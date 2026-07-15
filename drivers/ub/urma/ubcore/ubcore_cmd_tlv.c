@@ -103,7 +103,7 @@ static void ubcore_get_path_set_fill_spec_in(void *arg_addr,
 	SPEC(s++, GET_PATH_SET_IN_SRC_BONDING_EID, arg->in.src_bonding_eid);
 	SPEC(s++, GET_PATH_SET_IN_DST_BONDING_EID, arg->in.dst_bonding_eid);
 	SPEC(s++, GET_PATH_SET_IN_TP_TYPE, arg->in.tp_type);
-	SPEC(s++, GET_PATH_SET_IN_MULTI_PATH, arg->in.multi_path);
+	SPEC(s++, GET_PATH_SET_IN_IODIE_LEVEL, arg->in.iodie_level);
 }
 
 static void ubcore_get_path_set_fill_spec_out(void *arg_addr,
@@ -113,6 +113,70 @@ static void ubcore_get_path_set_fill_spec_out(void *arg_addr,
 	struct ubcore_cmd_spec *s = spec;
 
 	SPEC(s++, GET_PATH_SET_OUT_PATH_SET, arg->out);
+}
+
+static void ubcore_insert_main_ue_eid_fill_spec_in(void *arg_addr,
+	struct ubcore_cmd_spec *spec)
+{
+	struct ubcore_cmd_main_ue_eid_entry *arg = arg_addr;
+	struct ubcore_cmd_spec *s = spec;
+
+	SPEC(s++, INSERT_MAIN_UE_EID_IN_ENTRY, arg->in);
+}
+
+static void ubcore_delete_main_ue_eid_fill_spec_in(void *arg_addr,
+	struct ubcore_cmd_spec *spec)
+{
+	struct ubcore_cmd_main_ue_eid_delete *arg = arg_addr;
+	struct ubcore_cmd_spec *s = spec;
+
+	SPEC(s++, DELETE_MAIN_UE_EID_IN_EID, arg->in.eid);
+}
+
+static void ubcore_lookup_main_ue_eid_fill_spec_in(void *arg_addr,
+	struct ubcore_cmd_spec *spec)
+{
+	struct ubcore_cmd_main_ue_eid_lookup *arg = arg_addr;
+	struct ubcore_cmd_spec *s = spec;
+
+	SPEC(s++, LOOKUP_MAIN_UE_EID_IN_EID, arg->in.eid);
+}
+
+static void ubcore_lookup_main_ue_eid_fill_spec_out(void *arg_addr,
+	struct ubcore_cmd_spec *spec)
+{
+	struct ubcore_cmd_main_ue_eid_lookup *arg = arg_addr;
+	struct ubcore_cmd_spec *s = spec;
+
+	SPEC(s++, LOOKUP_MAIN_UE_EID_OUT_MAIN_UE_EID,
+	     arg->out.main_ue_eid);
+}
+
+static void ubcore_flush_main_ue_eid_fill_spec_out(void *arg_addr,
+	struct ubcore_cmd_spec *spec)
+{
+	struct ubcore_cmd_main_ue_eid_flush *arg = arg_addr;
+	struct ubcore_cmd_spec *s = spec;
+
+	SPEC(s++, FLUSH_MAIN_UE_EID_OUT_STATUS, arg->out.status);
+}
+
+static void ubcore_insert_main_ue_eid_batch_fill_spec_in(void *arg_addr,
+	struct ubcore_cmd_spec *spec)
+{
+	struct ubcore_cmd_main_ue_eid_batch *arg = arg_addr;
+	struct ubcore_cmd_spec *s = spec;
+
+	SPEC(s++, INSERT_MAIN_UE_EID_BATCH_IN_ENTRY, arg->in);
+}
+
+static void ubcore_insert_host_eid_batch_fill_spec_in(void *arg_addr,
+	struct ubcore_cmd_spec *spec)
+{
+	struct ubcore_cmd_host_eid_batch *arg = arg_addr;
+	struct ubcore_cmd_spec *s = spec;
+
+	SPEC(s++, INSERT_HOST_EID_BATCH_IN_ENTRY, arg->in);
 }
 
 static struct ubcore_tlv_handler
@@ -141,7 +205,43 @@ static struct ubcore_tlv_handler
 			GET_PATH_SET_IN_NUM,
 			ubcore_get_path_set_fill_spec_out,
 			GET_PATH_SET_OUT_NUM,
-		}
+		},
+		[UBCORE_CMD_INSERT_MAIN_UE_EID] = {
+			ubcore_insert_main_ue_eid_fill_spec_in,
+			INSERT_MAIN_UE_EID_IN_NUM,
+			NULL,
+			0,
+		},
+		[UBCORE_CMD_DELETE_MAIN_UE_EID] = {
+			ubcore_delete_main_ue_eid_fill_spec_in,
+			DELETE_MAIN_UE_EID_IN_NUM,
+			NULL,
+			0,
+		},
+		[UBCORE_CMD_LOOKUP_MAIN_UE_EID] = {
+			ubcore_lookup_main_ue_eid_fill_spec_in,
+			LOOKUP_MAIN_UE_EID_IN_NUM,
+			ubcore_lookup_main_ue_eid_fill_spec_out,
+			LOOKUP_MAIN_UE_EID_OUT_NUM,
+		},
+		[UBCORE_CMD_FLUSH_MAIN_UE_EID] = {
+			NULL,
+			0,
+			ubcore_flush_main_ue_eid_fill_spec_out,
+			FLUSH_MAIN_UE_EID_OUT_NUM,
+		},
+		[UBCORE_CMD_INSERT_MAIN_UE_EID_BATCH] = {
+			ubcore_insert_main_ue_eid_batch_fill_spec_in,
+			INSERT_MAIN_UE_EID_BATCH_IN_NUM,
+			NULL,
+			0,
+		},
+		[UBCORE_CMD_INSERT_HOST_EID_BATCH] = {
+			ubcore_insert_host_eid_batch_fill_spec_in,
+			INSERT_HOST_EID_BATCH_IN_NUM,
+			NULL,
+			0,
+		},
 	};
 
 static struct ubcore_cmd_attr *

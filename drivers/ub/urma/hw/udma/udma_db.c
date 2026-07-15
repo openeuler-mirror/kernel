@@ -43,7 +43,7 @@ int udma_pin_sw_db(struct udma_context *ctx, struct udma_sw_db *db)
 	page->umem = udma_umem_get(&param);
 	if (IS_ERR(page->umem)) {
 		ret = PTR_ERR(page->umem);
-		dev_err(ctx->dev->dev, "Failed to get umem, ret: %d.\n", ret);
+		dev_err(ctx->dev->dev, "failed to get user memory, ret: %d.\n", ret);
 		kfree(page);
 		goto out;
 	}
@@ -92,7 +92,7 @@ struct udma_page_priv *udma_get_sw_db(struct udma_context *ctx, uint64_t db_addr
 
 	priv = udma_get_map_page_priv(ctx, page_addr, PAGE_SIZE);
 	if (!priv) {
-		dev_err(ctx->dev->dev, "failed to get page priv.\n");
+		dev_err(ctx->dev->dev, "failed to get page private.\n");
 		mutex_unlock(&ctx->page_lock);
 		return NULL;
 	}
@@ -169,7 +169,7 @@ static struct udma_k_sw_db_page *udma_alloc_db_page(struct udma_dev *dev,
 
 	page->bitmap = bitmap_alloc(page->num_db, GFP_KERNEL);
 	if (!page->bitmap) {
-		dev_err(dev->dev, "Failed alloc db bitmap, db type is %u.\n", type);
+		dev_err(dev->dev, "failed to alloc doorbell bitmap, DB type is %u.\n", type);
 		goto err_bitmap;
 	}
 
@@ -177,7 +177,7 @@ static struct udma_k_sw_db_page *udma_alloc_db_page(struct udma_dev *dev,
 
 	ret = udma_alloc_normal_buf(dev, PAGE_SIZE, &page->db_buf);
 	if (ret) {
-		dev_err(dev->dev, "Failed alloc db page buf, ret is %d.\n", ret);
+		dev_err(dev->dev, "failed to alloc doorbell page buffer, ret is %d.\n", ret);
 		goto err_kva;
 	}
 
@@ -205,7 +205,7 @@ int udma_alloc_sw_db(struct udma_dev *dev, struct udma_sw_db *db,
 	page = udma_alloc_db_page(dev, type);
 	if (!page) {
 		ret = -ENOMEM;
-		dev_err(dev->dev, "Failed alloc sw db page db_type = %u\n", type);
+		dev_err(dev->dev, "failed to alloc SW DB page db_type = %u\n", type);
 		goto out;
 	}
 

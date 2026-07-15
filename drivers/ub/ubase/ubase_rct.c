@@ -5,6 +5,7 @@
  */
 
 #include "ubase_mailbox.h"
+#include "ubase_usc.h"
 #include "ubase_rct.h"
 
 static dma_addr_t ubase_get_rc_queue_iova_from_pmem(struct ubase_dev *udev,
@@ -33,13 +34,16 @@ static int ubase_alloc_rc_buf(struct ubase_dev *udev, u32 rc_queue_idx)
 	size_t size = udev->caps.udma_caps.rc_que_depth * UBASE_RCE_SIZE;
 	struct ubase_rc_queue *entry = &udev->rc_entry[rc_queue_idx];
 
+	if (ubase_dev_usc_supported(udev))
+		return ubase_alloc_rc_buf_usc(udev, entry, size);
+
 	if (test_bit(UBASE_STATE_PREALLOC_OK_B, &udev->state_bits)) {
 		entry->iova = ubase_get_rc_queue_iova_from_pmem(udev,
 								rc_queue_idx);
 		return 0;
 	}
 
-	entry->va = dma_alloc_coherent(udev->dev, size, &entry->iova, GFP_KERNEL);
+	entry->va = ubase_alloc_buf(udev, size, &entry->iova, &entry->page);
 	if (!entry->va)
 		return -ENOMEM;
 
@@ -51,13 +55,18 @@ static void ubase_free_rc_buf(struct ubase_dev *udev, u32 rc_queue_idx)
 	size_t size = udev->caps.udma_caps.rc_que_depth * UBASE_RCE_SIZE;
 	struct ubase_rc_queue *entry = &udev->rc_entry[rc_queue_idx];
 
+	if (ubase_dev_usc_supported(udev)) {
+		ubase_free_rc_buf_usc(udev, entry, size);
+		return;
+	}
+
 	if (test_bit(UBASE_STATE_PREALLOC_OK_B, &udev->state_bits))
 		return;
 
 	if (!entry->va || !entry->iova)
 		return;
 
-	dma_free_coherent(udev->dev, size, entry->va, entry->iova);
+	ubase_free_buf(udev, size, entry->va, entry->iova, entry->page);
 
 	entry->va = NULL;
 	entry->iova = 0;
@@ -94,7 +103,9 @@ int ubase_create_rc_queue_ctx(struct ubase_dev *udev, u32 rc_queue_idx)
 	memcpy(mailbox->buf, &ctx, sizeof(ctx));
 
 	ubase_fill_mbx_attr(&attr, rc_queue_idx, UBASE_MB_CREATE_RC_CONTEXT, 0);
-	ret = __ubase_hw_upgrade_ctx_ex(udev, &attr, mailbox);
+	ret = ubase_dev_mbx_supported(udev) ?
+	      __ubase_hw_upgrade_ctx_ex(udev, &attr, mailbox) :
+	      ubase_hw_upgrade_ctx_over_cmdq(udev, &attr, mailbox);
 	if (ret)
 		ubase_err(udev, "failed to post mailbox for rc queue, ret = %d.\n",
 			  ret);
@@ -117,7 +128,9 @@ int ubase_destroy_rc_queue_ctx(struct ubase_dev *udev, u32 rc_queue_idx)
 	}
 
 	ubase_fill_mbx_attr(&attr, rc_queue_idx, UBASE_MB_DESTROY_RC_CONTEXT, 0);
-	ret = __ubase_hw_upgrade_ctx_ex(udev, &attr, mailbox);
+	ret = ubase_dev_mbx_supported(udev) ?
+	      __ubase_hw_upgrade_ctx_ex(udev, &attr, mailbox) :
+	      ubase_hw_upgrade_ctx_over_cmdq(udev, &attr, mailbox);
 	if (ret)
 		ubase_err(udev, "failed to destroy rc queue ctx, ret = %d.\n", ret);
 
@@ -142,7 +155,7 @@ int ubase_rc_init(struct ubase_dev *udev)
 		if (ret) {
 			ubase_err(udev, "failed to init rc entry[%u], ret = %d.\n",
 				  i, ret);
-			goto err_alloc_rc_entry;
+			goto err_rc_init;
 		}
 
 		ret = ubase_create_rc_queue_ctx(udev, i);
@@ -150,13 +163,13 @@ int ubase_rc_init(struct ubase_dev *udev)
 			ubase_err(udev, "failed to create ctx for rc entry[%u], ret = %d.\n",
 				  i, ret);
 			ubase_free_rc_buf(udev, i);
-			goto err_alloc_rc_entry;
+			goto err_rc_init;
 		}
 	}
 
 	return 0;
 
-err_alloc_rc_entry:
+err_rc_init:
 	for (; i > 0; i--) {
 		(void)ubase_destroy_rc_queue_ctx(udev, i - 1);
 		ubase_free_rc_buf(udev, i - 1);
@@ -212,7 +225,9 @@ int ubase_adev_query_rc_ctx(struct auxiliary_device *adev, u32 rc_queue_idx,
 	}
 
 	ubase_fill_mbx_attr(&attr, rc_queue_idx, UBASE_MB_QUERY_RC_CONTEXT, 0);
-	ret = __ubase_hw_upgrade_ctx_ex(udev, &attr, mailbox);
+	ret = ubase_dev_mbx_supported(udev) ?
+	      __ubase_hw_upgrade_ctx_ex(udev, &attr, mailbox) :
+	      ubase_hw_upgrade_ctx_over_cmdq(udev, &attr, mailbox);
 	if (ret) {
 		ubase_err(udev, "failed to query rc queue ctx[%u], ret = %d.\n",
 			  rc_queue_idx, ret);

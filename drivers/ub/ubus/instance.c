@@ -348,7 +348,7 @@ cfg_fail:
 		i++;
 	}
 out:
-	/* upi no need unconfigure */
+	/* UPI does not need unconfigure */
 	(void)ub_cfg_bus_instance_eid(bi, false);
 	return ret;
 }
@@ -377,7 +377,7 @@ static void ub_unregister_bus_instance(struct ub_bus_instance *bi)
 					      bi->info.upi);
 	}
 
-	/* upi no need unconfigure */
+	/* UPI does not need unconfigure */
 	(void)ub_cfg_bus_instance_eid(bi, false);
 }
 
@@ -932,7 +932,6 @@ int ub_default_bus_instance_init(struct ub_entity *uent)
 
 	use_cluster = is_p_device(uent) || is_p_idevice(uent) ||
 		      (is_ibus_controller(uent) && uent->ubc->cluster);
-
 	if (use_cluster) {
 		mutex_lock(&dynamic_mutex);
 		bi = ub_find_bus_instance(eid_match, &uent->user_eid);

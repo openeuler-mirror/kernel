@@ -23,6 +23,9 @@
 #include <asm/paravirt.h>
 #include <asm/pvclock-abi.h>
 #include <asm/pvsched-abi.h>
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+#include <asm/pvtimer-status-abi.h>
+#endif
 #include <asm/smp_plat.h>
 
 struct static_key paravirt_steal_enabled;
@@ -282,3 +285,188 @@ int __init pv_sched_init(void)
 }
 early_initcall(pv_sched_init);
 #endif /* CONFIG_PARAVIRT_SCHED */
+
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+static void native_set_pvtimer_status(bool active) { }
+
+DEFINE_STATIC_CALL(pvtimer_status_set, native_set_pvtimer_status);
+
+struct pvtimer_status_region {
+	struct pvtimer_status_vcpu_state __rcu *kaddr;
+};
+
+static DEFINE_PER_CPU(struct pvtimer_status_region, vtimer_active_status_region);
+
+/* info hypervisor about timer active status */
+static void pv_set_pvtimer_status(bool active)
+{
+	struct pvtimer_status_vcpu_state *kaddr = NULL;
+	struct pvtimer_status_region *reg;
+
+	reg = this_cpu_ptr(&vtimer_active_status_region);
+
+	/*
+	 * paravirt_steal_clock() may be called before the CPU
+	 * online notification callback runs. Until the callback
+	 * has run we just return zero.
+	 */
+	rcu_read_lock();
+	kaddr = rcu_dereference(reg->kaddr);
+	if (!kaddr) {
+		rcu_read_unlock();
+		return;
+	}
+
+	WRITE_ONCE(kaddr->active, (int)active);
+	rcu_read_unlock();
+}
+
+static int pvtimer_status_cpu_down_prepare(unsigned int cpu)
+{
+	struct pvtimer_status_vcpu_state *kaddr = NULL;
+	struct pvtimer_status_region *reg;
+
+	reg = this_cpu_ptr(&vtimer_active_status_region);
+	if (!reg->kaddr)
+		return 0;
+
+	kaddr = rcu_replace_pointer(reg->kaddr, NULL, true);
+	synchronize_rcu();
+	memunmap(kaddr);
+
+	return 0;
+}
+
+static int pvtimer_status_cpu_online(unsigned int cpu)
+{
+	struct pvtimer_status_vcpu_state *kaddr = NULL;
+	struct pvtimer_status_region *reg;
+	struct arm_smccc_res res;
+
+	reg = this_cpu_ptr(&vtimer_active_status_region);
+
+	arm_smccc_1_1_invoke(ARM_SMCCC_VENDOR_PVTIMER_STATUS_ENABLE, &res);
+
+	if (res.a0 == SMCCC_RET_NOT_SUPPORTED)
+		return -EINVAL;
+
+	kaddr = memremap(res.a0,
+			      sizeof(struct pvtimer_status_vcpu_state),
+			      MEMREMAP_WB);
+
+	rcu_assign_pointer(reg->kaddr, kaddr);
+
+	if (!reg->kaddr) {
+		pr_warn("Failed to map pvtimer status data structure\n");
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+static int __init pvtimer_init_active_status_region(void)
+{
+	int ret;
+
+	ret = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN,
+				"hypervisor/arm/pvtimer-status:online",
+				pvtimer_status_cpu_online,
+				pvtimer_status_cpu_down_prepare);
+	if (ret < 0)
+		return ret;
+	return 0;
+}
+
+static bool __init has_pvtimer_status(void)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_invoke(ARM_SMCCC_VENDOR_PVTIMER_STATUS_FEATURES, &res);
+
+	if (res.a0 != SMCCC_RET_SUCCESS)
+		return false;
+
+	arm_smccc_1_1_invoke(ARM_SMCCC_VENDOR_PVTIMER_STATUS_ENABLE, &res);
+
+	return (res.a0 != SMCCC_RET_NOT_SUPPORTED);
+}
+
+int __init pvtimer_status_init(void)
+{
+	int ret;
+
+	if (!has_pvtimer_status())
+		return 0;
+
+	ret = pvtimer_init_active_status_region();
+	if (ret)
+		return ret;
+
+	static_call_update(pvtimer_status_set, pv_set_pvtimer_status);
+
+	pr_info("using pvtimer status\n");
+
+	return 0;
+}
+#endif
+
+#ifdef CONFIG_VIRT_TIMER_EARLY_INJECT
+
+#include <asm/pvtimer-early-abi.h>
+
+static u64 native_get_timer_early_inject_ns(void)
+{
+	return 0;
+}
+
+DEFINE_STATIC_CALL(pv_timer_early_inject, native_get_timer_early_inject_ns);
+
+static struct pvtimer_early_vcpu_state *timer_early_kaddr;
+
+static u64 pv_get_timer_early_inject_ns(void)
+{
+	if (!timer_early_kaddr)
+		return 0;
+
+	return le64_to_cpu(READ_ONCE(timer_early_kaddr->early_ns));
+}
+
+static bool __init has_timer_early_inject(void)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_invoke(ARM_SMCCC_VENDOR_TIMER_EARLY_INJECT_FEATURES, &res);
+
+	return res.a0 == SMCCC_RET_SUCCESS;
+}
+
+int __init timer_early_inject_init(void)
+{
+	struct arm_smccc_res res;
+	phys_addr_t gpa;
+
+	if (!has_timer_early_inject())
+		return 0;
+
+	arm_smccc_1_1_invoke(ARM_SMCCC_VENDOR_TIMER_EARLY_INJECT_ENABLE, &res);
+	if (res.a0 == SMCCC_RET_NOT_SUPPORTED)
+		return 0;
+
+	gpa = res.a0;
+
+	timer_early_kaddr = memremap(gpa,
+				      sizeof(struct pvtimer_early_vcpu_state),
+				      MEMREMAP_WB);
+	if (!timer_early_kaddr) {
+		pr_warn("Failed to map timer early inject data structure\n");
+		return -ENOMEM;
+	}
+
+	static_call_update(pv_timer_early_inject, pv_get_timer_early_inject_ns);
+
+	pr_info("using timer early inject PV\n");
+	return 0;
+}
+
+#endif /* CONFIG_VIRT_TIMER_EARLY_INJECT */
+

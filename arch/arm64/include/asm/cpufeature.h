@@ -851,6 +851,11 @@ static __always_inline bool system_uses_xcall_xint(void)
 	       cpus_have_const_cap(ARM64_HAS_HW_XCALL_XINT);
 }
 
+static __always_inline bool system_uses_xint(void)
+{
+	return IS_ENABLED(CONFIG_FAST_IRQ) && cpus_have_const_cap(ARM64_HAS_XINT);
+}
+
 static __always_inline bool system_uses_irq_prio_masking(void)
 {
 	return IS_ENABLED(CONFIG_ARM64_PSEUDO_NMI) &&

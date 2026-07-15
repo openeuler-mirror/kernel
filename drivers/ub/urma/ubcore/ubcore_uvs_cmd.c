@@ -17,14 +17,15 @@
 #include "ubcore_device.h"
 #include "ubcore_priv.h"
 #include "ubcore_cmd_tlv.h"
+#include "ubcore_main_ue_eid.h"
+#include "ubcore_host_info.h"
 #include "ubcore_topo_info.h"
 #include "net/ubcore_cm.h"
-#include "ubmgr/ubmgr_topo.h"
 #include "ubcore_uvs_cmd.h"
 
 int ubcore_get_path_set(union ubcore_eid *src_bonding_eid,
 	union ubcore_eid *dst_bonding_eid, enum ubcore_tp_type tp_type,
-	bool multi_path, struct ubcore_path_set *path_set);
+	bool iodie_level, struct ubcore_path_set *path_set);
 
 static int ubcore_eidtbl_add_entry(struct ubcore_device *dev,
 				   union ubcore_eid *eid, uint32_t *eid_idx,
@@ -156,94 +157,6 @@ int ubcore_update_eidtbl_by_idx(struct ubcore_device *dev,
 	return ret;
 }
 
-static int ubcore_get_eid_index(struct ubcore_device *dev,
-				union ubcore_eid *eid, uint32_t *eid_index)
-{
-	uint32_t idx, ret = 0;
-
-	spin_lock(&dev->eid_table.lock);
-	for (idx = 0; idx < dev->eid_table.eid_cnt; idx++) {
-		if (memcmp(&dev->eid_table.eid_entries[idx].eid, eid,
-			   sizeof(union ubcore_eid)) == 0) {
-			*eid_index = idx;
-			break;
-		}
-	}
-	if (idx == dev->eid_table.eid_cnt)
-		ret = -1;
-	spin_unlock(&dev->eid_table.lock);
-	return ret;
-}
-
-static int ubcore_create_jetty_rsrc(struct ubcore_topo_map *topo_map)
-{
-	struct ubcore_device *dev;
-	struct ubcore_eid_info eid_info = { 0 };
-	struct ubcore_topo_node *cur_node_info;
-	bool has_any_primary_eid = false;
-	int dev_idx, die_idx;
-	int ret;
-
-	cur_node_info = ubcore_get_cur_topo_info(topo_map);
-	if (cur_node_info == NULL) {
-		ubcore_log_err("Failed to get current node info\n");
-		return -EINVAL;
-	}
-
-	for (dev_idx = 0; dev_idx < DEV_NUM; dev_idx++) {
-		for (die_idx = 0; die_idx < IODIE_NUM; die_idx++) {
-			if (!is_eid_valid(
-				cur_node_info->agg_devs[dev_idx].ues[die_idx].primary_eid))
-				continue;
-
-			has_any_primary_eid = true;
-			(void)memcpy(&eid_info.eid,
-					cur_node_info->agg_devs[dev_idx].ues[die_idx].primary_eid,
-					sizeof(union ubcore_eid));
-
-			dev = ubcore_get_device_by_eid(&eid_info.eid,
-								   UBCORE_TRANSPORT_UB);
-			if (dev == NULL) {
-				ubcore_log_err(
-				"primary dev not exist, node %d dev %d die %d, eid: " EID_FMT
-				"\n",
-				cur_node_info->node_id, dev_idx, die_idx,
-				EID_RAW_ARGS(
-				cur_node_info->agg_devs[dev_idx].ues[die_idx].primary_eid
-				));
-				return -1;
-			}
-
-			ret = ubcore_get_eid_index(dev, &eid_info.eid,
-						&eid_info.eid_index);
-			if (ret != 0) {
-				ubcore_log_err("Failed to get eid index\n");
-				ubcore_put_device(dev);
-				return ret;
-			}
-
-			ret = ubcore_call_cm_eid_ops(dev, &eid_info,
-						UBCORE_MGMT_EVENT_EID_ADD);
-			if (ret != 0) {
-				ubcore_log_err("Failed to call cm eid ops\n");
-				ubcore_put_device(dev);
-				return ret;
-			}
-
-			ubcore_log_info(
-				"Created jetty rsrc: node %d dev %d primary die %d, eid: " EID_FMT
-				", idx: %d\n",
-				cur_node_info->node_id, dev_idx, die_idx,
-				EID_RAW_ARGS(
-				cur_node_info->agg_devs[dev_idx].ues[die_idx].primary_eid),
-				eid_info.eid_index);
-			ubcore_put_device(dev);
-		}
-	}
-
-	return has_any_primary_eid ? 0 : -1;
-}
-
 static int ubcore_cmd_set_topo(struct ubcore_global_file *file,
 			       struct ubcore_cmd_hdr *hdr)
 {
@@ -281,14 +194,6 @@ static int ubcore_cmd_set_topo(struct ubcore_global_file *file,
 	}
 	ubcore_show_topo_map(topo_map);
 
-	ret = ubcore_create_jetty_rsrc(topo_map);
-	if (ret != 0) {
-		ubcore_log_err("Failed to create jetty rsrc\n");
-		ubcore_delete_global_topo_map();
-		return ret;
-	}
-
-	ubmgr_notify_set_topo();
 	return 0;
 }
 
@@ -327,7 +232,7 @@ static int ubcore_cmd_get_topo(struct ubcore_global_file *file,
 }
 
 static int ubcore_cmd_get_route_list(struct ubcore_global_file *file,
-	struct ubcore_cmd_hdr *hdr)
+				     struct ubcore_cmd_hdr *hdr)
 {
 	struct ubcore_cmd_get_route_list arg;
 
@@ -362,7 +267,7 @@ static int ubcore_cmd_get_path_set(struct ubcore_global_file *file,
 		return ret;
 	}
 	ret = ubcore_get_path_set(&arg.in.src_bonding_eid, &arg.in.dst_bonding_eid,
-		arg.in.tp_type, arg.in.multi_path, &arg.out);
+		arg.in.tp_type, arg.in.iodie_level, &arg.out);
 	if (ret != 0) {
 		ubcore_log_err("Failed to get_path_set, ret: %d.\n", ret);
 		return ret;
@@ -370,6 +275,163 @@ static int ubcore_cmd_get_path_set(struct ubcore_global_file *file,
 	if (ubcore_global_tlv_append(hdr, (void *)&arg) != 0)
 		ret = -EPERM;
 
+	return ret;
+}
+
+static int ubcore_insert_host_eid_batch(
+	const union ubcore_eid *host_eid, uint32_t eid_num,
+	const union ubcore_eid *eids)
+{
+	struct ubcore_host_info host_info = {0};
+	uint32_t i;
+	int ret;
+
+	if (host_eid == NULL || eids == NULL || eid_num == 0 ||
+	    eid_num > UBCORE_HOST_EID_BATCH_EID_MAX) {
+		ubcore_log_err("invalid host eid batch.\n");
+		return -EINVAL;
+	}
+
+	host_info.eid = *host_eid;
+	for (i = 0; i < eid_num; i++) {
+		ret = ubcore_insert_host_info(&eids[i], &host_info);
+		if (ret != 0) {
+			ubcore_log_err("insert host eid batch failed, idx: %u, ret: %d\n",
+				       i, ret);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
+static int ubcore_insert_main_ue_eid_batch(
+	const union ubcore_eid *main_ue_eid, uint32_t eid_num,
+	const union ubcore_eid *eids)
+{
+	uint32_t i;
+	int ret;
+
+	if (main_ue_eid == NULL || eids == NULL || eid_num == 0 ||
+	    eid_num > UBCORE_MAIN_UE_EID_BATCH_EID_MAX) {
+		ubcore_log_err("invalid main ue eid batch.\n");
+		return -EINVAL;
+	}
+
+	for (i = 0; i < eid_num; i++) {
+		ret = ubcore_insert_main_ue_eid(&eids[i], main_ue_eid);
+		if (ret != 0) {
+			ubcore_log_err("insert main ue eid batch failed, idx: %u, ret: %d\n",
+				       i, ret);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
+static int ubcore_cmd_insert_main_ue_eid(struct ubcore_global_file *file,
+	struct ubcore_cmd_hdr *hdr)
+{
+	struct ubcore_cmd_main_ue_eid_entry arg;
+	int ret;
+
+	ret = ubcore_global_tlv_parse(hdr, (void *)&arg);
+	if (ret != 0)
+		return ret;
+
+	return ubcore_insert_main_ue_eid(&arg.in.eid,
+		&arg.in.main_ue_eid);
+}
+
+static int ubcore_cmd_delete_main_ue_eid(struct ubcore_global_file *file,
+	struct ubcore_cmd_hdr *hdr)
+{
+	struct ubcore_cmd_main_ue_eid_delete arg;
+	int ret;
+
+	ret = ubcore_global_tlv_parse(hdr, (void *)&arg);
+	if (ret != 0)
+		return ret;
+
+	ret = ubcore_delete_main_ue_eid(&arg.in.eid);
+	if (ret != 0)
+		ubcore_log_err("delete main ue eid failed, ret: %d\n", ret);
+
+	return ret;
+}
+
+static int ubcore_cmd_lookup_main_ue_eid(struct ubcore_global_file *file,
+	struct ubcore_cmd_hdr *hdr)
+{
+	struct ubcore_cmd_main_ue_eid_lookup arg;
+	int ret;
+
+	ret = ubcore_global_tlv_parse(hdr, (void *)&arg);
+	if (ret != 0)
+		return ret;
+
+	ret = ubcore_lookup_main_ue_eid(&arg.in.eid,
+		&arg.out.main_ue_eid);
+	if (ret != 0) {
+		ubcore_log_err("lookup main ue eid failed, ret: %d\n", ret);
+		return ret;
+	}
+
+	if (ubcore_global_tlv_append(hdr, (void *)&arg) != 0)
+		return -EPERM;
+
+	return 0;
+}
+
+static int ubcore_cmd_flush_main_ue_eid(struct ubcore_global_file *file,
+	struct ubcore_cmd_hdr *hdr)
+{
+	struct ubcore_cmd_main_ue_eid_flush arg = {
+		.out.status = -1,
+	};
+
+	ubcore_flush_main_ue_eid();
+	arg.out.status = 0;
+	return ubcore_global_tlv_append(hdr, &arg);
+}
+
+static int ubcore_cmd_insert_main_ue_eid_batch(
+	struct ubcore_global_file *file, struct ubcore_cmd_hdr *hdr)
+{
+	struct ubcore_cmd_main_ue_eid_batch *arg;
+	int ret;
+
+	arg = kzalloc(sizeof(*arg), GFP_KERNEL);
+	if (arg == NULL)
+		return -ENOMEM;
+
+	ret = ubcore_global_tlv_parse(hdr, (void *)arg);
+	if (ret == 0)
+		ret = ubcore_insert_main_ue_eid_batch(&arg->in.main_ue_eid,
+			arg->in.eid_num, arg->in.eids);
+
+	kfree(arg);
+	return ret;
+}
+
+static int ubcore_cmd_insert_host_eid_batch(
+	struct ubcore_global_file *file, struct ubcore_cmd_hdr *hdr)
+{
+	struct ubcore_cmd_host_eid_batch *arg;
+	int ret;
+
+	arg = kzalloc(sizeof(*arg), GFP_KERNEL);
+	if (arg == NULL)
+		return -ENOMEM;
+
+	ret = ubcore_global_tlv_parse(hdr, (void *)arg);
+	if (ret == 0)
+		ret = ubcore_insert_host_eid_batch(&arg->in.host_eid,
+						   arg->in.eid_num,
+						   arg->in.eids);
+
+	kfree(arg);
 	return ret;
 }
 
@@ -386,6 +448,18 @@ static struct ubcore_uvs_global_cmd_func g_ubcore_uvs_global_cmd_funcs[] = {
 	[UBCORE_CMD_GET_ROUTE_LIST] = { ubcore_cmd_get_route_list, false },
 	[UBCORE_CMD_GET_TOPO] = { ubcore_cmd_get_topo, false },
 	[UBCORE_CMD_GET_PATH_SET] = { ubcore_cmd_get_path_set, false },
+	[UBCORE_CMD_INSERT_MAIN_UE_EID] = {
+		ubcore_cmd_insert_main_ue_eid, true },
+	[UBCORE_CMD_DELETE_MAIN_UE_EID] = {
+		ubcore_cmd_delete_main_ue_eid, true },
+	[UBCORE_CMD_LOOKUP_MAIN_UE_EID] = {
+		ubcore_cmd_lookup_main_ue_eid, false },
+	[UBCORE_CMD_FLUSH_MAIN_UE_EID] = {
+		ubcore_cmd_flush_main_ue_eid, true },
+	[UBCORE_CMD_INSERT_MAIN_UE_EID_BATCH] = {
+		ubcore_cmd_insert_main_ue_eid_batch, true },
+	[UBCORE_CMD_INSERT_HOST_EID_BATCH] = {
+		ubcore_cmd_insert_host_eid_batch, true },
 };
 
 int ubcore_uvs_global_cmd_parse(struct ubcore_global_file *file,

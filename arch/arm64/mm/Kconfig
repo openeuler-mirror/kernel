@@ -8,6 +8,7 @@ config PFN_RANGE_ALLOC
 	default n
 	select CONTIG_ALLOC
 	depends on MEMORY_HOTPLUG
+	depends on ARM64_4K_PAGES || ARM64_64K_PAGES
 	help
 		It allows to allocate contiguous memory from special pfn range,
 		the linear mapping granule of this range is never larger than PMD.

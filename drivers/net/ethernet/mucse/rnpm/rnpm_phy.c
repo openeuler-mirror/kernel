@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #include <linux/pci.h>
 #include <linux/delay.h>
@@ -57,10 +57,12 @@ __maybe_unused static s32 rnpm_get_phy_id(struct rnpm_hw *hw)
 
 	if (status == 0) {
 		hw->phy.id = (u32)(phy_id_high << 16);
-		status = hw->phy.ops.read_reg(hw, MDIO_DEVID2, MDIO_MMD_PMAPMD,
+		status = hw->phy.ops.read_reg(hw, MDIO_DEVID2,
+					      MDIO_MMD_PMAPMD,
 					      &phy_id_low);
 		hw->phy.id |= (u32)(phy_id_low & RNPM_PHY_REVISION_MASK);
-		hw->phy.revision = (u32)(phy_id_low & ~RNPM_PHY_REVISION_MASK);
+		hw->phy.revision =
+			(u32)(phy_id_low & ~RNPM_PHY_REVISION_MASK);
 	}
 	return status;
 }
@@ -70,7 +72,8 @@ __maybe_unused static s32 rnpm_get_phy_id(struct rnpm_hw *hw)
  *  @hw: pointer to hardware structure
  *
  **/
-__maybe_unused static enum rnpm_phy_type rnpm_get_phy_type_from_id(u32 phy_id)
+__maybe_unused static enum rnpm_phy_type
+rnpm_get_phy_type_from_id(u32 phy_id)
 {
 	enum rnpm_phy_type phy_type = rnpm_phy_unknown;
 
@@ -94,8 +97,8 @@ s32 rnpm_reset_phy_generic(struct rnpm_hw *hw)
  *  @reg_addr: 32 bit address of PHY register to read
  *  @phy_data: Pointer to read data from PHY register
  **/
-s32 rnpm_read_phy_reg_generic(struct rnpm_hw *hw, u32 reg_addr, u32 device_type,
-			      u16 *phy_data)
+s32 rnpm_read_phy_reg_generic(struct rnpm_hw *hw, u32 reg_addr,
+			      u32 device_type, u16 *phy_data)
 {
 	s32 status = 0;
 	u32 data = 0;
@@ -132,8 +135,11 @@ s32 rnpm_write_phy_reg_generic(struct rnpm_hw *hw, u32 reg_addr,
 s32 rnpm_setup_phy_link_generic(struct rnpm_hw *hw)
 {
 	s32 status = 0;
+	// u32 time_out;
+	// u32 max_time_out = 10;
 
 	rnpm_mbx_phy_link_set(hw, hw->phy.autoneg_advertised);
+
 	return status;
 }
 
@@ -142,7 +148,8 @@ s32 rnpm_setup_phy_link_generic(struct rnpm_hw *hw)
  *  @hw: pointer to hardware structure
  *  @speed: new link speed
  **/
-s32 rnpm_setup_phy_link_speed_generic(struct rnpm_hw *hw, rnpm_link_speed speed,
+s32 rnpm_setup_phy_link_speed_generic(struct rnpm_hw *hw,
+				      rnpm_link_speed speed,
 				      bool autoneg_wait_to_complete)
 {
 	struct rnpm_adapter *adpt = hw->back;
@@ -151,24 +158,26 @@ s32 rnpm_setup_phy_link_speed_generic(struct rnpm_hw *hw, rnpm_link_speed speed,
 	u32 value_r9 = 0;
 
 	rnpm_logd(LOG_PHY,
-		  "%s setup phy: phy_addr=%d speed=%d duplex=%d autoneg=%d ",
+		  "%s setup phy: phy_addr=%d speed=%d duplex=%d autoneg=%d "
+		  "is_backplane=%d is_sgmii=%d mdix=%d\n",
 		  __func__, adpt->phy_addr, speed, hw->mac.duplex,
-		  hw->mac.autoneg);
-	rnpm_logd(LOG_PHY, "is_backplane=%d is_sgmii=%d mdix=%d\n",
-		  hw->is_backplane, hw->is_sgmii, hw->phy.mdix);
+		  hw->mac.autoneg, hw->is_backplane, hw->is_sgmii,
+		  hw->phy.mdix);
 
 	if (hw->is_backplane) {
 		/* Backplane type, support AN, unsupport set speed */
-		return rnpm_set_lane_fun(hw, LANE_FUN_AN, hw->mac.autoneg, 0, 0,
-					 0);
+		return rnpm_set_lane_fun(hw, LANE_FUN_AN, hw->mac.autoneg,
+					 0, 0, 0);
 	}
 
 	/* Fiber only support force speed 1G/10G*/
 	if (!hw->is_sgmii) {
 		if (adpt->pf_adapter->force_10g_1g_speed_ablity) {
-			rnpm_mbx_force_speed(hw, speed);
+			rnpm_mbx_force_speed(hw,
+					     hw->mac.autoneg ? 0 : speed);
 			/* Update port link info when firber is absent */
-			set_bit(RNPM_PF_LINK_CHANGE, &adpt->pf_adapter->flags);
+			set_bit(RNPM_PF_LINK_CHANGE,
+				&adpt->pf_adapter->flags);
 		}
 		return 0;
 	}
@@ -196,10 +205,12 @@ s32 rnpm_setup_phy_link_speed_generic(struct rnpm_hw *hw, rnpm_link_speed speed,
 		rnpm_mbx_phy_write(hw, 0x0, value);
 		goto skip_an;
 	}
-	/* Clear autoneg_advertised and set new values based on input link
+	/*
+	 * Clear autoneg_advertised and set new values based on input link
 	 * speed.
 	 */
 	hw->phy.autoneg_advertised = speed;
+	adpt->fake_force_1000m = 0;
 
 	if (!hw->mac.autoneg) {
 		switch (speed) {
@@ -208,7 +219,8 @@ s32 rnpm_setup_phy_link_speed_generic(struct rnpm_hw *hw, rnpm_link_speed speed,
 			value = RNPM_MDI_PHY_SPEED_SELECT1;
 			// if (hw->phy.id == RNPM_YT8531_PHY_ID) {
 			speed = RNPM_LINK_SPEED_1GB_FULL;
-			goto out;
+			adpt->fake_force_1000m = 1;
+			goto auto_neg;
 			// }
 			break;
 		case RNPM_LINK_SPEED_100_FULL:
@@ -236,6 +248,7 @@ s32 rnpm_setup_phy_link_speed_generic(struct rnpm_hw *hw, rnpm_link_speed speed,
 	}
 
 	// start_an:
+auto_neg:
 	value_r4 = 0x1E0;
 	value_r9 = 0x300;
 	/*disable 100/10base-T Self-negotiation ability*/
@@ -282,10 +295,12 @@ s32 rnpm_setup_phy_link_speed_generic(struct rnpm_hw *hw, rnpm_link_speed speed,
 	value |= value_r9;
 	rnpm_mbx_phy_write(hw, 0x9, value);
 
-	/* enable 100/10base-T Self-negotiation ability */
-	rnpm_mbx_phy_read(hw, 0x4, &value);
-	value |= value_r4;
-	rnpm_mbx_phy_write(hw, 0x4, value);
+	if (hw->mac.autoneg) {
+		/* enable 100/10base-T Self-negotiation ability */
+		rnpm_mbx_phy_read(hw, 0x4, &value);
+		value |= value_r4;
+		rnpm_mbx_phy_write(hw, 0x4, value);
+	}
 
 	/* software reset to make the above configuration take effect*/
 	rnpm_mbx_phy_read(hw, 0x0, &value);
@@ -297,7 +312,7 @@ skip_an:
 	value &= ~0x800;
 	rnpm_mbx_phy_write(hw, 0x0, value);
 
-out:
+	//out:
 	return 0;
 }
 
@@ -367,7 +382,8 @@ s32 rnpm_setup_phy_link_tnx(struct rnpm_hw *hw)
  *  @hw: pointer to hardware structure
  *  @firmware_version: pointer to the PHY Firmware Version
  **/
-s32 rnpm_get_phy_firmware_version_tnx(struct rnpm_hw *hw, u16 *firmware_version)
+s32 rnpm_get_phy_firmware_version_tnx(struct rnpm_hw *hw,
+				      u16 *firmware_version)
 {
 	s32 status = 0;
 
@@ -418,8 +434,8 @@ s32 rnpm_identify_sfp_module_generic(struct rnpm_hw *hw)
  *  Checks the MAC's EEPROM to see if it supports a given SFP+ module type, if
  *  so it returns the offsets to the phy init sequence block.
  **/
-s32 rnpm_get_sfp_init_sequence_offsets(struct rnpm_hw *hw, u16 *list_offset,
-				       u16 *data_offset)
+s32 rnpm_get_sfp_init_sequence_offsets(struct rnpm_hw *hw,
+				       u16 *list_offset, u16 *data_offset)
 {
 	return 0;
 }
@@ -449,9 +465,6 @@ s32 rnpm_read_i2c_eeprom_generic(struct rnpm_hw *hw, u8 byte_offset,
 s32 rnpm_read_i2c_sff8472_generic(struct rnpm_hw *hw, u8 byte_offset,
 				  u8 *sff8472_data)
 {
-	// *sff8472_data = rnpm_mbx_sfp_read(hw, RNPM_I2C_EEPROM_DEV_ADDR2,
-	// byte_offset); return hw->phy.ops.read_i2c_byte(hw, byte_offset,
-	// RNPM_I2C_EEPROM_DEV_ADDR2, sff8472_data);
 	return -EIO;
 }
 
@@ -466,8 +479,6 @@ s32 rnpm_read_i2c_sff8472_generic(struct rnpm_hw *hw, u8 byte_offset,
 s32 rnpm_write_i2c_eeprom_generic(struct rnpm_hw *hw, u8 byte_offset,
 				  u8 eeprom_data)
 {
-	// return hw->phy.ops.write_i2c_byte(hw, byte_offset,
-	// RNPM_I2C_EEPROM_DEV_ADDR, eeprom_data);
 	return -EIO;
 }
 
@@ -480,8 +491,8 @@ s32 rnpm_write_i2c_eeprom_generic(struct rnpm_hw *hw, u8 byte_offset,
  *  Performs byte read operation to SFP module's EEPROM over I2C interface at
  *  a specified device address.
  **/
-s32 rnpm_read_i2c_byte_generic(struct rnpm_hw *hw, u8 byte_offset, u8 dev_addr,
-			       u8 *data)
+s32 rnpm_read_i2c_byte_generic(struct rnpm_hw *hw, u8 byte_offset,
+			       u8 dev_addr, u8 *data)
 {
 	s32 status = 0;
 
@@ -497,8 +508,8 @@ s32 rnpm_read_i2c_byte_generic(struct rnpm_hw *hw, u8 byte_offset, u8 dev_addr,
  *  Performs byte write operation to SFP module's EEPROM over I2C interface at
  *  a specified device address.
  **/
-s32 rnpm_write_i2c_byte_generic(struct rnpm_hw *hw, u8 byte_offset, u8 dev_addr,
-				u8 data)
+s32 rnpm_write_i2c_byte_generic(struct rnpm_hw *hw, u8 byte_offset,
+				u8 dev_addr, u8 data)
 {
 	s32 status = 0;
 
@@ -532,7 +543,8 @@ __maybe_unused static void rnpm_i2c_stop(struct rnpm_hw *hw)
  *
  *  Clocks in one byte data via I2C data/clock
  **/
-__maybe_unused static s32 rnpm_clock_in_i2c_byte(struct rnpm_hw *hw, u8 *data)
+__maybe_unused static s32 rnpm_clock_in_i2c_byte(struct rnpm_hw *hw,
+						 u8 *data)
 {
 	s32 i;
 	bool bit = false;
@@ -552,7 +564,8 @@ __maybe_unused static s32 rnpm_clock_in_i2c_byte(struct rnpm_hw *hw, u8 *data)
  *
  *  Clocks out one byte data via I2C data/clock
  **/
-__maybe_unused static s32 rnpm_clock_out_i2c_byte(struct rnpm_hw *hw, u8 data)
+__maybe_unused static s32 rnpm_clock_out_i2c_byte(struct rnpm_hw *hw,
+						  u8 data)
 {
 	s32 status = 0;
 
@@ -579,7 +592,8 @@ __maybe_unused static s32 rnpm_get_i2c_ack(struct rnpm_hw *hw)
  *
  *  Clocks in one bit via I2C data/clock
  **/
-__maybe_unused static s32 rnpm_clock_in_i2c_bit(struct rnpm_hw *hw, bool *data)
+__maybe_unused static s32 rnpm_clock_in_i2c_bit(struct rnpm_hw *hw,
+						bool *data)
 {
 	return 0;
 }
@@ -591,12 +605,14 @@ __maybe_unused static s32 rnpm_clock_in_i2c_bit(struct rnpm_hw *hw, bool *data)
  *
  *  Clocks out one bit via I2C data/clock
  **/
-__maybe_unused static s32 rnpm_clock_out_i2c_bit(struct rnpm_hw *hw, bool data)
+__maybe_unused static s32 rnpm_clock_out_i2c_bit(struct rnpm_hw *hw,
+						 bool data)
 {
 	s32 status = 0;
 
 	return status;
 }
+
 /**
  *  rnpm_raise_i2c_clk - Raises the I2C SCL clock
  *  @hw: pointer to hardware structure
@@ -604,7 +620,8 @@ __maybe_unused static s32 rnpm_clock_out_i2c_bit(struct rnpm_hw *hw, bool data)
  *
  *  Raises the I2C clock line '0'->'1'
  **/
-__maybe_unused static void rnpm_raise_i2c_clk(struct rnpm_hw *hw, u32 *i2cctl)
+__maybe_unused static void rnpm_raise_i2c_clk(struct rnpm_hw *hw,
+					      u32 *i2cctl)
 {
 }
 
@@ -615,7 +632,8 @@ __maybe_unused static void rnpm_raise_i2c_clk(struct rnpm_hw *hw, u32 *i2cctl)
  *
  *  Lowers the I2C clock line '1'->'0'
  **/
-__maybe_unused static void rnpm_lower_i2c_clk(struct rnpm_hw *hw, u32 *i2cctl)
+__maybe_unused static void rnpm_lower_i2c_clk(struct rnpm_hw *hw,
+					      u32 *i2cctl)
 {
 }
 
@@ -627,8 +645,8 @@ __maybe_unused static void rnpm_lower_i2c_clk(struct rnpm_hw *hw, u32 *i2cctl)
  *
  *  Sets the I2C data bit
  **/
-__maybe_unused static s32 rnpm_set_i2c_data(struct rnpm_hw *hw, u32 *i2cctl,
-					    bool data)
+__maybe_unused static s32 rnpm_set_i2c_data(struct rnpm_hw *hw,
+					    u32 *i2cctl, bool data)
 {
 	s32 status = 0;
 

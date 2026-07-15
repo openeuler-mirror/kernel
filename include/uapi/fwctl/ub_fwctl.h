@@ -8,6 +8,10 @@
 
 #include <linux/types.h>
 
+#ifndef UBFWCTL_UBENGINE
+#define FWCTL_DEVICE_TYPE_UB 5
+#endif
+
 /**
  * struct fwctl_rpc_ub_in - ioctl(FWCTL_RPC) input
  * @rpc_cmd: user specified opcode
@@ -70,6 +74,14 @@ enum ub_fwctl_cmdrpc_type {
 	 * @UTOOL_CMD_QUERY_NL_SSU_P2P: Query ssu_p2p queue non-empty dfx statistics
 	 */
 	UTOOL_CMD_QUERY_NL_SSU_P2P = 0x0007,
+	/**
+	 * @UTOOL_CMD_CONF_NL_SSU_VL_PKT: Config NL layer ssu_vl_pkt related registers
+	 */
+	UTOOL_CMD_CONF_NL_SSU_VL_PKT = 0x0008,
+	/**
+	 * @UTOOL_CMD_QUERY_NL_SSU_VL_PKT: Query NL layer ssu_vl_pkt related registers
+	 */
+	UTOOL_CMD_QUERY_NL_SSU_VL_PKT = 0x0009,
 
 	/**
 	 * @UTOOL_CMD_QUERY_TP: Query all registers at the TP layer
@@ -129,9 +141,29 @@ enum ub_fwctl_cmdrpc_type {
 	 */
 	UTOOL_CMD_QUERY_DL_BIST_ERR = 0x0019,
 	/**
+	 * @UTOOL_CMD_QUERY_DL_PERFORMANCE: Query DL layer PERF related registers
+	 */
+	UTOOL_CMD_QUERY_DL_PERFORMANCE = 0x001A,
+	/**
+	 * @UTOOL_CMD_QUERY_DL_ALL_PERF: Query DL layer all the PERF related registers
+	 */
+	UTOOL_CMD_QUERY_DL_ALL_PERF = 0x001B,
+	/**
 	 * @UTOOL_CMD_QUERY_DL_RT_BANDWIDTH: Query DL layer real time bandwidth
 	 */
 	UTOOL_CMD_QUERY_DL_RT_BANDWIDTH = 0x001C,
+	/**
+	 * @UTOOL_CMD_QUERY_DL_PERF_START: Enable port traffic statistics
+	 */
+	UTOOL_CMD_QUERY_DL_PERF_START = 0x001D,
+	/**
+	 * @UTOOL_CMD_QUERY_DL_PERF: Query DL layer bandwidth registers
+	 */
+	UTOOL_CMD_QUERY_DL_PERF = 0x001E,
+	/**
+	 * @UTOOL_CMD_QUERY_DL_PERF_STOP: Disable port traffic statistics
+	 */
+	UTOOL_CMD_QUERY_DL_PERF_STOP = 0x001F,
 
 	/**
 	 * @UTOOL_CMD_QUERY_TA: Query all registers at the TA layer
@@ -315,7 +347,7 @@ struct fwctl_pkt_in_table {
 };
 
 /**
- * struct fwctl_pkt_in_enable - ioctl(FWCTL_RPC) input
+ * struct fwctl_pkt_in_port - ioctl(FWCTL_RPC) input
  * @port_id: The value of param '-p'
  */
 struct fwctl_pkt_in_port {
@@ -323,7 +355,7 @@ struct fwctl_pkt_in_port {
 };
 
 /**
- * struct fwctl_pkt_in_enable - ioctl(FWCTL_RPC) input
+ * struct fwctl_pkt_in_index - ioctl(FWCTL_RPC) input
  * @index: The value of param '-i'
  */
 struct fwctl_pkt_in_index {
@@ -331,13 +363,31 @@ struct fwctl_pkt_in_index {
 };
 
 /**
- * struct fwctl_pkt_in_enable - ioctl(FWCTL_RPC) input
+ * struct fwctl_pkt_in_ummuid_value - ioctl(FWCTL_RPC) input
  * @ummu_id: The value of param '-u'
  * @value: The value of param '-e'
  */
 struct fwctl_pkt_in_ummuid_value {
 	__u32 ummu_id;
 	__u32 value;
+};
+
+/**
+ * struct fwctl_pkt_in_port_time - ioctl(FWCTL_RPC) input
+ * @port_id: The value of param '-p'
+ * @time: The value of param '-t'
+ */
+struct fwctl_pkt_in_port_time {
+	__u32 port_id;
+	__u32 time;
+};
+
+/**
+ * struct fwctl_pkt_in_time - ioctl(FWCTL_RPC) input
+ * @time: The value of param '-t'
+ */
+struct fwctl_pkt_in_time {
+	__u32 time;
 };
 
 #endif

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #ifndef _RNPM_MBX_H_
 #define _RNPM_MBX_H_
@@ -87,6 +87,14 @@ enum PF_STATUS {
 	PF_VLAN_FILTER_STATUS,
 };
 
+/* dummy port stats */
+struct mbx_port_stat {
+	bool duplex;
+	int speed;
+	bool abs;
+	bool link;
+};
+
 s32 rnpm_read_mbx(struct rnpm_hw *hw, u32 *msg, u16 size, enum MBX_ID);
 s32 rnpm_write_mbx(struct rnpm_hw *hw, u32 *msg, u16 size, enum MBX_ID);
 s32 rnpm_check_for_msg(struct rnpm_hw *hw, enum MBX_ID);
@@ -108,7 +116,8 @@ int rnpm_fw_update(struct rnpm_hw *hw, int partition, const u8 *fw_bin,
 		   int bytes);
 int rnpm_mbx_pf_link_event_enable(struct rnpm_hw *hw, int enable);
 int rnpm_mbx_pf_link_event_enable_nolock(struct rnpm_hw *hw, int enable);
-int rnpm_mbx_lane_link_changed_event_enable(struct rnpm_hw *hw, int enable);
+int rnpm_mbx_lane_link_changed_event_enable(struct rnpm_hw *hw,
+					    int enable);
 
 int rnpm_mbx_led_set(struct rnpm_hw *hw, int value);
 #define MBX_IFDOWN (0)
@@ -119,21 +128,24 @@ int rnpm_mbx_ifup_down(struct rnpm_hw *hw, int up);
 
 void rnpm_link_stat_mark_reset(struct rnpm_hw *hw);
 
-int rnpm_mbx_sfp_module_eeprom_info(struct rnpm_hw *hw, int sfp_addr, int reg,
-				    int data_len, u8 *buf);
+int rnpm_mbx_sfp_module_eeprom_info(struct rnpm_hw *hw, int sfp_addr,
+				    int reg, int data_len, u8 *buf);
 // int rnpm_mbx_sfp_read(struct rnpm_hw *hw, int sfp_addr, int reg);
 int rnpm_mbx_sfp_write(struct rnpm_hw *hw, int sfp_addr, int reg, short v);
-int rnpm_mbx_get_dump(struct rnpm_hw *hw, int flags, u8 *data_out, int bytes);
+int rnpm_mbx_get_dump(struct rnpm_hw *hw, int flags, u8 *data_out,
+		      int bytes);
 int rnpm_mbx_set_dump(struct rnpm_hw *hw, int flag);
 int rnpm_mbx_phy_link_set(struct rnpm_hw *hw, int speeds);
 int rnpm_mbx_get_temp(struct rnpm_hw *hw, int *voltage);
-int rnpm_maintain_req(struct rnpm_hw *hw, int cmd, int arg0, int req_data_bytes,
-		      int reply_bytes, dma_addr_t dma_phy_addr);
+int rnpm_maintain_req(struct rnpm_hw *hw, int cmd, int arg0,
+		      int req_data_bytes, int reply_bytes,
+		      dma_addr_t dma_phy_addr);
 int rnpm_mbx_get_lane_stat(struct rnpm_hw *hw);
 int rnpm_set_lane_fun(struct rnpm_hw *hw, int fun, int value0, int value1,
 		      int value2, int value3);
 void rnpm_link_stat_mark(struct rnpm_hw *hw, int nr_lane, int up);
-void rnpm_mbx_probe_stat_set(struct rnpm_pf_adapter *pf_adapter, int probe);
+void rnpm_mbx_probe_stat_set(struct rnpm_pf_adapter *pf_adapter,
+			     int probe);
 int rnpm_mbx_get_phy_statistics(struct rnpm_hw *hw, u8 *data);
 int rnpm_mbx_get_link(struct rnpm_hw *hw);
 int rnpm_hw_set_clause73_autoneg_enable(struct rnpm_hw *hw, int enable);
@@ -147,10 +159,19 @@ int rnpm_mbx_force_speed(struct rnpm_hw *hw, int speed);
 int rnpm_mbx_lldp_status_get(struct rnpm_hw *hw);
 int rnpm_mbx_lldp_port_enable(struct rnpm_hw *hw, bool enable);
 
-#define cm3_reg_write32(hw, cm3_rpu_reg, v)                                    \
+#define cm3_reg_write32(hw, cm3_rpu_reg, v) \
 	rnpm_mbx_reg_write((hw), (cm3_rpu_reg), (v))
 
-#define cm3_reg_read32(hw, cm3_rpu_reg)                                        \
+#define cm3_reg_read32(hw, cm3_rpu_reg) \
 	rnpm_mbx_fw_reg_read((hw), (cm3_rpu_reg))
 
+int rnpm_mbx_ddr_csl_enable(struct rnpm_hw *hw, int enable,
+			    dma_addr_t dma_phy, int bytes);
+
+int rnpm_mpe_set_queue_info(struct rnpm_pf_adapter *adapter, int lane,
+			    int mpe_id_bitmask,
+			    int queue_start, int queue_end);
+struct rnpm_adapter;
+int rnpm_ipsec_rss_update_args(struct rnpm_adapter *adapter);
+int rnpm_get_port_stats2(struct rnpm_hw *hw, struct mbx_port_stat *stat);
 #endif /* _RNPM_MBX_H_ */

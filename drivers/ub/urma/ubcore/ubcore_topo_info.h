@@ -15,7 +15,7 @@
 #include <ub/urma/ubcore_types.h>
 
 #define EID_LEN (16)
-#define MAX_NODE_NUM (64)
+#define MAX_NODE_NUM (1024)
 #define ENTITY_AGG_DEV_NUM (3) // bonding device number per entity
 #define PORT_NUM (9)
 #define CHIP_NUM (2)
@@ -37,19 +37,6 @@ struct ubcore_topo_agg_dev {
 	struct ubcore_topo_ue ues[IODIE_NUM];
 };
 
-struct ubcore_topo_physical_dev {
-	char dev_name[UBCORE_MAX_DEV_NAME];
-	uint32_t chip_id;
-	uint32_t primary_eid_idx;
-	uint32_t port_eid_idx[PORT_NUM];
-};
-
-struct ubcore_topo_bonding_dev {
-	char dev_name[UBCORE_MAX_DEV_NAME];
-	uint32_t bonding_eid_idx;
-	struct ubcore_topo_physical_dev physical_devs[IODIE_NUM];
-};
-
 struct ubcore_topo_link {
 	uint32_t peer_node; // node id
 	uint32_t peer_iodie; // iodie idx
@@ -57,20 +44,21 @@ struct ubcore_topo_link {
 };
 
 struct ubcore_topo_node {
-	uint32_t type;  // 0:1D-fullmesh, 1: Clos topology with parallel planes
+	uint32_t type; // 0:1D-fullmesh, 1: Clos topology with parallel planes
 	uint32_t super_node_id;
 	uint32_t node_id;
 	uint32_t is_current;
-	struct ubcore_topo_link links[IODIE_NUM][PORT_NUM]; /*Links[i] represents
-		the destination information connected to the current node's port[i].
-		It is not filled in Clos topology and relies on preset information.*/
+	/*
+	 * links[local_idx][remote_idx] represents connectivity
+	 * between this node's port local_idx and node i's port remote_idx.
+	 */
+	bool links[IODIE_NUM * PORT_NUM][IODIE_NUM * PORT_NUM];
 	struct ubcore_topo_agg_dev agg_devs[DEV_NUM];
 };
 
-
 enum ubcore_topo_type_t {
 	UBCORE_TOPO_TYPE_FULLMESH_1D,
-	UBCORE_TOPO_TYPE_CLOS
+	UBCORE_TOPO_TYPE_CLOS,
 };
 
 struct ubcore_node_id {
@@ -119,26 +107,13 @@ struct ubcore_topo_map *
 ubcore_create_topo_map_from_user(struct ubcore_topo_node *user_topo_infos,
 				 uint32_t node_num);
 void ubcore_delete_topo_map(struct ubcore_topo_map *topo_map);
-bool is_agg_dev_valid(struct ubcore_topo_agg_dev *agg_dev);
 bool is_eid_valid(const char *eid);
-struct ubcore_topo_node *
-ubcore_get_cur_topo_info(struct ubcore_topo_map *topo_map);
 int ubcore_update_topo_map(struct ubcore_topo_map *new_topo_map,
 			   struct ubcore_topo_map *old_topo_map);
 void ubcore_show_topo_map(struct ubcore_topo_map *topo_map);
-int ubcore_get_primary_eid(union ubcore_eid *eid, union ubcore_eid *primary_eid,
-	uint32_t *entity_id, uint32_t *chip_id, uint32_t *nd_id);
-int ubcore_get_main_primary_eid(union ubcore_eid *eid,
-	union ubcore_eid *main_primary_eid);
-
-int ubcore_get_primary_eid_by_agg_eid(union ubcore_eid *agg_eid,
-	union ubcore_eid *primary_eid, uint32_t ue_id);
-
-int ubcore_get_topo_bonding_dev_by_agg_eid(union ubcore_eid *agg_eid,
-	struct ubcore_topo_bonding_dev *out);
-
 int ubcore_get_path_set(union ubcore_eid *src_bonding_eid,
-	union ubcore_eid *dst_bonding_eid, enum ubcore_tp_type tp_type,
-	bool multi_path, struct ubcore_path_set *path_set);
+			union ubcore_eid *dst_bonding_eid,
+			enum ubcore_tp_type tp_type, bool iodie_level,
+			struct ubcore_path_set *path_set);
 
 #endif // UBCORE_TOPO_INFO_H

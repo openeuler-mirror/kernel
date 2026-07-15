@@ -89,6 +89,7 @@ struct ubase_ceqe {
 
 struct ubase_eq_addr {
 	void		*addr;
+	struct page	*page;
 	dma_addr_t	dma_addr;
 	size_t		size;
 };

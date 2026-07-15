@@ -60,7 +60,7 @@ static u64 cdma_pin_pages(struct cdma_dev *cdev, struct cdma_umem *umem,
 						pages);
 		if (pinned <= 0) {
 			dev_err(cdev->dev,
-				"pin pages failed, page_left = 0x%llx, pinned = %d.\n",
+				"pin pages failed, page_left = 0x%llx, pinned = %d\n",
 				page_left, pinned);
 			return npages - page_left;
 		}
@@ -90,7 +90,7 @@ static u64 cdma_k_pin_pages(struct cdma_dev *cdev, struct cdma_umem *umem,
 
 	ret = sg_alloc_table(&umem->sg_head, (unsigned int)npages, GFP_KERNEL);
 	if (ret) {
-		dev_err(cdev->dev, "sg alloc table failed.\n");
+		dev_err(cdev->dev, "sg alloc table failed\n");
 		return 0;
 	}
 	sg_cur = umem->sg_head.sgl;
@@ -102,7 +102,7 @@ static u64 cdma_k_pin_pages(struct cdma_dev *cdev, struct cdma_umem *umem,
 			pg = kmap_to_page((void *)(uintptr_t)cur_base);
 
 		if (!pg) {
-			dev_err(cdev->dev, "vmalloc or kmap to page failed.\n");
+			dev_err(cdev->dev, "vmalloc or kmap to page failed\n");
 			break;
 		}
 
@@ -170,8 +170,8 @@ static int cdma_sva_matt_map(struct cdma_umem *umem)
 	ret = ummu_sva_matt_map(&matt_domain, umem->va, &umem->sgt_append.sgt,
 				prot);
 	if (ret)
-		dev_err(umem->dev->dev,
-			"ummu sva matt map failed, ret = %d.\n", ret);
+		dev_err(umem->dev->dev, "ummu sva matt map failed, ret = %d\n",
+			ret);
 
 	return ret;
 }
@@ -187,6 +187,10 @@ void cdma_put_umem(struct cdma_umem *umem, bool is_kernel)
 	if (IS_ERR_OR_NULL(umem))
 		return;
 
+	if (is_kernel && umem->dev->ksva)
+		cdma_ksva_tlb_inv(umem->dev->ksva->handle.domain, umem->va,
+				  umem->length);
+
 	if (!is_kernel && umem->sva_mode == UMMU_SVA_SEPARATE_MODE)
 		cdma_sva_matt_unmap(umem);
 	cdma_put_target_umem(umem, is_kernel);
@@ -195,14 +199,14 @@ void cdma_put_umem(struct cdma_umem *umem, bool is_kernel)
 static int cdma_verify_mem(struct cdma_dev *cdev, u64 va, u64 len)
 {
 	if (((va + len) <= va) || PAGE_ALIGN(va + len) < (va + len)) {
-		dev_err(cdev->dev, "invalid address parameter, len = %llu.\n",
+		dev_err(cdev->dev, "invalid address parameter, len = %llu\n",
 			len);
 		return -EINVAL;
 	}
 
 	if (cdev->iopf_feature == 0 && cdev->sva_mode == UMMU_SVA_SHARE_MODE) {
 		dev_err(cdev->dev,
-			"invalid sva mode, not support iopf, mode = %d.\n",
+			"invalid sva mode, not support iopf, mode = %d\n",
 			cdev->sva_mode);
 		return -EINVAL;
 	}
@@ -230,7 +234,7 @@ static struct cdma_umem *cdma_get_target_umem(struct cdma_umem_param *param,
 	npages = cdma_cal_npages(umem->va, umem->length);
 	if (!npages || npages > UINT_MAX) {
 		dev_err(cdev->dev,
-			"invalid npages %llu in getting target umem process.\n",
+			"invalid npages %llu in getting target umem process\n",
 			npages);
 		ret = -EINVAL;
 		goto umem_kfree;
@@ -284,7 +288,7 @@ struct cdma_umem *cdma_umem_get(struct cdma_dev *cdev, u64 va, u64 len,
 	param.is_kernel = is_kernel;
 	umem = cdma_get_target_umem(&param, page_list);
 	if (IS_ERR(umem)) {
-		dev_err(cdev->dev, "get target umem failed.\n");
+		dev_err(cdev->dev, "get target umem failed\n");
 		goto free_page;
 	}
 	umem->sva_mode = cdev->sva_mode;
@@ -293,12 +297,12 @@ struct cdma_umem *cdma_umem_get(struct cdma_dev *cdev, u64 va, u64 len,
 		umem->tid = ctx->tid;
 		ret = cdma_sva_matt_map(umem);
 		if (ret) {
-			dev_err(cdev->dev, "sva matt map failed.\n");
+			dev_err(cdev->dev, "sva matt map failed\n");
 			goto release_umem;
 		}
 	}
 
-	return umem;
+	goto free_page;
 
 release_umem:
 	cdma_put_target_umem(umem, is_kernel);
@@ -315,37 +319,35 @@ int cdma_k_alloc_buf(struct cdma_dev *cdev, size_t memory_size,
 	int ret;
 
 	aligned_memory_size = memory_size + CDMA_HW_PAGE_SIZE - 1;
-	buf->aligned_va = vmalloc(aligned_memory_size);
-	if (!buf->aligned_va) {
-		dev_err(cdev->dev,
-			"vmalloc kernel buf failed, size = %lu.\n",
+	buf->va_aligned = vmalloc(aligned_memory_size);
+	if (!buf->va_aligned) {
+		dev_err(cdev->dev, "vmalloc kernel buf failed, size = %lu\n",
 			aligned_memory_size);
 		return -ENOMEM;
 	}
 
-	memset(buf->aligned_va, 0, aligned_memory_size);
-	buf->umem = cdma_umem_get(cdev, (u64)buf->aligned_va,
+	memset(buf->va_aligned, 0, aligned_memory_size);
+	buf->umem = cdma_umem_get(cdev, (u64)buf->va_aligned,
 				  aligned_memory_size, true, NULL);
 	if (IS_ERR(buf->umem)) {
 		ret = PTR_ERR(buf->umem);
-		vfree(buf->aligned_va);
-		dev_err(cdev->dev, "pin kernel buf failed, ret = %d.\n", ret);
+		vfree(buf->va_aligned);
+		dev_err(cdev->dev, "pin kernel buf failed, ret = %d\n", ret);
 		return ret;
 	}
 
-	buf->addr = ((u64)buf->aligned_va + CDMA_HW_PAGE_SIZE - 1) &
-			~(CDMA_HW_PAGE_SIZE - 1);
+	buf->addr = ((u64)buf->va_aligned + CDMA_HW_PAGE_SIZE - 1) &
+		    ~(CDMA_HW_PAGE_SIZE - 1);
 	buf->kva = (void *)buf->addr;
 
 	return 0;
 }
 
-void cdma_k_free_buf(struct cdma_dev *cdev, size_t memory_size,
-		     struct cdma_buf *buf)
+void cdma_k_free_buf(struct cdma_dev *cdev, struct cdma_buf *buf)
 {
 	cdma_put_umem(buf->umem, true);
-	vfree(buf->aligned_va);
-	buf->aligned_va = NULL;
+	vfree(buf->va_aligned);
+	buf->va_aligned = NULL;
 	buf->kva = NULL;
 	buf->addr = 0;
 }

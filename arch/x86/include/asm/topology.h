@@ -214,6 +214,12 @@ static inline unsigned int topology_amd_nodes_per_pkg(void)
 	return __amd_nodes_per_pkg;
 }
 
+#else /* CONFIG_SMP */
+static inline int topology_phys_to_logical_pkg(unsigned int pkg) { return 0; }
+static inline int topology_max_smt_threads(void) { return 1; }
+static inline unsigned int topology_amd_nodes_per_pkg(void) { return 1; }
+#endif /* !CONFIG_SMP */
+
 extern struct cpumask __cpu_primary_thread_mask;
 #define cpu_primary_thread_mask ((const struct cpumask *)&__cpu_primary_thread_mask)
 
@@ -226,12 +232,6 @@ static inline bool topology_is_primary_thread(unsigned int cpu)
 	return cpumask_test_cpu(cpu, cpu_primary_thread_mask);
 }
 #define topology_is_primary_thread topology_is_primary_thread
-
-#else /* CONFIG_SMP */
-static inline int topology_phys_to_logical_pkg(unsigned int pkg) { return 0; }
-static inline int topology_max_smt_threads(void) { return 1; }
-static inline unsigned int topology_amd_nodes_per_pkg(void) { return 0; };
-#endif /* !CONFIG_SMP */
 
 static inline void arch_fix_phys_package_id(int num, u32 slot)
 {

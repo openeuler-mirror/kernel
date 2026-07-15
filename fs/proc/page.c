@@ -222,6 +222,9 @@ u64 stable_page_flags(struct page *page)
 #ifdef CONFIG_DYNAMIC_POOL
 	u |= kpf_copy_bit(k, KPF_POOL,		PG_pool);
 #endif
+#ifdef CONFIG_CMA_FOLIO
+	u |= kpf_copy_bit(k, KPF_CMA_FOLIO,	PG_fcma);
+#endif
 
 	return u;
 };

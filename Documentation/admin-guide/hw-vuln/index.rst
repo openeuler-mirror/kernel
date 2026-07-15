@@ -24,3 +24,4 @@ are configurable at compile, boot or run time.
    reg-file-data-sampling
    indirect-target-selection
    vmscape
+   rsb

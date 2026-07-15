@@ -305,7 +305,7 @@ static int hisi_soc_cache_aligned_alloc(struct hisi_soc_cache_lock_region *clr,
 	unsigned long arena_start;
 	struct page *pg;
 
-	pg = alloc_contig_pages(1 << order, GFP_KERNEL | __GFP_NOWARN | __GFP_ZERO,
+	pg = alloc_contig_pages(1UL << order, GFP_KERNEL | __GFP_NOWARN | __GFP_ZERO,
 				cpu_to_node(smp_processor_id()), NULL);
 	if (!pg)
 		return -ENOMEM;

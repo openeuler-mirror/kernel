@@ -8,6 +8,8 @@
 #ifndef _ASM_SW64_PROCESSOR_H
 #define _ASM_SW64_PROCESSOR_H
 
+#include <linux/cache.h>
+
 #include <asm/ptrace.h>
 
 #define task_pt_regs(task) \

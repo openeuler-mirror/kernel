@@ -93,6 +93,12 @@
 #define  CPUCFG2_LSPW			BIT(21)
 #define  CPUCFG2_LAM			BIT(22)
 #define  CPUCFG2_PTW			BIT(24)
+#define  CPUCFG2_FRECIPE		BIT(25)
+#define  CPUCFG2_DIV32			BIT(26)
+#define  CPUCFG2_LAM_BH			BIT(27)
+#define  CPUCFG2_LAMCAS			BIT(28)
+#define  CPUCFG2_LLACQ_SCREL		BIT(29)
+#define  CPUCFG2_SCQ			BIT(30)
 
 #define LOONGARCH_CPUCFG3		0x3
 #define  CPUCFG3_CCDMA			BIT(0)
@@ -107,6 +113,7 @@
 #define  CPUCFG3_SPW_HG_HF		BIT(11)
 #define  CPUCFG3_RVA			BIT(12)
 #define  CPUCFG3_RVAMAX			GENMASK(16, 13)
+#define  CPUCFG3_DBAR_HINTS		BIT(17)
 #define  CPUCFG3_ALDORDER_CAP		BIT(18) /* All address load ordered, capability */
 #define  CPUCFG3_ASTORDER_CAP		BIT(19) /* All address store ordered, capability */
 #define  CPUCFG3_ALDORDER_STA		BIT(20) /* All address load ordered, status */
@@ -504,6 +511,8 @@
 #define  CSR_GCFG_GPERF_SHIFT		24
 #define  CSR_GCFG_GPERF_WIDTH		3
 #define  CSR_GCFG_GPERF			(_ULCAST_(0x7) << CSR_GCFG_GPERF_SHIFT)
+#define  CSR_GCFG_GPMP_SHIFT		23
+#define  CSR_GCFG_GPMP			(_ULCAST_(0x1) << CSR_GCFG_GPMP_SHIFT)
 #define  CSR_GCFG_GCI_SHIFT		20
 #define  CSR_GCFG_GCI_WIDTH		2
 #define  CSR_GCFG_GCI			(_ULCAST_(0x3) << CSR_GCFG_GCI_SHIFT)
@@ -670,6 +679,7 @@
 #define LOONGARCH_CSR_ISR3		0xa3
 
 #define LOONGARCH_CSR_IRR		0xa4
+#define LOONGARCH_CSR_IPR		0xa5
 
 #define LOONGARCH_CSR_PRID		0xc0
 

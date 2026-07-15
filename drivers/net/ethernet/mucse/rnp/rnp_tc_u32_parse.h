@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright(c) 2022 - 2023 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #ifndef __RNP_TC_U32_PARSE_H__
 #define __RNP_TC_U32_PARSE_H__
@@ -10,9 +10,10 @@ struct rnp_match_parser {
 	/* parse the value/mask to realy value*/
 	int (*val)(struct rnp_fdir_filter *f, __be32 val, __be32 mask);
 };
+
 /* Ipv4 Rule Parse */
-static inline int rnp_fill_ipv4_src_ip(struct rnp_fdir_filter *f,
-				       __be32 val, __be32 mask)
+static inline int rnp_fill_ipv4_src_ip(struct rnp_fdir_filter *f, __be32 val,
+				       __be32 mask)
 {
 	memcpy(&f->filter.formatted.src_ip[0], &val, sizeof(u32));
 	memcpy(&f->filter.formatted.src_ip_mask[0], &mask, sizeof(u32));
@@ -23,8 +24,8 @@ static inline int rnp_fill_ipv4_src_ip(struct rnp_fdir_filter *f,
 	return 0;
 }
 
-static inline int rnp_fill_ipv4_dst_ip(struct rnp_fdir_filter *f,
-				       __be32 val, __be32 mask)
+static inline int rnp_fill_ipv4_dst_ip(struct rnp_fdir_filter *f, __be32 val,
+				       __be32 mask)
 {
 	memcpy(&f->filter.formatted.dst_ip[0], &val, sizeof(u32));
 	memcpy(&f->filter.formatted.dst_ip_mask[0], &mask, sizeof(u32));

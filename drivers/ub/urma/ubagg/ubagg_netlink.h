@@ -8,7 +8,7 @@
 #ifndef UBAGG_NETLINK_H
 #define UBAGG_NETLINK_H
 
-int ubagg_netlink_init(void);
-void ubagg_netlink_uninit(void);
+int ubagg_genl_register_family(void);
+void ubagg_genl_unregister_family(void);
 
 #endif /* UBAGG_NETLINK_H */

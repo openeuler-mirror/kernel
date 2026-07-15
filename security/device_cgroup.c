@@ -16,6 +16,14 @@
 #include <linux/rcupdate.h>
 #include <linux/mutex.h>
 
+#ifdef CONFIG_CGROUP_DMEM
+#include <linux/cgroup_dmem.h>
+
+#define STATIC
+#else
+#define STATIC static
+#endif
+
 #ifdef CONFIG_CGROUP_DEVICE
 
 static DEFINE_MUTEX(devcgroup_mutex);
@@ -185,7 +193,7 @@ static inline bool is_devcg_online(const struct dev_cgroup *devcg)
  * @css: css getting online
  * returns 0 in case of success, error code otherwise
  */
-static int devcgroup_online(struct cgroup_subsys_state *css)
+STATIC int devcgroup_online(struct cgroup_subsys_state *css)
 {
 	struct dev_cgroup *dev_cgroup = css_to_devcgroup(css);
 	struct dev_cgroup *parent_dev_cgroup = css_to_devcgroup(css->parent);
@@ -206,7 +214,7 @@ static int devcgroup_online(struct cgroup_subsys_state *css)
 	return ret;
 }
 
-static void devcgroup_offline(struct cgroup_subsys_state *css)
+STATIC void devcgroup_offline(struct cgroup_subsys_state *css)
 {
 	struct dev_cgroup *dev_cgroup = css_to_devcgroup(css);
 
@@ -218,7 +226,7 @@ static void devcgroup_offline(struct cgroup_subsys_state *css)
 /*
  * called from kernel/cgroup/cgroup.c with cgroup_lock() held.
  */
-static struct cgroup_subsys_state *
+STATIC struct cgroup_subsys_state *
 devcgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 {
 	struct dev_cgroup *dev_cgroup;
@@ -232,7 +240,7 @@ devcgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 	return &dev_cgroup->css;
 }
 
-static void devcgroup_css_free(struct cgroup_subsys_state *css)
+STATIC void devcgroup_css_free(struct cgroup_subsys_state *css)
 {
 	struct dev_cgroup *dev_cgroup = css_to_devcgroup(css);
 
@@ -280,10 +288,20 @@ static void set_majmin(char *str, unsigned m)
 
 static int devcgroup_seq_show(struct seq_file *m, void *v)
 {
-	struct dev_cgroup *devcgroup = css_to_devcgroup(seq_css(m));
+	struct dev_cgroup *devcgroup;
 	struct dev_exception_item *ex;
 	char maj[MAJMINLEN], min[MAJMINLEN], acc[ACCLEN];
 
+#ifdef CONFIG_CGROUP_DMEM
+	/*
+	 * If dmem cgroup is enabled, it supersedes the legacy devices cgroup.
+	 * Skip showing the legacy interface to avoid displaying conflicting info.
+	 */
+	if (dmem_cgroup_enabled())
+		return -EPERM;
+#endif
+
+	devcgroup = css_to_devcgroup(seq_css(m));
 	rcu_read_lock();
 	/*
 	 * To preserve the compatibility:
@@ -786,6 +804,15 @@ static ssize_t devcgroup_access_write(struct kernfs_open_file *of,
 {
 	int retval;
 
+#ifdef CONFIG_CGROUP_DMEM
+	/*
+	 * If dmem cgroup is enabled, it supersedes the legacy devices cgroup.
+	 * Reject operations to this interface with -EPERM to prevent conflicts.
+	 */
+	if (dmem_cgroup_enabled())
+		return -EPERM;
+#endif
+
 	mutex_lock(&devcgroup_mutex);
 	retval = devcgroup_update_access(css_to_devcgroup(of_css(of)),
 					 of_cft(of)->private, strstrip(buf));
@@ -793,7 +820,7 @@ static ssize_t devcgroup_access_write(struct kernfs_open_file *of,
 	return retval ?: nbytes;
 }
 
-static struct cftype dev_cgroup_files[] = {
+STATIC struct cftype dev_cgroup_files[] = {
 	{
 		.name = "allow",
 		.write = devcgroup_access_write,
@@ -812,6 +839,14 @@ static struct cftype dev_cgroup_files[] = {
 	{ }	/* terminate */
 };
 
+/*
+ * CRITICAL: Devices and Dmem may share the same SUBSYS slot when
+ *           CONFIG_CGROUP_DEVICE and CONFIG_CGROUP_DMEM are both set.
+ *
+ * If the hook functions in the devices cgroup_subsys changes, you MUST
+ * synchronize those changes to the Dmem subsystem (kernel/cgroup/dmem.c)
+ * immediately. Failure to do so will result in inconsistencies or crashes.
+ */
 struct cgroup_subsys devices_cgrp_subsys = {
 	.css_alloc = devcgroup_css_alloc,
 	.css_free = devcgroup_css_free,
@@ -834,6 +869,22 @@ static int devcgroup_legacy_check_permission(short type, u32 major, u32 minor,
 {
 	struct dev_cgroup *dev_cgroup;
 	bool rc;
+
+#ifdef CONFIG_CGROUP_DMEM
+	/*
+	 * If both CONFIG_CGROUP_DMEM and CONFIG_CGROUP_DEVICE are enabled,
+	 * they share the same SUBSYS slot.
+	 *
+	 * When dmem cgroup is enabled, it takes precedence and replaces the
+	 * devices cgroup functionality. This is effectively equivalent to
+	 * CONFIG_CGROUP_DEVICE=n.
+	 *
+	 * Therefore, we bypass the legacy permission check and return 0 directly
+	 * to allow the operation.
+	 */
+	if (dmem_cgroup_enabled())
+		return 0;
+#endif
 
 	rcu_read_lock();
 	dev_cgroup = task_devcgroup(current);

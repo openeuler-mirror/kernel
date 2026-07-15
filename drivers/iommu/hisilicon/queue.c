@@ -71,6 +71,19 @@ static void ummu_queue_sync_cons_out(struct ummu_queue *q)
 	writel_relaxed(q->llq.cons, q->cons_reg);
 }
 
+void ummu_queue_sync_cons_ovf(struct ummu_queue *q)
+{
+	struct ummu_ll_queue *llq = &q->llq;
+
+	if (likely(Q_OVF(llq->prod) == Q_OVF(llq->cons)))
+		return;
+
+	llq->cons = Q_OVF(llq->prod) | Q_WRP(llq, llq->cons) |
+		    Q_IDX(llq, llq->cons);
+
+	ummu_queue_sync_cons_out(q);
+}
+
 static void ummu_queue_inc_cons(struct ummu_ll_queue *q)
 {
 	u32 cons = (Q_WRP(q, q->cons) | Q_IDX(q, q->cons)) + 1;
@@ -84,10 +97,6 @@ int ummu_queue_sync_prod_in(struct ummu_queue *q)
 	int ret = 0;
 
 	prod = readl(q->prod_reg);
-	/*
-	 * We can't use the variable _relaxed() here because we have to prevent
-	 * speculative read of the queue before we determine The prod has moved.
-	 */
 	if (Q_OVF(prod) != Q_OVF(q->llq.prod))
 		ret = -EOVERFLOW;
 
@@ -158,31 +167,65 @@ int ummu_queue_remove_raw(struct ummu_queue *queue, u64 *ent)
 	return 0;
 }
 
+static void ummu_device_free_queue(struct ummu_queue *q)
+{
+	size_t qsz;
+
+	if (!q->base)
+		return;
+
+	qsz = ENTRY_DWORDS_TO_SIZE((1 << q->llq.log2size) * q->ent_dwords);
+	free_pages((unsigned long)q->base, get_order(qsz));
+	q->base = NULL;
+}
+
+void ummu_device_free_mcmdq(struct ummu_device *ummu)
+{
+	struct ummu_mcmdq *mcmdq;
+	int cpu;
+
+	if (!ummu->mcmdq || !ummu->nr_mcmdq)
+		return;
+
+	for_each_possible_cpu(cpu) {
+		mcmdq = *per_cpu_ptr(ummu->mcmdq, cpu);
+		if (!mcmdq || !mcmdq->q.base)
+			continue;
+
+		ummu_device_free_queue(&mcmdq->q);
+	}
+}
+
 static int ummu_common_init_queue(struct ummu_device *ummu,
 				  struct ummu_queue *q, size_t dwords)
 {
+	struct page *page = NULL;
 	size_t qsz;
 
 	q->base = NULL;
 	do {
 		qsz = ENTRY_DWORDS_TO_SIZE((1 << q->llq.log2size) * dwords);
-		if (get_order(qsz) <= MAX_ORDER)
-			q->base = (__le64 *)devm_get_free_pages(ummu->dev, GFP_KERNEL,
-								get_order(qsz));
+		if (get_order(qsz) <= MAX_ORDER) {
+			page = alloc_pages_node(dev_to_node(ummu->dev),
+						UMMU_GFP(GFP_KERNEL) | __GFP_ZERO,
+						get_order(qsz));
+			if (page)
+				q->base = (__le64 *)page_address(page);
+		}
+
 		q->llq.log2size--;
 	} while (!q->base && qsz > PAGE_SIZE);
 
 	/* confirm right log2size after the loop */
 	q->llq.log2size++;
 
-	if (q->base) {
-		q->base_pa = virt_to_phys(q->base);
-	} else {
+	if (!q->base) {
 		dev_err(ummu->dev,
 			"failed to allocate queue (0x%zx bytes)\n", qsz);
 		return -ENOMEM;
 	}
 
+	q->base_pa = virt_to_phys(q->base);
 	q->ent_dwords = dwords;
 	q->q_base = Q_BASE_RWA;
 	q->q_base |= q->base_pa & Q_BASE_ADDR_MASK;
@@ -215,6 +258,7 @@ static int ummu_mcmdq_allocate(struct ummu_device *ummu)
 			mcmdq = per_cpu_ptr(mcmdqs, host_cpu);
 			mcmdq->shared = 1;
 		}
+		mcmdq->q.base = NULL;
 		*per_cpu_ptr(ummu->mcmdq, cpu) = mcmdq;
 	}
 
@@ -245,14 +289,20 @@ static int ummu_mcmdq_cfg_para(struct ummu_device *ummu,
 static int ummu_mcmdq_init(struct ummu_device *ummu)
 {
 	struct ummu_mcmdq *mcmdq;
-	u32 shift;
 	u64 base_addr = 0;
+	u32 log2size;
 	int cpu, ret;
 
-	ummu->nr_mcmdq = 1UL << ummu->cap.mcmdq_log2num;
-	if (ummu->cap.options & UMMU_OPT_MCMDQ_DECREASE)
-		ummu->nr_mcmdq -= 1;
-	shift = order_base_2(num_possible_cpus() / ummu->nr_mcmdq);
+	if (ummu->cap.options & UMMU_OPT_ONE_MCMDQ) {
+		ummu->nr_mcmdq = 1;
+		log2size = ummu->cap.mcmdq_log2size;
+	} else {
+		ummu->nr_mcmdq = 1UL << ummu->cap.mcmdq_log2num;
+		if (ummu->cap.options & UMMU_OPT_MCMDQ_DECREASE)
+			ummu->nr_mcmdq -= 1;
+		log2size = MCMDQ_MAX_SZ_SHIFT + order_base_2(
+				num_possible_cpus() / ummu->nr_mcmdq);
+	}
 
 	ummu->mcmdq = devm_alloc_percpu(ummu->dev, struct ummu_mcmdq *);
 	if (!ummu->mcmdq) {
@@ -272,21 +322,24 @@ static int ummu_mcmdq_init(struct ummu_device *ummu)
 		if (!mcmdq || mcmdq->mcmdq_prod == MCMDQ_PROD_EN)
 			continue;
 
-		mcmdq->q.llq.log2size = MCMDQ_MAX_SZ_SHIFT + shift;
+		mcmdq->q.llq.log2size = log2size;
 		mcmdq->base = ummu->base + UMMU_MCMDQ_OFFSET + base_addr;
 		mcmdq->q.prod_reg = (u32 *)(mcmdq->base + MCMDQ_PROD_OFFSET);
 		mcmdq->q.cons_reg = (u32 *)(mcmdq->base + MCMDQ_CONS_OFFSET);
 		ret = ummu_common_init_queue(ummu, &mcmdq->q, MCMDQ_ENT_DWORDS);
 		if (ret)
-			goto err;
+			goto free_q;
 		ret = ummu_mcmdq_cfg_para(ummu, mcmdq);
 		if (ret)
-			goto err;
+			goto free_q;
 
 		base_addr += MCMDQ_ENT_SIZE;
 	}
 
 	return 0;
+
+free_q:
+	ummu_device_free_mcmdq(ummu);
 err:
 	ummu->nr_mcmdq = 0;
 	return -ENOMEM;
@@ -384,6 +437,11 @@ int ummu_write_evtq_regs(struct ummu_device *ummu)
 	return ummu_write_reg_sync(ummu, cr0, UMMU_CR0, UMMU_CR0ACK);
 }
 
+void ummu_device_free_evtq(struct ummu_device *ummu)
+{
+	ummu_device_free_queue(&ummu->evtq.q);
+}
+
 static int ummu_evtq_init(struct ummu_device *ummu)
 {
 	struct ummu_queue *q = &ummu->evtq.q;
@@ -397,8 +455,13 @@ static int ummu_evtq_init(struct ummu_device *ummu)
 		return ret;
 
 	if ((ummu->cap.features & UMMU_FEAT_SVA) &&
-	    (ummu->cap.features & UMMU_FEAT_STALLS))
-		return ummu_iopf_queue_alloc(ummu);
+	    (ummu->cap.features & UMMU_FEAT_STALLS)) {
+		ret =  ummu_iopf_queue_alloc(ummu);
+		if (ret) {
+			ummu_device_free_queue(q);
+			return ret;
+		}
+	}
 
 	return 0;
 }
@@ -734,6 +797,14 @@ int ummu_mcmdq_build_cmd(struct ummu_device *ummu, u64 *cmd,
 		break;
 	case CMD_NULL_OP:
 		return ummu_mcmdq_build_nop_cmd(cmd, ent);
+	case CMD_PLBI_OS_N:
+		cmd[0] |= FIELD_PREP(CMD_PLBI_0_TID, ent->plbi_free_bit.tid);
+		cmd[1] |= FIELD_PREP(CMD_PLBI_1_NEXT_LEVEL_INDEX_MASK,
+				     ent->plbi_free_bit.next_lvl_idx);
+		cmd[1] |= FIELD_PREP(CMD_PLBI_1_NEXT_LEVEL_OFFSET_MASK,
+				     ent->plbi_free_bit.next_lvl_offset);
+		cmd[2] |= FIELD_PREP(CMD_TLBI_2_TECTE_TAG, ent->plbi_free_bit.tecte_tag);
+		break;
 	default:
 		return -EINVAL;
 	}
@@ -941,7 +1012,7 @@ static int check_pa_continuity_nop_exec(struct ummu_queue *q, u32 prod)
 {
 	u64 cmd;
 
-	cmd = (u64)le64_to_cpu(Q_ENT(q, prod));
+	cmd = le64_to_cpu(*(Q_ENT(q, prod)));
 	if (FIELD_GET(CMD_0_OP, cmd) == CMD_NULL_OP &&
 	    FIELD_GET(CMD_NULL_OP_SUB_OP, cmd) ==
 		      SUB_CMD_NULL_CHECK_PA_CONTINUITY) {
@@ -1177,18 +1248,42 @@ int ummu_mcmdq_issue_cmdlist(struct ummu_device *ummu, u64 *cmds,
 	return ret;
 }
 
+static bool non_va_range_tlbi(int opcode)
+{
+	switch (opcode) {
+	case CMD_TLBI_OS_ALL:
+	case CMD_TLBI_OS_TID:
+	case CMD_TLBI_HYP_ALL:
+	case CMD_TLBI_HYP_TID:
+	case CMD_TLBI_S1S2_VMALL:
+	case CMD_TLBI_NS_OS_ALL:
+	case CMD_TLBI_OS_ALL_U:
+	case CMD_TLBI_OS_ASID_U:
+	case CMD_TLBI_HYP_ASID_U:
+	case CMD_TLBI_S1S2_VMALL_U:
+		return true;
+	default:
+		return false;
+	}
+}
+
 static int __ummu_mcmdq_issue_cmd(struct ummu_device *ummu,
 				  struct ummu_mcmdq_ent *ent, bool sync)
 {
-	u64 cmd[MCMDQ_ENT_DWORDS];
+	u64 cmds[2 * MCMDQ_ENT_DWORDS];
+	int num = 1;
 
-	if (unlikely(ummu_mcmdq_build_cmd(ummu, cmd, ent))) {
+	if (unlikely(ummu_mcmdq_build_cmd(ummu, cmds, ent))) {
 		dev_warn(ummu->dev, "ignoring unknown MCMDQ opcode = 0x%x\n",
 			 ent->opcode);
 		return -EINVAL;
 	}
 
-	return ummu_mcmdq_issue_cmdlist(ummu, cmd, 1, sync);
+	if ((ummu->cap.options & UMMU_OPT_DOUBLE_TLBI) && non_va_range_tlbi(ent->opcode)) {
+		memcpy(cmds + MCMDQ_ENT_DWORDS, cmds, MCMDQ_ENT_DWORDS * sizeof(u64));
+		num = 2;
+	}
+	return ummu_mcmdq_issue_cmdlist(ummu, cmds, num, sync);
 }
 
 int ummu_mcmdq_issue_cmd(struct ummu_device *ummu, struct ummu_mcmdq_ent *ent)

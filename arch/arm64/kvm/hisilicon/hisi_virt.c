@@ -26,6 +26,7 @@ static const char * const hisi_cpu_type_str[] = {
 	"HIP10",
 	"HIP10C",
 	"HIP12",
+	"HIP13",
 	"Unknown"
 };
 
@@ -37,7 +38,8 @@ static const char * const oem_str[] = {
 	"HIP09   ",	/* HIP09 */
 	"HIP10   ",	/* HIP10 */
 	"HIP10C  ",	/* HIP10C */
-	"HIP12   "	/* HIP12 */
+	"HIP12   ",	/* HIP12 */
+	"HIP13   ",	/* HIP13 */
 };
 
 /*
@@ -171,7 +173,7 @@ early_param("kvm-arm.ipiv_enabled", early_ipiv_enable);
 
 bool hisi_ipiv_supported(void)
 {
-	if (cpu_type != HI_IP12)
+	if (cpu_type != HI_IP12 && cpu_type != HI_IP13)
 		return false;
 
 	/* Determine whether IPIV is supported by the hardware */
@@ -233,7 +235,7 @@ void ipiv_gicd_init(void)
 bool hisi_dvmbm_supported(void)
 {
 	if (cpu_type != HI_IP10 && cpu_type != HI_IP10C &&
-	    cpu_type != HI_IP12)
+	    cpu_type != HI_IP12 && cpu_type != HI_IP13)
 		return false;
 
 	if (!is_kernel_in_hyp_mode()) {
@@ -581,7 +583,7 @@ void kvm_tlbi_dvmbm_vcpu_load(struct kvm_vcpu *vcpu)
 	 * Re-calculate LSUDVMBM_EL2 for this VM and kick all vcpus
 	 * out to reload the LSUDVMBM configuration.
 	 */
-	if (cpu_type == HI_IP12)
+	if (cpu_type == HI_IP12 || cpu_type == HI_IP13)
 		kvm_update_vm_lsudvmbm_hip12(kvm);
 	else
 		kvm_update_vm_lsudvmbm(kvm);
@@ -609,7 +611,7 @@ void kvm_get_pg_cfg(void)
 	u64 mn_phy_base;
 	u32 val;
 
-	if (cpu_type == HI_IP12)
+	if (cpu_type == HI_IP12 || cpu_type == HI_IP13)
 		return;
 
 	socket_num = kvm_get_socket_num();

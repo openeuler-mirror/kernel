@@ -30,6 +30,8 @@
 #include <linux/kasan.h>
 #include <linux/ubsan.h>
 #include <linux/cfi.h>
+#include <linux/acpi.h>
+#include <acpi/ghes.h>
 
 #include <asm/atomic.h>
 #include <asm/bug.h>
@@ -49,6 +51,8 @@
 #include <asm/stacktrace.h>
 #include <asm/system_misc.h>
 #include <asm/sysreg.h>
+#include <asm/acpi.h>
+#include <asm/setup.h>
 
 static bool __kprobes __check_eq(unsigned long pstate)
 {
@@ -971,6 +975,12 @@ bool arm64_is_fatal_ras_serror(struct pt_regs *regs, unsigned long esr)
 {
 	unsigned long aet = arm64_ras_serror_get_severity(esr);
 
+	pr_info_ratelimited(
+		"%s aet: %ld comm: %.20s tgid: %d pid: %d cpu: %d\n",
+		(regs && user_mode(regs)) ? "userspace" : "kernelspace", aet,
+		current->comm, current->tgid, current->pid,
+		raw_smp_processor_id());
+
 	switch (aet) {
 	case ESR_ELx_AET_CE:	/* corrected error */
 	case ESR_ELx_AET_UEO:	/* restartable, not yet consumed */
@@ -989,7 +999,14 @@ bool arm64_is_fatal_ras_serror(struct pt_regs *regs, unsigned long esr)
 		 * Neoverse-N1 #1349291 means a non-KVM SError reported as
 		 * Unrecoverable should be treated as Uncontainable. We
 		 * call arm64_serror_panic() in both cases.
+		 *
+		 * Add a vendor handler interface (apei_claim_sei) allowing
+		 * each SoC vendor to implement platform-specific SEI handling
+		 * for UER.
 		 */
+		if ((aet == ESR_ELx_AET_UER) && !apei_claim_sei(regs))
+			return false;
+
 		return true;
 
 	case ESR_ELx_AET_UC:	/* Uncontainable or Uncategorized error */

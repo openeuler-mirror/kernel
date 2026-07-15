@@ -830,7 +830,7 @@ static ssize_t eid_show_cb(struct ubcore_device *dev, char *buf,
 	}
 
 	e = &dev->eid_table.eid_entries[eid_idx];
-	if (!e->valid || !net_eq(e->net, net))
+	if (!e->valid || (!ubcore_eid_ns_shared() && !net_eq(e->net, net)))
 		len = snprintf(buf, UBCORE_MAX_EID_LINE, "" EID_FMT "\n",
 			       EID_ARGS(invalid_eid));
 	else

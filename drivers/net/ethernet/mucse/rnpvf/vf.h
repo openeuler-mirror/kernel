@@ -1,5 +1,5 @@
-/* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+// SPDX-License-Identifier: GPL-2.0
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #ifndef __RNP_VF_H__
 #define __RNP_VF_H__
@@ -45,17 +45,16 @@ struct rnp_mac_operations {
 				     bool *auneg);
 
 	/* RAR, Multicast, VLAN */
-	s32 (*set_rar)(struct rnpvf_hw *hw, u32 index,
-		       u8 *addr, u32 vmdq);
+	s32 (*set_rar)(struct rnpvf_hw *hw, u32 index, u8 *addr, u32 vmdq);
 	s32 (*set_uc_addr)(struct rnpvf_hw *hw, u32 index, u8 *adddr);
 	s32 (*init_rx_addrs)(struct rnpvf_hw *hw);
 	s32 (*update_mc_addr_list)(struct rnpvf_hw *hw, struct net_device *dev);
 	s32 (*enable_mc)(struct rnpvf_hw *hw);
 	s32 (*disable_mc)(struct rnpvf_hw *hw);
 	s32 (*clear_vfta)(struct rnpvf_hw *hw);
-	s32 (*set_vfta)(struct rnpvf_hw *hw, u32 vlan,
-			u32 vind, bool vlan_on);
+	s32 (*set_vfta)(struct rnpvf_hw *hw, u32 vlan, u32 vind, bool vlan_on);
 	s32 (*set_vlan_strip)(struct rnpvf_hw *hw, bool en);
+	s32 (*set_promisc_mode)(struct rnpvf_hw *hw, bool en);
 };
 
 enum rnp_mac_type {
@@ -75,12 +74,9 @@ struct rnp_mac_info {
 	struct rnp_mac_operations ops;
 	u8 addr[6];
 	u8 perm_addr[6];
-
 	enum rnp_mac_type type;
-
 	s32 mc_filter_type;
 	u32 dma_version;
-
 	bool get_link_status;
 	u32 max_tx_queues;
 	u32 max_rx_queues;
@@ -110,14 +106,10 @@ struct rnp_fc_info {
 
 struct rnp_mbx_operations {
 	s32 (*init_params)(struct rnpvf_hw *hw);
-	s32 (*read)(struct rnpvf_hw *hw, u32 *msg,
-		    u16 size, bool to_cm3);
-	s32 (*write)(struct rnpvf_hw *hw, u32 *msg,
-		     u16 size, bool to_cm3);
-	s32 (*read_posted)(struct rnpvf_hw *hw, u32 *msg,
-			   u16 size, bool to_cm3);
-	s32 (*write_posted)(struct rnpvf_hw *hw, u32 *msg,
-			    u16 size, bool to_cm3);
+	s32 (*read)(struct rnpvf_hw *hw, u32 *msg, u16 size, bool to_cm3);
+	s32 (*write)(struct rnpvf_hw *hw, u32 *msg, u16 size, bool to_cm3);
+	s32 (*read_posted)(struct rnpvf_hw *hw, u32 *msg, u16 size, bool to_cm3);
+	s32 (*write_posted)(struct rnpvf_hw *hw, u32 *msg, u16 size, bool to_cm3);
 	s32 (*check_for_msg)(struct rnpvf_hw *hw, bool to_cm3);
 	s32 (*check_for_ack)(struct rnpvf_hw *hw, bool to_cm3);
 	s32 (*check_for_rst)(struct rnpvf_hw *hw, bool to_cm3);
@@ -125,16 +117,13 @@ struct rnp_mbx_operations {
 };
 
 struct rnpvf_hw_operations {
-	void (*set_veb_mac)(struct rnpvf_hw *hw, u8 *mac,
-			    u32 vfnum, u32 ring);
-	void (*set_veb_vlan)(struct rnpvf_hw *hw, u16 vid,
-			     u32 vfnum);
+	void (*set_veb_mac)(struct rnpvf_hw *hw, u8 *mac, u32 vfnum, u32 ring);
+	void (*set_veb_vlan)(struct rnpvf_hw *hw, u16 vid, u32 vfnum);
 };
 
 struct rnp_mbx_stats {
 	u32 msgs_tx;
 	u32 msgs_rx;
-
 	u32 acks;
 	u32 reqs;
 	u32 rsts;
@@ -147,12 +136,10 @@ struct rnp_mbx_info {
 	u32 udelay;
 	u32 v2p_mailbox;
 	u16 size;
-
 	u16 pf_req;
 	u16 pf_ack;
 	u16 cpu_req;
 	u16 cpu_ack;
-
 	u32 vf_num_mask;
 	int mbx_size;
 	int mbx_mem_size;
@@ -167,7 +154,6 @@ struct rnp_mbx_info {
 	u32 cpu2vf_mbox_vec_base;
 	u32 cpu_vf_mbox_mask_lo_base;
 	u32 cpu_vf_mbox_mask_hi_base;
-
 	/* pf <--> vf mbx */
 	u32 pf_vf_shm_base;
 	u32 vf2cpu_mbox_ctrl_base;
@@ -184,6 +170,7 @@ struct rnpvf_hw_stats_own {
 	u64 vlan_strip_cnt;
 	u64 csum_err;
 	u64 csum_good;
+	u64 spoof_dropped;
 };
 
 struct rnpvf_hw_stats {
@@ -192,19 +179,16 @@ struct rnpvf_hw_stats {
 	u64 base_vfgorc;
 	u64 base_vfgotc;
 	u64 base_vfmprc;
-
 	u64 last_vfgprc;
 	u64 last_vfgptc;
 	u64 last_vfgorc;
 	u64 last_vfgotc;
 	u64 last_vfmprc;
-
 	u64 vfgprc;
 	u64 vfgptc;
 	u64 vfgorc;
 	u64 vfgotc;
 	u64 vfmprc;
-
 	u64 saved_reset_vfgprc;
 	u64 saved_reset_vfgptc;
 	u64 saved_reset_vfgorc;

@@ -22,12 +22,20 @@ enum ubagg_cmd {
 	UBAGG_CMD_CREATE_DEV,
 	UBAGG_CMD_DELETE_DEV,
 	UBAGG_CMD_GET_DEV_NAME,
+	UBAGG_CMD_GET_TOPO_INFO,
 };
 
 struct ubagg_cmd_hdr {
 	uint32_t command;
 	uint32_t args_len;
 	uint64_t args_addr;
+};
+
+struct ubagg_get_topo_info_arg {
+	struct {
+		void *topo;
+		uint32_t topo_num;
+	} out;
 };
 
 #define UBAGG_CMD_MAGIC 'B'
@@ -175,8 +183,8 @@ enum ubagg_userctl_opcode {
 	GET_TOPO_INFO = 2,
 	GET_JFR_ID = 3,
 	GET_JETTY_ID = 4,
-	GET_SEG_INFO = 5,
-	GET_JETTY_INFO = 6,
+	GET_LIST_RES = 7,
+	GET_SHOW_RES = 8,
 };
 
 struct ubagg_physical_device_out {
@@ -202,7 +210,22 @@ struct ubagg_add_dev_by_uvs {
 	struct ubagg_primary_port_eid slave_eid[IODIE_NUM];
 };
 
+struct ubagg_cmd_physical_device {
+	struct {
+		union ubcore_eid bonding_eid;
+	} in;
+	struct {
+		char dev_name[UBAGG_MAX_DEV_NAME_LEN];
+		uint32_t bonding_eid_idx;
+		struct ubagg_physical_device physical_devs[IODIE_NUM];
+	} out;
+};
+
 long ubagg_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
+bool is_agg_dev_valid(struct ubagg_topo_agg_dev *agg_dev);
 void ubagg_put_ubcore_device(struct ubcore_device *dev);
 void ubagg_clear_dev_list(void);
+int query_eid_idx(struct ubcore_device *dev, union ubcore_eid *eid, uint32_t *eid_idx);
+int get_physical_device(struct ubagg_device *ubagg_dev,
+	struct ubagg_physical_device_out *out, union ubcore_eid *bonding_eid);
 #endif // UBAGG_IOCTL_H

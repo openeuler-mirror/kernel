@@ -16,8 +16,9 @@
 #define CREATE_TRACE_POINTS
 #include "memory_trace.h"
 
-#define DRAIN_ENABLE_REG_OFFSET		0x24
-#define DRAIN_STATE_REG_OFFSET		0x28
+#define DRAIN_ENABLE_REG_OFFSET 0x24
+#define DRAIN_STATE_REG_OFFSET 0x28
+#define UPA_DRAIN_OFFSET 0x1A888
 
 #define HI_GET_UBMEM_EVENT_REQ_SIZE 4
 #define HI_GET_UBMEM_EVENT_RSP_SIZE 772
@@ -28,9 +29,6 @@
 #define MEM_DECODER_NUMBER_V2 2
 
 #define hpa_gen(addr_h, addr_l) (((u64)(addr_h) << 32) | (addr_l))
-
-#define UB_MEM_PORT_WARNING 18
-#define UB_MEM_PORT_RECOVERY 19
 
 static u8 ub_mem_num;
 
@@ -137,10 +135,11 @@ static irqreturn_t hi_mem_ras_isr(int irq, void *context)
 	u64 vals[3];
 	int ret;
 
+	mutex_lock(&mem_ras_mutex);
 	handler = ub_mem_ras_handler_get();
 	while (kfifo_get(&ras_ctx->ras_fifo, &err_info)) {
 		trace_mem_ras_event(ubc->mem_device, &err_info);
-		pr_info("ras: type=%u\n", err_info.type);
+		pr_info("UB memory ras event: type=%u\n", err_info.type);
 		if (err_info.type == UB_MEM_PORT_WARNING ||
 		    err_info.type == UB_MEM_PORT_RECOVERY) {
 			vals[0] = err_info.val0;
@@ -148,15 +147,20 @@ static irqreturn_t hi_mem_ras_isr(int irq, void *context)
 			vals[2] = ctl_no;
 			if (handler) {
 				ret = handler((u64)vals, err_info.type);
-				WARN_ON(ret);
+				if (ret)
+					pr_err("UB memory ras handler failed, ret=%d\n",
+					       ret);
 			}
 		} else {
 			if (handler) {
 				ret = handler(err_info.val0, err_info.type);
-				WARN_ON(ret);
+				if (ret)
+					pr_err("UB memory ras handler failed, ret=%d\n",
+					       ret);
 			}
 		}
 	}
+	mutex_unlock(&mem_ras_mutex);
 
 	return IRQ_HANDLED;
 }
@@ -323,13 +327,18 @@ static int hi_mem_decoder_create_one(struct ub_bus_controller *ubc, int index)
 {
 	struct ub_mem_decoder *decoder, *priv_data = ubc->mem_device->priv_data;
 	struct hi_ubc_private_data *data = ubc->data;
+	u64 base_addr;
 
 	decoder = &priv_data[index];
 	decoder->dev = &ubc->dev;
 	decoder->uent = ubc->uent;
 
-	decoder->base_reg = ioremap(data->mem_pa_info[index].decode_addr,
-				    SZ_64);
+	if (data->ub_mem_version == UB_MEM_VERSION_2)
+		base_addr = data->mem_pa_info[index].decode_addr + UPA_DRAIN_OFFSET;
+	else
+		base_addr = data->mem_pa_info[index].decode_addr;
+
+	decoder->base_reg = ioremap(base_addr, SZ_64);
 	if (!decoder->base_reg) {
 		dev_err(decoder->dev, "ub mem decoder base reg ioremap failed.\n");
 		return -ENOMEM;

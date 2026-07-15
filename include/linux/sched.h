@@ -77,6 +77,8 @@ struct task_delay_info;
 struct task_group;
 struct user_event_mm;
 
+#include <linux/sched/ext.h>
+
 /*
  * Task state bitmask. NOTE! These bits are also
  * encoded in fs/proc/array.c: get_task_state().
@@ -586,7 +588,8 @@ struct sched_entity {
 	struct list_head		group_node;
 	unsigned int on_rq;
 	KABI_FILL_HOLE(unsigned char rel_deadline)
-					/* 3 holes left here */
+	KABI_FILL_HOLE(unsigned char custom_slice)
+					/* 2 holes left here */
 
 	u64				exec_start;
 	u64				sum_exec_runtime;
@@ -628,7 +631,7 @@ struct sched_entity {
 	 */
 	struct sched_avg		avg;
 #endif
-	KABI_RESERVE(1)
+	KABI_USE(1, u64 min_slice)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
@@ -1656,6 +1659,16 @@ struct task_struct {
 	KABI_RESERVE(16)
 	KABI_AUX_PTR(task_struct)
 
+	/*
+	 * On x86, CONFIG_SCHED_CLASS_EXT is disabled by default since enabling it
+	 * may cause KABI changes. Placing scx before 'thread' avoids compilation
+	 * failures from the BUILD_CHECK at the end of task_struct, which enforces
+	 * that 'thread' must be the last field in X86 due to its variable-size nature.
+	 */
+#if defined(CONFIG_X86) && !defined(__GENKSYMS__) && defined(CONFIG_SCHED_CLASS_EXT)
+	KABI_BROKEN_INSERT(struct sched_ext_entity scx)
+#endif
+
 	/* CPU-specific state of this task: */
 	struct thread_struct		thread;
 
@@ -1665,6 +1678,10 @@ struct task_struct {
 	 *
 	 * Do not put anything below here!
 	 */
+
+#if defined(CONFIG_ARM64) && !defined(__GENKSYMS__) && defined(CONFIG_SCHED_CLASS_EXT)
+	KABI_EXTEND(struct sched_ext_entity scx)
+#endif
 };
 
 static inline struct pid *task_pid(struct task_struct *task)
@@ -1867,7 +1884,11 @@ extern struct pid *cad_pid;
 						 * I am cleaning dirty pages from some other bdi. */
 #define PF_KTHREAD		0x00200000	/* I am a kernel thread */
 #define PF_RANDOMIZE		0x00400000	/* Randomize virtual address space */
+#ifdef CONFIG_CMA_FOLIO
+#define PF_FOLIO_CMA		0x00800000	/* Per-task CMA folio allocation enabled */
+#else
 #define PF__HOLE__00800000	0x00800000
+#endif
 #define PF__HOLE__01000000	0x01000000
 #define PF__HOLE__02000000	0x02000000
 #define PF_NO_SETAFFINITY	0x04000000	/* Userland is not allowed to meddle with cpus_mask */
@@ -2692,4 +2713,24 @@ static inline bool smart_grid_used(void)
 	return false;
 }
 #endif
+
+#ifdef CONFIG_QOS_LEVEL
+#ifdef CONFIG_QOS_SCHED_MULTILEVEL
+enum task_qos_level {
+	QOS_LEVEL_OFFLINE_EX = -2,
+	QOS_LEVEL_OFFLINE = -1,
+	QOS_LEVEL_ONLINE = 0,
+	QOS_LEVEL_HIGH = 1,
+	QOS_LEVEL_HIGH_EX = 2
+};
+#else
+enum task_qos_level {
+	QOS_LEVEL_OFFLINE = -1,
+	QOS_LEVEL_ONLINE = 0,
+};
+#endif
+
+DECLARE_PER_CPU_ALIGNED(int, qos_smt_status);
+#endif
+
 #endif

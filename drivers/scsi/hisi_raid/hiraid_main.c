@@ -26,8 +26,13 @@
 #include <linux/bsg-lib.h>
 #include <asm/unaligned.h>
 #include <linux/sort.h>
+#include <linux/kthread.h>
+#include <linux/mutex.h>
+#include <linux/sched.h>
+#include <linux/sched/prio.h>
 #include <target/target_core_backend.h>
 
+#include <linux/blk-mq-pci.h>
 #include <scsi/scsi.h>
 #include <scsi/scsi_cmnd.h>
 #include <scsi/scsi_device.h>
@@ -38,7 +43,7 @@
 
 #include "hiraid.h"
 
-static u32 admin_tmout = 60;
+static u32 admin_tmout = 180;
 module_param(admin_tmout, uint, 0644);
 MODULE_PARM_DESC(admin_tmout, "admin commands timeout (seconds)");
 
@@ -99,7 +104,7 @@ static const struct kernel_param_ops io_queue_depth_ops = {
 	.get = param_get_uint,
 };
 
-static u32 io_queue_depth = 1024;
+static u32 io_queue_depth = 4096;
 module_param_cb(io_queue_depth, &io_queue_depth_ops, &io_queue_depth, 0644);
 MODULE_PARM_DESC(io_queue_depth, "set io queue depth, should >= 2");
 
@@ -140,8 +145,6 @@ MODULE_PARM_DESC(extra_pool_num, "set prp extra pool num, default 4, MAX 16");
 static void hiraid_handle_async_notice(struct hiraid_dev *hdev, u32 result);
 static void hiraid_handle_async_vs(struct hiraid_dev *hdev, u32 result, u32 result1);
 
-static struct class *hiraid_class;
-
 #define HIRAID_CAP_TIMEOUT_UNIT_MS	(HZ / 2)
 
 static struct workqueue_struct *work_queue;
@@ -152,7 +155,7 @@ static struct workqueue_struct *work_queue;
 			__func__, ##__VA_ARGS__);	\
 } while (0)
 
-#define HIRAID_DRV_VERSION	"1.1.0.0"
+#define HIRAID_DRV_VERSION	"2.1.0.1"
 
 #define ADMIN_TIMEOUT		(admin_tmout * HZ)
 #define USRCMD_TIMEOUT		(180 * HZ)
@@ -170,6 +173,19 @@ static struct workqueue_struct *work_queue;
 
 #define MAX_CAN_QUEUE		(4096 - 1)
 #define MIN_CAN_QUEUE		(1024 - 1)
+
+#define MAX_DECREASE_GRADE (-8)
+#define MAX_INCREASE_GRADE 8
+#define INC_GRADE 1
+#define MIN_CREDIT 0
+#define MAX_CREDIT 64
+#define CREDIT_THRES 32
+#ifndef MIN
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#endif
+#ifndef MAX
+#define MAX(a, b) (((a) > (b)) ? (a) : (b))
+#endif
 
 enum SENSE_STATE_CODE {
 	SENSE_STATE_OK = 0,
@@ -342,91 +358,6 @@ static u32 hiraid_get_max_cmd_size(struct hiraid_dev *hdev)
 		 sizeof(struct hiraid_mapmange), alloc_size);
 
 	return sizeof(struct hiraid_mapmange) + alloc_size;
-}
-
-static int hiraid_build_passthru_prp(struct hiraid_dev *hdev, struct hiraid_mapmange *mapbuf)
-{
-	struct scatterlist *sg = mapbuf->sgl;
-	__le64 *phy_regpage, *prior_list;
-	u64 buf_addr = sg_dma_address(sg);
-	int buf_length = sg_dma_len(sg);
-	u32 page_size = hdev->page_size;
-	int offset = buf_addr & (page_size - 1);
-	void **list = hiraid_mapbuf_list(mapbuf);
-	int maplen = mapbuf->len;
-	struct dma_pool *pool;
-	dma_addr_t buffer_phy;
-	int i;
-
-	maplen -= (page_size - offset);
-	if (maplen <= 0) {
-		mapbuf->first_dma = 0;
-		return 0;
-	}
-
-	buf_length -= (page_size - offset);
-	if (buf_length) {
-		buf_addr += (page_size - offset);
-	} else {
-		sg = sg_next(sg);
-		buf_addr = sg_dma_address(sg);
-		buf_length = sg_dma_len(sg);
-	}
-
-	if (maplen <= page_size) {
-		mapbuf->first_dma = buf_addr;
-		return 0;
-	}
-
-	pool = hdev->prp_page_pool;
-	mapbuf->page_cnt = 1;
-
-	phy_regpage = dma_pool_alloc(pool, GFP_ATOMIC, &buffer_phy);
-	if (!phy_regpage) {
-		dev_err_ratelimited(hdev->dev, "allocate first admin prp_list memory failed\n");
-		mapbuf->first_dma = buf_addr;
-		mapbuf->page_cnt = -1;
-		return -ENOMEM;
-	}
-	list[0] = phy_regpage;
-	mapbuf->first_dma = buffer_phy;
-	i = 0;
-	for (;;) {
-		if (i == page_size / PRP_ENTRY_SIZE) {
-			prior_list = phy_regpage;
-
-			phy_regpage = dma_pool_alloc(pool, GFP_ATOMIC, &buffer_phy);
-			if (!phy_regpage) {
-				dev_err_ratelimited(hdev->dev, "allocate [%d]th admin prp list memory failed\n",
-						mapbuf->page_cnt + 1);
-				return -ENOMEM;
-			}
-			list[mapbuf->page_cnt++] = phy_regpage;
-			phy_regpage[0] = prior_list[i - 1];
-			prior_list[i - 1] = cpu_to_le64(buffer_phy);
-			i = 1;
-		}
-		phy_regpage[i++] = cpu_to_le64(buf_addr);
-		buf_addr += page_size;
-		buf_length -= page_size;
-		maplen -= page_size;
-		if (maplen <= 0)
-			break;
-		if (buf_length > 0)
-			continue;
-		if (unlikely(buf_length < 0))
-			goto bad_admin_sgl;
-		sg = sg_next(sg);
-		buf_addr = sg_dma_address(sg);
-		buf_length = sg_dma_len(sg);
-	}
-
-	return 0;
-
-bad_admin_sgl:
-	dev_err(hdev->dev, "setup prps, invalid admin SGL for payload[%d] nents[%d]\n",
-		mapbuf->len, mapbuf->sge_cnt);
-	return -EIO;
 }
 
 static int hiraid_build_prp(struct hiraid_dev *hdev, struct hiraid_mapmange *mapbuf)
@@ -631,66 +562,8 @@ static void hiraid_sgl_set_seg(struct hiraid_sgl_desc *sge, dma_addr_t buffer_ph
 	}
 }
 
-static int hiraid_build_passthru_sgl(struct hiraid_dev *hdev,
-					struct hiraid_admin_command *admin_cmd,
-					struct hiraid_mapmange *mapbuf)
-{
-	struct hiraid_sgl_desc *sg_list, *link, *old_sg_list;
-	struct scatterlist *sg = mapbuf->sgl;
-	void **list = hiraid_mapbuf_list(mapbuf);
-	struct dma_pool *pool;
-	int nsge = mapbuf->sge_cnt;
-	dma_addr_t buffer_phy;
-	int i = 0;
-
-	admin_cmd->common.flags |= SQE_FLAG_SGL_METABUF;
-
-	if (nsge == 1) {
-		hiraid_sgl_set_data(&admin_cmd->common.dptr.sgl, sg);
-		return 0;
-	}
-
-	pool = hdev->prp_page_pool;
-	mapbuf->page_cnt = 1;
-
-	sg_list = dma_pool_alloc(pool, GFP_ATOMIC, &buffer_phy);
-	if (!sg_list) {
-		dev_err_ratelimited(hdev->dev, "allocate first admin sgl_list failed\n");
-		mapbuf->page_cnt = -1;
-		return -ENOMEM;
-	}
-
-	list[0] = sg_list;
-	mapbuf->first_dma = buffer_phy;
-	hiraid_sgl_set_seg(&admin_cmd->common.dptr.sgl, buffer_phy, nsge);
-	do {
-		if (i == SGES_PER_PAGE) {
-			old_sg_list = sg_list;
-			link = &old_sg_list[SGES_PER_PAGE - 1];
-
-			sg_list = dma_pool_alloc(pool, GFP_ATOMIC, &buffer_phy);
-			if (!sg_list) {
-				dev_err_ratelimited(hdev->dev, "allocate [%d]th admin sgl_list failed\n",
-						    mapbuf->page_cnt + 1);
-				return -ENOMEM;
-			}
-			list[mapbuf->page_cnt++] = sg_list;
-
-			i = 0;
-			memcpy(&sg_list[i++], link, sizeof(*link));
-			hiraid_sgl_set_seg(link, buffer_phy, nsge);
-		}
-
-		hiraid_sgl_set_data(&sg_list[i++], sg);
-		sg = sg_next(sg);
-	} while (--nsge > 0);
-
-	return 0;
-}
-
-
-static int hiraid_build_sgl(struct hiraid_dev *hdev, struct hiraid_scsi_io_cmd *io_cmd,
-				struct hiraid_mapmange *mapbuf)
+static int hiraid_build_sgl(struct hiraid_dev *hdev,
+	struct hiraid_scsi_io_cmd *io_cmd, struct hiraid_mapmange *mapbuf)
 {
 	struct hiraid_sgl_desc *sg_list, *link, *old_sg_list;
 	struct scatterlist *sg = mapbuf->sgl;
@@ -748,6 +621,373 @@ static int hiraid_build_sgl(struct hiraid_dev *hdev, struct hiraid_scsi_io_cmd *
 	} while (--nsge > 0);
 
 	return 0;
+}
+
+#define MAX_IO_NUM  (200 * 1024 * 1024)
+#define STREAM_LEN  (4 * 1024 * 1024)
+#define MAX_IO_NUM_ONCE 100
+#define IO_SUBMIT_TIME_OUT 100
+#define MAX_AGING_NUM 5000
+#define MAX_AGING_TIME 16
+#define AGING_DEGRADE (-2)
+#define MIN_IO_SEND_TIME 10
+#define MAX_IO_SEND_TIME 50
+
+struct mutex_list_head hiraid_io_heads_per_stream[
+	HIRAID_MAX_PD_NUM * HIRAID_MAX_STREAM_NUM];
+DEFINE_MUTEX(g_stream_operation_mutex);
+
+static inline bool hiraid_io_recog_check_stream_exceed(struct hiraid_dev *hdev,
+		u16 disk_id)
+{
+	bool exceed_flag;
+
+	spin_lock(&hdev->hiraid_stream_array_lock);
+	exceed_flag =
+	(hdev->hiraid_stream_io_num_per_pd[disk_id][HIRAID_STREAM_TYPE_TOTAL] >=
+		HIRAID_MAX_STREAM_NUM);
+	spin_unlock(&hdev->hiraid_stream_array_lock);
+	return exceed_flag;
+}
+
+static inline bool hiraid_recognition_acknowledge(
+	const struct hiraid_stream *stream)
+{
+	return (stream->aging_credit >= CREDIT_THRES) ? true : false;
+}
+
+void hiraid_io_recognition_init(struct hiraid_dev *hdev)
+{
+	u16 i;
+
+	spin_lock_init(&hdev->hiraid_stream_array_lock);
+	for (i = 0; i < (HIRAID_MAX_PD_NUM * HIRAID_MAX_STREAM_NUM); i++) {
+		INIT_LIST_HEAD(&hiraid_io_heads_per_stream[i].list);
+		mutex_init(&hiraid_io_heads_per_stream[i].lock);
+	}
+}
+
+static void hiraid_io_recognition_iterator(struct hiraid_stream *stream,
+	int direction)
+{
+	stream->aging_grade = stream->aging_grade + direction * INC_GRADE;
+	stream->aging_grade = MAX(stream->aging_grade, MAX_DECREASE_GRADE);
+	stream->aging_grade = MIN(stream->aging_grade, MAX_INCREASE_GRADE);
+	stream->aging_credit = stream->aging_credit + stream->aging_grade;
+	stream->aging_credit = MAX(stream->aging_credit, MIN_CREDIT);
+	stream->aging_credit = MIN(stream->aging_credit, MAX_CREDIT);
+}
+
+struct hiraid_stream *hiraid_io_pick_stream(struct hiraid_dev *hdev,
+	struct hiraid_scsi_rw_cmd *req, u16 type, u16 actual_id)
+{
+	struct hiraid_stream *first_hit_stream = NULL;
+	struct hiraid_stream *temp_stream = NULL;
+	bool pick_flag = false;
+	u8 i;
+
+	for (i = 0; i < HIRAID_MAX_STREAM_NUM; i++) {
+		temp_stream = &hdev->hiraid_stream_array[actual_id][i];
+		temp_stream->stream_id = i;
+		if (req->slba < temp_stream->stream_lba ||
+			req->slba >= temp_stream->stream_lba +
+			temp_stream->stream_len ||
+			temp_stream->type != type ||
+			!temp_stream->stream_is_using) {
+			continue;
+		}
+		if (pick_flag == false) {
+			temp_stream->stream_lba = req->slba;
+			first_hit_stream = temp_stream;
+			pick_flag = true;
+			continue;
+		}
+		spin_lock(&hdev->hiraid_stream_array_lock);
+		if (hdev->hiraid_stream_io_num_per_pd[actual_id]
+		[HIRAID_STREAM_TYPE_TOTAL] > 0)
+			hdev->hiraid_stream_io_num_per_pd[actual_id]
+			[HIRAID_STREAM_TYPE_TOTAL]--;
+
+		memset(temp_stream, 0, sizeof(struct hiraid_stream));
+		spin_unlock(&hdev->hiraid_stream_array_lock);
+	}
+	return first_hit_stream;
+}
+
+static struct hiraid_stream *hiraid_init_flow_stream(struct hiraid_dev *hdev,
+	struct hiraid_scsi_rw_cmd *req, u16 type, u16 actual_id)
+{
+	int i;
+	struct hiraid_stream *stream = NULL;
+
+	for (i = 0; i < HIRAID_MAX_STREAM_NUM; i++) {
+		stream = &hdev->hiraid_stream_array[actual_id][i];
+		if (!stream->stream_is_using) {
+			stream->stream_is_using = 1;
+			stream->stream_id = i;
+			break;
+		}
+	}
+	stream->stream_lba = req->slba;
+	stream->did = actual_id;
+	stream->type = type;
+	stream->aging_credit = 0;
+	stream->aging_grade = 0;
+	stream->stream_len = STREAM_LEN;
+	return stream;
+}
+
+static struct hiraid_stream *hiraid_stream_detect(struct hiraid_dev *hdev,
+	struct hiraid_scsi_rw_cmd *io_cmd, u16 actual_id)
+{
+	u16 type = HIRAID_STREAM_TYPE_READ;
+
+	if (io_cmd->opcode == HIRAID_CMD_WRITE)
+		type = HIRAID_STREAM_TYPE_WRITE;
+
+	struct hiraid_stream *stream = hiraid_io_pick_stream(hdev,
+	io_cmd, type, actual_id);
+
+	if (stream != NULL)
+		return stream;
+
+	if (hiraid_io_recog_check_stream_exceed(hdev, actual_id))
+		return NULL;
+
+	stream = hiraid_init_flow_stream(hdev, io_cmd, type, actual_id);
+	spin_lock(&hdev->hiraid_stream_array_lock);
+	hdev->hiraid_stream_io_num_per_pd[actual_id]
+	[HIRAID_STREAM_TYPE_TOTAL]++;
+	spin_unlock(&hdev->hiraid_stream_array_lock);
+	return stream;
+}
+
+static u16 hiraid_get_submit_io_stream(u16 did, struct hiraid_dev *hdev)
+{
+	u64 temp_num, i;
+	static u16 stream_num[HIRAID_MAX_PD_NUM] = {0};
+
+	if (hdev->hiraid_stream_io_last_pull_time[did] == 0)
+		hdev->hiraid_stream_io_last_pull_time[did] =
+	jiffies_to_msecs(jiffies);
+
+	for (i = 0; i < HIRAID_MAX_STREAM_NUM; i++) {
+		temp_num = hdev->hiraid_stream_sent_io_size[did][i];
+		if (temp_num != 0) {
+			if ((temp_num < MAX_IO_NUM) &&
+		((jiffies_to_msecs(jiffies) -
+		hdev->hiraid_stream_io_last_pull_time[did]) <
+		IO_SUBMIT_TIME_OUT)) {
+				stream_num[did] = i;
+				return i;
+			}
+			hdev->hiraid_stream_io_last_pull_time[did] =
+			jiffies_to_msecs(jiffies);
+			hdev->hiraid_stream_sent_io_size[did][i] = 0;
+			stream_num[did] = ((i+1) %
+			HIRAID_MAX_STREAM_NUM);
+			return ((i+1) % HIRAID_MAX_STREAM_NUM);
+
+		}
+	}
+	hdev->hiraid_stream_io_last_pull_time[did] =
+	jiffies_to_msecs(jiffies);
+	return ((stream_num[did]++) % HIRAID_MAX_STREAM_NUM);
+}
+
+static void hiraid_submit_io_stream(u16 hdid, struct hiraid_dev *hdev)
+{
+	struct mutex_list_head *io_slist = NULL;
+	struct list_head *node = NULL;
+	struct list_head *next_node = NULL;
+	struct list_head temp_header;
+	struct hiraid_scsi_io_cmd io_cmd;
+	u16 submit_stream_id;
+	struct hiraid_stream_io_list *temp_io_stream = NULL;
+	u16 count = 0;
+
+	INIT_LIST_HEAD(&temp_header);
+	submit_stream_id = hiraid_get_submit_io_stream(hdid, hdev);
+	io_slist = &hiraid_io_heads_per_stream[hdid * HIRAID_MAX_STREAM_NUM +
+	submit_stream_id];
+	mutex_lock(&io_slist->lock);
+	list_for_each_safe(node, next_node, &io_slist->list) {
+		list_del(node);
+		list_add_tail(node, &temp_header);
+		if (count++ >= MAX_IO_NUM_ONCE)
+			break;
+	}
+	mutex_unlock(&io_slist->lock);
+
+	list_for_each_safe(node, next_node, &temp_header) {
+		temp_io_stream = list_entry(node,
+	struct hiraid_stream_io_list, list);
+		io_cmd = temp_io_stream->io_cmd;
+		hiraid_submit_cmd(temp_io_stream->submit_queue, &io_cmd);
+		hdev->hiraid_stream_sent_io_size[hdid][submit_stream_id] +=
+	io_cmd.rw.nlb * temp_io_stream->sector_size;
+		list_del(node);
+		kfree(temp_io_stream);
+	}
+	temp_io_stream = NULL;
+	list_del_init(&temp_header);
+}
+
+static u8 hiraid_aging_detect(struct hiraid_dev *hdev)
+{
+	if (hdev->hiraid_stream_aging_time == 0)
+		hdev->hiraid_stream_aging_time = jiffies_to_msecs(jiffies);
+	if (++hdev->hiraid_stream_io_count > MAX_AGING_NUM) {
+		hdev->hiraid_stream_io_count = 0;
+		if ((jiffies_to_msecs(jiffies) -
+		hdev->hiraid_stream_aging_time) <
+		MAX_AGING_TIME)
+			return 0;
+		hdev->hiraid_stream_aging_time = jiffies_to_msecs(jiffies);
+		return 1;
+	}
+	return 0;
+}
+
+static void hiraid_sync_using_stream(struct hiraid_dev *hdev, u16 hdid)
+{
+	u8 i;
+	struct hiraid_stream *temp_stream = NULL;
+
+	hdev->hiraid_stream_io_num_per_pd[hdid][HIRAID_STREAM_TYPE_TOTAL] = 0;
+	for (i = 0; i < HIRAID_MAX_STREAM_NUM; i++) {
+		temp_stream = &hdev->hiraid_stream_array[hdid][i];
+		if (temp_stream->stream_is_using)
+			hdev->hiraid_stream_io_num_per_pd[hdid]
+		[HIRAID_STREAM_TYPE_TOTAL]++;
+	}
+}
+
+static void hiraid_aging(struct hiraid_dev *hdev)
+{
+	struct hiraid_stream *temp_stream = NULL;
+	int i = 0;
+	int j = 0;
+	u16 *tmp_io_num = NULL;
+
+	for (i = 0; i < HIRAID_MAX_PD_NUM; i++) {
+		for (j = 0; j < HIRAID_MAX_STREAM_NUM; j++) {
+			temp_stream = &hdev->hiraid_stream_array[i][j];
+			if (temp_stream->stream_is_using) {
+				hiraid_io_recognition_iterator(temp_stream,
+				AGING_DEGRADE);
+				spin_lock(&hdev->hiraid_stream_array_lock);
+				tmp_io_num = &hdev->hiraid_stream_io_num_per_pd
+				[i][HIRAID_STREAM_TYPE_TOTAL];
+				if (temp_stream->aging_credit <= 0) {
+					if (*tmp_io_num > 0)
+						(*tmp_io_num)--;
+					memset(temp_stream,
+				0, sizeof(struct hiraid_stream));
+				}
+				spin_unlock(&hdev->hiraid_stream_array_lock);
+			}
+		}
+		hiraid_sync_using_stream(hdev, i);
+	}
+}
+
+static u8 hiraid_stream_delete_io_list(struct hiraid_dev *hdev, u32 hdid,
+	u16 cid, u16 hwq, u8 delete_operation)
+{
+	int i, j;
+	struct mutex_list_head *io_slist = NULL;
+	struct list_head *node = NULL;
+	struct list_head *next_node = NULL;
+	struct hiraid_scsi_io_cmd *io_cmd = NULL;
+	struct hiraid_queue *hiraidq = NULL;
+	struct hiraid_stream_io_list *temp_io_stream = NULL;
+	u8 max_hd_num = delete_operation ==
+	HIRAID_STREAM_TYPE_DELETE_ALL_IO_LIST ? HIRAID_MAX_PD_NUM : hdid + 1;
+
+	for (i = hdid; i < max_hd_num; i++) {
+		for (j = 0; j < HIRAID_MAX_STREAM_NUM; j++) {
+			io_slist =
+		&hiraid_io_heads_per_stream[i * HIRAID_MAX_STREAM_NUM + j];
+			mutex_lock(&io_slist->lock);
+			list_for_each_safe(node, next_node, &io_slist->list) {
+				temp_io_stream =
+			list_entry(node, struct hiraid_stream_io_list, list);
+				io_cmd = &(temp_io_stream->io_cmd);
+				hiraidq = temp_io_stream->submit_queue;
+				if (delete_operation >=
+				HIRAID_STREAM_TYPE_DELETE_SINGLE_IO_LIST) {
+					list_del_init(node);
+					kfree(temp_io_stream);
+					temp_io_stream = NULL;
+				} else {
+					if ((io_cmd->rw.cmd_id == cid) &&
+					(hiraidq->qid == hwq)) {
+						list_del_init(node);
+						mutex_unlock(&io_slist->lock);
+						kfree(temp_io_stream);
+						return 1;
+					}
+				}
+			}
+			mutex_unlock(&io_slist->lock);
+		}
+	}
+	return 0;
+}
+
+static u8 hiraid_add_io_to_list(struct hiraid_dev *hdev,
+	struct hiraid_queue *submit_queue, struct hiraid_stream *tmp_stream,
+	struct hiraid_scsi_io_cmd io_cmd, unsigned int sector_size,
+	u16 actual_id)
+{
+	struct mutex_list_head *io_slist = NULL;
+	struct hiraid_stream_io_list *new_io_node = NULL;
+	u16 temp_io_id = actual_id * HIRAID_MAX_STREAM_NUM +
+	tmp_stream->stream_id;
+
+	new_io_node = kmalloc(sizeof(struct hiraid_stream_io_list), GFP_KERNEL);
+	if (!new_io_node)
+		return 0;
+	new_io_node->io_cmd = io_cmd;
+	new_io_node->submit_queue = submit_queue;
+	new_io_node->sector_size = sector_size;
+	io_slist = &hiraid_io_heads_per_stream[temp_io_id];
+	mutex_lock(&io_slist->lock);
+	INIT_LIST_HEAD(&(new_io_node->list));
+	list_add_tail(&(new_io_node->list),
+	&hiraid_io_heads_per_stream[temp_io_id].list);
+	mutex_unlock(&io_slist->lock);
+	return 1;
+}
+
+static void hiraid_submit_io_threading(struct hiraid_dev *hdev)
+{
+	int i = 0;
+
+	while (!kthread_should_stop()) {
+		for (i = 0; i < HIRAID_MAX_PD_NUM; i++)
+			hiraid_submit_io_stream(i, hdev);
+		usleep_range(MIN_IO_SEND_TIME, MAX_IO_SEND_TIME);
+	}
+}
+
+static void hiraid_destroy_io_stream_resource(struct hiraid_dev *hdev)
+{
+	u16 i;
+
+	for (i = 0; i < (HIRAID_MAX_PD_NUM * HIRAID_MAX_STREAM_NUM); i++) {
+		list_del_init(&hiraid_io_heads_per_stream[i].list);
+		mutex_destroy(&hiraid_io_heads_per_stream[i].lock);
+	}
+}
+
+static void hiraid_init_io_stream(struct hiraid_dev *hdev)
+{
+	hiraid_io_recognition_init(hdev);
+	hdev->hiraid_stream_submit_task =
+		kthread_run((void *)hiraid_submit_io_threading,
+		hdev, "hiraid_stream_submit_task");
 }
 
 #define HIRAID_RW_FUA	BIT(14)
@@ -872,6 +1112,30 @@ static int hiraid_setup_nonrw_cmd(struct hiraid_dev *hdev,
 	return 0;
 }
 
+static bool hiraid_disk_is_hdd(u8 attr)
+{
+	switch (HIRAID_DEV_DISK_TYPE(attr)) {
+	case HIRAID_SAS_HDD_VD:
+	case HIRAID_SATA_HDD_VD:
+	case HIRAID_SAS_HDD_PD:
+	case HIRAID_SATA_HDD_PD:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static bool hiraid_disk_is_hdd_rawdrive(u8 attr)
+{
+	switch (HIRAID_DEV_DISK_TYPE(attr)) {
+	case HIRAID_SAS_HDD_PD:
+	case HIRAID_SATA_HDD_PD:
+		return true;
+	default:
+		return false;
+	}
+}
+
 static int hiraid_setup_io_cmd(struct hiraid_dev *hdev,
 				struct hiraid_scsi_io_cmd *io_cmd, struct scsi_cmnd *scmd,
 				struct hiraid_mapmange *mapbuf)
@@ -937,7 +1201,7 @@ static int hiraid_io_map_data(struct hiraid_dev *hdev, struct hiraid_mapmange *m
 
 	ret = scsi_dma_map(scmd);
 	if (unlikely(ret < 0))
-		return ret;
+		return SCSI_MLQUEUE_HOST_BUSY;
 	mapbuf->sge_cnt = ret;
 
 	/* No data to DMA, it may be scsi no-rw command */
@@ -1018,6 +1282,35 @@ static inline void hiraid_query_scmd_tag(struct scsi_cmnd *scmd, u16 *qid, u16 *
 	*cid = blk_mq_unique_tag_to_tag(tag);
 }
 
+static void hiraid_set_ncq_prio(struct scsi_cmnd *scmd,
+	struct hiraid_scsi_io_cmd *io_cmd,
+	struct hiraid_sdev_hostdata *hostdata,
+	struct hiraid_dev *hdev)
+{
+	struct request *rq = scsi_cmd_to_rq(scmd);
+	int class = 0;
+
+	if (hostdata->sata_ncq_prio_enable) {
+		class = IOPRIO_PRIO_CLASS(req_get_ioprio(rq));
+		switch (class) {
+		case IOPRIO_CLASS_NONE:
+			break;
+		case IOPRIO_CLASS_RT:
+			io_cmd->rw.rsvd2 &= SCSI_RSVD_INIT_SHIFT;
+			io_cmd->rw.rsvd2 |= (1 << IOPRIO_CLASS_RT);
+			break;
+		case IOPRIO_CLASS_BE:
+			break;
+		case IOPRIO_CLASS_IDLE:
+			break;
+		default:
+			break;
+		}
+	}
+	dev_log_dbg(hdev->dev, "blk_ncq_prio = %d, scmd_ncq_prio = 0x%02x\n",
+		class, io_cmd->rw.rsvd2);
+}
+
 static int hiraid_queue_command(struct Scsi_Host *shost, struct scsi_cmnd *scmd)
 {
 	struct hiraid_mapmange *mapbuf = scsi_cmd_priv(scmd);
@@ -1026,6 +1319,7 @@ static int hiraid_queue_command(struct Scsi_Host *shost, struct scsi_cmnd *scmd)
 	struct hiraid_sdev_hostdata *hostdata;
 	struct hiraid_scsi_io_cmd io_cmd;
 	struct hiraid_queue *ioq;
+	struct hiraid_stream *tmp_stream;
 	u16 hwq, cid;
 	int ret;
 
@@ -1054,6 +1348,8 @@ static int hiraid_queue_command(struct Scsi_Host *shost, struct scsi_cmnd *scmd)
 	memset(&io_cmd, 0, sizeof(io_cmd));
 	io_cmd.rw.hdid = cpu_to_le32(hostdata->hdid);
 	io_cmd.rw.cmd_id = cpu_to_le16(cid);
+
+	hiraid_set_ncq_prio(scmd, &io_cmd, hostdata, hdev);
 
 	ret = hiraid_setup_io_cmd(hdev, &io_cmd, scmd, mapbuf);
 	if (unlikely(ret)) {
@@ -1085,6 +1381,10 @@ static int hiraid_queue_command(struct Scsi_Host *shost, struct scsi_cmnd *scmd)
 	mapbuf->cid = cid;
 	ret = hiraid_io_map_data(hdev, mapbuf, scmd, &io_cmd);
 	if (unlikely(ret)) {
+		if (ret == SCSI_MLQUEUE_HOST_BUSY) {
+			atomic_dec(&ioq->inflight);
+			return ret;
+		}
 		dev_err(hdev->dev, "io map data err\n");
 		set_host_byte(scmd, DID_ERROR);
 		scsi_done(scmd);
@@ -1093,6 +1393,23 @@ static int hiraid_queue_command(struct Scsi_Host *shost, struct scsi_cmnd *scmd)
 	}
 
 	WRITE_ONCE(mapbuf->state, CMD_FLIGHT);
+	if (hiraid_is_rw_scmd(scmd) &&
+		hiraid_disk_is_hdd_rawdrive(hostdata->attr)) {
+		if (hiraid_aging_detect(hdev))
+			hiraid_aging(hdev);
+		tmp_stream = hiraid_stream_detect(hdev, &(io_cmd.rw), sdev->id);
+		if (tmp_stream != NULL) {
+			hiraid_io_recognition_iterator(tmp_stream, 1);
+			if (hiraid_recognition_acknowledge(tmp_stream) &&
+	(sdev->id < HIRAID_MAX_PD_NUM) &&
+	(hdev->hiraid_stream_io_num_per_pd[sdev->id][HIRAID_STREAM_TYPE_TOTAL] >
+	1)) {
+				if (hiraid_add_io_to_list(hdev, ioq, tmp_stream,
+					io_cmd, sdev->sector_size, sdev->id))
+					return 0;
+			}
+		}
+	}
 	hiraid_submit_cmd(ioq, &io_cmd);
 
 	return 0;
@@ -1139,19 +1456,6 @@ static int hiraid_disk_qd(u8 attr)
 		return HIRAID_SSD_PD_QD;
 	default:
 		return MAX_CMD_PER_DEV;
-	}
-}
-
-static bool hiraid_disk_is_hdd(u8 attr)
-{
-	switch (HIRAID_DEV_DISK_TYPE(attr)) {
-	case HIRAID_SAS_HDD_VD:
-	case HIRAID_SATA_HDD_VD:
-	case HIRAID_SAS_HDD_PD:
-	case HIRAID_SATA_HDD_PD:
-		return true;
-	default:
-		return false;
 	}
 }
 
@@ -1238,6 +1542,7 @@ static int hiraid_slave_configure(struct scsi_device *sdev)
 static void hiraid_shost_init(struct hiraid_dev *hdev)
 {
 	struct pci_dev *pdev = hdev->pdev;
+	struct scsi_host_template *hostt;
 	u8 domain, bus;
 	u32 dev_func;
 
@@ -1246,8 +1551,10 @@ static void hiraid_shost_init(struct hiraid_dev *hdev)
 	dev_func = pdev->devfn;
 
 	hdev->shost->nr_hw_queues = work_mode ? 1 : hdev->online_queues - 1;
-	hdev->shost->can_queue = hdev->scsi_qd;
-
+	hdev->shost->can_queue = min(hdev->scsi_qd,
+			le16_to_cpu(hdev->ctrl_info->max_cmds) -
+			HIRAID_AQ_DEPTH -
+		HIRAID_TOTAL_PTCMDS(hdev->online_queues - 1));
 	hdev->shost->sg_tablesize = le16_to_cpu(hdev->ctrl_info->max_num_sge);
 	/* 512B per sector */
 	hdev->shost->max_sectors = (1U << ((hdev->ctrl_info->mdts) * 1U) << 12) / 512;
@@ -1259,6 +1566,13 @@ static void hiraid_shost_init(struct hiraid_dev *hdev)
 	hdev->shost->this_id = -1;
 	hdev->shost->unique_id = (domain << 16) | (bus << 8) | dev_func;
 	hdev->shost->max_cmd_len = MAX_CDB_LEN;
+
+	hostt = (struct scsi_host_template *)hdev->shost->hostt;
+	hostt->cmd_size = hiraid_get_max_cmd_size(hdev);
+
+	dev_info(hdev->dev, "nr_hw_queues[%u] can_queue[%u] unique_id[%u] cmd_size[%u]\n",
+		hdev->shost->nr_hw_queues, hdev->shost->can_queue,
+		hdev->shost->unique_id, hdev->shost->hostt->cmd_size);
 }
 
 static int hiraid_alloc_queue(struct hiraid_dev *hdev, u16 qid, u16 depth)
@@ -2046,6 +2360,14 @@ static int hiraid_get_queue_cnt(struct hiraid_dev *hdev, u32 *cnt)
 	return 0;
 }
 
+static bool hiraid_pci_is_present(struct hiraid_dev *hdev)
+{
+	if (!pci_device_is_present(hdev->pdev) ||
+		readl(hdev->bar + HIRAID_REG_VS) == 0Xffffffff)
+		return false;
+	return true;
+}
+
 static int hiraid_setup_io_queues(struct hiraid_dev *hdev)
 {
 	struct hiraid_queue *adminq = &hdev->queues[0];
@@ -2117,7 +2439,7 @@ static void hiraid_delete_io_queues(struct hiraid_dev *hdev)
 	u8 opcode = HIRAID_ADMIN_DELETE_SQ;
 	u16 i, pass;
 
-	if (!pci_device_is_present(hdev->pdev)) {
+	if (!hiraid_pci_is_present(hdev)) {
 		dev_err(hdev->dev, "pci_device is not present, skip disable io queues\n");
 		return;
 	}
@@ -2154,7 +2476,7 @@ static void hiraid_disable_admin_queue(struct hiraid_dev *hdev, bool shutdown)
 	struct hiraid_queue *adminq = &hdev->queues[0];
 	u16 start, end;
 
-	if (pci_device_is_present(hdev->pdev)) {
+	if (hiraid_pci_is_present(hdev)) {
 		if (shutdown)
 			hiraid_shutdown_control(hdev);
 		else
@@ -2372,8 +2694,13 @@ static int hiraid_luntarget_sort(const void *l, const void *r)
 	const struct hiraid_dev_info *rn = r;
 	int l_attr = HIRAID_DEV_INFO_ATTR_BOOT(ln->attr);
 	int r_attr = HIRAID_DEV_INFO_ATTR_BOOT(rn->attr);
-
 	/* boot first */
+	if (l_attr != r_attr)
+		return (r_attr - l_attr);
+
+	l_attr = HIRAID_DEV_INFO_ATTR_VD(ln->attr);
+	r_attr = HIRAID_DEV_INFO_ATTR_VD(rn->attr);
+	/* vd second */
 	if (l_attr != r_attr)
 		return (r_attr - l_attr);
 
@@ -2413,6 +2740,19 @@ static void hiraid_scan_work(struct work_struct *work)
 
 		if (HIRAID_DEV_INFO_FLAG_VALID(flag)) {
 			if (!HIRAID_DEV_INFO_FLAG_VALID(org_flag)) {
+				down_write(&hdev->dev_rwsem);
+				memcpy(&old_dev[i], &dev[i],
+						sizeof(struct hiraid_dev_info));
+				memcpy(&new_dev[count++], &dev[i],
+						sizeof(struct hiraid_dev_info));
+				up_write(&hdev->dev_rwsem);
+			} else if (HIRAID_DEV_INFO_FLAG_DELETE_OR_ADD(flag,
+			org_flag)) {
+				down_write(&hdev->dev_rwsem);
+				old_dev[i].flag &= 0xfe;
+				up_write(&hdev->dev_rwsem);
+				hiraid_delete_device(hdev, &old_dev[i]);
+
 				down_write(&hdev->dev_rwsem);
 				memcpy(&old_dev[i], &dev[i],
 						sizeof(struct hiraid_dev_info));
@@ -2560,7 +2900,7 @@ static void hiraid_bsg_buf_unmap(struct hiraid_dev *hdev, struct bsg_job *job)
 }
 
 static int hiraid_bsg_buf_map(struct hiraid_dev *hdev, struct bsg_job *job,
-				struct hiraid_admin_command *cmd)
+	struct hiraid_admin_command *cmd, u16 qid)
 {
 	struct hiraid_bsg_request *bsg_req = job->request;
 	struct request *rq = blk_mq_rq_from_pdu(job);
@@ -2573,6 +2913,7 @@ static int hiraid_bsg_buf_map(struct hiraid_dev *hdev, struct bsg_job *job,
 	mapbuf->sgl = job->request_payload.sg_list;
 	mapbuf->len = job->request_payload.payload_len;
 	mapbuf->page_cnt = -1;
+	mapbuf->hiraidq = &hdev->queues[qid];
 	if (unlikely(mapbuf->sge_cnt == 0))
 		goto out;
 
@@ -2582,13 +2923,15 @@ static int hiraid_bsg_buf_map(struct hiraid_dev *hdev, struct bsg_job *job,
 
 	mapbuf->use_sgl = !hiraid_is_prp(hdev, mapbuf->sgl, mapbuf->sge_cnt);
 
-	if ((mapbuf->use_sgl == (bool)true) && (bsg_req->msgcode == HIRAID_BSG_IOPTHRU) &&
-		(hdev->ctrl_info->pt_use_sgl != (bool)false)) {
-		ret = hiraid_build_passthru_sgl(hdev, cmd, mapbuf);
+	if ((mapbuf->use_sgl == true) &&
+		(bsg_req->msgcode == HIRAID_BSG_IOPTHRU) &&
+		(hdev->ctrl_info->pt_use_sgl != false)) {
+		ret = hiraid_build_sgl(hdev, (struct hiraid_scsi_io_cmd *)cmd,
+			mapbuf);
 	} else {
 		mapbuf->use_sgl = false;
 
-		ret = hiraid_build_passthru_prp(hdev, mapbuf);
+		ret = hiraid_build_prp(hdev, mapbuf);
 		cmd->common.dptr.prp1 = cpu_to_le64(sg_dma_address(mapbuf->sgl));
 		cmd->common.dptr.prp2 = cpu_to_le64(mapbuf->first_dma);
 	}
@@ -2666,8 +3009,7 @@ static int hiraid_init_control_info(struct hiraid_dev *hdev)
 	if (hdev->ctrl_info->asynevent > HIRAID_ASYN_COMMANDS)
 		hdev->ctrl_info->asynevent = HIRAID_ASYN_COMMANDS;
 
-	hdev->scsi_qd = work_mode ?
-		le16_to_cpu(hdev->ctrl_info->max_cmds) : (hdev->ioq_depth - HIRAID_PTHRU_CMDS_PERQ);
+	hdev->scsi_qd = hdev->ioq_depth - HIRAID_PTHRU_CMDS_PERQ;
 
 	return 0;
 }
@@ -2700,7 +3042,7 @@ static int hiraid_user_send_admcmd(struct hiraid_dev *hdev, struct bsg_job *job)
 	admin_cmd.common.cdw14 = cpu_to_le32(ptcmd->cdw14);
 	admin_cmd.common.cdw15 = cpu_to_le32(ptcmd->cdw15);
 
-	status = hiraid_bsg_buf_map(hdev, job, &admin_cmd);
+	status = hiraid_bsg_buf_map(hdev, job, &admin_cmd, 0);
 	if (status) {
 		dev_err(hdev->dev, "err, map data failed\n");
 		return status;
@@ -2712,7 +3054,7 @@ static int hiraid_user_send_admcmd(struct hiraid_dev *hdev, struct bsg_job *job)
 		memcpy(job->reply, result, sizeof(result));
 	}
 	if (status)
-		dev_info(hdev->dev, "opcode[0x%x] subopcode[0x%x] status[0x%x] result0[0x%x];"
+		dev_info(hdev->dev, "opcode[0x%x] subopcode[0x%x] status[0x%x] result0[0x%x] "
 			"result1[0x%x]\n", ptcmd->opcode, ptcmd->info_0.subopcode, status,
 			result[0], result[1]);
 
@@ -2757,18 +3099,12 @@ static void hiraid_free_io_ptcmds(struct hiraid_dev *hdev)
 }
 
 static int hiraid_put_io_sync_request(struct hiraid_dev *hdev, struct hiraid_scsi_io_cmd *io_cmd,
-					u32 *result, u32 *reslen, u32 timeout)
+	struct hiraid_cmd *pt_cmd, u32 *result, u32 *reslen, u32 timeout)
 {
 	int ret;
 	dma_addr_t buffer_phy;
 	struct hiraid_queue *ioq;
 	void *sense_addr = NULL;
-	struct hiraid_cmd *pt_cmd = hiraid_get_cmd(hdev, HIRAID_CMD_PTHRU);
-
-	if (!pt_cmd) {
-		dev_err(hdev->dev, "err, get ioq cmd failed\n");
-		return -EFAULT;
-	}
 
 	timeout = timeout ? timeout : ADMIN_TIMEOUT;
 
@@ -2798,8 +3134,6 @@ static int hiraid_put_io_sync_request(struct hiraid_dev *hdev, struct hiraid_scs
 			(le32_to_cpu(io_cmd->common.cdw3[0]) & 0xffff));
 
 		hiraid_admin_timeout(hdev, pt_cmd);
-
-		hiraid_put_cmd(hdev, pt_cmd, HIRAID_CMD_PTHRU);
 		return -ETIME;
 	}
 
@@ -2810,8 +3144,6 @@ static int hiraid_put_io_sync_request(struct hiraid_dev *hdev, struct hiraid_scs
 		}
 	}
 
-	hiraid_put_cmd(hdev, pt_cmd, HIRAID_CMD_PTHRU);
-
 	return pt_cmd->status;
 }
 
@@ -2820,6 +3152,7 @@ static int hiraid_user_send_ptcmd(struct hiraid_dev *hdev, struct bsg_job *job)
 	struct hiraid_bsg_request *bsg_req = (struct hiraid_bsg_request *)(job->request);
 	struct hiraid_passthru_io_cmd *cmd = &(bsg_req->pthrucmd);
 	struct hiraid_scsi_io_cmd pthru_cmd;
+	struct hiraid_cmd *pt_cmd;
 	int status = 0;
 	u32 timeout = msecs_to_jiffies(cmd->timeout_ms);
 	// data len is 4k before use sgl, now len is 1M
@@ -2861,19 +3194,29 @@ static int hiraid_user_send_ptcmd(struct hiraid_dev *hdev, struct bsg_job *job)
 	pthru_cmd.common.cdw26[2] = cpu_to_le32(cmd->cdw26[2]);
 	pthru_cmd.common.cdw26[3] = cpu_to_le32(cmd->cdw26[3]);
 
-	status = hiraid_bsg_buf_map(hdev, job, (struct hiraid_admin_command *)&pthru_cmd);
-	if (status) {
-		dev_err(hdev->dev, "err, map data failed\n");
-		return status;
+	pt_cmd = hiraid_get_cmd(hdev, HIRAID_CMD_PTHRU);
+	if (pt_cmd == NULL) {
+		dev_err(hdev->dev, "err, get ioq cmd failed\n");
+		return -EFAULT;
 	}
 
-	status = hiraid_put_io_sync_request(hdev, &pthru_cmd, job->reply, &job->reply_len, timeout);
+	status = hiraid_bsg_buf_map(hdev, job,
+		(struct hiraid_admin_command *)&pthru_cmd, pt_cmd->qid);
+	if (status) {
+		dev_err(hdev->dev, "err, map data failed\n");
+		goto ret;
+	}
 
+	status = hiraid_put_io_sync_request(hdev, &pthru_cmd, pt_cmd,
+		job->reply, &job->reply_len, timeout);
 	if (status)
 		dev_info(hdev->dev, "opcode[0x%x] subopcode[0x%x] status[0x%x] replylen[%d]\n",
 			 cmd->opcode, cmd->info_1.subopcode, status, job->reply_len);
 
 	hiraid_bsg_buf_unmap(hdev, job);
+
+ret:
+	hiraid_put_cmd(hdev, pt_cmd, HIRAID_CMD_PTHRU);
 
 	return status;
 }
@@ -2895,20 +3238,26 @@ static bool hiraid_check_scmd_finished(struct scsi_cmnd *scmd)
 	return false;
 }
 
-static enum scsi_timeout_action hiraid_timed_out(struct scsi_cmnd *scmd)
+#define EH_TIMED_RET_TP enum scsi_timeout_action
+#define EH_TIMED_RET_DONE SCSI_EH_DONE
+#define EH_TIMED_RET_NOT_HANDLED SCSI_EH_NOT_HANDLED
+#define EH_TIMED_RET_RESET_TIMER SCSI_EH_RESET_TIMER
+static EH_TIMED_RET_TP hiraid_timed_out(struct scsi_cmnd *scmd)
 {
 	struct hiraid_mapmange *mapbuf = scsi_cmd_priv(scmd);
 	unsigned int timeout = scmd->device->request_queue->rq_timeout;
 
 	if (hiraid_check_scmd_finished(scmd))
-		goto out;
+		return EH_TIMED_RET_DONE;
 
-	if (time_after(jiffies, scmd->jiffies_at_alloc + timeout)) {
+	if (time_after_eq(jiffies, scmd->jiffies_at_alloc + timeout)) {
+		scmd_printk(KERN_WARNING, scmd, "timeout is work[%d], need abort\n",
+			mapbuf->state);
 		if (cmpxchg(&mapbuf->state, CMD_FLIGHT, CMD_TIMEOUT) == CMD_FLIGHT)
-			return SCSI_EH_DONE;
+			return EH_TIMED_RET_NOT_HANDLED;
 	}
-out:
-	return SCSI_EH_RESET_TIMER;
+
+	return EH_TIMED_RET_RESET_TIMER;
 }
 
 /* send abort command by admin queue temporary */
@@ -3031,7 +3380,7 @@ static int hiraid_dev_disable(struct hiraid_dev *hdev, bool shutdown)
 	struct hiraid_queue *adminq = &hdev->queues[0];
 	u16 start, end;
 
-	if (pci_device_is_present(hdev->pdev)) {
+	if (hiraid_pci_is_present(hdev)) {
 		if (shutdown)
 			hiraid_shutdown_control(hdev);
 		else
@@ -3226,9 +3575,23 @@ static int hiraid_abort(struct scsi_cmnd *scmd)
 	    hiraid_check_scmd_finished(scmd))
 		return SUCCESS;
 
+	if (hdev->state != DEV_LIVE)
+		return SUCCESS;
+
 	hostdata = scmd->device->hostdata;
 	cid = mapbuf->cid;
 	hwq = mapbuf->hiraidq->qid;
+
+	mutex_lock(&g_stream_operation_mutex);
+	ret = hiraid_stream_delete_io_list(hdev, hostdata->hdid,
+		cid, hwq, HIRAID_STREAM_TYPE_DELETE_SINGLE_IO);
+	mutex_unlock(&g_stream_operation_mutex);
+
+	if (ret == 1) {
+		dev_warn(hdev->dev, "find cid[%d] qid[%d] in host, abort succ\n",
+			cid, hwq);
+		return SUCCESS;
+	}
 
 	dev_warn(hdev->dev, "cid[%d] qid[%d] timeout, send abort\n", cid, hwq);
 	ret = hiraid_send_abort_cmd(hdev, hostdata->hdid, hwq, cid);
@@ -3261,6 +3624,10 @@ static int hiraid_scsi_reset(struct scsi_cmnd *scmd, enum hiraid_rst_type rst)
 	ret = hiraid_send_reset_cmd(hdev, rst, hostdata->hdid);
 	if ((ret == 0) || (ret == FW_EH_DEV_NONE && rst == HIRAID_RESET_TARGET)) {
 		if (rst == HIRAID_RESET_TARGET) {
+			mutex_lock(&g_stream_operation_mutex);
+			hiraid_stream_delete_io_list(hdev, hostdata->hdid,
+				0, 0, HIRAID_STREAM_TYPE_DELETE_SINGLE_IO_LIST);
+			mutex_unlock(&g_stream_operation_mutex);
 			ret = wait_tgt_reset_io_done(scmd);
 			if (ret) {
 				dev_warn(hdev->dev, "sdev[%d:%d] target has %d peding cmd, target reset failed\n",
@@ -3298,8 +3665,13 @@ static int hiraid_host_reset(struct scsi_cmnd *scmd)
 
 	dev_warn(hdev->dev, "sdev[%d:%d] send host reset\n",
 		scmd->device->channel, scmd->device->id);
-	if (hiraid_reset_work_sync(hdev) == -EBUSY)
+	mutex_lock(&g_stream_operation_mutex);
+	hiraid_stream_delete_io_list(hdev, 0, 0, 0,
+		HIRAID_STREAM_TYPE_DELETE_ALL_IO_LIST);
+	mutex_unlock(&g_stream_operation_mutex);
+	if (hiraid_reset_work_sync(hdev) == -EBUSY) {
 		flush_work(&hdev->reset_work);
+	}
 
 	if (hdev->state != DEV_LIVE) {
 		dev_warn(hdev->dev, "sdev[%d:%d] host reset failed\n",
@@ -3331,6 +3703,10 @@ static pci_ers_result_t hiraid_pci_error_detected(struct pci_dev *pdev,
 		scsi_block_requests(hdev->shost);
 
 		hiraid_dev_state_trans(hdev, DEV_RESETTING);
+		mutex_lock(&g_stream_operation_mutex);
+		hiraid_stream_delete_io_list(hdev, 0, 0, 0,
+			HIRAID_STREAM_TYPE_DELETE_ALL_IO_LIST);
+		mutex_unlock(&g_stream_operation_mutex);
 
 		return PCI_ERS_RESULT_NEED_RESET;
 	case pci_channel_io_perm_failure:
@@ -3366,7 +3742,22 @@ static void hiraid_reset_pci_finish(struct pci_dev *pdev)
 {
 	struct hiraid_dev *hdev = pci_get_drvdata(pdev);
 
+	if (hiraid_reset_work_sync(hdev) == -EBUSY)
+		flush_work(&hdev->reset_work);
+
 	dev_info(hdev->dev, "enter hiraid reset finish\n");
+}
+
+static void hiraid_reset_pci_prepare(struct pci_dev *pdev)
+{
+	struct hiraid_dev *hdev = pci_get_drvdata(pdev);
+
+	mutex_lock(&g_stream_operation_mutex);
+	hiraid_stream_delete_io_list(hdev, 0, 0, 0,
+		HIRAID_STREAM_TYPE_DELETE_ALL_IO_LIST);
+	mutex_unlock(&g_stream_operation_mutex);
+	msleep(100);
+	dev_info(hdev->dev, "exit hiraid reset prepare\n");
 }
 
 static ssize_t csts_pp_show(struct device *cdev, struct device_attribute *attr, char *buf)
@@ -3375,7 +3766,7 @@ static ssize_t csts_pp_show(struct device *cdev, struct device_attribute *attr, 
 	struct hiraid_dev *hdev = shost_priv(shost);
 	int ret = -1;
 
-	if (pci_device_is_present(hdev->pdev)) {
+	if (hiraid_pci_is_present(hdev)) {
 		ret = (readl(hdev->bar + HIRAID_REG_CSTS) & HIRAID_CSTS_PP_MASK);
 		ret >>= HIRAID_CSTS_PP_SHIFT;
 	}
@@ -3389,7 +3780,7 @@ static ssize_t csts_shst_show(struct device *cdev, struct device_attribute *attr
 	struct hiraid_dev *hdev = shost_priv(shost);
 	int ret = -1;
 
-	if (pci_device_is_present(hdev->pdev)) {
+	if (hiraid_pci_is_present(hdev)) {
 		ret = (readl(hdev->bar + HIRAID_REG_CSTS) & HIRAID_CSTS_SHST_MASK);
 		ret >>= HIRAID_CSTS_SHST_SHIFT;
 	}
@@ -3403,7 +3794,7 @@ static ssize_t csts_cfs_show(struct device *cdev, struct device_attribute *attr,
 	struct hiraid_dev *hdev = shost_priv(shost);
 	int ret = -1;
 
-	if (pci_device_is_present(hdev->pdev)) {
+	if (hiraid_pci_is_present(hdev)) {
 		ret = (readl(hdev->bar + HIRAID_REG_CSTS) & HIRAID_CSTS_CFS_MASK);
 		ret >>= HIRAID_CSTS_CFS_SHIFT;
 	}
@@ -3417,7 +3808,7 @@ static ssize_t csts_rdy_show(struct device *cdev, struct device_attribute *attr,
 	struct hiraid_dev *hdev = shost_priv(shost);
 	int ret = -1;
 
-	if (pci_device_is_present(hdev->pdev))
+	if (hiraid_pci_is_present(hdev))
 		ret = (readl(hdev->bar + HIRAID_REG_CSTS) & HIRAID_CSTS_RDY);
 
 	return snprintf(buf, PAGE_SIZE, "%d\n", ret);
@@ -3671,16 +4062,71 @@ static ssize_t dispatch_hwq_store(struct device *dev, struct device_attribute *a
 	return strlen(buf);
 }
 
+static ssize_t sata_ncq_prio_enable_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct hiraid_sdev_hostdata *hostdata;
+
+	hostdata = to_scsi_device(dev)->hostdata;
+	return snprintf(buf, PAGE_SIZE, "%d\n", hostdata->sata_ncq_prio_enable);
+}
+
+bool scsi_ncq_prio_support(struct scsi_device *sdev, struct hiraid_dev *hdev)
+{
+	unsigned char *buf;
+	bool ncq_prio_supp = false;
+
+	if (!scsi_device_supports_vpd(sdev)) {
+		dev_err(hdev->dev, "scsi device not support vpd\n");
+		return ncq_prio_supp;
+	}
+
+	buf = kzalloc(HIRAID_SCSI_VPD_LEN, GFP_KERNEL);
+	if (!buf)
+		return ncq_prio_supp;
+
+	if (!scsi_get_vpd_page(sdev, 0x89, buf, HIRAID_SCSI_VPD_LEN))
+		ncq_prio_supp = (buf[NCQ_PRIO_SUPPORT_BYTE] >>
+		VPD_NCQ_PRIO_SUPPORT_BIT) & 1;
+
+	kfree(buf);
+	return ncq_prio_supp;
+}
+
+static ssize_t sata_ncq_prio_enable_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct scsi_device *sdev = to_scsi_device(dev);
+	struct hiraid_sdev_hostdata *hostdata = sdev->hostdata;
+	struct hiraid_dev *hdev = shost_priv(sdev->host);
+	bool ncq_prio_enable = 0;
+
+	if (kstrtobool(buf, &ncq_prio_enable))
+		return -EINVAL;
+
+	if (!scsi_ncq_prio_support(sdev, hdev)) {
+		dev_err(hdev->dev, "sdev[%d:%d] not support ncq prio\n",
+			sdev->channel, sdev->id);
+		return -EINVAL;
+	}
+
+	hostdata->sata_ncq_prio_enable = ncq_prio_enable;
+
+	return strlen(buf);
+}
+
 static DEVICE_ATTR_RO(raid_level);
 static DEVICE_ATTR_RO(raid_state);
 static DEVICE_ATTR_RO(raid_resync);
 static DEVICE_ATTR_RW(dispatch_hwq);
+static DEVICE_ATTR_RW(sata_ncq_prio_enable);
 
 static struct attribute *hiraid_dev_attrs[] = {
 	&dev_attr_raid_state.attr,
 	&dev_attr_raid_level.attr,
 	&dev_attr_raid_resync.attr,
 	&dev_attr_dispatch_hwq.attr,
+	&dev_attr_sata_ncq_prio_enable.attr,
 	NULL,
 };
 
@@ -3696,6 +4142,7 @@ const struct attribute_group *hiraid_dev_groups[] = {
 static struct pci_error_handlers hiraid_err_handler = {
 	.error_detected = hiraid_pci_error_detected,
 	.slot_reset = hiraid_pci_slot_reset,
+	.reset_prepare = hiraid_reset_pci_prepare,
 	.reset_done = hiraid_reset_pci_finish,
 };
 
@@ -3720,7 +4167,17 @@ static int hiraid_scan_finished(struct Scsi_Host *shost, unsigned long time)
 	return 1;
 }
 
-static const struct scsi_host_template hiraid_driver_template = {
+static void hiraid_map_queues(struct Scsi_Host *shost)
+{
+	struct hiraid_dev *hdev = shost_priv(shost);
+
+	if (shost->nr_hw_queues == 1)
+		return;
+
+	blk_mq_pci_map_queues(&shost->tag_set.map[HCTX_TYPE_DEFAULT],
+		hdev->pdev, 1);
+}
+static struct scsi_host_template hiraid_driver_template = {
 	.module			= THIS_MODULE,
 	.name			= "hiraid",
 	.proc_name		= "hiraid",
@@ -3736,10 +4193,10 @@ static const struct scsi_host_template hiraid_driver_template = {
 	.eh_host_reset_handler		= hiraid_host_reset,
 	.change_queue_depth		= scsi_change_queue_depth,
 	.this_id			= -1,
+	.map_queues				= hiraid_map_queues,
 	.shost_groups			= hiraid_host_attrs_groups,
 	.sdev_groups			= hiraid_dev_groups,
 	.host_reset			= hiraid_sysfs_host_reset,
-	.cmd_size			= sizeof(struct hiraid_mapmange) + HIRAID_ALLOC_SIZE_MAX,
 };
 
 static void hiraid_shutdown(struct pci_dev *pdev)
@@ -3919,6 +4376,7 @@ static int hiraid_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto unregist_bsg;
 
 	scsi_scan_host(hdev->shost);
+	hiraid_init_io_stream(hdev);
 
 	return 0;
 
@@ -3950,10 +4408,17 @@ static void hiraid_remove(struct pci_dev *pdev)
 
 	dev_info(hdev->dev, "enter hiraid remove\n");
 
+	kthread_stop(hdev->hiraid_stream_submit_task);
+	mutex_lock(&g_stream_operation_mutex);
+	hiraid_stream_delete_io_list(hdev, 0, 0, 0,
+		HIRAID_STREAM_TYPE_DELETE_ALL_IO_LIST);
+	mutex_unlock(&g_stream_operation_mutex);
+	hiraid_destroy_io_stream_resource(hdev);
+
 	hiraid_dev_state_trans(hdev, DEV_DELETING);
 	flush_work(&hdev->reset_work);
 
-	if (!pci_device_is_present(pdev))
+	if (!hiraid_pci_is_present(hdev))
 		hiraid_flush_running_cmds(hdev);
 
 	hiraid_unregist_bsg(hdev);
@@ -3999,22 +4464,9 @@ static int __init hiraid_init(void)
 	if (!work_queue)
 		return -ENOMEM;
 
-	hiraid_class = class_create("hiraid");
-	if (IS_ERR(hiraid_class)) {
-		ret = PTR_ERR(hiraid_class);
-		goto destroy_wq;
-	}
-
 	ret = pci_register_driver(&hiraid_driver);
 	if (ret < 0)
-		goto destroy_class;
-
-	return 0;
-
-destroy_class:
-	class_destroy(hiraid_class);
-destroy_wq:
-	destroy_workqueue(work_queue);
+		destroy_workqueue(work_queue);
 
 	return ret;
 }
@@ -4022,7 +4474,6 @@ destroy_wq:
 static void __exit hiraid_exit(void)
 {
 	pci_unregister_driver(&hiraid_driver);
-	class_destroy(hiraid_class);
 	destroy_workqueue(work_queue);
 }
 

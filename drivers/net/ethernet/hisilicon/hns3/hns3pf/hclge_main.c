@@ -67,6 +67,7 @@ static int hclge_mac_link_status_wait(struct hclge_dev *hdev, int link_ret,
 				      int wait_cnt);
 static int hclge_update_port_info(struct hclge_dev *hdev);
 static void hclge_reset_end(struct hnae3_handle *handle, bool done);
+static int hclge_enable_pfc_storm_prevent(struct hclge_dev *hdev, int dir, bool enable);
 
 static struct hnae3_ae_algo ae_algo;
 
@@ -1401,9 +1402,11 @@ static void hclge_parse_dev_specs(struct hclge_dev *hdev,
 	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(hdev->pdev);
 	struct hclge_dev_specs_0_cmd *req0;
 	struct hclge_dev_specs_1_cmd *req1;
+	struct hclge_dev_specs_2_cmd *req2;
 
 	req0 = (struct hclge_dev_specs_0_cmd *)desc[0].data;
 	req1 = (struct hclge_dev_specs_1_cmd *)desc[1].data;
+	req2 = (struct hclge_dev_specs_2_cmd *)desc[2].data;
 
 	ae_dev->dev_specs.max_non_tso_bd_num = req0->max_non_tso_bd_num;
 	ae_dev->dev_specs.rss_ind_tbl_size =
@@ -1418,6 +1421,10 @@ static void hclge_parse_dev_specs(struct hclge_dev *hdev,
 	ae_dev->dev_specs.mc_mac_size = le16_to_cpu(req1->mc_mac_size);
 	ae_dev->dev_specs.tnl_num = req1->tnl_num;
 	ae_dev->dev_specs.hilink_version = req1->hilink_version;
+	ae_dev->dev_specs.total_rx_buffer_size =
+		le32_to_cpu(req2->total_rx_buffer_size);
+	ae_dev->dev_specs.min_rx_buffer_size_per_tc =
+		le32_to_cpu(req2->min_rx_buffer_size_per_tc);
 }
 
 static void hclge_check_dev_specs(struct hclge_dev *hdev)
@@ -4140,6 +4147,62 @@ int hclge_func_reset_cmd(struct hclge_dev *hdev, int func_id)
 	return ret;
 }
 
+static int hclge_set_pfc_storm_prevention_tout(struct hnae3_handle *h, u16 times)
+{
+	struct hclge_vport *vport = hclge_get_vport(h);
+	struct hclge_dev *hdev = vport->back;
+	struct hnae3_pfc_storm_para para;
+	int ret;
+
+	if (hdev->ae_dev->dev_version < HNAE3_DEVICE_VERSION_V3)
+		return -EOPNOTSUPP;
+
+	if (times > HCLGE_MAX_PFC_PREVENTION_TOUT) {
+		dev_err(&hdev->pdev->dev,
+			"times %u should be less than %u!\n",
+			times, HCLGE_MAX_PFC_PREVENTION_TOUT);
+		return -EINVAL;
+	}
+
+	para.dir = HCLGE_DIR_TX;
+	ret = hclge_get_pfc_storm_para(hdev, &para, sizeof(struct hnae3_pfc_storm_para));
+	if (ret)
+		return ret;
+
+	para.enable = true;
+	if (!times)
+		para.enable = false;
+
+	para.times = (u32)times;
+	ret = hclge_set_pfc_storm_para(hdev, &para, sizeof(struct hnae3_pfc_storm_para));
+	if (ret)
+		return ret;
+
+	hdev->pfc_prevention_tout = times;
+
+	return 0;
+}
+
+static int hclge_get_pfc_storm_prevention_tout(struct hnae3_handle *h, u16 *times)
+{
+	struct hclge_vport *vport = hclge_get_vport(h);
+	struct hclge_dev *hdev = vport->back;
+	struct hnae3_pfc_storm_para para;
+	int ret;
+
+	if (hdev->ae_dev->dev_version < HNAE3_DEVICE_VERSION_V3)
+		return -EOPNOTSUPP;
+
+	para.dir = HCLGE_DIR_TX;
+	ret = hclge_get_pfc_storm_para(hdev, &para, sizeof(struct hnae3_pfc_storm_para));
+	if (ret)
+		return ret;
+
+	*times = para.enable ? (u16)para.times : 0;
+
+	return 0;
+}
+
 static void hclge_do_reset(struct hclge_dev *hdev)
 {
 	struct hnae3_handle *handle = &hdev->vport[0].nic;
@@ -4478,6 +4541,23 @@ static int hclge_reset_prepare(struct hclge_dev *hdev)
 	return hclge_reset_prepare_wait(hdev);
 }
 
+static void hclge_restore_pfc_storm_prevention_tout(struct hclge_dev *hdev)
+{
+	struct hnae3_handle *handle = &hdev->vport[0].nic;
+	int ret;
+
+	if (hdev->ae_dev->dev_version < HNAE3_DEVICE_VERSION_V3)
+		return;
+
+	ret = hclge_enable_pfc_storm_prevent(hdev, HCLGE_DIR_RX, false);
+	if (ret) {
+		dev_warn(&hdev->pdev->dev,
+			 "failed to disable rx pfc storm prevent, ret = %d\n", ret);
+	}
+
+	(void)hclge_set_pfc_storm_prevention_tout(handle, hdev->pfc_prevention_tout);
+}
+
 static int hclge_reset_rebuild(struct hclge_dev *hdev)
 {
 	struct hnae3_handle *handle = &hdev->vport[0].nic;
@@ -4543,6 +4623,8 @@ static int hclge_reset_rebuild(struct hclge_dev *hdev)
 	hclge_update_reset_level(hdev);
 
 	hclge_reset_end(handle, true);
+
+	hclge_restore_pfc_storm_prevention_tout(hdev);
 
 	return 0;
 }
@@ -7730,6 +7812,10 @@ static void hclge_get_cls_key_mac(const struct flow_rule *flow,
 		ether_addr_copy(rule->tuples_mask.dst_mac, match.mask->dst);
 		ether_addr_copy(rule->tuples.src_mac, match.key->src);
 		ether_addr_copy(rule->tuples_mask.src_mac, match.mask->src);
+		if (is_zero_ether_addr(match.key->dst))
+			rule->unused_tuple |= BIT(INNER_DST_MAC);
+		if (is_zero_ether_addr(match.key->src))
+			rule->unused_tuple |= BIT(INNER_SRC_MAC);
 	} else {
 		rule->unused_tuple |= BIT(INNER_DST_MAC);
 		rule->unused_tuple |= BIT(INNER_SRC_MAC);
@@ -7774,6 +7860,10 @@ static void hclge_get_cls_key_ip(const struct flow_rule *flow,
 		rule->tuples.dst_ip[IPV4_INDEX] = be32_to_cpu(match.key->dst);
 		rule->tuples_mask.dst_ip[IPV4_INDEX] =
 						be32_to_cpu(match.mask->dst);
+		if (!match.key->src)
+			rule->unused_tuple |= BIT(INNER_SRC_IP);
+		if (!match.key->dst)
+			rule->unused_tuple |= BIT(INNER_DST_IP);
 	} else if (addr_type == FLOW_DISSECTOR_KEY_IPV6_ADDRS) {
 		struct flow_match_ipv6_addrs match;
 
@@ -7786,6 +7876,10 @@ static void hclge_get_cls_key_ip(const struct flow_rule *flow,
 				  IPV6_SIZE);
 		be32_to_cpu_array(rule->tuples_mask.dst_ip,
 				  match.mask->dst.s6_addr32, IPV6_SIZE);
+		if (ipv6_addr_any((struct in6_addr *)match.key->src.s6_addr32))
+			rule->unused_tuple |= BIT(INNER_SRC_IP);
+		if (ipv6_addr_any((struct in6_addr *)match.key->dst.s6_addr32))
+			rule->unused_tuple |= BIT(INNER_DST_IP);
 	} else {
 		rule->unused_tuple |= BIT(INNER_SRC_IP);
 		rule->unused_tuple |= BIT(INNER_DST_IP);
@@ -7810,44 +7904,130 @@ static void hclge_get_cls_key_port(const struct flow_rule *flow,
 	}
 }
 
+static int hclge_get_cls_enc_keyid(struct hclge_dev *hdev,
+				   const struct flow_rule *flow,
+				   struct hclge_fd_rule *rule)
+{
+	if (flow_rule_match_key(flow, FLOW_DISSECTOR_KEY_ENC_KEYID)) {
+		struct flow_match_enc_keyid match;
+
+		flow_rule_match_enc_keyid(flow, &match);
+
+		/* vni is only 24 bits and must be greater than 0,
+		 * and it can not be masked.
+		 */
+		if (match.mask->keyid != HCLGE_FD_VXLAN_VNI_UNMASK ||
+		    be32_to_cpu(match.key->keyid) >= VXLAN_N_VID ||
+		    !match.key->keyid) {
+			dev_err(&hdev->pdev->dev, "invalid enc_keyid\n");
+			return -EINVAL;
+		}
+
+		rule->tuples.outer_tun_vni = be32_to_cpu(match.key->keyid);
+		rule->tuples_mask.outer_tun_vni =
+						be32_to_cpu(match.mask->keyid);
+	} else {
+		rule->unused_tuple |= BIT(OUTER_TUN_VNI);
+	}
+
+	return 0;
+}
+
+static void hclge_get_cls_key_ip_tos(const struct flow_rule *flow,
+				     struct hclge_fd_rule *rule)
+{
+	if (flow_rule_match_key(flow, FLOW_DISSECTOR_KEY_IP)) {
+		struct flow_match_ip match;
+
+		flow_rule_match_ip(flow, &match);
+
+		rule->tuples.ip_tos = match.key->tos;
+		rule->tuples_mask.ip_tos = match.mask->tos;
+		if (!rule->tuples.ip_tos)
+			rule->unused_tuple |= BIT(INNER_IP_TOS);
+	} else {
+		rule->unused_tuple |= BIT(INNER_IP_TOS);
+	}
+}
+
+static int hclge_get_tc_flower_action(struct hclge_dev *hdev,
+				      struct flow_cls_offload *cls_flower,
+				      struct hclge_fd_rule *rule)
+{
+	struct flow_rule *flow = flow_cls_offload_flow_rule(cls_flower);
+	struct hnae3_handle *handle = &hdev->vport[0].nic;
+	struct flow_action *action = &flow->action;
+	u16 vf = cls_flower->common.chain_index;
+	struct flow_action_entry *act;
+	int tc;
+
+	if (!flow_action_has_entries(&flow->action)) {
+		if (vf) {
+			dev_err(&hdev->pdev->dev,
+				"cannot select traffic class for vf\n");
+			return -EINVAL;
+		}
+
+		tc = tc_classid_to_hwtc(handle->netdev, cls_flower->classid);
+		if (tc < 0 || tc > hdev->tc_max) {
+			dev_err(&hdev->pdev->dev,
+				"invalid traffic class: %d\n", tc);
+			return -EINVAL;
+		}
+
+		rule->action = HCLGE_FD_ACTION_SELECT_TC;
+		rule->cls_flower.tc = tc;
+		return 0;
+	}
+
+	act = &action->entries[0];
+	switch (act->id) {
+	case FLOW_ACTION_RX_QUEUE_MAPPING:
+		if (act->rx_queue >= hdev->vport[vf].nic.kinfo.num_tqps) {
+			dev_err(&hdev->pdev->dev,
+				"queue id (%u) should be less than %u\n",
+				act->rx_queue,
+				hdev->vport[vf].nic.kinfo.num_tqps - 1);
+			return -EINVAL;
+		}
+
+		rule->queue_id = act->rx_queue;
+		rule->action = HCLGE_FD_ACTION_SELECT_QUEUE;
+		return 0;
+	case FLOW_ACTION_DROP:
+		rule->action = HCLGE_FD_ACTION_DROP_PACKET;
+		return 0;
+	default:
+		dev_err(&hdev->pdev->dev, "unsupported action(%d)\n", act->id);
+		return -EOPNOTSUPP;
+	}
+}
+
 static int hclge_parse_cls_flower(struct hclge_dev *hdev,
 				  struct flow_cls_offload *cls_flower,
 				  struct hclge_fd_rule *rule)
 {
 	struct flow_rule *flow = flow_cls_offload_flow_rule(cls_flower);
-	struct flow_dissector *dissector = flow->match.dissector;
 
-	if (dissector->used_keys &
-	    ~(BIT_ULL(FLOW_DISSECTOR_KEY_CONTROL) |
-	      BIT_ULL(FLOW_DISSECTOR_KEY_BASIC) |
-	      BIT_ULL(FLOW_DISSECTOR_KEY_ETH_ADDRS) |
-	      BIT_ULL(FLOW_DISSECTOR_KEY_VLAN) |
-	      BIT_ULL(FLOW_DISSECTOR_KEY_IPV4_ADDRS) |
-	      BIT_ULL(FLOW_DISSECTOR_KEY_IPV6_ADDRS) |
-	      BIT_ULL(FLOW_DISSECTOR_KEY_PORTS))) {
-		dev_err(&hdev->pdev->dev, "unsupported key set: %#llx\n",
-			dissector->used_keys);
-		return -EOPNOTSUPP;
-	}
+	/* not support any user def tuples */
+	rule->unused_tuple |= HCLGE_FD_TUPLE_USER_DEF_TUPLES;
 
 	hclge_get_cls_key_basic(flow, rule);
 	hclge_get_cls_key_mac(flow, rule);
 	hclge_get_cls_key_vlan(flow, rule);
 	hclge_get_cls_key_ip(flow, rule);
 	hclge_get_cls_key_port(flow, rule);
+	hclge_get_cls_key_ip_tos(flow, rule);
 
-	return 0;
+	return hclge_get_cls_enc_keyid(hdev, flow, rule);
 }
 
 static int hclge_check_cls_flower(struct hclge_dev *hdev,
-				  struct flow_cls_offload *cls_flower, int tc)
+				  struct flow_cls_offload *cls_flower)
 {
+	struct flow_rule *flow = flow_cls_offload_flow_rule(cls_flower);
+	struct flow_dissector *dissector = flow->match.dissector;
 	u32 prio = cls_flower->common.prio;
-
-	if (tc < 0 || tc > hdev->tc_max) {
-		dev_err(&hdev->pdev->dev, "invalid traffic class\n");
-		return -EINVAL;
-	}
 
 	if (prio == 0 ||
 	    prio > hdev->fd_cfg.rule_num[HCLGE_FD_STAGE_1]) {
@@ -7861,12 +8041,58 @@ static int hclge_check_cls_flower(struct hclge_dev *hdev,
 		dev_err(&hdev->pdev->dev, "prio %u is already used\n", prio);
 		return -EINVAL;
 	}
+
+	/* Each VF has its own rule, where chain_index indicates the vf_id.
+	 * For the PF, chain_index is 0.
+	 */
+	if (cls_flower->common.chain_index > hdev->num_req_vfs) {
+		dev_err(&hdev->pdev->dev, "chain (%u) should be less than %u\n",
+			cls_flower->common.chain_index, hdev->num_req_vfs);
+		return -EINVAL;
+	}
+
+	if (cls_flower->common.chain_index)
+		dev_info_once(&hdev->pdev->dev,
+			      "chain_index is considered as vf_id");
+
+	if (dissector->used_keys &
+	    ~(BIT_ULL(FLOW_DISSECTOR_KEY_CONTROL) |
+	      BIT_ULL(FLOW_DISSECTOR_KEY_BASIC) |
+	      BIT_ULL(FLOW_DISSECTOR_KEY_ETH_ADDRS) |
+	      BIT_ULL(FLOW_DISSECTOR_KEY_VLAN) |
+	      BIT_ULL(FLOW_DISSECTOR_KEY_IPV4_ADDRS) |
+	      BIT_ULL(FLOW_DISSECTOR_KEY_IPV6_ADDRS) |
+	      BIT_ULL(FLOW_DISSECTOR_KEY_PORTS) |
+	      BIT_ULL(FLOW_DISSECTOR_KEY_IP) |
+	      BIT_ULL(FLOW_DISSECTOR_KEY_ENC_KEYID))) {
+		dev_err(&hdev->pdev->dev, "unsupported key set: %#llx\n",
+			dissector->used_keys);
+		return -EOPNOTSUPP;
+	}
+
+	/* driver will parses classid into an action */
+	if (cls_flower->classid && flow_action_has_entries(&flow->action)) {
+		dev_err(&hdev->pdev->dev,
+			"please not set classid and action together\n");
+		return -EOPNOTSUPP;
+	}
+
+	if (!flow_action_has_entries(&flow->action) && !cls_flower->classid) {
+		dev_err(&hdev->pdev->dev, "please set action or classid\n");
+		return -EINVAL;
+	}
+
+	if (flow_action_has_entries(&flow->action) &&
+	    !flow_offload_has_one_action(&flow->action)) {
+		dev_err(&hdev->pdev->dev, "unsupported multiple actions\n");
+		return -EOPNOTSUPP;
+	}
+
 	return 0;
 }
 
 static int hclge_add_cls_flower(struct hnae3_handle *handle,
-				struct flow_cls_offload *cls_flower,
-				int tc)
+				struct flow_cls_offload *cls_flower)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
@@ -7879,7 +8105,7 @@ static int hclge_add_cls_flower(struct hnae3_handle *handle,
 		return -EOPNOTSUPP;
 	}
 
-	ret = hclge_check_cls_flower(hdev, cls_flower, tc);
+	ret = hclge_check_cls_flower(hdev, cls_flower);
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"failed to check cls flower params, ret = %d\n", ret);
@@ -7896,10 +8122,14 @@ static int hclge_add_cls_flower(struct hnae3_handle *handle,
 		return ret;
 	}
 
-	rule->action = HCLGE_FD_ACTION_SELECT_TC;
-	rule->cls_flower.tc = tc;
+	ret = hclge_get_tc_flower_action(hdev, cls_flower, rule);
+	if (ret) {
+		kfree(rule);
+		return ret;
+	}
+
 	rule->location = cls_flower->common.prio - 1;
-	rule->vf_id = 0;
+	rule->vf_id = hdev->vport[cls_flower->common.chain_index].vport_id;
 	rule->cls_flower.cookie = cls_flower->cookie;
 	rule->rule_type = HCLGE_FD_TC_FLOWER_ACTIVE;
 
@@ -12293,6 +12523,31 @@ static int hclge_init_wol(struct hclge_dev *hdev)
 	return hclge_update_wol(hdev);
 }
 
+static void hclge_set_default_pfc_prevention_tout(struct hclge_dev *hdev)
+{
+	struct hnae3_handle *handle = &hdev->vport[0].nic;
+	u16 times;
+	int ret;
+
+	if (hdev->ae_dev->dev_version < HNAE3_DEVICE_VERSION_V3)
+		return;
+
+	ret = hclge_enable_pfc_storm_prevent(hdev, HCLGE_DIR_RX, false);
+	if (ret)
+		dev_warn(&hdev->pdev->dev,
+			 "failed to disable rx pfc storm prevent, ret = %d\n", ret);
+
+	ret = hclge_get_pfc_storm_prevention_tout(handle, &times);
+	if (ret) {
+		hdev->pfc_prevention_tout = HCLGE_DEFAULT_PFC_PREVENTION_TOUT;
+		hdev->pfc_prevention_tout_default = HCLGE_DEFAULT_PFC_PREVENTION_TOUT;
+		return;
+	}
+
+	hdev->pfc_prevention_tout = times;
+	hdev->pfc_prevention_tout_default = times;
+}
+
 static void hclge_get_wol(struct hnae3_handle *handle,
 			  struct ethtool_wolinfo *wol)
 {
@@ -12565,6 +12820,8 @@ static int hclge_init_ae_dev(struct hnae3_ae_dev *ae_dev)
 	if (ret)
 		dev_warn(&pdev->dev,
 			 "failed to wake on lan init, ret = %d\n", ret);
+
+	hclge_set_default_pfc_prevention_tout(hdev);
 
 	ret = hclge_devlink_init(hdev);
 	if (ret)
@@ -12995,6 +13252,10 @@ static void hclge_uninit_ae_dev(struct hnae3_ae_dev *ae_dev)
 	hclge_config_mac_tnl_int(hdev, false);
 	hclge_config_nic_hw_error(hdev, false);
 	hclge_config_rocee_ras_interrupt(hdev, false);
+
+	/* Restore default values for the next initialization */
+	hclge_set_pfc_storm_prevention_tout(&hdev->vport->nic,
+					    hdev->pfc_prevention_tout_default);
 
 	hclge_comm_cmd_uninit(hdev->ae_dev, &hdev->hw.hw);
 	hclge_misc_irq_uninit(hdev);
@@ -13465,6 +13726,8 @@ struct hnae3_ae_ops hclge_ops = {
 	.request_update_promisc_mode = hclge_request_update_promisc_mode,
 	.request_pfc_storm_config = hclge_request_pfc_storm_config,
 	.get_pfc_storm_config = hclge_get_pfc_storm_config,
+	.set_pfc_storm_prevention_tout = hclge_set_pfc_storm_prevention_tout,
+	.get_pfc_storm_prevention_tout = hclge_get_pfc_storm_prevention_tout,
 	.set_loopback = hclge_set_loopback,
 	.start = hclge_ae_start,
 	.stop = hclge_ae_stop,

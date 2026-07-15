@@ -27,6 +27,7 @@
 #include <linux/timer.h>
 #include <linux/cper.h>
 #include <linux/platform_device.h>
+#include <linux/minmax.h>
 #include <linux/mutex.h>
 #include <linux/ratelimit.h>
 #include <linux/vmalloc.h>
@@ -290,6 +291,7 @@ static struct ghes *ghes_new(struct acpi_hest_generic *generic)
 		error_block_length = GHES_ESTATUS_MAX_SIZE;
 	}
 	ghes->estatus = kmalloc(error_block_length, GFP_KERNEL);
+	ghes->estatus_length = error_block_length;
 	if (!ghes->estatus) {
 		rc = -ENOMEM;
 		goto err_unmap_status_addr;
@@ -361,13 +363,15 @@ static int __ghes_check_estatus(struct ghes *ghes,
 				struct acpi_hest_generic_status *estatus)
 {
 	u32 len = cper_estatus_len(estatus);
+	u32 max_len = min(ghes->generic->error_block_length,
+			  ghes->estatus_length);
 
 	if (len < sizeof(*estatus)) {
 		pr_warn_ratelimited(FW_WARN GHES_PFX "Truncated error status block!\n");
 		return -EIO;
 	}
 
-	if (len > ghes->generic->error_block_length) {
+	if (!len || len > max_len) {
 		pr_warn_ratelimited(FW_WARN GHES_PFX "Invalid error status block length!\n");
 		return -EIO;
 	}
@@ -477,13 +481,13 @@ static void ghes_clear_estatus(struct ghes *ghes,
  *   terminating the corresponding host process (e.g., the VMM/QEMU task) is the
  *   expected behavior to ensure system stability.
  */
-static void ghes_handle_critical_ras(unsigned long pfn)
+static void ghes_handle_critical_ras(unsigned long pfn, unsigned long flags)
 {
 	struct mm_struct *mm = current->mm;
 	struct page *p;
 	int nid;
 
-	if (!IS_ENABLED(CONFIG_ACPI_APEI_RAS_CRITICAL))
+	if (!IS_ENABLED(CONFIG_ACPI_APEI_RAS_CRITICAL) || !(flags & MF_ACTION_REQUIRED))
 		return;
 
 	p = pfn_to_online_page(pfn);
@@ -492,6 +496,10 @@ static void ghes_handle_critical_ras(unsigned long pfn)
 
 	nid = page_to_nid(p);
 	if (!numa_is_remote_node(nid))
+		return;
+
+	set_node_critical_err(nid);
+	if (!mm)
 		return;
 
 	if (test_bit(MMF_CRITICAL_ERR, &mm->flags))
@@ -553,10 +561,10 @@ static bool ghes_do_memory_failure(u64 physical_addr, int flags, bool critical)
 		return false;
 	}
 
-	if (flags == MF_ACTION_REQUIRED && current->mm) {
-		if (critical)
-			ghes_handle_critical_ras(pfn);
+	if (critical)
+		ghes_handle_critical_ras(pfn, flags);
 
+	if (flags == MF_ACTION_REQUIRED && current->mm) {
 		twcb = (void *)gen_pool_alloc(ghes_estatus_pool, sizeof(*twcb));
 		if (!twcb)
 			return false;
@@ -603,27 +611,51 @@ static bool ghes_handle_arm_hw_error(struct acpi_hest_generic_data *gdata,
 {
 	struct cper_sec_proc_arm *err = acpi_hest_get_payload(gdata);
 	int flags = sync ? MF_ACTION_REQUIRED : 0;
+	int length = gdata->error_data_length;
 	bool queued = false;
 	int sec_sev, i;
 	bool critical;
 	char *p;
 
 	sec_sev = ghes_severity(gdata->error_severity);
+	if (length >= sizeof(*err)) {
 #ifdef CONFIG_RAS_ARM_EVENT_INFO
-	log_arm_hw_error(err, sec_sev);
+		log_arm_hw_error(err, sec_sev);
 #else
-	log_arm_hw_error(err);
+		log_arm_hw_error(err);
 #endif
+	} else {
+		pr_warn(FW_BUG "arm error length: %d\n", length);
+		pr_warn(FW_BUG "length is too small\n");
+		pr_warn(FW_BUG "firmware-generated error record is incorrect\n");
+		return false;
+	}
+
 	if (sev != GHES_SEV_RECOVERABLE || sec_sev != GHES_SEV_RECOVERABLE)
 		return false;
 
 	p = (char *)(err + 1);
 	critical = ghes_armp_vendor_critical_error(err, sync);
+	length -= sizeof(err);
+
 	for (i = 0; i < err->err_info_num; i++) {
-		struct cper_arm_err_info *err_info = (struct cper_arm_err_info *)p;
-		bool is_cache = (err_info->type == CPER_ARM_CACHE_ERROR);
-		bool has_pa = (err_info->validation_bits & CPER_ARM_INFO_VALID_PHYSICAL_ADDR);
 		const char *error_type = "unknown error";
+		struct cper_arm_err_info *err_info;
+		bool is_cache, has_pa;
+
+		/* Ensure we have enough data for the error info header */
+		if (length < sizeof(*err_info))
+			break;
+
+		err_info = (struct cper_arm_err_info *)p;
+
+		/* Validate the claimed length before using it */
+		length -= err_info->length;
+		if (length < 0)
+			break;
+
+		is_cache = err_info->type == CPER_ARM_CACHE_ERROR;
+		has_pa = (err_info->validation_bits & CPER_ARM_INFO_VALID_PHYSICAL_ADDR);
 
 		/*
 		 * The field (err_info->error_info & BIT(26)) is fixed to set to
@@ -1661,6 +1693,8 @@ void __init acpi_ghes_init(void)
  */
 static struct acpi_platform_list plat_list[] = {
 	{"HPE   ", "Server  ", 0, ACPI_SIG_FADT, all_versions},
+	{"__ZX__", "EDK2    ", 3, ACPI_SIG_FADT, greater_than_or_equal},
+	{"_BYO_ ", "BYOSOFT ", 3, ACPI_SIG_FADT, greater_than_or_equal},
 	{ } /* End */
 };
 
@@ -1695,3 +1729,8 @@ void ghes_unregister_report_chain(struct notifier_block *nb)
 	atomic_notifier_chain_unregister(&ghes_report_chain, nb);
 }
 EXPORT_SYMBOL_GPL(ghes_unregister_report_chain);
+
+int apei_claim_sei(struct pt_regs *regs)
+{
+	return ghes_armp_vendor_handle_sei(regs);
+}

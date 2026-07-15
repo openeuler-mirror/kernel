@@ -819,6 +819,11 @@ static inline struct vm_area_struct *lock_vma_under_rcu(struct mm_struct *mm,
 	return NULL;
 }
 
+static inline void vma_assert_locked(struct vm_area_struct *vma)
+{
+	mmap_assert_locked(vma->vm_mm);
+}
+
 static inline void release_fault_lock(struct vm_fault *vmf)
 {
 	mmap_read_unlock(vmf->vma->vm_mm);
@@ -1325,7 +1330,9 @@ static inline struct folio *virt_to_folio(const void *x)
 
 void __folio_put(struct folio *folio);
 
+#ifdef CONFIG_PSWIOTLB
 void put_pages_list(struct list_head *pages);
+#endif
 
 void split_page(struct page *page, unsigned int order);
 void folio_copy(struct folio *dst, struct folio *src);
@@ -2048,6 +2055,14 @@ static inline bool folio_is_longterm_pinnable(struct folio *folio)
 {
 #ifdef CONFIG_CMA
 	int mt = folio_migratetype(folio);
+
+	/*
+	 * CMA folios are allocated for user-space mappings and must stay
+	 * in their reserved CMA region; migrating them on pin defeats the
+	 * purpose of the allocation.
+	 */
+	if (folio_test_fcma(folio))
+		return true;
 
 	if (mt == MIGRATE_CMA || mt == MIGRATE_ISOLATE)
 		return false;
@@ -3093,7 +3108,7 @@ static inline void pagetable_free(struct ptdesc *pt)
 	__free_pages(page, compound_order(page));
 }
 
-#if USE_SPLIT_PTE_PTLOCKS
+#if defined(CONFIG_SPLIT_PTE_PTLOCKS)
 #if ALLOC_SPLIT_PTLOCKS
 void __init ptlock_cache_init(void);
 bool ptlock_alloc(struct ptdesc *ptdesc);
@@ -3144,7 +3159,7 @@ static inline bool ptlock_init(struct ptdesc *ptdesc)
 	return true;
 }
 
-#else	/* !USE_SPLIT_PTE_PTLOCKS */
+#else	/* !defined(CONFIG_SPLIT_PTE_PTLOCKS) */
 /*
  * We use mm->page_table_lock to guard all pagetable pages of the mm.
  */
@@ -3155,7 +3170,7 @@ static inline spinlock_t *pte_lockptr(struct mm_struct *mm, pmd_t *pmd)
 static inline void ptlock_cache_init(void) {}
 static inline bool ptlock_init(struct ptdesc *ptdesc) { return true; }
 static inline void ptlock_free(struct ptdesc *ptdesc) {}
-#endif /* USE_SPLIT_PTE_PTLOCKS */
+#endif /* defined(CONFIG_SPLIT_PTE_PTLOCKS) */
 
 static inline bool pagetable_pte_ctor(struct ptdesc *ptdesc)
 {
@@ -3215,7 +3230,7 @@ pte_t *pte_offset_map_nolock(struct mm_struct *mm, pmd_t *pmd,
 	((unlikely(pmd_none(*(pmd))) && __pte_alloc_kernel(pmd))? \
 		NULL: pte_offset_kernel(pmd, address))
 
-#if USE_SPLIT_PMD_PTLOCKS
+#if defined(CONFIG_SPLIT_PMD_PTLOCKS)
 
 static inline struct page *pmd_pgtable_page(pmd_t *pmd)
 {
@@ -4461,8 +4476,38 @@ static inline bool mm_is_critical_error(struct mm_struct *mm)
 {
 	return mm && test_bit(MMF_CRITICAL_ERR, &mm->flags);
 }
+
+static inline void set_node_critical_err(int nid)
+{
+	set_bit(PGDAT_CRITICAL_ERR, &NODE_DATA(nid)->flags);
+}
+
+static inline void clear_node_critical_err(int nid)
+{
+	clear_bit(PGDAT_CRITICAL_ERR, &NODE_DATA(nid)->flags);
+}
+
+static inline bool node_is_critical_err(int nid)
+{
+	return test_bit(PGDAT_CRITICAL_ERR, &NODE_DATA(nid)->flags);
+}
 #else
 static inline bool mm_is_critical_error(struct mm_struct *mm)
+{
+	return false;
+}
+
+static inline void set_node_critical_err(int nid) { return; }
+static inline void clear_node_critical_err(int nid) { return; }
+static inline bool node_is_critical_err(int nid) { return false; }
+#endif
+
+#ifdef CONFIG_CMA_FOLIO
+void __init folio_cma_reserve(void);
+bool use_folio_cma(void);
+#else
+static inline void folio_cma_reserve(void) { }
+static inline bool use_folio_cma(void)
 {
 	return false;
 }

@@ -18,6 +18,7 @@
 #include <net/netns/generic.h>
 #include <ub/urma/ubcore_uapi.h>
 #include <ub/urma/ubcore_jetty.h>
+#include <ub/urma/ubcore_perf.h>
 #include "ubcore_log.h"
 #include "ubcore_device.h"
 #include "ubcore_tp_table.h"
@@ -31,7 +32,6 @@
 #include "ubcore_priv.h"
 #include "net/ubcore_session.h"
 #include "net/ubcore_cm.h"
-#include "ubmgr/ubmgr_topo.h"
 
 #define UBCORE_MAX_MUE_NUM 16
 #define UBCORE_DEVICE_NAME "ubcore"
@@ -62,10 +62,34 @@ static struct ubcore_device *g_ub_mue;
 
 static unsigned int g_ubcore_net_id;
 static LIST_HEAD(g_ubcore_net_list);
-static DEFINE_SPINLOCK(g_ubcore_net_lock);
+/*
+ * g_ubcore_net_rwsem protects g_ubcore_net_list, g_dev_ns_shared and g_eid_ns_shared.
+ * All paths that access g_ubcore_net_list or modify ns mode flags must hold this lock.
+ * Lock ordering: g_ubcore_net_rwsem -> g_device_rwsem -> dev->ldev_mutex
+ *
+ * A separate spinlock (g_ubcore_net_lock) was previously used to protect list
+ * add/del operations. It is replaced by g_ubcore_net_rwsem because all callers
+ * are in process context (pernet ops .init/.exit, ioctl handlers, and netlink
+ * .doit callbacks), where sleeping is allowed. rwsem provides the same
+ * exclusion guarantee without spinlock's atomic context restrictions, and
+ * additionally allows concurrent readers.
+ */
 static DECLARE_RWSEM(g_ubcore_net_rwsem);
 
-static bool g_shared_ns;
+static bool g_dev_ns_shared;
+static bool g_eid_ns_shared;
+
+bool ubcore_dev_ns_shared(void)
+{
+	return READ_ONCE(g_dev_ns_shared);
+}
+EXPORT_SYMBOL(ubcore_dev_ns_shared);
+
+bool ubcore_eid_ns_shared(void)
+{
+	return READ_ONCE(g_eid_ns_shared);
+}
+EXPORT_SYMBOL(ubcore_eid_ns_shared);
 
 static void ubcore_global_release_file(struct kref *ref)
 {
@@ -592,14 +616,36 @@ static void ubcore_free_ex_tp_obj(void *obj)
 	ubcore_free_driver_obj(obj, UBCORE_HT_EX_TP);
 }
 
-static void ubcore_free_rc_tp_id_obj(void *obj)
+static void ubcore_free_rc_tpid_obj(void *obj)
 {
 	ubcore_free_driver_obj(obj, UBCORE_HT_RC_TP_ID);
 }
 
-static void ubcore_free_rm_tp_id_obj(void *obj)
+static void ubcore_free_rm_tpid_obj(void *obj)
 {
 	ubcore_free_driver_obj(obj, UBCORE_HT_RM_TP_ID);
+}
+
+static inline void ubcore_free_tpid_list_obj(void *obj)
+{
+	ubcore_free_driver_obj(obj, UBCORE_HT_TPID_LIST);
+}
+
+static inline void ubcore_free_tp_state_ht_obj(void *obj)
+{
+	ubcore_free_driver_obj(obj, UBCORE_HT_TPID_STATE);
+}
+
+static inline void ubcore_free_tp_reuse_ht_obj(void *obj)
+{
+	ubcore_free_driver_obj(obj, UBCORE_HT_TPID_REUSE);
+}
+
+static void ubcore_tpid_reuse_get(void *obj)
+{
+	struct ubcore_tpid_reuse *entry = obj;
+
+	kref_get(&entry->ref_cnt);
 }
 
 static struct ubcore_ht_param g_ht_params[] = {
@@ -642,13 +688,31 @@ static struct ubcore_ht_param g_ht_params[] = {
 			      offsetof(struct ubcore_tpid_ctx, hnode),
 			      offsetof(struct ubcore_tpid_ctx, key),
 			      sizeof(struct ubcore_tpid_key), NULL,
-			      ubcore_free_rc_tp_id_obj, ubcore_tpid_get },
+			      ubcore_free_rc_tpid_obj, ubcore_tpid_get },
 	[UBCORE_HT_RM_TP_ID] = { UBCORE_HASH_TABLE_SIZE,
 				offsetof(struct ubcore_rm_tp_info, hnode),
 				offsetof(struct ubcore_rm_tp_info, key),
 				sizeof(struct ubcore_rm_tp_key),
-				NULL, ubcore_free_rm_tp_id_obj,
+				NULL, ubcore_free_rm_tpid_obj,
 				NULL },
+	[UBCORE_HT_TPID_LIST] = {UBCORE_HASH_TABLE_SIZE,
+				offsetof(struct ubcore_tpid_list, hnode),
+				offsetof(struct ubcore_tpid_list, lk),
+				sizeof(struct ubcore_tpid_list_key),
+				NULL, ubcore_free_tpid_list_obj,
+				ubcore_tpid_list_get},
+	[UBCORE_HT_TPID_STATE] = {UBCORE_HASH_TABLE_SIZE,
+				offsetof(struct ubcore_tpid_state, hnode),
+				offsetof(struct ubcore_tpid_state, tp_id),
+				sizeof(uint64_t),
+				NULL, ubcore_free_tp_state_ht_obj,
+				ubcore_tpid_state_get},
+	[UBCORE_HT_TPID_REUSE] = {UBCORE_HASH_TABLE_SIZE,
+				offsetof(struct ubcore_tpid_reuse, hnode),
+				offsetof(struct ubcore_tpid_reuse, rk),
+				sizeof(struct ubcore_tpid_reuse_key),
+				NULL, ubcore_free_tp_reuse_ht_obj,
+				ubcore_tpid_reuse_get},
 };
 
 static inline void ubcore_set_vtpn_hash_table_size(uint32_t vtpn_size)
@@ -1142,15 +1206,16 @@ static int ubcore_copy_logic_devices(struct ubcore_device *dev)
 	if (dev->transport_type != UBCORE_TRANSPORT_UB)
 		return 0;
 
-	down_read(&g_ubcore_net_rwsem);
 	list_for_each_entry(unet, &g_ubcore_net_list, node) {
 		if (net_eq(read_pnet(&unet->net), read_pnet(&dev->ldev.net)))
 			continue;
 		ret = ubcore_add_one_logic_device(dev, read_pnet(&unet->net));
-		if (ret != 0)
+		if (ret != 0) {
+			ubcore_log_err("add device failed %s in net %u", dev->dev_name,
+			       read_pnet(&unet->net)->ns.inum);
 			break;
+		}
 	}
-	up_read(&g_ubcore_net_rwsem);
 
 	if (ret)
 		ubcore_remove_logic_devices(dev);
@@ -1259,21 +1324,25 @@ int ubcore_register_device(struct ubcore_device *dev)
 	}
 	ubcore_cgroup_reg_dev(dev);
 
+	down_read(&g_ubcore_net_rwsem);
 	down_write(&g_device_rwsem);
 	ubcore_clients_add(dev);
-	if (g_shared_ns) {
+	list_add_tail(&dev->list_node, &g_device_list);
+	if (g_dev_ns_shared) {
 		ret = ubcore_copy_logic_devices(dev);
 		if (ret) {
+			list_del(&dev->list_node);
 			ubcore_clients_remove(dev);
 			up_write(&g_device_rwsem);
+			up_read(&g_ubcore_net_rwsem);
 
 			ubcore_log_err("copy logic device failed, device:%s.\n",
 					dev->dev_name);
 			goto err;
 		}
 	}
-	list_add_tail(&dev->list_node, &g_device_list);
 	up_write(&g_device_rwsem);
+	up_read(&g_ubcore_net_rwsem);
 
 	ubcore_log_notice_rl("ubcore device: %s register success.\n",
 		dev->dev_name);
@@ -1428,12 +1497,36 @@ void ubcore_unregister_event_handler(struct ubcore_device *dev,
 }
 EXPORT_SYMBOL(ubcore_unregister_event_handler);
 
+static bool ubcore_preprocess_event(struct ubcore_event *event)
+{
+	struct ubcore_flushdone_tp_cfg flushdone_cfg = {0};
+	union ubcore_modify_tpid_cfg cfg = {
+			.flushdone_cfg = &flushdone_cfg
+		};
+
+	if (event->event_type == UBCORE_EVENT_TPID_FLUSH_DONE) {
+		ubcore_log_info_rl("ubcore detect tp id: %u flush done, update state.\n",
+			event->element.tpid_info.tpid);
+
+		cfg.flushdone_cfg->tpid = event->element.tpid_info.tpid;
+		if (ubcore_modify_tpid(event->ub_dev, UBCORE_TPID_STATE_RESET, &cfg) != 0)
+			return false;
+		else
+			return true;
+	}
+
+	return false;
+}
+
 void ubcore_dispatch_async_event(struct ubcore_event *event)
 {
 	if (event == NULL || event->ub_dev == NULL) {
 		ubcore_log_err("Invalid argument.\n");
 		return;
 	}
+
+	if (ubcore_preprocess_event(event))
+		return;
 
 	if (ubcore_dispatch_event(event) != 0)
 		ubcore_log_err("ubcore_dispatch_event failed");
@@ -1505,7 +1598,11 @@ bool ubcore_eid_accessible(struct ubcore_device *dev, uint32_t eid_index)
 	}
 	net = dev->eid_table.eid_entries[eid_index].net;
 	spin_unlock(&dev->eid_table.lock);
-	return net_eq(net, current->nsproxy->net_ns);
+
+	if (ubcore_eid_ns_shared())
+		return true;
+	else
+		return net_eq(net, current->nsproxy->net_ns);
 }
 
 void ubcore_clear_pattern1_eid(struct ubcore_device *dev, union ubcore_eid *eid)
@@ -1597,7 +1694,7 @@ bool ubcore_dev_accessible(struct ubcore_device *dev, struct net *net)
 {
 	struct ubcore_logic_device *ldev;
 
-	if (g_shared_ns || net_eq(net, read_pnet(&dev->ldev.net)))
+	if (ubcore_dev_ns_shared() || net_eq(net, read_pnet(&dev->ldev.net)))
 		return true;
 
 	mutex_lock(&dev->ldev_mutex);
@@ -1617,7 +1714,10 @@ ubcore_alloc_ucontext(struct ubcore_device *dev, uint32_t eid_index,
 {
 	struct ubcore_ucontext *ucontext;
 	struct ubcore_cg_object cg_obj;
+	uint32_t perf_alloc_ucontext_type;
 	int ret;
+
+	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_ALLOC_UCONTEXT);
 
 	if (dev == NULL ||
 	    strnlen(dev->dev_name, UBCORE_MAX_DEV_NAME) >=
@@ -1625,28 +1725,41 @@ ubcore_alloc_ucontext(struct ubcore_device *dev, uint32_t eid_index,
 	    dev->ops == NULL || dev->ops->alloc_ucontext == NULL ||
 	    eid_index >= UBCORE_MAX_EID_CNT) {
 		ubcore_log_err("Invalid argument.\n");
+		UBCORE_PERF_TRACE_END(PERF_CORE_ALLOC_UCONTEXT);
 		return ERR_PTR(-EINVAL);
 	}
 
 	if (!ubcore_dev_accessible(dev, current->nsproxy->net_ns) ||
 		!ubcore_eid_accessible(dev, eid_index)) {
 		ubcore_log_err("Device or EID not accessible.\n");
+		UBCORE_PERF_TRACE_END(PERF_CORE_ALLOC_UCONTEXT);
 		return ERR_PTR(-EPERM);
 	}
 
+	memset(&cg_obj, 0, sizeof(cg_obj));
 	ret = ubcore_cgroup_try_charge(&cg_obj, dev,
 				       UBCORE_RESOURCE_HCA_HANDLE);
 	if (ret != 0) {
 		ubcore_log_err("cgroup charge fail:%d ,dev_name :%s\n", ret,
 			       dev->dev_name);
+		UBCORE_PERF_TRACE_END(PERF_CORE_ALLOC_UCONTEXT);
 		return ERR_PTR(ret);
 	}
 
+	if (ubcore_is_bonding_dev(dev))
+		perf_alloc_ucontext_type = PERF_AGG_ALLOC_UCONTEXT;
+	else
+		perf_alloc_ucontext_type = PERF_UB_ALLOC_UCONTEXT;
+
+	UBCORE_PERF_TRACE_BEGIN(perf_alloc_ucontext_type);
 	ucontext = dev->ops->alloc_ucontext(dev, eid_index, udrv_data);
+	UBCORE_PERF_TRACE_END(perf_alloc_ucontext_type);
+
 	if (IS_ERR_OR_NULL(ucontext)) {
 		ubcore_log_err("failed to alloc ucontext.\n");
 		ubcore_cgroup_uncharge(&cg_obj, dev,
 				       UBCORE_RESOURCE_HCA_HANDLE);
+		UBCORE_PERF_TRACE_END(PERF_CORE_ALLOC_UCONTEXT);
 		return UBCORE_CHECK_RETURN_ERR_PTR(ucontext, UBCORE_DRV_ERRNO);
 	}
 
@@ -1654,6 +1767,7 @@ ubcore_alloc_ucontext(struct ubcore_device *dev, uint32_t eid_index,
 	ucontext->ub_dev = dev;
 	ucontext->cg_obj = cg_obj;
 
+	UBCORE_PERF_TRACE_END(PERF_CORE_ALLOC_UCONTEXT);
 	return ucontext;
 }
 EXPORT_SYMBOL(ubcore_alloc_ucontext);
@@ -2024,7 +2138,9 @@ int ubcore_set_dev_ns(char *device_name, uint32_t ns_fd)
 	struct net *net;
 	int ret = 0;
 
-	if (g_shared_ns) {
+	down_read(&g_ubcore_net_rwsem);
+	if (g_dev_ns_shared) {
+		up_read(&g_ubcore_net_rwsem);
 		ubcore_log_err(
 			"Can not set device to ns under shared ns mode.\n");
 		return -EPERM;
@@ -2033,7 +2149,8 @@ int ubcore_set_dev_ns(char *device_name, uint32_t ns_fd)
 	net = get_net_ns_by_fd(ns_fd);
 	if (IS_ERR(net)) {
 		ubcore_log_err("Failed to get ns by fd.\n");
-		return PTR_ERR(net);
+		ret = PTR_ERR(net);
+		goto up_net_rwsem;
 	}
 
 	/* Find device by name */
@@ -2057,27 +2174,90 @@ int ubcore_set_dev_ns(char *device_name, uint32_t ns_fd)
 out:
 	up_read(&g_device_rwsem);
 	put_net(net);
+up_net_rwsem:
+	up_read(&g_ubcore_net_rwsem);
 	return ret;
 }
 
-int ubcore_set_ns_mode(bool shared)
+int ubcore_set_dev_ns_mode(bool shared)
 {
-	unsigned long flags;
+	struct ubcore_device *dev;
+	int ret = 0;
 
 	down_write(&g_ubcore_net_rwsem);
-	if (g_shared_ns == shared) {
+	if (g_dev_ns_shared == shared) {
 		up_write(&g_ubcore_net_rwsem);
 		return 0;
 	}
-	spin_lock_irqsave(&g_ubcore_net_lock, flags);
-	if (!list_empty(&g_ubcore_net_list)) {
-		spin_unlock_irqrestore(&g_ubcore_net_lock, flags);
+
+	/* shared on->off: reject if any namespace exists */
+	if (g_dev_ns_shared && !list_empty(&g_ubcore_net_list)) {
 		up_write(&g_ubcore_net_rwsem);
 		ubcore_log_err("Failed to modify ns mode with existing ns");
 		return -EPERM;
 	}
-	g_shared_ns = shared;
-	spin_unlock_irqrestore(&g_ubcore_net_lock, flags);
+
+	/* exclusive->shared: reject if any device has logic devices (exposed),
+	 * then create logic devices in all namespaces for each device
+	 */
+	if (!g_dev_ns_shared) {
+		down_read(&g_device_rwsem);
+		list_for_each_entry(dev, &g_device_list, list_node) {
+			if (dev->transport_type != UBCORE_TRANSPORT_UB)
+				continue;
+			if (!list_empty(&dev->ldev_list)) {
+				up_read(&g_device_rwsem);
+				up_write(&g_ubcore_net_rwsem);
+				ubcore_log_err("Failed to switch to shared mode, device %s has logic devices\n",
+					       dev->dev_name);
+				return -EPERM;
+			}
+		}
+		list_for_each_entry(dev, &g_device_list, list_node) {
+			if (dev->transport_type != UBCORE_TRANSPORT_UB)
+				continue;
+
+			ret = ubcore_copy_logic_devices(dev);
+			if (ret)
+				break;
+		}
+		if (ret) {
+			list_for_each_entry(dev, &g_device_list, list_node) {
+				if (dev->transport_type != UBCORE_TRANSPORT_UB)
+					continue;
+				ubcore_remove_logic_devices(dev);
+			}
+		}
+		up_read(&g_device_rwsem);
+		if (ret) {
+			up_write(&g_ubcore_net_rwsem);
+			return ret;
+		}
+	}
+
+	g_dev_ns_shared = shared;
+	ubcore_log_info("Dev ns mode changed to %s\n", shared ? "shared" : "exclusive");
+	up_write(&g_ubcore_net_rwsem);
+	return 0;
+}
+
+int ubcore_set_eid_ns_mode(bool shared)
+{
+	down_write(&g_ubcore_net_rwsem);
+	if (g_eid_ns_shared == shared) {
+		up_write(&g_ubcore_net_rwsem);
+		return 0;
+	}
+
+	/* shared on->off: reject if any namespace exists */
+	if (g_eid_ns_shared && !list_empty(&g_ubcore_net_list)) {
+		up_write(&g_ubcore_net_rwsem);
+		ubcore_log_err("Failed to modify ns mode with existing ns");
+		return -EPERM;
+	}
+
+	g_eid_ns_shared = shared;
+	ubcore_log_info("Eid ns mode changed to %s\n", shared ? "shared" : "exclusive");
 	up_write(&g_ubcore_net_rwsem);
 	return 0;
 }
@@ -2088,6 +2268,11 @@ int ubcore_expose_dev_ns(char *device_name, uint32_t ns_fd)
 	struct net *net;
 	struct net *cur;
 	int ret = 0;
+
+	if (ubcore_dev_ns_shared()) {
+		ubcore_log_err("Can not expose device under shared ns mode.\n");
+		return -EPERM;
+	}
 
 	net = get_net_ns_by_fd(ns_fd);
 	if (IS_ERR(net)) {
@@ -2160,12 +2345,19 @@ int ubcore_unexpose_dev_ns(char *device_name, uint32_t ns_fd)
 	}
 
 	down_read(&g_ubcore_net_rwsem);
+	if (g_dev_ns_shared) {
+		up_read(&g_ubcore_net_rwsem);
+		ubcore_log_err("Can not unexpose device under shared ns mode.\n");
+		ret = -EPERM;
+		goto put_device;
+	}
 	ubcore_remove_one_logic_device(dev, net);
 	ubcore_reset_eid_ns(dev, net);
 	up_read(&g_ubcore_net_rwsem);
 
 	ubcore_log_info("Unexpose device %s to %u\n", device_name, ns_fd);
 
+put_device:
 	ubcore_put_device(dev);
 put_net:
 	put_net(net);
@@ -2231,6 +2423,11 @@ int ubcore_set_dev_eid_ns(char *device_name, uint32_t eid_index, uint32_t ns_fd)
 	struct net *cur;
 	int ret = 0;
 
+	if (ubcore_dev_ns_shared()) {
+		ubcore_log_err("Can not set eid ns under shared ns mode.\n");
+		return -EPERM;
+	}
+
 	dev = ubcore_find_device_with_name(device_name);
 	if (dev == NULL) {
 		ubcore_log_err("find dev_name: %s failed.\n", device_name);
@@ -2291,24 +2488,19 @@ void ubcore_net_exit(struct net *net)
 {
 	struct ubcore_net *unet = net_generic(net, g_ubcore_net_id);
 	struct ubcore_device *dev;
-	unsigned long flags;
 
 	if (unet == NULL)
 		return;
 
 	ubcore_log_info("net exit %u, net:0x%p", net->ns.inum, net);
 	down_write(&g_ubcore_net_rwsem);
-	spin_lock_irqsave(&g_ubcore_net_lock, flags);
 	if (list_empty(&unet->node)) {
-		spin_unlock_irqrestore(&g_ubcore_net_lock, flags);
 		up_write(&g_ubcore_net_rwsem);
 		return;
 	}
 	list_del_init(&unet->node);
-	spin_unlock_irqrestore(&g_ubcore_net_lock, flags);
-	up_write(&g_ubcore_net_rwsem);
 
-	if (!g_shared_ns) {
+	if (!g_dev_ns_shared) {
 		down_read(&g_device_rwsem);
 		list_for_each_entry(dev, &g_device_list, list_node) {
 			if (dev->transport_type != UBCORE_TRANSPORT_UB)
@@ -2324,17 +2516,20 @@ void ubcore_net_exit(struct net *net)
 			if (dev->transport_type != UBCORE_TRANSPORT_UB)
 				continue;
 			ubcore_remove_one_logic_device(dev, net);
-			ubcore_invalidate_eid_ns(dev, net);
+			if (g_eid_ns_shared)
+				ubcore_reset_eid_ns(dev, net);
+			else
+				ubcore_invalidate_eid_ns(dev, net);
 		}
 		up_write(&g_device_rwsem);
 	}
+	up_write(&g_ubcore_net_rwsem);
 }
 
 static int ubcore_net_init(struct net *net)
 {
 	struct ubcore_net *unet = net_generic(net, g_ubcore_net_id);
 	struct ubcore_device *dev;
-	unsigned long flags;
 	int ret = 0;
 
 	if (unet == NULL)
@@ -2347,25 +2542,25 @@ static int ubcore_net_init(struct net *net)
 		return 0;
 	}
 
-	spin_lock_irqsave(&g_ubcore_net_lock, flags);
+	down_write(&g_ubcore_net_rwsem);
 	list_add_tail(&unet->node, &g_ubcore_net_list);
-	spin_unlock_irqrestore(&g_ubcore_net_lock, flags);
 
-	if (!g_shared_ns)
+	if (!g_dev_ns_shared) {
+		up_write(&g_ubcore_net_rwsem);
 		return 0;
+	}
 
 	down_read(&g_device_rwsem);
 	list_for_each_entry(dev, &g_device_list, list_node) {
 		if (dev->transport_type != UBCORE_TRANSPORT_UB)
 			continue;
 
-		down_read(&g_ubcore_net_rwsem);
 		ret = ubcore_add_one_logic_device(dev, net);
-		up_read(&g_ubcore_net_rwsem);
 		if (ret)
 			break;
 	}
 	up_read(&g_device_rwsem);
+	up_write(&g_ubcore_net_rwsem);
 	if (ret)
 		ubcore_net_exit(net);
 
@@ -2452,8 +2647,6 @@ void ubcore_dispatch_mgmt_event(struct ubcore_mgmt_event *event)
 			"Failed to update eid table, index: %u, type: %d.\n",
 			eid_info->eid_index, event->event_type);
 
-	ubmgr_notify_mgmt_event(event);
-
 	if (ubcore_call_cm_eid_ops(event->ub_dev, event->element.eid_info,
 				   event->event_type) != 0)
 		ubcore_log_err_rl("cast eid to ubcm failed.\n");
@@ -2491,4 +2684,3 @@ struct ubcore_device *ubcore_get_device_by_eid(union ubcore_eid *eid,
 	return target;
 }
 EXPORT_SYMBOL(ubcore_get_device_by_eid);
-

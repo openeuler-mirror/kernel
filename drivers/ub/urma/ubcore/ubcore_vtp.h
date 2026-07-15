@@ -17,6 +17,7 @@
 #include "ubcore_msg.h"
 #include "ubcore_netlink.h"
 #include "ubcore_tp.h"
+#include "ubcore_tpid_table.h"
 
 #define UBCORE_VTP_TARGET 1
 #define UBCORE_VTP_INITIATOR 0
@@ -197,4 +198,15 @@ int ubcore_process_vtp_status_nofity(struct ubcore_device *dev,
 void ubcore_vtp_get(void *obj);
 void ubcore_vtpn_get(void *obj);
 void ubcore_vtp_kref_put(struct ubcore_vtp *vtp);
+
+struct ubcore_vtpn *
+	ubcore_get_vtpn(struct ubcore_device *dev,
+	struct ubcore_vtp_param *param,
+	struct ubcore_active_tp_cfg *active_tp_cfg,
+	struct ubcore_udata *udata);
+struct ubcore_vtpn *
+	ubcore_connect_rc_tpid(struct ubcore_device *dev,
+	struct ubcore_vtp_param *param,
+	struct ubcore_active_tp_cfg *active_tp_cfg,
+	struct ubcore_udata *udata);
 #endif

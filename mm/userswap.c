@@ -355,21 +355,18 @@ unsigned long uswap_mremap(unsigned long old_addr, unsigned long old_len,
 	if (!static_branch_unlikely(&userswap_enabled))
 		goto out;
 
-	if (offset_in_page(old_addr))
+	if (offset_in_page(old_addr) || offset_in_page(new_addr))
 		goto out;
 
-	old_len = PAGE_ALIGN(old_len);
-	new_len = PAGE_ALIGN(new_len);
-
-	if (!new_len || old_len != new_len || offset_in_page(new_addr))
+	if (old_len != new_len || !old_len || old_len % PAGE_SIZE)
 		goto out;
 
-	if (new_len > TASK_SIZE || new_addr > TASK_SIZE - new_len ||
-	    old_addr > TASK_SIZE - old_len)
+	if (len > TASK_SIZE || new_addr > TASK_SIZE - len ||
+	    old_addr > TASK_SIZE - len)
 		goto out;
 
 	/* Ensure the old/new locations do not overlap */
-	if (old_addr + old_len > new_addr && new_addr + new_len > old_addr)
+	if (old_addr + len > new_addr && new_addr + len > old_addr)
 		goto out;
 
 	lru_add_drain_all();
@@ -547,10 +544,3 @@ out_put_page:
 	put_page(page);
 	return ret;
 }
-
-static int __init enable_userswap_setup(char *str)
-{
-	static_branch_enable(&userswap_enabled);
-	return 1;
-}
-__setup("enable_userswap", enable_userswap_setup);

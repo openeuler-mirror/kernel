@@ -20,6 +20,9 @@
 #include "ubagg_seg.h"
 #include "ubagg_bitmap.h"
 #include "ubagg_hash_table.h"
+#include "ubagg_connect.h"
+#include "ubagg_msg.h"
+#include "ubagg_session.h"
 
 #define UBAGG_MODULE_NAME "ubagg"
 #define UBAGG_DEVNODE_MODE (0666)
@@ -138,24 +141,55 @@ static int __init ubagg_init(void)
 	ret = ubagg_cdev_create();
 	if (ret != 0) {
 		ubagg_log_err("create cdev fail.");
-		return ret;
+		goto err;
 	}
 
-	ret = ubagg_netlink_init();
+	ret = ubagg_genl_register_family();
 	if (ret != 0) {
-		ubagg_log_err("create ubagg netlink fail.\n");
-		ubagg_cdev_destroy();
-		return ret;
+		ubagg_log_err("register ubagg genl family fail.\n");
+		goto err_genl;
+	}
+
+	ret = ubagg_session_init();
+	if (ret != 0) {
+		ubagg_log_err("create ubagg session fail.\n");
+		goto err_session;
+	}
+
+	ret = ubagg_connect_init();
+	if (ret != 0) {
+		ubagg_log_err("register ubagg connect handlers fail.\n");
+		goto err_connect_msg;
+	}
+
+	ret = ubagg_msg_init();
+	if (ret != 0) {
+		ubagg_log_err("register ubagg message handler fail.\n");
+		goto err_msg;
 	}
 
 	return 0;
+
+err_msg:
+	ubagg_connect_uninit();
+err_connect_msg:
+	ubagg_session_uninit();
+err_session:
+	ubagg_genl_unregister_family();
+err_genl:
+	ubagg_cdev_destroy();
+err:
+	return ret;
 }
 
 static void __exit ubagg_exit(void)
 {
+	ubagg_msg_uninit();
+	ubagg_connect_uninit();
+	ubagg_session_uninit();
 	ubagg_delete_topo_map();
 	ubagg_clear_dev_list();
-	ubagg_netlink_uninit();
+	ubagg_genl_unregister_family();
 	ubagg_cdev_destroy();
 }
 

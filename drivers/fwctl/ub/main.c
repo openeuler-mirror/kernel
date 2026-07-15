@@ -118,11 +118,12 @@ static int ubctl_check_rpc_cmd(struct ubctl_dev *ucdev, u32 rpc_cmd)
 		  UBCTL_UNSUPPORTED_RPCCMD_CNT_A_0 },
 
 		{ UBASE_HW_VER_K_0,
-		  { UTOOL_CMD_QUERY_DL_BIST, UTOOL_CMD_CONF_DL_BIST, UTOOL_CMD_QUERY_DL_BIST_ERR,
+		  { UTOOL_CMD_CONF_NL_SSU_VL_PKT, UTOOL_CMD_QUERY_NL_SSU_VL_PKT,
+		    UTOOL_CMD_QUERY_DL_BIST, UTOOL_CMD_CONF_DL_BIST, UTOOL_CMD_QUERY_DL_BIST_ERR,
 		    UTOOL_CMD_QUERY_DL_RT_BANDWIDTH, UTOOL_CMD_QUERY_LOOPBACK,
 		    UTOOL_CMD_CONF_LOOPBACK, UTOOL_CMD_QUERY_PRBS_EN,
 		    UTOOL_CMD_CONF_PRBS_EN, UTOOL_CMD_QUERY_PRBS_RESULT,
-		    UTOOL_CMD_QUERY_PORT_PKT_STATS, UTOOL_CMD_QUERY_PORT_LINK_STATS },
+		    UTOOL_CMD_QUERY_PORT_PKT_STATS },
 		  UBCTL_UNSUPPORTED_RPCCMD_CNT_K_0 },
 	};
 	int env_type_cnt = ARRAY_SIZE(ubctl_env_type_info_table);
@@ -247,13 +248,9 @@ static int ubctl_probe(struct auxiliary_device *adev,
 		return ret;
 	}
 
-	ret = ubctl_port_link_status_init(adev);
-	if (ret) {
-		ubctl_err(ucdev, "fwctl register crq handler event failed, retval = %d.\n", ret);
-		fwctl_unregister(&ucdev->fwctl);
-		kfifo_free(&ucdev->ioctl_fifo);
-		return ret;
-	}
+	ret = ubctl_port_link_status_init(adev, ucdev);
+	if (ret)
+		ubctl_warn(ucdev, "fwctl register crq handler event failed, retval = %d.\n", ret);
 
 	ucdev->adev = adev;
 	auxiliary_set_drvdata(adev, no_free_ptr(ucdev));

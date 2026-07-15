@@ -116,50 +116,6 @@ static int unic_update_vl_sl_map(struct unic_dev *unic_dev)
 	return 0;
 }
 
-static inline void unic_get_hw_prio_vl(struct ubase_caps *caps, u8 *sw_prio_vl,
-				       u8 *hw_prio_vl)
-{
-	int i;
-
-	for (i = 0; i < UNIC_MAX_PRIO_NUM; i++)
-		hw_prio_vl[i] = caps->req_vl[sw_prio_vl[i]];
-}
-
-static inline void unic_get_hw_dscp_vl(struct ubase_caps *caps, u8 *hw_prio_vl,
-				       u8 *dscp_prio, u8 *hw_dscp_vl)
-{
-	int i;
-
-	for (i = 0; i < UBASE_MAX_DSCP; i++)
-		hw_dscp_vl[i] = dscp_prio[i] == UNIC_INVALID_PRIORITY ?
-				caps->req_vl[0] : hw_prio_vl[dscp_prio[i]];
-}
-
-int unic_set_vl_map(struct unic_dev *unic_dev, u8 *dscp_prio, u8 *prio_vl,
-		    u8 map_type)
-{
-	struct ubase_caps *caps = ubase_get_dev_caps(unic_dev->comdev.adev);
-	u8 hw_prio_vl[UNIC_MAX_PRIO_NUM];
-	u8 hw_dscp_vl[UBASE_MAX_DSCP];
-	int ret;
-
-	unic_get_hw_prio_vl(caps, prio_vl, hw_prio_vl);
-	unic_get_hw_dscp_vl(caps, hw_prio_vl, dscp_prio, hw_dscp_vl);
-
-	if (unic_dev_ets_supported(unic_dev) &&
-	    !unic_dev_ubl_supported(unic_dev)) {
-		ret = unic_set_hw_vl_map(unic_dev, hw_dscp_vl, hw_prio_vl,
-					 map_type);
-		if (ret)
-			return ret;
-	}
-
-	ubase_update_udma_dscp_vl(unic_dev->comdev.adev, hw_dscp_vl,
-				  UBASE_MAX_DSCP);
-
-	return 0;
-}
-
 static int unic_init_vl_map(struct unic_dev *unic_dev)
 {
 	struct unic_vl *vl = &unic_dev->channels.vl;
@@ -339,8 +295,7 @@ u16 unic_cqe_period_round_down(u16 cqe_period)
 	u16 i;
 
 	for (i = 0; i < ARRAY_SIZE(period) - 1; i++) {
-		if (cqe_period >= period[i] &&
-		    cqe_period < period[i + 1])
+		if (cqe_period >= period[i] && cqe_period < period[i + 1])
 			return period[i];
 	}
 
@@ -395,7 +350,7 @@ int unic_init_rx(struct unic_dev *unic_dev, u32 num)
 		if (ret) {
 			dev_err(unic_dev->comdev.adev->dev.parent,
 				"failed to init rx cq(%u), ret=%d.\n", i, ret);
-				goto err_create_cq;
+			goto err_create_cq;
 		}
 	}
 
@@ -761,7 +716,8 @@ static int unic_alloc_vport_buf(struct unic_dev *unic_dev)
 	for (i = 0; i < unic_dev->caps.vport_buf_num; i++) {
 		unic_dev->vbuf[i].buf = dma_alloc_coherent(adev->dev.parent,
 							   unic_dev->caps.vport_buf_size,
-							   &unic_dev->vbuf[i].dma_addr, GFP_KERNEL);
+							   &unic_dev->vbuf[i].dma_addr,
+							   unic_dev->gfp);
 		if (!unic_dev->vbuf[i].buf) {
 			dev_err(adev->dev.parent,
 				"failed to alloc vport buffer.\n");
@@ -885,7 +841,10 @@ static int unic_init_netdev_priv(struct net_device *netdev,
 	priv->comdev.adev = adev;
 	priv->msg_enable = netif_msg_init(netif_debug, DEFAULT_MSG_LEVEL);
 	priv->tid = ubase_get_dev_caps(adev)->tid;
+	priv->hw_ver = ubase_get_hw_ver(adev);
 	mutex_init(&priv->act_info.mutex);
+	mutex_init(&priv->bond_status.mutex);
+	mutex_init(&priv->stats.bond_record.lock);
 
 	ret = unic_query_dev_res(priv);
 	if (ret)
@@ -933,6 +892,8 @@ unic_unint_mac:
 err_uninit_vport:
 	unic_uninit_vport(priv);
 destroy_lock:
+	mutex_destroy(&priv->stats.bond_record.lock);
+	mutex_destroy(&priv->bond_status.mutex);
 	mutex_destroy(&priv->act_info.mutex);
 
 	return ret;
@@ -947,6 +908,8 @@ static void unic_uninit_netdev_priv(struct net_device *netdev)
 	unic_uninit_dev_addr(priv);
 	unic_uninit_mac(priv);
 	unic_uninit_vport(priv);
+	mutex_destroy(&priv->stats.bond_record.lock);
+	mutex_destroy(&priv->bond_status.mutex);
 	mutex_destroy(&priv->act_info.mutex);
 }
 
@@ -1096,11 +1059,20 @@ int unic_dev_init(struct auxiliary_device *adev)
 		goto err_unregister_event;
 	}
 
-	unic_query_ip_addr(adev);
+	ret = unic_query_ip_addr(adev);
+	if (ret) {
+		if (ret == -ETIMEDOUT)
+			ubase_update_adev_status(adev, UBASE_ADEV_PROBE_FAIL);
+
+		goto err_unregister_netdev;
+	}
+
 	unic_start_dev_period_task(netdev);
 
 	return 0;
 
+err_unregister_netdev:
+	unregister_netdev(netdev);
 err_unregister_event:
 	unic_unregister_event(adev);
 err_uninit_netdev_priv:

@@ -94,7 +94,8 @@ static void ubase_handle_activate_req(struct ubase_dev *udev, void *data,
 	else
 		ret = ubase_deactivate_ue(udev, ue, msn, bus_ue_id);
 
-	ubase_send_activate_resp(udev, req->bus_ue_id, req->msn, ret);
+	if (ret != -ETIMEDOUT)
+		ubase_send_activate_resp(udev, req->bus_ue_id, req->msn, ret);
 }
 
 struct ubase_arq_event {
@@ -181,8 +182,8 @@ void ubase_add_to_arq(struct ubase_dev *udev, u16 opcode, void *msg_data,
 	struct ubase_arq_msg_ring *arq = &udev->arq;
 
 	if (atomic_read(&arq->count) >= MAX_ARQ_MSG_NUM) {
-		ubase_warn(udev,
-			   "arq queue full, drop opcode = 0x%x.\n", opcode);
+		ubase_warn_rl(udev, arq_queue_full,
+			      "arq queue full, drop opcode = 0x%x.\n", opcode);
 		return;
 	}
 

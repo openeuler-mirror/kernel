@@ -4,6 +4,7 @@
 #ifndef __CDMA_COMMON_H__
 #define __CDMA_COMMON_H__
 
+#include <linux/iommu.h>
 #include <linux/types.h>
 #include "cdma_context.h"
 #include "cdma.h"
@@ -94,7 +95,7 @@ struct cdma_umem_param {
 static inline u64 cdma_cal_npages(u64 va, u64 len)
 {
 	return (ALIGN(va + len, PAGE_SIZE) - ALIGN_DOWN(va, PAGE_SIZE)) /
-		PAGE_SIZE;
+	       PAGE_SIZE;
 }
 
 struct cdma_umem *cdma_umem_get(struct cdma_dev *cdev, u64 va, u64 len,
@@ -103,7 +104,16 @@ void cdma_put_umem(struct cdma_umem *umem, bool is_kernel);
 
 int cdma_k_alloc_buf(struct cdma_dev *cdev, size_t memory_size,
 		     struct cdma_buf *buf);
-void cdma_k_free_buf(struct cdma_dev *cdev, size_t memory_size,
-		     struct cdma_buf *buf);
+void cdma_k_free_buf(struct cdma_dev *cdev, struct cdma_buf *buf);
+
+static inline void cdma_ksva_tlb_inv(struct iommu_domain *domain,
+				     unsigned long addr, size_t size)
+{
+	struct iommu_iotlb_gather gather;
+
+	iommu_iotlb_gather_init(&gather);
+	iommu_iotlb_gather_add_range(&gather, addr, PAGE_ALIGN(size));
+	iommu_iotlb_sync(domain, &gather);
+}
 
 #endif /* __CDMA_COMMON_H__ */

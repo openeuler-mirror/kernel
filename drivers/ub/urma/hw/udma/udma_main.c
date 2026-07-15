@@ -30,11 +30,12 @@
 #include "udma_common.h"
 #include "udma_ctrlq_tp.h"
 #include "udma_mue.h"
+#include "udma_safe_mode.h"
 #include "udma_jetty_group.h"
 
 #define UDMA_DRV_VER "1.0"
 
-bool dev_name_style;
+bool dev_name_style = true;
 bool cqe_mode = true;
 uint32_t batch_flush_query_freq = 10;
 uint32_t batch_flush_query_timeout = 64000;
@@ -45,6 +46,7 @@ uint32_t jfr_sleep_time = 1000;
 uint32_t jfc_arm_mode;
 bool dump_aux_info;
 bool hugepage_enable = true;
+bool jfc_share_enable = true;
 
 static const struct auxiliary_device_id udma_id_table[] = {
 	{
@@ -158,6 +160,7 @@ static void udma_set_dev_caps(struct ubcore_device_attr *attr, struct udma_dev *
 		     sizeof(struct ubcore_sl_info) * UDMA_MAX_SL_NUM);
 	attr->dev_cap.feature.bs.ipourma_en = udma_dev->caps.ipourma_en;
 	attr->dev_cap.feature.bs.ctp_en = udma_dev->caps.ctp_en;
+	attr->dev_cap.feature.bs.uboe = !ubase_adev_ubl_supported(udma_dev->comdev.adev);
 }
 
 static int udma_query_device_attr(struct ubcore_device *dev,
@@ -217,7 +220,7 @@ static int udma_query_stats(struct ubcore_device *dev, struct ubcore_stats_key *
 	else
 		ret = ubase_get_eth_port_stats(udma_dev->comdev.adev, &mac_stats);
 	if (ret) {
-		dev_err(udma_dev->dev, "failed to query port stats, ret = %d.\n", ret);
+		dev_err(udma_dev->dev, "failed to query port statistics, ret = %d.\n", ret);
 		return ret;
 	}
 
@@ -383,8 +386,7 @@ void udma_destroy_tables(struct udma_dev *udma_dev)
 	if (!udma_dev->is_ue)
 		udma_destroy_eid_guid_table(udma_dev);
 
-	udma_ctrlq_destroy_tpid_list(&udma_dev->ctrlq_tpid_table);
-
+	udma_destroy_seg_tree_table(udma_dev);
 	udma_destroy_eid_table(udma_dev);
 	mutex_destroy(&udma_dev->disable_ue_rx_mutex);
 	if (!ida_is_empty(&udma_dev->rsvd_jetty_ida_table.ida))
@@ -451,7 +453,6 @@ static void udma_init_managed_by_ctrl_cpu_table(struct udma_dev *udma_dev)
 {
 	mutex_init(&udma_dev->eid_mutex);
 	xa_init(&udma_dev->eid_table);
-	xa_init(&udma_dev->ctrlq_tpid_table);
 }
 
 int udma_init_tables(struct udma_dev *udma_dev)
@@ -475,14 +476,16 @@ int udma_init_tables(struct udma_dev *udma_dev)
 			     udma_dev->caps.jfc.start_idx - 1, udma_dev->caps.jfc.start_idx, true);
 	udma_init_udma_table(&udma_dev->jetty_grp_table, udma_dev->caps.jetty_grp.max_cnt +
 			     udma_dev->caps.jetty_grp.start_idx - 1,
-			     udma_dev->caps.jetty_grp.start_idx, true);
+			     udma_dev->caps.jetty_grp.start_idx, false);
 	udma_init_udma_table_mutex(&udma_dev->ksva_table, &udma_dev->ksva_mutex, false);
-	udma_init_udma_table_mutex(&udma_dev->npu_nb_table, &udma_dev->npu_nb_mutex, true);
-	xa_init_flags(&udma_dev->tpn_ue_idx_table, XA_FLAGS_LOCK_IRQ);
+	udma_init_udma_table_mutex(&udma_dev->npu_nb_table, &udma_dev->npu_nb_mutex, false);
+	xa_init(&udma_dev->tpn_ue_idx_table);
 	xa_init(&udma_dev->crq_nb_table);
 	ida_init(&udma_dev->rsvd_jetty_ida_table.ida);
 	mutex_init(&udma_dev->disable_ue_rx_mutex);
 	udma_init_managed_by_ctrl_cpu_table(udma_dev);
+	mutex_init(&udma_dev->seg_tree_mutex);
+	xa_init(&udma_dev->seg_tree_table);
 
 	if (udma_dev->is_ue)
 		return 0;
@@ -504,12 +507,11 @@ static int udma_set_ubcore_dev(struct udma_dev *udma_dev)
 	ub_dev->dma_dev = ub_dev->dev.parent;
 	ub_dev->attr.dev_cap.feature.value = udma_dev->caps.feature;
 
-	if (dev_name_style) {
+	if (dev_name_style)
 		scnprintf(udma_dev->dev_name, UBCORE_MAX_DEV_NAME,
-			"udmac%ud%ue%u", udma_dev->chip_id, udma_dev->die_id, udma_dev->ue_id);
-	} else {
+			  "udmac%ud%ue%u", udma_dev->chip_id, udma_dev->die_id, udma_dev->ue_id);
+	else
 		scnprintf(udma_dev->dev_name, UBCORE_MAX_DEV_NAME, "udma%hu", udma_dev->adev_id);
-	}
 	strscpy(ub_dev->dev_name, udma_dev->dev_name, UBCORE_MAX_DEV_NAME);
 	scnprintf(ub_dev->ops->driver_name, UBCORE_MAX_DRIVER_NAME, "udma");
 
@@ -518,7 +520,7 @@ static int udma_set_ubcore_dev(struct udma_dev *udma_dev)
 
 	ret = ubcore_register_device(ub_dev);
 	if (ret)
-		dev_err(udma_dev->dev, "failed to register udma_dev to ubcore, ret is %d.\n", ret);
+		dev_err(udma_dev->dev, "failed to register UDMA device to ubcore, ret=%d.\n", ret);
 
 	return ret;
 }
@@ -559,6 +561,7 @@ static void udma_get_jetty_id_range(struct udma_dev *udma_dev,
 	udma_dev->caps.ccu_jetty.start_idx = cmd->ccu_jetty_start;
 	udma_dev->caps.ccu_jetty.max_cnt = cmd->ccu_jetty_num;
 	udma_dev->caps.ccu_jetty.next_idx = udma_dev->caps.ccu_jetty.start_idx;
+	udma_dev->caps.lock_buf_bb_shift = cmd->lock_buf_bb_shift;
 
 	udma_dev->caps.hdc_jetty.start_idx = cmd->drv_jetty_start;
 	udma_dev->caps.hdc_jetty.max_cnt = cmd->drv_jetty_num;
@@ -575,6 +578,13 @@ static void udma_get_jetty_id_range(struct udma_dev *udma_dev,
 	udma_dev->caps.jetty.start_idx = cmd->standard_jetty_start;
 	udma_dev->caps.jetty.max_cnt = cmd->standard_jetty_num;
 
+	udma_dev->caps.ccu_jfc.start_idx = cmd->ccu_jfc_start;
+	udma_dev->caps.ccu_jfc.max_cnt =  cmd->ccu_jfc_num;
+	udma_dev->caps.ccu_jfc.next_idx = udma_dev->caps.ccu_jfc.start_idx;
+	udma_dev->caps.stars_jfc.start_idx = cmd->stars_jfc_start;
+	udma_dev->caps.stars_jfc.max_cnt = cmd->stars_jfc_num;
+	udma_dev->caps.stars_jfc.next_idx = udma_dev->caps.stars_jfc.start_idx;
+
 	udma_dev->caps.rsvd_jetty_cnt = udma_dev->caps.public_jetty.max_cnt +
 					udma_dev->caps.ccu_jetty.max_cnt +
 					udma_dev->caps.hdc_jetty.max_cnt +
@@ -585,6 +595,61 @@ static void udma_get_jetty_id_range(struct udma_dev *udma_dev,
 		udma_dump_jetty_id_range(udma_dev);
 }
 
+static void udma_dump_ucp_id_range(struct udma_dev *udma_dev)
+{
+#define UCP_JFX_CNT 3
+	const char *jfx_name[UCP_JFX_CNT] = {
+		"ucp_jetty",
+		"ucp_jfc",
+		"ucp_jfr",
+	};
+	struct udma_res *ucp_jfx_list[UCP_JFX_CNT] = {
+		&udma_dev->caps.ucp_caps.ucp_jetty,
+		&udma_dev->caps.ucp_caps.ucp_jfc,
+		&udma_dev->caps.ucp_caps.ucp_jfr,
+	};
+	uint32_t i;
+
+	for (i = 0; i < UCP_JFX_CNT; i++)
+		dev_info(udma_dev->dev, "%s start_idx = %u, max_cnt = %u\n",
+			 jfx_name[i], ucp_jfx_list[i]->start_idx,
+			 ucp_jfx_list[i]->max_cnt);
+
+	dev_info(udma_dev->dev, "rsvd_jetty_cnt = %u.\n", udma_dev->caps.rsvd_jetty_cnt);
+}
+
+static void udma_get_ucp_jfx_id_range(struct udma_dev *udma_dev, struct udma_cmd_ucp_resource *cmd)
+{
+	udma_dev->caps.ucp_caps.ucp_jetty.start_idx = cmd->ucp_jetty_start;
+	udma_dev->caps.ucp_caps.ucp_jetty.max_cnt = cmd->ucp_jetty_num;
+	udma_dev->caps.ucp_caps.ucp_jetty.next_idx = udma_dev->caps.ucp_caps.ucp_jetty.start_idx;
+	udma_dev->caps.ucp_caps.ucp_jfc.start_idx = cmd->ucp_jfc_start;
+	udma_dev->caps.ucp_caps.ucp_jfc.max_cnt = cmd->ucp_jfc_num;
+	udma_dev->caps.ucp_caps.ucp_jfc.next_idx = udma_dev->caps.ucp_caps.ucp_jfc.start_idx;
+	udma_dev->caps.ucp_caps.ucp_jfr.start_idx = cmd->ucp_jfr_start;
+	udma_dev->caps.ucp_caps.ucp_jfr.max_cnt = cmd->ucp_jfr_num;
+	udma_dev->caps.ucp_caps.ucp_jfr.next_idx = udma_dev->caps.ucp_caps.ucp_jfr.start_idx;
+	udma_dev->caps.rsvd_jetty_cnt += udma_dev->caps.ucp_caps.ucp_jetty.max_cnt;
+
+	if (debug_switch)
+		udma_dump_ucp_id_range(udma_dev);
+}
+
+static int udma_set_ucp_res(struct udma_dev *udma_dev)
+{
+	struct udma_cmd_ucp_resource ucp_cmd = {};
+	int ret;
+
+	ret = udma_query_ucp_res(udma_dev, (void *)&ucp_cmd);
+	if (ret) {
+		dev_err(udma_dev->dev, "fail to query UCP resource from firmware %d\n", ret);
+		return ret;
+	}
+	udma_get_ucp_jfx_id_range(udma_dev, &ucp_cmd);
+
+	return 0;
+}
+
 static int query_caps_from_firmware(struct udma_dev *udma_dev)
 {
 	struct udma_cmd_ue_resource cmd = {};
@@ -592,7 +657,7 @@ static int query_caps_from_firmware(struct udma_dev *udma_dev)
 
 	ret = udma_cmd_query_hw_resource(udma_dev, (void *)&cmd);
 	if (ret) {
-		dev_err(udma_dev->dev, "fail to query hw resource from FW %d\n", ret);
+		dev_err(udma_dev->dev, "fail to query hardware resource from firmware %d\n", ret);
 		return ret;
 	}
 
@@ -612,6 +677,14 @@ static int query_caps_from_firmware(struct udma_dev *udma_dev)
 	udma_dev->caps.atomic_feat = cmd.atomic_feat;
 
 	udma_get_jetty_id_range(udma_dev, &cmd);
+
+	if (ubase_adev_ucp_supported(udma_dev->comdev.adev)) {
+		ret = udma_set_ucp_res(udma_dev);
+		if (ret) {
+			dev_err(udma_dev->dev, "fail to set ucp resource.\n");
+			return ret;
+		}
+	}
 
 	udma_dev->caps.feature = cmd.cap_info;
 	udma_dev->caps.ue_cnt = cmd.ue_cnt >= UDMA_DEV_UE_NUM ?
@@ -638,6 +711,25 @@ static void get_dev_caps_from_ubase(struct udma_dev *udma_dev)
 	udma_dev->port_id = ubase_caps->io_port_id;
 	udma_dev->port_logic_id = ubase_caps->io_port_logic_id;
 	udma_dev->ue_id = ubase_caps->ue_id;
+	udma_dev->caps.non_mirror_en = ubase_adev_non_mirror_mem_supported(udma_dev->comdev.adev);
+
+	udma_dev->dtu_info.k_dtu_enable = ubase_adev_dtu_supported(udma_dev->comdev.adev);
+	if (!udma_dev->dtu_info.k_dtu_enable)
+		return;
+
+	if (ubase_caps->dtu_pa_base == 0 || ubase_caps->dtu_pa_size == 0 ||
+	    ubase_caps->dtu_va_base == 0 || ubase_caps->dtu_iova_base == 0) {
+		dev_warn(udma_dev->dev, "DTU para invalid.\n");
+		udma_dev->dtu_info.k_dtu_enable = false;
+		return;
+	}
+
+	udma_dev->dtu_info.u_dtu_enable = true;
+	udma_dev->dtu_info.pa_base = ubase_caps->dtu_pa_base;
+	udma_dev->dtu_info.pa_size = ubase_caps->dtu_pa_size;
+	udma_dev->dtu_info.va_base = ubase_caps->dtu_va_base;
+	udma_dev->dtu_info.iova_base = ubase_caps->dtu_iova_base;
+	udma_dev->dtu_info.dtu_mem_node_id = ubase_adev_get_mem_node_id(udma_dev->comdev.adev);
 }
 
 static int udma_construct_qos_param(struct udma_dev *dev)
@@ -719,7 +811,7 @@ static int udma_query_wqebb_va(struct udma_dev *dev)
 		      sizeof(info), (void *)&info);
 	ret = ubase_cmd_send_inout(dev->comdev.adev, &in, &out);
 	if (ret) {
-		dev_err(dev->dev, "failed to query_wqebb_va, ret = %d.\n", ret);
+		dev_err(dev->dev, "failed to query WQEBB VA, ret = %d.\n", ret);
 		return -EINVAL;
 	}
 
@@ -727,14 +819,14 @@ static int udma_query_wqebb_va(struct udma_dev *dev)
 		return 0;
 
 	if (dev->is_ue) {
-		dev_warn(dev->dev, "ue is not supported reserved sq.\n");
+		dev_warn(dev->dev, "UE is not supported reserved SQ.\n");
 		return 0;
 	}
 
 	if (dev->die_id >= info.die_num || dev->ue_id < UDMA_FIRST_UE_ID ||
 	   dev->ue_id >= info.ue_num + UDMA_FIRST_UE_ID) {
 		dev_warn(dev->dev,
-			 "this mue not supported reserved sq, die_id=%u, ue_id=%u.\n",
+			 "this MUE not supported reserved SQ, die_id=%u, UE_id=%u.\n",
 			 dev->die_id, dev->ue_id);
 		return 0;
 	}
@@ -780,6 +872,7 @@ static int udma_set_hw_caps(struct udma_dev *udma_dev)
 	udma_dev->caps.jfc.max_cnt = a_caps->jfc.max_cnt;
 	udma_dev->caps.jfc.depth = a_caps->jfc.depth;
 	udma_dev->caps.jfc.start_idx = a_caps->jfc.start_idx;
+	udma_dev->caps.jfc.next_idx = udma_dev->caps.jfc.start_idx;
 	udma_dev->caps.jetty.max_cnt = a_caps->jfs.max_cnt;
 	udma_dev->caps.jetty.depth = a_caps->jfs.depth;
 	udma_dev->caps.jetty.start_idx = a_caps->jfs.start_idx;
@@ -788,6 +881,8 @@ static int udma_set_hw_caps(struct udma_dev *udma_dev)
 	udma_dev->caps.ipourma_en = ubase_adev_ip_over_urma_supported(udma_dev->comdev.adev);
 	udma_dev->caps.ctp_en = !(ubase_adev_ip_over_urma_utp_supported(udma_dev->comdev.adev));
 	udma_dev->caps.rc_max_cnt = a_caps->rc_max_cnt;
+	udma_dev->caps.st64b_en = (udma_dev->hw_ver != UBASE_HW_VER_A_0) &&
+				  (udma_dev->hw_ver != UBASE_HW_VER_A_1);
 
 	ret = udma_construct_qos_param(udma_dev);
 	if (ret)
@@ -796,6 +891,17 @@ static int udma_set_hw_caps(struct udma_dev *udma_dev)
 	ret = udma_query_wqebb_va(udma_dev);
 	if (ret)
 		return ret;
+	if (!!(udma_dev->caps.feature & UDMA_CAP_FEATURE_WQE_LOCK_BUFFER_EN))
+		udma_dev->caps.lock_buffer_en = true;
+
+	if (!!(udma_dev->caps.feature & UDMA_CAP_FEATURE_SUPPORT_JFC_CTX_CCU_PROPERTY))
+		udma_dev->caps.ccu_jfc_property_en = true;
+
+	if (!!(udma_dev->caps.feature & UDMA_CAP_FEATURE_NOT_SHARE_JFC))
+		udma_dev->caps.no_share_jfc_en = true;
+
+	if (!!(udma_dev->caps.feature & UDMA_CAP_FEATURE_WRITE_ATOMIC_ADD))
+		udma_dev->caps.atomic_add_en = true;
 
 	udma_dev->caps.max_msg_len = MAX_MSG_LEN;
 	udma_dev->caps.jetty_in_grp = MAX_JETTY_IN_JETTY_GRP;
@@ -821,7 +927,7 @@ static int udma_init_dev_param(struct udma_dev *udma_dev)
 	if (!ubase_adev_ubl_supported(udma_dev->comdev.adev)) {
 		adev_com = ubase_get_mdrv_data(adev);
 		if (adev_com == NULL) {
-			dev_err(&adev->dev, "Failed to get mdrv data from ubase.\n");
+			dev_err(&adev->dev, "failed to get mdrv data from ubase.\n");
 			return -EINVAL;
 		}
 		udma_dev->comdev.netdev = adev_com->netdev;
@@ -832,16 +938,22 @@ static int udma_init_dev_param(struct udma_dev *udma_dev)
 	udma_dev->k_db_base = mem_base->addr;
 	udma_dev->adev_id = udma_dev->comdev.adev->id;
 
+	udma_dev->hw_ver = ubase_get_hw_ver(udma_dev->comdev.adev);
+	if (udma_dev->hw_ver == UBASE_HW_VER_UNKNOWN) {
+		dev_err(udma_dev->dev, "failed to get hw version.\n");
+		return -EINVAL;
+	}
+
 	ret = udma_set_hw_caps(udma_dev);
 	if (ret) {
-		dev_err(udma_dev->dev, "failed to query hw caps, ret = %d\n", ret);
+		dev_err(udma_dev->dev, "failed to query hardware capabilities, ret = %d.\n", ret);
 		return ret;
 	}
 
 	ret = udma_init_tables(udma_dev);
 	if (ret) {
 		dev_err(udma_dev->dev,
-			"Failed to init tables, ret = %d\n", ret);
+			"failed to init tables, ret = %d.\n", ret);
 		return ret;
 	}
 
@@ -852,12 +964,30 @@ static int udma_init_dev_param(struct udma_dev *udma_dev)
 		INIT_LIST_HEAD(&udma_dev->db_list[i]);
 
 	udma_init_hugepage(udma_dev);
+	spin_lock_init(&udma_dev->caps.udp.lock);
+
+	if (!ubase_adev_mbx_supported(udma_dev->comdev.adev)) {
+		ret = udma_init_mbox_over_cmdq(udma_dev);
+		if (ret) {
+			dev_err(udma_dev->dev,
+				"failed to init mbox over cmdq, ret = %d.\n", ret);
+			udma_destroy_hugepage(udma_dev);
+
+			mutex_destroy(&udma_dev->db_mutex);
+			dev_set_drvdata(&udma_dev->comdev.adev->dev, NULL);
+			udma_destroy_tables(udma_dev);
+			return ret;
+		}
+	}
 
 	return 0;
 }
 
 static void udma_uninit_dev_param(struct udma_dev *udma_dev)
 {
+	if (!ubase_adev_mbx_supported(udma_dev->comdev.adev))
+		udma_uninit_mbox_over_cmdq(udma_dev);
+
 	udma_destroy_hugepage(udma_dev);
 	mutex_destroy(&udma_dev->db_mutex);
 	dev_set_drvdata(&udma_dev->comdev.adev->dev, NULL);
@@ -870,11 +1000,11 @@ static void udma_disable_usva(struct udma_dev *udma_dev)
 
 	ret = iommu_dev_disable_feature(udma_dev->dev, IOMMU_DEV_FEAT_SVA);
 	if (ret)
-		dev_warn(udma_dev->dev, "disable sva failed, ret = %d.\n", ret);
+		dev_warn(udma_dev->dev, "SVA disable exception, ret = %d.\n", ret);
 
 	ret = iommu_dev_disable_feature(udma_dev->dev, IOMMU_DEV_FEAT_IOPF);
 	if (ret)
-		dev_warn(udma_dev->dev, "disable iopf failed, ret = %d.\n", ret);
+		dev_warn(udma_dev->dev, "IOPF disable exception, ret = %d.\n", ret);
 }
 
 static int udma_enable_usva(struct udma_dev *udma_dev)
@@ -904,7 +1034,7 @@ static int udma_enable_usva(struct udma_dev *udma_dev)
 
 err_enable_sva:
 	if (iommu_dev_disable_feature(udma_dev->dev, IOMMU_DEV_FEAT_IOPF))
-		dev_warn(udma_dev->dev, "disable iopf failed.\n");
+		dev_warn(udma_dev->dev, "IOPF disable exception.\n");
 	return ret;
 }
 
@@ -916,7 +1046,7 @@ static int udma_alloc_dev_tid(struct udma_dev *udma_dev)
 
 	ret = udma_enable_usva(udma_dev);
 	if (ret) {
-		dev_err(udma_dev->dev, "Failed to enable usva, ret = %d.\n", ret);
+		dev_err(udma_dev->dev, "failed to enable USVA, ret = %d.\n", ret);
 		return ret;
 	}
 
@@ -926,8 +1056,8 @@ static int udma_alloc_dev_tid(struct udma_dev *udma_dev)
 		goto err_enable_ksva;
 	}
 
-	udma_dev->ksva = ummu_ksva_bind_device(udma_dev->dev, &param);
-	if (!udma_dev->ksva) {
+	udma_dev->ksva = iommu_ksva_bind_device(udma_dev->dev, &param);
+	if (IS_ERR(udma_dev->ksva)) {
 		dev_err(udma_dev->dev, "ksva bind device failed.\n");
 		ret = -EINVAL;
 		goto err_ksva_bind_device;
@@ -935,25 +1065,35 @@ static int udma_alloc_dev_tid(struct udma_dev *udma_dev)
 
 	ret = ummu_get_tid(udma_dev->dev, udma_dev->ksva, &udma_dev->tid);
 	if (ret) {
-		dev_err(udma_dev->dev, "Failed to get tid for udma device.\n");
+		dev_err(udma_dev->dev, "failed to get TID for UDMA device.\n");
 		goto err_get_tid;
 	}
 
-	ret = ummu_sva_grant_range(udma_dev->ksva, 0, UDMA_MAX_GRANT_SIZE,
+	ret = iommu_sva_grant(udma_dev->ksva, 0, UDMA_MAX_GRANT_SIZE,
 				   UMMU_DEV_WRITE | UMMU_DEV_READ, &seg_attr);
 	if (ret) {
-		dev_err(udma_dev->dev, "Failed to sva grant range for udma device.\n");
+		dev_err(udma_dev->dev, "failed to SVA grant range for UDMA device.\n");
 		goto err_sva_grant_range;
 	}
 
-	return ret;
+	if (!udma_dev->dtu_info.k_dtu_enable)
+		return ret;
+
+	ret = ubase_dtu_tbl_init(udma_dev->comdev.adev, udma_dev->tid,
+				 &udma_dev->dtu_info.win_num);
+	if (ret) {
+		dev_warn(udma_dev->dev, "DTU not available for UDMA device.\n");
+		udma_dev->dtu_info.k_dtu_enable = false;
+	}
+
+	return 0;
 
 err_sva_grant_range:
 err_get_tid:
-	ummu_ksva_unbind_device(udma_dev->ksva);
+	iommu_ksva_unbind_device(udma_dev->ksva);
 err_ksva_bind_device:
 	if (iommu_dev_disable_feature(udma_dev->dev, IOMMU_DEV_FEAT_KSVA))
-		dev_warn(udma_dev->dev, "disable ksva failed.\n");
+		dev_warn(udma_dev->dev, "KSVA disable exception.\n");
 err_enable_ksva:
 	udma_disable_usva(udma_dev);
 
@@ -966,31 +1106,41 @@ static void udma_free_dev_tid(struct udma_dev *udma_dev)
 	size_t token_id;
 	int ret;
 
-	ret = ummu_sva_ungrant_range(udma_dev->ksva, 0, UDMA_MAX_GRANT_SIZE, NULL);
+	if (udma_dev->dtu_info.k_dtu_enable) {
+		ret = ubase_dtu_tbl_uninit(udma_dev->comdev.adev,
+					   udma_dev->dtu_info.win_num);
+		if (ret)
+			dev_warn(udma_dev->dev, "DTU uninit exception, ret = %d.\n", ret);
+	}
+
+	ret = iommu_sva_ungrant(udma_dev->ksva, 0, UDMA_MAX_GRANT_SIZE, NULL);
 	if (ret)
 		dev_warn(udma_dev->dev,
-			 "sva ungrant range for udma device failed, ret = %d.\n",
+			 "SVA ungrant range exception, ret = %d.\n",
 			 ret);
 
 	mutex_lock(&udma_dev->ksva_mutex);
 	xa_for_each(&udma_dev->ksva_table, token_id, ksva) {
 		__xa_erase(&udma_dev->ksva_table, token_id);
-		ummu_ksva_unbind_device(ksva);
+		iommu_ksva_unbind_device(ksva);
 	}
 	mutex_unlock(&udma_dev->ksva_mutex);
 
-	ummu_ksva_unbind_device(udma_dev->ksva);
+	iommu_ksva_unbind_device(udma_dev->ksva);
 
 	ret = iommu_dev_disable_feature(udma_dev->dev, IOMMU_DEV_FEAT_KSVA);
 	if (ret)
-		dev_warn(udma_dev->dev, "disable ksva failed, ret = %d.\n", ret);
+		dev_warn(udma_dev->dev, "KSVA disable exception, ret = %d.\n", ret);
 
 	udma_disable_usva(udma_dev);
 }
 
 static int udma_create_db_page(struct udma_dev *udev)
 {
-	udev->db_page = alloc_page(GFP_KERNEL | __GFP_ZERO | GFP_HIGHUSER_MOVABLE);
+	if (udev->caps.non_mirror_en)
+		udev->db_page = alloc_page(__GFP_ZERO | GFP_HIGHUSER_MOVABLE);
+	else
+		udev->db_page = alloc_page(GFP_KERNEL | __GFP_ZERO);
 	if (!udev->db_page)
 		return -ENOMEM;
 
@@ -1018,6 +1168,7 @@ static void udma_destroy_dev(struct udma_dev *udev)
 	for (i = ARRAY_SIZE(udma_dev_func_map) - 1; i >= 0; i--)
 		if (udma_dev_func_map[i].uninit_func)
 			udma_dev_func_map[i].uninit_func(udev);
+	mutex_destroy(&udev->open_rx_mutex);
 	kfree(udev);
 }
 
@@ -1031,6 +1182,7 @@ static struct udma_dev *udma_create_dev(struct auxiliary_device *adev)
 		return NULL;
 
 	udma_dev->comdev.adev = adev;
+	mutex_init(&udma_dev->open_rx_mutex);
 
 	for (i = 0; i < ARRAY_SIZE(udma_dev_func_map); i++) {
 		if (!udma_dev_func_map[i].init_func)
@@ -1038,7 +1190,7 @@ static struct udma_dev *udma_create_dev(struct auxiliary_device *adev)
 
 		ret = udma_dev_func_map[i].init_func(udma_dev);
 		if (ret) {
-			dev_err(udma_dev->dev, "Failed to init %s, ret = %d\n",
+			dev_err(udma_dev->dev, "failed to init %s, ret = %d\n",
 				udma_dev_func_map[i].err_msg, ret);
 			goto err_init;
 		}
@@ -1173,22 +1325,53 @@ static void udma_report_reset_event(enum ubcore_event_type event_type,
 	ubcore_dispatch_async_event(&ae);
 }
 
-static void udma_reset_handler(struct auxiliary_device *adev,
+static int udma_reinit_handler(struct auxiliary_device *adev)
+{
+	struct udma_dev *udev = get_udma_dev(adev);
+	int ret = 0;
+
+	if (!udev) {
+		dev_info(&adev->dev, "udma device is not exist.\n");
+		return 0;
+	}
+	mutex_lock(&udev->open_rx_mutex);
+	if (udev->open_ue_rx_failed) {
+		ret = udma_open_ue_rx(udev, true, false, false, udev->current_handle_tp_num);
+		if (ret)
+			dev_err(udev->dev, "udma open UE rx failed, ret = %d.\n", ret);
+		else
+			udev->open_ue_rx_failed = false;
+	}
+	mutex_unlock(&udev->open_rx_mutex);
+
+	return ret == -ETIMEDOUT ? -EAGAIN : ret;
+}
+
+static int udma_reset_handler(struct auxiliary_device *adev,
 			       enum ubase_reset_stage stage)
 {
+	int ret = 0;
+
 	switch (stage) {
 	case UBASE_RESET_STAGE_DOWN:
-		udma_reset_down(adev);
+		ret = udma_reset_down(adev);
 		break;
 	case UBASE_RESET_STAGE_UNINIT:
-		udma_reset_uninit(adev);
+		ret = udma_reset_uninit(adev);
 		break;
 	case UBASE_RESET_STAGE_INIT:
-		udma_reset_init(adev);
+		ret = udma_reset_init(adev);
+		break;
+	case UBASE_RESET_STAGE_ABORT:
+		ret = udma_reset_abort(adev);
 		break;
 	default:
+		ret = -EINVAL;
+		dev_err(&adev->dev, "udma reset handler invalid stage:%u.\n", stage);
 		break;
 	}
+
+	return ret;
 }
 
 static int udma_init_eid_table(struct udma_dev *udma_dev)
@@ -1197,12 +1380,12 @@ static int udma_init_eid_table(struct udma_dev *udma_dev)
 
 	ret = udma_query_eid_from_ctrl_cpu(udma_dev);
 	if (ret)
-		dev_err(udma_dev->dev, "query eid info failed, ret = %d.\n", ret);
+		dev_err(udma_dev->dev, "query EID info failed, ret = %d.\n", ret);
 
 	return ret;
 }
 
-static int udma_init_dev(struct auxiliary_device *adev)
+static int udma_init_dev(struct auxiliary_device *adev, bool is_probe)
 {
 	struct udma_dev *udma_dev;
 	int ret;
@@ -1216,8 +1399,10 @@ static int udma_init_dev(struct auxiliary_device *adev)
 	}
 
 	udma_dev = udma_create_dev(adev);
-	if (!udma_dev)
+	if (!udma_dev) {
+		ret = -ENOMEM;
 		goto err_create;
+	}
 
 	ret = udma_register_event(adev);
 	if (ret)
@@ -1231,22 +1416,25 @@ static int udma_init_dev(struct auxiliary_device *adev)
 
 	ret = udma_set_ubcore_dev(udma_dev);
 	if (ret) {
-		dev_err(udma_dev->dev, "failed to set ubcore dev, ret is %d.\n", ret);
+		dev_err(udma_dev->dev, "failed to set ubcore device, ret is %d.\n", ret);
 		goto err_set_ubcore_dev;
 	}
 
+	udma_dev->status = UDMA_NORMAL;
 	ret = udma_init_eid_table(udma_dev);
+	if (ret == -ETIMEDOUT && is_probe)
+		ubase_update_adev_status(udma_dev->comdev.adev, UBASE_ADEV_PROBE_FAIL);
 	if (ret) {
-		dev_err(udma_dev->dev, "init eid table failed.\n");
+		dev_err(udma_dev->dev, "init EID table failed.\n");
 		goto err_init_eid;
 	}
-	udma_dev->status = UDMA_NORMAL;
 	mutex_unlock(&udma_reset_mutex);
 	dev_info(udma_dev->dev, "init udma successfully.\n");
 
 	return 0;
 
 err_init_eid:
+	udma_dev->status = UDMA_INITIALIZING;
 	ubcore_unregister_device(&udma_dev->ub_dev);
 err_set_ubcore_dev:
 	udma_unregister_workqueue(udma_dev);
@@ -1258,7 +1446,7 @@ err_event_register:
 err_create:
 	mutex_unlock(&udma_reset_mutex);
 
-	return -EINVAL;
+	return ret == -ETIMEDOUT ? -EAGAIN : ret;
 }
 
 static void check_and_wait_flush_done(struct udma_dev *udma_dev)
@@ -1284,7 +1472,7 @@ static void check_and_wait_flush_done(struct udma_dev *udma_dev)
 	}
 }
 
-void udma_reset_down(struct auxiliary_device *adev)
+int udma_reset_down(struct auxiliary_device *adev)
 {
 	struct udma_dev *udma_dev;
 
@@ -1293,22 +1481,30 @@ void udma_reset_down(struct auxiliary_device *adev)
 	if (!udma_dev) {
 		mutex_unlock(&udma_reset_mutex);
 		dev_info(&adev->dev, "udma device is not exist.\n");
-		return;
+		return 0;
+	}
+
+	if (udma_dev->status == UDMA_ELR_ABORT) {
+		mutex_unlock(&udma_reset_mutex);
+		dev_info(&adev->dev, "udma device status ABORT.\n");
+		return 0;
 	}
 
 	if (udma_dev->status != UDMA_NORMAL) {
-		mutex_unlock(&udma_reset_mutex);
 		dev_info(&adev->dev, "udma device status(%u).\n", udma_dev->status);
-		return;
+		mutex_unlock(&udma_reset_mutex);
+		return -EINVAL;
 	}
 
 	ubcore_stop_requests(&udma_dev->ub_dev);
 	udma_report_reset_event(UBCORE_EVENT_ELR_ERR, udma_dev);
-	udma_dev->status = UDMA_SUSPEND;
+	udma_dev->status = UDMA_RESETTING;
 	mutex_unlock(&udma_reset_mutex);
+
+	return 0;
 }
 
-void udma_reset_uninit(struct auxiliary_device *adev)
+int udma_reset_uninit(struct auxiliary_device *adev)
 {
 	struct udma_dev *udma_dev;
 
@@ -1317,19 +1513,19 @@ void udma_reset_uninit(struct auxiliary_device *adev)
 	if (!udma_dev) {
 		dev_info(&adev->dev, "udma device is not exist.\n");
 		mutex_unlock(&udma_reset_mutex);
-		return;
+		return 0;
 	}
 
-	if (udma_dev->status != UDMA_SUSPEND) {
+	if (udma_dev->status != UDMA_RESETTING && udma_dev->status != UDMA_ELR_ABORT) {
 		dev_info(&adev->dev, "udma device status(%u).\n", udma_dev->status);
 		mutex_unlock(&udma_reset_mutex);
-		return;
+		return -EINVAL;
 	}
 
 	if (udma_close_ue_rx(udma_dev, false, false, true, 0)) {
 		mutex_unlock(&udma_reset_mutex);
-		dev_err(&adev->dev, "udma close ue rx failed in reset process.\n");
-		return;
+		dev_err(&adev->dev, "udma close UE rx failed in reset process.\n");
+		return -EINVAL;
 	}
 
 	udma_unregister_none_crq_event(adev);
@@ -1340,46 +1536,84 @@ void udma_reset_uninit(struct auxiliary_device *adev)
 	udma_unregister_crq_event(adev);
 	udma_destroy_dev(udma_dev);
 	mutex_unlock(&udma_reset_mutex);
-}
 
-void udma_reset_init(struct auxiliary_device *adev)
-{
-	udma_init_dev(adev);
-}
-
-int udma_probe(struct auxiliary_device *adev,
-	       const struct auxiliary_device_id *id)
-{
-	if (udma_init_dev(adev)) {
-		ubase_adev_fault_log(adev, UDMA_FAULT_EVENT_ID_PROBE, NULL);
-		return -EINVAL;
-	}
-
-	ubase_reset_register(adev, udma_reset_handler);
 	return 0;
 }
 
-void udma_remove(struct auxiliary_device *adev)
+int udma_reset_init(struct auxiliary_device *adev)
 {
-#define MIN_SLEEP_TIME 100
-#define MAX_SLEEP_TIME 800
-#define TIME_SLEEP_RATE 2
-	uint32_t wait_time = MIN_SLEEP_TIME;
+	return udma_init_dev(adev, false);
+}
+
+int udma_reset_abort(struct auxiliary_device *adev)
+{
 	struct udma_dev *udma_dev;
 
-	ubase_reset_unregister(adev);
 	mutex_lock(&udma_reset_mutex);
 	udma_dev = get_udma_dev(adev);
 	if (!udma_dev) {
 		mutex_unlock(&udma_reset_mutex);
 		dev_info(&adev->dev, "udma device is not exist.\n");
-		return;
+		return 0;
 	}
-	udma_dev->status = UDMA_SUSPEND;
+
+	udma_dev->status = UDMA_ELR_ABORT;
+	mutex_unlock(&udma_reset_mutex);
+
+	return 0;
+}
+
+int udma_probe(struct auxiliary_device *adev,
+	       const struct auxiliary_device_id *id)
+{
+	if (udma_init_dev(adev, true)) {
+		ubase_adev_fault_log(adev, UDMA_FAULT_EVENT_ID_PROBE, NULL);
+		return -EINVAL;
+	}
+
+	ubase_reinit_register(adev, udma_reinit_handler);
+	ubase_reset_register(adev, udma_reset_handler);
+	ubase_update_adev_status(adev, 0);
+
+	return 0;
+}
+
+void udma_remove(struct auxiliary_device *adev)
+{
+	uint32_t wait_time = UDMA_MIN_SLEEP_TIME;
+	struct udma_dev *udma_dev;
+
+	ubase_reset_unregister(adev);
+	ubase_reinit_unregister(adev);
+
+	while (true) {
+		mutex_lock(&udma_reset_mutex);
+		udma_dev = get_udma_dev(adev);
+		if (!udma_dev) {
+			mutex_unlock(&udma_reset_mutex);
+			dev_info(&adev->dev, "udma device is not exist.\n");
+			return;
+		}
+
+		if (udma_dev->status == UDMA_REMOVING) {
+			mutex_unlock(&udma_reset_mutex);
+			msleep(wait_time);
+			if (wait_time < UDMA_REMOVE_MAX_SLEEP_TIME)
+				wait_time *= UDMA_TIME_SLEEP_RATE;
+			continue;
+		} else {
+			udma_dev->status = UDMA_REMOVING;
+			mutex_unlock(&udma_reset_mutex);
+			break;
+		}
+	}
+
+	if (udma_dev->is_ue)
+		udma_notify_mue_delete_guid(udma_dev);
 	ubcore_stop_requests(&udma_dev->ub_dev);
 	while (true) {
 		if (!udma_close_ue_rx(udma_dev, false, false, false, 0)) {
-			if (wait_time != MIN_SLEEP_TIME)
+			if (wait_time != UDMA_MIN_SLEEP_TIME)
 				ubase_adev_fault_log(adev, UDMA_FAULT_EVENT_ID_REMOVE, NULL);
 			break;
 		}
@@ -1390,10 +1624,10 @@ void udma_remove(struct auxiliary_device *adev)
 		}
 
 		msleep(wait_time);
-		if (wait_time == MIN_SLEEP_TIME)
+		if (wait_time == UDMA_MIN_SLEEP_TIME)
 			ubase_adev_fault_log(adev, UDMA_FAULT_EVENT_ID_REMOVE, NULL);
-		if (wait_time < MAX_SLEEP_TIME)
-			wait_time *= TIME_SLEEP_RATE;
+		if (wait_time < UDMA_REMOVE_MAX_SLEEP_TIME)
+			wait_time *= UDMA_TIME_SLEEP_RATE;
 		dev_err_ratelimited(&adev->dev, "udma close ue rx failed in remove process.\n");
 	}
 	udma_report_reset_event(UBCORE_EVENT_ELR_ERR, udma_dev);
@@ -1401,10 +1635,11 @@ void udma_remove(struct auxiliary_device *adev)
 	ubcore_unregister_device(&udma_dev->ub_dev);
 	udma_unregister_workqueue(udma_dev);
 	check_and_wait_flush_done(udma_dev);
-	(void)ubase_activate_dev(adev);
+	if (ubase_activate_dev(adev))
+		ubase_update_dev_status(adev, UBASE_DEV_NEED_TO_ACTIVATE);
+	/* Crq event should unregister after wait flush done,  */
 	udma_unregister_crq_event(adev);
 	udma_destroy_dev(udma_dev);
-	mutex_unlock(&udma_reset_mutex);
 	dev_info(&adev->dev, "udma device remove success.\n");
 }
 
@@ -1413,6 +1648,9 @@ static struct auxiliary_driver udma_drv = {
 	.probe = udma_probe,
 	.remove = udma_remove,
 	.id_table = udma_id_table,
+	.driver = {
+		.probe_type = PROBE_FORCE_SYNCHRONOUS,
+	},
 };
 
 static int __init udma_init(void)
@@ -1421,7 +1659,7 @@ static int __init udma_init(void)
 
 	ret = auxiliary_driver_register(&udma_drv);
 	if (ret)
-		pr_err("failed to register auxiliary_driver\n");
+		pr_err("failed to register auxiliary driver\n");
 
 	return ret;
 }
@@ -1437,14 +1675,15 @@ module_exit(udma_exit);
 MODULE_VERSION(UDMA_DRV_VER);
 MODULE_LICENSE("GPL");
 
-module_param(dev_name_style, bool, 0644);
-MODULE_PARM_DESC(dev_name_style, "Set device name style, default: 0(0:disable, 1:enable)");
+module_param(dev_name_style, bool, 0444);
+MODULE_PARM_DESC(dev_name_style, "Set device name style, default: 1(0:disable, 1:enable)");
 
 module_param(cqe_mode, bool, 0444);
 MODULE_PARM_DESC(cqe_mode, "Set cqe reporting mode, default: 1 (0:BY_COUNT, 1:BY_CI_PI_GAP)");
 
 module_param(batch_flush_query_freq, uint, 0444);
-MODULE_PARM_DESC(batch_flush_query_freq, "Set flush query frequency, default: 10ms");
+MODULE_PARM_DESC(batch_flush_query_freq,
+		 "Set ta flush query frequency for batch, default: 10 (sleep 2^N, 2^(N+1)... ms)");
 
 module_param(batch_flush_query_timeout, uint, 0444);
 MODULE_PARM_DESC(batch_flush_query_timeout, "Set flush query timeout, default: 64000ms");
@@ -1464,5 +1703,8 @@ module_param(dump_aux_info, bool, 0644);
 MODULE_PARM_DESC(dump_aux_info,
 		 "Set whether dump aux info, default: false(false:not print, true:print)");
 
-module_param(hugepage_enable, bool, 0644);
+module_param(hugepage_enable, bool, 0444);
 MODULE_PARM_DESC(hugepage_enable, "Set huge page enable, default: 1(0:disable, 1:enable)");
+
+module_param(jfc_share_enable, bool, 0644);
+MODULE_PARM_DESC(jfc_share_enable, "Set jfc share enable, default: 1(0:disable, 1:enable)");

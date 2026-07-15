@@ -69,7 +69,7 @@ int ub_port_write_dword(struct ub_port *port, u32 pos, u32 val)
 {
 	u64 base = UB_PORT_SLICE_START + port->index * UB_PORT_SLICE_SIZE;
 
-	return ub_cfg_write_dword(port->uent,  base + pos, val);
+	return ub_cfg_write_dword(port->uent, base + pos, val);
 }
 
 static ssize_t cna_show(struct ub_port *port, char *buf)
@@ -89,7 +89,7 @@ static ssize_t linkup_show(struct ub_port *port, char *buf)
 	u8 val;
 
 	if (port->type == VIRTUAL)
-		return sysfs_emit(buf, "Virtual port don't support\n");
+		return sysfs_emit(buf, "Virtual port does not have real link status\n");
 
 	if (ub_port_read_byte(port, UB_PORT_PHYSICAL_PORT_LINK_STATUS, &val)) {
 		ub_err(port->uent, "get port link cap fail\n");
@@ -329,6 +329,12 @@ static ssize_t qdlws_exec_state_show(struct ub_port *port, char *buf)
 }
 UB_PORT_ATTR_RO(qdlws_exec_state);
 
+static ssize_t mgmt_state_show(struct ub_port *port, char *buf)
+{
+	return sysfs_emit(buf, "%d\n", atomic_read(&port->port_mgmt_state));
+}
+UB_PORT_ATTR_RO(mgmt_state);
+
 static struct attribute *ub_port_default_attrs[] = {
 	&ub_port_attr_cna.attr,
 	&ub_port_attr_boundary.attr,
@@ -338,6 +344,7 @@ static struct attribute *ub_port_default_attrs[] = {
 	&ub_port_attr_neighbor_guid.attr,
 	&ub_port_attr_neighbor.attr,
 	&ub_port_attr_port_reset.attr,
+	&ub_port_attr_mgmt_state.attr,
 	NULL
 };
 
@@ -534,7 +541,7 @@ void ub_ports_del(struct ub_entity *uent)
 		kobject_put(&port->kobj);
 }
 
-static void ub_port_init(struct ub_entity *uent, struct ub_port *port)
+static int ub_port_init(struct ub_entity *uent, struct ub_port *port)
 {
 	port->uent = uent;
 	port->type = PHYSICAL;
@@ -546,6 +553,12 @@ static void ub_port_init(struct ub_entity *uent, struct ub_port *port)
 	bitmap_zero(port->cna_maps, UB_MAX_CNA_NUM);
 	bitmap_zero(port->cap_map, UB_PORT_CAP_NUM);
 	kobject_init(&port->kobj, &ub_port_ktype);
+	port->port_lock = kzalloc(sizeof(struct mutex), GFP_KERNEL);
+	if (!port->port_lock)
+		return -ENOMEM;
+	mutex_init(port->port_lock);
+
+	return 0;
 }
 
 int ub_ports_setup(struct ub_entity *uent)
@@ -564,16 +577,29 @@ int ub_ports_setup(struct ub_entity *uent)
 
 	for_each_uent_port(port, uent) {
 		port->index = port - uent->ports;
-		ub_port_init(uent, port);
+		if (ub_port_init(uent, port))
+			goto err_free;
 	}
 
 	return 0;
+
+err_free:
+	for_each_uent_port(port, uent)
+		kfree(port->port_lock);
+	kvfree(uent->ports);
+	uent->ports = NULL;
+	return -ENOMEM;
 }
 
 void ub_ports_unset(struct ub_entity *uent)
 {
+	struct ub_port *port;
+
 	if (!uent)
 		return;
+
+	for_each_uent_port(port, uent)
+		kfree(port->port_lock);
 
 	kvfree(uent->ports);
 	uent->ports = NULL;
@@ -603,7 +629,7 @@ int ub_register_share_port(struct ub_entity *entity, u16 port_id,
 
 	if (!is_idev(entity) && !is_ibus_controller(entity)) {
 		ub_err(entity,
-		       "don't support device with type %u register share port\n",
+		       "does not support device with type %u register share port\n",
 		       uent_type(entity));
 		return -EINVAL;
 	}
@@ -617,7 +643,7 @@ int ub_register_share_port(struct ub_entity *entity, u16 port_id,
 		/* check parent is controller */
 		parent = to_ub_entity(parent->dev.parent);
 		if (!is_ibus_controller(parent)) {
-			ub_err(entity, "don't support register share port at non-controller device with type %u\n",
+			ub_err(entity, "does not support register share port at non-controller device with type %u\n",
 			       uent_type(parent));
 			return -EINVAL;
 		}
@@ -689,7 +715,7 @@ void ub_notify_share_port(struct ub_port *port,
 	struct ub_share_port_ops *ops;
 	struct ub_entity *uent;
 
-	if (!port || type > UB_PORT_EVENT_RESET_DONE)
+	if (!port || type > UB_PORT_EVENT_RESET_FAILED)
 		return;
 
 	uent = port->uent;

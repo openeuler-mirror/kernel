@@ -16,18 +16,25 @@
 #include <linux/sched/clock.h>
 #include <linux/sched/cputime.h>
 #include <linux/sched/hotplug.h>
+#include <linux/sched/isolation.h>
 #include <linux/sched/posix-timers.h>
 #include <linux/sched/rt.h>
 
 #include <linux/cpuidle.h>
 #include <linux/jiffies.h>
+#include <linux/kobject.h>
 #include <linux/livepatch.h>
+#include <linux/pm.h>
 #include <linux/psi.h>
+#include <linux/rhashtable.h>
+#include <linux/seq_buf.h>
 #include <linux/seqlock_api.h>
 #include <linux/slab.h>
 #include <linux/suspend.h>
 #include <linux/tsacct_kern.h>
 #include <linux/vtime.h>
+#include <linux/sysrq.h>
+#include <linux/percpu-rwsem.h>
 
 #include <uapi/linux/sched/types.h>
 
@@ -54,4 +61,14 @@
 
 #ifdef CONFIG_SCHED_SOFT_DOMAIN
 #include "soft_domain.c"
+#endif
+#ifdef CONFIG_SCHED_CLASS_EXT
+# include "ext.c"
+# include "ext_idle.c"
+#endif
+
+#include "syscalls.c"
+
+#ifdef CONFIG_SMT_QOS
+#include "smt_qos.c"
 #endif

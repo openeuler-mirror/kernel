@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #ifndef _RNPM_TYPE_H_
 #define _RNPM_TYPE_H_
@@ -19,8 +19,10 @@
 #endif
 #endif
 
+#if IS_ENABLED(CONFIG_MXGBEM_FIX_MAC_PADDING)
 #ifndef RNPM_FIX_MAC_PADDING
 #define RNPM_FIX_MAC_PADDING
+#endif
 #endif
 
 #include "rnpm_regs.h"
@@ -70,7 +72,7 @@
 #define RNPM_MAX_SENSORS 1
 struct rnpm_thermal_diode_data {
 	u8 location;
-	int temp;
+	u8 temp;
 	u8 caution_thresh;
 	u8 max_op_thresh;
 };
@@ -186,7 +188,7 @@ struct rnpm_tx_desc {
 struct rnpm_tx_ctx_desc {
 	__le32 mss_len_vf_num;
 	__le32 inner_vlan_tunnel_len;
-#define VF_VEB_MARK (1 << 24) // bit 56
+#define VF_VEB_MARK BIT(24) // bit 56
 	__le32 resv;
 	__le32 resv_cmd;
 #define RNPM_TXD_FLAG_TO_RPU (0x80000000)
@@ -219,15 +221,15 @@ union rnpm_rx_desc {
 	struct {
 		__le32 rss_hash;
 		__le16 mark;
-#define VEB_VF_PKG (1 << 15)
+#define VEB_VF_PKG BIT(15)
 		__le16 rev1;
 		__le16 len;
 		__le16 padding_len;
 		__le16 vlan;
 		__le16 cmd;
-#define RNPM_RX_L3_TYPE_MASK (1 << 15) // 1 is ipv4
+#define RNPM_RX_L3_TYPE_MASK BIT(15) // 1 is ipv4
 #define RNPM_RXD_STAT_L4_MASK (0x02 << 8)
-#define RNPM_RXD_STAT_VLAN_VALID (1 << 15)
+#define RNPM_RXD_STAT_VLAN_VALID BIT(15)
 #define RNPM_RXD_STAT_TUNNEL_NVGRE (0x02 << 13)
 #define RNPM_RXD_STAT_TUNNEL_VXLAN (0x01 << 13)
 #define RNPM_RXD_STAT_TUNNEL_MASK (0x03 << 13)
@@ -236,11 +238,11 @@ union rnpm_rx_desc {
 #define RNPM_RXD_STAT_L4_SCTP (0x02 << 6)
 #define RNPM_RXD_STAT_L4_TCP (0x01 << 6)
 #define RNPM_RXD_STAT_L4_UDP (0x03 << 6)
-#define RNPM_RXD_STAT_IPV6 (1 << 5)
+#define RNPM_RXD_STAT_IPV6 BIT(5)
 #define RNPM_RXD_STAT_IPV4 (0 << 5)
-#define RNPM_RXD_STAT_PTP (1 << 4)
-#define RNPM_RXD_STAT_DD (1 << 1)
-#define RNPM_RXD_STAT_EOP (1 << 0)
+#define RNPM_RXD_STAT_PTP BIT(4)
+#define RNPM_RXD_STAT_DD BIT(1)
+#define RNPM_RXD_STAT_EOP BIT(0)
 	} wb;
 } __packed;
 
@@ -352,9 +354,12 @@ enum {
 	fdir_mode_tcam = 0,
 	fdir_mode_tuple5,
 };
+
 /* Flow Director ATR input struct. */
 union rnpm_atr_input {
-	/* Byte layout in order, all values with MSB first:
+	/*
+	 * Byte layout in order, all values with MSB first:
+	 *
 	 * vm_pool      - 1 byte
 	 * flow_type    - 1 byte
 	 * vlan_id      - 2 bytes
@@ -399,8 +404,8 @@ union rnpm_atr_input {
 };
 
 /* BitTimes (BT) conversion */
-#define RNPM_BT2KB(BT) ((BT + (8 * 1024 - 1)) / (8 * 1024))
-#define RNPM_B2BT(BT) (BT * 8)
+#define RNPM_BT2KB(BT) (((BT) + (8 * 1024 - 1)) / (8 * 1024))
+#define RNPM_B2BT(BT) ((BT) * 8)
 
 /* Calculate Delay to respond to PFC */
 #define RNPM_PFC_D 672
@@ -474,11 +479,13 @@ enum rnpm_mac_type {
 	rnpm_mac_4lanes,
 	rnpm_num_macs,
 };
+
 enum rnpm_rss_type {
 	rnpm_rss_uv440 = 0,
 	rnpm_rss_uv3p,
 	rnpm_rss_n10,
 };
+
 enum rnpm_phy_type {
 	rnpm_phy_unknown = 0,
 	rnpm_phy_none,
@@ -608,6 +615,17 @@ struct rnpm_hw;
 /* iterator type for walking multicast address lists */
 typedef u8 *(*rnpm_mc_addr_itr)(struct rnpm_hw *hw, u8 **mc_addr_ptr,
 				u32 *vmdq);
+/* Function pointer table */
+struct rnpm_eeprom_operations {
+	s32 (*init_params)(struct rnpm_hw *hw);
+	s32 (*read)(struct rnpm_hw *hw, u16 addr, u16 *data);
+	s32 (*read_buffer)(struct rnpm_hw *hw, u16 addr, u16 len, u16 *data);
+	s32 (*write)(struct rnpm_hw *hw, u16 addr, u16 data);
+	s32 (*write_buffer)(struct rnpm_hw *hw, u16 addr, u16 len, u16 *data);
+	s32 (*validate_checksum)(struct rnpm_hw *hw, u16 *data);
+	s32 (*update_checksum)(struct rnpm_hw *hw);
+	u16 (*calc_checksum)(struct rnpm_hw *hw);
+};
 
 struct rnpm_mac_operations {
 	s32 (*init_hw)(struct rnpm_hw *hw);
@@ -617,12 +635,13 @@ struct rnpm_mac_operations {
 	enum rnpm_media_type (*get_media_type)(struct rnpm_hw *hw);
 	u32 (*get_supported_physical_layer)(struct rnpm_hw *hw);
 	s32 (*get_mac_addr)(struct rnpm_hw *hw, u8 *mac_addr);
-	s32 (*get_device_caps)(struct rnpm_hw *hw, u16 *device_caps);
-	s32 (*get_wwn_prefix)(struct rnpm_hw *hw, u16 *wwnn_prefix,
-			      u16 *wwpn_prefix);
+	s32 (*get_device_caps)(struct rnpm_hw *hw, u16 *cap);
+	s32 (*get_wwn_prefix)(struct rnpm_hw *hw, u16 *wwnn_prefix, u16 *wwpn_prefix);
 	s32 (*stop_adapter)(struct rnpm_hw *hw);
 	s32 (*get_bus_info)(struct rnpm_hw *hw);
 	void (*set_lan_id)(struct rnpm_hw *hw);
+	s32 (*read_analog_reg8)(struct rnpm_hw *hw, u32 addr, u8 *data);
+	s32 (*write_analog_reg8)(struct rnpm_hw *hw, u32 addr, u8 data);
 	s32 (*setup_sfp)(struct rnpm_hw *hw);
 	s32 (*disable_rx_buff)(struct rnpm_hw *hw);
 	s32 (*enable_rx_buff)(struct rnpm_hw *hw);
@@ -634,16 +653,14 @@ struct rnpm_mac_operations {
 	void (*disable_tx_laser)(struct rnpm_hw *hw);
 	void (*enable_tx_laser)(struct rnpm_hw *hw);
 	void (*flap_tx_laser)(struct rnpm_hw *hw);
-	s32 (*setup_link)(struct rnpm_hw *hw, rnpm_link_speed speed,
-			  bool autoneg_wait_to_complete);
-	s32 (*check_link)(struct rnpm_hw *hw, rnpm_link_speed *speed,
-			  bool *link_up, bool link_up_wait_to_complete);
+	s32 (*setup_link)(struct rnpm_hw *hw, rnpm_link_speed speed, bool flag);
+	s32 (*check_link)(struct rnpm_hw *hw, rnpm_link_speed *speed, bool *linkup,
+			  bool flag);
 	s32 (*get_link_capabilities)(struct rnpm_hw *hw, rnpm_link_speed *speed,
 				     bool *autoneg, u32 *media_type);
 
 	/* Packet Buffer Manipulation */
-	void (*set_rxpba)(struct rnpm_hw *hw, int num_pb, u32 headroom,
-			  int strategy);
+	void (*set_rxpba)(struct rnpm_hw *hw, int num_pb, u32 headroom, int strategy);
 
 	/* LED */
 	s32 (*led_on)(struct rnpm_hw *hw, u32 index);
@@ -652,23 +669,19 @@ struct rnpm_mac_operations {
 	s32 (*blink_led_stop)(struct rnpm_hw *hw, u32 index);
 
 	/* RAR, Multicast, VLAN */
-	s32 (*set_rar)(struct rnpm_hw *hw, u32 index, u8 *addr, u32 vmdq,
-		       u32 enable_addr);
-	s32 (*set_rar_mac)(struct rnpm_hw *hw, u32 index, u8 *addr, u32 vmdq,
-			   u32 port);
+	s32 (*set_rar)(struct rnpm_hw *hw, u32 index, u8 *addr, u32 vmdq, u32 enable_addr);
+	s32 (*set_rar_mac)(struct rnpm_hw *hw, u32 index, u8 *addr, u32 vmdq, u32 port);
 	s32 (*clear_rar)(struct rnpm_hw *hw, u32 index);
 	s32 (*clear_rar_mac)(struct rnpm_hw *hw, u32 index, u32 port);
 	s32 (*set_vmdq)(struct rnpm_hw *hw, u32 rar, u32 vmdq);
 	s32 (*clear_vmdq)(struct rnpm_hw *hw, u32 rar, u32 vmdq);
 	s32 (*init_rx_addrs)(struct rnpm_hw *hw);
-	s32 (*update_mc_addr_list)(struct rnpm_hw *hw,
-				   struct net_device *netdev);
+	s32 (*update_mc_addr_list)(struct rnpm_hw *hw, struct net_device *netdev);
 	s32 (*enable_mc)(struct rnpm_hw *hw);
 	s32 (*disable_mc)(struct rnpm_hw *hw);
 	s32 (*clear_vfta)(struct rnpm_hw *hw);
 	s32 (*set_vfta)(struct rnpm_hw *hw, u32 vlan, u32 vind, bool vlan_on);
-	s32 (*set_vfta_mac)(struct rnpm_hw *hw, u32 vlan, u32 vind,
-			    bool vlan_on);
+	s32 (*set_vfta_mac)(struct rnpm_hw *hw, u32 vlan, u32 vind, bool vlan_on);
 	s32 (*init_uta_tables)(struct rnpm_hw *hw);
 	void (*set_mac_anti_spoofing)(struct rnpm_hw *hw, bool enable, int pf);
 	void (*set_vlan_anti_spoofing)(struct rnpm_hw *hw, bool enable, int vf);
@@ -677,8 +690,7 @@ struct rnpm_mac_operations {
 	s32 (*fc_enable)(struct rnpm_hw *hw);
 	s32 (*setup_fc)(struct rnpm_hw *hw);
 	/* Manageability interface */
-	s32 (*set_fw_drv_ver)(struct rnpm_hw *hw, u8 maj, u8 min, u8 build,
-			      u8 sub);
+	s32 (*set_fw_drv_ver)(struct rnpm_hw *hw, u8 maj, u8 min, u8 build, u8 ver);
 	s32 (*get_thermal_sensor_data)(struct rnpm_hw *hw);
 	s32 (*init_thermal_sensor_thresh)(struct rnpm_hw *hw);
 	bool (*mng_fw_enabled)(struct rnpm_hw *hw);
@@ -689,27 +701,22 @@ struct rnpm_phy_operations {
 	s32 (*identify_sfp)(struct rnpm_hw *hw);
 	s32 (*init)(struct rnpm_hw *hw);
 	s32 (*reset)(struct rnpm_hw *hw);
-	s32 (*read_reg)(struct rnpm_hw *hw, u32 reg_addr, u32 device_type,
-			u16 *phy_data);
-	s32 (*write_reg)(struct rnpm_hw *hw, u32 reg_addr, u32 device_type,
-			 u16 phy_data);
+	s32 (*read_reg)(struct rnpm_hw *hw, u32 addr, u32 type, u16 *data);
+	s32 (*write_reg)(struct rnpm_hw *hw, u32 addr, u32 type, u16 data);
 	s32 (*setup_link)(struct rnpm_hw *hw);
-	s32 (*setup_link_speed)(struct rnpm_hw *hw, rnpm_link_speed speed,
-				bool autoneg_wait_to_complete);
-	s32 (*read_i2c_byte)(struct rnpm_hw *hw, u8 byte_offset, u8 dev_addr,
-			     u8 *data);
-	s32 (*write_i2c_byte)(struct rnpm_hw *hw, u8 byte_offset, u8 dev_addr,
-			      u8 data);
-	s32 (*read_i2c_sff8472)(struct rnpm_hw *hw, u8 byte_offset,
-				u8 *sff8472_data);
-	s32 (*read_i2c_eeprom)(struct rnpm_hw *hw, u8 byte_offset,
-			       u8 *eeprom_data);
-	s32 (*write_i2c_eeprom)(struct rnpm_hw *hw, u8 byte_offset,
-				u8 eeprom_data);
+	s32 (*setup_link_speed)(struct rnpm_hw *hw, rnpm_link_speed speed, bool unused);
+	s32 (*check_link)(struct rnpm_hw *hw, rnpm_link_speed *speed, bool *linkup);
+	s32 (*get_firmware_version)(struct rnpm_hw *hw, u16 *version);
+	s32 (*read_i2c_byte)(struct rnpm_hw *hw, u8 offset, u8 addr, u8 *data);
+	s32 (*write_i2c_byte)(struct rnpm_hw *hw, u8 offset, u8 addr, u8 data);
+	s32 (*read_i2c_sff8472)(struct rnpm_hw *hw, u8 addr, u8 *data);
+	s32 (*read_i2c_eeprom)(struct rnpm_hw *hw, u8 addr, u8 *data);
+	s32 (*write_i2c_eeprom)(struct rnpm_hw *hw, u8 addr, u8 data);
 	s32 (*check_overtemp)(struct rnpm_hw *hw);
 };
 
 struct rnpm_eeprom_info {
+	struct rnpm_eeprom_operations ops;
 	enum rnpm_eeprom_type type;
 	u32 semaphore_delay;
 	u16 word_size;
@@ -732,10 +739,12 @@ enum mc_location_type {
 	rnpm_mc_location_nic,
 	rnpm_mc_location_mac,
 };
+
 enum vlan_location_type {
 	rnpm_vlan_location_nic,
 	rnpm_vlan_location_mac,
 };
+
 struct rnpm_mac_info {
 	struct rnpm_mac_operations ops;
 	// enum rnpm_mac_type             type;
@@ -797,20 +806,19 @@ struct rnpm_phy_info {
 
 struct rnpm_pcs_operations {
 	u32 (*read)(struct rnpm_hw *hw, int num, u32 addr);
-	void (*write)(struct rnpm_hw *hw, int num, u32 addr, u32 value);
+	void (*write)(struct rnpm_hw *hw, int num, u32 addr, u32 data);
+	u32 (*cr_read)(struct rnpm_hw *hw, int num, u32 addr);
+	void (*cr_write)(struct rnpm_hw *hw, int num, u32 addr, u32 data);
 };
 
 struct rnpm_mbx_operations {
 	s32 (*init_params)(struct rnpm_hw *hw);
-	s32 (*read)(struct rnpm_hw *hw, u32 *msg, u16 size, enum MBX_ID mbx_id);
-	s32 (*write)(struct rnpm_hw *hw, u32 *msg, u16 size,
-		     enum MBX_ID mbx_id);
-	s32 (*read_posted)(struct rnpm_hw *hw, u32 *msg, u16 size,
-			   enum MBX_ID mbx_id);
-	s32 (*write_posted)(struct rnpm_hw *hw, u32 *msg, u16 size,
-			    enum MBX_ID mbx_id);
-	s32 (*check_for_msg)(struct rnpm_hw *hw, enum MBX_ID mbx_id);
-	s32 (*check_for_ack)(struct rnpm_hw *hw, enum MBX_ID mbx_id);
+	s32 (*read)(struct rnpm_hw *hw, u32 *msg, u16 len, enum MBX_ID);
+	s32 (*write)(struct rnpm_hw *hw, u32 *msg, u16 len, enum MBX_ID);
+	s32 (*read_posted)(struct rnpm_hw *hw, u32 *msg, u16 len, enum MBX_ID);
+	s32 (*write_posted)(struct rnpm_hw *hw, u32 *msg, u16 len, enum MBX_ID);
+	s32 (*check_for_msg)(struct rnpm_hw *hw, enum MBX_ID);
+	s32 (*check_for_ack)(struct rnpm_hw *hw, enum MBX_ID);
 	//	s32 (*check_for_rst)(struct rnpm_hw *, enum MBX_ID);
 	s32 (*configure)(struct rnpm_hw *hw, int nr_vec, bool enable);
 };
@@ -871,6 +879,9 @@ struct rnpm_mbx_info {
 
 // 0x500a8fc0,0x501adfc0: #63 cpu<->vf shm
 #define RNPM_VF_CPU_SHM_BASE_NR62 (RNPM_MBX_VF_CPU_SHM_PF_BASE + 62 * 64)
+/*
+ *	max size=64bytes
+ */
 struct ncsi_shm_info {
 	u32 valid;
 #define RNPM_NCSI_SHM_VALID 0xa5000000
@@ -894,12 +905,16 @@ struct ncsi_shm_info {
 struct rnpm_hw {
 	void *back;
 	u8 __iomem *hw_addr;
-	u8 __iomem *ring_msix_base;
+	u8 __iomem *hw_kram_addr;
 	u8 __iomem *rpu_addr;
+	u8 __iomem *hw_mpe_addr;
+	u8 __iomem *hw_sw_addr;
+	u8 __iomem *ring_msix_base;
 	spinlock_t *pf_setup_lock;
 
 	u8 pfvfnum; // fun
 	u8 num;
+	u8 port_idx;
 	u8 nr_lane;
 	int speed;
 	int ablity_speed;
@@ -934,6 +949,8 @@ struct rnpm_hw {
 		u8 port_id[4];
 		u32 port_ids;
 	};
+	u8 is_sgmii_bitmaps;
+	u8 is_sgmii_bitmaps_valid;
 	u8 is_backplane : 1;
 	u8 is_sgmii : 1;
 	u8 force_speed_stat : 2;
@@ -967,10 +984,10 @@ struct rnpm_hw {
 	int default_rx_queue;
 	int usecstocount;
 
-#define RNPM_NET_FEATURE_SG ((u32)(1 << 0))
-#define RNPM_NET_FEATURE_TX_CHECKSUM ((u32)(1 << 1))
-#define RNPM_NET_FEATURE_RX_CHECKSUM ((u32)(1 << 2))
-#define RNPM_NET_FEATURE_TSO ((u32)(1 << 3))
+#define RNPM_NET_FEATURE_SG ((u32)BIT(0))
+#define RNPM_NET_FEATURE_TX_CHECKSUM ((u32)BIT(1))
+#define RNPM_NET_FEATURE_RX_CHECKSUM ((u32)BIT(2))
+#define RNPM_NET_FEATURE_TSO ((u32)BIT(3))
 #define RNPM_NET_FEATURE_TX_UDP_TUNNEL BIT(4)
 #define RNPM_NET_FEATURE_VLAN_FILTER BIT(5)
 #define RNPM_NET_FEATURE_VLAN_OFFLOAD BIT(6)
@@ -992,6 +1009,7 @@ struct rnpm_info {
 	enum rnpm_rss_type rss_type;
 	s32 (*get_invariants)(struct rnpm_hw *hw);
 	struct rnpm_mac_operations *mac_ops;
+	struct rnpm_eeprom_operations *eeprom_ops;
 	struct rnpm_phy_operations *phy_ops;
 	struct rnpm_mbx_operations *mbx_ops;
 	struct rnpm_pcs_operations *pcs_ops;

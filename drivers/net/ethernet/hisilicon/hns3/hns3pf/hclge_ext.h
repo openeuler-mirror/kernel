@@ -150,4 +150,10 @@ void hclge_ext_reset_end(struct hclge_dev *hdev, bool done);
 
 int hclge_ext_ops_handle(struct hnae3_handle *handle, int opcode,
 			 void *data, size_t length);
+
+int hclge_set_pfc_storm_para(struct hclge_dev *hdev, void *data,
+			     size_t length);
+
+int hclge_get_pfc_storm_para(struct hclge_dev *hdev, void *data,
+			     size_t length);
 #endif

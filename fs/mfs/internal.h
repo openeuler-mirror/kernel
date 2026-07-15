@@ -4,6 +4,7 @@
 #ifndef _MFS_INTERNAL_H
 #define _MFS_INTERNAL_H
 
+#include <linux/kobject.h>
 #include <linux/file.h>
 #include <linux/fs.h>
 #include <linux/mm.h>
@@ -32,8 +33,7 @@ struct mfs_cache_object {
 	struct inode *mfs_inode;
 
 	struct rw_semaphore rwsem;
-	int fd;  /* file handle */
-	struct file *anon_file;  /* related with fd */
+	int fd;  /* anon file handle */
 };
 
 struct mfs_syncer {
@@ -73,6 +73,10 @@ struct mfs_sb_info {
 	struct super_block *sb;
 
 	struct mfs_caches caches;
+
+	struct kobject ev_kobj;
+	struct completion ev_kobj_unregister;
+	unsigned long ev_mask;
 };
 
 struct mfs_inode {
@@ -97,6 +101,11 @@ struct mfs_dentry_info {
 #define MFS_SB(sb) ((struct mfs_sb_info *)(sb)->s_fs_info)
 #define MFS_I(ptr) container_of(ptr, struct mfs_inode, vfs_inode)
 #define MFS_D(dent) ((struct mfs_dentry_info *)(dent)->d_fsdata)
+
+#define mfs_set_evmask(mask, bit) ((mask) |= (1UL << bit))
+#define mfs_clear_evmask(mask, bit) ((mask) &= ~(1UL << bit))
+#define mfs_test_evmask(mask, bit) ((mask) & (1UL << bit))
+#define allow_ev_type(sbi, op) mfs_test_evmask((sbi)->ev_mask, op)
 
 extern const struct file_operations mfs_dir_fops;
 extern const struct file_operations mfs_file_fops;
@@ -213,11 +222,17 @@ void mfs_fs_dev_exit(struct super_block *sb);
 int mfs_dev_init(void);
 void mfs_dev_exit(void);
 
+int mfs_fs_sysfs_init(struct super_block *sb);
+void mfs_fs_sysfs_exit(struct super_block *sb);
+int mfs_sysfs_init(void);
+void mfs_sysfs_exit(void);
+
 struct mfs_event *mfs_pick_event(struct xa_state *xas,
 				 unsigned long xa_max);
 void mfs_post_event_read(struct mfs_cache_object *object,
 			       loff_t off, uint64_t len,
 			       struct mfs_syncer *syncer, int op);
+void mfs_post_event_close(struct mfs_cache_object *object);
 void mfs_destroy_events(struct super_block *sb);
 void mfs_cancel_syncer_events(struct mfs_cache_object *object,
 			      struct mfs_syncer *syncer);

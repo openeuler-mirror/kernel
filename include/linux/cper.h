@@ -202,6 +202,14 @@ enum {
 	GUID_INIT(0x74D255B0, 0x73E8, 0x488A, 0xB8, 0x67, 0x90, 0x65,	\
 		  0x4A, 0x35, 0x86, 0x5E)
 
+#define CPER_SEC_SVID							\
+	GUID_INIT(0x3B1E4A7C, 0x9F82, 0x4E3D, 0x8A, 0x5B, 0x1C, 0x7D,	\
+		  0x3F, 0x6E, 0x8A, 0x2C)
+
+#define CPER_SEC_HIF							\
+	GUID_INIT(0x137B5703, 0xFD9C, 0x4C3F, 0xA2, 0x75, 0x3E, 0x00,	\
+		  0x2A, 0xDF, 0x7B, 0x04)
+
 #define CPER_PROC_VALID_TYPE			0x0001
 #define CPER_PROC_VALID_ISA			0x0002
 #define CPER_PROC_VALID_ERROR_TYPE		0x0004
@@ -257,6 +265,21 @@ enum {
 #define CPER_PCIE_VALID_AER_INFO		0x0080
 
 #define CPER_PCIE_SLOT_SHIFT			3
+
+#define CPER_SVID_VALID_SOCKET_ID		0x1
+#define CPER_SVID_VALID_SVID_ID			0x2
+#define CPER_SVID_VALID_VRM_NUM			0x4
+#define CPER_SVID_VALID_ERROR_TYPE		0x8
+
+#define CPER_HIF_VALID_DVAD_CHANNEL0		0x1
+#define CPER_HIF_VALID_DVAD_CHANNEL1		0x2
+#define CPER_HIF_VALID_DVAD_CHANNEL2		0x4
+#define CPER_HIF_VALID_DVAD_CHANNEL3		0x8
+#define CPER_HIF_VALID_DVAD_CHANNEL4		0x10
+#define CPER_HIF_VALID_DVAD_CHANNEL5		0x20
+#define CPER_HIF_VALID_SNT			0x40
+#define CPER_HIF_VALID_CXL_PORT0		0x80
+#define CPER_HIF_VALID_CXL_PORT1		0x100
 
 #define CPER_ARM_VALID_MPIDR			BIT(0)
 #define CPER_ARM_VALID_AFFINITY_LEVEL		BIT(1)
@@ -568,6 +591,28 @@ struct cper_sec_fw_err_rec_ref {
 	guid_t record_identifier_guid;
 };
 
+struct cper_sec_svid {
+	u8	validation_bits;
+	u8	socket_id;
+	u8	svid_id;
+	u8	vrm_number;
+	u16	error_type;
+	u16	reserved;
+};
+
+struct cper_sec_hif {
+	u16	validation_bits;
+	u8	socket_id;
+	u8	hnod_id;
+	u8	snt_location;
+	u8	snt_error_type;
+	u8	snt_error_data[5];
+	u8	snt_error_addr[5];
+	u64	dvad_error_addr[6];
+	u64	cxl_decode_error_addr[2];
+	u8	cxl_error_type[2];
+};
+
 /* Reset to default packing */
 #pragma pack()
 
@@ -586,7 +631,8 @@ void cper_mem_err_pack(const struct cper_sec_mem_err *,
 const char *cper_mem_err_unpack(struct trace_seq *,
 				struct cper_mem_err_compact *);
 void cper_print_proc_arm(const char *pfx,
-			 const struct cper_sec_proc_arm *proc);
+			 const struct cper_sec_proc_arm *proc,
+			 u32 length);
 void cper_print_proc_ia(const char *pfx,
 			const struct cper_sec_proc_ia *proc);
 int cper_mem_err_location(struct cper_mem_err_compact *mem, char *msg);
@@ -598,6 +644,6 @@ void cper_estatus_print(const char *pfx,
 int cper_estatus_check_header(const struct acpi_hest_generic_status *estatus);
 int cper_estatus_check(const struct acpi_hest_generic_status *estatus);
 
-const char *cper_zdi_zpi_err_type_str(unsigned long etype);
+const char *cper_zdi_zpi_err_type_str(unsigned int etype);
 
 #endif

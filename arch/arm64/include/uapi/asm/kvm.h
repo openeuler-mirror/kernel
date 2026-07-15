@@ -383,6 +383,8 @@ enum {
 	 * current sequence, add in sequence.
 	 */
 	KVM_REG_ARM_VENDOR_HYP_BIT_IPIV		= 2,
+	KVM_REG_ARM_VENDOR_HYP_BIT_PVTIMER_STATUS		= 3,
+	KVM_REG_ARM_VENDOR_HYP_BIT_TIMER_EARLY_INJECT	= 4,
 #ifdef __KERNEL__
 	KVM_REG_ARM_VENDOR_HYP_BMAP_BIT_COUNT,
 #endif
@@ -402,6 +404,10 @@ enum {
 /* Device Control API on vm fd */
 #define KVM_ARM_VM_SMCCC_CTRL		0
 #define   KVM_ARM_VM_SMCCC_FILTER	0
+
+/* Solely for avoiding conflicts with mainline */
+#define KVM_VM_TIMER_EARLY_INJECT_CTRL	20
+#define   KVM_VM_TIMER_EARLY_INJECT_IPA	0
 
 /* Device Control API: ARM VGIC */
 #define KVM_DEV_ARM_VGIC_GRP_ADDR	0
@@ -509,6 +515,10 @@ struct arm_rme_map_ram_args {
 #define   KVM_ARM_VCPU_TIMER_IRQ_HPTIMER	3
 #define KVM_ARM_VCPU_PVTIME_CTRL	2
 #define   KVM_ARM_VCPU_PVTIME_IPA	0
+
+/* Solely for avoiding conflicts with mainline */
+#define KVM_ARM_VCPU_PVTIMER_STATUS_CTRL	20
+#define   KVM_ARM_VCPU_PVTIMER_STATUS_IPA	0
 
 /* KVM_IRQ_LINE irq field index values */
 #define KVM_ARM_IRQ_VCPU2_SHIFT		28

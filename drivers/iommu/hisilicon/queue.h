@@ -107,6 +107,8 @@
 #define CMD_PLBI_0_RANGE GENMASK_ULL(37, 32)
 #define CMD_PLBI_1_ADDR_MASK GENMASK_ULL(63, 0)
 #define CMD_PLBI_2_TECTE_TAG GENMASK_ULL(15, 0)
+#define CMD_PLBI_1_NEXT_LEVEL_INDEX_MASK GENMASK_ULL(15, 0)
+#define CMD_PLBI_1_NEXT_LEVEL_OFFSET_MASK GENMASK_ULL(61, 32)
 
 #define CMD_CREATE_KVTBL0_EVT_EN BIT(8)
 #define CMD_CREATE_KVTBL0_TAG_MASK GENMASK_ULL(31, 16)
@@ -297,16 +299,43 @@ struct ummu_mcmdq_ent {
 				} check_pa_conti;
 			};
 		} null_op;
+#define CMD_PLBI_OS_N 0x63
+		struct {
+			u32 tid;
+			u16 tecte_tag;
+			u32 next_lvl_idx;
+			u32 next_lvl_offset;
+		} plbi_free_bit;
 	};
+};
+
+struct ummu_device_event {
+	u8		code;
+	u8		read : 1;
+	u8		instruction : 1;
+	u8		privileged : 1;
+	u8		cls : 2;
+	u8		ns_ipa : 1;
+	u8		s2 : 1;
+	u8		stall : 1;
+	u16		stag;
+	u16		tect_tag;
+	u32		tid;
+	u64		ipa;
+	u64		iova;
+	struct device	*dev;
 };
 
 void ummu_queue_write(__le64 *dst, u64 *src, size_t n_dwords);
 void ummu_queue_read(u64 *dst, __le64 *src, size_t n_dwords);
 int ummu_queue_remove_raw(struct ummu_queue *q, u64 *ent);
 int ummu_queue_sync_prod_in(struct ummu_queue *q);
+void ummu_queue_sync_cons_ovf(struct ummu_queue *q);
 bool ummu_queue_empty(struct ummu_ll_queue *q);
 int ummu_write_evtq_regs(struct ummu_device *ummu);
 int ummu_init_queues(struct ummu_device *ummu);
+void ummu_device_free_mcmdq(struct ummu_device *ummu);
+void ummu_device_free_evtq(struct ummu_device *ummu);
 int ummu_device_mcmdq_init_cfg(struct ummu_device *ummu);
 int ummu_mcmdq_issue_cmd(struct ummu_device *ummu, struct ummu_mcmdq_ent *ent);
 int ummu_mcmdq_build_cmd(struct ummu_device *ummu, u64 *cmd,

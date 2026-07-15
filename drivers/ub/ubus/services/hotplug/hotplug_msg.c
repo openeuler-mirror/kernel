@@ -45,7 +45,7 @@ static struct ub_slot *ubhp_get_slot_from_msg(void *pkt)
 	return slot;
 }
 
-void ubhp_handle_event(struct ub_slot *slot, enum hotplug_event event)
+static void ubhp_handle_event(struct ub_slot *slot, enum hotplug_event event)
 {
 	bool queued = false;
 	u32 flag;

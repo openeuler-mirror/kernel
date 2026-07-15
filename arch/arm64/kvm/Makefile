@@ -10,7 +10,8 @@ include $(srctree)/virt/kvm/Makefile.kvm
 obj-$(CONFIG_KVM) += kvm.o
 obj-$(CONFIG_KVM) += hyp/
 
-kvm-y += arm.o mmu.o mmio.o psci.o hypercalls.o pvtime.o pvsched.o \
+kvm-y += arm.o mmu.o mmio.o psci.o hypercalls.o \
+	 pvtime.o pvsched.o pvtimer_status.o pvtimer_early.o \
 	 inject_fault.o va_layout.o handle_exit.o \
 	 guest.o debug.o reset.o sys_regs.o stacktrace.o \
 	 vgic-sys-reg-v3.o fpsimd.o pkvm.o \
@@ -29,6 +30,7 @@ kvm-$(CONFIG_HISI_VIRTCCA_HOST) += tmi.o
 kvm-$(CONFIG_HISI_VIRTCCA_HOST) += virtcca_cvm.o
 kvm-$(CONFIG_HISI_VIRTCCA_HOST) += virtcca_cvm_exit.o
 kvm-$(CONFIG_HISI_CCA) += rme-hisi-cca.o
+kvm-$(CONFIG_HISI_CCA) += rme-debugfs.o
 kvm-$(CONFIG_HISI_CCADA_HOST) += hisi-cca-da.o
 obj-$(CONFIG_KVM_HISI_VIRT) += hisilicon/
 

@@ -15,6 +15,7 @@
 #include "ubcore_priv.h"
 
 #define UBCORE_DEVNODE_MODE (0666)
+#define UBAGG_DEV_PREFIX "bonding_dev"
 
 int ubcore_register_pnet_ops(void);
 void ubcore_unregister_pnet_ops(void);
@@ -22,7 +23,8 @@ int ubcore_class_register(void);
 void ubcore_class_unregister(void);
 int ubcore_cdev_register(void);
 int ubcore_cdev_unregister(void);
-int ubcore_set_ns_mode(bool shared);
+int ubcore_set_dev_ns_mode(bool shared);
+int ubcore_set_eid_ns_mode(bool shared);
 int ubcore_set_dev_ns(char *device_name, uint32_t ns_fd);
 int ubcore_expose_dev_ns(char *device_name, uint32_t ns_fd);
 int ubcore_unexpose_dev_ns(char *device_name, uint32_t ns_fd);
@@ -48,6 +50,12 @@ void ubcore_clear_pattern3_eid(struct ubcore_device *dev,
 static inline bool ubcore_check_ctrlplane(struct ubcore_device *dev)
 {
 	return dev && dev->ops && dev->ops->get_tp_list;
+}
+
+static inline bool ubcore_is_bonding_dev(struct ubcore_device *dev)
+{
+	return memcmp(dev->dev_name, UBAGG_DEV_PREFIX,
+		      strlen(UBAGG_DEV_PREFIX)) == 0;
 }
 
 #endif // UBCORE_DEVICE_H

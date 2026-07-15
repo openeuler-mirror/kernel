@@ -3,6 +3,7 @@
  * Copyright (C) 2024 Loongson Technology Corporation Limited
  */
 
+#include <asm/kvm_dmsintc.h>
 #include <asm/kvm_eiointc.h>
 #include <asm/kvm_pch_pic.h>
 #include <asm/kvm_vcpu.h>
@@ -11,7 +12,7 @@
 /* update the isr according to irq level and route irq to eiointc */
 static void pch_pic_update_irq(struct loongarch_pch_pic *s, int irq, int level)
 {
-	u64 mask = (1 << irq);
+	u64 mask = BIT(irq);
 
 	/*
 	 * set isr and route irq to eiointc and
@@ -32,24 +33,28 @@ static void pch_pic_update_irq(struct loongarch_pch_pic *s, int irq, int level)
 	}
 }
 
-/* msi irq handler */
-void pch_msi_set_irq(struct kvm *kvm, int irq, int level)
+/* update batch irqs, the irq_mask is a bitmap of irqs */
+static void pch_pic_update_batch_irqs(struct loongarch_pch_pic *s, u64 irq_mask, int level)
 {
-	eiointc_set_irq(kvm->arch.eiointc, irq, level);
+	unsigned int irq;
+	DECLARE_BITMAP(irqs, 64) = { BITMAP_FROM_U64(irq_mask) };
+
+	for_each_set_bit(irq, irqs, 64)
+		pch_pic_update_irq(s, irq, level);
 }
 
 /* called when a irq is triggered in pch pic */
 void pch_pic_set_irq(struct loongarch_pch_pic *s, int irq, int level)
 {
-	u64 mask = (1 << irq);
+	u64 mask = BIT(irq);
 
 	spin_lock(&s->lock);
 	if (level)
-		/* set irr */
-		s->irr |= mask;
+		s->irr |= mask; /* set irr */
 	else {
-		/* 0 level signal in edge triggered irq does not mean to clear irq
-		 * The irr register variable is cleared when the cpu writes to the
+		/*
+		 * In edge triggered mode, 0 does not mean to clear irq
+		 * The irr register variable is cleared when cpu writes to the
 		 * PCH_PIC_CLEAR_START address area
 		 */
 		if (s->edge & mask) {
@@ -62,295 +67,235 @@ void pch_pic_set_irq(struct loongarch_pch_pic *s, int irq, int level)
 	spin_unlock(&s->lock);
 }
 
-/* update batch irqs, the irq_mask is a bitmap of irqs */
-static void pch_pic_update_batch_irqs(struct loongarch_pch_pic *s, u64 irq_mask, int level)
+/* msi irq handler */
+int pch_msi_set_irq(struct kvm *kvm, struct kvm_kernel_irq_routing_entry *e, int level)
 {
-	int irq, bits;
+	u64 msg_addr = (((u64)e->msi.address_hi) << 32) | e->msi.address_lo;
 
-	/* find each irq by irqs bitmap and update each irq */
-	bits = sizeof(irq_mask) * 8;
-	irq = find_first_bit((void *)&irq_mask, bits);
-	while (irq < bits) {
-		pch_pic_update_irq(s, irq, level);
-		bitmap_clear((void *)&irq_mask, irq, 1);
-		irq = find_first_bit((void *)&irq_mask, bits);
+	if (cpu_has_msgint && kvm->arch.dmsintc &&
+		msg_addr >= kvm->arch.dmsintc->msg_addr_base &&
+		msg_addr < (kvm->arch.dmsintc->msg_addr_base + kvm->arch.dmsintc->msg_addr_size)) {
+		return dmsintc_set_irq(kvm, msg_addr, e->msi.data, level);
 	}
+
+	eiointc_set_irq(kvm->arch.eiointc, e->msi.data, level);
+
+	return 0;
 }
 
-/*
- * pch pic register is 64-bit, but it is accessed by 32-bit,
- * so we use high to get whether low or high 32 bits we want
- * to read.
- */
-static u32 pch_pic_read_reg(u64 *s, int high)
+static int loongarch_pch_pic_read(struct loongarch_pch_pic *s, gpa_t addr, int len, void *val)
 {
-	u64 val = *s;
+	int offset;
+	u64 data = 0;
+	void *ptemp;
 
-	/* read the high 32 bits when the high is 1 */
-	return high ? (u32)(val >> 32) : (u32)val;
+	offset = addr - s->pch_pic_base;
+	offset -= offset & 7;
+
+	spin_lock(&s->lock);
+	switch (offset) {
+	case PCH_PIC_INT_ID_START ... PCH_PIC_INT_ID_END:
+		data = s->id.data;
+		break;
+	case PCH_PIC_MASK_START ... PCH_PIC_MASK_END:
+		data = s->mask;
+		break;
+	case PCH_PIC_HTMSI_EN_START ... PCH_PIC_HTMSI_EN_END:
+		/* read htmsi enable reg */
+		data = s->htmsi_en;
+		break;
+	case PCH_PIC_EDGE_START ... PCH_PIC_EDGE_END:
+		/* read edge enable reg */
+		data = s->edge;
+		break;
+	case PCH_PIC_AUTO_CTRL0_START ... PCH_PIC_AUTO_CTRL0_END:
+	case PCH_PIC_AUTO_CTRL1_START ... PCH_PIC_AUTO_CTRL1_END:
+		/* we only use default mode: fixed interrupt distribution mode */
+		break;
+	case PCH_PIC_ROUTE_ENTRY_START ... PCH_PIC_ROUTE_ENTRY_END:
+		/* only route to int0: eiointc */
+		ptemp = s->route_entry + (offset - PCH_PIC_ROUTE_ENTRY_START);
+		data = *(u64 *)ptemp;
+		break;
+	case PCH_PIC_HTMSI_VEC_START ... PCH_PIC_HTMSI_VEC_END:
+		/* read htmsi vector */
+		ptemp = s->htmsi_vector + (offset - PCH_PIC_HTMSI_VEC_START);
+		data = *(u64 *)ptemp;
+		break;
+	case PCH_PIC_POLARITY_START ... PCH_PIC_POLARITY_END:
+		data = s->polarity;
+		break;
+	case PCH_PIC_INT_IRR_START:
+		data = s->irr;
+		break;
+	case PCH_PIC_INT_ISR_START:
+		data = s->isr;
+		break;
+	default:
+		break;
+	}
+	spin_unlock(&s->lock);
+
+	offset = (addr - s->pch_pic_base) & 7;
+	data = data >> (offset * 8);
+	memcpy(val, &data, len);
+
+	return 0;
 }
 
-/*
- * pch pic register is 64-bit, but it is accessed by 32-bit,
- * so we use high to get whether low or high 32 bits we want
- * to write.
- */
-static u32 pch_pic_write_reg(u64 *s, int high, u32 v)
+static int kvm_pch_pic_read(struct kvm_vcpu *vcpu,
+			struct kvm_io_device *dev,
+			gpa_t addr, int len, void *val)
 {
-	u64 val = *s, data = v;
+	int ret = 0;
+	struct loongarch_pch_pic *s = vcpu->kvm->arch.pch_pic;
 
-	if (high) {
-		/*
-		 * Clear val high 32 bits
-		 * write the high 32 bits when the high is 1
-		 */
-		*s = (val << 32 >> 32) | (data << 32);
-		val >>= 32;
-	} else
-		/*
-		 * Clear val low 32 bits
-		 * write the low 32 bits when the high is 0
-		 */
-		*s = (val >> 32 << 32) | v;
+	if (!s) {
+		kvm_err("%s: pch pic irqchip not valid!\n", __func__);
+		return ret;
+	}
 
-	return (u32)val;
+	if (addr & (len - 1)) {
+		kvm_err("%s: pch pic not aligned addr %llx len %d\n", __func__, addr, len);
+		return ret;
+	}
+
+	/* statistics of pch pic reading */
+	vcpu->stat.pch_pic_read_exits++;
+	ret = loongarch_pch_pic_read(s, addr, len, val);
+
+	return ret;
 }
 
 static int loongarch_pch_pic_write(struct loongarch_pch_pic *s, gpa_t addr,
 					int len, const void *val)
 {
-	u32 old, data, offset, index;
-	u64 irq;
-	int ret;
+	int offset;
+	u64 old, data, mask;
+	void *ptemp;
 
-	ret = 0;
-	data = *(u32 *)val;
-	offset = addr - s->pch_pic_base;
-
-	spin_lock(&s->lock);
-	switch (offset) {
-	case PCH_PIC_MASK_START ... PCH_PIC_MASK_END:
-		offset -= PCH_PIC_MASK_START;
-		/* get whether high or low 32 bits we want to write */
-		index = offset >> 2;
-		old = pch_pic_write_reg(&s->mask, index, data);
-
-		/* enable irq when mask value change to 0 */
-		irq = (old & ~data) << (32 * index);
-		pch_pic_update_batch_irqs(s, irq, 1);
-
-		/* disable irq when mask value change to 1 */
-		irq = (~old & data) << (32 * index);
-		pch_pic_update_batch_irqs(s, irq, 0);
+	switch (len) {
+	case 1:
+		data = *(u8 *)val;
+		mask = 0xFF;
 		break;
-	case PCH_PIC_HTMSI_EN_START ... PCH_PIC_HTMSI_EN_END:
-		offset -= PCH_PIC_HTMSI_EN_START;
-		index = offset >> 2;
-		pch_pic_write_reg(&s->htmsi_en, index, data);
+	case 2:
+		data = *(u16 *)val;
+		mask = USHRT_MAX;
 		break;
-	case PCH_PIC_EDGE_START ... PCH_PIC_EDGE_END:
-		offset -= PCH_PIC_EDGE_START;
-		index = offset >> 2;
-		/* 1: edge triggered, 0: level triggered */
-		pch_pic_write_reg(&s->edge, index, data);
+	case 4:
+		data = *(u32 *)val;
+		mask = UINT_MAX;
 		break;
-	case PCH_PIC_CLEAR_START ... PCH_PIC_CLEAR_END:
-		offset -= PCH_PIC_CLEAR_START;
-		index = offset >> 2;
-		/* write 1 to clear edge irq */
-		old = pch_pic_read_reg(&s->irr, index);
-		/*
-		 * get the irq bitmap which is edge triggered and
-		 * already set and to be cleared
-		 */
-		irq = old & pch_pic_read_reg(&s->edge, index) & data;
-		/* write irr to the new state where irqs have been cleared */
-		pch_pic_write_reg(&s->irr, index, old & ~irq);
-		/* update cleared irqs */
-		pch_pic_update_batch_irqs(s, irq, 0);
-		break;
-	case PCH_PIC_AUTO_CTRL0_START ... PCH_PIC_AUTO_CTRL0_END:
-		offset -= PCH_PIC_AUTO_CTRL0_START;
-		index = offset >> 2;
-		/* we only use default mode: fixed interrupt distribution mode */
-		pch_pic_write_reg(&s->auto_ctrl0, index, 0);
-		break;
-	case PCH_PIC_AUTO_CTRL1_START ... PCH_PIC_AUTO_CTRL1_END:
-		offset -= PCH_PIC_AUTO_CTRL1_START;
-		index = offset >> 2;
-		/* we only use default mode: fixed interrupt distribution mode */
-		pch_pic_write_reg(&s->auto_ctrl1, index, 0);
-		break;
-	case PCH_PIC_ROUTE_ENTRY_START ... PCH_PIC_ROUTE_ENTRY_END:
-		offset -= PCH_PIC_ROUTE_ENTRY_START;
-		/* only route to int0: eiointc */
-		s->route_entry[offset] = 1;
-		break;
-	case PCH_PIC_HTMSI_VEC_START ... PCH_PIC_HTMSI_VEC_END:
-		/* route table to eiointc */
-		offset -= PCH_PIC_HTMSI_VEC_START;
-		s->htmsi_vector[offset] = (u8)data;
-		break;
-	case PCH_PIC_POLARITY_START ... PCH_PIC_POLARITY_END:
-		offset -= PCH_PIC_POLARITY_START;
-		index = offset >> 2;
-
-		/* we only use defalut value 0: high level triggered */
-		pch_pic_write_reg(&s->polarity, index, 0);
-		break;
+	case 8:
 	default:
-		ret = -EINVAL;
+		data = *(u64 *)val;
+		mask = ULONG_MAX;
 		break;
 	}
 
+	offset = (addr - s->pch_pic_base) & 7;
+	mask = mask << (offset * 8);
+	data = data << (offset * 8);
+	offset = (addr - s->pch_pic_base) - offset;
+
+	spin_lock(&s->lock);
+	switch (offset) {
+	case PCH_PIC_MASK_START:
+		old = s->mask;
+		s->mask = (old & ~mask) | data;
+		if (old & ~data)
+			pch_pic_update_batch_irqs(s, old & ~data, 1);
+		if (~old & data)
+			pch_pic_update_batch_irqs(s, ~old & data, 0);
+		break;
+	case PCH_PIC_HTMSI_EN_START:
+		s->htmsi_en = (s->htmsi_en & ~mask) | data;
+		break;
+	case PCH_PIC_EDGE_START:
+		s->edge = (s->edge & ~mask) | data;
+		break;
+	case PCH_PIC_POLARITY_START:
+		s->polarity = (s->polarity & ~mask) | data;
+		break;
+	case PCH_PIC_CLEAR_START:
+		old = s->irr & s->edge & data;
+		if (old) {
+			s->irr &= ~old;
+			pch_pic_update_batch_irqs(s, old, 0);
+		}
+		break;
+	case PCH_PIC_HTMSI_VEC_START ... PCH_PIC_HTMSI_VEC_END:
+		ptemp = s->htmsi_vector + (offset - PCH_PIC_HTMSI_VEC_START);
+		*(u64 *)ptemp = (*(u64 *)ptemp & ~mask) | data;
+		break;
+	/* Not implemented */
+	case PCH_PIC_AUTO_CTRL0_START:
+	case PCH_PIC_AUTO_CTRL1_START:
+	case PCH_PIC_ROUTE_ENTRY_START ... PCH_PIC_ROUTE_ENTRY_END:
+		break;
+	default:
+		break;
+	}
 	spin_unlock(&s->lock);
-	return ret;
+
+	return 0;
 }
 
-static int kvm_loongarch_pch_pic_write(struct kvm_vcpu *vcpu,
-					struct kvm_io_device *dev,
-					gpa_t addr, int len, const void *val)
+static int kvm_pch_pic_write(struct kvm_vcpu *vcpu,
+			struct kvm_io_device *dev,
+			gpa_t addr, int len, const void *val)
 {
-	int ret;
+	int ret = 0;
 	struct loongarch_pch_pic *s = vcpu->kvm->arch.pch_pic;
 
 	if (!s) {
 		kvm_err("%s: pch pic irqchip not valid!\n", __func__);
-		return -EINVAL;
+		return ret;
 	}
 
 	if (addr & (len - 1)) {
 		kvm_err("%s: pch pic not aligned addr %llx len %d\n", __func__, addr, len);
-		return -EINVAL;
+		return ret;
 	}
 
 	/* statistics of pch pic writing */
-	vcpu->kvm->stat.pch_pic_write_exits++;
+	vcpu->stat.pch_pic_write_exits++;
 	ret = loongarch_pch_pic_write(s, addr, len, val);
 
 	return ret;
 }
 
-static int loongarch_pch_pic_read(struct loongarch_pch_pic *s, gpa_t addr, int len, void *val)
-{
-	int offset, index, ret = 0;
-	u32 data = 0;
-	u64 int_id = 0;
-
-	offset = addr - s->pch_pic_base;
-
-	spin_lock(&s->lock);
-	switch (offset) {
-	case PCH_PIC_INT_ID_START ... PCH_PIC_INT_ID_END:
-		/* int id version */
-		int_id |= (u64)PCH_PIC_INT_ID_VER << 32;
-		/* irq number */
-		int_id |= (u64)31 << (32 + 16);
-		/* int id value */
-		int_id |= PCH_PIC_INT_ID_VAL;
-		*(u64 *)val = int_id;
-		break;
-	case PCH_PIC_MASK_START ... PCH_PIC_MASK_END:
-		offset -= PCH_PIC_MASK_START;
-		index = offset >> 2;
-		/* read mask reg */
-		data = pch_pic_read_reg(&s->mask, index);
-		*(u32 *)val = data;
-		break;
-	case PCH_PIC_HTMSI_EN_START ... PCH_PIC_HTMSI_EN_END:
-		offset -= PCH_PIC_HTMSI_EN_START;
-		index = offset >> 2;
-		/* read htmsi enable reg */
-		data = pch_pic_read_reg(&s->htmsi_en, index);
-		*(u32 *)val = data;
-		break;
-	case PCH_PIC_EDGE_START ... PCH_PIC_EDGE_END:
-		offset -= PCH_PIC_EDGE_START;
-		index = offset >> 2;
-		/* read edge enable reg */
-		data = pch_pic_read_reg(&s->edge, index);
-		*(u32 *)val = data;
-		break;
-	case PCH_PIC_AUTO_CTRL0_START ... PCH_PIC_AUTO_CTRL0_END:
-	case PCH_PIC_AUTO_CTRL1_START ... PCH_PIC_AUTO_CTRL1_END:
-		/* we only use default mode: fixed interrupt distribution mode */
-		*(u32 *)val = 0;
-		break;
-	case PCH_PIC_ROUTE_ENTRY_START ... PCH_PIC_ROUTE_ENTRY_END:
-		/* only route to int0: eiointc */
-		*(u8 *)val = 1;
-		break;
-	case PCH_PIC_HTMSI_VEC_START ... PCH_PIC_HTMSI_VEC_END:
-		offset -= PCH_PIC_HTMSI_VEC_START;
-		/* read htmsi vector */
-		data = s->htmsi_vector[offset];
-		*(u8 *)val = data;
-		break;
-	case PCH_PIC_POLARITY_START ... PCH_PIC_POLARITY_END:
-		/* we only use defalut value 0: high level triggered */
-		*(u32 *)val = 0;
-		break;
-	default:
-		ret = -EINVAL;
-	}
-	spin_unlock(&s->lock);
-	return ret;
-}
-
-static int kvm_loongarch_pch_pic_read(struct kvm_vcpu *vcpu,
-					struct kvm_io_device *dev,
-					gpa_t addr, int len, void *val)
-{
-	int ret;
-	struct loongarch_pch_pic *s = vcpu->kvm->arch.pch_pic;
-
-	if (!s) {
-		kvm_err("%s: pch pic irqchip not valid!\n", __func__);
-		return -EINVAL;
-	}
-
-	if (addr & (len - 1)) {
-		kvm_err("%s: pch pic not aligned addr %llx len %d\n", __func__, addr, len);
-		return -EINVAL;
-	}
-
-	/* statistics of pch pic reading */
-	vcpu->kvm->stat.pch_pic_read_exits++;
-	ret = loongarch_pch_pic_read(s, addr, len, val);
-	return ret;
-}
-
-static const struct kvm_io_device_ops kvm_loongarch_pch_pic_ops = {
-	.read	= kvm_loongarch_pch_pic_read,
-	.write	= kvm_loongarch_pch_pic_write,
+static const struct kvm_io_device_ops kvm_pch_pic_ops = {
+	.read	= kvm_pch_pic_read,
+	.write	= kvm_pch_pic_write,
 };
 
-static int kvm_loongarch_pch_pic_init(struct kvm_device *dev, u64 addr)
+static int kvm_pch_pic_init(struct kvm_device *dev, u64 addr)
 {
 	int ret;
-	struct loongarch_pch_pic *s = dev->kvm->arch.pch_pic;
-	struct kvm_io_device *device;
 	struct kvm *kvm = dev->kvm;
+	struct kvm_io_device *device;
+	struct loongarch_pch_pic *s = dev->kvm->arch.pch_pic;
 
 	s->pch_pic_base = addr;
 	device = &s->device;
 	/* init device by pch pic writing and reading ops */
-	kvm_iodevice_init(device, &kvm_loongarch_pch_pic_ops);
+	kvm_iodevice_init(device, &kvm_pch_pic_ops);
 	mutex_lock(&kvm->slots_lock);
 	/* register pch pic device */
 	ret = kvm_io_bus_register_dev(kvm, KVM_MMIO_BUS, addr, PCH_PIC_SIZE, device);
 	mutex_unlock(&kvm->slots_lock);
-	if (ret < 0)
-		return -EFAULT;
 
-	return 0;
+	return (ret < 0) ? -EFAULT : 0;
 }
 
 /* used by user space to get or set pch pic registers */
-static int kvm_loongarch_pch_pic_regs_access(struct kvm_device *dev,
-					struct kvm_device_attr *attr,
-					bool is_write)
+static int kvm_pch_pic_regs_access(struct kvm_device *dev,
+				struct kvm_device_attr *attr,
+				bool is_write)
 {
+	char buf[8];
 	int addr, offset, len = 8, ret = 0;
 	void __user *data;
 	void *p = NULL;
@@ -360,7 +305,6 @@ static int kvm_loongarch_pch_pic_regs_access(struct kvm_device *dev,
 	addr = attr->attr;
 	data = (void __user *)attr->addr;
 
-	spin_lock(&s->lock);
 	/* get pointer to pch pic register by addr */
 	switch (addr) {
 	case PCH_PIC_MASK_START:
@@ -378,20 +322,12 @@ static int kvm_loongarch_pch_pic_regs_access(struct kvm_device *dev,
 	case PCH_PIC_AUTO_CTRL1_START:
 		p = &s->auto_ctrl1;
 		break;
-	case PCH_PIC_ROUTE_ENTRY_START:
-		p = s->route_entry;
-		len = 64;
-		break;
-	case (PCH_PIC_ROUTE_ENTRY_START + 1) ... PCH_PIC_ROUTE_ENTRY_END:
+	case PCH_PIC_ROUTE_ENTRY_START ... PCH_PIC_ROUTE_ENTRY_END:
 		offset = addr - PCH_PIC_ROUTE_ENTRY_START;
 		p = &s->route_entry[offset];
 		len = 1;
 		break;
-	case PCH_PIC_HTMSI_VEC_START:
-		p = s->htmsi_vector;
-		len = 64;
-		break;
-	case (PCH_PIC_HTMSI_VEC_START + 1) ... PCH_PIC_HTMSI_VEC_END:
+	case PCH_PIC_HTMSI_VEC_START ... PCH_PIC_HTMSI_VEC_END:
 		offset = addr - PCH_PIC_HTMSI_VEC_START;
 		p = &s->htmsi_vector[offset];
 		len = 1;
@@ -406,37 +342,43 @@ static int kvm_loongarch_pch_pic_regs_access(struct kvm_device *dev,
 		p = &s->polarity;
 		break;
 	default:
-		ret = -EINVAL;
+		return -EINVAL;
 	}
 
-	/* write or read value according to is_write */
 	if (is_write) {
-
-		if (p && copy_from_user(p, data, len))
-			ret = -EFAULT;
-	} else {
-		if (p && copy_to_user(data, p, len))
-			ret = -EFAULT;
+		if (copy_from_user(buf, data, len))
+			return -EFAULT;
 	}
 
+	spin_lock(&s->lock);
+	if (is_write)
+		memcpy(p, buf, len);
+	else
+		memcpy(buf, p, len);
 	spin_unlock(&s->lock);
+
+	if (!is_write) {
+		if (copy_to_user(data, buf, len))
+			return -EFAULT;
+	}
+
 	return ret;
 }
 
-static int kvm_loongarch_pch_pic_get_attr(struct kvm_device *dev,
+static int kvm_pch_pic_get_attr(struct kvm_device *dev,
 				struct kvm_device_attr *attr)
 {
-	/* only support pch pic group registers */
-	if (attr->group == KVM_DEV_LOONGARCH_PCH_PIC_GRP_REGS)
-		return kvm_loongarch_pch_pic_regs_access(dev, attr, false);
-
-	return -EINVAL;
+	switch (attr->group) {
+	case KVM_DEV_LOONGARCH_PCH_PIC_GRP_REGS:
+		return kvm_pch_pic_regs_access(dev, attr, false);
+	default:
+		return -EINVAL;
+	}
 }
 
-static int kvm_loongarch_pch_pic_set_attr(struct kvm_device *dev,
+static int kvm_pch_pic_set_attr(struct kvm_device *dev,
 				struct kvm_device_attr *attr)
 {
-	int ret = -EINVAL;
 	u64 addr;
 	void __user *uaddr = (void __user *)(long)attr->addr;
 
@@ -449,35 +391,27 @@ static int kvm_loongarch_pch_pic_set_attr(struct kvm_device *dev,
 
 			if (!dev->kvm->arch.pch_pic) {
 				kvm_err("%s: please create pch_pic irqchip first!\n", __func__);
-				ret = -EFAULT;
-				break;
+				return -ENODEV;
 			}
 
-			ret = kvm_loongarch_pch_pic_init(dev, addr);
-			break;
+			return kvm_pch_pic_init(dev, addr);
 		default:
 			kvm_err("%s: unknown group (%d) attr (%lld)\n", __func__, attr->group,
 					attr->attr);
-			ret = -EINVAL;
-			break;
+			return -EINVAL;
 		}
-		break;
 	case KVM_DEV_LOONGARCH_PCH_PIC_GRP_REGS:
-		ret = kvm_loongarch_pch_pic_regs_access(dev, attr, true);
-		break;
+		return kvm_pch_pic_regs_access(dev, attr, true);
 	default:
-			break;
+		return -EINVAL;
 	}
-
-	return ret;
 }
 
 static int kvm_setup_default_irq_routing(struct kvm *kvm)
 {
-	struct kvm_irq_routing_entry *entries;
-
-	u32 nr = KVM_IRQCHIP_NUM_PINS;
 	int i, ret;
+	u32 nr = KVM_IRQCHIP_NUM_PINS;
+	struct kvm_irq_routing_entry *entries;
 
 	entries = kcalloc(nr, sizeof(*entries), GFP_KERNEL);
 	if (!entries)
@@ -492,37 +426,14 @@ static int kvm_setup_default_irq_routing(struct kvm *kvm)
 	ret = kvm_set_irq_routing(kvm, entries, nr, 0);
 	kfree(entries);
 
-	return 0;
+	return ret;
 }
 
-static void kvm_loongarch_pch_pic_destroy(struct kvm_device *dev)
+static int kvm_pch_pic_create(struct kvm_device *dev, u32 type)
 {
-	struct kvm *kvm;
-	struct loongarch_pch_pic *s;
-	struct kvm_io_device *device;
-
-	if (!dev)
-		return;
-
-	kvm = dev->kvm;
-	if (!kvm)
-		return;
-
-	s = kvm->arch.pch_pic;
-	if (!s)
-		return;
-
-	device = &s->device;
-	/* unregister pch pic device and free it's memory */
-	kvm_io_bus_unregister_dev(kvm, KVM_MMIO_BUS, device);
-	kfree(s);
-}
-
-static int kvm_loongarch_pch_pic_create(struct kvm_device *dev, u32 type)
-{
-	int ret;
-	struct loongarch_pch_pic *s;
+	int i, ret, irq_num;
 	struct kvm *kvm = dev->kvm;
+	struct loongarch_pch_pic *s;
 
 	/* pch pic should not has been created */
 	if (kvm->arch.pch_pic)
@@ -536,28 +447,57 @@ static int kvm_loongarch_pch_pic_create(struct kvm_device *dev, u32 type)
 	if (!s)
 		return -ENOMEM;
 
+	/*
+	 * Interrupt controller identification register 1
+	 *   Bit 24-31 Interrupt Controller ID
+	 * Interrupt controller identification register 2
+	 *   Bit  0-7  Interrupt Controller version number
+	 *   Bit 16-23 The number of interrupt sources supported
+	 */
+	irq_num = 32;
+	s->mask = -1UL;
+	s->id.desc.id = PCH_PIC_INT_ID_VAL;
+	s->id.desc.version = PCH_PIC_INT_ID_VER;
+	s->id.desc.irq_num = irq_num - 1;
+	for (i = 0; i < irq_num; i++) {
+		s->route_entry[i] = 1;
+		s->htmsi_vector[i] = i;
+	}
 	spin_lock_init(&s->lock);
 	s->kvm = kvm;
-
-
 	kvm->arch.pch_pic = s;
 
 	kvm_info("create pch pic device successfully\n");
 	return 0;
 }
 
-static struct kvm_device_ops kvm_loongarch_pch_pic_dev_ops = {
+static void kvm_pch_pic_destroy(struct kvm_device *dev)
+{
+	struct kvm *kvm;
+	struct loongarch_pch_pic *s;
+
+	if (!dev || !dev->kvm || !dev->kvm->arch.pch_pic)
+		return;
+
+	kvm = dev->kvm;
+	s = kvm->arch.pch_pic;
+	/* unregister pch pic device and free it's memory */
+	kvm_io_bus_unregister_dev(kvm, KVM_MMIO_BUS, &s->device);
+	kfree(s);
+	kfree(dev);
+}
+
+static struct kvm_device_ops kvm_pch_pic_dev_ops = {
 	.name = "kvm-loongarch-pch-pic",
-	.create = kvm_loongarch_pch_pic_create,
-	.destroy = kvm_loongarch_pch_pic_destroy,
-	.set_attr = kvm_loongarch_pch_pic_set_attr,
-	.get_attr = kvm_loongarch_pch_pic_get_attr,
+	.create = kvm_pch_pic_create,
+	.destroy = kvm_pch_pic_destroy,
+	.set_attr = kvm_pch_pic_set_attr,
+	.get_attr = kvm_pch_pic_get_attr,
 };
 
 int kvm_loongarch_register_pch_pic_device(void)
 {
-	return kvm_register_device_ops(&kvm_loongarch_pch_pic_dev_ops,
-					KVM_DEV_TYPE_LOONGARCH_PCHPIC);
+	return kvm_register_device_ops(&kvm_pch_pic_dev_ops, KVM_DEV_TYPE_LOONGARCH_PCHPIC);
 }
 
 int kvm_loongarch_reset_pch(struct kvm *kvm)

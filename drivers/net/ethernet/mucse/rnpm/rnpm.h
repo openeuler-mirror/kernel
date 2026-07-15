@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #ifndef _RNPM_H_
 #define _RNPM_H_
@@ -16,26 +16,38 @@
 #include <linux/interrupt.h>
 #include <linux/net_tstamp.h>
 #include <linux/ptp_clock_kernel.h>
+
 #include "rnpm_type.h"
 #include "rnpm_common.h"
+
+/*
+ * OPTM_WITH_LPAGE should never define along with
+ * CONFIG_RNPM_DISABLE_PACKET_SPLIT
+ */
+#ifdef RNPM_OPTM_WITH_LPAGE
+#endif
+
+#ifndef __GFP_COLD
+#define __GFP_COLD 0
+#endif
+
+#ifndef __GFP_COMP
+#define __GFP_COMP 0
+#endif
 
 /* common prefix used by pr_<> macros */
 #undef pr_fmt
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #define RNPM_ALLOC_PAGE_ORDER (0)
-#define RNPM_PAGE_BUFFER_NUMS(ring)                                            \
-	((1 << RNPM_ALLOC_PAGE_ORDER) * PAGE_SIZE /                            \
-	 ALIGN((rnpm_rx_offset(ring) + rnpm_rx_bufsz(ring) +                   \
-		SKB_DATA_ALIGN(sizeof(struct skb_shared_info)) +               \
-		RNPM_RX_HWTS_OFFSET),                                          \
+#define RNPM_PAGE_BUFFER_NUMS(ring)                              \
+	((1 << RNPM_ALLOC_PAGE_ORDER) * PAGE_SIZE /              \
+	 ALIGN((rnpm_rx_offset(ring) + rnpm_rx_bufsz(ring) +     \
+		SKB_DATA_ALIGN(sizeof(struct skb_shared_info)) + \
+		RNPM_RX_HWTS_OFFSET),                            \
 	       1024))
 
 /* TX/RX descriptor defines */
-#ifdef FEITENG
 #define RNPM_DEFAULT_TXD (1024)
-#else
-#define RNPM_DEFAULT_TXD (1024)
-#endif
 
 #define RNPM_N400_DEFAULT_TXD (256)
 
@@ -74,11 +86,7 @@
 #define RNPM_REQ_TX_DESCRIPTOR_MULTIPLE (8)
 #define RNPM_REQ_RX_DESCRIPTOR_MULTIPLE (8)
 
-#ifdef FEITENG
 #define RNPM_DEFAULT_RXD (1024)
-#else
-#define RNPM_DEFAULT_RXD (1024)
-#endif
 
 #define RNPM_MAX_RXD (4096)
 #define RNPM_MIN_RXD (64)
@@ -110,12 +118,11 @@
 #define MAX_Q_VECTORS 128
 #define RNPM_RING_COUNTS_PEER_PF 8
 
-#ifdef NETIF_F_GSO_PARTIAL
-#define RNPM_GSO_PARTIAL_FEATURES                                              \
-	(NETIF_F_GSO_GRE | NETIF_F_GSO_GRE_CSUM | NETIF_F_GSO_UDP_TUNNEL |     \
-	 NETIF_F_GSO_UDP_TUNNEL_CSUM)
-#endif /* NETIF_F_GSO_PARTIAL */
-/* NOTE: netdev_alloc_skb reserves up to 64 bytes, NET_IP_ALIGN means we
+#define RNPM_GSO_PARTIAL_FEATURES                 \
+	(NETIF_F_GSO_GRE | NETIF_F_GSO_GRE_CSUM | \
+	 NETIF_F_GSO_UDP_TUNNEL | NETIF_F_GSO_UDP_TUNNEL_CSUM)
+/*
+ * NOTE: netdev_alloc_skb reserves up to 64 bytes, NET_IP_ALIGN means we
  * reserve 64 more, and skb_shared_info adds an additional 320 bytes more,
  * this adds up to 448 bytes of extra data.
  *
@@ -197,7 +204,7 @@ struct vf_macvlans {
 
 /* now tx max 4k for one desc */
 #define RNPM_MAX_TXD_PWR 12
-#define RNPM_MAX_DATA_PER_TXD (1 << RNPM_MAX_TXD_PWR)
+#define RNPM_MAX_DATA_PER_TXD BIT(RNPM_MAX_TXD_PWR)
 
 /* Tx Descriptors needed, worst case */
 #define TXD_USE_COUNT(S) DIV_ROUND_UP((S), RNPM_MAX_DATA_PER_TXD)
@@ -315,16 +322,17 @@ enum rnpm_ring_state_t {
 	__RNPM_RX_FCOE,
 };
 
-#define ring_uses_build_skb(ring)                                              \
+#define ring_uses_build_skb(ring) \
 	test_bit(__RNPM_RX_BUILD_SKB_ENABLED, &(ring)->state)
 
-#define check_for_tx_hang(ring) test_bit(__RNPM_TX_DETECT_HANG, &(ring)->state)
-#define set_check_for_tx_hang(ring)                                            \
+#define check_for_tx_hang(ring) \
+	test_bit(__RNPM_TX_DETECT_HANG, &(ring)->state)
+#define set_check_for_tx_hang(ring) \
 	set_bit(__RNPM_TX_DETECT_HANG, &(ring)->state)
-#define clear_check_for_tx_hang(ring)                                          \
+#define clear_check_for_tx_hang(ring) \
 	clear_bit(__RNPM_TX_DETECT_HANG, &(ring)->state)
 
-#define netdev_ring(ring) (ring->netdev)
+#define netdev_ring(ring) ((ring)->netdev)
 struct rnpm_ring {
 	struct rnpm_ring *next; /* pointer to next ring in q_vector */
 	struct rnpm_q_vector *q_vector; /* backpointer to host q_vector */
@@ -413,7 +421,8 @@ struct rnpm_ring_feature {
 #define RNPM_n10_VMDQ_4Q_MASK 0x7C
 #define RNPM_n10_VMDQ_2Q_MASK 0x7E
 
-/* FCoE requires that all Rx buffers be over 2200 bytes in length.  Since
+/*
+ * FCoE requires that all Rx buffers be over 2200 bytes in length.  Since
  * this is twice the size of a half page we need to double the page order
  * for FCoE enabled Rx queues.
  */
@@ -431,6 +440,7 @@ static inline unsigned int rnpm_rx_pg_order(struct rnpm_ring *ring)
 	/* we don't support 3k buffer */
 	return 0;
 }
+
 #define rnpm_rx_pg_size(_ring) (PAGE_SIZE << rnpm_rx_pg_order(_ring))
 
 struct rnpm_ring_container {
@@ -446,10 +456,11 @@ struct rnpm_ring_container {
 };
 
 /* iterator for handling rings in ring container */
-#define rnpm_for_each_ring(pos, head)                                          \
-	for (pos = (head).ring; pos != NULL; pos = pos->next)
+#define rnpm_for_each_ring(pos, head) \
+	for (pos = (head).ring; pos; pos = pos->next)
 
-#define MAX_RX_PACKET_BUFFERS ((adapter->flags & RNPM_FLAG_DCB_ENABLED) ? 8 : 1)
+#define MAX_RX_PACKET_BUFFERS \
+	((adapter->flags & RNPM_FLAG_DCB_ENABLED) ? 8 : 1)
 #define MAX_TX_PACKET_BUFFERS MAX_RX_PACKET_BUFFERS
 
 /* MAX_Q_VECTORS of these are allocated,
@@ -538,7 +549,8 @@ static inline u16 rnpm_desc_unused_rx(struct rnpm_ring *ring)
 
 #define RNPM_RX_DESC(R, i) (&(((union rnpm_rx_desc *)((R)->desc))[i]))
 #define RNPM_TX_DESC(R, i) (&(((struct rnpm_tx_desc *)((R)->desc))[i]))
-#define RNPM_TX_CTXTDESC(R, i) (&(((struct rnpm_tx_ctx_desc *)((R)->desc))[i]))
+#define RNPM_TX_CTXTDESC(R, i) \
+	(&(((struct rnpm_tx_ctx_desc *)((R)->desc))[i]))
 
 #define RNPM_MAX_JUMBO_FRAME_SIZE 9590 /* Maximum Supported Size 9.5KB */
 #define RNPM_MIN_MTU 68
@@ -571,6 +583,40 @@ struct rnpm_dcb_cfg {
 	u64 indications[RNPM_MAX_TCS_NUM];
 
 	enum rnpm_fc_mode last_lfc_mode;
+};
+
+struct mbx_fw_cmd_reply;
+
+typedef void (*cookie_cb)(struct mbx_fw_cmd_reply *reply, void *priv);
+
+enum cookie_stat {
+	COOKIE_FREE = 0,
+	COOKIE_FREE_WAIT_TIMEOUT,
+	COOKIE_ALLOCED,
+};
+
+struct mbx_req_cookie {
+	u64 alloced_jiffies;
+	enum cookie_stat stat;
+
+	cookie_cb cb;
+	int timeout_jiffes;
+	int errcode;
+
+	wait_queue_head_t wait;
+
+	int done;
+	int priv_len;
+#define MAX_PRIV_LEN 64
+	char priv[MAX_PRIV_LEN];
+};
+
+struct mbx_req_cookie_pool {
+#define MAX_COOKIES_ITEMS (20 * 400)
+// #define MAX_COOKIES_ITEMS (20)
+	struct mbx_req_cookie cookies[MAX_COOKIES_ITEMS];
+
+	int next_idx;
 };
 
 /* board pf adapter */
@@ -606,6 +652,7 @@ struct rnpm_pf_adapter {
 	u32 bd_number;
 	u8 __iomem *rpu_addr;
 	u8 rpu_inited;
+	u8 rpu_need_stop;
 	/* msix table */
 	struct msix_entry *msix_entries;
 	int max_msix_counts[MAX_PORT_NUM];
@@ -644,6 +691,13 @@ struct rnpm_pf_adapter {
 	/* just for mailbox use */
 	struct rnpm_hw hw;
 	char name[60];
+
+	u32 mpe_shm;
+
+	void *csl_dma_buf;
+	dma_addr_t csl_dma_phy;
+	int csl_dma_size;
+	struct mbx_req_cookie_pool cookie_pool;
 };
 
 enum priv_bits {
@@ -662,7 +716,7 @@ struct rnpm_adapter {
 	struct net_device *netdev;
 	bool rm_mode;
 	bool netdev_registered;
-
+	u32 lane_intr_en;
 	struct pci_dev *pdev;
 	bool quit_poll_thread;
 	struct task_struct *rx_poll_thread;
@@ -693,6 +747,7 @@ struct rnpm_adapter {
 
 	int lane;
 	int speed;
+	u8 fake_force_1000m;
 
 	int napi_budge;
 
@@ -796,6 +851,7 @@ struct rnpm_adapter {
 	unsigned int max_ring_pair_counts;
 	unsigned int max_msix_counts;
 	u16 tx_work_limit;
+
 	__be16 vxlan_port;
 	__be16 geneve_port;
 	/* Rx fast path data */
@@ -942,7 +998,8 @@ struct rnpm_adapter {
 	u8 rss_indir_tbl[RNPM_MAX_RETA_ENTRIES];
 	u32 rss_tbl_setup_flag;
 
-	/* #define RNPM_RSS_KEY_SIZE     40
+	/*
+	 * #define RNPM_RSS_KEY_SIZE     40
 	 * u8 rss_key[RNPM_RSS_KEY_SIZE];
 	 * u32 rss_key_setup_flag;
 	 * struct rnpm_info* info;
@@ -953,6 +1010,7 @@ struct rnpm_adapter {
 	u8 uc_num;
 
 	char name[60];
+	bool mac_ipc_off;
 };
 
 struct rnpm_fdir_filter {
@@ -972,6 +1030,7 @@ enum rnpm_state_t {
 	__RNPM_IN_SFP_INIT,
 	__RNPM_READ_I2C,
 	__RNPM_PTP_TX_IN_PROGRESS,
+	__RNPM_SERVICE_IN_PROGRESS,
 	__RNPM_REMOVING,
 };
 
@@ -984,6 +1043,7 @@ struct rnpm_cb {
 	u16 append_cnt;
 	bool page_released;
 };
+
 #define RNPM_CB(skb) ((struct rnpm_cb *)(skb)->cb)
 
 enum rnpm_boards {
@@ -998,120 +1058,117 @@ enum rnpm_boards {
 	board_n400_4x1G,
 };
 
-#ifdef CONFIG_RNPM_DCB
-extern const struct dcbnl_rtnl_ops dcbnl_ops;
-#endif
-
 extern char rnpm_driver_name[];
 extern const char rnpm_driver_version[];
-extern struct rnpm_info rnpm_n10_info;
-extern struct rnpm_info rnpm_n400_4x1G_info;
 
-extern void rnpm_up(struct rnpm_adapter *adapter);
-extern void rnpm_down(struct rnpm_adapter *adapter);
-extern void rnpm_reinit_locked(struct rnpm_adapter *adapter);
-extern void rnpm_reset(struct rnpm_adapter *adapter);
-extern void rnpm_set_ethtool_ops(struct net_device *netdev);
-extern int rnpm_setup_rx_resources(struct rnpm_ring *ring,
-				   struct rnpm_adapter *adapter);
-extern int rnpm_setup_tx_resources(struct rnpm_ring *ring,
-				   struct rnpm_adapter *adapter);
-extern void rnpm_free_rx_resources(struct rnpm_ring *ring);
-extern void rnpm_free_tx_resources(struct rnpm_ring *ring);
-extern void rnpm_configure_rx_ring(struct rnpm_adapter *adapter,
-				   struct rnpm_ring *ring);
-extern void rnpm_configure_tx_ring(struct rnpm_adapter *adapter,
-				   struct rnpm_ring *ring);
-extern void rnpm_disable_rx_queue(struct rnpm_adapter *adapter,
-				  struct rnpm_ring *ring);
-extern void rnpm_update_stats(struct rnpm_adapter *adapter);
-extern int rnpm_init_interrupt_scheme(struct rnpm_adapter *adapter);
-extern int rnpm_wol_supported(struct rnpm_adapter *adapter, u16 device_id,
-			      u16 subdevice_id);
-extern void rnpm_clear_interrupt_scheme(struct rnpm_adapter *adapter);
-extern netdev_tx_t rnpm_xmit_frame_ring(struct sk_buff *skb,
-					struct rnpm_adapter *adapter,
-					struct rnpm_ring *ring);
-extern void rnpm_unmap_and_free_tx_resource(struct rnpm_ring *ring,
-					    struct rnpm_tx_buffer *buffer);
-extern void rnpm_alloc_rx_buffers(struct rnpm_ring *ring, u16 cnt);
-extern int rnpm_poll(struct napi_struct *napi, int budget);
-extern int ethtool_ioctl(struct ifreq *ifr);
-extern s32 rnpm_reinit_fdir_tables_n10(struct rnpm_hw *hw);
-extern s32 rnpm_init_fdir_signature_n10(struct rnpm_hw *hw, u32 fdirctrl);
-extern s32 rnpm_init_fdir_perfect_n10(struct rnpm_hw *hw, u32 fdirctrl);
-extern s32 rnpm_fdir_add_signature_filter_n10(struct rnpm_hw *hw,
-					      union rnpm_atr_hash_dword input,
-					      union rnpm_atr_hash_dword common,
-					      u8 queue);
+void rnpm_up(struct rnpm_adapter *adapter);
+void rnpm_down(struct rnpm_adapter *adapter);
+void rnpm_reinit_locked(struct rnpm_adapter *adapter);
+void rnpm_reset(struct rnpm_adapter *adapter);
+void rnpm_set_ethtool_ops(struct net_device *netdev);
+int rnpm_setup_rx_resources(struct rnpm_ring *ring,
+			    struct rnpm_adapter *adapter);
+int rnpm_setup_tx_resources(struct rnpm_ring *ring,
+			    struct rnpm_adapter *adapter);
+void rnpm_free_rx_resources(struct rnpm_ring *ring);
+void rnpm_free_tx_resources(struct rnpm_ring *ring);
+void rnpm_configure_rx_ring(struct rnpm_adapter *adapter,
+			    struct rnpm_ring *ring);
+void rnpm_configure_tx_ring(struct rnpm_adapter *adapter,
+			    struct rnpm_ring *ring);
+void rnpm_disable_rx_queue(struct rnpm_adapter *adapter,
+			   struct rnpm_ring *ring);
+void rnpm_update_stats(struct rnpm_adapter *adapter);
+int rnpm_init_interrupt_scheme(struct rnpm_adapter *adapter);
+int rnpm_wol_supported(struct rnpm_adapter *adapter, u16 device_id,
+		       u16 subdevice_id);
+void rnpm_clear_interrupt_scheme(struct rnpm_adapter *adapter);
+netdev_tx_t rnpm_xmit_frame_ring(struct sk_buff *skb,
+				 struct rnpm_adapter *adapter,
+				 struct rnpm_ring *ring);
+void rnpm_unmap_and_free_tx_resource(struct rnpm_ring *ring,
+				     struct rnpm_tx_buffer *buffer);
+void rnpm_alloc_rx_buffers(struct rnpm_ring *ring, u16 cnt);
+int rnpm_poll(struct napi_struct *napi, int budget);
+int ethtool_ioctl(struct ifreq *ifr);
+s32 rnpm_reinit_fdir_tables_n10(struct rnpm_hw *hw);
+s32 rnpm_init_fdir_signature_n10(struct rnpm_hw *hw, u32 fdirctrl);
+s32 rnpm_init_fdir_perfect_n10(struct rnpm_hw *hw, u32 fdirctrl);
+s32 rnpm_fdir_add_signature_filter_n10(struct rnpm_hw *hw,
+				       union rnpm_atr_hash_dword input,
+				       union rnpm_atr_hash_dword common,
+				       u8 queue);
 
-extern void rnpm_release_hw_control(struct rnpm_adapter *adapter);
-extern void rnpm_get_hw_control(struct rnpm_adapter *adapter);
-extern s32 rnpm_fdir_set_input_mask_n10(struct rnpm_hw *hw,
-					union rnpm_atr_input *input_mask);
-extern s32 rnpm_fdir_write_perfect_filter_n10(struct rnpm_hw *hw,
-					      union rnpm_atr_input *input,
-					      u16 soft_id, u8 queue);
-extern s32 rnpm_fdir_erase_perfect_filter_n10(struct rnpm_hw *hw,
-					      union rnpm_atr_input *input,
-					      u16 soft_id);
-extern void rnpm_atr_compute_perfect_hash_n10(union rnpm_atr_input *input,
-					      union rnpm_atr_input *mask);
-extern bool rnpm_verify_lesm_fw_enabled_n10(struct rnpm_hw *hw);
-extern void rnpm_set_rx_mode(struct net_device *netdev);
-#ifdef CONFIG_RNPM_DCB
-extern void rnpm_set_rx_drop_en(struct rnpm_adapter *adapter);
-#endif
-extern int rnpm_setup_tx_maxrate(void __iomem *ioaddr,
-				 struct rnpm_ring *tx_ring, u64 max_rate,
-				 int samples_1sec);
-extern int rnpm_setup_tc(struct net_device *dev, u8 tc);
-extern int rnpm_open(struct net_device *netdev);
-extern int rnpm_close(struct net_device *netdev);
-extern void rnpm_service_event_schedule(struct rnpm_adapter *adapter);
+void rnpm_release_hw_control(struct rnpm_adapter *adapter);
+void rnpm_get_hw_control(struct rnpm_adapter *adapter);
+s32 rnpm_fdir_set_input_mask_n10(struct rnpm_hw *hw,
+				 union rnpm_atr_input *input_mask);
+s32 rnpm_fdir_write_perfect_filter_n10(struct rnpm_hw *hw,
+				       union rnpm_atr_input *input,
+				       u16 soft_id, u8 queue);
+s32 rnpm_fdir_erase_perfect_filter_n10(struct rnpm_hw *hw,
+				       union rnpm_atr_input *input,
+				       u16 soft_id);
+void rnpm_atr_compute_perfect_hash_n10(union rnpm_atr_input *input,
+				       union rnpm_atr_input *mask);
+bool rnpm_verify_lesm_fw_enabled_n10(struct rnpm_hw *hw);
+void rnpm_set_rx_mode(struct net_device *netdev);
+int rnpm_setup_tx_maxrate(void __iomem *ioaddr,
+			  struct rnpm_ring *tx_ring, u64 max_rate,
+			  int samples_1sec);
+int rnpm_setup_tc(struct net_device *dev, u8 tc);
+int rnpm_open(struct net_device *netdev);
+int rnpm_close(struct net_device *netdev);
+void rnpm_service_event_schedule(struct rnpm_adapter *adapter);
 void rnpm_tx_ctxtdesc(struct rnpm_ring *tx_ring, u32 mss_len_vf_num,
 		      u32 inner_vlan_tunnel_len, u32 type_tucmd);
 void rnpm_maybe_tx_ctxtdesc(struct rnpm_ring *tx_ring,
 			    struct rnpm_tx_buffer *first, u32 type_tucmd);
-extern void rnpm_store_reta(struct rnpm_adapter *adapter);
-extern void rnpm_store_key(struct rnpm_pf_adapter *pf_adapter);
-extern int rnpm_init_rss_key(struct rnpm_pf_adapter *adapter);
-extern int rnpm_init_rss_table(struct rnpm_adapter *adapter);
-extern void rnpm_setup_dma_rx(struct rnpm_adapter *adapter, int count_in_dw);
-extern s32 rnpm_fdir_write_perfect_filter(int fdir_mode, struct rnpm_hw *hw,
-					  union rnpm_atr_input *filter,
-					  u16 hw_id, u8 queue);
-extern s32 rnpm_fdir_erase_perfect_filter(int fdir_mode, struct rnpm_hw *hw,
-					  union rnpm_atr_input *input,
-					  u16 hw_id);
-extern u32 rnpm_rss_indir_tbl_entries(struct rnpm_adapter *adapter);
-extern u32 rnpm_tx_desc_unused_sw(struct rnpm_ring *tx_ring);
-extern u32 rnpm_tx_desc_unused_hw(struct rnpm_hw *hw,
-				  struct rnpm_ring *tx_ring);
-extern s32 rnpm_disable_rxr_maxrate(struct net_device *netdev, u8 queue_index);
-extern s32 rnpm_enable_rxr_maxrate(struct net_device *netdev, u8 queue_index,
-				   u32 maxrate);
-extern u32 rnpm_rx_desc_used_hw(struct rnpm_hw *hw, struct rnpm_ring *rx_ring);
-extern void rnpm_do_reset(struct net_device *netdev);
-#ifdef CONFIG_RNPM_HWMON
-extern void rnpm_sysfs_exit(struct rnpm_adapter *adapter);
-extern int rnpm_sysfs_init(struct rnpm_adapter *adapter, int port);
-#endif /* CONFIG_RNPM_HWMON */
+void rnpm_store_reta(struct rnpm_adapter *adapter);
+void rnpm_store_key(struct rnpm_pf_adapter *pf_adapter);
+int rnpm_init_rss_key(struct rnpm_pf_adapter *adapter);
+int rnpm_init_rss_table(struct rnpm_adapter *adapter);
+void rnpm_setup_dma_rx(struct rnpm_adapter *adapter,
+		       int count_in_dw);
+s32 rnpm_fdir_write_perfect_filter(int fdir_mode,
+				   struct rnpm_hw *hw,
+				   union rnpm_atr_input *filter,
+				   u16 hw_id, u8 queue);
+s32 rnpm_fdir_erase_perfect_filter(int fdir_mode,
+				   struct rnpm_hw *hw,
+				   union rnpm_atr_input *input,
+				   u16 hw_id);
+u32 rnpm_rss_indir_tbl_entries(struct rnpm_adapter *adapter);
+u32 rnpm_tx_desc_unused_sw(struct rnpm_ring *tx_ring);
+u32 rnpm_tx_desc_unused_hw(struct rnpm_hw *hw,
+			   struct rnpm_ring *tx_ring);
+s32 rnpm_disable_rxr_maxrate(struct net_device *netdev,
+			     u8 queue_index);
+s32 rnpm_enable_rxr_maxrate(struct net_device *netdev,
+			    u8 queue_index, u32 maxrate);
+u32 rnpm_rx_desc_used_hw(struct rnpm_hw *hw,
+			 struct rnpm_ring *rx_ring);
+void rnpm_do_reset(struct net_device *netdev);
+void rnpm_sysfs_exit(struct rnpm_adapter *adapter);
+int rnpm_sysfs_init(struct rnpm_adapter *adapter, int port);
 #ifdef CONFIG_DEBUG_FS
-extern void rnpm_dbg_adapter_init(struct rnpm_adapter *adapter);
-extern void rnpm_dbg_adapter_exit(struct rnpm_adapter *adapter);
-extern void rnpm_dbg_init(void);
-extern void rnpm_dbg_exit(void);
+void rnpm_dbg_adapter_init(struct rnpm_adapter *adapter);
+void rnpm_dbg_adapter_exit(struct rnpm_adapter *adapter);
+void rnpm_dbg_init(void);
+void rnpm_dbg_exit(void);
 #else
 static inline void rnpm_dbg_adapter_init(struct rnpm_adapter *adapter)
 {
 }
+
 static inline void rnpm_dbg_adapter_exit(struct rnpm_adapter *adapter)
 {
 }
+
 static inline void rnpm_dbg_init(void)
 {
 }
+
 static inline void rnpm_dbg_exit(void)
 {
 }
@@ -1121,11 +1178,11 @@ static inline struct netdev_queue *txring_txq(const struct rnpm_ring *ring)
 	return netdev_get_tx_queue(ring->netdev, ring->queue_index);
 }
 
-extern void rnpm_ptp_init(struct rnpm_adapter *adapter);
-extern void rnpm_ptp_stop(struct rnpm_adapter *adapter);
-extern void rnpm_ptp_overflow_check(struct rnpm_adapter *adapter);
-extern void rnpm_ptp_rx_hang(struct rnpm_adapter *adapter);
-extern void __rnpm_ptp_rx_hwtstamp(struct rnpm_q_vector *q_vector,
+void rnpm_ptp_init(struct rnpm_adapter *adapter);
+void rnpm_ptp_stop(struct rnpm_adapter *adapter);
+void rnpm_ptp_overflow_check(struct rnpm_adapter *adapter);
+void rnpm_ptp_rx_hang(struct rnpm_adapter *adapter);
+void __rnpm_ptp_rx_hwtstamp(struct rnpm_q_vector *q_vector,
 				   struct sk_buff *skb);
 static inline void rnpm_ptp_rx_hwtstamp(struct rnpm_ring *rx_ring,
 					union rnpm_rx_desc *rx_desc,
@@ -1136,7 +1193,8 @@ static inline void rnpm_ptp_rx_hwtstamp(struct rnpm_ring *rx_ring,
 
 	//__rnpm_ptp_rx_hwtstamp(rx_ring->q_vector, skb);
 
-	/* Update the last_rx_timestamp timer in order to enable watchdog check
+	/*
+	 * Update the last_rx_timestamp timer in order to enable watchdog check
 	 * for error case of latched timestamp on a dropped packet.
 	 */
 	rx_ring->last_rx_timestamp = jiffies;
@@ -1145,17 +1203,12 @@ static inline void rnpm_ptp_rx_hwtstamp(struct rnpm_ring *rx_ring,
 static inline int ignore_veb_pkg_err(struct rnpm_adapter *adapter,
 				     union rnpm_rx_desc *rx_desc)
 {
-#ifdef RNPM_IOV_VEB_BUG_NOT_FIXED
-	if (unlikely((adapter->flags & RNPM_FLAG_SRIOV_ENABLED) &&
-		     (cpu_to_le16(rx_desc->wb.mark) & VEB_VF_PKG))) {
-		return 1;
-	}
-#endif
 	return 0;
 }
 
 int rnpm_update_ethtool_fdir_entry(struct rnpm_adapter *adapter,
-				   struct rnpm_fdir_filter *input, u16 sw_idx);
+				   struct rnpm_fdir_filter *input,
+				   u16 sw_idx);
 
 static inline bool rnpm_is_pf1(struct pci_dev *pdev)
 {
@@ -1171,17 +1224,17 @@ static inline bool rnpm_is_pf1(struct pci_dev *pdev)
 	return !!((vf_num & VF_NUM_MASK_TEMP) >> VF_NUM_OFF);
 }
 
-extern void rnpm_service_task(struct work_struct *work);
-extern void rnpm_sysfs_exit(struct rnpm_adapter *adapter);
-extern int rnpm_sysfs_init(struct rnpm_adapter *adapter, int port);
+void rnpm_service_task(struct work_struct *work);
+void rnpm_sysfs_exit(struct rnpm_adapter *adapter);
+int rnpm_sysfs_init(struct rnpm_adapter *adapter, int port);
 
 #ifdef CONFIG_PCI_IOV
 void rnpm_sriov_reinit(struct rnpm_adapter *adapter);
 #endif
 
-#define SET_BIT(n, var) (var = (var | (1 << n)))
-#define CLR_BIT(n, var) (var = (var & (~(1 << n))))
-#define CHK_BIT(n, var) (var & (1 << n))
+#define SET_BIT(n, var) ((var) = ((var) | (1 << (n))))
+#define CLR_BIT(n, var) ((var) = ((var) & (~(1 << (n)))))
+#define CHK_BIT(n, var) ((var) & (1 << (n)))
 
 #define RNPM_RX_DMA_ATTR (DMA_ATTR_SKIP_CPU_SYNC | DMA_ATTR_WEAK_ORDERING)
 
@@ -1189,27 +1242,29 @@ static inline bool rnpm_removed(void __iomem *addr)
 {
 	return unlikely(!addr);
 }
-#define RNPM_REMOVED(a) rnpm_removed(a)
-static inline bool rnpm_port_is_valid(struct rnpm_pf_adapter *pf_adapter, int i)
-{
-	bool b = false;
 
+#define RNPM_REMOVED(a) rnpm_removed(a)
+static inline bool rnpm_port_is_valid(struct rnpm_pf_adapter *pf_adapter,
+				      int i)
+{
 	if (i >= MAX_PORT_NUM) {
 		//rnpm_dbg("Port number cannot over MAX_PORT_NUM!\n");
 		return false;
 	}
-	b = !!(pf_adapter->port_valid & (1 << i));
 
-	return b;
+	return !!(pf_adapter->port_valid & (1 << i));
 }
 
-int rnpm_set_clause73_autoneg_enable(struct net_device *netdev, int enable);
-int rnpm_card_partially_supported_10g_1g_sfp(struct rnpm_pf_adapter *pf_adapter);
+int rnpm_set_clause73_autoneg_enable(struct net_device *netdev,
+				     int enable);
+int rnpm_card_partially_supported_10g_1g_sfp(
+	struct rnpm_pf_adapter *pf_adapter);
 
 #define RNPM_FW_VERSION_NEW_ETHTOOL 0x00050010
 static inline bool rnpm_fw_is_old_ethtool(struct rnpm_hw *hw)
 {
-	return hw->fw_version >= RNPM_FW_VERSION_NEW_ETHTOOL ? false : true;
+	return hw->fw_version >= RNPM_FW_VERSION_NEW_ETHTOOL ? false :
+							       true;
 }
 
 static inline int Hamming_weight_1(u32 n)
@@ -1223,14 +1278,21 @@ static inline int Hamming_weight_1(u32 n)
 	return count_;
 }
 
-#define RNPM_WOL_GET_SUPPORTED(adapter)                                        \
-	(!!(adapter->wol & (BIT(0) << adapter->port)))
-#define RNPM_WOL_GET_STATUS(adapter)                                           \
-	(!!(adapter->wol & (BIT(4) << adapter->port)))
-#define RNPM_WOL_SET_SUPPORTED(adapter)                                        \
-	(adapter->wol |= BIT(0) << adapter->port)
-#define RNPM_WOL_SET_STATUS(adapter) (adapter->wol |= BIT(4) << adapter->port)
-#define RNPM_WOL_CLEAR_STATUS(adapter)                                         \
-	(adapter->wol &= ~(BIT(4) << adapter->port))
+#define RNPM_WOL_GET_SUPPORTED(adapter) \
+	(!!((adapter)->wol & (BIT(0) << (adapter)->port)))
+#define RNPM_WOL_GET_STATUS(adapter) \
+	(!!((adapter)->wol & (BIT(4) << (adapter)->port)))
+#define RNPM_WOL_SET_SUPPORTED(adapter) \
+	((adapter)->wol |= BIT(0) << (adapter)->port)
+#define RNPM_WOL_SET_STATUS(adapter) \
+	((adapter)->wol |= BIT(4) << (adapter)->port)
+#define RNPM_WOL_CLEAR_STATUS(adapter) \
+	((adapter)->wol &= ~(BIT(4) << (adapter)->port))
+
+int rnpm_esp_tcam_enable(struct rnpm_pf_adapter *pf_adapter);
+void rnpm_set_esp_to_mpe_tcam_rule(struct rnpm_pf_adapter *pf_adapter);
+
+extern struct rnpm_info rnpm_n10_info;
+extern struct rnpm_info rnpm_n400_4x1G_info;
 
 #endif /* _RNPM_H_ */

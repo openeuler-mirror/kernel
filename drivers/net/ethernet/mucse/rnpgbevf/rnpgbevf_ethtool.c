@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2025 Mucse Corporation. */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
@@ -27,6 +27,7 @@ struct rnpgbevf_stats {
 
 #define RNPVF_NUM_RX_QUEUES netdev->real_num_rx_queues
 #define RNPVF_NUM_TX_QUEUES netdev->real_num_tx_queues
+
 #define RNPGBE_NETDEV_STAT(_net_stat)                                          \
 	{                                                                      \
 		.stat_string = #_net_stat,                                     \
@@ -99,6 +100,12 @@ struct rnpgbevf_rx_queue_ring_stat {
 	(RNPVF_GLOBAL_STATS_LEN + RNPGBE_QUEUE_STATS_LEN +                     \
 	 RNPVF_HWSTRINGS_STATS_LEN)
 
+static const char rnp_gstrings_test[][ETH_GSTRING_LEN] = {
+	"Register test  (offline)", "Link test   (on/offline)"
+};
+
+#define RNPVF_TEST_LEN (sizeof(rnp_gstrings_test) / ETH_GSTRING_LEN)
+
 enum priv_bits {
 	padding_enable = 0,
 };
@@ -121,7 +128,8 @@ static int rnpgbevf_get_link_ksettings(struct net_device *netdev,
 	struct rnpgbevf_hw *hw = &adapter->hw;
 	bool autoneg = false;
 	bool link_up;
-	u32 supported, advertising;
+	u32 supported;
+	u32 advertising = 0;
 	u32 link_speed = 0;
 
 	ethtool_convert_link_mode_to_legacy_u32(&supported,
@@ -131,30 +139,25 @@ static int rnpgbevf_get_link_ksettings(struct net_device *netdev,
 
 	switch (link_speed) {
 	case RNPGBE_LINK_SPEED_1GB_FULL:
+	case RNPGBE_LINK_SPEED_1GB_HALF:
 		supported |= SUPPORTED_1000baseT_Full;
-		supported |= SUPPORTED_FIBRE;
-		advertising |= ADVERTISED_FIBRE | ADVERTISED_1000baseKX_Full;
-		cmd->base.port = PORT_FIBRE;
+		supported |= SUPPORTED_TP;
+		advertising |= ADVERTISED_TP | ADVERTISED_1000baseT_Full;
+		cmd->base.port = PORT_TP;
 		break;
-	case RNPGBE_LINK_SPEED_10GB_FULL:
-		supported |= SUPPORTED_10000baseT_Full;
-		supported |= SUPPORTED_FIBRE;
-		advertising |= ADVERTISED_FIBRE | SUPPORTED_10000baseT_Full;
-		cmd->base.port = PORT_FIBRE;
+	case RNPGBE_LINK_SPEED_100_FULL:
+	case RNPGBE_LINK_SPEED_100_HALF:
+		supported |= SUPPORTED_100baseT_Full;
+		supported |= SUPPORTED_TP;
+		advertising |= ADVERTISED_TP | ADVERTISED_100baseT_Full;
+		cmd->base.port = PORT_TP;
 		break;
-	case RNPGBE_LINK_SPEED_25GB_FULL:
-		supported |= SUPPORTED_40000baseKR4_Full;
-		supported |= SUPPORTED_FIBRE;
-		advertising |= ADVERTISED_FIBRE | SUPPORTED_40000baseKR4_Full;
-		cmd->base.port = PORT_FIBRE;
-		break;
-	case RNPGBE_LINK_SPEED_40GB_FULL:
-		supported |= SUPPORTED_40000baseCR4_Full |
-			     SUPPORTED_40000baseSR4_Full |
-			     SUPPORTED_40000baseLR4_Full;
-		supported |= SUPPORTED_FIBRE;
-		advertising |= ADVERTISED_FIBRE;
-		cmd->base.port = PORT_FIBRE;
+	case RNPGBE_LINK_SPEED_10_FULL:
+	case RNPGBE_LINK_SPEED_10_HALF:
+		supported |= SUPPORTED_10baseT_Full;
+		supported |= SUPPORTED_TP;
+		advertising |= ADVERTISED_TP | ADVERTISED_10baseT_Full;
+		cmd->base.port = PORT_TP;
 		break;
 	}
 
@@ -166,6 +169,7 @@ static int rnpgbevf_get_link_ksettings(struct net_device *netdev,
 		cmd->base.autoneg = AUTONEG_DISABLE;
 	}
 
+	/* set pause support */
 	supported |= SUPPORTED_Pause;
 
 	switch (hw->fc.current_mode) {
@@ -184,25 +188,33 @@ static int rnpgbevf_get_link_ksettings(struct net_device *netdev,
 
 	if (link_up) {
 		switch (link_speed) {
-		case RNPGBE_LINK_SPEED_40GB_FULL:
-			cmd->base.speed = SPEED_40000;
-			break;
-		case RNPGBE_LINK_SPEED_25GB_FULL:
-			cmd->base.speed = SPEED_25000;
-			break;
-		case RNPGBE_LINK_SPEED_10GB_FULL:
-			cmd->base.speed = SPEED_10000;
-			break;
 		case RNPGBE_LINK_SPEED_1GB_FULL:
 			cmd->base.speed = SPEED_1000;
+			cmd->base.duplex = DUPLEX_FULL;
 			break;
 		case RNPGBE_LINK_SPEED_100_FULL:
 			cmd->base.speed = SPEED_100;
+			cmd->base.duplex = DUPLEX_FULL;
+			break;
+		case RNPGBE_LINK_SPEED_10_FULL:
+			cmd->base.speed = SPEED_10;
+			cmd->base.duplex = DUPLEX_FULL;
+			break;
+		case RNPGBE_LINK_SPEED_1GB_HALF:
+			cmd->base.speed = SPEED_1000;
+			cmd->base.duplex = DUPLEX_HALF;
+			break;
+		case RNPGBE_LINK_SPEED_100_HALF:
+			cmd->base.speed = SPEED_100;
+			cmd->base.duplex = DUPLEX_HALF;
+			break;
+		case RNPGBE_LINK_SPEED_10_HALF:
+			cmd->base.speed = SPEED_10;
+			cmd->base.duplex = DUPLEX_HALF;
 			break;
 		default:
 			break;
 		}
-		cmd->base.duplex = DUPLEX_FULL;
 	} else {
 		cmd->base.speed = SPEED_UNKNOWN;
 		cmd->base.duplex = DUPLEX_UNKNOWN;
@@ -226,22 +238,11 @@ static void rnpgbevf_get_drvinfo(struct net_device *netdev,
 		sizeof(drvinfo->version));
 	strscpy(drvinfo->bus_info, pci_name(adapter->pdev),
 		sizeof(drvinfo->bus_info));
-	if (hw->board_type == rnp_board_n10) {
-		snprintf(drvinfo->fw_version, sizeof(drvinfo->fw_version),
-			 "%d.%d.%d.%d", ((char *)&hw->fw_version)[3],
-			 ((char *)&hw->fw_version)[2],
-			 ((char *)&hw->fw_version)[1],
-			 ((char *)&hw->fw_version)[0]);
-	} else if (hw->board_type == rnp_board_n500) {
-		snprintf(drvinfo->fw_version, sizeof(drvinfo->fw_version),
-			 "%d.%d.%d.%d", ((char *)&hw->fw_version)[3],
-			 ((char *)&hw->fw_version)[2],
-			 ((char *)&hw->fw_version)[1],
-			 ((char *)&hw->fw_version)[0]);
-	} else if (hw->board_type == rnp_board_n210) {
-		snprintf(drvinfo->fw_version, sizeof(drvinfo->fw_version),
-			 "fw %x", hw->fw_version);
-	}
+	snprintf(drvinfo->fw_version, sizeof(drvinfo->fw_version),
+		 "%d.%d.%d.%d", ((char *)&hw->fw_version)[3],
+		 ((char *)&hw->fw_version)[2],
+		 ((char *)&hw->fw_version)[1],
+		 ((char *)&hw->fw_version)[0]);
 	drvinfo->n_priv_flags = RNPVF_PRIV_FLAGS_STR_LEN;
 }
 
@@ -310,7 +311,8 @@ static int rnpgbevf_set_ringparam(struct net_device *netdev,
 
 	rnpgbevf_down(adapter);
 
-	/* Setup new Tx resources and free the old Tx resources in that order.
+	/*
+	 * Setup new Tx resources and free the old Tx resources in that order.
 	 * We can then assign the new resources to the rings via a memcpy.
 	 * The advantage to this approach is that we are guaranteed to still
 	 * have resources even in the case of an allocation failure.
@@ -326,8 +328,7 @@ static int rnpgbevf_set_ringparam(struct net_device *netdev,
 			if (err) {
 				while (i) {
 					i--;
-					rnpgbevf_free_tx_resources(adapter,
-								   &temp_ring[i]);
+					rnpgbevf_free_tx_resources(adapter, &temp_ring[i]);
 				}
 				goto err_setup;
 			}
@@ -356,8 +357,7 @@ static int rnpgbevf_set_ringparam(struct net_device *netdev,
 			if (err) {
 				while (i) {
 					i--;
-					rnpgbevf_free_rx_resources(adapter,
-								   &temp_ring[i]);
+					rnpgbevf_free_rx_resources(adapter, &temp_ring[i]);
 				}
 				goto err_setup;
 			}
@@ -385,8 +385,11 @@ clear_reset:
 static void rnpgbevf_get_strings(struct net_device *netdev, u32 stringset,
 				 u8 *data)
 {
+	struct rnpgbevf_adapter *adapter = netdev_priv(netdev);
 	char *p = (char *)data;
 	int i;
+	struct rnpgbevf_ring *ring;
+	u16 queue_idx;
 
 	switch (stringset) {
 	case ETH_SS_STATS:
@@ -405,6 +408,9 @@ static void rnpgbevf_get_strings(struct net_device *netdev, u32 stringset,
 		BUG_ON(RNPVF_NUM_TX_QUEUES != RNPVF_NUM_RX_QUEUES);
 
 		for (i = 0; i < RNPVF_NUM_TX_QUEUES; i++) {
+			/* ====  tx ======== */
+			ring = adapter->tx_ring[i];
+			queue_idx = ring->rnpgbevf_queue_idx;
 			sprintf(p, "\n     queue%u_tx_packets", i);
 			p += ETH_GSTRING_LEN;
 			sprintf(p, "queue%u_tx_bytes", i);
@@ -438,6 +444,9 @@ static void rnpgbevf_get_strings(struct net_device *netdev, u32 stringset,
 			sprintf(p, "queue%u_tx_equal_count", i);
 			p += ETH_GSTRING_LEN;
 
+			/* ====  rx ======== */
+			ring = adapter->rx_ring[i];
+			queue_idx = ring->rnpgbevf_queue_idx;
 			sprintf(p, "\n     queue%u_rx_packets", i);
 			p += ETH_GSTRING_LEN;
 			sprintf(p, "queue%u_rx_bytes", i);
@@ -547,7 +556,6 @@ static int rnpgbevf_get_coalesce(struct net_device *netdev,
 	coal->tx_coalesce_usecs_high = 0;
 	coal->tx_max_coalesced_frames_high = 0;
 	coal->rate_sample_interval = 0;
-
 	return 0;
 }
 
@@ -569,8 +577,8 @@ static int rnpgbevf_set_coalesce(struct net_device *netdev,
 	    ec->tx_max_coalesced_frames_irq > RNPVF_MAX_TX_WORK)
 		return -EINVAL;
 
-	value = clamp_t(u32, ec->tx_max_coalesced_frames_irq,
-			RNPVF_MIN_TX_WORK, RNPVF_MAX_TX_WORK);
+	value = clamp_t(u32, ec->tx_max_coalesced_frames_irq, RNPVF_MIN_TX_WORK,
+			RNPVF_MAX_TX_WORK);
 	value = ALIGN(value, RNPVF_WORK_ALIGN);
 
 	if (adapter->tx_work_limit != value) {
@@ -582,8 +590,8 @@ static int rnpgbevf_set_coalesce(struct net_device *netdev,
 	    ec->tx_max_coalesced_frames > RNPVF_MAX_TX_FRAME)
 		return -EINVAL;
 
-	value = clamp_t(u32, ec->tx_max_coalesced_frames,
-			RNPVF_MIN_TX_FRAME, RNPVF_MAX_TX_FRAME);
+	value = clamp_t(u32, ec->tx_max_coalesced_frames, RNPVF_MIN_TX_FRAME,
+			RNPVF_MAX_TX_FRAME);
 	if (adapter->tx_frames != value) {
 		reset = 1;
 		adapter->tx_frames = value;
@@ -604,8 +612,8 @@ static int rnpgbevf_set_coalesce(struct net_device *netdev,
 	    ec->rx_max_coalesced_frames_irq > RNPVF_MAX_RX_WORK)
 		return -EINVAL;
 
-	value = clamp_t(u32, ec->rx_max_coalesced_frames_irq,
-			RNPVF_MIN_RX_WORK, RNPVF_MAX_RX_WORK);
+	value = clamp_t(u32, ec->rx_max_coalesced_frames_irq, RNPVF_MIN_RX_WORK,
+			RNPVF_MAX_RX_WORK);
 	value = ALIGN(value, RNPVF_WORK_ALIGN);
 
 	if (adapter->napi_budge != value) {
@@ -617,8 +625,8 @@ static int rnpgbevf_set_coalesce(struct net_device *netdev,
 	    ec->rx_max_coalesced_frames > RNPVF_MAX_RX_FRAME)
 		return -EINVAL;
 
-	value = clamp_t(u32, ec->rx_max_coalesced_frames,
-			RNPVF_MIN_RX_FRAME, RNPVF_MAX_RX_FRAME);
+	value = clamp_t(u32, ec->rx_max_coalesced_frames, RNPVF_MIN_RX_FRAME,
+			RNPVF_MAX_RX_FRAME);
 	if (adapter->rx_frames != value) {
 		reset = 1;
 		adapter->rx_frames = value;
@@ -635,20 +643,15 @@ static int rnpgbevf_set_coalesce(struct net_device *netdev,
 		reset = 1;
 		adapter->rx_usecs = value;
 	}
-
 	/* other setup is not supported */
 	if (ec->pkt_rate_low || ec->pkt_rate_high ||
-	    ec->rx_coalesce_usecs_low ||
-	    ec->rx_max_coalesced_frames_low ||
-	    ec->tx_coalesce_usecs_low ||
-	    ec->tx_max_coalesced_frames_low ||
+	    ec->rx_coalesce_usecs_low || ec->rx_max_coalesced_frames_low ||
+	    ec->tx_coalesce_usecs_low || ec->tx_max_coalesced_frames_low ||
 	    ec->rx_coalesce_usecs_high ||
 	    ec->rx_max_coalesced_frames_high ||
 	    ec->tx_coalesce_usecs_high ||
-	    ec->tx_max_coalesced_frames_high ||
-	    ec->rate_sample_interval ||
-	    ec->tx_coalesce_usecs_irq ||
-	    ec->rx_coalesce_usecs_irq)
+	    ec->tx_max_coalesced_frames_high || ec->rate_sample_interval ||
+	    ec->tx_coalesce_usecs_irq || ec->rx_coalesce_usecs_irq)
 		return -EINVAL;
 
 	if (reset) {
@@ -675,7 +678,6 @@ static void rnpgbevf_get_ethtool_stats(struct net_device *netdev,
 	struct rnpgbevf_hw *hw = &adapter->hw;
 
 	rnpgbevf_update_stats(adapter);
-
 	net_stats->multicast += rd32(hw, RNPVF500_VEB_VFMPRC(0));
 
 	for (i = 0; i < RNPVF_GLOBAL_STATS_LEN; i++) {
@@ -696,19 +698,18 @@ static void rnpgbevf_get_ethtool_stats(struct net_device *netdev,
 	BUG_ON(RNPVF_NUM_TX_QUEUES != RNPVF_NUM_RX_QUEUES);
 
 	for (j = 0; j < RNPVF_NUM_TX_QUEUES; j++) {
+		/* ===== tx-ring == */
 		ring = adapter->tx_ring[j];
 
 		if (!ring) {
 			data[i++] = 0;
 			data[i++] = 0;
-
 			data[i++] = 0;
 			data[i++] = 0;
 			data[i++] = 0;
 			data[i++] = 0;
 			data[i++] = 0;
 			data[i++] = 0;
-
 			/* rnpgbevf_tx_queue_ring_stat */
 			data[i++] = 0;
 			data[i++] = 0;
@@ -717,10 +718,7 @@ static void rnpgbevf_get_ethtool_stats(struct net_device *netdev,
 			data[i++] = 0;
 			data[i++] = 0;
 			data[i++] = 0;
-
-			data[i++] = 0;
-			data[i++] = 0;
-
+			/* ===== rx-ring == */
 			data[i++] = 0;
 			data[i++] = 0;
 			data[i++] = 0;
@@ -735,7 +733,8 @@ static void rnpgbevf_get_ethtool_stats(struct net_device *netdev,
 			data[i++] = 0;
 			data[i++] = 0;
 			data[i++] = 0;
-
+			data[i++] = 0;
+			data[i++] = 0;
 			data[i++] = 0;
 			data[i++] = 0;
 			data[i++] = 0;
@@ -764,13 +763,11 @@ static void rnpgbevf_get_ethtool_stats(struct net_device *netdev,
 			data[i++] = ring->tx_stats.tx_next_to_clean;
 		data[i++] = ring->tx_stats.tx_equal_count;
 
+		/* ===== rx-ring == */
 		ring = adapter->rx_ring[j];
 
 		if (!ring) {
-			data[i++] = 0;
-			data[i++] = 0;
-
-			data[i++] = 0;
+			/* ===== rx-ring == */
 			data[i++] = 0;
 			data[i++] = 0;
 			data[i++] = 0;
@@ -785,7 +782,9 @@ static void rnpgbevf_get_ethtool_stats(struct net_device *netdev,
 			data[i++] = 0;
 			data[i++] = 0;
 			data[i++] = 0;
-
+			data[i++] = 0;
+			data[i++] = 0;
+			data[i++] = 0;
 			data[i++] = 0;
 			data[i++] = 0;
 			data[i++] = 0;
@@ -794,7 +793,6 @@ static void rnpgbevf_get_ethtool_stats(struct net_device *netdev,
 
 		data[i++] = ring->stats.packets;
 		data[i++] = ring->stats.bytes;
-
 		data[i++] = ring->rx_stats.driver_drop_packets;
 		data[i++] = ring->rx_stats.rsc_count;
 		data[i++] = ring->rx_stats.rsc_flush;
@@ -810,7 +808,6 @@ static void rnpgbevf_get_ethtool_stats(struct net_device *netdev,
 		data[i++] = ring_rd32(ring, RNPGBE_DMA_REG_RX_DESC_BUF_HEAD);
 		data[i++] = ring_rd32(ring, RNPGBE_DMA_REG_RX_DESC_BUF_TAIL);
 		data[i++] = ring->next_to_clean;
-
 		data[i++] = ring->rx_stats.rx_irq_miss;
 		if (ring->rx_stats.rx_next_to_clean == -1)
 			data[i++] = ring->count;
@@ -847,8 +844,8 @@ static u32 rnpgbevf_get_msglevel(struct net_device *netdev)
 static void rnpgbevf_get_pauseparam(struct net_device *netdev,
 				    struct ethtool_pauseparam *pause)
 {
-	/* we don't support autoneg */
 	pause->autoneg = 0;
+	/* vf fixed off */
 	pause->rx_pause = 0;
 	pause->rx_pause = 0;
 }
@@ -867,6 +864,7 @@ static const struct ethtool_ops rnpgbevf_ethtool_ops = {
 	.get_ringparam = rnpgbevf_get_ringparam,
 	.set_ringparam = rnpgbevf_set_ringparam,
 	.get_strings = rnpgbevf_get_strings,
+	/* vf juset get status */
 	.get_pauseparam = rnpgbevf_get_pauseparam,
 	.get_msglevel = rnpgbevf_get_msglevel,
 	.set_msglevel = rnpgbevf_set_msglevel,
@@ -875,8 +873,12 @@ static const struct ethtool_ops rnpgbevf_ethtool_ops = {
 	.get_ethtool_stats = rnpgbevf_get_ethtool_stats,
 	.get_coalesce = rnpgbevf_get_coalesce,
 	.set_coalesce = rnpgbevf_set_coalesce,
-	.supported_coalesce_params = ETHTOOL_COALESCE_USECS,
+	.supported_coalesce_params = ETHTOOL_COALESCE_USECS |
+				     ETHTOOL_COALESCE_MAX_FRAMES_IRQ |
+				     ETHTOOL_COALESCE_MAX_FRAMES,
+
 	.get_channels = rnpgbevf_get_channels,
+
 };
 
 void rnpgbevf_set_ethtool_ops(struct net_device *netdev)

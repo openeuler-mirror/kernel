@@ -29,6 +29,20 @@
 
 static int mfs_mode = -1;
 
+static int process_close(struct mfs_msg *msg)
+{
+	int fd = msg->fd;
+	int ret;
+
+	if (fd < 0)
+		return 0;
+	ret = close(fd);
+	if (ret)
+		perror("close failed");
+
+	return ret;
+}
+
 static int process_local_read(struct mfs_msg *msg)
 {
 	struct mfs_read *read = (struct mfs_read *)msg->data;
@@ -111,6 +125,9 @@ static int process_req(int fd)
 	}
 	if (msg->opcode == MFS_OP_READ || msg->opcode == MFS_OP_FAULT)
 		return process_read(msg);
+	if (msg->opcode == MFS_OP_CLOSE)
+		return process_close(msg);
+
 	pr_err("invalid opcode:%d\n", msg->opcode);
 	return -1;
 }
@@ -174,7 +191,7 @@ int main(int argc, char *argv[])
 
 		if (ret == 0 || !(pfd.revents & POLLIN)) {
 			pr_err("poll event error, ret:%d, revents:%x\n", ret, pfd.revents);
-			continue;
+			break;
 		}
 
 		if (process_req(fd) == -1)

@@ -18,10 +18,12 @@
 #include "net/ubcore_comm.h"
 #include "net/ubcore_session.h"
 #include "ubcore_connect_adapter.h"
-#include "ubcore_connect_bonding.h"
 #include "ubcore_genl.h"
+#include "ubcore_topo_info.h"
 #include "ubcm/ub_cm.h"
 #include "ubmgr/ubmgr.h"
+
+#include "ub/urma/ubcore_perf.h"
 
 #define UBCORE_LOG_FILE_PERMISSION (0644)
 
@@ -29,19 +31,27 @@ module_param(g_ubcore_log_level, uint, UBCORE_LOG_FILE_PERMISSION);
 MODULE_PARM_DESC(g_ubcore_log_level, " 3: ERR, 4: WARNING, 6: INFO, 7: DEBUG");
 module_param(ubcore_conn_timeout, uint, UBCORE_LOG_FILE_PERMISSION);
 MODULE_PARM_DESC(ubcore_conn_timeout, "unit milliseconds");
+module_param(ubcore_enable_shared_ctp, bool, UBCORE_LOG_FILE_PERMISSION);
+MODULE_PARM_DESC(ubcore_enable_shared_ctp, "enable shared-CTP, 0: off, 1: on (default: 0)");
 module_param(ubcore_max_retry_cnt, uint, UBCORE_LOG_FILE_PERMISSION);
-MODULE_PARM_DESC(ubcore_max_retry_cnt, "maximum retry count for wk-jetty");
+MODULE_PARM_DESC(ubcore_max_retry_cnt, "maximum retry count for wk-jetty (default: 11)");
+module_param(ubmad_retry_interval_ms, uint, UBCORE_LOG_FILE_PERMISSION);
+MODULE_PARM_DESC(ubmad_retry_interval_ms, "retransmission interval in ms for ubmad (default: 5000)");
 
 static int __init ubcore_init(void)
 {
 	int ret;
 
 	ubcore_exchange_init();
-	ubcore_connect_bonding_init();
 
+	ret = ubcore_perf_init();
+	if (ret != 0) {
+		ubcore_log_err("Failed to init ubcore perf, ret = %d.\n", ret);
+		return ret;
+	}
 	ret = ubcore_class_register();
 	if (ret != 0)
-		return -1;
+		goto ubperf;
 
 	ret = ubcore_cdev_register();
 	if (ret != 0)
@@ -97,12 +107,15 @@ genl_init:
 	ubcore_cdev_unregister();
 class_init:
 	ubcore_class_unregister();
+ubperf:
+	ubcore_perf_uninit();
 	return ret;
 }
 
 static void __exit ubcore_exit(void)
 {
 	ubcm_uninit();
+	ubcore_unregister_comm_msg_handler(1);
 	ubcore_comm_uninit();
 	ubcore_session_uninit();
 	ubcore_destroy_workqueues();
@@ -110,6 +123,7 @@ static void __exit ubcore_exit(void)
 	ubcore_genl_exit();
 	ubcore_cdev_unregister();
 	ubcore_class_unregister();
+	ubcore_perf_uninit();
 	ubcore_log_info("ubcore module exits.\n");
 }
 

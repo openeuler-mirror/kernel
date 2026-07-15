@@ -130,7 +130,7 @@ static bool ubmem_vmmu_tdev_support_attr(struct ummu_core_device *core_device,
 		return false;
 
 	if (attr->priv_len < sizeof(struct hisi_ummu_tdev_info)) {
-		pr_err("ubmem vmmu: para len is invalid.\n");
+		pr_err("ubmem vmmu: para len is invalid: priv_len %u\n", attr->priv_len);
 		return false;
 	}
 

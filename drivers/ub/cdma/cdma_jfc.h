@@ -76,10 +76,20 @@ struct cdma_jfc_ctx {
 	/* DW1 */
 	u32 cqe_va_h;
 	/* DW2 */
-	u32 cqe_token_id : 20;
-	u32 cq_cnt_mode : 1;
-	u32 rsv0 : 3;
-	u32 ceqn : 8;
+	union {
+		struct {
+			u32 cqe_token_id : 20;
+			u32 cq_cnt_mode : 1;
+			u32 rsv0 : 2;
+			u32 ceqn : 9;
+		} hw_ver_1;
+		struct {
+			u32 cqe_token_id : 20;
+			u32 cq_cnt_mode : 1;
+			u32 rsv0 : 3;
+			u32 ceqn : 8;
+		} hw_ver_0;
+	};
 	/* DW3 */
 	u32 cqe_token_value : 24;
 	u32 rsv1 : 8;

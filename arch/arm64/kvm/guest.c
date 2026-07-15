@@ -1081,6 +1081,11 @@ int kvm_arm_vcpu_arch_set_attr(struct kvm_vcpu *vcpu,
 	case KVM_ARM_VCPU_PVTIME_CTRL:
 		ret = kvm_arm_pvtime_set_attr(vcpu, attr);
 		break;
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+	case KVM_ARM_VCPU_PVTIMER_STATUS_CTRL:
+		ret = kvm_arm_pvtimer_status_set_attr(vcpu, attr);
+		break;
+#endif
 	default:
 		ret = -ENXIO;
 		break;
@@ -1104,6 +1109,11 @@ int kvm_arm_vcpu_arch_get_attr(struct kvm_vcpu *vcpu,
 	case KVM_ARM_VCPU_PVTIME_CTRL:
 		ret = kvm_arm_pvtime_get_attr(vcpu, attr);
 		break;
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+	case KVM_ARM_VCPU_PVTIMER_STATUS_CTRL:
+		ret = kvm_arm_pvtimer_status_get_attr(vcpu, attr);
+		break;
+#endif
 	default:
 		ret = -ENXIO;
 		break;
@@ -1127,6 +1137,11 @@ int kvm_arm_vcpu_arch_has_attr(struct kvm_vcpu *vcpu,
 	case KVM_ARM_VCPU_PVTIME_CTRL:
 		ret = kvm_arm_pvtime_has_attr(vcpu, attr);
 		break;
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+	case KVM_ARM_VCPU_PVTIMER_STATUS_CTRL:
+		ret = kvm_arm_pvtimer_status_has_attr(vcpu, attr);
+		break;
+#endif
 	default:
 		ret = -ENXIO;
 		break;

@@ -265,10 +265,49 @@ struct ubctl_port_bitmap_data {
 	u32 reserved[3];
 };
 
+struct ubctl_port_link_stats_data {
+	u32 port_id;
+	u32 link_status;
+	u32 link_state_info;
+	u32 port_type;
+	u32 reserved[2];
+};
+
+struct ubctl_pkt_in_port_info {
+	uint32_t port_id;
+	uint16_t query_type;
+	uint16_t module_type;
+};
+
+#define UBCTL_LINK_PROC_ERR_STATE_SIZE 15
+struct utool_mac_dfx_link_state {
+	u16 cur_state;
+	u16 err_state[UBCTL_LINK_PROC_ERR_STATE_SIZE];
+};
+
+struct utool_port_link_info {
+	u32 port_id;
+	u16 query_type;
+	u16 module_type;
+	u8 target_speed;
+	u8 speed_ability_old;
+	u8 lane_num;
+	u8 fec;
+	u8 sds_rate;
+	u8 port_usage : 1;
+	u8 port_enable : 1;
+	u8 port_link : 1;
+	u8 reserved_0 : 5;
+	u8 driver_type;
+	u8 port_mode;
+	u32 link_down_err;
+	struct utool_mac_dfx_link_state mac_link_state;
+	u32 speed_ability;
+};
+
 static unsigned long g_ubctl_port_bitmap[UBCTL_MAX_DIE_NUM] = { 0 };
 struct ubctl_port_link_list g_port_link_list[UBCTL_MAX_DIE_NUM];
 static DEFINE_MUTEX(g_ubctl_port_link_mutex);
-static DEFINE_MUTEX(g_ubctl_port_bitmap_mutex);
 
 static int ubctl_trace_data_deal(struct ubctl_dev *ucdev,
 				 struct ubctl_query_cmd_param *query_cmd_param,
@@ -362,9 +401,9 @@ static int ubctl_query_dl_trace_data(struct ubctl_dev *ucdev,
 		cmd_in->port_id = pkt_in->port_id;
 
 		cmd_dp = (struct ubctl_query_cmd_dp) {
+			.query_func = query_func,
 			.cmd_in = cmd_in,
 			.cmd_out = cmd_out,
-			.query_func = query_func,
 		};
 
 		ret = ubctl_send_deal_trace(ucdev, query_cmd_param,
@@ -386,6 +425,172 @@ static int ubctl_query_dl_trace_data(struct ubctl_dev *ucdev,
 
 		expect_total = tmp_sum;
 	}
+
+	return ret;
+}
+
+static int ubctl_query_perf_data(struct ubctl_dev *ucdev,
+				 struct ubctl_query_cmd_param *query_cmd_param,
+				 u32 port_bitmap, u32 period, u32 rpc_cmd)
+{
+	struct ubase_perf_stats_result *result_data;
+	u8 *perf_out_data;
+	int ret = 0;
+	u32 i = 0;
+
+	if (!ucdev || !query_cmd_param)
+		return -EINVAL;
+
+	if (!query_cmd_param->in || !query_cmd_param->out) {
+		ubctl_err(ucdev, "ubctl in or out is null.\n");
+		return -EINVAL;
+	}
+
+	if (query_cmd_param->out_len != UBCTL_MAX_PORT_NUM * UBCTL_DL_PERF_STATS_LEN ||
+	    sizeof(*result_data) < UBCTL_DL_PERF_STATS_LEN) {
+		ubctl_err(ucdev, "result data size is not equal to out len.\n");
+		return -EINVAL;
+	}
+
+	result_data = kvzalloc((UBCTL_MAX_PORT_NUM * sizeof(*result_data)), GFP_KERNEL);
+	if (!result_data)
+		return -ENOMEM;
+
+	if (rpc_cmd == UTOOL_CMD_QUERY_DL_PERF) {
+		ret = ubctl_query_perf_stats(ucdev, port_bitmap, result_data, UBCTL_MAX_PORT_NUM);
+		if (ret)
+			goto query_perf_failed;
+	} else {
+		ret = ubctl_query_perf(ucdev, port_bitmap, result_data, UBCTL_MAX_PORT_NUM, period);
+		if (ret)
+			goto query_perf_failed;
+	}
+
+	perf_out_data = (u8 *)query_cmd_param->out->data;
+	for (i = 0; i < UBCTL_MAX_PORT_NUM; i++) {
+		memcpy(perf_out_data, result_data, UBCTL_DL_PERF_STATS_LEN);
+		query_cmd_param->out->data_size += UBCTL_DL_PERF_STATS_LEN;
+		perf_out_data += UBCTL_DL_PERF_STATS_LEN;
+		result_data++;
+	}
+
+query_perf_failed:
+	if (ret)
+		ubctl_err(ucdev, "ubctl query perf failed, ret = %d.\n", ret);
+	kvfree(result_data);
+	return ret;
+}
+
+static int ubctl_query_dl_perf_data(struct ubctl_dev *ucdev,
+				    struct ubctl_query_cmd_param *query_cmd_param,
+				    struct ubctl_func_dispatch *query_func)
+{
+	if (query_cmd_param->in == NULL) {
+		ubctl_err(ucdev, "The input data is empty.\n");
+		return -EFAULT;
+	}
+
+	struct fwctl_pkt_in_port_time *pkt_in =
+		(struct fwctl_pkt_in_port_time *)query_cmd_param->in->data;
+
+	if (query_cmd_param->in->data_size != sizeof(struct fwctl_pkt_in_port_time)) {
+		ubctl_err(ucdev, "user data of trace is invalid.\n");
+		return -EINVAL;
+	}
+
+	return ubctl_query_perf_data(ucdev, query_cmd_param, pkt_in->port_id,
+				     pkt_in->time, query_func->rpc_cmd);
+}
+
+static int ubctl_query_dl_all_perf_data(struct ubctl_dev *ucdev,
+					struct ubctl_query_cmd_param *query_cmd_param,
+					struct ubctl_func_dispatch *query_func)
+{
+	struct fwctl_pkt_in_time *pkt_in = (struct fwctl_pkt_in_time *)query_cmd_param->in->data;
+
+	if (query_cmd_param->in->data_size != sizeof(struct fwctl_pkt_in_time)) {
+		ubctl_err(ucdev, "user data of trace is invalid.\n");
+		return -EINVAL;
+	}
+
+	return ubctl_query_perf_data(ucdev, query_cmd_param, 0, pkt_in->time, query_func->rpc_cmd);
+}
+
+static int ubctl_query_dl_perf_stats_data(struct ubctl_dev *ucdev,
+					  struct ubctl_query_cmd_param *query_cmd_param,
+					  struct ubctl_func_dispatch *query_func)
+{
+	int ret;
+
+	if (query_cmd_param->in == NULL) {
+		ubctl_err(ucdev, "The input data is empty.\n");
+		return -EFAULT;
+	}
+
+	struct fwctl_pkt_in_port *pkt_in = (struct fwctl_pkt_in_port *)query_cmd_param->in->data;
+
+	if (query_cmd_param->in->data_size != sizeof(struct fwctl_pkt_in_port)) {
+		ubctl_err(ucdev, "user data of trace is invalid.\n");
+		return -EINVAL;
+	}
+
+	ret = ubctl_query_perf_data(ucdev, query_cmd_param, pkt_in->port_id,
+				    0, query_func->rpc_cmd);
+	query_cmd_param->out->retval = ret;
+
+	return ret;
+}
+
+static int ubctl_query_dl_start_perf_data(struct ubctl_dev *ucdev,
+					  struct ubctl_query_cmd_param *query_cmd_param,
+					  struct ubctl_func_dispatch *query_func)
+{
+	struct fwctl_pkt_in_port_time *pkt_in;
+	int ret;
+
+	if (query_cmd_param->in == NULL) {
+		ubctl_err(ucdev, "The input data is empty.\n");
+		return -EFAULT;
+	}
+
+	pkt_in = (struct fwctl_pkt_in_port_time *)query_cmd_param->in->data;
+
+	if (query_cmd_param->in->data_size != sizeof(struct fwctl_pkt_in_port_time)) {
+		ubctl_err(ucdev, "user data of perf is invalid.\n");
+		return -EINVAL;
+	}
+
+	ret = ubase_open_perf_stats(ucdev->adev, pkt_in->port_id, pkt_in->time);
+	if (ret)
+		ubctl_err(ucdev, "ubase open perf stats failed, ret = %d.\n", ret);
+
+	query_cmd_param->out->retval = ret;
+
+	return ret;
+}
+
+static int ubctl_query_dl_stop_perf_data(struct ubctl_dev *ucdev,
+					 struct ubctl_query_cmd_param *query_cmd_param,
+					 struct ubctl_func_dispatch *query_func)
+{
+	struct fwctl_pkt_in_port *pkt_in;
+	int ret;
+
+	if (query_cmd_param->in == NULL) {
+		ubctl_err(ucdev, "The input data is empty.\n");
+		return -EFAULT;
+	}
+
+	if (query_cmd_param->in->data_size != sizeof(struct fwctl_pkt_in_port)) {
+		ubctl_err(ucdev, "user data of perf is invalid.\n");
+		return -EINVAL;
+	}
+
+	pkt_in = (struct fwctl_pkt_in_port *)query_cmd_param->in->data;
+
+	ret = ubase_close_perf_stats(ucdev->adev, pkt_in->port_id);
+	if (ret)
+		ubctl_err(ucdev, "ubase close perf stats failed, ret = %d.\n", ret);
 
 	return ret;
 }
@@ -1129,56 +1334,7 @@ static int ubctl_ummu_process_data(struct ubctl_dev *ucdev,
 	return -EINVAL;
 }
 
-static struct ubase_crq_event_nb ubctl_crq_events = {
-	.opcode = UBCTL_QUERY_PORT_LINK_STATS_DFX,
-	.crq_handler = ubctl_handle_link_status_event,
-};
-
-int ubctl_port_link_status_init(struct auxiliary_device *adev)
-{
-	struct ubase_caps *ucaps;
-	int ret = 0;
-
-	ucaps = ubase_get_dev_caps(adev);
-	if (ucaps == NULL || ucaps->die_id >= UBCTL_MAX_DIE_NUM)
-		return -ENODEV;
-
-	ubctl_crq_events.back = adev;
-	ret = ubase_register_crq_event(adev, &ubctl_crq_events);
-	if (ret)
-		return ret;
-
-	INIT_LIST_HEAD(&g_port_link_list[ucaps->die_id].port_link_list);
-
-	return ret;
-}
-
-void ubctl_port_link_status_uninit(struct auxiliary_device *adev)
-{
-	struct ubctl_port_link_list *current_node, *next;
-	struct ubctl_link_status *del_node, *del_next;
-	struct ubase_caps *ucaps;
-
-	ucaps = ubase_get_dev_caps(adev);
-	if (ucaps == NULL || ucaps->die_id >= UBCTL_MAX_DIE_NUM)
-		return;
-
-	ubase_unregister_crq_event(adev, ubctl_crq_events.opcode);
-	mutex_lock(&g_ubctl_port_link_mutex);
-	list_for_each_entry_safe(current_node, next,
-				 &g_port_link_list[ucaps->die_id].port_link_list, port_link_list) {
-		list_for_each_entry_safe(del_node, del_next,
-					 &current_node->link_info_list.list, list) {
-			list_del(&del_node->list);
-			kvfree(del_node);
-		}
-		list_del(&current_node->port_link_list);
-		kvfree(current_node);
-	}
-	mutex_unlock(&g_ubctl_port_link_mutex);
-}
-
-static struct ubctl_port_link_list *ubctl_add_port_node(struct ubase_caps *ucaps, u32 port)
+static struct ubctl_port_link_list *ubctl_add_port_node(u32 die_id, u32 port)
 {
 	struct ubctl_port_link_list *new_node = kvzalloc(sizeof(*new_node), GFP_KERNEL);
 
@@ -1192,7 +1348,7 @@ static struct ubctl_port_link_list *ubctl_add_port_node(struct ubase_caps *ucaps
 	INIT_LIST_HEAD(&new_node->link_info_list.list);
 	INIT_LIST_HEAD(&new_node->port_link_list);
 	mutex_lock(&g_ubctl_port_link_mutex);
-	list_add_tail(&new_node->port_link_list, &g_port_link_list[ucaps->die_id].port_link_list);
+	list_add_tail(&new_node->port_link_list, &g_port_link_list[die_id].port_link_list);
 	mutex_unlock(&g_ubctl_port_link_mutex);
 
 	return new_node;
@@ -1213,7 +1369,6 @@ static int ubctl_port_add_link_node(struct ubctl_port_link_list *ubctl_port_link
 	ubctl_link_status_list = &ubctl_port_link_node->link_info_list;
 	new_node->info = link_info;
 	INIT_LIST_HEAD(&new_node->list);
-
 	list_add_tail(&new_node->list, &ubctl_link_status_list->list);
 
 	if (size == UBCTL_LINK_SIZE_MAX) {
@@ -1229,6 +1384,192 @@ static int ubctl_port_add_link_node(struct ubctl_port_link_list *ubctl_port_link
 		ubctl_port_link_node->link_down_num++;
 
 	return 0;
+}
+
+static int ubctl_query_port_bitmap_data(struct auxiliary_device *adev,
+					struct ubctl_dev *ucdev, u32 die_id)
+{
+	struct ubctl_port_bitmap_data in_data, out_data;
+	struct ubctl_cmd cmd = {};
+	int ret = 0;
+
+	cmd.op_code = UBCTL_QUERY_PORT_NUM_DFX;
+	ret = ubctl_fill_cmd(&cmd, (void *)&in_data, (void *)&out_data, sizeof(out_data), true);
+	if (ret) {
+		ubctl_err(ucdev, "ubctl fill cmd failed.\n");
+		return ret;
+	}
+
+	ret = ubctl_ubase_cmd_send(adev, &cmd);
+	if (ret) {
+		ubctl_err(ucdev, "ubctl ubase cmd send failed, retval = %d.\n", ret);
+		return -EINVAL;
+	}
+
+	g_ubctl_port_bitmap[die_id] = (u64)out_data.port_bitmap;
+
+	return ret;
+}
+
+static bool ubctl_get_port_link_status(struct auxiliary_device *adev, struct ubctl_dev *ucdev,
+				       u32 port_id, u32 port_type)
+{
+#define UTOOL_QUERY_TYPE_DATA 1
+#define UTOOL_MODULE_TYPE_LINK_INFO_ETH 1
+#define UTOOL_MODULE_TYPE_LINK_INFO_UB 4
+
+	struct ubctl_pkt_in_port_info pkt_in_data = {
+		.port_id = port_id,
+		.query_type = UTOOL_QUERY_TYPE_DATA,
+		.module_type = 0
+	};
+	struct utool_port_link_info out_data = {};
+	struct ubctl_cmd cmd = {};
+	int ret;
+
+	if (port_type == UBCTL_PORT_TYPE_UB) {
+		pkt_in_data.module_type = UTOOL_MODULE_TYPE_LINK_INFO_UB;
+	} else if (port_type == UBCTL_PORT_TYPE_ETH) {
+		pkt_in_data.module_type = UTOOL_MODULE_TYPE_LINK_INFO_ETH;
+	} else {
+		ubctl_err(ucdev, "unknown port type (%u).\n", port_type);
+		return false;
+	}
+
+	cmd.op_code = UBCTL_QUERY_PORT_INFO_DFX;
+	ret = ubctl_fill_cmd(&cmd, (void *)&pkt_in_data, (void *)&out_data, sizeof(out_data), true);
+	if (ret) {
+		ubctl_err(ucdev, "failed to fill the cmd params for query link status.\n");
+		return false;
+	}
+
+	ret = ubctl_ubase_cmd_send(adev, &cmd);
+	if (ret) {
+		ubctl_err(ucdev,
+			  "failed to execute ubase cmd for query link status, ret = %d.\n", ret);
+		return false;
+	}
+
+	return (out_data.port_link != 0);
+}
+
+static bool ubctl_check_port_link_stats(struct auxiliary_device *adev,
+					struct ubctl_dev *ucdev, u32 port_id)
+{
+	struct ubctl_port_link_stats_data in_data, out_data;
+	struct ubctl_cmd cmd = {};
+	int ret = 0;
+
+	cmd.op_code = UBCTL_QUERY_DL_LINK_STATUS_DFX;
+	in_data.port_id = port_id;
+	ret = ubctl_fill_cmd(&cmd, (void *)&in_data, (void *)&out_data, sizeof(out_data), true);
+	if (ret) {
+		ubctl_err(ucdev, "ubctl fill cmd failed.\n");
+		return false;
+	}
+
+	ret = ubctl_ubase_cmd_send(adev, &cmd);
+	if (ret) {
+		ubctl_err(ucdev, "ubctl ubase cmd send failed, retval = %d.\n", ret);
+		return false;
+	}
+	return ubctl_get_port_link_status(adev, ucdev, port_id, out_data.port_type);
+}
+
+static int ubctl_construct_first_link_data(struct auxiliary_device *adev,
+					   struct ubctl_dev *ucdev, u32 die_id)
+{
+	struct ubctl_port_link_list *new_port_node = NULL;
+	struct ubctl_port_link_info link_info;
+	u32 port_id;
+	int ret = 0;
+
+	ret = ubctl_query_port_bitmap_data(adev, ucdev, die_id);
+	if (ret)
+		return ret;
+
+	for (port_id = 0; port_id < UBCTL_MAX_PORT_NUM; port_id++) {
+		if (!test_bit(port_id, &g_ubctl_port_bitmap[die_id]))
+			continue;
+		if (!ubctl_check_port_link_stats(adev, ucdev, port_id))
+			continue;
+
+		new_port_node = ubctl_add_port_node(die_id, port_id);
+		if (!new_port_node)
+			return -ENOMEM;
+
+		link_info.time = ktime_get_real_seconds();
+		link_info.link_status = 0;
+		ret = ubctl_port_add_link_node(new_port_node, link_info, new_port_node->size);
+		if (ret)
+			return ret;
+
+		new_port_node->size++;
+	}
+
+	return ret;
+}
+
+static bool ubctl_is_list_head_initialized(struct list_head *head)
+{
+	return head->next != NULL && head->prev != NULL;
+}
+
+static struct ubase_crq_event_nb ubctl_crq_events = {
+	.opcode = UBCTL_QUERY_PORT_LINK_STATS_DFX,
+	.crq_handler = ubctl_handle_link_status_event,
+};
+
+int ubctl_port_link_status_init(struct auxiliary_device *adev, struct ubctl_dev *ucdev)
+{
+	struct ubase_caps *ucaps;
+	int ret = 0;
+
+	ucaps = ubase_get_dev_caps(adev);
+	if (ucaps == NULL || ucaps->die_id >= UBCTL_MAX_DIE_NUM)
+		return -ENODEV;
+
+	INIT_LIST_HEAD(&g_port_link_list[ucaps->die_id].port_link_list);
+	ret = ubctl_construct_first_link_data(adev, ucdev, ucaps->die_id);
+	if (ret) {
+		ubctl_warn(ucdev, "ubctl construct first link data error, ret = %d.\n", ret);
+		return ret;
+	}
+
+	ubctl_crq_events.back = adev;
+	ret = ubase_register_crq_event(adev, &ubctl_crq_events);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
+void ubctl_port_link_status_uninit(struct auxiliary_device *adev)
+{
+	struct ubctl_port_link_list *current_node, *next;
+	struct ubctl_link_status *del_node, *del_next;
+	struct ubase_caps *ucaps;
+
+	ucaps = ubase_get_dev_caps(adev);
+	if (ucaps == NULL || ucaps->die_id >= UBCTL_MAX_DIE_NUM)
+		return;
+
+	ubase_unregister_crq_event(adev, ubctl_crq_events.opcode);
+
+	if (!ubctl_is_list_head_initialized(&g_port_link_list[ucaps->die_id].port_link_list))
+		return;
+	mutex_lock(&g_ubctl_port_link_mutex);
+	list_for_each_entry_safe(current_node, next,
+				 &g_port_link_list[ucaps->die_id].port_link_list, port_link_list) {
+		list_for_each_entry_safe(del_node, del_next,
+					 &current_node->link_info_list.list, list) {
+			list_del(&del_node->list);
+			kvfree(del_node);
+		}
+		list_del(&current_node->port_link_list);
+		kvfree(current_node);
+	}
+	mutex_unlock(&g_ubctl_port_link_mutex);
 }
 
 int ubctl_handle_link_status_event(void *dev, void *data, u32 len)
@@ -1247,6 +1588,9 @@ int ubctl_handle_link_status_event(void *dev, void *data, u32 len)
 	if (ucaps == NULL || ucaps->die_id >= UBCTL_MAX_DIE_NUM)
 		return -EINVAL;
 
+	if (!ubctl_is_list_head_initialized(&g_port_link_list[ucaps->die_id].port_link_list))
+		return -EINVAL;
+
 	link_info.time = ktime_get_real_seconds();
 	link_info.link_status = ((struct ubctl_port_link_out_info *)data)->link_status;
 	port = ((struct ubctl_port_link_out_info *)data)->port;
@@ -1256,6 +1600,7 @@ int ubctl_handle_link_status_event(void *dev, void *data, u32 len)
 			    port_link_list) {
 		if (current_node->port != port)
 			continue;
+
 		ret = ubctl_port_add_link_node(current_node, link_info, current_node->size);
 		if (ret) {
 			mutex_unlock(&g_ubctl_port_link_mutex);
@@ -1263,12 +1608,13 @@ int ubctl_handle_link_status_event(void *dev, void *data, u32 len)
 		}
 		if (current_node->size < UBCTL_LINK_SIZE_MAX)
 			current_node->size++;
+
 		mutex_unlock(&g_ubctl_port_link_mutex);
 		return ret;
 	}
 	mutex_unlock(&g_ubctl_port_link_mutex);
 
-	new_port_node = ubctl_add_port_node(ucaps, port);
+	new_port_node = ubctl_add_port_node(ucaps->die_id, port);
 	if (!new_port_node)
 		return -EINVAL;
 
@@ -1284,30 +1630,6 @@ int ubctl_handle_link_status_event(void *dev, void *data, u32 len)
 	return ret;
 }
 
-static int ubctl_query_port_bitmap_data(struct ubctl_dev *ucdev, u32 die_id)
-{
-	struct ubctl_port_bitmap_data in_data, out_data;
-	struct ubctl_cmd cmd = {};
-	int ret = 0;
-
-	cmd.op_code = UBCTL_QUERY_PORT_NUM_DFX;
-	ret = ubctl_fill_cmd(&cmd, (void *)&in_data, (void *)&out_data, sizeof(out_data), true);
-	if (ret) {
-		ubctl_err(ucdev, "ubctl fill cmd failed.\n");
-		return ret;
-	}
-
-	ret = ubctl_ubase_cmd_send(ucdev->adev, &cmd);
-	if (ret) {
-		ubctl_err(ucdev, "ubctl ubase cmd send failed, retval = %d.\n", ret);
-		return -EINVAL;
-	}
-
-	g_ubctl_port_bitmap[die_id] = (u64)out_data.port_bitmap;
-
-	return ret;
-}
-
 static int ubctl_check_port_id(struct ubctl_dev *ucdev, struct fwctl_pkt_in_port *pkt_in,
 			       u32 die_id)
 {
@@ -1317,16 +1639,6 @@ static int ubctl_check_port_id(struct ubctl_dev *ucdev, struct fwctl_pkt_in_port
 		ubctl_err(ucdev, "ubctl check die id filed, die id = %u.\n", die_id);
 		return -EINVAL;
 	}
-	mutex_lock(&g_ubctl_port_bitmap_mutex);
-	if (g_ubctl_port_bitmap[die_id] == 0) {
-		ret = ubctl_query_port_bitmap_data(ucdev, die_id);
-		if (ret) {
-			ubctl_err(ucdev, "ubctl query port bitmap failed, retval = %d.\n", ret);
-			mutex_unlock(&g_ubctl_port_bitmap_mutex);
-			return ret;
-		}
-	}
-	mutex_unlock(&g_ubctl_port_bitmap_mutex);
 
 	if (pkt_in->port_id >= UBCTL_MAX_PORT_NUM ||
 	    !test_bit(pkt_in->port_id, &g_ubctl_port_bitmap[die_id])) {
@@ -1360,6 +1672,9 @@ static int ubctl_query_port_link_status(struct ubctl_dev *ucdev,
 	ret = ubctl_check_port_id(ucdev, pkt_in, ucaps->die_id);
 	if (ret)
 		return ret;
+
+	if (!ubctl_is_list_head_initialized(&g_port_link_list[ucaps->die_id].port_link_list))
+		return -EINVAL;
 
 	if (query_cmd_param->out_len != sizeof(struct ubctl_port_link_stats)) {
 		ubctl_err(ucdev, "out len is error = %zu.\n", query_cmd_param->out_len);
@@ -1449,8 +1764,14 @@ static struct ubctl_func_dispatch g_ubctl_query_func[] = {
 	{ UTOOL_CMD_QUERY_DL_LINK_TRACE, ubctl_query_dl_trace_data,
 	  ubctl_trace_data_deal },
 
-	{ UTOOL_CMD_QUERY_SCC_VERSION, ubctl_query_scc_data, ubctl_scc_version_deal},
+	{ UTOOL_CMD_QUERY_SCC_VERSION, ubctl_query_scc_data, ubctl_scc_version_deal },
 	{ UTOOL_CMD_QUERY_SCC_LOG, ubctl_query_scc_data, ubctl_scc_log_deal },
+
+	{ UTOOL_CMD_QUERY_DL_PERFORMANCE, ubctl_query_dl_perf_data, NULL },
+	{ UTOOL_CMD_QUERY_DL_ALL_PERF, ubctl_query_dl_all_perf_data, NULL },
+	{ UTOOL_CMD_QUERY_DL_PERF, ubctl_query_dl_perf_stats_data, NULL },
+	{ UTOOL_CMD_QUERY_DL_PERF_START, ubctl_query_dl_start_perf_data, NULL },
+	{ UTOOL_CMD_QUERY_DL_PERF_STOP, ubctl_query_dl_stop_perf_data, NULL },
 
 	{ UTOOL_CMD_QUERY_MSGQ_QUE_STATS, ubctl_query_msgq_que_stats_data,
 	  ubctl_msgq_que_data_deal },

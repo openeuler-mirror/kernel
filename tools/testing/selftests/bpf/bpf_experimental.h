@@ -159,7 +159,103 @@ extern void *bpf_percpu_obj_new_impl(__u64 local_type_id, void *meta) __ksym;
  */
 extern void bpf_percpu_obj_drop_impl(void *kptr, void *meta) __ksym;
 
+struct bpf_iter_task_vma;
+
+extern int bpf_iter_task_vma_new(struct bpf_iter_task_vma *it,
+				 struct task_struct *task,
+				 unsigned long addr) __ksym;
+extern struct vm_area_struct *bpf_iter_task_vma_next(struct bpf_iter_task_vma *it) __ksym;
+extern void bpf_iter_task_vma_destroy(struct bpf_iter_task_vma *it) __ksym;
+
 /* Convenience macro to wrap over bpf_obj_drop_impl */
 #define bpf_percpu_obj_drop(kptr) bpf_percpu_obj_drop_impl(kptr, NULL)
+
+struct bpf_iter_css_task;
+struct cgroup_subsys_state;
+extern int bpf_iter_css_task_new(struct bpf_iter_css_task *it,
+		struct cgroup_subsys_state *css, unsigned int flags) __weak __ksym;
+extern struct task_struct *bpf_iter_css_task_next(struct bpf_iter_css_task *it) __weak __ksym;
+extern void bpf_iter_css_task_destroy(struct bpf_iter_css_task *it) __weak __ksym;
+
+struct bpf_iter_task;
+extern int bpf_iter_task_new(struct bpf_iter_task *it,
+		struct task_struct *task, unsigned int flags) __weak __ksym;
+extern struct task_struct *bpf_iter_task_next(struct bpf_iter_task *it) __weak __ksym;
+extern void bpf_iter_task_destroy(struct bpf_iter_task *it) __weak __ksym;
+
+struct bpf_iter_css;
+extern int bpf_iter_css_new(struct bpf_iter_css *it,
+				struct cgroup_subsys_state *start, unsigned int flags) __weak __ksym;
+extern struct cgroup_subsys_state *bpf_iter_css_next(struct bpf_iter_css *it) __weak __ksym;
+extern void bpf_iter_css_destroy(struct bpf_iter_css *it) __weak __ksym;
+
+#define __cmp_cannot_be_signed(x) \
+	__builtin_strcmp(#x, "==") == 0 || __builtin_strcmp(#x, "!=") == 0 || \
+	__builtin_strcmp(#x, "&") == 0
+
+#define __is_signed_type(type) (((type)(-1)) < (type)1)
+
+#define __bpf_cmp(LHS, OP, SIGN, PRED, RHS, DEFAULT)						\
+	({											\
+		__label__ l_true;								\
+		bool ret = DEFAULT;								\
+		asm volatile goto("if %[lhs] " SIGN #OP " %[rhs] goto %l[l_true]"		\
+				  :: [lhs] "r"((short)LHS), [rhs] PRED (RHS) :: l_true);	\
+		ret = !DEFAULT;									\
+l_true:												\
+		ret;										\
+       })
+
+/* C type conversions coupled with comparison operator are tricky.
+ * Make sure BPF program is compiled with -Wsign-compare then
+ * __lhs OP __rhs below will catch the mistake.
+ * Be aware that we check only __lhs to figure out the sign of compare.
+ */
+#define _bpf_cmp(LHS, OP, RHS, NOFLIP)								\
+	({											\
+		typeof(LHS) __lhs = (LHS);							\
+		typeof(RHS) __rhs = (RHS);							\
+		bool ret;									\
+		_Static_assert(sizeof(&(LHS)), "1st argument must be an lvalue expression");	\
+		(void)(__lhs OP __rhs);								\
+		if (__cmp_cannot_be_signed(OP) || !__is_signed_type(typeof(__lhs))) {		\
+			if (sizeof(__rhs) == 8)							\
+				ret = __bpf_cmp(__lhs, OP, "", "r", __rhs, NOFLIP);		\
+			else									\
+				ret = __bpf_cmp(__lhs, OP, "", "i", __rhs, NOFLIP);		\
+		} else {									\
+			if (sizeof(__rhs) == 8)							\
+				ret = __bpf_cmp(__lhs, OP, "s", "r", __rhs, NOFLIP);		\
+			else									\
+				ret = __bpf_cmp(__lhs, OP, "s", "i", __rhs, NOFLIP);		\
+		}										\
+		ret;										\
+       })
+
+#ifndef bpf_cmp_unlikely
+#define bpf_cmp_unlikely(LHS, OP, RHS) _bpf_cmp(LHS, OP, RHS, true)
+#endif
+
+#ifndef bpf_cmp_likely
+#define bpf_cmp_likely(LHS, OP, RHS)								\
+	({											\
+		bool ret;									\
+		if (__builtin_strcmp(#OP, "==") == 0)						\
+			ret = _bpf_cmp(LHS, !=, RHS, false);					\
+		else if (__builtin_strcmp(#OP, "!=") == 0)					\
+			ret = _bpf_cmp(LHS, ==, RHS, false);					\
+		else if (__builtin_strcmp(#OP, "<=") == 0)					\
+			ret = _bpf_cmp(LHS, >, RHS, false);					\
+		else if (__builtin_strcmp(#OP, "<") == 0)					\
+			ret = _bpf_cmp(LHS, >=, RHS, false);					\
+		else if (__builtin_strcmp(#OP, ">") == 0)					\
+			ret = _bpf_cmp(LHS, <=, RHS, false);					\
+		else if (__builtin_strcmp(#OP, ">=") == 0)					\
+			ret = _bpf_cmp(LHS, <, RHS, false);					\
+		else										\
+			(void) "bug";								\
+		ret;										\
+       })
+#endif
 
 #endif

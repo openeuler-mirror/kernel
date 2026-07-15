@@ -1096,11 +1096,16 @@ menuconfig CGROUP_SCHED
 	  tasks.
 
 if CGROUP_SCHED
+config QOS_LEVEL
+	bool
+	depends on CGROUP_SCHED && CFS_BANDWIDTH
+
 config QOS_SCHED
 	bool "Qos task scheduling"
 	depends on CGROUP_SCHED
 	depends on CFS_BANDWIDTH
 	depends on SMP
+	select QOS_LEVEL
 	default n
 	help
 	  This option enable qos scheduler, and support co-location online
@@ -1135,9 +1140,13 @@ config QOS_SCHED_MULTILEVEL
 	  Expand the qos_level to [-2,2] to distinguish the tasks expected
 	  to be with extremely high or low priority level.
 
+config GROUP_SCHED_WEIGHT
+	def_bool n
+
 config FAIR_GROUP_SCHED
 	bool "Group scheduling for SCHED_OTHER"
 	depends on CGROUP_SCHED
+	select GROUP_SCHED_WEIGHT
 	default CGROUP_SCHED
 
 config CFS_BANDWIDTH
@@ -1161,6 +1170,12 @@ config RT_GROUP_SCHED
 	  schedule realtime tasks for non-root users until you allocate
 	  realtime bandwidth for them.
 	  See Documentation/scheduler/sched-rt-group.rst for more information.
+
+config EXT_GROUP_SCHED
+	bool
+	depends on SCHED_CLASS_EXT && CGROUP_SCHED
+	select GROUP_SCHED_WEIGHT
+	default y
 
 endif #CGROUP_SCHED
 
@@ -1263,6 +1278,16 @@ config CGROUP_RDMA
 	  RDMA controller is designed to stop this from happening.
 	  Attaching processes with active RDMA resources to the cgroup
 	  hierarchy is allowed even if can cross the hierarchy's limit.
+
+config CGROUP_DMEM
+	bool "Device memory controller (DMEM)"
+	select PAGE_COUNTER
+	help
+	  The DMEM controller allows compatible devices to restrict device
+	  memory usage based on the cgroup hierarchy.
+
+	  As an example, it allows you to restrict VRAM usage for applications
+	  in the DRM subsystem.
 
 config CGROUP_FREEZER
 	bool "Freezer controller"

@@ -1071,14 +1071,14 @@ int proc_resctrl_show(struct seq_file *s, struct pid_namespace *ns,
 			continue;
 
 		seq_printf(s, "res:%s%s\n", (rdtg == &rdtgroup_default) ? "/" : "",
-			   rdtg->kn->name);
+			   rdt_kn_name(rdtg->kn));
 		seq_puts(s, "mon:");
 		list_for_each_entry(crg, &rdtg->mon.crdtgrp_list,
 				    mon.crdtgrp_list) {
 			if (!resctrl_arch_match_rmid(tsk, crg->mon.parent->closid,
 						     crg->mon.rmid))
 				continue;
-			seq_printf(s, "%s", crg->kn->name);
+			seq_printf(s, "%s", rdt_kn_name(crg->kn));
 			break;
 		}
 		seq_putc(s, '\n');
@@ -1111,10 +1111,20 @@ static int rdt_last_cmd_status_show(struct kernfs_open_file *of,
 	return 0;
 }
 
+static void *rdt_kn_parent_priv(struct kernfs_node *kn)
+{
+	/*
+	 * The parent pointer is only valid within RCU section since it can be
+	 * replaced.
+	 */
+	guard(rcu)();
+	return rcu_dereference(kn->__parent)->priv;
+}
+
 static int rdt_num_closids_show(struct kernfs_open_file *of,
 				struct seq_file *seq, void *v)
 {
-	struct resctrl_schema *s = of->kn->parent->priv;
+	struct resctrl_schema *s = rdt_kn_parent_priv(of->kn);
 
 	seq_printf(seq, "%u\n", s->num_closid);
 	return 0;
@@ -1123,7 +1133,7 @@ static int rdt_num_closids_show(struct kernfs_open_file *of,
 static int rdt_default_ctrl_show(struct kernfs_open_file *of,
 			     struct seq_file *seq, void *v)
 {
-	struct resctrl_schema *s = of->kn->parent->priv;
+	struct resctrl_schema *s = rdt_kn_parent_priv(of->kn);
 	struct rdt_resource *r = s->res;
 
 	seq_printf(seq, "%x\n", r->default_ctrl);
@@ -1133,7 +1143,7 @@ static int rdt_default_ctrl_show(struct kernfs_open_file *of,
 static int rdt_min_cbm_bits_show(struct kernfs_open_file *of,
 			     struct seq_file *seq, void *v)
 {
-	struct resctrl_schema *s = of->kn->parent->priv;
+	struct resctrl_schema *s = rdt_kn_parent_priv(of->kn);
 	struct rdt_resource *r = s->res;
 
 	seq_printf(seq, "%u\n", r->cache.min_cbm_bits);
@@ -1143,7 +1153,7 @@ static int rdt_min_cbm_bits_show(struct kernfs_open_file *of,
 static int rdt_shareable_bits_show(struct kernfs_open_file *of,
 				   struct seq_file *seq, void *v)
 {
-	struct resctrl_schema *s = of->kn->parent->priv;
+	struct resctrl_schema *s = rdt_kn_parent_priv(of->kn);
 	struct rdt_resource *r = s->res;
 
 	seq_printf(seq, "%x\n", r->cache.shareable_bits);
@@ -1167,7 +1177,7 @@ static int rdt_shareable_bits_show(struct kernfs_open_file *of,
 static int rdt_bit_usage_show(struct kernfs_open_file *of,
 			      struct seq_file *seq, void *v)
 {
-	struct resctrl_schema *s = of->kn->parent->priv;
+	struct resctrl_schema *s = rdt_kn_parent_priv(of->kn);
 	/*
 	 * Use unsigned long even though only 32 bits are used to ensure
 	 * test_bit() is used safely.
@@ -1249,7 +1259,7 @@ static int rdt_bit_usage_show(struct kernfs_open_file *of,
 static int rdt_min_bw_show(struct kernfs_open_file *of,
 			     struct seq_file *seq, void *v)
 {
-	struct resctrl_schema *s = of->kn->parent->priv;
+	struct resctrl_schema *s = rdt_kn_parent_priv(of->kn);
 	struct rdt_resource *r = s->res;
 
 	seq_printf(seq, "%u\n", r->membw.min_bw);
@@ -1259,7 +1269,7 @@ static int rdt_min_bw_show(struct kernfs_open_file *of,
 static int rdt_num_rmids_show(struct kernfs_open_file *of,
 			      struct seq_file *seq, void *v)
 {
-	struct rdt_resource *r = of->kn->parent->priv;
+	struct rdt_resource *r = rdt_kn_parent_priv(of->kn);
 
 	seq_printf(seq, "%d\n", r->num_rmid);
 
@@ -1269,7 +1279,7 @@ static int rdt_num_rmids_show(struct kernfs_open_file *of,
 static int rdt_mon_features_show(struct kernfs_open_file *of,
 				 struct seq_file *seq, void *v)
 {
-	struct rdt_resource *r = of->kn->parent->priv;
+	struct rdt_resource *r = rdt_kn_parent_priv(of->kn);
 	struct mon_evt *mevt;
 
 	list_for_each_entry(mevt, &r->evt_list, list) {
@@ -1284,7 +1294,7 @@ static int rdt_mon_features_show(struct kernfs_open_file *of,
 static int rdt_bw_gran_show(struct kernfs_open_file *of,
 			     struct seq_file *seq, void *v)
 {
-	struct resctrl_schema *s = of->kn->parent->priv;
+	struct resctrl_schema *s = rdt_kn_parent_priv(of->kn);
 	struct rdt_resource *r = s->res;
 
 	seq_printf(seq, "%u\n", r->membw.bw_gran);
@@ -1294,7 +1304,7 @@ static int rdt_bw_gran_show(struct kernfs_open_file *of,
 static int rdt_delay_linear_show(struct kernfs_open_file *of,
 			     struct seq_file *seq, void *v)
 {
-	struct resctrl_schema *s = of->kn->parent->priv;
+	struct resctrl_schema *s = rdt_kn_parent_priv(of->kn);
 	struct rdt_resource *r = s->res;
 
 	seq_printf(seq, "%u\n", r->membw.delay_linear);
@@ -1304,7 +1314,7 @@ static int rdt_delay_linear_show(struct kernfs_open_file *of,
 static int max_threshold_occ_show(struct kernfs_open_file *of,
 				  struct seq_file *seq, void *v)
 {
-	struct rdt_resource *r = of->kn->parent->priv;
+	struct rdt_resource *r = rdt_kn_parent_priv(of->kn);
 
 	if (r->cache_level != 3)
 		return 0;
@@ -1317,7 +1327,7 @@ static int max_threshold_occ_show(struct kernfs_open_file *of,
 static int rdt_thread_throttle_mode_show(struct kernfs_open_file *of,
 					 struct seq_file *seq, void *v)
 {
-	struct resctrl_schema *s = of->kn->parent->priv;
+	struct resctrl_schema *s = rdt_kn_parent_priv(of->kn);
 	struct rdt_resource *r = s->res;
 
 	if (r->membw.throttle_mode == THREAD_THROTTLE_PER_THREAD)
@@ -1331,7 +1341,7 @@ static int rdt_thread_throttle_mode_show(struct kernfs_open_file *of,
 static ssize_t max_threshold_occ_write(struct kernfs_open_file *of,
 				       char *buf, size_t nbytes, loff_t off)
 {
-	struct rdt_resource *r = of->kn->parent->priv;
+	struct rdt_resource *r = rdt_kn_parent_priv(of->kn);
 	unsigned int bytes;
 	int ret;
 
@@ -1387,7 +1397,7 @@ static enum resctrl_conf_type resctrl_peer_type(enum resctrl_conf_type my_type)
 static int rdt_has_sparse_bitmasks_show(struct kernfs_open_file *of,
 					struct seq_file *seq, void *v)
 {
-	struct resctrl_schema *s = of->kn->parent->priv;
+	struct resctrl_schema *s = rdt_kn_parent_priv(of->kn);
 	struct rdt_resource *r = s->res;
 
 	seq_printf(seq, "%u\n", r->cache.arch_has_sparse_bitmasks);
@@ -1758,7 +1768,7 @@ static int mbm_config_show(struct seq_file *s, struct rdt_resource *r, u32 evtid
 static int mbm_total_bytes_config_show(struct kernfs_open_file *of,
 				       struct seq_file *seq, void *v)
 {
-	struct rdt_resource *r = of->kn->parent->priv;
+	struct rdt_resource *r = rdt_kn_parent_priv(of->kn);
 
 	mbm_config_show(seq, r, QOS_L3_MBM_TOTAL_EVENT_ID);
 
@@ -1768,7 +1778,7 @@ static int mbm_total_bytes_config_show(struct kernfs_open_file *of,
 static int mbm_local_bytes_config_show(struct kernfs_open_file *of,
 				       struct seq_file *seq, void *v)
 {
-	struct rdt_resource *r = of->kn->parent->priv;
+	struct rdt_resource *r = rdt_kn_parent_priv(of->kn);
 
 	mbm_config_show(seq, r, QOS_L3_MBM_LOCAL_EVENT_ID);
 
@@ -1871,7 +1881,7 @@ static ssize_t mbm_total_bytes_config_write(struct kernfs_open_file *of,
 					    char *buf, size_t nbytes,
 					    loff_t off)
 {
-	struct rdt_resource *r = of->kn->parent->priv;
+	struct rdt_resource *r = rdt_kn_parent_priv(of->kn);
 	int ret;
 
 	/* Valid input requires a trailing newline */
@@ -1897,7 +1907,7 @@ static ssize_t mbm_local_bytes_config_write(struct kernfs_open_file *of,
 					    char *buf, size_t nbytes,
 					    loff_t off)
 {
-	struct rdt_resource *r = of->kn->parent->priv;
+	struct rdt_resource *r = rdt_kn_parent_priv(of->kn);
 	int ret;
 
 	/* Valid input requires a trailing newline */
@@ -2461,12 +2471,13 @@ static struct rdtgroup *kernfs_to_rdtgroup(struct kernfs_node *kn)
 		 * resource. "info" and its subdirectories don't
 		 * have rdtgroup structures, so return NULL here.
 		 */
-		if (kn == kn_info || kn->parent == kn_info)
+		if (kn == kn_info ||
+		    rcu_access_pointer(kn->__parent) == kn_info)
 			return NULL;
 		else
 			return kn->priv;
 	} else {
-		return kn->parent->priv;
+		return rdt_kn_parent_priv(kn);
 	}
 }
 
@@ -3636,7 +3647,7 @@ out_unlock:
  */
 static bool is_mon_groups(struct kernfs_node *kn, const char *name)
 {
-	return (!strcmp(kn->name, "mon_groups") &&
+	return (!strcmp(rdt_kn_name(kn), "mon_groups") &&
 		strcmp(name, "mon_groups"));
 }
 
@@ -3752,9 +3763,18 @@ static int rdtgroup_rmdir_ctrl(struct rdtgroup *rdtgrp, cpumask_var_t tmpmask)
 	return 0;
 }
 
+static struct kernfs_node *rdt_kn_parent(struct kernfs_node *kn)
+{
+	/*
+	 * Valid within the RCU section it was obtained or while rdtgroup_mutex
+	 * is held.
+	 */
+	return rcu_dereference_check(kn->__parent, lockdep_is_held(&rdtgroup_mutex));
+}
+
 static int rdtgroup_rmdir(struct kernfs_node *kn)
 {
-	struct kernfs_node *parent_kn = kn->parent;
+	struct kernfs_node *parent_kn;
 	struct rdtgroup *rdtgrp;
 	cpumask_var_t tmpmask;
 	int ret = 0;
@@ -3767,6 +3787,7 @@ static int rdtgroup_rmdir(struct kernfs_node *kn)
 		ret = -EPERM;
 		goto out;
 	}
+	parent_kn = rdt_kn_parent(kn);
 
 	/*
 	 * If the rdtgroup is a ctrl_mon group and parent directory
@@ -3784,7 +3805,7 @@ static int rdtgroup_rmdir(struct kernfs_node *kn)
 			ret = rdtgroup_rmdir_ctrl(rdtgrp, tmpmask);
 		}
 	} else if (rdtgrp->type == RDTMON_GROUP &&
-		 is_mon_groups(parent_kn, kn->name)) {
+		 is_mon_groups(parent_kn, rdt_kn_name(kn))) {
 		ret = rdtgroup_rmdir_mon(rdtgrp, tmpmask);
 	} else {
 		ret = -EPERM;
@@ -3837,6 +3858,7 @@ static void mongrp_reparent(struct rdtgroup *rdtgrp,
 static int rdtgroup_rename(struct kernfs_node *kn,
 			   struct kernfs_node *new_parent, const char *new_name)
 {
+	struct kernfs_node *kn_parent;
 	struct rdtgroup *new_prdtgrp;
 	struct rmid_entry *entry;
 	struct rdtgroup *rdtgrp;
@@ -3872,8 +3894,9 @@ static int rdtgroup_rename(struct kernfs_node *kn,
 		goto out;
 	}
 
-	if (rdtgrp->type != RDTMON_GROUP || !kn->parent ||
-	    !is_mon_groups(kn->parent, kn->name)) {
+	kn_parent = rdt_kn_parent(kn);
+	if (rdtgrp->type != RDTMON_GROUP || !kn_parent ||
+	    !is_mon_groups(kn_parent, rdt_kn_name(kn))) {
 		rdt_last_cmd_puts("Source must be a MON group\n");
 		ret = -EPERM;
 		goto out;

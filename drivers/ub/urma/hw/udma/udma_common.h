@@ -10,9 +10,15 @@
 #include "udma_ctx.h"
 #include "udma_dev.h"
 
+#define UDMA_WQE_LOCK_BUFFER_JETTY_IDX 4096
 #define TP_ACK_UDP_SPORT_H_OFFSET 8
 #define UDMA_TPHANDLE_TPID_SHIFT 0xFFFFFF
 #define UDMA_EID_GUID_INDEX_OFFSET 24
+#define UDMA_CCU_SQE_BB_CNT 2
+#define UDMA_MIN_SLEEP_TIME 100
+#define UDMA_REMOVE_MAX_SLEEP_TIME 800
+#define UDMA_OPEN_RX_MAX_SLEEP_TIME 3000
+#define UDMA_TIME_SLEEP_RATE 2
 
 struct udma_jetty_grp {
 	struct ubcore_jetty_group ubcore_jetty_grp;
@@ -23,6 +29,11 @@ struct udma_jetty_grp {
 	struct mutex valid_lock;
 	refcount_t ae_refcount;
 	struct completion ae_comp;
+};
+
+struct udma_dtu_pg_info {
+	struct page *pg;
+	int order;
 };
 
 struct udma_jetty_queue {
@@ -62,6 +73,8 @@ struct udma_jetty_queue {
 	bool pi_type;
 	bool activated;
 	bool cstm;
+	bool dtu_en;
+	struct udma_dtu_pg_info dtu_pg_info;
 };
 
 enum tp_state {
@@ -322,9 +335,9 @@ struct udma_tp_ctx {
 	uint32_t scc_data[8];
 };
 
-int udma_ioummu_map(struct udma_context *ctx, int r_tid, int prot, uint64_t addr,
+int udma_ioummu_map(uint32_t l_tid, uint32_t r_tid, int prot, uint64_t addr,
 		    struct sg_table *sgt);
-void udma_ioummu_unmap(struct udma_context *ctx, int r_tid, uint64_t addr, size_t size);
+void udma_ioummu_unmap(uint32_t l_tid, uint32_t r_tid, uint64_t addr, size_t size);
 struct udma_umem *udma_umem_get(struct udma_umem_param *param);
 void udma_umem_release(struct udma_umem *umem, bool is_kernel, bool dirty);
 void udma_init_udma_table(struct udma_table *table, uint32_t max, uint32_t min, bool irq_lock);
@@ -337,13 +350,12 @@ void udma_dfx_store_id(struct udma_dev *udma_dev, struct udma_dfx_entity *entity
 		       uint32_t id, const char *name);
 void udma_dfx_delete_id(struct udma_dev *udma_dev, struct udma_dfx_entity *entity,
 			uint32_t id);
+void udma_iotlb_sync(struct udma_dev *dev, uint64_t va, uint64_t len);
 int udma_alloc_normal_buf(struct udma_dev *udma_dev, size_t memory_size, struct udma_buf *buf);
 void udma_free_normal_buf(struct udma_dev *udma_dev, size_t memory_size, struct udma_buf *buf);
-int udma_k_alloc_buf(struct udma_dev *dev, struct udma_buf *buf);
-void udma_k_free_buf(struct udma_dev *dev, struct udma_buf *buf);
-void *udma_alloc_iova(struct udma_dev *udma_dev, size_t memory_size, dma_addr_t *addr);
-void udma_free_iova(struct udma_dev *udma_dev, size_t memory_size, void *kva_or_slot,
-		    dma_addr_t addr);
+int udma_k_alloc_buf(struct udma_dev *dev, struct udma_buf *buf, bool need_dtu);
+void udma_k_free_buf(struct udma_dev *dev, struct udma_buf *buf, bool need_dtu);
+bool remap_va_to_pfn(struct udma_dev *dev, uint64_t va, uint64_t *pfn);
 
 static inline void udma_write64(struct udma_dev *udma_dev,
 				uint64_t *val, void __iomem *dest)
@@ -364,12 +376,6 @@ static inline void *get_buf_entry(struct udma_buf *buf, uint32_t n)
 	uint32_t entry_index = n & (buf->entry_cnt - 1);
 
 	return (char *)buf->kva + (entry_index * buf->entry_size);
-}
-
-static inline uint8_t to_ta_timeout(uint32_t err_timeout)
-{
-#define TA_TIMEOUT_DIVISOR 8
-	return err_timeout / TA_TIMEOUT_DIVISOR;
 }
 
 static inline uint64_t udma_cal_npages(uint64_t va, uint64_t len)
@@ -407,5 +413,9 @@ void udma_swap_endian(const uint8_t arr[], uint8_t res[], uint32_t res_size);
 void udma_init_hugepage(struct udma_dev *dev);
 void udma_destroy_hugepage(struct udma_dev *dev);
 void udma_destroy_eid_guid_table(struct udma_dev *udma_dev);
+void udma_dtu_uva_unremap(struct udma_dev *dev, struct udma_buf *buf,
+			  struct udma_dtu_pg_info *dtu_pg_info);
+int udma_dtu_uva_remap(struct udma_dev *dev, struct udma_buf *buf,
+		       struct udma_dtu_pg_info *dtu_pg_info);
 
 #endif /* __UDMA_COMM_H__ */

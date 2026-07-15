@@ -25,6 +25,9 @@ enum ubcore_cm_msg_type {
 	UBCORE_CM_CONN_REQ = 2, /* Consistent with UBMAD_UBC_CONN_REQ */
 	UBCORE_CM_CONN_RESP = 3, /* Consistent with UBMAD_UBC_CONN_RESP */
 	UBCORE_CM_SINGLE_REQ = 4, /* Consistent with UBMAD_UBC_SINGLE_REQ */
+	UBCORE_CM_GEN_DATA = 0x10, /* Consistent with UBMAD_GEN_DATA */
+	UBCORE_CM_GEN_ACK, /* Consistent with UBMAD_GEN_ACK */
+	UBCORE_CM_GEN_RESP, /* Consistent with UBMAD_GEN_RESP */
 	UBCORE_CM_MSG_NUM
 };
 
@@ -65,9 +68,9 @@ int ubcore_call_cm_eid_ops(struct ubcore_device *dev,
 			   enum ubcore_mgmt_event_type event_type);
 
 int ubcore_ubcm_send(struct ubcore_device *dev, void *conn,
-		     struct ubcore_net_msg *msg);
+		     struct ubcore_comm_msg *msg);
 int ubcore_ubcm_send_to(struct ubcore_device *dev, union ubcore_eid addr,
-			struct ubcore_net_msg *msg);
+			struct ubcore_comm_msg *msg);
 
 void ubcore_cm_register_endpoint(struct ubcore_comm_endpoint *ep,
 				 struct ubcore_device *dev,

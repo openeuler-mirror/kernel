@@ -831,7 +831,7 @@ static ssize_t show_scaling_governor(struct cpufreq_policy *policy, char *buf)
 static ssize_t store_scaling_governor(struct cpufreq_policy *policy,
 					const char *buf, size_t count)
 {
-	char str_governor[16];
+	char str_governor[CPUFREQ_NAME_LEN];
 	int ret;
 
 	ret = sscanf(buf, "%15s", str_governor);
@@ -942,9 +942,9 @@ static ssize_t store_scaling_setspeed(struct cpufreq_policy *policy,
 	if (!policy->governor || !policy->governor->store_setspeed)
 		return -EINVAL;
 
-	ret = sscanf(buf, "%u", &freq);
-	if (ret != 1)
-		return -EINVAL;
+	ret = kstrtouint(buf, 0, &freq);
+	if (ret)
+		return ret;
 
 	policy->governor->store_setspeed(policy, freq);
 
@@ -2710,6 +2710,8 @@ static int cpufreq_set_policy(struct cpufreq_policy *policy,
 		ret = cpufreq_start_governor(policy);
 		if (!ret) {
 			pr_debug("governor change\n");
+			blocking_notifier_call_chain(&cpufreq_policy_notifier_list,
+						     CPUFREQ_CHANGE_POLICY, policy);
 			sched_cpufreq_governor_change(policy, old_gov);
 			return 0;
 		}
@@ -2930,11 +2932,11 @@ static ssize_t show_smart_grid_governor(struct kobject *kobj,
 	mutex_lock(&sg_zone_lock);
 	if (!sg_zone.enable) {
 		mutex_unlock(&sg_zone_lock);
-		return sprintf(buf, "smart_grid governor disable\n");
+		return sysfs_emit(buf, "smart_grid governor disable\n");
 	}
 
 	for (gov_index = 0; gov_index < SMART_GRID_ZONE_NR; gov_index++)
-		len += sprintf(buf + len, "smart_grid-%d: %s\n", gov_index,
+		len += sysfs_emit_at(buf, len, "smart_grid-%d: %s\n", gov_index,
 								 sg_zone.governor_name[gov_index]);
 
 	mutex_unlock(&sg_zone_lock);
@@ -3005,7 +3007,7 @@ define_one_global_rw(smart_grid_governor);
 static ssize_t show_smart_grid_governor_enable(struct kobject *kobj,
 					       struct kobj_attribute *attr, char *buf)
 {
-	return sprintf(buf, "%u\n", sg_zone.enable);
+	return sysfs_emit(buf, "%u\n", sg_zone.enable);
 }
 
 static void smart_grid_irq_work(struct irq_work *irq_work)

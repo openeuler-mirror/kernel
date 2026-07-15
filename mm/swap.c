@@ -108,6 +108,11 @@ void __folio_put(struct folio *folio)
 		return;
 	}
 
+	if (unlikely(folio_test_fcma(folio))) {
+		folio_put_cma(folio);
+		return;
+	}
+
 	page_cache_release(folio);
 	folio_unqueue_deferred_split(folio);
 	mem_cgroup_uncharge(folio);
@@ -115,6 +120,7 @@ void __folio_put(struct folio *folio)
 }
 EXPORT_SYMBOL(__folio_put);
 
+#ifdef CONFIG_PSWIOTLB
 /**
  * put_pages_list() - release a list of pages
  * @pages: list of pages threaded on page->lru
@@ -145,6 +151,7 @@ void put_pages_list(struct list_head *pages)
 	INIT_LIST_HEAD(pages);
 }
 EXPORT_SYMBOL(put_pages_list);
+#endif
 
 typedef void (*move_fn_t)(struct lruvec *lruvec, struct folio *folio);
 

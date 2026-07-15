@@ -17,6 +17,8 @@
 
 #define UBCTL_READ true
 #define UBCTL_WRITE false
+#define UBCTL_PORT_TYPE_ETH 0U
+#define UBCTL_PORT_TYPE_UB 1U
 
 #define ubctl_err(ucdev, format, ...) \
 	dev_err(&ucdev->fwctl.dev, format, ##__VA_ARGS__)
@@ -148,5 +150,11 @@ int ubctl_query_data_deal(struct ubctl_dev *ucdev,
 			  struct ubctl_query_cmd_param *query_cmd_param,
 			  struct ubctl_cmd *cmd, u32 out_len, u32 offset);
 
-#endif
+int ubctl_query_perf(struct ubctl_dev *ucdev, u32 port_bitmap,
+		     struct ubase_perf_stats_result *result_data,
+		     u32 result_data_size, u32 period);
+int ubctl_query_perf_stats(struct ubctl_dev *ucdev, u32 port_bitmap,
+			   struct ubase_perf_stats_result *result_data,
+			   u32 result_data_size);
 
+#endif

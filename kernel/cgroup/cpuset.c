@@ -5218,7 +5218,7 @@ int proc_cpuset_show(struct seq_file *m, struct pid_namespace *ns,
 	spin_unlock_irq(&css_set_lock);
 	rcu_read_unlock();
 
-	if (retval >= PATH_MAX)
+	if (retval == -E2BIG)
 		retval = -ENAMETOOLONG;
 	if (retval < 0)
 		goto out_free;
@@ -5269,10 +5269,10 @@ __bpf_kfunc unsigned int bpf_cpumask_weight(struct cpumask *pmask)
 	return cpumask_weight(pmask);
 }
 
-BTF_SET8_START(bpf_cpuset_kfunc_ids)
+BTF_KFUNCS_START(bpf_cpuset_kfunc_ids)
 BTF_ID_FLAGS(func, bpf_cpuset_from_task, KF_RET_NULL | KF_RCU)
 BTF_ID_FLAGS(func, bpf_cpumask_weight)
-BTF_SET8_END(bpf_cpuset_kfunc_ids)
+BTF_KFUNCS_END(bpf_cpuset_kfunc_ids)
 
 static const struct btf_kfunc_id_set bpf_cpuset_kfunc_set = {
 	.owner		= THIS_MODULE,

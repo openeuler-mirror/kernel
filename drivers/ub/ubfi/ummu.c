@@ -20,16 +20,61 @@ struct ummu_sub_table {
 	struct ub_table_header header;
 	u16 count;
 	u8 reserved[6];
-	u8 node_data[]; __counted_by(count)
+	u8 node_data[] __counted_by(count);
 };
 
-#define UBRT_UMMU_PXM_VALID 0xFFFF
-#define ACPI_UMMU_DEVICE_HID "HISI0551"
-#define ACPI_UMMU_PMU_DEVICE_HID "HISI0571"
-#define UMMU_INDEX_MASK GENMASK(31, 0)
-#define UMMU_TYPE_MASK GENMASK_ULL(63, 32)
+#define UBRT_UMMU_PXM_VALID		0xFFFF
+#define ACPI_UMMU_DEVICE_HID		"HISI0551"
+#define ACPI_UMMU_PMU_DEVICE_HID	"HISI0571"
+#define UMMU_INDEX_MASK			GENMASK(31, 0)
+#define UMMU_TYPE_MASK			GENMASK_ULL(63, 32)
 
-static int __init ummu_set_proximity(struct device *dev, struct ummu_node *node)
+struct ummu_type_info {
+	enum ubrt_node_type type;
+	const char *name;
+	const char *acpi_hid;
+	const char *of_compat;
+};
+
+static const struct ummu_type_info ummu_types[] = {
+	{
+		.type      = UBRT_UMMU,
+		.name      = "ummu",
+		.acpi_hid  = ACPI_UMMU_DEVICE_HID,
+		.of_compat = "ub,ummu",
+	},
+	{
+		.type      = UBRT_UMMU_PMU,
+		.name      = "ummu_pmu",
+		.acpi_hid  = ACPI_UMMU_PMU_DEVICE_HID,
+		.of_compat = "ub,ummu_pmu",
+	},
+};
+
+static const struct ummu_type_info *ummu_get_type_info(enum ubrt_node_type type)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(ummu_types); i++) {
+		if (ummu_types[i].type == type)
+			return &ummu_types[i];
+	}
+	return NULL;
+}
+
+static void ummu_get_node_addr(struct ummu_node *node, enum ubrt_node_type type,
+			       u64 *base, u64 *size)
+{
+	if (type == UBRT_UMMU) {
+		*base = node->base_addr;
+		*size = node->addr_size;
+	} else {
+		*base = node->pmu_addr;
+		*size = node->pmu_size;
+	}
+}
+
+static int ummu_set_proximity(struct device *dev, struct ummu_node *node)
 {
 	int dev_node;
 
@@ -54,71 +99,36 @@ static int __init ummu_set_proximity(struct device *dev, struct ummu_node *node)
 	return 0;
 }
 
-static int __init ummu_count_resources(struct ummu_node *node)
-{
-	/* present mem resource only */
-	return 1;
-}
-
-static void __init ummu_pmu_dev_init_resources(struct resource *res, int cnt,
-					       struct ummu_node *node)
-{
-	int num = 0;
-
-	res[num].start = node->pmu_addr;
-	res[num].end = node->pmu_addr + node->pmu_size - 1;
-	res[num].flags = IORESOURCE_MEM;
-	num++;
-
-	if (num != cnt)
-		pr_err("ummu pmu res num is not match!\n");
-}
-
-static void __init ummu_device_init_resources(struct resource *res, int cnt,
-				       struct ummu_node *node)
-{
-	int num = 0;
-
-	res[num].start = node->base_addr;
-	res[num].end = node->base_addr + node->addr_size - 1;
-	res[num].flags = IORESOURCE_MEM;
-	num++;
-	if (num != cnt)
-		pr_err("ummu res num is not match!\n");
-}
-
-static int __init ummu_add_resources(struct platform_device *pdev,
+static int ummu_add_resources(struct platform_device *pdev,
 				     struct ummu_node *node,
 				     enum ubrt_node_type type)
 {
 	struct resource *res __free(kfree);
-	int num_res;
+	u64 base, size;
 
-	num_res = ummu_count_resources(node);
-	res = kcalloc(num_res, sizeof(*res), GFP_KERNEL);
+	ummu_get_node_addr(node, type, &base, &size);
+
+	res = kcalloc(1, sizeof(*res), GFP_KERNEL);
 	if (!res)
 		return -ENOMEM;
 
-	if (type == UBRT_UMMU)
-		ummu_device_init_resources(res, num_res, node);
-	else
-		ummu_pmu_dev_init_resources(res, num_res, node);
+	res[0].start = base;
+	res[0].end = base + size - 1;
+	res[0].flags = IORESOURCE_MEM;
 
-	return platform_device_add_resources(pdev, res, num_res);
+	return platform_device_add_resources(pdev, res, 1);
 }
 
-static int ummu_rename_device(struct platform_device *pdev, enum ubrt_node_type type)
+static int ummu_rename_device(struct platform_device *pdev,
+			      const struct ummu_type_info *info)
 {
-	static int device_ummu_count;
-	static int device_pmu_count;
+	static int device_count[ARRAY_SIZE(ummu_types)];
+	unsigned int idx = info - ummu_types;
 	char new_name[32];
 	int ret;
 
-	if (type == UBRT_UMMU)
-		ret = snprintf(new_name, sizeof(new_name), "ummu.%d", device_ummu_count++);
-	else
-		ret = snprintf(new_name, sizeof(new_name), "ummu_pmu.%d", device_pmu_count++);
-
+	ret = snprintf(new_name, sizeof(new_name), "%s.%d",
+		       info->name, device_count[idx]++);
 	if (ret < 0 || ret >= sizeof(new_name)) {
 		dev_err(&pdev->dev, "failed to generate new device name\n");
 		return -ENOENT;
@@ -126,7 +136,8 @@ static int ummu_rename_device(struct platform_device *pdev, enum ubrt_node_type 
 
 	ret = device_rename(&pdev->dev, new_name);
 	if (ret) {
-		dev_err(&pdev->dev, "failed to rename device to %s: %d\n", new_name, ret);
+		dev_err(&pdev->dev, "failed to rename device to %s: %d\n",
+			new_name, ret);
 		return ret;
 	}
 	pdev->name = pdev->dev.kobj.name;
@@ -138,12 +149,16 @@ static int ummu_config_update(struct platform_device *pdev,
 			      struct ummu_node *ummu_node,
 			      enum ubrt_node_type type)
 {
+	const struct ummu_type_info *info = ummu_get_type_info(type);
 	int ret;
+
+	if (!info)
+		return -EINVAL;
 
 	if (!pdev->dev.msi.domain)
 		dev_warn(&pdev->dev, "can't find device msi domain.\n");
 
-	ret = ummu_rename_device(pdev, type);
+	ret = ummu_rename_device(pdev, info);
 	if (ret)
 		return ret;
 
@@ -161,7 +176,7 @@ static int ummu_config_update(struct platform_device *pdev,
 
 	if (type == UBRT_UMMU) {
 		ret = platform_device_add_data(pdev, ummu_node->vendor_info,
-						sizeof(ummu_node->vendor_info));
+					       sizeof(ummu_node->vendor_info));
 		if (ret)
 			return ret;
 	}
@@ -171,7 +186,7 @@ static int ummu_config_update(struct platform_device *pdev,
 
 #ifdef CONFIG_ACPI
 static acpi_status acpi_processor_ummu(acpi_handle handle, u32 lvl,
-				      void *context, void **rv)
+				       void *context, void **rv)
 {
 	struct platform_device *pdev;
 	struct acpi_device *adev;
@@ -190,7 +205,7 @@ static acpi_status acpi_processor_ummu(acpi_handle handle, u32 lvl,
 	type = FIELD_GET(UMMU_TYPE_MASK, *node_flag);
 	fw = ubrt_fwnode_get_by_idx(index, type);
 	if (!fw) {
-		pr_err("can not get ubrt fwnode!\n");
+		pr_err("can not get ubrt fwnode for index=%u, type=%d\n", index, type);
 		return AE_CTRL_FALSE;
 	}
 
@@ -221,6 +236,7 @@ static acpi_status acpi_processor_ummu(acpi_handle handle, u32 lvl,
 	ret = ummu_config_update(pdev, node, type);
 	if (ret) {
 		dev_err(dev, "update config failed, ret[%d]\n", ret);
+		put_device(dev);
 		status = AE_CTRL_FALSE;
 		goto out;
 	}
@@ -228,6 +244,7 @@ static acpi_status acpi_processor_ummu(acpi_handle handle, u32 lvl,
 	ret = ubrt_fwnode_set(index, type, dev->fwnode);
 	if (ret) {
 		dev_err(dev, "update fwnode failed, ret[%d]\n", ret);
+		put_device(dev);
 		status = AE_CTRL_FALSE;
 	}
 
@@ -239,49 +256,38 @@ out:
 static int acpi_update_ummu_config(struct ummu_node *ummu_node, u32 index)
 {
 	acpi_status status;
-	u64 node_flag = 0;
-	int ret;
+	u64 node_flag;
+	int ret, i;
 
-	ret = ubrt_fwnode_add(ummu_node, index, sizeof(*ummu_node), UBRT_UMMU);
-	if (ret) {
-		pr_err("failed to add ummu fwnode! ret[%d]\n", ret);
-		return ret;
-	}
+	for (i = 0; i < ARRAY_SIZE(ummu_types); i++) {
+		ret = ubrt_fwnode_add(ummu_node, index, sizeof(*ummu_node),
+				      ummu_types[i].type);
+		if (ret) {
+			pr_err("failed to add fwnode for type %d, ret[%d]\n",
+			       ummu_types[i].type, ret);
+			goto rollback;
+		}
 
-	node_flag = index | (((u64)UBRT_UMMU) << 32);
+		node_flag = index | ((u64)ummu_types[i].type << SZ_32);
 
-	status = acpi_get_devices(ACPI_UMMU_DEVICE_HID,
-				  acpi_processor_ummu,
-				  &node_flag, NULL);
-	if (ACPI_FAILURE(status)) {
-		pr_err("acpi get devices err, status[%u]\n", status);
-		goto ummu_err;
-	}
-
-	ret = ubrt_fwnode_add(ummu_node, index, sizeof(struct ummu_node), UBRT_UMMU_PMU);
-	if (ret) {
-		pr_err("failed to add pmu fwnode! ret[%d]\n", ret);
-		goto ummu_err;
-	}
-
-	node_flag = index | (((u64)UBRT_UMMU_PMU) << 32);
-
-	/* Get UB PMU from DSDT */
-	status = acpi_get_devices(ACPI_UMMU_PMU_DEVICE_HID,
-				  acpi_processor_ummu,
-				  &node_flag, NULL);
-	if (ACPI_FAILURE(status)) {
-		pr_err("acpi get devices err, status[%u]\n", status);
-		goto pmu_err;
+		status = acpi_get_devices(ummu_types[i].acpi_hid,
+					  acpi_processor_ummu,
+					  &node_flag, NULL);
+		if (ACPI_FAILURE(status)) {
+			pr_err("acpi get devices error for type %d, status[%u]\n",
+			       ummu_types[i].type, status);
+			ubrt_fwnode_del(index, ummu_types[i].type);
+			ret = -ENODEV;
+			goto rollback;
+		}
 	}
 
 	return 0;
 
-pmu_err:
-	ubrt_fwnode_del(index, UBRT_UMMU_PMU);
-ummu_err:
-	ubrt_fwnode_del(index, UBRT_UMMU);
-	return -ENODEV;
+rollback:
+	while (--i >= 0)
+		ubrt_fwnode_del(index, ummu_types[i].type);
+	return ret;
 }
 #else
 static inline int acpi_update_ummu_config(struct ummu_node *ummu_node, u32 index)
@@ -291,31 +297,28 @@ static inline int acpi_update_ummu_config(struct ummu_node *ummu_node, u32 index
 #endif /* CONFIG_ACPI */
 
 #ifdef CONFIG_OF
-static struct platform_device *ummu_of_find_plat_dev(struct device_node *node, u32 index)
+static struct platform_device *ummu_of_find_plat_dev(struct device_node *dn,
+						     u32 index)
 {
 	struct platform_device *pdev;
-	const char *node_name;
-	u32 dts_index;
+	u32 dn_index;
 	int ret;
 
-	node_name = of_node_full_name(node);
-
-	ret = of_property_read_u32(node, "index", &dts_index);
+	ret = of_property_read_u32(dn, "index", &dn_index);
 	if (ret) {
 		pr_err("dts can't find ummu ctl-no\n");
 		return NULL;
 	}
 
-	if (dts_index != index) {
-		pr_debug("ummu dts_index %u != index %u\n", dts_index, index);
+	if (dn_index != index) {
+		pr_debug("ummu dts_index %u != index %u\n", dn_index, index);
 		return NULL;
 	}
 
-	pdev = of_find_device_by_node(node);
-	if (!pdev) {
-		pr_err("failed to find platform device for node: %s\n", node_name);
-		return NULL;
-	}
+	pdev = of_find_device_by_node(dn);
+	if (!pdev)
+		pr_err("failed to find platform device for node: %s\n",
+		       of_node_full_name(dn));
 
 	return pdev;
 }
@@ -327,7 +330,7 @@ static int ummu_of_update_config(struct platform_device *pdev,
 {
 	int ret;
 
-	ret = ubrt_fwnode_add(ummu_node, index, sizeof(struct ummu_node), type);
+	ret = ubrt_fwnode_add(ummu_node, index, sizeof(*ummu_node), type);
 	if (ret) {
 		dev_err(&pdev->dev, "failed to add ummu fwnode! ret[%d]\n", ret);
 		return ret;
@@ -351,36 +354,34 @@ err:
 	return ret;
 }
 
-static int dts_update_ummu_config(struct ummu_node *ummu_node, u32 index)
+static int of_update_ummu_config(struct ummu_node *ummu_node, u32 index)
 {
 	struct platform_device *pdev;
-	struct device_node *node;
-	int ret;
+	struct device_node *dn;
+	int ret, i;
 
-	for_each_compatible_node(node, NULL, "ub,ummu") {
-		pdev = ummu_of_find_plat_dev(node, index);
-		if (!pdev)
-			continue;
+	for (i = 0; i < (int)ARRAY_SIZE(ummu_types); i++) {
+		for_each_compatible_node(dn, NULL, ummu_types[i].of_compat) {
+			pdev = ummu_of_find_plat_dev(dn, index);
+			if (!pdev)
+				continue;
 
-		ret = ummu_of_update_config(pdev, ummu_node, index, UBRT_UMMU);
-		if (ret)
-			return ret;
-	}
-
-	for_each_compatible_node(node, NULL, "ub,ummu_pmu") {
-		pdev = ummu_of_find_plat_dev(node, index);
-		if (!pdev)
-			continue;
-
-		ret = ummu_of_update_config(pdev, ummu_node, index, UBRT_UMMU_PMU);
-		if (ret)
-			return ret;
+			ret = ummu_of_update_config(pdev, ummu_node, index,
+						    ummu_types[i].type);
+			if (ret)
+				goto rollback;
+		}
 	}
 
 	return 0;
+
+rollback:
+	while (--i >= 0)
+		ubrt_fwnode_del(index, ummu_types[i].type);
+	return ret;
 }
 #else
-static inline int dts_update_ummu_config(struct ummu_node *ummu_node, u32 index)
+static inline int of_update_ummu_config(struct ummu_node *ummu_node, u32 index)
 {
 	return -ENODEV;
 }
@@ -388,12 +389,11 @@ static inline int dts_update_ummu_config(struct ummu_node *ummu_node, u32 index)
 
 static int parse_ummu(void *info_node)
 {
-	struct ummu_sub_table *sub_table;
+	struct ummu_sub_table *sub_table = (struct ummu_sub_table *)info_node;
 	struct ummu_node *ummu_node;
 	int ret;
 	u32 index;
 
-	sub_table = (struct ummu_sub_table *)info_node;
 	if (!sub_table->count) {
 		pr_warn("info table has no ummu.\n");
 		return 0;
@@ -406,7 +406,7 @@ static int parse_ummu(void *info_node)
 		if (firmware_mode == ACPI)
 			ret = acpi_update_ummu_config(ummu_node, index);
 		else
-			ret = dts_update_ummu_config(ummu_node, index);
+			ret = of_update_ummu_config(ummu_node, index);
 
 		if (ret) {
 			pr_err("Create No.%u ummu failed, ret=%d\n", index, ret);

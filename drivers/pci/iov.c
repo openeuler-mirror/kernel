@@ -362,6 +362,7 @@ void pci_iov_remove_virtfn(struct pci_dev *dev, int id)
 {
 	char buf[VIRTFN_ID_LEN];
 	struct pci_dev *virtfn;
+	u32 virtfn_devid;
 
 	virtfn = pci_get_domain_bus_and_slot(pci_domain_nr(dev->bus),
 					     pci_iov_virtfn_bus(dev, id),
@@ -382,11 +383,14 @@ void pci_iov_remove_virtfn(struct pci_dev *dev, int id)
 	pci_stop_and_remove_bus_device(virtfn);
 	virtfn_remove_bus(dev->bus, virtfn->bus);
 
+	/* Save device ID before releasing virtfn */
+	virtfn_devid = pci_dev_id(virtfn);
+
 	/* balance pci_get_domain_bus_and_slot() */
 	pci_dev_put(virtfn);
 	pci_dev_put(dev);
-	if (is_virtcca_cc_dev(pci_dev_id(virtfn))) {
-		virtcca_dev_destroy(pci_dev_id(virtfn), true);
+	if (is_virtcca_cc_dev(virtfn_devid)) {
+		virtcca_dev_destroy(virtfn_devid, true);
 	}
 }
 
@@ -758,6 +762,7 @@ static int sriov_init(struct pci_dev *dev, int pos)
 	u16 ctrl, total;
 	struct pci_sriov *iov;
 	struct resource *res;
+	const char *res_name;
 	struct pci_dev *pdev;
 	u32 sriovbars[PCI_SRIOV_NUM_BARS];
 
@@ -803,6 +808,8 @@ found:
 	nres = 0;
 	for (i = 0; i < PCI_SRIOV_NUM_BARS; i++) {
 		res = &dev->resource[i + PCI_IOV_RESOURCES];
+		res_name = pci_resource_name(dev, i + PCI_IOV_RESOURCES);
+
 		/*
 		 * If it is already FIXED, don't change it, something
 		 * (perhaps EA or header fixups) wants it this way.
@@ -821,8 +828,8 @@ found:
 		}
 		iov->barsz[i] = resource_size(res);
 		res->end = res->start + resource_size(res) * total - 1;
-		pci_info(dev, "VF(n) BAR%d space: %pR (contains BAR%d for %d VFs)\n",
-			 i, res, i, total);
+		pci_info(dev, "%s %pR: contains BAR %d for %d VFs\n",
+			 res_name, res, i, total);
 		i += bar64;
 		nres++;
 	}

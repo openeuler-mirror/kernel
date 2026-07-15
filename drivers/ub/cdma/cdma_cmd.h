@@ -76,11 +76,19 @@ struct eu_query_out {
 
 int cdma_init_dev_caps(struct cdma_dev *cdev);
 int cdma_ctrlq_query_eu(struct cdma_dev *cdev);
-void cdma_cmd_inc(struct cdma_dev *cdev);
-void cdma_cmd_dec(struct cdma_dev *cdev);
 void cdma_cmd_flush(struct cdma_dev *cdev);
-void cdma_kcmd_inc(struct cdma_dev *cdev);
-void cdma_kcmd_dec(struct cdma_dev *cdev);
 void cdma_kcmd_flush(struct cdma_dev *cdev);
+
+static inline void cdma_ref_inc(atomic_t *cnt)
+{
+	atomic_inc(cnt);
+}
+
+static inline void cdma_ref_dec(atomic_t *cnt, struct completion *done)
+{
+	if (atomic_add_unless(cnt, -1, 1))
+		return;
+	complete(done);
+}
 
 #endif /* __CDMA_CMD_H__ */

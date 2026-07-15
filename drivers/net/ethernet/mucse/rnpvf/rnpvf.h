@@ -1,5 +1,5 @@
-/* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+// SPDX-License-Identifier: GPL-2.0
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #ifndef _RNPVF_H_
 #define _RNPVF_H_
@@ -14,28 +14,22 @@
 #include "vf.h"
 
 #define RNPVF_ALLOC_PAGE_ORDER 0
-
 #define RNPVF_PAGE_BUFFER_NUMS(ring) \
 	(((1 << RNPVF_ALLOC_PAGE_ORDER) * PAGE_SIZE) >> 11)
-
 #define RNPVF_RX_DMA_ATTR (DMA_ATTR_SKIP_CPU_SYNC | DMA_ATTR_WEAK_ORDERING)
 
-#if defined(CONFIG_MXGBEVF_FIX_VF_QUEUE) && !defined(FIX_VF_QUEUE)
-#define FIX_VF_QUEUE
-#endif
-
-#if defined(CONFIG_MXGBEVF_FIX_MAC_PADDING) && !defined(FIX_MAC_PADDING)
+#if defined(CONFIG_MXGBEVF_FIX_MAC_PADDIN) && !defined(FIX_MAC_PADDIN)
 #define FIX_MAC_PADDIN
 #endif
 
-#if IS_ENABLED(CONFIG_MXGBEVF_OPTM_WITH_LARGE)
+#if defined(CONFIG_MXGBEVF_OPTM_WITH_LARGE) && !defined(OPTM_WITH_LARGE)
 #define OPTM_WITH_LARGE
-#endif /* IS_ENABLED(CONFIG_MXGBE_OPTM_WITH_LARGE) */
+#endif
 
 #if (PAGE_SIZE < 8192)
 #ifdef OPTM_WITH_LARGE
 #undef OPTM_WITH_LARGE
-#endif /* OPTM_WITH_LARGE */
+#endif
 #endif
 
 struct rnpvf_queue_stats {
@@ -186,11 +180,15 @@ struct rnpvf_ring {
 
 	u8 vfnum;
 	u8 rnpvf_msix_off;
+
 	u16 count; /* amount of descriptors */
+
 	u8 queue_index; /* queue_index needed for multiqueue queue management */
-	u8 rnpvf_queue_idx; /**/
-	u16 next_to_use; //tail (not-dma-mapped)
-	u16 next_to_clean; //soft-saved-head
+	u8 rnpvf_queue_idx;
+
+	u16 next_to_use;
+	u16 next_to_clean;
+
 	u16 device_id;
 #ifdef OPTM_WITH_LARGE
 	u16 rx_page_buf_nums;
@@ -224,10 +222,8 @@ struct rnpvf_ring {
 
 /* How many Rx Buffers do we bundle into one write to the hardware ? */
 #define RNPVF_RX_BUFFER_WRITE 16 /* Must be power of 2 */
-
-#define RNPVF_VF_MAX_TX_QUEUES 2
-#define RNPVF_VF_MAX_RX_QUEUES 2
-
+#define RNPVF_VF_MAX_TX_QUEUES 32
+#define RNPVF_VF_MAX_RX_QUEUES 32
 #define MAX_RX_QUEUES RNPVF_VF_MAX_RX_QUEUES
 #define MAX_TX_QUEUES RNPVF_VF_MAX_TX_QUEUES
 
@@ -321,7 +317,7 @@ struct rnpvf_ring_container {
 
 /* iterator for handling rings in ring container */
 #define rnpvf_for_each_ring(pos, head) \
-	for (pos = (head).ring; pos != NULL; pos = pos->next)
+	for (pos = (head).ring; pos; pos = pos->next)
 
 /* MAX_MSIX_Q_VECTORS of these are allocated,
  * but we only use one per queue-specific vector.
@@ -351,14 +347,16 @@ struct rnpvf_q_vector {
 #define RNPVF_QVECTOR_FLAG_IRQ_MISS_CHECK ((u32)(1 << 0))
 #define RNPVF_QVECTOR_FLAG_ITR_FEATURE ((u32)(1 << 1))
 #define RNPVF_QVECTOR_FLAG_REDUCE_TX_IRQ_MISS ((u32)(1 << 2))
+
 	int irq_check_usecs;
 	struct hrtimer irq_miss_check_timer;
+
 	char name[IFNAMSIZ + 9];
+
 	/* for dynamic allocation of rings associated with this q_vector */
 	struct rnpvf_ring ring[0] ____cacheline_internodealigned_in_smp;
 };
 
-/* rnp_test_staterr - tests bits in Rx descriptor status and error fields */
 static inline __le16 rnpvf_test_staterr(union rnp_rx_desc *rx_desc,
 					const u16 stat_err_bits)
 {
@@ -387,6 +385,7 @@ static inline u16 rnpvf_desc_unused(struct rnpvf_ring *ring)
 #define RNPVF_20K_ITR 200
 #define RNPVF_10K_ITR 400
 #define RNPVF_8K_ITR 500
+
 #define RNPVF_DESC_UNUSED(R)                                          \
 	((((R)->next_to_clean > (R)->next_to_use) ? 0 : (R)->count) + \
 	 (R)->next_to_clean - (R)->next_to_use - 1)
@@ -401,10 +400,13 @@ static inline u16 rnpvf_desc_unused(struct rnpvf_ring *ring)
 #define RNPVF_N500_MAX_JUMBO_FRAME_SIZE 9722
 /* Maximum Supported Size 9.5KB */
 #define RNPVF_MIN_MTU 68
+
 #define MAX_MSIX_VECTORS 4
 #define OTHER_VECTOR 1
 #define NON_Q_VECTORS (OTHER_VECTOR)
+
 #define MAX_MSIX_Q_VECTORS 2
+
 #define MIN_MSIX_Q_VECTORS 1
 #define MIN_MSIX_COUNT (MIN_MSIX_Q_VECTORS + NON_Q_VECTORS)
 
@@ -422,7 +424,7 @@ struct rnpvf_hw {
 	u8 __iomem *hw_addr;
 	u8 __iomem *hw_addr_bar0;
 	u8 __iomem *ring_msix_base;
-	u8 vfnum; // fun
+	u8 vfnum;
 #define VF_NUM_MASK 0x3f
 	struct pci_dev *pdev;
 
@@ -457,6 +459,7 @@ struct rnpvf_hw {
 	int usecstocount;
 #define PF_FEATURE_VLAN_FILTER BIT(0)
 #define PF_NCSI_EN BIT(1)
+#define PF_MAC_SPOOF BIT(2)
 	u32 pf_feature;
 
 	int mode;
@@ -490,15 +493,19 @@ enum irq_mode_enum {
 /* board specific private data structure */
 struct rnpvf_adapter {
 	unsigned long active_vlans[BITS_TO_LONGS(VLAN_N_VID)];
+
 #define GET_VFNUM_FROM_BAR0 BIT(0)
 	u16 status;
 	u16 vf_vlan;
 	struct timer_list watchdog_timer;
 	u16 bd_number;
 	struct work_struct reset_task;
+	bool promisc_mode;
+
 	/* Interrupt Throttle Rate */
 	u16 rx_itr_setting;
 	u16 tx_itr_setting;
+
 	u16 rx_usecs;
 	u16 rx_frames;
 	u16 tx_usecs;
@@ -547,6 +554,7 @@ struct rnpvf_adapter {
 	struct msix_entry *msix_entries;
 
 	u32 dma_channels;
+	/* the real used dma ring channels */
 
 	/* Some features need tri-state capability,
 	 * thus the additional *_CAPABLE flags.
@@ -575,7 +583,6 @@ struct rnpvf_adapter {
 #define RNPVF_PRIV_FLAG_TX_PADDING BIT(3)
 
 	/* OS defined structs */
-
 	struct net_device *netdev;
 	struct pci_dev *pdev;
 
@@ -592,14 +599,17 @@ struct rnpvf_adapter {
 	u64 tx_busy;
 	u32 link_speed;
 	bool link_up;
+
 	struct work_struct watchdog_task;
+
 	u8 port;
+
 	/* mbx_lock */
 	spinlock_t mbx_lock;
 	char name[60];
 };
 
-enum ixbgevf_state_t {
+enum rnpvf_state_t {
 	__RNPVF_TESTING,
 	__RNPVF_RESETTING,
 	__RNPVF_DOWN,
@@ -633,33 +643,33 @@ extern const struct rnp_mbx_operations rnpvf_mbx_ops;
 extern char rnpvf_driver_name[];
 extern const char rnpvf_driver_version[];
 
-extern void rnpvf_up(struct rnpvf_adapter *adapter);
-extern void rnpvf_down(struct rnpvf_adapter *adapter);
-extern void rnpvf_reinit_locked(struct rnpvf_adapter *adapter);
-extern void rnpvf_reset(struct rnpvf_adapter *adapter);
-extern void rnpvf_set_ethtool_ops(struct net_device *netdev);
-extern int rnpvf_setup_rx_resources(struct rnpvf_adapter *adapter,
-				    struct rnpvf_ring *ring);
-extern int rnpvf_setup_tx_resources(struct rnpvf_adapter *adapter,
-				    struct rnpvf_ring *ring);
-extern void rnpvf_free_rx_resources(struct rnpvf_adapter *adapter,
-				    struct rnpvf_ring *ring);
-extern void rnpvf_free_tx_resources(struct rnpvf_adapter *adapter,
-				    struct rnpvf_ring *ring);
-extern void rnpvf_update_stats(struct rnpvf_adapter *adapter);
-extern int ethtool_ioctl(struct ifreq *ifr);
-extern void remove_mbx_irq(struct rnpvf_adapter *adapter);
-extern void rnpvf_clear_interrupt_scheme(struct rnpvf_adapter *adapter);
-extern int register_mbx_irq(struct rnpvf_adapter *adapter);
-extern int rnpvf_init_interrupt_scheme(struct rnpvf_adapter *adapter);
-extern int rnpvf_close(struct net_device *netdev);
-extern int rnpvf_open(struct net_device *netdev);
+void rnpvf_up(struct rnpvf_adapter *adapter);
+void rnpvf_down(struct rnpvf_adapter *adapter);
+void rnpvf_reinit_locked(struct rnpvf_adapter *adapter);
+void rnpvf_reset(struct rnpvf_adapter *adapter);
+void rnpvf_set_ethtool_ops(struct net_device *netdev);
+int rnpvf_setup_rx_resources(struct rnpvf_adapter *adapter,
+			     struct rnpvf_ring *ring);
+int rnpvf_setup_tx_resources(struct rnpvf_adapter *adapter,
+			     struct rnpvf_ring *ring);
+void rnpvf_free_rx_resources(struct rnpvf_adapter *adapter,
+			     struct rnpvf_ring *ring);
+void rnpvf_free_tx_resources(struct rnpvf_adapter *adapter,
+			     struct rnpvf_ring *ring);
+void rnpvf_update_stats(struct rnpvf_adapter *adapter);
+int ethtool_ioctl(struct ifreq *ifr);
+void remove_mbx_irq(struct rnpvf_adapter *adapter);
+void rnpvf_clear_interrupt_scheme(struct rnpvf_adapter *adapter);
+int register_mbx_irq(struct rnpvf_adapter *adapter);
+int rnpvf_init_interrupt_scheme(struct rnpvf_adapter *adapter);
+int rnpvf_close(struct net_device *netdev);
+int rnpvf_open(struct net_device *netdev);
 
-extern void rnp_napi_add_all(struct rnpvf_adapter *adapter);
-extern void rnp_napi_del_all(struct rnpvf_adapter *adapter);
+void rnp_napi_add_all(struct rnpvf_adapter *adapter);
+void rnp_napi_del_all(struct rnpvf_adapter *adapter);
 
-extern int rnpvf_sysfs_init(struct net_device *ndev);
-extern void rnpvf_sysfs_exit(struct net_device *ndev);
+int rnpvf_sysfs_init(struct net_device *ndev);
+void rnpvf_sysfs_exit(struct net_device *ndev);
 
 static inline int rnpvf_is_pf1(struct pci_dev *pdev)
 {
@@ -678,9 +688,11 @@ txring_txq(const struct rnpvf_ring *ring)
  */
 static inline unsigned int rnpvf_rx_bufsz(struct rnpvf_ring *ring)
 {
-	return (RNPVF_RXBUFFER_1536 - NET_IP_ALIGN);
+	/* 1 rx-desc trans max half page(2048), for jumbo frame sg is needed */
+	return RNPVF_RXBUFFER_1536;
 }
 
+/* SG , 1 rx-desc use one page */
 static inline unsigned int rnpvf_rx_pg_order(struct rnpvf_ring *ring)
 {
 	return 0;

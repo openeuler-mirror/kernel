@@ -38,6 +38,7 @@ static int unic_probe(struct auxiliary_device *adev,
 	}
 
 	set_bit(UNIC_STATE_INITED, &unic_dev->state);
+	ubase_update_adev_status(adev, 0);
 
 	return 0;
 }
@@ -72,6 +73,9 @@ static struct auxiliary_driver unic_drv = {
 	.probe = unic_probe,
 	.remove = unic_remove,
 	.name = "unic",
+	.driver = {
+		.probe_type = PROBE_FORCE_SYNCHRONOUS,
+	},
 	.id_table = unic_id_table,
 };
 

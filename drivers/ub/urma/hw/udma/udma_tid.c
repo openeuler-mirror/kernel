@@ -12,10 +12,10 @@ static int udma_get_key_id_from_user(struct udma_dev *udma_dev,
 				     struct udma_tid *udma_tid)
 {
 	unsigned long byte;
-	uint32_t tid;
+	uint32_t tid = 0;
 
 	if (!udata->udrv_data || !udata->udrv_data->in_addr) {
-		dev_err(udma_dev->dev, "udrv_data or in_addr is null.\n");
+		dev_err(udma_dev->dev, "user driver data or input address is null.\n");
 		return -EINVAL;
 	}
 
@@ -41,15 +41,15 @@ static int udma_alloc_k_tid(struct udma_dev *udma_dev,
 	uint32_t tid;
 	int ret;
 
-	ksva = ummu_ksva_bind_device(udma_dev->dev, &param);
-	if (!ksva) {
+	ksva = iommu_ksva_bind_device(udma_dev->dev, &param);
+	if (IS_ERR(ksva)) {
 		dev_err(udma_dev->dev, "ksva bind device failed.\n");
 		return -ENOMEM;
 	}
 
 	ret = ummu_get_tid(udma_dev->dev, ksva, &tid);
 	if (ret) {
-		dev_err(udma_dev->dev, "get tid from ummu failed, ret = %d.\n", ret);
+		dev_err(udma_dev->dev, "get TID from UMMU failed, ret = %d.\n", ret);
 		goto err_get_tid;
 	}
 
@@ -74,7 +74,7 @@ static int udma_alloc_k_tid(struct udma_dev *udma_dev,
 	return ret;
 
 err_get_tid:
-	ummu_ksva_unbind_device(ksva);
+	iommu_ksva_unbind_device(ksva);
 
 	return ret;
 }
@@ -117,18 +117,18 @@ int udma_free_tid(struct ubcore_token_id *token_id)
 	struct ummu_invalid_cfg_param inva_param = {};
 	struct udma_context *ctx;
 	struct iommu_sva *ksva;
-	int ret;
+	int ret = 0;
 
 	if (!udma_tid->kernel_mode) {
 		ctx = to_udma_context(token_id->uctx);
 		if (!ctx) {
-			dev_err(udma_dev->dev, "udma free tid failed, ctx is null.\n");
+			dev_err(udma_dev->dev, "udma free TID failed, context is null.\n");
 			goto out;
 		}
 		inva_param.tid = udma_tid->tid;
 		inva_param.mm = ctx->mm;
 		ret = ummu_core_invalidate_cfg(&inva_param);
-		if (ret)
+		if (ret && ret != -ENOENT && ret != -ESRCH)
 			dev_err_ratelimited(udma_dev->dev,
 					    "invalidate cfg_table failed, ret=%d.\n", ret);
 
@@ -143,7 +143,7 @@ int udma_free_tid(struct ubcore_token_id *token_id)
 			 "unable to get ksva while free tid, token maybe is free.\n");
 		goto out;
 	}
-	ummu_ksva_unbind_device(ksva);
+	iommu_ksva_unbind_device(ksva);
 	__xa_erase(&udma_dev->ksva_table, udma_tid->tid);
 	mutex_unlock(&udma_dev->ksva_mutex);
 

@@ -40,6 +40,11 @@ void csv_release_to_contiguous(phys_addr_t pa, size_t size);
 
 uint32_t csv_get_smr_entry_shift(void);
 
+void __init early_csv_guest_mem_init(void);
+phys_addr_t csv3_alloc_mem_block(void);
+void csv3_free_mem_block(phys_addr_t phys_addr);
+size_t csv3_get_mem_block_size(void);
+
 #else	/* !CONFIG_HYGON_CSV */
 
 #define csv_smr		NULL
@@ -92,6 +97,10 @@ static inline void csv_memory_enc_dec(u64 vaddr, u64 pages, bool enc) { }
 static inline int csv3_issue_request_report(phys_addr_t paddr, size_t size) { return -EIO; }
 static inline int csv3_issue_request_rtmr(void *req_buffer, size_t buffer_size) { return -ENODEV; }
 
+static inline void __init early_csv_guest_mem_init(void) { }
+static inline phys_addr_t csv3_alloc_mem_block(void) { return 0; }
+static inline void csv3_free_mem_block(phys_addr_t phys_addr) { }
+static inline size_t csv3_get_mem_block_size(void) { return 0; }
 #endif	/* CONFIG_HYGON_CSV */
 
 #endif	/* __ASSEMBLY__ */

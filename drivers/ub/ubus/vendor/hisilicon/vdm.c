@@ -10,6 +10,8 @@
 #include "../../pool.h"
 #include "../../instance.h"
 #include "../../ubus_entity.h"
+#include "../../task.h"
+#include "../../link.h"
 #include "hisi-msg.h"
 #include "hisi-ubus.h"
 #include "vdm.h"
@@ -21,56 +23,6 @@ struct opcode_func_map {
 	u8 (*idev_handler)(struct ub_bus_controller *ubc, struct vdm_msg_pkt *pkt);
 	int idev_pld_size;
 };
-
-/**
- * inner_ub_get_ent_by_guid - search for device by guid in the idev message
- *
- * @guid:	guid in idev message
- * @dev_list:	&ubc->devs
- */
-static struct ub_entity *inner_ub_get_ent_by_guid(guid_t *guid,
-					       struct list_head *dev_list)
-{
-	struct ub_entity *uent;
-
-	list_for_each_entry(uent, dev_list, node)
-		if (guid_equal(guid, &uent->guid.id))
-			return uent;
-
-	return NULL;
-}
-
-/*
- * ub_get_pue - search for physical device by guid and mue_idx
- *
- * First search for entity0 in ubc->dev_list by guid,
- * then search for mue_idx in entity0->mue_list by mue_idx
- */
-static struct ub_entity *ub_get_pue(guid_t *guid, u16 mue_idx,
-				  struct list_head *dev_list)
-{
-	struct ub_entity *uent = inner_ub_get_ent_by_guid(guid, dev_list);
-	struct ub_entity *pue;
-
-	if (!uent) {
-		pr_err("find uent with the guid failed\n");
-		return NULL;
-	}
-
-	if (is_primary(uent) && mue_idx == 0) {
-		ub_info(uent,
-			"This uent is primary dev, return uent directly\n");
-		return uent;
-	}
-
-	list_for_each_entry(pue, &uent->mue_list, node) {
-		ub_info(pue, "the pue num=%#x\n", pue->uent_num);
-		if (pue->entity_idx == mue_idx)
-			return pue;
-	}
-
-	return NULL;
-}
 
 static void ub_vdm_msg_rsp(struct ub_bus_controller *ubc,
 				struct vdm_msg_pkt *pkt, u8 status)
@@ -93,306 +45,359 @@ static void ub_vdm_msg_rsp(struct ub_bus_controller *ubc,
 		dev_err(&ubc->dev, "send vdm response message failed, ret=%d\n", ret);
 }
 
-/**
- * ub_idevice_enable_handle - physical/virtual device entity enable handle
- *
- * @pue:	physical device
- * @idx:	index of device entity
- * @is_mue:	whether is physical device. 1 for yes, 0 for no
- * @map:	the mapping of virtual devices
- * @alloc_dev:	a temporary variable used to receive allocated dev and return the information
- */
 static int ub_idevice_enable_handle(struct ub_entity *pue, u16 idx, u8 is_mue,
-				 struct ue_map *map,
-				 struct ub_entity **alloc_dev)
+				    struct ue_map *map, u32 ueid)
 {
-	struct ub_entity *dev, *uent;
+	struct ub_delay_task *task;
+	struct ub_entity *dev;
 	int ret;
-
-	list_for_each_entry(uent, &pue->mue_list, node)
-		if (uent->entity_idx == idx)
-			return -EEXIST;
-
-	list_for_each_entry(uent, &pue->ue_list, node)
-		if (uent->entity_idx == idx)
-			return -EEXIST;
 
 	dev = ub_alloc_ent();
 	if (!dev)
 		return -ENOMEM;
 
+	task = ub_delay_task_alloc_and_init(dev, NULL, TASK_TYPE_START);
+	if (IS_ERR(task)) {
+		kfree(dev);
+		return PTR_ERR(task);
+	}
+
 	dev->pool = true;
 	dev->entity_idx = idx;
-	dev->pue = pue;
+	dev->pue = ub_entity_get(pue);
 	dev->dev.parent = &pue->dev;
 	dev->ubc = pue->ubc;
 	dev->cna = pue->cna;
 	dev->upi = pue->upi;
+	dev->user_eid = ueid;
 
 	if (is_mue) {
 		dev->is_mue = is_mue;
 		dev->uem.start_entity_idx = map->start_entity_idx;
 		dev->uem.end_entity_idx = map->end_entity_idx;
 		dev->total_ues = map->end_entity_idx - map->start_entity_idx + 1;
+		if (map->start_entity_idx == dev->entity_idx)
+			dev->total_ues = 0;
 		dev->is_vdm_idev = 1;
 	}
 
 	ret = ub_setup_ent(dev);
 	if (ret < 0) {
+		ub_entity_put(pue);
+		ub_delay_task_free(task);
 		kfree(dev);
-		return ret;
+		return -ENOEXEC;
 	}
 
-	ub_entity_get(pue);
 	ub_entity_add(dev, pue);
+	atomic_set(&dev->ent_mgmt_state, MGMT_STATE_REGISTERING);
 
-	*alloc_dev = dev;
-
+	ub_entity_assign_task_src(dev, TASK_SRC_VDM, true);
+	queue_work(ub_get_delay_task_wq(), &task->work);
 	return 0;
 }
 
-/**
- * ub_idevice_pue_add_handler - add mue to the bus
- *
- * @ubc:	ub bus controller
- * @pkt:	idev pue message packet, contains header and payload
- */
-static u8 ub_idevice_pue_add_handler(struct ub_bus_controller *ubc, struct vdm_msg_pkt *pkt)
+/* Should call ub_entity_put after unused */
+static u8 ub_get_entity0(struct ub_bus_controller *ubc, struct ub_guid *guid,
+			 bool mue, bool reg, struct ub_entity **uent)
+{
+	struct ub_entity *ent0;
+	char buf[SZ_64] = {};
+
+	/* get entity0 by guid in message payload */
+	ent0 = ub_get_ent_by_guid(guid);
+	if (!ent0) {
+		(void)ub_show_guid(guid, buf);
+		dev_err(&ubc->dev, "find entity0[%s] in %s %s failed\n", buf,
+			mue ? "mue" : "ue", reg ? "reg" : "unreg");
+		return UB_MSG_RSP_EXEC_ENODEV;
+	}
+
+	if (ent_in_unregistering(ent0)) {
+		ub_err(ent0, "entity0 is unregistering in %s %s\n",
+		       mue ? "mue" : "ue", reg ? "reg" : "unreg");
+		ub_entity_put(ent0);
+		return UB_MSG_RSP_EXEC_EBUSY;
+	}
+
+	*uent = ent0;
+	return UB_MSG_RSP_SUCCESS;
+}
+
+static u8 ub_get_ue_map(struct ub_entity *uent, struct idev_pue_reg_pld *pld,
+			struct ue_map *map)
+{
+	u8 status = UB_MSG_RSP_SUCCESS;
+
+	if (!pld->ue_cnt) {
+		map->start_entity_idx = pld->pue_entity_idx;
+		map->end_entity_idx = pld->pue_entity_idx;
+	} else if (pld->ue_cnt !=
+		   pld->end_ue_entity_idx - pld->start_ue_entity_idx + 1) {
+		ub_err(uent, "Invalid ue cnt: [%u] The ue cnt must be equal to end: [%d] - start: [%d] + 1\n",
+		       pld->ue_cnt, pld->end_ue_entity_idx,
+		       pld->start_ue_entity_idx);
+		status = UB_MSG_RSP_EXEC_EINVAL;
+	} else {
+		map->start_entity_idx = pld->start_ue_entity_idx;
+		map->end_entity_idx = pld->end_ue_entity_idx;
+	}
+
+	return status;
+}
+
+u8 ub_idevice_pue_add_handler(struct ub_bus_controller *ubc, struct vdm_msg_pkt *pkt)
 {
 	struct idev_pue_reg_pld *pld = &pkt->pd_reg_pld;
-	struct ub_entity *pue, *alloc_dev = NULL;
+	struct ub_entity *pue, *uent;
 	struct ue_map map = {};
-	char buf[SZ_64] = {};
 	u8 status;
 	int ret;
 
-	/* search corresponding device by guid in message payload */
-	pue = inner_ub_get_ent_by_guid((guid_t *)pld->guid, &ubc->devs);
-	if (!pue) {
-		(void)ub_show_guid((struct ub_guid *)pld->guid, buf);
-		dev_err(&ubc->dev, "find uent by guid in pue reg func failed\n");
-		status = UB_MSG_RSP_EXEC_ENODEV;
+	status = ub_get_entity0(ubc, (struct ub_guid *)pld->guid, true, true,
+				&pue);
+	if (status)
 		goto pue_reg_rsp;
-	}
 
-	map.start_entity_idx = pld->start_ue_entity_idx;
-	map.end_entity_idx = pld->end_ue_entity_idx;
-
-	if (!pld->ue_cnt) {
-		map.start_entity_idx = pue->entity_idx;
-		map.end_entity_idx = pue->entity_idx;
-	} else if (pld->ue_cnt != map.end_entity_idx - map.start_entity_idx + 1) {
-		dev_err(&ubc->dev, "Invalid ue cnt: [%u]\n"
-			"The ue cnt must be equal to end: [%d] - start: [%d] + 1\n",
-			pld->ue_cnt, map.end_entity_idx, map.start_entity_idx);
-		status = UB_MSG_RSP_EXEC_EINVAL;
-		goto pue_reg_rsp;
-	}
+	status = ub_get_ue_map(pue, pld, &map);
+	if (status)
+		goto put_pue;
 
 	if (!ub_bus_instance_exist(pld->user_eid[0])) {
-		dev_err(&ubc->dev, "pue add msg user eid[%#x] not exist\n",
-			pld->user_eid[0]);
+		ub_err(pue, "mue add msg user eid[%#x] does not exist\n",
+		       pld->user_eid[0]);
 		status = UB_MSG_RSP_EXEC_EINVAL;
-		goto pue_reg_rsp;
+		goto put_pue;
 	}
 
-	/* enable pue */
-	ret = ub_idevice_enable_handle(pue, pld->pue_entity_idx, 1, &map,
-				    &alloc_dev);
-	if (ret == 0) {
-		alloc_dev->user_eid = pld->user_eid[0];
-		ub_info(pue, "enable idev pue succeeded, user_eid=0x%x\n",
-			pld->user_eid[0]);
-		status = UB_MSG_RSP_SUCCESS;
-	} else if (ret == -EEXIST) {
-		ub_err(pue, "The pue idx[%u] is already exist\n",
-		       pld->pue_entity_idx);
-		status = UB_MSG_RSP_EXEC_EEXIST;
-	} else {
-		ub_err(pue, "enable idev pue failed\n");
-		status = UB_MSG_RSP_EXEC_ENOEXEC;
+	uent = ub_find_entity(pue, true, pld->pue_entity_idx);
+	if (uent) {
+		ub_warn(pue, "The mue idx[%u] already exists\n",
+			pld->pue_entity_idx);
+		ret = ub_create_existed_entity_handler(uent);
+		status = err_to_msg_rsp(ret);
+		ub_entity_put(uent);
+	} else { /* create mue */
+		ret = ub_idevice_enable_handle(pue, pld->pue_entity_idx, 1,
+					       &map, pld->user_eid[0]);
+		if (ret)
+			ub_err(pue, "enable mue[%u] failed, ret[%d]\n",
+			       pld->pue_entity_idx, ret);
+		else
+			ub_info(pue, "enable mue[%u] succeeded, user_eid=0x%x\n",
+				pld->pue_entity_idx, pld->user_eid[0]);
+
+		status = err_to_msg_rsp(ret);
 	}
 
+put_pue:
+	ub_entity_put(pue);
 pue_reg_rsp:
 	ub_vdm_msg_rsp(ubc, pkt, status);
-	if (status == UB_MSG_RSP_SUCCESS)
-		ub_start_ent(alloc_dev);
-
+	dev_info(&ubc->dev, "MUE reg: guid[%#llx-%#llx] idx[%u] cnt[%u] start[%u] end[%u] ueid[%#x] status[%#x]\n",
+		 *(u64 *)&pld->guid[SZ_2], *(u64 *)pld->guid, pld->pue_entity_idx,
+		 pld->ue_cnt, pld->start_ue_entity_idx, pld->end_ue_entity_idx,
+		 pld->user_eid[0], status);
 	return status;
 }
 
-/**
- * ub_idevice_pue_rls_handler - send message to the FM to release the idev_pue
- *
- * @ubc:	ub_bus_controller
- * @pkt:	message packet
- */
-static u8 ub_idevice_pue_rls_handler(struct ub_bus_controller *ubc, struct vdm_msg_pkt *pkt)
+/* API for ue reg/unreg, Should call ub_entity_put after unused */
+static u8 ub_get_mue(struct ub_bus_controller *ubc, struct ub_guid *guid,
+		     u16 idx, bool reg, struct ub_entity **uent)
+{
+	struct ub_entity *ent0, *mue;
+	u8 status;
+
+	status = ub_get_entity0(ubc, guid, false, reg, &ent0);
+	if (status)
+		return status;
+
+	if (idx == 0) {
+		*uent = ent0;
+		return UB_MSG_RSP_SUCCESS;
+	}
+
+	mue = ub_find_entity(ent0, true, idx);
+	if (!mue) {
+		ub_err(ent0, "find mue in ue %s failed\n",
+			reg ? "reg" : "unreg");
+		ub_entity_put(ent0);
+		return UB_MSG_RSP_EXEC_ENODEV;
+	}
+
+	ub_entity_put(ent0);
+
+	if (ent_in_unregistering(mue)) {
+		ub_err(mue, "mue is unregistering in ue %s\n",
+		       reg ? "reg" : "unreg");
+		ub_entity_put(mue);
+		return UB_MSG_RSP_EXEC_EBUSY;
+	}
+
+	*uent = mue;
+	return UB_MSG_RSP_SUCCESS;
+}
+
+u8 ub_idevice_pue_rls_handler(struct ub_bus_controller *ubc, struct vdm_msg_pkt *pkt)
 {
 	struct idev_pue_rls_pld *pld = &pkt->pd_rls_pld;
-	struct ub_entity *uent;
+	struct ub_entity *ent0, *mue;
 	u8 status;
+	int ret;
 
-	/* search device by guid and pue entity idx in message payload */
-	uent = ub_get_pue((guid_t *)pld->guid, pld->pue_entity_idx, &ubc->devs);
-	if (!uent) {
-		dev_err(&ubc->dev, "find pue failed, pue entity_idx in mue rls pkt=%u\n",
+	status = ub_get_entity0(ubc, (struct ub_guid *)pld->guid, true, false,
+				&ent0);
+	if (status)
+		goto rsp;
+
+	mue = ub_find_entity(ent0, true, pld->pue_entity_idx);
+	if (mue) {
+		ret = ub_destroy_existed_entity_handler(mue);
+		status = err_to_msg_rsp(ret);
+		ub_entity_put(mue);
+	} else {
+		ub_info(ent0, "mue[%u] does not exist in mue unreg\n",
 			pld->pue_entity_idx);
 		status = UB_MSG_RSP_EXEC_ENODEV;
-	} else {
-		status = UB_MSG_RSP_SUCCESS;
 	}
 
+	ub_entity_put(ent0);
+rsp:
 	ub_vdm_msg_rsp(ubc, pkt, status);
-
-	if (status == UB_MSG_RSP_SUCCESS)
-		ub_disable_ent(uent);
-
+	dev_info(&ubc->dev, "MUE unreg: guid[%#llx-%#llx] idx[%u] reason[%#x] status[%#x]\n",
+		 *(u64 *)&pld->guid[SZ_2], *(u64 *)pld->guid, pld->pue_entity_idx,
+		 pld->rls_reason, status);
 	return status;
 }
 
-/*
- * ub_idevice_ue_add_handler - add ue to the bus
- */
-static u8 ub_idevice_ue_add_handler(struct ub_bus_controller *ubc, struct vdm_msg_pkt *pkt)
+static u8 ue_idx_valid_check(struct ub_entity *mue, int idx)
+{
+	if (idx < mue->uem.start_entity_idx || idx > mue->uem.end_entity_idx) {
+		ub_err(mue, "invalid ue entity_idx=%d, start_idx=%d, end_idx=%d\n",
+		       idx, mue->uem.start_entity_idx,
+		       mue->uem.end_entity_idx);
+		return UB_MSG_RSP_EXEC_EINVAL;
+	}
+
+	return UB_MSG_RSP_SUCCESS;
+}
+
+static u8 ue_reg_para_valid_check(struct ub_entity *mue, int idx, u32 ueid)
+{
+	int status;
+
+	if (!mue->is_vdm_idev) {
+		ub_info(mue,
+			"The pue of this vdm ue to be enabled is normal\n");
+	} else {
+		status = ue_idx_valid_check(mue, idx);
+		if (status)
+			return status;
+	}
+
+	if (!ub_bus_instance_exist(ueid)) {
+		ub_err(mue, "ue add msg user eid[%#x] does not exist\n", ueid);
+		return UB_MSG_RSP_EXEC_EINVAL;
+	}
+
+	return UB_MSG_RSP_SUCCESS;
+}
+
+u8 ub_idevice_ue_add_handler(struct ub_bus_controller *ubc, struct vdm_msg_pkt *pkt)
 {
 	struct idev_ue_reg_pld *pld = &pkt->vd_reg_pld;
-	struct ub_entity *pue, *alloc_dev = NULL;
-	u16 ue_entity_idx = pld->ue_entity_idx;
-	int start_idx, end_idx, ret;
-	int lock = 0;
+	u16 ue_idx = pld->ue_entity_idx;
+	u32 ueid = pld->user_eid[0];
+	struct ub_entity *mue, *ue;
+	int ret, lock = 0;
 	u8 status;
 
-	/* check whether pue is registered. */
-	pue = ub_get_pue((guid_t *)pld->guid, pld->pue_entity_idx, &ubc->devs);
-	if (!pue) {
-		dev_err(&ubc->dev, "find pue failed, pue entity_idx in ue reg pkt=%u\n",
-			pld->pue_entity_idx);
-		status = UB_MSG_RSP_EXEC_ENODEV;
+	status = ub_get_mue(ubc, (struct ub_guid *)pld->guid,
+			    pld->pue_entity_idx, true, &mue);
+	if (status)
 		goto ue_reg_rsp;
-	}
 
-	if (pue->is_vdm_idev) {
-		start_idx = pue->uem.start_entity_idx;
-		end_idx = pue->uem.end_entity_idx;
-		if (ue_entity_idx < start_idx || ue_entity_idx > end_idx) {
-			ub_err(pue,
-			       "invalid ue entity_idx=%u, start_idx=%d, end_idx=%d\n",
-			       ue_entity_idx, start_idx, end_idx);
-			status = UB_MSG_RSP_EXEC_EINVAL;
-			goto ue_reg_rsp;
+	status = ue_reg_para_valid_check(mue, ue_idx, ueid);
+	if (status)
+		goto put_mue;
+
+	ue = ub_find_entity(mue, false, ue_idx);
+	if (ue) {
+		ub_warn(mue, "The ue idx[%u] already exists\n", ue_idx);
+		ret = ub_create_existed_entity_handler(ue);
+		ub_entity_put(ue);
+	} else {
+		lock = device_trylock(&mue->dev);
+		if (!lock) {
+			ub_warn(mue, "mue lock busy\n");
+			status = UB_MSG_RSP_EXEC_EBUSY;
+			goto put_mue;
 		}
-	} else {
-		ub_info(pue,
-			"The pue of this vdm ue to be enabled is normal\n");
+
+		ret = ub_idevice_enable_handle(mue, ue_idx, 0, NULL, ueid);
+		if (ret) {
+			ub_err(mue, "enable ue[%u] failed, ret[%d]\n", ue_idx,
+			       ret);
+		} else {
+			ub_info(mue, "enable ue[%u] succeeded, user_eid=0x%x\n",
+				ue_idx, ueid);
+			mue->num_ues += 1;
+		}
+
+		if (lock)
+			device_unlock(&mue->dev);
 	}
 
-	if (!ub_bus_instance_exist(pld->user_eid[0])) {
-		dev_err(&ubc->dev, "ue add msg user eid[%#x] not exist\n",
-			pld->user_eid[0]);
-		status = UB_MSG_RSP_EXEC_EINVAL;
-		goto ue_reg_rsp;
-	}
+	status = err_to_msg_rsp(ret);
 
-	lock = device_trylock(&pue->dev);
-	if (!lock) {
-		status = UB_MSG_RSP_EXEC_EBUSY;
-		goto ue_reg_rsp;
-	}
-
-	ret = ub_idevice_enable_handle(pue, ue_entity_idx, 0, NULL, &alloc_dev);
-	if (ret == 0) {
-		alloc_dev->user_eid = pld->user_eid[0];
-		ub_info(pue, "enable idev ue succeeded, user_eid=0x%x\n",
-			pld->user_eid[0]);
-		status = UB_MSG_RSP_SUCCESS;
-	} else if (ret == -EEXIST) {
-		ub_err(pue, "The ue idx[%u] is already exist\n",
-		       ue_entity_idx);
-		status = UB_MSG_RSP_EXEC_EEXIST;
-	} else {
-		ub_err(pue, "enable idev ue failed\n");
-		status = UB_MSG_RSP_EXEC_ENOEXEC;
-	}
-
+put_mue:
+	ub_entity_put(mue);
 ue_reg_rsp:
 	ub_vdm_msg_rsp(ubc, pkt, status);
-	if (status == UB_MSG_RSP_SUCCESS) {
-		ub_start_ent(alloc_dev);
-		pue->num_ues += 1;
-	}
-
-	if (lock)
-		device_unlock(&pue->dev);
-
+	dev_info(&ubc->dev, "UE reg: guid[%#llx-%#llx] mue_idx[%u] idx[%u] ueid[%#x] status[%#x]\n",
+		 *(u64 *)&pld->guid[SZ_2], *(u64 *)pld->guid, pld->pue_entity_idx,
+		 pld->ue_entity_idx, pld->user_eid[0], status);
 	return status;
 }
 
-/**
- * ub_idevice_ue_rls_handler - send message to the FM to release the idev_pue
- *
- * @ubc:	ub_bus_controller
- * @pkt:	message packet
- */
-static u8 ub_idevice_ue_rls_handler(struct ub_bus_controller *ubc, struct vdm_msg_pkt *pkt)
+u8 ub_idevice_ue_rls_handler(struct ub_bus_controller *ubc, struct vdm_msg_pkt *pkt)
 {
 	struct idev_ue_rls_pld *pld = &pkt->vd_rls_pld;
-	struct ub_entity *pue, *vd_dev, *tmp;
-	u16 ue_entity_idx = pld->ue_entity_idx;
-	u16 start_idx, end_idx;
-	int lock = 0;
+	u16 ue_idx = pld->ue_entity_idx;
+	struct ub_entity *mue, *ue;
 	u8 status;
+	int ret;
 
-	/* search for pue with guid. Return an error if pue does not exist */
-	pue = ub_get_pue((guid_t *)pld->guid, pld->pue_entity_idx, &ubc->devs);
-	if (!pue) {
-		dev_err(&ubc->dev, "find pue failed, pue entity_idx in ue rls pkt=%u\n",
-			pld->pue_entity_idx);
-		status = UB_MSG_RSP_EXEC_ENODEV;
+	status = ub_get_mue(ubc, (struct ub_guid *)pld->guid,
+			    pld->pue_entity_idx, false, &mue);
+	if (status)
 		goto ue_rls_rsp;
-	}
 
-	if (pue->is_vdm_idev) {
-		start_idx = pue->uem.start_entity_idx;
-		end_idx = pue->uem.end_entity_idx;
-		if (ue_entity_idx < start_idx || ue_entity_idx > end_idx) {
-			ub_err(pue,
-			       "invalid ue entity_idx=%u, start_idx=%u, end_idx=%u\n",
-			       ue_entity_idx, start_idx, end_idx);
-			status = UB_MSG_RSP_EXEC_EINVAL;
-			goto ue_rls_rsp;
-		}
+	if (!mue->is_vdm_idev) {
+		ub_info(mue, "mue of this vdm ue unreg is normal\n");
 	} else {
-		ub_info(pue,
-			"The pue of this vdm ue to be disabled is normal\n");
+		status = ue_idx_valid_check(mue, ue_idx);
+		if (status)
+			goto put_mue;
 	}
 
-	lock = device_trylock(&pue->dev);
-	if (!lock) {
-		status = UB_MSG_RSP_EXEC_EBUSY;
-		goto ue_rls_rsp;
+	ue = ub_find_entity(mue, false, ue_idx);
+	if (ue) {
+		ret = ub_destroy_existed_entity_handler(ue);
+		status = err_to_msg_rsp(ret);
+		ub_entity_put(ue);
+	} else {
+		ub_info(mue, "ue[%u] not exist in ue unreg\n", ue_idx);
+		status = UB_MSG_RSP_EXEC_ENODEV;
 	}
 
-	status = UB_MSG_RSP_EXEC_ENODEV;
-	/* otherwise, delete this ue with ue idx in message payload */
-	list_for_each_entry_safe(vd_dev, tmp, &pue->ue_list, node)
-		if (ue_entity_idx == vd_dev->entity_idx) {
-			status = UB_MSG_RSP_SUCCESS;
-			break;
-		}
-	if (status == UB_MSG_RSP_EXEC_ENODEV)
-		ub_err(pue, "find vd_dev with entity_idx %u failed\n", ue_entity_idx);
-
+put_mue:
+	ub_entity_put(mue);
 ue_rls_rsp:
 	ub_vdm_msg_rsp(ubc, pkt, status);
-	if (status == UB_MSG_RSP_SUCCESS) {
-		ub_disable_ent(vd_dev);
-		pue->num_ues -= 1;
-	}
-
-	if (lock)
-		device_unlock(&pue->dev);
-
+	dev_info(&ubc->dev, "UE unreg: guid[%#llx-%#llx] mue_idx[%u] idx[%u] reason[%#x] status[%#x]\n",
+		 *(u64 *)&pld->guid[SZ_2], *(u64 *)pld->guid, pld->pue_entity_idx,
+		 pld->ue_entity_idx, pld->rls_reason, status);
 	return status;
 }
 
@@ -433,6 +438,93 @@ static u8 ub_vdm_create_bi_bypass_ummu(struct ub_bus_controller *ubc, struct vdm
 	return status;
 }
 
+static int ub_vdm_port_enable(struct ub_bus_controller *ubc,
+			      struct vdm_msg_pkt *pkt, struct ub_port *port)
+{
+	int state, ret;
+
+	state = atomic_read(&port->port_mgmt_state);
+	if (state == MGMT_STATE_REGISTERING)
+		return 0;
+	else if (state == MGMT_STATE_UNREGISTERING)
+		return -EBUSY;
+
+	/* idle path */
+	atomic_set(&port->port_mgmt_state, MGMT_STATE_REGISTERING);
+
+	ret = ublc_link_up_handle(port, TASK_SRC_VPORT);
+	if (ret != 0 && ret != -EBUSY)
+		atomic_set(&port->port_mgmt_state, MGMT_STATE_IDLE);
+
+	return ret;
+}
+
+static int ub_vdm_port_disable(struct ub_bus_controller *ubc,
+			       struct vdm_msg_pkt *pkt, struct ub_port *port)
+{
+	int state, ret;
+
+	state = atomic_read(&port->port_mgmt_state);
+	if (state == MGMT_STATE_REGISTERING)
+		return -EBUSY;
+	else if (state == MGMT_STATE_UNREGISTERING)
+		return 0;
+
+	/* idle path */
+	atomic_set(&port->port_mgmt_state, MGMT_STATE_UNREGISTERING);
+
+	ret = ublc_link_down_handle(port);
+	if (ret)
+		atomic_set(&port->port_mgmt_state, MGMT_STATE_IDLE);
+
+	return ret;
+}
+
+static u8 ub_vdm_port_mgmt_handler(struct ub_bus_controller *ubc,
+				   struct vdm_msg_pkt *pkt)
+{
+	struct port_mgmt_pld *pld = &pkt->mgmt_pld;
+	u8 status = UB_MSG_RSP_EXEC_EINVAL;
+	struct ub_port *port;
+	int ret;
+
+#define UB_CFG_SUB_CMD_PORT_EN_SET 1
+	if (pld->subcmd != UB_CFG_SUB_CMD_PORT_EN_SET) {
+		dev_err(&ubc->dev, "vdm port mgmt subcmd[%u] invalid\n",
+			pld->subcmd);
+		goto port_mgmt_rsp;
+	}
+
+	if (pld->flag != VIRTUAL) {
+		dev_err(&ubc->dev, "vdm port mgmt flag not vport\n");
+		goto port_mgmt_rsp;
+	}
+
+	if (!ubc->uent || pld->port_idx >= ubc->uent->port_nums) {
+		dev_err(&ubc->dev, "vdm port mgmt port_idx invalid\n");
+		goto port_mgmt_rsp;
+	}
+
+	port = ubc->uent->ports + pld->port_idx;
+	if (port->type != VIRTUAL) {
+		dev_err(&ubc->dev, "vdm port mgmt not vport\n");
+		goto port_mgmt_rsp;
+	}
+
+	if (pld->en)
+		ret = ub_vdm_port_enable(ubc, pkt, port);
+	else
+		ret = ub_vdm_port_disable(ubc, pkt, port);
+
+	status = err_to_msg_rsp(ret);
+
+port_mgmt_rsp:
+	ub_vdm_msg_rsp(ubc, pkt, status);
+	dev_info(&ubc->dev, "VDM port %s: port_idx[%u] status[%#x]\n",
+		 pld->en ? "enable" : "disable", pld->port_idx, status);
+	return status;
+}
+
 struct opcode_func_map idev_func_mapping[] = {
 	{ VDM_SUB_OPCODE_MUE_REG, MSG_IDEV_MUE_REG_SIZE, "MUE register",
 	  ub_idevice_pue_add_handler, IDEV_MUE_REG_PLD_TOTAL_SIZE },
@@ -444,6 +536,8 @@ struct opcode_func_map idev_func_mapping[] = {
 	  ub_idevice_ue_rls_handler, IDEV_UE_RLS_PLD_TOTAL_SIZE },
 	{ VDM_BI_CREATE_BYPASS_UMMU, VDM_BI_CREATE_BYPASS_SIZE, "Vdm bi create",
 	  ub_vdm_create_bi_bypass_ummu, VDM_BI_CREATE_BYPASS_UMMU_PLD_SIZE },
+	{ VDM_FM2UB_SUB_PORT_MGMT, VDM_PORT_MGMT_SIZE, "Port mgmt",
+	  ub_vdm_port_mgmt_handler, VDM_PORT_MGMT_PLD_SIZE },
 };
 
 static int ub_vdm_msg_info_handle(struct ub_bus_controller *ubc,
@@ -483,6 +577,8 @@ static int hi_vdm_vendor_handler(struct ub_bus_controller *ubc, void *pkt, u16 l
 
 	opcode = pld_dw0->opcode;
 	sub_opcode = pld_dw0->sub_opcode;
+	dev_info(&ubc->dev, "vdm msg opcode %#x, sub %#x\n", opcode, sub_opcode);
+
 	switch (opcode) {
 	case VDM_OPCODE_FM2UB_COMM_MSG:
 		return ub_vdm_msg_info_handle(ubc, vdm_pkt, len, sub_opcode);
@@ -610,8 +706,8 @@ int hi_send_port_reset_msg(struct ub_entity *uent, u16 port_idx)
 
 	ub_info(uent, "Sync request port reset msg\n");
 
-	ret = hi_message_sync_request(uent->message->mdev, &info,
-				      pkt.header.msgetah.code);
+	ret = hi_message_sync_request_sched(uent->message->mdev, &info,
+					    pkt.header.msgetah.code);
 	if (ret) {
 		ub_err(uent, "msg sync request ret=%d\n", ret);
 		return ret;
@@ -624,4 +720,34 @@ int hi_send_port_reset_msg(struct ub_entity *uent, u16 port_idx)
 	}
 
 	return 0;
+}
+
+void ub_delay_task_work_vdm(struct work_struct *work)
+{
+	struct ub_delay_task *task = container_of(work, struct ub_delay_task,
+						  work);
+	struct ub_entity *uent = task->uent;
+	struct ub_port *port;
+
+	switch (task->task_type) {
+	case TASK_TYPE_START:
+	case TASK_TYPE_ATTACH:
+	case TASK_TYPE_REINIT:
+		if (!ub_entity_test_task_src(uent, TASK_SRC_VPORT))
+			return;
+
+		port = uent->ports[0].r_uent->ports + uent->ports[0].r_index;
+		atomic_set(&port->port_mgmt_state, MGMT_STATE_IDLE);
+		break;
+	case TASK_TYPE_LINKDOWN:
+		port = task->port;
+		atomic_set(&port->port_mgmt_state, MGMT_STATE_IDLE);
+		break;
+	case TASK_TYPE_DISABLE:
+	case TASK_TYPE_ATTACH_RETRY:
+	case TASK_TYPE_REINIT_RETRY:
+	default:
+		break;
+		/* do nothing */
+	}
 }

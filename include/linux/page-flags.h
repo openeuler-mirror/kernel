@@ -139,6 +139,9 @@ enum pageflags {
 #ifdef CONFIG_DYNAMIC_POOL
 	PG_pool,		/* Page is allocated from dynamic pool */
 #endif
+#ifdef CONFIG_CMA_FOLIO
+	PG_fcma,		/* Page is allocated from CMA folio area */
+#endif
 	__NR_PAGEFLAGS,
 
 	PG_readahead = PG_reclaim,
@@ -1041,6 +1044,16 @@ PAGE_TYPE_OPS(Dpool, dpool, dpool)
 FOLIO_TYPE_OPS(hugetlb, hugetlb)
 #else
 FOLIO_TEST_FLAG_FALSE(hugetlb)
+#endif
+
+#ifdef CONFIG_CMA_FOLIO
+/*
+ * PageFcma() indicates that the page was allocated from the
+ * CMA folio area and should be released back to CMA on free.
+ */
+PAGEFLAG(Fcma, fcma, PF_NO_TAIL)
+#else
+PAGEFLAG_FALSE(Fcma, fcma)
 #endif
 
 /**

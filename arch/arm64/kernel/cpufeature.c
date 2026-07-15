@@ -460,7 +460,7 @@ static const struct arm64_ftr_bits ftr_id_aa64dfr0[] = {
 	 * We can instantiate multiple PMU instances with different levels
 	 * of support.
 	 */
-	S_ARM64_FTR_BITS(FTR_HIDDEN, FTR_NONSTRICT, FTR_EXACT, ID_AA64DFR0_EL1_PMUVer_SHIFT, 4, 0),
+	ARM64_FTR_BITS(FTR_HIDDEN, FTR_NONSTRICT, FTR_EXACT, ID_AA64DFR0_EL1_PMUVer_SHIFT, 4, 0),
 	ARM64_FTR_BITS(FTR_HIDDEN, FTR_STRICT, FTR_EXACT, ID_AA64DFR0_EL1_DebugVer_SHIFT, 4, 0x6),
 	ARM64_FTR_END,
 };
@@ -604,7 +604,7 @@ static const struct arm64_ftr_bits ftr_id_pfr2[] = {
 
 static const struct arm64_ftr_bits ftr_id_dfr0[] = {
 	/* [31:28] TraceFilt */
-	S_ARM64_FTR_BITS(FTR_HIDDEN, FTR_NONSTRICT, FTR_EXACT, ID_DFR0_EL1_PerfMon_SHIFT, 4, 0),
+	ARM64_FTR_BITS(FTR_HIDDEN, FTR_NONSTRICT, FTR_EXACT, ID_DFR0_EL1_PerfMon_SHIFT, 4, 0),
 	ARM64_FTR_BITS(FTR_HIDDEN, FTR_STRICT, FTR_LOWER_SAFE, ID_DFR0_EL1_MProfDbg_SHIFT, 4, 0),
 	ARM64_FTR_BITS(FTR_HIDDEN, FTR_STRICT, FTR_LOWER_SAFE, ID_DFR0_EL1_MMapTrc_SHIFT, 4, 0),
 	ARM64_FTR_BITS(FTR_HIDDEN, FTR_STRICT, FTR_LOWER_SAFE, ID_DFR0_EL1_CopTrc_SHIFT, 4, 0),
@@ -2238,7 +2238,7 @@ static bool use_nmi(const struct arm64_cpu_capabilities *entry, int scope)
 	 */
 	if (!IS_ENABLED(CONFIG_ARM64_NMI))
 		pr_info("CONFIG_ARM64_NMI disabled, using NMIs for guests only\n");
-#ifdef CONFIG_ARM64_PSEUDO_NMI
+#if IS_ENABLED(CONFIG_ARM64_PSEUDO_NMI) || IS_ENABLED(CONFIG_ARM64_NMI)
 	else if (IS_ENABLED(CONFIG_ARM64_PSEUDO_NMI) && enable_pseudo_nmi) {
 		pr_info("Pseudo NMI enabled, not using architected NMI\n");
 		return false;
@@ -2577,6 +2577,34 @@ static void cpu_enable_arch_xcall_xint(const struct arm64_cpu_capabilities *__un
 	}
 
 	enable_xcall_xint_vectors();
+}
+#endif
+
+#ifdef CONFIG_ARM64_COPY_FROM_USER_OPT
+
+static bool copy_opt_disable __ro_after_init;
+
+static int __init parse_copy_opt_disable(char *str)
+{
+	copy_opt_disable = true;
+	return 0;
+}
+early_param("copy_opt_disable", parse_copy_opt_disable);
+
+static bool has_copy_opt(const struct arm64_cpu_capabilities *cap, int scope)
+{
+	/* List of CPUs that support copy_from_user_opt */
+	static const struct midr_range copy_opt_cpus[] = {
+		MIDR_ALL_VERSIONS(MIDR_HISI_HIP11),
+		MIDR_ALL_VERSIONS(MIDR_HISI_HIP12),
+		MIDR_ALL_VERSIONS(MIDR_HISI_LINXICORE9100),
+		{ }
+	};
+
+	if (copy_opt_disable)
+		return false;
+
+	return is_midr_in_range_list(copy_opt_cpus);
 }
 #endif
 
@@ -3153,6 +3181,14 @@ static const struct arm64_cpu_capabilities arm64_features[] = {
 		.type = ARM64_CPUCAP_SYSTEM_FEATURE,
 		.matches = has_arch_xcall_xint_support,
 		.cpu_enable = cpu_enable_arch_xcall_xint,
+	},
+#endif
+#ifdef CONFIG_ARM64_COPY_FROM_USER_OPT
+	{
+		.desc = "Hisilicon Optimized Copy From User enabled",
+		.capability = ARM64_HAS_COPY_OPT,
+		.type = ARM64_CPUCAP_SYSTEM_FEATURE,
+		.matches = has_copy_opt,
 	},
 #endif
 	{},

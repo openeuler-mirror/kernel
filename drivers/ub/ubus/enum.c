@@ -14,6 +14,7 @@
 #include "port.h"
 #include "cna.h"
 #include "route.h"
+#include "task.h"
 #include "enum.h"
 
 #define ENUM_MAX_HOPS 255
@@ -222,6 +223,7 @@ static int ub_enum_topo_scan_init(void)
 static void ub_enum_topo_scan_uninit(void)
 {
 	kfree(topo_scan.buf);
+	topo_scan.buf = NULL;
 }
 
 static inline void ub_enum_refresh_and_init_buffer_header(struct ub_entity *uent,
@@ -675,13 +677,13 @@ static int ub_enum_cluster_query(struct ub_entity *uent, void *buf)
 
 	ret = ub_query_ent_na(uent, buf);
 	if (ret) {
-		dev_err(&uent->ubc->dev, "query cluster ubc dev cna err\n");
+		dev_err(&uent->ubc->dev, "query cluster ubc dev cna error\n");
 		return ret;
 	}
 
 	ret = ub_query_port_na(uent, buf);
 	if (ret)
-		dev_err(&uent->ubc->dev, "query cluster ubc port cna err\n");
+		dev_err(&uent->ubc->dev, "query cluster ubc port cna error\n");
 
 	return ret;
 }
@@ -860,16 +862,16 @@ static int bfs_route_test_and_put(struct ub_port *p, struct ub_entity *uent)
 	path.uent = uent;
 
 	if (!kfifo_put(&bfs_route.kfifo, path)) {
-		pr_info("multiple paths join the kfifo, kfifo put failed\n");
+		pr_warn("multiple paths join the kfifo, kfifo put failed\n");
 		return 0;
 	}
 
 	return 1;
 }
 
-static int cna2index(int cna)
+static u32 cna2index(int cna)
 {
-	int i;
+	u32 i;
 
 	for (i = 0; i < bfs_route.cna_used; ++i) {
 		if (bfs_route.cna_map[i] == cna)
@@ -882,7 +884,7 @@ static int cna2index(int cna)
 static void ub_enum_bfs_layer_update(struct ub_entity *uent, int *curr, int *next,
 				     int *layer)
 {
-	int i;
+	u32 i;
 
 	*curr = *next;
 	*next = 0;
@@ -1416,7 +1418,7 @@ static void ub_enum_free_all(void)
 	ub_remove_entities();
 }
 
-int ub_enum_entities_active(struct list_head *dev_list)
+int ub_enum_entities_active(struct list_head *dev_list, int src)
 {
 	struct ub_entity *uent, *tmp;
 	int ret;
@@ -1434,11 +1436,22 @@ int ub_enum_entities_active(struct list_head *dev_list)
 
 		list_del(&uent->node);
 		ub_entity_add(uent, uent->ubc);
+		ub_entity_assign_task_src(uent, src, true);
 
 		if (is_ibus_controller(uent) && uent->ubc->cluster)
 			continue;
 
-		ub_start_ent(uent);
+		if (ub_entity_test_task_src(uent, TASK_SRC_SELF)) {
+			ub_start_ent(uent);
+		} else {
+			atomic_set(&uent->ent_mgmt_state, MGMT_STATE_REGISTERING);
+			ret = ub_add_delay_task(uent, NULL, TASK_TYPE_START);
+			if (ret) {
+				ub_err(uent, "active add start task failed\n");
+				atomic_set(&uent->ent_mgmt_state, MGMT_STATE_IDLE);
+				return ret; /* Just one entity */
+			}
+		}
 	}
 
 	return 0;
@@ -1462,7 +1475,7 @@ int ub_enum_probe(void)
 		goto err_out;
 	}
 
-	ret = ub_enum_entities_active(&topo_scan.dev_list);
+	ret = ub_enum_entities_active(&topo_scan.dev_list, TASK_SRC_SELF);
 	if (ret) {
 		pr_err("devices start failed, ret=%d\n", ret);
 		goto err_out;

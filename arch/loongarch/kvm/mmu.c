@@ -95,7 +95,7 @@ static int kvm_flush_pte(kvm_pte_t *pte, phys_addr_t addr, kvm_ptw_ctx *ctx)
 	else
 		kvm->stat.pages--;
 
-	*pte = ctx->invalid_entry;
+	kvm_set_pte(pte, ctx->invalid_entry);
 
 	return 1;
 }
@@ -540,7 +540,7 @@ bool kvm_set_spte_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 	prot_bits |= __WRITEABLE & *ptep & pte_val(range->arg.pte);
 	if (kvm_pte_dirty(prot_bits)) {
 		prot_bits = kvm_pte_mkclean(prot_bits);
-		prot_bits = kvm_pte_mkwrite(prot_bits);
+		prot_bits = kvm_pte_mkwriteable(prot_bits);
 	}
 	kvm_set_pte(ptep, kvm_pfn_pte(pfn, __pgprot(prot_bits)));
 
@@ -609,7 +609,7 @@ static int kvm_map_page_fast(struct kvm_vcpu *vcpu, unsigned long gpa, bool writ
 
 	/* call kvm_set_pfn_accessed() after unlock */
 	if (write && !kvm_pte_dirty(new)) {
-		if (!kvm_pte_write(new)) {
+		if (!kvm_pte_writeable(new)) {
 			ret = -EFAULT;
 			goto out;
 		}
@@ -912,7 +912,7 @@ retry:
 		 * to record it to restore the write attribute of the page entry,
 		 * in the fast path kvm_map_page_fast for page table processing
 		 */
-		prot_bits = kvm_pte_mkwrite(prot_bits);
+		prot_bits = kvm_pte_mkwriteable(prot_bits);
 		if (write || !kvm_slot_dirty_track_enabled(memslot))
 			prot_bits = kvm_pte_mkdirty(prot_bits);
 	}
@@ -958,7 +958,7 @@ retry:
 	kvm_set_pte(ptep, new_pte);
 	spin_unlock(&kvm->mmu_lock);
 
-	if (prot_bits & _PAGE_DIRTY) {
+	if (kvm_pte_dirty(prot_bits)) {
 		mark_page_dirty_in_slot(kvm, memslot, gfn);
 		kvm_set_pfn_dirty(pfn);
 	}
@@ -969,7 +969,7 @@ out:
 	return err;
 }
 
-int kvm_handle_mm_fault(struct kvm_vcpu *vcpu, unsigned long gpa, bool write)
+int kvm_handle_mm_fault(struct kvm_vcpu *vcpu, unsigned long gpa, bool write, int ecode)
 {
 	int ret;
 
@@ -978,8 +978,17 @@ int kvm_handle_mm_fault(struct kvm_vcpu *vcpu, unsigned long gpa, bool write)
 		return ret;
 
 	/* Invalidate this entry in the TLB */
-	vcpu->arch.flush_gpa = gpa;
-	kvm_make_request(KVM_REQ_TLB_FLUSH_GPA, vcpu);
+	if (!cpu_has_ptw || (ecode == EXCCODE_TLBM)) {
+		/*
+		 * With HW PTW, invalid TLB is not added when page fault. But
+		 * for EXCCODE_TLBM exception, stale TLB may exist because of
+		 * the last read access.
+		 *
+		 * With SW PTW, invalid TLB is added in TLB refill exception.
+		 */
+		vcpu->arch.flush_gpa = gpa;
+		kvm_make_request(KVM_REQ_TLB_FLUSH_GPA, vcpu);
+	}
 
 	return 0;
 }

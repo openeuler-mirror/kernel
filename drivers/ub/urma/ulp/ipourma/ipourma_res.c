@@ -501,6 +501,7 @@ static void ipourma_restart_rings_by_eid(struct ipourma_dev_priv *priv, int eid_
 {
 	struct ubcore_seg_cfg cfg = {0};
 	int ret = IPOURMA_OK;
+	int j = 0;
 
 	if (eid_is_empty(&priv->eid_info[eid_idx].eid) ||
 		!IS_ERR_OR_NULL(priv->jetty[eid_idx]) ||
@@ -513,20 +514,26 @@ static void ipourma_restart_rings_by_eid(struct ipourma_dev_priv *priv, int eid_
 	if (ret != IPOURMA_OK)
 		goto init_tx_bufs_err;
 
-	for (int j = 0; j < priv->rx_buf_num; j++) {
+	for (j = 0; j < priv->rx_buf_num; j++) {
 		ipourma_build_seg_cfg(&cfg, (u64)priv->rx_buf_aligned[eid_idx][j],
 						ipourma_register_seg_size);
 		priv->ipourma_ub_rx_seg[eid_idx][j] = ubcore_register_seg(priv->urma_dev,
 										&cfg, NULL);
 		if (!IS_ERR_OR_NULL(priv->ipourma_ub_rx_seg[eid_idx][j]))
 			continue;
-		goto register_tx_seg_err;
+		goto register_rx_seg_err;
 	}
-	for (int j = 0; j < ipourma_rx_ring_size; j++) {
+	for (j = 0; j < ipourma_rx_ring_size; j++) {
 		ipourma_restart_rx_segments(priv, &priv->rx_ring[eid_idx][j]);
 		ipourma_urma_post_recv(priv->dev, eid_idx, j);
 	}
-register_tx_seg_err:
+	return;
+
+register_rx_seg_err:
+	while (--j >= 0) {
+		ubcore_unregister_seg(priv->ipourma_ub_rx_seg[eid_idx][j]);
+		priv->ipourma_ub_rx_seg[eid_idx][j] = NULL;
+	}
 	ipourma_uninit_tx_bufs(priv, eid_idx);
 init_tx_bufs_err:
 	ipourma_uninit_urma_resources_by_eid(priv, eid_idx);
@@ -827,7 +834,7 @@ void ipourma_uninit_urma_resources(struct net_device *dev)
 
 static int ipourma_init_misc(struct ipourma_dev_priv *priv)
 {
-	int ctp_en = priv->urma_dev->attr.dev_cap.feature.bs.ctp_en;
+	int ctp_en = 0;
 
 	priv->max_send_sge = IPOURMA_MAX_URMA_SEND_SGES;
 	priv->urma_mtu = IPOURMA_URMA_MAX_MTU;

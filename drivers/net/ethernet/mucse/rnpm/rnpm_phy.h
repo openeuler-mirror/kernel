@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #ifndef _RNPM_PHY_H_
 #define _RNPM_PHY_H_
@@ -77,12 +77,13 @@
 s32 rnpm_init_phy_ops_generic(struct rnpm_hw *hw);
 s32 rnpm_identify_phy_generic(struct rnpm_hw *hw);
 s32 rnpm_reset_phy_generic(struct rnpm_hw *hw);
-s32 rnpm_read_phy_reg_generic(struct rnpm_hw *hw, u32 reg_addr, u32 device_type,
-			      u16 *phy_data);
+s32 rnpm_read_phy_reg_generic(struct rnpm_hw *hw, u32 reg_addr,
+			      u32 device_type, u16 *phy_data);
 s32 rnpm_write_phy_reg_generic(struct rnpm_hw *hw, u32 reg_addr,
 			       u32 device_type, u16 phy_data);
 s32 rnpm_setup_phy_link_generic(struct rnpm_hw *hw);
-s32 rnpm_setup_phy_link_speed_generic(struct rnpm_hw *hw, rnpm_link_speed speed,
+s32 rnpm_setup_phy_link_speed_generic(struct rnpm_hw *hw,
+				      rnpm_link_speed speed,
 				      bool autoneg_wait_to_complete);
 s32 rnpm_get_copper_link_capabilities_generic(struct rnpm_hw *hw,
 					      rnpm_link_speed *speed,
@@ -99,13 +100,13 @@ s32 rnpm_get_phy_firmware_version_generic(struct rnpm_hw *hw,
 
 s32 rnpm_reset_phy_nl(struct rnpm_hw *hw);
 s32 rnpm_identify_sfp_module_generic(struct rnpm_hw *hw);
-s32 rnpm_get_sfp_init_sequence_offsets(struct rnpm_hw *hw, u16 *list_offset,
-				       u16 *data_offset);
+s32 rnpm_get_sfp_init_sequence_offsets(struct rnpm_hw *hw,
+				       u16 *list_offset, u16 *data_offset);
 s32 rnpm_tn_check_overtemp(struct rnpm_hw *hw);
-s32 rnpm_read_i2c_byte_generic(struct rnpm_hw *hw, u8 byte_offset, u8 dev_addr,
-			       u8 *data);
-s32 rnpm_write_i2c_byte_generic(struct rnpm_hw *hw, u8 byte_offset, u8 dev_addr,
-				u8 data);
+s32 rnpm_read_i2c_byte_generic(struct rnpm_hw *hw, u8 byte_offset,
+			       u8 dev_addr, u8 *data);
+s32 rnpm_write_i2c_byte_generic(struct rnpm_hw *hw, u8 byte_offset,
+				u8 dev_addr, u8 data);
 s32 rnpm_read_i2c_eeprom_generic(struct rnpm_hw *hw, u8 byte_offset,
 				 u8 *eeprom_data);
 s32 rnpm_read_i2c_sff8472_generic(struct rnpm_hw *hw, u8 byte_offset,

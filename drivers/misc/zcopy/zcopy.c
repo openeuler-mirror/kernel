@@ -65,7 +65,7 @@ static void (*__zcopy_mmu_notifier_arch_invalidate_secondary_tlbs)(struct mm_str
 
 static struct kretprobe __kretprobe;
 
-#if USE_SPLIT_PTE_PTLOCKS && ALLOC_SPLIT_PTLOCKS
+#if defined(CONFIG_SPLIT_PTE_PTLOCKS) && ALLOC_SPLIT_PTLOCKS
 static struct kmem_cache *zcopy_page_ptl_cachep;
 bool ptlock_alloc(struct ptdesc *ptdesc)
 {
@@ -776,7 +776,7 @@ static int register_unexport_func(void)
 {
 	int ret;
 
-#if USE_SPLIT_PTE_PTLOCKS && ALLOC_SPLIT_PTLOCKS
+#if defined(CONFIG_SPLIT_PTE_PTLOCKS) && ALLOC_SPLIT_PTLOCKS
 	zcopy_page_ptl_cachep
 		= (struct kmem_cache *)__kallsyms_lookup_name("page_ptl_cachep");
 	ret = REGISTER_CHECK(__zcopy_pud_alloc, "__pud_alloc");

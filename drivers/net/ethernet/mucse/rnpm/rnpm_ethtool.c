@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 /* ethtool support for N10M */
 #include <linux/interrupt.h>
@@ -42,12 +42,13 @@ struct rnpm_stats {
 #define RNPM_NUM_RX_QUEUES netdev->real_num_rx_queues
 #define RNPM_NUM_TX_QUEUES netdev->real_num_tx_queues
 
-#define RNPM_NETDEV_STAT(_net_stat)                                            \
-	{                                                                      \
-		.stat_string = #_net_stat,                                     \
-		.sizeof_stat =                                                 \
-			sizeof_field(struct net_device_stats, _net_stat),      \
-		.stat_offset = offsetof(struct net_device_stats, _net_stat)    \
+#define RNPM_NETDEV_STAT(_net_stat)                                       \
+	{                                                                 \
+		.stat_string = #_net_stat,                                \
+		.sizeof_stat =                                            \
+			sizeof_field(struct net_device_stats, _net_stat), \
+		.stat_offset =                                            \
+			offsetof(struct net_device_stats, _net_stat)      \
 	}
 static const struct rnpm_stats rnpm_gstrings_net_stats[] = {
 	RNPM_NETDEV_STAT(rx_packets),
@@ -70,13 +71,14 @@ static const struct rnpm_stats rnpm_gstrings_net_stats[] = {
 	RNPM_NETDEV_STAT(tx_fifo_errors),
 	RNPM_NETDEV_STAT(tx_heartbeat_errors),
 };
+
 #define RNPM_GLOBAL_STATS_LEN ARRAY_SIZE(rnpm_gstrings_net_stats)
 
-#define RNPM_HW_STAT(_name, _stat)                                             \
-	{                                                                      \
-		.stat_string = _name,                                          \
-		.sizeof_stat = sizeof_field(struct rnpm_adapter, _stat),       \
-		.stat_offset = offsetof(struct rnpm_adapter, _stat)            \
+#define RNPM_HW_STAT(_name, _stat)                                       \
+	{                                                                \
+		.stat_string = _name,                                    \
+		.sizeof_stat = sizeof_field(struct rnpm_adapter, _stat), \
+		.stat_offset = offsetof(struct rnpm_adapter, _stat)      \
 	}
 static struct rnpm_stats rnpm_hwstrings_stats[] = {
 	RNPM_HW_STAT("dma_to_eth", hw_stats.dma_to_eth),
@@ -108,6 +110,7 @@ static struct rnpm_stats rnpm_hwstrings_stats[] = {
 	RNPM_HW_STAT("mac_rx_pause_cnt", hw_stats.mac_rx_pause_cnt),
 	RNPM_HW_STAT("mac_tx_pause_cnt", hw_stats.mac_tx_pause_cnt),
 };
+
 #define RNPM_HWSTRINGS_STATS_LEN ARRAY_SIZE(rnpm_hwstrings_stats)
 
 struct rnpm_tx_queue_ring_stat {
@@ -124,20 +127,20 @@ struct rnpm_rx_queue_ring_stat {
 	u64 sw_to_clean;
 };
 
-#define RNPM_QUEUE_STATS_LEN                                                   \
-	(RNPM_NUM_TX_QUEUES *                                                  \
-		 (sizeof(struct rnpm_tx_queue_stats) / sizeof(u64) +           \
-		  sizeof(struct rnpm_queue_stats) / sizeof(u64) +              \
-		  sizeof(struct rnpm_tx_queue_ring_stat) / sizeof(u64)) +      \
-	 RNPM_NUM_RX_QUEUES *                                                  \
-		 (sizeof(struct rnpm_rx_queue_stats) / sizeof(u64) +           \
-		  sizeof(struct rnpm_queue_stats) / sizeof(u64) +              \
+#define RNPM_QUEUE_STATS_LEN                                              \
+	(RNPM_NUM_TX_QUEUES *                                             \
+		 (sizeof(struct rnpm_tx_queue_stats) / sizeof(u64) +      \
+		  sizeof(struct rnpm_queue_stats) / sizeof(u64) +         \
+		  sizeof(struct rnpm_tx_queue_ring_stat) / sizeof(u64)) + \
+	 RNPM_NUM_RX_QUEUES *                                             \
+		 (sizeof(struct rnpm_rx_queue_stats) / sizeof(u64) +      \
+		  sizeof(struct rnpm_queue_stats) / sizeof(u64) +         \
 		  sizeof(struct rnpm_rx_queue_ring_stat) / sizeof(u64)))
 
-#define RNPM_STATS_LEN                                                         \
-	(RNPM_GLOBAL_STATS_LEN + RNPM_HWSTRINGS_STATS_LEN +                    \
+#define RNPM_STATS_LEN                                      \
+	(RNPM_GLOBAL_STATS_LEN + RNPM_HWSTRINGS_STATS_LEN + \
 	 RNPM_QUEUE_STATS_LEN)
-#ifdef ETHTOOL_TEST
+
 static const char rnpm_gstrings_test[][ETH_GSTRING_LEN] = {
 	"Register test  (offline)", "Eeprom test    (offline)",
 	"Interrupt test (offline)", "Loopback test  (offline)",
@@ -145,9 +148,6 @@ static const char rnpm_gstrings_test[][ETH_GSTRING_LEN] = {
 };
 
 #define RNPM_TEST_LEN (sizeof(rnpm_gstrings_test) / ETH_GSTRING_LEN)
-#else
-#define RNPM_TEST_LEN 0
-#endif
 
 static int rnpm_get_regs_len(struct net_device *netdev)
 {
@@ -156,8 +156,8 @@ static int rnpm_get_regs_len(struct net_device *netdev)
 	return RNPM_REGS_LEN * sizeof(u32);
 }
 
-static void rnpm_get_regs(struct net_device *netdev, struct ethtool_regs *regs,
-			  void *p)
+static void rnpm_get_regs(struct net_device *netdev,
+			  struct ethtool_regs *regs, void *p)
 {
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_hw *hw = &adapter->hw;
@@ -220,12 +220,14 @@ static void rnpm_get_drvinfo(struct net_device *netdev,
 	struct rnpm_hw *hw = &adapter->hw;
 
 	strscpy(drvinfo->driver, rnpm_driver_name, sizeof(drvinfo->driver));
-	snprintf(drvinfo->version, sizeof(drvinfo->version), "%s-%x",
-		 rnpm_driver_version, hw->ccode);
+	snprintf(drvinfo->version, sizeof(drvinfo->version), "%s",
+		 rnpm_driver_version);
 	snprintf(drvinfo->fw_version, sizeof(drvinfo->fw_version),
-		 "%d.%d.%d.%d 0x%08x", ((char *)&(hw->fw_version))[3],
-		 ((char *)&(hw->fw_version))[2], ((char *)&(hw->fw_version))[1],
-		 ((char *)&(hw->fw_version))[0], hw->fw_uid);
+		 "%d.%d.%d.%d",
+		 ((char *)&hw->fw_version)[3],
+		 ((char *)&hw->fw_version)[2],
+		 ((char *)&hw->fw_version)[1],
+		 ((char *)&hw->fw_version)[0]);
 	strscpy(drvinfo->bus_info, pci_name(adapter->pdev),
 		sizeof(drvinfo->bus_info));
 	drvinfo->n_stats = RNPM_STATS_LEN;
@@ -241,6 +243,9 @@ static int rnpm_set_autoneg_adv_from_hw(struct rnpm_hw *hw,
 	if (hw->phy_type == PHY_TYPE_SGMII) {
 		/* Not support AN, return directly */
 		if (!(hw->phy.vb_r[0] & BIT(12)) || !hw->link)
+			return 0;
+
+		if (!(hw->mac.autoneg) && hw->speed == SPEED_1000)
 			return 0;
 
 		if (hw->phy.vb_r[4] & 0x100)
@@ -279,16 +284,21 @@ static void rnpm_phy_type_to_ethtool(struct rnpm_adapter *adapter,
 	struct rnpm_hw *hw = &adapter->hw;
 	u32 supported_link = hw->supported_link;
 	u8 phy_type = hw->phy_type;
+	struct mbx_port_stat stat;
+
+	if (rnpm_get_port_stats2(hw, &stat) == 0) {
+		hw->speed = stat.speed;
+		hw->duplex = stat.duplex;
+	}
 
 	ethtool_link_ksettings_add_link_mode(ks, supported, Autoneg);
 	ethtool_link_ksettings_add_link_mode(ks, advertising, Autoneg);
-	rnpm_logd(LOG_ETHTOOL,
-		  "phy_type_to_ethtool name=%s link=%d speed=%d phy-type=0x%x ",
-		  adapter->netdev->name, hw->link, hw->speed, phy_type);
-	rnpm_logd(LOG_ETHTOOL,
-		  "sopport-link=0x%x media=0x%x priv_flags=0x%x\n ",
-		  supported_link, hw->phy.media_type,
-		  adapter->pf_adapter->priv_flags);
+	rnpm_logd(
+		LOG_ETHTOOL,
+		"phy_type_to_ethtool name=%s link=%d speed=%d phy-type=0x%x support-link=0x%x media=0x%x priv_flags=0x%x\n",
+		adapter->netdev->name, hw->link, hw->speed, phy_type,
+		supported_link, hw->phy.media_type,
+		adapter->pf_adapter->priv_flags);
 
 	/* ethtool show all support fiber type when media is unknown */
 	if (hw->phy.media_type == rnpm_media_type_unknown) {
@@ -311,32 +321,32 @@ static void rnpm_phy_type_to_ethtool(struct rnpm_adapter *adapter,
 							     10000baseER_Full);
 			if (adapter->pf_adapter->priv_flags &
 			    RNPM_PRIV_FLAG_FW_10G_1G_AUTO_DETCH_EN) {
-				ethtool_link_ksettings_add_link_mode(
-					ks, supported, 1000baseX_Full);
-				ethtool_link_ksettings_add_link_mode(
-					ks, advertising, 1000baseX_Full);
-				ethtool_link_ksettings_add_link_mode(
-					ks, supported, 1000baseT_Full);
-				ethtool_link_ksettings_add_link_mode(
-					ks, advertising, 1000baseT_Full);
-				ethtool_link_ksettings_add_link_mode(
-					ks, supported, 1000baseKX_Full);
-				ethtool_link_ksettings_add_link_mode(
-					ks, advertising, 1000baseKX_Full);
+				ethtool_link_ksettings_add_link_mode(ks, supported,
+								     1000baseX_Full);
+				ethtool_link_ksettings_add_link_mode(ks, advertising,
+								     1000baseX_Full);
+				ethtool_link_ksettings_add_link_mode(ks, supported,
+								     1000baseT_Full);
+				ethtool_link_ksettings_add_link_mode(ks, advertising,
+								     1000baseT_Full);
+				ethtool_link_ksettings_add_link_mode(ks, supported,
+								     1000baseKX_Full);
+				ethtool_link_ksettings_add_link_mode(ks, advertising,
+								     1000baseKX_Full);
 			}
 		} else {
-			ethtool_link_ksettings_add_link_mode(ks, supported,
-							     1000baseX_Full);
-			ethtool_link_ksettings_add_link_mode(ks, advertising,
-							     1000baseX_Full);
-			ethtool_link_ksettings_add_link_mode(ks, supported,
-							     1000baseT_Full);
-			ethtool_link_ksettings_add_link_mode(ks, advertising,
-							     1000baseT_Full);
-			ethtool_link_ksettings_add_link_mode(ks, supported,
-							     1000baseKX_Full);
-			ethtool_link_ksettings_add_link_mode(ks, advertising,
-							     1000baseKX_Full);
+			ethtool_link_ksettings_add_link_mode(ks,
+				supported, 1000baseX_Full);
+			ethtool_link_ksettings_add_link_mode(ks,
+				advertising, 1000baseX_Full);
+			ethtool_link_ksettings_add_link_mode(ks,
+				supported, 1000baseT_Full);
+			ethtool_link_ksettings_add_link_mode(ks,
+				advertising, 1000baseT_Full);
+			ethtool_link_ksettings_add_link_mode(ks,
+				supported, 1000baseKX_Full);
+			ethtool_link_ksettings_add_link_mode(ks,
+				advertising, 1000baseKX_Full);
 		}
 		/* when media type is unknown, return directly */
 		return;
@@ -360,7 +370,8 @@ static void rnpm_phy_type_to_ethtool(struct rnpm_adapter *adapter,
 	if (rnpm_fw_is_old_ethtool(hw) &&
 	    (supported_link & RNPM_LINK_SPEED_40GB_FULL)) {
 		supported_link |= RNPM_SFP_MODE_40G_CR4 |
-				  RNPM_SFP_MODE_40G_SR4 | PHY_TYPE_40G_BASE_LR4;
+				  RNPM_SFP_MODE_40G_SR4 |
+				  PHY_TYPE_40G_BASE_LR4;
 	}
 
 	if (supported_link & RNPM_SFP_MODE_40G_CR4) {
@@ -393,8 +404,8 @@ static void rnpm_phy_type_to_ethtool(struct rnpm_adapter *adapter,
 			ethtool_link_ksettings_add_link_mode(ks, supported,
 							     10000baseKR_Full);
 			if (supported_link & RNPM_LINK_SPEED_10GB_FULL)
-				ethtool_link_ksettings_add_link_mode(
-					ks, advertising, 10000baseKR_Full);
+				ethtool_link_ksettings_add_link_mode(ks, advertising,
+								     10000baseKR_Full);
 		}
 	}
 
@@ -403,20 +414,20 @@ static void rnpm_phy_type_to_ethtool(struct rnpm_adapter *adapter,
 			ethtool_link_ksettings_add_link_mode(ks, supported,
 							     1000baseKX_Full);
 			if (supported_link & RNPM_LINK_SPEED_1GB_FULL)
-				ethtool_link_ksettings_add_link_mode(
-					ks, advertising, 1000baseKX_Full);
+				ethtool_link_ksettings_add_link_mode(ks, advertising,
+								     1000baseKX_Full);
 		} else if (supported_link & RNPM_SFP_MODE_1G_T) {
 			ethtool_link_ksettings_add_link_mode(ks, supported,
 							     1000baseT_Full);
 			if (supported_link & RNPM_LINK_SPEED_1GB_FULL)
-				ethtool_link_ksettings_add_link_mode(
-					ks, advertising, 1000baseT_Full);
+				ethtool_link_ksettings_add_link_mode(ks, advertising,
+								     1000baseT_Full);
 		} else {
 			ethtool_link_ksettings_add_link_mode(ks, supported,
 							     1000baseX_Full);
 			if (supported_link & RNPM_LINK_SPEED_1GB_FULL)
-				ethtool_link_ksettings_add_link_mode(
-					ks, advertising, 1000baseX_Full);
+				ethtool_link_ksettings_add_link_mode(ks, advertising,
+								     1000baseX_Full);
 		}
 	}
 
@@ -446,13 +457,13 @@ static void rnpm_phy_type_to_ethtool(struct rnpm_adapter *adapter,
 	if (phy_type == PHY_TYPE_10G_BASE_SR ||
 	    phy_type == PHY_TYPE_10G_BASE_ER ||
 	    phy_type == PHY_TYPE_10G_BASE_LR) {
-		if ((hw->speed == SPEED_1000) ||
+		if (hw->speed == SPEED_1000 ||
 		    (supported_link & RNPM_LINK_SPEED_1GB_FULL)) {
 			ethtool_link_ksettings_add_link_mode(ks, supported,
 							     1000baseX_Full);
 			if (supported_link & RNPM_LINK_SPEED_10GB_FULL)
-				ethtool_link_ksettings_add_link_mode(
-					ks, advertising, 1000baseX_Full);
+				ethtool_link_ksettings_add_link_mode(ks, advertising,
+								     1000baseX_Full);
 		}
 	}
 }
@@ -517,7 +528,7 @@ static void rnpm_get_settings_link_up(struct rnpm_hw *hw,
 			ethtool_link_ksettings_add_link_mode(ks, advertising,
 							     10000baseT_Full);
 
-		if ((hw->speed == SPEED_1000) ||
+		if (hw->speed == SPEED_1000 ||
 		    (supported_link & RNPM_LINK_SPEED_1GB_FULL)) {
 			ethtool_link_ksettings_add_link_mode(ks, supported,
 							     1000baseX_Full);
@@ -534,10 +545,10 @@ static void rnpm_get_settings_link_up(struct rnpm_hw *hw,
 		ethtool_link_ksettings_add_link_mode(ks, supported, Autoneg);
 		ethtool_link_ksettings_add_link_mode(ks, advertising, Autoneg);
 		if (!!hw->is_backplane) {
-			ethtool_link_ksettings_add_link_mode(ks, supported,
-							     1000baseKX_Full);
-			ethtool_link_ksettings_add_link_mode(ks, advertising,
-							     1000baseKX_Full);
+			ethtool_link_ksettings_add_link_mode(
+				ks, supported, 1000baseKX_Full);
+			ethtool_link_ksettings_add_link_mode(
+				ks, advertising, 1000baseKX_Full);
 		}
 		ethtool_link_ksettings_add_link_mode(ks, supported,
 						     1000baseX_Full);
@@ -603,10 +614,8 @@ static void rnpm_get_settings_link_up(struct rnpm_hw *hw,
 	default:
 		/* if we got here and link is up something bad is afoot */
 		netdev_info(netdev,
-			    "WARNING: Link is up but PHY type 0x%x is not ",
+			    "WARNING: Link is up but PHY type 0x%x is not recognized, or incorrect cable is in use\n",
 			    hw->phy_type);
-		netdev_info(netdev,
-			    "recognized, or incorrect cable is in use\n");
 	}
 
 	/* Now that we've worked out everything that could be supported by the
@@ -618,7 +627,7 @@ static void rnpm_get_settings_link_up(struct rnpm_hw *hw,
 	ethtool_intersect_link_masks(ks, &cap_ksettings);
 
 	/* Set speed and duplex */
-	ks->base.speed = adapter->speed;
+	ks->base.speed = hw->speed;
 	ks->base.duplex = hw->duplex;
 }
 
@@ -661,8 +670,12 @@ static int rnpm_set_autoneg_state_from_hw(struct rnpm_hw *hw,
 	ks->base.autoneg = (adapter->an ? AUTONEG_ENABLE : AUTONEG_DISABLE);
 
 	/* Read autoneg state from phy */
-	if (hw->phy_type == PHY_TYPE_SGMII)
-		ks->base.autoneg = hw->phy.an;
+	if (hw->phy_type == PHY_TYPE_SGMII) {
+		if (!hw->mac.autoneg && adapter->fake_force_1000m)
+			ks->base.autoneg = hw->mac.autoneg;
+		else
+			ks->base.autoneg = hw->phy.an;
+	}
 
 	return 0;
 }
@@ -671,20 +684,21 @@ __maybe_unused static int rnpm_get_phy_mdix_from_hw(struct rnpm_hw *hw)
 {
 	return 0;
 }
+
 __maybe_unused static bool fiber_unsupport(u32 supported_link, u8 phy_type)
 {
-	if ((phy_type == PHY_TYPE_10G_BASE_KR) ||
-	    (phy_type == PHY_TYPE_10G_BASE_SR) ||
-	    (phy_type == PHY_TYPE_10G_BASE_LR) ||
-	    (phy_type == PHY_TYPE_10G_BASE_ER)) {
+	if (phy_type == PHY_TYPE_10G_BASE_KR ||
+	    phy_type == PHY_TYPE_10G_BASE_SR ||
+	    phy_type == PHY_TYPE_10G_BASE_LR ||
+	    phy_type == PHY_TYPE_10G_BASE_ER) {
 		if (!(supported_link & RNPM_LINK_SPEED_10GB_FULL))
 			return true;
 	}
 
-	if ((phy_type == PHY_TYPE_40G_BASE_KR4) ||
-	    (phy_type == PHY_TYPE_40G_BASE_SR4) ||
-	    (phy_type == PHY_TYPE_40G_BASE_CR4) ||
-	    (phy_type == PHY_TYPE_40G_BASE_LR4)) {
+	if (phy_type == PHY_TYPE_40G_BASE_KR4 ||
+	    phy_type == PHY_TYPE_40G_BASE_SR4 ||
+	    phy_type == PHY_TYPE_40G_BASE_CR4 ||
+	    phy_type == PHY_TYPE_40G_BASE_LR4) {
 		if (!(supported_link & RNPM_LINK_SPEED_40GB_FULL))
 			return true;
 	}
@@ -702,16 +716,22 @@ static bool rnpm_is_unknown_media(struct rnpm_hw *hw)
 	return false;
 }
 
-static void rnpm_redefine_phy_type(struct rnpm_adapter *adapter)
+static void rnpm_redefine_phy_type_speed(struct rnpm_adapter *adapter)
 {
+	struct mbx_port_stat stat;
 	struct rnpm_hw *hw = &adapter->hw;
+
+	if (rnpm_get_port_stats2(hw, &stat) == 0) {
+		hw->speed = stat.speed;
+		hw->duplex = stat.duplex;
+	}
 
 	if (adapter->pf_adapter->priv_flags &
 	    RNPM_PRIV_FLAG_FW_10G_1G_AUTO_DETCH_EN) {
 		// if (hw->phy_type == PHY_TYPE_1G_BASE_KX) {
-		if ((hw->speed == SPEED_1000) ||
-		    ((hw->phy_type == PHY_TYPE_1G_BASE_KX) ||
-		     (hw->phy_type == PHY_TYPE_SGMII))) {
+		if (hw->speed == SPEED_1000 ||
+		    (hw->phy_type == PHY_TYPE_1G_BASE_KX ||
+		     hw->phy_type == PHY_TYPE_SGMII)) {
 			if (hw->supported_link & RNPM_LINK_SPEED_10GB_FULL) {
 				if (hw->supported_link & RNPM_SFP_MODE_10G_LR)
 					hw->phy_type = PHY_TYPE_10G_BASE_LR;
@@ -719,8 +739,7 @@ static void rnpm_redefine_phy_type(struct rnpm_adapter *adapter)
 					hw->phy_type = PHY_TYPE_10G_BASE_SR;
 				if (hw->supported_link & RNPM_SFP_MODE_10G_LRM)
 					hw->phy_type = PHY_TYPE_10G_BASE_LR;
-				if (hw->supported_link &
-				    RNPM_SFP_MODE_10G_BASE_T)
+				if (hw->supported_link & RNPM_SFP_MODE_10G_BASE_T)
 					hw->phy_type = PHY_TYPE_10G_BASE_KR;
 			}
 		} else {
@@ -806,7 +825,7 @@ static int rnpm_get_link_ksettings(struct net_device *netdev,
 		return -1;
 
 	/* when turn on auto speed, the phy_type equal 1G is unreliable */
-	rnpm_redefine_phy_type(adapter);
+	rnpm_redefine_phy_type_speed(adapter);
 	/* update hw->phy.media_type by hw->phy_type */
 	rnpm_get_media_type(hw);
 
@@ -902,7 +921,6 @@ static int rnpm_get_link_ksettings(struct net_device *netdev,
 						     Asym_Pause);
 		break;
 	}
-#ifdef ETH_TP_MDI_X
 	/* MDI-X => 2; MDI =>1; Invalid =>0 */
 	if (hw->phy_type == PHY_TYPE_SGMII) {
 		if (rnpm_get_phy_mdix_from_hw(hw) < 0) {
@@ -913,20 +931,16 @@ static int rnpm_get_link_ksettings(struct net_device *netdev,
 		}
 	}
 
-#ifdef ETH_TP_MDI_AUTO
 	if (hw->phy.mdix == AUTO_ALL_MODES)
 		ks->base.eth_tp_mdix_ctrl = ETH_TP_MDI_AUTO;
 	else
 		ks->base.eth_tp_mdix_ctrl = hw->phy.mdix;
 
-#endif
-#endif /* ETH_TP_MDI_X */
 	rnpm_logd(LOG_ETHTOOL,
-		  "%s %s set link: speed=%d port=%d duplex=%d autoneg=%d ",
+		  "%s %s get link: speed=%d port=%d duplex=%d autoneg=%d phy_address=%d mdix_ctrl=%d\n",
 		  __func__, netdev->name, ks->base.speed, ks->base.port,
-		  ks->base.duplex, ks->base.autoneg);
-	rnpm_logd(LOG_ETHTOOL, "%s phy_address=%d mdix_ctrl=%d\n", __func__,
-		  ks->base.phy_address, ks->base.eth_tp_mdix_ctrl);
+		  ks->base.duplex, ks->base.autoneg, ks->base.phy_address,
+		  ks->base.eth_tp_mdix_ctrl);
 	return 0;
 }
 
@@ -995,7 +1009,7 @@ static int rnpm_set_wol(struct net_device *netdev, struct ethtool_wolinfo *wol)
 	//	   adapter->wol);
 
 	if (!!wol->wolopts) {
-		if ((wol->wolopts & (~hw->wol_supported)) ||
+		if ((wol->wolopts & ~hw->wol_supported) ||
 		    !RNPM_WOL_GET_SUPPORTED(adapter))
 			return -EOPNOTSUPP;
 	}
@@ -1046,12 +1060,12 @@ struct rnpm_reg_test {
 static struct rnpm_reg_test reg_test_n10[] = { { .reg = 0 } };
 
 /* write and read check */
-static bool reg_pattern_test(struct rnpm_adapter *adapter, u64 *data, int reg,
-			     u32 mask, u32 write)
+static bool reg_pattern_test(struct rnpm_adapter *adapter, u64 *data,
+			     int reg, u32 mask, u32 write)
 {
 	u32 pat, val, before;
-	static const u32 test_pattern[] = { 0x5A5A5A5A, 0xA5A5A5A5, 0x00000000,
-					    0xFFFFFFFF };
+	static const u32 test_pattern[] = { 0x5A5A5A5A, 0xA5A5A5A5,
+					    0x00000000, 0xFFFFFFFF };
 
 	for (pat = 0; pat < ARRAY_SIZE(test_pattern); pat++) {
 		before = readl(adapter->hw.hw_addr + reg);
@@ -1060,8 +1074,10 @@ static bool reg_pattern_test(struct rnpm_adapter *adapter, u64 *data, int reg,
 		val = readl(adapter->hw.hw_addr + reg);
 		if (val != (test_pattern[pat] & write & mask)) {
 			e_err(drv,
-			      "pattern test reg %04X failed: got 0x%08X expected 0x%08X\n",
-			      reg, val, (test_pattern[pat] & write & mask));
+			      "pattern test reg %04X failed: got "
+			      "0x%08X expected 0x%08X\n",
+			      reg, val,
+			      (test_pattern[pat] & write & mask));
 			*data = reg;
 			writel(before, adapter->hw.hw_addr + reg);
 			return 1;
@@ -1071,8 +1087,8 @@ static bool reg_pattern_test(struct rnpm_adapter *adapter, u64 *data, int reg,
 	return 0;
 }
 
-static bool reg_set_and_check(struct rnpm_adapter *adapter, u64 *data, int reg,
-			      u32 mask, u32 write)
+static bool reg_set_and_check(struct rnpm_adapter *adapter, u64 *data,
+			      int reg, u32 mask, u32 write)
 {
 	u32 val, before;
 
@@ -1081,7 +1097,8 @@ static bool reg_set_and_check(struct rnpm_adapter *adapter, u64 *data, int reg,
 	val = readl(adapter->hw.hw_addr + reg);
 	if ((write & mask) != (val & mask)) {
 		e_err(drv,
-		      "set/check reg %04X test failed: got 0x%08X expected 0x%08X\n",
+		      "set/check reg %04X test failed: got 0x%08X "
+		      "expected 0x%08X\n",
 		      reg, (val & mask), (write & mask));
 		*data = reg;
 		writel(before, (adapter->hw.hw_addr + reg));
@@ -1106,7 +1123,8 @@ __maybe_unused static bool rnpm_reg_test(struct rnpm_adapter *adapter,
 	}
 
 	test = reg_test_n10;
-	/* Perform the remainder of the register test, looping through
+	/*
+	 * Perform the remainder of the register test, looping through
 	 * the test table until we either fail or reach the null entry.
 	 */
 	while (test->reg) {
@@ -1184,7 +1202,9 @@ static void rnpm_diag_test(struct net_device *netdev,
 				if (adapter->vfinfo[i].clear_to_send) {
 					netdev_warn(
 						netdev, "%s",
-						"offline diagnostic donnot support when VF present\n");
+						"offline diagnostic is not "
+						"supported when VFs are "
+						"present\n");
 					data[0] = 1;
 					data[1] = 1;
 					data[2] = 1;
@@ -1216,17 +1236,21 @@ static void rnpm_diag_test(struct net_device *netdev,
 
 		data[1] = 1;
 		data[2] = 1;
-		data[3] = 1;
+
 		/* If SRIOV or VMDq is enabled then skip MAC
 		 * loopback diagnostic
 		 */
 		if (adapter->flags &
 		    (RNPM_FLAG_SRIOV_ENABLED | RNPM_FLAG_VMDQ_ENABLED)) {
-			netdev_warn(
-				netdev,
-				"Skip MAC loopback diagnostic in VT mode\n");
+			e_info(hw, "Skip MAC loopback diagnostic in VT "
+				   "mode\n");
 			data[3] = 0;
+			goto skip_loopback;
 		}
+
+		data[3] = 1;
+
+skip_loopback:
 		/* clear testing bit and return adapter to previous state */
 		clear_bit(__RNPM_TESTING, &adapter->state);
 	} else {
@@ -1281,11 +1305,12 @@ static int rnpm_set_link_ksettings(struct net_device *netdev,
 	/* save autoneg out of ksettings */
 	autoneg = copy_ks.base.autoneg;
 	rnpm_logd(LOG_ETHTOOL,
-		  "%s %s set link: speed=%d port=%d duplex=%d autoneg=%d ",
-		  __func__, netdev->name, copy_ks.base.speed, copy_ks.base.port,
-		  copy_ks.base.duplex, copy_ks.base.autoneg);
-	rnpm_logd(LOG_ETHTOOL, "phy_address=%d mdix_ctrl=%d\n",
-		  copy_ks.base.phy_address, copy_ks.base.eth_tp_mdix_ctrl);
+		  "%s %s set link: speed=%d port=%d duplex=%d autoneg=%d "
+		  "phy_address=%d mdix_ctrl=%d\n",
+		  __func__, netdev->name, copy_ks.base.speed,
+		  copy_ks.base.port, copy_ks.base.duplex,
+		  copy_ks.base.autoneg, copy_ks.base.phy_address,
+		  copy_ks.base.eth_tp_mdix_ctrl);
 	/* get our own copy of the bits to check against */
 	memset(&safe_ks, 0, sizeof(struct ethtool_link_ksettings));
 	safe_ks.base.cmd = copy_ks.base.cmd;
@@ -1315,7 +1340,6 @@ static int rnpm_set_link_ksettings(struct net_device *netdev,
 			   __ETHTOOL_LINK_MODE_MASK_NBITS))
 		return -EINVAL;
 
-#ifdef ETH_TP_MDI_AUTO
 	/* MDI setting is only allowed when autoneg enabled because
 	 * some hardware doesn't allow MDI setting when speed or
 	 * duplex is forced.
@@ -1328,11 +1352,11 @@ static int rnpm_set_link_ksettings(struct net_device *netdev,
 		    copy_ks.base.autoneg != AUTONEG_ENABLE) {
 			netdev_info(
 				netdev,
-				"forcing MDI/MDI-X state is not supported when link\n");
+				"forcing MDI/MDI-X state is not supported when link "
+				"speed and/or duplex are forced\n");
 			return -EINVAL;
 		}
 	}
-#endif /* ETH_TP_MDI_AUTO */
 	/* set autoneg back to what it currently is */
 	copy_ks.base.autoneg = safe_ks.base.autoneg;
 	memset(&advertising_link_speed, 0, sizeof(u32));
@@ -1409,7 +1433,7 @@ static int rnpm_set_link_ksettings(struct net_device *netdev,
 			// RNPM_LINK_SPEED_UNKNOWN
 			// goto done;
 		}
-		if (hw->is_sgmii && hw->mac.autoneg == false)
+		if (hw->is_sgmii && !hw->mac.autoneg)
 			autoneg_changed = true;
 		hw->mac.autoneg = true;
 	} else {
@@ -1489,7 +1513,6 @@ static int rnpm_set_link_ksettings(struct net_device *netdev,
 		usleep_range(1000, 2000);
 	}
 
-#ifdef ETH_TP_MDI_AUTO
 	/* MDI-X => 2; MDI => 1; Auto => 3 */
 	if (copy_ks.base.eth_tp_mdix_ctrl) {
 		/* fix up the value for auto (3 => 0) as zero is mapped
@@ -1500,8 +1523,6 @@ static int rnpm_set_link_ksettings(struct net_device *netdev,
 		else
 			hw->phy.mdix = copy_ks.base.eth_tp_mdix_ctrl;
 	}
-
-#endif /* ETH_TP_MDI_AUTO */
 
 	hw->mac.autotry_restart = true;
 	/* set speed */
@@ -1530,10 +1551,11 @@ static void rnpm_get_pauseparam(struct net_device *netdev,
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_hw *hw = &adapter->hw;
 
-	rnpm_redefine_phy_type(adapter);
+	rnpm_redefine_phy_type_speed(adapter);
 	rnpm_get_media_type(hw);
 
-	if (rnpm_device_supports_autoneg_fc(hw) && !hw->fc.disable_fc_autoneg)
+	if (rnpm_device_supports_autoneg_fc(hw) &&
+	    !hw->fc.disable_fc_autoneg)
 		pause->autoneg = 1;
 	else
 		pause->autoneg = 0;
@@ -1563,17 +1585,17 @@ static int rnpm_set_pauseparam(struct net_device *netdev,
 	/* we not support change in dcb mode */
 	if (adapter->flags & RNPM_FLAG_DCB_ENABLED)
 		return -EINVAL;
-	rnpm_redefine_phy_type(adapter);
+	rnpm_redefine_phy_type_speed(adapter);
 	rnpm_get_media_type(hw);
 
 	/* some devices do not support autoneg of flow control */
-	if ((pause->autoneg == AUTONEG_ENABLE) &&
+	if (pause->autoneg == AUTONEG_ENABLE &&
 	    !rnpm_device_supports_autoneg_fc(hw))
 		return -EINVAL;
 
 	fc.disable_fc_autoneg = (pause->autoneg != AUTONEG_ENABLE);
 
-	if ((pause->rx_pause && pause->tx_pause) || (pause->autoneg))
+	if ((pause->rx_pause && pause->tx_pause) || pause->autoneg)
 		fc.requested_mode = rnpm_fc_full;
 	else if (pause->rx_pause)
 		fc.requested_mode = rnpm_fc_rx_pause;
@@ -1675,7 +1697,6 @@ static int rnpm_get_ts_info(struct net_device *dev,
 			    struct ethtool_ts_info *info)
 {
 	struct rnpm_adapter *adapter = netdev_priv(dev);
-#ifndef NO_PTP
 	/*For we just set it as pf0 */
 	if (!(adapter->flags2 & RNPM_FLAG2_PTP_ENABLED))
 		return ethtool_op_get_ts_info(dev, info);
@@ -1685,10 +1706,12 @@ static int rnpm_get_ts_info(struct net_device *dev,
 		info->phc_index = -1;
 
 	ptp_dbg("phc_index is %d\n", info->phc_index);
-	info->so_timestamping =
-		SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_RX_HARDWARE |
-		SOF_TIMESTAMPING_RX_SOFTWARE | SOF_TIMESTAMPING_TX_SOFTWARE |
-		SOF_TIMESTAMPING_SOFTWARE | SOF_TIMESTAMPING_RAW_HARDWARE;
+	info->so_timestamping = SOF_TIMESTAMPING_TX_HARDWARE |
+				SOF_TIMESTAMPING_RX_HARDWARE |
+				SOF_TIMESTAMPING_RX_SOFTWARE |
+				SOF_TIMESTAMPING_TX_SOFTWARE |
+				SOF_TIMESTAMPING_SOFTWARE |
+				SOF_TIMESTAMPING_RAW_HARDWARE;
 
 	info->tx_types = (1 << HWTSTAMP_TX_OFF) | (1 << HWTSTAMP_TX_ON);
 
@@ -1700,17 +1723,7 @@ static int rnpm_get_ts_info(struct net_device *dev,
 			   BIT(HWTSTAMP_FILTER_PTP_V2_L4_EVENT) |
 			   BIT(HWTSTAMP_FILTER_PTP_V2_L4_DELAY_REQ) |
 			   BIT(HWTSTAMP_FILTER_ALL);
-#ifdef PTP_802_AS1
-	/* 802.AS1 */
-	BIT(HWTSTAMP_FILTER_PTP_V2_L2_EVENT) |
-		BIT(HWTSTAMP_FILTER_PTP_V2_L2_SYNC) |
-		BIT(HWTSTAMP_FILTER_PTP_V2_L2_DELAY_REQ);
-#endif
 
-#else
-	info->phc_index = -1;
-
-#endif
 	return 0;
 }
 
@@ -1840,6 +1853,8 @@ static int rnpm_get_module_info(struct net_device *dev,
 		switch (module_id) {
 		case SFF_MODULE_ID_SFF:
 		case SFF_MODULE_ID_SFP:
+
+			/* TODO: get info from firmware */
 			modinfo->type = ETH_MODULE_SFF_8472;
 			modinfo->eeprom_len = ETH_MODULE_SFF_8472_LEN;
 			if (!diag_supported)
@@ -1885,8 +1900,8 @@ static int rnpm_get_module_eeprom(struct net_device *dev,
 	if (start < ETH_MODULE_SFF_8436_LEN) {
 		if (start + eeprom->len > ETH_MODULE_SFF_8436_LEN)
 			length = ETH_MODULE_SFF_8436_LEN - start;
-		rc = rnpm_mbx_sfp_module_eeprom_info(hw, 0xA0, start, length,
-						     data);
+		rc = rnpm_mbx_sfp_module_eeprom_info(hw, 0xA0, start,
+						     length, data);
 		if (rc)
 			return rc;
 		start += length;
@@ -1897,15 +1912,16 @@ static int rnpm_get_module_eeprom(struct net_device *dev,
 	/* Read A2 portion of the EEPROM */
 	if (length) {
 		start -= ETH_MODULE_SFF_8436_LEN;
-		rc = rnpm_mbx_sfp_module_eeprom_info(hw, 0xA2, start, length,
-						     data);
+		rc = rnpm_mbx_sfp_module_eeprom_info(hw, 0xA2, start,
+						     length, data);
 	}
 
 	return rc;
 }
 
 static void
-rnpm_get_ringparam(struct net_device *netdev, struct ethtool_ringparam *ring,
+rnpm_get_ringparam(struct net_device *netdev,
+		   struct ethtool_ringparam *ring,
 		   struct kernel_ethtool_ringparam __always_unused *ker,
 		   struct netlink_ext_ack __always_unused *extack)
 {
@@ -1922,7 +1938,8 @@ rnpm_get_ringparam(struct net_device *netdev, struct ethtool_ringparam *ring,
 }
 
 static int
-rnpm_set_ringparam(struct net_device *netdev, struct ethtool_ringparam *ring,
+rnpm_set_ringparam(struct net_device *netdev,
+		   struct ethtool_ringparam *ring,
 		   struct kernel_ethtool_ringparam __always_unused *ker,
 		   struct netlink_ext_ack __always_unused *extack)
 {
@@ -1931,14 +1948,13 @@ rnpm_set_ringparam(struct net_device *netdev, struct ethtool_ringparam *ring,
 	int i, err = 0;
 	u32 new_rx_count, new_tx_count;
 
-	if ((ring->rx_mini_pending) || (ring->rx_jumbo_pending))
+	if (ring->rx_mini_pending || ring->rx_jumbo_pending)
 		return -EINVAL;
-	if ((ring->tx_pending < RNPM_MIN_TXD) ||
-	    (ring->tx_pending > RNPM_MAX_TXD) ||
-	    (ring->rx_pending < RNPM_MIN_RXD) ||
-	    (ring->rx_pending > RNPM_MAX_RXD)) {
-		netdev_info(
-			netdev,
+	if (ring->tx_pending < RNPM_MIN_TXD ||
+	    ring->tx_pending > RNPM_MAX_TXD ||
+	    ring->rx_pending < RNPM_MIN_RXD ||
+	    ring->rx_pending > RNPM_MAX_RXD) {
+		netdev_info(netdev,
 			"Descriptors requested (Tx: %d / Rx: %d) out of range [%d-%d]\n",
 			ring->tx_pending, ring->rx_pending, RNPM_MIN_TXD,
 			RNPM_MAX_TXD);
@@ -1953,8 +1969,8 @@ rnpm_set_ringparam(struct net_device *netdev, struct ethtool_ringparam *ring,
 		clamp_t(u32, ring->rx_pending, RNPM_MIN_RXD, RNPM_MAX_RXD);
 	new_rx_count = ALIGN(new_rx_count, RNPM_REQ_RX_DESCRIPTOR_MULTIPLE);
 
-	if ((new_tx_count == adapter->tx_ring_item_count) &&
-	    (new_rx_count == adapter->rx_ring_item_count)) {
+	if (new_tx_count == adapter->tx_ring_item_count &&
+	    new_rx_count == adapter->rx_ring_item_count) {
 		/* nothing to do */
 		return 0;
 	}
@@ -1990,7 +2006,8 @@ rnpm_set_ringparam(struct net_device *netdev, struct ethtool_ringparam *ring,
 		}
 	}
 	rnpm_down(adapter);
-	/* Setup new Tx resources and free the old Tx resources in that order.
+	/*
+	 * Setup new Tx resources and free the old Tx resources in that order.
 	 * We can then assign the new resources to the rings via a memcpy.
 	 * The advantage to this approach is that we are guaranteed to still
 	 * have resources even in the case of an allocation failure.
@@ -2094,9 +2111,6 @@ static void rnpm_get_strings(struct net_device *netdev, u32 stringset, u8 *data)
 			p += ETH_GSTRING_LEN;
 		}
 		for (i = 0; i < RNPM_NUM_TX_QUEUES; i++) {
-#define SHORT_STATS
-
-#ifdef SHORT_STATS
 			//====  tx ========
 			ring = adapter->tx_ring[i];
 			dma_ch = ring->rnpm_queue_idx;
@@ -2194,118 +2208,6 @@ static void rnpm_get_strings(struct net_device *netdev, u32 stringset, u8 *data)
 			p += ETH_GSTRING_LEN;
 			sprintf(p, "queue%u_rx_poll_itr", i);
 			p += ETH_GSTRING_LEN;
-#else
-			//====  tx ========
-			ring = adapter->tx_ring[i];
-			dma_ch = ring->rnpm_queue_idx;
-			sprintf(p, "queue%u_dma%u_tx_packets", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_tx_bytes", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-
-			sprintf(p, "queue%u_dma%u_tx_restart", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_tx_busy", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_tx_done_old", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_tx_clean_desc", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_tx_poll_count", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_tx_irq_more", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-
-			sprintf(p, "queue%u_dma%u_tx_hw_head", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_tx_hw_tail", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_tx_sw_next_to_clean", i,
-				dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_tx_sw_next_to_use", i,
-				dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_send_bytes", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_send_bytes_to_hw", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_todo_update", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_send_done_bytes", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_added_vlan_packets", i,
-				dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_tx_next_to_clean", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_tx_irq_miss", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_tx_equal_count", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-			//====  rx ========
-			ring = adapter->rx_ring[i];
-			dma_ch = ring->rnpm_queue_idx;
-			sprintf(p, "queue%u_dma%u_rx_packets", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_rx_bytes", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-
-			sprintf(p, "queue%u_dma%u_rx_driver_drop_packets", i,
-				dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_rx_rsc", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_rx_rsc_flush", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_rx_non_eop_descs", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_rx_alloc_page_failed", i,
-				dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_rx_alloc_buff_failed", i,
-				dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_rx_csum_offload_errs", i,
-				dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_rx_csum_offload_good", i,
-				dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_rx_poll_again_count", i,
-				dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_rx_rm_vlan_packets", i,
-				dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_alloc_rx_page", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-
-			sprintf(p, "queue%u_dma%u_rx_hw_head", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_rx_hw_tail", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_rx_sw_next_to_use", i,
-				dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_rx_sw_next_to_clean", i,
-				dma_ch);
-			/* dbg desc */
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_rx_next_to_clean", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_rx_irq_miss", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_rx_equal_count", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_rx_poll_packets", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_rx_poll_avg_packets", i,
-				dma_ch);
-			p += ETH_GSTRING_LEN;
-			sprintf(p, "queue%u_dma%u_rx_poll_itr", i, dma_ch);
-			p += ETH_GSTRING_LEN;
-#endif /* SHORT_STATS */
 		}
 
 		break;
@@ -2313,6 +2215,7 @@ static void rnpm_get_strings(struct net_device *netdev, u32 stringset, u8 *data)
 		memcpy(data, rnpm_priv_flags_strings,
 		       RNPM_PRIV_FLAGS_STR_LEN * ETH_GSTRING_LEN);
 		break;
+
 	case ETH_SS_PHY_STATS:
 		memcpy(data, rnpm_phy_statistics_strings,
 		       RNPM_PHY_STATISTICS_STR_LEN * ETH_GSTRING_LEN);
@@ -2368,10 +2271,6 @@ __maybe_unused static int rnpm_set_dump(struct net_device *netdev,
 
 static int rnpm_get_sset_count(struct net_device *netdev, int sset)
 {
-#ifdef NO_REAL_QUEUE_NUM
-	struct rnpm_adapter *adapter =
-		(struct rnpm_adapter *)netdev_priv(netdev);
-#endif
 
 	switch (sset) {
 		/* now we don't support test */
@@ -2512,7 +2411,8 @@ static int rnpm_priv_err_mask_set(struct rnpm_adapter *adapter)
 	unsigned long flags;
 
 	spin_lock_irqsave(&pf_adapter->priv_flags_lock, flags);
-	data_new = data_old = rd32(pf_adapter, RNPM_ETH_ERR_MASK_VECTOR);
+	data_old = rd32(pf_adapter, RNPM_ETH_ERR_MASK_VECTOR);
+	data_new = data_old;
 
 	if (pf_adapter->priv_flags & RNPM_PRIV_FLAG_LEN_ERR) {
 		// pf_adapter->priv_flags |= RNPM_PRIV_FLAG_LEN_ERR;
@@ -2526,6 +2426,23 @@ static int rnpm_priv_err_mask_set(struct rnpm_adapter *adapter)
 		wr32(pf_adapter, RNPM_ETH_ERR_MASK_VECTOR, data_new);
 	spin_unlock_irqrestore(&pf_adapter->priv_flags_lock, flags);
 	return 0;
+}
+
+void __PCS_CONFIG_SR_PMA_TX_DIS(struct rnpm_hw *hw, bool on)
+{
+	struct rnpm_adapter *adapter = (struct rnpm_adapter *)hw->back;
+	struct rnpm_pf_adapter *pf_adapter = adapter->pf_adapter;
+	struct rnpm_pcs_info *pcs = &hw->pcs;
+	int i;
+
+	for (i = pf_adapter->adapter_cnt - 1; i >= 0; i--) {
+		if (rnpm_port_is_valid(pf_adapter, i)) {
+			if (pf_adapter->adapter[i])
+				pcs->ops.write(
+					hw, pf_adapter->adapter[i]->port,
+					RNPM_PCS_SR_DMA_TX_DIS, on);
+		}
+	}
 }
 
 /**
@@ -2571,9 +2488,11 @@ static int rnpm_set_priv_flags(struct net_device *netdev, u32 priv_flags)
 	if (priv_flags & RNPM_SWITCH_LOOPBACK) {
 		SET_BIT(switch_loopback, new_flags);
 		adapter->priv_flags |= RNPM_PRIV_FLAG_SWITCH_LOOPBACK;
+		__PCS_CONFIG_SR_PMA_TX_DIS(hw, true);
 	} else if (adapter->priv_flags & RNPM_PRIV_FLAG_SWITCH_LOOPBACK) {
 		adapter->priv_flags &= (~RNPM_PRIV_FLAG_SWITCH_LOOPBACK);
 		CLR_BIT(switch_loopback, new_flags);
+		__PCS_CONFIG_SR_PMA_TX_DIS(hw, false);
 	}
 
 	if (priv_flags & RNPM_VEB_ENABLE) {
@@ -2697,10 +2616,11 @@ static int rnpm_set_priv_flags(struct net_device *netdev, u32 priv_flags)
  * modified per-queue settings, this only guarantees to represent queue 0. See
  * __rnpm_get_coalesce for more details.
  **/
-static int
-rnpm_get_coalesce(struct net_device *netdev, struct ethtool_coalesce *coal,
-		  struct kernel_ethtool_coalesce __maybe_unused *kernel_coal,
-		  struct netlink_ext_ack __maybe_unused *extack)
+static int rnpm_get_coalesce(
+	struct net_device *netdev,
+	struct ethtool_coalesce *coal,
+	struct kernel_ethtool_coalesce __maybe_unused *kernel_coal,
+	struct netlink_ext_ack __maybe_unused *extack)
 {
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 
@@ -2741,20 +2661,22 @@ rnpm_get_coalesce(struct net_device *netdev, struct ethtool_coalesce *coal,
  *
  * This will set each queue to the same coalesce settings.
  **/
-static int
-rnpm_set_coalesce(struct net_device *netdev, struct ethtool_coalesce *ec,
-		  struct kernel_ethtool_coalesce __maybe_unused *kernel_coal,
-		  struct netlink_ext_ack __maybe_unused *extack)
+static int rnpm_set_coalesce(
+	struct net_device *netdev,
+	struct ethtool_coalesce *ec,
+	struct kernel_ethtool_coalesce __maybe_unused *kernel_coal,
+	struct netlink_ext_ack __maybe_unused *extack)
 {
 	int reset = 0;
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	u32 value;
 	/* we don't support close tx and rx coalesce */
-	if (!(ec->use_adaptive_tx_coalesce) || !(ec->use_adaptive_rx_coalesce))
+	if (!(ec->use_adaptive_tx_coalesce) ||
+	    !(ec->use_adaptive_rx_coalesce))
 		return -EINVAL;
 
-	if ((ec->tx_max_coalesced_frames_irq < RNPM_MIN_TX_WORK) ||
-	    (ec->tx_max_coalesced_frames_irq > RNPM_MAX_TX_WORK))
+	if (ec->tx_max_coalesced_frames_irq < RNPM_MIN_TX_WORK ||
+	    ec->tx_max_coalesced_frames_irq > RNPM_MAX_TX_WORK)
 		return -EINVAL;
 	value = ALIGN(ec->tx_max_coalesced_frames_irq, RNPM_WORK_ALIGN);
 	if (adapter->tx_work_limit != value) {
@@ -2762,24 +2684,24 @@ rnpm_set_coalesce(struct net_device *netdev, struct ethtool_coalesce *ec,
 		adapter->tx_work_limit = value;
 	}
 
-	if ((ec->tx_max_coalesced_frames < RNPM_MIN_TX_FRAME) ||
-	    (ec->tx_max_coalesced_frames > RNPM_MAX_TX_FRAME))
+	if (ec->tx_max_coalesced_frames < RNPM_MIN_TX_FRAME ||
+	    ec->tx_max_coalesced_frames > RNPM_MAX_TX_FRAME)
 		return -EINVAL;
 	if (adapter->tx_frames != ec->tx_max_coalesced_frames) {
 		reset = 1;
 		adapter->tx_frames = ec->tx_max_coalesced_frames;
 	}
 
-	if ((ec->tx_coalesce_usecs < RNPM_MIN_TX_USEC) ||
-	    (ec->tx_coalesce_usecs > RNPM_MAX_TX_USEC))
+	if (ec->tx_coalesce_usecs < RNPM_MIN_TX_USEC ||
+	    ec->tx_coalesce_usecs > RNPM_MAX_TX_USEC)
 		return -EINVAL;
 	if (adapter->tx_usecs != ec->tx_coalesce_usecs) {
 		reset = 1;
 		adapter->tx_usecs = ec->tx_coalesce_usecs;
 	}
 
-	if ((ec->rx_max_coalesced_frames_irq < RNPM_MIN_RX_WORK) ||
-	    (ec->rx_max_coalesced_frames_irq > RNPM_MAX_RX_WORK))
+	if (ec->rx_max_coalesced_frames_irq < RNPM_MIN_RX_WORK ||
+	    ec->rx_max_coalesced_frames_irq > RNPM_MAX_RX_WORK)
 		return -EINVAL;
 	value = ALIGN(ec->rx_max_coalesced_frames_irq, RNPM_WORK_ALIGN);
 	if (adapter->napi_budge != ec->rx_max_coalesced_frames_irq) {
@@ -2787,16 +2709,16 @@ rnpm_set_coalesce(struct net_device *netdev, struct ethtool_coalesce *ec,
 		adapter->napi_budge = ec->rx_max_coalesced_frames_irq;
 	}
 
-	if ((ec->rx_max_coalesced_frames < RNPM_MIN_RX_FRAME) ||
-	    (ec->rx_max_coalesced_frames > RNPM_MAX_RX_FRAME))
+	if (ec->rx_max_coalesced_frames < RNPM_MIN_RX_FRAME ||
+	    ec->rx_max_coalesced_frames > RNPM_MAX_RX_FRAME)
 		return -EINVAL;
 	if (adapter->rx_frames != ec->rx_max_coalesced_frames) {
 		reset = 1;
 		adapter->rx_frames = ec->rx_max_coalesced_frames;
 	}
 
-	if ((ec->rx_coalesce_usecs < RNPM_MIN_RX_USEC) ||
-	    (ec->rx_coalesce_usecs > RNPM_MAX_RX_USEC))
+	if (ec->rx_coalesce_usecs < RNPM_MIN_RX_USEC ||
+	    ec->rx_coalesce_usecs > RNPM_MAX_RX_USEC)
 		return -EINVAL;
 
 	if (adapter->rx_usecs != ec->rx_coalesce_usecs) {
@@ -2805,164 +2727,24 @@ rnpm_set_coalesce(struct net_device *netdev, struct ethtool_coalesce *ec,
 	}
 
 	/* other setup is not supported */
-	if ((ec->pkt_rate_low) || (ec->pkt_rate_high) ||
-	    (ec->rx_coalesce_usecs_low) || (ec->rx_max_coalesced_frames_low) ||
-	    (ec->tx_coalesce_usecs_low) || (ec->tx_max_coalesced_frames_low) ||
-	    (ec->rx_coalesce_usecs_high) ||
-	    (ec->rx_max_coalesced_frames_high) ||
-	    (ec->tx_coalesce_usecs_high) ||
-	    (ec->tx_max_coalesced_frames_high) || (ec->rate_sample_interval) ||
-	    (ec->tx_coalesce_usecs_irq) || (ec->rx_coalesce_usecs_irq))
+	if (ec->pkt_rate_low || ec->pkt_rate_high ||
+	    ec->rx_coalesce_usecs_low ||
+	    ec->rx_max_coalesced_frames_low ||
+	    ec->tx_coalesce_usecs_low ||
+	    ec->tx_max_coalesced_frames_low ||
+	    ec->rx_coalesce_usecs_high ||
+	    ec->rx_max_coalesced_frames_high ||
+	    ec->tx_coalesce_usecs_high ||
+	    ec->tx_max_coalesced_frames_high ||
+	    ec->rate_sample_interval ||
+	    ec->tx_coalesce_usecs_irq ||
+	    ec->rx_coalesce_usecs_irq)
 		return -EINVAL;
 
 	if (reset)
 		return rnpm_setup_tc(netdev, netdev_get_num_tc(netdev));
 
 	return 0;
-}
-
-/**
- * rnpm_get_rss_hash_opts - Get RSS hash Input Set for each flow type
- * @pf: pointer to the physical function struct
- * @cmd: ethtool rxnfc command
- *
- * Returns Success if the flow is supported, else Invalid Input.
- **/
-static int rnpm_get_rss_hash_opts(struct rnpm_adapter *adapter,
-				  struct ethtool_rxnfc *cmd)
-{
-	cmd->data = 0;
-
-	/* Report default options for RSS on rnpm */
-	switch (cmd->flow_type) {
-	case TCP_V4_FLOW:
-		cmd->data |= RXH_L4_B_0_1 | RXH_L4_B_2_3;
-		fallthrough;
-	case UDP_V4_FLOW:
-	case SCTP_V4_FLOW:
-		cmd->data |= RXH_L4_B_0_1 | RXH_L4_B_2_3;
-		fallthrough;
-	case AH_ESP_V4_FLOW:
-	case AH_V4_FLOW:
-	case ESP_V4_FLOW:
-	case IPV4_FLOW:
-		cmd->data |= RXH_IP_SRC | RXH_IP_DST;
-		break;
-	case TCP_V6_FLOW:
-		cmd->data |= RXH_L4_B_0_1 | RXH_L4_B_2_3;
-		fallthrough;
-	case UDP_V6_FLOW:
-	case SCTP_V6_FLOW:
-		cmd->data |= RXH_L4_B_0_1 | RXH_L4_B_2_3;
-		fallthrough;
-	case AH_ESP_V6_FLOW:
-	case AH_V6_FLOW:
-	case ESP_V6_FLOW:
-	case IPV6_FLOW:
-		cmd->data |= RXH_IP_SRC | RXH_IP_DST;
-		break;
-	default:
-		return -EINVAL;
-	}
-	return 0;
-}
-
-static int rnpm_set_rss_hash_opt(struct rnpm_adapter *adapter,
-				 struct ethtool_rxnfc *nfc)
-{
-	if (nfc->data &
-	    ~(RXH_IP_SRC | RXH_IP_DST | RXH_L4_B_0_1 | RXH_L4_B_2_3))
-		return -EINVAL;
-
-	switch (nfc->flow_type) {
-	case TCP_V4_FLOW:
-	case TCP_V6_FLOW:
-	case UDP_V4_FLOW:
-	case UDP_V6_FLOW:
-		if (!(nfc->data & RXH_IP_SRC) || !(nfc->data & RXH_IP_DST) ||
-		    !(nfc->data & RXH_L4_B_0_1) || !(nfc->data & RXH_L4_B_2_3))
-			return -EINVAL;
-		break;
-	case AH_ESP_V4_FLOW:
-	case AH_V4_FLOW:
-	case ESP_V4_FLOW:
-	case SCTP_V4_FLOW:
-	case AH_ESP_V6_FLOW:
-	case AH_V6_FLOW:
-	case ESP_V6_FLOW:
-	case SCTP_V6_FLOW:
-		if (!(nfc->data & RXH_IP_SRC) || !(nfc->data & RXH_IP_DST) ||
-		    (nfc->data & RXH_L4_B_0_1) || (nfc->data & RXH_L4_B_2_3))
-			return -EINVAL;
-		break;
-	default:
-		return -EINVAL;
-	}
-
-	return 0;
-}
-
-/**
- * rnpm_get_rxnfc - command to get RX flow classification rules
- * @netdev: network interface device structure
- * @cmd: ethtool rxnfc command
- * @rule_locs: pointer to store rule data
- *
- * Returns Success if the command is supported.
- **/
-static int rnpm_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd,
-			  u32 *rule_locs)
-{
-	struct rnpm_adapter *adapter = netdev_priv(dev);
-	int ret = -EOPNOTSUPP;
-
-	switch (cmd->cmd) {
-	case ETHTOOL_GRXRINGS:
-		cmd->data = adapter->num_rx_queues;
-		ret = 0;
-		break;
-	case ETHTOOL_GRXCLSRLCNT:
-		cmd->rule_cnt = adapter->fdir_filter_count;
-		ret = 0;
-		break;
-	case ETHTOOL_GRXCLSRULE:
-		break;
-	case ETHTOOL_GRXCLSRLALL:
-		break;
-	case ETHTOOL_GRXFH:
-		ret = rnpm_get_rss_hash_opts(adapter, cmd);
-		break;
-	default:
-		break;
-	}
-
-	return ret;
-}
-
-/**
- * rnpm_set_rxnfc - command to set RX flow classification rules
- * @dev: network interface device structure
- * @cmd: ethtool rxnfc command
- * Returns Success if the command is supported.
- **/
-static int rnpm_set_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd)
-{
-	struct rnpm_adapter *adapter = netdev_priv(dev);
-	int ret = -EOPNOTSUPP;
-
-	switch (cmd->cmd) {
-	case ETHTOOL_SRXCLSRLINS:
-		break;
-	case ETHTOOL_SRXCLSRLDEL:
-		break;
-	case ETHTOOL_SRXFH:
-		ret = rnpm_set_rss_hash_opt(adapter, cmd);
-		break;
-	default:
-		break;
-	}
-
-	return ret;
 }
 
 /**
@@ -3144,6 +2926,802 @@ static void rnpm_get_ethtool_stats(struct net_device *netdev,
 	}
 }
 
+/**
+ * rnpm_get_rss_hash_opts - Get RSS hash Input Set for each flow type
+ * @pf: pointer to the physical function struct
+ * @cmd: ethtool rxnfc command
+ *
+ * Returns Success if the flow is supported, else Invalid Input.
+ **/
+static int rnpm_get_rss_hash_opts(struct rnpm_adapter *adapter,
+				  struct ethtool_rxnfc *cmd)
+{
+	cmd->data = 0;
+
+	/* Report default options for RSS on rnpm */
+	switch (cmd->flow_type) {
+	case TCP_V4_FLOW:
+		cmd->data |= RXH_L4_B_0_1 | RXH_L4_B_2_3;
+		/* fallthrough */
+		fallthrough;
+	case UDP_V4_FLOW:
+	case SCTP_V4_FLOW:
+		cmd->data |= RXH_L4_B_0_1 | RXH_L4_B_2_3;
+		/* fallthrough */
+		fallthrough;
+	case AH_ESP_V4_FLOW:
+	case AH_V4_FLOW:
+	case ESP_V4_FLOW:
+	case IPV4_FLOW:
+		cmd->data |= RXH_IP_SRC | RXH_IP_DST;
+		break;
+	case TCP_V6_FLOW:
+		cmd->data |= RXH_L4_B_0_1 | RXH_L4_B_2_3;
+		/* fallthrough */
+		fallthrough;
+	case UDP_V6_FLOW:
+	case SCTP_V6_FLOW:
+		cmd->data |= RXH_L4_B_0_1 | RXH_L4_B_2_3;
+		/* fallthrough */
+		fallthrough;
+	case AH_ESP_V6_FLOW:
+	case AH_V6_FLOW:
+	case ESP_V6_FLOW:
+	case IPV6_FLOW:
+		cmd->data |= RXH_IP_SRC | RXH_IP_DST;
+		break;
+	default:
+		return -EINVAL;
+	}
+	return 0;
+}
+
+__maybe_unused static void dump_fsp(struct ethtool_rx_flow_spec *fsp)
+{
+	int i;
+
+	dbg(" fsp cookie is %llx\n", fsp->ring_cookie);
+	switch (fsp->flow_type & ~FLOW_EXT) {
+	case ETHER_FLOW:
+		for (i = 0; i < ETH_ALEN; i++) {
+			dbg("src 0x%02x\n",
+			    fsp->h_u.ether_spec.h_source[i]);
+			dbg("src mask 0x%02x\n",
+			    fsp->m_u.ether_spec.h_source[i]);
+		}
+		for (i = 0; i < ETH_ALEN; i++) {
+			dbg("dst 0x%02x\n", fsp->h_u.ether_spec.h_dest[i]);
+			dbg("dst mask 0x%02x\n",
+			    fsp->m_u.ether_spec.h_dest[i]);
+		}
+		dbg("proto type is %x\n", fsp->h_u.ether_spec.h_proto);
+		break;
+	default:
+		dbg("flow type is %x\n", fsp->flow_type);
+		dbg("l2 prot is %x\n", fsp->h_u.ether_spec.h_proto);
+		dbg("ip4 src ip is %x\n", fsp->h_u.tcp_ip4_spec.ip4src);
+		dbg("ip4 src ip mask is %x\n",
+		    fsp->m_u.tcp_ip4_spec.ip4src);
+		dbg("ip4 dst ip is %x\n", fsp->h_u.tcp_ip4_spec.ip4dst);
+		dbg("ip4 dst ip mask is %x\n",
+		    fsp->m_u.tcp_ip4_spec.ip4dst);
+		dbg("ip4 src port is %x\n", fsp->h_u.tcp_ip4_spec.psrc);
+		dbg("ip4 src port mask is %x\n",
+		    fsp->m_u.tcp_ip4_spec.psrc);
+		dbg("ip4 dst port is %x\n", fsp->h_u.tcp_ip4_spec.pdst);
+		dbg("ip4 dst port mask is %x\n",
+		    fsp->m_u.tcp_ip4_spec.pdst);
+		dbg("proto is %x\n", fsp->h_u.usr_ip4_spec.proto);
+		break;
+	}
+}
+
+static int rnpm_get_ethtool_fdir_entry(struct rnpm_adapter *adapter,
+				       struct ethtool_rxnfc *cmd)
+{
+	// union rnpm_atr_input *mask = &adapter->fdir_mask;
+	struct ethtool_rx_flow_spec *fsp =
+		(struct ethtool_rx_flow_spec *)&cmd->fs;
+	struct hlist_node *node2;
+	struct rnpm_fdir_filter *rule = NULL;
+
+	/* report total rule count */
+	cmd->data = adapter->fdir_pballoc;
+
+	hlist_for_each_entry_safe(rule, node2, &adapter->fdir_filter_list,
+				  fdir_node) {
+		if (fsp->location <= rule->sw_idx)
+			break;
+	}
+
+	if (!rule || fsp->location != rule->sw_idx)
+		return -EINVAL;
+
+	/* fill out the flow spec entry */
+
+	/* set flow type field */
+	switch (rule->filter.formatted.flow_type) {
+	case RNPM_ATR_FLOW_TYPE_TCPV4:
+		fsp->flow_type = TCP_V4_FLOW;
+		break;
+	case RNPM_ATR_FLOW_TYPE_UDPV4:
+		fsp->flow_type = UDP_V4_FLOW;
+		break;
+	case RNPM_ATR_FLOW_TYPE_SCTPV4:
+		fsp->flow_type = SCTP_V4_FLOW;
+		break;
+	case RNPM_ATR_FLOW_TYPE_IPV4:
+		fsp->flow_type = IP_USER_FLOW;
+		fsp->h_u.usr_ip4_spec.ip_ver = ETH_RX_NFC_IP4;
+		if (adapter->fdir_mode == fdir_mode_tuple5) {
+			fsp->h_u.usr_ip4_spec.proto =
+				rule->filter.formatted.inner_mac[0];
+			fsp->m_u.usr_ip4_spec.proto = 0xff;
+
+		} else {
+			fsp->h_u.usr_ip4_spec.proto =
+				rule->filter.formatted.inner_mac[0] &
+				rule->filter.formatted.inner_mac_mask[0];
+			fsp->m_u.usr_ip4_spec.proto =
+				rule->filter.formatted.inner_mac_mask[0];
+		}
+		break;
+	case RNPM_ATR_FLOW_TYPE_ETHER:
+		fsp->flow_type = ETHER_FLOW;
+		/* support proto and mask only in this mode */
+		fsp->h_u.ether_spec.h_proto =
+			rule->filter.layer2_formate.proto;
+		fsp->m_u.ether_spec.h_proto = 0xffff;
+		break;
+	default:
+		return -EINVAL;
+	}
+	if (rule->filter.formatted.flow_type != RNPM_ATR_FLOW_TYPE_ETHER) {
+		// fsp->h_ext.vlan_tci = rule->filter.formatted.vlan_id;
+		// fsp->h_ext.vlan_etype = rule->filter.formatted.flex_bytes;
+		// fsp->h_ext.data[1] = htonl(rule->filter.formatted.vm_pool);
+		/* not support mask in tuple 5 mode */
+		if (adapter->fdir_mode == fdir_mode_tuple5) {
+			fsp->h_u.tcp_ip4_spec.psrc =
+				rule->filter.formatted.src_port;
+			fsp->h_u.tcp_ip4_spec.pdst =
+				rule->filter.formatted.dst_port;
+			fsp->h_u.tcp_ip4_spec.ip4src =
+				rule->filter.formatted.src_ip[0];
+			fsp->h_u.tcp_ip4_spec.ip4dst =
+				rule->filter.formatted.dst_ip[0];
+			fsp->m_u.tcp_ip4_spec.psrc = 0xffff;
+			fsp->m_u.tcp_ip4_spec.pdst = 0xffff;
+			fsp->m_u.tcp_ip4_spec.ip4src = 0xffffffff;
+			fsp->m_u.tcp_ip4_spec.ip4dst = 0xffffffff;
+			// fsp->m_ext.vlan_tci = mask->formatted.vlan_id;
+			// fsp->m_ext.vlan_etype = mask->formatted.flex_bytes;
+			// fsp->m_ext.data[1] = htonl(mask->formatted.vm_pool);
+		} else {
+			fsp->h_u.tcp_ip4_spec.psrc =
+				rule->filter.formatted.src_port &
+				rule->filter.formatted.src_port_mask;
+			fsp->m_u.tcp_ip4_spec.psrc =
+				rule->filter.formatted.src_port_mask;
+			fsp->h_u.tcp_ip4_spec.pdst =
+				rule->filter.formatted.dst_port &
+				rule->filter.formatted.dst_port_mask;
+			fsp->m_u.tcp_ip4_spec.pdst =
+				rule->filter.formatted.dst_port_mask;
+			fsp->h_u.tcp_ip4_spec.ip4src =
+				rule->filter.formatted.src_ip[0] &
+				rule->filter.formatted.src_ip_mask[0];
+			fsp->m_u.tcp_ip4_spec.ip4src =
+				rule->filter.formatted.src_ip_mask[0];
+			fsp->h_u.tcp_ip4_spec.ip4dst =
+				rule->filter.formatted.dst_ip[0] &
+				rule->filter.formatted.dst_ip_mask[0];
+			fsp->m_u.tcp_ip4_spec.ip4dst =
+				rule->filter.formatted.dst_ip_mask[0];
+		}
+	}
+	// dump_fsp(fsp);
+	// fsp->flow_type |= FLOW_EXT;
+
+	/* record action */
+	if (rule->action == RNPM_FDIR_DROP_QUEUE)
+		fsp->ring_cookie = RX_CLS_FLOW_DISC;
+	else {
+		if (rule->vf_num != 0) {
+			fsp->ring_cookie = ((u64)rule->vf_num << 32) |
+					   (rule->action %
+					    PF_RING_CNT_WHEN_IOV_ENABLED);
+		} else {
+			fsp->ring_cookie = rule->action;
+		}
+	}
+
+	return 0;
+}
+
+static int rnpm_get_ethtool_fdir_all(struct rnpm_adapter *adapter,
+				     struct ethtool_rxnfc *cmd,
+				     u32 *rule_locs)
+{
+	struct hlist_node *node2;
+	struct rnpm_fdir_filter *rule;
+	int cnt = 0;
+
+	/* report total rule count */
+	cmd->data = adapter->fdir_pballoc;
+
+	hlist_for_each_entry_safe(rule, node2, &adapter->fdir_filter_list,
+				  fdir_node) {
+		if (cnt == cmd->rule_cnt)
+			return -EMSGSIZE;
+		rule_locs[cnt] = rule->sw_idx;
+		cnt++;
+	}
+
+	cmd->rule_cnt = cnt;
+
+	return 0;
+}
+
+/**
+ * rnpm_get_rxnfc - command to get RX flow classification rules
+ * @netdev: network interface device structure
+ * @cmd: ethtool rxnfc command
+ * @rule_locs: pointer to store rule data
+ *
+ * Returns Success if the command is supported.
+ **/
+static int rnpm_get_rxnfc(struct net_device *dev,
+			  struct ethtool_rxnfc *cmd,
+			  u32 *rule_locs)
+{
+	struct rnpm_adapter *adapter = netdev_priv(dev);
+	int ret = -EOPNOTSUPP;
+
+	switch (cmd->cmd) {
+	case ETHTOOL_GRXRINGS:
+		if (adapter->flags & RNPM_FLAG_SRIOV_ENABLED) {
+			/* we fix 2 when srio on */
+			cmd->data = 2;
+		} else {
+			cmd->data = adapter->num_rx_queues;
+		}
+		ret = 0;
+		break;
+	case ETHTOOL_GRXCLSRLCNT:
+		cmd->rule_cnt = adapter->fdir_filter_count;
+		ret = 0;
+		break;
+	case ETHTOOL_GRXCLSRULE:
+		ret = rnpm_get_ethtool_fdir_entry(adapter, cmd);
+		break;
+	case ETHTOOL_GRXCLSRLALL:
+		ret = rnpm_get_ethtool_fdir_all(adapter, cmd, rule_locs);
+		break;
+	case ETHTOOL_GRXFH:
+		ret = rnpm_get_rss_hash_opts(adapter, cmd);
+		break;
+	default:
+		break;
+	}
+
+	return ret;
+}
+#define UDP_RSS_FLAGS \
+	(RNPM_FLAG2_RSS_FIELD_IPV4_UDP | RNPM_FLAG2_RSS_FIELD_IPV6_UDP)
+static int rnpm_set_rss_hash_opt(struct rnpm_adapter *adapter,
+				 struct ethtool_rxnfc *nfc)
+{
+	// u32 flags2 = adapter->flags2;
+
+	/*
+	 * RSS does not support anything other than hashing
+	 * to queues on src and dst IPs and ports
+	 */
+	if (nfc->data &
+	    ~(RXH_IP_SRC | RXH_IP_DST | RXH_L4_B_0_1 | RXH_L4_B_2_3))
+		return -EINVAL;
+
+	switch (nfc->flow_type) {
+	case TCP_V4_FLOW:
+	case TCP_V6_FLOW:
+	case UDP_V4_FLOW:
+	case UDP_V6_FLOW:
+		if (!(nfc->data & RXH_IP_SRC) ||
+		    !(nfc->data & RXH_IP_DST) ||
+		    !(nfc->data & RXH_L4_B_0_1) ||
+		    !(nfc->data & RXH_L4_B_2_3))
+			return -EINVAL;
+		break;
+	case AH_ESP_V4_FLOW:
+	case AH_V4_FLOW:
+	case ESP_V4_FLOW:
+	case SCTP_V4_FLOW:
+	case AH_ESP_V6_FLOW:
+	case AH_V6_FLOW:
+	case ESP_V6_FLOW:
+	case SCTP_V6_FLOW:
+		if (!(nfc->data & RXH_IP_SRC) ||
+		    !(nfc->data & RXH_IP_DST) ||
+		    (nfc->data & RXH_L4_B_0_1) ||
+		    (nfc->data & RXH_L4_B_2_3))
+			return -EINVAL;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	/* if we changed something we need to update flags */
+	/*
+	if (flags2 != adapter->flags2) {
+		struct rnpm_hw *hw = &adapter->hw;
+		u32 mrqc = RNPM_READ_REG(hw, RNPM_MRQC);
+
+		if ((flags2 & UDP_RSS_FLAGS) &&
+			!(adapter->flags2 & UDP_RSS_FLAGS))
+			e_warn(drv, "enabling UDP RSS: fragmented packets"
+				   " may arrive out of order to the stack above\n");
+
+		adapter->flags2 = flags2;
+
+		mrqc |= RNPM_MRQC_RSS_FIELD_IPV4
+			  | RNPM_MRQC_RSS_FIELD_IPV4_TCP
+			  | RNPM_MRQC_RSS_FIELD_IPV6
+			  | RNPM_MRQC_RSS_FIELD_IPV6_TCP;
+
+		mrqc &= ~(RNPM_MRQC_RSS_FIELD_IPV4_UDP |
+			  RNPM_MRQC_RSS_FIELD_IPV6_UDP);
+
+		if (flags2 & RNPM_FLAG2_RSS_FIELD_IPV4_UDP)
+			mrqc |= RNPM_MRQC_RSS_FIELD_IPV4_UDP;
+
+		if (flags2 & RNPM_FLAG2_RSS_FIELD_IPV6_UDP)
+			mrqc |= RNPM_MRQC_RSS_FIELD_IPV6_UDP;
+
+		RNPM_WRITE_REG(hw, RNPM_MRQC, mrqc);
+	}
+	*/
+
+	return 0;
+}
+
+__maybe_unused static int rnpm_set_flags(struct net_device *netdev,
+					 u32 data)
+{
+	return 0;
+}
+
+static int rnpm_flowspec_to_flow_type(struct rnpm_adapter *adapter,
+				      struct ethtool_rx_flow_spec *fsp,
+				      uint8_t *flow_type,
+				      struct rnpm_fdir_filter *input)
+{
+	int i;
+	int ret = 1;
+	/* not support flow_ext */
+	if (fsp->flow_type & FLOW_EXT)
+		return 0;
+
+	switch (fsp->flow_type & ~FLOW_EXT) {
+	case TCP_V4_FLOW:
+		*flow_type = RNPM_ATR_FLOW_TYPE_TCPV4;
+		break;
+	case UDP_V4_FLOW:
+		*flow_type = RNPM_ATR_FLOW_TYPE_UDPV4;
+		break;
+	case SCTP_V4_FLOW:
+		*flow_type = RNPM_ATR_FLOW_TYPE_SCTPV4;
+		break;
+	case ETHER_FLOW:
+		/* layer 2 flow */
+		*flow_type = RNPM_ATR_FLOW_TYPE_ETHER;
+		input->filter.layer2_formate.proto =
+			fsp->h_u.ether_spec.h_proto;
+		break;
+	case IP_USER_FLOW:
+		switch (fsp->h_u.usr_ip4_spec.proto) {
+		case IPPROTO_TCP:
+			*flow_type = RNPM_ATR_FLOW_TYPE_TCPV4;
+			break;
+		case IPPROTO_UDP:
+			*flow_type = RNPM_ATR_FLOW_TYPE_UDPV4;
+			break;
+		case IPPROTO_SCTP:
+			*flow_type = RNPM_ATR_FLOW_TYPE_SCTPV4;
+			break;
+		case 0:
+			/* if only ip4 no src no dst*/
+			if (!(fsp->h_u.tcp_ip4_spec.ip4src) &&
+			    (!(fsp->h_u.tcp_ip4_spec.ip4dst))) {
+				/* if have no l4 proto, use layer2 */
+				*flow_type = RNPM_ATR_FLOW_TYPE_ETHER;
+				input->filter.layer2_formate.proto =
+					htons(0x0800);
+			} else {
+				/* may only src or dst input */
+				*flow_type = RNPM_ATR_FLOW_TYPE_IPV4;
+			}
+			break;
+		default:
+			/* other unknown l4 proto ip */
+			*flow_type = RNPM_ATR_FLOW_TYPE_IPV4;
+		}
+		break;
+	default:
+		return 0;
+	}
+	/* layer2 flow */
+	if (*flow_type == RNPM_ATR_FLOW_TYPE_ETHER) {
+		if (adapter->layer2_count >= adapter->layer2_count_max) {
+			e_err(drv, "layer2 count full\n");
+			ret = 0;
+		}
+		/* should check dst mac filter */
+		/* should check src dst all zeros */
+		for (i = 0; i < ETH_ALEN; i++) {
+			if (fsp->h_u.ether_spec.h_source[i] != 0 ||
+			    fsp->h_u.ether_spec.h_dest[i] != 0 ||
+			    fsp->m_u.ether_spec.h_source[i] != 0 ||
+			    fsp->m_u.ether_spec.h_dest[i] != 0)
+				ret = 0;
+		}
+	} else if (*flow_type == RNPM_ATR_FLOW_TYPE_IPV4) {
+		if (adapter->fdir_mode == fdir_mode_tuple5) {
+			if (adapter->tuple_5_count >=
+			    adapter->tuple_5_count_max) {
+				e_err(drv, "tuple 5 count full\n");
+				ret = 0;
+			}
+			if (fsp->h_u.usr_ip4_spec.ip4src != 0 &&
+			    fsp->m_u.usr_ip4_spec.ip4src != 0xffffffff) {
+				e_err(drv, "ip src mask error\n");
+				ret = 0;
+			}
+			if (fsp->h_u.usr_ip4_spec.ip4dst != 0 &&
+			    fsp->m_u.usr_ip4_spec.ip4dst != 0xffffffff) {
+				e_err(drv, "ip dst mask error\n");
+				ret = 0;
+			}
+			if (fsp->h_u.usr_ip4_spec.proto != 0 &&
+			    fsp->m_u.usr_ip4_spec.proto != 0xff) {
+				e_err(drv, "ip l4 proto mask error\n");
+				ret = 0;
+			}
+		} else {
+			if (adapter->tuple_5_count >=
+			    adapter->tuple_5_count_max) {
+				e_err(drv, "tcam count full\n");
+				ret = 0;
+			}
+			/* tcam mode can support mask */
+		}
+		/* not support l4_4_bytes */
+		if (fsp->h_u.usr_ip4_spec.l4_4_bytes != 0) {
+			e_err(drv, "ip l4_4_bytes error\n");
+			ret = 0;
+		}
+	} else {
+		if (adapter->fdir_mode == fdir_mode_tuple5) {
+			/* should check mask all ff */
+			if (adapter->tuple_5_count >=
+			    adapter->tuple_5_count_max) {
+				e_err(drv, "tuple 5 count full\n");
+				ret = 0;
+			}
+			if (fsp->h_u.tcp_ip4_spec.ip4src != 0 &&
+			    fsp->m_u.tcp_ip4_spec.ip4src != 0xffffffff) {
+				e_err(drv, "src mask error\n");
+				ret = 0;
+			}
+			if (fsp->h_u.tcp_ip4_spec.ip4dst != 0 &&
+			    fsp->m_u.tcp_ip4_spec.ip4dst != 0xffffffff) {
+				e_err(drv, "dst mask error\n");
+				ret = 0;
+			}
+			if (fsp->h_u.tcp_ip4_spec.psrc != 0 &&
+			    fsp->m_u.tcp_ip4_spec.psrc != 0xffff) {
+				e_err(drv, "src port mask error\n");
+				ret = 0;
+			}
+			if (fsp->h_u.tcp_ip4_spec.pdst != 0 &&
+			    fsp->m_u.tcp_ip4_spec.pdst != 0xffff) {
+				e_err(drv, "src port mask error\n");
+				ret = 0;
+			}
+		} else {
+			if (adapter->tuple_5_count >=
+			    adapter->tuple_5_count_max) {
+				e_err(drv, "tcam count full\n");
+				ret = 0;
+			}
+		}
+		/* l4 tos is not supported */
+		if (fsp->h_u.tcp_ip4_spec.tos != 0) {
+			e_err(drv, "tos error\n");
+			ret = 0;
+		}
+	}
+
+	return ret;
+}
+
+int rnpm_update_ethtool_fdir_entry(struct rnpm_adapter *adapter,
+				   struct rnpm_fdir_filter *input,
+				   u16 sw_idx)
+{
+	struct rnpm_hw *hw = &adapter->hw;
+	struct hlist_node *node2;
+	struct rnpm_fdir_filter *rule, *parent;
+	bool deleted = false;
+	s32 err;
+
+	parent = NULL;
+	rule = NULL;
+
+	hlist_for_each_entry_safe(rule, node2, &adapter->fdir_filter_list,
+				  fdir_node) {
+		/* hash found, or no matching entry */
+		if (rule->sw_idx >= sw_idx)
+			break;
+		parent = rule;
+	}
+
+	/* if there is an old rule occupying our place remove it */
+	if (rule && rule->sw_idx == sw_idx) {
+		/* only clear hw enable bits */
+		/* hardware filters are only configured when interface is up,
+		 * and we should not issue filter commands while the interface
+		 * is down
+		 */
+		if (netif_running(adapter->netdev) && !input) {
+			err = rnpm_fdir_erase_perfect_filter(
+				adapter->fdir_mode, hw, &rule->filter,
+				rule->hw_idx);
+			if (err)
+				return -EINVAL;
+		}
+		adapter->fdir_filter_count--;
+		if (rule->filter.formatted.flow_type ==
+		    RNPM_ATR_FLOW_TYPE_ETHER) {
+			/* used to determine hw reg offset */
+			adapter->layer2_count--;
+		} else {
+			adapter->tuple_5_count--;
+		}
+		hlist_del(&rule->fdir_node);
+		kfree(rule);
+		deleted = true;
+	}
+
+	/* If we weren't given an input, then this was a request to delete a
+	 * filter. We should return -EINVAL if the filter wasn't found, but
+	 * return 0 if the rule was successfully deleted.
+	 */
+	if (!input)
+		return deleted ? 0 : -EINVAL;
+
+	/* initialize node and set software index */
+	INIT_HLIST_NODE(&input->fdir_node);
+
+	/* add filter to the list */
+	if (parent)
+		hlist_add_behind(&input->fdir_node, &parent->fdir_node);
+	else
+		hlist_add_head(&input->fdir_node,
+			       &adapter->fdir_filter_list);
+
+	/* update counts */
+	adapter->fdir_filter_count++;
+	if (input->filter.formatted.flow_type ==
+	    RNPM_ATR_FLOW_TYPE_ETHER) {
+		/* used to determine hw reg offset */
+		adapter->layer2_count++;
+	} else {
+		adapter->tuple_5_count++;
+	}
+	return 0;
+}
+
+static int rnpm_add_ethtool_fdir_entry(struct rnpm_adapter *adapter,
+				       struct ethtool_rxnfc *cmd)
+{
+	struct ethtool_rx_flow_spec *fsp =
+		(struct ethtool_rx_flow_spec *)&cmd->fs;
+	struct rnpm_hw *hw = &adapter->hw;
+	struct rnpm_fdir_filter *input;
+	/* we don't support mask */
+	// union rnpm_atr_input mask;
+	int err;
+	unsigned long flags;
+
+	if (!(adapter->flags & RNPM_FLAG_FDIR_PERFECT_CAPABLE))
+		return -EOPNOTSUPP;
+
+	/*
+	 * Don't allow programming if the action is a queue greater than
+	 * the number of online Rx queues.
+	 */
+	/* is sriov is on, allow vf and queue */
+	/* vf should smaller than num_vfs */
+	if (adapter->flags & RNPM_FLAG_SRIOV_ENABLED) {
+		if (fsp->ring_cookie != RX_CLS_FLOW_DISC &&
+		    ((((fsp->ring_cookie & 0xff00000000) >> 32) >
+		      adapter->num_vfs) ||
+		     ((fsp->ring_cookie & 0xffffffff) >=
+		      PF_RING_CNT_WHEN_IOV_ENABLED)))
+			return -EINVAL;
+
+	} else {
+		if (fsp->ring_cookie != RX_CLS_FLOW_DISC &&
+		    fsp->ring_cookie >= adapter->num_rx_queues)
+			return -EINVAL;
+	}
+
+	/* Don't allow indexes to exist outside of available space */
+	if (fsp->location >= adapter->fdir_pballoc) {
+		e_err(drv, "Location out of range\n");
+		return -EINVAL;
+	}
+
+	input = kzalloc(sizeof(*input), GFP_ATOMIC);
+	if (!input)
+		return -ENOMEM;
+
+	// memset(&mask, 0, sizeof(union rnpm_atr_input));
+	/* set SW index */
+	input->sw_idx = fsp->location;
+
+	/* record flow type */
+	if (!rnpm_flowspec_to_flow_type(adapter, fsp,
+					&input->filter.formatted.flow_type,
+					input)) {
+		e_err(drv, "Unrecognized flow type\n");
+		goto err_out;
+	}
+
+	if (input->filter.formatted.flow_type ==
+	    RNPM_ATR_FLOW_TYPE_ETHER) {
+		/* used to determine hw reg offset */
+		input->hw_idx =
+			adapter->layer2_count + adapter->layer2_offset;
+	} else if (input->filter.formatted.flow_type ==
+		   RNPM_ATR_FLOW_TYPE_IPV4) {
+		input->hw_idx =
+			adapter->tuple_5_count + adapter->tuple_5_offset;
+		/* Copy input into formatted structures */
+		input->filter.formatted.src_ip[0] =
+			fsp->h_u.usr_ip4_spec.ip4src;
+		input->filter.formatted.src_ip_mask[0] =
+			fsp->m_u.usr_ip4_spec.ip4src;
+		input->filter.formatted.dst_ip[0] =
+			fsp->h_u.usr_ip4_spec.ip4dst;
+		input->filter.formatted.dst_ip_mask[0] =
+			fsp->m_u.usr_ip4_spec.ip4dst;
+		input->filter.formatted.src_port = 0;
+		input->filter.formatted.src_port_mask = 0xffff;
+		input->filter.formatted.dst_port = 0;
+		input->filter.formatted.dst_port_mask = 0xffff;
+		input->filter.formatted.inner_mac[0] =
+			fsp->h_u.usr_ip4_spec.proto;
+		input->filter.formatted.inner_mac_mask[0] =
+			fsp->m_u.usr_ip4_spec.proto;
+	} else { /* tcp or udp or sctp*/
+		input->hw_idx =
+			adapter->tuple_5_count + adapter->tuple_5_offset;
+		/* Copy input into formatted structures */
+		input->filter.formatted.src_ip[0] =
+			fsp->h_u.tcp_ip4_spec.ip4src;
+		input->filter.formatted.src_ip_mask[0] =
+			fsp->m_u.usr_ip4_spec.ip4src;
+		input->filter.formatted.dst_ip[0] =
+			fsp->h_u.tcp_ip4_spec.ip4dst;
+		input->filter.formatted.dst_ip_mask[0] =
+			fsp->m_u.usr_ip4_spec.ip4dst;
+		input->filter.formatted.src_port =
+			fsp->h_u.tcp_ip4_spec.psrc;
+		input->filter.formatted.src_port_mask =
+			fsp->m_u.tcp_ip4_spec.psrc;
+		input->filter.formatted.dst_port =
+			fsp->h_u.tcp_ip4_spec.pdst;
+		input->filter.formatted.dst_port_mask =
+			fsp->m_u.tcp_ip4_spec.pdst;
+	}
+	/* determine if we need to drop or route the packet */
+	if (fsp->ring_cookie == RX_CLS_FLOW_DISC)
+		input->action = RNPM_FDIR_DROP_QUEUE;
+	else {
+		input->vf_num = (fsp->ring_cookie >> 32) & 0xff;
+		if (input->vf_num) {
+			/* in vf mode input->action is the real queue nums */
+			input->action =
+				2 * (((fsp->ring_cookie >> 32) & 0xff) -
+				     1) +
+				(fsp->ring_cookie & 0xffffffff);
+		} else
+			input->action = fsp->ring_cookie;
+	}
+	spin_lock_irqsave(&adapter->fdir_perfect_lock, flags);
+	/* only program filters to hardware if the net device is running, as
+	 * we store the filters in the Rx buffer which is not allocated when
+	 * the device is down
+	 */
+	if (netif_running(adapter->netdev)) {
+		if (!input->vf_num) {
+			err = rnpm_fdir_write_perfect_filter(
+				adapter->fdir_mode, hw, &input->filter,
+				input->hw_idx,
+				(input->action == RNPM_FDIR_DROP_QUEUE) ?
+					RNPM_FDIR_DROP_QUEUE :
+					adapter->rx_ring[input->action]
+						->rnpm_queue_idx);
+			/* to check */
+		} else {
+			err = rnpm_fdir_write_perfect_filter(
+				adapter->fdir_mode, hw, &input->filter,
+				input->hw_idx,
+				(input->action == RNPM_FDIR_DROP_QUEUE) ?
+					RNPM_FDIR_DROP_QUEUE :
+					input->action);
+		}
+		if (err)
+			goto err_out_w_lock;
+	}
+
+	rnpm_update_ethtool_fdir_entry(adapter, input, input->sw_idx);
+	spin_unlock_irqrestore(&adapter->fdir_perfect_lock, flags);
+	return 0;
+err_out_w_lock:
+	spin_unlock_irqrestore(&adapter->fdir_perfect_lock, flags);
+err_out:
+	kfree(input);
+	return -EINVAL;
+}
+
+static int rnpm_del_ethtool_fdir_entry(struct rnpm_adapter *adapter,
+				       struct ethtool_rxnfc *cmd)
+{
+	struct ethtool_rx_flow_spec *fsp =
+		(struct ethtool_rx_flow_spec *)&cmd->fs;
+	int err;
+	unsigned long flags;
+
+	spin_lock_irqsave(&adapter->fdir_perfect_lock, flags);
+	err = rnpm_update_ethtool_fdir_entry(adapter, NULL, fsp->location);
+	spin_unlock_irqrestore(&adapter->fdir_perfect_lock, flags);
+
+	return err;
+}
+
+/**
+ * rnpm_set_rxnfc - command to set RX flow classification rules
+ * @dev: network interface device structure
+ * @cmd: ethtool rxnfc command
+ *
+ * Returns Success if the command is supported.
+ **/
+static int rnpm_set_rxnfc(struct net_device *dev,
+			  struct ethtool_rxnfc *cmd)
+{
+	struct rnpm_adapter *adapter = netdev_priv(dev);
+	int ret = -EOPNOTSUPP;
+
+	switch (cmd->cmd) {
+	case ETHTOOL_SRXCLSRLINS:
+		ret = rnpm_add_ethtool_fdir_entry(adapter, cmd);
+		break;
+	case ETHTOOL_SRXCLSRLDEL:
+		ret = rnpm_del_ethtool_fdir_entry(adapter, cmd);
+		break;
+	case ETHTOOL_SRXFH:
+		ret = rnpm_set_rss_hash_opt(adapter, cmd);
+		break;
+	default:
+		break;
+	}
+
+	return ret;
+}
+
 enum {
 	PART_FW,
 	PART_CFG,
@@ -3223,8 +3801,8 @@ static int rnpm_flash_firmware_from_file(struct net_device *dev,
 
 	rc = request_firmware(&fw, filename, &dev->dev);
 	if (rc != 0) {
-		netdev_err(dev, "Error %d requesting firmware file: %s\n", rc,
-			   filename);
+		netdev_err(dev, "Error %d requesting firmware file: %s\n",
+			   rc, filename);
 		return rc;
 	}
 
@@ -3327,7 +3905,8 @@ static int rnpm_set_rxfh(struct net_device *netdev, const u32 *indir,
 	u32 reta_entries = rnpm_rss_indir_tbl_entries(adapter);
 	unsigned long flags;
 
-	if (hfunc)
+	if (hfunc != ETH_RSS_HASH_NO_CHANGE &&
+	    hfunc != ETH_RSS_HASH_TOP)
 		return -EOPNOTSUPP;
 
 	/* Verify user input. */
@@ -3340,7 +3919,7 @@ static int rnpm_set_rxfh(struct net_device *netdev, const u32 *indir,
 			return -EINVAL;
 		/*Allow at least 2 queues w/ SR-IOV.*/
 		if ((adapter->flags & RNPM_FLAG_SRIOV_ENABLED) &&
-		    (max_queues < 2))
+		    max_queues < 2)
 			max_queues = 2;
 
 		/* Verify user input. */
@@ -3370,7 +3949,7 @@ static int rnpm_set_rxfh(struct net_device *netdev, const u32 *indir,
 	return 0;
 }
 
-void rnpm_get_phy_statistics(struct net_device *netdev,
+static void rnpm_get_phy_statistics(struct net_device *netdev,
 			     struct ethtool_stats *stats, u64 *data)
 {
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
@@ -3405,17 +3984,15 @@ static int rnpm_nway_reset(struct net_device *netdev)
 		return 0;
 	netdev_info(netdev, "NIC Link is Down\n");
 	rnpm_down(adapter);
-	msleep(20);
+	msleep(10);
 	rnpm_up(adapter);
 	return 0;
 }
 static const struct ethtool_ops rnpm_ethtool_ops = {
-	.supported_coalesce_params = 0 | ETHTOOL_COALESCE_USECS |
-				     ETHTOOL_COALESCE_MAX_FRAMES_IRQ |
-				     ETHTOOL_COALESCE_MAX_FRAMES,
 	.get_link_ksettings = rnpm_get_link_ksettings,
 	.set_link_ksettings = rnpm_set_link_ksettings,
 	.get_drvinfo = rnpm_get_drvinfo,
+
 	.get_regs_len = rnpm_get_regs_len,
 	.get_regs = rnpm_get_regs,
 	.get_wol = rnpm_get_wol,
@@ -3428,10 +4005,13 @@ static const struct ethtool_ops rnpm_ethtool_ops = {
 	.set_pauseparam = rnpm_set_pauseparam,
 	.get_msglevel = rnpm_get_msglevel,
 	.set_msglevel = rnpm_set_msglevel,
+
 	.get_fecparam = rnpm_get_fecparam,
 	.set_fecparam = rnpm_set_fecparam,
+
 	.self_test = rnpm_diag_test,
 	.get_strings = rnpm_get_strings,
+
 	.set_phys_id = rnpm_set_phys_id,
 	.get_sset_count = rnpm_get_sset_count,
 	.get_priv_flags = rnpm_get_priv_flags,
@@ -3439,13 +4019,21 @@ static const struct ethtool_ops rnpm_ethtool_ops = {
 	.get_ethtool_stats = rnpm_get_ethtool_stats,
 	.get_coalesce = rnpm_get_coalesce,
 	.set_coalesce = rnpm_set_coalesce,
+	.supported_coalesce_params = 0 | ETHTOOL_COALESCE_USECS
+				     | ETHTOOL_COALESCE_MAX_FRAMES_IRQ
+				     | ETHTOOL_COALESCE_MAX_FRAMES
+	,
+
 	.get_rxnfc = rnpm_get_rxnfc,
 	.set_rxnfc = rnpm_set_rxnfc,
+
 	.get_channels = rnpm_get_channels,
 	.set_channels = rnpm_set_channels,
+
 	.get_module_info = rnpm_get_module_info,
 	.get_module_eeprom = rnpm_get_module_eeprom,
 	.get_ts_info = rnpm_get_ts_info,
+
 	.get_rxfh_indir_size = rnpm_rss_indir_size,
 	.get_rxfh_key_size = rnpm_get_rxfh_key_size,
 	.get_rxfh = rnpm_get_rxfh,
@@ -3453,8 +4041,11 @@ static const struct ethtool_ops rnpm_ethtool_ops = {
 	.get_dump_flag = rnpm_get_dump_flag,
 	.get_dump_data = rnpm_get_dump_data,
 	.set_dump = rnpm_set_dump,
+
 	.flash_device = rnpm_flash_device,
+
 	.get_ethtool_phy_stats = rnpm_get_phy_statistics,
+
 };
 
 void rnpm_set_ethtool_ops(struct net_device *netdev)

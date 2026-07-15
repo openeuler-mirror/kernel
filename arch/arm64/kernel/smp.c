@@ -55,6 +55,7 @@
 #include <asm/tlbflush.h>
 #include <asm/ptrace.h>
 #include <asm/virt.h>
+#include <asm/xint.h>
 
 #include <trace/events/ipi.h>
 
@@ -78,6 +79,9 @@ enum ipi_msg_type {
 	IPI_TIMER,
 	IPI_IRQ_WORK,
 	IPI_WAKEUP,
+#ifdef CONFIG_SMT_QOS
+	IPI_USER,
+#endif
 	NR_IPI
 };
 
@@ -812,6 +816,9 @@ static const char *ipi_types[NR_IPI] __tracepoint_string = {
 	[IPI_TIMER]		= "Timer broadcast interrupts",
 	[IPI_IRQ_WORK]		= "IRQ work interrupts",
 	[IPI_WAKEUP]		= "CPU wake-up interrupts",
+#ifdef CONFIG_SMT_QOS
+	[IPI_USER]		= "Userspace IPI",
+#endif
 };
 
 static void smp_cross_call(const struct cpumask *target, unsigned int ipinr);
@@ -967,6 +974,11 @@ static void do_handle_IPI(int ipinr)
 			  cpu);
 		break;
 #endif
+#ifdef CONFIG_SMT_QOS
+	case IPI_USER:
+		/* Do nothing */
+		break;
+#endif
 
 	default:
 		pr_crit("CPU%u: Unknown IPI message 0x%x\n", cpu, ipinr);
@@ -1065,6 +1077,17 @@ void arch_smp_send_reschedule(int cpu)
 void tick_broadcast(const struct cpumask *mask)
 {
 	smp_cross_call(mask, IPI_TIMER);
+}
+#endif
+
+#ifdef CONFIG_SMT_QOS
+void arch_smp_send_ipi_user(int cpu)
+{
+	struct irq_desc *desc = ipi_desc[IPI_USER];
+	struct irq_data *data = irq_desc_get_irq_data(desc);
+	struct irq_chip *chip = irq_data_get_irq_chip(data);
+
+	chip->ipi_send_mask(data, cpumask_of(cpu));
 }
 #endif
 

@@ -39,7 +39,7 @@ static int __init early_vtimer_irqbypass(char *buf)
 }
 early_param("kvm-arm.vtimer_irqbypass", early_vtimer_irqbypass);
 
-static inline bool vtimer_is_irqbypass(void)
+bool vtimer_is_irqbypass(void)
 {
 	return !!vtimer_irqbypass && kvm_vgic_vtimer_irqbypass_support();
 }

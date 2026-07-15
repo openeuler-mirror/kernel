@@ -183,7 +183,8 @@ void kvm_arm_vcpu_destroy(struct kvm_vcpu *vcpu)
 	kfree(sve_state);
 	kfree(vcpu->arch.ccsidr);
 	kvm_destroy_rec(vcpu);
-	kfree(vcpu->arch.rec);
+	if (kvm_is_realm(vcpu->kvm))
+		kfree(vcpu->arch.rec);
 
 #ifdef CONFIG_ARM64_HDBSS
 	if (vcpu->arch.hdbss.br_el2) {
@@ -320,6 +321,20 @@ int kvm_reset_vcpu(struct kvm_vcpu *vcpu)
 			kvm_vcpu_set_be(vcpu);
 
 		*vcpu_pc(vcpu) = target_pc;
+
+		/*
+		 * We may come from a state where either a PC update was
+		 * pending (SMC call resulting in PC being increpented to
+		 * skip the SMC) or a pending exception. Make sure we get
+		 * rid of all that, as this cannot be valid out of reset.
+		 *
+		 * Note that clearing the exception mask also clears PC
+		 * updates, but that's an implementation detail, and we
+		 * really want to make it explicit.
+		 */
+		vcpu_clear_flag(vcpu, PENDING_EXCEPTION);
+		vcpu_clear_flag(vcpu, EXCEPT_MASK);
+		vcpu_clear_flag(vcpu, INCREMENT_PC);
 		vcpu_set_reg(vcpu, 0, reset_state.r0);
 	}
 

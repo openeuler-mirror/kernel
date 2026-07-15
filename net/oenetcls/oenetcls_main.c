@@ -65,11 +65,11 @@ module_param(sft_num, uint, 0444);
 MODULE_PARM_DESC(sft_num, "sock flow table entries, default 0x100000");
 
 int rps_policy = 1;
-module_param(rps_policy, int, 0644);
+module_param(rps_policy, int, 0444);
 MODULE_PARM_DESC(rps_policy, "phy nic rps policy, default 1");
 
 int lo_rps_policy;
-module_param(lo_rps_policy, int, 0644);
+module_param(lo_rps_policy, int, 0444);
 MODULE_PARM_DESC(lo_rps_policy, "loopback rps policy, default 0");
 
 static int rxq_multiplex_limit = 1;
@@ -78,11 +78,25 @@ MODULE_PARM_DESC(rxq_multiplex_limit, "rxq multiplex limit num, default 1");
 
 static bool check_params(void)
 {
-	if (mode != 0 && mode != 1 && mode != 2)
+	if (mode != 0 && mode != 1 && mode != 2) {
+		oecls_error("invalid mode=%d, expected 0/1/2\n", mode);
 		return false;
+	}
 
-	if (strlen(ifname) == 0)
+	if (strlen(ifname) == 0) {
+		oecls_error("invalid ifname, empty string\n");
 		return false;
+	}
+
+	if (dft_num == 0) {
+		oecls_error("invalid dft_num=%u, must be > 0\n", dft_num);
+		return false;
+	}
+
+	if (sft_num == 0) {
+		oecls_error("invalid sft_num=%u, must be > 0\n", sft_num);
+		return false;
+	}
 
 	return true;
 }
@@ -255,6 +269,19 @@ err_out:
 	return ret;
 }
 
+static noinline_for_stack int ethtool_get_channels(struct net_device *dev,
+						   void *useraddr)
+{
+	struct ethtool_channels channels = { .cmd = ETHTOOL_GCHANNELS };
+
+	if (!dev->ethtool_ops->get_channels)
+		return -EOPNOTSUPP;
+
+	dev->ethtool_ops->get_channels(dev, &channels);
+	memcpy_r(useraddr, &channels, sizeof(channels));
+	return 0;
+}
+
 static int ethtool_get_value(struct net_device *dev, char *useraddr,
 			     u32 cmd, u32 (*actor)(struct net_device *))
 {
@@ -308,6 +335,7 @@ static int dev_ethtool_kern(struct net *net, struct ifreq *ifr)
 	case ETHTOOL_GRXCLSRLCNT:
 	case ETHTOOL_GRXCLSRULE:
 	case ETHTOOL_GRXCLSRLALL:
+	case ETHTOOL_GCHANNELS:
 		break;
 	default:
 		if (check_cap && !ns_capable(net->user_ns, CAP_NET_ADMIN))
@@ -340,6 +368,9 @@ static int dev_ethtool_kern(struct net *net, struct ifreq *ifr)
 	case ETHTOOL_SRXCLSRLDEL:
 	case ETHTOOL_SRXCLSRLINS:
 		rc = ethtool_set_rxnfc(dev, ethcmd, useraddr);
+		break;
+	case ETHTOOL_GCHANNELS:
+		rc = ethtool_get_channels(dev, useraddr);
 		break;
 	default:
 		rc = -EOPNOTSUPP;
@@ -403,8 +434,20 @@ static bool check_irq_name(const char *irq_name, struct oecls_netdev_info *oecls
 static void get_netdev_queue_info(struct oecls_netdev_info *oecls_dev)
 {
 	struct oecls_netdev_queue_info *rxq_info;
+	struct ethtool_channels echannels = {0};
+	int irq, cpu, ret, combined_channels;
+	struct cmd_context ctx = {0};
 	struct irq_desc *desc;
-	int irq, cpu;
+
+	strscpy(ctx.netdev, oecls_dev->dev_name, IFNAMSIZ);
+	echannels.cmd = ETHTOOL_GCHANNELS;
+	ret = send_ethtool_ioctl(&ctx, &echannels);
+	if (ret) {
+		oecls_error("get %s channels fail ret:%d\n", oecls_dev->dev_name, ret);
+		return;
+	}
+
+	combined_channels = echannels.combined_count;
 
 	for_each_irq_desc(irq, desc) {
 		if (!desc->action)
@@ -415,6 +458,10 @@ static void get_netdev_queue_info(struct oecls_netdev_info *oecls_dev)
 			continue;
 		if (oecls_dev->rxq_num >= OECLS_MAX_RXQ_NUM_PER_DEV)
 			break;
+		if (oecls_dev->rxq_num > combined_channels - 1)
+			break;
+		oecls_debug("rxq_num:%d channels:%d\n", oecls_dev->rxq_num, combined_channels);
+
 		rxq_info = &oecls_dev->rxq[oecls_dev->rxq_num++];
 		rxq_info->irq = irq;
 		cpu = cpumask_first(irq_data_get_effective_affinity_mask(&desc->irq_data));

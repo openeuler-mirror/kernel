@@ -1565,7 +1565,8 @@ static int check_position_fix(struct azx *chip, int fix)
 	}
 
 	/* Check VIA/ATI HD Audio Controller exist */
-	if (chip->driver_type == AZX_DRIVER_VIA) {
+	if (chip->driver_type == AZX_DRIVER_VIA ||
+	    chip->driver_type == AZX_DRIVER_ZHAOXIN) {
 		dev_dbg(chip->card->dev, "Using VIACOMBO position fix\n");
 		return POS_FIX_VIACOMBO;
 	}
@@ -1719,7 +1720,8 @@ static void azx_check_snoop_available(struct azx *chip)
 
 	snoop = true;
 	if (azx_get_snoop_type(chip) == AZX_SNOOP_TYPE_NONE &&
-	    chip->driver_type == AZX_DRIVER_VIA) {
+	    (chip->driver_type == AZX_DRIVER_VIA ||
+	     chip->driver_type == AZX_DRIVER_ZHAOXIN)) {
 		/* force to non-snoop mode for a new VIA controller
 		 * when BIOS is set
 		 */
@@ -2756,6 +2758,21 @@ static const struct pci_device_id azx_ids[] = {
 	{ PCI_VDEVICE(VIA, 0x9170), .driver_data = AZX_DRIVER_GENERIC },
 	/* VIA GFX VT6122/VX11 */
 	{ PCI_VDEVICE(VIA, 0x9140), .driver_data = AZX_DRIVER_GENERIC },
+	{ PCI_VDEVICE(VIA, 0x9141),
+	 .driver_data = AZX_DRIVER_ZHAOXINHDMI | AZX_DCAPS_POSFIX_LPIB |
+	 AZX_DCAPS_NO_MSI | AZX_DCAPS_NO_64BIT },
+	{ PCI_VDEVICE(VIA, 0x9142),
+	 .driver_data = AZX_DRIVER_ZHAOXINHDMI | AZX_DCAPS_POSFIX_LPIB |
+	 AZX_DCAPS_NO_MSI | AZX_DCAPS_NO_64BIT },
+	{ PCI_VDEVICE(VIA, 0x9144),
+	 .driver_data = AZX_DRIVER_ZHAOXINHDMI | AZX_DCAPS_POSFIX_LPIB |
+	 AZX_DCAPS_NO_MSI | AZX_DCAPS_NO_64BIT },
+	{ PCI_VDEVICE(VIA, 0x9145),
+	 .driver_data = AZX_DRIVER_ZHAOXINHDMI | AZX_DCAPS_POSFIX_LPIB |
+	 AZX_DCAPS_NO_MSI | AZX_DCAPS_NO_64BIT },
+	{ PCI_VDEVICE(VIA, 0x9146),
+	 .driver_data = AZX_DRIVER_ZHAOXINHDMI | AZX_DCAPS_POSFIX_LPIB |
+	 AZX_DCAPS_NO_MSI | AZX_DCAPS_NO_64BIT },
 	/* SIS966 */
 	{ PCI_VDEVICE(SI, 0x7502), .driver_data = AZX_DRIVER_SIS },
 	/* ULI M5461 */
@@ -2836,6 +2853,8 @@ static const struct pci_device_id azx_ids[] = {
 	  .driver_data = AZX_DRIVER_HYGON | AZX_DCAPS_POSFIX_LPIB | AZX_DCAPS_NO_MSI },
 	{ PCI_VDEVICE(HYGON, PCI_DEVICE_ID_HYGON_18H_M10H_HDA),
 	  .driver_data = AZX_DRIVER_HYGON },
+	{ PCI_DEVICE(PCI_VENDOR_ID_HYGON, PCI_DEVICE_ID_HYGON_18H_M18H_HDA),
+	  .driver_data = AZX_DRIVER_HYGON | AZX_DCAPS_POSFIX_LPIB },
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, azx_ids);

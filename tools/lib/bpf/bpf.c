@@ -171,7 +171,8 @@ int bpf_map_create(enum bpf_map_type map_type,
 		   __u32 max_entries,
 		   const struct bpf_map_create_opts *opts)
 {
-	const size_t attr_sz = offsetofend(union bpf_attr, map_extra);
+	const size_t attr_sz = offsetofend(union bpf_attr,
+					   value_type_btf_obj_fd);
 	union bpf_attr attr;
 	int fd;
 
@@ -193,6 +194,7 @@ int bpf_map_create(enum bpf_map_type map_type,
 	attr.btf_key_type_id = OPTS_GET(opts, btf_key_type_id, 0);
 	attr.btf_value_type_id = OPTS_GET(opts, btf_value_type_id, 0);
 	attr.btf_vmlinux_value_type_id = OPTS_GET(opts, btf_vmlinux_value_type_id, 0);
+	attr.value_type_btf_obj_fd = OPTS_GET(opts, value_type_btf_obj_fd, 0);
 
 	attr.inner_map_fd = OPTS_GET(opts, inner_map_fd, 0);
 	attr.map_flags = OPTS_GET(opts, map_flags, 0);
@@ -810,6 +812,22 @@ int bpf_link_create(int prog_fd, int target_fd,
 		}
 		attr.link_create.tcx.expected_revision = OPTS_GET(opts, tcx.expected_revision, 0);
 		if (!OPTS_ZEROED(opts, tcx))
+			return libbpf_err(-EINVAL);
+		break;
+	case BPF_NETKIT_PRIMARY:
+	case BPF_NETKIT_PEER:
+		relative_fd = OPTS_GET(opts, netkit.relative_fd, 0);
+		relative_id = OPTS_GET(opts, netkit.relative_id, 0);
+		if (relative_fd && relative_id)
+			return libbpf_err(-EINVAL);
+		if (relative_id) {
+			attr.link_create.netkit.relative_id = relative_id;
+			attr.link_create.flags |= BPF_F_ID;
+		} else {
+			attr.link_create.netkit.relative_fd = relative_fd;
+		}
+		attr.link_create.netkit.expected_revision = OPTS_GET(opts, netkit.expected_revision, 0);
+		if (!OPTS_ZEROED(opts, netkit))
 			return libbpf_err(-EINVAL);
 		break;
 	default:

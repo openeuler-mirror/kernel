@@ -15,6 +15,9 @@ EXPORT_SYMBOL_GPL(x86_topo_system);
 unsigned int __amd_nodes_per_pkg __ro_after_init;
 EXPORT_SYMBOL_GPL(__amd_nodes_per_pkg);
 
+/* CPUs which are the primary SMT threads */
+struct cpumask __cpu_primary_thread_mask __read_mostly;
+
 void topology_set_dom(struct topo_scan *tscan, enum x86_topology_domains dom,
 		      unsigned int shift, unsigned int ncpus)
 {
@@ -126,8 +129,12 @@ static void parse_topology(struct topo_scan *tscan, bool early)
 			cpu_parse_topology_amd(tscan);
 		break;
 	case X86_VENDOR_CENTAUR:
+		if (!IS_ENABLED(CONFIG_CPU_SUP_CENTAUR) || !cpu_parse_topology_ext(tscan))
+			parse_legacy(tscan);
+		break;
 	case X86_VENDOR_ZHAOXIN:
-		parse_legacy(tscan);
+		if (!IS_ENABLED(CONFIG_CPU_SUP_ZHAOXIN) || !cpu_parse_topology_ext(tscan))
+			parse_legacy(tscan);
 		break;
 	case X86_VENDOR_INTEL:
 		if (!IS_ENABLED(CONFIG_CPU_SUP_INTEL) || !cpu_parse_topology_ext(tscan))

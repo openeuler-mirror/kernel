@@ -96,7 +96,14 @@ struct ubcore_global_file {
 	struct ubcore_uvs_instance *uvs;
 };
 
+struct ubcore_host_info {
+	union ubcore_eid eid;
+	/* represents CNA as a ubcore_net_addr_union for interface consistency */
+	union ubcore_net_addr_union cna;
+};
+
 extern uint32_t ubcore_max_retry_cnt;
+extern uint32_t ubmad_retry_interval_ms;
 
 static inline struct ubcore_ucontext *
 ubcore_get_uctx(struct ubcore_udata *udata)
@@ -191,6 +198,21 @@ static inline uint32_t ubcore_get_vtp_hash(union ubcore_eid *local_eid)
 		     sizeof(union ubcore_eid) + sizeof(union ubcore_eid), 0);
 }
 
+static inline uint32_t ubcore_get_tpid_reuse_hash(struct ubcore_hash_table *ht, void *key_addr)
+{
+	return jhash(key_addr, ht->p.key_size, 0);
+}
+
+static inline uint32_t ubcore_get_tpid_list_hash(struct ubcore_hash_table *ht, void *key_addr)
+{
+	return jhash(key_addr, ht->p.key_size, 0);
+}
+
+static inline uint32_t ubcore_get_tpid_state_hash(struct ubcore_hash_table *ht, void *key_addr)
+{
+	return jhash(key_addr, ht->p.key_size, 0);
+}
+
 static inline uint32_t ubcore_get_rc_vtp_hash(union ubcore_eid *peer_eid)
 {
 	return jhash(peer_eid, sizeof(union ubcore_eid) + sizeof(uint32_t), 0);
@@ -216,5 +238,9 @@ static inline bool ubcore_is_ub_device(struct ubcore_device *dev)
 {
 	return (dev->transport_type == UBCORE_TRANSPORT_UB);
 }
+
+// for UB profiling
+int ubcore_perf_init(void);
+void ubcore_perf_uninit(void);
 
 #endif

@@ -37,7 +37,7 @@ struct ubagg_topo_map *get_global_ubagg_map(void)
 	return g_topo_map;
 }
 
-static struct ubagg_topo_node *get_current_topo_node(void)
+struct ubagg_topo_node *get_current_topo_node(void)
 {
 	if (g_topo_map == NULL)
 		return NULL;
@@ -81,53 +81,59 @@ int find_linked_port(union ubcore_eid *dst_eid,
 		return -EINVAL;
 	}
 
-	if (src_node->type == UBAGG_TOPO_TYPE_FULLMESH) {
-		for (uint32_t i = 0; i < IODIE_NUM; i++) {
-			connected[i][i] = true;
-			for (uint32_t j = 0; j < MAX_PORT_NUM; j++) {
-				struct ubagg_topo_link *link = &src_node->links[i][j];
-				uint32_t local_indice =
-					IODIE_NUM + i * MAX_PORT_NUM + j;
+	for (uint32_t local_idx = 0; local_idx < IODIE_NUM * PORT_NUM; local_idx++) {
+		uint32_t local_indice = IODIE_NUM + local_idx;
+		if (local_indice >= UBAGG_DEV_MAX_NUM) {
+			ubagg_log_err("local_indice %u is out of range\n", local_indice);
+			continue;
+		}
+		for (uint32_t remote_idx = 0; remote_idx < IODIE_NUM * PORT_NUM; remote_idx++) {
+			uint32_t remote_indice = IODIE_NUM + remote_idx;
+			if (remote_indice >= UBAGG_DEV_MAX_NUM) {
+				ubagg_log_err("remote_indice %u is out of range\n", remote_indice);
+				continue;
+			}
+			connected[local_indice][remote_indice] =
+				dst_node->links[local_idx][remote_idx];
+		}
+	}
 
+	/*
+	 * Derive iodie-level connectivity (first IODIE_NUM x IODIE_NUM block)
+	 * from port-level links: iodie i <-> iodie j is connected if any of
+	 * their ports has a valid link.
+	 */
+	for (uint32_t local_iodie = 0; local_iodie < IODIE_NUM; local_iodie++) {
+		for (uint32_t remote_iodie = 0; remote_iodie < IODIE_NUM; remote_iodie++) {
+			bool has_port_link = false;
+			for (uint32_t local_port = 0;
+				local_port < PORT_NUM && !has_port_link; local_port++) {
+				uint32_t local_indice =
+					IODIE_NUM + local_iodie * PORT_NUM + local_port;
 				if (local_indice >= UBAGG_DEV_MAX_NUM) {
-					ubagg_log_err("Invalid local indice: %u\n",
-							local_indice);
+					ubagg_log_err("local_indice %u is out of range\n",
+						local_indice);
 					continue;
 				}
-
-				if (src_node->node_id == dst_node->node_id)
-					connected[local_indice][local_indice] = true;
-				// Ignore peer iodie id
-				else if (link->peer_node == dst_node->node_id) {
-					uint32_t remote_indice;
-
-					if (link->peer_port >= MAX_PORT_NUM) {
-						ubagg_log_err("Invalid peer port: %u\n",
-								link->peer_port);
-						continue;
-					}
-
-					remote_indice = IODIE_NUM + i * MAX_PORT_NUM +
-							link->peer_port;
+				for (uint32_t remote_port = 0; remote_port < PORT_NUM; remote_port++) {
+					uint32_t remote_indice =
+						IODIE_NUM + remote_iodie * PORT_NUM + remote_port;
 					if (remote_indice >= UBAGG_DEV_MAX_NUM) {
-						ubagg_log_err(
-							"Invalid remote indice: %u\n",
+						ubagg_log_err("remote_indice %u is out of range\n",
 							remote_indice);
 						continue;
 					}
-					connected[local_indice][remote_indice] = true;
+					if (connected[local_indice][remote_indice]) {
+						has_port_link = true;
+						break;
+					}
 				}
 			}
+			if (has_port_link)
+				connected[local_iodie][remote_iodie] = true;
 		}
-	} else if (src_node->type == UBAGG_TOPO_TYPE_CLOS) {
-		for (uint32_t i = 0; i < UBAGG_DEV_MAX_NUM; i++) {
-			// Self connection: map to same port
-			connected[i][i] = true;
-		}
-	} else {
-		ubagg_log_err("Unknown topology type: %u\n", src_node->type);
-		return -EINVAL;
 	}
+
 	return 0;
 }
 
@@ -192,4 +198,36 @@ find_cur_topo_agg_dev(struct ubagg_topo_map *topo_map,
 			return &(cur_node->agg_devs[i]);
 	}
 	return NULL;
+}
+
+int ubagg_get_primary_eid_by_agg_eid(union ubcore_eid *agg_eid,
+	union ubcore_eid *primary_eid, uint32_t ue_id)
+{
+	struct ubagg_topo_map *topo_map;
+	int node_id, dev_id;
+
+	if (ue_id >= IODIE_NUM) {
+		ubagg_log_err("Invalid ue_id: %u.\n", ue_id);
+		return -EINVAL;
+	}
+
+	topo_map = get_global_ubagg_map();
+	if (!topo_map) {
+		ubagg_log_err("Failed get global topo map");
+		return -EINVAL;
+	}
+
+	for (node_id = 0; node_id < topo_map->node_num; node_id++) {
+		for (dev_id = 0; dev_id < DEV_NUM; dev_id++) {
+			struct ubagg_topo_agg_dev *agg_dev =
+				&topo_map->topo_infos[node_id].agg_devs[dev_id];
+
+			if (memcmp(agg_eid, agg_dev->agg_eid, sizeof(*agg_eid)) == 0) {
+				*primary_eid = *((union ubcore_eid *)
+				agg_dev->ues[ue_id].primary_eid);
+				return 0;
+			}
+		}
+	}
+	return -EINVAL;
 }

@@ -120,6 +120,7 @@ enum HNAE3_DEV_CAP_BITS {
 	HNAE3_DEV_SUPPORT_NOTIFY_PKT_B,
 	HNAE3_DEV_SUPPORT_ERR_MOD_GEN_REG_B,
 	HNAE3_DEV_SUPPORT_VF_MULTI_TCS_B,
+	HNAE3_DEV_SUPPORT_TC_BUFFER_B,
 };
 
 #define hnae3_ae_dev_fd_supported(ae_dev) \
@@ -205,6 +206,9 @@ enum HNAE3_DEV_CAP_BITS {
 
 #define hnae3_ae_dev_vf_multi_tcs_supported(hdev) \
 	test_bit(HNAE3_DEV_SUPPORT_VF_MULTI_TCS_B, (hdev)->ae_dev->caps)
+
+#define hnae3_ae_dev_tc_buffer_supported(hdev) \
+	test_bit(HNAE3_DEV_SUPPORT_TC_BUFFER_B, (hdev)->ae_dev->caps)
 
 enum HNAE3_PF_CAP_BITS {
 	HNAE3_PF_SUPPORT_VLAN_FLTR_MDF_B = 0,
@@ -359,6 +363,7 @@ enum hnae3_dbg_cmd {
 	HNAE3_DBG_CMD_TX_QUEUE_INFO,
 	HNAE3_DBG_CMD_FD_TCAM,
 	HNAE3_DBG_CMD_FD_COUNTER,
+	HNAE3_DBG_CMD_FD_RULE,
 	HNAE3_DBG_CMD_MAC_TNL_STATUS,
 	HNAE3_DBG_CMD_SERV_INFO,
 	HNAE3_DBG_CMD_UMV_INFO,
@@ -434,6 +439,8 @@ struct hnae3_dev_specs {
 	u32 mac_stats_num;
 	u8 tnl_num;
 	u8 hilink_version;
+	u32 total_rx_buffer_size;
+	u32 min_rx_buffer_size_per_tc;
 };
 
 struct hnae3_client_ops {
@@ -619,6 +626,10 @@ typedef int (*read_func)(struct seq_file *s, void *data);
  *   Request to update pfc storm configuration
  * get_pfc_storm_config
  *   Get pfc storm config
+ * set_pfc_storm_prevention_tout
+ *   Set_pfc_storm_prevention_tout
+ * get_pfc_storm_prevention_tout
+ *   Get_pfc_storm_prevention_tout
  * set_tx_hwts_info
  *   Save information for 1588 tx packet
  * get_rx_hwts
@@ -810,7 +821,7 @@ struct hnae3_ae_ops {
 				 u32 len, u8 *data);
 	bool (*get_cmdq_stat)(struct hnae3_handle *handle);
 	int (*add_cls_flower)(struct hnae3_handle *handle,
-			      struct flow_cls_offload *cls_flower, int tc);
+			      struct flow_cls_offload *cls_flower);
 	int (*del_cls_flower)(struct hnae3_handle *handle,
 			      struct flow_cls_offload *cls_flower);
 	bool (*cls_flower_active)(struct hnae3_handle *handle);
@@ -821,6 +832,8 @@ struct hnae3_ae_ops {
 	void (*request_pfc_storm_config)(struct hnae3_handle *handle,
 					 bool enable);
 	int (*get_pfc_storm_config)(struct hnae3_handle *handle, bool *enable);
+	int (*set_pfc_storm_prevention_tout)(struct hnae3_handle *handle, u16 times);
+	int (*get_pfc_storm_prevention_tout)(struct hnae3_handle *handle, u16 *times);
 	bool (*set_tx_hwts_info)(struct hnae3_handle *handle,
 				 struct sk_buff *skb);
 	void (*get_rx_hwts)(struct hnae3_handle *handle, struct sk_buff *skb,
@@ -859,6 +872,12 @@ struct hnae3_dcb_ops {
 	/* DCBX configuration */
 	u8   (*getdcbx)(struct hnae3_handle *);
 	u8   (*setdcbx)(struct hnae3_handle *, u8);
+
+	/* buffer settings */
+	int (*setbuffer)(struct hnae3_handle *h,
+			 struct dcbnl_buffer *buffer);
+	int (*getbuffer)(struct hnae3_handle *h,
+			 struct dcbnl_buffer *buffer);
 
 	int (*setup_tc)(struct hnae3_handle *handle,
 			struct tc_mqprio_qopt_offload *mqprio_qopt);
@@ -900,6 +919,7 @@ struct hnae3_knic_private_info {
 	u32 tx_spare_buf_size;
 
 	struct hnae3_tc_info tc_info;
+	u32 buffer_size[HNAE3_MAX_TC];
 	u8 tc_map_mode;
 	u8 dscp_app_cnt;
 	u8 dscp_prio[HNAE3_MAX_DSCP];

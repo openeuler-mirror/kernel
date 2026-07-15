@@ -16,8 +16,8 @@
 
 /* The default distance between local node and remote node */
 #define REMOTE_TO_LOCAL_DISTANCE	100
-/* The default distance between two remtoe node */
-#define REMOTE_TO_REMOTE_DISTANCE	254
+/* The default distance between two remote node */
+#define REMOTE_TO_REMOTE_DISTANCE	255
 
 bool numa_remote_enabled __ro_after_init;
 static bool numa_remote_nofallback_mode __ro_after_init;
@@ -592,16 +592,56 @@ static ssize_t remote_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(remote);
 
+static ssize_t critical_err_show(struct device *dev,
+				 struct device_attribute *dev_attr, char *buf)
+{
+	return sprintf(buf, "%d\n", node_is_critical_err(dev->id) ? 1 : 0);
+}
+
+static ssize_t critical_err_store(struct device *dev,
+				  struct device_attribute *dev_attr,
+				  const char *buf, size_t count)
+{
+	int nid = dev->id;
+	unsigned long val;
+	int ret;
+
+	ret = kstrtoul(buf, 10, &val);
+	if (ret)
+		return ret;
+
+	if (val > 1)
+		return -EINVAL;
+
+	if (val == 0)
+		clear_node_critical_err(nid);
+	else
+		set_node_critical_err(nid);
+
+	return count;
+}
+static DEVICE_ATTR_RW(critical_err);
+
 void numa_remote_register_node(struct node *node)
 {
-	if (numa_remote_enabled)
-		device_create_file(&node->dev, &dev_attr_remote);
+	if (!numa_remote_enabled)
+		return;
+
+	device_create_file(&node->dev, &dev_attr_remote);
+	if (IS_ENABLED(CONFIG_ACPI_APEI_RAS_CRITICAL) &&
+	    numa_is_remote_node(node->dev.id))
+		device_create_file(&node->dev, &dev_attr_critical_err);
 }
 
 void numa_remote_unregister_node(struct node *node)
 {
-	if (numa_remote_enabled)
-		device_remove_file(&node->dev, &dev_attr_remote);
+	if (!numa_remote_enabled)
+		return;
+
+	device_remove_file(&node->dev, &dev_attr_remote);
+	if (IS_ENABLED(CONFIG_ACPI_APEI_RAS_CRITICAL) &&
+	    numa_is_remote_node(node->dev.id))
+		device_remove_file(&node->dev, &dev_attr_critical_err);
 }
 
 void numa_remote_report_meminfo(struct seq_file *m)

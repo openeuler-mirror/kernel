@@ -15,6 +15,12 @@
 #define UBASE_MAILBOX_SIZE 4096
 #define UBASE_MBX_TX_TIMEOUT 30000
 
+#if defined(UBASE_FPGA_COMPILE) || defined(UBASE_ESL_COMPILE)
+#define UBASE_WAIT_PROXY_RESP_TIME	60000
+#else
+#define UBASE_WAIT_PROXY_RESP_TIME	7000
+#endif
+
 enum ubase_mb_type {
 	UBASE_MB_CREATE,
 	UBASE_MB_MODIFY,
@@ -27,6 +33,13 @@ struct mbx_op_match {
 	u32			op;
 	enum ubase_mb_type	type;
 	struct ubase_ctx_buf_cap	*ctx_caps;
+};
+
+struct ubase_mbox_over_cmdq_completion {
+	int ret;
+	bool get_resp;
+	u16 mbox_resp_len;
+	struct ubase_cmd_mailbox *mbox;
 };
 
 int ubase_mbox_cmd_init(struct ubase_dev *udev);
@@ -49,6 +62,10 @@ int __ubase_hw_upgrade_ctx_ex(struct ubase_dev *udev,
 int ubase_create_ctx_page(struct ubase_dev *udev,
 			  struct ubase_ctx_buf_cap *ctx_buf,
 			  struct ubase_ctx_page **ctx_page, u32 npage);
+int ubase_hw_upgrade_ctx_over_cmdq(struct ubase_dev *udev,
+				   struct ubase_mbx_attr *attr,
+				   struct ubase_cmd_mailbox *mailbox);
+int ubase_handle_mbx_over_cmdq_resp(void *dev, void *data, u32 len);
 void ubase_mailbox_buff_free(struct ubase_dev *udev);
 
 #endif /* __UBASE_MAILBOX_H__ */

@@ -2,6 +2,8 @@
 #include <linux/ras.h>
 #include "amd64_edac.h"
 #include <asm/amd_nb.h>
+#include <asm/amd_node.h>
+#include <asm/hygon/hygon_nb.h>
 
 static struct edac_pci_ctl_info *pci_ctl;
 
@@ -20,7 +22,6 @@ static inline u32 get_umc_reg(struct amd64_pvt *pvt, u32 reg)
 		return reg;
 
 	switch (reg) {
-	case UMCCH_ADDR_CFG:		return UMCCH_ADDR_CFG_DDR5;
 	case UMCCH_ADDR_MASK_SEC:	return UMCCH_ADDR_MASK_SEC_DDR5;
 	case UMCCH_DIMM_CFG:		return UMCCH_DIMM_CFG_DDR5;
 	}
@@ -99,13 +100,36 @@ int __amd64_write_pci_cfg_dword(struct pci_dev *pdev, int offset,
 
 static u32 get_umc_base_f18h_m4h(u16 node, u8 channel)
 {
-	struct pci_dev *f3 = node_to_amd_nb(node)->misc;
+	struct pci_dev *f3 = node_to_hygon_nb(node)->misc;
 	u8 df_id;
 
 	get_df_id(f3, &df_id);
 	df_id -= 4;
 
 	return get_umc_base(channel) + (0x80000000 + (0x10000000 * df_id));
+}
+
+static u32 get_umc_base_f18h_m18h(u8 channel)
+{
+	return 0x70000000 + (channel << 20);
+}
+
+static u32 hygon_get_umc_base(struct amd64_pvt *pvt, u8 channel)
+{
+	u32 umc_base;
+
+	if (hygon_f18h_m4h())
+		umc_base = get_umc_base_f18h_m4h(pvt->mc_node_id, channel);
+	/*
+	 * For Hygon family 18h model 0x18h-0x1fh processors, the UMC base
+	 * are identical.
+	 */
+	else if (hygon_f18h_m10h() && boot_cpu_data.x86_model >= 0x18)
+		umc_base = get_umc_base_f18h_m18h(channel);
+	else
+		umc_base = get_umc_base(channel);
+
+	return umc_base;
 }
 
 /*
@@ -1079,10 +1103,10 @@ static int __df_indirect_read(u16 node, u8 func, u16 reg, u8 instance_id, u32 *l
 	u32 ficaa;
 	int err = -ENODEV;
 
-	if (node >= amd_nb_num())
+	if (node >= hygon_nb_num())
 		goto out;
 
-	F4 = node_to_amd_nb(node)->link;
+	F4 = node_to_hygon_nb(node)->link;
 	if (!F4)
 		goto out;
 
@@ -1740,28 +1764,18 @@ static bool hygon_umc_channel_enabled(struct amd64_pvt *pvt, int channel)
 static void umc_dump_misc_regs(struct amd64_pvt *pvt)
 {
 	struct amd64_umc *umc;
-	u32 i, tmp, umc_base;
+	u32 i;
 
 	for_each_umc(i) {
 		if (!hygon_umc_channel_enabled(pvt, i))
 			continue;
 
-		if (hygon_f18h_m4h())
-			umc_base = get_umc_base_f18h_m4h(pvt->mc_node_id, i);
-		else
-			umc_base = get_umc_base(i);
 		umc = &pvt->umc[i];
 
 		edac_dbg(1, "UMC%d DIMM cfg: 0x%x\n", i, umc->dimm_cfg);
 		edac_dbg(1, "UMC%d UMC cfg: 0x%x\n", i, umc->umc_cfg);
 		edac_dbg(1, "UMC%d SDP ctrl: 0x%x\n", i, umc->sdp_ctrl);
 		edac_dbg(1, "UMC%d ECC ctrl: 0x%x\n", i, umc->ecc_ctrl);
-
-		amd_smn_read(pvt->mc_node_id, umc_base + UMCCH_ECC_BAD_SYMBOL, &tmp);
-		edac_dbg(1, "UMC%d ECC bad symbol: 0x%x\n", i, tmp);
-
-		amd_smn_read(pvt->mc_node_id, umc_base + UMCCH_UMC_CAP, &tmp);
-		edac_dbg(1, "UMC%d UMC cap: 0x%x\n", i, tmp);
 		edac_dbg(1, "UMC%d UMC cap high: 0x%x\n", i, umc->umc_cap_hi);
 
 		edac_dbg(1, "UMC%d ECC capable: %s, ChipKill ECC capable: %s\n",
@@ -1773,14 +1787,6 @@ static void umc_dump_misc_regs(struct amd64_pvt *pvt)
 				i, (umc->dimm_cfg & BIT(6)) ? "yes" : "no");
 		edac_dbg(1, "UMC%d x16 DIMMs present: %s\n",
 				i, (umc->dimm_cfg & BIT(7)) ? "yes" : "no");
-
-		if (umc->dram_type == MEM_LRDDR4 || umc->dram_type == MEM_LRDDR5) {
-			amd_smn_read(pvt->mc_node_id,
-				     umc_base + get_umc_reg(pvt, UMCCH_ADDR_CFG),
-				     &tmp);
-			edac_dbg(1, "UMC%d LRDIMM %dx rank multiply\n",
-					i, 1 << ((tmp >> 4) & 0x3));
-		}
 
 		umc_debug_display_dimm_sizes(pvt, i);
 	}
@@ -1850,7 +1856,7 @@ static void umc_prep_chip_selects(struct amd64_pvt *pvt)
 	}
 }
 
-static void umc_read_base_mask(struct amd64_pvt *pvt)
+static void hygon_umc_read_base_mask(struct amd64_pvt *pvt)
 {
 	u32 umc_base_reg, umc_base_reg_sec;
 	u32 umc_mask_reg, umc_mask_reg_sec;
@@ -1860,15 +1866,13 @@ static void umc_read_base_mask(struct amd64_pvt *pvt)
 	u32 *mask, *mask_sec;
 	u32 umc_base;
 	int cs, umc;
+	u32 tmp;
 
 	for_each_umc(umc) {
 		if (!hygon_umc_channel_enabled(pvt, umc))
 			continue;
 
-		if (hygon_f18h_m4h())
-			umc_base = get_umc_base_f18h_m4h(pvt->mc_node_id, umc);
-		else
-			umc_base = get_umc_base(umc);
+		umc_base = hygon_get_umc_base(pvt, umc);
 
 		umc_base_reg = umc_base + UMCCH_BASE_ADDR;
 		umc_base_reg_sec = umc_base + UMCCH_BASE_ADDR_SEC;
@@ -1880,13 +1884,80 @@ static void umc_read_base_mask(struct amd64_pvt *pvt)
 			base_reg = umc_base_reg + (cs * 4);
 			base_reg_sec = umc_base_reg_sec + (cs * 4);
 
-			if (!amd_smn_read(pvt->mc_node_id, base_reg, base))
+			if (!hygon_smn_read(pvt->mc_node_id, base_reg, &tmp)) {
+				*base = tmp;
 				edac_dbg(0, "  DCSB%d[%d]=0x%08x reg: 0x%x\n",
 					 umc, cs, *base, base_reg);
+			}
 
-			if (!amd_smn_read(pvt->mc_node_id, base_reg_sec, base_sec))
+			if (!hygon_smn_read(pvt->mc_node_id, base_reg_sec, &tmp)) {
+				*base_sec = tmp;
 				edac_dbg(0, "    DCSB_SEC%d[%d]=0x%08x reg: 0x%x\n",
 					 umc, cs, *base_sec, base_reg_sec);
+			}
+		}
+
+		umc_mask_reg = umc_base + UMCCH_ADDR_MASK;
+		umc_mask_reg_sec = umc_base + UMCCH_ADDR_MASK_SEC;
+
+		for_each_chip_select_mask(cs, umc, pvt) {
+			mask = &pvt->csels[umc].csmasks[cs];
+			mask_sec = &pvt->csels[umc].csmasks_sec[cs];
+
+			mask_reg = umc_mask_reg + (cs * 4);
+			mask_reg_sec = umc_mask_reg_sec + (cs * 4);
+
+			if (!hygon_smn_read(pvt->mc_node_id, mask_reg, &tmp)) {
+				*mask = tmp;
+				edac_dbg(0, "  DCSM%d[%d]=0x%08x reg: 0x%x\n",
+					 umc, cs, *mask, mask_reg);
+			}
+
+			if (!hygon_smn_read(pvt->mc_node_id, mask_reg_sec, &tmp)) {
+				*mask_sec = tmp;
+				edac_dbg(0, "    DCSM_SEC%d[%d]=0x%08x reg: 0x%x\n",
+					 umc, cs, *mask_sec, mask_reg_sec);
+			}
+		}
+	}
+}
+
+static void umc_read_base_mask(struct amd64_pvt *pvt)
+{
+	u32 umc_base_reg, umc_base_reg_sec;
+	u32 umc_mask_reg, umc_mask_reg_sec;
+	u32 base_reg, base_reg_sec;
+	u32 mask_reg, mask_reg_sec;
+	u32 *base, *base_sec;
+	u32 *mask, *mask_sec;
+	u32 umc_base;
+	int cs, umc;
+	u32 tmp;
+
+	for_each_umc(umc) {
+		umc_base = get_umc_base(umc);
+
+		umc_base_reg = umc_base + UMCCH_BASE_ADDR;
+		umc_base_reg_sec = umc_base + UMCCH_BASE_ADDR_SEC;
+
+		for_each_chip_select(cs, umc, pvt) {
+			base = &pvt->csels[umc].csbases[cs];
+			base_sec = &pvt->csels[umc].csbases_sec[cs];
+
+			base_reg = umc_base_reg + (cs * 4);
+			base_reg_sec = umc_base_reg_sec + (cs * 4);
+
+			if (!amd_smn_read(pvt->mc_node_id, base_reg, &tmp)) {
+				*base = tmp;
+				edac_dbg(0, "  DCSB%d[%d]=0x%08x reg: 0x%x\n",
+					 umc, cs, *base, base_reg);
+			}
+
+			if (!amd_smn_read(pvt->mc_node_id, base_reg_sec, &tmp)) {
+				*base_sec = tmp;
+				edac_dbg(0, "    DCSB_SEC%d[%d]=0x%08x reg: 0x%x\n",
+					 umc, cs, *base_sec, base_reg_sec);
+			}
 		}
 
 		umc_mask_reg = umc_base + UMCCH_ADDR_MASK;
@@ -1899,13 +1970,17 @@ static void umc_read_base_mask(struct amd64_pvt *pvt)
 			mask_reg = umc_mask_reg + (cs * 4);
 			mask_reg_sec = umc_mask_reg_sec + (cs * 4);
 
-			if (!amd_smn_read(pvt->mc_node_id, mask_reg, mask))
+			if (!amd_smn_read(pvt->mc_node_id, mask_reg, &tmp)) {
+				*mask = tmp;
 				edac_dbg(0, "  DCSM%d[%d]=0x%08x reg: 0x%x\n",
 					 umc, cs, *mask, mask_reg);
+			}
 
-			if (!amd_smn_read(pvt->mc_node_id, mask_reg_sec, mask_sec))
+			if (!amd_smn_read(pvt->mc_node_id, mask_reg_sec, &tmp)) {
+				*mask_sec = tmp;
 				edac_dbg(0, "    DCSM_SEC%d[%d]=0x%08x reg: 0x%x\n",
 					 umc, cs, *mask_sec, mask_reg_sec);
+			}
 		}
 	}
 }
@@ -3338,6 +3413,38 @@ static void determine_ecc_sym_sz(struct amd64_pvt *pvt)
 	}
 }
 
+static void hygon_umc_read_mc_regs(struct amd64_pvt *pvt)
+{
+	u8 nid = pvt->mc_node_id;
+	struct amd64_umc *umc;
+	u32 i, tmp, umc_base;
+
+	/* Read registers from each UMC */
+	for_each_umc(i) {
+		if (!hygon_umc_channel_enabled(pvt, i))
+			continue;
+
+		umc_base = hygon_get_umc_base(pvt, i);
+
+		umc = &pvt->umc[i];
+
+		if (!hygon_smn_read(nid, umc_base + UMCCH_DIMM_CFG, &tmp))
+			umc->dimm_cfg = tmp;
+
+		if (!hygon_smn_read(nid, umc_base + UMCCH_UMC_CFG, &tmp))
+			umc->umc_cfg = tmp;
+
+		if (!hygon_smn_read(nid, umc_base + UMCCH_SDP_CTRL, &tmp))
+			umc->sdp_ctrl = tmp;
+
+		if (!hygon_smn_read(nid, umc_base + UMCCH_ECC_CTRL, &tmp))
+			umc->ecc_ctrl = tmp;
+
+		if (!hygon_smn_read(nid, umc_base + UMCCH_UMC_CAP_HI, &tmp))
+			umc->umc_cap_hi = tmp;
+	}
+}
+
 /*
  * Retrieve the hardware registers of the memory controller.
  */
@@ -3345,25 +3452,28 @@ static void umc_read_mc_regs(struct amd64_pvt *pvt)
 {
 	u8 nid = pvt->mc_node_id;
 	struct amd64_umc *umc;
-	u32 i, umc_base;
+	u32 i, tmp, umc_base;
 
 	/* Read registers from each UMC */
 	for_each_umc(i) {
-		if (!hygon_umc_channel_enabled(pvt, i))
-			continue;
-
-		if (hygon_f18h_m4h())
-			umc_base = get_umc_base_f18h_m4h(pvt->mc_node_id, i);
-		else
-			umc_base = get_umc_base(i);
+		umc_base = get_umc_base(i);
 
 		umc = &pvt->umc[i];
 
-		amd_smn_read(nid, umc_base + get_umc_reg(pvt, UMCCH_DIMM_CFG), &umc->dimm_cfg);
-		amd_smn_read(nid, umc_base + UMCCH_UMC_CFG, &umc->umc_cfg);
-		amd_smn_read(nid, umc_base + UMCCH_SDP_CTRL, &umc->sdp_ctrl);
-		amd_smn_read(nid, umc_base + UMCCH_ECC_CTRL, &umc->ecc_ctrl);
-		amd_smn_read(nid, umc_base + UMCCH_UMC_CAP_HI, &umc->umc_cap_hi);
+		if (!amd_smn_read(nid, umc_base + get_umc_reg(pvt, UMCCH_DIMM_CFG), &tmp))
+			umc->dimm_cfg = tmp;
+
+		if (!amd_smn_read(nid, umc_base + UMCCH_UMC_CFG, &tmp))
+			umc->umc_cfg = tmp;
+
+		if (!amd_smn_read(nid, umc_base + UMCCH_SDP_CTRL, &tmp))
+			umc->sdp_ctrl = tmp;
+
+		if (!amd_smn_read(nid, umc_base + UMCCH_ECC_CTRL, &tmp))
+			umc->ecc_ctrl = tmp;
+
+		if (!amd_smn_read(nid, umc_base + UMCCH_UMC_CAP_HI, &tmp))
+			umc->umc_cap_hi = tmp;
 	}
 }
 
@@ -3918,8 +4028,14 @@ static int umc_hw_info_get(struct amd64_pvt *pvt)
 		return -ENOMEM;
 
 	umc_prep_chip_selects(pvt);
-	umc_read_base_mask(pvt);
-	umc_read_mc_regs(pvt);
+
+	if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON) {
+		hygon_umc_read_base_mask(pvt);
+		hygon_umc_read_mc_regs(pvt);
+	} else {
+		umc_read_base_mask(pvt);
+		umc_read_mc_regs(pvt);
+	}
 	umc_determine_memory_type(pvt);
 
 	return 0;
@@ -4078,16 +4194,21 @@ static void gpu_read_mc_regs(struct amd64_pvt *pvt)
 {
 	u8 nid = pvt->mc_node_id;
 	struct amd64_umc *umc;
-	u32 i, umc_base;
+	u32 i, tmp, umc_base;
 
 	/* Read registers from each UMC */
 	for_each_umc(i) {
 		umc_base = gpu_get_umc_base(i, 0);
 		umc = &pvt->umc[i];
 
-		amd_smn_read(nid, umc_base + UMCCH_UMC_CFG, &umc->umc_cfg);
-		amd_smn_read(nid, umc_base + UMCCH_SDP_CTRL, &umc->sdp_ctrl);
-		amd_smn_read(nid, umc_base + UMCCH_ECC_CTRL, &umc->ecc_ctrl);
+		if (!amd_smn_read(nid, umc_base + UMCCH_UMC_CFG, &tmp))
+			umc->umc_cfg = tmp;
+
+		if (!amd_smn_read(nid, umc_base + UMCCH_SDP_CTRL, &tmp))
+			umc->sdp_ctrl = tmp;
+
+		if (!amd_smn_read(nid, umc_base + UMCCH_ECC_CTRL, &tmp))
+			umc->ecc_ctrl = tmp;
 	}
 }
 
@@ -4276,28 +4397,35 @@ static int per_family_init(struct amd64_pvt *pvt)
 		break;
 
 	case 0x18:
-		if (pvt->model == 0x4) {
+		switch (pvt->model) {
+		case 0x4:
 			pvt->ctl_name			= "F18h_M04h";
 			pvt->max_mcs			= 3;
 			break;
-		} else if (pvt->model == 0x5) {
+		case 0x5:
 			pvt->ctl_name			= "F18h_M05h";
 			pvt->max_mcs			= 1;
 			break;
-		} else if (pvt->model == 0x6) {
+		case 0x6:
 			pvt->ctl_name			= "F18h_M06h";
 			break;
-		} else if (pvt->model == 0x7) {
+		case 0x7:
 			pvt->ctl_name			= "F18h_M07h";
 			break;
-		} else if (pvt->model == 0x8) {
+		case 0x8:
 			pvt->ctl_name			= "F18h_M08h";
 			break;
-		} else if (pvt->model == 0x10) {
+		case 0x10:
 			pvt->ctl_name			= "F18h_M10h";
 			break;
+		case 0x18:
+			pvt->ctl_name			= "F18h_M18h";
+			pvt->max_mcs			= 1;
+			break;
+		default:
+			pvt->ctl_name			= "F18h";
+			break;
 		}
-		pvt->ctl_name				= "F18h";
 		break;
 
 	case 0x19:
@@ -4353,6 +4481,26 @@ static int per_family_init(struct amd64_pvt *pvt)
 			break;
 		case 0x40 ... 0x4f:
 			pvt->ctl_name           = "F1Ah_M40h";
+			pvt->flags.zn_regs_v2   = 1;
+			break;
+		case 0x50 ... 0x57:
+			pvt->ctl_name           = "F1Ah_M50h";
+			pvt->max_mcs            = 16;
+			pvt->flags.zn_regs_v2   = 1;
+			break;
+		case 0x90 ... 0x9f:
+			pvt->ctl_name           = "F1Ah_M90h";
+			pvt->max_mcs            = 8;
+			pvt->flags.zn_regs_v2   = 1;
+			break;
+		case 0xa0 ... 0xaf:
+			pvt->ctl_name           = "F1Ah_MA0h";
+			pvt->max_mcs            = 8;
+			pvt->flags.zn_regs_v2   = 1;
+			break;
+		case 0xc0 ... 0xc7:
+			pvt->ctl_name           = "F1Ah_MC0h";
+			pvt->max_mcs            = 16;
 			pvt->flags.zn_regs_v2   = 1;
 			break;
 		}
@@ -4427,7 +4575,7 @@ static bool instance_has_memory(struct amd64_pvt *pvt)
 
 static int probe_one_instance(unsigned int nid)
 {
-	struct pci_dev *F3 = node_to_amd_nb(nid)->misc;
+	struct pci_dev *F3;
 	struct amd64_pvt *pvt = NULL;
 	struct ecc_settings *s;
 	int ret;
@@ -4444,6 +4592,10 @@ static int probe_one_instance(unsigned int nid)
 		goto err_settings;
 
 	pvt->mc_node_id	= nid;
+	if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON)
+		F3 = node_to_hygon_nb(nid)->misc;
+	else
+		F3 = node_to_amd_nb(nid)->misc;
 	pvt->F3 = F3;
 
 	ret = per_family_init(pvt);
@@ -4507,10 +4659,15 @@ err_out:
 
 static void remove_one_instance(unsigned int nid)
 {
-	struct pci_dev *F3 = node_to_amd_nb(nid)->misc;
+	struct pci_dev *F3;
 	struct ecc_settings *s = ecc_stngs[nid];
 	struct mem_ctl_info *mci;
 	struct amd64_pvt *pvt;
+
+	if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON)
+		F3 = node_to_hygon_nb(nid)->misc;
+	else
+		F3 = node_to_amd_nb(nid)->misc;
 
 	/* Remove from EDAC CORE tracking list */
 	mci = edac_mc_del_mc(&F3->dev);
@@ -4574,13 +4731,13 @@ static int __init amd64_edac_init(void)
 	if (!x86_match_cpu(amd64_cpuids))
 		return -ENODEV;
 
-	if (!amd_nb_num())
+	if (!amd_nb_num() && !hygon_node_num())
 		return -ENODEV;
 
 	opstate_init();
 
 	if (hygon_f18h_m4h())
-		instance_num = hygon_nb_num();
+		instance_num = hygon_node_num();
 	else
 		instance_num = amd_nb_num();
 
@@ -4651,7 +4808,7 @@ static void __exit amd64_edac_exit(void)
 		amd_unregister_ecc_decoder(decode_bus_error);
 
 	if (hygon_f18h_m4h())
-		instance_num = hygon_nb_num();
+		instance_num = hygon_node_num();
 	else
 		instance_num = amd_nb_num();
 

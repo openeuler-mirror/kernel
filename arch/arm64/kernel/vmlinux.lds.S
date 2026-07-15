@@ -190,6 +190,15 @@ SECTIONS
 	/* everything from this point to __init_begin will be marked RO NX */
 	RO_DATA(PAGE_SIZE)
 
+#ifdef CONFIG_ARM64_SYNC_SEI
+	. = ALIGN(8);
+	.esb_patch_table : {
+		PROVIDE(__start_esb_patch_table = .);
+		*(.esb_patch_table)
+		PROVIDE(__stop_esb_patch_table = .);
+	}
+#endif
+
 	HYPERVISOR_DATA_SECTIONS
 
 	.got : { *(.got) }

@@ -114,7 +114,8 @@ static int ubase_alloc_pmem(struct ubase_dev *udev, const char *type,
 	int i;
 
 	for (i = 0; i < page_cnt; i++) {
-		pgs[i] = alloc_pages(GFP_KERNEL | __GFP_ZERO, order);
+		pgs[i] = alloc_pages_node(dev_to_node(udev->dev),
+					  udev->gfp | __GFP_ZERO, order);
 		if (!pgs[i]) {
 			ubase_err(udev,
 				  "failed to alloc %s pages[%d], page_cnt = %d, order = %d.\n",

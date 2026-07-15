@@ -616,16 +616,21 @@ config ARCH_MHP_MEMMAP_ON_MEMORY_ENABLE
 # at the same time (e.g. copy_page_range()).
 # DEBUG_SPINLOCK and DEBUG_LOCK_ALLOC spinlock_t also enlarge struct page.
 #
-config SPLIT_PTLOCK_CPUS
-	int
-	default "999999" if !MMU
-	default "999999" if ARM && !CPU_CACHE_VIPT
-	default "999999" if PARISC && !PA20
-	default "999999" if SPARC32
-	default "4"
+config SPLIT_PTE_PTLOCKS
+	def_bool y
+	depends on MMU
+	depends on SMP
+	depends on NR_CPUS >= 4
+	depends on !ARM || CPU_CACHE_VIPT
+	depends on !PARISC || PA20
+	depends on !SPARC32
 
 config ARCH_ENABLE_SPLIT_PMD_PTLOCK
 	bool
+
+config SPLIT_PMD_PTLOCKS
+	def_bool y
+	depends on SPLIT_PTE_PTLOCKS && ARCH_ENABLE_SPLIT_PMD_PTLOCK
 
 #
 # support for memory balloon
@@ -1099,10 +1104,14 @@ config ZONE_DEVICE
 	  Device memory hotplug support allows for establishing pmem,
 	  or other device driver discovered memory regions, in the
 	  memmap. This allows pfn_to_page() lookups of otherwise
-	  "device-physical" addresses which is needed for using a DAX
-	  mapping in an O_DIRECT operation, among other things.
+	  "device-physical" addresses which is needed for DAX, PCI_P2PDMA, and
+	  DEVICE_PRIVATE features among others.
 
-	  If FS_DAX is enabled, then say Y.
+	  Enabling this option will reduce the entropy of x86 KASLR memory
+	  regions. For example - on a 46 bit system, the entropy goes down
+	  from 16 bits to 15 bits. The actual reduction in entropy depends
+	  on the physical address bits, on processor features, kernel config
+	  (5 level page table) and physical memory present on the system.
 
 config ZONE_EXTMEM
 	bool "Extension memory hotplug support"
@@ -1560,5 +1569,17 @@ config FILEMAP_LOCAL_ALLOC
 	  the kernel will attempt to allocate file cache pages strictly from the
 	  non-cpuless numa's memory. If set to 0 (default), the kernel follows the
 	  standard memory allocation policy.
+
+config CMA_FOLIO
+	bool "CMA based folio allocation"
+	depends on CMA && TRANSPARENT_HUGEPAGE
+	depends on ARM64
+	help
+	  This option enables allocating folios from reserved CMA
+	  areas. When enabled via the "folio_cma=" kernel command
+	  line, folios  will be allocated from CMA areas if available.
+	  The memory is returned to CMA upon release.
+
+	  If unsure, say "n".
 
 endmenu

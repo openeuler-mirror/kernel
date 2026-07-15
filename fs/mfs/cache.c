@@ -21,9 +21,8 @@ static int fd_release(struct inode *inode, struct file *file)
 	struct mfs_cache_object *object = file->private_data;
 
 	down_write(&object->rwsem);
-	if (object->fd > 0) {
+	if (object->fd >= 0) {
 		object->fd = -1;
-		object->anon_file = NULL;
 		up_write(&object->rwsem);
 		iput(object->mfs_inode);
 	} else {
@@ -246,7 +245,6 @@ static int mfs_setup_object(struct mfs_cache_object *object,
 	object->cache_file = cache_file;
 	init_rwsem(&object->rwsem);
 	object->fd = -1;
-	object->anon_file = NULL;
 	return 0;
 }
 
@@ -262,37 +260,41 @@ struct mfs_event *mfs_pick_event(struct xa_state *xas,
 	return NULL;
 }
 
-void mfs_post_event_read(struct mfs_cache_object *object,
-			       loff_t off, uint64_t len,
-			       struct mfs_syncer *syncer, int op)
+static void mfs_post_event(struct mfs_cache_object *object, void *msg,
+						   struct mfs_syncer *syncer, int op)
 {
 	struct mfs_sb_info *sbi = MFS_SB(object->mfs_inode->i_sb);
 	struct mfs_caches *caches = &sbi->caches;
 	XA_STATE(xas, &caches->events, 0);
 	struct mfs_event *event;
-	struct mfs_read *msg;
-	int ret;
+	int ret, datalen;
+
+	if (op == MFS_OP_READ || op == MFS_OP_FAULT)
+		datalen = sizeof(struct mfs_read);
+	else if (op == MFS_OP_CLOSE)
+		datalen = 0;
+	else {
+		pr_warn("%s: unsupported event type %d\n", __func__, op);
+		return;
+	}
 
 	/* 1. init event struct */
-	event = kzalloc(sizeof(*event) + sizeof(*msg), GFP_KERNEL);
+	event = kzalloc(sizeof(*event) + datalen, GFP_KERNEL);
 	if (!event) {
-		pr_warn("post read event failed, off:%lld, len:%llu\n", off, len);
+		pr_warn("post event failed, type:%d\n", op);
 		return;
 	}
 
 	/* 2. hold object's owner mfs_inode */
 	ihold(object->mfs_inode);
-	trace_mfs_post_event_read(object->mfs_inode, off, len, op);
 	refcount_set(&event->ref, 1);
 	event->object = object;
 	event->msg.version = 0;
 	event->msg.opcode = op;
-	event->msg.len = sizeof(struct mfs_msg) + sizeof(struct mfs_read);
+	event->msg.len = sizeof(struct mfs_msg) + datalen;
 	event->msg.fd = object->fd;
-	msg = (void *)event->msg.data;
-	msg->off = off;
-	msg->len = len;
-	msg->pid = current->pid;
+	if (datalen > 0)
+		memcpy((void *)event->msg.data, msg, datalen);
 	INIT_LIST_HEAD(&event->link);
 	event->syncer = syncer;
 	if (event->syncer) {
@@ -336,8 +338,8 @@ void mfs_post_event_read(struct mfs_cache_object *object,
 
 	ret = xas_error(&xas);
 	if (ret) {
-		pr_warn("post read event failed to insert events, off:%lld, len:%llu, ret:%d\n",
-			off, len, ret);
+		pr_warn("post event failed to insert events, type:%d, ret:%d\n",
+			op, ret);
 		goto out;
 	}
 
@@ -353,6 +355,24 @@ out:
 	}
 	kfree(event);
 	iput(object->mfs_inode);
+}
+
+void mfs_post_event_read(struct mfs_cache_object *object,
+			       loff_t off, uint64_t len,
+			       struct mfs_syncer *syncer, int op)
+{
+	struct mfs_read msg;
+
+	msg.off = off;
+	msg.len = len;
+	msg.pid = current->pid;
+	trace_mfs_post_event_read(object->mfs_inode, off, len, op);
+	mfs_post_event(object, &msg, syncer, op);
+}
+
+void mfs_post_event_close(struct mfs_cache_object *object)
+{
+	mfs_post_event(object, NULL, NULL, MFS_OP_CLOSE);
 }
 
 void mfs_destroy_events(struct super_block *sb)
@@ -439,13 +459,13 @@ int try_hook_fd(struct mfs_event *event)
 	int fd;
 
 	down_read(&object->rwsem);
-	if (object->fd > 0) {
+	if (object->fd >= 0) {
 		up_read(&object->rwsem);
 		return object->fd;
 	}
 	up_read(&object->rwsem);
 	down_write(&object->rwsem);
-	if (object->fd > 0) {
+	if (object->fd >= 0) {
 		up_write(&object->rwsem);
 		return object->fd;
 	}
@@ -463,7 +483,6 @@ int try_hook_fd(struct mfs_event *event)
 	}
 	anon_file->f_mode |= FMODE_PWRITE | FMODE_LSEEK;
 	object->fd = fd;
-	object->anon_file = anon_file;
 	/* lifecyle of fd/anon_file should later than mfs_inode */
 	ihold(object->mfs_inode);
 	fd_install(fd, anon_file);

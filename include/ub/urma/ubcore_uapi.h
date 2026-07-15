@@ -696,6 +696,13 @@ int ubcore_deactive_jetty(struct ubcore_jetty *jetty, struct ubcore_udata *udata
  */
 int ubcore_free_jetty(struct ubcore_jetty *jetty, struct ubcore_udata *udata);
 
+/**
+ * import jfr to ubcore device.
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] cfg: remote jfr attributes and import configurations;
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: target jfr pointer on success, NULL on error
+ */
 struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
 					struct ubcore_tjetty_cfg *cfg,
 					struct ubcore_udata *udata);
@@ -760,6 +767,8 @@ int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty);
  */
 int ubcore_bind_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
 		      struct ubcore_udata *udata);
+
+int ubcore_delete_tpid(struct ubcore_device *dev, struct ubcore_tpid *tpid);
 
 /**
  * Bind jetty: Bind local jetty with remote jetty, and construct a transport channel between them.
@@ -861,6 +870,8 @@ int ubcore_unbind_jetty_async(struct ubcore_jetty *jetty, int timeout,
 int ubcore_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *cfg,
 				uint32_t *tp_cnt, struct ubcore_tp_info *tp_list,
 				struct ubcore_udata *udata);
+struct ubcore_tpid *ubcore_create_tpid(struct ubcore_device *dev,
+	struct ubcore_tpid_cfg *cfg, struct ubcore_udata *udata);
 
 /**
  * set tp attributions by control plane.
@@ -1122,33 +1133,76 @@ int ubcore_get_topo_eid(uint32_t tp_type, union ubcore_eid *src_v_eid,
 	union ubcore_eid *dst_v_eid, union ubcore_eid *src_p_eid,
 	union ubcore_eid *dst_p_eid);
 
+union ubcore_comm_msg_flag {
+	struct {
+		uint16_t reserved : 16;
+	} bs;
+	uint16_t value;
+};
+
+struct ubcore_comm_msg {
+	uint8_t version; /* Message format version */
+	uint8_t type; /* Message sub-type within the protocol */
+	uint16_t len; /* Payload buffer length in bytes, excluding this header */
+	uint32_t session_id; /* Session id used to match requests and responses */
+	uint16_t protocol_id; /* Protocol id used to dispatch messages, 0 is reserved for ubcore */
+	union ubcore_comm_msg_flag flag; /* Protocol extension flags */
+	void *data; /* Pointer to payload buffer described by len */
+};
+
 /**
- * send bonding user msg to peer through ubcore net layer
- * @param[in] dev: the ubcore device handle
- * @param[in] peer_eid: remote eid
- * @param[in] session_id: message sequence number
- * @param[in] payload: bonding user msg payload to send
- * @param[in] payload_len: bonding user msg payload length
- * @return: 0 on success, other value on error
+ * Protocol communication message callback.
+ * @param[in] dev: ubcore device.
+ * @param[in] msg: received communication message.
+ * @param[in] conn: connection handle that received the message.
  */
-int ubcore_net_send_bonding_user_msg(struct ubcore_device *dev,
-				     union ubcore_eid peer_eid,
-				     uint32_t session_id,
-				     const void *payload,
-				     uint16_t payload_len);
+typedef void (*ubcore_comm_msg_handler)(struct ubcore_device *dev,
+					struct ubcore_comm_msg *msg,
+					void *conn);
+
 /**
- * register net bonding user msg callback
- * @param[in] handler: callback used to process received bonding user msg
- * @return: 0 on success, other value on error
+ * Register a communication message handler for a protocol ID.
+ * The handler is invoked for every received message whose protocol_id matches.
+ * The handler is responsible for further dispatch based on msg->type.
+ *
+ * @param[in] protocol_id: protocol id.
+ * @param[in] handler: callback used to process matched messages.
+ * @return 0 on success, -EINVAL on bad params, -EEXIST if already registered.
  */
-int ubcore_net_register_bonding_user_msg_handler(
-	void (*handler)(struct ubcore_device *dev,
-			void *payload, uint16_t payload_len, void *conn));
+int ubcore_register_comm_msg_handler(uint16_t protocol_id,
+				     ubcore_comm_msg_handler handler);
+
 /**
- * unregister net bonding user msg callback
- * @param[in] handler: callback registered before
+ * Unregister the communication message handler installed for a protocol ID.
+ * Safe to call when no handler is registered for the target ID.
+ * Modules owning a handler must unregister it before unloading.
+ * @param[in] protocol_id: protocol id.
  */
-void ubcore_net_unregister_bonding_user_msg_handler(
-	void (*handler)(struct ubcore_device *dev,
-			void *payload, uint16_t payload_len, void *conn));
+void ubcore_unregister_comm_msg_handler(uint16_t protocol_id);
+
+/**
+ * Send a communication message over an existing connection.
+ * This is typically used to reply on the same connection where a request
+ * was received.
+ * @param[in] dev: ubcore device.
+ * @param[in] msg: message to send.
+ * @param[in] conn: connection handle used to send the message.
+ * @return: 0 on success, other value on error.
+ */
+int ubcore_send_comm_msg(struct ubcore_device *dev, struct ubcore_comm_msg *msg,
+			 void *conn);
+
+/**
+ * Send a communication message to a destination identified by its EID.
+ * @param[in] dev: ubcore device.
+ * @param[in] msg: message to send.
+ * @param[in] addr: destination eid.
+ * @return: 0 on success, other value on error.
+ */
+int ubcore_send_comm_msg_to(struct ubcore_device *dev,
+			    struct ubcore_comm_msg *msg, union ubcore_eid addr);
+
+bool ubcore_dev_ns_shared(void);
+bool ubcore_eid_ns_shared(void);
+
 #endif

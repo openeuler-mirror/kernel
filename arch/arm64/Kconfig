@@ -2505,6 +2505,20 @@ config ARM64_PSEUDO_NMI
 
 	  If unsure, say N
 
+config ARM64_SYNC_SEI
+	bool "Use ESB to Synchronize SEI At Exception Boundary(EXPERIMENTAL)"
+	depends on ARM64_RAS_EXTN && ACPI_APEI_GHES_ARMP_VENDOR_INFO
+	help
+	  For Firmware-First, Use the ESB to synchronize SEI occurs before
+	  exception entry from EL0 and exit to EL0.
+
+	  SEI is an asynchronous exception that can occur on ARMv8 systems.
+	  When firmware handles SEI first, it analyzes and records the error.
+	  This option allows the OS to retrieve the error record and take
+	  appropriate action, such as killing the affected task.
+
+	  if unsure, say N
+
 if ARM64_PSEUDO_NMI
 config ARM64_DEBUG_PRIORITY_MASKING
 	bool "Debug interrupt priority masking"

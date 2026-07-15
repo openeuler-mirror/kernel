@@ -4132,6 +4132,66 @@ static void leapraid_sas_pd_expose(
 	}
 }
 
+static void leapraid_sas_vol_visibility(struct leapraid_adapter *adapter,
+		struct leapraid_evt_data_ir_change *evt_data)
+{
+	struct leapraid_raid_volume *raid_volume = NULL;
+	struct scsi_device *sdev = NULL;
+	u16 hdl = 0;
+	unsigned long flags;
+	u8 rc = 0;
+	u8 reprobe_flg = 0;
+
+	hdl = le16_to_cpu(evt_data->vol_dev_hdl);
+	rc = evt_data->reason_code;
+	spin_lock_irqsave(&adapter->dev_topo.raid_volume_lock, flags);
+	raid_volume = leapraid_raid_volume_find_by_hdl(adapter, hdl);
+	if (!raid_volume) {
+		spin_unlock_irqrestore(&adapter->dev_topo.raid_volume_lock,
+				       flags);
+		dev_warn(&adapter->pdev->dev,
+			 "%s:%d: volume handle 0x%x not found\n",
+			 __func__, __LINE__, hdl);
+		return;
+	}
+
+	reprobe_flg = 0;
+	sdev = raid_volume->sdev;
+	if (sdev) {
+		if (sdev->no_uld_attach) {
+			if (rc == LEAPRAID_EVT_IR_RC_VOLUME_UNHIDE) {
+				sdev->no_uld_attach = 0;
+				reprobe_flg = 1;
+			}
+		} else {
+			if (rc == LEAPRAID_EVT_IR_RC_VOLUME_HIDE) {
+				sdev->no_uld_attach = 1;
+				reprobe_flg = 1;
+			}
+		}
+
+		if (reprobe_flg) {
+			if (sdev->no_uld_attach)
+				sdev_printk(KERN_INFO, sdev, "hide vol\n");
+			else
+				sdev_printk(KERN_INFO, sdev, "unhide vol\n");
+
+			WARN_ON(scsi_device_reprobe(sdev));
+		} else {
+			dev_warn(&adapter->pdev->dev,
+				 "%s:rc(0x%x):request matches, skipping.\n",
+				 __func__, rc);
+		}
+
+	} else {
+		dev_warn(&adapter->pdev->dev,
+			 "%s:%d: volume handle 0x%x has no sdev\n",
+			 __func__, __LINE__, hdl);
+	}
+
+	spin_unlock_irqrestore(&adapter->dev_topo.raid_volume_lock, flags);
+}
+
 static void leapraid_sas_volume_add(struct leapraid_adapter *adapter,
 		struct leapraid_evt_data_ir_change *evt_data)
 {
@@ -4249,6 +4309,10 @@ static void leapraid_sas_ir_chg_evt(struct leapraid_adapter *adapter,
 		break;
 	case LEAPRAID_EVT_IR_RC_PD_DELETED_TO_EXPOSE:
 		leapraid_sas_pd_expose(adapter, evt_data);
+		break;
+	case LEAPRAID_EVT_IR_RC_VOLUME_HIDE:
+	case LEAPRAID_EVT_IR_RC_VOLUME_UNHIDE:
+		leapraid_sas_vol_visibility(adapter, evt_data);
 		break;
 	default:
 		break;
@@ -6397,6 +6461,8 @@ static int leapraid_get_adapter_features(struct leapraid_adapter *adapter)
 		le16_to_cpu(leap_mpi_rep.hp_slot);
 	adapter->adapter_attr.features.adapter_caps =
 		le32_to_cpu(leap_mpi_rep.adapter_caps);
+	adapter->adapter_attr.features.max_msix_vectors =
+		leap_mpi_rep.max_msix_vectors;
 	adapter->adapter_attr.features.max_volumes =
 		leap_mpi_rep.max_volumes;
 	if (!adapter->adapter_attr.features.max_volumes)
@@ -6754,10 +6820,14 @@ static int leapraid_set_msix(struct leapraid_adapter *adapter)
 		goto legacy_int;
 
 	msix_cnt = leapraid_msix_cnt(adapter->pdev);
-	if (msix_cnt <= 0) {
+	if (msix_cnt <= 0 ||
+	    adapter->adapter_attr.features.max_msix_vectors == 0) {
 		dev_info(&adapter->pdev->dev, "msix unsupported!\n");
 		goto legacy_int;
 	}
+
+	msix_cnt = min_t(int, msix_cnt,
+			 adapter->adapter_attr.features.max_msix_vectors);
 
 	if (reset_devices)
 		adapter->adapter_attr.rq_cnt = 1;
@@ -6859,10 +6929,14 @@ static int leapraid_set_msi(struct leapraid_adapter *adapter)
 		goto legacy_int1;
 
 	msi_cnt = leapraid_msi_cnt(adapter->pdev);
-	if (msi_cnt <= 0) {
-		dev_info(&adapter->pdev->dev, "msix unsupported!\n");
+	if (msi_cnt <= 0 ||
+	    adapter->adapter_attr.features.max_msix_vectors == 0) {
+		dev_info(&adapter->pdev->dev, "msi unsupported!\n");
 		goto legacy_int1;
 	}
+
+	msi_cnt = min_t(int, msi_cnt,
+			adapter->adapter_attr.features.max_msix_vectors);
 
 	if (reset_devices)
 		adapter->adapter_attr.rq_cnt = 1;
@@ -7014,6 +7088,18 @@ int leapraid_set_pcie_and_notification(struct leapraid_adapter *adapter)
 		goto out_fail;
 
 	leapraid_mask_int(adapter);
+
+	rc = leapraid_make_adapter_ready(adapter, PART_RESET);
+	if (rc) {
+		dev_err(&adapter->pdev->dev, "make adapter ready failure\n");
+		goto out_fail;
+	}
+
+	rc = leapraid_get_adapter_features(adapter);
+	if (rc) {
+		dev_err(&adapter->pdev->dev, "get adapter feature failure\n");
+		goto out_fail;
+	}
 
 	rc = leapraid_set_notification(adapter);
 	if (rc)
@@ -8183,18 +8269,6 @@ int leapraid_ctrl_init(struct leapraid_adapter *adapter)
 	if (cap & PCI_EXP_DEVCAP_EXT_TAG) {
 		pcie_capability_set_word(adapter->pdev, PCI_EXP_DEVCTL,
 					 PCI_EXP_DEVCTL_EXT_TAG);
-	}
-
-	rc = leapraid_make_adapter_ready(adapter, PART_RESET);
-	if (rc) {
-		dev_err(&adapter->pdev->dev, "make adapter ready failure\n");
-		goto out_free_resources;
-	}
-
-	rc = leapraid_get_adapter_features(adapter);
-	if (rc) {
-		dev_err(&adapter->pdev->dev, "get adapter feature failure\n");
-		goto out_free_resources;
 	}
 
 	rc = leapraid_fw_log_init(adapter);

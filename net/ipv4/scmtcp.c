@@ -53,7 +53,7 @@ struct scm_file_hashtable scm_fhtable;
 
 struct scmtcp_sock {
 	struct tcp_sock tp;  /* must be first */
-	u32 flist_seq;
+	atomic_t flist_seq;
 };
 
 #define scmtcp_sk(ptr) container_of_const(ptr, struct scmtcp_sock, tp.inet_conn.icsk_inet.sk)
@@ -99,7 +99,7 @@ static struct scm_file_list *file_list_alloc(struct sock *sk)
 
 	flist = kzalloc(sizeof(*flist), GFP_KERNEL);
 	if (flist)
-		flist->flist_seq = scmtcp_sk(sk)->flist_seq++;
+		flist->flist_seq = atomic_fetch_inc(&scmtcp_sk(sk)->flist_seq);
 	return flist;
 }
 
@@ -113,6 +113,22 @@ static void file_list_free(struct scm_file_list *flist)
 		__scm_destroy(&scm);
 	}
 	kfree(flist);
+}
+
+static bool file_list_has_self(const struct sock *sk, const struct scm_file_list *flist)
+{
+	const struct socket *sock;
+	struct scm_fp_list *fpl = flist->fp;
+	int i;
+
+	if (fpl) {
+		for (i = fpl->count - 1; i >= 0; i--) {
+			sock = sock_from_file(fpl->fp[i]);
+			if (sock && sock->sk == sk)
+				return true;
+		}
+	}
+	return false;
 }
 
 static struct scm_file_ctl *file_ctl_alloc(struct sock *sk)
@@ -294,7 +310,7 @@ static void __scmtcp_sk_init(struct sock *sk)
 {
 	struct scm_file_ctl *fctl;
 
-	scmtcp_sk(sk)->flist_seq = 0;
+	atomic_set(&scmtcp_sk(sk)->flist_seq, 0);
 
 	fctl = file_ctl_alloc(sk);
 	/* Don't worry, there will be errors in file_htable_add_flist(). */
@@ -424,7 +440,7 @@ static int scmtcp_sk_sendmsg(struct sock *sk, struct msghdr *msg, size_t size)
 			return -EINVAL;
 		}
 	}
-	if (!flist->fp || flist->fp->count == 0) {
+	if (!flist->fp || flist->fp->count == 0 || file_list_has_self(sk, flist)) {
 		file_list_free(flist);
 		return -EINVAL;
 	}

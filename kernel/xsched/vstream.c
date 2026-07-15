@@ -22,6 +22,10 @@
 #include <linux/vstream.h>
 #include <linux/xsched.h>
 
+#ifdef CONFIG_CGROUP_DMEM
+#include <linux/cgroup_dmem.h>
+#endif
+
 #if defined(CONFIG_XCU_SCHEDULER) && defined(CONFIG_XCU_VSTREAM)
 
 #define XCU_HASH_ORDER 6
@@ -169,6 +173,10 @@ static void init_xsched_ctx(struct xsched_context *ctx,
 	INIT_LIST_HEAD(&ctx->vstream_list);
 	INIT_LIST_HEAD(&ctx->ctx_node);
 
+#ifdef CONFIG_CGROUP_DMEM
+	INIT_LIST_HEAD(&ctx->pool_list);
+#endif
+
 	spin_lock_init(&ctx->ctx_lock);
 	mutex_init(&ctx->ctx_mutex);
 }
@@ -237,7 +245,7 @@ static int alloc_ctx_from_vstream(struct vstream_info *vstream_info,
 		XSCHED_ERR("Fail to initialize XSE for context @ %s\n",
 			__func__);
 		kfree(*ctx);
-		return -EINVAL;
+		return ret;
 	}
 
 	list_add(&(*ctx)->ctx_node, &xcu->ctx_list);
@@ -407,10 +415,8 @@ static int sqcq_alloc(struct vstream_args *arg)
 	vstream->task_type = arg->task_type;
 
 	ret = vstream_bind_to_xcu(vstream);
-	if (ret < 0) {
-		ret = -EINVAL;
+	if (ret != 0)
 		goto out_err_vstream_free;
-	}
 
 	/* Allocates vstream's SQ and CQ memory on a XCU for processing. */
 	params.group = vstream->xcu->group;
@@ -624,6 +630,102 @@ int vstream_kick(struct vstream_args *arg)
 	return err;
 }
 
+#ifdef CONFIG_CGROUP_DMEM
+static int vstream_hbm_alloc(struct vstream_args *arg)
+{
+	struct xsched_cu *xcu_found;
+	struct xsched_context *ctx;
+	int ret = 0;
+
+	if (!dmem_cgroup_enabled())
+		return -EPERM;
+
+	if (arg->vm_args.size == 0)
+		return -EINVAL;
+
+	xcu_found = xcu_find(XCU_TYPE_XPU, arg->dev_id, arg->channel_id);
+	if (!xcu_found)
+		return -ENODEV;
+
+	/* it will either allocate or find a context */
+	mutex_lock(&xcu_found->ctx_list_lock);
+	ctx = ctx_find_by_tgid_and_xcu(current->tgid, xcu_found);
+	if (ctx)
+		kref_get(&ctx->kref);
+	mutex_unlock(&xcu_found->ctx_list_lock);
+
+	if (!ctx) {
+		XSCHED_ERR("Failed to find a context for HBM alloc");
+		return -ENOENT;
+	}
+
+	ret = xsched_dmem_alloc(ctx, arg);
+	kref_put(&ctx->kref, xsched_task_free);
+
+	return ret;
+}
+
+static int vstream_hbm_free(struct vstream_args *arg)
+{
+	struct xsched_cu *xcu_found;
+	struct xsched_context *ctx;
+	int ret;
+
+	if (!dmem_cgroup_enabled())
+		return -EPERM;
+
+	xcu_found = xcu_find(XCU_TYPE_XPU, arg->dev_id, arg->channel_id);
+	if (!xcu_found)
+		return -EINVAL;
+
+	mutex_lock(&xcu_found->ctx_list_lock);
+	ctx = ctx_find_by_tgid_and_xcu(current->tgid, xcu_found);
+	if (ctx)
+		kref_get(&ctx->kref);
+	mutex_unlock(&xcu_found->ctx_list_lock);
+
+	if (!ctx) {
+		XSCHED_ERR("Failed to find a context for HBM free");
+		return -ENOENT;
+	}
+
+	ret = xsched_dmem_free(ctx, arg);
+	kref_put(&ctx->kref, xsched_task_free);
+
+	return ret;
+}
+
+static int vstream_hbm_cleanup(struct vstream_args *arg)
+{
+	struct xsched_cu *xcu_found;
+	struct xsched_context *ctx;
+
+	if (!dmem_cgroup_enabled())
+		return -EPERM;
+
+	xcu_found = xcu_find(XCU_TYPE_XPU, arg->dev_id, arg->channel_id);
+	if (!xcu_found)
+		return -EINVAL;
+
+	mutex_lock(&xcu_found->ctx_list_lock);
+	ctx = ctx_find_by_tgid_and_xcu(current->tgid, xcu_found);
+	if (ctx)
+		kref_get(&ctx->kref);
+	mutex_unlock(&xcu_found->ctx_list_lock);
+
+	if (ctx) {
+		xsched_dmem_cleanup(ctx);
+		kref_put(&ctx->kref, xsched_task_free);
+	}
+
+	return 0;
+}
+#else
+static int vstream_hbm_alloc(struct vstream_args *arg) { return -EOPNOTSUPP; }
+static int vstream_hbm_free(struct vstream_args *arg) { return -EOPNOTSUPP; }
+static int vstream_hbm_cleanup(struct vstream_args *arg) { return -EOPNOTSUPP; }
+#endif /* CONFIG_CGROUP_DMEM */
+
 /*
  * vstream_manage_cmd table
  */
@@ -631,6 +733,9 @@ static vstream_manage_t(*vstream_command_table[MAX_COMMAND + 1]) = {
 	vstream_alloc, // VSTREAM_ALLOC
 	vstream_free, // VSTREAM_FREE
 	vstream_kick, // VSTREAM_KICK
+	vstream_hbm_alloc, // VSTREAM_HBM_ALLOC
+	vstream_hbm_free, // VSTREAM_HBM_FREE
+	vstream_hbm_cleanup, // VSTREAM_HBM_CLEANUP
 	NULL // MAX_COMMAND
 };
 

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #ifndef MBX_FW_CMD_H
 #define MBX_FW_CMD_H
@@ -8,26 +8,7 @@
 #include <linux/errno.h>
 #include <linux/wait.h>
 
-#ifndef _PACKED_ALIGN4
-#define _PACKED_ALIGN4 __attribute__((packed, aligned(4)))
-#endif
-
 #define RNPM_MBX_ERR_IN_REMOVING (-200)
-
-struct mbx_fw_cmd_reply;
-typedef void (*cookie_cb)(struct mbx_fw_cmd_reply *reply, void *priv);
-
-struct mbx_req_cookie {
-	int magic;
-#define COOKIE_MAGIC 0xCE
-	cookie_cb cb;
-	int timeout_jiffes;
-	int errcode;
-	wait_queue_head_t wait;
-	int done;
-	int priv_len;
-	char priv[];
-};
 
 enum GENERIC_CMD {
 	/* generat */
@@ -77,6 +58,7 @@ enum GENERIC_CMD {
 	SET_WOL = 0x0a12,
 
 	LLDP_TX_CTL = 0x0a13,
+	SET_DDR_CSL = 0xFF11,
 };
 
 enum link_event_mask {
@@ -166,9 +148,16 @@ struct phy_abilities {
 			unsigned int fw_lldp_ablity : 1; /* 12 */
 			unsigned int lldp_enabled : 1; /* 13 */
 			unsigned int only_1g : 1; /* 14 */
+			unsigned int force_link_down_en : 4; // [15:18]
+			unsigned int force_link_supported : 1; //[19]
+			unsigned int ports_is_sgmii_valid : 1; //[20]
+			unsigned int lane0_is_sgmii : 1; //[21]
+			unsigned int lane1_is_sgmii : 1; //[22]
+			unsigned int lane2_is_sgmii : 1; //[23]
+			unsigned int lane3_is_sgmii : 1; //[24]
 		};
 	};
-} _PACKED_ALIGN4;
+} __packed __aligned(4);
 
 enum LOOPBACK_LEVEL {
 	LOOPBACK_DISABLE = 0,
@@ -176,6 +165,7 @@ enum LOOPBACK_LEVEL {
 	LOOPBACK_PCS = 5,
 	LOOPBACK_EXTERNAL = 6,
 };
+
 enum LOOPBACK_TYPE {
 	/* Tx->Rx */
 	LOOPBACK_TYPE_LOCAL = 0x0,
@@ -263,7 +253,7 @@ struct link_stat_data {
 	/* 9 */
 	int link_type; /* same as Phy type */
 	char link_type_ext;
-} _PACKED_ALIGN4;
+} __packed __aligned(4);
 
 struct port_stat {
 	u8 phy_addr;
@@ -343,10 +333,11 @@ struct phy_statistics {
 /* == flags == */
 #define FLAGS_DD BIT(0) /* driver clear 0, FW must set 1 */
 #define FLAGS_CMP BIT(1) /* driver clear 0, FW mucst set */
-#define FLAGS_ERR                                                              \
+#define FLAGS_ERR \
 	BIT(2) /* driver clear 0, FW must set only if it reporting an error */
 #define FLAGS_LB BIT(9)
-#define FLAGS_RD BIT(10) /* set if additional buffer has command parameters */
+#define FLAGS_RD \
+	BIT(10) /* set if additonal buffer has command paramters */
 #define FLAGS_BUF BIT(12) /* set 1 on indirect command */
 #define FLAGS_SI BIT(13) /* not irq when command complete */
 #define FLAGS_EI BIT(14) /* interrupt on error */
@@ -574,6 +565,14 @@ struct mbx_fw_cmd_req {
 			/* 0 = use page_num for QSFP */
 			char nr_lane;
 		} set_phy_reg;
+
+		struct {
+			int enable;
+			int ddr_phy_hi;
+			int ddr_phy_lo;
+			int bytes;
+		} ddr_csl;
+
 		struct {
 		} get_phy_ablity;
 
@@ -611,11 +610,12 @@ struct mbx_fw_cmd_req {
 			unsigned int op;
 		} emi_sync;
 	};
-} _PACKED_ALIGN4;
+} __packed __aligned(4);
 
 /* firmware -> driver */
 struct mbx_fw_cmd_reply {
-	unsigned short flags; // fw must set: DD, CMP, Error(if error), copy value
+	unsigned short
+		flags; // fw must set: DD, CMP, Error(if error), copy value
 		// from command: LB,RD,VFC,BUF,SI,EI,FE
 	unsigned short opcode; // 2-3: copy from req
 	unsigned short error_code; // 4-5: 0 if no error
@@ -682,12 +682,12 @@ struct mbx_fw_cmd_reply {
 		struct phy_abilities phy_abilities;
 		struct phy_statistics phy_statistics;
 	};
-} _PACKED_ALIGN4;
+} __packed __aligned(4);
 
-static inline void build_maintain_req(struct mbx_fw_cmd_req *req, void *cookie,
-				      int cmd, int arg0, int req_bytes,
-				      int reply_bytes, u32 dma_phy_lo,
-				      u32 dma_phy_hi)
+static inline void build_maintain_req(struct mbx_fw_cmd_req *req,
+				      void *cookie, int cmd, int arg0,
+				      int req_bytes, int reply_bytes,
+				      u32 dma_phy_lo, u32 dma_phy_hi)
 {
 	req->flags = 0;
 	req->opcode = FW_MAINTAIN;
@@ -703,8 +703,9 @@ static inline void build_maintain_req(struct mbx_fw_cmd_req *req, void *cookie,
 	req->maintain.ddr_hi = dma_phy_hi;
 }
 
-static inline void build_fw_update_req(struct mbx_fw_cmd_req *req, void *cookie,
-				       int partition, u32 fw_bin_phy_lo,
+static inline void build_fw_update_req(struct mbx_fw_cmd_req *req,
+				       void *cookie, int partition,
+				       u32 fw_bin_phy_lo,
 				       u32 fw_bin_phy_hi, int fw_bytes)
 {
 	req->flags = 0;
@@ -719,7 +720,8 @@ static inline void build_fw_update_req(struct mbx_fw_cmd_req *req, void *cookie,
 	req->fw_update.bin_phy_hi = fw_bin_phy_hi;
 }
 
-static inline void build_reset_phy_req(struct mbx_fw_cmd_req *req, void *cookie)
+static inline void build_reset_phy_req(struct mbx_fw_cmd_req *req,
+				       void *cookie)
 {
 	req->flags = 0;
 	req->opcode = RESET_PHY;
@@ -755,7 +757,8 @@ static inline void build_get_macaddress_req(struct mbx_fw_cmd_req *req,
 	req->get_mac_addr.pfvf_num = pfvfnum;
 }
 
-static inline void build_version_req(struct mbx_fw_cmd_req *req, void *cookie)
+static inline void build_version_req(struct mbx_fw_cmd_req *req,
+				     void *cookie)
 {
 	req->flags = 0;
 	req->opcode = GET_VERSION;
@@ -766,8 +769,8 @@ static inline void build_version_req(struct mbx_fw_cmd_req *req, void *cookie)
 }
 
 // 7.10.11.8 Read egister admin command
-static inline void build_readreg_req(struct mbx_fw_cmd_req *req, int reg_addr,
-				     void *cookie)
+static inline void build_readreg_req(struct mbx_fw_cmd_req *req,
+				     int reg_addr, void *cookie)
 {
 	req->flags = 0;
 	req->opcode = READ_REG;
@@ -795,15 +798,14 @@ static inline void build_mbx_wol_set(struct mbx_fw_cmd_req *req,
 static inline void mbx_fw_req_set_reply(struct mbx_fw_cmd_req *req,
 					dma_addr_t reply)
 {
-	u64 address = reply;
-
-	req->reply_hi = (address >> 32);
-	req->reply_lo = (address) & 0xffffffff;
+	req->reply_hi = upper_32_bits(reply);
+	req->reply_lo = lower_32_bits(reply);
 }
 
 // 7.10.11.9 Write egister admin command
-static inline void build_writereg_req(struct mbx_fw_cmd_req *req, void *cookie,
-				      int reg_addr, int bytes, int value[4])
+static inline void build_writereg_req(struct mbx_fw_cmd_req *req,
+				      void *cookie, int reg_addr,
+				      int bytes, int value[4])
 {
 	int i;
 
@@ -820,9 +822,9 @@ static inline void build_writereg_req(struct mbx_fw_cmd_req *req, void *cookie,
 }
 
 /* 7.10.11.10 modify egister admin command */
-static inline void build_modifyreg_req(struct mbx_fw_cmd_req *req, void *cookie,
-				       int reg_addr, int value,
-				       unsigned int mask)
+static inline void build_modifyreg_req(struct mbx_fw_cmd_req *req,
+				       void *cookie, int reg_addr,
+				       int value, unsigned int mask)
 {
 	req->flags = 0;
 	req->opcode = MODIFY_REG;
@@ -868,9 +870,11 @@ static inline void build_get_temp(struct mbx_fw_cmd_req *req, void *cookie)
 	req->reply_lo = 0;
 	req->reply_hi = 0;
 }
-static inline void build_get_dump_req(struct mbx_fw_cmd_req *req, void *cookie,
-				      int nr_lane, u32 fw_bin_phy_lo,
-				      u32 fw_bin_phy_hi, int bytes)
+
+static inline void build_get_dump_req(struct mbx_fw_cmd_req *req,
+				      void *cookie, int nr_lane,
+				      u32 fw_bin_phy_lo, u32 fw_bin_phy_hi,
+				      int bytes)
 {
 	req->flags = 0;
 	req->opcode = GET_DUMP;
@@ -898,7 +902,8 @@ static inline void build_set_dump(struct mbx_fw_cmd_req *req, int nr_lane,
 }
 
 static inline void build_led_set(struct mbx_fw_cmd_req *req,
-				 unsigned int nr_lane, int value, void *cookie)
+				 unsigned int nr_lane, int value,
+				 void *cookie)
 {
 	req->flags = 0;
 	req->opcode = LED_SET;
@@ -910,9 +915,9 @@ static inline void build_led_set(struct mbx_fw_cmd_req *req,
 	req->led_set.value = value;
 }
 
-static inline void build_set_lane_fun(struct mbx_fw_cmd_req *req, int nr_lane,
-				      int fun, int value0, int value1,
-				      int value2, int value3)
+static inline void build_set_lane_fun(struct mbx_fw_cmd_req *req,
+				      int nr_lane, int fun, int value0,
+				      int value1, int value2, int value3)
 {
 	req->flags = 0;
 	req->opcode = SET_LANE_FUN;
@@ -1049,8 +1054,8 @@ static inline void build_pluginout_evt_notify(struct mbx_fw_cmd_req *req,
 	}
 }
 
-static inline void build_lldp_ctrl_set(struct mbx_fw_cmd_req *req, int nr_lane,
-				       int enable)
+static inline void build_lldp_ctrl_set(struct mbx_fw_cmd_req *req,
+				       int nr_lane, int enable)
 {
 	req->flags = 0;
 	req->opcode = LLDP_TX_CTL;
@@ -1064,8 +1069,8 @@ static inline void build_lldp_ctrl_set(struct mbx_fw_cmd_req *req, int nr_lane,
 	req->lldp_tx.enable = enable;
 }
 
-static inline void build_lldp_ctrl_get(struct mbx_fw_cmd_req *req, int nr_lane,
-				       void *cookie)
+static inline void build_lldp_ctrl_get(struct mbx_fw_cmd_req *req,
+				       int nr_lane, void *cookie)
 {
 	req->flags = 0;
 	req->opcode = LLDP_TX_CTL;
@@ -1078,9 +1083,9 @@ static inline void build_lldp_ctrl_get(struct mbx_fw_cmd_req *req, int nr_lane,
 	req->lldp_tx.nr_lane = nr_lane;
 }
 
-static inline void build_lane_link_change_notify(struct mbx_fw_cmd_req *req,
-						 int nr_lane, int enable,
-						 void *cookie)
+static inline void
+build_lane_link_change_notify(struct mbx_fw_cmd_req *req, int nr_lane,
+			      int enable, void *cookie)
 {
 	req->flags = 0;
 	req->opcode = SET_LANE_EVENT_EN;
@@ -1113,9 +1118,36 @@ build_link_set_loopback_req(struct mbx_fw_cmd_req *req, void *cookie,
 	}
 }
 
-static inline void build_set_phy_reg(struct mbx_fw_cmd_req *req, void *cookie,
-				     enum PHY_INTERFACE phy_inf, char nr_lane,
-				     int reg, int w_data, int recall_qsfp_page)
+static inline void build_ddr_csl(struct mbx_fw_cmd_req *req, void *cookie,
+				 bool enable, dma_addr_t dma_phy,
+				 int bytes)
+{
+	req->flags = 0;
+	req->opcode = SET_DDR_CSL;
+	req->datalen = sizeof(req->ddr_csl);
+	req->cookie = cookie;
+	req->reply_lo = 0;
+	req->reply_hi = 0;
+
+	req->ddr_csl.enable = enable;
+
+	if (enable) {
+		req->ddr_csl.bytes = bytes;
+		req->ddr_csl.ddr_phy_hi = upper_32_bits(dma_phy);
+		req->ddr_csl.ddr_phy_lo = lower_32_bits(dma_phy);
+	} else {
+		req->ddr_csl.bytes = 0;
+	}
+}
+
+/*
+ *	used for debug
+ */
+static inline void build_set_phy_reg(struct mbx_fw_cmd_req *req,
+				     void *cookie,
+				     enum PHY_INTERFACE phy_inf,
+				     char nr_lane, int reg, int w_data,
+				     int recall_qsfp_page)
 {
 	req->flags = 0;
 	req->opcode = SET_PHY_REG;
@@ -1135,9 +1167,10 @@ static inline void build_set_phy_reg(struct mbx_fw_cmd_req *req, void *cookie,
 		req->set_phy_reg.recall_qsfp_page = 0;
 }
 
-static inline void build_get_phy_reg(struct mbx_fw_cmd_req *req, void *cookie,
-				     enum PHY_INTERFACE phy_inf, char nr_lane,
-				     int reg)
+static inline void build_get_phy_reg(struct mbx_fw_cmd_req *req,
+				     void *cookie,
+				     enum PHY_INTERFACE phy_inf,
+				     char nr_lane, int reg)
 {
 	req->flags = 0;
 	req->opcode = GET_PHY_REG;
@@ -1165,8 +1198,8 @@ static inline void build_get_phy_statistics_req(struct mbx_fw_cmd_req *req,
 
 static inline void build_comm_sdram_req(struct mbx_fw_cmd_req *req,
 					void *cookie, u32 op, u32 offset,
-					u32 fw_bin_phy_lo, u32 fw_bin_phy_hi,
-					u32 bytes)
+					u32 fw_bin_phy_lo,
+					u32 fw_bin_phy_hi, u32 bytes)
 {
 	req->flags = 0;
 	req->opcode = EMI_SYNC;

@@ -55,6 +55,7 @@ enum unic_channel_state {
 	UNIC_RX_CHANGED,
 	UNIC_TX_INITED,
 	UNIC_RX_INITED,
+	UNIC_NAPI_ENABLED,
 };
 
 #define UNIC_CQE_PERIOD_0	0
@@ -206,22 +207,34 @@ struct unic_link_stats {
 	struct mutex		lock; /* protects link record */
 };
 
+#define BOND_STAT_MAX_IDX 20U
+struct unic_bond_stats {
+	u64			tx_enabled_cnt;
+	u64			tx_disabled_cnt;
+	struct {
+		bool		bond_status;
+		time64_t	bond_tv_sec;
+	} stats[BOND_STAT_MAX_IDX];
+	struct mutex		lock; /* protects bond record */
+};
+
 struct unic_stats {
 	struct unic_fec_stats			fec_stats;
 	struct unic_link_stats			link_record;
+	struct unic_bond_stats			bond_record;
 };
 
 struct unic_addr_tbl {
-	spinlock_t		ip_list_lock; /* protect ip address need to add/detele */
+	spinlock_t		ip_list_lock; /* protect ip address need to add/delete */
 	struct list_head	ip_list; /* Store ip table */
 
 	spinlock_t		tmp_ip_lock; /* protect ip address from controller */
-	struct list_head	tmp_ip_list; /* Store temprary ip table */
+	struct list_head	tmp_ip_list; /* Store temporary ip table */
 
 	spinlock_t		bond_ip_list_lock; /* protect bond ip address from controller */
 	struct list_head	bond_ip_list; /* Store bond ip table */
 
-	spinlock_t		mac_list_lock; /* protect mac address need to add/detele */
+	spinlock_t		mac_list_lock; /* protect mac address need to add/delete */
 	struct list_head	uc_mac_list; /* store unicast mac table */
 	struct list_head	mc_mac_list; /* store multicast mac table */
 };
@@ -257,6 +270,12 @@ struct unic_act_info {
 	struct mutex	mutex; /* protects modify deactivate state */
 };
 
+struct unic_bond_status {
+	u8 cur_status;
+	u8 last_notify_status;
+	struct mutex	mutex; /* protection bond status. */
+};
+
 struct unic_dev {
 	/* This member must be first, adaptor driver will relay on it */
 	struct ubase_adev_com	comdev;
@@ -278,6 +297,9 @@ struct unic_dev {
 	struct unic_act_info	act_info;
 	u32			tid;
 	u8			sw_link_status;
+	struct unic_bond_status	bond_status;
+	gfp_t			gfp;
+	u32			hw_ver;
 };
 
 int unic_dev_init(struct auxiliary_device *adev);
@@ -301,8 +323,6 @@ bool unic_rss_vl_num_changed(struct unic_dev *unic_dev, u8 vl_num);
 int unic_change_rss_size(struct unic_dev *unic_dev, u32 new_rss_size,
 			 u32 org_rss_size);
 int unic_update_channels(struct unic_dev *unic_dev, u8 vl_num);
-int unic_set_vl_map(struct unic_dev *unic_dev, u8 *dscp_prio, u8 *prio_vl,
-		    u8 map_type);
 int unic_dbg_log(void);
 
 static inline bool unic_dev_ubl_supported(struct unic_dev *unic_dev)
@@ -436,7 +456,7 @@ static inline u8 unic_get_rss_vl_num(struct unic_dev *unic_dev, u8 max_vl)
 {
 	struct auxiliary_device *adev = unic_dev->comdev.adev;
 	struct ubase_adev_qos *qos = ubase_get_adev_qos(adev);
-	u8 vl_num = min(UNIC_RSS_MAX_VL_NUM, qos->nic_vl_num);
+	u8 vl_num = min_t(u8, UNIC_RSS_MAX_VL_NUM, qos->nic_vl_num);
 
 	return max_vl < vl_num ? max_vl : vl_num;
 }
@@ -466,6 +486,13 @@ static inline u32 unic_cmd_timeout(struct unic_dev *unic_dev)
 #define UNIC_CMD_TIMEOUT 5000
 
 	return __unic_removing(unic_dev) ? UNIC_CMD_TIMEOUT : 0;
+}
+
+static inline bool unic_abn_cqe_count_support(struct unic_dev *unic_dev)
+{
+	return unic_dev->hw_ver != UBASE_HW_VER_UNKNOWN &&
+	       unic_dev->hw_ver != UBASE_HW_VER_K_0 &&
+	       unic_dev->hw_ver != UBASE_HW_VER_A_0;
 }
 
 #endif /* __UNIC_DEV_H__ */

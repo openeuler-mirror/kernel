@@ -26,7 +26,7 @@
 #define TPAUSE_C01_STATE		1
 #define TPAUSE_C02_STATE		0
 
-#define ZXPAUSE_C01_STATE		1
+#define PAUSEOPT_P01_STATE		1
 
 static __always_inline void __monitor(const void *eax, unsigned long ecx,
 			     unsigned long edx)
@@ -159,16 +159,14 @@ static inline void __tpause(u32 ecx, u32 edx, u32 eax)
 }
 
 /*
- * Caller can specify whether to enter C0.1 (low latency, less
- * power saving) or C0.2 state (saves more power, but longer wakeup
- * latency). This may be overridden by the ZX_PAUSE_CONTROL MSR
- * which can force requests for C0.2 to be downgraded to C0.1.
+ * Caller can specify to enter P0.1 (low latency, less power saving).
  */
-static inline void __zxpause(u32 ecx, u32 edx, u32 eax)
+static inline void __pauseopt(u32 ecx, u32 edx, u32 eax)
 {
-	/* "zxpause %ecx, %edx, %eax;" */
-#ifdef CONFIG_AS_ZXPAUSE
-	asm volatile("zxpause %%ecx\n"
+	/* "pauseopt %ecx, %edx, %eax;" */
+#ifdef CONFIG_AS_PAUSEOPT
+	asm volatile(
+		"pauseopt\n"
 		:
 		: "c"(ecx), "d"(edx), "a"(eax));
 #else
@@ -177,4 +175,5 @@ static inline void __zxpause(u32 ecx, u32 edx, u32 eax)
 		: "c"(ecx), "d"(edx), "a"(eax));
 #endif
 }
+
 #endif /* _ASM_X86_MWAIT_H */

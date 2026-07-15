@@ -193,7 +193,7 @@ static int obmm_vma_access(struct vm_area_struct *vma, unsigned long addr,
 		return -EINVAL;
 
 	/* Check permission from vm_flags */
-	if (!(vma->vm_flags & VM_READ))
+	if (!(vma->vm_flags & (VM_READ | VM_WRITE)))
 		return -EINVAL;
 	if (write && !(vma->vm_flags & VM_WRITE))
 		return -EINVAL;

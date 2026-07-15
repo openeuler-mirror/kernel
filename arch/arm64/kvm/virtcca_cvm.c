@@ -306,7 +306,7 @@ void kvm_destroy_cvm(struct kvm *kvm)
 	struct list_head smmu_domain_group_list;
 #endif
 
-	if (!cvm)
+	if (!kvm_is_realm(kvm) || !cvm)
 		return;
 
 	/* disable mig config and clean binding state*/

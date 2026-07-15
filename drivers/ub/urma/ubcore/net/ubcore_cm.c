@@ -106,7 +106,7 @@ int ubcore_cm_recv(struct ubcore_device *dev, struct ubcore_cm_recv_cr *recv_cr)
 		return -EINVAL;
 	}
 	addr = recv_cr->cr->remote_id.eid;
-	struct ubcore_net_msg msg = { 0 };
+	struct ubcore_comm_msg msg = { 0 };
 	struct ubcore_comm_endpoint *ep;
 
 	if (recv_cr->payload == 0 || recv_cr->payload_len < MSG_HDR_SIZE) {
@@ -169,8 +169,57 @@ void ubcore_cm_unregister_endpoint(struct ubcore_comm_endpoint *ep)
 	spin_unlock(&g_cm_ep_lock);
 }
 
+static int ubcore_ubcm_service_connect_send_to(struct ubcore_comm_msg *msg,
+				struct ubcore_cm_send_buf *send_buf)
+{
+	if (!msg || !send_buf)
+		return -EINVAL;
+	if (msg->type == UBCORE_NET_CREATE_REQ)
+		send_buf->msg_type = UBCORE_CM_CONN_REQ;
+	else if (msg->type == UBCORE_NET_CREATE_RESP)
+		send_buf->msg_type = UBCORE_CM_CONN_RESP;
+	else if (msg->type == UBCORE_NET_DESTROY_REQ ||
+			 msg->type == UBCORE_NET_DESTROY_RESP ||
+			 msg->type == UBCORE_NET_ISREF_REQ)
+		send_buf->msg_type = UBCORE_CM_SINGLE_REQ;
+	else {
+		ubcore_log_err("Connect service, Unrecognized msg type %u\n", msg->type);
+		return -EINVAL;
+	}
+	return 0;
+}
+
+static int ubcore_ubcm_service_gen_send_to(struct ubcore_comm_msg *msg,
+				struct ubcore_cm_send_buf *send_buf)
+{
+	/*
+	* The well-know jetty channel currently configures MSN based on req
+	* or resp types. Bonding device message types are hard-coded here
+	* temporarily. The hard-code will be removed after the well-known
+	* jetty refactoring is completed.
+	*/
+	const uint8_t ubagg_net_bonding_seg_info_req = 0;
+	const uint8_t ubagg_net_bonding_seg_info_resp = 1;
+	const uint8_t ubagg_net_bonding_jetty_info_req = 2;
+	const uint8_t ubagg_net_bonding_jetty_info_resp = 3;
+
+	if (!msg || !send_buf)
+		return -EINVAL;
+	if (msg->type == ubagg_net_bonding_seg_info_req ||
+		msg->type == ubagg_net_bonding_jetty_info_req)
+		send_buf->msg_type = UBCORE_CM_GEN_DATA;
+	else if (msg->type == ubagg_net_bonding_seg_info_resp ||
+		msg->type == ubagg_net_bonding_jetty_info_resp)
+		send_buf->msg_type = UBCORE_CM_GEN_RESP;
+	else {
+		ubcore_log_err("Connect service, Unrecognized msg type %u\n", msg->type);
+		return -EINVAL;
+	}
+	return 0;
+}
+
 int ubcore_ubcm_send_to(struct ubcore_device *dev, union ubcore_eid addr,
-			struct ubcore_net_msg *msg)
+			struct ubcore_comm_msg *msg)
 {
 	uint16_t send_buf_len;
 	struct ubcore_cm_send_buf *send_buf = NULL;
@@ -195,22 +244,20 @@ int ubcore_ubcm_send_to(struct ubcore_device *dev, union ubcore_eid addr,
 
 	send_buf->session_id = (uint64_t)msg->session_id;
 	send_buf->dst_eid = addr;
-	if (msg->type == UBCORE_NET_CREATE_REQ ||
-	    msg->type == UBCORE_NET_BONDING_SEG_INFO_REQ ||
-	    msg->type == UBCORE_NET_BONDING_JETTY_INFO_REQ)
-		send_buf->msg_type = UBCORE_CM_CONN_REQ;
-	else if (msg->type == UBCORE_NET_CREATE_RESP ||
-		 msg->type == UBCORE_NET_BONDING_SEG_INFO_RESP ||
-		 msg->type == UBCORE_NET_BONDING_JETTY_INFO_RESP)
-		send_buf->msg_type = UBCORE_CM_CONN_RESP;
-	else if (msg->type == UBCORE_NET_DESTROY_REQ ||
-		 msg->type == UBCORE_NET_DESTROY_RESP ||
-		 msg->type == UBCORE_NET_BONDING_USER_MSG)
+	if (msg->protocol_id == 0) {
+		ret = ubcore_ubcm_service_connect_send_to(msg, send_buf);
+		if (ret != 0) {
+			kfree(send_buf);
+			return ret;
+		}
+	} else if (msg->protocol_id == 1) {
+		ret = ubcore_ubcm_service_gen_send_to(msg, send_buf);
+		if (ret != 0) {
+			kfree(send_buf);
+			return ret;
+		}
+	} else {
 		send_buf->msg_type = UBCORE_CM_SINGLE_REQ;
-	else {
-		ubcore_log_err("Unrecognized msg type %u\n", msg->type);
-		kfree(send_buf);
-		return -EINVAL;
 	}
 
 	send_buf->payload_len = MSG_HDR_SIZE + msg->len;
@@ -229,7 +276,7 @@ int ubcore_ubcm_send_to(struct ubcore_device *dev, union ubcore_eid addr,
 }
 
 int ubcore_ubcm_send(struct ubcore_device *dev, void *conn,
-		     struct ubcore_net_msg *msg)
+		     struct ubcore_comm_msg *msg)
 {
 	if (!conn) {
 		ubcore_log_err("Invalid param: conn is null");

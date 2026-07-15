@@ -16,8 +16,8 @@ static nic_event_fn_t nic_event_call;
  */
 static DEFINE_MUTEX(hclge_nic_event_lock);
 
-static int hclge_set_pfc_storm_para(struct hclge_dev *hdev, void *data,
-				    size_t length)
+int hclge_set_pfc_storm_para(struct hclge_dev *hdev, void *data,
+			     size_t length)
 {
 	struct hclge_pfc_storm_para_cmd *para_cmd;
 	struct hnae3_pfc_storm_para *para;
@@ -44,8 +44,8 @@ static int hclge_set_pfc_storm_para(struct hclge_dev *hdev, void *data,
 	return ret;
 }
 
-static int hclge_get_pfc_storm_para(struct hclge_dev *hdev, void *data,
-				    size_t length)
+int hclge_get_pfc_storm_para(struct hclge_dev *hdev, void *data,
+			     size_t length)
 {
 	struct hclge_pfc_storm_para_cmd *para_cmd;
 	struct hnae3_pfc_storm_para *para;

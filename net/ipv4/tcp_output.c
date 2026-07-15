@@ -430,6 +430,7 @@ static inline bool tcp_urg_mode(const struct tcp_sock *tp)
 #define OPTION_MPTCP		BIT(10)
 #define OPTION_COMP		BIT(11)
 #define OPTION_UMS		BIT(12)
+#define OPTION_UB_SOCKET	BIT(13)
 
 static void smc_options_write(__be32 *ptr, u16 *options)
 {
@@ -470,6 +471,19 @@ static void ums_options_write(__be32 *ptr, u16 *options)
 				       (TCPOLEN_EXP_UMS_BASE));
 			*ptr++ = htonl(TCPOPT_UMS_MAGIC);
 		}
+	}
+#endif
+}
+
+static void ubs_options_write(__be32 *ptr, u16 *options)
+{
+#if IS_ENABLED(CONFIG_UB_SOCKET_HANDSHAKE)
+	if (unlikely(OPTION_UB_SOCKET & *options)) {
+		*ptr++ = htonl((TCPOPT_NOP  << 24) |
+			       (TCPOPT_NOP  << 16) |
+			       (TCPOPT_EXP <<  8) |
+			       (TCPOLEN_EXP_UB_SOCKET_BASE));
+		*ptr++ = htonl(TCPOPT_UB_SOCKET_MAGIC);
 	}
 #endif
 }
@@ -751,6 +765,8 @@ static void tcp_options_write(struct tcphdr *th, struct tcp_sock *tp,
 	comp_options_write(ptr, &options);
 
 	ums_options_write(ptr, &options);
+
+	ubs_options_write(ptr, &options);
 }
 
 static void smc_set_option(const struct tcp_sock *tp,
@@ -796,6 +812,20 @@ static void ums_set_option(const struct tcp_sock *tp,
 				opts->options |= OPTION_UMS;
 				*remaining -= TCPOLEN_EXP_UMS_BASE_ALIGNED;
 			}
+		}
+	}
+#endif
+}
+
+static void ubs_set_option(const struct tcp_sock *tp,
+			   struct tcp_out_options *opts,
+			   unsigned int *remaining)
+{
+#if IS_ENABLED(CONFIG_UB_SOCKET_HANDSHAKE)
+	if (tp->syn_ubs) {
+		if (*remaining >= TCPOLEN_EXP_UB_SOCKET_BASE_ALIGNED) {
+			opts->options |= OPTION_UB_SOCKET;
+			*remaining -= TCPOLEN_EXP_UB_SOCKET_BASE_ALIGNED;
 		}
 	}
 #endif
@@ -847,6 +877,21 @@ static void ums_set_option_cond(const struct tcp_sock *tp,
 				opts->options |= OPTION_UMS;
 				*remaining -= TCPOLEN_EXP_UMS_BASE_ALIGNED;
 			}
+		}
+	}
+#endif
+}
+
+static void ubs_set_option_cond(const struct tcp_sock *tp,
+				const struct inet_request_sock *ireq,
+				struct tcp_out_options *opts,
+				unsigned int *remaining)
+{
+#if IS_ENABLED(CONFIG_UB_SOCKET_HANDSHAKE)
+	if (tp->syn_ubs && ireq->ubs_ok) {
+		if (*remaining >= TCPOLEN_EXP_UB_SOCKET_BASE_ALIGNED) {
+			opts->options |= OPTION_UB_SOCKET;
+			*remaining -= TCPOLEN_EXP_UB_SOCKET_BASE_ALIGNED;
 		}
 	}
 #endif
@@ -938,6 +983,7 @@ static unsigned int tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 	smc_set_option(tp, opts, &remaining);
 	comp_set_option(sk, opts, &remaining);
 	ums_set_option(tp, opts, &remaining);
+	ubs_set_option(tp, opts, &remaining);
 
 	if (sk_is_mptcp(sk)) {
 		unsigned int size;
@@ -1023,6 +1069,8 @@ static unsigned int tcp_synack_options(const struct sock *sk,
 	comp_set_option_cond((struct sock *)sk, ireq, opts, &remaining);
 
 	ums_set_option_cond(tcp_sk(sk), ireq, opts, &remaining);
+
+	ubs_set_option_cond(tcp_sk(sk), ireq, opts, &remaining);
 
 	bpf_skops_hdr_opt_len((struct sock *)sk, skb, req, syn_skb,
 			      synack_type, opts, &remaining);
@@ -1510,8 +1558,10 @@ static int __tcp_transmit_skb(struct sock *sk, struct sk_buff *skb,
 
 	if (skb->len != tcp_header_size) {
 		tcp_event_data_sent(tp, sk);
-		tp->data_segs_out += tcp_skb_pcount(skb);
-		tp->bytes_sent += skb->len - tcp_header_size;
+		WRITE_ONCE(tp->data_segs_out,
+			   tp->data_segs_out + tcp_skb_pcount(skb));
+		WRITE_ONCE(tp->bytes_sent,
+			   tp->bytes_sent + skb->len - tcp_header_size);
 	}
 
 	if (after(tcb->end_seq, tp->snd_nxt) || tcb->seq == tcb->end_seq)
@@ -3461,8 +3511,8 @@ start:
 	TCP_ADD_STATS(sock_net(sk), TCP_MIB_RETRANSSEGS, segs);
 	if (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_SYN)
 		__NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPSYNRETRANS);
-	tp->total_retrans += segs;
-	tp->bytes_retrans += skb->len;
+	WRITE_ONCE(tp->total_retrans, tp->total_retrans + segs);
+	WRITE_ONCE(tp->bytes_retrans, tp->bytes_retrans + skb->len);
 
 	/* make sure skb->data is aligned on arches that require it
 	 * and check if ack-trimming & collapsing extended the headroom
@@ -4409,7 +4459,8 @@ int tcp_rtx_synack(const struct sock *sk, struct request_sock *req)
 			 * However in this case, we are dealing with a passive fastopen
 			 * socket thus we can change total_retrans value.
 			 */
-			tcp_sk_rw(sk)->total_retrans++;
+			WRITE_ONCE(tcp_sk_rw(sk)->total_retrans,
+				   tcp_sk_rw(sk)->total_retrans + 1);
 		}
 		trace_tcp_retransmit_synack(sk, req);
 	}

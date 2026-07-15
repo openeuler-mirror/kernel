@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright(c) 2022 - 2023 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #ifndef _RNP_PHY_H_
 #define _RNP_PHY_H_
@@ -74,36 +74,32 @@
 s32 rnp_init_phy_ops_generic(struct rnp_hw *hw);
 s32 rnp_identify_phy_generic(struct rnp_hw *hw);
 s32 rnp_reset_phy_generic(struct rnp_hw *hw);
-s32 rnp_read_phy_reg_generic(struct rnp_hw *hw, u32 reg_addr,
-			     u32 device_type, u16 *phy_data);
-s32 rnp_write_phy_reg_generic(struct rnp_hw *hw, u32 reg_addr,
-			      u32 device_type, u16 phy_data);
+s32 rnp_read_phy_reg_generic(struct rnp_hw *hw, u32 reg_addr, u32 device_type,
+			     u16 *phy_data);
+s32 rnp_write_phy_reg_generic(struct rnp_hw *hw, u32 reg_addr, u32 device_type,
+			      u16 phy_data);
 s32 rnp_setup_phy_link_generic(struct rnp_hw *hw);
-s32 rnp_setup_phy_link_speed_generic(struct rnp_hw *hw,
-				     rnp_link_speed speed,
+s32 rnp_setup_phy_link_speed_generic(struct rnp_hw *hw, rnp_link_speed speed,
 				     bool autoneg_wait_to_complete);
 s32 rnp_get_copper_link_capabilities_generic(struct rnp_hw *hw,
 					     rnp_link_speed *speed,
 					     bool *autoneg);
-
 /* PHY specific */
 s32 rnp_check_phy_link_tnx(struct rnp_hw *hw, rnp_link_speed *speed,
 			   bool *link_up);
 s32 rnp_setup_phy_link_tnx(struct rnp_hw *hw);
-s32 rnp_get_phy_firmware_version_tnx(struct rnp_hw *hw,
-				     u16 *firmware_version);
+s32 rnp_get_phy_firmware_version_tnx(struct rnp_hw *hw, u16 *firmware_version);
 s32 rnp_get_phy_firmware_version_generic(struct rnp_hw *hw,
 					 u16 *firmware_version);
-
 s32 rnp_reset_phy_nl(struct rnp_hw *hw);
 s32 rnp_identify_sfp_module_generic(struct rnp_hw *hw);
 s32 rnp_get_sfp_init_sequence_offsets(struct rnp_hw *hw, u16 *list_offset,
 				      u16 *data_offset);
 s32 rnp_tn_check_overtemp(struct rnp_hw *hw);
-s32 rnp_read_i2c_byte_generic(struct rnp_hw *hw, u8 byte_offset,
-			      u8 dev_addr, u8 *data);
-s32 rnp_write_i2c_byte_generic(struct rnp_hw *hw, u8 byte_offset,
-			       u8 dev_addr, u8 data);
+s32 rnp_read_i2c_byte_generic(struct rnp_hw *hw, u8 byte_offset, u8 dev_addr,
+			      u8 *data);
+s32 rnp_write_i2c_byte_generic(struct rnp_hw *hw, u8 byte_offset, u8 dev_addr,
+			       u8 data);
 s32 rnp_read_i2c_eeprom_generic(struct rnp_hw *hw, u8 byte_offset,
 				u8 *eeprom_data);
 s32 rnp_read_i2c_sff8472_generic(struct rnp_hw *hw, u8 byte_offset,

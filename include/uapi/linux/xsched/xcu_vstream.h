@@ -22,6 +22,9 @@ typedef enum VSTREAM_COMMAND {
 	VSTREAM_ALLOC = 0,
 	VSTREAM_FREE,
 	VSTREAM_KICK,
+	VSTREAM_HBM_ALLOC,
+	VSTREAM_HBM_FREE,
+	VSTREAM_HBM_CLEANUP,
 	MAX_COMMAND
 } vstream_command_t;
 
@@ -51,6 +54,11 @@ typedef struct vstream_kick_args {
 	KABI_RESERVE_BYTES(2, 8);
 } vstream_kick_args_t;
 
+typedef struct vstream_hbm_args {
+	__u64 size;
+	__u64 addr;
+} vstream_hbm_args_t;
+
 typedef struct vstream_args {
 	__u32 channel_id;
 	__u32 fd;
@@ -64,6 +72,7 @@ typedef struct vstream_args {
 		vstream_alloc_args_t va_args;
 		vstream_free_args_t vf_args;
 		vstream_kick_args_t vk_args;
+		vstream_hbm_args_t vm_args;
 	};
 
 	__u32 payload_size;

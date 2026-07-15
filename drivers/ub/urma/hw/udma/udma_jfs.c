@@ -17,6 +17,7 @@
 #include "udma_cmd.h"
 #include "udma_jetty.h"
 #include "udma_segment.h"
+#include "udma_jfc.h"
 #include "udma_jfs.h"
 
 static bool udma_check_vma(struct udma_dev *dev, struct vm_area_struct *vma)
@@ -31,9 +32,11 @@ static void udma_u_free_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq
 {
 	struct vm_area_struct *vma;
 
-	if (dev->sq_reserved_info.sq_reserved) {
+	if (sq->dtu_en) {
+		udma_dtu_uva_unremap(dev, &sq->buf, &sq->dtu_pg_info);
+	} else if (dev->sq_reserved_info.sq_reserved) {
 		if (dev->caps.sva_sep_mode_en) {
-			udma_ioummu_unmap(sq->udma_ctx, UMMU_INVALID_TID, sq->buf.addr,
+			udma_ioummu_unmap(sq->udma_ctx->tid, UMMU_INVALID_TID, sq->buf.addr,
 					  sq->reserved_info.len);
 			sg_free_table(sq->sgt);
 			kfree(sq->sgt);
@@ -58,9 +61,9 @@ static void udma_u_free_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq
 
 void udma_free_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq)
 {
-	if (sq->buf.kva) {
+	if (is_support_ccu_jetty(dev, sq) || sq->buf.kva) {
 		if (!sq->cstm)
-			udma_k_free_buf(dev, &sq->buf);
+			udma_k_free_buf(dev, &sq->buf, true);
 		kfree(sq->wrid);
 		sq->wrid = NULL;
 		return;
@@ -85,14 +88,14 @@ static int udma_do_ioummu_map(struct udma_dev *dev, struct udma_jetty_queue *sq,
 	ret = udma_create_sgt_from_pages(sq->sgt, page_list, 1,
 					 PAGE_SIZE << sq->reserved_info.order);
 	if (ret) {
-		dev_err(dev->dev, "failed to create sg table, ret=%d.\n", ret);
+		dev_err(dev->dev, "failed to create SG table, ret=%d.\n", ret);
 		goto err_create_sgt;
 	}
 
-	ret = udma_ioummu_map(sq->udma_ctx, UMMU_INVALID_TID, IOMMU_READ | IOMMU_WRITE,
+	ret = udma_ioummu_map(sq->udma_ctx->tid, UMMU_INVALID_TID, IOMMU_READ | IOMMU_WRITE,
 			      buf_addr, sq->sgt);
 	if (ret) {
-		dev_err(dev->dev, "failed to map sgt, ret=%d.\n", ret);
+		dev_err(dev->dev, "failed to map SGT, ret=%d.\n", ret);
 		goto err_ioummu_map;
 	}
 
@@ -114,6 +117,7 @@ udma_reserved_u_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 	struct vm_area_struct *vma;
 	uint64_t buf_addr;
 	uint32_t buf_len;
+	gfp_t flag;
 	int ret;
 
 	buf_addr = dev->sq_reserved_info.va_per_ue +
@@ -137,15 +141,19 @@ udma_reserved_u_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 	}
 
 	if (!udma_check_vma(dev, vma)) {
-		dev_err(dev->dev, "invalid vma, this vma is not created by the udma.\n");
+		dev_err(dev->dev, "invalid VMA, this VMA is not created by the UDMA.\n");
 		ret = -EINVAL;
 		goto err_unlock;
 	}
 
-	sq->reserved_info.pg = udma_alloc_pages(GFP_KERNEL | __GFP_ZERO | GFP_HIGHUSER_MOVABLE,
-								sq->reserved_info.order);
+	if (debug_switch)
+		dev_info_ratelimited(dev->dev, "vm_flags=0x%lx, vm_page_prot=0x%llx.\n",
+				     vma->vm_flags, vma->vm_page_prot.pgprot);
+	flag = dev->caps.non_mirror_en == true ? (GFP_HIGHUSER_MOVABLE | __GFP_ZERO) :
+		(GFP_KERNEL | __GFP_ZERO);
+	sq->reserved_info.pg = udma_alloc_pages(flag, sq->reserved_info.order);
 	if (sq->reserved_info.pg == NULL) {
-		dev_err(dev->dev, "failed to alloc_pages, order=%u.\n", sq->reserved_info.order);
+		dev_err(dev->dev, "failed to alloc pages, order=%u.\n", sq->reserved_info.order);
 		ret = -ENOMEM;
 		goto err_unlock;
 	}
@@ -159,7 +167,7 @@ udma_reserved_u_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 	ret = udma_remap_pfn_range(vma, buf_addr, (uint64_t)page_to_pfn(sq->reserved_info.pg),
 				   buf_len, vma->vm_page_prot);
 	if (ret) {
-		dev_err(dev->dev, "failed to remap_pfn, ret=%d.\n", ret);
+		dev_err(dev->dev, "failed to remap PFN, ret=%d.\n", ret);
 		goto err_remap;
 	}
 
@@ -171,7 +179,7 @@ udma_reserved_u_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 	return ret;
 err_remap:
 	if (dev->caps.sva_sep_mode_en) {
-		udma_ioummu_unmap(sq->udma_ctx, UMMU_INVALID_TID, buf_addr, buf_len);
+		udma_ioummu_unmap(sq->udma_ctx->tid, UMMU_INVALID_TID, buf_addr, buf_len);
 		sg_free_table(sq->sgt);
 		kfree(sq->sgt);
 		sq->sgt = NULL;
@@ -189,18 +197,21 @@ static int udma_u_alloc_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq
 {
 	int ret = 0;
 
-	if (dev->sq_reserved_info.sq_reserved) {
+	if (sq->dtu_en) {
+		ret = udma_dtu_uva_remap(dev, &sq->buf, &sq->dtu_pg_info);
+		sq->buf.entry_size = UDMA_JFS_WQEBB_SIZE;
+	} else if (dev->sq_reserved_info.sq_reserved) {
 		ret = udma_reserved_u_sq_buf(dev, sq, ucmd);
 	} else if (ucmd->is_hugepage) {
 		if (!udma_alloc_u_hugepage(sq->udma_ctx, sq->buf.addr, sq->buf.len)) {
-			dev_err(dev->dev, "failed to create sq.\n");
+			dev_err(dev->dev, "failed to create SQ.\n");
 			return -ENOMEM;
 		}
 		sq->buf.is_hugepage = true;
 	} else {
 		sq->buf.page_priv = udma_get_map_page_priv(sq->udma_ctx, sq->buf.addr, sq->buf.len);
 		if (sq->buf.page_priv == NULL) {
-			dev_err(dev->dev, "failed to get sq page.\n");
+			dev_err(dev->dev, "failed to get SQ page.\n");
 			return -EINVAL;
 		}
 	}
@@ -223,9 +234,10 @@ int udma_alloc_u_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 	sq->buf.entry_cnt = ucmd->buf_len >> WQE_BB_SIZE_SHIFT;
 	sq->buf.addr = ucmd->buf_addr;
 	sq->buf.len = ucmd->buf_len;
+	sq->dtu_en = ucmd->dtu_en;
 	if (sq->non_pin) {
 		if (dev->caps.sva_sep_mode_en) {
-			dev_err(dev->dev, "sep mode not support non_pin.\n");
+			dev_err(dev->dev, "separate mode not support non-pin.\n");
 			ret = -EINVAL;
 		}
 		return ret;
@@ -233,7 +245,7 @@ int udma_alloc_u_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 
 	ret = udma_u_alloc_sq_buf(dev, sq, ucmd);
 	if (ret)
-		dev_err(dev->dev, "failed to alloc sq buf, ret = %d.\n", ret);
+		dev_err(dev->dev, "failed to alloc SQ buffer, ret = %d.\n", ret);
 
 	return ret;
 }
@@ -241,6 +253,7 @@ int udma_alloc_u_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 int udma_alloc_k_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 			struct ubcore_jfs_cfg *jfs_cfg)
 {
+	uint32_t jetty_depth = jfs_cfg->depth;
 	uint32_t wqe_bb_depth;
 	uint32_t sqe_bb_cnt;
 	uint32_t size;
@@ -259,23 +272,30 @@ int udma_alloc_k_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 	sq->sqe_bb_cnt = sqe_bb_cnt > (uint32_t)MAX_WQEBB_NUM ? (uint32_t)MAX_WQEBB_NUM :
 			 sqe_bb_cnt;
 
-	wqe_bb_depth = roundup_pow_of_two(sq->sqe_bb_cnt * jfs_cfg->depth);
+	if (is_support_ccu_jetty(dev, sq)) {
+		sq->sqe_bb_cnt = UDMA_CCU_SQE_BB_CNT;
+		jetty_depth = (1 << dev->caps.lock_buf_bb_shift);
+		sq->buf.addr = (((uint64_t)sq->buf.addr) << SQE_VA_L_OFFSET);
+		sq->buf.kva = (void *)(uintptr_t)sq->buf.addr;
+	}
+
+	wqe_bb_depth = roundup_pow_of_two(sq->sqe_bb_cnt * jetty_depth);
 	sq->buf.entry_size = UDMA_JFS_WQEBB_SIZE;
 	size = ALIGN(wqe_bb_depth * sq->buf.entry_size, UDMA_HW_PAGE_SIZE);
 	sq->buf.entry_cnt = size >> WQE_BB_SIZE_SHIFT;
 
 	if (!sq->cstm) {
-		ret = udma_k_alloc_buf(dev, &sq->buf);
+		ret = udma_k_alloc_buf(dev, &sq->buf, true);
 		if (ret) {
-			dev_err(dev->dev, "failed to alloc sq buffer, id=%u.\n", sq->id);
+			dev_err(dev->dev, "failed to alloc SQ buffer, id=%u.\n", sq->id);
 			return ret;
 		}
 	}
 
-	sq->wrid = kcalloc(1, sq->buf.entry_cnt * sizeof(uint64_t), GFP_KERNEL);
+	sq->wrid = kcalloc(sq->buf.entry_cnt, sizeof(uint64_t), GFP_KERNEL);
 	if (!sq->wrid) {
 		if (!sq->cstm)
-			udma_k_free_buf(dev, &sq->buf);
+			udma_k_free_buf(dev, &sq->buf, true);
 		return -ENOMEM;
 	}
 
@@ -312,7 +332,7 @@ void udma_init_jfsc(struct udma_dev *dev, struct ubcore_jfs_cfg *cfg,
 			      (uint32_t)SQE_TOKEN_ID_H_MASK;
 	ctx->sqe_bb_shift = ilog2(roundup_pow_of_two(jfs->sq.buf.entry_cnt));
 	ctx->tx_jfcn = cfg->jfc->id;
-	ctx->ta_timeout = to_ta_timeout(cfg->err_timeout);
+	ctx->ta_timeout = udma_get_ta_timeout_gear(dev, cfg->err_timeout);
 
 	if (!!(dev->caps.feature & UDMA_CAP_FEATURE_RNR_RETRY))
 		ctx->rnr_retry_num = cfg->rnr_retry;
@@ -327,6 +347,9 @@ void udma_init_jfsc(struct udma_dev *dev, struct ubcore_jfs_cfg *cfg,
 	ctx->sqe_pld_tokenid = jfs->sq.tid & (uint32_t)SQE_PLD_TOKEN_ID_MASK;
 	ctx->next_send_ssn = get_random_u16();
 	ctx->next_rcv_ssn = ctx->next_send_ssn;
+
+	if (!!(dev->caps.feature & UDMA_CAP_FEATURE_RC_CTP_MULTIPLE_PATH_MODE))
+		ctx->ctp_rc_mul_path_mode = cfg->flag.bs.ctp_rc_mul_path_mode;
 }
 
 int udma_verify_jfs_param(struct udma_dev *dev, struct ubcore_jfs_cfg *cfg,
@@ -335,7 +358,7 @@ int udma_verify_jfs_param(struct udma_dev *dev, struct ubcore_jfs_cfg *cfg,
 	if (!cfg->depth || cfg->depth > dev->caps.jfs.depth ||
 	    cfg->max_sge > dev->caps.jfs_sge || cfg->trans_mode == UBCORE_TP_RC) {
 		dev_err(dev->dev,
-			"jfs param is invalid, depth = %u, seg = %u, max_depth = %u, max_jfs_seg = %u, trans_mode = %u.\n",
+			"JFS param invalid, depth=%u, sge=%u, max_depth=%u, max_sge=%u, trans_mode=%u.\n",
 			cfg->depth, cfg->max_sge, dev->caps.jfs.depth,
 			dev->caps.jfs_sge, cfg->trans_mode);
 		return -EINVAL;
@@ -343,19 +366,19 @@ int udma_verify_jfs_param(struct udma_dev *dev, struct ubcore_jfs_cfg *cfg,
 
 	if (enable_stars && cfg->max_inline_data != 0 &&
 	    cfg->max_inline_data > dev->caps.jfs_inline_sz) {
-		dev_err(dev->dev, "jfs param is invalid, inline_data:%u, max_inline_len:%u.\n",
+		dev_err(dev->dev, "JFS parameter is invalid, inline_data:%u, max_inline_len:%u.\n",
 			cfg->max_inline_data, dev->caps.jfs_inline_sz);
 		return -EINVAL;
 	}
 
 	if (enable_stars && cfg->max_rsge > dev->caps.jfs_rsge) {
-		dev_err(dev->dev, "jfs param is invalid, rsge:%u, max_rsge:%u.\n",
+		dev_err(dev->dev, "JFS parameter is invalid, RSGE:%u, max_rsge:%u.\n",
 			cfg->max_rsge, dev->caps.jfs_rsge);
 		return -EINVAL;
 	}
 
 	if (cfg->priority >= UDMA_MAX_PRIORITY) {
-		dev_err(dev->dev, "kernel mode jfs priority is out of range, priority is %u.\n",
+		dev_err(dev->dev, "kernel mode JFS priority is out of range, priority is %u.\n",
 			cfg->priority);
 		return -EINVAL;
 	}
@@ -371,7 +394,7 @@ void udma_dfx_store_jfs_id(struct udma_dev *udma_dev, struct udma_jfs *udma_jfs)
 	jfs = (struct udma_dfx_jfs *)xa_load(&udma_dev->dfx_info->jfs.table,
 					     udma_jfs->sq.id);
 	if (jfs) {
-		dev_warn(udma_dev->dev, "jfs_id(%u) already exists in DFX.\n",
+		dev_warn(udma_dev->dev, "JFS id(%u) already exists in DFX.\n",
 			 udma_jfs->sq.id);
 		return;
 	}
@@ -385,10 +408,10 @@ void udma_dfx_store_jfs_id(struct udma_dev *udma_dev, struct udma_jfs *udma_jfs)
 
 	write_lock(&udma_dev->dfx_info->jfs.rwlock);
 	ret = xa_err(xa_store(&udma_dev->dfx_info->jfs.table, udma_jfs->sq.id,
-			      jfs, GFP_KERNEL));
+			      jfs, GFP_ATOMIC));
 	if (ret) {
 		write_unlock(&udma_dev->dfx_info->jfs.rwlock);
-		dev_err(udma_dev->dev, "store jfs_id(%u) to table failed in DFX.\n",
+		dev_err(udma_dev->dev, "store JFS id(%u) to table failed in DFX.\n",
 			udma_jfs->sq.id);
 		kfree(jfs);
 		return;
@@ -399,14 +422,14 @@ void udma_dfx_store_jfs_id(struct udma_dev *udma_dev, struct udma_jfs *udma_jfs)
 }
 
 static int udma_create_hw_jfs_ctx(struct udma_dev *dev, struct udma_jfs *jfs,
-				    struct ubcore_jfs_cfg *cfg)
+				  struct ubcore_jfs_cfg *cfg)
 {
 	struct ubase_mbx_attr attr = {};
 	struct udma_jetty_ctx ctx = {};
 	int ret;
 
 	if (cfg->priority >= UDMA_MAX_PRIORITY) {
-		dev_err(dev->dev, "kernel mode jfs priority is out of range, priority is %u.\n",
+		dev_err(dev->dev, "kernel mode JFS priority is out of range, priority is %u.\n",
 			cfg->priority);
 		return -EINVAL;
 	}
@@ -416,7 +439,7 @@ static int udma_create_hw_jfs_ctx(struct udma_dev *dev, struct udma_jfs *jfs,
 	attr.op = UDMA_CMD_CREATE_JFS_CONTEXT;
 	ret = post_mailbox_update_ctx(dev, &ctx, sizeof(ctx), &attr);
 	if (ret) {
-		dev_err(dev->dev, "failed to upgrade JFSC, ret = %d.\n", ret);
+		dev_err(dev->dev, "failed to upgrade JFS context, ret = %d.\n", ret);
 		return ret;
 	}
 
@@ -437,7 +460,7 @@ static int udma_get_user_jfs_cmd(struct udma_dev *dev, struct udma_jfs *jfs,
 		}
 
 		if (!udata->udrv_data->in_addr || udata->udrv_data->in_len < sizeof(*ucmd)) {
-			dev_err(dev->dev, "jfs in_len %u or addr is invalid.\n",
+			dev_err(dev->dev, "JFS input length %u or address is invalid.\n",
 				udata->udrv_data->in_len);
 			return -EINVAL;
 		}
@@ -472,12 +495,12 @@ static int udma_jfs_copy_resp(struct udma_dev *dev, struct udma_jetty_queue *sq,
 	struct udma_create_jetty_resp resp = {};
 	unsigned long byte;
 
-	if (sq->non_pin || !dev->sq_reserved_info.sq_reserved)
+	if (!sq->dtu_en && (sq->non_pin || !dev->sq_reserved_info.sq_reserved))
 		return 0;
 
 	if (udma_check_base_param(udata->udrv_data->out_addr,
 				  udata->udrv_data->out_len, sizeof(resp))) {
-		dev_err(dev->dev, "invalid out_addr or out_len=%u.\n",
+		dev_err(dev->dev, "invalid output address or output length=%u.\n",
 			udata->udrv_data->out_len);
 		return -EINVAL;
 	}
@@ -487,7 +510,7 @@ static int udma_jfs_copy_resp(struct udma_dev *dev, struct udma_jetty_queue *sq,
 	byte = copy_to_user((void *)(uintptr_t)udata->udrv_data->out_addr,
 			    &resp, sizeof(resp));
 	if (byte) {
-		dev_err(dev->dev, "failed to copy_to_user, ret=%lu.\n", byte);
+		dev_err(dev->dev, "failed to copy to user, ret=%lu.\n", byte);
 		return -EFAULT;
 	}
 
@@ -520,11 +543,11 @@ static int udma_alloc_jfs_sq(struct udma_dev *dev, struct ubcore_jfs_cfg *cfg,
 	}
 	jfs->ubcore_jfs.jfs_id.id = jfs->sq.id;
 	jfs->ubcore_jfs.jfs_cfg = *cfg;
-	udma_set_query_flush_time(&jfs->sq, cfg->err_timeout);
+	udma_set_query_flush_time(dev, &jfs->sq, cfg->err_timeout);
 
 	ret = xa_err(xa_store(&dev->jetty_table.xa, jfs->sq.id, &jfs->sq, GFP_KERNEL));
 	if (ret) {
-		dev_err(dev->dev, "failed to store_sq(%u), ret=%d.\n", jfs->sq.id, ret);
+		dev_err(dev->dev, "failed to store SQ(%u), ret=%d.\n", jfs->sq.id, ret);
 		goto err_store_sq;
 	}
 
@@ -568,20 +591,24 @@ int udma_active_jfs(struct ubcore_jfs *jfs, struct ubcore_udata *udata)
 	int ret;
 
 	if (cfg->trans_mode == UBCORE_TP_RC) {
-		dev_err(dev->dev, "jfs not support RC transmode.\n");
+		dev_err(dev->dev, "JFS not support RC transport mode.\n");
 		return -EINVAL;
 	}
 
 	ret = udma_alloc_jfs_sq(dev, cfg, ujfs, udata);
 	if (ret) {
-		dev_err(dev->dev, "failed to alloc_jfs_sq, ret = %d.\n", ret);
+		dev_err(dev->dev, "failed to alloc JFS SQ, ret = %d.\n", ret);
 		return ret;
 	}
+
+	ret = udma_bind_jfc(dev, cfg->jfc->id, UDMA_SEND_JFC);
+	if (ret)
+		goto err_bind_jfc;
 
 	ret = udma_create_hw_jfs_ctx(dev, ujfs, cfg);
 	if (ret) {
 		dev_err(dev->dev,
-			"post mailbox create jfs ctx failed, ret = %d.\n", ret);
+			"post mailbox create JFS context failed, ret = %d.\n", ret);
 		goto err_create_hw_jfs;
 	}
 
@@ -596,6 +623,8 @@ int udma_active_jfs(struct ubcore_jfs *jfs, struct ubcore_udata *udata)
 	return 0;
 
 err_create_hw_jfs:
+	udma_unbind_jfc(dev, cfg->jfc->id, UDMA_SEND_JFC);
+err_bind_jfc:
 	udma_free_jfs_sq(dev, ujfs);
 
 	return ret;
@@ -610,7 +639,7 @@ struct ubcore_jfs *udma_create_jfs(struct ubcore_device *ub_dev,
 	int ret;
 
 	if (cfg->trans_mode == UBCORE_TP_RC) {
-		dev_err(dev->dev, "jfs not support RC transmode.\n");
+		dev_err(dev->dev, "JFS not support RC transport mode.\n");
 		return ERR_PTR(-EINVAL);
 	}
 
@@ -620,14 +649,18 @@ struct ubcore_jfs *udma_create_jfs(struct ubcore_device *ub_dev,
 
 	ret = udma_alloc_jfs_sq(dev, cfg, jfs, udata);
 	if (ret) {
-		dev_err(dev->dev, "failed to alloc_jfs_sq, ret = %d.\n", ret);
+		dev_err(dev->dev, "failed to alloc JFS SQ, ret = %d.\n", ret);
 		goto err_alloc_sq;
 	}
+
+	ret = udma_bind_jfc(dev, cfg->jfc->id, UDMA_SEND_JFC);
+	if (ret)
+		goto err_bind_jfc;
 
 	ret = udma_create_hw_jfs_ctx(dev, jfs, cfg);
 	if (ret) {
 		dev_err(dev->dev,
-			"post mailbox create jfs ctx failed, ret = %d.\n", ret);
+			"post mailbox create JFS context failed, ret = %d.\n", ret);
 		goto err_create_hw_jfs;
 	}
 
@@ -642,6 +675,8 @@ struct ubcore_jfs *udma_create_jfs(struct ubcore_device *ub_dev,
 	return &jfs->ubcore_jfs;
 
 err_create_hw_jfs:
+	udma_unbind_jfc(dev, cfg->jfc->id, UDMA_SEND_JFC);
+err_bind_jfc:
 	udma_free_jfs_sq(dev, jfs);
 err_alloc_sq:
 	kfree(jfs);
@@ -652,6 +687,8 @@ static void udma_free_jfs_detail(struct ubcore_jfs *jfs)
 {
 	struct udma_dev *dev = to_udma_dev(jfs->ub_dev);
 	struct udma_jfs *ujfs = to_udma_jfs(jfs);
+
+	udma_unbind_jfc(dev, jfs->jfs_cfg.jfc->id, UDMA_SEND_JFC);
 
 	udma_clean_cqe_for_jetty(dev, &ujfs->sq, jfs->jfs_cfg.jfc, NULL);
 
@@ -684,21 +721,21 @@ int udma_deactive_jfs(struct ubcore_jfs *jfs, struct ubcore_udata *udata)
 	}
 
 	if (!ujfs->ue_rx_closed && udma_close_ue_rx(dev, true, true, false, 0)) {
-		dev_err(dev->dev, "close ue rx failed when destroying jfs.\n");
+		dev_err(dev->dev, "close UE rx failed when destroying JFS.\n");
 		return -EINVAL;
 	}
 
 	ret = udma_modify_and_destroy_jetty(dev, &ujfs->sq);
 	if (ret) {
-		dev_info(dev->dev, "udma modify error and destroy jfs failed, id: %u.\n",
+		dev_info(dev->dev, "udma modify error and destroy JFS failed, id: %u.\n",
 			 jfs->jfs_id.id);
 		if (!ujfs->ue_rx_closed)
-			udma_open_ue_rx(dev, true, true, false, 0);
+			udma_open_ue_rx_with_retry(dev, true, true, false, 0);
 		return ret;
 	}
 
 	udma_free_jfs_detail(jfs);
-	udma_open_ue_rx(dev, true, true, false, 0);
+	udma_open_ue_rx_with_retry(dev, true, true, false, 0);
 	ujfs->sq.activated = false;
 
 	return 0;
@@ -724,12 +761,12 @@ int udma_destroy_jfs_batch(struct ubcore_jfs **jfs, int jfs_cnt, int *bad_jfs_in
 	int ret;
 
 	if (!jfs) {
-		pr_err("jfs array is null.\n");
+		pr_err("JFS array is null.\n");
 		return -EINVAL;
 	}
 
 	if (!jfs_cnt) {
-		pr_err("jfs cnt is 0.\n");
+		pr_err("JFS count is 0.\n");
 		return -EINVAL;
 	}
 
@@ -748,7 +785,7 @@ int udma_destroy_jfs_batch(struct ubcore_jfs **jfs, int jfs_cnt, int *bad_jfs_in
 	ret = udma_batch_modify_and_destroy_jetty(udma_dev, sq_list, active_jfs_cnt, bad_jfs_index);
 	if (ret) {
 		dev_err(udma_dev->dev,
-			 "udma batch modify error and destroy jfs failed.\n");
+			 "udma modify error and destroy JFS failed.\n");
 		kfree(sq_list);
 		return ret;
 	}
@@ -785,17 +822,12 @@ static int udma_modify_jfs_state(struct udma_dev *udma_dev, struct udma_jfs *udm
 		if (ret)
 			break;
 
-		if (!(udma_dev->caps.feature & UDMA_CAP_FEATURE_UE_RX_CLOSE)) {
-			if (udma_modify_jetty_precondition(udma_dev, &udma_jfs->sq)) {
-				ret = -ENOMEM;
-				udma_open_ue_rx(udma_dev, true, true, false, 0);
-				break;
-			}
-		}
+		if (!(udma_dev->caps.feature & UDMA_CAP_FEATURE_UE_RX_CLOSE))
+			udma_modify_jetty_precondition(udma_dev, &udma_jfs->sq);
 
 		ret = udma_set_jetty_state(udma_dev, udma_jfs->sq.id, to_jetty_state(attr->state));
 		if (ret)
-			udma_open_ue_rx(udma_dev, true, true, false, 0);
+			udma_open_ue_rx_with_retry(udma_dev, true, true, false, 0);
 		else
 			udma_jfs->ue_rx_closed = true;
 		break;
@@ -812,26 +844,26 @@ int udma_modify_jfs(struct ubcore_jfs *jfs, struct ubcore_jfs_attr *attr,
 	int ret = 0;
 
 	if (!(attr->mask & UBCORE_JFS_STATE)) {
-		dev_err(udma_dev->dev, "modify jfs mask is error or not set, jfs_id = %u.\n",
+		dev_err(udma_dev->dev, "modify JFS mask is error or not set, JFS id = %u.\n",
 			udma_jfs->sq.id);
 		return -EINVAL;
 	}
 
 	if (udma_jfs->sq.state == attr->state) {
-		dev_info_ratelimited(udma_dev->dev, "jfs state has been %s.\n",
+		dev_info_ratelimited(udma_dev->dev, "JFS state has been %s.\n",
 				     to_state_name(attr->state));
 		return 0;
 	}
 
 	if (!verify_modify_jetty(udma_jfs->sq.state, attr->state)) {
-		dev_err(udma_dev->dev, "not support modify jfs state from %s to %s.\n",
+		dev_err(udma_dev->dev, "not support modify JFS state from %s to %s.\n",
 			to_state_name(udma_jfs->sq.state), to_state_name(attr->state));
 		return -EINVAL;
 	}
 
 	ret = udma_modify_jfs_state(udma_dev, udma_jfs, attr);
 	if (ret) {
-		dev_err(udma_dev->dev, "modify jfs %u state to %u failed.\n",
+		dev_err(udma_dev->dev, "modify JFS %u state to %u failed.\n",
 			udma_jfs->sq.id, attr->state);
 		return ret;
 	}
@@ -852,6 +884,7 @@ static void fill_imm_data_or_token_for_cr(struct udma_dev *udma_dev,
 	case UDMA_OPC_READ:
 	case UDMA_OPC_CAS:
 	case UDMA_OPC_FAA:
+	case UDMA_OPC_WRITE_WITH_ATOMICSTORE_ADD:
 		break;
 	case UDMA_OPC_SEND_WITH_IMM:
 		memcpy(&cr->imm_data, (void *)sqe_ctl + SQE_SEND_IMM_FIELD,
@@ -947,6 +980,8 @@ static uint32_t get_wqebb_num(struct udma_sqe_ctl *sqe_ctl)
 	case UDMA_OPC_CAS:
 	case UDMA_OPC_FAA:
 		return ATOMIC_WQEBB_CNT;
+	case UDMA_OPC_WRITE_WITH_ATOMICSTORE_ADD:
+		return WRITE_WITH_ATOMICSTORE_ADD_WQEBB_CNT;
 	case UDMA_OPC_NOP:
 		return NOP_WQEBB_CNT;
 	default:
@@ -997,7 +1032,8 @@ int udma_flush_jfs(struct ubcore_jfs *jfs, int cr_cnt, struct ubcore_cr *cr)
 	return n_flushed;
 }
 
-static uint8_t udma_get_jfs_opcode(enum ubcore_opcode opcode)
+static uint8_t udma_get_jfs_opcode(enum ubcore_opcode opcode,
+				   struct udma_caps *caps)
 {
 	switch (opcode) {
 	case UBCORE_OPC_SEND:
@@ -1010,6 +1046,10 @@ static uint8_t udma_get_jfs_opcode(enum ubcore_opcode opcode)
 		return UDMA_OPC_WRITE;
 	case UBCORE_OPC_WRITE_IMM:
 		return UDMA_OPC_WRITE_WITH_IMM;
+	case UBCORE_OPC_WRITE_ATOMIC:
+		if (!caps->atomic_add_en)
+			return UDMA_OPC_INVALID;
+		return UDMA_OPC_WRITE_WITH_ATOMICSTORE_ADD;
 	case UBCORE_OPC_READ:
 		return UDMA_OPC_READ;
 	case UBCORE_OPC_CAS:
@@ -1043,6 +1083,7 @@ udma_fill_sw_sge(struct udma_dev *dev, struct udma_sqe_ctl *sqe_ctl,
 		break;
 	case UBCORE_OPC_WRITE:
 	case UBCORE_OPC_WRITE_IMM:
+	case UBCORE_OPC_WRITE_ATOMIC:
 		sge_info = wr->rw.src.sge;
 		num_sge = wr->rw.src.num_sge;
 		break;
@@ -1064,7 +1105,7 @@ udma_fill_sw_sge(struct udma_dev *dev, struct udma_sqe_ctl *sqe_ctl,
 			total_len += sge_info[i].len;
 		}
 		sqe_ctl->inline_msg_len = total_len;
-	} else {
+	} else if (wr->opcode != UBCORE_OPC_WRITE_ATOMIC) {
 		for (i = 0; i < num_sge; i++) {
 			if (sge_info[i].len == 0)
 				continue;
@@ -1074,6 +1115,16 @@ udma_fill_sw_sge(struct udma_dev *dev, struct udma_sqe_ctl *sqe_ctl,
 			sge_num++;
 		}
 		sqe_ctl->sge_num = sge_num;
+	} else {
+		if (sge_info[0].len > SQE_CTL_ATOMICADD_LEN_BIT) {
+			dev_err(dev->dev, "local payload length overflow.\n");
+			return -EINVAL;
+		}
+		memcpy((void *)sqe_ctl + SQE_WRITE_ATOMICADD_DATA_ADDR_FIELD,
+			&sge_info[0].addr, sizeof(uint64_t));
+		sqe_ctl->sge_num = sge_info[0].len & SQE_CTL_ATOMICADD_LEN_L_BIT;
+		sqe_ctl->write_len = (sge_info[0].len & SQE_CTL_ATOMICADD_LEN_H_BIT) >>
+					WRITE_ATOMICADD_LEN_H_OFFSET;
 	}
 
 	return 0;
@@ -1106,8 +1157,8 @@ udma_k_fill_send_sqe(struct udma_dev *dev, struct udma_sqe_ctl *sqe_ctl,
 	} else if (wr->opcode == UBCORE_OPC_SEND_INVALIDATE) {
 		udma_seg = to_udma_seg(wr->send.tseg);
 		token_info = (struct udma_token_info *)&sqe_ctl->rmt_addr_l_or_token_id;
-		token_info->token_id = udma_seg->tid;
-		token_info->token_value = udma_seg->token_value;
+		token_info->normal.token_id = udma_seg->tid;
+		token_info->normal.token_value = udma_seg->token_value;
 	}
 
 	return 0;
@@ -1118,6 +1169,7 @@ udma_k_fill_write_sqe(struct udma_dev *dev, struct udma_sqe_ctl *sqe_ctl,
 		      struct ubcore_jfs_wr *wr, struct ubcore_tjetty *tjetty,
 		      uint32_t max_inline_size)
 {
+	struct udma_target_jetty *udma_tjetty;
 	struct udma_token_info *token_info;
 	struct udma_segment *udma_seg;
 	struct udma_normal_sge *sge;
@@ -1133,6 +1185,7 @@ udma_k_fill_write_sqe(struct udma_dev *dev, struct udma_sqe_ctl *sqe_ctl,
 	sge_info = wr->rw.dst.sge;
 	udma_seg = to_udma_seg(sge_info[0].tseg);
 
+	udma_tjetty = to_udma_tjetty(tjetty);
 	sqe_ctl->target_hint = wr->rw.target_hint;
 	sqe_ctl->rmt_obj_id = udma_seg->tid;
 	sqe_ctl->token_en = udma_seg->token_value_valid;
@@ -1147,8 +1200,25 @@ udma_k_fill_write_sqe(struct udma_dev *dev, struct udma_sqe_ctl *sqe_ctl,
 		       sizeof(uint64_t));
 		token_info = (struct udma_token_info *)
 			     ((void *)sqe_ctl + WRITE_IMM_TOKEN_FIELD);
-		token_info->token_id = tjetty->cfg.id.id;
-		token_info->token_value = tjetty->cfg.token_value.token;
+		token_info->normal.token_id = tjetty->cfg.id.id;
+		token_info->normal.token_value = tjetty->cfg.token_value.token;
+	} else if (sqe_ctl->opcode == UDMA_OPC_WRITE_WITH_ATOMICSTORE_ADD) {
+		memcpy((void *)sqe_ctl + SQE_WRITE_ATOMICADD_RMT_EID_FIELD,
+		       &udma_tjetty->le_eid.raw, sizeof(uint8_t) * UDMA_ATOMICADD_EID_SIZE);
+		memcpy((void *)sqe_ctl + SQE_WRITE_ATOMICADD_RMT_TOKEN_FIELD,
+		       &udma_seg->token_value, sizeof(uint32_t));
+		memcpy((void *)sqe_ctl + SQE_WRITE_ATOMICADD_RMT_ADDR_FIELD,
+		       &sge_info[0].addr, sizeof(uint64_t));
+		token_info = (struct udma_token_info *)
+			     ((void *)sqe_ctl + WRITE_ATOMICADD_TOKEN_FIELD);
+		udma_seg = to_udma_seg(sge_info[1].tseg);
+		token_info->atomic_add.token_id = udma_seg->tid;
+		token_info->atomic_add.token_value =
+			udma_seg->token_value & SQE_CTL_ATOMICADD_TOKEN_ID_BIT;
+		memcpy((void *)sqe_ctl + SQE_WRITE_ATOMICADD_ADDR_FIELD,
+		       &sge_info[1].addr, sizeof(uint64_t));
+		memcpy((void *)sqe_ctl + SQE_WRITE_ATOMICADD_NOTIIY_FIELD, &wr->rw.notify_data,
+		       sizeof(uint64_t));
 	}
 
 	return 0;
@@ -1310,6 +1380,10 @@ static int udma_fill_normal_sge(struct udma_dev *dev, struct udma_sqe_ctl *sqe_c
 		return udma_k_fill_cas_sqe(dev, sqe_ctl, wr);
 	case UDMA_OPC_FAA:
 		return udma_k_fill_faa_sqe(dev, sqe_ctl, wr);
+	case UDMA_OPC_WRITE_WITH_ATOMICSTORE_ADD:
+		return udma_k_fill_write_sqe(dev, sqe_ctl, wr, tjetty,
+					     max_inline_size > SQE_WRITE_ATOMICADD_INLINE_SIZE ?
+					     SQE_WRITE_ATOMICADD_INLINE_SIZE : max_inline_size);
 	default:
 		return -EINVAL;
 	}
@@ -1349,7 +1423,7 @@ static int udma_k_set_sqe(struct udma_sqe_ctl *sqe_ctl, struct ubcore_jfs_wr *wr
 
 	ret = udma_fill_normal_sge(dev, sqe_ctl, sq->max_inline_size, wr, tjetty);
 	if (ret)
-		dev_err(dev->dev, "Failed to fill normal sge, opcode :%u in wr.\n",
+		dev_err(dev->dev, "failed to fill normal SGE, opcode :%u in wr.\n",
 			(uint8_t)wr->opcode);
 
 	return ret;
@@ -1368,6 +1442,10 @@ static bool udma_k_check_sge_num(uint8_t opcode, struct udma_jetty_queue *sq,
 	case UDMA_OPC_WRITE_WITH_IMM:
 		return wr->rw.src.num_sge > UDMA_JFS_MAX_SGE_WRITE_IMM ||
 		       wr->rw.src.num_sge > sq->max_sge_num;
+	case UDMA_OPC_WRITE_WITH_ATOMICSTORE_ADD:
+		return wr->rw.src.num_sge != UDMA_JFS_SGE_WRITE_ATOMIC_ADD ||
+		       wr->rw.src.num_sge > sq->max_sge_num ||
+		       wr->rw.dst.num_sge != WRITE_ATOMICADD_DSGE_NUM;
 	case UDMA_OPC_SEND:
 	case UDMA_OPC_SEND_WITH_IMM:
 	case UDMA_OPC_SEND_WITH_INVALID:
@@ -1417,14 +1495,14 @@ static int udma_post_one_wr(struct udma_jetty_queue *sq, struct ubcore_jfs_wr *w
 	uint32_t i;
 	int ret;
 
-	opcode = udma_get_jfs_opcode(wr->opcode);
+	opcode = udma_get_jfs_opcode(wr->opcode, &udma_dev->caps);
 	if (unlikely(opcode == UDMA_OPC_INVALID)) {
 		dev_err(udma_dev->dev, "Invalid opcode :%u.\n", wr->opcode);
 		return -EINVAL;
 	}
 
 	if (unlikely(udma_k_check_sge_num(opcode, sq, wr))) {
-		dev_err(udma_dev->dev, "WR sge num invalid.\n");
+		dev_err(udma_dev->dev, "WR SGE number invalid.\n");
 		return -EINVAL;
 	}
 
@@ -1459,7 +1537,6 @@ static int udma_post_one_wr(struct udma_jetty_queue *sq, struct ubcore_jfs_wr *w
 	return 0;
 }
 
-#ifdef ST64B
 static void st64b(uint64_t *src, uint64_t *dst)
 {
 	asm volatile (
@@ -1474,12 +1551,13 @@ static void st64b(uint64_t *src, uint64_t *dst)
 		"ldr x6, [x9, #48]\n"
 		"ldr x7, [x9, #56]\n"
 		".inst 0xf83f9140\n"
-		::"r" (src), "r"(dst):"cc", "memory"
+		::"r" (src), "r"(dst)
+		: "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7",
+		  "x9", "x10", "cc", "memory"
 	);
 }
-#endif
 
-static void udma_write_dsqe(struct udma_jetty_queue *sq,
+static void udma_write_dsqe(struct udma_dev *udma_dev, struct udma_jetty_queue *sq,
 			    struct udma_sqe_ctl *ctrl)
 {
 #define DWQE_SIZE 8
@@ -1487,16 +1565,15 @@ static void udma_write_dsqe(struct udma_jetty_queue *sq,
 
 	ctrl->sqe_bb_idx = sq->pi;
 
-#ifdef ST64B
-	st64b(((uint64_t *)ctrl), (uint64_t *)sq->dwqe_addr);
-#else
-	for (i = 0; i < DWQE_SIZE; i++)
-		writeq_relaxed(*((uint64_t *)ctrl + i),
-				(uint64_t *)sq->dwqe_addr + i);
-#endif
+	if (udma_dev->caps.st64b_en) {
+		st64b(((uint64_t *)ctrl), (uint64_t *)sq->dwqe_addr);
+	} else {
+		for (i = 0; i < DWQE_SIZE; i++)
+			writeq_relaxed(*((uint64_t *)ctrl + i),
+					(uint64_t *)sq->dwqe_addr + i);
+	}
 }
 
-/* thanks to drivers/infiniband/hw/bnxt_re/ib_verbs.c */
 int udma_post_sq_wr(struct udma_dev *udma_dev, struct udma_jetty_queue *sq,
 		    struct ubcore_jfs_wr *wr, struct ubcore_jfs_wr **bad_wr)
 {
@@ -1520,13 +1597,13 @@ int udma_post_sq_wr(struct udma_dev *udma_dev, struct udma_jetty_queue *sq,
 	}
 
 err_post_wr:
-	if (unlikely(sq->db_status)) {
+	if (unlikely(sq->db_status || wr->flag.bs.db_bypass)) {
 		sq->need_ring_db = true;
 	} else {
-		if (likely(wr_cnt && udma_dev->status != UDMA_SUSPEND)) {
+		if (likely(wr_cnt && udma_dev->status == UDMA_NORMAL)) {
 			wmb(); /* set sqe before doorbell */
 			if (wr_cnt == 1 && dwqe_enable && (sq->pi - sq->ci == 1))
-				udma_write_dsqe(sq, wqe_addr);
+				udma_write_dsqe(udma_dev, sq, wqe_addr);
 			else
 				udma_k_update_sq_db(sq);
 		}
@@ -1547,7 +1624,7 @@ int udma_post_jfs_wr(struct ubcore_jfs *jfs, struct ubcore_jfs_wr *wr,
 
 	ret = udma_post_sq_wr(udma_dev, &udma_jfs->sq, wr, bad_wr);
 	if (ret)
-		dev_err(udma_dev->dev, "Failed to post jfs wr, sq_id = %u.\n",
+		dev_err(udma_dev->dev, "failed to post JFS work request, SQ id = %u.\n",
 			udma_jfs->sq.id);
 
 	return ret;

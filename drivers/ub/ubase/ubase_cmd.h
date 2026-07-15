@@ -89,6 +89,11 @@ enum ubase_drv_cap_bit {
 	UBASE_PMU_CRQ_SUPPORT_B  = 1,
 };
 
+enum ubase_vl_map_type {
+	UBASE_PRIO_VL_MAP,
+	UBASE_DSCP_VL_MAP,
+};
+
 struct ubase_notify_drv_cap_cmd {
 	u8	cap_bits[24]; /* see ubase_drv_cap_bit */
 };
@@ -140,13 +145,9 @@ struct ubase_stop_perf_stats_cmd {
 	__le32	rx_port_bw;
 	__le32	tx_vl_bw[UBASE_STATS_MAX_VL_NUM];
 	__le32	rx_vl_bw[UBASE_STATS_MAX_VL_NUM];
-	u32	tx_max_port_bw;
-	u32	rx_max_port_bw;
 
-	KABI_RESERVE(1)
-	KABI_RESERVE(2)
-	KABI_RESERVE(3)
-	KABI_RESERVE(4)
+	__le32	tx_max_port_bw;
+	__le32	rx_max_port_bw;
 };
 
 struct ubase_cfg_ets_vl_sch_cmd {
@@ -154,6 +155,11 @@ struct ubase_cfg_ets_vl_sch_cmd {
 	u8 rsvd[2];
 	u8 vl_bw[UBASE_MAX_VL_NUM];
 	__le32 port_bitmap;
+};
+
+struct ubase_close_perf_stats_cmd {
+	__le32	logic_port_bitmap[2];
+	u8	rsv[16];
 };
 
 struct ubase_query_dl_pkt_stats_cmd {
@@ -316,6 +322,12 @@ struct ubase_config_vl_speed_cmd {
 	u8 resv1[20];
 };
 
+struct ubase_config_dscp_tc_cmd {
+	u8 map_type;
+	u8 rsv[23];
+	u8 vl[UBASE_MAX_DSCP];
+};
+
 struct ubase_activate_req {
 	__le16	bus_ue_id;
 	__le16	msn;
@@ -382,4 +394,4 @@ void ubase_crq_service_task(struct ubase_delay_work *ubase_work);
 
 void ubase_mask_key_words(struct ubase_cmdq_desc *desc, u16 opc, int idx);
 
-#endif
+#endif /* __UBASE_CMD_H__ */

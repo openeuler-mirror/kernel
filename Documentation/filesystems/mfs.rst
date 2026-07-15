@@ -85,7 +85,7 @@ where:
 
 	* ``data`` indicates the payload of the event.
 
-The MFS will only post reading events when the data is missing in the local
+The MFS mainly posts reading events when the data is missing in the local
 cache (memory or disk). The payload format is define as follows::
 
 	struct mfs_read {
@@ -110,9 +110,12 @@ Currently the opcode is defined as follows::
 	enum mfs_opcode {
 		MFS_OP_READ = 0,
 		MFS_OP_FAULT,
+		MFS_OP_CLOSE,
 	};
 
-where means: normal read event and page fault event.
+where means: normal read event, page fault event and close event.
+Please refer to the `include/uapi/linux/mfs.h` file for the latest
+definitions.
 
 Running mode
 ============
@@ -219,3 +222,15 @@ aware allocation and trace-based prefetching triggered by MISS events.
 
 In this case, the user daemon can log the MISS io during running the process by
 parsing `offset` and `length` in the message.
+
+
+Sysfs interfaces
+================
+
+- Set the event reporting filter.
+
+Users can filter events reported by MFS through `/sys/fs/mfs/mfs${minor}/ev_mask`.
+The filtering rules are controlled by bitwise masks, and the mask calculation
+is performed based on the input value. For example, bit 0 represents a read event,
+and bit 1 represents a fault event. The order of the bits is determined by the
+value of `enum mfs_opcode`.
