@@ -39,8 +39,14 @@ struct ubaseproxy_ue_caps {
 	u32	jtg_max_cnt;
 };
 
+struct ubaseproxy_ue_default {
+	struct ubaseproxy_jfc_default	*jfc_default;
+	struct ubaseproxy_jetty_default	*jetty_default;
+};
+
 struct ubaseproxy_dev_caps {
 	struct ubaseproxy_ue_caps	ue_caps;
+	struct ubaseproxy_ue_default	ue_default;
 };
 
 struct ubaseproxy_ue_ctx_xarray {
@@ -97,6 +103,7 @@ struct ubaseproxy_dev {
 	struct ubaseproxy_ue_res_info	*ue_res_info;
 	u32				tid;
 	gfp_t				gfp;
+	atomic_t			virt_refcnt;
 };
 
 struct ubaseproxy_func_map {

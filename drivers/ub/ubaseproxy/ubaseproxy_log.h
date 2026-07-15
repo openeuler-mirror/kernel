@@ -68,6 +68,7 @@ struct ubaseproxy_ue_risk_stats {
 	u64 jfc_field_cnt;
 	u64 jfc_field_shift;
 	u64 jfc_field_cqe_coalesce_cnt;
+	u64 jfc_modify_cqe_coalesce_cnt;
 	u64 jfc_create_jfc_already_exists;
 	u64 jfc_create_eq_inc;
 	u64 jfc_destroy_jfc_not_exists;
