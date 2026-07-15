@@ -1110,35 +1110,6 @@ int vgic_v3_has_attr_regs(struct kvm_device *dev, struct kvm_device_attr *attr)
 
 	return 0;
 }
-/*
- * Compare a given affinity (level 1-3 and a level 0 mask, from the SGI
- * generation register ICC_SGI1R_EL1) with a given VCPU.
- * If the VCPU's MPIDR matches, return the level0 affinity, otherwise
- * return -1.
- */
-static int match_mpidr(u64 sgi_aff, u16 sgi_cpu_mask, struct kvm_vcpu *vcpu)
-{
-	unsigned long affinity;
-	int level0;
-
-	/*
-	 * Split the current VCPU's MPIDR into affinity level 0 and the
-	 * rest as this is what we have to compare against.
-	 */
-	affinity = kvm_vcpu_get_mpidr_aff(vcpu);
-	level0 = MPIDR_AFFINITY_LEVEL(affinity, 0);
-	affinity &= ~MPIDR_LEVEL_MASK;
-
-	/* bail out if the upper three levels don't match */
-	if (sgi_aff != affinity)
-		return -1;
-
-	/* Is this VCPU's bit set in the mask ? */
-	if (!(sgi_cpu_mask & BIT(level0)))
-		return -1;
-
-	return level0;
-}
 
 /*
  * The ICC_SGI* registers encode the affinity differently from the MPIDR,
@@ -1181,61 +1152,92 @@ void vgic_v3_dispatch_sgi(struct kvm_vcpu *vcpu, u64 reg, bool allow_group1)
 	mpidr |= SGI_AFFINITY_LEVEL(reg, 2);
 	mpidr |= SGI_AFFINITY_LEVEL(reg, 1);
 
-	/*
-	 * We iterate over all VCPUs to find the MPIDRs matching the request.
-	 * If we have handled one CPU, we clear its bit to detect early
-	 * if we are already finished. This avoids iterating through all
-	 * VCPUs when most of the times we just signal a single VCPU.
-	 */
-	kvm_for_each_vcpu(c, c_vcpu, kvm) {
-		struct vgic_irq *irq;
-
-		/* Exit early if we have dealt with all requested CPUs */
-		if (!broadcast && target_cpus == 0)
-			break;
-
-		/* Don't signal the calling VCPU */
-		if (broadcast && c == vcpu_id)
-			continue;
-
-		if (!broadcast) {
-			int level0;
-
-			level0 = match_mpidr(mpidr, target_cpus, c_vcpu);
-			if (level0 == -1)
+	if (!broadcast && target_cpus == 0)
+		return;
+	if (!broadcast) {
+		for (int i = 0; i < 16; i++) {
+			if ((((reg & ICC_SGI1R_TARGET_LIST_MASK) >> i) & 1) == 0)
 				continue;
 
-			/* remove this matching VCPU from the mask */
-			target_cpus &= ~BIT(level0);
-		}
+			unsigned long vcpuid = i +
+				(((reg & ICC_SGI1R_AFFINITY_1_MASK) >>
+				 (ICC_SGI1R_AFFINITY_1_SHIFT)) << 4) +
+				(((reg & ICC_SGI1R_AFFINITY_2_MASK) >>
+				 (ICC_SGI1R_AFFINITY_2_SHIFT)) << 12) +
+				(((reg & ICC_SGI1R_AFFINITY_3_MASK) >>
+				 (ICC_SGI1R_AFFINITY_3_SHIFT)) << 20);
 
-		irq = vgic_get_irq(vcpu->kvm, c_vcpu, sgi);
+			struct kvm_vcpu *t_vcpu = kvm_get_vcpu_by_id(kvm, vcpuid);
 
-		raw_spin_lock_irqsave(&irq->irq_lock, flags);
+			if (!t_vcpu)
+				continue;
 
-		/*
-		 * An access targeting Group0 SGIs can only generate
-		 * those, while an access targeting Group1 SGIs can
-		 * generate interrupts of either group.
-		 */
-		if (!irq->group || allow_group1) {
-			if (!irq->hw) {
-				irq->pending_latch = true;
-				vgic_queue_irq_unlock(vcpu->kvm, irq, flags);
+			struct vgic_irq *irq = vgic_get_irq(vcpu->kvm, t_vcpu, sgi);
+
+			raw_spin_lock_irqsave(&irq->irq_lock, flags);
+
+			/*
+			 * An access targeting Group0 SGIs can only generate
+			 * those, while an access targeting Group1 SGIs can
+			 * generate interrupts of either group.
+			 */
+			if (!irq->group || allow_group1) {
+				if (!irq->hw) {
+					irq->pending_latch = true;
+					vgic_queue_irq_unlock(vcpu->kvm, irq, flags);
+				} else {
+					/* HW SGI? Ask the GIC to inject it */
+					int err;
+
+					err = irq_set_irqchip_state(irq->host_irq,
+								    IRQCHIP_STATE_PENDING,
+								    true);
+					WARN_RATELIMIT(err, "IRQ %d", irq->host_irq);
+					raw_spin_unlock_irqrestore(&irq->irq_lock, flags);
+				}
 			} else {
-				/* HW SGI? Ask the GIC to inject it */
-				int err;
-				err = irq_set_irqchip_state(irq->host_irq,
-							    IRQCHIP_STATE_PENDING,
-							    true);
-				WARN_RATELIMIT(err, "IRQ %d", irq->host_irq);
 				raw_spin_unlock_irqrestore(&irq->irq_lock, flags);
 			}
-		} else {
-			raw_spin_unlock_irqrestore(&irq->irq_lock, flags);
-		}
 
-		vgic_put_irq(vcpu->kvm, irq);
+			vgic_put_irq(vcpu->kvm, irq);
+		}
+	} else {
+		kvm_for_each_vcpu(c, c_vcpu, kvm) {
+			struct vgic_irq *irq;
+
+			/* Don't signal the calling VCPU */
+			if (c == vcpu_id)
+				continue;
+
+			irq = vgic_get_irq(vcpu->kvm, c_vcpu, sgi);
+
+			raw_spin_lock_irqsave(&irq->irq_lock, flags);
+
+			/*
+			 * An access targeting Group0 SGIs can only generate
+			 * those, while an access targeting Group1 SGIs can
+			 * generate interrupts of either group.
+			 */
+			if (!irq->group || allow_group1) {
+				if (!irq->hw) {
+					irq->pending_latch = true;
+					vgic_queue_irq_unlock(vcpu->kvm, irq, flags);
+				} else {
+					/* HW SGI? Ask the GIC to inject it */
+					int err;
+
+					err = irq_set_irqchip_state(irq->host_irq,
+								    IRQCHIP_STATE_PENDING,
+								    true);
+					WARN_RATELIMIT(err, "IRQ %d", irq->host_irq);
+					raw_spin_unlock_irqrestore(&irq->irq_lock, flags);
+				}
+			} else {
+				raw_spin_unlock_irqrestore(&irq->irq_lock, flags);
+			}
+
+			vgic_put_irq(vcpu->kvm, irq);
+		}
 	}
 }
 
