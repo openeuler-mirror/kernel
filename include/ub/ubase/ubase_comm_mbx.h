@@ -112,6 +112,9 @@ void ubase_free_cmd_mailbox(struct auxiliary_device *aux_dev,
 int ubase_hw_upgrade_ctx_ex(struct auxiliary_device *aux_dev,
 			    struct ubase_mbx_attr *attr,
 			    struct ubase_cmd_mailbox *mailbox);
+int ubase_hw_upgrade_ctx_for_proxy(struct auxiliary_device *aux_dev,
+				   struct ubase_mbx_attr *attr,
+				   struct ubase_cmd_mailbox *mailbox);
 
 /**
  * ubase_fill_mbx_attr() - fill mailbox attribute
