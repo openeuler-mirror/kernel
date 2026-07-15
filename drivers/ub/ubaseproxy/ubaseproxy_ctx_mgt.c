@@ -89,8 +89,10 @@ static void ubaseproxy_init_res_info_lock(struct ubaseproxy_dev *udev)
 	struct ubase_caps *ubase_caps = ubase_get_dev_caps(udev->comdev.adev);
 	u8 managed_ue_num = ubase_caps->ue_num - 1, i;
 
-	for (i = 0; i < managed_ue_num; i++)
+	for (i = 0; i < managed_ue_num; i++) {
+		mutex_init(&udev->ue_res_info[i].ue_ctx_buf.jfs.ctx_mutex);
 		mutex_init(&udev->ue_res_info[i].ue_ctx_buf.jfc.ctx_mutex);
+	}
 }
 
 static void ubaseproxy_uninit_res_info_lock(struct ubaseproxy_dev *udev)
@@ -98,8 +100,10 @@ static void ubaseproxy_uninit_res_info_lock(struct ubaseproxy_dev *udev)
 	struct ubase_caps *ubase_caps = ubase_get_dev_caps(udev->comdev.adev);
 	u8 managed_ue_num = ubase_caps->ue_num - 1, i;
 
-	for (i = 0; i < managed_ue_num; i++)
+	for (i = 0; i < managed_ue_num; i++) {
+		mutex_destroy(&udev->ue_res_info[i].ue_ctx_buf.jfs.ctx_mutex);
 		mutex_destroy(&udev->ue_res_info[i].ue_ctx_buf.jfc.ctx_mutex);
+	}
 }
 
 static void ubaseproxy_get_ue_entry_caps(struct ubaseproxy_dev *udev)
