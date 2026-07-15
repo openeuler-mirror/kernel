@@ -5,6 +5,7 @@
 
 #include <ub/ubase/ubase_comm_cmd.h>
 
+#include "ubaseproxy_ctx_mgt.h"
 #include "ubaseproxy_event.h"
 #include "ubaseproxy_dev.h"
 
@@ -20,7 +21,11 @@ int ubaseproxy_dbg_log(void)
 static void ubaseproxy_parse_ue_res(struct ubaseproxy_dev *udev,
 				    struct ubaseproxy_query_ue_res_cmd *resp)
 {
+#define UBASEPROXY_JFC_DEPTH_SHIFT_MIN	BIT(6)
+#define UBASEPROXY_JFC_DEPTH_SHIFT_MAX	BIT(21)
+
 	struct ubaseproxy_ue_caps *ue_caps = &udev->caps.ue_caps;
+	u32 jfc_depth = le32_to_cpu(resp->jfc_depth);
 
 	ue_caps->aeq_vector_num = resp->aeq_vector_num;
 	ue_caps->ceq_vector_num = resp->ceq_vector_num;
@@ -31,7 +36,16 @@ static void ubaseproxy_parse_ue_res(struct ubaseproxy_dev *udev,
 	ue_caps->jfr_max_cnt = le32_to_cpu(resp->jfr_max_cnt);
 	ue_caps->jfr_depth = le32_to_cpu(resp->jfr_depth);
 	ue_caps->jfc_max_cnt = le32_to_cpu(resp->jfc_max_cnt);
-	ue_caps->jfc_depth = le32_to_cpu(resp->jfc_depth);
+	if (jfc_depth < UBASEPROXY_JFC_DEPTH_SHIFT_MIN) {
+		ubaseproxy_warn(udev, "jfc depth(%u) is less than %lu.\n",
+			       jfc_depth, UBASEPROXY_JFC_DEPTH_SHIFT_MIN);
+		jfc_depth = UBASEPROXY_JFC_DEPTH_SHIFT_MIN;
+	} else if (jfc_depth > UBASEPROXY_JFC_DEPTH_SHIFT_MAX) {
+		ubaseproxy_warn(udev, "jfc depth(%u) is more than %lu.\n",
+			       jfc_depth, UBASEPROXY_JFC_DEPTH_SHIFT_MAX);
+		jfc_depth = UBASEPROXY_JFC_DEPTH_SHIFT_MAX;
+	}
+	ue_caps->jfc_depth = jfc_depth;
 	ue_caps->rc_max_cnt = le32_to_cpu(resp->rc_max_cnt);
 	ue_caps->rc_depth = le32_to_cpu(resp->rc_depth);
 	ue_caps->jtg_max_cnt = le32_to_cpu(resp->jtg_max_cnt);
@@ -72,6 +86,14 @@ static int ubaseproxy_query_dev_res(struct ubaseproxy_dev *udev)
 static const struct ubaseproxy_func_map ubaseproxy_dev_func_map[] = {
 	{
 		"query ue res", ubaseproxy_query_dev_res, NULL
+	},
+	{
+		"init ue ctx buf", ubaseproxy_ue_res_info_init,
+		ubaseproxy_ue_res_info_uninit
+	},
+	{
+		"init ue ctx default", ubaseproxy_ue_ctx_default_init,
+		ubaseproxy_ue_ctx_default_uninit
 	},
 	{
 		"register event", ubaseproxy_register_event,

@@ -5,8 +5,10 @@
 
 #include <ub/ubase/ubase_comm_mbx.h>
 
+#include "ubaseproxy_ctx_mgt.h"
 #include "ubaseproxy_dev.h"
 #include "ubaseproxy_event.h"
+#include "ubaseproxy_jfc.h"
 #include "ubaseproxy_jfs.h"
 #include "ubaseproxy_mbx.h"
 
@@ -138,7 +140,11 @@ struct ubaseproxy_handler {
 	u16 opcode;
 	int (*handler)(struct ubaseproxy_dev *udev, struct ubase_proxy_req_msg *req);
 } g_ctx_handler[] = {
+	{UBASE_MB_CREATE_JFC_CONTEXT, ubaseproxy_handle_create_jfc_ctx_req},
 	{UBASE_MB_CREATE_JFS_CONTEXT, ubaseproxy_handle_create_jfs_ctx_req},
+	{UBASE_MB_DESTROY_JFC_CONTEXT, ubaseproxy_handle_destroy_jfc_ctx_req},
+	{UBASE_MB_MODIFY_JFC_CONTEXT, ubaseproxy_handle_modify_jfc_ctx_req},
+	{UBASE_MB_QUERY_JFC_CONTEXT, ubaseproxy_handle_query_jfc_ctx_req},
 };
 
 int ubaseproxy_handle_mbox_req(struct ubaseproxy_dev *udev,
