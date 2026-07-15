@@ -337,6 +337,12 @@ void ubase_resume(struct ubase_dev *udev, int pret)
 
 	ret = ubase_dev_reset_init(udev);
 	if (ret) {
+		/* When the reset fails, the cmdq resources are uninitialized.
+		 * To ensure that the subsequent reset is successful,
+		 * need to initialize the cmdq resources again.
+		 */
+		if (ubase_cmd_init(udev))
+			ubase_err(udev, "failed to reinit cmdq after reset failure.\n");
 		if (test_and_clear_bit(UBASE_STATE_INIT_AGAIN_B, &udev->state_bits))
 			goto timeout_resume;
 		goto err_resume;

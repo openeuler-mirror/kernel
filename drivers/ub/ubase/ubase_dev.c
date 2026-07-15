@@ -1000,7 +1000,7 @@ void ubase_dev_uninit(struct ubase_dev *udev)
 {
 	int i;
 
-	if (test_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state)) {
+	if (test_bit(UBASE_STATE_RST_FAILED_B, &udev->state_bits)) {
 		/* If ELR fails before remove, the cmdq & ctrlq may be disabled.
 		 * Since remove relies on cmdq\ctrlq, configuration messages
 		 * (e.g., destroy ctx res, close promiscuous, restore QoS..)
@@ -1008,16 +1008,19 @@ void ubase_dev_uninit(struct ubase_dev *udev)
 		 * residue. Therefore, try to reinit these resources as much
 		 * as possible.
 		 */
-		ubase_warn(udev, "cmdq is disabled. try to restore it.\n");
+		ubase_warn(udev, "last reset failed, try to restore cmdq, ctrlq and irq.\n");
 		set_bit(UBASE_STATE_CMD_CRQ_UNAVAIL_B, &udev->state_bits);
 		ubase_ctrlq_uninit(udev);
 		ubase_irq_table_uninit(udev);
-		if (ubase_cmd_init(udev))
+		if (test_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state) &&
+		    ubase_cmd_init(udev))
 			goto start_uninit;
-		if (ubase_irq_table_init(udev))
+		if (test_bit(UBASE_STATE_IRQ_INVALID_B, &udev->state_bits) &&
+		    ubase_irq_table_init(udev))
 			goto start_uninit;
 		clear_bit(UBASE_STATE_CMD_CRQ_UNAVAIL_B, &udev->state_bits);
-		ubase_ctrlq_init(udev);
+		if (!test_bit(UBASE_CTRLQ_STATE_ENABLE, &udev->ctrlq.state))
+			ubase_ctrlq_init(udev);
 		ubase_register_ae_event(udev);
 		ubase_register_cmdq_crq_event(udev);
 	}
