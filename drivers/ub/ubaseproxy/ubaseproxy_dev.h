@@ -41,6 +41,7 @@ struct ubaseproxy_ue_caps {
 
 struct ubaseproxy_ue_default {
 	struct ubaseproxy_jfc_default	*jfc_default;
+	struct ubaseproxy_jfr_default	*jfr_default;
 	struct ubaseproxy_jetty_default	*jetty_default;
 };
 
