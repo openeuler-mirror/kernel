@@ -1329,10 +1329,15 @@ struct ubcore_vtpn *
 		return ERR_PTR(-EAGAIN);
 	}
 
-	// 2. active tp (state == RESET here)
+	/*	2. active tp (state == RESET here)
+		This interface is only used by tp-aware users, for whom the vtpn is
+		created and use_cnt is incremented to 1 in ubcore_get_tp_list() or
+		ubcore_create_tpid() (via ubcore_create_add_vtpn_for_tpid()).
+		First import: do not inc use_cnt again; it was already accounted for
+		at creation. On reuse (READY) below, use_cnt is incremented.
+	*/
 	ret = ubcore_modify_tpid(dev, UBCORE_TPID_STATE_RTS, &cfg);
 	if (ret == 0) {
-		atomic_inc(&vtpn->use_cnt);
 		vtpn->state = UBCORE_VTPS_READY;
 	} else {
 		vtpn->state = UBCORE_VTPS_WAIT_DESTROY;
@@ -1507,9 +1512,9 @@ struct ubcore_vtpn *
 	}
 
 	// 2. active tp (state == RESET here)
+	// similar to connect_vtp_ctrlplane
 	ret = ubcore_modify_tpid(dev, UBCORE_TPID_STATE_RTS, &cfg);
 	if (ret == 0) {
-		atomic_inc(&vtpn->use_cnt);
 		vtpn->vtpn = (uint32_t)active_tp_cfg->tp_handle.bs.tpid;
 		vtpn->state = UBCORE_VTPS_READY;
 	} else {
