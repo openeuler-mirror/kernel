@@ -698,6 +698,22 @@ struct ubcore_tpid *ubcore_create_tpid(struct ubcore_device *dev,
 		return NULL;
 	}
 	tpid->tp_handle = tp_handle;
+
+	/*	if ret == NULL, use_cnt will not inc and delete_tpid is already done
+		in create_add_vtpn_for_tpid.
+		if is kernel user, there are constraints that need use complete process
+		of create_tpid -> import_jetty_ex -> unimport_jetty
+		to ensure to delete tpid, and use_cnt will be transferred in
+		import_jetty_ex, which has been described in the doc.
+	*/
+	if (ubcore_create_add_vtpn_for_tpid(dev, tp_handle.value) == NULL) {
+		ubcore_log_err_rl(
+			"Failed to create vtpn for tp_handle: %llu in create tpid.\n",
+			tp_handle.value);
+		kfree(tpid);
+		return NULL;
+	}
+
 	return tpid;
 }
 EXPORT_SYMBOL(ubcore_create_tpid);
@@ -751,16 +767,15 @@ int ubcore_delete_tpid_priv(struct ubcore_device *dev, uint32_t tpid_val)
 
 int ubcore_delete_tpid(struct ubcore_device *dev, struct ubcore_tpid *tpid)
 {
-	uint32_t tpid_val;
-
 	if (dev == NULL || tpid == NULL) {
 		ubcore_log_err("Invalid parameter.\n");
 		return -EINVAL;
 	}
 
-	tpid_val = tpid->tp_handle.bs.tpid;
+	/*	unimport_jetty will delete tpid in free_vtpn_crlplane.
+		do not delete twice here. Only kfree tpid. */
 	kfree(tpid);
-	return ubcore_delete_tpid_priv(dev, tpid_val);
+	return 0;
 }
 EXPORT_SYMBOL(ubcore_delete_tpid);
 
