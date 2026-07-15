@@ -3102,9 +3102,9 @@ void hisi_qm_wait_task_finish(struct hisi_qm *qm, struct hisi_qm_list *qm_list)
 		msleep(WAIT_PERIOD);
 	}
 
-	/* Cancel possible RAS reset process during the uninstallation procedure. */
-	if (qm->fun_type == QM_HW_PF)
-		cancel_work_sync(&qm->rst_work);
+	while (test_bit(QM_RST_SCHED, &qm->misc_ctl) ||
+	       test_bit(QM_RESETTING, &qm->misc_ctl))
+		msleep(WAIT_PERIOD);
 
 	if (test_bit(QM_SUPPORT_MB_COMMAND, &qm->caps))
 		flush_work(&qm->cmd_process);
@@ -4657,6 +4657,8 @@ static int qm_controller_reset_prepare(struct hisi_qm *qm)
 	if (ret)
 		pci_err(pdev, "failed to stop by vfs in soft reset!\n");
 
+	clear_bit(QM_RST_SCHED, &qm->misc_ctl);
+
 	return 0;
 }
 
@@ -4970,8 +4972,12 @@ static int qm_controller_reset(struct hisi_qm *qm)
 	pci_info(pdev, "Controller resetting...\n");
 
 	ret = qm_controller_reset_prepare(qm);
-	if (ret)
-		goto err_prepare;
+	if (ret) {
+		hisi_qm_set_hw_reset(qm, QM_RESET_STOP_TX_OFFSET);
+		hisi_qm_set_hw_reset(qm, QM_RESET_STOP_RX_OFFSET);
+		clear_bit(QM_RST_SCHED, &qm->misc_ctl);
+		return ret;
+	}
 
 	hisi_qm_show_last_dfx_regs(qm);
 	if (qm->err_ini->show_last_dfx_regs)
@@ -4988,13 +4994,6 @@ static int qm_controller_reset(struct hisi_qm *qm)
 	pci_info(pdev, "Controller reset complete\n");
 
 	return 0;
-
-err_prepare:
-	pci_info(pdev, "Controller reset_prepare failed\n");
-	writel(ACC_MASTER_GLOBAL_CTRL_SHUTDOWN,
-	       qm->io_base + ACC_MASTER_GLOBAL_CTRL);
-	hisi_qm_set_hw_reset(qm, QM_RESET_STOP_TX_OFFSET);
-	hisi_qm_set_hw_reset(qm, QM_RESET_STOP_RX_OFFSET);
 
 err_reset:
 	pci_err(pdev, "Controller reset failed (%d)\n", ret);
@@ -5163,13 +5162,17 @@ static irqreturn_t qm_rsvd_irq(int irq, void *data)
 static irqreturn_t qm_abnormal_irq(int irq, void *data)
 {
 	struct hisi_qm *qm = data;
+	enum acc_err_result ret;
 
 	atomic64_inc(&qm->debug.dfx.abnormal_irq_cnt);
-
-	if (!test_bit(QM_DRIVER_DOWN, &qm->misc_ctl))
-		schedule_work(&qm->rst_work);
-	else
-		pci_warn(qm->pdev, "Driver is down, need to reload driver!\n");
+	ret = qm_process_dev_error(qm);
+	if (ret == ACC_ERR_NEED_RESET) {
+		if (!test_bit(QM_DRIVER_DOWN, &qm->misc_ctl) &&
+		    !test_and_set_bit(QM_RST_SCHED, &qm->misc_ctl))
+			schedule_work(&qm->rst_work);
+		else if (test_bit(QM_DRIVER_DOWN, &qm->misc_ctl))
+			pci_warn(qm->pdev, "Driver is down, need reload driver!\n");
+	}
 
 	return IRQ_HANDLED;
 }
@@ -5198,13 +5201,7 @@ static void hisi_qm_controller_reset(struct work_struct *rst_work)
 
 	ret = qm_pm_get_sync(qm);
 	if (ret) {
-		dev_err(&qm->pdev->dev, "failed to get runtime PM for controller\n");
-		return;
-	}
-
-	ret = qm_process_dev_error(qm);
-	if (ret != ACC_ERR_NEED_RESET) {
-		qm_pm_put_sync(qm);
+		clear_bit(QM_RST_SCHED, &qm->misc_ctl);
 		return;
 	}
 
