@@ -19,7 +19,6 @@ struct ubcore_session {
 	uint32_t session_id;
 	void *session_data;
 	struct kref ref;
-	struct list_head list_entry;
 	struct delayed_work delayed_work;
 	struct completion completion;
 	atomic_t cb_called;
@@ -29,34 +28,33 @@ struct ubcore_session {
 
 struct ubcore_session_context {
 	atomic_t next_id;
-	struct list_head list;
-	spinlock_t lock;
+	struct xarray sessions;
 	struct workqueue_struct *wq;
 };
 
 struct ubcore_session_context session_ctx = { 0 };
 
-static inline void ubcore_session_add_to_list(struct ubcore_session *session)
+static inline int ubcore_session_add(struct ubcore_session *session)
 {
-	unsigned long flags;
+	int ret;
 
 	ubcore_session_ref_acquire(session);
-	spin_lock_irqsave(&session_ctx.lock, flags);
-	list_add_tail(&session->list_entry, &session_ctx.list);
-	spin_unlock_irqrestore(&session_ctx.lock, flags);
-	ubcore_log_info("Session %u add to list", session->session_id);
+	ret = xa_insert_irq(&session_ctx.sessions, session->session_id,
+			    session, GFP_KERNEL);
+	if (ret) {
+		ubcore_log_err_rl("Failed to add session %u.\n", session->session_id);
+		ubcore_session_ref_release(session);
+		return ret;
+	}
+	ubcore_log_info_rl("Session %u add to xarray", session->session_id);
+	return 0;
 }
 
-static inline void
-ubcore_session_remove_from_list(struct ubcore_session *session)
+static inline void ubcore_session_remove(struct ubcore_session *session)
 {
-	unsigned long flags;
-
-	spin_lock_irqsave(&session_ctx.lock, flags);
-	list_del(&session->list_entry);
-	spin_unlock_irqrestore(&session_ctx.lock, flags);
+	xa_erase_irq(&session_ctx.sessions, session->session_id);
 	ubcore_session_ref_release(session);
-	ubcore_log_info("Session %u remove from list", session->session_id);
+	ubcore_log_info("Session %u remove from xarray", session->session_id);
 }
 
 static void ubcore_session_timeout(struct work_struct *work);
@@ -87,7 +85,8 @@ ubcore_session_create(struct ubcore_device *dev, void *session_data,
 	atomic_set(&s->cb_called, 0);
 	s->complete_cb = complete_cb;
 	s->free_cb = free_cb;
-	ubcore_session_add_to_list(s);
+	if (ubcore_session_add(s))
+		goto free_session;
 
 	if (!queue_delayed_work(session_ctx.wq, &s->delayed_work,
 				msecs_to_jiffies(timeout_limited)))
@@ -95,25 +94,25 @@ ubcore_session_create(struct ubcore_device *dev, void *session_data,
 
 	return s;
 
+free_session:
+	ubcore_session_ref_release(s);
+	return NULL;
+
 delete_session:
-	ubcore_session_remove_from_list(s);
+	ubcore_session_remove(s);
 	return NULL;
 }
 
 struct ubcore_session *ubcore_session_find(uint32_t session_id)
 {
-	struct ubcore_session *cur, *target = NULL;
+	struct ubcore_session *target;
 	unsigned long flags;
 
-	spin_lock_irqsave(&session_ctx.lock, flags);
-	list_for_each_entry(cur, &session_ctx.list, list_entry) {
-		if (cur->session_id == session_id) {
-			target = cur;
-			ubcore_session_ref_acquire(target);
-			break;
-		}
-	}
-	spin_unlock_irqrestore(&session_ctx.lock, flags);
+	xa_lock_irqsave(&session_ctx.sessions, flags);
+	target = xa_load(&session_ctx.sessions, session_id);
+	if (target)
+		ubcore_session_ref_acquire(target);
+	xa_unlock_irqrestore(&session_ctx.sessions, flags);
 	return target;
 }
 
@@ -130,7 +129,7 @@ static void ubcore_session_timeout(struct work_struct *work)
 	if (session->complete_cb)
 		session->complete_cb(session->dev, session->session_data);
 	complete(&session->completion);
-	ubcore_session_remove_from_list(session);
+	ubcore_session_remove(session);
 }
 
 void ubcore_session_complete(struct ubcore_session *session)
@@ -144,7 +143,7 @@ void ubcore_session_complete(struct ubcore_session *session)
 	if (session->complete_cb)
 		session->complete_cb(session->dev, session->session_data);
 	complete(&session->completion);
-	ubcore_session_remove_from_list(session);
+	ubcore_session_remove(session);
 }
 
 void ubcore_session_wait(struct ubcore_session *session)
@@ -187,14 +186,15 @@ void *ubcore_session_get_data(struct ubcore_session *session)
 
 void ubcore_session_flush(struct ubcore_device *dev)
 {
-	struct ubcore_session *session = NULL;
+	struct ubcore_session *session;
 	unsigned long flags;
+	unsigned long index;
 
-	spin_lock_irqsave(&session_ctx.lock, flags);
-	list_for_each_entry(session, &session_ctx.list, list_entry) {
+	xa_lock_irqsave(&session_ctx.sessions, flags);
+	xa_for_each(&session_ctx.sessions, index, session) {
 		mod_delayed_work(session_ctx.wq, &session->delayed_work, 0);
 	}
-	spin_unlock_irqrestore(&session_ctx.lock, flags);
+	xa_unlock_irqrestore(&session_ctx.sessions, flags);
 
 	flush_workqueue(session_ctx.wq);
 }
@@ -202,8 +202,7 @@ void ubcore_session_flush(struct ubcore_device *dev)
 int ubcore_session_init(void)
 {
 	atomic_set(&session_ctx.next_id, 0);
-	INIT_LIST_HEAD(&session_ctx.list);
-	spin_lock_init(&session_ctx.lock);
+	xa_init_flags(&session_ctx.sessions, XA_FLAGS_LOCK_IRQ);
 
 	session_ctx.wq = alloc_workqueue("%s",
 		WQ_UNBOUND | WQ_HIGHPRI | WQ_MEM_RECLAIM, 1, "ubcore-session");
@@ -216,15 +215,17 @@ int ubcore_session_init(void)
 
 void ubcore_session_uninit(void)
 {
-	struct ubcore_session *session = NULL;
+	struct ubcore_session *session;
 	unsigned long flags;
+	unsigned long index;
 
-	spin_lock_irqsave(&session_ctx.lock, flags);
-	list_for_each_entry(session, &session_ctx.list, list_entry) {
+	xa_lock_irqsave(&session_ctx.sessions, flags);
+	xa_for_each(&session_ctx.sessions, index, session) {
 		mod_delayed_work(session_ctx.wq, &session->delayed_work, 0);
 	}
-	spin_unlock_irqrestore(&session_ctx.lock, flags);
+	xa_unlock_irqrestore(&session_ctx.sessions, flags);
 
 	drain_workqueue(session_ctx.wq);
 	destroy_workqueue(session_ctx.wq);
+	xa_destroy(&session_ctx.sessions);
 }
