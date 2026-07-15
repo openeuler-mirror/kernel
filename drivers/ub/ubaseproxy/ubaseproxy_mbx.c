@@ -143,8 +143,11 @@ struct ubaseproxy_handler {
 	{UBASE_MB_CREATE_JFC_CONTEXT, ubaseproxy_handle_create_jfc_ctx_req},
 	{UBASE_MB_CREATE_JFS_CONTEXT, ubaseproxy_handle_create_jfs_ctx_req},
 	{UBASE_MB_DESTROY_JFC_CONTEXT, ubaseproxy_handle_destroy_jfc_ctx_req},
+	{UBASE_MB_DESTROY_JFS_CONTEXT, ubaseproxy_handle_destroy_jfs_ctx_req},
 	{UBASE_MB_MODIFY_JFC_CONTEXT, ubaseproxy_handle_modify_jfc_ctx_req},
+	{UBASE_MB_MODIFY_JFS_CONTEXT, ubaseproxy_handle_modify_jfs_ctx_req},
 	{UBASE_MB_QUERY_JFC_CONTEXT, ubaseproxy_handle_query_jfc_ctx_req},
+	{UBASE_MB_QUERY_JFS_CONTEXT, ubaseproxy_handle_query_jfs_ctx_req},
 };
 
 int ubaseproxy_handle_mbox_req(struct ubaseproxy_dev *udev,

@@ -205,5 +205,11 @@ struct ubaseproxy_jetty_default {
 
 int ubaseproxy_handle_create_jfs_ctx_req(struct ubaseproxy_dev *udev,
 					 struct ubase_proxy_req_msg *req);
+int ubaseproxy_handle_destroy_jfs_ctx_req(struct ubaseproxy_dev *udev,
+					  struct ubase_proxy_req_msg *req);
+int ubaseproxy_handle_modify_jfs_ctx_req(struct ubaseproxy_dev *udev,
+					 struct ubase_proxy_req_msg *req);
+int ubaseproxy_handle_query_jfs_ctx_req(struct ubaseproxy_dev *udev,
+					struct ubase_proxy_req_msg *req);
 
 #endif /* __UBASEPROXY_JFS_H__ */
