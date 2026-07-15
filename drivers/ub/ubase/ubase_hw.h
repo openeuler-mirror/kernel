@@ -49,7 +49,7 @@ struct ubase_res_cmd_resp {
 
 	__le32	udma_jfs_depth;
 	__le32	udma_jfr_max_cnt;
-	u8	rsvd3[4];
+	__le32	umv_tbl_size;
 	__le32	udma_jfr_depth;
 	u8	rsvd4[12];
 	__le32	udma_jfc_max_cnt;
