@@ -5,6 +5,7 @@
 
 #include <ub/ubase/ubase_comm_cmd.h>
 
+#include "ubaseproxy_event.h"
 #include "ubaseproxy_dev.h"
 
 static int debug;
@@ -71,6 +72,10 @@ static int ubaseproxy_query_dev_res(struct ubaseproxy_dev *udev)
 static const struct ubaseproxy_func_map ubaseproxy_dev_func_map[] = {
 	{
 		"query ue res", ubaseproxy_query_dev_res, NULL
+	},
+	{
+		"register event", ubaseproxy_register_event,
+		ubaseproxy_unregister_event
 	},
 };
 

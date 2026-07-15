@@ -3,10 +3,10 @@
  * Copyright (c) 2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  */
 
-#include <linux/sched.h>
 #include <linux/auxiliary_bus.h>
 #include <linux/delay.h>
 #include <linux/module.h>
+#include <linux/sched.h>
 
 #include "ubaseproxy_dev.h"
 
