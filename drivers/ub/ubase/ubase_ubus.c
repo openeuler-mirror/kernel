@@ -286,6 +286,7 @@ static int ubase_ubus_probe(struct ub_entity *ue,
 	udev->caps.dev_caps.eid = ue->eid;
 	udev->caps.dev_caps.upi = ue->upi;
 	udev->caps.dev_caps.ctl_no = ue->ubc->ctl_no;
+	udev->caps.hw_ver = __ubase_get_hw_ver(udev);
 
 	dev_set_drvdata(&ue->dev, udev);
 

@@ -109,6 +109,8 @@ struct ubase_dev_caps {
 	struct ubase_adev_caps	udma_caps;
 	struct ubase_adev_caps	unic_caps;
 	struct ubase_caps	dev_caps;
+	u32			hw_ver;
+	u32			umv_tbl_size;
 };
 
 struct ubase_mbox_cmd {
@@ -677,5 +679,6 @@ void ubase_free_buf(struct ubase_dev *udev, size_t size,
 		    void *va, dma_addr_t iova, struct page *page);
 int ubase_reinit_aux_devices(struct ubase_dev *udev);
 int __ubase_activate_dev(struct ubase_dev *udev);
+u32 __ubase_get_hw_ver(struct ubase_dev *udev);
 
 #endif /* __UBASE_DEV_H__ */
