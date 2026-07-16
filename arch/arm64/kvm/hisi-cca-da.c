@@ -491,7 +491,7 @@ static inline bool is_root_dev_delegated(u16 root_bdf)
 	return false;
 }
 
-static inline bool is_dev_delegated(struct pci_dev *pdev)
+bool is_dev_delegated(struct pci_dev *pdev)
 {
 	struct pci_dev *root_dev;
 	unsigned long flags;
@@ -507,6 +507,23 @@ static inline bool is_dev_delegated(struct pci_dev *pdev)
 
 	return is_delegated;
 }
+EXPORT_SYMBOL_GPL(is_dev_delegated);
+
+int cca_add_protected_virtfn(struct pci_dev *virtfn)
+{
+	unsigned long flags;
+	u16 dev_bdf = pci_dev_id(virtfn);
+
+	if (dev_bdf > PCI_BDF_MASK)
+		return -EINVAL;
+
+	spin_lock_irqsave(&g_dev_protected_lock, flags);
+	bitmap_set(g_dev_protected, dev_bdf, 1);
+	spin_unlock_irqrestore(&g_dev_protected_lock, flags);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(cca_add_protected_virtfn);
 
 static inline struct dev_hash_entry *find_root_dev_entry(u16 root_bdf)
 {
@@ -1414,11 +1431,12 @@ EXPORT_SYMBOL_GPL(is_realm_device);
 
 bool is_dev_ecam_protected(u16 dev_bdf)
 {
+	unsigned long flags;
 	bool is_dev_ecam_protected = false;
 
-	spin_lock(&g_dev_protected_lock);
+	spin_lock_irqsave(&g_dev_protected_lock, flags);
 	is_dev_ecam_protected = bitmap_read(g_dev_protected, dev_bdf, 1);
-	spin_unlock(&g_dev_protected_lock);
+	spin_unlock_irqrestore(&g_dev_protected_lock, flags);
 
 	return is_dev_ecam_protected;
 }
