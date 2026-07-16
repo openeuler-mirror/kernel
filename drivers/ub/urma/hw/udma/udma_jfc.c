@@ -219,7 +219,7 @@ static int udma_alloc_k_cq(struct udma_dev *dev, struct udma_jfc *jfc)
 	ret = udma_alloc_sw_db(dev, &jfc->db, UDMA_JFC_TYPE_DB);
 	if (ret) {
 		dev_err(dev->dev, "failed to alloc SW doorbell for JFC(%u).\n", jfc->jfcn);
-		udma_k_free_buf(dev, &jfc->buf, true);
+		udma_k_free_buf(dev, &jfc->buf);
 	}
 
 	return ret;
@@ -230,7 +230,7 @@ static void udma_free_cq(struct udma_dev *dev, struct udma_jfc *jfc)
 	if (jfc->mode != UDMA_NORMAL_JFC_TYPE)
 		return;
 	if (jfc->buf.kva) {
-		udma_k_free_buf(dev, &jfc->buf, true);
+		udma_k_free_buf(dev, &jfc->buf);
 		udma_free_sw_db(dev, &jfc->db);
 	} else {
 		if (jfc->dtu_en)
@@ -666,7 +666,6 @@ struct ubcore_jfc *udma_create_jfc(struct ubcore_device *ubcore_dev,
 
 	if (!!dev->caps.no_share_jfc_en) {
 		jfc->bind_type = UDMA_UNOCP_JFC;
-		refcount_set(&jfc->bind_refcount, 1);
 	}
 
 	refcount_set(&jfc->event_refcount, 1);
@@ -761,7 +760,6 @@ int udma_active_jfc(struct ubcore_jfc *ubcore_jfc, struct ubcore_udata *udata)
 
 	if (!!dev->caps.no_share_jfc_en) {
 		ujfc->bind_type = UDMA_UNOCP_JFC;
-		refcount_set(&ujfc->bind_refcount, 1);
 	}
 
 	refcount_set(&ujfc->event_refcount, 1);
@@ -1883,9 +1881,13 @@ int udma_bind_jfc(struct udma_dev *dev, uint32_t jfc_id, enum udma_jfc_bind_type
 		xa_unlock_irqrestore(&dev->jfc_table.xa, flags);
 		dev_err(dev->dev, "JFC %u is bound.\n", jfc_id);
 		return -EINVAL;
+	} else if (udma_jfc->bind_type == UDMA_UNOCP_JFC) {
+		refcount_set(&udma_jfc->bind_refcount, 1);
+		udma_jfc->bind_type = type;
+	} else if (udma_jfc->bind_type == type) {
+		refcount_inc(&udma_jfc->bind_refcount);
 	}
 
-	refcount_inc(&udma_jfc->bind_refcount);
 	xa_unlock_irqrestore(&dev->jfc_table.xa, flags);
 
 	return 0;
@@ -1907,14 +1909,16 @@ void udma_unbind_jfc(struct udma_dev *dev, uint32_t jfc_id, enum udma_jfc_bind_t
 		return;
 	}
 
-	if ((udma_jfc->bind_type != type) && (udma_jfc->bind_type != UDMA_UNOCP_JFC)) {
+	if ((udma_jfc->bind_type != type) || (udma_jfc->bind_type == UDMA_UNOCP_JFC)) {
 		xa_unlock_irqrestore(&dev->jfc_table.xa, flags);
 		dev_err(dev->dev, "failed to unbind JFC:%u, JFC type:%u.\n",
 			jfc_id, (uint8_t)udma_jfc->bind_type);
 		return;
 	}
 
-	refcount_dec(&udma_jfc->bind_refcount);
+	if (refcount_dec_and_test(&udma_jfc->bind_refcount))
+		udma_jfc->bind_type = UDMA_UNOCP_JFC;
+
 	xa_unlock_irqrestore(&dev->jfc_table.xa, flags);
 }
 
@@ -1944,9 +1948,13 @@ int udma_jetty_bind_jfc(struct udma_dev *dev, uint32_t send_jfc_id, uint32_t rec
 		xa_unlock_irqrestore(&dev->jfc_table.xa, flags);
 		dev_err(dev->dev, "JFC %u is bound.\n", send_jfc_id);
 		return -EINVAL;
+	} else if (udma_send_jfc->bind_type == UDMA_UNOCP_JFC) {
+		refcount_set(&udma_send_jfc->bind_refcount, 1);
+		udma_send_jfc->bind_type = UDMA_SEND_JFC;
+	} else if (udma_send_jfc->bind_type == UDMA_SEND_JFC) {
+		refcount_inc(&udma_send_jfc->bind_refcount);
 	}
 
-	refcount_inc(&udma_send_jfc->bind_refcount);
 	xa_unlock_irqrestore(&dev->jfc_table.xa, flags);
 
 	return 0;
@@ -1968,14 +1976,16 @@ void udma_jetty_unbind_jfc(struct udma_dev *dev, uint32_t send_jfc_id)
 		return;
 	}
 
-	if ((udma_send_jfc->bind_type != UDMA_SEND_JFC) &&
-	    (udma_send_jfc->bind_type != UDMA_UNOCP_JFC)) {
+	if ((udma_send_jfc->bind_type != UDMA_SEND_JFC) ||
+	    (udma_send_jfc->bind_type == UDMA_UNOCP_JFC)) {
 		xa_unlock_irqrestore(&dev->jfc_table.xa, flags);
 		dev_err(dev->dev,
 			"failed to unbind JFC:%u, JFC type is not send JFC.\n", send_jfc_id);
 		return;
 	}
 
-	refcount_dec(&udma_send_jfc->bind_refcount);
+	if (refcount_dec_and_test(&udma_send_jfc->bind_refcount))
+		udma_send_jfc->bind_type = UDMA_UNOCP_JFC;
+
 	xa_unlock_irqrestore(&dev->jfc_table.xa, flags);
 }

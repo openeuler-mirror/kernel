@@ -116,67 +116,6 @@ void udma_tp_ae_work(struct work_struct *work)
 	kfree(ae_work);
 }
 
-int udma_ctrlq_tp_flush_done(struct udma_dev *udev, uint32_t tpn)
-{
-	struct udma_ctrlq_tp_flush_done_req_data tp_cfg_req = {};
-	struct udma_ue_idx_table *tp_ue_idx_info;
-	struct ubase_ctrlq_msg msg = {};
-	int ret = 0;
-	uint32_t i;
-
-	tp_ue_idx_info = udma_find_ue_idx_by_tpn(udev, tpn);
-	if (tp_ue_idx_info) {
-		for (i = 0; i < tp_ue_idx_info->num; i++)
-			udma_notify_ue_tp_flush_done(udev, tp_ue_idx_info->ue_idx[i]);
-
-		kfree(tp_ue_idx_info);
-	} else {
-		ret = udma_open_ue_rx_with_retry(udev, true, false, false, 0);
-		if (ret)
-			dev_err(udev->dev, "udma open UE rx failed in TP flush done.\n");
-	}
-
-	tp_cfg_req.tpn = tpn;
-	msg.opcode = UDMA_CMD_CTRLQ_TP_FLUSH_DONE;
-	udma_ctrlq_set_tp_msg(&msg, (void *)&tp_cfg_req, sizeof(tp_cfg_req), NULL, 0);
-	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &msg);
-	if (ret)
-		dev_err(udev->dev, "TP flush done ctrl queue TP %u failed, ret %d.\n", tpn, ret);
-
-	return ret;
-}
-
-int udma_ctrlq_tpn_flush_done(struct udma_dev *dev, struct xarray *ctrlq_tpid_table,
-			      uint32_t tp_id, bool is_udata)
-{
-	struct udma_ctrlq_tpid *tpid_entity;
-	uint32_t tp_start;
-	uint32_t tp_num;
-	int ret = 0;
-	uint32_t i;
-
-	xa_lock(ctrlq_tpid_table);
-	tpid_entity = xa_load(ctrlq_tpid_table, tp_id);
-	if (tpid_entity == NULL) {
-		xa_unlock(ctrlq_tpid_table);
-		dev_err(dev->dev, "TP id entity is NULL, TP id %u.\n", tp_id);
-		return -EINVAL;
-	}
-
-	tp_start = tpid_entity->tpn_start;
-	tp_num = tpid_entity->tpn_cnt;
-	xa_unlock(ctrlq_tpid_table);
-
-	for (i = 0; i < tp_num; i++) {
-		ret = udma_ctrlq_tp_flush_done(dev, tp_start + i);
-		if (ret != 0)
-			dev_err(dev->dev, "TPN flush done failed tp_id %u tp_start %u TPN %u.\n",
-				tp_id, tp_start, i);
-	}
-
-	return ret;
-}
-
 int udma_ctrlq_notify_tp_port_change(struct udma_dev *udev, uint32_t tpn)
 {
 	struct udma_ctrlq_tp_port_change_req_data tp_cfg_req = {};
@@ -627,22 +566,6 @@ int udma_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *tpid_c
 	return ret;
 }
 
-void udma_ctrlq_destroy_tpid_list(struct xarray *ctrlq_tpid_table)
-{
-	struct udma_ctrlq_tpid *tpid_entity = NULL;
-	unsigned long tpid = 0;
-
-	xa_lock(ctrlq_tpid_table);
-	if (!xa_empty(ctrlq_tpid_table)) {
-		xa_for_each(ctrlq_tpid_table, tpid, tpid_entity) {
-			__xa_erase(ctrlq_tpid_table, tpid);
-			kfree(tpid_entity);
-		}
-	}
-	xa_unlock(ctrlq_tpid_table);
-	xa_destroy(ctrlq_tpid_table);
-}
-
 static int udma_k_ctrlq_create_active_tp_msg(struct udma_dev *udev,
 					     struct ubcore_active_tp_cfg *active_cfg,
 					     uint32_t *tp_id)
@@ -749,10 +672,6 @@ int udma_k_ctrlq_deactive_tp(struct udma_dev *udev, union ubcore_tp_handle tp_ha
 	deactive_tp_req.tp_id = tp_id;
 	deactive_tp_req.tpn_cnt = tp_handle.bs.tp_cnt;
 	deactive_tp_req.start_tpn = tp_handle.bs.tpn_start;
-	if ((current->flags & PF_KTHREAD) || udev->status != UDMA_NORMAL)
-		deactive_tp_req.pid_flag = UDMA_DEFAULT_PID;
-	else
-		deactive_tp_req.pid_flag = (uint32_t)current->tgid & UDMA_PID_MASK;
 
 	udma_ctrlq_set_tp_msg(&msg, (void *)&deactive_tp_req, sizeof(deactive_tp_req), NULL, 0);
 

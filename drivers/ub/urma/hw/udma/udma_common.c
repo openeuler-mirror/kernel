@@ -827,7 +827,7 @@ int udma_k_alloc_buf(struct udma_dev *dev, struct udma_buf *buf, bool need_dtu)
 	return ret;
 }
 
-void udma_k_free_buf(struct udma_dev *dev, struct udma_buf *buf, bool need_dtu)
+void udma_k_free_buf(struct udma_dev *dev, struct udma_buf *buf)
 {
 	uint32_t size = buf->entry_cnt * buf->entry_size;
 
@@ -974,7 +974,7 @@ void udma_dtu_uva_unremap(struct udma_dev *dev, struct udma_buf *buf,
 	uint32_t size;
 
 	if (current->mm) {
-		size = buf->entry_cnt * buf->entry_size;
+		size = ALIGN(buf->len, PAGE_SIZE);
 		mmap_write_lock(current->mm);
 		vma = find_vma(current->mm, dev->dtu_info.va_base);
 		if (vma != NULL && vma->vm_start <= buf->addr &&
@@ -1016,7 +1016,7 @@ int udma_dtu_uva_remap(struct udma_dev *dev, struct udma_buf *buf,
 	}
 	if (!((vma->vm_flags & VM_WIPEONFORK) && (vma->vm_flags & VM_DONTEXPAND) &&
 	    (vma->vm_flags & VM_DONTCOPY) && (vma->vm_flags & VM_IO))) {
-		dev_err(dev->dev, "failed to check VMA flags.\n");
+		dev_err(dev->dev, "failed to check VMA flags = %lu.\n", vma->vm_flags);
 		ret = -EINVAL;
 		goto err_free_pages;
 	}
