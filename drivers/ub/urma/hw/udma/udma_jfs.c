@@ -63,7 +63,7 @@ void udma_free_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq)
 {
 	if (is_support_ccu_jetty(dev, sq) || sq->buf.kva) {
 		if (!sq->cstm)
-			udma_k_free_buf(dev, &sq->buf, true);
+			udma_k_free_buf(dev, &sq->buf);
 		kfree(sq->wrid);
 		sq->wrid = NULL;
 		return;
@@ -295,7 +295,7 @@ int udma_alloc_k_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 	sq->wrid = kcalloc(sq->buf.entry_cnt, sizeof(uint64_t), GFP_KERNEL);
 	if (!sq->wrid) {
 		if (!sq->cstm)
-			udma_k_free_buf(dev, &sq->buf, true);
+			udma_k_free_buf(dev, &sq->buf);
 		return -ENOMEM;
 	}
 
@@ -495,7 +495,7 @@ static int udma_jfs_copy_resp(struct udma_dev *dev, struct udma_jetty_queue *sq,
 	struct udma_create_jetty_resp resp = {};
 	unsigned long byte;
 
-	if (!sq->dtu_en && (sq->non_pin || !dev->sq_reserved_info.sq_reserved))
+	if (sq->non_pin || (!sq->dtu_en && !dev->sq_reserved_info.sq_reserved))
 		return 0;
 
 	if (udma_check_base_param(udata->udrv_data->out_addr,
@@ -858,8 +858,9 @@ int udma_modify_jfs(struct ubcore_jfs *jfs, struct ubcore_jfs_attr *attr,
 	}
 
 	if (!verify_modify_jetty(udma_jfs->sq.state, attr->state)) {
-		dev_err(udma_dev->dev, "not support modify JFS state from %s to %s.\n",
-			to_state_name(udma_jfs->sq.state), to_state_name(attr->state));
+		dev_err(udma_dev->dev, "not support modify JFS state from %s to %s, JFS id = %u.\n",
+			to_state_name(udma_jfs->sq.state), to_state_name(attr->state),
+			udma_jfs->sq.id);
 		return -EINVAL;
 	}
 
@@ -1504,7 +1505,7 @@ static int udma_post_one_wr(struct udma_jetty_queue *sq, struct ubcore_jfs_wr *w
 	}
 
 	if (unlikely(udma_k_check_sge_num(opcode, sq, wr))) {
-		dev_err(udma_dev->dev, "WR SGE number invalid.\n");
+		dev_err(udma_dev->dev, "WR SGE number invalid, opcode :%u.\n", opcode);
 		return -EINVAL;
 	}
 

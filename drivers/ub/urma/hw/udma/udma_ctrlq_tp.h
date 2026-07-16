@@ -129,15 +129,6 @@ struct udma_ctrlq_remove_single_tp_req_data {
 	uint32_t tp_status : 8;
 };
 
-struct udma_ctrlq_tpn_data {
-	uint32_t tpg_flag : 8;
-	uint32_t rsv : 24;
-	uint32_t tpgn : 24;
-	uint32_t rsv1 : 8;
-	uint32_t tpn_cnt : 8;
-	uint32_t start_tpn : 24;
-};
-
 struct udma_ctrlq_check_tp_active_req_data {
 	uint32_t tp_id : 24;
 	uint32_t rsv : 8;
@@ -313,15 +304,11 @@ int udma_register_npu_cb(struct ubcore_device *dev, struct ubcore_ucontext *uctx
 
 int udma_unregister_npu_cb(struct ubcore_device *dev, struct ubcore_ucontext *uctx,
 			   struct ubcore_user_ctl_in *in, struct ubcore_user_ctl_out *out);
-int udma_ctrlq_tp_flush_done(struct udma_dev *udev, uint32_t tpn);
 int udma_ctrlq_remove_single_tp(struct udma_dev *udev, uint32_t tpn, int status);
 int udma_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *tpid_cfg,
 		     uint32_t *tp_cnt, struct ubcore_tp_info *tp_list,
 		     struct ubcore_udata *udata);
 
-void udma_ctrlq_destroy_tpid_list(struct xarray *ctrlq_tpid_table);
-int udma_ctrlq_tpn_flush_done(struct udma_dev *dev, struct xarray *ctrlq_tpid_table,
-			      uint32_t tp_id, bool is_udata);
 int udma_ctrlq_set_active_tp_ex(struct udma_dev *dev,
 				struct ubcore_active_tp_cfg *active_cfg);
 int udma_k_ctrlq_deactive_tp(struct udma_dev *udev, union ubcore_tp_handle tp_handle,
