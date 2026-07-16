@@ -88,6 +88,17 @@ memory regions. It is recommended to enable the permission checking
 feature to enforce security policies and protect the SVA address space
 from unauthorized access.
 
+iommu.passthrough Not Supported
+===============================
+
+The UB protocol does not support the IOMMU passthrough mode
+(iommu.passthrough=1). UMMU must operate in DMA mode as defined by the
+UB protocol specification.
+
+When `iommu.passthrough=1` is configured, UMMU becomes unavailable and
+UB device functionality will be abnormal. Do not enable the
+`iommu.passthrough` option in systems that use UMMU.
+
 UMMU Driver Initialization
 ==========================
 
