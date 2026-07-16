@@ -926,6 +926,13 @@ const struct arm64_cpu_capabilities arm64_errata[] = {
 		ERRATA_MIDR_REV(MIDR_QCOM_FALKOR_V1, 0, 0),
 	},
 #endif
+#ifdef CONFIG_NVIDIA_OLYMPUS_ERRATUM_TLBI
+	{
+		.desc = "NVIDIA Olympus erratum T410-OLY-1029",
+		.capability = ARM64_WORKAROUND_REPEAT_TLBI,
+		ERRATA_MIDR_ALL_VERSIONS(MIDR_NVIDIA_OLYMPUS),
+	},
+#endif
 #ifdef CONFIG_ARM64_ERRATUM_858921
 	{
 	/* Cortex-A73 all versions */
