@@ -67,6 +67,7 @@ static ssize_t provider_info_show(struct kobject *kobj, struct kobj_attribute *a
 
 	count = sysfs_emit_at(buf, count, "provider:%s info:\n", provider->ops->name);
 	list_for_each_entry(pos, &container_list, node) {
+		mutex_lock(&pos->lock);
 		rbtree_postorder_for_each_entry_safe(area_pos, area_n, &pos->shm_area_root, node) {
 			list_for_each_entry(ctx_pos, &area_pos->ctx_list, node) {
 				if (ctx_pos->provider == provider) {
@@ -78,6 +79,7 @@ static ssize_t provider_info_show(struct kobject *kobj, struct kobj_attribute *a
 			}
 
 		}
+		mutex_unlock(&pos->lock);
 	}
 	up_read(&ubdevshm_rw_semlock);
 
@@ -130,12 +132,14 @@ static ssize_t container_info_show(struct kobject *kobj, struct kobj_attribute *
 
 	count = sysfs_emit_at(buf, count, "container:%s info:\n", cntr->owner.name);
 
+	mutex_lock(&cntr->lock);
 	rbtree_postorder_for_each_entry_safe(area_pos, area_n, &cntr->shm_area_root, node) {
 		count += sysfs_emit_at(buf, count, " register size:0x%llx\n", area_pos->size);
 		list_for_each_entry(ctx_pos, &area_pos->ctx_list, node)
 			count += sysfs_emit_at(buf, count, " grant to user:%s\n",
 					       ctx_pos->user.name);
 	}
+	mutex_unlock(&cntr->lock);
 	up_read(&ubdevshm_rw_semlock);
 
 	return count;

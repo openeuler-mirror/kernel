@@ -23,9 +23,8 @@
 #include <ub/ubdevshm/ubdevshm.h>
 #include "ubdevshm_attr.h"
 #include "ubdevshm_main.h"
+#include "ubdevshm_uba_record.h"
 
-#define UBDEVSHM_IDR_MIN_ID	0
-#define UBDEVSHM_IDR_MAX_ID	INT_MAX
 #define INVALID_LITE_ROLE ULONG_MAX
 #define LITE_ROLE_TGID_SHIFT 32
 #define LITE_ROLE_AUX_MASK GENMASK(LITE_ROLE_TGID_SHIFT - 1, 0)
@@ -323,7 +322,19 @@ static inline int shm_area_cmp(const void *key, const struct rb_node *node)
 	return 0;
 }
 
-static struct shm_area *shm_area_find(struct shm_container *cntr, u64 va, u64 size, bool equal)
+static inline int shm_area_find_containing(const void *key, const struct rb_node *node)
+{
+	struct va_area *a = (struct va_area *)key;
+	struct shm_area *b = __node_2_sa(node);
+
+	if (a->va >= b->va && (a->va + a->size) <= (b->va + b->size))
+		return 0;
+
+	return (a->va < b->va) ? -1 : 1;
+}
+
+static struct shm_area *shm_area_find(struct shm_container *cntr, u64 va, u64 size,
+						enum find_shm_area_mode mode)
 {
 	const struct va_area area = {
 		.va = va,
@@ -331,10 +342,19 @@ static struct shm_area *shm_area_find(struct shm_container *cntr, u64 va, u64 si
 	};
 	struct rb_node *node;
 
-	if (equal)
+	switch (mode) {
+	case EQUAL:
 		node = rb_find((const void *)&area, &cntr->shm_area_root, shm_area_cmp);
-	else
+		break;
+	case OVERLAP:
 		node = rb_find((const void *)&area, &cntr->shm_area_root, shm_area_find_overlap);
+		break;
+	case CONTAIN:
+		node = rb_find((const void *)&area, &cntr->shm_area_root, shm_area_find_containing);
+		break;
+	default:
+		return NULL;
+	}
 
 	if (!node)
 		return NULL;
@@ -348,7 +368,7 @@ static int shm_area_insert(struct shm_container *cntr, u64 va, u64 size,
 {
 	struct shm_area *sa;
 
-	sa = shm_area_find(cntr, va, size, true);
+	sa = shm_area_find(cntr, va, size, EQUAL);
 	if (sa) {
 		pr_err("area with size[%llx] already exist\n", size);
 		return -EEXIST;
@@ -396,17 +416,16 @@ static bool role_provider_equal(struct access_ctx_inner *ctx, void *arg)
 }
 
 static struct access_ctx_inner *find_get_access_ctx(struct shm_container *cntr,
-						struct mem_uva *va, bool unique, bool is_equal,
-						bool (*equal)(struct access_ctx_inner *, void *),
-						void *arg)
+				struct mem_uva *va, bool unique, enum find_shm_area_mode mode,
+				bool (*equal)(struct access_ctx_inner *, void *),
+				void *arg)
 {
 	struct access_ctx_inner *ctx = NULL, *pos = NULL, *n = NULL;
 	struct shm_area *sa;
 
 	mutex_lock(&cntr->lock);
-	sa = shm_area_find(cntr, va->va, va->size, is_equal);
+	sa = shm_area_find(cntr, va->va, va->size, mode);
 	if (!sa) {
-		pr_err("area with size[%llx] does not exist\n", va->size);
 		mutex_unlock(&cntr->lock);
 		return NULL;
 	}
@@ -447,11 +466,10 @@ static struct access_ctx_inner *find_get_access_ctx_by_id(u32 access_ctx_id)
 	return ctx;
 }
 
-static int create_and_link_access_ctx(struct shm_container *cntr, struct mem_provider *provider,
-	struct task_struct *user, bool sa_exit, u64 va, u64 size, struct access_ctx_inner **rctx)
+static int create_access_ctx(struct mem_provider *provider, struct task_struct *user,
+				u64 va, u64 size, struct access_ctx_inner **rctx)
 {
 	struct access_ctx_inner *ctx;
-	struct shm_area *sa;
 	int ret;
 
 	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
@@ -460,6 +478,7 @@ static int create_and_link_access_ctx(struct shm_container *cntr, struct mem_pro
 
 	ctx->provider = provider;
 	INIT_LIST_HEAD(&ctx->node);
+	INIT_LIST_HEAD(&ctx->uba_list);
 	set_role(&ctx->user, current);
 	refcount_set(&ctx->refcnt, 1);
 	refcount_set(&ctx->acquire_refcnt, 1);
@@ -470,16 +489,32 @@ static int create_and_link_access_ctx(struct shm_container *cntr, struct mem_pro
 	up_write(&ubdevshm_rw_semlock);
 	if (ret < 0) {
 		pr_err("shm access ctx id_alloc err=%d\n", ret);
-		goto fail;
+		kfree(ctx);
+		return ret;
 	}
+
 	ctx->id = ret;
 	ctx->seg.va = va;
 	ctx->seg.size = size;
 	set_role(&ctx->user, user);
+	*rctx = ctx;
+	return 0;
+}
+
+static int create_and_link_access_ctx(struct shm_container *cntr, struct mem_provider *provider,
+	struct task_struct *user, bool sa_exit, u64 va, u64 size, struct access_ctx_inner **rctx)
+{
+	struct access_ctx_inner *ctx;
+	struct shm_area *sa;
+	int ret;
+
+	ret = create_access_ctx(provider, user, va, size, &ctx);
+	if (ret)
+		return ret;
 
 	mutex_lock(&cntr->lock);
 
-	sa = shm_area_find(cntr, va, size, true);
+	sa = shm_area_find(cntr, va, size, EQUAL);
 	if (!sa) {
 		if (sa_exit) {
 			pr_err("expect sa exit\n");
@@ -504,14 +539,13 @@ fail_idr_remove:
 	down_write(&ubdevshm_rw_semlock);
 	(void)idr_remove(&access_ctx_idr, (unsigned long)ctx->id);
 	up_write(&ubdevshm_rw_semlock);
-fail:
 	kfree(ctx);
 	return ret;
 }
 
 static int create_shm_container(struct shm_container **rcntr)
 {
-	struct shm_container *cntr;
+	struct shm_container *cntr, *pos;
 	int ret;
 
 	cntr = kzalloc(sizeof(*cntr), GFP_KERNEL);
@@ -526,6 +560,15 @@ static int create_shm_container(struct shm_container **rcntr)
 	cntr->mode = USE_MODE_NOGRANT;
 
 	down_write(&ubdevshm_rw_semlock);
+	list_for_each_entry(pos, &container_list, node) {
+		if (is_same_role(&pos->owner, &cntr->owner)) {
+			shm_container_get(pos);
+			up_write(&ubdevshm_rw_semlock);
+			kfree(cntr);
+			*rcntr = pos;
+			return -EEXIST;
+		}
+	}
 	ret = idr_alloc_cyclic(&shm_container_idr, cntr, UBDEVSHM_IDR_MIN_ID,
 			       UBDEVSHM_IDR_MAX_ID, GFP_ATOMIC);
 	if (ret < 0) {
@@ -618,6 +661,17 @@ static int lite_role_find_get_task(struct mem_uva *va, struct role_info *role)
 	return 0;
 }
 
+static void destroy_shm_container(struct shm_container *cntr)
+{
+	if (!refcount_dec_if_one(&cntr->refcnt)) {
+		pr_err("cntr refcnt dec if one failed\n");
+		return;
+	}
+	list_del(&cntr->node);
+	(void)idr_remove(&shm_container_idr, (unsigned long)cntr->id);
+	kfree(cntr);
+}
+
 int ubdevshm_register_segment(unsigned long *handle, struct mem_uva *va)
 {
 	struct mem_provider *provider = NULL;
@@ -647,8 +701,11 @@ int ubdevshm_register_segment(unsigned long *handle, struct mem_uva *va)
 		found = true;
 	} else {
 		ret = create_shm_container(&cntr);
-		if (ret)
-			goto fail;
+		if (ret) {
+			if (ret != -EEXIST)
+				goto fail;
+			found = true;
+		}
 	}
 
 	// check segment register repeatedly
@@ -656,7 +713,7 @@ int ubdevshm_register_segment(unsigned long *handle, struct mem_uva *va)
 		rp.role = fill_role_info(role, current);
 		rp.provider = provider;
 
-		ctx_inner = find_get_access_ctx(cntr, va, false, false, role_provider_equal, &rp);
+		ctx_inner = find_get_access_ctx(cntr, va, false, OVERLAP, role_provider_equal, &rp);
 		if (ctx_inner) {
 			ret = -EEXIST;
 			access_ctx_put(ctx_inner);
@@ -673,10 +730,12 @@ int ubdevshm_register_segment(unsigned long *handle, struct mem_uva *va)
 	return ret;
 
 fail_cntr:
-	if (!found)
-		kfree(cntr);
-	if (cntr)
-		shm_container_put(cntr);
+	shm_container_put(cntr);
+	if (!found) {
+		down_write(&ubdevshm_rw_semlock);
+		destroy_shm_container(cntr);
+		up_write(&ubdevshm_rw_semlock);
+	}
 fail:
 	shm_provider_put(provider);
 	return ret;
@@ -701,6 +760,7 @@ static int destroy_access_ctx(struct access_ctx_inner *ctx, struct shm_container
 	mutex_unlock(&cntr->lock);
 
 	down_write(&ubdevshm_rw_semlock);
+	ubdevshm_cleanup_uba_records_in_ctx(ctx);
 	(void)idr_remove(&access_ctx_idr, (unsigned long)ctx->id);
 	shm_provider_put(ctx->provider);
 	up_write(&ubdevshm_rw_semlock);
@@ -722,17 +782,6 @@ static void shm_area_cleanup(struct shm_area *sa, struct shm_container *cntr)
 static bool is_shm_container_free(struct shm_container *cntr)
 {
 	return RB_EMPTY_ROOT(&cntr->shm_area_root) && refcount_read(&cntr->refcnt) == 1;
-}
-
-static void destroy_shm_container(struct shm_container *cntr)
-{
-	if (!refcount_dec_if_one(&cntr->refcnt)) {
-		pr_err("cntr refcnt dec if one failed\n");
-		return;
-	}
-	list_del(&cntr->node);
-	(void)idr_remove(&shm_container_idr, (unsigned long)cntr->id);
-	kfree(cntr);
 }
 
 static void __shm_container_cleanup(struct shm_container *cntr)
@@ -777,7 +826,7 @@ int ubdevshm_unregister_segment(unsigned long *handle, struct mem_uva *va)
 
 	// lite: true means the process has exited.
 	cntr = lite ? find_get_shm_container(is_same_role_cb, &role) :
-	       find_get_shm_container(is_same_role_task, task);
+		   find_get_shm_container(is_same_role_task, task);
 	if (!cntr) {
 		ret = -EINVAL;
 		goto out;
@@ -785,9 +834,9 @@ int ubdevshm_unregister_segment(unsigned long *handle, struct mem_uva *va)
 
 	rp.role = lite ? &role : fill_role_info(role, task);
 	rp.provider = provider;
-	ctx_inner = find_get_access_ctx(cntr, va, false, true, role_provider_equal, &rp);
+	ctx_inner = find_get_access_ctx(cntr, va, false, EQUAL, role_provider_equal, &rp);
 	if (!ctx_inner) {
-		ret = -EINVAL;
+		ret = -ENOENT;
 		goto out;
 	}
 
@@ -840,7 +889,7 @@ static int find_get_shm_context(struct access_ctx *ctx,
 	cntr = find_get_shm_container_by_id(ctx->shm_container_id);
 	if (!cntr) {
 		pr_err("invalid shm_container_id[%u] without matching cntr\n",
-		       ctx->shm_container_id);
+			   ctx->shm_container_id);
 		return -ENOENT;
 	}
 
@@ -877,6 +926,7 @@ static int find_get_shm_container_access_ctx(struct access_ctx *ctx, struct mem_
 	struct access_ctx_inner *ctx_inner;
 	struct shm_container *cntr;
 	struct role_info role;
+	u64 sa_end, req_end;
 	int ret;
 
 	if (!ctx) { // simple mode
@@ -887,7 +937,7 @@ static int find_get_shm_container_access_ctx(struct access_ctx *ctx, struct mem_
 			return -ENOENT;
 		}
 
-		ctx_inner = find_get_access_ctx(cntr, va, true, true, role_equal,
+		ctx_inner = find_get_access_ctx(cntr, va, true, CONTAIN, role_equal,
 						fill_role_info(role, current));
 		if (!ctx_inner) {
 			pr_err("find ctx_inner failed: role.tgid: %u, role.aux: %llx\n",
@@ -899,7 +949,9 @@ static int find_get_shm_container_access_ctx(struct access_ctx *ctx, struct mem_
 		ret = find_get_shm_context(ctx, &cntr, &ctx_inner);
 		if (ret)
 			return ret;
-		if (ctx_inner->sa->size != va->size || ctx_inner->sa->va != va->va) {
+		sa_end = ctx_inner->sa->va + ctx_inner->sa->size;
+		req_end = va->va + va->size;
+		if (va->va < ctx_inner->sa->va || req_end > sa_end) {
 			pr_err("area does not exist\n");
 			ret = -EINVAL;
 			access_ctx_put(ctx_inner);
@@ -916,7 +968,6 @@ out:
 	shm_container_put(cntr);
 	return ret;
 }
-
 /*
  * if ctx is null, it means that there is only one mem provider,
  * and sharer and user is the same process.
@@ -925,6 +976,7 @@ int ubdevshm_acquire_uba(struct access_ctx *ctx, struct mem_uva *va, union acqui
 			 invalidate func, struct mem_uba *uba)
 {
 	struct access_ctx_inner *ctx_inner;
+	struct uba_record *rec = NULL;
 	struct shm_container *cntr;
 	int ret;
 
@@ -939,24 +991,31 @@ int ubdevshm_acquire_uba(struct access_ctx *ctx, struct mem_uva *va, union acqui
 
 	if (!is_same_role_task(&ctx_inner->user, current)) {
 		ret = -EINVAL;
-		access_ctx_put(ctx_inner);
 		goto out;
 	}
 
-	ret = ctx_inner->provider->ops->acquire(va, attr, func, &ctx_inner->seg.uba);
-	if (!ret) {
-		if (refcount_inc_not_zero(&ctx_inner->acquire_refcnt)) {
-			ctx_inner->seg.uba.mem_handle = (void *)ctx_inner->id;
-			mem_uba_cpy(uba, &ctx_inner->seg.uba);
-		} else {
-			pr_err("ctx acquire ref is zero\n");
-			ctx_inner->provider->ops->release(&ctx_inner->seg.uba);
-			ret = -ENOENT;
-		}
-	}
-	access_ctx_put(ctx_inner);
+	ret = ubdevshm_create_uba_record(ctx_inner, &rec);
+	if (ret)
+		goto out;
 
+	ret = ctx_inner->provider->ops->acquire(va, attr, func, &rec->uba);
+	if (ret) {
+		pr_err("provider acquire failed\n");
+		goto free_rec;
+	}
+
+	ret = ubdevshm_link_uba_record_to_ctx(cntr, ctx_inner, rec);
+	if (ret)
+		goto release_uba;
+
+	mem_uba_cpy(uba, &rec->uba);
+	goto out;
+release_uba:
+	ctx_inner->provider->ops->release(&rec->uba);
+free_rec:
+	kfree(rec);
 out:
+	access_ctx_put(ctx_inner);
 	shm_container_put(cntr);
 	return ret;
 }
@@ -977,18 +1036,19 @@ static bool is_equal_uba(struct mem_uba *a, struct mem_uba *b)
 	return false;
 }
 
+
 static int find_get_shm_container_context(struct access_ctx *ctx, struct mem_uba *uba,
-			 struct shm_container **rcntr, struct access_ctx_inner **rctx_inner)
+			 struct shm_container **rcntr, struct access_ctx_inner **rctx_inner,
+			 struct uba_record **rrec)
 {
+	struct uba_record *rec = NULL, *pos;
 	struct access_ctx_inner *ctx_inner;
-	struct shm_container *cntr;
 	void *mem_handle = uba->mem_handle;
+	struct shm_container *cntr;
 	int ret;
 
 	if (!ctx) { // simple mode
-		uintptr_t handle = (uintptr_t)mem_handle;
-
-		ctx_inner = find_get_access_ctx_by_id(handle);
+		ctx_inner = ubdevshm_find_get_access_ctx_by_uba_record((uintptr_t)mem_handle, &rec);
 		if (!ctx_inner) {
 			pr_err("find access ctx inner failed\n");
 			return -ENOENT;
@@ -1004,25 +1064,42 @@ static int find_get_shm_container_context(struct access_ctx *ctx, struct mem_uba
 			return ret;
 		if (!is_same_role_task(&ctx_inner->user, current)) {
 			ret = -EINVAL;
-			access_ctx_put(ctx_inner);
+			goto out;
+		}
+
+		mutex_lock(&cntr->lock);
+		list_for_each_entry(pos, &ctx_inner->uba_list, node) {
+			if (pos->id == (uintptr_t)uba->mem_handle) {
+				rec = pos;
+				break;
+			}
+		}
+		mutex_unlock(&cntr->lock);
+		if (!rec) {
+			pr_err("uba record not found in ctx uba_list\n");
+			ret = -ENOENT;
 			goto out;
 		}
 	}
 
 	*rcntr = cntr;
 	*rctx_inner = ctx_inner;
+	*rrec = rec;
 
 	return 0;
 
 out:
+	access_ctx_put(ctx_inner);
 	shm_container_put(cntr);
 	return ret;
 }
+
 
 int ubdevshm_release_uba(struct access_ctx *ctx, struct mem_uba *uba)
 {
 	struct access_ctx_inner *ctx_inner;
 	struct shm_container *cntr;
+	struct uba_record *rec;
 	int ret;
 
 	if (!uba) {
@@ -1030,39 +1107,39 @@ int ubdevshm_release_uba(struct access_ctx *ctx, struct mem_uba *uba)
 		return -EINVAL;
 	}
 
-	ret = find_get_shm_container_context(ctx, uba, &cntr, &ctx_inner);
+	ret = find_get_shm_container_context(ctx, uba, &cntr, &ctx_inner, &rec);
 	if (ret)
 		return ret;
 
-	if (!is_equal_uba(&ctx_inner->seg.uba, uba)) {
+	if (!is_equal_uba(&rec->uba, uba)) {
 		ret = -EINVAL;
 		pr_err("uba not matching access uba\n");
-		access_ctx_put(ctx_inner);
 		goto out;
 	}
 
 	if (!refcount_dec_not_one(&ctx_inner->acquire_refcnt)) {
 		pr_err("the number of releases is more than acquires.\n");
 		ret = -EINVAL;
-		access_ctx_put(ctx_inner);
 		goto out;
 	}
 
 	ret = ctx_inner->provider->ops->release(uba);
 	if (!ret) {
 		uba->mem_handle = NULL;
+		ubdevshm_release_uba_record(cntr, rec);
 	} else {
 		/* Without this lock, destroy_access_ctx might decrement acquire reference
 		 * counting to zero if it happens to execute the current line of code.
 		 */
 		mutex_lock(&cntr->lock);
 		// This situation should not have happened.
-		if (refcount_inc_not_zero(&ctx_inner->acquire_refcnt))
-			pr_warn("refcnt is not zero, refcount is fail.\n");
+		if (!refcount_inc_not_zero(&ctx_inner->acquire_refcnt))
+			pr_warn("refcnt is zero, cannot rollback.\n");
 		mutex_unlock(&cntr->lock);
 	}
-	access_ctx_put(ctx_inner);
+
 out:
+	access_ctx_put(ctx_inner);
 	shm_container_put(cntr);
 	return ret;
 }
@@ -1121,14 +1198,14 @@ static int find_get_access_ctx_by_rp(struct shm_container *cntr, struct mem_uva 
 	struct access_ctx_inner *ctx_inner, *ctx_parent;
 	struct role_info role;
 
-	ctx_inner = find_get_access_ctx(cntr, va, false, true, role_provider_equal, rp);
+	ctx_inner = find_get_access_ctx(cntr, va, false, EQUAL, role_provider_equal, rp);
 	if (ctx_inner) {
 		access_ctx_put(ctx_inner);
 		return -EEXIST;
 	}
 
 	rp->role = fill_role_info(role, current);
-	ctx_parent = find_get_access_ctx(cntr, va, false, true, role_provider_equal, rp);
+	ctx_parent = find_get_access_ctx(cntr, va, false, EQUAL, role_provider_equal, rp);
 	if (!ctx_parent)
 		return -EINVAL;
 
@@ -1282,14 +1359,20 @@ static int __init ubdevshm_init(void)
 	idr_init(&shm_container_idr);
 	idr_init(&mem_provider_idr);
 	idr_init(&access_ctx_idr);
+	ubdevshm_uba_record_init();
 
 	ret = ubdevshm_attr_file_init();
-	if (ret)
+	if (ret) {
+		ubdevshm_uba_record_uninit();
+		idr_destroy(&access_ctx_idr);
+		idr_destroy(&mem_provider_idr);
+		idr_destroy(&shm_container_idr);
 		return ret;
+	}
 
 	init_rwsem(&ubdevshm_rw_semlock);
 	ubdevshm_init_state = true;
-	return ret;
+	return 0;
 }
 
 static void __exit ubdevshm_exit(void)
@@ -1297,6 +1380,7 @@ static void __exit ubdevshm_exit(void)
 	ubdevshm_init_state = false;
 
 	ubdevshm_attr_file_uninit();
+	ubdevshm_uba_record_uninit();
 	idr_destroy(&access_ctx_idr);
 	idr_destroy(&mem_provider_idr);
 	idr_destroy(&shm_container_idr);
