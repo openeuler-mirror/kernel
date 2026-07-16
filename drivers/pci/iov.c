@@ -13,6 +13,7 @@
 #include <linux/string.h>
 #include <linux/delay.h>
 #include <linux/virtcca_cvm_domain.h>
+#include <linux/cca_cvm_domain.h>
 #include "pci.h"
 
 #define VIRTFN_ID_LEN	17	/* "virtfn%u\0" for 2^32 - 1 */
@@ -307,6 +308,11 @@ int pci_iov_add_virtfn(struct pci_dev *dev, int id)
 	virtfn->devfn = pci_iov_virtfn_devfn(dev, id);
 	if (is_virtcca_cc_dev(pci_dev_id(dev))) {
 		rc = virtcca_add_coda_pci_dev(virtfn);
+		if (rc)
+			goto failed0;
+	}
+	if (is_dev_delegated(dev)) {
+		rc = cca_add_protected_virtfn(virtfn);
 		if (rc)
 			goto failed0;
 	}
