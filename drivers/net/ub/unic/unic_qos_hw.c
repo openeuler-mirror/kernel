@@ -11,8 +11,8 @@
 #include "unic_hw.h"
 #include "unic_qos_hw.h"
 
-static int unic_set_hw_vl_map(struct unic_dev *unic_dev, u8 *dscp_vl, u8 *prio_vl,
-			      u8 map_type)
+static int unic_set_hw_vl_map(struct unic_dev *unic_dev, u8 *dscp_vl,
+			      u8 *prio_vl, u8 map_type)
 {
 	struct auxiliary_device *adev = unic_dev->comdev.adev;
 	struct unic_config_vl_map_cmd req = {0};
