@@ -150,15 +150,16 @@ int __weak arch_asym_cpu_priority(int cpu)
 #define capacity_greater(cap1, cap2) ((cap1) * 1024 > (cap2) * 1078)
 #endif
 
-#ifdef CONFIG_QOS_SCHED
+#if defined(CONFIG_QOS_SCHED) || defined(CONFIG_QOS_SCHED_SMART_GRID)
+static int hundred_thousand = 100000;
+#endif
 
+#ifdef CONFIG_QOS_SCHED
 static DEFINE_PER_CPU_SECTION(struct list_head, qos_throttled_cfs_rq, PER_CPU_SHARED_ALIGNED_SECTION) __attribute__((__aligned__(128)));
 static DEFINE_PER_CPU_SHARED_ALIGNED(struct hrtimer, qos_overload_timer);
 static DEFINE_PER_CPU(int, qos_cpu_overload);
 unsigned int sysctl_overload_detect_period = 5000;  /* in ms */
 unsigned int sysctl_offline_wait_interval = 100;  /* in ms */
-static int one_thousand = 1000;
-static int hundred_thousand = 100000;
 static int __unthrottle_qos_cfs_rqs(int cpu);
 static int unthrottle_qos_cfs_rqs(int cpu);
 static bool qos_smt_expelled(int this_cpu);
@@ -277,7 +278,7 @@ static struct ctl_table sched_fair_sysctls[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= SYSCTL_ONE_HUNDRED,
-		.extra2		= &one_thousand,
+		.extra2		= SYSCTL_ONE_THOUSAND,
 	},
 #endif
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
@@ -10519,7 +10520,9 @@ static void set_next_task_fair(struct rq *rq, struct task_struct *p, bool first)
 struct task_struct *
 pick_next_task_fair(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 {
-	struct cfs_rq *cfs_rq = &rq->cfs;
+#ifdef CONFIG_QOS_SCHED
+	struct cfs_rq *qos_cfs_rq = &rq->cfs;
+#endif
 	struct sched_entity *se;
 	struct task_struct *p;
 	int new_tasks;
@@ -10550,7 +10553,7 @@ again:
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	if (prev->sched_class != &fair_sched_class) {
 #ifdef CONFIG_QOS_SCHED
-		if (qos_sched_enabled() && cfs_rq->idle_h_nr_running != 0 && rq->online)
+		if (qos_sched_enabled() && qos_cfs_rq->idle_h_nr_running != 0 && rq->online)
 			goto qos_simple;
 		else
 #endif
@@ -10600,16 +10603,16 @@ qos_simple:
 		put_prev_task(rq, prev);
 
 	do {
-		se = pick_next_entity(cfs_rq);
+		se = pick_next_entity(qos_cfs_rq);
 		if (check_qos_cfs_rq(group_cfs_rq(se))) {
-			cfs_rq = &rq->cfs;
-			if (!cfs_rq->nr_running)
+			qos_cfs_rq = &rq->cfs;
+			if (!qos_cfs_rq->nr_running)
 				goto idle;
 			continue;
 		}
 
-		cfs_rq = group_cfs_rq(se);
-	} while (cfs_rq);
+		qos_cfs_rq = group_cfs_rq(se);
+	} while (qos_cfs_rq);
 
 	p = task_of(se);
 
