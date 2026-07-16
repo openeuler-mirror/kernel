@@ -91,7 +91,7 @@ int udma_del_one_eid(struct udma_dev *udma_dev, struct udma_ctrlq_eid_info *eid_
 	if (!eid_entry) {
 		dev_err(udma_dev->dev, "get EID entry failed, EID index = %u.\n",
 			index);
-		return -EINVAL;
+		return -ENOENT;
 	}
 	if (memcmp(eid_entry->eid.raw, eid_info->eid.raw, sizeof(eid_entry->eid.raw))) {
 		dev_err(udma_dev->dev, "EID is not match, index = %u.\n", index);
@@ -202,19 +202,17 @@ int udma_add_one_eid_guid(struct udma_dev *udma_dev,
 	eid_guid_entry = (struct udma_ctrlq_ue_eid_guid_out *)
 		xa_load(&udma_dev->eid_guid_table, eid_guid_idx);
 	if (eid_guid_entry) {
-		if (memcmp(eid_guid_entry->eid_info.eid.raw, eid_guid_info->eid_info.eid.raw,
-		    sizeof(eid_guid_entry->eid_info.eid.raw))) {
-			dev_err(udma_dev->dev, "eid-guid exist and does not match, index = %u.\n",
-				eid_guid_idx);
-			return -EINVAL;
-		}
-		dev_info(udma_dev->dev, "eid-guid exist, index = %u.\n", eid_guid_idx);
-		return 0;
+		dev_info(udma_dev->dev, "eid-guid exist, update index = %u eid-guid.\n",
+			 eid_guid_idx);
+		xa_erase(&udma_dev->eid_guid_table, eid_guid_idx);
+		(void)memcpy(&guid, &eid_guid_entry->ue_guid, sizeof(guid));
+		(void)memcpy(&ummu_eid, eid_guid_entry->eid_info.eid.raw, sizeof(ummu_eid));
+		ummu_core_del_eid(&guid, ummu_eid, EID_NONE);
+	} else {
+		eid_guid_entry = kzalloc(sizeof(*eid_guid_entry), GFP_KERNEL);
+		if (!eid_guid_entry)
+			return -ENOMEM;
 	}
-
-	eid_guid_entry = kzalloc(sizeof(*eid_guid_entry), GFP_KERNEL);
-	if (!eid_guid_entry)
-		return -ENOMEM;
 
 	memcpy(eid_guid_entry, eid_guid_info, sizeof(*eid_guid_entry));
 

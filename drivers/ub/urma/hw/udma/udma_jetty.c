@@ -459,8 +459,7 @@ void free_jetty_id(struct udma_dev *udma_dev,
 				 udma_jetty->sq.id, false);
 }
 
-static void udma_dfx_store_jetty_id(struct udma_dev *udma_dev,
-				    struct udma_jetty *udma_jetty)
+void udma_dfx_store_jetty_id(struct udma_dev *udma_dev, struct udma_jetty *udma_jetty)
 {
 	struct udma_dfx_jetty *jetty;
 	int ret;
@@ -555,8 +554,7 @@ static int udma_jetty_copy_resp(struct udma_dev *dev, struct udma_jetty *jetty,
 			udata->udrv_data->out_len);
 		return -EINVAL;
 	}
-	if (jetty->sq.dtu_en ||
-	    (!jetty->sq.non_pin && dev->sq_reserved_info.sq_reserved))
+	if (!jetty->sq.non_pin && (jetty->sq.dtu_en || dev->sq_reserved_info.sq_reserved))
 		resp.buf_addr = jetty->sq.buf.addr;
 
 	byte = copy_to_user((void *)(uintptr_t)udata->udrv_data->out_addr, &resp, sizeof(resp));
@@ -718,9 +716,6 @@ int udma_add_xa_and_create_hw_ctx(struct udma_dev *udma_dev, struct udma_jetty *
 	refcount_set(&udma_jetty->ae_refcount, 1);
 	init_completion(&udma_jetty->ae_comp);
 
-	if (dfx_switch)
-		udma_dfx_store_jetty_id(udma_dev, udma_jetty);
-
 	return ret;
 err_create_hw_jetty:
 	xa_erase(&udma_dev->jetty_table.xa, udma_jetty->sq.id);
@@ -735,13 +730,29 @@ static int udma_active_jetty_detail(struct udma_dev *udma_dev, struct udma_jetty
 
 	ret = udma_alloc_jetty_sq(udma_dev, udma_jetty, cfg, udata);
 	if (ret) {
-		dev_err(udma_dev->dev, "udma alloc jetty id buffer failed, ret = %d.\n", ret);
+		dev_err(udma_dev->dev, "udma alloc jetty id buffer failed, id = %u, ret = %d.\n",
+			udma_jetty->sq.id, ret);
 		return ret;
 	}
 
 	ret = udma_add_xa_and_create_hw_ctx(udma_dev, udma_jetty, cfg);
-	if (ret)
+	if (ret) {
 		udma_free_jetty_id_buf(udma_dev, udma_jetty, cfg);
+		return ret;
+	}
+
+	if (udma_jetty->sq.jetty_grp) {
+		ret = udma_update_hw_grp_ctx_valid_only(udma_dev, udma_jetty, true);
+		if (ret) {
+			udma_destroy_hw_jetty_ctx(udma_dev, udma_jetty->sq.id);
+			xa_erase(&udma_dev->jetty_table.xa, udma_jetty->sq.id);
+			udma_free_jetty_id_buf(udma_dev, udma_jetty, cfg);
+			return ret;
+		}
+	}
+
+	if (dfx_switch)
+		udma_dfx_store_jetty_id(udma_dev, udma_jetty);
 
 	return ret;
 }
@@ -984,6 +995,13 @@ int udma_modify_and_destroy_jetty(struct udma_dev *dev,
 		return -EFAULT;
 
 	if (sq->state != UBCORE_JETTY_STATE_RESET) {
+		if (sq->jetty_grp) {
+			ret = udma_update_hw_grp_ctx_valid_only(dev,
+				to_udma_jetty_from_queue(sq), false);
+			if (ret)
+				return ret;
+		}
+
 		ret = udma_destroy_hw_jetty_ctx(dev, sq->id);
 		if (ret) {
 			dev_err(dev->dev, "jetty destroy failed, id: %u.\n",
@@ -1315,6 +1333,13 @@ int udma_batch_modify_and_destroy_jetty(struct udma_dev *dev,
 
 	for (i = 0; i < jetty_cnt; i++) {
 		if (sq_list[i]->state != UBCORE_JETTY_STATE_RESET) {
+			if (sq_list[i]->jetty_grp) {
+				ret = udma_update_hw_grp_ctx_valid_only(dev,
+					to_udma_jetty_from_queue(sq_list[i]), false);
+				if (ret)
+					return ret;
+			}
+
 			ret = udma_destroy_hw_jetty_ctx(dev, sq_list[i]->id);
 			if (ret) {
 				dev_err(dev->dev,
@@ -1588,16 +1613,16 @@ struct ubcore_tjetty *udma_import_jetty_ex(struct ubcore_device *ub_dev,
 	struct udma_target_jetty *tjetty;
 	int ret = 0;
 
+	ret = udma_check_tp_type_available(udma_dev, cfg);
+	if (ret)
+		return ERR_PTR(ret);
+
 	if (cfg->type != UBCORE_JETTY_GROUP && cfg->type != UBCORE_JETTY) {
 		dev_err(udma_dev->dev,
 			"the jetty of the type %u cannot be imported in exp.\n",
 			cfg->type);
 		return ERR_PTR(-EINVAL);
 	}
-
-	ret = udma_get_tp_type_available(udma_dev, cfg);
-	if (ret)
-		return ERR_PTR(ret);
 
 	ret = udma_check_jetty_grp_info(cfg, udma_dev);
 	if (ret)
@@ -2050,34 +2075,36 @@ uint32_t udma_get_type(uint32_t trans_mode, uint32_t order_type)
 	}
 }
 
-int udma_get_tp_type_available(struct udma_dev *dev, struct ubcore_tjetty_cfg *cfg)
-
+int udma_check_tp_type_available(struct udma_dev *dev, struct ubcore_tjetty_cfg *cfg)
 {
+	unsigned long long type_bit = ubase_get_ub_feature();
 	uint32_t tp_ability_bit = 0;
 
 	if (cfg->flag.bs.order_type == UBCORE_OI && cfg->tp_type == UBCORE_RTP) {
-		tp_ability_bit = !!(ubase_get_ub_feature() & UBASE_URMA_RTP_ROI);
+		tp_ability_bit = !!(type_bit & UBASE_URMA_RTP_ROI);
 	} else if (cfg->flag.bs.order_type == UBCORE_OI && cfg->tp_type == UBCORE_CTP) {
-		tp_ability_bit = !!(ubase_get_ub_feature() & UBASE_URMA_CTP_ROI);
+		tp_ability_bit = !!(type_bit & UBASE_URMA_CTP_ROI);
 	} else if (cfg->flag.bs.order_type == UBCORE_OL && cfg->tp_type == UBCORE_CTP) {
-		tp_ability_bit = !!(ubase_get_ub_feature() & UBASE_URMA_CTP_ROL);
+		tp_ability_bit = !!(type_bit & UBASE_URMA_CTP_ROL);
 	} else if (cfg->flag.bs.order_type == UBCORE_OL && cfg->tp_type == UBCORE_RTP) {
-		tp_ability_bit = !!(ubase_get_ub_feature() & UBASE_URMA_RTP_ROL);
+		tp_ability_bit = !!(type_bit & UBASE_URMA_RTP_ROL);
 	} else if (cfg->flag.bs.order_type == UBCORE_NO && cfg->tp_type == UBCORE_CTP) {
-		tp_ability_bit = !!(ubase_get_ub_feature() & UBASE_URMA_CTP_UNO);
+		tp_ability_bit = !!(type_bit & UBASE_URMA_CTP_UNO);
 	} else if (cfg->flag.bs.order_type == UBCORE_NO && cfg->tp_type == UBCORE_UTP) {
-		tp_ability_bit = !!(ubase_get_ub_feature() & UBASE_URMA_UTP_UNO);
+		tp_ability_bit = !!(type_bit & UBASE_URMA_UTP_UNO);
 	} else if (cfg->flag.bs.order_type == UBCORE_OT && cfg->tp_type == UBCORE_CTP) {
-		tp_ability_bit = !!(ubase_get_ub_feature() & UBASE_URMA_CTP_ROT);
+		tp_ability_bit = !!(type_bit & UBASE_URMA_CTP_ROT);
 	} else if (cfg->flag.bs.order_type == UBCORE_OT && cfg->tp_type == UBCORE_RTP) {
-		tp_ability_bit = !!(ubase_get_ub_feature() & UBASE_URMA_RTP_ROT);
-	} else	{
+		tp_ability_bit = !!(type_bit & UBASE_URMA_RTP_ROT);
+	} else {
 		dev_err(dev->dev, "tp mode is not recognized.\n");
 		return -EINVAL;
 	}
 
 	if (!tp_ability_bit) {
-		dev_err(dev->dev, "tp mode is not supported, tp type: %u .\n", cfg->tp_type);
+		dev_err(dev->dev,
+			"tp mode is not supported, order type: %u, tp type: %u.\n",
+			cfg->flag.bs.order_type, cfg->tp_type);
 		return -EINVAL;
 	}
 	return 0;

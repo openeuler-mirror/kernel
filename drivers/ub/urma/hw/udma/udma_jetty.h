@@ -255,7 +255,7 @@ static inline uint8_t udma_get_ta_timeout_gear(struct udma_dev *udev, uint32_t e
 
 	uint8_t ta_timeout_gear = err_timeout / TA_TIMEOUT_DIVISOR;
 	if ((ta_timeout_gear >= UDMA_TA_TIMEOUT_MAX_INDEX) &&
-		((udev->hw_ver == UBASE_HW_VER_A_0) || (udev->hw_ver == UBASE_HW_VER_K_0)))
+	    (udev->hw_ver == UBASE_HW_VER_K_0))
 		ta_timeout_gear = (UDMA_TA_TIMEOUT_MAX_INDEX - 1);
 
 	return ta_timeout_gear;
@@ -338,5 +338,6 @@ int udma_set_jetty_opt(struct ubcore_jetty *jetty, uint64_t opt,
 		       void *buf, uint32_t len, struct ubcore_udata *udata);
 void udma_get_jfs_cfg_field(struct ubcore_jfs_cfg *jfs_cfg, uint64_t opt, void *buf);
 uint32_t udma_get_type(uint32_t trans_mode, uint32_t order_type);
-int udma_get_tp_type_available(struct udma_dev *dev, struct ubcore_tjetty_cfg *cfg);
+void udma_dfx_store_jetty_id(struct udma_dev *udma_dev, struct udma_jetty *udma_jetty);
+int udma_check_tp_type_available(struct udma_dev *dev, struct ubcore_tjetty_cfg *cfg);
 #endif /* __UDMA_JETTY_H__ */
