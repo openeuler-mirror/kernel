@@ -187,12 +187,14 @@ static int __must_check uobj_remove_commit_internal(
 		/* We couldn't remove the object, so just unlock the uobject */
 		atomic_set(&uobj->rcnt, 0);
 		uobj->type->type_class->lookup_put(uobj, UOBJ_ACCESS_NOLOCK);
-	} else if (!list_empty(&uobj->list)) {
+	} else {
 		mutex_lock(&ufile->uobjects_lock);
-		list_del_init(&uobj->list);
+		/* put the ref when del list node */
+		if (!list_empty(&uobj->list)) {
+			list_del_init(&uobj->list);
+			uobj_put(uobj);
+		}
 		mutex_unlock(&ufile->uobjects_lock);
-		/* put the ref we took when we created the object */
-		uobj_put(uobj);
 	}
 
 	return ret;
@@ -229,13 +231,13 @@ uobj_remove_commit_internal_batch(struct uburma_uobj **uobj_arr, int arr_num,
 
 	for (i = 0; i < end_index; ++i) {
 		uobj = uobj_arr[i];
+		mutex_lock(&ufile->uobjects_lock);
+		/* put the ref when del list node */
 		if (!list_empty(&uobj->list)) {
-			mutex_lock(&ufile->uobjects_lock);
 			list_del_init(&uobj->list);
-			mutex_unlock(&ufile->uobjects_lock);
-			/* put the ref we took when we created the object */
 			uobj_put(uobj);
 		}
+		mutex_unlock(&ufile->uobjects_lock);
 	}
 
 	return ret;
