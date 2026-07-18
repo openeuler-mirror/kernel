@@ -108,6 +108,16 @@ bool arm64_rsi_is_protected(phys_addr_t base, size_t size)
 	enum ripas ripas;
 	phys_addr_t end, top;
 
+	/*
+	 * Addresses in the NS (non-secure) IPA alias range are by definition
+	 * unprotected/shared. RSI_IPA_STATE_GET only accepts addresses in
+	 * the protected IPA range; calling it on an NS IPA alias address
+	 * (e.g MMIO devices whose FDT addresses have the NS bit set)
+	 * returns an error. Short-circuit here to avoid spurious WARN_ON.
+	 */
+	if (prot_ns_shared && (base & prot_ns_shared))
+		return false;
+
 	/* Overflow ? */
 	if (WARN_ON(base + size <= base))
 		return false;
