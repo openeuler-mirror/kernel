@@ -13,13 +13,12 @@
 #include "cis_uvb_interface.h"
 
 #define CIS_USAGE_UVB                    2
-#define MAX_UVB_LOCK_IN_BITS             8
+#define MAX_UVB_DESC_BITS                8
 #define UVB_POLL_TIME_INTERVAL           (100)                  /* 100us */
 #define UVB_POLL_TIMEOUT                 (1200)                 /* 1200ms */
 #define UVB_TIMEOUT_WINDOW_OBTAIN        (10000)                /* 10000us */
 #define UVB_POLL_TIMEOUT_TIMES           (10000)                /* 10000 times */
 
-extern struct cis_message *io_param_sync;
 extern struct list_head  g_local_cis_list;
 
 struct udfi_para {
@@ -40,10 +39,13 @@ struct cis_func_node {
 	msg_handler func;
 };
 
-struct uvb_window_lock {
+struct uvb_win_desc_map {
 	atomic_t lock;
 	u64 window_address;
 	struct hlist_node node;
+	void *map_buffer;   //wd->buffer memremap addr
+	void *map_obtain;    //wd->obtain memremap addr
+	void *map_address;  //wd->address memremap addr
 };
 
 int cis_call_remote(u32 call_id, u32 sender_id, u32 receiver_id,
