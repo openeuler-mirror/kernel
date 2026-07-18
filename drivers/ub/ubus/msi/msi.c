@@ -374,25 +374,16 @@ u32 ub_intr_vec_count(struct ub_entity *uent)
 }
 EXPORT_SYMBOL_GPL(ub_intr_vec_count);
 
-static int ub_prepare_msi_desc(struct ub_entity *uent, struct msi_desc *desc)
+static int ub_prepare_msi_desc(struct ub_entity *uent, struct msi_desc *desc, u32 num)
 {
 	void __iomem *vec_desc_addr;
-	u32 addr_cnt, vec_cnt;
-
-	addr_cnt = ub_intr_addr_count(uent);
-	if (addr_cnt == 0)
-		return -EINVAL;
-
-	vec_cnt = ub_intr_vec_count(uent);
-	if (vec_cnt == 0)
-		return -EINVAL;
 
 	desc->nvec_used = 1;
 	desc->ub_intr.intr_attrib.is_type1 = 0;
 	desc->ub_intr.addr_base = uent->intr_addr_base;
 	desc->ub_intr.vector_base = uent->intr_vector_base;
-	desc->ub_intr.addr_num = (u16)(addr_cnt - 1);
-	desc->ub_intr.vec_num = (u16)(vec_cnt - 1);
+	desc->ub_intr.addr_num = num >> 16;
+	desc->ub_intr.vec_num = num & 0xffff;
 
 	vec_desc_addr = ub_vector_desc_addr(desc);
 	desc->ub_intr.intr_attrib.mask = !!(readl(vec_desc_addr + UB_INTR_VECTOR_ADDR_INDEX) &
@@ -408,6 +399,7 @@ static int ub_setup_msi_descs(struct ub_entity *uent,
 	struct irq_affinity_desc *curmsk;
 	struct msi_desc desc;
 	int ret = 0, i;
+	u32 num;
 
 	memset(&desc, 0, sizeof(desc));
 
@@ -423,11 +415,16 @@ static int ub_setup_msi_descs(struct ub_entity *uent,
 		return msi_insert_msi_desc(&uent->dev, &desc);
 	}
 
+	/* INT_TYPE2 setup */
+	ret = ub_cfg_read_dword(uent, UB_NUM_OF_INTR_VECTOR_TBL, &num);
+	if (ret)
+		return -EINVAL;
+
 	for (i = 0, curmsk = masks; i < nvec; i++, curmsk++) {
 		desc.msi_index = entries ? entries[i].entry : i;
 		desc.ub_intr.intr_attrib.entry_nr = desc.msi_index;
 		desc.affinity = masks ? curmsk : NULL;
-		ret = ub_prepare_msi_desc(uent, &desc);
+		ret = ub_prepare_msi_desc(uent, &desc, num);
 		if (ret)
 			break;
 		ret = msi_insert_msi_desc(&uent->dev, &desc);

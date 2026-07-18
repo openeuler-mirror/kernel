@@ -62,6 +62,7 @@ EXPORT_SYMBOL(ubcore_alloc_token_id);
 int ubcore_free_token_id(struct ubcore_token_id *token_id)
 {
 	struct ubcore_device *dev;
+	uint32_t id;
 	int ret = 0;
 
 	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_FREE_TOKEN_ID);
@@ -82,6 +83,7 @@ int ubcore_free_token_id(struct ubcore_token_id *token_id)
 		UBCORE_PERF_TRACE_END(PERF_CORE_FREE_TOKEN_ID);
 		return -EBUSY;
 	}
+	id = token_id->token_id;
 	UBCORE_PERF_TRACE_BEGIN(PERF_UB_FREE_TOKEN_ID);
 	ret = dev->ops->free_token_id(token_id);
 	UBCORE_PERF_TRACE_END(PERF_UB_FREE_TOKEN_ID);
@@ -90,8 +92,7 @@ int ubcore_free_token_id(struct ubcore_token_id *token_id)
 		UBCORE_PERF_TRACE_END(PERF_CORE_FREE_TOKEN_ID);
 		return ret;
 	}
-	ubcore_log_info("[FREE_TOKEN_ID] Free_token_id is %u.",
-			token_id->token_id);
+	ubcore_log_info("[FREE_TOKEN_ID] Free_token_id is %u.", id);
 	UBCORE_PERF_TRACE_END(PERF_CORE_FREE_TOKEN_ID);
 	return ret;
 }

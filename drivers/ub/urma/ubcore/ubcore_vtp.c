@@ -932,11 +932,13 @@ static int ubcore_free_vtpn(struct ubcore_vtpn *vtpn)
 				vtpn->vtpn, atomic_read(&vtpn->use_cnt));
 		return 0;
 	}
+
 	ubcore_vtpn_kref_put(vtpn);
 	wait_for_completion(&vtpn->comp);
 	mutex_destroy(&vtpn->state_lock);
 
 	if (vtpn->tp_handle != 0) {
+		(void)ubcore_delete_tpid_priv(vtpn->ub_dev, vtpn->vtpn);
 		kfree(vtpn);
 		return 0;
 	}
@@ -950,12 +952,15 @@ static int ubcore_free_vtpn_ctrlplane(struct ubcore_vtpn *vtpn)
 				vtpn->vtpn, atomic_read(&vtpn->use_cnt));
 		return 0;
 	}
+
 	ubcore_vtpn_kref_put(vtpn);
 	wait_for_completion(&vtpn->comp);
 	mutex_destroy(&vtpn->state_lock);
 
 	if (vtpn->tp_handle == 0)
 		ubcore_log_err("Invalid tp_handle.\n");
+	else
+		(void)ubcore_delete_tpid_priv(vtpn->ub_dev, vtpn->vtpn);
 
 	kfree(vtpn);
 	return 0;
@@ -1058,7 +1063,7 @@ static struct ubcore_vtpn *ubcore_reuse_vtpn(struct ubcore_device *dev,
 			break;
 		}
 	}
-	ubcore_log_warn("failed to reuse vtpn:%u, use_cnt:%d", vtpn->vtpn,
+	ubcore_log_err_rl("failed to reuse vtpn:%u, use_cnt:%d", vtpn->vtpn,
 			atomic_read(&vtpn->use_cnt));
 	mutex_unlock(&vtpn->state_lock);
 	ubcore_vtpn_kref_put(vtpn);

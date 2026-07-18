@@ -13,6 +13,8 @@ struct ummu_nested_domain {
 	struct ummu_base_domain base_domain;
 	struct ummu_domain *s2_parent;
 	__le64 tecte[2];
+	/* belongs IOMMU framework, using for multi-instance traversal */
+	struct iommu_domain *domain;
 };
 
 static inline struct ummu_nested_domain *to_nested_domain(struct iommu_domain *dom)

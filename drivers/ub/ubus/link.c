@@ -435,7 +435,7 @@ static void ub_link_handle_event(struct ub_port *port, enum ub_link_event event)
 		ublc_link_down_handle(port);
 }
 
-static struct ub_port *ub_link_get_port_from_msg(void *pkt)
+static struct ub_port *ub_link_get_port_from_msg(void *pkt, struct ub_bus_controller *ubc)
 {
 	struct msg_pkt_header *header = (struct msg_pkt_header *)pkt;
 	struct link_msg_payload *payload;
@@ -444,7 +444,15 @@ static struct ub_port *ub_link_get_port_from_msg(void *pkt)
 	u32 seid;
 
 	seid = eid_gen(header->seid_h, header->seid_l);
-	uent = ub_get_ent_by_eid(seid);
+
+	/*
+	 * Ensure link events can be reported in a cluster scenario when
+	 * UB bus controller has not yet received notification message.
+	 */
+	if (ubc->cluster && !ub_entity_test_priv_flag(ubc->uent, UB_ENTITY_START))
+		uent = ub_entity_get(ubc->uent);
+	else
+		uent = ub_get_ent_by_eid(seid);
 	if (!uent) {
 		pr_warn("get no device by eid %u\n", seid);
 		return NULL;
@@ -474,7 +482,7 @@ static void ub_link_event_handler(struct ub_bus_controller *ubc, void *pkt, u16 
 		return;
 	}
 
-	port = ub_link_get_port_from_msg(pkt);
+	port = ub_link_get_port_from_msg(pkt, ubc);
 	if (!port)
 		return;
 

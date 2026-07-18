@@ -20,6 +20,7 @@ struct nf_queue_entry {
 #endif
 	struct nf_hook_state	state;
 	u16			size; /* sizeof(entry) + saved route keys */
+	KABI_EXTEND(bool nf_ct_is_unconfirmed)
 
 	/* extra space to store route keys */
 };

@@ -3067,6 +3067,12 @@ bool iommu_default_passthrough(void)
 }
 EXPORT_SYMBOL_GPL(iommu_default_passthrough);
 
+bool iommu_default_dma_strict(void)
+{
+	return iommu_dma_strict;
+}
+EXPORT_SYMBOL_GPL(iommu_default_dma_strict);
+
 const struct iommu_ops *iommu_ops_from_fwnode(struct fwnode_handle *fwnode)
 {
 	const struct iommu_ops *ops = NULL;

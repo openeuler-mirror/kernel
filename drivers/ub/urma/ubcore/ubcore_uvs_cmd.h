@@ -19,6 +19,7 @@
 #include "ubcore_cmd.h"
 #include "ubcore_log.h"
 #include "ubcore_priv.h"
+#include "ubcore_topo_info.h"
 
 #define UBCORE_UVS_CMD_MAGIC 'V'
 #define UBCORE_UVS_CMD _IOWR(UBCORE_UVS_CMD_MAGIC, 1, struct ubcore_cmd_hdr)
@@ -29,17 +30,74 @@
 #define UBCORE_CMD_MAX_MUE_NUM 128
 #define UBCORE_HOST_EID_BATCH_EID_MAX 32
 
+/* only for uvs control ubcore device ioctl */
+enum ubcore_uvs_mue_cmd {
+	UBCORE_CMD_CHANNEL_INIT = 1,
+	UBCORE_CMD_SET_MUE_CFG,
+	UBCORE_CMD_CREATE_TPG, /* initiator */
+	UBCORE_CMD_CREATE_VTP, /* initiator */
+	UBCORE_CMD_MODIFY_TPG,
+	UBCORE_CMD_MODIFY_TPG_MAP_VTP,
+	UBCORE_CMD_MODIFY_TPG_TP_CNT,
+	UBCORE_CMD_CREATE_TARGET_TPG, /* target */
+	UBCORE_CMD_MODIFY_TARGET_TPG,
+	UBCORE_CMD_DESTROY_VTP, /* initiator or target */
+	UBCORE_CMD_DESTROY_TPG, /* initiator or target */
+	UBCORE_CMD_ADD_SIP,
+	UBCORE_CMD_DEL_SIP,
+	UBCORE_CMD_MAP_VTP,
+	UBCORE_CMD_CREATE_UTP,
+	UBCORE_CMD_ONLY_CREATE_UTP,
+	UBCORE_CMD_DESTROY_UTP,
+	UBCORE_CMD_GET_DEV_FEATURE,
+	UBCORE_CMD_RESTORE_TP_ERROR_RSP,
+	UBCORE_CMD_RESTORE_TARGET_TP_ERROR_REQ,
+	UBCORE_CMD_RESTORE_TARGET_TP_ERROR_ACK,
+	UBCORE_CMD_RESTORE_TP_SUSPEND,
+	UBCORE_CMD_CHANGE_TP_TO_ERROR,
+	UBCORE_NOUSE_1,
+	UBCORE_NOUSE_2,
+	UBCORE_CMD_CONFIG_FUNCTION_MIGRATE_STATE,
+	UBCORE_CMD_SET_VPORT_CFG,
+	UBCORE_CMD_MODIFY_VTP,
+	UBCORE_CMD_GET_DEV_INFO,
+	UBCORE_CMD_CHANGE_TPG_TO_ERROR,
+	UBCORE_CMD_ALLOC_EID,
+	UBCORE_CMD_DEALLOC_EID,
+	UBCORE_CMD_QUERY_UE_IDX,
+	UBCORE_CMD_CONFIG_DSCP_VL,
+	UBCORE_CMD_MAP_TARGET_VTP,
+	UBCORE_CMD_LIST_MIGRATE_ENTRY,
+	UBCORE_CMD_QUERY_DSCP_VL,
+	UBCORE_CMD_DFX_QUERY_STATS,
+	UBCORE_CMD_DFX_QUERY_RES,
+	UBCORE_CMD_DISCOVER_DMAC,
+	UBCORE_CMD_CLEAR_VICE_TPG,
+	UBCORE_CMD_USER_CTL,
+	UBCORE_CMD_MUE_LAST
+};
+
 enum ubcore_uvs_global_cmd {
-	UBCORE_CMD_SET_TOPO = 1,
-	UBCORE_CMD_GET_ROUTE_LIST = 2,
-	UBCORE_CMD_GET_TOPO = 3,
-	UBCORE_CMD_GET_PATH_SET = 4,
-	UBCORE_CMD_INSERT_MAIN_UE_EID = 5,
-	UBCORE_CMD_DELETE_MAIN_UE_EID = 6,
-	UBCORE_CMD_LOOKUP_MAIN_UE_EID = 7,
-	UBCORE_CMD_FLUSH_MAIN_UE_EID = 8,
-	UBCORE_CMD_INSERT_MAIN_UE_EID_BATCH = 9,
-	UBCORE_CMD_INSERT_HOST_EID_BATCH = 10,
+	UBCORE_CMD_REGISTER_UVS = 1,
+	UBCORE_CMD_UNREGISTER_UVS,
+	UBCORE_CMD_GET_VTP_TABLE_CNT,
+	UBCORE_CMD_RESTORE_TABLE,
+	UBCORE_CMD_GET_TPG_TABLE_CNT,
+	UBCORE_CMD_RESTORE_TPG_TABLE,
+	UBCORE_CMD_GET_UE_TABLE_CNT,
+	UBCORE_CMD_RESTORE_UE_TABLE,
+	UBCORE_CMD_GLOBAL_SET_UPI,
+	UBCORE_CMD_GLOBAL_SHOW_UPI,
+	UBCORE_CMD_LIST_MUE,
+	UBCORE_CMD_SET_TOPO,
+	UBCORE_CMD_GET_TOPO_RESERVE,
+	UBCORE_CMD_GET_PATH_SET,
+	UBCORE_CMD_INSERT_MAIN_UE_EID,
+	UBCORE_CMD_DELETE_MAIN_UE_EID,
+	UBCORE_CMD_LOOKUP_MAIN_UE_EID,
+	UBCORE_CMD_FLUSH_MAIN_UE_EID,
+	UBCORE_CMD_INSERT_MAIN_UE_EID_BATCH,
+	UBCORE_CMD_INSERT_HOST_EID_BATCH,
 	UBCORE_CMD_GLOBAL_LAST
 };
 
@@ -50,17 +108,6 @@ struct ubcore_cmd_set_topo {
 	} in;
 };
 
-struct ubcore_cmd_get_topo {
-	struct {
-		void *topo_map;
-	} out;
-};
-
-struct ubcore_cmd_get_route_list {
-	struct ubcore_route in;
-	struct ubcore_route_list out;
-};
-
 struct ubcore_cmd_get_path_set {
 	struct {
 		union ubcore_eid src_bonding_eid;
@@ -68,7 +115,9 @@ struct ubcore_cmd_get_path_set {
 		enum ubcore_tp_type tp_type;
 		bool iodie_level;
 	} in;
-	struct ubcore_path_set out;
+	struct {
+		struct ubcore_path_set path_set;
+	} out;
 };
 
 struct ubcore_cmd_main_ue_eid_entry {
@@ -112,6 +161,7 @@ struct ubcore_cmd_host_eid_batch {
 		union ubcore_eid host_eid;
 		uint32_t eid_num;
 		union ubcore_eid eids[UBCORE_HOST_EID_BATCH_EID_MAX];
+		union ubcore_net_addr_union cnas[UBCORE_HOST_EID_BATCH_EID_MAX];
 	} in;
 };
 

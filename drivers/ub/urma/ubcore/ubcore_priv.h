@@ -38,6 +38,7 @@
 #define UBCORE_DRV_TP_THRESHOLD_MS 1
 #define UBCORE_EXC_THRESHOLD_MS    20
 #define UBCORE_WQ_THRESHOLD_MS     10
+#define UBCORE_CONN_RETRY_MAX      3
 
 enum ubcore_uvs_state {
 	UBCORE_UVS_STATE_DEAD = 0,
@@ -98,8 +99,7 @@ struct ubcore_global_file {
 
 struct ubcore_host_info {
 	union ubcore_eid eid;
-	/* represents CNA as a ubcore_net_addr_union for interface consistency */
-	union ubcore_net_addr_union cna;
+	union ubcore_net_addr_union cna; // CNA address
 };
 
 extern uint32_t ubcore_max_retry_cnt;

@@ -1585,7 +1585,6 @@ void folio_put_cma(struct folio *folio);
 struct folio *folio_alloc_cma_mpol(gfp_t gfp, unsigned int order,
 		struct mempolicy *pol, pgoff_t ilx, int nid, bool use_smart_grid);
 void folio_put_cma_fallback(struct folio *folio);
-
 #else /* CONFIG_CMA_FOLIO */
 static inline struct folio *folio_alloc_cma(gfp_t gfp, unsigned int order,
 					int preferred_nid, nodemask_t *nodemask)

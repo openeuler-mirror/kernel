@@ -29,7 +29,7 @@ extern const struct ummu_device_helper ummu_helper;
 #define UMMU_CTRL_PAGE_SIZE ((PAGE_SIZE == SZ_4K) ? SZ_4K : SZ_64K)
 
 #define UMMU_GFP(gfp) \
-	(IS_ENABLED(CONFIG_UB_HIGHUSER_MOVABLE) ? GFP_HIGHUSER_MOVABLE : gfp)
+	(IS_ENABLED(CONFIG_UB_UMMU_HIGHUSER_MOVABLE_ALLOC) ? GFP_HIGHUSER_MOVABLE : gfp)
 
 /* target context table structures */
 struct ummu_l1_tct_desc {
@@ -54,6 +54,7 @@ struct ummu_tct_desc {
 	u32	tcr0;
 	u32	tcr1;
 	u64	mair;
+	u8		matt_bypass;
 	u8		mapt_en;
 	u8		token_en;
 	u8		mapt_mode;
@@ -193,7 +194,6 @@ struct ummu_capability {
 #define UMMU_OPT_UMAU			(1UL << 7)
 #define UMMU_OPT_DOUBLE_TLBI		(1UL << 8)
 #define UMMU_OPT_TLBI_LIMIT_SCALE	(1UL << 9)
-#define UMMU_OPT_MCMDQ_DECREASE		(1UL << 10)
 	u32 options;
 
 #define UMMU_MAX_ASIDS			(1UL << 16)
@@ -350,6 +350,7 @@ struct ummu_domain {
 	bool dirty_tracking;
 	struct ummu_domain_cfgs cfgs;
 	struct kvm *kvm;
+	u16 vmid;
 	bool tlbi_asid;
 };
 

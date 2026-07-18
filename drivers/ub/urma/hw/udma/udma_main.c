@@ -48,6 +48,9 @@ bool dump_aux_info;
 bool hugepage_enable = true;
 bool jfc_share_enable = true;
 
+struct xarray g_seg_tree_table;
+struct mutex g_seg_tree_mutex;
+
 static const struct auxiliary_device_id udma_id_table[] = {
 	{
 		.name = UBASE_ADEV_NAME ".udma",
@@ -161,6 +164,18 @@ static void udma_set_dev_caps(struct ubcore_device_attr *attr, struct udma_dev *
 	attr->dev_cap.feature.bs.ipourma_en = udma_dev->caps.ipourma_en;
 	attr->dev_cap.feature.bs.ctp_en = udma_dev->caps.ctp_en;
 	attr->dev_cap.feature.bs.uboe = !ubase_adev_ubl_supported(udma_dev->comdev.adev);
+	attr->dev_cap.rm_tp_cap.bs.rtp = (ubase_get_ub_feature() &
+					  UBASE_URMA_RTP_ROI) ? 1 : 0;
+	attr->dev_cap.rm_tp_cap.bs.ctp = (ubase_get_ub_feature() &
+					  UBASE_URMA_CTP_ROI) ? 1 : 0;
+	attr->dev_cap.rc_tp_cap.bs.ctp = (ubase_get_ub_feature() &
+					  UBASE_URMA_CTP_ROL) ? 1 : 0;
+	attr->dev_cap.rc_tp_cap.bs.rtp = (ubase_get_ub_feature() &
+					  UBASE_URMA_RTP_ROL) ? 1 : 0;
+	attr->dev_cap.um_tp_cap.bs.ctp = (ubase_get_ub_feature() &
+					  UBASE_URMA_CTP_UNO) ? 1 : 0;
+	attr->dev_cap.um_tp_cap.bs.utp = (ubase_get_ub_feature() &
+					  UBASE_URMA_UTP_UNO) ? 1 : 0;
 }
 
 static int udma_query_device_attr(struct ubcore_device *dev,
@@ -386,7 +401,6 @@ void udma_destroy_tables(struct udma_dev *udma_dev)
 	if (!udma_dev->is_ue)
 		udma_destroy_eid_guid_table(udma_dev);
 
-	udma_destroy_seg_tree_table(udma_dev);
 	udma_destroy_eid_table(udma_dev);
 	mutex_destroy(&udma_dev->disable_ue_rx_mutex);
 	if (!ida_is_empty(&udma_dev->rsvd_jetty_ida_table.ida))
@@ -484,8 +498,6 @@ int udma_init_tables(struct udma_dev *udma_dev)
 	ida_init(&udma_dev->rsvd_jetty_ida_table.ida);
 	mutex_init(&udma_dev->disable_ue_rx_mutex);
 	udma_init_managed_by_ctrl_cpu_table(udma_dev);
-	mutex_init(&udma_dev->seg_tree_mutex);
-	xa_init(&udma_dev->seg_tree_table);
 
 	if (udma_dev->is_ue)
 		return 0;
@@ -1657,6 +1669,9 @@ static int __init udma_init(void)
 {
 	int ret;
 
+	mutex_init(&g_seg_tree_mutex);
+	xa_init(&g_seg_tree_table);
+
 	ret = auxiliary_driver_register(&udma_drv);
 	if (ret)
 		pr_err("failed to register auxiliary driver\n");
@@ -1668,6 +1683,7 @@ static void __exit udma_exit(void)
 {
 	is_rmmod = true;
 	auxiliary_driver_unregister(&udma_drv);
+	udma_destroy_seg_tree_table();
 }
 
 module_init(udma_init);

@@ -18,6 +18,7 @@
 #include "queue.h"
 
 #define ENTRY_DWORDS_TO_SIZE(dwords) ((dwords) << 3)
+#define CMD_TLBI_DOUBLE_NUM 2
 
 struct ummu_queue_poll {
 	ktime_t timeout;
@@ -298,8 +299,6 @@ static int ummu_mcmdq_init(struct ummu_device *ummu)
 		log2size = ummu->cap.mcmdq_log2size;
 	} else {
 		ummu->nr_mcmdq = 1UL << ummu->cap.mcmdq_log2num;
-		if (ummu->cap.options & UMMU_OPT_MCMDQ_DECREASE)
-			ummu->nr_mcmdq -= 1;
 		log2size = MCMDQ_MAX_SZ_SHIFT + order_base_2(
 				num_possible_cpus() / ummu->nr_mcmdq);
 	}
@@ -599,7 +598,7 @@ static int ummu_mcmdq_build_nop_cmd(u64 *cmd, struct ummu_mcmdq_ent *ent)
 int ummu_mcmdq_build_cmd(struct ummu_device *ummu, u64 *cmd,
 			 struct ummu_mcmdq_ent *ent)
 {
-	memset(cmd, 0, 1 << MCMDQ_ENT_SZ_SHIFT);
+	memset(cmd, 0, 1U << MCMDQ_ENT_SZ_SHIFT);
 	cmd[0] |= FIELD_PREP(CMD_0_OP, ent->opcode);
 
 	/* build cmd method for different cmds */
@@ -1281,7 +1280,7 @@ static int __ummu_mcmdq_issue_cmd(struct ummu_device *ummu,
 
 	if ((ummu->cap.options & UMMU_OPT_DOUBLE_TLBI) && non_va_range_tlbi(ent->opcode)) {
 		memcpy(cmds + MCMDQ_ENT_DWORDS, cmds, MCMDQ_ENT_DWORDS * sizeof(u64));
-		num = 2;
+		num = CMD_TLBI_DOUBLE_NUM;
 	}
 	return ummu_mcmdq_issue_cmdlist(ummu, cmds, num, sync);
 }

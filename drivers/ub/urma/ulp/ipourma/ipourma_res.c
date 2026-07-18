@@ -665,19 +665,40 @@ int ipourma_init_tjetty_hmap(struct net_device *dev)
 static int ipourma_jetty_set_priority(struct ipourma_dev_priv *priv,
 					struct ubcore_jetty_cfg *jetty_cfg)
 {
-	if (jetty_cfg->trans_mode == UBCORE_TP_RM) {
-		jetty_cfg->priority = ipourma_ctp_sl;
-		netdev_info(priv->dev,
-					"ipourma create jetty set priority : %d, ty_type : ctp\n",
-					ipourma_ctp_sl);
-	} else if (jetty_cfg->trans_mode == UBCORE_TP_UM) {
-		jetty_cfg->priority = ipourma_utp_sl;
-		netdev_info(priv->dev,
-					"ipourma create jetty set priority : %d, ty_type : utp\n",
-					ipourma_utp_sl);
-	} else
-		return -EINVAL;
-	return IPOURMA_OK;
+	struct ubcore_device_attr attr = {0};
+	int ctp_en, ret;
+
+	ret = ubcore_query_device_attr(priv->urma_dev, &attr);
+	if (ret != 0)
+		return ret;
+	ctp_en = priv->urma_dev->attr.dev_cap.feature.bs.ctp_en;
+	if (ctp_en == 1) {
+		if (ipourma_ctp_sl >= 0 &&
+		    ipourma_ctp_sl < UBCORE_MAX_PRIORITY_CNT &&
+		    attr.dev_cap.priority_info[ipourma_ctp_sl].tp_type.bs.ctp == 1) {
+			jetty_cfg->priority = ipourma_ctp_sl;
+			netdev_info(priv->dev,
+				"ipourma create jetty set priority : %d, ty_type : ctp\n",
+				ipourma_ctp_sl);
+			return IPOURMA_OK;
+		}
+	} else {
+		if (ipourma_utp_sl >= 0 &&
+		    ipourma_utp_sl < UBCORE_MAX_PRIORITY_CNT &&
+		    (attr.dev_cap.priority_info[ipourma_utp_sl].tp_type.bs.utp == 1 ||
+			    attr.dev_cap.priority_info[ipourma_utp_sl].tp_type.bs.rtp == 1)) {
+			jetty_cfg->priority = ipourma_utp_sl;
+			netdev_info(priv->dev,
+				"ipourma create jetty set priority : %d, ty_type : utp\n",
+				ipourma_utp_sl);
+			return IPOURMA_OK;
+		}
+	}
+
+	netdev_err(priv->dev, "ipourma set jetty priority failed. the priority of %s cannot be set to %d\n",
+		   ctp_en ? "ctp" : "utp", ctp_en ? ipourma_ctp_sl : ipourma_utp_sl);
+
+	return -EINVAL;
 }
 
 static struct ubcore_jfr *ipourma_create_jfr(
@@ -685,9 +706,13 @@ static struct ubcore_jfr *ipourma_create_jfr(
 {
 	struct ubcore_jfr_cfg jfr_cfg = { 0 };
 	struct ipourma_dev_priv *priv = netdev_priv(dev);
+	int ctp_en;
+
+	ctp_en = priv->urma_dev->attr.dev_cap.feature.bs.ctp_en;
 
 	jfr_cfg.depth = depth;
 	jfr_cfg.flag.bs.token_policy = UBCORE_TOKEN_NONE;
+	jfr_cfg.flag.bs.order_type = ctp_en ? UBCORE_OL : UBCORE_DEF_ORDER;
 	jfr_cfg.trans_mode = priv->urma_transport_mode;
 	jfr_cfg.eid_index = priv->eid_info[eid_index].eid_index;
 	jfr_cfg.max_sge = IPOURMA_MAX_URMA_RECV_SGES;
@@ -703,15 +728,19 @@ static struct ubcore_jetty *ipourma_create_jetty(struct net_device *dev,
 	struct ubcore_jetty_cfg jetty_cfg = {0};
 	int max_send_sge;
 	int max_recv_sge;
+	int ctp_en;
 
 	max_send_sge = (IPOURMA_MAX_TX_SGES < IPOURMA_MAX_URMA_SEND_SGES) ?
 		IPOURMA_MAX_TX_SGES : IPOURMA_MAX_URMA_SEND_SGES;
 	max_recv_sge = (IPOURMA_MAX_RX_SGES < IPOURMA_MAX_URMA_RECV_SGES) ?
 		IPOURMA_MAX_RX_SGES : IPOURMA_MAX_URMA_RECV_SGES;
 
+	ctp_en = priv->urma_dev->attr.dev_cap.feature.bs.ctp_en;
 	/* some values should dynamically get from the device */
 	jetty_cfg.id = jetty_id;
 	jetty_cfg.flag.bs.share_jfr = 1;
+	if (ctp_en == 1)
+		jetty_cfg.flag.bs.order_type = UBCORE_OL;
 	jetty_cfg.trans_mode = priv->urma_transport_mode;
 	jetty_cfg.eid_index = priv->eid_info[eid_index].eid_index;
 	jetty_cfg.jfs_depth = IPOURMA_JFS_DEPTH;
@@ -834,12 +863,10 @@ void ipourma_uninit_urma_resources(struct net_device *dev)
 
 static int ipourma_init_misc(struct ipourma_dev_priv *priv)
 {
-	int ctp_en = 0;
-
 	priv->max_send_sge = IPOURMA_MAX_URMA_SEND_SGES;
 	priv->urma_mtu = IPOURMA_URMA_MAX_MTU;
 	priv->urma_op_mode = UBCORE_OPC_SEND;
-	priv->urma_transport_mode = ctp_en ? UBCORE_TP_RM : UBCORE_TP_UM;
+	priv->urma_transport_mode = UBCORE_TP_UM;
 
 	priv->tjetty_lru.tjetty_wq = alloc_workqueue("ipourma_tjetty_wq", WQ_MEM_RECLAIM, 0);
 	if (IS_ERR_OR_NULL(priv->tjetty_lru.tjetty_wq))

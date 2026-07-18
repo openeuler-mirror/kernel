@@ -491,6 +491,7 @@ void ubcore_put_device(struct ubcore_device *dev)
 	if (atomic_dec_and_test(&dev->use_cnt))
 		complete(&dev->comp);
 }
+EXPORT_SYMBOL(ubcore_put_device);
 
 struct ubcore_device *
 ubcore_find_mue_device_legacy(enum ubcore_transport_type type)
@@ -639,13 +640,6 @@ static inline void ubcore_free_tp_state_ht_obj(void *obj)
 static inline void ubcore_free_tp_reuse_ht_obj(void *obj)
 {
 	ubcore_free_driver_obj(obj, UBCORE_HT_TPID_REUSE);
-}
-
-static void ubcore_tpid_reuse_get(void *obj)
-{
-	struct ubcore_tpid_reuse *entry = obj;
-
-	kref_get(&entry->ref_cnt);
 }
 
 static struct ubcore_ht_param g_ht_params[] = {
@@ -1509,10 +1503,9 @@ static bool ubcore_preprocess_event(struct ubcore_event *event)
 			event->element.tpid_info.tpid);
 
 		cfg.flushdone_cfg->tpid = event->element.tpid_info.tpid;
-		if (ubcore_modify_tpid(event->ub_dev, UBCORE_TPID_STATE_RESET, &cfg) != 0)
-			return false;
-		else
-			return true;
+		(void)ubcore_modify_tpid(event->ub_dev, UBCORE_TPID_STATE_RESET, &cfg);
+
+		return true;
 	}
 
 	return false;

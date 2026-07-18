@@ -9455,28 +9455,36 @@ static void set_task_select_cpus(struct task_struct *p, int *idlest_cpu,
 #endif
 
 #ifdef CONFIG_SCHED_SOFT_DOMAIN
-static int wake_soft_domain(struct task_struct *p, int target)
+static __always_inline int wake_soft_domain(struct task_struct *p, int target)
 {
-	struct cpumask *mask = this_cpu_cpumask_var_ptr(select_rq_mask);
-	struct soft_domain_ctx *ctx = NULL;
+	struct soft_domain_ctx *ctx = task_group(p)->sf_ctx;
+	struct cpumask *span;
+	const struct cpumask *allowed_cpus;
 
-	ctx = task_group(p)->sf_ctx;
 	if (!ctx || ctx->policy == 0)
 		goto out;
 
+	span = to_cpumask(ctx->span);
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
-	cpumask_and(mask, to_cpumask(ctx->span), p->select_cpus);
+	allowed_cpus = p->select_cpus;
 #else
-	cpumask_and(mask, to_cpumask(ctx->span), p->cpus_ptr);
+	allowed_cpus = p->cpus_ptr;
 #endif
-	cpumask_and(mask, mask, cpu_active_mask);
-	if (cpumask_empty(mask) || cpumask_test_cpu(target, mask))
+
+	if (likely(cpumask_test_cpu(target, span) &&
+		   cpumask_test_cpu(target, allowed_cpus) &&
+		   cpu_active(target))) {
 		goto out;
-	else
+	} else {
+		struct cpumask *mask = this_cpu_cpumask_var_ptr(select_rq_mask);
+
+		cpumask_and(mask, span, allowed_cpus);
+		cpumask_and(mask, mask, cpu_active_mask);
+		if (cpumask_empty(mask))
+			goto out;
 		target = cpumask_any_distribute(mask);
-
+	}
 out:
-
 	return target;
 }
 #endif
@@ -12367,7 +12375,7 @@ static inline void update_sg_wakeup_stats(struct sched_domain *sd,
 	if (sd->flags & SD_ASYM_CPUCAPACITY)
 		sgs->group_misfit_task_load = 1;
 
-	for_each_cpu(i, sched_group_span(group)) {
+	for_each_cpu_and(i, sched_group_span(group), p->cpus_ptr) {
 		struct rq *rq = cpu_rq(i);
 		unsigned int local;
 

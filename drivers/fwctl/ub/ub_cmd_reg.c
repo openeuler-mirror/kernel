@@ -720,8 +720,19 @@ static int ubctl_query_port_pkt_stats(struct ubctl_dev *ucdev,
 				      struct ubctl_func_dispatch *query_func)
 {
 	struct ubctl_query_dp query_dp[] = {
-		{ UBCTL_QUERY_PORT_PKT_STATS_DFX, UBCTL_PORT_PKT_STATS_LEN,
-		  UBCTL_READ, NULL, 0 },
+		{ UBCTL_QUERY_PORT_PKT_STATS_DFX, UBCTL_PORT_PKT_STATS_LEN, UBCTL_READ, NULL, 0 },
+	};
+
+	return ubctl_query_data(ucdev, query_cmd_param, query_func,
+				query_dp, ARRAY_SIZE(query_dp));
+}
+
+static int ubctl_query_ta_wqe_time(struct ubctl_dev *ucdev,
+				   struct ubctl_query_cmd_param *query_cmd_param,
+				   struct ubctl_func_dispatch *query_func)
+{
+	struct ubctl_query_dp query_dp[] = {
+		{ UBCTL_QUERY_TA_WQE_TIME_DFX, UBCTL_TA_WQE_TIME_LEN, UBCTL_READ, NULL, 0 },
 	};
 
 	return ubctl_query_data(ucdev, query_cmd_param, query_func,
@@ -772,6 +783,7 @@ static struct ubctl_func_dispatch g_ubctl_query_reg[] = {
 	  ubctl_query_data_deal },
 	{ UTOOL_CMD_QUERY_TA_ABN_STATS, ubctl_query_ta_abn_stats,
 	  ubctl_query_data_deal },
+	{ UTOOL_CMD_QUERY_TA_WQE_TIME, ubctl_query_ta_wqe_time, ubctl_query_data_deal },
 
 	{ UTOOL_CMD_QUERY_BA, ubctl_query_ba_data, ubctl_query_data_deal },
 	{ UTOOL_CMD_QUERY_BA_PKT_STATS, ubctl_query_ba_pkt_stats_data,

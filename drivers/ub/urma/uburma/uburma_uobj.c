@@ -24,8 +24,6 @@
 #include "uburma_mmap.h"
 #include "uburma_uobj.h"
 
-static bool g_is_zero_fd;
-
 static void uobj_free(struct kref *ref)
 {
 	kfree_rcu(container_of(ref, struct uburma_uobj, ref), rcu);
@@ -381,13 +379,14 @@ static struct uburma_uobj *uobj_fd_alloc_begin(const struct uobj_type *type,
 	if (new_fd < 0)
 		return ERR_PTR(new_fd);
 
-	if (new_fd == 0) {
-		new_fd = get_unused_fd_flags(O_RDWR | O_CLOEXEC);
-		if (new_fd < 0)
-			return ERR_PTR(new_fd);
-		g_is_zero_fd = true;
-	}
-
+	/* Used to retry get_unused_fd_flags if new_fd happens to be 0.
+	 * This aims to avoid using new_fd = 0, as it may be misused by user
+	 * if they pass an fd = 0 for not passing a fd to core mode.
+	 * In this case, fd = 0 will be incorrectly linked with the new_fd
+	 * which was obtained by get_unused_fd_flags. However, fd of id 0
+	 * can be used normally just as other fd, and user now passes -1 instead of 0,
+	 * so retry get_unused_fd_flags is unnecessary when new_fd = 0.
+	 */
 	uobj = alloc_uobj(ufile, type);
 	if (IS_ERR(uobj)) {
 		put_unused_fd(new_fd);
@@ -628,7 +627,6 @@ int __must_check uobj_remove_commit_batch(struct uburma_uobj **uobj_arr,
 
 void uburma_init_uobj_context(struct uburma_file *ufile)
 {
-	g_is_zero_fd = false;
 	ufile->cleanup_reason = 0;
 	idr_init(&ufile->idr);
 	spin_lock_init(&ufile->idr_lock);
@@ -654,8 +652,12 @@ static inline void do_clean_uobj(struct uburma_uobj *obj,
 	list_del_init(&obj->list);
 
 	/* uburma_close_uobj_fd will also try lock the uobj for write */
-	if (uobj_type_is_fd(obj))
+	if (uobj_type_is_fd(obj)) {
+		/* paired with kref_get in uobj_fd_alloc_begin */
+		kref_put(&obj->ufile->ref, uburma_release_file);
+		obj->ufile = NULL; /* prevent double release in delete callback */
 		uobj_unlock(obj, true); /* match with uobj_try_lock */
+	}
 
 	/* put the ref we took when we created the object */
 	uobj_put(obj);
@@ -681,8 +683,12 @@ static void do_clean_uobj_batch(struct uburma_uobj **obj_arr, int arr_num,
 		obj = obj_arr[i];
 		list_del_init(&obj->list);
 		/* uburma_close_uobj_fd will also try lock the uobj for write */
-		if (uobj_type_is_fd(obj))
+		if (uobj_type_is_fd(obj)) {
+			/* paired with kref_get in uobj_fd_alloc_begin */
+			kref_put(&obj->ufile->ref, uburma_release_file);
+			obj->ufile = NULL; /* prevent double release in delete callback */
 			uobj_unlock(obj, true); /* match with uobj_try_lock */
+		}
 		/* put the ref we took when we created the object */
 		uobj_put(obj);
 	}
@@ -715,13 +721,17 @@ void uburma_cleanup_uobjs(struct uburma_file *ufile,
 			len++;
 		}
 		mutex_unlock(&ufile->uobjects_lock);
-
+		/* Only calloc obj_arr if the corresponding enable_batch_class is set to true.*/
 		for (i = 0; i < BATCH_DELETE_NUM; ++i) {
-			obj_arr[i] = kcalloc(len, sizeof(struct uburma_uobj *),
-					     GFP_KERNEL);
-			if (!obj_arr[i])
-				ubu_dev->batch_attr.enable_batch_class[i] =
-					false;
+			if (ubu_dev->batch_attr.enable_batch_class[i])
+				obj_arr[i] = kcalloc(len, sizeof(struct uburma_uobj *), GFP_KERNEL);
+				/* batch_attr.enable_batch_class is used to determine whether
+				 * current class uses batch mode. Since enable_batch_class is a
+				 * device granularity variable, comparing to thread granularity
+				 * of obj_arr, we skip setting enable_batch_class[i] to false
+				 * when kcalloc allocation fails.
+				 * Instead, we use obj_arr[i] != NULL to judge later.
+				 */
 		}
 	}
 
@@ -734,7 +744,8 @@ void uburma_cleanup_uobjs(struct uburma_file *ufile,
 				class_id = obj->class_id;
 				if (class_id == UOBJ_CLASS_JETTY &&
 				    ubu_dev->batch_attr.enable_batch_class
-					    [BATCH_DELETE_JETTY]) {
+					    [BATCH_DELETE_JETTY] &&
+					obj_arr[BATCH_DELETE_JETTY] != NULL) {
 					obj_arr[BATCH_DELETE_JETTY]
 					       [arr_num[BATCH_DELETE_JETTY]] =
 						       obj;
@@ -742,7 +753,8 @@ void uburma_cleanup_uobjs(struct uburma_file *ufile,
 					continue;
 				} else if (class_id == UOBJ_CLASS_JFS &&
 					   ubu_dev->batch_attr.enable_batch_class
-						   [BATCH_DELETE_JFS]) {
+						   [BATCH_DELETE_JFS] &&
+					obj_arr[BATCH_DELETE_JFS] != NULL) {
 					obj_arr[BATCH_DELETE_JFS]
 					       [arr_num[BATCH_DELETE_JFS]] =
 						       obj;
@@ -750,7 +762,8 @@ void uburma_cleanup_uobjs(struct uburma_file *ufile,
 					continue;
 				} else if (class_id == UOBJ_CLASS_JFR &&
 					   ubu_dev->batch_attr.enable_batch_class
-						   [BATCH_DELETE_JFR]) {
+						   [BATCH_DELETE_JFR] &&
+					obj_arr[BATCH_DELETE_JFR] != NULL) {
 					obj_arr[BATCH_DELETE_JFR]
 					       [arr_num[BATCH_DELETE_JFR]] =
 						       obj;
@@ -758,7 +771,8 @@ void uburma_cleanup_uobjs(struct uburma_file *ufile,
 					continue;
 				} else if (class_id == UOBJ_CLASS_JFC &&
 					   ubu_dev->batch_attr.enable_batch_class
-						   [BATCH_DELETE_JFC]) {
+						   [BATCH_DELETE_JFC] &&
+					obj_arr[BATCH_DELETE_JFC] != NULL) {
 					obj_arr[BATCH_DELETE_JFC]
 					       [arr_num[BATCH_DELETE_JFC]] =
 						       obj;
@@ -785,15 +799,12 @@ void uburma_cleanup_uobjs(struct uburma_file *ufile,
 	}
 
 	for (i = 0; i < BATCH_DELETE_NUM; ++i) {
-		if (ubu_dev->batch_attr.enable_batch_class[i])
+		/* Only free obj_arr if the corresponding enable_batch_class is set to true. */
+		if (ubu_dev->batch_attr.enable_batch_class[i] && obj_arr[i] != NULL)
 			kfree(obj_arr[i]);
 	}
 
-	if (g_is_zero_fd == true) {
-		put_unused_fd(0);
-		g_is_zero_fd = false;
-	}
-
+	/* put_unused_fd for fd = 0 is delete here, since fd = 0 is treated just as other fd. */
 	up_write(&ufile->cleanup_rwsem);
 }
 
@@ -1292,6 +1303,7 @@ static int uburma_hot_unplug_jfae(struct uburma_uobj *uobj,
 	spin_unlock_irq(&jfe->lock);
 	ubcore_unregister_event_handler(jfae->dev, &jfae->event_handler);
 
+	uburma_uninit_jfe(jfe);
 	return 0;
 }
 
@@ -1378,7 +1390,7 @@ declare_uobj_class(UOBJ_CLASS_JETTY,
 					   uburma_free_jetty,
 					   uburma_free_jetty_batch));
 declare_uobj_class(UOBJ_CLASS_JETTY_GRP,
-		   &uobj_type_alloc_idr(sizeof(struct uburma_jetty_grp_uobj), 1,
+		   &uobj_type_alloc_idr(sizeof(struct uburma_jetty_grp_uobj), 2,
 					uburma_free_jetty_grp));
 declare_uobj_class(UOBJ_CLASS_TARGET_JFR,
 		   &uobj_type_alloc_idr(sizeof(struct uburma_uobj), 0,

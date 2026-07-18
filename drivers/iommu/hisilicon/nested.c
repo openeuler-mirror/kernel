@@ -149,7 +149,7 @@ ummu_viommu_alloc_domain_nested(struct iommu_domain *parent, u32 flags,
 }
 
 static int ummu_fix_user_cmd(struct ummu_device *ummu,
-			    u64 *cmd, u32 tecte_tag)
+			    u64 *cmd, u32 tecte_tag, u16 vmid)
 {
 	u8 opcode;
 	int i;
@@ -164,6 +164,7 @@ static int ummu_fix_user_cmd(struct ummu_device *ummu,
 	case CMD_TLBI_NS_OS_ALL:
 	case CMD_TLBI_HYP_TID:
 	case CMD_TLBI_HYP_VA:
+	case CMD_TLBI_HYP_ASID_U:
 		break;
 	case CMD_PLBI_OS_EID:
 	case CMD_PLBI_OS_EIDTID:
@@ -187,6 +188,10 @@ static int ummu_fix_user_cmd(struct ummu_device *ummu,
 		cmd[2] &= ~CMD_CFGI_2_TECTE_TAG;
 		cmd[2] |= FIELD_PREP(CMD_CFGI_2_TECTE_TAG, tecte_tag);
 		break;
+	case CMD_TLBI_OS_ASID_U:
+		cmd[0] &= ~CMD_TLBI_0_VMID;
+		cmd[0] |= FIELD_PREP(CMD_TLBI_0_VMID, vmid);
+		break;
 	default:
 		return -EIO;
 	}
@@ -204,10 +209,12 @@ int ummu_viommu_cache_invalidate_user(struct iommu_domain *domain,
 	struct iommufd_viommu_ummu_invalidate *end;
 	struct ummu_device *ummu;
 	u64 tecte_tag;
+	u16 vmid;
 	int ret;
 
 	nested_domain = to_nested_domain(domain);
 	tecte_tag = nested_domain->s2_parent->cfgs.tecte_tag;
+	vmid = nested_domain->s2_parent->vmid;
 
 	ummu = core_to_ummu_device(nested_domain->base_domain.core_dev);
 
@@ -225,7 +232,7 @@ int ummu_viommu_cache_invalidate_user(struct iommu_domain *domain,
 
 	last = cmds;
 	while (cur != end) {
-		ret = ummu_fix_user_cmd(ummu, cur->cmd, tecte_tag);
+		ret = ummu_fix_user_cmd(ummu, cur->cmd, tecte_tag, vmid);
 		if (ret)
 			goto out;
 

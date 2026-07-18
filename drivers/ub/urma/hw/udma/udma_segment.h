@@ -16,6 +16,8 @@ struct udma_segment {
 	uint32_t tid;
 	uint64_t addr;
 	uint64_t length;
+	uint64_t vm_start;
+	uint64_t vm_end;
 };
 
 static inline struct udma_segment *to_udma_seg(struct ubcore_target_seg *seg)
@@ -31,6 +33,6 @@ struct ubcore_target_seg *udma_import_seg(struct ubcore_device *dev,
 					  struct ubcore_target_seg_cfg *cfg,
 					  struct ubcore_udata *udata);
 int udma_unimport_seg(struct ubcore_target_seg *tseg);
-void udma_destroy_seg_tree_table(struct udma_dev *udma_dev);
+void udma_destroy_seg_tree_table(void);
 
 #endif /* __UDMA_SEGMENT_H__ */

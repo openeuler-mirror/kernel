@@ -17,36 +17,25 @@
 #include <ub/urma/ubcore_api.h>
 #include <ub/urma/ubcore_uapi.h>
 #include <ub/urma/ubcore_types.h>
+
 #include "ubagg_log.h"
-#include "ubagg_ioctl.h"
 #include "ubagg_jetty.h"
 #include "ubagg_seg.h"
 #include "ubagg_bitmap.h"
 #include "ubagg_hash_table.h"
+#include "ubagg_device.h"
+#include "ubagg_failback.h"
+#include "ubagg_session.h"
+
+#include "ubagg_ioctl.h"
 
 #define UBAGG_DEVICE_MAX_EID_CNT 128
-#define UBAGG_MAX_BONDING_DEV_NUM 1024
 #define BITMAP_OFFSET 1025
-
-static LIST_HEAD(g_ubagg_dev_list);
-static DEFINE_SPINLOCK(g_ubagg_dev_list_lock);
 
 struct seg_info_req {
 	struct ubcore_ubva ubva;
 	uint64_t len;
 	uint32_t token_id;
-};
-enum ubagg_show_res_type {
-	UBAGG_SHOW_RES_JETTY = 0,
-	UBAGG_SHOW_RES_JFS,
-	UBAGG_SHOW_RES_JFR,
-	UBAGG_SHOW_RES_JFC,
-	UBAGG_SHOW_RES_SEG,
-};
-
-struct ubagg_show_res {
-	struct ubcore_jetty_id jetty_id;
-	enum ubagg_show_res_type  res_type;
 };
 
 struct jetty_info_req {
@@ -78,88 +67,11 @@ static struct ubagg_ht_param g_ubagg_ht_params[] = {
 			       sizeof(struct ubcore_jfc), sizeof(uint32_t) },
 };
 
-static void ubagg_dev_release(struct kref *kref)
-{
-	struct ubagg_device *dev = container_of(kref, struct ubagg_device, ref);
-
-	kfree(dev);
-}
-
-void ubagg_dev_ref_get(struct ubagg_device *dev)
-{
-	kref_get(&dev->ref);
-}
-
-void ubagg_dev_ref_put(struct ubagg_device *dev)
-{
-	kref_put(&dev->ref, ubagg_dev_release);
-}
-
-struct ubagg_dev_name_eid_arr {
-	char master_dev_name[UBAGG_MAX_DEV_NAME_LEN];
-	char agg_eid[EID_LEN];
-};
-static struct ubagg_dev_name_eid_arr
-	g_name_eid_arr[UBAGG_MAX_BONDING_DEV_NUM] = { 0 };
-static DEFINE_MUTEX(g_name_eid_arr_lock);
-
-static bool ubagg_dev_exists(const char *dev_name)
-{
-	struct ubagg_device *dev;
-	unsigned long flags;
-	bool found = false;
-
-	spin_lock_irqsave(&g_ubagg_dev_list_lock, flags);
-	list_for_each_entry(dev, &g_ubagg_dev_list, list_node) {
-		if (strncmp(dev_name, dev->master_dev_name,
-			    UBAGG_MAX_DEV_NAME_LEN) == 0) {
-			found = true;
-			break;
-		}
-	}
-	spin_unlock_irqrestore(&g_ubagg_dev_list_lock, flags);
-
-	return found;
-}
-
-static struct ubagg_device *ubagg_find_dev_by_name(char *dev_name)
-{
-	struct ubagg_device *dev;
-
-	spin_lock(&g_ubagg_dev_list_lock);
-	list_for_each_entry(dev, &g_ubagg_dev_list, list_node) {
-		if (strncmp(dev_name, dev->master_dev_name,
-			    UBAGG_MAX_DEV_NAME_LEN) == 0) {
-			ubagg_dev_ref_get(dev);
-			spin_unlock(&g_ubagg_dev_list_lock);
-			return dev;
-		}
-	}
-	spin_unlock(&g_ubagg_dev_list_lock);
-	return NULL;
-}
-
 bool is_agg_dev_valid(struct ubagg_topo_agg_dev *agg_dev)
 {
 	struct ubagg_topo_agg_dev empty_dev = {0};
 
 	return (memcmp(agg_dev, &empty_dev, sizeof(struct ubagg_topo_agg_dev)) == 0) ? false : true;
-}
-
-static bool is_eid_valid(const char *eid)
-{
-	int i;
-
-	for (i = 0; i < EID_LEN; i++) {
-		if (eid[i] != 0)
-			return true;
-	}
-	return false;
-}
-
-static bool is_eid_match(const char *eid1, const char *eid2)
-{
-	return memcmp(eid1, eid2, EID_LEN) == 0;
 }
 
 int query_eid_idx(struct ubcore_device *dev, union ubcore_eid *eid, uint32_t *eid_idx)
@@ -242,7 +154,7 @@ int get_physical_device(struct ubagg_device *ubagg_dev,
 				continue;
 			}
 		}
-		ubagg_put_ubcore_device(dev);
+		ubcore_put_device(dev);
 	}
 	return 0;
 }
@@ -254,7 +166,7 @@ static int ubagg_get_physical_device(struct ubcore_device *dev,
 	struct ubagg_device *ubagg_dev;
 	int ret;
 
-	ubagg_dev = ubagg_find_dev_by_name(dev->dev_name);
+	ubagg_dev = ubagg_get_device_by_name(dev->dev_name);
 	if (ubagg_dev == NULL) {
 		ubagg_log_err("Bonding device not exist.");
 		return -ENXIO;
@@ -262,7 +174,7 @@ static int ubagg_get_physical_device(struct ubcore_device *dev,
 
 	if (get_physical_device(ubagg_dev, &out, &ubagg_dev->bonding_eid) != 0) {
 		ubagg_log_err("Failed to get physical device:%s", dev->dev_name);
-		ubagg_dev_ref_put(ubagg_dev);
+		ubagg_put_device(ubagg_dev);
 		return -ENXIO;
 	}
 
@@ -270,7 +182,7 @@ static int ubagg_get_physical_device(struct ubcore_device *dev,
 		ubagg_log_err(
 			"ubagg user ctl has no enough space, buffer size:%u, needed size:%lu",
 			user_ctl->out.len, sizeof(struct ubagg_physical_device_out));
-		ubagg_dev_ref_put(ubagg_dev);
+		ubagg_put_device(ubagg_dev);
 		return -ENOSPC;
 	}
 
@@ -278,10 +190,10 @@ static int ubagg_get_physical_device(struct ubcore_device *dev,
 			   (void *)&out, sizeof(out));
 	if (ret != 0) {
 		ubagg_log_err("copy to user fail, ret:%d", ret);
-		ubagg_dev_ref_put(ubagg_dev);
+		ubagg_put_device(ubagg_dev);
 		return -EFAULT;
 	}
-	ubagg_dev_ref_put(ubagg_dev);
+	ubagg_put_device(ubagg_dev);
 	return 0;
 }
 
@@ -377,224 +289,185 @@ static int ubagg_get_jetty_id(struct ubcore_device *dev,
 	return ret;
 }
 
-static int ubagg_get_list_res(struct ubcore_device *dev,
-				struct ubcore_user_ctl *user_ctl)
+static int ubagg_get_rjetty(struct ubcore_device *dev,
+			    struct ubcore_user_ctl *user_ctl)
 {
 	struct ubagg_device *ubagg_dev = to_ubagg_dev(dev);
-	struct ubagg_show_res *req = NULL;
+	struct ubagg_jetty_id jetty_id;
 	struct ubagg_hash_table *ht = NULL;
-	struct hlist_node *pos = NULL;
-	struct hlist_node *n = NULL;
-	uint32_t *id_buf = NULL;
-	uint32_t count = 0;
-
-	if (ubagg_dev == NULL || user_ctl == NULL)
-		return -EINVAL;
-
-	if (user_ctl->in.addr == 0 ||
-	    user_ctl->in.len != sizeof(struct ubagg_show_res))
-		return -EINVAL;
-
-	req = (struct ubagg_show_res *)(uintptr_t)user_ctl->in.addr;
-
-	switch (req->res_type) {
-	case UBAGG_SHOW_RES_JETTY:
-		ht = &ubagg_dev->ubagg_ht[UBAGG_HT_JETTY_HT];
-		break;
-	case UBAGG_SHOW_RES_JFR:
-		ht = &ubagg_dev->ubagg_ht[UBAGG_HT_JFR_HT];
-		break;
-	case UBAGG_SHOW_RES_JFS:
-		ht = &ubagg_dev->ubagg_ht[UBAGG_HT_JFS_HT];
-		break;
-	case UBAGG_SHOW_RES_JFC:
-		ht = &ubagg_dev->ubagg_ht[UBAGG_HT_JFC_HT];
-		break;
-	case UBAGG_SHOW_RES_SEG:
-		ht = &ubagg_dev->ubagg_ht[UBAGG_HT_SEGMENT_HT];
-		break;
-	default:
-		ubagg_log_err("unsupported res_type: %u\n", req->res_type);
-		return -EINVAL;
-	}
-
-	if (ht == NULL || ht->head == NULL)
-		return -EINVAL;
-
-	spin_lock(&ht->lock);
-	for (uint32_t i = 0; i < ht->p.size; i++)
-		hlist_for_each_safe(pos, n, &ht->head[i])
-			count++;
-	spin_unlock(&ht->lock);
-
-	if (count == 0) {
-		user_ctl->out.len = 0;
-		return 0;
-	}
-
-	id_buf = vzalloc(count * sizeof(uint32_t));
-	if (id_buf == NULL)
-		return -ENOMEM;
-
-	count = 0;
-	spin_lock(&ht->lock);
-	for (uint32_t i = 0; i < ht->p.size; i++) {
-		hlist_for_each_safe(pos, n, &ht->head[i]) {
-			void *key = ubagg_ht_key(ht, pos);
-
-			if (key != NULL) {
-				id_buf[count] = *(uint32_t *)key;
-				count++;
-			}
-		}
-	}
-	spin_unlock(&ht->lock);
-
-	if (user_ctl->out.addr != 0) {
-		if (copy_to_user((void __user *)(uintptr_t)user_ctl->out.addr,
-				 id_buf, count * sizeof(uint32_t)) != 0) {
-			ubagg_log_err("copy to user fail");
-			vfree(id_buf);
-			return -EFAULT;
-		}
-	}
-
-	vfree(id_buf);
-	user_ctl->out.len = count * sizeof(uint32_t);
-	return 0;
-}
-
-static int ubagg_get_show_res(struct ubcore_device *dev,
-				struct ubcore_user_ctl *user_ctl)
-{
-	struct ubagg_device *ubagg_dev = to_ubagg_dev(dev);
-	struct ubagg_show_res *res = NULL;
-	struct ubagg_hash_table *ht = NULL;
-	void *data_buf = NULL;
-	uint32_t id;
-	size_t out_size = 0;
+	struct ubagg_jetty_hash_node *node = NULL;
+	struct ubagg_jetty_exchange_info *jetty_info = NULL;
+	bool (*connected)[UBAGG_DEV_MAX_NUM] = NULL;
+	char *out_buf = NULL;
+	size_t out_size;
 	int ret = 0;
 
-	if (ubagg_dev == NULL || user_ctl == NULL)
-		return -EINVAL;
-
-	if (user_ctl->in.addr == 0 ||
-	    user_ctl->in.len != sizeof(struct ubagg_show_res))
-		return -EINVAL;
-
-	res = (struct ubagg_show_res *)(uintptr_t)user_ctl->in.addr;
-	id = res->jetty_id.id;
-
-	switch (res->res_type) {
-	case UBAGG_SHOW_RES_JETTY:
-		ht = &ubagg_dev->ubagg_ht[UBAGG_HT_JETTY_HT];
-		out_size = sizeof(struct ubagg_jetty_exchange_info);
-		break;
-	case UBAGG_SHOW_RES_JFR:
-		ht = &ubagg_dev->ubagg_ht[UBAGG_HT_JFR_HT];
-		out_size = sizeof(struct ubagg_jetty_exchange_info);
-		break;
-	case UBAGG_SHOW_RES_JFS:
-		ht = &ubagg_dev->ubagg_ht[UBAGG_HT_JFS_HT];
-		out_size = sizeof(struct ubagg_jetty_id) * UBAGG_DEV_MAX_NUM;
-		break;
-	case UBAGG_SHOW_RES_JFC:
-		ht = &ubagg_dev->ubagg_ht[UBAGG_HT_JFC_HT];
-		out_size = sizeof(struct ubagg_jetty_id) * UBAGG_DEV_MAX_NUM;
-		break;
-	case UBAGG_SHOW_RES_SEG:
-		ht = &ubagg_dev->ubagg_ht[UBAGG_HT_SEGMENT_HT];
-		out_size = sizeof(struct ubagg_seg_exchange_info);
-		break;
-	default:
-		ubagg_log_err("unsupported res_type: %u\n", res->res_type);
+	if (ubagg_dev == NULL || user_ctl == NULL) {
+		ubagg_log_err("Invalid parameter.\n");
 		return -EINVAL;
 	}
 
-	if (ht == NULL || ht->head == NULL)
+	if (user_ctl->in.addr != 0 &&
+	    user_ctl->in.len >= sizeof(struct ubagg_jetty_id)) {
+		if (!access_ok((void __user *)(uintptr_t)user_ctl->in.addr,
+			       sizeof(struct ubagg_jetty_id))) {
+			ubagg_log_err("Failed to access jetty id from user.\n");
+			return -EFAULT;
+		}
+		if (copy_from_user(&jetty_id, (void __user *)(uintptr_t)user_ctl->in.addr,
+				   sizeof(struct ubagg_jetty_id)) != 0) {
+			ubagg_log_err("Failed to copy jetty id from user.\n");
+			return -EFAULT;
+		}
+	} else {
+		ubagg_log_err("Invalid input addr or len, addr:%llu, len:%u.\n",
+			      user_ctl->in.addr, user_ctl->in.len);
 		return -EINVAL;
+	}
 
-	data_buf = kzalloc(out_size, GFP_KERNEL);
-	if (data_buf == NULL)
+	out_size = sizeof(struct ubagg_jetty_exchange_info) +
+		   sizeof(bool) * UBAGG_DEV_MAX_NUM * UBAGG_DEV_MAX_NUM;
+
+	ht = &ubagg_dev->ubagg_ht[UBAGG_HT_JETTY_HT];
+
+	out_buf = kzalloc(out_size, GFP_KERNEL);
+	if (out_buf == NULL) {
+		ubagg_log_err("Failed to alloc memory for rjetty out buf, size:%zu.\n",
+			      out_size);
 		return -ENOMEM;
+	}
+
+	jetty_info = (struct ubagg_jetty_exchange_info *)out_buf;
+	connected = (bool (*)[UBAGG_DEV_MAX_NUM])
+		(out_buf + sizeof(struct ubagg_jetty_exchange_info));
 
 	spin_lock(&ht->lock);
-	switch (res->res_type) {
-	case UBAGG_SHOW_RES_JETTY: {
-		struct ubagg_jetty_hash_node *node;
-
-		node = ubagg_hash_table_lookup_nolock(ht, id, &id);
-		if (node == NULL) {
-			spin_unlock(&ht->lock);
-			ubagg_log_err("Failed to find jetty, id:%u.\n", id);
-			kfree(data_buf);
-			return -ENOENT;
-		}
-		memcpy(data_buf, &node->ex_info, out_size);
-		break;
+	node = ubagg_hash_table_lookup_nolock(ht, jetty_id.id, &jetty_id.id);
+	if (node == NULL) {
+		spin_unlock(&ht->lock);
+		ubagg_log_err("Failed to find jetty, id:%u.\n", jetty_id.id);
+		kfree(out_buf);
+		return -ENOENT;
 	}
-	case UBAGG_SHOW_RES_JFR: {
-		struct ubagg_jfr_hash_node *node;
+	*jetty_info = node->ex_info;
+	spin_unlock(&ht->lock);
 
-		node = ubagg_hash_table_lookup_nolock(ht, id, &id);
-		if (node == NULL) {
-			spin_unlock(&ht->lock);
-			ubagg_log_err("Failed to find jfr, id:%u.\n", id);
-			kfree(data_buf);
-			return -ENOENT;
-		}
-		memcpy(data_buf, &node->ex_info, out_size);
-		break;
+	ret = find_linked_port(&jetty_id.eid, connected);
+	if (ret != 0) {
+		ubagg_log_err("Failed to find linked port for jetty, id:%u.\n", jetty_id.id);
+		kfree(out_buf);
+		return ret;
 	}
-	case UBAGG_SHOW_RES_JFS: {
-		struct ubagg_jfs *node;
 
-		node = ubagg_hash_table_lookup_nolock(ht, id, &id);
-		if (node == NULL) {
-			spin_unlock(&ht->lock);
-			ubagg_log_err("Failed to find jfs, id:%u.\n", id);
-			kfree(data_buf);
-			return -ENOENT;
+	if (user_ctl->out.addr != 0) {
+		if (user_ctl->out.len < out_size) {
+			ubagg_log_err("ubagg user ctl has no enough space, buffer size:%u, needed size:%zu\n",
+				      user_ctl->out.len, out_size);
+			kfree(out_buf);
+			return -ENOSPC;
 		}
-		memcpy(data_buf, node->slaves, out_size);
-		break;
+		if (copy_to_user((void __user *)(uintptr_t)user_ctl->out.addr,
+				 out_buf, out_size) != 0) {
+			ubagg_log_err("Failed to copy rjetty info to user.\n");
+			ret = -EFAULT;
+		}
 	}
-	case UBAGG_SHOW_RES_JFC: {
-		struct ubagg_jfc *node;
 
-		node = ubagg_hash_table_lookup_nolock(ht, id, &id);
-		if (node == NULL) {
-			spin_unlock(&ht->lock);
-			ubagg_log_err("Failed to find jfc, id:%u.\n", id);
-			kfree(data_buf);
-			return -ENOENT;
-		}
-		memcpy(data_buf, node->slaves, out_size);
-		break;
-	}
-	case UBAGG_SHOW_RES_SEG: {
-		struct ubagg_seg_hash_node *node;
+	kfree(out_buf);
+	user_ctl->out.len = (uint32_t)out_size;
+	return ret;
+}
 
-		node = ubagg_hash_table_lookup_nolock(ht, id, &id);
-		if (node == NULL) {
-			spin_unlock(&ht->lock);
-			ubagg_log_err("Failed to find seg, id:%u.\n", id);
-			kfree(data_buf);
-			return -ENOENT;
-		}
-		memcpy(data_buf, &node->ex_info, out_size);
-		break;
+static int ubagg_get_seg_ctx(struct ubcore_device *dev,
+			     struct ubcore_user_ctl *user_ctl)
+{
+	struct ubagg_device *ubagg_dev = to_ubagg_dev(dev);
+	struct ubagg_seg_info seg;
+	struct ubagg_hash_table *ht = NULL;
+	struct ubagg_seg_hash_node *node = NULL;
+	struct ubagg_seg_exchange_info *seg_info = NULL;
+	bool (*connected)[UBAGG_DEV_MAX_NUM] = NULL;
+	char *out_buf = NULL;
+	size_t out_size;
+	int ret = 0;
+	bool found = false;
+
+	if (ubagg_dev == NULL || user_ctl == NULL) {
+		ubagg_log_err("Invalid parameter.\n");
+		return -EINVAL;
 	}
+
+	if (user_ctl->in.addr != 0 &&
+	    user_ctl->in.len >= sizeof(struct ubagg_seg_info)) {
+		if (!access_ok((void __user *)(uintptr_t)user_ctl->in.addr,
+			       sizeof(struct ubagg_seg_info))) {
+			ubagg_log_err("Failed to access seg from user.\n");
+			return -EFAULT;
+		}
+		if (copy_from_user(&seg, (void __user *)(uintptr_t)user_ctl->in.addr,
+				   sizeof(struct ubagg_seg_info)) != 0) {
+			ubagg_log_err("Failed to copy seg from user.\n");
+			return -EFAULT;
+		}
+	} else {
+		ubagg_log_err("Invalid input addr or len, addr:%llu, len:%u.\n",
+			      user_ctl->in.addr, user_ctl->in.len);
+		return -EINVAL;
+	}
+
+	out_size = sizeof(struct ubagg_seg_exchange_info) +
+		   sizeof(bool) * UBAGG_DEV_MAX_NUM * UBAGG_DEV_MAX_NUM;
+
+	ht = &ubagg_dev->ubagg_ht[UBAGG_HT_SEGMENT_HT];
+
+	out_buf = kzalloc(out_size, GFP_KERNEL);
+	if (out_buf == NULL) {
+		ubagg_log_err("Failed to alloc memory for seg ctx out buf, size:%zu.\n",
+			      out_size);
+		return -ENOMEM;
+	}
+
+	seg_info = (struct ubagg_seg_exchange_info *)out_buf;
+	connected = (bool (*)[UBAGG_DEV_MAX_NUM])
+		(out_buf + sizeof(struct ubagg_seg_exchange_info));
+
+	spin_lock(&ht->lock);
+	node = ubagg_hash_table_lookup_nolock(ht, seg.token_id, &seg.token_id);
+	if (node != NULL) {
+		*seg_info = node->ex_info;
+		found = true;
 	}
 	spin_unlock(&ht->lock);
 
-	if (user_ctl->out.addr != 0) {
-		if (copy_to_user((void __user *)(uintptr_t)user_ctl->out.addr,
-				 data_buf, out_size) != 0)
-			ret = -EFAULT;
+	if (!found) {
+		ubagg_log_err("Failed to find seg, token:%u.\n", seg.token_id);
+		kfree(out_buf);
+		return -ENOENT;
 	}
 
-	kfree(data_buf);
+	ret = find_linked_port(&seg.ubva.eid, connected);
+	if (ret != 0) {
+		ubagg_log_err("Failed to find linked port for seg, token:%u.\n",
+			      seg.token_id);
+		kfree(out_buf);
+		return ret;
+	}
+
+	if (user_ctl->out.addr != 0) {
+		if (user_ctl->out.len < out_size) {
+			ubagg_log_err("ubagg user ctl has no enough space, buffer size:%u, needed size:%zu\n",
+				      user_ctl->out.len, out_size);
+			kfree(out_buf);
+			return -ENOSPC;
+		}
+		if (copy_to_user((void __user *)(uintptr_t)user_ctl->out.addr,
+				 out_buf, out_size) != 0) {
+			ubagg_log_err("Failed to copy seg ctx to user.\n");
+			ret = -EFAULT;
+		}
+	}
+
+	kfree(out_buf);
 	user_ctl->out.len = (uint32_t)out_size;
 	return ret;
 }
@@ -621,11 +494,17 @@ int ubagg_user_ctl(struct ubcore_device *dev, struct ubcore_user_ctl *user_ctl)
 	case GET_JETTY_ID:
 		ret = ubagg_get_jetty_id(dev, user_ctl);
 		break;
-	case GET_LIST_RES:
-		ret = ubagg_get_list_res(dev, user_ctl);
+	case GET_RJETTY:
+		ret = ubagg_get_rjetty(dev, user_ctl);
 		break;
-	case GET_SHOW_RES:
-		ret = ubagg_get_show_res(dev, user_ctl);
+	case GET_SEG_CTX:
+		ret = ubagg_get_seg_ctx(dev, user_ctl);
+		break;
+	case FAILBACK_START:
+		ret = ubagg_fb_user_ctl_start(dev, user_ctl);
+		break;
+	case FAILBACK_RESULT:
+		ret = ubagg_fb_user_ctl_result(dev, user_ctl);
 		break;
 	default:
 		ubagg_log_err("unsupported ubagg userctl opcde:%u",
@@ -641,22 +520,6 @@ int ubagg_config_device(struct ubcore_device *dev,
 {
 	(void)dev;
 	(void)cfg;
-	return 0;
-}
-
-static struct ubcore_ucontext *
-ubagg_alloc_ucontext(struct ubcore_device *dev, uint32_t eid_index,
-		     struct ubcore_udrv_priv *udrv_data)
-{
-	(void)dev;
-	(void)eid_index;
-	(void)udrv_data;
-	return kzalloc(sizeof(struct ubcore_ucontext), GFP_KERNEL);
-}
-
-static int ubagg_free_ucontext(struct ubcore_ucontext *uctx)
-{
-	kfree(uctx);
 	return 0;
 }
 
@@ -1298,43 +1161,6 @@ static int ubagg_update_topo_info(struct ubagg_topo_map *new_topo_map,
 	return 0;
 }
 
-static bool has_add_dev_by_agg_eid(const char *agg_eid)
-{
-	int i;
-
-	if (agg_eid == NULL) {
-		ubagg_log_err("agg_eid is NULL");
-		return false;
-	}
-	mutex_lock(&g_name_eid_arr_lock);
-	for (i = 0; i < UBAGG_MAX_BONDING_DEV_NUM; i++) {
-		if (is_eid_match(agg_eid, g_name_eid_arr[i].agg_eid)) {
-			mutex_unlock(&g_name_eid_arr_lock);
-			return true;
-		}
-	}
-	mutex_unlock(&g_name_eid_arr_lock);
-	return false;
-}
-
-static void fill_add_dev_cfg(struct ubagg_topo_agg_dev *agg_dev,
-			     struct ubagg_add_dev_by_uvs *arg)
-{
-	int i, j, k;
-
-	(void)memcpy(&arg->agg_eid, agg_dev->agg_eid, EID_LEN);
-	for (i = 0; i < IODIE_NUM; i++)
-		(void)memcpy(&arg->slave_eid[i].primary_eid,
-				 agg_dev->ues[i].primary_eid, EID_LEN);
-
-	for (j = 0; j < IODIE_NUM; j++) {
-		for (k = 0; k < MAX_PORT_NUM; k++)
-			(void)memcpy(&arg->slave_eid[j].port_eid[k],
-					 agg_dev->ues[j].port_eid[k],
-					 EID_LEN);
-	}
-}
-
 static void
 set_ubagg_device_attr_by_ubcore_cap(struct ubcore_device *dev,
 				    struct ubcore_device_cap *dev_cap)
@@ -1342,45 +1168,33 @@ set_ubagg_device_attr_by_ubcore_cap(struct ubcore_device *dev,
 	dev->attr.dev_cap = *dev_cap;
 }
 
-void ubagg_put_ubcore_device(struct ubcore_device *dev)
-{
-	if (IS_ERR_OR_NULL(dev)) {
-		ubagg_log_err("Invalid parameter\n");
-		return;
-	}
-
-	if (atomic_dec_and_test(&dev->use_cnt))
-		complete(&dev->comp);
-}
-
 static int init_ubagg_dev(struct ubagg_device *ubagg_dev,
-			  struct ubagg_add_dev_by_uvs *arg)
+			  const char *master_dev_name,
+			  const struct ubagg_topo_agg_dev *agg_dev)
 {
 	struct ubcore_device *dev = NULL;
+	union ubcore_eid eid = { 0 };
 	int slave_dev_idx = 0;
 	int i, j, k;
 
 	// init ubagg device
-	(void)memcpy(ubagg_dev->master_dev_name, arg->master_dev_name,
+	(void)memcpy(ubagg_dev->master_dev_name, master_dev_name,
 		     UBAGG_MAX_DEV_NAME_LEN);
-	(void)memcpy(&ubagg_dev->bonding_eid, &arg->agg_eid,
-		     sizeof(union ubcore_eid));
+	(void)memcpy(&ubagg_dev->bonding_eid, agg_dev->agg_eid, EID_LEN);
 	ubagg_log_info("master dev name: %s, eid : " EID_FMT "\n",
 		ubagg_dev->master_dev_name,
-		EID_ARGS(arg->agg_eid));
+		EID_RAW_ARGS(agg_dev->agg_eid));
 	for (i = 0; i < IODIE_NUM; i++) {
-		if (!is_eid_valid((char *)&arg->slave_eid[i].primary_eid.raw)) {
-			ubagg_log_err("primary slave %d eid is invalid\n", i);
+		if (!is_eid_valid(agg_dev->ues[i].primary_eid)) {
+			ubagg_log_info("primary slave %d eid is invalid\n", i);
 			continue;
 		}
 
-		dev = ubcore_get_device_by_eid(&arg->slave_eid[i].primary_eid,
-					       UBCORE_TRANSPORT_UB);
+		(void)memcpy(eid.raw, agg_dev->ues[i].primary_eid, EID_LEN);
+		dev = ubcore_get_device_by_eid(&eid, UBCORE_TRANSPORT_UB);
 		if (dev == NULL) {
-			ubagg_log_err(
-				"primary slave %d dev not exist, eid: " EID_FMT
-				"\n",
-				i, EID_ARGS(arg->slave_eid[i].primary_eid));
+			ubagg_log_err_rl("primary slave %d dev not exist, eid: " EID_FMT
+					 "\n", i, EID_ARGS(eid));
 			return -1;
 		}
 		if (slave_dev_idx == 0)
@@ -1389,27 +1203,23 @@ static int init_ubagg_dev(struct ubagg_device *ubagg_dev,
 
 		(void)memcpy(ubagg_dev->slave_dev_name[slave_dev_idx],
 			     dev->dev_name, UBAGG_MAX_DEV_NAME_LEN);
-		ubagg_put_ubcore_device(dev);
+		ubcore_put_device(dev);
 		slave_dev_idx++;
 	}
 
 	for (j = 0; j < IODIE_NUM; j++) {
 		for (k = 0; k < MAX_PORT_NUM; k++) {
-			if (!is_eid_valid(
-				(char *)&arg->slave_eid[j].port_eid[k].raw)) {
-				ubagg_log_err("port slave %d_%d eid is invalid\n", j, k);
+			if (!is_eid_valid(agg_dev->ues[j].port_eid[k])) {
+				ubagg_log_info("port slave %d_%d eid is invalid\n", j, k);
 				continue;
 			}
-			dev = ubcore_get_device_by_eid(
-				&arg->slave_eid[j].port_eid[k],
-				UBCORE_TRANSPORT_UB);
+
+			(void)memcpy(eid.raw, agg_dev->ues[j].port_eid[k],
+				     EID_LEN);
+			dev = ubcore_get_device_by_eid(&eid, UBCORE_TRANSPORT_UB);
 			if (dev == NULL) {
-				ubagg_log_err(
-					"port slave %d_%d dev not exist, eid: " EID_FMT
-					"\n",
-					j, k,
-					EID_ARGS(
-						arg->slave_eid[j].port_eid[k]));
+				ubagg_log_err_rl("port slave %d_%d dev not exist, eid: " EID_FMT
+						 "\n", j, k, EID_ARGS(eid));
 				return -1;
 			}
 			if (slave_dev_idx == 0)
@@ -1418,7 +1228,7 @@ static int init_ubagg_dev(struct ubagg_device *ubagg_dev,
 
 			(void)memcpy(ubagg_dev->slave_dev_name[slave_dev_idx],
 				     dev->dev_name, UBAGG_MAX_DEV_NAME_LEN);
-			ubagg_put_ubcore_device(dev);
+			ubcore_put_device(dev);
 			slave_dev_idx++;
 		}
 	}
@@ -1440,7 +1250,6 @@ static int init_ubagg_res(struct ubagg_device *ubagg_dev)
 
 	ret = alloc_ubagg_dev_bitmap(ubagg_dev);
 	if (ret != 0) {
-		ubagg_log_err("ubagg alloc bitmap fail\n");
 		return ret;
 	}
 
@@ -1448,7 +1257,7 @@ static int init_ubagg_res(struct ubagg_device *ubagg_dev)
 		ret = ubagg_hash_table_alloc(&ubagg_dev->ubagg_ht[i],
 					     &g_ubagg_ht_params[i]);
 		if (ret != 0) {
-			ubagg_log_err("Fail to init hash map:%d.\n", i);
+			ubagg_log_err("Fail to init hash map:%d, ret: %d\n", i, ret);
 			goto FREE_HMAP;
 		}
 	}
@@ -1463,7 +1272,7 @@ FREE_HMAP:
 	return -ENOMEM;
 }
 
-static void uninit_ubagg_res(struct ubagg_device *ubagg_dev)
+void ubagg_uninit_device_res(struct ubagg_device *ubagg_dev)
 {
 	int i = 0;
 
@@ -1473,11 +1282,12 @@ static void uninit_ubagg_res(struct ubagg_device *ubagg_dev)
 }
 
 static int init_ubagg_ubcore_dev(struct ubagg_device *ubagg_dev,
-				 struct ubagg_add_dev_by_uvs *arg)
+				 const char *master_dev_name,
+				 const struct ubagg_topo_agg_dev *agg_dev)
 {
 	int ret = 0;
 
-	(void)memcpy(ubagg_dev->ub_dev.dev_name, arg->master_dev_name,
+	(void)memcpy(ubagg_dev->ub_dev.dev_name, master_dev_name,
 		     UBAGG_MAX_DEV_NAME_LEN);
 	ubagg_dev->ub_dev.ops = &g_ubagg_dev_ops;
 	ubagg_dev->ub_dev.attr.tp_maintainer = false;
@@ -1486,66 +1296,29 @@ static int init_ubagg_ubcore_dev(struct ubagg_device *ubagg_dev,
 	ret = ubcore_register_device(&ubagg_dev->ub_dev);
 	if (ret != 0) {
 		ubagg_log_err("ubcore register device fail, name:%s\n",
-			      arg->master_dev_name);
-		free_ubagg_dev_bitmap(ubagg_dev);
+			      master_dev_name);
 		return ret;
 	}
 
 	ubagg_dev->ub_dev.eid_table.eid_entries[0].eid_index = 0;
 	ubagg_dev->ub_dev.eid_table.eid_entries[0].net = &init_net;
 	(void)memcpy(&ubagg_dev->ub_dev.eid_table.eid_entries[0].eid,
-		     &arg->agg_eid, UBAGG_EID_SIZE);
+		     agg_dev->agg_eid, UBAGG_EID_SIZE);
 	ubagg_dev->ub_dev.eid_table.eid_entries[0].valid = true;
 
 	return 0;
 }
 
-static int add_dev_to_list(struct ubagg_device *ubagg_dev)
-{
-	struct ubagg_device *cur = NULL;
-	unsigned long flags;
-
-	spin_lock_irqsave(&g_ubagg_dev_list_lock, flags);
-	list_for_each_entry(cur, &g_ubagg_dev_list, list_node) {
-		if (strncmp(cur->ub_dev.dev_name, ubagg_dev->ub_dev.dev_name,
-			    UBAGG_MAX_DEV_NAME_LEN) == 0) {
-			spin_unlock_irqrestore(&g_ubagg_dev_list_lock, flags);
-			return -EEXIST;
-		}
-	}
-	list_add_tail(&ubagg_dev->list_node, &g_ubagg_dev_list);
-	ubagg_dev_ref_get(ubagg_dev);
-	spin_unlock_irqrestore(&g_ubagg_dev_list_lock, flags);
-	return 0;
-}
-
-static void rmv_dev_from_list(struct ubagg_device *ubagg_dev)
-{
-	struct ubagg_device *cur = NULL;
-	unsigned long flags;
-
-	spin_lock_irqsave(&g_ubagg_dev_list_lock, flags);
-	list_for_each_entry(cur, &g_ubagg_dev_list, list_node) {
-		if (strncmp(cur->ub_dev.dev_name, ubagg_dev->ub_dev.dev_name,
-			    UBAGG_MAX_DEV_NAME_LEN) == 0) {
-			list_del(&cur->list_node);
-			ubagg_dev_ref_put(ubagg_dev);
-			spin_unlock_irqrestore(&g_ubagg_dev_list_lock, flags);
-			ubagg_log_info("ubagg dev %s removed from list\n",
-				ubagg_dev->ub_dev.dev_name);
-			return;
-		}
-	}
-	spin_unlock_irqrestore(&g_ubagg_dev_list_lock, flags);
-}
-
-static int add_dev_by_uvs(struct ubagg_add_dev_by_uvs *arg)
+static int add_dev_from_topo(const char *master_dev_name,
+			     const struct ubagg_topo_agg_dev *agg_dev)
 {
 	struct ubagg_device *ubagg_dev = NULL;
 
-	if (ubagg_dev_exists(arg->master_dev_name)) {
+	ubagg_dev = ubagg_get_device_by_name(master_dev_name);
+	if (ubagg_dev != NULL) {
+		ubagg_put_device(ubagg_dev);
 		ubagg_log_err("ubagg dev already exist, name:%s\n",
-			      arg->master_dev_name);
+			      master_dev_name);
 		return -EEXIST;
 	}
 
@@ -1554,38 +1327,39 @@ static int add_dev_by_uvs(struct ubagg_add_dev_by_uvs *arg)
 		return -ENOMEM;
 	kref_init(&ubagg_dev->ref);
 
-	if (init_ubagg_dev(ubagg_dev, arg) != 0) {
+	if (init_ubagg_dev(ubagg_dev, master_dev_name, agg_dev) != 0) {
 		ubagg_log_err("init ubagg dev fail, name:%s\n",
-			      arg->master_dev_name);
+			      master_dev_name);
 		goto PUT_DEV;
 	}
 
 	if (init_ubagg_res(ubagg_dev) != 0) {
 		ubagg_log_err("init ubagg res fail, name:%s\n",
-			      arg->master_dev_name);
+			      master_dev_name);
 		goto PUT_DEV;
 	}
 
-	if (init_ubagg_ubcore_dev(ubagg_dev, arg) != 0) {
+	if (init_ubagg_ubcore_dev(ubagg_dev, master_dev_name, agg_dev) != 0) {
 		ubagg_log_err("init ubagg ubcore fail, name:%s\n",
-			      arg->master_dev_name);
+			      master_dev_name);
 		goto UNINIT_UBAGG_RES;
 	}
 
-	if (add_dev_to_list(ubagg_dev) != 0) {
+	if (ubagg_add_dev_to_list(ubagg_dev) != 0) {
 		ubagg_log_err("add dev to list fail, name:%s\n",
-			      arg->master_dev_name);
+			      master_dev_name);
 		goto UNINIT_UBCORE_DEV;
 	}
 
+	ubagg_put_device(ubagg_dev);
 	return 0;
 
 UNINIT_UBCORE_DEV:
 	ubcore_unregister_device(&ubagg_dev->ub_dev);
 UNINIT_UBAGG_RES:
-	uninit_ubagg_res(ubagg_dev);
+	ubagg_uninit_device_res(ubagg_dev);
 PUT_DEV:
-	ubagg_dev_ref_put(ubagg_dev);
+	ubagg_put_device(ubagg_dev);
 
 	return -ENODEV;
 }
@@ -1599,31 +1373,6 @@ static bool is_eid_empty(const char *eid)
 			return false;
 	}
 	return true;
-}
-
-static void find_add_master_dev(const char *agg_eid, const char *name)
-{
-	int i;
-	int empty_index = -1;
-
-	mutex_lock(&g_name_eid_arr_lock);
-	for (i = 0; i < UBAGG_MAX_BONDING_DEV_NUM; i++) {
-		if (is_eid_empty(g_name_eid_arr[i].agg_eid)) {
-			empty_index = i;
-			break;
-		}
-	}
-	if (empty_index == -1) {
-		mutex_unlock(&g_name_eid_arr_lock);
-		ubagg_log_err("g_name_eid_arr is full, max dev num is %d",
-			      UBAGG_MAX_BONDING_DEV_NUM);
-		return;
-	}
-	(void)memcpy(g_name_eid_arr[empty_index].agg_eid, agg_eid,
-		     EID_LEN);
-	(void)snprintf(g_name_eid_arr[empty_index].master_dev_name,
-		       UBAGG_MAX_DEV_NAME_LEN, "%s", name);
-	mutex_unlock(&g_name_eid_arr_lock);
 }
 
 static void print_topo_map(struct ubagg_topo_map *topo_map)
@@ -1742,7 +1491,7 @@ static int ubagg_cmd_set_topo_info(struct ubagg_cmd_hdr *hdr)
 
 	print_topo_map(topo_map);
 
-	ubagg_log_notice("Finish to set topo info, node_num: %u.\n",
+	ubagg_log_notice_rl("Finish to set topo info, node_num: %u.\n",
 		topo_map->node_num);
 
 	return 0;
@@ -1807,36 +1556,31 @@ void ubagg_delete_topo_map(void)
 	delete_global_ubagg_topo_map();
 }
 
-static int ubagg_create_dev(struct ubagg_create_dev_arg *arg)
+static int ubagg_create_dev(const char *dev_name,
+			    const union ubcore_eid *agg_eid)
 {
-	struct ubagg_add_dev_by_uvs uvs_arg = {0};
 	struct ubagg_topo_agg_dev *agg_dev = NULL;
-	struct ubagg_topo_node *cur_node;
 	struct ubagg_topo_map *topo_map;
+	struct ubagg_device *dev;
 	uint32_t dev_name_len = 0;
 	int ret;
-	int i;
 
-	if (is_eid_empty(arg->in.agg_eid.raw)) {
+	if (is_eid_empty(agg_eid->raw)) {
 		ubagg_log_err("agg_eid is empty\n");
 		return -EINVAL;
 	}
 
-	dev_name_len = strnlen(arg->in.dev_name, UBAGG_MAX_DEV_NAME_LEN);
+	dev_name_len = strnlen(dev_name, UBAGG_MAX_DEV_NAME_LEN);
 	if (dev_name_len == 0 || dev_name_len >= UBAGG_MAX_DEV_NAME_LEN) {
 		ubagg_log_err("dev_name is invalid\n");
 		return -EINVAL;
 	}
 
-	if (has_add_dev_by_agg_eid(arg->in.agg_eid.raw)) {
+	dev = ubagg_get_device_by_eid(agg_eid);
+	if (dev != NULL) {
+		ubagg_put_device(dev);
 		ubagg_log_err("has add dev by aggr eid: " EID_FMT "\n",
-				   EID_RAW_ARGS(arg->in.agg_eid.raw));
-		return -EEXIST;
-	}
-
-	if (ubagg_dev_exists(arg->in.dev_name)) {
-		ubagg_log_err("ubagg dev already exist, name:%s\n",
-			      arg->in.dev_name);
+				   EID_RAW_ARGS(agg_eid->raw));
 		return -EEXIST;
 	}
 
@@ -1846,38 +1590,20 @@ static int ubagg_create_dev(struct ubagg_create_dev_arg *arg)
 		return -EINVAL;
 	}
 
-	cur_node = find_cur_topo_node(topo_map);
-	if (cur_node == NULL) {
-		ubagg_log_err("find cur node index failed\n");
-		return -EINVAL;
-	}
-
-	for (i = 0; i < DEV_NUM; i++)
-		if (is_eid_match(cur_node->agg_devs[i].agg_eid, arg->in.agg_eid.raw)) {
-			agg_dev = &(cur_node->agg_devs[i]);
-			break;
-		}
-
+	agg_dev = find_cur_topo_agg_dev(topo_map, agg_eid);
 	if (agg_dev == NULL) {
 		ubagg_log_err("eid: " EID_FMT " not found in current node\n",
-					EID_RAW_ARGS(arg->in.agg_eid.raw));
+					EID_RAW_ARGS(agg_eid->raw));
 		return -ENODEV;
 	}
 
-	(void)snprintf(uvs_arg.master_dev_name, UBAGG_MAX_DEV_NAME_LEN, "%s",
-				arg->in.dev_name);
-
-	fill_add_dev_cfg(agg_dev, &uvs_arg);
-
-	ret = add_dev_by_uvs(&uvs_arg);
+	ret = add_dev_from_topo(dev_name, agg_dev);
 	if (ret != 0) {
-		ubagg_log_err("add ubagg dev by uvs failed, ret:%d\n", ret);
+		ubagg_log_err("add ubagg dev from topo failed, ret:%d\n", ret);
 		return ret;
 	}
 
-	find_add_master_dev(arg->in.agg_eid.raw, arg->in.dev_name);
-
-	ubagg_log_notice("Finish to create ubagg device: %s.\n", arg->in.dev_name);
+	ubagg_log_notice("Finish to create ubagg device: %s.\n", dev_name);
 	return 0;
 }
 
@@ -1898,7 +1624,7 @@ static int ubagg_cmd_create_dev(struct ubagg_cmd_hdr *hdr)
 		return -EFAULT;
 	}
 
-	ret = ubagg_create_dev(&arg);
+	ret = ubagg_create_dev(arg.in.dev_name, &arg.in.agg_eid);
 	if (ret != 0) {
 		ubagg_log_err("ubagg_create_dev failed, ret:%d\n", ret);
 		return ret;
@@ -1907,143 +1633,30 @@ static int ubagg_cmd_create_dev(struct ubagg_cmd_hdr *hdr)
 	return 0;
 }
 
-static int ubagg_find_name_by_agg_eid(const char *agg_eid, char *master_dev_name)
+static int ubagg_delete_dev(const union ubcore_eid *agg_eid)
 {
-	int ret = -1;
-	int i;
-
-	if (!master_dev_name)
-		return -EINVAL;
-
-	mutex_lock(&g_name_eid_arr_lock);
-	for (i = 0; i < UBAGG_MAX_BONDING_DEV_NUM; i++) {
-		if (is_eid_match(agg_eid, g_name_eid_arr[i].agg_eid)) {
-			(void)strscpy(master_dev_name, g_name_eid_arr[i].master_dev_name,
-				UBAGG_MAX_DEV_NAME_LEN);
-			ret = 0;
-			break;
-		}
-	}
-	mutex_unlock(&g_name_eid_arr_lock);
-
-	if (ret != 0)
-		master_dev_name[0] = '\0';
-
-	return ret;
-}
-
-static void find_delete_master_dev(const char *agg_eid, const char *name)
-{
-	int i;
-
-	if (agg_eid == NULL || name == NULL) {
-		ubagg_log_err("agg_eid or name is NULL\n");
-		return;
-	}
-
-	mutex_lock(&g_name_eid_arr_lock);
-	for (i = 0; i < UBAGG_MAX_BONDING_DEV_NUM; i++) {
-		if (is_eid_empty(g_name_eid_arr[i].agg_eid))
-			continue;
-
-		if (is_eid_match(agg_eid, g_name_eid_arr[i].agg_eid) &&
-			strncmp(g_name_eid_arr[i].master_dev_name, name,
-				UBAGG_MAX_DEV_NAME_LEN) == 0) {
-			memset(g_name_eid_arr[i].agg_eid, 0, EID_LEN);
-			memset(g_name_eid_arr[i].master_dev_name, 0,
-				   UBAGG_MAX_DEV_NAME_LEN);
-			mutex_unlock(&g_name_eid_arr_lock);
-			return;
-		}
-	}
-	mutex_unlock(&g_name_eid_arr_lock);
-
-	ubagg_log_err("can not find to delete, bonding eid: " EID_FMT ", name:%s\n",
-			  EID_RAW_ARGS(agg_eid), name);
-}
-
-static struct ubagg_device *ubagg_find_dev_by_agg_eid(const char *agg_eid)
-{
-	char master_dev_name[UBAGG_MAX_DEV_NAME_LEN] = {0};
 	struct ubagg_device *dev;
-	int ret;
 
-	ret = ubagg_find_name_by_agg_eid(agg_eid, master_dev_name);
-	if (ret != 0) {
-		ubagg_log_err("no master dev name for bonding eid: " EID_FMT "\n",
-					  EID_RAW_ARGS(agg_eid));
-		return NULL;
-	}
-
-	dev = ubagg_find_dev_by_name(master_dev_name);
-	if (dev == NULL) {
-		ubagg_log_err("ubagg dev not exist by name:%s\n", master_dev_name);
-		find_delete_master_dev(agg_eid, master_dev_name);
-		return NULL;
-	}
-
-	return dev;
-}
-
-static int ubagg_delete_dev(const struct ubagg_delete_dev_arg *arg)
-{
-	struct ubagg_topo_agg_dev *agg_dev = NULL;
-	struct ubagg_topo_node *cur_node;
-	struct ubagg_topo_map *topo_map;
-	struct ubagg_device *dev;
-	int i;
-
-	if (is_eid_empty(arg->in.agg_eid.raw)) {
+	if (is_eid_empty(agg_eid->raw)) {
 		ubagg_log_err("agg_eid is empty\n");
 		return -EINVAL;
 	}
 
-	if (!has_add_dev_by_agg_eid(arg->in.agg_eid.raw)) {
-		ubagg_log_err("no ubagg dev by aggr eid: " EID_FMT "\n",
-				   EID_RAW_ARGS(arg->in.agg_eid.raw));
-		return -EEXIST;
-	}
-
-	topo_map = get_global_ubagg_map();
-	if (topo_map == NULL) {
-		ubagg_log_err("global topo map is NULL\n");
-		return -EINVAL;
-	}
-
-	cur_node = find_cur_topo_node(topo_map);
-	if (cur_node == NULL) {
-		ubagg_log_err("find cur node index failed\n");
-		return -EINVAL;
-	}
-
-	for (i = 0; i < DEV_NUM; i++)
-		if (is_eid_match(cur_node->agg_devs[i].agg_eid, arg->in.agg_eid.raw)) {
-			agg_dev = &(cur_node->agg_devs[i]);
-			break;
-		}
-
-	if (agg_dev == NULL) {
-		ubagg_log_err("eid: " EID_FMT " not found in current node\n",
-					EID_RAW_ARGS(arg->in.agg_eid.raw));
-		return -ENODEV;
-	}
-
-	dev = ubagg_find_dev_by_agg_eid(arg->in.agg_eid.raw);
+	dev = ubagg_get_device_by_eid(agg_eid);
 	if (dev == NULL) {
 		ubagg_log_err("ubagg dev not exist by agg eid: " EID_FMT "\n",
-					EID_RAW_ARGS(arg->in.agg_eid.raw));
+							EID_RAW_ARGS(agg_eid->raw));
 		return -ENODEV;
 	}
 
-	find_delete_master_dev(arg->in.agg_eid.raw, dev->master_dev_name);
-	rmv_dev_from_list(dev);
+	ubagg_remove_dev_from_list(dev);
+	ubagg_session_flush(dev);
 	ubcore_unregister_device(&dev->ub_dev);
-	uninit_ubagg_res(dev);
 
 	ubagg_log_notice("Finish to delete ubagg device: %s.\n",
 		dev->master_dev_name);
 
-	ubagg_dev_ref_put(dev);
+	ubagg_put_device(dev);
 
 	return 0;
 }
@@ -2065,7 +1678,7 @@ static int ubagg_cmd_delete_dev(struct ubagg_cmd_hdr *hdr)
 		return -EFAULT;
 	}
 
-	ret = ubagg_delete_dev(&arg);
+	ret = ubagg_delete_dev(&arg.in.agg_eid);
 	if (ret != 0) {
 		ubagg_log_err("ubagg_delete_dev failed: %d\n", ret);
 		return ret;
@@ -2092,7 +1705,7 @@ static int ubagg_get_dev_name(struct ubagg_get_dev_name_arg *arg)
 
 	(void)strscpy(arg->out.dev_name, dev->dev_name, UBAGG_MAX_DEV_NAME_LEN);
 
-	ubagg_put_ubcore_device(dev);
+	ubcore_put_device(dev);
 	return 0;
 }
 
@@ -2144,9 +1757,6 @@ long ubagg_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		return -EFAULT;
 	}
 	switch (hdr.command) {
-	case UBAGG_CMD_ADD_DEV:
-	case UBAGG_CMD_RMV_DEV:
-		return 0;
 	case UBAGG_CMD_SET_TOPO_INFO:
 		return ubagg_cmd_set_topo_info(&hdr);
 	case UBAGG_CMD_GET_TOPO_INFO:
@@ -2165,15 +1775,11 @@ long ubagg_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 void ubagg_clear_dev_list(void)
 {
-	struct ubagg_device *dev, *next = NULL;
-	unsigned long flags;
+	struct ubagg_device *dev = NULL;
 
-	spin_lock_irqsave(&g_ubagg_dev_list_lock, flags);
-	list_for_each_entry_safe(dev, next, &g_ubagg_dev_list, list_node) {
-		list_del_init(&dev->list_node);
+	while ((dev = ubagg_pop_device_from_list()) != NULL) {
+		ubagg_session_flush(dev);
 		ubcore_unregister_device(&dev->ub_dev);
-		free_ubagg_dev_bitmap(dev);
-		ubagg_dev_ref_put(dev);
+		ubagg_put_device(dev);
 	}
-	spin_unlock_irqrestore(&g_ubagg_dev_list_lock, flags);
 }

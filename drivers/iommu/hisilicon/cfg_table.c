@@ -884,7 +884,6 @@ int ummu_write_tct_desc(struct ummu_device *ummu, struct ummu_domain_cfgs *cfgs,
 	struct ummu_domain *u_domain = container_of(cfgs, struct ummu_domain, cfgs);
 	struct ummu_tct_desc_cfg *tct_cfg = cfgs->s1_cfg.tct_cfg;
 	struct ummu_tct_desc *tct_desc = &cfgs->s1_cfg.tct;
-	u32 type = u_domain->base_domain.domain.type;
 	u32 tid = u_domain->base_domain.tid;
 	u32 tag = cfgs->tecte_tag;
 	bool is_valid;
@@ -930,6 +929,7 @@ int ummu_write_tct_desc(struct ummu_device *ummu, struct ummu_domain_cfgs *cfgs,
 		}
 		tcte[5] = cpu_to_le64(tct_desc->mair);
 		val = tct_desc->tcr0 |
+		      (tct_desc->matt_bypass ? TCT_ENT0_MATT_BYPASS : 0) |
 #ifdef __BIG_ENDIAN
 		      TCT_ENT0_ENDI |
 #endif
@@ -950,8 +950,7 @@ int ummu_write_tct_desc(struct ummu_device *ummu, struct ummu_domain_cfgs *cfgs,
 			val |= TCT_ENT0_HAF;
 		if (ummu->cap.features & UMMU_FEAT_HD)
 			val |= TCT_ENT0_HDF;
-		if (hw_bypass && type == IOMMU_DOMAIN_IDENTITY)
-			val |= TCT_ENT0_MATT_BYPASS;
+
 		WRITE_ONCE(tcte[0], cpu_to_le64(val));
 	}
 
@@ -1238,20 +1237,20 @@ static bool check_tecte_can_set(const struct ummu_tecte_data *tecte,
 	}
 }
 
-static bool ummu_device_fill_tecte(struct ummu_device *ummu, u32 deid,
+static void ummu_device_fill_tecte(struct ummu_device *ummu, u32 deid,
 				  const struct ummu_tecte_data *src)
 {
 	struct ummu_tecte_data *tecte;
 
+	if (!src)
+		return;
+
 	tecte = ummu_alloc_tecte(ummu, deid);
 	if (!tecte)
-		return false;
+		return;
 
-	if (check_tecte_can_set(tecte, src)) {
+	if (check_tecte_can_set(tecte, src))
 		memcpy(tecte, src->data, sizeof(*src));
-		return true;
-	}
-	return false;
 }
 
 void ummu_device_write_tecte(struct ummu_device *ummu, u32 deid,
@@ -1259,8 +1258,8 @@ void ummu_device_write_tecte(struct ummu_device *ummu, u32 deid,
 {
 	if (iommu_default_passthrough())
 		ummu_device_write_tecte_bypass(ummu, deid);
-	else if (!src || !ummu_device_fill_tecte(ummu, deid, src))
-		return;
+	else
+		ummu_device_fill_tecte(ummu, deid, src);
 
 	ummu_device_sync_tect(ummu, deid);
 	ummu_device_prefetch_cfg(ummu, deid, UMMU_INVALID_TID);
@@ -1320,6 +1319,9 @@ int ummu_add_eid(struct ummu_core_device *core_dev, guid_t *guid, eid_t eid, enu
 		meta->valid = true;
 		ummu_device_make_default_tecte(ummu, &meta->tct_tbl, &target, type);
 		ummu_device_write_tecte(ummu, meta->tecte_tag, &target);
+	} else {
+		ummu_device_sync_tect(ummu, meta->tecte_tag);
+		ummu_device_prefetch_cfg(ummu, meta->tecte_tag, UMMU_INVALID_TID);
 	}
 	ummu_device_create_kvtable(ummu, meta->tecte_tag, eid, kv_index);
 	return 0;
@@ -1350,6 +1352,9 @@ void ummu_del_eid(struct ummu_core_device *core_dev, guid_t *guid, eid_t eid, en
 	if (kref_read(&meta->ref) == 2) {
 		ummu_device_write_tecte(ummu, meta->tecte_tag, &ummu_clear_tecte);
 		meta->valid = false;
+	} else {
+		ummu_device_sync_tect(ummu, meta->tecte_tag);
+		ummu_device_prefetch_cfg(ummu, meta->tecte_tag, UMMU_INVALID_TID);
 	}
 
 	os_meta_del_eid(meta, eid);

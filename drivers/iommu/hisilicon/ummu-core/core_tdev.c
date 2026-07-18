@@ -336,13 +336,12 @@ static void ummu_core_tdev_release(struct kref *ref)
 	struct tid_dev *tdev = container_of(ref, struct tid_dev, ref);
 	struct tid_dev *entry;
 
-	scoped_guard(mutex, &mm_tid_xa_lock) {
-		if (tdev->mm) {
-			entry = (struct tid_dev *)__xa_erase(&mm_tid_xa,
-							     (unsigned long)(uintptr_t)tdev->mm);
-			WARN_ON(entry != tdev);
-		}
+	if (tdev->mm) {
+		entry = (struct tid_dev *)__xa_erase(&mm_tid_xa,
+						     (unsigned long)(uintptr_t)tdev->mm);
+		WARN_ON(entry != tdev);
 	}
+	mutex_unlock(&mm_tid_xa_lock);
 
 	platform_device_unregister(&tdev->pdev);
 }
@@ -351,7 +350,7 @@ int ummu_core_free_tdev(struct device *dev)
 {
 	struct tid_dev *tdev = to_tid_dev(dev);
 
-	kref_put(&tdev->ref, ummu_core_tdev_release);
+	kref_put_mutex(&tdev->ref, ummu_core_tdev_release, &mm_tid_xa_lock);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(ummu_core_free_tdev);

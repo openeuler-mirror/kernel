@@ -76,9 +76,9 @@
 #define UBCORE_OWN_UE_IDX (0xffff)
 #define UBCORE_JETTY_GRP_MAX_NAME 64
 #define UBCORE_MAX_TP_CNT_IN_GRP 32
-/* support 8 priorities and 8 algorithms */
+/* support 8 priorities and 10 algorithms */
 /* same as URMA_CC_IDX_TABLE_SIZE */
-#define UBCORE_CC_IDX_TABLE_SIZE 81
+#define UBCORE_CC_IDX_TABLE_SIZE 80
 #define UBCORE_SIP_TABLE_SIZE (1024)
 #define UBCORE_MAX_SIP UBCORE_SIP_TABLE_SIZE
 #define UBCORE_CHECK_RETURN_ERR_PTR(ptr, err) \
@@ -86,10 +86,14 @@
 
 #define UBCORE_MAX_DSCP_NUM (64)
 #define UBCORE_MAX_ROUTE_NUM 16
+#define MAX_PATH_NUM (16)
 
 enum ubcore_transport_type {
 	UBCORE_TRANSPORT_INVALID = -1,
-	UBCORE_TRANSPORT_UB = 0,
+	UBCORE_TRANSPORT_UB      = 0,
+	UBCORE_TRANSPORT_IB      = 1,
+	UBCORE_TRANSPORT_IP      = 2,
+	UBCORE_TRANSPORT_HNS_UB  = 5,
 	UBCORE_TRANSPORT_MAX
 };
 
@@ -155,6 +159,7 @@ struct ubcore_ueid_cfg {
 	uint32_t eid_index;
 	guid_t guid;
 };
+
 
 struct ubcore_devid {
 	uint8_t raw[UBCORE_DEVID_SIZE];
@@ -469,27 +474,28 @@ enum ubcore_mtu {
 enum ubcore_tp_cc_alg {
 	UBCORE_TP_CC_NONE = 0,
 	UBCORE_TP_CC_DCQCN,
-	UBCORE_TP_CC_DCQCN_AND_NETWORK_CC,
-	UBCORE_TP_CC_LDCP,
-	UBCORE_TP_CC_LDCP_AND_CAQM,
-	UBCORE_TP_CC_LDCP_AND_OPEN_CC,
-	UBCORE_TP_CC_HC3,
+	UBCORE_TP_CC_CAQM,
+	UBCORE_TP_CC_LDCP = 3, /* LDCP must be 3 to ensure compatibility */
+	UBCORE_TP_CC_LDCP_L2_HEADER,
+	UBCORE_TP_CC_LDCP_TP_HEADER,
 	UBCORE_TP_CC_DIP,
-	UBCORE_TP_CC_ACC,
-	UBCORE_TP_CC_NUM
+	UBCORE_TP_CC_ACC, /* for 1815E */
+	UBCORE_TP_CC_CUSTOM_1,
+	UBCORE_TP_CC_CUSTOM_2,
+	UBCORE_TP_CC_NUM,
 };
 
 enum ubcore_congestion_ctrl_alg {
 	UBCORE_CC_NONE = 0x1 << UBCORE_TP_CC_NONE,
 	UBCORE_CC_DCQCN = 0x1 << UBCORE_TP_CC_DCQCN,
-	UBCORE_CC_DCQCN_AND_NETWORK_CC = 0x1
-					 << UBCORE_TP_CC_DCQCN_AND_NETWORK_CC,
+	UBCORE_CC_CAQM = 0x1 << UBCORE_TP_CC_CAQM,
 	UBCORE_CC_LDCP = 0x1 << UBCORE_TP_CC_LDCP,
-	UBCORE_CC_LDCP_AND_CAQM = 0x1 << UBCORE_TP_CC_LDCP_AND_CAQM,
-	UBCORE_CC_LDCP_AND_OPEN_CC = 0x1 << UBCORE_TP_CC_LDCP_AND_OPEN_CC,
-	UBCORE_CC_HC3 = 0x1 << UBCORE_TP_CC_HC3,
+	UBCORE_CC_LDCP_L2_HEADER = 0x1 << UBCORE_TP_CC_LDCP_L2_HEADER,
+	UBCORE_CC_LDCP_TP_HEADER = 0x1 << UBCORE_TP_CC_LDCP_TP_HEADER,
 	UBCORE_CC_DIP = 0x1 << UBCORE_TP_CC_DIP,
-	UBCORE_CC_ACC = 0x1 << UBCORE_TP_CC_ACC
+	UBCORE_CC_ACC = 0x1 << UBCORE_TP_CC_ACC,
+	UBCORE_CC_CUSTOM_1 = 0x1 << UBCORE_TP_CC_CUSTOM_1,
+	UBCORE_CC_CUSTOM_2 = 0x1 << UBCORE_TP_CC_CUSTOM_2,
 };
 
 enum ubcore_speed {
@@ -728,7 +734,10 @@ union ubcore_device_cfg_mask {
 		uint32_t max_jfr_cnt : 1;
 		uint32_t reserved_jetty_id_min : 1;
 		uint32_t reserved_jetty_id_max : 1;
-		uint32_t reserved : 19;
+		uint32_t ta2tp_sched_alg : 1;
+		uint32_t dscp : 1;
+		uint32_t feature : 1;
+		uint32_t reserved : 16;
 	} bs;
 	uint32_t value;
 };
@@ -740,6 +749,26 @@ struct ubcore_congestion_control {
 struct ubcore_rc_cfg {
 	uint32_t rc_cnt; /* rc queue count */
 	uint32_t depth;
+};
+
+enum ubcore_ta2tp_sched_alg {
+	UBCORE_TA2TP_SCHE_DEFAULT = 0,   /* may schedule consecutive WQEs into one TP */
+	UBCORE_TA2TP_SCHE_RR,            /* round robin */
+	UBCORE_TA2TP_SCHE_FIXED,         /* fixed TP */
+	UBCORE_TA2TP_SCHE_LL,            /* TP with least load */
+	UBCORE_TA2TP_SCHE_MAX
+};
+
+union ubcore_device_cfg_feature {
+	struct {
+		uint32_t taack_flush : 1; /* enable sending TAACK after data written into memory */
+		uint32_t inline_reduce   : 1; /* enable inline reduce */
+		uint32_t npu_direct_urma : 1; /* enable NPU-direct URMA */
+		uint32_t bus_multipath   : 1; /* enable multipath transport in bus */
+		uint32_t jumbo_packet    : 1; /* enable jumbo packet in frame */
+		uint32_t reserve         : 27;
+	} bs;
+	uint32_t value;
 };
 
 struct ubcore_device_cfg {
@@ -757,6 +786,9 @@ struct ubcore_device_cfg {
 	uint32_t max_jfr_cnt;
 	uint32_t reserved_jetty_id_min;
 	uint32_t reserved_jetty_id_max;
+	enum ubcore_ta2tp_sched_alg ta2tp_sched_alg;
+	uint16_t dscp;
+	union ubcore_device_cfg_feature feature;
 };
 
 /* struct [struct ubcore_user_ctl_in] should be consistent with [urma_user_ctl_in_t] */
@@ -1174,6 +1206,7 @@ struct ubcore_vtp_cfg {
 		struct ubcore_utp *utp; // idx of dip
 		struct ubcore_ctp *ctp; /* valid when clan is true */
 	};
+	uint32_t upi;
 };
 
 struct ubcore_vtp {
@@ -1206,25 +1239,37 @@ union ubcore_vtp_attr_mask {
 };
 
 enum ubcore_msg_opcode {
-	/* 630 Verion msg start */
+	/* 630 Version msg start */
 	UBCORE_MSG_CREATE_VTP = 0x0,
 	UBCORE_MSG_DESTROY_VTP = 0x1,
 	UBCORE_MSG_ALLOC_EID = 0x2,
 	UBCORE_MSG_DEALLOC_EID = 0x3,
 	UBCORE_MSG_CONFIG_DEVICE = 0x4,
 	UBCORE_MSG_VTP_STATUS_NOTIFY = 0x5, // MUE notify MUE/UE
+	/* 630 Version msg end. Do not change! */
+
+	/* 930 Version msg start. */
 	UBCORE_MSG_UPDATE_EID_TABLE_NOTIFY = 0x6, // MUE notify MUE/UE
 	UBCORE_MSG_UE2MUE_TRANSFER = 0x7, // UE-MUE common transfer
+	/* 930 Version msg end. */
+
+	/* 630 Version msg start */
 	UBCORE_MSG_STOP_PROC_VTP_MSG = 0x10, // Live migration
 	UBCORE_MSG_QUERY_VTP_MIG_STATUS = 0x11, // Live migration
 	UBCORE_MSG_FLOW_STOPPED = 0x12, // Live migration
 	UBCORE_MSG_MIG_ROLLBACK = 0x13, // Live migration
 	UBCORE_MSG_MIG_VM_START = 0x14, // Live migration
 	UBCORE_MSG_NEGO_VER =
-		0x15, // Verion negotiation, processed by backend ubcore.
+			0x15, // Version negotiation, processed by backend ubcore.
+	/* 630 Version msg start end. Do not change! */
+
+	/* 930 Version msg start. */
 	UBCORE_MSG_NOTIFY_FASTMSG_DRAIN = 0x16,
+	/* 930 Version msg end. */
 	UBCORE_MSG_UPDATE_NET_ADDR = 0x17,
-	UBCORE_MSP_UPDATE_EID = 0x18
+	UBCORE_MSP_UPDATE_EID = 0x18,
+
+	UBCORE_MSG_DISCOVER_MAC = 0x20
 };
 
 struct ubcore_req {
@@ -1831,7 +1876,8 @@ union ubcore_jfs_wr_flag {
 		 */
 		uint32_t inline_flag : 1;
 		uint32_t db_bypass : 1;
-		uint32_t reserved : 24;
+		uint32_t udf : 1;
+		uint32_t reserved : 23;
 	} bs;
 	uint32_t value;
 };
@@ -1889,6 +1935,19 @@ struct ubcore_faa_wr {
 	};
 };
 
+
+struct ubcore_flush_dma_wr {
+	uint64_t token_id;
+};
+
+union ubcore_driver_data {
+	struct {
+		uint64_t addr;
+		uint32_t size;
+	} mem_descriptor;
+	uint8_t direct_data[16];
+};
+
 struct ubcore_jfs_wr {
 	enum ubcore_opcode opcode;
 	union ubcore_jfs_wr_flag flag;
@@ -1899,8 +1958,11 @@ struct ubcore_jfs_wr {
 		struct ubcore_send_wr send;
 		struct ubcore_cas_wr cas;
 		struct ubcore_faa_wr faa;
+		struct ubcore_flush_dma_wr cwr;
 	};
 	struct ubcore_jfs_wr *next;
+	uint32_t udf;
+	union ubcore_driver_data driver_data;
 };
 
 struct ubcore_jfr_wr {
@@ -1942,6 +2004,7 @@ struct ubcore_cr {
 	};
 	uint32_t tpn;
 	uintptr_t user_data; /* Use as pointer to local jetty struct */
+	union ubcore_driver_data driver_data;
 };
 
 enum ubcore_stats_key_type {
@@ -3292,10 +3355,12 @@ enum ubcore_hash_table_type {
 	UBCORE_HT_RM_TP_ID, /* key: seid + deid + tag */
 	UBCORE_HT_RC_TP_ID, /* seid + deid + sjettyid + djettyid + tag */
 	UBCORE_HT_UTP_ID, /* key: seid + deid + tag */
-	UBCORE_HT_TPID_LIST, /* key: seid + deid + trans_mode + tp_type + link_type */
+	UBCORE_HT_TPID_LIST, /* key: seid + deid + trans_mode + tp_type
+				 + link_type + local_cna + peer_cna */
 	UBCORE_HT_TPID_STATE, /* key: tpid */
-	UBCORE_HT_TPID_REUSE, /* key: seid + deid + trans_mode + tp_type + link_type +
-							 stag/sjettyid + dtag/djetty_id */
+	UBCORE_HT_TPID_REUSE, /* key: seid + deid + trans_mode + tp_type
+				 + link_type + local_cna + peer_cna
+				 + stag/sjettyid + dtag/djetty_id */
 	UBCORE_HT_NUM
 };
 

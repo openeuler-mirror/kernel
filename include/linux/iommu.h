@@ -1123,6 +1123,7 @@ extern int iommu_clear_dirty_log(struct iommu_domain *domain, unsigned long iova
 				 unsigned long bitmap_pgshift);
 
 void iommu_set_dma_strict(void);
+extern bool iommu_default_dma_strict(void);
 
 extern int report_iommu_fault(struct iommu_domain *domain, struct device *dev,
 			      unsigned long iova, int flags);
@@ -1499,6 +1500,11 @@ static inline void iommu_set_default_translated(bool cmd_line)
 }
 
 static inline bool iommu_default_passthrough(void)
+{
+	return true;
+}
+
+static inline bool iommu_default_dma_strict(void)
 {
 	return true;
 }

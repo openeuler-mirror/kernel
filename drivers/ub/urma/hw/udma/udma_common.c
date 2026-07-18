@@ -329,9 +329,11 @@ static inline uint32_t udma_adv_jetty_id_alloc(struct udma_dev *udma_dev, uint32
 					       uint32_t next_bit, uint32_t start_idx,
 					       struct udma_group_bitmap *bitmap_table)
 {
+	unsigned long tmp_bit;
 	uint32_t bit_idx;
 
-	bit_idx = find_next_bit((unsigned long *)bit, NUM_JETTY_PER_GROUP, next_bit);
+	tmp_bit = *bit;
+	bit_idx = find_next_bit(&tmp_bit, NUM_JETTY_PER_GROUP, next_bit);
 	*bit &= ~(1U << bit_idx);
 
 	return bitmap_table->min + start_idx + bit_idx;
@@ -921,12 +923,14 @@ void udma_dfx_ctx_print(struct udma_dev *udev, const char *name, uint32_t id, ui
 {
 	uint32_t i;
 
-	pr_info("*************udma%u %s(%u) CONTEXT INFO *************\n",
-		udev->adev_id, name, id);
+	pr_info("*************%s %s(%u) CONTEXT INFO *************\n",
+		udev->dev_name, name, id);
 
 	for (i = 0; i < len; ++i)
-		pr_info("udma%u %s(%u) CONTEXT(byte%4lu): %08x\n",
-			udev->adev_id, name, id, (i + 1) * sizeof(uint32_t), ctx[i]);
+		pr_info("%s %s(%u) CONTEXT(byte%4u): %08x\n",
+			udev->dev_name, name, id,
+			(i + 1) * (uint32_t)sizeof(uint32_t),
+			ctx[i]);
 
 	pr_info("**************************************************\n");
 }

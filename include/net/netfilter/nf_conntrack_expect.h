@@ -39,7 +39,7 @@ struct nf_conntrack_expect {
 	void (*expectfn)(struct nf_conn *new,
 			 struct nf_conntrack_expect *this);
 
-	/* Helper to assign to new connection */
+	/* Helper that created this expectation */
 	struct nf_conntrack_helper __rcu *helper;
 
 	/* The conntrack of the master connection */
@@ -58,11 +58,28 @@ struct nf_conntrack_expect {
 #endif
 
 	struct rcu_head rcu;
+#ifdef CONFIG_NF_CONNTRACK_ZONES
+	KABI_EXTEND(struct nf_conntrack_zone zone)
+#endif
+	/* Network namespace */
+	KABI_EXTEND(possible_net_t net)
+	/* Helper to assign to new connection */
+	KABI_EXTEND(struct nf_conntrack_helper __rcu *assign_helper)
 };
 
 static inline struct net *nf_ct_exp_net(struct nf_conntrack_expect *exp)
 {
-	return nf_ct_net(exp->master);
+	return read_pnet(&exp->net);
+}
+
+static inline bool nf_ct_exp_zone_equal_any(const struct nf_conntrack_expect *a,
+					    const struct nf_conntrack_zone *b)
+{
+#ifdef CONFIG_NF_CONNTRACK_ZONES
+	return a->zone.id == b->id;
+#else
+	return true;
+#endif
 }
 
 #define NF_CT_EXP_POLICY_NAME_LEN	16

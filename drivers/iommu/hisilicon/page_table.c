@@ -28,13 +28,13 @@ static const struct iommu_flush_ops ummu_flush_ops = {
 
 struct ummu_domain identity_u_domain = {};
 
-static int ummu_get_pgtable_cfg(struct ummu_domain *ummu_domain,
+static int ummu_get_pgtable_cfg(struct ummu_domain *u_domain,
 				struct ummu_pgtable_cfg *cfg)
 {
 	struct ummu_device *ummu = core_to_ummu_device(
-					ummu_domain->base_domain.core_dev);
+					u_domain->base_domain.core_dev);
 
-	if (ummu_domain->cfgs.stage == UMMU_DOMAIN_S1) {
+	if (u_domain->cfgs.stage == UMMU_DOMAIN_S1) {
 		cfg->fmt = ARM_64_LPAE_S1;
 		cfg->pgtbl_cfg.ias = (ummu->cap.features & UMMU_FEAT_VAX) ? 52 : 48;
 		cfg->pgtbl_cfg.ias = min(cfg->pgtbl_cfg.ias, VA_BITS);
@@ -56,11 +56,14 @@ static int ummu_get_pgtable_cfg(struct ummu_domain *ummu_domain,
 
 	cfg->pgtbl_cfg.coherent_walk = ummu->cap.features & UMMU_FEAT_COHERENCY;
 	cfg->pgtbl_cfg.pgsize_bitmap = ummu->cap.pgsize_bitmap;
-	cfg->pgtbl_cfg.tlb = &ummu_flush_ops;
+
+	if (u_domain->base_domain.domain.type != IOMMU_DOMAIN_IDENTITY)
+		cfg->pgtbl_cfg.tlb = &ummu_flush_ops;
+
 	cfg->pgtbl_cfg.iommu_dev = ummu->dev;
 
 	cfg->pgtbl_ops =
-		alloc_io_pgtable_ops(cfg->fmt, &cfg->pgtbl_cfg, ummu_domain);
+		alloc_io_pgtable_ops(cfg->fmt, &cfg->pgtbl_cfg, u_domain);
 	if (!cfg->pgtbl_ops) {
 		pr_err("alloc page table failed, check page table config!\n");
 		return -ENOMEM;
@@ -69,12 +72,12 @@ static int ummu_get_pgtable_cfg(struct ummu_domain *ummu_domain,
 	return 0;
 }
 
-static int ummu_domain_collect_pgtable_s1(struct ummu_domain *ummu_domain,
+static int ummu_domain_collect_pgtable_s1(struct ummu_domain *u_domain,
 					  struct io_pgtable_cfg *pgtbl_cfg)
 {
 	typeof(&pgtbl_cfg->arm_lpae_s1_cfg.tcr) tcr =
 		&pgtbl_cfg->arm_lpae_s1_cfg.tcr;
-	struct ummu_s1_cfg *cfg = &ummu_domain->cfgs.s1_cfg;
+	struct ummu_s1_cfg *cfg = &u_domain->cfgs.s1_cfg;
 
 	cfg->tct.ttbr = pgtbl_cfg->arm_lpae_s1_cfg.ttbr;
 	cfg->tct.mair = pgtbl_cfg->arm_lpae_s1_cfg.mair;
@@ -90,20 +93,21 @@ static int ummu_domain_collect_pgtable_s1(struct ummu_domain *ummu_domain,
 	return 0;
 }
 
-static int ummu_domain_collect_pgtable_s2(struct ummu_domain *ummu_domain,
+static int ummu_domain_collect_pgtable_s2(struct ummu_domain *u_domain,
 					  struct io_pgtable_cfg *pgtbl_cfg)
 {
 	typeof(&pgtbl_cfg->arm_lpae_s2_cfg.vtcr) vtcr =
 		&pgtbl_cfg->arm_lpae_s2_cfg.vtcr;
-	struct ummu_s2_cfg *cfg = &ummu_domain->cfgs.s2_cfg;
+	struct ummu_s2_cfg *cfg = &u_domain->cfgs.s2_cfg;
 	int vmid = 0;
 
-	if (ummu_domain->kvm)
-		vmid = kvm_pinned_vmid_get(ummu_domain->kvm);
+	if (u_domain->kvm)
+		vmid = kvm_pinned_vmid_get(u_domain->kvm);
 	if (vmid < 0)
 		return vmid;
 
 	cfg->vmid = (u16)vmid;
+	u_domain->vmid = cfg->vmid;
 	cfg->vttbr = pgtbl_cfg->arm_lpae_s2_cfg.vttbr;
 	cfg->vtcr = FIELD_PREP(TECT_ENT2_NS_S2_TSZ, vtcr->tsz) |
 		    FIELD_PREP(TECT_ENT2_NS_S2_SL, vtcr->sl) |
@@ -116,23 +120,23 @@ static int ummu_domain_collect_pgtable_s2(struct ummu_domain *ummu_domain,
 	return 0;
 }
 
-int ummu_domain_collect_pgtable(struct ummu_domain *ummu_domain)
+int ummu_domain_collect_pgtable(struct ummu_domain *u_domain)
 {
 	struct ummu_pgtable_cfg cfg;
 	int ret;
 
 	memset(&cfg, 0, sizeof(cfg));
-	ret = ummu_get_pgtable_cfg(ummu_domain, &cfg);
+	ret = ummu_get_pgtable_cfg(u_domain, &cfg);
 	if (ret) {
 		pr_err("get ummu pagetable configuration failed!\n");
 		return ret;
 	}
 
-	if (ummu_domain->cfgs.stage == UMMU_DOMAIN_S1)
-		ret = ummu_domain_collect_pgtable_s1(ummu_domain,
+	if (u_domain->cfgs.stage == UMMU_DOMAIN_S1)
+		ret = ummu_domain_collect_pgtable_s1(u_domain,
 						     &cfg.pgtbl_cfg);
 	else
-		ret = ummu_domain_collect_pgtable_s2(ummu_domain,
+		ret = ummu_domain_collect_pgtable_s2(u_domain,
 						     &cfg.pgtbl_cfg);
 
 	if (ret) {
@@ -140,13 +144,13 @@ int ummu_domain_collect_pgtable(struct ummu_domain *ummu_domain)
 		return ret;
 	}
 
-	ummu_domain->cfgs.pgtbl_ops = cfg.pgtbl_ops;
-	ummu_domain->base_domain.domain.pgsize_bitmap =
+	u_domain->cfgs.pgtbl_ops = cfg.pgtbl_ops;
+	u_domain->base_domain.domain.pgsize_bitmap =
 				cfg.pgtbl_cfg.pgsize_bitmap;
-	ummu_domain->base_domain.domain.geometry.aperture_start = 0;
-	ummu_domain->base_domain.domain.geometry.aperture_end =
+	u_domain->base_domain.domain.geometry.aperture_start = 0;
+	u_domain->base_domain.domain.geometry.aperture_end =
 		(dma_addr_t)DMA_BIT_MASK(cfg.pgtbl_cfg.ias);
-	ummu_domain->base_domain.domain.geometry.force_aperture = true;
+	u_domain->base_domain.domain.geometry.force_aperture = true;
 	return 0;
 }
 

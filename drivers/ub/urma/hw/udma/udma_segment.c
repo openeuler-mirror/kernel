@@ -10,6 +10,7 @@
 #include "udma_cmd.h"
 #include "udma_eid.h"
 #include "udma_tid.h"
+#include "udma_seg_tree.h"
 #include "udma_segment.h"
 
 static int udma_align_segment(struct udma_segment *seg)
@@ -225,10 +226,15 @@ static int udma_get_user_page(struct udma_dev *dev, struct udma_segment *seg,
 		return -EINVAL;
 	}
 
-	seg->first_page = va_to_page(dev, vma->vm_start);
+	seg->first_page = va_to_page(dev, seg->addr);
 	if (!seg->first_page) {
 		dev_err(dev->dev, "failed to get first physical page.\n");
 		return -EINVAL;
+	}
+	if (!PageCompound(seg->first_page)) {
+		seg->first_page = va_to_page(dev, vma->vm_start);
+		if (!seg->first_page)
+			dev_warn(dev->dev, "failed to get first physical page of normal page.\n");
 	}
 
 	seg->umem = kzalloc(sizeof(*seg->umem), GFP_KERNEL);
@@ -260,7 +266,7 @@ static int udma_get_user_page(struct udma_dev *dev, struct udma_segment *seg,
 		}
 	}
 
-	if (!try_get_page(seg->first_page)) {
+	if (seg->first_page && !try_get_page(seg->first_page)) {
 		dev_err(dev->dev, "failed to get_page.\n");
 		ret = -EINVAL;
 		goto err_get_page;
@@ -284,7 +290,8 @@ err_alloc_pages:
 
 static void udma_put_user_page(struct udma_segment *seg)
 {
-	put_page(seg->first_page);
+	if (seg->first_page)
+		put_page(seg->first_page);
 	sg_free_append_table(&seg->umem->append);
 	kfree(seg->umem);
 	seg->umem = NULL;
@@ -304,6 +311,9 @@ static int udma_pin_seg_pages(struct ubcore_device *ub_dev,
 		dev_err(ctx->dev->dev, "failed to vma_lookup.\n");
 		return -EINVAL;
 	}
+
+	seg->vm_start = vma->vm_start;
+	seg->vm_end = vma->vm_end;
 
 	if (vma->vm_flags & VM_PFNMAP) {
 		ret = udma_get_user_page(ctx->dev, seg, vma);
@@ -422,44 +432,38 @@ static int udma_iommu_local_map(struct ubcore_device *ub_dev,
 	struct udma_range_list pageList = {};
 	int ret;
 
-	mutex_lock(&ctx->seg_node->lock);
-	ret = udma_seg_range_occupy(ctx->seg_node, seg->addr,
-				    seg->addr + PAGE_ALIGN(seg->length) - 1,
-				    &pageList);
+	mutex_lock(&ctx->seg_tree->lock);
+	ret = udma_seg_range_occupy(ctx, seg, &pageList);
 	if (unlikely(ret)) {
-		mutex_unlock(&ctx->seg_node->lock);
+		mutex_unlock(&ctx->seg_tree->lock);
 		dev_err(ctx->dev->dev, "segment have invalid parameter,ret = %d.\n", ret);
 		return ret;
 	}
 
 	if (pageList.head == NULL) {
-		mutex_unlock(&ctx->seg_node->lock);
+		mutex_unlock(&ctx->seg_tree->lock);
 		return 0;
 	}
 
 	if (pageList.head->length == PAGE_ALIGN(seg->length)) {
 		ret = udma_ioummu_map(ctx->tid, UMMU_INVALID_TID, prot,
 				      seg->addr, &(seg->umem->append.sgt));
-		if (unlikely(ret)) {
-			udma_range_list_destroy(&pageList);
-			mutex_unlock(&ctx->seg_node->lock);
+		if (unlikely(ret))
 			dev_err(ctx->dev->dev, "IOMMU segment failed, ret = %d.\n", ret);
-			return ret;
-		}
 	} else {
 		ret = udma_iommu_partial_overlap_seg(ub_dev, ctx, seg, cfg,
 						     &pageList);
-		if (unlikely(ret)) {
-			udma_range_list_destroy(&pageList);
-			mutex_unlock(&ctx->seg_node->lock);
+		if (unlikely(ret))
 			dev_err(ctx->dev->dev,
 				"IOMMU partial overlap segment failed, ret = %d.\n", ret);
-			return ret;
-		}
 	}
-
 	udma_range_list_destroy(&pageList);
-	mutex_unlock(&ctx->seg_node->lock);
+	if (ret) {
+		udma_seg_range_release(ctx, seg, &pageList);
+		udma_range_list_destroy(&pageList);
+	}
+	mutex_unlock(&ctx->seg_tree->lock);
+
 	return ret;
 }
 
@@ -516,9 +520,8 @@ static void udma_unpin_pages_and_unioummu_map(struct udma_context *ctx, struct u
 		udma_ioummu_unmap(UMMU_INVALID_TID, tid, seg->addr,
 				  PAGE_SIZE * udma_cal_npages(seg->addr, seg->length));
 
-	mutex_lock(&ctx->seg_node->lock);
-	udma_seg_range_release(ctx->seg_node, seg->addr,
-			       seg->addr + PAGE_ALIGN(seg->length) - 1, &pageList);
+	mutex_lock(&ctx->seg_tree->lock);
+	udma_seg_range_release(ctx, seg, &pageList);
 	current_node = pageList.head;
 	while (current_node != NULL) {
 		udma_ioummu_unmap(ctx->tid, UMMU_INVALID_TID, current_node->start,
@@ -527,7 +530,7 @@ static void udma_unpin_pages_and_unioummu_map(struct udma_context *ctx, struct u
 		current_node = current_node->next;
 	}
 	udma_range_list_destroy(&pageList);
-	mutex_unlock(&ctx->seg_node->lock);
+	mutex_unlock(&ctx->seg_tree->lock);
 
 	udma_unpin_seg_pages(seg, true);
 }
@@ -699,17 +702,20 @@ int udma_unimport_seg(struct ubcore_target_seg *tseg)
 	return 0;
 }
 
-void udma_destroy_seg_tree_table(struct udma_dev *dev)
+void udma_destroy_seg_tree_table(void)
 {
-	struct udma_seg_tree_node *seg_node = NULL;
+	struct udma_seg_tree *seg_tree = NULL;
 	unsigned long tid = 0;
 
-	mutex_lock(&dev->seg_tree_mutex);
-	xa_for_each(&dev->seg_tree_table, tid, seg_node) {
-		__xa_erase(&dev->seg_tree_table, tid);
-		udma_seg_tree_destroy(seg_node);
+	mutex_lock(&g_seg_tree_mutex);
+	if (!xa_empty(&g_seg_tree_table))
+		pr_warn("seg_tree_table is not empty.\n");
+
+	xa_for_each(&g_seg_tree_table, tid, seg_tree) {
+		__xa_erase(&g_seg_tree_table, tid);
+		udma_seg_tree_destroy(seg_tree);
 	}
-	mutex_unlock(&dev->seg_tree_mutex);
-	xa_destroy(&dev->seg_tree_table);
-	mutex_destroy(&dev->seg_tree_mutex);
+	mutex_unlock(&g_seg_tree_mutex);
+	xa_destroy(&g_seg_tree_table);
+	mutex_destroy(&g_seg_tree_mutex);
 }

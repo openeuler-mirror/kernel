@@ -31,11 +31,13 @@ struct fwctl_rpc_ub_in {
 /**
  * struct fwctl_rpc_ub_out - ioctl(FWCTL_RPC) output
  * @retval: The value returned when querying data with an error message
+ * @env_version: Different environmental versions
  * @data_size: Length of @data
  * @data: data transmitted to users
  */
 struct fwctl_rpc_ub_out {
 	int retval;
+	__u32 env_version;
 	__u32 data_size;
 	__u32 data[];
 };
@@ -177,6 +179,10 @@ enum ub_fwctl_cmdrpc_type {
 	 * @UTOOL_CMD_QUERY_TA_ABN_STATS: Query TA layer ABN_STATS related registers
 	 */
 	UTOOL_CMD_QUERY_TA_ABN_STATS = 0x0033,
+	/**
+	 * @UTOOL_CMD_QUERY_TA_WQE_TIME: Query TA layer WQE_TIME related registers
+	 */
+	UTOOL_CMD_QUERY_TA_WQE_TIME = 0x0034,
 
 	/**
 	 * @UTOOL_CMD_QUERY_BA: Query all registers at the BA layer

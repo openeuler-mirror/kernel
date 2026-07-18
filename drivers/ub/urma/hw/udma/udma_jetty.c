@@ -140,7 +140,7 @@ static void udma_init_jettyc(struct udma_dev *dev, struct ubcore_jetty_cfg *cfg,
 
 	ctx->state = JETTY_READY;
 	ctx->jfs_mode = JETTY;
-	ctx->type = to_udma_type(cfg->trans_mode);
+	ctx->type = udma_get_type(cfg->trans_mode, cfg->flag.bs.order_type);
 	ctx->sl = dev->udma_sl[UDMA_DEFAULT_SL_NUM];
 	if (ctx->type == JETTY_RM || ctx->type == JETTY_RC) {
 		ctx->sl = dev->priority_info[cfg->priority].SL;
@@ -954,7 +954,8 @@ static bool udma_destroy_jetty_precondition(struct udma_dev *dev, struct udma_je
 	if (dev->caps.feature & UDMA_CAP_FEATURE_UE_RX_CLOSE)
 		goto modify_to_err;
 
-	udma_modify_jetty_precondition(dev, sq);
+	if ((dev->hw_ver == UBASE_HW_VER_A_0) || (dev->hw_ver == UBASE_HW_VER_K_0))
+		udma_modify_jetty_precondition(dev, sq);
 
 modify_to_err:
 	if (udma_set_jetty_state(dev, sq->id, JETTY_ERROR)) {
@@ -1285,6 +1286,7 @@ static bool udma_batch_destroy_jetty_precondition(struct udma_dev *dev,
 						  uint32_t jetty_cnt, int *bad_jetty_index)
 {
 	if (!(dev->caps.feature & UDMA_CAP_FEATURE_UE_RX_CLOSE) &&
+		((dev->hw_ver == UBASE_HW_VER_A_0) || (dev->hw_ver == UBASE_HW_VER_K_0)) &&
 	    udma_batch_modify_jetty_precondition(dev, sq_list, jetty_cnt, bad_jetty_index))
 		return false;
 
@@ -1456,7 +1458,9 @@ static int udma_modify_jetty_state(struct udma_dev *udma_dev, struct udma_jetty 
 		if (ret)
 			break;
 
-		if (!(udma_dev->caps.feature & UDMA_CAP_FEATURE_UE_RX_CLOSE))
+		if (!(udma_dev->caps.feature & UDMA_CAP_FEATURE_UE_RX_CLOSE) &&
+		    ((udma_dev->hw_ver == UBASE_HW_VER_A_0) ||
+		     (udma_dev->hw_ver == UBASE_HW_VER_K_0)))
 			udma_modify_jetty_precondition(udma_dev, &udma_jetty->sq);
 
 		ret = udma_set_jetty_state(udma_dev, udma_jetty->sq.id,
@@ -1590,6 +1594,10 @@ struct ubcore_tjetty *udma_import_jetty_ex(struct ubcore_device *ub_dev,
 			cfg->type);
 		return ERR_PTR(-EINVAL);
 	}
+
+	ret = udma_get_tp_type_available(udma_dev, cfg);
+	if (ret)
+		return ERR_PTR(ret);
 
 	ret = udma_check_jetty_grp_info(cfg, udma_dev);
 	if (ret)
@@ -2011,5 +2019,66 @@ int udma_free_jetty(struct ubcore_jetty *jetty, struct ubcore_udata *udata)
 {
 	kfree(jetty);
 
+	return 0;
+}
+
+uint32_t udma_get_ta_timeout(uint8_t gear)
+{
+	static const uint32_t timeout_table[] = {
+		UDMA_TA_TIMEOUT_128MS,
+		UDMA_TA_TIMEOUT_1000MS,
+		UDMA_TA_TIMEOUT_8000MS,
+		UDMA_TA_TIMEOUT_64000MS
+	};
+
+	return (gear < ARRAY_SIZE(timeout_table)) ? timeout_table[gear] : UDMA_TA_TIMEOUT_64000MS;
+}
+
+uint32_t udma_get_type(uint32_t trans_mode, uint32_t order_type)
+{
+	switch (trans_mode) {
+	case UBCORE_TP_RM:
+		return JETTY_RM;
+	case UBCORE_TP_RC:
+		return JETTY_RC;
+	case UBCORE_TP_UM:
+		if (order_type == UBCORE_OL)
+			return JETTY_RC;
+		return JETTY_UM;
+	default:
+		return JETTY_TYPE_RESERVED;
+	}
+}
+
+int udma_get_tp_type_available(struct udma_dev *dev, struct ubcore_tjetty_cfg *cfg)
+
+{
+	uint32_t tp_ability_bit = 0;
+
+	if (cfg->flag.bs.order_type == UBCORE_OI && cfg->tp_type == UBCORE_RTP) {
+		tp_ability_bit = !!(ubase_get_ub_feature() & UBASE_URMA_RTP_ROI);
+	} else if (cfg->flag.bs.order_type == UBCORE_OI && cfg->tp_type == UBCORE_CTP) {
+		tp_ability_bit = !!(ubase_get_ub_feature() & UBASE_URMA_CTP_ROI);
+	} else if (cfg->flag.bs.order_type == UBCORE_OL && cfg->tp_type == UBCORE_CTP) {
+		tp_ability_bit = !!(ubase_get_ub_feature() & UBASE_URMA_CTP_ROL);
+	} else if (cfg->flag.bs.order_type == UBCORE_OL && cfg->tp_type == UBCORE_RTP) {
+		tp_ability_bit = !!(ubase_get_ub_feature() & UBASE_URMA_RTP_ROL);
+	} else if (cfg->flag.bs.order_type == UBCORE_NO && cfg->tp_type == UBCORE_CTP) {
+		tp_ability_bit = !!(ubase_get_ub_feature() & UBASE_URMA_CTP_UNO);
+	} else if (cfg->flag.bs.order_type == UBCORE_NO && cfg->tp_type == UBCORE_UTP) {
+		tp_ability_bit = !!(ubase_get_ub_feature() & UBASE_URMA_UTP_UNO);
+	} else if (cfg->flag.bs.order_type == UBCORE_OT && cfg->tp_type == UBCORE_CTP) {
+		tp_ability_bit = !!(ubase_get_ub_feature() & UBASE_URMA_CTP_ROT);
+	} else if (cfg->flag.bs.order_type == UBCORE_OT && cfg->tp_type == UBCORE_RTP) {
+		tp_ability_bit = !!(ubase_get_ub_feature() & UBASE_URMA_RTP_ROT);
+	} else	{
+		dev_err(dev->dev, "tp mode is not recognized.\n");
+		return -EINVAL;
+	}
+
+	if (!tp_ability_bit) {
+		dev_err(dev->dev, "tp mode is not supported, tp type: %u .\n", cfg->tp_type);
+		return -EINVAL;
+	}
 	return 0;
 }

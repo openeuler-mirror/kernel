@@ -42,5 +42,17 @@ void __ubase_reset_event(struct ubase_dev *udev,
 void ubase_port_reset(struct ubase_dev *udev);
 void ubase_errhandle_service_task(struct ubase_delay_work *ubase_work);
 void ubase_reset_task_schedule_immediately(struct ubase_dev *udev);
+int ubase_reset_done(struct ubase_dev *udev);
+static inline int ubase_init_ue_reset_reg(struct ubase_dev *udev)
+{
+	/*
+	 * force to init the reset register of UEs.
+	 * because the value of the register is incorrect for UE when the MUE
+	 * is removed and then probed immediately after a reset failure.
+	 */
+	if (test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
+		return 0;
+	return ubase_reset_done(udev);
+};
 
 #endif /* __UBASE_RESET_H__ */

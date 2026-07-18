@@ -1248,6 +1248,9 @@ madvise_behavior_valid(int behavior)
 	case MADV_SWAPFLAG:
 	case MADV_SWAPFLAG_REMOVE:
 #endif
+#ifdef CONFIG_CMA_FOLIO
+	case MADV_FCMA_ENABLE:
+#endif
 		return true;
 
 	default:
@@ -1717,6 +1720,15 @@ int do_madvise(struct mm_struct *mm, unsigned long start, size_t len_in, int beh
 
 	if (end == start)
 		return 0;
+
+#ifdef CONFIG_CMA_FOLIO
+	if (behavior == MADV_FCMA_ENABLE) {
+		if (!use_folio_cma())
+			return -EINVAL;
+		current->flags |= PF_FOLIO_CMA;
+		return 0;
+	}
+#endif
 
 	error = madvise_lock(mm, &madv_behavior);
 	if (error)

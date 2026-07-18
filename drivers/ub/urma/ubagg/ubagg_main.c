@@ -13,6 +13,7 @@
 #include <linux/fs.h>
 #include <linux/version.h>
 #include <linux/module.h>
+#include <linux/limits.h>
 
 #include "ubagg_log.h"
 #include "ubagg_ioctl.h"
@@ -21,6 +22,7 @@
 #include "ubagg_bitmap.h"
 #include "ubagg_hash_table.h"
 #include "ubagg_connect.h"
+#include "ubagg_failback.h"
 #include "ubagg_msg.h"
 #include "ubagg_session.h"
 
@@ -32,6 +34,20 @@
 module_param(g_ubagg_log_level, uint, UBAGG_LOG_FILE_PERMISSION);
 MODULE_PARM_DESC(g_ubagg_log_level,
 		 " 3: ERR, 4: WARNING, 5:NOTICE, 6: INFO, 7: DEBUG");
+static int ubagg_ratelimit_burst_set(const char *val,
+				     const struct kernel_param *kp)
+{
+	return param_set_uint_minmax(val, kp, 0, S32_MAX);
+}
+
+static const struct kernel_param_ops ubagg_ratelimit_burst_ops = {
+	.set = ubagg_ratelimit_burst_set,
+	.get = param_get_uint,
+};
+
+module_param_cb(ubagg_ratelimit_burst, &ubagg_ratelimit_burst_ops,
+		&ubagg_ratelimit_burst, UBAGG_LOG_FILE_PERMISSION);
+MODULE_PARM_DESC(ubagg_ratelimit_burst, "ratelimit burst for _rl logs (default: 10)");
 
 struct ubagg_ctx {
 	dev_t ubagg_devno;
@@ -162,6 +178,12 @@ static int __init ubagg_init(void)
 		goto err_connect_msg;
 	}
 
+	ret = ubagg_fb_init();
+	if (ret != 0) {
+		ubagg_log_err("register ubagg failback handlers fail.\n");
+		goto err_failback_msg;
+	}
+
 	ret = ubagg_msg_init();
 	if (ret != 0) {
 		ubagg_log_err("register ubagg message handler fail.\n");
@@ -171,6 +193,8 @@ static int __init ubagg_init(void)
 	return 0;
 
 err_msg:
+	ubagg_fb_exit();
+err_failback_msg:
 	ubagg_connect_uninit();
 err_connect_msg:
 	ubagg_session_uninit();
@@ -185,10 +209,11 @@ err:
 static void __exit ubagg_exit(void)
 {
 	ubagg_msg_uninit();
+	ubagg_fb_exit();
 	ubagg_connect_uninit();
-	ubagg_session_uninit();
 	ubagg_delete_topo_map();
 	ubagg_clear_dev_list();
+	ubagg_session_uninit();
 	ubagg_genl_unregister_family();
 	ubagg_cdev_destroy();
 }

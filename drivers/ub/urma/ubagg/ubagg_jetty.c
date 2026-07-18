@@ -110,7 +110,7 @@ struct ubcore_tjetty *ubagg_import_jfr(struct ubcore_device *dev,
 
 	if (ubagg_connect_xchg_jetty(cfg, ue_idx, true, dev, &jetty_info) !=
 	    0) {
-		ubagg_log_err("failed to exchange udata when import jfr\n");
+		ubagg_log_err_rl("failed to exchange udata when import jfr\n");
 		return ERR_PTR(-ENOEXEC);
 	}
 
@@ -123,7 +123,7 @@ struct ubcore_tjetty *ubagg_import_jfr(struct ubcore_device *dev,
 	tjfr = kzalloc(sizeof(struct ubagg_target_jetty), GFP_KERNEL);
 	if (tjfr == NULL)
 		return NULL;
-	ubagg_log_info("Import jfr successfully, is:%u.\n", cfg->id.id);
+	ubagg_log_info_rl("Import jfr successfully, is:%u.\n", cfg->id.id);
 	return &tjfr->base;
 }
 
@@ -163,7 +163,7 @@ struct ubcore_tjetty *ubagg_import_jetty(struct ubcore_device *dev,
 
 	if (ubagg_connect_xchg_jetty(cfg, ue_idx, false, dev, &jetty_info) !=
 	    0) {
-		ubagg_log_err("failed to exchange udata when import jetty\n");
+		ubagg_log_err_rl("failed to exchange udata when import jetty\n");
 		return ERR_PTR(-ENOEXEC);
 	}
 
@@ -176,7 +176,7 @@ struct ubcore_tjetty *ubagg_import_jetty(struct ubcore_device *dev,
 	tjetty = kzalloc(sizeof(struct ubagg_target_jetty), GFP_KERNEL);
 	if (tjetty == NULL)
 		return NULL;
-	ubagg_log_info("Import jetty successfully, %u\n", cfg->id.id);
+	ubagg_log_info_rl("Import jetty successfully, %u\n", cfg->id.id);
 	return &tjetty->base;
 }
 

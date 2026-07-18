@@ -726,16 +726,22 @@ int hi_decoder_unmap(struct ub_decoder *decoder, phys_addr_t addr, u64 size)
 	int ret;
 
 	info.size = ALIGN(info.size, SZ_1M);
-	ret = handle_table(decoder, &info, false);
-	if (ret)
-		return ret;
+	ub_info(decoder->uent, "decoder unmap, pa=%#llx, size=%#llx", info.pa, info.size);
+
+	if (decoder->create_matt) {
+		ret = handle_table(decoder, &info, false);
+		if (ret)
+			return ret;
+	}
+
 	return hi_decoder_cmd_request(decoder, info.pa, info.size, TLBI_PARTIAL);
 }
 
 int hi_decoder_map(struct ub_decoder *decoder, struct decoder_map_info *info)
 {
-	info->size = ALIGN(info->size, SZ_1M);
+	int ret;
 
+	info->size = ALIGN(info->size, SZ_1M);
 	ub_info(decoder->uent,
 		"decoder map, pa=%#llx, uba=%#llx, size=%#llx, cna=%#x, orderid=%#x, ordertype=%#x, eid_l=%#llx, eid_h=%#llx, upi=%#x src_eid=%#x\n",
 		info->pa, info->uba, info->size, info->tpg_num, info->order_id,
@@ -749,7 +755,13 @@ int hi_decoder_map(struct ub_decoder *decoder, struct decoder_map_info *info)
 		return -EINVAL;
 	}
 
-	return handle_table(decoder, info, true);
+	if (decoder->create_matt) {
+		ret = handle_table(decoder, info, true);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
 }
 
 struct sync_entry {

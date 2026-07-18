@@ -22,7 +22,7 @@ void ubagg_connect_uninit(void);
 
 int ubagg_connect_xchg_seg(struct ubcore_seg *seg, uint32_t ue_idx,
 			   struct ubcore_device *dev,
-			   struct ubagg_seg_info *seg_info);
+			   struct ubagg_seg_exchange_info *seg_info);
 
 int ubagg_connect_xchg_jetty(struct ubcore_tjetty_cfg *cfg, uint32_t ue_idx,
 			     bool is_jfr, struct ubcore_device *dev,

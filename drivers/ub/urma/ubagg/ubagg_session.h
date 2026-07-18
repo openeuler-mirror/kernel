@@ -18,9 +18,10 @@
 #define UBAGG_CONN_MAX_TIMEOUT 30000 /* maximum timeout 30s */
 
 struct ubagg_session;
+struct ubagg_device;
 
-typedef void (*ubagg_session_callback)(struct ubcore_device *dev,
-					const void *session_data);
+typedef void (*ubagg_session_callback)(struct ubagg_device *dev,
+				       const void *session_data);
 typedef void (*ubagg_session_free_callback)(const void *session_data);
 
 /**
@@ -33,10 +34,10 @@ typedef void (*ubagg_session_free_callback)(const void *session_data);
  * @param[in] free_cb: Callback for session_data cleanup, (if NULL, uses kfree)
  * @return: Pointer to new session with acquired reference
  */
-struct ubagg_session *
-ubagg_session_create(struct ubcore_device *dev, void *session_data,
-		      uint32_t timeout, ubagg_session_callback complete_cb,
-		      ubagg_session_free_callback free_cb);
+struct ubagg_session *ubagg_session_create(struct ubagg_device *dev,
+					   void *session_data, uint32_t timeout,
+					   ubagg_session_callback complete_cb,
+					   ubagg_session_free_callback free_cb);
 
 /**
  * Finds a session by its ID, caller must release the reference using session_ref_release.
@@ -83,6 +84,7 @@ uint32_t ubagg_session_get_id(struct ubagg_session *session);
  */
 void *ubagg_session_get_data(struct ubagg_session *session);
 
+void ubagg_session_flush(struct ubagg_device *dev);
 int ubagg_session_init(void);
 void ubagg_session_uninit(void);
 

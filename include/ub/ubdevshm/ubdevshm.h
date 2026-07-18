@@ -9,7 +9,7 @@
 #include <linux/kernel.h>
 
 #define UBDEVSHM_VERSION_MAJOR 1
-#define UBDEVSHM_VERSION_MINOR 0
+#define UBDEVSHM_VERSION_MINOR 1
 
 /**
  * struct uba_eid - eid info of ub address.

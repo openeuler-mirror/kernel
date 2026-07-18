@@ -1365,6 +1365,7 @@ udma_get_kernel_jetty_sq_id_and_buf(struct udma_dev *udma_dev, struct udma_jetty
 {
 	int ret;
 
+	udma_jetty->sq.jetty_type = UDMA_LOCK_BUFFER_JETTY_TYPE;
 	ret = alloc_jetty_id(udma_dev, &udma_jetty->sq, base_cfg->id, NULL);
 	if (ret) {
 		dev_err(udma_dev->dev, "alloc WQE lock buffer jetty id failed, ret = %d.\n", ret);
@@ -1374,7 +1375,6 @@ udma_get_kernel_jetty_sq_id_and_buf(struct udma_dev *udma_dev, struct udma_jetty
 	udma_jetty->ubcore_jetty.jetty_id.id = udma_jetty->sq.id;
 	udma_jetty->ubcore_jetty.jetty_cfg = *base_cfg;
 	udma_jetty->jfr = to_udma_jfr(base_cfg->jfr);
-	udma_jetty->sq.jetty_type = UDMA_LOCK_BUFFER_JETTY_TYPE;
 	udma_jetty->jetty_addr = (uintptr_t)&udma_jetty->sq;
 	ret = udma_get_from_kernel_sq_lock_buf(udma_dev, &udma_jetty->sq, base_cfg, buf_idx);
 	if (ret) {
@@ -1491,6 +1491,7 @@ udma_create_lock_buffer_jetty(struct ubcore_device *dev, struct ubcore_jetty_cfg
 	if (ret)
 		goto err_store_jfs_sq;
 
+	udma_jetty->sq.activated = true;
 	return &udma_jetty->ubcore_jetty;
 
 err_store_jfs_sq:
