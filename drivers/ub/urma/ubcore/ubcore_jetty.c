@@ -767,12 +767,6 @@ int ubcore_active_jfc(struct ubcore_jfc *jfc, struct ubcore_udata *udata)
 		ubcore_log_err("Failed to add jfc to hash_table, ret is %d.\n", ret);
 		return ret;
 	}
-	ret = ubcore_hash_table_find_add(&dev->ht[UBCORE_HT_JFC], &jfc->hnode, jfc->id);
-	if (ret != 0) {
-		(void)dev->ops->deactive_jfc(jfc, udata);
-		ubcore_log_err("Failed to add jfc to hash_table, ret is %d.\n", ret);
-		return ret;
-	}
 	jfc->jfc_opt.is_actived = true;
 	return ret;
 }
@@ -1352,12 +1346,6 @@ int ubcore_active_jfs(struct ubcore_jfs *jfs, struct ubcore_udata *udata)
 	if (ret != 0) {
 		ubcore_log_err("[DRV_ERROR]Failed to active jfs, ret: %d, jfs_id: %u.\n",
 			ret, jfs->jfs_opt.urma_jfs_id);
-		return ret;
-	}
-	ret = ubcore_hash_table_find_add(&dev->ht[UBCORE_HT_JFS], &jfs->hnode, jfs->jfs_id.id);
-	if (ret != 0) {
-		(void)dev->ops->deactive_jfs(jfs, udata);
-		ubcore_log_err("Failed to add jfs, ret: %d.\n", ret);
 		return ret;
 	}
 	ret = ubcore_hash_table_find_add(&dev->ht[UBCORE_HT_JFS], &jfs->hnode, jfs->jfs_id.id);
@@ -2244,12 +2232,6 @@ int ubcore_active_jfr(struct ubcore_jfr *jfr, struct ubcore_udata *udata)
 	if (ret != 0) {
 		ubcore_log_err("[DRV_ERROR]Failed to active jfr, jfr_id:%u, ret: %d.\n",
 			jfr->jfr_opt.urma_jfr_id, ret);
-		return ret;
-	}
-	ret = ubcore_hash_table_find_add(&dev->ht[UBCORE_HT_JFR], &jfr->hnode, jfr->jfr_id.id);
-	if (ret != 0) {
-		(void)dev->ops->deactive_jfr(jfr, udata);
-		ubcore_log_err("Failed to add jfr, ret: %d.\n", ret);
 		return ret;
 	}
 	ret = ubcore_hash_table_find_add(&dev->ht[UBCORE_HT_JFR], &jfr->hnode, jfr->jfr_id.id);
@@ -4349,19 +4331,6 @@ int ubcore_active_jetty(struct ubcore_jetty *jetty, struct ubcore_udata *udata)
 		ubcore_log_err("[DRV_ERROR]Failed to activate jetty, id:%u, ret: %d.\n",
 			jetty->jetty_id.id, ret);
 		return ret;
-	}
-	if (cfg->jetty_grp != NULL && ubcore_add_jetty_to_jetty_grp(jetty,
-			(struct ubcore_jetty_group *)cfg->jetty_grp) != 0) {
-		ubcore_log_err("jetty cfg is not qualified.\n");
-		ret = -EPERM;
-		goto destroy_jetty;
-	}
-
-	ret = ubcore_hash_table_find_add(&dev->ht[UBCORE_HT_JETTY],
-		&jetty->hnode, jetty->jetty_id.id);
-	if (ret != 0) {
-		ubcore_log_err("Failed to add jetty, ret: %d.\n", ret);
-		goto delete_jetty_to_grp;
 	}
 	if (cfg->jetty_grp != NULL && ubcore_add_jetty_to_jetty_grp(jetty,
 			(struct ubcore_jetty_group *)cfg->jetty_grp) != 0) {
