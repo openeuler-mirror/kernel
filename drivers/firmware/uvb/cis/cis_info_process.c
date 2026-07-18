@@ -26,7 +26,6 @@ MODULE_PARM_DESC(uvb_poll_timeout, "set uvb poll timeout(ms), default 1200");
 
 LIST_HEAD(g_local_cis_list);
 DEFINE_SPINLOCK(cis_register_lock);
-struct cis_message *io_param_sync;
 
 void ubios_prepare_output_data(struct cis_message *io_param, void *output, u32 *output_size)
 {
@@ -141,16 +140,16 @@ static bool cis_call_for_local(u32 receiver_id)
 	return false;
 }
 
-static atomic_t *find_uvb_window_lock(u64 window_address)
+struct uvb_win_desc_map *find_uvb_win_desc_map(u64 window_address)
 {
-	struct uvb_window_lock *entry;
+	struct uvb_win_desc_map *entry;
 
-	if (hash_empty(uvb_lock_table))
+	if (hash_empty(uvb_desc_table))
 		return NULL;
 
-	hash_for_each_possible(uvb_lock_table, entry, node, window_address) {
+	hash_for_each_possible(uvb_desc_table, entry, node, window_address) {
 		if (entry->window_address == window_address)
-			return &entry->lock;
+			return entry;
 	}
 
 	return NULL;
@@ -165,18 +164,16 @@ static int try_obtain_uvb_window(u64 *wd_obtain, u32 sender_id)
 	return 0;
 }
 
-struct uvb_window_description *uvb_occupy_window(struct uvb *uvb, u32 sender_id, u64 **wd_obtain)
+struct uvb_window_description *uvb_occupy_window(struct uvb *uvb,
+					u32 sender_id,
+					struct uvb_win_desc_map **uwdm)
 {
 	struct uvb_window_description *wd = NULL;
-	ktime_t start;
-	ktime_t now;
-	atomic_t *lock;
+	ktime_t start, now;
 	s64 time_interval;
-	u32 i;
-	u32 round;
+	u32 i = 0, round = 0;
+	struct uvb_win_desc_map *entry;
 
-	i = 0;
-	round = 0;
 	start = ktime_get();
 	while (1) {
 		if (i >= uvb->window_count) {
@@ -184,27 +181,24 @@ struct uvb_window_description *uvb_occupy_window(struct uvb *uvb, u32 sender_id,
 			round++;
 		}
 		wd = &(uvb->wd[i]);
-		*wd_obtain = memremap(wd->obtain, sizeof(u64), MEMREMAP_WC);
-		if (!*wd_obtain) {
-			pr_err("uvb window obtain map failed\n");
+
+		entry = find_uvb_win_desc_map(wd->address);
+		if (!entry) {
+			pr_err("uvb window desc map not found\n");
 			return NULL;
 		}
-		lock = find_uvb_window_lock(wd->address);
-		if (!lock) {
-			pr_err("uvb window lock not found\n");
-			goto free_resources;
-		}
 
-		if (atomic_cmpxchg(lock, 0, 1) == 0) {
-			if (try_obtain_uvb_window(*wd_obtain, sender_id)) {
+		if (atomic_cmpxchg(&entry->lock, 0, 1) == 0) {
+			if (try_obtain_uvb_window(entry->map_obtain, sender_id)) {
 				udelay(uvb->delay);
-				if (**wd_obtain == sender_id) {
-					atomic_set(lock, 0);
+				if (*((u32 *)entry->map_obtain) == sender_id) {
+
+					*uwdm = entry;
 					pr_info("occupy uvb window successfully\n");
 					return wd;
 				}
 			}
-			atomic_set(lock, 0);
+			atomic_set(&entry->lock, 0);
 		}
 
 		now = ktime_get();
@@ -212,27 +206,20 @@ struct uvb_window_description *uvb_occupy_window(struct uvb *uvb, u32 sender_id,
 		if (round > 1 && time_interval > UVB_TIMEOUT_WINDOW_OBTAIN) {
 			pr_err("obtain window timeout, tried %u * %u = %u times\n",
 			round, (u32)(uvb->window_count), round * (u32)(uvb->window_count));
-			goto free_resources;
+			break;
 		}
 		i++;
-		memunmap(*wd_obtain);
-		*wd_obtain = NULL;
 	}
-
-free_resources:
-	memunmap(*wd_obtain);
-	*wd_obtain = NULL;
 
 	return NULL;
 }
 
-void uvb_free_wd_obtain(u64 *wd_obtain)
+void uvb_free_wd_obtain(struct uvb_win_desc_map *uwdm)
 {
-	if (!wd_obtain)
+	if (!uwdm->map_obtain)
 		return;
-	if (*wd_obtain)
-		*wd_obtain = 0;
-	memunmap(wd_obtain);
+	*((u64 *)uwdm->map_obtain) = 0;
+	atomic_set(&uwdm->lock, 0);
 }
 
 int uvb_free_window(struct uvb_window *window)
@@ -259,18 +246,16 @@ int uvb_free_window(struct uvb_window *window)
 }
 
 static int fill_uvb_window_with_buffer(struct uvb_window_description *wd,
-			struct uvb_window *window_address,
+			struct uvb_win_desc_map *uwdm,
 			struct cis_message *io_params,
 			void *input, u32 input_size,
 			void *output, u32 *output_size)
 {
 	struct uvb_window *window;
-	void *new_input = NULL;
-	void *new_output = NULL;
 
-	window = window_address;
+	window = (struct uvb_window *)uwdm->map_address;
 	if (output_size) {
-		if (wd->size < (u64)*output_size + (u64)input_size) {
+		if (wd->size < (u64)*output_size + (u64)ALIGN(input_size, sizeof(u64))) {
 			pr_err("check wd size failed for output size\n");
 			return -EOVERFLOW;
 		}
@@ -284,41 +269,39 @@ static int fill_uvb_window_with_buffer(struct uvb_window_description *wd,
 			pr_err("check wd size failed for input size\n");
 			return -EOVERFLOW;
 		}
-		new_input = memremap(wd->buffer, wd->size, MEMREMAP_WC);
-		if (!new_input) {
-			pr_err("memremap for wd_buffer_virt_addr failed\n");
-			return -ENOMEM;
-		}
-		memcpy(new_input, input, input_size);
+
+		memcpy(uwdm->map_buffer, input, input_size);
 		window->input_data_checksum = checksum32(input, input_size);
+		window->input_data_address = wd->buffer;
+		window->input_data_size = input_size;
+	} else {
+		window->input_data_address = 0;
+		window->input_data_size = 0;
 	}
 
-	if (output)
-		new_output = (void *)(new_input + ALIGN(input_size, sizeof(u64)));
+	if (output) {
+		io_params->output = uwdm->map_buffer + ALIGN(input_size, sizeof(u64));
+		window->output_data_address = wd->buffer + ALIGN(input_size, sizeof(u64));
+	} else {
+		io_params->output = NULL;
+		window->output_data_address = 0;
+	}
 
-	io_params->input = new_input;
-	io_params->input_size = input_size;
-	io_params->output = new_output;
 	io_params->p_output_size = &(window->output_data_size);
-
-	window->input_data_address = new_input ? wd->buffer : 0;
-	window->input_data_size = input_size;
-	window->output_data_address = new_output ? wd->buffer + ALIGN(input_size, sizeof(u64)) : 0;
 
 	return 0;
 }
 
-int uvb_fill_window(struct uvb_window_description *wd, struct uvb_window *wd_addr,
+int uvb_fill_window(struct uvb_window_description *wd, struct uvb_win_desc_map *uwdm,
 			struct cis_message *io_params, struct udfi_para *para)
 {
 	int err;
-	struct uvb_window *window;
+	struct uvb_window *window = (struct uvb_window *)uwdm->map_address;
 
-	window = wd_addr;
 	window->message_id = para->message_id;
 	window->sender_id = para->sender_id;
 
-	err = fill_uvb_window_with_buffer(wd, window, io_params, para->input,
+	err = fill_uvb_window_with_buffer(wd, uwdm, io_params, para->input,
 		para->input_size, para->output, para->output_size);
 	if (err) {
 		pr_err("fill uvb window with buffer failed\n");
@@ -391,6 +374,9 @@ int uvb_get_output_data(struct uvb_window *window,
 	}
 	ubios_prepare_output_data(io_param, output, output_size);
 
+	memcpy(output, io_param->output, *(io_param->p_output_size));
+	*output_size = *(io_param->p_output_size);
+
 	return 0;
 }
 
@@ -398,19 +384,16 @@ void free_io_param_with_buffer(struct cis_message *io_param)
 {
 	if (!io_param)
 		return;
-
-	if (io_param->input)
-		memunmap(io_param->input);
 	kfree(io_param);
 }
 
-int cis_call_uvb(u8 index, struct udfi_para *para)
+int cis_call_uvb(u8 index, struct udfi_para *para, bool is_sync)
 {
 	int err = 0;
 	struct uvb_window *window = NULL;
 	struct uvb_window_description *wd = NULL;
-	struct cis_message *io_param = NULL;
-	u64 *wd_obtain = NULL;
+	struct cis_message io_param = {};
+	struct uvb_win_desc_map *uwdm = NULL;
 
 	if (!g_uvb_info) {
 		pr_err("uvb unsupported\n");
@@ -422,123 +405,38 @@ int cis_call_uvb(u8 index, struct udfi_para *para)
 		return -EOVERFLOW;
 	}
 
-	wd = uvb_occupy_window(g_uvb_info->uvbs[index], para->sender_id, &wd_obtain);
+	wd = uvb_occupy_window(g_uvb_info->uvbs[index], para->sender_id, &uwdm);
 	if (!wd) {
 		pr_err("obtain window failed\n");
 		return -EBUSY;
 	}
 
-	if (!wd->buffer) {
-		pr_err("no window buffer to save data\n");
-		err = -EOPNOTSUPP;
-		goto free_obtain;
-	}
+	window = (struct uvb_window *)uwdm->map_address;
 
-	io_param = kzalloc(sizeof(struct cis_message), GFP_KERNEL);
-	if (!io_param) {
-		err = -ENOMEM;
-		goto free_obtain;
-	}
-
-	window = (struct uvb_window *)memremap(wd->address, sizeof(struct uvb_window), MEMREMAP_WC);
-	if (!window) {
-		pr_err("memremap uvb window failed\n");
-		err = -ENOMEM;
-		goto free_io_param;
-	}
-
-	err = uvb_fill_window(wd, window, io_param, para);
+	err = uvb_fill_window(wd, uwdm, &io_param, para);
 	if (err) {
 		pr_err("fill uvb window failed\n");
-		goto unmap_window;
+		goto free_obtain;
 	}
 
-	err = uvb_poll_window_call(window, para->message_id);
+	if (!is_sync)
+		err = uvb_poll_window_call(window, para->message_id);
+	else
+		err = uvb_poll_window_call_sync(window, para->message_id);
 	if (err) {
 		pr_err("call by uvb failed\n");
 		goto free_window;
 	}
 
-	err = uvb_get_output_data(window, io_param, para->output, para->output_size);
+	err = uvb_get_output_data(window, &io_param, para->output, para->output_size);
 	if (err)
 		pr_err("uvb get output data failed\n");
 
 free_window:
 	uvb_free_window(window);
-unmap_window:
-	memunmap(window);
-free_io_param:
-	free_io_param_with_buffer(io_param);
 free_obtain:
-	uvb_free_wd_obtain(wd_obtain);
+	uvb_free_wd_obtain(uwdm);
 	pr_info("finish cis call by uvb\n");
-
-	return err;
-}
-
-int cis_call_uvb_sync(u8 index, struct udfi_para *para)
-{
-	int err = 0;
-	struct uvb_window *window = NULL;
-	struct uvb_window_description *wd = NULL;
-	u64 *wd_obtain = NULL;
-
-	memset(io_param_sync, 0, sizeof(struct cis_message));
-
-	if (!g_uvb_info) {
-		pr_err("sync call uvb unsupported\n");
-		return -EOPNOTSUPP;
-	}
-
-	if (index >= g_uvb_info->uvb_count) {
-		pr_err("sync call use uvb index exceed\n");
-		return -EOVERFLOW;
-	}
-
-	wd = uvb_occupy_window(g_uvb_info->uvbs[index], para->sender_id, &wd_obtain);
-	if (!wd) {
-		pr_err("sync call obtain window failed\n");
-		return -EBUSY;
-	}
-
-	if (!wd->buffer) {
-		pr_err("sync call no window buffer to save data\n");
-		err = -EOPNOTSUPP;
-		goto free_obtain;
-	}
-
-	window = (struct uvb_window *)memremap(wd->address, sizeof(struct uvb_window), MEMREMAP_WC);
-	if (!window) {
-		pr_err("sync call memremap window failed\n");
-		err = -ENOMEM;
-		goto free_obtain;
-	}
-
-	err = uvb_fill_window(wd, window, io_param_sync, para);
-	if (err) {
-		pr_err("sync call fill uvb window failed\n");
-		goto unmap_window;
-	}
-
-	err = uvb_poll_window_call_sync(window, para->message_id);
-	if (err) {
-		pr_err("sync call by uvb failed\n");
-		goto free_window;
-	}
-
-	err = uvb_get_output_data(window, io_param_sync, para->output, para->output_size);
-	if (err)
-		pr_err("sync call uvb get output data failed\n");
-
-free_window:
-	uvb_free_window(window);
-	if (io_param_sync->input)
-		memunmap(io_param_sync->input);
-unmap_window:
-	memunmap(window);
-free_obtain:
-	uvb_free_wd_obtain(wd_obtain);
-	pr_info("finish cis sync call by uvb\n");
 
 	return err;
 }
@@ -577,10 +475,7 @@ int cis_call_remote(u32 call_id, u32 sender_id, u32 receiver_id,
 		return -EOPNOTSUPP;
 	}
 
-	if (is_sync)
-		return cis_call_uvb_sync(index, &para);
-
-	return cis_call_uvb(index, &para);
+	return cis_call_uvb(index, &para, is_sync);
 }
 
 static bool check_msg_vaild(struct cis_message *msg)
