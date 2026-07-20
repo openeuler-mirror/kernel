@@ -617,6 +617,20 @@ config QCOM_FALKOR_ERRATUM_1009
 
 	  If unsure, say Y.
 
+config NVIDIA_OLYMPUS_ERRATUM_TLBI
+	bool "NVIDIA Olympus: Completion of affected memory accesses might not be guaranteed by completion of a TLBI"
+	default y
+	help
+	  On NVIDIA Olympus CPU, the completion of a broadcast TLB
+	  invalidation might not guarantee that the memory accesses
+	  expected to be affected by it have completed. Work around
+	  this by issuing an additional broadcast TLBI followed by DSB.
+
+	  This is erratum T410-OLY-1029 on the NVIDIA Olympus CPU,
+	  also known as CVE-2025-10263.
+
+	  If unsure, say Y.
+
 config QCOM_QDF2400_ERRATUM_0065
 	bool "QDF2400 E0065: Incorrect GITS_TYPER.ITT_Entry_size"
 	default y
