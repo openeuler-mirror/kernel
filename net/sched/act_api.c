@@ -112,9 +112,18 @@ struct tcf_chain *tcf_action_set_ctrlact(struct tc_action *a, int action,
 }
 EXPORT_SYMBOL(tcf_action_set_ctrlact);
 
+static void tc_action_free_rcu(struct rcu_head *p)
+{
+	struct tc_action_rcu *ta = container_of(p, struct tc_action_rcu, rcu);
+
+	kfree(ta->action);
+	kfree(ta);
+}
+
 static void free_tcf(struct tc_action *p)
 {
 	struct tcf_chain *chain = rcu_dereference_protected(p->goto_chain, 1);
+	struct tc_action_rcu *ta = p->tcfa_rcu;
 
 	free_percpu(p->cpu_bstats);
 	free_percpu(p->cpu_bstats_hw);
@@ -124,7 +133,7 @@ static void free_tcf(struct tc_action *p)
 	if (chain)
 		tcf_chain_put_by_act(chain);
 
-	kfree_rcu(p, tcfa_rcu);
+	call_rcu(&ta->rcu, tc_action_free_rcu);
 }
 
 static void offload_action_hw_count_set(struct tc_action *act,
@@ -731,10 +740,16 @@ int tcf_idr_create(struct tc_action_net *tn, u32 index, struct nlattr *est,
 {
 	struct tc_action *p = kzalloc(ops->size, GFP_KERNEL);
 	struct tcf_idrinfo *idrinfo = tn->idrinfo;
+	struct tc_action_rcu *ta;
 	int err = -ENOMEM;
 
 	if (unlikely(!p))
 		return -ENOMEM;
+
+	ta = kzalloc(sizeof(*ta), GFP_KERNEL);
+	if (unlikely(!ta))
+		goto err0;
+
 	refcount_set(&p->tcfa_refcnt, 1);
 	if (bind)
 		atomic_set(&p->tcfa_bindcnt, 1);
@@ -758,6 +773,8 @@ int tcf_idr_create(struct tc_action_net *tn, u32 index, struct nlattr *est,
 	p->tcfa_tm.lastuse = jiffies;
 	p->tcfa_tm.firstuse = 0;
 	p->tcfa_flags = flags;
+	p->tcfa_rcu = ta;
+	ta->action = p;
 	if (est) {
 		err = gen_new_estimator(&p->tcfa_bstats, p->cpu_bstats,
 					&p->tcfa_rate_est,
@@ -778,6 +795,8 @@ err3:
 err2:
 	free_percpu(p->cpu_bstats);
 err1:
+	kfree(ta);
+err0:
 	kfree(p);
 	return err;
 }

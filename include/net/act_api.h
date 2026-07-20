@@ -20,6 +20,7 @@ struct tcf_idrinfo {
 };
 
 struct tc_action_ops;
+struct tc_action_rcu;
 
 struct tc_action {
 	const struct tc_action_ops	*ops;
@@ -31,6 +32,7 @@ struct tc_action {
 	atomic_t			tcfa_bindcnt;
 	int				tcfa_action;
 	struct tcf_t			tcfa_tm;
+	KABI_FILL_HOLE(struct tc_action_rcu *tcfa_rcu)
 	struct gnet_stats_basic_sync	tcfa_bstats;
 	struct gnet_stats_basic_sync	tcfa_bstats_hw;
 	struct gnet_stats_queue		tcfa_qstats;
@@ -42,7 +44,6 @@ struct tc_action {
 	struct tc_cookie	__rcu *user_cookie;
 	struct tcf_chain	__rcu *goto_chain;
 	u32			tcfa_flags;
-	struct rcu_head         tcfa_rcu;
 	u8			hw_stats;
 	u8			used_hw_stats;
 	bool			used_hw_stats_valid;
@@ -57,6 +58,11 @@ struct tc_action {
 #define tcf_qstats	common.tcfa_qstats
 #define tcf_rate_est	common.tcfa_rate_est
 #define tcf_lock	common.tcfa_lock
+
+struct tc_action_rcu {
+	struct tc_action *action;
+	struct rcu_head	 rcu;
+};
 
 #define TCA_ACT_HW_STATS_ANY (TCA_ACT_HW_STATS_IMMEDIATE | \
 			      TCA_ACT_HW_STATS_DELAYED)
