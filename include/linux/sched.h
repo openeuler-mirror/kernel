@@ -1872,11 +1872,6 @@ extern struct pid *cad_pid;
 #define PF_USER_WORKER		0x00004000	/* Kernel thread cloned from userspace thread */
 #define PF_NOFREEZE		0x00008000	/* This thread should not be frozen */
 #define PF_KCOMPACTD		0x00010000	/* I am kcompactd */
-#ifdef CONFIG_MEMORY_RELIABLE
-#define PF_RELIABLE		PF_KCOMPACTD	/* Allocate from reliable memory */
-#else
-#define PF_RELIABLE		0x00000000
-#endif
 #define PF_KSWAPD		0x00020000	/* I am kswapd */
 #define PF_MEMALLOC_NOFS	0x00040000	/* All allocation requests will inherit GFP_NOFS */
 #define PF_MEMALLOC_NOIO	0x00080000	/* All allocation requests will inherit GFP_NOIO */
@@ -1895,7 +1890,12 @@ extern struct pid *cad_pid;
 #define PF_MCE_EARLY		0x08000000      /* Early kill for mce process policy */
 #define PF_MEMALLOC_PIN		0x10000000	/* Allocation context constrained to zones which allow long term pinning. */
 #define PF_BLOCK_TS		0x20000000	/* plug has ts that needs updating */
+#ifdef CONFIG_MEMORY_RELIABLE
+#define PF_RELIABLE		0x40000000	/* Allocate from reliable memory */
+#else
+#define PF_RELIABLE		0x00000000
 #define PF__HOLE__40000000	0x40000000
+#endif
 #define PF_SUSPEND_TASK		0x80000000      /* This thread called freeze_processes() and should not be frozen */
 
 /*

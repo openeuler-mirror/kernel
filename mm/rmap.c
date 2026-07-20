@@ -1810,7 +1810,6 @@ static bool try_to_unmap_one(struct folio *folio, struct vm_area_struct *vma,
 						hsz);
 			} else {
 				dec_mm_counter(mm, mm_counter(folio));
-				add_reliable_folio_counter(folio, mm, -1);
 				set_pte_at(mm, address, pvmw.pte, pteval);
 			}
 
@@ -1826,7 +1825,6 @@ static bool try_to_unmap_one(struct folio *folio, struct vm_area_struct *vma,
 			 * copied pages.
 			 */
 			dec_mm_counter(mm, mm_counter(folio));
-			add_reliable_folio_counter(folio, mm, -1);
 		} else if (folio_test_anon(folio)) {
 			swp_entry_t entry = page_swap_entry(subpage);
 			pte_t swp_pte;
@@ -1882,7 +1880,6 @@ static bool try_to_unmap_one(struct folio *folio, struct vm_area_struct *vma,
 					goto walk_abort;
 				}
 				add_mm_counter(mm, MM_ANONPAGES, -nr_pages);
-				add_reliable_folio_counter(folio, mm, -nr_pages);
 				goto discard;
 			}
 
@@ -1910,7 +1907,6 @@ static bool try_to_unmap_one(struct folio *folio, struct vm_area_struct *vma,
 				spin_unlock(&mmlist_lock);
 			}
 			dec_mm_counter(mm, MM_ANONPAGES);
-			add_reliable_folio_counter(folio, mm, -1);
 			inc_mm_counter(mm, MM_SWAPENTS);
 			swp_pte = swp_entry_to_pte(entry);
 			if (anon_exclusive)
@@ -1933,7 +1929,6 @@ static bool try_to_unmap_one(struct folio *folio, struct vm_area_struct *vma,
 			 * See Documentation/mm/mmu_notifier.rst
 			 */
 			dec_mm_counter(mm, mm_counter_file(folio));
-			add_reliable_folio_counter(folio, mm, -1);
 		}
 discard:
 		if (unlikely(folio_test_hugetlb(folio))) {
@@ -2220,7 +2215,6 @@ static bool try_to_migrate_one(struct folio *folio, struct vm_area_struct *vma,
 						hsz);
 			} else {
 				dec_mm_counter(mm, mm_counter(folio));
-				add_reliable_folio_counter(folio, mm, -1);
 				set_pte_at(mm, address, pvmw.pte, pteval);
 			}
 
@@ -2236,7 +2230,6 @@ static bool try_to_migrate_one(struct folio *folio, struct vm_area_struct *vma,
 			 * copied pages.
 			 */
 			dec_mm_counter(mm, mm_counter(folio));
-			add_reliable_folio_counter(folio, mm, -1);
 		} else {
 			swp_entry_t entry;
 			pte_t swp_pte;
