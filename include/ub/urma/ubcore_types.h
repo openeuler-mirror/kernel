@@ -1333,7 +1333,7 @@ struct ubcore_jfc_cfg {
 	uint32_t depth;
 	union ubcore_jfc_flag flag;
 	uint32_t ceqn;
-	void *jfc_context;
+	void __rcu *jfc_context;
 };
 
 union ubcore_jfc_opt_mask {
