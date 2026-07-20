@@ -674,6 +674,12 @@ int ubcore_create_tpid_priv(struct ubcore_device *dev, struct ubcore_tpid_cfg *c
 		return -1;
 	}
 
+	/*	If it's CTP, the transmode key in the tpid_list table will be
+		uniformly stored as RM, needs to be converted back to the
+		correct transmode when returned. */
+	if (get_cfg.flag.bs.ctp == 1)
+		selected.tp_handle.bs.trans_mode = cfg->tp_mode;
+
 	*tp_handle = selected.tp_handle;
 	ubcore_log_info_rl("create tpid handle value = %llu.\n", selected.tp_handle.value);
 
