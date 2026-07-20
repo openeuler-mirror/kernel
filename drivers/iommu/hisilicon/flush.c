@@ -151,13 +151,25 @@ static void __ummu_tlbi_range(struct ummu_mcmdq_ent *cmd,
 
 	rg_start = range->iova;
 	rg_end = rg_start + range->size;
-	/* tg will be 12, 14, 16, indicating 4K, 16K, 64K pgtable */
+	/* gs will be 12, 14, 16, indicating 4K, 16K, 64K pgtable */
 	gs = __ffs(domain->base_domain.domain.pgsize_bitmap);
 	num_pages = range->size >> gs;
 
 	/* transfer 12,14,16 to 1,2,3, refer to the protocol */
 	cmd->tlbi.gs = (gs - 10) >> 1;
-	cmd->tlbi.tl = granule_to_lvl(range->granule, gs);
+
+	/*
+	 * When DVM is disabled in hardware, for non-leaf, both
+	 * KSVA and SVA pass a nominal last-level granule because
+	 * they don't know what level(s) actually apply, so ignore that
+	 * and leave TL=0. However for various errata reasons we still
+	 * want to use a range command, so avoid the corner case
+	 * where both scale and num could be 0 as well.
+	 */
+	if (cmd->tlbi.leaf)
+		cmd->tlbi.tl = granule_to_lvl(range->granule, gs);
+	else if ((num_pages & CMD_TLBI_RANGE_NUM_MAX) == 1)
+		num_pages++;
 
 	while (rg_start < rg_end) {
 		cmd->tlbi.addr = rg_start;
@@ -165,6 +177,10 @@ static void __ummu_tlbi_range(struct ummu_mcmdq_ent *cmd,
 		scale = min(__ffs(num_pages), max_scale);
 		cmd->tlbi.scale = scale;
 
+		/*
+		* (num_pages >> scale) can be an exact multiple of (CMD_TLBI_RANGE_NUM_MAX + 1),
+		* whose masked low bits would yield num = 0, risking an infinite loop.
+		*/
 		num = ((num_pages >> scale) & CMD_TLBI_RANGE_NUM_MAX) ?: CMD_TLBI_RANGE_NUM_MAX;
 		cmd->tlbi.num = num - 1;
 
@@ -240,7 +256,7 @@ void ummu_iotlb_sync(struct iommu_domain *domain,
 	struct ummu_tlb_range range = {
 		.iova = gather->start,
 		.size = gather->end - gather->start + 1,
-		.granule = gather->pgsize,
+		.granule = gather->pgsize ?: PAGE_SIZE,
 	};
 
 	ummu_tlbi_range(&range, true, u_domain);
@@ -253,7 +269,7 @@ void ummu_device_tlb_inv_walk(struct iommu_domain *domain,
 	struct ummu_tlb_range range = {
 		.iova = gather->start,
 		.size = gather->end - gather->start + 1,
-		.granule = gather->pgsize,
+		.granule = gather->pgsize ?: PAGE_SIZE,
 	};
 
 	ummu_tlbi_range(&range, false, u_domain);
