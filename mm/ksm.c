@@ -2652,6 +2652,73 @@ static void __ksm_add_vma(struct vm_area_struct *vma)
 		vm_flags_set(vma, VM_MERGEABLE);
 }
 
+/*
+ * ksm_should_add_vma - Could a VMA with these characteristics participate in KSM?
+ *
+ * @file:      the VMA's backing file, if any (NULL for anonymous).
+ * @vm_flags:  the proposed VMA flags.
+ *
+ * Like vma_ksm_compatible(), but does not require a VMA pointer: it judges
+ * KSM eligibility purely from the proposed (file, vm_flags). This is needed
+ * to decide whether to set VM_MERGEABLE on proposed VMA flags *before* a
+ * vma_merge() attempt, where no VMA exists yet.
+ */
+static bool ksm_should_add_vma(const struct file *file, unsigned long vm_flags)
+{
+	if (vm_flags & (VM_SHARED  | VM_MAYSHARE   | VM_PFNMAP  |
+			VM_IO      | VM_DONTEXPAND | VM_HUGETLB |
+			VM_MIXEDMAP))
+		return false;		/* just ignore the advice */
+
+	if (file && IS_DAX(file->f_mapping->host))
+		return false;
+
+#ifdef VM_SAO
+	if (vm_flags & VM_SAO)
+		return false;
+#endif
+#ifdef VM_SPARC_ADI
+	if (vm_flags & VM_SPARC_ADI)
+		return false;
+#endif
+
+	return true;
+}
+
+/**
+ * ksm_vma_flags - Pre-set VM_MERGEABLE on proposed VMA flags for process KSM
+ *
+ * @mm:        the mm_struct of the target process.
+ * @file:      the proposed VMA's backing file, if any (NULL for anonymous).
+ * @vm_flags:  the proposed VMA flags.
+ *
+ * When the process has opted into process-wide KSM merging (prctl
+ * PR_SET_MEMORY_MERGE, i.e. MMF_VM_MERGE_ANY), mark the proposed flags as
+ * KSM-mergeable if eligible. Setting VM_MERGEABLE *before* vma_merge() avoids
+ * breaking VMA merging for new VMAs: otherwise adjacent VMAs already carry
+ * VM_MERGEABLE while the proposed flags do not, and is_mergeable_vma() rejects
+ * the merge on the flag mismatch.
+ *
+ * Returns: @vm_flags possibly updated with VM_MERGEABLE.
+ */
+unsigned long ksm_vma_flags(struct mm_struct *mm, const struct file *file,
+			   unsigned long vm_flags)
+{
+	if (test_bit(MMF_VM_MERGE_ANY, &mm->flags) &&
+	    ksm_should_add_vma(file, vm_flags)) {
+		vm_flags |= VM_MERGEABLE;
+		/*
+		 * Generally the flags here always include MMF_VM_MERGEABLE.
+		 * However, in rare cases, this flag may be cleared by ksmd who
+		 * scans a cycle without finding any mergeable vma.
+		 */
+		if (unlikely(!test_bit(MMF_VM_MERGEABLE, &mm->flags)))
+			__ksm_enter(mm);
+	}
+
+	return vm_flags;
+}
+
 static int __ksm_del_vma(struct vm_area_struct *vma)
 {
 	int err;

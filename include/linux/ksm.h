@@ -24,6 +24,9 @@ int ksm_enable_merge_any(struct mm_struct *mm);
 int ksm_disable_merge_any(struct mm_struct *mm);
 int ksm_disable(struct mm_struct *mm);
 
+unsigned long ksm_vma_flags(struct mm_struct *mm, const struct file *file,
+			   unsigned long vm_flags);
+
 int __ksm_enter(struct mm_struct *mm);
 void __ksm_exit(struct mm_struct *mm);
 /*
@@ -106,6 +109,13 @@ static inline void ksm_add_vma(struct vm_area_struct *vma)
 static inline int ksm_disable(struct mm_struct *mm)
 {
 	return 0;
+}
+
+static inline unsigned long ksm_vma_flags(struct mm_struct *mm,
+					 const struct file *file,
+					 unsigned long vm_flags)
+{
+	return vm_flags;
 }
 
 static inline void ksm_fork(struct mm_struct *mm, struct mm_struct *oldmm)
