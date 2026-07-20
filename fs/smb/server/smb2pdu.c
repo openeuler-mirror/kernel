@@ -3783,7 +3783,17 @@ err_out2:
 	}
 
 	if (dh_info.reconnected) {
-		ksmbd_put_durable_fd(dh_info.fp);
+		/*
+		 * If reconnect succeeded, fp was republished in the
+		 * session file table.  On a later error, ksmbd_fd_put()
+		 * above drops the session reference; drop the durable
+		 * lookup reference through the same session-aware path so
+		 * final close removes the volatile id before freeing fp.
+		 */
+		if (rc && fp == dh_info.fp)
+			ksmbd_fd_put(work, dh_info.fp);
+		else
+			ksmbd_put_durable_fd(dh_info.fp);
     }
 
 	kfree(name);
