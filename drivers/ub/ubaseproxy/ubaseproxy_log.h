@@ -169,6 +169,7 @@ struct ubaseproxy_ue_risk_stats {
 	u64 eq_ctx_fixed;
 	u64 eq_field_shift;
 	u64 eq_field_eqe_coalesce_period;
+	u64 eq_field_eqe_coalesce_cnt;
 	u64 eq_field_eqn;
 	u64 eq_create_eq_already_exists;
 	u64 eq_destroy_eq_not_exists;

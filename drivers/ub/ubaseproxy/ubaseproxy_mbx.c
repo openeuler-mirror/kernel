@@ -7,6 +7,7 @@
 
 #include "ubaseproxy_ctx_mgt.h"
 #include "ubaseproxy_dev.h"
+#include "ubaseproxy_eq.h"
 #include "ubaseproxy_event.h"
 #include "ubaseproxy_jfc.h"
 #include "ubaseproxy_jfr.h"
@@ -153,6 +154,12 @@ struct ubaseproxy_handler {
 	{UBASE_MB_QUERY_JFC_CONTEXT, ubaseproxy_handle_query_jfc_ctx_req},
 	{UBASE_MB_QUERY_JFS_CONTEXT, ubaseproxy_handle_query_jfs_ctx_req},
 	{UBASE_MB_QUERY_JFR_CONTEXT, ubaseproxy_handle_query_jfr_ctx_req},
+	{UBASE_MB_CREATE_AEQ_CONTEXT, ubaseproxy_handle_create_eq_ctx_req},
+	{UBASE_MB_CREATE_CEQ_CONTEXT, ubaseproxy_handle_create_eq_ctx_req},
+	{UBASE_MB_DESTROY_AEQ_CONTEXT, ubaseproxy_handle_destroy_eq_ctx_req},
+	{UBASE_MB_DESTROY_CEQ_CONTEXT, ubaseproxy_handle_destroy_eq_ctx_req},
+	{UBASE_MB_QUERY_AEQ_CONTEXT, ubaseproxy_handle_query_eq_ctx_req},
+	{UBASE_MB_QUERY_CEQ_CONTEXT, ubaseproxy_handle_query_eq_ctx_req},
 };
 
 int ubaseproxy_handle_mbox_req(struct ubaseproxy_dev *udev,

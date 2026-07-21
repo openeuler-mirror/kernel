@@ -6,6 +6,7 @@
 #include <ub/ubase/ubase_comm_mbx.h>
 
 #include "ubaseproxy_ctx_mgt.h"
+#include "ubaseproxy_eq.h"
 #include "ubaseproxy_mbx.h"
 #include "ubaseproxy_jfc.h"
 
@@ -216,6 +217,18 @@ ubaseproxy_create_jfc_res(struct ubaseproxy_dev *udev,
 	jfc->inline_en = jfc_ctx->inline_en;
 	jfc->shift = jfc_ctx->shift;
 	jfc->cqe_size = jfc_ctx->cqe_size;
+	jfc->ceqn = jfc_ctx->ceqn;
+
+	ret = ubaseproxy_ceq_ref_inc(udev, ue_ctx_xa, jfc->ceqn,
+				     le16_to_cpu(req->mbx_ue_id));
+	if (ret) {
+		ubaseproxy_risk_rl(udev, le16_to_cpu(req->mbx_ue_id),
+				   jfc_create_eq_inc,
+				   "create jfc(%u) failed, eq inc err, ret = %d.\n",
+				   jfcn, ret);
+		kfree(jfc);
+		return NULL;
+	}
 
 	ret = xa_err(xa_store(&ue_ctx_xa->jfc, jfcn, jfc, GFP_KERNEL));
 	if (ret) {
@@ -233,6 +246,14 @@ static void ubaseproxy_destroy_jfc_res(struct ubaseproxy_dev *udev,
 				       struct ubaseproxy_jfc_key_words *jfc,
 				       u16 jfcn, u16 mbx_ue_id)
 {
+	int ret;
+
+	ret = ubaseproxy_ceq_ref_dec(udev, ue_ctx_xa, jfc->ceqn, mbx_ue_id);
+	if (ret)
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfc_destroy_eq_dec,
+				   "failed dec eq cnt, jfc(%u), ret = %d.\n",
+				   jfcn, ret);
+
 	xa_erase(&ue_ctx_xa->jfc, jfcn);
 	kfree(jfc);
 }
