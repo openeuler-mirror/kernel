@@ -19,6 +19,7 @@ static int ubase_notify_tp_flush_done(struct ubase_dev *udev, u32 tpn)
 	struct ubase_ctrlq_msg msg = {0};
 	struct ubase_tpg *tpg;
 	int ret, tmp_resp;
+	bool is_tp_exist;
 	u32 i;
 
 	spin_lock(&udev->tp_ctx.tpg_lock);
@@ -57,12 +58,13 @@ static int ubase_notify_tp_flush_done(struct ubase_dev *udev, u32 tpn)
 			  ret);
 
 	spin_lock(&udev->tp_ctx.tpg_lock);
-	if (udev->tp_ctx.tpg && i < udev->caps.unic_caps.tpg.max_cnt)
+	is_tp_exist = udev->tp_ctx.tpg && i < udev->caps.unic_caps.tpg.max_cnt;
+	if (is_tp_exist)
 		atomic_inc(&tpg[i].tp_fd_cnt);
-	else
+	spin_unlock(&udev->tp_ctx.tpg_lock);
+	if (!is_tp_exist)
 		ubase_warn(udev,
 			   "ubase tpg res does not exist, tpn = %u.\n", tpn);
-	spin_unlock(&udev->tp_ctx.tpg_lock);
 
 	return ret;
 }
