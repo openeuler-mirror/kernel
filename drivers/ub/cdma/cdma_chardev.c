@@ -67,30 +67,35 @@ static long cdma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct cdma_file *cfile = (struct cdma_file *)file->private_data;
 	struct cdma_ioctl_hdr hdr = { 0 };
-	int ret;
+	int ret = -ENOIOCTLCMD;
 
-	if (!cfile->cdev || cfile->cdev->status >= CDMA_STATUS_SUSPENDED) {
-		pr_info("ioctl cdev is invalid\n");
+	if (!cfile->cdev)
 		return -ENODEV;
-	}
+
 	cdma_ref_inc(&cfile->cdev->cmdcnt);
+
+	if (cfile->cdev->status >= CDMA_STATUS_SUSPENDED) {
+		pr_info("ioctl cdev is invalid\n");
+		ret = -ENODEV;
+		goto out;
+	}
 
 	if (cmd == CDMA_SYNC) {
 		ret = copy_from_user(&hdr, (void *)arg, sizeof(hdr));
 		if (ret || hdr.args_len > CDMA_MAX_CMD_SIZE) {
 			pr_err("copy user ret = %d, input parameter len = %u\n",
-				ret, hdr.args_len);
-			cdma_ref_dec(&cfile->cdev->cmdcnt, &cfile->cdev->cmddone);
-			return -EINVAL;
+			       ret, hdr.args_len);
+			ret = -EINVAL;
+			goto out;
 		}
 		ret = cdma_cmd_parse(cfile, &hdr);
-		cdma_ref_dec(&cfile->cdev->cmdcnt, &cfile->cdev->cmddone);
-		return ret;
+		goto out;
 	}
 
 	pr_err("invalid ioctl command, command = %u\n", cmd);
+out:
 	cdma_ref_dec(&cfile->cdev->cmdcnt, &cfile->cdev->cmddone);
-	return -ENOIOCTLCMD;
+	return ret;
 }
 
 static int cdma_remap_check_jfs_id(struct cdma_file *cfile, u32 jfs_id)
@@ -98,6 +103,11 @@ static int cdma_remap_check_jfs_id(struct cdma_file *cfile, u32 jfs_id)
 	struct cdma_dev *cdev = cfile->cdev;
 	struct cdma_jfs *jfs;
 	int ret = -EINVAL;
+
+	if (!cfile->uctx) {
+		dev_err(cdev->dev, "mmap rejected, no user context\n");
+		return ret;
+	}
 
 	spin_lock(&cdev->jfs_table.lock);
 	jfs = idr_find(&cdev->jfs_table.idr_pool.idr, jfs_id);
@@ -221,12 +231,14 @@ static void cdma_mmu_release(struct mmu_notifier *mn, struct mm_struct *mm)
 	}
 	mn_notifier->mm = NULL;
 
+	kref_get(&cfile->ref);
 	mutex_lock(&cfile->ctx_mutex);
 	cdma_cleanup_context_uobj(cfile, CDMA_REMOVE_CLOSE);
 	if (cfile->uctx)
 		cdma_cleanup_context_res(cfile->uctx);
 	cfile->uctx = NULL;
 	mutex_unlock(&cfile->ctx_mutex);
+	kref_put(&cfile->ref, cdma_release_file);
 }
 
 static const struct mmu_notifier_ops cdma_mm_notifier_ops = {
