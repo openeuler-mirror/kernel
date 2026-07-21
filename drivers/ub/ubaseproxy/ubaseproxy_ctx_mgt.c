@@ -11,6 +11,7 @@
 #include <ub/ubase/ubase_comm_mbx.h>
 
 #include "ubaseproxy_dev.h"
+#include "ubaseproxy_eq.h"
 #include "ubaseproxy_jfc.h"
 #include "ubaseproxy_jfr.h"
 #include "ubaseproxy_jfs.h"
@@ -137,6 +138,8 @@ static void ubaseproxy_init_ue_ctx_xarray(struct ubaseproxy_dev *udev)
 	for (i = 0; i < managed_ue_num; i++) {
 		xa_init(&udev->ue_res_info[i].ue_ctx_xa.jfc);
 		xa_init(&udev->ue_res_info[i].ue_ctx_xa.jfr);
+		xa_init(&udev->ue_res_info[i].ue_ctx_xa.aeq);
+		xa_init(&udev->ue_res_info[i].ue_ctx_xa.ceq);
 	}
 }
 
@@ -194,6 +197,14 @@ int ubaseproxy_ue_ctx_default_init(struct ubaseproxy_dev *udev)
 	if (ret)
 		goto err_init_jfr;
 
+	ret = ubaseproxy_init_ue_eq_ctx_default(udev);
+	if (ret)
+		goto err_init_eq;
+
+	return 0;
+
+err_init_eq:
+	ubaseproxy_uninit_ue_jfr_ctx_default(udev);
 err_init_jfr:
 	ubaseproxy_uninit_ue_jfc_ctx_default(udev);
 	return ret;
@@ -201,6 +212,7 @@ err_init_jfr:
 
 void ubaseproxy_ue_ctx_default_uninit(struct ubaseproxy_dev *udev)
 {
+	ubaseproxy_uninit_ue_eq_ctx_default(udev);
 	ubaseproxy_uninit_ue_jfr_ctx_default(udev);
 	ubaseproxy_uninit_ue_jfc_ctx_default(udev);
 }
@@ -222,12 +234,16 @@ static void ubaseproxy_erase_common_ctx_resources(struct xarray *arr)
 void ubaseproxy_erase_ue_ctx_resources(struct ubaseproxy_dev *udev,
 				       struct ubaseproxy_ue_ctx_xarray *ue_ctx_xa)
 {
+	ubaseproxy_erase_common_ctx_resources(&ue_ctx_xa->aeq);
+	ubaseproxy_erase_common_ctx_resources(&ue_ctx_xa->ceq);
 	ubaseproxy_erase_common_ctx_resources(&ue_ctx_xa->jfr);
 	ubaseproxy_erase_common_ctx_resources(&ue_ctx_xa->jfc);
 }
 
 static void ubaseproxy_destroy_ue_ctx_xa(struct ubaseproxy_ue_ctx_xarray *ue_ctx_xa)
 {
+	xa_destroy(&ue_ctx_xa->aeq);
+	xa_destroy(&ue_ctx_xa->ceq);
 	xa_destroy(&ue_ctx_xa->jfr);
 	xa_destroy(&ue_ctx_xa->jfc);
 }
