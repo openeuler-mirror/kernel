@@ -98,4 +98,4 @@ int ubaseproxy_ceq_ref_dec(struct ubaseproxy_dev *udev,
 			   struct ubaseproxy_ue_ctx_xarray *ue_ctx_xa, u16 eqn,
 			   u16 mbx_ue_id);
 
-#endif
+#endif /* __UBASEPROXY_EQ_H__ */
