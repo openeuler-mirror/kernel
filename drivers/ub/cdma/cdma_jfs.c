@@ -475,7 +475,6 @@ static int cdma_modify_jfs_precondition(struct cdma_dev *cdev,
 static bool cdma_destroy_jfs_precondition(struct cdma_dev *cdev,
 					  struct cdma_jetty_queue *sq)
 {
-
 	if ((sq->state == CDMA_JETTY_READY) ||
 	    (sq->state == CDMA_JETTY_SUSPENDED)) {
 		if (cdma_modify_jfs_precondition(cdev, sq))
