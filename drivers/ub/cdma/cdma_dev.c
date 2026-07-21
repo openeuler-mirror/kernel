@@ -146,14 +146,14 @@ static void cdma_release_table_res(struct cdma_dev *cdev)
 	struct cdma_tp *tmp;
 	int id;
 
+	idr_for_each_entry(&cdev->queue_table.idr_pool.idr, queue, id)
+		cdma_delete_queue(cdev, queue->id);
 	idr_for_each_entry(&cdev->ctp_table.idr_pool.idr, tmp, id)
 		cdma_destroy_ctp_imm(cdev, tmp->base.tp_id);
 	idr_for_each_entry(&cdev->jfs_table.idr_pool.idr, jfs, id)
 		cdma_delete_jfs(cdev, jfs->id);
 	idr_for_each_entry(&cdev->jfc_table.idr_pool.idr, jfc, id)
 		cdma_delete_jfc(cdev, jfc->jfcn, NULL);
-	idr_for_each_entry(&cdev->queue_table.idr_pool.idr, queue, id)
-		cdma_delete_queue(cdev, queue->id);
 	idr_for_each_entry(&cdev->seg_table.idr_pool.idr, seg, id)
 		cdma_unregister_seg(cdev, seg);
 }

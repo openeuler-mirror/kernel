@@ -287,6 +287,37 @@ static void cdma_config_jfs(struct cdma_jfs_cfg *cfg,
 	cfg->trans_mode = arg->in.trans_mode;
 }
 
+static int cdma_check_jfs_queue_binding(struct cdma_dev *cdev,
+					struct cdma_queue *queue,
+					struct cdma_cmd_create_jfs_args *arg)
+{
+	if (!queue->jfc) {
+		dev_err(cdev->dev, "create jfs jfc not bound to queue\n");
+		return -EINVAL;
+	}
+
+	if (queue->jfc->id != arg->in.jfc_id) {
+		dev_err(cdev->dev,
+			"create jfs jfc_id mismatch, user = %u, queue = %u\n",
+			arg->in.jfc_id, queue->jfc->id);
+		return -EINVAL;
+	}
+
+	if (!queue->tp) {
+		dev_err(cdev->dev, "create jfs tp not bound to queue\n");
+		return -EINVAL;
+	}
+
+	if (queue->tp->tpn != arg->in.tpn) {
+		dev_err(cdev->dev,
+			"create jfs tpn mismatch, user = %u, queue = %u\n",
+			arg->in.tpn, queue->tp->tpn);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int cdma_cmd_create_jfs(struct cdma_ioctl_hdr *hdr,
 			       struct cdma_file *cfile)
 {
@@ -319,6 +350,10 @@ static int cdma_cmd_create_jfs(struct cdma_ioctl_hdr *hdr,
 		return -EINVAL;
 	}
 	queue = (struct cdma_queue *)uobj->object;
+
+	ret = cdma_check_jfs_queue_binding(cdev, queue, &arg);
+	if (ret)
+		return ret;
 
 	uobj = cdma_uobj_create(cfile, CDMA_UOBJ_TYPE_JFS);
 	if (IS_ERR(uobj)) {
