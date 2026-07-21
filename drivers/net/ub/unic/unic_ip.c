@@ -89,11 +89,14 @@ static int unic_update_stack_ip_addr(struct unic_vport *vport,
 	memcpy(addr_node->unic_addr, addr, UNIC_ADDR_LEN);
 	list_add_tail(&addr_node->node, list);
 	unic_format_masked_ip_addr(format_masked_ip_addr, addr);
+	set_bit(UNIC_VPORT_STATE_IP_TBL_CHANGE, &vport->state);
+	spin_unlock_bh(addr_list_lock);
 	unic_info(unic_dev,
 		  "stack added a non-planned ip %s, need to delete it.\n",
 		  format_masked_ip_addr);
 	set_bit(UNIC_VPORT_STATE_IP_TBL_CHANGE, &vport->state);
-	goto unlock_and_exit;
+
+	return 0;
 
 finish_update_state:
 	list_for_each_entry(tmp, list, node) {
@@ -102,7 +105,6 @@ finish_update_state:
 			break;
 		}
 	}
-unlock_and_exit:
 	spin_unlock_bh(addr_list_lock);
 
 	return ret;
@@ -311,6 +313,7 @@ static void unic_sync_addr_table(struct unic_vport *vport,
 
 		new_node = kzalloc(sizeof(*new_node), GFP_ATOMIC);
 		if (!new_node) {
+			spin_unlock_bh(addr_list_lock);
 			dev_err_ratelimited(&adev->dev,
 					    "failed to alloc memory for new node.\n");
 			goto stop_traverse;
@@ -325,9 +328,9 @@ static void unic_sync_addr_table(struct unic_vport *vport,
 			list_add_tail(&new_node->node, &tmp_add_list);
 	}
 
-stop_traverse:
 	spin_unlock_bh(addr_list_lock);
 
+stop_traverse:
 	unic_sync_ip_list(vport, &tmp_del_list, UNIC_CTRLQ_DEL_IP);
 	unic_sync_ip_list(vport, &tmp_add_list, UNIC_CTRLQ_ADD_IP);
 }
@@ -507,17 +510,19 @@ int unic_handle_notify_ip_event(struct auxiliary_device *adev, u8 service_ver,
 					    (u8 *)&st_ip.ip_addr,
 					    st_ip.ip_mask);
 	} else {
-		unic_err(priv, "invalid ip cmd by ctrlq, cmd = %u.\n", st_ip.ip_cmd);
+		spin_unlock_bh(&vport->addr_tbl.tmp_ip_lock);
+		unic_err(priv, "invalid ip cmd by ctrlq, cmd = %u.\n",
+			 st_ip.ip_cmd);
 		ret = -EINVAL;
-		goto unlock;
+		goto send_resp;
 	}
 
 	if (ret == -ENOENT) {
-		unic_format_masked_ip_addr(format_ip, (u8 *)&st_ip.ip_addr);
+		spin_unlock_bh(&vport->addr_tbl.tmp_ip_lock);
 		unic_err(priv, "failed to delete IP %s from ip list.\n",
 			 format_ip);
 		ret = 0;
-		goto unlock;
+		goto send_resp;
 	}
 
 	if (!ret)
