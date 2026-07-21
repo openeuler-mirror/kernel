@@ -33,7 +33,22 @@ MODULE_PARM_DESC(g_ubcore_log_level, " 3: ERR, 4: WARNING, 6: INFO, 7: DEBUG");
 static int ubcore_ratelimit_burst_set(const char *val,
 				      const struct kernel_param *kp)
 {
-	return param_set_uint_minmax(val, kp, 0, S32_MAX);
+	unsigned int num;
+	int ret;
+
+	/* param_set_uint_minmax() is introduced in v5.14; fall back to the
+	 * generic param_set_uint() with a manual range check so we stay
+	 * compatible with older kernels. burst is later stored into an int
+	 * field of ratelimit_state, so cap the uint to S32_MAX to keep the
+	 * int conversion non-negative.
+	 */
+	ret = kstrtouint(val, 0, &num);
+	if (ret != 0)
+		return ret;
+	if (num > S32_MAX)
+		return -EINVAL;
+
+	return param_set_uint(val, kp);
 }
 
 static const struct kernel_param_ops ubcore_ratelimit_burst_ops = {
