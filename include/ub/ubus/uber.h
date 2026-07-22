@@ -8,7 +8,7 @@
 
 #include <linux/cper.h>
 
-typedef void (*ub_ras_recover_func_t)(struct cper_sec_ubus *err, int serverity);
+typedef void (*ub_ras_recover_func_t)(struct cper_sec_ubus *err, int severity);
 
 #ifdef CONFIG_UB_UBUS
 void ub_ras_register_recover_func(ub_ras_recover_func_t func);
