@@ -419,6 +419,7 @@ struct ubase_dev {
 	struct workqueue_struct	*ubase_reset_wq;
 	struct workqueue_struct	*ubase_period_wq;
 	struct workqueue_struct	*ubase_arq_wq;
+	struct workqueue_struct	*ubase_tp_fd_wq;
 	unsigned long		serv_proc_cnt;
 	struct ubase_delay_work	service_task;
 	struct ubase_delay_work	ctrlq_service_task;

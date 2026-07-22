@@ -13,13 +13,35 @@
 
 #define UBASE_TRANS_TYPE_UM_TP 0x2
 
-static int ubase_notify_tp_flush_done(struct ubase_dev *udev, u32 tpn)
+int ubase_send_tp_flush_done_notice(struct ubase_dev *udev, u32 tpn)
 {
 	struct ubase_ctrlq_tp_fd_req req = {0};
 	struct ubase_ctrlq_msg msg = {0};
-	struct ubase_tpg *tpg;
 	int ret, tmp_resp;
+
+	msg.service_ver = UBASE_CTRLQ_SER_VER_01;
+	msg.service_type = UBASE_CTRLQ_SER_TYPE_TP_ACL;
+	msg.opcode = UBASE_CTRLQ_OPC_TP_FLUSH_DONE;
+	msg.need_resp = 1;
+	msg.in_size = sizeof(req);
+	msg.in = &req;
+	msg.out_size = sizeof(tmp_resp);
+	msg.out = &tmp_resp;
+	req.tpn = cpu_to_le32(tpn);
+
+	ret = __ubase_ctrlq_send(udev, &msg, true, NULL);
+	if (ret)
+		ubase_err(udev, "failed to notify tp flush done, ret = %d.\n",
+			  ret);
+
+	return ret;
+}
+
+static int ubase_notify_tp_flush_done(struct ubase_dev *udev, u32 tpn)
+{
+	struct ubase_tpg *tpg;
 	bool is_tp_exist;
+	int ret;
 	u32 i;
 
 	spin_lock(&udev->tp_ctx.tpg_lock);
@@ -42,20 +64,10 @@ static int ubase_notify_tp_flush_done(struct ubase_dev *udev, u32 tpn)
 	}
 	spin_unlock(&udev->tp_ctx.tpg_lock);
 
-	msg.service_ver = UBASE_CTRLQ_SER_VER_01;
-	msg.service_type = UBASE_CTRLQ_SER_TYPE_TP_ACL;
-	msg.opcode = UBASE_CTRLQ_OPC_TP_FLUSH_DONE;
-	msg.need_resp = 1;
-	msg.in_size = sizeof(req);
-	msg.in = &req;
-	msg.out_size = sizeof(tmp_resp);
-	msg.out = &tmp_resp;
-	req.tpn = cpu_to_le32(tpn);
-
-	ret = __ubase_ctrlq_send(udev, &msg, true, NULL);
+	ret = ubase_send_tp_flush_done_notice(udev, tpn);
 	if (ret)
-		ubase_err(udev, "failed to notify tp flush done, ret = %d.\n",
-			  ret);
+		ubase_err(udev,
+			  "failed to send tp flush done, ret = %d.\n", ret);
 
 	spin_lock(&udev->tp_ctx.tpg_lock);
 	is_tp_exist = udev->tp_ctx.tpg && i < udev->caps.unic_caps.tpg.max_cnt;

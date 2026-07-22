@@ -545,9 +545,17 @@ static int ubase_wq_init(struct ubase_dev *udev)
 		goto err_alloc_ubase_arq_wq;
 	}
 
+	udev->ubase_tp_fd_wq = UBASE_ALLOC_WQ("ubase_tp_fd_service");
+	if (!udev->ubase_tp_fd_wq) {
+		ubase_err(udev, "failed to alloc ubase tp flush workqueue.\n");
+		goto err_alloc_ubase_tp_fd_wq;
+	}
+
 	ubase_init_delayed_work(udev);
 	return 0;
 
+err_alloc_ubase_tp_fd_wq:
+	destroy_workqueue(udev->ubase_arq_wq);
 err_alloc_ubase_arq_wq:
 	destroy_workqueue(udev->ubase_period_wq);
 err_alloc_ubase_period_wq:
@@ -564,6 +572,7 @@ err_alloc_ubase_wq:
 
 static void ubase_wq_uninit(struct ubase_dev *udev)
 {
+	destroy_workqueue(udev->ubase_tp_fd_wq);
 	destroy_workqueue(udev->ubase_arq_wq);
 	destroy_workqueue(udev->ubase_period_wq);
 	destroy_workqueue(udev->ubase_reset_wq);
@@ -1036,7 +1045,6 @@ void ubase_dev_uninit(struct ubase_dev *udev)
 start_uninit:
 	if (udev->reset_service_task.service_task.work.func)
 		cancel_delayed_work_sync(&udev->reset_service_task.service_task);
-	flush_workqueue(udev->ubase_async_wq);
 
 	for (i = ARRAY_SIZE(ubase_init_func_map) - 1; i >= 0; i--) {
 		if (!ubase_init_func_support(udev,
@@ -2078,6 +2086,7 @@ int ubase_deactivate_handler(struct ubase_dev *udev, u32 bus_ue_id)
 
 void ubase_flush_workqueue(struct ubase_dev *udev)
 {
+	flush_workqueue(udev->ubase_tp_fd_wq);
 	flush_workqueue(udev->ubase_wq);
 	flush_workqueue(udev->ubase_ctrlq_wq);
 	flush_workqueue(udev->ubase_async_wq);
