@@ -469,7 +469,8 @@ static int __hisi_soc_cache_maintain(struct hisi_soc_cache_ioctl_param *param)
 	if (!param->size || start + param->size < start)
 		return -EINVAL;
 
-	mmap_read_lock_killable(current->mm);
+	if (mmap_read_lock_killable(current->mm))
+		return -EINTR;
 
 	vma = vma_lookup(current->mm, param->addr);
 	if (!range_in_vma(vma, start, start + param->size)) {
