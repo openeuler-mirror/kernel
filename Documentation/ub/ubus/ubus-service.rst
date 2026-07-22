@@ -36,7 +36,7 @@ functional points implemented by the UBUS driver include:
 
   - Button event handling, completing the processing of hot-plug and
        hot-unplug button messages
-  - Indicator control, switching different knowledge points based on the
+  - Indicator control, switching between different indicator states based on the
        device status
   - Power control, performing power on/off operations for slots based on the
        device status
