@@ -662,6 +662,12 @@ static const u64 timer_reg_list[] = {
 	KVM_REG_ARM_PTIMER_CVAL,
 };
 
+static const u64 pvm_timer_reg_list[] = {
+	KVM_REG_ARM_TIMER_CTL,
+	KVM_REG_ARM_TIMER_CNT,
+	KVM_REG_ARM_TIMER_CVAL,
+};
+
 static bool is_timer_reg(u64 index)
 {
 	switch (index) {
@@ -678,13 +684,20 @@ static bool is_timer_reg(u64 index)
 
 static unsigned long num_timer_regs(struct kvm_vcpu *vcpu)
 {
-	return kvm_is_realm(vcpu->kvm) ? 0 : ARRAY_SIZE(timer_reg_list);
+	if (kvm_is_realm(vcpu->kvm))
+		return 0;
+	if (is_pvm_mode())
+		return ARRAY_SIZE(pvm_timer_reg_list);
+
+	return ARRAY_SIZE(timer_reg_list);
 }
 
 static int copy_timer_indices(struct kvm_vcpu *vcpu, u64 __user *uindices)
 {
+	const u64 *reg_list = is_pvm_mode() ? pvm_timer_reg_list : timer_reg_list;
+
 	for (int i = 0; i < num_timer_regs(vcpu); i++) {
-		if (put_user(timer_reg_list[i], uindices))
+		if (put_user(reg_list[i], uindices))
 			return -EFAULT;
 		uindices++;
 	}

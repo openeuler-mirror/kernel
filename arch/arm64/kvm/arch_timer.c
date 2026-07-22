@@ -21,6 +21,7 @@
 
 #include <kvm/arm_vgic.h>
 #include <kvm/arm_arch_timer.h>
+#include <kvm/arm_rv_timer.h>
 
 #include "trace.h"
 
@@ -257,6 +258,9 @@ static irqreturn_t kvm_arch_timer_handler(int irq, void *dev_id)
 	struct arch_timer_context *ctx;
 	struct timer_map map;
 
+	if (is_pvm_mode())
+		return IRQ_HANDLED;
+
 	/*
 	 * We may see a timer interrupt after vcpu_put() has been called which
 	 * sets the CPU's vcpu pointer to NULL, because even though the timer
@@ -454,6 +458,9 @@ static bool kvm_timer_should_fire(struct arch_timer_context *timer_ctx)
 
 int kvm_cpu_has_pending_timer(struct kvm_vcpu *vcpu)
 {
+	if (is_pvm_mode())
+		return kvm_cpu_has_pending_rv_timer(vcpu);
+
 	return vcpu_has_wfit_active(vcpu) && wfit_delay_ns(vcpu) == 0;
 }
 
@@ -465,6 +472,9 @@ void kvm_timer_update_run(struct kvm_vcpu *vcpu)
 	struct arch_timer_context *vtimer = vcpu_vtimer(vcpu);
 	struct arch_timer_context *ptimer = vcpu_ptimer(vcpu);
 	struct kvm_sync_regs *regs = &vcpu->run->s.regs;
+
+	if (is_pvm_mode())
+		return;
 
 	/* Populate the device bitmap with the timer states */
 	regs->device_irq_level &= ~(KVM_ARM_DEV_EL1_VTIMER |
@@ -966,6 +976,11 @@ void kvm_timer_vcpu_load(struct kvm_vcpu *vcpu)
 	struct arch_timer_cpu *timer = vcpu_timer(vcpu);
 	struct timer_map map;
 
+	if (is_pvm_mode()) {
+		kvm_rv_timer_vcpu_load(vcpu);
+		return;
+	}
+
 #if defined(CONFIG_HISI_VIRTCCA_HOST) || defined(CONFIG_HISI_CCA)
 	if (vcpu_is_rec(vcpu)) {
 		cvm_vcpu_load_timer_callback(vcpu);
@@ -1032,6 +1047,9 @@ bool kvm_timer_should_notify_user(struct kvm_vcpu *vcpu)
 	struct kvm_sync_regs *sregs = &vcpu->run->s.regs;
 	bool vlevel, plevel;
 
+	if (is_pvm_mode())
+		return false;
+
 	if (likely(irqchip_in_kernel(vcpu->kvm)))
 		return false;
 
@@ -1067,6 +1085,11 @@ void kvm_timer_vcpu_put(struct kvm_vcpu *vcpu)
 {
 	struct arch_timer_cpu *timer = vcpu_timer(vcpu);
 	struct timer_map map;
+
+	if (is_pvm_mode()) {
+		kvm_rv_timer_vcpu_put(vcpu);
+		return;
+	}
 
 #if defined(CONFIG_HISI_VIRTCCA_HOST) || defined(CONFIG_HISI_CCA)
 	if (vcpu_is_rec(vcpu)) {
@@ -1142,6 +1165,9 @@ void kvm_timer_sync_user(struct kvm_vcpu *vcpu)
 {
 	struct arch_timer_cpu *timer = vcpu_timer(vcpu);
 
+	if (is_pvm_mode())
+		return;
+
 	if (unlikely(!timer->enabled))
 		return;
 
@@ -1153,6 +1179,9 @@ int kvm_timer_vcpu_reset(struct kvm_vcpu *vcpu)
 {
 	struct arch_timer_cpu *timer = vcpu_timer(vcpu);
 	struct timer_map map;
+
+	if (is_pvm_mode())
+		return kvm_rv_timer_vcpu_reset(vcpu);
 
 	get_timer_map(vcpu, &map);
 
@@ -1245,6 +1274,11 @@ void kvm_timer_vcpu_init(struct kvm_vcpu *vcpu)
 	struct arch_timer_cpu *timer = vcpu_timer(vcpu);
 	u64 cntvoff;
 
+	if (is_pvm_mode()) {
+		kvm_rv_timer_vcpu_init(vcpu);
+		return;
+	}
+
 	for (int i = 0; i < NR_KVM_TIMERS; i++)
 		timer_context_init(vcpu, i);
 
@@ -1265,6 +1299,11 @@ void kvm_timer_vcpu_init(struct kvm_vcpu *vcpu)
 
 void kvm_timer_init_vm(struct kvm *kvm)
 {
+	if (is_pvm_mode()) {
+		kvm_rv_timer_init_vm(kvm);
+		return;
+	}
+
 	for (int i = 0; i < NR_KVM_TIMERS; i++)
 		kvm->arch.timer_data.ppi[i] = default_ppi[i];
 }
@@ -1302,6 +1341,9 @@ void kvm_timer_cpu_down(void)
 int kvm_arm_timer_set_reg(struct kvm_vcpu *vcpu, u64 regid, u64 value)
 {
 	struct arch_timer_context *timer;
+
+	if (is_pvm_mode())
+		return kvm_rv_timer_set_reg(vcpu, regid, value);
 
 	switch (regid) {
 	case KVM_REG_ARM_TIMER_CTL:
@@ -1360,6 +1402,9 @@ static u64 read_timer_ctl(struct arch_timer_context *timer)
 
 u64 kvm_arm_timer_get_reg(struct kvm_vcpu *vcpu, u64 regid)
 {
+	if (is_pvm_mode())
+		return kvm_rv_timer_get_reg(vcpu, regid);
+
 	switch (regid) {
 	case KVM_REG_ARM_TIMER_CTL:
 		return kvm_arm_timer_read(vcpu,
@@ -1426,6 +1471,9 @@ u64 kvm_arm_timer_read_sysreg(struct kvm_vcpu *vcpu,
 	struct timer_map map;
 	u64 val;
 
+	if (is_pvm_mode())
+		return kvm_rv_timer_read_sysreg(vcpu, tmr, treg);
+
 	get_timer_map(vcpu, &map);
 	timer = vcpu_get_timer(vcpu, tmr);
 
@@ -1477,6 +1525,11 @@ void kvm_arm_timer_write_sysreg(struct kvm_vcpu *vcpu,
 {
 	struct arch_timer_context *timer;
 	struct timer_map map;
+
+	if (is_pvm_mode()) {
+		kvm_rv_timer_write_sysreg(vcpu, tmr, treg, val);
+		return;
+	}
 
 	get_timer_map(vcpu, &map);
 	timer = vcpu_get_timer(vcpu, tmr);
@@ -1732,6 +1785,11 @@ void kvm_timer_vcpu_terminate(struct kvm_vcpu *vcpu)
 {
 	struct arch_timer_cpu *timer = vcpu_timer(vcpu);
 
+	if (is_pvm_mode()) {
+		kvm_rv_timer_vcpu_terminate(vcpu);
+		return;
+	}
+
 	soft_timer_cancel(&timer->bg_timer);
 }
 
@@ -1860,6 +1918,9 @@ int kvm_timer_enable(struct kvm_vcpu *vcpu)
 	struct timer_map map;
 	int ret = 0;
 
+	if (is_pvm_mode())
+		return kvm_rv_timer_enable(vcpu);
+
 	if (timer->enabled)
 		return 0;
 
@@ -1931,6 +1992,9 @@ int kvm_arm_timer_set_attr(struct kvm_vcpu *vcpu, struct kvm_device_attr *attr)
 	int __user *uaddr = (int __user *)(long)attr->addr;
 	int irq, idx, ret = 0;
 
+	if (is_pvm_mode())
+		return -ENXIO;
+
 	if (!irqchip_in_kernel(vcpu->kvm))
 		return -EINVAL;
 
@@ -1984,6 +2048,9 @@ int kvm_arm_timer_get_attr(struct kvm_vcpu *vcpu, struct kvm_device_attr *attr)
 	struct arch_timer_context *timer;
 	int irq;
 
+	if (is_pvm_mode())
+		return -ENXIO;
+
 	switch (attr->attr) {
 	case KVM_ARM_VCPU_TIMER_IRQ_VTIMER:
 		timer = vcpu_vtimer(vcpu);
@@ -2007,6 +2074,9 @@ int kvm_arm_timer_get_attr(struct kvm_vcpu *vcpu, struct kvm_device_attr *attr)
 
 int kvm_arm_timer_has_attr(struct kvm_vcpu *vcpu, struct kvm_device_attr *attr)
 {
+	if (is_pvm_mode())
+		return -ENXIO;
+
 	switch (attr->attr) {
 	case KVM_ARM_VCPU_TIMER_IRQ_VTIMER:
 	case KVM_ARM_VCPU_TIMER_IRQ_PTIMER:
@@ -2022,6 +2092,9 @@ int kvm_vm_ioctl_set_counter_offset(struct kvm *kvm,
 				    struct kvm_arm_counter_offset *offset)
 {
 	int ret = 0;
+
+	if (is_pvm_mode())
+		return -EINVAL;
 
 	if (offset->reserved)
 		return -EINVAL;
