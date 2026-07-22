@@ -3369,3 +3369,37 @@ static int __init kcompactd_init(void)
 subsys_initcall(kcompactd_init)
 
 #endif /* CONFIG_COMPACTION */
+
+#ifdef CONFIG_MM_FREE_RECLAIM
+/**
+ * mm_count_free_blocks - snapshot per-order buddy free block counts
+ * @counts: output array with at least @len entries
+ * @len: number of entries in @counts, clamped to NR_PAGE_ORDERS
+ */
+void mm_count_free_blocks(unsigned long *counts, int len)
+{
+	struct zone *zone;
+	unsigned int order;
+
+	if (!counts || len <= 0)
+		return;
+
+	len = min(len, (int)NR_PAGE_ORDERS);
+	memset(counts, 0, sizeof(*counts) * len);
+	for_each_populated_zone(zone)
+		for (order = 0; order < len; order++)
+			/* Lockless snapshot; a racy count is acceptable. */
+			counts[order] += data_race(zone->free_area[order].nr_free);
+}
+EXPORT_SYMBOL_GPL(mm_count_free_blocks);
+
+/**
+ * compact_memory_all - compact all zones in all nodes
+ * Same semantics as writing 1 to /proc/sys/vm/compact_memory
+ */
+void compact_memory_all(void)
+{
+	compact_nodes();
+}
+EXPORT_SYMBOL_GPL(compact_memory_all);
+#endif /* CONFIG_MM_FREE_RECLAIM */
