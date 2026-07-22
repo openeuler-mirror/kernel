@@ -44,7 +44,7 @@ static void ubase_reset_task_schedule(struct ubase_dev *udev)
 
 void ubase_reset_task_schedule_immediately(struct ubase_dev *udev)
 {
-#define RESET_TASK_DELAY_TIME_IM	msecs_to_jiffies(50)
+#define RESET_TASK_DELAY_TIME_IM	msecs_to_jiffies(100)
 
 	set_bit(UBASE_SERVICE_STATE_RESET_SCHED, &udev->service_task.state);
 
@@ -66,6 +66,7 @@ static void ubase_reset_err_handle(struct ubase_dev *udev)
 		return;
 	}
 
+	udev->reset_stat.reset_retry_cnt = 0;
 	ubase_err(udev, "failed to reset, too many attempts.\n");
 }
 
