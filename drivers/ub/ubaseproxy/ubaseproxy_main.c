@@ -8,6 +8,7 @@
 #include <linux/module.h>
 #include <linux/sched.h>
 
+#include "ubaseproxy_debugfs.h"
 #include "ubaseproxy_dev.h"
 
 static int ubaseproxy_probe(struct auxiliary_device *adev,
@@ -27,6 +28,15 @@ static int ubaseproxy_probe(struct auxiliary_device *adev,
 	if (ret) {
 		ubaseproxy_err(udev, "failed to init ubaseproxy device, ret = %d.\n",
 			       ret);
+		goto err_init;
+	}
+
+	ret = ubaseproxy_dbg_init(adev);
+	if (ret) {
+		ubaseproxy_err(udev,
+			       "failed to init ubaseproxy debugfs, ret = %d.\n",
+			       ret);
+		ubaseproxy_dev_uninit(udev);
 		goto err_init;
 	}
 
@@ -51,6 +61,7 @@ static void ubaseproxy_remove(struct auxiliary_device *adev)
 		msleep(UBASEPROXY_RESET_WAIT_TIME);
 
 	set_bit(UBASEPROXY_STATE_REMOVING, &udev->state);
+	ubaseproxy_dbg_uninit(adev);
 	ubaseproxy_dev_uninit(udev);
 
 	dev_set_drvdata(&adev->dev, NULL);
