@@ -27,6 +27,7 @@ struct ubaseproxy_jfr_key_words {
 	enum ubaseproxy_jfr_state	state;
 	enum ubaseproxy_jfr_type	type;
 	u32				jfcn;
+	u8				rqe_shift;
 };
 
 struct ubaseproxy_jfr_ctx {

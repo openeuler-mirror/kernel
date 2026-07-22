@@ -185,6 +185,7 @@ struct ubaseproxy_ue_risk_stats {
 	u64 crq_req_module;
 	u64 ctx_msg_len;
 	u64 ctx_ctx_type;
+	u64 ctx_slot;
 };
 
 #endif /* __UBASEPROXY_LOG_H__ */

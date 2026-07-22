@@ -14,6 +14,23 @@
 #define UBASEPROXY_JFR_CTX_BYTES sizeof(struct ubaseproxy_jfr_ctx)
 #define UBASEPROXY_JFR_CTX_SIZE (UBASEPROXY_JFR_CTX_BYTES / sizeof(u32))
 
+#define UBASEPROXY_JFR_LIMIT_WL_0 0
+#define UBASEPROXY_JFR_LIMIT_WL_64 64
+#define UBASEPROXY_JFR_LIMIT_WL_512 512
+#define UBASEPROXY_JFR_LIMIT_WL_4096 4096
+#define UBASEPROXY_JFR_LIMIT_WL_MASK 0x03
+
+static u16 ubaseproxy_get_jfr_limit_wl_value(u8 limit_wl)
+{
+	const u16 limit_wl_map[] = {
+		UBASEPROXY_JFR_LIMIT_WL_0,
+		UBASEPROXY_JFR_LIMIT_WL_64,
+		UBASEPROXY_JFR_LIMIT_WL_512,
+		UBASEPROXY_JFR_LIMIT_WL_4096};
+
+	return limit_wl_map[limit_wl & UBASEPROXY_JFR_LIMIT_WL_MASK];
+}
+
 static void ubaseproxy_update_jfr_ctx_res(struct ubase_proxy_req_msg *req,
 					  struct ubaseproxy_jfr_key_words *jfr)
 {
@@ -123,6 +140,7 @@ static int ubaseproxy_store_jfr_res(struct ubaseproxy_dev *udev,
 	jfr->state = jfr_ctx->state;
 	jfr->jfcn = jfcn;
 	jfr->type = jfr_ctx->type;
+	jfr->rqe_shift = jfr_ctx->rqe_shift;
 
 	ret = xa_err(xa_store(&ue_ctx_xa->jfr, jfrn, jfr, GFP_KERNEL));
 	if (ret)
@@ -235,6 +253,244 @@ void ubaseproxy_uninit_ue_jfr_ctx_default(struct ubaseproxy_dev *udev)
 	udev->caps.ue_default.jfr_default = NULL;
 }
 
+static int
+ubaseproxy_check_jfr_ctx_fixed_values(struct ubaseproxy_dev *udev,
+				      struct ubaseproxy_jfr_ctx *ctx,
+				      u16 jfrn, u16 mbx_ue_id)
+{
+	struct ubaseproxy_jfr_default *jfr_default;
+	int ret;
+
+	jfr_default = udev->caps.ue_default.jfr_default;
+	ret = ubaseproxy_check_ctx_mask_value(udev, ctx,
+					      &jfr_default->create_mask,
+					      &jfr_default->default_value,
+					      UBASEPROXY_JFR_CTX_SIZE);
+	if (ret)
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfr_ctx_fixed,
+				   "failed to check jfr(%u) ctx fixed values.\n",
+				   jfrn);
+
+	return ret;
+}
+
+static int
+ubaseproxy_check_jfr_ctx_range_values(struct ubaseproxy_dev *udev,
+				      struct ubaseproxy_ue_ctx_xarray *ue_ctx_xa,
+				      struct ubaseproxy_jfr_ctx *ctx,
+				      u16 jfrn, u16 mbx_ue_id)
+{
+#define UBASEPROXY_JFR_MIN_RQE_SHIFT 6
+#define UBASEPROXY_JFR_MAX_RNR_TIMER 19
+#define UBASEPROXY_JFR_MAX_RQE_SIZE_SHIFT 4
+
+	u32 jfcn = ctx->jfcn_l + (ctx->jfcn_h << UBASEPROXY_JFR_JFCN_L_BIT);
+	struct ubaseproxy_jfc_key_words *jfc;
+	u32 rqe_depth = 1 << ctx->rqe_shift;
+	u16 limit_wl_value;
+
+	if (ctx->rqe_shift < UBASEPROXY_JFR_MIN_RQE_SHIFT ||
+	    rqe_depth > udev->caps.ue_caps.jfr_depth) {
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfr_field_rqe_shift,
+				   "failed to check jfr(%u) rqe shift(%u).\n",
+				   jfrn, ctx->rqe_shift);
+		return -EINVAL;
+	}
+
+	limit_wl_value = ubaseproxy_get_jfr_limit_wl_value(ctx->limit_wl);
+	if (limit_wl_value >= rqe_depth) {
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfr_rqe_depth_limit,
+				   "failed to check jfr(%u) limit wl.\n", jfrn);
+		return -EINVAL;
+	}
+
+	if (ctx->rqe_size_shift > UBASEPROXY_JFR_MAX_RQE_SIZE_SHIFT) {
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfr_field_rqe_size_shift,
+				   "failed to check jfr(%u) rqe size shift.\n",
+				   jfrn);
+		return -EINVAL;
+	}
+
+	if (ctx->rnr_timer > UBASEPROXY_JFR_MAX_RNR_TIMER) {
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfr_field_rnr_timer,
+				   "failed to check jfr(%u) rnr timer.\n",
+				   jfrn);
+		return -EINVAL;
+	}
+
+	if (ctx->type == UBASEPROXY_JFR_TYPE_RAW_OR_NIC ||
+	    ctx->type >= UBASEPROXY_JFR_TYPE_RESERVED) {
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfr_field_type,
+				   "failed to check jfr(%u) type.\n", jfrn);
+		return -EINVAL;
+	}
+
+	jfc = (struct ubaseproxy_jfc_key_words *)xa_load(&ue_ctx_xa->jfc, jfcn);
+	if (!jfc) {
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfr_create_jfc_not_exists,
+				   "failed to check jfr(%u) jfcn, jfc(%u) not exists.\n",
+				   jfrn, jfcn);
+		return -EINVAL;
+	}
+
+	if (ctx->cqeie != jfc->inline_en) {
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfr_field_cqeie,
+				   "jfr(%u) cqeie(%u) is not equal to jfc(%u) inline_en(%u).\n",
+				   jfrn, ctx->cqeie, jfcn, jfc->inline_en);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int ubaseproxy_check_jfr_mbx_header(struct ubaseproxy_dev *udev, u16 jfrn,
+					   u16 mbx_ue_id)
+{
+	struct ubaseproxy_ue_caps *ue_caps = &udev->caps.ue_caps;
+
+	if (jfrn >= ue_caps->jfr_max_cnt) {
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfr_req_tag,
+				   "failed to check jfr mbx header, tag = %u\n",
+				   jfrn);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int ubaseproxy_check_create_jfr_ctx(struct ubaseproxy_dev *udev,
+					   struct ubase_proxy_req_msg *req,
+					   struct ubaseproxy_ue_ctx_xarray *ue_ctx_xa)
+{
+	struct ubaseproxy_jfr_ctx *ctx;
+	u16 jfrn = req->tag;
+	int ret;
+
+	ret = ubaseproxy_check_jfr_mbx_header(udev, jfrn,
+					      le16_to_cpu(req->mbx_ue_id));
+	if (ret)
+		return ret;
+
+	ctx = (struct ubaseproxy_jfr_ctx *)req->data;
+	ret = ubaseproxy_check_jfr_ctx_fixed_values(udev, ctx, jfrn,
+						    le16_to_cpu(req->mbx_ue_id));
+	if (ret)
+		return ret;
+
+	return ubaseproxy_check_jfr_ctx_range_values(udev, ue_ctx_xa, ctx, jfrn,
+						     le16_to_cpu(req->mbx_ue_id));
+}
+
+static int ubaseproxy_check_jfr_ctx_mask(struct ubaseproxy_dev *udev,
+					 struct ubaseproxy_jfr_ctx *ctx,
+					 u16 jfrn, u16 mbx_ue_id)
+{
+	struct ubaseproxy_jfr_ctx *ctx_mask, *modify_mask;
+	int ret;
+
+	ctx_mask = ctx + 1;
+	modify_mask = &udev->caps.ue_default.jfr_default->modify_mask;
+	ret = ubaseproxy_check_ctx_mask_value(udev, ctx_mask,
+					      modify_mask, modify_mask,
+					      UBASEPROXY_JFR_CTX_SIZE);
+	if (ret) {
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfr_ctx_fixed,
+				   "failed to check modify jfr(%u) ctx mask value.\n",
+				   jfrn);
+		return ret;
+	}
+
+	return 0;
+}
+
+static int ubaseproxy_check_modify_jfr_state(struct ubaseproxy_dev *udev,
+					     struct ubaseproxy_jfr_ctx *ctx,
+					     struct ubaseproxy_jfr_key_words *jfr,
+					     u16 jfrn, u16 mbx_ue_id)
+{
+#define UBASEPROXY_JFR_STATE_FIELD_WIDTH 2
+
+	struct ubaseproxy_jfr_ctx *ctx_mask;
+
+	ctx_mask = ctx + 1;
+	if (!ubaseproxy_check_ctx_mask_field(ctx_mask->state,
+					     UBASEPROXY_JFR_STATE_FIELD_WIDTH)) {
+		ubaseproxy_risk_rl(udev, mbx_ue_id,
+				   jfr_modify_state_ctx_mask,
+				   "failed to check jfr(%u) state ctx mask.\n",
+				   jfrn);
+		return -EINVAL;
+	}
+
+	if (ctx_mask->state == 0 &&
+	    (jfr->state != UBASEPROXY_JFR_STATE_READY ||
+	     ctx->state != UBASEPROXY_JFR_STATE_ERROR)) {
+		ubaseproxy_risk_rl(udev, mbx_ue_id,
+				   jfr_modify_state_check,
+				   "invalid jfr(%u) state modify, from %u to %u.\n",
+				   jfrn, jfr->state, ctx->state);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int ubaseproxy_check_modify_jfr_limit_wl(struct ubaseproxy_dev *udev,
+						struct ubaseproxy_jfr_ctx *ctx,
+						struct ubaseproxy_jfr_key_words *jfr,
+						u16 jfrn, u16 mbx_ue_id)
+{
+#define UBASEPROXY_JFR_LIMIT_WL_FIELD_WIDTH 2
+
+	struct ubaseproxy_jfr_ctx *ctx_mask;
+	u16 limit_wl_value;
+
+	ctx_mask = ctx + 1;
+	if (!ubaseproxy_check_ctx_mask_field(ctx_mask->limit_wl,
+					     UBASEPROXY_JFR_LIMIT_WL_FIELD_WIDTH)) {
+		ubaseproxy_risk_rl(udev, mbx_ue_id,
+				   jfr_modify_limit_wl_ctx_mask,
+				   "failed to check jfr(%u) limit_wl ctx mask.\n",
+				   jfrn);
+		return -EINVAL;
+	}
+
+	limit_wl_value = ubaseproxy_get_jfr_limit_wl_value(ctx->limit_wl);
+	if (ctx_mask->limit_wl == 0 && limit_wl_value >= BIT(jfr->rqe_shift)) {
+		ubaseproxy_risk_rl(udev, mbx_ue_id,
+				   jfr_modify_limit_wl_check,
+				   "failed to check modify jfr(%u) limit wl.\n",
+				   jfrn);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int ubaseproxy_check_modify_jfr_ctx(struct ubaseproxy_dev *udev,
+					   struct ubase_proxy_req_msg *req,
+					   struct ubaseproxy_jfr_key_words *jfr)
+{
+	u16 mbx_ue_id = le16_to_cpu(req->mbx_ue_id);
+	struct ubaseproxy_jfr_ctx *ctx;
+	u16 jfrn = req->tag;
+	int ret;
+
+	ctx = (struct ubaseproxy_jfr_ctx *)req->data;
+
+	ret = ubaseproxy_check_jfr_ctx_mask(udev, ctx, jfrn, mbx_ue_id);
+	if (ret)
+		return ret;
+
+	ret = ubaseproxy_check_modify_jfr_state(udev, ctx, jfr, jfrn,
+						mbx_ue_id);
+	if (ret)
+		return ret;
+
+	return ubaseproxy_check_modify_jfr_limit_wl(udev, ctx, jfr,
+						    jfrn, mbx_ue_id);
+}
+
 int ubaseproxy_handle_create_jfr_ctx_req(struct ubaseproxy_dev *udev,
 					 struct ubase_proxy_req_msg *req)
 {
@@ -262,6 +518,10 @@ int ubaseproxy_handle_create_jfr_ctx_req(struct ubaseproxy_dev *udev,
 				   jfrn);
 		return -EINVAL;
 	}
+
+	ret = ubaseproxy_check_create_jfr_ctx(udev, req, ue_ctx_xa);
+	if (ret)
+		return ret;
 
 	jfr = ubaseproxy_create_jfr_res(udev, req);
 	if (!jfr) {
@@ -363,6 +623,10 @@ int ubaseproxy_handle_modify_jfr_ctx_req(struct ubaseproxy_dev *udev,
 				   "modified jfr(%u) not exists.\n", jfrn);
 		return -EINVAL;
 	}
+
+	ret = ubaseproxy_check_modify_jfr_ctx(udev, req, jfr);
+	if (ret)
+		return ret;
 
 	ret = ubaseproxy_send_mbx_based_ue_req(udev, req);
 	if (ret)
