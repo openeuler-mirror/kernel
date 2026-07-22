@@ -99,18 +99,41 @@ static void ubaseproxy_unregister_crq_event(struct ubaseproxy_dev *udev)
 					   ubaseproxy_crq_events[i].opcode);
 }
 
+static void ubaseproxy_virt_handler(struct auxiliary_device *adev, u16 bus_ue_id,
+				    bool is_en)
+{
+	struct ubaseproxy_dev *udev = (struct ubaseproxy_dev *)dev_get_drvdata(&adev->dev);
+
+	if (is_en) {
+		if (!try_module_get(THIS_MODULE))
+			ubaseproxy_err(udev, "failed to handle virt event.\n");
+		else
+			atomic_inc(&udev->virt_refcnt);
+	} else {
+		if (atomic_dec_if_positive(&udev->virt_refcnt) >= 0)
+			module_put(THIS_MODULE);
+	}
+}
+
 int ubaseproxy_register_event(struct ubaseproxy_dev *udev)
 {
+	struct auxiliary_device *adev = udev->comdev.adev;
 	int ret;
 
 	ret = ubaseproxy_register_crq_event(udev);
 	if (ret)
 		return ret;
 
+	atomic_set(&udev->virt_refcnt, 0);
+	ubase_virt_register(adev, ubaseproxy_virt_handler);
+
 	return 0;
 }
 
 void ubaseproxy_unregister_event(struct ubaseproxy_dev *udev)
 {
+	struct auxiliary_device *adev = udev->comdev.adev;
+
+	ubase_virt_unregister(adev);
 	ubaseproxy_unregister_crq_event(udev);
 }
