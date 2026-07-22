@@ -338,12 +338,38 @@ static bool ubase_is_comm_event(struct ubase_dev *udev, struct ubase_aeqe *aeqe)
 	return false;
 }
 
+static void ubase_tp_fd_work_handler(struct work_struct *work)
+{
+	struct ubase_tp_fd_work *tp_fd_work =
+			container_of(work, struct ubase_tp_fd_work, work);
+	struct ubase_dev *udev = tp_fd_work->udev;
+
+	ubase_send_tp_flush_done_notice(udev, tp_fd_work->tpn);
+	kfree(tp_fd_work);
+}
+
+static void ubase_init_tp_fd_work(struct ubase_dev *udev, u32 tpn)
+{
+	struct ubase_tp_fd_work *tp_fd_work;
+
+	tp_fd_work = kzalloc(sizeof(*tp_fd_work), GFP_ATOMIC);
+	if (!tp_fd_work)
+		return;
+
+	tp_fd_work->udev = udev;
+	tp_fd_work->tpn = tpn;
+	INIT_WORK(&tp_fd_work->work, ubase_tp_fd_work_handler);
+	queue_work(udev->ubase_tp_fd_wq, &tp_fd_work->work);
+}
+
 static void ubase_aeq_event_handler(struct ubase_dev *udev,
 				    struct ubase_aeqe *aeqe)
 {
+	u32 tpn = aeqe->event.queue_event.num;
 	struct ubase_aeq_notify_info info;
 	u8 event_type = aeqe->event_type;
 	u8 sub_type = aeqe->sub_type;
+	int ret;
 	u8 idx;
 
 	if (event_type >= UBASE_EVENT_TYPE_MAX) {
@@ -368,8 +394,11 @@ static void ubase_aeq_event_handler(struct ubase_dev *udev,
 	ubase_dbg(udev, "ubase do async work, idx = %u, event_type = %u.\n",
 		  idx, event_type);
 
-	blocking_notifier_call_chain(&udev->irq_table.nh[idx][event_type],
-				     event_type, (void *)&info);
+	ret = blocking_notifier_call_chain(&udev->irq_table.nh[idx][event_type],
+					   event_type, (void *)&info);
+	if (ret == NOTIFY_DONE && idx == UBASE_DRV_UDMA &&
+	    event_type == UBASE_EVENT_TYPE_TP_FLUSH_DONE)
+		ubase_init_tp_fd_work(udev, tpn);
 }
 
 static void ubase_async_service_task(struct work_struct *work)
@@ -824,6 +853,12 @@ static void ubase_destroy_ceqs(struct ubase_dev *udev)
 	mutex_unlock(&udev->irq_table.ceq_lock);
 }
 
+static void ubase_flush_ae_work(struct ubase_dev *udev)
+{
+	flush_workqueue(udev->ubase_async_wq);
+	flush_workqueue(udev->ubase_tp_fd_wq);
+}
+
 static void ubase_destroy_aeq(struct ubase_dev *udev)
 {
 	struct ubase_aeq *aeq = &udev->irq_table.aeq;
@@ -836,6 +871,8 @@ static void ubase_destroy_aeq(struct ubase_dev *udev)
 
 	if (ubase_destroy_eq(udev, &aeq->eq, UBASE_EQ_TYPE_AEQ))
 		ubase_err(udev, "failed to destroy aeq.\n");
+
+	ubase_flush_ae_work(udev);
 }
 
 static int ubase_request_ceq_irq(struct ubase_dev *udev, struct ubase_ceq *ceq,

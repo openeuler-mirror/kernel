@@ -48,6 +48,13 @@ struct ubase_tpg {
 	u32		tp_shift;
 };
 
+struct ubase_tp_fd_work {
+	struct work_struct work;
+	struct ubase_dev *udev;
+	u32 tpn;
+};
+
+int ubase_send_tp_flush_done_notice(struct ubase_dev *udev, u32 tpn);
 int ubase_ae_tp_flush_done(struct notifier_block *nb, unsigned long event,
 			   void *data);
 int ubase_ae_tp_level_error(struct notifier_block *nb, unsigned long event,
