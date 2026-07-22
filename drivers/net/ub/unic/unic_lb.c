@@ -57,7 +57,7 @@ static int unic_set_lb_mode(struct unic_dev *unic_dev, bool en, int loop_type)
 
 static int unic_lb_link_status_wait(struct unic_dev *unic_dev, bool en)
 {
-#define UNIC_LINK_STATUS_MS		100
+#define UNIC_LINK_STATUS_MS		30
 #define UNIC_MAC_LINK_STATUS_NUM	100
 
 	u8 link_status = UNIC_LINK_STATUS_DOWN;
