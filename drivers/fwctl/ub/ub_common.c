@@ -120,7 +120,7 @@ static int ubctl_cmd_send_deal(struct ubctl_dev *ucdev,
 	ret = ubctl_fill_cmd(&cmd, cmd_data->cmd_in, cmd_data->cmd_out,
 			     query_dp->out_len, query_dp->is_read);
 	if (ret) {
-		ubctl_err(ucdev, "ubctl fill cmd failed.\n");
+		ubctl_err(ucdev, "failed to fill cmd params.\n");
 		return ret;
 	}
 
@@ -131,7 +131,7 @@ static int ubctl_cmd_send_deal(struct ubctl_dev *ucdev,
 	}
 
 	if (*retval) {
-		ubctl_err(ucdev, "ubctl ubase cmd send failed, retval = %d.\n",
+		ubctl_err(ucdev, "failed to execute ubctl ubase cmd send, retval = %d.\n",
 			  *retval);
 		return -EINVAL;
 	}
@@ -139,7 +139,7 @@ static int ubctl_cmd_send_deal(struct ubctl_dev *ucdev,
 	ret = cmd_data->query_func->data_deal(ucdev, query_cmd_param, &cmd,
 					      query_dp->out_len, offset);
 	if (ret)
-		ubctl_err(ucdev, "ubctl data deal failed, ret = %d.\n", ret);
+		ubctl_err(ucdev, "failed to execute ubctl data deal, ret = %d.\n", ret);
 
 	return ret;
 }
@@ -169,13 +169,14 @@ int ubctl_query_data(struct ubctl_dev *ucdev,
 
 	ret = ubctl_query_param_check(ucdev, query_cmd_param, query_func, query_dp);
 	if (ret) {
-		ubctl_err(ucdev, "ubctl query param check failed, ret = %d.\n", ret);
+		ubctl_err(ucdev, "failed to check ubctl query param, ret = %d.\n", ret);
 		return ret;
 	}
 
 	for (i = 0; i < query_dp_num; i++) {
 		if (query_cmd_param->in->data_size > query_dp[i].out_len) {
-			ubctl_err(ucdev, "ubctl in data size is bigger than out len.\n");
+			ubctl_err(ucdev, "user data size = %ubytes, it must be smaller than out len %ubytes.\n",
+				  query_cmd_param->in->data_size, query_dp[i].out_len);
 			return -EINVAL;
 		}
 
@@ -188,9 +189,9 @@ int ubctl_query_data(struct ubctl_dev *ucdev,
 			return -ENOMEM;
 
 		struct ubctl_query_cmd_dp cmd_dp = (struct ubctl_query_cmd_dp) {
+			.query_func = query_func,
 			.cmd_in = cmd_in,
 			.cmd_out = cmd_out,
-			.query_func = query_func,
 		};
 
 		ubctl_cmd_data_deal(query_cmd_param, &query_dp[i], &cmd_dp);
@@ -217,12 +218,14 @@ int ubctl_query_data_deal(struct ubctl_dev *ucdev,
 	}
 
 	if (cmd->out_len != out_len) {
-		ubctl_err(ucdev, "out data size is not equal to out len.\n");
+		ubctl_err(ucdev, "out data size = %ubytes, and it must be %ubytes.\n",
+			  cmd->out_len, out_len);
 		return -EINVAL;
 	}
 
 	if ((offset * (u32)sizeof(u32) + out_len) > query_cmd_param->out_len) {
-		ubctl_err(ucdev, "offset size is bigger than user out len.\n");
+		ubctl_err(ucdev, "offset size = %ubytes is bigger than user out len = %zubytes.\n",
+			  (offset * (u32)sizeof(u32) + out_len), query_cmd_param->out_len);
 		return -EINVAL;
 	}
 
@@ -246,7 +249,7 @@ int ubctl_query_perf(struct ubctl_dev *ucdev, u32 port_bitmap,
 	ret = ubase_perf_stats(ucdev->adev, (u64)port_bitmap, period,
 			       result_data, result_data_size);
 	if (ret)
-		ubctl_err(ucdev, "Failed to collecting performance.\n");
+		ubctl_err(ucdev, "failed to collecting performance.\n");
 
 	return ret;
 }
@@ -264,7 +267,7 @@ int ubctl_query_perf_stats(struct ubctl_dev *ucdev, u32 port_bitmap,
 
 	ret = ubase_query_perf_stats(ucdev->adev, (u64)port_bitmap, result_data, result_data_size);
 	if (ret)
-		ubctl_err(ucdev, "Failed to collecting performance.\n");
+		ubctl_err(ucdev, "failed to collecting performance.\n");
 
 	return ret;
 }

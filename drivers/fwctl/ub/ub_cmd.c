@@ -363,20 +363,20 @@ static int ubctl_send_deal_trace(struct ubctl_dev *ucdev,
 	ret = ubctl_fill_cmd(&cmd, cmd_data->cmd_in, cmd_data->cmd_out,
 			     out_len, UBCTL_READ);
 	if (ret) {
-		ubctl_err(ucdev, "ubctl fill cmd failed.\n");
+		ubctl_err(ucdev, "failed to fill cmd by ubctl.\n");
 		return ret;
 	}
 
 	ret = ubctl_ubase_cmd_send(ucdev->adev, &cmd);
 	if (ret) {
-		ubctl_err(ucdev, "ubctl ubase cmd send failed, ret = %d.\n", ret);
+		ubctl_err(ucdev, "failed to send ubase cmd, ret = %d.\n", ret);
 		return -EINVAL;
 	}
 
 	ret = cmd_data->query_func->data_deal(ucdev, query_cmd_param, &cmd,
 					      out_len, offset);
 	if (ret)
-		ubctl_err(ucdev, "ubctl data deal failed, ret = %d.\n", ret);
+		ubctl_err(ucdev, "failed to deal ubctl data, ret = %d.\n", ret);
 
 	return ret;
 }
@@ -391,7 +391,8 @@ static int ubctl_query_dl_trace_data(struct ubctl_dev *ucdev,
 	int ret = 0;
 
 	if (query_cmd_param->in->data_size != sizeof(struct fwctl_pkt_in_port)) {
-		ubctl_err(ucdev, "user data of trace is invalid.\n");
+		ubctl_err(ucdev, "user data size = %ubytes, it must be %zubytes.\n",
+			  query_cmd_param->in->data_size, sizeof(struct fwctl_pkt_in_port));
 		return -EINVAL;
 	}
 
@@ -423,7 +424,8 @@ static int ubctl_query_dl_trace_data(struct ubctl_dev *ucdev,
 		tmp_sum = cmd_out->cur_count + cmd_in->index;
 
 		if ((tmp_sum <= expect_total) || (tmp_sum > cmd_out->total_count)) {
-			ubctl_err(ucdev, "software data of trace is invalid.\n");
+			ubctl_err(ucdev, "software data size = %ubytes, it must be in (%u, %u].\n",
+				  tmp_sum, expect_total, cmd_out->total_count);
 			return -EINVAL;
 		}
 
@@ -449,7 +451,7 @@ static int ubctl_query_perf_data(struct ubctl_dev *ucdev,
 		return -EINVAL;
 
 	if (!query_cmd_param->in || !query_cmd_param->out) {
-		ubctl_err(ucdev, "ubctl in or out is null.\n");
+		ubctl_err(ucdev, "the input or output data is null.\n");
 		return -EINVAL;
 	}
 
@@ -483,7 +485,7 @@ static int ubctl_query_perf_data(struct ubctl_dev *ucdev,
 
 query_perf_failed:
 	if (ret)
-		ubctl_err(ucdev, "ubctl query perf failed, ret = %d.\n", ret);
+		ubctl_err(ucdev, "failed to query perf by ubctl, ret = %d.\n", ret);
 	kvfree(result_data);
 	return ret;
 }
@@ -493,7 +495,7 @@ static int ubctl_query_dl_perf_data(struct ubctl_dev *ucdev,
 				    struct ubctl_func_dispatch *query_func)
 {
 	if (query_cmd_param->in == NULL) {
-		ubctl_err(ucdev, "The input data is empty.\n");
+		ubctl_err(ucdev, "the input data is null.\n");
 		return -EFAULT;
 	}
 
@@ -501,7 +503,8 @@ static int ubctl_query_dl_perf_data(struct ubctl_dev *ucdev,
 		(struct fwctl_pkt_in_port_time *)query_cmd_param->in->data;
 
 	if (query_cmd_param->in->data_size != sizeof(struct fwctl_pkt_in_port_time)) {
-		ubctl_err(ucdev, "user data of trace is invalid.\n");
+		ubctl_err(ucdev, "user data size = %ubytes, it must be %zubytes.\n",
+			  query_cmd_param->in->data_size, sizeof(struct fwctl_pkt_in_port_time));
 		return -EINVAL;
 	}
 
@@ -516,7 +519,8 @@ static int ubctl_query_dl_all_perf_data(struct ubctl_dev *ucdev,
 	struct fwctl_pkt_in_time *pkt_in = (struct fwctl_pkt_in_time *)query_cmd_param->in->data;
 
 	if (query_cmd_param->in->data_size != sizeof(struct fwctl_pkt_in_time)) {
-		ubctl_err(ucdev, "user data of trace is invalid.\n");
+		ubctl_err(ucdev, "user data size = %ubytes, it must be %zubytes.\n",
+			  query_cmd_param->in->data_size, sizeof(struct fwctl_pkt_in_time));
 		return -EINVAL;
 	}
 
@@ -530,14 +534,15 @@ static int ubctl_query_dl_perf_stats_data(struct ubctl_dev *ucdev,
 	int ret;
 
 	if (query_cmd_param->in == NULL) {
-		ubctl_err(ucdev, "The input data is empty.\n");
+		ubctl_err(ucdev, "the input data is null.\n");
 		return -EFAULT;
 	}
 
 	struct fwctl_pkt_in_port *pkt_in = (struct fwctl_pkt_in_port *)query_cmd_param->in->data;
 
 	if (query_cmd_param->in->data_size != sizeof(struct fwctl_pkt_in_port)) {
-		ubctl_err(ucdev, "user data of trace is invalid.\n");
+		ubctl_err(ucdev, "user data size = %ubytes, it must be %zubytes.\n",
+			  query_cmd_param->in->data_size, sizeof(struct fwctl_pkt_in_port));
 		return -EINVAL;
 	}
 
@@ -556,20 +561,21 @@ static int ubctl_query_dl_start_perf_data(struct ubctl_dev *ucdev,
 	int ret;
 
 	if (query_cmd_param->in == NULL) {
-		ubctl_err(ucdev, "The input data is empty.\n");
+		ubctl_err(ucdev, "the input data is empty.\n");
 		return -EFAULT;
 	}
 
 	pkt_in = (struct fwctl_pkt_in_port_time *)query_cmd_param->in->data;
 
 	if (query_cmd_param->in->data_size != sizeof(struct fwctl_pkt_in_port_time)) {
-		ubctl_err(ucdev, "user data of perf is invalid.\n");
+		ubctl_err(ucdev, "user data size = %ubytes, it must be %zubytes.\n",
+			  query_cmd_param->in->data_size, sizeof(struct fwctl_pkt_in_port_time));
 		return -EINVAL;
 	}
 
 	ret = ubase_open_perf_stats(ucdev->adev, pkt_in->port_id, pkt_in->time);
 	if (ret)
-		ubctl_err(ucdev, "ubase open perf stats failed, ret = %d.\n", ret);
+		ubctl_err(ucdev, "failed to execute ubase open perf stats, ret = %d.\n", ret);
 
 	query_cmd_param->out->retval = ret;
 
@@ -584,12 +590,13 @@ static int ubctl_query_dl_stop_perf_data(struct ubctl_dev *ucdev,
 	int ret;
 
 	if (query_cmd_param->in == NULL) {
-		ubctl_err(ucdev, "The input data is empty.\n");
+		ubctl_err(ucdev, "the input data is empty.\n");
 		return -EFAULT;
 	}
 
 	if (query_cmd_param->in->data_size != sizeof(struct fwctl_pkt_in_port)) {
-		ubctl_err(ucdev, "user data of perf is invalid.\n");
+		ubctl_err(ucdev, "user data size = %ubytes, it must be %zubytes.\n",
+			  query_cmd_param->in->data_size, sizeof(struct fwctl_pkt_in_port));
 		return -EINVAL;
 	}
 
@@ -597,7 +604,7 @@ static int ubctl_query_dl_stop_perf_data(struct ubctl_dev *ucdev,
 
 	ret = ubase_close_perf_stats(ucdev->adev, pkt_in->port_id);
 	if (ret)
-		ubctl_err(ucdev, "ubase close perf stats failed, ret = %d.\n", ret);
+		ubctl_err(ucdev, "failed to execute ubase close perf stats, ret = %d.\n", ret);
 
 	return ret;
 }
@@ -618,19 +625,20 @@ static int ubctl_scc_data_deal(struct ubctl_dev *ucdev, u32 index,
 	u32 i, j;
 
 	if (index > UBCTL_SCC_INDEX_MAX_NUM) {
-		ubctl_err(ucdev, "scc index is invalid, index = %u.\n", index);
+		ubctl_err(ucdev, "scc index %u is bigger than maximum %u.\n", index,
+			  UBCTL_SCC_INDEX_MAX_NUM);
 		return -EINVAL;
 	}
 
 	phy_addr = UBCTL_GET_PHY_ADDR(scc->phy_addr_high, scc->phy_addr_low);
 	if (!phy_addr) {
-		ubctl_err(ucdev, " scc phy addr is invalid.\n");
+		ubctl_err(ucdev, "scc phy addr is invalid.\n");
 		return -EFAULT;
 	}
 
 	vir_addr = ioremap(phy_addr, scc->data_size);
 	if (!vir_addr) {
-		ubctl_err(ucdev, "addr ioremap failed.\n");
+		ubctl_err(ucdev, "failed to execute ioremap.\n");
 		return -EFAULT;
 	}
 
@@ -647,14 +655,14 @@ static int ubctl_scc_data_len_check(struct ubctl_dev *ucdev, u32 out_len,
 #define UBCTL_SCC_CACHE 0x200000
 
 	if (data_size != UBCTL_SCC_CACHE) {
-		ubctl_err(ucdev, "scc data size is not equal to 2M, data size = %u.\n",
+		ubctl_err(ucdev, "scc data size = %ubytes, and it must be 2M.\n",
 			  data_size);
 		return -EINVAL;
 	}
 
 	if (out_len != scc_len) {
-		ubctl_err(ucdev, "scc out len is invalid, out len = %u.\n",
-			  out_len);
+		ubctl_err(ucdev, "scc out len = %ubytes, and it must be %ubytes.\n",
+			  out_len, scc_len);
 		return -EINVAL;
 	}
 
@@ -672,7 +680,8 @@ static int ubctl_scc_version_deal(struct ubctl_dev *ucdev,
 	int ret = 0;
 
 	if (query_cmd_param->in->data_size != sizeof(struct fwctl_pkt_in_index)) {
-		ubctl_err(ucdev, "user data of scc version is invalid.\n");
+		ubctl_err(ucdev, "user data size = %ubytes, it must be %zubytes.\n",
+			  query_cmd_param->in->data_size, sizeof(struct fwctl_pkt_in_index));
 		return -EINVAL;
 	}
 	pkt_in = (struct fwctl_pkt_in_index *)query_cmd_param->in->data;
@@ -681,7 +690,7 @@ static int ubctl_scc_version_deal(struct ubctl_dev *ucdev,
 	ret = ubctl_scc_data_len_check(ucdev, query_cmd_param->out_len,
 				       scc->data_size, UBCTL_SCC_VERSION_SZ);
 	if (ret) {
-		ubctl_err(ucdev, "scc version data len check failed, ret = %d.\n", ret);
+		ubctl_err(ucdev, "failed to check scc version data len, ret = %d.\n", ret);
 		return -EINVAL;
 	}
 
@@ -700,14 +709,15 @@ static int ubctl_scc_log_deal(struct ubctl_dev *ucdev,
 	int ret = 0;
 
 	if (query_cmd_param->in->data_size != sizeof(*pkt_in)) {
-		ubctl_err(ucdev, "user data of scc log is invalid.\n");
+		ubctl_err(ucdev, "user data size = %ubytes, it must be %zubytes.\n",
+			  query_cmd_param->in->data_size, sizeof(*pkt_in));
 		return -EINVAL;
 	}
 
 	ret = ubctl_scc_data_len_check(ucdev, query_cmd_param->out_len,
 				       scc->data_size, UBCTL_SCC_SZ_1M);
 	if (ret) {
-		ubctl_err(ucdev, "scc log data len check failed, ret = %d.\n", ret);
+		ubctl_err(ucdev, "failed to check scc log data len, ret = %d.\n", ret);
 		return -EINVAL;
 	}
 
@@ -769,8 +779,7 @@ static int ubctl_query_port_infos(struct ubctl_dev *ucdev,
 
 		if ((out_temp->data_size + out_data_offset * sizeof(u32)) > out_mem_size) {
 			ubctl_err(ucdev, "port info size = %u, total size = %u, offset size = %lu.\n",
-				  out_temp->data_size, out_mem_size,
-				  out_data_offset * sizeof(u32));
+				  out_temp->data_size, out_mem_size, out_data_offset * sizeof(u32));
 			ret = -ENOMEM;
 			break;
 		}
@@ -894,7 +903,7 @@ static int ubctl_msgq_check_index(struct ubctl_dev *ucdev, u32 entry_index,
 {
 	if (entry_index >= entry_info->sq_dep ||
 	    entry_index >= entry_info->cq_dep) {
-		ubctl_err(ucdev, "index is illegal, index = %u.\n", entry_index);
+		ubctl_err(ucdev, "index = %u is illegal.\n", entry_index);
 		return -EINVAL;
 	}
 
@@ -917,7 +926,7 @@ static int ubctl_msgq_all_get_phy_addr(struct ubctl_dev *ucdev, u32 entry_index,
 	base_addr = UBCTL_GET_PHY_ADDR(entry_info->sq_base_addr_high,
 				       entry_info->sq_base_addr_low);
 	if (!base_addr) {
-		ubctl_err(ucdev, "sqe msgq not initialized.\n");
+		ubctl_err(ucdev, "failed to initial sqe msgq.\n");
 		return -EINVAL;
 	}
 
@@ -927,7 +936,7 @@ static int ubctl_msgq_all_get_phy_addr(struct ubctl_dev *ucdev, u32 entry_index,
 	base_addr = UBCTL_GET_PHY_ADDR(entry_info->cq_base_addr_high,
 				       entry_info->cq_base_addr_low);
 	if (!base_addr) {
-		ubctl_err(ucdev, "cqe msgq not initialized.\n");
+		ubctl_err(ucdev, "failed to initial cqe msgq.\n");
 		return -EINVAL;
 	}
 
@@ -959,7 +968,7 @@ static int ubctl_msgq_sq_entry_data_deal(struct ubctl_dev *ucdev,
 	ret = ubctl_msgq_entry_move_data(query_cmd_param, 0,
 					 UBCTL_SQE_TO_USER_SIZE, sq_entry_addr);
 	if (ret)
-		ubctl_err(ucdev, "move sqe data failed.\n");
+		ubctl_err(ucdev, "failed to move sqe data.\n");
 
 err_exec:
 	memunmap(sq_entry_addr);
@@ -988,7 +997,7 @@ static int ubctl_msgq_cq_entry_data_deal(struct ubctl_dev *ucdev,
 	ret = ubctl_msgq_entry_move_data(query_cmd_param, UBCTL_CQE_OFFSET,
 					 UBCTL_CQE_SIZE, cq_entry_addr);
 	if (ret)
-		ubctl_err(ucdev, "move cqe data failed.\n");
+		ubctl_err(ucdev, "failed to move cqe data.\n");
 
 err_exec:
 	memunmap(cq_entry_addr);
@@ -1006,7 +1015,8 @@ static int ubctl_msgq_entry_data_deal(struct ubctl_dev *ucdev,
 	int ret = 0;
 
 	if (query_cmd_param->in->data_size != sizeof(struct fwctl_pkt_in_index)) {
-		ubctl_err(ucdev, "user data of msgq is invalid.\n");
+		ubctl_err(ucdev, "user data size = %ubytes, it must be %zubytes.\n",
+			  query_cmd_param->in->data_size, sizeof(struct fwctl_pkt_in_index));
 		return -EINVAL;
 	}
 	entry_index = ((struct fwctl_pkt_in_index *)query_cmd_param->in->data)->index;
@@ -1076,8 +1086,8 @@ static struct resource *ubctl_find_and_sort_resources(struct ubctl_dev *ucdev,
 		if (!p->name || !strstr(p->name, name_substr))
 			continue;
 		if (count >= UBCL_MAX_UMMU_NUM) {
-			ubctl_err(ucdev, "ummu resources is more than max num = %u.\n",
-				  UBCL_MAX_UMMU_NUM);
+			ubctl_err(ucdev, "ummu resources = %u must be in (0, %u).\n",
+				  count, UBCL_MAX_UMMU_NUM);
 			return NULL;
 		}
 		entry_arr[count] = p;
@@ -1085,7 +1095,7 @@ static struct resource *ubctl_find_and_sort_resources(struct ubctl_dev *ucdev,
 	}
 
 	if (ummu_id >= count) {
-		ubctl_err(ucdev, "ummuid = %u out of range, current count = %u\n",
+		ubctl_err(ucdev, "ummuid = %u is out of range, current count = %u\n",
 			  ummu_id, count);
 		return NULL;
 	}
@@ -1252,7 +1262,7 @@ static int ubctl_ummu_copy_data(struct ubctl_dev *ucdev,
 		reg_pro_cmd.reg_index = i;
 		ret = ubctl_ummu_process_reg(&reg_pro_cmd);
 		if (ret) {
-			ubctl_err(ucdev, "ummu process reg failed, ret=%d.\n", ret);
+			ubctl_err(ucdev, "failed to execute ummu process reg, ret=%d.\n", ret);
 			return ret;
 		}
 	}
@@ -1270,7 +1280,7 @@ static int ubctl_ummu_proc_all_data(struct ubctl_dev *ucdev, struct resource *re
 
 	vaddr = ioremap(res->start + UBCTL_UMMU_REGISTER_BASE, map_length);
 	if (!vaddr) {
-		ubctl_err(ucdev, "ioremap ummu reg base failed, map length = %u.\n",
+		ubctl_err(ucdev, "failed to execute ioremap ummu reg base, map length = %u.\n",
 			  map_length);
 		return -ENOMEM;
 	}
@@ -1320,8 +1330,8 @@ static int ubctl_ummu_process_data(struct ubctl_dev *ucdev,
 	struct resource *res;
 
 	if (query_cmd_param->in->data_size != sizeof(*ummu_data)) {
-		ubctl_err(ucdev, "invalid ummuid value size = %u.\n",
-			  query_cmd_param->in->data_size);
+		ubctl_err(ucdev, "ummuid value size = %ubytes, it must be %zubytes.\n",
+			  query_cmd_param->in->data_size, sizeof(*ummu_data));
 		return -EINVAL;
 	}
 
@@ -1417,13 +1427,13 @@ static int ubctl_query_port_bitmap_data(struct auxiliary_device *adev,
 	cmd.op_code = UBCTL_QUERY_PORT_NUM_DFX;
 	ret = ubctl_fill_cmd(&cmd, (void *)&in_data, (void *)&out_data, sizeof(out_data), true);
 	if (ret) {
-		ubctl_err(ucdev, "ubctl fill cmd failed.\n");
+		ubctl_err(ucdev, "failed to fill the cmd params.\n");
 		return ret;
 	}
 
 	ret = ubctl_ubase_cmd_send(adev, &cmd);
 	if (ret) {
-		ubctl_err(ucdev, "ubctl ubase cmd send failed, retval = %d.\n", ret);
+		ubctl_err(ucdev, "failed to execute ubase cmd send, retval = %d.\n", ret);
 		return -EINVAL;
 	}
 
@@ -1496,13 +1506,13 @@ static bool ubctl_check_port_link_stats(struct auxiliary_device *adev,
 	in_data.port_id = port_id;
 	ret = ubctl_fill_cmd(&cmd, (void *)&in_data, (void *)&out_data, sizeof(out_data), true);
 	if (ret) {
-		ubctl_err(ucdev, "ubctl fill cmd failed.\n");
+		ubctl_err(ucdev, "failed to fill the cmd params.\n");
 		return false;
 	}
 
 	ret = ubctl_ubase_cmd_send(adev, &cmd);
 	if (ret) {
-		ubctl_err(ucdev, "ubctl ubase cmd send failed, retval = %d.\n", ret);
+		ubctl_err(ucdev, "failed to execute ubase cmd send, retval = %d.\n", ret);
 		return false;
 	}
 	port_node->port_type = out_data.port_type;
@@ -1658,7 +1668,7 @@ int ubctl_handle_link_status_event(void *dev, void *data, u32 len)
 	link_info.link_status = ((struct ubctl_port_link_out_info *)data)->link_status;
 	port = ((struct ubctl_port_link_out_info *)data)->port;
 
-	dev_info(&adev->dev, "The link status has changed, chip = %u, die = %u, port = %u, link_status = %u\n",
+	dev_info(&adev->dev, "the link status has changed, chip = %u, die = %u, port = %u, link_status = %u\n",
 		 ucaps->chip_id, ucaps->die_id, port, link_info.link_status);
 
 	list_for_each_entry(current_node, &dev_node->dev_list, port_link_list) {
@@ -1701,7 +1711,7 @@ static int ubctl_check_port_id(struct ubctl_dev *ucdev, struct fwctl_pkt_in_port
 
 	if (pkt_in->port_id >= UBCTL_MAX_PORT_NUM ||
 	    !test_bit(pkt_in->port_id, (unsigned long *)&port_bitmap)) {
-		ubctl_err(ucdev, "ubctl port id does not meet expectations, port id = %u.\n",
+		ubctl_err(ucdev, "ubctl port id = %u, ant it didn't meet expectations.\n",
 			  pkt_in->port_id);
 		return -EINVAL;
 	}
@@ -1725,12 +1735,13 @@ static int ubctl_query_port_link_status(struct ubctl_dev *ucdev,
 
 	ucaps = ubase_get_dev_caps(ucdev->adev);
 	if (!ucaps) {
-		ubctl_err(ucdev, "ubctl get ucaps err, ucaps is null.\n");
+		ubctl_err(ucdev, "ubctl get ucaps err, it is null.\n");
 		return -EINVAL;
 	}
 
 	if (query_cmd_param->out_len != sizeof(struct ubctl_port_link_stats)) {
-		ubctl_err(ucdev, "out len is error = %zu.\n", query_cmd_param->out_len);
+		ubctl_err(ucdev, "out length = %zubytes, it must be %zubytes.\n",
+			  query_cmd_param->out_len, sizeof(struct ubctl_port_link_stats));
 		return -EINVAL;
 	}
 
@@ -1788,26 +1799,25 @@ static int ubctl_query_rt_bandwidth(struct ubctl_dev *ucdev,
 	u32 i = 0;
 
 	if (query_cmd_param->in->data_size != sizeof(struct fwctl_pkt_in_port)) {
-		ubctl_err(ucdev, "user in data of trace is invalid.\n");
+		ubctl_err(ucdev, "user in data size = %ubytes, it must be %zubytes.\n",
+			  query_cmd_param->in->data_size, sizeof(struct fwctl_pkt_in_port));
 		return -EINVAL;
 	}
 	if (query_cmd_param->out_len != UTOOL_MAX_PORT_NUM * sizeof(*usr_out_data)) {
-		ubctl_err(ucdev, "user out data of trace is invalid, out len = %lu.\n",
-			  query_cmd_param->out_len);
+		ubctl_err(ucdev, "out length = %zubytes, it must be %zubytes.\n",
+			  query_cmd_param->out_len, UTOOL_MAX_PORT_NUM * sizeof(*usr_out_data));
 		return -EINVAL;
 	}
 
 	pkt_in = (struct fwctl_pkt_in_port *)query_cmd_param->in->data;
 	result_data = kvzalloc((UTOOL_MAX_PORT_NUM * sizeof(*result_data)), GFP_KERNEL);
-	if (!result_data) {
-		ubctl_err(ucdev, "result data create memory failed.\n");
+	if (!result_data)
 		return -ENOMEM;
-	}
 
 	port_bitmap = (u64)pkt_in->port_id;
 	ret = ubase_get_ub_dl_pkt_stats(ucdev->adev, port_bitmap, result_data, UTOOL_MAX_PORT_NUM);
 	if (ret) {
-		ubctl_err(ucdev, "ubctl query real time bandwidth failed, ret = %d.\n", ret);
+		ubctl_err(ucdev, "failed to query real time bandwidth by ubctl, ret = %d.\n", ret);
 		goto query_rt_bw_end;
 	}
 
