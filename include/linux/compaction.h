@@ -149,4 +149,9 @@ static inline void compaction_unregister_node(struct node *node)
 }
 #endif /* CONFIG_COMPACTION && CONFIG_SYSFS && CONFIG_NUMA */
 
+#ifdef CONFIG_MM_FREE_RECLAIM
+void mm_count_free_blocks(unsigned long *counts, int len);
+void compact_memory_all(void);
+#endif /* CONFIG_MM_FREE_RECLAIM */
+
 #endif /* _LINUX_COMPACTION_H */
