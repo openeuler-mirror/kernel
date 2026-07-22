@@ -521,6 +521,9 @@ static bool kvm_hyp_handle_cntpct(struct kvm_vcpu *vcpu)
 	u32 sysreg;
 	u64 val;
 
+	if (is_pvm_mode())
+		return false;
+
 	/*
 	 * We only get here for 64bit guests, 32bit guests will hit
 	 * the long and winding road all the way to the standard

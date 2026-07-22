@@ -587,10 +587,12 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 #ifdef CONFIG_VIRT_TIMER_EARLY_INJECT
 	case KVM_CAP_ARM_TIMER_EARLY_INJECT:
 #endif
-	case KVM_CAP_COUNTER_OFFSET:
 	case KVM_CAP_READONLY_MEM:
 	case KVM_CAP_SET_GUEST_DEBUG:
 		r = !kvm_is_realm(kvm);
+		break;
+	case KVM_CAP_COUNTER_OFFSET:
+		r = !kvm_is_realm(kvm) && !is_pvm_mode();
 		break;
 	case KVM_CAP_SET_GUEST_DEBUG2:
 		return KVM_GUESTDBG_VALID_MASK;
@@ -625,7 +627,7 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 		 * 1: EL1_VTIMER, EL1_PTIMER, and PMU.
 		 * (bump this number if adding more devices)
 		 */
-		r = 1;
+		r = !is_pvm_mode();
 		break;
 	case KVM_CAP_ARM_MTE:
 		r = system_supports_mte() && !is_pvm_mode();
