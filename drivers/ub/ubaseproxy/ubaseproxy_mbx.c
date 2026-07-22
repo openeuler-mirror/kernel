@@ -76,6 +76,12 @@ int ubaseproxy_post_mbox(struct ubaseproxy_dev *udev,
 	ubase_fill_mbx_attr(&attr, tag, opcode, mbx_ue_id);
 	ctx_buf = ubaseproxy_parse_ctx_buf(udev, &attr, &type);
 	if (ctx_buf && type == UBASEPROXY_MB_CREATE) {
+		if (!ctx_buf->slot) {
+			ubaseproxy_risk_rl(udev, mbx_ue_id, ctx_slot,
+					   "ctx slot is null.\n");
+			return -EINVAL;
+		}
+
 		ret = ubaseproxy_use_buf_ctx_page(udev, ctx_buf, attr.tag);
 		if (ret) {
 			ubaseproxy_err(udev,
