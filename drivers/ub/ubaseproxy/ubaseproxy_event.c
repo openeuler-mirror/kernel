@@ -7,6 +7,7 @@
 #include <ub/ubase/ubase_comm_cmd.h>
 #include <ub/ubase/ubase_comm_ctrlq.h>
 
+#include "ubaseproxy_ctx_mgt.h"
 #include "ubaseproxy_mbx.h"
 #include "ubaseproxy_event.h"
 
@@ -55,7 +56,11 @@ static struct ubase_crq_event_nb ubaseproxy_crq_events[] = {
 	{
 		.opcode = UBASE_OPC_UE_TO_PROXY,
 		.crq_handler = ubaseproxy_handle_crq_msg,
-	}
+	},
+	{
+		.opcode = UBASE_OPC_SET_CTX_VA_REQ,
+		.crq_handler = ubaseproxy_handle_ue_ctx_va_req,
+	},
 };
 
 static int ubaseproxy_register_crq_event(struct ubaseproxy_dev *udev)

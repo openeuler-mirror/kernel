@@ -75,12 +75,24 @@ int ubaseproxy_post_mbox(struct ubaseproxy_dev *udev,
 
 	ubase_fill_mbx_attr(&attr, tag, opcode, mbx_ue_id);
 	ctx_buf = ubaseproxy_parse_ctx_buf(udev, &attr, &type);
+	if (ctx_buf && type == UBASEPROXY_MB_CREATE) {
+		ret = ubaseproxy_use_buf_ctx_page(udev, ctx_buf, attr.tag);
+		if (ret) {
+			ubaseproxy_err(udev,
+				       "failed to write context va, ret = %d.\n",
+				       ret);
+			return ret;
+		}
+	}
 
 	ret = ubase_hw_upgrade_ctx_for_proxy(adev, &attr, mailbox);
 	if (ret)
 		ubaseproxy_err(udev,
 			       "failed to post mailbox for ue, tag = %u, opcode = 0x%x, mbx_ue_id = %u, ret = %d.\n",
 			       tag, opcode, mbx_ue_id, ret);
+
+	if (ret && type == UBASEPROXY_MB_CREATE)
+		ubaseproxy_free_buf_ctx_page(udev, ctx_buf, tag);
 
 	return ret;
 }
