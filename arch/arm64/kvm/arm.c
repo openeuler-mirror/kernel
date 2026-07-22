@@ -49,6 +49,8 @@
 #include <kvm/arm_pmu.h>
 #include <kvm/arm_psci.h>
 
+#include "pvm/pvm.h"
+
 static enum kvm_mode kvm_mode = KVM_MODE_DEFAULT;
 
 #include "hisilicon/hisi_virt.h"
@@ -727,6 +729,9 @@ long kvm_arch_dev_ioctl(struct file *filp,
 struct kvm *kvm_arch_alloc_vm(void)
 {
 	size_t sz = sizeof(struct kvm);
+
+	if (is_pvm_mode())
+		sz = sizeof(struct kvm_pvm);
 
 	if (!has_vhe() && !is_pvm_mode())
 		return kzalloc(sz, GFP_KERNEL_ACCOUNT);
@@ -3628,7 +3633,8 @@ static __init int kvm_arm_init(void)
 	 * FIXME: Do something reasonable if kvm_init() fails after pKVM
 	 * hypervisor protection is finalized.
 	 */
-	err = kvm_init(sizeof(struct kvm_vcpu), 0, THIS_MODULE);
+	err = kvm_init(is_pvm_mode() ? sizeof(struct kvm_pvm_vcpu) :
+				      sizeof(struct kvm_vcpu), 0, THIS_MODULE);
 	if (err)
 		goto out_subs;
 

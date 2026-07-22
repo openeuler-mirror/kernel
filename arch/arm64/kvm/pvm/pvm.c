@@ -7,11 +7,19 @@
 #include <linux/kvm_host.h>
 
 #include <asm/kvm_pvm.h>
+#include <kvm/arm_rv_timer.h>
 
 DEFINE_STATIC_KEY_FALSE(kvm_pvm_is_available);
 
-void kvm_arm_init_pvm(void)
+void __init kvm_arm_init_pvm(void)
 {
+	int ret;
+
+	ret = kvm_rv_timer_hyp_init();
+	if (ret) {
+		pr_err("pvm: failed to init kvm rv timer, err = %d\n", ret);
+		return;
+	}
 	static_branch_enable(&kvm_pvm_is_available);
 }
 

@@ -13,7 +13,7 @@ struct kvm_vcpu;
 bool kvm_pvm_vgic_cpuif_access(struct kvm_vcpu *vcpu, u32 sysreg,
 			       bool is_write, u64 *val);
 
-void kvm_arm_init_pvm(void);
+void __init kvm_arm_init_pvm(void);
 void kvm_arm_destroy_pvm(void);
 
 bool kvm_pvm_vgic_vcpu_pending_irq(struct kvm_vcpu *vcpu);
