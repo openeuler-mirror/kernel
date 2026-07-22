@@ -1216,6 +1216,7 @@ CONFIG_NUMABALANCING_MEM_SAMPLING=y
 #
 # CONFIG_DAMON is not set
 # end of Data Access Monitoring
+CONFIG_MM_FREE_RECLAIM=y
 # end of Memory Management options
 
 CONFIG_NET=y
