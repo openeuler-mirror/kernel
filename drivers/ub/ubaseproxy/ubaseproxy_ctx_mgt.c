@@ -36,6 +36,33 @@ static void ubaseproxy_risk_stats_init(struct ubaseproxy_dev *udev)
 		UBASEPROXY_RATELIMIT_INIT(udev, i);
 }
 
+static int ubaseproxy_create_ctx_page(struct ubaseproxy_dev *udev,
+				      struct ubase_ctx_buf_cap *ctx_buf,
+				      struct ubaseproxy_ctx_page **ctx_page,
+				      u32 npage)
+{
+	int ret;
+
+	*ctx_page = kzalloc(sizeof(struct ubaseproxy_ctx_page), GFP_KERNEL);
+	if (!(*ctx_page))
+		return -ENOMEM;
+
+	(*ctx_page)->iova = ctx_buf->dma_ctx_buf_ba + npage * PAGE_SIZE;
+	refcount_set(&(*ctx_page)->refcount, 1);
+	(*ctx_page)->npage = npage;
+	ret = ummu_core_fill_pages(ctx_buf->slot, (*ctx_page)->iova,
+				   UBASE_IOVA_COMM_PFN_CNT,
+				   udev->gfp | __GFP_ZERO);
+	if (ret) {
+		ubaseproxy_err(udev, "failed to fill pages in ummu, ret = %d\n",
+			       ret);
+		kfree(*ctx_page);
+		*ctx_page = NULL;
+	}
+
+	return ret;
+}
+
 static void ubaseproxy_destroy_ctx_page(struct ubaseproxy_dev *udev,
 					struct ubase_ctx_buf_cap *ctx_buf,
 					struct ubaseproxy_ctx_page *ctx_page)
@@ -50,6 +77,107 @@ static void ubaseproxy_destroy_ctx_page(struct ubaseproxy_dev *udev,
 			       ctx_page->npage, ret);
 
 	kfree(ctx_page);
+}
+
+int ubaseproxy_use_buf_ctx_page(struct ubaseproxy_dev *udev,
+				struct ubase_ctx_buf_cap *ctx_buf, u32 tag)
+{
+	u32 cnt_per_page_shift = ctx_buf->cnt_per_page_shift;
+	u32 npage = tag >> cnt_per_page_shift;
+	struct ubaseproxy_ctx_page *ctx_page;
+	int ret;
+
+	mutex_lock(&ctx_buf->ctx_mutex);
+
+	ctx_page = (struct ubaseproxy_ctx_page *)xa_load(&ctx_buf->ctx_xa, npage);
+	if (!ctx_page) {
+		ret = ubaseproxy_create_ctx_page(udev, ctx_buf, &ctx_page, npage);
+		if (ret) {
+			ubaseproxy_err(udev,
+				       "failed to create context page, ret = %d.\n",
+				       ret);
+			goto err_create;
+		}
+
+		ret = xa_err(xa_store(&ctx_buf->ctx_xa, npage, ctx_page,
+				      GFP_KERNEL));
+		if (ret) {
+			ubaseproxy_err(udev, "failed to store page, ret = %d.\n",
+				       ret);
+			goto err_store;
+		}
+	}
+
+	refcount_inc(&ctx_page->refcount);
+	mutex_unlock(&ctx_buf->ctx_mutex);
+
+	return 0;
+err_store:
+	ubaseproxy_destroy_ctx_page(udev, ctx_buf, ctx_page);
+err_create:
+	mutex_unlock(&ctx_buf->ctx_mutex);
+
+	return ret;
+}
+
+void ubaseproxy_free_buf_ctx_page(struct ubaseproxy_dev *udev,
+				  struct ubase_ctx_buf_cap *ctx_buf,
+				  u32 tag)
+{
+	struct ubaseproxy_ctx_page *ctx_page;
+	u32 cnt_per_page_shift;
+	u32 npage;
+
+	if (!ctx_buf)
+		return;
+
+	cnt_per_page_shift = ctx_buf->cnt_per_page_shift;
+	npage = tag >> cnt_per_page_shift;
+
+	mutex_lock(&ctx_buf->ctx_mutex);
+
+	ctx_page = (struct ubaseproxy_ctx_page *)xa_load(&ctx_buf->ctx_xa, npage);
+	if (!ctx_page) {
+		ubaseproxy_err(udev,
+			       "no find ctx page in free buf page, npage = %u.\n",
+			       npage);
+		mutex_unlock(&ctx_buf->ctx_mutex);
+		return;
+	}
+
+	refcount_dec(&ctx_page->refcount);
+	if (refcount_dec_if_one(&ctx_page->refcount)) {
+		ubaseproxy_info(udev,
+				"refcount of ctx page is equal to one and the ctx_page is going to be erased.\n");
+		xa_erase(&ctx_buf->ctx_xa, npage);
+		ubaseproxy_destroy_ctx_page(udev, ctx_buf, ctx_page);
+	}
+
+	mutex_unlock(&ctx_buf->ctx_mutex);
+}
+
+static int ubaseproxy_alloc_and_fill_ctx_buf(struct ubaseproxy_dev *udev,
+					     struct ubase_ctx_buf_cap *ctx_buf,
+					     struct ubase_mbx_attr *attr,
+					     size_t size)
+{
+	struct auxiliary_device *adev = udev->comdev.adev;
+	size_t sizep;
+	int ret;
+
+	ctx_buf->cnt_per_page_shift =
+		ilog2(roundup_pow_of_two(PAGE_SIZE / ctx_buf->entry_size));
+	ctx_buf->slot = dma_alloc_iova(adev->dev.parent, size, 0,
+				       &ctx_buf->dma_ctx_buf_ba, &sizep);
+	if (IS_ERR(ctx_buf->slot)) {
+		ret = PTR_ERR(ctx_buf->slot);
+		ubaseproxy_err(udev,
+			       "failed to alloc iova slot, cmd = 0x%x, size = %lu, ret = %d.\n",
+			       attr->op, size, ret);
+		return ret;
+	}
+
+	return 0;
 }
 
 static void ubaseproxy_free_and_clear_ctx_buf(struct ubaseproxy_dev *udev,
@@ -69,6 +197,52 @@ static void ubaseproxy_free_and_clear_ctx_buf(struct ubaseproxy_dev *udev,
 	}
 
 	ctx_buf->dma_ctx_buf_ba = 0;
+}
+
+static int ubaseproxy_config_ctx_buf_to_hw(struct ubaseproxy_dev *udev,
+					   struct ubase_ctx_buf_cap *ctx_buf,
+					   struct ubase_mbx_attr *attr)
+{
+	struct auxiliary_device *adev = udev->comdev.adev;
+	struct ubase_cmd_mailbox mailbox;
+	int ret;
+
+	mailbox.dma = ctx_buf->dma_ctx_buf_ba;
+	ret = ubase_hw_upgrade_ctx_for_proxy(adev, attr, &mailbox);
+	if (ret)
+		ubaseproxy_err(udev,
+			       "failed to config ctx_buf to hw, cmd = 0x%x, ret = %d.\n",
+			       attr->op, ret);
+	return ret;
+}
+
+static int ubaseproxy_cmd_ctx_buf_alloc(struct ubaseproxy_dev *udev,
+					struct ubase_ctx_buf_cap *ctx_buf,
+					struct ubase_mbx_attr *attr)
+{
+	size_t size = ctx_buf->entry_cnt * ctx_buf->entry_size;
+	int ret;
+
+	if (!size)
+		return 0;
+
+	xa_init(&ctx_buf->ctx_xa);
+	ret = ubaseproxy_alloc_and_fill_ctx_buf(udev, ctx_buf, attr, size);
+	if (ret)
+		goto err_ctx_alloc;
+
+	ret = ubaseproxy_config_ctx_buf_to_hw(udev, ctx_buf, attr);
+	if (ret)
+		goto err_ctx_to_hw;
+
+	return 0;
+
+err_ctx_to_hw:
+	ubaseproxy_free_and_clear_ctx_buf(udev, ctx_buf);
+err_ctx_alloc:
+	xa_destroy(&ctx_buf->ctx_xa);
+
+	return ret;
 }
 
 static void ubaseproxy_cmd_ctx_buf_free(struct ubaseproxy_dev *udev,
@@ -326,4 +500,90 @@ int ubaseproxy_check_ctx_mask_value(struct ubaseproxy_dev *udev,
 	}
 
 	return 0;
+}
+
+static void ubaseproxy_send_set_ctx_va_resp(struct ubaseproxy_dev *udev,
+					    struct ubase_proxy_set_ctx_va_cmd *cmd,
+					    int result)
+{
+	struct ubase_proxy_set_ctx_va_cmd resp = {0};
+	struct ubase_cmd_buf in;
+	int ret;
+
+	resp.bus_ue_id = cmd->bus_ue_id;
+	resp.mbx_ue_id = cmd->mbx_ue_id;
+	resp.ctx_type = cmd->ctx_type;
+	resp.result = (u16)(-result);
+
+	ubase_fill_inout_buf(&in, UBASE_OPC_SET_CTX_VA_RESP, false, sizeof(resp),
+			     &resp);
+	ret = ubase_cmd_send_in(udev->comdev.adev, &in);
+	if (ret)
+		ubaseproxy_err(udev,
+			       "failed to send set ctx va resp, ctx type = %u, ret = %d.\n",
+			       le16_to_cpu(cmd->ctx_type), ret);
+}
+
+static int ubaseproxy_set_ue_ctx_va(struct ubaseproxy_dev *udev,
+				    struct ubase_proxy_set_ctx_va_cmd *cmd)
+{
+	u16 bus_ue_id = le16_to_cpu(cmd->bus_ue_id);
+	u16 mbx_ue_id = le16_to_cpu(cmd->mbx_ue_id);
+	u16 ctx_type = le16_to_cpu(cmd->ctx_type);
+	struct ubaseproxy_ue_ctx_buf *ctx_buf;
+	struct ubase_mbx_attr attr = {0};
+	u16 bitmap = 1 << ctx_type;
+	int ret;
+
+	ctx_buf = ubaseproxy_get_ue_ctx_buf(udev, mbx_ue_id);
+	UBASEPROXY_DEFINE_CTX_VA_BUFS(ctx_buf);
+
+	attr.op = map[ctx_type].mb_cmd;
+	attr.mbx_ue_id = mbx_ue_id;
+	ret = ubaseproxy_cmd_ctx_buf_alloc(udev, map[ctx_type].ctx, &attr);
+	if (ret) {
+		ubaseproxy_err(udev,
+			       "failed to alloc ue ctx va, ctx type = %u, mbx ue id = %u, ret = %d.\n",
+			       ctx_type, mbx_ue_id, ret);
+		goto out;
+	}
+
+	ret = ubaseproxy_update_ctx_va_status(udev, bus_ue_id, bitmap,
+					      UBASEPROXY_CTX_VA_INTED);
+	if (ret)
+		ubaseproxy_err(udev,
+			       "failed to update ctx va status when alloc, ctx type = %u, vf id = %u, ret = %d.\n",
+			       ctx_type, mbx_ue_id, ret);
+
+out:
+	ubaseproxy_send_set_ctx_va_resp(udev, cmd, ret);
+
+	return ret;
+}
+
+int ubaseproxy_handle_ue_ctx_va_req(void *dev, void *data, u32 len)
+{
+	struct ubase_proxy_set_ctx_va_cmd *cmd = data;
+	struct auxiliary_device *adev = dev;
+	struct ubaseproxy_dev *udev = get_ubaseproxy_dev(adev);
+	u16 ctx_type;
+
+	if (len != sizeof(*cmd)) {
+		ubaseproxy_risk_rl(udev, le16_to_cpu(cmd->mbx_ue_id),
+				   ctx_msg_len,
+				   "ubaseproxy handle ctx va event msg len error, len = %u.\n",
+				   len);
+		return -EINVAL;
+	}
+
+	ctx_type = le16_to_cpu(cmd->ctx_type);
+	if (ctx_type >= UBASE_CTX_VA_TYPE_NUM) {
+		ubaseproxy_risk_rl(udev, le16_to_cpu(cmd->mbx_ue_id),
+				   ctx_ctx_type,
+				   "ubaseproxy handle ctx va event ctx type error, ctx_type = %u.\n",
+				   ctx_type);
+		return -EINVAL;
+	}
+
+	return ubaseproxy_set_ue_ctx_va(udev, cmd);
 }
