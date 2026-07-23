@@ -182,6 +182,15 @@ ubaseproxy_get_ue_ctx_qos(struct ubaseproxy_dev *udev, u16 mbx_ue_id)
 	return &ue_res_info->ue_ctx_qos;
 }
 
+static inline struct ubaseproxy_ue_seid_table*
+ubaseproxy_get_ue_seid_table(struct ubaseproxy_dev *udev, u16 mbx_ue_id)
+{
+	struct ubaseproxy_ue_res_info *ue_res_info;
+
+	ue_res_info = ubaseproxy_get_ue_ctx(udev, mbx_ue_id);
+	return &ue_res_info->ue_seid_table;
+}
+
 int ubaseproxy_dev_init(struct ubaseproxy_dev *udev);
 void ubaseproxy_dev_uninit(struct ubaseproxy_dev *udev);
 int ubaseproxy_dbg_log(void);

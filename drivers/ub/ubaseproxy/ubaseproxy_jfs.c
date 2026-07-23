@@ -255,6 +255,29 @@ static int ubaseproxy_check_jetty_sl_value(struct ubaseproxy_dev *udev,
 	return 0;
 }
 
+static int ubaseproxy_check_jfs_seid_idx(struct ubaseproxy_dev *udev,
+					 struct ubase_proxy_req_msg *req)
+{
+	struct ubaseproxy_ue_seid_table *ue_seid_table;
+	u16 mbx_ue_id = le16_to_cpu(req->mbx_ue_id);
+	struct ubaseproxy_jetty_ctx *ctx;
+	int ret = 0;
+
+	ctx = (struct ubaseproxy_jetty_ctx *)req->data;
+	ue_seid_table = ubaseproxy_get_ue_seid_table(udev, mbx_ue_id);
+
+	spin_lock_bh(&ue_seid_table->seid_lock);
+	if (!test_bit(ctx->seid_idx, ue_seid_table->seid_bmap)) {
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfs_check_jfs_seid,
+				   "failed to check jfs ctx seid idx, seid_idx = %u.\n",
+				   ctx->seid_idx);
+		ret = -EINVAL;
+	}
+	spin_unlock_bh(&ue_seid_table->seid_lock);
+
+	return ret;
+}
+
 static int
 ubaseproxy_check_jetty_ctx_range_values(struct ubaseproxy_dev *udev,
 					struct ubase_proxy_req_msg *req)
@@ -292,6 +315,10 @@ ubaseproxy_check_jetty_ctx_range_values(struct ubaseproxy_dev *udev,
 	}
 
 	ret = ubaseproxy_check_jetty_sl_value(udev, req);
+	if (ret)
+		return ret;
+
+	ret = ubaseproxy_check_jfs_seid_idx(udev, req);
 	if (ret)
 		return ret;
 
