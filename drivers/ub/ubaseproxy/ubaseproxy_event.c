@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2026 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  */
 
 #include <linux/module.h>
 #include <ub/ubase/ubase_comm_cmd.h>
 #include <ub/ubase/ubase_comm_ctrlq.h>
 
+#include "ubaseproxy_ctrlq.h"
 #include "ubaseproxy_ctx_mgt.h"
 #include "ubaseproxy_mbx.h"
 #include "ubaseproxy_reset.h"
@@ -120,6 +121,58 @@ static void ubaseproxy_virt_handler(struct auxiliary_device *adev, u16 bus_ue_id
 	}
 }
 
+static struct ubase_ctrlq_ue_msg_nb ubaseproxy_ue_resp_events[] = {
+	/* The return value 0 of the callback function indicates synchronous
+	 * operation, and the message will be continued to be sent by ubase;
+	 * a non-zero return value indicates an asynchronous operation, and the
+	 * message will be sent by the current module. If the message needs
+	 * further processing by ubase, the return value must be 0, even if an
+	 * error is reported by msg_handler.
+	 */
+	{
+		.service_type = UBASE_CTRLQ_SER_TYPE_QOS,
+		.opcode = UBASE_CTRLQ_OPC_QUERY_SL,
+		.msg_handler = ubaseproxy_ctrlq_handle_query_sl_resp,
+	},
+};
+
+static int ubaseproxy_ctrlq_register_ue_resp_event(struct ubaseproxy_dev *udev)
+{
+	struct auxiliary_device *adev = udev->comdev.adev;
+	int ret, i;
+
+	for (i = 0; i < ARRAY_SIZE(ubaseproxy_ue_resp_events); i++) {
+		ubaseproxy_ue_resp_events[i].back = adev;
+		ret = ubase_ctrlq_register_ue_resp_event(adev, &ubaseproxy_ue_resp_events[i]);
+		if (ret) {
+			ubaseproxy_err(udev,
+				       "failed to register ue resp event[%d], ret = %d.\n",
+				       i, ret);
+			goto err_register_event;
+		}
+	}
+
+	return 0;
+
+err_register_event:
+	for (i = i - 1; i >= 0; i--)
+		ubase_ctrlq_unregister_ue_resp_event(adev,
+						     ubaseproxy_ue_resp_events[i].service_type,
+						     ubaseproxy_ue_resp_events[i].opcode);
+	return ret;
+}
+
+static void ubaseproxy_ctrlq_unregister_ue_resp_event(struct ubaseproxy_dev *udev)
+{
+	struct auxiliary_device *adev = udev->comdev.adev;
+	u32 i;
+
+	for (i = 0; i < ARRAY_SIZE(ubaseproxy_ue_resp_events); i++)
+		ubase_ctrlq_unregister_ue_resp_event(adev,
+						     ubaseproxy_ue_resp_events[i].service_type,
+						     ubaseproxy_ue_resp_events[i].opcode);
+}
+
 int ubaseproxy_register_event(struct ubaseproxy_dev *udev)
 {
 	struct auxiliary_device *adev = udev->comdev.adev;
@@ -129,11 +182,19 @@ int ubaseproxy_register_event(struct ubaseproxy_dev *udev)
 	if (ret)
 		return ret;
 
+	ret = ubaseproxy_ctrlq_register_ue_resp_event(udev);
+	if (ret)
+		goto register_ue_resp_err;
+
 	ubase_reset_register(adev, ubaseproxy_reset_handler);
 	atomic_set(&udev->virt_refcnt, 0);
 	ubase_virt_register(adev, ubaseproxy_virt_handler);
 
 	return 0;
+
+register_ue_resp_err:
+	ubaseproxy_unregister_crq_event(udev);
+	return ret;
 }
 
 void ubaseproxy_unregister_event(struct ubaseproxy_dev *udev)
@@ -142,5 +203,6 @@ void ubaseproxy_unregister_event(struct ubaseproxy_dev *udev)
 
 	ubase_virt_unregister(adev);
 	ubase_reset_unregister(adev);
+	ubaseproxy_ctrlq_unregister_ue_resp_event(udev);
 	ubaseproxy_unregister_crq_event(udev);
 }

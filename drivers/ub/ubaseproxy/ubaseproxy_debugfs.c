@@ -6,6 +6,7 @@
 #include <linux/debugfs.h>
 #include <linux/time.h>
 #include <ub/ubase/ubase_comm_cmd.h>
+#include <ub/ubase/ubase_comm_dev.h>
 #include <ub/ubase/ubase_comm_mbx.h>
 
 #include "ubaseproxy_debugfs.h"
@@ -47,6 +48,29 @@ static int ubaseproxy_dbg_dump_ue_ctx_res(struct seq_file *s, void *data)
 	return 0;
 }
 
+static int ubaseproxy_dbg_dump_ue_qos_info(struct seq_file *s, void *data)
+{
+	struct ubaseproxy_dev *udev = dev_get_drvdata(s->private);
+	struct ubase_caps *ubase_caps = ubase_get_dev_caps(udev->comdev.adev);
+	u8 managed_ue_num = ubase_caps->ue_num - 1, i;
+
+	for (i = 0; i < managed_ue_num; i++) {
+		seq_printf(s, "UE%u:\n", i);
+		seq_printf(s, "\tum_sl_bitmap: 0x%lx\n",
+			   udev->ue_res_info[i].ue_ctx_qos.um_sl_bitmap);
+		seq_printf(s, "\ttp_sl_bitmap: 0x%lx\n",
+			   udev->ue_res_info[i].ue_ctx_qos.tp_sl_bitmap);
+		seq_printf(s, "\tctp_sl_bitmap: 0x%lx\n",
+			   udev->ue_res_info[i].ue_ctx_qos.ctp_sl_bitmap);
+		seq_printf(s, "\ttotal_sl_bitmap: 0x%lx\n",
+			   udev->ue_res_info[i].ue_ctx_qos.total_sl_bitmap);
+		seq_printf(s, "\trc_max_cnt: %u\n",
+			   udev->ue_res_info[i].ue_ctx_buf.rc.entry_cnt);
+	}
+
+	return 0;
+}
+
 static struct ubase_dbg_cmd_info ubaseproxy_dbg_cmd[] = {
 	{
 		.name = "ue_context_spec",
@@ -55,6 +79,14 @@ static struct ubase_dbg_cmd_info ubaseproxy_dbg_cmd[] = {
 		.support = ubaseproxy_dbg_dentry_support,
 		.init = ubase_dbg_seq_file_init,
 		.read_func = ubaseproxy_dbg_dump_ue_ctx_res,
+	},
+	{
+		.name = "ue_qos_info",
+		.dentry_index = UBASEPROXY_DBG_DENTRY_ROOT,
+		.property = UBASE_SUP_UDMA | UBASE_SUP_UBL,
+		.support = ubaseproxy_dbg_dentry_support,
+		.init = ubase_dbg_seq_file_init,
+		.read_func = ubaseproxy_dbg_dump_ue_qos_info,
 	},
 };
 

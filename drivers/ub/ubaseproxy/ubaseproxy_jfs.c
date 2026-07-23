@@ -236,6 +236,25 @@ static int ubaseproxy_check_jfc_exists(struct ubaseproxy_dev *udev,
 	return 0;
 }
 
+static int ubaseproxy_check_jetty_sl_value(struct ubaseproxy_dev *udev,
+					   struct ubase_proxy_req_msg *req)
+{
+	u16 mbx_ue_id = le16_to_cpu(req->mbx_ue_id);
+	struct ubaseproxy_ue_ctx_qos *ue_ctx_qos;
+	struct ubaseproxy_jetty_ctx *ctx;
+
+	ctx = (struct ubaseproxy_jetty_ctx *)req->data;
+	ue_ctx_qos = ubaseproxy_get_ue_ctx_qos(udev, mbx_ue_id);
+	if (!test_bit(ctx->sl, &ue_ctx_qos->total_sl_bitmap)) {
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfs_check_sl_not_valid,
+				   "failed to check jetty ctx sl, ue_id = %hu, sl(%u) is not in valid sl_bitmap(0x%lx).\n",
+				   mbx_ue_id, ctx->sl, ue_ctx_qos->total_sl_bitmap);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int
 ubaseproxy_check_jetty_ctx_range_values(struct ubaseproxy_dev *udev,
 					struct ubase_proxy_req_msg *req)
@@ -244,6 +263,7 @@ ubaseproxy_check_jetty_ctx_range_values(struct ubaseproxy_dev *udev,
 	struct ubaseproxy_jetty_ctx *ctx;
 	u32 jettyn = req->tag;
 	u32 jfs_depth, jfrn;
+	int ret;
 
 	ctx = (struct ubaseproxy_jetty_ctx *)req->data;
 	if (ctx->type < UBASEPROXY_JETTY_TYPE_UM ||
@@ -270,6 +290,10 @@ ubaseproxy_check_jetty_ctx_range_values(struct ubaseproxy_dev *udev,
 			       jettyn, ctx->next_send_ssn, ctx->next_rcv_ssn);
 		return -EINVAL;
 	}
+
+	ret = ubaseproxy_check_jetty_sl_value(udev, req);
+	if (ret)
+		return ret;
 
 	jfrn = (ctx->jfrn_h << UBASEPROXY_JETTY_CTX_JFRN_H_OFFSET) + ctx->jfrn_l;
 	return ubaseproxy_check_jetty_type_match(udev, req, jfrn);
