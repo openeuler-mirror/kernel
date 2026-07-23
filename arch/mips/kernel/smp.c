@@ -19,6 +19,7 @@
 #include <linux/sched/mm.h>
 #include <linux/cpumask.h>
 #include <linux/cpu.h>
+#include <linux/rcupdate.h>
 #include <linux/err.h>
 #include <linux/ftrace.h>
 #include <linux/irqdomain.h>
@@ -406,10 +407,12 @@ static void stop_this_cpu(void *dummy)
 	/*
 	 * Remove this CPU:
 	 */
+	int cpu = smp_processor_id();
 
-	set_cpu_online(smp_processor_id(), false);
+	set_cpu_online(cpu, false);
 	calculate_cpu_foreign_map();
 	local_irq_disable();
+	rcu_report_dead(cpu);
 	while (1);
 }
 
