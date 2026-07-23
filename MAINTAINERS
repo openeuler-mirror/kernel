@@ -6133,6 +6133,13 @@ L:	linux-gpio@vger.kernel.org
 S:	Maintained
 F:	drivers/gpio/gpio-gpio-mm.c
 
+DINGHAI DRIVER
+M:	Junyang Han <han.junyang@zte.com.cn>
+M:	Chengfei Han <han.chengfei@zte.com.cn>
+S:	Maintained
+F:	drivers/net/ethernet/dinghai/
+F:	include/linux/dinghai/
+
 DIOLAN U2C-12 I2C DRIVER
 M:	Guenter Roeck <linux@roeck-us.net>
 L:	linux-i2c@vger.kernel.org
@@ -24208,6 +24215,11 @@ S:	Maintained
 F:	Documentation/misc-devices/zcopy.rst
 F:	drivers/misc/zcopy/
 F:	include/trace/events/attach.h
+
+ZRDMA DRIVER
+M:	Chengfei Han <han.chengfei@zte.com.cn>
+S:	Maintained
+F:	drivers/infiniband/hw/zrdma/
 
 THE REST
 M:	Linus Torvalds <torvalds@linux-foundation.org>

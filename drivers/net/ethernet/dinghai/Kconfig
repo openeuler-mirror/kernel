@@ -1,0 +1,134 @@
+config NET_VENDOR_DINGHAI
+    tristate "Dinghai Devices"
+    depends on PCI && (X86 || ARM64)
+    help
+      This option enables support for Ethernet devices from
+      Dinghai (ZTE) corporation.
+
+      Dinghai Ethernet adapters provide high-performance networking
+      capabilities including hardware offloading, RDMA, and SR-IOV.
+
+      To compile this driver as a module, choose M here. The module
+      will be called dinghai.ko.
+
+      If unsure, say N.
+
+if NET_VENDOR_DINGHAI
+
+config DINGHAI_DH_CMD
+	tristate "Dinghai Command Interface Support"
+	help
+	  Say Y or M here to enable the command interface for Dinghai
+	  Ethernet devices.
+
+	  This module provides low-level command communication channel
+	  between the host and Dinghai hardware.
+
+	  To compile this driver as a module, choose M here. The module
+	  will be called dinghai_cmd.ko.
+
+	  If unsure, say N.
+
+config DINGHAI_NP
+	tristate "Dinghai Network Processor Support"
+	depends on DINGHAI_DH_CMD
+	help
+	  Say Y or M here to enable Network Processor (NP) support for
+	  Dinghai Ethernet devices.
+
+	  This module is required for network packet processing offload
+	  features. It depends on the DINGHAI_DH_CMD module.
+
+	  To compile this driver as a module, choose M here. The module
+	  will be called dinghai_np.ko.
+
+	  If unsure, say N.
+
+config DINGHAI_PTP
+	tristate "Dinghai Precision Time Protocol Support"
+	depends on DINGHAI_DH_CMD && PTP_1588_CLOCK
+	help
+	  Say Y or M here to enable Precision Time Protocol (PTP)
+	  support for Dinghai Ethernet devices.
+
+	  This module provides hardware timestamping and clock
+	  synchronization features. It requires DINGHAI_DH_CMD and
+	  PTP_1588_CLOCK to be enabled.
+
+	  To compile this driver as a module, choose M here. The module
+	  will be called dinghai_ptp.ko.
+
+	  If unsure, say N.
+
+config DINGHAI_TSN_M
+	tristate "Dinghai Time-Sensitive Networking Module"
+	help
+	  Say Y or M here to enable Time-Sensitive Networking (TSN)
+	  runtime module support for Dinghai Ethernet devices.
+
+	  This module provides TSN features including 802.1Qbv, 802.1Qbu,
+	  and frame preemption capabilities.
+
+	  To compile this driver as a module, choose M here. The module
+	  will be called dinghai_tsn.ko.
+
+	  If unsure, say N.
+
+config DINGHAI_SEC
+	tristate "Dinghai Security Module Support"
+	help
+	  Say Y or M here to enable Security (SEC) module support for
+	  Dinghai Ethernet devices.
+
+	  This module provides hardware security features including
+	  encryption, decryption, and secure key management.
+
+	  To compile this driver as a module, choose M here. The module
+	  will be called dinghai_sec.ko.
+
+	  This feature is experimental; say N if unsure.
+
+config DINGHAI_AUXILIARY
+	tristate "Dinghai Auxiliary Bus Support"
+	help
+	  Say Y or M here to enable auxiliary bus support for Dinghai
+	  Ethernet devices.
+
+	  This module provides the auxiliary bus infrastructure used
+	  for managing sub-devices.
+
+	  To compile this driver as a module, choose M here. The module
+	  will be called dinghai_auxiliary.ko.
+
+	  If unsure, say N.
+
+config DINGHAI_PF
+	tristate "Dinghai Primary Function Driver"
+	depends on DINGHAI_DH_CMD
+	depends on DINGHAI_AUXILIARY
+	depends on DINGHAI_NP
+	depends on DINGHAI_PTP
+	depends on DINGHAI_TSN_M
+	help
+	  Say Y or M here to enable the Primary Function (PF) driver
+	  for Dinghai Ethernet devices.
+
+	  This is the main driver that manages the physical function
+	  of Dinghai adapters. It supports:
+	    - SR-IOV for virtual functions
+	    - RDMA over Converged Ethernet (RoCE)
+	    - Hardware offloading features
+
+	  This driver requires the following modules to be enabled:
+	    - DINGHAI_DH_CMD (command interface)
+	    - DINGHAI_AUXILIARY (auxiliary bus)
+	    - DINGHAI_NP (network processor)
+	    - DINGHAI_PTP (PTP support, requires PTP_1588_CLOCK)
+	    - DINGHAI_TSN_M (TSN runtime support)
+
+	  To compile this driver as a module, choose M here. The module
+	  will be called dinghai_pf.ko.
+
+	  If unsure, say N.
+
+endif # NET_VENDOR_DINGHAI

@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-2.0
+
+config INFINIBAND_ZRDMA
+	tristate "ZTE Ethernet Protocol Driver for RDMA"
+	depends on NET_VENDOR_DINGHAI && (X86 || ARM64)
+	help
+		This driver supports the ZTE Dinghai RDMA engine over PCIe,
+		providing InfiniBand/RoCEv2 capabilities.
+
+		To compile this driver as a module, choose M here: the module
+		will be called zrdma.
+
+		If unsure, say N.
