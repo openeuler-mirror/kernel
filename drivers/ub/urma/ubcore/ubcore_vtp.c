@@ -826,6 +826,25 @@ static struct ubcore_vtpn *ubcore_alloc_vtpn(struct ubcore_device *dev,
 	return vtpn;
 }
 
+static void ubcore_fill_vtpn_config(struct ubcore_vtpn *vtpn,
+	struct ubcore_vtp_param *param,
+	struct ubcore_active_tp_cfg *active_tp_cfg,
+	struct ubcore_udata *udata)
+{
+	vtpn->trans_mode = param->trans_mode;
+	vtpn->local_eid = param->local_eid;
+	vtpn->peer_eid = param->peer_eid;
+	vtpn->eid_index = param->eid_index;
+	vtpn->local_jetty = param->local_jetty;
+	vtpn->peer_jetty = param->peer_jetty;
+	if (active_tp_cfg != NULL) {
+		vtpn->peer_tp_handle = active_tp_cfg->peer_tp_handle.value;
+		vtpn->tag = active_tp_cfg->tag;
+	}
+	if (udata != NULL)
+		vtpn->uspace = true;
+}
+
 static struct ubcore_vtpn *
 	ubcore_create_vtpn(struct ubcore_device *dev,
 	struct ubcore_vtp_param *param,
@@ -1310,7 +1329,6 @@ struct ubcore_vtpn *
 	}
 
 	mutex_lock(&vtpn->state_lock);
-
 	// READY: an active vtpn, reuse directly.
 	if (vtpn->state == UBCORE_VTPS_READY) {
 		ubcore_log_info("Success to reuse vtpn:%u", vtpn->vtpn);
@@ -1328,6 +1346,12 @@ struct ubcore_vtpn *
 		ubcore_vtpn_kref_put(vtpn);
 		return ERR_PTR(-EAGAIN);
 	}
+
+	/*	vtpn will be created in ubcore_get_tp_list.
+		some fields are not set. If reuse, there's no need to change its value
+		simply fill in the field when it becomes active for the first time
+	*/
+	ubcore_fill_vtpn_config(vtpn, param, active_tp_cfg, udata);
 
 	/*	2. active tp (state == RESET here)
 		This interface is only used by tp-aware users, for whom the vtpn is
@@ -1492,7 +1516,6 @@ struct ubcore_vtpn *
 	}
 
 	mutex_lock(&vtpn->state_lock);
-
 	// READY: an active vtpn, reuse directly.
 	if (vtpn->state == UBCORE_VTPS_READY) {
 		ubcore_log_info("Success to reuse vtpn:%u", vtpn->vtpn);
@@ -1510,6 +1533,12 @@ struct ubcore_vtpn *
 		ubcore_vtpn_kref_put(vtpn);
 		return ERR_PTR(-EAGAIN);
 	}
+
+	/*	vtpn will be created in ubcore_get_tp_list.
+		some fields are not set. If reuse, there's no need to change its value
+		simply fill in the field when it becomes active for the first time
+	*/
+	ubcore_fill_vtpn_config(vtpn, param, active_tp_cfg, udata);
 
 	// 2. active tp (state == RESET here)
 	// similar to connect_vtp_ctrlplane
