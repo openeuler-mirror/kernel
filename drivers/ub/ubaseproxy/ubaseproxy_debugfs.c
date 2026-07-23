@@ -71,6 +71,40 @@ static int ubaseproxy_dbg_dump_ue_qos_info(struct seq_file *s, void *data)
 	return 0;
 }
 
+static int ubaseproxy_dbg_dump_ue_seid_idx(struct seq_file *s, void *data)
+{
+#define SEID_NUM_PER_LINE	10
+
+	struct ubaseproxy_dev *udev = dev_get_drvdata(s->private);
+	struct ubase_caps *ubase_caps = ubase_get_dev_caps(udev->comdev.adev);
+	struct ubaseproxy_ue_seid_table	*ue_seid_table;
+	u8 managed_ue_num = ubase_caps->ue_num - 1, i;
+	u16 j, count;
+
+	for (i = 0; i < managed_ue_num; i++) {
+		seq_printf(s, "ue_num: %u\n", i);
+		seq_puts(s, "seid idx:\n");
+		ue_seid_table = &udev->ue_res_info[i].ue_seid_table;
+		count = 0;
+		spin_lock_bh(&ue_seid_table->seid_lock);
+		for (j = 0; j < UBASEPROXY_MAX_SEID_TABLE_SIZE; j++) {
+			if (test_bit(j, ue_seid_table->seid_bmap)) {
+				seq_printf(s, "%6u", j);
+				count++;
+			}
+
+			if (count == SEID_NUM_PER_LINE) {
+				seq_puts(s, "\n");
+				count = 0;
+			}
+		}
+		spin_unlock_bh(&ue_seid_table->seid_lock);
+		seq_puts(s, "\n\n");
+	}
+
+	return 0;
+}
+
 static struct ubase_dbg_cmd_info ubaseproxy_dbg_cmd[] = {
 	{
 		.name = "ue_context_spec",
@@ -87,6 +121,14 @@ static struct ubase_dbg_cmd_info ubaseproxy_dbg_cmd[] = {
 		.support = ubaseproxy_dbg_dentry_support,
 		.init = ubase_dbg_seq_file_init,
 		.read_func = ubaseproxy_dbg_dump_ue_qos_info,
+	},
+	{
+		.name = "ue_seid_idx",
+		.dentry_index = UBASEPROXY_DBG_DENTRY_ROOT,
+		.property = UBASE_SUP_UDMA | UBASE_SUP_UBL,
+		.support = ubaseproxy_dbg_dentry_support,
+		.init = ubase_dbg_seq_file_init,
+		.read_func = ubaseproxy_dbg_dump_ue_seid_idx,
 	},
 };
 
