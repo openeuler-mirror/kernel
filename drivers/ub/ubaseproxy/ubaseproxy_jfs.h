@@ -203,6 +203,12 @@ struct ubaseproxy_jetty_default {
 	struct ubaseproxy_jetty_ctx	default_value;
 };
 
+int ubaseproxy_jetty_bind_jetty_grp(struct ubaseproxy_dev *udev,
+				    struct ubaseproxy_ue_ctx_xarray *ue_ctx_xa,
+				    u16 jettyn, u16 mbx_ue_id);
+int ubaseproxy_jetty_unbind_jetty_grp(struct ubaseproxy_dev *udev,
+				      struct ubaseproxy_ue_ctx_xarray *ue_ctx_xa,
+				      u16 jettyn, u16 mbx_ue_id);
 int ubaseproxy_init_ue_jetty_ctx_default(struct ubaseproxy_dev *udev);
 void ubaseproxy_uninit_ue_jetty_ctx_default(struct ubaseproxy_dev *udev);
 
