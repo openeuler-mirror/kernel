@@ -15,11 +15,14 @@ static int ubaseproxy_check_rc_range_values(struct ubaseproxy_dev *udev,
 					    struct ubaseproxy_rc_ctx *rc_ctx,
 					    u16 mbx_ue_id)
 {
+#define RC_QUEUE_MIN_SHIFT 6
+
 	struct ubaseproxy_ue_caps *ue_caps = &udev->caps.ue_caps;
 	u32 rc_depth;
 
 	rc_depth = ilog2(roundup_pow_of_two(ue_caps->rc_depth));
-	if (!rc_ctx->rce_shift || rc_ctx->rce_shift > rc_depth) {
+	if (rc_ctx->rce_shift < RC_QUEUE_MIN_SHIFT ||
+	    rc_ctx->rce_shift > rc_depth) {
 		ubaseproxy_risk_rl(udev, mbx_ue_id, rc_field_rce_shift,
 				   "failed to check rc ctx, rce_shift = %u.\n",
 				   rc_ctx->rce_shift);
