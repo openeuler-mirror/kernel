@@ -26,6 +26,7 @@ struct udma_jetty_grp {
 	uint32_t next_jetty_id;
 	uint32_t jetty_grp_id;
 	uint32_t valid;
+	uint32_t hw_valid;
 	struct mutex valid_lock;
 	refcount_t ae_refcount;
 	struct completion ae_comp;
@@ -354,7 +355,7 @@ void udma_iotlb_sync(struct udma_dev *dev, uint64_t va, uint64_t len);
 int udma_alloc_normal_buf(struct udma_dev *udma_dev, size_t memory_size, struct udma_buf *buf);
 void udma_free_normal_buf(struct udma_dev *udma_dev, size_t memory_size, struct udma_buf *buf);
 int udma_k_alloc_buf(struct udma_dev *dev, struct udma_buf *buf, bool need_dtu);
-void udma_k_free_buf(struct udma_dev *dev, struct udma_buf *buf, bool need_dtu);
+void udma_k_free_buf(struct udma_dev *dev, struct udma_buf *buf);
 bool remap_va_to_pfn(struct udma_dev *dev, uint64_t va, uint64_t *pfn);
 
 static inline void udma_write64(struct udma_dev *udma_dev,
