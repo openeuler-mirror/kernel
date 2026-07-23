@@ -134,6 +134,16 @@ static struct ubase_ctrlq_ue_msg_nb ubaseproxy_ue_resp_events[] = {
 		.opcode = UBASE_CTRLQ_OPC_QUERY_SL,
 		.msg_handler = ubaseproxy_ctrlq_handle_query_sl_resp,
 	},
+	{
+		.service_type = UBASE_CTRLQ_SER_TYPE_DEV_REGISTER,
+		.opcode = UBASEPROXY_CTRLQ_GET_SEID_INFO,
+		.msg_handler = ubaseproxy_ctrlq_handle_query_eid_resp,
+	},
+	{
+		.service_type = UBASE_CTRLQ_SER_TYPE_DEV_REGISTER,
+		.opcode = UBASEPROXY_CTRLQ_UPDATE_SEID_INFO,
+		.msg_handler = ubaseproxy_ctrlq_handle_updata_eid_resp,
+	},
 };
 
 static int ubaseproxy_ctrlq_register_ue_resp_event(struct ubaseproxy_dev *udev)

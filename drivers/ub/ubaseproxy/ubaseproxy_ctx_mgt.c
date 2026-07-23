@@ -273,6 +273,7 @@ static void ubaseproxy_init_res_info_lock(struct ubaseproxy_dev *udev)
 		mutex_init(&udev->ue_res_info[i].ue_ctx_buf.jfc.ctx_mutex);
 		mutex_init(&udev->ue_res_info[i].ue_ctx_buf.jtg.ctx_mutex);
 		mutex_init(&udev->ue_res_info[i].ue_ctx_buf.rc.ctx_mutex);
+		spin_lock_init(&udev->ue_res_info[i].ue_seid_table.seid_lock);
 	}
 }
 
