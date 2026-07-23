@@ -43,6 +43,7 @@ struct ubaseproxy_ue_default {
 	struct ubaseproxy_jfc_default	*jfc_default;
 	struct ubaseproxy_jfr_default	*jfr_default;
 	struct ubaseproxy_jetty_default	*jetty_default;
+	struct ubaseproxy_jtg_default	*jtg_default;
 	struct ubaseproxy_rc_default	*rc_default;
 	struct ubaseproxy_eq_default	*eq_default;
 };

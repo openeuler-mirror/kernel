@@ -12,6 +12,7 @@
 
 #include "ubaseproxy_dev.h"
 #include "ubaseproxy_eq.h"
+#include "ubaseproxy_jetty_grp.h"
 #include "ubaseproxy_jfc.h"
 #include "ubaseproxy_jfr.h"
 #include "ubaseproxy_jfs.h"
@@ -270,6 +271,7 @@ static void ubaseproxy_init_res_info_lock(struct ubaseproxy_dev *udev)
 		mutex_init(&udev->ue_res_info[i].ue_ctx_buf.jfs.ctx_mutex);
 		mutex_init(&udev->ue_res_info[i].ue_ctx_buf.jfr.ctx_mutex);
 		mutex_init(&udev->ue_res_info[i].ue_ctx_buf.jfc.ctx_mutex);
+		mutex_init(&udev->ue_res_info[i].ue_ctx_buf.jtg.ctx_mutex);
 		mutex_init(&udev->ue_res_info[i].ue_ctx_buf.rc.ctx_mutex);
 	}
 }
@@ -283,6 +285,7 @@ static void ubaseproxy_uninit_res_info_lock(struct ubaseproxy_dev *udev)
 		mutex_destroy(&udev->ue_res_info[i].ue_ctx_buf.jfs.ctx_mutex);
 		mutex_destroy(&udev->ue_res_info[i].ue_ctx_buf.jfr.ctx_mutex);
 		mutex_destroy(&udev->ue_res_info[i].ue_ctx_buf.jfc.ctx_mutex);
+		mutex_destroy(&udev->ue_res_info[i].ue_ctx_buf.jtg.ctx_mutex);
 		mutex_destroy(&udev->ue_res_info[i].ue_ctx_buf.rc.ctx_mutex);
 	}
 }
@@ -316,6 +319,7 @@ static void ubaseproxy_init_ue_ctx_xarray(struct ubaseproxy_dev *udev)
 		xa_init(&udev->ue_res_info[i].ue_ctx_xa.jfc);
 		xa_init(&udev->ue_res_info[i].ue_ctx_xa.jfr);
 		xa_init(&udev->ue_res_info[i].ue_ctx_xa.jetty);
+		xa_init(&udev->ue_res_info[i].ue_ctx_xa.jetty_grp);
 		xa_init(&udev->ue_res_info[i].ue_ctx_xa.aeq);
 		xa_init(&udev->ue_res_info[i].ue_ctx_xa.ceq);
 		xa_init(&udev->ue_res_info[i].ue_ctx_xa.rc);
@@ -431,6 +435,7 @@ void ubaseproxy_erase_ue_ctx_resources(struct ubaseproxy_dev *udev,
 	ubaseproxy_erase_common_ctx_resources(&ue_ctx_xa->aeq);
 	ubaseproxy_erase_common_ctx_resources(&ue_ctx_xa->ceq);
 	ubaseproxy_erase_jetty_ctx_resources(udev, ue_ctx_xa);
+	ubaseproxy_erase_common_ctx_resources(&ue_ctx_xa->jetty_grp);
 	ubaseproxy_erase_common_ctx_resources(&ue_ctx_xa->jfr);
 	ubaseproxy_erase_common_ctx_resources(&ue_ctx_xa->jfc);
 }
@@ -441,6 +446,7 @@ static void ubaseproxy_destroy_ue_ctx_xa(struct ubaseproxy_ue_ctx_xarray *ue_ctx
 	xa_destroy(&ue_ctx_xa->aeq);
 	xa_destroy(&ue_ctx_xa->ceq);
 	xa_destroy(&ue_ctx_xa->jetty);
+	xa_destroy(&ue_ctx_xa->jetty_grp);
 	xa_destroy(&ue_ctx_xa->jfr);
 	xa_destroy(&ue_ctx_xa->jfc);
 }

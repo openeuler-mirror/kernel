@@ -9,6 +9,7 @@
 #include "ubaseproxy_dev.h"
 #include "ubaseproxy_eq.h"
 #include "ubaseproxy_event.h"
+#include "ubaseproxy_jetty_grp.h"
 #include "ubaseproxy_jfc.h"
 #include "ubaseproxy_jfr.h"
 #include "ubaseproxy_jfs.h"
@@ -165,17 +166,21 @@ struct ubaseproxy_handler {
 	{UBASE_MB_CREATE_JFS_CONTEXT, ubaseproxy_handle_create_jfs_ctx_req},
 	{UBASE_MB_CREATE_JFR_CONTEXT, ubaseproxy_handle_create_jfr_ctx_req},
 	{UBASE_MB_CREATE_RC_CONTEXT, ubaseproxy_handle_create_rc_ctx_req},
+	{UBASE_MB_CREATE_JETTY_GROUP_CONTEXT, ubaseproxy_handle_create_jetty_grp_ctx_req},
 	{UBASE_MB_DESTROY_JFC_CONTEXT, ubaseproxy_handle_destroy_jfc_ctx_req},
 	{UBASE_MB_DESTROY_JFS_CONTEXT, ubaseproxy_handle_destroy_jfs_ctx_req},
 	{UBASE_MB_DESTROY_JFR_CONTEXT, ubaseproxy_handle_destroy_jfr_ctx_req},
 	{UBASE_MB_DESTROY_RC_CONTEXT, ubaseproxy_handle_destroy_rc_ctx_req},
+	{UBASE_MB_DESTROY_JETTY_GROUP_CONTEXT, ubaseproxy_handle_destroy_jetty_grp_ctx_req},
 	{UBASE_MB_MODIFY_JFC_CONTEXT, ubaseproxy_handle_modify_jfc_ctx_req},
 	{UBASE_MB_MODIFY_JFS_CONTEXT, ubaseproxy_handle_modify_jfs_ctx_req},
 	{UBASE_MB_MODIFY_JFR_CONTEXT, ubaseproxy_handle_modify_jfr_ctx_req},
+	{UBASE_MB_MODIFY_JETTY_GROUP_CONTEXT, ubaseproxy_handle_modify_jetty_grp_ctx_req},
 	{UBASE_MB_QUERY_JFC_CONTEXT, ubaseproxy_handle_query_jfc_ctx_req},
 	{UBASE_MB_QUERY_JFS_CONTEXT, ubaseproxy_handle_query_jfs_ctx_req},
 	{UBASE_MB_QUERY_JFR_CONTEXT, ubaseproxy_handle_query_jfr_ctx_req},
 	{UBASE_MB_QUERY_RC_CONTEXT, ubaseproxy_handle_query_rc_ctx_req},
+	{UBASE_MB_QUERY_JETTY_GROUP_CONTEXT, ubaseproxy_handle_query_jetty_grp_ctx_req},
 	{UBASE_MB_CREATE_AEQ_CONTEXT, ubaseproxy_handle_create_eq_ctx_req},
 	{UBASE_MB_CREATE_CEQ_CONTEXT, ubaseproxy_handle_create_eq_ctx_req},
 	{UBASE_MB_DESTROY_AEQ_CONTEXT, ubaseproxy_handle_destroy_eq_ctx_req},
