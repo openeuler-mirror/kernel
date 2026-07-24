@@ -7,8 +7,9 @@ config I_MMAP_SHARDS
 	depends on MMU && SMP && NUMA && EXPERT
 	default n
 	help
-	  Build support for batching file VMA updates and splitting contended
-	  regular-file reverse mapping interval trees into NUMA-local shards.
+	  Split contended regular-file reverse mapping interval trees into
+	  NUMA-local shards. This is intended for machines with highly
+	  concurrent fork, exec, mmap, and exit workloads.
 
 	  This feature is experimental. If unsure, say N.
 

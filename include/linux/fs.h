@@ -471,6 +471,28 @@ struct address_space_operations {
 
 extern const struct address_space_operations empty_aops;
 
+#ifdef CONFIG_I_MMAP_SHARDS
+#define I_MMAP_MAX_DOMAINS		8
+#define I_MMAP_SHARDS_PER_DOMAIN	4
+#define I_MMAP_MAX_SHARDS		(I_MMAP_MAX_DOMAINS * \
+					 I_MMAP_SHARDS_PER_DOMAIN)
+
+struct i_mmap_shard {
+	struct rb_root_cached	root;
+	struct rw_semaphore	rwsem;
+} ____cacheline_aligned_in_smp;
+
+struct i_mmap_domain_shards {
+	int			nid;
+	struct i_mmap_shard	shard[I_MMAP_SHARDS_PER_DOMAIN];
+};
+
+struct i_mmap_shards {
+	unsigned int		nr_domains;
+	struct i_mmap_domain_shards *domain[I_MMAP_MAX_DOMAINS];
+};
+#endif
+
 /**
  * struct address_space - Contents of a cacheable, mappable object.
  * @host: Owner, either the inode or the block_device.
@@ -514,8 +536,14 @@ struct address_space {
 	struct rw_semaphore	i_mmap_rwsem;
 	void			*private_data;
 
+#ifdef CONFIG_I_MMAP_SHARDS
+	KABI_USE(1, struct i_mmap_shards *i_mmap_shards)
+	KABI_USE2(2, atomic_t i_mmap_nr_vmas,
+		  atomic_t i_mmap_lock_contention)
+#else
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
+#endif
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 	KABI_RESERVE(5)

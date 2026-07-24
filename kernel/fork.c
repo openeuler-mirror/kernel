@@ -76,6 +76,11 @@
 #include <linux/freezer.h>
 #include <linux/delayacct.h>
 #include <linux/taskstats_kern.h>
+#ifdef CONFIG_I_MMAP_SHARDS
+#include <linux/hash.h>
+#include <linux/log2.h>
+#include <linux/topology.h>
+#endif
 #include <linux/tty.h>
 #include <linux/fs_struct.h>
 #include <linux/magic.h>
@@ -1480,6 +1485,10 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p,
 	mm->locked_vm = 0;
 	atomic64_set(&mm->pinned_vm, 0);
 	memset(&mm->rss_stat, 0, sizeof(mm->rss_stat));
+#ifdef CONFIG_I_MMAP_SHARDS
+	mm->i_mmap_home_nid = numa_node_id();
+	mm->i_mmap_shard_idx = hash_ptr(mm, ilog2(I_MMAP_SHARDS_PER_DOMAIN));
+#endif
 	reliable_clear_page_counter(mm);
 	spin_lock_init(&mm->page_table_lock);
 	spin_lock_init(&mm->arg_lock);
@@ -1893,6 +1902,11 @@ static struct mm_struct *dup_mm(struct task_struct *tsk,
 
 	if (!mm_init(mm, tsk, mm->user_ns))
 		goto fail_nomem;
+
+#ifdef CONFIG_I_MMAP_SHARDS
+	mm->i_mmap_home_nid = READ_ONCE(oldmm->i_mmap_home_nid);
+	mm->i_mmap_shard_idx = READ_ONCE(oldmm->i_mmap_shard_idx);
+#endif
 
 	err = dup_mmap(mm, oldmm);
 	if (err)
