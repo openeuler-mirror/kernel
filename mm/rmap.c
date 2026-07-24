@@ -2662,6 +2662,68 @@ static void rmap_walk_anon(struct folio *folio,
  * Find all the mappings of a folio using the mapping pointer and the vma chains
  * contained in the address_space struct it points to.
  */
+#ifdef CONFIG_I_MMAP_SHARDS
+struct rmap_walk_file_arg {
+	struct folio *folio;
+	struct rmap_walk_control *rwc;
+};
+
+static int rmap_walk_file_vma(struct vm_area_struct *vma, void *arg)
+{
+	struct rmap_walk_file_arg *walk = arg;
+	struct rmap_walk_control *rwc = walk->rwc;
+	unsigned long address;
+
+	address = vma_address(&walk->folio->page, vma);
+	VM_BUG_ON_VMA(address == -EFAULT, vma);
+	cond_resched();
+
+	if (rwc->invalid_vma && rwc->invalid_vma(vma, rwc->arg))
+		return 0;
+
+	if (!rwc->rmap_one(walk->folio, vma, address, rwc->arg))
+		return 1;
+	if (rwc->done && rwc->done(walk->folio))
+		return 1;
+
+	return 0;
+}
+
+static void rmap_walk_file(struct folio *folio,
+		struct rmap_walk_control *rwc, bool locked)
+{
+	struct address_space *mapping = folio_mapping(folio);
+	pgoff_t pgoff_start, pgoff_end;
+	struct rmap_walk_file_arg walk = {
+		.folio = folio,
+		.rwc = rwc,
+	};
+	int ret;
+
+	/*
+	 * The page lock not only makes sure that page->mapping cannot
+	 * suddenly be NULLified by truncation, it makes sure that the
+	 * structure at mapping cannot be freed and reused yet,
+	 * so we can safely take mapping->i_mmap_rwsem.
+	 */
+	VM_BUG_ON_FOLIO(!folio_test_locked(folio), folio);
+
+	if (!mapping)
+		return;
+
+	pgoff_start = folio_pgoff(folio);
+	pgoff_end = pgoff_start + folio_nr_pages(folio) - 1;
+	if (locked)
+		ret = i_mmap_walk_locked(mapping, pgoff_start, pgoff_end,
+					 rmap_walk_file_vma, &walk);
+	else
+		ret = i_mmap_read_walk(mapping, pgoff_start, pgoff_end,
+				       rwc->try_lock, rmap_walk_file_vma,
+				       &walk);
+	if (ret == -EAGAIN)
+		rwc->contended = true;
+}
+#else
 static void rmap_walk_file(struct folio *folio,
 		struct rmap_walk_control *rwc, bool locked)
 {
@@ -2714,6 +2776,7 @@ done:
 	if (!locked)
 		i_mmap_unlock_read(mapping);
 }
+#endif
 
 void rmap_walk(struct folio *folio, struct rmap_walk_control *rwc)
 {
