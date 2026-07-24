@@ -290,6 +290,41 @@ static int i_mmap_walk_shards_locked(struct i_mmap_shards *shards,
 }
 #endif
 
+#ifdef CONFIG_I_MMAP_SHARDS
+void i_mmap_lock_read_all(struct address_space *mapping,
+			  struct i_mmap_read_lock *lock)
+{
+	struct i_mmap_shards *shards;
+
+	lock->central = false;
+	lock->shards = NULL;
+	shards = i_mmap_shards_load(mapping);
+	if (!shards) {
+		i_mmap_lock_read(mapping);
+		shards = i_mmap_shards_load(mapping);
+		if (!shards) {
+			lock->central = true;
+			return;
+		}
+		i_mmap_unlock_read(mapping);
+	}
+
+	i_mmap_lock_shards_read(shards, false);
+	lock->shards = shards;
+}
+
+void i_mmap_unlock_read_all(struct address_space *mapping,
+			    struct i_mmap_read_lock *lock)
+{
+	if (lock->shards) {
+		i_mmap_unlock_shards_read(lock->shards);
+		return;
+	}
+	VM_WARN_ON_ONCE(!lock->central);
+	i_mmap_unlock_read(mapping);
+}
+#endif
+
 int i_mmap_read_walk(struct address_space *mapping, pgoff_t first,
 		     pgoff_t last, bool try_lock, i_mmap_walk_fn fn,
 		     void *arg)

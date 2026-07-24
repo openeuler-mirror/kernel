@@ -508,6 +508,11 @@ struct i_mmap_write_lock {
 #endif
 
 #ifdef CONFIG_I_MMAP_SHARDS
+struct i_mmap_read_lock {
+	bool central;
+	struct i_mmap_shards *shards;
+};
+
 typedef int (*i_mmap_walk_fn)(struct vm_area_struct *vma, void *arg);
 
 int i_mmap_read_walk(struct address_space *mapping, pgoff_t first,
@@ -515,6 +520,10 @@ int i_mmap_read_walk(struct address_space *mapping, pgoff_t first,
 		     void *arg);
 int i_mmap_walk_locked(struct address_space *mapping, pgoff_t first,
 		       pgoff_t last, i_mmap_walk_fn fn, void *arg);
+void i_mmap_lock_read_all(struct address_space *mapping,
+			  struct i_mmap_read_lock *lock);
+void i_mmap_unlock_read_all(struct address_space *mapping,
+			    struct i_mmap_read_lock *lock);
 #endif
 
 /**
