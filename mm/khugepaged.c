@@ -1695,6 +1695,82 @@ drop_folio:
 	return result;
 }
 
+#ifdef CONFIG_I_MMAP_SHARDS
+static int retract_page_tables_vma(struct vm_area_struct *vma, void *arg)
+{
+	pgoff_t pgoff = *(pgoff_t *)arg;
+	struct mmu_notifier_range range;
+	struct mm_struct *mm;
+	unsigned long addr;
+	pmd_t *pmd, pgt_pmd;
+	spinlock_t *pml; /* PMD lock. */
+	spinlock_t *ptl; /* PTE lock. */
+	bool skipped_uffd = false;
+
+	/*
+	 * Exclude MAP_PRIVATE mappings that were written to. They are likely
+	 * to be split again and are not worth retracting page tables from.
+	 */
+	if (READ_ONCE(vma->anon_vma))
+		return 0;
+
+	addr = vma->vm_start + ((pgoff - vma->vm_pgoff) << PAGE_SHIFT);
+	if (addr & ~HPAGE_PMD_MASK || vma->vm_end < addr + HPAGE_PMD_SIZE)
+		return 0;
+
+	mm = vma->vm_mm;
+	if (find_pmd_or_thp_or_none(mm, addr, &pmd) != SCAN_SUCCEED)
+		return 0;
+	if (hpage_collapse_test_exit(mm))
+		return 0;
+
+	/*
+	 * A userfaultfd write-protected VMA can contain PTE markers, so its
+	 * page table cannot be recycled.
+	 */
+	if (userfaultfd_wp(vma))
+		return 0;
+
+	mmu_notifier_range_init(&range, MMU_NOTIFY_CLEAR, 0, mm, addr,
+				addr + HPAGE_PMD_SIZE);
+	mmu_notifier_invalidate_range_start(&range);
+
+	pml = pmd_lock(mm, pmd);
+	ptl = pte_lockptr(mm, pmd);
+	if (ptl != pml)
+		spin_lock_nested(ptl, SINGLE_DEPTH_NESTING);
+
+	/*
+	 * mmap_lock is not held, so recheck after taking the page-table lock
+	 * against a racing userfaultfd registration or private write.
+	 */
+	if (unlikely(vma->anon_vma || userfaultfd_wp(vma))) {
+		skipped_uffd = true;
+	} else {
+		pgt_pmd = pmdp_collapse_flush(vma, addr, pmd);
+		pmdp_get_lockless_sync();
+	}
+
+	if (ptl != pml)
+		spin_unlock(ptl);
+	spin_unlock(pml);
+	mmu_notifier_invalidate_range_end(&range);
+
+	if (!skipped_uffd) {
+		mm_dec_nr_ptes(mm);
+		page_table_check_pte_clear_range(mm, addr, pgt_pmd);
+		pte_free_defer(mm, pmd_pgtable(pgt_pmd));
+	}
+
+	return 0;
+}
+
+static void retract_page_tables(struct address_space *mapping, pgoff_t pgoff)
+{
+	i_mmap_read_walk(mapping, pgoff, pgoff, false,
+			 retract_page_tables_vma, &pgoff);
+}
+#else
 static void retract_page_tables(struct address_space *mapping, pgoff_t pgoff)
 {
 	struct vm_area_struct *vma;
@@ -1778,6 +1854,7 @@ static void retract_page_tables(struct address_space *mapping, pgoff_t pgoff)
 	}
 	i_mmap_unlock_read(mapping);
 }
+#endif
 
 /**
  * collapse_file - collapse filemap/tmpfs/shmem pages into huge one.
