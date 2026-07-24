@@ -113,6 +113,58 @@ void i_mmap_shards_free(struct i_mmap_shards *shards)
 		kfree(shards->domain[i]);
 	kfree(shards);
 }
+
+struct i_mmap_shard *i_mmap_shard_for_vma(struct i_mmap_shards *shards,
+					  struct vm_area_struct *vma)
+{
+	struct i_mmap_domain_shards *domain = NULL;
+	unsigned int domain_idx;
+	unsigned int shard_idx;
+	unsigned int i;
+	int nid;
+
+	nid = READ_ONCE(vma->vm_mm->i_mmap_home_nid);
+	for (i = 0; i < shards->nr_domains; i++) {
+		if (shards->domain[i]->nid == nid) {
+			domain = shards->domain[i];
+			break;
+		}
+	}
+
+	if (unlikely(!domain)) {
+		domain_idx = hash_32((u32)nid, 32) % shards->nr_domains;
+		domain = shards->domain[domain_idx];
+	}
+
+	shard_idx = READ_ONCE(vma->vm_mm->i_mmap_shard_idx);
+	if (unlikely(shard_idx >= I_MMAP_SHARDS_PER_DOMAIN))
+		shard_idx = 0;
+	return &domain->shard[shard_idx];
+}
+
+bool i_mmap_shards_install_locked(struct address_space *mapping,
+				  struct i_mmap_shards *shards)
+{
+	struct vm_area_struct *vma;
+	struct i_mmap_shard *shard;
+
+	i_mmap_assert_write_locked(mapping);
+	if (i_mmap_shards_load(mapping))
+		return false;
+
+	for (;;) {
+		vma = vma_interval_tree_iter_first(&mapping->i_mmap, 0, ULONG_MAX);
+		if (!vma)
+			break;
+		vma_interval_tree_remove(vma, &mapping->i_mmap);
+		shard = i_mmap_shard_for_vma(shards, vma);
+		vma_interval_tree_insert(vma, &shard->root);
+	}
+
+	/* Publish only after every interval-tree root has been populated. */
+	smp_store_release(&mapping->i_mmap_shards, shards);
+	return true;
+}
 #endif
 
 #ifdef CONFIG_HAVE_ARCH_MMAP_RND_BITS

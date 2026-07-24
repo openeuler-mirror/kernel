@@ -494,6 +494,10 @@ struct i_mmap_shards {
 
 struct i_mmap_shards *i_mmap_shards_alloc(gfp_t gfp);
 void i_mmap_shards_free(struct i_mmap_shards *shards);
+struct i_mmap_shard *i_mmap_shard_for_vma(struct i_mmap_shards *shards,
+					  struct vm_area_struct *vma);
+bool i_mmap_shards_install_locked(struct address_space *mapping,
+				  struct i_mmap_shards *shards);
 #endif
 
 /**
@@ -613,6 +617,13 @@ static inline void i_mmap_assert_write_locked(struct address_space *mapping)
 }
 
 #ifdef CONFIG_I_MMAP_SHARDS
+static inline struct i_mmap_shards *
+i_mmap_shards_load(struct address_space *mapping)
+{
+	/* Pairs with release publication after all roots are initialized. */
+	return smp_load_acquire(&mapping->i_mmap_shards);
+}
+
 static inline void i_mmap_vma_count_add(struct address_space *mapping)
 {
 	atomic_inc(&mapping->i_mmap_nr_vmas);
