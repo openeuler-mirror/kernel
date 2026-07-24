@@ -67,6 +67,8 @@
 #endif
 
 #ifdef CONFIG_I_MMAP_SHARDS
+#define I_MMAP_SHARD_CONTENTION_THRESHOLD	256
+
 static struct lock_class_key i_mmap_shard_lock_keys[I_MMAP_MAX_SHARDS];
 
 struct i_mmap_shards *i_mmap_shards_alloc(gfp_t gfp)
@@ -150,16 +152,81 @@ struct i_mmap_shard *i_mmap_shard_for_vma(struct i_mmap_shards *shards,
 	return &domain->shard[shard_idx];
 }
 
+static bool i_mmap_sharding_eligible(struct address_space *mapping,
+				     struct vm_area_struct *vma)
+{
+	struct inode *inode = mapping->host;
+
+	if (!inode || !S_ISREG(inode->i_mode))
+		return false;
+	if (!vma->vm_file || vma->vm_file->f_mapping != mapping)
+		return false;
+	if (shmem_mapping(mapping) || IS_DAX(inode))
+		return false;
+	if (is_file_hugepages(vma->vm_file))
+		return false;
+	return num_possible_nodes() <= I_MMAP_MAX_DOMAINS;
+}
+
+static bool i_mmap_claim_shard_install(struct address_space *mapping)
+{
+	atomic_t *contention = &mapping->i_mmap_lock_contention;
+	int old, new;
+
+	do {
+		old = atomic_read(contention);
+		if (old < 0)
+			return false;
+		new = old + 1;
+		if (new >= I_MMAP_SHARD_CONTENTION_THRESHOLD)
+			new = -1;
+	} while (atomic_cmpxchg(contention, old, new) != old);
+
+	return new < 0;
+}
+
+static void i_mmap_install_shards(struct address_space *mapping)
+{
+	struct i_mmap_shards *shards;
+
+	shards = i_mmap_shards_alloc(GFP_KERNEL);
+	if (!shards) {
+		atomic_set(&mapping->i_mmap_lock_contention, 0);
+		return;
+	}
+
+	i_mmap_lock_write(mapping);
+	if (i_mmap_shards_install_locked(mapping, shards))
+		shards = NULL;
+	i_mmap_unlock_write(mapping);
+	i_mmap_shards_free(shards);
+}
+
 void i_mmap_lock_write_vma(struct address_space *mapping,
 			   struct vm_area_struct *vma,
 			   struct i_mmap_write_lock *lock)
 {
 	struct i_mmap_shards *shards;
 
+retry:
 	lock->shard = NULL;
 	lock->root = &mapping->i_mmap;
 	shards = i_mmap_shards_load(mapping);
 	if (!shards) {
+		if (i_mmap_trylock_write(mapping)) {
+			shards = i_mmap_shards_load(mapping);
+			if (!shards)
+				return;
+			i_mmap_unlock_write(mapping);
+			goto lock_shard;
+		}
+
+		if (i_mmap_sharding_eligible(mapping, vma) &&
+		    i_mmap_claim_shard_install(mapping)) {
+			i_mmap_install_shards(mapping);
+			goto retry;
+		}
+
 		i_mmap_lock_write(mapping);
 		shards = i_mmap_shards_load(mapping);
 		if (!shards)
@@ -167,6 +234,7 @@ void i_mmap_lock_write_vma(struct address_space *mapping,
 		i_mmap_unlock_write(mapping);
 	}
 
+lock_shard:
 	lock->shard = i_mmap_shard_for_vma(shards, vma);
 	lock->root = &lock->shard->root;
 	down_write(&lock->shard->rwsem);
