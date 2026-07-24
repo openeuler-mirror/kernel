@@ -67,6 +67,8 @@
 #endif
 
 #ifdef CONFIG_I_MMAP_SHARDS
+static struct lock_class_key i_mmap_shard_lock_keys[I_MMAP_MAX_SHARDS];
+
 struct i_mmap_shards *i_mmap_shards_alloc(gfp_t gfp)
 {
 	struct i_mmap_domain_shards *domain;
@@ -88,8 +90,14 @@ struct i_mmap_shards *i_mmap_shards_alloc(gfp_t gfp)
 
 		domain->nid = nid;
 		for (i = 0; i < I_MMAP_SHARDS_PER_DOMAIN; i++) {
+			unsigned int lock_idx;
+
 			domain->shard[i].root = RB_ROOT_CACHED;
 			init_rwsem(&domain->shard[i].rwsem);
+			lock_idx = shards->nr_domains *
+				I_MMAP_SHARDS_PER_DOMAIN + i;
+			lockdep_set_class(&domain->shard[i].rwsem,
+					  &i_mmap_shard_lock_keys[lock_idx]);
 		}
 
 		shards->domain[shards->nr_domains++] = domain;
@@ -195,6 +203,156 @@ bool i_mmap_shards_install_locked(struct address_space *mapping,
 	/* Publish only after every interval-tree root has been populated. */
 	smp_store_release(&mapping->i_mmap_shards, shards);
 	return true;
+}
+#endif
+
+#ifdef CONFIG_I_MMAP_SHARDS
+static int i_mmap_walk_root(struct rb_root_cached *root, pgoff_t first,
+			    pgoff_t last, i_mmap_walk_fn fn, void *arg)
+{
+	struct vm_area_struct *vma;
+	int ret;
+
+	vma_interval_tree_foreach(vma, root, first, last) {
+		ret = fn(vma, arg);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+#ifdef CONFIG_I_MMAP_SHARDS
+static struct i_mmap_shard *i_mmap_shard_at(struct i_mmap_shards *shards,
+					    unsigned int index)
+{
+	unsigned int domain_idx = index / I_MMAP_SHARDS_PER_DOMAIN;
+	unsigned int shard_idx = index % I_MMAP_SHARDS_PER_DOMAIN;
+
+	return &shards->domain[domain_idx]->shard[shard_idx];
+}
+
+static unsigned int i_mmap_nr_shards(struct i_mmap_shards *shards)
+{
+	return shards->nr_domains * I_MMAP_SHARDS_PER_DOMAIN;
+}
+
+static int i_mmap_lock_shards_read(struct i_mmap_shards *shards,
+				   bool try_lock)
+{
+	unsigned int nr_shards = i_mmap_nr_shards(shards);
+	unsigned int i;
+
+	for (i = 0; i < nr_shards; i++) {
+		struct i_mmap_shard *shard = i_mmap_shard_at(shards, i);
+
+		if (try_lock) {
+			if (!down_read_trylock(&shard->rwsem))
+				goto unlock;
+		} else {
+			down_read(&shard->rwsem);
+		}
+	}
+
+	return 0;
+
+unlock:
+	while (i--)
+		up_read(&i_mmap_shard_at(shards, i)->rwsem);
+	return -EAGAIN;
+}
+
+static void i_mmap_unlock_shards_read(struct i_mmap_shards *shards)
+{
+	unsigned int i = i_mmap_nr_shards(shards);
+
+	while (i--)
+		up_read(&i_mmap_shard_at(shards, i)->rwsem);
+}
+
+static int i_mmap_walk_shards_locked(struct i_mmap_shards *shards,
+				     pgoff_t first, pgoff_t last,
+				     i_mmap_walk_fn fn, void *arg)
+{
+	unsigned int nr_shards = i_mmap_nr_shards(shards);
+	unsigned int i;
+	int ret;
+
+	for (i = 0; i < nr_shards; i++) {
+		struct i_mmap_shard *shard = i_mmap_shard_at(shards, i);
+
+		ret = i_mmap_walk_root(&shard->root, first, last, fn, arg);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+#endif
+
+int i_mmap_read_walk(struct address_space *mapping, pgoff_t first,
+		     pgoff_t last, bool try_lock, i_mmap_walk_fn fn,
+		     void *arg)
+{
+#ifdef CONFIG_I_MMAP_SHARDS
+	struct i_mmap_shards *shards;
+	int ret;
+
+	shards = i_mmap_shards_load(mapping);
+	if (!shards) {
+		if (try_lock) {
+			if (!i_mmap_trylock_read(mapping))
+				return -EAGAIN;
+		} else {
+			i_mmap_lock_read(mapping);
+		}
+
+		shards = i_mmap_shards_load(mapping);
+		if (!shards) {
+			ret = i_mmap_walk_root(&mapping->i_mmap, first, last,
+					       fn, arg);
+			i_mmap_unlock_read(mapping);
+			return ret;
+		}
+		i_mmap_unlock_read(mapping);
+	}
+
+	ret = i_mmap_lock_shards_read(shards, try_lock);
+	if (ret)
+		return ret;
+	ret = i_mmap_walk_shards_locked(shards, first, last, fn, arg);
+	i_mmap_unlock_shards_read(shards);
+	return ret;
+#else
+	int ret;
+
+	if (try_lock) {
+		if (!i_mmap_trylock_read(mapping))
+			return -EAGAIN;
+	} else {
+		i_mmap_lock_read(mapping);
+	}
+	ret = i_mmap_walk_root(&mapping->i_mmap, first, last, fn, arg);
+	i_mmap_unlock_read(mapping);
+	return ret;
+#endif
+}
+
+int i_mmap_walk_locked(struct address_space *mapping, pgoff_t first,
+		       pgoff_t last, i_mmap_walk_fn fn, void *arg)
+{
+#ifdef CONFIG_I_MMAP_SHARDS
+	struct i_mmap_shards *shards = i_mmap_shards_load(mapping);
+	unsigned int i;
+
+	if (shards) {
+		for (i = 0; i < i_mmap_nr_shards(shards); i++)
+			lockdep_assert_held(&i_mmap_shard_at(shards, i)->rwsem);
+		return i_mmap_walk_shards_locked(shards, first, last, fn, arg);
+	}
+#endif
+	i_mmap_assert_locked(mapping);
+	return i_mmap_walk_root(&mapping->i_mmap, first, last, fn, arg);
 }
 #endif
 

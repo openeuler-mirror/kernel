@@ -507,6 +507,16 @@ struct i_mmap_write_lock {
 };
 #endif
 
+#ifdef CONFIG_I_MMAP_SHARDS
+typedef int (*i_mmap_walk_fn)(struct vm_area_struct *vma, void *arg);
+
+int i_mmap_read_walk(struct address_space *mapping, pgoff_t first,
+		     pgoff_t last, bool try_lock, i_mmap_walk_fn fn,
+		     void *arg);
+int i_mmap_walk_locked(struct address_space *mapping, pgoff_t first,
+		       pgoff_t last, i_mmap_walk_fn fn, void *arg);
+#endif
+
 /**
  * struct address_space - Contents of a cacheable, mappable object.
  * @host: Owner, either the inode or the block_device.
