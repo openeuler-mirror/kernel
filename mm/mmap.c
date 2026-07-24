@@ -4268,6 +4268,23 @@ static void vm_lock_mapping(struct mm_struct *mm, struct address_space *mapping)
 		if (test_and_set_bit(AS_MM_ALL_LOCKS, &mapping->flags))
 			BUG();
 		down_write_nest_lock(&mapping->i_mmap_rwsem, &mm->mmap_lock);
+#ifdef CONFIG_I_MMAP_SHARDS
+		{
+			struct i_mmap_shards *shards;
+			unsigned int i;
+
+			shards = i_mmap_shards_load(mapping);
+			if (shards) {
+				for (i = 0; i < i_mmap_nr_shards(shards); i++) {
+					struct i_mmap_shard *shard;
+
+					shard = i_mmap_shard_at(shards, i);
+					down_write_nest_lock(&shard->rwsem,
+							     &mm->mmap_lock);
+				}
+			}
+		}
+#endif
 	}
 }
 
@@ -4387,6 +4404,31 @@ static void vm_unlock_anon_vma(struct anon_vma *anon_vma)
 	}
 }
 
+#ifdef CONFIG_I_MMAP_SHARDS
+static void vm_unlock_mapping(struct mm_struct *mm,
+			      struct address_space *mapping)
+{
+	mmap_assert_write_locked(mm);
+	if (test_bit(AS_MM_ALL_LOCKS, &mapping->flags)) {
+		/*
+		 * AS_MM_ALL_LOCKS can't change to 0 from under us
+		 * because we hold the mm_all_locks_mutex.
+		 */
+		struct i_mmap_shards *shards = i_mmap_shards_load(mapping);
+
+		if (shards) {
+			unsigned int i = i_mmap_nr_shards(shards);
+
+			while (i--)
+				up_write(&i_mmap_shard_at(shards, i)->rwsem);
+		}
+		i_mmap_unlock_write(mapping);
+		if (!test_and_clear_bit(AS_MM_ALL_LOCKS,
+					&mapping->flags))
+			BUG();
+	}
+}
+#else
 static void vm_unlock_mapping(struct address_space *mapping)
 {
 	if (test_bit(AS_MM_ALL_LOCKS, &mapping->flags)) {
@@ -4400,6 +4442,7 @@ static void vm_unlock_mapping(struct address_space *mapping)
 			BUG();
 	}
 }
+#endif
 
 /*
  * The mmap_lock cannot be released by the caller until
@@ -4419,7 +4462,11 @@ void mm_drop_all_locks(struct mm_struct *mm)
 			list_for_each_entry(avc, &vma->anon_vma_chain, same_vma)
 				vm_unlock_anon_vma(avc->anon_vma);
 		if (vma->vm_file && vma->vm_file->f_mapping)
+#ifdef CONFIG_I_MMAP_SHARDS
+			vm_unlock_mapping(mm, vma->vm_file->f_mapping);
+#else
 			vm_unlock_mapping(vma->vm_file->f_mapping);
+#endif
 	}
 
 	mutex_unlock(&mm_all_locks_mutex);
