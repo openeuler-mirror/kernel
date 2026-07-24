@@ -322,6 +322,11 @@ enum ub_fwctl_cmdrpc_type {
 	UTOOL_CMD_QUERY_PORT_LINK_STATS = 0x00F1,
 
 	/**
+	 * @UTOOL_CMD_QUERY_DEV_INFO: Query all ubctl device info
+	 */
+	UTOOL_CMD_QUERY_DEV_INFO = 0xAAAA,
+
+	/**
 	 * @UTOOL_CMD_QUERY_DUMP: Dump all register data
 	 */
 	UTOOL_CMD_QUERY_DUMP = 0xFFFE,
@@ -394,6 +399,19 @@ struct fwctl_pkt_in_port_time {
  */
 struct fwctl_pkt_in_time {
 	__u32 time;
+};
+
+/**
+ * struct fwctl_pkt_dev_info_match - ioctl(FWCTL_RPC) input/output
+ * @chip_id: The value of param '-c'
+ * @die_id: The value of param '-d'
+ * @is_matched: The result of dev info match
+ */
+struct fwctl_pkt_dev_info_match {
+	__u16 chip_id;
+	__u16 die_id;
+	__u8 is_matched;
+	__u8 reserved[3];
 };
 
 #endif

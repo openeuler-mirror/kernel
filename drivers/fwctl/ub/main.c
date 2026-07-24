@@ -50,71 +50,7 @@ static void *ubctl_fw_info(struct fwctl_uctx *uctx, size_t *length)
 	return NULL;
 }
 
-static int ubctl_legitimacy_rpc(struct ubctl_dev *ucdev, size_t out_len,
-				enum fwctl_rpc_scope scope)
-{
-	/*
-	 * Verify if RPC (Remote Procedure Call) requests are valid.
-	 * It determines whether the request is within the allowed time window
-	 * and whether the output length meets the requirements by checking
-	 * the timestamp and output length of the request.
-	 */
-	unsigned long current_jiffies = jiffies;
-	unsigned long earliest_jiffies = current_jiffies - TIME_WINDOW_JIFFIES;
-	unsigned long record_jiffies = 0;
-	int kfifo_ret = 0;
-
-	mutex_lock(&g_fifo_lock);
-	while (kfifo_peek(&ucdev->ioctl_fifo, &record_jiffies) && record_jiffies) {
-		if (time_after(record_jiffies, earliest_jiffies))
-			break;
-
-		kfifo_ret = kfifo_get(&ucdev->ioctl_fifo, &record_jiffies);
-		if (!kfifo_ret) {
-			mutex_unlock(&g_fifo_lock);
-			ubctl_err(ucdev, "unexpected events occurred while obtaining data.\n");
-			return kfifo_ret;
-		}
-	}
-
-	if (kfifo_is_full(&ucdev->ioctl_fifo)) {
-		mutex_unlock(&g_fifo_lock);
-		ubctl_err(ucdev, "the current number of valid requests exceeds the limit, record_jiffies = %lu, current_jiffies = %lu.\n",
-				 record_jiffies, current_jiffies);
-		return -EBADMSG;
-	}
-
-	kfifo_ret = kfifo_put(&ucdev->ioctl_fifo, current_jiffies);
-	if (!kfifo_ret) {
-		mutex_unlock(&g_fifo_lock);
-		ubctl_err(ucdev, "unexpected events occurred while writing data.\n");
-		return kfifo_ret;
-	}
-
-	mutex_unlock(&g_fifo_lock);
-	if (out_len < sizeof(struct fwctl_rpc_ub_out)) {
-		ubctl_dbg(ucdev, "outlen %zu is less than min value %zu.\n",
-			  out_len, sizeof(struct fwctl_rpc_ub_out));
-		return -EBADMSG;
-	}
-
-	if (scope != FWCTL_RPC_CONFIGURATION &&
-	    scope != FWCTL_RPC_DEBUG_READ_ONLY)
-		return -EOPNOTSUPP;
-
-	return 0;
-}
-
-static int ubctl_cmd_err(struct ubctl_dev *ucdev, int ret, struct fwctl_rpc_ub_out *out)
-{
-	/* Keep rpc_out as contains useful debug info for userspace */
-	if (!ret || out->retval)
-		return 0;
-
-	return ret;
-}
-
-static int ubctl_check_rpc_cmd(struct ubctl_dev *ucdev, u32 rpc_cmd)
+static int ubctl_check_env_type(struct ubctl_dev *ucdev, u32 rpc_cmd)
 {
 	static struct ubctl_env_type_info ubctl_env_type_info_table[] = {
 		{ UBASE_HW_VER_A_0,
@@ -165,19 +101,143 @@ static int ubctl_check_rpc_cmd(struct ubctl_dev *ucdev, u32 rpc_cmd)
 	return -ENOTTY;
 }
 
+static int ubctl_check_cmd_frequency(struct ubctl_dev *ucdev, size_t out_len,
+				     enum fwctl_rpc_scope scope)
+{
+	/*
+	 * Verify if RPC (Remote Procedure Call) requests are valid.
+	 * It determines whether the request is within the allowed time window
+	 * and whether the output length meets the requirements by checking
+	 * the timestamp.
+	 */
+	unsigned long current_jiffies = jiffies;
+	unsigned long earliest_jiffies = 0;
+	unsigned long record_jiffies = 0;
+	int kfifo_ret = 0;
+
+	earliest_jiffies = current_jiffies - TIME_WINDOW_JIFFIES;
+	mutex_lock(&g_fifo_lock);
+	while (kfifo_peek(&ucdev->ioctl_fifo, &record_jiffies) && record_jiffies) {
+		if (time_after(record_jiffies, earliest_jiffies))
+			break;
+
+		kfifo_ret = kfifo_get(&ucdev->ioctl_fifo, &record_jiffies);
+		if (!kfifo_ret) {
+			mutex_unlock(&g_fifo_lock);
+			ubctl_err(ucdev, "unexpected events occurred while obtaining data.\n");
+			return kfifo_ret;
+		}
+	}
+
+	if (kfifo_is_full(&ucdev->ioctl_fifo)) {
+		mutex_unlock(&g_fifo_lock);
+		ubctl_err(ucdev, "the current number of valid requests exceeds the limit, record_jiffies = %lu, current_jiffies = %lu.\n",
+			  record_jiffies, current_jiffies);
+		return -EBADMSG;
+	}
+	kfifo_ret = kfifo_put(&ucdev->ioctl_fifo, current_jiffies);
+	if (!kfifo_ret) {
+		mutex_unlock(&g_fifo_lock);
+		ubctl_err(ucdev, "unexpected events occurred while writing data.\n");
+		return kfifo_ret;
+	}
+	mutex_unlock(&g_fifo_lock);
+	return 0;
+}
+
+static int ubctl_legitimacy_rpc(struct ubctl_dev *ucdev, size_t out_len,
+				enum fwctl_rpc_scope scope, u32 rpc_cmd)
+{
+	int ret;
+
+	if (scope != FWCTL_RPC_CONFIGURATION &&
+	    scope != FWCTL_RPC_DEBUG_READ_ONLY)
+		return -EOPNOTSUPP;
+
+	if (out_len < sizeof(struct fwctl_rpc_ub_out)) {
+		ubctl_dbg(ucdev, "outlen %zu is less than min value %zu.\n",
+			  out_len, sizeof(struct fwctl_rpc_ub_out));
+		return -EBADMSG;
+	}
+
+	ret = ubctl_check_env_type(ucdev, rpc_cmd);
+	if (ret)
+		return ret;
+
+	ret = ubctl_check_cmd_frequency(ucdev, out_len, scope);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
+static int ubctl_cmd_err(struct ubctl_dev *ucdev, int ret, struct fwctl_rpc_ub_out *out)
+{
+	/* Keep rpc_out as contains useful debug info for userspace */
+	if (!ret || out->retval)
+		return 0;
+
+	return ret;
+}
+
+static int ubctl_check_ucdev(struct ubctl_dev *ucdev,
+			     struct ubctl_query_cmd_param *query_cmd_param)
+{
+	u32 expected_size = (u32)sizeof(struct fwctl_pkt_dev_info_match);
+	struct fwctl_pkt_dev_info_match *pkt_out_data;
+	struct fwctl_pkt_dev_info_match *pkt_in_data;
+	struct ubase_caps *ucaps;
+
+	if (query_cmd_param->in->data_size != expected_size) {
+		ubctl_err(ucdev, "in data size = %ubytes, it must be %ubytes.\n",
+			  query_cmd_param->in->data_size, expected_size);
+		return -EINVAL;
+	}
+	if (query_cmd_param->out_len != expected_size) {
+		ubctl_err(ucdev, "out data size = %zubytes, it must be %ubytes.\n",
+			  query_cmd_param->out_len, expected_size);
+		return -EINVAL;
+	}
+
+	ucaps = ubase_get_dev_caps(ucdev->adev);
+	if (ucaps == NULL)
+		return -ENODEV;
+
+	pkt_in_data = (struct fwctl_pkt_dev_info_match *)query_cmd_param->in->data;
+	pkt_out_data = (struct fwctl_pkt_dev_info_match *)query_cmd_param->out->data;
+
+	query_cmd_param->out->retval = 0;
+	query_cmd_param->out->data_size = sizeof(struct fwctl_pkt_dev_info_match);
+	pkt_out_data->chip_id = ucaps->chip_id;
+	pkt_out_data->die_id = ucaps->die_id;
+
+	pkt_out_data->is_matched = (pkt_in_data->chip_id == ucaps->chip_id) &&
+				   (pkt_in_data->die_id == ucaps->die_id);
+
+	return 0;
+}
+
 static int ub_cmd_do(struct ubctl_dev *ucdev,
 		     struct ubctl_query_cmd_param *query_cmd_param)
 {
+	struct ubctl_func_dispatch *ubctl_query_func;
+	struct ubctl_func_dispatch *ubctl_query_reg;
 	u32 rpc_cmd = query_cmd_param->in->rpc_cmd;
-	struct ubctl_func_dispatch *ubctl_query_reg = ubctl_get_query_reg_func(
-		ucdev, rpc_cmd);
-	struct ubctl_func_dispatch *ubctl_query_func = ubctl_get_query_func(
-		ucdev, rpc_cmd);
 	int ret;
 
+	ubctl_query_reg = ubctl_get_query_reg_func(ucdev, rpc_cmd);
+	ubctl_query_func = ubctl_get_query_func(ucdev, rpc_cmd);
+
 	switch (rpc_cmd) {
+	case UTOOL_CMD_QUERY_DEV_INFO:
+		return ubctl_check_ucdev(ucdev, query_cmd_param);
 	case UTOOL_CMD_CONF_NL_SSU_VL_PKT:
 	case UTOOL_CMD_QUERY_NL_SSU_VL_PKT:
+	case UTOOL_CMD_QUERY_LOOPBACK:
+	case UTOOL_CMD_CONF_LOOPBACK:
+	case UTOOL_CMD_QUERY_PRBS_EN:
+	case UTOOL_CMD_CONF_PRBS_EN:
+	case UTOOL_CMD_QUERY_PRBS_RESULT:
 		ret = ubctl_check_port_type(ucdev, query_cmd_param, UBCTL_PORT_TYPE_ETH);
 		if (ret)
 			return ret;
@@ -239,11 +299,7 @@ static void *ubctl_fw_rpc(struct fwctl_uctx *uctx, enum fwctl_rpc_scope scope,
 	ubctl_dbg(ucdev, "cmdif: opcode 0x%x inlen %zu outlen %zu\n",
 		  opcode, in_len, *out_len);
 
-	ret = ubctl_legitimacy_rpc(ucdev, *out_len, scope);
-	if (ret)
-		return ERR_PTR(ret);
-
-	ret = ubctl_check_rpc_cmd(ucdev, opcode);
+	ret = ubctl_legitimacy_rpc(ucdev, *out_len, scope, opcode);
 	if (ret)
 		return ERR_PTR(ret);
 
