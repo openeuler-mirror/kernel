@@ -694,22 +694,23 @@ static void dup_mmap_file_batch_init(struct dup_mmap_file_batch *batch)
 static void dup_mmap_file_batch_flush(struct dup_mmap_file_batch *batch)
 {
 	struct address_space *mapping = batch->mapping;
+	struct i_mmap_write_lock lock;
 	unsigned int i;
 
 	if (!batch->count)
 		return;
 
-	i_mmap_lock_write(mapping);
+	i_mmap_lock_write_vma(mapping, batch->prev[0], &lock);
 	flush_dcache_mmap_lock(mapping);
 	for (i = 0; i < batch->count; i++) {
 		if (batch->vmas[i]->vm_flags & VM_SHARED)
 			mapping_allow_writable(mapping);
-		vma_interval_tree_insert_after(batch->vmas[i], batch->prev[i],
-					       &mapping->i_mmap);
+		vma_interval_tree_insert_after(batch->vmas[i],
+					       batch->prev[i], lock.root);
 		i_mmap_vma_count_add(mapping);
 	}
 	flush_dcache_mmap_unlock(mapping);
-	i_mmap_unlock_write(mapping);
+	i_mmap_unlock_write_vma(mapping, &lock);
 
 	dup_mmap_file_batch_init(batch);
 }

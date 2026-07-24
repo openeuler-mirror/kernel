@@ -500,6 +500,13 @@ bool i_mmap_shards_install_locked(struct address_space *mapping,
 				  struct i_mmap_shards *shards);
 #endif
 
+#ifdef CONFIG_I_MMAP_SHARDS
+struct i_mmap_write_lock {
+	struct rb_root_cached	*root;
+	struct i_mmap_shard	*shard;
+};
+#endif
+
 /**
  * struct address_space - Contents of a cacheable, mappable object.
  * @host: Owner, either the inode or the block_device.
@@ -617,6 +624,12 @@ static inline void i_mmap_assert_write_locked(struct address_space *mapping)
 }
 
 #ifdef CONFIG_I_MMAP_SHARDS
+void i_mmap_lock_write_vma(struct address_space *mapping,
+			   struct vm_area_struct *vma,
+			   struct i_mmap_write_lock *lock);
+void i_mmap_unlock_write_vma(struct address_space *mapping,
+			     struct i_mmap_write_lock *lock);
+
 static inline struct i_mmap_shards *
 i_mmap_shards_load(struct address_space *mapping)
 {
