@@ -706,6 +706,7 @@ static void dup_mmap_file_batch_flush(struct dup_mmap_file_batch *batch)
 			mapping_allow_writable(mapping);
 		vma_interval_tree_insert_after(batch->vmas[i], batch->prev[i],
 					       &mapping->i_mmap);
+		i_mmap_vma_count_add(mapping);
 	}
 	flush_dcache_mmap_unlock(mapping);
 	i_mmap_unlock_write(mapping);

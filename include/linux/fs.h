@@ -612,11 +612,27 @@ static inline void i_mmap_assert_write_locked(struct address_space *mapping)
 	lockdep_assert_held_write(&mapping->i_mmap_rwsem);
 }
 
+#ifdef CONFIG_I_MMAP_SHARDS
+static inline void i_mmap_vma_count_add(struct address_space *mapping)
+{
+	atomic_inc(&mapping->i_mmap_nr_vmas);
+}
+
+static inline void i_mmap_vma_count_sub(struct address_space *mapping)
+{
+	atomic_dec(&mapping->i_mmap_nr_vmas);
+}
+#endif
+
 /*
  * Might pages of this file be mapped into userspace?
  */
 static inline int mapping_mapped(struct address_space *mapping)
 {
+#ifdef CONFIG_I_MMAP_SHARDS
+	if (atomic_read(&mapping->i_mmap_nr_vmas) > 0)
+		return true;
+#endif
 	return	!RB_EMPTY_ROOT(&mapping->i_mmap.rb_root);
 }
 

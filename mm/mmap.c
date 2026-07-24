@@ -165,6 +165,9 @@ static void __remove_shared_vm_struct(struct vm_area_struct *vma,
 
 	flush_dcache_mmap_lock(mapping);
 	vma_interval_tree_remove(vma, &mapping->i_mmap);
+#ifdef CONFIG_I_MMAP_SHARDS
+	i_mmap_vma_count_sub(mapping);
+#endif
 	flush_dcache_mmap_unlock(mapping);
 }
 
@@ -504,6 +507,9 @@ static void __vma_link_file(struct vm_area_struct *vma,
 
 	flush_dcache_mmap_lock(mapping);
 	vma_interval_tree_insert(vma, &mapping->i_mmap);
+#ifdef CONFIG_I_MMAP_SHARDS
+	i_mmap_vma_count_add(mapping);
+#endif
 	flush_dcache_mmap_unlock(mapping);
 }
 
