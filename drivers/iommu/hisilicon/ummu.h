@@ -193,6 +193,7 @@ struct ummu_capability {
 #define UMMU_OPT_KV_CAM_CONTINUITY	(1UL << 6)
 #define UMMU_OPT_DOUBLE_TLBI		(1UL << 7)
 #define UMMU_OPT_TLBI_LIMIT_SCALE	(1UL << 8)
+#define UMMU_OPT_IDENTITY_COHERENT	(1UL << 9)
 	u32 options;
 
 #define UMMU_MAX_ASIDS			(1UL << 16)
