@@ -997,6 +997,98 @@ static inline struct map_info *free_map_info(struct map_info *info)
 	return next;
 }
 
+#ifdef CONFIG_I_MMAP_SHARDS
+struct build_map_info_walk {
+	loff_t offset;
+	bool is_register;
+	struct map_info **curr;
+	struct map_info **prev;
+	int *more;
+};
+
+static int build_map_info_vma(struct vm_area_struct *vma, void *arg)
+{
+	struct build_map_info_walk *walk = arg;
+	struct map_info *info;
+	gfp_t gfp;
+
+	if (!valid_vma(vma, walk->is_register))
+		return 0;
+
+	if (!*walk->prev && !*walk->more) {
+		/*
+		 * GFP_NOWAIT avoids i_mmap lock recursion through reclaim. A
+		 * failure is harmless because build_map_info() retries after it
+		 * allocates enough entries without holding mapping locks.
+		 */
+		gfp = GFP_NOWAIT | __GFP_NOMEMALLOC | __GFP_NOWARN;
+		*walk->prev = kmalloc(sizeof(**walk->prev), gfp);
+		if (*walk->prev)
+			(*walk->prev)->next = NULL;
+	}
+	if (!*walk->prev) {
+		(*walk->more)++;
+		return 0;
+	}
+
+	if (!mmget_not_zero(vma->vm_mm))
+		return 0;
+
+	info = *walk->prev;
+	*walk->prev = info->next;
+	info->next = *walk->curr;
+	*walk->curr = info;
+	info->mm = vma->vm_mm;
+	info->vaddr = offset_to_vaddr(vma, walk->offset);
+	return 0;
+}
+
+static struct map_info *
+build_map_info(struct address_space *mapping, loff_t offset, bool is_register)
+{
+	unsigned long pgoff = offset >> PAGE_SHIFT;
+	struct map_info *curr = NULL;
+	struct map_info *prev = NULL;
+	struct map_info *info;
+	struct build_map_info_walk walk = {
+		.offset = offset,
+		.is_register = is_register,
+		.curr = &curr,
+		.prev = &prev,
+	};
+	int more = 0;
+
+	walk.more = &more;
+ again:
+	i_mmap_read_walk(mapping, pgoff, pgoff, false,
+			 build_map_info_vma, &walk);
+
+	if (!more)
+		goto out;
+
+	prev = curr;
+	while (curr) {
+		mmput(curr->mm);
+		curr = curr->next;
+	}
+
+	do {
+		info = kmalloc(sizeof(struct map_info), GFP_KERNEL);
+		if (!info) {
+			curr = ERR_PTR(-ENOMEM);
+			goto out;
+		}
+		info->next = prev;
+		prev = info;
+	} while (--more);
+
+	goto again;
+ out:
+	while (prev)
+		prev = free_map_info(prev);
+	return curr;
+}
+#else
 static struct map_info *
 build_map_info(struct address_space *mapping, loff_t offset, bool is_register)
 {
@@ -1066,6 +1158,7 @@ build_map_info(struct address_space *mapping, loff_t offset, bool is_register)
 		prev = free_map_info(prev);
 	return curr;
 }
+#endif
 
 static int
 register_for_each_vma(struct uprobe *uprobe, struct uprobe_consumer *new)
