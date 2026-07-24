@@ -28,6 +28,7 @@
 #include "iommu.h"
 #include "sva.h"
 #include "qos.h"
+#include "plat_erratum.h"
 
 #define UMMU_DRV_NAME "ummu"
 #define HISI_VENDOR_ID 0xCC08
@@ -667,6 +668,11 @@ static int ummu_device_ubrt_probe(struct ummu_device *ummu)
 
 	node = (struct ummu_node *)fw->ubrt_node;
 	ummu_chip_identifier = node->vendor_id;
+
+	if (ummu->dev->of_node)
+		ummu_device_dt_get_options(ummu);
+	else
+		ummu_device_acpi_get_options(ummu);
 
 	ummu->core_dev.iommu.min_pasids = node->min_tid;
 	ummu->core_dev.iommu.max_pasids = node->max_tid;
