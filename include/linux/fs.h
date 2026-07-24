@@ -491,6 +491,9 @@ struct i_mmap_shards {
 	unsigned int		nr_domains;
 	struct i_mmap_domain_shards *domain[I_MMAP_MAX_DOMAINS];
 };
+
+struct i_mmap_shards *i_mmap_shards_alloc(gfp_t gfp);
+void i_mmap_shards_free(struct i_mmap_shards *shards);
 #endif
 
 /**

@@ -66,6 +66,55 @@
 #define arch_mmap_check(addr, len, flags)	(0)
 #endif
 
+#ifdef CONFIG_I_MMAP_SHARDS
+struct i_mmap_shards *i_mmap_shards_alloc(gfp_t gfp)
+{
+	struct i_mmap_domain_shards *domain;
+	struct i_mmap_shards *shards;
+	unsigned int i;
+	int nid;
+
+	if (num_possible_nodes() > I_MMAP_MAX_DOMAINS)
+		return NULL;
+
+	shards = kzalloc(sizeof(*shards), gfp);
+	if (!shards)
+		return NULL;
+
+	for_each_node_state(nid, N_POSSIBLE) {
+		domain = kzalloc_node(sizeof(*domain), gfp, nid);
+		if (!domain)
+			goto free_shards;
+
+		domain->nid = nid;
+		for (i = 0; i < I_MMAP_SHARDS_PER_DOMAIN; i++) {
+			domain->shard[i].root = RB_ROOT_CACHED;
+			init_rwsem(&domain->shard[i].rwsem);
+		}
+
+		shards->domain[shards->nr_domains++] = domain;
+	}
+
+	return shards;
+
+free_shards:
+	i_mmap_shards_free(shards);
+	return NULL;
+}
+
+void i_mmap_shards_free(struct i_mmap_shards *shards)
+{
+	unsigned int i;
+
+	if (!shards)
+		return;
+
+	for (i = 0; i < shards->nr_domains; i++)
+		kfree(shards->domain[i]);
+	kfree(shards);
+}
+#endif
+
 #ifdef CONFIG_HAVE_ARCH_MMAP_RND_BITS
 const int mmap_rnd_bits_min = CONFIG_ARCH_MMAP_RND_BITS_MIN;
 const int mmap_rnd_bits_max = CONFIG_ARCH_MMAP_RND_BITS_MAX;

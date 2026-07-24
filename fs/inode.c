@@ -286,6 +286,12 @@ static struct inode *alloc_inode(struct super_block *sb)
 
 void __destroy_inode(struct inode *inode)
 {
+#ifdef CONFIG_I_MMAP_SHARDS
+	struct address_space *mapping = inode->i_mapping;
+
+	i_mmap_shards_free(mapping->i_mmap_shards);
+	mapping->i_mmap_shards = NULL;
+#endif
 	BUG_ON(inode_has_buffers(inode));
 	inode_detach_wb(inode);
 	security_inode_free(inode);
