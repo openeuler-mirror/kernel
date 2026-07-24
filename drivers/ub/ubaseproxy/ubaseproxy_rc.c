@@ -165,8 +165,13 @@ int ubaseproxy_handle_create_rc_ctx_req(struct ubaseproxy_dev *udev,
 	u16 rcn = req->tag;
 	int ret;
 
-	if (ctx_len != UBASEPROXY_RC_CTX_BYTES)
+	if (ctx_len != UBASEPROXY_RC_CTX_BYTES) {
+		ubaseproxy_risk_rl(udev, le16_to_cpu(req->mbx_ue_id),
+				   rc_create_req_len,
+				   "create rc(%u) ctx_len(%u) error.\n",
+				   rcn, ctx_len);
 		return -EINVAL;
+	}
 
 	ue_ctx_xa = ubaseproxy_get_ue_ctx_xa(udev, le16_to_cpu(req->mbx_ue_id));
 	rc = (struct ubaseproxy_rc_key_words *)xa_load(&ue_ctx_xa->rc, rcn);
@@ -217,8 +222,13 @@ int ubaseproxy_handle_destroy_rc_ctx_req(struct ubaseproxy_dev *udev,
 	u16 rcn = req->tag;
 	int ret;
 
-	if (req->data_len)
+	if (req->data_len) {
+		ubaseproxy_risk_rl(udev, le16_to_cpu(req->mbx_ue_id),
+				   rc_destroy_req_len,
+				   "destroy rc(%u) ctx_len(%u) error.\n",
+				   rcn, req->data_len);
 		return -EINVAL;
+	}
 
 	ret = ubaseproxy_check_rc_mbx_header(udev, req);
 	if (ret)
@@ -261,8 +271,13 @@ int ubaseproxy_handle_query_rc_ctx_req(struct ubaseproxy_dev *udev,
 	u16 rcn = req->tag;
 	int ret;
 
-	if (req->data_len)
+	if (req->data_len) {
+		ubaseproxy_risk_rl(udev, le16_to_cpu(req->mbx_ue_id),
+				   rc_query_req_len,
+				   "query rc(%u) ctx_len(%u) error.\n",
+				   rcn, req->data_len);
 		return -EINVAL;
+	}
 
 	ret = ubaseproxy_check_rc_mbx_header(udev, req);
 	if (ret)
