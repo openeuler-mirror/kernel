@@ -148,8 +148,9 @@ void pswiotlb_iommu_dma_free(struct device *dev, size_t size, void *cpu_addr,
 
 static inline bool check_if_pswiotlb_is_applicable(struct device *dev)
 {
-	if (dev && dev->can_use_pswiotlb && is_phytium_ps_socs()
-				&& !pswiotlb_force_disable) {
+	if (!pswiotlb_force_disable && is_phytium_ps_socs()
+				&& dev && dev->can_use_pswiotlb
+				&& is_pswiotlb_active(dev)) {
 		if (dev->numa_node == NUMA_NO_NODE ||
 			dev->numa_node != dev->local_node)
 			dev->numa_node = dev->local_node;
