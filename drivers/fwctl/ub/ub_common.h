@@ -7,6 +7,7 @@
 #define __UB_COMMAND_H__
 
 #include <linux/auxiliary_bus.h>
+#include <linux/capability.h>
 #include <linux/fwctl.h>
 #include <linux/kfifo.h>
 #include <ub/ubase/ubase_comm_stats.h>
