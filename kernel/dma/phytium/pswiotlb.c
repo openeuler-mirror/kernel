@@ -337,9 +337,9 @@ static void add_mem_pool(struct p_io_tlb_mem *mem, struct p_io_tlb_pool *pool)
 	spin_lock_irqsave(&mem->lock, flags);
 	if (mem->capacity != mem->whole_size) {
 		mem->pool_addr[mem->whole_size] = mem->pool_addr[mem->capacity];
-		mem->pool_addr[mem->capacity] = pool;
+		rcu_assign_pointer(mem->pool_addr[mem->capacity], pool);
 	} else {
-		mem->pool_addr[mem->capacity] = pool;
+		rcu_assign_pointer(mem->pool_addr[mem->capacity], pool);
 	}
 	/* prevent any other writes prior to this time */
 	smp_wmb();
@@ -548,10 +548,6 @@ static struct p_io_tlb_pool *pswiotlb_alloc_pool(struct device *dev,
 		goto error;
 	pool->areas = (void *)pool + sizeof(*pool);
 
-	if (!transient) {
-		nslabs = ALIGN(nslabs >> 1, P_IO_TLB_SEGSIZE);
-		nareas = limit_nareas(nareas, nslabs);
-	}
 	tlb_size = nslabs << P_IO_TLB_SHIFT;
 	while (!(tlb = pswiotlb_alloc_tlb(dev, nid, tlb_size, phys_limit, gfp))) {
 		if (nslabs <= minslabs)
@@ -661,7 +657,7 @@ static struct p_io_tlb_pool *pswiotlb_formal_alloc(struct device *dev,
 
 	pool = pswiotlb_alloc_pool(dev, mem->numa_node_id,
 				P_IO_TLB_MIN_SLABS, dynamic_inc_thr_npslabs,
-				dynamic_inc_thr_npslabs, mem->phys_limit,
+				default_npareas, mem->phys_limit,
 				0, GFP_ATOMIC | GFP_NOWAIT | __GFP_NOWARN);
 	if (!pool) {
 		pr_warn_once("Failed to allocate new formal pool");
@@ -671,10 +667,12 @@ static struct p_io_tlb_pool *pswiotlb_formal_alloc(struct device *dev,
 	pool->busy_record = bitmap_zalloc(pool->nareas, GFP_ATOMIC);
 	if (!pool->busy_record) {
 		pr_warn_ratelimited("%s: Failed to allocate pool busy record.\n", __func__);
+		free_pages((unsigned long)pool->slots,
+					get_order(array_size(sizeof(*pool->slots), pool->nslabs)));
+		pswiotlb_free_tlb(pool->vaddr, pool->nslabs << P_IO_TLB_SHIFT);
+		kfree(pool);
 		return NULL;
 	}
-
-	add_mem_pool(mem, pool);
 
 	return pool;
 }
@@ -689,6 +687,7 @@ static void pswiotlb_dyn_free(struct rcu_head *rcu)
 	size_t slots_size = array_size(sizeof(*pool->slots), pool->nslabs);
 	size_t tlb_size = pool->end - pool->start;
 
+	bitmap_free(pool->busy_record);
 	free_pages((unsigned long)pool->slots, get_order(slots_size));
 	pswiotlb_free_tlb(pool->vaddr, tlb_size);
 	kfree(pool);
@@ -870,7 +869,13 @@ void pswiotlb_store_local_node(struct pci_dev *dev, struct pci_bus *bus)
 	struct p_io_tlb_pool *defpool;
 	struct p_io_tlb_mem *mem;
 
+	if (!pswiotlb_node_num)
+		return;
+
 	dev->dev.local_node = pcibus_to_node(bus);
+	if (dev->dev.local_node == NUMA_NO_NODE)
+		return;
+
 	/* register pswiotlb resources */
 	dev->dev.dma_p_io_tlb_mem = p_io_tlb_default_mem;
 	nid = dev->dev.local_node;
@@ -879,6 +884,8 @@ void pswiotlb_store_local_node(struct pci_dev *dev, struct pci_bus *bus)
 	pci_info(dev, "numa node: %d, pswiotlb defpool range: [%#018Lx-%#018Lx]\n"
 				"local node range: [%#018Lx-%#018Lx]\n", nid,
 		defpool->start, defpool->end, mem->node_min_addr, mem->node_max_addr);
+
+	dma_set_seg_boundary(&dev->dev, 0xffffffffffff);
 }
 /*
  * Return the offset into a pswiotlb slot required to keep the device happy.
@@ -1120,10 +1127,10 @@ static int pswiotlb_pool_find_slots(struct device *dev, int nid, struct p_io_tlb
 		index = pswiotlb_area_find_slots(dev, nid, pool, i, orig_addr,
 						alloc_size, alloc_align_mask);
 		if (index >= 0) {
-			if ((pool != &p_io_tlb_default_mem[nid].defpool) &&
-						!pool->transient) {
-				bitmap_set(pool->busy_record, i, 1);
-			}
+			if ((pool != &p_io_tlb_default_mem[nid].defpool)
+						&& !pool->transient
+						&& !test_bit(i, pool->busy_record))
+				set_bit(i, pool->busy_record);
 			return index;
 		}
 		if (++i >= pool->nareas)
@@ -1167,16 +1174,16 @@ static int pswiotlb_find_slots(struct device *dev, int nid, phys_addr_t orig_add
 #ifndef CONFIG_ARM64_4K_PAGES
 	for (i = 0; i < 15; i++) {
 		if (i == 0) {
-			pool = mem->pool_addr[0];
+			pool = rcu_dereference(mem->pool_addr[0]);
 			index = pswiotlb_pool_find_slots(dev, nid, pool, orig_addr,
 						alloc_size, alloc_align_mask);
 		} else if (i == 1 && mem->capacity > (cpuid + 1)) {
-			pool = mem->pool_addr[cpuid + 1];
+			pool = rcu_dereference(mem->pool_addr[cpuid + 1]);
 			index = pswiotlb_pool_find_slots(dev, nid, pool, orig_addr,
 						alloc_size, alloc_align_mask);
 		} else {
 			try_pool_idx = get_random_u32() % mem->capacity;
-			pool = mem->pool_addr[try_pool_idx];
+			pool = rcu_dereference(mem->pool_addr[try_pool_idx]);
 			index = pswiotlb_pool_find_slots(dev, nid, pool, orig_addr,
 							alloc_size, alloc_align_mask);
 		}
@@ -1189,7 +1196,7 @@ static int pswiotlb_find_slots(struct device *dev, int nid, phys_addr_t orig_add
 #else
 	for (i = 0; i < 15; i++) {
 		try_pool_idx = get_random_u32() % mem->capacity;
-		pool = mem->pool_addr[try_pool_idx];
+		pool = rcu_dereference(mem->pool_addr[try_pool_idx]);
 		index = pswiotlb_pool_find_slots(dev, nid, pool, orig_addr,
 						alloc_size, alloc_align_mask);
 
@@ -1232,6 +1239,8 @@ static int pswiotlb_find_slots(struct device *dev, int nid, phys_addr_t orig_add
 		pswiotlb_dyn_free(&pool->rcu);
 		return -1;
 	}
+
+	add_mem_pool(mem, pool);
 
 found:
 	WRITE_ONCE(dev->dma_uses_p_io_tlb, true);
@@ -1425,8 +1434,9 @@ static void pswiotlb_release_slots(struct device *dev, int nid, phys_addr_t tlb_
 	     i--)
 		mem->slots[i].list = ++count;
 	area->used -= nslots;
-	if ((mem != &p_io_tlb_default_mem[nid].defpool) && (area->used == 0))
-		bitmap_clear(mem->busy_record, aindex, 1);
+	if ((mem != &p_io_tlb_default_mem[nid].defpool) && (area->used == 0)
+				&& test_bit(aindex, mem->busy_record))
+		clear_bit(aindex, mem->busy_record);
 	clear_bit(PG_pswiotlb, &page->flags);
 	spin_unlock_irqrestore(&area->lock, flags);
 }
@@ -1719,6 +1729,9 @@ static void pswiotlb_create_pswiotlb_debugfs_files(const char *dirname)
 static int __init pswiotlb_create_default_debugfs(void)
 {
 	char name[20] = "";
+
+	if (!pswiotlb_node_num)
+		return 0;
 
 	if (!pswiotlb_mtimer_alive && !pswiotlb_force_disable
 				&& is_phytium_ps_socs()) {

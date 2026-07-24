@@ -953,8 +953,6 @@ static int iommu_dma_map_sg_pswiotlb_pagesize(struct device *dev, struct scatter
 	struct scatterlist *s;
 	int i;
 
-	sg_dma_mark_swiotlb(sg);
-
 	for_each_sg(sg, s, nents, i) {
 		sg_dma_address(s) = pswiotlb_iommu_dma_map_page(dev, sg_page(s),
 				s->offset, s->length, dir, attrs);
@@ -1108,7 +1106,7 @@ void pswiotlb_iommu_dma_unmap_sg(struct device *dev, struct scatterlist *sg,
 	dma_addr_t start, end = 0, start_orig;
 	struct scatterlist *tmp, *s;
 	struct scatterlist *sg_orig = sg;
-	int i;
+	int i, j;
 	struct iommu_domain *domain = iommu_get_dma_domain(dev);
 	struct iommu_dma_cookie *cookie = domain->iova_cookie;
 	struct iova_domain *iovad = &cookie->iovad;
@@ -1143,10 +1141,10 @@ void pswiotlb_iommu_dma_unmap_sg(struct device *dev, struct scatterlist *sg,
 		/* check whether dma addr is in local node */
 		start_orig = start;
 		if (dir != DMA_TO_DEVICE) {
-			for_each_sg(sg_orig, s, nents, i) {
+			for_each_sg(sg_orig, s, nents, j) {
 				unsigned int s_iova_off = iova_offset(iovad, s->offset);
 
-				if (i > 0)
+				if (j > 0)
 					start_orig += s_iova_off;
 				iommu_dma_unmap_page_sg(dev, start_orig,
 						s_iova_off, s->length,
