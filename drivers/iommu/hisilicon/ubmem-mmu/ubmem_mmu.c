@@ -24,18 +24,20 @@
 #include "ubmem_mmu.h"
 
 #define UMMU_MEM_MAX_GRANULE 8
-#define UMMU_VENDOR_INFO_RESERVED 48
+#define UMMU_VENDOR_INFO_RESERVED 46
+#define UMMU_CHIP_VERSION_FIRST 0
+#define UMMU_GRANULE_MAX (UMMU_MEM_MAX_GRANULE - 1)
+#define UMAU_GRANULE_MAX 14
 static LIST_HEAD(ubmem_device_list);
 
 static ulong ubm_granule;
 module_param(ubm_granule, ulong, 0444);
 MODULE_PARM_DESC(ubm_granule,
-	"UB memory page table granule; range [0,7], default(0), addr|size must be aligned to 2M * 2^ubm_granule.");
-
-static unsigned long ummu_get_ubm_granule(void)
-{
-	return (ubm_granule >= UMMU_MEM_MAX_GRANULE) ? 0 : ubm_granule;
-}
+	"UB memory page table granule; default(0)\n"
+	"\t\tgranule_size = 2^granule * 2MB\n"
+	"\t\tfirst-gen: valid range [0,7], any value\n"
+	"\t\tother-gen: valid values 0,2,4,6,8,10,12,14 (even only)\n"
+	"\t\taddr and size must be aligned to the granule size.\n");
 
 /* REG DEFINE */
 #define UBMEM_REG_SHIFT 16
@@ -176,6 +178,8 @@ struct ubmem_mmu_info {
 	u64 reg_base;
 	u64 reg_size;
 	u8 reserved[UMMU_VENDOR_INFO_RESERVED];
+	u8 version;
+	u8 type;
 };
 
 struct ubmem_mmu_device {
@@ -190,6 +194,7 @@ struct ubmem_mmu_device {
 	u32 token_id_bits;
 	const struct ubmem_reg_offset *reg_offset;
 	struct ummu_core_device ummu_core;
+	u8 chip_version;
 };
 
 struct ubmem_mmu_domain {
@@ -232,6 +237,28 @@ to_ubmem_mmu_domain(struct iommu_domain *dom)
 	struct ummu_base_domain *base_domain =
 		container_of(dom, struct ummu_base_domain, domain);
 	return container_of(base_domain, struct ubmem_mmu_domain, base_domain);
+}
+
+static bool ubmem_granule_is_valid(unsigned long granule, u8 chip_version)
+{
+	if (chip_version == UMMU_CHIP_VERSION_FIRST)
+		return granule <= UMMU_GRANULE_MAX;
+	return granule <= UMAU_GRANULE_MAX && !(granule & 1);
+}
+
+static void ubmem_granule_sanitize(struct ubmem_mmu_device *mmu)
+{
+	if (ubmem_granule_is_valid(ubm_granule, mmu->chip_version))
+		return;
+
+	if (mmu->chip_version == UMMU_CHIP_VERSION_FIRST)
+		pr_warn("granule %lu out of range, expect [0, %d], granule has been reset to 0\n",
+					ubm_granule, UMMU_GRANULE_MAX);
+	else
+		pr_warn("granule %lu is incorrect, expect [0,2,4,6,8,10,12,14], granule has been reset to 0\n",
+			ubm_granule);
+
+	ubm_granule = 0;
 }
 
 static irqreturn_t ubmem_error_handler(int irq, void *ummu)
@@ -348,7 +375,7 @@ static struct ubmem_mmu_device *get_ubmem_mmu_from_fwnode(struct fwnode_handle *
 
 static void mmu_domain_cfg_clear(struct ubmem_mmu_domain *dom)
 {
-	dom->granule = ummu_get_ubm_granule();
+	dom->granule = ubm_granule;
 	dom->iova_start = 0;
 	dom->iova_len = 0;
 	dom->ate_count = 0;
@@ -429,7 +456,9 @@ static void write_pte_entry(struct ubmem_mmu_domain *dom,
 	reg = (dom->iova_start & IOVA_MASK) >> SZ_2M_SHIFT;
 	writel_relaxed(reg, mdev->base + mdev->reg_offset->mem_start_addr);
 
-	reg = FIELD_PREP(MEM_GRANU_MASK, dom->granule);
+	reg = FIELD_PREP(MEM_GRANU_MASK,
+			 (dom->mmu->chip_version == UMMU_CHIP_VERSION_FIRST) ?
+			 dom->granule : dom->granule / 2);
 	reg |= FIELD_PREP(MEM_LEN_MASK, dom->ate_count - 1);
 	writel_relaxed(reg, mdev->base + mdev->reg_offset->mem_len_granu);
 
@@ -820,7 +849,7 @@ static int ubmem_mmu_init(struct platform_device *pdev,
 	if (!mmu->base)
 		return -ENOMEM;
 
-	if (mmu->ummu.cap.options & UMMU_OPT_UMAU) {
+	if (mmu->chip_version != UMMU_CHIP_VERSION_FIRST) {
 		mmu->dfx_base = NULL;
 		mmu->reg_offset = &reg_umau_v2;
 		ret = umau_tab_init(mmu);
@@ -893,6 +922,9 @@ static int ubmem_mmu_device_probe(struct ummu_device *ummu)
 
 	info = (struct ubmem_mmu_info *)pdev->dev.platform_data;
 	mmu = (struct ubmem_mmu_device *)to_ubmem_mmu_dev(ummu);
+	mmu->chip_version = info->version;
+
+	ubmem_granule_sanitize(mmu);
 	ret = ubmem_mmu_init(pdev, info, mmu);
 	if (ret)
 		goto exit_err;
@@ -910,7 +942,7 @@ static int ubmem_mmu_device_probe(struct ummu_device *ummu)
 	mmu->dev = &pdev->dev;
 	ubmm_mmu_iommu_ops.pgsize_bitmap = SZ_4K | SZ_2M | SZ_4M | SZ_8M |
 					   SZ_16M | SZ_32M | SZ_64M | SZ_128M |
-					   SZ_256M;
+					   SZ_256M | SZ_512M | SZ_2G | SZ_8G | SZ_32G;
 
 	return 0;
 
@@ -947,8 +979,8 @@ struct ummu_device *ubmem_mmu_impl_init(struct ummu_device *ummu)
 	if (!info || (info->valid & UBMEM_VALID_MASK) != UBMEM_VALID_VALUE)
 		return ummu;
 
-	pr_info("valid = 0x%llx, cap0 = 0x%x, cap1 = 0x%x.\n",
-		info->valid, info->cap0, info->cap1);
+	pr_info("valid = 0x%llx, cap0 = 0x%x, cap1 = 0x%x, version = %u, type = %u.\n",
+		info->valid, info->cap0, info->cap1, info->version, info->type);
 	ubmem_mmu = devm_krealloc(dev, ummu, sizeof(*ubmem_mmu), GFP_KERNEL | __GFP_ZERO);
 	if (!ubmem_mmu)
 		return ERR_PTR(-ENOMEM);
