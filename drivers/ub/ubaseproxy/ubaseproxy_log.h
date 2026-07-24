@@ -142,7 +142,9 @@ struct ubaseproxy_ue_risk_stats {
 	u64 jfr_modify_limit_wl_check;
 	u64 jfr_query_jfr_not_exists;
 
-	u64 rc_req_len;
+	u64 rc_create_req_len;
+	u64 rc_destroy_req_len;
+	u64 rc_query_req_len;
 	u64 rc_req_tag;
 	u64 rc_ctx_fixed;
 	u64 rc_field_rce_shift;

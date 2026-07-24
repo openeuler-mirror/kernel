@@ -214,7 +214,9 @@ static void ubaseproxy_dump_ue_risk_rc(struct seq_file *s, u8 ue_id)
 {
 	struct ubaseproxy_dev *udev = dev_get_drvdata(s->private);
 
-	ubaseproxy_risk_printf(s, ue_id, rc_req_len);
+	ubaseproxy_risk_printf(s, ue_id, rc_create_req_len);
+	ubaseproxy_risk_printf(s, ue_id, rc_destroy_req_len);
+	ubaseproxy_risk_printf(s, ue_id, rc_query_req_len);
 	ubaseproxy_risk_printf(s, ue_id, rc_req_tag);
 	ubaseproxy_risk_printf(s, ue_id, rc_ctx_fixed);
 	ubaseproxy_risk_printf(s, ue_id, rc_field_rce_shift);
