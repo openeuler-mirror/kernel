@@ -3633,8 +3633,23 @@ int ubcore_bind_jetty_ex(struct ubcore_jetty *jetty,
 		return -EINVAL;
 	}
 	if ((jetty->jetty_cfg.trans_mode != UBCORE_TP_RC) ||
-	    (tjetty->cfg.trans_mode != UBCORE_TP_RC)) {
-		ubcore_log_err("trans mode is not rc type.\n");
+		(tjetty->cfg.trans_mode != UBCORE_TP_RC)) {
+		ubcore_log_err_rl(
+			"jetty trans mode is not rc type, jetty mode: %d, tjetty mode: %d.\n",
+			jetty->jetty_cfg.trans_mode, tjetty->cfg.trans_mode);
+		UBCORE_PERF_TRACE_END(PERF_CORE_BIND_JETTY);
+		return -EINVAL;
+	}
+	// check if tp_handle is not rc type or rtp.
+	// ctp or utp, peer_tp_handle not need to check.
+	if ((active_tp_cfg->tp_handle.bs.trans_mode != UBCORE_TP_RC) ||
+		((active_tp_cfg->tp_handle.bs.rtp == 1) &&
+		(active_tp_cfg->tpid_reuse == NULL) &&
+		(active_tp_cfg->peer_tp_handle.bs.trans_mode != UBCORE_TP_RC))) {
+		ubcore_log_err_rl(
+			"tphdl trans mode is not rc type, tp_hdl mode: %d, peer_tphdl mode: %d.\n",
+			active_tp_cfg->tp_handle.bs.trans_mode,
+			active_tp_cfg->peer_tp_handle.bs.trans_mode);
 		UBCORE_PERF_TRACE_END(PERF_CORE_BIND_JETTY);
 		return -EINVAL;
 	}
