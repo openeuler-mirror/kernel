@@ -492,7 +492,8 @@ static inline bool unic_abn_cqe_count_support(struct unic_dev *unic_dev)
 {
 	return unic_dev->hw_ver != UBASE_HW_VER_UNKNOWN &&
 	       unic_dev->hw_ver != UBASE_HW_VER_K_0 &&
-	       unic_dev->hw_ver != UBASE_HW_VER_A_0;
+	       unic_dev->hw_ver != UBASE_HW_VER_A_0 &&
+	       unic_dev->hw_ver != UBASE_HW_VER_S_0;
 }
 
 #endif /* __UNIC_DEV_H__ */
