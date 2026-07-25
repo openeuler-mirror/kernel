@@ -1064,12 +1064,14 @@ key_ref_t find_key_to_update(key_ref_t keyring_ref,
 	kenter("{%d},{%s,%s}",
 	       keyring->serial, index_key->type->name, index_key->description);
 
+	rcu_read_lock();
 	object = assoc_array_find(&keyring->keys, &keyring_assoc_array_ops,
 				  index_key);
 
 	if (object)
 		goto found;
 
+	rcu_read_unlock();
 	kleave(" = NULL");
 	return NULL;
 
@@ -1077,10 +1079,12 @@ found:
 	key = keyring_ptr_to_key(object);
 	if (key->flags & ((1 << KEY_FLAG_INVALIDATED) |
 			  (1 << KEY_FLAG_REVOKED))) {
+		rcu_read_unlock();
 		kleave(" = NULL [x]");
 		return NULL;
 	}
 	__key_get(key);
+	rcu_read_unlock();
 	kleave(" = {%d}", key->serial);
 	return make_key_ref(key, is_key_possessed(keyring_ref));
 }
