@@ -288,9 +288,11 @@ struct ummu_device_helper {
 	void (*plbi_free_bit)(struct iommu_domain *domain, u32 next_lvl_idx,
 			      u32 next_lvl_offset);
 	void (*sync_iotlb_all)(struct iommu_domain *domain);
-	void (*sync_iotlb_all_asid)(struct iommu_domain *domain);
+	void (*mm_arch_inv_secondary_tlbs)(struct iommu_domain *domain,
+					unsigned long start, size_t size);
 	void (*sync_iommu_domain)(struct ummu_base_domain *base_domain,
 				  struct iommu_domain *domain);
+	bool (*needs_mmu_notifier)(struct ummu_base_domain *base_domain);
 };
 
 struct ummu_device {
