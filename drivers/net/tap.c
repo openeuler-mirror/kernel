@@ -1013,9 +1013,9 @@ static long tap_ioctl(struct file *file, unsigned int cmd,
 	void __user *argp = (void __user *)arg;
 	struct ifreq __user *ifr = argp;
 	unsigned int __user *up = argp;
+	struct sockaddr sa = {};
 	unsigned short u;
 	int __user *sp = argp;
-	struct sockaddr sa;
 	int s;
 	int ret;
 
