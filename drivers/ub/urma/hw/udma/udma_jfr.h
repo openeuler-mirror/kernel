@@ -50,8 +50,11 @@
 #define UDMA_IDX_QUE_ENTRY_SZ 4
 #define UDMA_RNR_MAX 19
 
-#define UDMA_DEF_JFR_SLEEP_TIME 1000
-#define UDMA_SLEEP_DELAY_TIME 10
+#define UDMA_JFR_FLUSH_POLL_INTERVAL_US 100
+#define UDMA_JFR_FLUSH_TIMEOUT_US 1000000
+#define UDMA_JFR_FLUSH_SLEEP_US 1000
+#define UDMA_SLEEP_DELAY_US 10
+#define UDMA_UNIT_TIME_1MS 1000
 
 enum jfr_state {
 	UDMA_JFR_STATE_RESET = 0,
@@ -149,7 +152,8 @@ struct udma_jfr_ctx {
 	uint32_t record_db_addr_h : 2;
 	uint32_t cqeie : 1;
 	uint32_t cqesz : 1;
-	uint32_t rsv2 : 28;
+	uint32_t rqe_cnt : 16;
+	uint32_t rsv2 : 12;
 	/* padding */
 	uint32_t reserved[3];
 };

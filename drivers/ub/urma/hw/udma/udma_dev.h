@@ -147,7 +147,6 @@ struct udma_dev {
 	struct xarray crq_nb_table;
 	struct xarray npu_nb_table;
 	struct mutex npu_nb_mutex;
-	struct xarray ctrlq_tpid_table;
 	struct xarray tpn_ue_idx_table;
 	struct ubase_event_nb *ae_event_addr[UBASE_EVENT_TYPE_MAX];
 	resource_size_t db_base;

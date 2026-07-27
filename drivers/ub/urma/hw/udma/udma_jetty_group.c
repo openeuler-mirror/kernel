@@ -37,9 +37,9 @@ static int update_jetty_grp_ctx_valid(struct udma_dev *udma_dev,
 	struct ubase_mbx_attr mbox_attr = {};
 	int ret;
 
-	ctx[0].valid = jetty_grp->valid;
+	ctx[0].valid = jetty_grp->hw_valid;
 	/* jetty number indicates the location of the jetty with the largest ID. */
-	ctx[0].jetty_number = fls(jetty_grp->valid) - 1;
+	ctx[0].jetty_number = fls(jetty_grp->hw_valid) - 1;
 	memset(ctx + 1, 0xff, sizeof(ctx[1]));
 	ctx[1].valid = 0;
 	ctx[1].jetty_number = 0;
@@ -80,25 +80,49 @@ int add_jetty_to_grp(struct udma_dev *udma_dev, struct ubcore_jetty_group *jetty
 	sq->id = udma_jetty_grp->start_jetty_id + bit_idx;
 	sq->jetty_grp = udma_jetty_grp;
 
-	ret = update_jetty_grp_ctx_valid(udma_dev, udma_jetty_grp);
-	if (ret) {
-		dev_err(udma_dev->dev,
-			"update jetty group context valid failed, jetty group id is %u.\n",
-			udma_jetty_grp->jetty_grp_id);
-
-		udma_jetty_grp->valid &= ~BIT(bit_idx);
-	}
 out:
 	mutex_unlock(&udma_jetty_grp->valid_lock);
 
 	return ret;
 }
 
-void remove_jetty_from_grp(struct udma_dev *udma_dev, struct udma_jetty *jetty)
+int udma_update_hw_grp_ctx_valid_only(struct udma_dev *udma_dev, struct udma_jetty *jetty,
+				      bool is_add)
 {
 	struct udma_jetty_grp *jetty_grp = jetty->sq.jetty_grp;
 	uint32_t bit_idx;
 	int ret;
+
+	bit_idx = jetty->sq.id - jetty_grp->start_jetty_id;
+	mutex_lock(&jetty_grp->valid_lock);
+	if (is_add)
+		jetty_grp->hw_valid |= BIT(bit_idx);
+	else
+		jetty_grp->hw_valid &= ~BIT(bit_idx);
+	mutex_unlock(&jetty_grp->valid_lock);
+
+	ret = update_jetty_grp_ctx_valid(udma_dev, jetty_grp);
+	if (ret) {
+		mutex_lock(&jetty_grp->valid_lock);
+		if (is_add)
+			jetty_grp->hw_valid &= ~BIT(bit_idx);
+		else
+			jetty_grp->hw_valid |= BIT(bit_idx);
+		mutex_unlock(&jetty_grp->valid_lock);
+
+		dev_err(udma_dev->dev,
+			"update valid failed, id(%u), bit_idx(%u), jetty id(%u), is_add(%d), ret(%d).\n",
+			jetty_grp->jetty_grp_id, bit_idx, jetty->sq.id, is_add, ret);
+	}
+
+	return ret;
+}
+
+
+void remove_jetty_from_grp(struct udma_dev *udma_dev, struct udma_jetty *jetty)
+{
+	struct udma_jetty_grp *jetty_grp = jetty->sq.jetty_grp;
+	uint32_t bit_idx;
 
 	bit_idx = jetty->sq.id - jetty_grp->start_jetty_id;
 	if (bit_idx >= UDMA_BITS_PER_INT) {
@@ -111,12 +135,6 @@ void remove_jetty_from_grp(struct udma_dev *udma_dev, struct udma_jetty *jetty)
 	mutex_lock(&jetty_grp->valid_lock);
 	jetty_grp->valid &= ~BIT(bit_idx);
 	jetty->sq.jetty_grp = NULL;
-
-	ret = update_jetty_grp_ctx_valid(udma_dev, jetty_grp);
-	if (ret)
-		dev_err(udma_dev->dev,
-			"update jetty group context valid failed, jetty group id is %u.\n",
-			jetty_grp->jetty_grp_id);
 
 	mutex_unlock(&jetty_grp->valid_lock);
 }
