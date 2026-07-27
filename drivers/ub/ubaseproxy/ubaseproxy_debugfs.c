@@ -294,6 +294,9 @@ static int ubaseproxy_dbg_dump_risk_stats(struct seq_file *s, void *data)
 	ubase_caps = ubase_get_dev_caps(udev->comdev.adev);
 	managed_ue_num = ubase_caps->ue_num - 1;
 	for (i = 0; i < managed_ue_num; i++) {
+		if (!ubaseproxy_ue_active(udev, udev->ue_res_info[i].bus_ue_id))
+			continue;
+
 		seq_printf(s, "\nUE(%u) risk stats:\n", i);
 		ubaseproxy_dump_ue_risk_jfc(s, i);
 		ubaseproxy_dump_ue_risk_jfs(s, i);
