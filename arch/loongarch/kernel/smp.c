@@ -14,6 +14,7 @@
 #include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/profile.h>
+#include <linux/rcupdate.h>
 #include <linux/seq_file.h>
 #include <linux/smp.h>
 #include <linux/threads.h>
@@ -682,9 +683,12 @@ void __init smp_cpus_done(unsigned int max_cpus)
 
 static void stop_this_cpu(void *dummy)
 {
-	set_cpu_online(smp_processor_id(), false);
+	int cpu = smp_processor_id();
+
+	set_cpu_online(cpu, false);
 	calculate_cpu_foreign_map();
 	local_irq_disable();
+	rcu_report_dead(cpu);
 	while (true);
 }
 
