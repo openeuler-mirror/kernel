@@ -1309,6 +1309,11 @@ static int ubctl_ummu_proc_sync_data(struct resource *res,
 	if (is_query) {
 		*out_data = readl(vaddr);
 	} else {
+		if (!capable(CAP_SYS_ADMIN)) {
+			query_cmd_param->out->retval = -EACCES;
+			iounmap(vaddr);
+			return -EACCES;
+		}
 		*out_data = ummu_data->value;
 		writel(*out_data, vaddr);
 	}
@@ -1925,7 +1930,7 @@ static int ubctl_check_single_port_type(struct ubctl_dev *ucdev, u32 port_id, u3
 		expected_type = (expect_port_type == UBCTL_PORT_TYPE_ETH) ? "UBOE" : "UB";
 		ubctl_err(ucdev, "port type of port id(%u) is not %s, the cmd is not allowed.\n",
 			  port_id, expected_type);
-		return -EACCES;
+		return -EOPNOTSUPP;
 	}
 
 	return 0;

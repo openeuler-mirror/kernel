@@ -3,8 +3,6 @@
  * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. 2025-2025. All rights reserved.
  */
 
-#include <ub/ubase/ubase_comm_cmd.h>
-
 #include "ub_common.h"
 #include "ub_cmdq.h"
 
@@ -32,6 +30,23 @@ static inline int ubctl_ubase_cmd_send_param_check(struct auxiliary_device *adev
 	return 0;
 }
 
+static int ubctl_check_root_permission(struct ubctl_cmd *cmd)
+{
+	switch (cmd->op_code) {
+	case UBCTL_QUERY_CONF_NL_SSU_VL_PKT_DFX:
+	case UBCTL_QUERY_CONF_DL_BIST_DFX:
+	case UBCTL_QUERY_MAR_CYC_EN_DFX:
+	case UBCTL_QUERY_SCC_DEBUG_DFX:
+	case UBCTL_QUERY_LOOPBACK:
+	case UBCTL_QUERY_PRBS_RESULT:
+		if ((!cmd->is_read) && (!capable(CAP_SYS_ADMIN)))
+			return -EACCES;
+		return 0;
+	default:
+		return 0;
+	}
+}
+
 int ubctl_ubase_cmd_send(struct auxiliary_device *adev, struct ubctl_cmd *cmd)
 {
 	struct ubase_cmd_buf in, out;
@@ -39,6 +54,10 @@ int ubctl_ubase_cmd_send(struct auxiliary_device *adev, struct ubctl_cmd *cmd)
 
 	if (ubctl_ubase_cmd_send_param_check(adev, cmd))
 		return -EINVAL;
+
+	ret = ubctl_check_root_permission(cmd);
+	if (ret)
+		return ret;
 
 	ubctl_struct_cpu_to_le32(cmd->in_data, cmd->in_len / sizeof(u32));
 	ubase_fill_inout_buf(&in, cmd->op_code, cmd->is_read, cmd->in_len,
