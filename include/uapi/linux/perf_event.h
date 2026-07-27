@@ -382,7 +382,6 @@ enum perf_event_read_format {
 #define PERF_ATTR_SIZE_VER6			120	/* Add: aux_sample_size */
 #define PERF_ATTR_SIZE_VER7			128	/* Add: sig_data */
 #define PERF_ATTR_SIZE_VER8			136	/* Add: config3 */
-#define PERF_ATTR_SIZE_VER9			144	/* Add: config4 */
 
 /*
  * 'struct perf_event_attr' contains various attributes that define
@@ -531,14 +530,25 @@ struct perf_event_attr {
 	 * siginfo_t::si_perf_data, e.g. to permit user to identify the event.
 	 * Note, siginfo_t::si_perf_data is long-sized, and sig_data will be
 	 * truncated accordingly on 32 bit architectures.
+	 *
+	 * config4 is an extension of config3 for PMU hardware filtering
+	 * (e.g. Arm FEAT_SPE_FDS inv_data_src_filter).  It is unioned with
+	 * sig_data because the two are mutually exclusive in practice:
+	 * sig_data is only read when sigtrap=1 (per-task signal events),
+	 * while config4 is only read by PMU drivers for hardware filter
+	 * events.  This overlay avoids growing struct perf_event_attr and
+	 * preserves the kABI of the embedding struct perf_event.
 	 */
+#ifndef __GENKSYMS__
+	union {
+		__u64	sig_data;
+		__u64	config4; /* extension of config3 */
+	};
+#else
 	__u64	sig_data;
+#endif
 
 	__u64	config3; /* extension of config2 */
-
-#ifndef __GENKSYMS__
-	__u64	config4; /* extension of config3 */
-#endif
 };
 
 /*
