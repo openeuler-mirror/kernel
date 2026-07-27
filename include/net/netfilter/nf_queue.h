@@ -7,6 +7,7 @@
 #include <linux/jhash.h>
 #include <linux/netfilter.h>
 #include <linux/skbuff.h>
+#include <linux/slab.h>
 
 /* Each queued (to userspace) skbuff has one of these. */
 struct nf_queue_entry {
@@ -25,6 +26,33 @@ struct nf_queue_entry {
 };
 
 #define nf_queue_entry_reroute(x) ((void *)x + sizeof(struct nf_queue_entry))
+
+struct nf_queue_entry_wrapper {
+	struct net_device	*skb_dev;
+	struct nf_queue_entry	entry;
+};
+
+static inline struct nf_queue_entry_wrapper *
+nf_queue_entry_wrapper(const struct nf_queue_entry *entry)
+{
+	return container_of(entry, struct nf_queue_entry_wrapper, entry);
+}
+
+static inline struct nf_queue_entry *
+nf_queue_entry_alloc(unsigned int route_key_size, gfp_t gfp)
+{
+	struct nf_queue_entry_wrapper *w;
+
+	w = kmalloc(sizeof(*w) + route_key_size, gfp);
+	if (!w)
+		return NULL;
+	return &w->entry;
+}
+
+static inline void nf_queue_entry_kfree(const struct nf_queue_entry *entry)
+{
+	kfree(nf_queue_entry_wrapper(entry));
+}
 
 /* Packet queuing */
 struct nf_queue_handler {
