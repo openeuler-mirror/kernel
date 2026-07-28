@@ -105,6 +105,17 @@ struct wb_completion {
  * Each bdi_writeback that is not embedded into the backing_dev_info must hold
  * a reference to the parent backing_dev_info.  See cgwb_create() for details.
  */
+
+#ifdef CONFIG_CGROUP_WRITEBACK
+struct wb_switch_ctx {
+	struct bdi_writeback	*wb;
+	struct work_struct	switch_work;	/* work used to perform inode switching
+						 * to this wb */
+	struct llist_head	switch_wbs_ctxs;	/* queued contexts for
+							 * writeback switching */
+};
+#endif
+
 struct bdi_writeback {
 	struct backing_dev_info *bdi;	/* our parent bdi */
 
@@ -160,9 +171,11 @@ struct bdi_writeback {
 		struct work_struct release_work;
 		struct rcu_head rcu;
 	};
-#endif
 
+	KABI_USE(1, struct wb_switch_ctx *switch_ctx)
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
