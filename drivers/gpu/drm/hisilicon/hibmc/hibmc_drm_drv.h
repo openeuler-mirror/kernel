@@ -21,12 +21,16 @@
 #include <drm/drm_edid.h>
 #include <drm/drm_fb_helper.h>
 #include <drm/drm_framebuffer.h>
+#include "dp/dp_hw.h"
 
 struct drm_device;
+#define HIBMC_MIN_VECTORS	1
+#define HIBMC_MAX_VECTORS	2
 
-struct hibmc_connector {
-	struct drm_connector base;
-
+struct hibmc_vdac {
+	struct drm_device *dev;
+	struct drm_encoder encoder;
+	struct drm_connector connector;
 	struct i2c_adapter adapter;
 	struct i2c_algo_bit_data bit_data;
 };
@@ -39,22 +43,27 @@ struct hibmc_drm_private {
 	unsigned long  fb_size;
 
 	/* drm */
-	struct drm_device  *dev;
+	struct drm_device dev;
 	struct drm_plane primary_plane;
 	struct drm_crtc crtc;
-	struct drm_encoder encoder;
-	struct hibmc_connector connector;
 	bool mode_config_initialized;
+	struct hibmc_vdac vdac;
+	struct hibmc_dp dp;
 };
 
-static inline struct hibmc_connector *to_hibmc_connector(struct drm_connector *connector)
+static inline struct hibmc_vdac *to_hibmc_vdac(struct drm_connector *connector)
 {
-	return container_of(connector, struct hibmc_connector, base);
+	return container_of(connector, struct hibmc_vdac, connector);
+}
+
+static inline struct hibmc_dp *to_hibmc_dp(struct drm_connector *connector)
+{
+	return container_of(connector, struct hibmc_dp, connector);
 }
 
 static inline struct hibmc_drm_private *to_hibmc_drm_private(struct drm_device *dev)
 {
-	return dev->dev_private;
+	return container_of(dev, struct hibmc_drm_private, dev);
 }
 
 void hibmc_set_power_mode(struct hibmc_drm_private *priv,
@@ -69,8 +78,14 @@ int hibmc_mm_init(struct hibmc_drm_private *hibmc);
 void hibmc_mm_fini(struct hibmc_drm_private *hibmc);
 int hibmc_dumb_create(struct drm_file *file, struct drm_device *dev,
 		      struct drm_mode_create_dumb *args);
-int hibmc_ddc_create(struct drm_device *drm_dev, struct hibmc_connector *connector);
+int hibmc_ddc_create(struct drm_device *drm_dev, struct hibmc_vdac *connector);
+void hibmc_ddc_del(struct hibmc_vdac *vdac);
+int hibmc_dp_init(struct hibmc_drm_private *priv);
 
 extern const struct drm_mode_config_funcs hibmc_mode_funcs;
+
+void hibmc_debugfs_init(struct drm_connector *connector, struct dentry *root);
+
+irqreturn_t hibmc_dp_hpd_isr(int irq, void *arg);
 
 #endif

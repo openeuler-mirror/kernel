@@ -42,9 +42,9 @@ static int hibmc_connector_get_modes(struct drm_connector *connector)
 {
 	int count;
 	void *edid;
-	struct hibmc_connector *hibmc_connector = to_hibmc_connector(connector);
+	struct hibmc_vdac *vdac = to_hibmc_vdac(connector);
 
-	edid = drm_get_edid(connector, &hibmc_connector->adapter);
+	edid = drm_get_edid(connector, &vdac->adapter);
 	if (edid) {
 		drm_connector_update_edid_property(connector, edid);
 		count = drm_add_edid_modes(connector, edid);
@@ -88,26 +88,53 @@ static enum drm_mode_status hibmc_connector_mode_valid(
 	return hibmc_valid_mode(mode->hdisplay, mode->vdisplay);
 }
 
-static void hibmc_connector_destroy(struct drm_connector *connector)
+static void hibmc_vdac_connector_destroy(struct drm_connector *connector)
 {
-	struct hibmc_connector *hibmc_connector = to_hibmc_connector(connector);
+	struct hibmc_vdac *vdac = to_hibmc_vdac(connector);
 
-	i2c_del_adapter(&hibmc_connector->adapter);
+	i2c_del_adapter(&vdac->adapter);
 	drm_connector_cleanup(connector);
+}
+
+static int hibmc_vdac_detect(struct drm_connector *connector, struct drm_modeset_acquire_ctx *ctx,
+			     bool force)
+{
+	struct hibmc_drm_private *priv = to_hibmc_drm_private(connector->dev);
+	struct hibmc_dp *dp = &priv->dp;
+
+	if (dp->hpd_status)
+		return connector_status_disconnected;
+
+	return connector_status_connected;
 }
 
 static const struct drm_connector_helper_funcs
 	hibmc_connector_helper_funcs = {
 	.get_modes = hibmc_connector_get_modes,
 	.mode_valid = hibmc_connector_mode_valid,
+	.detect_ctx = hibmc_vdac_detect,
 };
+
+static void hibmc_vdac_force(struct drm_connector *connector)
+{
+	struct hibmc_drm_private *priv = to_hibmc_drm_private(connector->dev);
+	struct hibmc_dp *dp = &priv->dp;
+
+	if (dp->hpd_status) {
+		connector->status = connector_status_disconnected;
+		return;
+	}
+
+	connector->status = connector_status_connected;
+}
 
 static const struct drm_connector_funcs hibmc_connector_funcs = {
 	.fill_modes = drm_helper_probe_single_connector_modes,
-	.destroy = hibmc_connector_destroy,
+	.destroy = hibmc_vdac_connector_destroy,
 	.reset = drm_atomic_helper_connector_reset,
 	.atomic_duplicate_state = drm_atomic_helper_connector_duplicate_state,
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
+	.force = hibmc_vdac_force,
 };
 
 static void hibmc_encoder_mode_set(struct drm_encoder *encoder,
@@ -116,7 +143,7 @@ static void hibmc_encoder_mode_set(struct drm_encoder *encoder,
 {
 	u32 reg;
 	struct drm_device *dev = encoder->dev;
-	struct hibmc_drm_private *priv = dev->dev_private;
+	struct hibmc_drm_private *priv = to_hibmc_drm_private(dev);
 
 	reg = readl(priv->mmio + HIBMC_DISPLAY_CONTROL_HISILE);
 	reg |= HIBMC_DISPLAY_CONTROL_FPVDDEN(1);
@@ -136,13 +163,13 @@ static const struct drm_encoder_funcs hibmc_encoder_funcs = {
 
 int hibmc_vdac_init(struct hibmc_drm_private *priv)
 {
-	struct drm_device *dev = priv->dev;
-	struct hibmc_connector *hibmc_connector = &priv->connector;
-	struct drm_encoder *encoder = &priv->encoder;
-	struct drm_connector *connector = &hibmc_connector->base;
+	struct drm_device *dev = &priv->dev;
+	struct hibmc_vdac *vdac = &priv->vdac;
+	struct drm_encoder *encoder = &vdac->encoder;
+	struct drm_connector *connector = &vdac->connector;
 	int ret;
 
-	ret = hibmc_ddc_create(dev, hibmc_connector);
+	ret = hibmc_ddc_create(dev, vdac);
 	if (ret) {
 		drm_err(dev, "failed to create ddc: %d\n", ret);
 		return ret;
@@ -153,7 +180,7 @@ int hibmc_vdac_init(struct hibmc_drm_private *priv)
 			       DRM_MODE_ENCODER_DAC, NULL);
 	if (ret) {
 		drm_err(dev, "failed to init encoder: %d\n", ret);
-		return ret;
+		goto err;
 	}
 
 	drm_encoder_helper_add(encoder, &hibmc_encoder_helper_funcs);
@@ -161,14 +188,21 @@ int hibmc_vdac_init(struct hibmc_drm_private *priv)
 	ret = drm_connector_init_with_ddc(dev, connector,
 					  &hibmc_connector_funcs,
 					  DRM_MODE_CONNECTOR_VGA,
-					  &hibmc_connector->adapter);
+					  &vdac->adapter);
 	if (ret) {
 		drm_err(dev, "failed to init connector: %d\n", ret);
-		return ret;
+		goto err;
 	}
 	drm_connector_helper_add(connector, &hibmc_connector_helper_funcs);
 
 	drm_connector_attach_encoder(connector, encoder);
 
+	connector->polled = DRM_CONNECTOR_POLL_CONNECT | DRM_CONNECTOR_POLL_DISCONNECT;
+
 	return 0;
+
+err:
+	hibmc_ddc_del(vdac);
+
+	return ret;
 }
