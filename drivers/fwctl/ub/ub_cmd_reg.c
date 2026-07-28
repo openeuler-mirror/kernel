@@ -672,6 +672,47 @@ static int ubctl_query_nl_ssu_vl_pkt(struct ubctl_dev *ucdev,
 				query_dp, ARRAY_SIZE(query_dp));
 }
 
+static int ubctl_query_conf_user_comm(struct ubctl_dev *ucdev,
+				      struct ubctl_query_cmd_param *query_cmd_param,
+				      struct ubctl_func_dispatch *query_func)
+{
+	struct ubctl_query_dp query_dp[] = {
+		{ UBCTL_CMD_QUERY_CONF_USER_COMM, 0, 0, NULL, 0 },
+	};
+	struct ubctl_cmd_in_head *in_head_data = NULL;
+	u32 biz_data_size = 0;
+	void *tmp_buf = NULL;
+	u32 in_head_size = 0;
+
+	if (query_cmd_param->in->data_size < sizeof(struct ubctl_cmd_in_head)) {
+		ubctl_err(ucdev, "user api data size %u is too small for cmd head.\n",
+			  query_cmd_param->in->data_size);
+		return -EINVAL;
+	}
+
+	in_head_data = (struct ubctl_cmd_in_head *)query_cmd_param->in->data;
+	in_head_size = sizeof(struct ubctl_cmd_in_head);
+	biz_data_size = query_cmd_param->in->data_size - in_head_size;
+
+	query_dp[0].is_read = (bool)in_head_data->is_read;
+	query_dp[0].op_code = in_head_data->opcode;
+	query_dp[0].out_len = query_cmd_param->out_len;
+
+	tmp_buf = kvzalloc(biz_data_size, GFP_KERNEL);
+	if (!tmp_buf)
+		return -ENOMEM;
+
+	memcpy(tmp_buf, (u8 *)(query_cmd_param->in->data) + in_head_size, biz_data_size);
+	memcpy(query_cmd_param->in->data, tmp_buf, biz_data_size);
+
+	kvfree(tmp_buf);
+
+	query_cmd_param->in->data_size = biz_data_size;
+
+	return ubctl_query_data(ucdev, query_cmd_param, query_func,
+				query_dp, ARRAY_SIZE(query_dp));
+}
+
 static int ubctl_query_dump_data(struct ubctl_dev *ucdev,
 				 struct ubctl_query_cmd_param *query_cmd_param,
 				 struct ubctl_func_dispatch *query_func)
@@ -829,6 +870,8 @@ static struct ubctl_func_dispatch g_ubctl_query_reg[] = {
 
 	{ UTOOL_CMD_QUERY_FIRMWARE_VERSION, ubctl_query_fw_version,
 	  ubctl_query_data_deal },
+
+	{ UBCTL_CMD_QUERY_CONF_USER_COMM, ubctl_query_conf_user_comm, ubctl_query_data_deal },
 
 	{ UTOOL_CMD_QUERY_DUMP, ubctl_query_dump_data, ubctl_query_data_deal },
 
