@@ -225,20 +225,20 @@ static void cdma_mmu_release(struct mmu_notifier *mn, struct mm_struct *mm)
 	struct cdma_mn *mn_notifier = container_of(mn, struct cdma_mn, mn);
 	struct cdma_file *cfile = container_of(mn_notifier, struct cdma_file, mn_notifier);
 
+	mutex_lock(&cdma_mmu_mutex);
 	if (mn_notifier->mm != mm || mn_notifier->mm == NULL) {
+		mutex_unlock(&cdma_mmu_mutex);
 		pr_info("mm already released\n");
 		return;
 	}
-	mn_notifier->mm = NULL;
 
-	kref_get(&cfile->ref);
 	mutex_lock(&cfile->ctx_mutex);
 	cdma_cleanup_context_uobj(cfile, CDMA_REMOVE_CLOSE);
 	if (cfile->uctx)
 		cdma_cleanup_context_res(cfile->uctx);
 	cfile->uctx = NULL;
 	mutex_unlock(&cfile->ctx_mutex);
-	kref_put(&cfile->ref, cdma_release_file);
+	mutex_unlock(&cdma_mmu_mutex);
 }
 
 static const struct mmu_notifier_ops cdma_mm_notifier_ops = {
@@ -267,7 +267,9 @@ static void cdma_unregister_mmu(struct cdma_file *cfile)
 	if (!mm)
 		return;
 
+	mutex_lock(&cdma_mmu_mutex);
 	cfile->mn_notifier.mm = NULL;
+	mutex_unlock(&cdma_mmu_mutex);
 	mmu_notifier_unregister(&cfile->mn_notifier.mn, mm);
 }
 
