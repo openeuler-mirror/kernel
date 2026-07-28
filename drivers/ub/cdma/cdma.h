@@ -18,6 +18,7 @@ extern struct list_head cdma_client_list;
 extern struct rw_semaphore cdma_clients_rwsem;
 extern struct rw_semaphore cdma_device_rwsem;
 extern struct mutex cdma_reset_mutex;
+extern struct mutex cdma_mmu_mutex;
 
 #define CDMA_HW_PAGE_SHIFT	12
 #define CDMA_HW_PAGE_SIZE	(1 << CDMA_HW_PAGE_SHIFT)
