@@ -537,8 +537,10 @@ static int hi_message_sync(struct message_device *mdev, struct msg_info *info,
 		hi_msg_rqe_get(hmc, info->rsp_packet, cqe);
 		info->actual_rsp_size = cqe->p_len;
 	} else {
-		ub_msg_dump_sq(&sqe, info->req_packet);
-		ub_msg_dump_cq(cqe, NULL);
+		if (!hi_ver_exch_unsupp_msg(cqe)) {
+			ub_msg_dump_sq(&sqe, info->req_packet);
+			ub_msg_dump_cq(cqe, NULL);
+		}
 	}
 
 	cqe_state_set(hmd, cq_idx, CQ_SW_HANDLED);

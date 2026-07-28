@@ -50,6 +50,19 @@ extern int msg_wait;
 #define HI_MSG_SQE_SIZE		16
 #define HI_MSG_CQE_SIZE		16
 
+#define FIRMWARE_VER_DEFAULT 0
+#define HI_UBUS_LOWEST_VER 0
+#define HI_UBUS_HIGHEST_VER 1
+#define HI_VER_EXCH_REQ_SIZE 4
+#define HI_VER_EXCH_RSP_SIZE 4
+
+enum hi_cqe_status {
+	CQE_SUCCESS = 0,
+	CQE_FAIL = 1,
+	CQE_OP_UNSUPP_ASCEND = 38,
+	CQE_OP_UNSUPP_KUNPENG = 39
+};
+
 enum hi_task_type {
 	PROTOCOL_MSG = 0,
 	PROTOCOL_ENUM = 1,
@@ -59,7 +72,8 @@ enum hi_task_type {
 
 enum hi_msgq_private_opcode {
 	EU_TABLE_CFG_CMD = 2,
-	GET_UBMEM_EVENT_CMD = 4
+	GET_UBMEM_EVENT_CMD = 4,
+	VER_EXCH_CMD = 255
 };
 
 enum hi_msgq_user {
@@ -162,11 +176,35 @@ struct hi_msg_core {
 	struct hi_msg_queue queue[MSGQ_NUM];
 };
 
+struct hi_ver_exch_rsp {
+	u32 firmware_highest_ver : 16;
+	u32 firmware_lowest_ver : 16;
+};
+
+struct hi_ver_exch_req {
+	u32 ubus_highest_ver : 16;
+	u32 ubus_lowest_ver : 16;
+};
+
+struct hi_ver_exch_pld {
+	union {
+		struct hi_ver_exch_req req;
+		struct hi_ver_exch_rsp rsp;
+	};
+};
+
 #define q_used_cnt(q) (((q)->pi + (q)->depth - (q)->ci) % (q)->depth)
 #define q_ptr_idx(q, p, i) (((q)->p + (i)) % (q)->depth)
 #define cq_entry(hmc, idx) (&((hmc)->queue[MSG_CQ].cqe[idx]))
 #define rq_entry(hmc, idx) \
 	((hmc)->queue[MSG_RQ].rqe + (HI_MSG_RQE_SIZE * (idx)))
+
+static inline bool hi_ver_exch_unsupp_msg(struct hi_msg_cqe *cqe)
+{
+	return cqe->task_type == HISI_PRIVATE && cqe->opcode == VER_EXCH_CMD &&
+	       (cqe->status == CQE_OP_UNSUPP_ASCEND ||
+		cqe->status == CQE_OP_UNSUPP_KUNPENG);
+}
 
 int hi_msg_cq_poll(struct hi_msg_core *hmc, int task_type, u16 msn);
 void hi_msg_rq_update(struct hi_msg_core *hmc, int cq_idx);
