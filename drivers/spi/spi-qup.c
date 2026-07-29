@@ -969,8 +969,10 @@ static int spi_qup_init_dma(struct spi_master *master, resource_size_t base)
 
 err:
 	dma_release_channel(master->dma_tx);
+	master->dma_tx = NULL;
 err_tx:
 	dma_release_channel(master->dma_rx);
+	master->dma_rx = NULL;
 	return ret;
 }
 
