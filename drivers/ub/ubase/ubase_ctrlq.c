@@ -459,6 +459,8 @@ void ubase_ctrlq_uninit(struct ubase_dev *udev)
 	if (udev->reset_stage != UBASE_RESET_STAGE_UNINIT)
 		ubase_ctrlq_disable(udev);
 
+	cancel_delayed_work_sync(&udev->ctrlq_service_task.service_task);
+
 	if (!test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits)) {
 		ubase_ctrlq_table_uninit(udev);
 		ubase_ctrlq_msg_queue_uninit(udev);

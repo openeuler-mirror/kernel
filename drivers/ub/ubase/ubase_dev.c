@@ -449,6 +449,21 @@ static void ubase_arq_service_task(struct work_struct *work)
 	ubase_cmd_arq_handler(ubase_work);
 }
 
+static void ubase_cancel_arq_service_task(struct ubase_dev *udev)
+{
+	if (udev->arq_service_task.service_task.work.func) {
+		set_bit(UBASE_STATE_ARQ_SERVICE_SCHED, &udev->arq_service_task.state);
+		cancel_delayed_work_sync(&udev->arq_service_task.service_task);
+	}
+}
+
+static int ubase_enable_arq_service_task(struct ubase_dev *udev)
+{
+	clear_bit(UBASE_STATE_ARQ_SERVICE_SCHED, &udev->arq_service_task.state);
+
+	return 0;
+}
+
 static void ubase_reset_service_task(struct work_struct *work)
 {
 	struct ubase_delay_work *ubase_work =
@@ -754,6 +769,8 @@ static void ubase_unregister_cmdq_crq_event(struct ubase_dev *udev)
 {
 	int i;
 
+	cancel_delayed_work_sync(&udev->service_task.service_task);
+
 	for (i = 0; i < ARRAY_SIZE(ubase_crq_events); i++)
 		__ubase_unregister_crq_event(udev, ubase_crq_events[i].opcode);
 }
@@ -925,6 +942,10 @@ static const struct ubase_init_function ubase_init_func_map[] = {
 		ubase_enable_period_service_task, ubase_cancel_period_service_task
 	},
 	{
+		"enable arq service task", UBASE_SUP_NO_PMU, 1,
+		ubase_enable_arq_service_task, ubase_cancel_arq_service_task
+	},
+	{
 		"update ue isolated state", UBASE_SUP_URMA, 1,
 		ubase_init_ue_isolated_state, NULL
 	},
@@ -1002,8 +1023,6 @@ void ubase_dev_uninit(struct ubase_dev *udev)
 	}
 
 start_uninit:
-	if (udev->service_task.service_task.work.func)
-		cancel_delayed_work_sync(&udev->service_task.service_task);
 	if (udev->reset_service_task.service_task.work.func)
 		cancel_delayed_work_sync(&udev->reset_service_task.service_task);
 	flush_workqueue(udev->ubase_async_wq);
