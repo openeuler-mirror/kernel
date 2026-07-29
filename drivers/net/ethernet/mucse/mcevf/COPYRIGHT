@@ -1,0 +1,7 @@
+MCEVF Ethernet virtual function driver
+
+Copyright (C) 2020-2026 Mucse Corporation.
+
+The MCEVF driver is distributed under the GNU General Public License
+version 2 only. See the Linux kernel project's COPYING file for the
+complete license text.
