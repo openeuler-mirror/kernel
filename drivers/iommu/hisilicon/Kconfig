@@ -15,6 +15,16 @@ config UB_UMMU_BASE
 	  Say Y here if your Soc includes an UMMU device implementing
 	  the Hisilicon UMMU architecture.
 
+config UB_UMMU_BYPASSDEV
+	bool "Support UMMU to bypass device in S1"
+	depends on UB_UMMU_BASE
+	help
+	  Support UMMU to bypass device. You need to add the parameter,
+	  e.g."ummu.bypassdev=xxx(vendor):xxx(device)", to bypass a
+	  certain type of device while starting OS. Subsequently, the device
+	  will be bypassed, meaning IOVA = HPA(S1-only)/GPA(S1+S2).
+	  If you need them say Y here.
+
 config UB_UMMU
 	tristate "Hisilicon UB MMU Support"
 	depends on ARM64 && ARCH_HISI
@@ -54,15 +64,6 @@ config UB_UBMEM_UMMU
 	  Support the special UMMU for the address resolution of UB memory.
 	  This is a private implementation. User must check the hardware
 	  version.
-	  If you need them say Y here.
-
-config UB_UMMU_BYPASSDEV
-	bool "Support UMMU to bypass device in S1"
-	help
-	  Support UMMU to bypass device. You need to add the parameter,
-	  e.g."ummu.bypassdev=xxx(vendor):xxx(device)", to bypass a
-	  certain type of device while starting OS. Subsequently, the device
-	  will be bypassed, meaning IOVA = HPA(S1-only)/GPA(S1+S2).
 	  If you need them say Y here.
 
 config UB_UMMU_BYPASSEID
