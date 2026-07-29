@@ -583,6 +583,13 @@ ubcore_get_all_mue_device(enum ubcore_transport_type type, uint32_t *dev_cnt)
 static void ubcore_free_driver_obj(void *obj,
 	enum ubcore_hash_table_type type)
 {
+	/*	tpid list and tpid state table is free by device,
+		do not need print which will cause soft lock.
+	*/
+	if (type == UBCORE_HT_TPID_LIST ||
+		type == UBCORE_HT_TPID_STATE) {
+		return;
+	}
 	// obj alloced by driver, should not free by ubcore
 	ubcore_log_err("obj was not free correctly, type: %d.", type);
 }
