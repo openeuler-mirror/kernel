@@ -862,7 +862,7 @@ static const struct ubase_init_function ubase_init_func_map[] = {
 		ubase_query_dev_res, NULL
 	},
 	{
-		"dtu memory", UBASE_SUP_UDMA, 0,
+		"dtu memory", UBASE_SUP_NO_PMU, 0,
 		ubase_dtu_mem_init, ubase_dtu_mem_uninit
 	},
 	{
