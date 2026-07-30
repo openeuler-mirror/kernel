@@ -153,7 +153,7 @@ static int init_file(struct file *f, int flags, const struct cred *cred)
 	f->f_cred = get_cred(cred);
 	error = security_file_alloc(f);
 	if (unlikely(error)) {
-		file_free_rcu(&f->f_u.fu_rcuhead);
+		put_cred(f->f_cred);
 		return error;
 	}
 
@@ -202,8 +202,10 @@ struct file *alloc_empty_file(int flags, const struct cred *cred)
 		return ERR_PTR(-ENOMEM);
 
 	error = init_file(f, flags, cred);
-	if (unlikely(error))
+	if (unlikely(error)) {
+		kmem_cache_free(filp_cachep, GET_FILE_WRAP(f));
 		return ERR_PTR(error);
+	}
 
 	percpu_counter_inc(&nr_files);
 
@@ -234,8 +236,10 @@ struct file *alloc_empty_file_noaccount(int flags, const struct cred *cred)
 		return ERR_PTR(-ENOMEM);
 
 	error = init_file(f, flags, cred);
-	if (unlikely(error))
+	if (unlikely(error)) {
+		kmem_cache_free(filp_cachep, GET_FILE_WRAP(f));
 		return ERR_PTR(error);
+	}
 
 	f->f_mode |= FMODE_NOACCOUNT;
 
@@ -259,8 +263,10 @@ struct file *alloc_empty_backing_file(int flags, const struct cred *cred)
 		return ERR_PTR(-ENOMEM);
 
 	error = init_file(&ff->file, flags, cred);
-	if (unlikely(error))
+	if (unlikely(error)) {
+		kfree(ff);
 		return ERR_PTR(error);
+	}
 
 	ff->file.f_mode |= FMODE_BACKING | FMODE_NOACCOUNT;
 	return &ff->file;
