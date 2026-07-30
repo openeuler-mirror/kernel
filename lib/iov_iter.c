@@ -1625,6 +1625,7 @@ static ssize_t iov_iter_extract_xarray_pages(struct iov_iter *i,
 	struct page *page, **p;
 	unsigned int nr = 0, offset;
 	loff_t pos = i->xarray_start + i->iov_offset;
+	bool will_alloc = !*pages;
 	pgoff_t index = pos >> PAGE_SHIFT;
 	XA_STATE(xas, i->xarray, index);
 
@@ -1652,6 +1653,14 @@ static ssize_t iov_iter_extract_xarray_pages(struct iov_iter *i,
 			break;
 	}
 	rcu_read_unlock();
+
+	if (!nr) {
+		if (will_alloc) {
+			kvfree(*pages);
+			*pages = NULL;
+		}
+		return 0;
+	}
 
 	maxsize = min_t(size_t, nr * PAGE_SIZE - offset, maxsize);
 	iov_iter_advance(i, maxsize);
