@@ -124,20 +124,15 @@ int proc_nr_files(struct ctl_table *table, int write,
 }
 #endif
 
-static struct file *__alloc_file(int flags, const struct cred *cred)
+static int init_file(struct file *f, int flags, const struct cred *cred)
 {
-	struct file *f;
 	int error;
-
-	f = kmem_cache_zalloc_file();
-	if (unlikely(!f))
-		return ERR_PTR(-ENOMEM);
 
 	f->f_cred = get_cred(cred);
 	error = security_file_alloc(f);
 	if (unlikely(error)) {
 		file_free_rcu(&f->f_u.fu_rcuhead);
-		return ERR_PTR(error);
+		return error;
 	}
 
 	atomic_long_set(&f->f_count, 1);
@@ -149,7 +144,7 @@ static struct file *__alloc_file(int flags, const struct cred *cred)
 	f->f_mode = OPEN_FMODE(flags);
 	/* f->f_version: 0 */
 
-	return f;
+	return 0;
 }
 
 /* Find an unused file structure and return a pointer to it.
@@ -166,6 +161,7 @@ struct file *alloc_empty_file(int flags, const struct cred *cred)
 {
 	static long old_max;
 	struct file *f;
+	int error;
 
 	/*
 	 * Privileged users can go above max_files
@@ -179,9 +175,15 @@ struct file *alloc_empty_file(int flags, const struct cred *cred)
 			goto over;
 	}
 
-	f = __alloc_file(flags, cred);
-	if (!IS_ERR(f))
-		percpu_counter_inc(&nr_files);
+	f = kmem_cache_zalloc_file();
+	if (unlikely(!f))
+		return ERR_PTR(-ENOMEM);
+
+	error = init_file(f, flags, cred);
+	if (unlikely(error))
+		return ERR_PTR(error);
+
+	percpu_counter_inc(&nr_files);
 
 	return f;
 
@@ -197,14 +199,23 @@ over:
 /*
  * Variant of alloc_empty_file() that doesn't check and modify nr_files.
  *
- * Should not be used unless there's a very good reason to do so.
+ * This is only for kernel internal use, and the allocate file must not be
+ * installed into file tables or such.
  */
 struct file *alloc_empty_file_noaccount(int flags, const struct cred *cred)
 {
-	struct file *f = __alloc_file(flags, cred);
+	struct file *f;
+	int error;
 
-	if (!IS_ERR(f))
-		f->f_mode |= FMODE_NOACCOUNT;
+	f = kmem_cache_zalloc_file();
+	if (unlikely(!f))
+		return ERR_PTR(-ENOMEM);
+
+	error = init_file(f, flags, cred);
+	if (unlikely(error))
+		return ERR_PTR(error);
+
+	f->f_mode |= FMODE_NOACCOUNT;
 
 	return f;
 }
