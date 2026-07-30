@@ -73,10 +73,10 @@ static inline struct file *kmem_cache_zalloc_file(void)
 }
 #endif
 
-/* Container for backing file with optional real path */
+/* Container for backing file with optional user path */
 struct backing_file {
 	struct file file;
-	struct path real_path;
+	struct path user_path;
 };
 
 static inline struct backing_file *backing_file(struct file *f)
@@ -84,11 +84,11 @@ static inline struct backing_file *backing_file(struct file *f)
 	return container_of(f, struct backing_file, file);
 }
 
-struct path *backing_file_real_path(struct file *f)
+struct path *backing_file_user_path(struct file *f)
 {
-	return &backing_file(f)->real_path;
+	return &backing_file(f)->user_path;
 }
-EXPORT_SYMBOL_GPL(backing_file_real_path);
+EXPORT_SYMBOL_GPL(backing_file_user_path);
 
 static void file_free_rcu(struct rcu_head *head)
 {
@@ -105,7 +105,7 @@ static inline void file_free(struct file *f)
 {
 	security_file_free(f);
 	if (unlikely(f->f_mode & FMODE_BACKING))
-		path_put(backing_file_real_path(f));
+		path_put(backing_file_user_path(f));
 	if (likely(!(f->f_mode & FMODE_NOACCOUNT)))
 		percpu_counter_dec(&nr_files);
 	call_rcu(&f->f_u.fu_rcuhead, file_free_rcu);
