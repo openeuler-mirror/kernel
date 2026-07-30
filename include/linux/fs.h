@@ -2723,7 +2723,7 @@ struct file *dentry_create(const struct path *path, int flags, umode_t mode,
 struct file *backing_file_open(const struct path *user_path, int flags,
 			       const struct path *real_path,
 			       const struct cred *cred);
-struct path *backing_file_user_path(struct file *f);
+struct path *backing_file_user_path(const struct file *f);
 
 /*
  * file_user_path - get the path to display for memory mapped file
@@ -2734,7 +2734,7 @@ struct path *backing_file_user_path(struct file *f);
  * /proc/<pid>/maps), this helper should be used to get the path to display
  * to the user, which is the path of the fd that user has requested to map.
  */
-static inline const struct path *file_user_path(struct file *f)
+static inline const struct path *file_user_path(const struct file *f)
 {
 	if (unlikely(f->f_mode & FMODE_BACKING))
 		return backing_file_user_path(f);
