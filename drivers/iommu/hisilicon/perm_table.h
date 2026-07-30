@@ -141,7 +141,8 @@ struct ummu_data_info {
 	struct ummu_mapt_info *mapt_info;
 	u8 lvl;
 	u8 head_flag;
-	struct ummu_plbi_gather *ummu_gather;
+	/* reverse pointer to logic domain, for immediate iommu_plb_sync */
+	struct iommu_domain *domain;
 };
 
 struct ummu_domain;
