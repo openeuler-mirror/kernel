@@ -132,6 +132,7 @@ static int ubctl_cmd_send_deal(struct ubctl_dev *ucdev,
 {
 #define UTOOL_EOPNOTSUPP (-95)
 	int *retval = &query_cmd_param->out->retval;
+	u32 rpc_cmd = query_cmd_param->in->rpc_cmd;
 	struct ubctl_cmd cmd = {};
 	int ret = 0;
 
@@ -146,6 +147,8 @@ static int ubctl_cmd_send_deal(struct ubctl_dev *ucdev,
 	*retval = ubctl_ubase_cmd_send(ucdev->adev, &cmd);
 	if (*retval == UTOOL_EOPNOTSUPP) {
 		ubctl_warn(ucdev, "this opcode is not supported.\n");
+		if (rpc_cmd == UBCTL_CMD_QUERY_CONF_USER_COMM)
+			return -EINVAL;
 		*retval = 0;
 	}
 

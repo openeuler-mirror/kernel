@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note*/
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  * Copyright(c) 2025 HiSilicon Technologies CO., Limited. All rights reserved.
  */
@@ -322,6 +322,11 @@ enum ub_fwctl_cmdrpc_type {
 	UTOOL_CMD_QUERY_PORT_LINK_STATS = 0x00F1,
 
 	/**
+	 * @UBCTL_CMD_QUERY_CONF_USER_COMM: User-space interface command code
+	 */
+	UBCTL_CMD_QUERY_CONF_USER_COMM = 0x0101,
+
+	/**
 	 * @UTOOL_CMD_QUERY_DEV_INFO: Query all ubctl device info
 	 */
 	UTOOL_CMD_QUERY_DEV_INFO = 0xAAAA,
@@ -412,6 +417,16 @@ struct fwctl_pkt_dev_info_match {
 	__u16 die_id;
 	__u8 is_matched;
 	__u8 reserved[3];
+};
+
+/**
+ * struct ubctl_cmd_in_head - ioctl(UBCTL_RPC) input header
+ * @opcode: The operation code indicating the type of command
+ * @is_read: Flag indicating whether the operation is a read (1) or write (0)
+ */
+struct ubctl_cmd_in_head {
+	__u32 opcode;
+	__u32 is_read;
 };
 
 #endif
