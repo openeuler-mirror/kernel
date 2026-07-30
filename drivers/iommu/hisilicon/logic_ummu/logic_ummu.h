@@ -38,7 +38,5 @@ int logic_add_ummu_device(struct ummu_device *ummu,
 void logic_remove_ummu_device(struct ummu_device *ummu);
 int logic_ummu_device_init(void);
 void logic_ummu_device_exit(void);
-void logic_ummu_plbi_free_bit(struct iommu_domain *domain, u32 next_lvl_idx,
-			 u32 next_lvl_offset);
 
 #endif  /* __LOGIC_UMMU_H__ */
