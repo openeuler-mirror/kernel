@@ -601,6 +601,11 @@ qla25xx_free_rsp_que(struct scsi_qla_host *vha, struct rsp_que *rsp)
 		rsp->msix->in_use = 0;
 		rsp->msix->handle = NULL;
 	}
+
+	/* Flush any queued response work before freeing the queue/qpair. */
+	if (rsp->qpair && ha->wq)
+		cancel_work_sync(&rsp->qpair->q_work);
+
 	dma_free_coherent(&ha->pdev->dev, (rsp->length + 1) *
 		sizeof(response_t), rsp->ring, rsp->dma);
 	rsp->ring = NULL;
