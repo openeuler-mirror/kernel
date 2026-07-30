@@ -441,7 +441,8 @@ out:
 	a.vp_idx = vha->vp_idx;
 	a.nport_handle = uctx->nport_handle;
 	a.xchg_address = uctx->exchange_address;
-	qla_nvme_ls_reject_iocb(vha, ha->base_qpair, &a, true);
+	if (ha->flags.fw_started)
+		qla_nvme_ls_reject_iocb(vha, ha->base_qpair, &a, true);
 	kfree(uctx);
 	return rval;
 }
@@ -1196,7 +1197,9 @@ qla2xxx_process_purls_pkt(struct scsi_qla_host *vha, struct purex_item *item)
 		a.vp_idx = vha->vp_idx;
 		a.nport_handle = uctx->nport_handle;
 		a.xchg_address = uctx->exchange_address;
-		qla_nvme_ls_reject_iocb(vha, vha->hw->base_qpair, &a, true);
+		if (vha->hw->flags.fw_started)
+			qla_nvme_ls_reject_iocb(vha, vha->hw->base_qpair, &a,
+						true);
 		list_del(&uctx->elem);
 		kfree(uctx);
 	}
