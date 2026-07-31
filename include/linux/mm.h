@@ -1043,6 +1043,24 @@ static inline unsigned int page_shift(struct page *page)
 
 void free_compound_page(struct page *page);
 
+/**
+ * prep_compound_page - turn a freshly allocated page block
+ * into one compound page.
+ * @page: the head page of the block
+ * @order: the order of the block, at least 1
+ *
+ * The caller must own the block exclusively.  The block must
+ * come from the page allocator with the head's refcount at 1:
+ * the free path is put_page() on the head, which frees the
+ * whole block through the COMPOUND_PAGE_DTOR back to the page
+ * allocator.  Once the block is a compound page, the free
+ * paths documented on alloc_contig_pages() (free_contig_range(),
+ * __free_page()) no longer apply.  Leave the tail pages'
+ * refcount at 0 (e.g. with set_page_count()), or the free path
+ * rejects them.
+ */
+void prep_compound_page(struct page *page, unsigned int order);
+
 #ifdef CONFIG_MMU
 /*
  * Do pte_mkwrite, but only if the vma says VM_WRITE.  We do this when

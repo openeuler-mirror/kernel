@@ -718,6 +718,7 @@ void prep_compound_page(struct page *page, unsigned int order)
 	if (hpage_pincount_available(page))
 		atomic_set(compound_pincount_ptr(page), 0);
 }
+EXPORT_SYMBOL_GPL(prep_compound_page);
 
 #ifdef CONFIG_DEBUG_PAGEALLOC
 unsigned int _debug_guardpage_minorder;
