@@ -67,35 +67,30 @@ static long cdma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct cdma_file *cfile = (struct cdma_file *)file->private_data;
 	struct cdma_ioctl_hdr hdr = { 0 };
-	int ret = -ENOIOCTLCMD;
+	int ret;
 
-	if (!cfile->cdev)
-		return -ENODEV;
-
-	cdma_ref_inc(&cfile->cdev->cmdcnt);
-
-	if (cfile->cdev->status >= CDMA_STATUS_SUSPENDED) {
+	if (!cfile->cdev || cfile->cdev->status >= CDMA_STATUS_SUSPENDED) {
 		pr_info("ioctl cdev is invalid\n");
-		ret = -ENODEV;
-		goto out;
+		return -ENODEV;
 	}
+	cdma_ref_inc(&cfile->cdev->cmdcnt);
 
 	if (cmd == CDMA_SYNC) {
 		ret = copy_from_user(&hdr, (void *)arg, sizeof(hdr));
 		if (ret || hdr.args_len > CDMA_MAX_CMD_SIZE) {
 			pr_err("copy user ret = %d, input parameter len = %u\n",
-			       ret, hdr.args_len);
-			ret = -EINVAL;
-			goto out;
+				ret, hdr.args_len);
+			cdma_ref_dec(&cfile->cdev->cmdcnt, &cfile->cdev->cmddone);
+			return -EINVAL;
 		}
 		ret = cdma_cmd_parse(cfile, &hdr);
-		goto out;
+		cdma_ref_dec(&cfile->cdev->cmdcnt, &cfile->cdev->cmddone);
+		return ret;
 	}
 
 	pr_err("invalid ioctl command, command = %u\n", cmd);
-out:
 	cdma_ref_dec(&cfile->cdev->cmdcnt, &cfile->cdev->cmddone);
-	return ret;
+	return -ENOIOCTLCMD;
 }
 
 static int cdma_remap_check_jfs_id(struct cdma_file *cfile, u32 jfs_id)
