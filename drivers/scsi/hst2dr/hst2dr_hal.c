@@ -846,8 +846,8 @@ int hst2dr_init_nvme_io_queue_hal_api(struct HST2DR_ADAPTER *ioa)
  */
 int hst2dr_hal_free_resources_hal_api(struct HST2DR_ADAPTER *ioa)
 {
-	u32 io_queue_cnt = 0;
-	u8 i;
+	u16 io_queue_cnt = 0;
+	u16 i;
 	struct nvme_queue *nvmeq;
 
 	if (ioa->reply_queue_count == 1)

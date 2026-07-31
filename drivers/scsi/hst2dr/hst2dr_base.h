@@ -46,7 +46,7 @@
 typedef u8 U8;
 typedef u16 U16;
 typedef u32 U32;
-typedef u64 U64 __aligned(4);
+typedef u64 U64;
 
 #include "ssi/ssi2.h"
 #include "ssi/ssi2_ioa.h"
@@ -74,7 +74,7 @@ typedef u64 U64 __aligned(4);
 #define HST2DR_MINOR_VERSION		0
 #define HST2DR_REVISION_VERSION		6
 
-#define HST2DR_BUILD_DATE		"260730"
+#define HST2DR_BUILD_DATE		"260803"
 #define HST2DR_EXT_VERSION		"01"
 
 #define strhelper(x) #x

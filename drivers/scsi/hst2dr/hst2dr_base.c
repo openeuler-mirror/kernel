@@ -1704,11 +1704,13 @@ _base_assign_reply_queues(struct HST2DR_ADAPTER *ioa)
 static void
 _base_disable_msix(struct HST2DR_ADAPTER *ioa)
 {
+	if (!ioa->hst2dr_var.intr_enabled)
+		return;
 	pci_free_irq_vectors(ioa->pdev);
+	ioa->hst2dr_var.intr_enabled = 0;
 	if (!ioa->msix_enable)
 		return;
 	ioa->msix_enable = 0;
-	ioa->hst2dr_var.intr_enabled = 0;
 }
 /**
  * _base_alloc_irq_vectors - allocate msix vectors
@@ -4128,26 +4130,60 @@ out_free_resources:
 	log_error(ioa, "%s fail, free resources\n", __func__);
 	hst2dr_base_free_resources(ioa);
 	_base_release_memory_pools(ioa);
+	hst2dr_hal_free_resources_hal_api(ioa);
 	pci_set_drvdata(ioa->pdev, NULL);
-	kfree(ioa->cpu_msix_table);
-	kfree(ioa->blocking_handles);
-	kfree(ioa->device_remove_in_progress);
-	kfree(ioa->pend_os_device_add);
-	kfree(ioa->tm_cmds.reply);
-	kfree(ioa->transport_cmds.reply);
-	kfree(ioa->config_cmds.reply);
-	kfree(ioa->base_cmds.reply);
-	kfree(ioa->port_enable_cmds.reply);
-	kfree(ioa->ctl_cmds.reply);
-	kfree(ioa->ctl_cmds.sense);
-	kfree(ioa->pinfo);
-	kfree(ioa->pd_handles);
-	ioa->ctl_cmds.reply = NULL;
-	ioa->base_cmds.reply = NULL;
-	ioa->tm_cmds.reply = NULL;
-	ioa->transport_cmds.reply = NULL;
-	ioa->config_cmds.reply = NULL;
-	ioa->pinfo = NULL;
+	if (ioa->cpu_msix_table) {
+		kfree(ioa->cpu_msix_table);
+		ioa->cpu_msix_table = NULL;
+	}
+	if (ioa->blocking_handles) {
+		kfree(ioa->blocking_handles);
+		ioa->blocking_handles = NULL;
+	}
+	if (ioa->device_remove_in_progress) {
+		kfree(ioa->device_remove_in_progress);
+		ioa->device_remove_in_progress = NULL;
+	}
+	if (ioa->pend_os_device_add) {
+		kfree(ioa->pend_os_device_add);
+		ioa->pend_os_device_add = NULL;
+	}
+	if (ioa->pinfo) {
+		kfree(ioa->pinfo);
+		ioa->pinfo = NULL;
+	}
+	if (ioa->pd_handles) {
+		kfree(ioa->pd_handles);
+		ioa->pd_handles = NULL;
+	}
+	if (ioa->ctl_cmds.reply) {
+		kfree(ioa->ctl_cmds.reply);
+		ioa->ctl_cmds.reply = NULL;
+	}
+	if (ioa->ctl_cmds.sense) {
+		kfree(ioa->ctl_cmds.sense);
+		ioa->ctl_cmds.sense = NULL;
+	}
+	if (ioa->base_cmds.reply) {
+		kfree(ioa->base_cmds.reply);
+		ioa->base_cmds.reply = NULL;
+	}
+	if (ioa->port_enable_cmds.reply) {
+		kfree(ioa->port_enable_cmds.reply);
+		ioa->port_enable_cmds.reply = NULL;
+	}
+	if (ioa->tm_cmds.reply) {
+		kfree(ioa->tm_cmds.reply);
+		ioa->tm_cmds.reply = NULL;
+	}
+	if (ioa->transport_cmds.reply) {
+		kfree(ioa->transport_cmds.reply);
+		ioa->transport_cmds.reply = NULL;
+	}
+	if (ioa->config_cmds.reply) {
+		kfree(ioa->config_cmds.reply);
+		ioa->config_cmds.reply = NULL;
+	}
 	return r;
 }
 
@@ -4167,19 +4203,58 @@ hst2dr_base_detach(struct HST2DR_ADAPTER *ioa)
 	hst2dr_hal_free_resources_hal_api(ioa);
 
 	pci_set_drvdata(ioa->pdev, NULL);
-	kfree(ioa->cpu_msix_table);
-	kfree(ioa->blocking_handles);
-	kfree(ioa->device_remove_in_progress);
-	kfree(ioa->pend_os_device_add);
-	kfree(ioa->pinfo);
-	kfree(ioa->pd_handles);
-	kfree(ioa->ctl_cmds.reply);
-	kfree(ioa->ctl_cmds.sense);
-	kfree(ioa->base_cmds.reply);
-	kfree(ioa->port_enable_cmds.reply);
-	kfree(ioa->tm_cmds.reply);
-	kfree(ioa->transport_cmds.reply);
-	kfree(ioa->config_cmds.reply);
+	if (ioa->cpu_msix_table) {
+		kfree(ioa->cpu_msix_table);
+		ioa->cpu_msix_table = NULL;
+	}
+	if (ioa->blocking_handles) {
+		kfree(ioa->blocking_handles);
+		ioa->blocking_handles = NULL;
+	}
+	if (ioa->device_remove_in_progress) {
+		kfree(ioa->device_remove_in_progress);
+		ioa->device_remove_in_progress = NULL;
+	}
+	if (ioa->pend_os_device_add) {
+		kfree(ioa->pend_os_device_add);
+		ioa->pend_os_device_add = NULL;
+	}
+	if (ioa->pinfo) {
+		kfree(ioa->pinfo);
+		ioa->pinfo = NULL;
+	}
+	if (ioa->pd_handles) {
+		kfree(ioa->pd_handles);
+		ioa->pd_handles = NULL;
+	}
+	if (ioa->ctl_cmds.reply) {
+		kfree(ioa->ctl_cmds.reply);
+		ioa->ctl_cmds.reply = NULL;
+	}
+	if (ioa->ctl_cmds.sense) {
+		kfree(ioa->ctl_cmds.sense);
+		ioa->ctl_cmds.sense = NULL;
+	}
+	if (ioa->base_cmds.reply) {
+		kfree(ioa->base_cmds.reply);
+		ioa->base_cmds.reply = NULL;
+	}
+	if (ioa->port_enable_cmds.reply) {
+		kfree(ioa->port_enable_cmds.reply);
+		ioa->port_enable_cmds.reply = NULL;
+	}
+	if (ioa->tm_cmds.reply) {
+		kfree(ioa->tm_cmds.reply);
+		ioa->tm_cmds.reply = NULL;
+	}
+	if (ioa->transport_cmds.reply) {
+		kfree(ioa->transport_cmds.reply);
+		ioa->transport_cmds.reply = NULL;
+	}
+	if (ioa->config_cmds.reply) {
+		kfree(ioa->config_cmds.reply);
+		ioa->config_cmds.reply = NULL;
+	}
 }
 
 /**

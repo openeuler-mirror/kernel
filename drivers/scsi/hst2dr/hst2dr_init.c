@@ -8080,9 +8080,10 @@ _hst2dr_init(void)
 	hst2dr_ctl_init();
 
 	error = pci_register_driver(&hst2dr_driver);
-	if (error)
+	if (error) {
+		hst2dr_ctl_exit();
 		hst2dr_shost_exit();
-
+	}
 	return error;
 }
 

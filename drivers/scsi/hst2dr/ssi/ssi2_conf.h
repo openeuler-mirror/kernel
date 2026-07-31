@@ -18,6 +18,7 @@
 #ifndef SSI2_CNFG_H
 #define SSI2_CNFG_H
 
+#pragma pack(4)
 /*****************************************************************************
  *  Configuration Page Header and defines
  *****************************************************************************/
@@ -564,6 +565,6 @@ typedef struct _SSI2_INQUIRY_RAID_CONFIG {
 /* flags field */
 #define SSI2_RAID_CONFIG_FLAG_FOREIGN_CONFIG			(0x00000001)
 
-
+#pragma pack()
 
 #endif
