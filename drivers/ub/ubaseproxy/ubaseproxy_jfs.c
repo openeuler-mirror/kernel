@@ -386,11 +386,7 @@ static int ubaseproxy_check_modify_jetty_mask(struct ubaseproxy_dev *udev,
 	int ret;
 
 	modify_mask = &udev->caps.ue_default.jetty_default->modify_mask;
-	if (ctx_len == (UBASEPROXY_JETTY_CTX_BYTES + UBASEPROXY_JFS_MASK_OFFSET))
-		ctx_mask = (struct ubaseproxy_jetty_ctx *)((char *)ctx +
-			    UBASEPROXY_JFS_MASK_OFFSET);
-	else
-		ctx_mask = ctx + 1;
+	ctx_mask = (struct ubaseproxy_jetty_ctx *)((char *)ctx + UBASEPROXY_JFS_MASK_OFFSET);
 
 	ret = ubaseproxy_check_ctx_mask_value(udev, ctx_mask, modify_mask,
 					      modify_mask,
@@ -867,8 +863,7 @@ int ubaseproxy_handle_modify_jfs_ctx_req(struct ubaseproxy_dev *udev,
 	u16 jettyn = req->tag;
 	int ret;
 
-	if (ctx_len != (UBASEPROXY_JETTY_CTX_BYTES + UBASEPROXY_JFS_MASK_OFFSET) &&
-	    ctx_len != (UBASEPROXY_JETTY_CTX_BYTES * UBASEPROXY_CTXLEN_AND_MASK)) {
+	if (ctx_len != (UBASEPROXY_JETTY_CTX_BYTES + UBASEPROXY_JFS_MASK_OFFSET)) {
 		ubaseproxy_risk_rl(udev, mbx_ue_id, jfs_modify_req_len,
 				   "modify jetty(%u) ctx_len(%u) error.\n",
 				   jettyn, ctx_len);
