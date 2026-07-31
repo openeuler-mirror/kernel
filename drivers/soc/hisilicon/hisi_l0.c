@@ -15,6 +15,7 @@
 #include <linux/gfp.h>
 #include <linux/mempolicy.h>
 #include <linux/pfn_t.h>
+#include <linux/page_ref.h>
 
 #include "hisi_l3t.h"
 
@@ -85,6 +86,51 @@ static vm_fault_t l0_huge_fault(struct vm_fault *vmf,
 	return VM_FAULT_SIGBUS;
 }
 
+/*
+ * A poisoned tail must not return to the buddy allocator inside its
+ * compound block: the bulk free path only checks the head, so the
+ * page would be handed out again.  Each PMD is a compound page of its
+ * own, so keeping the one PMD that holds the poison costs 2MB, and
+ * the range is logged so it can be quarantined by hand.
+ */
+static bool l0_pmd_has_poison(struct page *head, unsigned long *poisoned)
+{
+	unsigned long nr_pages = PMD_SIZE >> PAGE_SHIFT;
+	unsigned long i;
+
+	for (i = 0; i < nr_pages; i++) {
+		if (PageHWPoison(head + i)) {
+			*poisoned = page_to_pfn(head + i);
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static void l0_free_block(struct l0_vma_data *data)
+{
+	unsigned long poisoned;
+	int i, pmd_nr;
+
+	/*
+	 * The block stays a valid compound page until the last
+	 * put_page(), so a GUP unpin may free it instead.
+	 */
+	pmd_nr = data->size >> PMD_SHIFT;
+	for (i = 0; i < pmd_nr; i++) {
+		struct page *p = data->page + i * (PMD_SIZE >> PAGE_SHIFT);
+
+		if (l0_pmd_has_poison(p, &poisoned)) {
+			pr_info("keep pmd at pfn %#lx, holds poisoned pfn %#lx\n",
+				page_to_pfn(p), poisoned);
+			continue;
+		}
+
+		put_page(p);
+	}
+}
+
 static void l0_vma_close(struct vm_area_struct *vma)
 {
 	struct l0_vma_data *data;
@@ -97,7 +143,7 @@ static void l0_vma_close(struct vm_area_struct *vma)
 	}
 
 	l3t_shared_unlock(data->nid, page_to_pfn(data->page), data->size);
-	free_contig_range(page_to_pfn(data->page), data->size >> PAGE_SHIFT);
+	l0_free_block(data);
 
 	kfree(data);
 }
@@ -127,7 +173,7 @@ static int l0_mmap(struct file *filp, struct vm_area_struct *vma)
 {
 	unsigned long cont_size = PAGE_ALIGN(vma->vm_end - vma->vm_start);
 	struct l0_vma_data *data;
-	int page_cnt, nid, ret;
+	int page_cnt, nid, ret, i, pmd_nr;
 	struct page *page;
 
 	pr_debug("%s: pid: %d, vma_start: %#lx, vma_end: %#lx vma_flags: %pGv\n",
@@ -158,6 +204,21 @@ static int l0_mmap(struct file *filp, struct vm_area_struct *vma)
 		       current->pid, ret);
 		ret = -ENOMEM;
 		goto free_page;
+	}
+
+	/*
+	 * One compound page per PMD so pin and put_page() both land on
+	 * the head.  Drop the tails' refcount 1 from split_map_pages()
+	 * or check_free_page() rejects the page at free time.
+	 */
+	pmd_nr = cont_size >> PMD_SHIFT;
+	for (i = 0; i < pmd_nr; i++) {
+		struct page *p = page + i * (PMD_SIZE >> PAGE_SHIFT);
+		int j;
+
+		prep_compound_page(p, PMD_SHIFT - PAGE_SHIFT);
+		for (j = 1; j < (PMD_SIZE >> PAGE_SHIFT); j++)
+			set_page_count(p + j, 0);
 	}
 
 	data->page = page;
