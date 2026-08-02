@@ -15,6 +15,7 @@
  *
  */
 #include <linux/anon_inodes.h>
+#include <linux/capability.h>
 #include <linux/delay.h>
 #include <linux/hash.h>
 #include <linux/hashtable.h>
@@ -743,6 +744,9 @@ SYSCALL_DEFINE2(vstream_manage, struct vstream_args __user *, arg, int, cmd)
 {
 	int res = 0;
 	struct vstream_args vstream_arg;
+
+	if (!capable(CAP_SYS_NICE) && !capable(CAP_SYS_RESOURCE))
+		return -EPERM;
 
 	if (cmd < 0 || cmd >= MAX_COMMAND) {
 		XSCHED_ERR("Invalid cmd value: %d, valid range is 0 to %d\n", cmd, MAX_COMMAND - 1);
