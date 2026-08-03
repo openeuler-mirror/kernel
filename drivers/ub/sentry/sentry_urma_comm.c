@@ -540,7 +540,8 @@ static void release_all_resource(void)
 int str_to_eid(const char *eid_str, union ubcore_eid *eid)
 {
 	if (!eid_str || !eid || strlen(eid_str) != EID_MAX_LEN - 1) {
-		pr_err("eid str %s len is invalid, failed to transfer\n", eid_str);
+		pr_err("eid str %s len is invalid, failed to transfer\n",
+		       eid_str ? eid_str : "(null)");
 		return -EINVAL;
 	}
 
