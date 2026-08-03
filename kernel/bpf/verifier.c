@@ -9936,11 +9936,14 @@ static int prepare_func_exit(struct bpf_verifier_env *env, int *insn_idx)
 	return 0;
 }
 
-static void do_refine_retval_range(struct bpf_reg_state *regs, int ret_type,
+static void do_refine_retval_range(struct bpf_verifier_env *env,
+				   struct bpf_reg_state *regs, int ret_type,
 				   int func_id,
 				   struct bpf_call_arg_meta *meta)
 {
+	struct bpf_retval_range range;
 	struct bpf_reg_state *ret_reg = &regs[BPF_REG_0];
+	enum bpf_prog_type prog_type = resolve_prog_type(env->prog);
 
 	if (ret_type != RET_INTEGER)
 		return;
@@ -9966,6 +9969,31 @@ static void do_refine_retval_range(struct bpf_reg_state *regs, int ret_type,
 		ret_reg->u32_min_value = 0;
 		ret_reg->smin_value = 0;
 		ret_reg->s32_min_value = 0;
+		reg_bounds_sync(ret_reg);
+		break;
+	case BPF_FUNC_get_retval:
+		/*
+		 * bpf_get_retval may see arbitrary value passed by bpf_prog_run_array_cg for
+		 * CGROUP_GETSOCKOPT type.
+		 */
+		if (prog_type == BPF_PROG_TYPE_CGROUP_SOCKOPT &&
+		    env->prog->expected_attach_type == BPF_CGROUP_GETSOCKOPT)
+			break;
+
+		if (prog_type == BPF_PROG_TYPE_LSM &&
+		    env->prog->expected_attach_type == BPF_LSM_CGROUP) {
+			if (!env->prog->aux->attach_func_proto->type)
+				break;
+			bpf_lsm_get_retval_range(env->prog, &range);
+		} else {
+			range.minval = -MAX_ERRNO;
+			range.maxval = 0;
+		}
+
+		ret_reg->smin_value = range.minval;
+		ret_reg->smax_value = range.maxval;
+		ret_reg->s32_min_value = range.minval;
+		ret_reg->s32_max_value = range.maxval;
 		reg_bounds_sync(ret_reg);
 		break;
 	}
@@ -10354,6 +10382,23 @@ static int check_helper_call(struct bpf_verifier_env *env, struct bpf_insn *insn
 		}
 		break;
 	case BPF_FUNC_set_retval:
+	{
+		struct bpf_retval_range range = {
+			.minval = -MAX_ERRNO,
+			.maxval = 0,
+		};
+		struct bpf_reg_state *r1 = &regs[BPF_REG_1];
+
+		if (r1->type != SCALAR_VALUE) {
+			verbose(env, "R1 is not a scalar\n");
+			return -EINVAL;
+		}
+
+		/* CGROUP_GETSOCKOPT is allowed to return arbitrary value */
+		if (prog_type == BPF_PROG_TYPE_CGROUP_SOCKOPT &&
+		    env->prog->expected_attach_type == BPF_CGROUP_GETSOCKOPT)
+			break;
+
 		if (prog_type == BPF_PROG_TYPE_LSM &&
 		    env->prog->expected_attach_type == BPF_LSM_CGROUP) {
 			if (!env->prog->aux->attach_func_proto->type) {
@@ -10363,8 +10408,20 @@ static int check_helper_call(struct bpf_verifier_env *env, struct bpf_insn *insn
 				verbose(env, "BPF_LSM_CGROUP that attach to void LSM hooks can't modify return value!\n");
 				return -EINVAL;
 			}
+			bpf_lsm_get_retval_range(env->prog, &range);
 		}
+
+		err = mark_chain_precision(env, BPF_REG_1);
+		if (err)
+			return err;
+
+		if (!retval_range_within(range, r1, true)) {
+			verbose_invalid_scalar(env, r1, range, "At bpf_set_retval", "R1");
+			return -EINVAL;
+		}
+
 		break;
+	}
 	case BPF_FUNC_dynptr_data:
 	{
 		struct bpf_reg_state *reg;
@@ -10588,7 +10645,7 @@ static int check_helper_call(struct bpf_verifier_env *env, struct bpf_insn *insn
 		regs[BPF_REG_0].ref_obj_id = id;
 	}
 
-	do_refine_retval_range(regs, fn->ret_type, func_id, &meta);
+	do_refine_retval_range(env, regs, fn->ret_type, func_id, &meta);
 
 	err = check_map_func_compatibility(env, meta.map_ptr, func_id);
 	if (err)
@@ -20745,8 +20802,10 @@ static bool can_be_sleepable(struct bpf_prog *prog)
 			return false;
 		}
 	}
-	return prog->type == BPF_PROG_TYPE_LSM ||
-	       prog->type == BPF_PROG_TYPE_KPROBE /* only for uprobes */ ||
+	if (prog->type == BPF_PROG_TYPE_LSM)
+		return prog->expected_attach_type != BPF_LSM_CGROUP;
+
+	return prog->type == BPF_PROG_TYPE_KPROBE /* only for uprobes */ ||
 	       prog->type == BPF_PROG_TYPE_STRUCT_OPS;
 }
 
