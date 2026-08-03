@@ -430,14 +430,6 @@ void ummu_put_tect_table(struct ummu_tect_cfg *tect)
 	kref_put(&tect->ref, ummu_free_tect_table);
 }
 
-static inline void ummu_build_tecte_bypass(struct ummu_tecte_data *tecte)
-{
-	memset(tecte, 0, sizeof(*tecte));
-	tecte->data[0] = cpu_to_le64(
-		FIELD_PREP(TECT_ENT0_ST_MODE, TECT_ENT0_ST_MODE_BYPASS) |
-		FIELD_PREP(TECT_ENT0_MSD_SEL, TECT_ENT0_MSD_SEL_INCOMING));
-}
-
 static inline void ummu_build_tecte_abort(struct ummu_tecte_data *tecte)
 {
 	memset(tecte, 0, sizeof(*tecte));
@@ -1127,43 +1119,27 @@ static inline bool ummu_tecte_cfged(const struct ummu_tecte_data *target)
 	return target->data[0] & cpu_to_le64(TECT_ENT0_V);
 }
 
-static void ummu_device_write_tecte_bypass(struct ummu_device *ummu,
-					   u32 tag)
+static void ummu_device_make_bypass_tecte(struct ummu_tecte_data *target)
 {
-	struct ummu_tecte_data src, *dst;
-	size_t i;
-
-	dst = ummu_alloc_tecte(ummu, tag);
-	if (!dst)
-		return;
-
-	if (ummu_tecte_cfged(dst))
-		return;
-
-	ummu_build_tecte_bypass(&src);
-
-	src.data[0] |= cpu_to_le64(TECT_ENT0_V);
-
-	for (i = 0; i < ARRAY_SIZE(src.data); i++)
-		WRITE_ONCE(dst->data[i], src.data[i]);
+	memset(target, 0, sizeof(*target));
+	target->data[0] = cpu_to_le64(TECT_ENT0_V |
+		FIELD_PREP(TECT_ENT0_ST_MODE, TECT_ENT0_ST_MODE_BYPASS) |
+		FIELD_PREP(TECT_ENT0_MSD_SEL, TECT_ENT0_MSD_SEL_INCOMING));
 }
 
 static void ummu_device_make_default_tecte(struct ummu_device *ummu,
 					   struct ummu_tct_desc_cfg *tct_cfg,
-					   struct ummu_tecte_data *target,
-					   enum eid_type type)
+					   struct ummu_tecte_data *target)
 {
-	u32 tcr_sel, st_mode;
+	u32 tcr_sel = ummu->cap.features & UMMU_FEAT_E2H ?
+		TECT_ENT0_TCR_EL2 : TECT_ENT0_TCR_NSEL1;
 
 	memset(target, 0, sizeof(*target));
-	tcr_sel = ummu->cap.features & UMMU_FEAT_E2H ?
-		  TECT_ENT0_TCR_EL2 : TECT_ENT0_TCR_NSEL1;
 
-	st_mode = (type == EID_BYPASS) ? TECT_ENT0_ST_MODE_BYPASS : TECT_ENT0_ST_MODE_S1;
 	target->data[0] = cpu_to_le64(
 		TECT_ENT0_V | FIELD_PREP(TECT_ENT0_TCRC_SEL, tcr_sel) |
 		((ummu->cap.features & UMMU_FEAT_MAPT) ? TECT_ENT0_MAPT_EN : 0) |
-		FIELD_PREP(TECT_ENT0_ST_MODE, st_mode) |
+		FIELD_PREP(TECT_ENT0_ST_MODE, TECT_ENT0_ST_MODE_S1) |
 		FIELD_PREP(TECT_ENT0_PRIV_SEL, TECT_ENT0_PRIV_SEL_PRIV));
 
 	target->data[1] = cpu_to_le64(
@@ -1256,11 +1232,7 @@ static void ummu_device_fill_tecte(struct ummu_device *ummu, u32 deid,
 void ummu_device_write_tecte(struct ummu_device *ummu, u32 deid,
 			     struct ummu_tecte_data *src)
 {
-	if (iommu_default_passthrough())
-		ummu_device_write_tecte_bypass(ummu, deid);
-	else
-		ummu_device_fill_tecte(ummu, deid, src);
-
+	ummu_device_fill_tecte(ummu, deid, src);
 	ummu_device_sync_tect(ummu, deid);
 	ummu_device_prefetch_cfg(ummu, deid, UMMU_INVALID_TID);
 }
@@ -1317,7 +1289,10 @@ int ummu_add_eid(struct ummu_core_device *core_dev, guid_t *guid, eid_t eid, enu
 
 	if (!meta->valid) {
 		meta->valid = true;
-		ummu_device_make_default_tecte(ummu, &meta->tct_tbl, &target, type);
+		if (type == EID_BYPASS)
+			ummu_device_make_bypass_tecte(&target);
+		else
+			ummu_device_make_default_tecte(ummu, &meta->tct_tbl, &target);
 		ummu_device_write_tecte(ummu, meta->tecte_tag, &target);
 	} else {
 		ummu_device_sync_tect(ummu, meta->tecte_tag);
