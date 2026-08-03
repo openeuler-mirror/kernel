@@ -13,6 +13,7 @@
 #include <linux/iommu.h>
 #include <linux/xarray.h>
 #include <linux/bitmap.h>
+#include <linux/log2.h>
 #include <linux/ummu_core.h>
 #include <linux/delay.h>
 #include <linux/maple_tree.h>
@@ -774,8 +775,10 @@ static bool ubmem_mmu_tdev_support_attr(struct ummu_core_device *core_device,
 		return false;
 
 	info = (struct hisi_ummu_tdev_info *)attr->priv;
-	if (!info->v1.on_chip || !info->v1.ummu_idx_mask) {
-		dev_err(ubmem_dev->ummu.dev, "tdev_info is invalid.\n");
+	if (!info->v1.on_chip || !is_power_of_2(info->v1.ummu_idx_mask)) {
+		dev_err(ubmem_dev->ummu.dev,
+			"tdev_info is invalid: on_chip = %u, ummu_idx_mask = 0x%llx.\n",
+			(unsigned int)info->v1.on_chip, info->v1.ummu_idx_mask);
 		return false;
 	}
 
