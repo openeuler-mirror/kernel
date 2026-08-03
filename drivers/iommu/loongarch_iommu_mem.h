@@ -21,6 +21,8 @@
 #define iommu_virt_to_phys(address) TO_PHYS((unsigned long)address)
 #define iommu_phys_to_virt(address) ((void *)TO_UNCACHE((unsigned long)address))
 
+extern int loongarch_iommu_disable;
+
 void *loongarch_iommu_alloc_page(void);
 void loongarch_iommu_free_page(void *page);
 #endif
