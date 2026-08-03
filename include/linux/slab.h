@@ -18,7 +18,7 @@
 #include <linux/workqueue.h>
 #include <linux/percpu-refcount.h>
 #include <linux/hash.h>
-
+#include <linux/cleanup.h>
 
 /*
  * Flags to pass to kmem_cache_create().
@@ -208,6 +208,8 @@ void kfree(const void *);
 void kfree_sensitive(const void *);
 size_t __ksize(const void *);
 size_t ksize(const void *);
+
+DEFINE_FREE(kfree, void *, if (_T) kfree(_T))
 
 #ifdef CONFIG_HAVE_HARDENED_USERCOPY_ALLOCATOR
 void __check_heap_object(const void *ptr, unsigned long n, struct page *page,
