@@ -97,6 +97,22 @@ MODULE_PARM_DESC(ubm_granule,
 
 #define UMAU_MEM_DTLB_INVLD 0x2030
 #define UMAU_MEM_START_ADDR 0x2000
+#define UMAU_MEM_ATTR_MASK GENMASK(30, 27)
+/*
+ * UMAU memory attributes (UMAU_MEM_ATTR_MASK field, register bits [30:27]):
+ *   attr[0] memattr_ewa       - early-write-allocate
+ *   attr[1] memattr_device    - device memory type
+ *   attr[2] memattr_cacheable - cacheable memory type
+ *   attr[3] memattr_allocate  - allocate-on-access
+ */
+#define UMAU_MEM_ATTR_EWA       BIT(0)
+#define UMAU_MEM_ATTR_DEVICE    BIT(1)
+#define UMAU_MEM_ATTR_CACHEABLE BIT(2)
+#define UMAU_MEM_ATTR_ALLOCATE  BIT(3)
+#define UMAU_MEM_ATTR_NORMAL    (UMAU_MEM_ATTR_EWA | \
+				 UMAU_MEM_ATTR_CACHEABLE | \
+				 UMAU_MEM_ATTR_ALLOCATE)
+
 #define UMAU_MEM_LEN_GRANU 0x2004
 #define UMAU_MEM_BTE 0x2008
 #define UMAU_MEM_INDEX 0x200C
@@ -439,6 +455,9 @@ static void write_ate_entries(struct ubmem_mmu_domain *dom,
 		cnt = info->size / granule_size;
 		for (i = 0; i < cnt; i++) {
 			reg = (start_addr & PHYS_ADDR_MASK) >> SZ_2M_SHIFT;
+			reg |= FIELD_PREP(UMAU_MEM_ATTR_MASK,
+				(dom->mmu->chip_version == UMMU_CHIP_VERSION_FIRST) ?
+				0 : UMAU_MEM_ATTR_NORMAL);
 			writel_relaxed(reg, mdev->base + mdev->reg_offset->mem_start_addr);
 
 			reg = MEM_TYPE_MASK | MEM_WR_MASK | MEM_VLD_MASK;
