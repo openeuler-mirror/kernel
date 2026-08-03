@@ -292,6 +292,8 @@ static ssize_t iommufd_fault_fops_read(struct file *filep, char __user *buf,
 			}
 			done += fault_size;
 		}
+		if (rc)
+			break;
 
 		list_del(&group_extend->node);
 	}
