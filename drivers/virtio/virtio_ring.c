@@ -298,6 +298,11 @@ static bool vring_use_dma_api(const struct virtio_device *vdev)
 
 	if (virtcca_cvm_domain())
 		return true;
+
+#ifdef CONFIG_HISI_CCADA_GUEST
+	if (is_realm_world())
+		return true;
+#endif
 	return false;
 }
 
