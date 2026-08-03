@@ -422,8 +422,8 @@ static u8 get_minist_log2size_range(size_t size)
 	return index;
 }
 
-int ummu_device_flush_plb(struct ummu_device *ummu, u32 tag, u32 tid,
-			  u64 addr, size_t size)
+static int ummu_device_flush_plb(struct ummu_device *ummu, u32 tag, u32 tid,
+				 u64 addr, size_t size)
 {
 	u32 plbi_num = (ummu->cap.options & UMMU_OPT_DOUBLE_PLBI) ? 2 : 1;
 	struct ummu_mcmdq_ent cmd = {
@@ -446,6 +446,23 @@ int ummu_device_flush_plb(struct ummu_device *ummu, u32 tag, u32 tid,
 	}
 
 	return ret;
+}
+
+void ummu_device_ioplb_sync(struct iommu_domain *domain,
+			    struct iommu_plb_gather *plb_gather)
+{
+	struct ummu_base_domain *base_domain = to_ummu_base_domain(domain);
+	struct ummu_device *ummu = core_to_ummu_device(base_domain->core_dev);
+	struct ummu_domain *u_domain = to_ummu_domain(domain);
+	u32 tid = u_domain->base_domain.tid;
+	u32 tag = u_domain->cfgs.tecte_tag;
+	u64 addr;
+
+	if (!plb_gather->size)
+		return;
+
+	addr = (u64)(uintptr_t)plb_gather->va & GENMASK_ULL(ummu->cap.ias - 1, 0U);
+	ummu_device_flush_plb(ummu, tag, tid, addr, plb_gather->size);
 }
 
 void ummu_device_flush_plb_all(struct iommu_domain *domain)
