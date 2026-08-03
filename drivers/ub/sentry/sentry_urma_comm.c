@@ -1587,7 +1587,7 @@ static ssize_t proc_heartbeat_write(struct file *file, const char __user *ubuf,
 	int ret;
 	char enable_str[ENABLE_VALUE_MAX_LEN + 1] = {0};
 
-	if (cnt > ENABLE_VALUE_MAX_LEN) {
+	if (cnt == 0 || cnt > ENABLE_VALUE_MAX_LEN) {
 		pr_err("invalid value for /proc/%s/%s, only 'off' or 'on' allowed\n",
 		       PROC_DEVICE_PATH, PROC_HEARTBEAT_SWITCH);
 		return -EINVAL;

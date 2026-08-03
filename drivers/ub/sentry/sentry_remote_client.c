@@ -498,7 +498,7 @@ static ssize_t proc_panic_enable_file_write(struct file *file, const char __user
 	int ret;
 	char enable_str[ENABLE_VALUE_MAX_LEN + 1] = {0};
 
-	if (cnt > ENABLE_VALUE_MAX_LEN) {
+	if (cnt == 0 || cnt > ENABLE_VALUE_MAX_LEN) {
 		pr_err("invalid value for panic mode, only 'off' or 'on' allowed\n");
 		return -EINVAL;
 	}
@@ -545,7 +545,7 @@ static ssize_t proc_kernel_reboot_enable_file_write(struct file *file,
 	int ret;
 	char enable_str[ENABLE_VALUE_MAX_LEN + 1] = {0};
 
-	if (cnt > ENABLE_VALUE_MAX_LEN) {
+	if (cnt == 0 || cnt > ENABLE_VALUE_MAX_LEN) {
 		pr_err("invalid value for kernel_reboot mode, only 'off' or 'on' allowed\n");
 		return -EINVAL;
 	}
@@ -624,7 +624,7 @@ static ssize_t proc_uvb_comm_file_write(struct file *file, const char __user *ub
 	int ret;
 	char enable_str[ENABLE_VALUE_MAX_LEN + 1] = {0};
 
-	if (cnt > ENABLE_VALUE_MAX_LEN) {
+	if (cnt == 0 || cnt > ENABLE_VALUE_MAX_LEN) {
 		pr_err("invalid value for uvb_comm, only 'off' or 'on' allowed\n");
 		return -EINVAL;
 	}
@@ -670,7 +670,7 @@ static ssize_t proc_urma_comm_file_write(struct file *file, const char __user *u
 	int ret;
 	char enable_str[ENABLE_VALUE_MAX_LEN + 1] = {0};
 
-	if (cnt > ENABLE_VALUE_MAX_LEN) {
+	if (cnt == 0 || cnt > ENABLE_VALUE_MAX_LEN) {
 		pr_err("invalid value for urma_comm, only 'off' or 'on' allowed\n");
 		return -EINVAL;
 	}

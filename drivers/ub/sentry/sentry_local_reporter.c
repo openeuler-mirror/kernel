@@ -226,7 +226,7 @@ static ssize_t proc_oom_enable_write(struct file *file,
 	int ret;
 	char oom_enable[ENABLE_VALUE_MAX_LEN + 1] = {0};
 
-	if (cnt > ENABLE_VALUE_MAX_LEN) {
+	if (cnt == 0 || cnt > ENABLE_VALUE_MAX_LEN) {
 		pr_err("invalid value for oom, the value can only be 'off' or 'on'.\n");
 		return -EINVAL;
 	}
@@ -293,7 +293,7 @@ static ssize_t proc_power_off_enable_write(struct file *file,
 	int ret;
 	char power_off_enable[ENABLE_VALUE_MAX_LEN + 1] = {0};
 
-	if (cnt > ENABLE_VALUE_MAX_LEN) {
+	if (cnt == 0 || cnt > ENABLE_VALUE_MAX_LEN) {
 		pr_err("invalid value for power_off, the value can only be 'off' or 'on'.\n");
 		return -EINVAL;
 	}
@@ -360,7 +360,7 @@ static ssize_t proc_ub_mem_fault_enable_write(struct file *file,
 	int ret;
 	char ub_mem_fault_enable[ENABLE_VALUE_MAX_LEN + 1] = {0};
 
-	if (cnt > ENABLE_VALUE_MAX_LEN) {
+	if (cnt == 0 || cnt > ENABLE_VALUE_MAX_LEN) {
 		pr_err("invalid value for ub_mem_fault, the value can only be 'off' or 'on'.\n");
 		return -EINVAL;
 	}
@@ -427,7 +427,7 @@ static ssize_t proc_ub_mem_fault_with_kill_write(struct file *file,
 	int ret;
 	char ub_mem_fault_with_kill[ENABLE_VALUE_MAX_LEN + 1] = {0};
 
-	if (cnt > ENABLE_VALUE_MAX_LEN) {
+	if (cnt == 0 || cnt > ENABLE_VALUE_MAX_LEN) {
 		pr_err("invalid value for ub_mem_fault_with_kill, the value can only be 'off' or 'on'.\n");
 		return -EINVAL;
 	}
@@ -769,7 +769,7 @@ static ssize_t proc_link_event_enable_write(struct file *file,
 	int ret;
 	char enable[ENABLE_VALUE_MAX_LEN + 1] = {0};
 
-	if (cnt > ENABLE_VALUE_MAX_LEN) {
+	if (cnt == 0 || cnt > ENABLE_VALUE_MAX_LEN) {
 		pr_err("invalid value for link_event, the value can only be 'off' or 'on'.\n");
 		return -EINVAL;
 	}
