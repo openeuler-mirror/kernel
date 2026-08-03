@@ -110,8 +110,6 @@ u16	la_iommu_last_bdf;			/* largest PCI device id
 						 *  we have to handle
 						 */
 
-int loongarch_iommu_disable;
-
 #define iommu_write_regl(iommu, off, val) \
 	writel(val, iommu->confbase + off)
 #define iommu_read_regl(iommu, off)	readl(iommu->confbase + off)
@@ -1789,26 +1787,6 @@ static void free_iommu_rlookup_entry(void)
 		kfree(rlookupentry);
 	}
 }
-
-static int __init la_iommu_setup(char *str)
-{
-	if (!str)
-		return -EINVAL;
-	while (*str) {
-		if (!strncmp(str, "on", 2)) {
-			loongarch_iommu_disable = 0;
-			pr_info("IOMMU enabled\n");
-		} else if (!strncmp(str, "off", 3)) {
-			loongarch_iommu_disable = 1;
-			pr_info("IOMMU disabled\n");
-		}
-		str += strcspn(str, ",");
-		while (*str == ',')
-			str++;
-	}
-	return 0;
-}
-__setup("loongarch_iommu=", la_iommu_setup);
 
 static const struct pci_device_id loongson_iommu_pci_tbl[] = {
 	{ PCI_DEVICE(0x14, 0x3c0f) },
