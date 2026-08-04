@@ -1007,10 +1007,6 @@ static int update_prefer_cpumask(struct cpuset *cs, struct cpuset *trialcs,
 			return retval;
 	}
 
-	/* Nothing to do if the cpus didn't change */
-	if (cpumask_equal(cs->prefer_cpus, trialcs->prefer_cpus))
-		return 0;
-
 	if (!cpumask_subset(trialcs->prefer_cpus, cs->cpus_allowed))
 		return -EINVAL;
 
