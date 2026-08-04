@@ -69,7 +69,9 @@ static long cdma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	struct cdma_ioctl_hdr hdr = { 0 };
 	int ret;
 
+	mutex_lock(&cfile->ctx_mutex);
 	if (!cfile->cdev || cfile->cdev->status >= CDMA_STATUS_SUSPENDED) {
+		mutex_unlock(&cfile->ctx_mutex);
 		pr_info("ioctl cdev is invalid\n");
 		return -ENODEV;
 	}
@@ -81,15 +83,18 @@ static long cdma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			pr_err("copy user ret = %d, input parameter len = %u\n",
 				ret, hdr.args_len);
 			cdma_ref_dec(&cfile->cdev->cmdcnt, &cfile->cdev->cmddone);
+			mutex_unlock(&cfile->ctx_mutex);
 			return -EINVAL;
 		}
 		ret = cdma_cmd_parse(cfile, &hdr);
 		cdma_ref_dec(&cfile->cdev->cmdcnt, &cfile->cdev->cmddone);
+		mutex_unlock(&cfile->ctx_mutex);
 		return ret;
 	}
 
 	pr_err("invalid ioctl command, command = %u\n", cmd);
 	cdma_ref_dec(&cfile->cdev->cmdcnt, &cfile->cdev->cmddone);
+	mutex_unlock(&cfile->ctx_mutex);
 	return -ENOIOCTLCMD;
 }
 
