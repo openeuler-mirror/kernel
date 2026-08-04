@@ -1022,6 +1022,16 @@ static int update_prefer_cpumask(struct cpuset *cs, struct cpuset *trialcs,
 
 	return 0;
 }
+
+static inline bool prefer_cpus_updated(struct cpuset *cs, struct cpuset *oldcs)
+{
+	return !cpumask_equal(cs->prefer_cpus, oldcs->prefer_cpus);
+}
+#else
+static inline bool prefer_cpus_updated(struct cpuset *cs, struct cpuset *oldcs)
+{
+	return false;
+}
 #endif
 
 #ifdef CONFIG_SMP
@@ -3539,7 +3549,7 @@ static void cpuset_attach(struct cgroup_taskset *tset)
 	 * by skipping the task iteration and update.
 	 */
 	if (cgroup_subsys_on_dfl(cpuset_cgrp_subsys) &&
-	    !cpus_updated && !mems_updated) {
+	    !cpus_updated && !mems_updated && !prefer_cpus_updated(cs, oldcs)) {
 		cpuset_attach_nodemask_to = cs->effective_mems;
 		goto out;
 	}
