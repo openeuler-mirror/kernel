@@ -896,9 +896,7 @@ int cdma_cmd_parse(struct cdma_file *cfile, struct cdma_ioctl_hdr *hdr)
 		return -ENOIOCTLCMD;
 	}
 
-	mutex_lock(&cfile->ctx_mutex);
 	ret = cdma_cmd_handler[hdr->command](hdr, cfile);
-	mutex_unlock(&cfile->ctx_mutex);
 
 	return ret;
 }
