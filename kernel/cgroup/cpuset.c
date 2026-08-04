@@ -4579,6 +4579,13 @@ hotplug_update_tasks(struct cpuset *cs,
 		update_tasks_cpumask(cs, new_cpus);
 	if (mems_updated)
 		update_tasks_nodemask(cs);
+
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	if (!cpumask_subset(cs->prefer_cpus, cs->effective_cpus)) {
+		cpumask_and(cs->prefer_cpus, cs->prefer_cpus, cs->effective_cpus);
+		update_tasks_prefer_cpumask(cs);
+	}
+#endif
 }
 
 static bool force_rebuild;
