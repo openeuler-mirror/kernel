@@ -1007,10 +1007,6 @@ static int update_prefer_cpumask(struct cpuset *cs, struct cpuset *trialcs,
 			return retval;
 	}
 
-	/* Nothing to do if the cpus didn't change */
-	if (cpumask_equal(cs->prefer_cpus, trialcs->prefer_cpus))
-		return 0;
-
 	if (!cpumask_subset(trialcs->prefer_cpus, cs->cpus_allowed))
 		return -EINVAL;
 
@@ -1021,6 +1017,16 @@ static int update_prefer_cpumask(struct cpuset *cs, struct cpuset *trialcs,
 	spin_unlock_irq(&callback_lock);
 
 	return 0;
+}
+
+static inline bool prefer_cpus_updated(struct cpuset *cs, struct cpuset *oldcs)
+{
+	return !cpumask_equal(cs->prefer_cpus, oldcs->prefer_cpus);
+}
+#else
+static inline bool prefer_cpus_updated(struct cpuset *cs, struct cpuset *oldcs)
+{
+	return false;
 }
 #endif
 
@@ -3544,7 +3550,7 @@ static void cpuset_attach(struct cgroup_taskset *tset)
 	 * by skipping the task iteration and update.
 	 */
 	if (cgroup_subsys_on_dfl(cpuset_cgrp_subsys) &&
-	    !cpus_updated && !mems_updated) {
+	    !cpus_updated && !mems_updated && !prefer_cpus_updated(cs, oldcs)) {
 		cpuset_attach_nodemask_to = cs->effective_mems;
 		goto out;
 	}
@@ -4578,6 +4584,13 @@ hotplug_update_tasks(struct cpuset *cs,
 		update_tasks_cpumask(cs, new_cpus);
 	if (mems_updated)
 		update_tasks_nodemask(cs);
+
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	if (!cpumask_subset(cs->prefer_cpus, cs->effective_cpus)) {
+		cpumask_and(cs->prefer_cpus, cs->prefer_cpus, cs->effective_cpus);
+		update_tasks_prefer_cpumask(cs);
+	}
+#endif
 }
 
 static bool force_rebuild;
