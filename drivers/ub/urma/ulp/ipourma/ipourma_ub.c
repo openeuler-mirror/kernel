@@ -647,8 +647,10 @@ int ipourma_urma_post_recv(struct net_device *dev, u32 eid_idx, u32 idx)
 		priv->runtime_stats.rx_stats.post_wr_failed++;
 		netdev_dbg(dev, "%s:%d\n",
 					ipourma_err_desc(IPOURMA_URMA_POST_RECV_FAILED), ret);
-		dev_kfree_skb_any(rx_buf->skb_pass_up);
-		rx_buf->skb_pass_up = NULL;
+		if (!IS_ERR_OR_NULL(rx_buf->skb_pass_up)) {
+			dev_kfree_skb_any(rx_buf->skb_pass_up);
+			rx_buf->skb_pass_up = NULL;
+		}
 		return IPOURMA_URMA_POST_RECV_FAILED;
 	}
 	priv->runtime_stats.rx_stats.num_post_wr++;
@@ -692,7 +694,7 @@ void ipourma_replenish_segments(struct work_struct *work)
 	if (IS_ERR_OR_NULL(rx_buf->skb_pass_up)) {
 		netdev_dbg(priv->dev, "%s: idx = %u\n",
 			ipourma_err_desc(IPOURMA_REPLENISH_RX_SEG_FAILED), rx_buf->idx);
-		return;
+		rx_buf->skb_pass_up = NULL;
 	}
 	if (test_bit(IPOURMA_DEV_ADMIN_UP, &priv->flags))
 		ipourma_urma_post_recv(priv->dev, rx_buf->eid_index, rx_buf->idx);
@@ -797,9 +799,24 @@ static void ipourma_do_handle_rx_wc(struct net_device *dev,
 	skb = rx_req->skb_pass_up;
 	rx_req->skb_pass_up = NULL;
 	if (IS_ERR_OR_NULL(skb)) {
-		priv->runtime_stats.rx_stats.cr_len_err++;
+		priv->runtime_stats.rx_stats.alloc_skb_retry++;
 		goto rx_wc_out;
 	}
+	if (cr->status >= IPOURMA_MAX_CR_STATUS) {
+		priv->runtime_stats.rx_stats.cqe_err++;
+		dev_kfree_skb_any(skb);
+		goto rx_wc_out;
+	}
+	priv->runtime_stats.rx_stats.cqe_stats[cr->status]++;
+	if (unlikely(cr->status != UBCORE_CR_SUCCESS)) {
+		priv->runtime_stats.rx_stats.cqe_err++;
+		netdev_dbg(dev, "%s:%d\n",
+				   ipourma_err_desc(IPOURMA_INCORRECT_CR_STATUS), cr->status);
+		dev_kfree_skb_any(skb);
+		goto rx_wc_out;
+	}
+	priv->runtime_stats.rx_stats.cqe_success++;
+
 	if (cr->completion_len > priv->tx_buf_size ||
 		cr->completion_len <= (u32)sizeof(struct ipourma_header) ||
 		IS_ERR_OR_NULL(rx_req->buf_aligned)) {
@@ -838,18 +855,6 @@ void ipourma_handle_rx_wc(struct net_device *dev,
 {
 	u32 eid_idx, idx;
 
-	if (cr->status >= IPOURMA_MAX_CR_STATUS) {
-		priv->runtime_stats.rx_stats.cqe_err++;
-		return;
-	}
-	priv->runtime_stats.rx_stats.cqe_stats[cr->status]++;
-	if (unlikely(cr->status != UBCORE_CR_SUCCESS)) {
-		priv->runtime_stats.rx_stats.cqe_err++;
-		netdev_dbg(dev, "%s:%d\n",
-				   ipourma_err_desc(IPOURMA_INCORRECT_CR_STATUS), cr->status);
-		return;
-	}
-	priv->runtime_stats.rx_stats.cqe_success++;
 	if (unlikely(cr->local_id < IPOURMA_WELL_KNOWN_JETTY_ID ||
 		cr->local_id >= IPOURMA_MAX_EID_CNT + IPOURMA_WELL_KNOWN_JETTY_ID)) {
 		netdev_dbg(dev, "%s:%u\n",

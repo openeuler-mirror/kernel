@@ -221,6 +221,7 @@ struct ipourma_rx_stats {
 	uint64_t alloc_skb_failed;
 	uint64_t register_seg_failed;
 	uint64_t post_wr_failed;
+	uint64_t alloc_skb_retry;
 };
 
 struct ipourma_runtime_stats {

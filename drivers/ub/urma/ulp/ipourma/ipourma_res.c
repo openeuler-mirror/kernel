@@ -774,7 +774,7 @@ static struct ubcore_jfc *ipourma_create_jfc(struct net_device *dev,
 	}
 	if (ubcore_rearm_jfc(jfc, false) != 0)
 		netdev_warn(dev, "%s\n", ipourma_err_desc(IPOURMA_REARM_JFC_FAILED));
-
+	netdev_dbg(dev, "jfc_id=%u\n", jfc->id);
 	return jfc;
 }
 
