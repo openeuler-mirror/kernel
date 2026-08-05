@@ -772,7 +772,7 @@ static int cppc_perf_from_fbctrs(struct cppc_cpudata *cpu_data,
 	u64 delta_reference, delta_delivered;
 	u64 reference_perf;
 
-	reference_perf = fb_ctrs_t0->reference_perf;
+	reference_perf = cpu_data->perf_caps.reference_perf;
 
 	delta_reference = get_delta(fb_ctrs_t1->reference,
 				    fb_ctrs_t0->reference);
