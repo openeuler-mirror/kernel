@@ -64,7 +64,7 @@ MODULE_PARM_DESC(ubm_granule,
 #define MEM_ATE_INDEX_MASK GENMASK(16, 0)
 
 #define UMMU_MEM_DTLB_INVLD 0x10
-#define MEM_DTLB_INVLD_MASK (1UL)
+#define UMMU_MEM_DTLB_INVLD_MASK (1UL)
 
 #define SZ_2M_SHIFT (21UL)
 #define PHYS_ADDR_MASK GENMASK_ULL(43, 21)
@@ -96,6 +96,7 @@ MODULE_PARM_DESC(ubm_granule,
 #define RESERVED_MSI_ADDR_H_SHIFT 32
 
 #define UMAU_MEM_DTLB_INVLD 0x2030
+#define UMAU_MEM_DTLB_INVLD_MASK (3UL)
 #define UMAU_MEM_START_ADDR 0x2000
 #define UMAU_MEM_ATTR_MASK GENMASK(30, 27)
 /*
@@ -126,6 +127,20 @@ MODULE_PARM_DESC(ubm_granule,
 #define UMAU_MEM_TAB_INIT_DONE_PROT 0x2014
 #define PTB_INIT_DONE BIT(0)
 
+#define UMAU_MEM_DFX_OFFSET 0x4
+#define UMAU_MEM_UPA_NUM 2
+
+/* UMAU DFX */
+#define UMAU_MEM_VA_L GENMASK(31, 0)
+#define UMAU_MEM_VA_H GENMASK(23, 8)
+#define UMAU_MEM_VA_GRANULE_SHIFT 6
+#define UMAU_MEM_ENTRYID GENMASK(7, 0)
+#define UMAU_MEM_TT_ADDR GENMASK(26, 0)
+#define UMAU_MEM_CLEAR BIT(31)
+#define UMAU_MEM_TOKENID GENMASK(16, 7)
+#define UMAU_MEM_ERR_CODE GENMASK(6, 2)
+#define UMAU_MEM_VLD BIT(0)
+
 enum ummu_ubif_reg_enum {
 	UBIF_MEM_CFG,
 	UBIF_MEM_DFX0,
@@ -144,11 +159,11 @@ static u32 ummu_ubif_reg[UMMU_UBIF_MEM_MAX] = {
 };
 
 static u32 umau_ubif_reg[UMMU_UBIF_MEM_MAX] = {
-	[UBIF_MEM_CFG] = 0x1030,
-	[UBIF_MEM_DFX0] = 0x1034,
-	[UBIF_MEM_DFX1] = 0x1038,
-	[UBIF_MEM_DFX2] = 0x103C,
-	[UBIF_MEM_DFX3] = 0x1044,
+	[UBIF_MEM_CFG] = 0x3250,
+	[UBIF_MEM_DFX0] = 0x4000,
+	[UBIF_MEM_DFX1] = 0x4010,
+	[UBIF_MEM_DFX2] = 0x4020,
+	[UBIF_MEM_DFX3] = 0x4030,
 };
 
 struct ubmem_reg_offset {
@@ -176,16 +191,6 @@ static const struct ubmem_reg_offset reg_umau_v2 = {
 	.mem_bte = UMAU_MEM_BTE,
 	.mem_index = UMAU_MEM_INDEX,
 	.ubif_reg = umau_ubif_reg
-};
-
-enum ubmem_err_type {
-	BAD_REQUEST = 1,
-	BAD_TOKENID,
-	PT_ECC_2BITS,
-	PT_INVALID,
-	PT_BAD_ADDR,
-	ATT_ECC_2BITS,
-	ATT_INVALID,
 };
 
 struct ubmem_mmu_info {
@@ -278,36 +283,98 @@ static void ubmem_granule_sanitize(struct ubmem_mmu_device *mmu)
 	ubm_granule = 0;
 }
 
-static irqreturn_t ubmem_error_handler(int irq, void *ummu)
+static bool ubmem_dfx_log_allow(void)
 {
-	struct ubmem_mmu_device *mmu =
-				to_ubmem_mmu_dev((struct ummu_device *)ummu);
+	static DEFINE_RATELIMIT_STATE(ubmem_dfx_rs, DEFAULT_RATELIMIT_INTERVAL,
+				      DEFAULT_RATELIMIT_BURST);
+
+	if (!__ratelimit(&ubmem_dfx_rs))
+		return false;
+
+	return true;
+}
+
+static void ubmem_umau_dfx_irq(struct ubmem_mmu_device *mmu)
+{
+	const u32 *reg = mmu->reg_offset->ubif_reg;
+	void __iomem *base = mmu->base;
+	u32 upa, off, dfx[UMMU_UBIF_MEM_MAX];
+	u8 code;
+	int i;
+
+	for (upa = 0; upa < UMAU_MEM_UPA_NUM; upa++) {
+		off = upa * UMAU_MEM_DFX_OFFSET;
+		for (i = UBIF_MEM_DFX0; i < UMMU_UBIF_MEM_MAX; i++)
+			dfx[i] = readl_relaxed(base + reg[i] + off);
+
+		if (!(dfx[UBIF_MEM_DFX3] & UMAU_MEM_VLD)) {
+			dev_info_ratelimited(mmu->dev,
+				"ummu mem dfx upa%u no valid fault.\n", upa);
+			continue;
+		}
+
+		code = FIELD_GET(UMAU_MEM_ERR_CODE, dfx[UBIF_MEM_DFX3]);
+		if (ubmem_dfx_log_allow()) {
+			dev_info(mmu->dev, "ummu mem dfx upa%u event 0x%x received.\n", upa, code);
+			dev_info(mmu->dev, "upa%u fault tid: 0x%x.\n", upa,
+				 (u32)FIELD_GET(UMAU_MEM_TOKENID, dfx[UBIF_MEM_DFX3]));
+			dev_info(mmu->dev, "upa%u fault entryid: 0x%x.\n", upa,
+				 (u32)FIELD_GET(UMAU_MEM_ENTRYID, dfx[UBIF_MEM_DFX1]));
+			dev_info(mmu->dev, "upa%u fault va: 0x%llx.\n", upa,
+				 ((u64)FIELD_GET(UMAU_MEM_VA_L, dfx[UBIF_MEM_DFX0]) |
+				  ((u64)FIELD_GET(UMAU_MEM_VA_H, dfx[UBIF_MEM_DFX1]) << 32))
+				  << UMAU_MEM_VA_GRANULE_SHIFT);
+			dev_info(mmu->dev, "upa%u fault tt_addr: 0x%x.\n", upa,
+				 (u32)FIELD_GET(UMAU_MEM_TT_ADDR, dfx[UBIF_MEM_DFX2]));
+		}
+
+		writel_relaxed(UMAU_MEM_CLEAR,
+			       base + reg[UBIF_MEM_DFX3] + off);
+	}
+}
+
+static void ubmem_ummu_dfx_irq(struct ubmem_mmu_device *mmu)
+{
 	void __iomem *dfx_base = mmu->dfx_base == NULL ? mmu->base : mmu->dfx_base;
+	const u32 *reg = mmu->reg_offset->ubif_reg;
 	u32 regs[UMMU_UBIF_MEM_MAX];
 	u8 code;
 	int i;
 
 	for (i = 0; i < UMMU_UBIF_MEM_MAX; i++)
-		regs[i] = readl_relaxed(dfx_base + mmu->reg_offset->ubif_reg[i]);
+		regs[i] = readl_relaxed(dfx_base + reg[i]);
 
 	if (!(regs[UBIF_MEM_DFX2] & UBIF_MEM_CHK_FAULT_VLD)) {
 		dev_info_ratelimited(mmu->dev, "received a unknown fault.\n");
-		return IRQ_HANDLED;
+		return;
 	}
 	code = FIELD_GET(UBIF_MEM_CHK_FAULT_ERR_CODE, regs[UBIF_MEM_DFX2]);
-	dev_info(mmu->dev, "event 0x%x received.\n", code);
-	dev_info(mmu->dev, "fault stage: 0x%lx.\n",
-		 regs[UBIF_MEM_DFX2] & UBIF_MEM_CHK_FAULT_STAGE);
-	dev_info(mmu->dev, "fault mode: 0x%lx.\n",
-		 regs[UBIF_MEM_CFG] & UBIF_MEM_CHK_FAULT_RECORD_MODE);
-	dev_info(mmu->dev, "fault tid: 0x%lx.\n",
-		 FIELD_GET(UBIF_MEM_CHK_FAULT_TOKENID, regs[UBIF_MEM_DFX2]));
-	dev_info(mmu->dev, "fault length: 0x%lx.\n",
-		 FIELD_GET(UBIF_MEM_CHK_FAULT_END_ADDR, regs[UBIF_MEM_DFX3]) -
-		 FIELD_GET(UBIF_MEM_CHK_FAULT_END_ADDR, regs[UBIF_MEM_DFX0]));
+	if (ubmem_dfx_log_allow()) {
+		dev_info(mmu->dev, "event 0x%x received.\n", code);
+		dev_info(mmu->dev, "fault stage: 0x%lx.\n",
+			 regs[UBIF_MEM_DFX2] & UBIF_MEM_CHK_FAULT_STAGE);
+		dev_info(mmu->dev, "fault mode: 0x%lx.\n",
+			 regs[UBIF_MEM_CFG] & UBIF_MEM_CHK_FAULT_RECORD_MODE);
+		dev_info(mmu->dev, "fault tid: 0x%lx.\n",
+			 FIELD_GET(UBIF_MEM_CHK_FAULT_TOKENID, regs[UBIF_MEM_DFX2]));
+		dev_info(mmu->dev, "fault length: 0x%lx.\n",
+			 FIELD_GET(UBIF_MEM_CHK_FAULT_END_ADDR, regs[UBIF_MEM_DFX3]) -
+			 FIELD_GET(UBIF_MEM_CHK_FAULT_END_ADDR, regs[UBIF_MEM_DFX0]));
+	}
 
-	writel_relaxed(UBIF_MEM_CHK_FAULT_CLEAR,
-		       dfx_base + mmu->reg_offset->ubif_reg[UBIF_MEM_DFX2]);
+	writel_relaxed(UBIF_MEM_CHK_FAULT_CLEAR, dfx_base + reg[UBIF_MEM_DFX2]);
+}
+
+static irqreturn_t ubmem_error_handler(int irq, void *ummu)
+{
+	struct ubmem_mmu_device *mmu =
+				to_ubmem_mmu_dev((struct ummu_device *)ummu);
+
+	if (mmu->chip_version != UMMU_CHIP_VERSION_FIRST)
+		ubmem_umau_dfx_irq(mmu);
+	else
+		ubmem_ummu_dfx_irq(mmu);
+
 	return IRQ_HANDLED;
 }
 
@@ -501,7 +568,8 @@ static void clear_pte_entry(struct ubmem_mmu_domain *dom,
 
 static void ubmem_mmu_flush_dtlb(struct ubmem_mmu_device *mdev)
 {
-	u32 reg = MEM_DTLB_INVLD_MASK;
+	u32 reg = mdev->chip_version == UMMU_CHIP_VERSION_FIRST ?
+		UMMU_MEM_DTLB_INVLD_MASK : UMAU_MEM_DTLB_INVLD_MASK;
 
 	writel_relaxed(reg, mdev->base + mdev->reg_offset->mem_dtlb_invld);
 }
