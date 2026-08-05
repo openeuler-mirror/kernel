@@ -540,7 +540,8 @@ static void release_all_resource(void)
 int str_to_eid(const char *eid_str, union ubcore_eid *eid)
 {
 	if (!eid_str || !eid || strlen(eid_str) != EID_MAX_LEN - 1) {
-		pr_err("eid str %s len is invalid, failed to transfer\n", eid_str);
+		pr_err("eid str %s len is invalid, failed to transfer\n",
+		       eid_str ? eid_str : "(null)");
 		return -EINVAL;
 	}
 
@@ -1586,7 +1587,7 @@ static ssize_t proc_heartbeat_write(struct file *file, const char __user *ubuf,
 	int ret;
 	char enable_str[ENABLE_VALUE_MAX_LEN + 1] = {0};
 
-	if (cnt > ENABLE_VALUE_MAX_LEN) {
+	if (cnt == 0 || cnt > ENABLE_VALUE_MAX_LEN) {
 		pr_err("invalid value for /proc/%s/%s, only 'off' or 'on' allowed\n",
 		       PROC_DEVICE_PATH, PROC_HEARTBEAT_SWITCH);
 		return -EINVAL;

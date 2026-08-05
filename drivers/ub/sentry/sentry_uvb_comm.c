@@ -90,6 +90,7 @@ static int convert_server_cna_str_to_u32_array(const char *server_cna)
     char *token;
 
     char *server_cna_copy = kstrdup(server_cna, GFP_KERNEL);
+
     if (!server_cna_copy) {
 		pr_err("%s: kstrdup failed!\n", __func__);
 		return -ENOMEM;
@@ -132,6 +133,9 @@ static int convert_server_cna_str_to_u32_array(const char *server_cna)
 
 static ssize_t proc_uvb_server_cna_show(struct file *file, char __user *buf, size_t count, loff_t *ppos)
 {
+	if (!g_kbuf_server_cna)
+		return -ENODEV;
+
     return simple_read_from_buffer(buf, count, ppos, g_kbuf_server_cna, strlen(g_kbuf_server_cna));
 }
 

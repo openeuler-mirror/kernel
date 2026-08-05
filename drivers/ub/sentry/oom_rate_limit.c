@@ -155,6 +155,11 @@ int oom_rate_limit_check(enum reclaim_reason reason, int nid)
 	unsigned long time_diff;
 	int should_report = 0;
 
+	if (reason < 0 || reason >= MAX_EVENT_TYPES) {
+		pr_err("invalid reason\n");
+		return -EINVAL;
+	}
+
 	if (nid < 0 || nid >= OOM_EVENT_MAX_NUMA_NODES) {
 		pr_err("invalid params\n");
 		return -EINVAL;
