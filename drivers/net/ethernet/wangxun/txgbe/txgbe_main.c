@@ -2483,6 +2483,8 @@ static void txgbe_check_overtemp_subtask(struct txgbe_adapter *adapter)
 
 		wr32m(&adapter->hw, TXGBE_RDB_PB_CTL,
 		      TXGBE_RDB_PB_CTL_RXEN, 0);
+		/* wait for tx ring clean */
+		mdelay(20);
 	}
 
 	adapter->interrupt_event = 0;
@@ -7150,6 +7152,9 @@ static void txgbe_watchdog_link_is_up(struct txgbe_adapter *adapter)
 	struct txgbe_hw *hw = &adapter->hw;
 	u32 link_speed = adapter->link_speed;
 	bool flow_rx, flow_tx;
+
+	if (test_bit(__TXGBE_HANGING, &adapter->state))
+		return;
 
 	/* only continue if link was previously down */
 	if (netif_carrier_ok(netdev))
