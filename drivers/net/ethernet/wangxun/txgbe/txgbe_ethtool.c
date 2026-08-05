@@ -4109,6 +4109,15 @@ static int txgbe_set_rss_hash_opt(struct txgbe_adapter *adapter,
 			mrqc |= TXGBE_RDB_RA_CTL_RSS_IPV6_UDP;
 
 		wr32(hw, TXGBE_RDB_RA_CTL, mrqc);
+
+		if (adapter->flags & TXGBE_FLAG_SRIOV_ENABLED) {
+			u32 vfmrqc;
+
+			vfmrqc = rd32(hw, TXGBE_RDB_PL_CFG(adapter->num_vfs));
+			vfmrqc &= ~TXGBE_RDB_PL_CFG_RSS_MASK;
+			vfmrqc |= mrqc & TXGBE_RDB_RA_CTL_RSS_MASK;
+			wr32(hw, TXGBE_RDB_PL_CFG(adapter->num_vfs), vfmrqc);
+		}
 	}
 
 	return 0;
