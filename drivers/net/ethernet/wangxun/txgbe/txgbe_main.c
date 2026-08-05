@@ -41,6 +41,7 @@
 #include "txgbe_hw.h"
 #include "txgbe_phy.h"
 #include "txgbe_pcierr.h"
+#include "txgbe_bp_base.h"
 #include "txgbe_bp.h"
 #include "txgbe_e56.h"
 #include "txgbe_e56_bp.h"

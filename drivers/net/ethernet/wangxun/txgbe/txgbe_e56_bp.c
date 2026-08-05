@@ -1,13 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0
 /* Copyright (c) 2019 - 2022 Beijing WangXun Technology Co., Ltd. */
 
+#include "txgbe_bp_base.h"
 #include "txgbe_e56.h"
-#include "txgbe_hw.h"
-
-#include "txgbe.h"
-#include "txgbe_type.h"
 #include "txgbe_e56_bp.h"
-#include "txgbe_bp.h"
 
 static int txgbe_e56_set_rxs_ufine_lemax(struct txgbe_adapter *adapter, u32 speed)
 {
@@ -2419,42 +2415,6 @@ static void txgbe_e56_print_page_status(struct txgbe_adapter *adapter,
 	       txgbe_rd32_epcs(hw, 0x7001b));
 }
 
-static int chk_bkp_ability(struct txgbe_adapter *adapter,
-			   struct bkpan73ability tbkp_an73_ability,
-			   struct bkpan73ability tlpbkp_an73_ability)
-{
-	unsigned int com_link_ability;
-
-	kr_dbg(KR_MODE, "CheckBkpAn73Ability():\n");
-	/* Check the common link ability and take action based on the result*/
-	com_link_ability = tbkp_an73_ability.link_ability &
-			 tlpbkp_an73_ability.link_ability;
-	kr_dbg(KR_MODE, "comAbility= 0x%x, Ability= 0x%x, lpAbility= 0x%x\n",
-	       com_link_ability, tbkp_an73_ability.link_ability,
-	       tlpbkp_an73_ability.link_ability);
-
-	if (com_link_ability == 0) {
-		adapter->bp_link_mode = 0;
-		kr_dbg(KR_MODE, "Do not support any compatible speed mode!\n");
-		return -EINVAL;
-	} else if (com_link_ability & BIT(ABILITY_40GBASE_CR4)) {
-		kr_dbg(KR_MODE, "Link mode is [ABILITY_40GBASE_CR4].\n");
-		adapter->bp_link_mode = 40;
-	} else if (com_link_ability & BIT(ABILITY_25GBASE_KRCR_S)) {
-		kr_dbg(KR_MODE, "Link mode is [ABILITY_25GBASE_KRCR_S].\n");
-		adapter->fec_mode = TXGBE_25G_RS_FEC_REQ;
-		adapter->bp_link_mode = 25;
-	} else if (com_link_ability & BIT(ABILITY_25GBASE_KRCR)) {
-		kr_dbg(KR_MODE, "Link mode is [ABILITY_25GBASE_KRCR].\n");
-		adapter->bp_link_mode = 25;
-	} else if (com_link_ability & BIT(ABILITY_10GBASE_KR)) {
-		kr_dbg(KR_MODE, "Link mode is [ABILITY_10GBASE_KR].\n");
-		adapter->bp_link_mode = 10;
-	}
-
-	return 0;
-}
-
 static int txgbe_e56_exchange_page(struct txgbe_adapter *adapter)
 {
 	struct bkpan73ability tbkp_an73_ability = { 0 }, tlpbkp_an73_ability = { 0 };
@@ -2463,7 +2423,7 @@ static int txgbe_e56_exchange_page(struct txgbe_adapter *adapter)
 	int count = 0;
 
 	an_int = txgbe_rd32_epcs(hw, 0x78002);
-	if (!(an_int & TXGBE_E56_AN_PG_RCV))
+	if (!(an_int & TXGBE_PCS_AN_PG_RCV))
 		return -EINVAL;
 
 	/* 500ms timeout */
@@ -2472,7 +2432,7 @@ static int txgbe_e56_exchange_page(struct txgbe_adapter *adapter)
 
 		kr_dbg(KR_MODE, "-----count----- %d - fsm: %x\n",
 		       count, fsm);
-		if (an_int & TXGBE_E56_AN_PG_RCV) {
+		if (an_int & TXGBE_PCS_AN_PG_RCV) {
 			u8 next_page = 0;
 			u32 rdata, addr;
 
@@ -2513,7 +2473,7 @@ static int txgbe_e56_exchange_page(struct txgbe_adapter *adapter)
 	}
 
 check_ability:
-	return chk_bkp_ability(adapter, tbkp_an73_ability, tlpbkp_an73_ability);
+	return txgbe_chk_bkp_ability(adapter, tbkp_an73_ability, tlpbkp_an73_ability);
 }
 
 static int txgbe_e56_cl72_trainning(struct txgbe_adapter *adapter)
@@ -2738,19 +2698,19 @@ void txgbe_e56_bp_watchdog_event(struct txgbe_adapter *adapter)
 
 	value = txgbe_rd32_epcs(hw, 0x78002);
 	an_int = value;
-	if (value & TXGBE_E56_AN_INT_CMPLT) {
+	if (value & TXGBE_PCS_AN_INT_CMPLT) {
 		adapter->an_done = true;
 		adapter->flags |= TXGBE_FLAG_NEED_LINK_UPDATE;
 		txgbe_field_set(&value, 0, 0, 0);
 		txgbe_wr32_epcs(hw, 0x78002, value);
 	}
 
-	if (value & TXGBE_E56_AN_INC_LINK) {
+	if (value & TXGBE_PCS_AN_INC_LINK) {
 		txgbe_field_set(&value, 1, 1, 0);
 		txgbe_wr32_epcs(hw, 0x78002, value);
 	}
 
-	if (value & TXGBE_E56_AN_TXDIS) {
+	if (value & TXGBE_PCS_AN_TXDIS) {
 		txgbe_field_set(&value, 3, 3, 0);
 		txgbe_wr32_epcs(hw, 0x78002, value);
 		mutex_lock(&adapter->e56_lock);
@@ -2759,7 +2719,7 @@ void txgbe_e56_bp_watchdog_event(struct txgbe_adapter *adapter)
 		goto an_status;
 	}
 
-	if (value & TXGBE_E56_AN_PG_RCV) {
+	if (value & TXGBE_PCS_AN_PG_RCV) {
 		kr_dbg(KR_MODE, "Enter training\n");
 		ret = handle_e56_bkp_an73_flow(adapter);
 
@@ -2778,7 +2738,7 @@ void txgbe_e56_bp_watchdog_event(struct txgbe_adapter *adapter)
 
 an_status:
 	an_int1 = txgbe_rd32_epcs(hw, 0x78002);
-	if (an_int1 & TXGBE_E56_AN_INT_CMPLT) {
+	if (an_int1 & TXGBE_PCS_AN_INT_CMPLT) {
 		adapter->an_done = true;
 		adapter->flags |= TXGBE_FLAG_NEED_LINK_UPDATE;
 	}

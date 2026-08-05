@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /* Copyright (c) 2019 - 2022 Beijing WangXun Technology Co., Ltd. */
 
+#include "txgbe_bp_base.h"
 #include "txgbe_bp.h"
 
 void txgbe_bp_close_protect(struct txgbe_adapter *adapter)
@@ -10,54 +11,6 @@ void txgbe_bp_close_protect(struct txgbe_adapter *adapter)
 		msleep(100);
 		kr_dbg(KR_MODE, "wait to reinited ok..%x\n", adapter->flags2);
 	}
-}
-
-int txgbe_bp_mode_setting(struct txgbe_adapter *adapter)
-{
-	struct txgbe_hw *hw = &adapter->hw;
-
-	/*default to open an73*/
-	if ((hw->subsystem_device_id & TXGBE_DEV_MASK) == TXGBE_ID_KR_KX_KX4)
-		adapter->backplane_an = 1;
-
-	switch (hw->mac.type) {
-	case txgbe_mac_sp:
-			adapter->backplane_an = 0;
-		break;
-	case txgbe_mac_aml40:
-	case txgbe_mac_aml:
-	default:
-		adapter->backplane_an = 1;
-		break;
-	}
-
-	adapter->autoneg = 1;
-	switch (adapter->backplane_mode) {
-	case TXGBE_BP_M_KR:
-		hw->subsystem_device_id = TXGBE_ID_WX1820_KR_KX_KX4;
-		break;
-	case TXGBE_BP_M_KX4:
-		hw->subsystem_device_id = TXGBE_ID_WX1820_MAC_XAUI;
-		break;
-	case TXGBE_BP_M_KX:
-		hw->subsystem_device_id = TXGBE_ID_WX1820_MAC_SGMII;
-		break;
-	case TXGBE_BP_M_SFI:
-		hw->subsystem_device_id = TXGBE_ID_WX1820_SFP;
-		break;
-	default:
-		break;
-	}
-
-	if (adapter->backplane_auto == TXGBE_BP_M_AUTO) {
-		adapter->backplane_an = 1;
-		adapter->autoneg = 1;
-	} else if (adapter->backplane_auto == TXGBE_BP_M_NAUTO) {
-		adapter->backplane_an = 0;
-		adapter->autoneg = 0;
-	}
-
-	return 0;
 }
 
 void txgbe_bp_watchdog_event(struct txgbe_adapter *adapter)
@@ -104,39 +57,6 @@ void txgbe_bp_down_event(struct txgbe_adapter *adapter)
 		txgbe_wr32_epcs(hw, 0x78002, 0x0000);
 		txgbe_wr32_epcs(hw, TXGBE_SR_AN_MMD_CTL, 0x3000);
 	}
-}
-
-int chk_bkp_an73_ability(struct bkpan73ability tbkp_an73_ability,
-			 struct bkpan73ability tlpbkp_an73_ability,
-							struct txgbe_adapter *adapter)
-{
-	unsigned int com_link_ability;
-
-	kr_dbg(KR_MODE, "CheckBkpAn73Ability():\n");
-	kr_dbg(KR_MODE, "------------------------\n");
-
-	/*-- Check the common link ability and take action based on the result*/
-	com_link_ability = tbkp_an73_ability.link_ability & tlpbkp_an73_ability.link_ability;
-	kr_dbg(KR_MODE, "com_link_ability= 0x%x, link_ability= 0x%x, lpLinkAbility= 0x%x\n",
-	       com_link_ability, tbkp_an73_ability.link_ability, tlpbkp_an73_ability.link_ability);
-
-	/*only support kr*/
-	if (com_link_ability == 0) {
-		kr_dbg(KR_MODE, "WARNING: The Link Partner does not support any compatible speed mode!!!\n\n");
-		return -1;
-	} else if (com_link_ability & 0x80) {
-		if (tbkp_an73_ability.cu_linkmode == 0) {
-			kr_dbg(KR_MODE, "Link mode is matched with Link Partner: [LINK_KR].\n");
-			goto out;
-		} else {
-			kr_dbg(KR_MODE, "Link mode is not matched with Link Partner: [LINK_KR].\n");
-			kr_dbg(KR_MODE, "Set the local link mode to [LINK_KR] ...\n");
-			return 1;
-		}
-	}
-
-out:
-	return 0;
 }
 
 static void txgbe_bp_print_page_status(struct txgbe_adapter *adapter)
@@ -242,11 +162,10 @@ int get_bkp_an73_ability(struct bkpan73ability *pt_bkp_an73_ability, unsigned ch
 
 		rdata = txgbe_rd32_epcs(hw, 0x70014);
 		kr_dbg(KR_MODE, "SR AN MMD LP Base Page Ability Register 2: 0x%x\n", rdata);
-		pt_bkp_an73_ability->link_ability = rdata & 0xE0;
+		pt_bkp_an73_ability->link_ability = (rdata >> 5) & GENMASK(10, 0);
 		kr_dbg(KR_MODE, "  Link Ability (bit[15:0]): 0x%x\n",
 		       pt_bkp_an73_ability->link_ability);
-		kr_dbg(KR_MODE, "  (0x20- KX_ONLY, 0x40- KX4_ONLY, 0x60- KX4_KX\n");
-		kr_dbg(KR_MODE, "   0x80- KR_ONLY, 0xA0- KR_KX, 0xC0- KR_KX4, 0xE0- KR_KX4_KX)\n");
+		kr_dbg(KR_MODE, "  KX : 1 , KX4 : 2, KR : 4\n");
 
 		rdata = txgbe_rd32_epcs(hw, 0x70015);
 		kr_dbg(KR_MODE, "SR AN MMD LP Base Page Ability Register 3: 0x%x\n", rdata);
@@ -271,11 +190,10 @@ int get_bkp_an73_ability(struct bkpan73ability *pt_bkp_an73_ability, unsigned ch
 
 		rdata = txgbe_rd32_epcs(hw, TXGBE_SR_AN_MMD_ADV_REG2);
 		kr_dbg(KR_MODE, "SR AN MMD Advertisement Register 2: 0x%x\n", rdata);
-		pt_bkp_an73_ability->link_ability = rdata & 0xE0;
+		pt_bkp_an73_ability->link_ability = (rdata >> 5) & GENMASK(10, 0);
 		kr_dbg(KR_MODE, "  Link Ability (bit[15:0]): 0x%x\n",
 		       pt_bkp_an73_ability->link_ability);
-		kr_dbg(KR_MODE, "  (0x20- KX_ONLY, 0x40- KX4_ONLY, 0x60- KX4_KX\n");
-		kr_dbg(KR_MODE, "   0x80- KR_ONLY, 0xA0- KR_KX, 0xC0- KR_KX4, 0xE0- KR_KX4_KX)\n");
+		kr_dbg(KR_MODE, "  KX : 1 , KX4 : 2, KR : 4\n");
 
 		rdata = txgbe_rd32_epcs(hw, 0x70012);
 		kr_dbg(KR_MODE, "SR AN MMD Advertisement Register 3: 0x%x\n", rdata);
@@ -456,7 +374,7 @@ int handle_bkp_an73_flow(unsigned char bp_link_mode, struct txgbe_adapter *adapt
 	kr_dbg(KR_MODE, "Local Link Ability: 0x%x\n", tbkp_an73_ability.link_ability);
 	kr_dbg(KR_MODE, "Link Partner Link Ability: 0x%x\n", tlpbkp_an73_ability.link_ability);
 
-	chk_bkp_an73_ability(tbkp_an73_ability, tlpbkp_an73_ability, adapter);
+	txgbe_chk_bkp_ability(adapter, tbkp_an73_ability, tlpbkp_an73_ability);
 
 	/*Check the FEC and KR Training for KR mode*/
 	kr_dbg(KR_MODE, "<3.3>. Check the FEC for KR mode ...\n");

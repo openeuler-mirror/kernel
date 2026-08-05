@@ -1,21 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0
 /* Copyright (c) 2019 - 2022 Beijing WangXun Technology Co., Ltd. */
 
+#include "txgbe_bp_base.h"
 #include "txgbe_e56.h"
 #include "linux/delay.h"
 #include "txgbe.h"
 #include "txgbe_hw.h"
 
 #include <linux/sort.h>
-
-#define FIELD_PREP_M(_mask, _val) \
-	({ ((typeof(_mask))(_val) << __bf_shf_m(_mask)) & (_mask); })
-
-void txgbe_field_set(u32 *psrcdata, u32 bithigh, u32 bitlow, u32 setvalue)
-{
-	*psrcdata &= ~GENMASK(bithigh, bitlow);
-	*psrcdata |= FIELD_PREP_M(GENMASK(bithigh, bitlow), setvalue);
-}
 
 s32 txgbe_e56_check_phy_link(struct txgbe_hw *hw, u32 *speed, bool *link_up)
 {

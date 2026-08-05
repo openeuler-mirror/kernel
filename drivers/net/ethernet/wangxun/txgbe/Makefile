@@ -10,6 +10,7 @@ txgbe-objs := txgbe_main.o \
               txgbe_hw.o \
               txgbe_phy.o \
               txgbe_ethtool.o \
+			  txgbe_bp_base.o \
 			  txgbe_bp.o \
 			  txgbe_dcb_nl.o \
 			  txgbe_dcb.o \

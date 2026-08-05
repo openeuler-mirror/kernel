@@ -4,16 +4,6 @@
 #ifndef _TXGBE_E56_BP_H_
 #define _TXGBE_E56_BP_H_
 
-#define TXGBE_E56_AN_TXDIS	BIT(3)
-#define TXGBE_E56_AN_PG_RCV	BIT(2)
-#define TXGBE_E56_AN_INC_LINK	BIT(1)
-#define TXGBE_E56_AN_INT_CMPLT	BIT(0)
-
-#define TXGBE_10G_FEC_REQ	BIT(15)
-#define TXGBE_10G_FEC_ABL	BIT(14)
-#define TXGBE_25G_BASE_FEC_REQ	BIT(13)
-#define TXGBE_25G_RS_FEC_REQ	BIT(12)
-
 union txgbe_e56_pmd_tx_ffe_cfg1 {
 	struct {
 		u32 tx0_cursor_factor : 7;

@@ -1807,26 +1807,6 @@ typedef union {
 
 #define TXGBE_E56_PHY_LINK_UP 0x4
 
-#define __bf_shf_m(x) (ffs(x) - 1)
-
-#define FIELD_PREP_M(_mask, _val)					\
-	({								\
-		((typeof(_mask))(_val) << __bf_shf_m(_mask)) & (_mask);	\
-	})
-
-/* FIELD_GET_M() - extract a bitfield element
- * @_mask: shifted mask defining the field's length and position
- * @_reg:  value of entire bitfield
- *
- * FIELD_GET_M() extracts the field specified by @_mask from the
- * bitfield passed in as @_reg by masking and shifting it down.
- */
-#define FIELD_GET_M(_mask, _reg)						\
-	({								\
-		(typeof(_mask))(((_reg) & (_mask)) >> __bf_shf_m(_mask));	\
-	})
-
-void txgbe_field_set(u32 *psrcdata, u32 bithigh, u32 bitlow, u32 setvalue);
 int txgbe_e56_rxrd_sec_code(struct txgbe_hw *hw, int *SECOND_CODE);
 u32 txgbe_e56_cfg_25g(struct txgbe_hw *hw);
 u32 txgbe_e56_cfg_10g(struct txgbe_hw *hw);

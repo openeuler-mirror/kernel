@@ -1263,7 +1263,15 @@ static s32 txgbe_read_i2c_word_int(struct txgbe_hw *hw, u16 byte_offset,
 		/* write reg_offset */
 		wr32(hw, TXGBE_I2C_DATA_CMD, (u8)byte_offset | TXGBE_I2C_DATA_CMD_STOP);
 
+#ifdef CONFIG_ARM
+		/* TXGBE_I2C_TIMEOUT (5000us) is above MAX_UDELAY_MS (2ms) on
+		 * 32-bit ARM, where udelay() would expand to the undefined
+		 * __bad_udelay().
+		 */
+		mdelay(5);
+#else
 		usec_delay(TXGBE_I2C_TIMEOUT);
+#endif
 		/* wait tx empty */
 		status = po32m(hw, TXGBE_I2C_RAW_INTR_STAT,
 			       TXGBE_I2C_INTR_STAT_TX_EMPTY, TXGBE_I2C_INTR_STAT_TX_EMPTY,
