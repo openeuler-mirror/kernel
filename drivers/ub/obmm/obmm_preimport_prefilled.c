@@ -61,7 +61,12 @@ static int create_prefilled_preimport_range(const struct obmm_cmd_preimport *cmd
 
 static void destroy_prefilled_preimport_range(const struct prefilled_preimport_range *ppr)
 {
-	release_ubmem_resource(ppr->ubmem_res);
+	int ret = release_ubmem_resource(ppr->ubmem_res);
+
+	if (ret)
+		pr_warn("failed to release ubmem resource [%#llx-%#llx]: %pe; resource leaked.\n",
+			(unsigned long long)ppr->pr.start, (unsigned long long)ppr->pr.end,
+			ERR_PTR(ret));
 	kfree(ppr->bitmap);
 	kfree(ppr);
 }
