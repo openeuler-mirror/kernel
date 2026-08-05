@@ -256,9 +256,9 @@ struct l2tp_session *l2tp_tunnel_get_session(struct l2tp_tunnel *tunnel,
 	rcu_read_lock_bh();
 	hlist_for_each_entry_rcu(session, session_list, hlist)
 		if (session->session_id == session_id) {
-			l2tp_session_inc_refcount(session);
+			if (!refcount_inc_not_zero(&session->ref_count))
+				continue;
 			rcu_read_unlock_bh();
-
 			return session;
 		}
 	rcu_read_unlock_bh();
@@ -277,9 +277,9 @@ struct l2tp_session *l2tp_session_get(const struct net *net, u32 session_id)
 	rcu_read_lock_bh();
 	hlist_for_each_entry_rcu(session, session_list, global_hlist)
 		if (session->session_id == session_id) {
-			l2tp_session_inc_refcount(session);
+			if (!refcount_inc_not_zero(&session->ref_count))
+				continue;
 			rcu_read_unlock_bh();
-
 			return session;
 		}
 	rcu_read_unlock_bh();
@@ -298,7 +298,8 @@ struct l2tp_session *l2tp_session_get_nth(struct l2tp_tunnel *tunnel, int nth)
 	for (hash = 0; hash < L2TP_HASH_SIZE; hash++) {
 		hlist_for_each_entry_rcu(session, &tunnel->session_hlist[hash], hlist) {
 			if (++count > nth) {
-				l2tp_session_inc_refcount(session);
+				if (!refcount_inc_not_zero(&session->ref_count))
+					continue;
 				rcu_read_unlock_bh();
 				return session;
 			}
@@ -324,12 +325,12 @@ struct l2tp_session *l2tp_session_get_by_ifname(const struct net *net,
 	rcu_read_lock_bh();
 	for (hash = 0; hash < L2TP_HASH_SIZE_2; hash++) {
 		hlist_for_each_entry_rcu(session, &pn->l2tp_session_hlist[hash], global_hlist) {
-			if (!strcmp(session->ifname, ifname)) {
-				l2tp_session_inc_refcount(session);
-				rcu_read_unlock_bh();
-
-				return session;
-			}
+			if (strcmp(session->ifname, ifname))
+				continue;
+			if (!refcount_inc_not_zero(&session->ref_count))
+				continue;
+			rcu_read_unlock_bh();
+			return session;
 		}
 	}
 
