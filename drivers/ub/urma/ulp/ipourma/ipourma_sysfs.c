@@ -219,7 +219,8 @@ static ssize_t format_stats(char *buf, struct ipourma_dev_priv *priv, ssize_t bu
 		"num_post_wr: %llu\n"
 		"alloc_skb_failed: %llu\n"
 		"register_seg_failed: %llu\n"
-		"post_wr_failed: %llu\n",
+		"post_wr_failed: %llu\n"
+		"alloc_skb_retry: %llu\n",
 		prx->poll_jfc_success,
 		prx->poll_jfc_failed,
 		prx->rearm_success,
@@ -231,7 +232,8 @@ static ssize_t format_stats(char *buf, struct ipourma_dev_priv *priv, ssize_t bu
 		prx->num_post_wr,
 		prx->alloc_skb_failed,
 		prx->register_seg_failed,
-		prx->post_wr_failed);
+		prx->post_wr_failed,
+		prx->alloc_skb_retry);
 	if (ret < 0 || ret + len >= buf_size)
 		goto FORMAT_ERR;
 
