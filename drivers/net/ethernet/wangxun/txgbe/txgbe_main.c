@@ -6831,7 +6831,10 @@ void txgbe_update_stats(struct txgbe_adapter *adapter)
 
 	adapter->hw_rx_no_dma_resources +=
 				     rd32(hw, TXGBE_RDM_DRP_PKT);
-	hwstats->lxonrxc += rd32(hw, TXGBE_MAC_LXONRXC);
+	if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40)
+		hwstats->lxonrxc += rd32(hw, TXGBE_AML_MAC_LXONRXC);
+	else
+		hwstats->lxonrxc += rd32(hw, TXGBE_MAC_LXONRXC);
 	hwstats->fdirmatch += rd32(hw, TXGBE_RDB_FDIR_MATCH);
 	hwstats->fdirmiss += rd32(hw, TXGBE_RDB_FDIR_MISS);
 

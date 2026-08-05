@@ -1289,7 +1289,8 @@ s32 txgbe_fc_enable(struct txgbe_hw *hw)
 		if ((hw->fc.current_mode & txgbe_fc_tx_pause) &&
 		    hw->fc.high_water[i]) {
 			fcrtl = (hw->fc.low_water[i] << 10);
-
+			if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40)
+				fcrtl |= TXGBE_RDB_RFCL_XONE;
 			wr32(hw, TXGBE_RDB_RFCL(i), fcrtl);
 			fcrth = (hw->fc.high_water[i] << 10) |
 				TXGBE_RDB_RFCH_XOFFE;

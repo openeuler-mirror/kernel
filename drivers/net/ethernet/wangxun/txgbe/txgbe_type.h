@@ -1633,6 +1633,7 @@ enum TXGBE_MSCA_CMD_value {
 
 /* statistic */
 #define TXGBE_MAC_LXONRXC               0x11E0C
+#define TXGBE_AML_MAC_LXONRXC           0x11f84
 #define TXGBE_MAC_LXOFFRXC              0x11988
 #define TXGBE_MAC_PXONRXC(_i)           (0x11E30 + ((_i) * 4)) /* 8 of these */
 #define TXGBE_MAC_PXOFFRXC              0x119DC
