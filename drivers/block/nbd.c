@@ -355,7 +355,11 @@ static int nbd_set_size(struct nbd_device *nbd, loff_t bytesize,
 
 	if (max_part)
 		set_bit(GD_NEED_PART_SCAN, &nbd->disk->state);
-	if (!set_capacity_and_notify(nbd->disk, bytesize >> 9))
+	/* Avoid the capacity-change printk on probe (0 -> size) */
+	if (!get_capacity(nbd->disk)) {
+		set_capacity(nbd->disk, bytesize >> 9);
+		kobject_uevent(&nbd_to_dev(nbd)->kobj, KOBJ_CHANGE);
+	} else if (!set_capacity_and_notify(nbd->disk, bytesize >> 9))
 		kobject_uevent(&nbd_to_dev(nbd)->kobj, KOBJ_CHANGE);
 	return 0;
 }
