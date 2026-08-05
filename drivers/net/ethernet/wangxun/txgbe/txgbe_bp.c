@@ -19,6 +19,9 @@ void txgbe_bp_watchdog_event(struct txgbe_adapter *adapter)
 	u32 value = 0;
 	int ret = 0;
 
+	if (!txgbe_xpcs_an_enabled(hw))
+		return;
+
 	/* only continue if link is down */
 	if (netif_carrier_ok(adapter->netdev))
 		return;
@@ -327,7 +330,7 @@ static int txgbe_cl72_trainning(struct txgbe_adapter *adapter)
 		rdata1 = rd32_ephy(hw, 0x100F);
 		e_dev_info("Lp and Ld all Ready, FFE : %d-%d-%d.\n",
 			   (rdata >> 6) & 0x3F, rdata1 & 0x3F, (rdata1 >> 6) & 0x3F);
-		if (!hw->dac_sfp)
+		if (AN73_TRAINNING_MODE == 1 && txgbe_is_backplane(hw))
 			if ((((rdata >> 6) & 0x3F) == 27) &&
 			    ((rdata1 & 0x3F) == 8) &&
 			    (((rdata1 >> 6) & 0x3F)) == 44)

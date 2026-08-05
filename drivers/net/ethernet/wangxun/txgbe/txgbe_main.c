@@ -5862,8 +5862,6 @@ static int txgbe_sw_init(struct txgbe_adapter *adapter)
 	hw->fc.send_xon = true;
 	hw->fc.disable_fc_autoneg = false;
 
-	hw->dac_sfp = false;
-
 	/* set default ring sizes */
 	adapter->tx_ring_count = TXGBE_DEFAULT_TXD;
 	adapter->rx_ring_count = TXGBE_DEFAULT_RXD;
@@ -6441,7 +6439,7 @@ int txgbe_close(struct net_device *netdev)
 
 	if (hw->subsystem_device_id == TXGBE_ID_WX1820_KR_KX_KX4 ||
 	    hw->subsystem_device_id == TXGBE_ID_SP1000_KR_KX_KX4 ||
-		hw->dac_sfp) {
+	    txgbe_is_dac_cable(hw)) {
 		txgbe_bp_close_protect(adapter);
 	}
 
@@ -7060,9 +7058,7 @@ static void txgbe_watchdog_update_link(struct txgbe_adapter *adapter)
 			txgbe_ptp_start_cyclecounter(adapter);
 
 		if (hw->mac.type == txgbe_mac_aml40) {
-			if (!(hw->phy.sfp_type == txgbe_qsfp_type_40g_cu_core0 ||
-			      hw->phy.sfp_type == txgbe_qsfp_type_40g_cu_core1 ||
-				  txgbe_is_backplane(hw)))
+			if (!txgbe_xpcs_an_enabled(hw))
 				txgbe_reconfig_mac(hw);
 
 			if (link_speed & TXGBE_LINK_SPEED_40GB_FULL) {
@@ -7075,9 +7071,7 @@ static void txgbe_watchdog_update_link(struct txgbe_adapter *adapter)
 			wr32m(hw, TXGBE_MAC_RX_CFG,
 			      TXGBE_MAC_RX_CFG_RE, TXGBE_MAC_RX_CFG_RE);
 		} else if (hw->mac.type == txgbe_mac_aml) {
-			if (!(hw->phy.sfp_type == txgbe_sfp_type_da_cu_core0 ||
-			      hw->phy.sfp_type == txgbe_sfp_type_da_cu_core1 ||
-			      txgbe_is_backplane(hw)))
+			if (!txgbe_xpcs_an_enabled(hw))
 				txgbe_reconfig_mac(hw);
 
 			if (link_speed & TXGBE_LINK_SPEED_25GB_FULL) {
@@ -7210,7 +7204,7 @@ static void txgbe_watchdog_link_is_up(struct txgbe_adapter *adapter)
 		 (adapter->cur_fec_link == TXGBE_PHY_FEC_OFF) ? ", FEC: OFF" : "") : ""));
 
 	if (!adapter->backplane_an &&
-	    (hw->dac_sfp ||
+	    (txgbe_is_dac_cable(hw) ||
 	     (hw->subsystem_device_id & TXGBE_DEV_MASK) == TXGBE_ID_KR_KX_KX4) &&
 		 hw->mac.type == txgbe_mac_sp)
 		txgbe_enable_rx_adapter(hw);
@@ -7266,12 +7260,6 @@ static void txgbe_watchdog_link_is_down(struct txgbe_adapter *adapter)
 	adapter->link_up = false;
 	adapter->link_speed = 0;
 
-	if (hw->mac.type == txgbe_mac_sp)
-		if (hw->subsystem_device_id == TXGBE_ID_WX1820_KR_KX_KX4 ||
-		    hw->subsystem_device_id == TXGBE_ID_SP1000_KR_KX_KX4 ||
-		    hw->dac_sfp)
-			txgbe_bp_down_event(adapter);
-
 	/* only continue if link was up previously */
 	if (!netif_carrier_ok(netdev))
 		return;
@@ -7283,9 +7271,7 @@ static void txgbe_watchdog_link_is_down(struct txgbe_adapter *adapter)
 	if (test_bit(__TXGBE_PTP_RUNNING, &adapter->state))
 		txgbe_ptp_start_cyclecounter(adapter);
 
-	if (hw->phy.sfp_type == txgbe_qsfp_type_40g_cu_core0 ||
-	    hw->phy.sfp_type == txgbe_qsfp_type_40g_cu_core1 ||
-	    txgbe_is_backplane(hw))
+	if (txgbe_xpcs_an_enabled(hw))
 		adapter->an_done = false;
 
 	e_info(drv, "NIC Link is Down\n");
@@ -7459,10 +7445,7 @@ static void txgbe_watchdog_subtask(struct txgbe_adapter *adapter)
 		return;
 
 	if (hw->mac.type == txgbe_mac_sp)
-		if (hw->subsystem_device_id == TXGBE_ID_WX1820_KR_KX_KX4 ||
-		    hw->subsystem_device_id == TXGBE_ID_SP1000_KR_KX_KX4 ||
-		    hw->dac_sfp)
-			txgbe_bp_watchdog_event(adapter);
+		txgbe_bp_watchdog_event(adapter);
 	if (hw->mac.type == txgbe_mac_aml ||
 	    hw->mac.type == txgbe_mac_aml40)
 		txgbe_e56_bp_watchdog_event(adapter);
@@ -7643,10 +7626,14 @@ static void txgbe_sfp_link_config_subtask(struct txgbe_adapter *adapter)
 			hw->mac.ops.get_link_capabilities(hw, &speed, &autoneg);
 			/* setup the highest link when no autoneg */
 			if (!autoneg) {
-				if (speed & TXGBE_LINK_SPEED_25GB_FULL)
+				if (speed & TXGBE_LINK_SPEED_40GB_FULL)
+					speed = TXGBE_LINK_SPEED_40GB_FULL;
+				else if (speed & TXGBE_LINK_SPEED_25GB_FULL)
 					speed = TXGBE_LINK_SPEED_25GB_FULL;
 				else if (speed & TXGBE_LINK_SPEED_10GB_FULL)
 					speed = TXGBE_LINK_SPEED_10GB_FULL;
+				else if (speed & TXGBE_LINK_SPEED_1GB_FULL)
+					speed = TXGBE_LINK_SPEED_1GB_FULL;
 			}
 
 			adapter->autoneg = autoneg;
@@ -8175,11 +8162,7 @@ static void txgbe_service_task(struct work_struct *work)
 	txgbe_phy_event_subtask(adapter);
 	txgbe_sfp_detection_subtask(adapter);
 	if (!(hw->mac.type == txgbe_mac_sp ||
-	      hw->phy.sfp_type == txgbe_sfp_type_da_cu_core0 ||
-	      hw->phy.sfp_type == txgbe_sfp_type_da_cu_core1 ||
-	      hw->phy.sfp_type == txgbe_qsfp_type_40g_cu_core0 ||
-	      hw->phy.sfp_type == txgbe_qsfp_type_40g_cu_core1 ||
-	      txgbe_is_backplane(hw)))
+	      txgbe_xpcs_an_enabled(hw)))
 		txgbe_linkdown_subtask(adapter);
 	txgbe_sfp_link_config_subtask(adapter);
 	txgbe_sfp_reset_eth_phy_subtask(adapter);

@@ -569,7 +569,6 @@ s32 txgbe_identify_sfp_module(struct txgbe_hw *hw)
 			goto err_read_i2c_eeprom;
 
 		hw->bypass_ctle = true;
-		hw->dac_sfp = false;
 
 		 /* ID Module
 		  * =========
@@ -596,11 +595,6 @@ s32 txgbe_identify_sfp_module(struct txgbe_hw *hw)
 					hw->phy.sfp_type =
 						     txgbe_sfp_type_da_cu_core1;
 
-				if (hw->phy.sfp_type == txgbe_sfp_type_da_cu_core0 ||
-				    hw->phy.sfp_type == txgbe_sfp_type_da_cu_core1) {
-					hw->dac_sfp = true;
-				}
-
 				if (comp_copper_len == 0x1)
 					hw->bypass_ctle = true;
 				else
@@ -617,7 +611,6 @@ s32 txgbe_identify_sfp_module(struct txgbe_hw *hw)
 						TXGBE_LINK_SPEED_10GB_FULL;
 				}
 			} else if (cable_tech & TXGBE_SFF_DA_ACTIVE_CABLE) {
-				hw->dac_sfp = false;
 				hw->phy.ops.read_i2c_eeprom(hw,
 						TXGBE_SFF_CABLE_SPEC_COMP,
 						&cable_spec);
@@ -984,14 +977,8 @@ s32 txgbe_identify_qsfp_module(struct txgbe_hw *hw)
 					hw->phy.sfp_type = txgbe_qsfp_type_40g_cu_core1;
 				hw->phy.fiber_suppport_speed =
 							TXGBE_LINK_SPEED_40GB_FULL |
+							TXGBE_LINK_SPEED_25GB_FULL |
 							TXGBE_LINK_SPEED_10GB_FULL;
-
-				if (!hw->mac.autoneg) {
-					if (hw->bus.lan_id == 0)
-						hw->phy.sfp_type = txgbe_qsfp_type_40g_sr_core0;
-					else
-						hw->phy.sfp_type = txgbe_qsfp_type_40g_sr_core1;
-				}
 			} else {
 				if (hw->bus.lan_id == 0)
 					hw->phy.sfp_type = txgbe_qsfp_type_40g_sr_core0;

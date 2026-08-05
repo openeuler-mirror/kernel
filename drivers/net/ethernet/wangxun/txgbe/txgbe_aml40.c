@@ -1,14 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright (c) 2019 - 2022 Beijing WangXun Technology Co., Ltd. */
+/* Copyright (c) 2015 - 2025 Beijing WangXun Technology Co., Ltd. */
 
-#include "txgbe_type.h"
-#include "txgbe_hw.h"
-#include "txgbe_aml40.h"
+#include "txgbe_bp_base.h"
 #include "txgbe_e56.h"
 #include "txgbe_e56_bp.h"
 #include "txgbe_phy.h"
-
-#include "txgbe.h"
+#include "txgbe_aml40.h"
 
 /**
  *  txgbe_get_media_type_aml40 - Get media type
@@ -70,17 +67,11 @@ static s32 txgbe_setup_mac_link_aml40(struct txgbe_hw *hw,
 		goto out;
 	}
 
-	if (hw->phy.sfp_type == txgbe_qsfp_type_40g_cu_core0 ||
-	    hw->phy.sfp_type == txgbe_qsfp_type_40g_cu_core1 ||
-	    txgbe_is_backplane(hw)) {
+	if (txgbe_xpcs_an_enabled(hw)) {
+		/* If XPCS_AN73 is enabled */
 		txgbe_e56_check_phy_link(hw, &link_speed, &link_up);
-		if (!adapter->backplane_an) {
-			if (link_speed == speed && link_up)
-				goto out;
-		} else {
-			if (link_up && adapter->an_done)
-				goto out;
-		}
+		if (link_up && adapter->an_done)
+			goto out;
 		mutex_lock(&adapter->e56_lock);
 		txgbe_e56_set_phylinkmode(adapter, 40, hw->bypass_ctle);
 		mutex_unlock(&adapter->e56_lock);
@@ -125,22 +116,42 @@ out:
  *
  *  Determines the link capabilities by reading the AUTOC register.
  **/
-static s32 txgbe_get_link_capabilities_aml40(struct txgbe_hw *hw,
-					     u32 *speed,
+static int txgbe_get_link_capabilities_aml40(struct txgbe_hw *hw, u32 *speed,
 					     bool *autoneg)
 {
-	s32 status = 0;
+	struct txgbe_adapter *adapter = hw->back;
+	int status = 0;
 
-	if (hw->phy.sfp_type == txgbe_qsfp_type_40g_cu_core0 ||
-	    hw->phy.sfp_type == txgbe_qsfp_type_40g_cu_core1) {
-		*autoneg = true;
-		*speed = TXGBE_LINK_SPEED_40GB_FULL;
+	if (hw->mac.ops.get_media_type(hw) == txgbe_media_type_fiber_qsfp) {
+		if (hw->phy.sfp_type == txgbe_qsfp_type_40g_cu_core0 ||
+		    hw->phy.sfp_type == txgbe_qsfp_type_40g_cu_core1) {
+			*autoneg = adapter->backplane_an;
+			*speed = hw->phy.fiber_suppport_speed;
+
+		} else if (hw->phy.sfp_type == txgbe_qsfp_type_40g_sr_core0 ||
+			   hw->phy.sfp_type == txgbe_qsfp_type_40g_sr_core1 ||
+			   hw->phy.sfp_type == txgbe_qsfp_type_40g_lr_core0 ||
+			   hw->phy.sfp_type == txgbe_qsfp_type_40g_lr_core1 ||
+			   hw->phy.sfp_type == txgbe_qsfp_type_40g_active_core0 ||
+			   hw->phy.sfp_type == txgbe_qsfp_type_40g_active_core1) {
+			*speed = TXGBE_LINK_SPEED_40GB_FULL;
+			*autoneg = false;
+		} else {
+			/* no i2c or get unsupport qsfp */
+			*speed = TXGBE_LINK_SPEED_40GB_FULL;
+			*autoneg = false;
+		}
 	} else if (txgbe_is_backplane(hw)) {
-		*speed = TXGBE_LINK_SPEED_40GB_FULL;
-		*autoneg = true;
+		*speed = TXGBE_LINK_SPEED_40GB_FULL |
+			 TXGBE_LINK_SPEED_10GB_FULL;
+		/* Backplane supports autonegotiation */
+		*autoneg = adapter->backplane_an;
 	} else {
-		*speed = TXGBE_LINK_SPEED_40GB_FULL;
-		*autoneg = true;
+		/* Unknown */
+		status = TXGBE_ERR_LINK_SETUP;
+		*speed = TXGBE_LINK_SPEED_UNKNOWN;
+		*autoneg = false;
+		e_dev_err("GET link capabilities failed\n");
 	}
 
 	return status;
@@ -201,7 +212,7 @@ static s32 txgbe_check_mac_link_aml40(struct txgbe_hw *hw, u32 *speed,
 		*speed = TXGBE_LINK_SPEED_UNKNOWN;
 	}
 
-	if (txgbe_is_backplane(hw)) {
+	if (txgbe_xpcs_an_enabled(hw)) {
 		if (!adapter->an_done) {
 			*link_up = false;
 			*speed = TXGBE_LINK_SPEED_UNKNOWN;

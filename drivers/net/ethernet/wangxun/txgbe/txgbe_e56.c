@@ -2873,7 +2873,7 @@ static int txgbe_e56_rxs_calib_adapt_seq(struct txgbe_hw *hw, u32 speed)
 	u32 rdata = 0x0;
 	u32 bypass_ctle = true;
 
-	if (hw->dac_sfp)
+	if (txgbe_is_dac_cable(hw))
 		bypass_ctle = false;
 
 	if (hw->mac.type == txgbe_mac_aml) {

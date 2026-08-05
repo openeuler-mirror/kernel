@@ -3375,7 +3375,6 @@ struct txgbe_hw {
 	u16 oem_ssid;
 	u16 oem_svid;
 	bool f2c_mod_status;         /* fiber to copper modules internal phy link status */
-	bool dac_sfp;         /* force dac sfp to kr mode */
 	bool bypass_ctle; /* DAC cable length */
 	u32 q_tx_regs[512];
 };

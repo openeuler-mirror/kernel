@@ -480,10 +480,10 @@ static int txgbe_e56_rxs_post_cdr_lock_temp_track_seq(struct txgbe_adapter *adap
 	return status;
 }
 
-static int txgbe_e56_ctle_bypass_seq(struct txgbe_adapter *adapter)
+static void txgbe_e56_ctle_bypass_seq(struct txgbe_adapter *adapter,
+					    u8 bplinkmode)
 {
 	struct txgbe_hw *hw = &adapter->hw;
-	int status = 0;
 	u32 rdata;
 
 	txgbe_e56_ephy_config(E56G__RXS0_ANA_OVRDVAL_0, ana_ctle_bypass_i, 1);
@@ -506,7 +506,57 @@ static int txgbe_e56_ctle_bypass_seq(struct txgbe_adapter *adapter)
 		1;
 	EPHY_WREG(E56G__PMD_RXS0_OVRDEN_1);
 
-	return status;
+	if (bplinkmode == 40) {
+		//1. Program the following RXS registers as mentioned below.
+		//RXS::ANA_OVRDVAL[0]::ana_ctle_bypass_i = 1
+		//RXS::ANA_OVRDEN[0]::ovrd_en_ana_ctle_bypass_i = 1
+		txgbe_e56_ephy_config(E56G__RXS1_ANA_OVRDVAL_0, ana_ctle_bypass_i, 1);
+		txgbe_e56_ephy_config(E56G__RXS1_ANA_OVRDEN_0, ovrd_en_ana_ctle_bypass_i, 1);
+		txgbe_e56_ephy_config(E56G__RXS2_ANA_OVRDVAL_0, ana_ctle_bypass_i, 1);
+		txgbe_e56_ephy_config(E56G__RXS2_ANA_OVRDEN_0, ovrd_en_ana_ctle_bypass_i, 1);
+		txgbe_e56_ephy_config(E56G__RXS3_ANA_OVRDVAL_0, ana_ctle_bypass_i, 1);
+		txgbe_e56_ephy_config(E56G__RXS3_ANA_OVRDEN_0, ovrd_en_ana_ctle_bypass_i, 1);
+
+		//RXS::ANA_OVRDVAL[3]::ana_ctle_cz_cstm_i[4:0] = 0
+		//RXS::ANA_OVRDEN[0]::ovrd_en_ana_ctle_cz_cstm_i = 1
+		txgbe_e56_ephy_config(E56G__RXS1_ANA_OVRDVAL_3, ana_ctle_cz_cstm_i, 0);
+		txgbe_e56_ephy_config(E56G__RXS1_ANA_OVRDEN_0, ovrd_en_ana_ctle_cz_cstm_i, 1);
+		txgbe_e56_ephy_config(E56G__RXS2_ANA_OVRDVAL_3, ana_ctle_cz_cstm_i, 0);
+		txgbe_e56_ephy_config(E56G__RXS2_ANA_OVRDEN_0, ovrd_en_ana_ctle_cz_cstm_i, 1);
+		txgbe_e56_ephy_config(E56G__RXS3_ANA_OVRDVAL_3, ana_ctle_cz_cstm_i, 0);
+		txgbe_e56_ephy_config(E56G__RXS3_ANA_OVRDEN_0, ovrd_en_ana_ctle_cz_cstm_i, 1);
+
+		//2. Program the following PDIG registers as mentioned below.
+		//PDIG::RXS<n>_OVRDVAL[1]::rxs<n>_rx0_ctle_train_en_i = 0
+		//PDIG::RXS<n>_OVRDEN[1]::ovrd_en_rxs<n>_rx0_ctle_train_en_i = 1
+		//PDIG::RXS<n>_OVRDVAL[1]::rxs<n>_rx0_ctle_train_done_o = 1
+		//PDIG::RXS<n>_OVRDEN[1]::ovrd_en_rxs<n>_rx0_ctle_train_done_o = 1
+		EPHY_RREG(E56G__PMD_RXS1_OVRDVAL_1);
+		EPHY_XFLD(E56G__PMD_RXS1_OVRDVAL_1, rxs1_rx0_ctle_train_en_i) = 0;
+		EPHY_XFLD(E56G__PMD_RXS1_OVRDVAL_1, rxs1_rx0_ctle_train_done_o) = 1;
+		EPHY_WREG(E56G__PMD_RXS1_OVRDVAL_1);
+		EPHY_RREG(E56G__PMD_RXS2_OVRDVAL_1);
+		EPHY_XFLD(E56G__PMD_RXS2_OVRDVAL_1, rxs2_rx0_ctle_train_en_i) = 0;
+		EPHY_XFLD(E56G__PMD_RXS2_OVRDVAL_1, rxs2_rx0_ctle_train_done_o) = 1;
+		EPHY_WREG(E56G__PMD_RXS2_OVRDVAL_1);
+		EPHY_RREG(E56G__PMD_RXS3_OVRDVAL_1);
+		EPHY_XFLD(E56G__PMD_RXS3_OVRDVAL_1, rxs3_rx0_ctle_train_en_i) = 0;
+		EPHY_XFLD(E56G__PMD_RXS3_OVRDVAL_1, rxs3_rx0_ctle_train_done_o) = 1;
+		EPHY_WREG(E56G__PMD_RXS3_OVRDVAL_1);
+
+		EPHY_RREG(E56G__PMD_RXS1_OVRDEN_1);
+		EPHY_XFLD(E56G__PMD_RXS1_OVRDEN_1, ovrd_en_rxs1_rx0_ctle_train_en_i) = 1;
+		EPHY_XFLD(E56G__PMD_RXS1_OVRDEN_1, ovrd_en_rxs1_rx0_ctle_train_done_o) = 1;
+		EPHY_WREG(E56G__PMD_RXS1_OVRDEN_1);
+		EPHY_RREG(E56G__PMD_RXS2_OVRDEN_1);
+		EPHY_XFLD(E56G__PMD_RXS2_OVRDEN_1, ovrd_en_rxs2_rx0_ctle_train_en_i) = 1;
+		EPHY_XFLD(E56G__PMD_RXS2_OVRDEN_1, ovrd_en_rxs2_rx0_ctle_train_done_o) = 1;
+		EPHY_WREG(E56G__PMD_RXS2_OVRDEN_1);
+		EPHY_RREG(E56G__PMD_RXS3_OVRDEN_1);
+		EPHY_XFLD(E56G__PMD_RXS3_OVRDEN_1, ovrd_en_rxs3_rx0_ctle_train_en_i) = 1;
+		EPHY_XFLD(E56G__PMD_RXS3_OVRDEN_1, ovrd_en_rxs3_rx0_ctle_train_done_o) = 1;
+		EPHY_WREG(E56G__PMD_RXS3_OVRDEN_1);
+	}
 }
 
 static int txgbe_e56_rxs_adc_adapt_seq(struct txgbe_adapter *adapter, u32 bypass_ctle)
@@ -811,8 +861,8 @@ static int txgbe_e56_rxs_calib_adapt_seq(struct txgbe_adapter *adapter, u8 bplin
 		txgbe_field_set(&rdata, 6, 6, 0x1);
 		txgbe_wr32_ephy(hw, addr, rdata);
 	}
-	if (bypass_ctle != 0)
-		status |= txgbe_e56_ctle_bypass_seq(adapter);
+	if (bypass_ctle)
+		txgbe_e56_ctle_bypass_seq(adapter, bplinkmode);
 
 	status |= txgbe_e56_rxs_oscinit_temp_track(adapter, bplinkmode);
 
@@ -2166,7 +2216,7 @@ int txgbe_e56_set_phylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 			      u32 bypass_ctle)
 {
 	struct txgbe_hw *hw = &adapter->hw;
-	int status = 0;
+	int status = 0, ret = 0;
 	u32 rdata;
 
 	switch (bplinkmode) {
@@ -2268,14 +2318,14 @@ int txgbe_e56_set_phylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 
 		/* config timer */
 		txgbe_wr32_epcs(hw, 0x078004, 0x003c);
-		txgbe_wr32_epcs(hw, 0x078005, 3000);
+		txgbe_wr32_epcs(hw, 0x078005, CL74_KRTR_TRAINNING_TIMEOUT);
 		txgbe_wr32_epcs(hw, 0x078006, 25);
 		txgbe_wr32_epcs(hw, 0x078000, 0x0008 | BIT(2));
 
 		kr_dbg(KR_MODE, "1.2 Wait 10G KR phy/pcs mode init ....\n");
 		status = setphylinkmode(adapter, 10, bypass_ctle);
-		if (status)
-			return status;
+		kr_dbg(KR_MODE, "Wait 10g phy/pcs mode init = %x, %s.\n", rdata,
+		       status ? "FAILED" : "SUCCESS");
 
 		/* 5. CM_ENABLE */
 		rdata = rd32_ephy(hw, 0x1400);
@@ -2292,8 +2342,8 @@ int txgbe_e56_set_phylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 
 		kr_dbg(KR_MODE, "1.3 Wait 10G PHY RXS....\n");
 		status = txgbe_e56_rxs_oscinit_temp_track(adapter, 10);
-		if (status)
-			return status;
+		kr_dbg(KR_MODE, "Wait 10G PHY/RXS mode init = %x, %s.\n", rdata,
+		       status ? "FAILED" : "SUCCESS");
 
 		/* Wait an 10g fsm_rx_sts */
 		status = read_poll_timeout(rd32_ephy, rdata,
@@ -2323,7 +2373,7 @@ int txgbe_e56_set_phylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 						 TXGBE_LINK_SPEED_10GB_FULL);
 	}
 
-	return status;
+	return ret;
 }
 
 static void txgbe_e56_print_page_status(struct txgbe_adapter *adapter,
@@ -2677,23 +2727,16 @@ static int handle_e56_bkp_an73_flow(struct txgbe_adapter *adapter)
 void txgbe_e56_bp_watchdog_event(struct txgbe_adapter *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
-	u32 rlu = 0, an_int = 0, an_int1 = 0;
+	u32 fsm = 0, an_int = 0, an_int1 = 0;
 	struct txgbe_hw *hw = &adapter->hw;
-	u32 value = 0, fsm = 0;
+	u32 value = 0;
 	int ret = 0;
 
-	if (!(hw->phy.sfp_type == txgbe_sfp_type_da_cu_core0 ||
-	      hw->phy.sfp_type == txgbe_sfp_type_da_cu_core1 ||
-	      hw->phy.sfp_type == txgbe_qsfp_type_40g_cu_core0 ||
-	      hw->phy.sfp_type == txgbe_qsfp_type_40g_cu_core1 ||
-	      txgbe_is_backplane(hw)))
+	if (!txgbe_xpcs_an_enabled(hw))
 		return;
 
 	/* only continue if link is down */
 	if (netif_carrier_ok(netdev))
-		return;
-
-	if (!adapter->backplane_an)
 		return;
 
 	value = txgbe_rd32_epcs(hw, 0x78002);
@@ -2742,10 +2785,10 @@ an_status:
 		adapter->an_done = true;
 		adapter->flags |= TXGBE_FLAG_NEED_LINK_UPDATE;
 	}
-	rlu = txgbe_rd32_epcs(hw, 0x30001);
 	kr_dbg(KR_MODE,
-	       "RLU:%x MLU:%x INT:%x-%x CTL:%x fsm:%x pmd_cfg0:%x an_done:%d by:%d\n",
-	       txgbe_rd32_epcs(hw, 0x30001), rd32(hw, 0x14404), an_int, an_int1,
+	       "RLU:%x-%x Link_s:%x MLU:%x INT:%x-%x CTL:%x fsm:%x pmd_cfg0:%x an_done:%d by:%d\n",
+	       txgbe_rd32_epcs(hw, 0x30001), txgbe_rd32_epcs(hw, 0x30001),
+	       rd32(hw, 0x110b0), rd32(hw, 0x14404), an_int, an_int1,
 	       txgbe_rd32_epcs(hw, 0x70000), txgbe_rd32_epcs(hw, 0x78010),
 	       rd32_ephy(hw, 0x1400), adapter->an_done, hw->bypass_ctle);
 }

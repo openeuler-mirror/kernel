@@ -19,6 +19,29 @@ void txgbe_field_set(u32 *psrcdata, u32 bithigh, u32 bitlow, u32 setvalue)
 #endif
 }
 
+int txgbe_is_dac_cable(struct txgbe_hw *hw)
+{
+	if (hw->phy.sfp_type == txgbe_sfp_type_da_cu_core0 ||
+	    hw->phy.sfp_type == txgbe_sfp_type_da_cu_core1 ||
+	    hw->phy.sfp_type == txgbe_sfp_type_da_act_lmt_core0 ||
+	    hw->phy.sfp_type == txgbe_sfp_type_da_act_lmt_core1 ||
+	    hw->phy.sfp_type == txgbe_qsfp_type_40g_cu_core0 ||
+	    hw->phy.sfp_type == txgbe_qsfp_type_40g_cu_core1)
+		return true;
+
+	return false;
+}
+
+int txgbe_xpcs_an_enabled(struct txgbe_hw *hw)
+{
+	struct txgbe_adapter *adapter = hw->back;
+
+	if (!(txgbe_is_dac_cable(hw) || txgbe_is_backplane(hw)))
+		return false;
+
+	return adapter->backplane_an ? true : false;
+}
+
 void txgbe_bp_mode_setting(struct txgbe_adapter *adapter)
 {
 	struct txgbe_hw *hw = &adapter->hw;
@@ -34,6 +57,7 @@ void txgbe_bp_mode_setting(struct txgbe_adapter *adapter)
 	case txgbe_mac_aml40:
 	case txgbe_mac_aml:
 	default:
+		hw->bypass_ctle = CTLE_BYPASS ? 1 : 0;
 		adapter->backplane_an = 1;
 		break;
 	}

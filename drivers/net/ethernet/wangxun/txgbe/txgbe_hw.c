@@ -7,6 +7,7 @@
 #include "txgbe_hw.h"
 #include "txgbe_phy.h"
 #include "txgbe_dcb.h"
+#include "txgbe_bp_base.h"
 #include "txgbe_e56.h"
 #include "txgbe_e56_bp.h"
 #include "txgbe.h"
@@ -4373,7 +4374,7 @@ s32 txgbe_get_link_capabilities_sp(struct txgbe_hw *hw,
 		*speed = TXGBE_LINK_SPEED_10GB_FULL |
 			  TXGBE_LINK_SPEED_1GB_FULL;
 		*autoneg = true;
-	} else if (hw->dac_sfp) {
+	} else if (txgbe_is_dac_cable(hw)) {
 		*autoneg = true;
 		hw->phy.link_mode = TXGBE_PHYSICAL_LAYER_10GBASE_KR;
 		*speed = TXGBE_LINK_SPEED_10GB_FULL;
@@ -4752,6 +4753,7 @@ s32 txgbe_set_link_to_kr(struct txgbe_hw *hw, bool autoneg)
 
 	/* 2. Disable xpcs AN-73 */
 	if (adapter->backplane_an == 1) {
+		adapter->an_done = false;
 		txgbe_wr32_epcs(hw, TXGBE_SR_AN_MMD_CTL, 0x3000);
 		/* bit8:CA_TX_EQ bit7:an_preset bit6:TX_EQ_OVR_RIDE */
 		value = txgbe_rd32_epcs(hw, TXGBE_PHY_TX_EQ_CTL1);
@@ -5564,7 +5566,7 @@ s32 txgbe_setup_mac_link_sp(struct txgbe_hw *hw,
 	if (!(((hw->subsystem_device_id & TXGBE_DEV_MASK) == TXGBE_ID_KR_KX_KX4) ||
 	      ((hw->subsystem_device_id & TXGBE_DEV_MASK) == TXGBE_ID_MAC_XAUI) ||
 			((hw->subsystem_device_id & TXGBE_DEV_MASK) == TXGBE_ID_MAC_SGMII) ||
-			hw->dac_sfp)) {
+			txgbe_is_dac_cable(hw))) {
 		status = hw->mac.ops.check_link(hw,
 				&link_speed, &link_up, false);
 
@@ -5583,7 +5585,7 @@ s32 txgbe_setup_mac_link_sp(struct txgbe_hw *hw,
 	}
 
 	if ((hw->subsystem_device_id & TXGBE_DEV_MASK) == TXGBE_ID_KR_KX_KX4 ||
-	    hw->dac_sfp) {
+	    txgbe_is_dac_cable(hw)) {
 		txgbe_set_link_to_kr(hw, autoneg);
 	} else if ((hw->subsystem_device_id & 0xF0) == TXGBE_ID_XAUI ||
 		((hw->subsystem_device_id & TXGBE_DEV_MASK) == TXGBE_ID_MAC_XAUI) ||
@@ -7414,6 +7416,7 @@ s32 txgbe_update_flash(struct txgbe_hw *hw)
 s32 txgbe_check_mac_link_sp(struct txgbe_hw *hw, u32 *speed,
 			    bool *link_up, bool link_up_wait_to_complete)
 {
+	struct txgbe_adapter *adapter = hw->back;
 	u32 links_reg = 0;
 	u16 value = 0;
 	u32 i;
@@ -7510,6 +7513,13 @@ s32 txgbe_check_mac_link_sp(struct txgbe_hw *hw, u32 *speed,
 		}
 	} else {
 		*speed = TXGBE_LINK_SPEED_UNKNOWN;
+	}
+
+	if (txgbe_xpcs_an_enabled(hw)) {
+		if (!adapter->an_done) {
+			*link_up = false;
+			*speed = TXGBE_LINK_SPEED_UNKNOWN;
+		}
 	}
 
 	return 0;

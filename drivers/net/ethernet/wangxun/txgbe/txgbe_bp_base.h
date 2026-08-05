@@ -15,6 +15,22 @@
 
 #define KR_MODE			0
 
+#ifndef AN_TRAINNING_MODE
+#define AN_TRAINNING_MODE	0
+#endif
+
+#ifndef AN73_TRAINNING_MODE
+#define AN73_TRAINNING_MODE	2
+#endif
+
+#ifndef CTLE_BYPASS
+#define CTLE_BYPASS		0
+#endif
+
+#ifndef CL74_KRTR_TRAINNING_TIMEOUT
+#define CL74_KRTR_TRAINNING_TIMEOUT	6000
+#endif
+
 #define TXGBE_10G_FEC_REQ	BIT(15)
 #define TXGBE_10G_FEC_ABL	BIT(14)
 #define TXGBE_25G_BASE_FEC_REQ	BIT(13)
@@ -69,6 +85,8 @@ enum ability_filed_encding {
 	} while (0)
 
 void txgbe_field_set(u32 *psrcdata, u32 bithigh, u32 bitlow, u32 setvalue);
+int txgbe_is_dac_cable(struct txgbe_hw *hw);
+int txgbe_xpcs_an_enabled(struct txgbe_hw *hw);
 void txgbe_bp_mode_setting(struct txgbe_adapter *adapter);
 int txgbe_chk_bkp_ability(struct txgbe_adapter *adapter,
 			  struct bkpan73ability bkp_an73_ability,

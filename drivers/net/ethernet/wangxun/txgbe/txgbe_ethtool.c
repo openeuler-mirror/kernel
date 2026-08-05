@@ -331,13 +331,21 @@ static int txgbe_get_link_ksettings(struct net_device *netdev,
 			ethtool_link_ksettings_add_link_mode(cmd, supported,
 							     10baseT_Full);
 	} else if (hw->phy.media_type == txgbe_media_type_fiber_qsfp) {
-		if (supported_link & TXGBE_LINK_SPEED_40GB_FULL)
+		if (supported_link & TXGBE_LINK_SPEED_40GB_FULL) {
 			ethtool_link_ksettings_add_link_mode(cmd, supported,
 							     40000baseSR4_Full);
+			ethtool_link_ksettings_add_link_mode(cmd, supported,
+							     40000baseCR4_Full);
+			ethtool_link_ksettings_add_link_mode(cmd, supported,
+							     40000baseLR4_Full);
+		}
 	} else if (hw->phy.media_type == txgbe_media_type_fiber) {
-		if (supported_link & TXGBE_LINK_SPEED_25GB_FULL)
+		if (supported_link & TXGBE_LINK_SPEED_25GB_FULL) {
 			ethtool_link_ksettings_add_link_mode(cmd, supported,
 							     25000baseSR_Full);
+			ethtool_link_ksettings_add_link_mode(cmd, supported,
+							     25000baseCR_Full);
+		}
 
 		if ((supported_link & TXGBE_LINK_SPEED_10GB_FULL) ||
 		    (supported_link & TXGBE_LINK_SPEED_1GB_FULL))
@@ -373,10 +381,16 @@ static int txgbe_get_link_ksettings(struct net_device *netdev,
 		if (hw->phy.autoneg_advertised & TXGBE_LINK_SPEED_40GB_FULL) {
 			ethtool_link_ksettings_add_link_mode(cmd, advertising,
 							     40000baseSR4_Full);
+			ethtool_link_ksettings_add_link_mode(cmd, advertising,
+							     40000baseCR4_Full);
+			ethtool_link_ksettings_add_link_mode(cmd, advertising,
+							     40000baseLR4_Full);
 		}
 		if (hw->phy.autoneg_advertised & TXGBE_LINK_SPEED_25GB_FULL) {
 			ethtool_link_ksettings_add_link_mode(cmd, advertising,
 							     25000baseSR_Full);
+			ethtool_link_ksettings_add_link_mode(cmd, advertising,
+							     25000baseCR_Full);
 		}
 		if (hw->phy.autoneg_advertised & TXGBE_LINK_SPEED_10GB_FULL) {
 			if (hw->phy.media_type == txgbe_media_type_copper) {
@@ -427,10 +441,16 @@ static int txgbe_get_link_ksettings(struct net_device *netdev,
 		if (supported_link & TXGBE_LINK_SPEED_40GB_FULL) {
 			ethtool_link_ksettings_add_link_mode(cmd, advertising,
 							     40000baseSR4_Full);
+			ethtool_link_ksettings_add_link_mode(cmd, advertising,
+							     40000baseCR4_Full);
+			ethtool_link_ksettings_add_link_mode(cmd, advertising,
+							     40000baseLR4_Full);
 		}
 		if (supported_link & TXGBE_LINK_SPEED_25GB_FULL) {
 			ethtool_link_ksettings_add_link_mode(cmd, advertising,
 							     25000baseSR_Full);
+			ethtool_link_ksettings_add_link_mode(cmd, advertising,
+							     25000baseCR_Full);
 		}
 		if (supported_link & TXGBE_LINK_SPEED_10GB_FULL) {
 			if (hw->phy.media_type == txgbe_media_type_copper) {

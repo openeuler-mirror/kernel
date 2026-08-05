@@ -1,14 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright (c) 2019 - 2022 Beijing WangXun Technology Co., Ltd. */
+/* Copyright (c) 2015 - 2025 Beijing WangXun Technology Co., Ltd. */
 
-#include "txgbe_type.h"
-#include "txgbe_hw.h"
-#include "txgbe_aml.h"
+#include "txgbe_bp_base.h"
 #include "txgbe_e56.h"
 #include "txgbe_e56_bp.h"
 #include "txgbe_phy.h"
-
-#include "txgbe.h"
+#include "txgbe_aml.h"
 
 /**
  *  txgbe_get_media_type_aml - Get media type
@@ -70,21 +67,15 @@ static s32 txgbe_setup_mac_link_aml(struct txgbe_hw *hw,
 		goto out;
 	}
 
-	if (hw->phy.sfp_type == txgbe_sfp_type_da_cu_core0 ||
-	    hw->phy.sfp_type == txgbe_sfp_type_da_cu_core1 ||
-	    txgbe_is_backplane(hw)) {
+	if (txgbe_xpcs_an_enabled(hw)) {
+		/* If XPCS_AN73 is enabled */
 		txgbe_e56_check_phy_link(hw, &link_speed, &link_up);
-		if (!adapter->backplane_an) {
-			if (link_speed == speed && link_up)
-				goto out;
-		} else {
-			if (link_up && adapter->an_done)
-				goto out;
-		}
+		if (link_up && adapter->an_done)
+			goto out;
 		mutex_lock(&adapter->e56_lock);
 		txgbe_e56_set_phylinkmode(adapter, 25, hw->bypass_ctle);
 		mutex_unlock(&adapter->e56_lock);
-		return 0;
+		goto out;
 	}
 
 	value = rd32(hw, TXGBE_GPIO_EXT);
@@ -153,16 +144,15 @@ out:
  *
  *  Determines the link capabilities by reading the AUTOC register.
  **/
-static s32 txgbe_get_link_capabilities_aml(struct txgbe_hw *hw,
-					   u32 *speed,
-				      bool *autoneg)
+static int txgbe_get_link_capabilities_aml(struct txgbe_hw *hw, u32 *speed,
+					 bool *autoneg)
 {
 	struct txgbe_adapter *adapter = hw->back;
-	s32 status = 0;
+	int status = 0;
 
 	if (hw->phy.multispeed_fiber) {
 		*speed = TXGBE_LINK_SPEED_10GB_FULL |
-					TXGBE_LINK_SPEED_25GB_FULL;
+			 TXGBE_LINK_SPEED_25GB_FULL;
 		*autoneg = true;
 	} else if (hw->phy.sfp_type == txgbe_sfp_type_da_cu_core0 ||
 		   hw->phy.sfp_type == txgbe_sfp_type_da_cu_core1) {
@@ -175,39 +165,38 @@ static s32 txgbe_get_link_capabilities_aml(struct txgbe_hw *hw,
 		}
 		*speed = hw->phy.fiber_suppport_speed;
 	} else if (hw->phy.sfp_type == txgbe_sfp_type_25g_sr_core0 ||
-		hw->phy.sfp_type == txgbe_sfp_type_25g_sr_core1 ||
-		hw->phy.sfp_type == txgbe_sfp_type_25g_lr_core0 ||
-		hw->phy.sfp_type == txgbe_sfp_type_25g_lr_core1) {
-		*speed = TXGBE_LINK_SPEED_25GB_FULL;
-		*autoneg = false;
-	} else if (hw->phy.sfp_type == txgbe_sfp_type_25g_aoc_core0 ||
+		   hw->phy.sfp_type == txgbe_sfp_type_25g_sr_core1 ||
+		   hw->phy.sfp_type == txgbe_sfp_type_25g_lr_core0 ||
+		   hw->phy.sfp_type == txgbe_sfp_type_25g_lr_core1 ||
+		   hw->phy.sfp_type == txgbe_sfp_type_25g_aoc_core0 ||
 		   hw->phy.sfp_type == txgbe_sfp_type_25g_aoc_core1) {
 		*speed = TXGBE_LINK_SPEED_25GB_FULL;
 		*autoneg = false;
+	} else if (hw->mac.ops.get_media_type(hw) == txgbe_media_type_backplane) {
+		/* Backplane */
+		*speed = TXGBE_LINK_SPEED_10GB_FULL |
+			 TXGBE_LINK_SPEED_25GB_FULL;
+		/* Backplane supports autonegotiation */
+		*autoneg = adapter->backplane_an;
+	} else if (hw->mac.ops.get_media_type(hw) == txgbe_media_type_fiber) {
+		/* Fiber */
+		*speed = TXGBE_LINK_SPEED_10GB_FULL;
+		*autoneg = false;
 	} else {
-		/* SFP */
-		if (hw->phy.sfp_type == txgbe_sfp_type_not_present)
-			*speed = TXGBE_LINK_SPEED_25GB_FULL;
-		else
-			*speed = TXGBE_LINK_SPEED_10GB_FULL;
-		*autoneg = true;
+		/* Unknown */
+		status = TXGBE_ERR_LINK_SETUP;
+		*speed = TXGBE_LINK_SPEED_UNKNOWN;
+		*autoneg = false;
+		e_dev_err("GET link capabilities failed\n");
 	}
 
 	return status;
 }
 
-/**
- *  txgbe_check_mac_link_aml - Determine link and speed status
- *  @hw: pointer to hardware structure
- *  @speed: pointer to link speed
- *  @link_up: true when link is up
- *  @link_up_wait_to_complete: bool used to wait for link up or not
- *
- *  Reads the links register to determine if link is up and the current speed
- **/
 static s32 txgbe_check_mac_link_aml(struct txgbe_hw *hw, u32 *speed,
 				    bool *link_up, bool link_up_wait_to_complete)
 {
+	struct txgbe_adapter *adapter = hw->back;
 	u32 links_reg = 0;
 	u32 i;
 
@@ -251,6 +240,13 @@ static s32 txgbe_check_mac_link_aml(struct txgbe_hw *hw, u32 *speed,
 			*speed = TXGBE_LINK_SPEED_10GB_FULL;
 	} else {
 		*speed = TXGBE_LINK_SPEED_UNKNOWN;
+	}
+
+	if (txgbe_xpcs_an_enabled(hw)) {
+		if (!adapter->an_done) {
+			*link_up = false;
+			*speed = TXGBE_LINK_SPEED_UNKNOWN;
+		}
 	}
 
 	return 0;
