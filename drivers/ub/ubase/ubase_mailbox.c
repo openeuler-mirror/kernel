@@ -27,7 +27,7 @@ static int ubase_mbox_over_cmdq_init(struct ubase_dev *udev)
 	xa_init(&info->seq_tbl);
 	init_waitqueue_head(&info->queue);
 	udev->moc_info = info;
-	udev->moc_info->seq_num = 0;
+	udev->moc_info->seq_num = (u32)jiffies;
 
 	return 0;
 }
@@ -49,15 +49,7 @@ static void ubase_mbox_over_cmdq_uninit(struct ubase_dev *udev)
 
 static u32 ubase_get_seq_for_cmdq(struct ubase_dev *udev)
 {
-#define MAX_SEQ_NUM 1024
-
-	u32 seq;
-
-	seq = ++udev->moc_info->seq_num;
-	if (udev->moc_info->seq_num >= MAX_SEQ_NUM)
-		udev->moc_info->seq_num = 0;
-
-	return seq;
+	return ++udev->moc_info->seq_num;
 }
 
 static u16 ubase_get_trans_len_by_opc(u16 opc)
