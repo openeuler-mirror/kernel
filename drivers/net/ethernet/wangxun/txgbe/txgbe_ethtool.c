@@ -4480,6 +4480,10 @@ static int txgbe_get_module_info(struct net_device *dev,
 				modinfo->eeprom_len = TXGBE_MODULE_QSFP_MAX_LEN;
 			}
 			break;
+		case TXGBE_SFF_IDENTIFIER_QSFP28:
+			modinfo->type = ETH_MODULE_SFF_8636;
+			modinfo->eeprom_len = TXGBE_MODULE_QSFP_MAX_LEN;
+			break;
 		default:
 			e_err(drv, "SFF Module Type not recognized.\n");
 			return -EINVAL;
@@ -4515,6 +4519,7 @@ static int txgbe_get_module_eeprom(struct net_device *dev,
 	u8 identifier = 0;
 	u32 swfw_mask = hw->phy.phy_semaphore_mask;
 	u8 databyte;
+	u8 page_sel_pre;
 	s32 status = 0;
 
 	if (hw->mac.type == txgbe_mac_aml40) {
@@ -4550,6 +4555,12 @@ static int txgbe_get_module_eeprom(struct net_device *dev,
 		if (status != 0)
 			goto ERROR_IO;
 
+		status = hw->phy.ops.read_i2c_eeprom(hw,
+						     TXGBE_SFF_8636_STATUS_OFFSET,
+						     &page_sel_pre);
+		if (status != 0)
+			goto ERROR_IO;
+
 		if (identifier == TXGBE_SFF_IDENTIFIER_SFP)
 			is_sfp = true;
 
@@ -4578,13 +4589,19 @@ static int txgbe_get_module_eeprom(struct net_device *dev,
 					page++;
 				}
 
-				if (page == 0 || !(data[0x2] & 0x4)) {
+				if (!(page_sel_pre & 0x4)) {
 					status = hw->phy.ops.read_i2c_sff8636(hw, page, offset,
 								&databyte);
-
-					if (status != 0)
-						goto ERROR_IO;
+				} else {
+					if (page == 0)
+						status = hw->phy.ops.read_i2c_eeprom(hw, offset,
+									&databyte);
+					else
+						break;
 				}
+
+				if (status != 0)
+					goto ERROR_IO;
 			}
 			data[i] = databyte;
 		}

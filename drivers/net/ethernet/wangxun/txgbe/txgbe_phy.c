@@ -899,6 +899,7 @@ s32 txgbe_identify_qsfp_module(struct txgbe_hw *hw)
 	s32 status = TXGBE_ERR_PHY_ADDR_INVALID;
 	u8 identifier = 0, transceiver_type = 0;
 	u32 swfw_mask = hw->phy.phy_semaphore_mask;
+	u8 option1_type;
 	u32 value;
 
 	if (hw->mac.type == txgbe_mac_aml40) {
@@ -928,7 +929,8 @@ s32 txgbe_identify_qsfp_module(struct txgbe_hw *hw)
 		goto err_read_i2c_eeprom;
 
 	if (identifier == TXGBE_SFF_IDENTIFIER_QSFP ||
-	    identifier == TXGBE_SFF_IDENTIFIER_QSFP_PLUS) {
+	    identifier == TXGBE_SFF_IDENTIFIER_QSFP_PLUS ||
+	    identifier == TXGBE_SFF_IDENTIFIER_QSFP28) {
 		hw->phy.type = txgbe_phy_sfp_unknown;
 
 		status = hw->phy.ops.read_i2c_eeprom(hw,
@@ -968,6 +970,35 @@ s32 txgbe_identify_qsfp_module(struct txgbe_hw *hw)
 				hw->phy.sfp_type = txgbe_qsfp_type_40g_active_core1;
 		}
 
+		if (transceiver_type & TXGBE_SFF_ETHERNET_RSRVD) {
+			status = hw->phy.ops.read_i2c_eeprom(hw,
+								 TXGBE_SFF_OPTION_1_OFFSET,
+								 &option1_type);
+			if (status != 0)
+				goto err_read_i2c_eeprom;
+
+			if (option1_type == TXGBE_SFF_ETHERNET_100G_CR4) {
+				if (hw->bus.lan_id == 0)
+					hw->phy.sfp_type = txgbe_qsfp_type_40g_cu_core0;
+				else
+					hw->phy.sfp_type = txgbe_qsfp_type_40g_cu_core1;
+				hw->phy.fiber_suppport_speed =
+							TXGBE_LINK_SPEED_40GB_FULL |
+							TXGBE_LINK_SPEED_10GB_FULL;
+
+				if (!hw->mac.autoneg) {
+					if (hw->bus.lan_id == 0)
+						hw->phy.sfp_type = txgbe_qsfp_type_40g_sr_core0;
+					else
+						hw->phy.sfp_type = txgbe_qsfp_type_40g_sr_core1;
+				}
+			} else {
+				if (hw->bus.lan_id == 0)
+					hw->phy.sfp_type = txgbe_qsfp_type_40g_sr_core0;
+				else
+					hw->phy.sfp_type = txgbe_qsfp_type_40g_sr_core1;
+			}
+		}
 	} else {
 		hw->phy.type = txgbe_phy_sfp_unsupported;
 		status = TXGBE_ERR_SFP_NOT_SUPPORTED;
