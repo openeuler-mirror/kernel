@@ -5,7 +5,6 @@
 #include "txgbe_e56.h"
 #include "txgbe_e56_bp.h"
 #include "txgbe_phy.h"
-#include "txgbe_aml40.h"
 
 /**
  *  txgbe_get_media_type_aml40 - Get media type
@@ -13,7 +12,7 @@
  *
  *  Returns the media type (fiber, copper, backplane)
  **/
-enum txgbe_media_type txgbe_get_media_type_aml40(struct txgbe_hw *hw)
+static enum txgbe_media_type txgbe_get_media_type_aml40(struct txgbe_hw *hw)
 {
 	u8 device_type = hw->subsystem_device_id & 0xF0;
 	enum txgbe_media_type media_type;
@@ -226,26 +225,20 @@ static void txgbe_init_mac_link_ops_aml40(struct txgbe_hw *hw)
 {
 	struct txgbe_mac_info *mac = &hw->mac;
 
-	mac->ops.disable_tx_laser =
-			txgbe_disable_tx_laser_multispeed_fiber;
-	mac->ops.enable_tx_laser =
-			txgbe_enable_tx_laser_multispeed_fiber;
+	mac->ops.disable_tx_laser = txgbe_disable_tx_laser_multispeed_fiber;
+	mac->ops.enable_tx_laser = txgbe_enable_tx_laser_multispeed_fiber;
 	mac->ops.flap_tx_laser = txgbe_flap_tx_laser_multispeed_fiber;
-
-	mac->ops.setup_link = txgbe_setup_mac_link_aml40;
-	mac->ops.set_rate_select_speed = txgbe_set_hard_rate_select_speed;
 }
 
 static int txgbe_setup_sfp_modules_aml40(struct txgbe_hw *hw)
 {
-	int ret_val = TXGBE_ERR_SFP_NOT_SUPPORTED;
-
 	if (hw->phy.sfp_type != txgbe_sfp_type_unknown) {
 		txgbe_init_mac_link_ops_aml40(hw);
-		ret_val = 0;
+		return 0;
 	}
-
-	return ret_val;
+	hw_dbg(hw, "unknown SFP type: %d\n", hw->phy.sfp_type);
+	/* If SFP type is unknown, we cannot set up the link */
+	return TXGBE_ERR_SFP_NOT_SUPPORTED;
 }
 
 /**
@@ -257,7 +250,7 @@ static int txgbe_setup_sfp_modules_aml40(struct txgbe_hw *hw)
  *  not known.  Perform the SFP init if necessary.
  *
  **/
-int txgbe_init_phy_ops_aml40(struct txgbe_hw *hw)
+static int txgbe_init_phy_ops_aml40(struct txgbe_hw *hw)
 {
 	int ret_val = 0;
 
@@ -277,26 +270,84 @@ init_phy_ops_out:
 	return ret_val;
 }
 
-int txgbe_init_ops_aml40(struct txgbe_hw *hw)
-{
-	struct txgbe_mac_info *mac = &hw->mac;
-	struct txgbe_phy_info *phy = &hw->phy;
-	int ret_val = 0;
-
-	ret_val = txgbe_init_ops_generic(hw);
-
-	/* PHY */
-	phy->ops.init = txgbe_init_phy_ops_aml40;
-
+static const struct txgbe_mac_operations mac_ops_aml40 = {
 	/* MAC */
-	mac->ops.get_media_type = txgbe_get_media_type_aml40;
-	mac->ops.setup_sfp = txgbe_setup_sfp_modules_aml40;
+	.init_hw		= &txgbe_init_hw,
+	.reset_hw		= &txgbe_reset_hw,
+	.start_hw		= &txgbe_start_hw,
+	.clear_hw_cntrs		= &txgbe_clear_hw_cntrs,
+	.get_media_type		= &txgbe_get_media_type_aml40,
+	.get_mac_addr		= &txgbe_get_mac_addr,
+	.stop_adapter		= &txgbe_stop_adapter,
+	.get_bus_info		= &txgbe_get_bus_info,
+	.set_lan_id		= &txgbe_set_lan_id_multi_port_pcie,
+	.setup_sfp		= &txgbe_setup_sfp_modules_aml40,
+	.enable_rx_dma		= &txgbe_enable_rx_dma,
+	.disable_sec_rx_path	= &txgbe_disable_sec_rx_path,
+	.enable_sec_rx_path	= &txgbe_enable_sec_rx_path,
+	.disable_sec_tx_path	= &txgbe_disable_sec_tx_path,
+	.enable_sec_tx_path	= &txgbe_enable_sec_tx_path,
 
-	/* LINK */
-	mac->ops.check_link = txgbe_check_mac_link_aml40;
-	mac->ops.setup_link = txgbe_setup_mac_link_aml40;
-	mac->ops.get_link_capabilities = txgbe_get_link_capabilities_aml40;
+	/* Link */
+	.disable_tx_laser	= NULL,
+	.enable_tx_laser	= NULL,
+	.flap_tx_laser		= NULL,
+	.setup_link		= &txgbe_setup_mac_link_aml40,
+	.setup_mac_link		= NULL,
+	.check_link		= &txgbe_check_mac_link_aml40,
+	.get_link_capabilities	= &txgbe_get_link_capabilities_aml40,
+	.set_rate_select_speed	= &txgbe_set_hard_rate_select_speed,
 
-	return ret_val;
-}
+	/* Packet Buffer manipulation */
+	.setup_rxpba		= &txgbe_set_rxpba,
+
+	/* RAR, Multicast, VLAN */
+	.set_rar		= &txgbe_set_rar,
+	.clear_rar		= &txgbe_clear_rar,
+	.set_vmdq_san_mac	= &txgbe_set_vmdq_san_mac,
+	.init_rx_addrs		= &txgbe_init_rx_addrs,
+	.update_mc_addr_list	= &txgbe_update_mc_addr_list,
+	.clear_vfta		= &txgbe_clear_vfta,
+	.set_vfta		= &txgbe_set_vfta,
+	.init_uta_tables	= &txgbe_init_uta_tables,
+	.set_vlan_anti_spoofing	= &txgbe_set_vlan_anti_spoofing,
+
+	/* Flow Control */
+	.fc_enable		= &txgbe_fc_enable,
+	.setup_fc		= &txgbe_setup_fc,
+
+	/* Manageability interface */
+	.get_thermal_sensor_data	= &txgbe_get_thermal_sensor_data,
+	.init_thermal_sensor_thresh	= &txgbe_init_thermal_sensor_thresh,
+	.get_rtrup2tc		= &txgbe_dcb_get_rtrup2tc,
+	.enable_rx		= &txgbe_enable_rx,
+	.disable_rx		= &txgbe_disable_rx,
+	.set_ethertype_anti_spoofing	= &txgbe_set_ethertype_anti_spoofing,
+	.setup_eee		= &txgbe_setup_eee,
+	.dmac_config		= NULL,
+};
+
+static const struct txgbe_phy_operations phy_ops_aml40 = {
+	/* PHY */
+	.identify		= &txgbe_identify_phy_generic,
+	.identify_sfp		= &txgbe_identify_module,
+	.init			= &txgbe_init_phy_ops_aml40,
+	.setup_link		= &txgbe_setup_phy_link,
+	.setup_link_speed	= &txgbe_setup_phy_link_speed,
+	.read_i2c_byte		= &txgbe_read_i2c_byte,
+	.write_i2c_byte		= &txgbe_write_i2c_byte,
+	.read_i2c_sff8472	= &txgbe_read_i2c_sff8472,
+	.read_i2c_sff8636	= &txgbe_read_i2c_sff8636,
+	.read_i2c_eeprom	= &txgbe_read_i2c_eeprom,
+	.read_i2c_sfp_phy	= &txgbe_read_i2c_sfp_phy,
+	.write_i2c_eeprom	= &txgbe_write_i2c_eeprom,
+	.check_overtemp		= &txgbe_tn_check_overtemp,
+};
+
+const struct txgbe_info txgbe_aml40_info = {
+	.mac			= txgbe_mac_aml,
+	.get_invariants		= &txgbe_get_invariants_generic,
+	.mac_ops		= &mac_ops_aml40,
+	.phy_ops		= &phy_ops_aml40,
+};
 

@@ -13,7 +13,9 @@
 
 #include "txgbe.h"
 #include "txgbe_hw.h"
+#include "txgbe_sp.h"
 #include "txgbe_phy.h"
+#include "txgbe_bp_base.h"
 #include "txgbe_e56.h"
 #include <linux/net_tstamp.h>
 
@@ -4424,11 +4426,9 @@ static int txgbe_get_module_info(struct net_device *dev,
 	u8 sff8636_rev = 0;
 	bool page_swap = false;
 	u32 swfw_mask = hw->phy.phy_semaphore_mask;
-	u32 value;
 
 	if (hw->mac.type == txgbe_mac_aml40) {
-		value = rd32(hw, TXGBE_GPIO_EXT);
-		if (value & TXGBE_SFP1_MOD_PRST_LS)
+		if (txgbe_gpio_ext_check(hw, TXGBE_SFP1_MOD_PRST_LS))
 			return -EIO;
 
 		if (!netif_carrier_ok(dev)) {
@@ -4438,8 +4438,7 @@ static int txgbe_get_module_info(struct net_device *dev,
 	}
 
 	if (hw->mac.type == txgbe_mac_aml) {
-		value = rd32(hw, TXGBE_GPIO_EXT);
-		if (value & TXGBE_SFP1_MOD_ABS_LS)
+		if (txgbe_gpio_ext_check(hw, TXGBE_SFP1_MOD_ABS_LS))
 			return -EIO;
 	}
 
@@ -4541,7 +4540,6 @@ static int txgbe_get_module_eeprom(struct net_device *dev,
 	struct txgbe_hw *hw = &adapter->hw;
 	int i = 0;
 	bool is_sfp = false;
-	u32 value;
 	u8 identifier = 0;
 	u32 swfw_mask = hw->phy.phy_semaphore_mask;
 	u8 databyte;
@@ -4549,8 +4547,7 @@ static int txgbe_get_module_eeprom(struct net_device *dev,
 	int status = 0;
 
 	if (hw->mac.type == txgbe_mac_aml40) {
-		value = rd32(hw, TXGBE_GPIO_EXT);
-		if (value & TXGBE_SFP1_MOD_PRST_LS)
+		if (txgbe_gpio_ext_check(hw, TXGBE_SFP1_MOD_PRST_LS))
 			return -EIO;
 
 		if (!netif_carrier_ok(dev)) {
@@ -4560,8 +4557,7 @@ static int txgbe_get_module_eeprom(struct net_device *dev,
 	}
 
 	if (hw->mac.type == txgbe_mac_aml) {
-		value = rd32(hw, TXGBE_GPIO_EXT);
-		if (value & TXGBE_SFP1_MOD_ABS_LS)
+		if (txgbe_gpio_ext_check(hw, TXGBE_SFP1_MOD_ABS_LS))
 			return -EIO;
 	}
 

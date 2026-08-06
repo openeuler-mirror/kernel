@@ -753,16 +753,15 @@ struct txgbe_adapter {
 	u8 tx_unidir_mode;
 	u8  an73_mode;
 	u8  backplane_an;
-	u8  an73;
 	u8  autoneg;
-	u16 ffe_main;
-	u16 ffe_pre;
-	u16 ffe_post;
+	u32 ffe_main;
+	u32 ffe_pre1;
+	u32 ffe_pre2;
+	u32 ffe_post;
 	u8  ffe_set;
 	u16 fec_mode;
 	u8  backplane_mode;
 	u8  backplane_auto;
-	struct phytxeq aml_txeq;
 	bool an_done;
 	u32 fsm;
 
@@ -1276,6 +1275,8 @@ struct txgbe_msg *txgbe_hw_to_msg(const struct txgbe_hw *hw);
 	netdev_dbg(txgbe_hw_to_netdev(hw), format, ## arg)
 #define hw_err(hw, format, arg...) \
 	netdev_err(txgbe_hw_to_netdev(hw), format, ## arg)
+#define hw_info(hw, format, arg...) \
+	netdev_info(txgbe_hw_to_netdev(hw), format, ## arg)
 #define e_dev_info(format, arg...) \
 	dev_info(pci_dev_to_dev(adapter->pdev), format, ## arg)
 #define e_dev_warn(format, arg...) \

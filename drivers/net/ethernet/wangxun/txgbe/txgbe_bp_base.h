@@ -36,6 +36,41 @@
 #define TXGBE_25G_BASE_FEC_REQ	BIT(13)
 #define TXGBE_25G_RS_FEC_REQ	BIT(12)
 
+#define S10G_TX_FFE_CFG_MAIN        0x2c2c2c2c
+#define S10G_TX_FFE_CFG_PRE1        0x0
+#define S10G_TX_FFE_CFG_PRE2        0x0
+#define S10G_TX_FFE_CFG_POST        0x6060606
+#define S25G_TX_FFE_CFG_MAIN        49
+#define S25G_TX_FFE_CFG_PRE1        4
+#define S25G_TX_FFE_CFG_PRE2        1
+#define S25G_TX_FFE_CFG_POST        9
+
+/* for dac test*/
+#define S25G_TX_FFE_CFG_DAC_MAIN    0x2a2a2a2a
+#define S25G_TX_FFE_CFG_DAC_PRE1    0x03030303
+#define S25G_TX_FFE_CFG_DAC_PRE2    0x0
+#define S25G_TX_FFE_CFG_DAC_POST    0x11111111
+
+#define SFI_SET     0
+#define SFI_MAIN    24
+#define SFI_PRE     4
+#define SFI_POST    16
+
+#define KR_SET      0
+#define KR_MAIN     27
+#define KR_PRE      8
+#define KR_POST     44
+
+#define KX4_SET     0
+#define KX4_MAIN    40
+#define KX4_PRE     0
+#define KX4_POST    0
+
+#define KX_SET      0
+#define KX_MAIN     24
+#define KX_PRE      4
+#define KX_POST     16
+
 struct bkpan73ability {
 	unsigned int next_page;		/* Next Page (bit0) */
 	unsigned int link_ability;	/* Link Ability (bit[7:0]) */
@@ -84,10 +119,16 @@ enum ability_filed_encding {
 			e_dev_info(fmt, ##arg);			\
 	} while (0)
 
+u32 rd32_ephy(struct txgbe_hw *hw, u32 addr);
+u32 txgbe_rd32_epcs(struct txgbe_hw *hw, u32 addr);
+void txgbe_wr32_ephy(struct txgbe_hw *hw, u32 addr, u32 data);
+void txgbe_wr32_epcs(struct txgbe_hw *hw, u32 addr, u32 data);
 void txgbe_field_set(u32 *psrcdata, u32 bithigh, u32 bitlow, u32 setvalue);
 int txgbe_is_dac_cable(struct txgbe_hw *hw);
 int txgbe_xpcs_an_enabled(struct txgbe_hw *hw);
 void txgbe_bp_mode_setting(struct txgbe_adapter *adapter);
+void txgbe_xpcs_txffe_set(struct txgbe_adapter *adapter);
+void txgbe_xlgpcs_txffe_set(struct txgbe_adapter *adapter, u32 speed);
 int txgbe_chk_bkp_ability(struct txgbe_adapter *adapter,
 			  struct bkpan73ability bkp_an73_ability,
 			  struct bkpan73ability lpbkp_an73_ability);

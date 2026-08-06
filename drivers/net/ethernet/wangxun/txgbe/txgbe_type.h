@@ -3248,7 +3248,6 @@ struct txgbe_phy_info {
 #include "txgbe_mbx.h"
 
 struct txgbe_mbx_operations {
-	void (*init_params)(struct txgbe_hw *hw);
 	int (*read)(struct txgbe_hw *hw, u32 *msg, u16 size, u16 vf);
 	int (*write)(struct txgbe_hw *hw, u32 *msg, u16 size, u16 vf);
 	int (*read_posted)(struct txgbe_hw *hw, u32 *msg, u16 size, u16 mbx_id);
@@ -3256,13 +3255,6 @@ struct txgbe_mbx_operations {
 	int (*check_for_msg)(struct txgbe_hw *hw, u16 __always_unused mbx_id);
 	int (*check_for_ack)(struct txgbe_hw *hw, u16 __always_unused mbx_id);
 	int (*check_for_rst)(struct txgbe_hw *hw, u16 __always_unused mbx_id);
-};
-
-struct phytxeq {
-	u32 main; //TX EQ main (bit[5:0])
-	u32 pre1; //TX EQ pre1 (bit[5:0])
-	u32 pre2; //TX EQ pre2 (bit[5:0])
-	u32 post; //TX EQ post (bit[5:0])
 };
 
 struct txgbe_mbx_stats {
@@ -3281,6 +3273,18 @@ struct txgbe_mbx_info {
 	u32 udelay;
 	u32 v2p_mailbox;
 	u16 size;
+};
+
+extern const struct txgbe_info txgbe_sp_info;
+extern const struct txgbe_info txgbe_aml_info;
+extern const struct txgbe_info txgbe_aml40_info;
+
+struct txgbe_info {
+	enum txgbe_mac_type			mac;
+	int					(*get_invariants)(struct txgbe_hw *hw);
+	const struct txgbe_mac_operations	*mac_ops;
+	const struct txgbe_phy_operations	*phy_ops;
+	const struct txgbe_mbx_operations	*mbx_ops;
 };
 
 enum txgbe_reset_type {

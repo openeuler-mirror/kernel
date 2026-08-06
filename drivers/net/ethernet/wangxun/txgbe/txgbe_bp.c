@@ -2,6 +2,7 @@
 /* Copyright (c) 2019 - 2022 Beijing WangXun Technology Co., Ltd. */
 
 #include "txgbe_bp_base.h"
+#include "txgbe_sp.h"
 #include "txgbe_bp.h"
 
 void txgbe_bp_close_protect(struct txgbe_adapter *adapter)

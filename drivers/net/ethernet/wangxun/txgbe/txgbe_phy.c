@@ -510,12 +510,10 @@ int txgbe_identify_sfp_module(struct txgbe_hw *hw)
 	u8 sff8472_rev, addr_mode, databyte;
 	bool page_swap = false;
 	u32 swfw_mask = hw->phy.phy_semaphore_mask;
-	u32 value;
 	int i;
 
 	if (hw->mac.type == txgbe_mac_aml) {
-		value = rd32(hw, TXGBE_GPIO_EXT);
-		if (value & TXGBE_SFP1_MOD_ABS_LS) {
+		if (txgbe_gpio_ext_check(hw, TXGBE_SFP1_MOD_ABS_LS)) {
 			hw->phy.sfp_type = txgbe_sfp_type_not_present;
 			return TXGBE_ERR_SFP_NOT_PRESENT;
 		}
@@ -898,11 +896,9 @@ int txgbe_identify_qsfp_module(struct txgbe_hw *hw)
 	u8 identifier = 0, transceiver_type = 0;
 	u32 swfw_mask = hw->phy.phy_semaphore_mask;
 	u8 option1_type;
-	u32 value;
 
 	if (hw->mac.type == txgbe_mac_aml40) {
-		value = rd32(hw, TXGBE_GPIO_EXT);
-		if (value & TXGBE_SFP1_MOD_PRST_LS) {
+		if (txgbe_gpio_ext_check(hw, TXGBE_SFP1_MOD_PRST_LS)) {
 			hw->phy.sfp_type = txgbe_sfp_type_not_present;
 			return TXGBE_ERR_SFP_NOT_PRESENT;
 		}

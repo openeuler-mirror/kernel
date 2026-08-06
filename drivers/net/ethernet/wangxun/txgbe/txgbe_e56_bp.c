@@ -992,23 +992,6 @@ static int txgbe_e56_cms_cfg_temp_track_range(struct txgbe_adapter *adapter,
 	return status;
 }
 
-static int txgbe_e56_phy_tx_ffe_cfg(struct txgbe_adapter *adapter)
-{
-	struct txgbe_hw *hw = &adapter->hw;
-
-	/* Setting the TX EQ main/pre1/pre2/post value */
-	adapter->aml_txeq.main = S25G_TX_FFE_CFG_DAC_MAIN;
-	adapter->aml_txeq.pre1 = S25G_TX_FFE_CFG_DAC_PRE1;
-	adapter->aml_txeq.pre2 = S25G_TX_FFE_CFG_DAC_PRE2;
-	adapter->aml_txeq.post = S25G_TX_FFE_CFG_DAC_POST;
-	txgbe_wr32_ephy(hw, 0x141c, adapter->aml_txeq.main);
-	txgbe_wr32_ephy(hw, 0x1420, adapter->aml_txeq.pre1);
-	txgbe_wr32_ephy(hw, 0x1424, adapter->aml_txeq.pre2);
-	txgbe_wr32_ephy(hw, 0x1428, adapter->aml_txeq.post);
-
-	return 0;
-}
-
 static int txgbe_e56_25g_cfg(struct txgbe_adapter *adapter)
 {
 	struct txgbe_hw *hw = &adapter->hw;
@@ -1094,7 +1077,7 @@ static int txgbe_e56_25g_cfg(struct txgbe_adapter *adapter)
 	txgbe_field_set(&rdata, E56PHY_TXS_ANA_OVRDEN_0_OVRD_EN_ANA_TEST_DAC_I, 0x1);
 	txgbe_wr32_ephy(hw, addr, rdata);
 
-	txgbe_e56_phy_tx_ffe_cfg(adapter);
+	txgbe_xlgpcs_txffe_set(adapter, TXGBE_LINK_SPEED_25GB_FULL);
 
 	rdata = 0x0000;
 	addr = E56PHY_RXS_RXS_CFG_0_ADDR;
@@ -1577,7 +1560,7 @@ static int txgbe_e56_10g_cfg(struct txgbe_adapter *adapter)
 	txgbe_field_set(&rdata, E56PHY_TXS_ANA_OVRDEN_0_OVRD_EN_ANA_TEST_DAC_I, 0x1);
 	txgbe_wr32_ephy(hw, addr, rdata);
 
-	txgbe_e56_phy_tx_ffe_cfg(adapter);
+	txgbe_xlgpcs_txffe_set(adapter, TXGBE_LINK_SPEED_25GB_FULL);
 
 	rdata = 0x0000;
 	addr = E56PHY_RXS_RXS_CFG_0_ADDR;

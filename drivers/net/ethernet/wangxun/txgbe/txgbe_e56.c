@@ -53,53 +53,53 @@ static u32 txgbe_e56_phy_tx_ffe_cfg(struct txgbe_hw *hw, u32 speed)
 	u32 addr;
 
 	if (speed == TXGBE_LINK_SPEED_10GB_FULL) {
-		adapter->aml_txeq.main = S10G_TX_FFE_CFG_MAIN;
-		adapter->aml_txeq.pre1 = S10G_TX_FFE_CFG_PRE1;
-		adapter->aml_txeq.pre2 = S10G_TX_FFE_CFG_PRE2;
-		adapter->aml_txeq.post = S10G_TX_FFE_CFG_POST;
+		adapter->ffe_main = S10G_TX_FFE_CFG_MAIN;
+		adapter->ffe_pre1 = S10G_TX_FFE_CFG_PRE1;
+		adapter->ffe_pre2 = S10G_TX_FFE_CFG_PRE2;
+		adapter->ffe_post = S10G_TX_FFE_CFG_POST;
 	} else if (speed == TXGBE_LINK_SPEED_25GB_FULL) {
-		adapter->aml_txeq.main = S25G_TX_FFE_CFG_MAIN;
-		adapter->aml_txeq.pre1 = S25G_TX_FFE_CFG_PRE1;
-		adapter->aml_txeq.pre2 = S25G_TX_FFE_CFG_PRE2;
-		adapter->aml_txeq.post = S25G_TX_FFE_CFG_POST;
+		adapter->ffe_main = S25G_TX_FFE_CFG_MAIN;
+		adapter->ffe_pre1 = S25G_TX_FFE_CFG_PRE1;
+		adapter->ffe_pre2 = S25G_TX_FFE_CFG_PRE2;
+		adapter->ffe_post = S25G_TX_FFE_CFG_POST;
 
 		if (hw->phy.sfp_type == txgbe_sfp_type_da_cu_core0 ||
 		    hw->phy.sfp_type == txgbe_sfp_type_da_cu_core1 ||
 		    txgbe_is_backplane(hw)) {
-			adapter->aml_txeq.main = S25G_TX_FFE_CFG_DAC_MAIN;
-			adapter->aml_txeq.pre1 = S25G_TX_FFE_CFG_DAC_PRE1;
-			adapter->aml_txeq.pre2 = S25G_TX_FFE_CFG_DAC_PRE2;
-			adapter->aml_txeq.post = S25G_TX_FFE_CFG_DAC_POST;
+			adapter->ffe_main = S25G_TX_FFE_CFG_DAC_MAIN;
+			adapter->ffe_pre1 = S25G_TX_FFE_CFG_DAC_PRE1;
+			adapter->ffe_pre2 = S25G_TX_FFE_CFG_DAC_PRE2;
+			adapter->ffe_post = S25G_TX_FFE_CFG_DAC_POST;
 		}
 	} else if (speed == TXGBE_LINK_SPEED_40GB_FULL) {
-		adapter->aml_txeq.main = S10G_TX_FFE_CFG_MAIN;
-		adapter->aml_txeq.pre1 = S10G_TX_FFE_CFG_PRE1;
-		adapter->aml_txeq.pre2 = S10G_TX_FFE_CFG_PRE2;
-		adapter->aml_txeq.post = S10G_TX_FFE_CFG_POST;
+		adapter->ffe_main = S10G_TX_FFE_CFG_MAIN;
+		adapter->ffe_pre1 = S10G_TX_FFE_CFG_PRE1;
+		adapter->ffe_pre2 = S10G_TX_FFE_CFG_PRE2;
+		adapter->ffe_post = S10G_TX_FFE_CFG_POST;
 
 		if (hw->phy.sfp_type == txgbe_qsfp_type_40g_cu_core0 ||
 		    hw->phy.sfp_type == txgbe_qsfp_type_40g_cu_core1 ||
 		    txgbe_is_backplane(hw)) {
-			adapter->aml_txeq.main = 0x2b2b2b2b;
-			adapter->aml_txeq.pre1 = 0x03030303;
-			adapter->aml_txeq.pre2 = 0;
-			adapter->aml_txeq.post = 0x11111111;
+			adapter->ffe_main = 0x2b2b2b2b;
+			adapter->ffe_pre1 = 0x03030303;
+			adapter->ffe_pre2 = 0;
+			adapter->ffe_post = 0x11111111;
 		}
 	} else {
 		return 0;
 	}
 
 	addr = 0x141c;
-	txgbe_wr32_ephy(hw, addr, adapter->aml_txeq.main);
+	txgbe_wr32_ephy(hw, addr, adapter->ffe_main);
 
 	addr = 0x1420;
-	txgbe_wr32_ephy(hw, addr, adapter->aml_txeq.pre1);
+	txgbe_wr32_ephy(hw, addr, adapter->ffe_pre1);
 
 	addr = 0x1424;
-	txgbe_wr32_ephy(hw, addr, adapter->aml_txeq.pre2);
+	txgbe_wr32_ephy(hw, addr, adapter->ffe_pre2);
 
 	addr = 0x1428;
-	txgbe_wr32_ephy(hw, addr, adapter->aml_txeq.post);
+	txgbe_wr32_ephy(hw, addr, adapter->ffe_post);
 
 	return 0;
 }
@@ -225,7 +225,7 @@ u32 txgbe_e56_cfg_40g(struct txgbe_hw *hw)
 		txgbe_wr32_ephy(hw, addr, rdata);
 	}
 	//Setting TX FFE
-	txgbe_e56_phy_tx_ffe_cfg(hw, TXGBE_LINK_SPEED_40GB_FULL);
+	txgbe_xlgpcs_txffe_set(hw->back, TXGBE_LINK_SPEED_40GB_FULL);
 
 	//RXS Config master
 	for (i = 0; i < 4; i++) {
@@ -2873,8 +2873,8 @@ static int txgbe_e56_rxs_calib_adapt_seq(struct txgbe_hw *hw, u32 speed)
 
 	if (hw->mac.type == txgbe_mac_aml) {
 		msleep(350);
-		rdata = rd32(hw, TXGBE_GPIO_EXT);
-		if (rdata & (TXGBE_SFP1_MOD_ABS_LS | TXGBE_SFP1_RX_LOS_LS))
+		if (txgbe_gpio_ext_check(hw, TXGBE_SFP1_MOD_ABS_LS |
+					 TXGBE_SFP1_RX_LOS_LS))
 			return TXGBE_ERR_PHY_INIT_NOT_DONE;
 	}
 
@@ -3578,15 +3578,14 @@ static int txgbe_e56_disable_rx(struct txgbe_hw *hw)
 int txgbe_e56_reconfig_rx(struct txgbe_hw *hw, u32 speed)
 {
 	int status = 0;
-	u32 rdata;
 	u32 addr;
 
 	wr32m(hw, TXGBE_MAC_TX_CFG, TXGBE_MAC_TX_CFG_TE, ~TXGBE_MAC_TX_CFG_TE);
 	wr32m(hw, TXGBE_MAC_RX_CFG, TXGBE_MAC_RX_CFG_RE, ~TXGBE_MAC_RX_CFG_RE);
 
 	if (hw->mac.type == txgbe_mac_aml) {
-		rdata = rd32(hw, TXGBE_GPIO_EXT);
-		if (rdata & (TXGBE_SFP1_MOD_ABS_LS | TXGBE_SFP1_RX_LOS_LS))
+		if (txgbe_gpio_ext_check(hw, TXGBE_SFP1_MOD_ABS_LS |
+					 TXGBE_SFP1_RX_LOS_LS))
 			return TXGBE_ERR_TIMEOUT;
 	}
 

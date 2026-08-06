@@ -19,6 +19,7 @@ txgbe-objs := txgbe_main.o \
 			  txgbe_mbx.o \
 			  txgbe_mtd.o \
 			  txgbe_e56.o \
+              txgbe_sp.o \
 			  txgbe_param.o \
 			  txgbe_ptp.o \
 			  txgbe_sriov.o \

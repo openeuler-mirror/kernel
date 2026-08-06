@@ -45,17 +45,26 @@ TXGBE_PARAM(TX_UNIDIR_MODE, "Tx Unidirectional Mode [0, 1]");
  *
  * Default Value: 27
  */
-TXGBE_PARAM(FFE_MAIN, "TX_EQ MAIN (0 - 40)");
+TXGBE_PARAM(FFE_MAIN, "TX_EQ MAIN (0 - 63)");
 #define TXGBE_DEFAULT_FFE_MAIN              27
 
-/* ffe_pre
+/* ffe_pre1
  *
  * Valid Range: 0-60
  *
  * Default Value: 8
  */
-TXGBE_PARAM(FFE_PRE, "TX_EQ PRE (0 - 40)");
-#define TXGBE_DEFAULT_FFE_PRE              8
+TXGBE_PARAM(FFE_PRE1, "TX_EQ PRE1 (0 - 63)");
+#define TXGBE_DEFAULT_FFE_PRE1              8
+
+/* ffe_pre2
+ *
+ * Valid Range: 0-60
+ *
+ * Default Value: 8
+ */
+TXGBE_PARAM(FFE_PRE2, "TX_EQ PRE2 (0 - 63)");
+#define TXGBE_DEFAULT_FFE_PRE2              8
 
 /* ffe_post
  *
@@ -63,7 +72,7 @@ TXGBE_PARAM(FFE_PRE, "TX_EQ PRE (0 - 40)");
  *
  * Default Value: 44
  */
-TXGBE_PARAM(FFE_POST, "TX_EQ POST (0 - 40)");
+TXGBE_PARAM(FFE_POST, "TX_EQ POST (0 - 63)");
 #define TXGBE_DEFAULT_FFE_POST              44
 
 /* ffe_set
@@ -440,7 +449,7 @@ void txgbe_check_options(struct txgbe_adapter *adapter)
 				"using default of " __MODULE_STRING(TXGBE_DEFAULT_FFE_MAIN),
 			.def = TXGBE_DEFAULT_FFE_MAIN,
 			.arg = { .r = { .min = 0,
-					.max = 60} }
+					.max = 63} }
 		};
 
 		if (num_FFE_MAIN > bd) {
@@ -454,26 +463,49 @@ void txgbe_check_options(struct txgbe_adapter *adapter)
 		}
 	}
 
-	{ /* PRE */
-		u32 ffe_pre;
+	{ /* PRE1 */
+		u32 ffe_pre1;
 		static struct txgbe_option opt = {
 			.type = range_option,
-			.name = "FFE_PRE",
+			.name = "FFE_PRE1",
 			.err =
-				"using default of " __MODULE_STRING(TXGBE_DEFAULT_FFE_PRE),
-			.def = TXGBE_DEFAULT_FFE_PRE,
+				"using default of " __MODULE_STRING(TXGBE_DEFAULT_FFE_PRE1),
+			.def = TXGBE_DEFAULT_FFE_PRE1,
 			.arg = { .r = { .min = 0,
-					.max = 60} }
+					.max = 63} }
 		};
 
-		if (num_FFE_PRE > bd) {
-			ffe_pre = FFE_PRE[bd];
-			if (ffe_pre == OPTION_UNSET)
-				ffe_pre = FFE_PRE[bd];
-			txgbe_validate_option(&ffe_pre, &opt);
-			adapter->ffe_pre = ffe_pre;
+		if (num_FFE_PRE1 > bd) {
+			ffe_pre1 = FFE_PRE1[bd];
+			if (ffe_pre1 == OPTION_UNSET)
+				ffe_pre1 = FFE_PRE1[bd];
+			txgbe_validate_option(&ffe_pre1, &opt);
+			adapter->ffe_pre1 = ffe_pre1;
 		} else {
-			adapter->ffe_pre = 8;
+			adapter->ffe_pre1 = 8;
+		}
+	}
+
+	{ /* PRE2 */
+		u32 ffe_pre2;
+		static struct txgbe_option opt = {
+			.type = range_option,
+			.name = "FFE_PRE2",
+			.err =
+				"using default of " __MODULE_STRING(TXGBE_DEFAULT_FFE_PRE2),
+			.def = TXGBE_DEFAULT_FFE_PRE2,
+			.arg = { .r = { .min = 0,
+					.max = 63} }
+		};
+
+		if (num_FFE_PRE2 > bd) {
+			ffe_pre2 = FFE_PRE2[bd];
+			if (ffe_pre2 == OPTION_UNSET)
+				ffe_pre2 = FFE_PRE2[bd];
+			txgbe_validate_option(&ffe_pre2, &opt);
+			adapter->ffe_pre2 = ffe_pre2;
+		} else {
+			adapter->ffe_pre2 = 8;
 		}
 	}
 
@@ -486,7 +518,7 @@ void txgbe_check_options(struct txgbe_adapter *adapter)
 				"using default of " __MODULE_STRING(TXGBE_DEFAULT_FFE_POST),
 			.def = TXGBE_DEFAULT_FFE_POST,
 			.arg = { .r = { .min = 0,
-					.max = 60} }
+					.max = 63} }
 		};
 		if (num_FFE_POST > bd) {
 			ffe_post = FFE_POST[bd];

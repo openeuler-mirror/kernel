@@ -4,6 +4,14 @@
 #ifndef _TXGBE_HW_H_
 #define _TXGBE_HW_H_
 
+#define TXGBE_SP_MAX_TX_QUEUES  128
+#define TXGBE_SP_MAX_RX_QUEUES  128
+
+#define TXGBE_SP_RAR_ENTRIES    128
+#define TXGBE_SP_MC_TBL_SIZE    128
+#define TXGBE_SP_VFT_TBL_SIZE   128
+#define TXGBE_SP_RX_PB_SIZE     512
+
 #define TXGBE_EMC_INTERNAL_DATA         0x00
 #define TXGBE_EMC_INTERNAL_THERM_LIMIT  0x20
 #define TXGBE_EMC_DIODE1_DATA           0x01
@@ -120,12 +128,6 @@ struct txgbe_dec_ptype {
 
 extern struct txgbe_dec_ptype txgbe_ptype_lookup[256];
 
-int txgbe_check_mac_link_sp(struct txgbe_hw *hw, u32 *speed,
-			    bool *link_up, bool link_up_wait_to_complete);
-u32 rd32_ephy(struct txgbe_hw *hw, u32 addr);
-u32 txgbe_rd32_epcs(struct txgbe_hw *hw, u32 addr);
-void txgbe_wr32_ephy(struct txgbe_hw *hw, u32 addr, u32 data);
-void txgbe_wr32_epcs(struct txgbe_hw *hw, u32 addr, u32 data);
 
 void txgbe_dcb_get_rtrup2tc(struct txgbe_hw *hw, u8 *map);
 u16 txgbe_get_pcie_msix_count(struct txgbe_hw *hw);
@@ -257,23 +259,16 @@ void txgbe_atr_compute_perfect_hash(union txgbe_atr_input *input,
 u32 txgbe_atr_compute_sig_hash(union txgbe_atr_hash_dword input,
 			       union txgbe_atr_hash_dword common);
 
-int txgbe_get_link_capabilities_sp(struct txgbe_hw *hw,
-				   u32 *speed, bool *autoneg);
-enum txgbe_media_type txgbe_get_media_type_sp(struct txgbe_hw *hw);
 void txgbe_disable_tx_laser_multispeed_fiber(struct txgbe_hw *hw);
 void txgbe_enable_tx_laser_multispeed_fiber(struct txgbe_hw *hw);
 void txgbe_flap_tx_laser_multispeed_fiber(struct txgbe_hw *hw);
-void txgbe_set_hard_rate_select_speed(struct txgbe_hw *hw,
-				      u32 speed);
+void txgbe_set_hard_rate_select_speed(struct txgbe_hw *hw, u32 speed);
+
 int txgbe_init_shared_code(struct txgbe_hw *hw);
-int txgbe_setup_mac_link_sp(struct txgbe_hw *hw, u32 speed,
-			    bool autoneg_wait_to_complete);
-void txgbe_init_mac_link_ops_sp(struct txgbe_hw *hw);
+int txgbe_get_invariants_generic(struct txgbe_hw *hw);
 int txgbe_reset_hw(struct txgbe_hw *hw);
-int txgbe_identify_phy(struct txgbe_hw *hw);
-int txgbe_init_phy_ops_sp(struct txgbe_hw *hw);
+int txgbe_identify_phy_generic(struct txgbe_hw *hw);
 int txgbe_enable_rx_dma(struct txgbe_hw *hw, u32 regval);
-int txgbe_init_ops_generic(struct txgbe_hw *hw);
 int txgbe_setup_eee(struct txgbe_hw *hw, bool enable_eee);
 int txgbe_reconfig_mac(struct txgbe_hw *hw);
 
@@ -301,10 +296,6 @@ int txgbe_write_ee_hostif(struct txgbe_hw *hw, u16 offset,
 int txgbe_read_ee_hostif_buffer(struct txgbe_hw *hw,
 				u16 offset, u16 words, u16 *data);
 int txgbe_read_ee_hostif(struct txgbe_hw *hw, u16 offset, u16 *data);
-u32 txgbe_rd32_epcs(struct txgbe_hw *hw, u32 addr);
-void txgbe_wr32_epcs(struct txgbe_hw *hw, u32 addr, u32 data);
-void txgbe_wr32_ephy(struct txgbe_hw *hw, u32 addr, u32 data);
-u32 rd32_ephy(struct txgbe_hw *hw, u32 addr);
 
 int txgbe_upgrade_flash_hostif(struct txgbe_hw *hw,  u32 region,
 			       const u8 *data, u32 size);
@@ -312,26 +303,18 @@ int txgbe_upgrade_flash_hostif(struct txgbe_hw *hw,  u32 region,
 int txgbe_close_notify(struct txgbe_hw *hw);
 int txgbe_open_notify(struct txgbe_hw *hw);
 
-int txgbe_set_link_to_kr(struct txgbe_hw *hw, bool autoneg);
-int txgbe_set_link_to_kx4(struct txgbe_hw *hw, bool autoneg);
 
-int txgbe_set_link_to_kx(struct txgbe_hw *hw,
-			 u32 speed,
-			       bool autoneg);
 int txgbe_flash_read_dword(struct txgbe_hw *hw, u32 addr, u32 *data);
 int txgbe_hic_write_lldp(struct txgbe_hw *hw, u32 open);
 int txgbe_is_lldp(struct txgbe_hw *hw);
-int txgbe_set_sgmii_an37_ability(struct txgbe_hw *hw);
 int txgbe_set_pps(struct txgbe_hw *hw, bool enable, u64 nsec, u64 cycles);
 void txgbe_hic_write_autoneg_status(struct txgbe_hw *hw, bool autoneg);
 int txgbe_enable_rx_adapter(struct txgbe_hw *hw);
-
-void txgbe_init_ops_aml(struct txgbe_hw *hw);
-int txgbe_init_ops_aml40(struct txgbe_hw *hw);
 
 void txgbe_set_queue_rate_limit(struct txgbe_hw *hw, int queue, u16 max_tx_rate);
 
 int txgbe_hic_notify_led_active(struct txgbe_hw *hw, int active_flag);
 bool txgbe_is_backplane(struct txgbe_hw *hw);
+bool txgbe_gpio_ext_check(struct txgbe_hw *hw, u8 gpio_ext_mask);
 
 #endif /* _TXGBE_HW_H_ */

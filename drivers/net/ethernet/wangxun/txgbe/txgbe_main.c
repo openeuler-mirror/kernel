@@ -5835,7 +5835,7 @@ static int txgbe_sw_init(struct txgbe_adapter *adapter)
 	       sizeof(adapter->temp_dcb_cfg));
 #endif /* CONFIG_DCB */
 
-	hw->mbx.ops.init_params(hw);
+	txgbe_init_mbx_params_pf(hw);
 
 	/* default flow control settings */
 	hw->fc.requested_mode = txgbe_fc_full;
@@ -7465,7 +7465,6 @@ static void txgbe_phy_event_subtask(struct txgbe_adapter *adapter)
 static void txgbe_sfp_detection_subtask(struct txgbe_adapter *adapter)
 {
 	struct txgbe_hw *hw = &adapter->hw;
-	u32 value = 0;
 	int err;
 
 	/* not searching for SFP so there is nothing to do here */
@@ -7484,8 +7483,7 @@ static void txgbe_sfp_detection_subtask(struct txgbe_adapter *adapter)
 	adapter->sfp_poll_time = jiffies + TXGBE_SFP_POLL_JIFFIES - 1;
 
 	if (hw->mac.type == txgbe_mac_aml40) {
-		value = rd32(hw, TXGBE_GPIO_EXT);
-		if (value & TXGBE_SFP1_MOD_PRST_LS) {
+		if (txgbe_gpio_ext_check(hw, TXGBE_SFP1_MOD_PRST_LS)) {
 			err = TXGBE_ERR_SFP_NOT_PRESENT;
 			adapter->flags2 &= ~TXGBE_FLAG2_SFP_NEEDS_RESET;
 			goto sfp_out;
@@ -7493,8 +7491,7 @@ static void txgbe_sfp_detection_subtask(struct txgbe_adapter *adapter)
 	}
 
 	if (hw->mac.type == txgbe_mac_aml) {
-		value = rd32(hw, TXGBE_GPIO_EXT);
-		if (value & TXGBE_SFP1_MOD_ABS_LS) {
+		if (txgbe_gpio_ext_check(hw, TXGBE_SFP1_MOD_ABS_LS)) {
 			err = TXGBE_ERR_SFP_NOT_PRESENT;
 			adapter->flags2 &= ~TXGBE_FLAG2_SFP_NEEDS_RESET;
 			goto sfp_out;
@@ -10442,6 +10439,7 @@ static int txgbe_probe(struct pci_dev *pdev,
 	if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40)
 		txgbe_release_hw_control(adapter);
 
+	txgbe_identify_module(hw);
 	/* Store the permanent mac address */
 	hw->mac.ops.get_mac_addr(hw, hw->mac.perm_addr);
 	hw->phy.reset_if_overtemp = false;
