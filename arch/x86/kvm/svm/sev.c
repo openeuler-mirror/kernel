@@ -2791,6 +2791,11 @@ int sev_handle_vmgexit(struct vcpu_svm *svm)
 			    "vmgexit: unsupported event - exit_info_1=%#llx, exit_info_2=%#llx\n",
 			    control->exit_info_1, control->exit_info_2);
 		break;
+	case SVM_EXIT_IOIO:
+		if (!((control->exit_info_1 & SVM_IOIO_SIZE_MASK) >> SVM_IOIO_SIZE_SHIFT))
+			return 1;
+
+		fallthrough;
 	default:
 		ret = svm_invoke_exit_handler(svm, exit_code);
 	}
@@ -2809,6 +2814,9 @@ int sev_es_string_io(struct vcpu_svm *svm, int size, unsigned int port, int in)
 	count = svm->vmcb->control.exit_info_2;
 	if (unlikely(check_mul_overflow(count, size, &bytes)))
 		return -EINVAL;
+
+	if (!bytes)
+		return 1;
 
 	if (!setup_vmgexit_scratch(svm, in, bytes))
 		return -EINVAL;
