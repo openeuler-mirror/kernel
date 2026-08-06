@@ -636,7 +636,7 @@ static bool ghes_handle_arm_hw_error(struct acpi_hest_generic_data *gdata,
 
 	p = (char *)(err + 1);
 	critical = ghes_armp_vendor_critical_error(err, sync);
-	length -= sizeof(err);
+	length -= sizeof(*err);
 
 	for (i = 0; i < err->err_info_num; i++) {
 		const char *error_type = "unknown error";
