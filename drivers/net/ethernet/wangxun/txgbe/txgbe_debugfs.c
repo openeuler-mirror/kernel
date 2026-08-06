@@ -2,6 +2,7 @@
 /* Copyright (c) 2019 - 2022 Beijing WangXun Technology Co., Ltd. */
 
 #include "txgbe.h"
+#include "txgbe_hw.h"
 #include <linux/debugfs.h>
 #include <linux/module.h>
 
@@ -19,9 +20,6 @@ enum txgbe_data_func {
 	TXGBE_FUNC_FLASH_WRITE = (5 << 16),
 };
 
-/**
- * data operation
- **/
 static ssize_t
 txgbe_simple_read_from_pcibar(struct txgbe_adapter *adapter, int res,
 			      void __user *buf, size_t size, loff_t *ppos)
@@ -57,7 +55,7 @@ txgbe_simple_read_from_flash(struct txgbe_adapter *adapter,
 	size_t ret = 0;
 	loff_t rpos, rtail;
 	void __user *to = buf;
-	size_t available = adapter->hw.flash.dword_size << 2;
+	size_t available = 0x1000000;
 
 	if (pos < 0)
 		return -EINVAL;
@@ -75,7 +73,7 @@ txgbe_simple_read_from_flash(struct txgbe_adapter *adapter,
 	while (rpos <= rtail) {
 		u32 value = txgbe_rd32(adapter->io_addr + rpos);
 
-		if (hw->flash.ops.write_buffer(hw, rpos >> 2, 1, &value)) {
+		if (txgbe_write_flash_buffer(hw, rpos >> 2, 1, &value)) {
 			ret = size;
 			break;
 		}
@@ -186,9 +184,6 @@ static const struct file_operations txgbe_dbg_data_ops_fops = {
 	.write = txgbe_dbg_data_ops_write,
 };
 
-/**
- * reg_ops operation
- **/
 static char txgbe_dbg_reg_ops_buf[256] = "";
 static ssize_t
 txgbe_dbg_reg_ops_read(struct file *filp, char __user *buffer,
@@ -326,9 +321,6 @@ static const struct file_operations txgbe_dbg_reg_ops_fops = {
 	.write = txgbe_dbg_reg_ops_write,
 };
 
-/**
- * netdev_ops operation
- **/
 static char txgbe_dbg_netdev_ops_buf[256] = "";
 static ssize_t
 txgbe_dbg_netdev_ops_read(struct file *filp,
@@ -438,7 +430,7 @@ void txgbe_dbg_adapter_init(struct txgbe_adapter *adapter)
 
 /**
  * txgbe_dbg_adapter_exit - clear out the adapter's debugfs entries
- * @pf: the pf that is stopping
+ * @adapter: the adapter that is shutting down
  **/
 void txgbe_dbg_adapter_exit(struct txgbe_adapter *adapter)
 {

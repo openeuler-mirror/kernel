@@ -694,7 +694,7 @@ static int txgbe_set_link_ksettings(struct net_device *netdev,
 	struct txgbe_hw *hw = &adapter->hw;
 	u32 advertised, old, link_support;
 	bool autoneg;
-	s32 err = 0;
+	int err = 0;
 	struct ethtool_link_ksettings temp_ks;
 	u32 curr_autoneg = 2;
 
@@ -807,7 +807,8 @@ static int txgbe_set_link_ksettings(struct net_device *netdev,
 			hw->mac.ops.setup_link(hw, old, true);
 		}
 		if ((hw->subsystem_device_id & TXGBE_NCSI_MASK) == TXGBE_NCSI_SUP)
-			hw->mac.ops.flap_tx_laser(hw);
+			if (hw->mac.ops.flap_tx_laser)
+				hw->mac.ops.flap_tx_laser(hw);
 
 		/* notify fw autoneg status */
 		txgbe_hic_write_autoneg_status(hw, cmd->base.autoneg);
@@ -891,7 +892,8 @@ static int txgbe_set_link_ksettings(struct net_device *netdev,
 				hw->mac.ops.setup_link(hw, old, true);
 			}
 			if ((hw->subsystem_device_id & TXGBE_NCSI_MASK) == TXGBE_NCSI_SUP)
-				hw->mac.ops.flap_tx_laser(hw);
+				if (hw->mac.ops.flap_tx_laser)
+					hw->mac.ops.flap_tx_laser(hw);
 
 			/* notify fw autoneg status */
 			txgbe_hic_write_autoneg_status(hw, cmd->base.autoneg);
@@ -1522,7 +1524,7 @@ static int txgbe_get_eeprom(struct net_device *netdev,
 	if (!eeprom_buff)
 		return -ENOMEM;
 
-	ret_val =  hw->eeprom.ops.read_buffer(hw, first_word, eeprom_len,
+	ret_val =  txgbe_read_ee_hostif_buffer(hw, first_word, eeprom_len,
 					   eeprom_buff);
 
 	/* Device's eeprom is always little-endian, word addressable */
@@ -1565,7 +1567,7 @@ static int txgbe_set_eeprom(struct net_device *netdev,
 		/* need read/modify/write of first changed EEPROM word
 		 * only the second byte of the word is being modified
 		 */
-		ret_val = hw->eeprom.ops.read(hw, first_word,
+		ret_val = txgbe_read_ee_hostif(hw, first_word,
 				&eeprom_buff[0]);
 		if (ret_val)
 			goto err;
@@ -1576,7 +1578,7 @@ static int txgbe_set_eeprom(struct net_device *netdev,
 		/* need read/modify/write of last changed EEPROM word
 		 * only the first byte of the word is being modified
 		 */
-		ret_val = hw->eeprom.ops.read(hw, last_word,
+		ret_val = txgbe_read_ee_hostif(hw, last_word,
 				&eeprom_buff[last_word - first_word]);
 		if (ret_val)
 			goto err;
@@ -1591,13 +1593,13 @@ static int txgbe_set_eeprom(struct net_device *netdev,
 	for (i = 0; i < last_word - first_word + 1; i++)
 		cpu_to_le16s(&eeprom_buff[i]);
 
-	ret_val = hw->eeprom.ops.write_buffer(hw, first_word,
+	ret_val = txgbe_write_ee_hostif_buffer(hw, first_word,
 					    last_word - first_word + 1,
 					    eeprom_buff);
 
 	/* Update the checksum */
 	if (ret_val == 0)
-		hw->eeprom.ops.update_checksum(hw);
+		txgbe_update_eeprom_checksum(hw);
 
 err:
 	kfree(eeprom_buff);
@@ -1940,10 +1942,8 @@ static u32 txgbe_get_priv_flags(struct net_device *dev)
 static int txgbe_set_priv_flags(struct net_device *dev, u32 flags)
 {
 	struct txgbe_adapter *adapter = netdev_priv(dev);
-	u32 orig_flags, new_flags, changed_flags;
-	bool reset_needed = 0;
-	u32 i;
-	s32 status = 0;
+	u32 orig_flags, new_flags, changed_flags, i;
+	int status = 0;
 
 	orig_flags = adapter->eth_priv_flags;
 	new_flags = orig_flags;
@@ -1968,9 +1968,6 @@ static int txgbe_set_priv_flags(struct net_device *dev, u32 flags)
 
 	if (!changed_flags)
 		return 0;
-
-	if (changed_flags & TXGBE_ETH_PRIV_FLAG_LLDP)
-		reset_needed = 1;
 
 	if (changed_flags & TXGBE_ETH_PRIV_FLAG_LLDP) {
 		status = txgbe_hic_write_lldp(&adapter->hw,
@@ -2318,7 +2315,7 @@ static bool txgbe_eeprom_test(struct txgbe_adapter *adapter, u64 *data)
 {
 	struct txgbe_hw *hw = &adapter->hw;
 
-	if (hw->eeprom.ops.validate_checksum(hw, NULL)) {
+	if (txgbe_validate_eeprom_checksum(hw, NULL)) {
 		*data = 1;
 		goto out;
 	} else {
@@ -3106,22 +3103,22 @@ static int txgbe_set_phys_id(struct net_device *netdev,
 			if (adapter->link_up) {
 				switch (adapter->link_speed) {
 				case TXGBE_LINK_SPEED_10GB_FULL:
-					hw->mac.ops.led_on(hw, TXGBE_LED_LINK_10G);
+					txgbe_led_on(hw, TXGBE_LED_LINK_10G);
 					break;
 				case TXGBE_LINK_SPEED_1GB_FULL:
-					hw->mac.ops.led_on(hw, TXGBE_LED_LINK_1G);
+					txgbe_led_on(hw, TXGBE_LED_LINK_1G);
 					break;
 				case TXGBE_LINK_SPEED_100_FULL:
-					hw->mac.ops.led_on(hw, TXGBE_LED_LINK_100M);
+					txgbe_led_on(hw, TXGBE_LED_LINK_100M);
 					break;
 				default:
 					break;
 				}
 			} else {
-				hw->mac.ops.led_on(hw, TXGBE_LED_LINK_10G);
+				txgbe_led_on(hw, TXGBE_LED_LINK_10G);
 			}
 		} else {
-			hw->mac.ops.led_on(hw, TXGBE_LED_LINK_UP);
+			txgbe_led_on(hw, TXGBE_LED_LINK_UP);
 		}
 		break;
 
@@ -3131,22 +3128,22 @@ static int txgbe_set_phys_id(struct net_device *netdev,
 			if (adapter->link_up) {
 				switch (adapter->link_speed) {
 				case TXGBE_LINK_SPEED_10GB_FULL:
-					hw->mac.ops.led_off(hw, TXGBE_LED_LINK_10G);
+					txgbe_led_off(hw, TXGBE_LED_LINK_10G);
 					break;
 				case TXGBE_LINK_SPEED_1GB_FULL:
-					hw->mac.ops.led_off(hw, TXGBE_LED_LINK_1G);
+					txgbe_led_off(hw, TXGBE_LED_LINK_1G);
 					break;
 				case TXGBE_LINK_SPEED_100_FULL:
-					hw->mac.ops.led_off(hw, TXGBE_LED_LINK_100M);
+					txgbe_led_off(hw, TXGBE_LED_LINK_100M);
 					break;
 				default:
 					break;
 				}
 			} else {
-				hw->mac.ops.led_off(hw, TXGBE_LED_LINK_10G);
+				txgbe_led_off(hw, TXGBE_LED_LINK_10G);
 			}
 		} else {
-			hw->mac.ops.led_off(hw, TXGBE_LED_LINK_UP);
+			txgbe_led_off(hw, TXGBE_LED_LINK_UP);
 		}
 		break;
 
@@ -3713,7 +3710,7 @@ static int txgbe_update_ethtool_fdir_entry(struct txgbe_adapter *adapter,
 	struct hlist_node *node, *parent;
 	struct txgbe_fdir_filter *rule;
 	bool deleted = false;
-	s32 err;
+	int err;
 
 	parent = NULL;
 	rule = NULL;
@@ -4447,7 +4444,7 @@ static int txgbe_get_module_info(struct net_device *dev,
 	}
 
 	if (hw->mac.type != txgbe_mac_sp) {
-		if (hw->mac.ops.acquire_swfw_sync(hw, swfw_mask) != 0)
+		if (txgbe_acquire_swfw_sync(hw, swfw_mask) != 0)
 			return -EBUSY;
 
 		if (!test_bit(__TXGBE_DOWN, &adapter->state))
@@ -4518,7 +4515,7 @@ static int txgbe_get_module_info(struct net_device *dev,
 			return -EINVAL;
 		}
 
-		hw->mac.ops.release_swfw_sync(hw, swfw_mask);
+		txgbe_release_swfw_sync(hw, swfw_mask);
 	} else {
 		modinfo->type = adapter->eeprom_type;
 		modinfo->eeprom_len = adapter->eeprom_len;
@@ -4527,7 +4524,7 @@ static int txgbe_get_module_info(struct net_device *dev,
 	return 0;
 
 ERROR_IO:
-	hw->mac.ops.release_swfw_sync(hw, swfw_mask);
+	txgbe_release_swfw_sync(hw, swfw_mask);
 	return -EIO;
 }
 
@@ -4549,7 +4546,7 @@ static int txgbe_get_module_eeprom(struct net_device *dev,
 	u32 swfw_mask = hw->phy.phy_semaphore_mask;
 	u8 databyte;
 	u8 page_sel_pre;
-	s32 status = 0;
+	int status = 0;
 
 	if (hw->mac.type == txgbe_mac_aml40) {
 		value = rd32(hw, TXGBE_GPIO_EXT);
@@ -4569,7 +4566,7 @@ static int txgbe_get_module_eeprom(struct net_device *dev,
 	}
 
 	if (hw->mac.type != txgbe_mac_sp) {
-		if (hw->mac.ops.acquire_swfw_sync(hw, swfw_mask) != 0)
+		if (txgbe_acquire_swfw_sync(hw, swfw_mask) != 0)
 			return -EBUSY;
 
 		if (!test_bit(__TXGBE_DOWN, &adapter->state))
@@ -4638,7 +4635,7 @@ static int txgbe_get_module_eeprom(struct net_device *dev,
 		if (ee->len == 0)
 			goto ERROR_INVAL;
 
-		if (hw->mac.ops.acquire_swfw_sync(hw, swfw_mask) != 0)
+		if (txgbe_acquire_swfw_sync(hw, swfw_mask) != 0)
 			return -EBUSY;
 
 		/*when down, can't know sfp change, get eeprom from i2c*/
@@ -4697,13 +4694,13 @@ static int txgbe_get_module_eeprom(struct net_device *dev,
 				data[i - ee->offset] = adapter->i2c_eeprom[i];
 		}
 	}
-	hw->mac.ops.release_swfw_sync(hw, swfw_mask);
+	txgbe_release_swfw_sync(hw, swfw_mask);
 	return 0;
 ERROR_BUSY:
-	hw->mac.ops.release_swfw_sync(hw, swfw_mask);
+	txgbe_release_swfw_sync(hw, swfw_mask);
 	return -EBUSY;
 ERROR_IO:
-	hw->mac.ops.release_swfw_sync(hw, swfw_mask);
+	txgbe_release_swfw_sync(hw, swfw_mask);
 	return -EIO;
 ERROR_INVAL:
 	return -EINVAL;
@@ -4719,7 +4716,7 @@ static int txgbe_set_eee(struct net_device *netdev, struct ethtool_eee *edata)
 	struct txgbe_adapter *adapter = netdev_priv(netdev);
 	struct txgbe_hw *hw = &adapter->hw;
 	struct ethtool_eee eee_data;
-	s32 ret_val;
+	int ret_val;
 
 	if (!(hw->mac.ops.setup_eee &&
 	      (adapter->flags2 & TXGBE_FLAG2_EEE_CAPABLE)))

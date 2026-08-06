@@ -1822,6 +1822,6 @@ int txgbe_temp_track_seq_40g(struct txgbe_hw *hw, u32 speed);
 int txgbe_get_cur_fec_mode(struct txgbe_hw *hw);
 int txgbe_e56_set_fec_mode(struct txgbe_hw *hw, u8 fec_mode);
 int txgbe_e56_fec_mode_polling(struct txgbe_hw *hw, bool *link_up);
-s32 txgbe_e56_check_phy_link(struct txgbe_hw *hw, u32 *speed, bool *link_up);
+int txgbe_e56_check_phy_link(struct txgbe_hw *hw, u32 *speed, bool *link_up);
 
 #endif /* _TXGBE_E56_H_ */

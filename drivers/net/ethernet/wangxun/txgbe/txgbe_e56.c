@@ -9,7 +9,7 @@
 
 #include <linux/sort.h>
 
-s32 txgbe_e56_check_phy_link(struct txgbe_hw *hw, u32 *speed, bool *link_up)
+int txgbe_e56_check_phy_link(struct txgbe_hw *hw, u32 *speed, bool *link_up)
 {
 	struct txgbe_adapter *adapter = hw->back;
 	u32 rdata = 0;
@@ -1497,7 +1497,6 @@ static int txgbe_e56_rxs_oscinit_temp_track(struct txgbe_hw *hw, u32 speed)
 	int T = 40;
 	int RX_COARSE_MID_TD, CMVAR_RANGE_H = 0, CMVAR_RANGE_L = 0;
 	int OFFSET_CENTRE_RANGE_H, OFFSET_CENTRE_RANGE_L, RANGE_FINAL;
-	int osc_freq_err_occur;
 	int i = 0;
 	int lane_num = 1;
 	struct txgbe_adapter *adapter = hw->back;
@@ -1580,7 +1579,6 @@ static int txgbe_e56_rxs_oscinit_temp_track(struct txgbe_hw *hw, u32 speed)
 		// poll CTRL_FSM_RX_ST
 		rdata = 0;
 		timer = 0;
-		osc_freq_err_occur = 0;
 		while ((rdata >> (i * 8) & 0x3f) != 0x9) { //Bit[5:0]!= 0x9
 			usleep_range(500, 1000);
 			// INTR[0]
@@ -1590,7 +1588,6 @@ static int txgbe_e56_rxs_oscinit_temp_track(struct txgbe_hw *hw, u32 speed)
 			rdata = rd32_ephy(hw, addr);
 			// TBD is always osc_freq_err occur?
 			if (rdata & (0x100 << i)) {
-				osc_freq_err_occur = 1;
 				break;
 			}
 			rdata = 0;
@@ -1705,7 +1702,6 @@ static int txgbe_e56_rxs_oscinit_temp_track(struct txgbe_hw *hw, u32 speed)
 
 		// poll CTRL_FSM_RX_ST
 		timer = 0;
-		osc_freq_err_occur = 0;
 		while (((rdata >> (i * 8)) & 0x3f) != 0x9) { //Bit[5:0]!= 0x9
 			usleep_range(500, 1000);
 			// INTR[0]
@@ -1715,7 +1711,6 @@ static int txgbe_e56_rxs_oscinit_temp_track(struct txgbe_hw *hw, u32 speed)
 			rdata = rd32_ephy(hw, addr);
 			// TBD is always osc_freq_err occur?
 			if ((rdata & 0x100) == 0x100) {
-				osc_freq_err_occur = 1;
 				break;
 			}
 			rdata = 0;
@@ -3241,7 +3236,7 @@ u32 txgbe_e56_cfg_temp(struct txgbe_hw *hw)
 int txgbe_e56_config_rx_40G(struct txgbe_hw *hw, u32 speed)
 {
 	struct txgbe_adapter *adapter = hw->back;
-	s32 status;
+	int status;
 
 	status = txgbe_e56_rxs_calib_adapt_seq40(hw, speed);
 	if (status)
@@ -3259,7 +3254,7 @@ int txgbe_e56_config_rx_40G(struct txgbe_hw *hw, u32 speed)
 
 static int txgbe_e56_config_rx(struct txgbe_hw *hw, u32 speed)
 {
-	s32 status;
+	int status;
 
 	if (speed == TXGBE_LINK_SPEED_40GB_FULL) {
 		txgbe_e56_config_rx_40G(hw, speed);
@@ -3645,7 +3640,8 @@ int txgbe_set_link_to_amlite(struct txgbe_hw *hw, u32 speed)
 		hw->mac.ops.disable_sec_tx_path(hw);
 	}
 
-	hw->mac.ops.disable_tx_laser(hw);
+	if (hw->mac.ops.disable_tx_laser)
+		hw->mac.ops.disable_tx_laser(hw);
 
 	if (hw->bus.lan_id == 0)
 		reset = TXGBE_MIS_RST_LAN0_EPHY_RST;
@@ -3665,7 +3661,8 @@ int txgbe_set_link_to_amlite(struct txgbe_hw *hw, u32 speed)
 	value = txgbe_rd32_epcs(hw, VR_PCS_DIG_CTRL1);
 	if ((value & 0x8000)) {
 		status = TXGBE_ERR_PHY_INIT_NOT_DONE;
-		hw->mac.ops.enable_tx_laser(hw);
+		if (hw->mac.ops.enable_tx_laser)
+			hw->mac.ops.enable_tx_laser(hw);
 		goto out;
 	}
 
@@ -3932,7 +3929,8 @@ int txgbe_set_link_to_amlite(struct txgbe_hw *hw, u32 speed)
 		txgbe_e56_set_fec_mode(hw, adapter->cur_fec_link);
 	}
 
-	hw->mac.ops.enable_tx_laser(hw);
+	if (hw->mac.ops.enable_tx_laser)
+		hw->mac.ops.enable_tx_laser(hw);
 
 	status = txgbe_e56_config_rx(hw, speed);
 

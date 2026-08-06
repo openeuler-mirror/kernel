@@ -41,7 +41,7 @@ static enum txgbe_media_type txgbe_get_media_type_aml(struct txgbe_hw *hw)
  *
  *  Set the link speed in the AUTOC register and restarts link.
  **/
-static s32 txgbe_setup_mac_link_aml(struct txgbe_hw *hw,
+static int txgbe_setup_mac_link_aml(struct txgbe_hw *hw,
 				    u32 speed,
 			       bool autoneg_wait_to_complete)
 {
@@ -50,9 +50,9 @@ static s32 txgbe_setup_mac_link_aml(struct txgbe_hw *hw,
 	struct txgbe_adapter *adapter = hw->back;
 	bool link_up = false;
 	bool autoneg = false;
-	s32 ret_status = 0;
+	int ret_status = 0;
 	int i = 0;
-	s32 status = 0;
+	int status = 0;
 	u32 value = 0;
 
 	/* Check to see if speed passed in is supported. */
@@ -193,7 +193,7 @@ static int txgbe_get_link_capabilities_aml(struct txgbe_hw *hw, u32 *speed,
 	return status;
 }
 
-static s32 txgbe_check_mac_link_aml(struct txgbe_hw *hw, u32 *speed,
+static int txgbe_check_mac_link_aml(struct txgbe_hw *hw, u32 *speed,
 				    bool *link_up, bool link_up_wait_to_complete)
 {
 	struct txgbe_adapter *adapter = hw->back;
@@ -227,7 +227,7 @@ static s32 txgbe_check_mac_link_aml(struct txgbe_hw *hw, u32 *speed,
 		if (*link_up)
 			wr32(hw, TXGBE_CFG_LED_CTL, 0);
 		else
-			hw->mac.ops.led_off(hw, TXGBE_LED_LINK_UP | TXGBE_AMLITE_LED_LINK_25G |
+			txgbe_led_off(hw, TXGBE_LED_LINK_UP | TXGBE_AMLITE_LED_LINK_25G |
 				TXGBE_AMLITE_LED_LINK_10G | TXGBE_AMLITE_LED_LINK_ACTIVE);
 	}
 
@@ -260,7 +260,7 @@ static s32 txgbe_check_mac_link_aml(struct txgbe_hw *hw, u32 *speed,
  *
  *  Set the link speed in the MAC and/or PHY register and restarts link.
  **/
-static s32 txgbe_setup_mac_link_multispeed_fiber_aml(struct txgbe_hw *hw,
+static int txgbe_setup_mac_link_multispeed_fiber_aml(struct txgbe_hw *hw,
 						     u32 speed,
 					  bool autoneg_wait_to_complete)
 {
@@ -269,7 +269,7 @@ static s32 txgbe_setup_mac_link_multispeed_fiber_aml(struct txgbe_hw *hw,
 	struct txgbe_adapter *adapter = hw->back;
 	bool autoneg, link_up = false;
 	u32 speedcnt = 0;
-	s32 status = 0;
+	int status = 0;
 
 	/* Mask off requested but non-supported speeds */
 	status = hw->mac.ops.get_link_capabilities(hw,
@@ -403,21 +403,23 @@ static void txgbe_init_mac_link_ops_aml(struct txgbe_hw *hw)
 	}
 }
 
-static s32 txgbe_setup_sfp_modules_aml(struct txgbe_hw *hw)
+static int txgbe_setup_sfp_modules_aml(struct txgbe_hw *hw)
 {
-	s32 ret_val = 0;
+	int ret_val = 0;
 
 	if (hw->phy.sfp_type != txgbe_sfp_type_unknown) {
 		txgbe_init_mac_link_ops_aml(hw);
-
-		hw->phy.ops.reset = NULL;
+	} else {
+		/* If SFP type is unknown, we cannot set up the link */
+		ret_val = TXGBE_ERR_SFP_NOT_SUPPORTED;
+		return ret_val;
 	}
 
 	return ret_val;
 }
 
 /**
- *  txgbe_init_phy_ops - PHY/SFP specific init
+ *  txgbe_init_phy_ops_aml - PHY/SFP specific init
  *  @hw: pointer to hardware structure
  *
  *  Initialize any function pointers that were not able to be
@@ -425,9 +427,9 @@ static s32 txgbe_setup_sfp_modules_aml(struct txgbe_hw *hw)
  *  not known.  Perform the SFP init if necessary.
  *
  **/
-static s32 txgbe_init_phy_ops_aml(struct txgbe_hw *hw)
+static int txgbe_init_phy_ops_aml(struct txgbe_hw *hw)
 {
-	s32 ret_val = 0;
+	int ret_val = 0;
 
 	txgbe_init_i2c(hw);
 	wr32(hw, TXGBE_MAC_MDIO_CLAUSE_22_PORT,
@@ -440,20 +442,17 @@ static s32 txgbe_init_phy_ops_aml(struct txgbe_hw *hw)
 
 	/* Setup function pointers based on detected SFP module and speeds */
 	txgbe_init_mac_link_ops_aml(hw);
-	if (hw->phy.sfp_type != txgbe_sfp_type_unknown)
-		hw->phy.ops.reset = NULL;
 
 init_phy_ops_out:
 	return ret_val;
 }
 
-s32 txgbe_init_ops_aml(struct txgbe_hw *hw)
+void txgbe_init_ops_aml(struct txgbe_hw *hw)
 {
 	struct txgbe_mac_info *mac = &hw->mac;
 	struct txgbe_phy_info *phy = &hw->phy;
-	s32 ret_val = 0;
 
-	ret_val = txgbe_init_ops_generic(hw);
+	txgbe_init_ops_generic(hw);
 
 	/* PHY */
 	phy->ops.init = txgbe_init_phy_ops_aml;
@@ -466,7 +465,5 @@ s32 txgbe_init_ops_aml(struct txgbe_hw *hw)
 	mac->ops.get_link_capabilities = txgbe_get_link_capabilities_aml;
 	mac->ops.setup_link = txgbe_setup_mac_link_aml;
 	mac->ops.check_link = txgbe_check_mac_link_aml;
-
-	return ret_val;
 }
 

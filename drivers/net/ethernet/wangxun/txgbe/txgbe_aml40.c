@@ -34,14 +34,14 @@ enum txgbe_media_type txgbe_get_media_type_aml40(struct txgbe_hw *hw)
 }
 
 /**
- *  txgbe_setup_mac_link_aml - Set MAC link speed
+ *  txgbe_setup_mac_link_aml40 - Set MAC link speed
  *  @hw: pointer to hardware structure
  *  @speed: new link speed
  *  @autoneg_wait_to_complete: true when waiting for completion is needed
  *
  *  Set the link speed in the AUTOC register and restarts link.
  **/
-static s32 txgbe_setup_mac_link_aml40(struct txgbe_hw *hw,
+static int txgbe_setup_mac_link_aml40(struct txgbe_hw *hw,
 				      u32 speed,
 			       bool autoneg_wait_to_complete)
 {
@@ -50,9 +50,9 @@ static s32 txgbe_setup_mac_link_aml40(struct txgbe_hw *hw,
 	struct txgbe_adapter *adapter = hw->back;
 	bool link_up = false;
 	bool autoneg = false;
-	s32 ret_status = 0;
+	int ret_status = 0;
 	int i = 0;
-	s32 status = 0;
+	int status = 0;
 
 	/* Check to see if speed passed in is supported. */
 	status = hw->mac.ops.get_link_capabilities(hw,
@@ -166,7 +166,7 @@ static int txgbe_get_link_capabilities_aml40(struct txgbe_hw *hw, u32 *speed,
  *
  *  Reads the links register to determine if link is up and the current speed
  **/
-static s32 txgbe_check_mac_link_aml40(struct txgbe_hw *hw, u32 *speed,
+static int txgbe_check_mac_link_aml40(struct txgbe_hw *hw, u32 *speed,
 				      bool *link_up, bool link_up_wait_to_complete)
 {
 	struct txgbe_adapter *adapter = hw->back;
@@ -236,21 +236,20 @@ static void txgbe_init_mac_link_ops_aml40(struct txgbe_hw *hw)
 	mac->ops.set_rate_select_speed = txgbe_set_hard_rate_select_speed;
 }
 
-static s32 txgbe_setup_sfp_modules_aml40(struct txgbe_hw *hw)
+static int txgbe_setup_sfp_modules_aml40(struct txgbe_hw *hw)
 {
-	s32 ret_val = 0;
+	int ret_val = TXGBE_ERR_SFP_NOT_SUPPORTED;
 
 	if (hw->phy.sfp_type != txgbe_sfp_type_unknown) {
 		txgbe_init_mac_link_ops_aml40(hw);
-
-		hw->phy.ops.reset = NULL;
+		ret_val = 0;
 	}
 
 	return ret_val;
 }
 
 /**
- *  txgbe_init_phy_ops - PHY/SFP specific init
+ *  txgbe_init_phy_ops_aml40 - PHY/SFP specific init
  *  @hw: pointer to hardware structure
  *
  *  Initialize any function pointers that were not able to be
@@ -258,9 +257,9 @@ static s32 txgbe_setup_sfp_modules_aml40(struct txgbe_hw *hw)
  *  not known.  Perform the SFP init if necessary.
  *
  **/
-s32 txgbe_init_phy_ops_aml40(struct txgbe_hw *hw)
+int txgbe_init_phy_ops_aml40(struct txgbe_hw *hw)
 {
-	s32 ret_val = 0;
+	int ret_val = 0;
 
 	txgbe_init_i2c(hw);
 	wr32(hw, TXGBE_MAC_MDIO_CLAUSE_22_PORT,
@@ -273,18 +272,16 @@ s32 txgbe_init_phy_ops_aml40(struct txgbe_hw *hw)
 
 	/* Setup function pointers based on detected SFP module and speeds */
 	txgbe_init_mac_link_ops_aml40(hw);
-	if (hw->phy.sfp_type != txgbe_sfp_type_unknown)
-		hw->phy.ops.reset = NULL;
 
 init_phy_ops_out:
 	return ret_val;
 }
 
-s32 txgbe_init_ops_aml40(struct txgbe_hw *hw)
+int txgbe_init_ops_aml40(struct txgbe_hw *hw)
 {
 	struct txgbe_mac_info *mac = &hw->mac;
 	struct txgbe_phy_info *phy = &hw->phy;
-	s32 ret_val = 0;
+	int ret_val = 0;
 
 	ret_val = txgbe_init_ops_generic(hw);
 

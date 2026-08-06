@@ -145,25 +145,25 @@ struct txgbe_dcb_config {
 /* DCB driver APIs */
 
 /* DCB credits calculation */
-s32 txgbe_dcb_calculate_tc_credits(u8 *bw, u16 *refill, u16 *max, int max_frame_size);
-s32 txgbe_dcb_calculate_tc_credits_cee(struct txgbe_hw __always_unused *hw,
+int txgbe_dcb_calculate_tc_credits(u8 *bw, u16 *refill, u16 *max, int max_frame_size);
+int txgbe_dcb_calculate_tc_credits_cee(struct txgbe_hw __always_unused *hw,
 				       struct txgbe_dcb_config *dcb_config,
 								u32 max_frame_size, u8 direction);
 
 /* DCB PFC */
-s32 txgbe_dcb_config_pfc(struct txgbe_hw *hw, u8 pfc_en, u8 *map);
+int txgbe_dcb_config_pfc(struct txgbe_hw *hw, u8 pfc_en, u8 *map);
 
 /* DCB stats */
-s32 txgbe_dcb_config_tc_stats(struct txgbe_hw __always_unused *hw,
+int txgbe_dcb_config_tc_stats(struct txgbe_hw __always_unused *hw,
 			      struct txgbe_dcb_config __always_unused *dcb_config);
 
 /* DCB config arbiters */
-s32 txgbe_dcb_config_tx_desc_arbiter(struct txgbe_hw *hw, u16 *refill,
+int txgbe_dcb_config_tx_desc_arbiter(struct txgbe_hw *hw, u16 *refill,
 				     u16 *max, u8 *bwg_id, u8 *tsa);
-s32 txgbe_dcb_config_tx_data_arbiter(struct txgbe_hw *hw, u16 *refill,
+int txgbe_dcb_config_tx_data_arbiter(struct txgbe_hw *hw, u16 *refill,
 				     u16 *max, u8 *bwg_id, u8 *tsa,
 					      u8 *map);
-s32 txgbe_dcb_config_rx_arbiter(struct txgbe_hw *hw, u16 *refill,
+int txgbe_dcb_config_rx_arbiter(struct txgbe_hw *hw, u16 *refill,
 				u16 *max, u8 *bwg_id, u8 *tsa,
 				      u8 *map);
 
@@ -178,15 +178,15 @@ void txgbe_dcb_unpack_tsa_cee(struct txgbe_dcb_config *cfg, int direction,
 			      u8 *tsa);
 void txgbe_dcb_unpack_map_cee(struct txgbe_dcb_config *cfg, int direction,
 			      u8 *map);
-s32 txgbe_dcb_config_tc_stats(struct txgbe_hw __always_unused *hw,
+int txgbe_dcb_config_tc_stats(struct txgbe_hw __always_unused *hw,
 			      struct txgbe_dcb_config __always_unused *dcb_config);
 u8 txgbe_dcb_get_tc_from_up(struct txgbe_dcb_config *cfg, int direction, u8 up);
 
 /* DCB initialization */
-s32 txgbe_dcb_config(struct txgbe_hw *hw,
+int txgbe_dcb_config(struct txgbe_hw *hw,
 		     struct txgbe_dcb_config *dcb_config);
-s32 txgbe_dcb_hw_config(struct txgbe_hw *hw, u16 *refill, u16 *max,
+int txgbe_dcb_hw_config(struct txgbe_hw *hw, u16 *refill, u16 *max,
 			u8 *bwg_id, u8 *tsa, u8 *map);
-s32 txgbe_dcb_hw_config_cee(struct txgbe_hw *hw,
+int txgbe_dcb_hw_config_cee(struct txgbe_hw *hw,
 			    struct txgbe_dcb_config *dcb_config);
 #endif /* _TXGBE_DCB_H_ */

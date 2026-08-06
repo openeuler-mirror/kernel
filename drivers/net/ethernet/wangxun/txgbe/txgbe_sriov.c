@@ -189,7 +189,7 @@ static void txgbe_get_vfs(struct txgbe_adapter *adapter)
 }
 
 /**
- * txgbe_pet_vfs - Release references to all vf devices
+ * txgbe_put_vfs - Release references to all vf devices
  * @adapter: Pointer to adapter struct
  */
 static void txgbe_put_vfs(struct txgbe_adapter *adapter)
@@ -422,7 +422,7 @@ static int txgbe_set_vf_lpe(struct txgbe_adapter *adapter, u32 max_frame,
 	 * account before we can enable the VF for receive
 	 */
 	u32 reg_offset, vf_shift, vfre;
-	s32 err = 0;
+	int err = 0;
 
 	/* determine VF receive enable location */
 	vf_shift = vf % 32;
@@ -527,7 +527,7 @@ static inline void txgbe_vf_reset_event(struct txgbe_adapter *adapter, u16 vf)
 int txgbe_set_vf_mac(struct txgbe_adapter *adapter,
 		     u16 vf, unsigned char *mac_addr)
 {
-	s32 retval = 0;
+	int retval = 0;
 
 	txgbe_del_mac_filter(adapter, adapter->vfinfo[vf].vf_mac_addresses, vf);
 	retval = txgbe_add_mac_filter(adapter, mac_addr, vf);
@@ -611,7 +611,7 @@ static int txgbe_set_vf_macvlan(struct txgbe_adapter *adapter,
 {
 	struct list_head *pos;
 	struct vf_macvlans *entry;
-	s32 retval = 0;
+	int retval = 0;
 
 	if (index <= 1) {
 		list_for_each(pos, &adapter->vf_mvs.l) {
@@ -821,7 +821,7 @@ static int txgbe_set_vf_mac_addr(struct txgbe_adapter *adapter,
 static int txgbe_find_vlvf_entry(struct txgbe_hw *hw, u32 vlan)
 {
 	u32 vlvf;
-	s32 regindex;
+	int regindex;
 
 	/* short cut the special case */
 	if (vlan == 0)
@@ -885,7 +885,7 @@ static int txgbe_set_vf_vlan_msg(struct txgbe_adapter *adapter,
 	 */
 	if (!add && adapter->netdev->flags & IFF_PROMISC) {
 		u32 bits, vlvf;
-		s32 reg_ndx;
+		int reg_ndx;
 
 		reg_ndx = txgbe_find_vlvf_entry(hw, vid);
 		if (reg_ndx < 0)
@@ -1160,7 +1160,7 @@ static int txgbe_rcv_msg_from_vf(struct txgbe_adapter *adapter, u16 vf)
 	u16 mbx_size = TXGBE_VXMAILBOX_SIZE;
 	u32 msgbuf[TXGBE_VXMAILBOX_SIZE];
 	struct txgbe_hw *hw = &adapter->hw;
-	s32 retval;
+	int retval;
 
 	retval = txgbe_read_mbx(hw, msgbuf, mbx_size, vf);
 
@@ -1485,7 +1485,7 @@ int txgbe_pci_sriov_configure(struct pci_dev *dev, int num_vfs)
 
 int txgbe_ndo_set_vf_mac(struct net_device *netdev, int vf, u8 *mac)
 {
-	s32 retval = 0;
+	int retval = 0;
 	struct txgbe_adapter *adapter = netdev_priv(netdev);
 
 	if (vf < 0 || vf >= adapter->num_vfs)

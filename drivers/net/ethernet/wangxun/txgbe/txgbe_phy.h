@@ -158,60 +158,60 @@
 #define TXGBE_SFF_SFF_8472_UNSUP        0x00
 
 enum txgbe_phy_type txgbe_get_phy_type_from_id(struct txgbe_hw *hw);
-s32 txgbe_get_phy_id(struct txgbe_hw *hw);
-s32 txgbe_reset_phy(struct txgbe_hw *hw);
-s32 txgbe_read_phy_reg_mdi(struct txgbe_hw *hw, u32 reg_addr, u32 device_type,
+int txgbe_get_phy_id(struct txgbe_hw *hw);
+int txgbe_reset_phy(struct txgbe_hw *hw);
+int txgbe_read_phy_reg_mdi(struct txgbe_hw *hw, u32 reg_addr, u32 device_type,
 			   u16 *phy_data);
-s32 txgbe_write_phy_reg_mdi(struct txgbe_hw *hw, u32 reg_addr, u32 device_type,
+int txgbe_write_phy_reg_mdi(struct txgbe_hw *hw, u32 reg_addr, u32 device_type,
 			    u16 phy_data);
-s32 txgbe_read_phy_reg(struct txgbe_hw *hw, u32 reg_addr,
+int txgbe_read_phy_reg(struct txgbe_hw *hw, u32 reg_addr,
 		       u32 device_type, u16 *phy_data);
-s32 txgbe_write_phy_reg(struct txgbe_hw *hw, u32 reg_addr,
+int txgbe_write_phy_reg(struct txgbe_hw *hw, u32 reg_addr,
 			u32 device_type, u16 phy_data);
 u32 txgbe_setup_phy_link(struct txgbe_hw *hw, u32 speed_set, bool autoneg_wait_to_complete);
 u32 txgbe_setup_phy_link_speed(struct txgbe_hw *hw,
 			       u32 speed,
 				       bool autoneg_wait_to_complete);
-s32 txgbe_get_copper_link_capabilities(struct txgbe_hw *hw,
+int txgbe_get_copper_link_capabilities(struct txgbe_hw *hw,
 				       u32 *speed,
 					       bool *autoneg);
-s32 txgbe_check_reset_blocked(struct txgbe_hw *hw);
+int txgbe_check_reset_blocked(struct txgbe_hw *hw);
 
-s32 txgbe_get_phy_firmware_version(struct txgbe_hw *hw,
+int txgbe_get_phy_firmware_version(struct txgbe_hw *hw,
 				   u16 *firmware_version);
 
-s32 txgbe_identify_module(struct txgbe_hw *hw);
-s32 txgbe_identify_sfp_module(struct txgbe_hw *hw);
-s32 txgbe_identify_qsfp_module(struct txgbe_hw *hw);
-s32 txgbe_tn_check_overtemp(struct txgbe_hw *hw);
-s32 txgbe_init_i2c(struct txgbe_hw *hw);
-s32 txgbe_clear_i2c(struct txgbe_hw *hw);
-s32 txgbe_switch_i2c_slave_addr(struct txgbe_hw *hw, u8 dev_addr);
-s32 txgbe_read_i2c_byte(struct txgbe_hw *hw, u8 byte_offset,
+int txgbe_identify_module(struct txgbe_hw *hw);
+int txgbe_identify_sfp_module(struct txgbe_hw *hw);
+int txgbe_identify_qsfp_module(struct txgbe_hw *hw);
+int txgbe_tn_check_overtemp(struct txgbe_hw *hw);
+int txgbe_init_i2c(struct txgbe_hw *hw);
+int txgbe_clear_i2c(struct txgbe_hw *hw);
+int txgbe_switch_i2c_slave_addr(struct txgbe_hw *hw, u8 dev_addr);
+int txgbe_read_i2c_byte(struct txgbe_hw *hw, u8 byte_offset,
 			u8 dev_addr, u8 *data);
-s32 txgbe_read_i2c_word(struct txgbe_hw *hw, u16 byte_offset,
+int txgbe_read_i2c_word(struct txgbe_hw *hw, u16 byte_offset,
 			u8 dev_addr, u16 *data);
 
-s32 txgbe_write_i2c_byte(struct txgbe_hw *hw, u8 byte_offset,
+int txgbe_write_i2c_byte(struct txgbe_hw *hw, u8 byte_offset,
 			 u8 dev_addr, u8 data);
-s32 txgbe_read_i2c_eeprom(struct txgbe_hw *hw, u8 byte_offset,
+int txgbe_read_i2c_eeprom(struct txgbe_hw *hw, u8 byte_offset,
 			  u8 *eeprom_data);
-s32 txgbe_write_i2c_eeprom(struct txgbe_hw *hw, u8 byte_offset,
+int txgbe_write_i2c_eeprom(struct txgbe_hw *hw, u8 byte_offset,
 			   u8 eeprom_data);
-s32 txgbe_read_i2c_sff8472(struct txgbe_hw *hw, u8 byte_offset,
+int txgbe_read_i2c_sff8472(struct txgbe_hw *hw, u8 byte_offset,
 			   u8 *sff8472_data);
-s32 txgbe_read_i2c_sff8636(struct txgbe_hw *hw, u8 page, u8 byte_offset,
+int txgbe_read_i2c_sff8636(struct txgbe_hw *hw, u8 page, u8 byte_offset,
 			   u8 *sff8636_data);
-s32 txgbe_read_i2c_sfp_phy(struct txgbe_hw *hw, u16 byte_offset,
+int txgbe_read_i2c_sfp_phy(struct txgbe_hw *hw, u16 byte_offset,
 			   u16 *data);
 
-s32 txgbe_init_external_phy(struct txgbe_hw *hw);
-s32 txgbe_uninit_external_phy(struct txgbe_hw *hw);
-s32 txgbe_set_phy_pause_advertisement(struct txgbe_hw *hw, u32 pause_bit);
-s32 txgbe_get_phy_advertised_pause(struct txgbe_hw *hw, u8 *pause_bit);
-s32 txgbe_get_lp_advertised_pause(struct txgbe_hw *hw, u8 *pause_bit);
-s32 txgbe_external_phy_suspend(struct txgbe_hw *hw);
-s32 txgbe_external_phy_resume(struct txgbe_hw *hw);
+int txgbe_init_external_phy(struct txgbe_hw *hw);
+int txgbe_uninit_external_phy(struct txgbe_hw *hw);
+int txgbe_set_phy_pause_advertisement(struct txgbe_hw *hw, u32 pause_bit);
+int txgbe_get_phy_advertised_pause(struct txgbe_hw *hw, u8 *pause_bit);
+int txgbe_get_lp_advertised_pause(struct txgbe_hw *hw, u8 *pause_bit);
+int txgbe_external_phy_suspend(struct txgbe_hw *hw);
+int txgbe_external_phy_resume(struct txgbe_hw *hw);
 
 u32 txgbe_read_mdio(struct mtd_dev *dev,
 		    u16 port,

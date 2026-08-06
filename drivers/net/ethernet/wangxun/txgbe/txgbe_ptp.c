@@ -134,7 +134,7 @@ static u64 txgbe_ptp_read(const struct cyclecounter *hw_cc)
  * txgbe_ptp_convert_to_hwtstamp - convert register value to hw timestamp
  * @adapter: private adapter structure
  * @hwtstamp: stack timestamp structure
- * @systim: unsigned 64bit system time value
+ * @timestamp: unsigned 64bit system time value
  *
  * We need to convert the adapter's RX/TXSTMP registers into a hwtstamp value
  * which can be used by the stack's ptp functions.
@@ -164,7 +164,7 @@ static void txgbe_ptp_convert_to_hwtstamp(struct txgbe_adapter *adapter,
 }
 
 /**
- * txgbe_ptp_adjfreq
+ * txgbe_ptp_adjfine
  * @ptp: the ptp clock structure
  * @ppb: parts per billion adjustment from base
  *
@@ -344,7 +344,6 @@ static int txgbe_ptp_feature_enable(struct ptp_clock_info *ptp,
 /**
  * txgbe_ptp_check_pps_event
  * @adapter: the private adapter structure
- * @eicr: the interrupt cause register value
  *
  * This function is called by the interrupt routine when checking for
  * interrupts. It will check and handle a pps event.
@@ -567,8 +566,8 @@ static void txgbe_ptp_tx_hwtstamp_work(struct work_struct *work)
 }
 
 /**
- * txgbe_ptp_rx_rgtstamp - utility function which checks for RX time stamp
- * @q_vector: structure containing interrupt and ring information
+ * txgbe_ptp_rx_hwtstamp - utility function which checks for RX time stamp
+ * @adapter: structure containing interrupt and ring information
  * @skb: particular skb to send timestamp with
  *
  * if the timestamp is valid, we convert it into the timecounter ns
@@ -597,7 +596,7 @@ void txgbe_ptp_rx_hwtstamp(struct txgbe_adapter *adapter, struct sk_buff *skb)
 /**
  * txgbe_ptp_get_ts_config - get current hardware timestamping configuration
  * @adapter: pointer to adapter structure
- * @ifreq: ioctl data
+ * @ifr: ioctl data
  *
  * This function returns the current timestamping settings. Rather than
  * attempt to deconstruct registers to fill in the values, simply keep a copy
@@ -746,7 +745,7 @@ static int txgbe_ptp_set_timestamp_mode(struct txgbe_adapter *adapter,
 /**
  * txgbe_ptp_set_ts_config - user entry point for timestamp mode
  * @adapter: pointer to adapter struct
- * @ifreq: ioctl data
+ * @ifr: ioctl data
  *
  * Set hardware to requested mode. If unsupported, return an error with no
  * changes. Otherwise, store the mode for future reference.

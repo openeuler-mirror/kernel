@@ -985,14 +985,11 @@ static inline u32 txgbe_misc_isb(struct txgbe_adapter *adapter,
 				 enum txgbe_isb_idx idx)
 {
 	u32 cur_tag = 0;
-	u32 cur_diff = 0;
 
 	cur_tag = adapter->isb_mem[TXGBE_ISB_HEADER];
-	cur_diff = cur_tag - adapter->isb_tag[idx];
-
 	adapter->isb_tag[idx] = cur_tag;
 
-	return adapter->isb_mem[idx];
+	return (__force u32)cpu_to_le32(adapter->isb_mem[idx]);
 }
 
 static inline u8 txgbe_max_rss_indices(struct txgbe_adapter *adapter)
@@ -1146,7 +1143,7 @@ static inline struct netdev_queue *txring_txq(const struct txgbe_ring *ring)
 }
 
 #if IS_ENABLED(CONFIG_DCB)
-s32 txgbe_dcb_hw_ets(struct txgbe_hw *hw, struct ieee_ets *ets, int max_frame);
+int txgbe_dcb_hw_ets(struct txgbe_hw *hw, struct ieee_ets *ets, int max_frame);
 #endif /* CONFIG_DCB */
 
 int txgbe_wol_supported(struct txgbe_adapter *adapter);

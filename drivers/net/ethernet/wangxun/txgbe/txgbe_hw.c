@@ -20,13 +20,11 @@
 #define TXGBE_SP_VFT_TBL_SIZE   128
 #define TXGBE_SP_RX_PB_SIZE     512
 
-static s32 txgbe_get_eeprom_semaphore(struct txgbe_hw *hw);
+static int txgbe_get_eeprom_semaphore(struct txgbe_hw *hw);
 static void txgbe_release_eeprom_semaphore(struct txgbe_hw *hw);
-static s32 txgbe_mta_vector(struct txgbe_hw *hw, u8 *mc_addr);
-static s32 txgbe_get_san_mac_addr_offset(struct txgbe_hw *hw,
-					 u16 *san_mac_offset);
+static int txgbe_mta_vector(struct txgbe_hw *hw, u8 *mc_addr);
 
-static s32 txgbe_setup_copper_link(struct txgbe_hw *hw,
+static int txgbe_setup_copper_link(struct txgbe_hw *hw,
 				   u32 speed,
 					 bool autoneg_wait_to_complete);
 
@@ -150,9 +148,9 @@ u16 txgbe_get_pcie_msix_count(struct txgbe_hw *hw)
  *  up link and flow control settings, and leaves transmit and receive units
  *  disabled and uninitialized
  **/
-s32 txgbe_init_hw(struct txgbe_hw *hw)
+int txgbe_init_hw(struct txgbe_hw *hw)
 {
-	s32 status;
+	int status;
 
 	/* Reset the hardware */
 	status = hw->mac.ops.reset_hw(hw);
@@ -172,7 +170,7 @@ s32 txgbe_init_hw(struct txgbe_hw *hw)
  *  Clears all hardware statistics counters by reading them from the hardware
  *  Statistics counters are clear on read.
  **/
-s32 txgbe_clear_hw_cntrs(struct txgbe_hw *hw)
+int txgbe_clear_hw_cntrs(struct txgbe_hw *hw)
 {
 	u16 i = 0;
 
@@ -269,9 +267,9 @@ bool txgbe_device_supports_autoneg_fc(struct txgbe_hw *hw)
  *
  * Called at init time to set up flow control.
  */
-s32 txgbe_setup_fc(struct txgbe_hw *hw)
+int txgbe_setup_fc(struct txgbe_hw *hw)
 {
-	s32 ret_val = 0;
+	int ret_val = 0;
 	u32 pcap = 0;
 	u32 value = 0;
 	u32 pcap_backplane = 0;
@@ -390,10 +388,10 @@ out:
  * @pba_num_size: part number string buffer length
  * Reads the part number string from the EEPROM.
  */
-s32 txgbe_read_pba_string(struct txgbe_hw *hw, u8 *pba_num,
+int txgbe_read_pba_string(struct txgbe_hw *hw, u8 *pba_num,
 			  u32 pba_num_size)
 {
-	s32 ret_val;
+	int ret_val;
 	u16 data;
 	u16 pba_ptr;
 	u16 offset;
@@ -402,13 +400,13 @@ s32 txgbe_read_pba_string(struct txgbe_hw *hw, u8 *pba_num,
 	if (!pba_num)
 		return TXGBE_ERR_INVALID_ARGUMENT;
 
-	ret_val = hw->eeprom.ops.read(hw,
+	ret_val = txgbe_read_ee_hostif(hw,
 			hw->eeprom.sw_region_offset + TXGBE_PBANUM0_PTR,
 			&data);
 	if (ret_val)
 		return ret_val;
 
-	ret_val = hw->eeprom.ops.read(hw,
+	ret_val = txgbe_read_ee_hostif(hw,
 			hw->eeprom.sw_region_offset + TXGBE_PBANUM1_PTR,
 			&pba_ptr);
 	if (ret_val)
@@ -449,7 +447,7 @@ s32 txgbe_read_pba_string(struct txgbe_hw *hw, u8 *pba_num,
 		return 0;
 	}
 
-	ret_val = hw->eeprom.ops.read(hw, pba_ptr, &length);
+	ret_val = txgbe_read_ee_hostif(hw, pba_ptr, &length);
 	if (ret_val)
 		return ret_val;
 
@@ -465,7 +463,7 @@ s32 txgbe_read_pba_string(struct txgbe_hw *hw, u8 *pba_num,
 	length--;
 
 	for (offset = 0; offset < length; offset++) {
-		ret_val = hw->eeprom.ops.read(hw, pba_ptr + offset, &data);
+		ret_val = txgbe_read_ee_hostif(hw, pba_ptr + offset, &data);
 		if (ret_val)
 			return ret_val;
 
@@ -484,7 +482,7 @@ s32 txgbe_read_pba_string(struct txgbe_hw *hw, u8 *pba_num,
  * A reset of the adapter must be performed prior to calling this function
  * in order for the MAC address to have been loaded from the EEPROM into RAR0
  */
-s32 txgbe_get_mac_addr(struct txgbe_hw *hw, u8 *mac_addr)
+int txgbe_get_mac_addr(struct txgbe_hw *hw, u8 *mac_addr)
 {
 	u32 rar_high;
 	u32 rar_low;
@@ -553,7 +551,7 @@ void txgbe_set_pci_config_data(struct txgbe_hw *hw, u16 link_status)
  * Gets the PCI bus info (speed, width, type) then calls helper function to
  * store this data within the txgbe_hw structure.
  */
-s32 txgbe_get_bus_info(struct txgbe_hw *hw)
+int txgbe_get_bus_info(struct txgbe_hw *hw)
 {
 	u16 link_status;
 
@@ -595,7 +593,7 @@ void txgbe_set_lan_id_multi_port_pcie(struct txgbe_hw *hw)
  *  the shared code and drivers to determine if the adapter is in a stopped
  *  state and should not touch the hardware.
  **/
-s32 txgbe_stop_adapter(struct txgbe_hw *hw)
+int txgbe_stop_adapter(struct txgbe_hw *hw)
 {
 	u16 i;
 	struct txgbe_adapter *adapter = hw->back;
@@ -645,7 +643,7 @@ s32 txgbe_stop_adapter(struct txgbe_hw *hw)
  *  @hw: pointer to hardware structure
  *  @index: led number to turn on
  **/
-s32 txgbe_led_on(struct txgbe_hw *hw, u32 index)
+int txgbe_led_on(struct txgbe_hw *hw, u32 index)
 {
 	u32 led_reg = rd32(hw, TXGBE_CFG_LED_CTL);
 	u16 value = 0;
@@ -667,7 +665,7 @@ s32 txgbe_led_on(struct txgbe_hw *hw, u32 index)
  *  @hw: pointer to hardware structure
  *  @index: led number to turn off
  **/
-s32 txgbe_led_off(struct txgbe_hw *hw, u32 index)
+int txgbe_led_off(struct txgbe_hw *hw, u32 index)
 {
 	u32 led_reg = rd32(hw, TXGBE_CFG_LED_CTL);
 	u16 value = 0;
@@ -691,9 +689,9 @@ s32 txgbe_led_off(struct txgbe_hw *hw, u32 index)
  *
  *  Sets the hardware semaphores so EEPROM access can occur for bit-bang method
  **/
-static s32 txgbe_get_eeprom_semaphore(struct txgbe_hw *hw)
+static int txgbe_get_eeprom_semaphore(struct txgbe_hw *hw)
 {
-	s32 status = TXGBE_ERR_EEPROM;
+	int status = TXGBE_ERR_EEPROM;
 	u32 timeout = 4000;
 	u32 i;
 	u32 swsm;
@@ -789,9 +787,9 @@ static void txgbe_release_eeprom_semaphore(struct txgbe_hw *hw)
  *
  *  Tests a MAC address to ensure it is a valid Individual Address
  **/
-s32 txgbe_validate_mac_addr(u8 *mac_addr)
+int txgbe_validate_mac_addr(u8 *mac_addr)
 {
-	s32 status = 0;
+	int status = 0;
 
 	/* Make sure it is not a multicast address */
 	if (TXGBE_IS_MULTICAST(mac_addr)) {
@@ -812,12 +810,12 @@ s32 txgbe_validate_mac_addr(u8 *mac_addr)
  *  @hw: pointer to hardware structure
  *  @index: Receive address register to write
  *  @addr: Address to put into receive address register
- *  @vmdq: VMDq "set" or "pool" index
+ *  @pools: VMDq "set" or "pool" index
  *  @enable_addr: set flag that address is active
  *
  *  Puts an ethernet address into a receive address register.
  **/
-s32 txgbe_set_rar(struct txgbe_hw *hw, u32 index, u8 *addr, u64 pools,
+int txgbe_set_rar(struct txgbe_hw *hw, u32 index, u8 *addr, u64 pools,
 		  u32 enable_addr)
 {
 	u32 rar_low, rar_high;
@@ -870,7 +868,7 @@ s32 txgbe_set_rar(struct txgbe_hw *hw, u32 index, u8 *addr, u64 pools,
  *
  *  Clears an ethernet address from a receive address register.
  **/
-s32 txgbe_clear_rar(struct txgbe_hw *hw, u32 index)
+int txgbe_clear_rar(struct txgbe_hw *hw, u32 index)
 {
 	u32 rar_entries = hw->mac.num_rar_entries;
 
@@ -908,7 +906,7 @@ s32 txgbe_clear_rar(struct txgbe_hw *hw, u32 index)
  *  of the receive address registers. Clears the multicast table. Assumes
  *  the receiver is in reset when the routine is called.
  **/
-s32 txgbe_init_rx_addrs(struct txgbe_hw *hw)
+int txgbe_init_rx_addrs(struct txgbe_hw *hw)
 {
 	u32 i;
 	u32 rar_entries = hw->mac.num_rar_entries;
@@ -954,92 +952,6 @@ s32 txgbe_init_rx_addrs(struct txgbe_hw *hw)
 }
 
 /**
- *  txgbe_add_uc_addr - Adds a secondary unicast address.
- *  @hw: pointer to hardware structure
- *  @addr: new address
- *
- *  Adds it to unused receive address register or goes into promiscuous mode.
- **/
-static void txgbe_add_uc_addr(struct txgbe_hw *hw, u8 *addr, u32 vmdq)
-{
-	u32 rar_entries = hw->mac.num_rar_entries;
-	u32 rar;
-
-	/* Place this address in the RAR if there is room,
-	 * else put the controller into promiscuous mode
-	 */
-	if (hw->addr_ctrl.rar_used_count < rar_entries) {
-		rar = hw->addr_ctrl.rar_used_count;
-		hw->mac.ops.set_rar(hw, rar, addr, vmdq,
-			TXGBE_PSR_MAC_SWC_AD_H_AV);
-
-		hw->addr_ctrl.rar_used_count++;
-	} else {
-		hw->addr_ctrl.overflow_promisc++;
-	}
-}
-
-/**
- *  txgbe_update_uc_addr_list - Updates MAC list of secondary addresses
- *  @hw: pointer to hardware structure
- *  @addr_list: the list of new addresses
- *  @addr_count: number of addresses
- *  @next: iterator function to walk the address list
- *
- *  The given list replaces any existing list.  Clears the secondary addrs from
- *  receive address registers.  Uses unused receive address registers for the
- *  first secondary addresses, and falls back to promiscuous mode as needed.
- *
- *  Drivers using secondary unicast addresses must set user_set_promisc when
- *  manually putting the device into promiscuous mode.
- **/
-s32 txgbe_update_uc_addr_list(struct txgbe_hw *hw, u8 *addr_list,
-			      u32 addr_count, txgbe_mc_addr_itr next)
-{
-	u8 *addr;
-	u32 i;
-	u32 old_promisc_setting = hw->addr_ctrl.overflow_promisc;
-	u32 uc_addr_in_use;
-	u32 vmdq;
-
-	/* Clear accounting of old secondary address list,
-	 * don't count RAR[0]
-	 */
-	uc_addr_in_use = hw->addr_ctrl.rar_used_count - 1;
-	hw->addr_ctrl.rar_used_count -= uc_addr_in_use;
-	hw->addr_ctrl.overflow_promisc = 0;
-
-	/* Zero out the other receive addresses */
-	for (i = 0; i < uc_addr_in_use; i++) {
-		wr32(hw, TXGBE_PSR_MAC_SWC_IDX, 1 + i);
-		wr32(hw, TXGBE_PSR_MAC_SWC_AD_L, 0);
-		wr32(hw, TXGBE_PSR_MAC_SWC_AD_H, 0);
-	}
-
-	/* Add the new addresses */
-	for (i = 0; i < addr_count; i++) {
-		addr = next(hw, &addr_list, &vmdq);
-		txgbe_add_uc_addr(hw, addr, vmdq);
-	}
-
-	if (hw->addr_ctrl.overflow_promisc) {
-		/* enable promisc if not already in overflow or set by user */
-		if (!old_promisc_setting && !hw->addr_ctrl.user_set_promisc) {
-			wr32m(hw, TXGBE_PSR_CTL,
-			      TXGBE_PSR_CTL_UPE, TXGBE_PSR_CTL_UPE);
-		}
-	} else {
-		/* only disable if set by overflow, not by user */
-		if (old_promisc_setting && !hw->addr_ctrl.user_set_promisc) {
-			wr32m(hw, TXGBE_PSR_CTL,
-			      TXGBE_PSR_CTL_UPE, 0);
-		}
-	}
-
-	return 0;
-}
-
-/**
  *  txgbe_mta_vector - Determines bit-vector in multicast table to set
  *  @hw: pointer to hardware structure
  *  @mc_addr: the multicast address
@@ -1051,7 +963,7 @@ s32 txgbe_update_uc_addr_list(struct txgbe_hw *hw, u8 *addr_list,
  *  by the MO field of the MCSTCTRL. The MO field is set during initialization
  *  to mc_filter_type.
  **/
-static s32 txgbe_mta_vector(struct txgbe_hw *hw, u8 *mc_addr)
+static int txgbe_mta_vector(struct txgbe_hw *hw, u8 *mc_addr)
 {
 	u32 vector = 0;
 
@@ -1081,7 +993,7 @@ static s32 txgbe_mta_vector(struct txgbe_hw *hw, u8 *mc_addr)
 /**
  *  txgbe_set_mta - Set bit-vector in multicast table
  *  @hw: pointer to hardware structure
- *  @hash_value: Multicast address hash value
+ *  @mc_addr: Multicast address hash value
  *
  *  Sets the bit-vector in the multicast table.
  **/
@@ -1118,7 +1030,7 @@ static void txgbe_set_mta(struct txgbe_hw *hw, u8 *mc_addr)
  *  When the clear flag is set, the given list replaces any existing list.
  *  Hashes the given addresses into the multicast table.
  **/
-s32 txgbe_update_mc_addr_list(struct txgbe_hw *hw, u8 *mc_addr_list,
+int txgbe_update_mc_addr_list(struct txgbe_hw *hw, u8 *mc_addr_list,
 			      u32 mc_addr_count, txgbe_mc_addr_itr next,
 				      bool clear)
 {
@@ -1157,59 +1069,16 @@ s32 txgbe_update_mc_addr_list(struct txgbe_hw *hw, u8 *mc_addr_list,
 }
 
 /**
- *  txgbe_enable_mc - Enable multicast address in RAR
- *  @hw: pointer to hardware structure
- *
- *  Enables multicast address in RAR and the use of the multicast hash table.
- **/
-s32 txgbe_enable_mc(struct txgbe_hw *hw)
-{
-	struct txgbe_addr_filter_info *a = &hw->addr_ctrl;
-	u32 psrctl;
-
-	if (a->mta_in_use > 0) {
-		psrctl = rd32(hw, TXGBE_PSR_CTL);
-		psrctl &= ~(TXGBE_PSR_CTL_MO | TXGBE_PSR_CTL_MFE);
-		psrctl |= TXGBE_PSR_CTL_MFE |
-			(hw->mac.mc_filter_type << TXGBE_PSR_CTL_MO_SHIFT);
-		wr32(hw, TXGBE_PSR_CTL, psrctl);
-	}
-
-	return 0;
-}
-
-/**
- *  txgbe_disable_mc - Disable multicast address in RAR
- *  @hw: pointer to hardware structure
- *
- *  Disables multicast address in RAR and the use of the multicast hash table.
- **/
-s32 txgbe_disable_mc(struct txgbe_hw *hw)
-{
-	struct txgbe_addr_filter_info *a = &hw->addr_ctrl;
-	u32 psrctl;
-
-	if (a->mta_in_use > 0) {
-		psrctl = rd32(hw, TXGBE_PSR_CTL);
-		psrctl &= ~(TXGBE_PSR_CTL_MO | TXGBE_PSR_CTL_MFE);
-		psrctl |= hw->mac.mc_filter_type << TXGBE_PSR_CTL_MO_SHIFT;
-		wr32(hw, TXGBE_PSR_CTL, psrctl);
-	}
-
-	return 0;
-}
-
-/**
  *  txgbe_fc_enable - Enable flow control
  *  @hw: pointer to hardware structure
  *
  *  Enable flow control according to the current settings.
  **/
-s32 txgbe_fc_enable(struct txgbe_hw *hw)
+int txgbe_fc_enable(struct txgbe_hw *hw)
 {
 	u32 mflcn_reg = 0;
 	u32 fccfg_reg = 0;
-	s32 ret_val = 0;
+	int ret_val = 0;
 	u32 fcrtl = 0;
 	u32 fcrth = 0;
 	u32 reg = 0;
@@ -1341,7 +1210,7 @@ out:
  *  Find the intersection between advertised settings and link partner's
  *  advertised settings
  **/
-static s32 txgbe_negotiate_fc(struct txgbe_hw *hw, u32 adv_reg, u32 lp_reg,
+static int txgbe_negotiate_fc(struct txgbe_hw *hw, u32 adv_reg, u32 lp_reg,
 			      u32 adv_sym, u32 adv_asm, u32 lp_sym, u32 lp_asm)
 {
 	if ((!(adv_reg)) ||  (!(lp_reg)))
@@ -1370,10 +1239,10 @@ static s32 txgbe_negotiate_fc(struct txgbe_hw *hw, u32 adv_reg, u32 lp_reg,
  *
  *  Enable flow control according on 1 gig fiber.
  **/
-static s32 txgbe_fc_autoneg_fiber(struct txgbe_hw *hw)
+static int txgbe_fc_autoneg_fiber(struct txgbe_hw *hw)
 {
 	u32 pcs_anadv_reg, pcs_lpab_reg;
-	s32 ret_val = TXGBE_ERR_FC_NOT_NEGOTIATED;
+	int ret_val = TXGBE_ERR_FC_NOT_NEGOTIATED;
 
 	pcs_anadv_reg = txgbe_rd32_epcs(hw, TXGBE_SR_MII_MMD_AN_ADV);
 	pcs_lpab_reg = txgbe_rd32_epcs(hw, TXGBE_SR_MII_MMD_LP_BABL);
@@ -1394,10 +1263,10 @@ static s32 txgbe_fc_autoneg_fiber(struct txgbe_hw *hw)
  *
  *  Enable flow control according to IEEE clause 37.
  **/
-static s32 txgbe_fc_autoneg_backplane(struct txgbe_hw *hw)
+static int txgbe_fc_autoneg_backplane(struct txgbe_hw *hw)
 {
 	u32 anlp1_reg, autoc_reg;
-	s32 ret_val = TXGBE_ERR_FC_NOT_NEGOTIATED;
+	int ret_val = TXGBE_ERR_FC_NOT_NEGOTIATED;
 
 	/* Read the 10g AN autoc and LP ability registers and resolve
 	 * local flow control settings accordingly
@@ -1420,7 +1289,7 @@ static s32 txgbe_fc_autoneg_backplane(struct txgbe_hw *hw)
  *
  *  Enable flow control according to IEEE clause 37.
  **/
-static s32 txgbe_fc_autoneg_copper(struct txgbe_hw *hw)
+static int txgbe_fc_autoneg_copper(struct txgbe_hw *hw)
 {
 	u8 technology_ability_reg = 0;
 	u8 lp_technology_ability_reg = 0;
@@ -1443,7 +1312,7 @@ static s32 txgbe_fc_autoneg_copper(struct txgbe_hw *hw)
  **/
 void txgbe_fc_autoneg(struct txgbe_hw *hw)
 {
-	s32 ret_val = TXGBE_ERR_FC_NOT_NEGOTIATED;
+	int ret_val = TXGBE_ERR_FC_NOT_NEGOTIATED;
 	u32 speed;
 	bool link_up = 0;
 
@@ -1504,9 +1373,9 @@ out:
  *  bit hasn't caused the master requests to be disabled, else 0
  *  is returned signifying master requests disabled.
  **/
-s32 txgbe_disable_pcie_master(struct txgbe_hw *hw)
+int txgbe_disable_pcie_master(struct txgbe_hw *hw)
 {
-	s32 status = 0;
+	int status = 0;
 	u32 i;
 	struct txgbe_adapter *adapter = hw->back;
 	unsigned int num_vfs = adapter->num_vfs;
@@ -1576,7 +1445,7 @@ out:
  *  Acquires the SWFW semaphore through the GSSR register for the specified
  *  function (CSR, PHY0, PHY1, EEPROM, Flash)
  **/
-s32 txgbe_acquire_swfw_sync(struct txgbe_hw *hw, u32 mask)
+int txgbe_acquire_swfw_sync(struct txgbe_hw *hw, u32 mask)
 {
 	u32 gssr = 0;
 	u32 swmask = mask;
@@ -1638,7 +1507,7 @@ void txgbe_release_swfw_sync(struct txgbe_hw *hw, u32 mask)
  *  Stops the receive data path and waits for the HW to internally empty
  *  the Rx security block
  **/
-s32 txgbe_disable_sec_rx_path(struct txgbe_hw *hw)
+int txgbe_disable_sec_rx_path(struct txgbe_hw *hw)
 {
 #define TXGBE_MAX_SECRX_POLL 40
 	int i;
@@ -1663,7 +1532,7 @@ s32 txgbe_disable_sec_rx_path(struct txgbe_hw *hw)
  *
  *  Enables the receive data path.
  **/
-s32 txgbe_enable_sec_rx_path(struct txgbe_hw *hw)
+int txgbe_enable_sec_rx_path(struct txgbe_hw *hw)
 {
 	wr32m(hw, TXGBE_RSC_CTL,
 	      TXGBE_RSC_CTL_RX_DIS, 0);
@@ -1679,7 +1548,7 @@ s32 txgbe_enable_sec_rx_path(struct txgbe_hw *hw)
  *  Stops the transmit data path and waits for the HW to internally empty
  *  the tx security block
  **/
-s32 txgbe_disable_sec_tx_path(struct txgbe_hw *hw)
+int txgbe_disable_sec_tx_path(struct txgbe_hw *hw)
 {
 #define TXGBE_MAX_SECTX_POLL 40
 
@@ -1700,12 +1569,12 @@ s32 txgbe_disable_sec_tx_path(struct txgbe_hw *hw)
 }
 
 /**
- *  txgbe_enable_sec_Tx_path - Enables the transmit data path
+ *  txgbe_enable_sec_tx_path - Enables the transmit data path
  *  @hw: pointer to hardware structure
  *
  *  Enables the transmit data path.
  **/
-s32 txgbe_enable_sec_tx_path(struct txgbe_hw *hw)
+int txgbe_enable_sec_tx_path(struct txgbe_hw *hw)
 {
 	wr32m(hw, TXGBE_TSC_CTL,
 	      TXGBE_TSC_CTL_TX_DIS, 0);
@@ -1714,175 +1583,8 @@ s32 txgbe_enable_sec_tx_path(struct txgbe_hw *hw)
 	return 0;
 }
 
-/**
- *  txgbe_get_san_mac_addr_offset - Get SAN MAC address offset from the EEPROM
- *  @hw: pointer to hardware structure
- *  @san_mac_offset: SAN MAC address offset
- *
- *  This function will read the EEPROM location for the SAN MAC address
- *  pointer, and returns the value at that location.  This is used in both
- *  get and set mac_addr routines.
- **/
-static s32 txgbe_get_san_mac_addr_offset(struct txgbe_hw *hw,
-					 u16 *san_mac_offset)
-{
-	s32 ret_val;
 
-	/* First read the EEPROM pointer to see if the MAC addresses are
-	 * available.
-	 */
-	ret_val = hw->eeprom.ops.read(hw,
-			hw->eeprom.sw_region_offset + TXGBE_SAN_MAC_ADDR_PTR,
-			san_mac_offset);
-	if (ret_val) {
-		ERROR_REPORT2(TXGBE_ERROR_INVALID_STATE,
-			      "eeprom at offset %d failed",
-			      TXGBE_SAN_MAC_ADDR_PTR);
-	}
 
-	return ret_val;
-}
-
-/**
- *  txgbe_get_san_mac_addr - SAN MAC address retrieval from the EEPROM
- *  @hw: pointer to hardware structure
- *  @san_mac_addr: SAN MAC address
- *
- *  Reads the SAN MAC address from the EEPROM, if it's available.  This is
- *  per-port, so set_lan_id() must be called before reading the addresses.
- *  set_lan_id() is called by identify_sfp(), but this cannot be relied
- *  upon for non-SFP connections, so we must call it here.
- **/
-s32 txgbe_get_san_mac_addr(struct txgbe_hw *hw, u8 *san_mac_addr)
-{
-	u16 san_mac_data, san_mac_offset;
-	u8 i;
-	s32 ret_val;
-
-	/* First read the EEPROM pointer to see if the MAC addresses are
-	 * available.  If they're not, no point in calling set_lan_id() here.
-	 */
-	ret_val = txgbe_get_san_mac_addr_offset(hw, &san_mac_offset);
-	if (ret_val || san_mac_offset == 0 || san_mac_offset == 0xFFFF)
-		goto san_mac_addr_out;
-
-	/* apply the port offset to the address offset */
-	(hw->bus.func) ? (san_mac_offset += TXGBE_SAN_MAC_ADDR_PORT1_OFFSET) :
-			 (san_mac_offset += TXGBE_SAN_MAC_ADDR_PORT0_OFFSET);
-	for (i = 0; i < 3; i++) {
-		ret_val = hw->eeprom.ops.read(hw, san_mac_offset,
-					      &san_mac_data);
-		if (ret_val) {
-			ERROR_REPORT2(TXGBE_ERROR_INVALID_STATE,
-				      "eeprom read at offset %d failed",
-				      san_mac_offset);
-			goto san_mac_addr_out;
-		}
-		san_mac_addr[i * 2] = (u8)(san_mac_data);
-		san_mac_addr[i * 2 + 1] = (u8)(san_mac_data >> 8);
-		san_mac_offset++;
-	}
-	return 0;
-
-san_mac_addr_out:
-	/* No addresses available in this EEPROM.  It's not an
-	 * error though, so just wipe the local address and return.
-	 */
-	for (i = 0; i < 6; i++)
-		san_mac_addr[i] = 0xFF;
-	return 0;
-}
-
-/**
- *  txgbe_set_san_mac_addr - Write the SAN MAC address to the EEPROM
- *  @hw: pointer to hardware structure
- *  @san_mac_addr: SAN MAC address
- *
- *  Write a SAN MAC address to the EEPROM.
- **/
-s32 txgbe_set_san_mac_addr(struct txgbe_hw *hw, u8 *san_mac_addr)
-{
-	s32 ret_val;
-	u16 san_mac_data, san_mac_offset;
-	u8 i;
-
-	/* Look for SAN mac address pointer.  If not defined, return */
-	ret_val = txgbe_get_san_mac_addr_offset(hw, &san_mac_offset);
-	if (ret_val || san_mac_offset == 0 || san_mac_offset == 0xFFFF)
-		return TXGBE_ERR_NO_SAN_ADDR_PTR;
-
-	/* Apply the port offset to the address offset */
-	(hw->bus.func) ? (san_mac_offset += TXGBE_SAN_MAC_ADDR_PORT1_OFFSET) :
-			 (san_mac_offset += TXGBE_SAN_MAC_ADDR_PORT0_OFFSET);
-
-	for (i = 0; i < 3; i++) {
-		san_mac_data = (u16)((u16)(san_mac_addr[i * 2 + 1]) << 8);
-		san_mac_data |= (u16)(san_mac_addr[i * 2]);
-		hw->eeprom.ops.write(hw, san_mac_offset, san_mac_data);
-		san_mac_offset++;
-	}
-
-	return 0;
-}
-
-/**
- *  txgbe_insert_mac_addr - Find a RAR for this mac address
- *  @hw: pointer to hardware structure
- *  @addr: Address to put into receive address register
- *  @vmdq: VMDq pool to assign
- *
- *  Puts an ethernet address into a receive address register, or
- *  finds the rar that it is aleady in; adds to the pool list
- **/
-s32 txgbe_insert_mac_addr(struct txgbe_hw *hw, u8 *addr, u32 vmdq)
-{
-	static const u32 NO_EMPTY_RAR_FOUND = 0xFFFFFFFF;
-	u32 first_empty_rar = NO_EMPTY_RAR_FOUND;
-	u32 rar;
-	u32 rar_low, rar_high;
-	u32 addr_low, addr_high;
-
-	/* swap bytes for HW little endian */
-	addr_low  = addr[5] | (addr[4] << 8)
-			    | (addr[3] << 16)
-			    | (addr[2] << 24);
-	addr_high = addr[1] | (addr[0] << 8);
-
-	/* Either find the mac_id in rar or find the first empty space.
-	 * rar_highwater points to just after the highest currently used
-	 * rar in order to shorten the search.  It grows when we add a new
-	 * rar to the top.
-	 */
-	for (rar = 0; rar < hw->mac.rar_highwater; rar++) {
-		wr32(hw, TXGBE_PSR_MAC_SWC_IDX, rar);
-		rar_high = rd32(hw, TXGBE_PSR_MAC_SWC_AD_H);
-
-		if ((TXGBE_PSR_MAC_SWC_AD_H_AV & rar_high) == 0 &&
-		    first_empty_rar == NO_EMPTY_RAR_FOUND) {
-			first_empty_rar = rar;
-		} else if ((rar_high & 0xFFFF) == addr_high) {
-			rar_low = rd32(hw, TXGBE_PSR_MAC_SWC_AD_L);
-			if (rar_low == addr_low)
-				break;    /* found it already in the rars */
-		}
-	}
-
-	if (first_empty_rar != NO_EMPTY_RAR_FOUND) {
-		/* stick it into first empty RAR slot we found */
-		rar = first_empty_rar;
-		hw->mac.ops.set_rar(hw, rar, addr, vmdq,
-			       TXGBE_PSR_MAC_SWC_AD_H_AV);
-	} else if (rar == hw->mac.rar_highwater) {
-		/* add it to the top of the list and inc the highwater mark */
-		hw->mac.ops.set_rar(hw, rar, addr, vmdq,
-			       TXGBE_PSR_MAC_SWC_AD_H_AV);
-		hw->mac.rar_highwater++;
-	} else if (rar >= hw->mac.num_rar_entries) {
-		return TXGBE_ERR_INVALID_MAC_ADDR;
-	}
-
-	return rar;
-}
 
 /**
  *  txgbe_clear_vmdq - Disassociate a VMDq pool index from a rx address
@@ -1890,7 +1592,7 @@ s32 txgbe_insert_mac_addr(struct txgbe_hw *hw, u8 *addr, u32 vmdq)
  *  @rar: receive address register index to disassociate
  *  @vmdq: VMDq pool index to remove from the rar
  **/
-s32 txgbe_clear_vmdq(struct txgbe_hw *hw, u32 rar, u32 vmdq)
+int txgbe_clear_vmdq(struct txgbe_hw *hw, u32 rar, u32 vmdq)
 {
 	u32 mpsar_lo, mpsar_hi;
 	u32 rar_entries = hw->mac.num_rar_entries;
@@ -1923,9 +1625,9 @@ done:
  *  txgbe_set_vmdq - Associate a VMDq pool index with a rx address
  *  @hw: pointer to hardware struct
  *  @rar: receive address register index to associate with a VMDq index
- *  @vmdq: VMDq pool index
+ *  @pool: VMDq pool index
  **/
-s32 txgbe_set_vmdq(struct txgbe_hw *hw, u32 rar, u32 pool)
+int txgbe_set_vmdq(struct txgbe_hw *hw, u32 rar, u32 pool)
 {
 	u32 rar_entries = hw->mac.num_rar_entries;
 
@@ -1940,16 +1642,16 @@ s32 txgbe_set_vmdq(struct txgbe_hw *hw, u32 rar, u32 pool)
 }
 
 /**
+ *  txgbe_set_vmdq_san_mac - Associate default VMDq pool index with a rx address
+ *  @hw: pointer to hardware struct
+ *  @vmdq: VMDq pool index
+ *
  *  This function should only be involved in the IOV mode.
  *  In IOV mode, Default pool is next pool after the number of
  *  VFs advertized and not 0.
  *  MPSAR table needs to be updated for SAN_MAC RAR [hw->mac.san_mac_rar_index]
- *
- *  txgbe_set_vmdq_san_mac - Associate default VMDq pool index with a rx address
- *  @hw: pointer to hardware struct
- *  @vmdq: VMDq pool index
  **/
-s32 txgbe_set_vmdq_san_mac(struct txgbe_hw *hw, u32 vmdq)
+int txgbe_set_vmdq_san_mac(struct txgbe_hw *hw, u32 vmdq)
 {
 	u32 rar = hw->mac.san_mac_rar_index;
 
@@ -1969,7 +1671,7 @@ s32 txgbe_set_vmdq_san_mac(struct txgbe_hw *hw, u32 vmdq)
  *  txgbe_init_uta_tables - Initialize the Unicast Table Array
  *  @hw: pointer to hardware structure
  **/
-s32 txgbe_init_uta_tables(struct txgbe_hw *hw)
+int txgbe_init_uta_tables(struct txgbe_hw *hw)
 {
 	int i;
 
@@ -1987,11 +1689,11 @@ s32 txgbe_init_uta_tables(struct txgbe_hw *hw)
  *  return the VLVF index where this VLAN id should be placed
  *
  **/
-s32 txgbe_find_vlvf_slot(struct txgbe_hw *hw, u32 vlan)
+int txgbe_find_vlvf_slot(struct txgbe_hw *hw, u32 vlan)
 {
 	u32 bits = 0;
 	u32 first_empty_slot = 0;
-	s32 regindex;
+	int regindex;
 
 	/* short cut the special case */
 	if (vlan == 0)
@@ -2035,14 +1737,14 @@ s32 txgbe_find_vlvf_slot(struct txgbe_hw *hw, u32 vlan)
  *
  *  Turn on/off specified VLAN in the VLAN filter table.
  **/
-s32 txgbe_set_vfta(struct txgbe_hw *hw, u32 vlan, u32 vind,
+int txgbe_set_vfta(struct txgbe_hw *hw, u32 vlan, u32 vind,
 		   bool vlan_on)
 {
-	s32 regindex;
+	int regindex;
 	u32 bitindex;
 	u32 vfta;
 	u32 targetbit;
-	s32 ret_val = 0;
+	int ret_val = 0;
 	bool vfta_changed = false;
 
 	if (vlan > 4095)
@@ -2088,7 +1790,7 @@ s32 txgbe_set_vfta(struct txgbe_hw *hw, u32 vlan, u32 vind,
  *
  *  Turn on/off specified bit in VLVF table.
  **/
-s32 txgbe_set_vlvf(struct txgbe_hw *hw, u32 vlan, u32 vind,
+int txgbe_set_vlvf(struct txgbe_hw *hw, u32 vlan, u32 vind,
 		   bool vlan_on, bool *vfta_changed)
 {
 	u32 vt;
@@ -2105,7 +1807,7 @@ s32 txgbe_set_vlvf(struct txgbe_hw *hw, u32 vlan, u32 vind,
 	 */
 	vt = rd32(hw, TXGBE_CFG_PORT_CTL);
 	if (vt & TXGBE_CFG_PORT_CTL_NUM_VT_MASK) {
-		s32 vlvf_index;
+		int vlvf_index;
 		u32 bits;
 
 		vlvf_index = txgbe_find_vlvf_slot(hw, vlan);
@@ -2191,7 +1893,7 @@ s32 txgbe_set_vlvf(struct txgbe_hw *hw, u32 vlan, u32 vind,
  *
  *  Clears the VLAN filer table, and the VMDq index associated with the filter
  **/
-s32 txgbe_clear_vfta(struct txgbe_hw *hw)
+int txgbe_clear_vfta(struct txgbe_hw *hw)
 {
 	u32 offset;
 
@@ -2219,7 +1921,7 @@ s32 txgbe_clear_vfta(struct txgbe_hw *hw)
  *  This function will read the EEPROM from the alternative SAN MAC address
  *  block to check the support for the alternative WWNN/WWPN prefix support.
  **/
-s32 txgbe_get_wwn_prefix(struct txgbe_hw *hw, u16 *wwnn_prefix,
+int txgbe_get_wwn_prefix(struct txgbe_hw *hw, u16 *wwnn_prefix,
 			 u16 *wwpn_prefix)
 {
 	u16 offset, caps;
@@ -2231,7 +1933,7 @@ s32 txgbe_get_wwn_prefix(struct txgbe_hw *hw, u16 *wwnn_prefix,
 
 	/* check if alternative SAN MAC is supported */
 	offset = hw->eeprom.sw_region_offset + TXGBE_ALT_SAN_MAC_ADDR_BLK_PTR;
-	if (hw->eeprom.ops.read(hw, offset, &alt_san_mac_blk_offset))
+	if (txgbe_read_ee_hostif(hw, offset, &alt_san_mac_blk_offset))
 		goto wwn_prefix_err;
 
 	if (alt_san_mac_blk_offset == 0 ||
@@ -2240,20 +1942,18 @@ s32 txgbe_get_wwn_prefix(struct txgbe_hw *hw, u16 *wwnn_prefix,
 
 	/* check capability in alternative san mac address block */
 	offset = alt_san_mac_blk_offset + TXGBE_ALT_SAN_MAC_ADDR_CAPS_OFFSET;
-	if (hw->eeprom.ops.read(hw, offset, &caps))
+	if (txgbe_read_ee_hostif(hw, offset, &caps))
 		goto wwn_prefix_err;
 	if (!(caps & TXGBE_ALT_SAN_MAC_ADDR_CAPS_ALTWWN))
 		goto wwn_prefix_out;
 
 	/* get the corresponding prefix for WWNN/WWPN */
 	offset = alt_san_mac_blk_offset + TXGBE_ALT_SAN_MAC_ADDR_WWNN_OFFSET;
-	if (hw->eeprom.ops.read(hw, offset, wwnn_prefix)) {
-		ERROR_REPORT2(TXGBE_ERROR_INVALID_STATE,
-			      "eeprom read at offset %d failed", offset);
-	}
+	if (txgbe_read_ee_hostif(hw, offset, wwnn_prefix))
+		hw_err(hw, "eeprom read at offset %d failed", offset);
 
 	offset = alt_san_mac_blk_offset + TXGBE_ALT_SAN_MAC_ADDR_WWPN_OFFSET;
-	if (hw->eeprom.ops.read(hw, offset, wwpn_prefix))
+	if (txgbe_read_ee_hostif(hw, offset, wwpn_prefix))
 		goto wwn_prefix_err;
 
 wwn_prefix_out:
@@ -2263,32 +1963,6 @@ wwn_prefix_err:
 	ERROR_REPORT2(TXGBE_ERROR_INVALID_STATE,
 		      "eeprom read at offset %d failed", offset);
 	return 0;
-}
-
-/**
- * txgbe_set_mac_anti_spoofing - Enable/Disable MAC anti-spoofing
- * @hw: pointer to hardware structure
- * @enable: enable or disable switch for anti-spoofing
- * @pf: Physical Function pool - do not enable anti-spoofing for the PF
- **/
-void txgbe_set_mac_anti_spoofing(struct txgbe_hw *hw, bool enable, int pf)
-{
-	u64 pfvfspoof = 0;
-
-	if (enable) {
-		/* The PF should be allowed to spoof so that it can support
-		 * emulation mode NICs.  Do not set the bits assigned to the PF
-		 * Remaining pools belong to the PF so they do not need to have
-		 * anti-spoofing enabled.
-		 */
-		pfvfspoof = (1 << pf) - 1;
-		wr32(hw, TXGBE_TDM_MAC_AS_L,
-		     pfvfspoof & 0xffffffff);
-		wr32(hw, TXGBE_TDM_MAC_AS_H, pfvfspoof >> 32);
-	} else {
-		wr32(hw, TXGBE_TDM_MAC_AS_L, 0);
-		wr32(hw, TXGBE_TDM_MAC_AS_H, 0);
-	}
 }
 
 /**
@@ -2349,21 +2023,6 @@ void txgbe_set_ethertype_anti_spoofing(struct txgbe_hw *hw,
 }
 
 /**
- *  txgbe_get_device_caps - Get additional device capabilities
- *  @hw: pointer to hardware structure
- *  @device_caps: the EEPROM word with the extra device capabilities
- *
- *  This function will read the EEPROM location for the device capabilities,
- *  and return the word through device_caps.
- **/
-s32 txgbe_get_device_caps(struct txgbe_hw *hw, u16 *device_caps)
-{
-	hw->eeprom.ops.read(hw, hw->eeprom.sw_region_offset + TXGBE_DEVICE_CAPS, device_caps);
-
-	return 0;
-}
-
-/**
  *  txgbe_calculate_checksum - Calculate checksum for buffer
  *  @buffer: pointer to EEPROM
  *  @length: size of EEPROM to calculate a checksum for
@@ -2401,7 +2060,7 @@ u8 txgbe_calculate_checksum(u8 *buffer, u32 length)
  *  Communicates with the manageability block.  On success return 0
  *  else return TXGBE_ERR_HOST_INTERFACE_COMMAND.
  **/
-s32 txgbe_host_interface_command(struct txgbe_hw *hw, u32 *buffer,
+int txgbe_host_interface_command(struct txgbe_hw *hw, u32 *buffer,
 				 u32 length, u32 timeout, bool return_data)
 {
 	struct txgbe_adapter *adapter = (struct txgbe_adapter *)hw->back;
@@ -2410,7 +2069,7 @@ s32 txgbe_host_interface_command(struct txgbe_hw *hw, u32 *buffer,
 	struct txgbe_hic_hdr *recv_hdr;
 	u32 buf[64] = {};
 	u32 hicr, i, bi;
-	s32 status = 0;
+	int status = 0;
 	u32 dword_len;
 	u16 buf_len;
 	u8 send_cmd;
@@ -2421,7 +2080,7 @@ s32 txgbe_host_interface_command(struct txgbe_hw *hw, u32 *buffer,
 		return TXGBE_ERR_HOST_INTERFACE_COMMAND;
 	}
 	if (hw->mac.type == txgbe_mac_sp)
-		if (hw->mac.ops.acquire_swfw_sync(hw, TXGBE_MNG_SWFW_SYNC_SW_MB) != 0)
+		if (txgbe_acquire_swfw_sync(hw, TXGBE_MNG_SWFW_SYNC_SW_MB) != 0)
 			return TXGBE_ERR_SWFW_SYNC;
 
 	/* Calculate length in DWORDs. We must be DWORD aligned */
@@ -2628,68 +2287,12 @@ rel_out:
 
 		clear_bit(__TXGBE_SWFW_BUSY, &adapter->state);
 	} else {
-		hw->mac.ops.release_swfw_sync(hw, TXGBE_MNG_SWFW_SYNC_SW_MB);
+		txgbe_release_swfw_sync(hw, TXGBE_MNG_SWFW_SYNC_SW_MB);
 	}
 
 	return status;
 }
 
-/**
- *  txgbe_set_fw_drv_ver - Sends driver version to firmware
- *  @hw: pointer to the HW structure
- *  @maj: driver version major number
- *  @min: driver version minor number
- *  @build: driver version build number
- *  @sub: driver version sub build number
- *
- *  Sends driver version number to firmware through the manageability
- *  block.  On success return 0
- *  else returns TXGBE_ERR_SWFW_SYNC when encountering an error acquiring
- *  semaphore or TXGBE_ERR_HOST_INTERFACE_COMMAND when command fails.
- **/
-s32 txgbe_set_fw_drv_ver(struct txgbe_hw *hw, u8 maj, u8 min,
-			 u8 build, u8 sub)
-{
-	struct txgbe_hic_drv_info fw_cmd;
-	int i;
-	s32 ret_val = 0;
-
-	fw_cmd.hdr.cmd = FW_CEM_CMD_DRIVER_INFO;
-	fw_cmd.hdr.buf_len = FW_CEM_CMD_DRIVER_INFO_LEN;
-	fw_cmd.hdr.cmd_or_resp.cmd_resv = FW_CEM_CMD_RESERVED;
-	fw_cmd.port_num = (u8)hw->bus.func;
-	fw_cmd.ver_maj = maj;
-	fw_cmd.ver_min = min;
-	fw_cmd.ver_build = build;
-	fw_cmd.ver_sub = sub;
-	fw_cmd.pad = 0;
-	fw_cmd.pad2 = 0;
-
-	if (hw->mac.type == txgbe_mac_sp) {
-		fw_cmd.hdr.cksum_or_index.checksum = 0;
-		fw_cmd.hdr.cksum_or_index.checksum = txgbe_calculate_checksum((u8 *)&fw_cmd,
-									      (FW_CEM_HDR_LEN + fw_cmd.hdr.buf_len));
-	}
-
-	for (i = 0; i <= FW_CEM_MAX_RETRIES; i++) {
-		ret_val = txgbe_host_interface_command(hw, (u32 *)&fw_cmd,
-						       sizeof(fw_cmd),
-						       TXGBE_HI_COMMAND_TIMEOUT,
-						       true);
-		if (ret_val != 0)
-			continue;
-
-		if (fw_cmd.hdr.cmd_or_resp.ret_status ==
-		    FW_CEM_RESP_STATUS_SUCCESS)
-			ret_val = 0;
-		else
-			ret_val = TXGBE_ERR_HOST_INTERFACE_COMMAND;
-
-		break;
-	}
-
-	return ret_val;
-}
 
 /**
  *  txgbe_reset_hostif - send reset cmd to fw
@@ -2700,11 +2303,11 @@ s32 txgbe_set_fw_drv_ver(struct txgbe_hw *hw, u8 maj, u8 min,
  *  else returns TXGBE_ERR_SWFW_SYNC when encountering an error acquiring
  *  semaphore or TXGBE_ERR_HOST_INTERFACE_COMMAND when command fails.
  **/
-s32 txgbe_reset_hostif(struct txgbe_hw *hw)
+int txgbe_reset_hostif(struct txgbe_hw *hw)
 {
 	struct txgbe_hic_reset reset_cmd;
 	int i;
-	s32 status = 0;
+	int status = 0;
 
 	reset_cmd.hdr.cmd = FW_RESET_CMD;
 	reset_cmd.hdr.buf_len = FW_RESET_LEN;
@@ -2756,14 +2359,14 @@ static u16 txgbe_crc16_ccitt(const u8 *buf, int size)
 	return crc;
 }
 
-s32 txgbe_upgrade_flash_hostif(struct txgbe_hw *hw, u32 region,
+int txgbe_upgrade_flash_hostif(struct txgbe_hw *hw, u32 region,
 			       const u8 *data, u32 size)
 {
 	struct txgbe_hic_upg_start start_cmd;
 	struct txgbe_hic_upg_write write_cmd;
 	struct txgbe_hic_upg_verify verify_cmd;
 	u32 offset;
-	s32 status = 0;
+	int status = 0;
 
 	start_cmd.hdr.cmd = FW_FLASH_UPGRADE_START_CMD;
 	start_cmd.hdr.buf_len = FW_FLASH_UPGRADE_START_LEN;
@@ -3304,17 +2907,16 @@ void txgbe_set_rxpba(struct txgbe_hw *hw, int num_pb, u32 headroom,
 /**
  *  txgbe_get_thermal_sensor_data - Gathers thermal sensor data
  *  @hw: pointer to hardware structure
- *  @data: pointer to the thermal sensor data structure
  *
  * algorithm:
  * T = (-4.8380E+01)N^0 + (3.1020E-01)N^1 + (-1.8201E-04)N^2 +
-		       (8.1542E-08)N^3 + (-1.6743E-11)N^4
+ *     (8.1542E-08)N^3 + (-1.6743E-11)N^4
  * algorithm with 5% more deviation, easy for implementation
  * T = (-50)N^0 + (0.31)N^1 + (-0.0002)N^2 + (0.0000001)N^3
  *
  *  Returns the thermal sensor data structure
  **/
-s32 txgbe_get_thermal_sensor_data(struct txgbe_hw *hw)
+int txgbe_get_thermal_sensor_data(struct txgbe_hw *hw)
 {
 	s64 tsv;
 	int i = 0;
@@ -3399,9 +3001,9 @@ s32 txgbe_get_thermal_sensor_data(struct txgbe_hw *hw)
  *  Inits the thermal sensor thresholds according to the NVM map
  *  and save off the threshold and location values into mac.thermal_sensor_data
  **/
-s32 txgbe_init_thermal_sensor_thresh(struct txgbe_hw *hw)
+int txgbe_init_thermal_sensor_thresh(struct txgbe_hw *hw)
 {
-	s32 status = 0;
+	int status = 0;
 
 	struct txgbe_thermal_sensor_data *data = &hw->mac.thermal_sensor_data;
 
@@ -3532,13 +3134,13 @@ bool txgbe_check_mng_access(struct txgbe_hw *hw)
  *
  *  Set the link speed in the MAC and/or PHY register and restarts link.
  **/
-s32 txgbe_setup_mac_link_multispeed_fiber(struct txgbe_hw *hw,
+int txgbe_setup_mac_link_multispeed_fiber(struct txgbe_hw *hw,
 					  u32 speed,
 					  bool autoneg_wait_to_complete)
 {
 	u32 link_speed = TXGBE_LINK_SPEED_UNKNOWN;
 	u32 highest_link_speed = TXGBE_LINK_SPEED_UNKNOWN;
-	s32 status = 0;
+	int status = 0;
 	u32 speedcnt = 0;
 	u32 i = 0;
 	bool autoneg, link_up = false;
@@ -3578,7 +3180,8 @@ s32 txgbe_setup_mac_link_multispeed_fiber(struct txgbe_hw *hw,
 			return status;
 
 		/* Flap the Tx laser if it has not already been done */
-		hw->mac.ops.flap_tx_laser(hw);
+		if (hw->mac.ops.flap_tx_laser)
+			hw->mac.ops.flap_tx_laser(hw);
 
 		/* Wait for the controller to acquire link.  Per IEEE 802.3ap,
 		 * Section 73.10.2, we may have to wait up to 500ms if KR is
@@ -3623,7 +3226,8 @@ s32 txgbe_setup_mac_link_multispeed_fiber(struct txgbe_hw *hw,
 			return status;
 
 		/* Flap the Tx laser if it has not already been done */
-		hw->mac.ops.flap_tx_laser(hw);
+		if (hw->mac.ops.flap_tx_laser)
+			hw->mac.ops.flap_tx_laser(hw);
 
 		/* Wait for the controller to acquire link.  Per IEEE 802.3ap,
 		 * Section 73.10.2, we may have to wait up to 500ms if KR is
@@ -3677,7 +3281,8 @@ s32 txgbe_setup_mac_link_multispeed_fiber(struct txgbe_hw *hw,
 			return status;
 
 		/* Flap the Tx laser if it has not already been done */
-		hw->mac.ops.flap_tx_laser(hw);
+		if (hw->mac.ops.flap_tx_laser)
+			hw->mac.ops.flap_tx_laser(hw);
 
 		/* Wait for the link partner to also set speed */
 		msec_delay(100);
@@ -4091,7 +3696,7 @@ void txgbe_init_mac_link_ops_sp(struct txgbe_hw *hw)
 }
 
 /**
- *  txgbe_init_phy_ops - PHY/SFP specific init
+ *  txgbe_init_phy_ops_sp - PHY/SFP specific init
  *  @hw: pointer to hardware structure
  *
  *  Initialize any function pointers that were not able to be
@@ -4099,10 +3704,10 @@ void txgbe_init_mac_link_ops_sp(struct txgbe_hw *hw)
  *  not known.  Perform the SFP init if necessary.
  *
  **/
-s32 txgbe_init_phy_ops_sp(struct txgbe_hw *hw)
+int txgbe_init_phy_ops_sp(struct txgbe_hw *hw)
 {
 	struct txgbe_mac_info *mac = &hw->mac;
-	s32 ret_val = 0;
+	int ret_val = 0;
 
 	/* Identify the PHY or SFP module */
 	ret_val = hw->phy.ops.identify(hw);
@@ -4111,8 +3716,6 @@ s32 txgbe_init_phy_ops_sp(struct txgbe_hw *hw)
 
 	/* Setup function pointers based on detected SFP module and speeds */
 	txgbe_init_mac_link_ops_sp(hw);
-	if (hw->phy.sfp_type != txgbe_sfp_type_unknown)
-		hw->phy.ops.reset = NULL;
 
 	/* If copper media, overwrite with copper function pointers */
 	if (hw->mac.ops.get_media_type(hw) == txgbe_media_type_copper) {
@@ -4128,9 +3731,9 @@ init_phy_ops_out:
 	return ret_val;
 }
 
-static s32 txgbe_setup_sfp_modules_sp(struct txgbe_hw *hw)
+static int txgbe_setup_sfp_modules_sp(struct txgbe_hw *hw)
 {
-	s32 ret_val = 0;
+	int ret_val = 0;
 
 	if (hw->phy.sfp_type != txgbe_sfp_type_unknown)
 		txgbe_init_mac_link_ops_sp(hw);
@@ -4146,11 +3749,11 @@ static s32 txgbe_setup_sfp_modules_sp(struct txgbe_hw *hw)
  *  Does not touch the hardware.
  **/
 
-static s32 txgbe_init_ops_sp(struct txgbe_hw *hw)
+static int txgbe_init_ops_sp(struct txgbe_hw *hw)
 {
 	struct txgbe_mac_info *mac = &hw->mac;
 	struct txgbe_phy_info *phy = &hw->phy;
-	s32 ret_val = 0;
+	int ret_val = 0;
 
 	ret_val = txgbe_init_ops_generic(hw);
 
@@ -4205,7 +3808,7 @@ static void txgbe_set_mac_type(struct txgbe_hw *hw)
  **/
 int txgbe_init_shared_code(struct txgbe_hw *hw)
 {
-	s32 status;
+	int status;
 
 	txgbe_set_mac_type(hw);
 
@@ -4214,7 +3817,8 @@ int txgbe_init_shared_code(struct txgbe_hw *hw)
 		status = txgbe_init_ops_sp(hw);
 		break;
 	case txgbe_mac_aml:
-		status = txgbe_init_ops_aml(hw);
+		txgbe_init_ops_aml(hw);
+		status = 0;
 		break;
 	case txgbe_mac_aml40:
 		status = txgbe_init_ops_aml40(hw);
@@ -4227,23 +3831,17 @@ int txgbe_init_shared_code(struct txgbe_hw *hw)
 	return status;
 }
 
-s32 txgbe_init_ops_generic(struct txgbe_hw *hw)
+int txgbe_init_ops_generic(struct txgbe_hw *hw)
 {
 	struct txgbe_mac_info *mac = &hw->mac;
 	struct txgbe_phy_info *phy = &hw->phy;
-	struct txgbe_eeprom_info *eeprom = &hw->eeprom;
-	struct txgbe_flash_info *flash = &hw->flash;
-	s32 ret_val = 0;
+	int ret_val = 0;
 
 	/* PHY */
-	phy->ops.reset = txgbe_reset_phy;
-	phy->ops.read_reg = txgbe_read_phy_reg;
-	phy->ops.write_reg = txgbe_write_phy_reg;
-	phy->ops.read_reg_mdi = txgbe_read_phy_reg_mdi;
-	phy->ops.write_reg_mdi = txgbe_write_phy_reg_mdi;
+	phy->ops.identify = txgbe_identify_phy;
+	phy->ops.identify_sfp = txgbe_identify_module;
 	phy->ops.setup_link = txgbe_setup_phy_link;
 	phy->ops.setup_link_speed = txgbe_setup_phy_link_speed;
-	phy->ops.get_firmware_version = txgbe_get_phy_firmware_version;
 	phy->ops.read_i2c_byte = txgbe_read_i2c_byte;
 	phy->ops.write_i2c_byte = txgbe_write_i2c_byte;
 	phy->ops.read_i2c_sff8472 = txgbe_read_i2c_sff8472;
@@ -4251,68 +3849,66 @@ s32 txgbe_init_ops_generic(struct txgbe_hw *hw)
 	phy->ops.read_i2c_eeprom = txgbe_read_i2c_eeprom;
 	phy->ops.read_i2c_sfp_phy = txgbe_read_i2c_sfp_phy;
 	phy->ops.write_i2c_eeprom = txgbe_write_i2c_eeprom;
-	phy->ops.identify_sfp = txgbe_identify_module;
-	phy->sfp_type = txgbe_sfp_type_unknown;
 	phy->ops.check_overtemp = txgbe_tn_check_overtemp;
-	phy->ops.identify = txgbe_identify_phy;
+	phy->sfp_type = txgbe_sfp_type_unknown;
 
 	/* MAC */
 	mac->ops.init_hw = txgbe_init_hw;
+	mac->ops.reset_hw = txgbe_reset_hw;
+	mac->ops.start_hw = txgbe_start_hw;
 	mac->ops.clear_hw_cntrs = txgbe_clear_hw_cntrs;
+	mac->ops.get_media_type = NULL;
 	mac->ops.get_mac_addr = txgbe_get_mac_addr;
+	mac->ops.get_wwn_prefix = txgbe_get_wwn_prefix;
 	mac->ops.stop_adapter = txgbe_stop_adapter;
 	mac->ops.get_bus_info = txgbe_get_bus_info;
 	mac->ops.set_lan_id = txgbe_set_lan_id_multi_port_pcie;
-	mac->ops.acquire_swfw_sync = txgbe_acquire_swfw_sync;
-	mac->ops.release_swfw_sync = txgbe_release_swfw_sync;
-	mac->ops.reset_hw = txgbe_reset_hw;
-	mac->ops.get_media_type = NULL;
+	mac->ops.setup_sfp = NULL;
+	mac->ops.enable_rx_dma = txgbe_enable_rx_dma;
 	mac->ops.disable_sec_rx_path = txgbe_disable_sec_rx_path;
 	mac->ops.enable_sec_rx_path = txgbe_enable_sec_rx_path;
 	mac->ops.disable_sec_tx_path = txgbe_disable_sec_tx_path;
 	mac->ops.enable_sec_tx_path = txgbe_enable_sec_tx_path;
-	mac->ops.enable_rx_dma = txgbe_enable_rx_dma;
-	mac->ops.start_hw = txgbe_start_hw;
-	mac->ops.get_san_mac_addr = txgbe_get_san_mac_addr;
-	mac->ops.set_san_mac_addr = txgbe_set_san_mac_addr;
-	mac->ops.get_device_caps = txgbe_get_device_caps;
-	mac->ops.get_wwn_prefix = txgbe_get_wwn_prefix;
-	mac->ops.setup_eee = txgbe_setup_eee;
 
-	/* LEDs */
-	mac->ops.led_on = txgbe_led_on;
-	mac->ops.led_off = txgbe_led_off;
+	/* Link */
+	mac->ops.disable_tx_laser = NULL;
+	mac->ops.enable_tx_laser = NULL;
+	mac->ops.flap_tx_laser = NULL;
+	mac->ops.setup_mac_link = NULL;
+	mac->ops.check_link = NULL;
+	mac->ops.get_link_capabilities = NULL;
+	mac->ops.set_rate_select_speed = NULL;
+
+	/* Packet Buffer manipulation */
+	mac->ops.setup_rxpba = txgbe_set_rxpba;
 
 	/* RAR, Multicast, VLAN */
 	mac->ops.set_rar = txgbe_set_rar;
 	mac->ops.clear_rar = txgbe_clear_rar;
-	mac->ops.init_rx_addrs = txgbe_init_rx_addrs;
-	mac->ops.update_uc_addr_list = txgbe_update_uc_addr_list;
-	mac->ops.update_mc_addr_list = txgbe_update_mc_addr_list;
-	mac->ops.enable_mc = txgbe_enable_mc;
-	mac->ops.disable_mc = txgbe_disable_mc;
-	mac->ops.enable_rx = txgbe_enable_rx;
-	mac->ops.disable_rx = txgbe_disable_rx;
 	mac->ops.set_vmdq_san_mac = txgbe_set_vmdq_san_mac;
-	mac->ops.insert_mac_addr = txgbe_insert_mac_addr;
-	mac->rar_highwater = 1;
-	mac->ops.set_vfta = txgbe_set_vfta;
-	mac->ops.set_vlvf = txgbe_set_vlvf;
+	mac->ops.init_rx_addrs = txgbe_init_rx_addrs;
+	mac->ops.update_mc_addr_list = txgbe_update_mc_addr_list;
 	mac->ops.clear_vfta = txgbe_clear_vfta;
+	mac->ops.set_vfta = txgbe_set_vfta;
 	mac->ops.init_uta_tables = txgbe_init_uta_tables;
-	mac->ops.set_mac_anti_spoofing = txgbe_set_mac_anti_spoofing;
 	mac->ops.set_vlan_anti_spoofing = txgbe_set_vlan_anti_spoofing;
-	mac->ops.set_ethertype_anti_spoofing =
-				txgbe_set_ethertype_anti_spoofing;
 
 	/* Flow Control */
 	mac->ops.fc_enable = txgbe_fc_enable;
 	mac->ops.setup_fc = txgbe_setup_fc;
 
+	/* Manageability interface */
+	mac->ops.get_thermal_sensor_data = txgbe_get_thermal_sensor_data;
+	mac->ops.init_thermal_sensor_thresh = txgbe_init_thermal_sensor_thresh;
+	mac->ops.get_rtrup2tc = txgbe_dcb_get_rtrup2tc;
+	mac->ops.enable_rx = txgbe_enable_rx;
+	mac->ops.disable_rx = txgbe_disable_rx;
+	mac->ops.set_ethertype_anti_spoofing = txgbe_set_ethertype_anti_spoofing;
+	mac->ops.setup_eee = txgbe_setup_eee;
+	mac->ops.dmac_config = NULL;
+
+	mac->rar_highwater = 1;
 	/* Link */
-	mac->ops.get_link_capabilities = NULL;
-	mac->ops.check_link = NULL;
-	mac->ops.setup_rxpba = txgbe_set_rxpba;
 	mac->mcft_size          = TXGBE_SP_MC_TBL_SIZE;
 	mac->vft_size           = TXGBE_SP_VFT_TBL_SIZE;
 	mac->num_rar_entries    = TXGBE_SP_RAR_ENTRIES;
@@ -4324,49 +3920,25 @@ s32 txgbe_init_ops_generic(struct txgbe_hw *hw)
 	mac->arc_subsystem_valid = (rd32(hw, TXGBE_MIS_ST) &
 				   TXGBE_MIS_ST_MNG_INIT_DN) ? true : false;
 
+	/* pf vf mbox */
 	hw->mbx.ops.init_params = txgbe_init_mbx_params_pf;
-
-	/* EEPROM */
-	eeprom->ops.init_params = txgbe_init_eeprom_params;
-	eeprom->ops.calc_checksum = txgbe_calc_eeprom_checksum;
-	eeprom->ops.read = txgbe_read_ee_hostif;
-	eeprom->ops.read_buffer = txgbe_read_ee_hostif_buffer;
-	eeprom->ops.write = txgbe_write_ee_hostif;
-	eeprom->ops.write_buffer = txgbe_write_ee_hostif_buffer;
-	eeprom->ops.update_checksum = txgbe_update_eeprom_checksum;
-	eeprom->ops.validate_checksum = txgbe_validate_eeprom_checksum;
-
-	/* FLASH */
-	flash->ops.init_params = txgbe_init_flash_params;
-	flash->ops.read_buffer = txgbe_read_flash_buffer;
-	flash->ops.write_buffer = txgbe_write_flash_buffer;
-
-	/* Manageability interface */
-	mac->ops.set_fw_drv_ver = txgbe_set_fw_drv_ver;
-
-	mac->ops.get_thermal_sensor_data =
-					 txgbe_get_thermal_sensor_data;
-	mac->ops.init_thermal_sensor_thresh =
-				      txgbe_init_thermal_sensor_thresh;
-
-	mac->ops.get_rtrup2tc = txgbe_dcb_get_rtrup2tc;
 
 	return ret_val;
 }
 
 /**
- *  txgbe_get_link_capabilities - Determines link capabilities
+ *  txgbe_get_link_capabilities_sp - Determines link capabilities
  *  @hw: pointer to hardware structure
  *  @speed: pointer to link speed
  *  @autoneg: true when autoneg or autotry is enabled
  *
  *  Determines the link capabilities by reading the AUTOC register.
  **/
-s32 txgbe_get_link_capabilities_sp(struct txgbe_hw *hw,
+int txgbe_get_link_capabilities_sp(struct txgbe_hw *hw,
 				   u32 *speed,
 				      bool *autoneg)
 {
-	s32 status = 0;
+	int status = 0;
 	u32 sr_pcs_ctl, sr_pma_mmd_ctl1, sr_an_mmd_ctl;
 	u32 sr_an_mmd_adv_reg2;
 
@@ -4559,13 +4131,13 @@ void txgbe_disable_tx_laser_multispeed_fiber(struct txgbe_hw *hw)
 	if (txgbe_close_notify(hw)) {
 		/* over write led when ifconfig down */
 		if (hw->mac.type == txgbe_mac_aml40)
-			hw->mac.ops.led_off(hw, TXGBE_LED_LINK_UP | TXGBE_AMLITE_LED_LINK_40G |
+			txgbe_led_off(hw, TXGBE_LED_LINK_UP | TXGBE_AMLITE_LED_LINK_40G |
 					TXGBE_AMLITE_LED_LINK_ACTIVE);
 		else if (hw->mac.type == txgbe_mac_aml)
-			hw->mac.ops.led_off(hw, TXGBE_LED_LINK_UP | TXGBE_AMLITE_LED_LINK_25G |
+			txgbe_led_off(hw, TXGBE_LED_LINK_UP | TXGBE_AMLITE_LED_LINK_25G |
 					TXGBE_AMLITE_LED_LINK_10G | TXGBE_AMLITE_LED_LINK_ACTIVE);
 		else
-			hw->mac.ops.led_off(hw, TXGBE_LED_LINK_UP |
+			txgbe_led_off(hw, TXGBE_LED_LINK_UP |
 							TXGBE_LED_LINK_10G | TXGBE_LED_LINK_1G |
 							TXGBE_LED_LINK_ACTIVE);
 	}
@@ -4677,7 +4249,7 @@ void txgbe_set_hard_rate_select_speed(struct txgbe_hw *hw,
 	TXGBE_WRITE_FLUSH(hw);
 }
 
-s32 txgbe_set_sgmii_an37_ability(struct txgbe_hw *hw)
+int txgbe_set_sgmii_an37_ability(struct txgbe_hw *hw)
 {
 	u32 value;
 	struct txgbe_adapter *adapter = hw->back;
@@ -4727,10 +4299,10 @@ int txgbe_enable_rx_adapter(struct txgbe_hw *hw)
 	return 0;
 }
 
-s32 txgbe_set_link_to_kr(struct txgbe_hw *hw, bool autoneg)
+int txgbe_set_link_to_kr(struct txgbe_hw *hw, bool autoneg)
 {
 	u32 i;
-	s32 status = 0;
+	int status = 0;
 	u32 value = 0;
 	struct txgbe_adapter *adapter = hw->back;
 
@@ -4819,10 +4391,10 @@ out:
 	return status;
 }
 
-s32 txgbe_set_link_to_kx4(struct txgbe_hw *hw, bool autoneg)
+int txgbe_set_link_to_kx4(struct txgbe_hw *hw, bool autoneg)
 {
 	u32 i;
-	s32 status = 0;
+	int status = 0;
 	u32 value;
 	struct txgbe_adapter *adapter = hw->back;
 
@@ -5032,12 +4604,12 @@ out:
 	return status;
 }
 
-s32 txgbe_set_link_to_kx(struct txgbe_hw *hw,
+int txgbe_set_link_to_kx(struct txgbe_hw *hw,
 			 u32 speed,
 			       bool autoneg)
 {
 	u32 i;
-	s32 status = 0;
+	int status = 0;
 	u32 wdata = 0;
 	u32 value;
 	struct txgbe_adapter *adapter = hw->back;
@@ -5251,11 +4823,11 @@ out:
 	return status;
 }
 
-static s32 txgbe_set_link_to_sfi(struct txgbe_hw *hw,
+static int txgbe_set_link_to_sfi(struct txgbe_hw *hw,
 				 u32 speed)
 {
 	u32 i;
-	s32 status = 0;
+	int status = 0;
 	u32 value = 0;
 	struct txgbe_adapter *adapter = hw->back;
 
@@ -5531,19 +5103,19 @@ out:
 }
 
 /**
- *  txgbe_setup_mac_link - Set MAC link speed
+ *  txgbe_setup_mac_link_sp - Set MAC link speed
  *  @hw: pointer to hardware structure
  *  @speed: new link speed
  *  @autoneg_wait_to_complete: true when waiting for completion is needed
  *
  *  Set the link speed in the AUTOC register and restarts link.
  **/
-s32 txgbe_setup_mac_link_sp(struct txgbe_hw *hw,
+int txgbe_setup_mac_link_sp(struct txgbe_hw *hw,
 			    u32 speed,
 			       bool autoneg_wait_to_complete)
 {
 	bool autoneg = false;
-	s32 status = 0;
+	int status = 0;
 	u32 link_capabilities = TXGBE_LINK_SPEED_UNKNOWN;
 	struct txgbe_adapter *adapter = hw->back;
 	u32 link_speed = TXGBE_LINK_SPEED_UNKNOWN;
@@ -5625,11 +5197,11 @@ out:
  *
  *  Restarts link on PHY and MAC based on settings passed in.
  **/
-static s32 txgbe_setup_copper_link(struct txgbe_hw *hw,
+static int txgbe_setup_copper_link(struct txgbe_hw *hw,
 				   u32 speed,
 					 bool autoneg_wait_to_complete)
 {
-	s32 status;
+	int status;
 	u32 link_speed;
 
 	/* Setup the PHY according to input speed */
@@ -5753,7 +5325,7 @@ static int txgbe_reset_misc(struct txgbe_hw *hw)
  *  and clears all interrupts, perform a PHY reset, and perform a link (MAC)
  *  reset.
  **/
-s32 txgbe_reset_hw(struct txgbe_hw *hw)
+int txgbe_reset_hw(struct txgbe_hw *hw)
 {
 	u32 sr_pcs_ctl, sr_pma_mmd_ctl1, sr_an_mmd_ctl, sr_an_mmd_adv_reg2;
 	u32 curr_sr_an_mmd_ctl = 0, curr_sr_an_mmd_adv_reg2 = 0;
@@ -5764,7 +5336,7 @@ s32 txgbe_reset_hw(struct txgbe_hw *hw)
 	u32 reset_status = 0;
 	u32 rst_delay = 0;
 	u32 reset = 0;
-	s32 status;
+	int status;
 	u32 value;
 	u32 i;
 
@@ -5960,9 +5532,6 @@ s32 txgbe_reset_hw(struct txgbe_hw *hw)
 	hw->mac.num_rar_entries = 128;
 	hw->mac.ops.init_rx_addrs(hw);
 
-	/* Store the permanent SAN mac address */
-	hw->mac.ops.get_san_mac_addr(hw, hw->mac.san_addr);
-
 	/* Add the SAN MAC address to the RAR only if it's a valid address */
 	if (txgbe_validate_mac_addr(hw->mac.san_addr) == 0) {
 		hw->mac.ops.set_rar(hw, hw->mac.num_rar_entries - 1,
@@ -5990,7 +5559,7 @@ reset_hw_out:
  * @hw: pointer to hardware structure
  * @fdircmd: current value of FDIRCMD register
  */
-static s32 txgbe_fdir_check_cmd_complete(struct txgbe_hw *hw, u32 *fdircmd)
+static int txgbe_fdir_check_cmd_complete(struct txgbe_hw *hw, u32 *fdircmd)
 {
 	int i;
 
@@ -6008,9 +5577,9 @@ static s32 txgbe_fdir_check_cmd_complete(struct txgbe_hw *hw, u32 *fdircmd)
  *  txgbe_reinit_fdir_tables - Reinitialize Flow Director tables.
  *  @hw: pointer to hardware structure
  **/
-s32 txgbe_reinit_fdir_tables(struct txgbe_hw *hw)
+int txgbe_reinit_fdir_tables(struct txgbe_hw *hw)
 {
-	s32 err;
+	int err;
 	int i;
 	u32 fdirctrl = rd32(hw, TXGBE_RDB_FDIR_CTL);
 	u32 fdircmd;
@@ -6109,7 +5678,7 @@ static void txgbe_fdir_enable(struct txgbe_hw *hw, u32 fdirctrl)
  *  @fdirctrl: value to write to flow director control register, initially
  *           contains just the value of the Rx packet buffer allocation
  **/
-s32 txgbe_init_fdir_signature(struct txgbe_hw *hw, u32 fdirctrl)
+int txgbe_init_fdir_signature(struct txgbe_hw *hw, u32 fdirctrl)
 {
 	struct txgbe_adapter *adapter = (struct txgbe_adapter *)hw->back;
 
@@ -6152,7 +5721,7 @@ s32 txgbe_init_fdir_signature(struct txgbe_hw *hw, u32 fdirctrl)
  *           contains just the value of the Rx packet buffer allocation
  *  @cloud_mode: true - cloud mode, false - other mode
  **/
-s32 txgbe_init_fdir_perfect(struct txgbe_hw *hw, u32 fdirctrl,
+int txgbe_init_fdir_perfect(struct txgbe_hw *hw, u32 fdirctrl,
 			    bool cloud_mode)
 {
 	/* Continue setup of fdirctrl register bits:
@@ -6209,7 +5778,8 @@ do { \
 
 /**
  *  txgbe_atr_compute_sig_hash - Compute the signature hash
- *  @stream: input bitstream to compute the hash on
+ *  @input: unique input dword
+ *  @common: compressed common input dword
  *
  *  This function is almost identical to the function above but contains
  *  several optimizations such as unwinding all of the loops, letting the
@@ -6273,13 +5843,13 @@ u32 txgbe_atr_compute_sig_hash(union txgbe_atr_hash_dword input,
 }
 
 /**
- *  txgbe_atr_add_signature_filter - Adds a signature hash filter
+ *  txgbe_fdir_add_signature_filter - Adds a signature hash filter
  *  @hw: pointer to hardware structure
  *  @input: unique input dword
  *  @common: compressed common input dword
  *  @queue: queue index to direct traffic to
  **/
-s32 txgbe_fdir_add_signature_filter(struct txgbe_hw *hw,
+int txgbe_fdir_add_signature_filter(struct txgbe_hw *hw,
 				    union txgbe_atr_hash_dword input,
 					  union txgbe_atr_hash_dword common,
 					  u8 queue)
@@ -6287,7 +5857,7 @@ s32 txgbe_fdir_add_signature_filter(struct txgbe_hw *hw,
 	u32 fdirhashcmd = 0;
 	u8 flow_type;
 	u32 fdircmd;
-	s32 err;
+	int err;
 
 	/* Get the flow_type in order to program FDIRCMD properly
 	 * lowest 2 bits are FDIRCMD.L4TYPE, third lowest bit is FDIRCMD.IPV6
@@ -6337,7 +5907,7 @@ do { \
 
 /**
  *  txgbe_atr_compute_perfect_hash - Compute the perfect filter hash
- *  @atr_input: input bitstream to compute the hash on
+ *  @input: input bitstream to compute the hash on
  *  @input_mask: mask for the input bitstream
  *
  *  This function serves two main purposes.  First it applies the input_mask
@@ -6426,7 +5996,7 @@ static u32 txgbe_get_fdirtcpm(union txgbe_atr_input *input_mask)
 #define TXGBE_STORE_AS_BE16(_value) \
 	TXGBE_NTOHS(((u16)(_value) >> 8) | ((u16)(_value) << 8))
 
-s32 txgbe_fdir_set_input_mask(struct txgbe_hw *hw,
+int txgbe_fdir_set_input_mask(struct txgbe_hw *hw,
 			      union txgbe_atr_input *input_mask,
 				       bool cloud_mode)
 {
@@ -6518,13 +6088,13 @@ s32 txgbe_fdir_set_input_mask(struct txgbe_hw *hw,
 	return 0;
 }
 
-s32 txgbe_fdir_write_perfect_filter(struct txgbe_hw *hw,
+int txgbe_fdir_write_perfect_filter(struct txgbe_hw *hw,
 				    union txgbe_atr_input *input,
 					     u16 soft_id, u8 queue,
 					     bool cloud_mode)
 {
 	u32 fdirport, fdirvlan, fdirhash, fdircmd;
-	s32 err;
+	int err;
 
 	if (!cloud_mode) {
 		/* currently IPv6 is not supported, must be programmed with 0 */
@@ -6590,13 +6160,13 @@ s32 txgbe_fdir_write_perfect_filter(struct txgbe_hw *hw,
 	return 0;
 }
 
-s32 txgbe_fdir_erase_perfect_filter(struct txgbe_hw *hw,
+int txgbe_fdir_erase_perfect_filter(struct txgbe_hw *hw,
 				    union txgbe_atr_input *input,
 					  u16 soft_id)
 {
 	u32 fdirhash;
 	u32 fdircmd;
-	s32 err;
+	int err;
 
 	/* configure FDIRHASH register */
 	fdirhash = input->formatted.bkt_hash;
@@ -6633,7 +6203,7 @@ s32 txgbe_fdir_erase_perfect_filter(struct txgbe_hw *hw,
  *  and the generation start_hw function.
  *  Then performs revision-specific operations, if any.
  **/
-s32 txgbe_start_hw(struct txgbe_hw *hw)
+int txgbe_start_hw(struct txgbe_hw *hw)
 {
 	int ret_val = 0;
 	u32 i;
@@ -6679,10 +6249,10 @@ s32 txgbe_start_hw(struct txgbe_hw *hw)
  *  If PHY already detected, maintains current PHY type in hw struct,
  *  otherwise executes the PHY detection routine.
  **/
-s32 txgbe_identify_phy(struct txgbe_hw *hw)
+int txgbe_identify_phy(struct txgbe_hw *hw)
 {
 	/* Detect PHY if not unknown - returns success if already detected. */
-	s32 status = TXGBE_ERR_PHY_ADDR_INVALID;
+	int status = TXGBE_ERR_PHY_ADDR_INVALID;
 	enum txgbe_media_type media_type;
 
 	/* avoid fw access phy */
@@ -6770,7 +6340,7 @@ int txgbe_set_pps(struct txgbe_hw *hw, bool enable, u64 nsec, u64 cycles)
  *
  *  Enables the Rx DMA unit for sapphire/amber-lite
  **/
-s32 txgbe_enable_rx_dma(struct txgbe_hw *hw, u32 regval)
+int txgbe_enable_rx_dma(struct txgbe_hw *hw, u32 regval)
 {
 	hw->mac.ops.disable_sec_rx_path(hw);
 
@@ -6784,25 +6354,6 @@ s32 txgbe_enable_rx_dma(struct txgbe_hw *hw, u32 regval)
 	return 0;
 }
 
-/**
- *  txgbe_init_flash_params - Initialize flash params
- *  @hw: pointer to hardware structure
- *
- *  Initializes the EEPROM parameters txgbe_eeprom_info within the
- *  txgbe_hw struct in order to set up EEPROM access.
- **/
-s32 txgbe_init_flash_params(struct txgbe_hw *hw)
-{
-	struct txgbe_flash_info *flash = &hw->flash;
-	u32 eec;
-
-	eec = 0x1000000;
-	flash->semaphore_delay = 10;
-	flash->dword_size = (eec >> 2);
-	flash->address_bits = 24;
-
-	return 0;
-}
 
 /**
  *  txgbe_read_flash_buffer - Read FLASH dword(s) using
@@ -6815,13 +6366,13 @@ s32 txgbe_init_flash_params(struct txgbe_hw *hw)
  *
  *  Retrieves 32 bit dword(s) read from EEPROM
  **/
-s32 txgbe_read_flash_buffer(struct txgbe_hw *hw, u32 offset,
+int txgbe_read_flash_buffer(struct txgbe_hw *hw, u32 offset,
 			    u32 dwords, u32 *data)
 {
-	s32 status = 0;
+	int status = 0;
 	u32 i;
 
-	hw->eeprom.ops.init_params(hw);
+	txgbe_init_eeprom_params(hw);
 
 	if (!dwords || offset + dwords >= hw->flash.dword_size) {
 		status = TXGBE_ERR_INVALID_ARGUMENT;
@@ -6855,13 +6406,13 @@ s32 txgbe_read_flash_buffer(struct txgbe_hw *hw, u32 offset,
  *  @data: dword(s) write from to EEPROM
  *
  **/
-s32 txgbe_write_flash_buffer(struct txgbe_hw *hw, u32 offset,
+int txgbe_write_flash_buffer(struct txgbe_hw *hw, u32 offset,
 			     u32 dwords, u32 *data)
 {
-	s32 status = 0;
+	int status = 0;
 	u32 i;
 
-	hw->eeprom.ops.init_params(hw);
+	txgbe_init_eeprom_params(hw);
 
 	if (!dwords || offset + dwords >= hw->flash.dword_size) {
 		status = TXGBE_ERR_INVALID_ARGUMENT;
@@ -6893,11 +6444,11 @@ s32 txgbe_write_flash_buffer(struct txgbe_hw *hw, u32 offset,
  *  Initializes the EEPROM parameters txgbe_eeprom_info within the
  *  txgbe_hw struct in order to set up EEPROM access.
  **/
-s32 txgbe_init_eeprom_params(struct txgbe_hw *hw)
+int txgbe_init_eeprom_params(struct txgbe_hw *hw)
 {
 	struct txgbe_eeprom_info *eeprom = &hw->eeprom;
 	u16 eeprom_size;
-	s32 status = 0;
+	int status = 0;
 	u16 data;
 
 	if (eeprom->type == txgbe_eeprom_uninitialized) {
@@ -6913,7 +6464,7 @@ s32 txgbe_init_eeprom_params(struct txgbe_hw *hw)
 		}
 	}
 
-	status = hw->eeprom.ops.read(hw, TXGBE_SW_REGION_PTR,
+	status = txgbe_read_ee_hostif(hw, TXGBE_SW_REGION_PTR,
 			&data);
 	if (status)
 		return status;
@@ -6924,7 +6475,7 @@ s32 txgbe_init_eeprom_params(struct txgbe_hw *hw)
 }
 
 /**
- *  txgbe_read_ee_hostif - Read EEPROM word using a host interface cmd
+ *  txgbe_read_ee_hostif_data - Read EEPROM word using a host interface cmd
  *  assuming that the semaphore is already obtained.
  *  @hw: pointer to hardware structure
  *  @offset: offset of  word in the EEPROM to read
@@ -6932,10 +6483,10 @@ s32 txgbe_init_eeprom_params(struct txgbe_hw *hw)
  *
  *  Reads a 16 bit word from the EEPROM using the hostif.
  **/
-static s32 txgbe_read_ee_hostif_data(struct txgbe_hw *hw, u16 offset,
+static int txgbe_read_ee_hostif_data(struct txgbe_hw *hw, u16 offset,
 				     u16 *data)
 {
-	s32 status;
+	int status;
 	struct txgbe_hic_read_shadow_ram buffer;
 
 	buffer.hdr.req.cmd = FW_READ_SHADOW_RAM_CMD;
@@ -6980,15 +6531,15 @@ static s32 txgbe_read_ee_hostif_data(struct txgbe_hw *hw, u16 offset,
  *
  *  Reads a 16 bit word from the EEPROM using the hostif.
  **/
-s32 txgbe_read_ee_hostif(struct txgbe_hw *hw, u16 offset,
+int txgbe_read_ee_hostif(struct txgbe_hw *hw, u16 offset,
 			 u16 *data)
 {
-	s32 status = 0;
+	int status = 0;
 
-	if (hw->mac.ops.acquire_swfw_sync(hw,
+	if (txgbe_acquire_swfw_sync(hw,
 					  TXGBE_MNG_SWFW_SYNC_SW_FLASH) == 0) {
 		status = txgbe_read_ee_hostif_data(hw, offset, data);
-		hw->mac.ops.release_swfw_sync(hw,
+		txgbe_release_swfw_sync(hw,
 			TXGBE_MNG_SWFW_SYNC_SW_FLASH);
 	} else {
 		status = TXGBE_ERR_SWFW_SYNC;
@@ -7006,19 +6557,19 @@ s32 txgbe_read_ee_hostif(struct txgbe_hw *hw, u16 offset,
  *
  *  Reads a 16 bit word(s) from the EEPROM using the hostif.
  **/
-s32 txgbe_read_ee_hostif_buffer(struct txgbe_hw *hw,
+int txgbe_read_ee_hostif_buffer(struct txgbe_hw *hw,
 				u16 offset, u16 words, u16 *data)
 {
 	struct txgbe_hic_read_shadow_ram buffer;
 	u32 current_word = 0;
 	u16 words_to_read;
-	s32 status;
+	int status;
 	u32 reg;
 	u32 i;
 	u32 value = 0;
 
 	/* Take semaphore for the entire operation. */
-	status = hw->mac.ops.acquire_swfw_sync(hw,
+	status = txgbe_acquire_swfw_sync(hw,
 			TXGBE_MNG_SWFW_SYNC_SW_FLASH);
 	if (status)
 		return status;
@@ -7073,23 +6624,23 @@ s32 txgbe_read_ee_hostif_buffer(struct txgbe_hw *hw,
 	}
 
 out:
-	hw->mac.ops.release_swfw_sync(hw,
+	txgbe_release_swfw_sync(hw,
 		TXGBE_MNG_SWFW_SYNC_SW_FLASH);
 	return status;
 }
 
 /**
- *  txgbe_write_ee_hostif - Write EEPROM word using hostif
+ *  txgbe_write_ee_hostif_data - Write EEPROM word using hostif
  *  @hw: pointer to hardware structure
  *  @offset: offset of  word in the EEPROM to write
  *  @data: word write to the EEPROM
  *
  *  Write a 16 bit word to the EEPROM using the hostif.
  **/
-static s32 txgbe_write_ee_hostif_data(struct txgbe_hw *hw, u16 offset,
+static int txgbe_write_ee_hostif_data(struct txgbe_hw *hw, u16 offset,
 				      u16 data)
 {
-	s32 status;
+	int status;
 	struct txgbe_hic_write_shadow_ram buffer;
 
 	buffer.hdr.req.cmd = FW_WRITE_SHADOW_RAM_CMD;
@@ -7110,10 +6661,10 @@ static s32 txgbe_write_ee_hostif_data(struct txgbe_hw *hw, u16 offset,
 	return status;
 }
 
-s32 txgbe_close_notify(struct txgbe_hw *hw)
+int txgbe_close_notify(struct txgbe_hw *hw)
 {
 	int tmp;
-	s32 status;
+	int status;
 	struct txgbe_hic_write_shadow_ram buffer;
 
 	buffer.hdr.req.cmd = FW_DW_CLOSE_NOTIFY;
@@ -7147,10 +6698,10 @@ s32 txgbe_close_notify(struct txgbe_hw *hw)
 	return status;
 }
 
-s32 txgbe_open_notify(struct txgbe_hw *hw)
+int txgbe_open_notify(struct txgbe_hw *hw)
 {
 	int tmp;
-	s32 status;
+	int status;
 	struct txgbe_hic_write_shadow_ram buffer;
 
 	buffer.hdr.req.cmd = FW_DW_OPEN_NOTIFY;
@@ -7192,15 +6743,15 @@ s32 txgbe_open_notify(struct txgbe_hw *hw)
  *
  *  Write a 16 bit word to the EEPROM using the hostif.
  **/
-s32 txgbe_write_ee_hostif(struct txgbe_hw *hw, u16 offset,
+int txgbe_write_ee_hostif(struct txgbe_hw *hw, u16 offset,
 			  u16 data)
 {
-	s32 status = 0;
+	int status = 0;
 
-	if (hw->mac.ops.acquire_swfw_sync(hw,
+	if (txgbe_acquire_swfw_sync(hw,
 					  TXGBE_MNG_SWFW_SYNC_SW_FLASH) == 0) {
 		status = txgbe_write_ee_hostif_data(hw, offset, data);
-		hw->mac.ops.release_swfw_sync(hw,
+		txgbe_release_swfw_sync(hw,
 			TXGBE_MNG_SWFW_SYNC_SW_FLASH);
 	} else {
 		status = TXGBE_ERR_SWFW_SYNC;
@@ -7218,14 +6769,14 @@ s32 txgbe_write_ee_hostif(struct txgbe_hw *hw, u16 offset,
  *
  *  Write a 16 bit word(s) to the EEPROM using the hostif.
  **/
-s32 txgbe_write_ee_hostif_buffer(struct txgbe_hw *hw,
+int txgbe_write_ee_hostif_buffer(struct txgbe_hw *hw,
 				 u16 offset, u16 words, u16 *data)
 {
-	s32 status = 0;
+	int status = 0;
 	u16 i = 0;
 
 	/* Take semaphore for the entire operation. */
-	status = hw->mac.ops.acquire_swfw_sync(hw,
+	status = txgbe_acquire_swfw_sync(hw,
 		       TXGBE_MNG_SWFW_SYNC_SW_FLASH);
 	if (status != 0)
 		goto out;
@@ -7237,7 +6788,7 @@ s32 txgbe_write_ee_hostif_buffer(struct txgbe_hw *hw,
 			break;
 	}
 
-	hw->mac.ops.release_swfw_sync(hw, TXGBE_MNG_SWFW_SYNC_SW_FLASH);
+	txgbe_release_swfw_sync(hw, TXGBE_MNG_SWFW_SYNC_SW_FLASH);
 out:
 
 	return status;
@@ -7249,18 +6800,18 @@ out:
  *
  *  Returns a negative error code on error, or the 16-bit checksum
  **/
-s32 txgbe_calc_eeprom_checksum(struct txgbe_hw *hw)
+int txgbe_calc_eeprom_checksum(struct txgbe_hw *hw)
 {
 	u16 *buffer = NULL;
 	u32 buffer_size = 0;
 
 	u16 *eeprom_ptrs = NULL;
 	u16 *local_buffer;
-	s32 status;
+	int status;
 	u16 checksum = 0;
 	u16 i;
 
-	hw->eeprom.ops.init_params(hw);
+	txgbe_init_eeprom_params(hw);
 
 	if (!buffer) {
 		eeprom_ptrs = vmalloc(TXGBE_EEPROM_LAST_WORD * sizeof(u16));
@@ -7292,7 +6843,7 @@ s32 txgbe_calc_eeprom_checksum(struct txgbe_hw *hw)
 	if (eeprom_ptrs)
 		vfree(eeprom_ptrs);
 
-	return (s32)checksum;
+	return (int)checksum;
 }
 
 /**
@@ -7303,9 +6854,9 @@ s32 txgbe_calc_eeprom_checksum(struct txgbe_hw *hw)
  * checksum and updates the EEPROM and instructs the hardware to update
  * the flash.
  **/
-s32 txgbe_update_eeprom_checksum(struct txgbe_hw *hw)
+int txgbe_update_eeprom_checksum(struct txgbe_hw *hw)
 {
-	s32 status;
+	int status;
 	u16 checksum = 0;
 
 	/* Read the first word from the EEPROM. If this times out or fails, do
@@ -7336,10 +6887,10 @@ s32 txgbe_update_eeprom_checksum(struct txgbe_hw *hw)
  *  Performs checksum calculation and validates the EEPROM checksum.  If the
  *  caller does not need checksum_val, the value can be NULL.
  **/
-s32 txgbe_validate_eeprom_checksum(struct txgbe_hw *hw,
+int txgbe_validate_eeprom_checksum(struct txgbe_hw *hw,
 				   u16 *checksum_val)
 {
-	s32 status;
+	int status;
 	u16 checksum;
 	u16 read_checksum = 0;
 
@@ -7347,11 +6898,11 @@ s32 txgbe_validate_eeprom_checksum(struct txgbe_hw *hw,
 	 * not continue or we could be in for a very long wait while every
 	 * EEPROM read fails
 	 */
-	status = hw->eeprom.ops.read(hw, 0, &checksum);
+	status = txgbe_read_ee_hostif(hw, 0, &checksum);
 	if (status)
 		return status;
 
-	status = hw->eeprom.ops.calc_checksum(hw);
+	status = txgbe_calc_eeprom_checksum(hw);
 	if (status < 0)
 		return status;
 
@@ -7385,9 +6936,9 @@ s32 txgbe_validate_eeprom_checksum(struct txgbe_hw *hw,
  *
  *  Issue a shadow RAM dump to FW to copy EEPROM from shadow RAM to the flash.
  **/
-s32 txgbe_update_flash(struct txgbe_hw *hw)
+int txgbe_update_flash(struct txgbe_hw *hw)
 {
-	s32 status = 0;
+	int status = 0;
 	union txgbe_hic_hdr2 buffer;
 
 	buffer.req.cmd = FW_SHADOW_RAM_DUMP_CMD;
@@ -7405,7 +6956,7 @@ s32 txgbe_update_flash(struct txgbe_hw *hw)
 }
 
 /**
- *  txgbe_check_mac_link - Determine link and speed status
+ *  txgbe_check_mac_link_sp - Determine link and speed status
  *  @hw: pointer to hardware structure
  *  @speed: pointer to link speed
  *  @link_up: true when link is up
@@ -7413,7 +6964,7 @@ s32 txgbe_update_flash(struct txgbe_hw *hw)
  *
  *  Reads the links register to determine if link is up and the current speed
  **/
-s32 txgbe_check_mac_link_sp(struct txgbe_hw *hw, u32 *speed,
+int txgbe_check_mac_link_sp(struct txgbe_hw *hw, u32 *speed,
 			    bool *link_up, bool link_up_wait_to_complete)
 {
 	struct txgbe_adapter *adapter = hw->back;
@@ -7483,7 +7034,7 @@ s32 txgbe_check_mac_link_sp(struct txgbe_hw *hw, u32 *speed,
 			wr32(hw, TXGBE_CFG_LED_CTL, 0);
 		else
 			/* over write led when link down */
-			hw->mac.ops.led_off(hw, TXGBE_LED_LINK_UP | TXGBE_LED_LINK_10G |
+			txgbe_led_off(hw, TXGBE_LED_LINK_UP | TXGBE_LED_LINK_10G |
 							 TXGBE_LED_LINK_1G | TXGBE_LED_LINK_ACTIVE);
 	}
 
@@ -7535,12 +7086,12 @@ s32 txgbe_check_mac_link_sp(struct txgbe_hw *hw, u32 *speed,
  *  are modified.
  *
  **/
-s32 txgbe_setup_eee(struct txgbe_hw *hw, bool enable_eee)
+int txgbe_setup_eee(struct txgbe_hw *hw, bool enable_eee)
 {
 	return 0;
 }
 
-s32 txgbe_hic_write_lldp(struct txgbe_hw *hw, u32 open)
+int txgbe_hic_write_lldp(struct txgbe_hw *hw, u32 open)
 {
 	int status;
 	struct txgbe_adapter *adapter = hw->back;
@@ -7562,8 +7113,8 @@ s32 txgbe_hic_write_lldp(struct txgbe_hw *hw, u32 open)
 
 static int txgbe_hic_get_lldp(struct txgbe_hw *hw)
 {
-	int status;
 	struct txgbe_hic_write_lldp buffer;
+	int status;
 
 	buffer.hdr.cmd = 0xf2;
 	buffer.hdr.buf_len = 0x1;
@@ -7575,17 +7126,19 @@ static int txgbe_hic_get_lldp(struct txgbe_hw *hw)
 	buffer.func = hw->bus.lan_id;
 	status = txgbe_host_interface_command(hw, (u32 *)&buffer,
 					      sizeof(buffer), 5000, true);
+	if (status)
+		return status;
 	if (buffer.hdr.cmd_or_resp.ret_status != FW_CEM_RESP_STATUS_SUCCESS)
-		return -1;
-	else
-		return (int)buffer.func;
+		return -EBUSY;
+
+	return (int)buffer.func;
 }
 
 int txgbe_is_lldp(struct txgbe_hw *hw)
 {
 	u32 tmp = 0, lldp_flash_data = 0, i = 0;
 	struct txgbe_adapter *adapter = hw->back;
-	s32 status = 0;
+	int status = 0;
 
 	status = txgbe_hic_get_lldp(hw);
 	if (status != -1) {
@@ -7695,18 +7248,15 @@ void txgbe_set_queue_rate_limit(struct txgbe_hw *hw, int queue, u16 max_tx_rate)
 
 int txgbe_hic_notify_led_active(struct txgbe_hw *hw, int active_flag)
 {
-	int status;
-	struct txgbe_led_active_set buffer;
+	struct txgbe_led_active_set buffer = {0};
 
 	buffer.hdr.cmd = 0xf8;
 	buffer.hdr.buf_len = 0x1;
 	buffer.hdr.cmd_or_resp.cmd_resv = FW_CEM_CMD_RESERVED;
 	buffer.active_flag = active_flag;
 
-	status = txgbe_host_interface_command(hw, (u32 *)&buffer,
-					      sizeof(buffer), 5000, true);
-
-	return 0;
+	return txgbe_host_interface_command(hw, (u32 *)&buffer,
+					    sizeof(buffer), 5000, true);
 }
 
 bool txgbe_is_backplane(struct txgbe_hw *hw)

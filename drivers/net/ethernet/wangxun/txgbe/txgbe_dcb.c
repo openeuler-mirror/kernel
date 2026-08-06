@@ -5,7 +5,7 @@
 #include "txgbe_dcb.h"
 #include "txgbe.h"
 
-s32 txgbe_dcb_calculate_tc_credits(u8 *bw, u16 *refill, u16 *max,
+int txgbe_dcb_calculate_tc_credits(u8 *bw, u16 *refill, u16 *max,
 				   int max_frame_size)
 {
 	int min_percent = 100;
@@ -38,21 +38,23 @@ s32 txgbe_dcb_calculate_tc_credits(u8 *bw, u16 *refill, u16 *max,
 
 /**
  * txgbe_dcb_calculate_tc_credits_cee - Calculates traffic class credits
- * @txgbe_dcb_config: Struct containing DCB settings.
+ * @hw: pointer to the hardware structure.
+ * @dcb_config: Struct containing DCB settings.
+ * @max_frame_size: Maximum frame size for the device.
  * @direction: Configuring either Tx or Rx.
  *
  * This function calculates the credits allocated to each traffic class.
  * It should be called only after the rules are checked by
  * txgbe_dcb_check_config_cee().
  */
-s32 txgbe_dcb_calculate_tc_credits_cee(struct txgbe_hw __always_unused *hw,
+int txgbe_dcb_calculate_tc_credits_cee(struct txgbe_hw __always_unused *hw,
 				       struct txgbe_dcb_config *dcb_config,
 				   u32 max_frame_size, u8 direction)
 {
 	struct txgbe_dcb_tc_path *p;
 	u32 min_multiplier      = 0;
 	u16 min_percent         = 100;
-	s32 ret_val =           0;
+	int ret_val =           0;
 	/* Initialization values default for Tx settings */
 	u32 min_credit          = 0;
 	u32 credit_refill       = 0;
@@ -240,11 +242,12 @@ void txgbe_dcb_unpack_map_cee(struct txgbe_dcb_config *cfg, int direction,
 /**
  * txgbe_dcb_config_tc_stats - Config traffic class statistics
  * @hw: pointer to hardware structure
+ * @dcb_config: pointer to txgbe_dcb_config structure
  *
  * Configure queue statistics registers, all queues belonging to same traffic
  * class uses a single set of queue statistics counters.
  */
-s32 txgbe_dcb_config_tc_stats(struct txgbe_hw __always_unused *hw,
+int txgbe_dcb_config_tc_stats(struct txgbe_hw __always_unused *hw,
 			      struct txgbe_dcb_config __always_unused *dcb_config)
 {
 	return 0;
@@ -257,10 +260,10 @@ s32 txgbe_dcb_config_tc_stats(struct txgbe_hw __always_unused *hw,
  *
  * Configure dcb settings and enable dcb mode.
  */
-s32 txgbe_dcb_hw_config_cee(struct txgbe_hw *hw,
+int txgbe_dcb_hw_config_cee(struct txgbe_hw *hw,
 			    struct txgbe_dcb_config *dcb_config)
 {
-	s32 ret = TXGBE_NOT_IMPLEMENTED;
+	int ret = TXGBE_NOT_IMPLEMENTED;
 	u8 pfc_en;
 	u8 tsa[TXGBE_DCB_MAX_TRAFFIC_CLASS];
 	u8 bwgid[TXGBE_DCB_MAX_TRAFFIC_CLASS];
@@ -291,7 +294,7 @@ s32 txgbe_dcb_hw_config_cee(struct txgbe_hw *hw,
 }
 
 /* Helper routines to abstract HW specifics from DCB netlink ops */
-s32 txgbe_dcb_config_pfc(struct txgbe_hw *hw, u8 pfc_en, u8 *map)
+int txgbe_dcb_config_pfc(struct txgbe_hw *hw, u8 pfc_en, u8 *map)
 {
 	int ret = TXGBE_ERR_PARAM;
 
@@ -364,7 +367,7 @@ s32 txgbe_dcb_config_pfc(struct txgbe_hw *hw, u8 pfc_en, u8 *map)
 	return ret;
 }
 
-s32 txgbe_dcb_hw_config(struct txgbe_hw *hw, u16 *refill, u16 *max,
+int txgbe_dcb_hw_config(struct txgbe_hw *hw, u16 *refill, u16 *max,
 			u8 *bwg_id, u8 *tsa, u8 *map)
 {
 	txgbe_dcb_config_rx_arbiter(hw, refill, max, bwg_id,
@@ -380,11 +383,15 @@ s32 txgbe_dcb_hw_config(struct txgbe_hw *hw, u16 *refill, u16 *max,
 /**
  * txgbe_dcb_config_rx_arbiter - Config Rx Data arbiter
  * @hw: pointer to hardware structure
- * @dcb_config: pointer to txgbe_dcb_config structure
+ * @refill: refill credits for each traffic class
+ * @max: maximum credits for each traffic class
+ * @bwg_id: bandwidth group id for each traffic class
+ * @tsa: traffic scheduling algorithm for each traffic class
+ * @map: user priority to traffic class map
  *
  * Configure Rx Packet Arbiter and credits for each traffic class.
  */
-s32 txgbe_dcb_config_rx_arbiter(struct txgbe_hw *hw, u16 *refill,
+int txgbe_dcb_config_rx_arbiter(struct txgbe_hw *hw, u16 *refill,
 				u16 *max, u8 *bwg_id, u8 *tsa,
 				      u8 *map)
 {
@@ -438,11 +445,14 @@ s32 txgbe_dcb_config_rx_arbiter(struct txgbe_hw *hw, u16 *refill,
 /**
  * txgbe_dcb_config_tx_desc_arbiter - Config Tx Desc. arbiter
  * @hw: pointer to hardware structure
- * @dcb_config: pointer to txgbe_dcb_config structure
+ * @refill: refill credits for each traffic class
+ * @max: maximum credits for each traffic class
+ * @bwg_id: bandwidth group id for each traffic class
+ * @tsa: traffic scheduling algorithm for each traffic class
  *
  * Configure Tx Descriptor Arbiter and credits for each traffic class.
  */
-s32 txgbe_dcb_config_tx_desc_arbiter(struct txgbe_hw *hw, u16 *refill,
+int txgbe_dcb_config_tx_desc_arbiter(struct txgbe_hw *hw, u16 *refill,
 				     u16 *max, u8 *bwg_id, u8 *tsa)
 {
 	u32 reg, max_credits;
@@ -480,11 +490,15 @@ s32 txgbe_dcb_config_tx_desc_arbiter(struct txgbe_hw *hw, u16 *refill,
 /**
  * txgbe_dcb_config_tx_data_arbiter - Config Tx Data arbiter
  * @hw: pointer to hardware structure
- * @dcb_config: pointer to txgbe_dcb_config structure
+ * @refill: refill credits for each traffic class
+ * @max: maximum credits for each traffic class
+ * @bwg_id: bandwidth group id for each traffic class
+ * @tsa: traffic scheduling algorithm for each traffic class
+ * @map: user priority to traffic class map
  *
  * Configure Tx Packet Arbiter and credits for each traffic class.
  */
-s32 txgbe_dcb_config_tx_data_arbiter(struct txgbe_hw *hw, u16 *refill,
+int txgbe_dcb_config_tx_data_arbiter(struct txgbe_hw *hw, u16 *refill,
 				     u16 *max, u8 *bwg_id, u8 *tsa,
 					      u8 *map)
 {
@@ -540,7 +554,7 @@ s32 txgbe_dcb_config_tx_data_arbiter(struct txgbe_hw *hw, u16 *refill,
  *
  * Configure general DCB parameters.
  */
-s32 txgbe_dcb_config(struct txgbe_hw *hw,
+int txgbe_dcb_config(struct txgbe_hw *hw,
 		     struct txgbe_dcb_config *dcb_config)
 {
 	u32 n, value;

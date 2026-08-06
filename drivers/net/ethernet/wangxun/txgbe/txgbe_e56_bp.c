@@ -1982,7 +1982,7 @@ static int setphylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 			  u32 bypass_ctle)
 {
 	struct txgbe_hw *hw = &adapter->hw;
-	int lane_num = 0, status = 0;
+	int status = 0;
 	u32 rdata = 0;
 
 	u32 speed_select = 0;
@@ -1995,7 +1995,6 @@ static int setphylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 	switch (bplinkmode) {
 	case 10:
 		bplinkmode = 10;
-		lane_num = 1;
 		speed_select = 0; /* 10 Gb/s */
 		pcs_type_sel = 0; /* 10GBASE-R PCS Type */
 		cns_en = 0; /* CNS_EN disable */
@@ -2005,7 +2004,6 @@ static int setphylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 		break;
 	case 40:
 		bplinkmode = 40;
-		lane_num = 4;
 		speed_select = 3; /* 40 Gb/s */
 		pcs_type_sel = 4; /* 40GBASE-R PCS Type */
 		cns_en = 0; /* CNS_EN disable */
@@ -2015,7 +2013,6 @@ static int setphylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 		break;
 	case 25:
 		bplinkmode = 25;
-		lane_num = 1;
 		speed_select = 5; /* 25 Gb/s */
 		pcs_type_sel = 7; /* 25GBASE-R PCS Type */
 		cns_en = 1; /* CNS_EN */

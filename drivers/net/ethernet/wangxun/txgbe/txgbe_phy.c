@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0
 /* Copyright (c) 2019 - 2022 Beijing WangXun Technology Co., Ltd. */
 
-#include "txgbe_phy.h"
-#include "txgbe_mtd.h"
 #include "txgbe.h"
+#include "txgbe_mtd.h"
+#include "txgbe_hw.h"
+#include "txgbe_phy.h"
 
 /**
  * txgbe_check_reset_blocked - check status of MNG FW veto bit
@@ -14,7 +15,7 @@
  * have this bit just return faluse since the link can not be blocked
  * via this method.
  **/
-s32 txgbe_check_reset_blocked(struct txgbe_hw *hw)
+int txgbe_check_reset_blocked(struct txgbe_hw *hw)
 {
 	u32 mmngc;
 
@@ -29,7 +30,7 @@ s32 txgbe_check_reset_blocked(struct txgbe_hw *hw)
  * txgbe_get_phy_id - Get the phy type
  * @hw: pointer to hardware structure
  **/
-s32 txgbe_get_phy_id(struct txgbe_hw *hw)
+int txgbe_get_phy_id(struct txgbe_hw *hw)
 {
 	u32 status;
 	u16 phy_id_high = 0;
@@ -99,7 +100,7 @@ s32 txgbe_get_phy_id(struct txgbe_hw *hw)
 
 /**
  * txgbe_get_phy_type_from_id - Get the phy type
- * @phy_id: PHY ID information
+ * @hw: pointer to hardware structure
  **/
 enum txgbe_phy_type txgbe_get_phy_type_from_id(struct txgbe_hw *hw)
 {
@@ -138,9 +139,9 @@ enum txgbe_phy_type txgbe_get_phy_type_from_id(struct txgbe_hw *hw)
  * txgbe_reset_phy - Performs a PHY reset
  * @hw: pointer to hardware structure
  **/
-s32 txgbe_reset_phy(struct txgbe_hw *hw)
+int txgbe_reset_phy(struct txgbe_hw *hw)
 {
-	s32 status = 0;
+	int status = 0;
 
 	if (status != 0 || hw->phy.type == txgbe_phy_none)
 		goto out;
@@ -163,17 +164,18 @@ out:
 }
 
 /**
- * txgbe_read_phy_mdi - Reads a value from a specified PHY register without
+ * txgbe_read_phy_reg_mdi - Reads a value from a specified PHY register without
  * the SWFW lock
  * @hw: pointer to hardware structure
  * @reg_addr: 32 bit address of PHY register to read
+ * @device_type: 5 bit device type
  * @phy_data: Pointer to read data from PHY register
  **/
-s32 txgbe_read_phy_reg_mdi(struct txgbe_hw *hw, u32 reg_addr, u32 device_type,
+int txgbe_read_phy_reg_mdi(struct txgbe_hw *hw, u32 reg_addr, u32 device_type,
 			   u16 *phy_data)
 {
 	u32 command;
-	s32 status = 0;
+	int status = 0;
 
 	/* setup and write the address cycle command */
 	command = TXGBE_MSCA_RA(reg_addr) |
@@ -205,18 +207,19 @@ s32 txgbe_read_phy_reg_mdi(struct txgbe_hw *hw, u32 reg_addr, u32 device_type,
  *  using the SWFW lock - this function is needed in most cases
  *  @hw: pointer to hardware structure
  *  @reg_addr: 32 bit address of PHY register to read
+ *  @device_type: 5 bit device type
  *  @phy_data: Pointer to read data from PHY register
  **/
-s32 txgbe_read_phy_reg(struct txgbe_hw *hw, u32 reg_addr,
+int txgbe_read_phy_reg(struct txgbe_hw *hw, u32 reg_addr,
 		       u32 device_type, u16 *phy_data)
 {
-	s32 status;
+	int status;
 	u32 gssr = hw->phy.phy_semaphore_mask;
 
-	if (hw->mac.ops.acquire_swfw_sync(hw, gssr) == 0) {
+	if (txgbe_acquire_swfw_sync(hw, gssr) == 0) {
 		status = txgbe_read_phy_reg_mdi(hw, reg_addr, device_type,
 						phy_data);
-		hw->mac.ops.release_swfw_sync(hw, gssr);
+		txgbe_release_swfw_sync(hw, gssr);
 	} else {
 		status = TXGBE_ERR_SWFW_SYNC;
 	}
@@ -232,11 +235,11 @@ s32 txgbe_read_phy_reg(struct txgbe_hw *hw, u32 reg_addr,
  * @device_type: 5 bit device type
  * @phy_data: Data to write to the PHY register
  **/
-s32 txgbe_write_phy_reg_mdi(struct txgbe_hw *hw, u32 reg_addr,
+int txgbe_write_phy_reg_mdi(struct txgbe_hw *hw, u32 reg_addr,
 			    u32 device_type, u16 phy_data)
 {
 	u32 command;
-	s32 status = 0;
+	int status = 0;
 
 	/* setup and write the address cycle command */
 	command = TXGBE_MSCA_RA(reg_addr) |
@@ -269,16 +272,16 @@ s32 txgbe_write_phy_reg_mdi(struct txgbe_hw *hw, u32 reg_addr,
  *  @device_type: 5 bit device type
  *  @phy_data: Data to write to the PHY register
  **/
-s32 txgbe_write_phy_reg(struct txgbe_hw *hw, u32 reg_addr,
+int txgbe_write_phy_reg(struct txgbe_hw *hw, u32 reg_addr,
 			u32 device_type, u16 phy_data)
 {
-	s32 status;
+	int status;
 	u32 gssr = hw->phy.phy_semaphore_mask;
 
-	if (hw->mac.ops.acquire_swfw_sync(hw, gssr) == 0) {
+	if (txgbe_acquire_swfw_sync(hw, gssr) == 0) {
 		status = txgbe_write_phy_reg_mdi(hw, reg_addr, device_type,
 						 phy_data);
-		hw->mac.ops.release_swfw_sync(hw, gssr);
+		txgbe_release_swfw_sync(hw, gssr);
 	} else {
 		status = TXGBE_ERR_SWFW_SYNC;
 	}
@@ -314,9 +317,10 @@ u32 txgbe_write_mdio(struct mtd_dev *dev,
 }
 
 /**
- *  txgbe_setup_phy_link - Set and restart auto-neg
- *  @hw: pointer to hardware structure
- *
+ * txgbe_setup_phy_link - Set and restart auto-neg
+ * @hw: pointer to hardware structure
+ * @speed_set: link speed to set
+ * @autoneg_wait_to_complete: wait for auto-negotiation to complete
  *  Restart auto-negotiation and PHY and waits for completion.
  **/
 u32 txgbe_setup_phy_link(struct txgbe_hw *hw, u32 speed_set, bool autoneg_wait_to_complete)
@@ -371,9 +375,10 @@ out:
 }
 
 /**
- *  txgbe_setup_phy_link_speed - Sets the auto advertised capabilities
- *  @hw: pointer to hardware structure
- *  @speed: new link speed
+ * txgbe_setup_phy_link_speed - Sets the auto advertised capabilities
+ * @hw: pointer to hardware structure
+ * @speed: new link speed
+ * @autoneg_wait_to_complete: wait for auto-negotiation to complete
  **/
 u32 txgbe_setup_phy_link_speed(struct txgbe_hw *hw,
 			       u32 speed,
@@ -409,11 +414,11 @@ u32 txgbe_setup_phy_link_speed(struct txgbe_hw *hw,
  *  Determines the supported link capabilities by reading the PHY auto
  *  negotiation register.
  **/
-s32 txgbe_get_copper_link_capabilities(struct txgbe_hw *hw,
+int txgbe_get_copper_link_capabilities(struct txgbe_hw *hw,
 				       u32 *speed,
 					       bool *autoneg)
 {
-	s32 status;
+	int status;
 	u16 speed_ability;
 	*speed = 0;
 	*autoneg = true;
@@ -441,10 +446,10 @@ s32 txgbe_get_copper_link_capabilities(struct txgbe_hw *hw,
  *  @hw: pointer to hardware structure
  *  @firmware_version: pointer to the PHY Firmware Version
  **/
-s32 txgbe_get_phy_firmware_version(struct txgbe_hw *hw,
+int txgbe_get_phy_firmware_version(struct txgbe_hw *hw,
 				   u16 *firmware_version)
 {
-	s32 status;
+	int status;
 	u8 major, minor, inc, test;
 
 	status = txgbe_mtd_get_firmver(&hw->phy_dev, hw->phy.addr,
@@ -460,9 +465,9 @@ s32 txgbe_get_phy_firmware_version(struct txgbe_hw *hw,
  *
  *  Determines HW type and calls appropriate function.
  **/
-s32 txgbe_identify_module(struct txgbe_hw *hw)
+int txgbe_identify_module(struct txgbe_hw *hw)
 {
-	s32 status = TXGBE_ERR_SFP_NOT_PRESENT;
+	int status = TXGBE_ERR_SFP_NOT_PRESENT;
 
 	switch (hw->mac.ops.get_media_type(hw)) {
 	case txgbe_media_type_fiber_qsfp:
@@ -486,9 +491,9 @@ s32 txgbe_identify_module(struct txgbe_hw *hw)
  *
  *  Searches for and identifies the SFP module and assigns appropriate PHY type.
  **/
-s32 txgbe_identify_sfp_module(struct txgbe_hw *hw)
+int txgbe_identify_sfp_module(struct txgbe_hw *hw)
 {
-	s32 status = TXGBE_ERR_PHY_ADDR_INVALID;
+	int status = TXGBE_ERR_PHY_ADDR_INVALID;
 	u32 vendor_oui = 0;
 	enum txgbe_sfp_type stored_sfp_type = hw->phy.sfp_type;
 	struct txgbe_adapter *adapter = hw->back;
@@ -516,7 +521,7 @@ s32 txgbe_identify_sfp_module(struct txgbe_hw *hw)
 		}
 	}
 
-	if (hw->mac.ops.acquire_swfw_sync(hw, swfw_mask) != 0)
+	if (txgbe_acquire_swfw_sync(hw, swfw_mask) != 0)
 		return TXGBE_ERR_SWFW_SYNC;
 
 	if (hw->mac.ops.get_media_type(hw) != txgbe_media_type_fiber) {
@@ -872,12 +877,12 @@ sp_record:
 		}
 	}
 out:
-	hw->mac.ops.release_swfw_sync(hw, swfw_mask);
+	txgbe_release_swfw_sync(hw, swfw_mask);
 
 	return status;
 
 err_read_i2c_eeprom:
-	hw->mac.ops.release_swfw_sync(hw, swfw_mask);
+	txgbe_release_swfw_sync(hw, swfw_mask);
 
 	hw->phy.sfp_type = txgbe_sfp_type_not_present;
 	if (hw->phy.type != txgbe_phy_nl) {
@@ -887,9 +892,9 @@ err_read_i2c_eeprom:
 	return TXGBE_ERR_SFP_NOT_PRESENT;
 }
 
-s32 txgbe_identify_qsfp_module(struct txgbe_hw *hw)
+int txgbe_identify_qsfp_module(struct txgbe_hw *hw)
 {
-	s32 status = TXGBE_ERR_PHY_ADDR_INVALID;
+	int status = TXGBE_ERR_PHY_ADDR_INVALID;
 	u8 identifier = 0, transceiver_type = 0;
 	u32 swfw_mask = hw->phy.phy_semaphore_mask;
 	u8 option1_type;
@@ -903,7 +908,7 @@ s32 txgbe_identify_qsfp_module(struct txgbe_hw *hw)
 		}
 	}
 
-	if (hw->mac.ops.acquire_swfw_sync(hw, swfw_mask) != 0)
+	if (txgbe_acquire_swfw_sync(hw, swfw_mask) != 0)
 		return TXGBE_ERR_SWFW_SYNC;
 
 	if (hw->mac.ops.get_media_type(hw) != txgbe_media_type_fiber_qsfp) {
@@ -991,12 +996,12 @@ s32 txgbe_identify_qsfp_module(struct txgbe_hw *hw)
 		status = TXGBE_ERR_SFP_NOT_SUPPORTED;
 	}
 out:
-	hw->mac.ops.release_swfw_sync(hw, swfw_mask);
+	txgbe_release_swfw_sync(hw, swfw_mask);
 
 	return status;
 
 err_read_i2c_eeprom:
-	hw->mac.ops.release_swfw_sync(hw, swfw_mask);
+	txgbe_release_swfw_sync(hw, swfw_mask);
 
 	hw->phy.sfp_type = txgbe_sfp_type_not_present;
 	hw->phy.id = 0;
@@ -1005,7 +1010,7 @@ err_read_i2c_eeprom:
 	return TXGBE_ERR_SFP_NOT_PRESENT;
 }
 
-s32 txgbe_init_i2c(struct txgbe_hw *hw)
+int txgbe_init_i2c(struct txgbe_hw *hw)
 {
 	wr32(hw, TXGBE_I2C_ENABLE, 0);
 
@@ -1045,7 +1050,7 @@ s32 txgbe_init_i2c(struct txgbe_hw *hw)
 	return 0;
 }
 
-static s32 txgbe_init_i2c_sfp_phy(struct txgbe_hw *hw)
+static int txgbe_init_i2c_sfp_phy(struct txgbe_hw *hw)
 {
 	wr32(hw, TXGBE_I2C_ENABLE, 0);
 
@@ -1071,9 +1076,9 @@ static s32 txgbe_init_i2c_sfp_phy(struct txgbe_hw *hw)
 	return 0;
 }
 
-s32 txgbe_clear_i2c(struct txgbe_hw *hw)
+int txgbe_clear_i2c(struct txgbe_hw *hw)
 {
-	s32 status = 0;
+	int status = 0;
 
 	/* wait for completion */
 	status = po32m(hw, TXGBE_I2C_STATUS,
@@ -1096,7 +1101,7 @@ out:
  *
  *  Performs byte read operation to SFP module's EEPROM over I2C interface.
  **/
-s32 txgbe_read_i2c_eeprom(struct txgbe_hw *hw, u8 byte_offset,
+int txgbe_read_i2c_eeprom(struct txgbe_hw *hw, u8 byte_offset,
 			  u8 *eeprom_data)
 {
 	txgbe_init_i2c(hw);
@@ -1109,11 +1114,11 @@ s32 txgbe_read_i2c_eeprom(struct txgbe_hw *hw, u8 byte_offset,
  *  txgbe_read_i2c_sff8472 - Reads 8 bit word over I2C interface
  *  @hw: pointer to hardware structure
  *  @byte_offset: byte offset at address 0xA2
- *  @eeprom_data: value read
+ *  @sff8472_data: value read
  *
  *  Performs byte read operation to SFP module's SFF-8472 data over I2C
  **/
-s32 txgbe_read_i2c_sff8472(struct txgbe_hw *hw, u8 byte_offset,
+int txgbe_read_i2c_sff8472(struct txgbe_hw *hw, u8 byte_offset,
 			   u8 *sff8472_data)
 {
 	txgbe_init_i2c(hw);
@@ -1123,14 +1128,15 @@ s32 txgbe_read_i2c_sff8472(struct txgbe_hw *hw, u8 byte_offset,
 }
 
 /**
- *  txgbe_read_i2c_sff8636 - Reads 8 bit word over I2C interface
- *  @hw: pointer to hardware structure
- *  @byte_offset: byte offset at address 0xA2
- *  @eeprom_data: value read
+ * txgbe_read_i2c_sff8636 - Reads 8 bit word over I2C interface
+ * @hw: pointer to hardware structure
+ * @page: page number to read
+ * @byte_offset: byte offset at address 0xA2
+ * @sff8636_data: value read
  *
  *  Performs byte read operation to SFP module's SFF-8472 data over I2C
  **/
-s32 txgbe_read_i2c_sff8636(struct txgbe_hw *hw, u8 page, u8 byte_offset,
+int txgbe_read_i2c_sff8636(struct txgbe_hw *hw, u8 page, u8 byte_offset,
 			   u8 *sff8636_data)
 {
 	txgbe_init_i2c(hw);
@@ -1147,12 +1153,12 @@ s32 txgbe_read_i2c_sff8636(struct txgbe_hw *hw, u8 page, u8 byte_offset,
  *  txgbe_read_i2c_sfp_phy - Reads 16 bit word over I2C interface
  *  @hw: pointer to hardware structure
  *  @byte_offset: byte offset at address 0xAC
- *  @eeprom_data: value read
+ *  @data: value read
  *
  *  Performs byte read operation to Fiber to Copper SFP module
  *  internal phy over I2C
  **/
-s32 txgbe_read_i2c_sfp_phy(struct txgbe_hw *hw, u16 byte_offset,
+int txgbe_read_i2c_sfp_phy(struct txgbe_hw *hw, u16 byte_offset,
 			   u16 *data)
 {
 	txgbe_init_i2c_sfp_phy(hw);
@@ -1170,7 +1176,7 @@ s32 txgbe_read_i2c_sfp_phy(struct txgbe_hw *hw, u16 byte_offset,
  *
  *  Performs byte write operation to SFP module's EEPROM over I2C interface.
  **/
-s32 txgbe_write_i2c_eeprom(struct txgbe_hw *hw, u8 byte_offset,
+int txgbe_write_i2c_eeprom(struct txgbe_hw *hw, u8 byte_offset,
 			   u8 eeprom_data)
 {
 	txgbe_init_i2c(hw);
@@ -1183,16 +1189,17 @@ s32 txgbe_write_i2c_eeprom(struct txgbe_hw *hw, u8 byte_offset,
  *  txgbe_read_i2c_byte_int - Reads 8 bit word over I2C
  *  @hw: pointer to hardware structure
  *  @byte_offset: byte offset to read
+ * @dev_addr: device address to read from
  *  @data: value read
  *  @lock: true if to take and release semaphore
  *
  *  Performs byte read operation to SFP module's EEPROM over I2C interface at
  *  a specified device address.
  **/
-static s32 txgbe_read_i2c_byte_int(struct txgbe_hw *hw, u8 byte_offset,
+static int txgbe_read_i2c_byte_int(struct txgbe_hw *hw, u8 byte_offset,
 				   u8 __always_unused dev_addr, u8 *data, bool __always_unused lock)
 {
-	s32 status = 0;
+	int status = 0;
 
 	/* wait tx empty */
 	status = po32m(hw, TXGBE_I2C_RAW_INTR_STAT,
@@ -1223,17 +1230,19 @@ out:
  * txgbe_read_i2c_word_int - Reads 16 bit word over I2C
  * @hw: pointer to hardware structure
  * @byte_offset: byte offset to read
+ * @dev_addr: device address to read from
  * @data: value read
  * @lock: true if to take and release semaphore
+ *
  * Performs byte read operation to SFP module's EEPROM over I2C interface at
  * a specified device address.
  **/
-static s32 txgbe_read_i2c_word_int(struct txgbe_hw *hw, u16 byte_offset,
+static int txgbe_read_i2c_word_int(struct txgbe_hw *hw, u16 byte_offset,
 				   u8 __always_unused dev_addr,
 									u16 *data,
 									bool __always_unused lock)
 {
-	s32 status = 0;
+	int status = 0;
 
 	if (hw->phy.sfp_type == txgbe_sfp_type_1g_cu_core0 ||
 	    hw->phy.sfp_type == txgbe_sfp_type_1g_cu_core1) {
@@ -1336,7 +1345,7 @@ out:
  * @hw: pointer to hardware structure
  * @dev_addr: slave addr to switch
  **/
-s32 txgbe_switch_i2c_slave_addr(struct txgbe_hw *hw, u8 dev_addr)
+int txgbe_switch_i2c_slave_addr(struct txgbe_hw *hw, u8 dev_addr)
 {
 	wr32(hw, TXGBE_I2C_ENABLE, 0);
 	wr32(hw, TXGBE_I2C_TAR, dev_addr >> 1);
@@ -1348,12 +1357,13 @@ s32 txgbe_switch_i2c_slave_addr(struct txgbe_hw *hw, u8 dev_addr)
  *  txgbe_read_i2c_byte - Reads 8 bit word over I2C
  *  @hw: pointer to hardware structure
  *  @byte_offset: byte offset to read
+ *  @dev_addr: device address to read from
  *  @data: value read
  *
  *  Performs byte read operation to SFP module's EEPROM over I2C interface at
  *  a specified device address.
  **/
-s32 txgbe_read_i2c_byte(struct txgbe_hw *hw, u8 byte_offset,
+int txgbe_read_i2c_byte(struct txgbe_hw *hw, u8 byte_offset,
 			u8 dev_addr, u8 *data)
 {
 	txgbe_switch_i2c_slave_addr(hw, dev_addr);
@@ -1366,12 +1376,13 @@ s32 txgbe_read_i2c_byte(struct txgbe_hw *hw, u8 byte_offset,
  *	txgbe_read_i2c_word - Reads 16 bit word over I2C
  *	@hw: pointer to hardware structure
  *	@byte_offset: byte offset to read
+ *	@dev_addr: device address to read from
  *	@data: value read
  *
  *	Performs byte read operation to SFP module's EEPROM over I2C interface at
  *	a specified device address.
  **/
-s32 txgbe_read_i2c_word(struct txgbe_hw *hw, u16 byte_offset,
+int txgbe_read_i2c_word(struct txgbe_hw *hw, u16 byte_offset,
 			u8 dev_addr, u16 *data)
 {
 	txgbe_switch_i2c_slave_addr(hw, dev_addr);
@@ -1384,16 +1395,16 @@ s32 txgbe_read_i2c_word(struct txgbe_hw *hw, u16 byte_offset,
  *  txgbe_write_i2c_byte_int - Writes 8 bit word over I2C
  *  @hw: pointer to hardware structure
  *  @byte_offset: byte offset to write
+ *  @dev_addr: device address to write to
  *  @data: value to write
- *  @lock: true if to take and release semaphore
  *
  *  Performs byte write operation to SFP module's EEPROM over I2C interface at
  *  a specified device address.
  **/
-static s32 txgbe_write_i2c_byte_int(struct txgbe_hw *hw, u8 byte_offset,
+static int txgbe_write_i2c_byte_int(struct txgbe_hw *hw, u8 byte_offset,
 				    u8 __always_unused dev_addr, u8 data)
 {
-	s32 status = 0;
+	int status = 0;
 
 	/* wait tx empty */
 	status = po32m(hw, TXGBE_I2C_RAW_INTR_STAT,
@@ -1418,12 +1429,13 @@ out:
  *  txgbe_write_i2c_byte - Writes 8 bit word over I2C
  *  @hw: pointer to hardware structure
  *  @byte_offset: byte offset to write
+ *  @dev_addr: device address to write to
  *  @data: value to write
  *
  *  Performs byte write operation to SFP module's EEPROM over I2C interface at
  *  a specified device address.
  **/
-s32 txgbe_write_i2c_byte(struct txgbe_hw *hw, u8 byte_offset,
+int txgbe_write_i2c_byte(struct txgbe_hw *hw, u8 byte_offset,
 			 u8 dev_addr, u8 data)
 {
 	return txgbe_write_i2c_byte_int(hw, byte_offset, dev_addr,
@@ -1436,9 +1448,9 @@ s32 txgbe_write_i2c_byte(struct txgbe_hw *hw, u8 byte_offset,
  *
  *  Checks if the LASI temp alarm status was triggered due to overtemp
  **/
-s32 txgbe_tn_check_overtemp(struct txgbe_hw *hw)
+int txgbe_tn_check_overtemp(struct txgbe_hw *hw)
 {
-	s32 status = 0;
+	int status = 0;
 	u32 ts_state;
 
 	if (hw->mac.type == txgbe_mac_aml ||
@@ -1465,9 +1477,9 @@ s32 txgbe_tn_check_overtemp(struct txgbe_hw *hw)
 	return status;
 }
 
-s32 txgbe_init_external_phy(struct txgbe_hw *hw)
+int txgbe_init_external_phy(struct txgbe_hw *hw)
 {
-	s32 status = 0;
+	int status = 0;
 
 	struct mtd_dev *devptr = &hw->phy_dev;
 
@@ -1492,21 +1504,21 @@ s32 txgbe_init_external_phy(struct txgbe_hw *hw)
 	return status;
 }
 
-s32 txgbe_uninit_external_phy(struct txgbe_hw *hw)
+int txgbe_uninit_external_phy(struct txgbe_hw *hw)
 {
 	return txgbe_mtd_unload_driver(&hw->phy_dev);
 }
 
-s32 txgbe_set_phy_pause_advertisement(struct txgbe_hw *hw, u32 pause_bit)
+int txgbe_set_phy_pause_advertisement(struct txgbe_hw *hw, u32 pause_bit)
 {
 	return txgbe_mtd_set_pause_adver(&hw->phy_dev, hw->phy.addr,
 						(pause_bit >> 10) & 0x3, false);
 }
 
-s32 txgbe_get_phy_advertised_pause(struct txgbe_hw *hw, u8 *pause_bit)
+int txgbe_get_phy_advertised_pause(struct txgbe_hw *hw, u8 *pause_bit)
 {
 	u16 value;
-	s32 status = 0;
+	int status = 0;
 
 	status = txgbe_mtd_hw_xmdio_rd(&hw->phy_dev, hw->phy.addr,
 				       TXGBE_MDIO_AUTO_NEG_DEV_TYPE,
@@ -1515,15 +1527,15 @@ s32 txgbe_get_phy_advertised_pause(struct txgbe_hw *hw, u8 *pause_bit)
 	return status;
 }
 
-s32 txgbe_get_lp_advertised_pause(struct txgbe_hw *hw, u8 *pause_bit)
+int txgbe_get_lp_advertised_pause(struct txgbe_hw *hw, u8 *pause_bit)
 {
 	return txgbe_mtd_get_lp_adver_pause(&hw->phy_dev,
 				hw->phy.addr, pause_bit);
 }
 
-s32 txgbe_external_phy_suspend(struct txgbe_hw *hw)
+int txgbe_external_phy_suspend(struct txgbe_hw *hw)
 {
-	s32 status = 0;
+	int status = 0;
 	u16 value = 0;
 
 	status = txgbe_mtd_hw_xmdio_rd(&hw->phy_dev, hw->phy.addr,
@@ -1543,9 +1555,9 @@ out:
 	return status;
 }
 
-s32 txgbe_external_phy_resume(struct txgbe_hw *hw)
+int txgbe_external_phy_resume(struct txgbe_hw *hw)
 {
-	s32 status = 0;
+	int status = 0;
 	u16 value = 0;
 
 	status = txgbe_mtd_hw_xmdio_rd(&hw->phy_dev, hw->phy.addr,
