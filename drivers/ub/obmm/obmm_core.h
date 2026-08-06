@@ -287,7 +287,8 @@ bool validate_obmm_mem_id(__u64 mem_id);
 /* internal helpers */
 static inline bool is_online_local_node(int node)
 {
-	return node_online(node) && !numa_is_remote_node(node);
+	return node < OBMM_MAX_LOCAL_NUMA_NODES &&
+	       node_online(node) && !numa_is_remote_node(node);
 }
 static inline int __maybe_unused next_online_local_node(int node)
 {
@@ -304,8 +305,9 @@ static inline int __maybe_unused first_online_local_node(void)
 		node = (int)next_node(node, node_online_map);
 	return node;
 }
-#define for_each_online_local_node(node)                                \
-	for ((node) = first_online_local_node(); (node) < MAX_NUMNODES; \
+
+#define for_each_online_local_node(node)                                        \
+	for ((node) = first_online_local_node(); (node) < OBMM_MAX_LOCAL_NUMA_NODES; \
 	     (node) = next_online_local_node(node))
 
 int set_obmm_region_priv(struct obmm_region *region, unsigned int priv_len,

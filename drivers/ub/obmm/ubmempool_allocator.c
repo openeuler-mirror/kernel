@@ -625,9 +625,12 @@ int ubmempool_allocator_init(void)
 	int i, j, nid, ret = 0, local_cnt = 0;
 	enum allocator_id aid;
 
-	for_each_online_local_node(nid) {
+	for_each_node_state(nid, N_ONLINE) {
+		if (numa_is_remote_node(nid))
+			continue;
 		if (nid >= OBMM_MAX_LOCAL_NUMA_NODES) {
-			pr_err("Too many local NUMA nodes. OBMM rebuild required.\n");
+			pr_err("Local NUMA node %d exceeds OBMM_MAX_LOCAL_NUMA_NODES (%d). OBMM rebuild required.\n",
+			       nid, OBMM_MAX_LOCAL_NUMA_NODES);
 			return -EOPNOTSUPP;
 		}
 		local_cnt++;
