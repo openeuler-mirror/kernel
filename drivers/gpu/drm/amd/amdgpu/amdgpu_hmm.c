@@ -171,7 +171,6 @@ int amdgpu_hmm_range_get_pages(struct mmu_interval_notifier *notifier,
 	const u64 max_bytes = SZ_2G;
 
 	struct hmm_range *hmm_range;
-	unsigned long timeout;
 	unsigned long i;
 	unsigned long *pfns;
 	unsigned long end;
@@ -203,22 +202,9 @@ int amdgpu_hmm_range_get_pages(struct mmu_interval_notifier *notifier,
 		pr_debug("hmm range: start = 0x%lx, end = 0x%lx",
 			hmm_range->start, hmm_range->end);
 
-		/* Assuming 128MB takes maximum 1 second to fault page address */
-		timeout = max((hmm_range->end - hmm_range->start) >> 27, 1UL);
-		timeout *= HMM_RANGE_DEFAULT_TIMEOUT;
-		timeout = jiffies + msecs_to_jiffies(timeout);
-
-retry:
 		r = hmm_range_fault(hmm_range);
-		if (unlikely(r)) {
-			/*
-			 * FIXME: This timeout should encompass the retry from
-			 * mmu_interval_read_retry() as well.
-			 */
-			if (r == -EBUSY && !time_after(jiffies, timeout))
-				goto retry;
+		if (unlikely(r))
 			goto out_free_pfns;
-		}
 
 		if (hmm_range->end == end)
 			break;
