@@ -363,20 +363,31 @@ static int __sched_group_unset_soft_domain(struct task_group *tg)
 		.policy = 0,
 	};
 	struct soft_domain *sf_d = NULL;
-	struct soft_subdomain *sub_d = NULL;
-	struct list_head *children = NULL;
 
 	/* If parent has set soft domain, child group can't unset itself. */
 	if (tg->parent->sf_ctx != NULL && tg->parent->sf_ctx->policy != 0)
 		return -EINVAL;
 
 	sf_d = tg->sf_ctx->sf_d;
-	sf_d->nr_available_cpus += __calc_cpu(tg);
-	children = &sf_d->child_domain;
 
-	list_for_each_entry(sub_d, children, node) {
-		if (cpumask_intersects(to_cpumask(tg->sf_ctx->span), to_cpumask(sub_d->span)))
-			sub_d->attached--;
+	/*
+	 * Only the group that owns the soft domain (sf_d != NULL) did the
+	 * LLC accounting (nr_available_cpus / attached). Groups which just
+	 * inherited the domain from an ancestor have sf_d == NULL, they
+	 * only need to clear their state, otherwise NULL dereference.
+	 */
+	if (sf_d) {
+		struct soft_subdomain *sub_d = NULL;
+		struct list_head *children = &sf_d->child_domain;
+
+		sf_d->nr_available_cpus += __calc_cpu(tg);
+
+		list_for_each_entry(sub_d, children, node) {
+			if (cpumask_intersects(to_cpumask(tg->sf_ctx->span), to_cpumask(sub_d->span)))
+				sub_d->attached--;
+		}
+
+		tg->sf_ctx->sf_d = NULL;
 	}
 
 	walk_tg_tree_from(tg, tg_set_soft_domain, tg_nop, &args);
@@ -434,10 +445,9 @@ out:
 	return ret;
 }
 
-int init_soft_domain(struct task_group *tg, struct task_group *parent)
+int init_soft_domain(struct task_group *tg)
 {
 	struct soft_domain_ctx *sf_ctx = NULL;
-	struct soft_domain_ctx *psf_ctx = NULL;
 
 	if (!soft_domain_enabled())
 		return 0;
@@ -446,18 +456,33 @@ int init_soft_domain(struct task_group *tg, struct task_group *parent)
 	if (!sf_ctx)
 		return -ENOMEM;
 
+	tg->sf_ctx = sf_ctx;
+
+	return 0;
+}
+
+void online_soft_domain(struct task_group *tg)
+{
+	struct soft_domain_ctx *sf_ctx = tg->sf_ctx;
+	struct soft_domain_ctx *psf_ctx = NULL;
+
+	if (!soft_domain_enabled() || !sf_ctx)
+		return;
+
 	mutex_lock(&soft_domain_mutex);
-	psf_ctx = parent->sf_ctx;
+	/*
+	 * Inherit the domain attributes from the parent group at the same
+	 * time the group is linked into the task group tree. Note that
+	 * sf_d is NOT inherited: only the owner of a soft domain holds it
+	 * and does the LLC accounting.
+	 */
+	psf_ctx = tg->parent->sf_ctx;
 	if (psf_ctx) {
 		sf_ctx->policy = psf_ctx->policy;
 		sf_ctx->nr_cpus = psf_ctx->nr_cpus;
 		cpumask_copy(to_cpumask(sf_ctx->span), to_cpumask(psf_ctx->span));
 	}
-
-	tg->sf_ctx = sf_ctx;
 	mutex_unlock(&soft_domain_mutex);
-
-	return 0;
 }
 
 void offline_soft_domain(struct task_group *tg)
