@@ -4089,7 +4089,8 @@ static inline void balance_callbacks(struct rq *rq, struct balance_callback *hea
 
 #ifdef CONFIG_SCHED_SOFT_DOMAIN
 void build_soft_domain(void);
-int init_soft_domain(struct task_group *tg, struct task_group *parent);
+int init_soft_domain(struct task_group *tg);
+void online_soft_domain(struct task_group *tg);
 int destroy_soft_domain(struct task_group *tg);
 void offline_soft_domain(struct task_group *tg);
 int sched_group_set_soft_domain(struct task_group *tg, long val);
@@ -4102,10 +4103,12 @@ static inline struct cpumask *soft_domain_span(unsigned long span[])
 #else
 
 static inline void build_soft_domain(void) { }
-static inline int init_soft_domain(struct task_group *tg, struct task_group *parent)
+static inline int init_soft_domain(struct task_group *tg)
 {
 	return 0;
 }
+
+static inline void online_soft_domain(struct task_group *tg) { }
 
 static inline void offline_soft_domain(struct task_group *tg) { }
 
