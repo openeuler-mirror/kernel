@@ -8994,6 +8994,7 @@ void sched_online_group(struct task_group *tg, struct task_group *parent)
 	spin_unlock_irqrestore(&task_group_lock, flags);
 
 	online_fair_sched_group(tg);
+	online_soft_domain(tg);
 }
 
 /* rcu callback to free various structures associated with a task group */
