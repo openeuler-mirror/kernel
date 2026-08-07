@@ -61,15 +61,20 @@ static int vfio_ub_setup_resmap(struct vfio_ub_core_device *vdev, int res)
 	struct ub_entity *uent = vdev->uent;
 	void __iomem *io_addr;
 
-	if (vdev->resmap[res])
+	mutex_lock(&vdev->resmap_lock);
+	if (vdev->resmap[res]) {
+		mutex_unlock(&vdev->resmap_lock);
 		return 0;
+	}
 
 	io_addr = ub_iomap(uent, res, 0);
-	if (!io_addr)
+	if (!io_addr) {
+		mutex_unlock(&vdev->resmap_lock);
 		return -ENOMEM;
+	}
 
 	vdev->resmap[res] = io_addr;
-
+	mutex_unlock(&vdev->resmap_lock);
 	return 0;
 }
 
@@ -77,6 +82,7 @@ void vfio_ub_unset_resmap(struct vfio_ub_core_device *vdev)
 {
 	int res;
 
+	mutex_lock(&vdev->resmap_lock);
 	for (res = 0; res < MAX_UB_RES_NUM; res++) {
 		if (!vdev->resmap[res])
 			continue;
@@ -84,6 +90,7 @@ void vfio_ub_unset_resmap(struct vfio_ub_core_device *vdev)
 		ub_iounmap(vdev->resmap[res]);
 		vdev->resmap[res] = NULL;
 	}
+	mutex_unlock(&vdev->resmap_lock);
 }
 
 static int do_io_rw32(struct vfio_ub_core_device *vdev, char __user *buf,
