@@ -960,7 +960,6 @@ static int unic_netdev_event(struct notifier_block *nb,
 		return NOTIFY_DONE;
 
 	unic_dev = netdev_priv(netdev);
-
 	if (!unic_dev_eth_mac_supported(unic_dev))
 		return NOTIFY_DONE;
 

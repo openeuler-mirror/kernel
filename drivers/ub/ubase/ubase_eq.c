@@ -596,6 +596,13 @@ static int ubase_destroy_eq(struct ubase_dev *udev, struct ubase_eq *eq,
 	int mbx_cmd;
 	int ret;
 
+	if ((!ubase_dev_mbx_supported(udev) &&
+	     test_bit(UBASE_STATE_REMOVING_B, &udev->state_bits)) ||
+	    udev->reset_stage == UBASE_RESET_STAGE_UNINIT) {
+		ubase_free_eq_buf(udev, eq);
+		return 0;
+	}
+
 	mbx_cmd = eq_type == UBASE_EQ_TYPE_AEQ ? UBASE_MB_DESTROY_AEQ_CONTEXT :
 						 UBASE_MB_DESTROY_CEQ_CONTEXT;
 

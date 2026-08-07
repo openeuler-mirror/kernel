@@ -211,7 +211,8 @@ stop_traverse:
 	return all_added;
 }
 
-int unic_convert_ip_addr(struct sockaddr *addr, struct in6_addr *ip_addr)
+int unic_convert_ip_addr(struct unic_dev *unic_dev, struct sockaddr *addr,
+			 struct in6_addr *ip_addr)
 {
 	__be32 v4addr;
 
@@ -226,6 +227,8 @@ int unic_convert_ip_addr(struct sockaddr *addr, struct in6_addr *ip_addr)
 		       sizeof(struct in6_addr));
 		break;
 	default:
+		unic_err(unic_dev, "invalid IP protocol type, sa_family = %u.\n",
+			 addr->sa_family);
 		return -EINVAL;
 	}
 	return 0;
