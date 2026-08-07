@@ -521,6 +521,7 @@ struct pci_dev {
 	u16		acs_cap;	/* ACS Capability offset */
 	phys_addr_t	rom;		/* Physical address if not from BAR */
 	size_t		romlen;		/* Length if not from BAR */
+	KABI_DEPRECATE(const char *, driver_override)
 	unsigned long	priv_flags;	/* Private flags for the PCI driver */
 
 	/* These methods index pci_reset_fn_methods[] */
