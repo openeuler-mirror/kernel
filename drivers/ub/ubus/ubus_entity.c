@@ -492,9 +492,8 @@ void ub_stop_ent(struct ub_entity *uent)
 	if (!uent)
 		return;
 
-	if (!ub_entity_test_priv_flag(uent, UB_ENTITY_START))
+	if (!ub_entity_test_and_clear_priv_flag(uent, UB_ENTITY_START))
 		return;
-	ub_entity_assign_priv_flag(uent, UB_ENTITY_START, false);
 
 	/* Stop ue in mue, when uent is not mue, ue_list is NULL */
 	list_for_each_entry_safe_reverse(ent, tmp, &uent->ue_list, node)
