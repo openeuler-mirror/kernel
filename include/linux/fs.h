@@ -16,6 +16,9 @@
 #include <linux/xarray.h>
 #include <linux/rbtree.h>
 #include <linux/init.h>
+#ifdef CONFIG_I_MMAP_SHARDS
+#include <linux/jump_label.h>
+#endif
 #include <linux/pid.h>
 #include <linux/bug.h>
 #include <linux/mutex.h>
@@ -492,6 +495,13 @@ struct i_mmap_shards {
 	struct i_mmap_domain_shards *domain[I_MMAP_MAX_DOMAINS];
 };
 
+DECLARE_STATIC_KEY_FALSE(i_mmap_opt_enabled_key);
+
+static inline bool i_mmap_opt_enabled(void)
+{
+	return static_branch_unlikely(&i_mmap_opt_enabled_key);
+}
+
 struct i_mmap_shards *i_mmap_shards_alloc(gfp_t gfp);
 void i_mmap_shards_free(struct i_mmap_shards *shards);
 struct i_mmap_shard *i_mmap_shard_for_vma(struct i_mmap_shards *shards,
@@ -503,7 +513,6 @@ bool i_mmap_shards_install_locked(struct address_space *mapping,
 #ifdef CONFIG_I_MMAP_SHARDS
 struct i_mmap_write_lock {
 	struct rb_root_cached	*root;
-	struct i_mmap_shard	*shard;
 };
 #endif
 
@@ -643,27 +652,56 @@ static inline void i_mmap_assert_write_locked(struct address_space *mapping)
 }
 
 #ifdef CONFIG_I_MMAP_SHARDS
-void i_mmap_lock_write_vma(struct address_space *mapping,
-			   struct vm_area_struct *vma,
-			   struct i_mmap_write_lock *lock);
-void i_mmap_unlock_write_vma(struct address_space *mapping,
+void __i_mmap_lock_write_vma(struct address_space *mapping,
+			     struct vm_area_struct *vma,
 			     struct i_mmap_write_lock *lock);
+void __i_mmap_unlock_write_vma(struct address_space *mapping,
+			       struct i_mmap_write_lock *lock);
+
+static inline void i_mmap_lock_write_vma(struct address_space *mapping,
+					 struct vm_area_struct *vma,
+					 struct i_mmap_write_lock *lock)
+{
+	if (i_mmap_opt_enabled()) {
+		__i_mmap_lock_write_vma(mapping, vma, lock);
+		return;
+	}
+
+	i_mmap_lock_write(mapping);
+	lock->root = &mapping->i_mmap;
+}
+
+static inline void i_mmap_unlock_write_vma(struct address_space *mapping,
+					   struct i_mmap_write_lock *lock)
+{
+	if (i_mmap_opt_enabled()) {
+		__i_mmap_unlock_write_vma(mapping, lock);
+		return;
+	}
+
+	i_mmap_unlock_write(mapping);
+}
 
 static inline struct i_mmap_shards *
 i_mmap_shards_load(struct address_space *mapping)
 {
+	if (!i_mmap_opt_enabled())
+		return NULL;
+
 	/* Pairs with release publication after all roots are initialized. */
 	return smp_load_acquire(&mapping->i_mmap_shards);
 }
 
 static inline void i_mmap_vma_count_add(struct address_space *mapping)
 {
-	atomic_inc(&mapping->i_mmap_nr_vmas);
+	if (i_mmap_opt_enabled())
+		atomic_inc(&mapping->i_mmap_nr_vmas);
 }
 
 static inline void i_mmap_vma_count_sub(struct address_space *mapping)
 {
-	atomic_dec(&mapping->i_mmap_nr_vmas);
+	if (i_mmap_opt_enabled())
+		atomic_dec(&mapping->i_mmap_nr_vmas);
 }
 #endif
 
@@ -673,7 +711,8 @@ static inline void i_mmap_vma_count_sub(struct address_space *mapping)
 static inline int mapping_mapped(struct address_space *mapping)
 {
 #ifdef CONFIG_I_MMAP_SHARDS
-	if (atomic_read(&mapping->i_mmap_nr_vmas) > 0)
+	if (i_mmap_opt_enabled() &&
+	    atomic_read(&mapping->i_mmap_nr_vmas) > 0)
 		return true;
 #endif
 	return	!RB_EMPTY_ROOT(&mapping->i_mmap.rb_root);

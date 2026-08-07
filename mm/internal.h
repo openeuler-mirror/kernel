@@ -1482,9 +1482,6 @@ unsigned long shrink_memory(unsigned long nr_to_reclaim, bool may_swap);
 #endif /* CONFIG_PAGE_CACHE_LIMIT */
 
 struct unlink_vma_file_batch {
-#ifdef CONFIG_I_MMAP_SHARDS
-	struct address_space *mapping;
-#endif
 	int count;
 	struct vm_area_struct *vmas[8];
 };

@@ -206,9 +206,11 @@ int inode_init_always(struct super_block *sb, struct inode *inode)
 	mapping->wb_err = 0;
 	atomic_set(&mapping->i_mmap_writable, 0);
 #ifdef CONFIG_I_MMAP_SHARDS
-	mapping->i_mmap_shards = NULL;
-	atomic_set(&mapping->i_mmap_nr_vmas, 0);
-	atomic_set(&mapping->i_mmap_lock_contention, 0);
+	if (i_mmap_opt_enabled()) {
+		mapping->i_mmap_shards = NULL;
+		atomic_set(&mapping->i_mmap_nr_vmas, 0);
+		atomic_set(&mapping->i_mmap_lock_contention, 0);
+	}
 #endif
 #ifdef CONFIG_READ_ONLY_THP_FOR_FS
 	atomic_set(&mapping->nr_thps, 0);
@@ -289,8 +291,10 @@ void __destroy_inode(struct inode *inode)
 #ifdef CONFIG_I_MMAP_SHARDS
 	struct address_space *mapping = inode->i_mapping;
 
-	i_mmap_shards_free(mapping->i_mmap_shards);
-	mapping->i_mmap_shards = NULL;
+	if (i_mmap_opt_enabled()) {
+		i_mmap_shards_free(mapping->i_mmap_shards);
+		mapping->i_mmap_shards = NULL;
+	}
 #endif
 	BUG_ON(inode_has_buffers(inode));
 	inode_detach_wb(inode);
@@ -413,9 +417,11 @@ static void __address_space_init_once(struct address_space *mapping)
 	spin_lock_init(&mapping->private_lock);
 	mapping->i_mmap = RB_ROOT_CACHED;
 #ifdef CONFIG_I_MMAP_SHARDS
-	mapping->i_mmap_shards = NULL;
-	atomic_set(&mapping->i_mmap_nr_vmas, 0);
-	atomic_set(&mapping->i_mmap_lock_contention, 0);
+	if (i_mmap_opt_enabled()) {
+		mapping->i_mmap_shards = NULL;
+		atomic_set(&mapping->i_mmap_nr_vmas, 0);
+		atomic_set(&mapping->i_mmap_lock_contention, 0);
+	}
 #endif
 }
 

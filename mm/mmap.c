@@ -37,6 +37,9 @@
 #include <linux/perf_event.h>
 #include <linux/audit.h>
 #include <linux/khugepaged.h>
+#ifdef CONFIG_I_MMAP_SHARDS
+#include <linux/kstrtox.h>
+#endif
 #include <linux/uprobes.h>
 #include <linux/notifier.h>
 #include <linux/memory.h>
@@ -68,6 +71,25 @@
 
 #ifdef CONFIG_I_MMAP_SHARDS
 #define I_MMAP_SHARD_CONTENTION_THRESHOLD	256
+
+DEFINE_STATIC_KEY_FALSE_RO(i_mmap_opt_enabled_key);
+EXPORT_SYMBOL_GPL(i_mmap_opt_enabled_key);
+
+static int __init i_mmap_opt_setup(char *str)
+{
+	bool enabled;
+	int ret;
+
+	ret = kstrtobool(str, &enabled);
+	if (ret)
+		return ret;
+	if (enabled)
+		static_branch_enable(&i_mmap_opt_enabled_key);
+	else
+		static_branch_disable(&i_mmap_opt_enabled_key);
+	return 0;
+}
+early_param("i_mmap_opt", i_mmap_opt_setup);
 
 static struct lock_class_key i_mmap_shard_lock_keys[I_MMAP_MAX_SHARDS];
 
@@ -202,14 +224,14 @@ static void i_mmap_install_shards(struct address_space *mapping)
 	i_mmap_shards_free(shards);
 }
 
-void i_mmap_lock_write_vma(struct address_space *mapping,
-			   struct vm_area_struct *vma,
-			   struct i_mmap_write_lock *lock)
+void __i_mmap_lock_write_vma(struct address_space *mapping,
+			     struct vm_area_struct *vma,
+			     struct i_mmap_write_lock *lock)
 {
 	struct i_mmap_shards *shards;
+	struct i_mmap_shard *shard;
 
 retry:
-	lock->shard = NULL;
 	lock->root = &mapping->i_mmap;
 	shards = i_mmap_shards_load(mapping);
 	if (!shards) {
@@ -235,18 +257,23 @@ retry:
 	}
 
 lock_shard:
-	lock->shard = i_mmap_shard_for_vma(shards, vma);
-	lock->root = &lock->shard->root;
-	down_write(&lock->shard->rwsem);
+	shard = i_mmap_shard_for_vma(shards, vma);
+	lock->root = &shard->root;
+	down_write(&shard->rwsem);
 }
 
-void i_mmap_unlock_write_vma(struct address_space *mapping,
-			     struct i_mmap_write_lock *lock)
+void __i_mmap_unlock_write_vma(struct address_space *mapping,
+			       struct i_mmap_write_lock *lock)
 {
-	if (lock->shard)
-		up_write(&lock->shard->rwsem);
-	else
+	struct i_mmap_shard *shard;
+
+	if (lock->root == &mapping->i_mmap) {
 		i_mmap_unlock_write(mapping);
+		return;
+	}
+
+	shard = container_of(lock->root, struct i_mmap_shard, root);
+	up_write(&shard->rwsem);
 }
 
 bool i_mmap_shards_install_locked(struct address_space *mapping,
@@ -256,7 +283,7 @@ bool i_mmap_shards_install_locked(struct address_space *mapping,
 	struct i_mmap_shard *shard;
 
 	i_mmap_assert_write_locked(mapping);
-	if (i_mmap_shards_load(mapping))
+	if (!i_mmap_opt_enabled() || i_mmap_shards_load(mapping))
 		return false;
 
 	for (;;) {
@@ -556,19 +583,17 @@ void unlink_file_vma(struct vm_area_struct *vma)
 
 void unlink_file_vma_batch_init(struct unlink_vma_file_batch *vb)
 {
-#ifdef CONFIG_I_MMAP_SHARDS
-	vb->mapping = NULL;
-#endif
 	vb->count = 0;
 }
 
 static void unlink_file_vma_batch_process(struct unlink_vma_file_batch *vb)
 {
 #ifdef CONFIG_I_MMAP_SHARDS
-	struct address_space *mapping = vb->mapping;
+	struct address_space *mapping;
 	struct i_mmap_write_lock lock;
 	int i;
 
+	mapping = vb->vmas[0]->vm_file->f_mapping;
 	i_mmap_lock_write_vma(mapping, vb->vmas[0], &lock);
 	for (i = 0; i < vb->count; i++) {
 		VM_WARN_ON_ONCE(vb->vmas[i]->vm_file->f_mapping != mapping);
@@ -595,19 +620,28 @@ void unlink_file_vma_batch_add(struct unlink_vma_file_batch *vb,
 			       struct vm_area_struct *vma)
 {
 #ifdef CONFIG_I_MMAP_SHARDS
+	struct file *file;
 	struct address_space *mapping;
+	bool mapping_changed = false;
 #endif
 
 	if (vma->vm_file == NULL)
 		return;
 
 #ifdef CONFIG_I_MMAP_SHARDS
-	mapping = vma->vm_file->f_mapping;
-	if ((vb->count > 0 && vb->mapping != mapping) ||
+	file = vma->vm_file;
+	mapping = file->f_mapping;
+	if (vb->count > 0) {
+		if (i_mmap_opt_enabled())
+			mapping_changed =
+				vb->vmas[0]->vm_file->f_mapping != mapping;
+		else
+			mapping_changed = vb->vmas[0]->vm_file != file;
+	}
+
+	if (mapping_changed ||
 	    vb->count == ARRAY_SIZE(vb->vmas))
 		unlink_file_vma_batch_process(vb);
-
-	vb->mapping = mapping;
 #else
 	if ((vb->count > 0 && vb->vmas[0]->vm_file != vma->vm_file) ||
 	    vb->count == ARRAY_SIZE(vb->vmas))
