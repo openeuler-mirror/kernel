@@ -23,6 +23,7 @@
 
 static bool is_rmmod;
 DEFINE_MUTEX(cdma_reset_mutex);
+DEFINE_MUTEX(cdma_mmu_mutex);
 
 /* Enabling jfc_arm_mode will cause jfc to report cqe; otherwise, it will not. */
 uint jfc_arm_mode;
@@ -274,6 +275,7 @@ static int cdma_probe(struct auxiliary_device *auxdev,
 
 	cdma_client_callback(cdev, CDMA_CLIENT_OP_ADD);
 	ubase_reset_register(auxdev, cdma_reset_handler);
+	ubase_update_adev_status(auxdev, 0);
 
 	return 0;
 }

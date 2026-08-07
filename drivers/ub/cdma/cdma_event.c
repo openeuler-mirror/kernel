@@ -228,16 +228,11 @@ static int cdma_delete_jfce(struct inode *inode, struct file *filp)
 static int cdma_jfce_fasync(int fd, struct file *filp, int on)
 {
 	struct cdma_jfce *jfce = (struct cdma_jfce *)filp->private_data;
-	int ret;
 
 	if (!jfce)
 		return -EINVAL;
 
-	spin_lock_irq(&jfce->jfe.lock);
-	ret = fasync_helper(fd, filp, on, &jfce->jfe.async_queue);
-	spin_unlock_irq(&jfce->jfe.lock);
-
-	return ret;
+	return fasync_helper(fd, filp, on, &jfce->jfe.async_queue);
 }
 
 const struct file_operations cdma_jfce_fops = {
@@ -481,16 +476,21 @@ static int cdma_get_async_event(struct cdma_jfae *jfae, struct file *filp,
 	struct list_head event_list;
 	struct cdma_context *ctx;
 	struct cdma_dev *cdev;
+	bool ctx_invalid;
 	u32 event_cnt;
 	int ret;
 
 	if (!arg)
 		return -EINVAL;
 
-	ctx = cdma_jfae_to_ctx(jfae);
+	mutex_lock(&jfae->cfile->ctx_mutex);
 	cdev = jfae->cfile->cdev;
+	ctx = cdma_jfae_to_ctx(jfae);
+	ctx_invalid = !cdev || cdev->status == CDMA_STATUS_INVALID || !ctx ||
+		      ctx->invalid;
+	mutex_unlock(&jfae->cfile->ctx_mutex);
 
-	if (!cdev || cdev->status == CDMA_STATUS_INVALID || !ctx || ctx->invalid) {
+	if (ctx_invalid) {
 		pr_info("wait dev invalid event success\n");
 		async_event.event_data = 0;
 		async_event.event_type = CDMA_EVENT_DEV_INVALID;
@@ -525,14 +525,19 @@ static __poll_t cdma_jfae_poll(struct file *filp, struct poll_table_struct *wait
 	struct cdma_jfae *jfae = (struct cdma_jfae *)filp->private_data;
 	struct cdma_context *ctx;
 	struct cdma_dev *cdev;
+	bool ctx_invalid;
 
 	if (!jfae || !jfae->cfile)
 		return POLLERR;
 
-	ctx = cdma_jfae_to_ctx(jfae);
+	mutex_lock(&jfae->cfile->ctx_mutex);
 	cdev = jfae->cfile->cdev;
+	ctx = cdma_jfae_to_ctx(jfae);
+	ctx_invalid = !cdev || cdev->status == CDMA_STATUS_INVALID || !ctx ||
+		      ctx->invalid;
+	mutex_unlock(&jfae->cfile->ctx_mutex);
 
-	if (!cdev || cdev->status == CDMA_STATUS_INVALID || !ctx || ctx->invalid)
+	if (ctx_invalid)
 		return POLLIN | POLLRDNORM;
 
 	return cdma_jfe_poll(&jfae->jfe, filp, wait);
@@ -585,16 +590,11 @@ static int cdma_delete_jfae(struct inode *inode, struct file *filp)
 static int cdma_jfae_fasync(int fd, struct file *filp, int on)
 {
 	struct cdma_jfae *jfae = (struct cdma_jfae *)filp->private_data;
-	int ret;
 
 	if (!jfae)
 		return -EINVAL;
 
-	spin_lock_irq(&jfae->jfe.lock);
-	ret = fasync_helper(fd, filp, on, &jfae->jfe.async_queue);
-	spin_unlock_irq(&jfae->jfe.lock);
-
-	return ret;
+	return fasync_helper(fd, filp, on, &jfae->jfe.async_queue);
 }
 
 const struct file_operations cdma_jfae_fops = {
