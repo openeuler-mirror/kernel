@@ -471,8 +471,6 @@ void ub_entity_type_init(struct ub_entity *uent)
 	}
 }
 
-#define PORT_TOTAL_NUM_MAX 256
-
 static int ub_enum_ent(struct ub_entity *uent, void *buf)
 {
 	struct device *dev = &uent->ubc->dev;
