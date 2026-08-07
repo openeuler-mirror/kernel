@@ -266,10 +266,19 @@ static int ubhp_setup_slot(struct ub_slot *slot, struct ub_entity *uent, int idx
 static void ubhp_del_slot(struct ub_slot *slot)
 {
 	struct ub_port *port;
+	bool pending;
 
-	cancel_work_sync(&slot->button_work);
-	cancel_delayed_work_sync(&slot->power_work);
-	cancel_delayed_work_sync(&slot->present_work);
+	pending = cancel_work_sync(&slot->button_work);
+	if (pending)
+		ubhp_put_slot(slot);
+
+	pending = cancel_delayed_work_sync(&slot->power_work);
+	if (pending)
+		ubhp_put_slot(slot);
+
+	pending = cancel_delayed_work_sync(&slot->present_work);
+	if (pending)
+		ubhp_put_slot(slot);
 
 	list_del(&slot->node);
 
@@ -632,6 +641,7 @@ static void ubhp_handle_present(struct ub_slot *slot)
 	if (PWR(slot)) {
 		mutex_unlock(&slot->state_lock);
 		ubhp_get_slot(slot);
+		/* power_work is always successfully added to the work queue. */
 		queue_delayed_work(get_rx_msg_wq(UB_MSG_CODE_LINK),
 				   &slot->power_work, HP_LINK_WAIT_DELAY * HZ);
 		return;
