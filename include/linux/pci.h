@@ -503,6 +503,7 @@ struct pci_dev {
 	phys_addr_t	rom;		/* Physical address if not from BAR */
 	size_t		romlen;		/* Length if not from BAR */
 
+	KABI_DEPRECATE(char *, driver_override)
 	unsigned long	priv_flags;	/* Private flags for the PCI driver */
 	/*
 	 * This flag is only set on root ports. When a slot below a root port
