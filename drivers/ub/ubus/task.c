@@ -308,11 +308,12 @@ void ub_add_retry_task(struct ub_entity *uent, int task_type)
 
 void ub_cancel_retry_work_sync(void)
 {
-	struct ub_retry_task *task, *tmp;
+	struct ub_retry_task *task;
 	bool ret;
 
 	spin_lock(&retry_lock);
-	list_for_each_entry_safe(task, tmp, &retry_list, node) {
+	while (!list_empty(&retry_list)) {
+		task = list_first_entry(&retry_list, struct ub_retry_task, node);
 		list_del_init(&task->node);
 		kref_get(&task->kref);
 		spin_unlock(&retry_lock);
