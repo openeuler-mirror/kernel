@@ -783,7 +783,7 @@ static struct l2cap_chan *a2mp_chan_open(struct l2cap_conn *conn, bool locked)
 
 	chan->ops = &a2mp_chan_ops;
 
-	l2cap_chan_set_defaults(chan);
+	l2cap_chan_set_defaults(chan, NULL);
 	chan->remote_max_tx = chan->max_tx;
 	chan->remote_tx_win = chan->tx_win;
 
