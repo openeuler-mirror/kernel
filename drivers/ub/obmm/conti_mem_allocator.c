@@ -205,11 +205,13 @@ void conti_free_memory(struct conti_mem_allocator *allocator, struct list_head *
 	struct memseg_node *node, *tmp;
 
 	list_for_each_entry_safe(node, tmp, head, list) {
+		phys_addr_t addr = node->addr;
+		size_t size = node->size;
+
 		freed_size += allocator->granu;
 		list_del(&node->list);
 		conti_pool_free_memseg(allocator, node);
-		pr_debug("allocator: freed: %d: 0x%llx + 0x%lx\n", allocator->nid, node->addr,
-			 node->size);
+		pr_debug("allocator: freed: %d: 0x%llx + 0x%lx\n", allocator->nid, addr, size);
 	}
 
 	atomic64_sub(freed_size, &allocator->pooled_mem_size);
