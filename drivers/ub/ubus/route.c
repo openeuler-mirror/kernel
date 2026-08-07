@@ -16,7 +16,7 @@
 
 #define UB_ROUTE_TABLE_ENTRY_START (UB_ROUTE_TABLE_SLICE_START + (0x10 << 2))
 #define EBW(port_nums) ((((port_nums) - 1) >> 5) + 1) /* Entry Bit Width */
-#define UB_ROUTE_TABLE_ENTRY_BITS SZ_128
+#define UB_ROUTE_TABLE_ENTRY_BITS PORT_TOTAL_NUM_MAX
 #define UB_ROUTE_KFIFO_DEPTH SZ_16
 
 /* node to update routing table */
@@ -152,7 +152,7 @@ void ub_route_clear(struct ub_entity *uent)
 		return;
 
 	for_each_uent_port(port, uent)
-		bitmap_clear(port->cna_maps, 0, UB_ROUTE_TABLE_ENTRY_BITS);
+		bitmap_zero(port->cna_maps, UB_MAX_CNA_NUM);
 
 	ub_clear_cna_list(&uent->cna_list);
 }
