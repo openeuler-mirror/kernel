@@ -129,7 +129,7 @@ unsigned long long hi_feature_get(void)
 	       UBC_VENDOR_FEATURE_SETS_SIZE);
 	feature = raw >> SZ_32;
 	if (!feature) {
-		dev_info(&ubc->dev, "Feature sets data is not initialized.\n");
+		dev_info_ratelimited(&ubc->dev, "Feature sets data is not initialized.\n");
 		return U64_MAX;
 	}
 
