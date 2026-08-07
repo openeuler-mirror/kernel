@@ -73,7 +73,7 @@ static void __iomem *ub_intr_map_region(struct ub_entity *uent,
 	u32 addr_reg_l, addr_reg_h, offset_l, offset_h;
 	resource_size_t tb_phys_addr;
 	unsigned long flags, sz;
-	u64 offset;
+	u64 offset, len;
 	int ret;
 
 	if (nr_entries <= 0)
@@ -101,7 +101,8 @@ static void __iomem *ub_intr_map_region(struct ub_entity *uent,
 	if (!flags || (flags & IORESOURCE_UNSET))
 		return NULL;
 
-	if (offset + sz > ub_resource_len(uent, 0)) {
+	len = ub_resource_len(uent, 0);
+	if (offset >= len || sz > len - offset) {
 		ub_err(uent, "UB interrupt table(type:%u) off:%#llx + sz:%#lx is out of range!\n",
 		       type, offset, sz);
 		return NULL;
