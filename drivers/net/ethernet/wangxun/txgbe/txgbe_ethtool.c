@@ -3829,8 +3829,8 @@ static bool txgbe_match_ethtool_fdir_entry(struct txgbe_adapter *adapter,
 	return false;
 }
 
-static int txgbe_add_ethtool_fdir_entry(struct txgbe_adapter *adapter,
-					struct ethtool_rxnfc *cmd)
+int txgbe_add_ethtool_fdir_entry(struct txgbe_adapter *adapter,
+				 struct ethtool_rxnfc *cmd)
 {
 	struct ethtool_rx_flow_spec *fsp =
 		(struct ethtool_rx_flow_spec *)&cmd->fs;
@@ -4008,8 +4008,8 @@ err_out:
 	return -EINVAL;
 }
 
-static int txgbe_del_ethtool_fdir_entry(struct txgbe_adapter *adapter,
-					struct ethtool_rxnfc *cmd)
+int txgbe_del_ethtool_fdir_entry(struct txgbe_adapter *adapter,
+				 struct ethtool_rxnfc *cmd)
 {
 	struct ethtool_rx_flow_spec *fsp =
 		(struct ethtool_rx_flow_spec *)&cmd->fs;

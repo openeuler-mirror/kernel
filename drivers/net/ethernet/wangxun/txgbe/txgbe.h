@@ -172,6 +172,7 @@ struct vf_data_storage {
 	int xcast_mode;
 	unsigned int vf_api;
 	u16 ft_filter_idx[TXGBE_MAX_RDB_5T_CTL0_FILTERS];
+	u16 *fdir_filter_idx;
 	u16 queue_max_tx_rate[TXGBE_VF_MAX_TX_QUEUES];
 };
 
@@ -1192,6 +1193,10 @@ int txgbe_find_nth_limited_vlan(struct txgbe_adapter *adapter, int vlan);
 void txgbe_del_vlan_limit(struct txgbe_adapter *adapter, int vlan);
 void txgbe_set_vlan_limit(struct txgbe_adapter *adapter, int vlan, int rate_limit);
 void txgbe_check_vlan_rate_limit(struct txgbe_adapter *adapter);
+int txgbe_add_ethtool_fdir_entry(struct txgbe_adapter *adapter,
+				 struct ethtool_rxnfc *cmd);
+int txgbe_del_ethtool_fdir_entry(struct txgbe_adapter *adapter,
+				 struct ethtool_rxnfc *cmd);
 
 /**
  * interrupt masking operations. each bit in PX_ICn correspond to a interrupt.

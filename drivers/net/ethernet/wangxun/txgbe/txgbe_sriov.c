@@ -25,9 +25,10 @@ static int __txgbe_enable_sriov(struct txgbe_adapter *adapter,
 				unsigned int num_vfs)
 {
 	struct txgbe_hw *hw = &adapter->hw;
-	int num_vf_macvlans, i;
+	int num_vf_macvlans, i, j;
 	struct vf_macvlans *mv_list;
 	u32 value = 0;
+	u16 fdir_max = (1024 << adapter->fdir_pballoc) - 2;
 
 	adapter->flags |= TXGBE_FLAG_SRIOV_ENABLED;
 	e_dev_info("SR-IOV enabled with %d VFs\n", num_vfs);
@@ -122,6 +123,15 @@ static int __txgbe_enable_sriov(struct txgbe_adapter *adapter,
 
 		/* set the default xcast mode */
 		adapter->vfinfo[i].xcast_mode = TXGBEVF_XCAST_MODE_NONE;
+
+		/* set the default unavailable fdir filter index */
+		adapter->vfinfo[i].fdir_filter_idx = kcalloc(fdir_max,
+							     sizeof(u16),
+							     GFP_KERNEL);
+		if (!adapter->vfinfo[i].fdir_filter_idx)
+			return -ENOMEM;
+		for (j = 0; j < fdir_max; j++)
+			adapter->vfinfo[i].fdir_filter_idx[j] = 0x1FFF;
 	}
 
 	return 0;
@@ -273,6 +283,10 @@ void txgbe_enable_sriov(struct txgbe_adapter *adapter)
 int txgbe_disable_sriov(struct txgbe_adapter *adapter)
 {
 	struct txgbe_hw *hw = &adapter->hw;
+	int i;
+
+	for (i = 0; i < adapter->num_vfs; i++)
+		kfree(adapter->vfinfo[i].fdir_filter_idx);
 
 	/* set num VFs to 0 to prevent access to vfinfo */
 	adapter->num_vfs = 0;
@@ -552,6 +566,7 @@ static int txgbe_negotiate_vf_api(struct txgbe_adapter *adapter,
 	case txgbe_mbox_api_13:
 	case txgbe_mbox_api_21:
 	case txgbe_mbox_api_22:
+	case txgbe_mbox_api_23:
 		adapter->vfinfo[vf].vf_api = api;
 		return 0;
 	default:
@@ -573,6 +588,7 @@ static int txgbe_get_vf_queues(struct txgbe_adapter *adapter,
 
 	/* verify the PF is supporting the correct APIs */
 	switch (adapter->vfinfo[vf].vf_api) {
+	case txgbe_mbox_api_23:
 	case txgbe_mbox_api_22:
 	case txgbe_mbox_api_21:
 	case txgbe_mbox_api_20:
@@ -976,6 +992,7 @@ static int txgbe_update_vf_xcast_mode(struct txgbe_adapter *adapter,
 	case txgbe_mbox_api_20:
 	case txgbe_mbox_api_21:
 	case txgbe_mbox_api_22:
+	case txgbe_mbox_api_23:
 		break;
 	default:
 		return -EOPNOTSUPP;
@@ -1037,6 +1054,7 @@ static int txgbe_get_vf_link_state(struct txgbe_adapter *adapter,
 	case txgbe_mbox_api_13:
 	case txgbe_mbox_api_21:
 	case txgbe_mbox_api_22:
+	case txgbe_mbox_api_23:
 		break;
 	default:
 		return -EOPNOTSUPP;
@@ -1058,6 +1076,7 @@ static int txgbe_get_fw_version(struct txgbe_adapter *adapter,
 	case txgbe_mbox_api_13:
 	case txgbe_mbox_api_21:
 	case txgbe_mbox_api_22:
+	case txgbe_mbox_api_23:
 		break;
 	default:
 		return -EOPNOTSUPP;
@@ -1093,6 +1112,7 @@ static int txgbe_add_5tuple_filter_vf(struct txgbe_adapter *adapter,
 	}
 	if (sw_idx >= TXGBE_MAX_RDB_5T_CTL0_FILTERS) {
 		e_err(drv, "5tuple filters are full.\n");
+		msgbuf[0] |= TXGBE_VT_MSGTYPE_SPEC;
 		return -EINVAL;
 	}
 
@@ -1153,6 +1173,126 @@ static int txgbe_set_5tuple_filter_vf(struct txgbe_adapter *adapter,
 	txgbe_del_5tuple_filter_vf(adapter, cmd, vf);
 
 	return 0;
+}
+
+static int txgbe_add_fdir_filter_vf(struct txgbe_adapter *adapter,
+				    u32 *msgbuf, u32 vf)
+{
+	struct ethtool_rxnfc rxnfc = { 0 };
+	struct ethtool_rx_flow_spec *fsp;
+	u16 index, sw_idx;
+	u8 flow_type;
+	int err = 0;
+
+	fsp = &rxnfc.fs;
+
+	/* ring index */
+	fsp->ring_cookie = (msgbuf[TXGBEVF_FDIR_CMD] >> 16) & 0xFF;
+	fsp->ring_cookie |= ((u64)(vf + 1) << ETHTOOL_RX_FLOW_SPEC_RING_VF_OFF) &
+			    ETHTOOL_RX_FLOW_SPEC_RING_VF;
+
+	/* filter index */
+	sw_idx = (1024 << adapter->fdir_pballoc) - 3;
+	sw_idx -= adapter->etype_filter_info.count;
+	sw_idx -= adapter->fdir_filter_count;
+	fsp->location = sw_idx;
+
+	/* flow type */
+	flow_type = (msgbuf[TXGBEVF_FDIR_CMD] & GENMASK(30, 24)) >> 24;
+	switch (flow_type) {
+	case TXGBE_ATR_FLOW_TYPE_TCPV4:
+		fsp->flow_type = TCP_V4_FLOW;
+		break;
+	case TXGBE_ATR_FLOW_TYPE_UDPV4:
+		fsp->flow_type = UDP_V4_FLOW;
+		break;
+	case TXGBE_ATR_FLOW_TYPE_SCTPV4:
+		fsp->flow_type = SCTP_V4_FLOW;
+		break;
+	case TXGBE_ATR_FLOW_TYPE_IPV4:
+		fsp->flow_type = IP_USER_FLOW;
+		fsp->h_u.usr_ip4_spec.proto = 0;
+		fsp->m_u.usr_ip4_spec.proto = 0;
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+	fsp->flow_type |= FLOW_EXT;
+
+	/* rule format */
+	fsp->h_u.tcp_ip4_spec.ip4src = msgbuf[TXGBEVF_FDIR_IP4SA];
+	fsp->h_u.tcp_ip4_spec.ip4dst = msgbuf[TXGBEVF_FDIR_IP4DA];
+	fsp->h_u.tcp_ip4_spec.psrc = msgbuf[TXGBEVF_FDIR_PORT] & 0xFFFF;
+	fsp->h_u.tcp_ip4_spec.pdst = msgbuf[TXGBEVF_FDIR_PORT] >> 16;
+	fsp->m_u.tcp_ip4_spec.ip4src = msgbuf[TXGBEVF_FDIR_IP4SM];
+	fsp->m_u.tcp_ip4_spec.ip4dst = msgbuf[TXGBEVF_FDIR_IP4DM];
+	fsp->m_u.tcp_ip4_spec.psrc = msgbuf[TXGBEVF_FDIR_PORTM] & 0xFFFF;
+	fsp->m_u.tcp_ip4_spec.pdst = msgbuf[TXGBEVF_FDIR_PORTM] >> 16;
+
+	/* flex bytes not supported yet*/
+	if (msgbuf[TXGBEVF_FDIR_FLEX] >> 16)
+		return -EOPNOTSUPP;
+
+	err = txgbe_add_ethtool_fdir_entry(adapter, &rxnfc);
+	if (err)
+		return err;
+
+	index = msgbuf[TXGBEVF_FDIR_CMD] & 0xFFFF;
+	adapter->vfinfo[vf].fdir_filter_idx[index] = sw_idx;
+
+	return 0;
+}
+
+static int txgbe_del_fdir_filter_vf(struct txgbe_adapter *adapter,
+				    u32 *msgbuf, u32 vf)
+{
+	u16 fdir_max = (1024 << adapter->fdir_pballoc) - 2;
+	struct ethtool_rxnfc rxnfc = { 0 };
+	u16 index, sw_idx;
+	int err = 0;
+
+	/* delete all enties */
+	if (msgbuf[TXGBEVF_FDIR_CMD] & BIT(16)) {
+		for (index = 0; index < fdir_max; index++) {
+			sw_idx = adapter->vfinfo[vf].fdir_filter_idx[index];
+			if (sw_idx == 0x1FFF)
+				continue;
+			adapter->vfinfo[vf].fdir_filter_idx[index] = 0x1FFF;
+			rxnfc.fs.location = sw_idx;
+			err += txgbe_del_ethtool_fdir_entry(adapter, &rxnfc);
+		}
+		if (err)
+			e_err(drv,
+			      "VF %d flush FDIR failed, please manually delete them\n", vf);
+		return 0;
+	}
+
+	index = msgbuf[TXGBEVF_FDIR_CMD] & 0xFFFF;
+	sw_idx = adapter->vfinfo[vf].fdir_filter_idx[index];
+	rxnfc.fs.location = sw_idx;
+
+	err = txgbe_del_ethtool_fdir_entry(adapter, &rxnfc);
+	if (!err)
+		adapter->vfinfo[vf].fdir_filter_idx[index] = 0x1FFF;
+
+	return err;
+}
+
+static int txgbe_set_fdir_filter_vf(struct txgbe_adapter *adapter,
+				    u32 *msgbuf, u32 vf)
+{
+	u32 cmd = msgbuf[TXGBEVF_FDIR_CMD];
+	bool add;
+
+	/* verify the PF is supporting the correct API */
+	if (adapter->vfinfo[vf].vf_api < txgbe_mbox_api_23)
+		return -EOPNOTSUPP;
+
+	add = !!(cmd & BIT(31));
+	if (add)
+		return txgbe_add_fdir_filter_vf(adapter, msgbuf, vf);
+
+	return txgbe_del_fdir_filter_vf(adapter, msgbuf, vf);
 }
 
 static int txgbe_rcv_msg_from_vf(struct txgbe_adapter *adapter, u16 vf)
@@ -1226,6 +1366,9 @@ static int txgbe_rcv_msg_from_vf(struct txgbe_adapter *adapter, u16 vf)
 		break;
 	case TXGBE_VF_SET_5TUPLE:
 		retval = txgbe_set_5tuple_filter_vf(adapter, msgbuf, vf);
+		break;
+	case TXGBE_VF_SET_FDIR:
+		retval = txgbe_set_fdir_filter_vf(adapter, msgbuf, vf);
 		break;
 	case TXGBE_VF_QUEUE_RATE_LIMIT:
 		retval = txgbe_set_queue_rate_limit_vf(adapter, msgbuf, vf);
