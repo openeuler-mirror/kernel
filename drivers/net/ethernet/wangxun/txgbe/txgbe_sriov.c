@@ -1217,7 +1217,6 @@ static int txgbe_add_fdir_filter_vf(struct txgbe_adapter *adapter,
 	default:
 		return -EOPNOTSUPP;
 	}
-	fsp->flow_type |= FLOW_EXT;
 
 	/* rule format */
 	fsp->h_u.tcp_ip4_spec.ip4src = msgbuf[TXGBEVF_FDIR_IP4SA];

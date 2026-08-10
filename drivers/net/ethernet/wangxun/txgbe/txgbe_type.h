@@ -2390,11 +2390,8 @@ union txgbe_atr_input {
 	/* Byte layout in order, all values with MSB first:
 	 * vm_pool      - 1 byte
 	 * flow_type    - 1 byte
-	 * vlan_id      - 2 bytes
+	 * pkt_type     - 2 bytes
 	 * src_ip       - 16 bytes
-	 * inner_mac    - 6 bytes
-	 * cloud_mode   - 2 bytes
-	 * tni_vni      - 4 bytes
 	 * dst_ip       - 16 bytes
 	 * src_port     - 2 bytes
 	 * dst_port     - 2 bytes
@@ -2404,7 +2401,7 @@ union txgbe_atr_input {
 	struct {
 		u8 vm_pool;
 		u8 flow_type;
-		__be16 vlan_id;
+		__be16 pkt_type;
 		__be32 dst_ip[4];
 		__be32 src_ip[4];
 		__be16 src_port;
@@ -2420,7 +2417,7 @@ union txgbe_atr_hash_dword {
 	struct {
 		u8 vm_pool;
 		u8 flow_type;
-		__be16 vlan_id;
+		__be16 pkt_type;
 	} formatted;
 	__be32 ip;
 	struct {

@@ -217,17 +217,19 @@ int txgbe_check_flash_load(struct txgbe_hw *hw, u32 check_bit);
 /* @txgbe_api.h */
 int txgbe_reinit_fdir_tables(struct txgbe_hw *hw);
 int txgbe_init_fdir_signature(struct txgbe_hw *hw, u32 fdirctrl);
-int txgbe_init_fdir_perfect(struct txgbe_hw *hw, u32 fdirctrl,
-			    bool cloud_mode);
+int txgbe_init_fdir_perfect(struct txgbe_hw *hw, u32 fdirctrl);
 int txgbe_fdir_add_signature_filter(struct txgbe_hw *hw,
 				    union txgbe_atr_hash_dword input,
 					  union txgbe_atr_hash_dword common,
 					  u8 queue);
 int txgbe_fdir_set_input_mask(struct txgbe_hw *hw,
-			      union txgbe_atr_input *input_mask, bool cloud_mode);
+			      union txgbe_atr_input *input_mask);
+int txgbe_fdir_set_flex_conf(struct txgbe_hw *hw,
+			     struct txgbe_fdir_filter *input,
+			     union txgbe_atr_input *input_mask);
 int txgbe_fdir_write_perfect_filter(struct txgbe_hw *hw,
 				    union txgbe_atr_input *input,
-				  u16 soft_id, u8 queue, bool cloud_mode);
+				    u16 soft_id, u8 queue);
 int txgbe_fdir_erase_perfect_filter(struct txgbe_hw *hw,
 				    union txgbe_atr_input *input,
 					  u16 soft_id);

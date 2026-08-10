@@ -4821,8 +4821,7 @@ static void txgbe_fdir_filter_restore(struct txgbe_adapter *adapter)
 	spin_lock(&adapter->fdir_perfect_lock);
 
 	if (!hlist_empty(&adapter->fdir_filter_list))
-		txgbe_fdir_set_input_mask(hw, &adapter->fdir_mask,
-					  adapter->cloud_mode);
+		txgbe_fdir_set_input_mask(hw, &adapter->fdir_mask);
 
 	hlist_for_each_entry_safe(filter, node,
 				  &adapter->fdir_filter_list, fdir_node) {
@@ -4857,8 +4856,7 @@ static void txgbe_fdir_filter_restore(struct txgbe_adapter *adapter)
 		txgbe_fdir_write_perfect_filter(hw,
 						&filter->filter,
 				filter->sw_idx,
-				queue,
-				adapter->cloud_mode);
+				queue);
 	}
 
 	spin_unlock(&adapter->fdir_perfect_lock);
@@ -4971,8 +4969,7 @@ static void txgbe_configure(struct txgbe_adapter *adapter)
 					  adapter->fdir_pballoc);
 	} else if (adapter->flags & TXGBE_FLAG_FDIR_PERFECT_CAPABLE) {
 		txgbe_init_fdir_perfect(&adapter->hw,
-					adapter->fdir_pballoc,
-								adapter->cloud_mode);
+					adapter->fdir_pballoc);
 		txgbe_fdir_filter_restore(adapter);
 	}
 
@@ -8800,10 +8797,10 @@ static void txgbe_atr(struct txgbe_ring *ring,
 	/* src and dst are inverted, think how the receiver sees them
 	 *
 	 * The input is broken into two sections, a non-compressed section
-	 * containing vm_pool, vlan_id, and flow_type.  The rest of the data
+	 * containing vm_pool, pkt_type, and flow_type.  The rest of the data
 	 * is XORed together and stored in the compressed dword.
 	 */
-	input.formatted.vlan_id = htons((u16)dptype.ptype);
+	input.formatted.pkt_type = htons((u16)dptype.ptype);
 
 	/* since src port and flex bytes occupy the same word XOR them together
 	 * and write the value to source port portion of compressed dword

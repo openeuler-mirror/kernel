@@ -4373,10 +4373,8 @@ int txgbe_init_fdir_signature(struct txgbe_hw *hw, u32 fdirctrl)
  *  @hw: pointer to hardware structure
  *  @fdirctrl: value to write to flow director control register, initially
  *           contains just the value of the Rx packet buffer allocation
- *  @cloud_mode: true - cloud mode, false - other mode
  **/
-int txgbe_init_fdir_perfect(struct txgbe_hw *hw, u32 fdirctrl,
-			    bool cloud_mode)
+int txgbe_init_fdir_perfect(struct txgbe_hw *hw, u32 fdirctrl)
 {
 	/* Continue setup of fdirctrl register bits:
 	 * Turn perfect match filtering on
@@ -4651,17 +4649,12 @@ static u32 txgbe_get_fdirtcpm(union txgbe_atr_input *input_mask)
 	TXGBE_NTOHS(((u16)(_value) >> 8) | ((u16)(_value) << 8))
 
 int txgbe_fdir_set_input_mask(struct txgbe_hw *hw,
-			      union txgbe_atr_input *input_mask,
-				       bool cloud_mode)
+			      union txgbe_atr_input *input_mask)
 {
 	/* mask IPv6 since it is currently not supported */
 	u32 fdirm = 0;
 	u32 fdirtcpm;
-	u32 flex = 0;
-	int i, j;
-#ifdef CONFIG_PCI_IOV
 	struct txgbe_adapter *adapter = (struct txgbe_adapter *)hw->back;
-#endif
 
 	/* Program the relevant mask registers.  If src/dst_port or src/dst_addr
 	 * are zero, then assume a full mask for that field.  Also assume that
@@ -4701,28 +4694,7 @@ int txgbe_fdir_set_input_mask(struct txgbe_hw *hw,
 	/* Now mask VM pool and destination IPv6 - bits 5 and 2 */
 	wr32(hw, TXGBE_RDB_FDIR_OTHER_MSK, fdirm);
 
-	i = VMDQ_P(0) / 4;
-	j = VMDQ_P(0) % 4;
-	flex = rd32m(hw, TXGBE_RDB_FDIR_FLEX_CFG(i),
-		     ~((TXGBE_RDB_FDIR_FLEX_CFG_BASE_MSK |
-		   TXGBE_RDB_FDIR_FLEX_CFG_MSK |
-		   TXGBE_RDB_FDIR_FLEX_CFG_OFST) <<
-		   (TXGBE_RDB_FDIR_FLEX_CFG_VM_SHIFT * j)));
-	flex |= (TXGBE_RDB_FDIR_FLEX_CFG_BASE_MAC |
-		0x6 << TXGBE_RDB_FDIR_FLEX_CFG_OFST_SHIFT) <<
-		(TXGBE_RDB_FDIR_FLEX_CFG_VM_SHIFT * j);
 
-	switch (input_mask->formatted.flex_bytes & 0xFFFF) {
-	case 0x0000:
-		flex |= TXGBE_RDB_FDIR_FLEX_CFG_MSK <<
-			(TXGBE_RDB_FDIR_FLEX_CFG_VM_SHIFT * j);
-		fallthrough;
-	case 0xFFFF:
-		break;
-	default:
-		return TXGBE_ERR_CONFIG;
-	}
-	wr32(hw, TXGBE_RDB_FDIR_FLEX_CFG(i), flex);
 
 	/* store the TCP/UDP port masks,
 	 * bit reversed from port layout
@@ -4742,45 +4714,75 @@ int txgbe_fdir_set_input_mask(struct txgbe_hw *hw,
 	return 0;
 }
 
+int txgbe_fdir_set_flex_conf(struct txgbe_hw *hw,
+			     struct txgbe_fdir_filter *input,
+			     union txgbe_atr_input *input_mask)
+{
+	u32 flex = 0;
+	int i, j;
+
+	i = input->filter.formatted.vm_pool / 4;
+	j = input->filter.formatted.vm_pool % 4;
+	flex = rd32m(hw, TXGBE_RDB_FDIR_FLEX_CFG(i),
+		~((TXGBE_RDB_FDIR_FLEX_CFG_BASE_MSK |
+		   TXGBE_RDB_FDIR_FLEX_CFG_MSK |
+		   TXGBE_RDB_FDIR_FLEX_CFG_OFST) <<
+		   (TXGBE_RDB_FDIR_FLEX_CFG_VM_SHIFT * j)));
+
+	switch (input_mask->formatted.flex_bytes & 0xFFFF) {
+	case 0x0000:
+		flex |= TXGBE_RDB_FDIR_FLEX_CFG_MSK <<
+			(TXGBE_RDB_FDIR_FLEX_CFG_VM_SHIFT * j);
+		break;
+	case 0xFFFF:
+		flex |= (TXGBE_RDB_FDIR_FLEX_CFG_BASE_MAC |
+			 ((input->flex_offset / 2) <<
+			  TXGBE_RDB_FDIR_FLEX_CFG_OFST_SHIFT)) <<
+			(TXGBE_RDB_FDIR_FLEX_CFG_VM_SHIFT * j);
+		break;
+	default:
+		return TXGBE_ERR_CONFIG;
+	}
+	wr32(hw, TXGBE_RDB_FDIR_FLEX_CFG(i), flex);
+	return 0;
+}
+
 int txgbe_fdir_write_perfect_filter(struct txgbe_hw *hw,
 				    union txgbe_atr_input *input,
-					     u16 soft_id, u8 queue,
-					     bool cloud_mode)
+				    u16 soft_id, u8 queue)
 {
 	u32 fdirport, fdirvlan, fdirhash, fdircmd;
 	int err;
 
-	if (!cloud_mode) {
-		/* currently IPv6 is not supported, must be programmed with 0 */
-		wr32(hw, TXGBE_RDB_FDIR_IP6(2),
+	/* currently IPv6 is not supported, must be programmed with 0 */
+	wr32(hw, TXGBE_RDB_FDIR_IP6(2),
 		     TXGBE_NTOHL(input->formatted.src_ip[0]));
-		wr32(hw, TXGBE_RDB_FDIR_IP6(1),
+	wr32(hw, TXGBE_RDB_FDIR_IP6(1),
 		     TXGBE_NTOHL(input->formatted.src_ip[1]));
-		wr32(hw, TXGBE_RDB_FDIR_IP6(0),
+	wr32(hw, TXGBE_RDB_FDIR_IP6(0),
 		     TXGBE_NTOHL(input->formatted.src_ip[2]));
 
-		/* record the source address (little-endian) */
-		wr32(hw, TXGBE_RDB_FDIR_SA,
+	/* record the source address (little-endian) */
+	wr32(hw, TXGBE_RDB_FDIR_SA,
 		     TXGBE_NTOHL(input->formatted.src_ip[0]));
 
-		/* record the first 32 bits of the destination address
-		 * (little-endian)
-		 */
-		wr32(hw, TXGBE_RDB_FDIR_DA,
+	/* record the first 32 bits of the destination address
+	 * (little-endian)
+	 */
+	wr32(hw, TXGBE_RDB_FDIR_DA,
 		     TXGBE_NTOHL(input->formatted.dst_ip[0]));
 
-		/* record source and destination port (little-endian)*/
-		fdirport = TXGBE_NTOHS(input->formatted.dst_port);
-		fdirport <<= TXGBE_RDB_FDIR_PORT_DESTINATION_SHIFT;
-		fdirport |= TXGBE_NTOHS(input->formatted.src_port);
-		wr32(hw, TXGBE_RDB_FDIR_PORT, fdirport);
-	}
+	/* record source and destination port (little-endian)*/
+	fdirport = TXGBE_NTOHS(input->formatted.dst_port);
+	fdirport <<= TXGBE_RDB_FDIR_PORT_DESTINATION_SHIFT;
+	fdirport |= TXGBE_NTOHS(input->formatted.src_port);
+	wr32(hw, TXGBE_RDB_FDIR_PORT, fdirport);
 
 	/* record packet type and flex_bytes(little-endian) */
 	fdirvlan = TXGBE_NTOHS(input->formatted.flex_bytes);
 	fdirvlan <<= TXGBE_RDB_FDIR_FLEX_FLEX_SHIFT;
 
-	fdirvlan |= TXGBE_NTOHS(input->formatted.vlan_id);
+	fdirvlan |= TXGBE_NTOHS(input->formatted.pkt_type);
 	wr32(hw, TXGBE_RDB_FDIR_FLEX, fdirvlan);
 
 	/* configure FDIRHASH register */

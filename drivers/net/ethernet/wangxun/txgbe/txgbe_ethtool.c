@@ -3430,11 +3430,13 @@ static int txgbe_get_ethtool_fdir_entry(struct txgbe_adapter *adapter,
 	fsp->m_u.tcp_ip4_spec.ip4src = mask->formatted.src_ip[0];
 	fsp->h_u.tcp_ip4_spec.ip4dst = rule->filter.formatted.dst_ip[0];
 	fsp->m_u.tcp_ip4_spec.ip4dst = mask->formatted.dst_ip[0];
-	fsp->h_ext.vlan_etype = rule->filter.formatted.flex_bytes;
-	fsp->m_ext.vlan_etype = mask->formatted.flex_bytes;
-	fsp->h_ext.data[1] = htonl(rule->filter.formatted.vm_pool);
-	fsp->m_ext.data[1] = htonl(mask->formatted.vm_pool);
-	fsp->flow_type |= FLOW_EXT;
+	if (mask->formatted.flex_bytes == 0xFFFF) {
+		fsp->h_ext.data[1] = htonl(ntohs(rule->filter.formatted.flex_bytes));
+		fsp->m_ext.data[1] = htonl(ntohs(mask->formatted.flex_bytes));
+		fsp->h_ext.data[0] = htonl(rule->flex_offset);
+		fsp->m_ext.data[0] = htonl(0xFFFF);
+		fsp->flow_type |= FLOW_EXT;
+	}
 
 	/* record action */
 	if (rule->action == TXGBE_RDB_FDIR_DROP_QUEUE)
@@ -3839,7 +3841,7 @@ int txgbe_add_ethtool_fdir_entry(struct txgbe_adapter *adapter,
 	struct txgbe_hw *hw = &adapter->hw;
 	struct txgbe_fdir_filter *input;
 	union txgbe_atr_input mask;
-	u8 queue;
+	u8 queue, pool = 0;
 	int err;
 	u16 ptype = 0;
 
@@ -3866,11 +3868,14 @@ int txgbe_add_ethtool_fdir_entry(struct txgbe_adapter *adapter,
 			return -EINVAL;
 
 		/* Map the ring onto the absolute queue index */
-		if (!vf)
+		if (!vf) {
 			queue = adapter->rx_ring[ring]->reg_idx;
-		else
+			pool = adapter->num_vfs;
+		} else {
 			queue = ((vf - 1) *
 				adapter->num_rx_queues_per_pool) + ring;
+			pool = vf - 1;
+		}
 	}
 
 	/* Don't allow indexes to exist outside of available space */
@@ -3911,14 +3916,17 @@ int txgbe_add_ethtool_fdir_entry(struct txgbe_adapter *adapter,
 	input->filter.formatted.dst_port = fsp->h_u.tcp_ip4_spec.pdst;
 	mask.formatted.dst_port = fsp->m_u.tcp_ip4_spec.pdst;
 
+	if (adapter->num_vfs) {
+		input->filter.formatted.vm_pool = pool;
+		mask.formatted.vm_pool = 0x7F;
+	}
+
 	if (fsp->flow_type & FLOW_EXT) {
-		input->filter.formatted.vm_pool =
-				(unsigned char)ntohl(fsp->h_ext.data[1]);
-		mask.formatted.vm_pool =
-				(unsigned char)ntohl(fsp->m_ext.data[1]);
 		input->filter.formatted.flex_bytes =
-						fsp->h_ext.vlan_etype;
-		mask.formatted.flex_bytes = fsp->m_ext.vlan_etype;
+				htons((ntohl(fsp->h_ext.data[1]) & 0xFFFF));
+		mask.formatted.flex_bytes =
+				htons((ntohl(fsp->m_ext.data[1]) & 0xFFFF));
+		input->flex_offset = htonl(fsp->h_ext.data[0]) & 0xFFFF;
 	}
 
 	switch (input->filter.formatted.flow_type) {
@@ -3950,11 +3958,11 @@ int txgbe_add_ethtool_fdir_entry(struct txgbe_adapter *adapter,
 		break;
 	}
 
-	input->filter.formatted.vlan_id = htons(ptype);
+	input->filter.formatted.pkt_type = htons(ptype);
 	if (mask.formatted.flow_type & TXGBE_ATR_L4TYPE_MASK)
-		mask.formatted.vlan_id = 0xFFFF;
+		mask.formatted.pkt_type = 0xFFFF;
 	else
-		mask.formatted.vlan_id = htons(0xFFF8);
+		mask.formatted.pkt_type = htons(0xFFF8);
 
 	/* determine if we need to drop or route the packet */
 	if (fsp->ring_cookie == RX_CLS_FLOW_DISC)
@@ -3967,14 +3975,19 @@ int txgbe_add_ethtool_fdir_entry(struct txgbe_adapter *adapter,
 	if (hlist_empty(&adapter->fdir_filter_list)) {
 		/* save mask and program input mask into HW */
 		memcpy(&adapter->fdir_mask, &mask, sizeof(mask));
-		err = txgbe_fdir_set_input_mask(hw, &mask,
-						adapter->cloud_mode);
+		err = txgbe_fdir_set_input_mask(hw, &mask);
 		if (err) {
 			e_err(drv, "Error writing mask\n");
 			goto err_out_w_lock;
 		}
 	} else if (memcmp(&adapter->fdir_mask, &mask, sizeof(mask))) {
 		e_err(drv, "Hardware only supports one mask per port.\n");
+		goto err_out_w_lock;
+	}
+
+	err = txgbe_fdir_set_flex_conf(hw, input, &mask);
+	if (err) {
+		e_err(drv, "Error setting flex configuration\n");
 		goto err_out_w_lock;
 	}
 
@@ -3992,8 +4005,7 @@ int txgbe_add_ethtool_fdir_entry(struct txgbe_adapter *adapter,
 	if (netif_running(adapter->netdev)) {
 		err = txgbe_fdir_write_perfect_filter(hw,
 						      &input->filter, input->sw_idx,
-				queue,
-				adapter->cloud_mode);
+					      queue);
 		if (err)
 			goto err_out_w_lock;
 	}

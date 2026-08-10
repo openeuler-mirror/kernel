@@ -768,8 +768,6 @@ struct txgbe_adapter {
 	bool an_done;
 	u32 fsm;
 
-	bool cloud_mode;
-
 	/* Tx fast path data */
 	int num_tx_queues;
 	u16 tx_itr_setting;
@@ -1006,6 +1004,7 @@ struct txgbe_fdir_filter {
 	union txgbe_atr_input filter;
 	u16 sw_idx;
 	u64 action;
+	u16 flex_offset;
 };
 
 enum txgbe_state_t {
