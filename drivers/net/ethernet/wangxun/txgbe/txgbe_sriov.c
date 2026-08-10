@@ -274,19 +274,6 @@ int txgbe_disable_sriov(struct txgbe_adapter *adapter)
 {
 	struct txgbe_hw *hw = &adapter->hw;
 
-#ifdef CONFIG_PCI_IOV
-	/* If our VFs are assigned we cannot shut down SR-IOV
-	 * without causing issues, so just leave the hardware
-	 * available but disabled
-	 */
-	if (pci_vfs_assigned(adapter->pdev)) {
-		e_dev_warn("Unloading driver while VFs are assigned VFs will not be deallocated\n");
-		return -EPERM;
-	}
-	/* disable iov and allow time for transactions to clear */
-	pci_disable_sriov(adapter->pdev);
-#endif
-
 	/* set num VFs to 0 to prevent access to vfinfo */
 	adapter->num_vfs = 0;
 
@@ -302,6 +289,19 @@ int txgbe_disable_sriov(struct txgbe_adapter *adapter)
 	/* free macvlan list */
 	kfree(adapter->mv_list);
 	adapter->mv_list = NULL;
+
+#ifdef CONFIG_PCI_IOV
+	/* If our VFs are assigned we cannot shut down SR-IOV
+	 * without causing issues, so just leave the hardware
+	 * available but disabled
+	 */
+	if (pci_vfs_assigned(adapter->pdev)) {
+		e_dev_warn("Unloading driver while VFs are assigned VFs will not be deallocated\n");
+		return -EPERM;
+	}
+	/* disable iov and allow time for transactions to clear */
+	pci_disable_sriov(adapter->pdev);
+#endif
 
 	/* if SR-IOV is already disabled then there is nothing to do */
 	if (!(adapter->flags & TXGBE_FLAG_SRIOV_ENABLED))
