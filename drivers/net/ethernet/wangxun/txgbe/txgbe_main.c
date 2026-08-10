@@ -4444,8 +4444,6 @@ void txgbe_set_rx_mode(struct net_device *netdev)
 
 	/* This is useful for sniffing bad packets. */
 	if (netdev->features & NETIF_F_RXALL) {
-		vmolr |= (TXGBE_PSR_VM_L2CTL_UPE | TXGBE_PSR_VM_L2CTL_MPE);
-		vlnctrl &= ~TXGBE_PSR_VLAN_CTL_VFE;
 		/* receive bad packets */
 		wr32m(hw, TXGBE_RSC_CTL,
 		      TXGBE_RSC_CTL_SAVE_MAC_ERR,
@@ -9909,6 +9907,8 @@ static int txgbe_set_features(struct net_device *netdev,
 		}
 	}
 
+	if (changed & NETIF_F_RXALL)
+		need_reset = true;
 	netdev->features = features;
 
 	if (changed & NETIF_F_HW_VLAN_CTAG_RX)

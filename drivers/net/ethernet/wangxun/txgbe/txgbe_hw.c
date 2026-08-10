@@ -5548,17 +5548,7 @@ out:
 
 void txgbe_hic_write_autoneg_status(struct txgbe_hw *hw, bool autoneg)
 {
-	struct txgbe_adapter *adapter = hw->back;
 	struct txgbe_hic_write_autoneg buffer;
-
-	/* only support sp temporarily */
-	if (hw->mac.type != txgbe_mac_sp)
-		return;
-
-	/* only 0x64e20011 and above 0x20011 support */
-	if (adapter->etrack_id != 0x64e20011 &&
-	    (adapter->etrack_id & 0xfffff) < 0x20012)
-		return;
 
 	buffer.hdr.cmd = FW_AN_STA_CMD;
 	buffer.hdr.buf_len = FW_AN_STA_LEN;
