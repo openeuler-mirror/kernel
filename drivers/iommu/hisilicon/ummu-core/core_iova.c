@@ -157,7 +157,7 @@ static int map_pages(struct iova_slot *slot, dma_addr_t iova, unsigned long nr_p
 
 	mapped = iommu_map_sg(slot->domain, iova, sgt->sgl, sgt->orig_nents,
 			      slot->prot, GFP_KERNEL);
-	if (mapped < 0 || (size_t)mapped < nr_pages) {
+	if (mapped < 0 || (size_t)mapped < (nr_pages << PAGE_SHIFT)) {
 		ret = -EFAULT;
 		goto err_free_sgt;
 	}
@@ -175,7 +175,7 @@ static int map_pages(struct iova_slot *slot, dma_addr_t iova, unsigned long nr_p
 err_unmap:
 	for (j = 0; j < i; j++)
 		xa_erase(&slot->xa, iova_bitmap_offset(slot, iova) + j);
-	iommu_unmap(slot->domain, iova, (size_t)i << PAGE_SHIFT);
+	iommu_unmap(slot->domain, iova, (size_t)mapped);
 err_free_sgt:
 	sg_free_table(sgt);
 err_release_sgt:
