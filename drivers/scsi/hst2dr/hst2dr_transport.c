@@ -653,7 +653,7 @@ hst2dr_transport_port_add(struct HST2DR_ADAPTER *ioa, u16 handle,
 	struct sas_rphy *rphy;
 	struct _sas_device *sas_device = NULL;
 	int i;
-	struct sas_port *port;
+	struct sas_port *port = NULL;
 
 	hst2dr_port = kzalloc(sizeof(struct _sas_port),
 			GFP_KERNEL);
@@ -776,7 +776,7 @@ hst2dr_transport_port_add(struct HST2DR_ADAPTER *ioa, u16 handle,
 		list_del_init(&hst2dr_phy->port_siblings);
 	kfree(hst2dr_port);
 	if (port)
-		kfree(port);
+		sas_port_free(port);
 	return NULL;
 }
 
