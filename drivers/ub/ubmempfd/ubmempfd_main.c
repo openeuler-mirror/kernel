@@ -23,7 +23,7 @@
 #include <linux/ummu_core.h>
 #include <linux/wait.h>
 #include <linux/delay.h>
-#include <linux/hisi_ummu.h>
+#include <uapi/linux/hisi_ummu.h>
 #include <uapi/ub/ubmempfd/ubmempfd.h>
 
 #define UBMEMPFD_MISC_NAME "ubmempfd"

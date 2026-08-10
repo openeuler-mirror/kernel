@@ -19,7 +19,7 @@
 #include <linux/maple_tree.h>
 #include <linux/interrupt.h>
 #include <ub/ubfi/ubfi.h>
-#include <linux/hisi_ummu.h>
+#include <uapi/linux/hisi_ummu.h>
 
 #include "../regs.h"
 #include "ubmem_mmu.h"
