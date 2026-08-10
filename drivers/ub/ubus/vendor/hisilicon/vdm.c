@@ -12,6 +12,7 @@
 #include "../../ubus_entity.h"
 #include "../../task.h"
 #include "../../link.h"
+#include "../../port.h"
 #include "hisi-msg.h"
 #include "hisi-ubus.h"
 #include "vdm.h"
@@ -459,6 +460,30 @@ static int ub_vdm_port_enable(struct ub_bus_controller *ubc,
 	return ret;
 }
 
+static int hi_vdm_link_down_handle(struct ub_port *port)
+{
+	struct ub_entity *r_uent = port->r_uent;
+	struct ub_entity *uent = port->uent;
+	int ret;
+
+	if (!r_uent) {
+		ub_warn(uent, "port%u is already down\n", port->index);
+		ub_notify_share_port(port, UB_PORT_EVENT_LINK_DOWN);
+		return -ENODEV;
+	}
+	ub_info(uent, "port%u link down\n", port->index);
+
+	device_lock(&uent->dev);
+	atomic_set(&r_uent->ent_mgmt_state, MGMT_STATE_UNREGISTERING);
+	ret = ub_add_delay_task(r_uent, port, TASK_TYPE_LINKDOWN);
+	if (ret)
+		atomic_set(&r_uent->ent_mgmt_state, MGMT_STATE_IDLE);
+	device_unlock(&uent->dev);
+
+	ub_notify_share_port(port, UB_PORT_EVENT_LINK_DOWN);
+	return ret;
+}
+
 static int ub_vdm_port_disable(struct ub_bus_controller *ubc,
 			       struct vdm_msg_pkt *pkt, struct ub_port *port)
 {
@@ -473,7 +498,10 @@ static int ub_vdm_port_disable(struct ub_bus_controller *ubc,
 	/* idle path */
 	atomic_set(&port->port_mgmt_state, MGMT_STATE_UNREGISTERING);
 
-	ret = ublc_link_down_handle(port);
+	if (hi_vport_disable_notify_enabled())
+		ret = hi_vdm_link_down_handle(port);
+	else
+		ret = ublc_link_down_handle(port);
 	if (ret)
 		atomic_set(&port->port_mgmt_state, MGMT_STATE_IDLE);
 
@@ -722,6 +750,48 @@ int hi_send_port_reset_msg(struct ub_entity *uent, u16 port_idx)
 	return 0;
 }
 
+static void hi_send_vport_disable_notify(struct ub_bus_controller *ubc, u16 port_idx)
+{
+	struct vport_disable_notify_pld *notify_pld;
+	struct msg_pkt_dw0 *pld_dw0;
+	struct vdm_msg_pkt pkt = {};
+	struct msg_info info = {};
+	u8 status;
+	int ret;
+
+	if (!ubc->cluster)
+		return;
+
+	ub_msg_pkt_header_init(&pkt.header, ubc->uent,
+			       VPORT_DISABLE_NOTIFY_PLD_SIZE,
+			       code_gen(UB_MSG_CODE_VDM, UB_VENDOR_MSG,
+					MSG_REQ), true);
+
+	pkt.guid_high = *(u64 *)(&ubc->uent->guid.dw[SZ_2]);
+	pld_dw0 = &pkt.pld_dw0;
+	pld_dw0->opcode = VDM_OPCODE_UB2UB_COMM_MSG;
+	pld_dw0->sub_opcode = VDM_SUB_OPCODE_VPORT_DISABLE_NOTIFY;
+	notify_pld = &pkt.disable_notify_pld;
+	notify_pld->port_idx = port_idx;
+
+	message_info_init(&info, ubc->uent, &pkt, &pkt,
+			  (VPORT_DISABLE_NOTIFY_MSG_PKT_SIZE << MSG_REQ_SIZE_OFFSET) |
+			  VPORT_DISABLE_NOTIFY_MSG_PKT_SIZE);
+
+	ub_info(ubc->uent, "Sync request vport disable notify msg, port_idx[%u]\n",
+		port_idx);
+
+	ret = hi_message_sync_request(ubc->mdev, &info, pkt.header.msgetah.code);
+	if (ret) {
+		ub_err(ubc->uent, "vport disable notify msg request failed, ret=%d\n", ret);
+		return;
+	}
+
+	status = pkt.header.msgetah.rsp_status;
+	if (status != UB_MSG_RSP_SUCCESS)
+		ub_err(ubc->uent, "vport disable notify msg status error, status=%#02x\n", status);
+}
+
 void ub_delay_task_work_vdm(struct work_struct *work)
 {
 	struct ub_delay_task *task = container_of(work, struct ub_delay_task,
@@ -741,6 +811,9 @@ void ub_delay_task_work_vdm(struct work_struct *work)
 		break;
 	case TASK_TYPE_LINKDOWN:
 		port = task->port;
+		if (port->uent && port->uent->ubc && hi_vport_disable_notify_enabled())
+			hi_send_vport_disable_notify(port->uent->ubc,
+						     port->index);
 		atomic_set(&port->port_mgmt_state, MGMT_STATE_IDLE);
 		break;
 	case TASK_TYPE_DISABLE:
