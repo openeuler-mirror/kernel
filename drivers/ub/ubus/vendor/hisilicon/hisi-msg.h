@@ -50,11 +50,23 @@ extern int msg_wait;
 #define HI_MSG_SQE_SIZE		16
 #define HI_MSG_CQE_SIZE		16
 
-#define FIRMWARE_VER_DEFAULT 0
-#define HI_UBUS_LOWEST_VER 0
-#define HI_UBUS_HIGHEST_VER 1
-#define HI_VER_EXCH_REQ_SIZE 4
-#define HI_VER_EXCH_RSP_SIZE 4
+#define HI_UBUS_LOWEST_VER	0U
+#define HI_UBUS_HIGHEST_VER	2U
+#define HI_VER_EXCH_REQ_SIZE	4
+#define HI_VER_EXCH_RSP_SIZE	4
+
+extern u16 hi_firmware_lowest_ver;
+extern u16 hi_firmware_highest_ver;
+
+enum hi_firmware_ver {
+	FIRMWARE_VER_DEFAULT = 0,
+	FIRMWARE_VER_VPORT_DISABLE_NOTIFY = 2,
+};
+
+static inline bool hi_vport_disable_notify_enabled(void)
+{
+	return hi_firmware_highest_ver >= FIRMWARE_VER_VPORT_DISABLE_NOTIFY;
+}
 
 enum hi_cqe_status {
 	CQE_SUCCESS = 0,

@@ -38,6 +38,7 @@ MODULE_PARM_DESC(msg_retry, "support msg retry: 0(disable)");
 
 DECLARE_RWSEM(ub_bus_sem);
 
+/* protocol_ver.feature_ver.bugfix_ver */
 #define UBUS_MOD_VERSION "2.0.3"
 #define UBC_GUID_VENDOR_SHIFT 48
 #define UBC_GUID_VENDOR_MASK GENMASK(15, 0)
