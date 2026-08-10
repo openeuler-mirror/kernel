@@ -3529,7 +3529,7 @@ static void txgbe_get_mac_type(struct txgbe_hw *hw)
 int txgbe_init_shared_code(struct txgbe_hw *hw)
 {
 	u32 flash_header = 0, flash_header_index = 0, ssid_addr = 0xfffdc;
-	u32 fw_version, control_rate_led = 0, ssid;
+	u32 fw_version, control_rate_led = 0, ocp_led_flag = 0, ssid;
 	struct txgbe_adapter *adapter = hw->back;
 	struct txgbe_mac_info *mac = &hw->mac;
 	struct txgbe_phy_info *phy = &hw->phy;
@@ -3587,7 +3587,12 @@ skip_flash_header_check:
 		hw->subsystem_device_id = swab16((u16)ssid);
 	}
 
-	txgbe_flash_read_dword(hw, 0xfffc4, &control_rate_led);
+	if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40) {
+		ocp_led_flag = (flash_header_index * 0x10000) + 0x3030;
+		txgbe_flash_read_dword(hw, ocp_led_flag, &control_rate_led);
+	} else {
+		txgbe_flash_read_dword(hw, 0xfffc4, &control_rate_led);
+	}
 	if (!(control_rate_led & 0xff))
 		set_bit(TXGBE_FLAG_CONTROL_RATE_LED, adapter->flag);
 

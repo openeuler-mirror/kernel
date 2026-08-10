@@ -3103,22 +3103,39 @@ static int txgbe_set_phys_id(struct net_device *netdev,
 		if ((hw->oem_ssid != 0x0085 && hw->oem_svid == 0x1bd4) ||
 		    (hw->oem_ssid != 0x0085 && hw->oem_svid == 0x1ff9) ||
 		    test_bit(TXGBE_FLAG_CONTROL_RATE_LED, adapter->flag)) {
-			if (adapter->link_up) {
-				switch (adapter->link_speed) {
-				case TXGBE_LINK_SPEED_10GB_FULL:
-					txgbe_led_on(hw, TXGBE_LED_LINK_10G);
-					break;
-				case TXGBE_LINK_SPEED_1GB_FULL:
-					txgbe_led_on(hw, TXGBE_LED_LINK_1G);
-					break;
-				case TXGBE_LINK_SPEED_100_FULL:
-					txgbe_led_on(hw, TXGBE_LED_LINK_100M);
-					break;
-				default:
-					break;
+			if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40) {
+				if (adapter->link_up) {
+					switch (adapter->link_speed) {
+					case TXGBE_LINK_SPEED_25GB_FULL:
+						txgbe_led_on(hw, TXGBE_LED_LINK_UP);
+						break;
+					case TXGBE_LINK_SPEED_10GB_FULL:
+						wr32m(hw, TXGBE_GPIO_DR, TXGBE_GPIO_DR_7, 0x0);
+						break;
+					default:
+						break;
+					}
+				} else {
+					txgbe_led_on(hw, TXGBE_LED_LINK_UP);
 				}
 			} else {
-				txgbe_led_on(hw, TXGBE_LED_LINK_10G);
+				if (adapter->link_up) {
+					switch (adapter->link_speed) {
+					case TXGBE_LINK_SPEED_10GB_FULL:
+						txgbe_led_on(hw, TXGBE_LED_LINK_10G);
+						break;
+					case TXGBE_LINK_SPEED_1GB_FULL:
+						txgbe_led_on(hw, TXGBE_LED_LINK_1G);
+						break;
+					case TXGBE_LINK_SPEED_100_FULL:
+						txgbe_led_on(hw, TXGBE_LED_LINK_100M);
+						break;
+					default:
+						break;
+					}
+				} else {
+					txgbe_led_on(hw, TXGBE_LED_LINK_10G);
+				}
 			}
 		} else {
 			txgbe_led_on(hw, TXGBE_LED_LINK_UP);
@@ -3129,22 +3146,41 @@ static int txgbe_set_phys_id(struct net_device *netdev,
 		if ((hw->oem_ssid != 0x0085 && hw->oem_svid == 0x1bd4) ||
 		    (hw->oem_ssid != 0x0085 && hw->oem_svid == 0x1ff9) ||
 		    test_bit(TXGBE_FLAG_CONTROL_RATE_LED, adapter->flag)) {
-			if (adapter->link_up) {
-				switch (adapter->link_speed) {
-				case TXGBE_LINK_SPEED_10GB_FULL:
-					txgbe_led_off(hw, TXGBE_LED_LINK_10G);
-					break;
-				case TXGBE_LINK_SPEED_1GB_FULL:
-					txgbe_led_off(hw, TXGBE_LED_LINK_1G);
-					break;
-				case TXGBE_LINK_SPEED_100_FULL:
-					txgbe_led_off(hw, TXGBE_LED_LINK_100M);
-					break;
-				default:
-					break;
+			if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40) {
+				if (adapter->link_up) {
+					switch (adapter->link_speed) {
+					case TXGBE_LINK_SPEED_25GB_FULL:
+						txgbe_led_off(hw, TXGBE_LED_LINK_UP);
+						break;
+					case TXGBE_LINK_SPEED_10GB_FULL:
+						wr32m(hw, TXGBE_GPIO_DR,
+							  TXGBE_GPIO_DR_7,
+							  TXGBE_GPIO_DR_7);
+						break;
+					default:
+						break;
+					}
+				} else {
+					txgbe_led_off(hw, TXGBE_LED_LINK_UP);
 				}
 			} else {
-				txgbe_led_off(hw, TXGBE_LED_LINK_10G);
+				if (adapter->link_up) {
+					switch (adapter->link_speed) {
+					case TXGBE_LINK_SPEED_10GB_FULL:
+						txgbe_led_off(hw, TXGBE_LED_LINK_10G);
+						break;
+					case TXGBE_LINK_SPEED_1GB_FULL:
+						txgbe_led_off(hw, TXGBE_LED_LINK_1G);
+						break;
+					case TXGBE_LINK_SPEED_100_FULL:
+						txgbe_led_off(hw, TXGBE_LED_LINK_100M);
+						break;
+					default:
+						break;
+					}
+				} else {
+					txgbe_led_off(hw, TXGBE_LED_LINK_10G);
+				}
 			}
 		} else {
 			txgbe_led_off(hw, TXGBE_LED_LINK_UP);
