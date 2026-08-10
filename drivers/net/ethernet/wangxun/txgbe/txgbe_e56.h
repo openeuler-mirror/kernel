@@ -1793,19 +1793,13 @@ typedef union {
 #define TXGBE_E56_PHY_LINK_UP 0x4
 
 int txgbe_e56_rxrd_sec_code(struct txgbe_hw *hw, int *SECOND_CODE);
-u32 txgbe_e56_cfg_25g(struct txgbe_hw *hw);
-u32 txgbe_e56_cfg_10g(struct txgbe_hw *hw);
-u32 txgbe_e56_cfg_40g(struct txgbe_hw *hw);
+void txgbe_e56_cfg_40g(struct txgbe_hw *hw);
 
 int txgbe_set_link_to_amlite(struct txgbe_hw *hw, u32 speed);
-u32 txgbe_e56_cfg_temp(struct txgbe_hw *hw);
 int txgbe_e56_get_temp(struct txgbe_hw *hw, int *temp);
-int txgbe_e56_reconfig_rx(struct txgbe_hw *hw, u32 speed);
-int txgbe_e56_config_rx_40G(struct txgbe_hw *hw, u32 speed);
 int txgbe_temp_track_seq(struct txgbe_hw *hw, u32 speed);
 int txgbe_temp_track_seq_40g(struct txgbe_hw *hw, u32 speed);
 int txgbe_get_cur_fec_mode(struct txgbe_hw *hw);
-int txgbe_e56_set_fec_mode(struct txgbe_hw *hw, u8 fec_mode);
 int txgbe_e56_fec_mode_polling(struct txgbe_hw *hw, bool *link_up);
 int txgbe_e56_check_phy_link(struct txgbe_hw *hw, u32 *speed, bool *link_up);
 

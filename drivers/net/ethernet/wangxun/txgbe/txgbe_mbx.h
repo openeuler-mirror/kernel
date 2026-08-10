@@ -168,14 +168,9 @@ enum txgbevf_queue_rate_limit_msg {
 
 int txgbe_read_mbx(struct txgbe_hw *hw, u32 *msg, u16 size, u16 mbx_id);
 int txgbe_write_mbx(struct txgbe_hw *hw, u32 *msg, u16 size, u16 mbx_id);
-int txgbe_read_posted_mbx(struct txgbe_hw *hw, u32 *msg, u16 size, u16 mbx_id);
-int txgbe_write_posted_mbx(struct txgbe_hw *hw, u32 *msg, u16 size,
-			   u16 mbx_id);
 int txgbe_check_for_msg(struct txgbe_hw *hw, u16 mbx_id);
 int txgbe_check_for_ack(struct txgbe_hw *hw, u16 mbx_id);
 int txgbe_check_for_rst(struct txgbe_hw *hw, u16 mbx_id);
-void txgbe_init_mbx_ops(struct txgbe_hw *hw);
-void txgbe_init_mbx_params_vf(struct txgbe_hw *hw);
 void txgbe_init_mbx_params_pf(struct txgbe_hw *hw);
 
 #endif /* _TXGBE_MBX_H_ */

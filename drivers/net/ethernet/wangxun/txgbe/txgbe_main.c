@@ -7202,7 +7202,6 @@ static void txgbe_watchdog_link_is_up(struct txgbe_adapter *adapter)
 	txgbe_update_default_up(adapter);
 
 	/* ping all the active vfs to let them know link has changed */
-	//txgbe_ping_all_vfs(adapter);
 	txgbe_ping_all_vfs_with_link_status(adapter, true);
 }
 

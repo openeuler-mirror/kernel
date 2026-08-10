@@ -398,7 +398,7 @@ void txgbe_restore_vf_multicasts(struct txgbe_adapter *adapter)
 	txgbe_full_sync_mac_table(adapter);
 }
 
-int txgbe_set_vf_vlan(struct txgbe_adapter *adapter, int add, int vid, u16 vf)
+static int txgbe_set_vf_vlan(struct txgbe_adapter *adapter, int add, int vid, u16 vf)
 {
 	struct txgbe_hw *hw = &adapter->hw;
 
@@ -454,7 +454,7 @@ static int txgbe_set_vf_lpe(struct txgbe_adapter *adapter, u32 max_frame,
 	return 0;
 }
 
-void txgbe_set_vmolr(struct txgbe_hw *hw, u16 vf, bool aupe)
+static void txgbe_set_vmolr(struct txgbe_hw *hw, u16 vf, bool aupe)
 {
 	u32 vmolr = rd32(hw, TXGBE_PSR_VM_L2CTL(vf));
 
@@ -524,8 +524,8 @@ static inline void txgbe_vf_reset_event(struct txgbe_adapter *adapter, u16 vf)
 	adapter->vfinfo[vf].vf_api = txgbe_mbox_api_10;
 }
 
-int txgbe_set_vf_mac(struct txgbe_adapter *adapter,
-		     u16 vf, unsigned char *mac_addr)
+static int txgbe_set_vf_mac(struct txgbe_adapter *adapter,
+			    u16 vf, unsigned char *mac_addr)
 {
 	int retval = 0;
 
@@ -1284,18 +1284,6 @@ void txgbe_msg_task(struct txgbe_adapter *adapter)
 	}
 }
 
-void txgbe_disable_tx_rx(struct txgbe_adapter *adapter)
-{
-	struct txgbe_hw *hw = &adapter->hw;
-
-	/* disable transmit and receive for all vfs */
-	wr32(hw, TXGBE_TDM_VF_TE(0), 0);
-	wr32(hw, TXGBE_TDM_VF_TE(1), 0);
-
-	wr32(hw, TXGBE_RDM_VF_RE(0), 0);
-	wr32(hw, TXGBE_RDM_VF_RE(1), 0);
-}
-
 static inline void txgbe_ping_vf(struct txgbe_adapter *adapter, int vf)
 {
 	struct txgbe_hw *hw = &adapter->hw;
@@ -1307,21 +1295,7 @@ static inline void txgbe_ping_vf(struct txgbe_adapter *adapter, int vf)
 	txgbe_write_mbx(hw, &ping, 1, vf);
 }
 
-void txgbe_ping_all_vfs(struct txgbe_adapter *adapter)
-{
-	struct txgbe_hw *hw = &adapter->hw;
-	u32 ping;
-	u16 i;
-
-	for (i = 0 ; i < adapter->num_vfs; i++) {
-		ping = TXGBE_PF_CONTROL_MSG;
-		if (adapter->vfinfo[i].clear_to_send)
-			ping |= TXGBE_VT_MSGTYPE_CTS;
-		txgbe_write_mbx(hw, &ping, 1, i);
-	}
-}
-
-void txgbe_ping_vf_with_link_status(struct txgbe_adapter *adapter, bool link_up, u16 vf)
+static void txgbe_ping_vf_with_link_status(struct txgbe_adapter *adapter, bool link_up, u16 vf)
 {
 	struct txgbe_hw *hw = &adapter->hw;
 	u32 msgbuf[2] = {0, 0};
@@ -1357,6 +1331,48 @@ void txgbe_ping_all_vfs_with_link_status(struct txgbe_adapter *adapter, bool lin
 			msgbuf[0] |= TXGBE_VT_MSGTYPE_CTS;
 		txgbe_write_mbx(hw, msgbuf, 2, i);
 	}
+}
+
+/**
+ * txgbe_set_vf_link_state - Set link state
+ * @adapter: Pointer to adapter struct
+ * @vf: VF identifier
+ * @state: required link state
+ *
+ * Set a link force state on/off a single vf
+ **/
+static void txgbe_set_vf_link_state(struct txgbe_adapter *adapter, int vf, int state)
+{
+	bool link_up = adapter->link_up;
+
+	adapter->vfinfo[vf].link_state = state;
+
+	switch (state) {
+	case TXGBE_VF_LINK_STATE_AUTO:
+		if (test_bit(__TXGBE_DOWN, &adapter->state)) {
+			adapter->vfinfo[vf].link_enable = false;
+		} else {
+			link_up = adapter->link_up;
+			adapter->vfinfo[vf].link_enable = true;
+		}
+		break;
+	case TXGBE_VF_LINK_STATE_ENABLE:
+		adapter->vfinfo[vf].link_enable = true;
+		link_up = true;
+		break;
+	case TXGBE_VF_LINK_STATE_DISABLE:
+		adapter->vfinfo[vf].link_enable = false;
+		link_up = false;
+		break;
+	}
+
+	/* restart the VF */
+	adapter->vfinfo[vf].clear_to_send = false;
+	txgbe_ping_vf(adapter, vf);
+
+	txgbe_ping_vf_with_link_status(adapter, link_up, vf);
+
+	txgbe_set_vf_rx_tx(adapter, vf);
 }
 
 /**
@@ -1917,48 +1933,6 @@ static void txgbe_set_vf_rx_tx(struct txgbe_adapter *adapter, int vf)
 }
 
 /**
- * txgbe_set_vf_link_state - Set link state
- * @adapter: Pointer to adapter struct
- * @vf: VF identifier
- * @state: required link state
- *
- * Set a link force state on/off a single vf
- **/
-void txgbe_set_vf_link_state(struct txgbe_adapter *adapter, int vf, int state)
-{
-	bool link_up = adapter->link_up;
-
-	adapter->vfinfo[vf].link_state = state;
-
-	switch (state) {
-	case TXGBE_VF_LINK_STATE_AUTO:
-		if (test_bit(__TXGBE_DOWN, &adapter->state)) {
-			adapter->vfinfo[vf].link_enable = false;
-		} else {
-			link_up = adapter->link_up;
-			adapter->vfinfo[vf].link_enable = true;
-		}
-		break;
-	case TXGBE_VF_LINK_STATE_ENABLE:
-		adapter->vfinfo[vf].link_enable = true;
-		link_up = true;
-		break;
-	case TXGBE_VF_LINK_STATE_DISABLE:
-		adapter->vfinfo[vf].link_enable = false;
-		link_up = false;
-		break;
-	}
-
-	/* restart the VF */
-	adapter->vfinfo[vf].clear_to_send = false;
-	txgbe_ping_vf(adapter, vf);
-
-	txgbe_ping_vf_with_link_status(adapter, link_up, vf);
-
-	txgbe_set_vf_rx_tx(adapter, vf);
-}
-
-/**
  * txgbe_ndo_set_vf_link_state - Set link state
  * @netdev: network interface device structure
  * @vf: VF identifier
@@ -2004,7 +1978,7 @@ out:
 	return ret;
 }
 
-int txgbe_trans_vf_link_state(int state)
+static int txgbe_trans_vf_link_state(int state)
 {
 	switch (state) {
 	case TXGBE_VF_LINK_STATE_ENABLE:

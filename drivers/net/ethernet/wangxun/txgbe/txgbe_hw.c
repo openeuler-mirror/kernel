@@ -37,7 +37,7 @@ void txgbe_dcb_get_rtrup2tc(struct txgbe_hw *hw, u8 *map)
  *  Read PCIe configuration space, and get the MSI-X vector count from
  *  the capabilities table.
  **/
-u16 txgbe_get_pcie_msix_count(struct txgbe_hw *hw)
+static u16 txgbe_get_pcie_msix_count(struct txgbe_hw *hw)
 {
 	u16 msix_count = 1;
 	u16 max_msix_count;
@@ -431,7 +431,7 @@ int txgbe_get_mac_addr(struct txgbe_hw *hw, u8 *mac_addr)
  * @link_status: the link status returned by the PCI config space
  * * Stores the PCI bus info (speed, width, type) within the txgbe_hw structure
  */
-void txgbe_set_pci_config_data(struct txgbe_hw *hw, u16 link_status)
+static void txgbe_set_pci_config_data(struct txgbe_hw *hw, u16 link_status)
 {
 	/* amlite: TODO */
 	if (hw->bus.type == txgbe_bus_type_unknown)
@@ -713,7 +713,7 @@ static int txgbe_get_eeprom_semaphore(struct txgbe_hw *hw)
  *
  *  Tests a MAC address to ensure it is a valid Individual Address
  **/
-int txgbe_validate_mac_addr(u8 *mac_addr)
+static int txgbe_validate_mac_addr(u8 *mac_addr)
 {
 	int status = 0;
 
@@ -994,6 +994,174 @@ int txgbe_update_mc_addr_list(struct txgbe_hw *hw, u8 *mc_addr_list,
 	return 0;
 }
 
+
+/**
+ *  txgbe_negotiate_fc - Negotiate flow control
+ *  @hw: pointer to hardware structure
+ *  @adv_reg: flow control advertised settings
+ *  @lp_reg: link partner's flow control settings
+ *  @adv_sym: symmetric pause bit in advertisement
+ *  @adv_asm: asymmetric pause bit in advertisement
+ *  @lp_sym: symmetric pause bit in link partner advertisement
+ *  @lp_asm: asymmetric pause bit in link partner advertisement
+ *
+ *  Find the intersection between advertised settings and link partner's
+ *  advertised settings
+ **/
+static int txgbe_negotiate_fc(struct txgbe_hw *hw, u32 adv_reg, u32 lp_reg,
+			      u32 adv_sym, u32 adv_asm, u32 lp_sym, u32 lp_asm)
+{
+	if ((!(adv_reg)) ||  (!(lp_reg)))
+		return TXGBE_ERR_FC_NOT_NEGOTIATED;
+
+	if ((adv_reg & adv_sym) && (lp_reg & lp_sym)) {
+		if (hw->fc.requested_mode == txgbe_fc_full)
+			hw->fc.current_mode = txgbe_fc_full;
+		else
+			hw->fc.current_mode = txgbe_fc_rx_pause;
+	} else if (!(adv_reg & adv_sym) && (adv_reg & adv_asm) &&
+		   (lp_reg & lp_sym) && (lp_reg & lp_asm)) {
+		hw->fc.current_mode = txgbe_fc_tx_pause;
+	} else if ((adv_reg & adv_sym) && (adv_reg & adv_asm) &&
+		   !(lp_reg & lp_sym) && (lp_reg & lp_asm)) {
+		hw->fc.current_mode = txgbe_fc_rx_pause;
+	} else {
+		hw->fc.current_mode = txgbe_fc_none;
+	}
+	return 0;
+}
+
+/**
+ *  txgbe_fc_autoneg_fiber - Enable flow control on 1 gig fiber
+ *  @hw: pointer to hardware structure
+ *
+ *  Enable flow control according on 1 gig fiber.
+ **/
+static int txgbe_fc_autoneg_fiber(struct txgbe_hw *hw)
+{
+	u32 pcs_anadv_reg, pcs_lpab_reg;
+	int ret_val = TXGBE_ERR_FC_NOT_NEGOTIATED;
+
+	pcs_anadv_reg = txgbe_rd32_epcs(hw, TXGBE_SR_MII_MMD_AN_ADV);
+	pcs_lpab_reg = txgbe_rd32_epcs(hw, TXGBE_SR_MII_MMD_LP_BABL);
+
+	ret_val =  txgbe_negotiate_fc(hw, pcs_anadv_reg,
+				      pcs_lpab_reg,
+				      TXGBE_SR_MII_MMD_AN_ADV_PAUSE_SYM,
+				      TXGBE_SR_MII_MMD_AN_ADV_PAUSE_ASM,
+				      TXGBE_SR_MII_MMD_AN_ADV_PAUSE_SYM,
+				      TXGBE_SR_MII_MMD_AN_ADV_PAUSE_ASM);
+
+	return ret_val;
+}
+
+/**
+ *  txgbe_fc_autoneg_backplane - Enable flow control IEEE clause 37
+ *  @hw: pointer to hardware structure
+ *
+ *  Enable flow control according to IEEE clause 37.
+ **/
+static int txgbe_fc_autoneg_backplane(struct txgbe_hw *hw)
+{
+	u32 anlp1_reg, autoc_reg;
+	int ret_val = TXGBE_ERR_FC_NOT_NEGOTIATED;
+
+	/* Read the 10g AN autoc and LP ability registers and resolve
+	 * local flow control settings accordingly
+	 */
+	autoc_reg = txgbe_rd32_epcs(hw, TXGBE_SR_AN_MMD_ADV_REG1);
+	anlp1_reg = txgbe_rd32_epcs(hw, TXGBE_SR_AN_MMD_LP_ABL1);
+
+	ret_val = txgbe_negotiate_fc(hw, autoc_reg,
+				     anlp1_reg, TXGBE_SR_AN_MMD_ADV_REG1_PAUSE_SYM,
+		TXGBE_SR_AN_MMD_ADV_REG1_PAUSE_ASM,
+		TXGBE_SR_AN_MMD_ADV_REG1_PAUSE_SYM,
+		TXGBE_SR_AN_MMD_ADV_REG1_PAUSE_ASM);
+
+	return ret_val;
+}
+
+/**
+ *  txgbe_fc_autoneg_copper - Enable flow control IEEE clause 37
+ *  @hw: pointer to hardware structure
+ *
+ *  Enable flow control according to IEEE clause 37.
+ **/
+static int txgbe_fc_autoneg_copper(struct txgbe_hw *hw)
+{
+	u8 technology_ability_reg = 0;
+	u8 lp_technology_ability_reg = 0;
+
+	txgbe_get_phy_advertised_pause(hw, &technology_ability_reg);
+	txgbe_get_lp_advertised_pause(hw, &lp_technology_ability_reg);
+
+	return txgbe_negotiate_fc(hw, (u32)technology_ability_reg,
+				  (u32)lp_technology_ability_reg,
+				  TXGBE_TAF_SYM_PAUSE, TXGBE_TAF_ASM_PAUSE,
+				  TXGBE_TAF_SYM_PAUSE, TXGBE_TAF_ASM_PAUSE);
+}
+
+/**
+ *  txgbe_fc_autoneg - Configure flow control
+ *  @hw: pointer to hardware structure
+ *
+ *  Compares our advertised flow control capabilities to those advertised by
+ *  our link partner, and determines the proper flow control mode to use.
+ **/
+static void txgbe_fc_autoneg(struct txgbe_hw *hw)
+{
+	int ret_val = TXGBE_ERR_FC_NOT_NEGOTIATED;
+	u32 speed;
+	bool link_up = 0;
+
+	/* AN should have completed when the cable was plugged in.
+	 * Look for reasons to bail out.  Bail out if:
+	 * - FC autoneg is disabled, or if
+	 * - link is not up.
+	 */
+	if (hw->fc.disable_fc_autoneg) {
+		ERROR_REPORT1(TXGBE_ERROR_UNSUPPORTED,
+			      "Flow control autoneg is disabled");
+		goto out;
+	}
+
+	hw->mac.ops.check_link(hw, &speed, &link_up, false);
+	if (!link_up) {
+		ERROR_REPORT1(TXGBE_ERROR_SOFTWARE, "The link is down");
+		goto out;
+	}
+
+	switch (hw->phy.media_type) {
+	/* Autoneg flow control on fiber adapters */
+	case txgbe_media_type_fiber:
+		if (speed == TXGBE_LINK_SPEED_1GB_FULL)
+			ret_val = txgbe_fc_autoneg_fiber(hw);
+		break;
+
+	/* Autoneg flow control on backplane adapters */
+	case txgbe_media_type_backplane:
+		ret_val = txgbe_fc_autoneg_backplane(hw);
+		break;
+
+	/* Autoneg flow control on copper adapters */
+	case txgbe_media_type_copper:
+		if (txgbe_device_supports_autoneg_fc(hw))
+			ret_val = txgbe_fc_autoneg_copper(hw);
+		break;
+
+	default:
+		break;
+	}
+
+out:
+	if (ret_val == 0) {
+		hw->fc.fc_was_autonegged = true;
+	} else {
+		hw->fc.fc_was_autonegged = false;
+		hw->fc.current_mode = hw->fc.requested_mode;
+	}
+}
+
 /**
  *  txgbe_fc_enable - Enable flow control
  *  @hw: pointer to hardware structure
@@ -1121,173 +1289,6 @@ int txgbe_fc_enable(struct txgbe_hw *hw)
 
 out:
 	return ret_val;
-}
-
-/**
- *  txgbe_negotiate_fc - Negotiate flow control
- *  @hw: pointer to hardware structure
- *  @adv_reg: flow control advertised settings
- *  @lp_reg: link partner's flow control settings
- *  @adv_sym: symmetric pause bit in advertisement
- *  @adv_asm: asymmetric pause bit in advertisement
- *  @lp_sym: symmetric pause bit in link partner advertisement
- *  @lp_asm: asymmetric pause bit in link partner advertisement
- *
- *  Find the intersection between advertised settings and link partner's
- *  advertised settings
- **/
-static int txgbe_negotiate_fc(struct txgbe_hw *hw, u32 adv_reg, u32 lp_reg,
-			      u32 adv_sym, u32 adv_asm, u32 lp_sym, u32 lp_asm)
-{
-	if ((!(adv_reg)) ||  (!(lp_reg)))
-		return TXGBE_ERR_FC_NOT_NEGOTIATED;
-
-	if ((adv_reg & adv_sym) && (lp_reg & lp_sym)) {
-		if (hw->fc.requested_mode == txgbe_fc_full)
-			hw->fc.current_mode = txgbe_fc_full;
-		else
-			hw->fc.current_mode = txgbe_fc_rx_pause;
-	} else if (!(adv_reg & adv_sym) && (adv_reg & adv_asm) &&
-		   (lp_reg & lp_sym) && (lp_reg & lp_asm)) {
-		hw->fc.current_mode = txgbe_fc_tx_pause;
-	} else if ((adv_reg & adv_sym) && (adv_reg & adv_asm) &&
-		   !(lp_reg & lp_sym) && (lp_reg & lp_asm)) {
-		hw->fc.current_mode = txgbe_fc_rx_pause;
-	} else {
-		hw->fc.current_mode = txgbe_fc_none;
-	}
-	return 0;
-}
-
-/**
- *  txgbe_fc_autoneg_fiber - Enable flow control on 1 gig fiber
- *  @hw: pointer to hardware structure
- *
- *  Enable flow control according on 1 gig fiber.
- **/
-static int txgbe_fc_autoneg_fiber(struct txgbe_hw *hw)
-{
-	u32 pcs_anadv_reg, pcs_lpab_reg;
-	int ret_val = TXGBE_ERR_FC_NOT_NEGOTIATED;
-
-	pcs_anadv_reg = txgbe_rd32_epcs(hw, TXGBE_SR_MII_MMD_AN_ADV);
-	pcs_lpab_reg = txgbe_rd32_epcs(hw, TXGBE_SR_MII_MMD_LP_BABL);
-
-	ret_val =  txgbe_negotiate_fc(hw, pcs_anadv_reg,
-				      pcs_lpab_reg,
-				      TXGBE_SR_MII_MMD_AN_ADV_PAUSE_SYM,
-				      TXGBE_SR_MII_MMD_AN_ADV_PAUSE_ASM,
-				      TXGBE_SR_MII_MMD_AN_ADV_PAUSE_SYM,
-				      TXGBE_SR_MII_MMD_AN_ADV_PAUSE_ASM);
-
-	return ret_val;
-}
-
-/**
- *  txgbe_fc_autoneg_backplane - Enable flow control IEEE clause 37
- *  @hw: pointer to hardware structure
- *
- *  Enable flow control according to IEEE clause 37.
- **/
-static int txgbe_fc_autoneg_backplane(struct txgbe_hw *hw)
-{
-	u32 anlp1_reg, autoc_reg;
-	int ret_val = TXGBE_ERR_FC_NOT_NEGOTIATED;
-
-	/* Read the 10g AN autoc and LP ability registers and resolve
-	 * local flow control settings accordingly
-	 */
-	autoc_reg = txgbe_rd32_epcs(hw, TXGBE_SR_AN_MMD_ADV_REG1);
-	anlp1_reg = txgbe_rd32_epcs(hw, TXGBE_SR_AN_MMD_LP_ABL1);
-
-	ret_val = txgbe_negotiate_fc(hw, autoc_reg,
-				     anlp1_reg, TXGBE_SR_AN_MMD_ADV_REG1_PAUSE_SYM,
-		TXGBE_SR_AN_MMD_ADV_REG1_PAUSE_ASM,
-		TXGBE_SR_AN_MMD_ADV_REG1_PAUSE_SYM,
-		TXGBE_SR_AN_MMD_ADV_REG1_PAUSE_ASM);
-
-	return ret_val;
-}
-
-/**
- *  txgbe_fc_autoneg_copper - Enable flow control IEEE clause 37
- *  @hw: pointer to hardware structure
- *
- *  Enable flow control according to IEEE clause 37.
- **/
-static int txgbe_fc_autoneg_copper(struct txgbe_hw *hw)
-{
-	u8 technology_ability_reg = 0;
-	u8 lp_technology_ability_reg = 0;
-
-	txgbe_get_phy_advertised_pause(hw, &technology_ability_reg);
-	txgbe_get_lp_advertised_pause(hw, &lp_technology_ability_reg);
-
-	return txgbe_negotiate_fc(hw, (u32)technology_ability_reg,
-				  (u32)lp_technology_ability_reg,
-				  TXGBE_TAF_SYM_PAUSE, TXGBE_TAF_ASM_PAUSE,
-				  TXGBE_TAF_SYM_PAUSE, TXGBE_TAF_ASM_PAUSE);
-}
-
-/**
- *  txgbe_fc_autoneg - Configure flow control
- *  @hw: pointer to hardware structure
- *
- *  Compares our advertised flow control capabilities to those advertised by
- *  our link partner, and determines the proper flow control mode to use.
- **/
-void txgbe_fc_autoneg(struct txgbe_hw *hw)
-{
-	int ret_val = TXGBE_ERR_FC_NOT_NEGOTIATED;
-	u32 speed;
-	bool link_up = 0;
-
-	/* AN should have completed when the cable was plugged in.
-	 * Look for reasons to bail out.  Bail out if:
-	 * - FC autoneg is disabled, or if
-	 * - link is not up.
-	 */
-	if (hw->fc.disable_fc_autoneg) {
-		ERROR_REPORT1(TXGBE_ERROR_UNSUPPORTED,
-			      "Flow control autoneg is disabled");
-		goto out;
-	}
-
-	hw->mac.ops.check_link(hw, &speed, &link_up, false);
-	if (!link_up) {
-		ERROR_REPORT1(TXGBE_ERROR_SOFTWARE, "The link is down");
-		goto out;
-	}
-
-	switch (hw->phy.media_type) {
-	/* Autoneg flow control on fiber adapters */
-	case txgbe_media_type_fiber:
-		if (speed == TXGBE_LINK_SPEED_1GB_FULL)
-			ret_val = txgbe_fc_autoneg_fiber(hw);
-		break;
-
-	/* Autoneg flow control on backplane adapters */
-	case txgbe_media_type_backplane:
-		ret_val = txgbe_fc_autoneg_backplane(hw);
-		break;
-
-	/* Autoneg flow control on copper adapters */
-	case txgbe_media_type_copper:
-		if (txgbe_device_supports_autoneg_fc(hw))
-			ret_val = txgbe_fc_autoneg_copper(hw);
-		break;
-
-	default:
-		break;
-	}
-
-out:
-	if (ret_val == 0) {
-		hw->fc.fc_was_autonegged = true;
-	} else {
-		hw->fc.fc_was_autonegged = false;
-		hw->fc.current_mode = hw->fc.requested_mode;
-	}
 }
 
 /**
@@ -1513,61 +1514,6 @@ int txgbe_enable_sec_tx_path(struct txgbe_hw *hw)
 
 
 /**
- *  txgbe_clear_vmdq - Disassociate a VMDq pool index from a rx address
- *  @hw: pointer to hardware struct
- *  @rar: receive address register index to disassociate
- *  @vmdq: VMDq pool index to remove from the rar
- **/
-int txgbe_clear_vmdq(struct txgbe_hw *hw, u32 rar, u32 vmdq)
-{
-	u32 mpsar_lo, mpsar_hi;
-	u32 rar_entries = hw->mac.num_rar_entries;
-
-	/* Make sure we are using a valid rar index range */
-	if (rar >= rar_entries) {
-		ERROR_REPORT2(TXGBE_ERROR_ARGUMENT,
-			      "RAR index %d is out of range.\n", rar);
-		return TXGBE_ERR_INVALID_ARGUMENT;
-	}
-
-	wr32(hw, TXGBE_PSR_MAC_SWC_IDX, rar);
-	mpsar_lo = rd32(hw, TXGBE_PSR_MAC_SWC_VM_L);
-	mpsar_hi = rd32(hw, TXGBE_PSR_MAC_SWC_VM_H);
-
-	if (TXGBE_REMOVED(hw->hw_addr))
-		goto done;
-
-	if (!mpsar_lo && !mpsar_hi)
-		goto done;
-
-	/* was that the last pool using this rar? */
-	if (mpsar_lo == 0 && mpsar_hi == 0 && rar != 0)
-		hw->mac.ops.clear_rar(hw, rar);
-done:
-	return 0;
-}
-
-/**
- *  txgbe_set_vmdq - Associate a VMDq pool index with a rx address
- *  @hw: pointer to hardware struct
- *  @rar: receive address register index to associate with a VMDq index
- *  @pool: VMDq pool index
- **/
-int txgbe_set_vmdq(struct txgbe_hw *hw, u32 rar, u32 pool)
-{
-	u32 rar_entries = hw->mac.num_rar_entries;
-
-	/* Make sure we are using a valid rar index range */
-	if (rar >= rar_entries) {
-		ERROR_REPORT2(TXGBE_ERROR_ARGUMENT,
-			      "RAR index %d is out of range.\n", rar);
-		return TXGBE_ERR_INVALID_ARGUMENT;
-	}
-
-	return 0;
-}
-
-/**
  *  txgbe_set_vmdq_san_mac - Associate default VMDq pool index with a rx address
  *  @hw: pointer to hardware struct
  *  @vmdq: VMDq pool index
@@ -1615,7 +1561,7 @@ int txgbe_init_uta_tables(struct txgbe_hw *hw)
  *  return the VLVF index where this VLAN id should be placed
  *
  **/
-int txgbe_find_vlvf_slot(struct txgbe_hw *hw, u32 vlan)
+static int txgbe_find_vlvf_slot(struct txgbe_hw *hw, u32 vlan)
 {
 	u32 bits = 0;
 	u32 first_empty_slot = 0;
@@ -1655,57 +1601,6 @@ int txgbe_find_vlvf_slot(struct txgbe_hw *hw, u32 vlan)
 }
 
 /**
- *  txgbe_set_vfta - Set VLAN filter table
- *  @hw: pointer to hardware structure
- *  @vlan: VLAN id to write to VLAN filter
- *  @vind: VMDq output index that maps queue to VLAN id in VFVFB
- *  @vlan_on: boolean flag to turn on/off VLAN in VFVF
- *
- *  Turn on/off specified VLAN in the VLAN filter table.
- **/
-int txgbe_set_vfta(struct txgbe_hw *hw, u32 vlan, u32 vind,
-		   bool vlan_on)
-{
-	int regindex;
-	u32 bitindex;
-	u32 vfta;
-	u32 targetbit;
-	int ret_val = 0;
-	bool vfta_changed = false;
-
-	if (vlan > 4095)
-		return TXGBE_ERR_PARAM;
-
-	regindex = (vlan >> 5) & 0x7F;
-	bitindex = vlan & 0x1F;
-	targetbit = (1 << bitindex);
-	vfta = rd32(hw, TXGBE_PSR_VLAN_TBL(regindex));
-	if (vlan_on) {
-		if (!(vfta & targetbit)) {
-			vfta |= targetbit;
-			vfta_changed = true;
-		}
-	} else {
-		if ((vfta & targetbit)) {
-			vfta &= ~targetbit;
-			vfta_changed = true;
-		}
-	}
-
-	/* Part 2
-	 * Call txgbe_set_vlvf to set VLVFB and VLVF
-	 */
-	ret_val = txgbe_set_vlvf(hw, vlan, vind, vlan_on,
-				 &vfta_changed);
-	if (ret_val != 0)
-		return ret_val;
-
-	if (vfta_changed)
-		wr32(hw, TXGBE_PSR_VLAN_TBL(regindex), vfta);
-	return 0;
-}
-
-/**
  *  txgbe_set_vlvf - Set VLAN Pool Filter
  *  @hw: pointer to hardware structure
  *  @vlan: VLAN id to write to VLAN filter
@@ -1716,8 +1611,8 @@ int txgbe_set_vfta(struct txgbe_hw *hw, u32 vlan, u32 vind,
  *
  *  Turn on/off specified bit in VLVF table.
  **/
-int txgbe_set_vlvf(struct txgbe_hw *hw, u32 vlan, u32 vind,
-		   bool vlan_on, bool *vfta_changed)
+static int txgbe_set_vlvf(struct txgbe_hw *hw, u32 vlan, u32 vind,
+			  bool vlan_on, bool *vfta_changed)
 {
 	u32 vt;
 
@@ -1814,6 +1709,57 @@ int txgbe_set_vlvf(struct txgbe_hw *hw, u32 vlan, u32 vind,
 }
 
 /**
+ *  txgbe_set_vfta - Set VLAN filter table
+ *  @hw: pointer to hardware structure
+ *  @vlan: VLAN id to write to VLAN filter
+ *  @vind: VMDq output index that maps queue to VLAN id in VFVFB
+ *  @vlan_on: boolean flag to turn on/off VLAN in VFVF
+ *
+ *  Turn on/off specified VLAN in the VLAN filter table.
+ **/
+int txgbe_set_vfta(struct txgbe_hw *hw, u32 vlan, u32 vind,
+		   bool vlan_on)
+{
+	int regindex;
+	u32 bitindex;
+	u32 vfta;
+	u32 targetbit;
+	int ret_val = 0;
+	bool vfta_changed = false;
+
+	if (vlan > 4095)
+		return TXGBE_ERR_PARAM;
+
+	regindex = (vlan >> 5) & 0x7F;
+	bitindex = vlan & 0x1F;
+	targetbit = (1 << bitindex);
+	vfta = rd32(hw, TXGBE_PSR_VLAN_TBL(regindex));
+	if (vlan_on) {
+		if (!(vfta & targetbit)) {
+			vfta |= targetbit;
+			vfta_changed = true;
+		}
+	} else {
+		if ((vfta & targetbit)) {
+			vfta &= ~targetbit;
+			vfta_changed = true;
+		}
+	}
+
+	/* Part 2
+	 * Call txgbe_set_vlvf to set VLVFB and VLVF
+	 */
+	ret_val = txgbe_set_vlvf(hw, vlan, vind, vlan_on,
+				 &vfta_changed);
+	if (ret_val != 0)
+		return ret_val;
+
+	if (vfta_changed)
+		wr32(hw, TXGBE_PSR_VLAN_TBL(regindex), vfta);
+	return 0;
+}
+
+/**
  *  txgbe_clear_vfta - Clear VLAN filter table
  *  @hw: pointer to hardware structure
  *
@@ -1834,60 +1780,6 @@ int txgbe_clear_vfta(struct txgbe_hw *hw)
 		wr32(hw, TXGBE_PSR_VLAN_SWC_VM_H, 0);
 	}
 
-	return 0;
-}
-
-/**
- *  txgbe_get_wwn_prefix - Get alternative WWNN/WWPN prefix from
- *  the EEPROM
- *  @hw: pointer to hardware structure
- *  @wwnn_prefix: the alternative WWNN prefix
- *  @wwpn_prefix: the alternative WWPN prefix
- *
- *  This function will read the EEPROM from the alternative SAN MAC address
- *  block to check the support for the alternative WWNN/WWPN prefix support.
- **/
-int txgbe_get_wwn_prefix(struct txgbe_hw *hw, u16 *wwnn_prefix,
-			 u16 *wwpn_prefix)
-{
-	u16 offset, caps;
-	u16 alt_san_mac_blk_offset;
-
-	/* clear output first */
-	*wwnn_prefix = 0xFFFF;
-	*wwpn_prefix = 0xFFFF;
-
-	/* check if alternative SAN MAC is supported */
-	offset = hw->eeprom.sw_region_offset + TXGBE_ALT_SAN_MAC_ADDR_BLK_PTR;
-	if (txgbe_read_ee_hostif(hw, offset, &alt_san_mac_blk_offset))
-		goto wwn_prefix_err;
-
-	if (alt_san_mac_blk_offset == 0 ||
-	    alt_san_mac_blk_offset == 0xFFFF)
-		goto wwn_prefix_out;
-
-	/* check capability in alternative san mac address block */
-	offset = alt_san_mac_blk_offset + TXGBE_ALT_SAN_MAC_ADDR_CAPS_OFFSET;
-	if (txgbe_read_ee_hostif(hw, offset, &caps))
-		goto wwn_prefix_err;
-	if (!(caps & TXGBE_ALT_SAN_MAC_ADDR_CAPS_ALTWWN))
-		goto wwn_prefix_out;
-
-	/* get the corresponding prefix for WWNN/WWPN */
-	offset = alt_san_mac_blk_offset + TXGBE_ALT_SAN_MAC_ADDR_WWNN_OFFSET;
-	if (txgbe_read_ee_hostif(hw, offset, wwnn_prefix))
-		hw_err(hw, "eeprom read at offset %d failed", offset);
-
-	offset = alt_san_mac_blk_offset + TXGBE_ALT_SAN_MAC_ADDR_WWPN_OFFSET;
-	if (txgbe_read_ee_hostif(hw, offset, wwpn_prefix))
-		goto wwn_prefix_err;
-
-wwn_prefix_out:
-	return 0;
-
-wwn_prefix_err:
-	ERROR_REPORT2(TXGBE_ERROR_INVALID_STATE,
-		      "eeprom read at offset %d failed", offset);
 	return 0;
 }
 
@@ -1955,7 +1847,7 @@ void txgbe_set_ethertype_anti_spoofing(struct txgbe_hw *hw,
  *  Calculates the checksum for some buffer on a specified length.  The
  *  checksum calculated is returned.
  **/
-u8 txgbe_calculate_checksum(u8 *buffer, u32 length)
+static u8 txgbe_calculate_checksum(u8 *buffer, u32 length)
 {
 	u32 i;
 	u8 sum = 0;
@@ -1986,8 +1878,9 @@ u8 txgbe_calculate_checksum(u8 *buffer, u32 length)
  *  Communicates with the manageability block.  On success return 0
  *  else return TXGBE_ERR_HOST_INTERFACE_COMMAND.
  **/
-int txgbe_host_interface_command(struct txgbe_hw *hw, u32 *buffer,
-				 u32 length, u32 timeout, bool return_data)
+static int txgbe_host_interface_command(struct txgbe_hw *hw, u32 *buffer,
+					u32 length, u32 timeout,
+					bool return_data)
 {
 	struct txgbe_adapter *adapter = (struct txgbe_adapter *)hw->back;
 	struct txgbe_hic_hdr *send_hdr = (struct txgbe_hic_hdr *)buffer;
@@ -3688,7 +3581,96 @@ int txgbe_get_invariants_generic(struct txgbe_hw *hw)
 	return 0;
 }
 
+static int txgbe_close_notify(struct txgbe_hw *hw)
+{
+	int tmp;
+	int status;
+	struct txgbe_hic_write_shadow_ram buffer;
 
+	buffer.hdr.req.cmd = FW_DW_CLOSE_NOTIFY;
+	buffer.hdr.req.buf_lenh = 0;
+	buffer.hdr.req.buf_lenl = 0;
+
+	if (hw->mac.type == txgbe_mac_sp)
+		buffer.hdr.req.cksum_or_index.checksum = FW_DEFAULT_CHECKSUM;
+
+	/* one word */
+	buffer.length = 0;
+	buffer.address = 0;
+
+	status = txgbe_host_interface_command(hw, (u32 *)&buffer,
+					      sizeof(buffer),
+					      500, false);
+	if (status)
+		return status;
+
+	if (txgbe_check_mng_access(hw)) {
+		tmp = (u32)rd32a(hw, TXGBE_MNG_MBOX, 1);
+		if (tmp == TXGBE_CHECKSUM_CAP_ST_PASS)
+			status = 0;
+		else
+			status = TXGBE_ERR_EEPROM_CHECKSUM;
+	} else {
+		status = TXGBE_ERR_MNG_ACCESS_FAILED;
+	}
+
+	return status;
+}
+
+static int txgbe_open_notify(struct txgbe_hw *hw)
+{
+	int tmp;
+	int status;
+	struct txgbe_hic_write_shadow_ram buffer;
+
+	buffer.hdr.req.cmd = FW_DW_OPEN_NOTIFY;
+	buffer.hdr.req.buf_lenh = 0;
+	buffer.hdr.req.buf_lenl = 0;
+
+	if (hw->mac.type == txgbe_mac_sp)
+		buffer.hdr.req.cksum_or_index.checksum = FW_DEFAULT_CHECKSUM;
+
+	/* one word */
+	buffer.length = 0;
+	buffer.address = 0;
+
+	status = txgbe_host_interface_command(hw, (u32 *)&buffer,
+					      sizeof(buffer),
+					      500, false);
+	if (status)
+		return status;
+
+	if (txgbe_check_mng_access(hw)) {
+		tmp = (u32)rd32a(hw, TXGBE_MNG_MBOX, 1);
+		if (tmp == TXGBE_CHECKSUM_CAP_ST_PASS)
+			status = 0;
+		else
+			status = TXGBE_ERR_EEPROM_CHECKSUM;
+	} else {
+		status = TXGBE_ERR_MNG_ACCESS_FAILED;
+	}
+
+	return status;
+}
+
+/**
+ * txgbe_check_reset_blocked - check status of MNG FW veto bit
+ * @hw: pointer to the hardware structure
+ *
+ * This function checks the MMNGC.MNG_VETO bit to see if there are
+ * any constraints on link from manageability.  For MAC's that don't
+ * have this bit just return faluse since the link can not be blocked
+ * via this method.
+ **/
+int txgbe_check_reset_blocked(struct txgbe_hw *hw)
+{
+	u32 mmngc = rd32(hw, TXGBE_MIS_ST);
+
+	if (mmngc & TXGBE_MIS_ST_MNG_VETO)
+		return true;
+
+	return false;
+}
 
 /**
  *  txgbe_disable_tx_laser_multispeed_fiber - Disable Tx laser
@@ -4386,8 +4368,8 @@ do { \
  *  defines, and computing two keys at once since the hashed dword stream
  *  will be the same for both keys.
  **/
-u32 txgbe_atr_compute_sig_hash(union txgbe_atr_hash_dword input,
-			       union txgbe_atr_hash_dword common)
+static u32 txgbe_atr_compute_sig_hash(union txgbe_atr_hash_dword input,
+				      union txgbe_atr_hash_dword common)
 {
 	u32 hi_hash_dword, lo_hash_dword, flow_vm_vlan;
 	u32 sig_hash = 0, bucket_hash = 0, common_hash = 0;
@@ -4937,47 +4919,6 @@ int txgbe_enable_rx_dma(struct txgbe_hw *hw, u32 regval)
 
 
 /**
- *  txgbe_read_flash_buffer - Read FLASH dword(s) using
- *  fastest available method
- *
- *  @hw: pointer to hardware structure
- *  @offset: offset of  dword in EEPROM to read
- *  @dwords: number of dwords
- *  @data: dword(s) read from the EEPROM
- *
- *  Retrieves 32 bit dword(s) read from EEPROM
- **/
-int txgbe_read_flash_buffer(struct txgbe_hw *hw, u32 offset,
-			    u32 dwords, u32 *data)
-{
-	int status = 0;
-	u32 i;
-
-	txgbe_init_eeprom_params(hw);
-
-	if (!dwords || offset + dwords >= hw->flash.dword_size) {
-		status = TXGBE_ERR_INVALID_ARGUMENT;
-		ERROR_REPORT1(TXGBE_ERROR_ARGUMENT, "Invalid FLASH arguments");
-		return status;
-	}
-
-	for (i = 0; i < dwords; i++) {
-		wr32(hw, TXGBE_SPI_DATA, data[i]);
-		wr32(hw, TXGBE_SPI_CMD,
-		     TXGBE_SPI_CMD_ADDR(offset + i) |
-			TXGBE_SPI_CMD_CMD(0x0));
-
-		status = po32m(hw, TXGBE_SPI_STATUS,
-			       TXGBE_SPI_STATUS_OPDONE, TXGBE_SPI_STATUS_OPDONE,
-			TXGBE_SPI_TIMEOUT, 0);
-		if (status)
-			break;
-	}
-
-	return status;
-}
-
-/**
  *  txgbe_write_flash_buffer - Write FLASH dword(s) using
  *  fastest available method
  *
@@ -5242,80 +5183,6 @@ static int txgbe_write_ee_hostif_data(struct txgbe_hw *hw, u16 offset,
 	return status;
 }
 
-int txgbe_close_notify(struct txgbe_hw *hw)
-{
-	int tmp;
-	int status;
-	struct txgbe_hic_write_shadow_ram buffer;
-
-	buffer.hdr.req.cmd = FW_DW_CLOSE_NOTIFY;
-	buffer.hdr.req.buf_lenh = 0;
-	buffer.hdr.req.buf_lenl = 0;
-
-	if (hw->mac.type == txgbe_mac_sp)
-		buffer.hdr.req.cksum_or_index.checksum = FW_DEFAULT_CHECKSUM;
-
-	/* one word */
-	buffer.length = 0;
-	buffer.address = 0;
-
-	status = txgbe_host_interface_command(hw, (u32 *)&buffer,
-					      sizeof(buffer),
-					      500, false);
-	if (status)
-		return status;
-
-	if (txgbe_check_mng_access(hw)) {
-		tmp = (u32)rd32a(hw, TXGBE_MNG_MBOX, 1);
-		if (tmp == TXGBE_CHECKSUM_CAP_ST_PASS)
-			status = 0;
-		else
-			status = TXGBE_ERR_EEPROM_CHECKSUM;
-	} else {
-		status = TXGBE_ERR_MNG_ACCESS_FAILED;
-		return status;
-	}
-
-	return status;
-}
-
-int txgbe_open_notify(struct txgbe_hw *hw)
-{
-	int tmp;
-	int status;
-	struct txgbe_hic_write_shadow_ram buffer;
-
-	buffer.hdr.req.cmd = FW_DW_OPEN_NOTIFY;
-	buffer.hdr.req.buf_lenh = 0;
-	buffer.hdr.req.buf_lenl = 0;
-
-	if (hw->mac.type == txgbe_mac_sp)
-		buffer.hdr.req.cksum_or_index.checksum = FW_DEFAULT_CHECKSUM;
-
-	/* one word */
-	buffer.length = 0;
-	buffer.address = 0;
-
-	status = txgbe_host_interface_command(hw, (u32 *)&buffer,
-					      sizeof(buffer),
-					      500, false);
-	if (status)
-		return status;
-
-	if (txgbe_check_mng_access(hw)) {
-		tmp = (u32)rd32a(hw, TXGBE_MNG_MBOX, 1);
-		if (tmp == TXGBE_CHECKSUM_CAP_ST_PASS)
-			status = 0;
-		else
-			status = TXGBE_ERR_EEPROM_CHECKSUM;
-	} else {
-		status = TXGBE_ERR_MNG_ACCESS_FAILED;
-		return status;
-	}
-
-	return status;
-}
-
 /**
  *  txgbe_write_ee_hostif - Write EEPROM word using hostif
  *  @hw: pointer to hardware structure
@@ -5324,8 +5191,7 @@ int txgbe_open_notify(struct txgbe_hw *hw)
  *
  *  Write a 16 bit word to the EEPROM using the hostif.
  **/
-int txgbe_write_ee_hostif(struct txgbe_hw *hw, u16 offset,
-			  u16 data)
+static int txgbe_write_ee_hostif(struct txgbe_hw *hw, u16 offset, u16 data)
 {
 	int status = 0;
 
@@ -5381,7 +5247,7 @@ out:
  *
  *  Returns a negative error code on error, or the 16-bit checksum
  **/
-int txgbe_calc_eeprom_checksum(struct txgbe_hw *hw)
+static int txgbe_calc_eeprom_checksum(struct txgbe_hw *hw)
 {
 	u16 *buffer = NULL;
 	u32 buffer_size = 0;
@@ -5510,32 +5376,6 @@ int txgbe_validate_eeprom_checksum(struct txgbe_hw *hw,
 
 	return status;
 }
-
-/**
- *  txgbe_update_flash - Instruct HW to copy EEPROM to Flash device
- *  @hw: pointer to hardware structure
- *
- *  Issue a shadow RAM dump to FW to copy EEPROM from shadow RAM to the flash.
- **/
-int txgbe_update_flash(struct txgbe_hw *hw)
-{
-	int status = 0;
-	union txgbe_hic_hdr2 buffer;
-
-	buffer.req.cmd = FW_SHADOW_RAM_DUMP_CMD;
-	buffer.req.buf_lenh = 0;
-	buffer.req.buf_lenl = FW_SHADOW_RAM_DUMP_LEN;
-
-	if (hw->mac.type == txgbe_mac_sp)
-		buffer.req.cksum_or_index.checksum = FW_DEFAULT_CHECKSUM;
-
-	status = txgbe_host_interface_command(hw, (u32 *)&buffer,
-					      sizeof(buffer),
-					      TXGBE_HI_COMMAND_TIMEOUT, false);
-
-	return status;
-}
-
 
 /**
  *  txgbe_setup_eee - Enable/disable EEE support

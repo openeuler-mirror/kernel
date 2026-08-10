@@ -1044,7 +1044,6 @@ int txgbe_copy_dcb_cfg(struct txgbe_adapter *adapter, int tc_max);
 u8 txgbe_dcb_txq_to_tc(struct txgbe_adapter *adapter, u8 index);
 
 /* needed by txgbe_main.c */
-int txgbe_validate_mac_addr(u8 *mc_addr);
 void txgbe_check_options(struct txgbe_adapter *adapter);
 void txgbe_assign_netdev_ops(struct net_device *netdev);
 

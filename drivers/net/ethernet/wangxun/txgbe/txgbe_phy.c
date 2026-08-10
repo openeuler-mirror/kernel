@@ -7,163 +7,6 @@
 #include "txgbe_phy.h"
 
 /**
- * txgbe_check_reset_blocked - check status of MNG FW veto bit
- * @hw: pointer to the hardware structure
- *
- * This function checks the MMNGC.MNG_VETO bit to see if there are
- * any constraints on link from manageability.  For MAC's that don't
- * have this bit just return faluse since the link can not be blocked
- * via this method.
- **/
-int txgbe_check_reset_blocked(struct txgbe_hw *hw)
-{
-	u32 mmngc;
-
-	mmngc = rd32(hw, TXGBE_MIS_ST);
-	if (mmngc & TXGBE_MIS_ST_MNG_VETO)
-		return true;
-
-	return false;
-}
-
-/**
- * txgbe_get_phy_id - Get the phy type
- * @hw: pointer to hardware structure
- **/
-int txgbe_get_phy_id(struct txgbe_hw *hw)
-{
-	u32 status;
-	u16 phy_id_high = 0;
-	u16 phy_id_low = 0;
-	u8 numport, thisport;
-	u32 i = 0;
-	struct txgbe_adapter *adapter = hw->back;
-
-	if (hw->mac.type == txgbe_mac_aml) {
-		hw->phy.addr = 0;
-
-		for (i = 0; i < 32; i++) {
-			hw->phy.addr = i;
-			status = txgbe_read_phy_reg_mdi(hw, TXGBE_MDIO_PHY_ID_HIGH,
-							0, &phy_id_high);
-			if (status) {
-				e_info(drv, "txgbe_read_phy_reg_mdi failed 1\n");
-				return status;
-			}
-			e_info(drv, "%d: phy_id_high 0x%x\n", i, phy_id_high);
-			if ((phy_id_high & 0xFFFF) == 0x0141)
-				break;
-		}
-
-		if (i == 32) {
-			e_info(drv, "txgbe_read_phy_reg_mdi failed\n");
-			return TXGBE_ERR_PHY;
-		}
-
-		status = txgbe_read_phy_reg_mdi(hw, TXGBE_MDIO_PHY_ID_LOW,
-						0, &phy_id_low);
-		if (status) {
-			e_info(drv, "txgbe_read_phy_reg_mdi failed 2\n");
-			return status;
-		}
-		hw->phy.id = (u32)(phy_id_high & 0xFFFF) << 6;
-		hw->phy.id |= (u32)((phy_id_low & 0xFC00) >> 10);
-
-		e_info(drv, "%s: phy_id 0x%x", __func__, hw->phy.id);
-
-		return status;
-	}
-
-	status = txgbe_mtd_hw_xmdio_rd(&hw->phy_dev, hw->phy.addr,
-				       TXGBE_MDIO_PMA_PMD_DEV_TYPE,
-				TXGBE_MDIO_PHY_ID_HIGH, &phy_id_high);
-
-	if (status == 0) {
-		hw->phy.id = (u32)(phy_id_high << 16);
-		status = txgbe_mtd_hw_xmdio_rd(&hw->phy_dev, hw->phy.addr,
-					       TXGBE_MDIO_PMA_PMD_DEV_TYPE,
-				TXGBE_MDIO_PHY_ID_LOW, &phy_id_low);
-		hw->phy.id |= (u32)(phy_id_low & TXGBE_PHY_REVISION_MASK);
-	}
-
-	if (status == 0) {
-		status = txgbe_mtd_get_phy_revision(&hw->phy_dev, hw->phy.addr,
-						    (enum txgbe_mtd_dev_id *)&hw->phy.revision,
-			&numport, &thisport);
-		if (status == MTD_FAIL) {
-			ERROR_REPORT1(TXGBE_ERROR_INVALID_STATE,
-				      "Error in txgbe_mtd_get_phy_revision()\n");
-		}
-	}
-	return status;
-}
-
-/**
- * txgbe_get_phy_type_from_id - Get the phy type
- * @hw: pointer to hardware structure
- **/
-enum txgbe_phy_type txgbe_get_phy_type_from_id(struct txgbe_hw *hw)
-{
-	enum txgbe_phy_type phy_type;
-	u16 ext_ability = 0;
-
-	switch (hw->phy.id) {
-	case TN1010_PHY_ID:
-		phy_type = txgbe_phy_tn;
-		break;
-	case QT2022_PHY_ID:
-		phy_type = txgbe_phy_qt;
-		break;
-	case ATH_PHY_ID:
-		phy_type = txgbe_phy_nl;
-		break;
-	default:
-		phy_type = txgbe_phy_unknown;
-		break;
-	}
-	if (phy_type == txgbe_phy_unknown) {
-		txgbe_mtd_hw_xmdio_rd(&hw->phy_dev, hw->phy.addr,
-				      TXGBE_MDIO_PMA_PMD_DEV_TYPE,
-				TXGBE_MDIO_PHY_EXT_ABILITY, &ext_ability);
-
-		if (ext_ability & (TXGBE_MDIO_PHY_10GBASET_ABILITY |
-			TXGBE_MDIO_PHY_1000BASET_ABILITY))
-			phy_type = txgbe_phy_cu_unknown;
-		else
-			phy_type = txgbe_phy_generic;
-	}
-	return phy_type;
-}
-
-/**
- * txgbe_reset_phy - Performs a PHY reset
- * @hw: pointer to hardware structure
- **/
-int txgbe_reset_phy(struct txgbe_hw *hw)
-{
-	int status = 0;
-
-	if (status != 0 || hw->phy.type == txgbe_phy_none)
-		goto out;
-
-	/* Don't reset PHY if it's shut down due to overtemp. */
-	if (!hw->phy.reset_if_overtemp &&
-	    hw->phy.ops.check_overtemp(hw) == TXGBE_ERR_OVERTEMP)
-		goto out;
-
-	/* Blocked by MNG FW so bail */
-	txgbe_check_reset_blocked(hw);
-	if (((hw->subsystem_device_id & TXGBE_NCSI_MASK) == TXGBE_NCSI_SUP) ||
-	    ((hw->subsystem_device_id & TXGBE_WOL_MASK) == TXGBE_WOL_SUP))
-		goto out;
-
-	status = txgbe_mtd_hw_rst(&hw->phy_dev, hw->phy.addr, 1000);
-
-out:
-	return status;
-}
-
-/**
  * txgbe_read_phy_reg_mdi - Reads a value from a specified PHY register without
  * the SWFW lock
  * @hw: pointer to hardware structure
@@ -171,8 +14,8 @@ out:
  * @device_type: 5 bit device type
  * @phy_data: Pointer to read data from PHY register
  **/
-int txgbe_read_phy_reg_mdi(struct txgbe_hw *hw, u32 reg_addr, u32 device_type,
-			   u16 *phy_data)
+static int txgbe_read_phy_reg_mdi(struct txgbe_hw *hw, u32 reg_addr,
+				  u32 device_type, u16 *phy_data)
 {
 	u32 command;
 	int status = 0;
@@ -210,8 +53,8 @@ int txgbe_read_phy_reg_mdi(struct txgbe_hw *hw, u32 reg_addr, u32 device_type,
  *  @device_type: 5 bit device type
  *  @phy_data: Pointer to read data from PHY register
  **/
-int txgbe_read_phy_reg(struct txgbe_hw *hw, u32 reg_addr,
-		       u32 device_type, u16 *phy_data)
+static int txgbe_read_phy_reg(struct txgbe_hw *hw, u32 reg_addr,
+			      u32 device_type, u16 *phy_data)
 {
 	int status;
 	u32 gssr = hw->phy.phy_semaphore_mask;
@@ -235,8 +78,8 @@ int txgbe_read_phy_reg(struct txgbe_hw *hw, u32 reg_addr,
  * @device_type: 5 bit device type
  * @phy_data: Data to write to the PHY register
  **/
-int txgbe_write_phy_reg_mdi(struct txgbe_hw *hw, u32 reg_addr,
-			    u32 device_type, u16 phy_data)
+static int txgbe_write_phy_reg_mdi(struct txgbe_hw *hw, u32 reg_addr,
+				   u32 device_type, u16 phy_data)
 {
 	u32 command;
 	int status = 0;
@@ -272,8 +115,8 @@ int txgbe_write_phy_reg_mdi(struct txgbe_hw *hw, u32 reg_addr,
  *  @device_type: 5 bit device type
  *  @phy_data: Data to write to the PHY register
  **/
-int txgbe_write_phy_reg(struct txgbe_hw *hw, u32 reg_addr,
-			u32 device_type, u16 phy_data)
+static int txgbe_write_phy_reg(struct txgbe_hw *hw, u32 reg_addr,
+			       u32 device_type, u16 phy_data)
 {
 	int status;
 	u32 gssr = hw->phy.phy_semaphore_mask;
@@ -442,56 +285,12 @@ int txgbe_get_copper_link_capabilities(struct txgbe_hw *hw,
 }
 
 /**
- *  txgbe_get_phy_firmware_version - Gets the PHY Firmware Version
- *  @hw: pointer to hardware structure
- *  @firmware_version: pointer to the PHY Firmware Version
- **/
-int txgbe_get_phy_firmware_version(struct txgbe_hw *hw,
-				   u16 *firmware_version)
-{
-	int status;
-	u8 major, minor, inc, test;
-
-	status = txgbe_mtd_get_firmver(&hw->phy_dev, hw->phy.addr,
-				       &major, &minor, &inc, &test);
-	if (status == 0)
-		*firmware_version = (major << 8) | minor;
-	return status;
-}
-
-/**
- *  txgbe_identify_module - Identifies module type
- *  @hw: pointer to hardware structure
- *
- *  Determines HW type and calls appropriate function.
- **/
-int txgbe_identify_module(struct txgbe_hw *hw)
-{
-	int status = TXGBE_ERR_SFP_NOT_PRESENT;
-
-	switch (hw->mac.ops.get_media_type(hw)) {
-	case txgbe_media_type_fiber_qsfp:
-		status = txgbe_identify_qsfp_module(hw);
-		break;
-	case txgbe_media_type_fiber:
-		status = txgbe_identify_sfp_module(hw);
-		break;
-	default:
-		hw->phy.sfp_type = txgbe_sfp_type_not_present;
-		status = TXGBE_ERR_SFP_NOT_PRESENT;
-		break;
-	}
-
-	return status;
-}
-
-/**
  *  txgbe_identify_sfp_module - Identifies SFP modules
  *  @hw: pointer to hardware structure
  *
  *  Searches for and identifies the SFP module and assigns appropriate PHY type.
  **/
-int txgbe_identify_sfp_module(struct txgbe_hw *hw)
+static int txgbe_identify_sfp_module(struct txgbe_hw *hw)
 {
 	int status = TXGBE_ERR_PHY_ADDR_INVALID;
 	u32 vendor_oui = 0;
@@ -890,7 +689,7 @@ err_read_i2c_eeprom:
 	return TXGBE_ERR_SFP_NOT_PRESENT;
 }
 
-int txgbe_identify_qsfp_module(struct txgbe_hw *hw)
+static int txgbe_identify_qsfp_module(struct txgbe_hw *hw)
 {
 	int status = TXGBE_ERR_PHY_ADDR_INVALID;
 	u8 identifier = 0, transceiver_type = 0;
@@ -1006,6 +805,32 @@ err_read_i2c_eeprom:
 	return TXGBE_ERR_SFP_NOT_PRESENT;
 }
 
+/**
+ *  txgbe_identify_module - Identifies module type
+ *  @hw: pointer to hardware structure
+ *
+ *  Determines HW type and calls appropriate function.
+ **/
+int txgbe_identify_module(struct txgbe_hw *hw)
+{
+	int status = TXGBE_ERR_SFP_NOT_PRESENT;
+
+	switch (hw->mac.ops.get_media_type(hw)) {
+	case txgbe_media_type_fiber_qsfp:
+		status = txgbe_identify_qsfp_module(hw);
+		break;
+	case txgbe_media_type_fiber:
+		status = txgbe_identify_sfp_module(hw);
+		break;
+	default:
+		hw->phy.sfp_type = txgbe_sfp_type_not_present;
+		status = TXGBE_ERR_SFP_NOT_PRESENT;
+		break;
+	}
+
+	return status;
+}
+
 int txgbe_init_i2c(struct txgbe_hw *hw)
 {
 	wr32(hw, TXGBE_I2C_ENABLE, 0);
@@ -1072,23 +897,6 @@ static int txgbe_init_i2c_sfp_phy(struct txgbe_hw *hw)
 	return 0;
 }
 
-int txgbe_clear_i2c(struct txgbe_hw *hw)
-{
-	int status = 0;
-
-	/* wait for completion */
-	status = po32m(hw, TXGBE_I2C_STATUS,
-		       TXGBE_I2C_STATUS_MST_ACTIVITY, ~TXGBE_I2C_STATUS_MST_ACTIVITY,
-		TXGBE_I2C_TIMEOUT, 10);
-	if (status != 0)
-		goto out;
-
-	wr32(hw, TXGBE_I2C_ENABLE, 0);
-
-out:
-	return status;
-}
-
 /**
  *  txgbe_read_i2c_eeprom - Reads 8 bit EEPROM word over I2C interface
  *  @hw: pointer to hardware structure
@@ -1146,22 +954,16 @@ int txgbe_read_i2c_sff8636(struct txgbe_hw *hw, u8 page, u8 byte_offset,
 }
 
 /**
- *  txgbe_read_i2c_sfp_phy - Reads 16 bit word over I2C interface
- *  @hw: pointer to hardware structure
- *  @byte_offset: byte offset at address 0xAC
- *  @data: value read
- *
- *  Performs byte read operation to Fiber to Copper SFP module
- *  internal phy over I2C
+ * txgbe_switch_i2c_slave_addr - Switch I2C slave address
+ * @hw: pointer to hardware structure
+ * @dev_addr: slave addr to switch
  **/
-int txgbe_read_i2c_sfp_phy(struct txgbe_hw *hw, u16 byte_offset,
-			   u16 *data)
+static int txgbe_switch_i2c_slave_addr(struct txgbe_hw *hw, u8 dev_addr)
 {
-	txgbe_init_i2c_sfp_phy(hw);
-
-	return txgbe_read_i2c_word(hw, byte_offset,
-					 TXGBE_I2C_EEPROM_DEV_ADDR3,
-					 data);
+	wr32(hw, TXGBE_I2C_ENABLE, 0);
+	wr32(hw, TXGBE_I2C_TAR, dev_addr >> 1);
+	wr32(hw, TXGBE_I2C_ENABLE, 1);
+	return 0;
 }
 
 /**
@@ -1337,16 +1139,41 @@ out:
 }
 
 /**
- * txgbe_switch_i2c_slave_addr - Switch I2C slave address
- * @hw: pointer to hardware structure
- * @dev_addr: slave addr to switch
+ *	txgbe_read_i2c_word - Reads 16 bit word over I2C
+ *	@hw: pointer to hardware structure
+ *	@byte_offset: byte offset to read
+ *	@dev_addr: device address to read from
+ *	@data: value read
+ *
+ *	Performs byte read operation to SFP module's EEPROM over I2C interface at
+ *	a specified device address.
  **/
-int txgbe_switch_i2c_slave_addr(struct txgbe_hw *hw, u8 dev_addr)
+static int txgbe_read_i2c_word(struct txgbe_hw *hw, u16 byte_offset,
+			       u8 dev_addr, u16 *data)
 {
-	wr32(hw, TXGBE_I2C_ENABLE, 0);
-	wr32(hw, TXGBE_I2C_TAR, dev_addr >> 1);
-	wr32(hw, TXGBE_I2C_ENABLE, 1);
-	return 0;
+	txgbe_switch_i2c_slave_addr(hw, dev_addr);
+
+	return txgbe_read_i2c_word_int(hw, byte_offset, dev_addr,
+						   data, true);
+}
+
+/**
+ *  txgbe_read_i2c_sfp_phy - Reads 16 bit word over I2C interface
+ *  @hw: pointer to hardware structure
+ *  @byte_offset: byte offset at address 0xAC
+ *  @data: value read
+ *
+ *  Performs byte read operation to Fiber to Copper SFP module
+ *  internal phy over I2C
+ **/
+int txgbe_read_i2c_sfp_phy(struct txgbe_hw *hw, u16 byte_offset,
+			   u16 *data)
+{
+	txgbe_init_i2c_sfp_phy(hw);
+
+	return txgbe_read_i2c_word(hw, byte_offset,
+					 TXGBE_I2C_EEPROM_DEV_ADDR3,
+					 data);
 }
 
 /**
@@ -1366,25 +1193,6 @@ int txgbe_read_i2c_byte(struct txgbe_hw *hw, u8 byte_offset,
 
 	return txgbe_read_i2c_byte_int(hw, byte_offset, dev_addr,
 					       data, true);
-}
-
-/**
- *	txgbe_read_i2c_word - Reads 16 bit word over I2C
- *	@hw: pointer to hardware structure
- *	@byte_offset: byte offset to read
- *	@dev_addr: device address to read from
- *	@data: value read
- *
- *	Performs byte read operation to SFP module's EEPROM over I2C interface at
- *	a specified device address.
- **/
-int txgbe_read_i2c_word(struct txgbe_hw *hw, u16 byte_offset,
-			u8 dev_addr, u16 *data)
-{
-	txgbe_switch_i2c_slave_addr(hw, dev_addr);
-
-	return txgbe_read_i2c_word_int(hw, byte_offset, dev_addr,
-						   data, true);
 }
 
 /**
@@ -1471,38 +1279,6 @@ int txgbe_tn_check_overtemp(struct txgbe_hw *hw)
 			status = TXGBE_ERR_OVERTEMP;
 	}
 	return status;
-}
-
-int txgbe_init_external_phy(struct txgbe_hw *hw)
-{
-	int status = 0;
-
-	struct mtd_dev *devptr = &hw->phy_dev;
-
-	hw->phy.addr = 0;
-
-	devptr->app_data = hw;
-	status = txgbe_mtd_load_driver(txgbe_read_mdio,
-				       txgbe_write_mdio,
-		false,
-		NULL,
-		NULL,
-		NULL,
-		NULL,
-		hw->phy.addr,
-		devptr);
-	if (status != 0) {
-		ERROR_REPORT1(TXGBE_ERROR_INVALID_STATE,
-			      "External PHY initialization failed.\n");
-		return TXGBE_ERR_PHY;
-	}
-
-	return status;
-}
-
-int txgbe_uninit_external_phy(struct txgbe_hw *hw)
-{
-	return txgbe_mtd_unload_driver(&hw->phy_dev);
 }
 
 int txgbe_set_phy_pause_advertisement(struct txgbe_hw *hw, u32 pause_bit)

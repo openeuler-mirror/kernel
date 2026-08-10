@@ -1016,7 +1016,7 @@ static int txgbe_setup_copper_link(struct txgbe_hw *hw,
 	return status;
 }
 
-enum txgbe_media_type txgbe_get_media_type_sp(struct txgbe_hw *hw)
+static enum txgbe_media_type txgbe_get_media_type_sp(struct txgbe_hw *hw)
 {
 	enum txgbe_media_type media_type;
 	u8 device_type = hw->subsystem_device_id & 0xF0;
