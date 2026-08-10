@@ -1878,9 +1878,8 @@ static u8 txgbe_calculate_checksum(u8 *buffer, u32 length)
  *  Communicates with the manageability block.  On success return 0
  *  else return TXGBE_ERR_HOST_INTERFACE_COMMAND.
  **/
-static int txgbe_host_interface_command(struct txgbe_hw *hw, u32 *buffer,
-					u32 length, u32 timeout,
-					bool return_data)
+int txgbe_host_interface_command(struct txgbe_hw *hw, u32 *buffer,
+				 u32 length, u32 timeout, bool return_data)
 {
 	struct txgbe_adapter *adapter = (struct txgbe_adapter *)hw->back;
 	struct txgbe_hic_hdr *send_hdr = (struct txgbe_hic_hdr *)buffer;
@@ -1943,7 +1942,6 @@ static int txgbe_host_interface_command(struct txgbe_hw *hw, u32 *buffer,
 		dword_len = hdr_size >> 2;
 
 		/* polling reply from FW */
-		timeout = 50;
 		do {
 			timeout--;
 			usleep_range(1000, 2000);
@@ -1962,6 +1960,12 @@ static int txgbe_host_interface_command(struct txgbe_hw *hw, u32 *buffer,
 				break;
 
 		} while (timeout);
+
+		if ((buf[0] & 0xff0000) >> 16 == 0x80) {
+			hw_info(hw, "It's unknown cmd.\n");
+			status = TXGBE_ERR_MNG_ACCESS_FAILED;
+			goto rel_out;
+		}
 
 		if (!timeout) {
 			ERROR_REPORT1(TXGBE_ERROR_CAUTION,
@@ -3514,6 +3518,12 @@ static void txgbe_get_mac_type(struct txgbe_hw *hw)
 	}
 }
 
+static const struct txgbe_info *txgbe_info_tbl[] = {
+	[txgbe_mac_sp]		= &txgbe_sp_info,
+	[txgbe_mac_aml]		= &txgbe_aml_info,
+	[txgbe_mac_aml40]	= &txgbe_aml40_info,
+};
+
 /**
  *  txgbe_init_shared_code - Initialize the shared code
  *  @hw: pointer to hardware structure
@@ -3538,19 +3548,7 @@ int txgbe_init_shared_code(struct txgbe_hw *hw)
 	int ret = 0;
 
 	txgbe_get_mac_type(hw);
-	switch (hw->mac.type) {
-	case txgbe_mac_sp:
-		ti = &txgbe_sp_info;
-		break;
-	case txgbe_mac_aml:
-		ti = &txgbe_aml_info;
-		break;
-	case txgbe_mac_aml40:
-		ti = &txgbe_aml40_info;
-		break;
-	default:
-		return TXGBE_ERR_DEVICE_NOT_SUPPORTED;
-	}
+	ti = txgbe_info_tbl[hw->mac.type];
 
 	if (hw->mac.type == txgbe_mac_sp)
 		goto skip_flash_header_check;
@@ -3920,8 +3918,12 @@ int txgbe_enable_rx_adapter(struct txgbe_hw *hw)
 
 int txgbe_reconfig_mac(struct txgbe_hw *hw)
 {
+	struct txgbe_adapter *adapter = hw->back;
 	u32 mac_wdg_timeout;
 	u32 mac_flow_ctrl;
+
+	if (test_bit(TXGBE_FLAG_FW_CONTROL_PHY, adapter->flag))
+		return 0;
 
 	mac_wdg_timeout = rd32(hw, TXGBE_MAC_WDG_TIMEOUT);
 	mac_flow_ctrl = rd32(hw, TXGBE_MAC_RX_FLOW_CTRL);

@@ -142,36 +142,6 @@
 #define TNX_FW_REV                              0xB
 #define AQ_FW_REV                               0x20
 
-/* AMLITE ETH PHY Registers */
-#define SR_AN_CTRL                              0x70000
-#define VR_PCS_DIG_CTRL1                        0x38000
-#define SR_PCS_CTRL1                            0x30000
-#define SR_PCS_CTRL2                            0x30007
-#define SR_PMA_CTRL2                            0x10007
-#define VR_PCS_DIG_CTRL3                        0x38003
-#define VR_PMA_CTRL3                            0x180a8
-#define VR_PMA_CTRL4                            0x180a9
-#define SR_PMA_RS_FEC_CTRL                      0x100c8
-#define ANA_OVRDEN0                             0xca4
-#define ANA_OVRDEN1                             0xca8
-#define ANA_OVRDVAL0                            0xcb0
-#define ANA_OVRDVAL5                            0xcc4
-#define OSC_CAL_N_CDR4                          0x14
-#define PLL0_CFG0                               0xc10
-#define PLL0_CFG2                               0xc18
-#define PLL0_DIV_CFG0                           0xc1c
-#define PLL1_CFG0                               0xc48
-#define PLL1_CFG2                               0xc50
-#define PIN_OVRDEN0                             0xc8c
-#define PIN_OVRDVAL0                            0xc94
-#define DATAPATH_CFG0                           0x142c
-#define DATAPATH_CFG1                           0x1430
-#define AN_CFG1                                 0x1438
-#define SPARE52                                 0x16fc
-#define RXS_CFG0                                0x000
-#define PMD_CFG0                                0x1400
-#define SR_PCS_STS1                             0x30001
-
 /* ETH PHY Registers */
 #define TXGBE_SR_XS_PCS_MMD_STATUS1             0x30001
 #define TXGBE_SR_PCS_CTL2                       0x30007
@@ -1745,18 +1715,30 @@ enum TXGBE_MSCA_CMD_value {
 //#define TXGBE_PX_MISC_IEN_MNG_HOST_MBOX 0x40000000U
 #define TXGBE_PX_MISC_IEN_TIMER         0x80000000U
 
-#define TXGBE_PX_MISC_IEN_MASK ( \
-				TXGBE_PX_MISC_IEN_ETH_LKDN | \
-				TXGBE_PX_MISC_IEN_DEV_RST | \
-				TXGBE_PX_MISC_IEN_ETH_EVENT | \
-				TXGBE_PX_MISC_IEN_ETH_LK | \
-				TXGBE_PX_MISC_IEN_ETH_AN | \
-				TXGBE_PX_MISC_IEN_INT_ERR | \
-				TXGBE_PX_MISC_IEN_VF_MBOX | \
-				TXGBE_PX_MISC_IEN_GPIO | \
-				TXGBE_PX_MISC_IEN_STALL | \
-				TXGBE_PX_MISC_IEN_PCIE_REQ_ERR | \
-				TXGBE_PX_MISC_IEN_TIMER)
+#define TXGBE_PX_MISC_IEN_MASK_SP ( \
+				   TXGBE_PX_MISC_IEN_ETH_LKDN | \
+				   TXGBE_PX_MISC_IEN_DEV_RST | \
+				   TXGBE_PX_MISC_IEN_ETH_EVENT | \
+				   TXGBE_PX_MISC_IEN_ETH_LK | \
+				   TXGBE_PX_MISC_IEN_ETH_AN | \
+				   TXGBE_PX_MISC_IEN_INT_ERR | \
+				   TXGBE_PX_MISC_IEN_VF_MBOX | \
+				   TXGBE_PX_MISC_IEN_GPIO | \
+				   TXGBE_PX_MISC_IEN_STALL | \
+				   TXGBE_PX_MISC_IEN_PCIE_REQ_ERR | \
+				   TXGBE_PX_MISC_IEN_TIMER)
+
+#define TXGBE_PX_MISC_IEN_MASK_AML ( \
+				    TXGBE_PX_MISC_AML_ETH_LK_CHANGE | \
+				    TXGBE_PX_MISC_IEN_DEV_RST | \
+				    TXGBE_PX_MISC_AML_ETH_PHY_EVENT | \
+				    TXGBE_PX_MISC_IEN_ETH_AN | \
+				    TXGBE_PX_MISC_IEN_INT_ERR | \
+				    TXGBE_PX_MISC_IEN_VF_MBOX | \
+				    TXGBE_PX_MISC_IEN_GPIO | \
+				    TXGBE_PX_MISC_IEN_STALL | \
+				    TXGBE_PX_MISC_IEN_PCIE_REQ_ERR | \
+				    TXGBE_PX_MISC_IEN_TIMER)
 
 /* General purpose Interrupt Enable */
 #define TXGBE_PX_GPIE_MODEL             0x00000001U

@@ -5,6 +5,7 @@
 #include "txgbe_e56.h"
 #include "txgbe_e56_bp.h"
 #include "txgbe_phy.h"
+#include "txgbe_mng_phy.h"
 
 /**
  *  txgbe_get_media_type_aml - Get media type
@@ -62,6 +63,15 @@ static int txgbe_setup_mac_link_aml(struct txgbe_hw *hw,
 
 	if (speed == TXGBE_LINK_SPEED_UNKNOWN) {
 		status = TXGBE_ERR_LINK_SETUP;
+		goto out;
+	}
+
+	if (test_bit(TXGBE_FLAG_FW_CONTROL_PHY, adapter->flag)) {
+		status = txgbe_set_phy_link_hostif(hw, speed, autoneg, 1);
+		if (status) {
+			hw_err(hw, "fw Set link failed %s %d\n",
+			       __func__, __LINE__);
+		}
 		goto out;
 	}
 
@@ -491,7 +501,7 @@ static const struct txgbe_mac_operations mac_ops_aml = {
 static const struct txgbe_phy_operations phy_ops_aml = {
 	/* PHY */
 	.identify		= &txgbe_identify_phy_generic,
-	.identify_sfp		= &txgbe_identify_module,
+	.identify_sfp		= &txgbe_identify_module_aml,
 	.init			= &txgbe_init_phy_ops_aml,
 	.setup_link		= &txgbe_setup_phy_link,
 	.setup_link_speed	= &txgbe_setup_phy_link_speed,

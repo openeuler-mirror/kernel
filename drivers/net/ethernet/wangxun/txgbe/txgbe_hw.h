@@ -281,4 +281,6 @@ int txgbe_hic_notify_led_active(struct txgbe_hw *hw, int active_flag);
 bool txgbe_is_backplane(struct txgbe_hw *hw);
 bool txgbe_gpio_ext_check(struct txgbe_hw *hw, u8 gpio_ext_mask);
 
+int txgbe_host_interface_command(struct txgbe_hw *hw, u32 *buffer,
+				 u32 length, u32 timeout, bool return_data);
 #endif /* _TXGBE_HW_H_ */

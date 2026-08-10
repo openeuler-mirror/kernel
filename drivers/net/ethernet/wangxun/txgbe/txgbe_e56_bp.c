@@ -2109,7 +2109,7 @@ static int setphylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 
 	rdata = 0x0000;
 	rdata = rd32_ephy(hw, ANA_OVRDVAL5);
-	txgbe_field_set(&rdata, 24, 24, 0x0);
+	txgbe_field_set(&rdata, 24, 24, 0x1);
 	txgbe_wr32_ephy(hw, ANA_OVRDVAL5, rdata);
 
 	rdata = 0x0000;
@@ -2704,6 +2704,25 @@ static int handle_e56_bkp_an73_flow(struct txgbe_adapter *adapter)
 	return status;
 }
 
+static void txgbe_e56_bp_watchdog_event_fw(struct txgbe_adapter *adapter)
+{
+	struct txgbe_hw *hw = &adapter->hw;
+	u32 value = 0;
+
+	value = txgbe_rd32_epcs(hw, 0x78002);
+	if (value & TXGBE_PCS_AN_INT_CMPLT) {
+		adapter->an_done = true;
+		adapter->flags |= TXGBE_FLAG_NEED_LINK_UPDATE;
+	}
+
+	if (value & TXGBE_PCS_AN_TXDIS)
+		adapter->an_done = false;
+
+	kr_dbg(KR_MODE, "RLU:%x-%x MLU:%x INT:%x an_done:%d by:%d\n",
+	       txgbe_rd32_epcs(hw, 0x30001), txgbe_rd32_epcs(hw, 0x30001),
+	       rd32(hw, 0x14404), value, adapter->an_done, hw->bypass_ctle);
+}
+
 void txgbe_e56_bp_watchdog_event(struct txgbe_adapter *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
@@ -2712,12 +2731,20 @@ void txgbe_e56_bp_watchdog_event(struct txgbe_adapter *adapter)
 	u32 value = 0;
 	int ret = 0;
 
-	if (!txgbe_xpcs_an_enabled(hw))
-		return;
-
 	/* only continue if link is down */
 	if (netif_carrier_ok(netdev))
 		return;
+
+	if (test_bit(TXGBE_FLAG_FW_CONTROL_PHY, adapter->flag)) {
+		txgbe_e56_bp_watchdog_event_fw(adapter);
+		return;
+	}
+
+	/* host auto off need reconfig TXGBE_FLAG_NEED_LINK_CONFIG to setup */
+	if (!(txgbe_xpcs_an_enabled(hw))) {
+		adapter->flags |= TXGBE_FLAG_NEED_LINK_CONFIG;
+		return;
+	}
 
 	value = txgbe_rd32_epcs(hw, 0x78002);
 	an_int = value;

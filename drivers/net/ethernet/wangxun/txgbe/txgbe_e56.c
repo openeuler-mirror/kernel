@@ -3207,7 +3207,7 @@ static void txgbe_e56_cfg_temp(struct txgbe_hw *hw)
 		txgbe_wr32_ephy(hw, CMS_ANA_OVRDVAL4, value);
 
 		value = rd32_ephy(hw, CMS_ANA_OVRDVAL5);
-		txgbe_field_set(&value, 1, 0, 0x0);
+		txgbe_field_set(&value, 1, 0, 0x1);
 		txgbe_wr32_ephy(hw, CMS_ANA_OVRDVAL5, value);
 
 		value = rd32_ephy(hw, CMS_ANA_OVRDEN1);
@@ -3385,7 +3385,7 @@ int txgbe_set_link_to_amlite(struct txgbe_hw *hw, u32 speed)
 		txgbe_wr32_ephy(hw, ANA_OVRDVAL0, value);
 
 		value = rd32_ephy(hw, ANA_OVRDVAL5);
-		txgbe_field_set(&value, 24, 24, 0x0);
+		txgbe_field_set(&value, 24, 24, 0x1);
 		txgbe_wr32_ephy(hw, ANA_OVRDVAL5, value);
 
 		value = rd32_ephy(hw, ANA_OVRDEN0);
@@ -3470,7 +3470,7 @@ int txgbe_set_link_to_amlite(struct txgbe_hw *hw, u32 speed)
 
 		value = rd32_ephy(hw, ANA_OVRDVAL5);
 		//Update to 0 from SNPS for PIN CLKP/N: Enable the termination of the input buffer
-		txgbe_field_set(&value, 24, 24, 0x0);
+		txgbe_field_set(&value, 24, 24, 0x1);
 		txgbe_wr32_ephy(hw, ANA_OVRDVAL5, value);
 
 		value = rd32_ephy(hw, ANA_OVRDEN0);
@@ -3554,7 +3554,7 @@ int txgbe_set_link_to_amlite(struct txgbe_hw *hw, u32 speed)
 		txgbe_wr32_ephy(hw, ANA_OVRDVAL0, value);
 
 		value = rd32_ephy(hw, ANA_OVRDVAL5);
-		txgbe_field_set(&value, 24, 24, 0x0);
+		txgbe_field_set(&value, 24, 24, 0x1);
 		txgbe_wr32_ephy(hw, ANA_OVRDVAL5, value);
 
 		value = rd32_ephy(hw, ANA_OVRDEN0);

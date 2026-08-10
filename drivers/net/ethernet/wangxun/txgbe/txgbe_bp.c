@@ -329,8 +329,10 @@ static int txgbe_cl72_trainning(struct txgbe_adapter *adapter)
 		txgbe_wr32_epcs(hw, 0x78002, 0x0000);
 		ret = read_poll_timeout(txgbe_rd32_epcs, rdata, (rdata & 0x1000), 1000,
 					100000, false, hw, 0x30020);
-		if (!ret)
+		if (!ret) {
 			e_dev_info("INT_AN_INT_CMPLT =1, AN73 Done Success.\n");
+			adapter->an_done = true;
+		}
 		return 0;
 	}
 	/* clear an pacv int */

@@ -102,7 +102,7 @@ union txgbe_e56_cms_ana_ovrdval0 {
 #define VR_PMA_CTRL3 0x180a8
 #define VR_PMA_CTRL4 0x180a9
 #define SR_PMA_RS_FEC_CTRL 0x100c8
-#define CMS_ANA_OVRDEN0 0xca4
+#define ANA_OVRDEN0 0xca4
 #define ANA_OVRDEN1 0xca8
 #define ANA_OVRDVAL0 0xcb0
 #define ANA_OVRDVAL5 0xcc4

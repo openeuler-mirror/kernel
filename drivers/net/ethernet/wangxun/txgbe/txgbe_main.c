@@ -45,6 +45,7 @@
 #include "txgbe_bp.h"
 #include "txgbe_e56.h"
 #include "txgbe_e56_bp.h"
+#include "txgbe_mng_phy.h"
 
 char txgbe_driver_name[32] = TXGBE_NAME;
 static const char txgbe_driver_string[] =
@@ -2512,50 +2513,39 @@ static void txgbe_check_overtemp_event(struct txgbe_adapter *adapter, u32 eicr)
 static void txgbe_check_sfp_event(struct txgbe_adapter *adapter, u32 eicr)
 {
 	struct txgbe_hw *hw = &adapter->hw;
-	u32 eicr_mask = TXGBE_PX_MISC_IC_GPIO;
 	u32 reg;
 
+	if (test_bit(__TXGBE_DOWN, &adapter->state) ||
+	    !(eicr & TXGBE_PX_MISC_IC_GPIO))
+		return;
+
+	wr32(hw, TXGBE_GPIO_INTMASK, 0xFF);
+	reg = rd32(hw, TXGBE_GPIO_INTSTATUS);
 	if (hw->mac.type == txgbe_mac_aml40) {
-		if (eicr & eicr_mask) {
-			if (!test_bit(__TXGBE_DOWN, &adapter->state)) {
-				wr32(hw, TXGBE_GPIO_INTMASK, 0xFF);
-				reg = rd32(hw, TXGBE_GPIO_INTSTATUS);
-				if (reg & TXGBE_GPIO_INTSTATUS_4) {
-					adapter->flags2 |= TXGBE_FLAG2_SFP_NEEDS_RESET;
-					wr32(hw, TXGBE_GPIO_EOI,
-					     TXGBE_GPIO_EOI_4);
-					adapter->sfp_poll_time = 0;
-					txgbe_service_event_schedule(adapter);
-				}
-			}
+		if (reg & TXGBE_GPIO_INTSTATUS_4) {
+			adapter->flags2 |= TXGBE_FLAG2_SFP_NEEDS_RESET;
+			wr32(hw, TXGBE_GPIO_EOI, TXGBE_GPIO_EOI_4);
+			adapter->sfp_poll_time = 0;
+			txgbe_service_event_schedule(adapter);
 		}
 	} else if (hw->mac.type == txgbe_mac_sp || hw->mac.type == txgbe_mac_aml) {
-		if (eicr & eicr_mask) {
-			if (!test_bit(__TXGBE_DOWN, &adapter->state)) {
-				wr32(hw, TXGBE_GPIO_INTMASK, 0xFF);
-				reg = rd32(hw, TXGBE_GPIO_INTSTATUS);
-				if (reg & TXGBE_GPIO_INTSTATUS_2) {
-					adapter->flags2 |= TXGBE_FLAG2_SFP_NEEDS_RESET;
-					wr32(hw, TXGBE_GPIO_EOI,
-					     TXGBE_GPIO_EOI_2);
-					adapter->sfp_poll_time = 0;
-					txgbe_service_event_schedule(adapter);
-				}
-				if (reg & TXGBE_GPIO_INTSTATUS_3) {
-					adapter->flags |= TXGBE_FLAG_NEED_LINK_CONFIG;
-					wr32(hw, TXGBE_GPIO_EOI,
-					     TXGBE_GPIO_EOI_3);
-					txgbe_service_event_schedule(adapter);
-				}
+		if (reg & TXGBE_GPIO_INTSTATUS_2) {
+			adapter->flags2 |= TXGBE_FLAG2_SFP_NEEDS_RESET;
+			wr32(hw, TXGBE_GPIO_EOI, TXGBE_GPIO_EOI_2);
+			adapter->sfp_poll_time = 0;
+			txgbe_service_event_schedule(adapter);
+		}
 
-				if (reg & TXGBE_GPIO_INTSTATUS_6) {
-					wr32(hw, TXGBE_GPIO_EOI,
-					     TXGBE_GPIO_EOI_6);
-					adapter->flags |=
-						TXGBE_FLAG_NEED_LINK_CONFIG;
-					txgbe_service_event_schedule(adapter);
-				}
-			}
+		if (reg & TXGBE_GPIO_INTSTATUS_3) {
+			wr32(hw, TXGBE_GPIO_EOI, TXGBE_GPIO_EOI_3);
+			adapter->flags |= TXGBE_FLAG_NEED_LINK_CONFIG;
+			txgbe_service_event_schedule(adapter);
+		}
+
+		if (reg & TXGBE_GPIO_INTSTATUS_6) {
+			wr32(hw, TXGBE_GPIO_EOI, TXGBE_GPIO_EOI_6);
+			adapter->flags |= TXGBE_FLAG_NEED_LINK_CONFIG;
+			txgbe_service_event_schedule(adapter);
 		}
 	}
 }
@@ -2585,24 +2575,12 @@ static void txgbe_check_phy_event(struct txgbe_adapter *adapter)
  **/
 void txgbe_irq_enable(struct txgbe_adapter *adapter, bool queues, bool flush)
 {
-	u32 mask = 0;
 	struct txgbe_hw *hw = &adapter->hw;
-	u8 device_type = hw->subsystem_device_id & 0xF0;
-
-	if (hw->mac.type == txgbe_mac_aml40) {
-		mask = TXGBE_GPIO_INTTYPE_LEVEL_4;
-	} else if (device_type != TXGBE_ID_MAC_XAUI &&
-	    device_type != TXGBE_ID_MAC_SGMII) {
-		mask = TXGBE_GPIO_INTTYPE_LEVEL_2 | TXGBE_GPIO_INTTYPE_LEVEL_3 |
-			TXGBE_GPIO_INTTYPE_LEVEL_6;
-	}
-	wr32(&adapter->hw, TXGBE_GPIO_INTTYPE_LEVEL, mask);
+	u32 mask = 0, gpio_mask = 0;
 
 	/* enable misc interrupt */
-	mask = TXGBE_PX_MISC_IEN_MASK;
-
-	if (hw->mac.type != txgbe_mac_sp)
-		mask &= ~TXGBE_PX_MISC_IEN_ETH_EVENT;
+	mask = (hw->mac.type == txgbe_mac_sp) ?
+	       TXGBE_PX_MISC_IEN_MASK_SP : TXGBE_PX_MISC_IEN_MASK_AML;
 
 	if (adapter->flags2 & TXGBE_FLAG2_TEMP_SENSOR_CAPABLE)
 		mask |= TXGBE_PX_MISC_IEN_OVER_HEAT;
@@ -2619,25 +2597,39 @@ void txgbe_irq_enable(struct txgbe_adapter *adapter, bool queues, bool flush)
 	if (netif_msg_tx_err(adapter))
 		mask |= TXGBE_PX_MISC_IEN_TXDESC;
 
-	wr32(&adapter->hw, TXGBE_PX_MISC_IEN, mask);
+	wr32(hw, TXGBE_PX_MISC_IEN, mask);
 	/* unmask interrupt */
-	txgbe_intr_enable(&adapter->hw, TXGBE_INTR_MISC(adapter));
+	txgbe_intr_enable(hw, TXGBE_INTR_MISC(adapter));
 	if (queues)
-		txgbe_intr_enable(&adapter->hw, TXGBE_INTR_QALL(adapter));
+		txgbe_intr_enable(hw, TXGBE_INTR_QALL(adapter));
 
 	/* flush configuration */
 	if (flush)
-		TXGBE_WRITE_FLUSH(&adapter->hw);
+		TXGBE_WRITE_FLUSH(hw);
 
-	/* enable gpio interrupt */
+	/* initlize gpio mask */
 	if (hw->mac.type == txgbe_mac_aml40) {
-		mask = TXGBE_GPIO_INTEN_4;
-	} else if (device_type != TXGBE_ID_MAC_XAUI &&
-	    device_type != TXGBE_ID_MAC_SGMII) {
-		mask = TXGBE_GPIO_INTEN_2 | TXGBE_GPIO_INTEN_3 |
-			TXGBE_GPIO_INTEN_6;
+		gpio_mask = TXGBE_GPIO_INTTYPE_LEVEL_4;
+	} else {
+		gpio_mask = TXGBE_GPIO_INTTYPE_LEVEL_2 |
+			    TXGBE_GPIO_INTTYPE_LEVEL_3 |
+			    TXGBE_GPIO_INTTYPE_LEVEL_6;
 	}
-	wr32(&adapter->hw, TXGBE_GPIO_INTEN, mask);
+	wr32(hw, TXGBE_GPIO_INTTYPE_LEVEL, gpio_mask);
+
+	/* enable gpio interrupts should after mac interrupt */
+	if (hw->mac.type == txgbe_mac_aml40) {
+		gpio_mask = TXGBE_GPIO_INTEN_4;
+	} else {
+		gpio_mask = TXGBE_GPIO_INTEN_2 | TXGBE_GPIO_INTEN_3 |
+			    TXGBE_GPIO_INTEN_6;
+	}
+
+	/* when fw take phy, we only care los gpio */
+	if (test_bit(TXGBE_FLAG_FW_CONTROL_PHY, adapter->flag))
+		gpio_mask &= ~(TXGBE_GPIO_INTEN_3 | TXGBE_GPIO_INTEN_6);
+
+	wr32(hw, TXGBE_GPIO_INTEN, gpio_mask);
 }
 
 static void txgbe_do_lan_reset(struct txgbe_adapter *adapter)
@@ -2694,10 +2686,8 @@ static irqreturn_t txgbe_msix_other(int __always_unused irq, void *data)
 
 	eicr = txgbe_misc_isb(adapter, TXGBE_ISB_MISC);
 
-	if (eicr & TXGBE_PX_MISC_IC_ETH_AN) {
-		if (adapter->backplane_an)
-			txgbe_check_lsc(adapter);
-	}
+	if (eicr & TXGBE_PX_MISC_IC_ETH_AN)
+		txgbe_check_lsc(adapter);
 
 	if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40) {
 		if (eicr & TXGBE_PX_MISC_AML_ETH_LK_CHANGE)
@@ -7143,10 +7133,6 @@ static void txgbe_watchdog_link_is_down(struct txgbe_adapter *adapter)
 	if (!netif_carrier_ok(netdev))
 		return;
 
-	if (hw->mac.type == txgbe_mac_aml ||
-	    hw->mac.type == txgbe_mac_aml40)
-		adapter->flags |= TXGBE_FLAG_NEED_LINK_CONFIG;
-
 	if (test_bit(__TXGBE_PTP_RUNNING, &adapter->state))
 		txgbe_ptp_start_cyclecounter(adapter);
 
@@ -7337,7 +7323,11 @@ static void txgbe_watchdog_subtask(struct txgbe_adapter *adapter)
 static void txgbe_phy_event_subtask(struct txgbe_adapter *adapter)
 {
 	struct txgbe_hw *hw = &adapter->hw;
-	u32 rdata;
+	u32 rdata = 0;
+
+	/* fw take phy, driver do not care phy. */
+	if (test_bit(TXGBE_FLAG_FW_CONTROL_PHY, adapter->flag))
+		return;
 
 	/* if interface is down do nothing */
 	if (test_bit(__TXGBE_DOWN, &adapter->state) ||
@@ -7497,53 +7487,23 @@ static void txgbe_sfp_link_config_subtask(struct txgbe_adapter *adapter)
 	}
 
 	/* firmware is configuring phy now, delay host driver config action */
-	if (hw->mac.type == txgbe_mac_aml ||
-	    hw->mac.type == txgbe_mac_aml40) {
+	if (!test_bit(TXGBE_FLAG_FW_CONTROL_PHY, adapter->flag) &&
+	    (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40)) {
 		if (txgbe_acquire_swfw_sync(hw, gssr) != 0) {
 			adapter->flags |= TXGBE_FLAG_NEED_LINK_CONFIG;
 			e_warn(probe, "delay config ephy\n");
 			return;
 		}
+		txgbe_release_swfw_sync(hw, gssr);
 	}
 
 	hw->mac.ops.setup_link(hw, speed, false);
 
-	if (hw->mac.type == txgbe_mac_aml ||
-	    hw->mac.type == txgbe_mac_aml40)
-		txgbe_release_swfw_sync(hw, gssr);
+	adapter->flags |= TXGBE_FLAG_NEED_LINK_UPDATE;
+	adapter->link_check_timeout = jiffies;
 
 	adapter->flags |= TXGBE_FLAG_NEED_LINK_UPDATE;
 	adapter->link_check_timeout = jiffies;
-}
-
-static void txgbe_sfp_reset_eth_phy_subtask(struct txgbe_adapter *adapter)
-{
-	struct txgbe_hw *hw = &adapter->hw;
-	u32 speed;
-	bool linkup = true;
-	u32 i = 0;
-
-	if (!(adapter->flags2 & TXGBE_FLAG_NEED_ETH_PHY_RESET))
-		return;
-
-	adapter->flags2 &= ~TXGBE_FLAG_NEED_ETH_PHY_RESET;
-
-	if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40)
-		return;
-
-	hw->mac.ops.check_link(hw, &speed, &linkup, false);
-	if (!linkup) {
-		txgbe_wr32_epcs(hw, TXGBE_VR_XS_OR_PCS_MMD_DIGI_CTL1,
-				0xA000);
-		/* wait phy initialization done */
-		for (i = 0; i < TXGBE_PHY_INIT_DONE_POLLING_TIME; i++) {
-			if ((txgbe_rd32_epcs(hw,
-					     TXGBE_VR_XS_OR_PCS_MMD_DIGI_CTL1) &
-				TXGBE_VR_XS_OR_PCS_MMD_DIGI_CTL1_VR_RST) == 0)
-				break;
-			msleep(100);
-		}
-	}
 }
 
 /**
@@ -7660,6 +7620,9 @@ static void txgbe_amlit_temp_subtask(struct txgbe_adapter *adapter)
 
 	if (hw->mac.type != txgbe_mac_aml &&
 	    hw->mac.type != txgbe_mac_aml40)
+		return;
+
+	if (test_bit(TXGBE_FLAG_FW_CONTROL_PHY, adapter->flag))
 		return;
 
 	if (!netif_carrier_ok(adapter->netdev))
@@ -8021,7 +7984,6 @@ static void txgbe_service_task(struct work_struct *work)
 	      txgbe_xpcs_an_enabled(hw)))
 		txgbe_linkdown_subtask(adapter);
 	txgbe_sfp_link_config_subtask(adapter);
-	txgbe_sfp_reset_eth_phy_subtask(adapter);
 	txgbe_check_overtemp_subtask(adapter);
 	txgbe_watchdog_subtask(adapter);
 	txgbe_fdir_reinit_subtask(adapter);
@@ -10348,7 +10310,6 @@ static int txgbe_probe(struct pci_dev *pdev,
 	if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40)
 		txgbe_release_hw_control(adapter);
 
-	txgbe_identify_module(hw);
 	/* Store the permanent mac address */
 	hw->mac.ops.get_mac_addr(hw, hw->mac.perm_addr);
 	hw->phy.reset_if_overtemp = false;
@@ -10479,6 +10440,17 @@ static int txgbe_probe(struct pci_dev *pdev,
 		goto err_sw_init;
 	}
 
+	if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40) {
+		struct txgbe_hic_ephy_status buffer;
+
+		err = txgbe_get_phy_status_hostif(hw, &buffer);
+		if (!err) {
+			dev_info(&pdev->dev,
+				 "Firmware can hold the PHY.\n");
+			set_bit(TXGBE_FLAG_FW_CONTROL_PHY, adapter->flag);
+		}
+	}
+	hw->phy.ops.identify_sfp(hw);
 	eth_hw_addr_set(netdev, hw->mac.perm_addr);
 
 	if (!is_valid_ether_addr(netdev->dev_addr)) {

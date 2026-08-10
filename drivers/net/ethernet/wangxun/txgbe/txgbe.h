@@ -731,6 +731,7 @@ enum txgbe_isb_idx {
 
 enum txgbe_state_flags {
 	TXGBE_FLAG_CONTROL_RATE_LED,
+	TXGBE_FLAG_FW_CONTROL_PHY,
 	TXGBE_FUCTIONS_FLAGS_NBITS		/* must be last */
 };
 

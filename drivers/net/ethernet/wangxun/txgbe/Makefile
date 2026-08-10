@@ -29,7 +29,8 @@ txgbe-objs := txgbe_main.o \
 			  txgbe_aml.o \
 			  txgbe_aml40.o \
 			  txgbe_pcierr.o \
-			  txgbe_e56_bp.o
+			  txgbe_e56_bp.o \
+			  txgbe_mng_phy.o
 
 KERNELDIR ?= /lib/modules/$(shell uname -r)/build
 all:
