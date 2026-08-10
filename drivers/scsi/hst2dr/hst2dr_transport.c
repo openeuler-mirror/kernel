@@ -770,12 +770,13 @@ hst2dr_transport_port_add(struct HST2DR_ADAPTER *ioa, u16 handle,
 			handle,
 			rphy_to_expander_device(rphy));
 	return hst2dr_port;
-
  out_fail:
 	list_for_each_entry_safe(hst2dr_phy, next, &hst2dr_port->phy_list,
 		port_siblings)
 		list_del_init(&hst2dr_phy->port_siblings);
 	kfree(hst2dr_port);
+	if (port)
+		kfree(port);
 	return NULL;
 }
 

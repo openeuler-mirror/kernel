@@ -2418,6 +2418,8 @@ _base_release_memory_pools(struct HST2DR_ADAPTER *ioa)
 	}
 	if (ioa->chain_lookup) {
 		for (i = 0; i < ioa->scsiio_depth; i++) {
+			if (!ioa->chain_lookup[i].chains_per_host_tag_id)
+					continue;
 			for (j = 0; j < ioa->chains_needed_per_io; j++) {
 				cs = &ioa->chain_lookup[i].chains_per_host_tag_id[j];
 				if (cs && cs->chain_buffer)
@@ -2446,7 +2448,7 @@ _base_allocate_memory_request_dma(struct HST2DR_ADAPTER *ioa)
 	if (ioa->request != NULL)
 		return 0;
 	ioa->request_dma_sz = sz;
-	ioa->request_sz = 128;
+	ioa->request_sz = SQ_SIZE(1);
 	ioa->request = dma_alloc_coherent(&ioa->pdev->dev,
 		sz, &ioa->request_dma, GFP_KERNEL);
 	if (!ioa->request) {
@@ -3078,6 +3080,11 @@ _base_get_ioa_info(struct HST2DR_ADAPTER *ioa)
 	info->fw_version.dword = le32_to_cpu(ssi_reply.fw_version.dword);
 	info->ioa_request_frame_size =
 		le16_to_cpu(ssi_reply.ioa_request_frame_size);
+	if (info->ioa_request_frame_size != SQ_SIZE(1) / 4) {
+		info->ioa_request_frame_size = SQ_SIZE(1) / 4;
+		log_warn(ioa, "ioa_request_frame_size set default: %d\n",
+				info->ioa_request_frame_size);
+	}
 	info->ioa_max_chain_segment_size =
 		le16_to_cpu(ssi_reply.ioa_max_chain_segment_size);
 	info->max_initiators = le16_to_cpu(ssi_reply.max_initiators);
