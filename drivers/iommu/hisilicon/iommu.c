@@ -613,7 +613,6 @@ const struct iommu_domain_ops default_domain_ops = {
 	.free = ummu_domain_free,
 };
 
-
 struct iommu_ops ummu_iommu_ops = {
 	.capable = ummu_capable,
 	.hw_info = ummu_hw_info,
