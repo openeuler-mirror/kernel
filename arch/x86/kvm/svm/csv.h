@@ -70,6 +70,9 @@ extern struct hygon_kvm_hooks_table {
 } hygon_kvm_hooks;
 
 void __init csv_init(struct kvm_x86_ops *ops);
+
+bool csv3_guest(struct kvm *kvm);
+
 void csv_exit(void);
 
 void __init csv_hardware_setup(unsigned int max_csv_asid);
@@ -91,6 +94,8 @@ static inline bool csv2_state_unstable(struct vcpu_svm *svm)
 
 static inline void __init csv_init(struct kvm_x86_ops *ops) { }
 static inline void csv_exit(void) { }
+
+static inline bool csv3_guest(struct kvm *kvm) { return false; }
 
 static inline void __init csv_hardware_setup(unsigned int max_csv_asid) { }
 static inline void csv_hardware_unsetup(void) { }
