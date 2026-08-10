@@ -4904,9 +4904,13 @@ static void txgbe_configure_port(struct txgbe_adapter *adapter)
 		TXGBE_CFG_PORT_CTL_D_VLAN |
 		TXGBE_CFG_PORT_CTL_QINQ,
 		value);
-	if (adapter->tx_unidir_mode)
+	if (adapter->tx_unidir_mode) {
 		wr32m(hw, TXGBE_CFG_PORT_CTL, TXGBE_CFG_PORT_CTL_FORCE_LKUP,
 		      TXGBE_CFG_PORT_CTL_FORCE_LKUP);
+	} else {
+		wr32m(hw, TXGBE_CFG_PORT_CTL, TXGBE_CFG_PORT_CTL_FORCE_LKUP, 0);
+		wr32m(hw, TXGBE_MAC_RX_CFG, TXGBE_MAC_RX_CFG_LM, 0);
+	}
 
 	wr32(hw, TXGBE_CFG_TAG_TPID(0),
 	     ETH_P_8021Q | ETH_P_8021AD << 16);
@@ -7085,10 +7089,10 @@ static void txgbe_watchdog_link_is_up(struct txgbe_adapter *adapter)
 		txgbe_enable_rx_adapter(hw);
 
 	if (adapter->tx_unidir_mode) {
-		wr32m(hw, 0x11004, BIT(10), BIT(10));
-		wr32m(hw, 0x11004, BIT(0), BIT(0));
-		e_dev_info("Enable loopback and disable rx : %x\n.",
-			   rd32(hw, 0x11004));
+		wr32m(hw, TXGBE_MAC_RX_CFG, TXGBE_MAC_RX_CFG_LM, TXGBE_MAC_RX_CFG_LM);
+		wr32m(hw, TXGBE_MAC_RX_CFG, TXGBE_MAC_RX_CFG_RE, 0);
+		e_dev_info("Enable loopback mode and disable rx: %x\n",
+			   rd32(hw, TXGBE_MAC_RX_CFG));
 	}
 	txgbe_check_vlan_rate_limit(adapter);
 	netif_carrier_on(netdev);
