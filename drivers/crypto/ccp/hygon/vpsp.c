@@ -431,6 +431,28 @@ static int check_cmd_forward_op_permission(struct kvm_vpsp *vpsp, struct vpsp_de
 	}
 
 	if (vpsp->is_csv_guest) {
+		if (vpsp->is_csv3_guest) {
+			if (!vpsp_ctx) {
+				pr_err("[%s]: No set vid in csv3 guest\n", __func__);
+				return -EPERM;
+			}
+
+			/*
+			 * The VID is encoded in bits 56-63 of the address word
+			 * passed to the PSP and PUT_PSP_VID() only ORs it in, so
+			 * a guest supplied GPA must not set those bits. Otherwise
+			 * the guest could select another guest's VID and have the
+			 * command executed in that context.
+			 */
+			if (data >> PSP_VID_SHIFT) {
+				pr_err("[%s]: invalid gpa %llx from csv3 guest\n",
+					__func__, data);
+				return -EFAULT;
+			}
+
+			return 0;
+		}
+
 		/**
 		 * If the gpa address range exists,
 		 * it means there must be a legal vid
@@ -540,7 +562,7 @@ int kvm_pv_psp_forward_op(struct kvm_vpsp *vpsp, uint32_t cmd,
 	struct vpsp_ret psp_async = {0};
 	struct vpsp_dev_ctx *vpsp_dev_ctx = NULL;
 	struct vpsp_cmd_ctx *cmd_ctx = NULL;
-	phys_addr_t hpa;
+	phys_addr_t data_addr;
 
 	vpsp_get_dev_ctx(&vpsp_dev_ctx, vpsp->kvm->userspace_pid);
 
@@ -571,13 +593,19 @@ int kvm_pv_psp_forward_op(struct kvm_vpsp *vpsp, uint32_t cmd,
 			goto end;
 		}
 
-		hpa = gpa_to_hpa(vpsp, data_gpa);
-		if (unlikely(!hpa)) {
-			ret = -EFAULT;
-			goto end;
+		if (vpsp->is_csv3_guest) {
+			/* csv3 guest uses the gpa as the address for the device */
+			data_addr = data_gpa;
+		} else {
+			data_addr = gpa_to_hpa(vpsp, data_gpa);
+			if (unlikely(!data_addr)) {
+				ret = -EFAULT;
+				goto end;
+			}
 		}
+
 		/* try to send command to the device for execution*/
-		ret = vpsp_try_do_cmd(cmd, PUT_PSP_VID(hpa, vid), cmd_ctx, &psp_async);
+		ret = vpsp_try_do_cmd(cmd, PUT_PSP_VID(data_addr, vid), cmd_ctx, &psp_async);
 		if (unlikely(ret)) {
 			pr_err("[%s]: vpsp_try_do_cmd failed\n", __func__);
 			goto end;

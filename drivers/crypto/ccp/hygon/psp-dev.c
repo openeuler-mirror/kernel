@@ -61,6 +61,7 @@ static const char * const psp_patch_flags[] = {
 	"cap_vtkm_overcommit",
 	"cap_vtkm_nodep_csv",
 	"cap_vtkm_live_mig",
+	"cap_vtkm_csv3",
 
 	"bug_memmove",
 	"bug_longtime_csv",
