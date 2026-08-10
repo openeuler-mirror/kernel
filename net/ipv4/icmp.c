@@ -96,7 +96,9 @@
 #include <net/addrconf.h>
 #include <net/inet_dscp.h>
 #define CREATE_TRACE_POINTS
+#ifndef __GENKSYMS__
 #include <trace/events/icmp.h>
+#endif
 
 /*
  *	Build xmit assembly blocks
@@ -804,7 +806,9 @@ void __icmp_send(struct sk_buff *skb_in, int type, int code, __be32 info,
 	if (!fl4.saddr)
 		fl4.saddr = htonl(INADDR_DUMMY);
 
+#ifndef __GENKSYMS__
 	trace_icmp_send(skb_in, type, code);
+#endif
 
 	icmp_push_reply(sk, &icmp_param, &fl4, &ipc, &rt);
 ende:
