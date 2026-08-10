@@ -1054,7 +1054,7 @@ static void brbe_regset_branch_entries(struct pmu_hw_events *cpuc, struct perf_e
 	struct perf_branch_entry *entry = &cpuc->branches->branch_entries[idx];
 	u64 brbinf = regset[idx].brbinf;
 
-	perf_clear_branch_entry_bitfields(entry);
+	*entry = (struct perf_branch_entry){ };
 	if (brbe_record_is_complete(brbinf)) {
 		entry->from = regset[idx].brbsrc;
 		entry->to = regset[idx].brbtgt;
