@@ -183,6 +183,7 @@ void txgbe_bp_mode_setting(struct txgbe_adapter *adapter)
 		adapter->ffe_main = KR_MAIN;
 		adapter->ffe_pre1 = KR_PRE;
 		adapter->ffe_post = KR_POST;
+		adapter->ffe_set = TXGBE_BP_M_KR;
 	}
 	if (KX4_SET &&
 	    ((hw->subsystem_device_id & TXGBE_DEV_MASK) == TXGBE_ID_MAC_XAUI)) {
@@ -201,6 +202,7 @@ void txgbe_bp_mode_setting(struct txgbe_adapter *adapter)
 		adapter->ffe_main = SFI_MAIN;
 		adapter->ffe_pre1 = SFI_PRE;
 		adapter->ffe_post = SFI_POST;
+		adapter->ffe_set = TXGBE_BP_M_SFI;
 	}
 }
 

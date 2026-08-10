@@ -2896,14 +2896,6 @@ enum txgbe_fc_mode {
 	txgbe_fc_default
 };
 
-/* Smart Speed Settings */
-#define TXGBE_SMARTSPEED_MAX_RETRIES    3
-enum txgbe_smart_speed {
-	txgbe_smart_speed_auto = 0,
-	txgbe_smart_speed_on,
-	txgbe_smart_speed_off
-};
-
 /* PCI bus types */
 enum txgbe_bus_type {
 	txgbe_bus_type_unknown = 0,
@@ -3238,8 +3230,6 @@ struct txgbe_phy_info {
 	u32 phy_semaphore_mask;
 	u8 lan_id; /* to be delete */
 	txgbe_autoneg_advertised autoneg_advertised;
-	enum txgbe_smart_speed smart_speed;
-	bool smart_speed_active;
 	bool multispeed_fiber;
 	bool reset_if_overtemp;
 	txgbe_physical_layer link_mode;

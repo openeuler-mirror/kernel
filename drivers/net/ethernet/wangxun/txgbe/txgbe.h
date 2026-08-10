@@ -702,11 +702,7 @@ struct txgbe_therm_proc_data {
 #define TXGBE_FLAG2_GLOBAL_RESET_REQUESTED      BIT(20)
 #define TXGBE_FLAG2_CLOUD_SWITCH_ENABLED        BIT(21)
 #define TXGBE_FLAG2_MNG_REG_ACCESS_DISABLED     BIT(22)
-#define TXGBE_FLAG2_KR_TRAINING                 BIT(24)
-#define TXGBE_FLAG2_KR_AUTO                     BIT(25)
 #define TXGBE_FLAG2_LINK_DOWN                   BIT(26)
-#define TXGBE_FLAG2_KR_PRO_DOWN                 BIT(27)
-#define TXGBE_FLAG2_KR_PRO_REINIT               BIT(28)
 #define TXGBE_FLAG2_ECC_ERR_RESET               BIT(29)
 #define TXGBE_FLAG2_RX_LEGACY					BIT(30)
 #define TXGBE_FLAG2_PCIE_NEED_RECOVER           BIT(31)
@@ -733,6 +729,11 @@ enum txgbe_isb_idx {
 #define TXGBE_PHY_FEC_AUTO (TXGBE_PHY_FEC_OFF | TXGBE_PHY_FEC_BASER |\
 			   TXGBE_PHY_FEC_RS)
 
+enum txgbe_state_flags {
+	TXGBE_FLAG_CONTROL_RATE_LED,
+	TXGBE_FUCTIONS_FLAGS_NBITS		/* must be last */
+};
+
 /* board specific private data structure */
 struct txgbe_adapter {
 	unsigned long active_vlans[BITS_TO_LONGS(VLAN_N_VID)];
@@ -743,6 +744,7 @@ struct txgbe_adapter {
 	struct pci_dev *pdev;
 
 	unsigned long state;
+	DECLARE_BITMAP(flag, TXGBE_FUCTIONS_FLAGS_NBITS);
 	u32 bp_link_mode;
 	u32 curbp_link_mode;
 	/* Some features need tri-state capability,

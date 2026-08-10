@@ -7,11 +7,6 @@
 
 void txgbe_bp_close_protect(struct txgbe_adapter *adapter)
 {
-	adapter->flags2 |= TXGBE_FLAG2_KR_PRO_DOWN;
-	while (adapter->flags2 & TXGBE_FLAG2_KR_PRO_REINIT) {
-		msleep(100);
-		kr_dbg(KR_MODE, "wait to reinited ok..%x\n", adapter->flags2);
-	}
 }
 
 void txgbe_bp_watchdog_event(struct txgbe_adapter *adapter)
@@ -27,15 +22,12 @@ void txgbe_bp_watchdog_event(struct txgbe_adapter *adapter)
 	if (netif_carrier_ok(adapter->netdev))
 		return;
 
-	if (adapter->flags2 & TXGBE_FLAG2_KR_TRAINING) {
-		value = txgbe_rd32_epcs(hw, 0x78002);
-		if ((value & BIT(2)) == BIT(2)) {
-			e_info(hw, "Enter training\n");
-			ret = handle_bkp_an73_flow(0, adapter);
-			if (ret)
-				txgbe_set_link_to_kr(hw, 1);
-		}
-		adapter->flags2 &= ~TXGBE_FLAG2_KR_TRAINING;
+	value = txgbe_rd32_epcs(hw, 0x78002);
+	if ((value & BIT(2)) == BIT(2)) {
+		e_info(hw, "Enter training\n");
+		ret = handle_bkp_an73_flow(0, adapter);
+		if (ret)
+			txgbe_set_link_to_kr(hw, 1);
 	}
 }
 
@@ -53,10 +45,7 @@ void txgbe_bp_down_event(struct txgbe_adapter *adapter)
 	       val, val1, txgbe_rd32_epcs(hw, 0x70012));
 
 	msleep(100);
-	if ((val & BIT(2)) == BIT(2)) {
-		if (!(adapter->flags2 & TXGBE_FLAG2_KR_TRAINING))
-			adapter->flags2 |= TXGBE_FLAG2_KR_TRAINING;
-	} else {
+	if ((val & BIT(2)) != BIT(2)) {
 		txgbe_wr32_epcs(hw, TXGBE_SR_AN_MMD_CTL, 0);
 		txgbe_wr32_epcs(hw, 0x78002, 0x0000);
 		txgbe_wr32_epcs(hw, TXGBE_SR_AN_MMD_CTL, 0x3000);

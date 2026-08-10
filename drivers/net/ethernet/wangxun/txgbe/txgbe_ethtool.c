@@ -3101,7 +3101,8 @@ static int txgbe_set_phys_id(struct net_device *netdev,
 
 	case ETHTOOL_ID_ON:
 		if ((hw->oem_ssid != 0x0085 && hw->oem_svid == 0x1bd4) ||
-		    (hw->oem_ssid != 0x0085 && hw->oem_svid == 0x1ff9)) {
+		    (hw->oem_ssid != 0x0085 && hw->oem_svid == 0x1ff9) ||
+		    test_bit(TXGBE_FLAG_CONTROL_RATE_LED, adapter->flag)) {
 			if (adapter->link_up) {
 				switch (adapter->link_speed) {
 				case TXGBE_LINK_SPEED_10GB_FULL:
@@ -3126,7 +3127,8 @@ static int txgbe_set_phys_id(struct net_device *netdev,
 
 	case ETHTOOL_ID_OFF:
 		if ((hw->oem_ssid != 0x0085 && hw->oem_svid == 0x1bd4) ||
-		    (hw->oem_ssid != 0x0085 && hw->oem_svid == 0x1ff9)) {
+		    (hw->oem_ssid != 0x0085 && hw->oem_svid == 0x1ff9) ||
+		    test_bit(TXGBE_FLAG_CONTROL_RATE_LED, adapter->flag)) {
 			if (adapter->link_up) {
 				switch (adapter->link_speed) {
 				case TXGBE_LINK_SPEED_10GB_FULL:

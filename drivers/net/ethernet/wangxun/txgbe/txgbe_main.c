@@ -5264,10 +5264,6 @@ static void txgbe_up_complete(struct txgbe_adapter *adapter)
 
 void txgbe_reinit_locked(struct txgbe_adapter *adapter)
 {
-	if (adapter->flags2 & TXGBE_FLAG2_KR_PRO_REINIT)
-		return;
-
-	adapter->flags2 |=  TXGBE_FLAG2_KR_PRO_REINIT;
 	WARN_ON(in_interrupt());
 	/* put off any impending NetWatchDogTimeout */
 	netif_trans_update(adapter->netdev);
@@ -5284,18 +5280,12 @@ void txgbe_reinit_locked(struct txgbe_adapter *adapter)
 		msleep(2000);
 	txgbe_up(adapter);
 	clear_bit(__TXGBE_RESETTING, &adapter->state);
-	adapter->flags2 &= ~TXGBE_FLAG2_KR_PRO_REINIT;
 }
 
 static void txgbe_reinit_locked_dma_reset(struct txgbe_adapter *adapter)
 {
 	struct txgbe_hw *hw = &adapter->hw;
 	int i;
-
-	if (adapter->flags2 & TXGBE_FLAG2_KR_PRO_REINIT)
-		return;
-
-	adapter->flags2 |=  TXGBE_FLAG2_KR_PRO_REINIT;
 
 	WARN_ON(in_interrupt());
 	/* put off any impending NetWatchDogTimeout */
@@ -5335,7 +5325,6 @@ skip_dma_rst:
 		msleep(2000);
 	txgbe_up(adapter);
 	clear_bit(__TXGBE_RESETTING, &adapter->state);
-	adapter->flags2 &= ~TXGBE_FLAG2_KR_PRO_REINIT;
 }
 
 void txgbe_up(struct txgbe_adapter *adapter)
@@ -5689,64 +5678,25 @@ static int txgbe_sw_init(struct txgbe_adapter *adapter)
 {
 	struct pci_dev *pdev = adapter->pdev;
 	struct txgbe_hw *hw = &adapter->hw;
-	unsigned int fdir;
-	u32 ssid = 0;
 	int err;
 #if IS_ENABLED(CONFIG_DCB)
 	struct txgbe_dcb_tc_config *tc;
 	int j, bwg_pct;
 #endif /* CONFIG_DCB */
-	u32 fw_version;
-	u32 flash_header;
-	u32 flash_header_index;
 
 	/* PCI config space info */
 	hw->vendor_id = pdev->vendor;
 	hw->device_id = pdev->device;
-	pci_read_config_byte(pdev, PCI_REVISION_ID, &hw->revision_id);
-	if (hw->revision_id == TXGBE_FAILED_READ_CFG_BYTE &&
-	    txgbe_check_cfg_remove(hw, pdev)) {
-		e_err(probe, "read of revision id failed\n");
-		err = -ENODEV;
-		goto out;
-	}
+	hw->revision_id = pdev->revision;
+	hw->oem_svid = pdev->subsystem_vendor;
+	hw->oem_ssid = pdev->subsystem_device;
 
+	/* Need device id init first */
 	err = txgbe_init_shared_code(hw);
 	if (err) {
 		e_err(probe, "init_shared_code failed: %d\n", err);
 		goto out;
 	}
-
-	txgbe_flash_read_dword(hw, 0x0, &flash_header);
-	if (((flash_header >> 16) & 0xffff) == TXGBE_FLASH_HEADER_FLAG)
-		flash_header_index = 0x0;
-	else
-		flash_header_index = 0x1;
-
-	hw->oem_svid = pdev->subsystem_vendor;
-	hw->oem_ssid = pdev->subsystem_device;
-	if (pdev->subsystem_vendor == 0x8088) {
-		hw->subsystem_vendor_id = pdev->subsystem_vendor;
-		hw->subsystem_device_id = pdev->subsystem_device;
-	} else {
-		if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40)
-			txgbe_flash_read_dword(hw, (flash_header_index * 0x10000) + 0x302c, &ssid);
-		else
-			txgbe_flash_read_dword(hw, 0xfffdc, &ssid);
-
-		if (ssid == 0x1) {
-			e_err(probe, "read of internal subsystem device id failed\n");
-			err = -ENODEV;
-			goto out;
-		}
-		hw->subsystem_device_id = (u16)ssid;
-		hw->subsystem_device_id = hw->subsystem_device_id >> 8 |
-					  hw->subsystem_device_id << 8;
-	}
-
-	txgbe_flash_read_dword(hw, (flash_header_index * 0x10000) + 0x13a, &fw_version);
-	snprintf(adapter->fl_version, sizeof(adapter->fw_version),
-		 "0x%08x", fw_version);
 
 	adapter->mac_table = kcalloc(hw->mac.num_rar_entries,
 				     sizeof(struct txgbe_mac_addr),
@@ -5777,14 +5727,10 @@ static int txgbe_sw_init(struct txgbe_adapter *adapter)
 #endif /* CONFIG_FCOE */
 	adapter->flags |= TXGBE_FLAG_VXLAN_OFFLOAD_CAPABLE;
 	adapter->flags2 |= TXGBE_FLAG2_RSC_CAPABLE;
-	fdir = min_t(int, TXGBE_MAX_FDIR_INDICES, num_online_cpus());
-	adapter->ring_feature[RING_F_FDIR].limit = fdir;
-	adapter->max_q_vectors = TXGBE_MAX_MSIX_Q_VECTORS_SAPPHIRE;
 
 	/* Set MAC specific capability flags and exceptions */
 	adapter->flags |= TXGBE_FLAGS_SP_INIT;
 	adapter->flags2 |= TXGBE_FLAG2_TEMP_SENSOR_CAPABLE;
-	hw->phy.smart_speed = txgbe_smart_speed_off;
 	adapter->flags2 |= TXGBE_FLAG2_EEE_CAPABLE;
 
 #if IS_ENABLED(CONFIG_FCOE)
@@ -5837,43 +5783,13 @@ static int txgbe_sw_init(struct txgbe_adapter *adapter)
 
 	txgbe_init_mbx_params_pf(hw);
 
-	/* default flow control settings */
-	hw->fc.requested_mode = txgbe_fc_full;
-	hw->fc.current_mode = txgbe_fc_full;    /* init for ethtool output */
-
-	adapter->last_lfc_mode = hw->fc.current_mode;
-	hw->fc.pause_time = TXGBE_DEFAULT_FCPAUSE;
-	hw->fc.send_xon = true;
-	hw->fc.disable_fc_autoneg = false;
-
-	/* set default ring sizes */
-	adapter->tx_ring_count = TXGBE_DEFAULT_TXD;
-	adapter->rx_ring_count = TXGBE_DEFAULT_RXD;
-
-	/* set default work limits */
-	adapter->tx_work_limit = TXGBE_DEFAULT_TX_WORK;
-	adapter->rx_work_limit = TXGBE_DEFAULT_RX_WORK;
-
-	adapter->tx_timeout_recovery_level = 0;
-	adapter->cmplt_to_dis = false;
-
 	/* PF holds first pool slot */
 	adapter->num_vmdqs = 1;
 	set_bit(0, &adapter->fwd_bitmask);
 	set_bit(__TXGBE_DOWN, &adapter->state);
-	memset(adapter->i2c_eeprom, 0, sizeof(u8) * 512);
-
-	adapter->fec_link_mode = TXGBE_PHY_FEC_AUTO;
-	adapter->cur_fec_link = TXGBE_PHY_FEC_AUTO;
-
-	adapter->link_valid = true;
-
-	if (hw->mac.type == txgbe_mac_sp)
-		adapter->desc_reserved = DESC_RESERVED;
-	else
-		adapter->desc_reserved = DESC_RESERVED_AML;
-
 	bitmap_zero(adapter->limited_vlans, 4096);
+
+	memset(adapter->i2c_eeprom, 0, sizeof(u8) * 512);
 
 out:
 	return err;
@@ -6282,9 +6198,6 @@ int txgbe_open(struct net_device *netdev)
 	struct txgbe_adapter *adapter = netdev_priv(netdev);
 	struct txgbe_hw *hw = &adapter->hw;
 	int err;
-
-	/*special for backplane flow*/
-	adapter->flags2 &= ~TXGBE_FLAG2_KR_PRO_DOWN;
 
 	/* disallow open during test */
 	if (test_bit(__TXGBE_TESTING, &adapter->state))

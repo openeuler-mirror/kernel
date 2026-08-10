@@ -3528,9 +3528,14 @@ static void txgbe_get_mac_type(struct txgbe_hw *hw)
  **/
 int txgbe_init_shared_code(struct txgbe_hw *hw)
 {
+	u32 flash_header = 0, flash_header_index = 0, ssid_addr = 0xfffdc;
+	u32 fw_version, control_rate_led = 0, ssid;
+	struct txgbe_adapter *adapter = hw->back;
 	struct txgbe_mac_info *mac = &hw->mac;
 	struct txgbe_phy_info *phy = &hw->phy;
+	struct pci_dev *pdev = adapter->pdev;
 	const struct txgbe_info *ti;
+	int ret = 0;
 
 	txgbe_get_mac_type(hw);
 	switch (hw->mac.type) {
@@ -3547,6 +3552,48 @@ int txgbe_init_shared_code(struct txgbe_hw *hw)
 		return TXGBE_ERR_DEVICE_NOT_SUPPORTED;
 	}
 
+	if (hw->mac.type == txgbe_mac_sp)
+		goto skip_flash_header_check;
+
+	ret = txgbe_flash_read_dword(hw, 0x0, &flash_header);
+	if (ret || flash_header == 0x1) {
+		e_err(probe, "SPI access is bad.\n");
+		return -EIO;
+	}
+	if (flash_header == U32_MAX) {
+		txgbe_flash_read_dword(hw, 0x10000, &flash_header);
+		if (((flash_header >> 16) & U16_MAX) ==
+		    TXGBE_FLASH_HEADER_FLAG) {
+			flash_header_index = 0x1;
+		} else {
+			e_err(probe, "Flash maybe empty.\n");
+			return -EIO;
+		}
+	}
+
+skip_flash_header_check:
+	if (pdev->subsystem_vendor == 0x8088) {
+		hw->subsystem_vendor_id = pdev->subsystem_vendor;
+		hw->subsystem_device_id = pdev->subsystem_device;
+	} else {
+		if (hw->mac.type == txgbe_mac_aml ||
+		    hw->mac.type == txgbe_mac_aml40)
+			ssid_addr = (flash_header_index * 0x10000) + 0x302c;
+		ret = txgbe_flash_read_dword(hw, ssid_addr, &ssid);
+		if (ssid == 0x1) {
+			e_err(probe, "read of internal subsystem device id failed\n");
+			return ret;
+		}
+		hw->subsystem_device_id = swab16((u16)ssid);
+	}
+
+	txgbe_flash_read_dword(hw, 0xfffc4, &control_rate_led);
+	if (!(control_rate_led & 0xff))
+		set_bit(TXGBE_FLAG_CONTROL_RATE_LED, adapter->flag);
+
+	txgbe_flash_read_dword(hw, (flash_header_index * 0x10000) + 0x13a, &fw_version);
+	snprintf(adapter->fl_version, sizeof(adapter->fl_version), "0x%08x", fw_version);
+
 	/* get_invariants needs the device IDs */
 	ti->get_invariants(hw);
 	mac->ops = *ti->mac_ops;
@@ -3557,6 +3604,7 @@ int txgbe_init_shared_code(struct txgbe_hw *hw)
 
 int txgbe_get_invariants_generic(struct txgbe_hw *hw)
 {
+	struct txgbe_adapter *adapter = hw->back;
 	struct txgbe_mac_info *mac = &hw->mac;
 	struct txgbe_phy_info *phy = &hw->phy;
 
@@ -3565,6 +3613,11 @@ int txgbe_get_invariants_generic(struct txgbe_hw *hw)
 
 	phy->sfp_type = txgbe_sfp_type_unknown;
 
+	adapter->ring_feature[RING_F_FDIR].limit = min_t(int,
+							 TXGBE_MAX_FDIR_INDICES,
+							 num_online_cpus());
+
+	adapter->max_q_vectors = TXGBE_MAX_MSIX_Q_VECTORS_SAPPHIRE;
 	mac->rar_highwater = 1;
 	/* Link */
 	mac->mcft_size          = TXGBE_SP_MC_TBL_SIZE;
@@ -3577,6 +3630,26 @@ int txgbe_get_invariants_generic(struct txgbe_hw *hw)
 
 	mac->arc_subsystem_valid = (rd32(hw, TXGBE_MIS_ST) &
 				   TXGBE_MIS_ST_MNG_INIT_DN) ? true : false;
+
+	/* default flow control settings */
+	hw->fc.requested_mode = txgbe_fc_full;
+	hw->fc.current_mode = txgbe_fc_full;    /* init for ethtool output */
+
+	adapter->last_lfc_mode = hw->fc.current_mode;
+	hw->fc.pause_time = TXGBE_DEFAULT_FCPAUSE;
+	hw->fc.send_xon = true;
+	hw->fc.disable_fc_autoneg = false;
+
+	/* set default ring sizes */
+	adapter->tx_ring_count = TXGBE_DEFAULT_TXD;
+	adapter->rx_ring_count = TXGBE_DEFAULT_RXD;
+
+	/* set default work limits */
+	adapter->tx_work_limit = TXGBE_DEFAULT_TX_WORK;
+	adapter->rx_work_limit = TXGBE_DEFAULT_RX_WORK;
+
+	adapter->tx_timeout_recovery_level = 0;
+	adapter->cmplt_to_dis = false;
 
 	return 0;
 }

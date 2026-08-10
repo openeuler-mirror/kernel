@@ -1303,9 +1303,22 @@ static const struct txgbe_phy_operations phy_ops_sp = {
 	.check_overtemp		= &txgbe_tn_check_overtemp,
 };
 
+static int txgbe_get_invariants_sp(struct txgbe_hw *hw)
+{
+	struct txgbe_adapter *adapter = hw->back;
+	int ret;
+
+	ret = txgbe_get_invariants_generic(hw);
+	hw->mac.orig_link_settings_stored = false;
+
+	adapter->desc_reserved = DESC_RESERVED;
+
+	return ret;
+}
+
 const struct txgbe_info txgbe_sp_info = {
 	.mac			= txgbe_mac_sp,
-	.get_invariants		= &txgbe_get_invariants_generic,
+	.get_invariants		= &txgbe_get_invariants_sp,
 	.mac_ops		= &mac_ops_sp,
 	.phy_ops		= &phy_ops_sp,
 };

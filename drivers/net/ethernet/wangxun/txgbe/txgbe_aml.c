@@ -98,7 +98,7 @@ static int txgbe_setup_mac_link_aml(struct txgbe_hw *hw,
 	    link_speed == TXGBE_LINK_SPEED_25GB_FULL) {
 		txgbe_e56_fec_mode_polling(hw, &link_up);
 
-		if (link_up)
+		if (link_up && !adapter->ffe_set)
 			goto out;
 	}
 
@@ -505,9 +505,25 @@ static const struct txgbe_phy_operations phy_ops_aml = {
 	.check_overtemp		= &txgbe_tn_check_overtemp,
 };
 
+static int txgbe_get_invariants_aml(struct txgbe_hw *hw)
+{
+	struct txgbe_adapter *adapter = hw->back;
+	int ret;
+
+	ret = txgbe_get_invariants_generic(hw);
+	hw->mac.orig_link_settings_stored = false;
+
+	adapter->desc_reserved = DESC_RESERVED_AML;
+	adapter->link_valid = true;
+	adapter->fec_link_mode = TXGBE_PHY_FEC_AUTO;
+	adapter->cur_fec_link = TXGBE_PHY_FEC_AUTO;
+
+	return ret;
+}
+
 const struct txgbe_info txgbe_aml_info = {
 	.mac			= txgbe_mac_aml,
-	.get_invariants		= &txgbe_get_invariants_generic,
+	.get_invariants		= &txgbe_get_invariants_aml,
 	.mac_ops		= &mac_ops_aml,
 	.phy_ops		= &phy_ops_aml,
 };
