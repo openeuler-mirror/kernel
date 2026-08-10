@@ -10661,6 +10661,14 @@ static struct cftype cpu_files[] = {
 		.write = cpu_uclamp_max_write,
 	},
 #endif
+#ifdef CONFIG_QOS_SCHED
+	{
+		.name = "qos_level",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.read_s64 = cpu_qos_read,
+		.write_s64 = cpu_qos_write,
+	},
+#endif
 #ifdef CONFIG_SCHED_SOFT_DOMAIN
 	{
 		.name = "soft_domain",
