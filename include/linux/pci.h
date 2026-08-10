@@ -502,8 +502,8 @@ struct pci_dev {
 	u16		acs_cap;	/* ACS Capability offset */
 	phys_addr_t	rom;		/* Physical address if not from BAR */
 	size_t		romlen;		/* Length if not from BAR */
-	char		*driver_override; /* Driver name to force a match */
 
+	KABI_DEPRECATE(char *, driver_override)
 	unsigned long	priv_flags;	/* Private flags for the PCI driver */
 	/*
 	 * This flag is only set on root ports. When a slot below a root port
