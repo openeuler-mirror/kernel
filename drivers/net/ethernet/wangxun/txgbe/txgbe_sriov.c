@@ -1820,6 +1820,8 @@ static void txgbe_set_vf_rate_limit(struct txgbe_adapter *adapter, int vf)
 	int link_speed;
 	u16 queue, queues_per_pool;
 	u16 max_tx_rate = adapter->vfinfo[vf].max_tx_rate;
+	u32 adjusted_max_tx_rate;
+	u32 tdm_adj_value;
 
 	/* determine how many queues per pool based on VMDq mask */
 	queues_per_pool = __ALIGN_MASK(1, ~vmdq->mask);
@@ -1834,11 +1836,23 @@ static void txgbe_set_vf_rate_limit(struct txgbe_adapter *adapter, int vf)
 		if (max_tx_rate) {
 			u16 frac;
 
-			link_speed = adapter->vf_rate_link_speed / 1000 * 1024;
+			/* Step 1
+			 *   Config csr_rl_adj as (16 - target_speed / clk) bytes,
+			 *   where Amber-Lite clk = 400 MHz, SP clk = 156.25 MHz.
+			 */
+			tdm_adj_value = 16 - max_tx_rate / TXGBE_TDM_CLK_BYTE_AML;
+			wr32(hw, TXGBE_TDM_RL_ADJ_AML, tdm_adj_value);
+
+			/* Step 2.
+			 *   Adjust target_speed by a factor of 0.975 to config
+			 *   RL frac register.
+			 */
+			link_speed = adapter->vf_rate_link_speed;
+			adjusted_max_tx_rate = (max_tx_rate * 39) / 40;
 
 			/* Calculate the rate factor values to set */
-			factor_int = link_speed / max_tx_rate;
-			frac = (link_speed % max_tx_rate) * 10000 / max_tx_rate;
+			factor_int = link_speed / adjusted_max_tx_rate;
+			frac = (link_speed % adjusted_max_tx_rate) * 10000 / adjusted_max_tx_rate;
 			factor_fra = txgbe_frac_to_bi(frac, 10000, 14);
 
 			wr32(hw, TXGBE_TDM_RL_VM_IDX, vf);
@@ -1856,8 +1870,12 @@ static void txgbe_set_vf_rate_limit(struct txgbe_adapter *adapter, int vf)
 			      TXGBE_TDM_RL_EN, 0);
 		}
 	} else {
-		max_tx_rate /= queues_per_pool;
-		bcnrc_val = TXGBE_TDM_RP_RATE_MAX(max_tx_rate);
+		tdm_adj_value = 16 - max_tx_rate / TXGBE_TDM_CLK_BYTE_SP;
+		wr32(hw, TXGBE_TDM_RL_ADJ_SP, tdm_adj_value);
+
+		adjusted_max_tx_rate = (max_tx_rate * 39) / 40;
+		adjusted_max_tx_rate /= queues_per_pool;
+		bcnrc_val = TXGBE_TDM_RP_RATE_MAX(adjusted_max_tx_rate);
 
 		/* write value for all Tx queues belonging to VF */
 		for (queue = 0; queue < queues_per_pool; queue++) {
@@ -1905,6 +1923,8 @@ txgbe_set_queue_rate_limit_vf(struct txgbe_adapter *adapter,
 	struct txgbe_hw *hw = &adapter->hw;
 	u16 queue, queues_per_pool, max_tx_rate;
 	int factor_int, factor_fra, link_speed;
+	u32 adjusted_max_tx_rate;
+	u32 tdm_adj_value;
 	u32 reg_idx;
 
 	if (hw->mac.type != txgbe_mac_aml)
@@ -1932,11 +1952,15 @@ txgbe_set_queue_rate_limit_vf(struct txgbe_adapter *adapter,
 	if (max_tx_rate) {
 		u16 frac;
 
-		link_speed = txgbe_link_mbps(adapter) / 1000 * 1024;
+		tdm_adj_value = 16 - max_tx_rate / TXGBE_TDM_CLK_BYTE_AML;
+		wr32(hw, TXGBE_TDM_RL_ADJ_AML, tdm_adj_value);
+
+		link_speed = txgbe_link_mbps(adapter);
+		adjusted_max_tx_rate = (max_tx_rate * 39) / 40;
 
 		/* Calculate the rate factor values to set */
-		factor_int = link_speed / max_tx_rate;
-		frac = (link_speed % max_tx_rate) * 10000 / max_tx_rate;
+		factor_int = link_speed / adjusted_max_tx_rate;
+		frac = (link_speed % adjusted_max_tx_rate) * 10000 / adjusted_max_tx_rate;
 		factor_fra = txgbe_frac_to_bi(frac, 10000, 14);
 
 		wr32(hw, TXGBE_TDM_RL_QUEUE_IDX, reg_idx);

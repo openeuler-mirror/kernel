@@ -5532,6 +5532,8 @@ void txgbe_hic_write_autoneg_status(struct txgbe_hw *hw, bool autoneg)
 void txgbe_set_queue_rate_limit(struct txgbe_hw *hw, int queue, u16 max_tx_rate)
 {
 	struct txgbe_adapter *adapter = hw->back;
+	u32 adjusted_max_tx_rate;
+	u32 tdm_adj_value;
 	int factor_int;
 	int factor_fra;
 	int link_speed;
@@ -5548,11 +5550,15 @@ void txgbe_set_queue_rate_limit(struct txgbe_hw *hw, int queue, u16 max_tx_rate)
 		if (max_tx_rate) {
 			u16 frac;
 
+			tdm_adj_value = 16 - max_tx_rate / TXGBE_TDM_CLK_BYTE_AML;
+			wr32(hw, TXGBE_TDM_RL_ADJ_AML, tdm_adj_value);
+
 			link_speed = txgbe_link_mbps(adapter);
-			max_tx_rate  = max_tx_rate * 105 / 100; //necessary offset by test
+			adjusted_max_tx_rate = (max_tx_rate * 39) / 40;
+
 			/* Calculate the rate factor values to set */
-			factor_int = link_speed / max_tx_rate;
-			frac = (link_speed % max_tx_rate) * 10000 / max_tx_rate;
+			factor_int = link_speed / adjusted_max_tx_rate;
+			frac = (link_speed % adjusted_max_tx_rate) * 10000 / adjusted_max_tx_rate;
 			factor_fra = txgbe_frac_to_bi(frac, 10000, 14);
 			if (max_tx_rate > link_speed) {
 				factor_int = 1;
@@ -5572,7 +5578,11 @@ void txgbe_set_queue_rate_limit(struct txgbe_hw *hw, int queue, u16 max_tx_rate)
 			      TXGBE_TDM_RL_EN, 0);
 		}
 	} else {
-		bcnrc_val = TXGBE_TDM_RP_RATE_MAX(max_tx_rate);
+		tdm_adj_value = 16 - max_tx_rate / TXGBE_TDM_CLK_BYTE_SP;
+		wr32(hw, TXGBE_TDM_RL_ADJ_SP, tdm_adj_value);
+
+		adjusted_max_tx_rate = (max_tx_rate * 39) / 40;
+		bcnrc_val = TXGBE_TDM_RP_RATE_MAX(adjusted_max_tx_rate);
 
 		wr32(hw, TXGBE_TDM_RP_IDX, queue);
 		wr32(hw, TXGBE_TDM_RP_RATE, bcnrc_val);

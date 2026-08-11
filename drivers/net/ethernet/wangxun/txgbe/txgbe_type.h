@@ -774,9 +774,11 @@ struct txgbe_thermal_sensor_data {
 #define TXGBE_TDM_RP_RATE_MIN(v) ((0x3FFF & (v)))
 #define TXGBE_TDM_RP_RATE_MAX(v) ((0x3FFF & (v)) << 16)
 
+#define TXGBE_TDM_RL_ADJ_AML          0x1820C
 #define TXGBE_TDM_RL_QUEUE_IDX        0x18210
 #define TXGBE_TDM_RL_QUEUE_CFG        0x18214
 
+#define TXGBE_TDM_RL_ADJ_SP        0x18210
 #define TXGBE_TDM_RL_VM_IDX        0x18218
 #define TXGBE_TDM_RL_VM_CFG        0x1821C
 #define TXGBE_TDM_RL_CFG           0x18400
@@ -787,6 +789,9 @@ struct txgbe_thermal_sensor_data {
 #define TXGBE_TDM_FACTOR_FRA_SHIFT 2
 #define TXGBE_TDM_FACTOR_INT_MASK  0xffff0000
 #define TXGBE_TDM_FACTOR_FRA_MASK  0xfffc
+
+#define TXGBE_TDM_CLK_BYTE_AML     3200
+#define TXGBE_TDM_CLK_BYTE_SP      1250
 
 #define TXGBE_TDM_RL_EN        0x00000001U
 
