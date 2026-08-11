@@ -509,8 +509,8 @@ int ubcore_delete_jfc(struct ubcore_jfc *jfc)
 	}
 
 	if (atomic_read(&jfc->use_cnt)) {
-		ubcore_log_err("The jfc is still being used, use_cnt is %d",
-			       atomic_read(&jfc->use_cnt));
+		ubcore_log_err_rl("The jfc is still being used, use_cnt is %d",
+				  atomic_read(&jfc->use_cnt));
 		UBCORE_PERF_TRACE_END(PERF_CORE_DELETE_JFC);
 		return -EBUSY;
 	}
