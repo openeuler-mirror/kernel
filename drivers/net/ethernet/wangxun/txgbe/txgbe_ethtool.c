@@ -363,38 +363,23 @@ static int txgbe_get_phy_caps(struct txgbe_hw *hw)
 	return phy_mode;
 }
 
-/**
- * txgbe_speed_to_aq_link - Get link speed by Ethtool forced speed
- * @speed: ethtool forced speed
- */
-static u16 txgbe_speed_to_mac_link_speed(int speed)
+static u32 txgbe_get_link_advertised(struct txgbe_hw *hw,
+				     const struct ethtool_link_ksettings *ks)
 {
-	int link_speed;
+	u32 advertised = 0, i;
 
-	switch (speed) {
-	case SPEED_10:
-		link_speed = TXGBE_LINK_SPEED_100_FULL;
-		break;
-	case SPEED_100:
-		link_speed = TXGBE_LINK_SPEED_100_FULL;
-		break;
-	case SPEED_1000:
-		link_speed = TXGBE_LINK_SPEED_1GB_FULL;
-		break;
-	case SPEED_10000:
-		link_speed = TXGBE_LINK_SPEED_10GB_FULL;
-		break;
-	case SPEED_25000:
-		link_speed = TXGBE_LINK_SPEED_25GB_FULL;
-		break;
-	case SPEED_40000:
-		link_speed = TXGBE_LINK_SPEED_40GB_FULL;
-		break;
-	default:
-		link_speed = TXGBE_LINK_SPEED_UNKNOWN;
-		break;
+	/* 2. advertised speeds */
+	for (i = 0; i < ARRAY_SIZE(phy_type_lkup); i++) {
+		int mode_bit = phy_type_lkup[i].link_mode;
+
+		if (linkmode_test_bit(mode_bit, ks->link_modes.advertising))
+			advertised |= phy_type_lkup[i].link_speed;
 	}
-	return link_speed;
+
+	hw_info(hw, "advertised : %x , speed %d\n",
+		advertised, ks->base.speed);
+
+	return advertised;
 }
 
 static u64 txgbe_link_speed_to_phy_modes(int supported_link)
@@ -701,10 +686,9 @@ static int txgbe_set_link_ksettings(struct net_device *netdev,
 	struct txgbe_adapter *adapter = netdev_priv(netdev);
 	struct ethtool_link_ksettings safe_ks = {};
 	struct txgbe_hw *hw = &adapter->hw;
-	u32 curr_autoneg = 2;
-	u32 advertised, old;
-	u32 phy_mode, i;
-	int err;
+	u32 curr_autoneg = 2, old;
+	u32 phy_mode, advertised = 0;
+	int err = 0;
 
 	if (hw->phy.media_type != txgbe_media_type_fiber &&
 	    hw->phy.media_type != txgbe_media_type_fiber_qsfp &&
@@ -724,19 +708,25 @@ static int txgbe_set_link_ksettings(struct net_device *netdev,
 	curr_autoneg = safe_ks.base.autoneg;
 
 	/* Copy the current user PHY configuration. */
-	old = hw->phy.autoneg_advertised;
-	advertised = 0;
+	old = hw->phy.link_info.req_speeds;
 
 	/* 1. base.speed */
-	advertised = txgbe_speed_to_mac_link_speed(ks->base.speed);
+	advertised = txgbe_get_link_advertised(hw, ks);
+	/* advertised = 0, speed is not supported return directly */
 	if (!advertised) {
-		/* 2. requested link mode */
-		for (i = 0; i < ARRAY_SIZE(phy_type_lkup); i++) {
-			u8 mode = phy_type_lkup[i].link_mode;
+		hw_info(hw, "Requested advertised %x not supported\n",
+			advertised);
+		return -EOPNOTSUPP;
+	}
 
-			if (test_bit(mode, ks->link_modes.advertising))
-				advertised |= phy_type_lkup[i].link_speed;
-		}
+	/* 2. advertised != 0, check speed match ks->link_modes.advertising
+	 * can compare PHY capabilities based on media to advertised phy modes
+	 * make sure requested speed is supported.
+	 */
+	if (!(phy_mode & txgbe_link_speed_to_phy_modes(advertised))) {
+		hw_info(hw, "Requested speed %x not supported phy_mode %x\n",
+			advertised, phy_mode);
+		return -EOPNOTSUPP;
 	}
 
 	if (advertised == TXGBE_LINK_SPEED_1GB_FULL) {
@@ -784,7 +774,7 @@ err_set:
 	if (hw->mac.ops.flap_tx_laser)
 		hw->mac.ops.flap_tx_laser(hw);
 	clear_bit(__TXGBE_IN_SFP_INIT, &adapter->state);
-	return 0;
+	return err;
 }
 
 static int txgbe_get_fec_param(struct net_device *netdev,

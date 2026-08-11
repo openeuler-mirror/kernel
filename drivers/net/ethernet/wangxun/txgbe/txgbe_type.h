@@ -3435,6 +3435,8 @@ struct txgbe_hw {
 #define TXGBE_ERR_REGISTER                      -(TXGBE_ERR + 45)
 #define TXGBE_ERR_MBX                           -(TXGBE_ERR + 46)
 #define TXGBE_ERR_MNG_ACCESS_FAILED             -(TXGBE_ERR + 47)
+#define TXGBE_ERR_MNG_UNSUPPORT_SFP             -(TXGBE_ERR + 48)
+#define TXGBE_ERR_MNG_UNKNOWN_CMD               -(TXGBE_ERR + 49)
 
 /**
  * register operations

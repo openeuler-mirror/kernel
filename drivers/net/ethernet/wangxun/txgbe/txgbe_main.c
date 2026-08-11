@@ -7467,7 +7467,7 @@ sfp_out:
 	if (err)
 		adapter->autoneg = false; /*init autoneg when NOT_SUPPORTED or NOT_PRESENT*/
 
-	txgbe_hic_write_autoneg_status(hw, adapter->autoneg);
+	txgbe_hic_write_autoneg_status(hw, autoneg);
 
 	if (err == TXGBE_ERR_SFP_NOT_SUPPORTED && adapter->netdev_registered)
 		e_dev_err("failed to initialize because an unsupported SFP+ module type was detected.\n");
@@ -7523,7 +7523,6 @@ static void txgbe_sfp_link_config_subtask(struct txgbe_adapter *adapter)
 			}
 
 			adapter->autoneg = autoneg;
-			txgbe_hic_write_autoneg_status(hw, adapter->autoneg);
 		}
 	}
 
@@ -10219,6 +10218,8 @@ static int txgbe_probe(struct pci_dev *pdev,
 	u16 build = 0, major = 0, patch = 0;
 	char *info_string, *i_s_var;
 	u8 part_str[TXGBE_PBANUM_LENGTH];
+	bool autoneg = false;
+	u32 speed = 0;
 	unsigned int indices = MAX_TX_QUEUES;
 	bool disable_dev = false;
 
@@ -10326,6 +10327,13 @@ static int txgbe_probe(struct pci_dev *pdev,
 		e_dev_err("HW Init failed: %d\n", err);
 		goto err_sw_init;
 	}
+
+	hw->mac.ops.get_link_capabilities(hw, &speed, &autoneg);
+	/* notify firmware default autoneg status */
+	txgbe_hic_write_autoneg_status(hw, autoneg);
+
+	if (txgbe_is_lldp(hw))
+		e_dev_err("Can not get lldp flags from flash.\n");
 
 #ifdef CONFIG_PCI_IOV
 	if (adapter->max_vfs > 0) {
@@ -10440,12 +10448,6 @@ static int txgbe_probe(struct pci_dev *pdev,
 		err = -EIO;
 		goto err_sw_init;
 	}
-
-	if (txgbe_is_lldp(hw))
-		e_dev_err("Can not get lldp flags from flash.\n");
-
-	/* notify firmware default autoneg status */
-	txgbe_hic_write_autoneg_status(hw, adapter->autoneg);
 
 	if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40) {
 		err = txgbe_test_phy_status_hostif(hw);

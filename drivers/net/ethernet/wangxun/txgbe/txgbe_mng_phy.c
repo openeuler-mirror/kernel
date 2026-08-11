@@ -76,10 +76,21 @@ int txgbe_test_phy_status_hostif(struct txgbe_hw *hw)
 					   sizeof(struct txgbe_hic_ephy_status),
 					   TXGBE_HI_COMMAND_TIMEOUT_SHORT,
 					   true);
-	if (ret) {
+	switch (ret) {
+	case TXGBE_ERR_MNG_UNKNOWN_CMD:
+	case 0:
+		goto oem_check;
+	case TXGBE_ERR_MNG_UNSUPPORT_SFP:
+		e_dev_info("Unsupported SFP module.\n");
+		fallthrough;
+	default:
 		e_dev_info("Failed to test link info, ret=%d\n", ret);
 		return ret;
 	}
+
+oem_check:
+	if (SW_CTRL_EPHY_FORCE)
+		return -EINVAL;
 
 	if (!((get_buffer.fw_oem_flag & U16_MAX) == EPHY_OEM_FROM_FW ||
 	      (get_buffer.fw_oem_flag & U16_MAX) == EPHY_OEM_SW_OVERRIDE_FW))
@@ -91,9 +102,6 @@ int txgbe_test_phy_status_hostif(struct txgbe_hw *hw)
 	for (i = 0; i < sizeof(struct txgbe_hic_ephy_status) / sizeof(u32); i++)
 		e_dev_info("[fw] OEM[%d]: %08x\n", i,
 			   *((u32 *)&get_buffer + i));
-
-	if (SW_CTRL_EPHY_FORCE)
-		return -EINVAL;
 
 	hw->phy.oem.sr_an_adv1 = get_buffer.oem.sr_an_adv1;
 	hw->phy.oem.sr_an_adv2 = get_buffer.oem.sr_an_adv2;

@@ -1983,8 +1983,11 @@ int txgbe_host_interface_command(struct txgbe_hw *hw, u32 *buffer,
 
 		buf[0] = rd32(hw, TXGBE_AML_MNG_MBOX_FW2SW);
 		if ((buf[0] & 0xff0000) >> 16 == 0x80) {
-			hw_info(hw, "It's unknown cmd : %08x.\n", buf[0]);
-			status = TXGBE_ERR_MNG_ACCESS_FAILED;
+			hw_dbg(hw, "It's unknown cmd : %08x.\n", buf[0]);
+			status = TXGBE_ERR_MNG_UNKNOWN_CMD;
+			goto rel_out;
+		} else if ((buf[0] & 0xff0000) >> 16 == 0x90) {
+			status = TXGBE_ERR_MNG_UNSUPPORT_SFP;
 			goto rel_out;
 		}
 
@@ -2054,7 +2057,7 @@ int txgbe_host_interface_command(struct txgbe_hw *hw, u32 *buffer,
 		buf[0] = rd32(hw, TXGBE_MNG_MBOX);
 
 		if ((buf[0] & 0xff0000) >> 16 == 0x80) {
-			ERROR_REPORT1(TXGBE_ERROR_UNSUPPORTED, "It's unknown cmd.\n");
+			hw_dbg(hw, "It's unknown cmd : %08x.\n", buf[0]);
 			status = TXGBE_ERR_MNG_ACCESS_FAILED;
 			goto rel_out;
 		}

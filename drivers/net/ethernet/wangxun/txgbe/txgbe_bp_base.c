@@ -288,8 +288,8 @@ void txgbe_xlgpcs_txffe_set(struct txgbe_adapter *adapter, u32 speed)
 		ffe_post = 0x11111111;
 	}
 
-	if (hw->phy.oem_flag == EPHY_OEM_FROM_FW ||
-	    hw->phy.oem_flag == EPHY_OEM_SW_OVERRIDE_FW) {
+	if ((hw->phy.oem_flag & U16_MAX) == EPHY_OEM_FROM_FW ||
+	    (hw->phy.oem_flag & U16_MAX) == EPHY_OEM_SW_OVERRIDE_FW) {
 		ffe_main = hw->phy.oem.txeq_main;
 		ffe_pre1 = hw->phy.oem.txeq_pre1;
 		ffe_pre2 = hw->phy.oem.txeq_pre2;
