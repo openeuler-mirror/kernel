@@ -3735,8 +3735,8 @@ static void txgbe_configure_virtualization(struct txgbe_adapter *adapter)
 	}
 
 	for (i = 0; i < adapter->num_vfs; i++) {
-		if (!adapter->vfinfo[i].spoofchk_enabled)
-			txgbe_ndo_set_vf_spoofchk(adapter->netdev, i, false);
+		txgbe_ndo_set_vf_spoofchk(adapter->netdev, i,
+					  adapter->vfinfo[i].spoofchk_enabled);
 		/* enable ethertype anti spoofing if hw supports it */
 		hw->mac.ops.set_ethertype_anti_spoofing(hw, true, i);
 	}

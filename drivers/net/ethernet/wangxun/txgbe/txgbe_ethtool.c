@@ -2252,6 +2252,9 @@ static irqreturn_t txgbe_test_intr(int __always_unused irq, void *data)
 	struct txgbe_adapter *adapter = netdev_priv(netdev);
 	u64 icr;
 
+	if (!(adapter->flags & TXGBE_FLAG_MSI_ENABLED))
+		wr32(&adapter->hw, TXGBE_PX_INTA, 1);
+
 	/* get misc interrupt, as cannot get ring interrupt status */
 	icr = txgbe_misc_isb(adapter, TXGBE_ISB_VEC1);
 	icr <<= 32;
