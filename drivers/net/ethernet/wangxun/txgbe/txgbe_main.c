@@ -9110,7 +9110,6 @@ netdev_tx_t txgbe_xmit_frame_ring(struct sk_buff *skb,
 	__be16 protocol = skb->protocol;
 	u8 hdr_len = 0;
 	struct txgbe_dec_ptype dptype;
-	u8 vlan_addlen = 0;
 
 	/* work around hw errata 3 */
 	u16 _llclen, *llclen;
@@ -9148,7 +9147,7 @@ netdev_tx_t txgbe_xmit_frame_ring(struct sk_buff *skb,
 		tx_flags |= skb_vlan_tag_get(skb) << TXGBE_TX_FLAGS_VLAN_SHIFT;
 		tx_flags |= TXGBE_TX_FLAGS_HW_VLAN;
 	/* else if it is a SW VLAN check the next protocol and store the tag */
-	} else if (protocol == htons(ETH_P_8021Q)) {
+	} else if (protocol == htons(ETH_P_8021Q) || protocol == htons(ETH_P_8021AD)) {
 		struct vlan_hdr *vhdr, _vhdr;
 
 		vhdr = skb_header_pointer(skb, ETH_HLEN, sizeof(_vhdr), &_vhdr);
@@ -9159,13 +9158,6 @@ netdev_tx_t txgbe_xmit_frame_ring(struct sk_buff *skb,
 		tx_flags |= ntohs(vhdr->h_vlan_TCI) <<
 				  TXGBE_TX_FLAGS_VLAN_SHIFT;
 		tx_flags |= TXGBE_TX_FLAGS_SW_VLAN;
-		vlan_addlen += VLAN_HLEN;
-	}
-
-	if (protocol == htons(ETH_P_8021Q) ||
-	    protocol == htons(ETH_P_8021AD)) {
-		tx_flags |= TXGBE_TX_FLAGS_SW_VLAN;
-		vlan_addlen += VLAN_HLEN;
 	}
 
 	protocol = vlan_get_protocol(skb);
@@ -9242,23 +9234,6 @@ netdev_tx_t txgbe_xmit_frame_ring(struct sk_buff *skb,
 			goto out_drop;
 
 		goto xmit_fcoe;
-	} else if (protocol ==  htons(ETH_P_FIP)) {
-		/* FCoE stack has a bug where it does not set the network
-		 * header offset for FIP frames sent resulting into MACLEN
-		 * being set to ZERO in the Tx context descriptor.
-		 * This will cause MDD events when trying to Tx such frames.
-		 */
-		if (!skb_network_offset(skb)) {
-			if (tx_flags & (TXGBE_TX_FLAGS_HW_VLAN |
-			    TXGBE_TX_FLAGS_SW_VLAN))
-				skb_set_network_header(skb,
-						       sizeof(struct ethhdr) +
-						sizeof(struct vlan_hdr) +
-						vlan_addlen);
-			else
-				skb_set_network_header(skb,
-						       sizeof(struct ethhdr));
-		}
 	}
 #endif /* CONFIG_FCOE */
 
@@ -10112,29 +10087,34 @@ txgbe_features_check(struct sk_buff *skb, struct net_device *dev,
 		     netdev_features_t features)
 {
 	u32 vlan_num = 0;
-	u16 vlan_depth = skb->mac_len;
+	u16 vlan_depth = ETH_HLEN;
 	__be16 type = skb->protocol;
-	struct vlan_hdr *vh;
+	u16 parse_depth = VLAN_MAX_DEPTH;
 
 	if (skb_vlan_tag_present(skb))
 		vlan_num++;
-
-	if (vlan_depth)
-		vlan_depth -= VLAN_HLEN;
 	else
-		vlan_depth = ETH_HLEN;
+		goto no_hw_vlan;
 
-	while (type == htons(ETH_P_8021Q) || type == htons(ETH_P_8021AD)) {
-		vlan_num++;
-		vh = (struct vlan_hdr *)(skb->data + vlan_depth);
-		type = vh->h_vlan_encapsulated_proto;
-		vlan_depth += VLAN_HLEN;
+	if (eth_type_vlan(type)) {
+		do {
+			struct vlan_hdr vhdr, *vh;
+
+			vh = skb_header_pointer(skb, vlan_depth,
+						sizeof(vhdr), &vhdr);
+			if (unlikely(!vh || !--parse_depth))
+				return 0;
+
+			type = vh->h_vlan_encapsulated_proto;
+			vlan_depth += VLAN_HLEN;
+			vlan_num++;
+		} while (eth_type_vlan(type));
 	}
 
 	if (vlan_num > 2)
 		features &= ~(NETIF_F_HW_VLAN_CTAG_TX |
 			    NETIF_F_HW_VLAN_STAG_TX);
-
+no_hw_vlan:
 	if (skb->encapsulation) {
 		if (unlikely(skb_inner_mac_header(skb) -
 			     skb_transport_header(skb) >
