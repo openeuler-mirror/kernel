@@ -81,6 +81,7 @@ struct txgbe_hic_i2c_read {
 	u8	*data;
 };
 
+int txgbe_test_phy_status_hostif(struct txgbe_hw *hw);
 int txgbe_set_phy_link_hostif(struct txgbe_hw *hw, int speed, bool autoneg, u8 duplex);
 int txgbe_get_phy_status_hostif(struct txgbe_hw *hw,
 				struct txgbe_hic_ephy_status *buffer);

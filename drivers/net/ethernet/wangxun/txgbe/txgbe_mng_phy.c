@@ -48,6 +48,20 @@ int txgbe_set_phy_link_hostif(struct txgbe_hw *hw, int speed, bool autoneg, u8 d
 					    TXGBE_HI_COMMAND_TIMEOUT_SHORT, true);
 }
 
+int txgbe_test_phy_status_hostif(struct txgbe_hw *hw)
+{
+	struct txgbe_hic_ephy_status buffer;
+
+	buffer.hdr.cmd = FW_PHY_CONFIG_READ_CMD;
+	buffer.hdr.buf_len = sizeof(struct txgbe_hic_ephy_status) -
+			     sizeof(struct txgbe_hic_hdr);
+	buffer.hdr.cmd_or_resp.cmd_resv = FW_CEM_CMD_RESERVED;
+
+	return txgbe_host_interface_command(hw, (u32 *)&buffer,
+					    sizeof(struct txgbe_hic_ephy_status),
+					    TXGBE_HI_COMMAND_TIMEOUT_SHORT, true);
+}
+
 int txgbe_get_phy_status_hostif(struct txgbe_hw *hw, struct txgbe_hic_ephy_status *buffer)
 {
 	buffer->hdr.cmd = FW_PHY_CONFIG_READ_CMD;
@@ -124,13 +138,13 @@ static int txgbe_identify_sfp_module_hostif(struct txgbe_hw *hw)
 	u8 identifier = 0, cable_tech = 0, cable_spec = 0, oui_bytes[3] = {0};
 	u8 comp_codes_1g = 0, comp_codes_10g = 0, comp_codes_25g = 0;
 	enum txgbe_sfp_type stored_sfp_type = hw->phy.sfp_type;
-	int status = TXGBE_ERR_PHY_ADDR_INVALID;
+	int ret = 0, status = 0;
 	struct txgbe_hic_get_sfp_info buffer;
-	int ret = 0;
 
+	/* if SFP module is not present just skip read */
 	if (txgbe_gpio_ext_check(hw, TXGBE_SFP1_MOD_ABS_LS)) {
 		hw->phy.sfp_type = txgbe_sfp_type_not_present;
-		return TXGBE_ERR_SFP_NOT_PRESENT;
+		goto out;
 	}
 
 	if (hw->mac.ops.get_media_type(hw) != txgbe_media_type_fiber) {
@@ -141,8 +155,9 @@ static int txgbe_identify_sfp_module_hostif(struct txgbe_hw *hw)
 
 	ret = txgbe_get_module_info_hostif(hw, &buffer);
 	if (ret) {
-		hw_info(hw, " %s %d ret : %d\n",
-			__func__, __LINE__,  ret);
+		hw_info(hw, " %s %d ret : %d\n", __func__, __LINE__, ret);
+		status = TXGBE_ERR_SFP_NOT_PRESENT;
+		goto out;
 	}
 
 	identifier = buffer.identifier;
@@ -275,7 +290,7 @@ static int txgbe_identify_sfp_module_hostif(struct txgbe_hw *hw)
 	}
 
 out:
-	return ret;
+	return status;
 
 err_read_i2c_eeprom:
 	hw->phy.sfp_type = txgbe_sfp_type_not_present;
@@ -294,14 +309,14 @@ static int txgbe_identify_qsfp_module_hostif(struct txgbe_hw *hw)
 {
 	u8 identifier = 0, comp_codes_1g = 0, comp_codes_10g = 0;
 	u8 comp_codes_25g = 0, cable_tech = 0, cable_spec = 0;
-	int status = TXGBE_ERR_PHY_ADDR_INVALID;
+	int ret = 0, status = 0;
 	struct txgbe_hic_get_sfp_info buffer;
 	u8 transceiver_type = 0;
-	int ret = 0;
 
+	/* if QSFP module is not present just skip read */
 	if (txgbe_gpio_ext_check(hw, TXGBE_SFP1_MOD_PRST_LS)) {
 		hw->phy.sfp_type = txgbe_sfp_type_not_present;
-		return TXGBE_ERR_SFP_NOT_PRESENT;
+		goto out;
 	}
 
 	if (hw->mac.ops.get_media_type(hw) != txgbe_media_type_fiber_qsfp) {
@@ -313,8 +328,9 @@ static int txgbe_identify_qsfp_module_hostif(struct txgbe_hw *hw)
 	/* Read the QSFP EEPROM */
 	ret = txgbe_get_module_info_hostif(hw, &buffer);
 	if (ret) {
-		hw_info(hw, " %s %d ret : %d\n",
-			__func__, __LINE__,  ret);
+		hw_info(hw, " %s %d ret : %d\n", __func__, __LINE__, ret);
+		status = TXGBE_ERR_SFP_NOT_PRESENT;
+		goto out;
 	}
 
 	identifier = buffer.identifier;
@@ -375,7 +391,7 @@ static int txgbe_identify_qsfp_module_hostif(struct txgbe_hw *hw)
 	}
 
 out:
-	return ret;
+	return status;
 
 err_read_i2c_eeprom:
 

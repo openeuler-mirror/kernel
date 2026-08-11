@@ -10445,12 +10445,9 @@ static int txgbe_probe(struct pci_dev *pdev,
 	}
 
 	if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40) {
-		struct txgbe_hic_ephy_status buffer;
-
-		err = txgbe_get_phy_status_hostif(hw, &buffer);
+		err = txgbe_test_phy_status_hostif(hw);
 		if (!err) {
-			dev_info(&pdev->dev,
-				 "Firmware can hold the PHY.\n");
+			dev_info(&pdev->dev, "Firmware can hold the PHY.\n");
 			set_bit(TXGBE_FLAG_FW_CONTROL_PHY, adapter->flag);
 		}
 	}
