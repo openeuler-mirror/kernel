@@ -3207,7 +3207,7 @@ static void txgbe_e56_cfg_temp(struct txgbe_hw *hw)
 		txgbe_wr32_ephy(hw, CMS_ANA_OVRDVAL4, value);
 
 		value = rd32_ephy(hw, CMS_ANA_OVRDVAL5);
-		txgbe_field_set(&value, 1, 0, 0x1);
+		txgbe_field_set(&value, 1, 0, 0);
 		txgbe_wr32_ephy(hw, CMS_ANA_OVRDVAL5, value);
 
 		value = rd32_ephy(hw, CMS_ANA_OVRDEN1);

@@ -15,6 +15,7 @@
 #include "txgbe_hw.h"
 #include "txgbe_sp.h"
 #include "txgbe_phy.h"
+#include "txgbe_mng_phy.h"
 #include "txgbe_bp_base.h"
 #include "txgbe_e56.h"
 #include <linux/net_tstamp.h>
@@ -4752,6 +4753,35 @@ ERROR_INVAL:
 	return -EINVAL;
 }
 
+static int txgbe_get_module_eeprom_by_page(struct net_device *netdev,
+					   const struct ethtool_module_eeprom *page_data,
+					   struct netlink_ext_ack *extack)
+{
+	struct txgbe_adapter *adapter = netdev_priv(netdev);
+	struct txgbe_hic_i2c_read buffer = {0};
+	struct txgbe_hw *hw = &adapter->hw;
+	int err = 0;
+
+	/* need fw take control of phy support get by page */
+	if (!test_bit(TXGBE_FLAG_FW_CONTROL_PHY, adapter->flag))
+		return -EOPNOTSUPP;
+
+	buffer.length = (__force u32)cpu_to_be32(page_data->length);
+	buffer.offset = (__force u32)cpu_to_be32(page_data->offset);
+	buffer.page = page_data->page;
+	buffer.bank = page_data->bank;
+	buffer.i2c_address = page_data->i2c_address;
+
+	err = txgbe_read_eeprom_i2c_hostif(hw, &buffer, page_data->length,
+					   page_data->data);
+	if (err) {
+		hw_err(hw, "Failed to read module EEPROM\n");
+		return err;
+	}
+
+	return page_data->length;
+}
+
 static int txgbe_get_eee(struct net_device *netdev, struct ethtool_eee *edata)
 {
 	return 0;
@@ -4877,6 +4907,7 @@ static const struct ethtool_ops txgbe_ethtool_ops = {
 	.set_channels           = txgbe_set_channels,
 	.get_module_info        = txgbe_get_module_info,
 	.get_module_eeprom      = txgbe_get_module_eeprom,
+	.get_module_eeprom_by_page = txgbe_get_module_eeprom_by_page,
 	.get_ts_info            = txgbe_get_ts_info,
 	.get_rxfh_indir_size	= txgbe_rss_indir_size,
 	.get_rxfh_key_size		= txgbe_get_rxfh_key_size,

@@ -127,6 +127,43 @@ int txgbe_phy_reset_hostif(struct txgbe_hw *hw)
 					    TXGBE_HI_COMMAND_TIMEOUT_SHORT, true);
 }
 
+int txgbe_read_eeprom_i2c_hostif(struct txgbe_hw *hw,
+				 struct txgbe_hic_i2c_read *buffer,
+				 u32 length, u8 *data)
+{
+	u32 buf_size = sizeof(struct txgbe_hic_i2c_read) - sizeof(u8);
+	u32 total_len = buf_size + length;
+	u8 local_data[256] = {0};
+	u32 dword_len, value, i;
+	int ret = 0;
+
+	if (total_len > sizeof(local_data))
+		return -EINVAL;
+
+	buffer->hdr.cmd = FW_READ_EEPROM_I2C_CMD;
+	buffer->hdr.buf_len = sizeof(struct txgbe_hic_i2c_read) -
+			      sizeof(struct txgbe_hic_hdr);
+	buffer->hdr.cmd_or_resp.cmd_resv = FW_CEM_CMD_RESERVED;
+
+	ret = txgbe_host_interface_command(hw, (u32 *)buffer,
+					   sizeof(struct txgbe_hic_i2c_read),
+					   TXGBE_HI_COMMAND_TIMEOUT_SHORT, false);
+	if (ret)
+		return ret;
+
+	dword_len = (total_len + 3) / 4;
+
+	for (i = 0; i < dword_len; i++) {
+		value = rd32a(hw, TXGBE_AML_MNG_MBOX_FW2SW, i);
+		le32_to_cpus(&value);
+
+		memcpy(&local_data[i * 4], &value, 4);
+	}
+	memcpy(data, &local_data[buf_size], length);
+
+	return 0;
+}
+
 /**
  *  txgbe_identify_sfp_module_aml - Identifies SFP modules
  *  @hw: pointer to hardware structure

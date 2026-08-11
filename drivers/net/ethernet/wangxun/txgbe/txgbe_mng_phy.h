@@ -78,7 +78,7 @@ struct txgbe_hic_i2c_read {
 	u8	page;
 	u8	bank;
 	u8	i2c_address;
-	u8	*data;
+	u8	data;
 };
 
 int txgbe_test_phy_status_hostif(struct txgbe_hw *hw);
@@ -87,6 +87,9 @@ int txgbe_get_phy_status_hostif(struct txgbe_hw *hw,
 				struct txgbe_hic_ephy_status *buffer);
 int txgbe_set_phy_fc_hostif(struct txgbe_hw *hw, u8 fc);
 int txgbe_set_phy_power_hostif(struct txgbe_hw *hw, u8 power);
+int txgbe_read_eeprom_i2c_hostif(struct txgbe_hw *hw,
+				 struct txgbe_hic_i2c_read *buffer,
+				 u32 length, u8 *data);
 int txgbe_identify_module_aml(struct txgbe_hw *hw);
 
 #endif /* _TXGBE_MNG_PHY_H_ */

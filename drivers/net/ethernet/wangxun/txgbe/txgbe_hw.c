@@ -1961,8 +1961,9 @@ int txgbe_host_interface_command(struct txgbe_hw *hw, u32 *buffer,
 
 		} while (timeout);
 
+		buf[0] = rd32(hw, TXGBE_AML_MNG_MBOX_FW2SW);
 		if ((buf[0] & 0xff0000) >> 16 == 0x80) {
-			hw_info(hw, "It's unknown cmd.\n");
+			hw_info(hw, "It's unknown cmd : %08x.\n", buf[0]);
 			status = TXGBE_ERR_MNG_ACCESS_FAILED;
 			goto rel_out;
 		}
