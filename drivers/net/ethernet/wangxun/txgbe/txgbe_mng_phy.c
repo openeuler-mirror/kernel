@@ -87,6 +87,14 @@ int txgbe_test_phy_status_hostif(struct txgbe_hw *hw)
 
 	e_dev_info("[fw] Get OEM settings from firmware, oem_flag %x.\n",
 		   get_buffer.fw_oem_flag);
+
+	for (i = 0; i < sizeof(struct txgbe_hic_ephy_status) / sizeof(u32); i++)
+		e_dev_info("[fw] OEM[%d]: %08x\n", i,
+			   *((u32 *)&get_buffer + i));
+
+	if (SW_CTRL_EPHY_FORCE)
+		return -EINVAL;
+
 	hw->phy.oem.sr_an_adv1 = get_buffer.oem.sr_an_adv1;
 	hw->phy.oem.sr_an_adv2 = get_buffer.oem.sr_an_adv2;
 	hw->phy.oem.sr_an_adv3 = get_buffer.oem.sr_an_adv3;
@@ -99,10 +107,6 @@ int txgbe_test_phy_status_hostif(struct txgbe_hw *hw)
 	hw->phy.oem.linkfail_timeout = get_buffer.oem.linkfail_timeout;
 	hw->phy.oem.ctlebypass = get_buffer.oem.ctlebypass;
 	hw->phy.oem_flag = get_buffer.fw_oem_flag;
-
-	for (i = 0; i < sizeof(struct txgbe_hic_ephy_status) / sizeof(u32); i++)
-		e_dev_info("[fw] OEM[%d]: %08x\n", i,
-			   *((u32 *)&get_buffer + i));
 
 	return 0;
 }

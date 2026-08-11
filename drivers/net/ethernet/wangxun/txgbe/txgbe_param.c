@@ -400,6 +400,27 @@ static int txgbe_validate_option(u32 *value,
 	return -1;
 }
 
+#define PARAM_BESET(opt) ((opt)[0] != OPTION_UNSET)
+static bool txgbe_check_any_option_use(void)
+{
+	if (PARAM_BESET(TX_UNIDIR_MODE) || PARAM_BESET(FFE_MAIN) ||
+	    PARAM_BESET(FFE_PRE1) || PARAM_BESET(FFE_PRE2) ||
+	    PARAM_BESET(FFE_POST) || PARAM_BESET(FFE_SET) ||
+	    PARAM_BESET(backplane_mode) || PARAM_BESET(backplane_auto) ||
+	    PARAM_BESET(interrupt_type) || PARAM_BESET(int_mode) ||
+	    PARAM_BESET(MQ) || PARAM_BESET(RSS) || PARAM_BESET(VMDQ) ||
+	    PARAM_BESET(max_vfs) || PARAM_BESET(VEPA) ||
+	    PARAM_BESET(itr) || PARAM_BESET(lli_port) ||
+	    PARAM_BESET(lli_size) || PARAM_BESET(lli_etype) ||
+	    PARAM_BESET(LLIVLANP) || PARAM_BESET(fdir_pballoc) ||
+	    PARAM_BESET(atr_sample_rate) || PARAM_BESET(fcoe) ||
+	    PARAM_BESET(LRO) || PARAM_BESET(fdir) ||
+	    PARAM_BESET(dmac_watchdog) || PARAM_BESET(vxlan_rx) ||
+	    PARAM_BESET(cloudswitch))
+		return true;
+	return false;
+}
+
 /**
  * txgbe_check_options - Range Checking for Command Line Parameters
  * @adapter: board private structure
@@ -415,6 +436,9 @@ void txgbe_check_options(struct txgbe_adapter *adapter)
 	u32 *aflags = &adapter->flags;
 	struct txgbe_ring_feature *feature = adapter->ring_feature;
 	u32 vmdq;
+
+	if (txgbe_check_any_option_use())
+		e_dev_info("INFO: If use modparam when load driver, shouldn't echo dev unbind bind");
 
 	{
 		u32 tx_unidir_mode;

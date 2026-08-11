@@ -39,6 +39,10 @@
 #define SW_OEM_EPHY		0
 #endif
 
+#ifndef SW_CTRL_EPHY_FORCE
+#define SW_CTRL_EPHY_FORCE	0
+#endif
+
 #ifndef AUTO
 #define AUTO			1	/* auto-negotiate/identify sfp module type */
 #endif

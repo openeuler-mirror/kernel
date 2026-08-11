@@ -313,6 +313,8 @@ void txgbe_xlgpcs_txffe_set(struct txgbe_adapter *adapter, u32 speed)
 		adapter->ffe_set,
 		ffe_main, ffe_pre1, ffe_pre2, ffe_post);
 ffe_set:
+	if (adapter->backplane_an)
+		return;
 	txgbe_wr32_epcs(hw, 0x141c, ffe_main);
 	txgbe_wr32_epcs(hw, 0x1420, ffe_pre1);
 	txgbe_wr32_epcs(hw, 0x1424, ffe_pre2);

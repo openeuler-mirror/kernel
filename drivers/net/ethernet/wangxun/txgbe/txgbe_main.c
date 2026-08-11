@@ -46,6 +46,7 @@
 #include "txgbe_e56.h"
 #include "txgbe_e56_bp.h"
 #include "txgbe_mng_phy.h"
+static int cards_found;
 
 char txgbe_driver_name[32] = TXGBE_NAME;
 static const char txgbe_driver_string[] =
@@ -10220,7 +10221,6 @@ static int txgbe_probe(struct pci_dev *pdev,
 	struct net_device *netdev;
 	struct txgbe_adapter *adapter = NULL;
 	struct txgbe_hw *hw = NULL;
-	static int cards_found;
 	int err, pci_using_dac, expected_gts;
 	u16 offset = 0;
 	u16 eeprom_verh = 0, eeprom_verl = 0;
@@ -10792,6 +10792,7 @@ static void txgbe_remove(struct pci_dev *pdev)
 	bitmap_free(adapter->af_xdp_zc_qps);
 
 	disable_dev = !test_and_set_bit(__TXGBE_DISABLED, &adapter->state);
+	cards_found--;
 	free_netdev(netdev);
 
 	if (disable_dev)
