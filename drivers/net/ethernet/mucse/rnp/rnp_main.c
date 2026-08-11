@@ -548,8 +548,8 @@ static void rnp_process_skb_fields(struct rnp_ring *rx_ring,
 			__vlan_hwaccel_put_tag(
 					skb, htons(ETH_P_8021Q), vid);
 		}
+		rx_ring->rx_stats.vlan_remove++;
 	}
-	rx_ring->rx_stats.vlan_remove++;
 
 	skb_record_rx_queue(skb, rx_ring->queue_index);
 
