@@ -183,732 +183,546 @@ static const struct txgbe_priv_flags txgbe_gstrings_priv_flags[] = {
 #define txgbe_isbackplane(type)  \
 			((type == txgbe_media_type_backplane) ? true : false)
 
-static int txgbe_set_advertising_1g_10gtypes(struct txgbe_hw *hw,
-					     struct ethtool_link_ksettings *cmd, u32 advertised_speed)
+struct txgbe_phy_type_to_ethtool {
+	u32 link_speed;
+	u32 link_mode;
+};
+
+/* Macro to make PHY type to Ethtool link mode table entry.
+ * The index is the PHY type.
+ */
+#define TXGBE_PHY_TYPE(LINK_SPEED, ETHTOOL_LINK_MODE) {\
+	.link_speed = TXGBE_LINK_SPEED_##LINK_SPEED##_FULL, \
+	.link_mode = ETHTOOL_LINK_MODE_##ETHTOOL_LINK_MODE##_BIT, \
+}
+
+/* Lookup table mapping PHY type low to link speed and Ethtool link modes.
+ * Array index corresponds to HW PHY type bit.
+ */
+static const struct txgbe_phy_type_to_ethtool phy_type_lkup[] = {
+	[0] = TXGBE_PHY_TYPE(10, 10baseT_Full),
+	[1] = TXGBE_PHY_TYPE(100, 100baseT_Full),
+	[2] = TXGBE_PHY_TYPE(1GB, 1000baseT_Full),
+	[3] = TXGBE_PHY_TYPE(1GB, 1000baseX_Full),
+	[4] = TXGBE_PHY_TYPE(1GB, 1000baseKX_Full),
+	[5] = TXGBE_PHY_TYPE(1GB, 1000baseT_Full),
+	[6] = TXGBE_PHY_TYPE(10GB, 10000baseT_Full),
+	[7] = TXGBE_PHY_TYPE(10GB, 10000baseCR_Full),
+	[8] = TXGBE_PHY_TYPE(10GB, 10000baseSR_Full),
+	[9] = TXGBE_PHY_TYPE(10GB, 10000baseLR_Full),
+	[10] = TXGBE_PHY_TYPE(10GB, 10000baseKX4_Full),
+	[11] = TXGBE_PHY_TYPE(10GB, 10000baseKR_Full),
+	[12] = TXGBE_PHY_TYPE(25GB, 25000baseCR_Full),
+	[13] = TXGBE_PHY_TYPE(25GB, 25000baseSR_Full),
+	[14] = TXGBE_PHY_TYPE(25GB, 25000baseKR_Full),
+	[15] = TXGBE_PHY_TYPE(25GB, 25000baseSR_Full),
+	[16] = TXGBE_PHY_TYPE(40GB, 40000baseCR4_Full),
+	[17] = TXGBE_PHY_TYPE(40GB, 40000baseSR4_Full),
+	[18] = TXGBE_PHY_TYPE(40GB, 40000baseLR4_Full),
+	[19] = TXGBE_PHY_TYPE(40GB, 40000baseKR4_Full),
+};
+
+#define TXGBE_PHY_TYPE_MASK_SP		GENMASK(11, 0)
+#define TXGBE_PHY_TYPE_MASK_AML		GENMASK(15, 6)
+#define TXGBE_PHY_TYPE_MASK_AML40	(GENMASK(19, 16) | GENMASK(11, 6))
+
+#define TXGBE_PHY_TYPE_LINK_SPEED_10	BIT(0)
+#define TXGBE_PHY_TYPE_LINK_SPEED_100	BIT(1)
+#define TXGBE_PHY_TYPE_LINK_SPEED_1G	GENMASK(5, 2)
+#define TXGBE_PHY_TYPE_LINK_SPEED_10G	GENMASK(11, 6)
+#define TXGBE_PHY_TYPE_LINK_SPEED_25G	GENMASK(15, 12)
+#define TXGBE_PHY_TYPE_LINK_SPEED_40G	GENMASK(19, 16)
+
+struct txgbe_mac_type_to_phy_types {
+	u32 mac_type;
+	u32 phy_type_mask;
+};
+
+static const struct txgbe_mac_type_to_phy_types txgbe_mac_type_lp[] = {
+	{0},
+	{txgbe_mac_sp, TXGBE_PHY_TYPE_MASK_SP},
+	{txgbe_mac_aml, TXGBE_PHY_TYPE_MASK_AML},
+	{txgbe_mac_aml40, TXGBE_PHY_TYPE_MASK_AML40},
+};
+
+static int txgbe_media_types_to_phy_types(struct txgbe_hw *hw)
 {
+	u32 phy_mode = 0;
+	int err = 0;
+
 	switch (hw->phy.sfp_type) {
-	case txgbe_sfp_type_da_cu:
-	case txgbe_sfp_type_da_act_lmt_core0:
-	case txgbe_sfp_type_da_act_lmt_core1:
 	case txgbe_sfp_type_da_cu_core0:
 	case txgbe_sfp_type_da_cu_core1:
+		/* 1000kx 10000CR 25000CR */
+	case txgbe_sfp_type_da_act_lmt_core0:
+	case txgbe_sfp_type_da_act_lmt_core1:
+		phy_mode = BIT(4) | BIT(7) | BIT(12);
+		break;
 	case txgbe_sfp_type_srlr_core0:
 	case txgbe_sfp_type_srlr_core1:
-		if (advertised_speed & TXGBE_LINK_SPEED_10GB_FULL) {
-			ethtool_link_ksettings_add_link_mode(cmd, advertising,
-								10000baseSR_Full);
-			ethtool_link_ksettings_add_link_mode(cmd, advertising,
-								10000baseLR_Full);
-		}
-		if (advertised_speed & TXGBE_LINK_SPEED_1GB_FULL)
-			ethtool_link_ksettings_add_link_mode(cmd, advertising,
-							     1000baseX_Full);
-
-		break;
-	case txgbe_sfp_type_sr:
-	case txgbe_sfp_type_25g_sr_core0:
-	case txgbe_sfp_type_25g_sr_core1:
-		if (advertised_speed & TXGBE_LINK_SPEED_10GB_FULL)
-			ethtool_link_ksettings_add_link_mode(cmd, advertising,
-							     10000baseSR_Full);
-
-		if (advertised_speed & TXGBE_LINK_SPEED_1GB_FULL)
-			ethtool_link_ksettings_add_link_mode(cmd, advertising, 1000baseX_Full);
-
-		break;
-	case txgbe_sfp_type_lr:
-	case txgbe_sfp_type_25g_lr_core0:
-	case txgbe_sfp_type_25g_lr_core1:
-		if (advertised_speed & TXGBE_LINK_SPEED_10GB_FULL)
-			ethtool_link_ksettings_add_link_mode(cmd, advertising,
-							     10000baseLR_Full);
-
-		if (advertised_speed & TXGBE_LINK_SPEED_1GB_FULL)
-			ethtool_link_ksettings_add_link_mode(cmd, advertising,
-							     1000baseX_Full);
-
+		/* 10000SR 10000LR */
+		phy_mode = BIT(8) | BIT(9);
 		break;
 	case txgbe_sfp_type_1g_cu_core0:
 	case txgbe_sfp_type_1g_cu_core1:
-		ethtool_link_ksettings_add_link_mode(cmd, advertising,
-						     1000baseT_Full);
+		/* 1000BAST */
+		phy_mode = BIT(2);
 		break;
 	case txgbe_sfp_type_1g_sx_core0:
 	case txgbe_sfp_type_1g_sx_core1:
 	case txgbe_sfp_type_1g_lx_core0:
 	case txgbe_sfp_type_1g_lx_core1:
-		ethtool_link_ksettings_add_link_mode(cmd, advertising,
-						     1000baseX_Full);
+		/* 1000BASEX */
+		phy_mode = BIT(3);
 		break;
-	default:
-		ethtool_link_ksettings_add_link_mode(cmd, advertising,
-						     10000baseT_Full);
+	case txgbe_sfp_type_10g_cu_core0:
+	case txgbe_sfp_type_10g_cu_core1:
+		/* 10000 BASET */
+		phy_mode = BIT(6);
 		break;
-	}
-
-	return 0;
-}
-
-static int txgbe_set_supported_1g_10gtypes(struct txgbe_hw *hw,
-					   struct ethtool_link_ksettings *cmd)
-{
-	switch (hw->phy.sfp_type) {
-	case txgbe_sfp_type_da_cu:
-	case txgbe_sfp_type_da_act_lmt_core0:
-	case txgbe_sfp_type_da_act_lmt_core1:
-	case txgbe_sfp_type_da_cu_core0:
-	case txgbe_sfp_type_da_cu_core1:
-	case txgbe_sfp_type_srlr_core0:
-	case txgbe_sfp_type_srlr_core1:
-		ethtool_link_ksettings_add_link_mode(cmd, supported,
-						     10000baseSR_Full);
-		ethtool_link_ksettings_add_link_mode(cmd, supported,
-						     10000baseLR_Full);
-		break;
-	case txgbe_sfp_type_sr:
 	case txgbe_sfp_type_25g_sr_core0:
 	case txgbe_sfp_type_25g_sr_core1:
-		ethtool_link_ksettings_add_link_mode(cmd, supported,
-						     10000baseSR_Full);
-		break;
-	case txgbe_sfp_type_lr:
+		/* 25000 SR */
 	case txgbe_sfp_type_25g_lr_core0:
 	case txgbe_sfp_type_25g_lr_core1:
-		ethtool_link_ksettings_add_link_mode(cmd, supported,
-						     10000baseLR_Full);
+		/* 25000 LR = SR */
+	case txgbe_sfp_type_25g_aoc_core0:
+	case txgbe_sfp_type_25g_aoc_core1:
+		/* 25000 AOC = SR */
+		phy_mode = BIT(13) | BIT(15);
 		break;
-	case txgbe_sfp_type_1g_cu_core0:
-	case txgbe_sfp_type_1g_cu_core1:
-		ethtool_link_ksettings_add_link_mode(cmd, supported,
-						     1000baseT_Full);
+	case txgbe_qsfp_type_40g_cu_core0:
+	case txgbe_qsfp_type_40g_cu_core1:
+		/* 40000 CR4 */
+		phy_mode = BIT(16);
 		break;
-	case txgbe_sfp_type_1g_sx_core0:
-	case txgbe_sfp_type_1g_sx_core1:
-	case txgbe_sfp_type_1g_lx_core0:
-	case txgbe_sfp_type_1g_lx_core1:
-		ethtool_link_ksettings_add_link_mode(cmd, supported,
-						     1000baseX_Full);
+	case txgbe_qsfp_type_40g_sr_core0:
+	case txgbe_qsfp_type_40g_sr_core1:
+		/* 40000 SR4 */
+	case txgbe_qsfp_type_40g_active_core0:
+	case txgbe_qsfp_type_40g_active_core1:
+		/* 40000 AOC = SR4*/
+		phy_mode = BIT(17);
 		break;
+	case txgbe_qsfp_type_40g_lr_core0:
+	case txgbe_qsfp_type_40g_lr_core1:
+		/* 40000 LR4 */
+		phy_mode = BIT(18);
+		break;
+	case txgbe_sfp_type_not_present:
+	case txgbe_sfp_type_unknown:
 	default:
-		ethtool_link_ksettings_add_link_mode(cmd, supported,
-						     10000baseT_Full);
+		err = -1;
 		break;
 	}
 
-	return 0;
+	if (!(txgbe_is_backplane(hw) ||
+	      (hw->subsystem_device_id & 0xF0) == TXGBE_ID_MAC_SGMII ||
+	      (hw->subsystem_device_id & 0xF0) == TXGBE_ID_XAUI ||
+	      (hw->subsystem_device_id & 0xF0) == TXGBE_ID_SGMII ||
+	      (hw->subsystem_device_id & 0xF0) == TXGBE_ID_MAC_XAUI))
+		return phy_mode;
+
+	switch (hw->mac.type) {
+	case txgbe_mac_sp:
+		phy_mode = BIT(4) | BIT(10) | BIT(11);
+		break;
+	case txgbe_mac_aml:
+		phy_mode = BIT(11) | BIT(14);
+		break;
+	case txgbe_mac_aml40:
+		phy_mode = BIT(11) | BIT(19);
+		break;
+	default:
+		break;
+	}
+
+	if ((hw->subsystem_device_id & 0xF0) == TXGBE_ID_MAC_SGMII ||
+	    (hw->subsystem_device_id & 0xF0) == TXGBE_ID_SGMII)
+		phy_mode = BIT(3) | BIT(4) | BIT(5);
+
+	if ((hw->subsystem_device_id & 0xF0) == TXGBE_ID_MAC_XAUI)
+		phy_mode = BIT(10);
+
+	if ((hw->subsystem_device_id & 0xF0) == TXGBE_ID_XAUI)
+		phy_mode = BIT(0) | BIT(1) | BIT(2) | BIT(5) | BIT(6);
+
+	return phy_mode;
 }
 
-static int txgbe_get_link_ksettings(struct net_device *netdev,
-				    struct ethtool_link_ksettings *cmd)
+static int txgbe_get_phy_caps(struct txgbe_hw *hw)
+{
+	u32 phy_mode = 0;
+
+	phy_mode = txgbe_media_types_to_phy_types(hw);
+	if (!phy_mode)
+		phy_mode = txgbe_mac_type_lp[hw->mac.type].phy_type_mask;
+
+	return phy_mode;
+}
+
+/**
+ * txgbe_speed_to_aq_link - Get link speed by Ethtool forced speed
+ * @speed: ethtool forced speed
+ */
+static u16 txgbe_speed_to_mac_link_speed(int speed)
+{
+	int link_speed;
+
+	switch (speed) {
+	case SPEED_10:
+		link_speed = TXGBE_LINK_SPEED_100_FULL;
+		break;
+	case SPEED_100:
+		link_speed = TXGBE_LINK_SPEED_100_FULL;
+		break;
+	case SPEED_1000:
+		link_speed = TXGBE_LINK_SPEED_1GB_FULL;
+		break;
+	case SPEED_10000:
+		link_speed = TXGBE_LINK_SPEED_10GB_FULL;
+		break;
+	case SPEED_25000:
+		link_speed = TXGBE_LINK_SPEED_25GB_FULL;
+		break;
+	case SPEED_40000:
+		link_speed = TXGBE_LINK_SPEED_40GB_FULL;
+		break;
+	default:
+		link_speed = TXGBE_LINK_SPEED_UNKNOWN;
+		break;
+	}
+	return link_speed;
+}
+
+static u64 txgbe_link_speed_to_phy_modes(int supported_link)
+{
+	u32 phy_types = 0;
+
+	if (supported_link & TXGBE_LINK_SPEED_40GB_FULL)
+		phy_types |= TXGBE_PHY_TYPE_LINK_SPEED_40G;
+
+	if (supported_link & TXGBE_LINK_SPEED_25GB_FULL)
+		phy_types |= TXGBE_PHY_TYPE_LINK_SPEED_25G;
+
+	if (supported_link & TXGBE_LINK_SPEED_10GB_FULL)
+		phy_types |= TXGBE_PHY_TYPE_LINK_SPEED_10G;
+
+	if (supported_link & TXGBE_LINK_SPEED_1GB_FULL)
+		phy_types |= TXGBE_PHY_TYPE_LINK_SPEED_1G;
+
+	if (supported_link & TXGBE_LINK_SPEED_100_FULL)
+		phy_types |= TXGBE_PHY_TYPE_LINK_SPEED_100;
+
+	if (supported_link & TXGBE_LINK_SPEED_10_FULL)
+		phy_types |= TXGBE_PHY_TYPE_LINK_SPEED_10;
+
+	return phy_types;
+}
+
+/**
+ * txgbe_linkmode_set_bit - set link mode bit
+ * @phy_to_ethtool: PHY type to ethtool link mode struct to set
+ * @ks: ethtool link ksettings struct to fill out
+ * @req_speeds: speed requested by user
+ * @advert_phy_type: advertised PHY type
+ * @phy_type: PHY type
+ */
+static void
+txgbe_linkmode_set_bit(const struct txgbe_phy_type_to_ethtool *phy_to_ethtool,
+		       struct ethtool_link_ksettings *ks, u32 req_speeds,
+		       u64 advert_phy_type, u32 phy_type)
+{
+	linkmode_set_bit(phy_to_ethtool->link_mode, ks->link_modes.supported);
+
+	if (req_speeds & phy_to_ethtool->link_speed ||
+	    (!req_speeds && advert_phy_type & BIT(phy_type)))
+		linkmode_set_bit(phy_to_ethtool->link_mode,
+				 ks->link_modes.advertising);
+}
+
+/**
+ * txgbe_phy_type_to_ethtool - convert the phy_types to ethtool link modes
+ * @netdev: network interface device structure
+ * @ks: ethtool link ksettings struct to fill out
+ */
+static void txgbe_phy_type_to_ethtool(struct net_device *netdev,
+				      struct ethtool_link_ksettings *ks)
 {
 	struct txgbe_adapter *adapter = netdev_priv(netdev);
+	u32 phy_types = 0, advert_phy_type = 0;
 	struct txgbe_hw *hw = &adapter->hw;
-	u32 supported_link;
-	u32 link_speed = 0;
+	u32 i, req_speeds, supported_link;
 	bool autoneg = false;
-	bool link_up;
-
-	ethtool_link_ksettings_zero_link_mode(cmd, supported);
-	ethtool_link_ksettings_zero_link_mode(cmd, advertising);
 
 	hw->mac.ops.get_link_capabilities(hw, &supported_link, &autoneg);
+	ks->base.autoneg = autoneg;
+	advert_phy_type = txgbe_link_speed_to_phy_modes(supported_link);
+	req_speeds = hw->phy.link_info.req_speeds;
 
-	if ((hw->subsystem_device_id & 0xF0) == TXGBE_ID_KR_KX_KX4)
-		autoneg = adapter->backplane_an ? 1 : 0;
-	else if ((hw->subsystem_device_id & 0xF0) == TXGBE_ID_MAC_SGMII)
-		autoneg = adapter->autoneg ? 1 : 0;
-
-	/* set the supported link speeds */
-	if (hw->phy.media_type == txgbe_media_type_copper) {
-		if (supported_link & TXGBE_LINK_SPEED_10GB_FULL)
-			ethtool_link_ksettings_add_link_mode(cmd, supported,
-							     10000baseT_Full);
-		if (supported_link & TXGBE_LINK_SPEED_1GB_FULL)
-			ethtool_link_ksettings_add_link_mode(cmd, supported,
-							     1000baseT_Full);
-		if (supported_link & TXGBE_LINK_SPEED_100_FULL)
-			ethtool_link_ksettings_add_link_mode(cmd, supported,
-							     100baseT_Full);
-
-		if (supported_link & TXGBE_LINK_SPEED_10_FULL)
-			ethtool_link_ksettings_add_link_mode(cmd, supported,
-							     10baseT_Full);
-	} else if (hw->phy.media_type == txgbe_media_type_fiber_qsfp) {
-		if (supported_link & TXGBE_LINK_SPEED_40GB_FULL) {
-			ethtool_link_ksettings_add_link_mode(cmd, supported,
-							     40000baseSR4_Full);
-			ethtool_link_ksettings_add_link_mode(cmd, supported,
-							     40000baseCR4_Full);
-			ethtool_link_ksettings_add_link_mode(cmd, supported,
-							     40000baseLR4_Full);
-		}
-	} else if (hw->phy.media_type == txgbe_media_type_fiber) {
-		if (supported_link & TXGBE_LINK_SPEED_25GB_FULL) {
-			ethtool_link_ksettings_add_link_mode(cmd, supported,
-							     25000baseSR_Full);
-			ethtool_link_ksettings_add_link_mode(cmd, supported,
-							     25000baseCR_Full);
-		}
-
-		if ((supported_link & TXGBE_LINK_SPEED_10GB_FULL) ||
-		    (supported_link & TXGBE_LINK_SPEED_1GB_FULL))
-			txgbe_set_supported_1g_10gtypes(hw, cmd);
-		if (hw->phy.multispeed_fiber && hw->mac.type == txgbe_mac_sp)
-			ethtool_link_ksettings_add_link_mode(cmd, supported,
-							     1000baseX_Full);
+	/* Check if lenient mode is supported and enabled, or in strict mode.
+	 *
+	 * In lenient mode the Supported link modes are the PHY types without
+	 * media. The Advertising link mode is either 1. the user requested
+	 * speed, 2. the override PHY mask, or 3. the PHY types with media.
+	 *
+	 * In strict mode Supported link mode are the PHY type with media,
+	 * and Advertising link modes are the media PHY type or the speed
+	 * requested by user.
+	 */
+	if (hw->phy.sfp_type == txgbe_sfp_type_not_present ||
+	    hw->phy.sfp_type == txgbe_sfp_type_unknown) {
+		phy_types = txgbe_mac_type_lp[hw->mac.type].phy_type_mask;
 	} else {
-		switch (hw->phy.link_mode) {
-		case TXGBE_PHYSICAL_LAYER_10GBASE_KX4:
-			ethtool_link_ksettings_add_link_mode(cmd, supported,
-							     10000baseKX4_Full);
-			break;
-		case TXGBE_PHYSICAL_LAYER_10GBASE_KR:
-			ethtool_link_ksettings_add_link_mode(cmd, supported,
-							     10000baseKR_Full);
-			break;
-		case TXGBE_PHYSICAL_LAYER_1000BASE_KX:
-			ethtool_link_ksettings_add_link_mode(cmd, supported,
-							     1000baseKX_Full);
-			break;
-		default:
-			ethtool_link_ksettings_add_link_mode(cmd, supported,
-							     10000baseKR_Full);
-			ethtool_link_ksettings_add_link_mode(cmd, supported,
-							     10000baseKX4_Full);
-			break;
-		}
+		phy_types = txgbe_mac_type_lp[hw->mac.type].phy_type_mask;
+		phy_types &= txgbe_media_types_to_phy_types(hw);
 	}
+	hw_dbg(hw, "%s %d phy_types: %x advert_phy_type: %x req_speeds: %x",
+		__func__, __LINE__, phy_types, advert_phy_type, req_speeds);
 
-		/* set the advertised speeds */
-	if (hw->phy.autoneg_advertised) {
-		if (hw->phy.autoneg_advertised & TXGBE_LINK_SPEED_40GB_FULL) {
-			ethtool_link_ksettings_add_link_mode(cmd, advertising,
-							     40000baseSR4_Full);
-			ethtool_link_ksettings_add_link_mode(cmd, advertising,
-							     40000baseCR4_Full);
-			ethtool_link_ksettings_add_link_mode(cmd, advertising,
-							     40000baseLR4_Full);
-		}
-		if (hw->phy.autoneg_advertised & TXGBE_LINK_SPEED_25GB_FULL) {
-			ethtool_link_ksettings_add_link_mode(cmd, advertising,
-							     25000baseSR_Full);
-			ethtool_link_ksettings_add_link_mode(cmd, advertising,
-							     25000baseCR_Full);
-		}
-		if (hw->phy.autoneg_advertised & TXGBE_LINK_SPEED_10GB_FULL) {
-			if (hw->phy.media_type == txgbe_media_type_copper) {
-				ethtool_link_ksettings_add_link_mode(cmd, advertising,
-								     10000baseT_Full);
-			} else if (hw->phy.media_type == txgbe_media_type_fiber) {
-				txgbe_set_advertising_1g_10gtypes(hw, cmd,
-								  hw->phy.autoneg_advertised);
-			} else {
-				switch (hw->phy.link_mode) {
-				case TXGBE_PHYSICAL_LAYER_10GBASE_KX4:
-					ethtool_link_ksettings_add_link_mode(cmd, advertising,
-									     10000baseKX4_Full);
-					break;
-				case TXGBE_PHYSICAL_LAYER_10GBASE_KR:
-					ethtool_link_ksettings_add_link_mode(cmd, supported,
-									     10000baseKR_Full);
-					break;
-				default:
-					ethtool_link_ksettings_add_link_mode(cmd, supported,
-									     10000baseKR_Full);
-					ethtool_link_ksettings_add_link_mode(cmd, supported,
-									     10000baseKX4_Full);
-					break;
-				}
-			}
-		}
-		if (hw->phy.autoneg_advertised & TXGBE_LINK_SPEED_1GB_FULL) {
-			if (hw->phy.media_type == txgbe_media_type_copper)
-				ethtool_link_ksettings_add_link_mode(cmd, advertising,
-								     1000baseT_Full);
-			else if (hw->phy.media_type == txgbe_media_type_fiber)
-				txgbe_set_advertising_1g_10gtypes(hw, cmd,
-								  hw->phy.autoneg_advertised);
-			else
-				ethtool_link_ksettings_add_link_mode(cmd, advertising,
-								     1000baseKX_Full);
-		}
-		if (hw->phy.autoneg_advertised & TXGBE_LINK_SPEED_100_FULL) {
-			ethtool_link_ksettings_add_link_mode(cmd, advertising,
-							     100baseT_Full);
-		}
-		if (hw->phy.autoneg_advertised & TXGBE_LINK_SPEED_10_FULL) {
-			ethtool_link_ksettings_add_link_mode(cmd, advertising,
-							     10baseT_Full);
-		}
-	} else {
-		if (supported_link & TXGBE_LINK_SPEED_40GB_FULL) {
-			ethtool_link_ksettings_add_link_mode(cmd, advertising,
-							     40000baseSR4_Full);
-			ethtool_link_ksettings_add_link_mode(cmd, advertising,
-							     40000baseCR4_Full);
-			ethtool_link_ksettings_add_link_mode(cmd, advertising,
-							     40000baseLR4_Full);
-		}
-		if (supported_link & TXGBE_LINK_SPEED_25GB_FULL) {
-			ethtool_link_ksettings_add_link_mode(cmd, advertising,
-							     25000baseSR_Full);
-			ethtool_link_ksettings_add_link_mode(cmd, advertising,
-							     25000baseCR_Full);
-		}
-		if (supported_link & TXGBE_LINK_SPEED_10GB_FULL) {
-			if (hw->phy.media_type == txgbe_media_type_copper) {
-				ethtool_link_ksettings_add_link_mode(cmd, advertising,
-								     10000baseT_Full);
-			} else if (hw->phy.media_type == txgbe_media_type_fiber) {
-				txgbe_set_advertising_1g_10gtypes(hw, cmd,
-								  TXGBE_LINK_SPEED_10GB_FULL);
-			} else {
-				ethtool_link_ksettings_add_link_mode(cmd, advertising,
-								     10000baseKR_Full);
-				ethtool_link_ksettings_add_link_mode(cmd, advertising,
-								     10000baseKX4_Full);
-			}
-		}
-		if (supported_link & TXGBE_LINK_SPEED_1GB_FULL) {
-			if (hw->phy.media_type == txgbe_media_type_copper)
-				ethtool_link_ksettings_add_link_mode(cmd, advertising,
-								     1000baseT_Full);
-			else if (hw->phy.media_type == txgbe_media_type_fiber)
-				txgbe_set_advertising_1g_10gtypes(hw, cmd,
-								  TXGBE_LINK_SPEED_1GB_FULL);
-			else
-				ethtool_link_ksettings_add_link_mode(cmd, advertising,
-								     1000baseKX_Full);
-		}
-		if (supported_link & TXGBE_LINK_SPEED_100_FULL) {
-			if (hw->phy.media_type == txgbe_media_type_copper)
-				ethtool_link_ksettings_add_link_mode(cmd, advertising,
-								     100baseT_Full);
-		}
-		if (supported_link & TXGBE_LINK_SPEED_10_FULL) {
-			if (hw->phy.media_type == txgbe_media_type_copper)
-				ethtool_link_ksettings_add_link_mode(cmd, advertising,
-								     10baseT_Full);
-		}
+	linkmode_zero(ks->link_modes.supported);
+	linkmode_zero(ks->link_modes.advertising);
+
+	for (i = 0; i < ARRAY_SIZE(phy_type_lkup); i++) {
+		if (phy_types & BIT_ULL(i))
+			txgbe_linkmode_set_bit(&phy_type_lkup[i], ks,
+					       req_speeds, advert_phy_type, i);
 	}
+}
 
-	if (autoneg) {
-		ethtool_link_ksettings_add_link_mode(cmd, supported, Autoneg);
-		ethtool_link_ksettings_add_link_mode(cmd, advertising, Autoneg);
-		cmd->base.autoneg = AUTONEG_ENABLE;
-	} else {
-		cmd->base.autoneg = AUTONEG_DISABLE;
-	}
+/**
+ * txgbe_get_settings_link_up - Get Link settings for when link is up
+ * @ks: ethtool ksettings to fill in
+ * @netdev: network interface device structure
+ */
+static void txgbe_get_settings_link_up(struct ethtool_link_ksettings *ks,
+				       struct net_device *netdev)
+{
+	struct txgbe_adapter *adapter = netdev_priv(netdev);
+	struct txgbe_link_status *hw_link_info;
+	struct txgbe_hw *hw = &adapter->hw;
 
-	/* Determine the remaining settings based on the PHY type. */
-	switch (adapter->hw.phy.type) {
-	case txgbe_phy_tn:
-	case txgbe_phy_aq:
-	case txgbe_phy_cu_unknown:
-		ethtool_link_ksettings_add_link_mode(cmd, supported, TP);
-		ethtool_link_ksettings_add_link_mode(cmd, advertising, TP);
-		cmd->base.port = PORT_TP;
+	hw_link_info = &hw->phy.link_info;
+
+	/* Get supported and advertised settings from PHY ability with media */
+	txgbe_phy_type_to_ethtool(netdev, ks);
+
+	ks->base.speed = hw_link_info->link_speed;
+	ks->base.duplex = DUPLEX_FULL;
+}
+
+/**
+ * txgbe_get_settings_link_down - Get the Link settings when link is down
+ * @ks: ethtool ksettings to fill in
+ * @netdev: network interface device structure
+ *
+ * Reports link settings that can be determined when link is down
+ */
+static void txgbe_get_settings_link_down(struct ethtool_link_ksettings *ks,
+					 struct net_device *netdev)
+{
+	/* link is down and the driver needs to fall back on
+	 * supported PHY types to figure out what info to display
+	 */
+	txgbe_phy_type_to_ethtool(netdev, ks);
+
+	/* With no link, speed and duplex are unknown */
+	ks->base.speed = SPEED_UNKNOWN;
+	ks->base.duplex = DUPLEX_UNKNOWN;
+}
+
+/**
+ * txgbe_get_link_ksettings - Get Link Speed and Duplex settings
+ * @netdev: network interface device structure
+ * @ks: ethtool ksettings
+ *
+ * Reports speed/duplex settings based on media_type
+ */
+static int txgbe_get_link_ksettings(struct net_device *netdev,
+				    struct ethtool_link_ksettings *ks)
+{
+	struct txgbe_adapter *adapter = netdev_priv(netdev);
+	struct txgbe_link_status *hw_link_info;
+	struct txgbe_hw *hw = &adapter->hw;
+
+	ethtool_link_ksettings_zero_link_mode(ks, supported);
+	ethtool_link_ksettings_zero_link_mode(ks, advertising);
+	hw_link_info = &hw->phy.link_info;
+
+	/* set speed and duplex */
+	if (netif_carrier_ok(netdev))
+		txgbe_get_settings_link_up(ks, netdev);
+	else
+		txgbe_get_settings_link_down(ks, netdev);
+
+	/* set autoneg settings
+	 * ks->base.autoneg already set in txgbe_phy_type_to_ethtool
+	 */
+
+	/* set media type settings */
+	switch (hw->phy.media_type) {
+	case txgbe_media_type_copper:
+		ethtool_link_ksettings_add_link_mode(ks, supported, TP);
+		ethtool_link_ksettings_add_link_mode(ks, advertising, TP);
+		ks->base.port = PORT_TP;
 		break;
-	case txgbe_phy_qt:
-		ethtool_link_ksettings_add_link_mode(cmd, supported, FIBRE);
-		ethtool_link_ksettings_add_link_mode(cmd, advertising, FIBRE);
-		cmd->base.port = PORT_FIBRE;
-		break;
-	case txgbe_phy_nl:
-	case txgbe_phy_sfp_passive_tyco:
-	case txgbe_phy_sfp_passive_unknown:
-	case txgbe_phy_sfp_active_unknown:
-	case txgbe_phy_sfp_ftl_active:
-	case txgbe_phy_sfp_ftl:
-	case txgbe_phy_sfp_avago:
-	case txgbe_phy_sfp_intel:
-	case txgbe_phy_sfp_unknown:
-		switch (adapter->hw.phy.sfp_type) {
-			/* SFP+ devices, further checking needed */
-		case txgbe_sfp_type_da_cu:
-		case txgbe_sfp_type_da_cu_core0:
-		case txgbe_sfp_type_da_cu_core1:
-		case txgbe_qsfp_type_40g_cu_core0:
-		case txgbe_qsfp_type_40g_cu_core1:
-			ethtool_link_ksettings_add_link_mode(cmd, supported, FIBRE);
-			ethtool_link_ksettings_add_link_mode(cmd, advertising, FIBRE);
-			cmd->base.port = PORT_DA;
-			break;
-		case txgbe_sfp_type_sr:
-		case txgbe_sfp_type_lr:
-		case txgbe_sfp_type_srlr_core0:
-		case txgbe_sfp_type_srlr_core1:
-		case txgbe_sfp_type_1g_sx_core0:
-		case txgbe_sfp_type_1g_sx_core1:
-		case txgbe_sfp_type_1g_lx_core0:
-		case txgbe_sfp_type_1g_lx_core1:
-		case txgbe_sfp_type_da_act_lmt_core0:
-		case txgbe_sfp_type_da_act_lmt_core1:
-		case txgbe_sfp_type_25g_sr_core0:
-		case txgbe_sfp_type_25g_sr_core1:
-		case txgbe_sfp_type_25g_lr_core0:
-		case txgbe_sfp_type_25g_lr_core1:
-		case txgbe_sfp_type_25g_aoc_core0:
-		case txgbe_sfp_type_25g_aoc_core1:
-		case txgbe_qsfp_type_40g_sr_core0:
-		case txgbe_qsfp_type_40g_sr_core1:
-		case txgbe_qsfp_type_40g_lr_core0:
-		case txgbe_qsfp_type_40g_lr_core1:
-		case txgbe_qsfp_type_40g_active_core0:
-		case txgbe_qsfp_type_40g_active_core1:
-			ethtool_link_ksettings_add_link_mode(cmd, supported, FIBRE);
-			ethtool_link_ksettings_add_link_mode(cmd, advertising, FIBRE);
-			cmd->base.port = PORT_FIBRE;
-			break;
-		case txgbe_sfp_type_not_present:
-			ethtool_link_ksettings_add_link_mode(cmd, supported, FIBRE);
-			ethtool_link_ksettings_add_link_mode(cmd, advertising, FIBRE);
-			cmd->base.port = PORT_NONE;
-			break;
-		case txgbe_sfp_type_1g_cu_core0:
-		case txgbe_sfp_type_1g_cu_core1:
-			ethtool_link_ksettings_add_link_mode(cmd, supported, TP);
-			ethtool_link_ksettings_add_link_mode(cmd, advertising, TP);
-			cmd->base.port = PORT_TP;
-			break;
-		case txgbe_sfp_type_unknown:
-		default:
-			ethtool_link_ksettings_add_link_mode(cmd, supported, FIBRE);
-			ethtool_link_ksettings_add_link_mode(cmd, advertising, FIBRE);
-			cmd->base.port = PORT_OTHER;
-			break;
+	case txgbe_media_type_fiber_qsfp:
+	case txgbe_media_type_fiber:
+		if (txgbe_is_dac_cable(hw)) {
+			ethtool_link_ksettings_add_link_mode(ks, supported, FIBRE);
+			ethtool_link_ksettings_add_link_mode(ks, advertising, FIBRE);
+			ks->base.port = PORT_DA;
+		} else {
+			ethtool_link_ksettings_add_link_mode(ks, supported, FIBRE);
+			ks->base.port = PORT_FIBRE;
 		}
 		break;
-	case txgbe_phy_xaui:
-		ethtool_link_ksettings_add_link_mode(cmd, supported, TP);
-		ethtool_link_ksettings_add_link_mode(cmd, advertising, TP);
-		cmd->base.port = PORT_TP;
+	case txgbe_media_type_backplane:
+		ethtool_link_ksettings_add_link_mode(ks, supported, Backplane);
+		ethtool_link_ksettings_add_link_mode(ks, advertising,
+						     Backplane);
+		ks->base.port = PORT_NONE;
 		break;
-	case txgbe_phy_unknown:
-	case txgbe_phy_generic:
-	case txgbe_phy_sfp_unsupported:
+	case txgbe_media_type_virtual:
+	case txgbe_media_type_unknown:
 	default:
-		ethtool_link_ksettings_add_link_mode(cmd, supported, FIBRE);
-		ethtool_link_ksettings_add_link_mode(cmd, advertising, FIBRE);
-		cmd->base.port = PORT_OTHER;
+		ks->base.port = PORT_OTHER;
 		break;
 	}
 
-	if ((hw->subsystem_device_id & 0xF0) == TXGBE_ID_XAUI &&
-	    (hw->subsystem_device_id & TXGBE_NCSI_MASK) == TXGBE_NCSI_SUP) {
-		/* only continue if link was up previously */
-		if (!netif_carrier_ok(netdev)) {
-			cmd->base.speed = -1;
-			cmd->base.duplex = -1;
-
-			return 0;
-		}
-	}
-	if (!in_interrupt()) {
-		hw->mac.ops.check_link(hw, &link_speed, &link_up, false);
-	} else {
-		/* this case is a special workaround for RHEL5 bonding
-		 * that calls this routine from interrupt context
-		 */
-		link_speed = adapter->link_speed;
-		link_up = adapter->link_up;
-	}
-
-	/* Indicate pause support */
-	ethtool_link_ksettings_add_link_mode(cmd, supported, Pause);
+	/* flow control is symmetric and always supported */
+	ethtool_link_ksettings_add_link_mode(ks, supported, Pause);
 
 	switch (hw->fc.requested_mode) {
 	case txgbe_fc_full:
-		ethtool_link_ksettings_add_link_mode(cmd, advertising, Pause);
+		ethtool_link_ksettings_add_link_mode(ks, advertising, Pause);
 		break;
 	case txgbe_fc_rx_pause:
-		ethtool_link_ksettings_add_link_mode(cmd, advertising, Pause);
-		ethtool_link_ksettings_add_link_mode(cmd, advertising,
+		ethtool_link_ksettings_add_link_mode(ks, advertising, Pause);
+		ethtool_link_ksettings_add_link_mode(ks, advertising,
 						     Asym_Pause);
 		break;
 	case txgbe_fc_tx_pause:
-		ethtool_link_ksettings_add_link_mode(cmd, advertising,
+		ethtool_link_ksettings_add_link_mode(ks, advertising,
 						     Asym_Pause);
 		break;
 	default:
-		ethtool_link_ksettings_del_link_mode(cmd, advertising, Pause);
-		ethtool_link_ksettings_del_link_mode(cmd, advertising,
+		ethtool_link_ksettings_del_link_mode(ks, advertising, Pause);
+		ethtool_link_ksettings_del_link_mode(ks, advertising,
 						     Asym_Pause);
 	}
 
-	if (link_up) {
-		switch (link_speed) {
-		case TXGBE_LINK_SPEED_40GB_FULL:
-			cmd->base.speed = SPEED_40000;
-			break;
-		case TXGBE_LINK_SPEED_25GB_FULL:
-			cmd->base.speed = SPEED_25000;
-			break;
-		case TXGBE_LINK_SPEED_10GB_FULL:
-			cmd->base.speed = SPEED_10000;
-			break;
-		case TXGBE_LINK_SPEED_1GB_FULL:
-			cmd->base.speed = SPEED_1000;
-			break;
-		case TXGBE_LINK_SPEED_100_FULL:
-			cmd->base.speed = SPEED_100;
-			break;
-		case TXGBE_LINK_SPEED_10_FULL:
-			cmd->base.speed = SPEED_10;
-			break;
-		default:
-			break;
-		}
-		cmd->base.duplex = DUPLEX_FULL;
-	} else {
-		cmd->base.speed = -1;
-		cmd->base.duplex = -1;
-	}
+#ifdef ETHTOOL_GFECPARAM
+	/* Set advertised FEC modes based on PHY capability */
+	ethtool_link_ksettings_add_link_mode(ks, advertising, FEC_NONE);
+	if (hw->phy.link_fec_options & TXGBE_PHY_FEC_10G_KR_40G_KR4_REQ ||
+	    hw->phy.link_fec_options & TXGBE_PHY_FEC_25G_KR_REQ)
+		ethtool_link_ksettings_add_link_mode(ks, advertising,
+						     FEC_BASER);
+	if (hw->phy.link_fec_options & TXGBE_PHY_FEC_25G_RS_528_REQ)
+		ethtool_link_ksettings_add_link_mode(ks, advertising, FEC_RS);
 
-	if (!netif_carrier_ok(netdev)) {
-		cmd->base.speed = -1;
-		cmd->base.duplex = -1;
-	}
+	/* Set supported FEC modes based on PHY capability */
+	ethtool_link_ksettings_add_link_mode(ks, supported, FEC_NONE);
+	if (hw->phy.link_fec_options & TXGBE_PHY_FEC_10G_KR_40G_KR4_EN ||
+	    hw->phy.link_fec_options & TXGBE_PHY_FEC_25G_KR_CLAUSE74_EN)
+		ethtool_link_ksettings_add_link_mode(ks, supported, FEC_BASER);
+	if (hw->phy.link_fec_options & TXGBE_PHY_FEC_25G_RS_CLAUSE91_EN)
+		ethtool_link_ksettings_add_link_mode(ks, supported, FEC_RS);
+#endif
 
-	if (hw->mac.type == txgbe_mac_aml) {
-		ethtool_link_ksettings_add_link_mode(cmd, supported, FEC_NONE);
-		ethtool_link_ksettings_add_link_mode(cmd, supported, FEC_RS);
-		ethtool_link_ksettings_add_link_mode(cmd, supported, FEC_BASER);
-		if (adapter->fec_link_mode & TXGBE_PHY_FEC_OFF)
-			ethtool_link_ksettings_add_link_mode(cmd, advertising, FEC_NONE);
-		if (adapter->fec_link_mode & TXGBE_PHY_FEC_RS)
-			ethtool_link_ksettings_add_link_mode(cmd, advertising, FEC_RS);
-		if (adapter->fec_link_mode & TXGBE_PHY_FEC_BASER)
-			ethtool_link_ksettings_add_link_mode(cmd, advertising, FEC_BASER);
+	/* Set supported and advertised autoneg */
+	/* clause 37/73/28 */
+	if (ks->base.autoneg) {
+		ethtool_link_ksettings_add_link_mode(ks, supported, Autoneg);
+		ethtool_link_ksettings_add_link_mode(ks, advertising, Autoneg);
 	}
-	if (!adapter->autoneg)
-		ethtool_link_ksettings_del_link_mode(cmd, advertising, Autoneg);
-	else
-		ethtool_link_ksettings_add_link_mode(cmd, advertising, Autoneg);
-	cmd->base.autoneg = adapter->autoneg;
 
 	return 0;
 }
 
 static int txgbe_set_link_ksettings(struct net_device *netdev,
-				    const struct ethtool_link_ksettings *cmd)
+				    const struct ethtool_link_ksettings *ks)
 {
 	struct txgbe_adapter *adapter = netdev_priv(netdev);
+	struct ethtool_link_ksettings safe_ks = {};
 	struct txgbe_hw *hw = &adapter->hw;
-	u32 advertised, old, link_support;
-	bool autoneg;
-	int err = 0;
-	struct ethtool_link_ksettings temp_ks;
 	u32 curr_autoneg = 2;
+	u32 advertised, old;
+	u32 phy_mode, i;
+	int err;
 
-	if ((hw->subsystem_device_id & 0xF0) == TXGBE_ID_KR_KX_KX4)
-		adapter->backplane_an = cmd->base.autoneg ? 1 : 0;
+	if (hw->phy.media_type != txgbe_media_type_fiber &&
+	    hw->phy.media_type != txgbe_media_type_fiber_qsfp &&
+	    hw->phy.media_type != txgbe_media_type_copper &&
+	    hw->phy.media_type != txgbe_media_type_backplane)
+		return -EOPNOTSUPP;
 
-	if (hw->phy.media_type == txgbe_media_type_copper || hw->phy.multispeed_fiber) {
-		memcpy(&temp_ks, cmd, sizeof(struct ethtool_link_ksettings));
-		/* To be compatible with test cases */
-		if (hw->phy.media_type == txgbe_media_type_fiber) {
-			if (ethtool_link_ksettings_test_link_mode(cmd, advertising,
-								  25000baseSR_Full)) {
-				ethtool_link_ksettings_add_link_mode(&temp_ks, supported,
-								     25000baseSR_Full);
-			}
+	/* Get the PHY capabilities based on media */
+	phy_mode = txgbe_get_phy_caps(hw);
+	if (!phy_mode)
+		return -EOPNOTSUPP;
 
-			if (ethtool_link_ksettings_test_link_mode(cmd, advertising,
-								  10000baseT_Full)) {
-				ethtool_link_ksettings_add_link_mode(&temp_ks, supported,
-								     10000baseT_Full);
-				ethtool_link_ksettings_del_link_mode(&temp_ks, supported,
-								     10000baseSR_Full);
-				ethtool_link_ksettings_del_link_mode(&temp_ks, supported,
-								     10000baseLR_Full);
-			}
-			if (ethtool_link_ksettings_test_link_mode(cmd, advertising,
-								  1000baseT_Full)) {
-				ethtool_link_ksettings_add_link_mode(&temp_ks, supported,
-								     1000baseT_Full);
-				ethtool_link_ksettings_del_link_mode(&temp_ks, supported,
-								     1000baseX_Full);
-			}
+	/* Get link modes supported by hardware.*/
+	txgbe_phy_type_to_ethtool(netdev, &safe_ks);
+
+	/* save autoneg out of ksettings */
+	curr_autoneg = safe_ks.base.autoneg;
+
+	/* Copy the current user PHY configuration. */
+	old = hw->phy.autoneg_advertised;
+	advertised = 0;
+
+	/* 1. base.speed */
+	advertised = txgbe_speed_to_mac_link_speed(ks->base.speed);
+	if (!advertised) {
+		/* 2. requested link mode */
+		for (i = 0; i < ARRAY_SIZE(phy_type_lkup); i++) {
+			u8 mode = phy_type_lkup[i].link_mode;
+
+			if (test_bit(mode, ks->link_modes.advertising))
+				advertised |= phy_type_lkup[i].link_speed;
 		}
-
-		/* this function does not support duplex forcing, but can
-		 * limit the advertising of the adapter to the specified speed
-		 */
-		if (!bitmap_subset(cmd->link_modes.advertising, temp_ks.link_modes.supported,
-				   __ETHTOOL_LINK_MODE_MASK_NBITS))
-			return -EINVAL;
-
-		old = hw->phy.autoneg_advertised;
-		advertised = 0;
-
-		if (!cmd->base.autoneg) {
-			if (cmd->base.speed == SPEED_25000)
-				advertised |= TXGBE_LINK_SPEED_25GB_FULL;
-			else if (cmd->base.speed == SPEED_10000)
-				advertised |= TXGBE_LINK_SPEED_10GB_FULL;
-			else if (cmd->base.speed == SPEED_1000)
-				advertised |= TXGBE_LINK_SPEED_1GB_FULL;
-			else
-				advertised |= old;
-		} else {
-			if (ethtool_link_ksettings_test_link_mode(cmd,
-								  advertising, 25000baseSR_Full))
-				advertised |= TXGBE_LINK_SPEED_25GB_FULL;
-
-			if (ethtool_link_ksettings_test_link_mode(cmd,
-								  advertising, 10000baseSR_Full) ||
-				ethtool_link_ksettings_test_link_mode(cmd,
-								      advertising, 10000baseLR_Full) ||
-				ethtool_link_ksettings_test_link_mode(cmd,
-								      advertising, 10000baseT_Full))
-				advertised |= TXGBE_LINK_SPEED_10GB_FULL;
-
-			if (ethtool_link_ksettings_test_link_mode(cmd,
-								  advertising, 1000baseX_Full) ||
-				ethtool_link_ksettings_test_link_mode(cmd,
-								      advertising, 1000baseT_Full))
-				advertised |= TXGBE_LINK_SPEED_1GB_FULL;
-
-			if (ethtool_link_ksettings_test_link_mode(cmd,
-								  advertising, 100baseT_Full))
-				advertised |= TXGBE_LINK_SPEED_100_FULL;
-
-			if (ethtool_link_ksettings_test_link_mode(cmd,
-								  advertising, 10baseT_Full))
-				advertised |= TXGBE_LINK_SPEED_10_FULL;
-		}
-
-		if (advertised == TXGBE_LINK_SPEED_1GB_FULL &&
-		    hw->phy.media_type != txgbe_media_type_copper) {
-			curr_autoneg = txgbe_rd32_epcs(hw, TXGBE_SR_MII_MMD_CTL);
-			curr_autoneg = !!(curr_autoneg & (0x1 << 12));
-			if (old == advertised && (curr_autoneg == !!(cmd->base.autoneg)))
-				return 0;
-		}
-
-		err = hw->mac.ops.get_link_capabilities(hw,
-			&link_support, &autoneg);
-		if (err)
-			e_info(probe, "get link capabiliyies failed with code %d\n", err);
-		if (!(link_support & advertised)) {
-			e_info(probe, "unsupported advertised: %x", advertised);
-			return -EINVAL;
-		}
-
-		/* this sets the link speed and restarts auto-neg */
-		while (test_and_set_bit(__TXGBE_IN_SFP_INIT, &adapter->state))
-			usleep_range(1000, 2000);
-
-		adapter->autoneg = cmd->base.autoneg ? 1 : 0;
-		hw->mac.autotry_restart = true;
-		adapter->flags |= TXGBE_FLAG_NEED_LINK_UPDATE;
-		txgbe_service_event_schedule(adapter);
-		err = hw->mac.ops.setup_link(hw, advertised, true);
-		if (err) {
-			e_info(probe, "setup link failed with code %d\n", err);
-			hw->mac.ops.setup_link(hw, old, true);
-		}
-		if ((hw->subsystem_device_id & TXGBE_NCSI_MASK) == TXGBE_NCSI_SUP)
-			if (hw->mac.ops.flap_tx_laser)
-				hw->mac.ops.flap_tx_laser(hw);
-
-		/* notify fw autoneg status */
-		txgbe_hic_write_autoneg_status(hw, cmd->base.autoneg);
-
-		clear_bit(__TXGBE_IN_SFP_INIT, &adapter->state);
-	} else if ((hw->subsystem_device_id & 0xF0) == TXGBE_ID_KR_KX_KX4 ||
-		   (hw->subsystem_device_id & 0xF0) == TXGBE_ID_MAC_SGMII) {
-		if (!cmd->base.autoneg) {
-			if (ethtool_link_ksettings_test_link_mode(cmd, advertising,
-								  10000baseKR_Full) &
-			    ethtool_link_ksettings_test_link_mode(cmd, advertising,
-								  1000baseKX_Full) &
-			    ethtool_link_ksettings_test_link_mode(cmd, advertising,
-								  10000baseKX4_Full))
-				return -EINVAL;
-		}
-		advertised = 0;
-		if (ethtool_link_ksettings_test_link_mode(cmd, advertising, 10000baseKR_Full)) {
-			err = txgbe_set_link_to_kr(hw, 1);
-			advertised |= TXGBE_LINK_SPEED_10GB_FULL;
-		} else if (ethtool_link_ksettings_test_link_mode(cmd, advertising,
-								 10000baseKX4_Full)) {
-			err = txgbe_set_link_to_kx4(hw, 1);
-			advertised |= TXGBE_LINK_SPEED_10GB_FULL;
-		} else if (ethtool_link_ksettings_test_link_mode(cmd, advertising,
-								 1000baseKX_Full)) {
-			advertised |= TXGBE_LINK_SPEED_1GB_FULL;
-			err = txgbe_set_link_to_kx(hw, TXGBE_LINK_SPEED_1GB_FULL, 0);
-		}
-		if (err)
-			return -EACCES;
-		goto out;
-	} else {
-		/* in this case we currently only support 10Gb/FULL */
-		if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40) {
-			return -EINVAL;
-		} else if ((ethtool_link_ksettings_test_link_mode(cmd,
-											advertising, 1000baseT_Full) ||
-			    ethtool_link_ksettings_test_link_mode(cmd,
-								  advertising, 1000baseKX_Full) ||
-			    ethtool_link_ksettings_test_link_mode(cmd,
-								  advertising, 1000baseX_Full))) {
-			memcpy(&temp_ks, cmd, sizeof(struct ethtool_link_ksettings));
-
-			if (ethtool_link_ksettings_test_link_mode(cmd,
-								  advertising, 1000baseT_Full)) {
-				ethtool_link_ksettings_add_link_mode(&temp_ks,
-								     supported, 1000baseT_Full);
-				ethtool_link_ksettings_del_link_mode(&temp_ks,
-								     supported, 1000baseKX_Full);
-			}
-
-			if (!bitmap_subset(cmd->link_modes.advertising,
-					   temp_ks.link_modes.supported,
-					   __ETHTOOL_LINK_MODE_MASK_NBITS))
-				return -EINVAL;
-
-			old = hw->phy.autoneg_advertised;
-			advertised = 0;
-
-			if (ethtool_link_ksettings_test_link_mode(cmd, advertising,
-								  1000baseX_Full) ||
-			    ethtool_link_ksettings_test_link_mode(cmd, advertising, 1000baseT_Full))
-				advertised |= TXGBE_LINK_SPEED_1GB_FULL;
-
-			if (advertised == TXGBE_LINK_SPEED_1GB_FULL) {
-				curr_autoneg = txgbe_rd32_epcs(hw, TXGBE_SR_MII_MMD_CTL);
-				curr_autoneg = !!(curr_autoneg & (0x1 << 12));
-			}
-			if (old == advertised && (curr_autoneg == !!cmd->base.autoneg))
-				return -EINVAL;
-			/* this sets the link speed and restarts auto-neg */
-			while (test_and_set_bit(__TXGBE_IN_SFP_INIT, &adapter->state))
-				usleep_range(1000, 2000);
-
-			adapter->autoneg = cmd->base.autoneg ? 1 : 0;
-			hw->mac.autotry_restart = true;
-			err = hw->mac.ops.setup_link(hw, advertised, true);
-			if (err) {
-				e_info(probe, "setup link failed with code %d\n", err);
-				hw->mac.ops.setup_link(hw, old, true);
-			}
-			if ((hw->subsystem_device_id & TXGBE_NCSI_MASK) == TXGBE_NCSI_SUP)
-				if (hw->mac.ops.flap_tx_laser)
-					hw->mac.ops.flap_tx_laser(hw);
-
-			/* notify fw autoneg status */
-			txgbe_hic_write_autoneg_status(hw, cmd->base.autoneg);
-
-			clear_bit(__TXGBE_IN_SFP_INIT, &adapter->state);
-		}
-		adapter->autoneg = cmd->base.autoneg ? 1 : 0;
 	}
-	if (err)
-		return -EINVAL;
-out:
-	return err;
+
+	if (advertised == TXGBE_LINK_SPEED_1GB_FULL) {
+		curr_autoneg = txgbe_rd32_epcs(hw, TXGBE_SR_MII_MMD_CTL);
+		curr_autoneg = !!(curr_autoneg & (0x1 << 12));
+	}
+
+	if (old == advertised && (curr_autoneg == !!ks->base.autoneg)) {
+		hw_info(hw, "Already in advertised : %x - autoneg : %x\n",
+			advertised, curr_autoneg);
+		return 0;
+	}
+
+	while (test_and_set_bit(__TXGBE_IN_SFP_INIT, &adapter->state))
+		usleep_range(1000, 2000);
+	hw->mac.autotry_restart = true;
+
+	adapter->autoneg = ks->base.autoneg;
+	adapter->backplane_an = ks->base.autoneg;
+
+	err = hw->mac.ops.setup_link(hw, advertised, true);
+	if (err) {
+		e_info(probe, "setup link failed with code %d\n", err);
+		adapter->autoneg = curr_autoneg;
+		adapter->backplane_an = curr_autoneg;
+		hw->mac.ops.setup_link(hw, old, true);
+		goto err_set;
+	}
+
+	hw->mac.orig_link_settings_stored = true;
+	hw->phy.link_info.req_speeds = advertised;
+
+	/* notify fw autoneg status */
+	txgbe_hic_write_autoneg_status(hw, ks->base.autoneg);
+
+err_set:
+	if (hw->mac.ops.flap_tx_laser)
+		hw->mac.ops.flap_tx_laser(hw);
+	clear_bit(__TXGBE_IN_SFP_INIT, &adapter->state);
+	return 0;
 }
 
 static int txgbe_get_fec_param(struct net_device *netdev,
@@ -933,11 +747,11 @@ static int txgbe_get_fec_param(struct net_device *netdev,
 	if (supported_link == TXGBE_LINK_SPEED_10GB_FULL) {
 		fecparam->fec |= ETHTOOL_FEC_OFF;
 	} else {
-		if (adapter->fec_link_mode == TXGBE_PHY_FEC_AUTO)
+		if (hw->phy.curr_user_fec_req == TXGBE_PHY_FEC_AUTO)
 			fecparam->fec |= ETHTOOL_FEC_AUTO;
-		else if (adapter->fec_link_mode & TXGBE_PHY_FEC_BASER)
+		else if (hw->phy.curr_user_fec_req & TXGBE_PHY_FEC_BASER)
 			fecparam->fec |= ETHTOOL_FEC_BASER;
-		else if (adapter->fec_link_mode & TXGBE_PHY_FEC_RS)
+		else if (hw->phy.curr_user_fec_req & TXGBE_PHY_FEC_RS)
 			fecparam->fec |= ETHTOOL_FEC_RS;
 		else
 			fecparam->fec |= ETHTOOL_FEC_OFF;
@@ -974,7 +788,7 @@ static int txgbe_set_fec_param(struct net_device *netdev,
 	int err = 0;
 	struct txgbe_adapter *adapter = netdev_priv(netdev);
 	struct txgbe_hw *hw = &adapter->hw;
-	u8 cur_fec_mode = adapter->fec_link_mode;
+	u8 cur_fec_mode = hw->phy.curr_user_fec_req;
 	bool autoneg = false;
 	u32 supported_link = 0;
 
@@ -987,17 +801,17 @@ static int txgbe_set_fec_param(struct net_device *netdev,
 
 	switch (fecparam->fec) {
 	case ETHTOOL_FEC_AUTO:
-		adapter->fec_link_mode = TXGBE_PHY_FEC_AUTO;
+		hw->phy.curr_user_fec_req = TXGBE_PHY_FEC_AUTO;
 		break;
 	case ETHTOOL_FEC_BASER:
-		adapter->fec_link_mode = TXGBE_PHY_FEC_BASER;
+		hw->phy.curr_user_fec_req = TXGBE_PHY_FEC_BASER;
 		break;
 	case ETHTOOL_FEC_OFF:
 	case ETHTOOL_FEC_NONE:
-		adapter->fec_link_mode = TXGBE_PHY_FEC_OFF;
+		hw->phy.curr_user_fec_req = TXGBE_PHY_FEC_OFF;
 		break;
 	case ETHTOOL_FEC_RS:
-		adapter->fec_link_mode = TXGBE_PHY_FEC_RS;
+		hw->phy.curr_user_fec_req = TXGBE_PHY_FEC_RS;
 		break;
 	default:
 		e_warn(drv, "Unsupported FEC mode: %d",
@@ -1005,7 +819,7 @@ static int txgbe_set_fec_param(struct net_device *netdev,
 		err = -EINVAL;
 		goto done;
 	}
-	if (cur_fec_mode != adapter->fec_link_mode) {
+	if (cur_fec_mode != hw->phy.curr_user_fec_req) {
 		int status, i;
 		u32 link_speed = TXGBE_LINK_SPEED_UNKNOWN;
 		bool link_up = false;
@@ -1014,7 +828,7 @@ static int txgbe_set_fec_param(struct net_device *netdev,
 		    (hw->phy.autoneg_advertised ==
 			(TXGBE_LINK_SPEED_10GB_FULL |
 				TXGBE_LINK_SPEED_25GB_FULL)) &&
-		    adapter->fec_link_mode != TXGBE_PHY_FEC_AUTO) {
+		    hw->phy.curr_user_fec_req != TXGBE_PHY_FEC_AUTO) {
 			while (test_and_set_bit(__TXGBE_IN_SFP_INIT, &adapter->state))
 				usleep_range(1000, 2000);
 			status = hw->mac.ops.setup_mac_link(hw,
@@ -4766,8 +4580,8 @@ static int txgbe_get_module_eeprom_by_page(struct net_device *netdev,
 	if (!test_bit(TXGBE_FLAG_FW_CONTROL_PHY, adapter->flag))
 		return -EOPNOTSUPP;
 
-	buffer.length = (__force u32)cpu_to_be32(page_data->length);
-	buffer.offset = (__force u32)cpu_to_be32(page_data->offset);
+	buffer.length = cpu_to_be32(page_data->length);
+	buffer.offset = cpu_to_be32(page_data->offset);
 	buffer.page = page_data->page;
 	buffer.bank = page_data->bank;
 	buffer.i2c_address = page_data->i2c_address;

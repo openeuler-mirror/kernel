@@ -8,6 +8,43 @@
 #include "txgbe_mng_phy.h"
 
 /**
+ *  txgbe_reset_hw_aml40 - Perform hardware reset
+ *  @hw: pointer to hardware structure
+ *
+ *  Resets the hardware by resetting the transmit and receive units, masks
+ *  and clears all interrupts, perform a PHY reset, and perform a link (MAC)
+ *  reset.
+ **/
+static int txgbe_reset_hw_aml40(struct txgbe_hw *hw)
+{
+	struct txgbe_adapter *adapter = hw->back;
+	int ret;
+
+	/* take driver control when do reset */
+	txgbe_get_hw_control(adapter);
+
+	ret = txgbe_reset_hw_generic(hw);
+	if (ret)
+		goto out;
+
+	/* special mac and link configure for aml. */
+	wr32(hw, TXGBE_LINKUP_FILTER, TXGBE_LINKUP_FILTER_TIME);
+	wr32m(hw, TXGBE_MAC_MISC_CTL, TXGBE_MAC_MISC_LINK_STS_MOD,
+	      TXGBE_LINK_BOTH_PCS_MAC);
+	/* amlite: bme */
+	wr32(hw, PX_PF_BME, 0x1);
+	/* amlite: rdm_rsc_ctl_free_ctl set to 1 */
+	wr32m(hw, TXGBE_RDM_RSC_CTL, TXGBE_RDM_RSC_CTL_FREE_CTL,
+	      TXGBE_RDM_RSC_CTL_FREE_CTL);
+	adapter->an_done = false;
+	adapter->cur_fec_link = TXGBE_PHY_FEC_AUTO;
+
+out:
+	txgbe_release_hw_control(adapter);
+	return ret;
+}
+
+/**
  *  txgbe_get_media_type_aml40 - Get media type
  *  @hw: pointer to hardware structure
  *
@@ -143,7 +180,8 @@ static int txgbe_get_link_capabilities_aml40(struct txgbe_hw *hw, u32 *speed,
 			*autoneg = false;
 		} else {
 			/* no i2c or get unsupport qsfp */
-			*speed = TXGBE_LINK_SPEED_40GB_FULL;
+			*speed = TXGBE_LINK_SPEED_40GB_FULL |
+				 TXGBE_LINK_SPEED_10GB_FULL;
 			*autoneg = false;
 		}
 	} else if (txgbe_is_backplane(hw)) {
@@ -206,22 +244,33 @@ static int txgbe_check_mac_link_aml40(struct txgbe_hw *hw, u32 *speed,
 			*link_up = false;
 	}
 
-	if (!adapter->link_valid)
-		*link_up = false;
+	if ((links_reg & TXGBE_CFG_PORT_ST_AML_LINK_40G) ==
+	    TXGBE_CFG_PORT_ST_AML_LINK_40G)
+		*speed = TXGBE_LINK_SPEED_40GB_FULL;
+	else if ((links_reg & TXGBE_CFG_PORT_ST_AML_LINK_25G) ==
+		 TXGBE_CFG_PORT_ST_AML_LINK_25G)
+		*speed = TXGBE_LINK_SPEED_25GB_FULL;
+	else if ((links_reg & TXGBE_CFG_PORT_ST_AML_LINK_10G) ==
+		 TXGBE_CFG_PORT_ST_AML_LINK_10G)
+		*speed = TXGBE_LINK_SPEED_10GB_FULL;
+	else
+		*speed = TXGBE_LINK_SPEED_UNKNOWN;
 
-	if (*link_up) {
-		if ((links_reg & TXGBE_CFG_PORT_ST_AML_LINK_40G) ==
-				TXGBE_CFG_PORT_ST_AML_LINK_40G)
-			*speed = TXGBE_LINK_SPEED_40GB_FULL;
-	} else {
+	if (!adapter->link_valid) {
+		*link_up = false;
 		*speed = TXGBE_LINK_SPEED_UNKNOWN;
 	}
 
-	if (txgbe_xpcs_an_enabled(hw)) {
-		if (!adapter->an_done) {
-			*link_up = false;
-			*speed = TXGBE_LINK_SPEED_UNKNOWN;
-		}
+	/* When fw control phy, check an_done after maclink in watchdog_is_up */
+	if (test_bit(TXGBE_FLAG_FW_CONTROL_PHY, adapter->flag))
+		return 0;
+
+	if (!txgbe_xpcs_an_enabled(hw))
+		return 0;
+
+	if (!adapter->an_done) {
+		*link_up = false;
+		*speed = TXGBE_LINK_SPEED_UNKNOWN;
 	}
 
 	return 0;
@@ -279,7 +328,7 @@ init_phy_ops_out:
 static const struct txgbe_mac_operations mac_ops_aml40 = {
 	/* MAC */
 	.init_hw		= &txgbe_init_hw,
-	.reset_hw		= &txgbe_reset_hw,
+	.reset_hw		= &txgbe_reset_hw_aml40,
 	.start_hw		= &txgbe_start_hw,
 	.clear_hw_cntrs		= &txgbe_clear_hw_cntrs,
 	.get_media_type		= &txgbe_get_media_type_aml40,
@@ -360,14 +409,17 @@ static int txgbe_get_invariants_aml40(struct txgbe_hw *hw)
 
 	adapter->desc_reserved = DESC_RESERVED_AML;
 	adapter->link_valid = true;
-	adapter->fec_link_mode = TXGBE_PHY_FEC_AUTO;
 	adapter->cur_fec_link = TXGBE_PHY_FEC_AUTO;
+
+	hw->phy.curr_user_fec_req = TXGBE_PHY_FEC_AUTO;
+	hw->phy.link_fec_options = TXGBE_PHY_FEC_10G_KR_40G_KR4_EN |
+				   TXGBE_PHY_FEC_10G_KR_40G_KR4_REQ;
 
 	return ret;
 }
 
 const struct txgbe_info txgbe_aml40_info = {
-	.mac			= txgbe_mac_aml,
+	.mac			= txgbe_mac_aml40,
 	.get_invariants		= &txgbe_get_invariants_aml40,
 	.mac_ops		= &mac_ops_aml40,
 	.phy_ops		= &phy_ops_aml40,

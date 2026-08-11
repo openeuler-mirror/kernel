@@ -30,7 +30,6 @@ static int txgbe_get_module_info_hostif(struct txgbe_hw *hw,
 
 int txgbe_set_phy_link_hostif(struct txgbe_hw *hw, int speed, bool autoneg, u8 duplex)
 {
-	struct txgbe_adapter *adapter = hw->back;
 	struct txgbe_hic_ephy_setlink buffer;
 
 	buffer.hdr.cmd = FW_PHY_CONFIG_LINK_CMD;
@@ -38,10 +37,12 @@ int txgbe_set_phy_link_hostif(struct txgbe_hw *hw, int speed, bool autoneg, u8 d
 			     sizeof(struct txgbe_hic_hdr);
 	buffer.hdr.cmd_or_resp.cmd_resv = FW_CEM_CMD_RESERVED;
 
-	buffer.fec_mode = adapter->fec_link_mode;
+	buffer.fec_mode = hw->phy.curr_user_fec_req;
 	buffer.speed = speed;
 	buffer.autoneg = autoneg;
 	buffer.duplex = duplex;
+	hw_info(hw, "[fw] Setting link speed to 0x%x, autoneg %s, fec 0x%x.\n",
+		speed, autoneg ? "enabled" : "disabled", buffer.fec_mode);
 
 	return txgbe_host_interface_command(hw, (u32 *)&buffer,
 					    sizeof(struct txgbe_hic_ephy_setlink),
@@ -62,7 +63,8 @@ int txgbe_test_phy_status_hostif(struct txgbe_hw *hw)
 					    TXGBE_HI_COMMAND_TIMEOUT_SHORT, true);
 }
 
-int txgbe_get_phy_status_hostif(struct txgbe_hw *hw, struct txgbe_hic_ephy_status *buffer)
+static int txgbe_get_phy_status_hostif(struct txgbe_hw *hw,
+				       struct txgbe_hic_ephy_status *buffer)
 {
 	buffer->hdr.cmd = FW_PHY_CONFIG_READ_CMD;
 	buffer->hdr.buf_len = sizeof(struct txgbe_hic_ephy_status) -
@@ -74,11 +76,25 @@ int txgbe_get_phy_status_hostif(struct txgbe_hw *hw, struct txgbe_hic_ephy_statu
 					    TXGBE_HI_COMMAND_TIMEOUT_SHORT, true);
 }
 
-int txgbe_get_cur_fec_mode_mbx(struct txgbe_hw *hw)
+int txgbe_get_link_info_mbx(struct txgbe_hw *hw)
 {
+	struct txgbe_adapter *adapter = hw->back;
 	struct txgbe_hic_ephy_status buffer;
+	int ret;
 
-	return txgbe_get_phy_status_hostif(hw, &buffer);
+	ret = txgbe_get_phy_status_hostif(hw, &buffer);
+	if (ret) {
+		hw_info(hw, "Failed to get link info, ret=%d\n", ret);
+		return ret;
+	}
+
+	/* speed can read from mac, duplex can ignore */
+	/* just printf autoneg and flow_ctl*/
+	hw->bypass_ctle = buffer.bypassctle;
+	adapter->cur_fec_link = buffer.fec_mode;
+	adapter->an_done = buffer.an_done;
+
+	return 0;
 }
 
 int txgbe_set_phy_fc_hostif(struct txgbe_hw *hw, u8 fc)
@@ -131,14 +147,8 @@ int txgbe_read_eeprom_i2c_hostif(struct txgbe_hw *hw,
 				 struct txgbe_hic_i2c_read *buffer,
 				 u32 length, u8 *data)
 {
-	u32 buf_size = sizeof(struct txgbe_hic_i2c_read) - sizeof(u8);
-	u32 total_len = buf_size + length;
-	u8 local_data[256] = {0};
-	u32 dword_len, value, i;
-	int ret = 0;
-
-	if (total_len > sizeof(local_data))
-		return -EINVAL;
+	u32 dword_len, offset, value, i;
+	int ret;
 
 	buffer->hdr.cmd = FW_READ_EEPROM_I2C_CMD;
 	buffer->hdr.buf_len = sizeof(struct txgbe_hic_i2c_read) -
@@ -147,19 +157,22 @@ int txgbe_read_eeprom_i2c_hostif(struct txgbe_hw *hw,
 
 	ret = txgbe_host_interface_command(hw, (u32 *)buffer,
 					   sizeof(struct txgbe_hic_i2c_read),
-					   TXGBE_HI_COMMAND_TIMEOUT_SHORT, false);
+					   TXGBE_HI_COMMAND_TIMEOUT_SHORT,
+					   false);
 	if (ret)
 		return ret;
 
-	dword_len = (total_len + 3) / 4;
+	/* buffer length offset to read return data */
+	offset = sizeof(struct txgbe_hic_i2c_read) >> 2;
+	dword_len = round_up(length, 4) >> 2;
 
 	for (i = 0; i < dword_len; i++) {
-		value = rd32a(hw, TXGBE_AML_MNG_MBOX_FW2SW, i);
+		value = rd32a(hw, TXGBE_AML_MNG_MBOX_FW2SW, i + offset);
 		le32_to_cpus(&value);
 
-		memcpy(&local_data[i * 4], &value, 4);
+		memcpy(data, &value, 4);
+		data += 4;
 	}
-	memcpy(data, &local_data[buf_size], length);
 
 	return 0;
 }
@@ -248,12 +261,6 @@ static int txgbe_identify_sfp_module_hostif(struct txgbe_hw *hw)
 				} else {
 					hw->phy.fiber_suppport_speed |=
 						TXGBE_LINK_SPEED_10GB_FULL;
-				}
-				if (!AUTO) {
-					if (hw->bus.lan_id == 0)
-						hw->phy.sfp_type = txgbe_sfp_type_25g_sr_core0;
-					else
-						hw->phy.sfp_type = txgbe_sfp_type_25g_sr_core1;
 				}
 
 			} else if (cable_tech & TXGBE_SFF_DA_ACTIVE_CABLE) {
@@ -344,7 +351,7 @@ err_read_i2c_eeprom:
  **/
 static int txgbe_identify_qsfp_module_hostif(struct txgbe_hw *hw)
 {
-	u8 identifier = 0, comp_codes_1g = 0, comp_codes_10g = 0;
+	u8 identifier = 0, comp_codes_1g = 0, comp_codes_10g = 0, sff_opt1 = 0;
 	u8 comp_codes_25g = 0, cable_tech = 0, cable_spec = 0;
 	int ret = 0, status = 0;
 	struct txgbe_hic_get_sfp_info buffer;
@@ -377,12 +384,14 @@ static int txgbe_identify_qsfp_module_hostif(struct txgbe_hw *hw)
 	cable_spec = buffer.cable_spec;
 	cable_tech = buffer.cable_tech;
 	transceiver_type = buffer.transceiver_type;
+	sff_opt1 = buffer.sff_opt1;
 
 	if (ret)
 		goto err_read_i2c_eeprom;
 
 	if (identifier == TXGBE_SFF_IDENTIFIER_QSFP ||
-		identifier == TXGBE_SFF_IDENTIFIER_QSFP_PLUS) {
+	    identifier == TXGBE_SFF_IDENTIFIER_QSFP_PLUS ||
+	    identifier == TXGBE_SFF_IDENTIFIER_QSFP28) {
 		hw->phy.type = txgbe_phy_sfp_unknown;
 
 		if (transceiver_type & TXGBE_SFF_ETHERNET_40G_CR4) {
@@ -393,13 +402,6 @@ static int txgbe_identify_qsfp_module_hostif(struct txgbe_hw *hw)
 			hw->phy.fiber_suppport_speed =
 						TXGBE_LINK_SPEED_40GB_FULL |
 						TXGBE_LINK_SPEED_10GB_FULL;
-
-			if (!AUTO) {
-				if (hw->bus.lan_id == 0)
-					hw->phy.sfp_type = txgbe_qsfp_type_40g_sr_core0;
-				else
-					hw->phy.sfp_type = txgbe_qsfp_type_40g_sr_core1;
-			}
 		}
 
 		if (transceiver_type & TXGBE_SFF_ETHERNET_40G_SR4) {
@@ -422,6 +424,25 @@ static int txgbe_identify_qsfp_module_hostif(struct txgbe_hw *hw)
 			else
 				hw->phy.sfp_type = txgbe_qsfp_type_40g_active_core1;
 		}
+
+		if (transceiver_type & TXGBE_SFF_ETHERNET_RSRVD) {
+			if (sff_opt1 == TXGBE_SFF_ETHERNET_100G_CR4) {
+				if (hw->bus.lan_id == 0)
+					hw->phy.sfp_type = txgbe_qsfp_type_40g_cu_core0;
+				else
+					hw->phy.sfp_type = txgbe_qsfp_type_40g_cu_core1;
+				hw->phy.fiber_suppport_speed =
+							TXGBE_LINK_SPEED_40GB_FULL |
+							TXGBE_LINK_SPEED_25GB_FULL |
+							TXGBE_LINK_SPEED_10GB_FULL;
+			} else {
+				if (hw->bus.lan_id == 0)
+					hw->phy.sfp_type = txgbe_qsfp_type_40g_sr_core0;
+				else
+					hw->phy.sfp_type = txgbe_qsfp_type_40g_sr_core1;
+			}
+		}
+
 	} else {
 		hw->phy.type = txgbe_phy_sfp_unsupported;
 		status = TXGBE_ERR_SFP_NOT_SUPPORTED;

@@ -2009,7 +2009,7 @@ static int setphylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 		break;
 	}
 
-	adapter->curbp_link_mode = bplinkmode;
+	adapter->bp_link_mode = bplinkmode;
 	/* To switch to the 40G mode Ethernet operation, complete the following steps:*/
 	/* 1. Initiate the vendor-specific software reset by programming
 	 * the VR_RST field (bit [15]) of the VR_PCS_DIG_CTRL1 register to 1.
@@ -2219,7 +2219,7 @@ int txgbe_e56_set_phylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 	}
 
 	adapter->an_done = false;
-	if (adapter->curbp_link_mode == 10)
+	if (adapter->bp_link_mode == 10)
 		return 0;
 	kr_dbg(KR_MODE, "Setup to backplane mode ==========\n");
 
@@ -2493,10 +2493,8 @@ static int txgbe_e56_exchange_page(struct txgbe_adapter *adapter)
 			txgbe_field_set(&rdata, 2, 2, 0x0);
 			txgbe_wr32_epcs(hw, 0x78002, rdata);
 			if (next_page == 0) {
-				if ((fsm & 0x8) == 0x8) {
-					adapter->fsm = 0x8;
+				if ((fsm & 0x8) == 0x8)
 					goto check_ability;
-				}
 			}
 		}
 		usec_delay(100);
@@ -2709,6 +2707,10 @@ static void txgbe_e56_bp_watchdog_event_fw(struct txgbe_adapter *adapter)
 	struct txgbe_hw *hw = &adapter->hw;
 	u32 value = 0;
 
+	/* when an disable just check mac link up is ok */
+	if (!(txgbe_xpcs_an_enabled(hw)))
+		return;
+
 	value = txgbe_rd32_epcs(hw, 0x78002);
 	if (value & TXGBE_PCS_AN_INT_CMPLT) {
 		adapter->an_done = true;
@@ -2718,9 +2720,9 @@ static void txgbe_e56_bp_watchdog_event_fw(struct txgbe_adapter *adapter)
 	if (value & TXGBE_PCS_AN_TXDIS)
 		adapter->an_done = false;
 
-	kr_dbg(KR_MODE, "RLU:%x-%x MLU:%x INT:%x an_done:%d by:%d\n",
-	       txgbe_rd32_epcs(hw, 0x30001), txgbe_rd32_epcs(hw, 0x30001),
-	       rd32(hw, 0x14404), value, adapter->an_done, hw->bypass_ctle);
+	kr_dbg(KR_MODE, "RLU:%x MLU:%x INT:%x AN_CTL:%x an_done:%d by:%d\n",
+	       txgbe_rd32_epcs(hw, 0x30001), rd32(hw, 0x14404), value,
+	       txgbe_rd32_epcs(hw, 0x70000), adapter->an_done, hw->bypass_ctle);
 }
 
 void txgbe_e56_bp_watchdog_event(struct txgbe_adapter *adapter)
@@ -2791,6 +2793,8 @@ an_status:
 	if (an_int1 & TXGBE_PCS_AN_INT_CMPLT) {
 		adapter->an_done = true;
 		adapter->flags |= TXGBE_FLAG_NEED_LINK_UPDATE;
+		txgbe_field_set(&an_int1, 0, 0, 0);
+		txgbe_wr32_epcs(hw, 0x78002, an_int1);
 	}
 	kr_dbg(KR_MODE,
 	       "RLU:%x-%x Link_s:%x MLU:%x INT:%x-%x CTL:%x fsm:%x pmd_cfg0:%x an_done:%d by:%d\n",

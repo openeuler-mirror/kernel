@@ -1446,7 +1446,7 @@ static void txgbe_ping_vf_with_link_status(struct txgbe_adapter *adapter, bool l
 		return;
 
 	msgbuf[0] = TXGBE_PF_NOFITY_VF_LINK_STATUS | TXGBE_PF_CONTROL_MSG;
-	msgbuf[1] = (adapter->speed << 1) | link_up;
+	msgbuf[1] = (hw->phy.link_info.link_speed << 1) | link_up;
 	//if (adapter->notify_down)
 	//	msgbuf[1] |= TXGBE_PF_NOFITY_VF_NET_NOT_RUNNING;
 	if (adapter->vfinfo[vf].clear_to_send)
@@ -1465,7 +1465,7 @@ void txgbe_ping_all_vfs_with_link_status(struct txgbe_adapter *adapter, bool lin
 
 	msgbuf[0] = TXGBE_PF_NOFITY_VF_LINK_STATUS | TXGBE_PF_CONTROL_MSG;
 	if (link_up)
-		msgbuf[1] = (adapter->speed << 1) | link_up;
+		msgbuf[1] = (hw->phy.link_info.link_speed << 1) | link_up;
 	//if (adapter->notify_down)
 	//	msgbuf[1] |= TXGBE_PF_NOFITY_VF_NET_NOT_RUNNING;
 	for (i = 0 ; i < adapter->num_vfs; i++) {

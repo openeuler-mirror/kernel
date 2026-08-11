@@ -2865,13 +2865,6 @@ static int txgbe_e56_rxs_calib_adapt_seq(struct txgbe_hw *hw, u32 speed)
 	if (txgbe_is_dac_cable(hw))
 		bypass_ctle = false;
 
-	if (hw->mac.type == txgbe_mac_aml) {
-		msleep(350);
-		if (txgbe_gpio_ext_check(hw, TXGBE_SFP1_MOD_ABS_LS |
-					 TXGBE_SFP1_RX_LOS_LS))
-			return TXGBE_ERR_PHY_INIT_NOT_DONE;
-	}
-
 	rdata = 0x0000;
 	addr = E56PHY_RXS0_OVRDVAL_1_ADDR;
 	rdata = rd32_ephy(hw, addr);
@@ -3621,9 +3614,9 @@ int txgbe_set_link_to_amlite(struct txgbe_hw *hw, u32 speed)
 
 	txgbe_e56_clear_symdata(hw);
 
-	if (adapter->fec_link_mode != TXGBE_PHY_FEC_AUTO &&
+	if (hw->phy.curr_user_fec_req != TXGBE_PHY_FEC_AUTO &&
 	    speed == TXGBE_LINK_SPEED_25GB_FULL) {
-		adapter->cur_fec_link = adapter->fec_link_mode;
+		adapter->cur_fec_link = hw->phy.curr_user_fec_req;
 		txgbe_e56_set_fec_mode(hw, adapter->cur_fec_link);
 	}
 
@@ -3683,12 +3676,12 @@ int txgbe_e56_fec_mode_polling(struct txgbe_hw *hw, bool *link_up)
 	u32 speed;
 
 	do {
-		if (!(adapter->fec_link_mode & BIT(j % 3))) {
+		if (!(hw->phy.curr_user_fec_req & BIT(j % 3))) {
 			j += 1;
 			continue;
 		}
 
-		adapter->cur_fec_link = adapter->fec_link_mode & BIT(j % 3);
+		adapter->cur_fec_link = hw->phy.curr_user_fec_req & BIT(j % 3);
 
 		mutex_lock(&adapter->e56_lock);
 		txgbe_e56_set_fec_mode(hw, adapter->cur_fec_link);

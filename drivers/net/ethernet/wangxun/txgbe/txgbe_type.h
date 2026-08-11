@@ -3196,8 +3196,42 @@ struct txgbe_mac_info {
 	bool autoneg;
 };
 
+struct txgbe_link_status {
+	u16 link_speed;
+	u16 req_speeds;
+	u8 link_cfg_err;
+	u8 lse_ena;	/* Link Status Event notification */
+	u8 link_info;
+#define TXGBE_PHY_LINK_UP			BIT(0)	/* Link Status */
+	u8 an_info;
+	u8 fec_info;
+};
+
+enum txgbe_fec_mode {
+	TXGBE_FEC_NONE = 0,
+	TXGBE_FEC_RS,
+	TXGBE_FEC_BASER,
+	TXGBE_FEC_AUTO
+};
+
+#define TXGBE_PHY_FEC_RS	(1U)
+#define TXGBE_PHY_FEC_BASER	BIT(1)
+#define TXGBE_PHY_FEC_OFF	BIT(2)
+#define TXGBE_PHY_FEC_AUTO (TXGBE_PHY_FEC_OFF | TXGBE_PHY_FEC_BASER |\
+			   TXGBE_PHY_FEC_RS)
+
 struct txgbe_phy_info {
 	struct txgbe_phy_operations ops;
+	struct txgbe_link_status link_info;
+	struct txgbe_link_status link_info_old;
+	enum txgbe_fec_mode curr_user_fec_req;
+	u8 link_fec_options;
+#define TXGBE_PHY_FEC_10G_KR_40G_KR4_EN		BIT(0)
+#define TXGBE_PHY_FEC_10G_KR_40G_KR4_REQ	BIT(1)
+#define TXGBE_PHY_FEC_25G_RS_528_REQ		BIT(2)
+#define TXGBE_PHY_FEC_25G_KR_REQ		BIT(3)
+#define TXGBE_PHY_FEC_25G_KR_CLAUSE74_EN	BIT(4)
+#define TXGBE_PHY_FEC_25G_RS_CLAUSE91_EN	BIT(5)
 	enum txgbe_phy_type type;
 	u32 addr;
 	u32 id;
@@ -3262,7 +3296,7 @@ enum txgbe_reset_type {
 	TXGBE_GLOBAL_RESET
 };
 
-enum txgbe_link_status {
+enum txgbe_link_layer_status {
 	TXGBE_LINK_STATUS_NONE = 0,
 	TXGBE_LINK_STATUS_KX,
 	TXGBE_LINK_STATUS_KX4
@@ -3292,7 +3326,7 @@ struct txgbe_hw {
 	bool wol_enabled;
 	bool fdir_enabled;
 	struct mtd_dev phy_dev;
-	enum txgbe_link_status link_status;
+	enum txgbe_link_layer_status link_status;
 	u16 tpid[8];
 	u16 oem_ssid;
 	u16 oem_svid;

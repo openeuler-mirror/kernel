@@ -4,6 +4,78 @@
 #include "txgbe_phy.h"
 #include "txgbe_sp.h"
 
+/**
+ *  txgbe_reset_hw_sp - Perform hardware reset
+ *  @hw: pointer to hardware structure
+ *
+ *  Resets the hardware by resetting the transmit and receive units, masks
+ *  and clears all interrupts, perform a PHY reset, and perform a link (MAC)
+ *  reset.
+ **/
+static int txgbe_reset_hw_sp(struct txgbe_hw *hw)
+{
+	u32 sr_an_mmd_ctl, sr_an_mmd_adv_reg2, sr_pcs_ctl, sr_pma_mmd_ctl1;
+	u32 curr_sr_an_mmd_ctl, curr_sr_an_mmd_adv_reg2;
+	u32 curr_sr_pcs_ctl, curr_sr_pma_mmd_ctl1;
+	struct txgbe_adapter *adapter = hw->back;
+	u32 curr_vr_xs_or_pcs_mmd_digi_ctl1;
+	u32 vr_xs_or_pcs_mmd_digi_ctl1;
+	int ret;
+
+	/* remember internal phy regs from before we reset */
+	curr_sr_pcs_ctl = txgbe_rd32_epcs(hw, TXGBE_SR_PCS_CTL2);
+	curr_sr_pma_mmd_ctl1 = txgbe_rd32_epcs(hw, TXGBE_SR_PMA_MMD_CTL1);
+	curr_sr_an_mmd_ctl = txgbe_rd32_epcs(hw, TXGBE_SR_AN_MMD_CTL);
+	curr_sr_an_mmd_adv_reg2 = txgbe_rd32_epcs(hw, TXGBE_SR_AN_MMD_ADV_REG2);
+	curr_vr_xs_or_pcs_mmd_digi_ctl1 =
+			txgbe_rd32_epcs(hw, TXGBE_VR_XS_OR_PCS_MMD_DIGI_CTL1);
+
+	ret = txgbe_reset_hw_generic(hw);
+	if (ret)
+		return ret;
+
+	adapter->an_done = false;
+	/* Store the original AUTOC/AUTOC2 values if they have not been
+	 * stored off yet.  Otherwise restore the stored original
+	 * values since the reset operation sets back to defaults.
+	 */
+	sr_pcs_ctl = txgbe_rd32_epcs(hw, TXGBE_SR_PCS_CTL2);
+	sr_pma_mmd_ctl1 = txgbe_rd32_epcs(hw, TXGBE_SR_PMA_MMD_CTL1);
+	sr_an_mmd_ctl = txgbe_rd32_epcs(hw, TXGBE_SR_AN_MMD_CTL);
+	sr_an_mmd_adv_reg2 = txgbe_rd32_epcs(hw, TXGBE_SR_AN_MMD_ADV_REG2);
+	vr_xs_or_pcs_mmd_digi_ctl1 =
+			txgbe_rd32_epcs(hw, TXGBE_VR_XS_OR_PCS_MMD_DIGI_CTL1);
+
+	if (!hw->mac.orig_link_settings_stored) {
+		hw->mac.orig_sr_pcs_ctl2 = sr_pcs_ctl;
+		hw->mac.orig_sr_pma_mmd_ctl1 = sr_pma_mmd_ctl1;
+		hw->mac.orig_sr_an_mmd_ctl = sr_an_mmd_ctl;
+		hw->mac.orig_sr_an_mmd_adv_reg2 = sr_an_mmd_adv_reg2;
+		hw->mac.orig_vr_xs_or_pcs_mmd_digi_ctl1 =
+						vr_xs_or_pcs_mmd_digi_ctl1;
+		hw->mac.orig_link_settings_stored = true;
+	} else {
+		/* If MNG FW is running on a multi-speed device that
+		 * doesn't autoneg with out driver support we need to
+		 * leave LMS in the state it was before we MAC reset.
+		 * Likewise if we support WoL we don't want change the
+		 * LMS state.
+		 */
+
+		hw->mac.orig_sr_pcs_ctl2 = curr_sr_pcs_ctl;
+		hw->mac.orig_sr_pma_mmd_ctl1 = curr_sr_pma_mmd_ctl1;
+		hw->mac.orig_sr_an_mmd_ctl = curr_sr_an_mmd_ctl;
+		hw->mac.orig_sr_an_mmd_adv_reg2 = curr_sr_an_mmd_adv_reg2;
+		hw->mac.orig_vr_xs_or_pcs_mmd_digi_ctl1 =
+						curr_vr_xs_or_pcs_mmd_digi_ctl1;
+	}
+	/*make sure phy power is up*/
+	msleep(100);
+	txgbe_xpcs_txffe_set(adapter);
+
+	return 0;
+}
+
 int txgbe_set_sgmii_an37_ability(struct txgbe_hw *hw)
 {
 	u32 value;
@@ -1232,7 +1304,7 @@ static int txgbe_setup_sfp_modules_sp(struct txgbe_hw *hw)
 static const struct txgbe_mac_operations mac_ops_sp = {
 	/* MAC */
 	.init_hw		= &txgbe_init_hw,
-	.reset_hw		= &txgbe_reset_hw,
+	.reset_hw		= &txgbe_reset_hw_sp,
 	.start_hw		= &txgbe_start_hw,
 	.clear_hw_cntrs		= &txgbe_clear_hw_cntrs,
 	.get_media_type		= &txgbe_get_media_type_sp,
@@ -1312,6 +1384,11 @@ static int txgbe_get_invariants_sp(struct txgbe_hw *hw)
 	hw->mac.orig_link_settings_stored = false;
 
 	adapter->desc_reserved = DESC_RESERVED;
+
+	adapter->cur_fec_link = TXGBE_PHY_FEC_AUTO;
+	hw->phy.curr_user_fec_req = TXGBE_PHY_FEC_AUTO;
+	hw->phy.link_fec_options = TXGBE_PHY_FEC_10G_KR_40G_KR4_EN |
+				   TXGBE_PHY_FEC_10G_KR_40G_KR4_REQ;
 
 	return ret;
 }

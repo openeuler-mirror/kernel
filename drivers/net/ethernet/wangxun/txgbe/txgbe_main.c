@@ -350,20 +350,6 @@ u32 txgbe_read_reg(struct txgbe_hw *hw, u32 reg, bool quiet)
 	return value;
 }
 
-static void txgbe_release_hw_control(struct txgbe_adapter *adapter)
-{
-	/* Let firmware take over control of h/w */
-	wr32m(&adapter->hw, TXGBE_CFG_PORT_CTL,
-	      TXGBE_CFG_PORT_CTL_DRV_LOAD, 0);
-}
-
-static void txgbe_get_hw_control(struct txgbe_adapter *adapter)
-{
-	/* Let firmware know the driver has taken over */
-	wr32m(&adapter->hw, TXGBE_CFG_PORT_CTL,
-	      TXGBE_CFG_PORT_CTL_DRV_LOAD, TXGBE_CFG_PORT_CTL_DRV_LOAD);
-}
-
 /**
  * txgbe_set_ivar - set the IVAR registers, mapping interrupt causes to vectors
  * @adapter: pointer to adapter struct
@@ -2442,7 +2428,7 @@ static void txgbe_check_overtemp_subtask(struct txgbe_adapter *adapter)
 	if (value == TXGBE_FAILED_READ_CFG_WORD)
 		return;
 
-	if (!(adapter->flags3 & TXGBE_FLAG3_TEMP_SENSOR_INPROGRESS)) {
+	if (!test_bit(TXGBE_FLAG_TEMP_SENSOR_INPROGRESS, adapter->flag)) {
 		if (!(adapter->flags2 & TXGBE_FLAG2_TEMP_SENSOR_EVENT))
 			return;
 
@@ -2466,8 +2452,8 @@ static void txgbe_check_overtemp_subtask(struct txgbe_adapter *adapter)
 	    test_bit(__TXGBE_HANGING, &adapter->state)) {
 		if (hw->mac.type == txgbe_mac_aml ||
 		    hw->mac.type == txgbe_mac_aml40) {
-			adapter->flags3 &= ~TXGBE_FLAG3_TEMP_SENSOR_INPROGRESS;
-			// re-enable over_heat misx itr
+			clear_bit(TXGBE_FLAG_TEMP_SENSOR_INPROGRESS,
+				  adapter->flag);
 			wr32m(&adapter->hw, TXGBE_PX_MISC_IEN, TXGBE_PX_MISC_IEN_OVER_HEAT,
 			      TXGBE_PX_MISC_IEN_OVER_HEAT);
 		}
@@ -2482,7 +2468,8 @@ static void txgbe_check_overtemp_subtask(struct txgbe_adapter *adapter)
 		!test_and_set_bit(__TXGBE_HANGING, &adapter->state)) {
 		if (hw->mac.type == txgbe_mac_aml ||
 		    hw->mac.type == txgbe_mac_aml40)
-			adapter->flags3 |= TXGBE_FLAG3_TEMP_SENSOR_INPROGRESS;
+			set_bit(TXGBE_FLAG_TEMP_SENSOR_INPROGRESS,
+				adapter->flag);
 		e_crit(drv, "%s\n", txgbe_overheat_msg);
 		netif_carrier_off(adapter->netdev);
 
@@ -2561,7 +2548,7 @@ static void txgbe_check_lsc(struct txgbe_adapter *adapter)
 
 static void txgbe_check_phy_event(struct txgbe_adapter *adapter)
 {
-	adapter->flags3 |= TXGBE_FLAG3_PHY_EVENT;
+	set_bit(TXGBE_FLAG_E56PHY_EVENT, adapter->flag);
 
 	if (!test_bit(__TXGBE_DOWN, &adapter->state))
 		txgbe_service_event_schedule(adapter);
@@ -2585,7 +2572,7 @@ void txgbe_irq_enable(struct txgbe_adapter *adapter, bool queues, bool flush)
 	if (adapter->flags2 & TXGBE_FLAG2_TEMP_SENSOR_CAPABLE)
 		mask |= TXGBE_PX_MISC_IEN_OVER_HEAT;
 
-	if (adapter->flags3 & TXGBE_FLAG3_TEMP_SENSOR_INPROGRESS)
+	if (test_bit(TXGBE_FLAG_TEMP_SENSOR_INPROGRESS, adapter->flag))
 		mask &= ~TXGBE_PX_MISC_IEN_OVER_HEAT;
 
 	if ((adapter->flags & TXGBE_FLAG_FDIR_HASH_CAPABLE) &&
@@ -7036,8 +7023,11 @@ static void txgbe_watchdog_link_is_up(struct txgbe_adapter *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
 	struct txgbe_hw *hw = &adapter->hw;
-	u32 link_speed = adapter->link_speed;
 	bool flow_rx, flow_tx;
+	const char *speed;
+	const char *fec;
+	const char *fc, *ad_fc;
+	const char *an;
 
 	if (test_bit(__TXGBE_HANGING, &adapter->state))
 		return;
@@ -7048,56 +7038,96 @@ static void txgbe_watchdog_link_is_up(struct txgbe_adapter *adapter)
 
 	adapter->flags2 &= ~TXGBE_FLAG2_SEARCH_FOR_SFP;
 
-	/* flow_rx, flow_tx report link flow control status */
-	flow_rx = (rd32(hw, TXGBE_MAC_RX_FLOW_CTRL) & 0x101) == 0x1;
-	flow_tx = !!(TXGBE_RDB_RFCC_RFCE_802_3X &
-		     rd32(hw, TXGBE_RDB_RFCC));
-
 	switch (adapter->link_speed) {
 	case TXGBE_LINK_SPEED_40GB_FULL:
-		adapter->speed = SPEED_40000;
+		hw->phy.link_info.link_speed = SPEED_40000;
+		speed = "40 Gbps";
 		break;
 	case TXGBE_LINK_SPEED_25GB_FULL:
-		adapter->speed = SPEED_25000;
+		hw->phy.link_info.link_speed = SPEED_25000;
+		speed = "25 Gbps";
 		break;
 	case TXGBE_LINK_SPEED_10GB_FULL:
-		adapter->speed = SPEED_10000;
+		hw->phy.link_info.link_speed = SPEED_10000;
+		speed = "10 Gbps";
 		break;
 	case TXGBE_LINK_SPEED_1GB_FULL:
+		hw->phy.link_info.link_speed = SPEED_1000;
+		speed = "1 Gbps";
+		break;
+	case TXGBE_LINK_SPEED_100_FULL:
+		hw->phy.link_info.link_speed = SPEED_100;
+		speed = "100 Mbps";
+		break;
+	case TXGBE_LINK_SPEED_10_FULL:
+		hw->phy.link_info.link_speed = SPEED_10;
+		speed = "10 Mbps";
+		break;
 	default:
-		adapter->speed = SPEED_1000;
+		hw->phy.link_info.link_speed = 0;
+		speed = "Unknown speed";
 		break;
 	}
 
-	if (hw->mac.type == txgbe_mac_aml)
+	switch (hw->fc.current_mode) {
+	case txgbe_fc_full:
+		ad_fc = "Rx/Tx";
+		break;
+	case txgbe_fc_tx_pause:
+		ad_fc = "Tx";
+		break;
+	case txgbe_fc_rx_pause:
+		ad_fc = "Rx";
+		break;
+	case txgbe_fc_none:
+		ad_fc = "None";
+		break;
+	default:
+		ad_fc = "Unknown";
+		break;
+	}
+
+	/* flow_rx, flow_tx report link flow control status */
+	flow_rx = (rd32(hw, TXGBE_MAC_RX_FLOW_CTRL) & 0x101) == 0x1;
+	flow_tx = !!(TXGBE_RDB_RFCC_RFCE_802_3X & rd32(hw, TXGBE_RDB_RFCC));
+	fc = "None";
+	if (flow_rx && flow_tx)
+		fc = "Rx/Tx";
+	if (flow_rx)
+		fc = "Rx";
+	if (flow_tx)
+		fc = "Tx";
+
+	if (test_bit(TXGBE_FLAG_FW_CONTROL_PHY, adapter->flag))
+		/* update an_done, fec_mode, and bypassctle */
+		txgbe_get_link_info_mbx(hw);
+	else
 		adapter->cur_fec_link = txgbe_get_cur_fec_mode(hw);
 
-	e_info(drv, "NIC Link is Up %s, Flow Control: %s%s\n",
-	       (link_speed == TXGBE_LINK_SPEED_40GB_FULL ?
-	       "40 Gbps" :
-	       (link_speed == TXGBE_LINK_SPEED_25GB_FULL ?
-	       "25 Gbps" :
-	       (link_speed == TXGBE_LINK_SPEED_10GB_FULL ?
-	       "10 Gbps" :
-	       (link_speed == TXGBE_LINK_SPEED_1GB_FULL ?
-	       "1 Gbps" :
-	       (link_speed == TXGBE_LINK_SPEED_100_FULL ?
-	       "100 Mbps" :
-	       (link_speed == TXGBE_LINK_SPEED_10_FULL ?
-	       "10 Mbps" :
-	       "unknown speed")))))),
-	       ((flow_rx && flow_tx) ? "RX/TX" :
-	       (flow_rx ? "RX" :
-	       (flow_tx ? "TX" : "None"))),
-	       ((hw->mac.type == txgbe_mac_aml && link_speed == TXGBE_LINK_SPEED_25GB_FULL) ?
-		((adapter->cur_fec_link == TXGBE_PHY_FEC_BASER) ? ", FEC: BASE-R" :
-		 (adapter->cur_fec_link == TXGBE_PHY_FEC_RS) ? ", FEC: RS" :
-		 (adapter->cur_fec_link == TXGBE_PHY_FEC_OFF) ? ", FEC: OFF" : "") : ""));
+	/* Get FEC mode based on negotiated link info */
+	switch (adapter->cur_fec_link) {
+	case TXGBE_PHY_FEC_RS:
+		fec = "RS-FEC";
+		break;
+	case TXGBE_PHY_FEC_BASER:
+		fec = "FC-FEC/BASE-R";
+		break;
+	default:
+		fec = "NONE";
+		break;
+	}
 
-	if (!adapter->backplane_an &&
-	    (txgbe_is_dac_cable(hw) ||
-	     (hw->subsystem_device_id & TXGBE_DEV_MASK) == TXGBE_ID_KR_KX_KX4) &&
-		 hw->mac.type == txgbe_mac_sp)
+	/* check if autoneg completed, might be false due to not supported */
+	if (adapter->an_done)
+		an = "True";
+	else
+		an = "False";
+
+	netdev_info(netdev, "NIC Link is up %s Full, FEC: %s, Autoneg Advertised: %s and Negotiated: %s, Flow Control Advertised: %s and Negotiated: %s.\n",
+		    speed, fec, txgbe_xpcs_an_enabled(hw) ? "True" : "False",
+		    an, ad_fc, fc);
+
+	if (!txgbe_xpcs_an_enabled(hw) && hw->mac.type == txgbe_mac_sp)
 		txgbe_enable_rx_adapter(hw);
 
 	if (adapter->tx_unidir_mode) {
@@ -7140,7 +7170,6 @@ static void txgbe_link_down_flush_tx(struct txgbe_adapter *adapter)
 static void txgbe_watchdog_link_is_down(struct txgbe_adapter *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
-	struct txgbe_hw *hw = &adapter->hw;
 
 	adapter->link_up = false;
 	adapter->link_speed = 0;
@@ -7152,8 +7181,7 @@ static void txgbe_watchdog_link_is_down(struct txgbe_adapter *adapter)
 	if (test_bit(__TXGBE_PTP_RUNNING, &adapter->state))
 		txgbe_ptp_start_cyclecounter(adapter);
 
-	if (txgbe_xpcs_an_enabled(hw))
-		adapter->an_done = false;
+	adapter->an_done = false;
 
 	e_info(drv, "NIC Link is Down\n");
 	netif_carrier_off(netdev);
@@ -7287,8 +7315,7 @@ static void txgbe_linkdown_subtask(struct txgbe_adapter *adapter)
 	    test_bit(__TXGBE_RESETTING, &adapter->state))
 		return;
 
-	if (!(adapter->flags2 & TXGBE_FLAG2_LINK_DOWN))
-		txgbe_watchdog_update_link(adapter);
+	txgbe_watchdog_update_link(adapter);
 
 	if (!adapter->link_up)
 		txgbe_watchdog_link_is_down(adapter);
@@ -7319,8 +7346,7 @@ static void txgbe_watchdog_subtask(struct txgbe_adapter *adapter)
 	    hw->mac.type == txgbe_mac_aml40)
 		txgbe_e56_bp_watchdog_event(adapter);
 
-	if (!(adapter->flags2 & TXGBE_FLAG2_LINK_DOWN))
-		txgbe_watchdog_update_link(adapter);
+	txgbe_watchdog_update_link(adapter);
 
 	if (adapter->link_up)
 		txgbe_watchdog_link_is_up(adapter);
@@ -7351,10 +7377,8 @@ static void txgbe_phy_event_subtask(struct txgbe_adapter *adapter)
 	    test_bit(__TXGBE_RESETTING, &adapter->state))
 		return;
 
-	if (!(adapter->flags3 & TXGBE_FLAG3_PHY_EVENT))
+	if (!test_and_clear_bit(TXGBE_FLAG_E56PHY_EVENT, adapter->flag))
 		return;
-
-	adapter->flags3 &= ~TXGBE_FLAG3_PHY_EVENT;
 
 	mutex_lock(&adapter->e56_lock);
 	rdata = rd32_ephy(hw, E56PHY_INTR_0_ADDR);
@@ -7378,7 +7402,9 @@ static void txgbe_phy_event_subtask(struct txgbe_adapter *adapter)
 static void txgbe_sfp_detection_subtask(struct txgbe_adapter *adapter)
 {
 	struct txgbe_hw *hw = &adapter->hw;
-	int err;
+	s32 err;
+	u32 speed = 0;
+	bool autoneg = false;
 
 	/* not searching for SFP so there is nothing to do here */
 	if (!(adapter->flags2 & TXGBE_FLAG2_SEARCH_FOR_SFP) &&
@@ -7442,11 +7468,15 @@ static void txgbe_sfp_detection_subtask(struct txgbe_adapter *adapter)
 	adapter->flags |= TXGBE_FLAG_NEED_LINK_CONFIG;
 	e_info(probe, "detected SFP+: %d\n", hw->phy.sfp_type);
 
+	hw->mac.ops.get_link_capabilities(hw, &speed, &autoneg);
+
 sfp_out:
 	clear_bit(__TXGBE_IN_SFP_INIT, &adapter->state);
 
 	if (err)
 		adapter->autoneg = false; /*init autoneg when NOT_SUPPORTED or NOT_PRESENT*/
+
+	txgbe_hic_write_autoneg_status(hw, adapter->autoneg);
 
 	if (err == TXGBE_ERR_SFP_NOT_SUPPORTED && adapter->netdev_registered)
 		e_dev_err("failed to initialize because an unsupported SFP+ module type was detected.\n");
@@ -7502,6 +7532,7 @@ static void txgbe_sfp_link_config_subtask(struct txgbe_adapter *adapter)
 			}
 
 			adapter->autoneg = autoneg;
+			txgbe_hic_write_autoneg_status(hw, adapter->autoneg);
 		}
 	}
 
@@ -10242,9 +10273,6 @@ static int txgbe_probe(struct pci_dev *pdev,
 	}
 
 	pci_set_master(pdev);
-	/* errata 16 */
-	if (pcie_get_readrq(pdev) != 256)
-		pcie_set_readrq(pdev, 256);
 
 	netdev = alloc_etherdev_mq(sizeof(struct txgbe_adapter), indices);
 	if (!netdev) {
@@ -10296,11 +10324,7 @@ static int txgbe_probe(struct pci_dev *pdev,
 		goto err_sw_init;
 	/* reset_hw fills in the perm_addr as well */
 	hw->phy.reset_if_overtemp = true;
-	if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40)
-		txgbe_get_hw_control(adapter);
 	err = hw->mac.ops.reset_hw(hw);
-	if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40)
-		txgbe_release_hw_control(adapter);
 
 	/* Store the permanent mac address */
 	hw->mac.ops.get_mac_addr(hw, hw->mac.perm_addr);
@@ -10433,10 +10457,13 @@ static int txgbe_probe(struct pci_dev *pdev,
 	if (txgbe_is_lldp(hw))
 		e_dev_err("Can not get lldp flags from flash.\n");
 
+	/* notify firmware default autoneg status */
+	txgbe_hic_write_autoneg_status(hw, adapter->autoneg);
+
 	if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40) {
 		err = txgbe_test_phy_status_hostif(hw);
 		if (!err) {
-			dev_info(&pdev->dev, "Firmware can hold the PHY.\n");
+			dev_info(&pdev->dev, "[fw] FW controls PHY.\n");
 			set_bit(TXGBE_FLAG_FW_CONTROL_PHY, adapter->flag);
 		}
 	}

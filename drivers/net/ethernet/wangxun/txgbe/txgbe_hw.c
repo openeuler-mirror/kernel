@@ -316,11 +316,18 @@ out:
 int txgbe_read_pba_string(struct txgbe_hw *hw, u8 *pba_num,
 			  u32 pba_num_size)
 {
+	u16 data, pba_ptr, offset, length;
 	int ret_val;
-	u16 data;
-	u16 pba_ptr;
-	u16 offset;
-	u16 length;
+
+	if (hw->mac.type == txgbe_mac_aml40) {
+		strscpy((char *)pba_num, "WangXun 40GbE Family Controller",
+			TXGBE_PBANUM_LENGTH);
+		return 0;
+	} else if (hw->mac.type == txgbe_mac_aml) {
+		strscpy((char *)pba_num, "WangXun 25GbE Family Controller",
+			TXGBE_PBANUM_LENGTH);
+		return 0;
+	}
 
 	if (!pba_num)
 		return TXGBE_ERR_INVALID_ARGUMENT;
@@ -2160,7 +2167,6 @@ int txgbe_reset_hostif(struct txgbe_hw *hw)
 		if (reset_cmd.hdr.cmd_or_resp.ret_status ==
 			FW_CEM_RESP_STATUS_SUCCESS) {
 			status = 0;
-			hw->link_status = TXGBE_LINK_STATUS_NONE;
 		} else {
 			status = TXGBE_ERR_HOST_INTERFACE_COMMAND;
 		}
@@ -3556,8 +3562,12 @@ int txgbe_init_shared_code(struct txgbe_hw *hw)
 	txgbe_get_mac_type(hw);
 	ti = txgbe_info_tbl[hw->mac.type];
 
-	if (hw->mac.type == txgbe_mac_sp)
+	if (hw->mac.type == txgbe_mac_sp) {
+		/* errata 16 */
+		if (pcie_get_readrq(pdev) != 256)
+			pcie_set_readrq(pdev, 256);
 		goto skip_flash_header_check;
+	}
 
 	ret = txgbe_flash_read_dword(hw, 0x0, &flash_header);
 	if (ret || flash_header == 0x1) {
@@ -3990,8 +4000,7 @@ static int txgbe_reset_misc(struct txgbe_hw *hw)
 		}
 	} else {
 		value = txgbe_rd32_epcs(hw, TXGBE_SR_PCS_CTL2);
-		if ((value & 0x3) != TXGBE_SR_PCS_CTL2_PCS_TYPE_SEL_X)
-			hw->link_status = TXGBE_LINK_STATUS_NONE;
+		//if ((value & 0x3) != TXGBE_SR_PCS_CTL2_PCS_TYPE_SEL_X)
 	}
 
 	/* receive packets that size > 2048 */
@@ -4027,27 +4036,33 @@ static int txgbe_reset_misc(struct txgbe_hw *hw)
 	return 0;
 }
 
+void txgbe_release_hw_control(struct txgbe_adapter *adapter)
+{
+	/* Let firmware take over control of h/w */
+	wr32m(&adapter->hw, TXGBE_CFG_PORT_CTL, TXGBE_CFG_PORT_CTL_DRV_LOAD, 0);
+}
+
+void txgbe_get_hw_control(struct txgbe_adapter *adapter)
+{
+	/* Let firmware know the driver has taken over */
+	wr32m(&adapter->hw, TXGBE_CFG_PORT_CTL,
+	      TXGBE_CFG_PORT_CTL_DRV_LOAD, TXGBE_CFG_PORT_CTL_DRV_LOAD);
+}
+
 /**
- *  txgbe_reset_hw - Perform hardware reset
+ *  txgbe_reset_hw_generic - Perform hardware reset
  *  @hw: pointer to hardware structure
  *
  *  Resets the hardware by resetting the transmit and receive units, masks
  *  and clears all interrupts, perform a PHY reset, and perform a link (MAC)
  *  reset.
  **/
-int txgbe_reset_hw(struct txgbe_hw *hw)
+int txgbe_reset_hw_generic(struct txgbe_hw *hw)
 {
-	u32 sr_pcs_ctl, sr_pma_mmd_ctl1, sr_an_mmd_ctl, sr_an_mmd_adv_reg2;
-	u32 curr_sr_an_mmd_ctl = 0, curr_sr_an_mmd_adv_reg2 = 0;
-	u32 curr_sr_pcs_ctl = 0, curr_sr_pma_mmd_ctl1 = 0;
 	struct txgbe_adapter *adapter = hw->back;
-	u32 curr_vr_xs_or_pcs_mmd_digi_ctl1 = 0;
-	u32 vr_xs_or_pcs_mmd_digi_ctl1;
 	u32 reset_status = 0;
 	u32 rst_delay = 0;
-	u32 reset = 0;
 	int status;
-	u32 i;
 
 	/* Call adapter stop to disable tx/rx and clear interrupts */
 	status = hw->mac.ops.stop_adapter(hw);
@@ -4060,30 +4075,20 @@ int txgbe_reset_hw(struct txgbe_hw *hw)
 	if (status == TXGBE_ERR_SFP_NOT_SUPPORTED)
 		goto reset_hw_out;
 
-	if (hw->mac.type == txgbe_mac_sp) {
-		/* remember internal phy regs from before we reset */
-		curr_sr_pcs_ctl = txgbe_rd32_epcs(hw, TXGBE_SR_PCS_CTL2);
-		curr_sr_pma_mmd_ctl1 = txgbe_rd32_epcs(hw, TXGBE_SR_PMA_MMD_CTL1);
-		curr_sr_an_mmd_ctl = txgbe_rd32_epcs(hw, TXGBE_SR_AN_MMD_CTL);
-		curr_sr_an_mmd_adv_reg2 = txgbe_rd32_epcs(hw,
-							  TXGBE_SR_AN_MMD_ADV_REG2);
-		curr_vr_xs_or_pcs_mmd_digi_ctl1 =
-			txgbe_rd32_epcs(hw, TXGBE_VR_XS_OR_PCS_MMD_DIGI_CTL1);
-	}
-
 	/* Issue global reset to the MAC.  Needs to be SW reset if link is up.
 	 * If link reset is used when link is up, it might reset the PHY when
 	 * mng is using it.  If link is down or the flag to force full link
 	 * reset is set, then perform link reset.
 	 */
 	if (hw->force_full_reset) {
+		u32 i;
+
 		rst_delay = (rd32(hw, TXGBE_MIS_RST_ST) &
-			TXGBE_MIS_RST_ST_RST_INIT) >>
-			TXGBE_MIS_RST_ST_RST_INI_SHIFT;
+			     TXGBE_MIS_RST_ST_RST_INIT) >>
+			    TXGBE_MIS_RST_ST_RST_INI_SHIFT;
 		if (hw->reset_type == TXGBE_SW_RESET) {
 			for (i = 0; i < rst_delay + 20; i++) {
-				reset_status =
-					rd32(hw, TXGBE_MIS_RST_ST);
+				reset_status = rd32(hw, TXGBE_MIS_RST_ST);
 				if (!(reset_status &
 				    TXGBE_MIS_RST_ST_DEV_RST_ST_MASK))
 					break;
@@ -4099,39 +4104,22 @@ int txgbe_reset_hw(struct txgbe_hw *hw)
 			if (status != 0)
 				goto reset_hw_out;
 			/* errata 7 */
-			if (txgbe_mng_present(hw) &&
-			    hw->revision_id == TXGBE_SP_MPW) {
-				struct txgbe_adapter *adapter =
-					(struct txgbe_adapter *)hw->back;
-				adapter->flags2 &=
-					~TXGBE_FLAG2_MNG_REG_ACCESS_DISABLED;
-			}
+			if (txgbe_mng_present(hw))
+				adapter->flags2 &= ~TXGBE_FLAG2_MNG_REG_ACCESS_DISABLED;
+
 		} else if (hw->reset_type == TXGBE_GLOBAL_RESET) {
-			struct txgbe_adapter *adapter =
-					(struct txgbe_adapter *)hw->back;
 			msleep(100 * rst_delay + 2000);
 			pci_restore_state(adapter->pdev);
 			pci_save_state(adapter->pdev);
 			pci_wake_from_d3(adapter->pdev, false);
 		}
 	} else {
-		if (hw->bus.lan_id == 0)
-			reset = TXGBE_MIS_RST_LAN0_RST;
-		else
-			reset = TXGBE_MIS_RST_LAN1_RST;
-
 		wr32(hw, TXGBE_MIS_RST,
-		     reset | rd32(hw, TXGBE_MIS_RST));
+		     BIT(hw->bus.lan_id + 1) | rd32(hw, TXGBE_MIS_RST));
 		TXGBE_WRITE_FLUSH(hw);
 		usec_delay(10);
 
-		if (hw->bus.lan_id == 0) {
-			status = txgbe_check_flash_load(hw,
-							TXGBE_SPI_ILDR_STATUS_LAN0_SW_RST);
-		} else {
-			status = txgbe_check_flash_load(hw,
-							TXGBE_SPI_ILDR_STATUS_LAN1_SW_RST);
-		}
+		status = txgbe_check_flash_load(hw, BIT(hw->bus.lan_id + 9));
 		if (status != 0)
 			goto reset_hw_out;
 	}
@@ -4143,58 +4131,6 @@ int txgbe_reset_hw(struct txgbe_hw *hw)
 	status = txgbe_reset_misc(hw);
 	if (status != 0)
 		goto reset_hw_out;
-
-	if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40) {
-		wr32(hw, TXGBE_LINKUP_FILTER, TXGBE_LINKUP_FILTER_TIME);
-		wr32m(hw, TXGBE_MAC_MISC_CTL, TXGBE_MAC_MISC_LINK_STS_MOD,
-		      TXGBE_LINK_BOTH_PCS_MAC);
-		/* amlite: bme */
-		wr32(hw, PX_PF_BME, 0x1);
-		/* amlite: rdm_rsc_ctl_free_ctl set to 1 */
-		wr32m(hw, TXGBE_RDM_RSC_CTL, TXGBE_RDM_RSC_CTL_FREE_CTL,
-		      TXGBE_RDM_RSC_CTL_FREE_CTL);
-		adapter->an_done = false;
-		adapter->cur_fec_link = TXGBE_PHY_FEC_AUTO;
-	} else {
-		/* Store the original AUTOC/AUTOC2 values if they have not been
-		 * stored off yet.  Otherwise restore the stored original
-		 * values since the reset operation sets back to defaults.
-		 */
-		sr_pcs_ctl = txgbe_rd32_epcs(hw, TXGBE_SR_PCS_CTL2);
-		sr_pma_mmd_ctl1 = txgbe_rd32_epcs(hw, TXGBE_SR_PMA_MMD_CTL1);
-		sr_an_mmd_ctl = txgbe_rd32_epcs(hw, TXGBE_SR_AN_MMD_CTL);
-		sr_an_mmd_adv_reg2 = txgbe_rd32_epcs(hw, TXGBE_SR_AN_MMD_ADV_REG2);
-		vr_xs_or_pcs_mmd_digi_ctl1 =
-			txgbe_rd32_epcs(hw, TXGBE_VR_XS_OR_PCS_MMD_DIGI_CTL1);
-
-		if (!hw->mac.orig_link_settings_stored) {
-			hw->mac.orig_sr_pcs_ctl2 = sr_pcs_ctl;
-			hw->mac.orig_sr_pma_mmd_ctl1 = sr_pma_mmd_ctl1;
-			hw->mac.orig_sr_an_mmd_ctl = sr_an_mmd_ctl;
-			hw->mac.orig_sr_an_mmd_adv_reg2 = sr_an_mmd_adv_reg2;
-			hw->mac.orig_vr_xs_or_pcs_mmd_digi_ctl1 =
-							vr_xs_or_pcs_mmd_digi_ctl1;
-			hw->mac.orig_link_settings_stored = true;
-		} else {
-			/* If MNG FW is running on a multi-speed device that
-			 * doesn't autoneg with out driver support we need to
-			 * leave LMS in the state it was before we MAC reset.
-			 * Likewise if we support WoL we don't want change the
-			 * LMS state.
-			 */
-			hw->mac.orig_sr_pcs_ctl2 = curr_sr_pcs_ctl;
-			hw->mac.orig_sr_pma_mmd_ctl1 = curr_sr_pma_mmd_ctl1;
-			hw->mac.orig_sr_an_mmd_ctl = curr_sr_an_mmd_ctl;
-			hw->mac.orig_sr_an_mmd_adv_reg2 =
-						curr_sr_an_mmd_adv_reg2;
-			hw->mac.orig_vr_xs_or_pcs_mmd_digi_ctl1 =
-						curr_vr_xs_or_pcs_mmd_digi_ctl1;
-		}
-	}
-
-	/*make sure phy power is up*/
-	msleep(100);
-	txgbe_xpcs_txffe_set(adapter);
 
 	/* Store MAC address from RAR0, clear receive address registers, and
 	 * clear the multicast table.  Also reset num_rar_entries to 128,
@@ -4215,7 +4151,7 @@ int txgbe_reset_hw(struct txgbe_hw *hw)
 		hw->mac.num_rar_entries--;
 	}
 
-	pci_set_master(((struct txgbe_adapter *)hw->back)->pdev);
+	pci_set_master(adapter->pdev);
 
 reset_hw_out:
 	return status;

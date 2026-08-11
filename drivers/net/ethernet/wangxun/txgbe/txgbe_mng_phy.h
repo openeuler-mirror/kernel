@@ -53,7 +53,9 @@ struct txgbe_hic_ephy_status {
 	u8 flow_ctl;
 	u8 power;
 	u8 fec_mode;
-	u8 resv[6];
+	u8 an_done;
+	u8 bypassctle;
+	u8 resv[4];
 };
 
 struct txgbe_hic_get_sfp_info {
@@ -67,24 +69,24 @@ struct txgbe_hic_get_sfp_info {
 	u8 vendor_oui0;		//A0H 0x25
 	u8 vendor_oui1;		//A0H 0x26
 	u8 vendor_oui2;		//A0H 0x27
-	u8 transceiver_type;//A0H 0x83
-	u8 reserved[6];
+	u8 transceiver_type;	//A0H 0x83
+	u8 sff_opt1;		//A0H 0xC0
+	u8 reserved[5];
 };
 
 struct txgbe_hic_i2c_read {
 	struct txgbe_hic_hdr hdr;
-	u32	offset;
-	u32	length;
-	u8	page;
-	u8	bank;
-	u8	i2c_address;
-	u8	data;
+	__be32 offset;
+	__be32 length;
+	u8 page;
+	u8 bank;
+	u8 i2c_address;
+	u8 resv;
 };
 
 int txgbe_test_phy_status_hostif(struct txgbe_hw *hw);
 int txgbe_set_phy_link_hostif(struct txgbe_hw *hw, int speed, bool autoneg, u8 duplex);
-int txgbe_get_phy_status_hostif(struct txgbe_hw *hw,
-				struct txgbe_hic_ephy_status *buffer);
+int txgbe_get_link_info_mbx(struct txgbe_hw *hw);
 int txgbe_set_phy_fc_hostif(struct txgbe_hw *hw, u8 fc);
 int txgbe_set_phy_power_hostif(struct txgbe_hw *hw, u8 power);
 int txgbe_read_eeprom_i2c_hostif(struct txgbe_hw *hw,

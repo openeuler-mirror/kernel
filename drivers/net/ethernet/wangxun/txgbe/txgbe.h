@@ -702,13 +702,9 @@ struct txgbe_therm_proc_data {
 #define TXGBE_FLAG2_GLOBAL_RESET_REQUESTED      BIT(20)
 #define TXGBE_FLAG2_CLOUD_SWITCH_ENABLED        BIT(21)
 #define TXGBE_FLAG2_MNG_REG_ACCESS_DISABLED     BIT(22)
-#define TXGBE_FLAG2_LINK_DOWN                   BIT(26)
 #define TXGBE_FLAG2_ECC_ERR_RESET               BIT(29)
 #define TXGBE_FLAG2_RX_LEGACY					BIT(30)
 #define TXGBE_FLAG2_PCIE_NEED_RECOVER           BIT(31)
-
-#define TXGBE_FLAG3_PHY_EVENT                   BIT(0)
-#define TXGBE_FLAG3_TEMP_SENSOR_INPROGRESS      BIT(1)
 
 #define TXGBE_SET_FLAG(_input, _flag, _result) \
 	(((_flag) <= (_result)) ? \
@@ -723,15 +719,11 @@ enum txgbe_isb_idx {
 	TXGBE_ISB_MAX
 };
 
-#define TXGBE_PHY_FEC_RS	BIT(0)
-#define TXGBE_PHY_FEC_BASER	BIT(1)
-#define TXGBE_PHY_FEC_OFF	BIT(2)
-#define TXGBE_PHY_FEC_AUTO (TXGBE_PHY_FEC_OFF | TXGBE_PHY_FEC_BASER |\
-			   TXGBE_PHY_FEC_RS)
-
 enum txgbe_state_flags {
 	TXGBE_FLAG_CONTROL_RATE_LED,
 	TXGBE_FLAG_FW_CONTROL_PHY,
+	TXGBE_FLAG_TEMP_SENSOR_INPROGRESS,
+	TXGBE_FLAG_E56PHY_EVENT,
 	TXGBE_FUCTIONS_FLAGS_NBITS		/* must be last */
 };
 
@@ -747,15 +739,12 @@ struct txgbe_adapter {
 	unsigned long state;
 	DECLARE_BITMAP(flag, TXGBE_FUCTIONS_FLAGS_NBITS);
 	u32 bp_link_mode;
-	u32 curbp_link_mode;
 	/* Some features need tri-state capability,
 	 * thus the additional *_CAPABLE flags.
 	 */
 	u32 flags;
 	u32 flags2;
-	u32 flags3;
 	u8 tx_unidir_mode;
-	u8  an73_mode;
 	u8  backplane_an;
 	u8  autoneg;
 	u32 ffe_main;
@@ -767,7 +756,6 @@ struct txgbe_adapter {
 	u8  backplane_mode;
 	u8  backplane_auto;
 	bool an_done;
-	u32 fsm;
 
 	/* Tx fast path data */
 	int num_tx_queues;
@@ -883,7 +871,6 @@ struct txgbe_adapter {
 
 	u16 bridge_mode;
 
-	u8 fec_link_mode;
 	u8 cur_fec_link;
 	bool link_valid;
 	u32 etrack_id;
