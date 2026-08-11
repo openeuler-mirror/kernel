@@ -1570,6 +1570,7 @@ enum txgbe_fdir_pballoc_type {
 #define TXGBE_MAC_ADDRESS0_HIGH         0x11300
 #define TXGBE_MAC_ADDRESS0_LOW          0x11304
 #define TXGBE_MAC_MISC_CTL              0x11f00
+#define TXGBE_MAC_INTR_STA              0x110b0
 
 #define TXGBE_MAC_TX_CFG_TE             0x00000001U
 #define TXGBE_MAC_TX_CFG_SPEED_MASK     0x60000000U

@@ -232,8 +232,12 @@ static int txgbe_get_link_capabilities_aml(struct txgbe_hw *hw, u32 *speed,
 		/* multispeed fiber must before single fiber */
 		*speed = TXGBE_LINK_SPEED_10GB_FULL |
 			 TXGBE_LINK_SPEED_25GB_FULL;
-		*autoneg = true;
-		adapter->autoneg = *autoneg;
+		if (hw->mac.orig_link_settings_stored) {
+			*autoneg = adapter->autoneg;
+		} else {
+			*autoneg = true;
+			adapter->autoneg = *autoneg;
+		}
 	} else if (txgbe_is_10g_fiber_sfp(hw)) {
 		*speed = TXGBE_LINK_SPEED_10GB_FULL;
 		*autoneg = false;

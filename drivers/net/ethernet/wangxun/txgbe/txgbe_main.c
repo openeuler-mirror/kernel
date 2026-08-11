@@ -141,6 +141,9 @@ void txgbe_print_tx_hang_status(struct txgbe_adapter *adapter)
 	e_info(probe, "Tx flow control Status[TDB_TFCS 0xCE00]: 0x%x\n",
 	       rd32(&adapter->hw, TXGBE_TDB_TFCS));
 
+	e_info(drv, "MAC Interrupt Status[MAC_INTR_STA 0x10B0]: 0x%08x\n",
+		rd32(&adapter->hw, TXGBE_MAC_INTR_STA));
+
 	e_info(tx_err, "tdm_desc_fatal_0: 0x%x\n",
 	       rd32(&adapter->hw, 0x180d0));
 	e_info(tx_err, "tdm_desc_fatal_1: 0x%x\n",
@@ -5107,6 +5110,9 @@ static void txgbe_up_complete(struct txgbe_adapter *adapter)
 	else
 		txgbe_configure_msi_and_legacy(adapter);
 
+	if (txgbe_is_lldp(hw))
+		e_dev_err("Can not get lldp flags from flash.\n");
+
 	/* enable the optics for SFP+ fiber
 	 * or power up mv phy
 	 */
@@ -5596,6 +5602,9 @@ static void txgbe_disable_device(struct txgbe_adapter *adapter)
 		/* Disable all VFTE/VFRE TX/RX */
 		txgbe_set_all_vfs(adapter);
 	}
+
+	if (txgbe_is_lldp(hw))
+		e_dev_err("Can not get lldp flags from flash.\n");
 
 	if (!(((hw->subsystem_device_id & TXGBE_NCSI_MASK) == TXGBE_NCSI_SUP) ||
 	      ((hw->subsystem_device_id & TXGBE_WOL_MASK) == TXGBE_WOL_SUP) ||
@@ -6937,7 +6946,18 @@ static void txgbe_watchdog_update_link(struct txgbe_adapter *adapter)
 				     (rd32(hw, TXGBE_MAC_TX_CFG) &
 					~TXGBE_MAC_TX_CFG_AML_SPEED_MASK) | TXGBE_MAC_TX_CFG_TE |
 					TXGBE_MAC_TX_CFG_AML_SPEED_40G);
+			} else if (link_speed & TXGBE_LINK_SPEED_25GB_FULL) {
+				wr32(hw, TXGBE_MAC_TX_CFG,
+				     (rd32(hw, TXGBE_MAC_TX_CFG) &
+					~TXGBE_MAC_TX_CFG_AML_SPEED_MASK) | TXGBE_MAC_TX_CFG_TE |
+					TXGBE_MAC_TX_CFG_AML_SPEED_25G);
+			} else if (link_speed & TXGBE_LINK_SPEED_10GB_FULL) {
+				wr32(hw, TXGBE_MAC_TX_CFG,
+				     (rd32(hw, TXGBE_MAC_TX_CFG) &
+					~TXGBE_MAC_TX_CFG_AML_SPEED_MASK) | TXGBE_MAC_TX_CFG_TE |
+					TXGBE_MAC_TX_CFG_AML_SPEED_10G);
 			}
+
 			/* enable mac receiver */
 			wr32m(hw, TXGBE_MAC_RX_CFG,
 			      TXGBE_MAC_RX_CFG_RE, TXGBE_MAC_RX_CFG_RE);
@@ -6955,11 +6975,6 @@ static void txgbe_watchdog_update_link(struct txgbe_adapter *adapter)
 				     (rd32(hw, TXGBE_MAC_TX_CFG) &
 					~TXGBE_MAC_TX_CFG_AML_SPEED_MASK) | TXGBE_MAC_TX_CFG_TE |
 					TXGBE_MAC_TX_CFG_AML_SPEED_10G);
-			} else {
-				wr32(hw, TXGBE_MAC_TX_CFG,
-				     (rd32(hw, TXGBE_MAC_TX_CFG) &
-					~TXGBE_MAC_TX_CFG_AML_SPEED_MASK) | TXGBE_MAC_TX_CFG_TE |
-					TXGBE_MAC_TX_CFG_AML_SPEED_1G);
 			}
 
 			/* enable mac receiver */

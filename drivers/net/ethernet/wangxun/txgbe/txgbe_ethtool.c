@@ -223,7 +223,7 @@ static const struct txgbe_phy_type_to_ethtool phy_type_lkup[] = {
 };
 
 #define TXGBE_PHY_TYPE_MASK_SP		GENMASK(11, 0)
-#define TXGBE_PHY_TYPE_MASK_AML		GENMASK(15, 6)
+#define TXGBE_PHY_TYPE_MASK_AML		(GENMASK(15, 11) | GENMASK(9, 6))
 #define TXGBE_PHY_TYPE_MASK_AML40	(GENMASK(19, 16) | GENMASK(11, 6))
 
 #define TXGBE_PHY_TYPE_LINK_SPEED_10	BIT(0)
@@ -363,21 +363,55 @@ static int txgbe_get_phy_caps(struct txgbe_hw *hw)
 	return phy_mode;
 }
 
+static u16 txgbe_speed_to_mac_link_speed(int speed)
+{
+	int link_speed;
+
+	switch (speed) {
+	case SPEED_10:
+		link_speed = TXGBE_LINK_SPEED_100_FULL;
+		break;
+	case SPEED_100:
+		link_speed = TXGBE_LINK_SPEED_100_FULL;
+		break;
+	case SPEED_1000:
+		link_speed = TXGBE_LINK_SPEED_1GB_FULL;
+		break;
+	case SPEED_10000:
+		link_speed = TXGBE_LINK_SPEED_10GB_FULL;
+		break;
+	case SPEED_25000:
+		link_speed = TXGBE_LINK_SPEED_25GB_FULL;
+		break;
+	case SPEED_40000:
+		link_speed = TXGBE_LINK_SPEED_40GB_FULL;
+		break;
+	default:
+		link_speed = TXGBE_LINK_SPEED_UNKNOWN;
+		break;
+	}
+
+	return link_speed;
+}
+
 static u32 txgbe_get_link_advertised(struct txgbe_hw *hw,
 				     const struct ethtool_link_ksettings *ks)
 {
-	u32 advertised = 0, i;
+	u32 advertised = 0, bit = 0;
+	unsigned long phy_mode;
 
-	/* 2. advertised speeds */
-	for (i = 0; i < ARRAY_SIZE(phy_type_lkup); i++) {
-		int mode_bit = phy_type_lkup[i].link_mode;
+	/* Get the PHY capabilities based on media */
+	phy_mode = txgbe_get_phy_caps(hw);
+
+	for_each_set_bit(bit, &phy_mode, sizeof(phy_mode) * 8) {
+		int mode_bit = phy_type_lkup[bit].link_mode;
+
+		if (bit >= ARRAY_SIZE(phy_type_lkup))
+			continue;
 
 		if (linkmode_test_bit(mode_bit, ks->link_modes.advertising))
-			advertised |= phy_type_lkup[i].link_speed;
+			advertised |= phy_type_lkup[bit].link_speed;
 	}
-
-	hw_info(hw, "advertised : %x , speed %d\n",
-		advertised, ks->base.speed);
 
 	return advertised;
 }
@@ -457,15 +491,15 @@ static void txgbe_phy_type_to_ethtool(struct net_device *netdev,
 	 * and Advertising link modes are the media PHY type or the speed
 	 * requested by user.
 	 */
+	phy_types = txgbe_mac_type_lp[hw->mac.type].phy_type_mask;
 	if (hw->phy.sfp_type == txgbe_sfp_type_not_present ||
-	    hw->phy.sfp_type == txgbe_sfp_type_unknown) {
-		phy_types = txgbe_mac_type_lp[hw->mac.type].phy_type_mask;
-	} else {
-		phy_types = txgbe_mac_type_lp[hw->mac.type].phy_type_mask;
+	    hw->phy.sfp_type == txgbe_sfp_type_unknown)
+		advert_phy_type = txgbe_get_phy_caps(hw);
+	else
 		phy_types &= txgbe_media_types_to_phy_types(hw);
-	}
+
 	hw_dbg(hw, "%s %d phy_types: %x advert_phy_type: %x req_speeds: %x",
-		__func__, __LINE__, phy_types, advert_phy_type, req_speeds);
+	       __func__, __LINE__, phy_types, advert_phy_type, req_speeds);
 
 	linkmode_zero(ks->link_modes.supported);
 	linkmode_zero(ks->link_modes.advertising);
@@ -686,19 +720,14 @@ static int txgbe_set_link_ksettings(struct net_device *netdev,
 	struct txgbe_adapter *adapter = netdev_priv(netdev);
 	struct ethtool_link_ksettings safe_ks = {};
 	struct txgbe_hw *hw = &adapter->hw;
-	u32 curr_autoneg = 2, old;
-	u32 phy_mode, advertised = 0;
+	u32 phy_mode, user_req = 0;
+	u32 curr_autoneg, old;
 	int err = 0;
 
 	if (hw->phy.media_type != txgbe_media_type_fiber &&
 	    hw->phy.media_type != txgbe_media_type_fiber_qsfp &&
 	    hw->phy.media_type != txgbe_media_type_copper &&
 	    hw->phy.media_type != txgbe_media_type_backplane)
-		return -EOPNOTSUPP;
-
-	/* Get the PHY capabilities based on media */
-	phy_mode = txgbe_get_phy_caps(hw);
-	if (!phy_mode)
 		return -EOPNOTSUPP;
 
 	/* Get link modes supported by hardware.*/
@@ -710,40 +739,54 @@ static int txgbe_set_link_ksettings(struct net_device *netdev,
 	/* Copy the current user PHY configuration. */
 	old = hw->phy.link_info.req_speeds;
 
-	/* 1. base.speed */
-	advertised = txgbe_get_link_advertised(hw, ks);
-	/* advertised = 0, speed is not supported return directly */
-	if (!advertised) {
-		hw_info(hw, "Requested advertised %x not supported\n",
-			advertised);
-		return -EOPNOTSUPP;
-	}
-
+	/* 1. parse user intent */
 	/* 2. advertised != 0, check speed match ks->link_modes.advertising
 	 * can compare PHY capabilities based on media to advertised phy modes
 	 * make sure requested speed is supported.
 	 */
-	if (!(phy_mode & txgbe_link_speed_to_phy_modes(advertised))) {
-		hw_info(hw, "Requested speed %x not supported phy_mode %x\n",
-			advertised, phy_mode);
-		return -EOPNOTSUPP;
+	if (ks->base.autoneg == AUTONEG_ENABLE) {
+		user_req = txgbe_get_link_advertised(hw, ks);
+		if (!user_req) {
+			hw_info(hw, "advertising=%*pb supported=%*pb\n",
+				__ETHTOOL_LINK_MODE_MASK_NBITS,
+				ks->link_modes.advertising,
+				__ETHTOOL_LINK_MODE_MASK_NBITS,
+				safe_ks.link_modes.supported);
+			return -EOPNOTSUPP;
+		}
+	} else {
+		if (ks->base.speed == SPEED_UNKNOWN ||
+		    ks->base.duplex == DUPLEX_UNKNOWN)
+			return -EINVAL;
+
+		user_req = txgbe_speed_to_mac_link_speed(ks->base.speed);
+		phy_mode = txgbe_get_phy_caps(hw);
+		if (!(txgbe_link_speed_to_phy_modes(user_req) & phy_mode)) {
+			hw_info(hw, "Requested speed %u not match phymode %d\n",
+				ks->base.speed, phy_mode);
+			return -EOPNOTSUPP;
+		}
 	}
 
-	if (advertised == TXGBE_LINK_SPEED_1GB_FULL) {
+	/* 3. no-op optimization */
+	if (old == user_req && curr_autoneg == ks->base.autoneg) {
+		hw_info(hw, "Already in advertised : %x - autoneg : %x\n",
+			user_req, curr_autoneg);
+		return 0;
+	}
+
+	/* 4. apply */
+	if (user_req == TXGBE_LINK_SPEED_1GB_FULL) {
 		curr_autoneg = txgbe_rd32_epcs(hw, TXGBE_SR_MII_MMD_CTL);
 		curr_autoneg = !!(curr_autoneg & (0x1 << 12));
-	}
-
-	if (old == advertised && (curr_autoneg == !!ks->base.autoneg)) {
-		hw_info(hw, "Already in advertised : %x - autoneg : %x\n",
-			advertised, curr_autoneg);
-		return 0;
 	}
 
 	while (test_and_set_bit(__TXGBE_IN_SFP_INIT, &adapter->state))
 		usleep_range(1000, 2000);
 	hw->mac.autotry_restart = true;
 
+	/* record and change auto value */
+	hw->mac.orig_link_settings_stored = true;
 	adapter->autoneg = ks->base.autoneg;
 	adapter->backplane_an = ks->base.autoneg;
 
@@ -755,17 +798,18 @@ static int txgbe_set_link_ksettings(struct net_device *netdev,
 		netif_tx_stop_all_queues(netdev);
 	}
 
-	err = hw->mac.ops.setup_link(hw, advertised, true);
+	err = hw->mac.ops.setup_link(hw, user_req, true);
 	if (err) {
 		e_info(probe, "setup link failed with code %d\n", err);
+		hw->mac.orig_link_settings_stored = false;
 		adapter->autoneg = curr_autoneg;
 		adapter->backplane_an = curr_autoneg;
 		hw->mac.ops.setup_link(hw, old, true);
 		goto err_set;
 	}
 
-	hw->mac.orig_link_settings_stored = true;
-	hw->phy.link_info.req_speeds = advertised;
+	hw->phy.link_info.req_speeds = user_req;
+	hw->phy.autoneg_advertised = user_req;
 
 	/* notify fw autoneg status */
 	txgbe_hic_write_autoneg_status(hw, ks->base.autoneg);
@@ -1792,6 +1836,9 @@ static u32 txgbe_get_priv_flags(struct net_device *dev)
 	struct txgbe_adapter *adapter = netdev_priv(dev);
 	u32 i, ret_flags = 0;
 
+	if (txgbe_is_lldp(&adapter->hw))
+		e_dev_err("Can not get lldp flags from flash.\n");
+
 	for (i = 0; i < TXGBE_PRIV_FLAGS_STR_LEN; i++) {
 		const struct txgbe_priv_flags *priv_flags;
 
@@ -1816,6 +1863,9 @@ static int txgbe_set_priv_flags(struct net_device *dev, u32 flags)
 
 	orig_flags = adapter->eth_priv_flags;
 	new_flags = orig_flags;
+
+	if (txgbe_is_lldp(&adapter->hw))
+		e_dev_err("Can not get lldp flags from flash.\n");
 
 	for (i = 0; i < TXGBE_PRIV_FLAGS_STR_LEN; i++) {
 		const struct txgbe_priv_flags *priv_flags;

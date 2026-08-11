@@ -67,6 +67,9 @@ int txgbe_test_phy_status_hostif(struct txgbe_hw *hw)
 	struct txgbe_hic_ephy_status get_buffer;
 	int ret, i;
 
+	if (SW_CTRL_EPHY_FORCE)
+		return -EINVAL;
+
 	get_buffer.hdr.cmd = FW_PHY_CONFIG_GET_LINK_CMD;
 	get_buffer.hdr.buf_len = sizeof(struct txgbe_hic_ephy_status) -
 				 sizeof(struct txgbe_hic_hdr);
@@ -77,11 +80,12 @@ int txgbe_test_phy_status_hostif(struct txgbe_hw *hw)
 					   TXGBE_HI_COMMAND_TIMEOUT_SHORT,
 					   true);
 	switch (ret) {
-	case TXGBE_ERR_MNG_UNKNOWN_CMD:
 	case 0:
 		goto oem_check;
 	case TXGBE_ERR_MNG_UNSUPPORT_SFP:
 		e_dev_info("Unsupported SFP module.\n");
+		fallthrough;
+	case TXGBE_ERR_MNG_UNKNOWN_CMD:
 		fallthrough;
 	default:
 		e_dev_info("Failed to test link info, ret=%d\n", ret);
@@ -89,9 +93,6 @@ int txgbe_test_phy_status_hostif(struct txgbe_hw *hw)
 	}
 
 oem_check:
-	if (SW_CTRL_EPHY_FORCE)
-		return -EINVAL;
-
 	if (!((get_buffer.fw_oem_flag & U16_MAX) == EPHY_OEM_FROM_FW ||
 	      (get_buffer.fw_oem_flag & U16_MAX) == EPHY_OEM_SW_OVERRIDE_FW))
 		return ret;
@@ -116,7 +117,7 @@ oem_check:
 	hw->phy.oem.ctlebypass = get_buffer.oem.ctlebypass;
 	hw->phy.oem_flag = get_buffer.fw_oem_flag;
 
-	return 0;
+	return ret;
 }
 
 static int txgbe_get_phy_status_hostif(struct txgbe_hw *hw,

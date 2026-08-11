@@ -867,16 +867,16 @@ static int txgbe_get_link_capabilities_sp(struct txgbe_hw *hw,
 					  u32 *speed,
 					     bool *autoneg)
 {
+	u32 sr_pcs_ctl, sr_pma_mmd_ctl1, sr_an_mmd_ctl, sr_an_mmd_adv_reg2;
+	struct txgbe_adapter *adapter = hw->back;
 	int status = 0;
-	u32 sr_pcs_ctl, sr_pma_mmd_ctl1, sr_an_mmd_ctl;
-	u32 sr_an_mmd_adv_reg2;
 
 	if (hw->phy.multispeed_fiber) {
 		*speed = TXGBE_LINK_SPEED_10GB_FULL |
 			 TXGBE_LINK_SPEED_1GB_FULL;
 		*autoneg = true;
 	} else if (txgbe_is_dac_cable(hw)) {
-		*autoneg = true;
+		*autoneg = adapter->backplane_an;
 		hw->phy.link_mode = TXGBE_PHYSICAL_LAYER_10GBASE_KR;
 		*speed = TXGBE_LINK_SPEED_10GB_FULL;
 	} else if (hw->phy.sfp_type == txgbe_sfp_type_1g_cu_core0 ||
