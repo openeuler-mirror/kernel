@@ -57,6 +57,30 @@
 #define TXGBE_VPD_OFFSET    0x500
 #define TXGBE_VPD_END    0x600
 
+#ifndef TXGBE_STORM_INTERVAL
+#define TXGBE_STORM_INTERVAL	100
+#endif
+
+#ifndef TXGBE_STORM_UC
+#define TXGBE_STORM_UC		0
+#endif
+
+#ifndef TXGBE_STORM_BC
+#define TXGBE_STORM_BC		0
+#endif
+
+#ifndef TXGBE_STORM_BC_THRE
+#define TXGBE_STORM_BC_THRE	100
+#endif
+
+#ifndef TXGBE_STORM_MC
+#define TXGBE_STORM_MC		0
+#endif
+
+#ifndef TXGBE_STORM_MC_THRE
+#define TXGBE_STORM_MC_THRE	100
+#endif
+
 struct txgbe_hic_read_cab {
 	union txgbe_hic_hdr2 hdr;
 	union {

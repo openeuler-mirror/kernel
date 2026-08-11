@@ -4047,6 +4047,30 @@ void txgbe_get_hw_control(struct txgbe_adapter *adapter)
 	      TXGBE_CFG_PORT_CTL_DRV_LOAD, TXGBE_CFG_PORT_CTL_DRV_LOAD);
 }
 
+static void txgbe_set_storm_ctl(struct txgbe_hw *hw)
+{
+	u32 value = 0, thre = 0;
+
+	if (TXGBE_STORM_MC || TXGBE_STORM_BC) {
+		value = (TXGBE_STORM_MC & TXGBE_PSR_STORM_CTL_MC_MASK) |
+			((TXGBE_STORM_BC << 2) & TXGBE_PSR_STORM_CTL_BC_MASK);
+		if (TXGBE_STORM_BC)
+			value |= (TXGBE_STORM_UC << 4) & TXGBE_PSR_STORM_CTL_UC;
+	}
+
+	value |= (TXGBE_STORM_INTERVAL << 8) &
+			  TXGBE_PSR_STORM_CTL_INTERVAL_MASK;
+
+	if (TXGBE_STORM_BC)
+		thre = ((TXGBE_STORM_BC_THRE << 16) &
+			TXGBE_PSR_STORM_THRE_BC_MASK);
+	if (TXGBE_STORM_MC)
+		thre |= (TXGBE_STORM_MC_THRE & TXGBE_PSR_STORM_THRE_MC_MASK);
+
+	wr32(hw, TXGBE_PSR_STORM_CTL, value);
+	wr32(hw, TXGBE_PSR_STORM_THRE, thre);
+}
+
 /**
  *  txgbe_reset_hw_generic - Perform hardware reset
  *  @hw: pointer to hardware structure
@@ -4150,6 +4174,8 @@ int txgbe_reset_hw_generic(struct txgbe_hw *hw)
 	}
 
 	pci_set_master(adapter->pdev);
+
+	txgbe_set_storm_ctl(hw);
 
 reset_hw_out:
 	return status;

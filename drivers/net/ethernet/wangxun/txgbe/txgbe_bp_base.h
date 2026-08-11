@@ -43,8 +43,32 @@
 #define SW_CTRL_EPHY_FORCE	0
 #endif
 
+#ifndef TXGBE_STORM_INTERVAL
+#define TXGBE_STORM_INTERVAL	100
+#endif
+
+#ifndef TXGBE_STORM_UC
+#define TXGBE_STORM_UC		0
+#endif
+
+#ifndef TXGBE_STORM_BC
+#define TXGBE_STORM_BC		0
+#endif
+
+#ifndef TXGBE_STORM_BC_THRE
+#define TXGBE_STORM_BC_THRE	100
+#endif
+
+#ifndef TXGBE_STORM_MC
+#define TXGBE_STORM_MC		0
+#endif
+
+#ifndef TXGBE_STORM_MC_THRE
+#define TXGBE_STORM_MC_THRE	100
+#endif
+
 #ifndef AUTO
-#define AUTO			1	/* auto-negotiate/identify sfp module type */
+#define AUTO			1
 #endif
 
 #define TXGBE_10G_FEC_REQ	BIT(15)

@@ -1123,6 +1123,22 @@ enum txgbe_fdir_pballoc_type {
 #define TXGBE_PSR_VLAN_CTL_CFIEN        0x20000000U  /* bit 29 */
 #define TXGBE_PSR_VLAN_CTL_VFE          0x40000000U  /* bit 30 */
 
+/*storm controller*/
+#define TXGBE_PSR_STORM_CTL                0x15004
+#define TXGBE_PSR_STORM_CTL_INTERVAL_MASK  0x3ff00
+#define TXGBE_PSR_STORM_CTL_INTERVAL_MAX   0x3ff
+#define TXGBE_PSR_STORM_CTL_MC_MASK        0x3
+#define TXGBE_PSR_STORM_CTL_MC_PREV        0x1
+#define TXGBE_PSR_STORM_CTL_MC_CUR         0x2
+#define TXGBE_PSR_STORM_CTL_BC_MASK        0xc
+#define TXGBE_PSR_STORM_CTL_BC_PREV        0x4
+#define TXGBE_PSR_STORM_CTL_BC_CUR         0x8
+#define TXGBE_PSR_STORM_CTL_UC             0x10
+#define TXGBE_PSR_STORM_CTL_INTEVAL_MASK   0x3FF00U
+#define TXGBE_PSR_STORM_THRE               0x15008
+#define TXGBE_PSR_STORM_THRE_BC_MASK       0xFFFF0000U
+#define TXGBE_PSR_STORM_THRE_MC_MASK       0x0000FFFFU
+
 /* vm L2 contorl */
 #define TXGBE_PSR_VM_L2CTL(_i)          (0x15600 + ((_i) * 4))
 /* VMOLR bitmasks */
@@ -1610,6 +1626,7 @@ enum TXGBE_MSCA_CMD_value {
 #define TXGBE_AML_MAC_PXONRXC(_i)       (0x11FC0 + ((_i) * 4)) /* 8 of these */
 #define TXGBE_AML_MAC_PXOFFRXC(_i)      (0x11FA0 + ((_i) * 4)) /* 8 of these */
 #define TXGBE_RX_BC_FRAMES_GOOD_LOW     0x11918
+#define TXGBE_RX_MC_FRAMES_GOOD_LOW     0x11920
 #define TXGBE_RX_CRC_ERROR_FRAMES_LOW   0x11928
 #define TXGBE_RX_LEN_ERROR_FRAMES_LOW   0x11978
 #define TXGBE_RX_UNDERSIZE_FRAMES_GOOD  0x11938

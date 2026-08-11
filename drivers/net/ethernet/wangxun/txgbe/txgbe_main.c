@@ -6624,7 +6624,6 @@ void txgbe_update_stats(struct txgbe_adapter *adapter)
 	u64 alloc_rx_page_failed = 0, alloc_rx_buff_failed = 0;
 	u64 bytes = 0, packets = 0, hw_csum_rx_error = 0;
 	u64 hw_csum_rx_good = 0;
-	u8 pf_queue_offset = 0;
 
 	if (test_bit(__TXGBE_DOWN, &adapter->state) ||
 	    test_bit(__TXGBE_RESETTING, &adapter->state))
@@ -6755,7 +6754,6 @@ void txgbe_update_stats(struct txgbe_adapter *adapter)
 
 	bprc = rd32(hw, TXGBE_RX_BC_FRAMES_GOOD_LOW);
 	hwstats->bprc += bprc;
-	hwstats->mprc = 0;
 	hwstats->rdpc += rd32(hw, TXGBE_RDB_PKT_CNT);
 	hwstats->rddc += rd32(hw, TXGBE_RDB_DRP_CNT);
 	hwstats->psrpc += rd32(hw, TXGBE_PSR_PKT_CNT);
@@ -6765,11 +6763,7 @@ void txgbe_update_stats(struct txgbe_adapter *adapter)
 	hwstats->tdmdc += rd32(hw, TXGBE_TDM_DRP_CNT);
 	hwstats->tdbpc += rd32(hw, TXGBE_TDB_OUT_PKT_CNT);
 
-	pf_queue_offset = adapter->ring_feature[RING_F_VMDQ].offset *
-					 (adapter->ring_feature[RING_F_RSS].mask + 1);
-
-	for (i = pf_queue_offset; i < 128; i++)
-		hwstats->mprc += rd32(hw, TXGBE_PX_MPRC(i));
+	hwstats->mprc += rd32(hw, TXGBE_RX_MC_FRAMES_GOOD_LOW);
 
 	hwstats->roc += rd32(hw, TXGBE_RX_OVERSIZE_FRAMES_GOOD);
 	hwstats->rlec += rd32(hw, TXGBE_RX_LEN_ERROR_FRAMES_LOW);

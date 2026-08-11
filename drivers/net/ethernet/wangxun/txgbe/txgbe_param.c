@@ -413,7 +413,10 @@ static bool txgbe_check_any_option_use(void)
 	    PARAM_BESET(itr) || PARAM_BESET(lli_port) ||
 	    PARAM_BESET(lli_size) || PARAM_BESET(lli_etype) ||
 	    PARAM_BESET(LLIVLANP) || PARAM_BESET(fdir_pballoc) ||
-	    PARAM_BESET(atr_sample_rate) || PARAM_BESET(fcoe) ||
+	    PARAM_BESET(atr_sample_rate) ||
+#if IS_ENABLED(CONFIG_FCOE)
+	    PARAM_BESET(fcoe) ||
+#endif
 	    PARAM_BESET(LRO) || PARAM_BESET(fdir) ||
 	    PARAM_BESET(dmac_watchdog) || PARAM_BESET(vxlan_rx) ||
 	    PARAM_BESET(cloudswitch))
