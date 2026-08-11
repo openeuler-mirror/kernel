@@ -3329,7 +3329,6 @@ struct txgbe_hw {
 #define TXGBE_ERR_SFP_NO_INIT_SEQ_PRESENT       -(TXGBE_ERR + 21)
 #define TXGBE_ERR_NO_SAN_ADDR_PTR               -(TXGBE_ERR + 22)
 #define TXGBE_ERR_FDIR_REINIT_FAILED            -(TXGBE_ERR + 23)
-#define TXGBE_ERR_EEPROM_VERSION                -(TXGBE_ERR + 24)
 #define TXGBE_ERR_NO_SPACE                      -(TXGBE_ERR + 25)
 #define TXGBE_ERR_OVERTEMP                      -(TXGBE_ERR + 26)
 #define TXGBE_ERR_UNDERTEMP                     -(TXGBE_ERR + 27)

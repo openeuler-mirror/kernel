@@ -472,7 +472,6 @@ static void txgbe_set_vmolr(struct txgbe_hw *hw, u16 vf, bool aupe)
 {
 	u32 vmolr = rd32(hw, TXGBE_PSR_VM_L2CTL(vf));
 
-	vmolr |= TXGBE_PSR_VM_L2CTL_BAM;
 	vmolr &= ~TXGBE_PSR_VM_L2CTL_VACC;
 	if (aupe)
 		vmolr |= TXGBE_PSR_VM_L2CTL_AUPE;

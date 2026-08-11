@@ -5369,10 +5369,6 @@ void txgbe_reset(struct txgbe_adapter *adapter)
 		if (!adapter->io_err)
 			txgbe_tx_timeout_dorecovery(adapter);
 		break;
-	case TXGBE_ERR_EEPROM_VERSION:
-		/* We are running on a pre-production device, log a warning */
-		e_dev_warn("This device is a pre-production adapter/LOM.\n");
-		break;
 	default:
 		e_dev_err("Hardware Error: %d\n", err);
 	}
@@ -7799,10 +7795,10 @@ static void txgbe_reset_subtask(struct txgbe_adapter *adapter)
 					TXGBE_FLAG2_MNG_REG_ACCESS_DISABLED;
 		} else if (value == TXGBE_MIS_RST_ST_DEV_RST_TYPE_GLOBAL_RST) {
 			adapter->hw.reset_type = TXGBE_GLOBAL_RESET;
+			adapter->hw.force_full_reset = true;
+			txgbe_reinit_locked(adapter);
+			adapter->hw.force_full_reset = false;
 		}
-		adapter->hw.force_full_reset = true;
-		txgbe_reinit_locked(adapter);
-		adapter->hw.force_full_reset = false;
 		goto unlock;
 	}
 
@@ -7819,9 +7815,8 @@ static void txgbe_reset_subtask(struct txgbe_adapter *adapter)
 		/*txgbe_dump(adapter);*/
 		if (txgbe_mng_present(&adapter->hw))
 			txgbe_reset_hostif(&adapter->hw);
-		else
-			wr32m(&adapter->hw, TXGBE_MIS_RST,
-			      TXGBE_MIS_RST_SW_RST, TXGBE_MIS_RST_SW_RST);
+		wr32m(&adapter->hw, TXGBE_MIS_RST,
+		      TXGBE_MIS_RST_SW_RST, TXGBE_MIS_RST_SW_RST);
 
 	} else if (reset_flag & TXGBE_FLAG2_PF_RESET_REQUESTED) {
 		/*debug to up*/
@@ -7843,10 +7838,8 @@ static void txgbe_reset_subtask(struct txgbe_adapter *adapter)
 		pci_save_state(adapter->pdev);
 		if (txgbe_mng_present(&adapter->hw))
 			txgbe_reset_hostif(&adapter->hw);
-		else
-			wr32m(&adapter->hw, TXGBE_MIS_RST,
-			      TXGBE_MIS_RST_GLOBAL_RST,
-				TXGBE_MIS_RST_GLOBAL_RST);
+		wr32m(&adapter->hw, TXGBE_MIS_RST,
+		      TXGBE_MIS_RST_GLOBAL_RST, TXGBE_MIS_RST_GLOBAL_RST);
 	}
 
 unlock:
@@ -10279,8 +10272,6 @@ static int txgbe_probe(struct pci_dev *pdev,
 
 	txgbe_assign_netdev_ops(netdev);
 
-	strscpy(netdev->name, pci_name(pdev), sizeof(netdev->name));
-
 	adapter->bd_number = cards_found;
 
 	/* setup the private structure */
@@ -10546,10 +10537,7 @@ static int txgbe_probe(struct pci_dev *pdev,
 
 	/* reset the hardware with the new settings */
 	err = hw->mac.ops.start_hw(hw);
-	if (err == TXGBE_ERR_EEPROM_VERSION) {
-		/* We are running on a pre-production device, log a warning */
-		e_dev_warn("This device is a pre-production adapter\n");
-	} else if (err) {
+	if (err) {
 		e_dev_err("HW init failed\n");
 		goto err_register;
 	}
