@@ -3709,10 +3709,14 @@ static void txgbe_configure_virtualization(struct txgbe_adapter *adapter)
 	reg_offset = (VMDQ_P(0) >= 32) ? 1 : 0;
 
 	/* Enable only the PF pools for Tx/Rx */
-	wr32(hw, TXGBE_RDM_VF_RE(reg_offset), (~0) << vf_shift);
-	wr32(hw, TXGBE_RDM_VF_RE(reg_offset ^ 1), reg_offset - 1);
+	wr32(hw, TXGBE_RDM_VF_RE(reg_offset), 1 << vf_shift);
+	wr32(hw, TXGBE_RDM_VF_RE(reg_offset ^ 1), 0);
 	wr32(hw, TXGBE_TDM_VF_TE(reg_offset), (~0) << vf_shift);
 	wr32(hw, TXGBE_TDM_VF_TE(reg_offset ^ 1), reg_offset - 1);
+
+	/*clear TXGBE_PSR_VM_L2CTL in not enable vm*/
+	for (i = VMDQ_P(0) + 1; i < 64; i++)
+		wr32(hw, TXGBE_PSR_VM_L2CTL(i), 0);
 
 	adapter->flags2 &= ~TXGBE_FLAG2_VLAN_PROMISC;
 
@@ -4796,6 +4800,18 @@ static void txgbe_ethertype_filter_restore(struct txgbe_adapter *adapter)
 			     filter_info->etype_filters[i].etqs);
 			TXGBE_WRITE_FLUSH(hw);
 		}
+	}
+}
+
+static void txgbe_ethertype_filter_clear(struct txgbe_adapter *adapter)
+{
+	struct txgbe_hw *hw = &adapter->hw;
+	int i;
+
+	for (i = 0; i < TXGBE_MAX_PSR_ETYPE_SWC_FILTERS; i++) {
+		wr32(hw, TXGBE_PSR_ETYPE_SWC(i), 0);
+		wr32(hw, TXGBE_RDB_ETYPE_CLS(i), 0);
+		TXGBE_WRITE_FLUSH(hw);
 	}
 }
 
@@ -7432,6 +7448,9 @@ static void txgbe_sfp_detection_subtask(struct txgbe_adapter *adapter)
 
 sfp_out:
 	clear_bit(__TXGBE_IN_SFP_INIT, &adapter->state);
+
+	if (err)
+		adapter->autoneg = false; /*init autoneg when NOT_SUPPORTED or NOT_PRESENT*/
 
 	if (err == TXGBE_ERR_SFP_NOT_SUPPORTED && adapter->netdev_registered)
 		e_dev_err("failed to initialize because an unsupported SFP+ module type was detected.\n");
@@ -10742,6 +10761,7 @@ static void txgbe_remove(struct pci_dev *pdev)
 
 	hw = &adapter->hw;
 	txgbe_mac_set_default_filter(adapter, hw->mac.perm_addr);
+	txgbe_ethertype_filter_clear(adapter);
 
 	netdev = adapter->netdev;
 	txgbe_dbg_adapter_exit(adapter);

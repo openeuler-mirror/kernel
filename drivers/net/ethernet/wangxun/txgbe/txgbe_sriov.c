@@ -472,7 +472,8 @@ static void txgbe_set_vmolr(struct txgbe_hw *hw, u16 vf, bool aupe)
 {
 	u32 vmolr = rd32(hw, TXGBE_PSR_VM_L2CTL(vf));
 
-	vmolr |=  TXGBE_PSR_VM_L2CTL_BAM;
+	vmolr |= TXGBE_PSR_VM_L2CTL_BAM;
+	vmolr &= ~TXGBE_PSR_VM_L2CTL_VACC;
 	if (aupe)
 		vmolr |= TXGBE_PSR_VM_L2CTL_AUPE;
 	else
@@ -1008,23 +1009,23 @@ static int txgbe_update_vf_xcast_mode(struct txgbe_adapter *adapter,
 
 	switch (xcast_mode) {
 	case TXGBEVF_XCAST_MODE_NONE:
-		disable = TXGBE_PSR_VM_L2CTL_BAM | TXGBE_PSR_VM_L2CTL_ROMPE |
+		disable = TXGBE_PSR_VM_L2CTL_ROMPE |
 			  TXGBE_PSR_VM_L2CTL_MPE | TXGBE_PSR_VM_L2CTL_UPE | TXGBE_PSR_VM_L2CTL_VPE;
-		enable = 0;
+		enable = TXGBE_PSR_VM_L2CTL_BAM;
 		break;
 	case TXGBEVF_XCAST_MODE_MULTI:
 		disable = TXGBE_PSR_VM_L2CTL_MPE | TXGBE_PSR_VM_L2CTL_UPE | TXGBE_PSR_VM_L2CTL_VPE;
 		enable = TXGBE_PSR_VM_L2CTL_BAM | TXGBE_PSR_VM_L2CTL_ROMPE;
 		break;
 	case TXGBEVF_XCAST_MODE_ALLMULTI:
-		disable = TXGBE_PSR_VM_L2CTL_UPE;
+		disable = TXGBE_PSR_VM_L2CTL_UPE | TXGBE_PSR_VM_L2CTL_VPE;
 		enable = TXGBE_PSR_VM_L2CTL_BAM | TXGBE_PSR_VM_L2CTL_ROMPE |
-			 TXGBE_PSR_VM_L2CTL_MPE | TXGBE_PSR_VM_L2CTL_VPE;
+			 TXGBE_PSR_VM_L2CTL_MPE;
 		break;
 	case TXGBEVF_XCAST_MODE_PROMISC:
-		disable = 0;
+		disable = TXGBE_PSR_VM_L2CTL_VPE;
 		enable = TXGBE_PSR_VM_L2CTL_BAM | TXGBE_PSR_VM_L2CTL_ROMPE |
-			 TXGBE_PSR_VM_L2CTL_MPE | TXGBE_PSR_VM_L2CTL_UPE | TXGBE_PSR_VM_L2CTL_VPE;
+			 TXGBE_PSR_VM_L2CTL_MPE | TXGBE_PSR_VM_L2CTL_UPE;
 		break;
 	default:
 		return -EOPNOTSUPP;

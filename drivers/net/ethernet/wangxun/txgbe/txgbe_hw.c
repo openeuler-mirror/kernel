@@ -1720,6 +1720,7 @@ static int txgbe_set_vlvf(struct txgbe_hw *hw, u32 vlan, u32 vind,
 int txgbe_set_vfta(struct txgbe_hw *hw, u32 vlan, u32 vind,
 		   bool vlan_on)
 {
+	struct txgbe_adapter *adapter = hw->back;
 	int regindex;
 	u32 bitindex;
 	u32 vfta;
@@ -1754,8 +1755,12 @@ int txgbe_set_vfta(struct txgbe_hw *hw, u32 vlan, u32 vind,
 	if (ret_val != 0)
 		return ret_val;
 
+	if (adapter->flags2 & TXGBE_FLAG2_VLAN_PROMISC)
+		return 0;
+
 	if (vfta_changed)
 		wr32(hw, TXGBE_PSR_VLAN_TBL(regindex), vfta);
+
 	return 0;
 }
 
