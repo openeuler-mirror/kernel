@@ -4337,14 +4337,7 @@ static void txgbe_scrub_vfta(struct txgbe_adapter *adapter)
 
 	/* extract values from vft_shadow and write back to VFTA */
 	for (i = 0; i < hw->mac.vft_size; i++) {
-#ifdef CONFIG_64BIT
-		if (i % 2)
-			vfta = (u32)((adapter->active_vlans[i / 2] >> 32) & U32_MAX);
-		else
-			vfta = (u32)((adapter->active_vlans[i / 2]) & U32_MAX);
-#else
-		vfta = (u32)((adapter->active_vlans[i]) & U32_MAX);
-#endif
+		vfta = hw->mac.vft_shadow[i];
 		wr32(hw, TXGBE_PSR_VLAN_TBL(i), vfta);
 	}
 }
@@ -7118,9 +7111,12 @@ static void txgbe_watchdog_link_is_up(struct txgbe_adapter *adapter)
 	else
 		an = "False";
 
-	netdev_info(netdev, "NIC Link is up %s Full, FEC: %s, Autoneg Advertised: %s and Negotiated: %s, Flow Control Advertised: %s and Negotiated: %s.\n",
-		    speed, fec, txgbe_xpcs_an_enabled(hw) ? "True" : "False",
-		    an, ad_fc, fc);
+	if (txgbe_xpcs_an_enabled(hw))
+		netdev_info(netdev, "NIC Link is up %s Full, FEC: %s, Autoneg Advertised: True and Negotiated: %s, Flow Control Advertised: %s and Negotiated: %s.\n",
+			    speed, fec, an, ad_fc, fc);
+	else
+		netdev_info(netdev, "NIC Link is up %s Full, FEC: %s, Flow Control Advertised: %s and Negotiated: %s.\n",
+			    speed, fec, ad_fc, fc);
 
 	if (!txgbe_xpcs_an_enabled(hw) && hw->mac.type == txgbe_mac_sp)
 		txgbe_enable_rx_adapter(hw);

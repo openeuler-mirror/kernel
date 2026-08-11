@@ -1741,7 +1741,8 @@ int txgbe_set_vfta(struct txgbe_hw *hw, u32 vlan, u32 vind,
 	regindex = (vlan >> 5) & 0x7F;
 	bitindex = vlan & 0x1F;
 	targetbit = (1 << bitindex);
-	vfta = rd32(hw, TXGBE_PSR_VLAN_TBL(regindex));
+	/* errata 5 */
+	vfta = hw->mac.vft_shadow[regindex];
 	if (vlan_on) {
 		if (!(vfta & targetbit)) {
 			vfta |= targetbit;
@@ -1762,11 +1763,16 @@ int txgbe_set_vfta(struct txgbe_hw *hw, u32 vlan, u32 vind,
 	if (ret_val != 0)
 		return ret_val;
 
+	/* errata 5 */
+	hw->mac.vft_shadow[regindex] = vfta;
+
 	if (adapter->flags2 & TXGBE_FLAG2_VLAN_PROMISC)
 		return 0;
 
 	if (vfta_changed)
 		wr32(hw, TXGBE_PSR_VLAN_TBL(regindex), vfta);
+	/* errata 5 */
+	hw->mac.vft_shadow[regindex] = vfta;
 
 	return 0;
 }
@@ -1783,6 +1789,8 @@ int txgbe_clear_vfta(struct txgbe_hw *hw)
 
 	for (offset = 0; offset < hw->mac.vft_size; offset++) {
 		wr32(hw, TXGBE_PSR_VLAN_TBL(offset), 0);
+		/* errata 5 */
+		hw->mac.vft_shadow[offset] = 0;
 	}
 
 	for (offset = 0; offset < TXGBE_PSR_VLAN_SWC_ENTRIES; offset++) {

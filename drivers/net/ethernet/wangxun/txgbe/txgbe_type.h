@@ -3192,6 +3192,7 @@ struct txgbe_mac_info {
 #define TXGBE_MAX_VFTA_ENTRIES          128
 	u32 mta_shadow[TXGBE_MAX_MTA];
 	int mc_filter_type;
+	u32 vft_shadow[TXGBE_MAX_VFTA_ENTRIES];
 	u32 mcft_size;
 	u32 vft_size;
 	u32 num_rar_entries;
