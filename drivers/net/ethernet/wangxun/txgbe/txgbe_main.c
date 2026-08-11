@@ -10210,7 +10210,6 @@ static int txgbe_probe(struct pci_dev *pdev,
 	u8 part_str[TXGBE_PBANUM_LENGTH];
 	unsigned int indices = MAX_TX_QUEUES;
 	bool disable_dev = false;
-	u16 pvalue = 0;
 
 	err = pci_enable_device_mem(pdev);
 	if (err)
@@ -10251,9 +10250,8 @@ static int txgbe_probe(struct pci_dev *pdev,
 
 	pci_set_master(pdev);
 	/* errata 16 */
-	pcie_capability_clear_and_set_word(pdev, PCI_EXP_DEVCTL,
-					   PCI_EXP_DEVCTL_READRQ,
-						0x1000);
+	if (pcie_get_readrq(pdev) != 256)
+		pcie_set_readrq(pdev, 256);
 
 	netdev = alloc_etherdev_mq(sizeof(struct txgbe_adapter), indices);
 	if (!netdev) {
@@ -10327,8 +10325,6 @@ static int txgbe_probe(struct pci_dev *pdev,
 		goto err_sw_init;
 	}
 
-	if (txgbe_is_lldp(hw))
-		e_dev_err("Can not get lldp flags from flash\n");
 #ifdef CONFIG_PCI_IOV
 	if (adapter->max_vfs > 0) {
 		e_dev_warn("Enabling SR-IOV VFs using the max_vfs parameter is deprecated.\n");
@@ -10442,6 +10438,9 @@ static int txgbe_probe(struct pci_dev *pdev,
 		err = -EIO;
 		goto err_sw_init;
 	}
+
+	if (txgbe_is_lldp(hw))
+		e_dev_err("Can not get lldp flags from flash.\n");
 
 	if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40) {
 		err = txgbe_test_phy_status_hostif(hw);
@@ -10682,11 +10681,14 @@ no_info_string:
 		(adapter->flags2 & TXGBE_FLAG2_EEE_ENABLED));
 
 	if (hw->mac.type == txgbe_mac_sp) {
-		pcie_capability_read_word(pdev, PCI_EXP_DEVCTL2, &pvalue);
-		pvalue = pvalue | 0x10;
-		pcie_capability_write_word(pdev, PCI_EXP_DEVCTL2, pvalue);
-		adapter->cmplt_to_dis = true;
-		e_info(probe, "disable completion timeout\n");
+		err = pcie_capability_set_word(pdev, PCI_EXP_DEVCTL2,
+					       PCI_EXP_DEVCTL2_COMP_TMOUT_DIS);
+		if (err) {
+			e_info(probe, "disable completion timeout failed\n");
+		} else {
+			adapter->cmplt_to_dis = true;
+			e_info(probe, "disable completion timeout succeeded\n");
+		}
 	}
 
 	return 0;
@@ -10958,13 +10960,14 @@ static pci_ers_result_t txgbe_io_slot_reset(struct pci_dev *pdev)
 {
 	struct txgbe_adapter *adapter = pci_get_drvdata(pdev);
 	pci_ers_result_t result = PCI_ERS_RESULT_RECOVERED;
-	u16 value;
+	int ret;
 
 	if (adapter->hw.mac.type == txgbe_mac_sp)
 		if (adapter->cmplt_to_dis) {
-			pcie_capability_read_word(adapter->pdev, PCI_EXP_DEVCTL2, &value);
-			value |= 0x10;
-			pcie_capability_write_word(adapter->pdev, PCI_EXP_DEVCTL2, value);
+			ret = pcie_capability_set_word(pdev, PCI_EXP_DEVCTL2,
+						       PCI_EXP_DEVCTL2_COMP_TMOUT_DIS);
+			e_info(probe, "%s %d, disable completion timeout %s\n",
+			       __func__, __LINE__, ret ? "failed" : "succeeded");
 			adapter->cmplt_to_dis = false;
 		}
 
