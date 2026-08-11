@@ -31,6 +31,7 @@
 #endif /* CONFIG_FCOE */
 
 #include <net/xdp.h>
+#include <net/page_pool/helpers.h>
 
 #include <linux/timecounter.h>
 #include <linux/clocksource.h>
@@ -315,6 +316,7 @@ struct txgbe_ring {
 	struct device *dev;             /* device for DMA mapping */
 	struct bpf_prog *xdp_prog;
 	struct txgbe_fwd_adapter *accel;
+	struct page_pool *page_pool;
 	void *desc;                     /* descriptor ring memory */
 	union {
 		struct txgbe_tx_buffer *tx_buffer_info;

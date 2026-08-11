@@ -71,6 +71,10 @@
 #define AUTO			1
 #endif
 
+#ifndef TXGBE_PAGE_POOL
+#define TXGBE_PAGE_POOL
+#endif
+
 #define TXGBE_10G_FEC_REQ	BIT(15)
 #define TXGBE_10G_FEC_ABL	BIT(14)
 #define TXGBE_25G_BASE_FEC_REQ	BIT(13)
