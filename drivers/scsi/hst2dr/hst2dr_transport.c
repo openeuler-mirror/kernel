@@ -650,7 +650,7 @@ hst2dr_transport_port_add(struct HST2DR_ADAPTER *ioa, u16 handle,
 	struct _sas_port *hst2dr_port;
 	unsigned long flags;
 	struct _sas_node *sas_node;
-	struct sas_rphy *rphy;
+	struct sas_rphy *rphy = NULL;
 	struct _sas_device *sas_device = NULL;
 	int i;
 	struct sas_port *port = NULL;
@@ -713,6 +713,11 @@ hst2dr_transport_port_add(struct HST2DR_ADAPTER *ioa, u16 handle,
 		goto out_fail;
 	}
 	port = sas_port_alloc_num(sas_node->parent_dev);
+	if (!port) {
+		log_error(ioa, "failure at %s:%d/%s()!\n",
+			__FILE__, __LINE__, __func__);
+		goto out_fail;
+	}
 	if ((sas_port_add(port))) {
 		log_error(ioa, "failure at %s:%d/%s()!\n",
 			__FILE__, __LINE__, __func__);
@@ -731,6 +736,11 @@ hst2dr_transport_port_add(struct HST2DR_ADAPTER *ioa, u16 handle,
 	else
 		rphy = sas_expander_alloc(port,
 			hst2dr_port->remote_identify.device_type);
+	if (!rphy) {
+		log_error(ioa, "failure at %s:%d/%s()!\n",
+			__FILE__, __LINE__, __func__);
+		goto delete_sas_port;
+	}
 
 	rphy->identify = hst2dr_port->remote_identify;
 
@@ -738,7 +748,7 @@ hst2dr_transport_port_add(struct HST2DR_ADAPTER *ioa, u16 handle,
 		sas_device = hst2dr_get_sdev_by_addr(ioa,
 				hst2dr_port->remote_identify.sas_address);
 		if (!sas_device)
-			goto out_fail;
+			goto delete_sas_port;
 
 		sas_device->pend_sas_rphy_add = 1;
 	}
@@ -746,6 +756,9 @@ hst2dr_transport_port_add(struct HST2DR_ADAPTER *ioa, u16 handle,
 	if ((sas_rphy_add(rphy))) {
 		log_error(ioa, "failure at %s:%d/%s()!\n",
 			__FILE__, __LINE__, __func__);
+		sas_rphy_free(rphy);
+		rphy = NULL;
+		goto delete_sas_port;
 	}
 
 	if (hst2dr_port->remote_identify.device_type == SAS_END_DEVICE) {
@@ -770,13 +783,14 @@ hst2dr_transport_port_add(struct HST2DR_ADAPTER *ioa, u16 handle,
 			handle,
 			rphy_to_expander_device(rphy));
 	return hst2dr_port;
+ delete_sas_port:
+	sas_port_delete(port);
+
  out_fail:
 	list_for_each_entry_safe(hst2dr_phy, next, &hst2dr_port->phy_list,
 		port_siblings)
 		list_del_init(&hst2dr_phy->port_siblings);
 	kfree(hst2dr_port);
-	if (port)
-		sas_port_free(port);
 	return NULL;
 }
 
