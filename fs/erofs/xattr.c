@@ -34,6 +34,8 @@ static int erofs_init_inode_xattrs(struct inode *inode)
 	struct super_block *sb = inode->i_sb;
 	int ret = 0;
 
+	it.buf = __EROFS_BUF_INITIALIZER;
+
 	/* the most case is that xattrs of this inode are initialized. */
 	if (test_bit(EROFS_I_EA_INITED_BIT, &vi->flags)) {
 		/*
@@ -76,7 +78,6 @@ static int erofs_init_inode_xattrs(struct inode *inode)
 		goto out_unlock;
 	}
 
-	it.buf = __EROFS_BUF_INITIALIZER;
 	erofs_init_metabuf(&it.buf, sb);
 	it.pos = erofs_iloc(inode) + vi->inode_isize;
 
