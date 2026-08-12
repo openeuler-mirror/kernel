@@ -600,7 +600,12 @@ struct kvm_vcpu_arch {
 	bool pause;
 	/* Shadow copy of pvsched preempted state for module param toggle */
 	KABI_FILL_HOLE(bool pv_preempted)
-
+#ifdef CONFIG_PARAVIRT_SPINLOCKS
+	/* pv related host specific info */
+	KABI_FILL_HOLE(struct {
+		bool pv_unhalted;
+	} pv)
+#endif
 	/*
 	 * We maintain more than a single set of debug registers to support
 	 * debugging the guest from the host and to maintain separate host and
@@ -672,13 +677,6 @@ struct kvm_vcpu_arch {
 	struct {
 		gpa_t base;
 	} pvsched;
-#endif
-
-#ifdef CONFIG_PARAVIRT_SPINLOCKS
-	/* pv related host specific info */
-	struct {
-		bool pv_unhalted;
-	} pv;
 #endif
 
 	/* Per-vcpu CCSIDR override or NULL */
