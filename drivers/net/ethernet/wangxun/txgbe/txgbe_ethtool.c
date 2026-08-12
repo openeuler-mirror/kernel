@@ -789,6 +789,8 @@ static int txgbe_set_link_ksettings(struct net_device *netdev,
 	hw->mac.orig_link_settings_stored = true;
 	adapter->autoneg = ks->base.autoneg;
 	adapter->backplane_an = ks->base.autoneg;
+	hw->phy.link_info.req_speeds = user_req;
+	hw->phy.autoneg_advertised = user_req;
 
 	if (adapter->link_up) {
 		/* Tell the OS link is going down, the link will go
@@ -807,9 +809,6 @@ static int txgbe_set_link_ksettings(struct net_device *netdev,
 		hw->mac.ops.setup_link(hw, old, true);
 		goto err_set;
 	}
-
-	hw->phy.link_info.req_speeds = user_req;
-	hw->phy.autoneg_advertised = user_req;
 
 	/* notify fw autoneg status */
 	txgbe_hic_write_autoneg_status(hw, ks->base.autoneg);

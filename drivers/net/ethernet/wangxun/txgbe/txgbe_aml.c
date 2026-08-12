@@ -20,9 +20,6 @@ static int txgbe_reset_hw_aml(struct txgbe_hw *hw)
 	struct txgbe_adapter *adapter = hw->back;
 	int ret;
 
-	/* take driver control when do reset */
-	txgbe_get_hw_control(hw);
-
 	ret = txgbe_reset_hw_generic(hw);
 	if (ret)
 		goto out;
@@ -40,7 +37,6 @@ static int txgbe_reset_hw_aml(struct txgbe_hw *hw)
 	adapter->cur_fec_link = TXGBE_PHY_FEC_AUTO;
 
 out:
-	txgbe_release_hw_control(hw);
 	return ret;
 }
 
@@ -340,6 +336,8 @@ static int txgbe_setup_mac_link_multispeed_fiber_aml(struct txgbe_hw *hw,
 		return status;
 
 	speed &= link_speed;
+	if (hw->phy.link_info.req_speeds)
+		speed &= hw->phy.link_info.req_speeds;
 
 	/* Try each speed one by one, highest priority first.  We do this in
 	 * software because 10Gb fiber doesn't support speed autonegotiation.
@@ -442,6 +440,7 @@ out:
 
 static void txgbe_init_mac_link_ops_aml(struct txgbe_hw *hw)
 {
+	struct txgbe_adapter *adapter = hw->back;
 	struct txgbe_mac_info *mac = &hw->mac;
 
 	mac->ops.disable_tx_laser = txgbe_disable_tx_laser_multispeed_fiber;
@@ -450,7 +449,9 @@ static void txgbe_init_mac_link_ops_aml(struct txgbe_hw *hw)
 
 	if (hw->phy.multispeed_fiber) {
 		/* Set up dual speed SFP+ support */
-		mac->ops.setup_link = txgbe_setup_mac_link_multispeed_fiber_aml;
+		if (!test_bit(TXGBE_FLAG_FW_CONTROL_PHY, adapter->flag))
+			mac->ops.setup_link =
+				txgbe_setup_mac_link_multispeed_fiber_aml;
 		mac->ops.setup_mac_link = txgbe_setup_mac_link_aml;
 		mac->ops.set_rate_select_speed = txgbe_set_hard_rate_select_speed;
 	}

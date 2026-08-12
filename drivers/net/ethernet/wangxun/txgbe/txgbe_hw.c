@@ -3000,6 +3000,9 @@ int txgbe_setup_mac_link_multispeed_fiber(struct txgbe_hw *hw,
 
 	speed &= link_speed;
 
+	if (hw->phy.link_info.req_speeds)
+		speed &= hw->phy.link_info.req_speeds;
+
 	/* Try each speed one by one, highest priority first.  We do this in
 	 * software because 10Gb fiber doesn't support speed autonegotiation.
 	 */
@@ -3638,9 +3641,6 @@ int txgbe_get_invariants_generic(struct txgbe_hw *hw)
 	struct txgbe_mac_info *mac = &hw->mac;
 	struct txgbe_phy_info *phy = &hw->phy;
 
-	/* Call PHY identify routine to get the phy type */
-	txgbe_identify_phy_generic(hw);
-
 	phy->sfp_type = txgbe_sfp_type_unknown;
 
 	adapter->ring_feature[RING_F_FDIR].limit = min_t(int,
@@ -4048,6 +4048,10 @@ static int txgbe_reset_misc(struct txgbe_hw *hw)
 
 void txgbe_release_hw_control(struct txgbe_hw *hw)
 {
+	u32 value = rd32m(hw, TXGBE_CFG_PORT_CTL, TXGBE_CFG_PORT_CTL_DRV_LOAD);
+
+	if (!value)
+		return;
 	/* Let firmware take over control of h/w */
 	wr32m(hw, TXGBE_CFG_PORT_CTL, TXGBE_CFG_PORT_CTL_DRV_LOAD, 0);
 	msleep(150);
@@ -4055,6 +4059,10 @@ void txgbe_release_hw_control(struct txgbe_hw *hw)
 
 void txgbe_get_hw_control(struct txgbe_hw *hw)
 {
+	u32 value = rd32m(hw, TXGBE_CFG_PORT_CTL, TXGBE_CFG_PORT_CTL_DRV_LOAD);
+
+	if (value)
+		return;
 	/* Let firmware know the driver has taken over */
 	wr32m(hw, TXGBE_CFG_PORT_CTL,
 	      TXGBE_CFG_PORT_CTL_DRV_LOAD, TXGBE_CFG_PORT_CTL_DRV_LOAD);
@@ -4894,25 +4902,45 @@ int txgbe_start_hw(struct txgbe_hw *hw)
  **/
 int txgbe_identify_phy_generic(struct txgbe_hw *hw)
 {
-	/* Detect PHY if not unknown - returns success if already detected. */
+	/* Detect PHY type */
 	int status = TXGBE_ERR_PHY_ADDR_INVALID;
 
-	/* avoid fw access phy */
-	if (((hw->subsystem_device_id & 0xF0) == TXGBE_ID_XAUI) &&
-	    ((hw->subsystem_device_id & TXGBE_NCSI_MASK) == TXGBE_NCSI_SUP))
-		txgbe_get_hw_control(hw);
-
-	if (!hw->phy.phy_semaphore_mask)
-		hw->phy.phy_semaphore_mask = TXGBE_MNG_SWFW_SYNC_SW_PHY;
-
-	/* Let firmware take over control of h/w */
-	if (((hw->subsystem_device_id & 0xF0) == TXGBE_ID_XAUI) &&
-	    ((hw->subsystem_device_id & TXGBE_NCSI_MASK) == TXGBE_NCSI_SUP))
-		txgbe_release_hw_control(hw);
-
-	/* Return error if SFP module has been detected but is not supported */
-	if (hw->phy.type == txgbe_phy_sfp_unsupported)
-		return TXGBE_ERR_SFP_NOT_SUPPORTED;
+	hw->phy.type = txgbe_phy_unknown;
+	switch (hw->mac.ops.get_media_type(hw)) {
+	case txgbe_media_type_copper:
+		if (hw->mac.type != txgbe_mac_sp)
+			break;
+		/* avoid fw access phy */
+		if (((hw->subsystem_device_id & 0xF0) == TXGBE_ID_XAUI) &&
+		    ((hw->subsystem_device_id & TXGBE_NCSI_MASK) ==
+		     TXGBE_NCSI_SUP)) {
+			/* Let firmware know the driver has taken over */
+			txgbe_get_hw_control(hw);
+		}
+		if (!hw->phy.phy_semaphore_mask)
+			hw->phy.phy_semaphore_mask = TXGBE_MNG_SWFW_SYNC_SW_PHY;
+		status = txgbe_init_external_phy(hw);
+		if (!status) {
+			txgbe_get_phy_id(hw);
+			hw->phy.type = txgbe_get_phy_type_from_id(hw);
+			status = 0;
+		}
+		/* Let firmware take over control of h/w */
+		if (((hw->subsystem_device_id & 0xF0) == TXGBE_ID_XAUI) &&
+		    ((hw->subsystem_device_id & TXGBE_NCSI_MASK) ==
+		     TXGBE_NCSI_SUP))
+			txgbe_release_hw_control(hw);
+		break;
+	case txgbe_media_type_fiber:
+	case txgbe_media_type_fiber_qsfp:
+		status = txgbe_identify_module(hw);
+		break;
+	case txgbe_media_type_backplane:
+	default:
+		hw->phy.type = txgbe_phy_none;
+		status = 0;
+		break;
+	}
 
 	return status;
 }

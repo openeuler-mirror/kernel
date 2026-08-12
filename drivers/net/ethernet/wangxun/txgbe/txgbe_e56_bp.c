@@ -2221,7 +2221,7 @@ int txgbe_e56_set_phylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 	}
 
 	adapter->an_done = false;
-	if (adapter->bp_link_mode == 10)
+	if (adapter->bp_link_mode == 110)
 		return 0;
 	kr_dbg(KR_MODE, "Setup to backplane mode ==========\n");
 
@@ -2249,40 +2249,24 @@ int txgbe_e56_set_phylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 		/* pcs case fec en to work around first */
 		txgbe_wr32_epcs(hw, 0x100ab, 1);
 
-		if (txgbe_is_backplane(hw)) {
-			if ((hw->device_id & 0xFF) == 0x10) {
-				backplane_mode |= 0x80;
-				fec_advertise |= TXGBE_10G_FEC_ABL;
-			} else if ((hw->device_id & 0xFF) == 0x25) {
-				backplane_mode |= 0xc000;
-				fec_advertise |= TXGBE_25G_RS_FEC_REQ |
-						 TXGBE_25G_BASE_FEC_REQ;
-			} else if ((hw->device_id & 0xFF) == 0x40) {
-				backplane_mode |= BIT(9) | BIT(8);
-				fec_advertise |= TXGBE_10G_FEC_ABL;
-			}
-		} else {
-			if ((hw->phy.fiber_suppport_speed &
-			     TXGBE_LINK_SPEED_10GB_FULL) ==
-			    TXGBE_LINK_SPEED_10GB_FULL) {
-				backplane_mode |= 0x80;
-				fec_advertise |= TXGBE_10G_FEC_ABL;
-			}
-
-			if ((hw->phy.fiber_suppport_speed &
-			     TXGBE_LINK_SPEED_25GB_FULL) ==
-			    TXGBE_LINK_SPEED_25GB_FULL) {
-				backplane_mode |= 0xc000;
-				fec_advertise |= TXGBE_25G_RS_FEC_REQ |
-						 TXGBE_25G_BASE_FEC_REQ;
-			}
-
-			if ((hw->phy.fiber_suppport_speed &
-			     TXGBE_LINK_SPEED_40GB_FULL) ==
-			    TXGBE_LINK_SPEED_40GB_FULL) {
-				backplane_mode |= BIT(9) | BIT(8);
-				fec_advertise |= TXGBE_10G_FEC_ABL;
-			}
+		/* backplane 10G/25G/40G */
+		/* 10GKR:7-25KR:14/15-40GKR:8-40GCR:9 */
+		/* default all speed */
+		if ((bplinkmode & TXGBE_LINK_SPEED_10GB_FULL) ||
+		     bplinkmode == 10) {
+			backplane_mode |= BIT(7);
+			fec_advertise |= TXGBE_10G_FEC_ABL;
+		}
+		if ((bplinkmode & TXGBE_LINK_SPEED_25GB_FULL) ||
+		    bplinkmode == 25) {
+			backplane_mode |= BIT(14) | BIT(15);
+			fec_advertise |= TXGBE_25G_RS_FEC_REQ |
+					 TXGBE_25G_BASE_FEC_REQ;
+		}
+		if ((bplinkmode & TXGBE_LINK_SPEED_40GB_FULL) ||
+		    bplinkmode == 40) {
+			backplane_mode |= BIT(9) | BIT(8);
+			fec_advertise |= TXGBE_10G_FEC_ABL;
 		}
 
 		txgbe_wr32_epcs(hw, 0x070010, 0x0001);
@@ -2339,6 +2323,9 @@ int txgbe_e56_set_phylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 		txgbe_field_set(&rdata, 12, 12, 0x1);
 		txgbe_wr32_epcs(hw, 0x070000, rdata);
 		kr_dbg(KR_MODE, "Setup the backplane mode========end ==\n");
+
+		/* set to 10G NRZ mode */
+		adapter->bp_link_mode = 110;
 	} else {
 		if ((hw->phy.fiber_suppport_speed &
 		     TXGBE_LINK_SPEED_40GB_FULL) == TXGBE_LINK_SPEED_40GB_FULL)

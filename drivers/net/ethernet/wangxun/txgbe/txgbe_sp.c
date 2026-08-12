@@ -874,7 +874,12 @@ static int txgbe_get_link_capabilities_sp(struct txgbe_hw *hw,
 	if (hw->phy.multispeed_fiber) {
 		*speed = TXGBE_LINK_SPEED_10GB_FULL |
 			 TXGBE_LINK_SPEED_1GB_FULL;
-		*autoneg = true;
+		if (hw->mac.orig_link_settings_stored) {
+			*autoneg = adapter->autoneg;
+		} else {
+			*autoneg = true;
+			adapter->autoneg = *autoneg;
+		}
 	} else if (txgbe_is_dac_cable(hw)) {
 		*autoneg = adapter->backplane_an;
 		hw->phy.link_mode = TXGBE_PHYSICAL_LAYER_10GBASE_KR;
@@ -887,7 +892,12 @@ static int txgbe_get_link_capabilities_sp(struct txgbe_hw *hw,
 	    hw->phy.sfp_type == txgbe_sfp_type_1g_sx_core1) {
 	    /* Check if 1G SFP module. */
 		*speed = TXGBE_LINK_SPEED_1GB_FULL;
-		*autoneg = true;
+		if (hw->mac.orig_link_settings_stored) {
+			*autoneg = adapter->autoneg;
+		} else {
+			*autoneg = true;
+			adapter->autoneg = *autoneg;
+		}
 	}
 	/* SFP */
 	else if (hw->mac.ops.get_media_type(hw) == txgbe_media_type_fiber) {
@@ -1032,7 +1042,8 @@ static int txgbe_setup_mac_link_sp(struct txgbe_hw *hw,
 
 		if (link_speed == speed && link_up &&
 		    !(speed == TXGBE_LINK_SPEED_1GB_FULL &&
-			adapter->autoneg != curr_autoneg))
+		    (adapter->autoneg != curr_autoneg)) &&
+		    !autoneg_wait_to_complete)
 			goto out;
 	}
 

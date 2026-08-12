@@ -166,6 +166,8 @@ int txgbe_get_copper_link_capabilities(struct txgbe_hw *hw,
 					       bool *autoneg);
 int txgbe_identify_module(struct txgbe_hw *hw);
 int txgbe_tn_check_overtemp(struct txgbe_hw *hw);
+enum txgbe_phy_type txgbe_get_phy_type_from_id(struct txgbe_hw *hw);
+int txgbe_get_phy_id(struct txgbe_hw *hw);
 int txgbe_init_i2c(struct txgbe_hw *hw);
 int txgbe_read_i2c_byte(struct txgbe_hw *hw, u8 byte_offset,
 			u8 dev_addr, u8 *data);
@@ -181,6 +183,7 @@ int txgbe_read_i2c_sff8636(struct txgbe_hw *hw, u8 page, u8 byte_offset,
 			   u8 *sff8636_data);
 int txgbe_read_i2c_sfp_phy(struct txgbe_hw *hw, u16 byte_offset,
 			   u16 *data);
+int txgbe_init_external_phy(struct txgbe_hw *hw);
 int txgbe_set_phy_pause_advertisement(struct txgbe_hw *hw, u32 pause_bit);
 int txgbe_get_phy_advertised_pause(struct txgbe_hw *hw, u8 *pause_bit);
 int txgbe_get_lp_advertised_pause(struct txgbe_hw *hw, u8 *pause_bit);

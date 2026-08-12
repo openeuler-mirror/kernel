@@ -342,7 +342,7 @@ int txgbe_chk_bkp_ability(struct txgbe_adapter *adapter,
 	       lpbkp_an73_ability.link_ability);
 
 	if (com_link_ability == 0) {
-		adapter->bp_link_mode = 0;
+		adapter->bp_link_mode = 110;
 		kr_dbg(KR_MODE, "Do not support any compatible speed mode!\n");
 		return -EINVAL;
 	} else if (com_link_ability & BIT(ABILITY_40GBASE_KR4)) {
@@ -369,6 +369,7 @@ int txgbe_chk_bkp_ability(struct txgbe_adapter *adapter,
 		adapter->bp_link_mode = 1;
 	} else {
 		kr_dbg(KR_MODE, "Unknown link mode!\n");
+		adapter->bp_link_mode = 110;
 		return -EINVAL;
 	}
 

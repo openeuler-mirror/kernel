@@ -845,11 +845,16 @@ struct txgbe_adapter {
 	/* mutex for amblite phy access */
 	struct mutex e56_lock;
 
+	/* workqueue for per func */
+	struct workqueue_struct *txgbe_wq;
+
 	struct timer_list service_timer;
 	struct timer_list irq_timer;
 	struct work_struct service_task;
 	struct work_struct sfp_sta_task;
 	struct work_struct temp_task;
+	struct timer_list pcie_recover_timer;
+	struct work_struct pcie_recover_task;
 	struct hlist_head fdir_filter_list;
 	unsigned long fdir_overflow; /* number of times ATR was backed off */
 	union txgbe_atr_input fdir_mask;
@@ -1010,6 +1015,7 @@ enum txgbe_state_t {
 	__TXGBE_PTP_RUNNING,
 	__TXGBE_PTP_TX_IN_PROGRESS,
 	__TXGBE_SWFW_BUSY,
+	__TXGBE_PCIE_RECOVERY_IN_PROGRESS,
 };
 
 struct txgbe_cb {

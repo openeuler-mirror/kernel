@@ -1281,6 +1281,129 @@ int txgbe_tn_check_overtemp(struct txgbe_hw *hw)
 	return status;
 }
 
+int txgbe_get_phy_id(struct txgbe_hw *hw)
+{
+	u32 status;
+	u16 phy_id_high = 0;
+	u16 phy_id_low = 0;
+	u8 numport, thisport;
+	u32 i = 0;
+
+	if (hw->mac.type == txgbe_mac_aml) {
+		hw->phy.addr = 0;
+
+		for (i = 0; i < 32; i++) {
+			hw->phy.addr = i;
+			status = txgbe_read_phy_reg_mdi(hw,
+							TXGBE_MDIO_PHY_ID_HIGH,
+							0, &phy_id_high);
+			if (status) {
+				hw_info(hw, "txgbe_read_phy_reg_mdi failed 1\n");
+				return status;
+			}
+			hw_info(hw, "%d: phy_id_high 0x%x\n", i, phy_id_high);
+			if ((phy_id_high & 0xFFFF) == 0x0141)
+				break;
+		}
+
+		if (i == 32) {
+			hw_info(hw, "txgbe_read_phy_reg_mdi failed\n");
+			return TXGBE_ERR_PHY;
+		}
+
+		status = txgbe_read_phy_reg_mdi(hw, TXGBE_MDIO_PHY_ID_LOW, 0, &phy_id_low);
+		if (status) {
+			hw_info(hw, "txgbe_read_phy_reg_mdi failed 2\n");
+			return status;
+		}
+		hw->phy.id = (u32)(phy_id_high & 0xFFFF) << 6;
+		hw->phy.id |= (u32)((phy_id_low & 0xFC00) >> 10);
+
+		hw_info(hw, "%s: phy_id 0x%x", __func__, hw->phy.id);
+
+		return status;
+	}
+
+	status = txgbe_mtd_hw_xmdio_rd(&hw->phy_dev, hw->phy.addr,
+				       TXGBE_MDIO_PMA_PMD_DEV_TYPE,
+				       TXGBE_MDIO_PHY_ID_HIGH, &phy_id_high);
+
+	if (status == 0) {
+		hw->phy.id = (u32)(phy_id_high << 16);
+		status = txgbe_mtd_hw_xmdio_rd(&hw->phy_dev, hw->phy.addr,
+					       TXGBE_MDIO_PMA_PMD_DEV_TYPE,
+					       TXGBE_MDIO_PHY_ID_LOW, &phy_id_low);
+		hw->phy.id |= (u32)(phy_id_low & TXGBE_PHY_REVISION_MASK);
+	}
+
+	if (status == 0) {
+		status = txgbe_mtd_get_phy_revision(&hw->phy_dev, hw->phy.addr,
+				(enum txgbe_mtd_dev_id *)&hw->phy.revision,
+				&numport, &thisport);
+		if (status == MTD_FAIL)
+			hw_err(hw, "Error in txgbe_mtd_get_phy_revision()\n");
+	}
+	return status;
+}
+
+enum txgbe_phy_type txgbe_get_phy_type_from_id(struct txgbe_hw *hw)
+{
+	enum txgbe_phy_type phy_type;
+	u16 ext_ability = 0;
+
+	switch (hw->phy.id) {
+	case TN1010_PHY_ID:
+		phy_type = txgbe_phy_tn;
+		break;
+	case QT2022_PHY_ID:
+		phy_type = txgbe_phy_qt;
+		break;
+	case ATH_PHY_ID:
+		phy_type = txgbe_phy_nl;
+		break;
+	default:
+		phy_type = txgbe_phy_unknown;
+		break;
+	}
+	if (phy_type == txgbe_phy_unknown) {
+		txgbe_mtd_hw_xmdio_rd(&hw->phy_dev, hw->phy.addr,
+				      TXGBE_MDIO_PMA_PMD_DEV_TYPE,
+				      TXGBE_MDIO_PHY_EXT_ABILITY, &ext_ability);
+
+		if (ext_ability & (TXGBE_MDIO_PHY_10GBASET_ABILITY |
+			TXGBE_MDIO_PHY_1000BASET_ABILITY))
+			phy_type = txgbe_phy_cu_unknown;
+		else
+			phy_type = txgbe_phy_generic;
+	}
+	return phy_type;
+}
+
+int txgbe_init_external_phy(struct txgbe_hw *hw)
+{
+	int status = 0;
+	struct mtd_dev *devptr = &hw->phy_dev;
+
+	hw->phy.addr = 0;
+
+	devptr->app_data = hw;
+	status = txgbe_mtd_load_driver(txgbe_read_mdio,
+				       txgbe_write_mdio,
+				       false,
+				       NULL,
+				       NULL,
+				       NULL,
+				       NULL,
+				       hw->phy.addr,
+				       devptr);
+	if (status != 0) {
+		hw_err(hw, "External PHY initialization failed.\n");
+		return TXGBE_ERR_PHY;
+	}
+
+	return status;
+}
+
 int txgbe_set_phy_pause_advertisement(struct txgbe_hw *hw, u32 pause_bit)
 {
 	return txgbe_mtd_set_pause_adver(&hw->phy_dev, hw->phy.addr,

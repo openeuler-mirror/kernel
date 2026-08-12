@@ -40,7 +40,7 @@
 #endif
 
 #ifndef SW_CTRL_EPHY_FORCE
-#define SW_CTRL_EPHY_FORCE	0
+#define SW_CTRL_EPHY_FORCE	1
 #endif
 
 #ifndef TXGBE_STORM_INTERVAL

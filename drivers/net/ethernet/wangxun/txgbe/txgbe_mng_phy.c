@@ -28,7 +28,7 @@ static int txgbe_get_module_info_hostif(struct txgbe_hw *hw,
 int txgbe_set_phy_link_hostif(struct txgbe_hw *hw, int speed, bool autoneg, u8 duplex)
 {
 	struct txgbe_adapter *adapter = hw->back;
-	struct txgbe_hic_ephy_setlink set_buffer;
+	struct txgbe_hic_ephy_setlink set_buffer = {0};
 
 	set_buffer.hdr.cmd = FW_PHY_CONFIG_SET_LINK_CMD;
 	set_buffer.hdr.buf_len = sizeof(struct txgbe_hic_ephy_setlink) -
@@ -64,7 +64,7 @@ send_cmd:
 int txgbe_test_phy_status_hostif(struct txgbe_hw *hw)
 {
 	struct txgbe_adapter *adapter = hw->back;
-	struct txgbe_hic_ephy_status get_buffer;
+	struct txgbe_hic_ephy_status get_buffer = {0};
 	int ret, i;
 
 	if (SW_CTRL_EPHY_FORCE)
@@ -80,12 +80,11 @@ int txgbe_test_phy_status_hostif(struct txgbe_hw *hw)
 					   TXGBE_HI_COMMAND_TIMEOUT_SHORT,
 					   true);
 	switch (ret) {
+	case TXGBE_ERR_MNG_UNKNOWN_CMD:
 	case 0:
 		goto oem_check;
 	case TXGBE_ERR_MNG_UNSUPPORT_SFP:
 		e_dev_info("Unsupported SFP module.\n");
-		fallthrough;
-	case TXGBE_ERR_MNG_UNKNOWN_CMD:
 		fallthrough;
 	default:
 		e_dev_info("Failed to test link info, ret=%d\n", ret);
@@ -136,7 +135,7 @@ static int txgbe_get_phy_status_hostif(struct txgbe_hw *hw,
 int txgbe_get_link_info_mbx(struct txgbe_hw *hw)
 {
 	struct txgbe_adapter *adapter = hw->back;
-	struct txgbe_hic_ephy_status buffer;
+	struct txgbe_hic_ephy_status buffer = {0};
 	int ret;
 
 	ret = txgbe_get_phy_status_hostif(hw, &buffer);
@@ -156,7 +155,7 @@ int txgbe_get_link_info_mbx(struct txgbe_hw *hw)
 
 int txgbe_set_phy_fc_hostif(struct txgbe_hw *hw, u8 fc)
 {
-	struct txgbe_hic_ephy_fc buffer;
+	struct txgbe_hic_ephy_fc buffer = {0};
 
 	buffer.hdr.cmd = FW_PHY_CONFIG_FC_CMD;
 	buffer.hdr.buf_len = sizeof(struct txgbe_hic_ephy_fc) -
@@ -172,7 +171,7 @@ int txgbe_set_phy_fc_hostif(struct txgbe_hw *hw, u8 fc)
 
 int txgbe_set_phy_power_hostif(struct txgbe_hw *hw, u8 power)
 {
-	struct txgbe_hic_ephy_power buffer;
+	struct txgbe_hic_ephy_power buffer = {0};
 
 	buffer.hdr.cmd = FW_PHY_CONFIG_POWER_CMD;
 	buffer.hdr.buf_len = sizeof(struct txgbe_hic_ephy_power) -

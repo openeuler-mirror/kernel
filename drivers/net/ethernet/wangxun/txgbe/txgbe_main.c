@@ -92,7 +92,7 @@ EXPORT_SYMBOL(txgbe_xdp_locking_key);
 
 #define DEFAULT_DEBUG_LEVEL_SHIFT 3
 
-static struct workqueue_struct *txgbe_wq;
+static struct workqueue_struct *txgbe_pcie_recover_wq;
 
 static bool txgbe_is_sfp(struct txgbe_hw *hw);
 static bool txgbe_check_cfg_remove(struct txgbe_hw *hw, struct pci_dev *pdev);
@@ -256,7 +256,7 @@ void txgbe_service_event_schedule(struct txgbe_adapter *adapter)
 	if (!test_bit(__TXGBE_DOWN, &adapter->state) &&
 	    !test_bit(__TXGBE_REMOVING, &adapter->state) &&
 	    !test_and_set_bit(__TXGBE_SERVICE_SCHED, &adapter->state))
-		queue_work(txgbe_wq, &adapter->service_task);
+		queue_work(adapter->txgbe_wq, &adapter->service_task);
 }
 
 static void txgbe_service_event_complete(struct txgbe_adapter *adapter)
@@ -266,6 +266,24 @@ static void txgbe_service_event_complete(struct txgbe_adapter *adapter)
 	/* flush memory to make sure state is correct before next watchdog */
 	smp_mb__before_atomic();
 	clear_bit(__TXGBE_SERVICE_SCHED, &adapter->state);
+}
+
+static void txgbe_pcie_recover_schedule(struct txgbe_adapter *adapter)
+{
+	if (!test_bit(__TXGBE_DOWN, &adapter->state) &&
+	    !test_bit(__TXGBE_REMOVING, &adapter->state) &&
+	    !test_and_set_bit(__TXGBE_PCIE_RECOVERY_IN_PROGRESS,
+			      &adapter->state))
+		queue_work(txgbe_pcie_recover_wq, &adapter->pcie_recover_task);
+}
+
+static void txgbe_pcie_recover_complete(struct txgbe_adapter *adapter)
+{
+	WARN_ON(!test_bit(__TXGBE_PCIE_RECOVERY_IN_PROGRESS, &adapter->state));
+
+	/* flush memory to make sure state is correct before next watchdog */
+	smp_mb__before_atomic();
+	clear_bit(__TXGBE_PCIE_RECOVERY_IN_PROGRESS, &adapter->state);
 }
 
 static void txgbe_remove_adapter(struct txgbe_hw *hw)
@@ -547,8 +565,9 @@ static inline bool txgbe_check_tx_hang(struct txgbe_ring *tx_ring)
 
 static void txgbe_tx_timeout_dorecovery(struct txgbe_adapter *adapter)
 {
+	/* schedule immediate reset if we believe we hung */
 	adapter->flags2 |= TXGBE_FLAG2_RING_DUMP;
-	txgbe_service_event_schedule(adapter);
+	txgbe_pcie_recover_schedule(adapter);
 }
 
 /**
@@ -1993,7 +2012,7 @@ static int txgbe_clean_rx_irq(struct txgbe_q_vector *q_vector,
 	unsigned int total_rx_bytes = 0, total_rx_packets = 0, xdp_xmit = 0;
 	u16 cleaned_count = txgbe_desc_unused(rx_ring);
 	struct txgbe_adapter *adapter = q_vector->adapter;
-	unsigned int offset = txgbe_rx_offset(rx_ring);
+	unsigned int offset = TXGBE_SKB_PAD;
 #if IS_ENABLED(CONFIG_FCOE)
 	int ddp_bytes;
 	unsigned int mss = 0;
@@ -2041,6 +2060,7 @@ static int txgbe_clean_rx_irq(struct txgbe_q_vector *q_vector,
 			xdp.data_meta = xdp.data;
 			xdp.data_hard_start = xdp.data - offset;
 			xdp.data_end = xdp.data + size;
+			xdp_buff_clear_frags_flag(&xdp);
 
 #if (PAGE_SIZE > 4096)
 			/* At larger PAGE_SIZE, frame_sz depend on len size */
@@ -5206,10 +5226,15 @@ static void txgbe_up_complete(struct txgbe_adapter *adapter)
 		links_reg = rd32(hw, TXGBE_CFG_PORT_ST);
 		if (links_reg & TXGBE_CFG_PORT_ST_LINK_UP) {
 			if (links_reg & TXGBE_CFG_PORT_ST_AML_LINK_25G) {
-				wr32(hw, TXGBE_MAC_TX_CFG,
-				     (rd32(hw, TXGBE_MAC_TX_CFG) &
-					~TXGBE_MAC_TX_CFG_AML_SPEED_MASK) |
-					TXGBE_MAC_TX_CFG_AML_SPEED_25G);
+				if (adapter->tx_unidir_mode)
+					wr32(hw, TXGBE_MAC_TX_CFG,
+					     (rd32(hw, TXGBE_MAC_TX_CFG) &
+					     ~TXGBE_MAC_TX_CFG_AML_SPEED_MASK));
+				else
+					wr32(hw, TXGBE_MAC_TX_CFG,
+					     (rd32(hw, TXGBE_MAC_TX_CFG) &
+					     ~TXGBE_MAC_TX_CFG_AML_SPEED_MASK) |
+					     TXGBE_MAC_TX_CFG_AML_SPEED_25G);
 			} else if (links_reg & TXGBE_CFG_PORT_ST_AML_LINK_10G) {
 				wr32(hw, TXGBE_MAC_TX_CFG,
 				     (rd32(hw, TXGBE_MAC_TX_CFG) &
@@ -5272,6 +5297,7 @@ static void txgbe_up_complete(struct txgbe_adapter *adapter)
 	adapter->link_check_timeout = jiffies;
 	hw->f2c_mod_status = false;
 	mod_timer(&adapter->service_timer, jiffies);
+	mod_timer(&adapter->pcie_recover_timer, jiffies);
 	mod_timer(&adapter->irq_timer, jiffies);
 
 	/* PCIE recovery: record lan status */
@@ -5627,6 +5653,7 @@ static void txgbe_disable_device(struct txgbe_adapter *adapter)
 
 	del_timer_sync(&adapter->service_timer);
 	del_timer_sync(&adapter->irq_timer);
+	del_timer_sync(&adapter->pcie_recover_timer);
 
 	hw->f2c_mod_status = false;
 	cancel_work_sync(&adapter->sfp_sta_task);
@@ -7060,10 +7087,17 @@ static void txgbe_watchdog_update_link(struct txgbe_adapter *adapter)
 				txgbe_reconfig_mac(hw);
 
 			if (link_speed & TXGBE_LINK_SPEED_25GB_FULL) {
-				wr32(hw, TXGBE_MAC_TX_CFG,
-				     (rd32(hw, TXGBE_MAC_TX_CFG) &
-					~TXGBE_MAC_TX_CFG_AML_SPEED_MASK) | TXGBE_MAC_TX_CFG_TE |
-					TXGBE_MAC_TX_CFG_AML_SPEED_25G);
+				if (adapter->tx_unidir_mode)
+					wr32(hw, TXGBE_MAC_TX_CFG,
+					     (rd32(hw, TXGBE_MAC_TX_CFG) &
+					     ~TXGBE_MAC_TX_CFG_AML_SPEED_MASK) |
+					     TXGBE_MAC_TX_CFG_TE);
+				else
+					wr32(hw, TXGBE_MAC_TX_CFG,
+					     (rd32(hw, TXGBE_MAC_TX_CFG) &
+					     ~TXGBE_MAC_TX_CFG_AML_SPEED_MASK) |
+					     TXGBE_MAC_TX_CFG_TE |
+					     TXGBE_MAC_TX_CFG_AML_SPEED_25G);
 			} else if (link_speed & TXGBE_LINK_SPEED_10GB_FULL) {
 				wr32(hw, TXGBE_MAC_TX_CFG,
 				     (rd32(hw, TXGBE_MAC_TX_CFG) &
@@ -7231,10 +7265,16 @@ static void txgbe_watchdog_link_is_up(struct txgbe_adapter *adapter)
 		txgbe_enable_rx_adapter(hw);
 
 	if (adapter->tx_unidir_mode) {
-		wr32m(hw, TXGBE_MAC_RX_CFG, TXGBE_MAC_RX_CFG_LM, TXGBE_MAC_RX_CFG_LM);
-		wr32m(hw, TXGBE_MAC_RX_CFG, TXGBE_MAC_RX_CFG_RE, 0);
-		e_dev_info("Enable loopback mode and disable rx: %x\n",
-			   rd32(hw, TXGBE_MAC_RX_CFG));
+		if (hw->mac.type == txgbe_mac_sp) {
+			wr32m(hw, TXGBE_MAC_RX_CFG, TXGBE_MAC_RX_CFG_LM, TXGBE_MAC_RX_CFG_LM);
+			wr32m(hw, TXGBE_MAC_RX_CFG, TXGBE_MAC_RX_CFG_RE, 0);
+			e_dev_info("Enable loopback mode and disable rx: %x\n",
+				rd32(hw, TXGBE_MAC_RX_CFG));
+		} else if (hw->mac.type == txgbe_mac_aml ||
+			   hw->mac.type == txgbe_mac_aml40) {
+			wr32m(hw, TXGBE_MAC_RX_CFG, TXGBE_MAC_RX_CFG_LM, 0);
+			wr32m(hw, TXGBE_MAC_RX_CFG, TXGBE_MAC_RX_CFG_RE, 0);
+		}
 	}
 	txgbe_check_vlan_rate_limit(adapter);
 	netif_carrier_on(netdev);
@@ -7664,13 +7704,30 @@ static void txgbe_service_timer(struct timer_list *t)
 	struct txgbe_adapter *adapter = from_timer(adapter, t, service_timer);
 	unsigned long next_event_offset;
 	struct txgbe_hw *hw = &adapter->hw;
-	u32 val = 0;
 
 	/* poll faster when waiting for link */
 	if (adapter->flags & TXGBE_FLAG_NEED_LINK_UPDATE)
 		next_event_offset = HZ / 10;
 	else
 		next_event_offset = HZ * 2;
+
+	/* Reset the timer */
+	mod_timer(&adapter->service_timer, next_event_offset + jiffies);
+
+	txgbe_service_event_schedule(adapter);
+	if (hw->phy.sfp_type == txgbe_sfp_type_1g_cu_core0 ||
+	    hw->phy.sfp_type == txgbe_sfp_type_1g_cu_core1 ||
+		hw->phy.sfp_type == txgbe_sfp_type_10g_cu_core0 ||
+		hw->phy.sfp_type == txgbe_sfp_type_10g_cu_core1)
+		queue_work(adapter->txgbe_wq, &adapter->sfp_sta_task);
+}
+
+static void txgbe_pcie_recover_timer(struct timer_list *t)
+{
+	struct txgbe_adapter *adapter = from_timer(adapter, t,
+						   pcie_recover_timer);
+	struct txgbe_hw *hw = &adapter->hw;
+	u32 val = 0;
 
 	/* record which func to provoke PCIE recovery.
 	 * if memory space is inaccessible, current port do recover
@@ -7699,14 +7756,8 @@ static void txgbe_service_timer(struct timer_list *t)
 	}
 
 	/* Reset the timer */
-	mod_timer(&adapter->service_timer, next_event_offset + jiffies);
-
-	txgbe_service_event_schedule(adapter);
-	if (hw->phy.sfp_type == txgbe_sfp_type_1g_cu_core0 ||
-	    hw->phy.sfp_type == txgbe_sfp_type_1g_cu_core1 ||
-		hw->phy.sfp_type == txgbe_sfp_type_10g_cu_core0 ||
-		hw->phy.sfp_type == txgbe_sfp_type_10g_cu_core1)
-		queue_work(txgbe_wq, &adapter->sfp_sta_task);
+	mod_timer(&adapter->pcie_recover_timer, HZ * 2 + jiffies);
+	txgbe_pcie_recover_schedule(adapter);
 }
 
 static void txgbe_sfp_phy_status_work(struct work_struct *work)
@@ -8150,7 +8201,6 @@ static void txgbe_service_task(struct work_struct *work)
 	txgbe_check_overtemp_subtask(adapter);
 	txgbe_watchdog_subtask(adapter);
 	txgbe_fdir_reinit_subtask(adapter);
-	txgbe_check_hang_subtask(adapter);
 
 	if (test_bit(__TXGBE_PTP_RUNNING, &adapter->state)) {
 		txgbe_ptp_overflow_check(adapter);
@@ -8159,10 +8209,34 @@ static void txgbe_service_task(struct work_struct *work)
 			txgbe_ptp_rx_hang(adapter);
 	}
 
-	txgbe_tx_queue_clear_error_task(adapter);
 	txgbe_amlit_temp_subtask(adapter);
+	txgbe_tx_queue_clear_error_task(adapter);
 
 	txgbe_service_event_complete(adapter);
+}
+
+static void txgbe_pcie_recover_task(struct work_struct *work)
+{
+	struct txgbe_adapter *adapter = container_of(work,
+						     struct txgbe_adapter,
+						     pcie_recover_task);
+
+	if (TXGBE_REMOVED(adapter->hw.hw_addr)) {
+		if (!test_bit(__TXGBE_DOWN, &adapter->state)) {
+			rtnl_lock();
+			txgbe_down(adapter);
+			rtnl_unlock();
+		}
+		txgbe_pcie_recover_complete(adapter);
+
+		return;
+	}
+
+	txgbe_check_ring_dump_subtask(adapter);
+	txgbe_check_pcie_subtask(adapter);
+	txgbe_check_hang_subtask(adapter);
+
+	txgbe_pcie_recover_complete(adapter);
 }
 
 union network_header {
@@ -8990,6 +9064,9 @@ static int txgbe_xdp_setup(struct net_device *dev, struct bpf_prog *prog)
 		else
 			txgbe_reset(adapter);
 
+		if (!prog)
+			xdp_features_clear_redirect_target(dev);
+
 		if (nr_cpu_ids > MAX_XDP_QUEUES)
 			static_branch_inc(&txgbe_xdp_locking_key);
 	}
@@ -9039,6 +9116,7 @@ static int txgbe_xdp_setup(struct net_device *dev, struct bpf_prog *prog)
 		for (i = 0; i < adapter->num_rx_queues; i++)
 			xchg(&adapter->rx_ring[i]->xdp_prog, adapter->xdp_prog);
 	}
+	xdp_features_set_redirect_target(dev, true);
 	if (old_prog)
 		bpf_prog_put(old_prog);
 
@@ -10343,6 +10421,7 @@ static int txgbe_probe(struct pci_dev *pdev,
 	u32 etrack_id = 0;
 	u16 build = 0, major = 0, patch = 0;
 	char *info_string, *i_s_var;
+	char wq_name[32];
 	u8 part_str[TXGBE_PBANUM_LENGTH];
 	bool autoneg = false;
 	u32 speed = 0;
@@ -10436,9 +10515,32 @@ static int txgbe_probe(struct pci_dev *pdev,
 	err = txgbe_check_flash_load(hw, TXGBE_SPI_ILDR_STATUS_PWRRST);
 	if (err)
 		goto err_sw_init;
+
+	/* do mbox checksum before all mbox cmd */
+	txgbe_init_eeprom_params(hw);
+	/* make sure the EEPROM is good */
+	if (txgbe_validate_eeprom_checksum(hw, NULL)) {
+		e_dev_err("The EEPROM Checksum Is Not Valid\n");
+		wr32(hw, TXGBE_MIS_RST, TXGBE_MIS_RST_SW_RST);
+		err = -EIO;
+		goto err_sw_init;
+	}
+
+	if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40) {
+		err = txgbe_test_phy_status_hostif(hw);
+		if (!err) {
+			dev_info(&pdev->dev, "[fw] FW controls PHY.\n");
+			set_bit(TXGBE_FLAG_FW_CONTROL_PHY, adapter->flag);
+		}
+	}
+
 	/* reset_hw fills in the perm_addr as well */
 	hw->phy.reset_if_overtemp = true;
+	if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40)
+		txgbe_get_hw_control(hw);
 	err = hw->mac.ops.reset_hw(hw);
+	if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40)
+		txgbe_release_hw_control(hw);
 
 	/* Store the permanent mac address */
 	hw->mac.ops.get_mac_addr(hw, hw->mac.perm_addr);
@@ -10510,6 +10612,9 @@ static int txgbe_probe(struct pci_dev *pdev,
 	netdev->hw_enc_features |= netdev->vlan_features;
 	netdev->mpls_features |= NETIF_F_HW_CSUM;
 
+	netdev->xdp_features = NETDEV_XDP_ACT_BASIC | NETDEV_XDP_ACT_REDIRECT |
+		NETDEV_XDP_ACT_XSK_ZEROCOPY;
+
 	/* set this bit last since it cannot be part of vlan_features */
 	netdev->features |= NETIF_F_HW_VLAN_CTAG_FILTER |
 			    NETIF_F_HW_VLAN_STAG_FILTER |
@@ -10565,24 +10670,6 @@ static int txgbe_probe(struct pci_dev *pdev,
 		netdev->vlan_features |= NETIF_F_HIGHDMA;
 	}
 
-	txgbe_init_eeprom_params(hw);
-	/* make sure the EEPROM is good */
-
-	if (txgbe_validate_eeprom_checksum(hw, NULL)) {
-		e_dev_err("The EEPROM Checksum Is Not Valid\n");
-		wr32(hw, TXGBE_MIS_RST, TXGBE_MIS_RST_SW_RST);
-		err = -EIO;
-		goto err_sw_init;
-	}
-
-	if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40) {
-		err = txgbe_test_phy_status_hostif(hw);
-		if (!err) {
-			dev_info(&pdev->dev, "[fw] FW controls PHY.\n");
-			set_bit(TXGBE_FLAG_FW_CONTROL_PHY, adapter->flag);
-		}
-	}
-	hw->phy.ops.identify_sfp(hw);
 	eth_hw_addr_set(netdev, hw->mac.perm_addr);
 
 	if (!is_valid_ether_addr(netdev->dev_addr)) {
@@ -10597,6 +10684,15 @@ static int txgbe_probe(struct pci_dev *pdev,
 	memset(&adapter->ft_filter_info, 0,
 	       sizeof(struct txgbe_5tuple_filter_info));
 
+	snprintf(wq_name, sizeof(wq_name), "%s.%d", KBUILD_MODNAME,
+		 adapter->bd_number);
+	adapter->txgbe_wq = create_singlethread_workqueue(wq_name);
+	if (!adapter->txgbe_wq) {
+		e_dev_err("%s: Failed to create workqueue\n", wq_name);
+		err = -ENOMEM;
+		goto err_sw_init;
+	}
+
 	timer_setup(&adapter->service_timer, txgbe_service_timer, 0);
 	timer_setup(&adapter->irq_timer, txgbe_irq_timer, 0);
 
@@ -10608,6 +10704,9 @@ static int txgbe_probe(struct pci_dev *pdev,
 	INIT_WORK(&adapter->sfp_sta_task, txgbe_sfp_phy_status_work);
 	set_bit(__TXGBE_SERVICE_INITED, &adapter->state);
 	clear_bit(__TXGBE_SERVICE_SCHED, &adapter->state);
+
+	timer_setup(&adapter->pcie_recover_timer, txgbe_pcie_recover_timer, 0);
+	INIT_WORK(&adapter->pcie_recover_task, txgbe_pcie_recover_task);
 
 	err = txgbe_init_interrupt_scheme(adapter);
 	if (err)
@@ -10827,6 +10926,8 @@ err_register:
 	txgbe_clear_interrupt_scheme(adapter);
 	txgbe_release_hw_control(&adapter->hw);
 err_sw_init:
+	if (adapter->txgbe_wq)
+		destroy_workqueue(adapter->txgbe_wq);
 #ifdef CONFIG_PCI_IOV
 	txgbe_disable_sriov(adapter);
 #endif /* CONFIG_PCI_IOV */
@@ -10880,6 +10981,9 @@ static void txgbe_remove(struct pci_dev *pdev)
 
 	set_bit(__TXGBE_REMOVING, &adapter->state);
 	cancel_work_sync(&adapter->service_task);
+	cancel_work_sync(&adapter->pcie_recover_task);
+	if (adapter->txgbe_wq)
+		destroy_workqueue(adapter->txgbe_wq);
 
 	txgbe_sysfs_exit(adapter);
 
@@ -11060,6 +11164,9 @@ skip_bad_vf_detection:
 	if (!test_bit(__TXGBE_SERVICE_INITED, &adapter->state))
 		return PCI_ERS_RESULT_DISCONNECT;
 
+	if (!netif_device_present(netdev))
+		return PCI_ERS_RESULT_DISCONNECT;
+
 	rtnl_lock();
 	netif_device_detach(netdev);
 
@@ -11221,8 +11328,8 @@ static int __init txgbe_init_module(void)
 	pr_info("%s - version %s\n", txgbe_driver_string, txgbe_driver_version);
 	pr_info("%s\n", txgbe_copyright);
 
-	txgbe_wq = create_singlethread_workqueue(txgbe_driver_name);
-	if (!txgbe_wq) {
+	txgbe_pcie_recover_wq = create_singlethread_workqueue(txgbe_driver_name);
+	if (!txgbe_pcie_recover_wq) {
 		pr_err("%s: Failed to create workqueue\n", txgbe_driver_name);
 		return -ENOMEM;
 	}
@@ -11243,7 +11350,7 @@ module_init(txgbe_init_module);
 static void __exit txgbe_exit_module(void)
 {
 	pci_unregister_driver(&txgbe_driver);
-	destroy_workqueue(txgbe_wq);
+	destroy_workqueue(txgbe_pcie_recover_wq);
 	txgbe_dbg_exit();
 }
 
