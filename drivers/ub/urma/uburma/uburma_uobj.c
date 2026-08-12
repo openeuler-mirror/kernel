@@ -646,8 +646,8 @@ static inline void do_clean_uobj(struct uburma_uobj *obj,
 	WARN_ON(uobj_try_lock(obj, true));
 	ret = obj->type->type_class->remove_commit(obj, why);
 	if (ret)
-		pr_warn("uburma: failed to remove uobject id %d order %u\n",
-			obj->id, cur_order);
+		uburma_log_warn_rl("failed to remove uobject id %d order %u\n",
+				   obj->id, cur_order);
 
 	list_del_init(&obj->list);
 
@@ -846,8 +846,8 @@ static int uburma_free_jfc(struct uburma_uobj *uobj,
 	if (jfc->jfc_opt.is_actived == true) {
 		ret = ubcore_delete_jfc(jfc);
 		if (ret) {
-			uburma_log_err("Failed to delete jfc, id: %u, ret: %d, why: %d.\n",
-				jfc_id, ret, why);
+			uburma_log_err_rl("Failed to delete jfc, id: %u, ret: %d, why: %d.\n",
+					  jfc_id, ret, why);
 			uburma_release_jfce_event(jfc_uobj);
 			return ret;
 		}
