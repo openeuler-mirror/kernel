@@ -631,5 +631,17 @@ asmlinkage void __arm_smccc_hvc(unsigned long a0, unsigned long a1,
 			   0x95)
 #endif
 
+#ifdef CONFIG_PARAVIRT_SPINLOCKS
+/*
+ * Paravirtualised spinlock kick call, owned by the vendor to allow the
+ * guest to wake up a vCPU busy-waiting on a queued spinlock.
+ */
+#define ARM_SMCCC_VENDOR_KICK_CPU					\
+	ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL,				\
+			   ARM_SMCCC_SMC_64,				\
+			   ARM_SMCCC_OWNER_VENDOR_HYP,			\
+			   0x96)
+#endif /* CONFIG_PARAVIRT_SPINLOCKS */
+
 #endif /*__ASSEMBLY__*/
 #endif /*__LINUX_ARM_SMCCC_H*/
