@@ -2462,6 +2462,7 @@ struct txgbe_5tuple_filter_info {
 #define TXGBE_HI_FLASH_UPDATE_TIMEOUT   5000 /* Process Update command limit */
 #define TXGBE_HI_FLASH_VERIFY_TIMEOUT   60000 /* Process Apply command limit */
 #define TXGBE_HI_PHY_MGMT_REQ_TIMEOUT   2000 /* Wait up to 2 seconds */
+#define TXGBE_HI_COMMAND_TIMEOUT_SHORT  500
 
 /* CEM Support */
 #define FW_CEM_HDR_LEN                  0x4

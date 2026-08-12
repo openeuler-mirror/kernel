@@ -5485,7 +5485,7 @@ static int txgbe_hic_get_lldp(struct txgbe_hw *hw)
 
 	buffer.func = hw->bus.lan_id;
 	status = txgbe_host_interface_command(hw, (u32 *)&buffer,
-					      sizeof(buffer), 5000, true);
+					      sizeof(buffer), TXGBE_HI_COMMAND_TIMEOUT_SHORT, true);
 	if (status)
 		return status;
 	if (buffer.hdr.cmd_or_resp.ret_status != FW_CEM_RESP_STATUS_SUCCESS)
@@ -5537,7 +5537,7 @@ void txgbe_hic_write_autoneg_status(struct txgbe_hw *hw, bool autoneg)
 	buffer.hdr.cksum_or_index.checksum = FW_DEFAULT_CHECKSUM;
 
 	txgbe_host_interface_command(hw, (u32 *)&buffer, sizeof(buffer),
-				     TXGBE_HI_COMMAND_TIMEOUT, false);
+				     TXGBE_HI_COMMAND_TIMEOUT_SHORT, false);
 }
 
 void txgbe_set_queue_rate_limit(struct txgbe_hw *hw, int queue, u16 max_tx_rate)

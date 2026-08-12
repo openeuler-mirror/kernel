@@ -3,8 +3,6 @@
 #ifndef _TXGBE_MNG_PHY_H_
 #define _TXGBE_MNG_PHY_H_
 
-#define TXGBE_HI_COMMAND_TIMEOUT_SHORT  500
-
 #define FW_PHY_CONFIG_GET_LINK_CMD      0xc0
 #define FW_PHY_CONFIG_SET_LINK_CMD      0xc1
 #define FW_PHY_CONFIG_FC_CMD            0xc2

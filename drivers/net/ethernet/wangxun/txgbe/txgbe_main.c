@@ -7672,10 +7672,19 @@ static void txgbe_service_timer(struct timer_list *t)
 	else
 		next_event_offset = HZ * 2;
 
-	/* record which func to provoke PCIE recovery */
-	if (rd32(&adapter->hw, TXGBE_MIS_PF_SM) == 1) {
-		val = rd32m(&adapter->hw, TXGBE_MIS_PRB_CTL, TXGBE_MIS_PRB_CTL_LAN0_UP |
-												   TXGBE_MIS_PRB_CTL_LAN1_UP);
+	/* record which func to provoke PCIE recovery.
+	 * if memory space is inaccessible, current port do recover
+	 * else lower lan_id port do recover.
+	 */
+	if (rd32(&adapter->hw, TXGBE_MIS_PF_SM) == TXGBE_FAILED_READ_REG) {
+		adapter->flags2 |= TXGBE_FLAG2_PCIE_NEED_RECOVER;
+		wr32m(&adapter->hw, TXGBE_MIS_PF_SM, TXGBE_MIS_PF_SM_SM, 0);
+		e_info(probe, "%s: set recover on Lan%d due to memory space inaccessible\n",
+			__func__, hw->bus.lan_id);
+	} else if (rd32(&adapter->hw, TXGBE_MIS_PF_SM) == 1) {
+		val = rd32m(&adapter->hw, TXGBE_MIS_PRB_CTL,
+			    TXGBE_MIS_PRB_CTL_LAN0_UP |
+			    TXGBE_MIS_PRB_CTL_LAN1_UP);
 		if (val & TXGBE_MIS_PRB_CTL_LAN0_UP) {
 			if (hw->bus.lan_id == 0) {
 				adapter->flags2 |= TXGBE_FLAG2_PCIE_NEED_RECOVER;
@@ -7989,20 +7998,28 @@ static void txgbe_check_ring_dump_subtask(struct txgbe_adapter *adapter)
 	wr32(&adapter->hw, TXGBE_MIS_PF_SM, 1);
 	adapter->flags2 &= ~TXGBE_FLAG2_RING_DUMP;
 
-	/* record which func to provoke PCIE recovery */
-	if (rd32(&adapter->hw, TXGBE_MIS_PF_SM) == 1) {
-		val = rd32m(&adapter->hw,
-			    TXGBE_MIS_PRB_CTL,
-				TXGBE_MIS_PRB_CTL_LAN0_UP | TXGBE_MIS_PRB_CTL_LAN1_UP);
+	/* record which func to provoke PCIE recovery.
+	 * if memory space is inaccessible, current port do recover
+	 * else lower lan_id port do recover.
+	 */
+	if (rd32(&adapter->hw, TXGBE_MIS_PF_SM) == TXGBE_FAILED_READ_REG) {
+		adapter->flags2 |= TXGBE_FLAG2_PCIE_NEED_RECOVER;
+		wr32m(&adapter->hw, TXGBE_MIS_PF_SM, TXGBE_MIS_PF_SM_SM, 0);
+		e_info(probe, "%s: set recover on Lan%d due to memory space inaccessible\n",
+			__func__, hw->bus.lan_id);
+	} else if (rd32(&adapter->hw, TXGBE_MIS_PF_SM) == 1) {
+		val = rd32m(&adapter->hw, TXGBE_MIS_PRB_CTL,
+				TXGBE_MIS_PRB_CTL_LAN0_UP |
+				TXGBE_MIS_PRB_CTL_LAN1_UP);
 		if (val & TXGBE_MIS_PRB_CTL_LAN0_UP) {
 			if (hw->bus.lan_id == 0) {
 				adapter->flags2 |= TXGBE_FLAG2_PCIE_NEED_RECOVER;
-				e_info(probe, "check_ring_dump_subtask: set recover on Lan0\n");
-				}
+				e_info(probe, "%s: set recover on Lan0\n", __func__);
+			}
 		} else if (val & TXGBE_MIS_PRB_CTL_LAN1_UP) {
 			if (hw->bus.lan_id == 1) {
 				adapter->flags2 |= TXGBE_FLAG2_PCIE_NEED_RECOVER;
-				e_info(probe, "check_ring_dump_subtask: set recover on Lan1\n");
+				e_info(probe, "%s: set recover on Lan1\n", __func__);
 			}
 		}
 	}
