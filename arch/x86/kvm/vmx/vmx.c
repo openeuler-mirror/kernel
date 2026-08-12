@@ -105,7 +105,6 @@ module_param(fasteoi, bool, S_IRUGO);
 bool __read_mostly enable_apicv = 1;
 module_param(enable_apicv, bool, S_IRUGO);
 
-bool __read_mostly enable_ipiv = true;
 module_param(enable_ipiv, bool, 0444);
 
 /*

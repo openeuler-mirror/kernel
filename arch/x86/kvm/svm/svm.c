@@ -1025,6 +1025,18 @@ static __init int svm_hardware_setup(void)
 			amd_iommu_register_ga_log_notifier(&avic_ga_log_notifier);
 		}
 	}
+	if (!avic)
+		enable_ipiv = false;
+
+	/*
+	 * Disable IPI virtualization for AMD Family 17h (Zen1 and Zen2) and
+	 * Hygon Family 18h (derived from AMD Zen1) CPUs due to erratum 1235,
+	 * which results in missed VM-Exits on the sender and thus missed wake
+	 * events for blocking vCPUs due to the CPU failing to see a software
+	 * update to clear IsRunning.
+	 */
+	if (boot_cpu_data.x86 == 0x17 || boot_cpu_data.x86 == 0x18)
+		enable_ipiv = false;
 
 	if (vls) {
 		if (!npt_enabled ||
