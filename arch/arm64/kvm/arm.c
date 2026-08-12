@@ -667,6 +667,8 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
 
 	kvm_arm_pvsched_vcpu_init(&vcpu->arch);
 
+	kvm_arm_pvspin_vcpu_init(&vcpu->arch);
+
 #ifdef CONFIG_VIRT_VTIMER_PV_STATUS
 	if (!kvm_is_realm(vcpu->kvm))
 		kvm_arm_pvtimer_status_vcpu_init(&vcpu->arch);
@@ -924,6 +926,10 @@ int kvm_arch_vcpu_runnable(struct kvm_vcpu *v)
 		      (kvm_timer_should_notify_user(v) ||
 		       kvm_pmu_should_notify_user(v)));
 
+#ifdef CONFIG_PARAVIRT_SPINLOCKS
+	irq_lines |= v->arch.pv.pv_unhalted;
+#endif
+
 	return ((irq_lines || kvm_vgic_vcpu_pending_irq(v))
 		&& !kvm_arm_vcpu_stopped(v) && !v->arch.pause);
 }
@@ -1104,6 +1110,10 @@ void kvm_vcpu_wfi(struct kvm_vcpu *vcpu)
 
 	kvm_vcpu_halt(vcpu);
 	vcpu_clear_flag(vcpu, IN_WFIT);
+
+#ifdef CONFIG_PARAVIRT_SPINLOCKS
+	vcpu->arch.pv.pv_unhalted = false;
+#endif
 
 	preempt_disable();
 	vcpu_clear_flag(vcpu, IN_WFI);
@@ -1810,6 +1820,8 @@ static int kvm_arch_vcpu_ioctl_vcpu_init(struct kvm_vcpu *vcpu,
 	spin_unlock(&vcpu->arch.mp_state_lock);
 
 	kvm_arm_pvsched_vcpu_init(&vcpu->arch);
+
+	kvm_arm_pvspin_vcpu_init(&vcpu->arch);
 
 #ifdef CONFIG_VIRT_VTIMER_PV_STATUS
 	/* let's set active to false for vcpu reset */

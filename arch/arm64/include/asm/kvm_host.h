@@ -674,6 +674,13 @@ struct kvm_vcpu_arch {
 	} pvsched;
 #endif
 
+#ifdef CONFIG_PARAVIRT_SPINLOCKS
+	/* pv related host specific info */
+	struct {
+		bool pv_unhalted;
+	} pv;
+#endif
+
 	/* Per-vcpu CCSIDR override or NULL */
 	u32 *ccsidr;
 
@@ -1249,6 +1256,15 @@ static inline bool kvm_arm_vcpu_is_preempted(struct kvm_vcpu_arch *vcpu_arch)
 {
 	return false;
 }
+#endif
+
+#ifdef CONFIG_PARAVIRT_SPINLOCKS
+static inline void kvm_arm_pvspin_vcpu_init(struct kvm_vcpu_arch *vcpu_arch)
+{
+	vcpu_arch->pv.pv_unhalted = false;
+}
+#else
+static inline void kvm_arm_pvspin_vcpu_init(struct kvm_vcpu_arch *vcpu_arch) {}
 #endif
 
 void kvm_set_sei_esr(struct kvm_vcpu *vcpu, u64 syndrome);
