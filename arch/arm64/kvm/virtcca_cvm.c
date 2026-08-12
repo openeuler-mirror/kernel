@@ -232,7 +232,6 @@ int kvm_arm_create_cvm(struct kvm *kvm)
 	cvm->params->vmid = cvm->cvm_vmid;
 	cvm->params->ns_vtcr = kvm->arch.vtcr;
 	cvm->params->vttbr_el2 = kvm->arch.mmu.pgd_phys;
-	memcpy(cvm->params->rpv, &cvm->cvm_vmid, sizeof(cvm->cvm_vmid));
 	cvm->rd = tmi_cvm_create(__pa(cvm->params), numa_set, virtcca_vtimer_adjust);
 	if (!cvm->rd) {
 		kvm_err("KVM creates cVM failed: %d\n", cvm->cvm_vmid);
@@ -680,6 +679,9 @@ static int kvm_tmm_config_cvm(struct kvm *kvm, struct kvm_enable_cap *cap)
 		return -EFAULT;
 
 	switch (cfg.cfg) {
+	case KVM_CAP_ARM_TMM_CFG_RPV:
+		memcpy(cvm->params->rpv, cfg.rpv, sizeof(cfg.rpv));
+		break;
 	case KVM_CAP_ARM_TMM_CFG_SVE:
 		r = config_cvm_sve(kvm, &cfg);
 		break;
