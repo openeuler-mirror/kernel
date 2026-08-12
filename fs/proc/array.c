@@ -463,6 +463,11 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 	int exit_code = task->exit_code;
 	struct signal_struct *sig = task->signal;
 	unsigned int seq = 1;
+	int ret;
+
+	ret = down_read_killable(&task->signal->exec_update_lock);
+	if (ret)
+		return ret;
 
 	state = *get_task_state(task);
 	vsize = eip = esp = 0;
@@ -644,6 +649,7 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 		seq_puts(m, " 0");
 
 	seq_putc(m, '\n');
+	up_read(&task->signal->exec_update_lock);
 	if (mm)
 		mmput(mm);
 	return 0;
