@@ -88,6 +88,14 @@ nouveau_channel_del(struct nouveau_channel **pchan)
 		struct nouveau_cli *cli = (void *)chan->user.client;
 		bool super;
 
+		/*
+		 * Drop the kill-event subscription first.  Its handler
+		 * dereferences chan->fence, which the fence context teardown
+		 * below frees, so leaving it armed across the teardown leaves
+		 * a window for a use-after-free.
+		 */
+		nvif_notify_dtor(&chan->kill);
+
 		if (cli) {
 			super = cli->base.super;
 			cli->base.super = true;
@@ -102,7 +110,6 @@ nouveau_channel_del(struct nouveau_channel **pchan)
 		nvif_object_dtor(&chan->nvsw);
 		nvif_object_dtor(&chan->gart);
 		nvif_object_dtor(&chan->vram);
-		nvif_notify_dtor(&chan->kill);
 		nvif_object_dtor(&chan->user);
 		nvif_object_dtor(&chan->push.ctxdma);
 		nouveau_vma_del(&chan->push.vma);
