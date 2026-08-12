@@ -3209,6 +3209,15 @@ SYSCALL_DEFINE2(swapon, const char __user *, specialfile, int, swap_flags)
 	if (!swap_avail_heads)
 		return -ENOMEM;
 
+	/*
+	 * Reliable memory excludes swap: user pages must stay in the
+	 * mirrored region and never be written out to a swap device.
+	 */
+	if (mem_reliable_is_enabled()) {
+		pr_warn_once("swapon rejected: memory reliable is enabled\n");
+		return -EPERM;
+	}
+
 	p = alloc_swap_info();
 	if (IS_ERR(p))
 		return PTR_ERR(p);
