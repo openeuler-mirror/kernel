@@ -4,10 +4,11 @@
  * Author: Zengruan Ye <yezengruan@huawei.com>
  */
 
-#ifdef CONFIG_PARAVIRT_SCHED
-#include <linux/static_call.h>
 #include <linux/spinlock.h>
 #include <asm/paravirt.h>
+
+#ifdef CONFIG_PARAVIRT_SCHED
+#include <linux/static_call.h>
 
 __visible bool __native_vcpu_is_preempted(int cpu)
 {
@@ -16,3 +17,10 @@ __visible bool __native_vcpu_is_preempted(int cpu)
 
 DEFINE_STATIC_CALL(pv_vcpu_preempted, __native_vcpu_is_preempted);
 #endif /* CONFIG_PARAVIRT_SCHED */
+
+#ifdef CONFIG_PARAVIRT_SPINLOCKS
+bool pv_is_native_spin_unlock(void)
+{
+	return pv_ops.lock.queued_spin_unlock == __native_queued_spin_unlock;
+}
+#endif /* CONFIG_PARAVIRT_SPINLOCKS */
