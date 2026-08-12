@@ -531,7 +531,10 @@ struct perf_event_attr {
 	 * Note, siginfo_t::si_perf_data is long-sized, and sig_data will be
 	 * truncated accordingly on 32 bit architectures.
 	 */
-	__u64	sig_data;
+	union {
+		__u64	sig_data;
+		__u64	config4; /* extension of config3 */
+	};
 
 	__u64	config3; /* extension of config2 */
 };

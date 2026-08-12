@@ -941,10 +941,10 @@ u8 kvm_arm_pmu_get_max_counters(struct kvm *kvm)
 		return kvm_realm_max_pmu_counters();
 
 	/*
-	 * The arm_pmu->num_events considers the cycle counter as well.
-	 * Ignore that and return only the general-purpose counters.
+	 * The arm_pmu->cntr_mask considers the fixed counter(s) as well.
+	 * Ignore those and return only the general-purpose counters.
 	 */
-	return arm_pmu->num_events - 1;
+	return bitmap_weight(arm_pmu->cntr_mask, ARMV8_PMU_MAX_GENERAL_COUNTERS);
 }
 
 static int kvm_arm_pmu_v3_set_pmu(struct kvm_vcpu *vcpu, int pmu_id)

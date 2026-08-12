@@ -288,6 +288,12 @@ Before jumping into the kernel, the following conditions must be met:
 
     - SCR_EL3.FGTEn (bit 27) must be initialised to 0b1.
 
+  For CPUs with the Fine Grained Traps 2 (FEAT_FGT2) extension present:
+
+  - If EL3 is present and the kernel is entered at EL2:
+
+    - SCR_EL3.FGTEn2 (bit 59) must be initialised to 0b1.
+
   For CPUs with support for HCRX_EL2 (FEAT_HCX) present:
 
   - If EL3 is present and the kernel is entered at EL2:
@@ -352,27 +358,6 @@ Before jumping into the kernel, the following conditions must be met:
 
     - HWFGWTR_EL2.nSMPRI_EL1 (bit 54) must be initialised to 0b01.
 
-  For CPUs with feature Branch Record Buffer Extension (FEAT_BRBE):
-
-  - If EL3 is present:
-
-    - MDCR_EL3.SBRBE (bits 33:32) must be initialised to 0b11.
-
-  - If the kernel is entered at EL1 and EL2 is present:
-
-    - BRBCR_EL2.CC (bit 3) must be initialised to 0b1.
-    - BRBCR_EL2.MPRED (bit 4) must be initialised to 0b1.
-
-    - HDFGRTR_EL2.nBRBDATA (bit 61) must be initialised to 0b1.
-    - HDFGRTR_EL2.nBRBCTL  (bit 60) must be initialised to 0b1.
-    - HDFGRTR_EL2.nBRBIDR  (bit 59) must be initialised to 0b1.
-
-    - HDFGWTR_EL2.nBRBDATA (bit 61) must be initialised to 0b1.
-    - HDFGWTR_EL2.nBRBCTL  (bit 60) must be initialised to 0b1.
-
-    - HFGITR_EL2.nBRBIALL (bit 56) must be initialised to 0b1.
-    - HFGITR_EL2.nBRBINJ  (bit 55) must be initialised to 0b1.
-
   For CPUs with the Scalable Matrix Extension FA64 feature (FEAT_SME_FA64):
 
   - If EL3 is present:
@@ -402,6 +387,54 @@ Before jumping into the kernel, the following conditions must be met:
  - If the kernel is entered at EL1 and EL2 is present:
 
     - SMCR_EL2.EZT0 (bit 30) must be initialised to 0b1.
+
+  For CPUs with the Performance Monitors Extension (FEAT_PMUv3p9):
+
+ - If EL3 is present:
+
+    - MDCR_EL3.EnPM2 (bit 7) must be initialised to 0b1.
+
+ - If the kernel is entered at EL1 and EL2 is present:
+
+    - HDFGRTR2_EL2.nPMICNTR_EL0 (bit 2) must be initialised to 0b1.
+    - HDFGRTR2_EL2.nPMICFILTR_EL0 (bit 3) must be initialised to 0b1.
+    - HDFGRTR2_EL2.nPMUACR_EL1 (bit 4) must be initialised to 0b1.
+
+    - HDFGWTR2_EL2.nPMICNTR_EL0 (bit 2) must be initialised to 0b1.
+    - HDFGWTR2_EL2.nPMICFILTR_EL0 (bit 3) must be initialised to 0b1.
+    - HDFGWTR2_EL2.nPMUACR_EL1 (bit 4) must be initialised to 0b1.
+
+  For CPUs with SPE data source filtering (FEAT_SPE_FDS):
+
+  - If EL3 is present:
+
+    - MDCR_EL3.EnPMS3 (bit 42) must be initialised to 0b1.
+
+  - If the kernel is entered at EL1 and EL2 is present:
+
+    - HDFGRTR2_EL2.nPMSDSFR_EL1 (bit 19) must be initialised to 0b1.
+    - HDFGWTR2_EL2.nPMSDSFR_EL1 (bit 19) must be initialised to 0b1.
+
+  For CPUs with the Branch Record Buffer Extension (FEAT_BRBE):
+
+  - If EL3 is present:
+
+    - MDCR_EL3.SBRBE (bits 33:32) must be initialised to 0b01 or 0b11.
+
+  - If the kernel is entered at EL1 and EL2 is present:
+
+    - BRBCR_EL2.CC (bit 3) must be initialised to 0b1.
+    - BRBCR_EL2.MPRED (bit 4) must be initialised to 0b1.
+
+    - HDFGRTR_EL2.nBRBDATA (bit 61) must be initialised to 0b1.
+    - HDFGRTR_EL2.nBRBCTL  (bit 60) must be initialised to 0b1.
+    - HDFGRTR_EL2.nBRBIDR  (bit 59) must be initialised to 0b1.
+
+    - HDFGWTR_EL2.nBRBDATA (bit 61) must be initialised to 0b1.
+    - HDFGWTR_EL2.nBRBCTL  (bit 60) must be initialised to 0b1.
+
+    - HFGITR_EL2.nBRBIALL (bit 56) must be initialised to 0b1.
+    - HFGITR_EL2.nBRBINJ  (bit 55) must be initialised to 0b1.
 
   For CPUs with Memory Copy and Memory Set instructions (FEAT_MOPS):
 
