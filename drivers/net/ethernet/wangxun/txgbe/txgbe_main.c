@@ -1474,6 +1474,9 @@ static void txgbe_dma_sync_frag(struct txgbe_ring *rx_ring,
 				     DMA_FROM_DEVICE,
 				     TXGBE_RX_DMA_ATTR);
 	} else if (ring_uses_build_skb(rx_ring)) {
+#else
+	if (ring_uses_build_skb(rx_ring)) {
+#endif
 		unsigned long offset = (unsigned long)(skb->data) & ~PAGE_MASK;
 
 		dma_sync_single_range_for_cpu(rx_ring->dev,
@@ -1482,7 +1485,6 @@ static void txgbe_dma_sync_frag(struct txgbe_ring *rx_ring,
 					      skb_headlen(skb),
 					      DMA_FROM_DEVICE);
 	} else {
-#else
 		skb_frag_t *frag = &skb_shinfo(skb)->frags[0];
 
 		dma_sync_single_range_for_cpu(rx_ring->dev,
@@ -1490,10 +1492,7 @@ static void txgbe_dma_sync_frag(struct txgbe_ring *rx_ring,
 					      skb_frag_off(frag),
 					      skb_frag_size(frag),
 					      DMA_FROM_DEVICE);
-#endif
-#ifndef TXGBE_PAGE_POOL
 	}
-#endif
 }
 
 /**
@@ -3846,10 +3845,6 @@ static void txgbe_set_rx_buffer_len(struct txgbe_adapter *adapter)
 #if IS_ENABLED(CONFIG_FCOE)
 		if (test_bit(__TXGBE_RX_FCOE, &rx_ring->state))
 			set_bit(__TXGBE_RX_3K_BUFFER, &rx_ring->state);
-#endif
-#ifdef TXGBE_PAGE_POOL
-		adapter->flags2 |= TXGBE_FLAG2_RX_LEGACY;
-		adapter->eth_priv_flags |= TXGBE_ETH_PRIV_FLAG_LEGACY_RX;
 #endif
 		if (adapter->flags2 & TXGBE_FLAG2_RX_LEGACY)
 			continue;
