@@ -129,6 +129,16 @@ struct scan_control {
 
 	unsigned int hibernation_mode:1;
 
+	/*
+	 * Skip non-MOVABLE zone folios during reclaim. Set by
+	 * try_to_free_pages() when its allocation is ZONE_MOVABLE-bound
+	 * (reliable_movable_only_alloc()); left 0 by system-level reclaim
+	 * (page cache trim, hibernation) so it can free mirrored-zone
+	 * pages. Tracks mem_reliable_is_enabled() so the flag is 0 when
+	 * memory reliable is off.
+	 */
+	unsigned int movable_only:1;
+
 	/* One of the zones is ready for compaction */
 	unsigned int compaction_ready:1;
 
@@ -1651,6 +1661,7 @@ static unsigned long isolate_lru_folios(unsigned long nr_to_scan,
 	unsigned long skipped = 0;
 	unsigned long scan, total_scan, nr_pages;
 	unsigned long max_nr_skipped = 0;
+	unsigned long non_movable_skipped = 0;
 	LIST_HEAD(folios_skipped);
 
 	total_scan = 0;
@@ -1679,10 +1690,21 @@ static unsigned long isolate_lru_folios(unsigned long nr_to_scan,
 		 * allocations confined to ZONE_MOVABLE can only consume pages
 		 * freed there, so skip folios from mirrored zones.
 		 */
-		if (reliable_movable_only_alloc(sc->gfp_mask) &&
+		if (sc->movable_only &&
 		    folio_zonenum(folio) != ZONE_MOVABLE) {
+			/*
+			 * The head of the LRU is all mirrored-zone folios.
+			 * Scanning further would traverse the whole list for
+			 * nothing, so stop once we've skipped SWAP_CLUSTER_MAX
+			 * of them and bail out. The skipped folios are spliced
+			 * back to the head, so the next attempt rescans them;
+			 * mirrored-zone pages are never reclaimed.
+			 */
+			if (non_movable_skipped >= SWAP_CLUSTER_MAX)
+				break;
 			nr_skipped[folio_zonenum(folio)] += nr_pages;
 			move_to = &folios_skipped;
+			non_movable_skipped++;
 			goto move;
 		}
 
@@ -5931,8 +5953,16 @@ static void shrink_node_memcgs(pg_data_t *pgdat, struct scan_control *sc)
 
 		shrink_lruvec(lruvec, sc);
 
-		shrink_slab(sc->gfp_mask, pgdat->node_id, memcg,
-			    sc->priority);
+		/*
+		 * Slab reclaim frees pages that poorly back a MOVABLE
+		 * allocation: slab objects live mostly in the mirrored
+		 * region, and the returned page count is discarded here.
+		 * Skip it for a MOVABLE-bound direct reclaim, whose
+		 * caller cannot consume mirrored-zone pages anyway.
+		 */
+		if (!sc->movable_only)
+			shrink_slab(sc->gfp_mask, pgdat->node_id, memcg,
+				    sc->priority);
 
 		/* Record the group's reclaim efficiency */
 		if (!sc->proactive)
@@ -6483,6 +6513,8 @@ unsigned long try_to_free_pages(struct zonelist *zonelist, int order,
 		.may_writepage = !laptop_mode,
 		.may_unmap = 1,
 		.may_swap = 1,
+		.movable_only = reliable_movable_only_alloc(
+					current_gfp_context(gfp_mask)),
 	};
 
 	/*
@@ -6500,6 +6532,18 @@ unsigned long try_to_free_pages(struct zonelist *zonelist, int order,
 	 */
 	if (throttle_direct_reclaim(sc.gfp_mask, zonelist, nodemask))
 		return 1;
+
+	/*
+	 * Bail out before the full reclaim walk when there is no
+	 * movable pagecache left to free. See has_movable_pagecache()
+	 * for the threshold rationale.
+	 */
+	if (sc.movable_only &&
+	    !has_movable_pagecache()) {
+		trace_mm_vmscan_direct_reclaim_begin(order, sc.gfp_mask);
+		trace_mm_vmscan_direct_reclaim_end(0);
+		return 0;
+	}
 
 	set_task_reclaim_state(current, &sc.reclaim_state);
 	trace_mm_vmscan_direct_reclaim_begin(order, sc.gfp_mask);
