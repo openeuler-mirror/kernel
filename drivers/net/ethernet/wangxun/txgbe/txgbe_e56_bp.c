@@ -2733,11 +2733,8 @@ void txgbe_e56_bp_watchdog_event(struct txgbe_adapter *adapter)
 		return;
 	}
 
-	/* host auto off need reconfig TXGBE_FLAG_NEED_LINK_CONFIG to setup */
-	if (!(txgbe_xpcs_an_enabled(hw))) {
-		adapter->flags |= TXGBE_FLAG_NEED_LINK_CONFIG;
+	if (!(txgbe_xpcs_an_enabled(hw)))
 		return;
-	}
 
 	value = txgbe_rd32_epcs(hw, 0x78002);
 	an_int = value;

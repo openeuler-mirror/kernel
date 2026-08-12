@@ -262,7 +262,7 @@ static int txgbe_media_types_to_phy_types(struct txgbe_hw *hw)
 		/* 10000SR 10000LR */
 		phy_mode = BIT(8) | BIT(9);
 		if (hw->phy.multispeed_fiber)
-			phy_mode |= BIT(2);
+			phy_mode |= BIT(3);
 		break;
 	case txgbe_sfp_type_1g_cu_core0:
 	case txgbe_sfp_type_1g_cu_core1:
@@ -915,63 +915,9 @@ static int txgbe_set_fec_param(struct net_device *netdev,
 		goto done;
 	}
 	if (cur_fec_mode != hw->phy.curr_user_fec_req) {
-		int status, i;
-		u32 link_speed = TXGBE_LINK_SPEED_UNKNOWN;
-		bool link_up = false;
-
-		if (hw->phy.multispeed_fiber &&
-		    (hw->phy.autoneg_advertised ==
-			(TXGBE_LINK_SPEED_10GB_FULL |
-				TXGBE_LINK_SPEED_25GB_FULL)) &&
-		    hw->phy.curr_user_fec_req != TXGBE_PHY_FEC_AUTO) {
-			while (test_and_set_bit(__TXGBE_IN_SFP_INIT, &adapter->state))
-				usleep_range(1000, 2000);
-			status = hw->mac.ops.setup_mac_link(hw,
-				       TXGBE_LINK_SPEED_25GB_FULL, 0);
-			if (status != 0)
-				return status;
-			for (i = 0; i < 30; i++) {
-				txgbe_e56_check_phy_link(hw, &link_speed, &link_up);
-				if (link_up)
-					goto out;
-				msleep(200);
-			}
-			msec_delay(100);
-			status = hw->mac.ops.setup_mac_link(hw,
-				TXGBE_LINK_SPEED_10GB_FULL, 0);
-			if (status != 0)
-				return status;
-			for (i = 0; i < 35; i++) {
-				u32 link_speed;
-				bool link_up = 0;
-
-				txgbe_e56_check_phy_link(hw, &link_speed, &link_up);
-				if (link_up) {
-					if (rd32(hw, 0x14404) & 0x1) {
-						adapter->flags &= ~TXGBE_FLAG_NEED_LINK_CONFIG;
-						mutex_lock(&adapter->e56_lock);
-						txgbe_wr32_ephy(hw,
-								E56PHY_INTR_1_ADDR,
-							E56PHY_INTR_1_IDLE_EXIT1);
-						mutex_unlock(&adapter->e56_lock);
-						goto out;
-					}
-				}
-				msleep(200);
-			}
-			adapter->flags |= TXGBE_FLAG_NEED_LINK_CONFIG;
-			txgbe_service_event_schedule(adapter);
-out:
-			clear_bit(__TXGBE_IN_SFP_INIT, &adapter->state);
-		} else if (hw->phy.multispeed_fiber) {
-			while (test_and_set_bit(__TXGBE_IN_SFP_INIT, &adapter->state))
-				usleep_range(1000, 2000);
-			hw->mac.ops.setup_link(hw, hw->phy.autoneg_advertised, true);
-			clear_bit(__TXGBE_IN_SFP_INIT, &adapter->state);
-		} else {
-			adapter->flags |= TXGBE_FLAG_NEED_LINK_CONFIG;
-			txgbe_service_event_schedule(adapter);
-		}
+		/* reconfig link */
+		adapter->flags |= TXGBE_FLAG_NEED_LINK_CONFIG;
+		txgbe_service_event_schedule(adapter);
 	}
 done:
 	return err;
