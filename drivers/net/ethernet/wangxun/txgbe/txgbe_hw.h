@@ -268,8 +268,8 @@ void txgbe_set_hard_rate_select_speed(struct txgbe_hw *hw, u32 speed);
 
 int txgbe_init_shared_code(struct txgbe_hw *hw);
 int txgbe_get_invariants_generic(struct txgbe_hw *hw);
-void txgbe_release_hw_control(struct txgbe_adapter *adapter);
-void txgbe_get_hw_control(struct txgbe_adapter *adapter);
+void txgbe_release_hw_control(struct txgbe_hw *hw);
+void txgbe_get_hw_control(struct txgbe_hw *hw);
 int txgbe_reset_hw_generic(struct txgbe_hw *hw);
 int txgbe_identify_phy_generic(struct txgbe_hw *hw);
 int txgbe_enable_rx_dma(struct txgbe_hw *hw, u32 regval);

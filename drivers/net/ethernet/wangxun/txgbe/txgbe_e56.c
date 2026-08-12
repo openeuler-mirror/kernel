@@ -2031,7 +2031,7 @@ int txgbe_temp_track_seq_40g(struct txgbe_hw *hw, u32 speed)
 			CMVAR_UFINE_FMIN_WRAP = S25G_CMVAR_UFINE_FMIN_WRAP;
 			CMVAR_FINE_FMIN_WRAP = S25G_CMVAR_FINE_FMIN_WRAP;
 		} else {
-			e_info(drv, "Error Speed\n");
+			e_info(link, "Unknown phy speed, skip configuration\n");
 			return 0;
 		}
 
@@ -2244,7 +2244,7 @@ int txgbe_temp_track_seq(struct txgbe_hw *hw, u32 speed)
 		CMVAR_UFINE_FMIN_WRAP = S25G_CMVAR_UFINE_FMIN_WRAP;
 		CMVAR_FINE_FMIN_WRAP = S25G_CMVAR_FINE_FMIN_WRAP;
 	} else {
-		e_info(drv, "Error Speed\n");
+		e_info(link, "Unknown phy speed, skip configuration\n");
 		return 0;
 	}
 

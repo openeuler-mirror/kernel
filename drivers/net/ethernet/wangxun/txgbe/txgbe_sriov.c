@@ -2088,13 +2088,12 @@ static void txgbe_set_vf_rx_tx(struct txgbe_adapter *adapter, int vf)
 		if (reg_cur_rx & reg_req_rx)
 			wr32(hw, TXGBE_RDM_VFRE_CLR(reg_offset), reg_req_rx);
 	}
-	if (adapter->vfinfo[vf].link_state == IFLA_VF_LINK_STATE_ENABLE &&
-	    !(rd32(hw, TXGBE_MAC_TX_CFG) & TXGBE_MAC_TX_CFG_TE)) {
+	if (adapter->vfinfo[vf].link_state == IFLA_VF_LINK_STATE_ENABLE) {
+		int reg = rd32(hw, TXGBE_MAC_TX_CFG);
 		wr32m(hw, TXGBE_MAC_TX_CFG, TXGBE_MAC_TX_CFG_TE,
 		      TXGBE_MAC_TX_CFG_TE);
 		TXGBE_WRITE_FLUSH(hw);
-		wr32m(hw, TXGBE_MAC_TX_CFG, TXGBE_MAC_TX_CFG_TE,
-		      TXGBE_MAC_TX_CFG_TE);
+		wr32(hw, TXGBE_MAC_TX_CFG, reg);
 	}
 }
 

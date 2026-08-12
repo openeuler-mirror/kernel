@@ -282,10 +282,17 @@ void txgbe_xlgpcs_txffe_set(struct txgbe_adapter *adapter, u32 speed)
 	}
 
 	if (txgbe_is_dac_cable(hw) || txgbe_is_backplane(hw)) {
-		ffe_main = 0x2b2b2b2b;
-		ffe_pre1 = 0x03030303;
-		ffe_pre2 = 0;
-		ffe_post = 0x11111111;
+		if (KR_TRAINNING_MODE) {
+			ffe_main = 0x2b2b2b2b;
+			ffe_pre1 = 0x03030303;
+			ffe_pre2 = 0;
+			ffe_post = 0x11111111;
+		} else {
+			ffe_main = 0x3f3f3f3f;
+			ffe_pre1 = 0;
+			ffe_pre2 = 0;
+			ffe_post = 0;
+		}
 	}
 
 	if ((hw->phy.oem_flag & U16_MAX) == EPHY_OEM_FROM_FW ||
@@ -313,8 +320,6 @@ void txgbe_xlgpcs_txffe_set(struct txgbe_adapter *adapter, u32 speed)
 		adapter->ffe_set,
 		ffe_main, ffe_pre1, ffe_pre2, ffe_post);
 ffe_set:
-	if (adapter->backplane_an)
-		return;
 	txgbe_wr32_epcs(hw, 0x141c, ffe_main);
 	txgbe_wr32_epcs(hw, 0x1420, ffe_pre1);
 	txgbe_wr32_epcs(hw, 0x1424, ffe_pre2);

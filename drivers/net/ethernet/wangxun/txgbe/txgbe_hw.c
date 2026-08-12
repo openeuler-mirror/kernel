@@ -3925,10 +3925,11 @@ int txgbe_enable_rx_adapter(struct txgbe_hw *hw)
 	txgbe_wr32_epcs(hw, TXGBE_PHY_RX_EQ_CTL, value);
 
 	value = 0;
-	ret = read_poll_timeout(txgbe_rd32_epcs, value, (value & BIT(11)), 1000,
-				200000, false, hw, TXGBE_PHY_RX_AD_ACK);
+	ret = read_poll_timeout_atomic(txgbe_rd32_epcs, value,
+				       (value & BIT(11)), 1000,
+				       200000, false, hw, TXGBE_PHY_RX_AD_ACK);
 	if (ret)
-		return -ETIMEDOUT;
+		hw_info(hw, "RX adapter enable failed to ack\n");
 
 	value = txgbe_rd32_epcs(hw, TXGBE_PHY_RX_EQ_CTL);
 	value &= ~BIT(12);
@@ -4045,17 +4046,19 @@ static int txgbe_reset_misc(struct txgbe_hw *hw)
 	return 0;
 }
 
-void txgbe_release_hw_control(struct txgbe_adapter *adapter)
+void txgbe_release_hw_control(struct txgbe_hw *hw)
 {
 	/* Let firmware take over control of h/w */
-	wr32m(&adapter->hw, TXGBE_CFG_PORT_CTL, TXGBE_CFG_PORT_CTL_DRV_LOAD, 0);
+	wr32m(hw, TXGBE_CFG_PORT_CTL, TXGBE_CFG_PORT_CTL_DRV_LOAD, 0);
+	msleep(150);
 }
 
-void txgbe_get_hw_control(struct txgbe_adapter *adapter)
+void txgbe_get_hw_control(struct txgbe_hw *hw)
 {
 	/* Let firmware know the driver has taken over */
-	wr32m(&adapter->hw, TXGBE_CFG_PORT_CTL,
+	wr32m(hw, TXGBE_CFG_PORT_CTL,
 	      TXGBE_CFG_PORT_CTL_DRV_LOAD, TXGBE_CFG_PORT_CTL_DRV_LOAD);
+	msleep(150);
 }
 
 static void txgbe_set_storm_ctl(struct txgbe_hw *hw)
@@ -4896,12 +4899,8 @@ int txgbe_identify_phy_generic(struct txgbe_hw *hw)
 
 	/* avoid fw access phy */
 	if (((hw->subsystem_device_id & 0xF0) == TXGBE_ID_XAUI) &&
-	    ((hw->subsystem_device_id & TXGBE_NCSI_MASK) == TXGBE_NCSI_SUP)) {
-		/* Let firmware know the driver has taken over */
-		wr32m(hw, TXGBE_CFG_PORT_CTL,
-		      TXGBE_CFG_PORT_CTL_DRV_LOAD, TXGBE_CFG_PORT_CTL_DRV_LOAD);
-		mdelay(100);
-	}
+	    ((hw->subsystem_device_id & TXGBE_NCSI_MASK) == TXGBE_NCSI_SUP))
+		txgbe_get_hw_control(hw);
 
 	if (!hw->phy.phy_semaphore_mask)
 		hw->phy.phy_semaphore_mask = TXGBE_MNG_SWFW_SYNC_SW_PHY;
@@ -4909,8 +4908,7 @@ int txgbe_identify_phy_generic(struct txgbe_hw *hw)
 	/* Let firmware take over control of h/w */
 	if (((hw->subsystem_device_id & 0xF0) == TXGBE_ID_XAUI) &&
 	    ((hw->subsystem_device_id & TXGBE_NCSI_MASK) == TXGBE_NCSI_SUP))
-		wr32m(hw, TXGBE_CFG_PORT_CTL,
-		      TXGBE_CFG_PORT_CTL_DRV_LOAD, 0);
+		txgbe_release_hw_control(hw);
 
 	/* Return error if SFP module has been detected but is not supported */
 	if (hw->phy.type == txgbe_phy_sfp_unsupported)

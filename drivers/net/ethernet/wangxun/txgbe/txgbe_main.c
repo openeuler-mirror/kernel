@@ -5145,7 +5145,7 @@ static void txgbe_up_complete(struct txgbe_adapter *adapter)
 	u32 links_reg;
 	u16 value;
 
-	txgbe_get_hw_control(adapter);
+	txgbe_get_hw_control(hw);
 	txgbe_setup_gpie(adapter);
 	if (adapter->flags & TXGBE_FLAG_MSIX_ENABLED)
 		txgbe_configure_msix(adapter);
@@ -6436,7 +6436,7 @@ int txgbe_close(struct net_device *netdev)
 	memset(&adapter->ft_filter_info, 0,
 	       sizeof(struct txgbe_5tuple_filter_info));
 
-	txgbe_release_hw_control(adapter);
+	txgbe_release_hw_control(&adapter->hw);
 
 	return 0;
 }
@@ -6588,7 +6588,7 @@ static int __txgbe_shutdown(struct pci_dev *pdev, bool *enable_wake)
 	pci_wake_from_d3(pdev, !!wufc);
 
 	*enable_wake = !!wufc;
-	txgbe_release_hw_control(adapter);
+	txgbe_release_hw_control(&adapter->hw);
 
 	if (!test_and_set_bit(__TXGBE_DISABLED, &adapter->state))
 		pci_disable_device(pdev);
@@ -10825,7 +10825,7 @@ no_info_string:
 
 err_register:
 	txgbe_clear_interrupt_scheme(adapter);
-	txgbe_release_hw_control(adapter);
+	txgbe_release_hw_control(&adapter->hw);
 err_sw_init:
 #ifdef CONFIG_PCI_IOV
 	txgbe_disable_sriov(adapter);
@@ -10897,7 +10897,7 @@ static void txgbe_remove(struct pci_dev *pdev)
 #endif /* CONFIG_FCOE */
 
 	txgbe_clear_interrupt_scheme(adapter);
-	txgbe_release_hw_control(adapter);
+	txgbe_release_hw_control(&adapter->hw);
 
 	kfree(adapter->txgbe_ieee_pfc);
 	kfree(adapter->txgbe_ieee_ets);

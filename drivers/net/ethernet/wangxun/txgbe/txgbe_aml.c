@@ -21,7 +21,7 @@ static int txgbe_reset_hw_aml(struct txgbe_hw *hw)
 	int ret;
 
 	/* take driver control when do reset */
-	txgbe_get_hw_control(adapter);
+	txgbe_get_hw_control(hw);
 
 	ret = txgbe_reset_hw_generic(hw);
 	if (ret)
@@ -40,7 +40,7 @@ static int txgbe_reset_hw_aml(struct txgbe_hw *hw)
 	adapter->cur_fec_link = TXGBE_PHY_FEC_AUTO;
 
 out:
-	txgbe_release_hw_control(adapter);
+	txgbe_release_hw_control(hw);
 	return ret;
 }
 

@@ -2320,8 +2320,8 @@ static int txgbe_intr_test(struct txgbe_adapter *adapter, u64 *data)
 			 * test failed.
 			 */
 			adapter->test_icr = 0;
-			txgbe_intr_disable(&adapter->hw, ~mask);
-			txgbe_intr_trigger(&adapter->hw, ~mask);
+			txgbe_intr_disable(&adapter->hw, mask);
+			txgbe_intr_trigger(&adapter->hw, mask);
 			TXGBE_WRITE_FLUSH(&adapter->hw);
 			usleep_range(10000, 20000);
 
@@ -2795,9 +2795,9 @@ static int txgbe_run_loopback_test(struct txgbe_adapter *adapter)
 static int txgbe_loopback_test(struct txgbe_adapter *adapter, u64 *data)
 {
 	struct txgbe_hw *hw = &adapter->hw;
+
 	/* Let firmware know the driver has taken over */
-	wr32m(&adapter->hw, TXGBE_CFG_PORT_CTL,
-	      TXGBE_CFG_PORT_CTL_DRV_LOAD, TXGBE_CFG_PORT_CTL_DRV_LOAD);
+	txgbe_get_hw_control(hw);
 	*data = txgbe_setup_config(adapter);
 	if (*data)
 		goto err_loopback;
