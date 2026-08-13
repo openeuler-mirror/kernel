@@ -91,6 +91,7 @@ struct udma_umem_param {
 	uint64_t len;
 	union ubcore_umem_flag flag;
 	bool is_kernel;
+	bool suppress_error_log;
 };
 
 struct udma_ue_index_cmd {

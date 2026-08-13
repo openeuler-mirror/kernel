@@ -127,8 +127,6 @@ static int udma_query_device_status(struct ubcore_device *dev,
 
 static void udma_set_dev_caps(struct ubcore_device_attr *attr, struct udma_dev *udma_dev)
 {
-	unsigned long long type_bit = ubase_get_ub_feature();
-
 	attr->dev_cap.max_jfs_depth = udma_dev->caps.jfs.depth;
 	attr->dev_cap.max_jfr_depth = udma_dev->caps.jfr.depth;
 	attr->dev_cap.max_jfc_depth = udma_dev->caps.jfc.depth;
@@ -166,12 +164,12 @@ static void udma_set_dev_caps(struct ubcore_device_attr *attr, struct udma_dev *
 	attr->dev_cap.feature.bs.ipourma_en = udma_dev->caps.ipourma_en;
 	attr->dev_cap.feature.bs.ctp_en = udma_dev->caps.ctp_en;
 	attr->dev_cap.feature.bs.uboe = !ubase_adev_ubl_supported(udma_dev->comdev.adev);
-	attr->dev_cap.rm_tp_cap.bs.rtp = !!(type_bit & UBASE_URMA_RTP_ROI);
-	attr->dev_cap.rm_tp_cap.bs.ctp = !!(type_bit & UBASE_URMA_CTP_ROI);
-	attr->dev_cap.rc_tp_cap.bs.ctp = !!(type_bit & UBASE_URMA_CTP_ROL);
-	attr->dev_cap.rc_tp_cap.bs.rtp = !!(type_bit & UBASE_URMA_RTP_ROL);
-	attr->dev_cap.um_tp_cap.bs.ctp = !!(type_bit & UBASE_URMA_CTP_UNO);
-	attr->dev_cap.um_tp_cap.bs.utp = !!(type_bit & UBASE_URMA_UTP_UNO);
+	attr->dev_cap.rm_tp_cap.bs.rtp = udma_dev->caps.rm_tp.bs.rtp;
+	attr->dev_cap.rm_tp_cap.bs.ctp = udma_dev->caps.rm_tp.bs.ctp;
+	attr->dev_cap.rc_tp_cap.bs.ctp = udma_dev->caps.rc_tp.bs.ctp;
+	attr->dev_cap.rc_tp_cap.bs.rtp = udma_dev->caps.rc_tp.bs.rtp;
+	attr->dev_cap.um_tp_cap.bs.ctp = udma_dev->caps.um_tp.bs.ctp;
+	attr->dev_cap.um_tp_cap.bs.utp = udma_dev->caps.um_tp.bs.utp;
 }
 
 static int udma_query_device_attr(struct ubcore_device *dev,
@@ -727,6 +725,7 @@ static void udma_get_dtu_param(struct udma_dev *udma_dev, struct ubase_caps *uba
 static void get_dev_caps_from_ubase(struct udma_dev *udma_dev)
 {
 	struct ubase_caps *ubase_caps;
+	unsigned long long type_bit;
 
 	ubase_caps = ubase_get_dev_caps(udma_dev->comdev.adev);
 	if (ubase_caps == NULL)
@@ -741,7 +740,13 @@ static void get_dev_caps_from_ubase(struct udma_dev *udma_dev)
 	udma_dev->port_logic_id = ubase_caps->io_port_logic_id;
 	udma_dev->ue_id = ubase_caps->ue_id;
 	udma_dev->caps.non_mirror_en = ubase_adev_non_mirror_mem_supported(udma_dev->comdev.adev);
-
+	type_bit = ubase_get_ub_feature();
+	udma_dev->caps.rm_tp.bs.rtp = !!(type_bit & UBASE_URMA_RTP_ROI);
+	udma_dev->caps.rm_tp.bs.ctp = !!(type_bit & UBASE_URMA_CTP_ROI);
+	udma_dev->caps.rc_tp.bs.ctp = !!(type_bit & UBASE_URMA_CTP_ROL);
+	udma_dev->caps.rc_tp.bs.rtp = !!(type_bit & UBASE_URMA_RTP_ROL);
+	udma_dev->caps.um_tp.bs.ctp = !!(type_bit & UBASE_URMA_CTP_UNO);
+	udma_dev->caps.um_tp.bs.utp = !!(type_bit & UBASE_URMA_UTP_UNO);
 	udma_get_dtu_param(udma_dev, ubase_caps);
 }
 
