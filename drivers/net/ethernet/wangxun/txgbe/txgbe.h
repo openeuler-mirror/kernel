@@ -478,6 +478,9 @@ static inline unsigned int txgbe_rx_bufsz(struct txgbe_ring __maybe_unused *ring
 #if (PAGE_SIZE < 8192)
 	if (ring_uses_build_skb(ring))
 		return TXGBE_MAX_2K_FRAME_BUILD_SKB;
+#else
+	if (ring_uses_build_skb(ring))
+		return TXGBE_RXBUFFER_3K;  /* for build_skb mode safety memory bound */
 #endif
 	return TXGBE_RXBUFFER_2K;
 #endif
