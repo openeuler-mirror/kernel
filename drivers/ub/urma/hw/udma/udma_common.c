@@ -37,6 +37,7 @@ static void udma_fill_umem(struct udma_umem *umem, struct udma_umem_param *param
 	umem->length = param->len;
 	umem->flag = param->flag;
 	umem->is_writable = !!param->flag.bs.writable;
+	umem->suppress_error_log = param->suppress_error_log;
 }
 
 static int udma_pin_pages(uint64_t cur_base, uint64_t npages,
@@ -97,9 +98,10 @@ static uint64_t udma_pin_all_pages(struct udma_dev *udma_dev, struct udma_umem *
 		cond_resched();
 		pinned = udma_pin_pages(cur_base, page_count, gup_flags, page_list);
 		if (pinned <= 0) {
-			dev_err(udma_dev->dev,
-				"failed to pin_user_pages_fast, page_count: %llu, pinned: %d.\n",
-				page_count, pinned);
+			if (!umem->suppress_error_log)
+				dev_err(udma_dev->dev,
+					"failed to pin_user_pages_fast, page_count: %llu, pinned: %d.\n",
+					page_count, pinned);
 			break;
 		}
 		cur_base += (uint64_t)pinned * PAGE_SIZE;
@@ -108,9 +110,10 @@ static uint64_t udma_pin_all_pages(struct udma_dev *udma_dev, struct udma_umem *
 						       pinned * PAGE_SIZE, UINT_MAX, page_count,
 						       GFP_KERNEL);
 		if (ret) {
-			dev_err(udma_dev->dev,
-				"failed to SG alloc append table failed, page_count: %llu.\n",
-				page_count);
+			if (!umem->suppress_error_log)
+				dev_err(udma_dev->dev,
+					"failed to SG alloc append table, page_count: %llu.\n",
+					page_count);
 			unpin_user_pages_dirty_lock(page_list, pinned, 0);
 			udma_unpin_pages_by_sgtable(umem, false);
 			return 0;
@@ -588,6 +591,7 @@ static struct udma_umem *udma_pin_k_addr(struct ubcore_device *ub_dev, uint64_t 
 	param.flag.bs.writable = true;
 	param.flag.bs.non_pin = 0;
 	param.is_kernel = true;
+	param.suppress_error_log = false;
 
 	return udma_umem_get(&param);
 }

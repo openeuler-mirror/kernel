@@ -28,9 +28,8 @@ static int udma_align_segment(struct udma_segment *seg)
 }
 
 static int udma_pin_segment(struct ubcore_device *ub_dev, struct ubcore_seg_cfg *cfg,
-			    struct udma_segment *seg, bool is_writable)
+			    struct udma_segment *seg, struct udma_pin_flag *flag)
 {
-	struct udma_dev *udma_dev = to_udma_dev(ub_dev);
 	struct udma_umem_param param;
 	int ret = 0;
 
@@ -38,16 +37,18 @@ static int udma_pin_segment(struct ubcore_device *ub_dev, struct ubcore_seg_cfg 
 	param.va = seg->addr;
 	param.len = seg->length;
 
-	param.flag.bs.writable = is_writable;
+	/*
+	 * URMA Guaranteed local write must be set
+	 * when remote write or remote atomic are declared
+	 */
+	param.flag.bs.writable = flag->is_writable;
 	param.flag.bs.non_pin = cfg->flag.bs.non_pin;
 	param.is_kernel = seg->kernel_mode;
+	param.suppress_error_log = flag->suppress_error_log;
 
 	seg->umem = udma_umem_get(&param);
-	if (IS_ERR(seg->umem)) {
+	if (IS_ERR(seg->umem))
 		ret = PTR_ERR(seg->umem);
-		dev_err(udma_dev->dev,
-			"failed to get segment umem, ret = %d.\n", ret);
-	}
 
 	return ret;
 }
@@ -80,6 +81,13 @@ static void udma_init_seg_cfg(struct udma_segment *seg, struct ubcore_seg_cfg *c
 	seg->token_value_valid = cfg->flag.bs.token_policy != UBCORE_TOKEN_NONE;
 	seg->addr = cfg->va;
 	seg->length = cfg->len;
+}
+
+static inline void udma_init_pin_flag(struct udma_pin_flag *flag, bool is_writable,
+				      bool suppress_error_log)
+{
+	flag->is_writable = is_writable;
+	flag->suppress_error_log = suppress_error_log;
 }
 
 static int udma_u_get_seg_perm(struct ubcore_seg_cfg *cfg)
@@ -302,6 +310,7 @@ static int udma_pin_seg_pages(struct ubcore_device *ub_dev,
 			      struct ubcore_seg_cfg *cfg, int *prot)
 {
 	struct vm_area_struct *vma;
+	struct udma_pin_flag flag;
 	int ret;
 
 	mmap_read_lock(current->mm);
@@ -327,10 +336,12 @@ static int udma_pin_seg_pages(struct ubcore_device *ub_dev,
 			return ret;
 		}
 
-		ret = udma_pin_segment(ub_dev, cfg, seg, true);
+		udma_init_pin_flag(&flag, true, true);
+		ret = udma_pin_segment(ub_dev, cfg, seg, &flag);
 		if (unlikely(ret)) {
 			*prot = IOMMU_READ;
-			ret = udma_pin_segment(ub_dev, cfg, seg, false);
+			udma_init_pin_flag(&flag, false, false);
+			ret = udma_pin_segment(ub_dev, cfg, seg, &flag);
 		}
 	}
 
@@ -541,6 +552,7 @@ struct ubcore_target_seg *udma_register_seg(struct ubcore_device *ub_dev,
 {
 	struct udma_dev *udma_dev = to_udma_dev(ub_dev);
 	struct udma_tid *udma_tid;
+	struct udma_pin_flag flag;
 	struct udma_segment *seg;
 	struct iommu_sva *ksva;
 	int ret = 0;
@@ -568,8 +580,8 @@ struct ubcore_target_seg *udma_register_seg(struct ubcore_device *ub_dev,
 	}
 
 	if (!cfg->flag.bs.non_pin) {
-		ret = udma_pin_segment(ub_dev, cfg, seg,
-				       !!(cfg->flag.bs.access & UBCORE_ACCESS_WRITE));
+		udma_init_pin_flag(&flag, !!(cfg->flag.bs.access & UBCORE_ACCESS_WRITE), false);
+		ret = udma_pin_segment(ub_dev, cfg, seg, &flag);
 		if (ret) {
 			dev_err(udma_dev->dev, "pin segment failed, ret = %d.\n", ret);
 			goto err_pin_seg;

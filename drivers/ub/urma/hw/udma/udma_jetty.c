@@ -2077,27 +2077,23 @@ uint32_t udma_get_type(uint32_t trans_mode, uint32_t order_type)
 
 int udma_check_tp_type_available(struct udma_dev *dev, struct ubcore_tjetty_cfg *cfg)
 {
-	unsigned long long type_bit = ubase_get_ub_feature();
-	uint32_t tp_ability_bit = 0;
+	bool tp_ability_bit = 0;
 
 	if (cfg->flag.bs.order_type == UBCORE_OI && cfg->tp_type == UBCORE_RTP) {
-		tp_ability_bit = !!(type_bit & UBASE_URMA_RTP_ROI);
+		tp_ability_bit = dev->caps.rm_tp.bs.rtp;
 	} else if (cfg->flag.bs.order_type == UBCORE_OI && cfg->tp_type == UBCORE_CTP) {
-		tp_ability_bit = !!(type_bit & UBASE_URMA_CTP_ROI);
+		tp_ability_bit = dev->caps.rm_tp.bs.ctp;
 	} else if (cfg->flag.bs.order_type == UBCORE_OL && cfg->tp_type == UBCORE_CTP) {
-		tp_ability_bit = !!(type_bit & UBASE_URMA_CTP_ROL);
+		tp_ability_bit = dev->caps.rc_tp.bs.ctp;
 	} else if (cfg->flag.bs.order_type == UBCORE_OL && cfg->tp_type == UBCORE_RTP) {
-		tp_ability_bit = !!(type_bit & UBASE_URMA_RTP_ROL);
+		tp_ability_bit = dev->caps.rc_tp.bs.rtp;
 	} else if (cfg->flag.bs.order_type == UBCORE_NO && cfg->tp_type == UBCORE_CTP) {
-		tp_ability_bit = !!(type_bit & UBASE_URMA_CTP_UNO);
+		tp_ability_bit = dev->caps.um_tp.bs.ctp;
 	} else if (cfg->flag.bs.order_type == UBCORE_NO && cfg->tp_type == UBCORE_UTP) {
-		tp_ability_bit = !!(type_bit & UBASE_URMA_UTP_UNO);
-	} else if (cfg->flag.bs.order_type == UBCORE_OT && cfg->tp_type == UBCORE_CTP) {
-		tp_ability_bit = !!(type_bit & UBASE_URMA_CTP_ROT);
-	} else if (cfg->flag.bs.order_type == UBCORE_OT && cfg->tp_type == UBCORE_RTP) {
-		tp_ability_bit = !!(type_bit & UBASE_URMA_RTP_ROT);
+		tp_ability_bit = dev->caps.um_tp.bs.utp;
 	} else {
-		dev_err(dev->dev, "tp mode is not recognized.\n");
+		dev_err(dev->dev, "tp mode is not recognized, order type: %u, tp type: %u.\n",
+			cfg->flag.bs.order_type, cfg->tp_type);
 		return -EINVAL;
 	}
 
@@ -2107,5 +2103,6 @@ int udma_check_tp_type_available(struct udma_dev *dev, struct ubcore_tjetty_cfg 
 			cfg->flag.bs.order_type, cfg->tp_type);
 		return -EINVAL;
 	}
+
 	return 0;
 }
