@@ -23,6 +23,7 @@ int udma_pin_sw_db(struct udma_context *ctx, struct udma_sw_db *db)
 	param.flag.bs.writable = 1;
 	param.flag.bs.non_pin = 0;
 	param.is_kernel = false;
+	param.suppress_error_log = false;
 	offset = db->db_addr - page_addr;
 
 	mutex_lock(&ctx->pgdir_mutex);
