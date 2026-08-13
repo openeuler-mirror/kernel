@@ -184,6 +184,21 @@ config MGBEVF_OPTM_WITH_LARGE
 
           If unsure, say N.
 
+config MCEPF
+	tristate "Mucse(R) N20/B850 25/40/100GbE PCI Express adapters support"
+	depends on PCI
+	depends on NETDEVICES
+	depends on 64BIT
+	depends on VLAN_8021Q
+	imply PTP_1588_CLOCK
+	select AUXILIARY_BUS
+	help
+	  This driver supports the Mucse(R) N20 and B850 25/40/100GbE
+	  PCI Express Ethernet adapters.
+
+	  To compile this driver as a module, choose M here. The module
+	  will be called mcepf.
+
 config MCEVF
 	tristate "Mucse Ethernet virtual function support"
 	depends on PCI && DIMLIB
