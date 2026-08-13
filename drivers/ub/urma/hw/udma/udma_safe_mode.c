@@ -39,9 +39,14 @@ void udma_uninit_mbox_over_cmdq(struct udma_dev *udev)
 		return;
 
 	mutex_lock(&info->tbl_lock);
-	if (!xa_empty(&info->seq_tbl))
-		xa_for_each(&info->seq_tbl, index, wait_completion)
-			xa_erase(&info->seq_tbl, index);
+	if (!xa_empty(&info->seq_tbl)) {
+		xa_for_each(&info->seq_tbl, index, wait_completion) {
+			if (wait_completion)
+				complete(&wait_completion->ret_completion);
+			__xa_erase(&info->seq_tbl, index);
+		}
+	}
+
 	xa_destroy(&info->seq_tbl);
 	mutex_unlock(&info->tbl_lock);
 	mutex_destroy(&info->tbl_lock);
@@ -68,7 +73,7 @@ static int udma_get_trans_len_by_op(uint8_t op)
 	case UDMA_CMD_MODIFY_JFC_CONTEXT:
 		return sizeof(struct udma_jfc_ctx) * UDMA_CTX_MULTIPLE;
 	case UDMA_CMD_MODIFY_JFS_CONTEXT:
-		return sizeof(struct udma_jetty_ctx) * UDMA_CTX_MULTIPLE;
+		return sizeof(struct udma_jetty_ctx) + UDMA_JFS_MASK_OFFSET;
 	case UDMA_CMD_MODIFY_JFR_CONTEXT:
 		return sizeof(struct udma_jfr_ctx) * UDMA_CTX_MULTIPLE;
 	case UDMA_CMD_MODIFY_JETTY_GROUP_CONTEXT:
@@ -78,7 +83,7 @@ static int udma_get_trans_len_by_op(uint8_t op)
 	}
 }
 
-static int udma_get_resp_len_by_op(uint8_t op)
+static uint16_t udma_get_resp_len_by_op(uint8_t op)
 {
 	switch (op) {
 	/* ctx len */
@@ -106,77 +111,109 @@ static inline uint32_t udma_get_seq_for_cmdq(struct udma_dev *udev)
 	return seq;
 }
 
-static int udma_wait_resp_from_proxy(struct udma_dev *udev,
-				     struct ubase_proxy_req_msg *req,
-				     struct ubase_cmd_mailbox *mbox)
+static inline void udma_init_req(struct udma_dev *udev,
+				 struct ubase_proxy_req_msg *req,
+				 struct ubase_mbx_attr *attr,
+				 struct ubase_cmd_mailbox *mbox)
 {
-#define UDMA_WAIT_RESP_TIME msecs_to_jiffies(500)
+	req->module = UBASE_MODULE_UDMA_TO_PROXY;
+	req->opcode = attr->op;
+	req->tag = attr->tag;
+	req->seq_num = udma_get_seq_for_cmdq(udev);
+	req->data_len = udma_get_trans_len_by_op(attr->op);
+	if (req->data_len)
+		memcpy(req->data, mbox->buf, req->data_len);
+}
 
+static inline void udma_init_wait_completion(struct udma_mbox_over_cmdq_completion *wait_completion,
+					     struct ubase_proxy_req_msg *req,
+					     struct ubase_cmd_mailbox *mbox)
+{
+	wait_completion->mbox = mbox;
+	wait_completion->mbox_len = udma_get_resp_len_by_op(req->opcode);
+	wait_completion->ret_success = false;
+	wait_completion->ret = -EFAULT;
+	init_completion(&wait_completion->ret_completion);
+}
+
+static inline int udma_store_wait_completion(struct udma_dev *udev,
+					     struct udma_mbox_over_cmdq_completion *wait_completion,
+					     struct ubase_proxy_req_msg *req)
+{
 	struct udma_mbox_over_cmdq_info *info = udev->mbox_over_cmdq_info;
-	struct udma_mbox_over_cmdq_completion wait_completion;
 	int ret;
 
-	wait_completion.mbox = mbox;
-	wait_completion.mbox_len = udma_get_resp_len_by_op(req->opcode);
-	wait_completion.ret_success = false;
-	wait_completion.ret = -EFAULT;
-
 	mutex_lock(&info->tbl_lock);
-	ret = xa_err(__xa_store(&info->seq_tbl, req->seq_num, &wait_completion, GFP_KERNEL));
+	ret = xa_err(__xa_store(&info->seq_tbl, req->seq_num, wait_completion, GFP_KERNEL));
 	mutex_unlock(&info->tbl_lock);
-	if (ret) {
-		dev_err(udev->dev, "save response completion failed, ret = %d.\n", ret);
-		return -EFAULT;
-	}
 
-	init_completion(&wait_completion.ret_completion);
-	(void)wait_for_completion_timeout(&wait_completion.ret_completion, UDMA_WAIT_RESP_TIME);
+	return ret;
+}
+
+static inline void udma_remove_wait_completion(struct udma_dev *udev,
+					struct udma_mbox_over_cmdq_completion *wait_completion,
+					struct ubase_proxy_req_msg *req)
+{
+	struct udma_mbox_over_cmdq_info *info = udev->mbox_over_cmdq_info;
 
 	mutex_lock(&info->tbl_lock);
 	if (xa_load(&info->seq_tbl, req->seq_num))
-		xa_erase(&info->seq_tbl, req->seq_num);
+		__xa_erase(&info->seq_tbl, req->seq_num);
 	mutex_unlock(&info->tbl_lock);
-
-	if (!wait_completion.ret_success)
-		dev_err(udev->dev, "wait response failed.\n");
-
-	return wait_completion.ret;
 }
 
 int udma_post_mbox_over_cmdq(struct udma_dev *udev,
 			     struct ubase_mbx_attr *attr,
 			     struct ubase_cmd_mailbox *mbox)
 {
+#define UDMA_WAIT_RESP_TIME msecs_to_jiffies(500)
+
+	struct udma_mbox_over_cmdq_completion *wait_completion;
 	struct ubase_proxy_req_msg *req;
-	uint16_t ctx_len, data_len;
 	struct ubase_cmd_buf in;
+	uint16_t data_len;
 	int ret;
 
-	ctx_len = udma_get_trans_len_by_op(attr->op);
-	data_len = sizeof(*req) + ctx_len;
-
+	data_len = sizeof(*req) + udma_get_trans_len_by_op(attr->op);
 	req = kzalloc(data_len, GFP_KERNEL);
 	if (!req)
 		return -ENOMEM;
 
-	req->module = UBASE_MODULE_UDMA_TO_PROXY;
-	req->opcode = attr->op;
-	req->tag = attr->tag;
-	req->seq_num = udma_get_seq_for_cmdq(udev);
-	req->data_len = ctx_len;
-	if (req->data_len)
-		memcpy(req->data, mbox->buf, req->data_len);
+	wait_completion = kzalloc(sizeof(*wait_completion), GFP_KERNEL);
+	if (!wait_completion) {
+		ret = -ENOMEM;
+		goto alloc_wait_completion_err;
+	}
+
+	udma_init_req(udev, req, attr, mbox);
+	udma_init_wait_completion(wait_completion, req, mbox);
+	ret = udma_store_wait_completion(udev, wait_completion, req);
+	if (ret) {
+		dev_err(udev->dev, "store wait_completion failed, ret is %d.\n", ret);
+		goto store_wait_completion_err;
+	}
 
 	udma_fill_buf(&in, UBASE_OPC_UE_TO_PROXY, false, data_len, req);
 	ret = ubase_cmd_send_in(udev->comdev.adev, &in);
 	if (ret) {
-		dev_err(udev->dev, "send mailbox request message failed, ret is %d.\n", ret);
+		dev_err(udev->dev, "send command queue to ubaseproxy failed, ret is %d.\n", ret);
 		goto post_process;
 	}
 
-	ret = udma_wait_resp_from_proxy(udev, req, mbox);
+	(void)wait_for_completion_timeout(&wait_completion->ret_completion, UDMA_WAIT_RESP_TIME);
+	if (wait_completion->ret_success) {
+		ret = wait_completion->ret;
+	} else {
+		dev_err(udev->dev, "wait response from ubaseproxy failed, seq = %u.\n",
+			req->seq_num);
+		ret = -ETIMEDOUT;
+	}
 
 post_process:
+	udma_remove_wait_completion(udev, wait_completion, req);
+store_wait_completion_err:
+	kfree(wait_completion);
+alloc_wait_completion_err:
 	kfree(req);
 
 	return ret;
@@ -188,6 +225,7 @@ int udma_recv_resp_from_proxy(void *dev, void *data, uint32_t len)
 	struct udma_mbox_over_cmdq_info *info = udev->mbox_over_cmdq_info;
 	struct udma_mbox_over_cmdq_completion *wait_completion;
 	struct ubase_proxy_resp_msg *resp;
+	uint16_t expect_len;
 	uint32_t data_len;
 
 	if (len < sizeof(*resp)) {
@@ -211,10 +249,11 @@ int udma_recv_resp_from_proxy(void *dev, void *data, uint32_t len)
 		return -EINVAL;
 	}
 
-	if (resp->data_len != wait_completion->mbox_len) {
+	expect_len = wait_completion->mbox_len;
+	if (resp->data_len != expect_len) {
 		mutex_unlock(&info->tbl_lock);
 		dev_err(udev->dev, "expect len = %u, but get len = %u.\n",
-			wait_completion->mbox_len, resp->data_len);
+			expect_len, resp->data_len);
 		return -EINVAL;
 	}
 
@@ -223,7 +262,7 @@ int udma_recv_resp_from_proxy(void *dev, void *data, uint32_t len)
 		memcpy(wait_completion->mbox->buf, resp->data, resp->data_len);
 
 	wait_completion->ret_success = true;
-	xa_erase(&info->seq_tbl, resp->seq_num);
+	__xa_erase(&info->seq_tbl, resp->seq_num);
 	complete(&wait_completion->ret_completion);
 	mutex_unlock(&info->tbl_lock);
 
