@@ -153,6 +153,13 @@ int allocate_memory_contiguous(uint64_t size[], int length, struct mem_descripti
 			ret = -EINVAL;
 			goto err_free_memory;
 		}
+		if ((u64)conti_get_used(&mem_allocators[i].allocator) + (u64)size[i] >
+		    conti_get_max_total(&mem_allocators[i].allocator)) {
+			pr_err_ratelimited("%s: size %#llx + used would breach max_total on node %d\n",
+					   __func__, size[i], i);
+			ret = -ENOMEM;
+			goto err_free_memory;
+		}
 		allocated = conti_alloc_memory(&mem_allocators[i].allocator, size[i], &head, zero,
 					       allow_slow);
 		list_replace(&head, &desc->head[i]);
@@ -170,10 +177,23 @@ err_free_memory:
 	return ret;
 }
 
-static size_t cma_contract_size(struct conti_mem_allocator *a)
+/* Cap-aware idle reserve target: the pool_size reference, clamped by the
+ * remaining room under max_total. Equals pool_size when uncapped (LLONG_MAX).
+ */
+static size_t cma_target_avail(struct conti_mem_allocator *a)
 {
 	struct mem_allocator *m = conti_mem_to_mem_allocator(a);
-	ssize_t size = (ssize_t)(ALIGN(conti_get_avail(a) - m->pool_size, a->granu));
+	u64 used = conti_get_used(a);
+	u64 max_total = conti_get_max_total(a);
+	u64 cap_room = used < max_total ? (max_total - used) : 0;
+
+	return (size_t)min_t(u64, m->pool_size, cap_room);
+}
+
+static size_t cma_contract_size(struct conti_mem_allocator *a)
+{
+	ssize_t size = (ssize_t)(ALIGN(conti_get_avail(a) - cma_target_avail(a),
+				       a->granu));
 
 	return size > 0 ? size : 0;
 }
@@ -185,8 +205,8 @@ static bool cma_need_contract(struct conti_mem_allocator *a)
 
 static size_t cma_expand_size(struct conti_mem_allocator *a)
 {
-	struct mem_allocator *m = conti_mem_to_mem_allocator(a);
-	ssize_t size = (ssize_t)ALIGN_DOWN(m->pool_size - conti_get_avail(a), a->granu);
+	ssize_t size = (ssize_t)ALIGN_DOWN(cma_target_avail(a) - conti_get_avail(a),
+					   a->granu);
 
 	return size > 0 ? size : 0;
 }

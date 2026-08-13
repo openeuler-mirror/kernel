@@ -91,10 +91,14 @@ size_t conti_mem_allocator_expand(struct conti_mem_allocator *allocator, size_t 
 
 	count = size / allocator->granu;
 	while (count > 0 && atomic_read(&pool_thread_should_pause) == 0) {
+		if (!conti_can_grow_pooled(allocator, allocator->granu))
+			break;
 		node = conti_pool_alloc_memseg(allocator);
 		if (!node)
 			break;
 
+		atomic64_add(allocator->granu, &allocator->pooled_mem_size);
+		atomic64_add(allocator->granu, &allocator->uncleared_mem_size);
 		spin_lock_irqsave(&allocator->lock, flags);
 		list_add_tail(&node->list, &allocator->memseg_uncleared);
 		spin_unlock_irqrestore(&allocator->lock, flags);
@@ -105,8 +109,6 @@ size_t conti_mem_allocator_expand(struct conti_mem_allocator *allocator, size_t 
 		wake_up_interruptible(&allocator->clear_wq);
 
 	expand_size = size - count * allocator->granu;
-	atomic64_add(expand_size, &allocator->pooled_mem_size);
-	atomic64_add(expand_size, &allocator->uncleared_mem_size);
 	if (expand_size > 0)
 		pr_debug("%s: expand expect size %#zx, actual size %#zx\n", current->comm, size,
 			expand_size);
@@ -225,6 +227,8 @@ static size_t conti_alloc_memory_slow(struct conti_mem_allocator *allocator, siz
 	int ret;
 
 	while (size) {
+		if (!conti_can_grow_pooled(allocator, allocator->granu))
+			break;
 		node = conti_pool_alloc_memseg(allocator);
 		if (!node)
 			break;
@@ -237,12 +241,12 @@ static size_t conti_alloc_memory_slow(struct conti_mem_allocator *allocator, siz
 			}
 		}
 		allocated += allocator->granu;
+		atomic64_add(allocator->granu, &allocator->pooled_mem_size);
+		atomic64_add(allocator->granu, &allocator->used_mem_size);
 		list_add_tail(&node->list, head);
 		size -= allocator->granu;
 	}
 
-	atomic64_add(allocated, &allocator->pooled_mem_size);
-	atomic64_add(allocated, &allocator->used_mem_size);
 	pr_debug("%s: slow allocate %#zx from node %d\n", current->comm, allocated, allocator->nid);
 	return allocated;
 }
@@ -569,18 +573,55 @@ static ssize_t available_uncleared_show(struct kobject *kobj,
 	return sysfs_emit(buf, "0x%llx\n", atomic64_read(&allocator->uncleared_mem_size));
 }
 
+static ssize_t max_total_store(struct kobject *kobj, struct kobj_attribute *attr,
+			       const char *buf, size_t count)
+{
+	struct conti_mem_allocator *allocator;
+	u64 val;
+	char *p;
+
+	allocator = container_of(kobj, struct conti_mem_allocator, kobj);
+
+	val = memparse(buf, &p);
+	if (*p != '\0' && *p != '\n')	/* trailing garbage; also rejects a leading '-' */
+		return -EINVAL;
+
+	if (val == 0)
+		val = LLONG_MAX;		/* 0 = clear cap */
+	else if (val > (u64)LLONG_MAX)
+		return -EINVAL;
+	else if (val < conti_get_used(allocator))
+		return -EINVAL;		/* cannot set cap below current usage */
+
+	atomic64_set(&allocator->max_total, (s64)val);
+	wake_up_interruptible(&allocator->pool_wq);
+	return count;
+}
+
+static ssize_t max_total_show(struct kobject *kobj, struct kobj_attribute *attr,
+			      char *buf)
+{
+	struct conti_mem_allocator *allocator;
+
+	allocator = container_of(kobj, struct conti_mem_allocator, kobj);
+	return sysfs_emit(buf, "0x%llx\n", conti_get_max_total(allocator));
+}
+
 static struct kobj_attribute total_attr = __ATTR(total, 0400, total_show, NULL);
 static struct kobj_attribute used_attr = __ATTR(used, 0400, used_show, NULL);
 static struct kobj_attribute available_cleared_attr =
 	__ATTR(available_cleared, 0400, available_cleared_show, NULL);
 static struct kobj_attribute available_uncleared_attr =
 	__ATTR(available_uncleared, 0400, available_uncleared_show, NULL);
+static struct kobj_attribute max_total_attr =
+	__ATTR(max_total, 0600, max_total_show, max_total_store);
 
 static struct attribute *conti_attrs[] = {
 	&total_attr.attr,
 	&used_attr.attr,
 	&available_cleared_attr.attr,
 	&available_uncleared_attr.attr,
+	&max_total_attr.attr,
 	NULL,
 };
 
@@ -622,6 +663,7 @@ int conti_mem_allocator_init(struct conti_mem_allocator *allocator, int nid, siz
 	atomic64_set(&allocator->used_mem_size, 0);
 	atomic64_set(&allocator->ready_mem_size, 0);
 	atomic64_set(&allocator->uncleared_mem_size, 0);
+	atomic64_set(&allocator->max_total, LLONG_MAX);	/* uncapped until configured */
 	spin_lock_init(&allocator->lock);
 	INIT_LIST_HEAD(&allocator->memseg_ready);
 	init_waitqueue_head(&allocator->clear_wq);
