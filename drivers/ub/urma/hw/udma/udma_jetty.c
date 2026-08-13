@@ -197,7 +197,8 @@ static int udma_specify_rsvd_jetty_id(struct udma_dev *udma_dev, uint32_t cfg_id
 
 	id = ida_alloc_range(&ida_table->ida, cfg_id, cfg_id, GFP_KERNEL);
 	if (id < 0) {
-		dev_err(udma_dev->dev, "user specified id %u has been used, ret=%d.\n", cfg_id, id);
+		dev_err(udma_dev->dev, "user specified id %u has been used, ret = %d.\n",
+				cfg_id, id);
 		return id;
 	}
 
@@ -1336,8 +1337,10 @@ int udma_batch_modify_and_destroy_jetty(struct udma_dev *dev,
 			if (sq_list[i]->jetty_grp) {
 				ret = udma_update_hw_grp_ctx_valid_only(dev,
 					to_udma_jetty_from_queue(sq_list[i]), false);
-				if (ret)
+				if (ret) {
+					*bad_jetty_index = 0;
 					return ret;
+				}
 			}
 
 			ret = udma_destroy_hw_jetty_ctx(dev, sq_list[i]->id);

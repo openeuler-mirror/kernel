@@ -807,7 +807,7 @@ static int udma_ctrlq_check_tp_active(struct auxiliary_device *adev,
 				      uint8_t service_ver, void *data,
 				      uint16_t len, uint16_t seq)
 {
-	struct udma_ctrlq_check_tp_active_rsp_info *rsp_info;
+	struct udma_ctrlq_check_tp_active_rsp_info *rsp_info = NULL;
 	struct udma_dev *udev = get_udma_dev(adev);
 	struct ubase_ctrlq_msg msg = {};
 	uint32_t rsp_info_len = 0;
