@@ -190,6 +190,14 @@
 #endif
 .endm
 
+.macro HANDLE_INTR_SAFERET pt_regs
+#ifdef CONFIG_CPU_SRSO
+	ALTERNATIVE_2 "",							\
+		      "call __handle_intr_saferet", X86_FEATURE_SRSO,		\
+		      "call __handle_intr_saferet_alias", X86_FEATURE_SRSO_ALIAS
+#endif
+.endm
+
 #else /* __ASSEMBLY__ */
 
 #define ANNOTATE_RETPOLINE_SAFE					\
@@ -423,6 +431,11 @@ static inline void mds_idle_clear_cpu_buffers(void)
 	if (static_branch_likely(&mds_idle_clear))
 		mds_clear_cpu_buffers();
 }
+
+struct pt_regs;
+void srso_safe_ret(void);
+void srso_alias_safe_ret(void);
+void handle_interrupted_saferet(struct pt_regs *regs);
 
 #endif /* __ASSEMBLY__ */
 
