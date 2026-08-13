@@ -172,7 +172,7 @@ int udma_get_dev_resource_ratio(struct ubcore_device *dev, struct ubcore_ucontex
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &ctrlq_msg);
 	if (ret)
 		dev_err(udev->dev,
-			"get device resource send ctrl queue message failed, ret=%d.\n", ret);
+			"get device resource send ctrl queue message failed, ret is %d.\n", ret);
 
 	return ret;
 }
@@ -637,7 +637,7 @@ static int udma_k_ctrlq_save_tpn(struct udma_dev *udev, uint32_t tp_id, uint32_t
 			      sizeof(tp_info_resp));
 	msg.opcode = UDMA_CMD_CTRLQ_GET_TP_INFO;
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &msg);
-	if (ret) {
+	if (ret != -EAGAIN && ret) {
 		dev_err(udev->dev, "get TP id = %u info failed, ret = %d.\n", tp_id, ret);
 		return ret;
 	}
@@ -687,24 +687,17 @@ int udma_k_ctrlq_deactive_tp(struct udma_dev *udev, union ubcore_tp_handle tp_ha
 	return (ret == -EAGAIN) ? 0 : ret;
 }
 
-int udma_ctrlq_query_ubmem_info(struct ubcore_device *dev, struct ubcore_ucontext *uctx,
-				struct ubcore_user_ctl_in *in, struct ubcore_user_ctl_out *out)
+static int udma_ctrlq_send_msg_query_ubmem_info(struct udma_dev *udev, void *in,
+						uint16_t in_size, struct ubcore_user_ctl_out *out)
 {
-	struct udma_dev *udev = to_udma_dev(dev);
 	struct ubase_ctrlq_msg ctrlq_msg = {};
-	uint32_t input_buf = 0;
 	int ret;
-
-	if (out->addr == 0) {
-		dev_err(udev->dev, "query UBMEM info failed, address is NULL.\n");
-		return -EINVAL;
-	}
 
 	ctrlq_msg.service_type = UDMA_CTRLQ_SER_TYPE_UBMEM;
 	ctrlq_msg.service_ver = UBASE_CTRLQ_SER_VER_01;
 	ctrlq_msg.need_resp = 1;
-	ctrlq_msg.in_size = sizeof(input_buf);
-	ctrlq_msg.in = (void *)&input_buf;
+	ctrlq_msg.in_size = in_size;
+	ctrlq_msg.in = in;
 	ctrlq_msg.out_size = out->len;
 	ctrlq_msg.out = (void *)(uintptr_t)out->addr;
 	ctrlq_msg.opcode = UDMA_CTRLQ_QUERY_UBMEM_INFO;
@@ -715,6 +708,36 @@ int udma_ctrlq_query_ubmem_info(struct ubcore_device *dev, struct ubcore_ucontex
 			"query device ubmem info send ctrlq msg failed, ret is %d.\n", ret);
 
 	return ret;
+}
+
+int udma_ctrlq_query_ubmem_info(struct ubcore_device *dev, struct ubcore_ucontext *uctx,
+				struct ubcore_user_ctl_in *in, struct ubcore_user_ctl_out *out)
+{
+	struct udma_communication_info_req_data communication_info = {};
+	struct udma_dev *udev = to_udma_dev(dev);
+	uint32_t input_buf = 0;
+
+	if (out->addr == 0) {
+		dev_err(udev->dev, "query ubmem info failed, address is NULL.\n");
+		return -EINVAL;
+	}
+
+	if (in->addr == 0 && in->len == 0)
+		return udma_ctrlq_send_msg_query_ubmem_info(
+			udev, (void *)&input_buf, sizeof(input_buf), out);
+
+	if (udma_check_base_param(in->addr, in->len, sizeof(communication_info))) {
+		dev_err(udev->dev,
+				"parameter invalid in query ubmem info, length = %u.\n",
+				in->len);
+		return -EINVAL;
+	}
+
+	memcpy(&communication_info, (void *)(uintptr_t)in->addr,
+	       sizeof(communication_info));
+
+	return udma_ctrlq_send_msg_query_ubmem_info(
+		udev, (void *)&communication_info, sizeof(communication_info), out);
 }
 
 int udma_ctrlq_query_host_ubmem_info(struct ubcore_device *dev, struct ubcore_ucontext *uctx,

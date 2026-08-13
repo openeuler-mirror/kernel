@@ -293,6 +293,12 @@ struct udma_ae_work {
 	struct work_struct work;
 };
 
+struct udma_communication_info_req_data {
+	uint64_t nonlinear_pa_start_idx : 16;
+	uint64_t nonlinear_pa_num : 8;
+	uint64_t rsv : 40;
+};
+
 int udma_query_pair_dev_count(struct ubcore_device *dev, struct ubcore_ucontext *uctx,
 			      struct ubcore_user_ctl_in *in, struct ubcore_user_ctl_out *out);
 
