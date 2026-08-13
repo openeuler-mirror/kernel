@@ -46,6 +46,9 @@
 #include "txgbe_e56.h"
 #include "txgbe_e56_bp.h"
 #include "txgbe_mng_phy.h"
+
+/* disable rx merge for amlite */
+#define TXGBE_RX_MERGE 0
 static int cards_found;
 
 char txgbe_driver_name[32] = TXGBE_NAME;
@@ -439,13 +442,19 @@ static void txgbe_update_xoff_rx_lfc(struct txgbe_adapter *adapter)
 	    hw->fc.current_mode != txgbe_fc_rx_pause)
 		return;
 
-	data = rd32(hw, TXGBE_MAC_LXOFFRXC);
-
-	hwstats->lxoffrxc += data;
-
-	/* refill credits (no tx hang) if we received xoff */
-	if (!data)
-		return;
+	if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40) {
+		data = rd32(hw, TXGBE_AML_MAC_LXOFFRXC);
+		/* refill credits (no tx hang) if we received xoff */
+		if ((hwstats->lxoffrxc - hwstats->lxoffrxc_reset) == data)
+			return;
+		hwstats->lxoffrxc = data + hwstats->lxoffrxc_reset;
+	} else {
+		data = rd32(hw, TXGBE_MAC_LXOFFRXC);
+		hwstats->lxoffrxc += data;
+		/* refill credits (no tx hang) if we received xoff */
+		if (!data)
+			return;
+	}
 
 	for (i = 0; i < adapter->num_tx_queues; i++)
 		clear_bit(__TXGBE_HANG_CHECK_ARMED,
@@ -478,7 +487,7 @@ static void txgbe_update_xoff_received(struct txgbe_adapter *adapter)
 
 		if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40) {
 			pxoffrxc = rd32(hw, TXGBE_AML_MAC_PXOFFRXC(i));
-			hwstats->pxoffrxc[i] = pxoffrxc;
+			hwstats->pxoffrxc[i] = pxoffrxc + hwstats->pxoffrxc_reset[i];
 			/* Get the TC for given UP */
 			tc = netdev_get_prio_tc_map(adapter->netdev, i);
 			xoff[tc] = pxoffrxc;
@@ -2734,8 +2743,11 @@ static irqreturn_t txgbe_msix_other(int __always_unused irq, void *data)
 
 	eicr = txgbe_misc_isb(adapter, TXGBE_ISB_MISC);
 
-	if (eicr & TXGBE_PX_MISC_IC_ETH_AN)
+	if (eicr & TXGBE_PX_MISC_IC_ETH_AN) {
+		kr_dbg(KR_MODE, "an int cpu=%d, pid=%d, eicr=0x%08x\n",
+		       smp_processor_id(), current->pid, eicr);
 		txgbe_check_lsc(adapter);
+	}
 
 	if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40) {
 		if (eicr & TXGBE_PX_MISC_AML_ETH_LK_CHANGE)
@@ -3894,12 +3906,6 @@ static void txgbe_configure_rx(struct txgbe_adapter *adapter)
 
 	/* set_rx_buffer_len must be called before ring initialization */
 	txgbe_set_rx_buffer_len(adapter);
-
-	wr32(hw, TXGBE_RDM_DCACHE_CTL, TXGBE_RDM_DCACHE_CTL_EN);
-	wr32m(hw, TXGBE_RDM_RSC_CTL, TXGBE_RDM_RSC_CTL_FREE_CTL,
-	      TXGBE_RDM_RSC_CTL_FREE_CTL);
-	wr32m(hw, TXGBE_RDM_RSC_CTL, TXGBE_RDM_RSC_CTL_FREE_CNT_DIS,
-	      ~TXGBE_RDM_RSC_CTL_FREE_CNT_DIS);
 
 	/* Setup the HW Rx Head and Tail Descriptor Pointers and
 	 * the Base and Length of the Rx Descriptor Ring
@@ -5310,8 +5316,8 @@ static void txgbe_up_complete(struct txgbe_adapter *adapter)
 	wr32m(hw, TXGBE_CFG_PORT_CTL,
 	      TXGBE_CFG_PORT_CTL_PFRSTD, TXGBE_CFG_PORT_CTL_PFRSTD);
 	/* update setting rx tx for all active vfs */
+	adapter->notify_down = false;
 	txgbe_set_all_vfs(adapter);
-
 	/* clear ecc reset flag if set */
 	if (adapter->flags2 & TXGBE_FLAG2_ECC_ERR_RESET)
 		adapter->flags2 &= ~TXGBE_FLAG2_ECC_ERR_RESET;
@@ -5394,7 +5400,7 @@ void txgbe_reset(struct txgbe_adapter *adapter)
 {
 	struct txgbe_hw *hw = &adapter->hw;
 	struct net_device *netdev = adapter->netdev;
-	int err;
+	int err, i;
 	u8 old_addr[ETH_ALEN];
 
 	if (TXGBE_REMOVED(hw->hw_addr))
@@ -5407,6 +5413,14 @@ void txgbe_reset(struct txgbe_adapter *adapter)
 	adapter->flags2 &= ~(TXGBE_FLAG2_SEARCH_FOR_SFP |
 			     TXGBE_FLAG2_SFP_NEEDS_RESET);
 	adapter->flags &= ~TXGBE_FLAG_NEED_LINK_CONFIG;
+
+	adapter->stats.lxonrxc_reset = adapter->stats.lxonrxc;
+	adapter->stats.lxoffrxc_reset = adapter->stats.lxoffrxc;
+
+	for (i = 0; i < 8; i++) {
+		adapter->stats.pxonrxc_reset[i] = adapter->stats.pxonrxc[i];
+		adapter->stats.pxoffrxc_reset[i] = adapter->stats.pxoffrxc[i];
+	}
 
 	err = hw->mac.ops.init_hw(hw);
 	switch (err) {
@@ -5667,9 +5681,13 @@ static void txgbe_disable_device(struct txgbe_adapter *adapter)
 		/* Clear EITR Select mapping */
 		wr32(&adapter->hw, TXGBE_PX_ITRSEL, 0);
 
+		adapter->notify_down = true;
+
 		/* Mark all the VFs as inactive */
-		for (i = 0 ; i < adapter->num_vfs; i++)
+		for (i = 0 ; i < adapter->num_vfs; i++) {
 			adapter->vfinfo[i].clear_to_send = 0;
+			adapter->vfinfo[i].xcast_mode = TXGBEVF_XCAST_MODE_NONE;
+		}
 
 		/* Disable all VFTE/VFRE TX/RX */
 		txgbe_set_all_vfs(adapter);
@@ -6815,7 +6833,8 @@ void txgbe_update_stats(struct txgbe_adapter *adapter)
 		hwstats->pxofftxc[i] +=
 				rd32(hw, TXGBE_RDB_PXOFFTXC(i));
 		if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40)
-			hwstats->pxonrxc[i] = rd32(hw, TXGBE_AML_MAC_PXONRXC(i));
+			hwstats->pxonrxc[i] = rd32(hw, TXGBE_AML_MAC_PXONRXC(i)) +
+					      hwstats->pxonrxc_reset[i];
 		else
 			hwstats->pxonrxc[i] += rd32(hw, TXGBE_MAC_PXONRXC(i));
 	}
@@ -6839,7 +6858,8 @@ void txgbe_update_stats(struct txgbe_adapter *adapter)
 	adapter->hw_rx_no_dma_resources +=
 				     rd32(hw, TXGBE_RDM_DRP_PKT);
 	if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40)
-		hwstats->lxonrxc += rd32(hw, TXGBE_AML_MAC_LXONRXC);
+		hwstats->lxonrxc = rd32(hw, TXGBE_AML_MAC_LXONRXC) +
+				   hwstats->lxonrxc_reset;
 	else
 		hwstats->lxonrxc += rd32(hw, TXGBE_MAC_LXONRXC);
 	hwstats->fdirmatch += rd32(hw, TXGBE_RDB_FDIR_MATCH);
@@ -7287,6 +7307,7 @@ static void txgbe_watchdog_link_is_up(struct txgbe_adapter *adapter)
 static void txgbe_link_down_flush_tx(struct txgbe_adapter *adapter)
 {
 	struct txgbe_hw *hw = &adapter->hw;
+	int i = 0;
 
 	if (hw->mac.type != txgbe_mac_aml &&
 	    hw->mac.type != txgbe_mac_aml40)
@@ -7300,10 +7321,19 @@ static void txgbe_link_down_flush_tx(struct txgbe_adapter *adapter)
 	mdelay(20);
 
 	wr32m(hw, TXGBE_MAC_RX_CFG, TXGBE_MAC_RX_CFG_LM, 0);
+
+	for (i = 0; i < adapter->num_vfs; i++) {
+		if (adapter->vfinfo[i].link_state == IFLA_VF_LINK_STATE_ENABLE) {
+			wr32(hw, TXGBE_MAC_TX_CFG, TXGBE_MAC_TX_CFG_TE);
+			TXGBE_WRITE_FLUSH(hw);
+			break;
+		}
+	}
 }
 
 static void txgbe_watchdog_link_is_down(struct txgbe_adapter *adapter)
 {
+	struct txgbe_hw *hw = &adapter->hw;
 	struct net_device *netdev = adapter->netdev;
 
 	adapter->link_up = false;
@@ -7316,7 +7346,12 @@ static void txgbe_watchdog_link_is_down(struct txgbe_adapter *adapter)
 	if (test_bit(__TXGBE_PTP_RUNNING, &adapter->state))
 		txgbe_ptp_start_cyclecounter(adapter);
 
-	adapter->an_done = false;
+	if (txgbe_xpcs_an_enabled(&adapter->hw)) {
+		u32 fsm = 0xf & txgbe_rd32_epcs(hw, 0x78010);
+
+		if (fsm != 0x9)
+			adapter->an_done = false;
+	}
 
 	e_info(drv, "NIC Link is Down\n");
 	netif_carrier_off(netdev);

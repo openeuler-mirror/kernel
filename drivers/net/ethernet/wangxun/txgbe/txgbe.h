@@ -918,6 +918,7 @@ struct txgbe_adapter {
 	int vf_rate_link_speed;
 	struct vf_macvlans vf_mvs;
 	struct vf_macvlans *mv_list;
+	bool notify_down;
 #ifdef CONFIG_PCI_IOV
 	u32 timer_event_accumulator;
 	u32 vferr_refcount;

@@ -2246,6 +2246,7 @@ int txgbe_e56_set_phylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 		txgbe_field_set(&rdata, 12, 12, 0x1);
 		txgbe_wr32_epcs(hw, 0x070000, rdata);
 		txgbe_wr32_epcs(hw, 0x078002, 0x0000);
+		txgbe_wr32_epcs(hw, 0x78001, 0x7);
 		/* pcs case fec en to work around first */
 		txgbe_wr32_epcs(hw, 0x100ab, 1);
 
@@ -2410,14 +2411,19 @@ static void txgbe_e56_print_page_status(struct txgbe_adapter *adapter,
 	       ((rdata >> 13) & 0x01), ((rdata >> 12) & 0x01));
 	tlpbkp_an73_ability->fec_ability = rdata;
 	adapter->fec_mode = 0;
-	if (rdata & TXGBE_25G_RS_FEC_REQ)
+	if ((tbkp_an73_ability->fec_ability & TXGBE_25G_RS_FEC_REQ) &&
+	    (tlpbkp_an73_ability->fec_ability & TXGBE_25G_RS_FEC_REQ)) {
 		adapter->fec_mode |= TXGBE_25G_RS_FEC_REQ;
-	if (rdata & TXGBE_25G_BASE_FEC_REQ)
+	} else if ((tbkp_an73_ability->fec_ability & TXGBE_25G_BASE_FEC_REQ) &&
+		   (tlpbkp_an73_ability->fec_ability & TXGBE_25G_BASE_FEC_REQ)) {
 		adapter->fec_mode |= TXGBE_25G_BASE_FEC_REQ;
-	if (rdata & TXGBE_10G_FEC_ABL)
-		adapter->fec_mode |= TXGBE_10G_FEC_ABL;
-	if (rdata & TXGBE_10G_FEC_REQ)
-		adapter->fec_mode |= TXGBE_10G_FEC_REQ;
+	} else if ((tbkp_an73_ability->fec_ability & TXGBE_10G_FEC_ABL) &&
+		 (tlpbkp_an73_ability->fec_ability & TXGBE_10G_FEC_ABL)) {
+		if ((tbkp_an73_ability->fec_ability & TXGBE_10G_FEC_REQ) &&
+		    (tlpbkp_an73_ability->fec_ability & TXGBE_10G_FEC_REQ)) {
+			adapter->fec_mode |= TXGBE_10G_FEC_REQ;
+		}
+	}
 	kr_dbg(KR_MODE, "\tread 70015 data %0x\n", rdata);
 
 	kr_dbg(KR_MODE, "\tread 70016 data %0x\n",
@@ -2439,14 +2445,14 @@ static int txgbe_e56_exchange_page(struct txgbe_adapter *adapter)
 	struct bkpan73ability tbkp_an73_ability = { 0 }, tlpbkp_an73_ability = { 0 };
 	struct txgbe_hw *hw = &adapter->hw;
 	u32 an_int, base_page = 0;
-	int count = 0;
+	int count = 0, count2 = 0;
 
 	an_int = txgbe_rd32_epcs(hw, 0x78002);
 	if (!(an_int & TXGBE_PCS_AN_PG_RCV))
 		return -EINVAL;
 
 	/* 500ms timeout */
-	for (count = 0; count < 5000; count++) {
+	for (count = 0; count < 50; count++) {
 		u32 fsm = txgbe_rd32_epcs(hw, 0x78010);
 
 		kr_dbg(KR_MODE, "-----count----- %d - fsm: %x\n",
@@ -2457,6 +2463,7 @@ static int txgbe_e56_exchange_page(struct txgbe_adapter *adapter)
 
 			txgbe_e56_print_page_status(adapter, &tbkp_an73_ability,
 						    &tlpbkp_an73_ability);
+			count2++;
 			addr = base_page == 0 ? 0x70013 : 0x70019;
 			rdata = txgbe_rd32_epcs(hw, addr);
 			if (rdata & BIT(14)) {
@@ -2493,15 +2500,50 @@ check_ability:
 	return txgbe_chk_bkp_ability(adapter, tbkp_an73_ability, tlpbkp_an73_ability);
 }
 
+static void txgbe_e56_get_txffe(struct txgbe_adapter *adapter)
+{
+	/* 21. read txffe to check kr training status */
+	u32 rdata = 0, pmd_ctrl = 0, lane_num = 0;
+	struct txgbe_hw *hw = &adapter->hw;
+
+	switch (adapter->bp_link_mode) {
+	case 10:
+		lane_num = 1;
+		break;
+	case 40:
+		lane_num = 4;
+		break;
+	case 25:
+		lane_num = 1;
+		break;
+	default:
+		kr_dbg(KR_MODE, "%s %d :Invalid speed\n", __func__, __LINE__);
+		break;
+	}
+
+	kr_dbg(KR_MODE, "%dG phy kr training check.... fsm: %x\n",
+	       adapter->bp_link_mode, txgbe_rd32_epcs(hw, 0x78010));
+	rdata = rd32_ephy(hw, 0x163c) & GENMASK(lane_num, 1);
+	pmd_ctrl = rd32_ephy(hw, 0x1644);
+	kr_dbg(KR_MODE, "KR TRAINNING CHECK = %x. pmd_ctrl:%lx-%lx-%lx-%lx\n",
+	       rdata,
+	       FIELD_GET_M(GENMASK(3, 0), pmd_ctrl),
+	       FIELD_GET_M(GENMASK(7, 4), pmd_ctrl),
+	       FIELD_GET_M(GENMASK(11, 8), pmd_ctrl),
+	       FIELD_GET_M(GENMASK(15, 12), pmd_ctrl));
+	kr_dbg(KR_MODE, "before: %x-%x-%x-%x\n",
+	       rd32_ephy(hw, 0x141c), rd32_ephy(hw, 0x1420),
+	       rd32_ephy(hw, 0x1424), rd32_ephy(hw, 0x1428));
+}
+
 static int txgbe_e56_cl72_trainning(struct txgbe_adapter *adapter)
 {
 	u32 bylinkmode = adapter->bp_link_mode;
 	struct txgbe_hw *hw = &adapter->hw;
 	u8 bypass_ctle = hw->bypass_ctle;
 	int status = 0, temp_data = 0;
-	u32 lane_num = 0, lane_idx = 0;
+	u32 lane_num = 0;
 	u32 pmd_ctrl = 0;
-	u32 txffe = 0;
 	int ret = 0;
 	u32 rdata;
 
@@ -2594,14 +2636,7 @@ static int txgbe_e56_cl72_trainning(struct txgbe_adapter *adapter)
 	       rd32_ephy(hw, 0x1420), rd32_ephy(hw, 0x1424),
 	       rd32_ephy(hw, 0x1428));
 
-	for (lane_idx = 0; lane_idx < lane_num; lane_idx++) {
-		txffe = rd32_ephy(hw, 0x828 + lane_idx * 0x100);
-		kr_dbg(KR_MODE, "after[%x]: %lx-%lx-%lx-%lx\n", lane_idx,
-		       FIELD_GET_M(GENMASK(6, 0), txffe),
-		       FIELD_GET_M(GENMASK(21, 16), txffe),
-		       FIELD_GET_M(GENMASK(29, 24), txffe),
-		       FIELD_GET_M(GENMASK(13, 8), txffe));
-	}
+	txgbe_e56_get_txffe(adapter);
 
 	/* 22 */
 	kr_dbg(KR_MODE, "2.7 Wait %dG phy Rx adc.... fsm:%x\n", bylinkmode,
@@ -2616,21 +2651,6 @@ static int handle_e56_bkp_an73_flow(struct txgbe_adapter *adapter)
 	struct txgbe_hw *hw = &adapter->hw;
 	int status = 0;
 	u32 rdata;
-
-	kr_dbg(KR_MODE, "2.1 Wait page changed ....\n");
-	status = txgbe_e56_exchange_page(adapter);
-	if (status) {
-		kr_dbg(KR_MODE, "Exchange page failed\n");
-		return status;
-	}
-
-	kr_dbg(KR_MODE, "2.2 Wait page changed ..done..\n");
-	txgbe_wr32_epcs(hw, 0x100ab, 0);
-
-	rdata = txgbe_rd32_epcs(hw, 0x78002);
-	kr_dbg(KR_MODE, "read 78002 data %0x and clear page int\n", rdata);
-	txgbe_field_set(&rdata, 2, 2, 0x0);
-	txgbe_wr32_epcs(hw, 0x78002, rdata);
 
 	/* 10  RXS_DISABLE - TXS_DISABLE - CMS_DISABLE */
 	/* dis phy tx/rx lane */
@@ -2697,8 +2717,10 @@ static void txgbe_e56_bp_watchdog_event_fw(struct txgbe_adapter *adapter)
 	u32 value = 0;
 
 	/* when an disable just check mac link up is ok */
-	if (!(txgbe_xpcs_an_enabled(hw)) && !KR_MODE)
+	if (!(txgbe_xpcs_an_enabled(hw)) && !KR_MODE) {
+		kr_dbg(KR_MODE, "%s %d\n", __func__, __LINE__);
 		return;
+	}
 
 	value = txgbe_rd32_epcs(hw, 0x78002);
 	if (value & TXGBE_PCS_AN_INT_CMPLT) {
@@ -2719,9 +2741,9 @@ static void txgbe_e56_bp_watchdog_event_fw(struct txgbe_adapter *adapter)
 void txgbe_e56_bp_watchdog_event(struct txgbe_adapter *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
-	u32 fsm = 0, an_int = 0, an_int1 = 0;
+	u32 an_int = 0, value = 0;
 	struct txgbe_hw *hw = &adapter->hw;
-	u32 value = 0;
+	bool exchange_done = false;
 	int ret = 0;
 
 	/* only continue if link is down */
@@ -2760,12 +2782,22 @@ void txgbe_e56_bp_watchdog_event(struct txgbe_adapter *adapter)
 	}
 
 	if (value & TXGBE_PCS_AN_PG_RCV) {
-		kr_dbg(KR_MODE, "Enter training\n");
+		kr_dbg(KR_MODE, "2.1 *** Wait page changed ....\n");
+		ret = txgbe_e56_exchange_page(adapter);
+		if (ret) {
+			kr_dbg(KR_MODE, "2.2 *** Exchange page failed\n");
+			goto an_status;
+		} else {
+			kr_dbg(KR_MODE, "2.2 *** Wait page changed ..done..\n");
+			txgbe_wr32_epcs(hw, 0x100ab, 0);
+			exchange_done = true;
+		}
+	}
+
+	if (exchange_done) {
+		kr_dbg(KR_MODE, "2.2.2 *** Enter training\n");
 		ret = handle_e56_bkp_an73_flow(adapter);
 
-		fsm = txgbe_rd32_epcs(hw, 0x78010);
-		if (fsm & 0x8)
-			goto an_status;
 		if (ret) {
 			kr_dbg(KR_MODE, "Training FAILED, do reset\n");
 			mutex_lock(&adapter->e56_lock);
@@ -2777,17 +2809,11 @@ void txgbe_e56_bp_watchdog_event(struct txgbe_adapter *adapter)
 	}
 
 an_status:
-	an_int1 = txgbe_rd32_epcs(hw, 0x78002);
-	if (an_int1 & TXGBE_PCS_AN_INT_CMPLT) {
-		adapter->an_done = true;
-		adapter->flags |= TXGBE_FLAG_NEED_LINK_UPDATE;
-		txgbe_field_set(&an_int1, 0, 0, 0);
-		txgbe_wr32_epcs(hw, 0x78002, an_int1);
-	}
 	kr_dbg(KR_MODE,
 	       "RLU:%x-%x Link_s:%x MLU:%x INT:%x-%x CTL:%x fsm:%x pmd_cfg0:%x an_done:%d by:%d\n",
 	       txgbe_rd32_epcs(hw, 0x30001), txgbe_rd32_epcs(hw, 0x30001),
-	       rd32(hw, 0x110b0), rd32(hw, 0x14404), an_int, an_int1,
-	       txgbe_rd32_epcs(hw, 0x70000), txgbe_rd32_epcs(hw, 0x78010),
-	       rd32_ephy(hw, 0x1400), adapter->an_done, hw->bypass_ctle);
+	       rd32(hw, 0x110b0), rd32(hw, 0x14404), an_int,
+	       txgbe_rd32_epcs(hw, 0x78002), txgbe_rd32_epcs(hw, 0x70000),
+	       txgbe_rd32_epcs(hw, 0x78010), rd32_ephy(hw, 0x1400),
+	       adapter->an_done, hw->bypass_ctle);
 }

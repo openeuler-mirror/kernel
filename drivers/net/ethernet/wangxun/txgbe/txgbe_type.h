@@ -1626,6 +1626,7 @@ enum TXGBE_MSCA_CMD_value {
 /* statistic */
 #define TXGBE_MAC_LXONRXC               0x11E0C
 #define TXGBE_AML_MAC_LXONRXC           0x11f84
+#define TXGBE_AML_MAC_LXOFFRXC          0x11f80
 #define TXGBE_MAC_LXOFFRXC              0x11988
 #define TXGBE_MAC_PXONRXC(_i)           (0x11E30 + ((_i) * 4)) /* 8 of these */
 #define TXGBE_MAC_PXOFFRXC              0x119DC
@@ -2979,12 +2980,16 @@ struct txgbe_hw_stats {
 	u64 rlec;
 	u64 lxontxc;
 	u64 lxonrxc;
+	u64 lxonrxc_reset;
 	u64 lxofftxc;
 	u64 lxoffrxc;
+	u64 lxoffrxc_reset;
 	u64 pxontxc[8];
 	u64 pxonrxc[8];
 	u64 pxofftxc[8];
 	u64 pxoffrxc[8];
+	u64 pxonrxc_reset[8];
+	u64 pxoffrxc_reset[8];
 	u64 prc64;
 	u64 prc127;
 	u64 prc255;

@@ -1429,29 +1429,14 @@ void txgbe_msg_task(struct txgbe_adapter *adapter)
 static inline void txgbe_ping_vf(struct txgbe_adapter *adapter, int vf)
 {
 	struct txgbe_hw *hw = &adapter->hw;
-	u32 ping;
+	u32 ping[2] = {0, 0};
 
-	ping = TXGBE_PF_CONTROL_MSG;
+	ping[0] = TXGBE_PF_CONTROL_MSG;
+	if (adapter->notify_down)
+		ping[1] |= TXGBE_PF_NOFITY_VF_NET_NOT_RUNNING;
 	if (adapter->vfinfo[vf].clear_to_send)
-		ping |= TXGBE_VT_MSGTYPE_CTS;
-	txgbe_write_mbx(hw, &ping, 1, vf);
-}
-
-static void txgbe_ping_vf_with_link_status(struct txgbe_adapter *adapter, bool link_up, u16 vf)
-{
-	struct txgbe_hw *hw = &adapter->hw;
-	u32 msgbuf[2] = {0, 0};
-
-	if (vf > adapter->num_vfs)
-		return;
-
-	msgbuf[0] = TXGBE_PF_NOFITY_VF_LINK_STATUS | TXGBE_PF_CONTROL_MSG;
-	msgbuf[1] = (hw->phy.link_info.link_speed << 1) | link_up;
-	//if (adapter->notify_down)
-	//	msgbuf[1] |= TXGBE_PF_NOFITY_VF_NET_NOT_RUNNING;
-	if (adapter->vfinfo[vf].clear_to_send)
-		msgbuf[0] |= TXGBE_VT_MSGTYPE_CTS;
-	txgbe_write_mbx(hw, msgbuf, 2, vf);
+		ping[0] |= TXGBE_VT_MSGTYPE_CTS;
+	txgbe_write_mbx(hw, ping, 2, vf);
 }
 
 void txgbe_ping_all_vfs_with_link_status(struct txgbe_adapter *adapter, bool link_up)
@@ -1512,7 +1497,7 @@ static void txgbe_set_vf_link_state(struct txgbe_adapter *adapter, int vf, int s
 	adapter->vfinfo[vf].clear_to_send = false;
 	txgbe_ping_vf(adapter, vf);
 
-	txgbe_ping_vf_with_link_status(adapter, link_up, vf);
+	//txgbe_ping_vf_with_link_status(adapter, link_up, vf);
 
 	txgbe_set_vf_rx_tx(adapter, vf);
 }
@@ -2090,8 +2075,7 @@ static void txgbe_set_vf_rx_tx(struct txgbe_adapter *adapter, int vf)
 	}
 	if (adapter->vfinfo[vf].link_state == IFLA_VF_LINK_STATE_ENABLE) {
 		int reg = rd32(hw, TXGBE_MAC_TX_CFG);
-		wr32m(hw, TXGBE_MAC_TX_CFG, TXGBE_MAC_TX_CFG_TE,
-		      TXGBE_MAC_TX_CFG_TE);
+		wr32(hw, TXGBE_MAC_TX_CFG, TXGBE_MAC_TX_CFG_TE);
 		TXGBE_WRITE_FLUSH(hw);
 		wr32(hw, TXGBE_MAC_TX_CFG, reg);
 	}

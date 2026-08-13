@@ -292,6 +292,7 @@ int txgbe_get_copper_link_capabilities(struct txgbe_hw *hw,
  **/
 static int txgbe_identify_sfp_module(struct txgbe_hw *hw)
 {
+	u32 swfw_mask = TXGBE_MNG_SWFW_SYNC_SW_PHY;
 	int status = TXGBE_ERR_PHY_ADDR_INVALID;
 	u32 vendor_oui = 0;
 	enum txgbe_sfp_type stored_sfp_type = hw->phy.sfp_type;
@@ -308,7 +309,7 @@ static int txgbe_identify_sfp_module(struct txgbe_hw *hw)
 	u16 phy_data = 0;
 	u8 sff8472_rev, addr_mode, databyte;
 	bool page_swap = false;
-	u32 swfw_mask = hw->phy.phy_semaphore_mask;
+
 	int i;
 
 	if (hw->mac.type == txgbe_mac_aml) {
@@ -691,9 +692,9 @@ err_read_i2c_eeprom:
 
 static int txgbe_identify_qsfp_module(struct txgbe_hw *hw)
 {
+	u32 swfw_mask = TXGBE_MNG_SWFW_SYNC_SW_PHY;
 	int status = TXGBE_ERR_PHY_ADDR_INVALID;
 	u8 identifier = 0, transceiver_type = 0;
-	u32 swfw_mask = hw->phy.phy_semaphore_mask;
 	u8 option1_type;
 
 	if (hw->mac.type == txgbe_mac_aml40) {

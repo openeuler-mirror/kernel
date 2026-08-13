@@ -108,6 +108,8 @@ int txgbe_clear_hw_cntrs(struct txgbe_hw *hw)
 	rd32(hw, TXGBE_RDB_LXOFFTXC);
 	rd32(hw, TXGBE_MAC_LXONRXC);
 	rd32(hw, TXGBE_MAC_LXOFFRXC);
+	wr32(hw, TXGBE_AML_MAC_LXONRXC, 0);
+	wr32(hw, TXGBE_AML_MAC_LXOFFRXC, 0);
 
 	for (i = 0; i < 8; i++) {
 		rd32(hw, TXGBE_RDB_PXONTXC(i));

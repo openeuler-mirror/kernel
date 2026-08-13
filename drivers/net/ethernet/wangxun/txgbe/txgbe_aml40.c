@@ -177,6 +177,8 @@ static int txgbe_get_link_capabilities_aml40(struct txgbe_hw *hw, u32 *speed,
 	if (txgbe_is_backplane(hw)) {
 		*speed = TXGBE_LINK_SPEED_10GB_FULL |
 			 TXGBE_LINK_SPEED_40GB_FULL;
+		if (hw->phy.link_info.req_speeds)
+			*speed &= hw->phy.link_info.req_speeds;
 		/* Backplane supports autonegotiation */
 		*autoneg = adapter->backplane_an;
 		txgbe_ephy_oem_config(hw, speed, autoneg);
@@ -193,6 +195,8 @@ static int txgbe_get_link_capabilities_aml40(struct txgbe_hw *hw, u32 *speed,
 			*autoneg = adapter->backplane_an;
 		}
 		*speed = hw->phy.fiber_suppport_speed;
+		if (hw->phy.link_info.req_speeds)
+			*speed &= hw->phy.link_info.req_speeds;
 		txgbe_ephy_oem_config(hw, speed, autoneg);
 	} else if (hw->phy.multispeed_fiber) {
 		/* multispeed fiber must before single fiber */

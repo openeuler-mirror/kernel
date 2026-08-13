@@ -297,7 +297,7 @@ static int txgbe_media_types_to_phy_types(struct txgbe_hw *hw)
 	case txgbe_qsfp_type_40g_cu_core0:
 	case txgbe_qsfp_type_40g_cu_core1:
 		/* 40000 CR4 */
-		phy_mode = BIT(16);
+		phy_mode = BIT(16) | BIT(7);
 		break;
 	case txgbe_qsfp_type_40g_sr_core0:
 	case txgbe_qsfp_type_40g_sr_core1:
