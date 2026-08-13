@@ -505,9 +505,20 @@ static void txgbe_phy_type_to_ethtool(struct net_device *netdev,
 	linkmode_zero(ks->link_modes.advertising);
 
 	for (i = 0; i < ARRAY_SIZE(phy_type_lkup); i++) {
-		if (phy_types & BIT_ULL(i))
-			txgbe_linkmode_set_bit(&phy_type_lkup[i], ks,
-					       req_speeds, advert_phy_type, i);
+		if ((hw->mac.ops.get_media_type(hw) ==
+		     txgbe_media_type_fiber) ||
+		    (hw->mac.ops.get_media_type(hw) ==
+		     txgbe_media_type_fiber_qsfp)) {
+			if (phy_types & BIT_ULL(i))
+				txgbe_linkmode_set_bit(&phy_type_lkup[i], ks,
+						       req_speeds,
+						       advert_phy_type, i);
+		} else {
+			if (advert_phy_type & BIT_ULL(i))
+				txgbe_linkmode_set_bit(&phy_type_lkup[i], ks,
+						       req_speeds,
+						       advert_phy_type, i);
+		}
 	}
 }
 
@@ -1645,7 +1656,9 @@ static int txgbe_set_ringparam(struct net_device *netdev,
 
 			memcpy(&rx_ring[i], adapter->rx_ring[i],
 			       sizeof(struct txgbe_ring));
-			xdp_rxq_info_unreg(&rx_ring[i].xdp_rxq);
+			/* Clear copied XDP RX-queue info */
+			memset(&rx_ring[i].xdp_rxq, 0,
+			       sizeof(rx_ring[i].xdp_rxq));
 			rx_ring[i].count = new_rx_count;
 			/* the desc and bi pointers will be reallocated
 			 * in the setup call
@@ -4340,7 +4353,7 @@ static int txgbe_get_module_info(struct net_device *dev,
 	u8 identifier = 0;
 	u8 sff8636_rev = 0;
 	bool page_swap = false;
-	u32 swfw_mask = hw->phy.phy_semaphore_mask;
+	u32 swfw_mask = TXGBE_MNG_SWFW_SYNC_SW_PHY;
 
 	if (hw->mac.type == txgbe_mac_aml40) {
 		if (txgbe_gpio_ext_check(hw, TXGBE_SFP1_MOD_PRST_LS))

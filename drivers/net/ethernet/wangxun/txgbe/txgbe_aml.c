@@ -119,6 +119,16 @@ static int txgbe_setup_mac_link_aml(struct txgbe_hw *hw,
 		goto out;
 	}
 
+	if (autoneg_wait_to_complete)
+		goto reset_up;
+
+	if (txgbe_is_backplane(hw) || txgbe_is_dac_cable(hw) ||
+	    adapter->ffe_set) {
+		mutex_lock(&adapter->e56_lock);
+		txgbe_xlgpcs_txffe_set(adapter, speed);
+		mutex_unlock(&adapter->e56_lock);
+	}
+
 	if (txgbe_gpio_ext_check(hw, TXGBE_SFP1_MOD_ABS_LS |
 				 TXGBE_SFP1_RX_LOS_LS))
 		goto out;
@@ -145,6 +155,7 @@ static int txgbe_setup_mac_link_aml(struct txgbe_hw *hw,
 			goto out;
 	}
 
+reset_up:
 	mutex_lock(&adapter->e56_lock);
 	ret_status = txgbe_set_link_to_amlite(hw, speed);
 	mutex_unlock(&adapter->e56_lock);

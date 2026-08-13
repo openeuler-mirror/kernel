@@ -808,7 +808,7 @@ static bool txgbe_clean_tx_irq(struct txgbe_q_vector *q_vector,
 			}
 		} else {
 			if (free_tx_buffer->skb) {
-				dev_consume_skb_any(free_tx_buffer->skb);
+				napi_consume_skb(free_tx_buffer->skb, napi_budget);
 				first_dma = true;
 			}
 		}
@@ -1830,7 +1830,7 @@ txgbe_run_xdp(struct txgbe_adapter __maybe_unused *adapter,
 		if (!err)
 			result = TXGBE_XDP_REDIR;
 		else
-			result = TXGBE_XDP_CONSUMED;
+			goto xdp_drop;
 		break;
 	default:
 		bpf_warn_invalid_xdp_action(rx_ring->netdev, xdp_prog, act);
@@ -1838,6 +1838,7 @@ txgbe_run_xdp(struct txgbe_adapter __maybe_unused *adapter,
 	case XDP_ABORTED:
 		trace_xdp_exception(rx_ring->netdev, xdp_prog, act);
 		fallthrough;
+xdp_drop:
 	case XDP_DROP:
 		page_pool_put_full_page(rx_ring->page_pool, virt_to_head_page(xdp->data), true);
 		result = TXGBE_XDP_CONSUMED;
@@ -3644,9 +3645,15 @@ void txgbe_configure_rx_ring(struct txgbe_adapter *adapter,
 						   MEM_TYPE_XSK_BUFF_POOL,
 						   NULL));
 	} else {
+#ifndef TXGBE_PAGE_POOL
 		if (ring->q_vector)
 			WARN_ON(xdp_rxq_info_reg_mem_model(&ring->xdp_rxq,
 							   MEM_TYPE_PAGE_SHARED, NULL));
+#else
+		WARN_ON(xdp_rxq_info_reg_mem_model(&ring->xdp_rxq,
+						   MEM_TYPE_PAGE_POOL,
+						   ring->page_pool));
+#endif
 	}
 
 	wr32(hw, TXGBE_PX_RR_BAL(reg_idx), rdba & DMA_BIT_MASK(32));
@@ -5442,6 +5449,9 @@ void txgbe_reset(struct txgbe_adapter *adapter)
 	memcpy(old_addr, &adapter->mac_table[0].addr, netdev->addr_len);
 	txgbe_flush_sw_mac_table(adapter);
 	txgbe_mac_set_default_filter(adapter, old_addr);
+	#ifdef HAVE_SET_RX_MODE
+	__dev_uc_unsync(netdev, NULL);
+#endif
 
 	/* update SAN MAC vmdq pool selection */
 	hw->mac.ops.set_vmdq_san_mac(hw, VMDQ_P(0));
@@ -5721,12 +5731,28 @@ static void txgbe_disable_device(struct txgbe_adapter *adapter)
 void txgbe_down(struct txgbe_adapter *adapter)
 {
 	struct txgbe_hw *hw = &adapter->hw;
+	u32 rdata;
 
 	txgbe_disable_device(adapter);
 	txgbe_reset(adapter);
 
 	if (!(((hw->subsystem_device_id & TXGBE_NCSI_MASK) == TXGBE_NCSI_SUP) ||
 	      adapter->eth_priv_flags & TXGBE_ETH_PRIV_FLAG_LLDP)) {
+		if (hw->mac.type == txgbe_mac_aml40 &&
+		    (txgbe_is_backplane(hw) || txgbe_is_dac_cable(hw))) {
+			if (LASER_OFF) {
+				mutex_lock(&adapter->e56_lock);
+				/* 10  RXS_DISABLE - TXS_DISABLE - CMS_DISABLE */
+				/* dis phy tx/rx lane */
+				rdata = rd32_ephy(hw, 0x1400);
+				txgbe_field_set(&rdata, 19, 16, 0x0);
+				txgbe_field_set(&rdata, 15, 12, 0x0);
+				txgbe_field_set(&rdata, 1, 1, 0x0);
+				txgbe_wr32_ephy(hw, 0x1400, rdata);
+				kr_dbg(KR_MODE, "Ephy Write A: 0x%x, D: 0x%x\n", 0x1400, rdata);
+				mutex_unlock(&adapter->e56_lock);
+			}
+		}
 		if (hw->phy.media_type == txgbe_media_type_fiber ||
 		    hw->phy.media_type == txgbe_media_type_fiber_qsfp) {
 			if (hw->mac.ops.disable_tx_laser)
@@ -7244,11 +7270,14 @@ static void txgbe_watchdog_link_is_up(struct txgbe_adapter *adapter)
 	if (flow_tx)
 		fc = "Tx";
 
-	if (test_bit(TXGBE_FLAG_FW_CONTROL_PHY, adapter->flag))
-		/* update an_done, fec_mode, and bypassctle */
-		txgbe_get_link_info_mbx(hw);
-	else
-		adapter->cur_fec_link = txgbe_get_cur_fec_mode(hw);
+	if (hw->mac.type == txgbe_mac_aml ||
+	    hw->mac.type == txgbe_mac_aml40) {
+		if (test_bit(TXGBE_FLAG_FW_CONTROL_PHY, adapter->flag))
+			/* update an_done, fec_mode, and bypassctle */
+			txgbe_get_link_info_mbx(hw);
+		else
+			adapter->cur_fec_link = txgbe_get_cur_fec_mode(hw);
+	}
 
 	/* Get FEC mode based on negotiated link info */
 	switch (adapter->cur_fec_link) {
@@ -7258,6 +7287,8 @@ static void txgbe_watchdog_link_is_up(struct txgbe_adapter *adapter)
 	case TXGBE_PHY_FEC_BASER:
 		fec = "FC-FEC/BASE-R";
 		break;
+	case TXGBE_PHY_FEC_OFF:
+	case TXGBE_PHY_FEC_AUTO:
 	default:
 		fec = "NONE";
 		break;
@@ -10642,14 +10673,15 @@ static int txgbe_probe(struct pci_dev *pdev,
 	netdev->hw_enc_features |= netdev->vlan_features;
 	netdev->mpls_features |= NETIF_F_HW_CSUM;
 
-	netdev->xdp_features = NETDEV_XDP_ACT_BASIC | NETDEV_XDP_ACT_REDIRECT |
-		NETDEV_XDP_ACT_XSK_ZEROCOPY;
 
 	/* set this bit last since it cannot be part of vlan_features */
 	netdev->features |= NETIF_F_HW_VLAN_CTAG_FILTER |
 			    NETIF_F_HW_VLAN_STAG_FILTER |
 			    NETIF_F_HW_VLAN_CTAG_RX |
 			    NETIF_F_HW_VLAN_CTAG_TX;
+
+	netdev->xdp_features = NETDEV_XDP_ACT_BASIC | NETDEV_XDP_ACT_REDIRECT |
+		NETDEV_XDP_ACT_XSK_ZEROCOPY;
 
 	netdev->priv_flags |= IFF_UNICAST_FLT;
 	netdev->priv_flags |= IFF_SUPP_NOFCS;

@@ -998,30 +998,36 @@ int txgbe_write_i2c_eeprom(struct txgbe_hw *hw, u8 byte_offset,
 static int txgbe_read_i2c_byte_int(struct txgbe_hw *hw, u8 byte_offset,
 				   u8 __always_unused dev_addr, u8 *data, bool __always_unused lock)
 {
+	u32 max_retry = 10, retry = 0;
 	int status = 0;
 
-	/* wait tx empty */
-	status = po32m(hw, TXGBE_I2C_RAW_INTR_STAT,
-		       TXGBE_I2C_INTR_STAT_TX_EMPTY, TXGBE_I2C_INTR_STAT_TX_EMPTY,
-		TXGBE_I2C_TIMEOUT, 10);
-	if (status != 0)
-		goto out;
+	do {
+		/* wait tx empty */
+		status = po32m(hw, TXGBE_I2C_RAW_INTR_STAT,
+			TXGBE_I2C_INTR_STAT_TX_EMPTY, TXGBE_I2C_INTR_STAT_TX_EMPTY,
+			TXGBE_I2C_TIMEOUT, 10);
+		if (status != 0)
+			goto fail;
 
-	/* read data */
-	wr32(hw, TXGBE_I2C_DATA_CMD,
-	     byte_offset | TXGBE_I2C_DATA_CMD_STOP);
-	wr32(hw, TXGBE_I2C_DATA_CMD, TXGBE_I2C_DATA_CMD_READ);
+		/* read data */
+		wr32(hw, TXGBE_I2C_DATA_CMD,
+		     byte_offset | TXGBE_I2C_DATA_CMD_STOP);
+		wr32(hw, TXGBE_I2C_DATA_CMD, TXGBE_I2C_DATA_CMD_READ);
 
-	/* wait for read complete */
-	status = po32m(hw, TXGBE_I2C_RAW_INTR_STAT,
-		       TXGBE_I2C_INTR_STAT_RX_FULL, TXGBE_I2C_INTR_STAT_RX_FULL,
-		TXGBE_I2C_TIMEOUT, 100);
-	if (status != 0)
-		goto out;
+		/* wait for read complete */
+		status = po32m(hw, TXGBE_I2C_RAW_INTR_STAT,
+			TXGBE_I2C_INTR_STAT_RX_FULL, TXGBE_I2C_INTR_STAT_RX_FULL,
+			TXGBE_I2C_TIMEOUT, 100);
 
-	*data = 0xFF & rd32(hw, TXGBE_I2C_DATA_CMD);
+		if (status != 0)
+			goto fail;
 
-out:
+		*data = 0xFF & rd32(hw, TXGBE_I2C_DATA_CMD);
+		return 0;
+fail:
+		retry++;
+	} while (retry < max_retry);
+
 	return status;
 }
 
@@ -1398,7 +1404,7 @@ int txgbe_init_external_phy(struct txgbe_hw *hw)
 				       hw->phy.addr,
 				       devptr);
 	if (status != 0) {
-		hw_err(hw, "External PHY initialization failed.\n");
+		hw_dbg(hw, "External PHY initialization failed.\n");
 		return TXGBE_ERR_PHY;
 	}
 

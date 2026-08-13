@@ -116,6 +116,16 @@ static int txgbe_setup_mac_link_aml40(struct txgbe_hw *hw,
 		goto out;
 	}
 
+	if (autoneg_wait_to_complete)
+		goto reset_up;
+
+	if (txgbe_is_backplane(hw) || txgbe_is_dac_cable(hw) ||
+	    adapter->ffe_set) {
+		mutex_lock(&adapter->e56_lock);
+		txgbe_xlgpcs_txffe_set(adapter, speed);
+		mutex_unlock(&adapter->e56_lock);
+	}
+
 	for (i = 0; i < 4; i++) {
 		txgbe_e56_check_phy_link(hw, &link_speed, &link_up);
 		if (link_up)
@@ -126,6 +136,7 @@ static int txgbe_setup_mac_link_aml40(struct txgbe_hw *hw,
 	if (link_speed == speed && link_up && !adapter->ffe_set)
 		goto out;
 
+reset_up:
 	mutex_lock(&adapter->e56_lock);
 	ret_status = txgbe_set_link_to_amlite(hw, speed);
 	mutex_unlock(&adapter->e56_lock);

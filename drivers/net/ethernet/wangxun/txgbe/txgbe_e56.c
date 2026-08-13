@@ -3335,7 +3335,7 @@ int txgbe_set_link_to_amlite(struct txgbe_hw *hw, u32 speed)
 		hw->mac.ops.disable_sec_tx_path(hw);
 	}
 
-	if (hw->mac.ops.disable_tx_laser)
+	if (hw->mac.type == txgbe_mac_aml && hw->mac.ops.disable_tx_laser)
 		hw->mac.ops.disable_tx_laser(hw);
 
 	if (hw->bus.lan_id == 0)
@@ -3626,7 +3626,8 @@ int txgbe_set_link_to_amlite(struct txgbe_hw *hw, u32 speed)
 	}
 
 	if (hw->mac.ops.enable_tx_laser)
-		hw->mac.ops.enable_tx_laser(hw);
+		if (hw->mac.type == txgbe_mac_aml && hw->mac.ops.enable_tx_laser)
+			hw->mac.ops.enable_tx_laser(hw);
 
 	status = txgbe_e56_config_rx(hw, speed);
 

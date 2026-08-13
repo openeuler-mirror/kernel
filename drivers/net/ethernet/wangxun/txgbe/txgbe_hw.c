@@ -3787,7 +3787,9 @@ int txgbe_check_reset_blocked(struct txgbe_hw *hw)
  **/
 void txgbe_disable_tx_laser_multispeed_fiber(struct txgbe_hw *hw)
 {
+	struct txgbe_adapter *adapter = hw->back;
 	u32 esdp_reg = rd32(hw, TXGBE_GPIO_DR);
+	u32 rdata = 0;
 
 	if (!((hw->mac.ops.get_media_type(hw) == txgbe_media_type_fiber) ||
 	      (hw->mac.ops.get_media_type(hw) == txgbe_media_type_fiber_qsfp)))
@@ -3811,8 +3813,22 @@ void txgbe_disable_tx_laser_multispeed_fiber(struct txgbe_hw *hw)
 
 	/* Disable Tx laser; allow 100us to go dark per spec */
 	if (hw->mac.type == txgbe_mac_aml40) {
-		wr32m(hw, TXGBE_GPIO_DDR, TXGBE_GPIO_DR_1, TXGBE_GPIO_DR_1);
-		esdp_reg &= ~TXGBE_GPIO_DR_1;
+		if (LASER_OFF) {
+			if (txgbe_is_dac_cable(hw) ||
+			hw->phy.sfp_type == txgbe_sfp_type_unknown) {
+				mutex_lock(&adapter->e56_lock);
+				rdata = rd32_ephy(hw, 0x1400);
+				txgbe_field_set(&rdata, 19, 16, 0x0);
+				txgbe_field_set(&rdata, 15, 12, 0x0);
+				txgbe_field_set(&rdata, 1, 1, 0x0);
+				txgbe_wr32_ephy(hw, 0x1400, rdata);
+				mutex_unlock(&adapter->e56_lock);
+			} else {
+				txgbe_acquire_swfw_sync(hw, 1);
+				hw->phy.ops.write_i2c_eeprom(hw, 86, 0xf);
+				txgbe_release_swfw_sync(hw, 1);
+			}
+		}
 	} else if (hw->mac.type == txgbe_mac_aml) {
 		esdp_reg |= TXGBE_GPIO_DR_1;
 	} else {
@@ -3845,6 +3861,9 @@ void txgbe_enable_tx_laser_multispeed_fiber(struct txgbe_hw *hw)
 	if (hw->mac.type == txgbe_mac_aml40) {
 		wr32m(hw, TXGBE_GPIO_DDR, TXGBE_GPIO_DR_1, TXGBE_GPIO_DR_1);
 		wr32m(hw, TXGBE_GPIO_DR, TXGBE_GPIO_DR_1, TXGBE_GPIO_DR_1);
+		txgbe_acquire_swfw_sync(hw, 1);
+		hw->phy.ops.write_i2c_eeprom(hw, 86, 0x0);
+		txgbe_release_swfw_sync(hw, 1);
 	} else {
 		wr32m(hw, TXGBE_GPIO_DR,
 		      TXGBE_GPIO_DR_0 | TXGBE_GPIO_DR_1, 0);
