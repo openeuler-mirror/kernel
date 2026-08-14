@@ -121,6 +121,8 @@ int ubctl_ubase_cmd_send(struct auxiliary_device *adev,
 			 struct ubctl_cmd *cmd);
 int ubctl_fill_cmd(struct ubctl_cmd *cmd, void *cmd_in, void *cmd_out,
 		   u32 out_len, u32 is_read);
+int ubctl_fill_cmd_isread(struct ubctl_cmd *cmd, void *cmd_in, void *cmd_out,
+			  u32 out_len, u32 in_len);
 
 /**
  * ubctl_query_data - Packaging and delivering parameters of cmdq
@@ -157,7 +159,5 @@ int ubctl_query_perf(struct ubctl_dev *ucdev, u32 port_bitmap,
 int ubctl_query_perf_stats(struct ubctl_dev *ucdev, u32 port_bitmap,
 			   struct ubase_perf_stats_result *result_data,
 			   u32 result_data_size);
-int ubctl_fill_cmd_isread(struct ubctl_cmd *cmd, void *cmd_in, void *cmd_out,
-			  u32 out_len, u32 in_len);
 
 #endif

@@ -15,9 +15,9 @@
 #define MAX_IOCTL_COUNT 1024
 #define TIME_WINDOW_MS 3000
 #define TIME_WINDOW_JIFFIES msecs_to_jiffies(TIME_WINDOW_MS)
-#define UBCTL_UNSUPPORTED_RPCCMD_CNT_A_0 3
-#define UBCTL_UNSUPPORTED_RPCCMD_CNT_A_1 1
-#define UBCTL_UNSUPPORTED_RPCCMD_CNT_K_0 12
+#define UBCTL_UNSUPPORTED_RPCCMD_CNT_A_0 5
+#define UBCTL_UNSUPPORTED_RPCCMD_CNT_A_1 3
+#define UBCTL_UNSUPPORTED_RPCCMD_CNT_K_0 13
 #define UBCTL_UNSUPPORTED_RPCCMD_CNT_K_1 18
 #define UBCTL_CMD_CNT_MAX 100
 
@@ -55,9 +55,12 @@ static int ubctl_check_env_type(struct ubctl_dev *ucdev, u32 rpc_cmd)
 	static struct ubctl_env_type_info ubctl_env_type_info_table[] = {
 		{ UBASE_HW_VER_A_0,
 		  { UTOOL_CMD_QUERY_SCC_VERSION, UTOOL_CMD_QUERY_SCC_LOG,
-		    UTOOL_CMD_QUERY_TA_WQE_TIME },
+		    UTOOL_CMD_QUERY_TA_WQE_TIME,
+		    UTOOL_CMD_QUERY_UPA_PKT_STATS, UTOOL_CMD_QUERY_UE_INFO },
 		  UBCTL_UNSUPPORTED_RPCCMD_CNT_A_0 },
-		{ UBASE_HW_VER_A_1, { UTOOL_CMD_QUERY_TA_WQE_TIME },
+		{ UBASE_HW_VER_A_1,
+		  { UTOOL_CMD_QUERY_TA_WQE_TIME,
+		    UTOOL_CMD_QUERY_UPA_PKT_STATS, UTOOL_CMD_QUERY_UE_INFO },
 		  UBCTL_UNSUPPORTED_RPCCMD_CNT_A_1 },
 
 		{ UBASE_HW_VER_K_0,
@@ -66,7 +69,7 @@ static int ubctl_check_env_type(struct ubctl_dev *ucdev, u32 rpc_cmd)
 		    UTOOL_CMD_QUERY_DL_RT_BANDWIDTH, UTOOL_CMD_QUERY_LOOPBACK,
 		    UTOOL_CMD_CONF_LOOPBACK, UTOOL_CMD_QUERY_PRBS_EN,
 		    UTOOL_CMD_CONF_PRBS_EN, UTOOL_CMD_QUERY_PRBS_RESULT,
-		    UTOOL_CMD_QUERY_PORT_PKT_STATS },
+		    UTOOL_CMD_QUERY_PORT_PKT_STATS, UTOOL_CMD_QUERY_UPA_PKT_STATS },
 		  UBCTL_UNSUPPORTED_RPCCMD_CNT_K_0 },
 		{ UBASE_HW_VER_K_1,
 		  { UTOOL_CMD_CONF_NL_SSU_VL_PKT, UTOOL_CMD_QUERY_NL_SSU_VL_PKT,
@@ -101,15 +104,12 @@ static int ubctl_check_env_type(struct ubctl_dev *ucdev, u32 rpc_cmd)
 	return -ENOTTY;
 }
 
-static int ubctl_check_cmd_frequency(struct ubctl_dev *ucdev, size_t out_len,
-				     enum fwctl_rpc_scope scope)
+/*
+ * Verify if RPC (Remote Procedure Call) requests are valid.
+ * It determines whether the request is within the allowed time window.
+ */
+static int ubctl_check_cmd_frequency(struct ubctl_dev *ucdev, enum fwctl_rpc_scope scope)
 {
-	/*
-	 * Verify if RPC (Remote Procedure Call) requests are valid.
-	 * It determines whether the request is within the allowed time window
-	 * and whether the output length meets the requirements by checking
-	 * the timestamp.
-	 */
 	unsigned long current_jiffies = jiffies;
 	unsigned long earliest_jiffies = 0;
 	unsigned long record_jiffies = 0;
@@ -164,7 +164,7 @@ static int ubctl_legitimacy_rpc(struct ubctl_dev *ucdev, size_t out_len,
 	if (ret)
 		return ret;
 
-	ret = ubctl_check_cmd_frequency(ucdev, out_len, scope);
+	ret = ubctl_check_cmd_frequency(ucdev, scope);
 	if (ret)
 		return ret;
 
@@ -228,6 +228,8 @@ static int ub_cmd_do(struct ubctl_dev *ucdev,
 	ubctl_query_reg = ubctl_get_query_reg_func(ucdev, rpc_cmd);
 	ubctl_query_func = ubctl_get_query_func(ucdev, rpc_cmd);
 
+	query_cmd_param->out->env_version = g_env_type;
+
 	switch (rpc_cmd) {
 	case UTOOL_CMD_QUERY_DEV_INFO:
 		return ubctl_check_ucdev(ucdev, query_cmd_param);
@@ -280,8 +282,6 @@ static int ub_cmd_do(struct ubctl_dev *ucdev,
 		ubctl_err(ucdev, "no corresponding query was found.\n");
 		return -EINVAL;
 	}
-
-	query_cmd_param->out->env_version = g_env_type;
 
 	return ubctl_cmd_err(ucdev, ret, query_cmd_param->out);
 }
