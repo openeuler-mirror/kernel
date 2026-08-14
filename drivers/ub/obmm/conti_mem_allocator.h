@@ -8,6 +8,7 @@
 #define CONTI_MEM_ALLOC
 
 #include <linux/types.h>
+#include <linux/kernel.h>
 #include <linux/wait.h>
 #include <linux/kthread.h>
 #include <linux/atmioc.h>
@@ -80,6 +81,7 @@ struct conti_mem_allocator {
 	atomic64_t ready_mem_size;      /* cleared but not used (memseg_ready) */
 	atomic64_t uncleared_mem_size;  /* allocated but not cleared */
 					/* (memseg_uncleared + memseg_clearing) */
+	atomic64_t max_total;		/* cap on pooled_mem_size; LLONG_MAX = uncapped */
 
 	spinlock_t lock;
 	struct list_head memseg_ready;
@@ -108,6 +110,49 @@ static inline size_t conti_get_total(struct conti_mem_allocator *a)
 static inline size_t conti_get_avail(struct conti_mem_allocator *a)
 {
 	return atomic64_read(&a->pooled_mem_size) - atomic64_read(&a->used_mem_size);
+}
+
+static inline u64 conti_get_max_total(struct conti_mem_allocator *a)
+{
+	return (u64)atomic64_read(&a->max_total);
+}
+
+static inline u64 conti_get_used(struct conti_mem_allocator *a)
+{
+	return (u64)atomic64_read(&a->used_mem_size);
+}
+
+/*
+ * True if pooled_mem_size may still grow by @bytes without exceeding max_total.
+ * Lock-free and best-effort: concurrent growers may transiently overshoot
+ * max_total by at most (number of growers) * granu.
+ */
+static inline bool conti_can_grow_pooled(struct conti_mem_allocator *a, u64 bytes)
+{
+	return conti_get_total(a) + bytes <= conti_get_max_total(a);
+}
+
+/*
+ * Parse a max_total value written to the sysfs store.
+ *
+ * Returns 0 and stores the parsed value in *@val on success, -EINVAL on:
+ *  - no digits consumed (empty write such as "\n", or a leading '-');
+ *  - trailing garbage (a single trailing '\n' from sysfs echo is tolerated);
+ *  - values above LLONG_MAX (max_total is stored as s64).
+ */
+static inline int conti_parse_max_total(const char *str, u64 *val)
+{
+	u64 v;
+	char *endp;
+
+	v = memparse(str, &endp);
+	if (endp == str || (*endp != '\0' && *endp != '\n'))
+		return -EINVAL;
+	if (v > (u64)LLONG_MAX)
+		return -EINVAL;
+
+	*val = v;
+	return 0;
 }
 
 int conti_mem_allocator_init(struct conti_mem_allocator *allocator, int nid, size_t granu,
