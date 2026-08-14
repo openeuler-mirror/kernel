@@ -47,6 +47,13 @@ static void n20_init_etype_clear_ram(struct mce_hw *hw)
 	}
 }
 
+#if IS_ENABLED(CONFIG_NET_CLS_FLOWER)
+static void n20_init_fd_clear_ram(struct mce_hw *hw)
+{
+	hw->ops->fd_clear_hw(hw);
+}
+#endif
+
 static void n20_init_vport_mc_vlan_clear_ram(struct mce_hw *hw)
 {
 	/* clear vf multicast filter table */
@@ -170,6 +177,9 @@ static void n20_reset_hw(struct mce_hw *hw)
 	/* clear nic ram */
 	n20_init_vport_bitmap_clear_ram(hw);
 	n20_init_etype_clear_ram(hw);
+#if IS_ENABLED(CONFIG_NET_CLS_FLOWER)
+	n20_init_fd_clear_ram(hw);
+#endif
 	n20_init_vport_mc_vlan_clear_ram(hw);
 	n20_init_rss_clear_ram(hw);
 	mce_mbx_reset(hw);
@@ -2629,14 +2639,14 @@ static void __n20_add_ntuple_filter(struct mce_hw *hw,
 		else
 			filter &= ~F_T5_SPORT_MASK;
 		F_T5_SET_SPORT(port, (__force u16)htons((__force u16)
-								 rule->ip.v4.src_port));
+							 rule->ip.v4.src_port));
 
 		if (rule->ip.v4.dst_port == 0)
 			filter |= F_T5_DPORT_MASK;
 		else
 			filter &= ~F_T5_DPORT_MASK;
 		F_T5_SET_DPORT(port, (__force u16)htons((__force u16)
-								 rule->ip.v4.dst_port));
+							 rule->ip.v4.dst_port));
 	}
 
 	if (flow_type == MCE_FLTR_PTYPE_IPV4_OTHER) {
@@ -2662,14 +2672,14 @@ static void __n20_add_ntuple_filter(struct mce_hw *hw,
 		else
 			filter &= ~F_T5_SPORT_MASK;
 		F_T5_SET_SPORT(port, (__force u16)htons((__force u16)
-								 rule->ip.v6.src_port));
+							 rule->ip.v6.src_port));
 
 		if (rule->ip.v6.dst_port == 0)
 			filter |= F_T5_DPORT_MASK;
 		else
 			filter &= ~F_T5_DPORT_MASK;
 		F_T5_SET_DPORT(port, (__force u16)htons((__force u16)
-								 rule->ip.v6.dst_port));
+							 rule->ip.v6.dst_port));
 	}
 
 	if (flow_type == MCE_FLTR_PTYPE_IPV6_OTHER) {
@@ -2716,7 +2726,7 @@ static void __n20_add_l2_filter(struct mce_hw *hw, struct mce_fdir_fltr *rule)
 	loc = MCE_MAX_ETYPE_CNT - 1 - rule->etype_loc;
 	rule->eth.type = rule->eth.type;
 	etqf |= BIT(31);
-	MODIFY_BITFIELD(etqf, (__force u16)rule->eth.type, 16, 0);
+	MODIFY_BITFIELD(etqf, rule->eth.type, 16, 0);
 	wr32(hw, N20_ETH_RQA_ETQF_OFF(vfid, loc), etqf);
 	logd(LOG_NTUPLE_INFO, "setup etqf %d loc %d %x --> %x\n", vfid, loc,
 	     etqf, N20_ETH_RQA_ETQF_OFF(vfid, loc));
@@ -3718,6 +3728,23 @@ static struct mce_hw_operations n20_ops = {
 	.ptp_tx_state = n20_ptp_tx_status,
 	.ptp_tx_stamp = n20_ptp_tx_stamp,
 #endif
+#if IS_ENABLED(CONFIG_NET_CLS_FLOWER)
+	/* Flow Director flow-engine callbacks. */
+	.fd_update_entry_table = n20_fd_update_entry_table,
+	.fd_query_entry_table = n20_fd_query_entry_table,
+	.fd_update_hash_table = n20_fd_update_hash_table,
+	.fd_query_hash_table = n20_fd_query_hash_table,
+	.fd_update_ex_hash_table = n20_fd_update_ex_hash_table,
+	.fd_query_ex_hash_table = n20_fd_query_ex_hash_table,
+	.fd_verificate_sign_rule = n20_fd_verificate_sign_rule,
+	.fd_clear_sign_rule = n20_fd_clear_sign_rule,
+	.fd_field_bitmask_setup = n20_fd_field_bitmask_setup,
+	.fd_profile_field_bitmask_update = n20_fd_profile_field_bitmask_update,
+	.fd_profile_update = n20_fd_profile_update,
+	.fd_init_hw = n20_fd_init_hw,
+	.fd_deinit_hw = n20_fd_deinit_hw,
+	.fd_clear_hw = n20_fd_clear_hw,
+#endif
 	.set_txring_trig_intr = n20_set_txring_trig_intr,
 	.get_hw_ring_stats = n20_get_hw_ring_stats,
 	.clear_hw_ring_stats = n20_clear_hw_ring_stats,
@@ -4018,8 +4045,104 @@ static void n20_eswitch_en(struct mce_hw *hw, bool en)
 	}
 }
 
+#if IS_ENABLED(CONFIG_NET_CLS_FLOWER)
+static void n20_eswitch_update_legacy(struct mce_hw *hw,
+				      struct mce_eswitch_filter *filter,
+					      bool add)
+{
+	struct mce_eswitch_pattern *pattern = &filter->lkup_pattern;
+	const u8 *mac = pattern->formatted.dst_mac;
+	int loc = filter->rule_loc;
+	u32 mac_lo, mac_hi;
+	u32 rule_ctrl = 0;
+
+	if (add) {
+		if (filter->options & MCE_OPT_DMAC) {
+			mac_lo = (mac[2] << 24) | (mac[3] << 16) |
+				 mac[4] << 8 | mac[5];
+			mac_hi = (mac[0] << 8) | mac[1];
+			wr32(hw, N20_ETH_VM_DMAC_RAH(loc), mac_hi);
+			wr32(hw, N20_ETH_VM_DMAC_RAL(loc), mac_lo);
+			rule_ctrl |= F_MAC_FILTER_PVF_EN;
+
+			mac_hi |= F_MAC_FLTR_EN;
+			wr32(hw, N20_ETH_FLTR_DMAC_RAH(loc), mac_hi);
+			wr32(hw, N20_ETH_FLTR_DMAC_RAL(loc), mac_lo);
+		}
+
+		if (pattern->formatted.svport_id == PFINFO_IDX) {
+			/* peer packets do not need a source port setup */
+		} else if (pattern->formatted.svport_id < MCE_MAX_VF_NUM) {
+			rule_ctrl |= F_IPORT_FILTER_PVF_EN;
+			rule_ctrl |= pattern->formatted.svport_id;
+		}
+
+		wr32(hw, N20_ETH_VM_IPORT_PVF(loc), rule_ctrl);
+
+		if (filter->drop_en) {
+			/* no redirect bitmap means that the packet is dropped */
+			wr32(hw, N20_ETH_VEB_ACT_PVF(loc), loc << 8);
+			return;
+		}
+
+		if (pattern->dvport_id == PFINFO_IDX) {
+			/* downlink to uplink packets are sent to the NPU switch */
+			wr32(hw, N20_ETH_VEB_ACT_PVF(loc), 0x20);
+		} else {
+			wr32(hw, N20_ETH_VEB_ACT_PVF(loc), loc << 8);
+			if (pattern->dvport_id < MCE_MAX_VF_NUM) {
+				int idx = _vfnum(hw, pattern->dvport_id);
+				u32 v_bit = BIT(pattern->dvport_id % 32);
+
+				wr32(hw, N20_ETH_VPORT_SET_BITMAP(idx, loc), v_bit);
+			}
+		}
+	} else {
+		int idx = _vfnum(hw, pattern->dvport_id);
+
+		wr32(hw, N20_ETH_VM_DMAC_RAH(loc), 0);
+		wr32(hw, N20_ETH_VM_DMAC_RAL(loc), 0);
+		wr32(hw, N20_ETH_FLTR_DMAC_RAH(loc), 0);
+		wr32(hw, N20_ETH_FLTR_DMAC_RAL(loc), 0);
+		wr32(hw, N20_ETH_VM_IPORT_PVF(loc), 0);
+		wr32(hw, N20_ETH_VEB_ACT_PVF(loc), 0);
+		wr32(hw, N20_ETH_VPORT_SET_BITMAP(idx, loc), 0);
+	}
+}
+
+static void n20_eswitch_update_switchdev(struct mce_hw *hw,
+					 struct mce_eswitch_filter *filter,
+						 bool add)
+{
+}
+
+static void n20_eswitch_update_bcmc_redir(struct mce_hw *hw, int vfid,
+					  bool add)
+{
+	u32 entry;
+	u32 val;
+	int idx;
+
+	idx = _vfnum(hw, vfid);
+	entry = hw->vf_bcmc_addr_offset;
+	val = rd32(hw, N20_ETH_VPORT_SET_BITMAP(idx, entry));
+
+	if (add)
+		val |= BIT(idx % 32);
+	else
+		val &= ~BIT(idx % 32);
+
+	wr32(hw, N20_ETH_VPORT_SET_BITMAP(idx, entry), val);
+}
+#endif
+
 static struct mce_eswitch_operations n20_eswitch_ops = {
 	.eswitch_en = n20_eswitch_en,
+#if IS_ENABLED(CONFIG_NET_CLS_FLOWER)
+	.eswitch_update_legacy = n20_eswitch_update_legacy,
+	.eswitch_update_switchdev = n20_eswitch_update_switchdev,
+	.eswitch_update_bcmc_redir = n20_eswitch_update_bcmc_redir,
+#endif
 };
 
 #ifdef N20_RSS_DEBUG

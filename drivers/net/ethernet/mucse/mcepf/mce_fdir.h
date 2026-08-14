@@ -48,7 +48,7 @@ struct mce_fdir_v6 {
 struct mce_fdir_eth {
 	u8 dst[ETH_ALEN];
 	u8 src[ETH_ALEN];
-	__be16 type;
+	u16 type;
 };
 
 struct mce_fdir_fltr {

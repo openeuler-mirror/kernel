@@ -69,6 +69,8 @@
 #include <linux/atomic.h>
 #include <linux/jiffies.h>
 #include "mce_fdir.h"
+#include "mce_fdir_flow.h"
+#include "mce_tc_lib.h"
 #include "mce_sriov.h"
 #include "./mucse_auxiliary/mce_idc.h"
 #include "mce_repr.h"
@@ -650,6 +652,14 @@ struct mce_pf {
 	struct mce_hw_stats prev_stats;
 	struct mce_mac_stats mac_stats;
 	struct mce_hw hw;
+
+#if IS_ENABLED(CONFIG_NET_CLS_FLOWER)
+	/* TC flower filters and Flow Director flow-engine state. */
+	u16 num_dmac_chnl_fltrs;
+	struct hlist_head tc_flower_fltr_list;
+	struct mce_flow_engine_module *flow_engine[MCE_FLOW_MAX];
+	u32 fdir_mode;
+#endif
 
 	unsigned long serv_tmr_period;
 	unsigned long serv_tmr_prev;

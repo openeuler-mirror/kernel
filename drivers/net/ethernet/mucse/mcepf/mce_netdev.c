@@ -8,6 +8,7 @@
 #include "mce_irq.h"
 #include "mce_dcbnl.h"
 #include "mce_fdir.h"
+#include "mce_tc_lib.h"
 #include "mce_dcb.h"
 #include "mce_n20/mce_hw_n20.h"
 
@@ -75,6 +76,14 @@ int mce_open(struct net_device *netdev)
 	if (err) {
 		netdev_err(netdev, "Failed to open VSI 0x%04X\n", vsi->idx);
 		return err;
+	}
+	if (IS_ENABLED(CONFIG_NET_CLS_FLOWER) &&
+	    (netdev->features & NETIF_F_HW_TC)) {
+		err = mce_init_flow_engine(pf, MCE_FLOW_FDIR);
+		if (err && !test_bit(MCE_FLAGS_FDIR_FLOW_ENA, pf->flags)) {
+			mce_vsi_close(vsi);
+			return err;
+		}
 	}
 	if (IS_REACHABLE(CONFIG_PTP_1588_CLOCK)) {
 		err = mce_ptp_register(pf);
@@ -509,6 +518,24 @@ static int mce_set_features(struct net_device *netdev,
 		/* setup max frame to hw */
 		hw->ops->set_max_pktlen(hw, netdev->mtu);
 		hw->ops->set_err_mode(hw);
+	}
+
+	if (IS_ENABLED(CONFIG_NET_CLS_FLOWER) &&
+	    (changed & NETIF_F_HW_TC)) {
+		if (features & NETIF_F_HW_TC) {
+			int err;
+
+			if (test_bit(MCE_FLAG_SRIOV_ENA, pf->flags))
+				return -EOPNOTSUPP;
+
+			err = mce_init_flow_engine(pf, MCE_FLOW_FDIR);
+			if (err && !test_bit(MCE_FLAGS_FDIR_FLOW_ENA, pf->flags))
+				return err;
+		} else {
+			if (!hlist_empty(&pf->tc_flower_fltr_list))
+				return -EACCES;
+			mce_deinit_flow_engine(pf, MCE_FLOW_FDIR);
+		}
 	}
 
 	netdev->features = features;
@@ -1375,6 +1402,55 @@ out_rm_features:
 	return features & ~(NETIF_F_CSUM_MASK | NETIF_F_GSO_MASK);
 }
 
+#if IS_ENABLED(CONFIG_NET_CLS_FLOWER)
+static int mce_setup_tc_cls_flower(struct mce_netdev_priv *np,
+				   struct net_device *filter_dev,
+					   struct flow_cls_offload *cls_flower)
+{
+	if (cls_flower->common.chain_index)
+		return -EOPNOTSUPP;
+
+	switch (cls_flower->command) {
+	case FLOW_CLS_REPLACE:
+		return mce_add_cls_flower(filter_dev, np->vsi, cls_flower);
+	case FLOW_CLS_DESTROY:
+		return mce_del_cls_flower(np->vsi, cls_flower);
+	default:
+		return -EINVAL;
+	}
+}
+
+static int mce_setup_tc_block_cb(enum tc_setup_type type, void *type_data,
+				 void *cb_priv)
+{
+	struct mce_netdev_priv *np = cb_priv;
+
+	if (type == TC_SETUP_CLSFLOWER)
+		return mce_setup_tc_cls_flower(np, np->vsi->netdev, type_data);
+
+	return -EOPNOTSUPP;
+}
+
+static LIST_HEAD(mce_block_cb_list);
+
+static int mce_setup_tc(struct net_device *netdev, enum tc_setup_type type,
+			void *type_data)
+{
+	struct mce_netdev_priv *np = netdev_priv(netdev);
+
+	switch (type) {
+	case TC_SETUP_CLSFLOWER:
+		return mce_setup_tc_cls_flower(np, netdev, type_data);
+	case TC_SETUP_BLOCK:
+		return flow_block_cb_setup_simple(type_data, &mce_block_cb_list,
+						  mce_setup_tc_block_cb, np, np,
+						  true);
+	default:
+		return -EOPNOTSUPP;
+	}
+}
+#endif
+
 static const struct net_device_ops mce_netdev_ops = {
 	.ndo_open = mce_open,
 	.ndo_stop = mce_stop,
@@ -1384,7 +1460,8 @@ static const struct net_device_ops mce_netdev_ops = {
 	.ndo_features_check = mce_features_check,
 	.ndo_bridge_getlink = mce_bridge_getlink,
 	.ndo_bridge_setlink = mce_bridge_setlink,
-#ifdef CONFIG_RFS_ACCEL
+#if IS_ENABLED(CONFIG_NET_CLS_FLOWER)
+	.ndo_setup_tc = mce_setup_tc,
 #endif
 	.ndo_set_rx_mode = mce_set_rx_mode,
 	.ndo_do_ioctl = mce_ioctl,
@@ -1415,6 +1492,9 @@ static void mce_set_netdev_features(struct net_device *netdev)
 	dflt_features |= NETIF_F_SG;
 	dflt_features |= NETIF_F_HIGHDMA;
 	dflt_features |= NETIF_F_RXHASH;
+#if IS_ENABLED(CONFIG_NET_CLS_FLOWER)
+	dflt_features |= NETIF_F_HW_TC;
+#endif
 
 	fixon_features |= NETIF_F_HW_VLAN_CTAG_FILTER;
 	fixon_features |= NETIF_F_HW_VLAN_STAG_FILTER;

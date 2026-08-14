@@ -18,6 +18,7 @@
 #include "mce_virtchnl.h"
 #include "mce_devlink.h"
 #include "mce_dcb.h"
+#include "mce_tc_lib.h"
 #include "mce_version.h"
 #include "mce_npu.h"
 #include "mce_ptp.h"
@@ -702,11 +703,35 @@ static void mce_udp_tunnel_restore_fltr(struct mce_hw *hw)
 	hw->ops->restore_udp_tnl(hw, TNL_VXLAN_GPE);
 }
 
+#if IS_ENABLED(CONFIG_NET_CLS_FLOWER)
+static void mce_fdir_flow_restore_fltr(struct mce_hw *hw)
+{
+	struct mce_pf *pf = container_of(hw, struct mce_pf, hw);
+	struct mce_fdir_handle *handle;
+	struct mce_tc_flower_fltr *fltr;
+
+	if (!test_bit(MCE_FLAGS_FDIR_FLOW_ENA, pf->flags))
+		return;
+
+	handle = mce_get_engine_handle(pf, MCE_FLOW_FDIR);
+	if (!handle)
+		return;
+
+	hw->ops->fd_init_hw(hw, handle);
+	hlist_for_each_entry(fltr, &pf->tc_flower_fltr_list,
+			     tc_flower_node)
+		pf->flow_engine[MCE_FLOW_FDIR]->restore(pf, fltr);
+}
+#endif
+
 void mce_restore_hw(struct mce_hw *hw)
 {
 	/* fdir fltr restore */
 	mce_fdir_del_fltrs(hw, false);
 	mce_fdir_restore_fltr(hw);
+#if IS_ENABLED(CONFIG_NET_CLS_FLOWER)
+	mce_fdir_flow_restore_fltr(hw);
+#endif
 	/* vlan fltr restore */
 	mce_vlan_restore_fltr(hw);
 	/* uc/mc fltr restore */
@@ -1770,6 +1795,8 @@ static int mce_init_pf(struct mce_pf *pf)
 	set_bit(MCE_FLAG_SW_DIM_ENA, pf->flags);
 	set_bit(MCE_FLAG_RX_BUFFER_MANUALLY, pf->flags);
 	clear_bit(MCE_FLAG_PF_ANTISPOOF, pf->flags);
+	pf->fdir_mode = fdir_mode;
+	INIT_HLIST_HEAD(&pf->tc_flower_fltr_list);
 
 	memset(&pf->fc, 0x0, sizeof(struct mce_flow_control));
 
@@ -1799,6 +1826,20 @@ static int mce_init_pf(struct mce_pf *pf)
  */
 static void mce_deinit_pf(struct mce_pf *pf)
 {
+#if IS_ENABLED(CONFIG_NET_CLS_FLOWER)
+	struct mce_tc_flower_fltr *fltr;
+	struct hlist_node *tmp;
+
+	hlist_for_each_entry_safe(fltr, tmp, &pf->tc_flower_fltr_list,
+				  tc_flower_node) {
+		hlist_del(&fltr->tc_flower_node);
+		if (pf->flow_engine[MCE_FLOW_FDIR])
+			pf->flow_engine[MCE_FLOW_FDIR]->destroy(pf, fltr->filter,
+							       fltr);
+		kfree(fltr);
+	}
+	mce_deinit_flow_engine(pf, MCE_FLOW_FDIR);
+#endif
 	mutex_destroy(&pf->sw_mutex);
 	mutex_destroy(&pf->adev_mutex);
 

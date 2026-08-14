@@ -5,6 +5,15 @@
 #include "mce_fdir.h"
 #include "mce_ethtool_fdir.h"
 
+static const struct in6_addr zero_ipv6_addr_mask = {
+	.in6_u = {
+		.u6_addr8 = {
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		},
+	},
+};
+
 /* calls to mce_flow_add_prof require the number of segments in the array
  * for segs_cnt. In this code that is one more than the index.
  */
@@ -35,7 +44,7 @@ static int mce_fltr_to_ethtool_flow(enum mce_fltr_ptype flow)
 	case MCE_FLTR_PTYPE_IPV6_SCTP:
 		return SCTP_V6_FLOW;
 	case MCE_FLTR_PTYPE_IPV6_OTHER:
-		return 0;
+		return IPV6_USER_FLOW;
 	case MCE_FLTR_PTYPE_NONF_ETH:
 		return ETHER_FLOW;
 	default:
@@ -67,6 +76,8 @@ static enum mce_fltr_ptype mce_ethtool_flow_to_fltr(int eth)
 		return MCE_FLTR_PTYPE_IPV6_UDP;
 	case SCTP_V6_FLOW:
 		return MCE_FLTR_PTYPE_IPV6_SCTP;
+	case IPV6_USER_FLOW:
+		return MCE_FLTR_PTYPE_IPV6_OTHER;
 	case ETHER_FLOW:
 		return MCE_FLTR_PTYPE_NONF_ETH;
 	default:
@@ -103,8 +114,8 @@ int mce_get_ethtool_fdir_entry(struct mce_hw *hw,
 
 	switch (fsp->flow_type) {
 	case ETHER_FLOW:
-		fsp->h_u.ether_spec.h_proto = rule->eth.type;
-		fsp->m_u.ether_spec.h_proto = rule->eth_mask.type;
+		fsp->h_u.ether_spec.h_proto = cpu_to_be16(rule->eth.type);
+		fsp->m_u.ether_spec.h_proto = cpu_to_be16(rule->eth_mask.type);
 		memcpy(fsp->h_u.ether_spec.h_dest, rule->eth.dst,
 		       sizeof(fsp->h_u.ether_spec.h_dest));
 		memcpy(fsp->m_u.ether_spec.h_dest, rule->eth_mask.dst,
@@ -139,6 +150,40 @@ int mce_get_ethtool_fdir_entry(struct mce_hw *hw,
 		fsp->m_u.tcp_ip4_spec.pdst = rule->mask.v4.dst_port;
 		fsp->m_u.tcp_ip4_spec.ip4src = rule->mask.v4.src_ip;
 		fsp->m_u.tcp_ip4_spec.ip4dst = rule->mask.v4.dst_ip;
+		break;
+	case IPV6_USER_FLOW:
+		fsp->h_u.usr_ip6_spec.l4_4_bytes = rule->ip.v6.l4_header;
+		fsp->h_u.usr_ip6_spec.tclass = rule->ip.v6.tc;
+		fsp->h_u.usr_ip6_spec.l4_proto = rule->ip.v6.proto;
+		memcpy(fsp->h_u.usr_ip6_spec.ip6src, rule->ip.v6.src_ip,
+		       sizeof(struct in6_addr));
+		memcpy(fsp->h_u.usr_ip6_spec.ip6dst, rule->ip.v6.dst_ip,
+		       sizeof(struct in6_addr));
+		memcpy(fsp->m_u.usr_ip6_spec.ip6src, rule->mask.v6.src_ip,
+		       sizeof(struct in6_addr));
+		memcpy(fsp->m_u.usr_ip6_spec.ip6dst, rule->mask.v6.dst_ip,
+		       sizeof(struct in6_addr));
+		fsp->m_u.usr_ip6_spec.l4_4_bytes = rule->mask.v6.l4_header;
+		fsp->m_u.usr_ip6_spec.tclass = rule->mask.v6.tc;
+		fsp->m_u.usr_ip6_spec.l4_proto = rule->mask.v6.proto;
+		break;
+	case TCP_V6_FLOW:
+	case UDP_V6_FLOW:
+	case SCTP_V6_FLOW:
+		memcpy(fsp->h_u.tcp_ip6_spec.ip6src, rule->ip.v6.src_ip,
+		       sizeof(struct in6_addr));
+		memcpy(fsp->h_u.tcp_ip6_spec.ip6dst, rule->ip.v6.dst_ip,
+		       sizeof(struct in6_addr));
+		fsp->h_u.tcp_ip6_spec.psrc = rule->ip.v6.src_port;
+		fsp->h_u.tcp_ip6_spec.pdst = rule->ip.v6.dst_port;
+		memcpy(fsp->m_u.tcp_ip6_spec.ip6src, rule->mask.v6.src_ip,
+		       sizeof(struct in6_addr));
+		memcpy(fsp->m_u.tcp_ip6_spec.ip6dst, rule->mask.v6.dst_ip,
+		       sizeof(struct in6_addr));
+		fsp->m_u.tcp_ip6_spec.psrc = rule->mask.v6.src_port;
+		fsp->m_u.tcp_ip6_spec.pdst = rule->mask.v6.dst_port;
+		fsp->h_u.tcp_ip6_spec.tclass = rule->ip.v6.tc;
+		fsp->m_u.tcp_ip6_spec.tclass = rule->mask.v6.tc;
 		break;
 	default:
 		break;
@@ -247,6 +292,59 @@ static int mce_ntuple_check_ip4_usr_seg(struct mce_hw *hw,
 			dev_err(hw->dev, "ip4 empty rules are not valid\n");
 			return -EINVAL;
 		}
+	}
+
+	return 0;
+}
+
+/**
+ * mce_ntuple_check_ip6_seg - Check valid fields are provided for filter
+ * @hw: hardware structure
+ * @tcp_ip6_spec: mask data from ethtool
+ * Returns: The result of the operation.
+ */
+static int mce_ntuple_check_ip6_seg(struct mce_hw *hw,
+				    struct ethtool_tcpip6_spec *tcp_ip6_spec)
+{
+	if (!memcmp(tcp_ip6_spec->ip6src, &zero_ipv6_addr_mask,
+		    sizeof(struct in6_addr)) &&
+	    !memcmp(tcp_ip6_spec->ip6dst, &zero_ipv6_addr_mask,
+		    sizeof(struct in6_addr)) &&
+	    !tcp_ip6_spec->psrc && !tcp_ip6_spec->pdst) {
+		dev_err(hw->dev, "ip6 empty rules are not valid\n");
+		return -EINVAL;
+	}
+	if (tcp_ip6_spec->tclass) {
+		dev_err(hw->dev, "filtering on TC not supported\n");
+		return -EOPNOTSUPP;
+	}
+
+	return 0;
+}
+
+/**
+ * mce_ntuple_check_ip6_usr_seg - Check valid fields are provided for filter
+ * @hw: hardware structure
+ * @usr_ip6_spec: ethtool userdef packet offset
+ * Returns: The result of the operation.
+ */
+static int mce_ntuple_check_ip6_usr_seg(struct mce_hw *hw,
+					struct ethtool_usrip6_spec *usr_ip6_spec)
+{
+	if (usr_ip6_spec->l4_4_bytes) {
+		dev_err(hw->dev, "Layer 4 bytes not supported\n");
+		return -EOPNOTSUPP;
+	}
+	if (usr_ip6_spec->tclass) {
+		dev_err(hw->dev, "filtering on TC not supported\n");
+		return -EOPNOTSUPP;
+	}
+	if (!memcmp(usr_ip6_spec->ip6src, &zero_ipv6_addr_mask,
+		    sizeof(struct in6_addr)) &&
+	    !memcmp(usr_ip6_spec->ip6dst, &zero_ipv6_addr_mask,
+		    sizeof(struct in6_addr)) && !usr_ip6_spec->l4_proto) {
+		dev_err(hw->dev, "ip6 empty rules are not valid\n");
+		return -EINVAL;
 	}
 
 	return 0;
@@ -372,6 +470,51 @@ action_drop:
 		input->mask.v4.ip_ver = fsp->m_u.usr_ip4_spec.ip_ver;
 		input->mask.v4.tos = fsp->m_u.usr_ip4_spec.tos;
 		break;
+	case TCP_V6_FLOW:
+	case UDP_V6_FLOW:
+	case SCTP_V6_FLOW:
+		ret = mce_ntuple_check_ip6_seg(hw, &fsp->m_u.tcp_ip6_spec);
+		if (ret != 0)
+			return ret;
+
+		memcpy(input->ip.v6.dst_ip, fsp->h_u.tcp_ip6_spec.ip6dst,
+		       sizeof(struct in6_addr));
+		memcpy(input->ip.v6.src_ip, fsp->h_u.tcp_ip6_spec.ip6src,
+		       sizeof(struct in6_addr));
+		input->ip.v6.dst_port = fsp->h_u.tcp_ip6_spec.pdst;
+		input->ip.v6.src_port = fsp->h_u.tcp_ip6_spec.psrc;
+		input->ip.v6.tc = fsp->h_u.tcp_ip6_spec.tclass;
+		memcpy(input->mask.v6.dst_ip, fsp->m_u.tcp_ip6_spec.ip6dst,
+		       sizeof(struct in6_addr));
+		memcpy(input->mask.v6.src_ip, fsp->m_u.tcp_ip6_spec.ip6src,
+		       sizeof(struct in6_addr));
+		input->mask.v6.dst_port = fsp->m_u.tcp_ip6_spec.pdst;
+		input->mask.v6.src_port = fsp->m_u.tcp_ip6_spec.psrc;
+		input->mask.v6.tc = fsp->m_u.tcp_ip6_spec.tclass;
+		break;
+	case IPV6_USER_FLOW:
+		ret = mce_ntuple_check_ip6_usr_seg(hw, &fsp->m_u.usr_ip6_spec);
+		if (ret != 0)
+			return ret;
+
+		memcpy(input->ip.v6.dst_ip, fsp->h_u.usr_ip6_spec.ip6dst,
+		       sizeof(struct in6_addr));
+		memcpy(input->ip.v6.src_ip, fsp->h_u.usr_ip6_spec.ip6src,
+		       sizeof(struct in6_addr));
+		input->ip.v6.l4_header = fsp->h_u.usr_ip6_spec.l4_4_bytes;
+		input->ip.v6.tc = fsp->h_u.usr_ip6_spec.tclass;
+		if (!fsp->m_u.usr_ip6_spec.l4_proto)
+			input->ip.v6.proto = IPPROTO_NONE;
+		else
+			input->ip.v6.proto = fsp->h_u.usr_ip6_spec.l4_proto;
+		memcpy(input->mask.v6.dst_ip, fsp->m_u.usr_ip6_spec.ip6dst,
+		       sizeof(struct in6_addr));
+		memcpy(input->mask.v6.src_ip, fsp->m_u.usr_ip6_spec.ip6src,
+		       sizeof(struct in6_addr));
+		input->mask.v6.l4_header = fsp->m_u.usr_ip6_spec.l4_4_bytes;
+		input->mask.v6.tc = fsp->m_u.usr_ip6_spec.tclass;
+		input->mask.v6.proto = fsp->m_u.usr_ip6_spec.l4_proto;
+		break;
 	case ETHER_FLOW:
 		ret = mce_ntuple_check_ether_input(&fsp->m_u.ether_spec);
 		if (ret != 0)
@@ -385,8 +528,8 @@ action_drop:
 		       ETH_ALEN);
 		memcpy(input->eth_mask.src, fsp->m_u.ether_spec.h_source,
 		       ETH_ALEN);
-		input->eth.type = fsp->h_u.ether_spec.h_proto;
-		input->eth_mask.type = fsp->m_u.ether_spec.h_proto;
+		input->eth.type = be16_to_cpu(fsp->h_u.ether_spec.h_proto);
+		input->eth_mask.type = be16_to_cpu(fsp->m_u.ether_spec.h_proto);
 		break;
 	default:
 		/* not doing un-parsed flow types */

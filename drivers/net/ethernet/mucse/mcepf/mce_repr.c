@@ -7,6 +7,7 @@
 #include "mce_devlink.h"
 #endif /* CONFIG_NET_DEVLINK */
 #include "mce_sriov.h"
+#include "mce_tc_lib.h"
 #include "mce_lib.h"
 #include "mce_repr.h"
 #include "mce_txrx_lib.h"
@@ -192,10 +193,59 @@ static void mce_repr_get_stats64(struct net_device *dev,
 	stats->tx_errors = repr->stats.tx_errors;
 }
 
+#if IS_ENABLED(CONFIG_NET_CLS_FLOWER)
+static int mce_repr_setup_tc_cls_flower(struct mce_repr *repr,
+					struct flow_cls_offload *flower)
+{
+	switch (flower->command) {
+	case FLOW_CLS_REPLACE:
+		return mce_add_cls_flower(repr->netdev, repr->src_vsi, flower);
+	case FLOW_CLS_DESTROY:
+		return mce_del_cls_flower(repr->src_vsi, flower);
+	default:
+		return -EINVAL;
+	}
+}
+
+static int mce_repr_setup_tc_block_cb(enum tc_setup_type type,
+				      void *type_data, void *cb_priv)
+{
+	struct flow_cls_offload *flower = type_data;
+	struct mce_netdev_priv *np = cb_priv;
+
+	if (type == TC_SETUP_CLSFLOWER)
+		return mce_repr_setup_tc_cls_flower(np->repr, flower);
+	return -EOPNOTSUPP;
+}
+
+static LIST_HEAD(mce_repr_block_cb_list);
+
+static int mce_repr_setup_tc(struct net_device *netdev,
+			     enum tc_setup_type type, void *type_data)
+{
+	struct mce_netdev_priv *np = netdev_priv(netdev);
+
+	switch (type) {
+	case TC_SETUP_CLSFLOWER:
+		return mce_repr_setup_tc_cls_flower(np->repr, type_data);
+	case TC_SETUP_BLOCK:
+		return flow_block_cb_setup_simple(type_data,
+						  &mce_repr_block_cb_list,
+						  mce_repr_setup_tc_block_cb, np, np,
+						  true);
+	default:
+		return -EOPNOTSUPP;
+	}
+}
+#endif
+
 static const struct net_device_ops mce_repr_netdev_ops = {
 	.ndo_get_stats64 = mce_repr_get_stats64,
 	.ndo_open = mce_repr_open,
 	.ndo_stop = mce_repr_stop,
+#if IS_ENABLED(CONFIG_NET_CLS_FLOWER)
+	.ndo_setup_tc = mce_repr_setup_tc,
+#endif
 };
 
 /**
@@ -231,6 +281,7 @@ static int mce_repr_reg_netdev(struct mce_repr *repr)
 
 	netdev->netdev_ops = &mce_repr_netdev_ops;
 	mce_set_ethtool_repr_ops(netdev);
+	netdev->hw_features |= NETIF_F_HW_TC;
 
 	netif_carrier_off(netdev);
 	netif_tx_stop_all_queues(netdev);

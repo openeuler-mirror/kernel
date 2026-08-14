@@ -16,6 +16,12 @@
 
 struct mce_ring;
 struct mce_fdir_fltr;
+struct mce_fdir_filter;
+struct mce_fdir_field_mask;
+struct mce_fdir_handle;
+struct mce_hw_profile;
+struct mce_eswitch_filter;
+struct mce_flow_engine_module;
 struct mce_hw;
 struct mce_ets_cfg;
 struct mce_dcb;
@@ -608,6 +614,31 @@ struct mce_hw_operations {
 	int (*ptp_tx_state)(struct mce_hw *hw);
 	int (*ptp_tx_stamp)(struct mce_hw *hw, u64 *sec, u64 *nsec);
 
+	/* Flow Director profile and table operations. */
+	int (*fd_update_entry_table)(struct mce_hw *hw, int loc, u32 *meta);
+	int (*fd_query_entry_table)(struct mce_hw *hw, int loc);
+	int (*fd_update_hash_table)(struct mce_hw *hw, bool en, u16 loc,
+				    u32 fdir_hash);
+	int (*fd_query_hash_table)(struct mce_hw *hw, u32 fdir_hash);
+	int (*fd_update_ex_hash_table)(struct mce_hw *hw, bool en, u16 loc,
+				       u32 fdir_hash);
+	int (*fd_query_ex_hash_table)(struct mce_hw *hw, u32 fdir_hash);
+	int (*fd_verificate_sign_rule)(struct mce_hw *hw,
+				       struct mce_fdir_filter *filter, u16 loc,
+					       u32 fdir_hash);
+	int (*fd_clear_sign_rule)(struct mce_hw *hw, u32 fdir_hash);
+	void (*fd_field_bitmask_setup)(struct mce_hw *hw,
+				       struct mce_fdir_field_mask *options,
+					       u16 loc);
+	void (*fd_profile_field_bitmask_update)(struct mce_hw *hw,
+						u16 profile_id, u32 options);
+	int (*fd_profile_update)(struct mce_hw *hw,
+				 struct mce_hw_profile *profile, bool add);
+	int (*fd_init_hw)(struct mce_hw *hw,
+			  struct mce_fdir_handle *fdir_handle);
+	int (*fd_deinit_hw)(struct mce_hw *hw);
+	int (*fd_clear_hw)(struct mce_hw *hw);
+
 	int (*set_txring_trig_intr)(struct mce_ring *tx_ring);
 	void (*mbx_init_vf)(struct mce_hw *hw, struct mce_mbx_info *mbx,
 			    int nr_vf);
@@ -680,6 +711,11 @@ struct mce_vf_operations {
 struct mce_eswitch_operations {
 	/* hw */
 	void (*eswitch_en)(struct mce_hw *hw, bool en);
+	void (*eswitch_update_legacy)(struct mce_hw *hw,
+				      struct mce_eswitch_filter *filter, bool add);
+	void (*eswitch_update_switchdev)(struct mce_hw *hw,
+					 struct mce_eswitch_filter *filter, bool add);
+	void (*eswitch_update_bcmc_redir)(struct mce_hw *hw, int vfid, bool add);
 };
 
 struct mce_eswitch_info {

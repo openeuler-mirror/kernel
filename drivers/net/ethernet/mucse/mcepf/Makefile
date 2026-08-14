@@ -24,6 +24,9 @@ mcepf-y := mce_main.o \
 	mce_ethtool_fdir.o \
 	mce_fdir.o \
 	mce_parse.o \
+	mce_fdir_flow.o \
+	mce_profile_mask.o \
+	mce_tc_lib.o \
 	mce_mbx.o \
 	mce_dcb.o \
 	mce_npu.o \
