@@ -1368,10 +1368,11 @@ static int mce_handle_tclass_action(struct mce_vsi *vsi,
 		NL_SET_ERR_MSG_MOD(fltr->extack,
 				   "Unable to add filter because user specified not support hw_tc as forward action");
 		return -EINVAL;
+	} else {
+		NL_SET_ERR_MSG_MOD(fltr->extack,
+				   "Unable to add filter because user specified neither queue nor hw_tc as forward action");
+		return -EINVAL;
 	}
-	NL_SET_ERR_MSG_MOD(fltr->extack,
-			   "Unable to add filter because user specified neither queue nor hw_tc as forward action");
-	return -EINVAL;
 
 	return 0;
 }

@@ -1657,6 +1657,23 @@ static void mce_vsi_napi_enable_all(struct mce_vsi *vsi)
 		mce_qvec_napi_enable(vsi->q_vectors[v_idx]);
 }
 
+static void mce_restore_queue_tx_maxrate(struct mce_vsi *vsi)
+{
+	struct mce_hw *hw = &vsi->back->hw;
+	struct mce_ring *ring;
+	struct netdev_queue *queue;
+	int i, queue_index = 0;
+
+	mce_for_each_txq_new(vsi, i) {
+		ring = vsi->tx_rings[i];
+		if (!ring || !ring->q_vector || !ring->netdev)
+			continue;
+
+		queue = netdev_get_tx_queue(ring->netdev, queue_index++);
+		hw->ops->cfg_txring_bw_lmt(ring, queue->tx_maxrate);
+	}
+}
+
 static int mce_vsi_update_hw(struct mce_vsi *vsi)
 {
 	struct net_device *netdev = vsi->netdev;
@@ -1685,6 +1702,7 @@ static int mce_vsi_update_hw(struct mce_vsi *vsi)
 	hw->ops->set_rss_hash(hw, features);
 
 	hw->ops->set_max_pktlen(hw, netdev->mtu);
+	mce_restore_queue_tx_maxrate(vsi);
 	if (!test_bit(MCE_PFC_EN, vsi->back->dcb->flags))
 		hw->ops->set_pause(hw, netdev->mtu);
 	return err;

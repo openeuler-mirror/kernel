@@ -933,6 +933,59 @@ static int mce_change_mtu(struct net_device *netdev, int new_mtu)
 	return 0;
 }
 
+static int mce_map_to_real_queue(struct mce_vsi *vsi, int queue)
+{
+	int queue_base = vsi->num_tc_offset;
+	int real_queue = vsi->num_txq_real;
+
+	return queue_base * (queue / real_queue) + (queue % real_queue);
+}
+
+/**
+ * mce_set_tx_maxrate - Set the maximum per-queue transmit bitrate
+ * @netdev: network interface device structure
+ * @queue_index: queue identifier
+ * @maxrate: maximum bandwidth in Mbps, or zero to remove the limit
+ *
+ * Returns: zero on success or a negative error code on failure.
+ */
+static int mce_set_tx_maxrate(struct net_device *netdev, int queue_index,
+			      u32 maxrate)
+{
+	struct mce_netdev_priv *np = netdev_priv(netdev);
+	struct mce_vsi *vsi = np->vsi;
+	struct mce_pf *pf = vsi->back;
+	struct mce_hw *hw = &pf->hw;
+	struct mce_ring *tx_ring;
+	int real_queue;
+
+	if (queue_index < 0 || queue_index >= netdev->real_num_tx_queues)
+		return -EINVAL;
+
+	if (maxrate && maxrate > MCE_SCHED_MAX_BW / 1000)
+		return -EINVAL;
+	if (maxrate && maxrate < 10)
+		return -EINVAL;
+
+	if (pf->dcb && test_bit(MCE_DCB_EN, pf->dcb->flags))
+		real_queue = mce_map_to_real_queue(vsi, queue_index);
+	else
+		real_queue = queue_index;
+
+	if (real_queue < 0 || real_queue >= vsi->alloc_txq)
+		return -EINVAL;
+
+	tx_ring = vsi->tx_rings[real_queue];
+	if (!tx_ring)
+		return -ENODEV;
+
+	if (netif_msg_drv(pf))
+		netdev_info(netdev, "tx queue %u set maxrate %uMb\n",
+			    queue_index, maxrate);
+
+	return hw->ops->cfg_txring_bw_lmt(tx_ring, maxrate);
+}
+
 /**
  * mce_find_tnl - return -1 mean not match ; return 0 ~ 7 mean matched
  * @hw: pointer to PF struct
@@ -1415,6 +1468,130 @@ static netdev_features_t mce_fix_features(struct net_device *netdev,
 	return features;
 }
 
+static int mce_setup_tc_mqprio_dcb(struct mce_vsi *vsi)
+{
+	struct mce_pf *pf = vsi->back;
+	struct mce_hw *hw = &pf->hw;
+	struct mce_dcb *dcb = pf->dcb;
+	struct mce_tc_cfg *tccfg;
+	u32 rate_rem;
+	u32 min_per_qg;
+	u16 qg_per_tc;
+	int i, j, k = 0;
+
+	if (!dcb)
+		return -EINVAL;
+	tccfg = &dcb->cur_tccfg;
+
+	mutex_lock(&dcb->dcb_mutex);
+	for (i = 0; i < tccfg->tc_cnt; i++) {
+		qg_per_tc = tccfg->tc_qgs[i];
+		if (!qg_per_tc)
+			continue;
+
+		if (!tccfg->tc_bw[i]) {
+			if (k + qg_per_tc > MCE_MAX_QGS) {
+				mutex_unlock(&dcb->dcb_mutex);
+				return -EINVAL;
+			}
+			for (j = 0; j < qg_per_tc; j++) {
+				tccfg->min_rate[k] = 0;
+				tccfg->max_rate[k] = 0;
+				k++;
+			}
+			continue;
+		}
+
+		if (k + qg_per_tc > MCE_MAX_QGS) {
+			mutex_unlock(&dcb->dcb_mutex);
+			return -EINVAL;
+		}
+
+		rate_rem = tccfg->tc_bw[i] * (hw->qos.link_speed / 100);
+		for (j = 0; j < qg_per_tc; j++) {
+			min_per_qg = DIV_ROUND_UP(rate_rem, qg_per_tc - j);
+			tccfg->min_rate[k] = min_per_qg;
+			tccfg->max_rate[k] = 0;
+			k++;
+			rate_rem -= min_per_qg;
+		}
+	}
+
+	hw->ops->set_qg_rate(hw, dcb);
+	clear_bit(MCE_MQPRIO_CHANNEL, dcb->flags);
+	mutex_unlock(&dcb->dcb_mutex);
+
+	return 0;
+}
+
+static int
+mce_setup_tc_mqprio_channel(struct mce_vsi *vsi,
+			    struct tc_mqprio_qopt_offload *mqprio)
+{
+	struct mce_pf *pf = vsi->back;
+	struct mce_hw *hw = &pf->hw;
+	struct mce_dcb *dcb = pf->dcb;
+	struct mce_tc_cfg *tccfg;
+	struct tc_mqprio_qopt *mqopt = &mqprio->qopt;
+	u32 min_rate, max_rate;
+	u16 qg_per_tc;
+	u8 i, j, k = 0;
+
+	if (!dcb)
+		return -EINVAL;
+	tccfg = &dcb->cur_tccfg;
+	if (!test_bit(MCE_DCB_EN, dcb->flags))
+		return -EOPNOTSUPP;
+	if (mqopt->num_tc > MCE_MAX_TC_CNT)
+		return -EOPNOTSUPP;
+
+	for (i = 0; i < mqopt->num_tc; i++) {
+		if (mqopt->count[i] > vsi->num_txq_real)
+			return -EINVAL;
+	}
+
+	mutex_lock(&dcb->dcb_mutex);
+	for (i = 0; i < mqopt->num_tc; i++) {
+		min_rate = div_u64(mqprio->min_rate[i] * 8, 1000000);
+		max_rate = div_u64(mqprio->max_rate[i] * 8, 1000000);
+		if (min_rate > max_rate) {
+			mutex_unlock(&dcb->dcb_mutex);
+			return -EINVAL;
+		}
+
+		qg_per_tc = tccfg->tc_qgs[i];
+		if (k + qg_per_tc > MCE_MAX_QGS) {
+			mutex_unlock(&dcb->dcb_mutex);
+			return -EINVAL;
+		}
+		for (j = 0; j < qg_per_tc; j++) {
+			tccfg->min_rate[k] = min_rate;
+			tccfg->max_rate[k] = max_rate;
+			k++;
+		}
+	}
+
+	mqopt->hw = TC_MQPRIO_HW_OFFLOAD_TCS;
+	hw->ops->set_qg_rate(hw, dcb);
+	set_bit(MCE_MQPRIO_CHANNEL, dcb->flags);
+	mutex_unlock(&dcb->dcb_mutex);
+
+	return 0;
+}
+
+static int mce_setup_tc_mqprio(struct mce_vsi *vsi,
+			       struct tc_mqprio_qopt_offload *mqprio)
+{
+	switch (mqprio->mode) {
+	case TC_MQPRIO_MODE_DCB:
+		return mce_setup_tc_mqprio_dcb(vsi);
+	case TC_MQPRIO_MODE_CHANNEL:
+		return mce_setup_tc_mqprio_channel(vsi, mqprio);
+	default:
+		return -EOPNOTSUPP;
+	}
+}
+
 #define MCE_TXD_CTX_MIN_MSS 64
 #define MCE_MAX_TUNNEL_HDR_LEN 80
 #define MCE_MAX_MAC_HDR_LEN 127
@@ -1473,7 +1650,7 @@ out_rm_features:
 #if IS_ENABLED(CONFIG_NET_CLS_FLOWER)
 static int mce_setup_tc_cls_flower(struct mce_netdev_priv *np,
 				   struct net_device *filter_dev,
-					   struct flow_cls_offload *cls_flower)
+				   struct flow_cls_offload *cls_flower)
 {
 	if (cls_flower->common.chain_index)
 		return -EOPNOTSUPP;
@@ -1501,23 +1678,29 @@ static int mce_setup_tc_block_cb(enum tc_setup_type type, void *type_data,
 
 static LIST_HEAD(mce_block_cb_list);
 
+#endif /* CONFIG_NET_CLS_FLOWER */
+
 static int mce_setup_tc(struct net_device *netdev, enum tc_setup_type type,
 			void *type_data)
 {
 	struct mce_netdev_priv *np = netdev_priv(netdev);
 
 	switch (type) {
+	case TC_SETUP_QDISC_MQPRIO:
+		return mce_setup_tc_mqprio(np->vsi,
+					   type_data);
+#if IS_ENABLED(CONFIG_NET_CLS_FLOWER)
 	case TC_SETUP_CLSFLOWER:
 		return mce_setup_tc_cls_flower(np, netdev, type_data);
 	case TC_SETUP_BLOCK:
 		return flow_block_cb_setup_simple(type_data, &mce_block_cb_list,
 						  mce_setup_tc_block_cb, np, np,
 						  true);
+#endif
 	default:
 		return -EOPNOTSUPP;
 	}
 }
-#endif
 
 static const struct net_device_ops mce_netdev_ops = {
 	.ndo_open = mce_open,
@@ -1528,9 +1711,7 @@ static const struct net_device_ops mce_netdev_ops = {
 	.ndo_features_check = mce_features_check,
 	.ndo_bridge_getlink = mce_bridge_getlink,
 	.ndo_bridge_setlink = mce_bridge_setlink,
-#if IS_ENABLED(CONFIG_NET_CLS_FLOWER)
 	.ndo_setup_tc = mce_setup_tc,
-#endif
 #if IS_ENABLED(CONFIG_RFS_ACCEL) && IS_ENABLED(CONFIG_NET_CLS_FLOWER)
 	.ndo_rx_flow_steer = mce_rx_flow_steer,
 #endif
@@ -1540,6 +1721,7 @@ static const struct net_device_ops mce_netdev_ops = {
 	.ndo_vlan_rx_kill_vid = mce_vlan_rx_kill_vid,
 	.ndo_fix_features = mce_fix_features,
 	.ndo_change_mtu = mce_change_mtu,
+	.ndo_set_tx_maxrate = mce_set_tx_maxrate,
 	.ndo_set_mac_address = mce_set_mac_address,
 	.ndo_set_vf_spoofchk = mce_set_vf_spoofchk,
 
