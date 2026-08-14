@@ -684,6 +684,9 @@ struct mce_pf {
 
 	u32 msg_enable;
 
+	/* UDP tunnel offload port tables owned by the PF netdev. */
+	struct udp_tunnel_nic_info udp_tunnel_nic;
+
 	struct mce_flow_control fc;
 
 	/* sriov */

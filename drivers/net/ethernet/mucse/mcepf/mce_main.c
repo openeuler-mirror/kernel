@@ -2234,6 +2234,7 @@ static int mce_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		dev_err(dev, "mce_init_hw failed: %d", err);
 		goto err_init_pf;
 	}
+	mce_udp_tunnel_prepare(pf);
 
 	err = mce_init_devlink(pf);
 	if (err)

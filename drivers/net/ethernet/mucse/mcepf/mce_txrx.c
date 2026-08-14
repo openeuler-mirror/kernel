@@ -4,6 +4,10 @@
 #include "mce_lib.h"
 #include "mce_txrx_lib.h"
 #include "mce_repr.h"
+#include <net/geneve.h>
+#include <net/vxlan.h>
+
+#define MCE_VXLAN_GPE_UDP_PORT 8472
 
 int mce_create_txring(struct mce_vsi *vsi, int index)
 {
@@ -841,10 +845,17 @@ static int mce_tx_csum(struct sk_buff *skb, struct mce_tx_desc_ctx *tmp_desc,
 			/* outer l4 type */
 			SET_CMD_L4_TYPE(tmp_desc->cmd, L4TYPE_UDP);
 			switch (l4.udp->dest) {
+			case htons(IANA_VXLAN_UDP_PORT):
+			case htons(IANA_VXLAN_GPE_UDP_PORT):
+			case htons(MCE_VXLAN_GPE_UDP_PORT):
+				tunnel = INNER_VXLAN;
+				break;
+			case htons(GENEVE_UDP_PORT):
+				tunnel = INNER_GENEVE;
+				break;
 			default:
 				/* others try to use software */
-				skb_checksum_help(skb);
-				return 0;
+				return skb_checksum_help(skb);
 			}
 			SET_CMD_TUNNEL_TYPE(tmp_desc->cmd, tunnel);
 			break;
@@ -938,8 +949,7 @@ unknown_type:
 	SET_TUNNEL_HDR_LEN(tmp_desc->l4_hdr_len, 0);
 	SET_INNER_L3_TYPE(tmp_desc->priv_inner_type, L3TYPE_RES);
 	SET_INNER_L4_TYPE(tmp_desc->priv_inner_type, L4TYPE_RES);
-	skb_checksum_help(skb);
-	return 0;
+	return skb_checksum_help(skb);
 }
 
 static u16 cal_fifo_depth(struct mce_tx_buf *first)

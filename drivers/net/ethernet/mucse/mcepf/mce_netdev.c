@@ -966,6 +966,29 @@ static int mce_find_tnl(struct mce_hw *hw, enum mce_tunnel_type tnl_type,
 	return ret;
 }
 
+static int mce_udp_tunnel_add(struct net_device *netdev,
+			      unsigned int table, unsigned int idx,
+			      struct udp_tunnel_info *ti);
+static int mce_udp_tunnel_del(struct net_device *netdev,
+			      unsigned int table, unsigned int idx,
+			      struct udp_tunnel_info *ti);
+
+void mce_udp_tunnel_prepare(struct mce_pf *pf)
+{
+	struct udp_tunnel_nic_info *info = &pf->udp_tunnel_nic;
+
+	memset(info, 0, sizeof(*info));
+	info->set_port = mce_udp_tunnel_add;
+	info->unset_port = mce_udp_tunnel_del;
+	info->flags = UDP_TUNNEL_NIC_INFO_MAY_SLEEP;
+	info->tables[0].n_entries = MCE_TUNNEL_MAX_ENTRIES;
+	info->tables[0].tunnel_types = UDP_TUNNEL_TYPE_VXLAN;
+	info->tables[1].n_entries = MCE_TUNNEL_MAX_ENTRIES;
+	info->tables[1].tunnel_types = UDP_TUNNEL_TYPE_GENEVE;
+	info->tables[2].n_entries = MCE_TUNNEL_MAX_ENTRIES;
+	info->tables[2].tunnel_types = UDP_TUNNEL_TYPE_VXLAN_GPE;
+}
+
 /**
  * mce_check_tx_hang - periodic Tx-hang check per queue vector
  * @pf: private board structure
@@ -1077,10 +1100,14 @@ static void mce_tx_timeout(struct net_device *netdev,
 /**
  * mce_udp_tunnel_add - Get notifications about UDP tunnel ports that come up
  * @netdev: This physical port's netdev
+ * @table: UDP tunnel table index
+ * @idx: UDP tunnel table entry index
  * @ti: Tunnel endpoint information
  */
-static void __maybe_unused mce_udp_tunnel_add(struct net_device *netdev,
-					      struct udp_tunnel_info *ti)
+static int mce_udp_tunnel_add(struct net_device *netdev,
+			      unsigned int __always_unused table,
+			      unsigned int __always_unused idx,
+			      struct udp_tunnel_info *ti)
 {
 	struct mce_netdev_priv *np = netdev_priv(netdev);
 	struct mce_vsi *vsi = np->vsi;
@@ -1097,9 +1124,12 @@ static void __maybe_unused mce_udp_tunnel_add(struct net_device *netdev,
 	case UDP_TUNNEL_TYPE_GENEVE:
 		tnl_type = TNL_GENEVE;
 		break;
+	case UDP_TUNNEL_TYPE_VXLAN_GPE:
+		tnl_type = TNL_VXLAN_GPE;
+		break;
 	default:
 		netdev_err(netdev, "Unknown tunnel type\n");
-		return;
+		return -EINVAL;
 	}
 
 	mutex_lock(&hw->tnl_lock);
@@ -1112,20 +1142,26 @@ static void __maybe_unused mce_udp_tunnel_add(struct net_device *netdev,
 				    "Max tunneled UDP ports:%d reached(reserved one for default), port %d not added\n",
 				MCE_TUNNEL_MAX_ENTRIES, port);
 			mutex_unlock(&hw->tnl_lock);
-			return;
+			return -ENOSPC;
 		}
 		hw->ops->add_udp_tnl(hw, tnl_type, port);
 	}
 	mutex_unlock(&hw->tnl_lock);
+
+	return 0;
 }
 
 /**
  * mce_udp_tunnel_del - Get notifications about UDP tunnel ports that go away
  * @netdev: This physical port's netdev
+ * @table: UDP tunnel table index
+ * @idx: UDP tunnel table entry index
  * @ti: Tunnel endpoint information
  */
-static void __maybe_unused mce_udp_tunnel_del(struct net_device *netdev,
-					      struct udp_tunnel_info *ti)
+static int mce_udp_tunnel_del(struct net_device *netdev,
+			      unsigned int __always_unused table,
+			      unsigned int __always_unused idx,
+			      struct udp_tunnel_info *ti)
 {
 	struct mce_netdev_priv *np = netdev_priv(netdev);
 	struct mce_vsi *vsi = np->vsi;
@@ -1142,9 +1178,12 @@ static void __maybe_unused mce_udp_tunnel_del(struct net_device *netdev,
 	case UDP_TUNNEL_TYPE_GENEVE:
 		tnl_type = TNL_GENEVE;
 		break;
+	case UDP_TUNNEL_TYPE_VXLAN_GPE:
+		tnl_type = TNL_VXLAN_GPE;
+		break;
 	default:
 		netdev_err(netdev, "Unknown tunnel type\n");
-		return;
+		return -EINVAL;
 	}
 	mutex_lock(&hw->tnl_lock);
 	index = mce_find_tnl(hw, tnl_type, port);
@@ -1159,6 +1198,8 @@ static void __maybe_unused mce_udp_tunnel_del(struct net_device *netdev,
 			   port, tnl_type);
 	}
 	mutex_unlock(&hw->tnl_lock);
+
+	return 0;
 }
 
 /**
@@ -1503,6 +1544,8 @@ static const struct net_device_ops mce_netdev_ops = {
 	.ndo_set_vf_spoofchk = mce_set_vf_spoofchk,
 
 	.ndo_set_vf_vlan = mce_set_vf_port_vlan,
+	.ndo_udp_tunnel_add = udp_tunnel_nic_add_port,
+	.ndo_udp_tunnel_del = udp_tunnel_nic_del_port,
 	.ndo_tx_timeout = mce_tx_timeout,
 	.ndo_select_queue = mce_select_queue,
 };
@@ -1523,6 +1566,7 @@ static void mce_set_netdev_features(struct net_device *netdev)
 	dflt_features |= NETIF_F_HIGHDMA;
 	dflt_features |= NETIF_F_NTUPLE;
 	dflt_features |= NETIF_F_RXHASH;
+	dflt_features |= NETIF_F_RX_UDP_TUNNEL_PORT;
 #if IS_ENABLED(CONFIG_NET_CLS_FLOWER)
 	dflt_features |= NETIF_F_HW_TC;
 #endif
@@ -1611,6 +1655,7 @@ int mce_cfg_netdev(struct mce_vsi *vsi)
 	mce_set_ethtool_ops(netdev);
 
 	mce_set_dcbnl_ops(netdev);
+	netdev->udp_tunnel_nic_info = &pf->udp_tunnel_nic;
 
 	if (vsi->type == MCE_VSI_PF) {
 		SET_NETDEV_DEV(netdev, mce_pf_to_dev(vsi->back));
