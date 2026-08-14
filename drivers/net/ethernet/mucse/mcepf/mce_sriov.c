@@ -214,7 +214,7 @@ int mce_get_vf_cfg(struct net_device *netdev, int vf_id,
 	struct mce_vf *vf = mce_pf_to_vf(pf);
 	int timeout = 50;
 
-	if (vf_id >= pf->num_vfs || !vf)
+	if (vf_id < 0 || vf_id >= pf->num_vfs || !vf)
 		return -EINVAL;
 
 	/* if sriov not open, or disabled, nothing todo */
@@ -248,8 +248,128 @@ int mce_get_vf_cfg(struct net_device *netdev, int vf_id,
 	}
 
 	ivi->spoofchk = vf->vfinfo[vf_id].spoofchk_enabled;
+	ivi->min_tx_rate = 0;
+	ivi->trusted = vf->vfinfo[vf_id].trusted;
+	switch (vf->vfinfo[vf_id].link_state) {
+	case mce_link_state_on:
+		ivi->linkstate = IFLA_VF_LINK_STATE_ENABLE;
+		break;
+	case mce_link_state_off:
+		ivi->linkstate = IFLA_VF_LINK_STATE_DISABLE;
+		break;
+	case mce_link_state_auto:
+	default:
+		ivi->linkstate = IFLA_VF_LINK_STATE_AUTO;
+		break;
+	}
 	clear_bit(MCE_FLAG_VFIO_VISIT, pf->flags);
 
+	return 0;
+}
+
+/**
+ * mce_set_vf_link_state - Set the link state for a virtual function.
+ * @netdev: network interface device structure
+ * @vf_id: VF identifier
+ * @state: requested VF link state
+ *
+ * Update the VF state and notify the VF through the mailbox when it is ready.
+ * Returns: The result of the operation.
+ */
+int mce_set_vf_link_state(struct net_device *netdev, int vf_id, int state)
+{
+	struct mce_pf *pf = mce_netdev_to_pf(netdev);
+	struct mce_vf *vf = mce_pf_to_vf(pf);
+	enum PF2VF_EVENT_ID event;
+	int link_mode;
+	int timeout = 50;
+
+	if (!test_bit(MCE_FLAG_SRIOV_ENA, pf->flags))
+		return 0;
+
+	while (test_and_set_bit(MCE_FLAG_VFIO_VISIT, pf->flags)) {
+		if (!--timeout)
+			return -EINVAL;
+		usleep_range(100, 200);
+	}
+
+	if (vf_id < 0 || vf_id >= pf->num_vfs || !vf) {
+		clear_bit(MCE_FLAG_VFIO_VISIT, pf->flags);
+		return -EINVAL;
+	}
+
+	pf->hw.ops->update_pf_stat(&pf->hw);
+	switch (state) {
+	case IFLA_VF_LINK_STATE_AUTO:
+		link_mode = mce_link_state_auto;
+		event = EVT_PF_LINK_CHANGED;
+		break;
+	case IFLA_VF_LINK_STATE_ENABLE:
+		link_mode = mce_link_state_on;
+		event = EVT_PF_FORCE_VF_LINK_UP;
+		break;
+	case IFLA_VF_LINK_STATE_DISABLE:
+		link_mode = mce_link_state_off;
+		event = EVT_PF_FORCE_VF_LINK_DOWN;
+		break;
+	default:
+		netdev_err(netdev, "NDO set VF %d - invalid link state %d\n",
+			   vf_id, state);
+		clear_bit(MCE_FLAG_VFIO_VISIT, pf->flags);
+		return -EINVAL;
+	}
+
+	vf->vfinfo[vf_id].link_state = link_mode;
+	if (mce_check_vf_no_ready_for_cfg(&vf->vfinfo[vf_id])) {
+		clear_bit(MCE_FLAG_VFIO_VISIT, pf->flags);
+		return 0;
+	}
+
+	clear_bit(MCE_FLAG_VFIO_VISIT, pf->flags);
+	return mce_mbx_send_event_to_vf(&pf->hw, vf_id, event, 1000);
+}
+
+/**
+ * mce_set_vf_trust - Enable or disable trusted mode for a virtual function.
+ * @netdev: network interface device structure
+ * @vf_id: VF identifier
+ * @trusted: whether trusted mode is enabled
+ *
+ * Update hardware trust state and notify the VF through the mailbox.
+ * Returns: The result of the operation.
+ */
+int mce_set_vf_trust(struct net_device *netdev, int vf_id, bool trusted)
+{
+	struct mce_pf *pf = mce_netdev_to_pf(netdev);
+	struct mce_vf *vf = mce_pf_to_vf(pf);
+	struct mce_hw *hw = &pf->hw;
+	int timeout = 50;
+
+	if (!test_bit(MCE_FLAG_SRIOV_ENA, pf->flags))
+		return 0;
+
+	while (test_and_set_bit(MCE_FLAG_VFIO_VISIT, pf->flags)) {
+		if (!--timeout)
+			return -EINVAL;
+		usleep_range(100, 200);
+	}
+
+	if (vf_id < 0 || vf_id >= pf->num_vfs || !vf) {
+		clear_bit(MCE_FLAG_VFIO_VISIT, pf->flags);
+		return -EINVAL;
+	}
+
+	if (vf->vfinfo[vf_id].trusted != trusted) {
+		vf->vfinfo[vf_id].trusted = trusted;
+		mce_vf_set_trusted(pf, vf_id, trusted);
+		if (test_bit(MCE_FLAG_VF_TRUE_PROMISC_ENA, pf->flags))
+			hw->vf.ops->set_vf_true_promisc(hw, vf_id, trusted);
+		hw->vf.ops->set_vf_trust_vport_en(hw,
+						  mce_vf_check_any_trust_setuped(hw));
+		mce_vf_notify_trust_state(pf, vf_id, trusted);
+	}
+
+	clear_bit(MCE_FLAG_VFIO_VISIT, pf->flags);
 	return 0;
 }
 
@@ -417,10 +537,12 @@ int mce_set_vf_port_vlan(struct net_device *netdev, int vf_id, u16 vlan_id,
  * mce_set_vf_bw - set min/max VF bandwidth
  * @netdev: network interface device structure
  * @vf_id: VF identifier
+ * @min_tx_rate: Minimum Tx rate in Mbps (not supported)
  * @max_tx_rate: Maximum Tx rate in Mbps
  * Returns: The result of the operation.
  */
-int mce_set_vf_bw(struct net_device *netdev, int vf_id, int max_tx_rate)
+int mce_set_vf_bw(struct net_device *netdev, int vf_id,
+		  int __always_unused min_tx_rate, int max_tx_rate)
 {
 	struct mce_pf *pf = mce_netdev_to_pf(netdev);
 	struct device *dev = mce_pf_to_dev(pf);
@@ -440,7 +562,7 @@ int mce_set_vf_bw(struct net_device *netdev, int vf_id, int max_tx_rate)
 		usleep_range(100, 200);
 	}
 
-	if (vf_id >= pf->num_vfs || !vf) {
+	if (vf_id < 0 || vf_id >= pf->num_vfs || !vf) {
 		clear_bit(MCE_FLAG_VFIO_VISIT, pf->flags);
 		return -EINVAL;
 	}
@@ -1108,6 +1230,14 @@ static int mce_check_sriov_allowed(struct mce_pf *pf, int num_vfs)
 			"The tcpsync rules must be cleared before turn on/off sriov.\n");
 		return -EOPNOTSUPP;
 	}
+
+#if IS_ENABLED(CONFIG_NET_CLS_FLOWER)
+	if (!hlist_empty(&pf->tc_flower_fltr_list)) {
+		dev_err(dev,
+			"The tc flower rules must be cleared before turn on/off sriov.\n");
+		return -EOPNOTSUPP;
+	}
+#endif
 	return 0;
 }
 

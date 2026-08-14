@@ -2514,6 +2514,9 @@ static struct pci_driver mce_driver = {
 	.remove = mce_remove,
 	/* .err_handler = &mce_err_handler, */
 	.shutdown = mce_shutdown,
+#ifdef CONFIG_PCI_IOV
+	.sriov_configure = mce_sriov_configure,
+#endif
 };
 
 static int __init mce_init_module(void)

@@ -1723,7 +1723,12 @@ static const struct net_device_ops mce_netdev_ops = {
 	.ndo_change_mtu = mce_change_mtu,
 	.ndo_set_tx_maxrate = mce_set_tx_maxrate,
 	.ndo_set_mac_address = mce_set_mac_address,
+	.ndo_set_vf_mac = mce_set_vf_mac,
+	.ndo_get_vf_config = mce_get_vf_cfg,
+	.ndo_set_vf_rate = mce_set_vf_bw,
 	.ndo_set_vf_spoofchk = mce_set_vf_spoofchk,
+	.ndo_set_vf_trust = mce_set_vf_trust,
+	.ndo_set_vf_link_state = mce_set_vf_link_state,
 
 	.ndo_set_vf_vlan = mce_set_vf_port_vlan,
 	.ndo_udp_tunnel_add = udp_tunnel_nic_add_port,

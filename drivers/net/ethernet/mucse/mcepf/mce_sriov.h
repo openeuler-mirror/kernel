@@ -13,7 +13,10 @@ int mce_get_vf_cfg(struct net_device *netdev, int vf_id,
 		   struct ifla_vf_info *ivi);
 int mce_set_vf_port_vlan(struct net_device *netdev, int vf_id,
 			 u16 vlan_id, u8 qos, __be16 vlan_proto);
-int mce_set_vf_bw(struct net_device *netdev, int vf_id, int tx_rate);
+int mce_set_vf_bw(struct net_device *netdev, int vf_id, int min_tx_rate,
+		  int max_tx_rate);
+int mce_set_vf_trust(struct net_device *netdev, int vf_id, bool trusted);
+int mce_set_vf_link_state(struct net_device *netdev, int vf_id, int state);
 
 int mce_reset_vf(struct net_device *netdev);
 int mce_set_vf_dscp_prio(struct net_device *netdev, u8 dscp, u8 prio);
@@ -66,7 +69,15 @@ mce_set_vf_port_vlan(struct net_device __always_unused *netdev,
 
 static inline int mce_set_vf_bw(struct net_device __always_unused *netdev,
 				int __always_unused vf_id,
+				int __always_unused min_tx_rate,
 				int __always_unused max_tx_rate)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int
+mce_set_vf_trust(struct net_device __always_unused *netdev,
+		 int __always_unused vf_id, bool __always_unused trusted)
 {
 	return -EOPNOTSUPP;
 }
@@ -88,10 +99,10 @@ static inline int mce_sriov_deinit_hw(struct mce_pf *pf)
 	return 0;
 }
 
-static inline int mce_set_vf_link_state(struct net_device *netdev, int vf_id,
-					int state)
+static inline int mce_set_vf_link_state(struct net_device *netdev,
+					int vf_id, int state)
 {
-	return 0;
+	return -EOPNOTSUPP;
 }
 
 static inline int mce_sriov_configure(struct pci_dev *dev, int num_vfs)
