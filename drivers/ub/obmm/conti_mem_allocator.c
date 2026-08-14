@@ -578,18 +578,15 @@ static ssize_t max_total_store(struct kobject *kobj, struct kobj_attribute *attr
 {
 	struct conti_mem_allocator *allocator;
 	u64 val;
-	char *p;
 
 	allocator = container_of(kobj, struct conti_mem_allocator, kobj);
 
-	val = memparse(buf, &p);
-	if (*p != '\0' && *p != '\n')	/* trailing garbage; also rejects a leading '-' */
+	/* Rejects garbage and empty writes. */
+	if (conti_parse_max_total(buf, &val))
 		return -EINVAL;
 
 	if (val == 0)
 		val = LLONG_MAX;		/* 0 = clear cap */
-	else if (val > (u64)LLONG_MAX)
-		return -EINVAL;
 	else if (val < conti_get_used(allocator))
 		return -EINVAL;		/* cannot set cap below current usage */
 

@@ -8,6 +8,7 @@
 #define CONTI_MEM_ALLOC
 
 #include <linux/types.h>
+#include <linux/kernel.h>
 #include <linux/wait.h>
 #include <linux/kthread.h>
 #include <linux/atmioc.h>
@@ -129,6 +130,29 @@ static inline u64 conti_get_used(struct conti_mem_allocator *a)
 static inline bool conti_can_grow_pooled(struct conti_mem_allocator *a, u64 bytes)
 {
 	return conti_get_total(a) + bytes <= conti_get_max_total(a);
+}
+
+/*
+ * Parse a max_total value written to the sysfs store.
+ *
+ * Returns 0 and stores the parsed value in *@val on success, -EINVAL on:
+ *  - no digits consumed (empty write such as "\n", or a leading '-');
+ *  - trailing garbage (a single trailing '\n' from sysfs echo is tolerated);
+ *  - values above LLONG_MAX (max_total is stored as s64).
+ */
+static inline int conti_parse_max_total(const char *str, u64 *val)
+{
+	u64 v;
+	char *endp;
+
+	v = memparse(str, &endp);
+	if (endp == str || (*endp != '\0' && *endp != '\n'))
+		return -EINVAL;
+	if (v > (u64)LLONG_MAX)
+		return -EINVAL;
+
+	*val = v;
+	return 0;
 }
 
 int conti_mem_allocator_init(struct conti_mem_allocator *allocator, int nid, size_t granu,
