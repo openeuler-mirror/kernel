@@ -14,12 +14,64 @@
 
 int mce_repr_poll(struct napi_struct *napi, int weight)
 {
-	return weight;
+	struct mce_q_vector *q_vector;
+	struct mce_repr *repr;
+	struct list_head head;
+	struct sk_buff *skb;
+	bool need_resched;
+	u64 read_index;
+	int spent = 0;
+
+	q_vector = container_of(napi, struct mce_q_vector, napi);
+	repr = q_vector->repr;
+	INIT_LIST_HEAD(&head);
+	spin_lock_bh(&repr->rx_lock);
+	read_index = repr->write_index;
+	while (spent < weight && !list_empty(&repr->rx_list)) {
+		skb = list_first_entry(&repr->rx_list, struct sk_buff, list);
+		list_del(&skb->list);
+		list_add_tail(&skb->list, &head);
+		spent++;
+	}
+	spin_unlock_bh(&repr->rx_lock);
+
+	netif_receive_skb_list(&head);
+	if (spent < weight && napi_complete_done(napi, spent)) {
+		spin_lock_bh(&repr->rx_lock);
+		repr->read_index = read_index;
+		need_resched = repr->write_index != read_index;
+		spin_unlock_bh(&repr->rx_lock);
+		if (need_resched)
+			napi_schedule(&repr->q_vector->napi);
+	}
+
+	return spent;
 }
 
+static netdev_tx_t mce_repr_port_start_xmit(struct sk_buff *skb,
+					    struct net_device *dev)
+{
+	struct mce_netdev_priv *np;
+	struct mce_repr *repr;
+	struct mce_vsi *vsi;
+	struct mce_pf *pf;
+	netdev_tx_t rc;
+
+	np = netdev_priv(dev);
+	repr = np->repr;
+	pf = repr->vfinfo->pf;
+	vsi = mce_get_main_vsi(pf);
+	netif_tx_lock(vsi->netdev);
+	rc = __mce_hard_start_xmit(skb, vsi->netdev, repr);
+	netif_tx_unlock(vsi->netdev);
+	return rc;
+}
+
+/* The receive helpers below are kept separate from the PF path because a
+ * representor has its own statistics, checksum state and pseudo-ring. */
 static void __maybe_unused mce_repr_rx_hash(struct mce_repr *repr,
 					    struct mce_rx_desc_up *rx_desc,
-					    struct sk_buff *skb)
+						    struct sk_buff *skb)
 {
 	enum pkt_hash_types hash_type = PKT_HASH_TYPE_NONE;
 	u32 hash = 0;
@@ -151,6 +203,56 @@ mce_process_rx_vlan(struct mce_pf *pf, struct mce_repr *repr,
 	return skb;
 }
 
+void mce_repr_rx_packet(struct mce_pf *pf, int repr_port,
+			struct mce_ring *rx_ring,
+			struct mce_rx_desc_up *rx_desc,
+			struct sk_buff *skb)
+{
+	struct vf_info *vfinfo;
+	struct mce_repr *repr;
+	struct mce_vf *vf;
+	bool primed;
+
+	vf = mce_pf_to_vf(pf);
+	vfinfo = &vf->vfinfo[repr_port];
+	repr = vfinfo->repr;
+	if (!(repr->netdev->flags & IFF_UP))
+		goto drop;
+
+	if (repr->write_index - READ_ONCE(repr->read_index) >
+	    repr->rx_pring_size) {
+		if (net_ratelimit())
+			netdev_info(repr->netdev,
+				    "nodesc-dropped packet of length %u\n",
+				    skb->len);
+		goto drop;
+	}
+
+	mce_repr_rx_hash(repr, rx_desc, skb);
+	mce_repr_process_rx_csum(repr, rx_desc, skb);
+	skb = mce_process_rx_vlan(pf, repr, rx_desc, skb);
+	if (!skb)
+		goto drop;
+
+	skb->protocol = eth_type_trans(skb, repr->netdev);
+
+	spin_lock_bh(&repr->rx_lock);
+	primed = repr->read_index == repr->write_index;
+	list_add_tail(&skb->list, &repr->rx_list);
+	repr->write_index++;
+	spin_unlock_bh(&repr->rx_lock);
+
+	repr->stats.rx_bytes += skb->len;
+	repr->stats.rx_packets++;
+	if (primed)
+		napi_schedule(&repr->q_vector->napi);
+	return;
+
+drop:
+	dev_kfree_skb_any(skb);
+	repr->stats.rx_dropped++;
+}
+
 static int mce_repr_open(struct net_device *netdev)
 {
 	netif_carrier_on(netdev);
@@ -239,12 +341,57 @@ static int mce_repr_setup_tc(struct net_device *netdev,
 }
 #endif
 
+#if IS_ENABLED(CONFIG_NET_DEVLINK)
+static int mce_repr_get_sw_port_id(struct mce_repr *repr)
+{
+	return repr->vfinfo->pf->hw.port_info->lport;
+}
+
+static int mce_repr_get_phys_port_name(struct net_device *netdev,
+				       char *buf, size_t len)
+{
+	struct mce_netdev_priv *np = netdev_priv(netdev);
+	struct mce_repr *repr = np->repr;
+	int res;
+
+	if (repr->vfinfo->devlink_port.devlink)
+		return -EOPNOTSUPP;
+
+	res = snprintf(buf, len, "pf%dvfr%d", mce_repr_get_sw_port_id(repr),
+		       repr->vfinfo->lan_vsi_idx);
+	if (res <= 0 || res >= len)
+		return -EOPNOTSUPP;
+	return 0;
+}
+
+static int mce_repr_get_phys_port_id(struct net_device __always_unused *netdev,
+				     struct netdev_phys_item_id __always_unused *ppid)
+{
+	return -EOPNOTSUPP;
+}
+
+static struct devlink_port *mce_repr_get_devlink_port(struct net_device *netdev)
+{
+	struct mce_repr *repr = mce_netdev_to_repr(netdev);
+
+	return &repr->vfinfo->devlink_port;
+}
+#endif
+
 static const struct net_device_ops mce_repr_netdev_ops = {
+#if IS_ENABLED(CONFIG_NET_DEVLINK)
+	.ndo_get_phys_port_id = mce_repr_get_phys_port_id,
+	.ndo_get_phys_port_name = mce_repr_get_phys_port_name,
+#endif
 	.ndo_get_stats64 = mce_repr_get_stats64,
 	.ndo_open = mce_repr_open,
 	.ndo_stop = mce_repr_stop,
 #if IS_ENABLED(CONFIG_NET_CLS_FLOWER)
 	.ndo_setup_tc = mce_repr_setup_tc,
+#endif
+#if IS_ENABLED(CONFIG_NET_DEVLINK)
+	.ndo_start_xmit = mce_repr_port_start_xmit,
+	.ndo_get_devlink_port = mce_repr_get_devlink_port,
 #endif
 };
 
@@ -334,18 +481,24 @@ static int mce_repr_add(struct mce_pf *pf, int vfid)
 	INIT_LIST_HEAD(&repr->rx_list);
 	spin_lock_init(&repr->rx_lock);
 #if IS_ENABLED(CONFIG_NET_DEVLINK)
+	err = mce_devlink_create_vf_port(pf, vfid);
+	if (err)
+		goto err_devlink;
+	repr->netdev->min_mtu = ETH_MIN_MTU;
+	repr->netdev->max_mtu = MCE_MAX_MTU;
 #endif /* CONFIG_NET_DEVLINK */
 	SET_NETDEV_DEV(repr->netdev, mce_pf_to_dev(pf));
-#if IS_ENABLED(CONFIG_NET_DEVLINK)
-#endif /* CONFIG_NET_DEVLINK */
 	err = mce_repr_reg_netdev(repr);
 	if (err)
 		goto err_netdev;
 #if IS_ENABLED(CONFIG_NET_DEVLINK)
+	devlink_port_type_eth_set(&vfinfo->devlink_port, repr->netdev);
 #endif /* CONFIG_NET_DEVLINK */
 	return 0;
 err_netdev:
 #if IS_ENABLED(CONFIG_NET_DEVLINK)
+	mce_devlink_destroy_vf_port(pf, vfid);
+err_devlink:
 #endif /* CONFIG_NET_DEVLINK */
 	kfree(repr->q_vector);
 	vfinfo->repr->q_vector = NULL;
@@ -376,6 +529,7 @@ static void mce_repr_rem(struct mce_pf *pf, int vfid)
 	vfinfo->repr->q_vector = NULL;
 	unregister_netdev(vfinfo->repr->netdev);
 #if IS_ENABLED(CONFIG_NET_DEVLINK)
+	mce_devlink_destroy_vf_port(pf, vfid);
 #endif /* CONFIG_NET_DEVLINK */
 	free_netdev(vfinfo->repr->netdev);
 	vfinfo->repr->netdev = NULL;

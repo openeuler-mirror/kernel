@@ -1592,61 +1592,6 @@ static int mce_setup_tc_mqprio(struct mce_vsi *vsi,
 	}
 }
 
-#define MCE_TXD_CTX_MIN_MSS 64
-#define MCE_MAX_TUNNEL_HDR_LEN 80
-#define MCE_MAX_MAC_HDR_LEN 127
-#define MCE_MAX_NETWORK_HDR_LEN 511
-
-/**
- * mce_features_check - validate packet headers against hardware limits
- * @skb: packet to validate
- * @netdev: network device being checked
- * @features: offloads requested for this packet
- *
- * The hardware has finite descriptor-header fields.  Remove checksum and
- * segmentation offloads when an encapsulated packet cannot be represented.
- */
-static netdev_features_t
-mce_features_check(struct sk_buff *skb,
-		   struct net_device __always_unused *netdev,
-		   netdev_features_t features)
-{
-	bool gso = skb_is_gso(skb);
-	size_t len;
-
-	if (skb->ip_summed != CHECKSUM_PARTIAL)
-		return features;
-
-	if (gso && skb_shinfo(skb)->gso_size < MCE_TXD_CTX_MIN_MSS)
-		features &= ~NETIF_F_GSO_MASK;
-
-	len = skb_network_offset(skb);
-	if (len > MCE_MAX_MAC_HDR_LEN)
-		goto out_rm_features;
-
-	len = skb_network_header_len(skb);
-	if (len > MCE_MAX_NETWORK_HDR_LEN)
-		goto out_rm_features;
-
-	if (skb->encapsulation) {
-		if (gso && (skb_shinfo(skb)->gso_type &
-			    (SKB_GSO_GRE | SKB_GSO_UDP_TUNNEL))) {
-			len = skb_inner_mac_header(skb) - skb_transport_header(skb);
-			if (len > MCE_MAX_TUNNEL_HDR_LEN)
-				goto out_rm_features;
-		}
-
-		len = skb_inner_network_header_len(skb);
-		if (len > MCE_MAX_NETWORK_HDR_LEN)
-			goto out_rm_features;
-	}
-
-	return features;
-
-out_rm_features:
-	return features & ~(NETIF_F_CSUM_MASK | NETIF_F_GSO_MASK);
-}
-
 #if IS_ENABLED(CONFIG_NET_CLS_FLOWER)
 static int mce_setup_tc_cls_flower(struct mce_netdev_priv *np,
 				   struct net_device *filter_dev,
@@ -1700,6 +1645,61 @@ static int mce_setup_tc(struct net_device *netdev, enum tc_setup_type type,
 	default:
 		return -EOPNOTSUPP;
 	}
+}
+
+#define MCE_TXD_CTX_MIN_MSS 64
+#define MCE_MAX_TUNNEL_HDR_LEN 80
+#define MCE_MAX_MAC_HDR_LEN 127
+#define MCE_MAX_NETWORK_HDR_LEN 511
+
+/**
+ * mce_features_check - validate packet headers against hardware limits
+ * @skb: packet to validate
+ * @netdev: network device being checked
+ * @features: offloads requested for this packet
+ *
+ * The hardware has finite descriptor-header fields.  Remove checksum and
+ * segmentation offloads when an encapsulated packet cannot be represented.
+ */
+static netdev_features_t
+mce_features_check(struct sk_buff *skb,
+		   struct net_device __always_unused *netdev,
+		   netdev_features_t features)
+{
+	bool gso = skb_is_gso(skb);
+	size_t len;
+
+	if (skb->ip_summed != CHECKSUM_PARTIAL)
+		return features;
+
+	if (gso && skb_shinfo(skb)->gso_size < MCE_TXD_CTX_MIN_MSS)
+		features &= ~NETIF_F_GSO_MASK;
+
+	len = skb_network_offset(skb);
+	if (len > MCE_MAX_MAC_HDR_LEN)
+		goto out_rm_features;
+
+	len = skb_network_header_len(skb);
+	if (len > MCE_MAX_NETWORK_HDR_LEN)
+		goto out_rm_features;
+
+	if (skb->encapsulation) {
+		if (gso && (skb_shinfo(skb)->gso_type &
+			    (SKB_GSO_GRE | SKB_GSO_UDP_TUNNEL))) {
+			len = skb_inner_mac_header(skb) - skb_transport_header(skb);
+			if (len > MCE_MAX_TUNNEL_HDR_LEN)
+				goto out_rm_features;
+		}
+
+		len = skb_inner_network_header_len(skb);
+		if (len > MCE_MAX_NETWORK_HDR_LEN)
+			goto out_rm_features;
+	}
+
+	return features;
+
+out_rm_features:
+	return features & ~(NETIF_F_CSUM_MASK | NETIF_F_GSO_MASK);
 }
 
 static const struct net_device_ops mce_netdev_ops = {

@@ -2631,6 +2631,19 @@ static bool mce_is_non_eop(struct mce_ring *rx_ring,
 	return true;
 }
 
+#if IS_ENABLED(CONFIG_NET_DEVLINK)
+static int mce_repr_get_port_from_packet(struct mce_pf *pf,
+					 struct mce_rx_desc_up *rx_desc)
+{
+	int repr_port = GET_RD_REPR_SRC_PORT(le16_to_cpu(rx_desc->vlan_tpid));
+
+	if (pf->switchdev.is_running && repr_port >= 0 &&
+	    repr_port < MCE_MAX_VF_NUM && repr_port != MCE_REPR_PF_BASE_PORT)
+		return repr_port;
+	return -1;
+}
+#endif
+
 /**
  * mce_clean_rx_irq - Clean completed descriptors from Rx ring - bounce buf
  * @rx_ring: Rx descriptor ring to transact packets on
@@ -2651,6 +2664,9 @@ int mce_clean_rx_irq(struct mce_ring *rx_ring, int budget)
 	struct mce_vsi *vsi = np->vsi;
 	struct mce_pf __maybe_unused *pf = vsi->back;
 	struct xdp_buff xdp;
+#if IS_ENABLED(CONFIG_NET_DEVLINK)
+	int repr_port;
+#endif
 
 	/* start the loop to process Rx packets bounded by 'budget' */
 	while (likely(total_rx_pkts < (unsigned int)budget)) {
@@ -2692,6 +2708,11 @@ int mce_clean_rx_irq(struct mce_ring *rx_ring, int budget)
 
 		size = le16_to_cpu(rx_desc->data_len);
 		rx_buf = mce_get_rx_buf(rx_ring, &skb, size, &rx_buf_pgcnt);
+#if IS_ENABLED(CONFIG_NET_DEVLINK)
+		repr_port = mce_repr_get_port_from_packet(pf, rx_desc);
+		if (rx_buf && repr_port >= 0)
+			rx_buf->repr_sport = repr_port;
+#endif
 		if (!size) {
 			xdp.data = NULL;
 			xdp.data_end = NULL;
@@ -2742,6 +2763,12 @@ int mce_clean_rx_irq(struct mce_ring *rx_ring, int budget)
 			continue;
 		}
 
+#if IS_ENABLED(CONFIG_NET_DEVLINK)
+		if (pf->switchdev.is_running && repr_port >= 0) {
+			mce_repr_rx_packet(pf, repr_port, rx_ring, rx_desc, skb);
+			continue;
+		}
+#endif
 		total_rx_bytes += skb->len;
 		total_rx_pkts++;
 		skb = mce_process_skb_fields(rx_ring, rx_desc, skb);

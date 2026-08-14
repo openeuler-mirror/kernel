@@ -25,13 +25,76 @@ int mce_eswitch_mode_get(struct devlink *devlink, u16 *mode)
 	return 0;
 }
 
-static int mce_eswitch_setup_reprs(struct mce_pf __always_unused *pf)
+/**
+ * mce_eswitch_mode_set - Set the requested e-switch mode.
+ * @devlink: devlink instance structure
+ * @mode: requested e-switch mode
+ * @extack: extended acknowledgment for the rejected request
+ *
+ * Mode changes are only allowed before VFs are created.  The switchdev mode
+ * is exposed only when the hardware backend implements all required rule
+ * programming callbacks.
+ * Returns: The result of the operation.
+ */
+int mce_eswitch_mode_set(struct devlink *devlink, u16 mode,
+			 struct netlink_ext_ack *extack)
 {
-	return -ENODEV;
+	struct mce_pf *pf = devlink_priv(devlink);
+
+	if (pf->eswitch_mode == mode)
+		return 0;
+
+	if (pf->num_vfs) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "e-switch mode cannot change while VFs exist");
+		return -EOPNOTSUPP;
+	}
+
+	switch (mode) {
+	case DEVLINK_ESWITCH_MODE_LEGACY:
+		break;
+	case DEVLINK_ESWITCH_MODE_SWITCHDEV:
+		if (!mce_is_support_eswitch(pf)) {
+			NL_SET_ERR_MSG_MOD(extack,
+					   "switchdev mode is not supported by hardware");
+			return -EOPNOTSUPP;
+		}
+		break;
+	default:
+		NL_SET_ERR_MSG_MOD(extack, "unknown e-switch mode");
+		return -EINVAL;
+	}
+
+	pf->eswitch_mode = mode;
+	return 0;
 }
 
-static void mce_eswitch_release_reprs(struct mce_pf __always_unused *pf)
+static int mce_eswitch_setup_reprs(struct mce_pf *pf)
 {
+	struct mce_vf *vf = mce_pf_to_vf(pf);
+	struct vf_info *vfinfo;
+	int i;
+
+	mce_for_each_vf_id(pf, i) {
+		vfinfo = &vf->vfinfo[i];
+		netif_napi_add(vfinfo->repr->netdev,
+			       &vfinfo->repr->q_vector->napi,
+			       mce_repr_poll, NAPI_POLL_WEIGHT);
+	}
+
+	return 0;
+}
+
+static void mce_eswitch_release_reprs(struct mce_pf *pf)
+{
+	struct mce_vf *vf = mce_pf_to_vf(pf);
+	struct vf_info *vfinfo;
+	int i;
+
+	mce_for_each_vf_id(pf, i) {
+		vfinfo = &vf->vfinfo[i];
+		netif_napi_del(&vfinfo->repr->q_vector->napi);
+	}
 }
 
 /**
@@ -177,7 +240,12 @@ static void mce_eswitch_disable_switchdev(struct mce_pf *pf)
 
 bool mce_is_support_eswitch(struct mce_pf *pf)
 {
-	return true;
+	struct mce_eswitch_operations *ops = pf->hw.eswitch.ops;
+
+	return test_bit(MCE_FLAG_ESWITCH_CAPABLE, pf->flags) && ops &&
+		ops->eswitch_en && ops->eswitch_update_legacy &&
+		ops->eswitch_update_switchdev &&
+		ops->eswitch_update_bcmc_redir;
 }
 
 int mce_eswitch_alloc_vfs(struct mce_pf *pf)
@@ -219,7 +287,7 @@ int mce_eswitch_free_vfs(struct mce_pf *pf)
 
 bool mce_is_eswitch_mode_switchdev(struct mce_pf *pf)
 {
-	return false;
+	return pf->switchdev.is_running;
 }
 
 /**
@@ -228,6 +296,9 @@ bool mce_is_eswitch_mode_switchdev(struct mce_pf *pf)
  */
 void mce_eswitch_release(struct mce_pf *pf)
 {
+	if (!pf->switchdev.is_running)
+		return;
+
 	mce_eswitch_disable_switchdev(pf);
 	pf->switchdev.is_running = false;
 }
@@ -241,7 +312,8 @@ int mce_eswitch_configure(struct mce_pf *pf)
 {
 	int status;
 
-	if (!mce_is_support_eswitch(pf))
+	if (!mce_is_support_eswitch(pf) ||
+	    pf->eswitch_mode != DEVLINK_ESWITCH_MODE_SWITCHDEV)
 		return 0;
 
 	status = mce_eswitch_enable_switchdev(pf);

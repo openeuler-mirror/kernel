@@ -39,6 +39,10 @@ struct mce_repr {
 
 #if IS_ENABLED(CONFIG_NET_DEVLINK)
 int mce_repr_poll(struct napi_struct *napi, int weight);
+void mce_repr_rx_packet(struct mce_pf *pf, int repr_port,
+			struct mce_ring *rx_ring,
+			struct mce_rx_desc_up *rx_desc,
+			struct sk_buff *skb);
 #endif
 int mce_repr_add_for_all_vfs(struct mce_pf *pf);
 void mce_repr_rem_from_all_vfs(struct mce_pf *pf);

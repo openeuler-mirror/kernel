@@ -8,12 +8,19 @@
 
 #if IS_ENABLED(CONFIG_NET_DEVLINK)
 
+enum mce_devlink_param_id {
+	MCE_DEVLINK_PARAM_ID_BASE = DEVLINK_PARAM_GENERIC_ID_MAX,
+	MCE_DEVLINK_PARAM_ID_VF_MAX_RING,
+};
+
 struct mce_pf *mce_allocate_pf(struct device *dev);
 
 void mce_devlink_register(struct mce_pf *pf);
 void mce_devlink_unregister(struct mce_pf *pf);
 int mce_devlink_register_params(struct mce_pf *pf);
 void mce_devlink_unregister_params(struct mce_pf *pf);
+int mce_devlink_create_vf_port(struct mce_pf *pf, int vfid);
+void mce_devlink_destroy_vf_port(struct mce_pf *pf, int vfid);
 #else /* CONFIG_NET_DEVLINK */
 static inline struct mce_pf *mce_allocate_pf(struct device *dev)
 {
