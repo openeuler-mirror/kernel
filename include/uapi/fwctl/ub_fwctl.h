@@ -84,6 +84,10 @@ enum ub_fwctl_cmdrpc_type {
 	 * @UTOOL_CMD_QUERY_NL_SSU_VL_PKT: Query NL layer ssu_vl_pkt related registers
 	 */
 	UTOOL_CMD_QUERY_NL_SSU_VL_PKT = 0x0009,
+	/**
+	 * @UTOOL_CMD_QUERY_NL_P2P: Query p2p dfx statistics
+	 */
+	UTOOL_CMD_QUERY_NL_P2P = 0x000A,
 
 	/**
 	 * @UTOOL_CMD_QUERY_TP: Query all registers at the TP layer
@@ -322,9 +326,19 @@ enum ub_fwctl_cmdrpc_type {
 	UTOOL_CMD_QUERY_PORT_LINK_STATS = 0x00F1,
 
 	/**
+	 * @UTOOL_CMD_QUERY_UE_INFO: Query the information of function entity
+	 */
+	UTOOL_CMD_QUERY_UE_INFO = 0x00F2,
+
+	/**
 	 * @UBCTL_CMD_QUERY_CONF_USER_COMM: User-space interface command code
 	 */
 	UBCTL_CMD_QUERY_CONF_USER_COMM = 0x0101,
+
+	/**
+	 * @UTOOL_CMD_QUERY_UPA_PKT_STATS: Query UPA layer PKT_STATS related registers
+	 */
+	UTOOL_CMD_QUERY_UPA_PKT_STATS = 0x0111,
 
 	/**
 	 * @UTOOL_CMD_QUERY_DEV_INFO: Query all ubctl device info
@@ -340,6 +354,19 @@ enum ub_fwctl_cmdrpc_type {
 	 * @UTOOL_CMD_QUERY_MAX: Maximum Command Code
 	 */
 	UTOOL_CMD_QUERY_MAX,
+};
+
+/**
+ * struct fwctl_pkt_dev_info_match - ioctl(FWCTL_RPC) input/output
+ * @chip_id: The value of param '-c'
+ * @die_id: The value of param '-d'
+ * @is_matched: The result of dev info match
+ */
+struct fwctl_pkt_dev_info_match {
+	__u16 chip_id;
+	__u16 die_id;
+	__u8 is_matched;
+	__u8 reserved[3];
 };
 
 /**
@@ -407,19 +434,6 @@ struct fwctl_pkt_in_time {
 };
 
 /**
- * struct fwctl_pkt_dev_info_match - ioctl(FWCTL_RPC) input/output
- * @chip_id: The value of param '-c'
- * @die_id: The value of param '-d'
- * @is_matched: The result of dev info match
- */
-struct fwctl_pkt_dev_info_match {
-	__u16 chip_id;
-	__u16 die_id;
-	__u8 is_matched;
-	__u8 reserved[3];
-};
-
-/**
  * struct ubctl_cmd_in_head - ioctl(UBCTL_RPC) input header
  * @opcode: The operation code indicating the type of command
  * @is_read: Flag indicating whether the operation is a read (1) or write (0)
@@ -430,4 +444,3 @@ struct ubctl_cmd_in_head {
 };
 
 #endif
-
