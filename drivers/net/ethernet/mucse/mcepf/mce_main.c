@@ -770,6 +770,7 @@ static void mce_pf_reset_subtask(struct mce_pf *pf)
 	rtnl_lock();
 	mce_vsi_close(vsi);
 	rtnl_unlock();
+	mce_reset_clear_arfs(vsi);
 	mce_reset_hw(hw);
 	mce_reset_prev_stats(pf);
 	mce_restore_hw(hw);
@@ -786,6 +787,9 @@ static void mce_pf_reset_subtask(struct mce_pf *pf)
 	/* need keep this */
 	pci_set_master(pf->pdev);
 	msleep(MCE_PCIE_POST_MASTER_WAIT_MS);
+	ret = mce_rebuild_arfs(pf);
+	if (ret)
+		netdev_warn(netdev, "failed to rebuild aRFS after reset: %d\n", ret);
 	rtnl_lock();
 	mce_vsi_open(vsi);
 	rtnl_unlock();
@@ -2324,6 +2328,7 @@ static int mce_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 err_init_cdev:
 	if (mce_pcie_support_mrdma(pf))
 		mce_unplug_aux_dev(pf);
+	mce_remove_arfs(pf);
 	mce_vsi_release_all(pf);
 err_netdev_reg:
 	/* Both notifiers are registered at this point, clean them up in reverse order */
@@ -2474,6 +2479,7 @@ static void mce_remove(struct pci_dev *pdev)
 	pf->aux_op_upper = NULL;
 
 	mce_deinit_devlink(pf);
+	mce_remove_arfs(pf);
 	mce_vsi_release_all(pf);
 
 	devm_kfree(&pdev->dev, pf->vsi_stats);

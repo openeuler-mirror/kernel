@@ -2235,6 +2235,33 @@ static int mce_fdir_flow_delete(struct mce_pf *pf, void *p_filter,
 	return 0;
 }
 
+int mce_fdir_flow_force_delete(struct mce_pf *pf,
+			       struct mce_fdir_filter *filter,
+			       struct mce_tc_flower_fltr *fltr)
+{
+	struct mce_fdir_handle *handle;
+	struct mce_hw *hw = &pf->hw;
+
+	if (!filter)
+		return 0;
+
+	handle = mce_get_engine_handle(pf, MCE_FLOW_FDIR);
+	if (!handle)
+		return -ENOENT;
+
+	/* Reset will clear hardware immediately after this. Do not depend on
+	 * lookup succeeding: the caller owns the exact filter pointer that was
+	 * installed, so remove its software bookkeeping directly.
+	 */
+	mce_fdir_remove_entry(pf, handle, 0, filter);
+	if (!hlist_unhashed(&filter->hl_node))
+		mce_fdir_remove_hash_map(handle, filter);
+	mce_fdir_remove_profile(hw, handle, filter);
+	mce_fdir_update_usage(handle, filter, fltr, false);
+	kfree(filter);
+	return 0;
+}
+
 static int mce_fdir_l2_encode(struct mce_fdir_filter *filter)
 {
 	union mce_fdir_pattern *lkup_pattern = &filter->lkup_pattern;

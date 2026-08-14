@@ -84,6 +84,8 @@ int mce_open(struct net_device *netdev)
 			mce_vsi_close(vsi);
 			return err;
 		}
+		if (netdev->features & NETIF_F_NTUPLE)
+			mce_init_arfs(vsi);
 	}
 	if (IS_REACHABLE(CONFIG_PTP_1588_CLOCK)) {
 		err = mce_ptp_register(pf);
@@ -479,6 +481,18 @@ static int mce_set_features(struct net_device *netdev,
 	struct mce_vsi *vsi = np->vsi;
 	struct mce_pf *pf = vsi->back;
 	struct mce_hw *hw = &pf->hw;
+	int err;
+
+	/* Validate HW_TC transitions before changing NTUPLE/aRFS state. */
+	if (IS_ENABLED(CONFIG_NET_CLS_FLOWER) &&
+	    (changed & NETIF_F_HW_TC)) {
+		if ((features & NETIF_F_HW_TC) &&
+		    test_bit(MCE_FLAG_SRIOV_ENA, pf->flags))
+			return -EOPNOTSUPP;
+		if (!(features & NETIF_F_HW_TC) &&
+		    !hlist_empty(&pf->tc_flower_fltr_list))
+			return -EACCES;
+	}
 
 	if ((changed & NETIF_F_HW_VLAN_CTAG_RX) ||
 	    (changed & NETIF_F_HW_VLAN_STAG_RX)) {
@@ -494,6 +508,21 @@ static int mce_set_features(struct net_device *netdev,
 
 	if (changed & NETIF_F_RXHASH)
 		hw->ops->set_rss_hash(hw, features);
+
+	if (changed & NETIF_F_NTUPLE) {
+		if (!(features & NETIF_F_NTUPLE)) {
+			err = mce_clear_arfs(vsi);
+			if (err)
+				return err;
+			mce_fdir_del_fltrs(hw, true);
+		} else if (netdev->features & NETIF_F_HW_TC) {
+			mce_init_arfs(vsi);
+		}
+	}
+	if (features & NETIF_F_NTUPLE)
+		hw->hw_flags |= MCE_F_NTUPLE;
+	else
+		hw->hw_flags &= ~MCE_F_NTUPLE;
 
 	if (changed & NETIF_F_RXFCS) {
 		if (features & NETIF_F_RXFCS) {
@@ -523,17 +552,15 @@ static int mce_set_features(struct net_device *netdev,
 	if (IS_ENABLED(CONFIG_NET_CLS_FLOWER) &&
 	    (changed & NETIF_F_HW_TC)) {
 		if (features & NETIF_F_HW_TC) {
-			int err;
-
-			if (test_bit(MCE_FLAG_SRIOV_ENA, pf->flags))
-				return -EOPNOTSUPP;
-
 			err = mce_init_flow_engine(pf, MCE_FLOW_FDIR);
 			if (err && !test_bit(MCE_FLAGS_FDIR_FLOW_ENA, pf->flags))
 				return err;
+			if (features & NETIF_F_NTUPLE)
+				mce_init_arfs(vsi);
 		} else {
-			if (!hlist_empty(&pf->tc_flower_fltr_list))
-				return -EACCES;
+			err = mce_clear_arfs(vsi);
+			if (err)
+				return err;
 			mce_deinit_flow_engine(pf, MCE_FLOW_FDIR);
 		}
 	}
@@ -1463,6 +1490,9 @@ static const struct net_device_ops mce_netdev_ops = {
 #if IS_ENABLED(CONFIG_NET_CLS_FLOWER)
 	.ndo_setup_tc = mce_setup_tc,
 #endif
+#if IS_ENABLED(CONFIG_RFS_ACCEL) && IS_ENABLED(CONFIG_NET_CLS_FLOWER)
+	.ndo_rx_flow_steer = mce_rx_flow_steer,
+#endif
 	.ndo_set_rx_mode = mce_set_rx_mode,
 	.ndo_do_ioctl = mce_ioctl,
 	.ndo_vlan_rx_add_vid = mce_vlan_rx_add_vid,
@@ -1491,6 +1521,7 @@ static void mce_set_netdev_features(struct net_device *netdev)
 
 	dflt_features |= NETIF_F_SG;
 	dflt_features |= NETIF_F_HIGHDMA;
+	dflt_features |= NETIF_F_NTUPLE;
 	dflt_features |= NETIF_F_RXHASH;
 #if IS_ENABLED(CONFIG_NET_CLS_FLOWER)
 	dflt_features |= NETIF_F_HW_TC;
@@ -1560,6 +1591,7 @@ int mce_cfg_netdev(struct mce_vsi *vsi)
 	int alloc_txq = vsi->alloc_txq;
 	int alloc_rxq = vsi->alloc_rxq;
 	struct mce_pf *pf = vsi->back;
+	struct mce_hw *hw = &pf->hw;
 
 	netdev = alloc_etherdev_mqs(sizeof(*np), alloc_txq, alloc_rxq);
 	if (!netdev)
@@ -1573,6 +1605,8 @@ int mce_cfg_netdev(struct mce_vsi *vsi)
 	np->vsi = vsi;
 
 	mce_set_netdev_features(netdev);
+	if (netdev->features & NETIF_F_NTUPLE)
+		hw->hw_flags |= MCE_F_NTUPLE;
 	netdev->netdev_ops = &mce_netdev_ops;
 	mce_set_ethtool_ops(netdev);
 

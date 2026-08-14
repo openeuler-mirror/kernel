@@ -101,5 +101,8 @@ struct mce_fdir_filter *
 mce_meta_to_fdir_rule_l2(struct mce_hw *hw, struct mce_fdir_handle *handle,
 			 u16 meta_num, bool is_ipv6, bool is_tunnel);
 int mce_fdir_key_setup(struct mce_fdir_filter *filter);
+int mce_fdir_flow_force_delete(struct mce_pf *pf,
+			       struct mce_fdir_filter *filter,
+			       struct mce_tc_flower_fltr *fltr);
 #endif /* CONFIG_NET_CLS_FLOWER */
 #endif /* _MCE_FDIR_FLOW__H_ */
