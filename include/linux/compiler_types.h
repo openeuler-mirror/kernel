@@ -96,6 +96,10 @@ static inline void __chk_io_ptr(const volatile void __iomem *ptr) { }
 #define ___PASTE(a,b) a##b
 #define __PASTE(a,b) ___PASTE(a,b)
 
+#ifndef __context_unsafe
+# define __context_unsafe(comment)
+#endif
+
 #ifdef __KERNEL__
 
 /* Attributes */
