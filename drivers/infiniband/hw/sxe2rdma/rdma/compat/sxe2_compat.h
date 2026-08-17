@@ -11,6 +11,10 @@
 #include <linux/scatterlist.h>
 #include <rdma/ib_user_verbs.h>
 
+#if !defined(CONFIG_X86)
+#define SXE2_NATIVE_CPUID_NOT_SUPPORT
+#endif
+
 #ifdef NEED_KERNEL_AUX_DEFINE
 #include "auxiliary_bus.h"
 #include "rdma/uverbs_ioctl.h"
