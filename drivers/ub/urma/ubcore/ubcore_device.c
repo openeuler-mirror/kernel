@@ -15,6 +15,7 @@
 #include <linux/err.h>
 #include <linux/device.h>
 #include <linux/cdev.h>
+#include <linux/kstrtox.h>
 #include <net/netns/generic.h>
 #include <ub/urma/ubcore_uapi.h>
 #include <ub/urma/ubcore_jetty.h>
@@ -35,6 +36,7 @@
 
 #define UBCORE_MAX_MUE_NUM 16
 #define UBCORE_DEVICE_NAME "ubcore"
+#define UBCORE_SHARING_MAX_LEN 16
 
 struct ubcore_ctx {
 	dev_t ubcore_devno;
@@ -174,6 +176,68 @@ static const struct file_operations g_ubcore_global_ops = {
 
 static dev_t g_dynamic_mue_devnum;
 static struct ubcore_ctx g_ubcore_ctx = { 0 };
+
+static ssize_t dev_sharing_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, UBCORE_SHARING_MAX_LEN, "%u\n", ubcore_dev_ns_shared());
+}
+
+static ssize_t dev_sharing_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t len)
+{
+	bool value;
+	int ret;
+
+	if (!capable(CAP_NET_ADMIN))
+		return -EPERM;
+
+	if (kstrtobool(buf, &value) != 0)
+		return -EINVAL;
+
+	ret = ubcore_set_dev_ns_mode(value);
+	if (ret != 0)
+		return ret;
+
+	return (ssize_t)len;
+}
+static DEVICE_ATTR_RW(dev_sharing);  /* dev_sharing read/write attribute */
+
+static ssize_t eid_sharing_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, UBCORE_SHARING_MAX_LEN, "%u\n", ubcore_eid_ns_shared());
+}
+
+static ssize_t eid_sharing_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t len)
+{
+	bool value;
+	int ret;
+
+	if (!capable(CAP_NET_ADMIN))
+		return -EPERM;
+
+	if (kstrtobool(buf, &value) != 0)
+		return -EINVAL;
+
+	ret = ubcore_set_eid_ns_mode(value);
+	if (ret != 0)
+		return ret;
+
+	return (ssize_t)len;
+}
+static DEVICE_ATTR_RW(eid_sharing);
+
+static struct attribute *ubcore_global_attrs[] = {
+	&dev_attr_dev_sharing.attr,
+	&dev_attr_eid_sharing.attr,
+	NULL,
+};
+
+static const struct attribute_group ubcore_global_attr_group = {
+	.attrs = ubcore_global_attrs,
+};
 
 static const void *ubcore_net_namespace(const struct device *dev)
 {
@@ -1260,9 +1324,17 @@ int ubcore_cdev_register(void)
 		g_ubcore_ctx.ubcore_dev = NULL;
 		goto del_cdev;
 	}
+	ret = sysfs_create_group(&g_ubcore_ctx.ubcore_dev->kobj, &ubcore_global_attr_group);
+	if (ret != 0) {
+		ubcore_log_err("sysfs create group failed, ret:%d.\n", ret);
+		goto destroy_device;
+	}
 	ubcore_log_info("ubcore device created success.\n");
 	return 0;
 
+destroy_device:
+	device_destroy(&g_ubcore_class, g_ubcore_ctx.ubcore_cdev.dev);
+	g_ubcore_ctx.ubcore_dev = NULL;
 del_cdev:
 	cdev_del(&g_ubcore_ctx.ubcore_cdev);
 unreg_cdev_region:
@@ -1277,6 +1349,8 @@ int ubcore_cdev_unregister(void)
 	if (IS_ERR_OR_NULL(g_ubcore_ctx.ubcore_dev))
 		return 0;
 
+	sysfs_remove_group(&g_ubcore_ctx.ubcore_dev->kobj,
+						&ubcore_global_attr_group);
 	device_destroy(&g_ubcore_class, g_ubcore_ctx.ubcore_cdev.dev);
 	cdev_del(&g_ubcore_ctx.ubcore_cdev);
 	unregister_chrdev_region(g_ubcore_ctx.ubcore_devno, 1);
