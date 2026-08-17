@@ -4390,9 +4390,15 @@ static int txgbe_get_module_info(struct net_device *dev,
 		if (!test_bit(__TXGBE_DOWN, &adapter->state))
 			cancel_work_sync(&adapter->sfp_sta_task);
 
-		status = hw->phy.ops.read_i2c_eeprom(hw,
-							TXGBE_SFF_IDENTIFIER,
-							&identifier);
+		if (hw->mac.type == txgbe_mac_aml40) {
+			status = hw->phy.ops.read_i2c_sff8636(hw, 0,
+							     TXGBE_SFF_IDENTIFIER,
+							     &identifier);
+		} else {
+			status = hw->phy.ops.read_i2c_eeprom(hw,
+							     TXGBE_SFF_IDENTIFIER,
+							     &identifier);
+		}
 		if (status != 0)
 			goto ERROR_IO;
 
@@ -4430,9 +4436,9 @@ static int txgbe_get_module_info(struct net_device *dev,
 			break;
 		case TXGBE_SFF_IDENTIFIER_QSFP:
 		case TXGBE_SFF_IDENTIFIER_QSFP_PLUS:
-			status = hw->phy.ops.read_i2c_eeprom(hw,
-								TXGBE_SFF_SFF_REVISION_ADDR,
-								&sff8636_rev);
+			status = hw->phy.ops.read_i2c_sff8636(hw, 0,
+							     TXGBE_SFF_SFF_REVISION_ADDR,
+							     &sff8636_rev);
 			if (status != 0)
 				goto ERROR_IO;
 

@@ -714,8 +714,7 @@ static int txgbe_identify_qsfp_module(struct txgbe_hw *hw)
 	}
 
 	/* LAN ID is needed for I2C access */
-	txgbe_init_i2c(hw);
-	status = hw->phy.ops.read_i2c_eeprom(hw,
+	status = hw->phy.ops.read_i2c_sff8636(hw, 0,
 					     TXGBE_SFF_IDENTIFIER,
 					     &identifier);
 
@@ -727,7 +726,7 @@ static int txgbe_identify_qsfp_module(struct txgbe_hw *hw)
 	    identifier == TXGBE_SFF_IDENTIFIER_QSFP28) {
 		hw->phy.type = txgbe_phy_sfp_unknown;
 
-		status = hw->phy.ops.read_i2c_eeprom(hw,
+		status = hw->phy.ops.read_i2c_sff8636(hw, 0,
 						     TXGBE_ETHERNET_COMP_OFFSET,
 						     &transceiver_type);
 		if (status != 0)
@@ -765,9 +764,9 @@ static int txgbe_identify_qsfp_module(struct txgbe_hw *hw)
 		}
 
 		if (transceiver_type & TXGBE_SFF_ETHERNET_RSRVD) {
-			status = hw->phy.ops.read_i2c_eeprom(hw,
-								 TXGBE_SFF_OPTION_1_OFFSET,
-								 &option1_type);
+			status = hw->phy.ops.read_i2c_sff8636(hw, 0,
+						TXGBE_SFF_OPTION_1_OFFSET,
+						&option1_type);
 			if (status != 0)
 				goto err_read_i2c_eeprom;
 

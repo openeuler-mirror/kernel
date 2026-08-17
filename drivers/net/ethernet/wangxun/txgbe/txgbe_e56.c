@@ -62,15 +62,6 @@ static u32 txgbe_e56_phy_tx_ffe_cfg(struct txgbe_hw *hw, u32 speed)
 		adapter->ffe_pre1 = S25G_TX_FFE_CFG_PRE1;
 		adapter->ffe_pre2 = S25G_TX_FFE_CFG_PRE2;
 		adapter->ffe_post = S25G_TX_FFE_CFG_POST;
-
-		if (hw->phy.sfp_type == txgbe_sfp_type_da_cu_core0 ||
-		    hw->phy.sfp_type == txgbe_sfp_type_da_cu_core1 ||
-		    txgbe_is_backplane(hw)) {
-			adapter->ffe_main = S25G_TX_FFE_CFG_DAC_MAIN;
-			adapter->ffe_pre1 = S25G_TX_FFE_CFG_DAC_PRE1;
-			adapter->ffe_pre2 = S25G_TX_FFE_CFG_DAC_PRE2;
-			adapter->ffe_post = S25G_TX_FFE_CFG_DAC_POST;
-		}
 	} else if (speed == TXGBE_LINK_SPEED_40GB_FULL) {
 		adapter->ffe_main = S10G_TX_FFE_CFG_MAIN;
 		adapter->ffe_pre1 = S10G_TX_FFE_CFG_PRE1;
