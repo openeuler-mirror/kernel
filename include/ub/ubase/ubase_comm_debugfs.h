@@ -8,6 +8,7 @@
 #define _UB_UBASE_COMM_DEBUGFS_H_
 
 #include <linux/auxiliary_bus.h>
+#include "ubase_comm_dev.h"
 
 struct ubase_dbgfs;
 
@@ -72,6 +73,71 @@ struct ubase_dbgfs {
 	KABI_RESERVE(4)
 };
 
+/**
+ * struct ubase_dbg_dscp_vl_map - ubase debugfs dscp to vl map data
+ * @hw_vl: hardware vl values indexed by dscp
+ */
+struct ubase_dbg_dscp_vl_map {
+	u8	hw_vl[UBASE_MAX_DSCP];
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+};
+
+/**
+ * struct ubase_dbg_sl_vl_map - ubase debugfs sl to vl map data
+ * @hw_vl: hardware vl values indexed by sl
+ */
+struct ubase_dbg_sl_vl_map {
+	u8	hw_vl[UBASE_MAX_SL_NUM];
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+};
+
+/**
+ * struct ubase_dbg_caps_info - ubase debugfs device caps info
+ * @aeq_num: number of AEQ vectors
+ * @ceq_num: number of CEQ vectors
+ * @aeq_ctx_size: AEQ context size
+ * @ceq_ctx_size: CEQ context size
+ * @die_id: die ID
+ * @io_port_logic_id: IO port logic ID
+ */
+struct ubase_dbg_caps_info {
+	u16	aeq_num;
+	u16	ceq_num;
+	u16	aeq_ctx_size;
+	u16	ceq_ctx_size;
+	u16	die_id;
+	u16	io_port_logic_id;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
+	KABI_RESERVE(8)
+	KABI_RESERVE(9)
+	KABI_RESERVE(10)
+	KABI_RESERVE(11)
+	KABI_RESERVE(12)
+};
+
+int ubase_dbg_get_aeq_ctx_hw(struct device *dev, void *buf, u32 *size);
+int ubase_dbg_get_ceq_ctx_hw(struct device *dev, void *buf, u32 *size);
+int ubase_dbg_get_caps_info(struct device *dev,
+			    struct ubase_dbg_caps_info *info);
+int ubase_dbg_get_dscp_vl_map(struct device *dev,
+			      struct ubase_dbg_dscp_vl_map *map);
+int ubase_dbg_get_sl_vl_map(struct device *dev,
+			    struct ubase_dbg_sl_vl_map *map);
 int ubase_dbg_seq_file_init(struct device *dev,
 			    struct ubase_dbg_dentry_info *dirs,
 			    struct ubase_dbgfs *dbgfs, u32 idx);

@@ -199,6 +199,38 @@ static int ubase_dbg_dump_dev_caps(struct seq_file *s, void *data)
 	return 0;
 }
 
+/**
+ * ubase_dbg_get_caps_info() - get caps info
+ * @dev: device
+ * @map: debug get caps info
+ *
+ * The function is used to get caps info.
+ *
+ * Context: Any context.
+ * Return: 0 on success, negative error code otherwise
+ */
+int ubase_dbg_get_caps_info(struct device *dev, struct ubase_dbg_caps_info *info)
+{
+	struct ubase_caps *dev_caps;
+	struct ubase_dev *udev;
+
+	if (!dev || !info)
+		return -EINVAL;
+
+	udev = dev_get_drvdata(dev);
+	dev_caps = &udev->caps.dev_caps;
+
+	info->aeq_num = dev_caps->num_aeq_vectors;
+	info->ceq_num = dev_caps->num_ceq_vectors;
+	info->aeq_ctx_size = UBASE_AEQ_CTX_SIZE;
+	info->ceq_ctx_size = UBASE_CEQ_CTX_SIZE;
+	info->die_id = dev_caps->die_id;
+	info->io_port_logic_id = dev_caps->io_port_logic_id;
+
+	return 0;
+}
+EXPORT_SYMBOL(ubase_dbg_get_caps_info);
+
 static int ubase_query_ubcl_config(struct ubase_dev *udev, u16 offset,
 				   u16 is_query, u16 size,
 				   struct ubase_ubcl_config_cmd *resp)
