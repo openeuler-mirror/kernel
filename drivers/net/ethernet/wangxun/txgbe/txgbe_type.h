@@ -3544,9 +3544,6 @@ wr32m(struct txgbe_hw *hw, u32 reg, u32 mask, u32 field)
 #define TXGBE_MDIO_TIMEOUT 1000
 #define TXGBE_I2C_TIMEOUT  5000
 
-#ifndef LASER_OFF
-#define LASER_OFF 0
-#endif
 #define TXGBE_SPI_TIMEOUT  1000
 static inline int
 po32m(struct txgbe_hw *hw, u32 reg, u32 mask, u32 field, int usecs, int count)

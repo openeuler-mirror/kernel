@@ -13,68 +13,6 @@
 #define TXGBE_PCS_AN_INC_LINK	BIT(1)
 #define TXGBE_PCS_AN_INT_CMPLT	BIT(0)
 
-#define KR_MODE			0
-
-#ifndef AN_TRAINNING_MODE
-#define AN_TRAINNING_MODE	0
-#endif
-
-#ifndef AN73_TRAINNING_MODE
-#define AN73_TRAINNING_MODE	2
-#endif
-
-#ifndef CTLE_BYPASS
-#define CTLE_BYPASS		0
-#endif
-
-#ifndef CL74_KRTR_TRAINNING_TIMEOUT
-#define CL74_KRTR_TRAINNING_TIMEOUT	6000
-#endif
-
-#ifndef KR_TRAINNING_MODE
-#define KR_TRAINNING_MODE	2	/* 0 PRESET 2 INITIALIZE */
-#endif
-
-#ifndef SW_OEM_EPHY
-#define SW_OEM_EPHY		0
-#endif
-
-#ifndef SW_CTRL_EPHY_FORCE
-#define SW_CTRL_EPHY_FORCE	1
-#endif
-
-#ifndef TXGBE_STORM_INTERVAL
-#define TXGBE_STORM_INTERVAL	100
-#endif
-
-#ifndef TXGBE_STORM_UC
-#define TXGBE_STORM_UC		0
-#endif
-
-#ifndef TXGBE_STORM_BC
-#define TXGBE_STORM_BC		0
-#endif
-
-#ifndef TXGBE_STORM_BC_THRE
-#define TXGBE_STORM_BC_THRE	100
-#endif
-
-#ifndef TXGBE_STORM_MC
-#define TXGBE_STORM_MC		0
-#endif
-
-#ifndef TXGBE_STORM_MC_THRE
-#define TXGBE_STORM_MC_THRE	100
-#endif
-
-#ifndef AUTO
-#define AUTO			1
-#endif
-
-#ifndef TXGBE_PAGE_POOL
-#define TXGBE_PAGE_POOL
-#endif
-
 #define TXGBE_10G_FEC_REQ	BIT(15)
 #define TXGBE_10G_FEC_ABL	BIT(14)
 #define TXGBE_25G_BASE_FEC_REQ	BIT(13)
@@ -94,26 +32,6 @@
 #define S25G_TX_FFE_CFG_DAC_PRE1    0x03030303
 #define S25G_TX_FFE_CFG_DAC_PRE2    0x0
 #define S25G_TX_FFE_CFG_DAC_POST    0x11111111
-
-#define SFI_SET     0
-#define SFI_MAIN    24
-#define SFI_PRE     4
-#define SFI_POST    16
-
-#define KR_SET      0
-#define KR_MAIN     27
-#define KR_PRE      8
-#define KR_POST     44
-
-#define KX4_SET     0
-#define KX4_MAIN    40
-#define KX4_PRE     0
-#define KX4_POST    0
-
-#define KX_SET      0
-#define KX_MAIN     24
-#define KX_PRE      4
-#define KX_POST     16
 
 struct bkpan73ability {
 	unsigned int next_page;		/* Next Page (bit0) */

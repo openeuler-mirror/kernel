@@ -47,8 +47,6 @@
 #include "txgbe_e56_bp.h"
 #include "txgbe_mng_phy.h"
 
-/* disable rx merge for amlite */
-#define TXGBE_RX_MERGE 0
 static int cards_found;
 
 char txgbe_driver_name[32] = TXGBE_NAME;
@@ -585,16 +583,9 @@ static void txgbe_tx_timeout_dorecovery(struct txgbe_adapter *adapter)
  **/
 static void txgbe_tx_timeout_reset(struct txgbe_adapter *adapter)
 {
-	struct txgbe_hw *hw = &adapter->hw;
-
 	if (!test_bit(__TXGBE_DOWN, &adapter->state)) {
-		if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40) {
-			adapter->flags2 |= TXGBE_FLAG2_DMA_RESET_REQUESTED;
-			e_warn(drv, "initiating dma reset due to tx timeout\n");
-		} else {
-			adapter->flags2 |= TXGBE_FLAG2_PF_RESET_REQUESTED;
-			e_warn(drv, "initiating reset due to tx timeout\n");
-		}
+		adapter->flags2 |= TXGBE_FLAG2_PF_RESET_REQUESTED;
+		e_warn(drv, "initiating reset due to tx timeout\n");
 		txgbe_service_event_schedule(adapter);
 	}
 }
@@ -697,11 +688,13 @@ static bool txgbe_clean_tx_irq(struct txgbe_q_vector *q_vector,
 	unsigned int budget = q_vector->tx.work_limit;
 	unsigned int i = tx_ring->next_to_clean;
 	u16 vid = 0;
+#ifdef TXGBE_TXHEAD_WB
 	u32 head = 0;
 	u32 temp = tx_ring->next_to_clean;
 
 	if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40)
 		head = *tx_ring->headwb_mem;
+#endif
 
 	int j = 0;
 	u32 size;
@@ -732,6 +725,7 @@ static bool txgbe_clean_tx_irq(struct txgbe_q_vector *q_vector,
 		/* prevent any other reads prior to eop_desc */
 		smp_rmb();
 
+#ifdef TXGBE_TXHEAD_WB
 		if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40) {
 			/* we have caught up to head, no work left to do */
 			if (temp == head)
@@ -742,11 +736,11 @@ static bool txgbe_clean_tx_irq(struct txgbe_q_vector *q_vector,
 			else if (!(tx_buffer->next_eop >= temp ||
 				   (tx_buffer->next_eop < head)))
 				break;
-		} else {
+		} else
+#endif
 			/* if DD is not set pending work has not been completed */
 			if (!(eop_desc->wb.status & cpu_to_le32(TXGBE_TXD_STAT_DD)))
 				break;
-		}
 
 		/* clear next_to_watch to prevent false hangs */
 		tx_buffer->next_to_watch = NULL;
@@ -1779,7 +1773,9 @@ int txgbe_xmit_xdp_ring(struct txgbe_ring *ring, struct xdp_frame *xdpf)
 		i = 0;
 
 	tx_buffer->next_to_watch = tx_desc;
+#ifdef TXGBE_TXHEAD_WB
 	tx_buffer->next_eop = i;
+#endif
 	ring->next_to_use = i;
 
 	return TXGBE_XDP_TX;
@@ -3138,12 +3134,13 @@ static void txgbe_configure_msi_and_legacy(struct txgbe_adapter *adapter)
 }
 
 /* amlite: tx header wb */
+#ifdef TXGBE_TXHEAD_WB
 static int txgbe_setup_headwb_resources(struct txgbe_ring *ring)
 {
 	struct txgbe_adapter *adapter;
 	struct txgbe_hw *hw;
 	struct device *dev = ring->dev;
-	u8 headwb_size = 1;
+	u8 headwb_size = 0;
 
 	if (ring->q_vector) {
 		adapter = ring->q_vector->adapter;
@@ -3153,6 +3150,13 @@ static int txgbe_setup_headwb_resources(struct txgbe_ring *ring)
 	} else {
 		return 0;
 	}
+
+	if (TXGBE_TXHEAD_WB == 1)
+		headwb_size = 16;
+	else if (TXGBE_TXHEAD_WB == 2)
+		headwb_size = 16;
+	else
+		headwb_size = 1;
 
 	ring->headwb_mem = dma_alloc_coherent(dev,
 					      sizeof(u32) * headwb_size,
@@ -3166,6 +3170,7 @@ static int txgbe_setup_headwb_resources(struct txgbe_ring *ring)
 
 	return 0;
 }
+#endif
 
 /**
  * txgbe_configure_tx_ring - Configure Tx ring after Reset
@@ -3240,14 +3245,20 @@ void txgbe_configure_tx_ring(struct txgbe_adapter *adapter,
 
 	clear_bit(__TXGBE_HANG_CHECK_ARMED, &ring->state);
 
+#ifdef TXGBE_TXHEAD_WB
 	if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40) {
 		wr32(hw, TXGBE_PX_TR_HEAD_ADDRL(reg_idx),
 		     ring->headwb_dma & DMA_BIT_MASK(32));
 #ifdef CONFIG_64BIT
 		wr32(hw, TXGBE_PX_TR_HEAD_ADDRH(reg_idx), ring->headwb_dma >> 32);
 #endif
-		txdctl |= TXGBE_PX_TR_CFG_HEAD_WB;
+		if (TXGBE_TXHEAD_WB == 1)
+			txdctl |= TXGBE_PX_TR_CFG_HEAD_WB |
+				  TXGBE_PX_TR_CFG_HEAD_WB_64BYTE;
+		else
+			txdctl |= TXGBE_PX_TR_CFG_HEAD_WB;
 	}
+#endif
 
 	/* enable queue */
 	wr32(hw, TXGBE_PX_TR_CFG(reg_idx), txdctl);
@@ -3672,8 +3683,10 @@ void txgbe_configure_rx_ring(struct txgbe_adapter *adapter,
 
 	rxdctl |= 0x1 << TXGBE_PX_RR_CFG_RR_THER_SHIFT;
 
+#ifdef TXGBE_TXHEAD_WB
 	if (hw->mac.type == txgbe_mac_aml || hw->mac.type == txgbe_mac_aml40)
 		rxdctl |= TXGBE_PX_RR_CFG_DESC_MERGE;
+#endif
 
 	wr32(hw, TXGBE_PX_RR_CFG(reg_idx), rxdctl);
 
@@ -5942,7 +5955,9 @@ int txgbe_setup_tx_resources(struct txgbe_ring *tx_ring)
 	if (!tx_ring->desc)
 		goto err;
 
+#ifdef TXGBE_TXHEAD_WB
 	txgbe_setup_headwb_resources(tx_ring);
+#endif
 
 	return 0;
 
@@ -6169,9 +6184,10 @@ void txgbe_free_isb_resources(struct txgbe_adapter *adapter)
 	adapter->isb_mem = NULL;
 }
 
+#ifdef TXGBE_TXHEAD_WB
 void txgbe_free_headwb_resources(struct txgbe_ring *ring)
 {
-	u8 headwb_size = 1;
+	u8 headwb_size = 0;
 	struct txgbe_adapter *adapter;
 	struct txgbe_hw *hw;
 
@@ -6184,12 +6200,20 @@ void txgbe_free_headwb_resources(struct txgbe_ring *ring)
 		return;
 	}
 
+	if (TXGBE_TXHEAD_WB == 1)
+		headwb_size = 16;
+	else if (TXGBE_TXHEAD_WB == 2)
+		headwb_size = 16;
+	else
+		headwb_size = 1;
+
 	if (ring->headwb_mem) {
 		dma_free_coherent(ring->dev, sizeof(u32) * headwb_size,
 				  ring->headwb_mem, ring->headwb_dma);
 		ring->headwb_mem = NULL;
 	}
 }
+#endif
 
 /**
  * txgbe_free_tx_resources - Free Tx Resources per Queue
@@ -6212,7 +6236,9 @@ void txgbe_free_tx_resources(struct txgbe_ring *tx_ring)
 			  tx_ring->desc, tx_ring->dma);
 	tx_ring->desc = NULL;
 
+#ifdef TXGBE_TXHEAD_WB
 	txgbe_free_headwb_resources(tx_ring);
+#endif
 }
 
 /**
@@ -7830,7 +7856,7 @@ static void txgbe_sfp_phy_status_work(struct work_struct *work)
 	u16 data = 0;
 	bool status = false;
 	int i2c_status;
-	u32 swfw_mask = hw->phy.phy_semaphore_mask;
+	u32 swfw_mask = TXGBE_MNG_SWFW_SYNC_SW_PHY;
 
 	if (txgbe_acquire_swfw_sync(hw, swfw_mask) != 0)
 		return;
@@ -8964,8 +8990,10 @@ static int txgbe_tx_map(struct txgbe_ring *tx_ring,
 	/* set next_to_watch value indicating a packet is present */
 	first->next_to_watch = tx_desc;
 
+#ifdef TXGBE_TXHEAD_WB
 	/* set next_eop for amlite tx head wb*/
 	first->next_eop = i;
+#endif
 
 	i++;
 	if (i == tx_ring->count)

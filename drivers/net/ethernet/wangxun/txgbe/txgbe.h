@@ -4,6 +4,8 @@
 #ifndef _TXGBE_H_
 #define _TXGBE_H_
 
+#include "txgbe_osdep.h"
+
 #include <net/ip.h>
 #include <linux/bitops.h>
 #include <linux/types.h>
@@ -45,8 +47,18 @@
 DECLARE_STATIC_KEY_FALSE(txgbe_xdp_locking_key);
 
 /* TX/RX descriptor defines */
+#if defined(DEFAULT_TXD)
+#define TXGBE_DEFAULT_TXD               DEFAULT_TXD
+#else
 #define TXGBE_DEFAULT_TXD               1024
+#endif
+
+#if defined(DEFAULT_TX_WORK)
+#define TXGBE_DEFAULT_TX_WORK           DEFAULT_TX_WORK
+#else
 #define TXGBE_DEFAULT_TX_WORK           256
+#endif
+
 #define TXGBE_MAX_TXD                   8192
 #define TXGBE_MIN_TXD                   256
 #define TXGBE_MIN_TXD_AML               512
@@ -71,7 +83,11 @@ DECLARE_STATIC_KEY_FALSE(txgbe_xdp_locking_key);
 #define TXGBE_MIN_FCRTH                 0x600
 #define TXGBE_MAX_FCRTH                 0x7FFF0
 
+#if defined(DEFAULT_FCPAUSE)
+#define TXGBE_DEFAULT_FCPAUSE           DEFAULT_FCPAUSE
+#else
 #define TXGBE_DEFAULT_FCPAUSE           0xFFFF
+#endif
 
 #define TXGBE_MIN_FCPAUSE               0
 #define TXGBE_MAX_FCPAUSE               0xFFFF
@@ -1031,10 +1047,6 @@ struct txgbe_cb {
 };
 
 #define TXGBE_CB(skb) ((struct txgbe_cb *)(skb)->cb)
-
-#define TXGBE_1588_PPS_WIDTH 100
-#define TXGBE_1588_TOD_ENABLE 1
-#define TXGBE_1588_PPS_LEVEL 1
 
 /* ESX txgbe CIM IOCTL definition */
 void txgbe_sysfs_exit(struct txgbe_adapter *adapter);

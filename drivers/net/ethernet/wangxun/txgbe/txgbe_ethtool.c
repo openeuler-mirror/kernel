@@ -4469,7 +4469,7 @@ static int txgbe_get_module_eeprom(struct net_device *dev,
 	int i = 0;
 	bool is_sfp = false;
 	u8 identifier = 0;
-	u32 swfw_mask = hw->phy.phy_semaphore_mask;
+	u32 swfw_mask = TXGBE_MNG_SWFW_SYNC_SW_PHY;
 	u8 databyte;
 	u8 page_sel_pre;
 	int status = 0;
