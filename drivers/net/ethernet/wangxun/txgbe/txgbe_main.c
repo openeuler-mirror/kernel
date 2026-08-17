@@ -1639,9 +1639,10 @@ static unsigned int txgbe_rx_frame_truesize(struct txgbe_ring *rx_ring,
 #if (PAGE_SIZE < 8192)
 	truesize = txgbe_rx_pg_size(rx_ring) / 2;
 #else
-	truesize = SKB_DATA_ALIGN(TXGBE_SKB_PAD + size)
+	truesize = rx_ring->rx_offset ?
+		SKB_DATA_ALIGN(rx_ring->rx_offset + size)
 		+ SKB_DATA_ALIGN(sizeof(struct skb_shared_info))
-		;
+		: SKB_DATA_ALIGN(size);
 #endif
 	if (ring_is_page_pool_enabled(rx_ring))
 		truesize = TXGBE_PAGE_POOL_RX_BUF_SIZE;
@@ -2042,7 +2043,7 @@ static int txgbe_clean_rx_irq(struct txgbe_q_vector *q_vector,
 	unsigned int total_rx_bytes = 0, total_rx_packets = 0, xdp_xmit = 0;
 	u16 cleaned_count = txgbe_desc_unused(rx_ring);
 	struct txgbe_adapter *adapter = q_vector->adapter;
-	unsigned int offset = TXGBE_SKB_PAD;
+	unsigned int offset = rx_ring->rx_offset;
 #if IS_ENABLED(CONFIG_FCOE)
 	int ddp_bytes;
 	unsigned int mss = 0;
