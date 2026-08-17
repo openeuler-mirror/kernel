@@ -38,6 +38,13 @@
 #define UBASE_MOVE_CRQ_RING_PTR(crq) \
 	((crq)->ci = ((crq)->ci + 1) % (crq)->desc_num)
 
+/* Software handshake 1 register(RW) */
+#define UBASE_SW_HANDSHAKE_1_REG	0x18048
+/* Software handshake 1 register bit for CMDQ init */
+#define UBASE_SW_HANDSHAKE_1_FW_CAP_B		0
+#define UBASE_SW_HANDSHAKE_1_DRV_CAP_B		1
+#define UBASE_SW_HANDSHAKE_1_UE_FIRST_CMD_B	2
+
 union ubase_mbox {
 	struct {
 		/* MB 0 */

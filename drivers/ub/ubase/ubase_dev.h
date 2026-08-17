@@ -52,6 +52,7 @@ struct ubase_cmdq_ring {
 	u32 desc_num;
 	u32 tx_timeout;
 	dma_addr_t desc_dma_addr;
+	phys_addr_t pa;
 	struct ubase_cmdq_desc *desc;
 	spinlock_t lock;
 };
@@ -60,6 +61,7 @@ struct ubase_cmdq {
 	struct ubase_cmdq_ring csq;
 	struct ubase_cmdq_ring crq;
 	atomic_t csq_cnt;
+	u32 handshake_reg_val;
 };
 
 struct ubase_hw {
