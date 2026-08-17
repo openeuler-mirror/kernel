@@ -20,6 +20,7 @@
 #include <linux/irq.h>
 #include <linux/kexec.h>
 #include <linux/entry-common.h>
+#include <linux/nospec.h>
 #ifdef CONFIG_LIVEPATCH_WO_FTRACE
 #include <linux/livepatch.h>
 #endif

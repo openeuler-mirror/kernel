@@ -873,6 +873,7 @@ void hinic5_arp_dual_work(struct work_struct *work)
 			continue;
 		}
 		kfree_skb(skb);
+		msleep(10);
 
 		ret = hinic5_send_arp_to_mpu(nic_dev->hwdev, &info);
 		if (ret < 0)

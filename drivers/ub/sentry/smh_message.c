@@ -120,20 +120,6 @@ uint64_t smh_get_new_msg_id(void)
 EXPORT_SYMBOL(smh_get_new_msg_id);
 
 /**
- * check_msg_is_timeout - Check if message has timed out
- * @msg: Message to check
- *
- * Return: true if timeout, false otherwise
- */
-static bool check_msg_is_timeout(struct sentry_msg_helper_msg *msg)
-{
-	uint64_t now = ktime_get_ns();
-	uint64_t interval_time = (now - msg->start_send_time) / NSEC_PER_MSEC;
-
-	return interval_time > msg->timeout_time;
-}
-
-/**
  * smh_message_send - Send a message through the message helper
  * @msg: Message to send
  * @ack: Whether acknowledgment is required
