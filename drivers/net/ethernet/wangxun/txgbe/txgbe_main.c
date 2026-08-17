@@ -6525,40 +6525,7 @@ err_setup_tx:
  */
 static void txgbe_close_suspend(struct txgbe_adapter *adapter)
 {
-	struct txgbe_hw *hw = &adapter->hw;
-
 	txgbe_ptp_suspend(adapter);
-
-	txgbe_disable_device(adapter);
-
-	/* power down the optics for SFP+ fiber or mv phy */
-	if (!(((hw->subsystem_device_id & TXGBE_NCSI_MASK) == TXGBE_NCSI_SUP) ||
-	      adapter->eth_priv_flags & TXGBE_ETH_PRIV_FLAG_LLDP)) {
-		if (hw->phy.media_type == txgbe_media_type_fiber ||
-		    hw->phy.media_type == txgbe_media_type_fiber_qsfp) {
-			if (hw->mac.ops.disable_tx_laser)
-				hw->mac.ops.disable_tx_laser(hw);
-		} else if (hw->phy.media_type == txgbe_media_type_copper &&
-			 (hw->subsystem_device_id & 0xF0) != TXGBE_ID_SFI_XAUI) {
-			txgbe_external_phy_suspend(hw);
-		}
-	}
-
-	txgbe_clean_all_tx_rings(adapter);
-	txgbe_clean_all_rx_rings(adapter);
-
-	txgbe_free_irq(adapter);
-
-	txgbe_free_isb_resources(adapter);
-	txgbe_free_all_rx_resources(adapter);
-	txgbe_free_all_tx_resources(adapter);
-}
-
-static void txgbe_down_suspend(struct txgbe_adapter *adapter)
-{
-#ifdef HAVE_PTP_1588_CLOCK
-	txgbe_ptp_suspend(adapter);
-#endif
 
 	txgbe_down(adapter);
 	txgbe_free_irq(adapter);
@@ -6593,7 +6560,7 @@ int txgbe_close(struct net_device *netdev)
 	txgbe_ptp_stop(adapter);
 
 	if (netif_device_present(netdev))
-		txgbe_down_suspend(adapter);
+		txgbe_close_suspend(adapter);
 
 	txgbe_fdir_filter_exit(adapter);
 	memset(&adapter->ft_filter_info, 0,
@@ -11334,7 +11301,7 @@ skip_bad_vf_detection:
 	adapter->io_err = true;
 
 	if (netif_running(netdev))
-		txgbe_down_suspend(adapter);
+		txgbe_close_suspend(adapter);
 
 	if (state == pci_channel_io_perm_failure) {
 		rtnl_unlock();
