@@ -126,8 +126,8 @@ static inline void ubase_free_cmd_queue_pa(struct ubase_dev *udev,
 	ring->desc = NULL;
 }
 
-static inline int ubase_alloc_cmd_queue(struct ubase_dev *udev,
-					struct ubase_cmdq_ring *ring)
+static int ubase_alloc_cmd_queue(struct ubase_dev *udev,
+				 struct ubase_cmdq_ring *ring)
 {
 	size_t size = ring->desc_num * sizeof(struct ubase_cmdq_desc);
 
@@ -142,8 +142,8 @@ static inline int ubase_alloc_cmd_queue(struct ubase_dev *udev,
 	return 0;
 }
 
-static inline void ubase_free_cmd_queue(struct ubase_dev *udev,
-					struct ubase_cmdq_ring *ring)
+static void ubase_free_cmd_queue(struct ubase_dev *udev,
+				 struct ubase_cmdq_ring *ring)
 {
 	size_t size = ring->desc_num * sizeof(struct ubase_cmdq_desc);
 
