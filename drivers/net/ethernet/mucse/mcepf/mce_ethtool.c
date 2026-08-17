@@ -2697,11 +2697,36 @@ static int mce_get_ts_info(struct net_device *dev, struct ethtool_ts_info *info)
 	struct mce_netdev_priv *np = netdev_priv(dev);
 	struct mce_vsi *vsi = np->vsi;
 	struct mce_pf *pf = vsi->back;
-	/* ethtool -T ethX */
 
-	/*For we just set it as pf0 */
-	if (!(pf->flags2 & MCE_FLAG2_PTP_ENABLED))
+	if (!IS_REACHABLE(CONFIG_PTP_1588_CLOCK) ||
+	    !(pf->flags2 & MCE_FLAG2_PTP_ENABLED))
 		return ethtool_op_get_ts_info(dev, info);
+
+#if IS_REACHABLE(CONFIG_PTP_1588_CLOCK)
+	info->phc_index = pf->ptp_clock ? ptp_clock_index(pf->ptp_clock) : -1;
+	info->so_timestamping = SOF_TIMESTAMPING_TX_HARDWARE |
+		SOF_TIMESTAMPING_RX_HARDWARE |
+		SOF_TIMESTAMPING_RX_SOFTWARE |
+		SOF_TIMESTAMPING_TX_SOFTWARE |
+		SOF_TIMESTAMPING_SOFTWARE |
+		SOF_TIMESTAMPING_RAW_HARDWARE;
+	info->tx_types = BIT(HWTSTAMP_TX_OFF) | BIT(HWTSTAMP_TX_ON);
+	info->rx_filters = BIT(HWTSTAMP_FILTER_NONE) |
+		BIT(HWTSTAMP_FILTER_PTP_V1_L4_EVENT) |
+		BIT(HWTSTAMP_FILTER_PTP_V1_L4_SYNC) |
+		BIT(HWTSTAMP_FILTER_PTP_V1_L4_DELAY_REQ) |
+		BIT(HWTSTAMP_FILTER_PTP_V2_L4_SYNC) |
+		BIT(HWTSTAMP_FILTER_PTP_V2_L4_EVENT) |
+		BIT(HWTSTAMP_FILTER_PTP_V2_L2_EVENT) |
+		BIT(HWTSTAMP_FILTER_PTP_V2_L2_SYNC) |
+		BIT(HWTSTAMP_FILTER_PTP_V2_L2_DELAY_REQ) |
+		BIT(HWTSTAMP_FILTER_PTP_V2_L4_DELAY_REQ) |
+		BIT(HWTSTAMP_FILTER_PTP_V2_EVENT) |
+		BIT(HWTSTAMP_FILTER_PTP_V2_SYNC) |
+		BIT(HWTSTAMP_FILTER_PTP_V2_DELAY_REQ) |
+		BIT(HWTSTAMP_FILTER_NTP_ALL) |
+		BIT(HWTSTAMP_FILTER_ALL);
+#endif
 	return 0;
 }
 

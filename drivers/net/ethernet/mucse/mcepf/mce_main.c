@@ -20,6 +20,7 @@
 #include "mce_dcb.h"
 #include "mce_version.h"
 #include "mce_npu.h"
+#include "mce_ptp.h"
 
 /* Device IDs */
 #define PCI_DEVICE_ID_N20_25G 0x8500
@@ -152,8 +153,10 @@ static int mce_service_task_stop(struct mce_pf *pf)
 
 	if (pf->serv_task.func)
 		cancel_work_sync(&pf->serv_task);
-	if (pf->tx_hwtstamp_work.func)
-		cancel_work_sync(&pf->tx_hwtstamp_work);
+#if IS_REACHABLE(CONFIG_PTP_1588_CLOCK)
+	if (pf->tx_hwtstamp_work.work.func)
+		cancel_delayed_work_sync(&pf->tx_hwtstamp_work);
+#endif
 
 	clear_bit(MCE_SERVICE_SCHED, pf->state);
 	return ret;
@@ -646,12 +649,21 @@ void mce_reset_prev_stats(struct mce_pf *pf)
 
 void mce_reset_hw(struct mce_hw *hw)
 {
+#if IS_REACHABLE(CONFIG_PTP_1588_CLOCK)
+	struct mce_pf *pf = container_of(hw, struct mce_pf, hw);
+	bool restore_ptp = pf->flags2 & MCE_FLAG2_PTP_ENABLED;
+#endif
+
 	/* all regs will cleared when reset hw */
 	hw->ops->reset_hw(hw);
 	hw->ops->init_hw(hw);
 	/* Initialize PTP hardware when PTP misc IRQ support is present. */
 	if (hw->func_caps.common_cap.mac_misc_irq & BIT(MCE_MAC_MISC_IRQ_PTP))
 		hw->ops->set_init_ptp(hw);
+#if IS_REACHABLE(CONFIG_PTP_1588_CLOCK)
+	if (restore_ptp && mce_ptp_restore(pf))
+		dev_warn(hw->dev, "failed to restore PTP after reset\n");
+#endif
 	hw->vf.ops->set_vf_rebase_ring_base(hw);
 }
 
@@ -1738,8 +1750,10 @@ static int mce_init_pf(struct mce_pf *pf)
 	pf->aux_op_pending = MCE_AUX_OP_NONE;
 	pf->aux_op_upper = NULL;
 
-	pf->ptp_addr = pf->hw.eth_bar_base + 0x64000;
+#if IS_REACHABLE(CONFIG_PTP_1588_CLOCK)
+	INIT_DELAYED_WORK(&pf->tx_hwtstamp_work, mce_tx_hwtstamp_work);
 	pf->tx_timeout_factor = 10; /* 10s for ptp timeout */
+#endif
 
 	/* setup service timer and periodic service task */
 	timer_setup(&pf->serv_tmr, mce_service_timer, 0);

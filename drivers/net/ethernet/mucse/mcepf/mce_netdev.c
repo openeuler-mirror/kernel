@@ -76,6 +76,13 @@ int mce_open(struct net_device *netdev)
 		netdev_err(netdev, "Failed to open VSI 0x%04X\n", vsi->idx);
 		return err;
 	}
+	if (IS_REACHABLE(CONFIG_PTP_1588_CLOCK)) {
+		err = mce_ptp_register(pf);
+		if (err) {
+			mce_vsi_close(vsi);
+			return err;
+		}
+	}
 	/* Update existing tunnels information */
 
 	if (!test_bit(MCE_NO_LINK, pf->state))
@@ -102,6 +109,8 @@ static int mce_stop(struct net_device *netdev)
 	struct mce_pf *pf = vsi->back;
 
 	mce_notify_fw_ifup_down(pf, false);
+	if (IS_REACHABLE(CONFIG_PTP_1588_CLOCK))
+		mce_ptp_unregister(pf);
 	mce_vsi_close(vsi);
 
 	set_bit(MCE_FLAG_PF_UPDATE_LINK, pf->flags);
@@ -534,8 +543,19 @@ void mce_set_rx_mode(struct net_device *netdev)
 
 static int mce_ioctl(struct net_device *netdev, struct ifreq *req, int cmd)
 {
-	/* ptp 1588 used this */
+#if IS_REACHABLE(CONFIG_PTP_1588_CLOCK)
+	struct mce_netdev_priv *np = netdev_priv(netdev);
+	struct mce_vsi *vsi = np->vsi;
+	struct mce_pf *pf = vsi->back;
+#endif
+
 	switch (cmd) {
+#if IS_REACHABLE(CONFIG_PTP_1588_CLOCK)
+	case SIOCGHWTSTAMP:
+		return mce_ptp_get_ts_config(pf, req);
+	case SIOCSHWTSTAMP:
+		return mce_ptp_set_ts_config(pf, req);
+#endif
 	case SIOCGMIIPHY:
 		return 0;
 	case SIOCGMIIREG:

@@ -59,6 +59,7 @@
 #include "mce_type.h"
 #include "mce_txrx.h"
 #include <linux/auxiliary_bus.h>
+#include "mce_ptp.h"
 
 #include <net/pkt_cls.h>
 #include <net/tc_act/tc_mirred.h>
@@ -583,8 +584,6 @@ struct mce_pf {
 	struct devlink_port devlink_port;
 #endif /* CONFIG_NET_DEVLINK */
 	unsigned int default_addend;
-	u64 clk_ptp_rate; /*uint is HZ 1MHz＝1 000 000Hz*/
-	u8 __iomem *ptp_addr;
 	int gmac4;
 	u32 sub_second_inc;
 	u32 systime_flags;
@@ -688,7 +687,7 @@ struct mce_pf {
 	struct mce_dvlan_ctrl dvlan_ctrl;
 
 	/* add for ptp */
-	struct work_struct tx_hwtstamp_work;
+	struct delayed_work tx_hwtstamp_work;
 	struct ptp_clock *ptp_clock;
 	struct ptp_clock_info ptp_clock_ops;
 	struct sk_buff *ptp_tx_skb;

@@ -16,6 +16,7 @@
 #include "mce_hw_dcb.h"
 #include "mce_hw_npu.h"
 #include "mce_hw_fdir.h"
+#include "mce_hw_ptp.h"
 #include "../mce_fwchnl.h"
 
 /* pf_vf_num[8]: 0:pf 1:vf
@@ -3706,7 +3707,17 @@ static struct mce_hw_operations n20_ops = {
 	.npu_download_firmware = n20_npu_download_firmware,
 	.update_rdma_status = n20_update_rdma_status,
 
-/* ptp control */
+	/* PTP control */
+#if IS_REACHABLE(CONFIG_PTP_1588_CLOCK)
+	.ptp_get_systime = n20_get_systime,
+	.ptp_init_counter = n20_ptp_init_counter,
+	.ptp_init_systime = n20_init_systime,
+	.ptp_adjust_systime = n20_adjust_systime,
+	.ptp_adjfine = n20_adjfine,
+	.ptp_set_ts_config = n20_ptp_set_ts_config,
+	.ptp_tx_state = n20_ptp_tx_status,
+	.ptp_tx_stamp = n20_ptp_tx_stamp,
+#endif
 	.set_txring_trig_intr = n20_set_txring_trig_intr,
 	.get_hw_ring_stats = n20_get_hw_ring_stats,
 	.clear_hw_ring_stats = n20_clear_hw_ring_stats,

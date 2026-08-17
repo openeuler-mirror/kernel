@@ -598,6 +598,7 @@ struct mce_hw_operations {
 
 	/* ptp ops */
 	void (*ptp_get_systime)(struct mce_hw *hw, u64 *systime);
+	int (*ptp_init_counter)(struct mce_hw *hw);
 	int (*ptp_init_systime)(struct mce_hw *hw, u32 sec, u32 nsec);
 	int (*ptp_adjust_systime)(struct mce_hw *hw, u32 sec, u32 nsec,
 				  int add_sub);

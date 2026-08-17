@@ -41,3 +41,4 @@ mcepf-$(CONFIG_SYSFS) += mce_sysfs.o
 mcepf-$(CONFIG_NET_DEVLINK:m=y) += mce_devlink.o mce_repr.o
 
 mcepf-$(CONFIG_DEBUG_FS) += mce_debugfs.o mce_debugfs_regs.o
+mcepf-$(CONFIG_PTP_1588_CLOCK) += mce_n20/mce_hw_ptp.o mce_ptp.o

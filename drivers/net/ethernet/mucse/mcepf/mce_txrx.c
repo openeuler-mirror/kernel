@@ -1243,6 +1243,9 @@ netdev_tx_t __mce_hard_start_xmit(struct sk_buff *skb,
 	u32 count = 0;
 	u8 *priv_data;
 	int tc = 0;
+#if IS_REACHABLE(CONFIG_PTP_1588_CLOCK)
+	bool ptp_tx = false;
+#endif
 
 	if (!netif_carrier_ok(netdev)) {
 		dev_kfree_skb_any(skb);
@@ -1343,7 +1346,7 @@ netdev_tx_t __mce_hard_start_xmit(struct sk_buff *skb,
 
 	skb_tx_timestamp(skb);
 
-#if IS_ENABLED(CONFIG_PTP_1588_CLOCK)
+#if IS_REACHABLE(CONFIG_PTP_1588_CLOCK)
 	if (unlikely(skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP) &&
 	    (pf->flags2 & MCE_FLAG2_PTP_ENABLED) && pf->ptp_tx_en) {
 		if (!test_and_set_bit_lock(MCE_PTP_TX_IN_PROGRESS, pf->state)) {
@@ -1351,7 +1354,7 @@ netdev_tx_t __mce_hard_start_xmit(struct sk_buff *skb,
 			SET_CMD_PTP(tx_ctx.cmd);
 			pf->ptp_tx_skb = skb_get(skb);
 			pf->tx_hwtstamp_start = jiffies;
-			schedule_work(&pf->tx_hwtstamp_work);
+			ptp_tx = true;
 			netdev_logd(LOG_PTP_WORK,
 				    "%s tx ptp packet jiffies:%ld\n", __func__,
 				    pf->tx_hwtstamp_start);
@@ -1368,10 +1371,21 @@ netdev_tx_t __mce_hard_start_xmit(struct sk_buff *skb,
 	if (mce_tx_csum(skb, &tx_ctx, pf) < 0)
 		goto tx_drop;
 	mce_tx_map(first, tx_ring, &tx_ctx, repr);
+#if IS_REACHABLE(CONFIG_PTP_1588_CLOCK)
+	if (ptp_tx)
+		schedule_delayed_work(&pf->tx_hwtstamp_work, 0);
+#endif
 
 	return NETDEV_TX_OK;
 
 tx_drop:
+#if IS_REACHABLE(CONFIG_PTP_1588_CLOCK)
+	if (ptp_tx) {
+		dev_kfree_skb_any(pf->ptp_tx_skb);
+		pf->ptp_tx_skb = NULL;
+		clear_bit_unlock(MCE_PTP_TX_IN_PROGRESS, pf->state);
+	}
+#endif
 	dev_kfree_skb_any(skb);
 	tx_ring->ring_stats->tx_stats.tx_drop++;
 	return NETDEV_TX_OK;
@@ -2700,6 +2714,11 @@ int mce_clean_rx_irq(struct mce_ring *rx_ring, int budget)
 			}
 			break;
 		}
+
+#if IS_REACHABLE(CONFIG_PTP_1588_CLOCK)
+		if (pf->ptp_rx_en && (pf->flags2 & MCE_FLAG2_PTP_ENABLED))
+			mce_ptp_get_rx_hwstamp(pf, rx_desc, skb);
+#endif
 
 		mce_put_rx_buf(rx_ring, rx_buf, rx_buf_pgcnt);
 		cleaned_count++;
