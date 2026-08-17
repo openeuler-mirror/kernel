@@ -15,10 +15,6 @@
 #define MAX_IOCTL_COUNT 1024
 #define TIME_WINDOW_MS 3000
 #define TIME_WINDOW_JIFFIES msecs_to_jiffies(TIME_WINDOW_MS)
-#define UBCTL_UNSUPPORTED_RPCCMD_CNT_A_0 5
-#define UBCTL_UNSUPPORTED_RPCCMD_CNT_A_1 3
-#define UBCTL_UNSUPPORTED_RPCCMD_CNT_K_0 13
-#define UBCTL_UNSUPPORTED_RPCCMD_CNT_K_1 18
 #define UBCTL_CMD_CNT_MAX 100
 
 static u32 g_env_type;
@@ -29,10 +25,32 @@ struct ubctl_uctx {
 	struct fwctl_uctx uctx;
 };
 
-struct ubctl_env_type_info {
-	u32 env_type;
-	enum ub_fwctl_cmdrpc_type unsupported_rpccmd[UBCTL_CMD_CNT_MAX];
-	u32 rpc_cmd_count;
+static const u32 g_ubctl_env_type_a0_unsupported_cmds[] = {
+	UTOOL_CMD_QUERY_SCC_VERSION, UTOOL_CMD_QUERY_SCC_LOG,
+	UTOOL_CMD_QUERY_TA_WQE_TIME, UTOOL_CMD_QUERY_UPA_PKT_STATS, UTOOL_CMD_QUERY_UE_INFO
+};
+
+static const u32 g_ubctl_env_type_a1_unsupported_cmds[] = {
+	UTOOL_CMD_QUERY_TA_WQE_TIME, UTOOL_CMD_QUERY_UPA_PKT_STATS,
+	UTOOL_CMD_QUERY_UE_INFO, UTOOL_CMD_QUERY_BA_ICRC
+};
+
+static const u32 g_ubctl_env_type_k0_unsupported_cmds[] = {
+	UTOOL_CMD_CONF_NL_SSU_VL_PKT, UTOOL_CMD_QUERY_NL_SSU_VL_PKT, UTOOL_CMD_QUERY_DL_BIST,
+	UTOOL_CMD_CONF_DL_BIST, UTOOL_CMD_QUERY_DL_BIST_ERR, UTOOL_CMD_QUERY_DL_RT_BANDWIDTH,
+	UTOOL_CMD_QUERY_LOOPBACK, UTOOL_CMD_CONF_LOOPBACK,
+	UTOOL_CMD_QUERY_PRBS_EN, UTOOL_CMD_CONF_PRBS_EN, UTOOL_CMD_QUERY_PRBS_RESULT,
+	UTOOL_CMD_QUERY_PORT_PKT_STATS, UTOOL_CMD_QUERY_UPA_PKT_STATS, UTOOL_CMD_QUERY_BA_ICRC
+};
+
+static const u32 g_ubctl_env_type_k1_unsupported_cmds[] = {
+	UTOOL_CMD_CONF_NL_SSU_VL_PKT, UTOOL_CMD_QUERY_NL_SSU_VL_PKT, UTOOL_CMD_QUERY_DL_BIST,
+	UTOOL_CMD_CONF_DL_BIST, UTOOL_CMD_QUERY_DL_BIST_ERR, UTOOL_CMD_QUERY_DL_RT_BANDWIDTH,
+	UTOOL_CMD_QUERY_LOOPBACK, UTOOL_CMD_CONF_LOOPBACK, UTOOL_CMD_QUERY_PRBS_EN,
+	UTOOL_CMD_CONF_PRBS_EN, UTOOL_CMD_QUERY_PRBS_RESULT, UTOOL_CMD_QUERY_PORT_PKT_STATS,
+	UTOOL_CMD_QUERY_BA_MAR, UTOOL_CMD_QUERY_BA_MAR_TABLE, UTOOL_CMD_QUERY_BA_MAR_CYC_EN,
+	UTOOL_CMD_CONF_BA_MAR_CYC_EN, UTOOL_CMD_CONFIG_BA_MAR_PEFR_STATS,
+	UTOOL_CMD_QUERY_BA_MAR_PEFR_STATS, UTOOL_CMD_QUERY_BA_ICRC
 };
 
 static int ubctl_open_uctx(struct fwctl_uctx *uctx)
@@ -50,58 +68,61 @@ static void *ubctl_fw_info(struct fwctl_uctx *uctx, size_t *length)
 	return NULL;
 }
 
+static int ubctl_check_cmd_cnt(struct ubctl_dev *ucdev)
+{
+	if (ARRAY_SIZE(g_ubctl_env_type_a0_unsupported_cmds) > UBCTL_CMD_CNT_MAX ||
+	    ARRAY_SIZE(g_ubctl_env_type_a1_unsupported_cmds) > UBCTL_CMD_CNT_MAX ||
+	    ARRAY_SIZE(g_ubctl_env_type_k0_unsupported_cmds) > UBCTL_CMD_CNT_MAX ||
+	    ARRAY_SIZE(g_ubctl_env_type_k1_unsupported_cmds) > UBCTL_CMD_CNT_MAX) {
+		ubctl_err(ucdev, "the cmd cnt is larger than max(%u), pls check!\n",
+			  UBCTL_CMD_CNT_MAX);
+		return -ENOTTY;
+	}
+
+	return 0;
+}
+
 static int ubctl_check_env_type(struct ubctl_dev *ucdev, u32 rpc_cmd)
 {
-	static struct ubctl_env_type_info ubctl_env_type_info_table[] = {
-		{ UBASE_HW_VER_A_0,
-		  { UTOOL_CMD_QUERY_SCC_VERSION, UTOOL_CMD_QUERY_SCC_LOG,
-		    UTOOL_CMD_QUERY_TA_WQE_TIME,
-		    UTOOL_CMD_QUERY_UPA_PKT_STATS, UTOOL_CMD_QUERY_UE_INFO },
-		  UBCTL_UNSUPPORTED_RPCCMD_CNT_A_0 },
-		{ UBASE_HW_VER_A_1,
-		  { UTOOL_CMD_QUERY_TA_WQE_TIME,
-		    UTOOL_CMD_QUERY_UPA_PKT_STATS, UTOOL_CMD_QUERY_UE_INFO },
-		  UBCTL_UNSUPPORTED_RPCCMD_CNT_A_1 },
+	const u32 *unsupported_cmds = NULL;
+	u32 cmd_count = 0;
+	u32 i;
 
-		{ UBASE_HW_VER_K_0,
-		  { UTOOL_CMD_CONF_NL_SSU_VL_PKT, UTOOL_CMD_QUERY_NL_SSU_VL_PKT,
-		    UTOOL_CMD_QUERY_DL_BIST, UTOOL_CMD_CONF_DL_BIST, UTOOL_CMD_QUERY_DL_BIST_ERR,
-		    UTOOL_CMD_QUERY_DL_RT_BANDWIDTH, UTOOL_CMD_QUERY_LOOPBACK,
-		    UTOOL_CMD_CONF_LOOPBACK, UTOOL_CMD_QUERY_PRBS_EN,
-		    UTOOL_CMD_CONF_PRBS_EN, UTOOL_CMD_QUERY_PRBS_RESULT,
-		    UTOOL_CMD_QUERY_PORT_PKT_STATS, UTOOL_CMD_QUERY_UPA_PKT_STATS },
-		  UBCTL_UNSUPPORTED_RPCCMD_CNT_K_0 },
-		{ UBASE_HW_VER_K_1,
-		  { UTOOL_CMD_CONF_NL_SSU_VL_PKT, UTOOL_CMD_QUERY_NL_SSU_VL_PKT,
-		    UTOOL_CMD_QUERY_DL_BIST, UTOOL_CMD_CONF_DL_BIST, UTOOL_CMD_QUERY_DL_BIST_ERR,
-		    UTOOL_CMD_QUERY_DL_RT_BANDWIDTH, UTOOL_CMD_QUERY_LOOPBACK,
-		    UTOOL_CMD_CONF_LOOPBACK, UTOOL_CMD_QUERY_PRBS_EN,
-		    UTOOL_CMD_CONF_PRBS_EN, UTOOL_CMD_QUERY_PRBS_RESULT,
-		    UTOOL_CMD_QUERY_PORT_PKT_STATS,
-		    UTOOL_CMD_QUERY_BA_MAR, UTOOL_CMD_QUERY_BA_MAR_TABLE,
-		    UTOOL_CMD_QUERY_BA_MAR_CYC_EN, UTOOL_CMD_CONF_BA_MAR_CYC_EN,
-		    UTOOL_CMD_CONFIG_BA_MAR_PEFR_STATS, UTOOL_CMD_QUERY_BA_MAR_PEFR_STATS },
-		  UBCTL_UNSUPPORTED_RPCCMD_CNT_K_1 }
-	};
-	int env_type_cnt = ARRAY_SIZE(ubctl_env_type_info_table);
-	int i, j;
-
+	if (ubctl_check_cmd_cnt(ucdev))
+		return -ENOTTY;
 	g_env_type = ubase_get_hw_ver(ucdev->adev);
-	for (i = 0; i < env_type_cnt; i++) {
-		if (ubctl_env_type_info_table[i].env_type != g_env_type)
-			continue;
-		for (j = 0; j < ubctl_env_type_info_table[i].rpc_cmd_count; j++) {
-			if (ubctl_env_type_info_table[i].unsupported_rpccmd[j] != rpc_cmd)
-				continue;
+
+	switch (g_env_type) {
+	case UBASE_HW_VER_A_0:
+		unsupported_cmds = g_ubctl_env_type_a0_unsupported_cmds;
+		cmd_count = ARRAY_SIZE(g_ubctl_env_type_a0_unsupported_cmds);
+		break;
+	case UBASE_HW_VER_A_1:
+		unsupported_cmds = g_ubctl_env_type_a1_unsupported_cmds;
+		cmd_count = ARRAY_SIZE(g_ubctl_env_type_a1_unsupported_cmds);
+		break;
+	case UBASE_HW_VER_K_0:
+		unsupported_cmds = g_ubctl_env_type_k0_unsupported_cmds;
+		cmd_count = ARRAY_SIZE(g_ubctl_env_type_k0_unsupported_cmds);
+		break;
+	case UBASE_HW_VER_K_1:
+		unsupported_cmds = g_ubctl_env_type_k1_unsupported_cmds;
+		cmd_count = ARRAY_SIZE(g_ubctl_env_type_k1_unsupported_cmds);
+		break;
+	default:
+		ubctl_err(ucdev, "env type(%u) is not support.\n", g_env_type);
+		return -ENOTTY;
+	}
+
+	for (i = 0; i < cmd_count; i++) {
+		if (unsupported_cmds[i] == rpc_cmd) {
 			ubctl_err(ucdev, "rpc cmd(0x%x) cannot be used in current env type(%u)\n",
 				  rpc_cmd, g_env_type);
 			return -ENOTTY;
 		}
-		return 0;
 	}
-	ubctl_err(ucdev, "env type(%u) is not support.\n", g_env_type);
 
-	return -ENOTTY;
+	return 0;
 }
 
 /*
