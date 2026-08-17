@@ -632,7 +632,7 @@ struct sched_entity {
 	struct sched_avg		avg;
 #endif
 	KABI_USE(1, u64 min_slice)
-	KABI_RESERVE(2)
+	KABI_USE(2, u64 max_slice)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 };

@@ -1172,6 +1172,7 @@ struct ubcore_vtpn {
 	uint64_t tag;
 	bool uspace; /* true: user space; false: kernel space */
 	struct ubcore_tpid_reuse *tpid_reuse;
+	uint64_t tpid_uobj_id; /* uburma tpid uobj id (idr id), set by uburma */
 };
 
 union ubcore_vtp_cfg_flag {
