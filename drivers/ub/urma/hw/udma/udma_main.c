@@ -401,6 +401,12 @@ void udma_destroy_tables(struct udma_dev *udma_dev)
 		dev_err(udma_dev->dev,
 			"IDA not empty in clean up rsvd jetty id table.\n");
 	ida_destroy(&udma_dev->rsvd_jetty_ida_table.ida);
+	if (udma_dev->sq_reserved_info.sq_reserved) {
+		if (!ida_is_empty(&udma_dev->sq_reserved_info.ida_table.ida))
+			dev_err(udma_dev->dev,
+				"IDA not empty in sq_reserved_info.\n");
+		ida_destroy(&udma_dev->sq_reserved_info.ida_table.ida);
+	}
 
 	if (!xa_empty(&udma_dev->crq_nb_table))
 		dev_err(udma_dev->dev, "crq nb table is not empty.\n");
@@ -815,7 +821,6 @@ static int udma_construct_qos_param(struct udma_dev *dev)
 static int udma_query_wqebb_va(struct udma_dev *dev)
 {
 #define UDMA_FIRST_UE_ID 2
-#define UDMA_RESERVED_SQ_SIZE 2097152
 	uint32_t max_jetty_num, ue_va_offset;
 	struct udma_cmd_wqebb_va info = {};
 	struct ubase_cmd_buf in, out;
@@ -854,9 +859,10 @@ static int udma_query_wqebb_va(struct udma_dev *dev)
 	ue_va_offset = dev->die_id * info.ue_num + dev->ue_id - UDMA_FIRST_UE_ID;
 	dev->sq_reserved_info.va_start = info.va_start;
 	dev->sq_reserved_info.va_size = info.va_size;
-	dev->sq_reserved_info.size_per_jetty = UDMA_RESERVED_SQ_SIZE;
+	dev->sq_reserved_info.size_per_jetty = ALIGN(dev->caps.jfs.depth *
+		MAX_WQEBB_IN_SQE * UDMA_JFS_WQEBB_SIZE, UDMA_HUGEPAGE_SIZE);
 	dev->sq_reserved_info.size_per_ue =
-		ALIGN_DOWN(info.va_size / info.die_num / info.ue_num, UDMA_RESERVED_SQ_SIZE);
+		ALIGN_DOWN(info.va_size / info.die_num / info.ue_num, UDMA_HUGEPAGE_SIZE);
 	dev->sq_reserved_info.va_per_ue =
 		info.va_start + dev->sq_reserved_info.size_per_ue * ue_va_offset;
 	dev->sq_reserved_info.sq_reserved = dev->sq_reserved_info.size_per_jetty *
@@ -864,6 +870,8 @@ static int udma_query_wqebb_va(struct udma_dev *dev)
 	if (!dev->sq_reserved_info.sq_reserved)
 		dev_warn(dev->dev,
 			"invalid param, the reserved size is not enough to create all sq.\n");
+	else
+		udma_init_ida(&dev->sq_reserved_info.ida_table, max_jetty_num - 1, 0);
 
 	return 0;
 }

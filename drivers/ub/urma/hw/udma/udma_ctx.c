@@ -169,6 +169,8 @@ struct ubcore_ucontext *udma_alloc_ucontext(struct ubcore_device *ub_dev,
 	mutex_init(&ctx->hugepage_lock);
 	INIT_LIST_HEAD(&ctx->page_list);
 	mutex_init(&ctx->page_lock);
+	INIT_LIST_HEAD(&ctx->reserved_list);
+	mutex_init(&ctx->reserved_lock);
 
 	ret = udma_init_ctx_resp(dev, udrv_data, ctx->dtu_en);
 	if (ret) {
@@ -179,6 +181,7 @@ struct ubcore_ucontext *udma_alloc_ucontext(struct ubcore_device *ub_dev,
 	return &ctx->base;
 
 err_init_ctx_resp:
+	mutex_destroy(&ctx->reserved_lock);
 	mutex_destroy(&ctx->page_lock);
 	mutex_destroy(&ctx->hugepage_lock);
 	mutex_destroy(&ctx->pgdir_mutex);
@@ -190,39 +193,27 @@ err_free_ctx:
 	return NULL;
 }
 
-int udma_free_ucontext(struct ubcore_ucontext *ucontext)
+static void udma_destroy_u_hugepage_list(struct udma_context *ctx)
 {
-	struct udma_dev *udma_dev = to_udma_dev(ucontext->ub_dev);
 	struct udma_hugepage_priv *priv;
 	struct udma_hugepage_priv *tmp;
 	struct vm_area_struct *vma;
-	struct udma_context *ctx;
 	uint32_t i;
-
-	ctx = to_udma_context(ucontext);
-
-	mutex_destroy(&ctx->pgdir_mutex);
-	udma_unset_dtu_va_info(udma_dev, ctx);
-	udma_put_usva_tid(udma_dev, ctx);
 
 	mutex_lock(&ctx->hugepage_lock);
 	list_for_each_entry_safe(priv, tmp, &ctx->hugepage_list, list) {
 		list_del(&priv->list);
-		if (ctx->dev->caps.sva_sep_mode_en) {
-			udma_ioummu_unmap(ctx->tid, UMMU_INVALID_TID,
-					  (uintptr_t)priv->va_base, priv->va_len);
-			sg_free_table(&priv->sgt);
-		}
+		udma_matt_unmap_by_priv(ctx, priv);
 		if (current->mm) {
 			mmap_write_lock(current->mm);
-			vma = find_vma(current->mm, (unsigned long)priv->va_base);
-			if (vma != NULL && vma->vm_start <= (unsigned long)priv->va_base &&
-			    vma->vm_end >= (unsigned long)(priv->va_base + priv->va_len))
-				zap_vma_ptes(vma, (unsigned long)priv->va_base, priv->va_len);
+			vma = find_vma(current->mm, (uintptr_t)priv->va_base);
+			if (vma != NULL && vma->vm_start <= (uintptr_t)priv->va_base &&
+			    vma->vm_end >= (uintptr_t)(priv->va_base + priv->va_len))
+				zap_vma_ptes(vma, (uintptr_t)priv->va_base, priv->va_len);
 			mmap_write_unlock(current->mm);
 		}
 
-		dev_info_ratelimited(udma_dev->dev, "free_hugepage, seq=%u.\n", priv->seq);
+		dev_info_ratelimited(ctx->dev->dev, "free_hugepage, seq=%u.\n", priv->seq);
 		for (i = 0; i < priv->page_num; i++)
 			udma_free_pages(priv->pages[i], get_order(priv->page_size));
 		kfree(priv->pages);
@@ -230,7 +221,48 @@ int udma_free_ucontext(struct ubcore_ucontext *ucontext)
 	}
 	mutex_unlock(&ctx->hugepage_lock);
 	mutex_destroy(&ctx->hugepage_lock);
+}
+
+static void udma_destroy_u_reserved_list(struct udma_context *ctx)
+{
+	struct udma_hugepage_priv *priv;
+	struct udma_hugepage_priv *tmp;
+	struct vm_area_struct *vma;
+	uint32_t i;
+
+	mutex_lock(&ctx->reserved_lock);
+	list_for_each_entry_safe(priv, tmp, &ctx->reserved_list, list) {
+		list_del(&priv->list);
+		udma_matt_unmap_by_priv(ctx, priv);
+		if (current->mm) {
+			mmap_write_lock(current->mm);
+			vma = vma_lookup(current->mm, (uintptr_t)priv->va_base);
+			if (vma != NULL)
+				zap_vma_ptes(vma, (uintptr_t)priv->va_base, priv->va_len);
+			mmap_write_unlock(current->mm);
+		}
+		if (debug_switch)
+			dev_info_ratelimited(ctx->dev->dev, "free_reserved, seq=%u.\n", priv->seq);
+		for (i = 0; i < priv->page_num; i++)
+			udma_free_pages(priv->pages[i], get_order(priv->page_size));
+		kfree(priv->pages);
+		kfree(priv);
+	}
+	mutex_unlock(&ctx->reserved_lock);
+	mutex_destroy(&ctx->reserved_lock);
+}
+
+int udma_free_ucontext(struct ubcore_ucontext *ucontext)
+{
+	struct udma_dev *udma_dev = to_udma_dev(ucontext->ub_dev);
+	struct udma_context *ctx = to_udma_context(ucontext);
+
+	mutex_destroy(&ctx->pgdir_mutex);
+	udma_unset_dtu_va_info(udma_dev, ctx);
+	udma_put_usva_tid(udma_dev, ctx);
+	udma_destroy_u_hugepage_list(ctx);
 	mutex_destroy(&ctx->page_lock);
+	udma_destroy_u_reserved_list(ctx);
 	kfree(ctx);
 
 	return 0;
@@ -445,32 +477,6 @@ int udma_mmap(struct ubcore_ucontext *uctx, struct vm_area_struct *vma)
 	return 0;
 }
 
-int udma_create_sgt_from_pages(struct sg_table *sgt, struct page **pages,
-			       uint32_t page_num, uint32_t page_size)
-{
-	struct scatterlist *sg;
-	uint32_t i;
-
-	if (sg_alloc_table(sgt, page_num, GFP_KERNEL))
-		return -ENOMEM;
-
-	sg = sgt->sgl;
-	for (i = 0; i < page_num; i++, sg = sg_next(sg)) {
-		sg_set_page(sg, pages[i], page_size, 0);
-		if (i == page_num - 1)
-			sg_mark_end(sg);
-	}
-
-	return 0;
-}
-
-static inline bool udma_check_vma_flags(struct vm_area_struct *vma)
-{
-	//TODO: Check user va and length
-	return (vma->vm_flags & VM_WIPEONFORK) && (vma->vm_flags & VM_DONTEXPAND) &&
-	       (vma->vm_flags & VM_DONTCOPY) && (vma->vm_flags & VM_IO);
-}
-
 static struct udma_page_priv *
 udma_get_page_priv(struct udma_context *ctx, uint64_t va, uint32_t len)
 {
@@ -564,6 +570,47 @@ void udma_put_map_page_priv(struct udma_context *ctx, struct udma_page_priv *pri
 	udma_free_page_priv(ctx, priv);
 }
 
+int udma_matt_map_by_priv(struct udma_context *ctx, struct udma_hugepage_priv *priv)
+{
+	struct scatterlist *sg;
+	uint32_t i;
+	int ret;
+
+	if (!ctx->dev->caps.sva_sep_mode_en)
+		return 0;
+
+	ret = sg_alloc_table(&priv->sgt, priv->page_num, GFP_KERNEL);
+	if (ret) {
+		dev_err(ctx->dev->dev, "failed to create SG table, ret=%d.\n", ret);
+		return ret;
+	}
+
+	sg = priv->sgt.sgl;
+	for (i = 0; i < priv->page_num; i++, sg = sg_next(sg)) {
+		sg_set_page(sg, priv->pages[i], priv->page_size, 0);
+		if (i == (priv->page_num - 1))
+			sg_mark_end(sg);
+	}
+
+	ret = udma_ioummu_map(ctx->tid, UMMU_INVALID_TID, IOMMU_READ | IOMMU_WRITE,
+			      (uintptr_t)priv->va_base, &priv->sgt);
+	if (ret) {
+		dev_err(ctx->dev->dev, "failed to map SGT, ret = %d.\n", ret);
+		sg_free_table(&priv->sgt);
+	}
+
+	return ret;
+}
+
+void udma_matt_unmap_by_priv(struct udma_context *ctx, struct udma_hugepage_priv *priv)
+{
+	if (ctx->dev->caps.sva_sep_mode_en) {
+		udma_ioummu_unmap(ctx->tid, UMMU_INVALID_TID, (uintptr_t)priv->va_base,
+				  priv->va_len);
+		sg_free_table(&priv->sgt);
+	}
+}
+
 static struct udma_hugepage_priv *udma_list_find_before(struct udma_context *ctx, uint64_t va)
 {
 	struct udma_hugepage_priv *priv;
@@ -651,7 +698,6 @@ static struct udma_hugepage_priv *
 udma_alloc_u_hugepage_priv(struct udma_context *ctx, struct vm_area_struct *vma)
 {
 	struct udma_hugepage_priv *priv = NULL;
-	int ret;
 
 	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
 	if (!priv)
@@ -664,21 +710,8 @@ udma_alloc_u_hugepage_priv(struct udma_context *ctx, struct vm_area_struct *vma)
 			goto err_remap_hugepage;
 	}
 
-	if (ctx->dev->caps.sva_sep_mode_en) {
-		ret = udma_create_sgt_from_pages(&priv->sgt, priv->pages, priv->page_num,
-						 priv->page_size);
-		if (ret) {
-			dev_err(ctx->dev->dev, "failed to create SG table, ret=%d.\n", ret);
-			goto err_create_sgt_from_pages;
-		}
-
-		ret = udma_ioummu_map(ctx->tid, UMMU_INVALID_TID, IOMMU_READ | IOMMU_WRITE,
-				      vma->vm_start, &priv->sgt);
-		if (ret) {
-			dev_err(ctx->dev->dev, "failed to map SGT, ret = %d.\n", ret);
-			goto err_ioummu_map;
-		}
-	}
+	if (udma_matt_map_by_priv(ctx, priv))
+		goto err_matt_map;
 
 	list_add(&priv->list, &ctx->hugepage_list);
 
@@ -688,10 +721,7 @@ udma_alloc_u_hugepage_priv(struct udma_context *ctx, struct vm_area_struct *vma)
 			priv->seq, priv->va_len >> UDMA_HUGEPAGE_SHIFT);
 	return priv;
 
-err_ioummu_map:
-	if (ctx->dev->caps.sva_sep_mode_en)
-		sg_free_table(&priv->sgt);
-err_create_sgt_from_pages:
+err_matt_map:
 	udma_unremap_hugepage(vma, priv, priv->page_num);
 err_remap_hugepage:
 	kfree(priv);
@@ -766,11 +796,7 @@ void udma_free_u_hugepage(struct udma_context *ctx, uint64_t buf_addr)
 			dev_info_ratelimited(ctx->dev->dev, "free_hugepage, seq=%u.\n", priv->seq);
 	}
 
-	if (ctx->dev->caps.sva_sep_mode_en) {
-		udma_ioummu_unmap(ctx->tid, UMMU_INVALID_TID,
-				  (uintptr_t)priv->va_base, priv->va_len);
-		sg_free_table(&priv->sgt);
-	}
+	udma_matt_unmap_by_priv(ctx, priv);
 	if (current->mm) {
 		mmap_write_lock(current->mm);
 		vma = find_vma(current->mm, (unsigned long)priv->va_base);

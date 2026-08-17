@@ -147,6 +147,7 @@ static int udma_u_alloc_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr,
 			dev_err(dev->dev, "failed to get RQ page.\n");
 			return -EINVAL;
 		}
+		jfr->rq.buf.is_hugepage = false;
 	}
 
 	jfr->idx_que.buf.page_priv =
@@ -264,10 +265,12 @@ static void udma_put_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr, bool di
 
 	udma_put_sw_db(jfr->udma_ctx, jfr->sw_db.db_addr);
 	udma_put_map_page_priv(jfr->udma_ctx, jfr->idx_que.buf.page_priv);
-	if (jfr->rq.buf.is_hugepage)
+	if (jfr->rq.buf.is_hugepage) {
 		udma_free_u_hugepage(jfr->udma_ctx, jfr->rq.buf.addr);
-	else
+		jfr->rq.buf.is_hugepage = false;
+	} else {
 		udma_put_map_page_priv(jfr->udma_ctx, jfr->rq.buf.page_priv);
+	}
 }
 
 static enum udma_rx_limit_wl to_udma_limit_wl(uint32_t rx_threshold)
