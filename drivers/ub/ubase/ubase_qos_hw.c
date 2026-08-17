@@ -33,6 +33,22 @@ int ubase_query_sl_vl_map(struct ubase_dev *udev, u8 *sl_vl)
 	return 0;
 }
 
+int ubase_query_vl_map(struct ubase_dev *udev, struct ubase_query_vl_map_cmd *resp)
+{
+	struct ubase_query_vl_map_cmd req = {0};
+	struct ubase_cmd_buf in, out;
+	int ret;
+
+	ubase_fill_inout_buf(&in, UBASE_OPC_CFG_VL_MAP, true, sizeof(req), &req);
+	ubase_fill_inout_buf(&out, UBASE_OPC_CFG_VL_MAP, false, sizeof(*resp),
+			     resp);
+	ret = __ubase_cmd_send_inout(udev, &in, &out);
+	if (ret)
+		ubase_err(udev, "failed to query vl map, ret = %d.\n", ret);
+
+	return ret;
+}
+
 static inline unsigned long ubase_convert_sl_vl_bitmap(struct ubase_dev *udev,
 						       unsigned long sl_bitmap)
 {
