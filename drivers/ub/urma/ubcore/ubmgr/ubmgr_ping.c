@@ -510,6 +510,38 @@ static int ping_ctx_prefill_recv_wr(struct ubmgr_ping_ctx *ctx)
 	return 0;
 }
 
+static int ping_jetty_set_priority(struct ubcore_device *dev,
+				   struct ubcore_jetty_cfg *jetty_cfg)
+{
+	struct ubcore_device_attr attr = {0};
+	int set_priority_ret = 0;
+	int ret = 0;
+	int i;
+
+	ret = ubcore_query_device_attr(dev, &attr);
+	if (ret == 0) {
+		for (i = 0; i < UBCORE_MAX_PRIORITY_CNT; ++i) {
+			/* ubmgr_ping uses ctp, so ctp priority used */
+			if (attr.dev_cap.priority_info[i].tp_type.bs.ctp == 1) {
+				jetty_cfg->priority = i;
+				ubcore_log_info(
+					"ubmgr_ping set priority : %d, tp_type : ctp\n",
+					i);
+				set_priority_ret = 1;
+				break;
+			}
+		}
+		if (set_priority_ret == 0) {
+			ubcore_log_err("set priority default value : 0\n");
+			return -EINVAL;
+		}
+	} else {
+		ubcore_log_err("Failed to ubcore get dev_attr!\n");
+		return -EINVAL;
+	}
+	return 0;
+}
+
 static int ping_ctx_init_jetty(struct ubcore_device *dev,
 			       struct ubmgr_ping_ctx *ctx, uint32_t eid_index)
 {
@@ -585,13 +617,19 @@ static int ping_ctx_init_jetty(struct ubcore_device *dev,
 		.trans_mode = UBCORE_TP_RM,
 		.eid_index = eid_index,
 		.jfs_depth = PING_SEND_DEPTH,
-		.priority = 6,
+		.priority = 0,
 		.max_send_sge = 1,
 		.max_send_rsge = 1,
 		.send_jfc = ctx->send_jfc,
 		.recv_jfc = ctx->recv_jfc,
 		.jfr = ctx->jfr,
 	};
+
+	ret = ping_jetty_set_priority(dev, &jetty_cfg);
+	if (ret != 0) {
+		ubcore_log_err("Failed to select CTP priority, ret:%d\n", ret);
+		goto delete_jfr;
+	}
 
 	ctx->jetty = ubcore_create_jetty(dev, &jetty_cfg, NULL, NULL);
 	if (IS_ERR_OR_NULL(ctx->jetty)) {
