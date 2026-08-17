@@ -414,7 +414,7 @@ void udma_adv_id_free(struct udma_group_bitmap *bitmap_table, uint32_t start_idx
 	spin_unlock(&bitmap_table->lock);
 }
 
-static void udma_init_ida_table(struct udma_ida *ida_table, uint32_t max, uint32_t min)
+void udma_init_ida(struct udma_ida *ida_table, uint32_t max, uint32_t min)
 {
 	ida_init(&ida_table->ida);
 	spin_lock_init(&ida_table->lock);
@@ -425,7 +425,7 @@ static void udma_init_ida_table(struct udma_ida *ida_table, uint32_t max, uint32
 
 void udma_init_udma_table(struct udma_table *table, uint32_t max, uint32_t min, bool irq_lock)
 {
-	udma_init_ida_table(&table->ida_table, max, min);
+	udma_init_ida(&table->ida_table, max, min);
 	if (irq_lock)
 		xa_init_flags(&table->xa, XA_FLAGS_LOCK_IRQ);
 	else
@@ -840,10 +840,12 @@ void udma_k_free_buf(struct udma_dev *dev, struct udma_buf *buf)
 		return;
 	}
 
-	if (buf->is_hugepage)
+	if (buf->is_hugepage) {
 		udma_free_hugepage(dev, buf->hugepage);
-	else
+		buf->is_hugepage = false;
+	} else {
 		udma_free_normal_buf(dev, size, buf);
+	}
 }
 
 bool remap_va_to_pfn(struct udma_dev *dev, uint64_t va, uint64_t *pfn)
@@ -963,7 +965,6 @@ void udma_destroy_hugepage(struct udma_dev *dev)
 		list_del(&priv->list);
 		dev_info_ratelimited(dev->dev, "free_hugepage, seq=%u.\n", priv->seq);
 		udma_unpin_k_addr(priv->umem);
-		udma_iotlb_sync(dev, (uintptr_t)priv->va_base, priv->va_len);
 		vfree(priv->va_base);
 		kfree(priv);
 	}

@@ -253,15 +253,6 @@ struct udma_entity_msg {
 	struct udma_entity_buf buf;
 };
 
-struct udma_sq_reserved_info {
-	uint64_t va_start;
-	uint64_t va_size;
-	uint64_t va_per_ue;
-	uint64_t size_per_ue;
-	uint64_t size_per_jetty;
-	bool sq_reserved;
-};
-
 struct udma_ae_event_type {
 	uint8_t event_type;
 	uint8_t sub_type;
