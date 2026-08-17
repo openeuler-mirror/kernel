@@ -3399,7 +3399,12 @@ static void txgbe_configure_srrctl(struct txgbe_adapter *adapter,
 	srrctl |= TXGBE_RX_HDR_SIZE << TXGBE_PX_RR_CFG_BSIZEHDRSIZE_SHIFT;
 
 	/* configure the packet buffer length */
-	if (test_bit(__TXGBE_RX_3K_BUFFER, &rx_ring->state))
+	/* PF may receive 3K length desc when SR-IOV is enabled,
+	 * build_skb with pad causes request out-of-bounds memory.
+	 * Validate desc len to 2K and alloc 3K buffer to avoid it.
+	 */
+	if (test_bit(__TXGBE_RX_3K_BUFFER, &rx_ring->state) &&
+	    !(adapter->flags & TXGBE_FLAG_SRIOV_ENABLED))
 		srrctl |= TXGBE_RXBUFFER_3K >> TXGBE_PX_RR_CFG_BSIZEPKT_SHIFT;
 	else
 		srrctl |= TXGBE_RXBUFFER_2K >> TXGBE_PX_RR_CFG_BSIZEPKT_SHIFT;
@@ -3942,6 +3947,9 @@ static void txgbe_set_rx_buffer_len(struct txgbe_adapter *adapter)
 		    (max_frame > (ETH_FRAME_LEN + ETH_FCS_LEN)))
 			set_bit(__TXGBE_RX_3K_BUFFER, &rx_ring->state);
 #endif
+
+		if (adapter->flags & TXGBE_FLAG_SRIOV_ENABLED)
+			set_bit(__TXGBE_RX_3K_BUFFER, &rx_ring->state);
 	}
 }
 
