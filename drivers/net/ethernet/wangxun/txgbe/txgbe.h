@@ -103,6 +103,8 @@ DECLARE_STATIC_KEY_FALSE(txgbe_xdp_locking_key);
 #define TXGBE_RXBUFFER_15K      15360
 #define TXGBE_MAX_RXBUFFER      16384  /* largest size for single descriptor */
 
+#define TXGBE_PAGE_POOL_RX_BUF_SIZE 4096
+
 #define TXGBE_BP_M_NULL                      0
 #define TXGBE_BP_M_SFI                       1
 #define TXGBE_BP_M_KR                        2
@@ -286,6 +288,7 @@ enum txgbe_ring_state_t {
 	__TXGBE_RX_FCOE,
 #endif
 	__TXGBE_TX_DISABLED,
+	__TXGBE_RX_PAGE_POOL_ENABLED,
 };
 
 struct txgbe_fwd_adapter {
@@ -324,6 +327,13 @@ struct txgbe_fwd_adapter {
 	set_bit(__TXGBE_TX_XDP_RING, &(ring)->state)
 #define clear_ring_xdp(ring) \
 	clear_bit(__TXGBE_TX_XDP_RING, &(ring)->state)
+
+#define ring_is_page_pool_enabled(ring) \
+	test_bit(__TXGBE_RX_PAGE_POOL_ENABLED, &(ring)->state)
+#define set_ring_page_pool_enabled(ring) \
+	set_bit(__TXGBE_RX_PAGE_POOL_ENABLED, &(ring)->state)
+#define clear_ring_page_pool_enabled(ring) \
+	clear_bit(__TXGBE_RX_PAGE_POOL_ENABLED, &(ring)->state)
 
 struct txgbe_ring {
 	struct txgbe_ring *next;        /* pointer to next ring in q_vector */
@@ -723,6 +733,7 @@ struct txgbe_therm_proc_data {
 #define TXGBE_FLAG2_GLOBAL_RESET_REQUESTED      BIT(20)
 #define TXGBE_FLAG2_CLOUD_SWITCH_ENABLED        BIT(21)
 #define TXGBE_FLAG2_MNG_REG_ACCESS_DISABLED     BIT(22)
+#define TXGBE_FLAG2_RX_PAGE_POOL				BIT(23)
 #define TXGBE_FLAG2_ECC_ERR_RESET               BIT(29)
 #define TXGBE_FLAG2_RX_LEGACY					BIT(30)
 #define TXGBE_FLAG2_PCIE_NEED_RECOVER           BIT(31)
@@ -971,6 +982,7 @@ struct txgbe_adapter {
 	u64 eth_priv_flags;
 #define TXGBE_ETH_PRIV_FLAG_LLDP		BIT(0)
 #define TXGBE_ETH_PRIV_FLAG_LEGACY_RX	BIT(1)
+#define TXGBE_ETH_PRIV_FLAG_PAGE_POOL	BIT(2)
 
 	/* AF_XDP zero-copy */
 	struct xsk_buff_pool **xsk_pools;

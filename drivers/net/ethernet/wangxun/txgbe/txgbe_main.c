@@ -234,8 +234,6 @@ static inline int txgbe_enumerate_functions(struct txgbe_adapter *adapter)
 		/* don't count virtual functions */
 		if (entry->is_virtfn)
 			continue;
-#endif
-
 		/* When the devices on the bus don't all match our device ID,
 		 * we can't reliably determine the correct number of
 		 * functions. This can occur if a function has been direct
@@ -1112,54 +1110,48 @@ static bool txgbe_alloc_mapped_page(struct txgbe_ring *rx_ring,
 				    struct txgbe_rx_buffer *bi)
 {
 	struct page *page = bi->page;
-	dma_addr_t dma;
-	unsigned int offset = 0;
+	dma_addr_t dma = 0;
 
 	/* since we are recycling buffers we should seldom need to alloc */
 	if (likely(page))
 		return true;
 
-#ifndef TXGBE_PAGE_POOL
-	/* alloc new page for storage */
-	page = dev_alloc_pages(txgbe_rx_pg_order(rx_ring));
-	if (unlikely(!page)) {
-		rx_ring->rx_stats.alloc_rx_page_failed++;
-		return false;
+	if (!ring_is_page_pool_enabled(rx_ring)) {
+		/* alloc new page for storage */
+		page = dev_alloc_pages(txgbe_rx_pg_order(rx_ring));
+		if (unlikely(!page)) {
+			rx_ring->rx_stats.alloc_rx_page_failed++;
+			return false;
+		}
+
+		/* map page for use */
+		dma = dma_map_page_attrs(rx_ring->dev, page, 0,
+					 txgbe_rx_pg_size(rx_ring),
+					 DMA_FROM_DEVICE,
+					 TXGBE_RX_DMA_ATTR);
+
+		/* if mapping failed free memory back to system since
+		 * there isn't much point in holding memory we can't use
+		 */
+		if (dma_mapping_error(rx_ring->dev, dma)) {
+			__free_pages(page, txgbe_rx_pg_order(rx_ring));
+
+			rx_ring->rx_stats.alloc_rx_page_failed++;
+			return false;
+		}
+	} else {
+		page = page_pool_dev_alloc_pages(rx_ring->page_pool);
+		WARN_ON(!page);
+		dma = page_pool_get_dma_addr(page);
 	}
 
-	/* map page for use */
-	dma = dma_map_page_attrs(rx_ring->dev, page, 0,
-				 txgbe_rx_pg_size(rx_ring),
-				 DMA_FROM_DEVICE,
-				 TXGBE_RX_DMA_ATTR);
-
-	/* if mapping failed free memory back to system since
-	 * there isn't much point in holding memory we can't use
-	 */
-	if (dma_mapping_error(rx_ring->dev, dma)) {
-		__free_pages(page, txgbe_rx_pg_order(rx_ring));
-
-		rx_ring->rx_stats.alloc_rx_page_failed++;
-		return false;
-	}
-#else
-#if (PAGE_SIZE < 8192)
-	page = page_pool_dev_alloc_pages(rx_ring->page_pool);
-#else
-	page = page_pool_dev_alloc_frag(rx_ring->page_pool, &offset,
-						txgbe_rx_bufsz(rx_ring));
-#endif
-	WARN_ON(!page);
-	dma = page_pool_get_dma_addr(page);
-
-#endif
-
+	bi->page_offset = txgbe_rx_offset(rx_ring);
 	bi->page_dma = dma;
 	bi->page = page;
-	bi->page_offset = txgbe_rx_offset(rx_ring) + offset;
-#ifndef TXGBE_PAGE_POOL
-	page_ref_add(page, USHRT_MAX - 1);
-#endif
+
+	if (!ring_is_page_pool_enabled(rx_ring))
+		page_ref_add(page, USHRT_MAX - 1);
+
 	bi->pagecnt_bias = USHRT_MAX;
 
 	return true;
@@ -1469,7 +1461,6 @@ static void txgbe_pull_tail(struct sk_buff *skb)
 static void txgbe_dma_sync_frag(struct txgbe_ring *rx_ring,
 				struct sk_buff *skb)
 {
-#ifndef TXGBE_PAGE_POOL
 	/* if the page was released unmap it, else just sync our portion */
 	if (unlikely(TXGBE_CB(skb)->page_released)) {
 		dma_unmap_page_attrs(rx_ring->dev, TXGBE_CB(skb)->dma,
@@ -1477,9 +1468,28 @@ static void txgbe_dma_sync_frag(struct txgbe_ring *rx_ring,
 				     DMA_FROM_DEVICE,
 				     TXGBE_RX_DMA_ATTR);
 	} else if (ring_uses_build_skb(rx_ring)) {
-#else
+		unsigned long offset = (unsigned long)(skb->data) & ~PAGE_MASK;
+
+		dma_sync_single_range_for_cpu(rx_ring->dev,
+					      TXGBE_CB(skb)->dma,
+					      offset,
+					      skb_headlen(skb),
+					      DMA_FROM_DEVICE);
+	} else {
+		skb_frag_t *frag = &skb_shinfo(skb)->frags[0];
+
+		dma_sync_single_range_for_cpu(rx_ring->dev,
+					      TXGBE_CB(skb)->dma,
+					      skb_frag_off(frag),
+					      skb_frag_size(frag),
+					      DMA_FROM_DEVICE);
+	}
+}
+
+static void txgbe_dma_sync_frag_page_pool(struct txgbe_ring *rx_ring,
+				struct sk_buff *skb)
+{
 	if (ring_uses_build_skb(rx_ring)) {
-#endif
 		unsigned long offset = (unsigned long)(skb->data) & ~PAGE_MASK;
 
 		dma_sync_single_range_for_cpu(rx_ring->dev,
@@ -1557,7 +1567,6 @@ bool txgbe_cleanup_headers(struct txgbe_ring *rx_ring,
  *
  * Synchronizes page for reuse by the adapter
  **/
-#ifndef TXGBE_PAGE_POOL
 static void txgbe_reuse_rx_page(struct txgbe_ring *rx_ring,
 				struct txgbe_rx_buffer *old_buff)
 {
@@ -1579,7 +1588,6 @@ static void txgbe_reuse_rx_page(struct txgbe_ring *rx_ring,
 	new_buff->page_offset	= old_buff->page_offset;
 	new_buff->pagecnt_bias	= old_buff->pagecnt_bias;
 }
-#endif
 
 static inline bool txgbe_page_is_reserved(struct page *page)
 {
@@ -1635,6 +1643,9 @@ static unsigned int txgbe_rx_frame_truesize(struct txgbe_ring *rx_ring,
 		+ SKB_DATA_ALIGN(sizeof(struct skb_shared_info))
 		;
 #endif
+	if (ring_is_page_pool_enabled(rx_ring))
+		truesize = TXGBE_PAGE_POOL_RX_BUF_SIZE;
+
 	return truesize;
 }
 
@@ -1650,7 +1661,6 @@ static void txgbe_rx_buffer_flip(struct txgbe_ring *rx_ring,
 #endif
 }
 
-#ifndef TXGBE_PAGE_POOL
 static bool txgbe_can_reuse_rx_page(struct txgbe_rx_buffer *rx_buffer)
 {
 	unsigned int pagecnt_bias = rx_buffer->pagecnt_bias;
@@ -1693,7 +1703,7 @@ static void txgbe_put_rx_buffer(struct txgbe_ring *rx_ring,
 				struct txgbe_rx_buffer *rx_buffer,
 				  struct sk_buff *skb)
 {
-#ifndef TXGBE_PAGE_POOL
+if (!ring_is_page_pool_enabled(rx_ring)) {
 	if (txgbe_can_reuse_rx_page(rx_buffer)) {
 		/* hand second half of page back to the ring */
 		txgbe_reuse_rx_page(rx_ring, rx_buffer);
@@ -1711,11 +1721,11 @@ static void txgbe_put_rx_buffer(struct txgbe_ring *rx_ring,
 		__page_frag_cache_drain(rx_buffer->page,
 					rx_buffer->pagecnt_bias);
 	}
-#else
+} else {
 	if (!IS_ERR(skb) && TXGBE_CB(skb)->dma == rx_buffer->page_dma)
 		/* the page has been released from the ring */
 		TXGBE_CB(skb)->page_released = true;
-#endif
+}
 	/* clear contents of rx_buffer */
 	rx_buffer->page = NULL;
 	rx_buffer->skb = NULL;
@@ -1726,7 +1736,7 @@ int txgbe_xmit_xdp_ring(struct txgbe_ring *ring, struct xdp_frame *xdpf)
 	struct txgbe_tx_buffer *tx_buffer;
 	union txgbe_tx_desc *tx_desc;
 	u32 len, cmd_type = 0;
-	dma_addr_t dma;
+	dma_addr_t dma = 0;
 	u16 i;
 
 	len = xdpf->len;
@@ -1836,7 +1846,10 @@ txgbe_run_xdp(struct txgbe_adapter __maybe_unused *adapter,
 		fallthrough;
 xdp_drop:
 	case XDP_DROP:
-		page_pool_put_full_page(rx_ring->page_pool, virt_to_head_page(xdp->data), true);
+		if (ring_is_page_pool_enabled(rx_ring))
+			page_pool_put_full_page(rx_ring->page_pool,
+							  virt_to_head_page(xdp->data),
+							  false);
 		result = TXGBE_XDP_CONSUMED;
 		break;
 	}
@@ -1865,8 +1878,12 @@ static struct txgbe_rx_buffer *txgbe_get_rx_buffer(struct txgbe_ring *rx_ring,
 		if (!*skb)
 			goto skip_sync;
 	} else {
-		if (*skb)
-			txgbe_dma_sync_frag(rx_ring, *skb);
+		if (*skb) {
+			if (!ring_is_page_pool_enabled(rx_ring))
+				txgbe_dma_sync_frag(rx_ring, *skb);
+			else
+				txgbe_dma_sync_frag_page_pool(rx_ring, *skb);
+		}
 	}
 
 	/* we are reusing so sync this buffer for CPU use */
@@ -1898,6 +1915,9 @@ static struct sk_buff *txgbe_build_skb(struct txgbe_ring *rx_ring,
 #endif
 	struct sk_buff *skb;
 
+	if (ring_is_page_pool_enabled(rx_ring))
+		truesize = TXGBE_PAGE_POOL_RX_BUF_SIZE;
+
 	/* prefetch first cache line of first page */
 	prefetch(va);
 #if L1_CACHE_BYTES < 128
@@ -1927,6 +1947,9 @@ static struct sk_buff *txgbe_build_skb(struct txgbe_ring *rx_ring,
 	rx_buffer->page_offset += truesize;
 #endif
 
+	if (ring_is_page_pool_enabled(rx_ring))
+		skb_mark_for_recycle(skb);
+
 	return skb;
 }
 
@@ -1943,6 +1966,9 @@ static struct sk_buff *txgbe_construct_skb(struct txgbe_ring *rx_ring,
 					       xdp->data_hard_start);
 #endif
 	struct sk_buff *skb;
+
+	if (ring_is_page_pool_enabled(rx_ring))
+		truesize = TXGBE_PAGE_POOL_RX_BUF_SIZE;
 
 	/* prefetch first cache line of first page */
 	prefetch(xdp->data);
@@ -1988,10 +2014,9 @@ static struct sk_buff *txgbe_construct_skb(struct txgbe_ring *rx_ring,
 		memcpy(__skb_put(skb, size),
 		       xdp->data, ALIGN(size, sizeof(long)));
 		rx_buffer->pagecnt_bias++;
-#ifdef TXGBE_PAGE_POOL
-		page_pool_put_full_page(rx_ring->page_pool,
-						rx_buffer->page, true);
-#endif
+		if (ring_is_page_pool_enabled(rx_ring))
+			page_pool_put_full_page(rx_ring->page_pool,
+							rx_buffer->page, false);
 	}
 
 	return skb;
@@ -2079,11 +2104,12 @@ static int txgbe_clean_rx_irq(struct txgbe_q_vector *q_vector,
 
 			if (xdp_res & (TXGBE_XDP_TX | TXGBE_XDP_REDIR)) {
 				xdp_xmit |= xdp_res;
-#ifdef TXGBE_PAGE_POOL
 				txgbe_rx_buffer_flip(rx_ring, rx_buffer, size);
-#endif
 			} else {
 				rx_buffer->pagecnt_bias++;
+				if (ring_is_page_pool_enabled(rx_ring))
+					page_pool_put_full_page(rx_ring->page_pool,
+								rx_buffer->page, false);
 			}
 			total_rx_packets++;
 			total_rx_bytes += size;
@@ -2100,6 +2126,10 @@ static int txgbe_clean_rx_irq(struct txgbe_q_vector *q_vector,
 		/* exit if we failed to retrieve a buffer */
 		if (!skb) {
 			rx_ring->rx_stats.alloc_rx_buff_failed++;
+			rx_buffer->pagecnt_bias++;
+			if (ring_is_page_pool_enabled(rx_ring))
+				page_pool_put_full_page(rx_ring->page_pool,
+							rx_buffer->page, false);
 			break;
 		}
 
@@ -3656,15 +3686,15 @@ void txgbe_configure_rx_ring(struct txgbe_adapter *adapter,
 						   MEM_TYPE_XSK_BUFF_POOL,
 						   NULL));
 	} else {
-#ifndef TXGBE_PAGE_POOL
-		if (ring->q_vector)
-			WARN_ON(xdp_rxq_info_reg_mem_model(&ring->xdp_rxq,
-							   MEM_TYPE_PAGE_SHARED, NULL));
-#else
-		WARN_ON(xdp_rxq_info_reg_mem_model(&ring->xdp_rxq,
-						   MEM_TYPE_PAGE_POOL,
-						   ring->page_pool));
-#endif
+		if (ring->q_vector) {
+			if (!ring_is_page_pool_enabled(ring))
+				WARN_ON(xdp_rxq_info_reg_mem_model(&ring->xdp_rxq,
+								   MEM_TYPE_PAGE_SHARED, NULL));
+			else
+				WARN_ON(xdp_rxq_info_reg_mem_model(&ring->xdp_rxq,
+								   MEM_TYPE_PAGE_POOL,
+								   ring->page_pool));
+		}
 	}
 
 	wr32(hw, TXGBE_PX_RR_BAL(reg_idx), rdba & DMA_BIT_MASK(32));
@@ -3829,6 +3859,28 @@ static void txgbe_configure_virtualization(struct txgbe_adapter *adapter)
 		/* enable ethertype anti spoofing if hw supports it */
 		hw->mac.ops.set_ethertype_anti_spoofing(hw, true, i);
 	}
+}
+
+static void txgbe_set_rx_buf_type(struct txgbe_adapter *adapter)
+{
+	struct txgbe_ring *rx_ring;
+	int i;
+
+	for (i = 0; i < adapter->num_rx_queues; i++) {
+		rx_ring = adapter->rx_ring[i];
+
+		clear_ring_page_pool_enabled(rx_ring);
+
+		if (adapter->flags2 & TXGBE_FLAG2_RX_PAGE_POOL)
+			set_ring_page_pool_enabled(rx_ring);
+		else
+			clear_ring_page_pool_enabled(rx_ring);
+	}
+
+	if (adapter->flags2 & TXGBE_FLAG2_RX_PAGE_POOL)
+		e_info(drv, "Using page pool mode for Rx buffers\n");
+	else
+		e_info(drv, "Using page mode for Rx buffers\n");
 }
 
 static void txgbe_set_rx_buffer_len(struct txgbe_adapter *adapter)
@@ -5507,14 +5559,12 @@ void txgbe_clean_rx_ring(struct txgbe_ring *rx_ring)
 		if (rx_buffer->skb) {
 			struct sk_buff *skb = rx_buffer->skb;
 
-#ifndef TXGBE_PAGE_POOL
-			if (TXGBE_CB(skb)->page_released)
+			if (TXGBE_CB(skb)->page_released && !ring_is_page_pool_enabled(rx_ring))
 				dma_unmap_page_attrs(rx_ring->dev,
 						     TXGBE_CB(skb)->dma,
 						     txgbe_rx_pg_size(rx_ring),
 						     DMA_FROM_DEVICE,
 						     TXGBE_RX_DMA_ATTR);
-#endif
 			dev_kfree_skb(skb);
 			rx_buffer->skb = NULL;
 		}
@@ -5530,22 +5580,23 @@ void txgbe_clean_rx_ring(struct txgbe_ring *rx_ring)
 					      rx_buffer->page_offset,
 					      txgbe_rx_bufsz(rx_ring),
 					      DMA_FROM_DEVICE);
-#ifndef TXGBE_PAGE_POOL
-		/* free resources associated with mapping */
-		dma_unmap_page_attrs(rx_ring->dev, rx_buffer->page_dma,
-				     txgbe_rx_pg_size(rx_ring),
-				     DMA_FROM_DEVICE,
-				     TXGBE_RX_DMA_ATTR);
+		if (!ring_is_page_pool_enabled(rx_ring)) {
+			/* free resources associated with mapping */
+			dma_unmap_page_attrs(rx_ring->dev, rx_buffer->page_dma,
+					     txgbe_rx_pg_size(rx_ring),
+					     DMA_FROM_DEVICE,
+					     TXGBE_RX_DMA_ATTR);
 
-		__page_frag_cache_drain(rx_buffer->page,
-					rx_buffer->pagecnt_bias);
-		rx_buffer->page = NULL;
-#else
+			__page_frag_cache_drain(rx_buffer->page,
+						rx_buffer->pagecnt_bias);
+			rx_buffer->page = NULL;
+		}
 		/* return page to page pool */
-		page_pool_put_full_page(rx_ring->page_pool,
-						rx_buffer->page, false);
-		rx_buffer->page = NULL;
-#endif
+		if (ring_is_page_pool_enabled(rx_ring)) {
+			page_pool_put_full_page(rx_ring->page_pool,
+							rx_buffer->page, false);
+			rx_buffer->page = NULL;
+		}
 	}
 
 	size = sizeof(struct txgbe_rx_buffer) * rx_ring->count;
@@ -5853,6 +5904,15 @@ static int txgbe_sw_init(struct txgbe_adapter *adapter)
 	adapter->flags2 |= TXGBE_FLAG2_TEMP_SENSOR_CAPABLE;
 	adapter->flags2 |= TXGBE_FLAG2_EEE_CAPABLE;
 
+	/* set default buffer type */
+	if (TXGBE_RX_BUF_MODE) {
+		adapter->flags2 |= TXGBE_FLAG2_RX_PAGE_POOL;
+		adapter->eth_priv_flags |= TXGBE_ETH_PRIV_FLAG_PAGE_POOL;
+	} else {
+		adapter->flags2 &= ~TXGBE_FLAG2_RX_PAGE_POOL;
+		adapter->eth_priv_flags &= ~TXGBE_ETH_PRIV_FLAG_PAGE_POOL;
+	}
+
 #if IS_ENABLED(CONFIG_FCOE)
 	/* FCoE support exists, always init the FCoE lock */
 	spin_lock_init(&adapter->fcoe.lock);
@@ -6027,12 +6087,12 @@ static int txgbe_alloc_page_pool(struct txgbe_ring *rx_ring)
 		.dev = rx_ring->dev,
 		.dma_dir = DMA_FROM_DEVICE,
 		.offset = 0,
-		.max_len = PAGE_SIZE,
-	};
-
 #if (PAGE_SIZE > 4096)
-	pp_params.flags |= PP_FLAG_PAGE_FRAG;
+		.max_len = TXGBE_PAGE_POOL_RX_BUF_SIZE,
+#else
+		.max_len = PAGE_SIZE,
 #endif
+	};
 
 	rx_ring->page_pool = page_pool_create(&pp_params);
 	if (IS_ERR(rx_ring->page_pool)) {
@@ -6050,9 +6110,7 @@ int txgbe_setup_rx_resources(struct txgbe_ring *rx_ring)
 	int numa_node = -1;
 	int size;
 	int err;
-#ifdef TXGBE_PAGE_POOL
 	int ret = 0;
-#endif
 
 	size = sizeof(struct txgbe_rx_buffer) * rx_ring->count;
 
@@ -6084,11 +6142,11 @@ int txgbe_setup_rx_resources(struct txgbe_ring *rx_ring)
 	rx_ring->next_to_clean = 0;
 	rx_ring->next_to_use = 0;
 
-#ifdef TXGBE_PAGE_POOL
-	ret = txgbe_alloc_page_pool(rx_ring);
-	if (ret)
-		goto err;
-#endif
+	if (ring_is_page_pool_enabled(rx_ring)) {
+		ret = txgbe_alloc_page_pool(rx_ring);
+		if (ret)
+			goto err;
+	}
 
 	if (!rx_ring->q_vector)
 		return 0;
@@ -6127,6 +6185,9 @@ err:
 static int txgbe_setup_all_rx_resources(struct txgbe_adapter *adapter)
 {
 	int i, err = 0;
+
+	/* set rx buf type before ring initialization */
+	txgbe_set_rx_buf_type(adapter);
 
 	for (i = 0; i < adapter->num_rx_queues; i++) {
 		err = txgbe_setup_rx_resources(adapter->rx_ring[i]);
@@ -6284,12 +6345,10 @@ void txgbe_free_rx_resources(struct txgbe_ring *rx_ring)
 
 	rx_ring->desc = NULL;
 
-#ifdef TXGBE_PAGE_POOL
 	if (rx_ring->page_pool) {
 		page_pool_destroy(rx_ring->page_pool);
 		rx_ring->page_pool = NULL;
 	}
-#endif
 }
 
 /**
@@ -8882,7 +8941,7 @@ static int txgbe_tx_map(struct txgbe_ring *tx_ring,
 	struct txgbe_tx_buffer *tx_buffer;
 	union txgbe_tx_desc *tx_desc;
 	skb_frag_t *frag;
-	dma_addr_t dma;
+	dma_addr_t dma = 0;
 	unsigned int data_len, size;
 	u32 tx_flags = first->tx_flags;
 	u32 cmd_type = txgbe_tx_cmd_type(tx_flags);

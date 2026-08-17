@@ -172,6 +172,7 @@ struct txgbe_priv_flags {
 static const struct txgbe_priv_flags txgbe_gstrings_priv_flags[] = {
 	TXGBE_PRIV_FLAG("lldp", TXGBE_ETH_PRIV_FLAG_LLDP, 0),
 	TXGBE_PRIV_FLAG("legacy-rx", TXGBE_ETH_PRIV_FLAG_LEGACY_RX, 0),
+	TXGBE_PRIV_FLAG("page-pool", TXGBE_ETH_PRIV_FLAG_PAGE_POOL, 0),
 };
 
 #define TXGBE_PRIV_FLAGS_STR_LEN ARRAY_SIZE(txgbe_gstrings_priv_flags)
@@ -1864,6 +1865,18 @@ static int txgbe_set_priv_flags(struct net_device *dev, u32 flags)
 		/* reset interface to repopulate queues */
 		if (netif_running(dev))
 			txgbe_reinit_locked(adapter);
+	}
+
+	if (changed_flags & TXGBE_ETH_PRIV_FLAG_PAGE_POOL) {
+		adapter->eth_priv_flags = new_flags;
+
+		if (!(adapter->eth_priv_flags & TXGBE_ETH_PRIV_FLAG_PAGE_POOL))
+			adapter->flags2 &= ~TXGBE_FLAG2_RX_PAGE_POOL;
+		else
+			adapter->flags2 |= TXGBE_FLAG2_RX_PAGE_POOL;
+
+		/* use setup TC to update any traffic class queue mapping */
+		status = txgbe_setup_tc(dev, netdev_get_num_tc(dev));
 	}
 
 	return status;
