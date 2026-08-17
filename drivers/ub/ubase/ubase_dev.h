@@ -275,6 +275,7 @@ struct ubase_ctrlq {
 	struct semaphore			msg_queue_sem;
 	u32					last_clean_idx;
 	spinlock_t				send_lock;
+	u32					remote_ver;
 };
 
 struct ubase_ctx_status {

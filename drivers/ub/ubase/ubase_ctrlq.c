@@ -10,6 +10,14 @@
 #include "ubase_trace.h"
 #include "ubase_ctrlq.h"
 
+/* UBASE ctrlq msg white list */
+static const struct ubase_ctrlq_event_nb ubase_ctrlq_wlist_ubase[] = {
+	{
+		.service_type = UBASE_CTRLQ_SER_TYPE_DEV_REGISTER,
+		.opcode = UBASE_CTRLQ_OPC_EXCHANGE_VER,
+	},
+};
+
 /* UNIC ctrlq msg white list */
 static const struct ubase_ctrlq_event_nb ubase_ctrlq_wlist_unic[] = {
 	{
@@ -53,10 +61,10 @@ static const struct ubase_ctrlq_event_nb ubase_ctrlq_wlist_cdma[] = {
 static int ubase_ctrlq_alloc_crq_tbl_mem(struct ubase_dev *udev)
 {
 	struct ubase_ctrlq_crq_table *crq_tab = &udev->ctrlq.crq_table;
-	u16 cnt = 0;
+	u16 cnt = ARRAY_SIZE(ubase_ctrlq_wlist_ubase);
 
 	if (ubase_dev_cdma_supported(udev)) {
-		cnt = ARRAY_SIZE(ubase_ctrlq_wlist_cdma);
+		cnt += ARRAY_SIZE(ubase_ctrlq_wlist_cdma);
 	} else if (ubase_dev_urma_supported(udev)) {
 		if (ubase_dev_unic_supported(udev))
 			cnt += ARRAY_SIZE(ubase_ctrlq_wlist_unic);
@@ -88,16 +96,19 @@ static void ubase_ctrlq_free_crq_tbl_mem(struct ubase_dev *udev)
 static void ubase_ctrlq_init_crq_wlist(struct ubase_dev *udev)
 {
 	struct ubase_ctrlq_crq_table *crq_tab = &udev->ctrlq.crq_table;
-	u32 offset = 0;
+	u32 offset = ARRAY_SIZE(ubase_ctrlq_wlist_ubase);
+
+	memcpy(crq_tab->crq_nbs, ubase_ctrlq_wlist_ubase,
+	       sizeof(ubase_ctrlq_wlist_ubase));
 
 	if (ubase_dev_cdma_supported(udev)) {
-		memcpy(crq_tab->crq_nbs, ubase_ctrlq_wlist_cdma,
+		memcpy(&crq_tab->crq_nbs[offset], ubase_ctrlq_wlist_cdma,
 		       sizeof(ubase_ctrlq_wlist_cdma));
 	} else if (ubase_dev_urma_supported(udev)) {
 		if (ubase_dev_unic_supported(udev)) {
-			memcpy(crq_tab->crq_nbs, ubase_ctrlq_wlist_unic,
+			memcpy(&crq_tab->crq_nbs[offset], ubase_ctrlq_wlist_unic,
 			       sizeof(ubase_ctrlq_wlist_unic));
-			offset = ARRAY_SIZE(ubase_ctrlq_wlist_unic);
+			offset += ARRAY_SIZE(ubase_ctrlq_wlist_unic);
 		}
 		if (ubase_dev_udma_supported(udev)) {
 			memcpy(&crq_tab->crq_nbs[offset], ubase_ctrlq_wlist_udma,
@@ -330,6 +341,150 @@ static int ubase_ctrlq_queue_init(struct ubase_dev *udev)
 static void ubase_ctrlq_queue_uninit(struct ubase_dev *udev)
 {
 	ubase_ctrlq_unmap_queue(udev);
+}
+
+static int ubase_handle_notify_ver_event(struct auxiliary_device *adev,
+					 u8 service_ver, void *data, u16 len,
+					 u16 seq)
+{
+	/* 'adev' is not an auxiliary_device here: it is the 'back' pointer
+	 * registered in ubase_ctrlq_register_ubase_crq_event(), which for UBASE
+	 * own ctrlq events holds a struct ubase_dev *.
+	 */
+	struct ubase_dev *udev = (struct ubase_dev *)adev;
+	struct ubase_ctrlq_exchange_ver resp = {0};
+	struct ubase_ctrlq_exchange_ver *req;
+	struct ubase_ctrlq_msg msg = {0};
+	int pret = 0, ret = 0;
+
+	if (service_ver != UBASE_CTRLQ_SER_VER_01) {
+		pret = -EOPNOTSUPP;
+		goto out;
+	}
+
+	if (len < sizeof(*req)) {
+		ubase_err(udev, "invalid notify ctrl plane ver len, len = %u.\n",
+			  len);
+		pret = -EINVAL;
+		goto send_resp;
+	}
+
+	req = (struct ubase_ctrlq_exchange_ver *)data;
+	resp.ver_num = UBASE_CTRLQ_LOCAL_VERSION;
+
+send_resp:
+	resp.module_id = 1;
+	msg.service_ver = UBASE_CTRLQ_SER_VER_01;
+	msg.service_type = UBASE_CTRLQ_SER_TYPE_DEV_REGISTER;
+	msg.opcode = UBASE_CTRLQ_OPC_EXCHANGE_VER;
+	msg.is_resp = 1;
+	msg.in_size = sizeof(resp);
+	msg.in = &resp;
+	msg.resp_seq = seq;
+	msg.resp_ret = pret;
+
+	ret = __ubase_ctrlq_send(udev, &msg, true, NULL);
+	if (ret)
+		ubase_err(udev,
+			  "failed to send exchange ctrlq ver resp, ret = %d.\n",
+			  ret);
+out:
+	udev->ctrlq.remote_ver = (pret || ret) ? 0 : req->ver_num;
+	return pret ? pret : ret;
+}
+
+static struct ubase_ctrlq_event_nb ubase_ctrlq_events[] = {
+	{
+		.service_type = UBASE_CTRLQ_SER_TYPE_DEV_REGISTER,
+		.opcode = UBASE_CTRLQ_OPC_EXCHANGE_VER,
+		.crq_handler = ubase_handle_notify_ver_event,
+	},
+};
+
+static int __ubase_ctrlq_register_crq_event(struct ubase_dev *udev,
+					    struct ubase_ctrlq_event_nb *nb)
+{
+	struct ubase_ctrlq_crq_table *crq_tab = &udev->ctrlq.crq_table;
+	int ret = -ENOENT;
+	u32 i;
+
+	mutex_lock(&crq_tab->lock);
+	for (i = 0; i < crq_tab->crq_nb_cnt; i++) {
+		if (crq_tab->crq_nbs[i].service_type == nb->service_type &&
+		    crq_tab->crq_nbs[i].opcode == nb->opcode) {
+			if (crq_tab->crq_nbs[i].crq_handler) {
+				ret = -EEXIST;
+				break;
+			}
+			crq_tab->crq_nbs[i].back = nb->back;
+			crq_tab->crq_nbs[i].crq_handler = nb->crq_handler;
+			ret = 0;
+			break;
+		}
+	}
+	mutex_unlock(&crq_tab->lock);
+
+	return ret;
+}
+
+static void __ubase_ctrlq_unregister_crq_event(struct ubase_dev *udev,
+					       u8 service_type, u8 opcode)
+{
+	struct ubase_ctrlq_crq_table *crq_tab = &udev->ctrlq.crq_table;
+	u32 i;
+
+	mutex_lock(&crq_tab->lock);
+	for (i = 0; i < crq_tab->crq_nb_cnt; i++) {
+		if (crq_tab->crq_nbs[i].service_type == service_type &&
+		    crq_tab->crq_nbs[i].opcode == opcode) {
+			crq_tab->crq_nbs[i].back = NULL;
+			crq_tab->crq_nbs[i].crq_handler = NULL;
+			break;
+		}
+	}
+	mutex_unlock(&crq_tab->lock);
+}
+
+int ubase_ctrlq_register_ubase_crq_event(struct ubase_dev *udev)
+{
+	int ret, i;
+
+	for (i = 0; i < ARRAY_SIZE(ubase_ctrlq_events); i++) {
+		/* Store the ubase_dev pointer into 'back'. Although crq_handler's
+		 * first parameter is declared as struct auxiliary_device *, the
+		 * invocation site at ubase_ctrlq_event_handle() passes 'back'
+		 * verbatim as that argument, so for UBASE's own ctrlq events the
+		 * pointer is actually a struct ubase_dev *.
+		 */
+		ubase_ctrlq_events[i].back = udev;
+
+		ret = __ubase_ctrlq_register_crq_event(udev, &ubase_ctrlq_events[i]);
+		if (ret) {
+			ubase_err(udev,
+				  "failed to register ubase ctrlq event[%d], ret = %d.\n",
+				  i, ret);
+			goto err_reg_event;
+		}
+	}
+
+	return 0;
+
+err_reg_event:
+	for (i = i - 1; i >= 0; i--)
+		__ubase_ctrlq_unregister_crq_event(udev,
+						   ubase_ctrlq_events[i].service_type,
+						   ubase_ctrlq_events[i].opcode);
+	return ret;
+}
+
+void ubase_ctrlq_unregister_ubase_crq_event(struct ubase_dev *udev)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(ubase_ctrlq_events); i++)
+		__ubase_ctrlq_unregister_crq_event(udev,
+						   ubase_ctrlq_events[i].service_type,
+						   ubase_ctrlq_events[i].opcode);
 }
 
 int ubase_ctrlq_init(struct ubase_dev *udev)
@@ -1241,6 +1396,7 @@ void ubase_ctrlq_handle_crq_msg(struct ubase_dev *udev,
 		spin_unlock_bh(&csq->lock);
 
 		up(&udev->ctrlq.msg_queue_sem);
+		return;
 	}
 
 	ubase_ctrlq_crq_event_callback(udev, head, msg_data, data_len, seq);
@@ -1499,34 +1655,14 @@ void ubase_ctrlq_clean_service_task(struct ubase_dev *udev)
 int ubase_ctrlq_register_crq_event(struct auxiliary_device *aux_dev,
 				   struct ubase_ctrlq_event_nb *nb)
 {
-	struct ubase_ctrlq_crq_table *crq_tab;
 	struct ubase_dev *udev;
-	int ret = -ENOENT;
-	u32 i;
 
 	if (!aux_dev || !nb || !nb->crq_handler)
 		return -EINVAL;
 
 	udev = __ubase_get_udev_by_adev(aux_dev);
-	crq_tab = &udev->ctrlq.crq_table;
-	mutex_lock(&crq_tab->lock);
-	for (i = 0; i < crq_tab->crq_nb_cnt; i++) {
-		if (crq_tab->crq_nbs[i].service_type == nb->service_type &&
-		    crq_tab->crq_nbs[i].opcode == nb->opcode) {
-			if (crq_tab->crq_nbs[i].crq_handler) {
-				ret = -EEXIST;
-				break;
-			}
-			crq_tab->crq_nbs[i].back = nb->back;
-			crq_tab->crq_nbs[i].crq_handler = nb->crq_handler;
-			ret = 0;
-			break;
-		}
-	}
 
-	mutex_unlock(&crq_tab->lock);
-
-	return ret;
+	return __ubase_ctrlq_register_crq_event(udev, nb);
 }
 EXPORT_SYMBOL(ubase_ctrlq_register_crq_event);
 
@@ -1544,25 +1680,14 @@ EXPORT_SYMBOL(ubase_ctrlq_register_crq_event);
 void ubase_ctrlq_unregister_crq_event(struct auxiliary_device *aux_dev,
 				      u8 service_type, u8 opcode)
 {
-	struct ubase_ctrlq_crq_table *crq_tab;
 	struct ubase_dev *udev;
-	u32 i;
 
 	if (!aux_dev)
 		return;
 
 	udev = __ubase_get_udev_by_adev(aux_dev);
-	crq_tab = &udev->ctrlq.crq_table;
-	mutex_lock(&crq_tab->lock);
-	for (i = 0; i < crq_tab->crq_nb_cnt; i++) {
-		if (crq_tab->crq_nbs[i].service_type == service_type &&
-		    crq_tab->crq_nbs[i].opcode == opcode) {
-			crq_tab->crq_nbs[i].back = NULL;
-			crq_tab->crq_nbs[i].crq_handler = NULL;
-			break;
-		}
-	}
-	mutex_unlock(&crq_tab->lock);
+
+	__ubase_ctrlq_unregister_crq_event(udev, service_type, opcode);
 }
 EXPORT_SYMBOL(ubase_ctrlq_unregister_crq_event);
 
@@ -1939,3 +2064,59 @@ void ubase_ctrlq_parse_ue_msg(struct auxiliary_device *adev, void *data, u16 len
 	info->ret = -head->ret;
 }
 EXPORT_SYMBOL(ubase_ctrlq_parse_ue_msg);
+
+int ubase_query_ctrl_plane_ver(struct ubase_dev *udev)
+{
+	struct ubase_ctrlq_exchange_ver resp = {0};
+	struct ubase_ctrlq_exchange_ver req = {0};
+	struct ubase_ctrlq_msg msg = {0};
+	int ret;
+
+	req.module_id = 1;
+	req.ver_num = UBASE_CTRLQ_LOCAL_VERSION;
+
+	msg.service_ver = UBASE_CTRLQ_SER_VER_01;
+	msg.service_type = UBASE_CTRLQ_SER_TYPE_DEV_REGISTER;
+	msg.opcode = UBASE_CTRLQ_OPC_EXCHANGE_VER;
+	msg.need_resp = 1;
+	msg.is_resp = 0;
+	msg.in_size = sizeof(req);
+	msg.in = &req;
+	msg.out_size = sizeof(resp);
+	msg.out = &resp;
+
+	ret = __ubase_ctrlq_send(udev, &msg, true, NULL);
+	if (ret == -EOPNOTSUPP || !ret) {
+		udev->ctrlq.remote_ver = ret ? 0 : resp.ver_num;
+		return 0;
+	} else if (ret == -ETIMEDOUT) {
+		set_bit(UBASE_STATE_INIT_AGAIN_B, &udev->state_bits);
+	}
+
+	ubase_err(udev, "failed to exchange ctrlq ver, ret = %d.\n", ret);
+	return ret;
+}
+
+/**
+ * ubase_ctrlq_get_negotiated_ver() - Get negotiated version.
+ * @adev: auxiliary device
+ *
+ * This function is used by the auxiliary device driver module to get
+ * negotiated version from ubase.
+ *
+ * Context: Any context.
+ * Return: negotiated version. For details, see the definition in ubase_comm_ctrlq.h.
+ */
+u32 ubase_ctrlq_get_negotiated_ver(struct auxiliary_device *adev)
+{
+	struct ubase_dev *udev;
+
+	if (!adev)
+		return 0;
+
+	udev = __ubase_get_udev_by_adev(adev);
+
+	return udev->ctrlq.remote_ver == 0 ? 1 :
+		min(udev->ctrlq.remote_ver, UBASE_CTRLQ_LOCAL_VERSION);
+}
+EXPORT_SYMBOL(ubase_ctrlq_get_negotiated_ver);

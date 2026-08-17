@@ -7,6 +7,7 @@
 #include <linux/debugfs.h>
 #include <linux/delay.h>
 #include <linux/kernel.h>
+#include <ub/ubase/ubase_comm_ctrlq.h>
 #include <ub/ubase/ubase_comm_debugfs.h>
 #include <ub/ubase/ubase_comm_eq.h>
 
@@ -117,6 +118,8 @@ static void ubase_dbg_dump_caps_info(struct seq_file *s, struct ubase_dev *udev)
 		{"\tnl_id: %u\n", dev_caps->nl_id},
 		{"\ttid: %u\n", dev_caps->tid},
 		{"\tumv_tbl_size: %u\n", udev->caps.umv_tbl_size},
+		{"\tctrlq_remote_version: %u\n", udev->ctrlq.remote_ver},
+		{"\tctrlq_local_version: %u\n", UBASE_CTRLQ_LOCAL_VERSION},
 	};
 	int i;
 

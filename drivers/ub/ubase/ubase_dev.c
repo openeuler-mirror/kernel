@@ -894,6 +894,10 @@ static const struct ubase_init_function ubase_init_func_map[] = {
 		ubase_ctrlq_init, ubase_ctrlq_uninit
 	},
 	{
+		"register ctrlq crq event", UBASE_SUP_NO_PMU, 0,
+		ubase_ctrlq_register_ubase_crq_event, ubase_ctrlq_unregister_ubase_crq_event
+	},
+	{
 		"register cmdq crq event", UBASE_SUP_NO_PMU, 0,
 		ubase_register_cmdq_crq_event, ubase_unregister_cmdq_crq_event
 	},
@@ -904,6 +908,10 @@ static const struct ubase_init_function ubase_init_func_map[] = {
 	{
 		"register aeq event", UBASE_SUP_NO_PMU, 0,
 		ubase_register_ae_event, ubase_unregister_ae_event
+	},
+	{
+		"query ctrl plane ver", UBASE_SUP_NO_PMU, 0,
+		ubase_query_ctrl_plane_ver, NULL
 	},
 	{
 		"init qos", UBASE_SUP_NO_PMU, 0,

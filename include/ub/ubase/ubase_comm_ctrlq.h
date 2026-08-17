@@ -25,6 +25,12 @@
 
 #define UBASE_CTRLQ_HANDLE_UE_MSG	1
 
+/* Provides macros for defining version numbers. When upgrading the version
+ * of auxiliary devices, the macro value must be updated synchronously.
+ * Each time a version is upgraded, the macro value must be incremented by 1.
+ */
+#define UBASE_CTRLQ_LOCAL_VERSION	1
+
 enum ubase_ctrlq_ser_ver {
 	UBASE_CTRLQ_SER_VER_01 = 0x01,
 };
@@ -62,6 +68,7 @@ enum ubase_ctrlq_opc_type_dev_register {
 	UBASE_CTRLQ_OPC_NOTIFY_RES_RATIO	= 0x13,
 	UBASE_CTRLQ_OPC_CTRLQ_CTRL		= 0x14,
 	UBASE_CTRLQ_OPC_UE_RESET_CTRL		= 0x15,
+	UBASE_CTRLQ_OPC_EXCHANGE_VER		= 0x20,
 };
 
 enum ubase_ctrlq_opc_type_port {
@@ -187,4 +194,5 @@ int ubase_ctrlq_send_ue_req(struct auxiliary_device *adev, void *data, u16 len);
 u16 ubase_ctrlq_ue_msg_header_len(void);
 void ubase_ctrlq_parse_ue_msg(struct auxiliary_device *adev, void *data, u16 len,
 			      struct ubase_ctrlq_ue_msg_info *info);
+u32 ubase_ctrlq_get_negotiated_ver(struct auxiliary_device *adev);
 #endif /* _UB_UBASE_COMM_CTRLQ_H_ */
