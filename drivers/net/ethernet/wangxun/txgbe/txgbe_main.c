@@ -2889,6 +2889,7 @@ int txgbe_poll(struct napi_struct *napi, int budget)
 	struct txgbe_ring *ring;
 	int per_ring_budget;
 	bool clean_complete = true;
+	int work_done = 0;
 
 	txgbe_for_each_ring(ring, q_vector->tx) {
 		bool wd = ring->xsk_pool ?
@@ -2913,6 +2914,7 @@ int txgbe_poll(struct napi_struct *napi, int budget)
 			      txgbe_clean_rx_irq(q_vector, ring,
 						 per_ring_budget);
 
+		work_done += cleaned;
 		if (cleaned >= per_ring_budget)
 			clean_complete = false;
 	}
@@ -2926,14 +2928,15 @@ int txgbe_poll(struct napi_struct *napi, int budget)
 		return budget;
 
 	/* all work done, exit the polling mode */
-	napi_complete(napi);
-	if (adapter->rx_itr_setting == 1)
-		txgbe_set_itr(q_vector);
-	if (!test_bit(__TXGBE_DOWN, &adapter->state))
-		txgbe_intr_enable(&adapter->hw,
-				  TXGBE_INTR_Q(q_vector->v_idx));
+	if (likely(napi_complete_done(napi, work_done))) {
+		if (adapter->rx_itr_setting == 1)
+			txgbe_set_itr(q_vector);
+		if (!test_bit(__TXGBE_DOWN, &adapter->state))
+			txgbe_intr_enable(&adapter->hw,
+					  TXGBE_INTR_Q(q_vector->v_idx));
+	}
 
-	return 0;
+	return min(work_done, budget - 1);
 }
 
 /**
