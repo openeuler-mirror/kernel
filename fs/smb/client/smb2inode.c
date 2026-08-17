@@ -51,7 +51,10 @@ static struct reparse_data_buffer *reparse_buf_ptr(struct kvec *iov)
 
 	buf = (struct reparse_data_buffer *)((u8 *)io + off);
 	len = sizeof(*buf);
-	if (count < len || count < le16_to_cpu(buf->ReparseDataLength) + len)
+	if (count < len)
+		return ERR_PTR(-EIO);
+
+	if (count < le16_to_cpu(buf->ReparseDataLength) + len)
 		return ERR_PTR(-EIO);
 	return buf;
 }
