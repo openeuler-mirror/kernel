@@ -60,6 +60,7 @@ struct vfio_ub_core_device {
 	struct ub_entity *uent;
 	struct vfio_ub_config vconfig;
 	void __iomem *resmap[MAX_UB_RES_NUM];
+	struct mutex resmap_lock;
 	int num_ctx; /* num of enabled irqs */
 	int irq_type; /* interrupt type of this uent */
 	struct vfio_ub_irq_ctx *ctx;

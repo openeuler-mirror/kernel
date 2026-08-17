@@ -67,6 +67,16 @@ static inline bool ub_entity_test_priv_flag(struct ub_entity *uent, int bit)
 	return test_bit(bit, &uent->priv_flags);
 }
 
+static inline bool ub_entity_test_and_set_priv_flag(struct ub_entity *uent, int bit)
+{
+	return test_and_set_bit(bit, &uent->priv_flags);
+}
+
+static inline bool ub_entity_test_and_clear_priv_flag(struct ub_entity *uent, int bit)
+{
+	return test_and_clear_bit(bit, &uent->priv_flags);
+}
+
 struct ub_bus_controller *ub_find_bus_controller(u32 ctl_no);
 
 /**

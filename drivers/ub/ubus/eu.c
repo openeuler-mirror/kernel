@@ -56,6 +56,8 @@ static int ub_eu_table_init_common(struct ub_entity *uent)
 	if (cfg_ret) {
 		ret = (int)cfg_ret;
 		ub_err(uent, "EU TABLE set failed, ret=%d\n", ret);
+		(void)ub_cfg_write_dword(uent, UB_EU_TBA_L, 0);
+		(void)ub_cfg_write_dword(uent, UB_EU_TBA_H, 0);
 		goto dma_free;
 	}
 
