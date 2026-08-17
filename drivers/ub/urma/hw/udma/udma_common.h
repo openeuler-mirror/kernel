@@ -63,11 +63,7 @@ struct udma_jetty_queue {
 	bool non_pin;
 	struct udma_jetty_grp *jetty_grp;
 	enum udma_jetty_type jetty_type;
-	struct {
-		struct page *pg;
-		int order;
-		uint32_t len;
-	} reserved_info;
+	struct udma_hugepage_priv *reserved_info;
 	struct sg_table *sgt;
 	uint8_t db_status;
 	bool need_ring_db;
@@ -342,6 +338,7 @@ int udma_ioummu_map(uint32_t l_tid, uint32_t r_tid, int prot, uint64_t addr,
 void udma_ioummu_unmap(uint32_t l_tid, uint32_t r_tid, uint64_t addr, size_t size);
 struct udma_umem *udma_umem_get(struct udma_umem_param *param);
 void udma_umem_release(struct udma_umem *umem, bool is_kernel, bool dirty);
+void udma_init_ida(struct udma_ida *ida_table, uint32_t max, uint32_t min);
 void udma_init_udma_table(struct udma_table *table, uint32_t max, uint32_t min, bool irq_lock);
 void udma_init_udma_table_mutex(struct xarray *table, struct mutex *udma_mutex, bool irq_lock);
 void udma_destroy_npu_cb_table(struct udma_dev *dev);
@@ -383,6 +380,12 @@ static inline void *get_buf_entry(struct udma_buf *buf, uint32_t n)
 static inline uint64_t udma_cal_npages(uint64_t va, uint64_t len)
 {
 	return (ALIGN(va + len, PAGE_SIZE) - ALIGN_DOWN(va, PAGE_SIZE)) / PAGE_SIZE;
+}
+
+static inline bool udma_check_vma_flags(struct vm_area_struct *vma)
+{
+	return (vma->vm_flags & VM_WIPEONFORK) && (vma->vm_flags & VM_DONTEXPAND) &&
+	       (vma->vm_flags & VM_DONTCOPY) && (vma->vm_flags & VM_IO);
 }
 
 static inline int

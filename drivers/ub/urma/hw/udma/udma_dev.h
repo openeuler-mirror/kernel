@@ -115,6 +115,16 @@ struct udma_ex_jfc_addr {
 	uint32_t cq_len;
 };
 
+struct udma_sq_reserved_info {
+	uint64_t va_start;
+	uint64_t va_size;
+	uint64_t va_per_ue;
+	uint64_t size_per_ue;
+	uint64_t size_per_jetty;
+	bool sq_reserved;
+	struct udma_ida ida_table;
+};
+
 struct udma_dtu_info {
 	uint16_t win_num;
 	uint64_t pa_base;
