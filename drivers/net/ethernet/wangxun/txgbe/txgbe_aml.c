@@ -469,6 +469,9 @@ static void txgbe_init_mac_link_ops_aml(struct txgbe_hw *hw)
 				txgbe_setup_mac_link_multispeed_fiber_aml;
 		mac->ops.setup_mac_link = txgbe_setup_mac_link_aml;
 		mac->ops.set_rate_select_speed = txgbe_set_hard_rate_select_speed;
+	} else {
+		mac->ops.setup_link = txgbe_setup_mac_link_aml;
+		mac->ops.setup_mac_link = NULL;
 	}
 }
 

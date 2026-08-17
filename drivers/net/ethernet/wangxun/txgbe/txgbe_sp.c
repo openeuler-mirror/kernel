@@ -1271,6 +1271,9 @@ static void txgbe_init_mac_link_ops_sp(struct txgbe_hw *hw)
 		mac->ops.setup_mac_link = txgbe_setup_mac_link_sp;
 		mac->ops.set_rate_select_speed =
 					       txgbe_set_hard_rate_select_speed;
+	} else {
+		mac->ops.setup_link = txgbe_setup_mac_link_sp;
+		mac->ops.setup_mac_link = NULL;
 	}
 }
 
