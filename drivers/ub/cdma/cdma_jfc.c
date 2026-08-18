@@ -74,6 +74,13 @@ static int cdma_check_jfc_cfg(struct cdma_dev *cdev, struct cdma_jfc *jfc,
 	if (jfc->buf.entry_cnt < CDMA_JFC_DEPTH_MIN)
 		jfc->buf.entry_cnt = CDMA_JFC_DEPTH_MIN;
 
+	if (jfc->buf.entry_cnt & (jfc->buf.entry_cnt - 1)) {
+		dev_err(cdev->dev,
+			"jfc entry_cnt must be power of 2, entry_cnt = %u\n",
+			jfc->buf.entry_cnt);
+		return -EINVAL;
+	}
+
 	if (cfg->ceqn >= cdev->caps.comp_vector_cnt) {
 		dev_err(cdev->dev, "invalid ceqn = %u, cap ceq cnt = %u\n",
 			cfg->ceqn, cdev->caps.comp_vector_cnt);
