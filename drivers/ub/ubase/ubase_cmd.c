@@ -568,9 +568,6 @@ static void ubase_cmd_exec_callback(struct ubase_dev *udev, u16 opcode,
 	struct ubase_crq_table *crq_table = &udev->crq_table;
 	struct ubase_crq_event_nbs *nbs;
 
-	if (!msg_data)
-		return;
-
 	mutex_lock(&crq_table->lock);
 	list_for_each_entry(nbs, &crq_table->nbs.list, list) {
 		if (nbs->nb.opcode == opcode) {
@@ -582,8 +579,8 @@ static void ubase_cmd_exec_callback(struct ubase_dev *udev, u16 opcode,
 	mutex_unlock(&crq_table->lock);
 }
 
-static void ubase_gen_multi_bd_data(struct ubase_dev *udev, u32 bd_num,
-				    void **msg_data, u32 msg_data_len)
+static int ubase_gen_multi_bd_data(struct ubase_dev *udev, u32 bd_num,
+				   void **msg_data, u32 msg_data_len)
 {
 	struct ubase_cmdq_ring *crq = &udev->hw.cmdq.crq;
 	struct ubase_cmdq_desc *desc;
@@ -593,23 +590,25 @@ static void ubase_gen_multi_bd_data(struct ubase_dev *udev, u32 bd_num,
 	*msg_data = kzalloc(msg_data_len, GFP_KERNEL);
 	if (!(*msg_data)) {
 		ubase_err(udev, "failed to alloc crq msg data.");
-		return;
+		UBASE_MOVE_CRQ_RING_PTR(crq, bd_num);
+		return -ENOMEM;
 	}
 
 	for (i = 0; i < bd_num; i++) {
 		desc = &crq->desc[crq->ci];
 		trace_ubase_crq(udev->dev, i, crq->pi, crq->ci, desc);
 		if (i == 0) {
-			memcpy(*msg_data + pos,
-			       desc->data, UBASE_CMD_DATA_LENGTH);
+			memcpy(*msg_data, desc->data, UBASE_CMD_DATA_LENGTH);
 			pos += UBASE_CMD_DATA_LENGTH;
 		} else {
 			memcpy(*msg_data + pos, desc, sizeof(*desc));
 			pos += sizeof(*desc);
 		}
 
-		UBASE_MOVE_CRQ_RING_PTR(crq);
+		UBASE_MOVE_CRQ_RING_PTR(crq, 1);
 	}
+
+	return 0;
 }
 
 static void ubase_gen_single_bd_data(struct ubase_dev *udev, void **msg_data)
@@ -620,18 +619,18 @@ static void ubase_gen_single_bd_data(struct ubase_dev *udev, void **msg_data)
 	desc = &crq->desc[crq->ci];
 	trace_ubase_crq(udev->dev, 1, crq->pi, crq->ci, desc);
 	*msg_data = crq->desc[crq->ci].data;
-	UBASE_MOVE_CRQ_RING_PTR(crq);
+	UBASE_MOVE_CRQ_RING_PTR(crq, 1);
 }
 
-static void ubase_gen_bd_data(struct ubase_dev *udev, u32 bd_num,
-			      void **msg_data, u32 msg_data_len)
+static int ubase_gen_bd_data(struct ubase_dev *udev, u32 bd_num,
+			     void **msg_data, u32 msg_data_len)
 {
 	if (bd_num == 1) {
 		ubase_gen_single_bd_data(udev, msg_data);
-		return;
+		return 0;
 	}
 
-	ubase_gen_multi_bd_data(udev, bd_num, msg_data, msg_data_len);
+	return ubase_gen_multi_bd_data(udev, bd_num, msg_data, msg_data_len);
 }
 
 static bool ubase_cmd_crq_empty(struct ubase_dev *udev, struct ubase_hw *hw)
@@ -649,6 +648,7 @@ static void ubase_cmd_crq_handler(struct ubase_dev *udev)
 	u16 opcode;
 	u8 bd_num;
 	u8 flag;
+	int ret;
 
 	while (!ubase_cmd_crq_empty(udev, &udev->hw)) {
 		if (test_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state)) {
@@ -667,12 +667,16 @@ static void ubase_cmd_crq_handler(struct ubase_dev *udev)
 			ubase_err(udev,
 				  "drop invalid crq message, opcode = 0x%x, bd_num = %u, flag = 0x%x.",
 				  opcode, bd_num, flag);
-			UBASE_MOVE_CRQ_RING_PTR(crq);
+			UBASE_MOVE_CRQ_RING_PTR(crq, 1);
 			ubase_write_dev(&udev->hw, UBASE_CRQ_HEAD_REG, crq->ci);
 			continue;
 		}
 
-		ubase_gen_bd_data(udev, bd_num, &msg_data, msg_data_len);
+		ret = ubase_gen_bd_data(udev, bd_num, &msg_data, msg_data_len);
+		if (ret) {
+			ubase_write_dev(&udev->hw, UBASE_CRQ_HEAD_REG, crq->ci);
+			continue;
+		}
 
 		if (ubase_is_arq_msg(opcode))
 			ubase_add_to_arq(udev, opcode, msg_data, msg_data_len);

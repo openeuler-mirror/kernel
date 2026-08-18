@@ -447,7 +447,7 @@ void ubase_ctrlq_disable(struct ubase_dev *udev)
 	 */
 	if (!test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits)) {
 		while (test_bit(UBASE_STATE_CTRLQ_HANDLING,
-		       &udev->service_task.state))
+		       &udev->ctrlq_service_task.state))
 			msleep(UBASE_CTRLQ_CLEAR_WAIT_TIME);
 	}
 
