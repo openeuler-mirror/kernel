@@ -28,6 +28,10 @@ enum vdm_ub2fm_sub_opcode {
 	VDM_SUB_OPCODE_PORT_RESET = 0x2,
 };
 
+enum vdm_ub2ub_sub_opcode {
+	VDM_SUB_OPCODE_VPORT_DISABLE_NOTIFY = 0x5,
+};
+
 enum ub_task_src_vdm {
 	TASK_SRC_VPORT = 8,
 	TASK_SRC_VDM = 9,
@@ -141,6 +145,13 @@ struct port_reset_pld {
 };
 #define VDM_PORT_RESET_PLD_SIZE 16
 
+struct vport_disable_notify_pld {
+	/* DW1 */
+	u16 rsvd;
+	u16 port_idx;
+};
+#define VPORT_DISABLE_NOTIFY_PLD_SIZE 16
+
 #define MSG_IDEV_MUE_REG_SIZE \
 	(MSG_PKT_HEADER_SIZE + IDEV_MUE_REG_PLD_TOTAL_SIZE)
 #define MSG_IDEV_MUE_RLS_SIZE \
@@ -155,6 +166,8 @@ struct port_reset_pld {
 	(MSG_PKT_HEADER_SIZE + VDM_PORT_MGMT_PLD_SIZE)
 #define VDM_PORT_RESET_SIZE \
 	(MSG_PKT_HEADER_SIZE + VDM_PORT_RESET_PLD_SIZE)
+#define VPORT_DISABLE_NOTIFY_MSG_PKT_SIZE \
+	(MSG_PKT_HEADER_SIZE + VPORT_DISABLE_NOTIFY_PLD_SIZE)
 
 #define VENDOR_GUID_PLD_SIZE 8
 
@@ -171,6 +184,7 @@ struct vdm_msg_pkt {
 		struct idev_ue_rls_pld vd_rls_pld;
 		struct port_mgmt_pld mgmt_pld;
 		struct create_bi_bypass_pld bi_bypass_pld;
+		struct vport_disable_notify_pld disable_notify_pld;
 	};
 };
 

@@ -8,9 +8,6 @@
 
 #include <ub/ubus/ubus.h>
 
-extern u16 hi_firmware_lowest_ver;
-extern u16 hi_firmware_highest_ver;
-
 #define MEM_INFO_NUM 5
 #define MB_SIZE_OFFSET 20
 #define HI_UBC_PRIVATE_DATA_RESERVED 3
