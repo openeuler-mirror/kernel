@@ -130,6 +130,8 @@ static int cdma_get_sq_buf(struct cdma_dev *cdev, struct cdma_jfs *jfs,
 			dev_err(cdev->dev,
 				"jfs sq entry_cnt must be power of 2, entry_cnt = %u\n",
 				sq->buf.entry_cnt);
+			cdma_put_umem(sq->buf.umem, false);
+			sq->buf.umem = NULL;
 			return -EINVAL;
 		}
 	} else {
