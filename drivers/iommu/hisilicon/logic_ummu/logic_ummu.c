@@ -7,6 +7,7 @@
 
 #include <linux/kvm_host.h>
 #include <uapi/linux/iommufd.h>
+#include <uapi/linux/hisi_ummu.h>
 #include <linux/device.h>
 #include <linux/err.h>
 #include <linux/kernel.h>
@@ -19,7 +20,6 @@
 #include <linux/ummu_core.h>
 #include <linux/mmu_notifier.h>
 #include <linux/rwsem.h>
-#include <linux/hisi_ummu.h>
 
 #include "../queue.h"
 #include "logic_ummu.h"
@@ -1244,7 +1244,6 @@ static void logic_ummu_release_device(struct device *dev)
 		pr_err("find domain failed.\n");
 		return;
 	}
-
 
 	logic_domain = iommu_to_logic_domain(domain);
 	if (!logic_domain->agent_domain || !core_ops || !core_ops->cfg_sync) {
