@@ -124,6 +124,14 @@ static int cdma_get_sq_buf(struct cdma_dev *cdev, struct cdma_jfs *jfs,
 		sq->sqe_bb_cnt = ucmd->sqe_bb_cnt;
 		if (sq->sqe_bb_cnt > MAX_WQEBB_NUM)
 			sq->sqe_bb_cnt = MAX_WQEBB_NUM;
+
+		if (!sq->buf.entry_cnt ||
+		    (sq->buf.entry_cnt & (sq->buf.entry_cnt - 1))) {
+			dev_err(cdev->dev,
+				"jfs sq entry_cnt must be power of 2, entry_cnt = %u\n",
+				sq->buf.entry_cnt);
+			return -EINVAL;
+		}
 	} else {
 		spin_lock_init(&sq->lock);
 		sq->tid = cdev->tid;
