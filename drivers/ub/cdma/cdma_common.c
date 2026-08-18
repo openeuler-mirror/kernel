@@ -6,6 +6,9 @@
 #include <linux/highmem.h>
 #include <linux/scatterlist.h>
 #include <linux/mm.h>
+#include <linux/sched/mm.h>
+#include <linux/sched/signal.h>
+#include <linux/capability.h>
 #include <linux/iommu.h>
 #include <linux/ummu_core.h>
 #include "cdma_common.h"
@@ -179,6 +182,11 @@ static int cdma_sva_matt_map(struct cdma_umem *umem)
 static void cdma_put_target_umem(struct cdma_umem *umem, bool is_kernel)
 {
 	cdma_unpin_pages(umem, umem->sg_head.nents, is_kernel, 1);
+	if (!is_kernel && umem->owning_mm) {
+		atomic64_sub(cdma_cal_npages(umem->va, umem->length),
+			     &umem->owning_mm->pinned_vm);
+		mmdrop(umem->owning_mm);
+	}
 	kfree(umem);
 }
 
@@ -214,10 +222,43 @@ static int cdma_verify_mem(struct cdma_dev *cdev, u64 va, u64 len)
 	return 0;
 }
 
-static struct cdma_umem *cdma_get_target_umem(struct cdma_umem_param *param,
-					      struct page **page_list)
+static struct cdma_umem *cdma_get_kernel_umem(struct cdma_umem_param *param)
 {
 	struct cdma_dev *cdev = param->dev;
+	struct cdma_umem *umem;
+	u64 npages, pinned;
+
+	umem = kzalloc(sizeof(*umem), GFP_KERNEL);
+	if (!umem)
+		return ERR_PTR(-ENOMEM);
+
+	cdma_fill_umem(umem, param);
+
+	npages = cdma_cal_npages(umem->va, umem->length);
+	if (!npages || npages > UINT_MAX) {
+		dev_err(cdev->dev,
+			"invalid npages %llu in getting kernel umem\n",
+			npages);
+		kfree(umem);
+		return ERR_PTR(-EINVAL);
+	}
+
+	pinned = cdma_k_pin_pages(cdev, umem, npages);
+	if (pinned != npages) {
+		if (pinned)
+			cdma_unpin_pages(umem, pinned, true, 0);
+		kfree(umem);
+		return ERR_PTR(-ENOMEM);
+	}
+
+	return umem;
+}
+
+static struct cdma_umem *cdma_get_user_umem(struct cdma_umem_param *param,
+					    struct page **page_list)
+{
+	struct cdma_dev *cdev = param->dev;
+	u64 lock_limit, new_pinned;
 	struct cdma_umem *umem;
 	u64 npages, pinned;
 	u32 gup_flags;
@@ -234,34 +275,50 @@ static struct cdma_umem *cdma_get_target_umem(struct cdma_umem_param *param,
 	npages = cdma_cal_npages(umem->va, umem->length);
 	if (!npages || npages > UINT_MAX) {
 		dev_err(cdev->dev,
-			"invalid npages %llu in getting target umem process\n",
+			"invalid npages %llu in getting user umem\n",
 			npages);
 		ret = -EINVAL;
-		goto umem_kfree;
+		goto err_kfree;
 	}
 
-	if (param->is_kernel) {
-		pinned = cdma_k_pin_pages(cdev, umem, npages);
-	} else {
-		gup_flags = param->flag.bs.writable ? FOLL_WRITE : 0;
-		pinned = cdma_pin_pages(cdev, umem, npages, gup_flags,
-					page_list);
+	umem->owning_mm = current->mm;
+	if (!umem->owning_mm) {
+		dev_err(cdev->dev, "current->mm is null\n");
+		ret = -EINVAL;
+		goto err_kfree;
+	}
+	mmgrab(umem->owning_mm);
+
+	lock_limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
+	new_pinned = atomic64_add_return(npages,
+					 &umem->owning_mm->pinned_vm);
+	if (new_pinned > lock_limit && !capable(CAP_IPC_LOCK)) {
+		dev_err(cdev->dev,
+			"pinned pages %llu exceed rlimit %llu\n",
+			new_pinned, lock_limit);
+		ret = -ENOMEM;
+		goto err_unpin_account;
 	}
 
+	gup_flags = param->flag.bs.writable ? FOLL_WRITE : 0;
+	pinned = cdma_pin_pages(cdev, umem, npages, gup_flags, page_list);
 	if (pinned != npages) {
 		ret = -ENOMEM;
-		goto umem_release;
+		goto err_unpin_pages;
 	}
 
 	goto out;
 
-umem_release:
+err_unpin_pages:
 	if (pinned)
-		cdma_unpin_pages(umem, pinned, param->is_kernel, 0);
-umem_kfree:
+		cdma_unpin_pages(umem, pinned, false, 0);
+err_unpin_account:
+	atomic64_sub(npages, &umem->owning_mm->pinned_vm);
+	mmdrop(umem->owning_mm);
+err_kfree:
 	kfree(umem);
 out:
-	return ret != 0 ? ERR_PTR(ret) : umem;
+	return ret ? ERR_PTR(ret) : umem;
 }
 
 struct cdma_umem *cdma_umem_get(struct cdma_dev *cdev, u64 va, u64 len,
@@ -276,6 +333,9 @@ struct cdma_umem *cdma_umem_get(struct cdma_dev *cdev, u64 va, u64 len,
 	if (ret)
 		return ERR_PTR(ret);
 
+	if (!is_kernel && !can_do_mlock())
+		return ERR_PTR(-EPERM);
+
 	page_list = (struct page **)__get_free_page(GFP_KERNEL);
 	if (!page_list)
 		return ERR_PTR(-ENOMEM);
@@ -285,8 +345,10 @@ struct cdma_umem *cdma_umem_get(struct cdma_dev *cdev, u64 va, u64 len,
 	param.len = len;
 	param.flag.bs.writable = true;
 	param.flag.bs.non_pin = 0;
-	param.is_kernel = is_kernel;
-	umem = cdma_get_target_umem(&param, page_list);
+	if (is_kernel)
+		umem = cdma_get_kernel_umem(&param);
+	else
+		umem = cdma_get_user_umem(&param, page_list);
 	if (IS_ERR(umem)) {
 		dev_err(cdev->dev, "get target umem failed\n");
 		goto free_page;
