@@ -1822,7 +1822,13 @@ static int ubctl_query_rt_bandwidth(struct ubctl_dev *ucdev,
 	port_bitmap = (u64)pkt_in->port_id;
 	ret = ubase_get_ub_dl_pkt_stats(ucdev->adev, port_bitmap, result_data, UTOOL_MAX_PORT_NUM);
 	if (ret) {
-		ubctl_err(ucdev, "failed to query real time bandwidth by ubctl, ret = %d.\n", ret);
+		if (ret == -EBUSY) {
+			query_cmd_param->out->retval = -EBUSY;
+			ret = 0;
+		} else {
+			ubctl_err(ucdev, "failed to query real time bandwidth by ubctl, ret = %d.\n",
+				  ret);
+		}
 		goto query_rt_bw_end;
 	}
 
@@ -1837,6 +1843,192 @@ static int ubctl_query_rt_bandwidth(struct ubctl_dev *ucdev,
 
 query_rt_bw_end:
 	kvfree(result_data);
+	return ret;
+}
+
+static int ubctl_get_device(struct ubctl_dev *ucdev,
+			    struct ubctl_query_cmd_param *query_cmd_param,
+			    struct device **dev)
+{
+	struct fwctl_pkt_in_dev_name *pkt_in;
+	struct device *adev;
+
+	if (!query_cmd_param || !query_cmd_param->in)
+		return -EINVAL;
+
+	if (query_cmd_param->in->data_size != sizeof(struct fwctl_pkt_in_dev_name)) {
+		ubctl_err(ucdev, "dev name data size = %ubytes, it must be %zubytes.\n",
+			  query_cmd_param->in->data_size, sizeof(struct fwctl_pkt_in_dev_name));
+		return -EINVAL;
+	}
+
+	pkt_in = (struct fwctl_pkt_in_dev_name *)query_cmd_param->in->data;
+
+	adev = ubctl_find_device_by_name(pkt_in->dev_name);
+	if (!adev || !adev->parent) {
+		ubctl_err(ucdev, "no such device %s.\n", pkt_in->dev_name);
+		return -ENXIO;
+	}
+	*dev = adev->parent;
+
+	return 0;
+}
+
+static int ubctl_query_dscp(struct ubctl_dev *ucdev,
+			    struct ubctl_query_cmd_param *query_cmd_param,
+			    struct ubctl_func_dispatch *query_func)
+{
+	struct ubase_dbg_dscp_vl_map map = {};
+	struct device *dev;
+	u32 *out_data_size;
+	u32 out_size;
+	void *buf;
+	int ret;
+
+	ret = ubctl_get_device(ucdev, query_cmd_param, &dev);
+	if (ret)
+		return ret;
+
+	out_data_size = &query_cmd_param->out->data_size;
+	out_size = query_cmd_param->out_len;
+	if (out_size > sizeof(struct ubase_dbg_dscp_vl_map) + sizeof(struct fwctl_rpc_ub_out)) {
+		ubctl_err(ucdev, "data size(%u) is too large, out data size(%zu).\n", out_size,
+			  sizeof(struct ubase_dbg_dscp_vl_map) + sizeof(struct fwctl_rpc_ub_out));
+		return -EINVAL;
+	}
+
+	buf = (void *)query_cmd_param->out->data;
+	ret = ubase_dbg_get_dscp_vl_map(dev, &map);
+	if (ret) {
+		ubctl_err(ucdev, "failed to get dscp vl map, ret = %d.\n", ret);
+		return ret;
+	}
+
+	*out_data_size = out_size;
+	memcpy(buf, &map, *out_data_size);
+
+	return ret;
+}
+
+static int ubctl_query_sl_vl_map(struct ubctl_dev *ucdev,
+				 struct ubctl_query_cmd_param *query_cmd_param,
+				 struct ubctl_func_dispatch *query_func)
+{
+	struct ubase_dbg_sl_vl_map map = {};
+	struct device *dev;
+	u32 *out_data_size;
+	u32 out_size;
+	void *buf;
+	int ret;
+
+	ret = ubctl_get_device(ucdev, query_cmd_param, &dev);
+	if (ret)
+		return ret;
+
+	out_data_size = &query_cmd_param->out->data_size;
+	out_size = query_cmd_param->out_len;
+	if (out_size > sizeof(struct ubase_dbg_sl_vl_map) + sizeof(struct fwctl_rpc_ub_out)) {
+		ubctl_err(ucdev, "data size(%u) is too large, out data size(%zu).\n", out_size,
+			  sizeof(struct ubase_dbg_sl_vl_map) + sizeof(struct fwctl_rpc_ub_out));
+		return -EINVAL;
+	}
+
+	buf = (void *)query_cmd_param->out->data;
+	ret = ubase_dbg_get_sl_vl_map(dev, &map);
+	if (ret) {
+		ubctl_err(ucdev, "failed to get sl vl map, ret = %d.\n", ret);
+		return ret;
+	}
+
+	*out_data_size = out_size;
+	memcpy(buf, &map, *out_data_size);
+
+	return ret;
+}
+
+static int ubctl_query_caps_info(struct ubctl_dev *ucdev,
+				 struct ubctl_query_cmd_param *query_cmd_param,
+				 struct ubctl_func_dispatch *query_func)
+{
+	struct ubase_dbg_caps_info info = {};
+	struct device *dev;
+	u32 *out_data_size;
+	u32 out_size;
+	void *buf;
+	int ret;
+
+	ret = ubctl_get_device(ucdev, query_cmd_param, &dev);
+	if (ret)
+		return ret;
+
+	out_data_size = &query_cmd_param->out->data_size;
+	out_size = query_cmd_param->out_len;
+	if (out_size > sizeof(struct ubase_dbg_caps_info) + sizeof(struct fwctl_rpc_ub_out)) {
+		ubctl_err(ucdev, "data size(%u) is too large, out data size(%zu).\n", out_size,
+			  sizeof(struct ubase_dbg_caps_info) + sizeof(struct fwctl_rpc_ub_out));
+		return -EINVAL;
+	}
+	buf = (void *)query_cmd_param->out->data;
+
+	ret = ubase_dbg_get_caps_info(dev, &info);
+	if (ret) {
+		ubctl_err(ucdev, "failed to get caps info, ret = %d.\n", ret);
+		return ret;
+	}
+
+	*out_data_size = out_size;
+	memcpy(buf, &info, *out_data_size);
+
+	return ret;
+}
+
+static int ubctl_query_aeqc(struct ubctl_dev *ucdev,
+			    struct ubctl_query_cmd_param *query_cmd_param,
+			    struct ubctl_func_dispatch *query_func)
+{
+	struct device *dev;
+	u32 buf_size;
+	void *buf;
+	int ret;
+
+	ret = ubctl_get_device(ucdev, query_cmd_param, &dev);
+	if (ret)
+		return ret;
+
+	buf_size = query_cmd_param->out_len;
+	buf = (void *)query_cmd_param->out->data;
+
+	ret = ubase_dbg_get_aeq_ctx_hw(dev, buf, &buf_size);
+	if (ret)
+		ubctl_err(ucdev, "failed to get aeq ctx, ret = %d.\n", ret);
+
+	query_cmd_param->out->data_size = buf_size;
+
+	return ret;
+}
+
+static int ubctl_query_ceqc(struct ubctl_dev *ucdev,
+			    struct ubctl_query_cmd_param *query_cmd_param,
+			    struct ubctl_func_dispatch *query_func)
+{
+	struct device *dev;
+	u32 buf_size;
+	void *buf;
+	int ret;
+
+	ret = ubctl_get_device(ucdev, query_cmd_param, &dev);
+	if (ret)
+		return ret;
+
+	buf_size = query_cmd_param->out_len;
+	buf = (void *)query_cmd_param->out->data;
+
+	ret = ubase_dbg_get_ceq_ctx_hw(dev, buf, &buf_size);
+	if (ret)
+		ubctl_err(ucdev, "failed to get ceq ctx, ret = %d.\n", ret);
+
+	query_cmd_param->out->data_size = buf_size;
+
 	return ret;
 }
 
@@ -1867,6 +2059,12 @@ static struct ubctl_func_dispatch g_ubctl_query_func[] = {
 
 	{ UTOOL_CMD_QUERY_DL_RT_BANDWIDTH, ubctl_query_rt_bandwidth, NULL },
 	{ UTOOL_CMD_QUERY_PORT_LINK_STATS, ubctl_query_port_link_status, NULL },
+
+	{ UTOOL_CMD_QUERY_DSCP_INFO, ubctl_query_dscp, NULL },
+	{ UTOOL_CMD_QUERY_SL_VL_MAP_INFO, ubctl_query_sl_vl_map, NULL },
+	{ UTOOL_CMD_QUERY_CAPS_INFO, ubctl_query_caps_info, NULL },
+	{ UTOOL_CMD_QUERY_AEQC_INFO, ubctl_query_aeqc, NULL },
+	{ UTOOL_CMD_QUERY_CEQC_INFO, ubctl_query_ceqc, NULL },
 
 	{ UTOOL_CMD_QUERY_MAX, NULL, NULL }
 };
