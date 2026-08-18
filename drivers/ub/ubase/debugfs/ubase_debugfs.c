@@ -7,6 +7,7 @@
 #include <linux/debugfs.h>
 #include <linux/delay.h>
 #include <linux/kernel.h>
+#include <ub/ubase/ubase_comm_ctrlq.h>
 #include <ub/ubase/ubase_comm_debugfs.h>
 #include <ub/ubase/ubase_comm_eq.h>
 
@@ -67,11 +68,12 @@ static void ubase_dbg_dump_caps_bits(struct seq_file *s, struct ubase_dev *udev)
 		PRINT_CAP(ip_over_urma_utp, ubase_ip_over_urma_utp_supported);
 	PRINT_CAP(activate_proxy, ubase_activate_proxy_supported);
 	PRINT_CAP(utp, ubase_utp_supported);
+	PRINT_CAP(pmu_irq, ubase_pmu_irq_supported);
 	PRINT_CAP(dtu, ubase_dev_dtu_supported);
 	PRINT_CAP(usc, ubase_dev_usc_supported);
 	PRINT_CAP(ucp, ubase_ucp_supported);
 	PRINT_CAP(non_mirror_mem, ubase_dev_non_mirror_mem_supported);
-	PRINT_CAP(pmu_irq, ubase_pmu_irq_supported);
+	PRINT_CAP(batch_query_pmu, ubase_dev_batch_query_pmu_supported);
 }
 
 static void ubase_dbg_dump_caps_info(struct seq_file *s, struct ubase_dev *udev)
@@ -115,6 +117,9 @@ static void ubase_dbg_dump_caps_info(struct seq_file *s, struct ubase_dev *udev)
 		{"\tue_id: %u\n", dev_caps->ue_id},
 		{"\tnl_id: %u\n", dev_caps->nl_id},
 		{"\ttid: %u\n", dev_caps->tid},
+		{"\tumv_tbl_size: %u\n", udev->caps.umv_tbl_size},
+		{"\tctrlq_remote_version: %u\n", udev->ctrlq.remote_ver},
+		{"\tctrlq_local_version: %u\n", UBASE_CTRLQ_LOCAL_VERSION},
 	};
 	int i;
 
@@ -193,6 +198,38 @@ static int ubase_dbg_dump_dev_caps(struct seq_file *s, void *data)
 
 	return 0;
 }
+
+/**
+ * ubase_dbg_get_caps_info() - get caps info
+ * @dev: device
+ * @map: debug get caps info
+ *
+ * The function is used to get caps info.
+ *
+ * Context: Any context.
+ * Return: 0 on success, negative error code otherwise
+ */
+int ubase_dbg_get_caps_info(struct device *dev, struct ubase_dbg_caps_info *info)
+{
+	struct ubase_caps *dev_caps;
+	struct ubase_dev *udev;
+
+	if (!dev || !info)
+		return -EINVAL;
+
+	udev = dev_get_drvdata(dev);
+	dev_caps = &udev->caps.dev_caps;
+
+	info->aeq_num = dev_caps->num_aeq_vectors;
+	info->ceq_num = dev_caps->num_ceq_vectors;
+	info->aeq_ctx_size = UBASE_AEQ_CTX_SIZE;
+	info->ceq_ctx_size = UBASE_CEQ_CTX_SIZE;
+	info->die_id = dev_caps->die_id;
+	info->io_port_logic_id = dev_caps->io_port_logic_id;
+
+	return 0;
+}
+EXPORT_SYMBOL(ubase_dbg_get_caps_info);
 
 static int ubase_query_ubcl_config(struct ubase_dev *udev, u16 offset,
 				   u16 is_query, u16 size,
@@ -502,6 +539,91 @@ static int ubase_dbg_dump_mbx_stats(struct seq_file *s, void *data)
 	return 0;
 }
 
+static int ubase_query_udma_mac_list_hw(struct seq_file *s, struct ubase_dev *udev,
+					u32 *mac_idx, u32 *cnt, bool *complete)
+{
+	struct ubase_dbg_udma_mac_entry *mac_entry;
+	struct ubase_dbg_udma_mac_head req = {0};
+	struct ubase_dbg_udma_mac_head *head;
+	struct ubase_cmd_buf in, out;
+	int ret;
+	u8 i;
+
+	head = kzalloc(UBASE_QUERY_MAC_LEN, GFP_KERNEL);
+	if (!head)
+		return -ENOMEM;
+
+	mac_entry = head->mac_entry;
+	req.mac_idx = cpu_to_le32(*mac_idx);
+	__ubase_fill_inout_buf(&in, UBASE_OPC_QUERY_UDMA_MAC_TBL, true,
+			       sizeof(req), &req);
+	__ubase_fill_inout_buf(&out, UBASE_OPC_QUERY_UDMA_MAC_TBL, true,
+			       UBASE_QUERY_MAC_LEN, head);
+	ret = __ubase_cmd_send_inout(udev, &in, &out);
+	if (ret) {
+		ubase_err(udev, "failed to query udma mac hw tbl, ret = %d.\n",
+			  ret);
+		goto err_out;
+	}
+
+	if (head->cur_mac_cnt > UBASE_DBG_MAC_NUM) {
+		ret = -EINVAL;
+		ubase_err(udev,
+			  "invalid cur_mac_cnt = %u out of range [0, %d].\n",
+			  head->cur_mac_cnt, UBASE_DBG_MAC_NUM);
+		goto err_out;
+	}
+
+	for (i = 0; i < head->cur_mac_cnt; i++) {
+		seq_printf(s, "%-7u", (*cnt)++);
+		seq_printf(s, "%-28pM", &mac_entry[i].mac_addr);
+		seq_printf(s, "%-13u", mac_entry[i].nl_port_id);
+		seq_printf(s, "0x%08x\n", le32_to_cpu(mac_entry[i].mac_ad));
+	}
+
+	*complete = head->cur_mac_cnt < UBASE_DBG_MAC_NUM;
+	*mac_idx = le32_to_cpu(head->mac_idx);
+
+err_out:
+	kfree(head);
+
+	return ret;
+}
+
+static int ubase_dbg_dump_udma_mac_tbl_list_hw(struct seq_file *s, void *data)
+{
+#define UBASE_LOOP_COUNT(total_size, size) ((total_size) / (size) + 1)
+
+	struct ubase_dev *udev = dev_get_drvdata(s->private);
+	u32 idx = 0, cnt = 0, loop = 0;
+	bool complete = false;
+	int ret = 0;
+
+	if (!test_bit(UBASE_STATE_INITED_B, &udev->state_bits) ||
+	     test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
+		return -EBUSY;
+
+	seq_printf(s, "No     %-28sNL_PORT_ID   EXTEND_INFO\n", "MAC_ADDR");
+
+	while (loop < UBASE_LOOP_COUNT(udev->caps.umv_tbl_size,
+				       UBASE_DBG_MAC_NUM)) {
+		ret = ubase_query_udma_mac_list_hw(s, udev, &idx, &cnt, &complete);
+		if (ret) {
+			ubase_err(udev,
+				  "failed to query udma hw mac list, ret = %d.\n",
+				  ret);
+			break;
+		}
+
+		if (complete)
+			break;
+
+		loop++;
+	}
+
+	return ret;
+}
+
 static bool __ubase_dbg_dentry_support(struct device *dev, u32 property)
 {
 	struct ubase_dev *udev = dev_get_drvdata(dev);
@@ -516,6 +638,16 @@ static bool __ubase_dbg_dentry_support(struct device *dev, u32 property)
 	}
 
 	return false;
+}
+
+static bool ubase_dbg_udma_mac_tbl_list_support(struct device *dev, u32 property)
+{
+	struct ubase_dev *udev = dev_get_drvdata(dev);
+
+	if (!ubase_udma_mac_tbl_list_support(udev))
+		return false;
+
+	return __ubase_dbg_dentry_support(dev, property);
 }
 
 /**
@@ -591,6 +723,11 @@ static struct ubase_dbg_dentry_info ubase_dbg_dentry[] = {
 		.name = "qos",
 		.property = UBASE_SUP_URMA | UBASE_SUP_CDMA | UBASE_SUP_UBL_ETH,
 		.support = __ubase_dbg_dentry_support,
+	},
+	{
+		.name = "mac_tbl",
+		.property = UBASE_SUP_URMA | UBASE_SUP_ETH,
+		.support = ubase_dbg_udma_mac_tbl_list_support,
 	},
 	/* ue debugfs top-level directory,
 	 * "dev_name" refers to the ue name
@@ -830,6 +967,14 @@ static struct ubase_dbg_cmd_info ubase_dbg_cmd[] = {
 		.init = __ubase_dbg_seq_file_init,
 		.read_func = ubase_dbg_dump_mbx_stats,
 	},
+	{
+		.name = "udma_mac_tbl_list_hw",
+		.dentry_index = UBASE_DBG_DENTRY_MAC,
+		.property = UBASE_SUP_URMA | UBASE_SUP_ETH,
+		.support = ubase_dbg_udma_mac_tbl_list_support,
+		.init = __ubase_dbg_seq_file_init,
+		.read_func = ubase_dbg_dump_udma_mac_tbl_list_hw,
+	}
 };
 
 static int ubase_dbg_create_dir(struct device *dev,

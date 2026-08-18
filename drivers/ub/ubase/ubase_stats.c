@@ -9,6 +9,8 @@
 #include "ubase_cmd.h"
 #include "ubase_stats.h"
 
+#define UBASE_FLIT_TO_BYTE	20
+
 static DEFINE_MUTEX(ubase_perf_mutex);
 static LIST_HEAD(ubase_die_list);
 
@@ -331,28 +333,91 @@ static int ubase_query_dl_pkt_stats(struct ubase_dev *udev, u16 port_id,
 	return ret == -EPERM ? -EOPNOTSUPP : ret;
 }
 
-static int __ubase_get_ub_dl_pkt_stats(struct ubase_dev *udev, u64 port_bitmap,
-				       struct ubase_ub_dl_pkt_stats_result *data,
-				       u32 data_size)
+static int ubase_batch_query_pkt_stats(struct ubase_dev *udev, u64 query_bitmap,
+				       struct ubase_batch_query_dl_stats_cmd *resp)
 {
-#define UBASE_FLIT_TO_BYTE	20
+	struct ubase_batch_query_dl_stats_cmd req = {0};
+	struct ubase_cmd_buf in, out;
+	int ret;
 
+	req.query_port_bitmap_l = cpu_to_le32(lower_32_bits(query_bitmap));
+	req.query_port_bitmap_h = cpu_to_le32(upper_32_bits(query_bitmap));
+
+	__ubase_fill_inout_buf(&in, UBASE_OPC_BATCH_QUERY_UB_DL_PKT_STATS, true,
+			       sizeof(req), &req);
+	__ubase_fill_inout_buf(&out, UBASE_OPC_BATCH_QUERY_UB_DL_PKT_STATS, false,
+			       sizeof(*resp), resp);
+
+	ret = __ubase_cmd_send_inout(udev, &in, &out);
+	if (ret && ret != -EPERM)
+		dev_err_ratelimited(udev->dev,
+				    "failed to query ub dl pkt stats, query_bitmap = 0x%llx, ret = %d.\n",
+				    query_bitmap, ret);
+
+	return ret == -EPERM ? -EOPNOTSUPP : ret;
+}
+
+static int ubase_query_batch_dl_pkt_stats(struct ubase_dev *udev, u64 port_bitmap,
+					  struct ubase_ub_dl_pkt_stats_result *data,
+					  unsigned long port_num)
+{
+	u16 max_loop = DIV_ROUND_UP(port_num, UBASE_MAX_BATCH_QUERY_PORTS);
+	u16 loop, cnt, port_idx, info_idx, data_idx = 0;
+	struct ubase_batch_query_dl_stats_cmd resp;
+	u64 valid_bitmap, query_bitmap, pkt_filts;
+	u16 bit_idx = 0;
+	int ret = 0;
+
+	for (loop = 0; loop < max_loop; loop++) {
+		query_bitmap = 0;
+		for (cnt = 0; cnt < UBASE_MAX_BATCH_QUERY_PORTS; bit_idx++) {
+			if (test_bit(bit_idx, (unsigned long *)&port_bitmap)) {
+				set_bit(bit_idx, (unsigned long *)&query_bitmap);
+				cnt++;
+			}
+		}
+
+		memset(&resp, 0, sizeof(resp));
+		ret = ubase_batch_query_pkt_stats(udev, query_bitmap, &resp);
+		if (ret)
+			return ret;
+
+		valid_bitmap = ubase_size_gen(le32_to_cpu(resp.port_valid_bitmap_h),
+					      le32_to_cpu(resp.port_valid_bitmap_l));
+		if (!valid_bitmap)
+			return -EBUSY;
+
+		for (port_idx = UBASE_MAX_BATCH_QUERY_PORTS * loop, info_idx = 0;
+		     info_idx < UBASE_MAX_BATCH_QUERY_PORTS && data_idx < port_num &&
+		     port_idx < UBASE_MAX_PORT_NUM; port_idx++) {
+			if (!test_bit(port_idx, (unsigned long *)&valid_bitmap))
+				continue;
+
+			pkt_filts = ubase_size_gen(le32_to_cpu(resp.info[info_idx].tx_flit_num_h),
+						   le32_to_cpu(resp.info[info_idx].tx_flit_num_l));
+			data[data_idx].tx_pkt_bytes = pkt_filts * UBASE_FLIT_TO_BYTE;
+			pkt_filts = ubase_size_gen(le32_to_cpu(resp.info[info_idx].rx_flit_num_h),
+						   le32_to_cpu(resp.info[info_idx].rx_flit_num_l));
+			data[data_idx].rx_pkt_bytes = pkt_filts * UBASE_FLIT_TO_BYTE;
+			data[data_idx].port_id = port_idx;
+			data[data_idx].valid = 1;
+			data_idx++;
+			info_idx++;
+		}
+	}
+
+	return ret;
+}
+
+static int ubase_query_each_dl_pkt_stats(struct ubase_dev *udev, u64 port_bitmap,
+					 struct ubase_ub_dl_pkt_stats_result *data,
+					 unsigned long port_num)
+{
 	struct ubase_query_dl_pkt_stats_cmd resp;
-	unsigned long port_num, k;
+	unsigned long k;
 	u64 pkt_filts;
 	int ret;
 	u16 i;
-
-	if (!test_bit(UBASE_STATE_INITED_B, &udev->state_bits) ||
-	    test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
-		return -EBUSY;
-
-	ret = ubase_check_port_bitmap(udev, &port_bitmap, data_size);
-	if (ret)
-		return ret;
-
-	port_num = bitmap_weight((unsigned long *)&port_bitmap,
-				 UBASE_MAX_PORT_NUM);
 
 	for (i = 0, k = 0; i < UBASE_MAX_PORT_NUM && k < port_num; i++) {
 		if (!test_bit(i, (unsigned long *)&port_bitmap))
@@ -374,6 +439,34 @@ static int __ubase_get_ub_dl_pkt_stats(struct ubase_dev *udev, u64 port_bitmap,
 
 		k++;
 	}
+
+	return ret;
+}
+
+static int __ubase_get_ub_dl_pkt_stats(struct ubase_dev *udev, u64 port_bitmap,
+				       struct ubase_ub_dl_pkt_stats_result *data,
+				       u32 data_size)
+{
+	unsigned long port_num;
+	int ret;
+
+	if (!test_bit(UBASE_STATE_INITED_B, &udev->state_bits) ||
+	    test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
+		return -EBUSY;
+
+	ret = ubase_check_port_bitmap(udev, &port_bitmap, data_size);
+	if (ret)
+		return ret;
+
+	port_num = bitmap_weight((unsigned long *)&port_bitmap,
+				 UBASE_MAX_PORT_NUM);
+
+	if (ubase_dev_batch_query_pmu_supported(udev))
+		ret = ubase_query_batch_dl_pkt_stats(udev, port_bitmap,
+						     data, port_num);
+	else
+		ret = ubase_query_each_dl_pkt_stats(udev, port_bitmap,
+						    data, port_num);
 
 	return ret;
 }

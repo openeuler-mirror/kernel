@@ -38,6 +38,43 @@ int ubase_dbg_dump_sl_vl_map(struct seq_file *s, void *data)
 	return ret;
 }
 
+/**
+ * ubase_dbg_get_sl_vl_map() - get sl vl map
+ * @dev: device
+ * @map: debug sl vl map
+ *
+ * The function is used to get sl vl map.
+ *
+ * Context: Any context.
+ * Return: 0 on success, negative error code otherwise
+ */
+int ubase_dbg_get_sl_vl_map(struct device *dev, struct ubase_dbg_sl_vl_map *map)
+{
+	u8 sl_vl[UBASE_MAX_SL_NUM] = {0};
+	struct ubase_dev *udev;
+	int ret;
+
+	if (!dev || !map)
+		return -EINVAL;
+
+	udev = dev_get_drvdata(dev);
+	if (!ubase_dev_urma_supported(udev) && !ubase_dev_cdma_supported(udev))
+		return -EOPNOTSUPP;
+
+	if (!test_bit(UBASE_STATE_INITED_B, &udev->state_bits) ||
+	    test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
+		return -EBUSY;
+
+	ret = ubase_query_sl_vl_map(udev, sl_vl);
+	if (ret)
+		return ret;
+
+	memcpy(map->hw_vl, sl_vl, UBASE_MAX_SL_NUM);
+
+	return 0;
+}
+EXPORT_SYMBOL(ubase_dbg_get_sl_vl_map);
+
 int ubase_dbg_dump_udma_dscp_vl_map(struct seq_file *s, void *data)
 {
 	struct ubase_dev *udev = dev_get_drvdata(s->private);
@@ -56,6 +93,44 @@ int ubase_dbg_dump_udma_dscp_vl_map(struct seq_file *s, void *data)
 
 	return 0;
 }
+
+/**
+ * ubase_dbg_get_dscp_vl_map() - get dscp vl map
+ * @dev: device
+ * @map: debug dscp vl map
+ *
+ * The function is used to get dscp vl map.
+ *
+ * Context: Any context.
+ * Return: 0 on success, negative error code otherwise
+ */
+int ubase_dbg_get_dscp_vl_map(struct device *dev,
+			      struct ubase_dbg_dscp_vl_map *map)
+{
+	struct ubase_query_vl_map_cmd resp = {0};
+	struct ubase_dev *udev;
+	int ret;
+
+	if (!dev || !map)
+		return -EINVAL;
+
+	udev = dev_get_drvdata(dev);
+	if (!ubase_dev_eth_mac_supported(udev))
+		return -EOPNOTSUPP;
+
+	if (!test_bit(UBASE_STATE_INITED_B, &udev->state_bits) ||
+	    test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
+		return -EBUSY;
+
+	ret = ubase_query_vl_map(udev, &resp);
+	if (ret)
+		return ret;
+
+	memcpy(map->hw_vl, resp.dscp_vl, sizeof(map->hw_vl));
+
+	return 0;
+}
+EXPORT_SYMBOL(ubase_dbg_get_dscp_vl_map);
 
 int ubase_dbg_dump_ets_tc_info(struct seq_file *s, void *data)
 {
