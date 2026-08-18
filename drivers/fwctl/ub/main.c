@@ -18,8 +18,10 @@
 #define UBCTL_CMD_CNT_MAX 100
 
 static u32 g_env_type;
+static bool g_dev_client_init_flag;
 
 static DEFINE_MUTEX(g_fifo_lock);
+static DEFINE_MUTEX(g_dev_client_init_mutex);
 
 struct ubctl_uctx {
 	struct fwctl_uctx uctx;
@@ -384,6 +386,17 @@ static int ubctl_probe(struct auxiliary_device *adev,
 		ubctl_warn(ucdev, "failed to execute fwctl register crq handler event, retval = %d.\n",
 			   ret);
 
+	mutex_lock(&g_dev_client_init_mutex);
+	if (!g_dev_client_init_flag) {
+		ret = ubctl_dev_client_init(ucdev);
+		if (ret)
+			ubctl_warn(ucdev, "the dev client has not been fully initialized., retval = %d.\n",
+				   ret);
+		else
+			g_dev_client_init_flag = true;
+	}
+	mutex_unlock(&g_dev_client_init_mutex);
+
 	ucdev->adev = adev;
 	auxiliary_set_drvdata(adev, no_free_ptr(ucdev));
 	return 0;
@@ -392,6 +405,13 @@ static int ubctl_probe(struct auxiliary_device *adev,
 static void ubctl_remove(struct auxiliary_device *adev)
 {
 	struct ubctl_dev *ucdev = auxiliary_get_drvdata(adev);
+
+	mutex_lock(&g_dev_client_init_mutex);
+	if (g_dev_client_init_flag) {
+		ubctl_dev_client_uninit(ucdev);
+		g_dev_client_init_flag = false;
+	}
+	mutex_unlock(&g_dev_client_init_mutex);
 
 	ubctl_port_link_status_uninit(adev);
 	fwctl_unregister(&ucdev->fwctl);
