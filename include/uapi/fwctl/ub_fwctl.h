@@ -220,6 +220,10 @@ enum ub_fwctl_cmdrpc_type {
 	 * @UTOOL_CMD_QUERY_BA_MAR_PEFR_STATS: Query BA layer MAR_PEFR_STATS related registers
 	 */
 	UTOOL_CMD_QUERY_BA_MAR_PEFR_STATS = 0x0048,
+	/**
+	 * @UTOOL_CMD_QUERY_BA_ICRC: Query BA layer ICRC related registers
+	 */
+	UTOOL_CMD_QUERY_BA_ICRC = 0x0049,
 
 	/**
 	 * @UTOOL_CMD_QUERY_QOS: Query QOS related registers

@@ -403,6 +403,18 @@ static int ubctl_conf_mar_cyc_en_data(struct ubctl_dev *ucdev,
 				query_dp, ARRAY_SIZE(query_dp));
 }
 
+static int ubctl_query_ba_icrc_data(struct ubctl_dev *ucdev,
+				    struct ubctl_query_cmd_param *query_cmd_param,
+				    struct ubctl_func_dispatch *query_func)
+{
+	struct ubctl_query_dp query_dp[] = {
+		{ UBCTL_QUERY_BA_ICRC_DFX, UBCTL_QUERY_BA_ICRC_LEN, UBCTL_READ, NULL, 0 },
+	};
+
+	return ubctl_query_data(ucdev, query_cmd_param, query_func,
+				query_dp, ARRAY_SIZE(query_dp));
+}
+
 static int ubctl_query_mar_table_data(struct ubctl_dev *ucdev,
 				      struct ubctl_query_cmd_param *query_cmd_param,
 				      struct ubctl_func_dispatch *query_func)
@@ -894,6 +906,7 @@ static struct ubctl_func_dispatch g_ubctl_query_reg[] = {
 	  ubctl_query_data_deal },
 	{ UTOOL_CMD_QUERY_BA_MAR_PEFR_STATS, ubctl_query_ba_mar_perf,
 	  ubctl_query_data_deal },
+	{ UTOOL_CMD_QUERY_BA_ICRC, ubctl_query_ba_icrc_data, ubctl_query_data_deal },
 
 	{ UTOOL_CMD_QUERY_QOS, ubctl_query_qos_data, ubctl_query_data_deal },
 
