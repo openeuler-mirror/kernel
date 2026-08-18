@@ -3220,8 +3220,35 @@ enum txgbe_fec_mode {
 #define TXGBE_PHY_FEC_AUTO (TXGBE_PHY_FEC_OFF | TXGBE_PHY_FEC_BASER |\
 			   TXGBE_PHY_FEC_RS)
 
+struct txgbe_hic_ephy_customizable {
+	u16 sr_an_adv1;	/* 0x70010 */
+	u16 sr_an_adv2;	/* 0x70011 */
+	u16 sr_an_adv3;	/* 0x70012 */
+	u16 oem_auto;	/* 0x70000 */
+	u32 txeq_main;	/* 0x141c */
+	u32 txeq_pre1;	/* 0x1420 */
+	u32 txeq_pre2;	/* 0x1424 */
+	u32 txeq_post;	/* 0x1428 */
+	u16 training_mode;	/* training mode: 0 PRESET 2 INITIALIZE */
+	u16 linkfail_timeout;	/* 0x78005 */
+	u8 ctlebypass;	/* ctle bypass */
+	u8 resv[3];
+};
+
 struct txgbe_phy_info {
 	struct txgbe_phy_operations ops;
+	u32 oem_flag;	/* OEM customization flag 1: fw_oem 3: sw_oem */
+#define EPHY_OEM_NONE			BIT(0)
+#define EPHY_OEM_FROM_FW		BIT(1)
+#define EPHY_OEM_FROM_SW		BIT(2)
+#define EPHY_OEM_SW_OVERRIDE_FW		BIT(3)
+#define EPHY_SR_AN_ADV_EN		BIT(16)
+#define EPHY_SR_AN_CTRL_EN		BIT(17)
+#define EPHY_VR_AN_TIMER_EN		BIT(18)
+#define EPHY_CTLE_BYPASS_EN		BIT(19)
+#define EPHY_TXEQ_EN			BIT(20)
+#define EPHY_TRAINNING_MODE_EN		BIT(21)
+	struct txgbe_hic_ephy_customizable oem;
 	struct txgbe_link_status link_info;
 	struct txgbe_link_status link_info_old;
 	enum txgbe_fec_mode curr_user_fec_req;

@@ -9592,14 +9592,7 @@ static int txgbe_get_vlan_rate_ioctl(struct net_device *netdev, struct ifreq *if
 
 static int txgbe_ioctl(struct net_device *netdev, struct ifreq *ifr, int cmd)
 {
-	struct txgbe_adapter *adapter = netdev_priv(netdev);
-
 	switch (cmd) {
-	case SIOCGHWTSTAMP:
-		return txgbe_ptp_get_ts_config(adapter, ifr);
-	case SIOCSHWTSTAMP:
-		return txgbe_ptp_set_ts_config(adapter, ifr);
-
 	case SIOCGMIIREG:
 	case SIOCSMIIREG:
 		return txgbe_mii_ioctl(netdev, ifr, cmd);
@@ -10026,7 +10019,9 @@ static int txgbe_udp_tunnel_unset(struct net_device *dev,
 static const struct udp_tunnel_nic_info txgbe_udp_tunnels = {
 	.set_port       = txgbe_udp_tunnel_set,
 	.unset_port     = txgbe_udp_tunnel_unset,
+#ifdef UDP_TUNNEL_NIC_INFO_MAY_SLEEP
 	.flags          = UDP_TUNNEL_NIC_INFO_MAY_SLEEP,
+#endif
 	.tables         = {
 		{ .n_entries = 1, .tunnel_types = UDP_TUNNEL_TYPE_VXLAN,  },
 		{ .n_entries = 1, .tunnel_types = UDP_TUNNEL_TYPE_GENEVE, },
@@ -10161,6 +10156,8 @@ static const struct net_device_ops txgbe_netdev_ops = {
 	.ndo_open               = txgbe_open,
 	.ndo_stop               = txgbe_close,
 	.ndo_start_xmit         = txgbe_xmit_frame,
+	.ndo_hwtstamp_get	= txgbe_ptp_hwtstamp_get,
+	.ndo_hwtstamp_set	= txgbe_ptp_hwtstamp_set,
 	.ndo_select_queue       = txgbe_select_queue,
 	.ndo_set_rx_mode        = txgbe_set_rx_mode,
 	.ndo_validate_addr      = eth_validate_addr,

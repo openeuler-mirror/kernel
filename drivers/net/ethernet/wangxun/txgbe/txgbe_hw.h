@@ -285,4 +285,6 @@ bool txgbe_gpio_ext_check(struct txgbe_hw *hw, u8 gpio_ext_mask);
 
 int txgbe_host_interface_command(struct txgbe_hw *hw, u32 *buffer,
 				 u32 length, u32 timeout, bool return_data);
+int txgbe_is_10g_fiber_sfp(struct txgbe_hw *hw);
+void txgbe_ephy_oem_config(struct txgbe_hw *hw, u32 *speed, bool *autoneg);
 #endif /* _TXGBE_HW_H_ */

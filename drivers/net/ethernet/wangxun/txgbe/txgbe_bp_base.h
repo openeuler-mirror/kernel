@@ -31,6 +31,18 @@
 #define CL74_KRTR_TRAINNING_TIMEOUT	6000
 #endif
 
+#ifndef KR_TRAINNING_MODE
+#define KR_TRAINNING_MODE	2	/* 0 PRESET 2 INITIALIZE */
+#endif
+
+#ifndef SW_OEM_EPHY
+#define SW_OEM_EPHY		0
+#endif
+
+#ifndef AUTO
+#define AUTO			1	/* auto-negotiate/identify sfp module type */
+#endif
+
 #define TXGBE_10G_FEC_REQ	BIT(15)
 #define TXGBE_10G_FEC_ABL	BIT(14)
 #define TXGBE_25G_BASE_FEC_REQ	BIT(13)

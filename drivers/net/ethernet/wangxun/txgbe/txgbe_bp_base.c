@@ -118,7 +118,26 @@ void txgbe_bp_mode_setting(struct txgbe_adapter *adapter)
 	case txgbe_mac_aml:
 	default:
 		hw->bypass_ctle = CTLE_BYPASS ? 1 : 0;
-		adapter->backplane_an = 1;
+		adapter->backplane_an = AUTO ? 1 : 0;
+
+		/* OEM init */
+		/* SR AN ADV do not use latter, so can be ignored */
+		hw->phy.oem.sr_an_adv1 = 0;
+		hw->phy.oem.sr_an_adv2 = 0;
+		hw->phy.oem.sr_an_adv3 = 0;
+
+		hw->phy.oem.oem_auto = adapter->backplane_an;
+
+		/* tx_eq do not use latter, so can be ignored */
+		hw->phy.oem.txeq_main = 0;
+		hw->phy.oem.txeq_pre1 = 0;
+		hw->phy.oem.txeq_pre2 = 0;
+		hw->phy.oem.txeq_post = 0;
+
+		hw->phy.oem.training_mode = KR_TRAINNING_MODE;
+		hw->phy.oem.linkfail_timeout = CL74_KRTR_TRAINNING_TIMEOUT;
+		hw->phy.oem.ctlebypass = hw->bypass_ctle;
+		hw->phy.oem_flag = EPHY_OEM_NONE;
 		break;
 	}
 
@@ -267,6 +286,14 @@ void txgbe_xlgpcs_txffe_set(struct txgbe_adapter *adapter, u32 speed)
 		ffe_pre1 = 0x03030303;
 		ffe_pre2 = 0;
 		ffe_post = 0x11111111;
+	}
+
+	if (hw->phy.oem_flag == EPHY_OEM_FROM_FW ||
+	    hw->phy.oem_flag == EPHY_OEM_SW_OVERRIDE_FW) {
+		ffe_main = hw->phy.oem.txeq_main;
+		ffe_pre1 = hw->phy.oem.txeq_pre1;
+		ffe_pre2 = hw->phy.oem.txeq_pre2;
+		ffe_post = hw->phy.oem.txeq_post;
 	}
 
 	if (!adapter->ffe_set && !KR_SET && !SFI_SET)

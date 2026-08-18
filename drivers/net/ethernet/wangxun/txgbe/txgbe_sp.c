@@ -873,7 +873,7 @@ static int txgbe_get_link_capabilities_sp(struct txgbe_hw *hw,
 
 	if (hw->phy.multispeed_fiber) {
 		*speed = TXGBE_LINK_SPEED_10GB_FULL |
-			  TXGBE_LINK_SPEED_1GB_FULL;
+			 TXGBE_LINK_SPEED_1GB_FULL;
 		*autoneg = true;
 	} else if (txgbe_is_dac_cable(hw)) {
 		*autoneg = true;

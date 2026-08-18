@@ -3977,7 +3977,6 @@ int txgbe_reconfig_mac(struct txgbe_hw *hw)
 static int txgbe_reset_misc(struct txgbe_hw *hw)
 {
 	struct txgbe_adapter *adapter = hw->back;
-	u32 value;
 	u32 err;
 	int i;
 
@@ -3999,8 +3998,7 @@ static int txgbe_reset_misc(struct txgbe_hw *hw)
 			}
 		}
 	} else {
-		value = txgbe_rd32_epcs(hw, TXGBE_SR_PCS_CTL2);
-		//if ((value & 0x3) != TXGBE_SR_PCS_CTL2_PCS_TYPE_SEL_X)
+		txgbe_rd32_epcs(hw, TXGBE_SR_PCS_CTL2);
 	}
 
 	/* receive packets that size > 2048 */
@@ -5590,4 +5588,52 @@ bool txgbe_gpio_ext_check(struct txgbe_hw *hw, u8 gpio_ext_mask)
 	if (gpio_ext & gpio_ext_mask)
 		return true;
 	return false;
+}
+
+int txgbe_is_10g_fiber_sfp(struct txgbe_hw *hw)
+{
+	if (hw->phy.sfp_type == txgbe_sfp_type_10g_cu_core0 ||
+	    hw->phy.sfp_type == txgbe_sfp_type_10g_cu_core1 ||
+	    hw->phy.sfp_type == txgbe_sfp_type_srlr_core0 ||
+	    hw->phy.sfp_type == txgbe_sfp_type_srlr_core1)
+		return true;
+
+	return false;
+}
+
+void txgbe_ephy_oem_config(struct txgbe_hw *hw, u32 *speed, bool *autoneg)
+{
+	struct txgbe_adapter *adapter = hw->back;
+
+	/* OEM setting from FW or SW override FW
+	 * Only rewrite SR AN ADV, SR AN CTRL and CTLE BYPASS
+	 */
+	if (!((hw->phy.oem_flag & U16_MAX) == EPHY_OEM_FROM_FW ||
+	      (hw->phy.oem_flag & U16_MAX) == EPHY_OEM_SW_OVERRIDE_FW))
+		return;
+
+	/* OEM SR AN ADV */
+	if (hw->phy.oem_flag & EPHY_SR_AN_ADV_EN) {
+		if (hw->phy.oem.sr_an_adv2 & BIT(7)) /* 10GKR */
+			*speed |= TXGBE_LINK_SPEED_10GB_FULL;
+		if (hw->phy.oem.sr_an_adv2 & BIT(14) ||
+		    hw->phy.oem.sr_an_adv2 & BIT(15)) /* 25GKR/CR */
+			*speed |= TXGBE_LINK_SPEED_25GB_FULL;
+		if (hw->phy.oem.sr_an_adv2 & BIT(8) ||
+		    hw->phy.oem.sr_an_adv2 & BIT(9)) /* 40GKR/CR */
+			*speed |= TXGBE_LINK_SPEED_40GB_FULL;
+	}
+
+	/* OEM SR AN CTRL */
+	if (hw->phy.oem_flag & EPHY_SR_AN_CTRL_EN) {
+		if (hw->phy.oem.oem_auto & BIT(12))
+			*autoneg = true;
+		else
+			*autoneg = false;
+		adapter->backplane_an = *autoneg;
+	}
+
+	/* OEM CTLE BYPASS */
+	if (hw->phy.oem_flag & EPHY_CTLE_BYPASS_EN)
+		hw->bypass_ctle = hw->phy.oem.ctlebypass;
 }

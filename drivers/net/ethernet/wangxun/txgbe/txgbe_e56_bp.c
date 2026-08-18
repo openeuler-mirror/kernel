@@ -1483,8 +1483,10 @@ static int txgbe_e56_25g_cfg(struct txgbe_adapter *adapter)
 	rdata = 0x0000;
 	addr = E56PHY_FETX_FFE_TRAIN_CFG_0_ADDR;
 	rdata = rd32_ephy(hw, addr);
+	txgbe_field_set(&rdata, E56PHY_FETX_FFE_TRAIN_CFG_0_KRT_FETX_INIT_FFE_CFG_0,
+			hw->phy.oem.training_mode);
 	txgbe_field_set(&rdata, E56PHY_FETX_FFE_TRAIN_CFG_0_KRT_FETX_INIT_FFE_CFG_2,
-			0x2);
+			hw->phy.oem.training_mode);
 	txgbe_wr32_ephy(hw, addr, rdata);
 
 	return 0;
@@ -2298,7 +2300,7 @@ int txgbe_e56_set_phylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 
 		/* config timer */
 		txgbe_wr32_epcs(hw, 0x078004, 0x003c);
-		txgbe_wr32_epcs(hw, 0x078005, CL74_KRTR_TRAINNING_TIMEOUT);
+		txgbe_wr32_epcs(hw, 0x078005, hw->phy.oem.linkfail_timeout);
 		txgbe_wr32_epcs(hw, 0x078006, 25);
 		txgbe_wr32_epcs(hw, 0x078000, 0x0008 | BIT(2));
 
@@ -2708,7 +2710,7 @@ static void txgbe_e56_bp_watchdog_event_fw(struct txgbe_adapter *adapter)
 	u32 value = 0;
 
 	/* when an disable just check mac link up is ok */
-	if (!(txgbe_xpcs_an_enabled(hw)))
+	if (!(txgbe_xpcs_an_enabled(hw)) && !KR_MODE)
 		return;
 
 	value = txgbe_rd32_epcs(hw, 0x78002);
@@ -2720,9 +2722,11 @@ static void txgbe_e56_bp_watchdog_event_fw(struct txgbe_adapter *adapter)
 	if (value & TXGBE_PCS_AN_TXDIS)
 		adapter->an_done = false;
 
-	kr_dbg(KR_MODE, "RLU:%x MLU:%x INT:%x AN_CTL:%x an_done:%d by:%d\n",
+	kr_dbg(KR_MODE,
+	       "RLU:%x MLU:%x INT:%x AN_CTL:%x an_done:%d by:%d oem: %x\n",
 	       txgbe_rd32_epcs(hw, 0x30001), rd32(hw, 0x14404), value,
-	       txgbe_rd32_epcs(hw, 0x70000), adapter->an_done, hw->bypass_ctle);
+	       txgbe_rd32_epcs(hw, 0x70000), adapter->an_done,
+	       hw->bypass_ctle, hw->phy.oem_flag);
 }
 
 void txgbe_e56_bp_watchdog_event(struct txgbe_adapter *adapter)

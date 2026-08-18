@@ -248,7 +248,6 @@ static const struct txgbe_mac_type_to_phy_types txgbe_mac_type_lp[] = {
 static int txgbe_media_types_to_phy_types(struct txgbe_hw *hw)
 {
 	u32 phy_mode = 0;
-	int err = 0;
 
 	switch (hw->phy.sfp_type) {
 	case txgbe_sfp_type_da_cu_core0:
@@ -262,6 +261,8 @@ static int txgbe_media_types_to_phy_types(struct txgbe_hw *hw)
 	case txgbe_sfp_type_srlr_core1:
 		/* 10000SR 10000LR */
 		phy_mode = BIT(8) | BIT(9);
+		if (hw->phy.multispeed_fiber)
+			phy_mode |= BIT(2);
 		break;
 	case txgbe_sfp_type_1g_cu_core0:
 	case txgbe_sfp_type_1g_cu_core1:
@@ -290,6 +291,8 @@ static int txgbe_media_types_to_phy_types(struct txgbe_hw *hw)
 	case txgbe_sfp_type_25g_aoc_core1:
 		/* 25000 AOC = SR */
 		phy_mode = BIT(13) | BIT(15);
+		if (hw->phy.multispeed_fiber)
+			phy_mode |= BIT(8) | BIT(9);
 		break;
 	case txgbe_qsfp_type_40g_cu_core0:
 	case txgbe_qsfp_type_40g_cu_core1:
@@ -312,7 +315,6 @@ static int txgbe_media_types_to_phy_types(struct txgbe_hw *hw)
 	case txgbe_sfp_type_not_present:
 	case txgbe_sfp_type_unknown:
 	default:
-		err = -1;
 		break;
 	}
 
@@ -490,6 +492,79 @@ static void txgbe_phy_type_to_ethtool(struct net_device *netdev,
 	}
 }
 
+#ifdef ETHTOOL_GFECPARAM
+/**
+ * txgbe_get_support_fec - Get the support FEC mode from PHY capability
+ * @netdev: network interface device structure
+ * @ks: ethtool ksettings to fill in
+ **/
+static void txgbe_get_support_fec(struct net_device *netdev,
+				  struct ethtool_link_ksettings *ks)
+{
+	struct txgbe_adapter *adapter = netdev_priv(netdev);
+	struct txgbe_hw *hw = &adapter->hw;
+
+	/* Set supported FEC modes based on PHY capability */
+	ethtool_link_ksettings_add_link_mode(ks, supported, FEC_NONE);
+	if (((hw->phy.link_fec_options & TXGBE_PHY_FEC_10G_KR_40G_KR4_EN) &&
+	    (txgbe_is_dac_cable(hw) || txgbe_is_backplane(hw))) ||
+	    (hw->phy.link_fec_options & TXGBE_PHY_FEC_25G_KR_CLAUSE74_EN))
+		ethtool_link_ksettings_add_link_mode(ks, supported,
+						     FEC_BASER);
+	if (hw->phy.link_fec_options & TXGBE_PHY_FEC_25G_RS_CLAUSE91_EN)
+		ethtool_link_ksettings_add_link_mode(ks, supported, FEC_RS);
+}
+
+/**
+ * txgbe_get_settings_link_up_fec - Get the FEC mode encoding when link up
+ * @netdev: network interface device structure
+ * @ks: ethtool ksettings to fill in
+ **/
+static void txgbe_get_settings_link_up_fec(struct net_device *netdev,
+					  struct ethtool_link_ksettings *ks)
+{
+	struct txgbe_adapter *adapter = netdev_priv(netdev);
+	struct txgbe_hw *hw = &adapter->hw;
+
+	txgbe_get_support_fec(netdev, ks);
+
+	/* Set advertised FEC modes*/
+	if (hw->phy.curr_user_fec_req & TXGBE_PHY_FEC_RS)
+		ethtool_link_ksettings_add_link_mode(ks, advertising, FEC_RS);
+	if (hw->phy.curr_user_fec_req & TXGBE_PHY_FEC_BASER)
+		ethtool_link_ksettings_add_link_mode(ks, advertising,
+						     FEC_BASER);
+	if (hw->phy.curr_user_fec_req & TXGBE_PHY_FEC_OFF ||
+	    !hw->phy.curr_user_fec_req)
+		ethtool_link_ksettings_add_link_mode(ks, advertising,
+						     FEC_NONE);
+}
+
+/**
+ * txgbe_get_settings_link_up_fec - Get the FEC mode encoding from mask
+ * @netdev: network interface device structure
+ * @ks: ethtool ksettings to fill in
+ **/
+static void txgbe_get_settings_link_down_fec(struct net_device *netdev,
+					     struct ethtool_link_ksettings *ks)
+{
+	struct txgbe_adapter *adapter = netdev_priv(netdev);
+	struct txgbe_hw *hw = &adapter->hw;
+
+	txgbe_get_support_fec(netdev, ks);
+
+	/* Set advertised FEC modes based on PHY capability when link down*/
+	ethtool_link_ksettings_add_link_mode(ks, advertising, FEC_NONE);
+	if (((hw->phy.link_fec_options & TXGBE_PHY_FEC_10G_KR_40G_KR4_EN) &&
+	    (txgbe_is_dac_cable(hw) || txgbe_is_backplane(hw))) ||
+	    (hw->phy.link_fec_options & TXGBE_PHY_FEC_25G_KR_CLAUSE74_EN))
+		ethtool_link_ksettings_add_link_mode(ks, advertising,
+						     FEC_BASER);
+	if (hw->phy.link_fec_options & TXGBE_PHY_FEC_25G_RS_CLAUSE91_EN)
+		ethtool_link_ksettings_add_link_mode(ks, advertising, FEC_RS);
+}
+#endif /* ETHTOOL_GFECPARAM */
+
 /**
  * txgbe_get_settings_link_up - Get Link settings for when link is up
  * @ks: ethtool ksettings to fill in
@@ -506,7 +581,7 @@ static void txgbe_get_settings_link_up(struct ethtool_link_ksettings *ks,
 
 	/* Get supported and advertised settings from PHY ability with media */
 	txgbe_phy_type_to_ethtool(netdev, ks);
-
+	txgbe_get_settings_link_up_fec(netdev, ks);
 	ks->base.speed = hw_link_info->link_speed;
 	ks->base.duplex = DUPLEX_FULL;
 }
@@ -525,7 +600,7 @@ static void txgbe_get_settings_link_down(struct ethtool_link_ksettings *ks,
 	 * supported PHY types to figure out what info to display
 	 */
 	txgbe_phy_type_to_ethtool(netdev, ks);
-
+	txgbe_get_settings_link_down_fec(netdev, ks);
 	/* With no link, speed and duplex are unknown */
 	ks->base.speed = SPEED_UNKNOWN;
 	ks->base.duplex = DUPLEX_UNKNOWN;
@@ -542,12 +617,10 @@ static int txgbe_get_link_ksettings(struct net_device *netdev,
 				    struct ethtool_link_ksettings *ks)
 {
 	struct txgbe_adapter *adapter = netdev_priv(netdev);
-	struct txgbe_link_status *hw_link_info;
 	struct txgbe_hw *hw = &adapter->hw;
 
 	ethtool_link_ksettings_zero_link_mode(ks, supported);
 	ethtool_link_ksettings_zero_link_mode(ks, advertising);
-	hw_link_info = &hw->phy.link_info;
 
 	/* set speed and duplex */
 	if (netif_carrier_ok(netdev))
@@ -611,25 +684,6 @@ static int txgbe_get_link_ksettings(struct net_device *netdev,
 		ethtool_link_ksettings_del_link_mode(ks, advertising,
 						     Asym_Pause);
 	}
-
-#ifdef ETHTOOL_GFECPARAM
-	/* Set advertised FEC modes based on PHY capability */
-	ethtool_link_ksettings_add_link_mode(ks, advertising, FEC_NONE);
-	if (hw->phy.link_fec_options & TXGBE_PHY_FEC_10G_KR_40G_KR4_REQ ||
-	    hw->phy.link_fec_options & TXGBE_PHY_FEC_25G_KR_REQ)
-		ethtool_link_ksettings_add_link_mode(ks, advertising,
-						     FEC_BASER);
-	if (hw->phy.link_fec_options & TXGBE_PHY_FEC_25G_RS_528_REQ)
-		ethtool_link_ksettings_add_link_mode(ks, advertising, FEC_RS);
-
-	/* Set supported FEC modes based on PHY capability */
-	ethtool_link_ksettings_add_link_mode(ks, supported, FEC_NONE);
-	if (hw->phy.link_fec_options & TXGBE_PHY_FEC_10G_KR_40G_KR4_EN ||
-	    hw->phy.link_fec_options & TXGBE_PHY_FEC_25G_KR_CLAUSE74_EN)
-		ethtool_link_ksettings_add_link_mode(ks, supported, FEC_BASER);
-	if (hw->phy.link_fec_options & TXGBE_PHY_FEC_25G_RS_CLAUSE91_EN)
-		ethtool_link_ksettings_add_link_mode(ks, supported, FEC_RS);
-#endif
 
 	/* Set supported and advertised autoneg */
 	/* clause 37/73/28 */
@@ -702,6 +756,14 @@ static int txgbe_set_link_ksettings(struct net_device *netdev,
 
 	adapter->autoneg = ks->base.autoneg;
 	adapter->backplane_an = ks->base.autoneg;
+
+	if (adapter->link_up) {
+		/* Tell the OS link is going down, the link will go
+		 * back up after link setup
+		 */
+		netif_carrier_off(netdev);
+		netif_tx_stop_all_queues(netdev);
+	}
 
 	err = hw->mac.ops.setup_link(hw, advertised, true);
 	if (err) {

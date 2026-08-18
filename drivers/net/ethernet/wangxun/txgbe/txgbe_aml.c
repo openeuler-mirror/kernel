@@ -180,6 +180,19 @@ out:
 	return status;
 }
 
+static int txgbe_is_25g_fiber_sfp(struct txgbe_hw *hw)
+{
+	if (hw->phy.sfp_type == txgbe_sfp_type_25g_sr_core0 ||
+	    hw->phy.sfp_type == txgbe_sfp_type_25g_sr_core1 ||
+	    hw->phy.sfp_type == txgbe_sfp_type_25g_lr_core0 ||
+	    hw->phy.sfp_type == txgbe_sfp_type_25g_lr_core1 ||
+	    hw->phy.sfp_type == txgbe_sfp_type_25g_aoc_core0 ||
+	    hw->phy.sfp_type == txgbe_sfp_type_25g_aoc_core1)
+		return true;
+
+	return false;
+}
+
 /**
  *  txgbe_get_link_capabilities_aml - Determines link capabilities
  *  @hw: pointer to hardware structure
@@ -194,45 +207,42 @@ static int txgbe_get_link_capabilities_aml(struct txgbe_hw *hw, u32 *speed,
 	struct txgbe_adapter *adapter = hw->back;
 	int status = 0;
 
-	if (hw->phy.multispeed_fiber) {
+	/* Backplane*/
+	if (txgbe_is_backplane(hw)) {
 		*speed = TXGBE_LINK_SPEED_10GB_FULL |
 			 TXGBE_LINK_SPEED_25GB_FULL;
-		*autoneg = true;
-	} else if (hw->phy.sfp_type == txgbe_sfp_type_da_cu_core0 ||
-		   hw->phy.sfp_type == txgbe_sfp_type_da_cu_core1) {
+		/* Backplane supports autonegotiation */
+		*autoneg = adapter->backplane_an;
+		txgbe_ephy_oem_config(hw, speed, autoneg);
+		return status;
+	}
+
+	/* Fiber or DAC cable */
+	if (txgbe_is_dac_cable(hw)) {
 		if (hw->phy.fiber_suppport_speed ==
-		    TXGBE_LINK_SPEED_10GB_FULL) {
+		    TXGBE_LINK_SPEED_10GB_FULL && AUTO <= 1) {
 			adapter->backplane_an = false;
 			*autoneg = false;
 		} else {
 			*autoneg = adapter->backplane_an;
 		}
 		*speed = hw->phy.fiber_suppport_speed;
-	} else if (hw->phy.sfp_type == txgbe_sfp_type_25g_sr_core0 ||
-		   hw->phy.sfp_type == txgbe_sfp_type_25g_sr_core1 ||
-		   hw->phy.sfp_type == txgbe_sfp_type_25g_lr_core0 ||
-		   hw->phy.sfp_type == txgbe_sfp_type_25g_lr_core1 ||
-		   hw->phy.sfp_type == txgbe_sfp_type_25g_aoc_core0 ||
-		   hw->phy.sfp_type == txgbe_sfp_type_25g_aoc_core1) {
+		txgbe_ephy_oem_config(hw, speed, autoneg);
+	} else if (hw->phy.multispeed_fiber) {
+		/* multispeed fiber must before single fiber */
+		*speed = TXGBE_LINK_SPEED_10GB_FULL |
+			 TXGBE_LINK_SPEED_25GB_FULL;
+		*autoneg = true;
+		adapter->autoneg = *autoneg;
+	} else if (txgbe_is_10g_fiber_sfp(hw)) {
+		*speed = TXGBE_LINK_SPEED_10GB_FULL;
+		*autoneg = false;
+	} else if (txgbe_is_25g_fiber_sfp(hw)) {
 		*speed = TXGBE_LINK_SPEED_25GB_FULL;
 		*autoneg = false;
-	} else if (hw->mac.ops.get_media_type(hw) == txgbe_media_type_backplane) {
-		/* Backplane */
-		*speed = TXGBE_LINK_SPEED_10GB_FULL |
-			 TXGBE_LINK_SPEED_25GB_FULL;
-		/* Backplane supports autonegotiation */
-		*autoneg = adapter->backplane_an;
-	} else if (hw->mac.ops.get_media_type(hw) == txgbe_media_type_fiber) {
-		/* Fiber */
-		*speed = TXGBE_LINK_SPEED_10GB_FULL |
-			 TXGBE_LINK_SPEED_25GB_FULL;
-		*autoneg = false;
 	} else {
-		/* Unknown */
-		status = TXGBE_ERR_LINK_SETUP;
-		*speed = TXGBE_LINK_SPEED_UNKNOWN;
+		*speed = TXGBE_LINK_SPEED_25GB_FULL;
 		*autoneg = false;
-		e_dev_err("GET link capabilities failed\n");
 	}
 
 	return status;

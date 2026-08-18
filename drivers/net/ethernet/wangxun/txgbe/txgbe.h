@@ -885,7 +885,7 @@ struct txgbe_adapter {
 	struct ptp_clock_info ptp_caps;
 	struct work_struct ptp_tx_work;
 	struct sk_buff *ptp_tx_skb;
-	struct hwtstamp_config tstamp_config;
+	struct kernel_hwtstamp_config tstamp_config;
 	unsigned long ptp_tx_start;
 	unsigned long last_overflow_check;
 	unsigned long last_rx_ptp_check;
@@ -1151,8 +1151,11 @@ void txgbe_ptp_suspend(struct txgbe_adapter *adapter);
 void txgbe_ptp_overflow_check(struct txgbe_adapter *adapter);
 void txgbe_ptp_rx_hang(struct txgbe_adapter *adapter);
 void txgbe_ptp_rx_hwtstamp(struct txgbe_adapter *adapter, struct sk_buff *skb);
-int txgbe_ptp_set_ts_config(struct txgbe_adapter *adapter, struct ifreq *ifr);
-int txgbe_ptp_get_ts_config(struct txgbe_adapter *adapter, struct ifreq *ifr);
+int txgbe_ptp_hwtstamp_get(struct net_device *netdev,
+			   struct kernel_hwtstamp_config *config);
+int txgbe_ptp_hwtstamp_set(struct net_device *netdev,
+			   struct kernel_hwtstamp_config *config,
+			   struct netlink_ext_ack *extack);
 void txgbe_ptp_start_cyclecounter(struct txgbe_adapter *adapter);
 void txgbe_ptp_reset(struct txgbe_adapter *adapter);
 void txgbe_ptp_check_pps_event(struct txgbe_adapter *adapter);

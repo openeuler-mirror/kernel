@@ -150,6 +150,19 @@ out:
 	return status;
 }
 
+static int txgbe_is_40g_fiber_qsfp(struct txgbe_hw *hw)
+{
+	if (hw->phy.sfp_type == txgbe_qsfp_type_40g_sr_core0 ||
+	    hw->phy.sfp_type == txgbe_qsfp_type_40g_sr_core1 ||
+	    hw->phy.sfp_type == txgbe_qsfp_type_40g_lr_core0 ||
+	    hw->phy.sfp_type == txgbe_qsfp_type_40g_lr_core1 ||
+	    hw->phy.sfp_type == txgbe_qsfp_type_40g_active_core0 ||
+	    hw->phy.sfp_type == txgbe_qsfp_type_40g_active_core1)
+		return true;
+
+	return false;
+}
+
 /**
  *  txgbe_get_link_capabilities_aml40 - Determines link capabilities
  *  @hw: pointer to hardware structure
@@ -164,37 +177,42 @@ static int txgbe_get_link_capabilities_aml40(struct txgbe_hw *hw, u32 *speed,
 	struct txgbe_adapter *adapter = hw->back;
 	int status = 0;
 
-	if (hw->mac.ops.get_media_type(hw) == txgbe_media_type_fiber_qsfp) {
-		if (hw->phy.sfp_type == txgbe_qsfp_type_40g_cu_core0 ||
-		    hw->phy.sfp_type == txgbe_qsfp_type_40g_cu_core1) {
-			*autoneg = adapter->backplane_an;
-			*speed = hw->phy.fiber_suppport_speed;
-
-		} else if (hw->phy.sfp_type == txgbe_qsfp_type_40g_sr_core0 ||
-			   hw->phy.sfp_type == txgbe_qsfp_type_40g_sr_core1 ||
-			   hw->phy.sfp_type == txgbe_qsfp_type_40g_lr_core0 ||
-			   hw->phy.sfp_type == txgbe_qsfp_type_40g_lr_core1 ||
-			   hw->phy.sfp_type == txgbe_qsfp_type_40g_active_core0 ||
-			   hw->phy.sfp_type == txgbe_qsfp_type_40g_active_core1) {
-			*speed = TXGBE_LINK_SPEED_40GB_FULL;
-			*autoneg = false;
-		} else {
-			/* no i2c or get unsupport qsfp */
-			*speed = TXGBE_LINK_SPEED_40GB_FULL |
-				 TXGBE_LINK_SPEED_10GB_FULL;
-			*autoneg = false;
-		}
-	} else if (txgbe_is_backplane(hw)) {
-		*speed = TXGBE_LINK_SPEED_40GB_FULL |
-			 TXGBE_LINK_SPEED_10GB_FULL;
+	/* Backplane*/
+	if (txgbe_is_backplane(hw)) {
+		*speed = TXGBE_LINK_SPEED_10GB_FULL |
+			 TXGBE_LINK_SPEED_40GB_FULL;
 		/* Backplane supports autonegotiation */
 		*autoneg = adapter->backplane_an;
-	} else {
-		/* Unknown */
-		status = TXGBE_ERR_LINK_SETUP;
-		*speed = TXGBE_LINK_SPEED_UNKNOWN;
+		txgbe_ephy_oem_config(hw, speed, autoneg);
+		return status;
+	}
+
+	/* Fiber or DAC cable */
+	if (txgbe_is_dac_cable(hw)) {
+		if (hw->phy.fiber_suppport_speed ==
+		    TXGBE_LINK_SPEED_10GB_FULL && AUTO <= 1) {
+			adapter->backplane_an = false;
+			*autoneg = false;
+		} else {
+			*autoneg = adapter->backplane_an;
+		}
+		*speed = hw->phy.fiber_suppport_speed;
+		txgbe_ephy_oem_config(hw, speed, autoneg);
+	} else if (hw->phy.multispeed_fiber) {
+		/* multispeed fiber must before single fiber */
+		*speed = TXGBE_LINK_SPEED_10GB_FULL |
+			 TXGBE_LINK_SPEED_40GB_FULL;
+		*autoneg = true;
+		adapter->autoneg = *autoneg;
+	} else if (txgbe_is_40g_fiber_qsfp(hw)) {
+		*speed = TXGBE_LINK_SPEED_40GB_FULL;
 		*autoneg = false;
-		e_dev_err("GET link capabilities failed\n");
+	} else if (txgbe_is_10g_fiber_sfp(hw)) {
+		*speed = TXGBE_LINK_SPEED_10GB_FULL;
+		*autoneg = false;
+	} else {
+		*speed = TXGBE_LINK_SPEED_40GB_FULL;
+		*autoneg = false;
 	}
 
 	return status;

@@ -5,8 +5,8 @@
 
 #define TXGBE_HI_COMMAND_TIMEOUT_SHORT  500
 
-#define FW_PHY_CONFIG_READ_CMD          0xc0
-#define FW_PHY_CONFIG_LINK_CMD          0xc1
+#define FW_PHY_CONFIG_GET_LINK_CMD      0xc0
+#define FW_PHY_CONFIG_SET_LINK_CMD      0xc1
 #define FW_PHY_CONFIG_FC_CMD            0xc2
 #define FW_PHY_CONFIG_POWER_CMD         0xc3
 #define FW_PHY_CONFIG_RESET_CMD         0xc4
@@ -26,6 +26,8 @@ struct txgbe_hic_ephy_setlink {
 	u8 duplex;
 	u8 autoneg;
 	u8 fec_mode;
+	u32 sw_oem_flag;
+	struct txgbe_hic_ephy_customizable sw_oem;
 	u8 resv[4];
 };
 
@@ -55,6 +57,8 @@ struct txgbe_hic_ephy_status {
 	u8 fec_mode;
 	u8 an_done;
 	u8 bypassctle;
+	u32 fw_oem_flag;
+	struct txgbe_hic_ephy_customizable oem;
 	u8 resv[4];
 };
 

@@ -12,9 +12,6 @@
 #define TXGBE_DUPLEX_FULL             0x01
 #define TXGBE_POWER_ON                0x01
 
-/* AUTO: auto-negotiate/identify sfp module type, do not force the type */
-#define AUTO 1
-
 static int txgbe_get_module_info_hostif(struct txgbe_hw *hw,
 					struct txgbe_hic_get_sfp_info *buffer)
 {
@@ -30,43 +27,90 @@ static int txgbe_get_module_info_hostif(struct txgbe_hw *hw,
 
 int txgbe_set_phy_link_hostif(struct txgbe_hw *hw, int speed, bool autoneg, u8 duplex)
 {
-	struct txgbe_hic_ephy_setlink buffer;
+	struct txgbe_adapter *adapter = hw->back;
+	struct txgbe_hic_ephy_setlink set_buffer;
 
-	buffer.hdr.cmd = FW_PHY_CONFIG_LINK_CMD;
-	buffer.hdr.buf_len = sizeof(struct txgbe_hic_ephy_setlink) -
-			     sizeof(struct txgbe_hic_hdr);
-	buffer.hdr.cmd_or_resp.cmd_resv = FW_CEM_CMD_RESERVED;
+	set_buffer.hdr.cmd = FW_PHY_CONFIG_SET_LINK_CMD;
+	set_buffer.hdr.buf_len = sizeof(struct txgbe_hic_ephy_setlink) -
+				 sizeof(struct txgbe_hic_hdr);
+	set_buffer.hdr.cmd_or_resp.cmd_resv = FW_CEM_CMD_RESERVED;
 
-	buffer.fec_mode = hw->phy.curr_user_fec_req;
-	buffer.speed = speed;
-	buffer.autoneg = autoneg;
-	buffer.duplex = duplex;
+	set_buffer.fec_mode = hw->phy.curr_user_fec_req;
+	set_buffer.speed = speed;
+	set_buffer.autoneg = autoneg;
+	set_buffer.duplex = duplex;
 	hw_info(hw, "[fw] Setting link speed to 0x%x, autoneg %s, fec 0x%x.\n",
-		speed, autoneg ? "enabled" : "disabled", buffer.fec_mode);
+		speed, autoneg ? "enabled" : "disabled", set_buffer.fec_mode);
 
-	return txgbe_host_interface_command(hw, (u32 *)&buffer,
+	if (!SW_OEM_EPHY)
+		goto send_cmd;
+
+	hw_info(hw, "Applying SW_OEM to FW.\n");
+	set_buffer.sw_oem.txeq_main = adapter->ffe_main;
+	set_buffer.sw_oem.txeq_pre1 = adapter->ffe_pre1;
+	set_buffer.sw_oem.txeq_pre2 = adapter->ffe_pre2;
+	set_buffer.sw_oem.txeq_post = adapter->ffe_post;
+	set_buffer.sw_oem.training_mode = KR_TRAINNING_MODE;
+	set_buffer.sw_oem.linkfail_timeout = CL74_KRTR_TRAINNING_TIMEOUT;
+	set_buffer.sw_oem.ctlebypass = CTLE_BYPASS ? 1 : 0;
+	set_buffer.sw_oem_flag = EPHY_OEM_FROM_SW;
+
+send_cmd:
+	return txgbe_host_interface_command(hw, (u32 *)&set_buffer,
 					    sizeof(struct txgbe_hic_ephy_setlink),
 					    TXGBE_HI_COMMAND_TIMEOUT_SHORT, true);
 }
 
 int txgbe_test_phy_status_hostif(struct txgbe_hw *hw)
 {
-	struct txgbe_hic_ephy_status buffer;
+	struct txgbe_adapter *adapter = hw->back;
+	struct txgbe_hic_ephy_status get_buffer;
+	int ret, i;
 
-	buffer.hdr.cmd = FW_PHY_CONFIG_READ_CMD;
-	buffer.hdr.buf_len = sizeof(struct txgbe_hic_ephy_status) -
-			     sizeof(struct txgbe_hic_hdr);
-	buffer.hdr.cmd_or_resp.cmd_resv = FW_CEM_CMD_RESERVED;
+	get_buffer.hdr.cmd = FW_PHY_CONFIG_GET_LINK_CMD;
+	get_buffer.hdr.buf_len = sizeof(struct txgbe_hic_ephy_status) -
+				 sizeof(struct txgbe_hic_hdr);
+	get_buffer.hdr.cmd_or_resp.cmd_resv = FW_CEM_CMD_RESERVED;
 
-	return txgbe_host_interface_command(hw, (u32 *)&buffer,
-					    sizeof(struct txgbe_hic_ephy_status),
-					    TXGBE_HI_COMMAND_TIMEOUT_SHORT, true);
+	ret = txgbe_host_interface_command(hw, (u32 *)&get_buffer,
+					   sizeof(struct txgbe_hic_ephy_status),
+					   TXGBE_HI_COMMAND_TIMEOUT_SHORT,
+					   true);
+	if (ret) {
+		e_dev_info("Failed to test link info, ret=%d\n", ret);
+		return ret;
+	}
+
+	if (!((get_buffer.fw_oem_flag & U16_MAX) == EPHY_OEM_FROM_FW ||
+	      (get_buffer.fw_oem_flag & U16_MAX) == EPHY_OEM_SW_OVERRIDE_FW))
+		return ret;
+
+	e_dev_info("[fw] Get OEM settings from firmware, oem_flag %x.\n",
+		   get_buffer.fw_oem_flag);
+	hw->phy.oem.sr_an_adv1 = get_buffer.oem.sr_an_adv1;
+	hw->phy.oem.sr_an_adv2 = get_buffer.oem.sr_an_adv2;
+	hw->phy.oem.sr_an_adv3 = get_buffer.oem.sr_an_adv3;
+	hw->phy.oem.oem_auto = get_buffer.oem.oem_auto;
+	hw->phy.oem.txeq_main = get_buffer.oem.txeq_main;
+	hw->phy.oem.txeq_pre1 = get_buffer.oem.txeq_pre1;
+	hw->phy.oem.txeq_pre2 = get_buffer.oem.txeq_pre2;
+	hw->phy.oem.txeq_post = get_buffer.oem.txeq_post;
+	hw->phy.oem.training_mode = get_buffer.oem.training_mode;
+	hw->phy.oem.linkfail_timeout = get_buffer.oem.linkfail_timeout;
+	hw->phy.oem.ctlebypass = get_buffer.oem.ctlebypass;
+	hw->phy.oem_flag = get_buffer.fw_oem_flag;
+
+	for (i = 0; i < sizeof(struct txgbe_hic_ephy_status) / sizeof(u32); i++)
+		e_dev_info("[fw] OEM[%d]: %08x\n", i,
+			   *((u32 *)&get_buffer + i));
+
+	return 0;
 }
 
 static int txgbe_get_phy_status_hostif(struct txgbe_hw *hw,
 				       struct txgbe_hic_ephy_status *buffer)
 {
-	buffer->hdr.cmd = FW_PHY_CONFIG_READ_CMD;
+	buffer->hdr.cmd = FW_PHY_CONFIG_GET_LINK_CMD;
 	buffer->hdr.buf_len = sizeof(struct txgbe_hic_ephy_status) -
 			      sizeof(struct txgbe_hic_hdr);
 	buffer->hdr.cmd_or_resp.cmd_resv = FW_CEM_CMD_RESERVED;
@@ -129,20 +173,6 @@ int txgbe_set_phy_power_hostif(struct txgbe_hw *hw, u8 power)
 					    TXGBE_HI_COMMAND_TIMEOUT_SHORT, false);
 }
 
-int txgbe_phy_reset_hostif(struct txgbe_hw *hw)
-{
-	struct txgbe_hic_ephy_power buffer;
-
-	buffer.hdr.cmd = FW_PHY_CONFIG_RESET_CMD;
-	buffer.hdr.buf_len = sizeof(struct txgbe_hic_ephy_power) -
-			     sizeof(struct txgbe_hic_hdr);
-	buffer.hdr.cmd_or_resp.cmd_resv = FW_CEM_CMD_RESERVED;
-
-	return txgbe_host_interface_command(hw, (u32 *)&buffer,
-					    sizeof(buffer),
-					    TXGBE_HI_COMMAND_TIMEOUT_SHORT, true);
-}
-
 int txgbe_read_eeprom_i2c_hostif(struct txgbe_hw *hw,
 				 struct txgbe_hic_i2c_read *buffer,
 				 u32 length, u8 *data)
@@ -185,9 +215,9 @@ int txgbe_read_eeprom_i2c_hostif(struct txgbe_hw *hw,
  **/
 static int txgbe_identify_sfp_module_hostif(struct txgbe_hw *hw)
 {
-	u8 identifier = 0, cable_tech = 0, cable_spec = 0, oui_bytes[3] = {0};
-	u8 comp_codes_1g = 0, comp_codes_10g = 0, comp_codes_25g = 0;
 	enum txgbe_sfp_type stored_sfp_type = hw->phy.sfp_type;
+	u8 identifier = 0, cable_tech = 0, cable_spec = 0;
+	u8 comp_codes_10g = 0, comp_codes_25g = 0;
 	int ret = 0, status = 0;
 	struct txgbe_hic_get_sfp_info buffer;
 
@@ -210,15 +240,12 @@ static int txgbe_identify_sfp_module_hostif(struct txgbe_hw *hw)
 		goto out;
 	}
 
+	/* comp_codes_1g and oui_bytes not use in this func */
 	identifier = buffer.identifier;
-	comp_codes_1g = buffer.com_1g_code;
 	comp_codes_10g = buffer.com_10g_code;
 	comp_codes_25g = buffer.com_25g_code;
 	cable_spec = buffer.cable_spec;
 	cable_tech = buffer.cable_tech;
-	oui_bytes[0] = buffer.vendor_oui0;
-	oui_bytes[1] = buffer.vendor_oui1;
-	oui_bytes[2] = buffer.vendor_oui2;
 
 	if (ret)
 		goto err_read_i2c_eeprom;
@@ -351,11 +378,9 @@ err_read_i2c_eeprom:
  **/
 static int txgbe_identify_qsfp_module_hostif(struct txgbe_hw *hw)
 {
-	u8 identifier = 0, comp_codes_1g = 0, comp_codes_10g = 0, sff_opt1 = 0;
-	u8 comp_codes_25g = 0, cable_tech = 0, cable_spec = 0;
+	u8 identifier = 0, sff_opt1 = 0, transceiver_type = 0;
 	int ret = 0, status = 0;
 	struct txgbe_hic_get_sfp_info buffer;
-	u8 transceiver_type = 0;
 
 	/* if QSFP module is not present just skip read */
 	if (txgbe_gpio_ext_check(hw, TXGBE_SFP1_MOD_PRST_LS)) {
@@ -378,11 +403,6 @@ static int txgbe_identify_qsfp_module_hostif(struct txgbe_hw *hw)
 	}
 
 	identifier = buffer.identifier;
-	comp_codes_1g = buffer.com_1g_code;
-	comp_codes_10g = buffer.com_10g_code;
-	comp_codes_25g = buffer.com_25g_code;
-	cable_spec = buffer.cable_spec;
-	cable_tech = buffer.cable_tech;
 	transceiver_type = buffer.transceiver_type;
 	sff_opt1 = buffer.sff_opt1;
 
