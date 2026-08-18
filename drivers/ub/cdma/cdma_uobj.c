@@ -105,13 +105,10 @@ struct cdma_uobj *cdma_uobj_get(struct cdma_file *cfile, int id,
 	return uobj;
 }
 
-void cdma_cleanup_context_uobj(struct cdma_file *cfile, enum cdma_remove_reason why)
+void cdma_cleanup_context_uobj(struct cdma_file *cfile)
 {
 	struct cdma_uobj *uobj;
 	int id;
-
-	if (why == CDMA_REMOVE_DRIVER_REMOVE)
-		cdma_unmap_vma_pages(cfile);
 
 	spin_lock(&cfile->idr_lock);
 	idr_for_each_entry(&cfile->idr, uobj, id)
