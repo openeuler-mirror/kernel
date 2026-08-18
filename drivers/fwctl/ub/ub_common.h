@@ -10,9 +10,14 @@
 #include <linux/capability.h>
 #include <linux/fwctl.h>
 #include <linux/kfifo.h>
+#include <linux/time.h>
+#include <linux/netdevice.h>
 #include <ub/ubase/ubase_comm_stats.h>
 #include <ub/ubase/ubase_comm_cmd.h>
 #include <ub/ubase/ubase_comm_dev.h>
+#include <ub/ubase/ubase_comm_debugfs.h>
+#include <ub/urma/ubcore_uapi.h>
+#include "../../ub/urma/hw/udma/udma_dev.h"
 
 #include <uapi/fwctl/ub_fwctl.h>
 
@@ -34,6 +39,10 @@
 
 #define ubctl_warn(ucdev, format, ...) \
 	dev_warn(&ucdev->fwctl.dev, "PID %u: " format, current->pid, \
+		##__VA_ARGS__)
+
+#define ubctl_dev_warn(dev, format, ...) \
+	dev_warn(dev, "PID %u: " format, current->pid, \
 		##__VA_ARGS__)
 
 #define UBCTL_GET_PHY_ADDR(high, low) ((((u64)(high)) << 32) | (low))
@@ -159,5 +168,9 @@ int ubctl_query_perf(struct ubctl_dev *ucdev, u32 port_bitmap,
 int ubctl_query_perf_stats(struct ubctl_dev *ucdev, u32 port_bitmap,
 			   struct ubase_perf_stats_result *result_data,
 			   u32 result_data_size);
+
+int ubctl_dev_client_init(struct ubctl_dev *ucdev);
+void ubctl_dev_client_uninit(struct ubctl_dev *ucdev);
+struct device *ubctl_find_device_by_name(const char *dev_name);
 
 #endif

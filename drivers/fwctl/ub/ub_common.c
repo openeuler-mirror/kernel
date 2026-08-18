@@ -6,6 +6,16 @@
 #include "ub_common.h"
 #include "ub_cmdq.h"
 
+#define MAX_DEV_NAME 64
+struct ubctl_unic_udma_dev {
+	struct list_head list;
+	struct device *dev;
+	char dev_name[MAX_DEV_NAME];
+};
+
+static LIST_HEAD(g_ubctl_dev_list);
+static DEFINE_MUTEX(g_ubctl_dev_lock);
+
 static inline void ubctl_struct_cpu_to_le32(u32 *data, u32 cnt)
 {
 	for (u32 i = 0; i < cnt; i++)
@@ -146,7 +156,7 @@ static int ubctl_cmd_send_deal(struct ubctl_dev *ucdev,
 
 	*retval = ubctl_ubase_cmd_send(ucdev->adev, &cmd);
 	if (*retval == UTOOL_EOPNOTSUPP) {
-		ubctl_warn(ucdev, "this opcode is not supported.\n");
+		ubctl_warn(ucdev, "this opcode(%#x) is not supported.\n", cmd.op_code);
 		if (rpc_cmd == UBCTL_CMD_QUERY_CONF_USER_COMM)
 			return -EINVAL;
 		*retval = 0;
@@ -292,4 +302,154 @@ int ubctl_query_perf_stats(struct ubctl_dev *ucdev, u32 port_bitmap,
 		ubctl_err(ucdev, "failed to collecting performance.\n");
 
 	return ret;
+}
+
+struct device *ubctl_find_device_by_name(const char *dev_name)
+{
+	struct ubctl_unic_udma_dev *entry = NULL;
+	struct device *ret_dev = NULL;
+
+	mutex_lock(&g_ubctl_dev_lock);
+	list_for_each_entry(entry, &g_ubctl_dev_list, list) {
+		if (strcmp(entry->dev_name, dev_name) == 0) {
+			ret_dev = entry->dev;
+			break;
+		}
+	}
+	mutex_unlock(&g_ubctl_dev_lock);
+
+	return ret_dev;
+}
+
+static int ubctl_add_device(struct device *dev, const char *dev_name)
+{
+	struct ubctl_unic_udma_dev *new_dev_node;
+
+	if (!dev || !dev_name)
+		return -EINVAL;
+
+	new_dev_node = kvzalloc(sizeof(struct ubctl_unic_udma_dev), GFP_KERNEL);
+	if (!new_dev_node)
+		return -ENOMEM;
+
+	memcpy(new_dev_node->dev_name, dev_name, sizeof(new_dev_node->dev_name));
+	INIT_LIST_HEAD(&new_dev_node->list);
+	new_dev_node->dev = dev;
+
+	mutex_lock(&g_ubctl_dev_lock);
+	list_add(&new_dev_node->list, &g_ubctl_dev_list);
+	mutex_unlock(&g_ubctl_dev_lock);
+
+	return 0;
+}
+
+static void ubctl_remove_device(const char *dev_name)
+{
+	struct ubctl_unic_udma_dev *current_node;
+	struct ubctl_unic_udma_dev *next;
+
+	mutex_lock(&g_ubctl_dev_lock);
+	list_for_each_entry_safe(current_node, next, &g_ubctl_dev_list, list) {
+		if (strcmp(current_node->dev_name, dev_name) != 0)
+			continue;
+		list_del(&current_node->list);
+		kvfree(current_node);
+		break;
+	}
+	mutex_unlock(&g_ubctl_dev_lock);
+}
+
+static int ubctl_add_udma_device(struct ubcore_device *ubc_dev)
+{
+	struct udma_dev *udev;
+	int ret = 0;
+
+	if (!ubc_dev)
+		return -EFAULT;
+
+	udev = to_udma_dev(ubc_dev);
+	if (!udev)
+		ubctl_dev_warn(&ubc_dev->dev, "udev not obtained.\n");
+
+	ret = ubctl_add_device(&udev->comdev.adev->dev, udev->dev_name);
+	if (ret)
+		ubctl_dev_warn(udev->dev, "device not added, ret = %d.\n", ret);
+
+	return ret;
+}
+
+static void ubctl_remove_udma_device(struct ubcore_device *ubc_dev, void *client_ctx)
+{
+	if (!ubc_dev)
+		return;
+
+	ubctl_remove_device(ubc_dev->dev_name);
+}
+
+static struct ubcore_client g_ubctl_udma_client = {
+	.list_node = LIST_HEAD_INIT(g_ubctl_udma_client.list_node),
+	.client_name = "ub_fwctl",
+	.add = ubctl_add_udma_device,
+	.remove = ubctl_remove_udma_device
+};
+
+static int ubctl_netdevice_event(struct notifier_block *tblock,
+				 unsigned long event, void *eptr)
+{
+	struct net_device *netdev;
+	int ret = 0;
+
+	netdev = netdev_notifier_info_to_dev((const struct netdev_notifier_info *)eptr);
+
+	switch (event) {
+	case NETDEV_REGISTER:
+		ret = ubctl_add_device(&netdev->dev, netdev->name);
+		break;
+	case NETDEV_UNREGISTER:
+		ubctl_remove_device(netdev->name);
+		break;
+	default:
+		break;
+	}
+
+	return ret;
+}
+
+static struct notifier_block g_ubctl_netdevice = {
+	.notifier_call = ubctl_netdevice_event,
+};
+
+int ubctl_dev_client_init(struct ubctl_dev *ucdev)
+{
+	int ret;
+
+	ret = ubcore_register_client(&g_ubctl_udma_client);
+	if (ret)
+		return ret;
+
+	ret = register_netdevice_notifier(&g_ubctl_netdevice);
+	if (ret)
+		ubcore_unregister_client(&g_ubctl_udma_client);
+
+	return ret;
+}
+
+void ubctl_dev_client_uninit(struct ubctl_dev *ucdev)
+{
+	struct ubctl_unic_udma_dev *current_node;
+	struct ubctl_unic_udma_dev *next;
+	int ret;
+
+	ret = unregister_netdevice_notifier(&g_ubctl_netdevice);
+	if (ret)
+		ubctl_warn(ucdev, "netdevice notifier not deregistered, ret = %d.\n", ret);
+
+	ubcore_unregister_client(&g_ubctl_udma_client);
+
+	mutex_lock(&g_ubctl_dev_lock);
+	list_for_each_entry_safe(current_node, next, &g_ubctl_dev_list, list) {
+		list_del(&current_node->list);
+		kvfree(current_node);
+	}
+	mutex_unlock(&g_ubctl_dev_lock);
 }
