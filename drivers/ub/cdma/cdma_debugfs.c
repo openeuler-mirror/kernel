@@ -135,40 +135,59 @@ static int cdma_dbg_dump_sq_jfc_ctx_hw(struct seq_file *s, void *data)
 	return cdma_dbg_dump_ctx_hw(s, CDMA_DBG_SQ_JFC_CTX);
 }
 
-static void cdma_get_jfs_cfg(struct cdma_queue *queue, struct seq_file *s)
+static void cdma_get_jfs_cfg(struct cdma_dev *cdev, struct cdma_queue *queue,
+			     struct seq_file *s)
 {
-	struct cdma_jfs_cfg *cfg;
+	struct cdma_jfs_cfg cfg;
+	struct cdma_jfs *jfs;
 
-	if (!queue->jfs)
+	spin_lock(&cdev->jfs_table.lock);
+	jfs = idr_find(&cdev->jfs_table.idr_pool.idr, queue->jfs_id);
+	if (!jfs) {
+		spin_unlock(&cdev->jfs_table.lock);
+		dev_err(&cdev->adev->dev, "find jfs[%u] for queue[%u] failed\n",
+			queue->jfs_id, queue->id);
 		return;
+	}
+	cfg = jfs->base_jfs.cfg;
+	spin_unlock(&cdev->jfs_table.lock);
 
-	cfg = &queue->jfs->cfg;
-	seq_printf(s, "%-13u", cfg->depth);
-	seq_printf(s, "%-12u", cfg->flag.value);
-	seq_printf(s, "%-17u", cfg->eid_index);
-	seq_printf(s, "%-10u", cfg->priority);
-	seq_printf(s, "%-9u", cfg->max_sge);
-	seq_printf(s, "%-10u", cfg->max_rsge);
-	seq_printf(s, "%-11u", cfg->rnr_retry);
-	seq_printf(s, "%-13u", cfg->err_timeout);
-	seq_printf(s, "%-14u", cfg->jfc_id);
-	seq_printf(s, "%-15u", cfg->sqe_pos);
-	seq_printf(s, "%-11u", cfg->tpn);
-	seq_printf(s, "%-15u", cfg->pld_pos);
-	seq_printf(s, "%-16u", cfg->queue_id);
+	seq_printf(s, "%-13u", cfg.depth);
+	seq_printf(s, "%-12u", cfg.flag.value);
+	seq_printf(s, "%-17u", cfg.eid_index);
+	seq_printf(s, "%-10u", cfg.priority);
+	seq_printf(s, "%-9u", cfg.max_sge);
+	seq_printf(s, "%-10u", cfg.max_rsge);
+	seq_printf(s, "%-11u", cfg.rnr_retry);
+	seq_printf(s, "%-13u", cfg.err_timeout);
+	seq_printf(s, "%-14u", cfg.jfc_id);
+	seq_printf(s, "%-15u", cfg.sqe_pos);
+	seq_printf(s, "%-11u", cfg.tpn);
+	seq_printf(s, "%-15u", cfg.pld_pos);
+	seq_printf(s, "%-16u", cfg.queue_id);
 }
 
-static void cdma_get_jfc_cfg(struct cdma_queue *queue, struct seq_file *s)
+static void cdma_get_jfc_cfg(struct cdma_dev *cdev, struct cdma_queue *queue,
+			     struct seq_file *s)
 {
-	struct cdma_jfc_cfg *cfg;
+	struct cdma_jfc_cfg cfg;
+	struct cdma_jfc *jfc;
+	unsigned long flags;
 
-	if (!queue->jfc)
+	spin_lock_irqsave(&cdev->jfc_table.lock, flags);
+	jfc = idr_find(&cdev->jfc_table.idr_pool.idr, queue->jfc_id);
+	if (!jfc) {
+		spin_unlock_irqrestore(&cdev->jfc_table.lock, flags);
+		dev_err(&cdev->adev->dev, "find jfc[%u] for queue[%u] failed\n",
+			queue->jfc_id, queue->id);
 		return;
+	}
+	cfg = jfc->base.jfc_cfg;
+	spin_unlock_irqrestore(&cdev->jfc_table.lock, flags);
 
-	cfg = &queue->jfc->jfc_cfg;
-	seq_printf(s, "%-13u", cfg->depth);
-	seq_printf(s, "%-12u", cfg->ceqn);
-	seq_printf(s, "%-16u", cfg->queue_id);
+	seq_printf(s, "%-13u", cfg.depth);
+	seq_printf(s, "%-12u", cfg.ceqn);
+	seq_printf(s, "%-16u", cfg.queue_id);
 }
 
 static void cdma_get_jfs_title(struct seq_file *s)
@@ -202,7 +221,8 @@ static int cdma_dbg_dump_ctx(struct seq_file *s, enum cdma_dbg_ctx_type ctx_type
 {
 	struct cdma_dbg_context {
 		void (*get_title)(struct seq_file *s);
-		void (*get_cfg)(struct cdma_queue *queue, struct seq_file *s);
+		void (*get_cfg)(struct cdma_dev *cdev, struct cdma_queue *queue,
+				struct seq_file *s);
 	} dbg_ctx[] = {
 		{
 			.get_title = cdma_get_jfs_title,
@@ -227,7 +247,7 @@ static int cdma_dbg_dump_ctx(struct seq_file *s, enum cdma_dbg_ctx_type ctx_type
 		return -EINVAL;
 	}
 
-	dbg_ctx[ctx_type].get_cfg(queue, s);
+	dbg_ctx[ctx_type].get_cfg(cdev, queue, s);
 
 	spin_unlock(&cdev->queue_table.lock);
 
@@ -384,24 +404,35 @@ static int cdma_dbg_dump_sqe(struct seq_file *s, void *data)
 		return -EINVAL;
 	}
 
-	if (queue->jfs && queue->is_kernel) {
-		jfs = to_cdma_jfs(queue->jfs);
-		if (entry_pi >= jfs->base_jfs.cfg.depth) {
-			spin_unlock(&cdev->queue_table.lock);
-			dev_err(&cdev->adev->dev, "pi [%u] overflow for dump sqe\n", entry_pi);
-			return -EINVAL;
-		}
-
-		spin_lock(&jfs->sq.lock);
-		sqe_ctl = (struct cdma_sqe_ctl *)(jfs->sq.buf.kva +
-			   (entry_pi & (jfs->sq.buf.entry_cnt - 1)) *
-			    jfs->sq.buf.entry_size);
-		cdma_dbg_dump_sqe_info(sqe_ctl, s);
-		spin_unlock(&jfs->sq.lock);
-	} else {
+	if (!queue->jfs || !queue->is_kernel) {
+		spin_unlock(&cdev->queue_table.lock);
 		dev_warn(&cdev->adev->dev, "not support queue[%u] for dump sqe\n", queue_id);
+		return 0;
 	}
 
+	spin_lock(&cdev->jfs_table.lock);
+	jfs = idr_find(&cdev->jfs_table.idr_pool.idr, queue->jfs_id);
+	if (!jfs) {
+		spin_unlock(&cdev->jfs_table.lock);
+		spin_unlock(&cdev->queue_table.lock);
+		return -EINVAL;
+	}
+
+	if (entry_pi >= jfs->base_jfs.cfg.depth) {
+		spin_unlock(&cdev->jfs_table.lock);
+		spin_unlock(&cdev->queue_table.lock);
+		dev_err(&cdev->adev->dev, "pi [%u] overflow for dump sqe\n", entry_pi);
+		return -EINVAL;
+	}
+
+	spin_lock(&jfs->sq.lock);
+	sqe_ctl = (struct cdma_sqe_ctl *)(jfs->sq.buf.kva +
+		   (entry_pi & (jfs->sq.buf.entry_cnt - 1)) *
+		    jfs->sq.buf.entry_size);
+	cdma_dbg_dump_sqe_info(sqe_ctl, s);
+	spin_unlock(&jfs->sq.lock);
+
+	spin_unlock(&cdev->jfs_table.lock);
 	spin_unlock(&cdev->queue_table.lock);
 
 	return 0;
@@ -418,6 +449,7 @@ static int cdma_dbg_dump_cqe(struct seq_file *s, void *data)
 	struct cdma_queue *queue;
 	struct cdma_jfc_cqe *cqe;
 	struct cdma_jfc *jfc;
+	unsigned long flags;
 
 	spin_lock(&cdev->queue_table.lock);
 	queue = idr_find(&cdev->queue_table.idr_pool.idr, queue_id);
@@ -427,24 +459,35 @@ static int cdma_dbg_dump_cqe(struct seq_file *s, void *data)
 		return -EINVAL;
 	}
 
-	if (queue->jfc && queue->is_kernel) {
-		jfc = to_cdma_jfc(queue->jfc);
-		if (entry_ci >= jfc->base.jfc_cfg.depth) {
-			spin_unlock(&cdev->queue_table.lock);
-			dev_err(&cdev->adev->dev, "ci [%u] overflow for dump cqe\n", entry_ci);
-			return -EINVAL;
-		}
-
-		spin_lock(&jfc->lock);
-		cqe = (struct cdma_jfc_cqe *)(jfc->buf.kva +
-		      (entry_ci & (jfc->buf.entry_cnt - 1)) *
-		      jfc->buf.entry_size);
-		cdma_dbg_dump_cqe_info(cqe, s);
-		spin_unlock(&jfc->lock);
-	} else {
+	if (!queue->jfc || !queue->is_kernel) {
+		spin_unlock(&cdev->queue_table.lock);
 		dev_warn(&cdev->adev->dev, "not support queue[%u] for dump cqe\n", queue_id);
+		return 0;
 	}
 
+	spin_lock_irqsave(&cdev->jfc_table.lock, flags);
+	jfc = idr_find(&cdev->jfc_table.idr_pool.idr, queue->jfc_id);
+	if (!jfc) {
+		spin_unlock_irqrestore(&cdev->jfc_table.lock, flags);
+		spin_unlock(&cdev->queue_table.lock);
+		return -EINVAL;
+	}
+
+	if (entry_ci >= jfc->base.jfc_cfg.depth) {
+		spin_unlock_irqrestore(&cdev->jfc_table.lock, flags);
+		spin_unlock(&cdev->queue_table.lock);
+		dev_err(&cdev->adev->dev, "ci [%u] overflow for dump cqe\n", entry_ci);
+		return -EINVAL;
+	}
+
+	spin_lock(&jfc->lock);
+	cqe = (struct cdma_jfc_cqe *)(jfc->buf.kva +
+	      (entry_ci & (jfc->buf.entry_cnt - 1)) *
+	      jfc->buf.entry_size);
+	cdma_dbg_dump_cqe_info(cqe, s);
+	spin_unlock(&jfc->lock);
+
+	spin_unlock_irqrestore(&cdev->jfc_table.lock, flags);
 	spin_unlock(&cdev->queue_table.lock);
 
 	return 0;
