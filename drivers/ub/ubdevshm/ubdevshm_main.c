@@ -840,7 +840,7 @@ int ubdevshm_unregister_segment(unsigned long *handle, struct mem_uva *va)
 		goto out;
 	}
 
-	if (task && !is_same_role_task(&ctx_inner->user, task)) {
+	if (task_get && !is_same_role_task(&ctx_inner->user, task)) {
 		ret = -EPERM;
 		access_ctx_put(ctx_inner);
 		goto out;
