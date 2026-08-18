@@ -99,25 +99,23 @@ int udma_update_hw_grp_ctx_valid_only(struct udma_dev *udma_dev, struct udma_jet
 		jetty_grp->hw_valid |= BIT(bit_idx);
 	else
 		jetty_grp->hw_valid &= ~BIT(bit_idx);
-	mutex_unlock(&jetty_grp->valid_lock);
 
 	ret = update_jetty_grp_ctx_valid(udma_dev, jetty_grp);
 	if (ret) {
-		mutex_lock(&jetty_grp->valid_lock);
 		if (is_add)
 			jetty_grp->hw_valid &= ~BIT(bit_idx);
 		else
 			jetty_grp->hw_valid |= BIT(bit_idx);
-		mutex_unlock(&jetty_grp->valid_lock);
-
-		dev_err(udma_dev->dev,
-			"update valid failed, id(%u), bit_idx(%u), jetty id(%u), is_add(%d), ret(%d).\n",
-			jetty_grp->jetty_grp_id, bit_idx, jetty->sq.id, is_add, ret);
 	}
+	mutex_unlock(&jetty_grp->valid_lock);
+
+	if (ret)
+		dev_err(udma_dev->dev,
+				"update valid failed, id(%u), jetty id(%u), is_add(%d), ret(%d).\n",
+				jetty_grp->jetty_grp_id, jetty->sq.id, is_add, ret);
 
 	return ret;
 }
-
 
 void remove_jetty_from_grp(struct udma_dev *udma_dev, struct udma_jetty *jetty)
 {
@@ -263,10 +261,12 @@ struct ubcore_jetty_group *udma_create_jetty_grp(struct ubcore_device *dev,
 				  jetty_grp->jetty_grp_id, "jetty_grp");
 
 	return &jetty_grp->ubcore_jetty_grp;
+
 err_post_mailbox:
 	xa_erase(&udma_dev->jetty_grp_table.xa, jetty_grp->jetty_grp_id);
 err_store_jetty_grp:
 	udma_id_free(&udma_dev->jetty_grp_table.ida_table, jetty_grp->jetty_grp_id);
+	udma_adv_id_free(&udma_dev->jetty_table.bitmap_table, jetty_grp->start_jetty_id, true);
 err_alloc_jetty_grp_id:
 	kfree(jetty_grp);
 
