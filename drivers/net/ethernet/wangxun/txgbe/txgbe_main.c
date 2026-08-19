@@ -53,7 +53,7 @@ char txgbe_driver_name[32] = TXGBE_NAME;
 static const char txgbe_driver_string[] =
 			"WangXun RP1000/RP2000/FF50XX PCI Express Network Driver";
 
-#define DRV_VERSION     __stringify(2.1.1.3oe)
+#define DRV_VERSION     __stringify(2.2.0.1oe)
 
 const char txgbe_driver_version[32] = DRV_VERSION;
 static const char txgbe_copyright[] =
@@ -521,18 +521,10 @@ static u64 txgbe_get_tx_completed(struct txgbe_ring *ring)
 
 static u64 txgbe_get_tx_pending(struct txgbe_ring *ring)
 {
-	struct txgbe_adapter *adapter;
-	struct txgbe_hw *hw;
-	u32 head, tail;
+	unsigned int head, tail;
 
-	if (ring->accel)
-		adapter = ring->accel->adapter;
-	else
-		adapter = ring->q_vector->adapter;
-
-	hw = &adapter->hw;
-	head = rd32(hw, TXGBE_PX_TR_RP(ring->reg_idx));
-	tail = rd32(hw, TXGBE_PX_TR_WP(ring->reg_idx));
+	head = ring->next_to_clean;
+	tail = ring->next_to_use;
 
 	return ((head <= tail) ? tail : tail + ring->count) - head;
 }
@@ -1041,8 +1033,10 @@ static inline void txgbe_rx_checksum(struct txgbe_ring *ring,
 	}
 
 	/* L4 checksum offload flag must set for the below code to work */
-	if (!txgbe_test_staterr(rx_desc, TXGBE_RXD_STAT_L4CS))
+	if (!txgbe_test_staterr(rx_desc, TXGBE_RXD_STAT_L4CS)) {
+		ring->rx_stats.csum_good_cnt++;
 		return;
+	}
 
 	/*likely incorrect csum if IPv6 Dest Header found */
 	if (dptype.prot != TXGBE_DEC_PTYPE_PROT_SCTP &&
@@ -1734,6 +1728,7 @@ if (!ring_is_page_pool_enabled(rx_ring)) {
 
 int txgbe_xmit_xdp_ring(struct txgbe_ring *ring, struct xdp_frame *xdpf)
 {
+	struct txgbe_adapter *adapter = netdev_priv(ring->netdev);
 	struct txgbe_tx_buffer *tx_buffer;
 	union txgbe_tx_desc *tx_desc;
 	u32 len, cmd_type = 0;
@@ -1742,7 +1737,7 @@ int txgbe_xmit_xdp_ring(struct txgbe_ring *ring, struct xdp_frame *xdpf)
 
 	len = xdpf->len;
 
-	if (unlikely(!txgbe_desc_unused(ring)))
+	if (unlikely(txgbe_desc_unused(ring) < adapter->desc_reserved + 1))
 		return TXGBE_XDP_CONSUMED;
 
 	dma = dma_map_single(ring->dev, xdpf->data, len, DMA_TO_DEVICE);
@@ -6845,7 +6840,7 @@ void txgbe_update_stats(struct txgbe_adapter *adapter)
 	struct txgbe_hw *hw = &adapter->hw;
 	struct txgbe_hw_stats *hwstats = &adapter->stats;
 	u64 total_mpc = 0;
-	u32 i, missed_rx = 0, mpc, bprc, lxon, lxoff;
+	u32 i, mpc, bprc, lxon, lxoff;
 	u64 non_eop_descs = 0, restart_queue = 0, tx_busy = 0;
 	u64 alloc_rx_page_failed = 0, alloc_rx_buff_failed = 0;
 	u64 bytes = 0, packets = 0, hw_csum_rx_error = 0;
@@ -6916,9 +6911,7 @@ void txgbe_update_stats(struct txgbe_adapter *adapter)
 	for (i = 0; i < 8; i++) {
 		/* for packet buffers not used, the register should read 0 */
 		mpc = rd32(hw, TXGBE_RDB_MPCNT(i));
-		missed_rx += mpc;
-		hwstats->mpc[i] += mpc;
-		total_mpc += hwstats->mpc[i];
+		total_mpc += mpc;
 		hwstats->pxontxc[i] += rd32(hw, TXGBE_RDB_PXONTXC(i));
 		hwstats->pxofftxc[i] +=
 				rd32(hw, TXGBE_RDB_PXOFFTXC(i));
@@ -7005,6 +6998,7 @@ void txgbe_update_stats(struct txgbe_adapter *adapter)
 	hwstats->ruc += rd32(hw, TXGBE_RX_UNDERSIZE_FRAMES_GOOD);
 	hwstats->tpr += rd32(hw, TXGBE_RX_FRAME_CNT_GOOD_BAD_LOW);
 	hwstats->bptc += rd32(hw, TXGBE_TX_BC_FRAMES_GOOD_LOW);
+	hwstats->mpc += total_mpc;
 	/* Fill out the OS statistics structure */
 	net_stats->multicast = hwstats->mprc;
 
@@ -7014,7 +7008,7 @@ void txgbe_update_stats(struct txgbe_adapter *adapter)
 	net_stats->rx_dropped = 0;
 	net_stats->rx_length_errors = hwstats->rlec;
 	net_stats->rx_crc_errors = hwstats->crcerrs;
-	net_stats->rx_missed_errors = total_mpc;
+	net_stats->rx_missed_errors = 0;
 }
 
 /*
@@ -7488,6 +7482,8 @@ static bool txgbe_vf_tx_pending(struct txgbe_adapter *adapter)
 		return false;
 
 	for (i = 0; i < adapter->num_vfs; i++) {
+		if (adapter->vfinfo[i].link_state == TXGBE_VF_LINK_STATE_ENABLE)
+			continue;
 		for (j = 0; j < q_per_pool; j++) {
 			u32 h, t;
 

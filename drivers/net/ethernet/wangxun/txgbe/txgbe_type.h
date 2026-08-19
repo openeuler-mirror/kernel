@@ -2974,7 +2974,7 @@ struct txgbe_hw_stats {
 	u64 errbc;
 	u64 mspdc;
 	u64 mpctotal;
-	u64 mpc[8];
+	u64 mpc;
 	u64 mlfc;
 	u64 mrfc;
 	u64 rlec;

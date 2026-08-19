@@ -5548,12 +5548,14 @@ int txgbe_is_lldp(struct txgbe_hw *hw)
 	int status = 0;
 
 	status = txgbe_hic_get_lldp(hw);
-	if (status != -1) {
-		if (status)
+	if (status >= 0) {
+		if (status) {
 			adapter->eth_priv_flags |= TXGBE_ETH_PRIV_FLAG_LLDP;
-		else
+			adapter->eth_priv_flags &= ~TXGBE_ETH_PRIV_FLAG_LINK_DOWN_ON_CLOSE;
+		} else {
 			adapter->eth_priv_flags &= ~TXGBE_ETH_PRIV_FLAG_LLDP;
-		goto out;
+			adapter->eth_priv_flags |= TXGBE_ETH_PRIV_FLAG_LINK_DOWN_ON_CLOSE;
+		}
 	} else {
 		for (; i < 0x1000 / sizeof(u32); i++) {
 			status = txgbe_flash_read_dword(hw, TXGBE_LLDP_REG + i * 4, &tmp);
@@ -5563,12 +5565,18 @@ int txgbe_is_lldp(struct txgbe_hw *hw)
 				break;
 			lldp_flash_data = tmp;
 		}
-		if (lldp_flash_data & BIT(hw->bus.lan_id))
+		if (lldp_flash_data & BIT(hw->bus.lan_id)) {
 			adapter->eth_priv_flags |= TXGBE_ETH_PRIV_FLAG_LLDP;
-		else
+			adapter->eth_priv_flags &= ~TXGBE_ETH_PRIV_FLAG_LINK_DOWN_ON_CLOSE;
+		} else {
 			adapter->eth_priv_flags &= ~TXGBE_ETH_PRIV_FLAG_LLDP;
+			adapter->eth_priv_flags |= TXGBE_ETH_PRIV_FLAG_LINK_DOWN_ON_CLOSE;
+		}
 	}
-out:
+	if (((hw->subsystem_device_id & TXGBE_NCSI_MASK) == TXGBE_NCSI_SUP) ||
+		((hw->subsystem_device_id & TXGBE_WOL_MASK) == TXGBE_WOL_SUP))
+		adapter->eth_priv_flags &= ~TXGBE_ETH_PRIV_FLAG_LINK_DOWN_ON_CLOSE;
+
 	return 0;
 }
 

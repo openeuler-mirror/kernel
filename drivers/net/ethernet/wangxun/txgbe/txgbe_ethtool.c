@@ -79,7 +79,8 @@ static struct txgbe_stats txgbe_gstrings_stats[] = {
 	TXGBE_STAT("tx_multicast", stats.mptc),
 	TXGBE_STAT("rx_mac_good", stats.tpr),
 	TXGBE_STAT("rdb_pkts", stats.rdpc),
-	TXGBE_STAT("rdb_drop", stats.rddc),
+	TXGBE_STAT("rdb_filtered", stats.rddc),
+	TXGBE_STAT("rdb_missed", stats.mpc),
 	TXGBE_STAT("tdm_pkts", stats.tdmpc),
 	TXGBE_STAT("tdm_drop", stats.tdmdc),
 	TXGBE_STAT("tdb_pkts", stats.tdbpc),
@@ -173,6 +174,7 @@ static const struct txgbe_priv_flags txgbe_gstrings_priv_flags[] = {
 	TXGBE_PRIV_FLAG("lldp", TXGBE_ETH_PRIV_FLAG_LLDP, 0),
 	TXGBE_PRIV_FLAG("legacy-rx", TXGBE_ETH_PRIV_FLAG_LEGACY_RX, 0),
 	TXGBE_PRIV_FLAG("page-pool", TXGBE_ETH_PRIV_FLAG_PAGE_POOL, 0),
+	TXGBE_PRIV_FLAG("link-down-on-close", TXGBE_ETH_PRIV_FLAG_LINK_DOWN_ON_CLOSE, 0),
 };
 
 #define TXGBE_PRIV_FLAGS_STR_LEN ARRAY_SIZE(txgbe_gstrings_priv_flags)
@@ -1820,11 +1822,11 @@ static int txgbe_set_priv_flags(struct net_device *dev, u32 flags)
 	u32 orig_flags, new_flags, changed_flags, i;
 	int status = 0;
 
-	orig_flags = adapter->eth_priv_flags;
-	new_flags = orig_flags;
-
 	if (txgbe_is_lldp(&adapter->hw))
 		e_dev_err("Can not get lldp flags from flash.\n");
+
+	orig_flags = adapter->eth_priv_flags;
+	new_flags = orig_flags;
 
 	for (i = 0; i < TXGBE_PRIV_FLAGS_STR_LEN; i++) {
 		const struct txgbe_priv_flags *priv_flags;
@@ -1847,11 +1849,28 @@ static int txgbe_set_priv_flags(struct net_device *dev, u32 flags)
 	if (!changed_flags)
 		return 0;
 
-	if (changed_flags & TXGBE_ETH_PRIV_FLAG_LLDP) {
+	if ((new_flags & TXGBE_ETH_PRIV_FLAG_LINK_DOWN_ON_CLOSE) &&
+	    (((adapter->hw.subsystem_device_id & TXGBE_NCSI_MASK) == TXGBE_NCSI_SUP) ||
+	     ((adapter->hw.subsystem_device_id & TXGBE_WOL_MASK) == TXGBE_WOL_SUP))) {
+		e_dev_info("can't enable link-down-on-close with ncsi or wol\n");
+		return -EOPNOTSUPP;
+	}
+
+	if (changed_flags & (TXGBE_ETH_PRIV_FLAG_LLDP |
+			     TXGBE_ETH_PRIV_FLAG_LINK_DOWN_ON_CLOSE)) {
+		if (changed_flags & TXGBE_ETH_PRIV_FLAG_LINK_DOWN_ON_CLOSE) {
+			if (new_flags & TXGBE_ETH_PRIV_FLAG_LINK_DOWN_ON_CLOSE)
+				new_flags &= ~TXGBE_ETH_PRIV_FLAG_LLDP;
+			else
+				new_flags |= TXGBE_ETH_PRIV_FLAG_LLDP;
+		}
+
 		status = txgbe_hic_write_lldp(&adapter->hw,
 					      (u32)(new_flags & TXGBE_ETH_PRIV_FLAG_LLDP));
-		if (!status)
-			adapter->eth_priv_flags = new_flags;
+		if (status)
+			return status;
+
+		adapter->eth_priv_flags = new_flags;
 	}
 
 	if (changed_flags & TXGBE_ETH_PRIV_FLAG_LEGACY_RX) {

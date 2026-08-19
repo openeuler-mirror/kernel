@@ -983,6 +983,7 @@ struct txgbe_adapter {
 #define TXGBE_ETH_PRIV_FLAG_LLDP		BIT(0)
 #define TXGBE_ETH_PRIV_FLAG_LEGACY_RX	BIT(1)
 #define TXGBE_ETH_PRIV_FLAG_PAGE_POOL	BIT(2)
+#define TXGBE_ETH_PRIV_FLAG_LINK_DOWN_ON_CLOSE	BIT(3)
 
 	/* AF_XDP zero-copy */
 	struct xsk_buff_pool **xsk_pools;
