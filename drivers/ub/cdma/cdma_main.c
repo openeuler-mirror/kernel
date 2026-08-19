@@ -96,10 +96,11 @@ static void cdma_reset_unmap_vma_pages(struct cdma_dev *cdev, bool is_reset)
 	mutex_lock(&cdev->file_mutex);
 	list_for_each_entry(cfile, &cdev->file_list, list) {
 		mutex_lock(&cfile->ctx_mutex);
-		cdma_unmap_vma_pages(cfile);
 		if (is_reset && cfile->uctx != NULL)
 			cfile->uctx->invalid = true;
 		mutex_unlock(&cfile->ctx_mutex);
+
+		cdma_unmap_vma_pages(cfile);
 	}
 	mutex_unlock(&cdev->file_mutex);
 }
@@ -112,8 +113,9 @@ static void cdma_free_cfile_uobj(struct cdma_dev *cdev)
 	mutex_lock(&cdev->file_mutex);
 	list_for_each_entry_safe(cfile, next_cfile, &cdev->file_list, list) {
 		list_del(&cfile->list);
+
 		mutex_lock(&cfile->ctx_mutex);
-		cdma_cleanup_context_uobj(cfile, CDMA_REMOVE_DRIVER_REMOVE);
+		cdma_cleanup_context_uobj(cfile);
 		cfile->cdev = NULL;
 		if (cfile->uctx) {
 			jfae = cfile->jfae;

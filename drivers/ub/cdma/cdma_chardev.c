@@ -233,7 +233,7 @@ static void cdma_mmu_release(struct mmu_notifier *mn, struct mm_struct *mm)
 	}
 
 	mutex_lock(&cfile->ctx_mutex);
-	cdma_cleanup_context_uobj(cfile, CDMA_REMOVE_CLOSE);
+	cdma_cleanup_context_uobj(cfile);
 	if (cfile->uctx)
 		cdma_cleanup_context_res(cfile->uctx);
 	cfile->uctx = NULL;
@@ -335,7 +335,7 @@ static int cdma_close(struct inode *inode, struct file *file)
 	mutex_unlock(&cdev->file_mutex);
 
 	mutex_lock(&cfile->ctx_mutex);
-	cdma_cleanup_context_uobj(cfile, CDMA_REMOVE_CLOSE);
+	cdma_cleanup_context_uobj(cfile);
 	if (cfile->uctx)
 		cdma_cleanup_context_res(cfile->uctx);
 	cfile->uctx = NULL;
