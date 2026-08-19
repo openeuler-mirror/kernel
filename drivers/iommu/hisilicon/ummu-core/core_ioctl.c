@@ -710,13 +710,11 @@ static int sva_mode_alloc_tid(struct proc_manager *manager,
 		return ret;
 	}
 
-	ret = xa_err(xa_store(&manager->tid_xa, entry->tid, entry, GFP_KERNEL));
-	if (ret)
-		goto uninit_dev;
-
 	ret = get_ummu_cnt(entry, &cnt);
-	if (ret)
-		goto xa_erase;
+	if (ret) {
+		release_tid_resource(entry);
+		return ret;
+	}
 
 	tid_data->pcmdq_order = entry->pcmdq_order;
 	tid_data->pcplq_order = entry->pcplq_order;
@@ -729,13 +727,6 @@ static int sva_mode_alloc_tid(struct proc_manager *manager,
 	*entry_out = entry;
 
 	return 0;
-
-xa_erase:
-	xa_erase(&manager->tid_xa, entry->tid);
-uninit_dev:
-	release_tid_resource(entry);
-
-	return ret;
 }
 
 static int sva_mode_free_tid(struct proc_manager *manager,
@@ -786,37 +777,19 @@ static int sva_mode_plbi(struct proc_manager *manager,
 	return 0;
 }
 
-static int alloc_tid_response(struct ummu_tid_info *tid_data,
-			      unsigned long key, struct ktid_info *entry,
-			      unsigned long arg)
+static int store_tid_to_xa(unsigned long key, struct ktid_info *entry)
 {
 	struct proc_manager *manager;
-	int ret = 0;
-	u32 err;
 
-	err = copy_to_user((struct ummu_tid_info __user *)arg, tid_data,
-			    sizeof(struct ummu_tid_info));
-	if (err) {
-		ret = -EFAULT;
-		goto xa_erase;
-	}
-
-	return ret;
-xa_erase:
 	mutex_lock(&global_proc_mtx);
 	manager = xa_load(&proc_info_xa, key);
 	if (!manager) {
 		mutex_unlock(&global_proc_mtx);
-		return ret;
+		return -ESRCH;
 	}
-
-	mutex_lock(&manager->proc_mtx);
+	guard(mutex)(&manager->proc_mtx);
 	mutex_unlock(&global_proc_mtx);
-	xa_erase(&manager->tid_xa, entry->tid);
-	release_tid_resource(entry);
-	mutex_unlock(&manager->proc_mtx);
-
-	return ret;
+	return xa_err(xa_store(&manager->tid_xa, entry->tid, entry, GFP_KERNEL));
 }
 
 static long tid_ioctl(struct file *filp, u32 cmd, unsigned long arg)
@@ -858,8 +831,16 @@ static long tid_ioctl(struct file *filp, u32 cmd, unsigned long arg)
 	}
 	mutex_unlock(&manager->proc_mtx);
 
-	if ((ret == 0) && (cmd == UMMU_IOCALLOC_TID))
-		ret = alloc_tid_response(&tid_data, key, entry, arg);
+	if ((!ret) && (cmd == UMMU_IOCALLOC_TID)) {
+		if (copy_to_user((struct ummu_tid_info __user *)arg, &tid_data,
+			    sizeof(struct ummu_tid_info))) {
+			release_tid_resource(entry);
+			return -EFAULT;
+		}
+		ret = store_tid_to_xa(key, entry);
+		if (ret)
+			release_tid_resource(entry);
+	}
 
 	return ret;
 }
