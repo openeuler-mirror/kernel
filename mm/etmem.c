@@ -46,11 +46,15 @@ int add_page_for_swap(struct page *page, struct list_head *pagelist)
 	struct page *head;
 
 	/* If the page is mapped by more than one process, do not swap it */
-	if (page_mapcount(page) > 1)
+	if (page_mapcount(page) > 1) {
+		put_page(page);
 		return -EACCES;
+	}
 
-	if (PageHuge(page))
+	if (PageHuge(page)) {
+		put_page(page);
 		return -EACCES;
+	}
 
 	head = compound_head(page);
 	if (!folio_isolate_lru(page_folio(head))) {
