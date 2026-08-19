@@ -13680,8 +13680,8 @@ void kvm_arch_irq_bypass_del_producer(struct irq_bypass_consumer *cons,
 
 	ret = static_call(kvm_x86_pi_update_irte)(irqfd->kvm, prod->irq, irqfd->gsi, 0);
 	if (ret)
-		printk(KERN_INFO "irq bypass consumer (token %p) unregistration"
-		       " fails: %d\n", irqfd->consumer.token, ret);
+		printk(KERN_INFO "irq bypass consumer (eventfd %p) unregistration"
+		       " fails: %d\n", irqfd->consumer.eventfd, ret);
 
 	spin_unlock_irq(&kvm->irqfds.lock);
 
