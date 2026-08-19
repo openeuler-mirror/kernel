@@ -157,6 +157,9 @@ int ummu_domain_collect_pgtable(struct ummu_domain *u_domain)
 static int ummu_map_identity_pages(void)
 {
 	struct io_pgtable_ops *pgtbl_ops = identity_u_domain.cfgs.pgtbl_ops;
+	struct ummu_device *ummu = core_to_ummu_device(
+					identity_u_domain.base_domain.core_dev);
+	int prot = IOMMU_READ | IOMMU_WRITE;
 	size_t pgcount = 0;
 	size_t pgsize = 0;
 	size_t mapped = 0;
@@ -164,6 +167,9 @@ static int ummu_map_identity_pages(void)
 	u64 start;
 	u64 end;
 	int ret = 0;
+
+	if (ummu->cap.options & UMMU_OPT_IDENTITY_COHERENT)
+		prot |= IOMMU_CACHE;
 
 	switch (PAGE_SIZE) {
 	case SZ_4K:
@@ -181,13 +187,13 @@ static int ummu_map_identity_pages(void)
 
 	if (!pgtbl_ops)
 		return -EOPNOTSUPP;
+
 	end = ALIGN(identity_u_domain.base_domain.domain.geometry.aperture_end +
 		1, pgsize);
 	step = pgsize * pgcount;
 	for (start = 0; start < end; start += step) {
 		ret = pgtbl_ops->map_pages(pgtbl_ops, start, start, pgsize,
-					   pgcount, (IOMMU_READ | IOMMU_WRITE),
-					   GFP_KERNEL, &mapped);
+					   pgcount, prot, GFP_KERNEL, &mapped);
 		if (ret) {
 			pr_err("map failed, ret = %d!\n", ret);
 			return ret;

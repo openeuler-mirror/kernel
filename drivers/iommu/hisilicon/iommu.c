@@ -824,6 +824,13 @@ static int ummu_device_get_hw_cap(struct device *dev, u32 *hw_cap)
 	return 0;
 }
 
+static bool ummu_needs_mmu_notifier(struct ummu_base_domain *base_domain)
+{
+	struct ummu_device *ummu = core_to_ummu_device(base_domain->core_dev);
+
+	return !(ummu->cap.features & UMMU_FEAT_BTM);
+}
+
 const struct ummu_core_ops ummu_ops = {
 	.cfg_sync_all = ummu_cfg_sync_all,
 	.cfg_sync = ummu_cfg_sync,
@@ -843,6 +850,7 @@ const struct ummu_device_helper ummu_helper = {
 	.cache_invalidate_user = ummu_viommu_cache_invalidate_user,
 	.plbi_free_bit = ummu_plbi_free_bit,
 	.sync_iotlb_all = ummu_flush_iotlb_all,
-	.sync_iotlb_all_asid = ummu_flush_iotlb_all_asid,
+	.mm_arch_inv_secondary_tlbs = ummu_mm_arch_inv_secondary_tlbs,
 	.sync_iommu_domain = ummu_sync_iommu_domain,
+	.needs_mmu_notifier = ummu_needs_mmu_notifier,
 };
