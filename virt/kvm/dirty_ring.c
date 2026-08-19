@@ -57,7 +57,8 @@ static void kvm_reset_dirty_gfn(struct kvm *kvm, u32 slot, u64 offset, u64 mask)
 	
 	memslot = id_to_memslot(__kvm_memslots(kvm, as_id), id);
 	
-	if (!memslot || (offset + __fls(mask)) >= memslot->npages)
+	if (!memslot || offset >= memslot->npages ||
+	    offset + __fls(mask) >= memslot->npages)
 		return;
 	
 	write_lock(&kvm->mmu_lock);
