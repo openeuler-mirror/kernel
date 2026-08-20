@@ -413,6 +413,17 @@ static void early_init_hygon(struct cpuinfo_x86 *c)
 
 static void init_hygon(struct cpuinfo_x86 *c)
 {
+	/*
+	 * On Hygon platforms with SMT enabled, MWAIT is disabled by default
+	 * for better performance.
+	 */
+	if (boot_option_idle_override == IDLE_NO_OVERRIDE &&
+	    smp_num_siblings > 1 &&
+	    cpu_smt_control == CPU_SMT_ENABLED) {
+		pr_info("On Hygon platforms with SMT enabled, set idle=nomwait by default.\n");
+		boot_option_idle_override = IDLE_NOMWAIT;
+	}
+
 	early_init_hygon(c);
 
 	/*
