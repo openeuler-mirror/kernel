@@ -104,6 +104,7 @@
 #define HWCAP2_SME_F16F16	(1UL << 42)
 #define HWCAP2_MOPS		(1UL << 43)
 #define HWCAP2_HBC		(1UL << 44)
+#define HWCAP2_SVE_B16B16	(1UL << 45)
 #define HWCAP2_FPMR		(1UL << 48)
 #define HWCAP2_LUT		(1UL << 49)
 #define HWCAP2_FAMINMAX	(1UL << 50)
