@@ -1447,8 +1447,13 @@ int ummu_perm_grant(struct iommu_domain *domain, void *va, size_t size,
 		return -EINVAL;
 
 	ret = ummu_grant_imp(mapt_info, &data_info);
-	if (ret == 0)
+	if (!ret) {
 		ret = ummu_update_info(data_info.op, mapt_info, &data_info);
+		if (ret) {
+			data_info.op = UMMU_UNGRANT;
+			ummu_grant_imp(mapt_info, &data_info);
+		}
+	}
 
 	plb_gather->va = (void *)data_info.data_base;
 	/* plb_gather->size = 0 indicates PLB will not be flushed */
