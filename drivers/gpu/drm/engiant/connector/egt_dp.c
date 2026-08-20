@@ -194,10 +194,12 @@ struct drm_encoder *egt_dp_best_encoder(struct drm_connector *connector)
 
 int egt_dp_get_modes(struct drm_connector *connector)
 {
+	u32 dp_clock_flag = 0;
 	int edid_cnt = 0;
 	int i = 0;
 	struct drm_device *dev = connector->dev;
-	struct egt_displayport *dp = container_of(connector, struct egt_displayport, connector);
+	struct egt_displayport *dp =
+			container_of(connector, struct egt_displayport, connector);
 	struct edid *edid = NULL;
 	struct drm_display_mode *mode = NULL;
 	struct drm_display_mode egt_noedid_modes[] = {
@@ -206,6 +208,8 @@ int egt_dp_get_modes(struct drm_connector *connector)
 					(0x1 << 0x1) | (0x1 << 3)), },/* 1024x768@60 */
 	};
 
+	dp_clock_flag = egt_dp_read(DP_SOURCE_CLOCK_FLAG, dp);
+
 	if (dp->connected) {
 		pr_debug("get edid from sink.\n");
 		edid = drm_get_edid(connector, &dp->aux.ddc);
@@ -213,6 +217,14 @@ int egt_dp_get_modes(struct drm_connector *connector)
 		if (edid) {
 			drm_connector_update_edid_property(connector, edid);
 			edid_cnt = drm_add_edid_modes(connector, edid);
+			list_for_each_entry(mode, &connector->probed_modes, head) {
+				if (((dp_clock_flag & EGT_TX_CLK_FLAG_MASK) ==
+					HALF_CLOCK_90_VISIBLE) && (mode->clock > 90000))
+					mode->clock = mode->clock / 2;
+				if (((dp_clock_flag & EGT_TX_CLK_FLAG_MASK) ==
+					HALF_CLOCK_110_VISIBLE) && (mode->clock > 110000))
+					mode->clock = mode->clock / 2;
+			}
 			dp->edid_present = true;
 			kfree(edid);
 		}
@@ -254,6 +266,9 @@ int egt_dp_mode_valid(__maybe_unused struct drm_connector *connector,
 					  struct drm_display_mode *mode)
 {
 	int i = 0;
+	u32 dp_clock_flag = 0;
+	struct egt_displayport *dp =
+			container_of(connector, struct egt_displayport, connector);
 	struct egt_dp_supported_mode supported_modes[] = {
 		{640, 480},
 		{800, 600},
@@ -268,9 +283,18 @@ int egt_dp_mode_valid(__maybe_unused struct drm_connector *connector,
 		{1920, 1200},
 	};
 
+	dp_clock_flag = egt_dp_read(DP_SOURCE_CLOCK_FLAG, dp);
+
 	for (i = 0; i < ARRAY_SIZE(supported_modes); i++) {
 		if (mode->hdisplay == supported_modes[i].width &&
-			mode->vdisplay == supported_modes[i].height) {
+			mode->vdisplay == supported_modes[i].height &&
+			mode->clock <= EGT_TX_MAX_CLOCK) {
+			if (((dp_clock_flag & EGT_TX_CLK_FLAG_MASK) ==
+				CLOCK_90_LIMIT) && (mode->clock > 90000))
+				continue;
+			if (((dp_clock_flag & EGT_TX_CLK_FLAG_MASK) ==
+				CLOCK_110_LIMIT) && (mode->clock > 110000))
+				continue;
 			pr_debug("valid mode: [%dx%d], clock: %d\n",
 					 mode->hdisplay, mode->vdisplay, mode->clock);
 			return MODE_OK;

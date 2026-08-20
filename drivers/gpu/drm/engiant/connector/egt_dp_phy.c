@@ -251,6 +251,13 @@ static void egt_dp_calculate_pll_config(int freq_khz,
 	u8 N0 = 0;
 	u32 ret = 0;
 	u64 expect_pll_out2 = 0;
+	u32 dp_clock_flag = 0;
+
+	dp_clock_flag = egt_dp_read(DP_SOURCE_CLOCK_FLAG, dp);
+	if (((dp_clock_flag & EGT_TX_CLK_FLAG_MASK) == HALF_CLOCK_90) && (freq_khz > 90000))
+		freq_khz = freq_khz / 2;
+	if (((dp_clock_flag & EGT_TX_CLK_FLAG_MASK) == HALF_CLOCK_110) && (freq_khz > 110000))
+		freq_khz = freq_khz / 2;
 
 	for (div_clk = 1; div_clk <= 127; div_clk++) {
 		expect_pll_out2 = (u64)(freq_khz / 4) * div_clk;

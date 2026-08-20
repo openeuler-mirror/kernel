@@ -45,6 +45,7 @@
 #define EGT_TX_TIME_MASK					GENMASK(23, 0)
 #define EGT_TX_AUXDONE_MASK					(1<<31)
 #define EGT_TX_AUXREADY_MASK				(1<<30)
+#define EGT_TX_CLK_FLAG_MASK					0x7
 
 #define EGT_TX_TP_0							0x0
 #define EGT_TX_TP_1							0x1
@@ -70,6 +71,8 @@
 #define EGT_TX_PM_DISABLE					0
 #define EGT_PCI_INTRREG_OFFSET				0x18c
 
+#define EGT_TX_MAX_CLOCK					154000
+
 /* AUX */
 #define EGT_DP_AUX_RD_BIT					0x1
 #define EGT_DP_AUX_STD_TOUT					(800)
@@ -93,6 +96,7 @@
 #define DP_SOURCE_TX_STATUS					(0x1 * 4)
 #define DP_SOURCE_TX_CAPAB					(0x4 * 4)
 #define DP_SOURCE_PRE_VOLT0					(0x10 * 4)
+#define DP_SOURCE_CLOCK_FLAG				(0x12 * 4)
 #define DP_SOURCE_RECONFIG					(0x14 * 4)
 #define DP_SOURCE_TIMESTAMP					(0x1f * 4)
 #define DP_SOURCE_MSA_COLOUR				(0x2e * 4)
@@ -130,6 +134,15 @@ enum egt_dp_ret_flags {
 	RET_RETRY,
 	RET_OUT,
 	RET_TIMEOUT,
+};
+
+enum egt_dp_refresh_flags {
+	CLOCK_90_LIMIT = 1,
+	CLOCK_110_LIMIT,
+	HALF_CLOCK_90_VISIBLE,
+	HALF_CLOCK_110_VISIBLE,
+	HALF_CLOCK_90,
+	HALF_CLOCK_110,
 };
 
 struct egt_dp_msa_mode {

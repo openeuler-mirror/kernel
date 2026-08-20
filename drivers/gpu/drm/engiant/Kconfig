@@ -9,6 +9,7 @@ config DRM_ENGIANT
 	select DRM_VRAM_HELPER
 	select DRM_TTM
 	select DRM_TTM_HELPER
+	select DRM_GEM_DMA_HELPER
 	select DRM_ENGIANT_VS
 	select DRM_EGT_DP
 	select ENGIANT_VS_PCIE

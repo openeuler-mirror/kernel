@@ -3,8 +3,8 @@
  * Copyright (C) 2020 VeriSilicon Holdings Co., Ltd.
  */
 
-#ifndef __VS_DEBUG_H_
-#define __VS_DEBUG_H_
+#ifndef __VS_DEBUG_H__
+#define __VS_DEBUG_H__
 
 #include <linux/init.h>
 #include <linux/fs.h>
@@ -26,4 +26,4 @@ void vs_egt_debug_dump_interrupt(struct file *fp, const char *event,
 				enum vs_debug_intr_partition part,
 				bool multi_dest, u8 intr_dest);
 
-#endif /* __VS_VIRTUAL_H_ */
+#endif /* __VS_DEBUG_H__ */
