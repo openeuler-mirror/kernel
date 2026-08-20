@@ -468,22 +468,6 @@ static int ipourma_get_iflink(const struct net_device *dev)
 	return 0;
 }
 
-static int ipourma_set_mac(struct net_device *dev, void *addr)
-{
-	struct sockaddr *sa = addr;
-
-	if (IS_ERR_OR_NULL(dev) || IS_ERR_OR_NULL(addr))
-		return -EINVAL;
-	if (!is_valid_ether_addr(sa->sa_data))
-		return -EINVAL;
-	if (!(dev->priv_flags & IFF_LIVE_ADDR_CHANGE) && netif_running(dev))
-		return -EBUSY;
-
-	memcpy((void *)dev->dev_addr, sa->sa_data, dev->addr_len);
-
-	return 0;
-}
-
 static void ipourma_get_stats(struct net_device *dev, struct rtnl_link_stats64 *stats)
 {
 	// fill in stats
@@ -508,7 +492,6 @@ static const struct net_device_ops ipourma_netdev_ops = {
 	.ndo_start_xmit		 = ipourma_start_xmit,
 	.ndo_tx_timeout		 = ipourma_timeout,
 	.ndo_get_iflink		 = ipourma_get_iflink,
-	.ndo_set_mac_address	 = ipourma_set_mac,
 	.ndo_get_stats64	 = ipourma_get_stats,
 	.ndo_eth_ioctl		 = ipourma_ioctl,
 };
@@ -520,9 +503,11 @@ static void ipourma_netdev_setup(struct net_device *dev)
 	ipourma_set_ethtool_ops(dev);
 	ipourma_set_rtnl_link_ops(dev);
 
-	dev->type              = ARPHRD_ETHER;
-	dev->hard_header_len   = IPOURMA_HARD_LEN;
-	dev->addr_len          = IPOURMA_ALEN;
+	dev->type              = ARPHRD_NONE;
+	dev->hard_header_len   = 0;
+	dev->min_header_len    = 0;
+	dev->needed_headroom   = IPOURMA_HARD_LEN;
+	dev->addr_len          = 0;
 	dev->tx_queue_len      = DEFAULT_TX_QUEUE_LEN;
 	dev->needs_free_netdev = false;
 	dev->mtu               = IPOURMA_DEFAULT_MTU;
@@ -533,7 +518,7 @@ static void ipourma_netdev_setup(struct net_device *dev)
 	dev->num_rx_queues     = 1;
 	dev->num_tx_queues     = 1;
 	dev->watchdog_timeo    = HZ;
-	dev->priv_flags |= IFF_LIVE_ADDR_CHANGE | IFF_NO_ADDRCONF;
+	dev->priv_flags |= IFF_NO_ADDRCONF;
 
 	netif_keep_dst(dev);
 }
