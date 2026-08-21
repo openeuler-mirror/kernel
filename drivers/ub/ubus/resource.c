@@ -26,6 +26,7 @@ struct query_token_msg_pld_rsp {
 	u32 reserved : 12;
 	u32 token_value;
 };
+#define QUERY_TOKEN_MSG_RSP_PLD_SIZE 8
 #define QUERY_TOKEN_MSG_RSP_SIZE 40
 
 struct query_token_msg_pld {
@@ -401,11 +402,13 @@ fail:
 static int ub_query_token_rsp_handle(struct ub_entity *uent,
 				     struct query_token_msg_pkt *pkt)
 {
+	struct msg_extended_header *msgetah = &pkt->header.msgetah;
 	struct query_token_msg_pld_rsp *rsp = &pkt->pld.rsp;
 
-	if (pkt->header.msgetah.rsp_status != UB_MSG_RSP_SUCCESS) {
-		ub_err(uent, "query token rsp, status=%#02x\n",
-		       pkt->header.msgetah.rsp_status);
+	if (msgetah->rsp_status != UB_MSG_RSP_SUCCESS ||
+	    msgetah->plen != QUERY_TOKEN_MSG_RSP_PLD_SIZE) {
+		ub_err(uent, "query token rsp, status=%#02x, plen=%#03x\n",
+		       msgetah->rsp_status, msgetah->plen);
 		return -EINVAL;
 	}
 
