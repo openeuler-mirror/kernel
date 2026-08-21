@@ -19,8 +19,7 @@ static inline int access_ok(const void *addr, unsigned long size)
 {
 	unsigned long limit = current_thread_info()->addr_limit.seg;
 
-	return (((unsigned long)addr < limit) &&
-		((unsigned long)(addr + size) < limit));
+	return (size <= limit) && ((unsigned long)addr <= (limit - size));
 }
 
 #define __addr_ok(addr) (access_ok(addr, 0))
