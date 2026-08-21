@@ -86,6 +86,7 @@ obj-y				+= cxl/
 obj-y				+= macintosh/
 obj-y				+= scsi/
 obj-y				+= nvme/
+obj-$(CONFIG_NDS)		+= nds/
 obj-$(CONFIG_ATA)		+= ata/
 obj-$(CONFIG_TARGET_CORE)	+= target/
 obj-$(CONFIG_MTD)		+= mtd/

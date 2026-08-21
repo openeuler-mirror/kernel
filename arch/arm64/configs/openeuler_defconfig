@@ -2486,6 +2486,13 @@ CONFIG_NVME_TARGET_TCP=m
 # end of NVME Support
 
 #
+# NDS Support
+#
+CONFIG_NDS=m
+CONFIG_NDS_P2P_DEV=m
+# end of NDS Supoort
+
+#
 # Misc devices
 #
 CONFIG_SENSORS_LIS3LV02D=m
