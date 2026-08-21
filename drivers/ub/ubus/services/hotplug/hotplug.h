@@ -115,6 +115,7 @@ void ubhp_event_handler(struct ub_bus_controller *ubc, void *pkt, u16 len);
 
 /* core */
 void ubhp_handle_power(struct ub_slot *slot, bool power_on);
+void ubhp_cancel_all_work(void);
 
 /* route */
 int ubhp_update_route_link_up(struct ub_slot *slot);
