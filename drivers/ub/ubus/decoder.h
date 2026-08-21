@@ -8,6 +8,13 @@
 
 #include <ub/ubus/ubus.h>
 
+/*
+ * The producer / consumer index fields in UB SPEC only reserve 11 bits,
+ * so the wrap bit at position qs must satisfy qs <= 10.
+ * This bounds the decoder command/event queue size accepted from capability.
+ */
+#define UB_DECODER_MAX_QS 10
+
 enum ub_cmd_op_type {
 	INVALID = 0x0,
 	SYNC = 0x1,
