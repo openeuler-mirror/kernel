@@ -482,7 +482,7 @@ int ip_defrag(struct net *net, struct sk_buff *skb, u32 user)
 	vif = l3mdev_master_ifindex_rcu(dev);
 	qp = ip_find(net, ip_hdr(skb), user, vif);
 	if (qp) {
-		int ret, refs = 1;
+		int ret, refs = 0;
 
 		spin_lock(&qp->q.lock);
 
