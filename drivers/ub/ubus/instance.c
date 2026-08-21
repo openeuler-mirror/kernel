@@ -164,12 +164,11 @@ static struct ub_bus_instance *ub_find_bus_instance(instance_match match,
 
 	mutex_lock(&ubi_list_mutex);
 	list_for_each_entry(bi, &ubi_list, node)
-		if (match(bi, arg))
+		if (match(bi, arg) && kref_get_unless_zero(&bi->kref))
 			goto out;
 
 	bi = NULL;
 out:
-	ub_bus_instance_get(bi);
 	mutex_unlock(&ubi_list_mutex);
 
 	return bi;
