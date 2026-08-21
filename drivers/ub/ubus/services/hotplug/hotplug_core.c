@@ -9,6 +9,7 @@
 #include "../../route.h"
 #include "../../port.h"
 #include "../../task.h"
+#include "../../ubus_driver.h"
 #include "../service.h"
 #include "hotplug.h"
 
@@ -49,11 +50,13 @@ static void ubhp_enable_slot(struct ub_slot *slot)
 	ubhp_get_slot(slot);
 	mutex_lock(&slot->state_lock);
 
-	if (slot->state == SLOT_OFF)
-		queued = queue_work(get_rx_msg_wq(UB_MSG_CODE_LINK),
-				    &slot->button_work);
-	else
+	if (slot->state == SLOT_OFF) {
+		if (get_msg_rx_flag())
+			queued = queue_work(get_rx_msg_wq(UB_MSG_CODE_LINK),
+					    &slot->button_work);
+	} else {
 		ub_info(slot->uent, "ignore slot poweron\n");
+	}
 
 	mutex_unlock(&slot->state_lock);
 	if (!queued)
@@ -67,11 +70,13 @@ static void ubhp_disable_slot(struct ub_slot *slot)
 	ubhp_get_slot(slot);
 	mutex_lock(&slot->state_lock);
 
-	if (slot->state == SLOT_ON)
-		queued = queue_work(get_rx_msg_wq(UB_MSG_CODE_LINK),
-				    &slot->button_work);
-	else
+	if (slot->state == SLOT_ON) {
+		if (get_msg_rx_flag())
+			queued = queue_work(get_rx_msg_wq(UB_MSG_CODE_LINK),
+					    &slot->button_work);
+	} else {
 		ub_info(slot->uent, "ignore slot poweroff\n");
+	}
 
 	mutex_unlock(&slot->state_lock);
 	if (!queued)
@@ -263,6 +268,37 @@ static int ubhp_setup_slot(struct ub_slot *slot, struct ub_entity *uent, int idx
 	return 0;
 }
 
+static int ubhp_cancel_slot_work(struct device *dev, void *data)
+{
+	struct ub_service_device *sdev = to_ub_service_device(dev);
+	struct ub_slot *slot;
+	bool pending;
+
+	if (sdev->service != UB_SERVICE_HP)
+		return 0;
+
+	list_for_each_entry(slot, &sdev->uent->slot_list, node) {
+		pending = cancel_work_sync(&slot->button_work);
+		if (pending)
+			ubhp_put_slot(slot);
+
+		pending = cancel_delayed_work_sync(&slot->present_work);
+		if (pending)
+			ubhp_put_slot(slot);
+
+		pending = cancel_delayed_work_sync(&slot->power_work);
+		if (pending)
+			ubhp_put_slot(slot);
+	}
+
+	return 0;
+}
+
+void ubhp_cancel_all_work(void)
+{
+	bus_for_each_dev(&ub_service_bus_type, NULL, NULL, ubhp_cancel_slot_work);
+}
+
 static void ubhp_del_slot(struct ub_slot *slot)
 {
 	struct ub_port *port;
@@ -272,11 +308,11 @@ static void ubhp_del_slot(struct ub_slot *slot)
 	if (pending)
 		ubhp_put_slot(slot);
 
-	pending = cancel_delayed_work_sync(&slot->power_work);
+	pending = cancel_delayed_work_sync(&slot->present_work);
 	if (pending)
 		ubhp_put_slot(slot);
 
-	pending = cancel_delayed_work_sync(&slot->present_work);
+	pending = cancel_delayed_work_sync(&slot->power_work);
 	if (pending)
 		ubhp_put_slot(slot);
 
@@ -550,16 +586,18 @@ static void ubhp_handle_button_press(struct ub_slot *slot)
 		ub_info(slot->uent, "slot%u poweroff\n", slot->slot_id);
 		ubhp_set_indicators(slot, INDICATOR_BLINKING, INDICATOR_NOOP);
 		/* for power off, issued the present work immediately */
-		queued = queue_delayed_work(get_rx_msg_wq(UB_MSG_CODE_LINK),
-					    &slot->present_work, 0);
+		if (get_msg_rx_flag())
+			queued = queue_delayed_work(get_rx_msg_wq(UB_MSG_CODE_LINK),
+						    &slot->present_work, 0);
 	} else if (slot->state == SLOT_OFF) {
 		slot->state = SLOT_POWERON;
 		ub_info(slot->uent, "slot%u poweron\n", slot->slot_id);
 		ubhp_set_indicators(slot, INDICATOR_BLINKING, INDICATOR_NOOP);
 		/* for power on, left 5s for possible card insertion */
-		queued = queue_delayed_work(get_rx_msg_wq(UB_MSG_CODE_LINK),
-					    &slot->present_work,
-					    POWER_ON_WAIT * HZ);
+		if (get_msg_rx_flag())
+			queued = queue_delayed_work(get_rx_msg_wq(UB_MSG_CODE_LINK),
+						    &slot->present_work,
+						    POWER_ON_WAIT * HZ);
 	}
 
 	mutex_unlock(&slot->state_lock);
@@ -642,8 +680,12 @@ static void ubhp_handle_present(struct ub_slot *slot)
 		mutex_unlock(&slot->state_lock);
 		ubhp_get_slot(slot);
 		/* power_work is always successfully added to the work queue. */
-		queue_delayed_work(get_rx_msg_wq(UB_MSG_CODE_LINK),
-				   &slot->power_work, HP_LINK_WAIT_DELAY * HZ);
+		if (get_msg_rx_flag())
+			queue_delayed_work(get_rx_msg_wq(UB_MSG_CODE_LINK),
+					   &slot->power_work,
+					   HP_LINK_WAIT_DELAY * HZ);
+		else
+			ubhp_put_slot(slot);
 		return;
 	}
 
