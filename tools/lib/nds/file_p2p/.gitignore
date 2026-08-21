@@ -1,0 +1,6 @@
+__pycache__/
+build/
+file_p2p*.so
+nds*.so
+libfile_p2p.so
+/nds_example
