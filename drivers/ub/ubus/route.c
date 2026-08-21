@@ -159,6 +159,8 @@ void ub_route_clear(struct ub_entity *uent)
 
 int ub_route_add_entry(struct ub_port *port, u32 cna, short distance)
 {
+	int ret;
+
 	if (!port)
 		return -EINVAL;
 
@@ -166,7 +168,11 @@ int ub_route_add_entry(struct ub_port *port, u32 cna, short distance)
 		return -EEXIST;
 
 	set_bit(cna, port->cna_maps);
-	return ub_add_cna_node(cna, distance, &port->uent->cna_list);
+	ret = ub_add_cna_node(cna, distance, &port->uent->cna_list);
+	if (ret)
+		clear_bit(cna, port->cna_maps);
+
+	return ret;
 }
 
 static void ub_route_del_entry(struct ub_port *port, u32 cna)
