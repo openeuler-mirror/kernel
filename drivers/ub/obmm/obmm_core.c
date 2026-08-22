@@ -149,7 +149,7 @@ struct obmm_region *search_deactivate_obmm_region(int regionid)
 
 	if (!success) {
 		pr_err("failed to deactivate: region %d is being used or in creation/destruction process.\n",
-		       region->regionid);
+		       regionid);
 		return ERR_PTR(-EBUSY);
 	}
 
