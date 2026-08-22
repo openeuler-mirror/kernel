@@ -369,15 +369,12 @@ static bool validate_pa_range(phys_addr_t pa, size_t size)
 
 static bool validate_import_region(const struct obmm_import_region *i_reg)
 {
-	bool preimport;
-
 	/* size and alignment check */
 	if (i_reg->region.mem_size == 0) {
 		pr_err("Zero memory segment size is invalid\n");
 		return false;
 	}
 
-	preimport = region_preimport(&i_reg->region);
 	/* PA as parameter */
 	if (!validate_pa_range(i_reg->pa, i_reg->region.mem_size))
 		return false;
