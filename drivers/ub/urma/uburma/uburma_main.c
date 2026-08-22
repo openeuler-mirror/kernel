@@ -31,6 +31,7 @@
 #include "uburma_cmd.h"
 #include "uburma_mmap.h"
 #include "uburma_event.h"
+#include "uburma_devnum.h"
 
 #define UBURMA_LOG_FILE_PERMISSION (0644)
 #define UBURMA_IRQ_HANDLE_THRESHOLD (0644)
@@ -71,14 +72,8 @@ MODULE_PARM_DESC(uburma_irq_handle_threshold, "IRQ handle threshold in ns");
 module_param(uburma_irq_handle_threshold_enable, uint, UBURMA_IRQ_HANDLE_THRESHOLD);
 MODULE_PARM_DESC(uburma_irq_handle_threshold_enable, "Enable IRQ handle threshold. 0: disable, 1: enable");
 
-#define UBURMA_MAX_DEVICE 1024
-#define UBURMA_DYNAMIC_MINOR_NUM UBURMA_MAX_DEVICE
 #define UBURMA_MODULE_NAME "uburma"
 #define UBURMA_DEVNODE_MODE (0666)
-
-static DECLARE_BITMAP(g_dev_bitmap, UBURMA_MAX_DEVICE);
-
-static dev_t g_dynamic_uburma_dev;
 
 static atomic_t
 	g_dev_cnt; /* When cnt becomes 0, it will wake up dev_flush_comp */
@@ -134,21 +129,6 @@ static const struct kobj_type uburma_dev_ktype = {
 	.release = uburma_release_dev,
 };
 
-static int uburma_get_devt(dev_t *devt)
-{
-	unsigned int devnum;
-
-	devnum = (unsigned int)find_first_zero_bit(g_dev_bitmap,
-						   UBURMA_MAX_DEVICE);
-	if (devnum >= UBURMA_MAX_DEVICE) {
-		uburma_log_err("Invalid argument.\n");
-		return -ENOMEM;
-	}
-	set_bit(devnum, g_dev_bitmap);
-	*devt = g_dynamic_uburma_dev + devnum;
-	return 0;
-}
-
 static int uburma_device_create(struct uburma_device *ubu_dev,
 				struct ubcore_device *ubc_dev)
 {
@@ -175,12 +155,15 @@ static int uburma_cdev_create(struct uburma_device *ubu_dev,
 			      struct ubcore_device *ubc_dev)
 {
 	dev_t base;
+	int ret;
 
-	if (uburma_get_devt(&base) != 0) {
-		uburma_log_err("Invalid argument.\n");
-		return -ENOMEM;
+	ret = uburma_devnum_alloc(ubc_dev, &base);
+	if (ret != 0) {
+		uburma_log_err("failed to allocate device number, ret:%d.\n",
+			       ret);
+		return ret;
 	}
-	ubu_dev->devnum = base - g_dynamic_uburma_dev;
+	ubu_dev->devnum = MINOR(base);
 
 	cdev_init(&ubu_dev->cdev, NULL);
 	ubu_dev->cdev.owner = THIS_MODULE;
@@ -203,7 +186,7 @@ static int uburma_cdev_create(struct uburma_device *ubu_dev,
 del_cdev:
 	cdev_del(&ubu_dev->cdev);
 free_bit:
-	clear_bit(ubu_dev->devnum, g_dev_bitmap);
+	uburma_devnum_free(ubu_dev->devnum);
 	return -EPERM;
 }
 
@@ -310,7 +293,7 @@ static void uburma_remove_device(struct ubcore_device *ubc_dev,
 
 	uburma_device_destroy(ubu_dev);
 	cdev_del(&ubu_dev->cdev);
-	clear_bit(ubu_dev->devnum, g_dev_bitmap);
+	uburma_devnum_free(ubu_dev->devnum);
 
 	uburma_free_ucontext(ubu_dev, ubc_dev);
 
@@ -379,10 +362,9 @@ static int uburma_class_create(void)
 {
 	int ret;
 
-	ret = alloc_chrdev_region(&g_dynamic_uburma_dev, 0,
-				  UBURMA_DYNAMIC_MINOR_NUM, UBURMA_MODULE_NAME);
+	ret = uburma_devnum_init();
 	if (ret != 0) {
-		uburma_log_err("couldn't register dynamic device number.\n");
+		uburma_log_err("couldn't register device number.\n");
 		goto out;
 	}
 
@@ -396,8 +378,7 @@ static int uburma_class_create(void)
 
 	return 0;
 out_chrdev:
-	unregister_chrdev_region(g_dynamic_uburma_dev,
-				 UBURMA_DYNAMIC_MINOR_NUM);
+	uburma_devnum_exit();
 out:
 	return ret;
 }
@@ -405,8 +386,7 @@ out:
 static void uburma_class_destroy(void)
 {
 	class_unregister(&g_uburma_class);
-	unregister_chrdev_region(g_dynamic_uburma_dev,
-				 UBURMA_DYNAMIC_MINOR_NUM);
+	uburma_devnum_exit();
 }
 
 static int __init uburma_init(void)
