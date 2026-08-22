@@ -125,7 +125,7 @@ static bool hisi_workarounds_check_page_list(struct obmm_export_region *reg, str
 
 int alloc_export_memory_pid(struct obmm_export_region *e_reg)
 {
-	unsigned long new_pinned, nrpages;
+	unsigned long nrpages;
 	struct mem_description_pid *desc = &e_reg->mem_desc_pid;
 	struct page **page_list;
 	struct task_struct *tsk;
@@ -160,7 +160,8 @@ int alloc_export_memory_pid(struct obmm_export_region *e_reg)
 
 	pr_debug("exporting from %s\n", remote_mm ? "remote" : "current");
 
-	new_pinned = (unsigned long)atomic64_add_return(nrpages, &mm->pinned_vm);
+	/* account the pages to be pinned; released in free_export_memory_pid() */
+	atomic64_add(nrpages, &mm->pinned_vm);
 
 	page_list = kvmalloc_array(nrpages, sizeof(struct page *), GFP_KERNEL);
 	if (!page_list) {
