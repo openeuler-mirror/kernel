@@ -19,6 +19,7 @@
 #include "ubmempool_allocator.h"
 #include "conti_mem_allocator.h"
 #include "obmm_export.h"
+#include "obmm_shm_dev.h"
 
 /* SGL size is specified as an unsigned int. It's best to limit the size of single SGL
  * no larger than (1 << MAX_CHUNK_SHIFT)
@@ -262,8 +263,6 @@ static struct obmm_export_region *alloc_region_from_cmd(struct obmm_cmd_export *
 	if (e_reg == NULL)
 		return ERR_PTR(-ENOMEM);
 
-	atomic_set(&e_reg->region.device_released, 1);
-
 	e_reg->region.type = OBMM_EXPORT_REGION;
 	e_reg->region.mem_size = total_size;
 	e_reg->region.mem_cap = OBMM_MEM_ALLOW_CACHEABLE_MMAP | OBMM_MEM_ALLOW_NONCACHEABLE_MMAP;
@@ -319,9 +318,14 @@ int obmm_export_from_pool(struct obmm_cmd_export *cmd_export)
 	if (ret)
 		goto out_free_reg;
 
-	ret = obmm_export_common(e_reg);
+	/* from here on the device core owns the region's memory */
+	ret = obmm_shm_dev_init_device(&e_reg->region);
 	if (ret)
 		goto out_unit_reg;
+
+	ret = obmm_export_common(e_reg);
+	if (ret)
+		goto out_put_dev;
 
 	token_id = e_reg->tokenid;
 	uba = e_reg->uba;
@@ -341,6 +345,11 @@ int obmm_export_from_pool(struct obmm_cmd_export *cmd_export)
 
 out_unexport:
 	obmm_unexport_common(e_reg);
+out_put_dev:
+	uninit_obmm_region(&e_reg->region);
+	/* frees the region via the device release callback */
+	obmm_shm_dev_put(&e_reg->region);
+	return ret;
 out_unit_reg:
 	uninit_obmm_region(&e_reg->region);
 out_free_reg:

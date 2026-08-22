@@ -921,25 +921,28 @@ const struct file_operations obmm_shm_fops = { .owner = THIS_MODULE,
 					       .flush = obmm_shm_fops_flush,
 					       .release = obmm_shm_fops_release };
 
+/* Free the region owned by the device core since obmm_shm_dev_init_device(). */
 static void obmm_shm_dev_release(struct device *dev)
 {
 	struct obmm_region *reg = container_of(dev, struct obmm_region, device);
 
-	atomic_set(&reg->device_released, 1);
+	/* region is the first member of both enclosing structs: kfree(reg) frees all */
+	if (reg->type == OBMM_EXPORT_REGION)
+		kfree(container_of(reg, struct obmm_export_region, region)->vendor_info);
+	kfree(reg);
+
+	/* pairs with try_module_get() in obmm_shm_dev_init_device(); must be last */
 	module_put(THIS_MODULE);
 }
 
-void wait_until_dev_released(struct obmm_region *reg)
+/*
+ * Initialize the cdev and the device embedded in @reg. Returns -EPERM with
+ * the device left uninitialized when the module is dying. Once initialized,
+ * the device core owns @reg's memory -- see the life-cycle rules in
+ * obmm_shm_dev.h.
+ */
+int obmm_shm_dev_init_device(struct obmm_region *reg)
 {
-	while (atomic_read(&reg->device_released) == 0)
-		cpu_relax();
-}
-
-int obmm_shm_dev_add(struct obmm_region *reg)
-{
-	int ret;
-	dev_t devt;
-
 	if (!try_module_get(THIS_MODULE)) {
 		pr_err("Module is dying. Reject all memory requests\n");
 		return -EPERM;
@@ -948,44 +951,52 @@ int obmm_shm_dev_add(struct obmm_region *reg)
 	atomic_set(&reg->mmap_count, 0);
 	reg->mmap_mode = OBMM_MMAP_INIT;
 
-	devt = MKDEV(MAJOR(obmm_devt), reg->regionid);
+	/* obmm_shm_dev_release() frees the region via a plain kfree(reg) */
+	BUILD_BUG_ON(offsetof(struct obmm_export_region, region) != 0);
+	BUILD_BUG_ON(offsetof(struct obmm_import_region, region) != 0);
+
 	cdev_init(&reg->cdevice, &obmm_shm_fops);
 	reg->cdevice.owner = THIS_MODULE;
-	reg->device.devt = devt;
+	reg->device.devt = MKDEV(MAJOR(obmm_devt), reg->regionid);
 	reg->device.release = obmm_shm_dev_release;
 	reg->device.groups = obmm_region_get_attr_groups(reg);
 	reg->device.parent = obmm_shm_rootdev;
 	device_initialize(&reg->device);
 
+	return 0;
+}
+
+/*
+ * Publish the device as /dev/obmm_shmdev<regionid> with its sysfs entry.
+ * On failure the device stays initialized-but-unpublished.
+ */
+int obmm_shm_dev_publish(struct obmm_region *reg)
+{
+	int ret;
+
 	ret = dev_set_name(&reg->device, "obmm_shmdev%d", reg->regionid);
 	if (ret) {
 		pr_err("Failed to set name for shmdev %d. ret=%pe\n", reg->regionid, ERR_PTR(ret));
-		goto err_put_dev;
+		return ret;
 	}
 
 	ret = cdev_device_add(&reg->cdevice, &reg->device);
 	if (ret) {
 		pr_err("Failed to add shm device %d. ret=%pe\n", reg->regionid, ERR_PTR(ret));
-		goto err_put_dev;
+		return ret;
 	}
 
-	atomic_set(&reg->device_released, 0);
-
 	return 0;
-
-	/* NOTE: If the device is properly initialized, the refcount of module
-	 * should be maintained by device kobject (and the associated
-	 * obmm_shm_dev_release function). The refcount of region is always
-	 * recovered by kobject-triggered release function.
-	 */
-err_put_dev:
-	put_device(&reg->device);
-	return ret;
 }
 
-void obmm_shm_dev_del(struct obmm_region *reg)
+void obmm_shm_dev_unpublish(struct obmm_region *reg)
 {
 	cdev_device_del(&reg->cdevice, &reg->device);
+}
+
+/* Drop the initial device reference; @reg must not be touched afterwards. */
+void obmm_shm_dev_put(struct obmm_region *reg)
+{
 	put_device(&reg->device);
 }
 
