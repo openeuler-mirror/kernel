@@ -228,7 +228,8 @@ int obmm_unexport(const struct obmm_cmd_unexport *cmd_unexport)
 
 	deregister_obmm_region(reg);
 	uninit_obmm_region(reg);
-	free_export_region(e_reg);
+	/* the region is freed by the device release callback */
+	obmm_shm_dev_put(reg);
 
 	pr_debug("%s: mem_id=%llu completed.\n", __func__, cmd_unexport->mem_id);
 	return 0;
@@ -267,9 +268,9 @@ int set_export_vendor(struct obmm_export_region *e_reg, const void __user *vendo
 	return 0;
 }
 
+/* Free an export region whose device was never initialized (early error paths). */
 void free_export_region(struct obmm_export_region *e_reg)
 {
-	wait_until_dev_released(&e_reg->region);
 	if (e_reg->vendor_len)
 		kfree(e_reg->vendor_info);
 

@@ -20,6 +20,7 @@
 #include "obmm_cache.h"
 #include "obmm_export_region_ops.h"
 #include "obmm_export.h"
+#include "obmm_shm_dev.h"
 
 static struct task_struct *get_tsk_struct(pid_t pid)
 {
@@ -284,8 +285,6 @@ alloc_export_region_from_obmm_cmd_export_pid(const struct obmm_cmd_export_pid *e
 	if (e_reg == NULL)
 		return ERR_PTR(-ENOMEM);
 
-	atomic_set(&e_reg->region.device_released, 1);
-
 	e_reg->mem_desc_pid.pid = export_pid->pid;
 	e_reg->mem_desc_pid.user_va = export_pid->va;
 	e_reg->region.mem_size = export_pid->length;
@@ -341,9 +340,14 @@ int obmm_export_pid(struct obmm_cmd_export_pid *export_pid)
 	if (ret)
 		goto out_free_reg;
 
-	ret = obmm_export_common(e_reg);
+	/* from here on the device core owns the region's memory */
+	ret = obmm_shm_dev_init_device(&e_reg->region);
 	if (ret)
 		goto out_unit_reg;
+
+	ret = obmm_export_common(e_reg);
+	if (ret)
+		goto out_put_dev;
 
 	token_id = e_reg->tokenid;
 	uba = e_reg->uba;
@@ -363,6 +367,11 @@ int obmm_export_pid(struct obmm_cmd_export_pid *export_pid)
 
 out_unexport:
 	obmm_unexport_common(e_reg);
+out_put_dev:
+	uninit_obmm_region(&e_reg->region);
+	/* frees the region via the device release callback */
+	obmm_shm_dev_put(&e_reg->region);
+	return ret;
 out_unit_reg:
 	uninit_obmm_region(&e_reg->region);
 out_free_reg:
