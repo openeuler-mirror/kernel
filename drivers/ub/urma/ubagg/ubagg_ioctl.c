@@ -12,6 +12,7 @@
 #include <linux/list.h>
 #include <linux/string.h>
 #include <linux/kref.h>
+#include <linux/kstrtox.h>
 #include <linux/vmalloc.h>
 
 #include <ub/urma/ubcore_api.h>
@@ -31,6 +32,8 @@
 
 #define UBAGG_DEVICE_MAX_EID_CNT 128
 #define BITMAP_OFFSET 1025
+#define UBAGG_DEV_NAME_PREFIX "bonding_dev_"
+#define UBAGG_DEV_ID_NUM 8192
 
 struct seg_info_req {
 	struct ubcore_ubva ubva;
@@ -1556,6 +1559,35 @@ void ubagg_delete_topo_map(void)
 	delete_global_ubagg_topo_map();
 }
 
+/* uburma requires canonical device names to derive stable minor numbers. */
+static int ubagg_validate_dev_name(const char *dev_name)
+{
+	char canonical[UBAGG_MAX_DEV_NAME_LEN];
+	const char *suffix;
+	unsigned int dev_id;
+	size_t prefix_len;
+	int ret;
+
+	prefix_len = strlen(UBAGG_DEV_NAME_PREFIX);
+	if (strncmp(dev_name, UBAGG_DEV_NAME_PREFIX, prefix_len))
+		return -EINVAL;
+
+	suffix = dev_name + prefix_len;
+	ret = kstrtouint(suffix, 10, &dev_id);
+	if (ret)
+		return ret;
+
+	if (dev_id >= UBAGG_DEV_ID_NUM)
+		return -ERANGE;
+
+	scnprintf(canonical, sizeof(canonical), "%s%u",
+		  UBAGG_DEV_NAME_PREFIX, dev_id);
+	if (strcmp(dev_name, canonical))
+		return -EINVAL;
+
+	return 0;
+}
+
 static int ubagg_create_dev(const char *dev_name,
 			    const union ubcore_eid *agg_eid)
 {
@@ -1574,6 +1606,12 @@ static int ubagg_create_dev(const char *dev_name,
 	if (dev_name_len == 0 || dev_name_len >= UBAGG_MAX_DEV_NAME_LEN) {
 		ubagg_log_err("dev_name is invalid\n");
 		return -EINVAL;
+	}
+
+	ret = ubagg_validate_dev_name(dev_name);
+	if (ret) {
+		ubagg_log_err("dev_name format is invalid, ret:%d\n", ret);
+		return ret;
 	}
 
 	dev = ubagg_get_device_by_eid(agg_eid);
