@@ -100,13 +100,11 @@ DEFINE_PER_CPU(u64, kvm_pvm_run_sctlr);
 
 /*
  * The guest-run CPACR_EL1 keeps the host's EL1 controls, as the host handles
- * guest exits at EL1.  Until guest FPSIMD state is preserved,
- * these EL0 enables are forced off:
+ * guest exits at EL1.  Physical EL0 FP/SIMD access follows the guest's
+ * virtual EL and FPEN.  These EL0 enables are forced off:
  *  ZEN, SMEN:   SVE and SME state is not preserved for the guest.
- *  FPEN:        neither is FP/SIMD state yet.
  */
 #define PVM_CPACR_FLAGS		(CPACR_EL1_ZEN_EL0EN | \
-				 CPACR_EL1_FPEN_EL0EN | \
 				 CPACR_EL1_SMEN_EL0EN)
 
 static void __activate_traps(struct kvm_vcpu *vcpu)
@@ -115,7 +113,7 @@ static void __activate_traps(struct kvm_vcpu *vcpu)
 
 	if (is_pvm_mode()) {
 		struct kvm_cpu_context *ctxt = &vcpu->arch.ctxt;
-		u64 sctlr, tcr, cpacr;
+		u64 sctlr, tcr, cpacr, fpen;
 
 		sctlr = ctxt_sys_reg(ctxt, SCTLR_EL1) & PVM_SCTLR_GUEST;
 		sctlr |= read_sysreg_el2(SYS_SCTLR) & ~PVM_SCTLR_GUEST;
@@ -130,7 +128,12 @@ static void __activate_traps(struct kvm_vcpu *vcpu)
 		tcr = read_sysreg_el2(SYS_TCR) & ~PVM_TCR_FLAGS;
 		write_sysreg_el2(tcr, SYS_TCR);
 
-		cpacr = read_sysreg_el2(SYS_CPACR);
+		cpacr = read_sysreg_el2(SYS_CPACR) & ~CPACR_EL1_FPEN_EL0EN;
+		fpen = ctxt_sys_reg(ctxt, CPACR_EL1) & CPACR_ELx_FPEN;
+		/* Guest EL1 permission must also be enabled at physical EL0. */
+		if (fpen == CPACR_ELx_FPEN ||
+		    (fpen == CPACR_EL1_FPEN_EL1EN && vcpu_mode_priv(vcpu)))
+			cpacr |= CPACR_EL1_FPEN_EL0EN;
 		/* PVM does not virtualize trace; trap trace register accesses. */
 		cpacr |= CPACR_ELx_TTA;
 		cpacr &= ~PVM_CPACR_FLAGS;

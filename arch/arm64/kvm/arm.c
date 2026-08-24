@@ -655,6 +655,8 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 	case KVM_CAP_ARM_SVE:
 		if (kvm_is_realm(kvm))
 			r = kvm_rme_supports_sve();
+		else if (is_pvm_mode())
+			r = 0;
 		else
 			r = system_supports_sve();
 		break;
@@ -2032,6 +2034,10 @@ static unsigned long system_supported_vcpu_features(struct kvm *kvm)
 		clear_bit(KVM_ARM_VCPU_PTRAUTH_ADDRESS, &features);
 		clear_bit(KVM_ARM_VCPU_PTRAUTH_GENERIC, &features);
 	}
+
+	/* PVM preserves only the FPSIMD state */
+	if (is_pvm_mode())
+		clear_bit(KVM_ARM_VCPU_SVE, &features);
 
 	if (!kvm_is_realm(kvm))
 		clear_bit(KVM_ARM_VCPU_REC, &features);
