@@ -567,6 +567,8 @@ static unsigned char _ps3_add_disk_prepare(struct ps3_instance *instance,
 		LOG_INFO("hno:%u check magic same [%u:%u] magic[%#x]\n",
 			 PS3_HOST(instance), PS3_SDEV_CHANNEL(sdev),
 			 PS3_SDEV_TARGET(sdev), sdev_magic);
+		ps3_update_max_sectors(instance, PS3_CHANNEL(dev_pos),
+			PS3_TARGET(dev_pos), sdev);
 		is_need_add = PS3_FALSE;
 	} else {
 		LOG_WARN("hno:%u check dev[%u:%u] magic is diff[%#x != %#x]\n",
@@ -1254,6 +1256,11 @@ static int ps3_add_remove_multi_pd(struct ps3_instance *instance)
 	for (i = 0; i < p_dev_ctx->pd_channel_count; i++) {
 		chan_id = pd_chan[i].channel;
 		for (j = 0; j < pd_chan[i].max_dev_num; j++) {
+			if (!instance->state_machine.is_load) {
+				ret = -PS3_FAILED;
+				LOG_INFO("hno:%u, instance unload, break\n", PS3_HOST(instance));
+				goto l_out;
+			}
 			ret_tmp =
 				_ps3_add_remove_multi_pd(instance, chan_id, j);
 			if (ret_tmp != PS3_SUCCESS)
@@ -1289,6 +1296,11 @@ static int ps3_add_remove_multi_vd(struct ps3_instance *instance)
 	for (i = 0; i < p_dev_ctx->vd_channel_count; i++) {
 		chan_id = vd_chan[i].channel;
 		for (j = 0; j < vd_chan[i].max_dev_num; j++) {
+			if (!instance->state_machine.is_load) {
+				ret = -PS3_FAILED;
+				LOG_INFO("hno:%u, instance unload, break\n", PS3_HOST(instance));
+				goto l_out;
+			}
 			p_dev = ps3_dev_mgr_lookup_vd_list(instance, chan_id,
 							   j);
 			if (p_dev != NULL &&
@@ -1324,6 +1336,9 @@ static int ps3_update_multi_pd_info(struct ps3_instance *instance)
 	struct ps3_dev_context *p_dev_ctx = &instance->dev_context;
 	struct PS3DevList *p_pd_list = p_dev_ctx->pd_list_buf;
 	struct PS3Dev *p_dev = NULL;
+#if defined(PS3_DISALLOW_ZERO_ARRAY)
+	union PS3Device *devs = p_pd_list->devs;
+#endif
 
 	LOG_DEBUG("hno:%u  ready to update full pd info\n", PS3_HOST(instance));
 
@@ -1338,9 +1353,18 @@ static int ps3_update_multi_pd_info(struct ps3_instance *instance)
 		 p_pd_list->count);
 
 	for (i = 0; i < p_pd_list->count; i++) {
+		if (!instance->state_machine.is_load) {
+			ret = -PS3_FAILED;
+			LOG_INFO("hno:%u, instance unload, break\n", PS3_HOST(instance));
+			goto l_out;
+		}
+#if defined(PS3_DISALLOW_ZERO_ARRAY)
+		p_dev = PS3_DEV(&devs[i].pd.diskPos);
+		if (PS3_DEV_INVALID(devs[i].pd.diskPos)) {
+#else
 		p_dev = PS3_DEV(&p_pd_list->devs[i].pd.diskPos);
-
 		if (PS3_PDID_INVALID(&p_pd_list->devs[i].pd.diskPos)) {
+#endif
 			LOG_WARN("hno:%u  check pd list %d dev pdid is 0\n",
 				 PS3_HOST(instance), i);
 			continue;
@@ -1354,8 +1378,14 @@ static int ps3_update_multi_pd_info(struct ps3_instance *instance)
 		}
 
 		LOG_INFO("hno:%u update pd info %d dev[%u:%u:%u], magic[%#x], state[%s]\n",
-			 PS3_HOST(instance), i, p_dev->softChan, p_dev->devID,
-			 p_dev->phyDiskID,
+			PS3_HOST(instance), i, p_dev->softChan, p_dev->devID,
+			p_dev->phyDiskID,
+#if defined(PS3_DISALLOW_ZERO_ARRAY)
+			devs[i].pd.diskPos.diskMagicNum,
+			getDeviceStateName((enum DeviceState)devs[i].pd.diskState));
+		ret_tmp = ps3_update_single_pd_info(instance, &devs[i].pd.diskPos,
+			&devs[i]);
+#else
 			 p_pd_list->devs[i].pd.diskPos.diskMagicNum,
 			 getDeviceStateName((enum DeviceState)p_pd_list->devs[i]
 						    .pd.diskState));
@@ -1363,6 +1393,7 @@ static int ps3_update_multi_pd_info(struct ps3_instance *instance)
 		ret_tmp = ps3_update_single_pd_info(
 			instance, &p_pd_list->devs[i].pd.diskPos,
 			&p_pd_list->devs[i]);
+#endif
 		if (ret_tmp != PS3_SUCCESS) {
 			LOG_ERROR("hno:%u NOK, %u:%u, ret[%d]\n",
 				  PS3_HOST(instance), p_dev->softChan,
@@ -1416,6 +1447,7 @@ static inline int ps3_dev_evt_update_vd_count(struct ps3_instance *instance,
 	case PS3_EVT_CODE(MGR_EVT_VD_OPTIMAL):
 	case PS3_EVT_CODE(MGR_EVT_VD_PARTIAL_DEGRADE):
 	case PS3_EVT_CODE(MGR_EVT_VD_DEGRADE):
+	case PS3_EVT_CODE(MGR_EVT_VD_CHANGE):
 	case PS3_EVT_CODE(MGR_EVT_VD_UNLOCK):
 		ret = ps3_vd_add(instance, dev_pos);
 		break;
@@ -1461,8 +1493,12 @@ int ps3_dev_update_detail_proc(struct ps3_instance *instance,
 	ps3_dev_update_pre_check(event_detail, event_cnt);
 
 	for (i = 0; i < event_cnt; i++) {
+		if (!instance->state_machine.is_load) {
+			LOG_INFO("hno:%u  instance unload, break\n", PS3_HOST(instance));
+			break;
+		}
 		LOG_INFO(
-		"hno:%u  event detail %d event type[%s], eventCode is [%s], dev[%u:%u:%u]\n",
+		"hno:%u evt i %d evt type[%s], evtCode[%s], dev[%u:%u:%u]\n",
 		 PS3_HOST(instance), i,
 		 nameMgrEvtType(event_detail[i].eventType),
 		 mgrEvtCodeTrans(event_detail[i].eventCode),
@@ -1593,17 +1629,15 @@ static unsigned char ps3_dev_vd_pending_data_switch(struct ps3_cmd *cmd)
 		virtDiskIdx = get_offset_of_vdid(PS3_VDID_OFFSET(cmd->instance),
 						 p_dev->virtDiskID);
 		if (unlikely(virtDiskIdx > PS3_MAX_VD_COUNT(cmd->instance))) {
-			LOG_WARN_IN_IRQ(
-				cmd->instance,
-				"hno:%u, init %d of %d vd info NOK, vir_id[%d] > max[%d]\n",
+			LOG_WARN_IN_IRQ(cmd->instance,
+				"hno:%u, init %d of %d vd info NOK, v_id[%d]>max[%d]\n",
 				PS3_HOST(cmd->instance), i,
 				p_dev_ctx->vd_info_buf_sync->count, virtDiskIdx,
 				PS3_MAX_VD_COUNT(cmd->instance));
 			continue;
 		}
 		LOG_INFO_IN_IRQ(cmd->instance, "hno:%u update vd[%u:%u] info\n",
-				PS3_HOST(cmd->instance), p_dev->softChan,
-				p_dev->devID);
+			PS3_HOST(cmd->instance), p_dev->softChan, p_dev->devID);
 
 		ps3_qos_vd_init(cmd->instance, &p_vd_entry[i]);
 		vd_entry_old = ps3_dev_mgr_lookup_vd_info_by_id(
@@ -1619,6 +1653,7 @@ static unsigned char ps3_dev_vd_pending_data_switch(struct ps3_cmd *cmd)
 					      p_dev->devID, 0);
 		if (sdev != NULL) {
 			ps3_vd_busy_scale_get(&p_new_vd_array[virtDiskIdx]);
+#if defined(PS3_SLAVE_CONFIG_SUPPORT)
 			if (ps3_sdev_bdi_stable_writes_get(sdev)) {
 				if (!(p_vd_entry[i].bdev_bdi_cap &
 				      PS3_STABLE_WRITES_MASK)) {
@@ -1632,11 +1667,12 @@ static unsigned char ps3_dev_vd_pending_data_switch(struct ps3_cmd *cmd)
 						cmd->instance, sdev);
 				}
 			}
+#endif
 			ps3_scsi_device_put(cmd->instance, sdev);
 		}
 
 		ps3_vd_info_show(cmd->instance, &p_new_vd_array[virtDiskIdx]);
-#ifndef _WINDOWS
+
 		if (p_vd_entry[i].maxIOSize != 0) {
 			ps3_change_sdev_max_sector(cmd->instance,
 						   &p_vd_entry[i]);
@@ -1646,7 +1682,6 @@ static unsigned char ps3_dev_vd_pending_data_switch(struct ps3_cmd *cmd)
 				PS3_HOST(cmd->instance), p_dev->softChan,
 				p_dev->devID);
 		}
-#endif
 	}
 	mb(); /* in order to force CPU ordering */
 	if (p_dev_ctx->vd_table_idx == (PS3_VD_TABLE_NUM - 1))
@@ -1698,9 +1733,9 @@ int ps3_dev_vd_pending_proc(struct ps3_cmd *cmd, unsigned short reply_flags)
 		goto l_out;
 	}
 
-	if (!instance->state_machine.is_load) {
-		LOG_INFO_IN_IRQ(
-			instance,
+	if (!instance->state_machine.is_load ||
+		instance->is_suspend) {
+		LOG_INFO_IN_IRQ(instance,
 			"trace_id[0x%llx], hno:%u instance is suspend or instance unload!\n",
 			cmd->trace_id, PS3_HOST(instance));
 		ret = -PS3_FAILED;

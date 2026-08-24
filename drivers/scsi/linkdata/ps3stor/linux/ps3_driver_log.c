@@ -24,6 +24,7 @@
 #include "ps3_driver_log.h"
 #include "ps3_module_para.h"
 #include "ps3_kernel_version.h"
+#include "ps3_util.h"
 
 #if defined DRIVER_DEBUG && defined __KERNEL__
 
@@ -128,7 +129,7 @@ int ps3_filter_file_add(char *name)
 		ps3_print(PRINT_ERR, "kmalloc size %lu failed\n", PAGE_SIZE);
 		return -ENOMEM;
 	}
-	strncpy(file->name, name, sizeof(file->name));
+	PS3_STRCPY(file->name, name, sizeof(file->name));
 	INIT_LIST_HEAD(&file->list);
 
 	list_add_rcu(&file->list, &g_ps3_debug.filter_file);
@@ -190,7 +191,7 @@ int ps3_filter_func_add(char *name)
 		ps3_print(PRINT_ERR, "kmalloc size %lu failed\n", PAGE_SIZE);
 		return -ENOMEM;
 	}
-	strncpy(func->name, name, sizeof(func->name));
+	PS3_STRCPY(func->name, name, sizeof(func->name));
 	INIT_LIST_HEAD(&func->list);
 
 	list_add_rcu(&func->list, &g_ps3_debug.filter_func);
@@ -272,7 +273,7 @@ static int ps3_file_open(struct ps3_log *log, struct file **pp_file)
 	}
 #else
 	memset(filename, 0, FILE_NAME_SIZE);
-	strncpy(filename, path, FILE_NAME_SIZE);
+	PS3_STRCPY(filename, path, FILE_NAME_SIZE);
 #endif
 	if (log->file_num == 0) {
 		file = filp_open(filename, flags_new, 0666);
@@ -641,10 +642,10 @@ void ps3_log_string(enum debug_level level, const char *file, int line,
 
 	if (ps3_log_tty_query()) {
 		if (buf[0] == 'I' || buf[0] == 'W') {
-			printk_ratelimited(KERN_WARNING "%s",
+			pr_warn_ratelimited("%s",
 					   buf + LOG_INFO_PREFIX_LEN);
 		} else if (buf[0] == 'E') {
-			printk_ratelimited(KERN_WARNING "%s",
+			pr_warn_ratelimited("%s",
 					   buf + LOG_ERROR_PREFIX_LEN);
 		}
 	}
@@ -747,7 +748,7 @@ int ps3_debug_init(void)
 				  PAGE_SIZE);
 			goto l_free_cpu_buff;
 		}
-		ctxt->buff = kmap(ctxt->page);
+		ctxt->buff = PS3_KMAP(ctxt->page);
 	}
 
 	log_path_p = ps3_log_path_query();
@@ -825,7 +826,7 @@ l_free_cpu_buff:
 	for_each_possible_cpu(i) {
 		ctxt = per_cpu_ptr(g_ps3_debug.ctxt, i);
 		if (ctxt && ctxt->page) {
-			kunmap(ctxt->page);
+			PS3_KUNMAP(ctxt->page, ctxt->buff);
 			__free_page(ctxt->page);
 		}
 	}
@@ -850,7 +851,7 @@ void ps3_debug_exit(void)
 		for_each_possible_cpu(i) {
 			ctxt = per_cpu_ptr(g_ps3_debug.ctxt, i);
 			if (ctxt && ctxt->page) {
-				kunmap(ctxt->page);
+				PS3_KUNMAP(ctxt->page, ctxt->buff);
 				__free_page(ctxt->page);
 			}
 		}

@@ -136,41 +136,54 @@ static void ps3_r1x_rand_read_target_pd_calc(struct ps3_cmd *cmd,
 	unsigned long long diff1 = 0;
 	unsigned int pd0 = 0;
 	unsigned int pd1 = 0;
+	unsigned char pd0_state = 0;
+	unsigned char pd1_state = 0;
 	unsigned int target_pd = 0;
 
 	if (!cmd->r1x_read_pd) {
 		priv_data = scsi_device_private_data(cmd->scmd);
 		rb_info = priv_data->r1x_rb_info;
 		vlba = U32_HIGH_LOW_TO_U64(cmd->io_attr.lba_hi,
-					   cmd->io_attr.lba_lo);
+					cmd->io_attr.lba_lo);
 		pd0 = PS3_R1X_RB_INFO_INDEX(span_idx, span_pd_idx);
 		pd1 = PS3_R1X_RB_INFO_INDEX(span_idx, span_pd_back_idx);
-		outstanding0 =
-			ps3_atomic_read(&rb_info->scsi_outstanding_cmds[pd0]);
-		outstanding1 =
-			ps3_atomic_read(&rb_info->scsi_outstanding_cmds[pd1]);
+		pd0_state = ps3_vd_member_state_get(cmd->io_attr.vd_entry,
+				span_idx, span_pd_idx);
+		pd1_state = ps3_vd_member_state_get(cmd->io_attr.vd_entry,
+				span_idx, span_pd_back_idx);
 
-		if (outstanding0 > outstanding1 + g_ps3_r1x_rb_diff_cmds) {
+		if (pd0_state == MIC_PD_STATE_ONLINE && pd1_state == MIC_PD_STATE_ONLINE) {
+			outstanding0 =
+				ps3_atomic_read(&rb_info->scsi_outstanding_cmds[pd0]);
+			outstanding1 =
+				ps3_atomic_read(&rb_info->scsi_outstanding_cmds[pd1]);
+
+			if (outstanding0 > outstanding1 + g_ps3_r1x_rb_diff_cmds) {
+				target_pd = pd1;
+			} else if (outstanding1 >
+				   outstanding0 + g_ps3_r1x_rb_diff_cmds) {
+				target_pd = pd0;
+			} else {
+				diff0 = ABS_DIFF(vlba,
+						 rb_info->last_accessed_block[pd0]);
+				diff1 = ABS_DIFF(vlba,
+						 rb_info->last_accessed_block[pd1]);
+				target_pd = (diff0 <= diff1 ? pd0 : pd1);
+			}
+		} else if (pd1_state == MIC_PD_STATE_ONLINE) {
 			target_pd = pd1;
-		} else if (outstanding1 >
-			   outstanding0 + g_ps3_r1x_rb_diff_cmds) {
-			target_pd = pd0;
 		} else {
-			diff0 = ABS_DIFF(vlba,
-					 rb_info->last_accessed_block[pd0]);
-			diff1 = ABS_DIFF(vlba,
-					 rb_info->last_accessed_block[pd1]);
-			target_pd = (diff0 <= diff1 ? pd0 : pd1);
+			target_pd = pd0;
 		}
 
 		if (target_pd == pd0) {
 			cmd->io_attr.span_pd_idx = (unsigned char)span_pd_idx;
-			cmd->io_attr.span_pd_idx_p =
-				(unsigned char)span_pd_back_idx;
+			cmd->io_attr.span_pd_idx_p = (unsigned char)span_pd_back_idx;
+			cmd->io_attr.target_pd_state = pd0_state;
 		} else {
-			cmd->io_attr.span_pd_idx =
-				(unsigned char)span_pd_back_idx;
+			cmd->io_attr.span_pd_idx = (unsigned char)span_pd_back_idx;
 			cmd->io_attr.span_pd_idx_p = (unsigned char)span_pd_idx;
+			cmd->io_attr.target_pd_state = pd1_state;
 		}
 
 		cmd->r1x_read_pd = target_pd;
@@ -194,6 +207,8 @@ static void ps3_r1x_seq_read_target_pd_calc(struct ps3_cmd *cmd,
 	unsigned long long diff1 = 0;
 	unsigned int pd0 = 0;
 	unsigned int pd1 = 0;
+	unsigned char pd0_state = 0;
+	unsigned char pd1_state = 0;
 	unsigned int target_pd = 0;
 
 	if (!cmd->r1x_read_pd) {
@@ -203,31 +218,42 @@ static void ps3_r1x_seq_read_target_pd_calc(struct ps3_cmd *cmd,
 					   cmd->io_attr.lba_lo);
 		pd0 = PS3_R1X_RB_INFO_INDEX(span_idx, span_pd_idx);
 		pd1 = PS3_R1X_RB_INFO_INDEX(span_idx, span_pd_back_idx);
-		outstanding0 =
-			ps3_atomic_read(&rb_info->scsi_outstanding_cmds[pd0]);
-		outstanding1 =
-			ps3_atomic_read(&rb_info->scsi_outstanding_cmds[pd1]);
+		pd0_state = ps3_vd_member_state_get(cmd->io_attr.vd_entry,
+			span_idx, span_pd_idx);
+		pd1_state = ps3_vd_member_state_get(cmd->io_attr.vd_entry,
+			span_idx, span_pd_back_idx);
 
-		if (outstanding0 == 0 && outstanding1 != 0) {
-			target_pd = pd0;
-		} else if (outstanding0 != 0 && outstanding1 == 0) {
+		if (pd0_state == MIC_PD_STATE_ONLINE && pd1_state == MIC_PD_STATE_ONLINE) {
+			outstanding0 =
+				ps3_atomic_read(&rb_info->scsi_outstanding_cmds[pd0]);
+			outstanding1 =
+				ps3_atomic_read(&rb_info->scsi_outstanding_cmds[pd1]);
+
+			if (outstanding0 == 0 && outstanding1 != 0) {
+				target_pd = pd0;
+			} else if (outstanding0 != 0 && outstanding1 == 0) {
+				target_pd = pd1;
+			} else {
+				diff0 = ABS_DIFF(vlba,
+						 rb_info->last_accessed_block[pd0]);
+				diff1 = ABS_DIFF(vlba,
+						 rb_info->last_accessed_block[pd1]);
+				target_pd = (diff0 <= diff1 ? pd0 : pd1);
+			}
+		} else if (pd1_state == MIC_PD_STATE_ONLINE) {
 			target_pd = pd1;
 		} else {
-			diff0 = ABS_DIFF(vlba,
-					 rb_info->last_accessed_block[pd0]);
-			diff1 = ABS_DIFF(vlba,
-					 rb_info->last_accessed_block[pd1]);
-			target_pd = (diff0 <= diff1 ? pd0 : pd1);
+			target_pd = pd0;
 		}
 
 		if (target_pd == pd0) {
 			cmd->io_attr.span_pd_idx = (unsigned char)span_pd_idx;
-			cmd->io_attr.span_pd_idx_p =
-				(unsigned char)span_pd_back_idx;
+			cmd->io_attr.span_pd_idx_p = (unsigned char)span_pd_back_idx;
+			cmd->io_attr.target_pd_state = pd0_state;
 		} else {
-			cmd->io_attr.span_pd_idx =
-				(unsigned char)span_pd_back_idx;
+			cmd->io_attr.span_pd_idx = (unsigned char)span_pd_back_idx;
 			cmd->io_attr.span_pd_idx_p = (unsigned char)span_pd_idx;
+			cmd->io_attr.target_pd_state = pd1_state;
 		}
 
 		cmd->r1x_read_pd = target_pd;
@@ -607,13 +633,19 @@ static void ps3_r60_convert_vlba_to_pd_attr(struct ps3_cmd *cmd)
 
 static int ps3_convert_to_pd_info(struct ps3_cmd *cmd)
 {
+	unsigned char state;
 	int ret = PS3_SUCCESS;
 	const struct PS3VDEntry *vd_entry = cmd->io_attr.vd_entry;
 	const struct PS3Extent *extent =
 		&(vd_entry->span[cmd->io_attr.span_idx]
 			  .extent[cmd->io_attr.span_pd_idx]);
 
-	if (extent->state != MIC_PD_STATE_ONLINE) {
+	if (cmd->io_attr.target_pd_state != 0xff)
+		state = cmd->io_attr.target_pd_state;
+	else
+		state = extent->state;
+
+	if (state != MIC_PD_STATE_ONLINE) {
 		LOG_DEBUG("cmd :%u direct check pd:%u state:%s != ONLINE\n",
 			  cmd->index, extent->phyDiskID.ps3Dev.phyDiskID,
 			  getPdStateName((enum MicPdState)extent->state,

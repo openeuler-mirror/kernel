@@ -459,9 +459,8 @@ void ps3_debug_context_init(struct ps3_instance *instance)
 	ps3_reg_dump_attr_init(instance);
 }
 
-static inline struct ps3_instance *
-ps3_debug_instance_query(struct device *cdev, struct device_attribute *attr,
-			 const char *buf)
+struct ps3_instance *ps3_debug_instance_query(struct device *cdev,
+	struct device_attribute *attr, const char *buf)
 {
 	struct Scsi_Host *shost = NULL;
 	struct ps3_instance *instance = NULL;
@@ -881,36 +880,6 @@ l_out:
 	return ret;
 }
 
-int ps3_dump_dir_length(const char *buf, size_t count)
-{
-	int i = 0;
-	char c;
-
-	while ((size_t)i++ < count) {
-		c = buf[i];
-
-		if (isdigit(c))
-			continue;
-
-		if (isalpha(c))
-			continue;
-
-		switch (c) {
-		case '-':
-		case '_':
-		case '/':
-		case '~':
-			continue;
-			break;
-		default:
-			goto l_out;
-		}
-	}
-
-l_out:
-	return i;
-}
-
 ssize_t ps3_dump_type_show(struct device *cdev, struct device_attribute *attr,
 			   char *buf)
 {
@@ -1015,7 +984,7 @@ ssize_t ps3_soc_dead_reset_store(struct device *cdev,
 		LOG_WARN("hno:%u  can not start hard reset\n",
 			 PS3_HOST(instance));
 	} else {
-		ps3_hard_recovery_request_with_retry(instance);
+		ps3_hard_recovery_request_with_retry(instance, PS3_FALSE);
 	}
 
 	return count;

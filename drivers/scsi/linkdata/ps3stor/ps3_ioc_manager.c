@@ -305,7 +305,7 @@ void ps3_host_mem_info_buf_free(struct ps3_instance *instance)
 	}
 }
 
-int ps3_hard_reset_to_ready(struct ps3_instance *instance)
+static int ps3_hard_reset_to_ready(struct ps3_instance *instance)
 {
 	int ret = PS3_SUCCESS;
 
@@ -321,7 +321,7 @@ int ps3_hard_reset_to_ready(struct ps3_instance *instance)
 					PS3_PARALLEL_HARDRESET_STATE_WAIT_INIT_INTERVAL);
 			}
 		} else {
-			ret = ps3_hard_recovery_request(instance);
+			ret = ps3_hard_recovery_request_with_retry(instance, PS3_FALSE);
 			if (ret != PS3_SUCCESS) {
 				LOG_WARN(
 					"hno:%u  hard recovery request failed\n",
@@ -967,7 +967,12 @@ unsigned long long ps3_switch_ioc_reg_read(struct ps3_instance *instance,
 inline void ps3_ioc_reg_write(struct ps3_instance *instance,
 			      unsigned long long val, void __iomem *reg)
 {
+#if defined(PS3_SUPPORT_DEBUG) ||                                              \
+		(defined(PS3_CFG_RELEASE) && defined(PS3_CFG_OCM_DBGBUG)) ||		   \
+		(defined(PS3_CFG_RELEASE) && defined(PS3_CFG_OCM_RELEASE))
 	ps3_reg_dump(instance, reg, val, PS3_FALSE);
+#endif
+
 	if (instance->ioc_adpter->reg_write) {
 		instance->ioc_adpter->reg_write(instance, val, reg);
 	} else {

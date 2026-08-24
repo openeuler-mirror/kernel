@@ -39,7 +39,7 @@ enum {
 };
 #define PS3_PARALLEL_HARDRESET_STATE_WAIT_INIT_INTERVAL (5)
 #define PS3_RECOVERY_CONTEXT_MAX_NUM (8)
-#define PS3_RECOVERY_IRQ_NAME_MAX_LENGTH (48)
+#define PS3_RECOVERY_IRQ_NAME_MAX_LENGTH (32)
 #define PS3_RECOVERY_WHILE_PRINT_REACH_TIME (10 * 1000)
 
 enum {
@@ -125,9 +125,11 @@ void ps3_recovery_clean(struct ps3_instance *instance);
 
 void ps3_recovery_destroy(struct ps3_instance *instance);
 
-int ps3_recovery_request(struct ps3_instance *instance);
+int ps3_recovery_request(struct ps3_instance *instance,
+	unsigned char is_host_reset);
 
-int ps3_hard_recovery_request(struct ps3_instance *instance);
+int ps3_hard_recovery_request(struct ps3_instance *instance,
+	unsigned char is_host_reset);
 
 void ps3_scsi_cmd_force_stop(struct ps3_instance *instance);
 void ps3_mgr_cmd_force_stop(struct ps3_instance *instance);
@@ -157,8 +159,10 @@ int ps3_hardreset_handle_offline(struct ps3_instance *instance);
 int ps3_softreset_handle_pre(struct ps3_instance *instance);
 
 int ps3_softreset_handle_post(struct ps3_instance *instance);
-int ps3_hard_recovery_request_with_retry(struct ps3_instance *instance);
-int ps3_recovery_request_with_retry(struct ps3_instance *instance);
+int ps3_hard_recovery_request_with_retry(struct ps3_instance *instance,
+	unsigned char is_host_reset);
+int ps3_recovery_request_with_retry(struct ps3_instance *instance,
+	unsigned char is_host_reset);
 irqreturn_t ps3_recovery_irq_handler(int virq, void *dev_id);
 int ps3_recovery_irq_start(struct ps3_instance *instance);
 

@@ -70,23 +70,24 @@ ps3_wait_watchdog_dect_recovery(struct ps3_instance *instance)
 	}
 }
 
-struct ps3_recovery_context *ps3_recovery_context_alloc(void)
+static struct ps3_recovery_context *ps3_recovery_context_alloc(void)
 {
 	struct ps3_recovery_context *context;
 
-	context = kzalloc(sizeof(struct ps3_recovery_context), GFP_KERNEL);
+	context = kzalloc(sizeof(struct ps3_recovery_context),
+		GFP_KERNEL);
 	if (!context)
 		return NULL;
 
 	return context;
 }
-void ps3_recovery_context_free(struct ps3_recovery_context *context)
+static void ps3_recovery_context_free(struct ps3_recovery_context *context)
 {
 	if (context != NULL)
 		kfree(context);
 }
 
-void ps3_recovery_context_delete(struct ps3_recovery_context *context)
+static void ps3_recovery_context_delete(struct ps3_recovery_context *context)
 {
 	if (context != NULL) {
 		if (context->recovery_wq) {
@@ -128,7 +129,7 @@ static void ps3_recovery_irq_service(struct work_struct *work)
 	}
 	ps3_mutex_unlock(
 		&instance->recovery_context->ps3_watchdog_recovery_mutex);
-	while ((ret = ps3_hard_recovery_request(instance)) == -PS3_RETRY) {
+	while ((ret = ps3_hard_recovery_request(instance, PS3_FALSE)) == -PS3_RETRY) {
 		if (count++ == ps3_use_hard_reset_max_retry()) {
 			ret = -PS3_FAILED;
 			break;
@@ -162,8 +163,7 @@ int ps3_recovery_irq_start(struct ps3_instance *instance)
 	INIT_WORK(recovery_irq_work, ps3_recovery_irq_service);
 
 	snprintf(request_irq_queue_name, PS3_RECOVERY_IRQ_NAME_MAX_LENGTH,
-		 "ps3_irq_recovery_start_service_host%d",
-		 instance->host->host_no);
+		 "ps3_irq_recov%d", instance->host->host_no);
 
 	instance->recovery_irq_queue =
 		create_singlethread_workqueue(request_irq_queue_name);
@@ -202,7 +202,7 @@ l_out:
 	return IRQ_HANDLED;
 }
 
-void ps3_recovery_irq_queue_destroy(struct ps3_instance *instance)
+static void ps3_recovery_irq_queue_destroy(struct ps3_instance *instance)
 {
 	if (instance->recovery_irq_queue) {
 		flush_workqueue(instance->recovery_irq_queue);
@@ -361,7 +361,7 @@ void ps3_recovery_context_exit(struct ps3_instance *instance)
 	}
 
 }
-int ps3_recovery_state_transfer(struct ps3_instance *instance,
+static int ps3_recovery_state_transfer(struct ps3_instance *instance,
 				unsigned int dest_state)
 {
 	unsigned int recovery_origin_state;
@@ -482,13 +482,13 @@ static inline void ps3_wait_hard_reset_finish(struct ps3_instance *instance)
 				   PS3_HARD_RECOVERY_DECIDE)) {
 				continue;
 			} else {
-				cancel_work_sync(&instance->recovery_context
+				ps3_cancel_work_sync(&instance->recovery_context
 							  ->recovery_work);
 				break;
 			}
 		} while (1);
 	} else {
-		cancel_work_sync(&instance->recovery_context->recovery_work);
+		ps3_cancel_work_sync(&instance->recovery_context->recovery_work);
 	}
 }
 int ps3_recovery_cancel_work_sync(struct ps3_instance *instance)
@@ -522,12 +522,13 @@ static int ps3_recovery_start(struct ps3_instance *instance)
 	ps3_mutex_unlock(&instance->state_machine.lock);
 	if (unlikely(instance->recovery_context->recovery_wq == NULL)) {
 		ret = -PS3_FAILED;
+		ps3_recovery_state_transfer(instance, PS3_HARD_RECOVERY_FINISH);
 		LOG_ERROR("hno:%u  recovery work sync NOK!\n",
 			  PS3_HOST(instance));
 		goto l_out;
 	}
 
-	cancel_work_sync(&instance->recovery_context->recovery_work);
+	ps3_cancel_work_sync(&instance->recovery_context->recovery_work);
 
 	ps3_mutex_lock(&instance->state_machine.lock);
 	if (instance->recovery_context->recovery_state ==
@@ -538,6 +539,8 @@ static int ps3_recovery_start(struct ps3_instance *instance)
 			LOG_ERROR(
 				"hno:%u  transfer to PS3_INSTANCE_STATE_RECOVERY NOK!\n",
 				PS3_HOST(instance));
+			instance->recovery_context->recovery_state =
+				PS3_HARD_RECOVERY_FINISH;
 			ret = -PS3_FAILED;
 			ps3_mutex_unlock(&instance->state_machine.lock);
 			goto l_out;
@@ -556,6 +559,8 @@ static int ps3_recovery_start(struct ps3_instance *instance)
 				LOG_ERROR(
 					"hno:%u  transfer to PS3_INSTANCE_STATE_RECOVERY NOK!\n",
 					PS3_HOST(instance->peer_instance));
+				instance->recovery_context->recovery_state =
+					PS3_HARD_RECOVERY_FINISH;
 				ret = -PS3_FAILED;
 				ps3_mutex_unlock(&instance->peer_instance
 							  ->state_machine.lock);
@@ -802,7 +807,8 @@ l_clean:
 	return ret;
 }
 
-int ps3_hard_recovery_request(struct ps3_instance *instance)
+int ps3_hard_recovery_request(struct ps3_instance *instance,
+	unsigned char is_host_reset)
 {
 	int ret = PS3_SUCCESS;
 	struct ps3_instance *instance_recovery = NULL;
@@ -816,17 +822,24 @@ int ps3_hard_recovery_request(struct ps3_instance *instance)
 
 	if (instance->recovery_context->instance_change) {
 		LOG_INFO("hno:%u peer instance is change\n",
-			 PS3_HOST(instance));
+			PS3_HOST(instance));
+		ret = -PS3_RETRY;
+		goto l_out;
+	}
+
+	if (!ps3_host_reset_state_check(instance, is_host_reset)) {
+		LOG_WARN_LIM("hno[%u], recovery request during host reset\n",
+			PS3_HOST(instance));
 		ret = -PS3_RETRY;
 		goto l_out;
 	}
 
 	while (instance->peer_instance != NULL &&
-	       PS3_IS_INSTANCE_NOT_LOAD_NORMAL(instance->peer_instance)) {
+		PS3_IS_INSTANCE_NOT_LOAD_NORMAL(instance->peer_instance)) {
 		if (instance->recovery_context->recovery_state ==
-			    PS3_HARD_RECOVERY_SHALLOW ||
-		    instance->recovery_context->recovery_state ==
-			    PS3_HARD_RECOVERY_DECIDE) {
+				PS3_HARD_RECOVERY_SHALLOW ||
+			instance->recovery_context->recovery_state ==
+				PS3_HARD_RECOVERY_DECIDE) {
 			instance->recovery_context->parall_hardreset_state =
 				PS3_PARALLEL_HARDRESET_STATE_INIT;
 			goto l_out;
@@ -834,20 +847,20 @@ int ps3_hard_recovery_request(struct ps3_instance *instance)
 
 		if (instance->recovery_context->instance_change) {
 			LOG_INFO("hno:%u peer instance is change\n",
-				 PS3_HOST(instance));
+				PS3_HOST(instance));
 			ret = -PS3_RETRY;
 			goto l_out;
 		}
 
 		if (instance->recovery_context->parall_hardreset_state ==
-		    PS3_PARALLEL_HARDRESET_STATE_INIT) {
+			PS3_PARALLEL_HARDRESET_STATE_INIT) {
 			instance->recovery_context->parall_hardreset_state =
 				PS3_PARALLEL_HARDRESET_STATE_PENDING;
 		}
 		ps3_atomic_dec(&instance->recovery_context->hardreset_ref);
 		ps3_msleep(10);
 		if (instance->recovery_context->parall_hardreset_state ==
-		    PS3_PARALLEL_HARDRESET_STATE_CONTINUE) {
+			PS3_PARALLEL_HARDRESET_STATE_CONTINUE) {
 			ps3_atomic_inc(
 				&instance->recovery_context->hardreset_ref);
 			mb(); /* in order to force CPU ordering */
@@ -1219,7 +1232,8 @@ l_out:
 	return ret;
 }
 
-int ps3_recovery_request(struct ps3_instance *instance)
+int ps3_recovery_request(struct ps3_instance *instance,
+	unsigned char is_host_reset)
 {
 	int ret = PS3_SUCCESS;
 	struct ps3_instance *instance_recovery = NULL;
@@ -1231,29 +1245,37 @@ int ps3_recovery_request(struct ps3_instance *instance)
 	mb(); /* in order to force CPU ordering */
 	if (instance->recovery_context->instance_change) {
 		LOG_INFO("hno:%u peer instance is change\n",
-			 PS3_HOST(instance));
+			PS3_HOST(instance));
 		ret = -PS3_RETRY;
 		goto l_out;
 	}
+
+	if (!ps3_host_reset_state_check(instance, is_host_reset)) {
+		LOG_WARN("hno[%u], recovery request during host reset\n",
+			PS3_HOST(instance));
+		ret = -PS3_RETRY;
+		goto l_out;
+	}
+
 	while (instance->peer_instance != NULL &&
-	       PS3_IS_INSTANCE_NOT_LOAD_NORMAL(instance->peer_instance)) {
+		PS3_IS_INSTANCE_NOT_LOAD_NORMAL(instance->peer_instance)) {
 		if (instance->recovery_context->recovery_state ==
-			    PS3_HARD_RECOVERY_SHALLOW ||
-		    instance->recovery_context->recovery_state ==
-			    PS3_HARD_RECOVERY_DECIDE) {
+				PS3_HARD_RECOVERY_SHALLOW ||
+			instance->recovery_context->recovery_state ==
+				PS3_HARD_RECOVERY_DECIDE) {
 			instance->recovery_context->parall_hardreset_state =
 				PS3_PARALLEL_HARDRESET_STATE_INIT;
 			goto l_out;
 		}
 
 		if (instance->recovery_context->parall_hardreset_state ==
-		    PS3_PARALLEL_HARDRESET_STATE_INIT) {
+			PS3_PARALLEL_HARDRESET_STATE_INIT) {
 			instance->recovery_context->parall_hardreset_state =
 				PS3_PARALLEL_HARDRESET_STATE_PENDING;
 		}
 		if (instance->recovery_context->instance_change) {
 			LOG_INFO("hno:%u peer instance is change\n",
-				 PS3_HOST(instance));
+				PS3_HOST(instance));
 			ret = -PS3_RETRY;
 			goto l_out;
 		}
@@ -2698,7 +2720,7 @@ static void ps3_recovery_wait_reg_access_done(struct ps3_instance *instance)
 		  PS3_HOST(instance));
 }
 
-void ps3_hard_recovery_state_finish(struct ps3_instance *instance)
+static void ps3_hard_recovery_state_finish(struct ps3_instance *instance)
 {
 	ps3_mutex_lock(&instance->state_machine.lock);
 	if (instance->recovery_context->host_reset_state ==
@@ -3253,11 +3275,11 @@ void ps3_scsi_cmd_force_stop(struct ps3_instance *instance)
 		count++;
 
 		PS3_IO_OUTSTAND_DEC(instance, s_cmd);
-		PS3_VD_OUTSTAND_DEC(instance, s_cmd);
+		PS3_VD_OUTSTAND_DEC(instance, cmd);
 		PS3_DEV_IO_OUTSTAND_DEC(instance, cmd);
 		PS3_IOC_DRV2IOC_BACK_INC(cmd->instance, cmd,
 					 PS3_REPLY_WORD_FLAG_FAIL);
-		ps3_qos_cmd_update(instance, cmd);
+		ps3_qos_cmd_update(instance, cmd, PS3_FALSE);
 
 #ifndef _WINDOWS
 		PS3_IO_BACK_ERR_INC(cmd->instance, s_cmd);
@@ -3520,7 +3542,7 @@ int ps3_hard_reset_to_ready_with_doorbell(struct ps3_instance *instance)
 				PS3_PARALLEL_HARDRESET_STATE_WAIT_INIT_INTERVAL);
 		}
 	} else {
-		ret = ps3_hard_recovery_request(instance);
+		ret = ps3_hard_recovery_request_with_retry(instance, PS3_FALSE);
 		if (ret != PS3_SUCCESS) {
 			LOG_WARN("hno:%u  hard recovery request NOK\n",
 				 PS3_HOST(instance));
@@ -3553,7 +3575,7 @@ int ps3_init_fail_hard_reset_with_doorbell(struct ps3_instance *instance)
 				PS3_PARALLEL_HARDRESET_STATE_WAIT_INIT_INTERVAL);
 		}
 	} else {
-		ret = ps3_hard_recovery_request_with_retry(instance);
+		ret = ps3_hard_recovery_request_with_retry(instance, PS3_FALSE);
 		if (ret != PS3_SUCCESS) {
 			LOG_WARN("hno:%u  hard recovery request NOK\n",
 				 PS3_HOST(instance));
@@ -3868,31 +3890,48 @@ l_out:
 	return ret;
 }
 
-int ps3_hard_recovery_request_with_retry(struct ps3_instance *instance)
+int ps3_hard_recovery_request_with_retry(struct ps3_instance *instance,
+	unsigned char is_host_reset)
 {
 	int ret = PS3_SUCCESS;
 	unsigned int count = 0;
 
-	while ((ret = ps3_hard_recovery_request(instance)) == -PS3_RETRY) {
+	while ((ret = ps3_hard_recovery_request(instance, is_host_reset)) == -PS3_RETRY) {
 		if (count++ == ps3_use_hard_reset_max_retry()) {
 			ret = -PS3_FAILED;
 			break;
 		}
+
+		while (1) {
+			if (ps3_host_reset_state_check(instance, is_host_reset))
+				break;
+			ps3_msleep(1000);
+		}
+
 		ps3_mdelay(10);
 	}
 
 	return ret;
 }
-int ps3_recovery_request_with_retry(struct ps3_instance *instance)
+
+int ps3_recovery_request_with_retry(struct ps3_instance *instance,
+	unsigned char is_host_reset)
 {
 	int ret = PS3_SUCCESS;
 	unsigned int count = 0;
 
-	while ((ret = ps3_recovery_request(instance)) == -PS3_RETRY) {
+	while ((ret = ps3_recovery_request(instance, is_host_reset)) == -PS3_RETRY) {
 		if (count++ == ps3_use_hard_reset_max_retry()) {
 			ret = -PS3_FAILED;
 			break;
 		}
+
+		while (1) {
+			if (ps3_host_reset_state_check(instance, is_host_reset))
+				break;
+			ps3_msleep(1000);
+		}
+
 		ps3_mdelay(10);
 	}
 

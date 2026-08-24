@@ -13,7 +13,7 @@ static inline char const *mgrEvtCodeTrans(unsigned int opCode)
 	unsigned int typeIndex = 0;
 	unsigned int codeIndex = 0;
 	const char *pEvtTransStr = NULL;
-	static char const *pEvtCodeInfo[MGR_EVT_EXTEND_TYPE_START][MGR_EVT_TYPE_OFFSET] = {
+	static const char *pEvtCodeInfo[MGR_EVT_EXTEND_TYPE_START][MGR_EVT_TYPE_OFFSET] = {
 		{
 			"MGR_EVT_SAS_START",
 			"MGR_EVT_SAS_EXPANDER_IN",
@@ -65,6 +65,7 @@ static inline char const *mgrEvtCodeTrans(unsigned int opCode)
 			"MGR_EVT_MULITPILE_VD_OUT",
 			"MGR_EVT_VD_UNLOCK",
 			"MGR_EVT_VD_OFFLINE",
+			"MGR_EVT_VD_CHANGE",
 		},
 		{
 			"MGR_EVT_CTRL_INFO_START",
@@ -408,7 +409,7 @@ static inline char const *mgrEvtCodeTrans(unsigned int opCode)
 		},
 	};
 
-	static char const *pEvtCodeExtInfo[PS3_EVT_EXT_NR][MGR_EVT_TYPE_EXTEND_OFFSET] = {
+	static const char *pEvtCodeExtInfo[PS3_EVT_EXT_NR][MGR_EVT_TYPE_EXTEND_OFFSET] = {
 		{
 			"MGR_EVT_PD_ATTR_EXTEND_START_START",
 			"MGR_EVT_PD_ERASE_ABORT",

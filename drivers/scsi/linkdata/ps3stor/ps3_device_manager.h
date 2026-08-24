@@ -237,7 +237,13 @@ struct ps3_scsi_priv_data {
 	unsigned char task_reset_timeout;
 	unsigned char encl_id;
 	unsigned char phy_id;
+#ifdef PS3_NCQ_PRIO_SUPPORT
+	unsigned char ncq_prio_support:1;
+	unsigned char ncq_prio_enable:1;
+	unsigned char reserved:6;
+#else
 	unsigned char reserved;
+#endif
 	atomic_t rd_io_outstand;
 	atomic_t wr_io_outstand;
 	atomic_t r1x_read_cmd_swap_total_cnt;
@@ -304,7 +310,8 @@ struct ps3_pd_entry {
 			unsigned char support_ncq : 1;
 			unsigned char protect : 1;
 			unsigned char is_direct_disable : 1;
-			unsigned char reserved : 5;
+			unsigned char support_ncq_prio:1;
+			unsigned char reserved : 4;
 		};
 		unsigned char pd_flags;
 	};
@@ -478,7 +485,12 @@ int ps3_scsi_slave_alloc(struct scsi_device *sdev);
 
 void ps3_scsi_slave_destroy(struct scsi_device *sdev);
 
+#if defined(PS3_SLAVE_CONFIG_SUPPORT)
 int ps3_scsi_slave_configure(struct scsi_device *sdev);
+#else
+int ps3_scsi_slave_configure(struct scsi_device *sdev,
+	struct queue_limits *lim);
+#endif
 #endif
 static inline unsigned char ps3_check_pd_is_vd_member(unsigned char config_flag)
 {
@@ -552,13 +564,33 @@ static inline unsigned char ps3_is_hdd_pd(unsigned char dev_type)
 		dev_type == PS3_DEV_TYPE_SATA_HDD);
 }
 
+static inline unsigned char ps3_is_hdd_vd(const struct PS3VDEntry *vd_entry)
+{
+	return (!vd_entry->isNvme && !vd_entry->isSsd);
+}
+
+static inline unsigned char ps3_vd_member_state_get(const struct PS3VDEntry *vd_entry,
+		unsigned char span_idx, unsigned char span_pd_idx)
+{
+	return vd_entry->span[span_idx].extent[span_pd_idx].state;
+}
+
 void ps3_vd_busy_scale_get(struct PS3VDEntry *vd_entry);
+#if defined(PS3_SLAVE_CONFIG_SUPPORT)
 void ps3_sdev_bdi_stable_writes_set(struct ps3_instance *instance,
-				    struct scsi_device *sdev);
+	struct scsi_device *sdev);
 
 void ps3_sdev_bdi_stable_writes_clear(struct ps3_instance *instance,
-				      struct scsi_device *sdev);
+	struct scsi_device *sdev);
 
 int ps3_sdev_bdi_stable_writes_get(struct scsi_device *sdev);
+#endif
+
+void ps3_update_max_sectors(struct ps3_instance *instance,
+	unsigned char channel, unsigned short target, struct scsi_device *sdev);
+
+#ifdef PS3_NCQ_PRIO_SUPPORT
+ssize_t ps3_dev_ncq_prio_enable_stor(struct device *dev, const char *buf);
+#endif
 
 #endif

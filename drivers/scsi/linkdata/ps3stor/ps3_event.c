@@ -213,7 +213,8 @@ static void ps3_event_resubscribe(struct ps3_instance *instance,
 	struct PS3MgrEvent *event_req_info = NULL;
 
 
-	if (!instance->state_machine.is_load) {
+	if (!instance->state_machine.is_load ||
+		instance->is_suspend) {
 		LOG_WARN_IN_IRQ(
 			instance,
 			"hno:%u instance is suspend or instance unload!\n",
@@ -286,6 +287,10 @@ ps3_event_proc_without_details(struct ps3_instance *instance,
 	}
 #endif
 	while (mask_bit != 0) {
+		if (!instance->state_machine.is_load) {
+			LOG_INFO("hno:%u  instance unload, break\n", PS3_HOST(instance));
+			break;
+		}
 		if (event_type != 0) {
 			LOG_INFO(
 				"hno:%u Event type %s report without details!\n",
@@ -309,7 +314,6 @@ ps3_event_proc_without_details(struct ps3_instance *instance,
 		mask_bit = mask_bit << 1;
 		event_type = event_info->eventTypeMap & mask_bit;
 	}
-
 	return event_proc_result_bitmap;
 }
 
@@ -374,6 +378,7 @@ static unsigned int ps3_event_proc_with_details(struct ps3_instance *instance,
 	event_proc_result_bitmap |= ps3_sas_update_detail_proc(
 		instance, event_info->eventDetail, event_info->eventCount);
 #endif
+
 	event_proc_result_bitmap = ps3_dev_update_detail_proc(
 		instance, event_info->eventDetail, event_info->eventCount);
 
@@ -419,12 +424,16 @@ void ps3_event_handle(struct ps3_event_delay_work *ps3_delay_work)
 	int ret;
 
 	if (instance->event_context.event_cmd == NULL) {
+		if (ps3_atomic_read(&instance->event_context.subwork) != 0)
+			ps3_atomic_dec(&instance->event_context.subwork);
 		LOG_WARN("trace_id[0x%llx], hno:%u Event is unsubscribed\n",
 			 cmd->trace_id, PS3_HOST(instance));
 		return;
 	}
 
-	if (!instance->state_machine.is_load) {
+	if (!instance->state_machine.is_load || instance->is_suspend) {
+		if (ps3_atomic_read(&instance->event_context.subwork) != 0)
+			ps3_atomic_dec(&instance->event_context.subwork);
 		LOG_WARN(
 			"trace_id[0x%llx], hno:%u instance is suspend or instance unload!\n",
 			cmd->trace_id, PS3_HOST(instance));
@@ -446,6 +455,14 @@ void ps3_event_handle(struct ps3_event_delay_work *ps3_delay_work)
 			cmd->trace_id, PS3_HOST(instance));
 		event_proc_result_bitmap |=
 			ps3_event_proc_with_details(instance, event_info, cmd);
+	}
+
+	if (!instance->state_machine.is_load) {
+		if (ps3_atomic_read(&instance->event_context.subwork) != 0)
+			ps3_atomic_dec(&instance->event_context.subwork);
+		LOG_INFO("trace_id[0x%llx], hno:%u instance is suspend or instance unload!\n",
+			cmd->trace_id, PS3_HOST(instance));
+		return;
 	}
 
 	if (event_info->eventTypeMap) {
@@ -625,7 +642,8 @@ int ps3_event_subscribe(struct ps3_instance *instance)
 		goto l_out;
 	}
 
-	if (!instance->state_machine.is_load) {
+	if (!instance->state_machine.is_load ||
+		instance->is_suspend) {
 		LOG_WARN_IN_IRQ(
 			instance,
 			"hno:%u instance is suspend or instance unload!\n",
@@ -918,7 +936,8 @@ int ps3_event_service(struct ps3_cmd *cmd, unsigned short reply_flags)
 	ps3_spin_unlock_irqrestore(&instance->recovery_context->recovery_lock,
 				   flags1);
 
-	if (!instance->state_machine.is_load) {
+	if (!instance->state_machine.is_load ||
+		instance->is_suspend) {
 		LOG_INFO_IN_IRQ(
 			instance,
 			"trace_id[0x%llx], hno:%u instance is suspend or instance unload!\n",
@@ -1050,7 +1069,8 @@ int ps3_webSubscribe_service(struct ps3_cmd *cmd, unsigned short reply_flags)
 		goto l_out;
 	}
 
-	if (!instance->state_machine.is_load) {
+	if (!instance->state_machine.is_load ||
+		instance->is_suspend) {
 		LOG_INFO_IN_IRQ(
 			instance,
 			"trace_id[0x%llx], hno:%u instance is suspend or instance unload!\n",

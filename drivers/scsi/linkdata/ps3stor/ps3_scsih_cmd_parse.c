@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
 /* Copyright (c) LD. */
-#ifndef _WINDOWS
 #include <scsi/scsi_cmnd.h>
 #include "ps3_scsih.h"
 #include "ps3_module_para.h"
-#endif
 
 #include "ps3_scsih_cmd_parse.h"
 #include "ps3_err_def.h"
@@ -13,21 +11,65 @@
 #include "ps3_driver_log.h"
 #include "ps3_kernel_version.h"
 
+#ifndef PS3_WRITE_VERIFY_16
 #define PS3_WRITE_VERIFY_16 (0x8e)
+#endif
+
+#ifndef PS3_WRITE_VERIFY_32
 #define PS3_WRITE_VERIFY_32 (0x0C)
+#endif
+
+#ifndef ORWRITE_16
 #define ORWRITE_16 (0x8B)
+#endif
+
+#ifndef ORWRITE_32
 #define ORWRITE_32 (0x0E)
+#endif
+
+#ifndef PRE_FETCH_16
 #define PRE_FETCH_16 (0x90)
+#endif
+
+#ifndef READ_BUFFER_16
 #define READ_BUFFER_16 (0X9B)
+#endif
+
+#ifndef REPORT_REFERRALS
 #define REPORT_REFERRALS (0x9E)
+#endif
+
+#ifndef SANITIZE
 #define SANITIZE (0x48)
+#endif
+
+#ifndef WRITE_ATOMIC_16
 #define WRITE_ATOMIC_16 (0x9C)
+#endif
+
+#ifndef WRITE_ATOMIC_32
 #define WRITE_ATOMIC_32 (0x0F)
+#endif
+
+#ifndef WRITE_SCATTERED_16
 #define WRITE_SCATTERED_16 (0x12)
+#endif
+
+#ifndef WRITE_SCATTERED_32
 #define WRITE_SCATTERED_32 (0x0011)
+#endif
+
+#ifndef WRITE_STREAM_16
 #define WRITE_STREAM_16 (0x9A)
+#endif
+
+#ifndef WRITE_STREAM_32
 #define WRITE_STREAM_32 (0x10)
+#endif
+
+#ifndef WRITE_LONG_16
 #define WRITE_LONG_16 (0x11)
+#endif
 
 unsigned char ps3_scsih_is_rw_type(unsigned char type)
 {

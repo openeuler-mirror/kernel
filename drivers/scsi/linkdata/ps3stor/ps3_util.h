@@ -11,6 +11,7 @@
 #include "htp_v200/ps3_htp_def.h"
 #include "ps3_driver_log.h"
 #include "ps3_platform_utils.h"
+#include "ps3_kernel_version.h"
 
 #define PS3_DRV_MAX(x, y) ((x) > (y) ? (x) : (y))
 
@@ -430,6 +431,24 @@ ps3_utility_div64_32(unsigned long long dividend, unsigned int divisor)
 
 	return d;
 }
+
+#if defined(PS3_STRSCPY)
+#define PS3_STRCPY(dest, src, n) strscpy(dest, src, n)
+#else
+#define PS3_STRCPY(dest, src, n) strncpy(dest, src, n)
+#endif
+
+#if defined(PS3_KMAP_LOCAL)
+#define PS3_KMAP(page) kmap_local_page(page)
+#else
+#define PS3_KMAP(page) kmap(page)
+#endif
+
+#if defined(PS3_KUNMAP_LOCAL)
+#define PS3_KUNMAP(page, buff) kunmap_local(buff)
+#else
+#define PS3_KUNMAP(page, buff) kunmap(page)
+#endif
 
 #if defined(CONFIG_64BIT)
 #define PS3_DIV64_32(dividend, divisor) ((dividend) / (divisor))

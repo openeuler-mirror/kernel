@@ -16,6 +16,7 @@
 
 #include <scsi/scsi_host.h>
 #include <scsi/scsi_tcq.h>
+#include <linux/blkdev.h>
 #endif
 
 #include "ps3_device_manager.h"
@@ -27,9 +28,19 @@
 #include "ps3_module_para.h"
 #include "ps3_r1x_write_lock.h"
 #include "ps3_qos.h"
+#include "ps3_debug.h"
 
+#if defined(PS3_SLAVE_CONFIG_SUPPORT)
 static void ps3_nvme_attr_set(const struct ps3_instance *instance,
 			      struct scsi_device *sdev);
+#define PS3_SDEV_Q_DMA_ALIGN(q, mask) blk_queue_dma_alignment((q), (mask))
+#else
+static void ps3_nvme_attr_set(const struct ps3_instance *instance,
+	struct scsi_device *sdev, struct queue_limits *lim);
+#define PS3_SDEV_Q_DMA_ALIGN(q, mask) ((q)->limits.dma_alignment = (mask))
+#endif
+static inline unsigned int ps3_vd_max_sectors_get(const struct PS3VDEntry *p_entry);
+static inline unsigned int ps3_pd_max_sectors_get(const struct ps3_pd_entry *p_entry);
 
 static int ps3_dev_channel_init(struct ps3_instance *instance)
 {
@@ -377,7 +388,7 @@ void ps3_vd_info_show(const struct ps3_instance *instance,
 		"\ttaskResetTimeout[%u], mapBlock[%llu], mapBlockVer[%u]\n"
 		"\tmaxIOSize[%u], devQueDepth[%u], capacity[%llu], isNvme[%u], isSsd[%u]\n"
 		"\tvirtDiskSeq[%d] bdev_bdi_cap[%d], umapBlkDescCnt[%d], umapNumblk[%d]\n"
-		"\tnormalQuota[%u], directQuota[%u] dev_busy_scale[%u]\n",
+		"\tnormalQuota[%u], directQuota[%u] dev_busy_scale[%u] seq_enable[%u %u]\n",
 		PS3_HOST(instance), channel, target_id, vd_id,
 		vd_entry->diskPos.diskMagicNum,
 		(vd_entry->isHidden) ? "true" : "false",
@@ -396,7 +407,7 @@ void ps3_vd_info_show(const struct ps3_instance *instance,
 		vd_entry->isSsd, vd_entry->virtDiskSeq, vd_entry->bdev_bdi_cap,
 		vd_entry->umapBlkDescCnt, vd_entry->umapNumblk,
 		vd_entry->normalQuota, vd_entry->directQuota,
-		vd_entry->dev_busy_scale);
+		vd_entry->dev_busy_scale, vd_entry->isReadNeedSeq, vd_entry->isWriteNeedSeq);
 
 	for (i = 0; i < vd_entry->spanCount; i++) {
 		LOG_INFO_IN_IRQ(
@@ -431,28 +442,28 @@ static void ps3_pd_info_show(const struct ps3_instance *instance,
 			     const struct ps3_pd_entry *pd_entry)
 {
 	LOG_INFO("hno:%u  disk detail info - pd[%u:%u:%u], magicNum[%#x]\n"
-		 "\tstate[%s], dev_type[%s], config_flag[%s], pd_flags[0x%02x]\n"
-		 "\tRWCT[%u], scsi_interface_type[%u]\n"
-		 "\ttask_abort_timeout[%u], task_reset_timeout[%u]\n"
-		 "\tmax_io_size[%u], dev_queue_depth[%u]\n"
-		 "\tsector_size[%u], encl_id[%u], pd phy_id[%u]\n"
-		 "\tdma_addr_alignment[%u], dma_len_alignment[%u]\n"
-		 "\tnormal_quota[%u] direct_quota[%u] is_direct_disable[%u]\n",
-		 PS3_HOST(instance), PS3_CHANNEL(&pd_entry->disk_pos),
-		 PS3_TARGET(&pd_entry->disk_pos), PS3_PDID(&pd_entry->disk_pos),
-		 pd_entry->disk_pos.diskMagicNum,
-		 getDeviceStateName((enum DeviceState)pd_entry->state),
-		 namePS3DevType((enum PS3DevType)pd_entry->dev_type),
-		 getPdStateName((enum MicPdState)pd_entry->config_flag,
-				instance->is_raid),
-		 pd_entry->pd_flags, pd_entry->RWCT,
-		 pd_entry->scsi_interface_type, pd_entry->task_abort_timeout,
-		 pd_entry->task_reset_timeout, pd_entry->max_io_size,
-		 pd_entry->dev_queue_depth, pd_entry->sector_size,
-		 pd_entry->encl_id, pd_entry->phy_id,
-		 pd_entry->dma_addr_alignment, pd_entry->dma_len_alignment,
-		 pd_entry->normal_quota, pd_entry->direct_quota,
-		 pd_entry->is_direct_disable);
+		"\tstate[%s], dev_type[%s], config_flag[%s], pd_flags[0x%02x]\n"
+		"\tRWCT[%u], scsi_interface_type[%u]\n"
+		"\ttask_abort_timeout[%u], task_reset_timeout[%u]\n"
+		"\tmax_io_size[%u], dev_queue_depth[%u]\n"
+		"\tsector_size[%u], encl_id[%u], pd phy_id[%u]\n"
+		"\tdma_addr_alignment[%u], dma_len_alignment[%u]\n"
+		"\tnormal_quota[%u], direct_quota[%u], is_direct_disable[%u], ncq_prio[%u]\n",
+		PS3_HOST(instance), PS3_CHANNEL(&pd_entry->disk_pos),
+		PS3_TARGET(&pd_entry->disk_pos), PS3_PDID(&pd_entry->disk_pos),
+		pd_entry->disk_pos.diskMagicNum,
+		getDeviceStateName((enum DeviceState)pd_entry->state),
+		namePS3DevType((enum PS3DevType)pd_entry->dev_type),
+		getPdStateName((enum MicPdState)pd_entry->config_flag,
+			instance->is_raid),
+		pd_entry->pd_flags, pd_entry->RWCT,
+		pd_entry->scsi_interface_type, pd_entry->task_abort_timeout,
+		pd_entry->task_reset_timeout, pd_entry->max_io_size,
+		pd_entry->dev_queue_depth, pd_entry->sector_size,
+		pd_entry->encl_id, pd_entry->phy_id,
+		pd_entry->dma_addr_alignment, pd_entry->dma_len_alignment,
+		pd_entry->normal_quota, pd_entry->direct_quota,
+		pd_entry->is_direct_disable, pd_entry->support_ncq_prio);
 }
 
 static inline void ps3_pd_info_localed(const struct ps3_instance *instance,
@@ -479,6 +490,7 @@ static inline void ps3_pd_info_localed(const struct ps3_instance *instance,
 		ps3_pd_dma_alignment_calc(pd_info->dmaLenAlignShift);
 	local_entry->normal_quota = pd_info->normalQuota;
 	local_entry->direct_quota = pd_info->directQuota;
+	local_entry->support_ncq_prio = pd_info->supportNcqPrio;
 
 	if (unlikely(local_entry->sector_size == 0)) {
 		LOG_WARN("pd[%u:%u] sector_size is 0\n",
@@ -604,8 +616,7 @@ int ps3_dev_mgr_vd_info_subscribe(struct ps3_instance *instance)
 {
 	int ret = PS3_SUCCESS;
 
-	LOG_FILE_INFO("hno:%u %s\n",
-		      PS3_HOST(instance), __func__);
+	LOG_FILE_INFO("hno:%u %s\n", PS3_HOST(instance), __func__);
 
 	if (PS3_MAX_VD_COUNT(instance) <= 0)
 		goto l_out;
@@ -846,36 +857,33 @@ l_out:
 	return;
 }
 
-#ifndef _WINDOWS
 void ps3_change_sdev_max_sector(struct ps3_instance *instance,
 				struct PS3VDEntry *vd_entry)
 {
 	struct scsi_device *sdev = NULL;
 	struct PS3Dev *p_vd = &vd_entry->diskPos.diskDev.ps3Dev;
+	unsigned int max_hw_sectors = 0;
 
 	sdev = ps3_scsi_device_lookup(instance, p_vd->softChan, p_vd->devID, 0);
 	if (sdev != NULL) {
-		if (vd_entry->sectorSize == PS3_SECTORSIZE_512B) {
-			blk_queue_max_hw_sectors(sdev->request_queue,
-						 vd_entry->maxIOSize);
-		} else {
-			blk_queue_max_hw_sectors(
-				sdev->request_queue,
-				vd_entry->maxIOSize
-					<< (ilog2(vd_entry->sectorSize) -
-					    PS3_512B_SHIFT));
-		}
+		if (vd_entry->sectorSize == PS3_SECTORSIZE_512B)
+			max_hw_sectors = vd_entry->maxIOSize;
+		else
+			max_hw_sectors = vd_entry->maxIOSize <<
+				(ilog2(vd_entry->sectorSize) - PS3_512B_SHIFT);
 
-		LOG_INFO_IN_IRQ(
-			instance,
+#if defined(PS3_SLAVE_CONFIG_SUPPORT)
+		if (queue_max_hw_sectors(sdev->request_queue) != max_hw_sectors)
+			blk_queue_max_hw_sectors(sdev->request_queue, max_hw_sectors);
+#endif
+		LOG_INFO_IN_IRQ(instance,
 			"hno:%u vd[%u:%u] max sector num change to:%d\n",
 			PS3_HOST(instance), p_vd->softChan, p_vd->devID,
-			vd_entry->maxIOSize);
+			max_hw_sectors);
 
 		ps3_scsi_device_put(instance, sdev);
 	}
 }
-#endif
 int ps3_vd_info_get_all(struct ps3_instance *instance)
 {
 	int ret = -PS3_FAILED;
@@ -1048,6 +1056,9 @@ int ps3_dev_mgr_pd_list_get(struct ps3_instance *instance)
 	struct ps3_dev_context *p_dev_ctx = &instance->dev_context;
 	struct PS3DevList *p_pd_list = p_dev_ctx->pd_list_buf;
 	struct PS3Dev *p_dev = NULL;
+#if defined(PS3_DISALLOW_ZERO_ARRAY)
+	union PS3Device *devs = p_pd_list->devs;
+#endif
 
 	ret = ps3_pd_list_get(instance);
 	if (ret != PS3_SUCCESS) {
@@ -1064,9 +1075,13 @@ int ps3_dev_mgr_pd_list_get(struct ps3_instance *instance)
 		 p_pd_list->count);
 
 	for (i = 0; i < p_pd_list->count; i++) {
+#if defined(PS3_DISALLOW_ZERO_ARRAY)
+		p_dev = PS3_DEV(&devs[i].pd.diskPos);
+		if (PS3_DEV_INVALID(devs[i].pd.diskPos)) {
+#else
 		p_dev = PS3_DEV(&p_pd_list->devs[i].pd.diskPos);
-
 		if (PS3_PDID_INVALID(&p_pd_list->devs[i].pd.diskPos)) {
+#endif
 			LOG_WARN("hno:%u, get pd list %d dev pdid is 0\n",
 				 PS3_HOST(instance), i);
 			continue;
@@ -1083,12 +1098,18 @@ int ps3_dev_mgr_pd_list_get(struct ps3_instance *instance)
 			"hno:%u, pd list %d dev[%u:%u:%u], magic[%#x], state[%s]\n",
 			PS3_HOST(instance), i, p_dev->softChan, p_dev->devID,
 			p_dev->phyDiskID,
+#if defined(PS3_DISALLOW_ZERO_ARRAY)
+			devs[i].pd.diskPos.diskMagicNum,
+			getDeviceStateName((enum DeviceState)devs[i].pd.diskState));
+			p_dev_ctx->pd_pool.devs[p_dev->softChan][p_dev->devID].pd = devs[i].pd;
+#else
 			p_pd_list->devs[i].pd.diskPos.diskMagicNum,
 			getDeviceStateName((enum DeviceState)p_pd_list->devs[i]
 						   .pd.diskState));
 
 		p_dev_ctx->pd_pool.devs[p_dev->softChan][p_dev->devID].pd =
 			p_pd_list->devs[i].pd;
+#endif
 	}
 l_out:
 	return ret;
@@ -1101,6 +1122,9 @@ int ps3_dev_mgr_vd_list_get(struct ps3_instance *instance)
 	struct ps3_dev_context *p_dev_ctx = &instance->dev_context;
 	struct PS3DevList *p_vd_list = p_dev_ctx->vd_list_buf;
 	struct PS3Dev *p_dev = NULL;
+#if defined(PS3_DISALLOW_ZERO_ARRAY)
+	union PS3Device *devs = p_vd_list->devs;
+#endif
 
 	ret = ps3_vd_list_get(instance);
 	if (ret != PS3_SUCCESS) {
@@ -1117,9 +1141,13 @@ int ps3_dev_mgr_vd_list_get(struct ps3_instance *instance)
 		 p_vd_list->count);
 
 	for (i = 0; i < p_vd_list->count; i++) {
+#if defined(PS3_DISALLOW_ZERO_ARRAY)
+		p_dev = PS3_DEV(&devs[i].vd.diskPos);
+		if (PS3_DEV_INVALID(devs[i].vd.diskPos)) {
+#else
 		p_dev = PS3_DEV(&p_vd_list->devs[i].vd.diskPos);
-
 		if (PS3_VDID_INVALID(&p_vd_list->devs[i].vd.diskPos)) {
+#endif
 			LOG_WARN("hno:%u, get vd list %d vdid is 0\n",
 				 PS3_HOST(instance), i);
 			continue;
@@ -1135,10 +1163,15 @@ int ps3_dev_mgr_vd_list_get(struct ps3_instance *instance)
 		LOG_INFO("hno:%u, vd list %d dev[%u:%u:%u], magic[%#x]\n",
 			 PS3_HOST(instance), i, p_dev->softChan, p_dev->devID,
 			 p_dev->virtDiskID,
-			 p_vd_list->devs[i].vd.diskPos.diskMagicNum);
+#if defined(PS3_DISALLOW_ZERO_ARRAY)
+			devs[i].vd.diskPos.diskMagicNum);
+			p_dev_ctx->vd_pool.devs[p_dev->softChan][p_dev->devID].vd = devs[i].vd;
+#else
+			p_vd_list->devs[i].vd.diskPos.diskMagicNum);
 
 		p_dev_ctx->vd_pool.devs[p_dev->softChan][p_dev->devID].vd =
 			p_vd_list->devs[i].vd;
+#endif
 	}
 l_out:
 	return ret;
@@ -1500,7 +1533,6 @@ l_out:
 	return queue_depth;
 }
 
-#ifndef _WINDOWS
 #if defined(PS3_CHANGE_QUEUE_DEPTH)
 int ps3_change_queue_depth(struct scsi_device *sdev, int queue_depth,
 			   int reason)
@@ -1579,7 +1611,7 @@ static inline void ps3_init_vd_stream(struct ps3_vd_stream_detect *vdsd)
 		}
 	}
 }
-int ps3_scsi_private_init_pd(struct scsi_device *sdev)
+static int ps3_scsi_private_init_pd(struct scsi_device *sdev)
 {
 	int ret = PS3_SUCCESS;
 	struct ps3_scsi_priv_data *p_priv_data = NULL;
@@ -1628,6 +1660,10 @@ int ps3_scsi_private_init_pd(struct scsi_device *sdev)
 	p_priv_data->task_manager_busy = 0;
 	p_priv_data->encl_id = p_pd_entry->encl_id;
 	p_priv_data->phy_id = p_pd_entry->phy_id;
+#ifdef PS3_NCQ_PRIO_SUPPORT
+	p_priv_data->ncq_prio_support = p_pd_entry->support_ncq_prio;
+	p_priv_data->ncq_prio_enable = 0;
+#endif
 	ps3_atomic_set(&p_priv_data->rd_io_outstand, PS3_CMD_STAT_INIT_VALUE);
 	ps3_atomic_set(&p_priv_data->wr_io_outstand, PS3_CMD_STAT_INIT_VALUE);
 	ps3_atomic_set(&p_priv_data->r1x_read_cmd_swap_total_cnt,
@@ -1635,10 +1671,8 @@ int ps3_scsi_private_init_pd(struct scsi_device *sdev)
 	ps3_atomic_set(&p_priv_data->r1x_read_cmd_swap_res_cnt,
 		       PS3_CMD_STAT_INIT_VALUE);
 	p_qos_pd_mgr = ps3_qos_pd_mgr_init(instance, p_pd_entry);
-	if (p_qos_pd_mgr != NULL &&
-	    p_qos_pd_mgr->dev_type != p_pd_entry->dev_type) {
+	if (p_qos_pd_mgr != NULL && PS3_NEED_UPDATE_PD_QUOTAS(p_qos_pd_mgr, p_pd_entry))
 		ps3_qos_pd_rsc_init(p_qos_pd_mgr, p_pd_entry);
-	}
 	p_priv_data->dev_deling = PS3_FALSE;
 	p_priv_data->swap_flag = PS3_FALSE;
 	sdev->hostdata = p_priv_data;
@@ -1661,7 +1695,7 @@ void ps3_vd_busy_scale_get(struct PS3VDEntry *vd_entry)
 	vd_entry->dev_busy_scale = scale;
 }
 
-int ps3_scsi_private_init_vd(struct scsi_device *sdev)
+static int ps3_scsi_private_init_vd(struct scsi_device *sdev)
 {
 	int ret = PS3_SUCCESS;
 	struct ps3_scsi_priv_data *p_priv_data = NULL;
@@ -1860,18 +1894,22 @@ int ps3_scsi_slave_alloc(struct scsi_device *sdev)
 		dma_len_alignment = p_pd_entry->dma_len_alignment;
 	}
 
-	blk_queue_dma_alignment(sdev->request_queue, PS3_SCSI_ALINNMENT_MASK);
+	PS3_SDEV_Q_DMA_ALIGN(sdev->request_queue, PS3_SCSI_ALINNMENT_MASK);
 	if (dma_addr_alignment) {
-		blk_queue_dma_alignment(sdev->request_queue,
-					dma_addr_alignment - 1);
+		PS3_SDEV_Q_DMA_ALIGN(sdev->request_queue, dma_addr_alignment - 1);
 	}
 
 	if (dma_len_alignment) {
 #if defined(PS3_BLK_DMA_PAD)
 		blk_queue_dma_pad(sdev->request_queue, dma_len_alignment - 1);
 #else
+#if defined(PS3_SLAVE_CONFIG_SUPPORT)
 		blk_queue_update_dma_pad(sdev->request_queue,
 					 dma_len_alignment - 1);
+#else
+		sdev->request_queue->limits.dma_pad_mask =
+			dma_len_alignment - 1;
+#endif
 #endif
 	}
 
@@ -1985,8 +2023,13 @@ l_out:
 	return ret;
 }
 
+#if defined(PS3_SLAVE_CONFIG_SUPPORT)
 static void ps3_nvme_attr_set(const struct ps3_instance *instance,
 			      struct scsi_device *sdev)
+#else
+static void ps3_nvme_attr_set(const struct ps3_instance *instance,
+	struct scsi_device *sdev, struct queue_limits *lim)
+#endif
 {
 	unsigned int page_size = instance->cmd_attr.nvme_page_size;
 	unsigned int align_mask =
@@ -1998,11 +2041,20 @@ static void ps3_nvme_attr_set(const struct ps3_instance *instance,
 #else
 	blk_queue_flag_set(QUEUE_FLAG_NOMERGES, sdev->request_queue);
 #endif
+#if defined(PS3_SLAVE_CONFIG_SUPPORT)
 	blk_queue_virt_boundary(sdev->request_queue, align_mask);
+#else
+	lim->virt_boundary_mask = align_mask;
+#endif
 }
 
+#if defined(PS3_SLAVE_CONFIG_SUPPORT)
 static inline void ps3_nvme_pd_attr_set(struct scsi_device *sdev,
-					const struct ps3_pd_entry *p_pd_entry)
+	const struct ps3_pd_entry *p_pd_entry)
+#else
+static inline void ps3_nvme_pd_attr_set(struct scsi_device *sdev,
+	const struct ps3_pd_entry *p_pd_entry, struct queue_limits *lim)
+#endif
 {
 	struct ps3_instance *instance =
 		(struct ps3_instance *)sdev->host->hostdata;
@@ -2010,19 +2062,25 @@ static inline void ps3_nvme_pd_attr_set(struct scsi_device *sdev,
 
 	if (p_pd_entry->max_io_size != 0 && p_pd_entry->sector_size != 0) {
 		sector_count = p_pd_entry->max_io_size >> PS3_512B_SHIFT;
+#if defined(PS3_SLAVE_CONFIG_SUPPORT)
 		blk_queue_max_hw_sectors(sdev->request_queue, sector_count);
+#else
+		lim->max_hw_sectors = sector_count;
+#endif
 	}
 
-	LOG_INFO(
-		"nvme attr max_io_size[%u], sector_size[%u], sector_count[%u]\n",
+	LOG_INFO("nvme max_io_size[%u], sector_size[%u], sector_count[%u]\n",
 		p_pd_entry->max_io_size, p_pd_entry->sector_size, sector_count);
 
+#if defined(PS3_SLAVE_CONFIG_SUPPORT)
 	ps3_nvme_attr_set(instance, sdev);
+#else
+	ps3_nvme_attr_set(instance, sdev, lim);
+#endif
 }
 
 static inline void ps3_set_queue_depth(struct scsi_device *sdev,
-				       unsigned char dev_type,
-				       unsigned int queue_depth)
+	unsigned char dev_type, unsigned int queue_depth)
 {
 	int dev_queue_depth = queue_depth;
 	struct ps3_instance *instance =
@@ -2037,6 +2095,7 @@ static inline void ps3_set_queue_depth(struct scsi_device *sdev,
 	scsi_change_queue_depth(sdev, dev_queue_depth);
 #endif
 }
+#if defined(PS3_SLAVE_CONFIG_SUPPORT)
 void ps3_sdev_bdi_stable_writes_set(struct ps3_instance *instance,
 				    struct scsi_device *sdev)
 {
@@ -2074,11 +2133,11 @@ int ps3_sdev_bdi_stable_writes_get(struct scsi_device *sdev)
 #endif
 }
 
-void ps3_sdev_bdi_stable_writes_clear(struct ps3_instance *instance,
+void ps3_sdev_bdi_stable_writes_clear(struct ps3_instance *ins,
 				      struct scsi_device *sdev)
 {
 #if defined(PS3_BLK_QUEUE_FLAG_CLEAR)
-	(void)instance;
+	(void)ins;
 	blk_queue_flag_clear(QUEUE_FLAG_STABLE_WRITES, sdev->request_queue);
 #else
 #if defined(PS3_BACK_DEV_INFO)
@@ -2086,20 +2145,40 @@ void ps3_sdev_bdi_stable_writes_clear(struct ps3_instance *instance,
 		~BDI_CAP_STABLE_WRITES;
 	;
 	LOG_INFO("hno:%u, dev type[%u:%u] capabilities[0x%x]\n",
-		 PS3_HOST(instance), sdev->channel, sdev->id,
+		 PS3_HOST(ins), sdev->channel, sdev->id,
 		 sdev->request_queue->backing_dev_info.capabilities);
 #else
 	sdev->request_queue->backing_dev_info->capabilities &=
 		~BDI_CAP_STABLE_WRITES;
 	;
 	LOG_INFO("hno:%u, dev type[%u:%u] capabilities[0x%x]\n",
-		 PS3_HOST(instance), sdev->channel, sdev->id,
+		 PS3_HOST(ins), sdev->channel, sdev->id,
 		 sdev->request_queue->backing_dev_info->capabilities);
 #endif
 #endif
 }
 
+static inline void ps3_stable_writes_set(struct ps3_instance *instance,
+	struct scsi_device *sdev, struct queue_limits *lim)
+{
+	(void)lim;
+	ps3_sdev_bdi_stable_writes_set(instance, sdev);
+}
+#else
+static inline void ps3_stable_writes_set(struct ps3_instance *instance,
+	struct scsi_device *sdev, struct queue_limits *lim)
+{
+	(void)sdev;
+	if (lim != NULL)
+		lim->features |= BLK_FEAT_STABLE_WRITES;
+}
+#endif
+
+#if defined(PS3_SLAVE_CONFIG_SUPPORT)
 int ps3_scsi_slave_configure(struct scsi_device *sdev)
+#else
+int ps3_scsi_slave_configure(struct scsi_device *sdev, struct queue_limits *lim)
+#endif
 {
 	int ret = PS3_SUCCESS;
 	struct ps3_scsi_priv_data *p_priv_data = NULL;
@@ -2109,6 +2188,7 @@ int ps3_scsi_slave_configure(struct scsi_device *sdev)
 	unsigned int dma_addr_alignment = 0;
 	unsigned int dma_len_alignment = 0;
 	unsigned char io_tmo = PS3_SCSI_CMD_TIMEOUT_DEFAULT;
+	unsigned int max_hw_sectors = 0;
 
 	struct ps3_instance *instance =
 		(struct ps3_instance *)sdev->host->hostdata;
@@ -2152,7 +2232,11 @@ int ps3_scsi_slave_configure(struct scsi_device *sdev)
 		dma_len_alignment =
 			ps3_pd_dma_alignment_calc(p_vd_entry->dmaLenAlignShift);
 		if (p_vd_entry->bdev_bdi_cap & PS3_STABLE_WRITES_MASK)
-			ps3_sdev_bdi_stable_writes_set(instance, sdev);
+#if defined(PS3_SLAVE_CONFIG_SUPPORT)
+			ps3_stable_writes_set(instance, sdev, NULL);
+#else
+			ps3_stable_writes_set(instance, sdev, lim);
+#endif
 	} else {
 		p_pd_entry = ps3_dev_mgr_lookup_pd_info(instance, sdev->channel,
 							sdev->id);
@@ -2168,18 +2252,28 @@ int ps3_scsi_slave_configure(struct scsi_device *sdev)
 		dma_len_alignment = p_pd_entry->dma_len_alignment;
 	}
 
+#if defined(PS3_SLAVE_CONFIG_SUPPORT)
 	blk_queue_dma_alignment(sdev->request_queue, PS3_SCSI_ALINNMENT_MASK);
-	if (dma_addr_alignment) {
+	if (dma_addr_alignment)
 		blk_queue_dma_alignment(sdev->request_queue,
-					dma_addr_alignment - 1);
-	}
+			dma_addr_alignment - 1);
+#else
+	lim->dma_alignment = PS3_SCSI_ALINNMENT_MASK;
+	if (dma_addr_alignment)
+		lim->dma_alignment = dma_addr_alignment - 1;
+
+#endif
 
 	if (dma_len_alignment) {
 #if defined(PS3_BLK_DMA_PAD)
 		blk_queue_dma_pad(sdev->request_queue, dma_len_alignment - 1);
 #else
+#if defined(PS3_SLAVE_CONFIG_SUPPORT)
 		blk_queue_update_dma_pad(sdev->request_queue,
-					 dma_len_alignment - 1);
+			dma_len_alignment - 1);
+#else
+		lim->dma_pad_mask = dma_len_alignment - 1;
+#endif
 #endif
 	}
 	if (instance->ctrl_info.ioTimeOut != 0)
@@ -2197,44 +2291,57 @@ int ps3_scsi_slave_configure(struct scsi_device *sdev)
 
 	if (p_priv_data->dev_type == PS3_DEV_TYPE_VD) {
 		if (p_vd_entry->maxIOSize != 0) {
-			if (p_vd_entry->sectorSize == PS3_SECTORSIZE_512B) {
-				blk_queue_max_hw_sectors(sdev->request_queue,
-							 p_vd_entry->maxIOSize);
-			} else {
-				blk_queue_max_hw_sectors(
-					sdev->request_queue,
-					p_vd_entry->maxIOSize
-						<< (ilog2(p_vd_entry
-								  ->sectorSize) -
-						    PS3_512B_SHIFT));
-			}
+			max_hw_sectors = ps3_vd_max_sectors_get(p_vd_entry);
+#if defined(PS3_SLAVE_CONFIG_SUPPORT)
+			blk_queue_max_hw_sectors(sdev->request_queue,
+				max_hw_sectors);
+#else
+			lim->max_hw_sectors = max_hw_sectors;
+#endif
 		} else {
 			LOG_DEBUG(
 				"hno:%u vd[%u:%u] update max sector num is:0\n",
 				PS3_HOST(instance), sdev->channel, sdev->id);
 		}
 		if (ps3_is_nvme_device(instance, p_priv_data->dev_type,
-				       sdev->channel, sdev->id)) {
+			sdev->channel, sdev->id)) {
+#if defined(PS3_SLAVE_CONFIG_SUPPORT)
 			ps3_nvme_attr_set(instance, sdev);
+#else
+			ps3_nvme_attr_set(instance, sdev, lim);
+#endif
 		} else {
 #if defined(PS3_BLK_DMA_PAD)
 			blk_queue_dma_pad(sdev->request_queue,
 					  dma_len_alignment - 1);
 #else
+#if defined(PS3_SLAVE_CONFIG_SUPPORT)
 			blk_queue_update_dma_pad(sdev->request_queue,
-						 dma_len_alignment - 1);
+				dma_len_alignment - 1);
+#else
+			lim->dma_pad_mask = dma_len_alignment - 1;
+#endif
 #endif
 		}
 	} else if (p_pd_entry != NULL) {
 		if (p_priv_data->dev_type == PS3_DEV_TYPE_NVME_SSD) {
+#if defined(PS3_SLAVE_CONFIG_SUPPORT)
 			ps3_nvme_pd_attr_set(sdev, p_pd_entry);
+#else
+			ps3_nvme_pd_attr_set(sdev, p_pd_entry, lim);
+#endif
+
 		} else if (PS3_IS_HAC_LIMIT_TYPE(p_priv_data->dev_type)) {
 			if (p_pd_entry->max_io_size != 0 &&
-			    p_pd_entry->sector_size != 0) {
-				blk_queue_max_hw_sectors(
-					sdev->request_queue,
-					p_pd_entry->max_io_size >>
-						PS3_512B_SHIFT);
+				p_pd_entry->sector_size != 0) {
+				max_hw_sectors =
+					ps3_pd_max_sectors_get(p_pd_entry);
+#if defined(PS3_SLAVE_CONFIG_SUPPORT)
+				blk_queue_max_hw_sectors(sdev->request_queue,
+					max_hw_sectors);
+#else
+				lim->max_hw_sectors = max_hw_sectors;
+#endif
 			}
 		}
 	}
@@ -2250,7 +2357,7 @@ int ps3_scsi_slave_configure(struct scsi_device *sdev)
 		    p_priv_data->dev_type == PS3_DEV_TYPE_SAS_SSD ||
 		    p_priv_data->dev_type == PS3_DEV_TYPE_SES) {
 			LOG_DEBUG(
-				"hno:%u pd[%u:%u] dev_type[%s] ready read port mode page\n",
+				"hno:%u pd[%u:%u] dev_type[%s] rd mode page\n",
 				PS3_HOST(instance), sdev->channel, sdev->id,
 				namePS3DevType(
 					(enum PS3DevType)p_pd_entry->dev_type));
@@ -2261,11 +2368,104 @@ int ps3_scsi_slave_configure(struct scsi_device *sdev)
 l_out:
 	return ret;
 }
-#else
-void ps3_nvme_attr_set(const struct ps3_instance *instance,
-		       struct scsi_device *sdev)
+#ifdef PS3_NCQ_PRIO_SUPPORT
+ssize_t ps3_dev_ncq_prio_enable_stor(struct device *dev, const char *buf)
 {
-	(void)instance;
-	(void)sdev;
+	struct scsi_device *sdev = to_scsi_device(dev);
+	struct ps3_scsi_priv_data *priv_data = (struct ps3_scsi_priv_data *)sdev->hostdata;
+	int ncq_prio_enable = 0;
+
+	if (kstrtoint(buf, 0, &ncq_prio_enable))
+		return -EINVAL;
+
+	if (!priv_data->ncq_prio_support)
+		return -EINVAL;
+
+	priv_data->ncq_prio_enable = !!ncq_prio_enable;
+
+	return strlen(buf);
 }
 #endif
+
+static inline unsigned int ps3_vd_max_sectors_get(const struct PS3VDEntry *p_entry)
+{
+	unsigned int max_hw_sectors = 0;
+
+	if ((p_entry == NULL) || (p_entry->maxIOSize == 0))
+		goto l_out;
+
+	if (p_entry->sectorSize == PS3_SECTORSIZE_512B)
+		max_hw_sectors = p_entry->maxIOSize;
+	else
+		max_hw_sectors = p_entry->maxIOSize <<
+			(ilog2(p_entry->sectorSize) - PS3_512B_SHIFT);
+l_out:
+	return max_hw_sectors;
+}
+
+static inline unsigned int ps3_pd_max_sectors_get(const struct ps3_pd_entry *p_entry)
+{
+	unsigned int max_hw_sectors = 0;
+
+	if ((p_entry == NULL) || (p_entry->max_io_size == 0) ||
+		(p_entry->sector_size == 0))
+		goto l_out;
+
+	max_hw_sectors = p_entry->max_io_size >> PS3_512B_SHIFT;
+l_out:
+	return max_hw_sectors;
+}
+
+void ps3_update_max_sectors(struct ps3_instance *instance,
+	unsigned char channel, unsigned short target, struct scsi_device *sdev)
+{
+#if defined(PS3_SLAVE_CONFIG_SUPPORT)
+	(void)instance;
+	(void)channel;
+	(void)target;
+	(void)sdev;
+#else
+	struct ps3_pd_entry *p_pd_entry = NULL;
+	struct PS3VDEntry *p_vd_entry = NULL;
+	unsigned int max_hw_sectors = 0;
+	struct queue_limits lim;
+
+	if (PS3_IS_VD_CHANNEL(instance, channel)) {
+		p_vd_entry = ps3_dev_mgr_lookup_vd_info(instance,
+			channel, target);
+		if (p_vd_entry == NULL) {
+			LOG_INFO("hno:%u, not found VD[%u:%u] info\n",
+				PS3_HOST(instance), channel, target);
+			goto l_out;
+		}
+
+		max_hw_sectors = ps3_vd_max_sectors_get(p_vd_entry);
+
+	} else if (PS3_IS_PD_CHANNEL(instance, channel)) {
+		p_pd_entry = ps3_dev_mgr_lookup_pd_info(instance,
+			channel, target);
+		if (p_pd_entry == NULL) {
+			LOG_INFO("hno:%u, not found PD[%u:%u] info\n",
+				PS3_HOST(instance), channel, target);
+			goto l_out;
+		}
+
+		max_hw_sectors = ps3_pd_max_sectors_get(p_pd_entry);
+	}
+
+	if (max_hw_sectors == 0)
+		goto l_out;
+
+	lim = queue_limits_start_update(sdev->request_queue);
+	if (lim.max_hw_sectors == max_hw_sectors) {
+		queue_limits_cancel_update(sdev->request_queue);
+		goto l_out;
+	} else
+		lim.max_hw_sectors = max_hw_sectors;
+
+	(void)queue_limits_commit_update(sdev->request_queue, &lim);
+
+l_out:
+#endif
+}
+

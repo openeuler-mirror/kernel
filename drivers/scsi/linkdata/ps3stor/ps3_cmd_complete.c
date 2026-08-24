@@ -129,7 +129,7 @@ static inline void ps3_reply_word_next(struct ps3_irq *irq,
 		++(*reply_word);
 }
 #ifndef _WINDOWS
-void ps3_trigger_irq_poll(struct ps3_irq *irq)
+static void ps3_trigger_irq_poll(struct ps3_irq *irq)
 {
 	LOG_DEBUG("host_no:%u trigger irq_poll isrSN:%d\n",
 		  PS3_HOST(irq->instance), irq->isrSN);
@@ -212,10 +212,8 @@ static int ps3_reply_fifo_traverse(struct ps3_irq *irq,
 			irq->last_reply_idx = 0;
 		}
 
-		if (((++(*completed_count)) & (PS3_QOS_NOTIFY_CMD_COUNT - 1)) ==
-		    0) {
-			ps3_qos_waitq_notify(instance);
-		}
+		if (((++(*completed_count)) & (PS3_QOS_NOTIFY_CMD_COUNT - 1)) == 0)
+			ps3_qos_waitq_notify(instance, irq->isrSN);
 
 		++reply_threshold_count;
 
@@ -236,12 +234,12 @@ static int ps3_reply_fifo_traverse(struct ps3_irq *irq,
 	}
 
 	if (((*completed_count) & (PS3_QOS_NOTIFY_CMD_COUNT - 1)) > 0)
-		ps3_qos_waitq_notify(instance);
+		ps3_qos_waitq_notify(instance, irq->isrSN);
 
 	return ret;
 }
 
-int ps3_resp_status_convert(unsigned int resp_status)
+static int ps3_resp_status_convert(unsigned int resp_status)
 {
 	int ret = PS3_SUCCESS;
 
