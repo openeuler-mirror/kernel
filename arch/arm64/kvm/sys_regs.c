@@ -192,6 +192,18 @@ static bool access_rw(struct kvm_vcpu *vcpu,
 	return true;
 }
 
+/* PVM guest kernel IC IALLU and IALLUIS, on the shared instruction cache */
+static bool pvm_access_ic_iallu(struct kvm_vcpu *vcpu,
+				struct sys_reg_params *p,
+				const struct sys_reg_desc *r)
+{
+	if (!p->is_write)
+		return read_from_write_only(vcpu, p, r);
+
+	icache_inval_all_pou();
+	return true;
+}
+
 /*
  * See note at ARMv7 ARM B1.14.4 (TL;DR: S/W ops are not easily virtualized).
  */
@@ -2365,6 +2377,11 @@ static int set_imp_id_reg(struct kvm_vcpu *vcpu, const struct sys_reg_desc *r,
 static const struct sys_reg_desc sys_reg_descs[] = {
 	{ SYS_DESC(SYS_ALLINT_CLR), undef_access },
 	{ SYS_DESC(SYS_ALLINT_SET), undef_access },
+
+	{ SYS_DESC(SYS_IC_IALLUIS), undef_access,
+	  .pvm_access = pvm_access_ic_iallu },
+	{ SYS_DESC(SYS_IC_IALLU), undef_access,
+	  .pvm_access = pvm_access_ic_iallu },
 
 	{ SYS_DESC(SYS_DC_ISW), access_dcsw,
 	  .pvm_access = access_dcsw },
