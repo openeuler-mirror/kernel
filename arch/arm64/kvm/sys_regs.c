@@ -208,8 +208,11 @@ static bool access_dcsw(struct kvm_vcpu *vcpu,
 	 * be done by firmware, knowing that there is only a single
 	 * CPU left in the system, and certainly not from non-secure
 	 * software).
+	 *
+	 * A PVM guest owns neither a stage-2 nor the physical caches, so
+	 * kvm_set_way_flush() does not apply to it.
 	 */
-	if (!cpus_have_const_cap(ARM64_HAS_STAGE2_FWB))
+	if (!cpus_have_const_cap(ARM64_HAS_STAGE2_FWB) && !is_pvm_mode())
 		kvm_set_way_flush(vcpu);
 
 	return true;
@@ -2363,13 +2366,16 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 	{ SYS_DESC(SYS_ALLINT_CLR), undef_access },
 	{ SYS_DESC(SYS_ALLINT_SET), undef_access },
 
-	{ SYS_DESC(SYS_DC_ISW), access_dcsw },
+	{ SYS_DESC(SYS_DC_ISW), access_dcsw,
+	  .pvm_access = access_dcsw },
 	{ SYS_DESC(SYS_DC_IGSW), access_dcgsw },
 	{ SYS_DESC(SYS_DC_IGDSW), access_dcgsw },
-	{ SYS_DESC(SYS_DC_CSW), access_dcsw },
+	{ SYS_DESC(SYS_DC_CSW), access_dcsw,
+	  .pvm_access = access_dcsw },
 	{ SYS_DESC(SYS_DC_CGSW), access_dcgsw },
 	{ SYS_DESC(SYS_DC_CGDSW), access_dcgsw },
-	{ SYS_DESC(SYS_DC_CISW), access_dcsw },
+	{ SYS_DESC(SYS_DC_CISW), access_dcsw,
+	  .pvm_access = access_dcsw },
 	{ SYS_DESC(SYS_DC_CIGSW), access_dcgsw },
 	{ SYS_DESC(SYS_DC_CIGDSW), access_dcgsw },
 	{ SYS_DESC(OP_BRB_IALL), undef_access },
