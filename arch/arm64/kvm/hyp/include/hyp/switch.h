@@ -878,6 +878,10 @@ static inline u64 kvm_pvm_insn_to_esr(u32 insn, u64 esr)
 						    ESR_ELx_SYS64_ISS_DIR_WRITE);
 	}
 
+	if (aarch64_insn_is_hvc(insn))
+		return ESR_ELx_IL | ESR_ELx_EC_HVC64 << ESR_ELx_EC_SHIFT |
+		       aarch64_insn_decode_immediate(AARCH64_INSN_IMM_16, insn);
+
 	if (aarch64_insn_is_eret(insn))
 		return ESR_ELx_IL | ESR_ELx_EC_ERET << ESR_ELx_EC_SHIFT;
 
@@ -905,6 +909,10 @@ static inline bool kvm_hyp_handle_unknown(struct kvm_vcpu *vcpu,
 
 	vcpu->arch.fault.esr_el2 = kvm_pvm_insn_to_esr(insn,
 						       vcpu->arch.fault.esr_el2);
+
+	/* A trapped HVC returns past the instruction. */
+	if (kvm_vcpu_trap_get_class(vcpu) == ESR_ELx_EC_HVC64)
+		__kvm_skip_instr(vcpu);
 
 	return false;
 }
