@@ -300,6 +300,9 @@ static void cifs_kill_sb(struct super_block *sb)
 		flush_workqueue(cifsoplockd_wq);
 		/* Wait for all opened files to release */
 		flush_workqueue(deferredclose_wq);
+		flush_workqueue(cifsiod_wq);
+		flush_workqueue(serverclose_wq);
+		flush_workqueue(fileinfo_put_wq);
 
 		/* finally release root dentry */
 		dput(cifs_sb->root);
