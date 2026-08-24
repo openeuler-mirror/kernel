@@ -34,6 +34,12 @@
 
 #define PS3_QOS_INITED(instance) ((instance)->qos_context.inited)
 
+#define PS3_NEED_UPDATE_PD_QUOTAS(pd_mgr, pd_entry)               \
+	(((pd_mgr)->dev_type != (pd_entry)->dev_type) ||           \
+	((pd_mgr)->pd_quota != (pd_entry)->normal_quota) ||       \
+	((pd_mgr)->direct_quota != (pd_entry)->direct_quota)      \
+	)
+
 enum ps3_qos_fifo_type {
 	PS3_QOS_CMDQ_0,
 	PS3_QOS_CMDQ_1,
@@ -125,6 +131,13 @@ struct ps3_qos_pd_mgr {
 	int adjust_max_quota;
 	int adjust_min_quota;
 	int pd_init_quota;
+	unsigned int wdt_awake;
+};
+
+struct ps3_qos_pd_reply_info {
+	unsigned char *processed_pd_state;
+	unsigned short *processed_pd_id;
+	unsigned short processed_pd_cnt;
 };
 
 struct ps3_qos_pd_context {
@@ -136,6 +149,8 @@ struct ps3_qos_pd_context {
 	unsigned short nvme_direct_quota;
 	atomic_t workq_id_cnt;
 	unsigned char workq_count;
+	struct ps3_qos_pd_reply_info *reply_info;
+	unsigned int reply_info_cnt;
 };
 
 struct ps3_qos_vd_context {
@@ -173,8 +188,8 @@ struct ps3_qos_ops {
 	void (*qos_vd_reset)(struct ps3_instance *instance,
 			     unsigned short disk_id);
 	unsigned char (*qos_decision)(struct ps3_cmd *cmd);
-	void (*qos_cmd_update)(struct ps3_cmd *cmd);
-	void (*qos_waitq_notify)(struct ps3_instance *instance);
+	void (*qos_cmd_update)(struct ps3_cmd *cmd, unsigned char in_reply);
+	void (*qos_waitq_notify)(struct ps3_instance *instance, unsigned short isr_sn);
 	unsigned char (*qos_pd_resend_check)(struct ps3_cmd *cmd);
 	unsigned char (*qos_waitq_abort)(struct ps3_cmd *cmd);
 	void (*qos_vd_clean)(struct ps3_instance *instance,
@@ -208,9 +223,10 @@ void ps3_qos_vd_member_change(struct ps3_instance *instance,
 
 int ps3_qos_decision(struct ps3_cmd *cmd);
 
-void ps3_qos_cmd_update(struct ps3_instance *instance, struct ps3_cmd *cmd);
+void ps3_qos_cmd_update(struct ps3_instance *instance,
+		struct ps3_cmd *cmd, unsigned char in_reply);
 
-void ps3_qos_waitq_notify(struct ps3_instance *instance);
+void ps3_qos_waitq_notify(struct ps3_instance *instance, unsigned short isr_sn);
 
 unsigned char ps3_qos_waitq_abort(struct ps3_cmd *aborted_cmd);
 

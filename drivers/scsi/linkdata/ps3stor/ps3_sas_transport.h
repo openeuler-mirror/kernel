@@ -32,12 +32,12 @@ int ps3_sas_phy_enable(struct sas_phy *phy, int enable);
 
 int ps3_sas_linkrates_set(struct sas_phy *phy, struct sas_phy_linkrates *rates);
 
-#if defined(PS3_SAS_SMP_RETURN)
-int ps3_sas_smp_handler(struct Scsi_Host *shost, struct sas_rphy *rphy,
-			struct request *req);
-#else
+#if defined(PS3_SAS_SMP_RETURN_VOID)
 void ps3_sas_smp_handler(struct bsg_job *job, struct Scsi_Host *shost,
 			 struct sas_rphy *rphy);
+#else
+int ps3_sas_smp_handler(struct Scsi_Host *shost, struct sas_rphy *rphy,
+			struct request *req);
 #endif
 
 #endif

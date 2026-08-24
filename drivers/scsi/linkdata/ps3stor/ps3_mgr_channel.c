@@ -150,7 +150,8 @@ static int ps3_mgr_cmd_send(struct ps3_instance *instance, struct ps3_cmd *cmd)
 	int ret = PS3_SUCCESS;
 	int cur_state = PS3_INSTANCE_STATE_INIT;
 
-	if (!instance->state_machine.is_load) {
+	if (!instance->state_machine.is_load ||
+		instance->is_suspend) {
 		if (PS3_MGR_CMD_TYPE(cmd) != PS3_CMD_MANAGEMENT) {
 			LOG_WARN(
 				"host_no:%u instance state is unloading or suspend\n",
@@ -261,7 +262,8 @@ static int ps3_polled_cmd_send(struct ps3_instance *instance,
 {
 	int ret = PS3_SUCCESS;
 
-	if (!instance->state_machine.is_load) {
+	if (!instance->state_machine.is_load ||
+		instance->is_suspend) {
 		if (PS3_MGR_CMD_TYPE(cmd) != PS3_CMD_MANAGEMENT) {
 			LOG_WARN(
 				"host_no:%u instance state is unloading or suspend\n",

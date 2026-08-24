@@ -1056,7 +1056,7 @@ l_out:
 	return;
 }
 
-int ps3_dump_context_show(const char *prefix, struct ps3_instance *instance)
+static int ps3_dump_context_show(const char *prefix, struct ps3_instance *instance)
 {
 	int ret = PS3_SUCCESS;
 	struct ps3_dump_context *ctxt = &instance->dump_context;
@@ -2626,7 +2626,7 @@ static void ps3_cli_stop_all_instance(void)
 			cmd = instance->cmd_context.cmd_buf[index];
 			if (cmd->scmd != NULL) {
 				PS3_IO_OUTSTAND_DEC(instance, cmd->scmd);
-				PS3_VD_OUTSTAND_DEC(instance, cmd->scmd);
+				PS3_VD_OUTSTAND_DEC(instance, cmd);
 				PS3_IO_BACK_ERR_INC(instance, cmd->scmd);
 				PS3_DEV_BUSY_DEC(cmd->scmd);
 				cmd->scmd->result =
@@ -2990,7 +2990,7 @@ static void ps3_hard_reset_cb(int argc, char *argv[])
 		goto l_out;
 	}
 
-	ps3_hard_recovery_request_with_retry(instance);
+	ps3_hard_recovery_request_with_retry(instance, PS3_FALSE);
 	LOG_WARN("hno:%u  cli call recovery request!\n", PS3_HOST(instance));
 
 l_out:
@@ -3677,10 +3677,12 @@ static void ps3_qos_show_pd(struct ps3_instance *instance, unsigned short disk_i
 		ps3stor_cli_printf("qos pd[%u] info\n", disk_id);
 		qos_pd_mgr = &instance->qos_context.pd_ctx.qos_pd_mgrs[disk_id];
 		ps3stor_cli_printf(
-			"-----valid[%u] vid[%u] used_quota[%u] quota[%u] total_waited_cmd[%u]\n",
+			"-----valid[%u] vid[%u] used_quota[%u] quota[%u]\n"
+			"\ttotal_waited_cmd[%u] awake_cnt[%u]\n",
 			ps3_atomic_read(&qos_pd_mgr->valid), qos_pd_mgr->vd_id,
 			ps3_atomic_read(&qos_pd_mgr->pd_used_quota),
-			qos_pd_mgr->pd_quota, qos_pd_mgr->total_wait_cmd_cnt);
+			qos_pd_mgr->pd_quota, qos_pd_mgr->total_wait_cmd_cnt,
+			qos_pd_mgr->wdt_awake);
 		if (qos_pd_mgr->total_wait_cmd_cnt > 0) {
 			for (i = 1; i < qos_pd_mgr->waitq_cnt; i++) {
 				waitq = &qos_pd_mgr->waitqs[i];

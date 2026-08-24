@@ -119,6 +119,10 @@ void ps3_dma_dump_mapping(struct pci_dev *pdev);
 ssize_t ps3_soc_dead_reset_store(struct device *cdev,
 				 struct device_attribute *attr, const char *buf,
 				 size_t count);
+
+struct ps3_instance *ps3_debug_instance_query(struct device *cdev,
+	struct device_attribute *attr, const char *buf);
+
 #else
 
 struct ps3_reg_dump_attr {

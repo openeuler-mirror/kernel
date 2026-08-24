@@ -3,9 +3,9 @@
 #define _PS3_DRV_VER_H_
 
 #define PS3_PRIVATE_VERSION            "00.000.00.01"
-#define PS3_DRV_VERSION                "2.5.0.34"
-#define PS3_DRV_COMMIT_ID              "98da299 ce2f094"
-#define PS3_DRV_BUILD_TIME             "Mar 04 2025 11:13:45"
+#define PS3_DRV_VERSION                "2.9.0.12"
+#define PS3_DRV_COMMIT_ID              "b6529a9 9146769"
+#define PS3_DRV_BUILD_TIME             "Jul 28 2026 20:06:45"
 #define PS3_DRV_TOOLCHAIN_ID            ""
 
 #define PS3_DRV_PRODUCT_SUPPORT "RAID/HBA"

@@ -64,6 +64,11 @@ static int ps3_scsi_remap_sgl(struct ps3_cmd *cmd);
 
 #ifndef _WINDOWS
 #define sg_dma_address_u64(sg) sg_dma_address(sg)
+
+#ifdef PS3_NCQ_PRIO_SUPPORT
+#define PS3_IS_NCQ_PRIO_DISK_ENABLE(cmd) \
+	((cmd)->io_attr.is_ncq_prio_enable)
+#endif
 #endif
 
 #define UNMAP_PARAM_LEN (8)
@@ -82,6 +87,29 @@ static struct disk_type_to_proc_func_table g_req_frame_func_table[] = {
 
 };
 #ifndef _WINDOWS
+
+#ifdef PS3_NCQ_PRIO_SUPPORT
+static inline u8 ps3_scsih_is_io_belongs_to_rt_class(struct ps3_cmd *cmd)
+{
+	struct request *rq = SCMD_GET_REQUEST(cmd->scmd);
+
+	return (IOPRIO_PRIO_CLASS(req_get_ioprio(rq)) == IOPRIO_CLASS_RT);
+}
+#endif
+
+static inline unsigned char ps3_scsih_stream_detect_enable(struct ps3_cmd *cmd,
+			 unsigned int type)
+{
+	unsigned char detect = PS3_FALSE;
+	const struct PS3VDEntry *vd_entry = cmd->io_attr.vd_entry;
+
+	if ((type == PS3_SCSI_CMD_TYPE_READ && vd_entry->isReadNeedSeq) ||
+		(type == PS3_SCSI_CMD_TYPE_WRITE && vd_entry->isWriteNeedSeq)) {
+		detect = PS3_TRUE;
+	}
+
+	return detect;
+}
 
 unsigned char ps3_scsih_stream_is_detect(struct ps3_cmd *cmd)
 {
@@ -107,11 +135,8 @@ unsigned char ps3_scsih_stream_is_detect(struct ps3_cmd *cmd)
 	if (PS3_IF_QUIT_STREAM_DIRECT_DETECT())
 		goto l_out;
 
-
-	if ((type != PS3_SCSI_CMD_TYPE_READ) &&
-	    (type != PS3_SCSI_CMD_TYPE_WRITE)) {
+	if (!ps3_scsih_stream_detect_enable(cmd, type))
 		goto l_out;
-	}
 
 	typeIndex = type - PS3_SCSI_CMD_TYPE_READ;
 	current_ld_sd = &(data->vd_sd[typeIndex]);
@@ -137,7 +162,6 @@ unsigned char ps3_scsih_stream_is_detect(struct ps3_cmd *cmd)
 		      (lba <= (current_sd->next_seq_lba + 32)))) &&
 		    (type == current_sd->rw_type)) {
 			is_stream = PS3_TRUE;
-			cmd->io_attr.seq_flag = SCSI_RW_SEQ_CMD;
 			cmd->req_frame->frontendReq.reqHead.isStream1 =
 				PS3_TRUE;
 			current_sd->next_seq_lba = lba + len;
@@ -167,12 +191,15 @@ unsigned char ps3_scsih_stream_is_detect(struct ps3_cmd *cmd)
 	current_sd->next_seq_lba = lba + len;
 	*track_stream =
 		(((*track_stream & ZERO_LAST_STREAM) << 4) | stream_num);
-	cmd->io_attr.seq_flag = SCSI_RW_RANDOM_CMD;
-
 end:
 	ps3_spin_unlock_irqrestore(&current_ld_sd->ps3_sequence_stream_lock,
 				   flag);
 l_out:
+	if (is_stream)
+		cmd->io_attr.seq_flag = SCSI_RW_SEQ_CMD;
+	else
+		cmd->io_attr.seq_flag = SCSI_RW_RANDOM_CMD;
+
 
 	return is_stream;
 }
@@ -188,8 +215,7 @@ unsigned char ps3_raid_scsih_stream_is_direct(const struct ps3_cmd *cmd)
 			    !(cmd->io_attr.vd_entry->isSsd &&
 			      (ps3_atomic_read(&p_priv_data->rd_io_outstand) >
 			       PS3_VD_IO_16_OUTSTANDING) &&
-			      (cmd->io_attr.num_blocks >
-			       PS3_BLOCK_NUM_OF_32K))) {
+			      (cmd->io_attr.num_blocks > PS3_BLOCK_NUM_OF_32K))) {
 				is_direct = PS3_FALSE;
 			}
 		}
@@ -197,6 +223,7 @@ unsigned char ps3_raid_scsih_stream_is_direct(const struct ps3_cmd *cmd)
 
 	return is_direct;
 }
+
 unsigned char ps3_hba_scsih_stream_is_direct(const struct ps3_cmd *cmd)
 {
 	unsigned char is_direct = PS3_TRUE;
@@ -416,8 +443,6 @@ static unsigned char ps3_scsih_qos_check(struct ps3_instance *instance,
 		}
 	}
 
-	PS3_VD_OUTSTAND_INC(instance, s_cmd);
-
 	goto l_out;
 
 l_dec_vd_io_outstand:
@@ -546,7 +571,6 @@ int ps3_scsih_queue_command(struct Scsi_Host *s_host, struct scsi_cmnd *s_cmd)
 				   SCMD_GET_REQUEST(s_cmd)->tag, ret);
 		PS3_IO_BACK_ERR_INC(instance, s_cmd);
 		PS3_IO_OUTSTAND_DEC(instance, s_cmd);
-		PS3_VD_OUTSTAND_DEC(instance, s_cmd);
 		PS3_DEV_BUSY_DEC(s_cmd);
 		ret = SCSI_MLQUEUE_HOST_BUSY;
 		ps3_scsi_cmd_deliver_put(instance);
@@ -564,7 +588,7 @@ int ps3_scsih_queue_command(struct Scsi_Host *s_host, struct scsi_cmnd *s_cmd)
 	}
 
 	cmd->scmd = s_cmd;
-
+	PS3_VD_OUTSTAND_INC(instance, cmd);
 	ret = instance->ioc_adpter->io_cmd_build(cmd);
 	if (unlikely(ret != PS3_SUCCESS)) {
 		switch (ret) {
@@ -617,7 +641,7 @@ int ps3_scsih_queue_command(struct Scsi_Host *s_host, struct scsi_cmnd *s_cmd)
 
 	ret = ps3_scsi_cmd_send(instance, cmd, PS3_TRUE);
 	if (unlikely(ret != PS3_SUCCESS)) {
-		ps3_qos_cmd_update(instance, cmd);
+		ps3_qos_cmd_update(instance, cmd, PS3_FALSE);
 		if (ret == -PS3_RECOVERED) {
 			ret = SCSI_MLQUEUE_HOST_BUSY;
 		} else if (ret == -PS3_RETRY) {
@@ -638,6 +662,7 @@ int ps3_scsih_queue_command(struct Scsi_Host *s_host, struct scsi_cmnd *s_cmd)
 	goto l_out;
 
 l_cmd_release:
+	PS3_VD_OUTSTAND_DEC(instance, cmd);
 	ps3_scsi_dma_unmap(cmd);
 	if (cmd->is_got_r1x == 1) {
 		data = (struct ps3_scsi_priv_data *)s_cmd->device->hostdata;
@@ -648,7 +673,6 @@ l_cmd_release:
 l_cmd_stat_dec:
 	PS3_IO_BACK_ERR_INC(instance, s_cmd);
 	PS3_IO_OUTSTAND_DEC(instance, s_cmd);
-	PS3_VD_OUTSTAND_DEC(instance, s_cmd);
 	PS3_DEV_BUSY_DEC(s_cmd);
 	ps3_scsi_cmd_deliver_put(instance);
 l_scsi_done:
@@ -1010,18 +1034,18 @@ ps3_scsih_hdd_vd_direct_check(const struct ps3_cmd *cmd)
 		scsi_device_private_data(cmd->scmd);
 
 	if (p_priv_data->dev_type == PS3_DEV_TYPE_VD) {
-		if (!cmd->io_attr.vd_entry->isNvme &&
-		    !cmd->io_attr.vd_entry->isSsd) {
+		if (ps3_is_hdd_vd(cmd->io_attr.vd_entry)) {
 			if (ps3_scsih_is_write_cmd(cmd->io_attr.rw_flag) &&
-			    (ps3_atomic_read(&p_priv_data->wr_io_outstand) !=
-			     PS3_VD_IO_1_OUTSTANDING)) {
+				(PS3_VD_WRITE_OUTSTAND(p_priv_data) > PS3_VD_IO_1_OUTSTANDING)) {
 				is_direct = PS3_FALSE;
-			} else if (ps3_scsih_is_read_cmd(
-					   cmd->io_attr.rw_flag)) {
+			} else if (ps3_scsih_is_read_cmd(cmd->io_attr.rw_flag) &&
+				((PS3_VD_READ_OUTSTAND(p_priv_data) > PS3_VD_IO_1_OUTSTANDING) ||
+					cmd->io_attr.vd_entry->isReadNeedSeq)) {
 				is_direct = PS3_FALSE;
 			}
 		}
 	}
+
 	return is_direct;
 }
 
@@ -1208,6 +1232,12 @@ static void ps3_scsih_build_direct_cmd(struct ps3_cmd *cmd)
 		cmd->io_attr.direct_flag =
 			(unsigned char)PS3_CMDWORD_DIRECT_ADVICE;
 	} else {
+#ifdef PS3_NCQ_PRIO_SUPPORT
+		if (PS3_IS_NCQ_PRIO_DISK_ENABLE(cmd)) {
+			LOG_DEBUG("ncq prio is enabled, need to normal\n");
+			goto l_out;
+		}
+#endif
 		if (!direct_cmd_is_supported_device(cmd,
 						    cmd->io_attr.pd_entry)) {
 			goto l_out;
@@ -1439,6 +1469,10 @@ static int ps3_scsih_cmd_build_prepare(struct ps3_cmd *cmd)
 			ret = -PS3_ENODEV;
 			goto l_out;
 		}
+
+#ifdef PS3_NCQ_PRIO_SUPPORT
+		cmd->io_attr.is_ncq_prio_enable = data->ncq_prio_enable;
+#endif
 	}
 
 l_skip_r1x_write_lock:
@@ -1498,11 +1532,9 @@ static void ps3_scsih_vd_cmd_word_devid_build(struct ps3_cmd *cmd,
 
 }
 
-static unsigned char ps3_is_no_calc_mapblocks(const struct PS3VDEntry *vd_info,
-					      const struct ps3_cmd *cmd)
+static unsigned char ps3_is_no_calc_mapblocks(const struct ps3_cmd *cmd)
 {
 	unsigned char ret = PS3_FALSE;
-	(void)vd_info;
 
 	if (ps3_scsih_is_sync_cache(scsi_cmnd_cdb(cmd->scmd))) {
 		LOG_DEBUG("hno:%u is SYNCHRONIZE_CACHE\n",
@@ -1542,7 +1574,7 @@ static int ps3_scsih_vd_cmd_word_cpu_set(struct ps3_cmd *cmd,
 		cmd->trace_id, PS3_HOST(cmd->instance), cmd->index, lba,
 		vd_info->mapBlock, num_blocks);
 
-	if (ps3_is_no_calc_mapblocks(vd_info, cmd)) {
+	if (ps3_is_no_calc_mapblocks(cmd)) {
 		LOG_DEBUG(
 			"tid:0x%llx hno:%u CFID:%u lba:0x%llx map_block[%lld], num_blks:0x%x\n",
 			cmd->trace_id, PS3_HOST(cmd->instance), cmd->index, lba,
@@ -1589,6 +1621,19 @@ l_hba_ssd_vd:
 
 l_out:
 	return ret;
+}
+
+void ps3_scsih_pd_cmd_word_cpu_set(struct ps3_cmd *cmd)
+{
+	const struct ps3_pd_entry *pd_info = cmd->io_attr.pd_entry;
+	unsigned char que_offset =
+		((PS3_PDID(&pd_info->disk_pos)) & (cmd->instance->ctrl_info.vdQueueNum - 1));
+
+	cmd->cmd_word.qMask = 1 << que_offset;
+
+	LOG_DEBUG("tid:0x%llx hno:%u CFID:%d pdid:%u que:%d\n", cmd->trace_id,
+		PS3_HOST(cmd->instance), cmd->index, PS3_PDID(&pd_info->disk_pos),
+		cmd->cmd_word.qMask);
 }
 
 static int ps3_scsih_cmd_word_type_set(struct ps3_cmd *cmd)
@@ -1685,10 +1730,12 @@ static int ps3_scsih_pd_cmd_word_build(struct ps3_cmd *cmd)
 	cmd->cmd_word.virtDiskID = PS3_INVALID_DEV_ID;
 
 	if ((cmd->cmd_word.type == PS3_CMDWORD_TYPE_READ) ||
-	    (cmd->cmd_word.type == PS3_CMDWORD_TYPE_WRITE)) {
-		cmd->cmd_word.qMask = 0x1;
+		(cmd->cmd_word.type == PS3_CMDWORD_TYPE_WRITE)) {
+		if (cmd->instance->ioc_adpter->pd_cmd_word_cpu_set != NULL)
+			cmd->instance->ioc_adpter->pd_cmd_word_cpu_set(cmd);
+		else
+			cmd->cmd_word.qMask = 0x1;
 	}
-
 l_out:
 	return ret;
 }
@@ -2797,6 +2844,12 @@ static void ps3_scsih_req_frame_head_build(struct ps3_cmd *cmd,
 	req_head->isWrite = ps3_scsih_data_direction_build(cmd);
 	req_head->timeout = ps3_scsi_cmd_timeout_get(cmd);
 	req_head->traceID = cmd->trace_id;
+#ifdef PS3_NCQ_PRIO_SUPPORT
+	if (PS3_IS_NCQ_PRIO_DISK_ENABLE(cmd)) {
+		req_head->ncq_prio = ps3_scsih_is_io_belongs_to_rt_class(cmd);
+	}
+#endif
+
 	if (cmd->io_attr.dev_type == PS3_DEV_TYPE_VD) {
 		req_head->devID = cmd->io_attr.vd_entry->diskPos.diskDev;
 		if (unlikely(req_head->devID.diskID == 0)) {
@@ -3304,12 +3357,12 @@ int ps3_scsih_io_done(struct ps3_cmd *cmd, unsigned short reply_flags)
 #endif
 	ps3_scsi_dma_unmap(cmd);
 
-	ps3_qos_cmd_update(cmd->instance, cmd);
+	ps3_qos_cmd_update(cmd->instance, cmd, PS3_TRUE);
 
 	ps3_r1x_write_unlock(&data->lock_mgr, cmd);
 	peer_cmd = cmd->r1x_peer_cmd;
 	PS3_IO_OUTSTAND_DEC(cmd->instance, s_cmd);
-	PS3_VD_OUTSTAND_DEC(cmd->instance, s_cmd);
+	PS3_VD_OUTSTAND_DEC(cmd->instance, cmd);
 	ps3_scsi_cmd_free(cmd);
 	if (peer_cmd != NULL) {
 		LOG_DEBUG(

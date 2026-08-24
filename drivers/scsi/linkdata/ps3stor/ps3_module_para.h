@@ -96,6 +96,14 @@ unsigned char ps3_tagset_enable_query(void);
 #endif
 unsigned char ps3_smp_affinity_query(void);
 
+unsigned char ps3_latency_perf_mode_query(void);
+
+void ps3_latency_perf_mode_modify(unsigned char enable);
+
+int ps3_max_sge_cnt_query(void);
+
+void ps3_max_sge_cnt_modify(int value);
+
 #ifndef _WINDOWS
 #endif
 

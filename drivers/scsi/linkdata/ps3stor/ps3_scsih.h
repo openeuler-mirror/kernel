@@ -140,4 +140,6 @@ unsigned char ps3_write_direct_enable(struct ps3_cmd *cmd);
 
 unsigned char ps3_ssd_vd_qmask_calculate_hba(struct ps3_cmd *cmd);
 
+void ps3_scsih_pd_cmd_word_cpu_set(struct ps3_cmd *cmd);
+
 #endif

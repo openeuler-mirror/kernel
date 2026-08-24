@@ -782,7 +782,7 @@ l_out:
 	return ret;
 }
 
-void ps3_clean_mgr_cmd(struct ps3_instance *instance)
+static void ps3_clean_mgr_cmd(struct ps3_instance *instance)
 {
 	struct ps3_cmd_context *context = &instance->cmd_context;
 	unsigned int mgr_cmd_idx = 0;
