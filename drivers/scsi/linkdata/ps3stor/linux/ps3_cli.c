@@ -44,8 +44,6 @@ static struct mutex ps3_cli_mutex;
 
 static inline int ps3_cli_minor_get(void)
 {
-	if (strstr(ps3_host_release_get(), "5.10.134-16.2.an8"))
-		return PS3_CLI_DYNAMIC_MINOR;
 #if defined(PS3_STATIC_MINOR)
 	return PS3_CLI_STATIC_MINOR;
 #else

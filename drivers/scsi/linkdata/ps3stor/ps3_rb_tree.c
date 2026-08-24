@@ -151,7 +151,7 @@ static void rbtColorAfterDel(struct Ps3RbRoot *pRoot, struct Ps3RbNode *pNode,
 		RBT_SET_BLACK(pNode);
 }
 
-void rbtDelNodeDo(struct Ps3RbRoot *pRoot, struct Ps3RbNode *pNode)
+static void rbtDelNodeDo(struct Ps3RbRoot *pRoot, struct Ps3RbNode *pNode)
 {
 	struct Ps3RbNode *pParent = NULL;
 	struct Ps3RbNode *pChild = NULL;

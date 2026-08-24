@@ -51,9 +51,7 @@ static int ps3_pci_info_get(struct ps3_instance *instance,
 	PCI_COMMON_CONFIG pci_config = { 0 };
 	unsigned long len = 0;
 	unsigned long base_addr = 0;
-#ifdef PS3_HARDWARE_ASIC
-	unsigned int check_count = ps3_hba_check_time_query() * 10;
-#endif
+
 	if (config->AdapterInterfaceType != PCIBus) {
 		LOG_ERROR("there is not pcibus, type:%d\n",
 			  config->AdapterInterfaceType);
@@ -69,27 +67,6 @@ static int ps3_pci_info_get(struct ps3_instance *instance,
 		LOG_ERROR("get bus data failed,cfg length:%d\n", len);
 		return -PS3_FAILED;
 	}
-
-#ifdef PS3_HARDWARE_ASIC
-	while (pci_config.DeviceID == PCI_DEVICE_ID_PS3_RAID_FPGA &&
-	       check_count > 0) {
-		check_count--;
-		ps3_msleep(100);
-
-		len = StorPortGetBusData(instance, PCIConfiguration,
-					 config->SystemIoBusNumber,
-					 (unsigned long)config->SlotNumber,
-					 (void *)&pci_config,
-					 sizeof(pci_config));
-
-		if (len == 0 || len == 2) {
-			LOG_ERROR("get bus data failed,cfg length:%d\n", len);
-			return -PS3_FAILED;
-		}
-
-		LOG_INFO("get real device id is[0x%x]\n", pci_config.DeviceID);
-	};
-#endif
 
 	instance->pci_dev_context.slot_number =
 		(unsigned long long)config->SlotNumber;

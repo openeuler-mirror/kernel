@@ -16,6 +16,10 @@ int ps3_base_init_resources(struct ps3_instance *instance);
 
 void ps3_base_free_resources(struct ps3_instance *instance);
 
+int ps3_pci_init(struct pci_dev *pdev, struct ps3_instance *instance);
+int ps3_pci_init_complete(struct ps3_instance *instance);
+void ps3_pci_init_complete_exit(struct ps3_instance *instance);
+
 #ifdef __cplusplus
 }
 #endif

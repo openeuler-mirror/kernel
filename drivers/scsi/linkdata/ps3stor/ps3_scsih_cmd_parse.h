@@ -7,50 +7,7 @@
 #include "ps3_inner_data.h"
 #include "ps3_driver_log.h"
 
-#ifndef _WINDOWS
 #include <scsi/scsi.h>
-#else
-
-#define VARIABLE_LENGTH_CMD 0x7f
-#define SYNCHRONIZE_CACHE_16 0x91
-#define SYNCHRONIZE_CACHE 0x35
-
-#define FORMAT_UNIT 0x04
-#define REASSIGN_BLOCKS 0x07
-#define READ_6 0x08
-#define WRITE_6 0x0a
-#define READ_10 0x28
-#define WRITE_10 0x2a
-#define WRITE_VERIFY 0x2e
-#define VERIFY 0x2f
-#define PRE_FETCH 0x34
-#define SYNCHRONIZE_CACHE 0x35
-#define WRITE_LONG 0x3f
-#define WRITE_SAME 0x41
-#define UNMAP 0x42
-#define VARIABLE_LENGTH_CMD 0x7f
-#define READ_12 0xa8
-#define WRITE_12 0xaa
-#define WRITE_VERIFY_12 0xae
-#define VERIFY_12 0xaf
-#define EXTENDED_COPY 0x83
-#define READ_16 0x88
-#define COMPARE_AND_WRITE 0x89
-#define WRITE_16 0x8a
-#define WRITE_ATTRIBUTE 0x8d
-#define PS3_WRITE_VERIFY_16 0x8e
-#define VERIFY_16 0x8f
-#define SYNCHRONIZE_CACHE_16 0x91
-#define WRITE_SAME_16 0x93
-#define SERVICE_ACTION_IN_16 0x9e
-#define SERVICE_ACTION_OUT_16 0x9f
-#define READ_32 0x09
-#define VERIFY_32 0x0a
-#define WRITE_32 0x0b
-#define PS3_WRITE_VERIFY_32 0x0c
-#define WRITE_SAME_32 0x0d
-
-#endif
 
 #define PS3_SCSI_CONFLICT_CHECK 0x80
 #define PS3_SCSI_CONFLICT_CHECK_TEST(type) ((type)&PS3_SCSI_CONFLICT_CHECK)

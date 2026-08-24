@@ -63,9 +63,9 @@ static void msix_irq_mode_check(struct ps3_irq_context *irq_context,
 	pcie_capability_read_word(irq_context->instance->pdev, PCI_EXP_LNKSTA,
 				  &lnksta);
 	speed = lnksta & PCI_EXP_LNKSTA_CLS;
-	if ((iops_msix_cnt > 0) &&
-	    (online_cpu_num >= PS3_BALANCE_MODE_MIN_CPU_NUM) &&
-	    (iops_msix_cnt < max_vectors) && (speed >= 0x4)) {
+	if (!ps3_latency_perf_mode_query() && (iops_msix_cnt > 0) &&
+		(online_cpu_num >= PS3_BALANCE_MODE_MIN_CPU_NUM) &&
+		(iops_msix_cnt < max_vectors) && (speed >= 0x4)) {
 		irq_context->high_iops_msix_vectors = iops_msix_cnt;
 		irq_context->valid_msix_vector_count = min(
 			irq_context->high_iops_msix_vectors + online_cpu_num,
@@ -124,7 +124,11 @@ static unsigned int __ps3_irq_vectors_alloc(struct pci_dev *pdev,
 
 	switch (ps3_irq_mode) {
 	case PS3_PCI_IRQ_MODE_LEGACY:
+#if defined(PS3_OS_IRQ_INTX)
+		irq_flags = PCI_IRQ_INTX;
+#else
 		irq_flags = PCI_IRQ_LEGACY;
+#endif
 		break;
 	case PS3_PCI_IRQ_MODE_MSI:
 		irq_flags = PCI_IRQ_MSI;
@@ -265,7 +269,11 @@ static unsigned int ps3_irq_vectors_alloc(struct pci_dev *pdev,
 		irq_context->high_iops_msix_vectors = 0;
 		irq_context->is_support_balance = PS3_FALSE;
 		irq_context->is_balance_current_perf_mode = PS3_FALSE;
+#if defined(PS3_OS_IRQ_INTX)
+		nr_entries = pci_alloc_irq_vectors(pdev, 1, 1, PCI_IRQ_INTX);
+#else
 		nr_entries = pci_alloc_irq_vectors(pdev, 1, 1, PCI_IRQ_LEGACY);
+#endif
 		if (nr_entries != 1) {
 			LOG_ERROR("host_no:%u alloc irq fail!\n",
 				  PS3_IRQCTX_HOST(irq_context));
@@ -799,6 +807,7 @@ static unsigned char ps3_irq_max_vectors_calc(struct ps3_instance *instance,
 		ret = PS3_FALSE;
 		goto l_out;
 	}
+	instance->irq_context.max_replyq_cnt = max_replyq_count;
 
 	if (max_replyq_count > PS3_MSIX_COMBINED_MODE_MSIX_VECTORS)
 		instance->msix_combined = PS3_TRUE;
@@ -836,8 +845,13 @@ int ps3_irq_context_init(struct ps3_instance *instance)
 	irq_context->reply_fifo_depth += instance->reply_fifo_depth_addition;
 	irq_context->instance = instance;
 
-	LOG_INFO("max_vectors:%d replyQ_depth:%d\n", max_vectors,
-		 irq_context->reply_fifo_depth);
+	if (ps3_host_cpu_type_get() == PS3_HOST_HYGON_CPU_TYPE2)
+		irq_context->iops_batch_cnt_shift = PS3_HIGH_IOPS_VECTOR_BATCH_COUNT_SHIFT - 1;
+	else
+		irq_context->iops_batch_cnt_shift = PS3_HIGH_IOPS_VECTOR_BATCH_COUNT_SHIFT;
+
+	LOG_INFO("max_vectors:%d replyQ_depth:%d iops_batch_cnt:%u\n",
+		max_vectors, irq_context->reply_fifo_depth, irq_context->iops_batch_cnt_shift);
 
 	if (max_vectors <= 0) {
 		LOG_ERROR("host_no:%u IOC max_vectors invliad:%d\n",
@@ -943,6 +957,7 @@ static inline unsigned char ps3_sdev_is_high_load(struct ps3_cmd *cmd,
 	if (PS3_MULTI_DATA_DISK_BUSY_THRESHOLD(busy_threshold, busy_base) &&
 	    !ps3_is_hdd_cmd(cmd)) {
 		if (ps3_host_vendor_get() == PS3_HOST_VENDOR_HYGON &&
+		    ps3_host_cpu_type_get() != PS3_HOST_HYGON_CPU_TYPE2 &&
 		    busy_threshold <= PS3_HYGON_BUSY_ADJUST_THRESHOLD) {
 			busy_threshold = busy_base;
 		} else if (busy_threshold > PS3_SSD_MAX_BUSY_THRESHOLD) {
@@ -958,11 +973,10 @@ static inline unsigned char ps3_sdev_is_high_load(struct ps3_cmd *cmd,
 static inline unsigned int
 ps3_iops_msix_index_get(struct ps3_irq_context *irq_context)
 {
+
 	unsigned int msix_index = 0;
-	unsigned int ioc_count =
-		atomic_add_return(1, &irq_context->high_iops_io_count);
-	unsigned int batch_num =
-		ioc_count >> PS3_HIGH_IOPS_VECTOR_BATCH_COUNT_SHIFT;
+	unsigned int ioc_count = atomic_add_return(1, &irq_context->high_iops_io_count);
+	unsigned int batch_num = ioc_count >> irq_context->iops_batch_cnt_shift;
 
 	msix_index = batch_num % PS3_IOPS_MSIX_VECTORS;
 	return msix_index;

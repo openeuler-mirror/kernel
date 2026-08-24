@@ -82,15 +82,17 @@ struct PS3ReqFrameHead {
 	unsigned char cmdType;
 	unsigned char cmdSubType;
 	unsigned short cmdFrameID;
-	union {
+	union{
 		struct {
-			unsigned int noReplyWord : 1;
-			unsigned int dataFormat : 1;
-			unsigned int reqFrameFormat : 2;
-			unsigned int mapBlockVer : 2;
-			unsigned int isWrite : 1;
-			unsigned int isStream1 : 1;
-			unsigned int reserved : 24;
+		unsigned int noReplyWord    : 1;
+		unsigned int dataFormat     : 1;
+		unsigned int reqFrameFormat : 2;
+		unsigned int mapBlockVer    : 2;
+		unsigned int isWrite	    : 1;
+		unsigned int isStream1	    : 1;
+		unsigned int reserved	    : 16;
+		unsigned int ncq_prio	    : 1;
+		unsigned int reserved2	    : 7;
 		};
 		unsigned int control;
 	};
