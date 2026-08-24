@@ -2309,6 +2309,25 @@ static bool access_sp_el0(struct kvm_vcpu *vcpu,
 	return true;
 }
 
+static bool access_tpidrro(struct kvm_vcpu *vcpu,
+			   struct sys_reg_params *p,
+			   const struct sys_reg_desc *r)
+{
+	if (p->is_write) {
+		/* TPIDRRO_EL0 is read-only at EL0. */
+		if (pvm_vcpu_in_user_ctxt(vcpu)) {
+			kvm_inject_undefined(vcpu);
+			return false;
+		}
+
+		write_sysreg_s(p->regval, SYS_TPIDRRO_EL0);
+	} else {
+		p->regval = read_sysreg_s(SYS_TPIDRRO_EL0);
+	}
+
+	return true;
+}
+
 /*
  * For historical (ahem ABI) reasons, KVM treated MIDR_EL1, REVIDR_EL1, and
  * AIDR_EL1 as "invariant" registers, meaning userspace cannot change them.
@@ -2892,7 +2911,8 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 	  .access = access_pmovs, .reg = PMOVSSET_EL0 },
 
 	{ SYS_DESC(SYS_TPIDR_EL0), NULL, reset_unknown, TPIDR_EL0 },
-	{ SYS_DESC(SYS_TPIDRRO_EL0), NULL, reset_unknown, TPIDRRO_EL0 },
+	{ SYS_DESC(SYS_TPIDRRO_EL0), NULL, reset_unknown, TPIDRRO_EL0,
+	  .pvm_access = access_tpidrro },
 	{ SYS_DESC(SYS_TPIDR2_EL0), undef_access },
 
 	{ SYS_DESC(SYS_SCXTNUM_EL0), undef_access },
