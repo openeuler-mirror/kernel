@@ -642,9 +642,22 @@ static bool vgic_v3_broken_seis(void)
  */
 int vgic_v3_probe(const struct gic_kvm_info *info)
 {
-	u64 ich_vtr_el2 = kvm_call_hyp_ret(__vgic_v3_get_gic_config);
+	u64 ich_vtr_el2;
 	bool has_v2;
 	int ret;
+
+	if (is_pvm_mode()) {
+		/*
+		 * Populate synthetic ListRegs, IDbits and PRIbits fields without
+		 * reading ICH_VTR_EL2. PRIbits encodes VGIC_PRI_BITS priority bits.
+		 */
+		ich_vtr_el2 = 0xf |
+				 ((u64)(VGIC_PRI_BITS - 1) << ICH_VTR_ID_BITS_SHIFT) |
+				 ((u64)(VGIC_PRI_BITS - 1) <<
+				  ICH_VTR_PRI_BITS_SHIFT);
+	} else {
+		ich_vtr_el2 = kvm_call_hyp_ret(__vgic_v3_get_gic_config);
+	}
 
 	has_v2 = ich_vtr_el2 >> 63;
 	ich_vtr_el2 = (u32)ich_vtr_el2;
