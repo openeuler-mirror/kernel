@@ -2368,55 +2368,6 @@ bool ubase_adev_mbx_supported(struct auxiliary_device *adev)
 EXPORT_SYMBOL(ubase_adev_mbx_supported);
 
 /**
- * ubase_cmd_ctx_buf_free - Free context buffer of the device
- * @aux_dev: auxiliary device
- * @ctx_buf: context buffer capabilities
- *
- * This function is used to free the context buffer that is
- * allocated by calling function 'ubase_cmd_ctx_buf_alloc'.
- *
- * Context: Any context.
- */
-void ubase_cmd_ctx_buf_free(struct auxiliary_device *aux_dev,
-			    struct ubase_ctx_buf_cap *ctx_buf)
-{
-	struct ubase_dev *udev;
-
-	if (!aux_dev || !ctx_buf)
-		return;
-
-	udev = __ubase_get_udev_by_adev(aux_dev);
-	__ubase_cmd_ctx_buf_free(udev, ctx_buf);
-}
-EXPORT_SYMBOL(ubase_cmd_ctx_buf_free);
-
-/**
- * ubase_cmd_ctx_buf_alloc - Allocate context buffer of the device
- * @aux_dev: auxiliary device
- * @ctx_buf: context buffer capabilities
- * @attr: mailbox attribute
- *
- * This function is used to allocate context buffer for the device
- * and config context buffer by mailbox to hardware.
- *
- * Context: Process context. Takes and releases <lock>, BH-safe. May sleep
- * Return: 0 on success, negative error code otherwise
- */
-int ubase_cmd_ctx_buf_alloc(struct auxiliary_device *aux_dev,
-			    struct ubase_ctx_buf_cap *ctx_buf,
-			    struct ubase_mbx_attr *attr)
-{
-	struct ubase_dev *udev;
-
-	if (!aux_dev || !ctx_buf || !attr)
-		return -EINVAL;
-
-	udev = __ubase_get_udev_by_adev(aux_dev);
-	return __ubase_cmd_ctx_buf_alloc(udev, ctx_buf, attr);
-}
-EXPORT_SYMBOL(ubase_cmd_ctx_buf_alloc);
-
-/**
  * ubase_set_dev_mac() - Record the MAC address of the device
  * @adev: auxiliary device
  * @dev_addr: MAC address of the device

@@ -351,7 +351,7 @@ void ubase_free_cmd_mailbox(struct auxiliary_device *aux_dev,
 {
 	struct ubase_dev *udev;
 
-	if (!aux_dev)
+	if (!aux_dev || !mailbox)
 		return;
 
 	udev = __ubase_get_udev_by_adev(aux_dev);
