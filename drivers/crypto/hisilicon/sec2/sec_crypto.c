@@ -674,7 +674,6 @@ static int sec_ctx_base_init(struct sec_ctx *ctx)
 	sec = container_of(ctx->qps[0]->qm, struct sec_dev, qm);
 	ctx->sec = sec;
 	ctx->dev = &sec->qm.pdev->dev;
-	ctx->hlf_q_num = sec->ctx_q_num >> 1;
 
 	ctx->pbuf_supported = sec->qm.use_iommu;
 	if (sec->qm.ver < QM_HW_V3)
