@@ -34,7 +34,7 @@ endif
 # Add compiler options and macros
 ccflags-y += -g -ggdb #Supports debug information
 ccflags-y += -Wall  #-Werror Enable all GCC warnings and treat warnings as errors (-Werror).
-ccflags-y += -Wextra #Enable additional GCC warning options
+#ccflags-y += -Wextra #Enable additional GCC warning options
 ccflags-y += -frecord-gcc-switches #Afterwards, you can view the number of compilation options using the command readelf -p .gcc.command.li
 # Kernel headers do not strictly comply with variable usage standards; not disabling this check will cause compilation to fail
 ccflags-y += -Wno-unused-parameter -Wno-missing-field-initializers -Wno-implicit-fallthrough -Wno-type-limits

@@ -46,6 +46,10 @@
 #endif
 #include <rdma/ib_verbs.h>
 
+#if !defined(CONFIG_X86)
+#define SXE2_NATIVE_CPUID_NOT_SUPPORT
+#endif
+
 #ifndef from_tasklet
 #define from_tasklet(var, callback_tasklet, tasklet_fieldname) \
 	container_of(callback_tasklet, typeof(*var), tasklet_fieldname)
