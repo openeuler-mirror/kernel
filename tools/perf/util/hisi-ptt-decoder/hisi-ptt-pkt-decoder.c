@@ -11,7 +11,7 @@
 #include <byteswap.h>
 #include <linux/bitops.h>
 #include <linux/kernel.h>
-#include <linux/unaligned.h>
+#include <asm-generic/unaligned.h>
 #include <stdarg.h>
 
 #include "../color.h"
