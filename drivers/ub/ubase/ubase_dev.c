@@ -279,10 +279,10 @@ static int ubase_add_one_adev(struct ubase_dev *udev, int idx)
 
 	ret = auxiliary_device_init(&uadev->adev);
 	if (ret) {
-		ubase_destroy_one_adev(uadev);
 		ubase_err(udev,
 			  "failed to init auxiliary device(%s.%d), ret = %d\n",
 			  uadev->adev.name, udev->dev_id, ret);
+		ubase_destroy_one_adev(uadev);
 		return ret;
 	}
 
