@@ -677,6 +677,11 @@ static int sec_ctx_base_init(struct sec_ctx *ctx)
 	ctx->hlf_q_num = sec->ctx_q_num >> 1;
 
 	ctx->pbuf_supported = sec->qm.use_iommu;
+	if (sec->qm.ver < QM_HW_V3)
+		ctx->type_supported = SEC_BD_TYPE2;
+	else
+		ctx->type_supported = SEC_BD_TYPE3;
+
 	ctx->qp_ctx = kcalloc(sec->ctx_q_num, sizeof(struct sec_qp_ctx),
 			      GFP_KERNEL);
 	if (!ctx->qp_ctx) {
@@ -2064,13 +2069,10 @@ static int sec_skcipher_ctx_init(struct crypto_skcipher *tfm)
 	if (!ctx->qps)
 		return 0;
 
-	if (ctx->sec->qm.ver < QM_HW_V3) {
-		ctx->type_supported = SEC_BD_TYPE2;
-		ctx->req_op = &sec_skcipher_req_ops;
-	} else {
-		ctx->type_supported = SEC_BD_TYPE3;
+	if (ctx->type_supported == SEC_BD_TYPE3)
 		ctx->req_op = &sec_skcipher_req_ops_v3;
-	}
+	else
+		ctx->req_op = &sec_skcipher_req_ops;
 
 	return 0;
 }
@@ -2097,13 +2099,11 @@ static int sec_aead_init(struct crypto_aead *tfm)
 	ret = sec_ctx_base_init(ctx);
 	if (ret)
 		return ret;
-	if (ctx->sec->qm.ver < QM_HW_V3) {
-		ctx->type_supported = SEC_BD_TYPE2;
-		ctx->req_op = &sec_aead_req_ops;
-	} else {
-		ctx->type_supported = SEC_BD_TYPE3;
+
+	if (ctx->type_supported == SEC_BD_TYPE3)
 		ctx->req_op = &sec_aead_req_ops_v3;
-	}
+	else
+		ctx->req_op = &sec_aead_req_ops;
 
 	ret = sec_auth_init(ctx);
 	if (ret)
