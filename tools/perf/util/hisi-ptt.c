@@ -13,7 +13,7 @@
 #include <linux/kernel.h>
 #include <linux/log2.h>
 #include <linux/types.h>
-#include <linux/unaligned.h>
+#include <asm-generic/unaligned.h>
 #include <linux/zalloc.h>
 #include <stdlib.h>
 #include <unistd.h>
