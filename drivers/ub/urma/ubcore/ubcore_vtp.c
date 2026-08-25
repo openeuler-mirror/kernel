@@ -826,6 +826,25 @@ static struct ubcore_vtpn *ubcore_alloc_vtpn(struct ubcore_device *dev,
 	return vtpn;
 }
 
+static void ubcore_fill_vtpn_config(struct ubcore_vtpn *vtpn,
+	struct ubcore_vtp_param *param,
+	struct ubcore_active_tp_cfg *active_tp_cfg,
+	struct ubcore_udata *udata)
+{
+	vtpn->trans_mode = param->trans_mode;
+	vtpn->local_eid = param->local_eid;
+	vtpn->peer_eid = param->peer_eid;
+	vtpn->eid_index = param->eid_index;
+	vtpn->local_jetty = param->local_jetty;
+	vtpn->peer_jetty = param->peer_jetty;
+	if (active_tp_cfg != NULL) {
+		vtpn->peer_tp_handle = active_tp_cfg->peer_tp_handle.value;
+		vtpn->tag = active_tp_cfg->tag;
+	}
+	if (udata != NULL)
+		vtpn->uspace = true;
+}
+
 static struct ubcore_vtpn *
 	ubcore_create_vtpn(struct ubcore_device *dev,
 	struct ubcore_vtp_param *param,
@@ -1254,7 +1273,7 @@ int ubcore_delete_vtpn_for_tpid(struct ubcore_vtpn *vtpn)
 EXPORT_SYMBOL(ubcore_delete_vtpn_for_tpid);
 
 // Allocate a vtpn keyed by tp_handle, used by uburma_cmd_get_tp_list.
-struct ubcore_vtpn *ubcore_create_vtpn_for_tpid(struct ubcore_device *dev,
+struct ubcore_vtpn *ubcore_create_add_vtpn_for_tpid(struct ubcore_device *dev,
 						  uint64_t tp_handle)
 {
 	struct ubcore_active_tp_cfg active_tp_cfg = { 0 };
@@ -1269,16 +1288,19 @@ struct ubcore_vtpn *ubcore_create_vtpn_for_tpid(struct ubcore_device *dev,
 		a newly created tpid, and there is no concurrency.*/
 	vtpn = ubcore_create_vtpn(dev, &vtp_param, &active_tp_cfg, NULL);
 	if (vtpn == NULL) {
-		ubcore_log_err("failed to alloc vtpn for tpid.\n");
+		ubcore_log_err_rl("failed to alloc vtpn for tpid.\n");
+		(void)ubcore_delete_tpid_priv(dev, active_tp_cfg.tp_handle.bs.tpid);
 		return NULL;
 	}
-	vtpn->vtpn = (uint32_t)active_tp_cfg.tp_handle.bs.tpid;
 
 	ret = ubcore_find_add_vtpn_ctrlplane(dev, vtpn, &exist_vtpn);
 	if (ret != 0) {
-		ubcore_log_err("VTPN is already exist in add ht table in add tpid_uobj.\n");
-		// each process must be a new tpid, if exist in VTPN table, is error.
+		/* Each tpid is unique; finding a duplicate is bug. */
+		ubcore_log_err_rl("VTPN already exists in HT for tp_handle: %llu.\n",
+				  tp_handle);
+		/* ubcore_free_vtpn_ctrlplane deletes the tpid and frees vtpn. */
 		(void)ubcore_free_vtpn_ctrlplane(vtpn);
+		// kref_put but exist_vtpn will not be free. leak.
 		ubcore_vtpn_kref_put(exist_vtpn);
 		return NULL;
 	}
@@ -1286,7 +1308,6 @@ struct ubcore_vtpn *ubcore_create_vtpn_for_tpid(struct ubcore_device *dev,
 	atomic_inc(&vtpn->use_cnt);
 	return vtpn;
 }
-EXPORT_SYMBOL(ubcore_create_vtpn_for_tpid);
 
 struct ubcore_vtpn *
 	ubcore_connect_vtp_ctrlplane(struct ubcore_device *dev,
@@ -1300,7 +1321,7 @@ struct ubcore_vtpn *
 		.active_cfg = active_tp_cfg,
 	};
 
-	// 1. find get vtpn, must be created in uburma_cmd_get_tp_list.
+	// 1. find get vtpn, must be created in ubcore_get_tp_list.
 	vtpn = ubcore_find_get_vtpn_ctrlplane(dev, active_tp_cfg);
 	if (vtpn == NULL) {
 		ubcore_log_err_rl("VTPN not found in ht table.\n");
@@ -1308,7 +1329,6 @@ struct ubcore_vtpn *
 	}
 
 	mutex_lock(&vtpn->state_lock);
-
 	// READY: an active vtpn, reuse directly.
 	if (vtpn->state == UBCORE_VTPS_READY) {
 		ubcore_log_info("Success to reuse vtpn:%u", vtpn->vtpn);
@@ -1327,10 +1347,21 @@ struct ubcore_vtpn *
 		return ERR_PTR(-EAGAIN);
 	}
 
-	// 2. active tp (state == RESET here)
+	/*	vtpn will be created in ubcore_get_tp_list.
+		some fields are not set. If reuse, there's no need to change its value
+		simply fill in the field when it becomes active for the first time
+	*/
+	ubcore_fill_vtpn_config(vtpn, param, active_tp_cfg, udata);
+
+	/*	2. active tp (state == RESET here)
+		This interface is only used by tp-aware users, for whom the vtpn is
+		created and use_cnt is incremented to 1 in ubcore_get_tp_list() or
+		ubcore_create_tpid() (via ubcore_create_add_vtpn_for_tpid()).
+		First import: do not inc use_cnt again; it was already accounted for
+		at creation. On reuse (READY) below, use_cnt is incremented.
+	*/
 	ret = ubcore_modify_tpid(dev, UBCORE_TPID_STATE_RTS, &cfg);
 	if (ret == 0) {
-		atomic_inc(&vtpn->use_cnt);
 		vtpn->state = UBCORE_VTPS_READY;
 	} else {
 		vtpn->state = UBCORE_VTPS_WAIT_DESTROY;
@@ -1485,7 +1516,6 @@ struct ubcore_vtpn *
 	}
 
 	mutex_lock(&vtpn->state_lock);
-
 	// READY: an active vtpn, reuse directly.
 	if (vtpn->state == UBCORE_VTPS_READY) {
 		ubcore_log_info("Success to reuse vtpn:%u", vtpn->vtpn);
@@ -1504,10 +1534,16 @@ struct ubcore_vtpn *
 		return ERR_PTR(-EAGAIN);
 	}
 
+	/*	vtpn will be created in ubcore_get_tp_list.
+		some fields are not set. If reuse, there's no need to change its value
+		simply fill in the field when it becomes active for the first time
+	*/
+	ubcore_fill_vtpn_config(vtpn, param, active_tp_cfg, udata);
+
 	// 2. active tp (state == RESET here)
+	// similar to connect_vtp_ctrlplane
 	ret = ubcore_modify_tpid(dev, UBCORE_TPID_STATE_RTS, &cfg);
 	if (ret == 0) {
-		atomic_inc(&vtpn->use_cnt);
 		vtpn->vtpn = (uint32_t)active_tp_cfg->tp_handle.bs.tpid;
 		vtpn->state = UBCORE_VTPS_READY;
 	} else {

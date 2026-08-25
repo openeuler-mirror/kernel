@@ -81,7 +81,7 @@ struct ubcore_path_set {
  * @param[in] dev: ubcore_device found by add ops in the client.
  * @param[in] eid_index: function entity id (eid) index to set;
  * @param[in] udrv_data (optional): ucontext and user space driver data
- * @return: ubcore_ucontext pointer on success, NULL on fail.
+ * @return: ubcore_ucontext pointer on success, an ERR_PTR() on error.
  * Note: this API is called only by uburma representing user-space application,
  *       not by other kernel modules
  */
@@ -191,7 +191,7 @@ void ubcore_unregister_client(struct ubcore_client *rm_client);
  * @param[in] dev: the ubcore device handle;
  * @param[in] flag: token_id_flag;
  * @param[in] udata (optional): ucontext and user space driver data
- * @return: token id pointer on success, NULL on error
+ * @return: token id pointer on success, an ERR_PTR() on error
  */
 struct ubcore_token_id *ubcore_alloc_token_id(struct ubcore_device *dev,
 							union ubcore_token_id_flag flag,
@@ -207,7 +207,7 @@ int ubcore_free_token_id(struct ubcore_token_id *token_id);
  * @param[in] dev: the ubcore device handle;
  * @param[in] cfg: segment configurations
  * @param[in] udata (optional): ucontext and user space driver data
- * @return: target segment pointer on success, NULL on error
+ * @return: target segment pointer on success, an ERR_PTR() on error
  */
 struct ubcore_target_seg *ubcore_register_seg(struct ubcore_device *dev,
 					      struct ubcore_seg_cfg *cfg,
@@ -223,7 +223,7 @@ int ubcore_unregister_seg(struct ubcore_target_seg *tseg);
  * @param[in] dev: the ubcore device handle;
  * @param[in] cfg: import configurations
  * @param[in] udata (optional): ucontext and user space driver data
- * @return: target segment handle on success, NULL on error
+ * @return: target segment handle on success, an ERR_PTR() on error
  */
 struct ubcore_target_seg *ubcore_import_seg(struct ubcore_device *dev,
 					    struct ubcore_target_seg_cfg *cfg,
@@ -242,7 +242,7 @@ int ubcore_unimport_seg(struct ubcore_target_seg *tseg);
  * @param[in] jfce_handler (optional): completion event handler
  * @param[in] jfae_handler (optional): jfc async_event handler
  * @param[in] udata (optional): ucontext and user space driver data
- * @return: jfc pointer on success, NULL on error
+ * @return: jfc pointer on success, an ERR_PTR() on error
  */
 struct ubcore_jfc *ubcore_create_jfc(struct ubcore_device *dev,
 					struct ubcore_jfc_cfg *cfg,
@@ -359,7 +359,7 @@ int ubcore_free_jfc(struct ubcore_jfc *jfc, struct ubcore_udata *udata);
  * @param[in] cfg: jfs configurations
  * @param[in] jfae_handler (optional): jfs async_event handler
  * @param[in] udata (optional): ucontext and user space driver data
- * @return: jfs pointer on success, NULL on error
+ * @return: jfs pointer on success, an ERR_PTR() on error
  */
 struct ubcore_jfs *ubcore_create_jfs(struct ubcore_device *dev,
 					struct ubcore_jfs_cfg *cfg,
@@ -416,7 +416,7 @@ int ubcore_flush_jfs(struct ubcore_jfs *jfs, int cr_cnt, struct ubcore_cr *cr);
  * @param[in] cfg: jfr configurations
  * @param[in] jfae_handler (optional): jfr async_event handler
  * @param[in] udata (optional): ucontext and user space driver data
- * @return: jfr pointer on success, NULL on error
+ * @return: jfr pointer on success, an ERR_PTR() on error
  */
 struct ubcore_jfr *ubcore_create_jfr(struct ubcore_device *dev,
 				     struct ubcore_jfr_cfg *cfg,
@@ -534,7 +534,7 @@ int ubcore_delete_jfr_batch(struct ubcore_jfr **jfr_arr, int jfr_num,
  * @param[in] cfg: jetty attributes and configurations
  * @param[in] jfae_handler (optional): jetty async_event handler
  * @param[in] udata (optional): ucontext and user space driver data
- * @return: jetty pointer on success, NULL on error
+ * @return: jetty pointer on success, an ERR_PTR() on error
  */
 /**
  * Alloc a jfr.
@@ -662,7 +662,7 @@ int ubcore_flush_jetty(struct ubcore_jetty *jetty, int cr_cnt,
  * @param[in] dev: the ubcore device handle;
  * @param[in] cfg: remote jfr attributes and import configurations
  * @param[in] udata (optional): ucontext and user space driver data
- * @return: target jfr pointer on success, NULL on error
+ * @return: target jfr pointer on success, NULL or an ERR_PTR() on error
  */
 /**
  * Alloc a jetty.
@@ -738,7 +738,7 @@ int ubcore_free_jetty(struct ubcore_jetty *jetty, struct ubcore_udata *udata);
  * @param[in] dev: the ubcore device handle;
  * @param[in] cfg: remote jfr attributes and import configurations;
  * @param[in] udata (optional): ucontext and user space driver data
- * @return: target jfr pointer on success, NULL on error
+ * @return: target jfr pointer on success, NULL or an ERR_PTR() on error
  */
 struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
 					struct ubcore_tjetty_cfg *cfg,
@@ -750,7 +750,7 @@ struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
  * @param[in] cfg: remote jfr attributes and import configurations;
  * @param[in] active_tp_cfg: tp configuration to active;
  * @param[in] udata (optional): ucontext and user space driver data
- * @return: target jfr pointer on success, NULL on error
+ * @return: target jfr pointer on success, NULL or an ERR_PTR() on error
  */
 struct ubcore_tjetty *
 ubcore_import_jfr_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
@@ -768,7 +768,7 @@ int ubcore_unimport_jfr(struct ubcore_tjetty *tjfr);
  * @param[in] dev: the ubcore device handle;
  * @param[in] cfg: remote jetty attributes and import configurations
  * @param[in] udata (optional): ucontext and user space driver data
- * @return: target jetty pointer on success, NULL on error
+ * @return: target jetty pointer on success, NULL or an ERR_PTR() on error
  */
 struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
 					struct ubcore_tjetty_cfg *cfg,
@@ -780,7 +780,7 @@ struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
  * @param[in] cfg: remote jetty attributes and import configurations
  * @param[in] active_tp_cfg: tp configuration to active
  * @param[in] udata (optional): ucontext and user space driver data
- * @return: target jetty pointer on success, NULL on error
+ * @return: target jetty pointer on success, an ERR_PTR() on error
  */
 struct ubcore_tjetty *
 ubcore_import_jetty_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
@@ -878,7 +878,7 @@ int ubcore_unbind_jetty(struct ubcore_jetty *jetty);
  * @param[in] cfg: jetty group  configurations
  * @param[in] jfae_handler (optional): jetty async_event handler
  * @param[in] udata (optional): ucontext and user space driver data
- * @return: jetty group pointer on success, NULL on error
+ * @return: jetty group pointer on success, an ERR_PTR() on error
  */
 struct ubcore_jetty_group *ubcore_create_jetty_grp(
 	struct ubcore_device *dev, struct ubcore_jetty_grp_cfg *cfg,
@@ -896,7 +896,7 @@ int ubcore_delete_jetty_grp(struct ubcore_jetty_group *jetty_grp);
  * @param[in] timeout: max time to wait (milliseconds)
  * @param[in] cb: callback function pointer with custom user argument
  * @param[in] udata (optional): ucontext and user space driver data
- * @return: target jetty pointer on success, NULL on error
+ * @return: target jetty pointer on success, an ERR_PTR() on error
  */
 struct ubcore_tjetty *ubcore_import_jetty_async(struct ubcore_device *dev,
 					struct ubcore_tjetty_cfg *cfg,
@@ -955,18 +955,6 @@ struct ubcore_tpid *ubcore_create_tpid(struct ubcore_device *dev,
 	struct ubcore_tpid_cfg *cfg, struct ubcore_udata *udata);
 
 /**
- * find or add a vtpn keyed by tp_handle in the control-plane vtpn table,
- * used by uburma_get_tp_list to create tpid uobj.
- * @param[in] dev: ubcore device pointer;
- * @param[in] tp_handle: tp_handle obtained from ubcore_get_tp_list;
- * @return: vtpn pointer (with a kref taken) on success, NULL on failure.
- *          If a vtpn with the same tp_handle already exists, it is returned
- *          (and kref-get) instead of creating a new one.
- */
-struct ubcore_vtpn *ubcore_create_vtpn_for_tpid(struct ubcore_device *dev,
-						  uint64_t tp_handle);
-
-/**
  * find an existing vtpn by tp_handle and take a kref on it. used by uburma.
  * @param[in] dev: ubcore device pointer;
  * @param[in] tp_handle: tp_handle obtained from ubcore_get_tp_list;
@@ -977,8 +965,8 @@ struct ubcore_vtpn *ubcore_find_get_vtpn_by_tp_handle(struct ubcore_device *dev,
 						      uint64_t tp_handle);
 
 /**
- * drop a kref taken by ubcore_find_get_vtpn_by_tp_handle() or
- * ubcore_create_vtpn_for_tpid(). The vtpn is not freed here.
+ * drop a kref taken by ubcore_find_get_vtpn_by_tp_handle().
+ * The vtpn is not freed here.
  * @param[in] vtpn: vtpn pointer returned by the find functions above;
  */
 void ubcore_put_vtpn_for_tpid(struct ubcore_vtpn *vtpn);

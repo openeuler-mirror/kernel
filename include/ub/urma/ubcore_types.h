@@ -1150,6 +1150,7 @@ struct ubcore_vtpn {
 	/* ubcore private, inaccessible to driver */
 	enum ubcore_transport_mode trans_mode;
 	/* vtpn key start */
+	/* nobody use this key now */
 	union ubcore_eid local_eid;
 	union ubcore_eid peer_eid;
 	uint32_t local_jetty;
@@ -1167,6 +1168,7 @@ struct ubcore_vtpn {
 	struct list_head list; /* vtpn head to restore tjetty/jetty/cb node */
 	struct list_head
 		disconnect_list; /* vtpn head to restore disconnect vtpn node */
+	/* vtpn key is tp_handle now */
 	uint64_t tp_handle;
 	uint64_t peer_tp_handle;
 	uint64_t tag;
