@@ -2919,7 +2919,7 @@ static void cpu_init_hyp_mode(void)
 
 static void cpu_hyp_reset(void)
 {
-	if (!is_kernel_in_hyp_mode())
+	if (!is_kernel_in_hyp_mode() && !is_pvm_mode())
 		__hyp_reset_vectors();
 }
 
@@ -2958,7 +2958,7 @@ static void cpu_hyp_init_context(void)
 {
 	kvm_init_host_cpu_context(host_data_ptr(host_ctxt));
 
-	if (!is_kernel_in_hyp_mode())
+	if (!is_kernel_in_hyp_mode() && !is_pvm_mode())
 		cpu_init_hyp_mode();
 }
 
