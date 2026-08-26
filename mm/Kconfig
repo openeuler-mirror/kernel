@@ -1582,4 +1582,21 @@ config CMA_FOLIO
 
 	  If unsure, say "n".
 
+config MM_FREE_RECLAIM
+	bool "Export reclaim free memory"
+	depends on ARM64
+	select COMPACTION
+	default y
+	help
+	  Export a set of memory-management interfaces so that kernel
+	  modules (e.g. host-driven virtio-balloon memory operations)
+	  can proactively manage memory:
+	    - mm_count_free_blocks(), which snapshots per-order buddy
+	      free block counts summed over all populated zones;
+	    - try_to_free_mem_cgroup_pages(), which triggers memory
+		  reclaim.  Direct reclaim is a heavy operation:
+		  callers must throttle themselves.
+	  The exported symbols become part of the kernel ABI (kABI), so
+	  this is restricted to arm64. If unsure, say "n".
+
 endmenu

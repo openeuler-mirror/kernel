@@ -18,6 +18,8 @@
 #include <linux/wait.h>
 #include <linux/mm.h>
 #include <linux/page_reporting.h>
+#include <linux/compaction.h>
+#include <linux/vmstat.h>
 
 /*
  * Balloon device works in 4K page units.  So each page is pointed to by
@@ -45,12 +47,18 @@ enum virtio_balloon_vq {
 	VIRTIO_BALLOON_VQ_STATS,
 	VIRTIO_BALLOON_VQ_FREE_PAGE,
 	VIRTIO_BALLOON_VQ_REPORTING,
+	VIRTIO_BALLOON_VQ_MEMOP,
 	VIRTIO_BALLOON_VQ_MAX
 };
 
 enum virtio_balloon_config_read {
 	VIRTIO_BALLOON_CONFIG_READ_CMD_ID = 0,
 };
+
+#if defined(CONFIG_MM_FREE_RECLAIM) && defined(CONFIG_MEMCG)
+
+#define VIRTIO_BALLOON_RECLAIM_MAX_PASSES	10
+#endif /* CONFIG_MM_FREE_RECLAIM && CONFIG_MEMCG */
 
 struct virtio_balloon {
 	struct virtio_device *vdev;
@@ -119,12 +127,65 @@ struct virtio_balloon {
 	/* Free page reporting device */
 	struct virtqueue *reporting_vq;
 	struct page_reporting_dev_info pr_dev_info;
+
+#if defined(CONFIG_MM_FREE_RECLAIM) && defined(CONFIG_MEMCG)
+	/* Host-initiated memory operations - VIRTIO_BALLOON_F_MEMOP */
+	struct virtqueue *memop_vq;
+	struct work_struct memop_work;
+	/* Last handled memop_cmd_id (CPU byte order), dedups requests */
+	u32 memop_cmd_id;
+	struct virtio_balloon_memop_resp memop_resp;
+#endif
 };
 
 static const struct virtio_device_id id_table[] = {
 	{ VIRTIO_ID_BALLOON, VIRTIO_DEV_ANY_ID },
 	{ 0 },
 };
+
+#if defined(CONFIG_MM_FREE_RECLAIM) && defined(CONFIG_MEMCG)
+static void reclaim_page_cache_pages(unsigned long nr_to_reclaim,
+			      unsigned long *nr_reclaimed)
+{
+	unsigned long reclaimed_total = 0;
+	unsigned int nr_passes = VIRTIO_BALLOON_RECLAIM_MAX_PASSES;
+	unsigned long reclaimed;
+
+	if (nr_reclaimed)
+		*nr_reclaimed = 0;
+
+	if (!nr_to_reclaim)
+		return;
+
+	while (reclaimed_total < nr_to_reclaim && nr_passes--) {
+		reclaimed = try_to_free_mem_cgroup_pages(NULL,
+					nr_to_reclaim - reclaimed_total,
+					GFP_KERNEL, MEMCG_RECLAIM_PROACTIVE);
+		reclaimed_total += reclaimed;
+
+		cond_resched();
+	}
+
+	if (nr_reclaimed)
+		*nr_reclaimed = reclaimed_total;
+}
+
+static void virtio_balloon_report_free_blocks(struct virtio_balloon *vb)
+{
+	unsigned long free_blocks[NR_PAGE_ORDERS];
+	int i;
+
+	/* The wire format must have room for all of the guest's orders. */
+	BUILD_BUG_ON(VIRTIO_BALLOON_MEMOP_NR_FREE_BLOCKS < NR_PAGE_ORDERS);
+
+	mm_count_free_blocks(free_blocks, ARRAY_SIZE(free_blocks));
+	for (i = 0; i < VIRTIO_BALLOON_MEMOP_NR_FREE_BLOCKS; i++)
+		vb->memop_resp.free_blocks[i] =
+			cpu_to_virtio64(vb->vdev,
+					i < NR_PAGE_ORDERS ? free_blocks[i] : 0);
+}
+
+#endif /* CONFIG_MM_FREE_RECLAIM && CONFIG_MEMCG */
 
 static u32 page_to_balloon_pfn(struct page *page)
 {
@@ -351,6 +412,99 @@ static unsigned int update_balloon_stats(struct virtio_balloon *vb)
 	return idx;
 }
 
+#if defined(CONFIG_MM_FREE_RECLAIM) && defined(CONFIG_MEMCG)
+/*
+ * The device pops the response buffer, reads it and returns it right
+ * away; reap the used buffer here so its descriptor goes back to the
+ * free pool.  Requests themselves arrive via the config space, see
+ * memop_func().
+ */
+static void memop_request(struct virtqueue *vq)
+{
+	unsigned int len;
+
+	while (virtqueue_get_buf(vq, &len))
+		;
+}
+
+static void virtio_balloon_queue_memop_work(struct virtio_balloon *vb)
+{
+	if (!virtio_has_feature(vb->vdev, VIRTIO_BALLOON_F_MEMOP))
+		return;
+
+	queue_work(system_freezable_wq, &vb->memop_work);
+}
+
+static void memop_func(struct work_struct *work)
+{
+	struct virtio_balloon *vb = container_of(work, struct virtio_balloon,
+						 memop_work);
+	struct virtqueue *vq = vb->memop_vq;
+	struct scatterlist sg;
+	unsigned long reclaimed;
+	u32 cmd_id, arg;
+	u32 cmd;
+
+	/*
+	 * Legacy balloon config space is LE, unlike all other devices.
+	 * The device bumps the sequence part of memop_cmd_id on every
+	 * request and issues at most one request at a time (it waits for
+	 * the response before publishing the next one), so cmd_id cannot
+	 * change while this work runs; a value equal to the last handled
+	 * one, or VIRTIO_BALLOON_MEMOP_NONE, means there is nothing to do.
+	 * Command and argument ride along in the same word.
+	 */
+	virtio_cread_le(vb->vdev, struct virtio_balloon_config,
+			memop_cmd_id, &cmd_id);
+	cmd = (cmd_id >> VIRTIO_BALLOON_MEMOP_CMD_SHIFT) &
+	      VIRTIO_BALLOON_MEMOP_CMD_MASK;
+	if (cmd == VIRTIO_BALLOON_MEMOP_NONE || cmd_id == vb->memop_cmd_id)
+		return;
+	vb->memop_cmd_id = cmd_id;
+
+	memset(&vb->memop_resp, 0, sizeof(vb->memop_resp));
+
+	switch (cmd) {
+	case VIRTIO_BALLOON_MEMOP_RECLAIM_PAGE_CACHE:
+		arg = cmd_id & VIRTIO_BALLOON_MEMOP_ARG_MASK;
+		reclaim_page_cache_pages(arg, &reclaimed);
+		vb->memop_resp.reclaim.nr_reclaimed =
+			cpu_to_virtio64(vb->vdev, reclaimed);
+		break;
+	case VIRTIO_BALLOON_MEMOP_COMPACT_MEMORY:
+		/*
+		 * Unconditional whole-zone compaction, same as writing 1
+		 * to /proc/sys/vm/compact_memory.  try_to_compact_pages()
+		 * is not suitable here: it only services a failing
+		 * high-order allocation and skips zones where such an
+		 * allocation would already succeed.
+		 */
+		compact_memory_all();
+		virtio_balloon_report_free_blocks(vb);
+		break;
+	case VIRTIO_BALLOON_MEMOP_QUERY_FRAGMENTATION:
+		/* Report-only: read back the buddy free block counts. */
+		virtio_balloon_report_free_blocks(vb);
+		break;
+	default:
+		dev_warn(&vb->vdev->dev, "%s: unknown memop cmd=%u\n",
+			 __func__, cmd);
+		vb->memop_resp.status =
+			cpu_to_virtio64(vb->vdev, (u64)(s64)-EINVAL);
+		break;
+	}
+
+	sg_init_one(&sg, &vb->memop_resp, sizeof(vb->memop_resp));
+	/*
+	 * memop_request() returns each response buffer as soon as the
+	 * device has consumed it, and the device waits for the response
+	 * before issuing the next request, so the ring always has room.
+	 */
+	virtqueue_add_outbuf(vq, &sg, 1, vb, GFP_KERNEL);
+	virtqueue_kick(vq);
+}
+#endif /* CONFIG_MM_FREE_RECLAIM && CONFIG_MEMCG */
+
 /*
  * While most virtqueues communicate guest-initiated requests to the hypervisor,
  * the stats queue operates in reverse.  The driver initializes the virtqueue
@@ -447,6 +601,10 @@ static void virtballoon_changed(struct virtio_device *vdev)
 		queue_work(system_freezable_wq,
 			   &vb->update_balloon_size_work);
 		virtio_balloon_queue_free_page_work(vb);
+#if defined(CONFIG_MM_FREE_RECLAIM) && defined(CONFIG_MEMCG)
+		/* A new memop request may have been published. */
+		virtio_balloon_queue_memop_work(vb);
+#endif
 	}
 	spin_unlock_irqrestore(&vb->stop_update_lock, flags);
 }
@@ -512,6 +670,8 @@ static int init_vqs(struct virtio_balloon *vb)
 	callbacks[VIRTIO_BALLOON_VQ_FREE_PAGE] = NULL;
 	names[VIRTIO_BALLOON_VQ_FREE_PAGE] = NULL;
 	names[VIRTIO_BALLOON_VQ_REPORTING] = NULL;
+	callbacks[VIRTIO_BALLOON_VQ_MEMOP] = NULL;
+	names[VIRTIO_BALLOON_VQ_MEMOP] = NULL;
 
 	if (virtio_has_feature(vb->vdev, VIRTIO_BALLOON_F_STATS_VQ)) {
 		names[VIRTIO_BALLOON_VQ_STATS] = "stats";
@@ -527,6 +687,13 @@ static int init_vqs(struct virtio_balloon *vb)
 		names[VIRTIO_BALLOON_VQ_REPORTING] = "reporting_vq";
 		callbacks[VIRTIO_BALLOON_VQ_REPORTING] = balloon_ack;
 	}
+
+#if defined(CONFIG_MM_FREE_RECLAIM) && defined(CONFIG_MEMCG)
+	if (virtio_has_feature(vb->vdev, VIRTIO_BALLOON_F_MEMOP)) {
+		names[VIRTIO_BALLOON_VQ_MEMOP] = "memop";
+		callbacks[VIRTIO_BALLOON_VQ_MEMOP] = memop_request;
+	}
+#endif
 
 	err = virtio_find_vqs(vb->vdev, VIRTIO_BALLOON_VQ_MAX, vqs,
 			      callbacks, names, NULL);
@@ -562,6 +729,11 @@ static int init_vqs(struct virtio_balloon *vb)
 
 	if (virtio_has_feature(vb->vdev, VIRTIO_BALLOON_F_REPORTING))
 		vb->reporting_vq = vqs[VIRTIO_BALLOON_VQ_REPORTING];
+
+#if defined(CONFIG_MM_FREE_RECLAIM) && defined(CONFIG_MEMCG)
+	if (virtio_has_feature(vb->vdev, VIRTIO_BALLOON_F_MEMOP))
+		vb->memop_vq = vqs[VIRTIO_BALLOON_VQ_MEMOP];
+#endif
 
 	return 0;
 }
@@ -884,6 +1056,9 @@ static int virtballoon_probe(struct virtio_device *vdev)
 
 	INIT_WORK(&vb->update_balloon_stats_work, update_balloon_stats_func);
 	INIT_WORK(&vb->update_balloon_size_work, update_balloon_size_func);
+#if defined(CONFIG_MM_FREE_RECLAIM) && defined(CONFIG_MEMCG)
+	INIT_WORK(&vb->memop_work, memop_func);
+#endif
 	spin_lock_init(&vb->stop_update_lock);
 	mutex_init(&vb->balloon_lock);
 	init_waitqueue_head(&vb->acked);
@@ -992,6 +1167,15 @@ static int virtballoon_probe(struct virtio_device *vdev)
 
 	virtio_device_ready(vdev);
 
+#if defined(CONFIG_MM_FREE_RECLAIM) && defined(CONFIG_MEMCG)
+	/*
+	 * The host may have published a memop request before the driver
+	 * became ready; its config change notification reached nobody,
+	 * so check the config space once here.
+	 */
+	virtio_balloon_queue_memop_work(vb);
+#endif
+
 	if (towards_target(vb))
 		virtballoon_changed(vdev);
 	return 0;
@@ -1045,6 +1229,9 @@ static void virtballoon_remove(struct virtio_device *vdev)
 	spin_unlock_irq(&vb->stop_update_lock);
 	cancel_work_sync(&vb->update_balloon_size_work);
 	cancel_work_sync(&vb->update_balloon_stats_work);
+#if defined(CONFIG_MM_FREE_RECLAIM) && defined(CONFIG_MEMCG)
+	cancel_work_sync(&vb->memop_work);
+#endif
 
 	if (virtio_has_feature(vdev, VIRTIO_BALLOON_F_FREE_PAGE_HINT)) {
 		cancel_work_sync(&vb->report_free_page_work);
@@ -1079,6 +1266,16 @@ static int virtballoon_restore(struct virtio_device *vdev)
 
 	virtio_device_ready(vdev);
 
+#if defined(CONFIG_MM_FREE_RECLAIM) && defined(CONFIG_MEMCG)
+	/*
+	 * A memop request may have been published while the device was
+	 * down (e.g. during migration); check the config space once here.
+	 * A request already handled before the freeze is deduped by its
+	 * sequence number.
+	 */
+	virtio_balloon_queue_memop_work(vb);
+#endif
+
 	if (towards_target(vb))
 		virtballoon_changed(vdev);
 	update_balloon_size(vb);
@@ -1099,6 +1296,17 @@ static int virtballoon_validate(struct virtio_device *vdev)
 	else if (!virtio_has_feature(vdev, VIRTIO_BALLOON_F_PAGE_POISON))
 		__virtio_clear_bit(vdev, VIRTIO_BALLOON_F_REPORTING);
 
+#if defined(CONFIG_MM_FREE_RECLAIM) && defined(CONFIG_MEMCG)
+	/*
+	 * memop_cmd_id shares config space storage with
+	 * free_page_hint_cmd_id, so the features cannot coexist; the
+	 * device is expected to not offer the conflicting bit together
+	 * with memop, but clear it here just in case.
+	 */
+	if (virtio_has_feature(vdev, VIRTIO_BALLOON_F_MEMOP))
+		__virtio_clear_bit(vdev, VIRTIO_BALLOON_F_FREE_PAGE_HINT);
+#endif
+
 	__virtio_clear_bit(vdev, VIRTIO_F_ACCESS_PLATFORM);
 	return 0;
 }
@@ -1110,6 +1318,9 @@ static unsigned int features[] = {
 	VIRTIO_BALLOON_F_FREE_PAGE_HINT,
 	VIRTIO_BALLOON_F_PAGE_POISON,
 	VIRTIO_BALLOON_F_REPORTING,
+#if defined(CONFIG_MM_FREE_RECLAIM) && defined(CONFIG_MEMCG)
+	VIRTIO_BALLOON_F_MEMOP,
+#endif
 };
 
 static struct virtio_driver virtio_balloon_driver = {
