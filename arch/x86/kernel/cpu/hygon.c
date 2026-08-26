@@ -7,6 +7,7 @@
  * Author: Pu Wen <puwen@hygon.cn>
  */
 #include <linux/io.h>
+#include <linux/cpu_smt.h>
 
 #include <asm/apic.h>
 #include <asm/cpu.h>
@@ -273,6 +274,17 @@ static void cpu_topology_fixup_hygon(struct cpuinfo_x86 *c)
 static void init_hygon(struct cpuinfo_x86 *c)
 {
 	u64 vm_cr;
+
+	/*
+	 * On Hygon platforms with SMT enabled, MWAIT is disabled by default
+	 * for better performance.
+	 */
+	if (boot_option_idle_override == IDLE_NO_OVERRIDE &&
+	    __max_threads_per_core > 1 &&
+	    cpu_smt_control == CPU_SMT_ENABLED) {
+		pr_info("On Hygon platforms with SMT enabled, set idle=nomwait by default.\n");
+		boot_option_idle_override = IDLE_NOMWAIT;
+	}
 
 	early_init_hygon(c);
 
