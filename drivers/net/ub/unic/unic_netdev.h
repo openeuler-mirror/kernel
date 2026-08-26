@@ -22,7 +22,8 @@ void unic_unregister_ipaddr_notifier(void);
 void unic_link_status_change(struct net_device *netdev, bool linkup);
 void unic_enable_channels(struct unic_dev *unic_dev);
 void unic_disable_channels(struct unic_dev *unic_dev);
-int unic_query_link_status(struct unic_dev *unic_dev, u8 *link_status);
+int unic_query_link_status(struct unic_dev *unic_dev, u8 *link_status,
+			   u8 *all_port_link_down);
 int unic_register_netdevice_notifier(void);
 void unic_unregister_netdevice_notifier(void);
 

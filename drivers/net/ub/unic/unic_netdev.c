@@ -257,6 +257,7 @@ out:
 
 void unic_link_status_update(struct unic_dev *unic_dev)
 {
+	u8 all_port_link_down = UNIC_LINK_STATUS_DOWN;
 	u8 link_status = UNIC_LINK_STATUS_DOWN;
 	int ret;
 
@@ -266,7 +267,8 @@ void unic_link_status_update(struct unic_dev *unic_dev)
 	if (test_bit(UNIC_STATE_DOWN, &unic_dev->state))
 		goto ifdown;
 
-	ret = unic_query_link_status(unic_dev, &link_status);
+	ret = unic_query_link_status(unic_dev, &link_status,
+				     &all_port_link_down);
 	if (ret) {
 		clear_bit(UNIC_STATE_LINK_UPDATING, &unic_dev->state);
 		return;
@@ -274,7 +276,7 @@ void unic_link_status_update(struct unic_dev *unic_dev)
 
 	unic_dev->hw.mac.link_status = link_status;
 	if (unic_dev_ubl_supported(unic_dev))
-		link_status = UNIC_LINK_STATUS_UP;
+		link_status = unic_ub_link_status(all_port_link_down);
 
 ifdown:
 	if (link_status != unic_dev->sw_link_status) {
@@ -987,7 +989,8 @@ void unic_unregister_netdevice_notifier(void)
 	unregister_netdevice_notifier(&unic_netdev_notifier);
 }
 
-int unic_query_link_status(struct unic_dev *unic_dev, u8 *link_status)
+int unic_query_link_status(struct unic_dev *unic_dev, u8 *link_status,
+			   u8 *all_port_link_down)
 {
 	struct unic_link_status_cmd_resp resp = {0};
 	struct ubase_cmd_buf out;
@@ -1008,6 +1011,8 @@ int unic_query_link_status(struct unic_dev *unic_dev, u8 *link_status)
 
 	*link_status = (resp.status & UNIC_LINK_STATUS_UP_M) > 0 ?
 		       UNIC_LINK_STATUS_UP : UNIC_LINK_STATUS_DOWN;
+
+	*all_port_link_down = resp.all_port_link_down;
 
 	return 0;
 }
