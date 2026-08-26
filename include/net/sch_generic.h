@@ -101,7 +101,6 @@ struct Qdisc {
 	struct hlist_node       hash;
 	u32			handle;
 	u32			parent;
-	int			depth;
 
 	struct netdev_queue	*dev_queue;
 
@@ -130,7 +129,7 @@ struct Qdisc {
 	netdevice_tracker	dev_tracker;
 
 	KABI_USE(1, int owner)
-	KABI_RESERVE(2)
+	KABI_USE(2, int depth)
 
 	/* private data */
 	long privdata[] ____cacheline_aligned;
