@@ -40,6 +40,9 @@
 #define CDMA_CQE_STATUS_NUM 7
 #define CDMA_CQE_SUB_STATUS_NUM 5
 
+/* rsv_bitmap bits for cdma_create_context_args.out */
+#define CDMA_CTX_RSP_ST64B_EN 0x1
+
 enum dma_cr_status {
 	DMA_CR_SUCCESS = 0,
 	DMA_CR_UNSUPPORTED_OPCODE_ERR,
@@ -346,7 +349,9 @@ struct cdma_create_context_args {
 		__u8 dwqe_enable;
 		int async_fd;
 		__u32 rsv_bitmap;
-		__u32 rsvd[4];
+		__u8 st64b_en;
+		__u8 pad[3];
+		__u32 rsvd[3];
 	} out;
 };
 

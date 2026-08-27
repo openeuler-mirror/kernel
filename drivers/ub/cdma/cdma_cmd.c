@@ -146,6 +146,8 @@ int cdma_init_dev_caps(struct cdma_dev *cdev)
 	caps->queue.start_idx = 0;
 	caps->jfce.max_cnt = caps->jfc.max_cnt;
 	caps->jfce.start_idx = 0;
+	caps->st64b_en = (cdev->hw_ver != UBASE_HW_VER_A_0) &&
+			  (cdev->hw_ver != UBASE_HW_VER_A_1);
 
 	dev_info(cdev->dev, "query cdev eid = 0x%x, cdev upi = 0x%x\n", cdev->eid,
 		 cdev->upi);
@@ -159,6 +161,7 @@ int cdma_init_dev_caps(struct cdma_dev *cdev)
 		 caps->jfc.max_cnt, caps->jfc.depth, caps->jfc.start_idx);
 	dev_info(cdev->dev, "comp_vector_cnt = 0x%x, public_jetty_cnt = 0x%x\n",
 		 caps->comp_vector_cnt, caps->public_jetty_cnt);
+	dev_info(cdev->dev, "st64b_en = %d\n", caps->st64b_en);
 	dev_info(cdev->dev, "sl_num = 0x%x\n", cdev->sl_num);
 	for (i = 0; i < cdev->sl_num; i++)
 		dev_info(cdev->dev, "sl[%u] = 0x%x\n", i, cdev->sl[i]);
