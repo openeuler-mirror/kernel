@@ -5521,9 +5521,7 @@ void txgbe_reset(struct txgbe_adapter *adapter)
 	memcpy(old_addr, &adapter->mac_table[0].addr, netdev->addr_len);
 	txgbe_flush_sw_mac_table(adapter);
 	txgbe_mac_set_default_filter(adapter, old_addr);
-	#ifdef HAVE_SET_RX_MODE
 	__dev_uc_unsync(netdev, NULL);
-#endif
 
 	/* update SAN MAC vmdq pool selection */
 	hw->mac.ops.set_vmdq_san_mac(hw, VMDQ_P(0));
@@ -10336,9 +10334,7 @@ static int txgbe_udp_tunnel_unset(struct net_device *dev,
 static const struct udp_tunnel_nic_info txgbe_udp_tunnels = {
 	.set_port       = txgbe_udp_tunnel_set,
 	.unset_port     = txgbe_udp_tunnel_unset,
-#ifdef UDP_TUNNEL_NIC_INFO_MAY_SLEEP
 	.flags          = UDP_TUNNEL_NIC_INFO_MAY_SLEEP,
-#endif
 	.tables         = {
 		{ .n_entries = 1, .tunnel_types = UDP_TUNNEL_TYPE_VXLAN,  },
 		{ .n_entries = 1, .tunnel_types = UDP_TUNNEL_TYPE_GENEVE, },
