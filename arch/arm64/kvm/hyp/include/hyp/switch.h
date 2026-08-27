@@ -23,6 +23,7 @@
 #include <asm/cpufeature.h>
 #include <asm/extable.h>
 #include <asm/kprobes.h>
+#include <asm/insn.h>
 #include <asm/kvm_asm.h>
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_hyp.h>
@@ -922,6 +923,93 @@ static __always_inline int kvm_pvm_guest_insn_read(struct kvm_vcpu *vcpu,
 }
 
 /*
+ * A PVM guest kernel runs at physical EL0, so the privileged system-register
+ * accesses it performs on every exception entry and exit trap as EC=UNKNOWN.
+ * They are plain reads and writes with no side effects, yet each one would
+ * otherwise exit to the host for a full system-register table walk.  Under a
+ * timer-tick workload these are the hottest trapped instructions, and the
+ * exits alone can keep a vCPU from making progress, to the point where the
+ * guest never reports a quiescent state and RCU stalls.  Emulate them in the
+ * hypervisor and resume the guest instead.
+ *
+ * The PC is advanced with __kvm_skip_instr(), which writes ELR_EL2 directly.
+ * This runs inside the fixup_guest_exit() loop, where __kvm_adjust_pc() is not
+ * re-invoked, so the flag set by kvm_incr_pc() would never be consumed and the
+ * guest would re-execute the same instruction forever.
+ */
+static bool kvm_pvm_try_fast_sysreg(struct kvm_vcpu *vcpu, u32 insn)
+{
+	bool is_read = aarch64_insn_is_mrs(insn);
+	enum vcpu_sysreg reg;
+	u32 sysreg, rt;
+
+	if (!is_read && !aarch64_insn_is_msr_reg(insn))
+		return false;
+
+	/* Assemble the accessed sysreg as kvm_pvm_insn_to_esr() does. */
+	sysreg = (u32)aarch64_insn_decode_immediate(AARCH64_INSN_IMM_16,
+						    insn) << 5;
+	rt = aarch64_insn_decode_register(AARCH64_INSN_REGTYPE_RT, insn);
+
+	switch (sysreg) {
+	case SYS_CurrentEL:
+		if (!is_read)
+			return false;
+		vcpu_set_reg(vcpu, rt, CurrentEL_EL1);
+		__kvm_skip_instr(vcpu);
+		return true;
+	case SYS_SP_EL0:
+		/* Backed by gp_regs.sp, which the guest exit path has saved. */
+		if (is_read)
+			vcpu_set_reg(vcpu, rt, *vcpu_sp(vcpu));
+		else
+			*vcpu_sp(vcpu) = vcpu_get_reg(vcpu, rt);
+		__kvm_skip_instr(vcpu);
+		return true;
+	case SYS_TPIDRRO_EL0:
+		/*
+		 * Backed by hardware, since guest userspace reads it directly
+		 * at EL0.  Those reads do not trap, so only a guest kernel
+		 * write lands here; leave any other access to the host path.
+		 */
+		if (is_read)
+			return false;
+		write_sysreg_s(vcpu_get_reg(vcpu, rt), SYS_TPIDRRO_EL0);
+		__kvm_skip_instr(vcpu);
+		return true;
+	case SYS_TPIDR_EL1:
+		reg = TPIDR_EL1;
+		break;
+	case SYS_ELR_EL1:
+		reg = ELR_EL1;
+		break;
+	case SYS_SPSR_EL1:
+		reg = SPSR_EL1;
+		break;
+	case SYS_ESR_EL1:
+		reg = ESR_EL1;
+		break;
+	case SYS_FAR_EL1:
+		reg = FAR_EL1;
+		break;
+	default:
+		return false;
+	}
+
+	/*
+	 * These only ever live in the context, as PVM does not restore the EL1
+	 * state to hardware for the guest.
+	 */
+	if (is_read)
+		vcpu_set_reg(vcpu, rt, ctxt_sys_reg(&vcpu->arch.ctxt, reg));
+	else
+		ctxt_sys_reg(&vcpu->arch.ctxt, reg) = vcpu_get_reg(vcpu, rt);
+
+	__kvm_skip_instr(vcpu);
+	return true;
+}
+
+/*
  * A PVM guest kernel runs at physical EL0, so its privileged instructions trap
  * with EC=UNKNOWN.  Return the syndrome they would trap with from EL1, for the
  * host to emulate them through its regular exit handlers, or @esr to keep
@@ -972,6 +1060,10 @@ static inline bool kvm_hyp_handle_unknown(struct kvm_vcpu *vcpu,
 	/* A failed read leaves EC=UNKNOWN. */
 	if (kvm_pvm_guest_insn_read(vcpu, read_sysreg_el2(SYS_ELR), &insn))
 		return false;
+
+	/* Absorb the hot exception entry and exit system registers. */
+	if (kvm_pvm_try_fast_sysreg(vcpu, insn))
+		return true;
 
 	vcpu->arch.fault.esr_el2 = kvm_pvm_insn_to_esr(insn,
 						       vcpu->arch.fault.esr_el2);
