@@ -725,7 +725,7 @@ struct kvm *kvm_arch_alloc_vm(void)
 {
 	size_t sz = sizeof(struct kvm);
 
-	if (!has_vhe())
+	if (!has_vhe() && !is_pvm_mode())
 		return kzalloc(sz, GFP_KERNEL_ACCOUNT);
 
 	return __vmalloc(sz, GFP_KERNEL_ACCOUNT | __GFP_HIGHMEM | __GFP_ZERO);
