@@ -174,8 +174,17 @@ unsigned long __thp_vma_allowable_orders(struct vm_area_struct *vma,
 		/*
 		 * Enforce sysfs THP requirements as necessary. Anonymous vmas
 		 * were already handled in thp_vma_allowable_orders().
+		 *
+		 * Huge PFN mappings are uncompactable so the THP tuneables
+		 * policy does not apply to them: if a huge PFN map is
+		 * available (vm_ops->huge_fault is set for a VM_PFNMAP vma),
+		 * it should be mapped huge upon fault-in regardless of the
+		 * sysfs setting.  See upstream commit e384abeb559 ("mm/
+		 * huge_memory: bypass THP tuneables for huge pfnmap
+		 * mappings").
 		 */
 		if (enforce_sysfs &&
+		    !((vm_flags & VM_PFNMAP) && vma->vm_ops->huge_fault) &&
 		    (!hugepage_global_enabled() || (!(vm_flags & VM_HUGEPAGE) &&
 						    !hugepage_global_always())))
 			return 0;
