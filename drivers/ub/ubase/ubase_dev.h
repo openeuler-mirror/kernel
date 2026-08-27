@@ -107,12 +107,18 @@ struct ubase_priv {
 	unsigned long adev_status[UBASE_DRV_MAX];
 };
 
+struct ubase_tp_tpg_caps {
+	u32		max_cnt;
+	unsigned long	vl_bitmap;
+};
+
 struct ubase_dev_caps {
-	struct ubase_adev_caps	udma_caps;
-	struct ubase_adev_caps	unic_caps;
-	struct ubase_caps	dev_caps;
-	u32			hw_ver;
-	u32			umv_tbl_size;
+	struct ubase_adev_caps		udma_caps;
+	struct ubase_adev_caps		unic_caps;
+	struct ubase_caps		dev_caps;
+	struct ubase_tp_tpg_caps	tp_tpg_caps;
+	u32				hw_ver;
+	u32				umv_tbl_size;
 };
 
 struct ubase_mbox_cmd {
@@ -368,6 +374,7 @@ enum ubase_node_type {
 struct ubase_dev_qos {
 	struct ubase_adev_qos		adev_qos;
 	struct ubase_initial_qset_qos	initial_qos;
+	struct ubase_adev_utp_qos	utp_qos;
 };
 
 struct ubase_mm_ops {

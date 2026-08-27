@@ -291,7 +291,7 @@ static bool ubase_is_udma_tp_event(struct ubase_dev *udev, u32 tpn)
 		return true;
 	}
 
-	for (i = 0; i < udev->caps.unic_caps.tpg.max_cnt; i++) {
+	for (i = 0; i < udev->caps.tp_tpg_caps.max_cnt; i++) {
 		if (tpn >= tpg[i].start_tpn &&
 		    tpn < tpg[i].start_tpn + tpg[i].tp_cnt) {
 			spin_unlock(&udev->tp_ctx.tpg_lock);

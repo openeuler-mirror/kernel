@@ -260,14 +260,17 @@ int ubase_dbg_dump_vl_bitmap(struct seq_file *s, void *data)
 
 	vl_bitmap = le16_to_cpu(resp.vl_bitmap);
 
-	seq_printf(s, "vl bitmap : 0x%x", vl_bitmap);
+	seq_printf(s, "vl bitmap : 0x%x\n", vl_bitmap);
 
 	return 0;
 }
 
 static void ubase_dbg_dump_adev_vl_info(struct seq_file *s,
-					struct ubase_adev_qos *qos)
+					struct ubase_dev *udev)
 {
+	struct ubase_adev_utp_qos *utp_qos = &udev->qos.utp_qos;
+	struct ubase_adev_qos *qos = &udev->qos.adev_qos;
+
 	seq_puts(s, "tp_req_vl:");
 	ubase_dbg_dump_arr_info(s, qos->tp_req_vl, qos->tp_vl_num);
 
@@ -276,11 +279,17 @@ static void ubase_dbg_dump_adev_vl_info(struct seq_file *s,
 
 	seq_puts(s, "nic_vl:");
 	ubase_dbg_dump_arr_info(s, qos->nic_vl, qos->nic_vl_num);
+
+	seq_puts(s, "utp_vl:");
+	ubase_dbg_dump_arr_info(s, utp_qos->utp_vl, utp_qos->utp_vl_num);
 }
 
 static void ubase_dbg_dump_adev_sl_info(struct seq_file *s,
-					struct ubase_adev_qos *qos)
+					struct ubase_dev *udev)
 {
+	struct ubase_adev_utp_qos *utp_qos = &udev->qos.utp_qos;
+	struct ubase_adev_qos *qos = &udev->qos.adev_qos;
+
 	seq_puts(s, "tp_sl:");
 	ubase_dbg_dump_arr_info(s, qos->tp_sl, qos->tp_sl_num);
 
@@ -289,11 +298,15 @@ static void ubase_dbg_dump_adev_sl_info(struct seq_file *s,
 
 	seq_puts(s, "nic_sl:");
 	ubase_dbg_dump_arr_info(s, qos->nic_sl, qos->nic_sl_num);
+
+	seq_puts(s, "utp_sl:");
+	ubase_dbg_dump_arr_info(s, utp_qos->utp_sl, utp_qos->utp_sl_num);
 }
 
 int ubase_dbg_dump_adev_qos_info(struct seq_file *s, void *data)
 {
 	struct ubase_dev *udev = dev_get_drvdata(s->private);
+	struct ubase_adev_utp_qos *utp_qos = &udev->qos.utp_qos;
 	struct ubase_adev_qos *qos = &udev->qos.adev_qos;
 	struct ubase_dbg_adev_qos_info {
 		const char *format;
@@ -308,14 +321,16 @@ int ubase_dbg_dump_adev_qos_info(struct seq_file *s, void *data)
 		{"nic_sl_num: %u\n", qos->nic_sl_num},
 		{"nic_vl_num: %u\n", qos->nic_vl_num},
 		{"ue_max_vl_id: %u\n", qos->ue_max_vl_id},
+		{"utp_sl_num: %u\n", utp_qos->utp_sl_num},
+		{"utp_vl_num: %u\n", utp_qos->utp_vl_num},
 	};
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(adev_qos_info); i++)
 		seq_printf(s, adev_qos_info[i].format, adev_qos_info[i].qos_info);
 
-	ubase_dbg_dump_adev_vl_info(s, qos);
-	ubase_dbg_dump_adev_sl_info(s, qos);
+	ubase_dbg_dump_adev_vl_info(s, udev);
+	ubase_dbg_dump_adev_sl_info(s, udev);
 
 	return 0;
 }
