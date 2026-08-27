@@ -1010,6 +1010,26 @@ static bool kvm_pvm_try_fast_sysreg(struct kvm_vcpu *vcpu, u32 insn)
 }
 
 /*
+ * Switch the guest to a new virtual PC and PSTATE from within the
+ * fixup_guest_exit() loop.  ELR_EL2 and SPSR_EL2 are written directly, because
+ * neither __kvm_adjust_pc() nor the guest sysreg restore runs again before the
+ * guest resumes.  The virtual exception level is taken from the unstripped
+ * mode, and the physical PSTATE is then forced to EL0t because a PVM guest
+ * always resumes at physical EL0.  DAIF is virtualized, so the physical target
+ * keeps it open.  The FP/SIMD permission follows the new virtual mode.
+ */
+static inline void kvm_pvm_hyp_set_pc_pstate(struct kvm_vcpu *vcpu,
+					     u64 pc, u64 pstate)
+{
+	*vcpu_pc(vcpu) = pc;
+	*vcpu_cpsr(vcpu) = pstate;
+
+	write_sysreg_el2(pc, SYS_ELR);
+	write_sysreg_el2(pvm_to_phys_pstate(pstate), SYS_SPSR);
+	kvm_pvm_sync_fpen(vcpu);
+}
+
+/*
  * A PVM guest kernel runs at physical EL0, so its privileged instructions trap
  * with EC=UNKNOWN.  Return the syndrome they would trap with from EL1, for the
  * host to emulate them through its regular exit handlers, or @esr to keep
@@ -1064,6 +1084,27 @@ static inline bool kvm_hyp_handle_unknown(struct kvm_vcpu *vcpu,
 	/* Absorb the hot exception entry and exit system registers. */
 	if (kvm_pvm_try_fast_sysreg(vcpu, insn))
 		return true;
+
+	/*
+	 * A PVM guest kernel runs at physical EL0, so its ERET traps here as
+	 * EC=UNKNOWN.  Under load this is a large share of all guest exits, so
+	 * emulate it in the hypervisor rather than exiting to the host.
+	 *
+	 * This mirrors kvm_pvm_emulate_eret().
+	 *
+	 * Exit to the host when an interrupt may be pending, so that its
+	 * injection path runs; this keeps the same boundary as the DAIF unmask
+	 * path.  An ERET to an illegal or unsupported mode exits as well, for
+	 * the host to deliver its exception.
+	 */
+	if (aarch64_insn_is_eret(insn) && !pvm_vcpu_irq_queued(vcpu) &&
+	    pvm_eret_target(ctxt_sys_reg(&vcpu->arch.ctxt, SPSR_EL1)) ==
+	    PVM_ERET_LEGAL) {
+		kvm_pvm_hyp_set_pc_pstate(vcpu,
+					  ctxt_sys_reg(&vcpu->arch.ctxt, ELR_EL1),
+					  ctxt_sys_reg(&vcpu->arch.ctxt, SPSR_EL1));
+		return true;
+	}
 
 	vcpu->arch.fault.esr_el2 = kvm_pvm_insn_to_esr(insn,
 						       vcpu->arch.fault.esr_el2);
