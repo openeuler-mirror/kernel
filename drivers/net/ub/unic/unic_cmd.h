@@ -63,7 +63,8 @@ enum unic_link_fail_code {
 struct unic_link_status_cmd_resp {
 	u8	status;
 	u8	link_fail_code;
-	u8	rsvd[22];
+	u8	all_port_link_down;
+	u8	rsvd[21];
 };
 
 struct unic_query_port_info_resp {

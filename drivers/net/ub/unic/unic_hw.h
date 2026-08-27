@@ -23,6 +23,9 @@
 #define UNIC_LINK_STATUS_DOWN	0
 #define UNIC_LINK_STATUS_UP	1
 
+#define unic_ub_link_status(all_port_link_down) \
+	((all_port_link_down) ? UNIC_LINK_STATUS_DOWN : UNIC_LINK_STATUS_UP)
+
 enum unic_rss_tc_mode {
 	UNIC_RSS_TC_MODE0,
 	UNIC_RSS_TC_MODE1

@@ -61,6 +61,7 @@ static int unic_lb_link_status_wait(struct unic_dev *unic_dev, bool en)
 #define UNIC_MAC_LINK_STATUS_NUM	100
 
 	u8 link_status = UNIC_LINK_STATUS_DOWN;
+	u8 all_port_link_down;
 	u8 link_ret;
 	int i = 0;
 	int ret;
@@ -68,7 +69,8 @@ static int unic_lb_link_status_wait(struct unic_dev *unic_dev, bool en)
 	link_ret = en ? UNIC_LINK_STATUS_UP : UNIC_LINK_STATUS_DOWN;
 
 	do {
-		ret = unic_query_link_status(unic_dev, &link_status);
+		ret = unic_query_link_status(unic_dev, &link_status,
+					     &all_port_link_down);
 		if (ret)
 			return ret;
 		if (link_status == link_ret)
