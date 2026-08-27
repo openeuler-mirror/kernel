@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+menuconfig NDS
+	tristate "NDS NVMe peer-to-peer I/O"
+	depends on BLOCK && BLK_DEV_NVME
+	help
+	  NDS provides a character device and UAPI for NVMe peer-to-peer
+	  I/O against registered device memory (e.g. NPU HBM).
+
+	  If unsure, say N.
+
+if NDS
+
+config NDS_P2P_DEV
+	tristate "NDS p2p_dev driver"
+	default m
+	help
+	  Core NDS driver (/dev/nds_p2p*). Provides ioctl submit/complete
+	  paths for peer-to-peer DMA I/O.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called p2p_dev.
+
+endif # NDS
