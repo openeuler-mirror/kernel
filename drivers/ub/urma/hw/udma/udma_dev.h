@@ -183,11 +183,13 @@ struct udma_dev {
 	struct page *db_page;
 	u8 udma_tp_sl_num;
 	u8 udma_ctp_sl_num;
+	u8 udma_utp_sl_num;
 	u8 unic_sl_num;
 	u8 udma_total_sl_num;
 	u8 udma_tp_resp_vl_off;
 	u8 udma_tp_sl[UDMA_MAX_SL_NUM];
 	u8 udma_ctp_sl[UDMA_MAX_SL_NUM];
+	u8 udma_utp_sl[UDMA_MAX_SL_NUM];
 	u8 unic_sl[UDMA_MAX_SL_NUM];
 	u8 udma_sl[UDMA_MAX_SL_NUM];
 	struct ubcore_sl_info priority_info[UDMA_MAX_SL_NUM];

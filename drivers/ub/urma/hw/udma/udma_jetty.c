@@ -136,7 +136,6 @@ static void udma_init_jettyc(struct udma_dev *dev, struct ubcore_jetty_cfg *cfg,
 {
 	struct udma_jetty_ctx *ctx = (struct udma_jetty_ctx *)mb_buf;
 	struct udma_jfc *receive_jfc = to_udma_jfc(cfg->recv_jfc);
-	uint8_t i;
 
 	ctx->state = JETTY_READY;
 	ctx->jfs_mode = JETTY;
@@ -145,14 +144,14 @@ static void udma_init_jettyc(struct udma_dev *dev, struct ubcore_jetty_cfg *cfg,
 	if (ctx->type == JETTY_RM || ctx->type == JETTY_RC) {
 		ctx->sl = dev->priority_info[cfg->priority].SL;
 	} else if (ctx->type == JETTY_UM) {
-		ctx->sl = dev->unic_sl[UDMA_DEFAULT_SL_NUM];
-		for (i = 0; i < dev->unic_sl_num; i++) {
-			if (cfg->priority == dev->unic_sl[i]) {
-				ctx->sl = cfg->priority;
-				break;
-			}
-		}
+		if (dev->priority_info[cfg->priority].tp_type.bs.utp)
+			ctx->sl = dev->priority_info[cfg->priority].SL;
+		else if (dev->udma_utp_sl_num)
+			ctx->sl = dev->udma_utp_sl[UDMA_DEFAULT_SL_NUM];
+		else
+			ctx->sl = dev->unic_sl[UDMA_DEFAULT_SL_NUM];
 	}
+
 	ctx->sqe_base_addr_l = (jetty->sq.buf.addr >> SQE_VA_L_OFFSET) &
 			       (uint32_t)SQE_VA_L_VALID_BIT;
 	ctx->sqe_base_addr_h = (jetty->sq.buf.addr >> SQE_VA_H_OFFSET) &
