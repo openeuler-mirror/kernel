@@ -1116,4 +1116,44 @@ static inline bool kvm_hyp_handle_unknown(struct kvm_vcpu *vcpu,
 	return false;
 }
 
+/*
+ * An SVC from a PVM guest, typically from its userspace, is the inverse of the
+ * emulated ERET: it moves the guest to virtual EL1 and delivers a synchronous
+ * exception to the guest kernel.  Together with ERET it accounts for most
+ * guest exits under load, so deliver it in the hypervisor as well.
+ *
+ * The exception is constructed here rather than pended: a pended exception is
+ * only consumed by __kvm_adjust_pc() outside the fixup_guest_exit() loop.  The
+ * SVC has already moved ELR_EL2 past it, so the guest would resume without
+ * taking it and take it only on a later exit to the host, from a stale PC.
+ * The vector and PSTATE are computed as in enter_exception64().
+ *
+ * Inside the loop the hardware and the context are not in sync, so the return
+ * address is read from ELR_EL2 rather than from the stale context PC, while the
+ * trapped PSTATE comes from the context, which synchronize_vcpu_pstate() has
+ * just refreshed.
+ */
+static inline bool kvm_hyp_handle_svc(struct kvm_vcpu *vcpu, u64 *exit_code)
+{
+	struct kvm_cpu_context *ctxt = &vcpu->arch.ctxt;
+	u64 old, mode;
+
+	if (!is_pvm_mode())
+		return false;
+
+	old = *vcpu_cpsr(vcpu);
+	mode = old & (PSR_MODE_MASK | PSR_MODE32_BIT);
+
+	ctxt_sys_reg(ctxt, ELR_EL1) = read_sysreg_el2(SYS_ELR);
+	ctxt_sys_reg(ctxt, SPSR_EL1) = old;
+	ctxt_sys_reg(ctxt, ESR_EL1) = kvm_vcpu_get_esr(vcpu);
+
+	kvm_pvm_hyp_set_pc_pstate(vcpu,
+		ctxt_sys_reg(ctxt, VBAR_EL1) + except_type_sync +
+		kvm_exception64_offset(mode, PSR_MODE_EL1h),
+		kvm_exception64_pstate(vcpu, old, ctxt_sys_reg(ctxt, SCTLR_EL1),
+				       PSR_MODE_EL1h));
+	return true;
+}
+
 #endif /* __ARM64_KVM_HYP_SWITCH_H__ */
