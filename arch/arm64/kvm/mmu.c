@@ -532,7 +532,7 @@ int kvm_share_hyp(void *from, void *to)
 	u64 pfn;
 	int ret;
 
-	if (is_kernel_in_hyp_mode())
+	if (is_kernel_in_hyp_mode() || is_pvm_mode())
 		return 0;
 
 	/*
@@ -563,7 +563,8 @@ void kvm_unshare_hyp(void *from, void *to)
 	phys_addr_t start, end, cur;
 	u64 pfn;
 
-	if (is_kernel_in_hyp_mode() || kvm_host_owns_hyp_mappings() || !from)
+	if (is_kernel_in_hyp_mode() || is_pvm_mode() ||
+	    kvm_host_owns_hyp_mappings() || !from)
 		return;
 
 	start = ALIGN_DOWN(__pa(from), PAGE_SIZE);
