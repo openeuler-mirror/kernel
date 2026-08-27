@@ -104,6 +104,8 @@ static int cdma_create_ucontext(struct cdma_ioctl_hdr *hdr,
 	args.out.cqe_size = cdev->caps.cqe_size;
 	args.out.dwqe_enable =
 		!!(cdev->caps.feature & CDMA_CAP_FEATURE_DIRECT_WQE);
+	args.out.rsv_bitmap |= CDMA_CTX_RSP_ST64B_EN;
+	args.out.st64b_en = (u8)cdev->caps.st64b_en;
 	args.out.async_fd = jfae->fd;
 	cfile->uctx = ctx;
 

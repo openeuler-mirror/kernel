@@ -107,6 +107,7 @@ struct cdma_caps {
 	u8 cqe_size;
 	u8 cc_priority_cnt;
 	bool virtualization;
+	bool st64b_en;
 	struct cdma_oor_caps oor_caps;
 	struct cdma_cap_table src_addr;
 	struct cdma_cap_table seid;
