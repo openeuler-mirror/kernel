@@ -388,6 +388,27 @@ struct ubase_adev_qos {
 	KABI_RESERVE(6)
 };
 
+/**
+ * struct ubase_adev_utp_qos - UTP SL/VL qos information exported by UBASE
+ * @utp_sl_num: UTP SL number. 0 means UTP is not enabled.
+ * @utp_sl: UTP SL list
+ * @utp_vl_num: UTP VL number
+ * @utp_vl: UTP VL list
+ */
+struct ubase_adev_utp_qos {
+	u8	utp_sl_num;
+	u8	utp_sl[UBASE_MAX_SL_NUM];
+	u8	utp_vl_num;
+	u8	utp_vl[UBASE_MAX_VL_NUM];
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+};
+
 #define UBASE_BUS_EID_LEN 4
 
 /**
@@ -423,6 +444,7 @@ struct ubase_adev_caps *ubase_get_unic_caps(struct auxiliary_device *adev);
 struct ubase_adev_caps *ubase_get_udma_caps(struct auxiliary_device *adev);
 struct ubase_adev_caps *ubase_get_cdma_caps(struct auxiliary_device *adev);
 struct ubase_adev_qos *ubase_get_adev_qos(struct auxiliary_device *adev);
+struct ubase_adev_utp_qos *ubase_get_adev_utp_qos(struct auxiliary_device *adev);
 void ubase_reset_event(struct auxiliary_device *adev,
 		       enum ubase_reset_type reset_type);
 enum ubase_reset_stage ubase_get_reset_stage(struct auxiliary_device *adev);

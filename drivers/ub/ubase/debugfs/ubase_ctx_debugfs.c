@@ -60,6 +60,9 @@ static void ubase_dump_tpg_ctx(struct seq_file *s, struct ubase_dev *udev, u32 i
 {
 	struct ubase_tpg *tpg = &udev->tp_ctx.tpg[idx];
 
+	if (!test_bit(idx, &udev->caps.tp_tpg_caps.vl_bitmap))
+		return;
+
 	seq_printf(s, "%-12u", idx);
 	seq_printf(s, "%-9u", tpg->mb_tpgn);
 	seq_printf(s, "%-10u", tpg->tp_shift);
@@ -79,7 +82,6 @@ enum ubase_dbg_ctx_type {
 static u32 ubase_get_ctx_num(struct ubase_dev *udev,
 			     enum ubase_dbg_ctx_type ctx_type)
 {
-	struct ubase_adev_caps *unic_caps = &udev->caps.unic_caps;
 	u32 ctx_num = 0;
 
 	switch (ctx_type) {
@@ -90,7 +92,7 @@ static u32 ubase_get_ctx_num(struct ubase_dev *udev,
 		ctx_num = udev->irq_table.ceqs.num;
 		break;
 	case UBASE_DBG_TPG_CTX:
-		ctx_num = unic_caps->tpg.max_cnt;
+		ctx_num = udev->caps.tp_tpg_caps.max_cnt;
 		break;
 	default:
 		ubase_err(udev, "failed to get ctx num, ctx_type = %u.\n",
