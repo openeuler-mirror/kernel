@@ -81,7 +81,11 @@ struct ubase_ctrlq_query_sl_resp {
 	__le16 rc_max_cnt;
 	__le16 udma_tp_sl_bitmap;
 	__le16 udma_ctp_sl_bitmap;
-	u8 rsv1[12];
+	u8 utp_sl_valid : 1;
+	u8 rsv : 7;
+	u8 rsv1;
+	__le16 utp_sl_bitmap;
+	u8 rsv2[8];
 };
 
 struct ubase_ctrlq_query_sl_req {

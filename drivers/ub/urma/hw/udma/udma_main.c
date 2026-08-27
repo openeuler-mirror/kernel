@@ -201,15 +201,22 @@ static int udma_set_sl(struct ubcore_device *dev, uint32_t priority, uint32_t SL
 			if (i < udma_dev->udma_tp_sl_num) {
 				udma_dev->priority_info[priority].tp_type.bs.rtp = 1;
 				udma_dev->priority_info[priority].tp_type.bs.ctp = 0;
-			} else {
+				udma_dev->priority_info[priority].tp_type.bs.utp = 0;
+			} else if (i < udma_dev->udma_tp_sl_num +
+					   udma_dev->udma_ctp_sl_num) {
 				udma_dev->priority_info[priority].tp_type.bs.rtp = 0;
 				udma_dev->priority_info[priority].tp_type.bs.ctp = 1;
+				udma_dev->priority_info[priority].tp_type.bs.utp = 0;
+			} else {
+				udma_dev->priority_info[priority].tp_type.bs.rtp = 0;
+				udma_dev->priority_info[priority].tp_type.bs.ctp = 0;
+				udma_dev->priority_info[priority].tp_type.bs.utp = 1;
 			}
 			return 0;
 		}
 	}
 
-	dev_err(udma_dev->dev, "SL(%d) to set is not in rtp or ctp range.\n", SL);
+	dev_err(udma_dev->dev, "SL(%d) to set is not in correct range.\n", SL);
 
 	return -EINVAL;
 }
@@ -758,6 +765,7 @@ static void get_dev_caps_from_ubase(struct udma_dev *udma_dev)
 
 static int udma_construct_qos_param(struct udma_dev *dev)
 {
+	struct ubase_adev_utp_qos *utp_qos_info;
 	struct ubase_adev_qos *qos_info;
 	uint8_t i;
 
@@ -767,15 +775,25 @@ static int udma_construct_qos_param(struct udma_dev *dev)
 		return -EINVAL;
 	}
 
+	utp_qos_info = ubase_get_adev_utp_qos(dev->comdev.adev);
+	if (!utp_qos_info) {
+		dev_err(dev->dev, "cannot get utp qos information from ubase.\n");
+		return -EINVAL;
+	}
+
 	dev->udma_tp_sl_num = qos_info->tp_sl_num;
 	dev->udma_ctp_sl_num = qos_info->ctp_sl_num;
 	dev->unic_sl_num = qos_info->nic_sl_num;
+	dev->udma_utp_sl_num = utp_qos_info->utp_sl_num;
 	dev->udma_tp_resp_vl_off = qos_info->tp_resp_vl_offset;
-	dev->udma_total_sl_num = dev->udma_tp_sl_num + dev->udma_ctp_sl_num;
-	if (dev->udma_total_sl_num > UDMA_MAX_SL_NUM) {
+	dev->udma_total_sl_num = dev->udma_tp_sl_num + dev->udma_ctp_sl_num +
+							 dev->udma_utp_sl_num;
+	if (dev->udma_total_sl_num > UDMA_MAX_SL_NUM ||
+	    dev->udma_total_sl_num == 0) {
 		dev_err(dev->dev,
-			"total sl num is invalid, tp sl num is %u, ctp sl num is %u.\n",
-			dev->udma_tp_sl_num, dev->udma_ctp_sl_num);
+			"total sl num is invalid, tp is %u, ctp is %u, utp is %u.\n",
+			dev->udma_tp_sl_num, dev->udma_ctp_sl_num,
+			dev->udma_utp_sl_num);
 		return -EINVAL;
 	}
 
@@ -783,6 +801,8 @@ static int udma_construct_qos_param(struct udma_dev *dev)
 		     qos_info->tp_sl, sizeof(u8) * qos_info->tp_sl_num);
 	(void)memcpy(dev->udma_ctp_sl,
 		     qos_info->ctp_sl, sizeof(u8) * qos_info->ctp_sl_num);
+	(void)memcpy(dev->udma_utp_sl,
+		     utp_qos_info->utp_sl, sizeof(u8) * utp_qos_info->utp_sl_num);
 	(void)memcpy(dev->unic_sl,
 		     qos_info->nic_sl, sizeof(u8) * qos_info->nic_sl_num);
 	(void)memcpy(dev->udma_sl,
@@ -790,16 +810,24 @@ static int udma_construct_qos_param(struct udma_dev *dev)
 
 	for (i = 0; i < qos_info->ctp_sl_num; i++)
 		dev->udma_sl[qos_info->tp_sl_num + i] = qos_info->ctp_sl[i];
+	for (i = 0; i < utp_qos_info->utp_sl_num; i++)
+		dev->udma_sl[qos_info->tp_sl_num + qos_info->ctp_sl_num + i] =
+			utp_qos_info->utp_sl[i];
 
 	if (qos_info->tp_sl_num != 0) {
 		for (i = 0; i < UDMA_MAX_SL_NUM; i++) {
 			dev->priority_info[i].SL = dev->udma_tp_sl[UDMA_DEFAULT_SL_NUM];
 			dev->priority_info[i].tp_type.bs.rtp = 1;
 		}
-	} else {
+	} else if (qos_info->ctp_sl_num != 0) {
 		for (i = 0; i < UDMA_MAX_SL_NUM; i++) {
 			dev->priority_info[i].SL = dev->udma_ctp_sl[UDMA_DEFAULT_SL_NUM];
 			dev->priority_info[i].tp_type.bs.ctp = 1;
+		}
+	} else {
+		for (i = 0; i < UDMA_MAX_SL_NUM; i++) {
+			dev->priority_info[i].SL = dev->udma_utp_sl[UDMA_DEFAULT_SL_NUM];
+			dev->priority_info[i].tp_type.bs.utp = 1;
 		}
 	}
 
@@ -807,12 +835,21 @@ static int udma_construct_qos_param(struct udma_dev *dev)
 		dev->priority_info[dev->udma_tp_sl[i]].SL = dev->udma_tp_sl[i];
 		dev->priority_info[dev->udma_tp_sl[i]].tp_type.bs.rtp = 1;
 		dev->priority_info[dev->udma_tp_sl[i]].tp_type.bs.ctp = 0;
+		dev->priority_info[dev->udma_tp_sl[i]].tp_type.bs.utp = 0;
 	}
 
 	for (i = 0; i < dev->udma_ctp_sl_num; i++) {
 		dev->priority_info[dev->udma_ctp_sl[i]].SL = dev->udma_ctp_sl[i];
 		dev->priority_info[dev->udma_ctp_sl[i]].tp_type.bs.rtp = 0;
 		dev->priority_info[dev->udma_ctp_sl[i]].tp_type.bs.ctp = 1;
+		dev->priority_info[dev->udma_ctp_sl[i]].tp_type.bs.utp = 0;
+	}
+
+	for (i = 0; i < dev->udma_utp_sl_num; i++) {
+		dev->priority_info[dev->udma_utp_sl[i]].SL = dev->udma_utp_sl[i];
+		dev->priority_info[dev->udma_utp_sl[i]].tp_type.bs.rtp = 0;
+		dev->priority_info[dev->udma_utp_sl[i]].tp_type.bs.ctp = 0;
+		dev->priority_info[dev->udma_utp_sl[i]].tp_type.bs.utp = 1;
 	}
 
 	return 0;

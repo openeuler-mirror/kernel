@@ -160,7 +160,6 @@ static void ubase_dbg_dump_adev_caps(struct seq_file *s,
 		{"\tjfr_depth: %u\n", caps->jfr.depth},
 		{"\tjfc_max_cnt: %u\n", caps->jfc.max_cnt},
 		{"\tjfc_depth: %u\n", caps->jfc.depth},
-		{"\ttpg_max_cnt: %u\n", caps->tpg.max_cnt},
 		{"\tcqe_size: %hu\n", caps->cqe_size},
 		{"\tjtg_max_cnt: %u\n", caps->jtg_max_cnt},
 		{"\trc_max_cnt: %u\n", caps->rc_max_cnt},
@@ -172,6 +171,13 @@ static void ubase_dbg_dump_adev_caps(struct seq_file *s,
 	for (i = 0; i < ARRAY_SIZE(ubase_adev_caps_info); i++)
 		seq_printf(s, ubase_adev_caps_info[i].format,
 			   ubase_adev_caps_info[i].caps_info);
+}
+
+static void ubase_dbg_dump_tp_tpg_caps(struct seq_file *s,
+				       struct ubase_tp_tpg_caps *caps)
+{
+	seq_printf(s, "\tmax_cnt: %u\n", caps->max_cnt);
+	seq_printf(s, "\tvl_bitmap: 0x%lx\n", caps->vl_bitmap);
 }
 
 static int ubase_dbg_dump_dev_caps(struct seq_file *s, void *data)
@@ -195,6 +201,11 @@ static int ubase_dbg_dump_dev_caps(struct seq_file *s, void *data)
 	else
 		seq_puts(s, "\nUDMA_CAPS:\n");
 	ubase_dbg_dump_adev_caps(s, &udev_caps->udma_caps);
+
+	if (ubase_utp_supported(udev) && ubase_dev_urma_supported(udev)) {
+		seq_puts(s, "\nTP_TPG_CAPS:\n");
+		ubase_dbg_dump_tp_tpg_caps(s, &udev_caps->tp_tpg_caps);
+	}
 
 	return 0;
 }

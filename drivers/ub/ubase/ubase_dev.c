@@ -1772,6 +1772,30 @@ struct ubase_adev_qos *ubase_get_adev_qos(struct auxiliary_device *adev)
 EXPORT_SYMBOL(ubase_get_adev_qos);
 
 /**
+ * ubase_get_adev_utp_qos() - get auxiliary device UTP qos information
+ * @adev: auxiliary device
+ *
+ * The function returns the UTP SL/VL information for the auxiliary device.
+ * Caller should determine whether to block UTP traffic based on
+ * utp_sl_num=0 (UTP not enabled).
+ *
+ * Context: Any context.
+ * Return: NULL if the adev is empty, otherwise the pointer to
+ *         struct ubase_adev_utp_qos
+ */
+struct ubase_adev_utp_qos *ubase_get_adev_utp_qos(struct auxiliary_device *adev)
+{
+	struct ubase_dev *udev;
+
+	if (!adev)
+		return NULL;
+
+	udev = __ubase_get_udev_by_adev(adev);
+	return &udev->qos.utp_qos;
+}
+EXPORT_SYMBOL(ubase_get_adev_utp_qos);
+
+/**
  * ubase_adev_mac_stats_supported - determine whether mac statistics querying
  * is supported
  * @adev: auxiliary device
