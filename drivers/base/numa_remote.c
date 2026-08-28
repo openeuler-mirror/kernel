@@ -12,6 +12,7 @@
 #include <linux/memory.h>
 #include <linux/numa_remote.h>
 #include <linux/oom.h>
+#include <linux/memory-tiers.h>
 #include "../../mm/hugetlb_vmemmap.h"
 #include "../../mm/internal.h"
 
@@ -19,6 +20,8 @@
 #define REMOTE_TO_LOCAL_DISTANCE	100
 /* The default distance between two remote node */
 #define REMOTE_TO_REMOTE_DISTANCE	255
+
+#define MEMTIER_DEFAULT_UB_ADISTANCE (MEMTIER_ADISTANCE_DRAM * 5)
 
 bool numa_remote_enabled __ro_after_init;
 static bool numa_remote_nofallback_mode __ro_after_init;
@@ -680,6 +683,24 @@ int numa_remote_report_node_meminfo(char *buf, int len, int nid)
 			     nid, K(atomic_long_read(&pre_online_pages_node[nid])));
 }
 
+static int ub_calculate_adistance(struct notifier_block *self,
+				    unsigned long nid, void *data)
+{
+	int *adist = data;
+
+	if (!numa_is_remote_node(nid))
+		return NOTIFY_OK;
+
+	*adist = MEMTIER_DEFAULT_UB_ADISTANCE;
+
+	return NOTIFY_STOP;
+}
+
+static struct notifier_block ub_adist_nb __meminitdata = {
+	.notifier_call = ub_calculate_adistance,
+	.priority = 100,
+};
+
 static int __init numa_remote_init(void)
 {
 	int ret;
@@ -699,6 +720,8 @@ static int __init numa_remote_init(void)
 	ret = register_memory_notifier(&numa_remote_memory_notifier);
 	if (ret)
 		goto err_register_notifier;
+
+	register_mt_adistance_algorithm(&ub_adist_nb);
 
 	return 0;
 
