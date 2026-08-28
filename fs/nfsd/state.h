@@ -369,11 +369,18 @@ struct nfs4_client_reclaim {
 	char			cr_recdir[HEXDIR_LEN]; /* recover dir */
 };
 
-/* A reasonable value for REPLAY_ISIZE was estimated as follows:  
- * The OPEN response, typically the largest, requires 
- *   4(status) + 8(stateid) + 20(changeinfo) + 4(rflags) +  8(verifier) + 
- *   4(deleg. type) + 8(deleg. stateid) + 4(deleg. recall flag) + 
- *   20(deleg. space limit) + ~32(deleg. ace) = 112 bytes 
+/*
+ * REPLAY_ISIZE is sized for an OPEN response with delegation:
+ *   4(status) + 8(stateid) + 20(changeinfo) + 4(rflags) +
+ *   8(verifier) + 4(deleg. type) + 8(deleg. stateid) +
+ *   4(deleg. recall flag) + 20(deleg. space limit) +
+ *   ~32(deleg. ace) = 112 bytes
+ *
+ * Some responses can exceed this. A LOCK denial includes the conflicting
+ * lock owner, which can be up to 1024 bytes (NFS4_OPAQUE_LIMIT). When a
+ * response exceeds REPLAY_ISIZE, a buffer is dynamically allocated. If
+ * that allocation fails, only rp_status is saved. Enlarging this constant
+ * increases the size of every nfs4_stateowner.
  */
 
 #define NFSD4_REPLAY_ISIZE       112 
@@ -385,11 +392,13 @@ struct nfs4_client_reclaim {
 struct nfs4_replay {
 	__be32			rp_status;
 	unsigned int		rp_buflen;
-	char			*rp_buf;
+	char			*rp_buf; /* rp_ibuf or kmalloc'd */
 	struct knfsd_fh		rp_openfh;
 	struct mutex		rp_mutex;
 	char			rp_ibuf[NFSD4_REPLAY_ISIZE];
 };
+
+extern void nfs4_replay_free_cache(struct nfs4_replay *rp);
 
 struct nfs4_stateowner;
 
