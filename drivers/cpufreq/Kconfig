@@ -296,7 +296,7 @@ endif
 if LOONGARCH
 config LOONGSON3_CPUFREQ
 	tristate "Loongson3 CPUFreq Driver"
-	depends on ACPI_PROCESSOR
+	depends on MACH_LOONGSON64 && ACPI_PROCESSOR
 	help
 	  This option adds a CPUFreq driver for Loongson processors which
 	  support software configurable cpu frequency.
