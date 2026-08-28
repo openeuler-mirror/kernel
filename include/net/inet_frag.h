@@ -98,7 +98,7 @@ struct inet_frag_queue {
 	ktime_t			stamp;
 	int			len;
 	int			meat;
-	u8			tstamp_type;
+	KABI_REPLACE(u8	mono_delivery_time, u8 tstamp_type)
 	__u8			flags;
 	u16			max_size;
 	struct fqdir		*fqdir;
