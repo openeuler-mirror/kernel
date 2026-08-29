@@ -164,18 +164,12 @@ static void udma_set_dev_caps(struct ubcore_device_attr *attr, struct udma_dev *
 	attr->dev_cap.feature.bs.ipourma_en = udma_dev->caps.ipourma_en;
 	attr->dev_cap.feature.bs.ctp_en = udma_dev->caps.ctp_en;
 	attr->dev_cap.feature.bs.uboe = !ubase_adev_ubl_supported(udma_dev->comdev.adev);
-	attr->dev_cap.rm_tp_cap.bs.rtp = (ubase_get_ub_feature() &
-					  UBASE_URMA_RTP_ROI) ? 1 : 0;
-	attr->dev_cap.rm_tp_cap.bs.ctp = (ubase_get_ub_feature() &
-					  UBASE_URMA_CTP_ROI) ? 1 : 0;
-	attr->dev_cap.rc_tp_cap.bs.ctp = (ubase_get_ub_feature() &
-					  UBASE_URMA_CTP_ROL) ? 1 : 0;
-	attr->dev_cap.rc_tp_cap.bs.rtp = (ubase_get_ub_feature() &
-					  UBASE_URMA_RTP_ROL) ? 1 : 0;
-	attr->dev_cap.um_tp_cap.bs.ctp = (ubase_get_ub_feature() &
-					  UBASE_URMA_CTP_UNO) ? 1 : 0;
-	attr->dev_cap.um_tp_cap.bs.utp = (ubase_get_ub_feature() &
-					  UBASE_URMA_UTP_UNO) ? 1 : 0;
+	attr->dev_cap.rm_tp_cap.bs.rtp = udma_dev->caps.rm_tp.bs.rtp;
+	attr->dev_cap.rm_tp_cap.bs.ctp = udma_dev->caps.rm_tp.bs.ctp;
+	attr->dev_cap.rc_tp_cap.bs.ctp = udma_dev->caps.rc_tp.bs.ctp;
+	attr->dev_cap.rc_tp_cap.bs.rtp = udma_dev->caps.rc_tp.bs.rtp;
+	attr->dev_cap.um_tp_cap.bs.ctp = udma_dev->caps.um_tp.bs.ctp;
+	attr->dev_cap.um_tp_cap.bs.utp = udma_dev->caps.um_tp.bs.utp;
 }
 
 static int udma_query_device_attr(struct ubcore_device *dev,
@@ -207,15 +201,22 @@ static int udma_set_sl(struct ubcore_device *dev, uint32_t priority, uint32_t SL
 			if (i < udma_dev->udma_tp_sl_num) {
 				udma_dev->priority_info[priority].tp_type.bs.rtp = 1;
 				udma_dev->priority_info[priority].tp_type.bs.ctp = 0;
-			} else {
+				udma_dev->priority_info[priority].tp_type.bs.utp = 0;
+			} else if (i < udma_dev->udma_tp_sl_num +
+					   udma_dev->udma_ctp_sl_num) {
 				udma_dev->priority_info[priority].tp_type.bs.rtp = 0;
 				udma_dev->priority_info[priority].tp_type.bs.ctp = 1;
+				udma_dev->priority_info[priority].tp_type.bs.utp = 0;
+			} else {
+				udma_dev->priority_info[priority].tp_type.bs.rtp = 0;
+				udma_dev->priority_info[priority].tp_type.bs.ctp = 0;
+				udma_dev->priority_info[priority].tp_type.bs.utp = 1;
 			}
 			return 0;
 		}
 	}
 
-	dev_err(udma_dev->dev, "SL(%d) to set is not in rtp or ctp range.\n", SL);
+	dev_err(udma_dev->dev, "SL(%d) to set is not in correct range.\n", SL);
 
 	return -EINVAL;
 }
@@ -407,6 +408,12 @@ void udma_destroy_tables(struct udma_dev *udma_dev)
 		dev_err(udma_dev->dev,
 			"IDA not empty in clean up rsvd jetty id table.\n");
 	ida_destroy(&udma_dev->rsvd_jetty_ida_table.ida);
+	if (udma_dev->sq_reserved_info.sq_reserved) {
+		if (!ida_is_empty(&udma_dev->sq_reserved_info.ida_table.ida))
+			dev_err(udma_dev->dev,
+				"IDA not empty in sq_reserved_info.\n");
+		ida_destroy(&udma_dev->sq_reserved_info.ida_table.ida);
+	}
 
 	if (!xa_empty(&udma_dev->crq_nb_table))
 		dev_err(udma_dev->dev, "crq nb table is not empty.\n");
@@ -707,24 +714,8 @@ static int query_caps_from_firmware(struct udma_dev *udma_dev)
 	return 0;
 }
 
-static void get_dev_caps_from_ubase(struct udma_dev *udma_dev)
+static void udma_get_dtu_param(struct udma_dev *udma_dev, struct ubase_caps *ubase_caps)
 {
-	struct ubase_caps *ubase_caps;
-
-	ubase_caps = ubase_get_dev_caps(udma_dev->comdev.adev);
-	if (ubase_caps == NULL)
-		return;
-
-	udma_dev->caps.comp_vector_cnt = ubase_caps->num_ceq_vectors;
-	udma_dev->caps.ack_queue_num = ubase_caps->ack_queue_num;
-
-	udma_dev->chip_id = ubase_caps->chip_id;
-	udma_dev->die_id = ubase_caps->die_id;
-	udma_dev->port_id = ubase_caps->io_port_id;
-	udma_dev->port_logic_id = ubase_caps->io_port_logic_id;
-	udma_dev->ue_id = ubase_caps->ue_id;
-	udma_dev->caps.non_mirror_en = ubase_adev_non_mirror_mem_supported(udma_dev->comdev.adev);
-
 	udma_dev->dtu_info.k_dtu_enable = ubase_adev_dtu_supported(udma_dev->comdev.adev);
 	if (!udma_dev->dtu_info.k_dtu_enable)
 		return;
@@ -744,8 +735,37 @@ static void get_dev_caps_from_ubase(struct udma_dev *udma_dev)
 	udma_dev->dtu_info.dtu_mem_node_id = ubase_adev_get_mem_node_id(udma_dev->comdev.adev);
 }
 
+static void get_dev_caps_from_ubase(struct udma_dev *udma_dev)
+{
+	struct ubase_caps *ubase_caps;
+	unsigned long long type_bit;
+
+	ubase_caps = ubase_get_dev_caps(udma_dev->comdev.adev);
+	if (ubase_caps == NULL)
+		return;
+
+	udma_dev->caps.comp_vector_cnt = ubase_caps->num_ceq_vectors;
+	udma_dev->caps.ack_queue_num = ubase_caps->ack_queue_num;
+
+	udma_dev->chip_id = ubase_caps->chip_id;
+	udma_dev->die_id = ubase_caps->die_id;
+	udma_dev->port_id = ubase_caps->io_port_id;
+	udma_dev->port_logic_id = ubase_caps->io_port_logic_id;
+	udma_dev->ue_id = ubase_caps->ue_id;
+	udma_dev->caps.non_mirror_en = ubase_adev_non_mirror_mem_supported(udma_dev->comdev.adev);
+	type_bit = ubase_get_ub_feature();
+	udma_dev->caps.rm_tp.bs.rtp = !!(type_bit & UBASE_URMA_RTP_ROI);
+	udma_dev->caps.rm_tp.bs.ctp = !!(type_bit & UBASE_URMA_CTP_ROI);
+	udma_dev->caps.rc_tp.bs.ctp = !!(type_bit & UBASE_URMA_CTP_ROL);
+	udma_dev->caps.rc_tp.bs.rtp = !!(type_bit & UBASE_URMA_RTP_ROL);
+	udma_dev->caps.um_tp.bs.ctp = !!(type_bit & UBASE_URMA_CTP_UNO);
+	udma_dev->caps.um_tp.bs.utp = !!(type_bit & UBASE_URMA_UTP_UNO);
+	udma_get_dtu_param(udma_dev, ubase_caps);
+}
+
 static int udma_construct_qos_param(struct udma_dev *dev)
 {
+	struct ubase_adev_utp_qos *utp_qos_info;
 	struct ubase_adev_qos *qos_info;
 	uint8_t i;
 
@@ -755,15 +775,25 @@ static int udma_construct_qos_param(struct udma_dev *dev)
 		return -EINVAL;
 	}
 
+	utp_qos_info = ubase_get_adev_utp_qos(dev->comdev.adev);
+	if (!utp_qos_info) {
+		dev_err(dev->dev, "cannot get utp qos information from ubase.\n");
+		return -EINVAL;
+	}
+
 	dev->udma_tp_sl_num = qos_info->tp_sl_num;
 	dev->udma_ctp_sl_num = qos_info->ctp_sl_num;
 	dev->unic_sl_num = qos_info->nic_sl_num;
+	dev->udma_utp_sl_num = utp_qos_info->utp_sl_num;
 	dev->udma_tp_resp_vl_off = qos_info->tp_resp_vl_offset;
-	dev->udma_total_sl_num = dev->udma_tp_sl_num + dev->udma_ctp_sl_num;
-	if (dev->udma_total_sl_num > UDMA_MAX_SL_NUM) {
+	dev->udma_total_sl_num = dev->udma_tp_sl_num + dev->udma_ctp_sl_num +
+							 dev->udma_utp_sl_num;
+	if (dev->udma_total_sl_num > UDMA_MAX_SL_NUM ||
+	    dev->udma_total_sl_num == 0) {
 		dev_err(dev->dev,
-			"total sl num is invalid, tp sl num is %u, ctp sl num is %u.\n",
-			dev->udma_tp_sl_num, dev->udma_ctp_sl_num);
+			"total sl num is invalid, tp is %u, ctp is %u, utp is %u.\n",
+			dev->udma_tp_sl_num, dev->udma_ctp_sl_num,
+			dev->udma_utp_sl_num);
 		return -EINVAL;
 	}
 
@@ -771,6 +801,8 @@ static int udma_construct_qos_param(struct udma_dev *dev)
 		     qos_info->tp_sl, sizeof(u8) * qos_info->tp_sl_num);
 	(void)memcpy(dev->udma_ctp_sl,
 		     qos_info->ctp_sl, sizeof(u8) * qos_info->ctp_sl_num);
+	(void)memcpy(dev->udma_utp_sl,
+		     utp_qos_info->utp_sl, sizeof(u8) * utp_qos_info->utp_sl_num);
 	(void)memcpy(dev->unic_sl,
 		     qos_info->nic_sl, sizeof(u8) * qos_info->nic_sl_num);
 	(void)memcpy(dev->udma_sl,
@@ -778,16 +810,24 @@ static int udma_construct_qos_param(struct udma_dev *dev)
 
 	for (i = 0; i < qos_info->ctp_sl_num; i++)
 		dev->udma_sl[qos_info->tp_sl_num + i] = qos_info->ctp_sl[i];
+	for (i = 0; i < utp_qos_info->utp_sl_num; i++)
+		dev->udma_sl[qos_info->tp_sl_num + qos_info->ctp_sl_num + i] =
+			utp_qos_info->utp_sl[i];
 
 	if (qos_info->tp_sl_num != 0) {
 		for (i = 0; i < UDMA_MAX_SL_NUM; i++) {
 			dev->priority_info[i].SL = dev->udma_tp_sl[UDMA_DEFAULT_SL_NUM];
 			dev->priority_info[i].tp_type.bs.rtp = 1;
 		}
-	} else {
+	} else if (qos_info->ctp_sl_num != 0) {
 		for (i = 0; i < UDMA_MAX_SL_NUM; i++) {
 			dev->priority_info[i].SL = dev->udma_ctp_sl[UDMA_DEFAULT_SL_NUM];
 			dev->priority_info[i].tp_type.bs.ctp = 1;
+		}
+	} else {
+		for (i = 0; i < UDMA_MAX_SL_NUM; i++) {
+			dev->priority_info[i].SL = dev->udma_utp_sl[UDMA_DEFAULT_SL_NUM];
+			dev->priority_info[i].tp_type.bs.utp = 1;
 		}
 	}
 
@@ -795,12 +835,21 @@ static int udma_construct_qos_param(struct udma_dev *dev)
 		dev->priority_info[dev->udma_tp_sl[i]].SL = dev->udma_tp_sl[i];
 		dev->priority_info[dev->udma_tp_sl[i]].tp_type.bs.rtp = 1;
 		dev->priority_info[dev->udma_tp_sl[i]].tp_type.bs.ctp = 0;
+		dev->priority_info[dev->udma_tp_sl[i]].tp_type.bs.utp = 0;
 	}
 
 	for (i = 0; i < dev->udma_ctp_sl_num; i++) {
 		dev->priority_info[dev->udma_ctp_sl[i]].SL = dev->udma_ctp_sl[i];
 		dev->priority_info[dev->udma_ctp_sl[i]].tp_type.bs.rtp = 0;
 		dev->priority_info[dev->udma_ctp_sl[i]].tp_type.bs.ctp = 1;
+		dev->priority_info[dev->udma_ctp_sl[i]].tp_type.bs.utp = 0;
+	}
+
+	for (i = 0; i < dev->udma_utp_sl_num; i++) {
+		dev->priority_info[dev->udma_utp_sl[i]].SL = dev->udma_utp_sl[i];
+		dev->priority_info[dev->udma_utp_sl[i]].tp_type.bs.rtp = 0;
+		dev->priority_info[dev->udma_utp_sl[i]].tp_type.bs.ctp = 0;
+		dev->priority_info[dev->udma_utp_sl[i]].tp_type.bs.utp = 1;
 	}
 
 	return 0;
@@ -809,7 +858,6 @@ static int udma_construct_qos_param(struct udma_dev *dev)
 static int udma_query_wqebb_va(struct udma_dev *dev)
 {
 #define UDMA_FIRST_UE_ID 2
-#define UDMA_RESERVED_SQ_SIZE 2097152
 	uint32_t max_jetty_num, ue_va_offset;
 	struct udma_cmd_wqebb_va info = {};
 	struct ubase_cmd_buf in, out;
@@ -843,13 +891,15 @@ static int udma_query_wqebb_va(struct udma_dev *dev)
 		return 0;
 	}
 
+	info.va_size -= PMD_SIZE;
 	max_jetty_num = dev->caps.jetty.start_idx + dev->caps.jetty.max_cnt;
 	ue_va_offset = dev->die_id * info.ue_num + dev->ue_id - UDMA_FIRST_UE_ID;
 	dev->sq_reserved_info.va_start = info.va_start;
 	dev->sq_reserved_info.va_size = info.va_size;
-	dev->sq_reserved_info.size_per_jetty = UDMA_RESERVED_SQ_SIZE;
+	dev->sq_reserved_info.size_per_jetty = ALIGN(dev->caps.jfs.depth *
+		MAX_WQEBB_IN_SQE * UDMA_JFS_WQEBB_SIZE, UDMA_HUGEPAGE_SIZE);
 	dev->sq_reserved_info.size_per_ue =
-		ALIGN_DOWN(info.va_size / info.die_num / info.ue_num, UDMA_RESERVED_SQ_SIZE);
+		ALIGN_DOWN(info.va_size / info.die_num / info.ue_num, UDMA_HUGEPAGE_SIZE);
 	dev->sq_reserved_info.va_per_ue =
 		info.va_start + dev->sq_reserved_info.size_per_ue * ue_va_offset;
 	dev->sq_reserved_info.sq_reserved = dev->sq_reserved_info.size_per_jetty *
@@ -857,6 +907,8 @@ static int udma_query_wqebb_va(struct udma_dev *dev)
 	if (!dev->sq_reserved_info.sq_reserved)
 		dev_warn(dev->dev,
 			"invalid param, the reserved size is not enough to create all sq.\n");
+	else
+		udma_init_ida(&dev->sq_reserved_info.ida_table, max_jetty_num - 1, 0);
 
 	return 0;
 }
@@ -1088,14 +1140,13 @@ static int udma_alloc_dev_tid(struct udma_dev *udma_dev)
 		goto err_sva_grant_range;
 	}
 
-	if (!udma_dev->dtu_info.k_dtu_enable)
-		return ret;
-
-	ret = ubase_dtu_tbl_init(udma_dev->comdev.adev, udma_dev->tid,
-				 &udma_dev->dtu_info.win_num);
-	if (ret) {
-		dev_warn(udma_dev->dev, "DTU not available for UDMA device.\n");
-		udma_dev->dtu_info.k_dtu_enable = false;
+	if (udma_dev->dtu_info.k_dtu_enable) {
+		ret = ubase_dtu_tbl_init(udma_dev->comdev.adev, udma_dev->tid,
+					&udma_dev->dtu_info.win_num);
+		if (ret) {
+			dev_warn(udma_dev->dev, "DTU not available for UDMA device, ret=%d\n", ret);
+			udma_dev->dtu_info.k_dtu_enable = false;
+		}
 	}
 
 	return 0;

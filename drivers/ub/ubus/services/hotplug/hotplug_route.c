@@ -84,10 +84,9 @@ void ubhp_mark_detached_entities(struct ub_entity *root, struct list_head *dev_l
 				continue;
 
 			r_uent = port->r_uent;
-			if (ub_entity_test_priv_flag(r_uent, UB_ENTITY_DETACHED))
+			if (ub_entity_test_and_set_priv_flag(r_uent, UB_ENTITY_DETACHED))
 				continue;
 
-			ub_entity_assign_priv_flag(r_uent, UB_ENTITY_DETACHED, true);
 			if (!kfifo_put(&kfifo, r_uent))
 				ub_err(r_uent, "hp detached entity kfifo put failed!\n");
 		}

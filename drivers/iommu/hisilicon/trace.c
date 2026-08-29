@@ -7,4 +7,4 @@
 #include <linux/types.h>
 
 #define CREATE_TRACE_POINTS
-#include "trace/trace.h"
+#include "trace.h"

@@ -60,6 +60,9 @@ static void ubase_dump_tpg_ctx(struct seq_file *s, struct ubase_dev *udev, u32 i
 {
 	struct ubase_tpg *tpg = &udev->tp_ctx.tpg[idx];
 
+	if (!test_bit(idx, &udev->caps.tp_tpg_caps.vl_bitmap))
+		return;
+
 	seq_printf(s, "%-12u", idx);
 	seq_printf(s, "%-9u", tpg->mb_tpgn);
 	seq_printf(s, "%-10u", tpg->tp_shift);
@@ -79,7 +82,6 @@ enum ubase_dbg_ctx_type {
 static u32 ubase_get_ctx_num(struct ubase_dev *udev,
 			     enum ubase_dbg_ctx_type ctx_type)
 {
-	struct ubase_adev_caps *unic_caps = &udev->caps.unic_caps;
 	u32 ctx_num = 0;
 
 	switch (ctx_type) {
@@ -90,7 +92,7 @@ static u32 ubase_get_ctx_num(struct ubase_dev *udev,
 		ctx_num = udev->irq_table.ceqs.num;
 		break;
 	case UBASE_DBG_TPG_CTX:
-		ctx_num = unic_caps->tpg.max_cnt;
+		ctx_num = udev->caps.tp_tpg_caps.max_cnt;
 		break;
 	default:
 		ubase_err(udev, "failed to get ctx num, ctx_type = %u.\n",
@@ -221,15 +223,14 @@ void ubase_print_context_hw(struct seq_file *s, void *ctx_addr, u32 ctx_len)
 }
 EXPORT_SYMBOL(ubase_print_context_hw);
 
-static int ubase_dbg_dump_ctx_hw(struct seq_file *s, void *data,
-				 enum ubase_dbg_ctx_type ctx_type)
+static int ubase_dbg_query_eq_ctx(struct ubase_dev *udev, void *buf,
+				  struct ubase_ctx_info *ctx_info,
+				  u32 ctx_num, enum ubase_dbg_ctx_type ctx_type)
 {
-	struct ubase_dev *udev = dev_get_drvdata(s->private);
-	struct ubase_ctx_info ctx_info = {0};
 	struct ubase_cmd_mailbox *mailbox;
 	struct ubase_mbx_attr attr;
+	u32 ctxn, offset = 0;
 	int ret = 0;
-	u32 ctxn;
 
 	if (!test_bit(UBASE_STATE_INITED_B, &udev->state_bits) ||
 	    test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
@@ -242,32 +243,61 @@ static int ubase_dbg_dump_ctx_hw(struct seq_file *s, void *data,
 		return -ENOMEM;
 	}
 
-	ubase_get_ctx_info(udev, ctx_type, &ctx_info);
-	for (ctxn = 0; ctxn < ubase_get_ctx_num(udev, ctx_type); ctxn++) {
-		ubase_fill_mbx_attr(&attr, ctxn + ctx_info.start_idx,
-				    ctx_info.op, 0);
+	for (ctxn = 0; ctxn < ctx_num; ctxn++) {
+		ubase_fill_mbx_attr(&attr, ctxn + ctx_info->start_idx,
+				    ctx_info->op, 0);
 
 		ret = ubase_dev_mbx_supported(udev) ?
 		      __ubase_hw_upgrade_ctx_ex(udev, &attr, mailbox) :
 		      ubase_hw_upgrade_ctx_over_cmdq(udev, &attr, mailbox);
 		if (ret) {
 			ubase_err(udev,
-				  "failed to post query %s ctx mbx, ret = %d.\n",
-				  ctx_info.ctx_name, ret);
-			goto upgrade_ctx_err;
+				  "failed to query %s ctx, ret = %d.\n",
+				  ctx_info->ctx_name, ret);
+			goto out;
 		}
-
-		seq_printf(s, "offset\t%s%u\n", ctx_info.ctx_name,
-			   ctxn + ctx_info.start_idx);
-		ubase_mask_ctx_key_words(mailbox->buf, ctx_type);
-		__ubase_print_context_hw(s, mailbox->buf, ctx_info.ctx_size);
-		seq_puts(s, "\n");
+		ubase_mask_ctx_key_words(buf + offset, ctx_type);
+		memcpy(buf + offset, mailbox->buf, ctx_info->ctx_size);
+		offset += ctx_info->ctx_size;
 	}
 
-upgrade_ctx_err:
+out:
 	__ubase_free_cmd_mailbox(udev, mailbox);
-
 	return ret;
+}
+
+static int ubase_dbg_dump_ctx_hw(struct seq_file *s, void *data,
+				 enum ubase_dbg_ctx_type ctx_type)
+{
+	struct ubase_dev *udev = dev_get_drvdata(s->private);
+	struct ubase_ctx_info ctx_info = {0};
+	u32 ctxn, ctx_num, offset = 0;
+	void *ctx_arr;
+	int ret;
+
+	ctx_num = ubase_get_ctx_num(udev, ctx_type);
+	ubase_get_ctx_info(udev, ctx_type, &ctx_info);
+	ctx_arr = kzalloc(ctx_num * ctx_info.ctx_size, GFP_KERNEL);
+	if (!ctx_arr)
+		return -ENOMEM;
+
+	ret = ubase_dbg_query_eq_ctx(udev, ctx_arr, &ctx_info, ctx_num,
+				     ctx_type);
+	if (ret) {
+		kfree(ctx_arr);
+		return ret;
+	}
+
+	for (ctxn = 0; ctxn < ctx_num; ctxn++) {
+		seq_printf(s, "offset\t%s%u\n", ctx_info.ctx_name,
+			   ctxn + ctx_info.start_idx);
+		__ubase_print_context_hw(s, ctx_arr + offset, ctx_info.ctx_size);
+		seq_puts(s, "\n");
+		offset += ctx_info.ctx_size;
+	}
+
+	kfree(ctx_arr);
+	return 0;
 }
 
 int ubase_dbg_dump_aeq_context(struct seq_file *s, void *data)
@@ -328,3 +358,83 @@ int ubase_dbg_dump_ceq_ctx_hw(struct seq_file *s, void *data)
 {
 	return ubase_dbg_dump_ctx_hw(s, data, UBASE_DBG_CEQ_CTX);
 }
+
+static int __ubase_dbg_get_eq_ctx_hw(struct ubase_dev *udev, void *buf, u32 *size,
+				     enum ubase_dbg_ctx_type ctx_type)
+{
+	struct ubase_ctx_info ctx_info = {0};
+	u32 ctx_num;
+	int ret;
+
+	if (!ubase_dev_urma_supported(udev) && !ubase_dev_cdma_supported(udev))
+		return -EOPNOTSUPP;
+
+	ubase_get_ctx_info(udev, ctx_type, &ctx_info);
+	ctx_num = ubase_get_ctx_num(udev, ctx_type);
+
+	ret = ubase_dbg_query_eq_ctx(udev, buf, &ctx_info, ctx_num, ctx_type);
+	if (ret)
+		return ret;
+
+	*size = ctx_num * ctx_info.ctx_size;
+
+	return 0;
+}
+
+/**
+ * ubase_dbg_get_aeq_ctx_hw() - get aeq ctx hw
+ * @dev: device
+ * @buf: aeq ctx buffer
+ * @size: aeq ctx buffer size
+ *
+ * The function is used to get hardware aeq ctx.
+ *
+ * Context: Any context.
+ * Return: 0 on success, negative error code otherwise
+ */
+int ubase_dbg_get_aeq_ctx_hw(struct device *dev, void *buf, u32 *size)
+{
+	struct ubase_dev *udev;
+
+	if (!dev || !buf || !size)
+		return -EINVAL;
+
+	udev = dev_get_drvdata(dev);
+	if (*size < udev->caps.dev_caps.num_aeq_vectors * UBASE_AEQ_CTX_SIZE) {
+		ubase_err(udev, "size of aeq ctx buf is too small, size = %u.\n",
+			  *size);
+		return -EINVAL;
+	}
+
+	return __ubase_dbg_get_eq_ctx_hw(udev, buf, size, UBASE_DBG_AEQ_CTX);
+}
+EXPORT_SYMBOL(ubase_dbg_get_aeq_ctx_hw);
+
+/**
+ * ubase_dbg_get_ceq_ctx_hw() - get ceq ctx hw
+ * @dev: device
+ * @buf: ceq ctx buffer
+ * @size: ceq ctx buffer size
+ *
+ * The function is used to get hardware ceq ctx.
+ *
+ * Context: Any context.
+ * Return: 0 on success, negative error code otherwise
+ */
+int ubase_dbg_get_ceq_ctx_hw(struct device *dev, void *buf, u32 *size)
+{
+	struct ubase_dev *udev;
+
+	if (!dev || !buf || !size)
+		return -EINVAL;
+
+	udev = dev_get_drvdata(dev);
+	if (*size < udev->caps.dev_caps.num_ceq_vectors * UBASE_CEQ_CTX_SIZE) {
+		ubase_err(udev, "size of ceq ctx buf is too small, size = %u.\n",
+			  *size);
+		return -EINVAL;
+	}
+
+	return __ubase_dbg_get_eq_ctx_hw(udev, buf, size, UBASE_DBG_CEQ_CTX);
+}
+EXPORT_SYMBOL(ubase_dbg_get_ceq_ctx_hw);

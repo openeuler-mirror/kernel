@@ -449,6 +449,21 @@ static void ubase_arq_service_task(struct work_struct *work)
 	ubase_cmd_arq_handler(ubase_work);
 }
 
+static void ubase_cancel_arq_service_task(struct ubase_dev *udev)
+{
+	if (udev->arq_service_task.service_task.work.func) {
+		set_bit(UBASE_STATE_ARQ_SERVICE_SCHED, &udev->arq_service_task.state);
+		cancel_delayed_work_sync(&udev->arq_service_task.service_task);
+	}
+}
+
+static int ubase_enable_arq_service_task(struct ubase_dev *udev)
+{
+	clear_bit(UBASE_STATE_ARQ_SERVICE_SCHED, &udev->arq_service_task.state);
+
+	return 0;
+}
+
 static void ubase_reset_service_task(struct work_struct *work)
 {
 	struct ubase_delay_work *ubase_work =
@@ -754,6 +769,8 @@ static void ubase_unregister_cmdq_crq_event(struct ubase_dev *udev)
 {
 	int i;
 
+	cancel_delayed_work_sync(&udev->service_task.service_task);
+
 	for (i = 0; i < ARRAY_SIZE(ubase_crq_events); i++)
 		__ubase_unregister_crq_event(udev, ubase_crq_events[i].opcode);
 }
@@ -845,7 +862,7 @@ static const struct ubase_init_function ubase_init_func_map[] = {
 		ubase_query_dev_res, NULL
 	},
 	{
-		"dtu memory", UBASE_SUP_UDMA, 0,
+		"dtu memory", UBASE_SUP_NO_PMU, 0,
 		ubase_dtu_mem_init, ubase_dtu_mem_uninit
 	},
 	{
@@ -877,6 +894,10 @@ static const struct ubase_init_function ubase_init_func_map[] = {
 		ubase_ctrlq_init, ubase_ctrlq_uninit
 	},
 	{
+		"register ctrlq crq event", UBASE_SUP_NO_PMU, 0,
+		ubase_ctrlq_register_ubase_crq_event, ubase_ctrlq_unregister_ubase_crq_event
+	},
+	{
 		"register cmdq crq event", UBASE_SUP_NO_PMU, 0,
 		ubase_register_cmdq_crq_event, ubase_unregister_cmdq_crq_event
 	},
@@ -887,6 +908,10 @@ static const struct ubase_init_function ubase_init_func_map[] = {
 	{
 		"register aeq event", UBASE_SUP_NO_PMU, 0,
 		ubase_register_ae_event, ubase_unregister_ae_event
+	},
+	{
+		"query ctrl plane ver", UBASE_SUP_NO_PMU, 0,
+		ubase_query_ctrl_plane_ver, NULL
 	},
 	{
 		"init qos", UBASE_SUP_NO_PMU, 0,
@@ -923,6 +948,10 @@ static const struct ubase_init_function ubase_init_func_map[] = {
 	{
 		"enable period service task", UBASE_SUP_NO_PMU, 0,
 		ubase_enable_period_service_task, ubase_cancel_period_service_task
+	},
+	{
+		"enable arq service task", UBASE_SUP_NO_PMU, 1,
+		ubase_enable_arq_service_task, ubase_cancel_arq_service_task
 	},
 	{
 		"update ue isolated state", UBASE_SUP_URMA, 1,
@@ -979,7 +1008,7 @@ void ubase_dev_uninit(struct ubase_dev *udev)
 {
 	int i;
 
-	if (test_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state)) {
+	if (test_bit(UBASE_STATE_RST_FAILED_B, &udev->state_bits)) {
 		/* If ELR fails before remove, the cmdq & ctrlq may be disabled.
 		 * Since remove relies on cmdq\ctrlq, configuration messages
 		 * (e.g., destroy ctx res, close promiscuous, restore QoS..)
@@ -987,23 +1016,24 @@ void ubase_dev_uninit(struct ubase_dev *udev)
 		 * residue. Therefore, try to reinit these resources as much
 		 * as possible.
 		 */
-		ubase_warn(udev, "cmdq is disabled. try to restore it.\n");
+		ubase_warn(udev, "last reset failed, try to restore cmdq, ctrlq and irq.\n");
 		set_bit(UBASE_STATE_CMD_CRQ_UNAVAIL_B, &udev->state_bits);
 		ubase_ctrlq_uninit(udev);
 		ubase_irq_table_uninit(udev);
-		if (ubase_cmd_init(udev))
+		if (test_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state) &&
+		    ubase_cmd_init(udev))
 			goto start_uninit;
-		if (ubase_irq_table_init(udev))
+		if (test_bit(UBASE_STATE_IRQ_INVALID_B, &udev->state_bits) &&
+		    ubase_irq_table_init(udev))
 			goto start_uninit;
 		clear_bit(UBASE_STATE_CMD_CRQ_UNAVAIL_B, &udev->state_bits);
-		ubase_ctrlq_init(udev);
+		if (!test_bit(UBASE_CTRLQ_STATE_ENABLE, &udev->ctrlq.state))
+			ubase_ctrlq_init(udev);
 		ubase_register_ae_event(udev);
 		ubase_register_cmdq_crq_event(udev);
 	}
 
 start_uninit:
-	if (udev->service_task.service_task.work.func)
-		cancel_delayed_work_sync(&udev->service_task.service_task);
 	if (udev->reset_service_task.service_task.work.func)
 		cancel_delayed_work_sync(&udev->reset_service_task.service_task);
 	flush_workqueue(udev->ubase_async_wq);
@@ -1153,26 +1183,9 @@ int ubase_reinit_aux_devices(struct ubase_dev *udev)
 	return ret;
 }
 
-/**
- * ubase_get_hw_ver() - obtaining the current hardware version.
- * @adev: auxiliary device
- *
- * This function is used by the auxiliary device driver module to query
- * the hardware version information from ubase.
- *
- * Context: Any context.
- * Return: Hardware code. For details, see the definition in ubase_comm_dev.h.
- */
-u32 ubase_get_hw_ver(struct auxiliary_device *adev)
+u32 __ubase_get_hw_ver(struct ubase_dev *udev)
 {
-	struct ubase_dev *udev;
-	struct ub_entity *ue;
-
-	if (!adev)
-		return UBASE_HW_VER_UNKNOWN;
-
-	udev = __ubase_get_udev_by_adev(adev);
-	ue = container_of(udev->dev, struct ub_entity, dev);
+	struct ub_entity *ue = container_of(udev->dev, struct ub_entity, dev);
 
 	switch (uent_device(ue)) {
 	case UBASE_DEV_ID_K_0_URMA_MUE:
@@ -1215,6 +1228,24 @@ u32 ubase_get_hw_ver(struct auxiliary_device *adev)
 	default:
 		return UBASE_HW_VER_UNKNOWN;
 	}
+}
+
+/**
+ * ubase_get_hw_ver() - obtaining the current hardware version.
+ * @adev: auxiliary device
+ *
+ * This function is used by the auxiliary device driver module to query
+ * the hardware version information from ubase.
+ *
+ * Context: Any context.
+ * Return: Hardware code. For details, see the definition in ubase_comm_dev.h.
+ */
+u32 ubase_get_hw_ver(struct auxiliary_device *adev)
+{
+	if (!adev)
+		return UBASE_HW_VER_UNKNOWN;
+
+	return __ubase_get_hw_ver(__ubase_get_udev_by_adev(adev));
 }
 EXPORT_SYMBOL(ubase_get_hw_ver);
 
@@ -1739,6 +1770,30 @@ struct ubase_adev_qos *ubase_get_adev_qos(struct auxiliary_device *adev)
 	return &udev->qos.adev_qos;
 }
 EXPORT_SYMBOL(ubase_get_adev_qos);
+
+/**
+ * ubase_get_adev_utp_qos() - get auxiliary device UTP qos information
+ * @adev: auxiliary device
+ *
+ * The function returns the UTP SL/VL information for the auxiliary device.
+ * Caller should determine whether to block UTP traffic based on
+ * utp_sl_num=0 (UTP not enabled).
+ *
+ * Context: Any context.
+ * Return: NULL if the adev is empty, otherwise the pointer to
+ *         struct ubase_adev_utp_qos
+ */
+struct ubase_adev_utp_qos *ubase_get_adev_utp_qos(struct auxiliary_device *adev)
+{
+	struct ubase_dev *udev;
+
+	if (!adev)
+		return NULL;
+
+	udev = __ubase_get_udev_by_adev(adev);
+	return &udev->qos.utp_qos;
+}
+EXPORT_SYMBOL(ubase_get_adev_utp_qos);
 
 /**
  * ubase_adev_mac_stats_supported - determine whether mac statistics querying

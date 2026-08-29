@@ -88,6 +88,15 @@ memory regions. It is recommended to enable the permission checking
 feature to enforce security policies and protect the SVA address space
 from unauthorized access.
 
+Interaction with ``iommu.passthrough``
+--------------------------------------
+
+The generic ``iommu.passthrough=1`` parameter is intended for PCI/IOMMU
+bypass and only affects the generic IOMMU framework path. UMMU does not
+respond to passthrough and keeps working normally even when
+``iommu.passthrough=1`` is configured for PCI devices on a system where
+PCI and UB coexist.
+
 UMMU Driver Initialization
 ==========================
 
@@ -132,3 +141,61 @@ device set.
     +----------------+   +----------------+     +----------------+
     | ummu device 0  |   | ummu device 1  | ... | ummu device x  |
     +----------------+   +----------------+     +----------------+
+
+UMMU Module Parameters
+=======================
+
+The UMMU driver exposes the following module parameter that can be set at
+driver load time.
+
+ubm_granule
+-----------
+
+UB memory page table granule, specified as an unsigned long via the
+``ubm_granule`` kernel module parameter.
+
+Usage::
+
+    insmod ummu.ko ubm_granule=<value>
+
+The granule size determines the minimum mapping unit for on-chip memory
+address translation:
+
+    ``granule_size = 2^ubm_granule * 2 MB``
+
+Default value is ``0``, corresponding to a granule size of 2 MB.
+
+If an invalid value is supplied, the driver emits a warning and resets
+``ubm_granule`` to 0:
+
+Granule Size Mapping Table
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+========= ==================
+granule   granule_size
+          (2^g × 2 MB)
+========= ==================
+0         2 MB
+1         4 MB
+2         8 MB
+3         16 MB
+4         32 MB
+5         64 MB
+6         128 MB
+7         256 MB
+8         512 MB
+10        2 GB
+12        8 GB
+14        32 GB
+========= ==================
+
+Both the address and the total mapping size must be aligned to
+the granule size.  Misaligned mappings are rejected by the driver.
+
+Examples::
+
+    # granule = 4 → 32 MB mapping granularity
+    insmod ummu.ko ubm_granule=4
+
+    # Invalid value: driver warns and resets to 0
+    insmod ummu.ko ubm_granule=9

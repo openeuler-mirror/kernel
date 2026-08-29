@@ -49,7 +49,7 @@ struct ubase_res_cmd_resp {
 
 	__le32	udma_jfs_depth;
 	__le32	udma_jfr_max_cnt;
-	u8	rsvd3[4];
+	__le32	umv_tbl_size;
 	__le32	udma_jfr_depth;
 	u8	rsvd4[12];
 	__le32	udma_jfc_max_cnt;
@@ -133,6 +133,14 @@ struct ubase_query_sl_vl_cmd {
 	u8	sl_vl[23];
 };
 
+struct ubase_query_vl_map_cmd {
+	u8	map_type;
+	u8	resv0[3];
+	u8	prio_vl[IEEE_8021QAZ_MAX_TCS];
+	u8	dscp_vl[UBASE_MAX_DSCP];
+	u8	resv1[12];
+};
+
 struct ubase_query_chip_die_cmd {
 	__le16	nl_port_id;
 	__le16	chip_id;
@@ -157,6 +165,7 @@ struct ubase_query_ctp_vl_offset_cmd {
 int ubase_hw_init(struct ubase_dev *udev);
 void ubase_hw_uninit(struct ubase_dev *udev);
 int ubase_query_sl_vl_map(struct ubase_dev *udev, u8 *sl_vl);
+int ubase_query_vl_map(struct ubase_dev *udev, struct ubase_query_vl_map_cmd *resp);
 int ubase_qos_init(struct ubase_dev *udev);
 void ubase_qos_uninit(struct ubase_dev *udev);
 int ubase_query_ets_tc(struct ubase_dev *udev, u32 port_bitmap,

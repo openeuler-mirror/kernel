@@ -25,7 +25,6 @@ struct tid_dev {
 };
 
 /* private definition */
-#define UMMU_CORE_VER_NO "1.0.0"
 #define to_tid_dev(n) container_of(to_platform_device(n), struct tid_dev, pdev)
 
 /* private variable */

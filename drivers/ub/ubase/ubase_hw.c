@@ -193,6 +193,7 @@ static void ubase_parse_dev_caps_comm(struct ubase_dev *udev,
 
 	udev->ta_ctx.extdb_buf.size = le32_to_cpu(resp->ta_extdb_buf_size);
 	udev->ta_ctx.timer_buf.size = le32_to_cpu(resp->ta_timer_buf_size);
+	udev->caps.umv_tbl_size = le32_to_cpu(resp->umv_tbl_size);
 }
 
 static void ubase_parse_dev_caps_unic(struct ubase_dev *udev,

@@ -115,6 +115,16 @@ struct udma_ex_jfc_addr {
 	uint32_t cq_len;
 };
 
+struct udma_sq_reserved_info {
+	uint64_t va_start;
+	uint64_t va_size;
+	uint64_t va_per_ue;
+	uint64_t size_per_ue;
+	uint64_t size_per_jetty;
+	bool sq_reserved;
+	struct udma_ida ida_table;
+};
+
 struct udma_dtu_info {
 	uint16_t win_num;
 	uint64_t pa_base;
@@ -147,7 +157,6 @@ struct udma_dev {
 	struct xarray crq_nb_table;
 	struct xarray npu_nb_table;
 	struct mutex npu_nb_mutex;
-	struct xarray ctrlq_tpid_table;
 	struct xarray tpn_ue_idx_table;
 	struct ubase_event_nb *ae_event_addr[UBASE_EVENT_TYPE_MAX];
 	resource_size_t db_base;
@@ -174,11 +183,13 @@ struct udma_dev {
 	struct page *db_page;
 	u8 udma_tp_sl_num;
 	u8 udma_ctp_sl_num;
+	u8 udma_utp_sl_num;
 	u8 unic_sl_num;
 	u8 udma_total_sl_num;
 	u8 udma_tp_resp_vl_off;
 	u8 udma_tp_sl[UDMA_MAX_SL_NUM];
 	u8 udma_ctp_sl[UDMA_MAX_SL_NUM];
+	u8 udma_utp_sl[UDMA_MAX_SL_NUM];
 	u8 unic_sl[UDMA_MAX_SL_NUM];
 	u8 udma_sl[UDMA_MAX_SL_NUM];
 	struct ubcore_sl_info priority_info[UDMA_MAX_SL_NUM];

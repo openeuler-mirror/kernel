@@ -291,7 +291,7 @@ static bool ubase_is_udma_tp_event(struct ubase_dev *udev, u32 tpn)
 		return true;
 	}
 
-	for (i = 0; i < udev->caps.unic_caps.tpg.max_cnt; i++) {
+	for (i = 0; i < udev->caps.tp_tpg_caps.max_cnt; i++) {
 		if (tpn >= tpg[i].start_tpn &&
 		    tpn < tpg[i].start_tpn + tpg[i].tp_cnt) {
 			spin_unlock(&udev->tp_ctx.tpg_lock);
@@ -595,6 +595,13 @@ static int ubase_destroy_eq(struct ubase_dev *udev, struct ubase_eq *eq,
 	struct ubase_mbx_attr attr;
 	int mbx_cmd;
 	int ret;
+
+	if ((!ubase_dev_mbx_supported(udev) &&
+	     test_bit(UBASE_STATE_REMOVING_B, &udev->state_bits)) ||
+	    udev->reset_stage == UBASE_RESET_STAGE_UNINIT) {
+		ubase_free_eq_buf(udev, eq);
+		return 0;
+	}
 
 	mbx_cmd = eq_type == UBASE_EQ_TYPE_AEQ ? UBASE_MB_DESTROY_AEQ_CONTEXT :
 						 UBASE_MB_DESTROY_CEQ_CONTEXT;

@@ -5,6 +5,8 @@
  */
 
 #include <linux/delay.h>
+#include <linux/iommu.h>
+#include <linux/ktime.h>
 
 #include "ubase_cmd.h"
 #include "ubase_arq.h"
@@ -19,10 +21,118 @@
 #define CREATE_TRACE_POINTS
 #include "ubase_trace.h"
 
+static bool ubase_cmd_is_a0k0_mue(struct ubase_dev *udev)
+{
+	struct ub_entity *ue = container_of(udev->dev, struct ub_entity, dev);
+
+	switch (uent_device(ue)) {
+	case UBASE_DEV_ID_K_0_URMA_MUE:
+	case UBASE_DEV_ID_K_0_CDMA_MUE:
+	case UBASE_DEV_ID_K_0_PMU_MUE:
+	case UBASE_DEV_ID_A_0_URMA_MUE:
+	case UBASE_DEV_ID_A_0_CDMA_MUE:
+	case UBASE_DEV_ID_A_0_PMU_MUE:
+	case UBASE_DEV_ID_A_0_UBOE_MUE:
+		break;
+	default:
+		return false;
+	}
+
+	return true;
+}
+
+static bool ubase_cmd_is_a0k0_ue(struct ubase_dev *udev)
+{
+	struct ub_entity *ue = container_of(udev->dev, struct ub_entity, dev);
+
+	switch (uent_device(ue)) {
+	case UBASE_DEV_ID_K_0_URMA_UE:
+	case UBASE_DEV_ID_K_0_CDMA_UE:
+	case UBASE_DEV_ID_K_0_PMU_UE:
+	case UBASE_DEV_ID_A_0_URMA_UE:
+	case UBASE_DEV_ID_A_0_CDMA_UE:
+	case UBASE_DEV_ID_A_0_PMU_UE:
+	case UBASE_DEV_ID_A_0_UBOE_UE:
+		break;
+	default:
+		return false;
+	}
+
+	return true;
+}
+
+static bool ubase_cmd_fw_support_handshake(struct ubase_dev *udev)
+{
+	return !!(udev->hw.cmdq.handshake_reg_val &
+		  BIT(UBASE_SW_HANDSHAKE_1_FW_CAP_B));
+}
+
+static bool ubase_cmd_dev_support_handshake(struct ubase_dev *udev)
+{
+	return ubase_cmd_is_a0k0_mue(udev) || ubase_cmd_is_a0k0_ue(udev);
+}
+
+static bool ubase_cmd_support_first_cmd_retry(struct ubase_dev *udev)
+{
+	return ubase_cmd_is_a0k0_ue(udev) &&
+	       ubase_cmd_fw_support_handshake(udev);
+}
+
+static bool ubase_cmd_support_pa(struct ubase_dev *udev)
+{
+	return ubase_cmd_is_a0k0_mue(udev) &&
+	       ubase_cmd_fw_support_handshake(udev);
+}
+
+static int ubase_alloc_cmd_queue_pa(struct ubase_dev *udev,
+				    struct ubase_cmdq_ring *ring,
+				    size_t size)
+{
+	struct iommu_domain *domain;
+	phys_addr_t pa;
+
+	domain = iommu_get_domain_for_dev(udev->dev);
+	if (!domain) {
+		ubase_err(udev, "failed to get iommu domain.\n");
+		return -EIO;
+	}
+
+	ring->desc = dma_alloc_attrs(udev->dev, size, &ring->desc_dma_addr,
+				     GFP_KERNEL, DMA_ATTR_FORCE_CONTIGUOUS);
+	if (!ring->desc)
+		return -ENOMEM;
+
+	pa = iommu_iova_to_phys(domain, ring->desc_dma_addr);
+	if (!pa) {
+		ubase_err(udev, "failed to translate iova to pa.\n");
+		dma_free_attrs(udev->dev, size, ring->desc,
+			       ring->desc_dma_addr,
+			       DMA_ATTR_FORCE_CONTIGUOUS);
+		ring->desc = NULL;
+		return -EIO;
+	}
+
+	ring->pa = pa;
+	return 0;
+}
+
+static inline void ubase_free_cmd_queue_pa(struct ubase_dev *udev,
+					   struct ubase_cmdq_ring *ring,
+					   size_t size)
+{
+	dma_free_attrs(udev->dev, size, ring->desc, ring->desc_dma_addr,
+		       DMA_ATTR_FORCE_CONTIGUOUS);
+	ring->pa = 0;
+	ring->desc = NULL;
+}
+
 static inline int ubase_alloc_cmd_queue(struct ubase_dev *udev,
 					struct ubase_cmdq_ring *ring)
 {
 	size_t size = ring->desc_num * sizeof(struct ubase_cmdq_desc);
+
+	if (ubase_cmd_support_pa(udev))
+		return ubase_alloc_cmd_queue_pa(udev, ring, size);
 
 	ring->desc = dma_alloc_coherent(udev->dev, size, &ring->desc_dma_addr,
 					GFP_KERNEL);
@@ -39,6 +149,11 @@ static inline void ubase_free_cmd_queue(struct ubase_dev *udev,
 
 	if (!ring->desc)
 		return;
+
+	if (ring->pa) {
+		ubase_free_cmd_queue_pa(udev, ring, size);
+		return;
+	}
 
 	dma_free_coherent(udev->dev, size, ring->desc, ring->desc_dma_addr);
 	ring->desc = NULL;
@@ -89,6 +204,58 @@ static void ubase_cmd_queue_uninit(struct ubase_dev *udev)
 	ubase_free_cmd_queue(udev, crq);
 }
 
+static int ubase_cmd_write_handshake1_reg(struct ubase_dev *udev, u32 val)
+{
+	u32 read_val;
+
+	ubase_write_dev(&udev->hw, UBASE_SW_HANDSHAKE_1_REG, val);
+	read_val = ubase_read_dev(&udev->hw, UBASE_SW_HANDSHAKE_1_REG);
+	if (read_val != val) {
+		ubase_err(udev,
+			  "failed to write handshake1 reg, write=0x%x, read=0x%x.\n",
+			  val, read_val);
+		return -EIO;
+	}
+
+	return 0;
+}
+
+static int ubase_cmd_init_handshake_reg(struct ubase_dev *udev)
+{
+	u32 old_val, new_val;
+
+	if (!ubase_cmd_dev_support_handshake(udev))
+		return 0;
+
+	/* when the resource space is disabled, ubase_read_dev return U32_MAX */
+	old_val = ubase_read_dev(&udev->hw, UBASE_SW_HANDSHAKE_1_REG);
+	if (old_val == U32_MAX) {
+		ubase_err(udev,
+			  "failed to read handshake1 reg, reg_val = 0x%x.\n",
+			  old_val);
+		return -EIO;
+	}
+
+	udev->hw.cmdq.handshake_reg_val = old_val;
+	ubase_info(udev, "cmdq handshake1 = 0x%x.\n", old_val);
+
+	if (!ubase_cmd_fw_support_handshake(udev))
+		return 0;
+
+	new_val = old_val | BIT(UBASE_SW_HANDSHAKE_1_DRV_CAP_B);
+	return ubase_cmd_write_handshake1_reg(udev, new_val);
+}
+
+static void ubase_cmd_uninit_handshake_reg(struct ubase_dev *udev)
+{
+	if (!ubase_cmd_fw_support_handshake(udev) ||
+	    !ubase_cmd_dev_support_handshake(udev))
+		return;
+
+	ubase_write_dev(&udev->hw, UBASE_SW_HANDSHAKE_1_REG,
+			udev->hw.cmdq.handshake_reg_val);
+}
+
 static void ubase_cmd_init_regs(struct ubase_dev *udev)
 {
 	struct ubase_cmdq_ring *csq = &udev->hw.cmdq.csq;
@@ -99,20 +266,34 @@ static void ubase_cmd_init_regs(struct ubase_dev *udev)
 	spin_lock(&crq->lock);
 
 	/* csq init */
-	ubase_write_dev(&udev->hw, UBASE_CSQ_BASEADDR_L_REG,
-			lower_32_bits(csq->desc_dma_addr));
-	ubase_write_dev(&udev->hw, UBASE_CSQ_BASEADDR_H_REG,
-			upper_32_bits(csq->desc_dma_addr));
+	if (csq->pa) {
+		ubase_write_dev(&udev->hw, UBASE_CSQ_BASEADDR_L_REG,
+				lower_32_bits(csq->pa));
+		ubase_write_dev(&udev->hw, UBASE_CSQ_BASEADDR_H_REG,
+				upper_32_bits(csq->pa));
+	} else {
+		ubase_write_dev(&udev->hw, UBASE_CSQ_BASEADDR_L_REG,
+				lower_32_bits(csq->desc_dma_addr));
+		ubase_write_dev(&udev->hw, UBASE_CSQ_BASEADDR_H_REG,
+				upper_32_bits(csq->desc_dma_addr));
+	}
 	reg_val = csq->desc_num >> UBASE_CMDQ_DESC_NUM_S;
 	ubase_write_dev(&udev->hw, UBASE_CSQ_DEPTH_REG, reg_val);
 	ubase_write_dev(&udev->hw, UBASE_CSQ_HEAD_REG, 0);
 	ubase_write_dev(&udev->hw, UBASE_CSQ_TAIL_REG, 0);
 
 	/* crq init */
-	ubase_write_dev(&udev->hw, UBASE_CRQ_BASEADDR_L_REG,
-			lower_32_bits(crq->desc_dma_addr));
-	ubase_write_dev(&udev->hw, UBASE_CRQ_BASEADDR_H_REG,
-			upper_32_bits(crq->desc_dma_addr));
+	if (crq->pa) {
+		ubase_write_dev(&udev->hw, UBASE_CRQ_BASEADDR_L_REG,
+				lower_32_bits(crq->pa));
+		ubase_write_dev(&udev->hw, UBASE_CRQ_BASEADDR_H_REG,
+				upper_32_bits(crq->pa));
+	} else {
+		ubase_write_dev(&udev->hw, UBASE_CRQ_BASEADDR_L_REG,
+				lower_32_bits(crq->desc_dma_addr));
+		ubase_write_dev(&udev->hw, UBASE_CRQ_BASEADDR_H_REG,
+				upper_32_bits(crq->desc_dma_addr));
+	}
 	reg_val = crq->desc_num >> UBASE_CMDQ_DESC_NUM_S;
 	ubase_write_dev(&udev->hw, UBASE_CRQ_DEPTH_REG, reg_val);
 	ubase_write_dev(&udev->hw, UBASE_CRQ_HEAD_REG, 0);
@@ -173,7 +354,26 @@ static int ubase_remain_cmdq_space(struct ubase_cmdq_ring *csq)
 	return csq->desc_num - used - 1;
 }
 
-static bool ubase_wait_for_resp(struct ubase_dev *udev)
+static bool ubase_wait_resp_timeout(struct ubase_dev *udev)
+{
+#define MSLEEP_TIME_MS 4
+
+	struct ubase_cmdq_ring *csq = &udev->hw.cmdq.csq;
+	ktime_t end = ktime_add_us(ktime_get(), csq->tx_timeout);
+	u32 ci;
+
+	do {
+		msleep(MSLEEP_TIME_MS);
+
+		ci = ubase_read_dev(&udev->hw, UBASE_CSQ_HEAD_REG);
+		if (ci == csq->pi)
+			return true;
+	} while (ktime_before(ktime_get(), end));
+
+	return false;
+}
+
+static bool ubase_poll_resp_timeout(struct ubase_dev *udev)
 {
 	struct ubase_cmdq_ring *csq = &udev->hw.cmdq.csq;
 	u32 timeout = 0;
@@ -320,7 +520,7 @@ int ubase_send_cmd(struct ubase_dev *udev,
 	sw_pi = csq->pi;
 
 	ubase_write_desc_to_cmdq(udev, desc, num);
-	is_completed = ubase_wait_for_resp(udev);
+	is_completed = ubase_poll_resp_timeout(udev);
 	if (!is_completed) {
 		ret = -EBADE;
 		goto err_clr_cmdq;
@@ -345,20 +545,72 @@ err_clr_cmdq:
 	return ret;
 }
 
+static int ubase_send_cmd_query_fw_ver(struct ubase_dev *udev,
+				       struct ubase_cmdq_desc *desc,
+				       u32 retry_cnt)
+{
+	struct ubase_cmdq_ring *csq = &udev->hw.cmdq.csq;
+	int ret = -ETIMEDOUT;
+	u32 i, sw_pi;
+
+	for (i = 0; i < retry_cnt; i++) {
+		ubase_cmd_setup_basic_desc(desc, UBASE_OPC_QUERY_FW_VER,
+					   true, 1);
+
+		sw_pi = csq->pi;
+		ubase_write_desc_to_cmdq(udev, desc, 1);
+		if (!ubase_wait_resp_timeout(udev)) {
+			ubase_err(udev,
+				  "query fw version wait ci update timeout.\n");
+			continue;
+		}
+
+		memcpy(desc, &csq->desc[sw_pi], sizeof(*desc));
+		trace_ubase_csq_rx(udev->dev, 0, sw_pi, csq->ci, desc);
+		csq->ci = ubase_read_dev(&udev->hw, UBASE_CSQ_HEAD_REG);
+
+		if (!(desc->flag & UBASE_CMD_FLAG_OUT)) {
+			ubase_err(udev, "query fw version wait resp timeout.\n");
+			continue;
+		}
+
+		if (desc->ret) {
+			ret = -le16_to_cpu(desc->ret);
+			ubase_err(udev,
+				  "failed to query fw version, ret = %d.\n", ret);
+		} else {
+			ret = 0;
+		}
+
+		break;
+	}
+
+	return ret;
+}
+
 static int ubase_cmd_query_version(struct ubase_dev *udev)
 {
-	struct ubase_query_version_cmd *resp;
-	struct ubase_cmdq_desc desc;
-	u32 fw_ver;
-	int ret;
+#define MAX_RETRY_CNT 20
 
-	ubase_cmd_setup_basic_desc(&desc, UBASE_OPC_QUERY_FW_VER, true, 1);
-	ret = ubase_send_cmd(udev, &desc, 1);
-	if (ret) {
-		ubase_err(udev, "failed to query fw version, ret = %d.\n",
-			  ret);
-		return ret;
+	u32 handshake_val = udev->hw.cmdq.handshake_reg_val;
+	struct ubase_query_version_cmd *resp;
+	u32 fw_ver, new_val, retry_cnt = 1;
+	struct ubase_cmdq_desc desc;
+	int ret, clear_ret;
+
+	if (ubase_cmd_support_first_cmd_retry(udev)) {
+		new_val = handshake_val | BIT(UBASE_SW_HANDSHAKE_1_DRV_CAP_B) |
+			  BIT(UBASE_SW_HANDSHAKE_1_UE_FIRST_CMD_B);
+		ret = ubase_cmd_write_handshake1_reg(udev, new_val);
+		if (ret)
+			return ret;
+
+		retry_cnt = MAX_RETRY_CNT;
 	}
+
+	ret = ubase_send_cmd_query_fw_ver(udev, &desc, retry_cnt);
+	if (ret)
+		goto out;
 
 	resp = (struct ubase_query_version_cmd *)desc.data;
 	udev->caps.dev_caps.fw_version = le32_to_cpu(resp->fw_version);
@@ -370,7 +622,15 @@ static int ubase_cmd_query_version(struct ubase_dev *udev)
 		   u32_get_bits(fw_ver, UBASE_FW_VERSION_BYTE1_MASK),
 		   u32_get_bits(fw_ver, UBASE_FW_VERSION_BYTE0_MASK));
 
-	return 0;
+out:
+	if (ubase_cmd_support_first_cmd_retry(udev)) {
+		new_val = handshake_val | BIT(UBASE_SW_HANDSHAKE_1_DRV_CAP_B);
+		clear_ret = ubase_cmd_write_handshake1_reg(udev, new_val);
+		if (!ret)
+			ret = clear_ret;
+	}
+
+	return ret;
 }
 
 static inline void ubase_crq_table_init(struct ubase_dev *udev)
@@ -392,8 +652,15 @@ int ubase_cmd_init(struct ubase_dev *udev)
 {
 	int ret;
 
-	if (!test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
+	set_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state);
+
+	if (!test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits)) {
+		ret = ubase_cmd_init_handshake_reg(udev);
+		if (ret)
+			return ret;
+
 		ubase_crq_table_init(udev);
+	}
 
 	ret = ubase_cmd_queue_init(udev);
 	if (ret) {
@@ -407,22 +674,22 @@ int ubase_cmd_init(struct ubase_dev *udev)
 
 	atomic_set(&udev->hw.cmdq.csq_cnt, 0);
 
-	clear_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state);
-
 	ret = ubase_cmd_query_version(udev);
 	if (ret)
 		goto err_query_version;
 
+	clear_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state);
 	return 0;
 
 err_query_version:
-	set_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state);
 	ubase_cmd_uninit_regs(udev);
 	ubase_arq_uninit(udev);
 	ubase_cmd_queue_uninit(udev);
 err_queue_init:
-	if (!test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
+	if (!test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits)) {
 		ubase_crq_table_uninit(udev);
+		ubase_cmd_uninit_handshake_reg(udev);
+	}
 
 	return ret;
 }
@@ -450,8 +717,10 @@ void ubase_cmd_uninit(struct ubase_dev *udev)
 	ubase_arq_uninit(udev);
 	ubase_cmd_queue_uninit(udev);
 
-	if (!test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
+	if (!test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits)) {
 		ubase_crq_table_uninit(udev);
+		ubase_cmd_uninit_handshake_reg(udev);
+	}
 }
 
 void ubase_cmd_setup_basic_desc(struct ubase_cmdq_desc *desc,

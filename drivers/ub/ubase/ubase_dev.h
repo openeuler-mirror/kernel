@@ -52,6 +52,7 @@ struct ubase_cmdq_ring {
 	u32 desc_num;
 	u32 tx_timeout;
 	dma_addr_t desc_dma_addr;
+	phys_addr_t pa;
 	struct ubase_cmdq_desc *desc;
 	spinlock_t lock;
 };
@@ -60,6 +61,7 @@ struct ubase_cmdq {
 	struct ubase_cmdq_ring csq;
 	struct ubase_cmdq_ring crq;
 	atomic_t csq_cnt;
+	u32 handshake_reg_val;
 };
 
 struct ubase_hw {
@@ -105,10 +107,18 @@ struct ubase_priv {
 	unsigned long adev_status[UBASE_DRV_MAX];
 };
 
+struct ubase_tp_tpg_caps {
+	u32		max_cnt;
+	unsigned long	vl_bitmap;
+};
+
 struct ubase_dev_caps {
-	struct ubase_adev_caps	udma_caps;
-	struct ubase_adev_caps	unic_caps;
-	struct ubase_caps	dev_caps;
+	struct ubase_adev_caps		udma_caps;
+	struct ubase_adev_caps		unic_caps;
+	struct ubase_caps		dev_caps;
+	struct ubase_tp_tpg_caps	tp_tpg_caps;
+	u32				hw_ver;
+	u32				umv_tbl_size;
 };
 
 struct ubase_mbox_cmd {
@@ -273,6 +283,7 @@ struct ubase_ctrlq {
 	struct semaphore			msg_queue_sem;
 	u32					last_clean_idx;
 	spinlock_t				send_lock;
+	u32					remote_ver;
 };
 
 struct ubase_ctx_status {
@@ -363,6 +374,7 @@ enum ubase_node_type {
 struct ubase_dev_qos {
 	struct ubase_adev_qos		adev_qos;
 	struct ubase_initial_qset_qos	initial_qos;
+	struct ubase_adev_utp_qos	utp_qos;
 };
 
 struct ubase_mm_ops {
@@ -591,6 +603,11 @@ static inline bool ubase_dev_non_mirror_mem_supported(struct ubase_dev *udev)
 	return ubase_get_cap_bit(udev, UBASE_SUPPORT_NON_MIRROR_MEM_B);
 }
 
+static inline bool ubase_dev_batch_query_pmu_supported(struct ubase_dev *udev)
+{
+	return ubase_get_cap_bit(udev, UBASE_SUPPORT_BATCH_QUERY_PMU_B);
+}
+
 static inline u32 ubase_jfs_num(struct ubase_dev *udev)
 {
 	struct ubase_adev_caps *unic_caps = &udev->caps.unic_caps;
@@ -672,5 +689,6 @@ void ubase_free_buf(struct ubase_dev *udev, size_t size,
 		    void *va, dma_addr_t iova, struct page *page);
 int ubase_reinit_aux_devices(struct ubase_dev *udev);
 int __ubase_activate_dev(struct ubase_dev *udev);
+u32 __ubase_get_hw_ver(struct ubase_dev *udev);
 
 #endif /* __UBASE_DEV_H__ */

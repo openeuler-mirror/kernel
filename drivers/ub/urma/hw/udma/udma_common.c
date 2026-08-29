@@ -37,6 +37,7 @@ static void udma_fill_umem(struct udma_umem *umem, struct udma_umem_param *param
 	umem->length = param->len;
 	umem->flag = param->flag;
 	umem->is_writable = !!param->flag.bs.writable;
+	umem->suppress_error_log = param->suppress_error_log;
 }
 
 static int udma_pin_pages(uint64_t cur_base, uint64_t npages,
@@ -97,9 +98,10 @@ static uint64_t udma_pin_all_pages(struct udma_dev *udma_dev, struct udma_umem *
 		cond_resched();
 		pinned = udma_pin_pages(cur_base, page_count, gup_flags, page_list);
 		if (pinned <= 0) {
-			dev_err(udma_dev->dev,
-				"failed to pin_user_pages_fast, page_count: %llu, pinned: %d.\n",
-				page_count, pinned);
+			if (!umem->suppress_error_log)
+				dev_err(udma_dev->dev,
+					"failed to pin_user_pages_fast, page_count: %llu, pinned: %d.\n",
+					page_count, pinned);
 			break;
 		}
 		cur_base += (uint64_t)pinned * PAGE_SIZE;
@@ -108,9 +110,10 @@ static uint64_t udma_pin_all_pages(struct udma_dev *udma_dev, struct udma_umem *
 						       pinned * PAGE_SIZE, UINT_MAX, page_count,
 						       GFP_KERNEL);
 		if (ret) {
-			dev_err(udma_dev->dev,
-				"failed to SG alloc append table failed, page_count: %llu.\n",
-				page_count);
+			if (!umem->suppress_error_log)
+				dev_err(udma_dev->dev,
+					"failed to SG alloc append table, page_count: %llu.\n",
+					page_count);
 			unpin_user_pages_dirty_lock(page_list, pinned, 0);
 			udma_unpin_pages_by_sgtable(umem, false);
 			return 0;
@@ -411,7 +414,7 @@ void udma_adv_id_free(struct udma_group_bitmap *bitmap_table, uint32_t start_idx
 	spin_unlock(&bitmap_table->lock);
 }
 
-static void udma_init_ida_table(struct udma_ida *ida_table, uint32_t max, uint32_t min)
+void udma_init_ida(struct udma_ida *ida_table, uint32_t max, uint32_t min)
 {
 	ida_init(&ida_table->ida);
 	spin_lock_init(&ida_table->lock);
@@ -422,7 +425,7 @@ static void udma_init_ida_table(struct udma_ida *ida_table, uint32_t max, uint32
 
 void udma_init_udma_table(struct udma_table *table, uint32_t max, uint32_t min, bool irq_lock)
 {
-	udma_init_ida_table(&table->ida_table, max, min);
+	udma_init_ida(&table->ida_table, max, min);
 	if (irq_lock)
 		xa_init_flags(&table->xa, XA_FLAGS_LOCK_IRQ);
 	else
@@ -588,6 +591,7 @@ static struct udma_umem *udma_pin_k_addr(struct ubcore_device *ub_dev, uint64_t 
 	param.flag.bs.writable = true;
 	param.flag.bs.non_pin = 0;
 	param.is_kernel = true;
+	param.suppress_error_log = false;
 
 	return udma_umem_get(&param);
 }
@@ -827,7 +831,7 @@ int udma_k_alloc_buf(struct udma_dev *dev, struct udma_buf *buf, bool need_dtu)
 	return ret;
 }
 
-void udma_k_free_buf(struct udma_dev *dev, struct udma_buf *buf, bool need_dtu)
+void udma_k_free_buf(struct udma_dev *dev, struct udma_buf *buf)
 {
 	uint32_t size = buf->entry_cnt * buf->entry_size;
 
@@ -836,10 +840,12 @@ void udma_k_free_buf(struct udma_dev *dev, struct udma_buf *buf, bool need_dtu)
 		return;
 	}
 
-	if (buf->is_hugepage)
+	if (buf->is_hugepage) {
 		udma_free_hugepage(dev, buf->hugepage);
-	else
+		buf->is_hugepage = false;
+	} else {
 		udma_free_normal_buf(dev, size, buf);
+	}
 }
 
 bool remap_va_to_pfn(struct udma_dev *dev, uint64_t va, uint64_t *pfn)
@@ -959,7 +965,6 @@ void udma_destroy_hugepage(struct udma_dev *dev)
 		list_del(&priv->list);
 		dev_info_ratelimited(dev->dev, "free_hugepage, seq=%u.\n", priv->seq);
 		udma_unpin_k_addr(priv->umem);
-		udma_iotlb_sync(dev, (uintptr_t)priv->va_base, priv->va_len);
 		vfree(priv->va_base);
 		kfree(priv);
 	}
@@ -974,7 +979,7 @@ void udma_dtu_uva_unremap(struct udma_dev *dev, struct udma_buf *buf,
 	uint32_t size;
 
 	if (current->mm) {
-		size = buf->entry_cnt * buf->entry_size;
+		size = ALIGN(buf->len, PAGE_SIZE);
 		mmap_write_lock(current->mm);
 		vma = find_vma(current->mm, dev->dtu_info.va_base);
 		if (vma != NULL && vma->vm_start <= buf->addr &&
@@ -1016,7 +1021,7 @@ int udma_dtu_uva_remap(struct udma_dev *dev, struct udma_buf *buf,
 	}
 	if (!((vma->vm_flags & VM_WIPEONFORK) && (vma->vm_flags & VM_DONTEXPAND) &&
 	    (vma->vm_flags & VM_DONTCOPY) && (vma->vm_flags & VM_IO))) {
-		dev_err(dev->dev, "failed to check VMA flags.\n");
+		dev_err(dev->dev, "failed to check VMA flags = %lu.\n", vma->vm_flags);
 		ret = -EINVAL;
 		goto err_free_pages;
 	}

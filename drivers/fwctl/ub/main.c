@@ -15,24 +15,44 @@
 #define MAX_IOCTL_COUNT 1024
 #define TIME_WINDOW_MS 3000
 #define TIME_WINDOW_JIFFIES msecs_to_jiffies(TIME_WINDOW_MS)
-#define UBCTL_UNSUPPORTED_RPCCMD_CNT_A_0 3
-#define UBCTL_UNSUPPORTED_RPCCMD_CNT_A_1 1
-#define UBCTL_UNSUPPORTED_RPCCMD_CNT_K_0 12
-#define UBCTL_UNSUPPORTED_RPCCMD_CNT_K_1 18
 #define UBCTL_CMD_CNT_MAX 100
 
 static u32 g_env_type;
+static bool g_dev_client_init_flag;
 
 static DEFINE_MUTEX(g_fifo_lock);
+static DEFINE_MUTEX(g_dev_client_init_mutex);
 
 struct ubctl_uctx {
 	struct fwctl_uctx uctx;
 };
 
-struct ubctl_env_type_info {
-	u32 env_type;
-	enum ub_fwctl_cmdrpc_type unsupported_rpccmd[UBCTL_CMD_CNT_MAX];
-	u32 rpc_cmd_count;
+static const u32 g_ubctl_env_type_a0_unsupported_cmds[] = {
+	UTOOL_CMD_QUERY_SCC_VERSION, UTOOL_CMD_QUERY_SCC_LOG,
+	UTOOL_CMD_QUERY_TA_WQE_TIME, UTOOL_CMD_QUERY_UPA_PKT_STATS, UTOOL_CMD_QUERY_UE_INFO
+};
+
+static const u32 g_ubctl_env_type_a1_unsupported_cmds[] = {
+	UTOOL_CMD_QUERY_TA_WQE_TIME, UTOOL_CMD_QUERY_UPA_PKT_STATS,
+	UTOOL_CMD_QUERY_UE_INFO, UTOOL_CMD_QUERY_BA_ICRC
+};
+
+static const u32 g_ubctl_env_type_k0_unsupported_cmds[] = {
+	UTOOL_CMD_CONF_NL_SSU_VL_PKT, UTOOL_CMD_QUERY_NL_SSU_VL_PKT, UTOOL_CMD_QUERY_DL_BIST,
+	UTOOL_CMD_CONF_DL_BIST, UTOOL_CMD_QUERY_DL_BIST_ERR, UTOOL_CMD_QUERY_DL_RT_BANDWIDTH,
+	UTOOL_CMD_QUERY_LOOPBACK, UTOOL_CMD_CONF_LOOPBACK,
+	UTOOL_CMD_QUERY_PRBS_EN, UTOOL_CMD_CONF_PRBS_EN, UTOOL_CMD_QUERY_PRBS_RESULT,
+	UTOOL_CMD_QUERY_PORT_PKT_STATS, UTOOL_CMD_QUERY_UPA_PKT_STATS, UTOOL_CMD_QUERY_BA_ICRC
+};
+
+static const u32 g_ubctl_env_type_k1_unsupported_cmds[] = {
+	UTOOL_CMD_CONF_NL_SSU_VL_PKT, UTOOL_CMD_QUERY_NL_SSU_VL_PKT, UTOOL_CMD_QUERY_DL_BIST,
+	UTOOL_CMD_CONF_DL_BIST, UTOOL_CMD_QUERY_DL_BIST_ERR, UTOOL_CMD_QUERY_DL_RT_BANDWIDTH,
+	UTOOL_CMD_QUERY_LOOPBACK, UTOOL_CMD_CONF_LOOPBACK, UTOOL_CMD_QUERY_PRBS_EN,
+	UTOOL_CMD_CONF_PRBS_EN, UTOOL_CMD_QUERY_PRBS_RESULT, UTOOL_CMD_QUERY_PORT_PKT_STATS,
+	UTOOL_CMD_QUERY_BA_MAR, UTOOL_CMD_QUERY_BA_MAR_TABLE, UTOOL_CMD_QUERY_BA_MAR_CYC_EN,
+	UTOOL_CMD_CONF_BA_MAR_CYC_EN, UTOOL_CMD_CONFIG_BA_MAR_PEFR_STATS,
+	UTOOL_CMD_QUERY_BA_MAR_PEFR_STATS, UTOOL_CMD_QUERY_BA_ICRC
 };
 
 static int ubctl_open_uctx(struct fwctl_uctx *uctx)
@@ -50,20 +70,75 @@ static void *ubctl_fw_info(struct fwctl_uctx *uctx, size_t *length)
 	return NULL;
 }
 
-static int ubctl_legitimacy_rpc(struct ubctl_dev *ucdev, size_t out_len,
-				enum fwctl_rpc_scope scope)
+static int ubctl_check_cmd_cnt(struct ubctl_dev *ucdev)
 {
-	/*
-	 * Verify if RPC (Remote Procedure Call) requests are valid.
-	 * It determines whether the request is within the allowed time window
-	 * and whether the output length meets the requirements by checking
-	 * the timestamp and output length of the request.
-	 */
+	if (ARRAY_SIZE(g_ubctl_env_type_a0_unsupported_cmds) > UBCTL_CMD_CNT_MAX ||
+	    ARRAY_SIZE(g_ubctl_env_type_a1_unsupported_cmds) > UBCTL_CMD_CNT_MAX ||
+	    ARRAY_SIZE(g_ubctl_env_type_k0_unsupported_cmds) > UBCTL_CMD_CNT_MAX ||
+	    ARRAY_SIZE(g_ubctl_env_type_k1_unsupported_cmds) > UBCTL_CMD_CNT_MAX) {
+		ubctl_err(ucdev, "the cmd cnt is larger than max(%u), pls check!\n",
+			  UBCTL_CMD_CNT_MAX);
+		return -ENOTTY;
+	}
+
+	return 0;
+}
+
+static int ubctl_check_env_type(struct ubctl_dev *ucdev, u32 rpc_cmd)
+{
+	const u32 *unsupported_cmds = NULL;
+	u32 cmd_count = 0;
+	u32 i;
+
+	if (ubctl_check_cmd_cnt(ucdev))
+		return -ENOTTY;
+	g_env_type = ubase_get_hw_ver(ucdev->adev);
+
+	switch (g_env_type) {
+	case UBASE_HW_VER_A_0:
+		unsupported_cmds = g_ubctl_env_type_a0_unsupported_cmds;
+		cmd_count = ARRAY_SIZE(g_ubctl_env_type_a0_unsupported_cmds);
+		break;
+	case UBASE_HW_VER_A_1:
+		unsupported_cmds = g_ubctl_env_type_a1_unsupported_cmds;
+		cmd_count = ARRAY_SIZE(g_ubctl_env_type_a1_unsupported_cmds);
+		break;
+	case UBASE_HW_VER_K_0:
+		unsupported_cmds = g_ubctl_env_type_k0_unsupported_cmds;
+		cmd_count = ARRAY_SIZE(g_ubctl_env_type_k0_unsupported_cmds);
+		break;
+	case UBASE_HW_VER_K_1:
+		unsupported_cmds = g_ubctl_env_type_k1_unsupported_cmds;
+		cmd_count = ARRAY_SIZE(g_ubctl_env_type_k1_unsupported_cmds);
+		break;
+	default:
+		ubctl_err(ucdev, "env type(%u) is not support.\n", g_env_type);
+		return -ENOTTY;
+	}
+
+	for (i = 0; i < cmd_count; i++) {
+		if (unsupported_cmds[i] == rpc_cmd) {
+			ubctl_err(ucdev, "rpc cmd(0x%x) cannot be used in current env type(%u)\n",
+				  rpc_cmd, g_env_type);
+			return -ENOTTY;
+		}
+	}
+
+	return 0;
+}
+
+/*
+ * Verify if RPC (Remote Procedure Call) requests are valid.
+ * It determines whether the request is within the allowed time window.
+ */
+static int ubctl_check_cmd_frequency(struct ubctl_dev *ucdev, enum fwctl_rpc_scope scope)
+{
 	unsigned long current_jiffies = jiffies;
-	unsigned long earliest_jiffies = current_jiffies - TIME_WINDOW_JIFFIES;
+	unsigned long earliest_jiffies = 0;
 	unsigned long record_jiffies = 0;
 	int kfifo_ret = 0;
 
+	earliest_jiffies = current_jiffies - TIME_WINDOW_JIFFIES;
 	mutex_lock(&g_fifo_lock);
 	while (kfifo_peek(&ucdev->ioctl_fifo, &record_jiffies) && record_jiffies) {
 		if (time_after(record_jiffies, earliest_jiffies))
@@ -80,27 +155,41 @@ static int ubctl_legitimacy_rpc(struct ubctl_dev *ucdev, size_t out_len,
 	if (kfifo_is_full(&ucdev->ioctl_fifo)) {
 		mutex_unlock(&g_fifo_lock);
 		ubctl_err(ucdev, "the current number of valid requests exceeds the limit, record_jiffies = %lu, current_jiffies = %lu.\n",
-				 record_jiffies, current_jiffies);
+			  record_jiffies, current_jiffies);
 		return -EBADMSG;
 	}
-
 	kfifo_ret = kfifo_put(&ucdev->ioctl_fifo, current_jiffies);
 	if (!kfifo_ret) {
 		mutex_unlock(&g_fifo_lock);
 		ubctl_err(ucdev, "unexpected events occurred while writing data.\n");
 		return kfifo_ret;
 	}
-
 	mutex_unlock(&g_fifo_lock);
+	return 0;
+}
+
+static int ubctl_legitimacy_rpc(struct ubctl_dev *ucdev, size_t out_len,
+				enum fwctl_rpc_scope scope, u32 rpc_cmd)
+{
+	int ret;
+
+	if (scope != FWCTL_RPC_CONFIGURATION &&
+	    scope != FWCTL_RPC_DEBUG_READ_ONLY)
+		return -EOPNOTSUPP;
+
 	if (out_len < sizeof(struct fwctl_rpc_ub_out)) {
 		ubctl_dbg(ucdev, "outlen %zu is less than min value %zu.\n",
 			  out_len, sizeof(struct fwctl_rpc_ub_out));
 		return -EBADMSG;
 	}
 
-	if (scope != FWCTL_RPC_CONFIGURATION &&
-	    scope != FWCTL_RPC_DEBUG_READ_ONLY)
-		return -EOPNOTSUPP;
+	ret = ubctl_check_env_type(ucdev, rpc_cmd);
+	if (ret)
+		return ret;
+
+	ret = ubctl_check_cmd_frequency(ucdev, scope);
+	if (ret)
+		return ret;
 
 	return 0;
 }
@@ -114,70 +203,66 @@ static int ubctl_cmd_err(struct ubctl_dev *ucdev, int ret, struct fwctl_rpc_ub_o
 	return ret;
 }
 
-static int ubctl_check_rpc_cmd(struct ubctl_dev *ucdev, u32 rpc_cmd)
+static int ubctl_check_ucdev(struct ubctl_dev *ucdev,
+			     struct ubctl_query_cmd_param *query_cmd_param)
 {
-	static struct ubctl_env_type_info ubctl_env_type_info_table[] = {
-		{ UBASE_HW_VER_A_0,
-		  { UTOOL_CMD_QUERY_SCC_VERSION, UTOOL_CMD_QUERY_SCC_LOG,
-		    UTOOL_CMD_QUERY_TA_WQE_TIME },
-		  UBCTL_UNSUPPORTED_RPCCMD_CNT_A_0 },
-		{ UBASE_HW_VER_A_1, { UTOOL_CMD_QUERY_TA_WQE_TIME },
-		  UBCTL_UNSUPPORTED_RPCCMD_CNT_A_1 },
+	u32 expected_size = (u32)sizeof(struct fwctl_pkt_dev_info_match);
+	struct fwctl_pkt_dev_info_match *pkt_out_data;
+	struct fwctl_pkt_dev_info_match *pkt_in_data;
+	struct ubase_caps *ucaps;
 
-		{ UBASE_HW_VER_K_0,
-		  { UTOOL_CMD_CONF_NL_SSU_VL_PKT, UTOOL_CMD_QUERY_NL_SSU_VL_PKT,
-		    UTOOL_CMD_QUERY_DL_BIST, UTOOL_CMD_CONF_DL_BIST, UTOOL_CMD_QUERY_DL_BIST_ERR,
-		    UTOOL_CMD_QUERY_DL_RT_BANDWIDTH, UTOOL_CMD_QUERY_LOOPBACK,
-		    UTOOL_CMD_CONF_LOOPBACK, UTOOL_CMD_QUERY_PRBS_EN,
-		    UTOOL_CMD_CONF_PRBS_EN, UTOOL_CMD_QUERY_PRBS_RESULT,
-		    UTOOL_CMD_QUERY_PORT_PKT_STATS },
-		  UBCTL_UNSUPPORTED_RPCCMD_CNT_K_0 },
-		{ UBASE_HW_VER_K_1,
-		  { UTOOL_CMD_CONF_NL_SSU_VL_PKT, UTOOL_CMD_QUERY_NL_SSU_VL_PKT,
-		    UTOOL_CMD_QUERY_DL_BIST, UTOOL_CMD_CONF_DL_BIST, UTOOL_CMD_QUERY_DL_BIST_ERR,
-		    UTOOL_CMD_QUERY_DL_RT_BANDWIDTH, UTOOL_CMD_QUERY_LOOPBACK,
-		    UTOOL_CMD_CONF_LOOPBACK, UTOOL_CMD_QUERY_PRBS_EN,
-		    UTOOL_CMD_CONF_PRBS_EN, UTOOL_CMD_QUERY_PRBS_RESULT,
-		    UTOOL_CMD_QUERY_PORT_PKT_STATS,
-		    UTOOL_CMD_QUERY_BA_MAR, UTOOL_CMD_QUERY_BA_MAR_TABLE,
-		    UTOOL_CMD_QUERY_BA_MAR_CYC_EN, UTOOL_CMD_CONF_BA_MAR_CYC_EN,
-		    UTOOL_CMD_CONFIG_BA_MAR_PEFR_STATS, UTOOL_CMD_QUERY_BA_MAR_PEFR_STATS },
-		  UBCTL_UNSUPPORTED_RPCCMD_CNT_K_1 }
-	};
-	int env_type_cnt = ARRAY_SIZE(ubctl_env_type_info_table);
-	int i, j;
-
-	g_env_type = ubase_get_hw_ver(ucdev->adev);
-	for (i = 0; i < env_type_cnt; i++) {
-		if (ubctl_env_type_info_table[i].env_type != g_env_type)
-			continue;
-		for (j = 0; j < ubctl_env_type_info_table[i].rpc_cmd_count; j++) {
-			if (ubctl_env_type_info_table[i].unsupported_rpccmd[j] != rpc_cmd)
-				continue;
-			ubctl_err(ucdev, "rpc cmd(0x%x) cannot be used in current env type(%u)\n",
-				  rpc_cmd, g_env_type);
-			return -ENOTTY;
-		}
-		return 0;
+	if (query_cmd_param->in->data_size != expected_size) {
+		ubctl_err(ucdev, "in data size = %ubytes, it must be %ubytes.\n",
+			  query_cmd_param->in->data_size, expected_size);
+		return -EINVAL;
 	}
-	ubctl_err(ucdev, "env type(%u) is not support.\n", g_env_type);
+	if (query_cmd_param->out_len != expected_size) {
+		ubctl_err(ucdev, "out data size = %zubytes, it must be %ubytes.\n",
+			  query_cmd_param->out_len, expected_size);
+		return -EINVAL;
+	}
 
-	return -ENOTTY;
+	ucaps = ubase_get_dev_caps(ucdev->adev);
+	if (ucaps == NULL)
+		return -ENODEV;
+
+	pkt_in_data = (struct fwctl_pkt_dev_info_match *)query_cmd_param->in->data;
+	pkt_out_data = (struct fwctl_pkt_dev_info_match *)query_cmd_param->out->data;
+
+	query_cmd_param->out->retval = 0;
+	query_cmd_param->out->data_size = sizeof(struct fwctl_pkt_dev_info_match);
+	pkt_out_data->chip_id = ucaps->chip_id;
+	pkt_out_data->die_id = ucaps->die_id;
+
+	pkt_out_data->is_matched = (pkt_in_data->chip_id == ucaps->chip_id) &&
+				   (pkt_in_data->die_id == ucaps->die_id);
+
+	return 0;
 }
 
 static int ub_cmd_do(struct ubctl_dev *ucdev,
 		     struct ubctl_query_cmd_param *query_cmd_param)
 {
+	struct ubctl_func_dispatch *ubctl_query_func;
+	struct ubctl_func_dispatch *ubctl_query_reg;
 	u32 rpc_cmd = query_cmd_param->in->rpc_cmd;
-	struct ubctl_func_dispatch *ubctl_query_reg = ubctl_get_query_reg_func(
-		ucdev, rpc_cmd);
-	struct ubctl_func_dispatch *ubctl_query_func = ubctl_get_query_func(
-		ucdev, rpc_cmd);
 	int ret;
 
+	ubctl_query_reg = ubctl_get_query_reg_func(ucdev, rpc_cmd);
+	ubctl_query_func = ubctl_get_query_func(ucdev, rpc_cmd);
+
+	query_cmd_param->out->env_version = g_env_type;
+
 	switch (rpc_cmd) {
+	case UTOOL_CMD_QUERY_DEV_INFO:
+		return ubctl_check_ucdev(ucdev, query_cmd_param);
 	case UTOOL_CMD_CONF_NL_SSU_VL_PKT:
 	case UTOOL_CMD_QUERY_NL_SSU_VL_PKT:
+	case UTOOL_CMD_QUERY_LOOPBACK:
+	case UTOOL_CMD_CONF_LOOPBACK:
+	case UTOOL_CMD_QUERY_PRBS_EN:
+	case UTOOL_CMD_CONF_PRBS_EN:
+	case UTOOL_CMD_QUERY_PRBS_RESULT:
 		ret = ubctl_check_port_type(ucdev, query_cmd_param, UBCTL_PORT_TYPE_ETH);
 		if (ret)
 			return ret;
@@ -221,8 +306,6 @@ static int ub_cmd_do(struct ubctl_dev *ucdev,
 		return -EINVAL;
 	}
 
-	query_cmd_param->out->env_version = g_env_type;
-
 	return ubctl_cmd_err(ucdev, ret, query_cmd_param->out);
 }
 
@@ -239,11 +322,7 @@ static void *ubctl_fw_rpc(struct fwctl_uctx *uctx, enum fwctl_rpc_scope scope,
 	ubctl_dbg(ucdev, "cmdif: opcode 0x%x inlen %zu outlen %zu\n",
 		  opcode, in_len, *out_len);
 
-	ret = ubctl_legitimacy_rpc(ucdev, *out_len, scope);
-	if (ret)
-		return ERR_PTR(ret);
-
-	ret = ubctl_check_rpc_cmd(ucdev, opcode);
+	ret = ubctl_legitimacy_rpc(ucdev, *out_len, scope, opcode);
 	if (ret)
 		return ERR_PTR(ret);
 
@@ -297,14 +376,26 @@ static int ubctl_probe(struct auxiliary_device *adev,
 
 	ret = fwctl_register(&ucdev->fwctl);
 	if (ret) {
-		ubctl_err(ucdev, "fwctl register failed, retval = %d.\n", ret);
+		ubctl_err(ucdev, "failed to execute fwctl register, retval = %d.\n", ret);
 		kfifo_free(&ucdev->ioctl_fifo);
 		return ret;
 	}
 
 	ret = ubctl_port_link_status_init(adev, ucdev);
 	if (ret)
-		ubctl_warn(ucdev, "fwctl register crq handler event failed, retval = %d.\n", ret);
+		ubctl_warn(ucdev, "failed to execute fwctl register crq handler event, retval = %d.\n",
+			   ret);
+
+	mutex_lock(&g_dev_client_init_mutex);
+	if (!g_dev_client_init_flag) {
+		ret = ubctl_dev_client_init(ucdev);
+		if (ret)
+			ubctl_warn(ucdev, "the dev client has not been fully initialized., retval = %d.\n",
+				   ret);
+		else
+			g_dev_client_init_flag = true;
+	}
+	mutex_unlock(&g_dev_client_init_mutex);
 
 	ucdev->adev = adev;
 	auxiliary_set_drvdata(adev, no_free_ptr(ucdev));
@@ -314,6 +405,13 @@ static int ubctl_probe(struct auxiliary_device *adev,
 static void ubctl_remove(struct auxiliary_device *adev)
 {
 	struct ubctl_dev *ucdev = auxiliary_get_drvdata(adev);
+
+	mutex_lock(&g_dev_client_init_mutex);
+	if (g_dev_client_init_flag) {
+		ubctl_dev_client_uninit(ucdev);
+		g_dev_client_init_flag = false;
+	}
+	mutex_unlock(&g_dev_client_init_mutex);
 
 	ubctl_port_link_status_uninit(adev);
 	fwctl_unregister(&ucdev->fwctl);

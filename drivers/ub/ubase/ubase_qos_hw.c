@@ -33,6 +33,22 @@ int ubase_query_sl_vl_map(struct ubase_dev *udev, u8 *sl_vl)
 	return 0;
 }
 
+int ubase_query_vl_map(struct ubase_dev *udev, struct ubase_query_vl_map_cmd *resp)
+{
+	struct ubase_query_vl_map_cmd req = {0};
+	struct ubase_cmd_buf in, out;
+	int ret;
+
+	ubase_fill_inout_buf(&in, UBASE_OPC_CFG_VL_MAP, true, sizeof(req), &req);
+	ubase_fill_inout_buf(&out, UBASE_OPC_CFG_VL_MAP, false, sizeof(*resp),
+			     resp);
+	ret = __ubase_cmd_send_inout(udev, &in, &out);
+	if (ret)
+		ubase_err(udev, "failed to query vl map, ret = %d.\n", ret);
+
+	return ret;
+}
+
 static inline unsigned long ubase_convert_sl_vl_bitmap(struct ubase_dev *udev,
 						       unsigned long sl_bitmap)
 {
@@ -586,18 +602,20 @@ static void ubase_gather_udma_req_resp_vl(struct ubase_dev *udev, u8 *req_vl,
 					  u8 req_vl_num, u8 resp_vl_off)
 {
 	struct ubase_caps *dev_caps = &udev->caps.dev_caps;
-	struct ubase_adev_qos *qos = &udev->qos.adev_qos;
 	u8 i, j;
 
 	for (i = 0; i < req_vl_num; i++) {
-		for (j = 0; j < qos->nic_vl_num; j++) {
+		for (j = 0; j < dev_caps->vl_num; j++) {
 			if (req_vl[i] == dev_caps->req_vl[j]) {
 				dev_caps->resp_vl[j] = req_vl[i] + resp_vl_off;
+				ubase_warn(udev,
+					   "vl %u has been allocated to other traffic type",
+					   req_vl[i]);
 				break;
 			}
 		}
 
-		if (j < qos->nic_vl_num)
+		if (j < dev_caps->vl_num)
 			continue;
 
 		dev_caps->req_vl[dev_caps->vl_num] = req_vl[i];
@@ -608,6 +626,7 @@ static void ubase_gather_udma_req_resp_vl(struct ubase_dev *udev, u8 *req_vl,
 
 static void ubase_gather_urma_req_resp_vl(struct ubase_dev *udev)
 {
+	struct ubase_adev_utp_qos *utp_qos = &udev->qos.utp_qos;
 	struct ubase_caps *dev_caps = &udev->caps.dev_caps;
 	struct ubase_adev_qos *qos = &udev->qos.adev_qos;
 
@@ -620,6 +639,8 @@ static void ubase_gather_urma_req_resp_vl(struct ubase_dev *udev)
 				      qos->tp_resp_vl_offset);
 	ubase_gather_udma_req_resp_vl(udev, qos->ctp_req_vl, qos->ctp_vl_num,
 				      qos->ctp_resp_vl_offset);
+	ubase_gather_udma_req_resp_vl(udev, utp_qos->utp_vl,
+				      utp_qos->utp_vl_num, 0);
 
 	/* dev_caps->vl_num is used for DCB tool configuration. Therefore,
 	 * dev_caps->vl_num cannot exceed IEEE_8021QAZ_MAX_TCS.
@@ -743,11 +764,17 @@ static int ubase_parse_nic_vl(struct ubase_dev *udev)
 
 static int ubase_parse_udma_req_vl(struct ubase_dev *udev)
 {
+	struct ubase_adev_utp_qos *utp_qos = &udev->qos.utp_qos;
 	struct ubase_adev_qos *qos = &udev->qos.adev_qos;
 	int ret;
 
 	ret = ubase_get_vl_by_sl(udev, qos->tp_sl, qos->tp_sl_num,
 				 qos->tp_req_vl, &qos->tp_vl_num);
+	if (ret)
+		return ret;
+
+	ret = ubase_get_vl_by_sl(udev, utp_qos->utp_sl, utp_qos->utp_sl_num,
+				 utp_qos->utp_vl, &utp_qos->utp_vl_num);
 	if (ret)
 		return ret;
 
@@ -850,6 +877,7 @@ static int ubase_parse_adev_sl_vl(struct ubase_dev *udev)
 
 static void ubase_parse_max_vl(struct ubase_dev *udev)
 {
+	struct ubase_adev_utp_qos *utp_qos = &udev->qos.utp_qos;
 	struct ubase_adev_qos *qos = &udev->qos.adev_qos;
 	u8 i, ue_max_vl_id = 0;
 
@@ -864,21 +892,33 @@ static void ubase_parse_max_vl(struct ubase_dev *udev)
 		ue_max_vl_id = max(qos->ctp_req_vl[i] + qos->ctp_resp_vl_offset,
 				   ue_max_vl_id);
 
+	for (i = 0; i < utp_qos->utp_vl_num; i++)
+		ue_max_vl_id = max(utp_qos->utp_vl[i], ue_max_vl_id);
+
 	qos->ue_max_vl_id = ue_max_vl_id;
 
 	if (ubase_dev_urma_supported(udev) && !udev->use_fixed_rc_num)
 		udev->caps.udma_caps.rc_max_cnt *= (ue_max_vl_id + 1);
 }
 
-static u8 ubase_get_nic_max_vl(struct ubase_dev *udev)
+static void ubase_get_tp_tpg_caps(struct ubase_dev *udev)
 {
+	struct ubase_adev_utp_qos *utp_qos = &udev->qos.utp_qos;
 	struct ubase_adev_qos *qos = &udev->qos.adev_qos;
-	u8 i, nic_max_vl = 0;
+	u8 max_vl_id = 0;
+	u8 i;
 
-	for (i = 0; i < qos->nic_vl_num; i++)
-		nic_max_vl = max(qos->nic_vl[i], nic_max_vl);
+	for (i = 0; i < qos->nic_vl_num; i++) {
+		set_bit(qos->nic_vl[i], &udev->caps.tp_tpg_caps.vl_bitmap);
+		max_vl_id = max(qos->nic_vl[i], max_vl_id);
+	}
 
-	return nic_max_vl;
+	for (i = 0; i < utp_qos->utp_vl_num; i++) {
+		set_bit(utp_qos->utp_vl[i], &udev->caps.tp_tpg_caps.vl_bitmap);
+		max_vl_id = max(utp_qos->utp_vl[i], max_vl_id);
+	}
+
+	udev->caps.tp_tpg_caps.max_cnt = max_vl_id + 1;
 }
 
 static int ubase_parse_sl_vl(struct ubase_dev *udev)
@@ -894,7 +934,7 @@ static int ubase_parse_sl_vl(struct ubase_dev *udev)
 		return ret;
 
 	if (ubase_utp_supported(udev) && ubase_dev_urma_supported(udev))
-		udev->caps.unic_caps.tpg.max_cnt = ubase_get_nic_max_vl(udev) + 1;
+		ubase_get_tp_tpg_caps(udev);
 
 	ubase_parse_max_vl(udev);
 
@@ -949,12 +989,13 @@ static int ubase_ctrlq_query_vl(struct ubase_dev *udev)
 }
 
 static bool ubase_check_sl_valid(struct ubase_dev *udev, u8 unic_sl_cnt,
-				 u8 udma_tp_sl_cnt, u8 udma_ctp_sl_cnt)
+				 u8 udma_tp_sl_cnt, u8 udma_ctp_sl_cnt,
+				 u8 utp_sl_cnt)
 {
-	u32 totol_cnt = 0;
+	u32 total_cnt;
 
-	totol_cnt = unic_sl_cnt + udma_tp_sl_cnt + udma_ctp_sl_cnt;
-	if (!totol_cnt) {
+	total_cnt = unic_sl_cnt + udma_tp_sl_cnt + udma_ctp_sl_cnt + utp_sl_cnt;
+	if (!total_cnt) {
 		ubase_err(udev, "unic and udma does not have any sl.\n");
 		return false;
 	}
@@ -969,8 +1010,8 @@ static bool ubase_check_sl_valid(struct ubase_dev *udev, u8 unic_sl_cnt,
 
 static int ubase_ctrlq_query_sl(struct ubase_dev *udev)
 {
-	unsigned long unic_sl_bitmap, udma_tp_sl_bitmap, udma_ctp_sl_bitmap;
-	u8 unic_sl_cnt = 0, udma_tp_sl_cnt = 0, udma_ctp_sl_cnt = 0;
+	unsigned long unic_sl_bitmap, udma_tp_sl_bitmap, udma_ctp_sl_bitmap, utp_sl_bitmap;
+	u8 unic_sl_cnt = 0, udma_tp_sl_cnt = 0, udma_ctp_sl_cnt = 0, utp_sl_cnt = 0;
 	struct ubase_ctrlq_query_sl_resp resp = {0};
 	struct ubase_ctrlq_query_sl_req req = {0};
 	struct ubase_ctrlq_msg msg = {0};
@@ -1015,11 +1056,14 @@ static int ubase_ctrlq_query_sl(struct ubase_dev *udev)
 	unic_sl_bitmap = le16_to_cpu(resp.unic_sl_bitmap);
 	udma_tp_sl_bitmap = le16_to_cpu(resp.udma_tp_sl_bitmap);
 	udma_ctp_sl_bitmap = le16_to_cpu(resp.udma_ctp_sl_bitmap);
+	utp_sl_bitmap = resp.utp_sl_valid ? le16_to_cpu(resp.utp_sl_bitmap) :
+			unic_sl_bitmap;
 
 	ubase_dbg(udev, "ctrlq query rc_max_cnt = %u, unic_sl_bitmap = 0x%lx\n",
 		  rc_max_cnt, unic_sl_bitmap);
 	ubase_dbg(udev, "udma_tp_sl_bitmap = 0x%lx, udma_ctp_sl_bitmap = 0x%lx.\n",
 		  udma_tp_sl_bitmap, udma_ctp_sl_bitmap);
+	ubase_dbg(udev, "utp_sl_bitmap = 0x%lx.\n", utp_sl_bitmap);
 
 	for (i = 0; i < UBASE_MAX_SL_NUM; i++) {
 		if (test_bit(i, &unic_sl_bitmap))
@@ -1028,14 +1072,18 @@ static int ubase_ctrlq_query_sl(struct ubase_dev *udev)
 			udev->qos.adev_qos.tp_sl[udma_tp_sl_cnt++] = i;
 		if (test_bit(i, &udma_ctp_sl_bitmap))
 			udev->qos.adev_qos.ctp_sl[udma_ctp_sl_cnt++] = i;
+		if (test_bit(i, &utp_sl_bitmap))
+			udev->qos.utp_qos.utp_sl[utp_sl_cnt++] = i;
 	}
 
-	if (!ubase_check_sl_valid(udev, unic_sl_cnt, udma_tp_sl_cnt, udma_ctp_sl_cnt))
+	if (!ubase_check_sl_valid(udev, unic_sl_cnt, udma_tp_sl_cnt,
+				  udma_ctp_sl_cnt, utp_sl_cnt))
 		return -EINVAL;
 
 	udev->qos.adev_qos.nic_sl_num = unic_sl_cnt;
 	udev->qos.adev_qos.tp_sl_num = udma_tp_sl_cnt;
 	udev->qos.adev_qos.ctp_sl_num = udma_ctp_sl_cnt;
+	udev->qos.utp_qos.utp_sl_num = utp_sl_cnt;
 
 	return 0;
 }

@@ -217,10 +217,9 @@ static void ublc_mark_detached_devices(struct ub_entity *root,
 				continue;
 
 			r_uent = port->r_uent;
-			if (ub_entity_test_priv_flag(r_uent, UB_ENTITY_DETACHED))
+			if (ub_entity_test_and_set_priv_flag(r_uent, UB_ENTITY_DETACHED))
 				continue;
 
-			ub_entity_assign_priv_flag(r_uent, UB_ENTITY_DETACHED, true);
 			if (!kfifo_put(&kfifo, r_uent))
 				ub_err(r_uent, "%s kfifo put failed!\n", __func__);
 		}

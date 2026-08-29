@@ -10,7 +10,6 @@ static ub_ras_recover_func_t ub_ras_recover_func;
 static DEFINE_SPINLOCK(ubus_ghes_lock);
 
 void ub_ras_register_recover_func(ub_ras_recover_func_t func)
-
 {
 	spin_lock(&ubus_ghes_lock);
 	ub_ras_recover_func = func;

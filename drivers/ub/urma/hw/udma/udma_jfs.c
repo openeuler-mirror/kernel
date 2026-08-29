@@ -20,42 +20,41 @@
 #include "udma_jfc.h"
 #include "udma_jfs.h"
 
-static bool udma_check_vma(struct udma_dev *dev, struct vm_area_struct *vma)
-{
-	return (vma->vm_start == dev->sq_reserved_info.va_start) &&
-	       (vma->vm_end == dev->sq_reserved_info.va_start + dev->sq_reserved_info.va_size) &&
-	       (vma->vm_flags & VM_WIPEONFORK) && (vma->vm_flags & VM_DONTEXPAND) &&
-	       (vma->vm_flags & VM_DONTCOPY) && (vma->vm_flags & VM_IO);
-}
-
-static void udma_u_free_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq)
+static void udma_unremap_reserved_va(struct udma_hugepage_priv *priv)
 {
 	struct vm_area_struct *vma;
 
-	if (sq->dtu_en) {
-		udma_dtu_uva_unremap(dev, &sq->buf, &sq->dtu_pg_info);
-	} else if (dev->sq_reserved_info.sq_reserved) {
-		if (dev->caps.sva_sep_mode_en) {
-			udma_ioummu_unmap(sq->udma_ctx->tid, UMMU_INVALID_TID, sq->buf.addr,
-					  sq->reserved_info.len);
-			sg_free_table(sq->sgt);
-			kfree(sq->sgt);
-			sq->sgt = NULL;
-		}
+	mmap_write_lock(current->mm);
+	vma = vma_lookup(current->mm, (uintptr_t)priv->va_base);
+	if (vma != NULL)
+		zap_vma_ptes(vma, (uintptr_t)priv->va_base, priv->va_len);
+	mmap_write_unlock(current->mm);
+}
 
-		if (current->mm) {
-			mmap_write_lock(current->mm);
-			vma = find_vma(current->mm, sq->buf.addr);
-			if (vma != NULL && vma->vm_start <= sq->buf.addr &&
-			    vma->vm_end >= sq->buf.addr + sq->reserved_info.len)
-				zap_vma_ptes(vma, sq->buf.addr, sq->reserved_info.len);
-			mmap_write_unlock(current->mm);
-		}
-		udma_free_pages(sq->reserved_info.pg, sq->reserved_info.order);
-	} else if (sq->buf.is_hugepage) {
-		udma_free_u_hugepage(sq->udma_ctx, sq->buf.addr);
-	} else {
-		udma_put_map_page_priv(sq->udma_ctx, sq->buf.page_priv);
+static void udma_free_reserved_sq(struct udma_dev *dev, struct udma_jetty_queue *sq)
+{
+	struct udma_hugepage_priv *priv = sq->reserved_info;
+	bool b_del = false;
+	uint32_t i;
+
+	mutex_lock(&sq->udma_ctx->reserved_lock);
+	if (refcount_dec_and_test(&priv->refcnt)) {
+		b_del = true;
+		list_del(&priv->list);
+		udma_matt_unmap_by_priv(sq->udma_ctx, priv);
+		if (current->mm)
+			udma_unremap_reserved_va(priv);
+	}
+	mutex_unlock(&sq->udma_ctx->reserved_lock);
+
+	if (b_del) {
+		if (debug_switch)
+			dev_info_ratelimited(dev->dev, "free_reserved, seq=%u.\n", priv->seq);
+		udma_id_free(&dev->sq_reserved_info.ida_table, priv->seq);
+		for (i = 0; i < priv->page_num; i++)
+			udma_free_pages(priv->pages[i], get_order(priv->page_size));
+		kfree(priv->pages);
+		kfree(priv);
 	}
 }
 
@@ -63,7 +62,7 @@ void udma_free_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq)
 {
 	if (is_support_ccu_jetty(dev, sq) || sq->buf.kva) {
 		if (!sq->cstm)
-			udma_k_free_buf(dev, &sq->buf, true);
+			udma_k_free_buf(dev, &sq->buf);
 		kfree(sq->wrid);
 		sq->wrid = NULL;
 		return;
@@ -72,151 +71,171 @@ void udma_free_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq)
 	if (sq->non_pin)
 		return;
 
-	udma_u_free_sq_buf(dev, sq);
+	if (sq->dtu_en) {
+		udma_dtu_uva_unremap(dev, &sq->buf, &sq->dtu_pg_info);
+	} else if (dev->sq_reserved_info.sq_reserved) {
+		udma_free_reserved_sq(dev, sq);
+	} else if (sq->buf.is_hugepage) {
+		udma_free_u_hugepage(sq->udma_ctx, sq->buf.addr);
+		sq->buf.is_hugepage = false;
+	} else {
+		udma_put_map_page_priv(sq->udma_ctx, sq->buf.page_priv);
+	}
 }
 
-static int udma_do_ioummu_map(struct udma_dev *dev, struct udma_jetty_queue *sq, uint64_t buf_addr)
-{
-	struct page *page_list[1];
-	int ret;
-
-	sq->sgt = kmalloc(sizeof(struct sg_table), GFP_KERNEL);
-	if (!sq->sgt)
-		return -ENOMEM;
-
-	page_list[0] = sq->reserved_info.pg;
-	ret = udma_create_sgt_from_pages(sq->sgt, page_list, 1,
-					 PAGE_SIZE << sq->reserved_info.order);
-	if (ret) {
-		dev_err(dev->dev, "failed to create SG table, ret=%d.\n", ret);
-		goto err_create_sgt;
-	}
-
-	ret = udma_ioummu_map(sq->udma_ctx->tid, UMMU_INVALID_TID, IOMMU_READ | IOMMU_WRITE,
-			      buf_addr, sq->sgt);
-	if (ret) {
-		dev_err(dev->dev, "failed to map SGT, ret=%d.\n", ret);
-		goto err_ioummu_map;
-	}
-
-	return ret;
-
-err_ioummu_map:
-	sg_free_table(sq->sgt);
-err_create_sgt:
-	kfree(sq->sgt);
-	sq->sgt = NULL;
-
-	return ret;
-}
-
-static int
-udma_reserved_u_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
-		       struct udma_create_jetty_ucmd *ucmd)
+static int udma_remap_reserved_va(struct udma_dev *dev, struct udma_hugepage_priv *priv)
 {
 	struct vm_area_struct *vma;
-	uint64_t buf_addr;
-	uint32_t buf_len;
-	gfp_t flag;
-	int ret;
-
-	buf_addr = dev->sq_reserved_info.va_per_ue +
-		   sq->id * dev->sq_reserved_info.size_per_jetty;
-	buf_len = (ubase_adev_prealloc_supported(dev->comdev.adev)) ?
-		ALIGN(ucmd->buf_len, UDMA_HUGEPAGE_SIZE) : ALIGN(ucmd->buf_len, PAGE_SIZE);
-	sq->reserved_info.order = get_order(buf_len);
-
-	if (buf_len > dev->sq_reserved_info.size_per_jetty) {
-		dev_err(dev->dev, "the sq_buffer(%u) is greater than the available_buffer(%llu).\n",
-			buf_len, dev->sq_reserved_info.size_per_jetty);
-		return -EINVAL;
-	}
+	uint32_t remaped_num;
+	int ret = -EINVAL;
 
 	mmap_write_lock(current->mm);
-	vma = find_vma(current->mm, buf_addr);
-	if (vma == NULL || vma->vm_start > buf_addr || vma->vm_end < buf_addr + buf_len) {
-		dev_err(dev->dev, "failed to find_vma.\n");
-		ret = -EINVAL;
+	vma = vma_lookup(current->mm, (uintptr_t)priv->va_base);
+	if (vma == NULL) {
+		dev_err(dev->dev, "failed to vma_lookup.\n");
 		goto err_unlock;
 	}
 
-	if (!udma_check_vma(dev, vma)) {
-		dev_err(dev->dev, "invalid VMA, this VMA is not created by the UDMA.\n");
-		ret = -EINVAL;
+	if (!udma_check_vma_flags(vma)) {
+		dev_err(dev->dev, "invalid VMA, vm_flags=0x%lx.\n", vma->vm_flags);
+		goto err_unlock;
+	}
+
+	if ((vma->vm_start != dev->sq_reserved_info.va_start) ||
+	    (vma->vm_end != dev->sq_reserved_info.va_start + dev->sq_reserved_info.va_size)) {
+		dev_err(dev->dev, "invalid VMA.\n");
 		goto err_unlock;
 	}
 
 	if (debug_switch)
 		dev_info_ratelimited(dev->dev, "vm_flags=0x%lx, vm_page_prot=0x%llx.\n",
 				     vma->vm_flags, vma->vm_page_prot.pgprot);
-	flag = dev->caps.non_mirror_en == true ? (GFP_HIGHUSER_MOVABLE | __GFP_ZERO) :
-		(GFP_KERNEL | __GFP_ZERO);
-	sq->reserved_info.pg = udma_alloc_pages(flag, sq->reserved_info.order);
-	if (sq->reserved_info.pg == NULL) {
-		dev_err(dev->dev, "failed to alloc pages, order=%u.\n", sq->reserved_info.order);
-		ret = -ENOMEM;
-		goto err_unlock;
+	for (remaped_num = 0; remaped_num < priv->page_num; remaped_num++) {
+		ret = udma_remap_pfn_range(vma, (uintptr_t)priv->va_base +
+					   remaped_num * priv->page_size,
+					   (uint64_t)page_to_pfn(priv->pages[remaped_num]),
+					   priv->page_size, vma->vm_page_prot);
+		if (ret) {
+			dev_err(dev->dev, "failed to remap PFN, ret=%d.\n", ret);
+			goto err_remap;
+		}
 	}
-
-	if (dev->caps.sva_sep_mode_en) {
-		ret = udma_do_ioummu_map(dev, sq, buf_addr);
-		if (ret)
-			goto err_alloc;
-	}
-
-	ret = udma_remap_pfn_range(vma, buf_addr, (uint64_t)page_to_pfn(sq->reserved_info.pg),
-				   buf_len, vma->vm_page_prot);
-	if (ret) {
-		dev_err(dev->dev, "failed to remap PFN, ret=%d.\n", ret);
-		goto err_remap;
-	}
-
-	sq->buf.addr = buf_addr;
-	sq->reserved_info.len = buf_len;
-
 	mmap_write_unlock(current->mm);
 
-	return ret;
+	return 0;
+
 err_remap:
-	if (dev->caps.sva_sep_mode_en) {
-		udma_ioummu_unmap(sq->udma_ctx->tid, UMMU_INVALID_TID, buf_addr, buf_len);
-		sg_free_table(sq->sgt);
-		kfree(sq->sgt);
-		sq->sgt = NULL;
-	}
-err_alloc:
-	udma_free_pages(sq->reserved_info.pg, sq->reserved_info.order);
+	if (remaped_num)
+		zap_vma_ptes(vma, (uintptr_t)priv->va_base, remaped_num * priv->page_size);
 err_unlock:
 	mmap_write_unlock(current->mm);
 
 	return ret;
 }
 
-static int udma_u_alloc_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
-			       struct udma_create_jetty_ucmd *ucmd)
+static struct udma_hugepage_priv *
+udma_alloc_reserved_priv(struct udma_dev *dev, struct udma_jetty_queue *sq)
 {
-	int ret = 0;
+	struct udma_hugepage_priv *priv;
+	uint32_t i;
+	gfp_t flag;
 
-	if (sq->dtu_en) {
-		ret = udma_dtu_uva_remap(dev, &sq->buf, &sq->dtu_pg_info);
-		sq->buf.entry_size = UDMA_JFS_WQEBB_SIZE;
-	} else if (dev->sq_reserved_info.sq_reserved) {
-		ret = udma_reserved_u_sq_buf(dev, sq, ucmd);
-	} else if (ucmd->is_hugepage) {
-		if (!udma_alloc_u_hugepage(sq->udma_ctx, sq->buf.addr, sq->buf.len)) {
-			dev_err(dev->dev, "failed to create SQ.\n");
-			return -ENOMEM;
-		}
-		sq->buf.is_hugepage = true;
-	} else {
-		sq->buf.page_priv = udma_get_map_page_priv(sq->udma_ctx, sq->buf.addr, sq->buf.len);
-		if (sq->buf.page_priv == NULL) {
-			dev_err(dev->dev, "failed to get SQ page.\n");
-			return -EINVAL;
+	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
+	if (!priv)
+		return NULL;
+
+	if (udma_id_alloc_auto_grow(dev, &dev->sq_reserved_info.ida_table, &priv->seq))
+		goto err_alloc_buff_id;
+
+	priv->va_base = (void *)(uintptr_t)(dev->sq_reserved_info.va_per_ue +
+			priv->seq * dev->sq_reserved_info.size_per_jetty);
+	priv->va_len = dev->sq_reserved_info.size_per_jetty;
+	priv->left_va_len = priv->va_len;
+	priv->page_size = UDMA_HUGEPAGE_SIZE;
+	priv->page_num = priv->va_len >> UDMA_HUGEPAGE_SHIFT;
+	priv->pages = kcalloc(priv->page_num, sizeof(*priv->pages), GFP_KERNEL);
+	if (!priv->pages)
+		goto err_alloc_arr;
+
+	flag = dev->caps.non_mirror_en ? (GFP_HIGHUSER_MOVABLE | __GFP_ZERO) :
+		(GFP_KERNEL | __GFP_ZERO);
+	for (i = 0; i < priv->page_num; i++) {
+		priv->pages[i] = udma_alloc_pages(flag, get_order(priv->page_size));
+		if (priv->pages[i] == NULL) {
+			dev_err(dev->dev, "failed to alloc pages, order=%d.\n",
+				get_order(priv->page_size));
+			goto err_alloc_pages;
 		}
 	}
 
-	return ret;
+	if (udma_remap_reserved_va(dev, priv))
+		goto err_remap_reserved_va;
+
+	if (udma_matt_map_by_priv(sq->udma_ctx, priv))
+		goto err_matt_map;
+
+	refcount_set(&priv->refcnt, 1);
+	list_add(&priv->list, &sq->udma_ctx->reserved_list);
+
+	if (debug_switch)
+		dev_info_ratelimited(dev->dev, "alloc_reserved, seq=%u.\n", priv->seq);
+	return priv;
+
+err_matt_map:
+	udma_unremap_reserved_va(priv);
+err_remap_reserved_va:
+err_alloc_pages:
+	for (i = 0; i < priv->page_num; i++) {
+		if (priv->pages[i])
+			udma_free_pages(priv->pages[i], get_order(priv->page_size));
+		else
+			break;
+	}
+	kfree(priv->pages);
+err_alloc_arr:
+	udma_id_free(&dev->sq_reserved_info.ida_table, priv->seq);
+err_alloc_buff_id:
+	kfree(priv);
+
+	return NULL;
+}
+
+static int udma_alloc_reserved_sq(struct udma_dev *dev, struct udma_jetty_queue *sq,
+				  uint32_t buf_len)
+{
+	struct udma_context *ctx = sq->udma_ctx;
+	struct udma_hugepage_priv *priv = NULL;
+	bool b_reuse = false;
+
+	if (buf_len > dev->sq_reserved_info.size_per_jetty) {
+		dev_err(dev->dev, "the sq_buffer(%u) is greater than the available_buffer.\n",
+			buf_len);
+		return -EINVAL;
+	}
+
+	mutex_lock(&ctx->reserved_lock);
+	if (!list_empty(&ctx->reserved_list)) {
+		priv = list_first_entry(&ctx->reserved_list, struct udma_hugepage_priv, list);
+		b_reuse = buf_len <= priv->left_va_len;
+	}
+
+	if (b_reuse) {
+		refcount_inc(&priv->refcnt);
+	} else {
+		priv = udma_alloc_reserved_priv(dev, sq);
+		if (!priv) {
+			mutex_unlock(&ctx->reserved_lock);
+			return -ENOMEM;
+		}
+	}
+
+	sq->buf.addr = (uintptr_t)priv->va_base + priv->left_va_offset;
+	sq->reserved_info = priv;
+	priv->left_va_offset += buf_len;
+	priv->left_va_len -= buf_len;
+	mutex_unlock(&ctx->reserved_lock);
+
+	return 0;
 }
 
 int udma_alloc_u_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
@@ -243,9 +262,24 @@ int udma_alloc_u_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 		return ret;
 	}
 
-	ret = udma_u_alloc_sq_buf(dev, sq, ucmd);
-	if (ret)
-		dev_err(dev->dev, "failed to alloc SQ buffer, ret = %d.\n", ret);
+	if (sq->dtu_en) {
+		ret = udma_dtu_uva_remap(dev, &sq->buf, &sq->dtu_pg_info);
+		sq->buf.entry_size = UDMA_JFS_WQEBB_SIZE;
+	} else if (dev->sq_reserved_info.sq_reserved) {
+		ret = udma_alloc_reserved_sq(dev, sq, ucmd->buf_len);
+	} else if (ucmd->is_hugepage) {
+		if (!udma_alloc_u_hugepage(sq->udma_ctx, sq->buf.addr, sq->buf.len)) {
+			dev_err(dev->dev, "failed to create SQ.\n");
+			return -ENOMEM;
+		}
+		sq->buf.is_hugepage = true;
+	} else {
+		sq->buf.page_priv = udma_get_map_page_priv(sq->udma_ctx, sq->buf.addr, sq->buf.len);
+		if (sq->buf.page_priv == NULL) {
+			dev_err(dev->dev, "failed to get SQ page.\n");
+			return -EINVAL;
+		}
+	}
 
 	return ret;
 }
@@ -295,7 +329,7 @@ int udma_alloc_k_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 	sq->wrid = kcalloc(sq->buf.entry_cnt, sizeof(uint64_t), GFP_KERNEL);
 	if (!sq->wrid) {
 		if (!sq->cstm)
-			udma_k_free_buf(dev, &sq->buf, true);
+			udma_k_free_buf(dev, &sq->buf);
 		return -ENOMEM;
 	}
 
@@ -309,7 +343,6 @@ void udma_init_jfsc(struct udma_dev *dev, struct ubcore_jfs_cfg *cfg,
 		    struct udma_jfs *jfs, void *mb_buf)
 {
 	struct udma_jetty_ctx *ctx = (struct udma_jetty_ctx *)mb_buf;
-	uint8_t i;
 
 	ctx->state = JETTY_READY;
 	ctx->jfs_mode = JFS;
@@ -318,10 +351,12 @@ void udma_init_jfsc(struct udma_dev *dev, struct ubcore_jfs_cfg *cfg,
 	if (ctx->type == JETTY_RM) {
 		ctx->sl = dev->priority_info[cfg->priority].SL;
 	} else if (ctx->type == JETTY_UM) {
-		ctx->sl = dev->unic_sl[UDMA_DEFAULT_SL_NUM];
-		for (i = 0; i < dev->unic_sl_num; i++)
-			if (cfg->priority == dev->unic_sl[i])
-				ctx->sl = cfg->priority;
+		if (dev->priority_info[cfg->priority].tp_type.bs.utp)
+			ctx->sl = dev->priority_info[cfg->priority].SL;
+		else if (dev->udma_utp_sl_num)
+			ctx->sl = dev->udma_utp_sl[UDMA_DEFAULT_SL_NUM];
+		else
+			ctx->sl = dev->unic_sl[UDMA_DEFAULT_SL_NUM];
 	}
 	ctx->sqe_base_addr_l = (jfs->sq.buf.addr >> SQE_VA_L_OFFSET) &
 			       (uint32_t)SQE_VA_L_VALID_BIT;
@@ -495,7 +530,7 @@ static int udma_jfs_copy_resp(struct udma_dev *dev, struct udma_jetty_queue *sq,
 	struct udma_create_jetty_resp resp = {};
 	unsigned long byte;
 
-	if (!sq->dtu_en && (sq->non_pin || !dev->sq_reserved_info.sq_reserved))
+	if (sq->non_pin || (!sq->dtu_en && !dev->sq_reserved_info.sq_reserved))
 		return 0;
 
 	if (udma_check_base_param(udata->udrv_data->out_addr,
@@ -858,8 +893,9 @@ int udma_modify_jfs(struct ubcore_jfs *jfs, struct ubcore_jfs_attr *attr,
 	}
 
 	if (!verify_modify_jetty(udma_jfs->sq.state, attr->state)) {
-		dev_err(udma_dev->dev, "not support modify JFS state from %s to %s.\n",
-			to_state_name(udma_jfs->sq.state), to_state_name(attr->state));
+		dev_err(udma_dev->dev, "not support modify JFS state from %s to %s, JFS id = %u.\n",
+			to_state_name(udma_jfs->sq.state), to_state_name(attr->state),
+			udma_jfs->sq.id);
 		return -EINVAL;
 	}
 
@@ -1504,7 +1540,7 @@ static int udma_post_one_wr(struct udma_jetty_queue *sq, struct ubcore_jfs_wr *w
 	}
 
 	if (unlikely(udma_k_check_sge_num(opcode, sq, wr))) {
-		dev_err(udma_dev->dev, "WR SGE number invalid.\n");
+		dev_err(udma_dev->dev, "WR SGE number invalid, opcode :%u.\n", opcode);
 		return -EINVAL;
 	}
 

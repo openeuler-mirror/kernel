@@ -38,6 +38,43 @@ int ubase_dbg_dump_sl_vl_map(struct seq_file *s, void *data)
 	return ret;
 }
 
+/**
+ * ubase_dbg_get_sl_vl_map() - get sl vl map
+ * @dev: device
+ * @map: debug sl vl map
+ *
+ * The function is used to get sl vl map.
+ *
+ * Context: Any context.
+ * Return: 0 on success, negative error code otherwise
+ */
+int ubase_dbg_get_sl_vl_map(struct device *dev, struct ubase_dbg_sl_vl_map *map)
+{
+	u8 sl_vl[UBASE_MAX_SL_NUM] = {0};
+	struct ubase_dev *udev;
+	int ret;
+
+	if (!dev || !map)
+		return -EINVAL;
+
+	udev = dev_get_drvdata(dev);
+	if (!ubase_dev_urma_supported(udev) && !ubase_dev_cdma_supported(udev))
+		return -EOPNOTSUPP;
+
+	if (!test_bit(UBASE_STATE_INITED_B, &udev->state_bits) ||
+	    test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
+		return -EBUSY;
+
+	ret = ubase_query_sl_vl_map(udev, sl_vl);
+	if (ret)
+		return ret;
+
+	memcpy(map->hw_vl, sl_vl, UBASE_MAX_SL_NUM);
+
+	return 0;
+}
+EXPORT_SYMBOL(ubase_dbg_get_sl_vl_map);
+
 int ubase_dbg_dump_udma_dscp_vl_map(struct seq_file *s, void *data)
 {
 	struct ubase_dev *udev = dev_get_drvdata(s->private);
@@ -56,6 +93,44 @@ int ubase_dbg_dump_udma_dscp_vl_map(struct seq_file *s, void *data)
 
 	return 0;
 }
+
+/**
+ * ubase_dbg_get_dscp_vl_map() - get dscp vl map
+ * @dev: device
+ * @map: debug dscp vl map
+ *
+ * The function is used to get dscp vl map.
+ *
+ * Context: Any context.
+ * Return: 0 on success, negative error code otherwise
+ */
+int ubase_dbg_get_dscp_vl_map(struct device *dev,
+			      struct ubase_dbg_dscp_vl_map *map)
+{
+	struct ubase_query_vl_map_cmd resp = {0};
+	struct ubase_dev *udev;
+	int ret;
+
+	if (!dev || !map)
+		return -EINVAL;
+
+	udev = dev_get_drvdata(dev);
+	if (!ubase_dev_eth_mac_supported(udev))
+		return -EOPNOTSUPP;
+
+	if (!test_bit(UBASE_STATE_INITED_B, &udev->state_bits) ||
+	    test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
+		return -EBUSY;
+
+	ret = ubase_query_vl_map(udev, &resp);
+	if (ret)
+		return ret;
+
+	memcpy(map->hw_vl, resp.dscp_vl, sizeof(map->hw_vl));
+
+	return 0;
+}
+EXPORT_SYMBOL(ubase_dbg_get_dscp_vl_map);
 
 int ubase_dbg_dump_ets_tc_info(struct seq_file *s, void *data)
 {
@@ -185,14 +260,17 @@ int ubase_dbg_dump_vl_bitmap(struct seq_file *s, void *data)
 
 	vl_bitmap = le16_to_cpu(resp.vl_bitmap);
 
-	seq_printf(s, "vl bitmap : 0x%x", vl_bitmap);
+	seq_printf(s, "vl bitmap : 0x%x\n", vl_bitmap);
 
 	return 0;
 }
 
 static void ubase_dbg_dump_adev_vl_info(struct seq_file *s,
-					struct ubase_adev_qos *qos)
+					struct ubase_dev *udev)
 {
+	struct ubase_adev_utp_qos *utp_qos = &udev->qos.utp_qos;
+	struct ubase_adev_qos *qos = &udev->qos.adev_qos;
+
 	seq_puts(s, "tp_req_vl:");
 	ubase_dbg_dump_arr_info(s, qos->tp_req_vl, qos->tp_vl_num);
 
@@ -201,11 +279,17 @@ static void ubase_dbg_dump_adev_vl_info(struct seq_file *s,
 
 	seq_puts(s, "nic_vl:");
 	ubase_dbg_dump_arr_info(s, qos->nic_vl, qos->nic_vl_num);
+
+	seq_puts(s, "utp_vl:");
+	ubase_dbg_dump_arr_info(s, utp_qos->utp_vl, utp_qos->utp_vl_num);
 }
 
 static void ubase_dbg_dump_adev_sl_info(struct seq_file *s,
-					struct ubase_adev_qos *qos)
+					struct ubase_dev *udev)
 {
+	struct ubase_adev_utp_qos *utp_qos = &udev->qos.utp_qos;
+	struct ubase_adev_qos *qos = &udev->qos.adev_qos;
+
 	seq_puts(s, "tp_sl:");
 	ubase_dbg_dump_arr_info(s, qos->tp_sl, qos->tp_sl_num);
 
@@ -214,11 +298,15 @@ static void ubase_dbg_dump_adev_sl_info(struct seq_file *s,
 
 	seq_puts(s, "nic_sl:");
 	ubase_dbg_dump_arr_info(s, qos->nic_sl, qos->nic_sl_num);
+
+	seq_puts(s, "utp_sl:");
+	ubase_dbg_dump_arr_info(s, utp_qos->utp_sl, utp_qos->utp_sl_num);
 }
 
 int ubase_dbg_dump_adev_qos_info(struct seq_file *s, void *data)
 {
 	struct ubase_dev *udev = dev_get_drvdata(s->private);
+	struct ubase_adev_utp_qos *utp_qos = &udev->qos.utp_qos;
 	struct ubase_adev_qos *qos = &udev->qos.adev_qos;
 	struct ubase_dbg_adev_qos_info {
 		const char *format;
@@ -233,14 +321,16 @@ int ubase_dbg_dump_adev_qos_info(struct seq_file *s, void *data)
 		{"nic_sl_num: %u\n", qos->nic_sl_num},
 		{"nic_vl_num: %u\n", qos->nic_vl_num},
 		{"ue_max_vl_id: %u\n", qos->ue_max_vl_id},
+		{"utp_sl_num: %u\n", utp_qos->utp_sl_num},
+		{"utp_vl_num: %u\n", utp_qos->utp_vl_num},
 	};
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(adev_qos_info); i++)
 		seq_printf(s, adev_qos_info[i].format, adev_qos_info[i].qos_info);
 
-	ubase_dbg_dump_adev_vl_info(s, qos);
-	ubase_dbg_dump_adev_sl_info(s, qos);
+	ubase_dbg_dump_adev_vl_info(s, udev);
+	ubase_dbg_dump_adev_sl_info(s, udev);
 
 	return 0;
 }

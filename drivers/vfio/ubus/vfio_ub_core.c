@@ -429,6 +429,7 @@ int vfio_ub_core_init_dev(struct vfio_device *core_vdev)
 	vdev->uent = to_ub_entity(core_vdev->dev);
 	vdev->irq_type = VFIO_UB_NUM_IRQS;
 	mutex_init(&vdev->igate);
+	mutex_init(&vdev->resmap_lock);
 	return 0;
 }
 
@@ -438,6 +439,7 @@ void vfio_ub_core_release_dev(struct vfio_device *core_vdev)
 		container_of(core_vdev, struct vfio_ub_core_device, vdev);
 
 	mutex_destroy(&vdev->igate);
+	mutex_destroy(&vdev->resmap_lock);
 }
 
 void vfio_ub_core_request(struct vfio_device *core_vdev, unsigned int count)

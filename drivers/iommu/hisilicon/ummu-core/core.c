@@ -8,8 +8,9 @@
 #include <linux/module.h>
 #include <ub/ubus/ubus.h>
 
-#include "../../iommu-priv.h"
 #include "ummu_core_priv.h"
+
+LIST_HEAD(core_device_list);
 
 static struct ummu_tid_manager *
 ummu_core_alloc_tid_manager(struct ummu_core_device *core_device,
@@ -410,29 +411,6 @@ int ummu_get_tid(struct device *dev, struct iommu_sva *sva, u32 *tidp)
 }
 EXPORT_SYMBOL_GPL(ummu_get_tid);
 
-struct iommu_domain *ummu_core_get_domain_by_tid(struct device *dev,
-						 u32 tid)
-{
-	struct iommu_attach_handle *attach_handle;
-	struct iommu_domain *domain;
-
-	attach_handle = iommu_attach_handle_get(dev->iommu_group, tid,
-						IOMMU_DOMAIN_SVA);
-	if (IS_ERR(attach_handle))
-		domain = iommu_get_domain_for_dev(dev);
-	else
-		domain = attach_handle->domain;
-
-	if (!domain)
-		return NULL;
-
-	if (to_ummu_base_domain(domain)->tid != tid)
-		return NULL;
-
-	return domain;
-}
-EXPORT_SYMBOL_GPL(ummu_core_get_domain_by_tid);
-
 int ummu_core_invalidate_cfg_table(u32 tid)
 {
 	struct iommu_domain *domain;
@@ -485,7 +463,7 @@ void ummu_core_tlb_inv_walk(struct iommu_domain *domain, unsigned long iova,
 	    global_core_device->ops->tlb_inv_walk)
 		global_core_device->ops->tlb_inv_walk(domain, iova, size, granule);
 }
-EXPORT_SYMBOL_NS_GPL(ummu_core_tlb_inv_walk, UMMU_INTERNAL);
+EXPORT_SYMBOL_NS_GPL(ummu_core_tlb_inv_walk, UMMU_CORE_DRIVER);
 
 static int __init ummu_core_init(void)
 {

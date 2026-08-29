@@ -19,4 +19,6 @@ struct ubcore_jetty_group *udma_create_jetty_grp(struct ubcore_device *dev,
 						 struct ubcore_jetty_grp_cfg *cfg,
 						 struct ubcore_udata *udata);
 int udma_delete_jetty_grp(struct ubcore_jetty_group *jetty_grp);
+int udma_update_hw_grp_ctx_valid_only(struct udma_dev *udma_dev, struct udma_jetty *jetty,
+				      bool is_add);
 #endif /* __UDMA_JETTY_GROUP_H__ */

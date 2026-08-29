@@ -43,6 +43,9 @@ static int udma_ae_tp_ctrlq_msg_deal(struct udma_dev *udma_dev,
 	case UBASE_EVENT_TYPE_CHECK_TOKEN:
 		if (!!(udma_dev->caps.feature & UDMA_CAP_FEATURE_PORT_CHANGE_AE))
 			return udma_ctrlq_notify_tp_port_change(udma_dev, queue_num);
+
+		dev_warn(udma_dev->dev,
+			 "unsupported port change asynchronous event.\n");
 		return 0;
 	default:
 		dev_warn(udma_dev->dev, "udma get unsupported asynchronous event %u.\n",
@@ -804,7 +807,7 @@ static int udma_ctrlq_check_tp_active(struct auxiliary_device *adev,
 				      uint8_t service_ver, void *data,
 				      uint16_t len, uint16_t seq)
 {
-	struct udma_ctrlq_check_tp_active_rsp_info *rsp_info;
+	struct udma_ctrlq_check_tp_active_rsp_info *rsp_info = NULL;
 	struct udma_dev *udev = get_udma_dev(adev);
 	struct ubase_ctrlq_msg msg = {};
 	uint32_t rsp_info_len = 0;

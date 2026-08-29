@@ -81,7 +81,11 @@ struct ubase_ctrlq_query_sl_resp {
 	__le16 rc_max_cnt;
 	__le16 udma_tp_sl_bitmap;
 	__le16 udma_ctp_sl_bitmap;
-	u8 rsv1[12];
+	u8 utp_sl_valid : 1;
+	u8 rsv : 7;
+	u8 rsv1;
+	__le16 utp_sl_bitmap;
+	u8 rsv2[8];
 };
 
 struct ubase_ctrlq_query_sl_req {
@@ -96,6 +100,12 @@ struct ubase_ctrlq_chan_ctrl_req {
 struct ubase_ctrlq_reset_ctrl_req {
 	u8 flag;
 	u8 rsv[3];
+};
+
+struct ubase_ctrlq_exchange_ver {
+	u8 module_id;
+	u8 rsv[3];
+	__le32 ver_num;
 };
 
 static inline bool ubase_ctrlq_msg_is_sync_req(struct ubase_ctrlq_msg *msg)
@@ -134,5 +144,8 @@ void ubase_ctrlq_clean_service_task(struct ubase_dev *udev);
 void ubase_ctrlq_disable_remote(struct ubase_dev *udev);
 int ubase_ctrlq_ue_req_event_callback(struct ubase_dev *udev,
 				      struct ubase_ue2ue_ctrlq_head *cmd);
+int ubase_query_ctrl_plane_ver(struct ubase_dev *udev);
+int ubase_ctrlq_register_ubase_crq_event(struct ubase_dev *udev);
+void ubase_ctrlq_unregister_ubase_crq_event(struct ubase_dev *udev);
 
 #endif /* __UBASE_CTRLQ_H__ */

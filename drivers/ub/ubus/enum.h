@@ -12,6 +12,8 @@ enum enum_cmd {
 	ENUM_CMD_NA_QUERY
 };
 
+#define PORT_TOTAL_NUM_MAX 256
+
 /*
  * enum pkt : enum_pkt_header + enum_pld_scan_header + reqX
  * reqX : enum_topo_query_req or enum_na_cfg_req or enum_na_query_req

@@ -20,6 +20,11 @@ struct udma_segment {
 	uint64_t vm_end;
 };
 
+struct udma_pin_flag {
+	bool is_writable;
+	bool suppress_error_log;
+};
+
 static inline struct udma_segment *to_udma_seg(struct ubcore_target_seg *seg)
 {
 	return container_of(seg, struct udma_segment, core_tseg);

@@ -48,6 +48,16 @@ struct udma_ucp_caps {
 	struct udma_res ucp_jfr;
 };
 
+union udma_tp_type_cap {
+	struct {
+		uint32_t rtp : 1;
+		uint32_t ctp : 1;
+		uint32_t utp : 1;
+		uint32_t reserved : 29;
+	} bs;
+	uint32_t value;
+};
+
 struct udma_udp_sport {
 	spinlock_t lock;
 	uint16_t ack_udp_srcport;
@@ -88,6 +98,9 @@ struct udma_caps {
 	struct udma_res ccu_jfc;
 	struct udma_res stars_jfc;
 	struct udma_ucp_caps ucp_caps;
+	union udma_tp_type_cap um_tp;
+	union udma_tp_type_cap rc_tp;
+	union udma_tp_type_cap rm_tp;
 	uint8_t ack_queue_num;
 	uint8_t port_num;
 	uint8_t cqe_size;
@@ -147,6 +160,7 @@ struct udma_umem {
 	struct sg_append_table append;
 	uint32_t nmap;
 	bool is_writable;
+	bool suppress_error_log;
 };
 
 struct udma_sw_db_page {
@@ -237,15 +251,6 @@ struct udma_entity_msg {
 	uint8_t opcode;
 	uint16_t rsv;
 	struct udma_entity_buf buf;
-};
-
-struct udma_sq_reserved_info {
-	uint64_t va_start;
-	uint64_t va_size;
-	uint64_t va_per_ue;
-	uint64_t size_per_ue;
-	uint64_t size_per_jetty;
-	bool sq_reserved;
 };
 
 struct udma_ae_event_type {

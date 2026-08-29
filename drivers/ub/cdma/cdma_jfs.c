@@ -124,6 +124,16 @@ static int cdma_get_sq_buf(struct cdma_dev *cdev, struct cdma_jfs *jfs,
 		sq->sqe_bb_cnt = ucmd->sqe_bb_cnt;
 		if (sq->sqe_bb_cnt > MAX_WQEBB_NUM)
 			sq->sqe_bb_cnt = MAX_WQEBB_NUM;
+
+		if (!sq->buf.entry_cnt ||
+		    (sq->buf.entry_cnt & (sq->buf.entry_cnt - 1))) {
+			dev_err(cdev->dev,
+				"jfs sq entry_cnt must be power of 2, entry_cnt = %u\n",
+				sq->buf.entry_cnt);
+			cdma_put_umem(sq->buf.umem, false);
+			sq->buf.umem = NULL;
+			return -EINVAL;
+		}
 	} else {
 		spin_lock_init(&sq->lock);
 		sq->tid = cdev->tid;
@@ -475,7 +485,6 @@ static int cdma_modify_jfs_precondition(struct cdma_dev *cdev,
 static bool cdma_destroy_jfs_precondition(struct cdma_dev *cdev,
 					  struct cdma_jetty_queue *sq)
 {
-
 	if ((sq->state == CDMA_JETTY_READY) ||
 	    (sq->state == CDMA_JETTY_SUSPENDED)) {
 		if (cdma_modify_jfs_precondition(cdev, sq))

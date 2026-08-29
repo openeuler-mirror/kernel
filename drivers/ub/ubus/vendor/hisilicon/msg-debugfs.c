@@ -201,29 +201,30 @@ void hi_msg_debugfs_uninit(struct hi_msg_core *hmc)
 
 static void hi_msg_sqe_dump(struct hi_msg_sqe *sqe)
 {
-	pr_err("sqe:\n");
-	pr_err("type=%u local=%u dev=%u icrc=%u len=%#x msn=%#x off=%#x\n",
-	       sqe->task_type, sqe->local, sqe->dev_type, sqe->icrc,
-	       sqe->p_len, sqe->msn, sqe->p_addr);
+	pr_err_ratelimited("sqe:\n");
+	pr_err_ratelimited("type=%u local=%u dev=%u icrc=%u len=%#x msn=%#x off=%#x\n",
+			   sqe->task_type, sqe->local, sqe->dev_type,
+			   sqe->icrc, sqe->p_len, sqe->msn, sqe->p_addr);
 
 	if (sqe->task_type == PROTOCOL_MSG)
-		pr_err("code=%#x sub=%#x rsp=%u\n", sqe->msg_code,
-		       sqe->sub_msg_code, sqe->type);
+		pr_err_ratelimited("code=%#x sub=%#x rsp=%u\n", sqe->msg_code,
+				   sqe->sub_msg_code, sqe->type);
 	else
-		pr_err("opcode=%#x\n", sqe->opcode);
+		pr_err_ratelimited("opcode=%#x\n", sqe->opcode);
 }
 
 static void hi_msg_cqe_dump(struct hi_msg_cqe *cqe)
 {
-	pr_err("cqe:\n");
-	pr_err("type=%u plen=%#x msn=%#x pi=%#x s=%u\n", cqe->task_type,
-	       cqe->p_len, cqe->msn, cqe->rq_pi, cqe->status);
+	pr_err_ratelimited("cqe:\n");
+	pr_err_ratelimited("type=%u plen=%#x msn=%#x pi=%#x s=%u\n",
+			   cqe->task_type, cqe->p_len, cqe->msn, cqe->rq_pi,
+			   cqe->status);
 
 	if (cqe->task_type == PROTOCOL_MSG)
-		pr_err("code=%#x sub=%#x rsp=%u\n", cqe->msg_code,
-		       cqe->sub_msg_code, cqe->type);
+		pr_err_ratelimited("code=%#x sub=%#x rsp=%u\n", cqe->msg_code,
+				   cqe->sub_msg_code, cqe->type);
 	else
-		pr_err("opcode=%#x\n", cqe->opcode);
+		pr_err_ratelimited("opcode=%#x\n", cqe->opcode);
 }
 
 static void hi_msg_header_dump(void *buf)
@@ -233,16 +234,17 @@ static void hi_msg_header_dump(void *buf)
 	struct compact_network_header *nh = &h->nth;
 	struct ub_link_header *lh = &h->ulh;
 
-	pr_err("msg header:\n");
-	pr_err("cfg=%u dcna=%#x scna=%#x nlp=%u mgmt=%u\n",
-	       lh->cfg, nh->dcna, nh->scna, nh->nth_nlp, nh->mgmt);
-	pr_err("tp_opcode=%u tp_nlp=%u upi=%#x seid=%#x deid=%#x\n",
-	       h->tp_opcode,
-	       h->ctph_nlp, h->upi, eid_gen(h->seid_h, h->seid_l), h->deid);
-	pr_err("msn=%#x ta_opcode=%#x msgq_id=%u\n", h->src_tassn, h->ta_opcode,
-	       h->msgq_id);
-	pr_err("code=%#x sub=%#x rsp=%u plen=%#x s=%u\n", eh->msg_code,
-	       eh->sub_msg_code, eh->type, eh->plen, eh->rsp_status);
+	pr_err_ratelimited("msg header:\n");
+	pr_err_ratelimited("cfg=%u dcna=%#x scna=%#x nlp=%u mgmt=%u\n",
+			   lh->cfg, nh->dcna, nh->scna, nh->nth_nlp, nh->mgmt);
+	pr_err_ratelimited("tp_opcode=%u tp_nlp=%u upi=%#x seid=%#x deid=%#x\n",
+			   h->tp_opcode, h->ctph_nlp, h->upi,
+			   eid_gen(h->seid_h, h->seid_l), h->deid);
+	pr_err_ratelimited("msn=%#x ta_opcode=%#x msgq_id=%u\n", h->src_tassn,
+			   h->ta_opcode, h->msgq_id);
+	pr_err_ratelimited("code=%#x sub=%#x rsp=%u plen=%#x s=%u\n",
+			   eh->msg_code, eh->sub_msg_code, eh->type, eh->plen,
+			   eh->rsp_status);
 }
 
 static void hi_enum_header_dump(void *buf)
@@ -251,9 +253,10 @@ static void hi_enum_header_dump(void *buf)
 	struct compact_network_header *nh = &h->cnth;
 	struct ub_link_header *lh = &h->ulh;
 
-	pr_err("enum header:\n");
-	pr_err("cfg=%u dcna=%#x scna=%#x nlp=%u mgmt=%u upi=%#x\n",
-	       lh->cfg, nh->dcna, nh->scna, nh->nth_nlp, nh->mgmt, h->upi);
+	pr_err_ratelimited("enum header:\n");
+	pr_err_ratelimited("cfg=%u dcna=%#x scna=%#x nlp=%u mgmt=%u upi=%#x\n",
+			   lh->cfg, nh->dcna, nh->scna, nh->nth_nlp, nh->mgmt,
+			   h->upi);
 }
 
 static void hi_msg_pld_dump(void *buf, int task_type, int len)
@@ -273,7 +276,7 @@ static void hi_msg_pld_dump(void *buf, int task_type, int len)
 		/* Don't print */
 		break;
 	default:
-		pr_err("bad task_type:%d\n", task_type);
+		pr_err_ratelimited("bad task_type:%d\n", task_type);
 	}
 }
 

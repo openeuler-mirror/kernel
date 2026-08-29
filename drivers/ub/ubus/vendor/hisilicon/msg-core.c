@@ -15,7 +15,6 @@
 #define hi_msg_rqe_size_hw(sz_sw) (ilog2((sz_sw) / (HI_MSG_RQE_SIZE_128)))
 
 enum hi_sqe_ent_type { TYPE_BUS_CONTROLLER = 0, TYPE_IDEV = 1 };
-enum hi_cqe_status { CQE_SUCCESS, CQE_FAIL };
 
 struct hi_msgq_reg {
 	u32 pi;
@@ -264,6 +263,10 @@ void hi_msg_sqe_init(struct hi_msg_sqe *sqe, int msn, struct msg_info *info,
 		sqe->local = (info->ubc == info->uent || idev_flag) ? 1 : 0;
 		if (sqe->local)
 			sqe->dev_type = idev_flag ? TYPE_IDEV : TYPE_BUS_CONTROLLER;
+	} else if (task_type == HISI_PRIVATE) {
+		/* send private msgq req before ubc->uent init */
+		sqe->local = 1;
+		sqe->dev_type = TYPE_BUS_CONTROLLER;
 	}
 
 	/* only msg need icrc */
@@ -306,7 +309,8 @@ int hi_message_cqe_check(struct device *dev, struct hi_msg_sqe *sqe,
 			 struct hi_msg_cqe *cqe, u16 rsp_pkt_size)
 {
 	if (cqe->status != CQE_SUCCESS) {
-		dev_err(dev, "cqe fail status=%u\n", cqe->status);
+		if (!hi_ver_exch_unsupp_msg(cqe))
+			dev_err(dev, "cqe fail status=%u\n", cqe->status);
 		return -EINVAL;
 	}
 

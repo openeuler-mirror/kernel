@@ -172,7 +172,7 @@ int ubase_hw_upgrade_ctx_over_cmdq(struct ubase_dev *udev,
 	if (ret) {
 		ubase_err(udev,
 			  "failed to send mbox over cmdq req, opc = 0x%x, seq = %u, ret = %d.\n",
-			   req->opcode, req->seq_num, ret);
+			  req->opcode, req->seq_num, ret);
 		kfree(req);
 		return ret;
 	}

@@ -268,7 +268,7 @@ static int hi_msg_sync_wait(struct hi_message_device *hmd, int task_type,
 	spin_lock_irqsave(&hmd->timeout_msg_lock, flags);
 	list_add_tail(&timeout_msg->node, &hmd->timeout_msg_list);
 	spin_unlock_irqrestore(&hmd->timeout_msg_lock, flags);
-	dev_err(hmc->dev, "task %d msn %#x wait cqe timeout\n", task_type, msn);
+	dev_err_ratelimited(hmc->dev, "task %d msn %#x wait cqe timeout\n", task_type, msn);
 	return -ETIMEDOUT;
 }
 
@@ -537,8 +537,10 @@ static int hi_message_sync(struct message_device *mdev, struct msg_info *info,
 		hi_msg_rqe_get(hmc, info->rsp_packet, cqe);
 		info->actual_rsp_size = cqe->p_len;
 	} else {
-		ub_msg_dump_sq(&sqe, info->req_packet);
-		ub_msg_dump_cq(cqe, NULL);
+		if (!hi_ver_exch_unsupp_msg(cqe)) {
+			ub_msg_dump_sq(&sqe, info->req_packet);
+			ub_msg_dump_cq(cqe, NULL);
+		}
 	}
 
 	cqe_state_set(hmd, cq_idx, CQ_SW_HANDLED);
@@ -676,9 +678,8 @@ static void hi_timeout_msg_ageing(struct hi_message_device *hmd)
 			hi_msn_put(msg->task_type, msg->msn);
 			atomic_sub(1, &hmd->msg_in_flight_cnt);
 			list_del(&msg->node);
-			dev_err(hmd->hmc.dev,
-				"release aged timeout type=%u msn=%#x\n",
-				msg->task_type, msg->msn);
+			dev_err_ratelimited(hmd->hmc.dev, "release aged timeout type=%u msn=%#x\n",
+					    msg->task_type, msg->msn);
 			kfree(msg);
 			continue;
 		}
@@ -718,11 +719,13 @@ static bool hi_cqe_ageing(struct hi_message_device *hmd, int idx)
 			ub_msg_dump_cq(cqe, rq_entry(hmc, cqe->rq_pi));
 		}
 
-		dev_warn(hmc->dev, "interrupt does not up, process unhandled cqe, idx=%d type=%u msn=%#x opcode=%#x\n",
-			 idx, cqe->task_type, cqe->msn, cqe->opcode);
+		dev_warn_ratelimited(hmc->dev, "interrupt does not up, process unhandled cqe, idx=%d type=%u msn=%#x opcode=%#x\n",
+				     idx, cqe->task_type, cqe->msn,
+				     cqe->opcode);
 	} else {
-		dev_err(hmc->dev, "reset unhandled cqe, idx=%d type=%u msn=%#x\n",
-			idx, cqe->task_type, cqe->msn);
+		dev_err_ratelimited(hmc->dev, "reset unhandled cqe, idx=%d type=%u msn=%#x, opcode=%#x\n",
+				    idx, cqe->task_type, cqe->msn,
+				    cqe->opcode);
 		ub_msg_dump_cq(cqe, rq_entry(hmc, cqe->rq_pi));
 	}
 
@@ -741,9 +744,8 @@ static bool hi_is_timeout_msg(struct hi_message_device *hmd, int idx)
 		if (cqe->msn == msg->msn && cqe->task_type == msg->task_type &&
 		    (cqe->task_type != PROTOCOL_MSG || cqe->type == MSG_RSP)) {
 			list_del(&msg->node);
-			dev_err(hmc->dev,
-				"Timeout Message Processed, task=%u msn=%#x\n",
-				msg->task_type, msg->msn);
+			dev_err_ratelimited(hmc->dev, "Timeout Message Processed, task=%u msn=%#x\n",
+					    msg->task_type, msg->msn);
 			kfree(msg);
 			return true;
 		}

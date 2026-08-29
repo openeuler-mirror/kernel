@@ -19,6 +19,7 @@ static int ubase_notify_tp_flush_done(struct ubase_dev *udev, u32 tpn)
 	struct ubase_ctrlq_msg msg = {0};
 	struct ubase_tpg *tpg;
 	int ret, tmp_resp;
+	bool is_tp_exist;
 	u32 i;
 
 	spin_lock(&udev->tp_ctx.tpg_lock);
@@ -30,7 +31,7 @@ static int ubase_notify_tp_flush_done(struct ubase_dev *udev, u32 tpn)
 		return 0;
 	}
 
-	for (i = 0; i < udev->caps.unic_caps.tpg.max_cnt; i++) {
+	for (i = 0; i < udev->caps.tp_tpg_caps.max_cnt; i++) {
 		if (tpn >= tpg[i].start_tpn &&
 		    tpn < tpg[i].start_tpn + tpg[i].tp_cnt) {
 			ubase_dbg(udev,
@@ -57,12 +58,13 @@ static int ubase_notify_tp_flush_done(struct ubase_dev *udev, u32 tpn)
 			  ret);
 
 	spin_lock(&udev->tp_ctx.tpg_lock);
-	if (udev->tp_ctx.tpg && i < udev->caps.unic_caps.tpg.max_cnt)
+	is_tp_exist = udev->tp_ctx.tpg && i < udev->caps.tp_tpg_caps.max_cnt;
+	if (is_tp_exist)
 		atomic_inc(&tpg[i].tp_fd_cnt);
-	else
+	spin_unlock(&udev->tp_ctx.tpg_lock);
+	if (!is_tp_exist)
 		ubase_warn(udev,
 			   "ubase tpg res does not exist, tpn = %u.\n", tpn);
-	spin_unlock(&udev->tp_ctx.tpg_lock);
 
 	return ret;
 }
@@ -186,24 +188,30 @@ static void ubase_destroy_tp_tpg(struct ubase_dev *udev, u32 vl)
 
 static void ubase_destroy_multi_tp_tpg(struct ubase_dev *udev, u32 num)
 {
-	u32 idx;
+	u32 i;
 
 	if (ubase_shutting_down(udev) && ubase_is_ctrl_node(udev))
 		return;
 
-	for (idx = 0; idx < num; idx++)
-		ubase_destroy_tp_tpg(udev, idx);
+	for (i = 0; i < num; i++) {
+		if (test_bit(i, &udev->caps.tp_tpg_caps.vl_bitmap))
+			ubase_destroy_tp_tpg(udev, i);
+	}
 }
 
 static int ubase_create_multi_tp_tpg(struct ubase_dev *udev)
 {
+	u32 max_cnt = udev->caps.tp_tpg_caps.max_cnt;
 	int ret;
 	u32 i;
 
-	for (i = 0; i < udev->caps.unic_caps.tpg.max_cnt; i++) {
+	for (i = 0; i < max_cnt; i++) {
+		if (!test_bit(i, &udev->caps.tp_tpg_caps.vl_bitmap))
+			continue;
+
 		ret = ubase_create_tp_tpg(udev, i);
 		if (ret) {
-			ubase_err(udev, "failed to create tp tpg, tpgn = %u, ret = %d.\n",
+			ubase_err(udev, "failed to create tp tpg, vl = %u, ret = %d.\n",
 				  i, ret);
 			goto err_create_tp_tpg;
 		}
@@ -219,7 +227,6 @@ err_create_tp_tpg:
 
 int ubase_dev_init_tp_tpg(struct ubase_dev *udev)
 {
-	struct ubase_adev_caps *unic_caps = &udev->caps.unic_caps;
 	struct ubase_tp_layer_ctx *tp_ctx = &udev->tp_ctx;
 	int ret;
 
@@ -227,7 +234,7 @@ int ubase_dev_init_tp_tpg(struct ubase_dev *udev)
 		return 0;
 
 	spin_lock(&tp_ctx->tpg_lock);
-	tp_ctx->tpg = devm_kcalloc(udev->dev, unic_caps->tpg.max_cnt,
+	tp_ctx->tpg = devm_kcalloc(udev->dev, udev->caps.tp_tpg_caps.max_cnt,
 				   sizeof(struct ubase_tpg), GFP_ATOMIC);
 	if (!tp_ctx->tpg) {
 		spin_unlock(&tp_ctx->tpg_lock);
@@ -248,9 +255,7 @@ int ubase_dev_init_tp_tpg(struct ubase_dev *udev)
 
 void ubase_dev_uninit_tp_tpg(struct ubase_dev *udev)
 {
-	struct ubase_adev_caps *unic_caps = &udev->caps.unic_caps;
 	struct ubase_tp_layer_ctx *tp_ctx = &udev->tp_ctx;
-	u32 num = unic_caps->tpg.max_cnt;
 
 	if (!ubase_utp_supported(udev) || !ubase_dev_urma_supported(udev))
 		return;
@@ -259,7 +264,7 @@ void ubase_dev_uninit_tp_tpg(struct ubase_dev *udev)
 		return;
 
 	if (!test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
-		ubase_destroy_multi_tp_tpg(udev, num);
+		ubase_destroy_multi_tp_tpg(udev, udev->caps.tp_tpg_caps.max_cnt);
 
 	spin_lock(&tp_ctx->tpg_lock);
 	devm_kfree(udev->dev, tp_ctx->tpg);

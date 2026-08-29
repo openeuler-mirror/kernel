@@ -32,6 +32,40 @@ static struct ub_bus_controller_ops hi_ubc_ops = {
 	.decoder_event_deal = hi_decoder_event_deal,
 };
 
+static void hi_ver_exch(struct ub_bus_controller *ubc)
+{
+	struct hi_ver_exch_pld pld = {};
+	struct msg_info info = {};
+	int ret;
+
+	hi_firmware_lowest_ver = FIRMWARE_VER_DEFAULT;
+	hi_firmware_highest_ver = FIRMWARE_VER_DEFAULT;
+	pld.req.ubus_lowest_ver = HI_UBUS_LOWEST_VER;
+	pld.req.ubus_highest_ver = HI_UBUS_HIGHEST_VER;
+
+	message_info_init(&info, NULL, &pld, &pld,
+			  (HI_VER_EXCH_REQ_SIZE << MSG_REQ_SIZE_OFFSET) |
+			  HI_VER_EXCH_RSP_SIZE);
+	ret = hi_message_private(ubc->mdev, &info, VER_EXCH_CMD);
+	if (ret) {
+		dev_info(&ubc->dev,
+			 "unsupported ver-exchange msg for firmware, ret=%d, "
+			 "ubus highest_version: 0x%x, lowest_version: 0x%x, "
+			 "default firmware version: 0x%x\n",
+			 ret, HI_UBUS_HIGHEST_VER, HI_UBUS_LOWEST_VER,
+			 hi_firmware_highest_ver);
+		return;
+	}
+
+	hi_firmware_lowest_ver = pld.rsp.firmware_lowest_ver;
+	hi_firmware_highest_ver = pld.rsp.firmware_highest_ver;
+	dev_info(&ubc->dev,
+		 "ubus highest_version: 0x%x, firmware highest_version: 0x%x, "
+		 "ubus lowest_version: 0x%x, firmware lowest_version: 0x%x\n",
+		 HI_UBUS_HIGHEST_VER, hi_firmware_highest_ver,
+		 HI_UBUS_LOWEST_VER, hi_firmware_lowest_ver);
+}
+
 static void ub_bus_controller_debugfs_init(struct ub_bus_controller *ubc)
 {
 	if (!debugfs_initialized())
@@ -56,6 +90,9 @@ int ub_bus_controller_probe(struct ub_bus_controller *ubc)
 	ret = hi_msg_device_probe(ubc);
 	if (ret)
 		goto msg_fail;
+
+	if (ubc->ctl_no == 0)
+		hi_ver_exch(ubc);
 
 	return 0;
 
@@ -92,7 +129,7 @@ unsigned long long hi_feature_get(void)
 	       UBC_VENDOR_FEATURE_SETS_SIZE);
 	feature = raw >> SZ_32;
 	if (!feature) {
-		dev_info(&ubc->dev, "Feature sets data is not initialized.\n");
+		dev_info_ratelimited(&ubc->dev, "Feature sets data is not initialized.\n");
 		return U64_MAX;
 	}
 

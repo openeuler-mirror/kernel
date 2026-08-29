@@ -38,6 +38,13 @@
 #define UBASE_MOVE_CRQ_RING_PTR(crq) \
 	((crq)->ci = ((crq)->ci + 1) % (crq)->desc_num)
 
+/* Software handshake 1 register(RW) */
+#define UBASE_SW_HANDSHAKE_1_REG	0x18048
+/* Software handshake 1 register bit for CMDQ init */
+#define UBASE_SW_HANDSHAKE_1_FW_CAP_B		0
+#define UBASE_SW_HANDSHAKE_1_DRV_CAP_B		1
+#define UBASE_SW_HANDSHAKE_1_UE_FIRST_CMD_B	2
+
 union ubase_mbox {
 	struct {
 		/* MB 0 */
@@ -170,6 +177,24 @@ struct ubase_query_dl_pkt_stats_cmd {
 	__le32	rx_flit_num_l;
 	__le32	rx_flit_num_h;
 	u8	rsvd1[4];
+};
+
+#define UBASE_MAX_BATCH_QUERY_PORTS	10
+struct ubase_batch_query_dl_stats_cmd {
+	__le32	query_port_bitmap_l;
+	__le32	query_port_bitmap_h;
+
+	__le32	port_valid_bitmap_l;
+	__le32	port_valid_bitmap_h;
+
+	struct {
+		__le32	tx_flit_num_l;
+		__le32	tx_flit_num_h;
+		__le32	rx_flit_num_l;
+		__le32	rx_flit_num_h;
+	} info[UBASE_MAX_BATCH_QUERY_PORTS];
+
+	u8	rsvd[8];
 };
 
 struct ubase_cfg_tm_vl_sch_cmd {

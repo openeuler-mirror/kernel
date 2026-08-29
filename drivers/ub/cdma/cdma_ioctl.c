@@ -181,7 +181,14 @@ static int cdma_cmd_create_ctp(struct cdma_ioctl_hdr *hdr,
 			arg.in.queue_id);
 		return -EINVAL;
 	}
-	queue = (struct cdma_queue *)uobj->object;
+	queue = uobj->object;
+
+	if (queue->tp) {
+		dev_err(cdev->dev,
+			"create ctp, queue %u already has a tp\n",
+			queue->id);
+		return -EEXIST;
+	}
 
 	uobj = cdma_uobj_create(cfile, CDMA_UOBJ_TYPE_CTP);
 	if (IS_ERR(uobj)) {
@@ -261,6 +268,13 @@ static int cdma_cmd_delete_ctp(struct cdma_ioctl_hdr *hdr,
 	}
 	ctp = uobj->object;
 
+	if (queue->tp != ctp) {
+		dev_err(cdev->dev,
+			"delete ctp, ctp does not belong to queue %u\n",
+			queue->id);
+		return -EINVAL;
+	}
+
 	cdma_delete_ctp(cdev, ctp->tp_id, cfile->uctx->invalid);
 	cdma_uobj_delete(uobj);
 	cdma_set_queue_res(cdev, queue, QUEUE_RES_TP, NULL);
@@ -285,6 +299,37 @@ static void cdma_config_jfs(struct cdma_jfs_cfg *cfg,
 	cfg->tpn = arg->in.tpn;
 	cfg->queue_id = arg->in.queue_id;
 	cfg->trans_mode = arg->in.trans_mode;
+}
+
+static int cdma_check_jfs_queue_binding(struct cdma_dev *cdev,
+					struct cdma_queue *queue,
+					struct cdma_cmd_create_jfs_args *arg)
+{
+	if (!queue->jfc) {
+		dev_err(cdev->dev, "create jfs jfc not bound to queue\n");
+		return -EINVAL;
+	}
+
+	if (queue->jfc->id != arg->in.jfc_id) {
+		dev_err(cdev->dev,
+			"create jfs jfc_id mismatch, user = %u, queue = %u\n",
+			arg->in.jfc_id, queue->jfc->id);
+		return -EINVAL;
+	}
+
+	if (!queue->tp) {
+		dev_err(cdev->dev, "create jfs tp not bound to queue\n");
+		return -EINVAL;
+	}
+
+	if (queue->tp->tpn != arg->in.tpn) {
+		dev_err(cdev->dev,
+			"create jfs tpn mismatch, user = %u, queue = %u\n",
+			arg->in.tpn, queue->tp->tpn);
+		return -EINVAL;
+	}
+
+	return 0;
 }
 
 static int cdma_cmd_create_jfs(struct cdma_ioctl_hdr *hdr,
@@ -318,7 +363,18 @@ static int cdma_cmd_create_jfs(struct cdma_ioctl_hdr *hdr,
 			arg.in.queue_id);
 		return -EINVAL;
 	}
-	queue = (struct cdma_queue *)uobj->object;
+	queue = uobj->object;
+
+	if (queue->jfs) {
+		dev_err(cdev->dev,
+			"create jfs, queue %u already has a jfs\n",
+			queue->id);
+		return -EEXIST;
+	}
+
+	ret = cdma_check_jfs_queue_binding(cdev, queue, &arg);
+	if (ret)
+		return ret;
 
 	uobj = cdma_uobj_create(cfile, CDMA_UOBJ_TYPE_JFS);
 	if (IS_ERR(uobj)) {
@@ -407,6 +463,14 @@ static int cdma_cmd_delete_jfs(struct cdma_ioctl_hdr *hdr,
 	}
 
 	base_jfs = uobj->object;
+
+	if (queue->jfs != base_jfs) {
+		dev_err(cdev->dev,
+			"delete jfs, jfs does not belong to queue %u\n",
+			queue->id);
+		return -EINVAL;
+	}
+
 	ret = cdma_delete_jfs(cdev, base_jfs->id);
 	if (ret) {
 		dev_err(&cdev->adev->dev, "delete jfs failed, ret = %d\n",
@@ -502,7 +566,7 @@ static int cdma_cmd_delete_queue(struct cdma_ioctl_hdr *hdr, struct cdma_file *c
 		return -EINVAL;
 	}
 
-	queue = (struct cdma_queue *)uobj->object;
+	queue = uobj->object;
 	if (queue->jfc || queue->jfs || queue->tp) {
 		dev_err(cdev->dev, "jfc/jfs/tp is still in use");
 		return -EBUSY;
@@ -644,7 +708,14 @@ static int cdma_cmd_create_jfc(struct cdma_ioctl_hdr *hdr,
 			arg.in.queue_id);
 		return -EINVAL;
 	}
-	queue = (struct cdma_queue *)uobj->object;
+	queue = uobj->object;
+
+	if (queue->jfc) {
+		dev_err(cdev->dev,
+			"create jfc, queue %u already has a jfc\n",
+			queue->id);
+		return -EEXIST;
+	}
 
 	uobj = cdma_uobj_create(cfile, CDMA_UOBJ_TYPE_JFC);
 	if (IS_ERR(uobj)) {
@@ -722,7 +793,7 @@ static int cdma_cmd_delete_jfc(struct cdma_ioctl_hdr *hdr,
 			arg.in.queue_id);
 		return -EINVAL;
 	}
-	queue = (struct cdma_queue *)uobj->object;
+	queue = uobj->object;
 
 	uobj = cdma_uobj_get(cfile, arg.in.handle, CDMA_UOBJ_TYPE_JFC);
 	if (IS_ERR(uobj)) {
@@ -730,7 +801,15 @@ static int cdma_cmd_delete_jfc(struct cdma_ioctl_hdr *hdr,
 		return -EINVAL;
 	}
 
-	base_jfc = (struct cdma_base_jfc *)uobj->object;
+	base_jfc = uobj->object;
+
+	if (queue->jfc != base_jfc) {
+		dev_err(cdev->dev,
+			"delete jfc, jfc does not belong to queue %u\n",
+			queue->id);
+		return -EINVAL;
+	}
+
 	ret = cdma_delete_jfc(cdev, base_jfc->id, &arg);
 	if (ret) {
 		dev_err(cdev->dev, "cdma delete jfc failed, ret = %d\n", ret);
@@ -817,9 +896,7 @@ int cdma_cmd_parse(struct cdma_file *cfile, struct cdma_ioctl_hdr *hdr)
 		return -ENOIOCTLCMD;
 	}
 
-	mutex_lock(&cfile->ctx_mutex);
 	ret = cdma_cmd_handler[hdr->command](hdr, cfile);
-	mutex_unlock(&cfile->ctx_mutex);
 
 	return ret;
 }

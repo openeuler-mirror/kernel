@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note*/
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  * Copyright(c) 2025 HiSilicon Technologies CO., Limited. All rights reserved.
  */
@@ -11,6 +11,7 @@
 #ifndef UBFWCTL_UBENGINE
 #define FWCTL_DEVICE_TYPE_UB 5
 #endif
+#define UBCTL_MAX_DEV_NAME 64
 
 /**
  * struct fwctl_rpc_ub_in - ioctl(FWCTL_RPC) input
@@ -84,6 +85,10 @@ enum ub_fwctl_cmdrpc_type {
 	 * @UTOOL_CMD_QUERY_NL_SSU_VL_PKT: Query NL layer ssu_vl_pkt related registers
 	 */
 	UTOOL_CMD_QUERY_NL_SSU_VL_PKT = 0x0009,
+	/**
+	 * @UTOOL_CMD_QUERY_NL_P2P: Query p2p dfx statistics
+	 */
+	UTOOL_CMD_QUERY_NL_P2P = 0x000A,
 
 	/**
 	 * @UTOOL_CMD_QUERY_TP: Query all registers at the TP layer
@@ -216,6 +221,10 @@ enum ub_fwctl_cmdrpc_type {
 	 * @UTOOL_CMD_QUERY_BA_MAR_PEFR_STATS: Query BA layer MAR_PEFR_STATS related registers
 	 */
 	UTOOL_CMD_QUERY_BA_MAR_PEFR_STATS = 0x0048,
+	/**
+	 * @UTOOL_CMD_QUERY_BA_ICRC: Query BA layer ICRC related registers
+	 */
+	UTOOL_CMD_QUERY_BA_ICRC = 0x0049,
 
 	/**
 	 * @UTOOL_CMD_QUERY_QOS: Query QOS related registers
@@ -322,6 +331,50 @@ enum ub_fwctl_cmdrpc_type {
 	UTOOL_CMD_QUERY_PORT_LINK_STATS = 0x00F1,
 
 	/**
+	 * @UTOOL_CMD_QUERY_UE_INFO: Query the information of function entity
+	 */
+	UTOOL_CMD_QUERY_UE_INFO = 0x00F2,
+
+	/**
+	 * @UBCTL_CMD_QUERY_CONF_USER_COMM: User-space interface command code
+	 */
+	UBCTL_CMD_QUERY_CONF_USER_COMM = 0x0101,
+	/**
+	 * @UTOOL_CMD_QUERY_DSCP_INFO: Query DSCP-related information
+	 */
+	UTOOL_CMD_QUERY_DSCP_INFO = 0x0102,
+
+	/**
+	 * @UTOOL_CMD_QUERY_SL_VL_MAP_INFO: Query SL-to-VL mapping information
+	 */
+	UTOOL_CMD_QUERY_SL_VL_MAP_INFO = 0x0103,
+
+	/**
+	 * @UTOOL_CMD_QUERY_CAPS_INFO: Query device capability information
+	 */
+	UTOOL_CMD_QUERY_CAPS_INFO = 0x0104,
+
+	/**
+	 * @UTOOL_CMD_QUERY_AEQC_INFO: Query AEQC information
+	 */
+	UTOOL_CMD_QUERY_AEQC_INFO = 0x0105,
+
+	/**
+	 * @UTOOL_CMD_QUERY_CEQC_INFO: Query CEQC information
+	 */
+	UTOOL_CMD_QUERY_CEQC_INFO = 0x0106,
+
+	/**
+	 * @UTOOL_CMD_QUERY_UPA_PKT_STATS: Query UPA layer PKT_STATS related registers
+	 */
+	UTOOL_CMD_QUERY_UPA_PKT_STATS = 0x0111,
+
+	/**
+	 * @UTOOL_CMD_QUERY_DEV_INFO: Query all ubctl device info
+	 */
+	UTOOL_CMD_QUERY_DEV_INFO = 0xAAAA,
+
+	/**
 	 * @UTOOL_CMD_QUERY_DUMP: Dump all register data
 	 */
 	UTOOL_CMD_QUERY_DUMP = 0xFFFE,
@@ -330,6 +383,19 @@ enum ub_fwctl_cmdrpc_type {
 	 * @UTOOL_CMD_QUERY_MAX: Maximum Command Code
 	 */
 	UTOOL_CMD_QUERY_MAX,
+};
+
+/**
+ * struct fwctl_pkt_dev_info_match - ioctl(FWCTL_RPC) input/output
+ * @chip_id: The value of param '-c'
+ * @die_id: The value of param '-d'
+ * @is_matched: The result of dev info match
+ */
+struct fwctl_pkt_dev_info_match {
+	__u16 chip_id;
+	__u16 die_id;
+	__u8 is_matched;
+	__u8 reserved[3];
 };
 
 /**
@@ -396,5 +462,22 @@ struct fwctl_pkt_in_time {
 	__u32 time;
 };
 
-#endif
+/**
+ * struct fwctl_pkt_in_dev_name - ioctl(UBCTL_RPC) input header
+ * @dev_name: udma or unic device name
+ */
+struct fwctl_pkt_in_dev_name {
+	char dev_name[UBCTL_MAX_DEV_NAME];
+};
 
+/**
+ * struct ubctl_cmd_in_head - ioctl(UBCTL_RPC) input header
+ * @opcode: The operation code indicating the type of command
+ * @is_read: Flag indicating whether the operation is a read (1) or write (0)
+ */
+struct ubctl_cmd_in_head {
+	__u32 opcode;
+	__u32 is_read;
+};
+
+#endif

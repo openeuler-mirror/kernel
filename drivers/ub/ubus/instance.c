@@ -868,9 +868,9 @@ int ub_ioctl_bus_instance_bind(void __user *uptr)
 	}
 
 out:
+	mutex_unlock(&uent->instance_lock);
 	ub_entity_put(uent);
 	ub_bus_instance_put(bi);
-	mutex_unlock(&uent->instance_lock);
 	mutex_unlock(&dynamic_mutex);
 	return ret;
 }
@@ -914,9 +914,9 @@ int ub_ioctl_bus_instance_unbind(void __user *uptr)
 	}
 
 out:
+	mutex_unlock(&uent->instance_lock);
 	ub_entity_put(uent);
 	ub_bus_instance_put(bi);
-	mutex_unlock(&uent->instance_lock);
 	mutex_unlock(&dynamic_mutex);
 	return ret;
 }
