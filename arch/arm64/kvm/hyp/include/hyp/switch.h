@@ -14,6 +14,7 @@
 #include <linux/kvm_host.h>
 #include <linux/types.h>
 #include <linux/jump_label.h>
+#include <linux/uaccess.h>
 #include <uapi/linux/psci.h>
 
 #include <kvm/arm_psci.h>
@@ -784,6 +785,96 @@ static inline void __kvm_unexpected_el2_exception(void)
 		fixup = (unsigned long)__pvm_guest_exit_panic;
 #endif
 	write_sysreg_el2(fixup, SYS_ELR);
+}
+
+/*
+ * The live shadow S1 can lose the guest PC mapping while PVM handles an
+ * exit.  The normal host exception table does not serve the PVM vector, so
+ * use the KVM exception table for this load and recover through its fixup.
+ */
+#define __pvm_load_insn(op, addr, insn)                          \
+({                                                              \
+	int __err = 0;                                          \
+	asm volatile(                                           \
+	"1: " op " %w[i], [%[a]]\n"                            \
+	"   b 3f\n"                                            \
+	"2: mov %w[e], %[efault]\n"                           \
+	"3:\n"                                                \
+	__KVM_EXTABLE(1b, 2b)                                  \
+	: [e] "+r" (__err), [i] "+r" (insn)                     \
+	: [a] "r" (addr), [efault] "i" (-EFAULT)                \
+	: "memory");                                            \
+	__err;                                                  \
+})
+
+static __always_inline int kvm_pvm_guest_insn_read(struct kvm_vcpu *vcpu,
+						   u64 pc, u32 *insnp)
+{
+	u64 elr, spsr, esr, far;
+	u32 insn = 0;
+	int err;
+
+	/* An intervening data abort overwrites these exit registers. */
+	elr = read_sysreg_el2(SYS_ELR);
+	spsr = read_sysreg_el2(SYS_SPSR);
+	esr = read_sysreg_el2(SYS_ESR);
+	far = read_sysreg_el2(SYS_FAR);
+
+	if (pc & BIT(55)) {
+		__uaccess_disable_hw_pan();
+		err = __pvm_load_insn("ldr", pc, insn);
+		__uaccess_enable_hw_pan();
+	} else {
+		err = __pvm_load_insn("ldtr", pc, insn);
+	}
+
+	if (err) {
+		write_sysreg_el2(elr, SYS_ELR);
+		write_sysreg_el2(spsr, SYS_SPSR);
+		write_sysreg_el2(esr, SYS_ESR);
+		write_sysreg_el2(far, SYS_FAR);
+		*insnp = 0;
+		return err;
+	}
+
+	*insnp = le32_to_cpu((__force __le32)insn);
+	return 0;
+}
+
+/*
+ * A PVM guest kernel runs at physical EL0, so its privileged instructions trap
+ * with EC=UNKNOWN.  Return the syndrome they would trap with from EL1, for the
+ * host to emulate them through its regular exit handlers, or @esr to keep
+ * EC=UNKNOWN.
+ */
+static inline u64 kvm_pvm_insn_to_esr(u32 insn, u64 esr)
+{
+	return esr;
+}
+
+static inline bool kvm_hyp_handle_unknown(struct kvm_vcpu *vcpu,
+					  u64 *exit_code)
+{
+	u32 insn;
+
+	if (!is_pvm_mode())
+		return false;
+
+	/*
+	 * Only the guest kernel's privileged instructions are emulated here;
+	 * those of its userspace are UNDEFINED at EL0, which the host delivers.
+	 */
+	if (pvm_vcpu_in_user_ctxt(vcpu))
+		return false;
+
+	/* A failed read leaves EC=UNKNOWN. */
+	if (kvm_pvm_guest_insn_read(vcpu, read_sysreg_el2(SYS_ELR), &insn))
+		return false;
+
+	vcpu->arch.fault.esr_el2 = kvm_pvm_insn_to_esr(insn,
+						       vcpu->arch.fault.esr_el2);
+
+	return false;
 }
 
 #endif /* __ARM64_KVM_HYP_SWITCH_H__ */
