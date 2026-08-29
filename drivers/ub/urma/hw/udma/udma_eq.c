@@ -37,7 +37,7 @@ static int udma_ae_tp_ctrlq_msg_deal(struct udma_dev *udma_dev,
 		ae_work->tpn = queue_num;
 		INIT_WORK(&ae_work->work, udma_tp_ae_work);
 		queue_work(udma_dev->ae_workq, &ae_work->work);
-		return 0;
+		return NOTIFY_OK;
 	case UBASE_EVENT_TYPE_TP_LEVEL_ERROR:
 		return udma_ctrlq_remove_single_tp(udma_dev, queue_num, TP_ERROR);
 	case UBASE_EVENT_TYPE_CHECK_TOKEN:
