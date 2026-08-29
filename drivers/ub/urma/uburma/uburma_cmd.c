@@ -352,11 +352,14 @@ void uburma_jfc_event_cb(struct ubcore_event *event,
 	if (!event->element.jfc)
 		return;
 
-	jfc_uobj = (struct uburma_jfc_uobj *)
-			   event->element.jfc->jfc_cfg.jfc_context;
-	uburma_write_async_event(ctx, event->element.jfc->urma_jfc,
-				 event->event_type, &jfc_uobj->async_event_list,
-				 &jfc_uobj->async_events_reported);
+	rcu_read_lock();
+	jfc_uobj = rcu_dereference(event->element.jfc->jfc_cfg.jfc_context);
+	if (!IS_ERR_OR_NULL(jfc_uobj))
+		uburma_write_async_event(ctx, event->element.jfc->urma_jfc,
+					 event->event_type,
+					 &jfc_uobj->async_event_list,
+					 &jfc_uobj->async_events_reported);
+	rcu_read_unlock();
 }
 
 void uburma_jfs_event_cb(struct ubcore_event *event,
@@ -1914,7 +1917,7 @@ static int uburma_cmd_create_jfc(struct ubcore_device *ubc_dev,
 	jfc_uobj->async_events_reported = 0;
 	INIT_LIST_HEAD(&jfc_uobj->comp_event_list);
 	INIT_LIST_HEAD(&jfc_uobj->async_event_list);
-	cfg.jfc_context = jfc_uobj;
+	RCU_INIT_POINTER(cfg.jfc_context, jfc_uobj);
 
 	jfc = ubcore_create_jfc(ubc_dev, &cfg, uburma_jfce_handler,
 				uburma_jfc_event_cb, &udata);
@@ -2273,7 +2276,7 @@ static int uburma_cmd_alloc_jfc(struct ubcore_device *ubc_dev,
 	jfc_uobj->async_events_reported = 0;
 	INIT_LIST_HEAD(&jfc_uobj->comp_event_list);
 	INIT_LIST_HEAD(&jfc_uobj->async_event_list);
-	cfg.jfc_context = jfc_uobj;
+	RCU_INIT_POINTER(cfg.jfc_context, jfc_uobj);
 
 	ret = ubcore_alloc_jfc(ubc_dev, &cfg, uburma_jfce_handler,
 		uburma_jfc_event_cb, &jfc, &udata);
