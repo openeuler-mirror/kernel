@@ -852,6 +852,7 @@ static int uburma_free_jfc(struct uburma_uobj *uobj,
 				rcu_assign_pointer(jfc->jfc_cfg.jfc_context, NULL);
 				synchronize_rcu();
 			}
+			tasklet_kill(&jfc_uobj->jfce_tasklet);
 			uburma_release_jfce_event(jfc_uobj);
 			return ret;
 		}
@@ -864,10 +865,17 @@ static int uburma_free_jfc(struct uburma_uobj *uobj,
 				rcu_assign_pointer(jfc->jfc_cfg.jfc_context, NULL);
 				synchronize_rcu();
 			}
+			tasklet_kill(&jfc_uobj->jfce_tasklet);
 			uburma_release_jfce_event(jfc_uobj);
 			return ret;
 		}
 	}
+	/*
+	 * Hardware has stopped invoking uburma_jfce_handler by now (jfc is
+	 * deleted/freed). Kill the tasklet so no bottom-half races with the
+	 * event-list teardown below.
+	 */
+	tasklet_kill(&jfc_uobj->jfce_tasklet);
 	uburma_release_async_event(uobj->ufile, &jfc_uobj->async_event_list);
 	uburma_release_jfce_event(jfc_uobj);
 	return ret;
@@ -922,6 +930,7 @@ static int uburma_free_jfc_batch(struct uburma_uobj **uobj_arr, int arr_num,
 		for (i = 0; i < end_index; ++i) {
 			jfc_uobj = jfc_uobj_arr[i];
 			uobj = uobj_arr[i];
+			tasklet_kill(&jfc_uobj->jfce_tasklet);
 			uburma_release_async_event(uobj->ufile,
 						   &jfc_uobj->async_event_list);
 			uburma_release_jfce_event(jfc_uobj);

@@ -71,16 +71,10 @@ void uburma_write_event_with_free_fn(
 	struct uburma_jfe_event *event;
 	unsigned long flags;
 
-	spin_lock_irqsave(&jfe->lock, flags);
-	if (jfe->deleting) {
-		spin_unlock_irqrestore(&jfe->lock, flags);
+	event = kzalloc(sizeof(struct uburma_jfe_event), GFP_ATOMIC);
+	if (!event)
 		return;
-	}
-	event = kmalloc(sizeof(struct uburma_jfe_event), GFP_ATOMIC);
-	if (!event) {
-		spin_unlock_irqrestore(&jfe->lock, flags);
-		return;
-	}
+
 	event->event_data = event_data;
 	event->event_type = event_type;
 	event->counter = counter;
@@ -88,12 +82,19 @@ void uburma_write_event_with_free_fn(
 	INIT_LIST_HEAD(&event->node);
 	INIT_LIST_HEAD(&event->obj_node);
 
+	spin_lock_irqsave(&jfe->lock, flags);
+	if (jfe->deleting) {
+		spin_unlock_irqrestore(&jfe->lock, flags);
+		kfree(event);
+		return;
+	}
 	list_add_tail(&event->node, &jfe->event_list);
 	if (obj_event_list)
 		list_add_tail(&event->obj_node, obj_event_list);
+	spin_unlock_irqrestore(&jfe->lock, flags);
+
 	if (jfe->async_queue)
 		kill_fasync(&jfe->async_queue, SIGIO, POLL_IN);
-	spin_unlock_irqrestore(&jfe->lock, flags);
 	wake_up_interruptible(&jfe->poll_wait);
 }
 
@@ -105,57 +106,93 @@ void uburma_write_event(struct uburma_jfe *jfe, uint64_t event_data,
 					obj_event_list, counter, NULL);
 }
 
-static bool uburma_jfce_is_null(struct uburma_jfc_uobj *jfc_uobj)
-{
-	unsigned long flag;
-
-	spin_lock_irqsave(&jfc_uobj->jfc_lock, flag);
-	if (jfc_uobj->jfce == NULL) {
-		spin_unlock_irqrestore(&jfc_uobj->jfc_lock, flag);
-		return true;
-	}
-	spin_unlock_irqrestore(&jfc_uobj->jfc_lock, flag);
-	return false;
-}
-
 void uburma_set_irq_handle_threshold(uint32_t threshold)
 {
 	uburma_irq_handle_threshold = threshold;
 }
 
+static void uburma_jfce_tasklet(unsigned long data)
+{
+	struct uburma_jfc_uobj *jfc_uobj = (struct uburma_jfc_uobj *)data;
+	struct uburma_jfce_uobj *jfce;
+	struct uburma_device *ubu_dev = NULL;
+	u64 start_time, duration_ns;
+	/*
+	 * Read the cached urma_jfc/jfc_id instead of dereferencing
+	 * jfc_uobj->uobj.object (struct ubcore_jfc *): the jfc may already be
+	 * freed by destroy_jfc() during ubcore_delete_jfc() before this softirq
+	 * runs, while jfc_uobj itself stays alive until tasklet_kill()+release
+	 * below.
+	 */
+	if (IS_ERR_OR_NULL(jfc_uobj->jfce) ||
+	    IS_ERR_OR_NULL(jfc_uobj->uobj.ufile))
+		return;
+
+	jfce = container_of(jfc_uobj->jfce, struct uburma_jfce_uobj, uobj);
+	ubu_dev = jfc_uobj->uobj.ufile->ubu_dev;
+
+	/*
+	 * tasklet_hi_schedule() coalesces repeated scheduling while a tasklet is
+	 * already in TASKLET_STATE_SCHED, so all CQE interrupts that arrive
+	 * between two runs collapse into a single bottom-half invocation. We
+	 * emit exactly one completion event per run as the coalesced result.
+	 * This drops the previous 1:1 mapping between CQEs and user-visible
+	 * comp_events_reported, trading exact accounting for a single tasklet
+	 * run per burst instead of ceil(N/BATCH).
+	 */
+	start_time = ktime_get_ns();
+	uburma_write_event(&jfce->jfe, jfc_uobj->urma_jfc, 0,
+			   &jfc_uobj->comp_event_list,
+			   &jfc_uobj->comp_events_reported);
+	duration_ns = ktime_get_ns() - start_time;
+	if (!IS_ERR_OR_NULL(ubu_dev) && uburma_irq_handle_threshold_enable &&
+	    duration_ns > uburma_irq_handle_threshold)
+		ubu_dev->irq_thresh_count_table[jfc_uobj->jfc_id]++;
+
+	uburma_log_info("Finish to write jfc event, jfc_id: %u.\n",
+			jfc_uobj->jfc_id);
+}
+
+void uburma_jfce_tasklet_init(struct uburma_jfc_uobj *jfc_uobj)
+{
+	tasklet_init(&jfc_uobj->jfce_tasklet, uburma_jfce_tasklet,
+		     (unsigned long)(uintptr_t)jfc_uobj);
+}
+
 void uburma_jfce_handler(struct ubcore_jfc *jfc)
 {
 	struct uburma_jfc_uobj *jfc_uobj;
-	struct uburma_jfce_uobj *jfce;
 	struct uburma_device *ubu_dev = NULL;
-	bool write_event = false;
-	u64 start_time, duration_ns;
 
 	if (!jfc)
 		return;
 
-	start_time = ktime_get_ns();
+	/*
+	 * Top-half runs in hard-irq context: keep it minimal. Resolve the
+	 * jfc_uobj from jfc_context and, if the jfce is still alive, schedule the
+	 * bottom-half tasklet. The heavy work (kmalloc, list/lock, wake-up) is
+	 * deferred to uburma_jfce_tasklet() in softirq context.
+	 */
 	rcu_read_lock();
 	jfc_uobj = rcu_dereference(jfc->jfc_cfg.jfc_context);
-	if (!IS_ERR_OR_NULL(jfc_uobj) && !IS_ERR(jfc_uobj->jfce) &&
-		(uburma_jfce_is_null(jfc_uobj) == false) && !IS_ERR_OR_NULL(jfc_uobj->uobj.ufile)) {
-		jfce = container_of(jfc_uobj->jfce, struct uburma_jfce_uobj, uobj);
-		ubu_dev = jfc_uobj->uobj.ufile->ubu_dev;
-		uburma_write_event(&jfce->jfe, jfc->urma_jfc, 0,
-				   &jfc_uobj->comp_event_list,
-				   &jfc_uobj->comp_events_reported);
-		write_event = true;
-	}
-	rcu_read_unlock();
+	if (IS_ERR_OR_NULL(jfc_uobj) || IS_ERR_OR_NULL(jfc_uobj->jfce) ||
+	    IS_ERR_OR_NULL(jfc_uobj->uobj.ufile))
+		goto out;
 
-	if (!IS_ERR_OR_NULL(ubu_dev) && uburma_irq_handle_threshold_enable) {
-		duration_ns = ktime_get_ns() - start_time;
+	/*
+	 * tasklet_hi_schedule() already coalesces repeated scheduling: a tasklet
+	 * already scheduled (TASKLET_STATE_SCHED) is not re-queued until it has
+	 * run once, so repeated interrupts only trigger one bottom-half run.
+	 * No per-irq counter is maintained here; the bottom-half emits one
+	 * coalesced completion event per run.
+	 */
+	tasklet_hi_schedule(&jfc_uobj->jfce_tasklet);
+
+	ubu_dev = jfc_uobj->uobj.ufile->ubu_dev;
+	if (!IS_ERR_OR_NULL(ubu_dev) && uburma_irq_handle_threshold_enable)
 		ubu_dev->irq_total_count_table[jfc->id]++;
-		if (duration_ns > uburma_irq_handle_threshold)
-			ubu_dev->irq_thresh_count_table[jfc->id]++;
-	}
-	if (write_event)
-		uburma_log_info("Finish to write jfc event, jfc_id: %u.\n", jfc->id);
+out:
+	rcu_read_unlock();
 }
 
 void uburma_uninit_jfe(struct uburma_jfe *jfe)
@@ -586,12 +623,43 @@ static void uburma_async_event_callback(struct ubcore_event *event,
 {
 	struct uburma_jfae_uobj *jfae =
 		container_of(handler, struct uburma_jfae_uobj, event_handler);
+	struct uburma_jfe_event *ev;
+	unsigned long flags;
+	bool enqueued = false;
 
 	if (WARN_ON(IS_ERR_OR_NULL(jfae)))
 		return;
 
-	uburma_write_event(&jfae->jfe, event->element.port_id,
-			   event->event_type, NULL, NULL);
+	/*
+	 * Dispatched on the ubcore event workqueue (process context), so the
+	 * wake_up below runs directly. event is freed once this returns, so
+	 * capture port_id / event_type into ev now.
+	 */
+	ev = kzalloc(sizeof(struct uburma_jfe_event), GFP_ATOMIC);
+	if (!ev)
+		return;
+	ev->event_data = event->element.port_id;
+	ev->event_type = event->event_type;
+	ev->counter = NULL;
+	ev->event_data_free_fn = NULL;
+	INIT_LIST_HEAD(&ev->node);
+	INIT_LIST_HEAD(&ev->obj_node);
+
+	spin_lock_irqsave(&jfae->jfe.lock, flags);
+	if (!jfae->jfe.deleting) {
+		list_add_tail(&ev->node, &jfae->jfe.event_list);
+		enqueued = true;
+	}
+	spin_unlock_irqrestore(&jfae->jfe.lock, flags);
+
+	if (!enqueued) {
+		kfree(ev);
+		return;
+	}
+
+	if (jfae->jfe.async_queue)
+		kill_fasync(&jfae->jfe.async_queue, SIGIO, POLL_IN);
+	wake_up_interruptible(&jfae->jfe.poll_wait);
 }
 
 static inline void

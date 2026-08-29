@@ -1918,6 +1918,7 @@ static int uburma_cmd_create_jfc(struct ubcore_device *ubc_dev,
 	INIT_LIST_HEAD(&jfc_uobj->comp_event_list);
 	INIT_LIST_HEAD(&jfc_uobj->async_event_list);
 	RCU_INIT_POINTER(cfg.jfc_context, jfc_uobj);
+	uburma_jfce_tasklet_init(jfc_uobj);
 
 	jfc = ubcore_create_jfc(ubc_dev, &cfg, uburma_jfce_handler,
 				uburma_jfc_event_cb, &udata);
@@ -1929,6 +1930,8 @@ static int uburma_cmd_create_jfc(struct ubcore_device *ubc_dev,
 	jfc_uobj->jfce = (struct uburma_uobj *)jfce;
 	jfc_uobj->uobj.object = jfc;
 	jfc->urma_jfc = arg.in.urma_jfc;
+	jfc_uobj->urma_jfc = arg.in.urma_jfc;
+	jfc_uobj->jfc_id = jfc->id;
 	spin_lock_init(&jfc_uobj->jfc_lock);
 
 	/* Do not release jfae fd until jfc is destroyed */
@@ -1950,7 +1953,14 @@ static int uburma_cmd_create_jfc(struct ubcore_device *ubc_dev,
 err_put_jfae:
 	uburma_put_jfae(file);
 err_delete_jfc:
-	(void)ubcore_delete_jfc(jfc);
+	if (ubcore_delete_jfc(jfc) != 0) {
+		rcu_assign_pointer(jfc->jfc_cfg.jfc_context, NULL);
+		synchronize_rcu();
+	}
+	/* Hardware has stopped invoking uburma_jfce_handler; drain any pending
+	 * tasklet run before uobj_alloc_abort() releases jfc_uobj.
+	 */
+	tasklet_kill(&jfc_uobj->jfce_tasklet);
 err_alloc_abort:
 	uobj_alloc_abort(&jfc_uobj->uobj);
 err_put_jfce:
@@ -2277,6 +2287,7 @@ static int uburma_cmd_alloc_jfc(struct ubcore_device *ubc_dev,
 	INIT_LIST_HEAD(&jfc_uobj->comp_event_list);
 	INIT_LIST_HEAD(&jfc_uobj->async_event_list);
 	RCU_INIT_POINTER(cfg.jfc_context, jfc_uobj);
+	uburma_jfce_tasklet_init(jfc_uobj);
 
 	ret = ubcore_alloc_jfc(ubc_dev, &cfg, uburma_jfce_handler,
 		uburma_jfc_event_cb, &jfc, &udata);
@@ -2288,6 +2299,8 @@ static int uburma_cmd_alloc_jfc(struct ubcore_device *ubc_dev,
 	jfc_uobj->jfce = (struct uburma_uobj *)jfce;
 	jfc_uobj->uobj.object = jfc;
 	jfc->urma_jfc = arg.in.urma_jfc;
+	jfc_uobj->urma_jfc = arg.in.urma_jfc;
+	jfc_uobj->jfc_id = jfc->id;
 
 	/* Do not release jfae fd until jfc is destroyed */
 	ret = uburma_get_jfae(file);
@@ -2310,7 +2323,14 @@ static int uburma_cmd_alloc_jfc(struct ubcore_device *ubc_dev,
 err_put_jfae:
 	uburma_put_jfae(file);
 err_free_jfc:
-	(void)ubcore_free_jfc(jfc, &udata);
+	if (ubcore_free_jfc(jfc, &udata) != 0) {
+		rcu_assign_pointer(jfc->jfc_cfg.jfc_context, NULL);
+		synchronize_rcu();
+	}
+	/* Hardware has stopped invoking uburma_jfce_handler; drain any pending
+	 * tasklet run before uobj_alloc_abort() releases jfc_uobj.
+	 */
+	tasklet_kill(&jfc_uobj->jfce_tasklet);
 err_alloc_abort:
 	uobj_alloc_abort(&jfc_uobj->uobj);
 err_put_jfce:
