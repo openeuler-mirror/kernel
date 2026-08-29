@@ -449,6 +449,8 @@ int iommufd_fault_iopf_handler(struct iopf_group *group)
 	hwpt = group->attach_handle->domain->fault_data;
 	fault = hwpt->fault;
 
+	iopf_group_dequeue(group);
+
 	mutex_lock(&fault->mutex);
 	list_add_tail(&group_extend->node, &fault->deliver);
 	mutex_unlock(&fault->mutex);
