@@ -26,7 +26,11 @@
 #ifdef CONFIG_VIRT_VTIMER_PV_STATUS
 #include <asm/pvtimer-status-abi.h>
 #endif
+#include <asm/qspinlock_paravirt.h>
 #include <asm/smp_plat.h>
+
+#define CREATE_TRACE_POINTS
+#include "trace-paravirt.h"
 
 struct static_key paravirt_steal_enabled;
 struct static_key paravirt_steal_rq_enabled;
@@ -470,3 +474,73 @@ int __init timer_early_inject_init(void)
 
 #endif /* CONFIG_VIRT_TIMER_EARLY_INJECT */
 
+#ifdef CONFIG_PARAVIRT_SPINLOCKS
+extern bool nopvspin;
+
+static void kvm_kick_cpu(int cpu)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_invoke(ARM_SMCCC_VENDOR_KICK_CPU, cpu, &res);
+
+	trace_kvm_kick_cpu("kvm kick cpu", raw_smp_processor_id(), cpu);
+}
+
+static void kvm_wait(u8 *ptr, u8 val)
+{
+	unsigned long flags;
+
+	if (in_nmi())
+		return;
+
+	local_irq_save(flags);
+
+	if (READ_ONCE(*ptr) != val)
+		goto out;
+
+	trace_kvm_wait("kvm wait before wfi", smp_processor_id());
+
+	dsb(sy);
+	wfi();
+
+	trace_kvm_wait("kvm wait after wfi", smp_processor_id());
+
+out:
+	local_irq_restore(flags);
+}
+
+int __init pv_qspinlock_init(void)
+{
+	struct arm_smccc_res res;
+
+	if (nopvspin) {
+		pr_info("PV qspinlocks disabled, forced by \"nopvspin\" parameter\n");
+		return 0;
+	}
+
+	/* Check if KICK_CPU is supported by hypervisor */
+	arm_smccc_1_1_invoke(ARM_SMCCC_ARCH_FEATURES_FUNC_ID,
+			     ARM_SMCCC_VENDOR_KICK_CPU, &res);
+	if (res.a0 != SMCCC_RET_SUCCESS) {
+		pr_info("PV qspinlocks disabled, no KICK_CPU support\n");
+		return 0;
+	}
+
+	/* Don't use the PV qspinlock code if there is only 1 vCPU. */
+	if (num_possible_cpus() == 1) {
+		pr_info("PV qspinlocks disabled, single CPU\n");
+		return 0;
+	}
+	pr_info("PV qspinlocks enabled\n");
+
+	__pv_init_lock_hash();
+
+	pv_ops.lock.queued_spin_lock_slowpath = __pv_queued_spin_lock_slowpath;
+	pv_ops.lock.queued_spin_unlock = __pv_queued_spin_unlock;
+	pv_ops.lock.wait = kvm_wait;
+	pv_ops.lock.kick = kvm_kick_cpu;
+
+	return 0;
+}
+early_initcall(pv_qspinlock_init);
+#endif  /* CONFIG_PARAVIRT_SPINLOCKS */

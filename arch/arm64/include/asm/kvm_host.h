@@ -600,7 +600,12 @@ struct kvm_vcpu_arch {
 	bool pause;
 	/* Shadow copy of pvsched preempted state for module param toggle */
 	KABI_FILL_HOLE(bool pv_preempted)
-
+#ifdef CONFIG_PARAVIRT_SPINLOCKS
+	/* pv related host specific info */
+	KABI_FILL_HOLE(struct {
+		bool pv_unhalted;
+	} pv)
+#endif
 	/*
 	 * We maintain more than a single set of debug registers to support
 	 * debugging the guest from the host and to maintain separate host and
@@ -1249,6 +1254,15 @@ static inline bool kvm_arm_vcpu_is_preempted(struct kvm_vcpu_arch *vcpu_arch)
 {
 	return false;
 }
+#endif
+
+#ifdef CONFIG_PARAVIRT_SPINLOCKS
+static inline void kvm_arm_pvspin_vcpu_init(struct kvm_vcpu_arch *vcpu_arch)
+{
+	vcpu_arch->pv.pv_unhalted = false;
+}
+#else
+static inline void kvm_arm_pvspin_vcpu_init(struct kvm_vcpu_arch *vcpu_arch) {}
 #endif
 
 void kvm_set_sei_esr(struct kvm_vcpu *vcpu, u64 syndrome);
