@@ -64,10 +64,12 @@ static void ipourma_setup_common(struct net_device *dev)
 	struct ipourma_dev_priv *priv = netdev_priv(dev);
 
 	priv->dev = dev;
-	dev->type = ARPHRD_ETHER;
+	dev->type = ARPHRD_NONE;
 	dev->mtu = IPOURMA_DEFAULT_MTU;
-	dev->hard_header_len = ETH_HLEN;
-	dev->addr_len = ETH_ALEN;
+	dev->hard_header_len = 0;
+	dev->min_header_len = 0;
+	dev->needed_headroom = IPOURMA_HARD_LEN;
+	dev->addr_len = 0;
 	dev->flags = IFF_NOARP;
 	dev->needs_free_netdev = false;
 }
