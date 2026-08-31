@@ -13,8 +13,6 @@ struct bpf_mem_alloc {
 	struct bpf_mem_cache __percpu *cache;
 	bool percpu;
 	struct work_struct work;
-	void (*dtor_ctx_free)(void *ctx);
-	void *dtor_ctx;
 };
 
 /* 'size != 0' is for bpf_mem_alloc which manages fixed-size objects.
