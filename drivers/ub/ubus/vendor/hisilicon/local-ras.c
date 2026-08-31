@@ -13,58 +13,69 @@
 #include "local-ras.h"
 #include "hisi-ubus.h"
 
-struct sub_module_info {
+#define RAS_V1 BIT(0)
+#define RAS_V2 BIT(1)
+
+struct sub_module_entry {
 	u32 sub_module_id;
-	const char *sub_module_name;
+	const char *name;
+	u64 ras_ver;
 };
 
-static struct sub_module_info hisi_ubus_sub_module[] = {
-	{0x1, "MISC.MISC_SLV"},
-	{0x2, "MISC.IMP"},
-	{0x3, "BA"},
-	{0x4, "NL PORT"},
-	{0x5, "NL DEVICE"},
-	{0x6, "DLMAC"},
-	{0x7, "MUXPCS"},
-	{0x1D, "ETH"},
-	{0x20, "TP_DAM"},
-	{0x21, "TP_EUM"},
-	{0x22, "TP_LRB"},
-	{0x23, "TP_PPP"},
-	{0x24, "TP_RQM"},
-	{0x25, "TP_RXDMA_HEAD"},
-	{0x26, "TP_RXP"},
-	{0x27, "TP_SCC"},
-	{0x28, "TP_TAI"},
-	{0x29, "TP_TIMER"},
-	{0x2a, "TP_TPCM"},
-	{0x2b, "TP_TPGCM"},
-	{0x2c, "TP_TPMM"},
-	{0x2d, "TP_TPP"},
-	{0x2e, "TP_TQEM"},
-	{0x2f, "TP_TQS"},
-	{0x30, "TP_UBOMMU"},
-	{0x40, "TA_CQM"},
-	{0x41, "TA_MRD"},
-	{0x42, "TA_RSP"},
-	{0x43, "TA_TM"},
-	{0x44, "TA_TOM"},
-	{0x45, "TA_TQC"},
-	{0x46, "TA_TQEB"},
-	{0x47, "TA_TQMS"},
-	{0x48, "TA_USI"},
-	{0x60, "ETH.CORE_TXMAC"},
-	{0x61, "ETH.CORE_TDM"},
-	{0x62, "ETH.CORE_TXPCS"},
-	{0x63, "ETH.CORE_TXRSFEC"},
-	{0x64, "ETH.CORE_MIB"},
-	{0x65, "ETH.CORE_RXMAC"},
-	{0x66, "ETH.CORE_RXPCS"},
-	{0x67, "ETH.CORE_RXRSFEC"},
-	{0x68, "ETH.CORE_RXPMACORE"},
-	{0x69, "ETH.CORE_TXPMAL0"},
-	{0x6b, "ETH.CORE_TXBRFEC"},
-	{0x6c, "ETH.CORE_RXBRFEC"},
+static const struct sub_module_entry hisi_ubus_sub_modules[] = {
+	{0x01, "MISC.MISC_SLV", RAS_V1 | RAS_V2},
+	{0x02, "MISC.IMP", RAS_V1 | RAS_V2},
+	{0x03, "BA", RAS_V1 | RAS_V2},
+	{0x04, "NL PORT", RAS_V1 | RAS_V2},
+	{0x05, "NL DEVICE", RAS_V1 | RAS_V2},
+	{0x06, "DLMAC", RAS_V1 | RAS_V2},
+	{0x07, "MUXPCS", RAS_V1 | RAS_V2},
+	{0x1D, "ETH", RAS_V1},
+	{0x20, "TP_DAM", RAS_V1 | RAS_V2},
+	{0x21, "TP_EUM", RAS_V1 | RAS_V2},
+	{0x22, "TP_LRB", RAS_V1 | RAS_V2},
+	{0x23, "TP_PPP", RAS_V1 | RAS_V2},
+	{0x24, "TP_RQM", RAS_V1 | RAS_V2},
+	{0x25, "TP_RXDMA_HEAD", RAS_V1 | RAS_V2},
+	{0x26, "TP_RXP", RAS_V1 | RAS_V2},
+	{0x27, "TP_SCC", RAS_V1 | RAS_V2},
+	{0x28, "TP_TAI", RAS_V1 | RAS_V2},
+	{0x29, "TP_TIMER", RAS_V1 | RAS_V2},
+	{0x2a, "TP_TPCM", RAS_V1 | RAS_V2},
+	{0x2b, "TP_TPGCM", RAS_V1 | RAS_V2},
+	{0x2c, "TP_TPMM", RAS_V1 | RAS_V2},
+	{0x2d, "TP_TPP", RAS_V1 | RAS_V2},
+	{0x2e, "TP_TQEM", RAS_V1},
+	{0x2e, "TP_WQEM", RAS_V2},
+	{0x2f, "TP_TQS", RAS_V1 | RAS_V2},
+	{0x30, "TP_UBOMMU", RAS_V1},
+	{0x40, "TA_CQM", RAS_V1 | RAS_V2},
+	{0x41, "TA_MRD", RAS_V1 | RAS_V2},
+	{0x42, "TA_RSP", RAS_V1 | RAS_V2},
+	{0x43, "TA_TM", RAS_V1 | RAS_V2},
+	{0x44, "TA_TOM", RAS_V1 | RAS_V2},
+	{0x45, "TA_TQC", RAS_V1 | RAS_V2},
+	{0x46, "TA_TQEB", RAS_V1},
+	{0x46, "TA_WQEM", RAS_V2},
+	{0x47, "TA_TQMS", RAS_V1 | RAS_V2},
+	{0x48, "TA_USI", RAS_V1 | RAS_V2},
+	{0x49, "TA_RIG", RAS_V2},
+	{0x4a, "TA_DM", RAS_V2},
+	{0x4b, "TA_IDEV", RAS_V2},
+	{0x4c, "TA_TQEP", RAS_V2},
+	{0x4d, "TA_EIP", RAS_V2},
+	{0x60, "ETH_CORE_TXMAC", RAS_V1},
+	{0x61, "ETH_CORE_TDM", RAS_V1},
+	{0x62, "ETH_CORE_TXPCS", RAS_V1},
+	{0x63, "ETH_CORE_TXRSFEC", RAS_V1},
+	{0x64, "ETH_CORE_MIB", RAS_V1},
+	{0x65, "ETH_CORE_RXMAC", RAS_V1},
+	{0x66, "ETH_CORE_RXPCS", RAS_V1},
+	{0x67, "ETH_CORE_RXRSFEC", RAS_V1},
+	{0x68, "ETH_CORE_RXPMACORE", RAS_V1},
+	{0x69, "ETH_CORE_TXPMAL0", RAS_V1},
+	{0x6b, "ETH_CORE_TXBRFEC", RAS_V1},
+	{0x6c, "ETH_CORE_RXBRFEC", RAS_V1},
 };
 
 static const char * const hisi_ubus_error_sev[] = {
@@ -87,6 +98,7 @@ struct ubus_error_match {
 	u8 module_id;
 	u8 valid_bit; /* used to identify which field require matching verification */
 	u8 ctl_calc;
+	u64 ras_ver; /* version mask for sub-module lookup */
 };
 
 enum ubus_controller_cal_mode {
@@ -110,13 +122,14 @@ static inline const char *hisi_ubus_get_string(
 	return id < n && array[id] ? array[id] : "Unknown";
 }
 
-static const char *get_sub_module_name(u32 id)
+static const char *get_sub_module_name(u64 ras_ver, u32 id)
 {
-	u8 i;
+	u32 i;
 
-	for (i = 0; i < ARRAY_SIZE(hisi_ubus_sub_module); i++) {
-		if (hisi_ubus_sub_module[i].sub_module_id == id)
-			return hisi_ubus_sub_module[i].sub_module_name;
+	for (i = 0; i < ARRAY_SIZE(hisi_ubus_sub_modules); i++) {
+		if (hisi_ubus_sub_modules[i].sub_module_id == id &&
+		    hisi_ubus_sub_modules[i].ras_ver & ras_ver)
+			return hisi_ubus_sub_modules[i].name;
 	}
 
 	return "Unknown";
@@ -142,17 +155,19 @@ static const char *get_sub_module_name(u32 id)
 static const struct ubus_error_match ubus_error_table[] = {
 	{ HIP12_SOC_ID, HIP12_VERSION, UNION_DIE, HIP12_UB_MODULE_ID,
 	  VALID_SOC_ID | VALID_VERSION | VALID_NIMBUS_ID | VALID_MODULE_ID,
-	  SOCKET_MODE },
+	  SOCKET_MODE, RAS_V1 },
 	{ HIP13_SOC_ID, HIP13A_VERSION, 0, HIP13_UB_MODULE_ID,
 	  VALID_SOC_ID | VALID_VERSION | VALID_MODULE_ID,
-	  COMBINE_MODE },
+	  COMBINE_MODE, RAS_V2 },
 	{ HIP13_SOC_ID, HIP13B_VERSION, 0, HIP13_UB_MODULE_ID,
 	  VALID_SOC_ID | VALID_VERSION | VALID_MODULE_ID,
-	  COMBINE_MODE },
+	  COMBINE_MODE, RAS_V2 },
 	{ ASCEND950_SOC_ID, ASCEND950_VERSION, 0, ASCEND950_UB_MODULE_ID,
-	  VALID_SOC_ID | VALID_VERSION | VALID_MODULE_ID, NIMBUS_MODE },
+	  VALID_SOC_ID | VALID_VERSION | VALID_MODULE_ID, NIMBUS_MODE,
+	  RAS_V1 },
 	{ ZHULONG855_SOC_ID, ZHULONG855_VERSION, 0, ZHULONG855_UB_MODULE_ID,
-	  VALID_SOC_ID | VALID_VERSION | VALID_MODULE_ID, SOCKET_MODE },
+	  VALID_SOC_ID | VALID_VERSION | VALID_MODULE_ID, SOCKET_MODE,
+	  RAS_V1 },
 };
 
 static u32 ubus_calc_ctl_no(const struct ubus_error_match *match,
@@ -221,14 +236,10 @@ static bool ubus_error_supported(const struct hisi_ubus_error_data *error_data)
 }
 
 static struct ub_bus_controller *find_bus_controller_by_errdata(
-	const struct hisi_ubus_error_data *edata)
+	const struct hisi_ubus_error_data *edata,
+	const struct ubus_error_match *match)
 {
-	const struct ubus_error_match *match;
 	u32 ctl_no;
-
-	match = ubus_error_find_match(edata);
-	if (!match)
-		return NULL;
 
 	ctl_no = ubus_calc_ctl_no(match, edata);
 	if (ctl_no == U32_MAX)
@@ -238,7 +249,8 @@ static struct ub_bus_controller *find_bus_controller_by_errdata(
 }
 
 static void hisi_ubus_ras_print(struct ub_entity *uent,
-				const struct hisi_ubus_error_data *edata)
+				const struct hisi_ubus_error_data *edata,
+				u64 ras_ver)
 {
 	struct ras_err_info ras_err_info[] = {
 		{HISI_UBUS_LOCAL_VALID_SOC_ID,
@@ -263,7 +275,7 @@ static void hisi_ubus_ras_print(struct ub_entity *uent,
 
 	if (edata->val_bits & HISI_UBUS_LOCAL_VALID_SUB_MODULE_ID)
 		ub_info(uent, "Sub Module = %s\n",
-			get_sub_module_name((u32)edata->sub_module_id));
+			get_sub_module_name(ras_ver, (u32)edata->sub_module_id));
 
 	if (edata->val_bits & HISI_UBUS_LOCAL_VALID_ERR_SEVERITY)
 		ub_info(uent, "Error severity = %s\n",
@@ -355,12 +367,13 @@ static int ubus_recover(struct ub_entity *uent,
 }
 
 static void hisi_ubus_handle_error(struct ub_entity *uent,
-				   const struct hisi_ubus_error_data *edata)
+				   const struct hisi_ubus_error_data *edata,
+				   u64 ras_ver)
 {
 	int ret;
 	u32 i;
 
-	hisi_ubus_ras_print(uent, edata);
+	hisi_ubus_ras_print(uent, edata, ras_ver);
 	ub_info(uent, "Reg Dump:\n");
 #define REGISTER_ARRAY_MAX_SIZE 256
 	for (i = 0; i < DIV_ROUND_UP(
@@ -384,6 +397,7 @@ static int hisi_ubus_notify_error(struct notifier_block *nb, unsigned long event
 {
 	const struct hisi_ubus_error_data *error_data;
 	struct acpi_hest_generic_data *gdata;
+	const struct ubus_error_match *match;
 	struct ub_bus_controller *ubc;
 	guid_t err_sec_guid;
 
@@ -396,11 +410,15 @@ static int hisi_ubus_notify_error(struct notifier_block *nb, unsigned long event
 	if (!ubus_error_supported(error_data))
 		return NOTIFY_DONE;
 
-	ubc = find_bus_controller_by_errdata(error_data);
+	match = ubus_error_find_match(error_data);
+	if (!match)
+		return NOTIFY_DONE;
+
+	ubc = find_bus_controller_by_errdata(error_data, match);
 	if (!ubc)
 		return NOTIFY_DONE;
 
-	hisi_ubus_handle_error(ubc->uent, error_data);
+	hisi_ubus_handle_error(ubc->uent, error_data, match->ras_ver);
 	return NOTIFY_OK;
 }
 
