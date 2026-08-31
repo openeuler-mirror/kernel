@@ -17,7 +17,7 @@
 #define UB_ROUTE_TABLE_ENTRY_START (UB_ROUTE_TABLE_SLICE_START + (0x10 << 2))
 #define EBW(port_nums) ((((port_nums) - 1) >> 5) + 1) /* Entry Bit Width */
 #define UB_ROUTE_TABLE_ENTRY_BITS PORT_TOTAL_NUM_MAX
-#define UB_ROUTE_KFIFO_DEPTH SZ_16
+#define UB_ROUTE_KFIFO_DEPTH PORT_TOTAL_NUM_MAX
 
 /* node to update routing table */
 struct cna_node {
@@ -159,6 +159,8 @@ void ub_route_clear(struct ub_entity *uent)
 
 int ub_route_add_entry(struct ub_port *port, u32 cna, short distance)
 {
+	int ret;
+
 	if (!port)
 		return -EINVAL;
 
@@ -166,7 +168,11 @@ int ub_route_add_entry(struct ub_port *port, u32 cna, short distance)
 		return -EEXIST;
 
 	set_bit(cna, port->cna_maps);
-	return ub_add_cna_node(cna, distance, &port->uent->cna_list);
+	ret = ub_add_cna_node(cna, distance, &port->uent->cna_list);
+	if (ret)
+		clear_bit(cna, port->cna_maps);
+
+	return ret;
 }
 
 static void ub_route_del_entry(struct ub_port *port, u32 cna)
@@ -408,7 +414,7 @@ struct bfs_node {
  */
 void ub_route_mod_bfs(struct ub_entity *uent)
 {
-	DECLARE_KFIFO(kfifo, struct bfs_node, UB_ROUTE_KFIFO_DEPTH);
+	DECLARE_KFIFO_PTR(kfifo, struct bfs_node);
 	struct bfs_node curr, next;
 	struct list_head cna_list;
 	struct ub_port *from, *to;
@@ -416,11 +422,15 @@ void ub_route_mod_bfs(struct ub_entity *uent)
 	if (!uent)
 		return;
 
-	INIT_KFIFO(kfifo);
 	INIT_LIST_HEAD(&cna_list);
 
 	if (ub_entity_copy_cna_list(uent, &cna_list, true))
 		goto clear_cna;
+
+	if (kfifo_alloc(&kfifo, UB_ROUTE_KFIFO_DEPTH, GFP_KERNEL)) {
+		ub_err(uent, "kfifo alloc failed, skip mod bfs\n");
+		goto clear_cna;
+	}
 
 	for_each_uent_port(to, uent) {
 		if (to->r_uent && to->r_uent->port_nums > 1) {
@@ -450,6 +460,8 @@ void ub_route_mod_bfs(struct ub_entity *uent)
 		}
 	}
 
+	kfifo_free(&kfifo);
+
 clear_cna:
 	ub_clear_cna_list(&cna_list);
 }
@@ -457,18 +469,22 @@ clear_cna:
 /* same as ub_route_mod_bfs, but used to del route instead of update route */
 void ub_route_del_bfs(struct ub_entity *uent)
 {
-	DECLARE_KFIFO(kfifo, struct ub_port *, UB_ROUTE_KFIFO_DEPTH);
+	DECLARE_KFIFO_PTR(kfifo, struct ub_port *);
 	struct ub_port *from, *to;
 	struct list_head cna_list;
 
 	if (!uent)
 		return;
 
-	INIT_KFIFO(kfifo);
 	INIT_LIST_HEAD(&cna_list);
 
 	if (ub_entity_copy_cna_list(uent, &cna_list, true))
 		goto clear_cna;
+
+	if (kfifo_alloc(&kfifo, UB_ROUTE_KFIFO_DEPTH, GFP_KERNEL)) {
+		ub_err(uent, "kfifo alloc failed, skip del bfs\n");
+		goto clear_cna;
+	}
 
 	for_each_uent_port(to, uent)
 		if (to->r_uent && to->r_uent->port_nums > 1)
@@ -490,6 +506,8 @@ void ub_route_del_bfs(struct ub_entity *uent)
 				       "%s kfifo put failed!\n", __func__);
 		}
 	}
+
+	kfifo_free(&kfifo);
 
 clear_cna:
 	ub_clear_cna_list(&cna_list);

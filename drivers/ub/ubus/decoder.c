@@ -298,6 +298,17 @@ static int ub_get_decoder_cap(struct ub_decoder *decoder)
 		return -EINVAL;
 	}
 
+	/* qs is a 4-bit field (0..15) but the ring index only has
+	 * UB_DECODER_QUEUE_IDX_BITS (11) bits, so the wrap bit at position qs
+	 * must satisfy qs <= UB_DECODER_MAX_QS (10). Larger values would make
+	 * the producer/consumer bitfield silently lose the wrap bit and corrupt
+	 * full/empty judgements.
+	 */
+	if (decoder->cmdq.qs > UB_DECODER_MAX_QS)
+		decoder->cmdq.qs = UB_DECODER_MAX_QS;
+	if (decoder->evtq.qs > UB_DECODER_MAX_QS)
+		decoder->evtq.qs = UB_DECODER_MAX_QS;
+
 	size = decoder->mmio_end_addr - decoder->mmio_base_addr + 1;
 	if (size > mmio_size[decoder->mmio_size_sup])
 		decoder->mmio_end_addr = decoder->mmio_base_addr +

@@ -133,8 +133,10 @@ static u8 ub_get_ue_map(struct ub_entity *uent, struct idev_pue_reg_pld *pld,
 	if (!pld->ue_cnt) {
 		map->start_entity_idx = pld->pue_entity_idx;
 		map->end_entity_idx = pld->pue_entity_idx;
-	} else if (pld->ue_cnt !=
-		   pld->end_ue_entity_idx - pld->start_ue_entity_idx + 1) {
+	} else if ((pld->end_ue_entity_idx < pld->start_ue_entity_idx) ||
+		   (pld->ue_cnt !=
+		   pld->end_ue_entity_idx - pld->start_ue_entity_idx + 1) ||
+		   pld->start_ue_entity_idx == 0) {
 		ub_err(uent, "Invalid ue cnt: [%u] The ue cnt must be equal to end: [%d] - start: [%d] + 1\n",
 		       pld->ue_cnt, pld->end_ue_entity_idx,
 		       pld->start_ue_entity_idx);
