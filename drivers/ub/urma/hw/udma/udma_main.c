@@ -1394,7 +1394,7 @@ static int udma_reinit_handler(struct auxiliary_device *adev)
 	int ret = 0;
 
 	if (!udev) {
-		dev_info(&adev->dev, "udma device is not exist.\n");
+		dev_warn(&adev->dev, "udma device is not exist.\n");
 		return 0;
 	}
 	mutex_lock(&udev->open_rx_mutex);
@@ -1543,13 +1543,13 @@ int udma_reset_down(struct auxiliary_device *adev)
 	udma_dev = get_udma_dev(adev);
 	if (!udma_dev) {
 		mutex_unlock(&udma_reset_mutex);
-		dev_info(&adev->dev, "udma device is not exist.\n");
+		dev_warn(&adev->dev, "udma device is not exist.\n");
 		return 0;
 	}
 
 	if (udma_dev->status == UDMA_ELR_ABORT) {
 		mutex_unlock(&udma_reset_mutex);
-		dev_info(&adev->dev, "udma device status ABORT.\n");
+		dev_warn(&adev->dev, "udma device status ABORT.\n");
 		return 0;
 	}
 
@@ -1574,7 +1574,7 @@ int udma_reset_uninit(struct auxiliary_device *adev)
 	mutex_lock(&udma_reset_mutex);
 	udma_dev = get_udma_dev(adev);
 	if (!udma_dev) {
-		dev_info(&adev->dev, "udma device is not exist.\n");
+		dev_warn(&adev->dev, "udma device is not exist.\n");
 		mutex_unlock(&udma_reset_mutex);
 		return 0;
 	}
@@ -1654,7 +1654,7 @@ void udma_remove(struct auxiliary_device *adev)
 		udma_dev = get_udma_dev(adev);
 		if (!udma_dev) {
 			mutex_unlock(&udma_reset_mutex);
-			dev_info(&adev->dev, "udma device is not exist.\n");
+			dev_warn(&adev->dev, "udma device is not exist.\n");
 			return;
 		}
 
