@@ -44,7 +44,7 @@ static void ubase_reset_task_schedule(struct ubase_dev *udev)
 
 void ubase_reset_task_schedule_immediately(struct ubase_dev *udev)
 {
-#define RESET_TASK_DELAY_TIME_IM	msecs_to_jiffies(50)
+#define RESET_TASK_DELAY_TIME_IM	msecs_to_jiffies(100)
 
 	set_bit(UBASE_SERVICE_STATE_RESET_SCHED, &udev->service_task.state);
 
@@ -66,6 +66,7 @@ static void ubase_reset_err_handle(struct ubase_dev *udev)
 		return;
 	}
 
+	udev->reset_stat.reset_retry_cnt = 0;
 	ubase_err(udev, "failed to reset, too many attempts.\n");
 }
 
@@ -249,6 +250,44 @@ int ubase_reset_done(struct ubase_dev *udev)
 	return 0;
 }
 
+static void ubase_pmu_suspend(struct ubase_dev *udev)
+{
+	__ubase_cmd_disable(udev);
+	udev->reset_stat.elr_reset_cnt++;
+}
+
+static void ubase_pmu_resume(struct ubase_dev *udev)
+{
+	ubase_ubus_reset_init(udev->dev);
+	__ubase_cmd_enable(udev);
+	udev->reset_stat.reset_done_cnt++;
+	udev->reset_stat.hw_reset_done_cnt++;
+	clear_bit(UBASE_STATE_RST_WAIT_DEACTIVE_B, &udev->state_bits);
+	clear_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits);
+	clear_bit(UBASE_STATE_DISABLED_B, &udev->state_bits);
+}
+
+static void ubase_resume_fail_handle(struct ubase_dev *udev)
+{
+	udev->reset_stat.reset_fail_cnt++;
+	/* The cmdq is restored at the unified egress so that commands can
+	 * be sent through cmdq during the next reset retry. This function
+	 * is executed before reset_stage is set to NONE, which enables
+	 * ubase_cmd_uninit to skip the sleep.
+	 */
+	if (test_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state)) {
+		ubase_cmd_uninit(udev);
+		if (ubase_cmd_init(udev))
+			ubase_err(udev, "failed to reinit cmdq after reset failure.\n");
+	}
+	udev->reset_stage = UBASE_RESET_STAGE_NONE;
+	ubase_resume_aux_devices(udev, UBASE_RESET_STAGE_ABORT);
+	clear_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits);
+	clear_bit(UBASE_STATE_DISABLED_B, &udev->state_bits);
+	set_bit(UBASE_STATE_RST_FAILED_B, &udev->state_bits);
+	ubase_reset_err_handle(udev);
+}
+
 void ubase_suspend(struct ubase_dev *udev)
 {
 	if (!test_bit(UBASE_STATE_INITED_B, &udev->state_bits) ||
@@ -262,8 +301,7 @@ void ubase_suspend(struct ubase_dev *udev)
 	set_bit(UBASE_STATE_RST_WAIT_DEACTIVE_B, &udev->state_bits);
 
 	if (ubase_dev_pmu_supported(udev)) {
-		__ubase_cmd_disable(udev);
-		udev->reset_stat.elr_reset_cnt++;
+		ubase_pmu_suspend(udev);
 		return;
 	}
 
@@ -298,13 +336,7 @@ void ubase_resume(struct ubase_dev *udev, int pret)
 	}
 
 	if (ubase_dev_pmu_supported(udev)) {
-		ubase_ubus_reset_init(udev->dev);
-		__ubase_cmd_enable(udev);
-		udev->reset_stat.reset_done_cnt++;
-		udev->reset_stat.hw_reset_done_cnt++;
-		clear_bit(UBASE_STATE_RST_WAIT_DEACTIVE_B, &udev->state_bits);
-		clear_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits);
-		clear_bit(UBASE_STATE_DISABLED_B, &udev->state_bits);
+		ubase_pmu_resume(udev);
 		return;
 	}
 
@@ -362,13 +394,7 @@ void ubase_resume(struct ubase_dev *udev, int pret)
 timeout_resume:
 	set_bit(UBASE_STATE_RST_TIMEOUT_RETRY_B, &udev->state_bits);
 err_resume:
-	udev->reset_stat.reset_fail_cnt++;
-	udev->reset_stage = UBASE_RESET_STAGE_NONE;
-	ubase_resume_aux_devices(udev, UBASE_RESET_STAGE_ABORT);
-	clear_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits);
-	clear_bit(UBASE_STATE_DISABLED_B, &udev->state_bits);
-	set_bit(UBASE_STATE_RST_FAILED_B, &udev->state_bits);
-	ubase_reset_err_handle(udev);
+	ubase_resume_fail_handle(udev);
 }
 
 void ubase_errhandle_service_task(struct ubase_delay_work *ubase_work)

@@ -646,8 +646,8 @@ static inline void do_clean_uobj(struct uburma_uobj *obj,
 	WARN_ON(uobj_try_lock(obj, true));
 	ret = obj->type->type_class->remove_commit(obj, why);
 	if (ret)
-		pr_warn("uburma: failed to remove uobject id %d order %u\n",
-			obj->id, cur_order);
+		uburma_log_warn_rl("failed to remove uobject id %d order %u\n",
+				   obj->id, cur_order);
 
 	list_del_init(&obj->list);
 
@@ -846,8 +846,13 @@ static int uburma_free_jfc(struct uburma_uobj *uobj,
 	if (jfc->jfc_opt.is_actived == true) {
 		ret = ubcore_delete_jfc(jfc);
 		if (ret) {
-			uburma_log_err("Failed to delete jfc, id: %u, ret: %d, why: %d.\n",
-				jfc_id, ret, why);
+			uburma_log_err_rl("Failed to delete jfc, id: %u, ret: %d, why: %d.\n",
+					  jfc_id, ret, why);
+			if (why != UBURMA_REMOVE_DESTROY) {
+				rcu_assign_pointer(jfc->jfc_cfg.jfc_context, NULL);
+				synchronize_rcu();
+			}
+			tasklet_kill(&jfc_uobj->jfce_tasklet);
 			uburma_release_jfce_event(jfc_uobj);
 			return ret;
 		}
@@ -856,10 +861,21 @@ static int uburma_free_jfc(struct uburma_uobj *uobj,
 		if (ret) {
 			uburma_log_err("Failed to free jfc, id: %u, ret: %d, why: %d.\n",
 				jfc_id, ret, why);
+			if (why != UBURMA_REMOVE_DESTROY) {
+				rcu_assign_pointer(jfc->jfc_cfg.jfc_context, NULL);
+				synchronize_rcu();
+			}
+			tasklet_kill(&jfc_uobj->jfce_tasklet);
 			uburma_release_jfce_event(jfc_uobj);
 			return ret;
 		}
 	}
+	/*
+	 * Hardware has stopped invoking uburma_jfce_handler by now (jfc is
+	 * deleted/freed). Kill the tasklet so no bottom-half races with the
+	 * event-list teardown below.
+	 */
+	tasklet_kill(&jfc_uobj->jfce_tasklet);
 	uburma_release_async_event(uobj->ufile, &jfc_uobj->async_event_list);
 	uburma_release_jfce_event(jfc_uobj);
 	return ret;
@@ -896,10 +912,17 @@ static int uburma_free_jfc_batch(struct uburma_uobj **uobj_arr, int arr_num,
 	}
 
 	ret = ubcore_delete_jfc_batch(jfc_arr, arr_num, bad_jfc_index);
-	if (ret)
+	if (ret) {
 		end_index = *bad_jfc_index;
-	else
+		if (why != UBURMA_REMOVE_DESTROY) {
+			for (i = end_index; i < arr_num; ++i)
+				rcu_assign_pointer(jfc_arr[i]->jfc_cfg.jfc_context,
+						   NULL);
+			synchronize_rcu();
+		}
+	} else {
 		end_index = arr_num;
+	}
 
 	uburma_log_info("Delete jfc batch, ret: %d, bad_jfc_index: %d, why: %d.\n",
 		ret, *bad_jfc_index, why);
@@ -907,6 +930,7 @@ static int uburma_free_jfc_batch(struct uburma_uobj **uobj_arr, int arr_num,
 		for (i = 0; i < end_index; ++i) {
 			jfc_uobj = jfc_uobj_arr[i];
 			uobj = uobj_arr[i];
+			tasklet_kill(&jfc_uobj->jfce_tasklet);
 			uburma_release_async_event(uobj->ufile,
 						   &jfc_uobj->async_event_list);
 			uburma_release_jfce_event(jfc_uobj);

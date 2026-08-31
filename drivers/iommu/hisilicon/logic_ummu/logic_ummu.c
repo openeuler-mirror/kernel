@@ -7,6 +7,7 @@
 
 #include <linux/kvm_host.h>
 #include <uapi/linux/iommufd.h>
+#include <uapi/linux/hisi_ummu.h>
 #include <linux/device.h>
 #include <linux/err.h>
 #include <linux/kernel.h>
@@ -19,7 +20,6 @@
 #include <linux/ummu_core.h>
 #include <linux/mmu_notifier.h>
 #include <linux/rwsem.h>
-#include <linux/hisi_ummu.h>
 
 #include "../queue.h"
 #include "logic_ummu.h"
@@ -774,15 +774,6 @@ static int logic_domain_set_ops(struct logic_ummu_domain *logic_domain)
 	return ret;
 }
 
-/*
- * Cloned from the MAX_TLBI_OPS in arch/arm64/include/asm/tlbflush.h, this
- * is used as a threshold to replace per-page TLBI commands to issue in the
- * command queue with an address-space TLBI command, when UMMU w/o a range
- * invalidation feature handles too many per-page TLBI commands, which will
- * otherwise result in a soft lockup.
- */
-#define CMDQ_MAX_TLBI_OPS		(1 << (PAGE_SHIFT - 3))
-
 static void logic_ummu_mm_arch_invalidate_secondary_tlbs(struct mmu_notifier *mn,
 						struct mm_struct *mm,
 						unsigned long start,
@@ -791,9 +782,7 @@ static void logic_ummu_mm_arch_invalidate_secondary_tlbs(struct mmu_notifier *mn
 	const struct ummu_device_helper *helper = get_agent_helper();
 	struct logic_ummu_domain *logic_domain;
 	struct ummu_base_domain *base_domain;
-	struct iommu_iotlb_gather gather = {};
 	struct logic_ummu_mn *logic_mn;
-	struct ummu_device *agent_ummu;
 	size_t size;
 
 	/*
@@ -810,25 +799,9 @@ static void logic_ummu_mm_arch_invalidate_secondary_tlbs(struct mmu_notifier *mn
 		goto unlock;
 
 	logic_domain = list_first_entry(&logic_mn->list, struct logic_ummu_domain, list);
-	agent_ummu = logic_ummu.agent_device;
 
-	if (!(agent_ummu->cap.features & UMMU_FEAT_RANGE_INV)) {
-		if (size >= CMDQ_MAX_TLBI_OPS * PAGE_SIZE)
-			size = 0;
-	} else {
-		if (size == ULONG_MAX)
-			size = 0;
-	}
-
-	if (!size) {
-		list_for_each_entry(base_domain, &logic_domain->base_domain.list, list)
-			helper->sync_iotlb_all_asid(&base_domain->domain);
-	} else {
-		gather.start = start;
-		gather.end = end - 1;
-		gather.pgsize = PAGE_SIZE;
-		logic_ummu_iotlb_sync(&logic_domain->base_domain.domain, &gather);
-	}
+	list_for_each_entry(base_domain, &logic_domain->base_domain.list, list)
+		helper->mm_arch_inv_secondary_tlbs(&base_domain->domain, start, size);
 
 unlock:
 	up_read(&logic_mn->rwsem);
@@ -884,7 +857,7 @@ mn_error:
 static void logic_ummu_sync_iommu_domain(struct iommu_domain *domain)
 {
 	const struct ummu_device_helper *helper = get_agent_helper();
-	struct ummu_base_domain *base_domain, *next;
+	struct ummu_base_domain *base_domain;
 	struct logic_ummu_domain *logic_domain;
 
 	if (!domain)
@@ -895,12 +868,14 @@ static void logic_ummu_sync_iommu_domain(struct iommu_domain *domain)
 		return;
 
 	if (helper && helper->sync_iommu_domain)
-		list_for_each_entry_safe(base_domain, next, &logic_domain->base_domain.list, list)
+		list_for_each_entry(base_domain, &logic_domain->base_domain.list, list)
 			helper->sync_iommu_domain(base_domain, domain);
 }
 
-static struct iommu_domain *logic_ummu_domain_alloc_sva(struct device *dev, struct mm_struct *mm)
+static struct iommu_domain *logic_ummu_domain_alloc_sva(struct device *dev,
+							struct mm_struct *mm)
 {
+	const struct ummu_device_helper *helper = get_agent_helper();
 	const struct iommu_ops *ops = get_agent_iommu_ops();
 	struct ummu_base_domain *base_domain, *next;
 	struct logic_ummu_domain *logic_domain;
@@ -939,16 +914,20 @@ static struct iommu_domain *logic_ummu_domain_alloc_sva(struct device *dev, stru
 	}
 	logic_ummu_sync_iommu_domain(&logic_domain->base_domain.domain);
 
-	if (!(logic_ummu.agent_device->cap.features & UMMU_FEAT_BTM) && mm == current->mm) {
-		ret = logic_ummu_mmu_notifier_register(logic_domain, mm);
-		if (ret)
-			goto error_handle;
+	if (logic_domain->agent_domain && mm == current->mm) {
+		if (helper && helper->needs_mmu_notifier &&
+		    helper->needs_mmu_notifier(logic_domain->agent_domain)) {
+			ret = logic_ummu_mmu_notifier_register(logic_domain, mm);
+			if (ret)
+				goto error_handle;
+		}
 	}
 
 	return &logic_domain->base_domain.domain;
 
 error_handle:
-	list_for_each_entry_safe(base_domain, next, &logic_domain->base_domain.list, list) {
+	list_for_each_entry_safe(base_domain, next,
+				 &logic_domain->base_domain.list, list) {
 		list_del(&base_domain->list);
 		base_domain->domain.ops->free(&base_domain->domain);
 	}
@@ -1244,7 +1223,6 @@ static void logic_ummu_release_device(struct device *dev)
 		pr_err("find domain failed.\n");
 		return;
 	}
-
 
 	logic_domain = iommu_to_logic_domain(domain);
 	if (!logic_domain->agent_domain || !core_ops || !core_ops->cfg_sync) {

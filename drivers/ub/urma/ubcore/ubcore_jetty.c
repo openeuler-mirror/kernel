@@ -509,8 +509,8 @@ int ubcore_delete_jfc(struct ubcore_jfc *jfc)
 	}
 
 	if (atomic_read(&jfc->use_cnt)) {
-		ubcore_log_err("The jfc is still being used, use_cnt is %d",
-			       atomic_read(&jfc->use_cnt));
+		ubcore_log_err_rl("The jfc is still being used, use_cnt is %d",
+				  atomic_read(&jfc->use_cnt));
 		UBCORE_PERF_TRACE_END(PERF_CORE_DELETE_JFC);
 		return -EBUSY;
 	}
@@ -678,6 +678,11 @@ int ubcore_set_jfc_opt(struct ubcore_jfc *jfc, uint64_t opt, void *buf, uint32_t
 	if (jfc == NULL || opt == 0 || jfc->ub_dev == NULL || jfc->ub_dev->ops == NULL ||
 		jfc->ub_dev->ops->set_jfc_opt == NULL || buf == NULL)
 		return -EINVAL;
+	if (jfc->jfc_opt.is_actived == true) {
+		ubcore_log_err("jfc is already activated, jfc_id:%u, set opt is not allowed when jfc is active, please deactivate first.\n",
+			jfc->id);
+		return -EPERM;
+	}
 	jfc_id = jfc->id;
 	dev = jfc->ub_dev;
 	ret = ubcore_check_opt_valid(&jfc->jfc_opt.jfc_opt_mask.value, g_ubcore_jfc_opt_table,
@@ -1290,6 +1295,11 @@ int ubcore_set_jfs_opt(struct ubcore_jfs *jfs, uint64_t opt, void *buf, uint32_t
 	if (jfs == NULL || opt == 0 || jfs->ub_dev == NULL || jfs->ub_dev->ops == NULL ||
 		jfs->ub_dev->ops->set_jfs_opt == NULL || buf == NULL)
 		return -EINVAL;
+	if (jfs->jfs_opt.is_actived == true) {
+		ubcore_log_err("jfs is already activated, jfs_id:%u, set opt is not allowed when jfs is active, please deactivate first.\n",
+			jfs->jfs_opt.urma_jfs_id);
+		return -EPERM;
+	}
 
 	ret = ubcore_check_opt_valid(&jfs->jfs_opt.jfs_opt_mask.value, g_ubcore_jfs_opt_table,
 		g_ubcore_jfs_opt_map_count, opt, len);
@@ -2282,6 +2292,11 @@ int ubcore_set_jfr_opt(struct ubcore_jfr *jfr, uint64_t opt, void *buf, uint32_t
 	if (jfr == NULL || opt == 0 || jfr->ub_dev == NULL || jfr->ub_dev->ops == NULL ||
 		jfr->ub_dev->ops->set_jfr_opt == NULL || buf == NULL)
 		return -EINVAL;
+	if (jfr->jfr_opt.is_actived == true) {
+		ubcore_log_err("jfr is already activated, jfr_id:%u, set opt is not allowed when jfr is active, please deactivate first.\n",
+			jfr->jfr_opt.urma_jfr_id);
+		return -EPERM;
+	}
 	ret = ubcore_check_opt_valid(&jfr->jfr_opt.jfr_opt_mask.value,
 		g_ubcore_jfr_opt_table,
 		g_ubcore_jfr_opt_map_count, opt, len);
@@ -4456,6 +4471,11 @@ int ubcore_set_jetty_opt(struct ubcore_jetty *jetty, uint64_t opt, void *buf, ui
 	if (jetty == NULL || opt == 0 || jetty->ub_dev == NULL || jetty->ub_dev->ops == NULL ||
 		jetty->ub_dev->ops->set_jetty_opt == NULL || buf == NULL)
 		return -EINVAL;
+	if (jetty->jetty_opt.is_actived == true) {
+		ubcore_log_err("jetty is already activated, jetty_id:%u, set opt is not allowed when jetty is active, please deactivate first.\n",
+			jetty->jetty_id.id);
+		return -EPERM;
+	}
 
 	ret = ubcore_check_opt_valid(&jetty->jetty_opt.jfs_opt.jfs_opt_mask.value,
 		g_ubcore_jetty_opt_table, g_ubcore_jetty_opt_map_count, opt, len);

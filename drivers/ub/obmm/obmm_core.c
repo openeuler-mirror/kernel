@@ -607,19 +607,13 @@ static int __init obmm_init(void)
 		return ret;
 	}
 
-	ret = misc_register(&obmm_dev_handle);
-	if (ret) {
-		pr_err("Failed to register root device. ret=%pe\n", ERR_PTR(ret));
-		goto out_allocator_exit;
-	}
-
 	spin_lock_init(&g_obmm_ctx_info.lock);
 	INIT_LIST_HEAD(&g_obmm_ctx_info.regions);
 
 	ret = obmm_shm_dev_init();
 	if (ret) {
 		pr_err("failed to initialize obmm_shm_dev. ret=%pe\n", ERR_PTR(ret));
-		goto out_misc_deregister;
+		goto out_allocator_exit;
 	}
 
 	module_addr_check_init();
@@ -636,16 +630,23 @@ static int __init obmm_init(void)
 		goto out_module_import_exit;
 	}
 
+	/* Register last: no ioctl may arrive before init is complete. */
+	ret = misc_register(&obmm_dev_handle);
+	if (ret) {
+		pr_err("Failed to register root device. ret=%pe\n", ERR_PTR(ret));
+		goto out_lowmem_exit;
+	}
+
 	pr_info("obmm_module: init completed\n");
 	return ret;
 
+out_lowmem_exit:
+	lowmem_notify_exit();
 out_module_import_exit:
 	module_preimport_exit();
 out_addr_check_exit:
 	module_addr_check_exit();
 	obmm_shm_dev_exit();
-out_misc_deregister:
-	misc_deregister(&obmm_dev_handle);
 out_allocator_exit:
 	ubmempool_allocator_exit();
 	return ret;

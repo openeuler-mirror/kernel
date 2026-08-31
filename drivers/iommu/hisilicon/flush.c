@@ -15,6 +15,12 @@
 #include "flush.h"
 #include "nested.h"
 
+struct ummu_tlb_range {
+	unsigned long iova;
+	size_t size;
+	size_t granule;
+};
+
 enum ummu_tlbi_scene {
 	UMMU_TLBI_SCENE_DMA = 0,
 	UMMU_TLBI_SCENE_SVA,
@@ -62,35 +68,35 @@ u8 ummu_tlbi_code_table[UMMU_TLBI_SCENE_NUM][UMMU_TLBI_SCOPE_NUM][UMMU_TLBI_TYPE
 	},
 };
 
-static int ummu_domain_tlbi_cmd(struct ummu_domain *domain,
+static int ummu_domain_tlbi_cmd(struct ummu_domain *u_domain,
 				enum ummu_tlbi_scope scope,
 				enum ummu_tlbi_scene scene,
 				struct ummu_mcmdq_ent *cmd)
 {
-	struct ummu_s1_cfg *s1cfg = &domain->cfgs.s1_cfg;
-	struct ummu_s2_cfg *s2cfg = &domain->cfgs.s2_cfg;
+	struct ummu_s1_cfg *s1cfg = &u_domain->cfgs.s1_cfg;
+	struct ummu_s2_cfg *s2cfg = &u_domain->cfgs.s2_cfg;
 	struct ummu_device *ummu_dev;
 	enum ummu_tlbi_type type;
 	bool e2h;
 
-	switch (domain->cfgs.stage) {
+	switch (u_domain->cfgs.stage) {
 	case UMMU_DOMAIN_S1:
 		if (scene == UMMU_TLBI_SCENE_DMA) {
-			if (domain->base_domain.tid == UMMU_INVALID_TID)
+			if (u_domain->base_domain.tid == UMMU_INVALID_TID)
 				return -EINVAL;
 
-			cmd->tlbi.tid = domain->base_domain.tid;
+			cmd->tlbi.tid = u_domain->base_domain.tid;
 		} else {
 			cmd->tlbi.asid = s1cfg->tct.asid;
 		}
 
-		ummu_dev = core_to_ummu_device(domain->base_domain.core_dev);
+		ummu_dev = core_to_ummu_device(u_domain->base_domain.core_dev);
 		e2h = !!(ummu_dev->cap.features & UMMU_FEAT_E2H);
 		type = e2h ? UMMU_TLBI_TYPE_S1E2H : UMMU_TLBI_TYPE_S1NH;
 		break;
 	case UMMU_DOMAIN_S2:
 		if (scene == UMMU_TLBI_SCENE_DMA)
-			cmd->tlbi.tect_tag = domain->cfgs.tecte_tag;
+			cmd->tlbi.tect_tag = u_domain->cfgs.tecte_tag;
 		else
 			cmd->tlbi.vmid = s2cfg->vmid;
 
@@ -98,7 +104,7 @@ static int ummu_domain_tlbi_cmd(struct ummu_domain *domain,
 		break;
 	default:
 		WARN(1, "get unexpected domain stage: %d",
-			 (int)domain->cfgs.stage);
+			 (int)u_domain->cfgs.stage);
 		return -EINVAL;
 	}
 
@@ -259,12 +265,39 @@ void ummu_device_tlb_inv_walk(struct iommu_domain *domain,
 	ummu_tlbi_range(&range, false, u_domain);
 }
 
-void ummu_flush_iotlb_all_asid(struct iommu_domain *domain)
+/*
+ * Cloned from the MAX_TLBI_OPS in arch/arm64/include/asm/tlbflush.h, this
+ * is used as a threshold to replace per-page TLBI commands to issue in the
+ * command queue with an address-space TLBI command, when UMMU w/o a range
+ * invalidation feature handles too many per-page TLBI commands, which will
+ * otherwise result in a soft lockup.
+ */
+#define CMDQ_MAX_TLBI_OPS		(1 << (PAGE_SHIFT - 3))
+void ummu_mm_arch_inv_secondary_tlbs(struct iommu_domain *domain,
+				     unsigned long start, size_t size)
 {
 	struct ummu_domain *u_domain = to_ummu_domain(domain);
+	struct ummu_device *ummu =
+			core_to_ummu_device(u_domain->base_domain.core_dev);
+	struct iommu_iotlb_gather gather = {};
 
-	u_domain->tlbi_asid = true;
-	ummu_tlbi_context(u_domain);
+	if (!(ummu->cap.features & UMMU_FEAT_RANGE_INV)) {
+		if (size >= CMDQ_MAX_TLBI_OPS * PAGE_SIZE)
+			size = 0;
+	} else {
+		if (size == ULONG_MAX)
+			size = 0;
+	}
+
+	if (!size) {
+		u_domain->tlbi_asid = true;
+		ummu_tlbi_context(u_domain);
+	} else {
+		gather.start = start;
+		gather.end = start + size - 1;
+		gather.pgsize = PAGE_SIZE;
+		ummu_device_tlb_inv_walk(domain, &gather);
+	}
 }
 
 void ummu_flush_iotlb_all(struct iommu_domain *domain)
@@ -406,8 +439,8 @@ static u8 get_minist_log2size_range(size_t size)
 	return index;
 }
 
-int ummu_device_flush_plb(struct ummu_device *ummu, u32 tag, u32 tid,
-			  u64 addr, size_t size)
+static int ummu_device_flush_plb(struct ummu_device *ummu, u32 tag, u32 tid,
+				 u64 addr, size_t size)
 {
 	u32 plbi_num = (ummu->cap.options & UMMU_OPT_DOUBLE_PLBI) ? 2 : 1;
 	struct ummu_mcmdq_ent cmd = {
@@ -430,6 +463,23 @@ int ummu_device_flush_plb(struct ummu_device *ummu, u32 tag, u32 tid,
 	}
 
 	return ret;
+}
+
+void ummu_device_ioplb_sync(struct iommu_domain *domain,
+			    struct iommu_plb_gather *plb_gather)
+{
+	struct ummu_base_domain *base_domain = to_ummu_base_domain(domain);
+	struct ummu_device *ummu = core_to_ummu_device(base_domain->core_dev);
+	struct ummu_domain *u_domain = to_ummu_domain(domain);
+	u32 tid = u_domain->base_domain.tid;
+	u32 tag = u_domain->cfgs.tecte_tag;
+	u64 addr;
+
+	if (!plb_gather->size)
+		return;
+
+	addr = (u64)(uintptr_t)plb_gather->va & GENMASK_ULL(ummu->cap.ias - 1, 0U);
+	ummu_device_flush_plb(ummu, tag, tid, addr, plb_gather->size);
 }
 
 void ummu_device_flush_plb_all(struct iommu_domain *domain)

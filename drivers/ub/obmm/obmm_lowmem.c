@@ -39,7 +39,7 @@ static int obmm_lowmem_notify_handler(struct notifier_block *nb __always_unused,
 
 	if (data->reason == RR_HUGEPAGE_RECLAIM)
 		is_huge = true;
-	data->nr_freed = 0;
+	/* Accumulate: higher-priority notifiers may have already set nr_freed. */
 	for (i = 0; i < data->nr_nid; i++) {
 		pr_debug_ratelimited("contract memory on nid: %d\n", data->nid[i]);
 		data->nr_freed += ubmempool_contract(data->nid[i], is_huge) >> PAGE_SHIFT;

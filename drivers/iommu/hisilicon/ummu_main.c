@@ -28,6 +28,7 @@
 #include "iommu.h"
 #include "sva.h"
 #include "qos.h"
+#include "plat_erratum.h"
 
 #define UMMU_DRV_NAME "ummu"
 #define HISI_VENDOR_ID 0xCC08
@@ -163,21 +164,17 @@ static void ummu_device_hw_probe_iidr(struct ummu_device *ummu)
 	 * ummu enables chip_identifier to perform some specialized operations.
 	 */
 	reg = readl_relaxed(ummu->base + UMMU_IIDR);
-	if (ummu_chip_identifier == HISI_VENDOR_ID) {
-		if (!FIELD_GET(IIDR_PROD_ID, reg)) {
-			ummu->cap.options |= UMMU_OPT_DOUBLE_PLBI;
-			ummu->cap.options |= UMMU_OPT_KCMD_PLBI;
-			ummu->cap.options |= UMMU_OPT_CHK_MAPT_CONTINUITY;
-			ummu->cap.options |= UMMU_OPT_SYNC_WITH_PLBI;
-			ummu->cap.options |= UMMU_OPT_KV_CAM_CONTINUITY;
-			ummu->cap.options |= UMMU_OPT_ONE_MCMDQ;
-			ummu->cap.options |= UMMU_OPT_DOUBLE_TLBI;
-			ummu->cap.options |= UMMU_OPT_TLBI_LIMIT_SCALE;
-			ummu->cap.features &= ~UMMU_FEAT_BTM;
-			ummu->cap.features &= ~UMMU_FEAT_STALLS;
-		} else {
-			ummu->cap.options |= UMMU_OPT_UMAU;
-		}
+	if (ummu_chip_identifier == HISI_VENDOR_ID && !FIELD_GET(IIDR_PROD_ID, reg)) {
+		ummu->cap.options |= UMMU_OPT_DOUBLE_PLBI;
+		ummu->cap.options |= UMMU_OPT_KCMD_PLBI;
+		ummu->cap.options |= UMMU_OPT_CHK_MAPT_CONTINUITY;
+		ummu->cap.options |= UMMU_OPT_SYNC_WITH_PLBI;
+		ummu->cap.options |= UMMU_OPT_KV_CAM_CONTINUITY;
+		ummu->cap.options |= UMMU_OPT_ONE_MCMDQ;
+		ummu->cap.options |= UMMU_OPT_DOUBLE_TLBI;
+		ummu->cap.options |= UMMU_OPT_TLBI_LIMIT_SCALE;
+		ummu->cap.features &= ~UMMU_FEAT_BTM;
+		ummu->cap.features &= ~UMMU_FEAT_STALLS;
 	}
 	dev_notice(ummu->dev, "features 0x%08x, options 0x%08x.\n",
 		   ummu->cap.features, ummu->cap.options);
@@ -671,6 +668,11 @@ static int ummu_device_ubrt_probe(struct ummu_device *ummu)
 
 	node = (struct ummu_node *)fw->ubrt_node;
 	ummu_chip_identifier = node->vendor_id;
+
+	if (ummu->dev->of_node)
+		ummu_device_dt_get_options(ummu);
+	else
+		ummu_device_acpi_get_options(ummu);
 
 	ummu->core_dev.iommu.min_pasids = node->min_tid;
 	ummu->core_dev.iommu.max_pasids = node->max_tid;
