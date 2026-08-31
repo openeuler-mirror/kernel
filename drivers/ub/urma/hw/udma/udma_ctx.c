@@ -625,12 +625,12 @@ static struct udma_hugepage_priv *udma_list_find_before(struct udma_context *ctx
 }
 
 static void udma_unremap_hugepage(struct vm_area_struct *vma, struct udma_hugepage_priv *priv,
-				  uint32_t remaped_num)
+				  uint32_t remapped_num)
 {
 	uint32_t i;
 
-	if (remaped_num)
-		zap_vma_ptes(vma, vma->vm_start, remaped_num * priv->page_size);
+	if (remapped_num)
+		zap_vma_ptes(vma, vma->vm_start, remapped_num * priv->page_size);
 
 	for (i = 0; i < priv->page_num; i++) {
 		if (priv->pages[i])

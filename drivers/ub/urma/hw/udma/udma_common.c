@@ -821,7 +821,7 @@ int udma_k_alloc_buf(struct udma_dev *dev, struct udma_buf *buf, bool need_dtu)
 			buf->is_hugepage = true;
 		} else {
 			dev_warn(dev->dev,
-				 "failed to alloc hugepage buf, switch to alloc normal buf.\n");
+				 "not enough hugepage buffer, switch to alloc normal buffer.\n");
 			ret = udma_alloc_normal_buf(dev, size, buf);
 		}
 	} else {
