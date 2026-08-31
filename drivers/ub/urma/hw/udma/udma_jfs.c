@@ -86,7 +86,7 @@ void udma_free_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq)
 static int udma_remap_reserved_va(struct udma_dev *dev, struct udma_hugepage_priv *priv)
 {
 	struct vm_area_struct *vma;
-	uint32_t remaped_num;
+	uint32_t remapped_num;
 	int ret = -EINVAL;
 
 	mmap_write_lock(current->mm);
@@ -110,10 +110,10 @@ static int udma_remap_reserved_va(struct udma_dev *dev, struct udma_hugepage_pri
 	if (debug_switch)
 		dev_info_ratelimited(dev->dev, "vm_flags=0x%lx, vm_page_prot=0x%llx.\n",
 				     vma->vm_flags, vma->vm_page_prot.pgprot);
-	for (remaped_num = 0; remaped_num < priv->page_num; remaped_num++) {
+	for (remapped_num = 0; remapped_num < priv->page_num; remapped_num++) {
 		ret = udma_remap_pfn_range(vma, (uintptr_t)priv->va_base +
-					   remaped_num * priv->page_size,
-					   (uint64_t)page_to_pfn(priv->pages[remaped_num]),
+					   remapped_num * priv->page_size,
+					   (uint64_t)page_to_pfn(priv->pages[remapped_num]),
 					   priv->page_size, vma->vm_page_prot);
 		if (ret) {
 			dev_err(dev->dev, "failed to remap PFN, ret=%d.\n", ret);
@@ -125,8 +125,8 @@ static int udma_remap_reserved_va(struct udma_dev *dev, struct udma_hugepage_pri
 	return 0;
 
 err_remap:
-	if (remaped_num)
-		zap_vma_ptes(vma, (uintptr_t)priv->va_base, remaped_num * priv->page_size);
+	if (remapped_num)
+		zap_vma_ptes(vma, (uintptr_t)priv->va_base, remapped_num * priv->page_size);
 err_unlock:
 	mmap_write_unlock(current->mm);
 
@@ -762,7 +762,7 @@ int udma_deactive_jfs(struct ubcore_jfs *jfs, struct ubcore_udata *udata)
 
 	ret = udma_modify_and_destroy_jetty(dev, &ujfs->sq);
 	if (ret) {
-		dev_info(dev->dev, "udma modify error and destroy JFS failed, id: %u.\n",
+		dev_warn(dev->dev, "udma modify state and destroy JFS failed, id: %u.\n",
 			 jfs->jfs_id.id);
 		if (!ujfs->ue_rx_closed)
 			udma_open_ue_rx_with_retry(dev, true, true, false, 0);

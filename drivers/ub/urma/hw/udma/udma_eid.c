@@ -43,7 +43,7 @@ int udma_add_one_eid(struct udma_dev *udma_dev, struct udma_ctrlq_eid_info *eid_
 				eid_info->eid_idx);
 			return -EINVAL;
 		}
-		dev_info(udma_dev->dev, "eid exist, index = %u.\n", eid_info->eid_idx);
+		dev_warn(udma_dev->dev, "eid exist, index = %u.\n", eid_info->eid_idx);
 		return 0;
 	}
 
