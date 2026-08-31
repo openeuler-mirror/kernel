@@ -74,12 +74,6 @@ static int cppc_perf_from_fbctrs(struct cppc_cpudata *cpu_data,
 				 struct cppc_perf_fb_ctrs *fb_ctrs_t0,
 				 struct cppc_perf_fb_ctrs *fb_ctrs_t1);
 
-struct fb_ctr_pair {
-	u32 cpu;
-	struct cppc_perf_fb_ctrs fb_ctrs_t0;
-	struct cppc_perf_fb_ctrs fb_ctrs_t1;
-};
-
 /**
  * __cppc_scale_freq_tick - CPPC arch_freq_scale updater for frequency invariance
  * @cppc_fi: per-cpu CPPC FIE data.
@@ -786,37 +780,9 @@ static int cppc_perf_from_fbctrs(struct cppc_cpudata *cpu_data,
 	return (reference_perf * delta_delivered) / delta_reference;
 }
 
-static int cppc_get_perf_ctrs_pair(void *val)
-{
-	struct fb_ctr_pair *fb_ctrs = val;
-	int cpu = fb_ctrs->cpu;
-	int ret;
-	ktime_t timeout;
-
-	ret = cppc_get_perf_ctrs(cpu, &fb_ctrs->fb_ctrs_t0);
-	if (ret)
-		return ret;
-
-	if (likely(!in_atomic() && !irqs_disabled())) {
-		/*
-		 * Set 1ms as sampling interval, but never schedule
-		 * to the idle task to prevent the AMU counters from
-		 * stopping working.
-		 */
-		timeout = ktime_add_ms(ktime_get(), 1);
-		while (ktime_before(ktime_get(), timeout))
-			cond_resched();
-	} else {
-		pr_warn_once("CPU%d: Get rate in atomic context", cpu);
-		udelay(2); /* 2usec delay between sampling */
-	}
-
-	return cppc_get_perf_ctrs(cpu, &fb_ctrs->fb_ctrs_t1);
-}
-
 static unsigned int cppc_cpufreq_get_rate(unsigned int cpu)
 {
-	struct fb_ctr_pair fb_ctrs = { .cpu = cpu, };
+	struct cppc_perf_fb_ctrs fb_ctrs_t0 = {0}, fb_ctrs_t1 = {0};
 	struct cpufreq_policy *policy = cpufreq_cpu_get(cpu);
 	struct cppc_cpudata *cpu_data;
 	u64 delivered_perf;
@@ -829,18 +795,17 @@ static unsigned int cppc_cpufreq_get_rate(unsigned int cpu)
 
 	cpufreq_cpu_put(policy);
 
-	if (cpu_has_amu_feat(cpu))
-		ret = smp_call_on_cpu(cpu, cppc_get_perf_ctrs_pair,
-				      &fb_ctrs, false);
-	else
-		ret = cppc_get_perf_ctrs_pair(&fb_ctrs);
+	ret = cppc_get_perf_ctrs(cpu, &fb_ctrs_t0);
+	if (ret)
+		return 0;
+	udelay(2); /* 2usec delay between sampling */
 
+	ret = cppc_get_perf_ctrs(cpu, &fb_ctrs_t1);
 	if (ret)
 		return 0;
 
-	delivered_perf = cppc_perf_from_fbctrs(cpu_data,
-					      &fb_ctrs.fb_ctrs_t0,
-					      &fb_ctrs.fb_ctrs_t1);
+	delivered_perf = cppc_perf_from_fbctrs(cpu_data, &fb_ctrs_t0,
+					       &fb_ctrs_t1);
 
 	return cppc_perf_to_khz(&cpu_data->perf_caps, delivered_perf);
 }
