@@ -225,8 +225,6 @@ static void htab_free_prealloced_timers(struct bpf_htab *htab)
 	u32 num_entries = htab->map.max_entries;
 	int i;
 
-	if (!btf_record_has_field(htab->map.record, BPF_TIMER))
-		return;
 	if (htab_has_extra_elems(htab))
 		num_entries += num_possible_cpus();
 
@@ -234,7 +232,9 @@ static void htab_free_prealloced_timers(struct bpf_htab *htab)
 		struct htab_elem *elem;
 
 		elem = get_htab_elem(htab, i);
-		bpf_obj_free_timer(htab->map.record, elem->key + round_up(htab->map.key_size, 8));
+		if (btf_record_has_field(htab->map.record, BPF_TIMER))
+			bpf_obj_free_timer(htab->map.record,
+					   elem->key + round_up(htab->map.key_size, 8));
 		cond_resched();
 	}
 }
@@ -1529,7 +1529,9 @@ static void htab_free_malloced_timers(struct bpf_htab *htab)
 
 		hlist_nulls_for_each_entry(l, n, head, hash_node) {
 			/* We only free timer on uref dropping to zero */
-			bpf_obj_free_timer(htab->map.record, l->key + round_up(htab->map.key_size, 8));
+			if (btf_record_has_field(htab->map.record, BPF_TIMER))
+				bpf_obj_free_timer(htab->map.record,
+						   l->key + round_up(htab->map.key_size, 8));
 		}
 		cond_resched_rcu();
 	}
@@ -1541,12 +1543,12 @@ static void htab_map_free_timers(struct bpf_map *map)
 	struct bpf_htab *htab = container_of(map, struct bpf_htab, map);
 
 	/* We only free timer on uref dropping to zero */
-	if (!btf_record_has_field(htab->map.record, BPF_TIMER))
-		return;
-	if (!htab_is_prealloc(htab))
-		htab_free_malloced_timers(htab);
-	else
-		htab_free_prealloced_timers(htab);
+	if (btf_record_has_field(htab->map.record, BPF_TIMER)) {
+		if (!htab_is_prealloc(htab))
+			htab_free_malloced_timers(htab);
+		else
+			htab_free_prealloced_timers(htab);
+	}
 }
 
 /* Called when map->refcnt goes to zero, either from workqueue or from syscall */
