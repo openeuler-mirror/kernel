@@ -35,8 +35,11 @@
 #define UBASE_CMD_MAX_DESC_SIZE \
 	(UBASE_CMDQ_DESC_NUM * sizeof(struct ubase_cmdq_desc))
 
-#define UBASE_MOVE_CRQ_RING_PTR(crq) \
-	((crq)->ci = ((crq)->ci + 1) % (crq)->desc_num)
+#define UBASE_MOVE_CRQ_RING_PTR(crq, n) \
+do { \
+	struct ubase_cmdq_ring *__crq = (crq); \
+	__crq->ci = (__crq->ci + (n)) % __crq->desc_num; \
+} while (0)
 
 /* Software handshake 1 register(RW) */
 #define UBASE_SW_HANDSHAKE_1_REG	0x18048

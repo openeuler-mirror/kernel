@@ -12,6 +12,8 @@
 #ifndef UBURMA_UOBJ_H
 #define UBURMA_UOBJ_H
 
+#include <linux/interrupt.h>
+
 #include "ub/urma/ubcore_types.h"
 
 enum UOBJ_CLASS_ID {
@@ -124,6 +126,9 @@ struct uburma_jfc_uobj {
 	uint32_t comp_events_reported;
 	uint32_t async_events_reported;
 	spinlock_t jfc_lock;
+	struct tasklet_struct jfce_tasklet; /* defers heavy work out of irq top-half */
+	uint64_t urma_jfc;                  /* cached jfc user handle for deferred bh */
+	uint32_t jfc_id;                    /* cached jfc id for irq stat in deferred bh */
 };
 
 struct uburma_jfc_uobj_array {
