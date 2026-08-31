@@ -577,6 +577,9 @@ static int _mlx5_vdpa_create_mr(struct mlx5_vdpa_dev *mvdev,
 {
 	int err;
 
+	if (mlx5_vdpa_max_iotlb_entries < 2)
+		return -EINVAL;
+
 	err = _mlx5_vdpa_create_dvq_mr(mvdev, iotlb, asid);
 	if (err)
 		return err;
