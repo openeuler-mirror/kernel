@@ -255,6 +255,10 @@ static void htab_free_prealloced_fields(struct bpf_htab *htab)
 
 	if (IS_ERR_OR_NULL(htab->map.record))
 		return;
+	/*
+	 * Preallocated maps do not have a bpf_mem_alloc destructor, so fully
+	 * destroy every element, including the extra elements.
+	 */
 	if (htab_has_extra_elems(htab))
 		num_entries += num_possible_cpus();
 	for (i = 0; i < num_entries; i++) {
@@ -867,19 +871,19 @@ static int htab_lru_map_gen_lookup(struct bpf_map *map,
 	return insn - insn_buf;
 }
 
-static void check_and_free_fields(struct bpf_htab *htab,
-				  struct htab_elem *elem)
+static void check_and_cancel_fields(struct bpf_htab *htab,
+				    struct htab_elem *elem)
 {
 	if (htab_is_percpu(htab)) {
 		void __percpu *pptr = htab_elem_get_ptr(elem, htab->map.key_size);
 		int cpu;
 
 		for_each_possible_cpu(cpu)
-			bpf_obj_free_fields(htab->map.record, per_cpu_ptr(pptr, cpu));
+			bpf_obj_cancel_fields(&htab->map, per_cpu_ptr(pptr, cpu));
 	} else {
 		void *map_value = htab_elem_value(elem, htab->map.key_size);
 
-		bpf_obj_free_fields(htab->map.record, map_value);
+		bpf_obj_cancel_fields(&htab->map, map_value);
 	}
 }
 
@@ -907,7 +911,7 @@ static bool htab_lru_map_delete_node(void *arg, struct bpf_lru_node *node)
 	hlist_nulls_for_each_entry_rcu(l, n, head, hash_node)
 		if (l == tgt_l) {
 			hlist_nulls_del_rcu(&l->hash_node);
-			check_and_free_fields(htab, l);
+			check_and_cancel_fields(htab, l);
 			bpf_map_dec_elem_count(&htab->map);
 			break;
 		}
@@ -978,7 +982,7 @@ find_first_elem:
 
 static void htab_elem_free(struct bpf_htab *htab, struct htab_elem *l)
 {
-	check_and_free_fields(htab, l);
+	check_and_cancel_fields(htab, l);
 
 	migrate_disable();
 	if (htab->map.map_type == BPF_MAP_TYPE_PERCPU_HASH)
@@ -1033,7 +1037,7 @@ static void free_htab_elem(struct bpf_htab *htab, struct htab_elem *l)
 
 	if (htab_is_prealloc(htab)) {
 		bpf_map_dec_elem_count(&htab->map);
-		check_and_free_fields(htab, l);
+		check_and_cancel_fields(htab, l);
 		pcpu_freelist_push(&htab->freelist, &l->fnode);
 	} else {
 		dec_elem_count(htab);
@@ -1050,7 +1054,7 @@ static void pcpu_copy_value(struct bpf_htab *htab, void __percpu *pptr,
 		/* copy true value_size bytes */
 		ptr = this_cpu_ptr(pptr);
 		copy_map_value(&htab->map, ptr, value);
-		bpf_obj_free_fields(htab->map.record, ptr);
+		bpf_obj_cancel_fields(&htab->map, ptr);
 	} else {
 		u32 size = round_up(htab->map.value_size, 8);
 		int off = 0, cpu;
@@ -1058,7 +1062,7 @@ static void pcpu_copy_value(struct bpf_htab *htab, void __percpu *pptr,
 		for_each_possible_cpu(cpu) {
 			ptr = per_cpu_ptr(pptr, cpu);
 			copy_map_value_long(&htab->map, ptr, value + off);
-			bpf_obj_free_fields(htab->map.record, ptr);
+			bpf_obj_cancel_fields(&htab->map, ptr);
 			off += size;
 		}
 	}
@@ -1276,16 +1280,16 @@ static long htab_map_update_elem(struct bpf_map *map, void *key, void *value,
 	if (l_old) {
 		hlist_nulls_del_rcu(&l_old->hash_node);
 
-		/* l_old has already been stashed in htab->extra_elems, free
-		 * its special fields before it is available for reuse. Also
-		 * save the old map pointer in htab of maps before unlock
+		/* l_old has already been stashed in htab->extra_elems, cancel
+		 * its reusable special fields before it is available for reuse.
+		 * Also save the old map pointer in htab of maps before unlock
 		 * and release it after unlock.
 		 */
 		old_map_ptr = NULL;
 		if (htab_is_prealloc(htab)) {
 			if (map->ops->map_fd_put_ptr)
 				old_map_ptr = fd_htab_map_get_ptr(map, l_old);
-			check_and_free_fields(htab, l_old);
+			check_and_cancel_fields(htab, l_old);
 		}
 	}
 	htab_unlock_bucket(htab, b, hash, flags);
@@ -1303,7 +1307,7 @@ err:
 
 static void htab_lru_push_free(struct bpf_htab *htab, struct htab_elem *elem)
 {
-	check_and_free_fields(htab, elem);
+	check_and_cancel_fields(htab, elem);
 	bpf_map_dec_elem_count(&htab->map);
 	bpf_lru_push_free(&htab->lru, &elem->lru_node);
 }
