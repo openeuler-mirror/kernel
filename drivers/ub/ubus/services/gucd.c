@@ -105,6 +105,11 @@ static void ub_setup_bus_controller(struct ub_entity *uent)
 
 	ub_set_user_info(uent);
 	vec_num_max = ub_int_type1_vec_count(uent);
+	if (!vec_num_max) {
+		ub_warn(uent, "interrupt type1 vector cnt is zero.\n");
+		return;
+	}
+
 	usi_count = ub_alloc_irq_vectors(uent, vec_num_max, vec_num_max);
 	if (usi_count < 0) {
 		ub_err(uent, "alloc irq for ub bus controller failed, usi_count=%d\n",

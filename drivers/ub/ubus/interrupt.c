@@ -56,6 +56,9 @@ u32 ub_int_type1_vec_count(struct ub_entity *uent)
 	u16 vector_num = 0;
 	int ret;
 
+	if (!(uent->cfg1_bitmap[0] & UB_INT_TYPE1_CAP_BIT))
+		return 0;
+
 	ret = ub_cfg_read_word(uent, UB_INT_TYPE1_SUP_INT_NUM, &vector_num);
 	if (ret)
 		return 0;
