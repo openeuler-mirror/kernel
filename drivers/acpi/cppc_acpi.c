@@ -1397,20 +1397,9 @@ EXPORT_SYMBOL_GPL(cppc_get_perf_caps);
 bool cppc_perf_ctrs_in_pcc_cpu(unsigned int cpu)
 {
 	struct cpc_desc *cpc_desc = per_cpu(cpc_desc_ptr, cpu);
-	struct cpc_register_resource *ref_perf_reg;
-
-	/*
-	 * If reference perf register is not supported then we should use the
-	 * nominal perf value
-	 */
-	ref_perf_reg = &cpc_desc->cpc_regs[REFERENCE_PERF];
-	if (!CPC_SUPPORTED(ref_perf_reg))
-		ref_perf_reg = &cpc_desc->cpc_regs[NOMINAL_PERF];
 
 	return CPC_IN_PCC(&cpc_desc->cpc_regs[DELIVERED_CTR]) ||
-		CPC_IN_PCC(&cpc_desc->cpc_regs[REFERENCE_CTR]) ||
-		CPC_IN_PCC(&cpc_desc->cpc_regs[CTR_WRAP_TIME]) ||
-		CPC_IN_PCC(ref_perf_reg);
+		CPC_IN_PCC(&cpc_desc->cpc_regs[REFERENCE_CTR]);
 }
 EXPORT_SYMBOL_GPL(cppc_perf_ctrs_in_pcc_cpu);
 
@@ -1462,6 +1451,31 @@ bool cppc_perf_ctrs_in_pcc(void)
 	return false;
 }
 EXPORT_SYMBOL_GPL(cppc_perf_ctrs_in_pcc);
+
+/**
+ * cppc_fb_ctrs_in_ffh - Check if any feedback counters are in a FFH region.
+ *
+ * Return: true if any of the counters are in FFH regions, false otherwise
+ */
+bool cppc_fb_ctrs_in_ffh(void)
+{
+	int cpu;
+
+	for_each_present_cpu(cpu) {
+		struct cpc_desc *cpc_desc;
+
+		cpc_desc = per_cpu(cpc_desc_ptr, cpu);
+		if (!cpc_desc)
+			continue;
+
+		if (CPC_IN_FFH(&cpc_desc->cpc_regs[DELIVERED_CTR]) ||
+		    CPC_IN_FFH(&cpc_desc->cpc_regs[REFERENCE_CTR]))
+			return true;
+	}
+
+	return false;
+}
+EXPORT_SYMBOL_GPL(cppc_fb_ctrs_in_ffh);
 
 /**
  * cppc_get_perf_ctrs - Read a CPU's performance feedback counters.

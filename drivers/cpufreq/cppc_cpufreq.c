@@ -27,6 +27,7 @@
 #include <acpi/cppc_acpi.h>
 
 static bool boost_supported;
+static bool ffh_supported;
 
 struct cppc_workaround_oem_info {
 	char oem_id[ACPI_OEM_ID_SIZE + 1];
@@ -73,6 +74,12 @@ static struct kthread_worker *kworker_fie;
 static int cppc_perf_from_fbctrs(struct cppc_cpudata *cpu_data,
 				 struct cppc_perf_fb_ctrs *fb_ctrs_t0,
 				 struct cppc_perf_fb_ctrs *fb_ctrs_t1);
+
+struct fb_ctr_pair {
+	u32 cpu;
+	struct cppc_perf_fb_ctrs *fb_ctrs_t0;
+	struct cppc_perf_fb_ctrs *fb_ctrs_t1;
+};
 
 /**
  * __cppc_scale_freq_tick - CPPC arch_freq_scale updater for frequency invariance
@@ -801,6 +808,47 @@ static int cppc_get_perf_ctrs_sample(int cpu,
 	return cppc_get_perf_ctrs(cpu, fb_ctrs_t1);
 }
 
+static int cppc_get_perf_ctrs_pair(void *val)
+{
+	struct fb_ctr_pair *fb_ctrs = val;
+	int cpu = fb_ctrs->cpu;
+	int ret;
+	ktime_t timeout;
+
+	ret = cppc_get_perf_ctrs(cpu, fb_ctrs->fb_ctrs_t0);
+	if (ret)
+		return ret;
+
+	if (likely(!in_atomic() && !irqs_disabled())) {
+		/*
+		 * Set 1ms as sampling interval, but never schedule
+		 * to the idle task to prevent the AMU counters from
+		 * stopping working.
+		 */
+		timeout = ktime_add_ms(ktime_get(), 1);
+		while (ktime_before(ktime_get(), timeout))
+			cond_resched();
+	} else {
+		pr_warn_once("CPU%d: Get rate in atomic context", cpu);
+		udelay(2); /* 2usec delay between sampling */
+	}
+
+	return cppc_get_perf_ctrs(cpu, fb_ctrs->fb_ctrs_t1);
+}
+
+static int cppc_get_perf_ctrs_on_cpu(unsigned int cpu,
+				     struct cppc_perf_fb_ctrs *fb_ctrs_t0,
+				     struct cppc_perf_fb_ctrs *fb_ctrs_t1)
+{
+	struct fb_ctr_pair fb_ctrs = {
+		.cpu = cpu,
+		.fb_ctrs_t0 = fb_ctrs_t0,
+		.fb_ctrs_t1 = fb_ctrs_t1,
+	};
+
+	return smp_call_on_cpu(cpu, cppc_get_perf_ctrs_pair, &fb_ctrs, false);
+}
+
 static unsigned int cppc_cpufreq_get_rate(unsigned int cpu)
 {
 	struct cppc_perf_fb_ctrs fb_ctrs_t0 = {0}, fb_ctrs_t1 = {0};
@@ -816,12 +864,24 @@ static unsigned int cppc_cpufreq_get_rate(unsigned int cpu)
 
 	cpufreq_cpu_put(policy);
 
-	ret = cppc_get_perf_ctrs(cpu, &fb_ctrs_t0);
-	if (ret)
-		return 0;
-	udelay(2); /* 2usec delay between sampling */
+	/*
+	 * Pick the feedback-counter sampling strategy from how BIOS exposes
+	 * the counters (ffh_supported is cached once in cppc_cpufreq_init):
+	 *
+	 * - FFH : cppc_get_perf_ctrs() reads both counters in a single IPI on
+	 *   the target core, so they are sampled together and a short udelay(2)
+	 *   window suffices.
+	 *
+	 * - non-FFH (PCC / system memory): run t0/window/t1 on the target core
+	 *   via smp_call_on_cpu() and wait 1ms with cond_resched() to amortize
+	 *   cpc_read() latency jitter under memory pressure (udelay(2) in atomic
+	 *   context).
+	 */
+	if (ffh_supported)
+		ret = cppc_get_perf_ctrs_sample(cpu, &fb_ctrs_t0, &fb_ctrs_t1);
+	else
+		ret = cppc_get_perf_ctrs_on_cpu(cpu, &fb_ctrs_t0, &fb_ctrs_t1);
 
-	ret = cppc_get_perf_ctrs(cpu, &fb_ctrs_t1);
 	if (ret)
 		goto out_invalid_counters;
 
@@ -1066,6 +1126,8 @@ static int __init cppc_cpufreq_init(void)
 	cppc_check_hisi_workaround();
 	cppc_freq_invariance_init();
 	populate_efficiency_class();
+
+	ffh_supported = cppc_fb_ctrs_in_ffh();
 
 	ret = cpufreq_register_driver(&cppc_cpufreq_driver);
 	if (ret)
