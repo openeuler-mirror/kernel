@@ -12,6 +12,7 @@
 #include <ub/ubus/ub-mem-decoder.h>
 
 #define MAX_RAS_ERROR_SOURCES_CNT 256
+#define EVENT_INFO_NUM 16
 
 void ub_mem_decoder_init(struct ub_entity *uent);
 void ub_mem_decoder_uninit(struct ub_entity *uent);
@@ -24,6 +25,17 @@ struct ub_mem_ras_err_info {
 	enum ras_err_type type;
 	u64 val0; /* addr or transaction id + port bitmap or 0*/
 	u64 val1; /* port bitmap or 0 */
+};
+
+struct ub_mem_event_info {
+	u32 status0;
+	u32 status1;
+	u32 info[EVENT_INFO_NUM];
+};
+
+struct ub_mem_event_ctx {
+	DECLARE_KFIFO(event_fifo, struct ub_mem_event_info,
+		      MAX_RAS_ERROR_SOURCES_CNT);
 };
 
 struct ub_mem_ras_ctx {
@@ -55,7 +67,7 @@ struct ub_mem_device {
 	const struct ub_mem_device_ops *ops;
 	void *priv_data;
 
-	KABI_RESERVE(1)
+	KABI_USE(1, struct ub_mem_event_ctx *event_ctx)
 	KABI_RESERVE(2)
 };
 
