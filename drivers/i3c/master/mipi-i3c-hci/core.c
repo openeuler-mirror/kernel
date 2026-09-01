@@ -546,6 +546,8 @@ static irqreturn_t i3c_hci_irq_handler(int irq, void *dev_id)
 	irqreturn_t result = IRQ_NONE;
 	u32 val;
 
+	guard(spinlock)(&hci->lock);
+
 	val = reg_read(INTR_STATUS);
 	DBG("INTR_STATUS = %#x", val);
 
