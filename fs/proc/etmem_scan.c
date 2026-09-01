@@ -1054,11 +1054,9 @@ static int page_scan_release(struct inode *inode, struct file *file)
 		ret = -EINVAL;
 		goto out;
 	}
-#ifdef CONFIG_X86_64
 	write_lock(&kvm->mmu_lock);
 	kvm_flush_remote_tlbs(kvm);
 	write_unlock(&kvm->mmu_lock);
-#endif
 
 out:
 	module_put(THIS_MODULE);
