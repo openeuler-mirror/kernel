@@ -982,14 +982,11 @@ static bool hci_pio_irq_handler(struct i3c_hci *hci, unsigned int unused)
 	struct hci_pio_data *pio = hci->io_data;
 	u32 status;
 
-	spin_lock(&hci->lock);
 	status = pio_reg_read(INTR_STATUS);
 	DBG("(in) status: %#x/%#x", status, pio->enabled_irqs);
 	status &= pio->enabled_irqs | STAT_LATENCY_WARNINGS;
-	if (!status) {
-		spin_unlock(&hci->lock);
+	if (!status)
 		return false;
-	}
 
 	if (status & STAT_IBI_STATUS_THLD)
 		hci_pio_process_ibi(hci, pio);
@@ -1023,7 +1020,6 @@ static bool hci_pio_irq_handler(struct i3c_hci *hci, unsigned int unused)
 	pio_reg_write(INTR_SIGNAL_ENABLE, pio->enabled_irqs);
 	DBG("(out) status: %#x/%#x",
 	    pio_reg_read(INTR_STATUS), pio_reg_read(INTR_SIGNAL_ENABLE));
-	spin_unlock(&hci->lock);
 	return true;
 }
 
