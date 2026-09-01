@@ -8662,7 +8662,7 @@ CONFIG_SECURITY_LOCKDOWN_LSM_EARLY=y
 CONFIG_LOCK_DOWN_KERNEL_FORCE_NONE=y
 # CONFIG_LOCK_DOWN_KERNEL_FORCE_INTEGRITY is not set
 # CONFIG_LOCK_DOWN_KERNEL_FORCE_CONFIDENTIALITY is not set
-# CONFIG_SECURITY_LANDLOCK is not set
+CONFIG_SECURITY_LANDLOCK=y
 CONFIG_INTEGRITY=y
 CONFIG_INTEGRITY_SIGNATURE=y
 CONFIG_INTEGRITY_ASYMMETRIC_KEYS=y
@@ -8719,7 +8719,7 @@ CONFIG_EVM_X509_PATH="/etc/keys/x509_evm.der"
 CONFIG_DEFAULT_SECURITY_SELINUX=y
 # CONFIG_DEFAULT_SECURITY_APPARMOR is not set
 # CONFIG_DEFAULT_SECURITY_DAC is not set
-CONFIG_LSM="lockdown,yama,loadpin,safesetid,integrity,selinux,smack,tomoyo,apparmor,bpf"
+CONFIG_LSM="landlock,lockdown,yama,loadpin,safesetid,integrity,selinux,smack,tomoyo,apparmor,bpf"
 
 #
 # Kernel hardening options
