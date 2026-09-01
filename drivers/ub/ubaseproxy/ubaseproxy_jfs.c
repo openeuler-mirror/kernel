@@ -965,7 +965,7 @@ ubaseproxy_init_jetty_create_mask(struct ubaseproxy_jetty_default *jetty_default
 		/* DW0-DW15 */
 		GENMASK(18, 16), GENMASK(11, 9), 0, GENMASK(31, 0), 0,
 		GENMASK(11, 8), GENMASK(31, 10), 0, 0,
-		GENMASK(31, 22) | GENMASK(1, 1), GENMASK(31, 24),
+		GENMASK(31, 22) | GENMASK(1, 0), GENMASK(31, 24),
 		GENMASK(31, 20), GENMASK(23, 20), 0, 0, GENMASK(31, 0),
 		/* DW16-DW21 */
 		GENMASK(31, 16), GENMASK(31, 0), GENMASK(31, 0), GENMASK(31, 0),
