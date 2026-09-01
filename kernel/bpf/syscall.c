@@ -630,6 +630,11 @@ void bpf_obj_free_timer(const struct btf_record *rec, void *obj)
 
 extern void __bpf_obj_drop_impl(void *p, const struct btf_record *rec);
 
+void bpf_obj_cancel_fields(struct bpf_map *map, void *obj)
+{
+	bpf_map_free_internal_structs(map, obj);
+}
+
 void bpf_obj_free_fields(const struct btf_record *rec, void *obj)
 {
 	const struct btf_field *fields;

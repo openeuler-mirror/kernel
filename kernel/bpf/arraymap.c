@@ -336,7 +336,7 @@ static long array_map_update_elem(struct bpf_map *map, void *key, void *value,
 	if (array->map.map_type == BPF_MAP_TYPE_PERCPU_ARRAY) {
 		val = this_cpu_ptr(array->pptrs[index & array->index_mask]);
 		copy_map_value(map, val, value);
-		bpf_obj_free_fields(array->map.record, val);
+		bpf_obj_cancel_fields(map, val);
 	} else {
 		val = array->value +
 			(u64)array->elem_size * (index & array->index_mask);
@@ -344,7 +344,7 @@ static long array_map_update_elem(struct bpf_map *map, void *key, void *value,
 			copy_map_value_locked(map, val, value, false);
 		else
 			copy_map_value(map, val, value);
-		bpf_obj_free_fields(array->map.record, val);
+		bpf_obj_cancel_fields(map, val);
 	}
 	return 0;
 }
@@ -381,7 +381,7 @@ int bpf_percpu_array_update(struct bpf_map *map, void *key, void *value,
 	pptr = array->pptrs[index & array->index_mask];
 	for_each_possible_cpu(cpu) {
 		copy_map_value_long(map, per_cpu_ptr(pptr, cpu), value + off);
-		bpf_obj_free_fields(array->map.record, per_cpu_ptr(pptr, cpu));
+		bpf_obj_cancel_fields(map, per_cpu_ptr(pptr, cpu));
 		off += size;
 	}
 	rcu_read_unlock();
@@ -404,12 +404,12 @@ static void array_map_free_timers(struct bpf_map *map)
 	struct bpf_array *array = container_of(map, struct bpf_array, map);
 	int i;
 
-	/* We don't reset or free fields other than timer on uref dropping to zero. */
-	if (!btf_record_has_field(map->record, BPF_TIMER))
+	/* We only free internal structs on uref dropping to zero */
+	if (!bpf_map_has_internal_structs(map))
 		return;
 
 	for (i = 0; i < array->map.max_entries; i++)
-		bpf_obj_free_timer(map->record, array_map_elem_ptr(array, i));
+		bpf_map_free_internal_structs(map, array_map_elem_ptr(array, i));
 }
 
 /* Called when map->refcnt goes to zero, either from workqueue or from syscall */

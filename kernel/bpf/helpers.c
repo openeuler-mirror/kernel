@@ -2905,3 +2905,9 @@ static int __init kfunc_init(void)
 }
 
 late_initcall(kfunc_init);
+
+void bpf_map_free_internal_structs(struct bpf_map *map, void *val)
+{
+	if (btf_record_has_field(map->record, BPF_TIMER))
+		bpf_obj_free_timer(map->record, val);
+}
