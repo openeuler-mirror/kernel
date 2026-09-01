@@ -129,7 +129,7 @@ struct Qdisc {
 	netdevice_tracker	dev_tracker;
 
 	KABI_USE(1, int owner)
-	KABI_RESERVE(2)
+	KABI_USE(2, int depth)
 
 	/* private data */
 	long privdata[] ____cacheline_aligned;
