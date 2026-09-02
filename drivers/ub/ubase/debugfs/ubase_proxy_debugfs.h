@@ -8,5 +8,6 @@
 #define __UBASE_PROXY_DEBUGFS_H__
 
 int ubase_dbg_dump_ue_isolated_state(struct seq_file *s, void *data);
+int ubase_dbg_dump_ue_cmdq_ratelimit_record(struct seq_file *s, void *data);
 
 #endif /* __UBASE_PROXY_DEBUGFS_H__ */
