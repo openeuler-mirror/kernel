@@ -12,6 +12,7 @@
 #include <linux/kfifo.h>
 #include <linux/time.h>
 #include <linux/netdevice.h>
+#include <linux/printk.h>
 #include <ub/ubase/ubase_comm_stats.h>
 #include <ub/ubase/ubase_comm_cmd.h>
 #include <ub/ubase/ubase_comm_dev.h>
@@ -25,6 +26,7 @@
 #define UBCTL_WRITE false
 #define UBCTL_PORT_TYPE_ETH 0U
 #define UBCTL_PORT_TYPE_UB 1U
+#define MODULE_UBCTL "ubctl"
 
 #define ubctl_err(ucdev, format, ...) \
 	dev_err(&ucdev->fwctl.dev, format, ##__VA_ARGS__)
@@ -41,9 +43,8 @@
 	dev_warn(&ucdev->fwctl.dev, "PID %u: " format, current->pid, \
 		##__VA_ARGS__)
 
-#define ubctl_dev_warn(dev, format, ...) \
-	dev_warn(dev, "PID %u: " format, current->pid, \
-		##__VA_ARGS__)
+#define ubctl_nodev_warn(fmt, ...) pr_warn(MODULE_UBCTL ": <%s:%d>" fmt, \
+		__func__, __LINE__, ##__VA_ARGS__)
 
 #define UBCTL_GET_PHY_ADDR(high, low) ((((u64)(high)) << 32) | (low))
 #define UBCTL_EXTRACT_BITS(value, start, end) \
