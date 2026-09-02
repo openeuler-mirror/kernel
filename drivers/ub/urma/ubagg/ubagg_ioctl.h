@@ -191,6 +191,12 @@ enum ubagg_userctl_opcode {
 	GET_SEG_CTX = 10,
 	FAILBACK_START = 11,
 	FAILBACK_RESULT = 12,
+	GET_TOPO_BY_EID = 13,
+};
+
+struct ubagg_topo_by_eid_in {
+	/* Can be an aggregation, primary, or port EID. */
+	union ubcore_eid eid;
 };
 
 struct ubagg_physical_device_out {
