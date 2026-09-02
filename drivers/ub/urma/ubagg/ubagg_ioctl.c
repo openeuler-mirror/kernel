@@ -250,6 +250,55 @@ static int ubagg_get_topo_info(struct ubcore_device *dev,
 	return 0;
 }
 
+static int ubagg_get_topo_by_eid_user_ctl(struct ubcore_user_ctl *user_ctl)
+{
+	struct ubagg_topo_by_eid_out out;
+	struct ubagg_topo_by_eid_in in;
+	int ret;
+
+	if (user_ctl->in.addr == 0 ||
+	    user_ctl->in.len < sizeof(struct ubagg_topo_by_eid_in)) {
+		ubagg_log_err("Invalid get topo by eid input, addr:%llu, len:%u\n",
+			      user_ctl->in.addr, user_ctl->in.len);
+		return -EINVAL;
+	}
+
+	if (copy_from_user(&in,
+			   (void __user *)(uintptr_t)user_ctl->in.addr,
+			   sizeof(in)) != 0) {
+		ubagg_log_err("Failed to copy get topo by eid input\n");
+		return -EFAULT;
+	}
+
+	if (user_ctl->out.addr == 0) {
+		ubagg_log_err("Invalid get topo by eid output addr\n");
+		return -EINVAL;
+	}
+	if (user_ctl->out.len < sizeof(out)) {
+		ubagg_log_err(
+			"ubagg user ctl has no enough space, buffer size:%u, needed size:%lu",
+			user_ctl->out.len, sizeof(out));
+		user_ctl->out.len = sizeof(out);
+		return -ENOSPC;
+	}
+
+	ret = ubagg_get_topo_by_eid(&in.eid, &out);
+	if (ret != 0) {
+		ubagg_log_err("Failed to get topo by eid: " EID_FMT ", ret:%d\n",
+			      EID_ARGS(in.eid), ret);
+		return ret;
+	}
+
+	if (copy_to_user((void __user *)(uintptr_t)user_ctl->out.addr,
+			 &out, sizeof(out)) != 0) {
+		ubagg_log_err("Failed to copy get topo by eid output\n");
+		return -EFAULT;
+	}
+
+	user_ctl->out.len = sizeof(out);
+	return 0;
+}
+
 static int ubagg_get_jfr_id(struct ubcore_device *dev,
 			    struct ubcore_user_ctl *user_ctl)
 {
@@ -508,6 +557,9 @@ int ubagg_user_ctl(struct ubcore_device *dev, struct ubcore_user_ctl *user_ctl)
 		break;
 	case FAILBACK_RESULT:
 		ret = ubagg_fb_user_ctl_result(dev, user_ctl);
+		break;
+	case GET_TOPO_BY_EID:
+		ret = ubagg_get_topo_by_eid_user_ctl(user_ctl);
 		break;
 	default:
 		ubagg_log_err("unsupported ubagg userctl opcde:%u",
@@ -1472,6 +1524,7 @@ static int ubagg_cmd_set_topo_info(struct ubagg_cmd_hdr *hdr)
 		ubagg_log_err("Invalid set_topo_info param\n");
 		return -EINVAL;
 	}
+
 	topo_map = get_global_ubagg_map();
 	if (topo_map == NULL) {
 		topo_map = create_global_ubagg_topo_map(arg.in.topo,
@@ -1487,9 +1540,15 @@ static int ubagg_cmd_set_topo_info(struct ubagg_cmd_hdr *hdr)
 		if (ubagg_update_topo_info(new_topo_map, topo_map) != 0) {
 			delete_ubagg_topo_map(new_topo_map);
 			ubagg_log_err("Failed to update topo info\n");
-			return -1;
+			return -EINVAL;
 		}
 		delete_ubagg_topo_map(new_topo_map);
+	}
+
+	ret = ubagg_rebuild_topo_eid_index(topo_map);
+	if (ret != 0) {
+		ubagg_log_err("Failed to rebuild topo eid index, ret:%d\n", ret);
+		return ret;
 	}
 
 	print_topo_map(topo_map);
