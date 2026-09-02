@@ -368,12 +368,10 @@ static int ubctl_add_udma_device(struct ubcore_device *ubc_dev)
 		return -EFAULT;
 
 	udev = to_udma_dev(ubc_dev);
-	if (!udev)
-		ubctl_dev_warn(&ubc_dev->dev, "udev not obtained.\n");
 
 	ret = ubctl_add_device(&udev->comdev.adev->dev, udev->dev_name);
 	if (ret)
-		ubctl_dev_warn(udev->dev, "device not added, ret = %d.\n", ret);
+		ubctl_nodev_warn("device not added, ret = %d.\n", ret);
 
 	return ret;
 }
