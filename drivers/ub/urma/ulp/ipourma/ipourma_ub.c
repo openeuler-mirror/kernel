@@ -119,9 +119,8 @@ static inline void ipourma_build_tjetty_cfg(struct ubcore_tjetty_cfg *tjetty_cfg
 }
 
 static struct ubcore_tjetty *ipourma_import_jetty(struct net_device *dev,
-	union ubcore_eid *dst_eid, uint32_t jetty_id)
+	union ubcore_eid *dst_eid, uint32_t jetty_id, uint32_t eid_index)
 {
-	u32 eid_index = jetty_id - IPOURMA_WELL_KNOWN_JETTY_ID;
 	struct ipourma_dev_priv *priv = netdev_priv(dev);
 	struct ubcore_device *urma_dev = priv->urma_dev;
 	struct ubcore_tjetty_cfg tjetty_cfg = { 0 };
@@ -160,7 +159,7 @@ static struct ipourma_tjetty_hash_node *ipourma_locate_tjetty_node(
 	uint32_t hash_key = hash_eids(src_eid, dst_eid, tjetty_hmap->hash_seed);
 	struct ipourma_tjetty_hash_node *tjetty_node = NULL;
 
-	hash_key = hash_key & (IPOURMA_TJETTY_HMAP_SIZE - 1);
+	hash_key = hash_key % IPOURMA_TJETTY_HMAP_SIZE;
 	if (!lock_free)
 		spin_lock(&tjetty_lru->lock);
 	hlist_for_each_entry(tjetty_node, &tjetty_hmap->buckets[hash_key], hlist) {
@@ -185,7 +184,7 @@ static void ipourma_insert_tjetty_node(struct ipourma_tjetty_lru *tjetty_lru,
 	/* newly imported jetty has been checked before the calling of insert function */
 	uint32_t hash_key = hash_eids(&tjetty_node->key[0], &tjetty_node->key[1], hash_seed);
 
-	hash_key = hash_key & (IPOURMA_TJETTY_HMAP_SIZE - 1);
+	hash_key = hash_key % IPOURMA_TJETTY_HMAP_SIZE;
 	spin_lock(&tjetty_lru->lock);
 	hlist_add_head(&tjetty_node->hlist, &tjetty_hmap->buckets[hash_key]);
 	list_add(&tjetty_node->lru_list, &tjetty_lru->list);
@@ -280,8 +279,9 @@ void ipourma_init_tjetty_aging_work(struct ipourma_tjetty_lru *tjetty_lru)
 	tjetty_lru->tjetty_aging_interval_s = IPOURMA_TJETTY_CB_S;
 	tjetty_lru->tjetty_aging_timeout_s = IPOURMA_TJETTY_TIMEOUT_S;
 	INIT_DELAYED_WORK(work, tjetty_aging_callback);
-	schedule_delayed_work(work,
-		msecs_to_jiffies((u32)tjetty_lru->tjetty_aging_interval_s * MSEC_PER_SEC));
+	if (ipourma_tjetty_aging_en)
+		schedule_delayed_work(work,
+			msecs_to_jiffies((u32)tjetty_lru->tjetty_aging_interval_s * MSEC_PER_SEC));
 	spin_unlock_irqrestore(&tjetty_lru->lock, flags);
 }
 
@@ -299,11 +299,11 @@ static struct ubcore_tjetty *ipourma_import_new_tjetty(
 {
 	if (IS_ERR_OR_NULL(priv) || IS_ERR_OR_NULL(tx_req))
 		goto nullptr_err;
-	u32 eid_index = tx_req->eid_index;
-	union ubcore_eid src_eid = priv->eid_info[eid_index].eid;
+	u32 jetty_index = tx_req->jetty_index;
+	union ubcore_eid src_eid = tx_req->src_eid;
 	union ubcore_eid dst_eid = tx_req->dst_eid;
 	struct ipourma_tjetty_hash_node *tjetty_node = NULL;
-	u32 jetty_id = eid_index + IPOURMA_WELL_KNOWN_JETTY_ID;
+	u32 jetty_id = jetty_index + IPOURMA_WELL_KNOWN_JETTY_ID;
 
 	tjetty_node = kzalloc(sizeof(struct ipourma_tjetty_hash_node), GFP_KERNEL);
 	if (IS_ERR_OR_NULL(tjetty_node)) {
@@ -316,7 +316,8 @@ static struct ubcore_tjetty *ipourma_import_new_tjetty(
 	tjetty_node->key[1] = dst_eid;
 	tjetty_node->tjetty_lru = &priv->tjetty_lru;
 	INIT_WORK(&tjetty_node->unimport_work, ipourma_unimport_tjetty_cb);
-	tjetty_node->tjetty = ipourma_import_jetty(priv->dev, &dst_eid, jetty_id);
+	tjetty_node->tjetty = ipourma_import_jetty(priv->dev, &dst_eid, jetty_id,
+						(u32)READ_ONCE(priv->anchor_eid_idx));
 	if (IS_ERR_OR_NULL(tjetty_node->tjetty))
 		goto ipourma_import_jetty_failed;
 
@@ -334,27 +335,27 @@ tjetty_node_zalloc_failed:
 static void ipourma_advance_tx_tail(struct ipourma_dev_priv *priv,
 	struct ipourma_tx_buf *tx_req)
 {
-	u32 i = 0, eid_idx = tx_req->eid_index;
+	u32 i = 0, jetty_idx = tx_req->jetty_index;
 	unsigned long flags;
 
-	spin_lock_irqsave(&priv->tx_ring_locks[eid_idx], flags);
+	spin_lock_irqsave(&priv->tx_ring_locks[jetty_idx], flags);
 	tx_req->tx_buf_in_use = 0;
-	for (i = priv->tx_tail[eid_idx] % ipourma_tx_ring_size;
-		priv->tx_tail[eid_idx] != priv->tx_head[eid_idx];
-		i = (i + 1) % ipourma_tx_ring_size) {
-		if (priv->tx_ring[eid_idx][i].tx_buf_in_use == 1)
+	for (i = priv->tx_tail[jetty_idx] % priv->tx_ring_size;
+		priv->tx_tail[jetty_idx] != priv->tx_head[jetty_idx];
+		i = (i + 1) % priv->tx_ring_size) {
+		if (priv->tx_ring[jetty_idx][i].tx_buf_in_use == 1)
 			break;
-		priv->tx_tail[eid_idx]++;
+		priv->tx_tail[jetty_idx]++;
 	}
-	if (unlikely(priv->tx_ring_is_full[eid_idx] &&
+	if (unlikely(priv->tx_ring_is_full[jetty_idx] &&
 		test_bit(IPOURMA_DEV_ADMIN_UP, &priv->flags)) &&
-		priv->tx_head[eid_idx] - priv->tx_tail[eid_idx] <= (ipourma_tx_ring_size >> 1)) {
-		priv->tx_ring_is_full[eid_idx] = false;
+		priv->tx_head[jetty_idx] - priv->tx_tail[jetty_idx] <= (priv->tx_ring_size >> 1)) {
+		priv->tx_ring_is_full[jetty_idx] = false;
 		atomic_sub(1, &priv->tx_ring_blocked);
 		if (atomic_read(&priv->tx_ring_blocked) == 0)
 			netif_wake_queue(priv->dev);
 	}
-	spin_unlock_irqrestore(&priv->tx_ring_locks[eid_idx], flags);
+	spin_unlock_irqrestore(&priv->tx_ring_locks[jetty_idx], flags);
 }
 
 static int ipourma_update_wr(struct net_device *dev, struct ipourma_tx_buf *tx_req)
@@ -365,7 +366,7 @@ static int ipourma_update_wr(struct net_device *dev, struct ipourma_tx_buf *tx_r
 	union ubcore_eid *src_eid, *dst_eid;
 
 	if (IS_ERR_OR_NULL(tx_req->tjetty)) {
-		src_eid = &priv->eid_info[tx_req->eid_index].eid;
+		src_eid = &tx_req->src_eid;
 		dst_eid = &tx_req->dst_eid;
 		tjetty_node = ipourma_locate_tjetty_node(&priv->tjetty_lru,
 								src_eid, dst_eid, false);
@@ -401,14 +402,14 @@ void ipourma_post_send(struct work_struct *work)
 		return;
 
 	priv->runtime_stats.tx_stats.post_send_start++;
-	pr_debug("post_send start, idx %u, jetty %u\n", tx_req->idx, tx_req->eid_index);
+	pr_debug("post_send start, idx %u, jetty %u\n", tx_req->idx, tx_req->jetty_index);
 	ret = ipourma_prepare_tx_data(priv->urma_dev, priv, tx_req);
 	if (ret != IPOURMA_OK)
 		goto free_skb_out;
 	ret = ipourma_update_wr(priv->dev, tx_req);
 	if (unlikely(ret != 0))
 		goto free_skb_out;
-	ret = ubcore_post_jetty_send_wr(priv->jetty[tx_req->eid_index],
+	ret = ubcore_post_jetty_send_wr(priv->jetty[tx_req->jetty_index],
 								&tx_req->tx_wr, &jfs_bad_wr);
 	if (unlikely(ret != 0)) {
 		priv->runtime_stats.tx_stats.send_wr_failed++;
@@ -417,7 +418,7 @@ void ipourma_post_send(struct work_struct *work)
 		goto free_skb_out;
 	}
 	priv->runtime_stats.tx_stats.pass_to_ub++;
-	pr_debug("post_send finish, idx %u, jetty %u\n", tx_req->idx, tx_req->eid_index);
+	pr_debug("post_send finish, idx %u, jetty %u\n", tx_req->idx, tx_req->jetty_index);
 	return;
 free_skb_out:
 	if (!IS_ERR_OR_NULL(tx_req->skb))
@@ -430,7 +431,7 @@ static inline int ipourma_get_eid_index(struct net_device *dev, union ubcore_eid
 {
 	struct ipourma_dev_priv *priv = netdev_priv(dev);
 
-	for (u32 i = 0; i < IPOURMA_MAX_EID_CNT; i++) {
+	for (u32 i = 0; i < UBCORE_MAX_SIP; i++) {
 		if (!eid_is_empty(&priv->eid_info[i].eid)
 				&& ipourma_are_eids_equal(&priv->eid_info[i].eid, eid))
 			return i;
@@ -490,10 +491,10 @@ int ipourma_register_rx_segments(struct net_device *dev,
 	u32 blk_idx;
 	u32 i;
 
-	blk_idx = rx_req->idx * priv->skb_buf_size / ipourma_register_seg_size;
+	blk_idx = rx_req->idx / priv->rx_bufs_per_blk;
 
 	for (i = 0; i < IPOURMA_MAX_RX_SGES; i++) {
-		rx_req->seg[i] = priv->ipourma_ub_rx_seg[rx_req->eid_index][blk_idx];
+		rx_req->seg[i] = priv->ipourma_ub_rx_seg[rx_req->jetty_index][blk_idx];
 		/* FIME: deal with partial failures */
 		if (IS_ERR_OR_NULL(rx_req->seg[i])) {
 			priv->runtime_stats.rx_stats.register_seg_failed++;
@@ -530,7 +531,7 @@ int ipourma_xmit(struct net_device *dev, struct sk_buff *skb,
 	struct ipourma_dev_priv *priv = netdev_priv(dev);
 	struct ipourma_tx_buf *tx_req;
 	int ret = IPOURMA_OK;
-	u32 eid_idx;
+	u32 jetty_idx = 0;
 	u32 tx_idx;
 
 	ret = ipourma_add_header(skb);
@@ -547,7 +548,6 @@ int ipourma_xmit(struct net_device *dev, struct sk_buff *skb,
 			src_eid->in6.interface_id);
 		return IPOURMA_SRC_IP_ADDR_EID_MISMATCH;
 	}
-	eid_idx = (u32)ret;
 	ret = IPOURMA_OK;
 	if (spin_trylock(&priv->tjetty_lru.lock)) {
 		tjetty_node = ipourma_locate_tjetty_node(&priv->tjetty_lru, src_eid, dst_eid, true);
@@ -555,29 +555,32 @@ int ipourma_xmit(struct net_device *dev, struct sk_buff *skb,
 	}
 
 	// enqueue the skb
-	spin_lock(&priv->tx_ring_locks[eid_idx]);
-	if (priv->tx_ring_is_full[eid_idx]) {
-		spin_unlock(&priv->tx_ring_locks[eid_idx]);
+	if (IS_ERR_OR_NULL(priv->tx_ring[jetty_idx]))
+		return IPOURMA_ALLOC_TX_RING_FAILED;
+	spin_lock(&priv->tx_ring_locks[jetty_idx]);
+	if (priv->tx_ring_is_full[jetty_idx]) {
+		spin_unlock(&priv->tx_ring_locks[jetty_idx]);
 		priv->runtime_stats.tx_stats.tx_ring_full++;
 		return IPOURMA_TX_RING_FULL;
 	}
-	tx_idx = priv->tx_head[eid_idx] % ipourma_tx_ring_size;
-	tx_req = &priv->tx_ring[eid_idx][tx_idx];
+	tx_idx = priv->tx_head[jetty_idx] % priv->tx_ring_size;
+	tx_req = &priv->tx_ring[jetty_idx][tx_idx];
 	tx_req->tx_buf_in_use = 1;
-	if ((priv->tx_head[eid_idx] - priv->tx_tail[eid_idx]) == ipourma_tx_ring_size - 1) {
+	if ((priv->tx_head[jetty_idx] - priv->tx_tail[jetty_idx]) == priv->tx_ring_size - 1) {
 		/* tx ring is full, notify the upper layer */
-		priv->tx_ring_is_full[eid_idx] = true;
+		priv->tx_ring_is_full[jetty_idx] = true;
 		atomic_add(1, &priv->tx_ring_blocked);
 		netif_stop_queue(dev);
 		netdev_dbg(dev, "%s: head = %u, tail = %u\n",
 					ipourma_err_desc(IPOURMA_TX_RING_FULL),
-					priv->tx_head[eid_idx], priv->tx_tail[eid_idx]);
+					priv->tx_head[jetty_idx], priv->tx_tail[jetty_idx]);
 	}
-	priv->tx_head[eid_idx]++;
-	spin_unlock(&priv->tx_ring_locks[eid_idx]);
+	priv->tx_head[jetty_idx]++;
+	spin_unlock(&priv->tx_ring_locks[jetty_idx]);
 	tx_req->skb = skb;
 	tx_req->dst_eid = *dst_eid;
-	tx_req->eid_index = eid_idx;
+	tx_req->src_eid = *src_eid;
+	tx_req->jetty_index = jetty_idx;
 	tx_req->tjetty = IS_ERR_OR_NULL(tjetty_node) ? NULL : tjetty_node->tjetty;
 
 	/* take the ownership of skb */
@@ -613,7 +616,7 @@ static struct sk_buff *ipourma_alloc_rx_skb(struct net_device *dev)
 	return skb;
 }
 
-static int ipourma_alloc_rx_buffer(struct net_device *dev, u32 eid_idx, u32 idx)
+static int ipourma_alloc_rx_buffer(struct net_device *dev, u32 jetty_idx, u32 idx)
 {
 	struct ipourma_dev_priv *priv = netdev_priv(dev);
 	struct ubcore_seg_cfg cfg = { 0 };
@@ -624,34 +627,35 @@ static int ipourma_alloc_rx_buffer(struct net_device *dev, u32 eid_idx, u32 idx)
 	if (IS_ERR_OR_NULL(skb_pass_up))
 		return IPOURMA_ALLOC_RX_SKB_FAILED;
 
-	blk_idx = idx * priv->skb_buf_size / ipourma_register_seg_size;
-	offset = (idx * priv->skb_buf_size) % ipourma_register_seg_size;
-	priv->rx_ring[eid_idx][idx].buf_aligned = priv->rx_buf_aligned[eid_idx][blk_idx] + offset;
+	blk_idx = idx / priv->rx_bufs_per_blk;
+	offset = (idx % priv->rx_bufs_per_blk) * priv->skb_buf_size;
+	priv->rx_ring[jetty_idx][idx].buf_aligned =
+		priv->rx_buf_aligned[jetty_idx][blk_idx] + offset;
 
-	if (ipourma_register_rx_segments(dev, &cfg, &priv->rx_ring[eid_idx][idx])
+	if (ipourma_register_rx_segments(dev, &cfg, &priv->rx_ring[jetty_idx][idx])
 			!= IPOURMA_OK) {
 		dev_kfree_skb_any(skb_pass_up);
 		return IPOURMA_REGISTER_SEG_FAILED;
 	}
 
-	priv->rx_ring[eid_idx][idx].skb_pass_up = skb_pass_up;
+	priv->rx_ring[jetty_idx][idx].skb_pass_up = skb_pass_up;
 	pr_skb_head_plus_linear(skb_pass_up, "Alloced rx buffer skb_pass_up");
 
 	return IPOURMA_OK;
 }
 
-int ipourma_urma_post_recv(struct net_device *dev, u32 eid_idx, u32 idx)
+int ipourma_urma_post_recv(struct net_device *dev, u32 jetty_idx, u32 idx)
 {
 	struct ipourma_dev_priv *priv = netdev_priv(dev);
-	struct ipourma_rx_buf *rx_buf = &priv->rx_ring[eid_idx][idx];
+	struct ipourma_rx_buf *rx_buf = &priv->rx_ring[jetty_idx][idx];
 	int ret;
 	struct ubcore_jfr_wr *jfr_bad_wr = NULL;
 
 	rx_buf->rx_sge[0].tseg = rx_buf->seg[0];
 	rx_buf->rx_sge[0].addr = (u64)rx_buf->buf_aligned;
 	rx_buf->rx_sge[0].len = priv->urma_mtu;
-	pr_debug("post_recv start, eid idx %u, idx %u\n", rx_buf->eid_index, rx_buf->idx);
-	ret = ubcore_post_jetty_recv_wr(priv->jetty[eid_idx], &rx_buf->rx_wr, &jfr_bad_wr);
+	pr_debug("post_recv start, jetty idx %u, idx %u\n", rx_buf->jetty_index, rx_buf->idx);
+	ret = ubcore_post_jetty_recv_wr(priv->jetty[jetty_idx], &rx_buf->rx_wr, &jfr_bad_wr);
 	if (unlikely(ret != 0)) {
 		priv->runtime_stats.rx_stats.post_wr_failed++;
 		netdev_dbg(dev, "%s:%d\n",
@@ -661,23 +665,23 @@ int ipourma_urma_post_recv(struct net_device *dev, u32 eid_idx, u32 idx)
 		return IPOURMA_URMA_POST_RECV_FAILED;
 	}
 	priv->runtime_stats.rx_stats.num_post_wr++;
-	pr_debug("post_recv finish, eid idx %u, idx %u\n", rx_buf->eid_index, rx_buf->idx);
+	pr_debug("post_recv finish, jetty idx %u, idx %u\n", rx_buf->jetty_index, rx_buf->idx);
 	return IPOURMA_OK;
 }
 
-static int ipourma_post_recv_by_eid(struct net_device *dev, u32 eid_idx)
+static int ipourma_post_recv_by_jetty(struct net_device *dev, u32 jetty_idx)
 {
 	struct ipourma_dev_priv *priv = netdev_priv(dev);
 	int ret = IPOURMA_OK;
 	u32 i;
 
-	for (i = 0; i < ipourma_rx_ring_size; i++) {
-		if (ipourma_alloc_rx_buffer(dev, eid_idx, i) != IPOURMA_OK) {
+	for (i = 0; i < priv->rx_ring_size; i++) {
+		if (ipourma_alloc_rx_buffer(dev, jetty_idx, i) != IPOURMA_OK) {
 			ret = IPOURMA_ALLOC_RX_SKB_FAILED;
 			goto post_recv_failed;
 		}
 
-		if (ipourma_urma_post_recv(dev, eid_idx, i) != IPOURMA_OK) {
+		if (ipourma_urma_post_recv(dev, jetty_idx, i) != IPOURMA_OK) {
 			ret = IPOURMA_URMA_POST_RECV_FAILED;
 			goto post_recv_failed;
 		}
@@ -685,7 +689,7 @@ static int ipourma_post_recv_by_eid(struct net_device *dev, u32 eid_idx)
 	return ret;
 
 post_recv_failed:
-	ipourma_uninit_rx_bufs(priv, eid_idx);
+	ipourma_uninit_rx_bufs(priv, jetty_idx);
 	return ret;
 }
 
@@ -704,38 +708,38 @@ void ipourma_replenish_segments(struct work_struct *work)
 		return;
 	}
 	if (test_bit(IPOURMA_DEV_ADMIN_UP, &priv->flags))
-		ipourma_urma_post_recv(priv->dev, rx_buf->eid_index, rx_buf->idx);
+		ipourma_urma_post_recv(priv->dev, rx_buf->jetty_index, rx_buf->idx);
 }
 
-int ipourma_urma_init_by_eid(struct ipourma_dev_priv *priv, u32 eid_idx)
+int ipourma_urma_init_by_jetty(struct ipourma_dev_priv *priv, u32 jetty_idx)
 {
 	int ret;
 
-	ret = ipourma_init_rings_by_eid(priv, eid_idx);
+	ret = ipourma_init_rings_by_jetty(priv, jetty_idx);
 	if (ret != IPOURMA_OK)
-		goto init_rings_by_eid_failed;
+		goto init_rings_by_jetty_failed;
 
-	ret = ipourma_init_urma_resources_by_eid(priv, eid_idx);
+	ret = ipourma_init_urma_resources_by_jetty(priv, jetty_idx);
 	if (ret != IPOURMA_OK)
-		goto init_urma_res_by_eid_failed;
+		goto init_urma_res_by_jetty_failed;
 
-	ret = ipourma_post_recv_by_eid(priv->dev, eid_idx);
+	ret = ipourma_post_recv_by_jetty(priv->dev, jetty_idx);
 	if (ret != IPOURMA_OK)
-		goto post_recv_by_eid_failed;
+		goto post_recv_by_jetty_failed;
 
 	return ret;
-post_recv_by_eid_failed:
-	ipourma_uninit_urma_resources_by_eid(priv, eid_idx);
-init_urma_res_by_eid_failed:
-	ipourma_uninit_rings_by_eid(priv, eid_idx);
-init_rings_by_eid_failed:
+post_recv_by_jetty_failed:
+	ipourma_uninit_urma_resources_by_jetty(priv, jetty_idx);
+init_urma_res_by_jetty_failed:
+	ipourma_uninit_rings_by_jetty(priv, jetty_idx);
+init_rings_by_jetty_failed:
 	return ret;
 }
 
 static void ipourma_do_handle_tx_wc(struct net_device *dev,
-	struct ipourma_dev_priv *priv, u32 eid_idx, u32 idx, struct ubcore_cr *cr)
+	struct ipourma_dev_priv *priv, u32 jetty_idx, u32 idx, struct ubcore_cr *cr)
 {
-	struct ipourma_tx_buf *tx_req = &priv->tx_ring[eid_idx][idx];
+	struct ipourma_tx_buf *tx_req = &priv->tx_ring[jetty_idx][idx];
 
 	if (unlikely(tx_req->tx_buf_in_use == 0))
 		return;
@@ -753,7 +757,7 @@ void ipourma_handle_tx_wc(struct net_device *dev,
 			  struct ipourma_dev_priv *priv,
 			  struct ubcore_cr *cr)
 {
-	u32 eid_idx, idx;
+	u32 jetty_idx, idx;
 
 	if (cr->status >= IPOURMA_MAX_CR_STATUS) {
 		priv->runtime_stats.tx_stats.cqe_err++;
@@ -776,29 +780,29 @@ void ipourma_handle_tx_wc(struct net_device *dev,
 		priv->runtime_stats.tx_stats.flush_jetty_success++;
 
 	if (unlikely(cr->local_id < IPOURMA_WELL_KNOWN_JETTY_ID ||
-		cr->local_id >= IPOURMA_MAX_EID_CNT + IPOURMA_WELL_KNOWN_JETTY_ID)) {
+		cr->local_id >= priv->jetty_cnt + IPOURMA_WELL_KNOWN_JETTY_ID)) {
 		netdev_dbg(dev, "%s:%u\n",
 				   ipourma_err_desc(IPOURMA_INCORRECT_WQE_JETTY_IDX), cr->local_id);
 		return;
 	}
-	eid_idx = cr->local_id - IPOURMA_WELL_KNOWN_JETTY_ID;
+	jetty_idx = cr->local_id - IPOURMA_WELL_KNOWN_JETTY_ID;
 	idx = cr->user_ctx;
-	if (IS_ERR_OR_NULL(priv->tx_ring[eid_idx]) ||
-		unlikely(idx >= ipourma_tx_ring_size)) {
-		netdev_dbg(dev, "%s:eid_idx:%u idx:%u\n",
-				   ipourma_err_desc(IPOURMA_INCORRECT_WQE_IDX), eid_idx, idx);
+	if (IS_ERR_OR_NULL(priv->tx_ring[jetty_idx]) ||
+		unlikely(idx >= priv->tx_ring_size)) {
+		netdev_dbg(dev, "%s:jetty_idx:%u idx:%u\n",
+				   ipourma_err_desc(IPOURMA_INCORRECT_WQE_IDX), jetty_idx, idx);
 		return;
 	}
 	pr_debug("now cr status:%d\n", cr->status);
-	ipourma_do_handle_tx_wc(dev, priv, eid_idx, idx, cr);
+	ipourma_do_handle_tx_wc(dev, priv, jetty_idx, idx, cr);
 }
 
 static void ipourma_do_handle_rx_wc(struct net_device *dev,
 					struct ipourma_dev_priv *priv,
-					u32 eid_idx, u32 idx,
+					u32 jetty_idx, u32 idx,
 					struct ubcore_cr *cr)
 {
-	struct ipourma_rx_buf *rx_req = &priv->rx_ring[eid_idx][idx];
+	struct ipourma_rx_buf *rx_req = &priv->rx_ring[jetty_idx][idx];
 	struct sk_buff *skb;
 	u32 data_len;
 
@@ -853,7 +857,7 @@ void ipourma_handle_rx_wc(struct net_device *dev,
 			  struct ipourma_dev_priv *priv,
 			  struct ubcore_cr *cr)
 {
-	u32 eid_idx, idx;
+	u32 jetty_idx, idx;
 
 	if (cr->status >= IPOURMA_MAX_CR_STATUS) {
 		priv->runtime_stats.rx_stats.cqe_err++;
@@ -868,20 +872,20 @@ void ipourma_handle_rx_wc(struct net_device *dev,
 	}
 	priv->runtime_stats.rx_stats.cqe_success++;
 	if (unlikely(cr->local_id < IPOURMA_WELL_KNOWN_JETTY_ID ||
-		cr->local_id >= IPOURMA_MAX_EID_CNT + IPOURMA_WELL_KNOWN_JETTY_ID)) {
+		cr->local_id >= priv->jetty_cnt + IPOURMA_WELL_KNOWN_JETTY_ID)) {
 		netdev_dbg(dev, "%s:%u\n",
 				   ipourma_err_desc(IPOURMA_INCORRECT_WQE_JETTY_IDX), cr->local_id);
 		return;
 	}
-	eid_idx = cr->local_id - IPOURMA_WELL_KNOWN_JETTY_ID;
+	jetty_idx = cr->local_id - IPOURMA_WELL_KNOWN_JETTY_ID;
 	idx = cr->user_ctx;
-	if (IS_ERR_OR_NULL(priv->rx_ring[eid_idx]) ||
-		unlikely(idx >= ipourma_rx_ring_size)) {
-		netdev_dbg(dev, "%s:eid_idx:%u idx:%u\n",
-				   ipourma_err_desc(IPOURMA_INCORRECT_WQE_IDX), eid_idx, idx);
+	if (IS_ERR_OR_NULL(priv->rx_ring[jetty_idx]) ||
+		unlikely(idx >= priv->rx_ring_size)) {
+		netdev_dbg(dev, "%s:jetty_idx:%u idx:%u\n",
+				   ipourma_err_desc(IPOURMA_INCORRECT_WQE_IDX), jetty_idx, idx);
 		return;
 	}
-	ipourma_do_handle_rx_wc(dev, priv, eid_idx, idx, cr);
+	ipourma_do_handle_rx_wc(dev, priv, jetty_idx, idx, cr);
 }
 
 void ipourma_rx_cr_event(struct work_struct *work)
