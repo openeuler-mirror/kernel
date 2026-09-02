@@ -143,6 +143,7 @@ enum ubase_opcode_type {
 	UBASE_OPC_PROXY_TO_UDMA		= 0xF018,
 	UBASE_OPC_UE_TO_PROXY		= 0xF019,
 	UBASE_OPC_SET_CTX_VA_RESP	= 0xF01A,
+	UBASE_OPC_MUE_FORCE_UE_RESET	= 0xF01B,
 };
 
 enum ubase_ue_to_proxy_module {
