@@ -9,6 +9,7 @@
 
 #include "ubaseproxy_ctx_mgt.h"
 #include "ubaseproxy_mbx.h"
+#include "ubaseproxy_reset.h"
 #include "ubaseproxy_event.h"
 
 static int ubaseproxy_handle_crq_msg(void *dev, void *data, u32 len)
@@ -61,6 +62,10 @@ static struct ubase_crq_event_nb ubaseproxy_crq_events[] = {
 		.opcode = UBASE_OPC_SET_CTX_VA_REQ,
 		.crq_handler = ubaseproxy_handle_ue_ctx_va_req,
 	},
+	{
+		.opcode = UBASE_OPC_UE_RESET_NOTIFY,
+		.crq_handler = ubaseproxy_handle_ue_reset_notify,
+	}
 };
 
 static int ubaseproxy_register_crq_event(struct ubaseproxy_dev *udev)
@@ -124,6 +129,7 @@ int ubaseproxy_register_event(struct ubaseproxy_dev *udev)
 	if (ret)
 		return ret;
 
+	ubase_reset_register(adev, ubaseproxy_reset_handler);
 	atomic_set(&udev->virt_refcnt, 0);
 	ubase_virt_register(adev, ubaseproxy_virt_handler);
 
@@ -135,5 +141,6 @@ void ubaseproxy_unregister_event(struct ubaseproxy_dev *udev)
 	struct auxiliary_device *adev = udev->comdev.adev;
 
 	ubase_virt_unregister(adev);
+	ubase_reset_unregister(adev);
 	ubaseproxy_unregister_crq_event(udev);
 }

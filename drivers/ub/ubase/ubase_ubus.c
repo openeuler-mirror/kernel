@@ -456,9 +456,8 @@ static int ubase_ubus_suspend(struct device *dev)
 	struct ubase_dev *udev = dev_get_drvdata(dev);
 
 	ubase_info(udev, "UBUS suspend start.\n");
-	ubase_suspend(udev);
 
-	return 0;
+	return ubase_suspend(udev);
 }
 
 static int ubase_ubus_resume(struct device *dev)
@@ -562,9 +561,8 @@ static int ubase_ubus_reset_prepare_return(struct ub_entity *ue)
 	struct ubase_dev *udev = dev_get_drvdata(&ue->dev);
 
 	ubase_info(udev, "UBUS ELR start.\n");
-	ubase_suspend(udev);
 
-	return 0;
+	return ubase_suspend(udev);
 }
 
 static int ubase_ubus_reset_done_with_pret(struct ub_entity *ue, int pret)
