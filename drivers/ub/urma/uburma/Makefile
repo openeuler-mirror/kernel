@@ -10,6 +10,7 @@ uburma-objs := uburma_log.o \
 			uburma_uobj.o \
 			uburma_cmd.o \
 			uburma_dev_ops.o \
+			uburma_devnum.o \
 			uburma_main.o
 
 obj-$(CONFIG_UB_URMA) += uburma.o

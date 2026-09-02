@@ -34,6 +34,7 @@ void uburma_write_event(struct uburma_jfe *jfe, uint64_t event_data,
 struct uburma_jfce_uobj *uburma_get_jfce_uobj(int fd,
 					      struct uburma_file *ufile);
 void uburma_jfce_handler(struct ubcore_jfc *jfc);
+void uburma_jfce_tasklet_init(struct uburma_jfc_uobj *jfc_uobj);
 void uburma_release_comp_event(struct uburma_jfce_uobj *jfce,
 			       struct list_head *event_list);
 

@@ -511,8 +511,13 @@ static inline int ipourma_add_header(struct sk_buff *skb)
 	struct ipourma_header *header;
 	size_t header_size = sizeof(struct ipourma_header);
 
+	/* Ensure there is enough headroom for the ipourma header; skb_push()
+	 * would BUG()/panic otherwise. skb_cow_head() reallocates if needed. */
+	if (skb_cow_head(skb, header_size) != 0)
+		return -ENOMEM;
+
 	/* For now, addresses are not used */
-	header = skb_push(skb, header_size);
+	header = (struct ipourma_header *)skb_push(skb, header_size);
 	header->proto = skb->protocol;
 
 	return header_size;
@@ -528,7 +533,11 @@ int ipourma_xmit(struct net_device *dev, struct sk_buff *skb,
 	u32 eid_idx;
 	u32 tx_idx;
 
-	ipourma_add_header(skb);
+	ret = ipourma_add_header(skb);
+	if (ret < 0) {
+		netdev_dbg(dev, "skb headroom too short\n");
+		return IPOURMA_INSUFFICIENT_MEMORY;
+	}
 	ret = ipourma_get_eid_index(dev, src_eid);
 	if (unlikely(ret == -IPOURMA_SRC_IP_ADDR_EID_MISMATCH)) {
 		priv->runtime_stats.tx_stats.ip_eid_not_equal++;
@@ -815,6 +824,14 @@ static void ipourma_do_handle_rx_wc(struct net_device *dev,
 	skb->data_len = 0;
 	skb_trim(skb, 0);
 	skb_put(skb, data_len);
+
+	/*
+	 * ipourma is a pure L3 device (ARPHRD_NONE): there is no link-layer
+	 * header, so skb->data points at the IPv6 header. Reset mac_header to
+	 * the same offset so AF_PACKET captures start at the IPv6 header with a
+	 * zero-length L2.
+	 */
+	skb_reset_mac_header(skb);
 
 	skb->pkt_type = PACKET_HOST;
 	skb->dev = dev;
