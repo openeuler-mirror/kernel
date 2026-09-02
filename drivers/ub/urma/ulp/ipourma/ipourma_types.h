@@ -43,46 +43,37 @@ struct ipourma_header {
 enum {
 	IPOURMA_DEV_ADMIN_UP        = 1,
 	IPOURMA_DEV_OP_UP           = 2,
-	IPOURMA_JFS_DEPTH           = 128,
-	IPOURMA_JFR_DEPTH           = 256,
-	IPOURMA_TX_JFC_DEPTH        = 1024,
-	IPOURMA_RX_JFC_DEPTH        = 2048,
 	IPOURMA_SEGMENT_ALIGN_SIZE  = 4096,
 	IPOURMA_MIN_PAGE_LEVEL      = 12,
-	IPOURMA_DEF_PAGE_LEVEL      = 16,
+	IPOURMA_DEF_PAGE_LEVEL      = 18,
 	IPOURMA_MAX_PAGE_LEVEL      = 21,
 	IPOURMA_REGISTER_SEG_SIZE   = 65536,
 	IPOURMA_MAX_URMA_SEND_SGES  = 13,
 	IPOURMA_MAX_URMA_RECV_SGES  = 1,
 	IPOURMA_WELL_KNOWN_JETTY_ID = 32,
 	IPOURMA_MAX_RX_SGES         = 1,
-	IPOURMA_TJETTY_HMAP_SIZE    = 1024,
+	IPOURMA_TJETTY_HMAP_SIZE    = 10240,
 	/* additional 1 for linear data, normally 18 */
 	IPOURMA_MAX_TX_SGES         = MAX_SKB_FRAGS + 1,
 	IPOURMA_NAPI_RX_WEIGHT      = 4,
 	IPOURMA_NAPI_TX_WEIGHT      = 16,
+	/* default requested ring size, the actual size is limited by device capability */
 	IPOURMA_TX_RING_SIZE        = 16,
 	IPOURMA_RX_RING_SIZE        = 32,
 	IPOURMA_MIN_TX_RING_SIZE    = 16,
-	IPOURMA_MAX_TX_RING_SIZE    = 2048,
-	IPOURMA_MIN_RX_RING_SIZE    = 16,
-	IPOURMA_MAX_RX_RING_SIZE    = 4096,
+	IPOURMA_MIN_RX_RING_SIZE    = 32,
 	IPOURMA_URMA_MAX_MTU        = 4096,
 	IPOURMA_MAX_MTU             = (IPOURMA_URMA_MAX_MTU -
 					sizeof(struct ipourma_header)),
 	IPOURMA_MIN_MTU             = 1280,
 	IPOURMA_DEFAULT_MTU         = IPOURMA_MAX_MTU,
 	IPOURMA_ALEN                = 6,
-	IPOURMA_DEFAULT_TJETTY_CAP  = 256,
-	IPOURMA_MAX_EID_CNT         = 128,
-	IPOURMA_MIN_EID_CNT       = 9,
-	IPOURMA_DWORK_TIME          = 30,
-	IPOURMA_TJETTY_CB_S         = 10,
-	IPOURMA_TJETTY_TIMEOUT_S    = 60,
+	IPOURMA_DEFAULT_TJETTY_CAP  = 10240,
+	IPOURMA_DEF_JETTY_CNT       = 9,
+	IPOURMA_TJETTY_CB_S         = 30,
+	IPOURMA_TJETTY_TIMEOUT_S    = 1200,
 	IPOURMA_TJETTY_TIMEOUT_MAX  = 65535,
 	IPOURMA_MAX_DEV_NAME        = 50,
-	IPOURMA_DEFAULT_CTP_SL      = IPOURMA_SL_INVALID,
-	IPOURMA_DEFAULT_UTP_SL      = IPOURMA_SL_INVALID,
 };
 
 enum {
@@ -150,9 +141,9 @@ enum {
 #define IFLA_IPOURMA_MAX (__IFLA_IPOURMA_MAX - 1)
 extern u32 ipourma_tx_ring_size;
 extern u32 ipourma_rx_ring_size;
-extern u32 ipourma_jfs_depth;
-extern u32 ipourma_tx_jfc_depth;
 extern u32 ipourma_register_seg_size;
+extern int ipourma_tjetty_aging_en;
+extern int ipourma_min_eid_cnt;
 
 /* IPOURMA_MAX_CR_STATUS should be as same as the length of the enum ubcore_cr_status. Since
  * ubcore_cr_status is contiguous and starts from 0, we can use the value of the last item
@@ -238,8 +229,8 @@ struct ipourma_rx_buf {
 	u8 *buf_aligned;
 	struct ubcore_target_seg *seg[IPOURMA_MAX_RX_SGES];
 	u32 idx;
-	/* eid_index = jetty id - IPOURMA_WELL_KNOWN_JETTY_ID */
-	u32 eid_index;
+	/* jetty_index = jetty id - IPOURMA_WELL_KNOWN_JETTY_ID */
+	u32 jetty_index;
 	struct work_struct work;
 	struct ubcore_jfr_wr rx_wr;
 	struct ubcore_sge rx_sge[IPOURMA_MAX_RX_SGES];
@@ -251,11 +242,12 @@ struct ipourma_tx_buf {
 	u8 *buf_aligned;
 	struct ubcore_target_seg *seg[IPOURMA_MAX_TX_SGES];
 	u32 idx;
-	u32 eid_index;
+	u32 jetty_index;
 	struct work_struct work;
 	/* dynamic fields */
 	struct sk_buff *skb;
 	union ubcore_eid dst_eid;
+	union ubcore_eid src_eid;
 	u8 tx_buf_in_use;
 	struct ubcore_jfs_wr tx_wr;
 	struct ubcore_sge tx_sge[IPOURMA_MAX_TX_SGES];
@@ -303,7 +295,12 @@ struct ipourma_dev_priv {
 	struct ipourma_rx_buf **rx_ring;
 	u32 tx_ring_size;
 	u32 rx_ring_size;
+	u32 jfs_depth;
+	u32 jfr_depth;
+	u32 tx_jfc_depth;
+	u32 rx_jfc_depth;
 	u32 tx_buf_size;
+	u32 tx_bufs_per_blk;
 	u32 *tx_head;
 	u32 *tx_tail;
 	u32 *tx_count;
@@ -320,18 +317,18 @@ struct ipourma_dev_priv {
 	bool need_restart_ring;
 	struct workqueue_struct *net_config_wq;
 	struct work_struct set_dev_up;
+	struct work_struct set_dev_down;
 	struct work_struct set_ip;
 	struct work_struct set_route;
 	struct work_struct unset_route;
 	struct work_struct set_route_entry;
 	struct work_struct rx_cr_event;
-	struct delayed_work redundant_dwork;
 	/* register netdev */
 	struct workqueue_struct *register_wq;
 	struct work_struct register_netdev;
 	/* urma device */
 	struct ubcore_eid_info *eid_info;
-	struct ubcore_eid_info eid_info_exist[IPOURMA_MAX_EID_CNT];
+	struct ubcore_eid_info *eid_info_exist;
 	uint32_t eid_count;
 	struct ubcore_jetty **jetty;
 	struct ubcore_jfc *tx_jfc;
@@ -350,18 +347,23 @@ struct ipourma_dev_priv {
 	atomic_t need_set_ip;
 	struct list_head set_ip_list;
 	spinlock_t set_ip_lock;
+	spinlock_t anchor_lock;
+	atomic_t need_anchor;
+	int anchor_eid_idx;
 	/* tjetty lru */
 	struct ipourma_tjetty_lru tjetty_lru;
 	/* runtime stats statistics */
 	struct ipourma_runtime_stats runtime_stats;
 	/* memory pool */
-	struct ubcore_target_seg **ipourma_ub_tx_seg[IPOURMA_MAX_EID_CNT];
-	struct ubcore_target_seg **ipourma_ub_rx_seg[IPOURMA_MAX_EID_CNT];
-	u8 **tx_buf_aligned[IPOURMA_MAX_EID_CNT];
-	u8 **rx_buf_aligned[IPOURMA_MAX_EID_CNT];
+	u32 jetty_cnt;
+	struct ubcore_target_seg ***ipourma_ub_tx_seg;
+	struct ubcore_target_seg ***ipourma_ub_rx_seg;
+	u8 ***tx_buf_aligned;
+	u8 ***rx_buf_aligned;
 	size_t tx_buf_num;
 	size_t rx_buf_num;
 	u32 skb_buf_size;
+	u32 rx_bufs_per_blk;
 };
 
 /* iterator for debugfs-eid */
