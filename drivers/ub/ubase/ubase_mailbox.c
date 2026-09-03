@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -465,7 +465,7 @@ static int ubase_cmd_mbox_poll(struct ubase_dev *udev,
 
 	mb->seq_num = CMD_MBX_POLL_VALUE;
 
-	ret = ubase_post_mailbox(udev, &desc, UBASE_MBX_TX_TIMEOUT, &status,
+	ret = ubase_post_mailbox(udev, &desc, UBASE_CMDQ_MBX_TX_TIMEOUT, &status,
 				 false);
 	if (ret) {
 		ubase_err(udev,
@@ -474,7 +474,7 @@ static int ubase_cmd_mbox_poll(struct ubase_dev *udev,
 		return ret;
 	}
 
-	return ubase_poll_mbox_done(udev, UBASE_MBX_TX_TIMEOUT);
+	return ubase_poll_mbox_done(udev, UBASE_CMDQ_MBX_TX_TIMEOUT);
 }
 
 static int ubase_cmd_mbox_event(struct ubase_dev *udev,
@@ -497,7 +497,7 @@ static int ubase_cmd_mbox_event(struct ubase_dev *udev,
 	__ubase_fill_inout_buf(&out, UBASE_OPC_POST_MB, false,
 			       sizeof(union ubase_mbox), (void *)&mb_out);
 
-	ret = ubase_post_mailbox_by_event(udev, &in, &out, mailbox);
+	ret = ubase_post_mailbox_by_event(udev, &in, &out, mailbox, attr);
 	if (ret)
 		ubase_err_rl(udev, post_mailbox_fail,
 			     "failed to post mailbox 0x%x in event mode, ret = %d.\n",

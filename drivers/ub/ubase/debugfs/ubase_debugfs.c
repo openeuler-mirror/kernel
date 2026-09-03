@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -534,10 +534,14 @@ static int ubase_dbg_dump_mbx_stats(struct seq_file *s, void *data)
 
 	seq_printf(s, "mbx event_hw_cnt: %llu\n",
 		   udev->mbx_stats.event_hw_cnt);
-	seq_printf(s, "mbx event cmd_timeout_cnt: %llu\n",
+	seq_printf(s, "mbx cmd_timeout_cnt: %llu\n",
 		   udev->mbx_stats.cmd_timeout_cnt);
 	seq_printf(s, "mbx event_hw_timeout_cnt: %llu\n",
 		   udev->mbx_stats.event_hw_timeout_cnt);
+	seq_printf(s, "mbx destroy_jfs_cmd_timeout_cnt: %llu\n",
+		   udev->mbx_stats.destroy_jfs_cmd_timeout_cnt);
+	seq_printf(s, "mbx destroy_jfs_event_hw_timeout_cnt: %llu\n",
+		   udev->mbx_stats.destroy_jfs_event_hw_timeout_cnt);
 	seq_printf(s, "mbx ae_cnt: %llu\n", udev->mbx_stats.ae_cnt);
 	seq_printf(s, "mbx seq_num_err_cnt: %llu\n",
 		   udev->mbx_stats.seq_num_err_cnt);

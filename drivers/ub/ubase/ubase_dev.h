@@ -394,6 +394,8 @@ struct ubase_mbx_stats {
 	u64	event_hw_cnt;
 	u64	cmd_timeout_cnt;
 	u64	event_hw_timeout_cnt;
+	u64	destroy_jfs_cmd_timeout_cnt;
+	u64	destroy_jfs_event_hw_timeout_cnt;
 	u64	ae_cnt;
 	u64	seq_num_err_cnt;
 	u64	buff_cnt;
