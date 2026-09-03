@@ -314,7 +314,7 @@ void mpam_disable(struct work_struct *work);
 void mpam_reset_class(struct mpam_class *class);
 
 int mpam_apply_config(struct mpam_component *comp, u16 partid,
-		      struct mpam_config *cfg);
+		      struct mpam_config *cfg, bool sync);
 
 int mpam_msmon_read(struct mpam_component *comp, struct mon_cfg *ctx,
 		    enum mpam_device_features, u64 *val);

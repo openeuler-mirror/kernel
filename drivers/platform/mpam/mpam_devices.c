@@ -2577,6 +2577,7 @@ struct mpam_write_config_arg {
 	struct mpam_msc_ris *ris;
 	struct mpam_component *comp;
 	u16 partid;
+	bool sync;
 };
 
 static int __write_config(void *arg)
@@ -2584,6 +2585,15 @@ static int __write_config(void *arg)
 	int closid_num = resctrl_arch_get_num_closid(NULL);
 	struct mpam_write_config_arg *c = arg;
 	u32 reqpartid;
+
+	if (c->sync) {
+		/* c->partid should be within the range of reqPARTIDs */
+		WARN_ON_ONCE(c->partid < closid_num);
+
+		mpam_reprogram_ris_partid(c->ris, c->partid,
+					 &c->comp->cfg[req2intpartid(c->partid)]);
+		return 0;
+	}
 
 	/* c->partid should be within the range of intPARTIDs */
 	WARN_ON_ONCE(c->partid >= closid_num);
@@ -2605,7 +2615,7 @@ static int __write_config(void *arg)
 /* TODO: split into write_config/sync_config */
 /* TODO: add config_dirty bitmap to drive sync_config */
 int mpam_apply_config(struct mpam_component *comp, u16 partid,
-		      struct mpam_config *cfg)
+		      struct mpam_config *cfg, bool sync)
 {
 	struct mpam_write_config_arg arg;
 	struct mpam_msc_ris *ris;
@@ -2613,12 +2623,19 @@ int mpam_apply_config(struct mpam_component *comp, u16 partid,
 
 	lockdep_assert_cpus_held();
 
-	if (!memcmp(&comp->cfg[partid], cfg, sizeof(*cfg)))
-		return 0;
+	if (!sync) {
+		/* The partid is within the range of intPARTIDs */
+		WARN_ON_ONCE(partid >= resctrl_arch_get_num_closid(NULL));
 
-	comp->cfg[partid] = *cfg;
+		if (!memcmp(&comp->cfg[partid], cfg, sizeof(*cfg)))
+			return 0;
+
+		comp->cfg[partid] = *cfg;
+	}
+
 	arg.comp = comp;
 	arg.partid = partid;
+	arg.sync = sync;
 
 	idx = srcu_read_lock(&mpam_srcu);
 	list_for_each_entry_rcu(ris, &comp->ris, comp_list) {

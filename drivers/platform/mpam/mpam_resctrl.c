@@ -1239,6 +1239,25 @@ void update_rmid_entries_for_reqpartid(u32 reqpartid)
 		rmid_entry_reassign_closid(closid, req_pmg2rmid(reqpartid, pmg));
 }
 
+static int mpam_sync_config(u32 reqpartid)
+{
+	struct mpam_component *comp;
+	struct mpam_class *class;
+	int err, idx;
+
+	idx = srcu_read_lock(&mpam_srcu);
+	list_for_each_entry_rcu(class, &mpam_classes, classes_list) {
+		list_for_each_entry(comp, &class->components, class_list) {
+			err = mpam_apply_config(comp, reqpartid, NULL, true);
+			if (err)
+				return err;
+		}
+	}
+	srcu_read_unlock(&mpam_srcu, idx);
+
+	return 0;
+}
+
 int resctrl_arch_rmid_expand(u32 closid)
 {
 	int i;
@@ -1248,10 +1267,16 @@ int resctrl_arch_rmid_expand(u32 closid)
 		if (reqpartid_map[i] >= resctrl_arch_get_num_closid(NULL)) {
 			if (cdp_enabled) {
 				reqpartid_map[i] = resctrl_get_config_index(closid, CDP_DATA);
+				mpam_sync_config(i);
+
 				reqpartid_map[i + 1] = resctrl_get_config_index(closid, CDP_CODE);
+				mpam_sync_config(i + 1);
+
 			} else {
 				reqpartid_map[i] = resctrl_get_config_index(closid, CDP_NONE);
+				mpam_sync_config(i);
 			}
+
 			update_rmid_entries_for_reqpartid(i);
 			return i;
 		}
@@ -1544,15 +1569,15 @@ int resctrl_arch_update_one(struct rdt_resource *r, struct rdt_domain *d,
 	 */
 	if (mpam_resctrl_hide_cdp(r->rid)) {
 		partid = resctrl_get_config_index(closid, CDP_CODE);
-		err = mpam_apply_config(dom->comp, partid, &cfg);
+		err = mpam_apply_config(dom->comp, partid, &cfg, false);
 		if (err)
 			return err;
 
 		partid = resctrl_get_config_index(closid, CDP_DATA);
-		return mpam_apply_config(dom->comp, partid, &cfg);
+		return mpam_apply_config(dom->comp, partid, &cfg, false);
 
 	} else {
-		return mpam_apply_config(dom->comp, partid, &cfg);
+		return mpam_apply_config(dom->comp, partid, &cfg, false);
 	}
 }
 
