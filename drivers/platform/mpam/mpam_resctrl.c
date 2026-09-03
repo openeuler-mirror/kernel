@@ -1093,6 +1093,12 @@ bool resctrl_arch_is_evt_configurable(enum resctrl_event_id evt)
 		cprops = &mbm_local_class->props;
 
 		return mpam_has_feature(mpam_feat_msmon_mbwu_rwbw, cprops);
+	case QOS_L3_MBM_TOTAL_EVENT_ID:
+		if (!mbm_total_class)
+			return false;
+
+		cprops = &mbm_total_class->props;
+		return mpam_has_feature(mpam_feat_msmon_mbwu_rwbw, cprops);
 	default:
 		return false;
 	}
