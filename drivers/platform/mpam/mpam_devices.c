@@ -2710,8 +2710,8 @@ static int mpam_msc_drv_remove(struct platform_device *pdev)
 	mpam_num_msc--;
 	platform_set_drvdata(pdev, NULL);
 	list_del_rcu(&msc->glbl_list);
-	mpam_msc_destroy(msc);
 	synchronize_srcu(&mpam_srcu);
+	mpam_msc_destroy(msc);
 	mutex_unlock(&mpam_list_lock);
 
 	return 0;
