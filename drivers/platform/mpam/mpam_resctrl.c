@@ -1134,7 +1134,7 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 		r->cache.arch_has_sparse_bitmasks = true;
 
 		/* mpam_devices will reject empty bitmaps */
-		r->cache.min_cbm_bits = 1;
+		r->cache.min_cbm_bits = mpam_min_cbm_bits(res->resctrl_res.rid);
 
 		/* TODO: kill these properties off as they are derivatives */
 		r->format_str = "%d=%0*x";

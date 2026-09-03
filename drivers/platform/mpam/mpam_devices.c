@@ -1051,6 +1051,16 @@ static u64 mpam_csu_hisi_need_halved(struct mpam_msc_ris *ris, u64 now)
 	return now >> 1;
 }
 
+u32 mpam_min_cbm_bits(enum resctrl_res_level rid)
+{
+	if (rid == RDT_RESOURCE_L2) {
+		if (is_midr_in_range_list(hip13_cpus))
+			return 0;
+	}
+
+	return 1;
+}
+
 static bool read_msmon_mbwu_is_overflow(struct mpam_msc *msc)
 {
 	u32 ctl;

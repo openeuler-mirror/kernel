@@ -331,6 +331,7 @@ void mpam_resctrl_exit(void);
 
 u16 mpam_cpbm_wd_hisi_workaround(u16 cpbm_wd, enum mpam_device_features feat, u8 cache_level);
 bool mpam_cpbm_hisi_check_invalid(struct rdt_resource *r, unsigned long val);
+u32 mpam_min_cbm_bits(enum resctrl_res_level rid);
 
 /*
  * MPAM MSCs have the following register layout. See:
