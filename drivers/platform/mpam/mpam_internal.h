@@ -110,6 +110,7 @@ enum mpam_device_features {
 	mpam_feat_msmon_mbwu_63counter,
 	mpam_feat_msmon_mbwu_capture,
 	mpam_feat_msmon_mbwu_rwbw,
+	mpam_feat_msmon_mbwu_scale,
 	mpam_feat_msmon_capt,
 	mpam_feat_partid_nrw,
 	MPAM_FEATURE_LAST,
@@ -128,6 +129,7 @@ struct mpam_props
 	u16			dspri_wd;
 	u16			num_csu_mon;
 	u16			num_mbwu_mon;
+	u8			mbwu_scale;
 };
 
 #define mpam_has_feature(_feat, x)	((1<<_feat) & (x)->features)
@@ -434,6 +436,7 @@ bool mpam_cpbm_hisi_check_invalid(struct rdt_resource *r, unsigned long val);
 
 /* MPAMF_MBWUMON_IDR - MPAM memory bandwidth usage monitor ID register */
 #define MPAMF_MBWUMON_IDR_NUM_MON       GENMASK(15, 0)
+#define MPAMF_MBWUMON_IDR_SCALE         GENMASK(20, 16)
 #define MPAMF_MBWUMON_IDR_HAS_RWBW      BIT(28)
 #define MPAMF_MBWUMON_IDR_LWD           BIT(29)
 #define MPAMF_MBWUMON_IDR_HAS_LONG      BIT(30)

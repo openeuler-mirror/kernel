@@ -745,6 +745,14 @@ static void mpam_ris_hw_probe(struct mpam_msc_ris *ris)
 				else
 					mpam_set_feature(mpam_feat_msmon_mbwu_44counter, props);
 			}
+
+			if (!has_long) {
+				props->mbwu_scale = FIELD_GET(MPAMF_MBWUMON_IDR_SCALE, mbwumonidr);
+				if (props->mbwu_scale)
+					mpam_set_feature(mpam_feat_msmon_mbwu_scale, props);
+			} else {
+				props->mbwu_scale = 0;
+			}
 		}
 	}
 
@@ -909,6 +917,9 @@ static void gen_msmon_ctl_flt_vals(struct mon_read *m, u32 *ctl_val,
 	 */
 	*ctl_val |= MSMON_CFG_x_CTL_MATCH_PARTID;
 
+	if (mpam_has_feature(mpam_feat_msmon_mbwu_scale, &m->ris->props))
+		*ctl_val |= MSMON_CFG_x_CTL_SCLEN;
+
 	*flt_val = FIELD_PREP(MSMON_CFG_MBWU_FLT_PARTID, ctx->partid);
 	*flt_val |= FIELD_PREP(MSMON_CFG_MBWU_FLT_RWBW, ctx->opts);
 	if (m->ctx->match_pmg) {
@@ -995,7 +1006,8 @@ static u64 mpam_msmon_overflow_val(struct mpam_msc_ris *ris)
 	else if (mpam_has_feature(mpam_feat_msmon_mbwu_44counter, &ris->props))
 		return GENMASK_ULL(43, 0);
 	else
-		return GENMASK_ULL(30, 0);
+		/* Only non-long MBWU counter enables scale */
+		return GENMASK_ULL(30, 0) << ris->props.mbwu_scale;
 }
 
 bool resctrl_arch_would_mbm_overflow(void)
@@ -1044,7 +1056,7 @@ static void __ris_msmon_read(void *arg)
 	unsigned long flags;
 	bool config_mismatch;
 	struct mon_read *m = arg;
-	u64 now, overflow_val = 0;
+	u64 now;
 	bool mbwu_overflow = false;
 	struct mon_cfg *ctx = m->ctx;
 	bool reset_on_next_read = false;
@@ -1120,6 +1132,7 @@ static void __ris_msmon_read(void *arg)
 			now = mpam_read_monsel_reg(msc, MBWU);
 			nrdy = now & MSMON___NRDY;
 			now = FIELD_GET(MSMON___VALUE, now);
+			now <<= ris->props.mbwu_scale;
 		}
 
 		if (config_mismatch && !mpam_ris_has_nrdy_bit(ris))
@@ -1145,9 +1158,7 @@ static void __ris_msmon_read(void *arg)
 
 		/* Add any pre-overflow value to the mbwu_state->val */
 		if (mbwu_overflow)
-			overflow_val = mpam_msmon_overflow_val(ris);
-
-		mbwu_state->correction += overflow_val;
+			mbwu_state->correction += mpam_msmon_overflow_val(ris);
 
 		/* Include bandwidth consumed before the last hardware reset */
 		now += mbwu_state->correction;
