@@ -126,6 +126,7 @@ struct rdt_domain {
 	struct pseudo_lock_region	*plr;
 	struct resctrl_staged_config	staged_config[CDP_NUM_TYPES];
 	u32				*mbps_val;
+	struct rdt_resource		*res;		/* Just for MPAM */
 };
 
 /**
@@ -478,6 +479,11 @@ void resctrl_setup_dom_overflow_exclude_cpu(struct rdt_resource *r,
 					    unsigned int exclude_cpu);
 void resctrl_arch_setup_res_mbm_over(void);
 void resctrl_arch_setup_res_mbm_over_exclude_cpu(unsigned int exclude_cpu);
+
+void resctrl_mbm_update_one(struct rdt_resource *r, struct rdt_domain *d,
+			    enum resctrl_event_id evtid,
+			    u32 closid, u32 rmid);
+void resctrl_arch_mbm_update(struct rdt_domain *d, u32 closid, u32 rmid);
 
 /* When supported, the architecture must implement these */
 #ifdef CONFIG_RESCTRL_IOMMU

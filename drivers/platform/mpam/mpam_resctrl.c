@@ -133,6 +133,36 @@ void resctrl_arch_setup_res_mbm_over_exclude_cpu(unsigned int exclude_cpu)
 	}
 }
 
+void resctrl_arch_mbm_update(struct rdt_domain *d,
+			     u32 closid, u32 rmid)
+{
+	switch (d->res->rid) {
+	case RDT_RESOURCE_MBA:
+		if (resctrl_arch_is_mbm_total_enabled())
+			resctrl_mbm_update_one(d->res, d,
+					       QOS_L3_MBM_TOTAL_EVENT_ID,
+					       closid, rmid);
+		break;
+
+	case RDT_RESOURCE_L3:
+		if (resctrl_arch_is_mbm_local_enabled())
+			resctrl_mbm_update_one(d->res, d,
+					       QOS_L3_MBM_LOCAL_EVENT_ID,
+					       closid, rmid);
+		break;
+
+	case RDT_RESOURCE_L2:
+		if (resctrl_arch_is_mbm_core_enabled() && !d->res->invisible)
+			resctrl_mbm_update_one(d->res, d,
+					       QOS_L2_MBM_CORE_OVERFLOW_EVENT_ID,
+					       closid, rmid);
+		break;
+
+	default:
+		break;
+	}
+}
+
 bool resctrl_arch_get_cdp_enabled(enum resctrl_res_level rid)
 {
 	switch (rid) {
@@ -1826,6 +1856,7 @@ mpam_resctrl_alloc_domain(unsigned int cpu, struct mpam_resctrl_res *res)
 
 	/* TODO: this list should be sorted */
 	list_add_tail(&dom->resctrl_dom.list, &res->resctrl_res.domains);
+	dom->resctrl_dom.res = &res->resctrl_res;
 
 	return dom;
 }
