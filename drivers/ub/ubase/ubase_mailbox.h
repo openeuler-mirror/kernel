@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -13,7 +13,6 @@
 
 #define CMD_MBX_POLL_VALUE 0xffff
 #define UBASE_MAILBOX_SIZE 4096
-#define UBASE_MBX_TX_TIMEOUT 30000
 
 #if defined(UBASE_FPGA_COMPILE) || defined(UBASE_ESL_COMPILE)
 #define UBASE_WAIT_PROXY_RESP_TIME	60000
