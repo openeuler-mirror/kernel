@@ -265,7 +265,7 @@ int alloc_rmid(u32 closid)
 	if (IS_ERR(entry))
 		return PTR_ERR(entry);
 
-	list_del(&entry->list);
+	list_del_init(&entry->list);
 	return entry->rmid;
 }
 
@@ -322,6 +322,13 @@ void free_rmid(u32 closid, u32 rmid)
 		add_rmid_to_limbo(entry);
 	else
 		list_add_tail(&entry->list, &rmid_free_lru);
+}
+
+bool rmid_is_occupied(u32 closid, u32 rmid)
+{
+	u32 idx = resctrl_arch_rmid_idx_encode(closid, rmid);
+
+	return list_empty(&rmid_ptrs[idx].list);
 }
 
 static struct mbm_state *get_mbm_state(struct rdt_domain *d, u32 closid,
@@ -733,6 +740,13 @@ void mbm_setup_overflow_handler(struct rdt_domain *dom, unsigned long delay_ms,
 		schedule_delayed_work_on(cpu, &dom->mbm_over, delay);
 }
 
+void rmid_entry_reassign_closid(u32 closid, u32 rmid)
+{
+	u32 idx = resctrl_arch_rmid_idx_encode(closid, rmid);
+
+	rmid_ptrs[idx].closid = closid;
+}
+
 static int dom_data_init(struct rdt_resource *r)
 {
 	u32 idx_limit = resctrl_arch_system_num_rmid_idx();
@@ -780,7 +794,7 @@ static int dom_data_init(struct rdt_resource *r)
 	idx = resctrl_arch_rmid_idx_encode(RESCTRL_RESERVED_CLOSID,
 					   RESCTRL_RESERVED_RMID);
 	entry = __rmid_entry(idx);
-	list_del(&entry->list);
+	list_del_init(&entry->list);
 
 out_unlock:
 	mutex_unlock(&rdtgroup_mutex);
