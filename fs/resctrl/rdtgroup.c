@@ -3000,17 +3000,37 @@ static void rmdir_all_sub(void)
 	kernfs_remove(kn_mondata);
 }
 
+static void rdt_flush_limbo(void)
+{
+	struct rdt_resource *r = resctrl_arch_get_resource(RDT_RESOURCE_L3);
+	struct rdt_domain *d;
+
+	if (!IS_ENABLED(CONFIG_RESCTRL_RMID_DEPENDS_ON_CLOSID))
+		return;
+
+	if (!resctrl_arch_is_llc_occupancy_enabled())
+		return;
+
+	list_for_each_entry(d, &r->domains, list) {
+		if (has_busy_rmid(d)) {
+			__check_limbo(d, true);
+			cancel_delayed_work(&d->cqm_limbo);
+		}
+	}
+}
+
 static void rdt_kill_sb(struct super_block *sb)
 {
 	cpus_read_lock();
 	mutex_lock(&rdtgroup_mutex);
 
-	rdt_disable_ctx();
-
 	/* Put everything back to default values. */
 	resctrl_arch_reset_resources();
 
 	rmdir_all_sub();
+	rdt_flush_limbo();
+	rdt_disable_ctx();
+
 	if (IS_ENABLED(CONFIG_RESCTRL_FS_PSEUDO_LOCK))
 		rdt_pseudo_lock_release();
 	rdtgroup_default.mode = RDT_MODE_SHAREABLE;
