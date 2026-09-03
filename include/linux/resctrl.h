@@ -473,6 +473,13 @@ void resctrl_exit(void);
 int resctrl_arch_mon_resource_init(void);
 void mbm_config_rftype_init(const char *config);
 
+void resctrl_setup_dom_overflow(struct rdt_resource *r);
+void resctrl_setup_dom_overflow_exclude_cpu(struct rdt_resource *r,
+					    struct rdt_domain *d,
+					    unsigned int exclude_cpu);
+void resctrl_arch_setup_res_mbm_over(void);
+void resctrl_arch_setup_res_mbm_over_exclude_cpu(unsigned int exclude_cpu);
+
 /* When supported, the architecture must implement these */
 #ifdef CONFIG_RESCTRL_IOMMU
 int resctrl_arch_set_iommu_closid_rmid(struct iommu_group *group, u32 closid,

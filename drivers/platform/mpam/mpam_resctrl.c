@@ -99,6 +99,40 @@ bool resctrl_arch_is_mbm_enabled(enum resctrl_res_level rid)
 	}
 }
 
+void resctrl_arch_setup_res_mbm_over(void)
+{
+	struct mpam_resctrl_res *res;
+	int i;
+
+	for (i = 0; i < RDT_NUM_RESOURCES; i++) {
+		res = &mpam_resctrl_exports[i];
+
+		if (!res->class)
+			continue;
+
+		resctrl_setup_dom_overflow(&res->resctrl_res);
+	}
+}
+
+void resctrl_arch_setup_res_mbm_over_exclude_cpu(unsigned int exclude_cpu)
+{
+	struct mpam_resctrl_res *res;
+	struct rdt_domain *d;
+	int i;
+
+	for (i = 0; i < RDT_NUM_RESOURCES; i++) {
+		res = &mpam_resctrl_exports[i];
+
+		if (!res->class)
+			continue;
+
+		d = resctrl_get_domain_from_cpu(exclude_cpu, &res->resctrl_res);
+		if (d)
+			resctrl_setup_dom_overflow_exclude_cpu(&res->resctrl_res,
+								d, exclude_cpu);
+	}
+}
+
 bool resctrl_arch_get_cdp_enabled(enum resctrl_res_level rid)
 {
 	switch (rid) {
