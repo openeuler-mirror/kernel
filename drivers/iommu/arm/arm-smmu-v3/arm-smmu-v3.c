@@ -4155,6 +4155,9 @@ static int arm_smmu_group_set_mpam(struct iommu_group *group, u16 partid,
 			sid = master->streams[i].id;
 			step = arm_smmu_get_step_for_sid(smmu, sid);
 
+			pr_debug("smmu feat 0x%x bind partid %d pmg %d to sid %d\n",
+				  smmu->features, partid, pmg, sid);
+
 			/* These need locking if the VMSPtr is ever used */
 			step->data[4] = FIELD_PREP(STRTAB_STE_4_PARTID, partid);
 			step->data[5] = FIELD_PREP(STRTAB_STE_5_PMG, pmg);
