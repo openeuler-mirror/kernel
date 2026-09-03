@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -578,11 +578,9 @@ static u8 *unic_get_queues_strings(struct unic_dev *unic_dev, u8 *data)
 {
 	u32 channel_num = unic_dev->channels.num;
 
-	/* get desc for Tx */
 	data = unic_get_strings(unic_dev, data, "txq", channel_num,
 				unic_sq_stats_str, ARRAY_SIZE(unic_sq_stats_str));
 
-	/* get desc for Rx */
 	data = unic_get_strings(unic_dev, data, "rxq", channel_num,
 				unic_rq_stats_str, ARRAY_SIZE(unic_rq_stats_str));
 

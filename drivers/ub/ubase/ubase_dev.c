@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -279,10 +279,10 @@ static int ubase_add_one_adev(struct ubase_dev *udev, int idx)
 
 	ret = auxiliary_device_init(&uadev->adev);
 	if (ret) {
-		ubase_destroy_one_adev(uadev);
 		ubase_err(udev,
 			  "failed to init auxiliary device(%s.%d), ret = %d\n",
 			  uadev->adev.name, udev->dev_id, ret);
+		ubase_destroy_one_adev(uadev);
 		return ret;
 	}
 
@@ -1230,8 +1230,8 @@ u32 __ubase_get_hw_ver(struct ubase_dev *udev)
 		return UBASE_HW_VER_A_1;
 	case UBASE_DEV_ID_S_0_URMA_MUE:
 	case UBASE_DEV_ID_S_0_URMA_UE:
-	case UBASE_DEV_ID_S_0_PMU_MUE:
 	case UBASE_DEV_ID_S_0_CDMA_MUE:
+	case UBASE_DEV_ID_S_0_PMU_MUE:
 		return UBASE_HW_VER_S_0;
 	default:
 		return UBASE_HW_VER_UNKNOWN;
@@ -2123,11 +2123,6 @@ int __ubase_activate_dev(struct ubase_dev *udev)
 	struct ub_entity *ue = container_of(udev->dev, struct ub_entity, dev);
 	int ret;
 
-#ifdef CONFIG_EQUIP
-	if (!ubase_dev_rack_server_supported(udev))
-		return 0;
-#endif
-
 	if (ubase_activate_proxy_supported(udev))
 		ret = ub_activate_entity(ue, ue->entity_idx);
 	else
@@ -2366,55 +2361,6 @@ bool ubase_adev_mbx_supported(struct auxiliary_device *adev)
 	return ubase_dev_mbx_supported(__ubase_get_udev_by_adev(adev));
 }
 EXPORT_SYMBOL(ubase_adev_mbx_supported);
-
-/**
- * ubase_cmd_ctx_buf_free - Free context buffer of the device
- * @aux_dev: auxiliary device
- * @ctx_buf: context buffer capabilities
- *
- * This function is used to free the context buffer that is
- * allocated by calling function 'ubase_cmd_ctx_buf_alloc'.
- *
- * Context: Any context.
- */
-void ubase_cmd_ctx_buf_free(struct auxiliary_device *aux_dev,
-			    struct ubase_ctx_buf_cap *ctx_buf)
-{
-	struct ubase_dev *udev;
-
-	if (!aux_dev || !ctx_buf)
-		return;
-
-	udev = __ubase_get_udev_by_adev(aux_dev);
-	__ubase_cmd_ctx_buf_free(udev, ctx_buf);
-}
-EXPORT_SYMBOL(ubase_cmd_ctx_buf_free);
-
-/**
- * ubase_cmd_ctx_buf_alloc - Allocate context buffer of the device
- * @aux_dev: auxiliary device
- * @ctx_buf: context buffer capabilities
- * @attr: mailbox attribute
- *
- * This function is used to allocate context buffer for the device
- * and config context buffer by mailbox to hardware.
- *
- * Context: Process context. Takes and releases <lock>, BH-safe. May sleep
- * Return: 0 on success, negative error code otherwise
- */
-int ubase_cmd_ctx_buf_alloc(struct auxiliary_device *aux_dev,
-			    struct ubase_ctx_buf_cap *ctx_buf,
-			    struct ubase_mbx_attr *attr)
-{
-	struct ubase_dev *udev;
-
-	if (!aux_dev || !ctx_buf || !attr)
-		return -EINVAL;
-
-	udev = __ubase_get_udev_by_adev(aux_dev);
-	return __ubase_cmd_ctx_buf_alloc(udev, ctx_buf, attr);
-}
-EXPORT_SYMBOL(ubase_cmd_ctx_buf_alloc);
 
 /**
  * ubase_set_dev_mac() - Record the MAC address of the device

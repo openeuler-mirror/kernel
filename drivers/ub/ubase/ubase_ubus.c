@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
 #include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/pm.h>
-#include <ub/ubase/ubase_comm_dev.h>
 #include <ub/ubus/ub_black_box.h>
+#include <ub/ubase/ubase_comm_dev.h>
 
 #include "ubase_cmd.h"
 #include "ubase_dev.h"

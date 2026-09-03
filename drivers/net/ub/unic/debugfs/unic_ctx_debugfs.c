@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -76,7 +76,6 @@ static void unic_dump_jfc_ctx_info_sw(struct unic_cq *cq, struct seq_file *s,
 
 	if (unic_jfc_support_ceqn9(unic_dev))
 		seq_printf(s, "%-6u", ctx->dw2_ceqn9.ceqn);
-
 	else
 		seq_printf(s, "%-6u", ctx->dw2_ceqn8.ceqn);
 	seq_printf(s, "%-14u", ctx->record_db_en);

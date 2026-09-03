@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -2046,10 +2046,6 @@ void ubase_ctrlq_parse_ue_msg(struct auxiliary_device *adev, void *data, u16 len
 		return;
 
 	udev = __ubase_get_udev_by_adev(adev);
-#ifdef CONFIG_EQUIP
-	if (!ubase_dev_rack_server_supported(udev))
-		return;
-#endif
 	if (len < UBASE_CTRLQ_UE_MSG_HDR_LEN) {
 		ubase_err(udev, "invalid ue ctrlq msg len(%u).\n", len);
 		return;

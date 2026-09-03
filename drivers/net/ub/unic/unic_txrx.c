@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -42,7 +42,6 @@ static u16 unic_get_cqe_period(u16 cqe_period)
 }
 
 bool unic_jfc_support_ceqn9(struct unic_dev *unic_dev)
-
 {
 	return unic_dev->hw_ver != UBASE_HW_VER_A_0 &&
 	       unic_dev->hw_ver != UBASE_HW_VER_K_0;
@@ -69,12 +68,12 @@ static void unic_init_jfc_ctx(struct unic_cq *cq, u8 jfc_shift,
 		ctx->dw2_ceqn9.queue_token_id = unic_dev->tid;
 		ctx->dw2_ceqn9.ceqn = 0;
 		ctx->dw2_ceqn9.cq_cnt_mode = UNIC_CQE_CNT_MODE_BY_COUNT;
-
 	} else {
 		ctx->dw2_ceqn8.queue_token_id = unic_dev->tid;
 		ctx->dw2_ceqn8.ceqn = 0;
 		ctx->dw2_ceqn8.cq_cnt_mode = UNIC_CQE_CNT_MODE_BY_COUNT;
 	}
+
 	ctx->cqe_coalesce_cnt = cqe_coal_cnt;
 	ctx->cqe_coalesce_period = unic_get_cqe_period(cqe_coal_period);
 }

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -12,7 +12,6 @@
 #include "ubase_cmd.h"
 #include "ubase_dev.h"
 
-#define UBASE_CTRLQ_TX_TIMEOUT		30000
 #define UBASE_CTRLQ_BB_LEN		32U
 #define UBASE_CTRLQ_HDR_LEN		12
 #define UBASE_CTRLQ_DATA_LEN		(UBASE_CTRLQ_BB_LEN - UBASE_CTRLQ_HDR_LEN)

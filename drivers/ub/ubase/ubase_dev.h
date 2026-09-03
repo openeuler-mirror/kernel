@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -27,7 +27,6 @@
 #include "ubase_proxy.h"
 #include "ubase_ubus.h"
 
-#define UBASE_MOD_VERSION		"1.0"
 #define UBASE_ADEV_PROBE_FAIL_B		0
 #define UBASE_DEV_NEED_TO_ACTIVATE_B	0
 
@@ -395,6 +394,8 @@ struct ubase_mbx_stats {
 	u64	event_hw_cnt;
 	u64	cmd_timeout_cnt;
 	u64	event_hw_timeout_cnt;
+	u64	destroy_jfs_cmd_timeout_cnt;
+	u64	destroy_jfs_event_hw_timeout_cnt;
 	u64	ae_cnt;
 	u64	seq_num_err_cnt;
 	u64	buff_cnt;

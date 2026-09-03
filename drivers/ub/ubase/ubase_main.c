@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -33,8 +33,5 @@ module_init(ubase_init);
 module_exit(ubase_exit);
 
 MODULE_DESCRIPTION("UBASE: Hisilicon Network Driver");
-MODULE_IMPORT_NS(UB_UBFI);
-MODULE_IMPORT_NS(UB_UBUS);
 MODULE_LICENSE("GPL");
 MODULE_SOFTDEP("pre: ummu");
-MODULE_VERSION(UBASE_MOD_VERSION);

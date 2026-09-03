@@ -63,6 +63,18 @@ static inline u16 unic_get_sqe_mask(struct unic_sq *sq)
 	return unic_get_sqe_depth(sq) - 1;
 }
 
+static inline bool unic_support_jfs_flush_prepare(struct unic_dev *unic_dev)
+{
+	return (unic_dev->hw_ver == UBASE_HW_VER_A_0 ||
+		unic_dev->hw_ver == UBASE_HW_VER_K_0);
+}
+
+static inline bool unic_support_jfs_flush_ssn_vld(struct unic_dev *unic_dev)
+{
+	return (unic_dev->hw_ver == UBASE_HW_VER_A_0 ||
+		unic_dev->hw_ver == UBASE_HW_VER_K_0);
+}
+
 static u16 unic_get_spare_sqebb_num(struct unic_sq *sq)
 {
 	u16 sqe_depth = unic_get_sqe_depth(sq);
@@ -498,7 +510,6 @@ static void unic_multi_jfs_wait_flush(struct unic_dev *unic_dev, u32 num,
 
 	struct auxiliary_device *adev = unic_dev->comdev.adev;
 	unsigned long end_jiffies, fd_bitmap = 0;
-	struct unic_channel *c;
 	bool timeout = false;
 	u32 i, fd_cnt = 0;
 	int ret;
@@ -510,7 +521,6 @@ static void unic_multi_jfs_wait_flush(struct unic_dev *unic_dev, u32 num,
 			timeout = true;
 
 		for (i = 0; i < num; i++) {
-			c = &unic_dev->channels.c[i];
 			if (test_bit(i, &fd_bitmap))
 				continue;
 
@@ -529,8 +539,16 @@ static void unic_multi_jfs_wait_flush(struct unic_dev *unic_dev, u32 num,
 		msleep(UNIC_WAIT_FLUSH_EVERY_STEP_TIME);
 	}
 
+	if (!unic_support_jfs_flush_ssn_vld(unic_dev)) {
+		if (fd_cnt != num)
+			dev_err(adev->dev.parent,
+				"wait jfs flush timeout, need flush jfs(%u), actually flush jfs_bitmap(%lu).\n",
+				num, fd_bitmap);
+
+		goto skip_check_ssn_vld;
+	}
+
 	for (i = 0; i < num; i++) {
-		c = &unic_dev->channels.c[i];
 		if (test_bit(i, &fd_bitmap))
 			continue;
 
@@ -542,6 +560,7 @@ static void unic_multi_jfs_wait_flush(struct unic_dev *unic_dev, u32 num,
 				i + start_idx, ret);
 	}
 
+skip_check_ssn_vld:
 	udelay(UNIC_WAIT_TIME_AFTER_FLUSH_DONE);
 }
 
@@ -641,7 +660,8 @@ static void unic_destroy_multi_jfs(struct unic_dev *unic_dev, u32 num,
 
 	timeout_ms = unic_get_ta_timeout_ms(UNIC_TIMEOUT_64S);
 
-	unic_multi_jfs_flush_prepare(unic_dev, num, timeout_ms, start_idx);
+	if (unic_support_jfs_flush_prepare(unic_dev))
+		unic_multi_jfs_flush_prepare(unic_dev, num, timeout_ms, start_idx);
 
 	unic_modify_multi_jfs_state(adev, num, start_idx);
 
