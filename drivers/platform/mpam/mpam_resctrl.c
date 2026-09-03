@@ -714,7 +714,7 @@ static u32 mbw_max_to_percent(u16 mbw_max, u8 wd)
 	u8 bit;
 	u32 divisor = 2, value = 0, precision = get_wd_precision(wd);
 
-	if (mbw_max == GENMASK(15, 15 - wd + 1))
+	if (mbw_max == GENMASK(15, 16 - wd))
 		return MAX_MBA_BW;
 
 	for (bit = 15; bit; bit--) {
@@ -743,11 +743,12 @@ static u16 percent_to_mbw_max(u32 pc, u8 wd)
 	u8 bit;
 	u32 divisor = 2, value = 0, precision = get_wd_precision(wd);
 
-	if (WARN_ON_ONCE(wd > 15))
-		return MAX_MBA_BW;
+	if (WARN_ON_ONCE(wd > 16))
+		/* All bits valid as fallback */
+		return GENMASK(15, 0);
 
 	if (pc == MAX_MBA_BW)
-		return GENMASK(15, 15 - wd + 1);
+		return GENMASK(15, 16 - wd);
 
 	pc *= precision;
 
@@ -762,7 +763,7 @@ static u16 percent_to_mbw_max(u32 pc, u8 wd)
 			break;
 	}
 
-	value &= GENMASK(15, 15 - wd + 1);
+	value &= GENMASK(15, 16 - wd);
 
 	return value;
 }
