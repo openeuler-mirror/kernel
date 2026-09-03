@@ -320,6 +320,25 @@ static int check_acl(struct mnt_idmap *idmap,
 	return -EAGAIN;
 }
 
+/*
+ * Very quick optimistic "we know we have no ACL's" check.
+ *
+ * Note that this is purely for ACL_TYPE_ACCESS, and purely
+ * for the "we have cached that there are no ACLs" case.
+ *
+ * If this returns true, we know there are no ACLs. But if
+ * it returns false, we might still not have ACLs (it could
+ * be the is_uncached_acl() case).
+ */
+static inline bool no_acl_inode(struct inode *inode)
+{
+#ifdef CONFIG_FS_POSIX_ACL
+	return likely(!READ_ONCE(inode->i_acl));
+#else
+	return true;
+#endif
+}
+
 /**
  * acl_permission_check - perform basic UNIX permission checking
  * @idmap:	idmap of the mount the inode was found from
@@ -341,6 +360,28 @@ static int acl_permission_check(struct mnt_idmap *idmap,
 {
 	unsigned int mode = inode->i_mode;
 	vfsuid_t vfsuid;
+
+	/*
+	 * Common cheap case: everybody has the requested
+	 * rights, and there are no ACLs to check. No need
+	 * to do any owner/group checks in that case.
+	 *
+	 *  - 'mask&7' is the requested permission bit set
+	 *  - multiplying by 0111 spreads them out to all of ugo
+	 *  - '& ~mode' looks for missing inode permission bits
+	 *  - the '!' is for "no missing permissions"
+	 *
+	 * After that, we just need to check that there are no
+	 * ACL's on the inode - do the 'IS_POSIXACL()' check last
+	 * because it will dereference the ->i_sb pointer and we
+	 * want to avoid that if at all possible.
+	 */
+	if (!((mask & 7) * 0111 & ~mode)) {
+		if (no_acl_inode(inode))
+			return 0;
+		if (!IS_POSIXACL(inode))
+			return 0;
+	}
 
 	/* Are we the owner? If so, ACL's don't matter */
 	vfsuid = i_uid_into_vfsuid(idmap, inode);
@@ -476,6 +517,9 @@ static inline int do_inode_permission(struct mnt_idmap *idmap,
  * @mask: Right to check for (%MAY_READ, %MAY_WRITE, %MAY_EXEC)
  *
  * Separate out file-system wide checks from inode-specific permission checks.
+ *
+ * Note: lookup_inode_permission_may_exec() does not call here. If you add
+ * MAY_EXEC checks, adjust it.
  */
 static int sb_permission(struct super_block *sb, struct inode *inode, int mask)
 {
@@ -537,6 +581,38 @@ int inode_permission(struct mnt_idmap *idmap,
 	return security_inode_permission(inode, mask);
 }
 EXPORT_SYMBOL(inode_permission);
+
+/*
+ * lookup_inode_permission_may_exec - Check traversal right for given inode
+ *
+ * This is a special case routine for may_lookup() making assumptions specific
+ * to path traversal. Use inode_permission() if you are doing something else.
+ *
+ * Work is shaved off compared to inode_permission() as follows:
+ * - we know for a fact there is no MAY_WRITE to worry about
+ * - it is an invariant the inode is a directory
+ *
+ * Since majority of real-world traversal happens on inodes which grant it for
+ * everyone, we check it upfront and only resort to more expensive work if it
+ * fails.
+ *
+ * Filesystems which have their own ->permission hook and consequently miss out
+ * on IOP_FASTPERM can still get the optimization if they set IOP_FASTPERM_MAY_EXEC
+ * on their directory inodes.
+ */
+static __always_inline int lookup_inode_permission_may_exec(struct mnt_idmap *idmap,
+	struct inode *inode, int mask)
+{
+	mask |= MAY_EXEC;
+
+	if (unlikely(!(inode->i_opflags & (IOP_FASTPERM | IOP_FASTPERM_MAY_EXEC))))
+		return inode_permission(idmap, inode, mask);
+
+	if (unlikely(((inode->i_mode & 0111) != 0111) || !no_acl_inode(inode)))
+		return inode_permission(idmap, inode, mask);
+
+	return security_inode_permission(inode, mask);
+}
 
 /**
  * path_get - get a reference to a path
@@ -1719,11 +1795,12 @@ static inline int may_lookup(struct mnt_idmap *idmap,
 			     struct nameidata *nd)
 {
 	if (nd->flags & LOOKUP_RCU) {
-		int err = inode_permission(idmap, nd->inode, MAY_EXEC|MAY_NOT_BLOCK);
+		int err = lookup_inode_permission_may_exec(idmap, nd->inode,
+							   MAY_NOT_BLOCK);
 		if (err != -ECHILD || !try_to_unlazy(nd))
 			return err;
 	}
-	return inode_permission(idmap, nd->inode, MAY_EXEC);
+	return lookup_inode_permission_may_exec(idmap, nd->inode, 0);
 }
 
 static int reserve_stack(struct nameidata *nd, struct path *link)

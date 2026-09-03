@@ -1030,7 +1030,12 @@ struct mm_struct {
 #else
 	KABI_RESERVE(3)
 #endif
+#ifdef CONFIG_I_MMAP_SHARDS
+	KABI_USE2(4, int i_mmap_home_nid,
+		  unsigned int i_mmap_shard_idx)
+#else
 	KABI_RESERVE(4)
+#endif
 	KABI_RESERVE(5)
 	/*
 	 * The mm_cpumask needs to be at the end of mm_struct, because it

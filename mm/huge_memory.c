@@ -3591,6 +3591,9 @@ int split_huge_page_to_list_to_order(struct page *page, struct list_head *list,
 	bool is_anon = folio_test_anon(folio);
 	struct address_space *mapping = NULL;
 	struct anon_vma *anon_vma = NULL;
+#ifdef CONFIG_I_MMAP_SHARDS
+	struct i_mmap_read_lock i_mmap_lock;
+#endif
 	int order = folio_order(folio);
 	int extra_pins, ret;
 	pgoff_t end;
@@ -3685,7 +3688,11 @@ int split_huge_page_to_list_to_order(struct page *page, struct list_head *list,
 		}
 
 		anon_vma = NULL;
+#ifdef CONFIG_I_MMAP_SHARDS
+		i_mmap_lock_read_all(mapping, &i_mmap_lock);
+#else
 		i_mmap_lock_read(mapping);
+#endif
 
 		/*
 		 *__split_huge_page() may need to trim off pages beyond EOF:
@@ -3777,7 +3784,11 @@ out_unlock:
 		put_anon_vma(anon_vma);
 	}
 	if (mapping)
+#ifdef CONFIG_I_MMAP_SHARDS
+		i_mmap_unlock_read_all(mapping, &i_mmap_lock);
+#else
 		i_mmap_unlock_read(mapping);
+#endif
 out:
 	xas_destroy(&xas);
 	if (order == HPAGE_PMD_ORDER)

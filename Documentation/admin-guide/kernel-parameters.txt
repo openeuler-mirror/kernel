@@ -1914,6 +1914,14 @@
 
 	i810=		[HW,DRM]
 
+	i_mmap_opt=	[KNL]
+			Format: <bool>
+			Control file VMA batching and NUMA-local sharding of
+			regular-file reverse mapping trees. This option is
+			available when CONFIG_I_MMAP_SHARDS=y and defaults to
+			off. Specify on to enable batching and dynamic sharding
+			after lock contention.
+
 	i915.invert_brightness=
 			[DRM] Invert the sense of the variable that is used to
 			set the brightness of the panel backlight. Normally a
@@ -7524,4 +7532,3 @@
 				memory, and other data can't be written using
 				xmon commands.
 			off	xmon is disabled.
-

@@ -606,6 +606,38 @@ int walk_page_vma(struct vm_area_struct *vma, const struct mm_walk_ops *ops,
 	return __walk_page_range(vma->vm_start, vma->vm_end, &walk);
 }
 
+#ifdef CONFIG_I_MMAP_SHARDS
+/**
+ * walk_page_mapping - walk all memory areas mapped into a struct address_space.
+ * @mapping: Pointer to the struct address_space
+ * @first_index: First page offset in the address_space
+ * @nr: Number of incremental page offsets to cover
+ * @ops:	operation to call during the walk
+ * @private:	private data for callbacks' usage
+ *
+ * This function walks all memory areas mapped into a struct address_space.
+ * The walk is limited to only the given page-size index range, but if
+ * the index boundaries cross a huge page-table entry, that entry will be
+ * included.
+ *
+ * Also see walk_page_range() for additional information.
+ *
+ * Locking:
+ *   This function can't require that the struct mm_struct::mmap_lock is held,
+ *   since @mapping may be mapped by multiple processes. It takes the mapping
+ *   interval-tree read locks internally. This might have implications in the
+ *   callbacks, and it is up to the caller to ensure that the
+ *   struct mm_struct::mmap_lock is not needed.
+ *
+ *   Also this means that a caller can't rely on the struct
+ *   vm_area_struct::vm_flags to be constant across a call,
+ *   except for immutable flags. Callers requiring this shouldn't use
+ *   this function.
+ *
+ * Return: 0 on success, negative error code on failure, positive number on
+ * caller defined premature termination.
+ */
+#else
 /**
  * walk_page_mapping - walk all memory areas mapped into a struct address_space.
  * @mapping: Pointer to the struct address_space
@@ -636,6 +668,64 @@ int walk_page_vma(struct vm_area_struct *vma, const struct mm_walk_ops *ops,
  * Return: 0 on success, negative error code on failure, positive number on
  * caller defined premature termination.
  */
+#endif
+#ifdef CONFIG_I_MMAP_SHARDS
+struct walk_page_mapping_args {
+	struct mm_walk walk;
+	pgoff_t first_index;
+	pgoff_t nr;
+	int err;
+};
+
+static int walk_page_mapping_vma(struct vm_area_struct *vma, void *arg)
+{
+	struct walk_page_mapping_args *walk = arg;
+	pgoff_t vba, vea, cba, cea;
+	unsigned long start_addr, end_addr;
+
+	vba = vma->vm_pgoff;
+	vea = vba + vma_pages(vma);
+	cba = max(walk->first_index, vba);
+	cea = min(walk->first_index + walk->nr, vea);
+
+	start_addr = ((cba - vba) << PAGE_SHIFT) + vma->vm_start;
+	end_addr = ((cea - vba) << PAGE_SHIFT) + vma->vm_start;
+	if (start_addr >= end_addr)
+		return 0;
+
+	walk->walk.vma = vma;
+	walk->walk.mm = vma->vm_mm;
+	walk->err = walk_page_test(vma->vm_start, vma->vm_end,
+				   &walk->walk);
+	if (walk->err > 0) {
+		walk->err = 0;
+		return 1;
+	}
+	if (walk->err < 0)
+		return 1;
+
+	walk->err = __walk_page_range(start_addr, end_addr, &walk->walk);
+	return walk->err ? 1 : 0;
+}
+
+int walk_page_mapping(struct address_space *mapping, pgoff_t first_index,
+		      pgoff_t nr, const struct mm_walk_ops *ops,
+		      void *private)
+{
+	struct walk_page_mapping_args walk = {
+		.walk = {
+			.ops = ops,
+			.private = private,
+		},
+		.first_index = first_index,
+		.nr = nr,
+	};
+
+	i_mmap_read_walk(mapping, first_index, first_index + nr - 1, false,
+			 walk_page_mapping_vma, &walk);
+	return walk.err;
+}
+#else
 int walk_page_mapping(struct address_space *mapping, pgoff_t first_index,
 		      pgoff_t nr, const struct mm_walk_ops *ops,
 		      void *private)
@@ -682,6 +772,7 @@ int walk_page_mapping(struct address_space *mapping, pgoff_t first_index,
 
 	return err;
 }
+#endif
 
 /**
  * folio_walk_start - walk the page tables to a folio

@@ -16,6 +16,9 @@
 #include <linux/xarray.h>
 #include <linux/rbtree.h>
 #include <linux/init.h>
+#ifdef CONFIG_I_MMAP_SHARDS
+#include <linux/jump_label.h>
+#endif
 #include <linux/pid.h>
 #include <linux/bug.h>
 #include <linux/mutex.h>
@@ -471,6 +474,67 @@ struct address_space_operations {
 
 extern const struct address_space_operations empty_aops;
 
+#ifdef CONFIG_I_MMAP_SHARDS
+#define I_MMAP_MAX_DOMAINS		8
+#define I_MMAP_SHARDS_PER_DOMAIN	4
+#define I_MMAP_MAX_SHARDS		(I_MMAP_MAX_DOMAINS * \
+					 I_MMAP_SHARDS_PER_DOMAIN)
+
+struct i_mmap_shard {
+	struct rb_root_cached	root;
+	struct rw_semaphore	rwsem;
+} ____cacheline_aligned_in_smp;
+
+struct i_mmap_domain_shards {
+	int			nid;
+	struct i_mmap_shard	shard[I_MMAP_SHARDS_PER_DOMAIN];
+};
+
+struct i_mmap_shards {
+	unsigned int		nr_domains;
+	struct i_mmap_domain_shards *domain[I_MMAP_MAX_DOMAINS];
+};
+
+DECLARE_STATIC_KEY_FALSE(i_mmap_opt_enabled_key);
+
+static inline bool i_mmap_opt_enabled(void)
+{
+	return static_branch_unlikely(&i_mmap_opt_enabled_key);
+}
+
+struct i_mmap_shards *i_mmap_shards_alloc(gfp_t gfp);
+void i_mmap_shards_free(struct i_mmap_shards *shards);
+struct i_mmap_shard *i_mmap_shard_for_vma(struct i_mmap_shards *shards,
+					  struct vm_area_struct *vma);
+bool i_mmap_shards_install_locked(struct address_space *mapping,
+				  struct i_mmap_shards *shards);
+#endif
+
+#ifdef CONFIG_I_MMAP_SHARDS
+struct i_mmap_write_lock {
+	struct rb_root_cached	*root;
+};
+#endif
+
+#ifdef CONFIG_I_MMAP_SHARDS
+struct i_mmap_read_lock {
+	bool central;
+	struct i_mmap_shards *shards;
+};
+
+typedef int (*i_mmap_walk_fn)(struct vm_area_struct *vma, void *arg);
+
+int i_mmap_read_walk(struct address_space *mapping, pgoff_t first,
+		     pgoff_t last, bool try_lock, i_mmap_walk_fn fn,
+		     void *arg);
+int i_mmap_walk_locked(struct address_space *mapping, pgoff_t first,
+		       pgoff_t last, i_mmap_walk_fn fn, void *arg);
+void i_mmap_lock_read_all(struct address_space *mapping,
+			  struct i_mmap_read_lock *lock);
+void i_mmap_unlock_read_all(struct address_space *mapping,
+			    struct i_mmap_read_lock *lock);
+#endif
+
 /**
  * struct address_space - Contents of a cacheable, mappable object.
  * @host: Owner, either the inode or the block_device.
@@ -514,8 +578,14 @@ struct address_space {
 	struct rw_semaphore	i_mmap_rwsem;
 	void			*private_data;
 
+#ifdef CONFIG_I_MMAP_SHARDS
+	KABI_USE(1, struct i_mmap_shards *i_mmap_shards)
+	KABI_USE2(2, atomic_t i_mmap_nr_vmas,
+		  atomic_t i_mmap_lock_contention)
+#else
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
+#endif
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 	KABI_RESERVE(5)
@@ -581,11 +651,70 @@ static inline void i_mmap_assert_write_locked(struct address_space *mapping)
 	lockdep_assert_held_write(&mapping->i_mmap_rwsem);
 }
 
+#ifdef CONFIG_I_MMAP_SHARDS
+void __i_mmap_lock_write_vma(struct address_space *mapping,
+			     struct vm_area_struct *vma,
+			     struct i_mmap_write_lock *lock);
+void __i_mmap_unlock_write_vma(struct address_space *mapping,
+			       struct i_mmap_write_lock *lock);
+
+static inline void i_mmap_lock_write_vma(struct address_space *mapping,
+					 struct vm_area_struct *vma,
+					 struct i_mmap_write_lock *lock)
+{
+	if (i_mmap_opt_enabled()) {
+		__i_mmap_lock_write_vma(mapping, vma, lock);
+		return;
+	}
+
+	i_mmap_lock_write(mapping);
+	lock->root = &mapping->i_mmap;
+}
+
+static inline void i_mmap_unlock_write_vma(struct address_space *mapping,
+					   struct i_mmap_write_lock *lock)
+{
+	if (i_mmap_opt_enabled()) {
+		__i_mmap_unlock_write_vma(mapping, lock);
+		return;
+	}
+
+	i_mmap_unlock_write(mapping);
+}
+
+static inline struct i_mmap_shards *
+i_mmap_shards_load(struct address_space *mapping)
+{
+	if (!i_mmap_opt_enabled())
+		return NULL;
+
+	/* Pairs with release publication after all roots are initialized. */
+	return smp_load_acquire(&mapping->i_mmap_shards);
+}
+
+static inline void i_mmap_vma_count_add(struct address_space *mapping)
+{
+	if (i_mmap_opt_enabled())
+		atomic_inc(&mapping->i_mmap_nr_vmas);
+}
+
+static inline void i_mmap_vma_count_sub(struct address_space *mapping)
+{
+	if (i_mmap_opt_enabled())
+		atomic_dec(&mapping->i_mmap_nr_vmas);
+}
+#endif
+
 /*
  * Might pages of this file be mapped into userspace?
  */
 static inline int mapping_mapped(struct address_space *mapping)
 {
+#ifdef CONFIG_I_MMAP_SHARDS
+	if (i_mmap_opt_enabled() &&
+	    atomic_read(&mapping->i_mmap_nr_vmas) > 0)
+		return true;
+#endif
 	return	!RB_EMPTY_ROOT(&mapping->i_mmap.rb_root);
 }
 
@@ -657,11 +786,12 @@ is_uncached_acl(struct posix_acl *acl)
 	return (long)acl & 1;
 }
 
-#define IOP_FASTPERM	0x0001
-#define IOP_LOOKUP	0x0002
-#define IOP_NOFOLLOW	0x0004
-#define IOP_XATTR	0x0008
+#define IOP_FASTPERM		0x0001
+#define IOP_LOOKUP		0x0002
+#define IOP_NOFOLLOW		0x0004
+#define IOP_XATTR		0x0008
 #define IOP_DEFAULT_READLINK	0x0010
+#define IOP_FASTPERM_MAY_EXEC	0x0020
 
 struct fsnotify_mark_connector;
 

@@ -265,10 +265,14 @@ unsigned long wp_shared_mapping_range(struct address_space *mapping,
 {
 	struct wp_walk wpwalk = { .total = 0 };
 
+#ifndef CONFIG_I_MMAP_SHARDS
 	i_mmap_lock_read(mapping);
+#endif
 	WARN_ON(walk_page_mapping(mapping, first_index, nr, &wp_walk_ops,
 				  &wpwalk));
+#ifndef CONFIG_I_MMAP_SHARDS
 	i_mmap_unlock_read(mapping);
+#endif
 
 	return wpwalk.total;
 }
@@ -326,10 +330,14 @@ unsigned long clean_record_shared_mapping_range(struct address_space *mapping,
 		.end = none_set ? 0 : *end,
 	};
 
+#ifndef CONFIG_I_MMAP_SHARDS
 	i_mmap_lock_read(mapping);
+#endif
 	WARN_ON(walk_page_mapping(mapping, first_index, nr, &clean_walk_ops,
 				  &cwalk.base));
+#ifndef CONFIG_I_MMAP_SHARDS
 	i_mmap_unlock_read(mapping);
+#endif
 
 	*start = cwalk.start;
 	*end = cwalk.end;

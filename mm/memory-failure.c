@@ -652,6 +652,52 @@ static void collect_procs_anon(struct folio *folio, struct page *page,
 /*
  * Collect processes when the error hit a file mapped page.
  */
+#ifdef CONFIG_I_MMAP_SHARDS
+struct collect_procs_file_walk {
+	struct page *page;
+	struct list_head *to_kill;
+	int force_early;
+};
+
+static int collect_procs_file_vma(struct vm_area_struct *vma, void *arg)
+{
+	struct collect_procs_file_walk *walk = arg;
+	struct task_struct *tsk;
+
+	/*
+	 * Send early kill signals when the VMA covers the page even if the
+	 * corrupted page is not present in its page table. Applications that
+	 * requested early notification expect all such data corruption.
+	 */
+	rcu_read_lock();
+	for_each_process(tsk) {
+		struct task_struct *t;
+
+		t = task_early_kill(tsk, walk->force_early);
+		if (t && vma->vm_mm == t->mm)
+			add_to_kill_anon_file(t, walk->page, vma,
+					      walk->to_kill);
+	}
+	rcu_read_unlock();
+	return 0;
+}
+
+static void collect_procs_file(struct folio *folio, struct page *page,
+			       struct list_head *to_kill, int force_early)
+{
+	struct address_space *mapping = folio->mapping;
+	struct collect_procs_file_walk walk = {
+		.page = page,
+		.to_kill = to_kill,
+		.force_early = force_early,
+	};
+	pgoff_t pgoff;
+
+	pgoff = page_to_pgoff(page);
+	i_mmap_read_walk(mapping, pgoff, pgoff, false,
+			 collect_procs_file_vma, &walk);
+}
+#else
 static void collect_procs_file(struct folio *folio, struct page *page,
 		struct list_head *to_kill, int force_early)
 {
@@ -684,6 +730,7 @@ static void collect_procs_file(struct folio *folio, struct page *page,
 	rcu_read_unlock();
 	i_mmap_unlock_read(mapping);
 }
+#endif
 
 #ifdef CONFIG_FS_DAX
 static void add_to_kill_fsdax(struct task_struct *tsk, struct page *p,

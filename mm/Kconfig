@@ -2,6 +2,18 @@
 
 menu "Memory Management options"
 
+config I_MMAP_SHARDS
+	bool "File VMA batching and NUMA-local i_mmap shards"
+	depends on MMU && SMP && NUMA
+	default n
+	help
+	  Build support for batching file VMA updates and splitting contended
+	  regular-file reverse mapping interval trees into NUMA-local shards.
+
+	  Selecting this option only builds the capability. The optimizations
+	  remain disabled unless i_mmap_opt=on is specified on the kernel
+	  command line. If unsure, say N.
+
 #
 # For some reason microblaze and nios2 hard code SWAP=n.  Hopefully we can
 # add proper SWAP support to them, in which case this can be remove.

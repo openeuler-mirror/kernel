@@ -37,6 +37,9 @@
 #include <linux/perf_event.h>
 #include <linux/audit.h>
 #include <linux/khugepaged.h>
+#ifdef CONFIG_I_MMAP_SHARDS
+#include <linux/kstrtox.h>
+#endif
 #include <linux/uprobes.h>
 #include <linux/notifier.h>
 #include <linux/memory.h>
@@ -64,6 +67,423 @@
 
 #ifndef arch_mmap_check
 #define arch_mmap_check(addr, len, flags)	(0)
+#endif
+
+#ifdef CONFIG_I_MMAP_SHARDS
+#define I_MMAP_SHARD_CONTENTION_THRESHOLD	256
+
+DEFINE_STATIC_KEY_FALSE_RO(i_mmap_opt_enabled_key);
+EXPORT_SYMBOL_GPL(i_mmap_opt_enabled_key);
+
+static int __init i_mmap_opt_setup(char *str)
+{
+	bool enabled;
+	int ret;
+
+	ret = kstrtobool(str, &enabled);
+	if (ret)
+		return ret;
+	if (enabled)
+		static_branch_enable(&i_mmap_opt_enabled_key);
+	else
+		static_branch_disable(&i_mmap_opt_enabled_key);
+	return 0;
+}
+early_param("i_mmap_opt", i_mmap_opt_setup);
+
+static struct lock_class_key i_mmap_shard_lock_keys[I_MMAP_MAX_SHARDS];
+
+struct i_mmap_shards *i_mmap_shards_alloc(gfp_t gfp)
+{
+	struct i_mmap_domain_shards *domain;
+	struct i_mmap_shards *shards;
+	unsigned int i;
+	int nid;
+
+	if (num_possible_nodes() > I_MMAP_MAX_DOMAINS)
+		return NULL;
+
+	shards = kzalloc(sizeof(*shards), gfp);
+	if (!shards)
+		return NULL;
+
+	for_each_node_state(nid, N_POSSIBLE) {
+		domain = kzalloc_node(sizeof(*domain), gfp, nid);
+		if (!domain)
+			goto free_shards;
+
+		domain->nid = nid;
+		for (i = 0; i < I_MMAP_SHARDS_PER_DOMAIN; i++) {
+			unsigned int lock_idx;
+
+			domain->shard[i].root = RB_ROOT_CACHED;
+			init_rwsem(&domain->shard[i].rwsem);
+			lock_idx = shards->nr_domains *
+				I_MMAP_SHARDS_PER_DOMAIN + i;
+			lockdep_set_class(&domain->shard[i].rwsem,
+					  &i_mmap_shard_lock_keys[lock_idx]);
+		}
+
+		shards->domain[shards->nr_domains++] = domain;
+	}
+
+	return shards;
+
+free_shards:
+	i_mmap_shards_free(shards);
+	return NULL;
+}
+
+void i_mmap_shards_free(struct i_mmap_shards *shards)
+{
+	unsigned int i;
+
+	if (!shards)
+		return;
+
+	for (i = 0; i < shards->nr_domains; i++)
+		kfree(shards->domain[i]);
+	kfree(shards);
+}
+
+struct i_mmap_shard *i_mmap_shard_for_vma(struct i_mmap_shards *shards,
+					  struct vm_area_struct *vma)
+{
+	struct i_mmap_domain_shards *domain = NULL;
+	unsigned int domain_idx;
+	unsigned int shard_idx;
+	unsigned int i;
+	int nid;
+
+	nid = READ_ONCE(vma->vm_mm->i_mmap_home_nid);
+	for (i = 0; i < shards->nr_domains; i++) {
+		if (shards->domain[i]->nid == nid) {
+			domain = shards->domain[i];
+			break;
+		}
+	}
+
+	if (unlikely(!domain)) {
+		domain_idx = hash_32((u32)nid, 32) % shards->nr_domains;
+		domain = shards->domain[domain_idx];
+	}
+
+	shard_idx = READ_ONCE(vma->vm_mm->i_mmap_shard_idx);
+	if (unlikely(shard_idx >= I_MMAP_SHARDS_PER_DOMAIN))
+		shard_idx = 0;
+	return &domain->shard[shard_idx];
+}
+
+static bool i_mmap_sharding_eligible(struct address_space *mapping,
+				     struct vm_area_struct *vma)
+{
+	struct inode *inode = mapping->host;
+
+	if (!inode || !S_ISREG(inode->i_mode))
+		return false;
+	if (!vma->vm_file || vma->vm_file->f_mapping != mapping)
+		return false;
+	if (shmem_mapping(mapping) || IS_DAX(inode))
+		return false;
+	if (is_file_hugepages(vma->vm_file))
+		return false;
+	return num_possible_nodes() <= I_MMAP_MAX_DOMAINS;
+}
+
+static bool i_mmap_claim_shard_install(struct address_space *mapping)
+{
+	atomic_t *contention = &mapping->i_mmap_lock_contention;
+	int old, new;
+
+	do {
+		old = atomic_read(contention);
+		if (old < 0)
+			return false;
+		new = old + 1;
+		if (new >= I_MMAP_SHARD_CONTENTION_THRESHOLD)
+			new = -1;
+	} while (atomic_cmpxchg(contention, old, new) != old);
+
+	return new < 0;
+}
+
+static void i_mmap_install_shards(struct address_space *mapping)
+{
+	struct i_mmap_shards *shards;
+
+	shards = i_mmap_shards_alloc(GFP_KERNEL);
+	if (!shards) {
+		atomic_set(&mapping->i_mmap_lock_contention, 0);
+		return;
+	}
+
+	i_mmap_lock_write(mapping);
+	if (i_mmap_shards_install_locked(mapping, shards))
+		shards = NULL;
+	i_mmap_unlock_write(mapping);
+	i_mmap_shards_free(shards);
+}
+
+void __i_mmap_lock_write_vma(struct address_space *mapping,
+			     struct vm_area_struct *vma,
+			     struct i_mmap_write_lock *lock)
+{
+	struct i_mmap_shards *shards;
+	struct i_mmap_shard *shard;
+
+retry:
+	lock->root = &mapping->i_mmap;
+	shards = i_mmap_shards_load(mapping);
+	if (!shards) {
+		if (i_mmap_trylock_write(mapping)) {
+			shards = i_mmap_shards_load(mapping);
+			if (!shards)
+				return;
+			i_mmap_unlock_write(mapping);
+			goto lock_shard;
+		}
+
+		if (i_mmap_sharding_eligible(mapping, vma) &&
+		    i_mmap_claim_shard_install(mapping)) {
+			i_mmap_install_shards(mapping);
+			goto retry;
+		}
+
+		i_mmap_lock_write(mapping);
+		shards = i_mmap_shards_load(mapping);
+		if (!shards)
+			return;
+		i_mmap_unlock_write(mapping);
+	}
+
+lock_shard:
+	shard = i_mmap_shard_for_vma(shards, vma);
+	lock->root = &shard->root;
+	down_write(&shard->rwsem);
+}
+
+void __i_mmap_unlock_write_vma(struct address_space *mapping,
+			       struct i_mmap_write_lock *lock)
+{
+	struct i_mmap_shard *shard;
+
+	if (lock->root == &mapping->i_mmap) {
+		i_mmap_unlock_write(mapping);
+		return;
+	}
+
+	shard = container_of(lock->root, struct i_mmap_shard, root);
+	up_write(&shard->rwsem);
+}
+
+bool i_mmap_shards_install_locked(struct address_space *mapping,
+				  struct i_mmap_shards *shards)
+{
+	struct vm_area_struct *vma;
+	struct i_mmap_shard *shard;
+
+	i_mmap_assert_write_locked(mapping);
+	if (!i_mmap_opt_enabled() || i_mmap_shards_load(mapping))
+		return false;
+
+	for (;;) {
+		vma = vma_interval_tree_iter_first(&mapping->i_mmap, 0, ULONG_MAX);
+		if (!vma)
+			break;
+		vma_interval_tree_remove(vma, &mapping->i_mmap);
+		shard = i_mmap_shard_for_vma(shards, vma);
+		vma_interval_tree_insert(vma, &shard->root);
+	}
+
+	/* Publish only after every interval-tree root has been populated. */
+	smp_store_release(&mapping->i_mmap_shards, shards);
+	return true;
+}
+#endif
+
+#ifdef CONFIG_I_MMAP_SHARDS
+static int i_mmap_walk_root(struct rb_root_cached *root, pgoff_t first,
+			    pgoff_t last, i_mmap_walk_fn fn, void *arg)
+{
+	struct vm_area_struct *vma;
+	int ret;
+
+	vma_interval_tree_foreach(vma, root, first, last) {
+		ret = fn(vma, arg);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+#ifdef CONFIG_I_MMAP_SHARDS
+static struct i_mmap_shard *i_mmap_shard_at(struct i_mmap_shards *shards,
+					    unsigned int index)
+{
+	unsigned int domain_idx = index / I_MMAP_SHARDS_PER_DOMAIN;
+	unsigned int shard_idx = index % I_MMAP_SHARDS_PER_DOMAIN;
+
+	return &shards->domain[domain_idx]->shard[shard_idx];
+}
+
+static unsigned int i_mmap_nr_shards(struct i_mmap_shards *shards)
+{
+	return shards->nr_domains * I_MMAP_SHARDS_PER_DOMAIN;
+}
+
+static int i_mmap_lock_shards_read(struct i_mmap_shards *shards,
+				   bool try_lock)
+{
+	unsigned int nr_shards = i_mmap_nr_shards(shards);
+	unsigned int i;
+
+	for (i = 0; i < nr_shards; i++) {
+		struct i_mmap_shard *shard = i_mmap_shard_at(shards, i);
+
+		if (try_lock) {
+			if (!down_read_trylock(&shard->rwsem))
+				goto unlock;
+		} else {
+			down_read(&shard->rwsem);
+		}
+	}
+
+	return 0;
+
+unlock:
+	while (i--)
+		up_read(&i_mmap_shard_at(shards, i)->rwsem);
+	return -EAGAIN;
+}
+
+static void i_mmap_unlock_shards_read(struct i_mmap_shards *shards)
+{
+	unsigned int i = i_mmap_nr_shards(shards);
+
+	while (i--)
+		up_read(&i_mmap_shard_at(shards, i)->rwsem);
+}
+
+static int i_mmap_walk_shards_locked(struct i_mmap_shards *shards,
+				     pgoff_t first, pgoff_t last,
+				     i_mmap_walk_fn fn, void *arg)
+{
+	unsigned int nr_shards = i_mmap_nr_shards(shards);
+	unsigned int i;
+	int ret;
+
+	for (i = 0; i < nr_shards; i++) {
+		struct i_mmap_shard *shard = i_mmap_shard_at(shards, i);
+
+		ret = i_mmap_walk_root(&shard->root, first, last, fn, arg);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+#endif
+
+#ifdef CONFIG_I_MMAP_SHARDS
+void i_mmap_lock_read_all(struct address_space *mapping,
+			  struct i_mmap_read_lock *lock)
+{
+	struct i_mmap_shards *shards;
+
+	lock->central = false;
+	lock->shards = NULL;
+	shards = i_mmap_shards_load(mapping);
+	if (!shards) {
+		i_mmap_lock_read(mapping);
+		shards = i_mmap_shards_load(mapping);
+		if (!shards) {
+			lock->central = true;
+			return;
+		}
+		i_mmap_unlock_read(mapping);
+	}
+
+	i_mmap_lock_shards_read(shards, false);
+	lock->shards = shards;
+}
+
+void i_mmap_unlock_read_all(struct address_space *mapping,
+			    struct i_mmap_read_lock *lock)
+{
+	if (lock->shards) {
+		i_mmap_unlock_shards_read(lock->shards);
+		return;
+	}
+	VM_WARN_ON_ONCE(!lock->central);
+	i_mmap_unlock_read(mapping);
+}
+#endif
+
+int i_mmap_read_walk(struct address_space *mapping, pgoff_t first,
+		     pgoff_t last, bool try_lock, i_mmap_walk_fn fn,
+		     void *arg)
+{
+#ifdef CONFIG_I_MMAP_SHARDS
+	struct i_mmap_shards *shards;
+	int ret;
+
+	shards = i_mmap_shards_load(mapping);
+	if (!shards) {
+		if (try_lock) {
+			if (!i_mmap_trylock_read(mapping))
+				return -EAGAIN;
+		} else {
+			i_mmap_lock_read(mapping);
+		}
+
+		shards = i_mmap_shards_load(mapping);
+		if (!shards) {
+			ret = i_mmap_walk_root(&mapping->i_mmap, first, last,
+					       fn, arg);
+			i_mmap_unlock_read(mapping);
+			return ret;
+		}
+		i_mmap_unlock_read(mapping);
+	}
+
+	ret = i_mmap_lock_shards_read(shards, try_lock);
+	if (ret)
+		return ret;
+	ret = i_mmap_walk_shards_locked(shards, first, last, fn, arg);
+	i_mmap_unlock_shards_read(shards);
+	return ret;
+#else
+	int ret;
+
+	if (try_lock) {
+		if (!i_mmap_trylock_read(mapping))
+			return -EAGAIN;
+	} else {
+		i_mmap_lock_read(mapping);
+	}
+	ret = i_mmap_walk_root(&mapping->i_mmap, first, last, fn, arg);
+	i_mmap_unlock_read(mapping);
+	return ret;
+#endif
+}
+
+int i_mmap_walk_locked(struct address_space *mapping, pgoff_t first,
+		       pgoff_t last, i_mmap_walk_fn fn, void *arg)
+{
+#ifdef CONFIG_I_MMAP_SHARDS
+	struct i_mmap_shards *shards = i_mmap_shards_load(mapping);
+	unsigned int i;
+
+	if (shards) {
+		for (i = 0; i < i_mmap_nr_shards(shards); i++)
+			lockdep_assert_held(&i_mmap_shard_at(shards, i)->rwsem);
+		return i_mmap_walk_shards_locked(shards, first, last, fn, arg);
+	}
+#endif
+	i_mmap_assert_locked(mapping);
+	return i_mmap_walk_root(&mapping->i_mmap, first, last, fn, arg);
+}
 #endif
 
 #ifdef CONFIG_HAVE_ARCH_MMAP_RND_BITS
@@ -105,6 +525,23 @@ void vma_set_page_prot(struct vm_area_struct *vma)
 	WRITE_ONCE(vma->vm_page_prot, vm_page_prot);
 }
 
+#ifdef CONFIG_I_MMAP_SHARDS
+/*
+ * Requires the mapping tree write lock for @root.
+ */
+static void __remove_shared_vm_struct(struct vm_area_struct *vma,
+				      struct address_space *mapping,
+				      struct rb_root_cached *root)
+{
+	if (vma->vm_flags & VM_SHARED)
+		mapping_unmap_writable(mapping);
+
+	flush_dcache_mmap_lock(mapping);
+	vma_interval_tree_remove(vma, root);
+	i_mmap_vma_count_sub(mapping);
+	flush_dcache_mmap_unlock(mapping);
+}
+#else
 /*
  * Requires inode->i_mapping->i_mmap_rwsem
  */
@@ -118,6 +555,7 @@ static void __remove_shared_vm_struct(struct vm_area_struct *vma,
 	vma_interval_tree_remove(vma, &mapping->i_mmap);
 	flush_dcache_mmap_unlock(mapping);
 }
+#endif
 
 /*
  * Unlink a file-based vm structure from its interval tree, to hide
@@ -129,9 +567,17 @@ void unlink_file_vma(struct vm_area_struct *vma)
 
 	if (file) {
 		struct address_space *mapping = file->f_mapping;
+#ifdef CONFIG_I_MMAP_SHARDS
+		struct i_mmap_write_lock lock;
+
+		i_mmap_lock_write_vma(mapping, vma, &lock);
+		__remove_shared_vm_struct(vma, mapping, lock.root);
+		i_mmap_unlock_write_vma(mapping, &lock);
+#else
 		i_mmap_lock_write(mapping);
 		__remove_shared_vm_struct(vma, mapping);
 		i_mmap_unlock_write(mapping);
+#endif
 	}
 }
 
@@ -142,6 +588,19 @@ void unlink_file_vma_batch_init(struct unlink_vma_file_batch *vb)
 
 static void unlink_file_vma_batch_process(struct unlink_vma_file_batch *vb)
 {
+#ifdef CONFIG_I_MMAP_SHARDS
+	struct address_space *mapping;
+	struct i_mmap_write_lock lock;
+	int i;
+
+	mapping = vb->vmas[0]->vm_file->f_mapping;
+	i_mmap_lock_write_vma(mapping, vb->vmas[0], &lock);
+	for (i = 0; i < vb->count; i++) {
+		VM_WARN_ON_ONCE(vb->vmas[i]->vm_file->f_mapping != mapping);
+		__remove_shared_vm_struct(vb->vmas[i], mapping, lock.root);
+	}
+	i_mmap_unlock_write_vma(mapping, &lock);
+#else
 	struct address_space *mapping;
 	int i;
 
@@ -152,6 +611,7 @@ static void unlink_file_vma_batch_process(struct unlink_vma_file_batch *vb)
 		__remove_shared_vm_struct(vb->vmas[i], mapping);
 	}
 	i_mmap_unlock_write(mapping);
+#endif
 
 	unlink_file_vma_batch_init(vb);
 }
@@ -159,13 +619,34 @@ static void unlink_file_vma_batch_process(struct unlink_vma_file_batch *vb)
 void unlink_file_vma_batch_add(struct unlink_vma_file_batch *vb,
 			       struct vm_area_struct *vma)
 {
+#ifdef CONFIG_I_MMAP_SHARDS
+	struct file *file;
+	struct address_space *mapping;
+	bool mapping_changed = false;
+#endif
+
 	if (vma->vm_file == NULL)
 		return;
 
+#ifdef CONFIG_I_MMAP_SHARDS
+	file = vma->vm_file;
+	mapping = file->f_mapping;
+	if (vb->count > 0) {
+		if (i_mmap_opt_enabled())
+			mapping_changed =
+				vb->vmas[0]->vm_file->f_mapping != mapping;
+		else
+			mapping_changed = vb->vmas[0]->vm_file != file;
+	}
+
+	if (mapping_changed ||
+	    vb->count == ARRAY_SIZE(vb->vmas))
+		unlink_file_vma_batch_process(vb);
+#else
 	if ((vb->count > 0 && vb->vmas[0]->vm_file != vma->vm_file) ||
 	    vb->count == ARRAY_SIZE(vb->vmas))
 		unlink_file_vma_batch_process(vb);
-
+#endif
 	vb->vmas[vb->count] = vma;
 	vb->count++;
 }
@@ -426,6 +907,20 @@ static unsigned long count_vma_pages_range(struct mm_struct *mm,
 	return nr_pages;
 }
 
+#ifdef CONFIG_I_MMAP_SHARDS
+static void __vma_link_file(struct vm_area_struct *vma,
+			    struct address_space *mapping,
+			    struct rb_root_cached *root)
+{
+	if (vma->vm_flags & VM_SHARED)
+		mapping_allow_writable(mapping);
+
+	flush_dcache_mmap_lock(mapping);
+	vma_interval_tree_insert(vma, root);
+	i_mmap_vma_count_add(mapping);
+	flush_dcache_mmap_unlock(mapping);
+}
+#else
 static void __vma_link_file(struct vm_area_struct *vma,
 			    struct address_space *mapping)
 {
@@ -436,17 +931,27 @@ static void __vma_link_file(struct vm_area_struct *vma,
 	vma_interval_tree_insert(vma, &mapping->i_mmap);
 	flush_dcache_mmap_unlock(mapping);
 }
+#endif
 
 static void vma_link_file(struct vm_area_struct *vma)
 {
 	struct file *file = vma->vm_file;
 	struct address_space *mapping;
+#ifdef CONFIG_I_MMAP_SHARDS
+	struct i_mmap_write_lock lock;
+#endif
 
 	if (file) {
 		mapping = file->f_mapping;
+#ifdef CONFIG_I_MMAP_SHARDS
+		i_mmap_lock_write_vma(mapping, vma, &lock);
+		__vma_link_file(vma, mapping, lock.root);
+		i_mmap_unlock_write_vma(mapping, &lock);
+#else
 		i_mmap_lock_write(mapping);
 		__vma_link_file(vma, mapping);
 		i_mmap_unlock_write(mapping);
+#endif
 	}
 }
 
@@ -518,7 +1023,11 @@ static inline void vma_prepare(struct vma_prepare *vp)
 			uprobe_munmap(vp->adj_next, vp->adj_next->vm_start,
 				      vp->adj_next->vm_end);
 
+#ifdef CONFIG_I_MMAP_SHARDS
+		i_mmap_lock_write_vma(vp->mapping, vp->vma, &vp->i_mmap_lock);
+#else
 		i_mmap_lock_write(vp->mapping);
+#endif
 		if (vp->insert && vp->insert->vm_file) {
 			/*
 			 * Put into interval tree now, so instantiated pages
@@ -526,8 +1035,13 @@ static inline void vma_prepare(struct vma_prepare *vp)
 			 * throughout; but we cannot insert into address
 			 * space until vma start or end is updated.
 			 */
+#ifdef CONFIG_I_MMAP_SHARDS
+			__vma_link_file(vp->insert, vp->mapping,
+					vp->i_mmap_lock.root);
+#else
 			__vma_link_file(vp->insert,
 					vp->insert->vm_file->f_mapping);
+#endif
 		}
 	}
 
@@ -540,10 +1054,17 @@ static inline void vma_prepare(struct vma_prepare *vp)
 
 	if (vp->file) {
 		flush_dcache_mmap_lock(vp->mapping);
+#ifdef CONFIG_I_MMAP_SHARDS
+		vma_interval_tree_remove(vp->vma, vp->i_mmap_lock.root);
+		if (vp->adj_next)
+			vma_interval_tree_remove(vp->adj_next,
+						 vp->i_mmap_lock.root);
+#else
 		vma_interval_tree_remove(vp->vma, &vp->mapping->i_mmap);
 		if (vp->adj_next)
 			vma_interval_tree_remove(vp->adj_next,
 						 &vp->mapping->i_mmap);
+#endif
 	}
 
 }
@@ -560,17 +1081,32 @@ static inline void vma_complete(struct vma_prepare *vp,
 				struct vma_iterator *vmi, struct mm_struct *mm)
 {
 	if (vp->file) {
+#ifdef CONFIG_I_MMAP_SHARDS
+		if (vp->adj_next)
+			vma_interval_tree_insert(vp->adj_next,
+						 vp->i_mmap_lock.root);
+		vma_interval_tree_insert(vp->vma, vp->i_mmap_lock.root);
+#else
 		if (vp->adj_next)
 			vma_interval_tree_insert(vp->adj_next,
 						 &vp->mapping->i_mmap);
 		vma_interval_tree_insert(vp->vma, &vp->mapping->i_mmap);
+#endif
 		flush_dcache_mmap_unlock(vp->mapping);
 	}
 
 	if (vp->remove && vp->file) {
+#ifdef CONFIG_I_MMAP_SHARDS
+		__remove_shared_vm_struct(vp->remove, vp->mapping,
+					  vp->i_mmap_lock.root);
+		if (vp->remove2)
+			__remove_shared_vm_struct(vp->remove2, vp->mapping,
+						  vp->i_mmap_lock.root);
+#else
 		__remove_shared_vm_struct(vp->remove, vp->mapping);
 		if (vp->remove2)
 			__remove_shared_vm_struct(vp->remove2, vp->mapping);
+#endif
 	} else if (vp->insert) {
 		/*
 		 * split_vma has split insert from vma, and needs
@@ -589,7 +1125,11 @@ static inline void vma_complete(struct vma_prepare *vp,
 	}
 
 	if (vp->file) {
+#ifdef CONFIG_I_MMAP_SHARDS
+		i_mmap_unlock_write_vma(vp->mapping, &vp->i_mmap_lock);
+#else
 		i_mmap_unlock_write(vp->mapping);
+#endif
 
 		if (!vp->skip_vma_uprobe) {
 			uprobe_mmap(vp->vma);
@@ -3865,6 +4405,23 @@ static void vm_lock_mapping(struct mm_struct *mm, struct address_space *mapping)
 		if (test_and_set_bit(AS_MM_ALL_LOCKS, &mapping->flags))
 			BUG();
 		down_write_nest_lock(&mapping->i_mmap_rwsem, &mm->mmap_lock);
+#ifdef CONFIG_I_MMAP_SHARDS
+		{
+			struct i_mmap_shards *shards;
+			unsigned int i;
+
+			shards = i_mmap_shards_load(mapping);
+			if (shards) {
+				for (i = 0; i < i_mmap_nr_shards(shards); i++) {
+					struct i_mmap_shard *shard;
+
+					shard = i_mmap_shard_at(shards, i);
+					down_write_nest_lock(&shard->rwsem,
+							     &mm->mmap_lock);
+				}
+			}
+		}
+#endif
 	}
 }
 
@@ -3984,6 +4541,31 @@ static void vm_unlock_anon_vma(struct anon_vma *anon_vma)
 	}
 }
 
+#ifdef CONFIG_I_MMAP_SHARDS
+static void vm_unlock_mapping(struct mm_struct *mm,
+			      struct address_space *mapping)
+{
+	mmap_assert_write_locked(mm);
+	if (test_bit(AS_MM_ALL_LOCKS, &mapping->flags)) {
+		/*
+		 * AS_MM_ALL_LOCKS can't change to 0 from under us
+		 * because we hold the mm_all_locks_mutex.
+		 */
+		struct i_mmap_shards *shards = i_mmap_shards_load(mapping);
+
+		if (shards) {
+			unsigned int i = i_mmap_nr_shards(shards);
+
+			while (i--)
+				up_write(&i_mmap_shard_at(shards, i)->rwsem);
+		}
+		i_mmap_unlock_write(mapping);
+		if (!test_and_clear_bit(AS_MM_ALL_LOCKS,
+					&mapping->flags))
+			BUG();
+	}
+}
+#else
 static void vm_unlock_mapping(struct address_space *mapping)
 {
 	if (test_bit(AS_MM_ALL_LOCKS, &mapping->flags)) {
@@ -3997,6 +4579,7 @@ static void vm_unlock_mapping(struct address_space *mapping)
 			BUG();
 	}
 }
+#endif
 
 /*
  * The mmap_lock cannot be released by the caller until
@@ -4016,7 +4599,11 @@ void mm_drop_all_locks(struct mm_struct *mm)
 			list_for_each_entry(avc, &vma->anon_vma_chain, same_vma)
 				vm_unlock_anon_vma(avc->anon_vma);
 		if (vma->vm_file && vma->vm_file->f_mapping)
+#ifdef CONFIG_I_MMAP_SHARDS
+			vm_unlock_mapping(mm, vma->vm_file->f_mapping);
+#else
 			vm_unlock_mapping(vma->vm_file->f_mapping);
+#endif
 	}
 
 	mutex_unlock(&mm_all_locks_mutex);

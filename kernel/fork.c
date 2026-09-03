@@ -76,6 +76,11 @@
 #include <linux/freezer.h>
 #include <linux/delayacct.h>
 #include <linux/taskstats_kern.h>
+#ifdef CONFIG_I_MMAP_SHARDS
+#include <linux/hash.h>
+#include <linux/log2.h>
+#include <linux/topology.h>
+#endif
 #include <linux/tty.h>
 #include <linux/fs_struct.h>
 #include <linux/magic.h>
@@ -670,20 +675,89 @@ static void dup_mm_exe_file(struct mm_struct *mm, struct mm_struct *oldmm)
 }
 
 #ifdef CONFIG_MMU
+#ifdef CONFIG_I_MMAP_SHARDS
+#define DUP_MMAP_FILE_BATCH_NR	4
+
+struct dup_mmap_file_batch {
+	struct address_space *mapping;
+	unsigned int count;
+	struct vm_area_struct *vmas[8];
+	struct vm_area_struct *prev[8];
+};
+
+static void dup_mmap_file_batch_init(struct dup_mmap_file_batch *batch)
+{
+	batch->mapping = NULL;
+	batch->count = 0;
+}
+
+static void dup_mmap_file_batch_flush(struct dup_mmap_file_batch *batch)
+{
+	struct address_space *mapping = batch->mapping;
+	struct i_mmap_write_lock lock;
+	unsigned int i;
+
+	if (!batch->count)
+		return;
+
+	i_mmap_lock_write_vma(mapping, batch->prev[0], &lock);
+	flush_dcache_mmap_lock(mapping);
+	for (i = 0; i < batch->count; i++) {
+		if (batch->vmas[i]->vm_flags & VM_SHARED)
+			mapping_allow_writable(mapping);
+		vma_interval_tree_insert_after(batch->vmas[i],
+					       batch->prev[i], lock.root);
+		i_mmap_vma_count_add(mapping);
+	}
+	flush_dcache_mmap_unlock(mapping);
+	i_mmap_unlock_write_vma(mapping, &lock);
+
+	dup_mmap_file_batch_init(batch);
+}
+
+static bool dup_mmap_needs_page_copy(struct vm_area_struct *dst_vma,
+				     struct vm_area_struct *src_vma)
+{
+	if (userfaultfd_wp(dst_vma))
+		return true;
+
+	if (src_vma->vm_flags & (VM_PFNMAP | VM_MIXEDMAP))
+		return true;
+
+	return src_vma->anon_vma;
+}
+#endif
+
 static __latent_entropy int dup_mmap(struct mm_struct *mm,
 					struct mm_struct *oldmm)
 {
+#ifdef CONFIG_I_MMAP_SHARDS
+	struct dup_mmap_file_batch *file_batches = NULL;
+	struct dup_mmap_file_batch file_batch_storage[DUP_MMAP_FILE_BATCH_NR];
+	unsigned int batch_idx;
+#endif
 	struct vm_area_struct *mpnt, *tmp;
 	int retval;
 	unsigned long charge = 0;
 	LIST_HEAD(uf);
 	VMA_ITERATOR(vmi, mm, 0);
 
+#ifdef CONFIG_I_MMAP_SHARDS
+	if (i_mmap_opt_enabled())
+		file_batches = file_batch_storage;
+#endif
 	uprobe_start_dup_mmap();
 	if (mmap_write_lock_killable(oldmm)) {
 		retval = -EINTR;
 		goto fail_uprobe_end;
 	}
+#ifdef CONFIG_I_MMAP_SHARDS
+	if (file_batches) {
+		for (batch_idx = 0;
+		     batch_idx < DUP_MMAP_FILE_BATCH_NR; batch_idx++)
+			dup_mmap_file_batch_init(&file_batches[batch_idx]);
+	}
+#endif
 	flush_cache_dup_mm(oldmm);
 	uprobe_dup_mmap(oldmm, mm);
 	/*
@@ -773,6 +847,49 @@ static __latent_entropy int dup_mmap(struct mm_struct *mm,
 
 		file = tmp->vm_file;
 		if (file) {
+#ifdef CONFIG_I_MMAP_SHARDS
+			struct address_space *mapping = file->f_mapping;
+			struct dup_mmap_file_batch *batch = NULL;
+
+			get_file(file);
+			if (file_batches) {
+				for (batch_idx = 0;
+				     batch_idx < DUP_MMAP_FILE_BATCH_NR;
+				     batch_idx++) {
+					struct dup_mmap_file_batch *candidate;
+
+					candidate = file_batches + batch_idx;
+					if (candidate->count &&
+					    candidate->mapping == mapping) {
+						batch = candidate;
+						break;
+					}
+					if (!candidate->count && !batch)
+						batch = candidate;
+				}
+				if (!batch) {
+					batch = &file_batches[0];
+					dup_mmap_file_batch_flush(batch);
+				}
+
+				batch->mapping = mapping;
+				batch->vmas[batch->count] = tmp;
+				batch->prev[batch->count] = mpnt;
+				batch->count++;
+
+				if (batch->count == ARRAY_SIZE(batch->vmas))
+					dup_mmap_file_batch_flush(batch);
+			} else {
+				i_mmap_lock_write(mapping);
+				if (tmp->vm_flags & VM_SHARED)
+					mapping_allow_writable(mapping);
+				flush_dcache_mmap_lock(mapping);
+				vma_interval_tree_insert_after(tmp, mpnt,
+							       &mapping->i_mmap);
+				flush_dcache_mmap_unlock(mapping);
+				i_mmap_unlock_write(mapping);
+			}
+#else
 			struct address_space *mapping = file->f_mapping;
 
 			get_file(file);
@@ -785,10 +902,25 @@ static __latent_entropy int dup_mmap(struct mm_struct *mm,
 					&mapping->i_mmap);
 			flush_dcache_mmap_unlock(mapping);
 			i_mmap_unlock_write(mapping);
+#endif
 		}
 
+#ifdef CONFIG_I_MMAP_SHARDS
+		if (!(tmp->vm_flags & VM_WIPEONFORK)) {
+			if (file_batches &&
+			    dup_mmap_needs_page_copy(tmp, mpnt)) {
+				for (batch_idx = 0;
+				     batch_idx < DUP_MMAP_FILE_BATCH_NR;
+				     batch_idx++)
+					dup_mmap_file_batch_flush(
+						&file_batches[batch_idx]);
+			}
+			retval = copy_page_range(tmp, mpnt);
+		}
+#else
 		if (!(tmp->vm_flags & VM_WIPEONFORK))
 			retval = copy_page_range(tmp, mpnt);
+#endif
 
 		if (retval) {
 			mpnt = vma_next(&vmi);
@@ -796,8 +928,22 @@ static __latent_entropy int dup_mmap(struct mm_struct *mm,
 		}
 	}
 	/* a new mm has just been created */
+#ifdef CONFIG_I_MMAP_SHARDS
+	if (file_batches) {
+		for (batch_idx = 0;
+		     batch_idx < DUP_MMAP_FILE_BATCH_NR; batch_idx++)
+			dup_mmap_file_batch_flush(&file_batches[batch_idx]);
+	}
+#endif
 	retval = arch_dup_mmap(oldmm, mm);
 loop_out:
+#ifdef CONFIG_I_MMAP_SHARDS
+	if (file_batches) {
+		for (batch_idx = 0;
+		     batch_idx < DUP_MMAP_FILE_BATCH_NR; batch_idx++)
+			dup_mmap_file_batch_flush(&file_batches[batch_idx]);
+	}
+#endif
 	vma_iter_free(&vmi);
 	if (!retval) {
 		mt_set_in_rcu(vmi.mas.tree);
@@ -1363,6 +1509,12 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p,
 	mm->locked_vm = 0;
 	atomic64_set(&mm->pinned_vm, 0);
 	memset(&mm->rss_stat, 0, sizeof(mm->rss_stat));
+#ifdef CONFIG_I_MMAP_SHARDS
+	if (i_mmap_opt_enabled()) {
+		mm->i_mmap_home_nid = numa_node_id();
+		mm->i_mmap_shard_idx = hash_ptr(mm, ilog2(I_MMAP_SHARDS_PER_DOMAIN));
+	}
+#endif
 	reliable_clear_page_counter(mm);
 	spin_lock_init(&mm->page_table_lock);
 	spin_lock_init(&mm->arg_lock);
@@ -1776,6 +1928,13 @@ static struct mm_struct *dup_mm(struct task_struct *tsk,
 
 	if (!mm_init(mm, tsk, mm->user_ns))
 		goto fail_nomem;
+
+#ifdef CONFIG_I_MMAP_SHARDS
+	if (i_mmap_opt_enabled()) {
+		mm->i_mmap_home_nid = READ_ONCE(oldmm->i_mmap_home_nid);
+		mm->i_mmap_shard_idx = READ_ONCE(oldmm->i_mmap_shard_idx);
+	}
+#endif
 
 	err = dup_mmap(mm, oldmm);
 	if (err)

@@ -104,6 +104,27 @@ static pmd_t *alloc_new_pmd(struct mm_struct *mm, struct vm_area_struct *vma,
 	return pmd;
 }
 
+#ifdef CONFIG_I_MMAP_SHARDS
+static void take_rmap_locks(struct vm_area_struct *vma,
+			    struct i_mmap_write_lock *i_mmap_lock)
+{
+	if (vma->vm_file)
+		i_mmap_lock_write_vma(vma->vm_file->f_mapping, vma,
+				       i_mmap_lock);
+	if (vma->anon_vma)
+		anon_vma_lock_write(vma->anon_vma);
+}
+
+static void drop_rmap_locks(struct vm_area_struct *vma,
+			    struct i_mmap_write_lock *i_mmap_lock)
+{
+	if (vma->anon_vma)
+		anon_vma_unlock_write(vma->anon_vma);
+	if (vma->vm_file)
+		i_mmap_unlock_write_vma(vma->vm_file->f_mapping,
+					 i_mmap_lock);
+}
+#else
 static void take_rmap_locks(struct vm_area_struct *vma)
 {
 	if (vma->vm_file)
@@ -119,6 +140,7 @@ static void drop_rmap_locks(struct vm_area_struct *vma)
 	if (vma->vm_file)
 		i_mmap_unlock_write(vma->vm_file->f_mapping);
 }
+#endif
 
 static pte_t move_soft_dirty_pte(pte_t pte)
 {
@@ -162,6 +184,9 @@ static int move_ptes(struct vm_area_struct *vma, pmd_t *old_pmd,
 		unsigned long new_addr, bool need_rmap_locks)
 {
 	struct mm_struct *mm = vma->vm_mm;
+#ifdef CONFIG_I_MMAP_SHARDS
+	struct i_mmap_write_lock i_mmap_lock;
+#endif
 	pte_t *old_ptep, *new_ptep;
 	pte_t old_pte, pte;
 	spinlock_t *old_ptl, *new_ptl;
@@ -171,6 +196,26 @@ static int move_ptes(struct vm_area_struct *vma, pmd_t *old_pmd,
 	int nr_ptes;
 	int err = 0;
 
+#ifdef CONFIG_I_MMAP_SHARDS
+	/*
+	 * When need_rmap_locks is true, we take the file i_mmap write lock and
+	 * anon_vma locks to ensure that rmap will always observe either the old
+	 * or the new ptes. This is the easiest way to avoid races with
+	 * truncate_pagecache(), page migration, etc...
+	 *
+	 * When need_rmap_locks is false, we use other ways to avoid
+	 * such races:
+	 *
+	 * - During exec() shift_arg_pages(), we use a specially tagged vma
+	 *   which rmap call sites look for using vma_is_temporary_stack().
+	 *
+	 * - During mremap(), new_vma is often known to be placed after vma
+	 *   in rmap traversal order. This ensures rmap will always observe
+	 *   either the old pte, or the new pte, or both (the page table locks
+	 *   serialize access to individual ptes, but only rmap traversal
+	 *   order guarantees that we won't miss both the old and new ptes).
+	 */
+#else
 	/*
 	 * When need_rmap_locks is true, we take the i_mmap_rwsem and anon_vma
 	 * locks to ensure that rmap will always observe either the old or the
@@ -189,8 +234,13 @@ static int move_ptes(struct vm_area_struct *vma, pmd_t *old_pmd,
 	 *   serialize access to individual ptes, but only rmap traversal
 	 *   order guarantees that we won't miss both the old and new ptes).
 	 */
+#endif
 	if (need_rmap_locks)
+#ifdef CONFIG_I_MMAP_SHARDS
+		take_rmap_locks(vma, &i_mmap_lock);
+#else
 		take_rmap_locks(vma);
+#endif
 
 	/*
 	 * We don't have to worry about the ordering of src and dst
@@ -251,7 +301,11 @@ static int move_ptes(struct vm_area_struct *vma, pmd_t *old_pmd,
 	pte_unmap_unlock(old_ptep - 1, old_ptl);
 out:
 	if (need_rmap_locks)
+#ifdef CONFIG_I_MMAP_SHARDS
+		drop_rmap_locks(vma, &i_mmap_lock);
+#else
 		drop_rmap_locks(vma);
+#endif
 	return err;
 }
 
@@ -491,11 +545,18 @@ static bool move_pgt_entry(enum pgt_entry entry, struct vm_area_struct *vma,
 			unsigned long old_addr, unsigned long new_addr,
 			void *old_entry, void *new_entry, bool need_rmap_locks)
 {
+#ifdef CONFIG_I_MMAP_SHARDS
+	struct i_mmap_write_lock i_mmap_lock;
+#endif
 	bool moved = false;
 
 	/* See comment in move_ptes() */
 	if (need_rmap_locks)
+#ifdef CONFIG_I_MMAP_SHARDS
+		take_rmap_locks(vma, &i_mmap_lock);
+#else
 		take_rmap_locks(vma);
+#endif
 
 	switch (entry) {
 	case NORMAL_PMD:
@@ -523,7 +584,11 @@ static bool move_pgt_entry(enum pgt_entry entry, struct vm_area_struct *vma,
 	}
 
 	if (need_rmap_locks)
+#ifdef CONFIG_I_MMAP_SHARDS
+		drop_rmap_locks(vma, &i_mmap_lock);
+#else
 		drop_rmap_locks(vma);
+#endif
 
 	return moved;
 }

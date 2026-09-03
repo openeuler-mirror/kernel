@@ -3838,6 +3838,30 @@ static void unmap_mapping_range_vma(struct vm_area_struct *vma,
 	zap_page_range_single(vma, start_addr, end_addr - start_addr, details);
 }
 
+#ifdef CONFIG_I_MMAP_SHARDS
+struct unmap_mapping_walk {
+	pgoff_t first_index;
+	pgoff_t last_index;
+	struct zap_details *details;
+};
+
+static int unmap_mapping_range_vma_walk(struct vm_area_struct *vma, void *arg)
+{
+	struct unmap_mapping_walk *walk = arg;
+	unsigned long start_addr, end_addr;
+	pgoff_t vba, vea, zba, zea;
+
+	vba = vma->vm_pgoff;
+	vea = vba + vma_pages(vma) - 1;
+	zba = max(walk->first_index, vba);
+	zea = min(walk->last_index, vea);
+	start_addr = ((zba - vba) << PAGE_SHIFT) + vma->vm_start;
+	end_addr = ((zea - vba + 1) << PAGE_SHIFT) + vma->vm_start;
+	unmap_mapping_range_vma(vma, start_addr, end_addr, walk->details);
+
+	return 0;
+}
+#else
 static inline void unmap_mapping_range_tree(struct rb_root_cached *root,
 					    pgoff_t first_index,
 					    pgoff_t last_index,
@@ -3858,6 +3882,7 @@ static inline void unmap_mapping_range_tree(struct rb_root_cached *root,
 				details);
 	}
 }
+#endif
 
 /**
  * unmap_mapping_folio() - Unmap single folio from processes.
@@ -3886,11 +3911,24 @@ void unmap_mapping_folio(struct folio *folio)
 	details.single_folio = folio;
 	details.zap_flags = ZAP_FLAG_DROP_MARKER;
 
+#ifdef CONFIG_I_MMAP_SHARDS
+	{
+		struct unmap_mapping_walk walk = {
+			.first_index = first_index,
+			.last_index = last_index,
+			.details = &details,
+		};
+
+		i_mmap_read_walk(mapping, first_index, last_index, false,
+				 unmap_mapping_range_vma_walk, &walk);
+	}
+#else
 	i_mmap_lock_read(mapping);
 	if (unlikely(!RB_EMPTY_ROOT(&mapping->i_mmap.rb_root)))
 		unmap_mapping_range_tree(&mapping->i_mmap, first_index,
 					 last_index, &details);
 	i_mmap_unlock_read(mapping);
+#endif
 }
 
 /**
@@ -3916,11 +3954,24 @@ void unmap_mapping_pages(struct address_space *mapping, pgoff_t start,
 	if (last_index < first_index)
 		last_index = ULONG_MAX;
 
+#ifdef CONFIG_I_MMAP_SHARDS
+	{
+		struct unmap_mapping_walk walk = {
+			.first_index = first_index,
+			.last_index = last_index,
+			.details = &details,
+		};
+
+		i_mmap_read_walk(mapping, first_index, last_index, false,
+				 unmap_mapping_range_vma_walk, &walk);
+	}
+#else
 	i_mmap_lock_read(mapping);
 	if (unlikely(!RB_EMPTY_ROOT(&mapping->i_mmap.rb_root)))
 		unmap_mapping_range_tree(&mapping->i_mmap, first_index,
 					 last_index, &details);
 	i_mmap_unlock_read(mapping);
+#endif
 }
 EXPORT_SYMBOL_GPL(unmap_mapping_pages);
 
