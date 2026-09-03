@@ -32,8 +32,8 @@
 #define UBURMA_JFCE_DELETE_EVENT 0
 #define UBURMA_RELEASE_EVENT_BATCH 1000
 
-uint32_t uburma_irq_handle_threshold = 50;
-uint32_t uburma_irq_handle_threshold_enable;
+uint32_t uburma_irq_handle_threshold = 5000;
+uint32_t uburma_irq_handle_threshold_enable = 1;
 struct uburma_jfe_event {
 	struct list_head node;
 	uint32_t event_type; /* support async event */

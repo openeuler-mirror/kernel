@@ -68,9 +68,9 @@ module_param_cb(uburma_ratelimit_burst, &uburma_ratelimit_burst_ops,
 		&uburma_ratelimit_burst, UBURMA_LOG_FILE_PERMISSION);
 MODULE_PARM_DESC(uburma_ratelimit_burst, "ratelimit burst for _rl logs (default: 10)");
 module_param(uburma_irq_handle_threshold, uint, UBURMA_IRQ_HANDLE_THRESHOLD);
-MODULE_PARM_DESC(uburma_irq_handle_threshold, "IRQ handle threshold in ns");
+MODULE_PARM_DESC(uburma_irq_handle_threshold, "IRQ handle threshold in ns (default 5000)");
 module_param(uburma_irq_handle_threshold_enable, uint, UBURMA_IRQ_HANDLE_THRESHOLD);
-MODULE_PARM_DESC(uburma_irq_handle_threshold_enable, "Enable IRQ handle threshold. 0: disable, 1: enable");
+MODULE_PARM_DESC(uburma_irq_handle_threshold_enable, "Enable IRQ handle threshold. 0: disable, 1: enable(default)");
 
 #define UBURMA_MODULE_NAME "uburma"
 #define UBURMA_DEVNODE_MODE (0666)
