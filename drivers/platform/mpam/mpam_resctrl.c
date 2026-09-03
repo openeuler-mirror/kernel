@@ -85,6 +85,20 @@ bool resctrl_arch_is_mbm_core_enabled(void)
 	return mbm_core_class;
 }
 
+bool resctrl_arch_is_mbm_enabled(enum resctrl_res_level rid)
+{
+	switch (rid) {
+	case RDT_RESOURCE_L2:
+		return resctrl_arch_is_mbm_core_enabled();
+	case RDT_RESOURCE_L3:
+		return resctrl_arch_is_mbm_local_enabled();
+	case RDT_RESOURCE_MBA:
+		return resctrl_arch_is_mbm_total_enabled();
+	default:
+		return false;
+	}
+}
+
 bool resctrl_arch_get_cdp_enabled(enum resctrl_res_level rid)
 {
 	switch (rid) {

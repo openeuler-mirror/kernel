@@ -68,6 +68,7 @@ bool resctrl_arch_is_l2c_occupancy_enabled(void);
 bool resctrl_arch_is_mbm_core_enabled(void);
 bool resctrl_arch_is_mbm_local_enabled(void);
 bool resctrl_arch_is_mbm_total_enabled(void);
+bool resctrl_arch_is_mbm_enabled(enum resctrl_res_level rid);
 bool resctrl_arch_would_mbm_overflow(void);
 
 /* reset cached configurations, then all devices */
