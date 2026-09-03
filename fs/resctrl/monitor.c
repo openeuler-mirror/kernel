@@ -211,7 +211,7 @@ static struct rmid_entry *__resctrl_find_free_rmid(u32 closid)
 	return ERR_PTR(-ENOSPC);
 }
 
-struct rmid_entry *resctrl_find_free_rmid(u32 closid)
+static struct rmid_entry *resctrl_find_free_rmid(u32 closid)
 {
 	struct rmid_entry *err;
 	int ret;
