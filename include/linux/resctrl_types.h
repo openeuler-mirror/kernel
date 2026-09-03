@@ -94,6 +94,7 @@ enum resctrl_res_level {
 	RDT_RESOURCE_L2_PRI,
 	RDT_RESOURCE_MB_PRI,
 	RDT_RESOURCE_MB_HDL,
+	RDT_RESOURCE_MB_OPT,
 #endif
 
 	/* Must be the last */

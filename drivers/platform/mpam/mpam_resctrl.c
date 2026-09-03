@@ -1006,6 +1006,12 @@ static void mpam_resctrl_pick_mba(void)
 			res = &mpam_resctrl_exports[RDT_RESOURCE_MBA];
 			res->class = class;
 			res->resctrl_res.name = "MB";
+
+			if (mpam_has_feature(mpam_feat_mbw_max, cprops)) {
+				res = &mpam_resctrl_exports[RDT_RESOURCE_MB_OPT];
+				res->class = class;
+				res->resctrl_res.name = "MBOPT";
+			}
 		}
 
 		if (has_mbw_min) {
@@ -1311,6 +1317,23 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 			r->alloc_capable = true;
 		break;
 
+	case RDT_RESOURCE_MB_OPT:
+		r->format_str = "%d=%0*u";
+		r->schema_fmt = RESCTRL_SCHEMA_RANGE;
+		r->fflags = RFTYPE_RES_MB;
+		r->default_ctrl = GENMASK(cprops->bwa_wd - 1, 0);
+		r->membw.max_bw = GENMASK(cprops->bwa_wd - 1, 0);
+		r->data_width = 5;
+
+		r->membw.delay_linear = true;
+		r->membw.throttle_mode = THREAD_THROTTLE_UNDEFINED;
+		r->membw.min_bw = 1;
+		r->membw.bw_gran = 1;
+
+		if (class_has_usable_mba(cprops))
+			r->alloc_capable = true;
+		break;
+
 	default:
 		break;
 	}
@@ -1577,6 +1600,10 @@ u32 resctrl_arch_get_config(struct rdt_resource *r, struct rdt_domain *d,
 		configured_by = mpam_feat_max_limit;
 		break;
 
+	case RDT_RESOURCE_MB_OPT:
+		configured_by = mpam_feat_mbw_max;
+		break;
+
 	default:
 		return -EINVAL;
 	}
@@ -1599,14 +1626,20 @@ u32 resctrl_arch_get_config(struct rdt_resource *r, struct rdt_domain *d,
 		/* TODO: Scaling is not yet supported */
 		return mbw_pbm_to_percent(cfg->mbw_pbm, cprops);
 	case mpam_feat_mbw_max:
-		return mbw_max_to_percent(cfg->mbw_max, cprops->bwa_wd);
+		if (r->rid == RDT_RESOURCE_MBA)
+			return mbw_max_to_percent(cfg->mbw_max, cprops->bwa_wd);
+		else if (r->rid == RDT_RESOURCE_MB_OPT)
+			return cfg->mbw_max >> (16 - cprops->bwa_wd);
+		break;
 	case mpam_feat_mbw_min:
 		return mbw_max_to_percent(cfg->mbw_min, cprops->bwa_wd);
 	case mpam_feat_max_limit:
 		return cfg->max_limit;
 	default:
-		return -EINVAL;
+		break;
 	}
+
+	return -EINVAL;
 }
 
 int resctrl_arch_update_one(struct rdt_resource *r, struct rdt_domain *d,
@@ -1681,6 +1714,10 @@ int resctrl_arch_update_one(struct rdt_resource *r, struct rdt_domain *d,
 	case RDT_RESOURCE_MB_HDL:
 		cfg.max_limit = cfg_val;
 		mpam_set_feature(mpam_feat_max_limit, &cfg);
+		break;
+	case RDT_RESOURCE_MB_OPT:
+		cfg.mbw_max = cfg_val << (16 - cprops->bwa_wd);
+		mpam_set_feature(mpam_feat_mbw_max, &cfg);
 		break;
 	default:
 		return -EINVAL;
