@@ -2392,6 +2392,7 @@ static void __destroy_component_cfg(struct mpam_component *comp)
 	struct msmon_mbwu_state *mbwu_state;
 
 	kfree(comp->cfg);
+	comp->cfg = NULL;
 	list_for_each_entry(ris, &comp->ris, comp_list) {
 		mutex_lock(&ris->msc->lock);
 		spin_lock_irqsave(&ris->msc->mon_sel_lock, flags);
