@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -27,7 +27,6 @@
 #include "ubase_proxy.h"
 #include "ubase_ubus.h"
 
-#define UBASE_MOD_VERSION		"1.0"
 #define UBASE_ADEV_PROBE_FAIL_B		0
 #define UBASE_DEV_NEED_TO_ACTIVATE_B	0
 

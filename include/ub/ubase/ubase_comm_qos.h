@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -27,6 +27,7 @@ struct ubase_sl_priqos {
 	u32 sl_bitmap;
 	u8 weight[UBASE_MAX_SL_NUM];
 	u8 sch_mode[UBASE_MAX_SL_NUM];
+
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
