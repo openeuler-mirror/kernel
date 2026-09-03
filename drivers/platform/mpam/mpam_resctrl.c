@@ -164,24 +164,73 @@ u32 resctrl_arch_system_num_rmid_idx(void)
 	return num_reqpartid << closid_shift;
 }
 
+static u32 rmid2reqpartid(u32 rmid)
+{
+	u8 pmg_shift = fls(mpam_pmg_max);
+	u32 reqpartid;
+
+	WARN_ON_ONCE(pmg_shift > 8);
+
+	rmid >>= pmg_shift;
+
+	if (cdp_enabled)
+		reqpartid = resctrl_get_config_index(rmid, CDP_DATA);
+	else
+		reqpartid = resctrl_get_config_index(rmid, CDP_NONE);
+
+	return reqpartid;
+}
+
+static u8 rmid2pmg(u32 rmid)
+{
+	u8 pmg_shift = fls(mpam_pmg_max);
+	u32 pmg_mask = ~(~0 << pmg_shift);
+
+	return rmid & pmg_mask;
+}
+
+u32 req2intpartid(u32 reqpartid)
+{
+	u8 intpartid_shift = fls(mpam_intpartid_max);
+	u32 intpartid_mask = ~(~0 << intpartid_shift);
+
+	return reqpartid & intpartid_mask;
+}
+
+/*
+ * To avoid the reuse of rmid across multiple control groups, check
+ * the incoming closid to prevent rmid from being reallocated by
+ * resctrl_find_free_rmid().
+ *
+ * If the closid and rmid do not match upon inspection, immediately
+ * returns an invalid rmid. A valid rmid must not exceed 24 bits.
+ */
 u32 resctrl_arch_rmid_idx_encode(u32 closid, u32 rmid)
 {
-	u8 closid_shift = fls(mpam_pmg_max);
+	u32 reqpartid = rmid2reqpartid(rmid);
+	u32 intpartid = req2intpartid(reqpartid);
 
-	BUG_ON(closid_shift > 8);
+	if (cdp_enabled)
+		intpartid >>= 1;
 
-	return (closid << closid_shift) | rmid;
+	if (closid != intpartid)
+		return U32_MAX;
+
+	return rmid;
 }
 
 void resctrl_arch_rmid_idx_decode(u32 idx, u32 *closid, u32 *rmid)
 {
-	u8 closid_shift = fls(mpam_pmg_max);
-	u32 pmg_mask = ~(~0 << closid_shift);
+	u32 reqpartid = rmid2reqpartid(idx);
+	u32 intpartid = req2intpartid(reqpartid);
 
-	BUG_ON(closid_shift > 8);
-
-	*closid = idx >> closid_shift;
-	*rmid = idx & pmg_mask;
+	if (rmid)
+		*rmid = idx;
+	if (closid) {
+		if (cdp_enabled)
+			intpartid >>= 1;
+		*closid = intpartid;
+	}
 }
 
 void resctrl_sched_in(struct task_struct *tsk)
@@ -191,23 +240,22 @@ void resctrl_sched_in(struct task_struct *tsk)
 	mpam_thread_switch(tsk);
 }
 
-void resctrl_arch_set_cpu_default_closid_rmid(int cpu, u32 closid, u32 pmg)
+void resctrl_arch_set_cpu_default_closid_rmid(int cpu, u32 closid, u32 rmid)
 {
-	BUG_ON(closid > U16_MAX);
-	BUG_ON(pmg > U8_MAX);
+	u32 reqpartid = rmid2reqpartid(rmid);
+	u8 pmg = rmid2pmg(rmid);
 
-	if (!cdp_enabled) {
-		mpam_set_cpu_defaults(cpu, closid, closid, pmg, pmg);
-	} else {
+	WARN_ON_ONCE(reqpartid > U16_MAX);
+	WARN_ON_ONCE(pmg > U8_MAX);
+
+	if (!cdp_enabled)
+		mpam_set_cpu_defaults(cpu, reqpartid, reqpartid, pmg, pmg);
+	else
 		/*
 		 * When CDP is enabled, resctrl halves the closid range and we
 		 * use odd/even partid for one closid.
 		 */
-		u32 partid_d = resctrl_get_config_index(closid, CDP_DATA);
-		u32 partid_i = resctrl_get_config_index(closid, CDP_CODE);
-
-		mpam_set_cpu_defaults(cpu, partid_d, partid_i, pmg, pmg);
-	}
+		mpam_set_cpu_defaults(cpu, reqpartid, reqpartid + 1, pmg, pmg);
 }
 
 void resctrl_arch_sync_cpu_defaults(void *info)
@@ -226,43 +274,40 @@ void resctrl_arch_sync_cpu_defaults(void *info)
 
 void resctrl_arch_set_closid_rmid(struct task_struct *tsk, u32 closid, u32 rmid)
 {
+	u32 reqpartid = rmid2reqpartid(rmid);
+	u8 pmg = rmid2pmg(rmid);
 
+	WARN_ON_ONCE(reqpartid > U16_MAX);
+	WARN_ON_ONCE(pmg > U8_MAX);
 
-	BUG_ON(closid > U16_MAX);
-	BUG_ON(rmid > U8_MAX);
-
-	if (!cdp_enabled) {
-		mpam_set_task_partid_pmg(tsk, closid, closid, rmid, rmid);
-	} else {
-		u32 partid_d = resctrl_get_config_index(closid, CDP_DATA);
-		u32 partid_i = resctrl_get_config_index(closid, CDP_CODE);
-
-		mpam_set_task_partid_pmg(tsk, partid_d, partid_i, rmid, rmid);
-	}
+	if (!cdp_enabled)
+		mpam_set_task_partid_pmg(tsk, reqpartid, reqpartid, pmg, pmg);
+	else
+		mpam_set_task_partid_pmg(tsk, reqpartid, reqpartid + 1, pmg, pmg);
 }
 
 bool resctrl_arch_match_closid(struct task_struct *tsk, u32 closid)
 {
 	u64 regval = mpam_get_regval(tsk);
-	u32 tsk_closid = FIELD_GET(MPAM_SYSREG_PARTID_D, regval);
+	u32 tsk_partid = FIELD_GET(MPAM1_EL1_PARTID_D, regval);
+
+	tsk_partid = req2intpartid(tsk_partid);
 
 	if (cdp_enabled)
-		tsk_closid >>= 1;
+		tsk_partid >>= 1;
 
-	return tsk_closid == closid;
+	return tsk_partid == closid;
 }
 
 /* The task's pmg is not unique, the partid must be considered too */
 bool resctrl_arch_match_rmid(struct task_struct *tsk, u32 closid, u32 rmid)
 {
 	u64 regval = mpam_get_regval(tsk);
-	u32 tsk_closid = FIELD_GET(MPAM_SYSREG_PARTID_D, regval);
-	u32 tsk_rmid = FIELD_GET(MPAM_SYSREG_PMG_D, regval);
+	u32 tsk_partid = FIELD_GET(MPAM1_EL1_PARTID_D, regval);
+	u32 tsk_pmg = FIELD_GET(MPAM1_EL1_PMG_D, regval);
 
-	if (cdp_enabled)
-		tsk_closid >>= 1;
-
-	return (tsk_closid == closid) && (tsk_rmid == rmid);
+	return (tsk_partid == rmid2reqpartid(rmid)) &&
+	       (tsk_pmg == rmid2pmg(rmid));
 }
 
 #ifdef CONFIG_RESCTRL_IOMMU
@@ -389,29 +434,24 @@ int resctrl_arch_rmid_read(struct rdt_resource	*r, struct rdt_domain *d,
 		num_mon = res->class->props.num_csu_mon;
 
 	cfg.match_pmg = true;
-	cfg.pmg = rmid;
+	cfg.pmg = rmid2pmg(rmid);
 	cfg.opts = resctrl_evt_config_to_mpam(dom->mbm_local_evt_cfg);
+	cfg.partid = rmid2reqpartid(rmid);
+
+	cfg.mon = cfg.partid % num_mon;
+	err = mpam_msmon_read(dom->comp, &cfg, type, val);
+	if (err)
+		return err;
 
 	if (cdp_enabled) {
-		cfg.partid = resctrl_get_config_index(closid, CDP_DATA);
-		cfg.mon = cfg.partid % num_mon;
-		err = mpam_msmon_read(dom->comp, &cfg, type, val);
-		if (err)
-			return err;
-
-		cfg.partid = resctrl_get_config_index(closid, CDP_CODE);
+		cfg.partid += 1;
 		cfg.mon = cfg.partid % num_mon;
 		err = mpam_msmon_read(dom->comp, &cfg, type, &cdp_val);
 		if (!err) {
-			pr_debug("read monitor rmid %u %s:%u CODE/DATA: %lld/%lld\n",
-				resctrl_arch_rmid_idx_encode(closid, rmid),
-				r->name, dom->comp->comp_id, cdp_val, *val);
+			pr_debug("read monitor closid %u rmid %u %s:%u CODE/DATA: %lld/%lld\n",
+				  closid, rmid, r->name, dom->comp->comp_id, cdp_val, *val);
 			*val += cdp_val;
 		}
-	} else {
-		cfg.partid = closid;
-		cfg.mon = cfg.partid % num_mon;
-		err = mpam_msmon_read(dom->comp, &cfg, type, val);
 	}
 
 	return err;
@@ -433,18 +473,14 @@ void resctrl_arch_reset_rmid(struct rdt_resource *r, struct rdt_domain *d,
 	num_mbwu_mon = res->class->props.num_mbwu_mon;
 	cfg.mon = resctrl_arch_rmid_idx_encode(closid, rmid) % num_mbwu_mon;
 	cfg.match_pmg = true;
-	cfg.pmg = rmid;
+	cfg.pmg = rmid2pmg(rmid);
+	cfg.partid = rmid2reqpartid(rmid);
 
 	dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
+	mpam_msmon_reset_mbwu(dom->comp, &cfg);
 
 	if (cdp_enabled) {
-		cfg.partid = closid << 1;
-		mpam_msmon_reset_mbwu(dom->comp, &cfg);
-
 		cfg.partid += 1;
-		mpam_msmon_reset_mbwu(dom->comp, &cfg);
-	} else {
-		cfg.partid = closid;
 		mpam_msmon_reset_mbwu(dom->comp, &cfg);
 	}
 }
