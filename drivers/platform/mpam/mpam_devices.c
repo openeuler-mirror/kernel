@@ -1086,6 +1086,9 @@ static void __ris_msmon_read(void *arg)
 		if (mbwu_state) {
 			reset_on_next_read = mbwu_state->reset_on_next_read;
 			mbwu_state->reset_on_next_read = false;
+
+			mbwu_state->cfg.partid = ctx->partid;
+			mbwu_state->cfg.pmg = ctx->pmg;
 		}
 
 		mbwu_overflow = read_msmon_mbwu_is_overflow(msc);

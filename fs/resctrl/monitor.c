@@ -633,7 +633,7 @@ static void mbm_update(struct rdt_resource *r, struct rdt_domain *d,
 		resctrl_arch_mon_ctx_free(rr.r, rr.evtid, rr.arch_mon_ctx);
 	}
 	if (resctrl_arch_is_mbm_core_enabled()) {
-		rr.evtid = QOS_L2_MBM_CORE_EVENT_ID;
+		rr.evtid = QOS_L2_MBM_CORE_OVERFLOW_EVENT_ID;
 		rr.val = 0;
 		rr.arch_mon_ctx = resctrl_arch_mon_ctx_alloc(rr.r, rr.evtid);
 		if (IS_ERR(rr.arch_mon_ctx)) {

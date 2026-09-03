@@ -496,6 +496,42 @@ static enum mon_filter_options resctrl_evt_config_to_mpam(u32 local_evt_cfg)
 	}
 }
 
+/*
+ * Check whether to skip L2 MBM overflow checking for a given component.
+ *
+ * The number of L2 monitors is less than the number of RMIDs, so we only
+ * check MBM overflow for RMIDs currently being monitored by the monitor.
+ * When handling QOS_L2_MBM_CORE_OVERFLOW_EVENT_ID, we verify if the current
+ * monitoring configuration (partid/pmg) matches the previously saved one in
+ * mbwu_state. If they match, it means this RMID is still being monitored
+ * and we should proceed with overflow check. Otherwise, skip it.
+ *
+ * Returns:
+ *   false - Don't skip, proceed with overflow check (partid/pmg match)
+ *   true  - Skip overflow check (no matching configuration found)
+ */
+static bool mpam_skip_check_l2_overflow(struct mpam_component *comp,
+					struct mon_cfg *cfg)
+{
+	bool ret;
+	unsigned long flags;
+	struct mpam_msc_ris *ris;
+	struct msmon_mbwu_state	*mbwu_state;
+
+	ris = list_first_or_null_rcu(&comp->ris, struct mpam_msc_ris, comp_list);
+	if (!ris)
+		return true;
+
+	mbwu_state = &ris->mbwu_state[cfg->mon];
+
+	spin_lock_irqsave(&ris->msc->mon_sel_lock, flags);
+	ret = (mbwu_state->cfg.partid != cfg->partid ||
+	       mbwu_state->cfg.pmg != cfg->pmg);
+	spin_unlock_irqrestore(&ris->msc->mon_sel_lock, flags);
+
+	return ret;
+}
+
 int resctrl_arch_rmid_read(struct rdt_resource	*r, struct rdt_domain *d,
 			   u32 closid, u32 rmid, enum resctrl_event_id eventid,
 			   u64 *val, void *arch_mon_ctx)
@@ -520,6 +556,7 @@ int resctrl_arch_rmid_read(struct rdt_resource	*r, struct rdt_domain *d,
 	case QOS_L3_MBM_LOCAL_EVENT_ID:
 	case QOS_L3_MBM_TOTAL_EVENT_ID:
 	case QOS_L2_MBM_CORE_EVENT_ID:
+	case QOS_L2_MBM_CORE_OVERFLOW_EVENT_ID:
 		type = mpam_feat_msmon_mbwu;
 		break;
 	default:
@@ -542,6 +579,12 @@ int resctrl_arch_rmid_read(struct rdt_resource	*r, struct rdt_domain *d,
 	cfg.partid = rmid2reqpartid(rmid);
 
 	cfg.mon = cfg.partid % num_mon;
+
+	if (eventid == QOS_L2_MBM_CORE_OVERFLOW_EVENT_ID) {
+		if (mpam_skip_check_l2_overflow(dom->comp, &cfg))
+			return 0;
+	}
+
 	err = mpam_msmon_read(dom->comp, &cfg, type, val);
 	if (err)
 		return err;
