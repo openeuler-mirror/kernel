@@ -4118,16 +4118,6 @@ static int domain_setup_mon_state(struct rdt_resource *r, struct rdt_domain *d)
 			return -ENOMEM;
 		}
 	}
-	if (resctrl_arch_is_mbm_core_enabled()) {
-		tsize = sizeof(*d->mbm_core);
-		d->mbm_core = kcalloc(idx_limit, tsize, GFP_KERNEL);
-		if (!d->mbm_core) {
-			bitmap_free(d->rmid_busy_llc);
-			kfree(d->mbm_total);
-			kfree(d->mbm_local);
-			return -ENOMEM;
-		}
-	}
 
 	return 0;
 }
