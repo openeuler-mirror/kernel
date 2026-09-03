@@ -97,6 +97,12 @@ static const struct midr_range hip12_cpus[] = {
 	{ /* sentinel */ }
 };
 
+static const struct midr_range hisi_cpus[] = {
+	MIDR_ALL_VERSIONS(MIDR_HISI_HIP12),
+	MIDR_ALL_VERSIONS(MIDR_HISI_HIP13),
+	{ /* sentinel */ }
+};
+
 static u32 __mpam_read_reg(struct mpam_msc *msc, u16 reg)
 {
 	WARN_ON_ONCE(reg + sizeof(u32) > msc->mapped_hwpage_sz);
@@ -776,7 +782,7 @@ static void mpam_ris_hw_probe(struct mpam_msc_ris *ris)
 
 static int mpam_pmg_max_workaround(u64 idr)
 {
-	if (is_midr_in_range_list(hip12_cpus))
+	if (is_midr_in_range_list(hisi_cpus))
 		return 0;
 
 	return FIELD_GET(MPAMF_IDR_PMG_MAX, idr);
@@ -957,7 +963,7 @@ static bool mpam_csu_hisi_need_retrigger(struct mpam_msc_ris *ris,
 	    ris->comp->class->level != 3)
 		return false;
 
-	if (!is_midr_in_range_list(hip12_cpus))
+	if (!is_midr_in_range_list(hisi_cpus))
 		return false;
 
 	if (read_again)
@@ -1025,7 +1031,7 @@ static bool mpam_ris_has_nrdy_bit(struct mpam_msc_ris *ris)
 
 static u64 mpam_csu_hisi_need_halved(struct mpam_msc_ris *ris, u64 now)
 {
-	if (!is_midr_in_range_list(hip12_cpus))
+	if (!is_midr_in_range_list(hisi_cpus))
 		return now;
 
 	if (ris->comp->class->type != MPAM_CLASS_CACHE ||
