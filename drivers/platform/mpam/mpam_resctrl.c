@@ -151,14 +151,9 @@ u32 resctrl_arch_get_num_closid(struct rdt_resource *ignored)
 	return mpam_intpartid_max + 1;
 }
 
-static u32 get_num_reqpartid(void)
+u32 get_num_reqpartid(void)
 {
 	return mpam_partid_max + 1;
-}
-
-u32 get_num_reqpartid_per_closid(void)
-{
-	return get_num_reqpartid() / resctrl_arch_get_num_closid(NULL);
 }
 
 u32 resctrl_arch_system_num_rmid_idx(void)
@@ -194,12 +189,37 @@ static u8 rmid2pmg(u32 rmid)
 	return rmid & pmg_mask;
 }
 
+static u32 req_pmg2rmid(u32 reqpartid, u8 pmg)
+{
+	u8 pmg_shift = fls(mpam_pmg_max);
+	u32 pmg_mask = ~(~0 << pmg_shift);
+
+	if (cdp_enabled)
+		reqpartid >>= 1;
+
+	return (reqpartid << pmg_shift) | (pmg & pmg_mask);
+}
+
+static u32 *reqpartid_map;
+
 u32 req2intpartid(u32 reqpartid)
 {
-	u8 intpartid_shift = fls(mpam_intpartid_max);
-	u32 intpartid_mask = ~(~0 << intpartid_shift);
+	/*
+	 * Directly return intPartid in case that mpam_reset_ris() access
+	 * NULL pointer.
+	 */
+	if (reqpartid < resctrl_arch_get_num_closid(NULL))
+		return reqpartid;
 
-	return reqpartid & intpartid_mask;
+	return reqpartid_map[reqpartid];
+}
+
+static u32 partid2closid(u32 partid)
+{
+	if (cdp_enabled)
+		partid >>= 1;
+
+	return partid;
 }
 
 /*
@@ -213,12 +233,12 @@ u32 req2intpartid(u32 reqpartid)
 u32 resctrl_arch_rmid_idx_encode(u32 closid, u32 rmid)
 {
 	u32 reqpartid = rmid2reqpartid(rmid);
-	u32 intpartid = req2intpartid(reqpartid);
 
-	if (cdp_enabled)
-		intpartid >>= 1;
+	/* When enable CDP mode, needs to filter invalid rmid entry out */
+	if (reqpartid >= get_num_reqpartid())
+		return U32_MAX;
 
-	if (closid != intpartid)
+	if (closid != partid2closid(req2intpartid(reqpartid)))
 		return U32_MAX;
 
 	return rmid;
@@ -231,11 +251,9 @@ void resctrl_arch_rmid_idx_decode(u32 idx, u32 *closid, u32 *rmid)
 
 	if (rmid)
 		*rmid = idx;
-	if (closid) {
-		if (cdp_enabled)
-			intpartid >>= 1;
-		*closid = intpartid;
-	}
+
+	if (closid)
+		*closid = partid2closid(intpartid);
 }
 
 void resctrl_sched_in(struct task_struct *tsk)
@@ -1191,6 +1209,87 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 	return 0;
 }
 
+static int reqpartid_init(void)
+{
+	int req_num, idx;
+
+	req_num = get_num_reqpartid();
+	reqpartid_map = kcalloc(req_num, sizeof(u32), GFP_KERNEL);
+	if (!reqpartid_map)
+		return -ENOMEM;
+
+	for (idx = 0; idx < req_num; idx++)
+		reqpartid_map[idx] = idx;
+
+	return 0;
+}
+
+void reqpartid_exit(void)
+{
+	kfree(reqpartid_map);
+}
+
+void update_rmid_entries_for_reqpartid(u32 reqpartid)
+{
+	int pmg;
+	u32 intpartid = reqpartid_map[reqpartid];
+	u32 closid = partid2closid(intpartid);
+
+	for (pmg = 0; pmg <= mpam_pmg_max; pmg++)
+		rmid_entry_reassign_closid(closid, req_pmg2rmid(reqpartid, pmg));
+}
+
+int resctrl_arch_rmid_expand(u32 closid)
+{
+	int i;
+
+	for (i = resctrl_arch_get_num_closid(NULL);
+	     i < get_num_reqpartid(); i++) {
+		if (reqpartid_map[i] >= resctrl_arch_get_num_closid(NULL)) {
+			if (cdp_enabled) {
+				reqpartid_map[i] = resctrl_get_config_index(closid, CDP_DATA);
+				reqpartid_map[i + 1] = resctrl_get_config_index(closid, CDP_CODE);
+			} else {
+				reqpartid_map[i] = resctrl_get_config_index(closid, CDP_NONE);
+			}
+			update_rmid_entries_for_reqpartid(i);
+			return i;
+		}
+	}
+
+	return -ENOSPC;
+}
+
+void resctrl_arch_rmid_reclaim(u32 closid, u32 rmid)
+{
+	int pmg;
+	u32 intpartid;
+	int reqpartid = rmid2reqpartid(rmid);
+
+	if (reqpartid < resctrl_arch_get_num_closid(NULL))
+		return;
+
+	if (cdp_enabled)
+		intpartid = resctrl_get_config_index(closid, CDP_DATA);
+	else
+		intpartid = resctrl_get_config_index(closid, CDP_NONE);
+
+	WARN_ON_ONCE(intpartid != req2intpartid(reqpartid));
+
+	for (pmg = 0; pmg <= mpam_pmg_max; pmg++) {
+		if (rmid_is_occupied(closid, req_pmg2rmid(reqpartid, pmg)))
+			break;
+	}
+
+	if (pmg > mpam_pmg_max) {
+		reqpartid_map[reqpartid] = reqpartid;
+		if (cdp_enabled)
+			reqpartid_map[reqpartid + 1] = reqpartid + 1;
+
+		update_rmid_entries_for_reqpartid(reqpartid);
+	}
+}
+
 int mpam_resctrl_setup(void)
 {
 	int err = 0;
@@ -1222,24 +1321,35 @@ int mpam_resctrl_setup(void)
 	}
 	cpus_read_unlock();
 
-	if (!err && !exposed_alloc_capable && !exposed_mon_capable)
-		err = -EOPNOTSUPP;
+	if (err)
+		return err;
 
-	if (!err) {
-		if (!is_power_of_2(mpam_pmg_max + 1)) {
-			/*
-			 * If not all the partid*pmg values are valid indexes,
-			 * resctrl may allocate pmg that don't exist. This
-			 * should cause an error interrupt.
-			 */
-			pr_warn("Number of PMG is not a power of 2! resctrl may misbehave");
-		}
+	if (!exposed_alloc_capable && !exposed_mon_capable)
+		return -EOPNOTSUPP;
 
-		err = resctrl_init();
-		if (!err)
-			WRITE_ONCE(resctrl_enabled, true);
+	err = reqpartid_init();
+	if (err)
+		return err;
+
+	if (!is_power_of_2(mpam_pmg_max + 1)) {
+		/*
+		 * If not all the partid*pmg values are valid indexes,
+		 * resctrl may allocate pmg that don't exist. This
+		 * should cause an error interrupt.
+		 */
+		pr_warn("Number of PMG is not a power of 2! resctrl may misbehave");
 	}
 
+	err = resctrl_init();
+	if (err)
+		goto out;
+
+	WRITE_ONCE(resctrl_enabled, true);
+
+	return 0;
+
+out:
+	reqpartid_exit();
 	return err;
 }
 
@@ -1250,6 +1360,7 @@ void mpam_resctrl_exit(void)
 
 	WRITE_ONCE(resctrl_enabled, false);
 	resctrl_exit();
+	reqpartid_exit();
 }
 
 u32 resctrl_arch_get_config(struct rdt_resource *r, struct rdt_domain *d,

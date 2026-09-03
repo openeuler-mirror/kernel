@@ -2583,18 +2583,20 @@ static int __write_config(void *arg)
 {
 	int closid_num = resctrl_arch_get_num_closid(NULL);
 	struct mpam_write_config_arg *c = arg;
-	u32 reqpartid, req_idx;
+	u32 reqpartid;
 
 	/* c->partid should be within the range of intPARTIDs */
 	WARN_ON_ONCE(c->partid >= closid_num);
 
-	/* Synchronize the configuration to each sub-monitoring group. */
-	for (req_idx = 0; req_idx < get_num_reqpartid_per_closid();
-	     req_idx++) {
-		reqpartid = req_idx * closid_num + c->partid;
+	mpam_reprogram_ris_partid(c->ris, c->partid,
+				 &c->comp->cfg[c->partid]);
 
-		mpam_reprogram_ris_partid(c->ris, reqpartid,
-					 &c->comp->cfg[c->partid]);
+	/* Synchronize the configuration to each sub-monitoring group. */
+	for (reqpartid = closid_num;
+	     reqpartid < get_num_reqpartid(); reqpartid++) {
+		if (req2intpartid(reqpartid) == c->partid)
+			mpam_reprogram_ris_partid(c->ris, reqpartid,
+						 &c->comp->cfg[c->partid]);
 	}
 
 	return 0;
