@@ -594,4 +594,6 @@ bool mpam_cpbm_hisi_check_invalid(struct rdt_resource *r, unsigned long val);
 
 int mpam_resctrl_prepare_offline(void);
 
+u32 get_num_reqpartid_per_closid(void);
+
 #endif /* MPAM_INTERNAL_H */
