@@ -77,6 +77,23 @@ bool resctrl_arch_get_cdp_enabled(enum resctrl_res_level ignored);
 int resctrl_arch_set_cdp_enabled(enum resctrl_res_level ignored, bool enable);
 bool resctrl_arch_match_closid(struct task_struct *tsk, u32 closid);
 bool resctrl_arch_match_rmid(struct task_struct *tsk, u32 closid, u32 rmid);
+
+/**
+ * resctrl_arch_rmid_expand() - Expand the RMID resources for the specified closid.
+ * @closid:	closid that matches the rmid.
+ *
+ * Return:
+ * 0 on success, or -ENOSPC etc on error.
+ */
+int resctrl_arch_rmid_expand(u32 closid);
+
+/**
+ * resctrl_arch_rmid_reclaim() - Reclaim the rmid resources for the specified closid.
+ * @closid:	closid that matches the rmid.
+ * @rmid:	Reclaim the rmid specified.
+ */
+void resctrl_arch_rmid_reclaim(u32 closid, u32 rmid);
+
 void resctrl_arch_set_cpu_default_closid(int cpu, u32 closid);
 void resctrl_arch_set_closid_rmid(struct task_struct *tsk, u32 closid, u32 rmid);
 void resctrl_arch_set_cpu_default_closid_rmid(int cpu, u32 closid, u32 rmid);

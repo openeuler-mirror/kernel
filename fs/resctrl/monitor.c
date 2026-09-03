@@ -115,6 +115,8 @@ static void limbo_release_entry(struct rmid_entry *entry)
 
 	if (IS_ENABLED(CONFIG_RESCTRL_RMID_DEPENDS_ON_CLOSID))
 		closid_num_dirty_rmid[entry->closid]--;
+
+	resctrl_arch_rmid_reclaim(entry->closid, entry->rmid);
 }
 
 /*
@@ -178,7 +180,7 @@ bool has_busy_rmid(struct rdt_domain *d)
 	return find_first_bit(d->rmid_busy_llc, idx_limit) != idx_limit;
 }
 
-struct rmid_entry *resctrl_find_free_rmid(u32 closid)
+static struct rmid_entry *__resctrl_find_free_rmid(u32 closid)
 {
 	struct rmid_entry *itr;
 	u32 itr_idx, cmp_idx;
@@ -195,13 +197,37 @@ struct rmid_entry *resctrl_find_free_rmid(u32 closid)
 		 * very first entry will be returned.
 		 */
 		itr_idx = resctrl_arch_rmid_idx_encode(itr->closid, itr->rmid);
+		if (itr_idx == U32_MAX)
+			continue;
+
 		cmp_idx = resctrl_arch_rmid_idx_encode(closid, itr->rmid);
+		if (cmp_idx == U32_MAX)
+			continue;
 
 		if (itr_idx == cmp_idx)
 			return itr;
 	}
 
 	return ERR_PTR(-ENOSPC);
+}
+
+struct rmid_entry *resctrl_find_free_rmid(u32 closid)
+{
+	struct rmid_entry *err;
+	int ret;
+
+	err = __resctrl_find_free_rmid(closid);
+	if (err == ERR_PTR(-ENOSPC)) {
+		ret = resctrl_arch_rmid_expand(closid);
+		if (ret < 0)
+			/* Out of rmid */
+			goto out;
+
+		/* Try it again */
+		return __resctrl_find_free_rmid(closid);
+	}
+out:
+	return err;
 }
 
 /**
@@ -320,8 +346,10 @@ void free_rmid(u32 closid, u32 rmid)
 
 	if (resctrl_arch_is_llc_occupancy_enabled())
 		add_rmid_to_limbo(entry);
-	else
+	else {
 		list_add_tail(&entry->list, &rmid_free_lru);
+		resctrl_arch_rmid_reclaim(closid, rmid);
+	}
 }
 
 bool rmid_is_occupied(u32 closid, u32 rmid)
