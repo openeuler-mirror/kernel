@@ -417,44 +417,35 @@ bool resctrl_arch_match_rmid(struct task_struct *tsk, u32 closid, u32 rmid)
 int resctrl_arch_set_iommu_closid_rmid(struct iommu_group *group, u32 closid,
 				       u32 rmid)
 {
-	u16 partid;
-
-	if (cdp_enabled)
-		partid = closid << 1;
-	else
-		partid = closid;
-
-	return iommu_group_set_qos_params(group, partid, rmid);
+	return iommu_group_set_qos_params(group, rmid2reqpartid(rmid),
+					  rmid2pmg(rmid));
 }
 
 bool resctrl_arch_match_iommu_closid(struct iommu_group *group, u32 closid)
 {
-	u16 partid;
-	int err = iommu_group_get_qos_params(group, &partid, NULL);
+	u16 reqpartid;
+	int err = iommu_group_get_qos_params(group, &reqpartid, NULL);
 
 	if (err)
 		return false;
 
 	if (cdp_enabled)
-		partid >>= 1;
+		closid <<= 1;
 
-	return (partid == closid);
+	return req2intpartid(reqpartid) == closid;
 }
 
 bool resctrl_arch_match_iommu_closid_rmid(struct iommu_group *group,
 					  u32 closid, u32 rmid)
 {
 	u8 pmg;
-	u16 partid;
-	int err = iommu_group_get_qos_params(group, &partid, &pmg);
+	u16 reqpartid;
+	int err = iommu_group_get_qos_params(group, &reqpartid, &pmg);
 
 	if (err)
 		return false;
 
-	if (cdp_enabled)
-		partid >>= 1;
-
-	return (partid == closid) && (rmid == pmg);
+	return req_pmg2rmid(reqpartid, pmg) == rmid;
 }
 #endif
 
