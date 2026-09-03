@@ -394,6 +394,9 @@ static void mpam_msc_destroy(struct mpam_msc *msc)
 
 	list_for_each_entry_safe(ris, tmp, &msc->ris, msc_list)
 		mpam_ris_destroy(ris);
+
+	debugfs_remove_recursive(msc->debugfs);
+	msc->debugfs = NULL;
 }
 
 /*
@@ -625,6 +628,7 @@ u16 mpam_cpbm_wd_hisi_workaround(u16 cpbm_wd, enum mpam_device_features feat,
 	return cpbm_wd;
 }
 
+static struct dentry *mpam_debugfs;
 static void mpam_ris_hw_probe(struct mpam_msc_ris *ris)
 {
 	int err;
@@ -637,25 +641,25 @@ static void mpam_ris_hw_probe(struct mpam_msc_ris *ris)
 
 	/* Cache Capacity Partitioning */
 	if (FIELD_GET(MPAMF_IDR_HAS_CCAP_PART, ris->idr)) {
-		u32 ccap_features = mpam_read_partsel_reg(msc, CCAP_IDR);
+		ris->ccap_idr = mpam_read_partsel_reg(msc, CCAP_IDR);
 
-		props->cmax_wd = FIELD_GET(MPAMF_CCAP_IDR_CMAX_WD, ccap_features);
+		props->cmax_wd = FIELD_GET(MPAMF_CCAP_IDR_CMAX_WD, ris->ccap_idr);
 
 		if (props->cmax_wd) {
-			if (!FIELD_GET(MPAMF_CCAP_IDR_NO_CMAX, ccap_features))
+			if (!FIELD_GET(MPAMF_CCAP_IDR_NO_CMAX, ris->ccap_idr))
 				mpam_set_feature(mpam_feat_ccap_part, props);
 
-			if (FIELD_GET(MPAMF_CCAP_IDR_HAS_CMIN, ccap_features))
+			if (FIELD_GET(MPAMF_CCAP_IDR_HAS_CMIN, ris->ccap_idr))
 				mpam_set_feature(mpam_feat_cmin, props);
 		}
 	}
 
 	/* Cache Portion partitioning */
 	if (FIELD_GET(MPAMF_IDR_HAS_CPOR_PART, ris->idr)) {
-		u32 cpor_features = mpam_read_partsel_reg(msc, CPOR_IDR);
+		ris->cpor_idr = mpam_read_partsel_reg(msc, CPOR_IDR);
 
 		props->cpbm_wd = mpam_cpbm_wd_hisi_workaround(
-				 FIELD_GET(MPAMF_CPOR_IDR_CPBM_WD, cpor_features),
+				 FIELD_GET(MPAMF_CPOR_IDR_CPBM_WD, ris->cpor_idr),
 				 mpam_feat_cpor_part, class->level);
 		if (props->cpbm_wd)
 			mpam_set_feature(mpam_feat_cpor_part, props);
@@ -1992,6 +1996,7 @@ static int mpam_msc_drv_probe(struct platform_device *pdev)
 {
 	int err;
 	pgprot_t prot;
+	char name[20];
 	void * __iomem io;
 	struct mpam_msc *msc;
 	struct resource *msc_res;
@@ -2090,6 +2095,11 @@ static int mpam_msc_drv_probe(struct platform_device *pdev)
 
 		list_add_rcu(&msc->glbl_list, &mpam_all_msc);
 		platform_set_drvdata(pdev, msc);
+
+		snprintf(name, sizeof(name), "msc.%u", msc->id);
+		msc->debugfs = debugfs_create_dir(name, mpam_debugfs);
+		debugfs_create_x32("max_nrdy_usec", 0400, msc->debugfs, &msc->nrdy_usec);
+
 	} while (0);
 	mutex_unlock(&mpam_list_lock);
 
@@ -2448,6 +2458,97 @@ static int mpam_allocate_config(void)
 	return 0;
 }
 
+static void mpam_debugfs_setup_ris(struct mpam_msc_ris *ris)
+{
+	char name[40];
+	struct dentry *d;
+	struct mpam_props *rprops = &ris->props;
+
+	snprintf(name, sizeof(name), "ris.%u", ris->ris_idx);
+	d = debugfs_create_dir(name, ris->msc->debugfs);
+	debugfs_create_x64("mpamf_idr", 0400, d, &ris->idr);
+	debugfs_create_x32("mpamf_cpor_idr", 0400, d, &ris->cpor_idr);
+	debugfs_create_x32("mpamf_ccap_idr", 0400, d, &ris->ccap_idr);
+	debugfs_create_x32("features", 0400, d, &rprops->features);
+	debugfs_create_x16("cpbm_wd", 0400, d, &rprops->cpbm_wd);
+	debugfs_create_x16("cmax_wd", 0400, d, &rprops->cmax_wd);
+	debugfs_create_x16("mbw_pbm_bits", 0400, d, &rprops->mbw_pbm_bits);
+	debugfs_create_x16("intpri_wd", 0400, d, &rprops->intpri_wd);
+	debugfs_create_x8("bwa_wd", 0400, d, &rprops->bwa_wd);
+	debugfs_create_x8("mbwu_scale", 0400, d, &rprops->mbwu_scale);
+	debugfs_create_x16("num_csu_mon", 0400, d, &rprops->num_csu_mon);
+	debugfs_create_x16("num_mbwu_mon", 0400, d, &rprops->num_mbwu_mon);
+	debugfs_create_cpumask("affinity", 0400, d, &ris->affinity);
+	ris->debugfs = d;
+}
+
+static void mpam_debugfs_setup_comp_ris(struct mpam_component *comp,
+					struct mpam_msc_ris *ris)
+{
+	char name[40];
+	char path[40];
+	u8 ris_idx = ris->ris_idx;
+	int msc_id = ris->msc->id;
+	struct dentry *d = comp->debugfs;
+
+	snprintf(name, sizeof(name), "msc.%u_ris.%u",
+			msc_id,	ris_idx);
+	snprintf(path, sizeof(path), "../../msc.%u/ris.%u",
+			msc_id, ris_idx);
+	debugfs_create_symlink(name, d, path);
+}
+
+static void mpam_debugfs_setup_comp(struct mpam_class *class,
+				    struct mpam_component *comp)
+{
+	char name[40];
+	struct dentry *d;
+	struct mpam_msc_ris *ris;
+
+	snprintf(name, sizeof(name), "comp.%u", comp->comp_id);
+	d = debugfs_create_dir(name, class->debugfs);
+	comp->debugfs = d;
+
+	list_for_each_entry_rcu(ris, &comp->ris, comp_list)
+		mpam_debugfs_setup_comp_ris(comp, ris);
+}
+
+static void mpam_debugfs_setup(void)
+{
+	char name[40];
+	struct dentry *d;
+	struct mpam_msc *msc;
+	struct mpam_class *class;
+	struct mpam_msc_ris *ris;
+	struct mpam_component *comp;
+
+	lockdep_assert_held(&mpam_list_lock);
+
+	list_for_each_entry(msc, &mpam_all_msc, glbl_list) {
+		d = msc->debugfs;
+		debugfs_create_x32("fw_id", 0400, d, &msc->pdev->id);
+		debugfs_create_x32("iface", 0400, d, &msc->iface);
+		debugfs_create_u16("partid_max", 0400, d, &msc->partid_max);
+		debugfs_create_u16("intpartid_max", 0400, d, &msc->intpartid_max);
+		debugfs_create_u8("pmg_max", 0400, d, &msc->pmg_max);
+		list_for_each_entry(ris, &msc->ris, msc_list)
+			mpam_debugfs_setup_ris(ris);
+	}
+
+	list_for_each_entry_rcu(class, &mpam_classes, classes_list) {
+		snprintf(name, sizeof(name), "class.%u", class->level);
+		d = debugfs_create_dir(name, mpam_debugfs);
+		debugfs_create_x32("features", 0400, d, &class->props.features);
+		debugfs_create_x32("nrdy_usec", 0400, d, &class->nrdy_usec);
+		debugfs_create_x8("level", 0400, d, &class->level);
+		debugfs_create_cpumask("affinity", 0400, d, &class->affinity);
+		class->debugfs = d;
+
+		list_for_each_entry_rcu(comp, &class->components, class_list)
+			mpam_debugfs_setup_comp(class, comp);
+	}
+}
+
 static void mpam_enable_once(void)
 {
 	int err;
@@ -2473,6 +2574,8 @@ static void mpam_enable_once(void)
 			pr_warn("Failed to register irqs: %d\n", err);
 			break;
 		}
+
+		mpam_debugfs_setup();
 	} while (0);
 	mutex_unlock(&mpam_list_lock);
 	cpus_read_unlock();
@@ -2756,6 +2859,8 @@ static int __init mpam_msc_driver_init(void)
 
 	if (acpi_disabled)
 		mpam_dt_create_foundling_msc();
+
+	mpam_debugfs = debugfs_create_dir("mpam", NULL);
 
 	return platform_driver_register(&mpam_msc_driver);
 }
