@@ -397,6 +397,8 @@ static void mpam_msc_destroy(struct mpam_msc *msc)
 
 	debugfs_remove_recursive(msc->debugfs);
 	msc->debugfs = NULL;
+
+	free_percpu(msc->error_dev_id);
 }
 
 /*
@@ -1835,6 +1837,7 @@ static int __setup_ppi(struct mpam_msc *msc)
 			pr_err_once("%s shares PPI with %s!\n",
 				    dev_name(&msc->pdev->dev),
 				    dev_name(&empty->pdev->dev));
+			free_percpu(msc->error_dev_id);
 			return -EBUSY;
 		}
 		*per_cpu_ptr(msc->error_dev_id, cpu) = msc;
