@@ -97,6 +97,11 @@ static const struct midr_range hip12_cpus[] = {
 	{ /* sentinel */ }
 };
 
+static const struct midr_range hip13_cpus[] = {
+	MIDR_ALL_VERSIONS(MIDR_HISI_HIP13),
+	{ /* sentinel */ }
+};
+
 static const struct midr_range hisi_cpus[] = {
 	MIDR_ALL_VERSIONS(MIDR_HISI_HIP12),
 	MIDR_ALL_VERSIONS(MIDR_HISI_HIP13),
@@ -1018,7 +1023,12 @@ static u64 mpam_msmon_overflow_val(struct mpam_msc_ris *ris)
 
 bool resctrl_arch_would_mbm_overflow(void)
 {
-	return read_cpuid_implementor() != ARM_CPU_IMP_HISI;
+	/* Non-HiSilicon CPUs and HIP13 need overflow handling */
+	if (read_cpuid_implementor() != ARM_CPU_IMP_HISI)
+		return true;
+
+	/* HIP13 is the exception among HiSilicon CPUs */
+	return is_midr_in_range_list(hip13_cpus);
 }
 
 static bool mpam_ris_has_nrdy_bit(struct mpam_msc_ris *ris)
