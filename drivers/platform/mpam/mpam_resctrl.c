@@ -151,17 +151,49 @@ u32 resctrl_arch_get_num_closid(struct rdt_resource *ignored)
 	return mpam_intpartid_max + 1;
 }
 
+/*
+ * Determine the effective number of PARTIDs available for resctrl.
+ *
+ * This function performs a one-time check to determine if Narrow-PARTID
+ * can be used. It must be called after mpam_resctrl_pick_{mba,caches}()
+ * have initialized the resource classes, as class properties are used
+ * to detect Narrow-PARTID support.
+ *
+ * The first call occurs in update_rmid_limits(), ensuring the
+ * prerequisite initialization is complete.
+ */
 u32 get_num_reqpartid(void)
 {
+	struct mpam_props *cprops;
+	struct mpam_class *class;
+	static bool first = true;
+	int idx;
+
+	if (first) {
+		idx = srcu_read_lock(&mpam_srcu);
+		list_for_each_entry_rcu(class, &mpam_classes, classes_list) {
+			cprops = &class->props;
+			if (mpam_has_feature(mpam_feat_partid_nrw, cprops))
+				continue;
+
+			if (mpam_has_feature(mpam_feat_mbw_max, cprops) ||
+			    mpam_has_feature(mpam_feat_mbw_min, cprops) ||
+			    mpam_has_feature(mpam_feat_ccap_part, cprops) ||
+			    mpam_has_feature(mpam_feat_cmin, cprops)) {
+				mpam_partid_max = mpam_intpartid_max;
+				break;
+			}
+		}
+		srcu_read_unlock(&mpam_srcu, idx);
+	}
+
+	first = false;
 	return mpam_partid_max + 1;
 }
 
 u32 resctrl_arch_system_num_rmid_idx(void)
 {
-	u8 closid_shift = fls(mpam_pmg_max);
-	u32 num_reqpartid = get_num_reqpartid();
-
-	return num_reqpartid << closid_shift;
+	return (mpam_pmg_max + 1) * get_num_reqpartid();
 }
 
 static u32 rmid2reqpartid(u32 rmid)
@@ -512,9 +544,13 @@ void resctrl_arch_reset_rmid(struct rdt_resource *r, struct rdt_domain *d,
  * The rmid realloc threshold should be for the smallest cache exposed to
  * resctrl.
  */
-static void update_rmid_limits(unsigned int size)
+static void update_rmid_limits(struct mpam_class *class)
 {
 	u32 num_unique_pmg = resctrl_arch_system_num_rmid_idx();
+	unsigned int size;
+
+	/* Assume cache levels are the same size for all CPUs... */
+	size = get_cpu_cacheinfo_size(smp_processor_id(), class->level);
 
 	if (WARN_ON_ONCE(!size))
 		return;
@@ -773,7 +809,6 @@ static u16 ca_max_to_percent(u16 ca_max, u8 wd)
 static void mpam_resctrl_pick_caches(void)
 {
 	int idx;
-	unsigned int cache_size;
 	struct mpam_class *class;
 	struct mpam_resctrl_res *res;
 	bool has_cpor, has_cmax, has_cmin, has_intpri;
@@ -811,18 +846,6 @@ static void mpam_resctrl_pick_caches(void)
 		if (!cpumask_equal(&class->affinity, cpu_possible_mask)) {
 			pr_debug("pick_caches: Class has missing CPUs\n");
 			continue;
-		}
-
-		/* Assume cache levels are the same size for all CPUs... */
-		cache_size = get_cpu_cacheinfo_size(smp_processor_id(), class->level);
-		if (!cache_size) {
-			pr_debug("pick_caches: Could not read cache size\n");
-			continue;
-		}
-
-		if (mpam_has_feature(mpam_feat_msmon_csu, cprops)) {
-			if (class->level == 3)
-				update_rmid_limits(cache_size);
 		}
 
 		if (has_cpor) {
@@ -920,6 +943,23 @@ static void mpam_resctrl_pick_mba(void)
 			res->resctrl_res.name = "MBHDL";
 		}
 	}
+	srcu_read_unlock(&mpam_srcu, idx);
+}
+
+static void mpam_resctrl_pick_counters(void)
+{
+	struct mpam_class *class;
+	int idx;
+
+	idx = srcu_read_lock(&mpam_srcu);
+
+	list_for_each_entry_rcu(class, &mpam_classes, classes_list) {
+		if (mpam_has_feature(mpam_feat_msmon_csu, &class->props)) {
+			if (class->level == 3)
+				update_rmid_limits(class);
+		}
+	}
+
 	srcu_read_unlock(&mpam_srcu, idx);
 }
 
@@ -1333,7 +1373,7 @@ int mpam_resctrl_setup(void)
 
 	mpam_resctrl_pick_caches();
 	mpam_resctrl_pick_mba();
-	/* TODO: mpam_resctrl_pick_counters(); */
+	mpam_resctrl_pick_counters();
 
 	for (i = 0; i < RDT_NUM_RESOURCES; i++) {
 		res = &mpam_resctrl_exports[i];
