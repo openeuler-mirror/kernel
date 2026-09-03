@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -956,7 +956,6 @@ static void ubase_cmd_crq_handler(struct ubase_dev *udev)
 		ubase_free_bd_data(msg_data, bd_num);
 		ubase_write_dev(&udev->hw, UBASE_CRQ_HEAD_REG, crq->ci);
 	}
-
 }
 
 void ubase_crq_service_task(struct ubase_delay_work *ubase_work)

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -94,7 +94,6 @@ static int unic_update_stack_ip_addr(struct unic_vport *vport,
 	unic_info(unic_dev,
 		  "stack added a non-planned ip %s, need to delete it.\n",
 		  format_masked_ip_addr);
-	set_bit(UNIC_VPORT_STATE_IP_TBL_CHANGE, &vport->state);
 
 	return 0;
 

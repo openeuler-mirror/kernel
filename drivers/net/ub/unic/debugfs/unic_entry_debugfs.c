@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -146,7 +146,6 @@ int unic_dbg_dump_ip_tbl_list(struct seq_file *s, void *data)
 		seq_printf(s, "%-43pI6c", &ip_node->ip_addr.s6_addr);
 		seq_printf(s, "%-9s", unic_entry_state_str[ip_node->state]);
 		seq_printf(s, "%-3u", ip_node->node_mask);
-
 		seq_puts(s, "\n");
 	}
 	spin_unlock_bh(&ip_tbl->ip_list_lock);

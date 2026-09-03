@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -1230,8 +1230,8 @@ u32 __ubase_get_hw_ver(struct ubase_dev *udev)
 		return UBASE_HW_VER_A_1;
 	case UBASE_DEV_ID_S_0_URMA_MUE:
 	case UBASE_DEV_ID_S_0_URMA_UE:
-	case UBASE_DEV_ID_S_0_PMU_MUE:
 	case UBASE_DEV_ID_S_0_CDMA_MUE:
+	case UBASE_DEV_ID_S_0_PMU_MUE:
 		return UBASE_HW_VER_S_0;
 	default:
 		return UBASE_HW_VER_UNKNOWN;
@@ -2122,11 +2122,6 @@ int __ubase_activate_dev(struct ubase_dev *udev)
 {
 	struct ub_entity *ue = container_of(udev->dev, struct ub_entity, dev);
 	int ret;
-
-#ifdef CONFIG_EQUIP
-	if (!ubase_dev_rack_server_supported(udev))
-		return 0;
-#endif
 
 	if (ubase_activate_proxy_supported(udev))
 		ret = ub_activate_entity(ue, ue->entity_idx);
