@@ -1742,6 +1742,16 @@ void rc_free_device(struct rc_dev *dev)
 	if (!dev)
 		return;
 
+	/*
+	 * input_dev may already have been cleared by rc_free_rx_device(),
+	 * so key off driver_type for the timers, which are only set up
+	 * for non IR_RAW_TX devices.
+	 */
+	if (dev->driver_type != RC_DRIVER_IR_RAW_TX) {
+		timer_delete_sync(&dev->timer_keyup);
+		timer_delete_sync(&dev->timer_repeat);
+	}
+
 	input_free_device(dev->input_dev);
 
 	put_device(&dev->dev);
