@@ -436,7 +436,10 @@ static inline int rdev_scan(struct cfg80211_registered_device *rdev,
 {
 	int ret;
 	trace_rdev_scan(&rdev->wiphy, request);
+	request->driver_owns = true;
 	ret = rdev->ops->scan(&rdev->wiphy, request);
+	if (ret)
+		request->driver_owns = false;
 	trace_rdev_return_int(&rdev->wiphy, ret);
 	return ret;
 }
