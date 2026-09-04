@@ -33,6 +33,7 @@ struct obj_cgroup;
 struct page;
 struct mm_struct;
 struct kmem_cache;
+struct memcg_reclaim_state;
 struct oom_control;
 struct dynamic_pool;
 
@@ -412,7 +413,11 @@ struct mem_cgroup {
 	struct dynamic_pool *dpool;
 #endif
 
+#ifdef CONFIG_ZRAM_RECLAIM
+	KABI_USE(1, struct memcg_reclaim_state *memcg_reclaim_state)
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)

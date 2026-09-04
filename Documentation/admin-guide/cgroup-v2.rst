@@ -1706,6 +1706,30 @@ PAGE_SIZE multiple when read back.
 	limit, it will refuse to take any more stores before existing
 	entries fault back in or are written out to disk.
 
+  memory.zram_reclaim
+	A read-write file which exists on non-root cgroups on supported
+	ARM64 platforms when ``CONFIG_ZRAM_RECLAIM=y``.
+
+	Controls a memcg-scoped reclaim policy tuned for compressed-swap
+	environments.  Reading returns two whitespace-separated fields::
+
+	  <enabled> <limit_ratio>
+
+	Writing accepts the following forms::
+
+	  echo 1 > memory.zram_reclaim
+	  echo "1 <limit_ratio>" > memory.zram_reclaim
+	  echo "0 0" > memory.zram_reclaim
+
+	``echo 1`` enables the policy with the default ``limit_ratio``
+	of ``30``.  ``limit_ratio`` may be set explicitly in the range
+	``1`` to ``60``.  Disabling requires writing ``0 0``.
+
+	Changing ``limit_ratio`` while enabled is rejected; disable and
+	re-enable the policy to apply a different value.
+
+	See Documentation/admin-guide/mm/zram_reclaim.rst for details.
+
   memory.pressure
 	A read-only nested-keyed file.
 

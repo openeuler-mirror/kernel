@@ -95,6 +95,7 @@
 #include "pgalloc-track.h"
 #include "internal.h"
 #include "swap.h"
+#include "zram_reclaim.h"
 
 #if defined(LAST_CPUPID_NOT_IN_PAGE_FLAGS) && !defined(CONFIG_COMPILE_TEST)
 #warning Unfortunate NUMA and NUMA Balancing config, growing page-frame for last_cpupid.
@@ -4468,6 +4469,8 @@ vm_fault_t do_swap_page(struct vm_fault *vmf)
 		ret = VM_FAULT_SIGBUS;
 		goto out_nomap;
 	}
+
+	zram_reclaim_note_cost_folio(folio, false);
 
 	/* allocated large folios for SWP_SYNCHRONOUS_IO */
 	if (folio_test_large(folio) && !folio_test_swapcache(folio)) {

@@ -78,6 +78,7 @@
 #include <net/ip.h>
 #include "slab.h"
 #include "swap.h"
+#include "zram_reclaim.h"
 
 #include <linux/uaccess.h>
 
@@ -6656,6 +6657,7 @@ static void __mem_cgroup_free(struct mem_cgroup *memcg)
 	kfree(memcg->vmstats);
 	free_percpu(memcg->vmstats_percpu);
 	memcg_free_swap_device(memcg);
+	zram_reclaim_memcg_free(memcg);
 	kfree(memcg);
 }
 

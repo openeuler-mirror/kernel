@@ -87,6 +87,9 @@ Brief summary of control files.
  memory.swap.max		     set/show limit for the difference between memsw.usage
 				     and memory.usage
  memory.swapfile		     set/show available swap file
+ memory.zram_reclaim		     set/show zram reclaim policy state and
+				     swap ratio limit on supported ARM64
+				     platforms
  memory.pressure_level		     set memory pressure notifications
  memory.swappiness		     set/show swappiness parameter of vmscan
 				     (See sysctl's vm.swappiness)
@@ -622,7 +625,33 @@ enforces that 0 swappiness really prevents from any swapping even if
 there is a swap storage available. This might lead to memcg OOM killer
 if there are no file pages to reclaim.
 
-5.4 failcnt
+5.4 zram_reclaim
+----------------
+
+On supported ARM64 platforms with ``CONFIG_ZRAM_RECLAIM=y``,
+``memory.zram_reclaim`` controls a memcg-scoped reclaim policy for
+compressed-swap environments.
+
+Reading the file returns::
+
+  <enabled> <limit_ratio>
+
+Writing accepts::
+
+  echo 1 > memory.zram_reclaim
+  echo "1 <limit_ratio>" > memory.zram_reclaim
+  echo "0 0" > memory.zram_reclaim
+
+``echo 1`` enables the policy with the default ``limit_ratio`` of ``30``.
+``limit_ratio`` may be set explicitly in the range ``1`` to ``60``.
+Disabling requires writing ``0 0``.
+
+Changing ``limit_ratio`` while enabled is rejected; disable and re-enable the
+policy to apply a different value.
+
+See Documentation/admin-guide/mm/zram_reclaim.rst for details.
+
+5.5 failcnt
 -----------
 
 A memory cgroup provides memory.failcnt and memory.memsw.failcnt files.
@@ -634,7 +663,7 @@ You can reset failcnt by writing 0 to failcnt file::
 
 	# echo 0 > .../memory.failcnt
 
-5.5 usage_in_bytes
+5.6 usage_in_bytes
 ------------------
 
 For efficiency, as other kernel components, memory cgroup uses some optimization
@@ -644,7 +673,7 @@ value for efficient access. (Of course, when necessary, it's synchronized.)
 If you want to know more exact memory usage, you should use RSS+CACHE(+SWAP)
 value in memory.stat(see 5.2).
 
-5.6 numa_stat
+5.7 numa_stat
 -------------
 
 This is similar to numa_maps but operates on a per-memcg basis.  This is

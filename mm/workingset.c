@@ -17,6 +17,7 @@
 #include <linux/fs.h>
 #include <linux/mm.h>
 #include "internal.h"
+#include "zram_reclaim.h"
 
 /*
  *		Double CLOCK lists
@@ -539,6 +540,7 @@ void workingset_refault(struct folio *folio, void *shadow)
 	lruvec = mem_cgroup_lruvec(memcg, pgdat);
 
 	mod_lruvec_state(lruvec, WORKINGSET_REFAULT_BASE + file, nr);
+	zram_reclaim_note_cost_folio(folio, file);
 
 	if (!workingset_test_recent(shadow, file, &workingset))
 		goto out;

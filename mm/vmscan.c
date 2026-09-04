@@ -67,6 +67,7 @@
 
 #include "internal.h"
 #include "swap.h"
+#include "zram_reclaim.h"
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/vmscan.h>
@@ -2419,6 +2420,16 @@ static void get_scan_count(struct lruvec *lruvec, struct scan_control *sc,
 	 */
 	if (!sc->priority && swappiness) {
 		scan_balance = SCAN_EQUAL;
+		goto out;
+	}
+
+	/*
+	 * The compressed-swap policy intentionally takes precedence over
+	 * cache_trim_mode to protect file cache from slow-storage refaults.
+	 */
+	if (zram_reclaim_should_use_policy(lruvec, memcg, sc->priority,
+					   &swappiness)) {
+		scan_balance = SCAN_ANON;
 		goto out;
 	}
 
