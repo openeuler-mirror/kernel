@@ -2331,9 +2331,6 @@ struct net_device {
 	/* These may be needed for future network-power-down code. */
 	struct timer_list	watchdog_timer;
 	int			watchdog_timeo;
-	spinlock_t		watchdog_lock;
-	bool			watchdog_ref_held;
-
 	u32                     proto_down_reason;
 
 	struct list_head	todo_list;
@@ -2459,8 +2456,8 @@ struct net_device {
 #else
 	KABI_RESERVE(1)
 #endif
-	KABI_RESERVE(2)
-	KABI_RESERVE(3)
+	KABI_RENAME(_KABI_RESERVE(2), spinlock_t watchdog_lock);
+	KABI_USE(3, bool watchdog_ref_held)
 	KABI_RESERVE(4)
 	KABI_RESERVE(5)
 	KABI_RESERVE(6)
