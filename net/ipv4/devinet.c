@@ -1796,6 +1796,9 @@ static int inet_validate_link_af(const struct net_device *dev,
 
 			if (cfgid <= 0 || cfgid > IPV4_DEVCONF_MAX)
 				return -EINVAL;
+
+			if (cfgid == IPV4_DEVCONF_MC_FORWARDING)
+				return -EINVAL;
 		}
 	}
 
