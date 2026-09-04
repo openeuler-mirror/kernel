@@ -19,7 +19,7 @@
  * Ensure DMA allocations are naturally aligned
  * Hardware requirements base address by address length align
  */
-#if IS_ENABLED(CONFIG_CMA_ALIGNMENT)
+#ifdef CONFIG_CMA_ALIGNMENT
 #define Q_MAX_SZ_SHIFT (PAGE_SHIFT + CONFIG_CMA_ALIGNMENT)
 #else
 #define Q_MAX_SZ_SHIFT (PAGE_SHIFT + MAX_ORDER)
