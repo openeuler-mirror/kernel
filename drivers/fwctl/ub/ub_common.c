@@ -3,6 +3,7 @@
  * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. 2025-2025. All rights reserved.
  */
 
+#include <linux/ethtool.h>
 #include "ub_common.h"
 #include "ub_cmdq.h"
 
@@ -157,7 +158,7 @@ static int ubctl_cmd_send_deal(struct ubctl_dev *ucdev,
 	*retval = ubctl_ubase_cmd_send(ucdev->adev, &cmd);
 	if (*retval == UTOOL_EOPNOTSUPP) {
 		ubctl_warn(ucdev, "this opcode(%#x) is not supported.\n", cmd.op_code);
-		if (rpc_cmd == UBCTL_CMD_QUERY_CONF_USER_COMM)
+		if (rpc_cmd == UTOOL_CMD_QUERY_CONF_USER_COMM)
 			return -EINVAL;
 		*retval = 0;
 	}
@@ -248,7 +249,14 @@ int ubctl_query_data_deal(struct ubctl_dev *ucdev,
 		ubctl_err(ucdev, "ubctl in or out is null.\n");
 		return -EINVAL;
 	}
-
+	if (!(cmd->out_data)) {
+		ubctl_err(ucdev, "out_data is null.\n");
+		return -EINVAL;
+	}
+	if (!(cmd->out_data)) {
+		ubctl_err(ucdev, "out_data is null.\n");
+		return -EINVAL;
+	}
 	if (cmd->out_len != out_len) {
 		ubctl_err(ucdev, "out data size = %ubytes, and it must be %ubytes.\n",
 			  cmd->out_len, out_len);
@@ -304,15 +312,21 @@ int ubctl_query_perf_stats(struct ubctl_dev *ucdev, u32 port_bitmap,
 	return ret;
 }
 
+static void ubctl_init_netdev_list(void)
+{
+	INIT_LIST_HEAD(&g_ubctl_dev_list);
+}
+
 struct device *ubctl_find_device_by_name(const char *dev_name)
 {
-	struct ubctl_unic_udma_dev *entry = NULL;
+	struct ubctl_unic_udma_dev *current_node;
+	struct ubctl_unic_udma_dev *next;
 	struct device *ret_dev = NULL;
 
 	mutex_lock(&g_ubctl_dev_lock);
-	list_for_each_entry(entry, &g_ubctl_dev_list, list) {
-		if (strcmp(entry->dev_name, dev_name) == 0) {
-			ret_dev = entry->dev;
+	list_for_each_entry_safe(current_node, next, &g_ubctl_dev_list, list) {
+		if (strcmp(current_node->dev_name, dev_name) == 0) {
+			ret_dev = current_node->dev;
 			break;
 		}
 	}
@@ -321,7 +335,44 @@ struct device *ubctl_find_device_by_name(const char *dev_name)
 	return ret_dev;
 }
 
-static int ubctl_add_device(struct device *dev, const char *dev_name)
+static bool ubctl_netdev_belong_unic(struct net_device *netdev)
+{
+#define UBCTL_UNIC_ADEV_NAME "unic"
+
+	struct ethtool_drvinfo drvinfo = {0};
+
+	if (!netdev || !netdev->ethtool_ops || !netdev->ethtool_ops->get_drvinfo)
+		return false;
+
+	netdev->ethtool_ops->get_drvinfo(netdev, &drvinfo);
+	if (strncmp(drvinfo.driver, UBCTL_UNIC_ADEV_NAME, sizeof(UBCTL_UNIC_ADEV_NAME)))
+		return false;
+
+	return true;
+}
+
+static void ubctl_add_device(struct net_device *netdev)
+{
+	struct ubctl_unic_udma_dev *new_dev_node;
+
+	if (!ubctl_netdev_belong_unic(netdev))
+		return;
+
+	new_dev_node = kvzalloc(sizeof(struct ubctl_unic_udma_dev), GFP_KERNEL);
+	if (!new_dev_node)
+		return;
+
+	memcpy(new_dev_node->dev_name, netdev->name,
+	       min(sizeof(new_dev_node->dev_name), sizeof(netdev->name)));
+	INIT_LIST_HEAD(&new_dev_node->list);
+	new_dev_node->dev = &netdev->dev;
+
+	mutex_lock(&g_ubctl_dev_lock);
+	list_add(&new_dev_node->list, &g_ubctl_dev_list);
+	mutex_unlock(&g_ubctl_dev_lock);
+}
+
+static int ubctl_add_one_device(struct device *dev, const char *dev_name)
 {
 	struct ubctl_unic_udma_dev *new_dev_node;
 
@@ -348,6 +399,9 @@ static void ubctl_remove_device(const char *dev_name)
 	struct ubctl_unic_udma_dev *current_node;
 	struct ubctl_unic_udma_dev *next;
 
+	if (!dev_name)
+		return;
+
 	mutex_lock(&g_ubctl_dev_lock);
 	list_for_each_entry_safe(current_node, next, &g_ubctl_dev_list, list) {
 		if (strcmp(current_node->dev_name, dev_name) != 0)
@@ -368,8 +422,10 @@ static int ubctl_add_udma_device(struct ubcore_device *ubc_dev)
 		return -EFAULT;
 
 	udev = to_udma_dev(ubc_dev);
+	if (!udev || !udev->comdev.adev)
+		return -EFAULT;
 
-	ret = ubctl_add_device(&udev->comdev.adev->dev, udev->dev_name);
+	ret = ubctl_add_one_device(&udev->comdev.adev->dev, udev->dev_name);
 	if (ret)
 		ubctl_nodev_warn("device not added, ret = %d.\n", ret);
 
@@ -378,10 +434,17 @@ static int ubctl_add_udma_device(struct ubcore_device *ubc_dev)
 
 static void ubctl_remove_udma_device(struct ubcore_device *ubc_dev, void *client_ctx)
 {
+	UBCTL_SET_USED(client_ctx);
+	struct udma_dev *udev;
+
 	if (!ubc_dev)
 		return;
 
-	ubctl_remove_device(ubc_dev->dev_name);
+	udev = to_udma_dev(ubc_dev);
+	if (!udev)
+		return;
+
+	ubctl_remove_device(udev->dev_name);
 }
 
 static struct ubcore_client g_ubctl_udma_client = {
@@ -395,13 +458,12 @@ static int ubctl_netdevice_event(struct notifier_block *tblock,
 				 unsigned long event, void *eptr)
 {
 	struct net_device *netdev;
-	int ret = 0;
 
 	netdev = netdev_notifier_info_to_dev((const struct netdev_notifier_info *)eptr);
 
 	switch (event) {
 	case NETDEV_REGISTER:
-		ret = ubctl_add_device(&netdev->dev, netdev->name);
+		ubctl_add_device(netdev);
 		break;
 	case NETDEV_UNREGISTER:
 		ubctl_remove_device(netdev->name);
@@ -410,16 +472,18 @@ static int ubctl_netdevice_event(struct notifier_block *tblock,
 		break;
 	}
 
-	return ret;
+	return NOTIFY_DONE;
 }
 
 static struct notifier_block g_ubctl_netdevice = {
 	.notifier_call = ubctl_netdevice_event,
 };
 
-int ubctl_dev_client_init(struct ubctl_dev *ucdev)
+int ubctl_dev_client_init(void)
 {
 	int ret;
+
+	ubctl_init_netdev_list();
 
 	ret = ubcore_register_client(&g_ubctl_udma_client);
 	if (ret)
@@ -437,6 +501,9 @@ void ubctl_dev_client_uninit(struct ubctl_dev *ucdev)
 	struct ubctl_unic_udma_dev *current_node;
 	struct ubctl_unic_udma_dev *next;
 	int ret;
+
+	if (!ucdev || !(ucdev->adev))
+		return;
 
 	ret = unregister_netdevice_notifier(&g_ubctl_netdevice);
 	if (ret)
