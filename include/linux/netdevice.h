@@ -1986,6 +1986,8 @@ enum netdev_stat_type {
  *	@qdisc_hash:		qdisc hash table
  *	@watchdog_timeo:	Represents the timeout that is used by
  *				the watchdog (see dev_watchdog())
+ *	@watchdog_lock:		protect watchdog_ref_held
+ *	@watchdog_ref_held:	True if the watchdog device ref is taken.
  *	@watchdog_timer:	List of timers
  *
  *	@proto_down_reason:	reason a netdev interface is held down
@@ -2329,7 +2331,6 @@ struct net_device {
 	/* These may be needed for future network-power-down code. */
 	struct timer_list	watchdog_timer;
 	int			watchdog_timeo;
-
 	u32                     proto_down_reason;
 
 	struct list_head	todo_list;
@@ -2455,8 +2456,8 @@ struct net_device {
 #else
 	KABI_RESERVE(1)
 #endif
-	KABI_RESERVE(2)
-	KABI_RESERVE(3)
+	KABI_RENAME(_KABI_RESERVE(2), spinlock_t watchdog_lock);
+	KABI_USE(3, bool watchdog_ref_held)
 	KABI_RESERVE(4)
 	KABI_RESERVE(5)
 	KABI_RESERVE(6)
@@ -4270,7 +4271,7 @@ static inline bool netif_carrier_ok(const struct net_device *dev)
 
 unsigned long dev_trans_start(struct net_device *dev);
 
-void __netdev_watchdog_up(struct net_device *dev);
+void netdev_watchdog_up(struct net_device *dev);
 
 void netif_carrier_on(struct net_device *dev);
 void netif_carrier_off(struct net_device *dev);
