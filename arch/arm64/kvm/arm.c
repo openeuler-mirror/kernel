@@ -634,7 +634,7 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 			r = kvm_arm_pvtime_supported();
 		break;
 	case KVM_CAP_ARM_EL1_32BIT:
-		r = cpus_have_const_cap(ARM64_HAS_32BIT_EL1);
+		r = cpus_have_const_cap(ARM64_HAS_32BIT_EL1) && !is_pvm_mode();
 		break;
 	case KVM_CAP_GUEST_DEBUG_HW_BPS:
 		r = kvm_is_realm(kvm) ? 0 : get_num_brps();
@@ -1174,7 +1174,7 @@ void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 	if (vcpu_is_rec(vcpu))
 		return;
 
-	if (has_vhe())
+	if (has_vhe() || is_pvm_mode())
 		kvm_vcpu_load_sysregs_vhe(vcpu);
 	kvm_arch_vcpu_load_fp(vcpu);
 	kvm_vcpu_pmu_restore_guest(vcpu);
@@ -1214,7 +1214,7 @@ void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
 
 	kvm_arch_vcpu_put_debug_state_flags(vcpu);
 	kvm_arch_vcpu_put_fp(vcpu);
-	if (has_vhe())
+	if (has_vhe() || is_pvm_mode())
 		kvm_vcpu_put_sysregs_vhe(vcpu);
 
 	kvm_vcpu_pmu_restore_host(vcpu);
@@ -2022,7 +2022,8 @@ static unsigned long system_supported_vcpu_features(struct kvm *kvm)
 {
 	unsigned long features = KVM_VCPU_VALID_FEATURES;
 
-	if (!cpus_have_final_cap(ARM64_HAS_32BIT_EL1))
+	/* PVM runs the guest EL1 at EL0 and can only project AArch64 modes */
+	if (!cpus_have_final_cap(ARM64_HAS_32BIT_EL1) || is_pvm_mode())
 		clear_bit(KVM_ARM_VCPU_EL1_32BIT, &features);
 
 	if (!kvm_is_realm(kvm))

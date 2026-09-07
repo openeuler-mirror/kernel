@@ -89,8 +89,10 @@ void kvm_vcpu_load_sysregs_vhe(struct kvm_vcpu *vcpu)
 	 */
 	__sysreg32_restore_state(vcpu);
 	__sysreg_restore_user_state(guest_ctxt);
-	__sysreg_restore_el1_state(guest_ctxt, ctxt_midr_el1(guest_ctxt));
-	__mpam_guest_load();
+	if (!is_pvm_mode()) {
+		__sysreg_restore_el1_state(guest_ctxt, ctxt_midr_el1(guest_ctxt));
+		__mpam_guest_load();
+	}
 
 #ifdef CONFIG_ARM64_HDBSS
 	__load_hdbss(vcpu);
@@ -98,7 +100,8 @@ void kvm_vcpu_load_sysregs_vhe(struct kvm_vcpu *vcpu)
 
 	vcpu_set_flag(vcpu, SYSREGS_ON_CPU);
 
-	activate_traps_vhe_load(vcpu);
+	if (!is_pvm_mode())
+		activate_traps_vhe_load(vcpu);
 }
 
 /**
@@ -118,9 +121,11 @@ void kvm_vcpu_put_sysregs_vhe(struct kvm_vcpu *vcpu)
 	struct kvm_cpu_context *host_ctxt;
 
 	host_ctxt = host_data_ptr(host_ctxt);
-	deactivate_traps_vhe_put(vcpu);
+	if (!is_pvm_mode())
+		deactivate_traps_vhe_put(vcpu);
 
-	__sysreg_save_el1_state(guest_ctxt);
+	if (!is_pvm_mode())
+		__sysreg_save_el1_state(guest_ctxt);
 	__sysreg_save_user_state(guest_ctxt);
 	__sysreg32_save_state(vcpu);
 
