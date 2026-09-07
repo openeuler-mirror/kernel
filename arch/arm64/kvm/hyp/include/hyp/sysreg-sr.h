@@ -45,6 +45,9 @@ static inline u64 ctxt_midr_el1(struct kvm_cpu_context *ctxt)
 
 static inline void __sysreg_save_common_state(struct kvm_cpu_context *ctxt)
 {
+	if (is_pvm_mode())
+		return;
+
 	ctxt_sys_reg(ctxt, MDSCR_EL1)	= read_sysreg(mdscr_el1);
 #ifdef CONFIG_ACTLR_XCALL_XINT
 	ctxt_sys_reg(ctxt, ACTLR_EL1)   = read_sysreg(actlr_el1);
@@ -118,6 +121,9 @@ static inline void __sysreg_save_el2_return_state(struct kvm_cpu_context *ctxt)
 
 static inline void __sysreg_restore_common_state(struct kvm_cpu_context *ctxt)
 {
+	if (is_pvm_mode())
+		return;
+
 	write_sysreg(ctxt_sys_reg(ctxt, MDSCR_EL1),  mdscr_el1);
 #ifdef CONFIG_ACTLR_XCALL_XINT
 	write_sysreg(ctxt_sys_reg(ctxt, ACTLR_EL1),  actlr_el1);
