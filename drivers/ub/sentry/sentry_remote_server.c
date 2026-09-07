@@ -491,7 +491,6 @@ int cis_ubios_remote_msg_cb(struct cis_message *cis_msg)
 	int ret;
 	struct sentry_binary_msg event_msg;
 
-	pr_info("uvb get msg: [%s]\n", (char *)cis_msg->input);
 	if (cis_msg->input_size != sizeof(struct sentry_binary_msg)) {
 		pr_err("%s: invalid input size: %d, expect %lu\n",
 			__func__, cis_msg->input_size, sizeof(struct sentry_binary_msg));
@@ -499,6 +498,7 @@ int cis_ubios_remote_msg_cb(struct cis_message *cis_msg)
 	}
 
 	memcpy(&event_msg, cis_msg->input, sizeof(struct sentry_binary_msg));
+	pr_info("uvb get msg: type=%u cna=%u\n", event_msg.type, event_msg.cna);
 	ret = create_kworker_to_process_msg(&event_msg, COMM_TYPE_UVB);
 	return ret;
 }
