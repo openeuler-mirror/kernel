@@ -1010,6 +1010,8 @@ static int uburma_cmd_active_jfs(struct ubcore_device *ubc_dev,
 	struct ubcore_jfs_opt jfs_opt;
 	struct uburma_uobj *jfc_uobj;
 	struct ubcore_jfs *jfs;
+	struct ubcore_jfc *old_jfc;
+	struct ubcore_jfc *new_jfc;
 	int ret;
 
 	ret = uburma_tlv_parse(hdr, (void *)&arg);
@@ -1032,6 +1034,11 @@ static int uburma_cmd_active_jfs(struct ubcore_device *ubc_dev,
 		return -EINVAL;
 	}
 	jfs = (struct ubcore_jfs *)uobj->object;
+	if (jfs->jfs_opt.is_actived) {
+		uobj_put_write(uobj);
+		uburma_log_err("jfs has activated.\n");
+		return -EINVAL;
+	}
 
 	fill_udata(&udata, file->ucontext, &arg.udata);
 	(void)memcpy(&jfs->jfs_opt, &jfs_opt, sizeof(jfs_opt));
@@ -1054,9 +1061,16 @@ static int uburma_cmd_active_jfs(struct ubcore_device *ubc_dev,
 		ret = -EINVAL;
 		return ret;
 	}
-	jfs->jfs_cfg.jfc = jfc_uobj->object;
+	new_jfc = (struct ubcore_jfc *)jfc_uobj->object;
+	old_jfc = jfs->jfs_cfg.jfc;
+
+	/* Maintain use_cnt: inc new jfc before replacing pointer */
+	atomic_inc(&new_jfc->use_cnt);
+	jfs->jfs_cfg.jfc = new_jfc;
 
 	ret = ubcore_active_jfs(jfs, &udata);
+	if (old_jfc)
+		atomic_dec(&old_jfc->use_cnt);
 	if (ret != 0) {
 		uobj_put_write(uobj);
 		uobj_put_read(jfc_uobj);
@@ -1775,6 +1789,8 @@ static int uburma_cmd_active_jfr(struct ubcore_device *ubc_dev,
 	struct ubcore_jfr_opt jfr_opt;
 	struct uburma_uobj *jfc_uobj;
 	struct ubcore_jfr *jfr;
+	struct ubcore_jfc *old_jfc;
+	struct ubcore_jfc *new_jfc;
 	int ret;
 
 	ret = uburma_tlv_parse(hdr, (void *)&arg);
@@ -1798,6 +1814,11 @@ static int uburma_cmd_active_jfr(struct ubcore_device *ubc_dev,
 	}
 
 	jfr = (struct ubcore_jfr *)uobj->object;
+	if (jfr->jfr_opt.is_actived) {
+		uobj_put_write(uobj);
+		uburma_log_err("jfr has activated.\n");
+		return -EINVAL;
+	}
 	fill_udata(&udata, file->ucontext, &arg.udata);
 	(void)memcpy(&jfr->jfr_opt, &jfr_opt, sizeof(jfr_opt));
 
@@ -1817,9 +1838,16 @@ static int uburma_cmd_active_jfr(struct ubcore_device *ubc_dev,
 		ret = -EINVAL;
 		return ret;
 	}
-	jfr->jfr_cfg.jfc = jfc_uobj->object;
+	new_jfc = (struct ubcore_jfc *)jfc_uobj->object;
+	old_jfc = jfr->jfr_cfg.jfc;
+
+	/* Maintain use_cnt: inc new jfc before replacing pointer */
+	atomic_inc(&new_jfc->use_cnt);
+	jfr->jfr_cfg.jfc = new_jfc;
 
 	ret = ubcore_active_jfr(jfr, &udata);
+	if (old_jfc)
+		atomic_dec(&old_jfc->use_cnt);
 	if (ret != 0) {
 		uobj_put_write(uobj);
 		uobj_put_read(jfc_uobj);
@@ -3250,6 +3278,10 @@ static int uburma_cmd_active_jetty(struct ubcore_device *ubc_dev,
 	struct ubcore_jetty *jetty;
 	struct uburma_uobj *recv_jfc_uobj = ERR_PTR(-ENOENT);
 	struct uburma_uobj *send_jfc_uobj = ERR_PTR(-ENOENT);
+	struct ubcore_jfc *old_recv_jfc;
+	struct ubcore_jfc *new_recv_jfc;
+	struct ubcore_jfc *old_send_jfc;
+	struct ubcore_jfc *new_send_jfc;
 	int ret;
 
 	ret = uburma_tlv_parse(hdr, (void *)&arg);
@@ -3271,6 +3303,11 @@ static int uburma_cmd_active_jetty(struct ubcore_device *ubc_dev,
 		return -EINVAL;
 	}
 	jetty = (struct ubcore_jetty *)uobj->object;
+	if (jetty->jetty_opt.is_actived) {
+		uobj_put_write(uobj);
+		uburma_log_err("jetty has activated.\n");
+		return -EINVAL;
+	}
 
 	recv_jfc_uobj = uobj_get_read(UOBJ_CLASS_JFC, arg.in.recv_jfc_handle, file);
 	if (IS_ERR_OR_NULL(recv_jfc_uobj)) {
@@ -3285,8 +3322,16 @@ static int uburma_cmd_active_jetty(struct ubcore_device *ubc_dev,
 		ret = -EINVAL;
 		goto err_put_recv;
 	}
-	jetty->jetty_cfg.recv_jfc = recv_jfc_uobj->object;
-	jetty->jetty_cfg.send_jfc = send_jfc_uobj->object;
+	new_recv_jfc = (struct ubcore_jfc *)recv_jfc_uobj->object;
+	new_send_jfc = (struct ubcore_jfc *)send_jfc_uobj->object;
+	old_recv_jfc = jetty->jetty_cfg.recv_jfc;
+	old_send_jfc = jetty->jetty_cfg.send_jfc;
+
+	/* Maintain use_cnt: inc new jfcs before replacing pointers */
+	atomic_inc(&new_recv_jfc->use_cnt);
+	atomic_inc(&new_send_jfc->use_cnt);
+	jetty->jetty_cfg.recv_jfc = new_recv_jfc;
+	jetty->jetty_cfg.send_jfc = new_send_jfc;
 	jetty->jetty_opt = jetty_opt;
 	jetty->jetty_cfg.flag.bs.lock_free = ((union ubcore_jfs_flag)arg.in.flag).bs.lock_free;
 	jetty->jetty_cfg.flag.bs.error_suspend =
@@ -3297,6 +3342,10 @@ static int uburma_cmd_active_jetty(struct ubcore_device *ubc_dev,
 	fill_udata(&udata, file->ucontext, &arg.udata);
 
 	ret = ubcore_active_jetty(jetty, &udata);
+	if (old_recv_jfc)
+		atomic_dec(&old_recv_jfc->use_cnt);
+	if (old_send_jfc)
+		atomic_dec(&old_send_jfc->use_cnt);
 	if (ret != 0) {
 		uburma_log_err("Active jetty failed, ret:%d.\n", ret);
 		goto err_put_send;
@@ -3304,6 +3353,7 @@ static int uburma_cmd_active_jetty(struct ubcore_device *ubc_dev,
 
 	arg.out.jetty_id = jetty->jetty_id.id;
 	ret = uburma_tlv_append(hdr, (void *)&arg);
+
 	uobj_put_read(send_jfc_uobj);
 	uobj_put_read(recv_jfc_uobj);
 	uobj_put_write(uobj);
