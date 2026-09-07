@@ -94,7 +94,7 @@ static int udma_handle_ue_req_msg(struct auxiliary_device *adev, void *data,
 	uint16_t hdr_len;
 
 	if (adev == NULL || data == NULL) {
-		pr_err("auxiliary device is null %d, data is null %d.\n",
+		pr_warn("auxiliary device is null %d, data is null %d.\n",
 		       adev == NULL, data == NULL);
 		return 0;
 	}
@@ -223,8 +223,8 @@ static int udma_handle_ue_rsp_msg(struct auxiliary_device *adev, void *data,
 	uint16_t hdr_len;
 
 	if (adev == NULL || data == NULL) {
-		pr_err("auxiliary device is null %d, data is null %d\n",
-		adev == NULL, data == NULL);
+		pr_warn("auxiliary device is null %d, data is null %d\n",
+			adev == NULL, data == NULL);
 		return 0;
 	}
 

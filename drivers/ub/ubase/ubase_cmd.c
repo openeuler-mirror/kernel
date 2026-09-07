@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -20,6 +20,16 @@
  */
 #define CREATE_TRACE_POINTS
 #include "ubase_trace.h"
+
+static uint del_jfs_send_cmd_timeout = UBASE_DEL_JFS_SEND_CMD_TIMEOUT;
+module_param(del_jfs_send_cmd_timeout, uint, 0644);
+MODULE_PARM_DESC(del_jfs_send_cmd_timeout,
+		 "delete jfs send cmd msg timeout(ms), default:45000");
+
+static uint del_jfs_wait_ae_timeout = UBASE_DEL_JFS_WAIT_AE_TIMEOUT;
+module_param(del_jfs_wait_ae_timeout, uint, 0644);
+MODULE_PARM_DESC(del_jfs_wait_ae_timeout,
+		 "delete jfs wait ae timeout(ms), default:21000");
 
 static bool ubase_cmd_is_a0k0_mue(struct ubase_dev *udev)
 {
@@ -126,8 +136,8 @@ static inline void ubase_free_cmd_queue_pa(struct ubase_dev *udev,
 	ring->desc = NULL;
 }
 
-static inline int ubase_alloc_cmd_queue(struct ubase_dev *udev,
-					struct ubase_cmdq_ring *ring)
+static int ubase_alloc_cmd_queue(struct ubase_dev *udev,
+				 struct ubase_cmdq_ring *ring)
 {
 	size_t size = ring->desc_num * sizeof(struct ubase_cmdq_desc);
 
@@ -142,8 +152,8 @@ static inline int ubase_alloc_cmd_queue(struct ubase_dev *udev,
 	return 0;
 }
 
-static inline void ubase_free_cmd_queue(struct ubase_dev *udev,
-					struct ubase_cmdq_ring *ring)
+static void ubase_free_cmd_queue(struct ubase_dev *udev,
+				 struct ubase_cmdq_ring *ring)
 {
 	size_t size = ring->desc_num * sizeof(struct ubase_cmdq_desc);
 
@@ -956,7 +966,6 @@ static void ubase_cmd_crq_handler(struct ubase_dev *udev)
 		ubase_free_bd_data(msg_data, bd_num);
 		ubase_write_dev(&udev->hw, UBASE_CRQ_HEAD_REG, crq->ci);
 	}
-
 }
 
 void ubase_crq_service_task(struct ubase_delay_work *ubase_work)
@@ -983,9 +992,33 @@ void ubase_crq_service_task(struct ubase_delay_work *ubase_work)
 	clear_bit(UBASE_STATE_CRQ_HANDLING, &udev->service_task.state);
 }
 
-static int ubase_cmd_wait_mbx_completed(struct ubase_dev *udev,
-					union ubase_mbox *mbx)
+static inline bool ubase_mbx_need_extend_timeout(struct ubase_dev *udev,
+						 struct ubase_mbx_attr *attr)
 {
+	return (udev->caps.hw_ver == UBASE_HW_VER_K_0) &&
+	       (attr->op == UBASE_MB_DESTROY_JFS_CONTEXT ||
+		attr->op == UBASE_MB_DESTROY_RC_CONTEXT);
+}
+
+static inline u32 ubase_mbx_get_send_cmd_timeout(struct ubase_dev *udev,
+						 struct ubase_mbx_attr *attr)
+{
+	return ubase_mbx_need_extend_timeout(udev, attr) ?
+	       del_jfs_send_cmd_timeout : UBASE_CMDQ_MBX_TX_TIMEOUT;
+}
+
+static inline u32 ubase_mbx_get_wait_ae_timeout(struct ubase_dev *udev,
+						struct ubase_mbx_attr *attr)
+{
+	return ubase_mbx_need_extend_timeout(udev, attr) ?
+	       del_jfs_wait_ae_timeout : UBASE_CMDQ_MBX_TX_TIMEOUT;
+}
+
+static int ubase_cmd_wait_mbx_completed(struct ubase_dev *udev,
+					union ubase_mbox *mbx,
+					struct ubase_mbx_attr *attr)
+{
+	u32 timeout = ubase_mbx_get_wait_ae_timeout(udev, attr);
 	struct ubase_mbx_event_context *ctx = &udev->mb_cmd.ctx;
 	struct ubase_irq_table *irq_table = &udev->irq_table;
 	struct ubase_aeq *aeq = &irq_table->aeq;
@@ -994,12 +1027,15 @@ static int ubase_cmd_wait_mbx_completed(struct ubase_dev *udev,
 	atomic_inc(&udev->mb_cmd.mbx_cnt);
 	complete(&aeq->poll);
 	if (!wait_for_completion_timeout(&ctx->done,
-					 msecs_to_jiffies(UBASE_CMDQ_MBX_TX_TIMEOUT))) {
+					 msecs_to_jiffies(timeout))) {
 		ubase_err_rl(udev, mailbox_cmd_timeout,
 			     "cmd seq_num 0x%x mailbox cmd code 0x%x timeout.\n",
 			     ctx->seq_num, mbx->cmd);
 		atomic_dec(&udev->mb_cmd.mbx_cnt);
 		udev->mbx_stats.event_hw_timeout_cnt++;
+		if (attr->op == UBASE_MB_DESTROY_JFS_CONTEXT)
+			udev->mbx_stats.destroy_jfs_event_hw_timeout_cnt++;
+
 		return -EBUSY;
 	}
 
@@ -1020,11 +1056,32 @@ static void ubase_setup_mbx_info(struct ubase_dev *udev, union ubase_mbox *mbx)
 	mbx->event_en = 1;
 }
 
+static void ubase_mbx_log_busy_stats(struct ubase_dev *udev)
+{
+	ubase_err_rl(udev, mbx_buff_not_empty,
+		     "incomplete mailbox events exist, mbx stats: %llu, %llu, %llu, %llu, %llu, %llu, %llu, %llu, %llu, %llu\n",
+		     udev->mbx_stats.event_hw_cnt,
+		     udev->mbx_stats.cmd_timeout_cnt,
+		     udev->mbx_stats.event_hw_timeout_cnt,
+		     udev->mbx_stats.destroy_jfs_cmd_timeout_cnt,
+		     udev->mbx_stats.destroy_jfs_event_hw_timeout_cnt,
+		     udev->mbx_stats.ae_cnt,
+		     udev->mbx_stats.seq_num_err_cnt,
+		     udev->mbx_stats.buff_cnt,
+		     udev->mbx_stats.buff_free_cnt,
+		     udev->mbx_stats.buff_not_empty_cnt);
+}
+
 int ubase_post_mailbox_by_event(struct ubase_dev *udev,
 				struct ubase_cmd_buf *in,
 				struct ubase_cmd_buf *out,
-				struct ubase_cmd_mailbox *mailbox)
+				struct ubase_cmd_mailbox *mailbox,
+				struct ubase_mbx_attr *attr)
 {
+#define RETRY_INTERVAL_MIN	4000
+#define RETRY_INTERVAL_MAX	5000
+
+	u32 timeout = ubase_mbx_get_send_cmd_timeout(udev, attr);
 	struct ubase_mbx_event_context *ctx = &udev->mb_cmd.ctx;
 	union ubase_mbox *mbx = (union ubase_mbox *)in->data;
 	unsigned long end, flags;
@@ -1039,16 +1096,7 @@ int ubase_post_mailbox_by_event(struct ubase_dev *udev,
 	if (ctx->mbx_buff) {
 		raw_spin_unlock_irqrestore(&udev->mb_cmd.mbx_lock, flags);
 		udev->mbx_stats.buff_not_empty_cnt++;
-		ubase_err_rl(udev, mbx_buff_not_empty,
-			     "incomplete mailbox events exist, mbx stats: %llu, %llu, %llu, %llu, %llu, %llu, %llu, %llu\n",
-			     udev->mbx_stats.event_hw_cnt,
-			     udev->mbx_stats.cmd_timeout_cnt,
-			     udev->mbx_stats.event_hw_timeout_cnt,
-			     udev->mbx_stats.ae_cnt,
-			     udev->mbx_stats.seq_num_err_cnt,
-			     udev->mbx_stats.buff_cnt,
-			     udev->mbx_stats.buff_free_cnt,
-			     udev->mbx_stats.buff_not_empty_cnt);
+		ubase_mbx_log_busy_stats(udev);
 		return -EBUSY;
 	}
 
@@ -1064,7 +1112,7 @@ int ubase_post_mailbox_by_event(struct ubase_dev *udev,
 
 	trace_ubase_add_mailbox_count(udev->dev, &mailbox->count, ctx->seq_num);
 
-	end = msecs_to_jiffies(UBASE_CMDQ_MBX_TX_TIMEOUT) + jiffies;
+	end = msecs_to_jiffies(timeout) + jiffies;
 	while (1) {
 		ret = __ubase_cmd_send_inout(udev, in, out);
 		if (!ret)
@@ -1075,18 +1123,21 @@ int ubase_post_mailbox_by_event(struct ubase_dev *udev,
 				     "failed to wait mbox, ret = %d.\n",
 				     ret);
 			udev->mbx_stats.cmd_timeout_cnt++;
+			if (attr->op == UBASE_MB_DESTROY_JFS_CONTEXT)
+				udev->mbx_stats.destroy_jfs_cmd_timeout_cnt++;
+
 			raw_spin_lock_irqsave(&udev->mb_cmd.mbx_lock, flags);
 			ubase_mailbox_buff_free(udev);
 			raw_spin_unlock_irqrestore(&udev->mb_cmd.mbx_lock, flags);
 			return -ETIMEDOUT;
 		}
 
-		cond_resched();
+		usleep_range(RETRY_INTERVAL_MIN, RETRY_INTERVAL_MAX);
 	}
 
 	udev->mbx_stats.event_hw_cnt++;
 
-	return ubase_cmd_wait_mbx_completed(udev, mbx);
+	return ubase_cmd_wait_mbx_completed(udev, mbx, attr);
 }
 
 int __ubase_cmd_send_inout(struct ubase_dev *udev, struct ubase_cmd_buf *in,

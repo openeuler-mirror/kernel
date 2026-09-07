@@ -13,6 +13,7 @@
 #include "link.h"
 #include "task.h"
 #include "msg.h"
+#include "services/hotplug/hotplug.h"
 
 u8 err_to_msg_rsp(int err)
 {
@@ -223,6 +224,8 @@ void message_rx_uninit(void)
 		q = rx_msg_wq[i];
 		if (q) {
 			flush_workqueue(q);
+			if (i == UB_MSG_CODE_LINK)
+				ubhp_cancel_all_work();
 			ub_cancel_retry_work_sync();
 			destroy_workqueue(q);
 			rx_msg_wq[i] = NULL;

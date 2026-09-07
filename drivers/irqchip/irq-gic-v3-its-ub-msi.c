@@ -55,7 +55,13 @@ static int its_ub_msi_prepare(struct irq_domain *domain, struct device *dev,
 	cnt = max(nvec, alias_count);
 	cnt = max_t(int, minnvec, roundup_pow_of_two((u32)cnt));
 
-	return msi_info->ops->msi_prepare(domain->parent, dev, cnt, info);
+	ret = msi_info->ops->msi_prepare(domain->parent, dev, cnt, info);
+	if (ret) {
+		ub_interrupt_id_free(uent);
+		dev_err(&uent->dev, "msi prepare failed %d.\n", ret);
+	}
+
+	return ret;
 }
 
 static struct msi_domain_ops its_ub_msi_ops = {

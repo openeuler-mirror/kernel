@@ -449,12 +449,6 @@ void ubase_reset_event(struct auxiliary_device *adev,
 		       enum ubase_reset_type reset_type);
 enum ubase_reset_stage ubase_get_reset_stage(struct auxiliary_device *adev);
 
-void ubase_cmd_ctx_buf_free(struct auxiliary_device *aux_dev,
-			    struct ubase_ctx_buf_cap *ctx_buf);
-int ubase_cmd_ctx_buf_alloc(struct auxiliary_device *aux_dev,
-			    struct ubase_ctx_buf_cap *ctx_buf,
-			    struct ubase_mbx_attr *attr);
-
 void ubase_virt_register(struct auxiliary_device *adev,
 			 void (*virt_handler)(struct auxiliary_device *adev,
 					      u16 bus_ue_id, bool is_en));

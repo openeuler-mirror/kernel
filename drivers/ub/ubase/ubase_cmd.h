@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -15,6 +15,8 @@
 #define UBASE_CMDQ_DESC_NUM		1024
 #define UBASE_CMDQ_TX_TIMEOUT		300000
 #define UBASE_CMDQ_MBX_TX_TIMEOUT	3000
+#define UBASE_DEL_JFS_SEND_CMD_TIMEOUT	45000
+#define UBASE_DEL_JFS_WAIT_AE_TIMEOUT	21000
 #define UBASE_CMDQ_CLEAR_WAIT_TIME	200
 #define UBASE_CMDQ_WAIT_TIME		10
 
@@ -409,7 +411,8 @@ int ubase_send_cmd(struct ubase_dev *udev,
 int ubase_post_mailbox_by_event(struct ubase_dev *udev,
 				struct ubase_cmd_buf *in,
 				struct ubase_cmd_buf *out,
-				struct ubase_cmd_mailbox *mailbox);
+				struct ubase_cmd_mailbox *mailbox,
+				struct ubase_mbx_attr *attr);
 int __ubase_cmd_send_in(struct ubase_dev *udev, struct ubase_cmd_buf *in);
 int __ubase_cmd_send_inout(struct ubase_dev *udev, struct ubase_cmd_buf *in,
 			   struct ubase_cmd_buf *out);

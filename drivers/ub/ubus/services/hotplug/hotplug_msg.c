@@ -59,14 +59,14 @@ static void ubhp_handle_event(struct ub_slot *slot, enum hotplug_event event)
 	 * mod_delayed_work: return true if work exists, with its timer modified
 	 */
 	if (event == HPE_BUTTON_PRESSED) {
-		queued = queue_work(get_rx_msg_wq(UB_MSG_CODE_LINK),
-				    &slot->button_work);
+		if (get_msg_rx_flag())
+			queued = queue_work(get_rx_msg_wq(UB_MSG_CODE_LINK),
+					    &slot->button_work);
 	} else if (event == HPE_PRESENCE_DETECT) {
 		flag = work_busy(&slot->present_work.work);
-		if (!(flag & WORK_BUSY_RUNNING))
-			queued = !mod_delayed_work(
-					get_rx_msg_wq(UB_MSG_CODE_LINK),
-					&slot->present_work, 0);
+		if (!(flag & WORK_BUSY_RUNNING) && get_msg_rx_flag())
+			queued = !mod_delayed_work(get_rx_msg_wq(UB_MSG_CODE_LINK),
+						   &slot->present_work, 0);
 	}
 	if (queued)
 		ubhp_get_slot(slot);
