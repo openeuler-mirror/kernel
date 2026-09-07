@@ -570,7 +570,7 @@ static int mlx5_lag_create_single_fdb(struct mlx5_lag *ldev)
 	}
 	return 0;
 err:
-	for (; i > MLX5_LAG_P1; i--)
+	for (i--; i > MLX5_LAG_P1; i--)
 		mlx5_eswitch_offloads_single_fdb_del_one(master_esw,
 							 ldev->pf[i].dev->priv.eswitch);
 	return err;
