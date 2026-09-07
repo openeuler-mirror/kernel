@@ -12,6 +12,7 @@
 #include <linux/list.h>
 #include <linux/string.h>
 #include <linux/kref.h>
+#include <linux/kstrtox.h>
 #include <linux/vmalloc.h>
 
 #include <ub/urma/ubcore_api.h>
@@ -31,6 +32,8 @@
 
 #define UBAGG_DEVICE_MAX_EID_CNT 128
 #define BITMAP_OFFSET 1025
+#define UBAGG_DEV_NAME_PREFIX "bonding_dev_"
+#define UBAGG_DEV_ID_NUM 8192
 
 struct seg_info_req {
 	struct ubcore_ubva ubva;
@@ -244,6 +247,55 @@ static int ubagg_get_topo_info(struct ubcore_device *dev,
 		return -EFAULT;
 	}
 	vfree(topo_info_out);
+	return 0;
+}
+
+static int ubagg_get_topo_by_eid_user_ctl(struct ubcore_user_ctl *user_ctl)
+{
+	struct ubagg_topo_by_eid_out out;
+	struct ubagg_topo_by_eid_in in;
+	int ret;
+
+	if (user_ctl->in.addr == 0 ||
+	    user_ctl->in.len < sizeof(struct ubagg_topo_by_eid_in)) {
+		ubagg_log_err("Invalid get topo by eid input, addr:%llu, len:%u\n",
+			      user_ctl->in.addr, user_ctl->in.len);
+		return -EINVAL;
+	}
+
+	if (copy_from_user(&in,
+			   (void __user *)(uintptr_t)user_ctl->in.addr,
+			   sizeof(in)) != 0) {
+		ubagg_log_err("Failed to copy get topo by eid input\n");
+		return -EFAULT;
+	}
+
+	if (user_ctl->out.addr == 0) {
+		ubagg_log_err("Invalid get topo by eid output addr\n");
+		return -EINVAL;
+	}
+	if (user_ctl->out.len < sizeof(out)) {
+		ubagg_log_err(
+			"ubagg user ctl has no enough space, buffer size:%u, needed size:%lu",
+			user_ctl->out.len, sizeof(out));
+		user_ctl->out.len = sizeof(out);
+		return -ENOSPC;
+	}
+
+	ret = ubagg_get_topo_by_eid(&in.eid, &out);
+	if (ret != 0) {
+		ubagg_log_err("Failed to get topo by eid: " EID_FMT ", ret:%d\n",
+			      EID_ARGS(in.eid), ret);
+		return ret;
+	}
+
+	if (copy_to_user((void __user *)(uintptr_t)user_ctl->out.addr,
+			 &out, sizeof(out)) != 0) {
+		ubagg_log_err("Failed to copy get topo by eid output\n");
+		return -EFAULT;
+	}
+
+	user_ctl->out.len = sizeof(out);
 	return 0;
 }
 
@@ -505,6 +557,9 @@ int ubagg_user_ctl(struct ubcore_device *dev, struct ubcore_user_ctl *user_ctl)
 		break;
 	case FAILBACK_RESULT:
 		ret = ubagg_fb_user_ctl_result(dev, user_ctl);
+		break;
+	case GET_TOPO_BY_EID:
+		ret = ubagg_get_topo_by_eid_user_ctl(user_ctl);
 		break;
 	default:
 		ubagg_log_err("unsupported ubagg userctl opcde:%u",
@@ -1469,6 +1524,7 @@ static int ubagg_cmd_set_topo_info(struct ubagg_cmd_hdr *hdr)
 		ubagg_log_err("Invalid set_topo_info param\n");
 		return -EINVAL;
 	}
+
 	topo_map = get_global_ubagg_map();
 	if (topo_map == NULL) {
 		topo_map = create_global_ubagg_topo_map(arg.in.topo,
@@ -1484,9 +1540,15 @@ static int ubagg_cmd_set_topo_info(struct ubagg_cmd_hdr *hdr)
 		if (ubagg_update_topo_info(new_topo_map, topo_map) != 0) {
 			delete_ubagg_topo_map(new_topo_map);
 			ubagg_log_err("Failed to update topo info\n");
-			return -1;
+			return -EINVAL;
 		}
 		delete_ubagg_topo_map(new_topo_map);
+	}
+
+	ret = ubagg_rebuild_topo_eid_index(topo_map);
+	if (ret != 0) {
+		ubagg_log_err("Failed to rebuild topo eid index, ret:%d\n", ret);
+		return ret;
 	}
 
 	print_topo_map(topo_map);
@@ -1556,6 +1618,35 @@ void ubagg_delete_topo_map(void)
 	delete_global_ubagg_topo_map();
 }
 
+/* uburma requires canonical device names to derive stable minor numbers. */
+static int ubagg_validate_dev_name(const char *dev_name)
+{
+	char canonical[UBAGG_MAX_DEV_NAME_LEN];
+	const char *suffix;
+	unsigned int dev_id;
+	size_t prefix_len;
+	int ret;
+
+	prefix_len = strlen(UBAGG_DEV_NAME_PREFIX);
+	if (strncmp(dev_name, UBAGG_DEV_NAME_PREFIX, prefix_len))
+		return -EINVAL;
+
+	suffix = dev_name + prefix_len;
+	ret = kstrtouint(suffix, 10, &dev_id);
+	if (ret)
+		return ret;
+
+	if (dev_id >= UBAGG_DEV_ID_NUM)
+		return -ERANGE;
+
+	scnprintf(canonical, sizeof(canonical), "%s%u",
+		  UBAGG_DEV_NAME_PREFIX, dev_id);
+	if (strcmp(dev_name, canonical))
+		return -EINVAL;
+
+	return 0;
+}
+
 static int ubagg_create_dev(const char *dev_name,
 			    const union ubcore_eid *agg_eid)
 {
@@ -1574,6 +1665,12 @@ static int ubagg_create_dev(const char *dev_name,
 	if (dev_name_len == 0 || dev_name_len >= UBAGG_MAX_DEV_NAME_LEN) {
 		ubagg_log_err("dev_name is invalid\n");
 		return -EINVAL;
+	}
+
+	ret = ubagg_validate_dev_name(dev_name);
+	if (ret) {
+		ubagg_log_err("dev_name format is invalid, ret:%d\n", ret);
+		return ret;
 	}
 
 	dev = ubagg_get_device_by_eid(agg_eid);

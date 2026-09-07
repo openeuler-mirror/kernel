@@ -52,6 +52,17 @@ struct ubagg_topo_map {
 	uint32_t node_num;
 };
 
+struct ubagg_topo_by_eid_out {
+	uint32_t type;
+	uint32_t super_node_id;
+	uint32_t node_id;
+	uint32_t is_current;
+	uint32_t dev_idx;
+	/* Row is a current-node port and column is a matched-node port. */
+	bool links[IODIE_NUM * PORT_NUM][IODIE_NUM * PORT_NUM];
+	struct ubagg_topo_agg_dev agg_dev;
+};
+
 enum ubagg_topo_type {
 	UBAGG_TOPO_TYPE_FULLMESH,
 	UBAGG_TOPO_TYPE_CLOS
@@ -81,4 +92,7 @@ find_cur_topo_agg_dev(struct ubagg_topo_map *topo_map,
 		      const union ubcore_eid *bonding_eid);
 int ubagg_get_primary_eid_by_agg_eid(union ubcore_eid *agg_eid,
 	union ubcore_eid *primary_eid, uint32_t ue_id);
+int ubagg_get_topo_by_eid(const union ubcore_eid *eid,
+	struct ubagg_topo_by_eid_out *out);
+int ubagg_rebuild_topo_eid_index(struct ubagg_topo_map *topo_map);
 #endif // ubagg_topo_node_H

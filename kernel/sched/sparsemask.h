@@ -74,6 +74,7 @@ sparsemask_next(const struct sparsemask *mask, int origin, int prev)
 	int nelems = mask->nelems;
 	int next, bit, nbits;
 	unsigned long word;
+	bool wrapped = false;
 
 	/* Calculate number of bits to be searched. */
 	if (prev == -1) {
@@ -82,13 +83,19 @@ sparsemask_next(const struct sparsemask *mask, int origin, int prev)
 	} else if (prev < origin) {
 		nbits = origin - prev;
 		next = prev + 1;
+		wrapped = true;
 	} else {
 		nbits = nelems - prev + origin - 1;
 		next = prev + 1;
 	}
 
-	if (unlikely(next >= nelems))
-		return nelems;
+	if (unlikely(next >= nelems)) {
+		if (prev == -1)
+			return nelems;
+
+		next = 0;
+		wrapped = true;
+	}
 
 	/*
 	 * Fetch and adjust first word.  Clear word bits below @next, and round
@@ -104,21 +111,23 @@ sparsemask_next(const struct sparsemask *mask, int origin, int prev)
 	while (!word) {
 		next += bits_per_word;
 		nbits -= bits_per_word;
-		if (nbits <= 0)
-			return nelems;
 
 		if (next >= nelems) {
 			chunk = mask->chunks;
-			nbits -= (next - nelems);
+			nbits += (next - nelems);
 			next = 0;
+			wrapped = true;
 		} else {
 			chunk++;
 		}
+
+		if (nbits <= 0)
+			return nelems;
 		word = chunk->word;
 	}
 
 	next += __ffs(word);
-	if (next >= origin && prev != -1)
+	if (next >= origin && wrapped)
 		return nelems;
 	return next;
 }
