@@ -30,6 +30,14 @@ do {							\
 #define CRC32(crc, value, size)		_CRC32(crc, value, size, crc)
 #define CRC32C(crc, value, size)	_CRC32(crc, value, size, crcc)
 
+static inline u64 __get_unaligned_le64(const void *p)
+{
+	if (static_branch_likely(&cpu_ual_support))
+		return *((__le64 *)p);
+	else
+		return get_unaligned_le64(p);
+}
+
 u32 __pure crc32_le(u32 crc_, unsigned char const *p, size_t len)
 {
 	u32 crc = crc_;
@@ -38,7 +46,7 @@ u32 __pure crc32_le(u32 crc_, unsigned char const *p, size_t len)
 		return crc32_le_base(crc, p, len);
 
 	while (len >= sizeof(u64)) {
-		u64 value = get_unaligned_le64(p);
+		u64 value = __get_unaligned_le64(p);
 
 		CRC32(crc, value, d);
 		p += sizeof(u64);
@@ -76,7 +84,7 @@ u32 __pure __crc32c_le(u32 crc_, unsigned char const *p, size_t len)
 		return __crc32c_le_base(crc, p, len);
 
 	while (len >= sizeof(u64)) {
-		u64 value = get_unaligned_le64(p);
+		u64 value = __get_unaligned_le64(p);
 
 		CRC32C(crc, value, d);
 		p += sizeof(u64);

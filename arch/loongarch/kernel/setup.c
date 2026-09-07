@@ -71,6 +71,7 @@ struct cpuinfo_loongarch cpu_data[NR_CPUS] __read_mostly;
 EXPORT_SYMBOL(cpu_data);
 
 DEFINE_STATIC_KEY_FALSE(cpu_crc32_support);
+DEFINE_STATIC_KEY_FALSE(cpu_ual_support);
 struct loongson_board_info b_info;
 static const char dmi_empty_string[] = "        ";
 
@@ -97,6 +98,8 @@ static void __init cpu_features_init(void)
 {
 	if (cpu_has_crc32)
 		static_branch_enable(&cpu_crc32_support);
+	if (cpu_has_ual)
+		static_branch_enable(&cpu_ual_support);
 }
 
 void __init arch_cpu_finalize_init(void)
