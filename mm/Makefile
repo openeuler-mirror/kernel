@@ -153,3 +153,4 @@ obj-$(CONFIG_MEM_SAMPLING) += mem_sampling.o
 obj-$(CONFIG_THP_CONTROL) += thp_ctl.o
 obj-$(CONFIG_FILEMAP_LOCAL_ALLOC) += filemap_local.o
 obj-$(CONFIG_CMA_FOLIO) += cma_folio.o
+obj-$(CONFIG_ZRAM_RECLAIM) += zram_reclaim.o

@@ -61,6 +61,27 @@ config ZSWAP_EXCLUSIVE_LOADS_DEFAULT_ON
 	  The cost is that if the page was never dirtied and needs to be
 	  swapped out again, it will be re-compressed.
 
+config ZRAM_RECLAIM
+	bool "Optimized Reclaim Policy for ZRAM Environments"
+	depends on ARM64 && MEMCG && SWAP
+	help
+	  Enable a per-memcg reclaim policy for compressed-swap systems with
+	  slower backing storage. The policy records anonymous swap-in and
+	  file/anon refault cost signals and biases reclaim toward anonymous
+	  memory when the compressed-swap path is not estimated to be
+	  overloaded.
+
+	  The memory cgroup interface is memory.zram_reclaim and uses the
+	  format "<enable> <ratio>". The default ratio is 30 and valid
+	  ratios are 1 through 60. Disable the policy by writing "0 0".
+	  Ratio changes require disabling the policy first; changing the
+	  ratio while enabled returns -EBUSY.
+
+	  The interface and the auto-tuned file-refault weight are available
+	  only on supported HiSilicon ARM64 platforms (TSV110, LinxiCore
+	  9100, HIP11, HIP12). On other platforms no interface is
+	  registered.
+
 choice
 	prompt "Default compressor"
 	depends on ZSWAP
