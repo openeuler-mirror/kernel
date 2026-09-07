@@ -31,6 +31,10 @@
 #include "ubcore_device.h"
 #include "ubcore_opt.h"
 
+#define UBCORE_MAX_PRIORITY 15
+#define UBCORE_MAX_RNR_RETRY 7
+#define UBCORE_MAX_TIMEOUT_COUNT 31
+
 const struct ubcore_opt_map g_ubcore_jfc_opt_table[] = {
 	/* opt, mask, target, offset, size */
 	/* ---- CFG ---- */
@@ -887,6 +891,14 @@ static int check_jfs_cfg(struct ubcore_device *dev, struct ubcore_jfs_cfg *cfg)
 		return -EINVAL;
 	cfg->flag.bs.order_type = order_type;
 
+	if (cfg->priority > UBCORE_MAX_PRIORITY || cfg->rnr_retry > UBCORE_MAX_RNR_RETRY ||
+		cfg->err_timeout > UBCORE_MAX_TIMEOUT_COUNT) {
+		ubcore_log_err("jfs cfg is out of range, and depth = %d, priority = %d.\n",
+			cfg->depth, cfg->priority);
+		ubcore_log_err("jfs cfg is out of range, rnr_retry = %d, err_timeout = %d.\n",
+			cfg->rnr_retry, cfg->err_timeout);
+		return -EINVAL;
+	}
 	return 0;
 }
 
@@ -1472,6 +1484,13 @@ static int ubcore_check_jfr_cfg(struct ubcore_jfr_cfg *cfg)
 	if (ubcore_convert_order_type(cfg->trans_mode, &order_type) != 0)
 		return -EINVAL;
 	cfg->flag.bs.order_type = order_type;
+
+	if (cfg->min_rnr_timer > UBCORE_MAX_TIMEOUT_COUNT ||
+		cfg->flag.bs.token_policy > UBCORE_TOKEN_RESERVED) {
+		ubcore_log_err("Invalid min_rnr_timer: %d or token_policy: %d.",
+			cfg->min_rnr_timer, cfg->flag.bs.token_policy);
+		return -EINVAL;
+	}
 
 	return 0;
 }
@@ -2527,6 +2546,22 @@ static int check_jetty_check_dev_cap(struct ubcore_device *dev,
 				cfg->max_recv_sge, cap->max_jfr_sge);
 			return -EINVAL;
 		}
+	}
+
+	if (cfg->priority > UBCORE_MAX_PRIORITY || cfg->rnr_retry > UBCORE_MAX_RNR_RETRY ||
+		cfg->err_timeout > UBCORE_MAX_TIMEOUT_COUNT) {
+		ubcore_log_err("jetty cfg is out of range, priority = %d, rnr_retry = %d.\n",
+			cfg->priority, cfg->rnr_retry);
+		ubcore_log_err("jetty cfg is out of range, err_timeout = %d.\n",
+			cfg->err_timeout);
+		return -EINVAL;
+	}
+
+	if (cfg->jfr->jfr_cfg.min_rnr_timer > UBCORE_MAX_TIMEOUT_COUNT ||
+		cfg->jfr->jfr_cfg.flag.bs.token_policy > UBCORE_TOKEN_RESERVED) {
+		ubcore_log_err("Invalid min_rnr_timer: %d or token_policy: %d.",
+			cfg->jfr->jfr_cfg.min_rnr_timer, cfg->jfr->jfr_cfg.flag.bs.token_policy);
+		return -EINVAL;
 	}
 
 	return 0;
