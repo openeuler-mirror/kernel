@@ -9,93 +9,12 @@
  * Copyright (C) 2020-2023 Loongson Technology Corporation Limited
  */
 
+#include <linux/crc32.h>
 #include <linux/module.h>
 #include <crypto/internal/hash.h>
 
 #include <asm/cpu-features.h>
 #include <asm/unaligned.h>
-
-#define _CRC32(crc, value, size, type)			\
-do {							\
-	__asm__ __volatile__(				\
-		#type ".w." #size ".w" " %0, %1, %0\n\t"\
-		: "+r" (crc)				\
-		: "r" (value)				\
-		: "memory");				\
-} while (0)
-
-#define CRC32(crc, value, size)		_CRC32(crc, value, size, crc)
-#define CRC32C(crc, value, size)	_CRC32(crc, value, size, crcc)
-
-static u32 crc32_loongarch_hw(u32 crc_, const u8 *p, unsigned int len)
-{
-	u32 crc = crc_;
-
-	while (len >= sizeof(u64)) {
-		u64 value = get_unaligned_le64(p);
-
-		CRC32(crc, value, d);
-		p += sizeof(u64);
-		len -= sizeof(u64);
-	}
-
-	if (len & sizeof(u32)) {
-		u32 value = get_unaligned_le32(p);
-
-		CRC32(crc, value, w);
-		p += sizeof(u32);
-	}
-
-	if (len & sizeof(u16)) {
-		u16 value = get_unaligned_le16(p);
-
-		CRC32(crc, value, h);
-		p += sizeof(u16);
-	}
-
-	if (len & sizeof(u8)) {
-		u8 value = *p++;
-
-		CRC32(crc, value, b);
-	}
-
-	return crc;
-}
-
-static u32 crc32c_loongarch_hw(u32 crc_, const u8 *p, unsigned int len)
-{
-	u32 crc = crc_;
-
-	while (len >= sizeof(u64)) {
-		u64 value = get_unaligned_le64(p);
-
-		CRC32C(crc, value, d);
-		p += sizeof(u64);
-		len -= sizeof(u64);
-	}
-
-	if (len & sizeof(u32)) {
-		u32 value = get_unaligned_le32(p);
-
-		CRC32C(crc, value, w);
-		p += sizeof(u32);
-	}
-
-	if (len & sizeof(u16)) {
-		u16 value = get_unaligned_le16(p);
-
-		CRC32C(crc, value, h);
-		p += sizeof(u16);
-	}
-
-	if (len & sizeof(u8)) {
-		u8 value = *p++;
-
-		CRC32C(crc, value, b);
-	}
-
-	return crc;
-}
 
 #define CHKSUM_BLOCK_SIZE	1
 #define CHKSUM_DIGEST_SIZE	4
@@ -138,7 +57,7 @@ static int chksum_update(struct shash_desc *desc, const u8 *data, unsigned int l
 {
 	struct chksum_desc_ctx *ctx = shash_desc_ctx(desc);
 
-	ctx->crc = crc32_loongarch_hw(ctx->crc, data, length);
+	ctx->crc = crc32_le(ctx->crc, data, length);
 	return 0;
 }
 
@@ -146,7 +65,7 @@ static int chksumc_update(struct shash_desc *desc, const u8 *data, unsigned int 
 {
 	struct chksum_desc_ctx *ctx = shash_desc_ctx(desc);
 
-	ctx->crc = crc32c_loongarch_hw(ctx->crc, data, length);
+	ctx->crc = __crc32c_le(ctx->crc, data, length);
 	return 0;
 }
 
@@ -168,13 +87,13 @@ static int chksumc_final(struct shash_desc *desc, u8 *out)
 
 static int __chksum_finup(u32 crc, const u8 *data, unsigned int len, u8 *out)
 {
-	put_unaligned_le32(crc32_loongarch_hw(crc, data, len), out);
+	put_unaligned_le32(crc32_le(crc, data, len), out);
 	return 0;
 }
 
 static int __chksumc_finup(u32 crc, const u8 *data, unsigned int len, u8 *out)
 {
-	put_unaligned_le32(~crc32c_loongarch_hw(crc, data, len), out);
+	put_unaligned_le32(~__crc32c_le(crc, data, len), out);
 	return 0;
 }
 

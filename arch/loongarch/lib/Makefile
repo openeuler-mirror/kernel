@@ -9,3 +9,4 @@ lib-y	+= delay.o memset.o memcpy.o memmove.o \
 obj-$(CONFIG_CPU_HAS_LSX) += xor_simd.o xor_simd_glue.o
 
 obj-$(CONFIG_FUNCTION_ERROR_INJECTION) += error-inject.o
+obj-$(CONFIG_CRC32) += crc32.o
