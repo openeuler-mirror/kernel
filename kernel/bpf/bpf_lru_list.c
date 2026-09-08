@@ -4,6 +4,7 @@
 #include <linux/cpumask.h>
 #include <linux/spinlock.h>
 #include <linux/percpu.h>
+#include <linux/llist.h>
 
 #include "bpf_lru_list.h"
 
@@ -13,11 +14,68 @@
 #define PERCPU_FREE_TARGET		(4)
 #define PERCPU_NR_SCANS			PERCPU_FREE_TARGET
 
-/* Helpers to get the local list index */
-#define LOCAL_LIST_IDX(t)	((t) - BPF_LOCAL_LIST_T_OFFSET)
-#define LOCAL_FREE_LIST_IDX	LOCAL_LIST_IDX(BPF_LRU_LOCAL_LIST_T_FREE)
-#define LOCAL_PENDING_LIST_IDX	LOCAL_LIST_IDX(BPF_LRU_LOCAL_LIST_T_PENDING)
 #define IS_LOCAL_LIST_TYPE(t)	((t) >= BPF_LOCAL_LIST_T_OFFSET)
+
+/*
+ * Per-CPU spinlock that rejects same-CPU re-entry.
+ *
+ * Same-CPU re-entry would AA-deadlock a plain raw spinlock, so an owner
+ * mark rejects it and lets the caller run its recovery path; cross-CPU
+ * contention blocks on the raw spinlock.
+ */
+static int bpf_lru_spin_lock_init(struct bpf_lru_spin_lock *l)
+{
+	raw_spin_lock_init(&l->lock);
+	l->nest = alloc_percpu(int);
+	if (!l->nest)
+		return -ENOMEM;
+	return 0;
+}
+
+static void bpf_lru_spin_lock_destroy(struct bpf_lru_spin_lock *l)
+{
+	free_percpu(l->nest);
+}
+
+static int bpf_lru_spin_lock(struct bpf_lru_spin_lock *l)
+{
+	preempt_disable();
+	if (this_cpu_inc_return(*l->nest) != 1) {
+		this_cpu_dec(*l->nest);
+		preempt_enable();
+		return -EBUSY;
+	}
+	raw_spin_lock(&l->lock);
+	return 0;
+}
+
+static void bpf_lru_spin_unlock(struct bpf_lru_spin_lock *l)
+{
+	raw_spin_unlock(&l->lock);
+	this_cpu_dec(*l->nest);
+	preempt_enable();
+}
+
+static int bpf_lru_spin_lock_irqsave(struct bpf_lru_spin_lock *l,
+					      unsigned long *flags)
+{
+	preempt_disable();
+	if (this_cpu_inc_return(*l->nest) != 1) {
+		this_cpu_dec(*l->nest);
+		preempt_enable();
+		return -EBUSY;
+	}
+	raw_spin_lock_irqsave(&l->lock, *flags);
+	return 0;
+}
+
+static void bpf_lru_spin_unlock_irqrestore(struct bpf_lru_spin_lock *l,
+					    unsigned long flags)
+{
+	raw_spin_unlock_irqrestore(&l->lock, flags);
+	this_cpu_dec(*l->nest);
+	preempt_enable();
+}
 
 static int get_next_cpu(int cpu)
 {
@@ -25,17 +83,6 @@ static int get_next_cpu(int cpu)
 	if (cpu >= nr_cpu_ids)
 		cpu = cpumask_first(cpu_possible_mask);
 	return cpu;
-}
-
-/* Local list helpers */
-static struct list_head *local_free_list(struct bpf_lru_locallist *loc_l)
-{
-	return &loc_l->lists[LOCAL_FREE_LIST_IDX];
-}
-
-static struct list_head *local_pending_list(struct bpf_lru_locallist *loc_l)
-{
-	return &loc_l->lists[LOCAL_PENDING_LIST_IDX];
 }
 
 /* bpf_lru_node helpers */
@@ -80,6 +127,7 @@ static void __bpf_lru_node_move_to_free(struct bpf_lru_list *l,
 	bpf_lru_list_count_dec(l, node->type);
 
 	node->type = tgt_free_type;
+	WRITE_ONCE(node->pending_free, 0);
 	list_move(&node->list, free_list);
 }
 
@@ -95,6 +143,9 @@ static void __bpf_lru_node_move_in(struct bpf_lru_list *l,
 	bpf_lru_list_count_inc(l, tgt_type);
 	node->type = tgt_type;
 	bpf_lru_node_clear_ref(node);
+	/* Reset pending_free only when moving to the free list */
+	if (tgt_type == BPF_LRU_LIST_T_FREE)
+		WRITE_ONCE(node->pending_free, 0);
 	list_move(&node->list, &l->lists[tgt_type]);
 }
 
@@ -220,9 +271,11 @@ __bpf_lru_list_shrink_inactive(struct bpf_lru *lru,
 	unsigned int i = 0;
 
 	list_for_each_entry_safe_reverse(node, tmp_node, inactive, list) {
-		if (bpf_lru_node_is_ref(node)) {
+		if (bpf_lru_node_is_ref(node) &&
+		    !READ_ONCE(node->pending_free)) {
 			__bpf_lru_node_move(l, node, BPF_LRU_LIST_T_ACTIVE);
-		} else if (lru->del_from_htab(lru->del_arg, node)) {
+		} else if (READ_ONCE(node->pending_free) ||
+			   lru->del_from_htab(lru->del_arg, node)) {
 			__bpf_lru_node_move_to_free(l, node, free_list,
 						    tgt_free_type);
 			if (++nshrinked == tgt_nshrink)
@@ -281,7 +334,8 @@ static unsigned int __bpf_lru_list_shrink(struct bpf_lru *lru,
 
 	list_for_each_entry_safe_reverse(node, tmp_node, force_shrink_list,
 					 list) {
-		if (lru->del_from_htab(lru->del_arg, node)) {
+		if (READ_ONCE(node->pending_free) ||
+		    lru->del_from_htab(lru->del_arg, node)) {
 			__bpf_lru_node_move_to_free(l, node, free_list,
 						    tgt_free_type);
 			return 1;
@@ -298,8 +352,10 @@ static void __local_list_flush(struct bpf_lru_list *l,
 	struct bpf_lru_node *node, *tmp_node;
 
 	list_for_each_entry_safe_reverse(node, tmp_node,
-					 local_pending_list(loc_l), list) {
-		if (bpf_lru_node_is_ref(node))
+					 &loc_l->pending_list, list) {
+		if (READ_ONCE(node->pending_free))
+			__bpf_lru_node_move_in(l, node, BPF_LRU_LIST_T_FREE);
+		else if (bpf_lru_node_is_ref(node))
 			__bpf_lru_node_move_in(l, node, BPF_LRU_LIST_T_ACTIVE);
 		else
 			__bpf_lru_node_move_in(l, node,
@@ -315,9 +371,12 @@ static void bpf_lru_list_push_free(struct bpf_lru_list *l,
 	if (WARN_ON_ONCE(IS_LOCAL_LIST_TYPE(node->type)))
 		return;
 
-	raw_spin_lock_irqsave(&l->lock, flags);
+	if (bpf_lru_spin_lock_irqsave(&l->lock, &flags)) {
+		WRITE_ONCE(node->pending_free, 1);
+		return;
+	}
 	__bpf_lru_node_move(l, node, BPF_LRU_LIST_T_FREE);
-	raw_spin_unlock_irqrestore(&l->lock, flags);
+	bpf_lru_spin_unlock_irqrestore(&l->lock, flags);
 }
 
 static void bpf_lru_list_pop_free_to_local(struct bpf_lru *lru,
@@ -326,8 +385,10 @@ static void bpf_lru_list_pop_free_to_local(struct bpf_lru *lru,
 	struct bpf_lru_list *l = &lru->common_lru.lru_list;
 	struct bpf_lru_node *node, *tmp_node;
 	unsigned int nfree = 0;
+	LIST_HEAD(tmp_free);
 
-	raw_spin_lock(&l->lock);
+	if (bpf_lru_spin_lock(&l->lock))
+		return;
 
 	__local_list_flush(l, loc_l);
 
@@ -335,7 +396,7 @@ static void bpf_lru_list_pop_free_to_local(struct bpf_lru *lru,
 
 	list_for_each_entry_safe(node, tmp_node, &l->lists[BPF_LRU_LIST_T_FREE],
 				 list) {
-		__bpf_lru_node_move_to_free(l, node, local_free_list(loc_l),
+		__bpf_lru_node_move_to_free(l, node, &tmp_free,
 					    BPF_LRU_LOCAL_LIST_T_FREE);
 		if (++nfree == lru->target_free)
 			break;
@@ -343,10 +404,19 @@ static void bpf_lru_list_pop_free_to_local(struct bpf_lru *lru,
 
 	if (nfree < lru->target_free)
 		__bpf_lru_list_shrink(lru, l, lru->target_free - nfree,
-				      local_free_list(loc_l),
+				      &tmp_free,
 				      BPF_LRU_LOCAL_LIST_T_FREE);
 
-	raw_spin_unlock(&l->lock);
+	bpf_lru_spin_unlock(&l->lock);
+
+	/*
+	 * Transfer the harvested nodes from the temporary list_head into
+	 * the lockless per-CPU free llist.
+	 */
+	list_for_each_entry_safe(node, tmp_node, &tmp_free, list) {
+		list_del(&node->list);
+		llist_add(&node->llist, &loc_l->free_llist);
+	}
 }
 
 static void __local_list_add_pending(struct bpf_lru *lru,
@@ -358,22 +428,21 @@ static void __local_list_add_pending(struct bpf_lru *lru,
 	*(u32 *)((void *)node + lru->hash_offset) = hash;
 	node->cpu = cpu;
 	node->type = BPF_LRU_LOCAL_LIST_T_PENDING;
+	WRITE_ONCE(node->pending_free, 0);
 	bpf_lru_node_clear_ref(node);
-	list_add(&node->list, local_pending_list(loc_l));
+	list_add(&node->list, &loc_l->pending_list);
 }
 
 static struct bpf_lru_node *
 __local_list_pop_free(struct bpf_lru_locallist *loc_l)
 {
-	struct bpf_lru_node *node;
+	struct llist_node *llnode;
 
-	node = list_first_entry_or_null(local_free_list(loc_l),
-					struct bpf_lru_node,
-					list);
-	if (node)
-		list_del(&node->list);
+	llnode = llist_del_first(&loc_l->free_llist);
+	if (!llnode)
+		return NULL;
 
-	return node;
+	return container_of(llnode, struct bpf_lru_node, llist);
 }
 
 static struct bpf_lru_node *
@@ -384,10 +453,10 @@ __local_list_pop_pending(struct bpf_lru *lru, struct bpf_lru_locallist *loc_l)
 
 ignore_ref:
 	/* Get from the tail (i.e. older element) of the pending list. */
-	list_for_each_entry_reverse(node, local_pending_list(loc_l),
-				    list) {
+	list_for_each_entry_reverse(node, &loc_l->pending_list, list) {
 		if ((!bpf_lru_node_is_ref(node) || force) &&
-		    lru->del_from_htab(lru->del_arg, node)) {
+		    (READ_ONCE(node->pending_free) ||
+		     lru->del_from_htab(lru->del_arg, node))) {
 			list_del(&node->list);
 			return node;
 		}
@@ -412,7 +481,8 @@ static struct bpf_lru_node *bpf_percpu_lru_pop_free(struct bpf_lru *lru,
 
 	l = per_cpu_ptr(lru->percpu_lru, cpu);
 
-	raw_spin_lock_irqsave(&l->lock, flags);
+	if (bpf_lru_spin_lock_irqsave(&l->lock, &flags))
+		return NULL;
 
 	__bpf_lru_list_rotate(lru, l);
 
@@ -428,7 +498,7 @@ static struct bpf_lru_node *bpf_percpu_lru_pop_free(struct bpf_lru *lru,
 		__bpf_lru_node_move(l, node, BPF_LRU_LIST_T_INACTIVE);
 	}
 
-	raw_spin_unlock_irqrestore(&l->lock, flags);
+	bpf_lru_spin_unlock_irqrestore(&l->lock, flags);
 
 	return node;
 }
@@ -445,7 +515,8 @@ static struct bpf_lru_node *bpf_common_lru_pop_free(struct bpf_lru *lru,
 
 	loc_l = per_cpu_ptr(clru->local_list, cpu);
 
-	raw_spin_lock_irqsave(&loc_l->lock, flags);
+	if (bpf_lru_spin_lock_irqsave(&loc_l->lock, &flags))
+		return NULL;
 
 	node = __local_list_pop_free(loc_l);
 	if (!node) {
@@ -456,17 +527,22 @@ static struct bpf_lru_node *bpf_common_lru_pop_free(struct bpf_lru *lru,
 	if (node)
 		__local_list_add_pending(lru, loc_l, cpu, node, hash);
 
-	raw_spin_unlock_irqrestore(&loc_l->lock, flags);
+	bpf_lru_spin_unlock_irqrestore(&loc_l->lock, flags);
 
 	if (node)
 		return node;
 
-	/* No free nodes found from the local free list and
+	/*
+	 * No free nodes found from the local free list and
 	 * the global LRU list.
 	 *
 	 * Steal from the local free/pending list of the
 	 * current CPU and remote CPU in RR.  It starts
 	 * with the loc_l->next_steal CPU.
+	 *
+	 * Acquire the victim's lock before touching either list. On
+	 * acquisition failure (rqspinlock AA or timeout) skip the victim
+	 * and try the next CPU.
 	 */
 
 	first_steal = loc_l->next_steal;
@@ -474,24 +550,36 @@ static struct bpf_lru_node *bpf_common_lru_pop_free(struct bpf_lru *lru,
 	do {
 		steal_loc_l = per_cpu_ptr(clru->local_list, steal);
 
-		raw_spin_lock_irqsave(&steal_loc_l->lock, flags);
-
-		node = __local_list_pop_free(steal_loc_l);
-		if (!node)
-			node = __local_list_pop_pending(lru, steal_loc_l);
-
-		raw_spin_unlock_irqrestore(&steal_loc_l->lock, flags);
+		if (!bpf_lru_spin_lock_irqsave(&steal_loc_l->lock, &flags)) {
+			node = __local_list_pop_free(steal_loc_l);
+			if (!node)
+				node = __local_list_pop_pending(lru, steal_loc_l);
+			bpf_lru_spin_unlock_irqrestore(&steal_loc_l->lock, flags);
+		}
 
 		steal = get_next_cpu(steal);
 	} while (!node && steal != first_steal);
 
 	loc_l->next_steal = steal;
 
-	if (node) {
-		raw_spin_lock_irqsave(&loc_l->lock, flags);
-		__local_list_add_pending(lru, loc_l, cpu, node, hash);
-		raw_spin_unlock_irqrestore(&loc_l->lock, flags);
+	if (!node)
+		return NULL;
+
+	if (bpf_lru_spin_lock_irqsave(&loc_l->lock, &flags)) {
+		/*
+		 * The local pending lock can't be acquired (rqspinlock AA
+		 * or timeout). Return the stolen node to the per-CPU
+		 * free_llist instead of orphaning it; the next pop_free on
+		 * this CPU will pick it up.
+		 */
+		node->type = BPF_LRU_LOCAL_LIST_T_FREE;
+		bpf_lru_node_clear_ref(node);
+		WRITE_ONCE(node->pending_free, 0);
+		llist_add(&node->llist, &loc_l->free_llist);
+		return NULL;
 	}
+	__local_list_add_pending(lru, loc_l, cpu, node, hash);
+	bpf_lru_spin_unlock_irqrestore(&loc_l->lock, flags);
 
 	return node;
 }
@@ -519,18 +607,23 @@ static void bpf_common_lru_push_free(struct bpf_lru *lru,
 
 		loc_l = per_cpu_ptr(lru->common_lru.local_list, node->cpu);
 
-		raw_spin_lock_irqsave(&loc_l->lock, flags);
+		if (bpf_lru_spin_lock_irqsave(&loc_l->lock, &flags)) {
+			WRITE_ONCE(node->pending_free, 1);
+			return;
+		}
 
 		if (unlikely(node->type != BPF_LRU_LOCAL_LIST_T_PENDING)) {
-			raw_spin_unlock_irqrestore(&loc_l->lock, flags);
+			bpf_lru_spin_unlock_irqrestore(&loc_l->lock, flags);
 			goto check_lru_list;
 		}
 
 		node->type = BPF_LRU_LOCAL_LIST_T_FREE;
 		bpf_lru_node_clear_ref(node);
-		list_move(&node->list, local_free_list(loc_l));
+		list_del(&node->list);
 
-		raw_spin_unlock_irqrestore(&loc_l->lock, flags);
+		bpf_lru_spin_unlock_irqrestore(&loc_l->lock, flags);
+
+		llist_add(&node->llist, &loc_l->free_llist);
 		return;
 	}
 
@@ -546,11 +639,14 @@ static void bpf_percpu_lru_push_free(struct bpf_lru *lru,
 
 	l = per_cpu_ptr(lru->percpu_lru, node->cpu);
 
-	raw_spin_lock_irqsave(&l->lock, flags);
+	if (bpf_lru_spin_lock_irqsave(&l->lock, &flags)) {
+		WRITE_ONCE(node->pending_free, 1);
+		return;
+	}
 
 	__bpf_lru_node_move(l, node, BPF_LRU_LIST_T_FREE);
 
-	raw_spin_unlock_irqrestore(&l->lock, flags);
+	bpf_lru_spin_unlock_irqrestore(&l->lock, flags);
 }
 
 void bpf_lru_push_free(struct bpf_lru *lru, struct bpf_lru_node *node)
@@ -573,6 +669,7 @@ static void bpf_common_lru_populate(struct bpf_lru *lru, void *buf,
 
 		node = (struct bpf_lru_node *)(buf + node_offset);
 		node->type = BPF_LRU_LIST_T_FREE;
+		node->pending_free = 0;
 		bpf_lru_node_clear_ref(node);
 		list_add(&node->list, &l->lists[BPF_LRU_LIST_T_FREE]);
 		buf += elem_size;
@@ -602,6 +699,7 @@ again:
 		node = (struct bpf_lru_node *)(buf + node_offset);
 		node->cpu = cpu;
 		node->type = BPF_LRU_LIST_T_FREE;
+		node->pending_free = 0;
 		bpf_lru_node_clear_ref(node);
 		list_add(&node->list, &l->lists[BPF_LRU_LIST_T_FREE]);
 		i++;
@@ -624,19 +722,17 @@ void bpf_lru_populate(struct bpf_lru *lru, void *buf, u32 node_offset,
 					nr_elems);
 }
 
-static void bpf_lru_locallist_init(struct bpf_lru_locallist *loc_l, int cpu)
+static int bpf_lru_locallist_init(struct bpf_lru_locallist *loc_l, int cpu)
 {
-	int i;
-
-	for (i = 0; i < NR_BPF_LRU_LOCAL_LIST_T; i++)
-		INIT_LIST_HEAD(&loc_l->lists[i]);
+	INIT_LIST_HEAD(&loc_l->pending_list);
+	init_llist_head(&loc_l->free_llist);
 
 	loc_l->next_steal = cpu;
 
-	raw_spin_lock_init(&loc_l->lock);
+	return bpf_lru_spin_lock_init(&loc_l->lock);
 }
 
-static void bpf_lru_list_init(struct bpf_lru_list *l)
+static int bpf_lru_list_init(struct bpf_lru_list *l)
 {
 	int i;
 
@@ -648,13 +744,15 @@ static void bpf_lru_list_init(struct bpf_lru_list *l)
 
 	l->next_inactive_rotation = &l->lists[BPF_LRU_LIST_T_INACTIVE];
 
-	raw_spin_lock_init(&l->lock);
+	return bpf_lru_spin_lock_init(&l->lock);
 }
 
 int bpf_lru_init(struct bpf_lru *lru, bool percpu, u32 hash_offset,
 		 del_from_htab_func del_from_htab, void *del_arg)
 {
-	int cpu;
+	int cpu, err;
+
+	lru->percpu = percpu;
 
 	if (percpu) {
 		lru->percpu_lru = alloc_percpu(struct bpf_lru_list);
@@ -665,7 +763,9 @@ int bpf_lru_init(struct bpf_lru *lru, bool percpu, u32 hash_offset,
 			struct bpf_lru_list *l;
 
 			l = per_cpu_ptr(lru->percpu_lru, cpu);
-			bpf_lru_list_init(l);
+			err = bpf_lru_list_init(l);
+			if (err)
+				goto out;
 		}
 		lru->nr_scans = PERCPU_NR_SCANS;
 	} else {
@@ -679,25 +779,47 @@ int bpf_lru_init(struct bpf_lru *lru, bool percpu, u32 hash_offset,
 			struct bpf_lru_locallist *loc_l;
 
 			loc_l = per_cpu_ptr(clru->local_list, cpu);
-			bpf_lru_locallist_init(loc_l, cpu);
+			err = bpf_lru_locallist_init(loc_l, cpu);
+			if (err)
+				goto out;
 		}
 
-		bpf_lru_list_init(&clru->lru_list);
+		err = bpf_lru_list_init(&clru->lru_list);
+		if (err)
+			goto out;
 		lru->nr_scans = LOCAL_NR_SCANS;
 	}
 
-	lru->percpu = percpu;
 	lru->del_from_htab = del_from_htab;
 	lru->del_arg = del_arg;
 	lru->hash_offset = hash_offset;
 
 	return 0;
+out:
+	bpf_lru_destroy(lru);
+	return err;
 }
 
 void bpf_lru_destroy(struct bpf_lru *lru)
 {
-	if (lru->percpu)
+	int cpu;
+
+	if (lru->percpu) {
+		for_each_possible_cpu(cpu) {
+			struct bpf_lru_list *l;
+
+			l = per_cpu_ptr(lru->percpu_lru, cpu);
+			bpf_lru_spin_lock_destroy(&l->lock);
+		}
 		free_percpu(lru->percpu_lru);
-	else
+	} else {
+		for_each_possible_cpu(cpu) {
+			struct bpf_lru_locallist *loc_l;
+
+			loc_l = per_cpu_ptr(lru->common_lru.local_list, cpu);
+			bpf_lru_spin_lock_destroy(&loc_l->lock);
+		}
+		bpf_lru_spin_lock_destroy(&lru->common_lru.lru_list.lock);
 		free_percpu(lru->common_lru.local_list);
+	}
 }
