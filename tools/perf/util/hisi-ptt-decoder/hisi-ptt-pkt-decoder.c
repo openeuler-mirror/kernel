@@ -20,7 +20,7 @@
 /*
  * For 8DW format, the bit[31:11] of DW0 is always 0x1fffff, which can be
  * used to distinguish the data format.
- * 8DW format is like:
+ * 8DW format legacy pattern is like:
  *   bits [                 31:11                 ][       10:0       ]
  *        |---------------------------------------|-------------------|
  *    DW0 [                0x1fffff               ][ Reserved (0x7ff) ]
@@ -32,7 +32,7 @@
  *    DW6 [                   Reserved (0x0)                          ]
  *    DW7 [                        Time                               ]
  *
- * 4DW format is like:
+ * 4DW format legacy pattern is like:
  *   bits [31:30] [ 29:25 ][24][23][22][21][    20:11   ][    10:0    ]
  *        |-----|---------|---|---|---|---|-------------|-------------|
  *    DW0 [ Fmt ][  Type  ][T9][T8][TH][SO][   Length   ][    Time    ]
@@ -77,6 +77,11 @@ static const char * const hisi_ptt_4dw_pkt_field_name[] = {
 	[HISI_PTT_4DW_HEAD1]	= "Header DW1",
 	[HISI_PTT_4DW_HEAD2]	= "Header DW2",
 	[HISI_PTT_4DW_HEAD3]	= "Header DW3",
+};
+
+static int hisi_ptt_pkt_size[] = {
+	[HISI_PTT_4DW_PKT]	= 16,
+	[HISI_PTT_8DW_PKT]	= 32,
 };
 
 /* TLP message parsers below according to PCIe r6.4 sec 2.2.1.1 & 2.2.1.2 */
@@ -230,21 +235,36 @@ static void hisi_ptt_print_head0_8dw_fields(uint32_t dw)
 		      "Length", FIELD_GET(HISI_PTT_HEAD0_8DW_LEN, dw));
 }
 
+static void hisi_ptt_print_head0_fields_v1(struct hisi_ptt_pkt_buf *pkt_buf,
+					   uint32_t dw, const char *desc)
+{
+	if (pkt_buf->pkt_type == HISI_PTT_4DW_PKT)
+		hisi_ptt_print_head0_4dw_fields(dw);
+	else if (pkt_buf->pkt_type == HISI_PTT_8DW_PKT)
+		hisi_ptt_print_head0_8dw_fields(dw);
+	else
+		color_fprintf(stdout, PERF_COLOR_BLUE, "  %s\n", desc);
+}
+
 static void hisi_ptt_print_head0(struct hisi_ptt_pkt_buf *pkt_buf)
 {
+	const char *desc = pkt_buf->pkt_type == HISI_PTT_4DW_PKT ?
+			   hisi_ptt_4dw_pkt_field_name[HISI_PTT_4DW_HEAD0] :
+			   hisi_ptt_8dw_pkt_field_name[HISI_PTT_8DW_HEAD0];
 	uint32_t dw;
 
 	dw = get_unaligned_le32(pkt_buf->buf + pkt_buf->pos);
 	hisi_ptt_parse_pkt_info(pkt_buf, dw);
 	hisi_ptt_print_raw_record(pkt_buf->pos, dw);
 
-	if (pkt_buf->pkt_type == HISI_PTT_4DW_PKT)
-		hisi_ptt_print_head0_4dw_fields(dw);
-	else if (pkt_buf->pkt_type == HISI_PTT_8DW_PKT)
-		hisi_ptt_print_head0_8dw_fields(dw);
+	if (pkt_buf->pattern < HISI_PTT_PATTERN_V1) {
+		if (pkt_buf->pkt_type == HISI_PTT_4DW_PKT)
+			hisi_ptt_print_head0_4dw_fields(dw);
+		else
+			color_fprintf(stdout, PERF_COLOR_BLUE, "  %s\n", desc);
+	}
 	else
-		color_fprintf(stdout, PERF_COLOR_BLUE, "  %s\n",
-			      hisi_ptt_8dw_pkt_field_name[HISI_PTT_8DW_HEAD0]);
+		hisi_ptt_print_head0_fields_v1(pkt_buf, dw, desc);
 
 	pkt_buf->pos += HISI_PTT_FIELD_LENGTH;
 }
@@ -304,13 +324,9 @@ static void hisi_ptt_print_head1_msg_fields(uint32_t dw)
 		      "Message Code", FIELD_GET(HISI_PTT_HEAD1_MSG_CODE, dw));
 }
 
-static void hisi_ptt_print_head1(struct hisi_ptt_pkt_buf *pkt_buf)
+static void hisi_ptt_print_head1_fields_v1(struct hisi_ptt_pkt_buf *pkt_buf,
+					   uint32_t dw, const char *desc)
 {
-	uint32_t dw;
-
-	dw = get_unaligned_le32(pkt_buf->buf + pkt_buf->pos);
-	hisi_ptt_print_raw_record(pkt_buf->pos, dw);
-
 	switch (pkt_buf->pkt_msg_type) {
 	case HISI_PTT_PKT_TYPE_MRD:
 	case HISI_PTT_PKT_TYPE_MWR:
@@ -334,12 +350,25 @@ static void hisi_ptt_print_head1(struct hisi_ptt_pkt_buf *pkt_buf)
 	case HISI_PTT_PKT_TYPE_UNKNOWN:
 	case HISI_PTT_PKT_TYPE_MAX:
 	default:
-		color_fprintf(stdout, PERF_COLOR_BLUE, "  %s\n",
-			      pkt_buf->pkt_type == HISI_PTT_4DW_PKT ?
-			      hisi_ptt_4dw_pkt_field_name[HISI_PTT_4DW_HEAD1] :
-			      hisi_ptt_8dw_pkt_field_name[HISI_PTT_8DW_HEAD1]);
+		color_fprintf(stdout, PERF_COLOR_BLUE, "  %s\n", desc);
 		break;
 	}
+}
+
+static void hisi_ptt_print_head1(struct hisi_ptt_pkt_buf *pkt_buf)
+{
+	const char *desc = pkt_buf->pkt_type == HISI_PTT_4DW_PKT ?
+			   hisi_ptt_4dw_pkt_field_name[HISI_PTT_4DW_HEAD1] :
+			   hisi_ptt_8dw_pkt_field_name[HISI_PTT_8DW_HEAD1];
+	uint32_t dw;
+
+	dw = get_unaligned_le32(pkt_buf->buf + pkt_buf->pos);
+	hisi_ptt_print_raw_record(pkt_buf->pos, dw);
+
+	if (pkt_buf->pattern < HISI_PTT_PATTERN_V1)
+		color_fprintf(stdout, PERF_COLOR_BLUE, "  %s\n", desc);
+	else
+		hisi_ptt_print_head1_fields_v1(pkt_buf, dw, desc);
 
 	pkt_buf->pos += HISI_PTT_FIELD_LENGTH;
 }
@@ -403,13 +432,9 @@ static void hisi_ptt_print_head2_cpl_fields(uint32_t dw)
 		      FIELD_GET(HISI_PTT_HEAD2_CPL_LO_ADDR, dw));
 }
 
-static void hisi_ptt_print_head2(struct hisi_ptt_pkt_buf *pkt_buf)
+static void hisi_ptt_print_head2_fields_v1(struct hisi_ptt_pkt_buf *pkt_buf,
+					   uint32_t dw, const char *desc)
 {
-	uint32_t dw;
-
-	dw = get_unaligned_le32(pkt_buf->buf + pkt_buf->pos);
-	hisi_ptt_print_raw_record(pkt_buf->pos, dw);
-
 	switch (pkt_buf->pkt_msg_type) {
 	case HISI_PTT_PKT_TYPE_MRD:
 	case HISI_PTT_PKT_TYPE_MWR:
@@ -433,12 +458,25 @@ static void hisi_ptt_print_head2(struct hisi_ptt_pkt_buf *pkt_buf)
 	case HISI_PTT_PKT_TYPE_UNKNOWN:
 	case HISI_PTT_PKT_TYPE_MAX:
 	default:
-		color_fprintf(stdout, PERF_COLOR_BLUE, "  %s\n",
-			      pkt_buf->pkt_type == HISI_PTT_4DW_PKT ?
-			      hisi_ptt_4dw_pkt_field_name[HISI_PTT_4DW_HEAD2] :
-			      hisi_ptt_8dw_pkt_field_name[HISI_PTT_8DW_HEAD2]);
+		color_fprintf(stdout, PERF_COLOR_BLUE, "  %s\n", desc);
 		break;
 	}
+}
+
+static void hisi_ptt_print_head2(struct hisi_ptt_pkt_buf *pkt_buf)
+{
+	const char *desc = pkt_buf->pkt_type == HISI_PTT_4DW_PKT ?
+			   hisi_ptt_4dw_pkt_field_name[HISI_PTT_4DW_HEAD2] :
+			   hisi_ptt_8dw_pkt_field_name[HISI_PTT_8DW_HEAD2];
+	uint32_t dw;
+
+	dw = get_unaligned_le32(pkt_buf->buf + pkt_buf->pos);
+	hisi_ptt_print_raw_record(pkt_buf->pos, dw);
+
+	if (pkt_buf->pattern < HISI_PTT_PATTERN_V1)
+		color_fprintf(stdout, PERF_COLOR_BLUE, "  %s\n", desc);
+	else
+		hisi_ptt_print_head2_fields_v1(pkt_buf, dw, desc);
 
 	pkt_buf->pos += HISI_PTT_FIELD_LENGTH;
 }
@@ -516,13 +554,9 @@ static void hisi_ptt_print_head3_cpl_fields(uint32_t dw)
 		      FIELD_GET(HISI_PTT_HEAD3_CPL_TAG_13_10, dw));
 }
 
-static void hisi_ptt_print_head3(struct hisi_ptt_pkt_buf *pkt_buf)
+static void hisi_ptt_print_head3_fields_v1(struct hisi_ptt_pkt_buf *pkt_buf,
+					   uint32_t dw, const char *desc)
 {
-	uint32_t dw;
-
-	dw = get_unaligned_le32(pkt_buf->buf + pkt_buf->pos);
-	hisi_ptt_print_raw_record(pkt_buf->pos, dw);
-
 	switch (pkt_buf->pkt_msg_type) {
 	case HISI_PTT_PKT_TYPE_MRD:
 	case HISI_PTT_PKT_TYPE_MWR:
@@ -546,12 +580,25 @@ static void hisi_ptt_print_head3(struct hisi_ptt_pkt_buf *pkt_buf)
 	case HISI_PTT_PKT_TYPE_UNKNOWN:
 	case HISI_PTT_PKT_TYPE_MAX:
 	default:
-		color_fprintf(stdout, PERF_COLOR_BLUE, "  %s\n",
-			      pkt_buf->pkt_type == HISI_PTT_4DW_PKT ?
-			      hisi_ptt_4dw_pkt_field_name[HISI_PTT_4DW_HEAD3] :
-			      hisi_ptt_8dw_pkt_field_name[HISI_PTT_8DW_HEAD3]);
+		color_fprintf(stdout, PERF_COLOR_BLUE, "  %s\n", desc);
 		break;
 	}
+}
+
+static void hisi_ptt_print_head3(struct hisi_ptt_pkt_buf *pkt_buf)
+{
+	const char *desc = pkt_buf->pkt_type == HISI_PTT_4DW_PKT ?
+			   hisi_ptt_4dw_pkt_field_name[HISI_PTT_4DW_HEAD3] :
+			   hisi_ptt_8dw_pkt_field_name[HISI_PTT_8DW_HEAD3];
+	uint32_t dw;
+
+	dw = get_unaligned_le32(pkt_buf->buf + pkt_buf->pos);
+	hisi_ptt_print_raw_record(pkt_buf->pos, dw);
+
+	if (pkt_buf->pattern < HISI_PTT_PATTERN_V1)
+		color_fprintf(stdout, PERF_COLOR_BLUE, "  %s\n", desc);
+	else
+		hisi_ptt_print_head3_fields_v1(pkt_buf, dw, desc);
 
 	pkt_buf->pos += HISI_PTT_FIELD_LENGTH;
 }
