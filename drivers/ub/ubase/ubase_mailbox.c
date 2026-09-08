@@ -834,3 +834,23 @@ int ubase_hw_upgrade_ctx_ex(struct auxiliary_device *aux_dev,
 	return __ubase_hw_upgrade_ctx_ex(udev, attr, mailbox);
 }
 EXPORT_SYMBOL(ubase_hw_upgrade_ctx_ex);
+
+int ubase_hw_upgrade_ctx_for_proxy(struct auxiliary_device *aux_dev,
+				   struct ubase_mbx_attr *attr,
+				   struct ubase_cmd_mailbox *mailbox)
+{
+	struct ubase_dev *udev;
+
+	if (!aux_dev || !attr || !mailbox)
+		return -EINVAL;
+
+	udev = ubase_get_udev_by_adev(aux_dev);
+	if (!ubase_dev_mbx_supported(udev))
+		return -EOPNOTSUPP;
+
+	if (!test_bit(UBASE_STATE_CTX_READY_B, &udev->state_bits))
+		return -EAGAIN;
+
+	return __ubase_hw_upgrade_ctx(udev, attr, mailbox);
+}
+EXPORT_SYMBOL(ubase_hw_upgrade_ctx_for_proxy);

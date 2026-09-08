@@ -166,45 +166,101 @@ static void ubase_notify_all_ue_reset(struct ubase_dev *udev)
 {
 	struct ubase_ue_node *ue_node;
 
-	list_for_each_entry(ue_node, &udev->ue_list, list) {
-		if (ue_node->isolated)
-			continue;
-
+	list_for_each_entry(ue_node, &udev->ue_list, list)
 		ubase_notify_ue_reset(udev, ue_node->bus_ue_id, 0);
-	}
 }
 
-static void ubase_wait_ue_reset_ready(struct ubase_dev *udev)
+static int ubase_query_ue_reset_ready(struct ubase_dev *udev,
+				      struct ubase_ue_reset_ready_cmd *resp)
 {
-	struct ubase_ue_reset_ready_cmd resp;
 	struct ubase_cmd_buf out, in;
 	int try_cnt = 0;
 	int ret;
 
-	if (!dev_num_vf(udev->dev))
-		return;
-
 	do {
-		memset(&resp, 0, sizeof(resp));
+		memset(resp, 0, sizeof(*resp));
 		__ubase_fill_inout_buf(&in, UBASE_OPC_QUERY_UE_RST_RDY, true,
 				       0, NULL);
 		__ubase_fill_inout_buf(&out, UBASE_OPC_QUERY_UE_RST_RDY,
-				       false, sizeof(resp), &resp);
+				       false, sizeof(*resp), resp);
 
 		ret = __ubase_cmd_send_inout(udev, &in, &out);
 		if (ret) {
-			ubase_err(udev, "failed to query ue ready status, ret = %d.\n",
+			ubase_err(udev,
+				  "failed to query ue ready status, ret = %d.\n",
 				  ret);
-			return;
+			return ret;
 		}
 
 		msleep(UBASE_RST_WAIT_CMD_TIME);
 		try_cnt++;
-	} while (resp.ue_unready_num && try_cnt < UBASE_RST_WAIT_CMD_COUNT);
+	} while (resp->ue_unready_num && try_cnt < UBASE_RST_WAIT_CMD_COUNT);
 
-	if (resp.ue_unready_num)
-		ubase_warn(udev, "wait ue reset ready timeout! unready num = %u.\n",
-			   resp.ue_unready_num);
+	return 0;
+}
+
+static int ubase_mue_force_ue_reset(struct ubase_dev *udev, u64 bitmap)
+{
+	struct ubase_mue_force_ue_reset_cmd req = {0};
+	struct ubase_ue_reset_ready_cmd resp = {0};
+	struct ubase_cmd_buf in;
+	int ret;
+
+	req.ue_bitmap = bitmap;
+	__ubase_fill_inout_buf(&in, UBASE_OPC_MUE_FORCE_UE_RESET, false,
+			       sizeof(req), &req);
+	ret = __ubase_cmd_send_in(udev, &in);
+	if (ret) {
+		ubase_err(udev, "failed to force ue reset, ret = %d.\n", ret);
+		return ret;
+	}
+
+	ret = ubase_query_ue_reset_ready(udev, &resp);
+	if (ret) {
+		ubase_err(udev,
+			  "failed to query ue reset after force, ret = %d.\n",
+			  ret);
+		return ret;
+	}
+
+	if (resp.ue_unready_num) {
+		ubase_warn(udev,
+			   "wait ue reset ready timeout after force! unready num = %u, ue_bitmap = 0x%llx.\n",
+			   resp.ue_unready_num, resp.ue_bitmap);
+		return -ETIMEDOUT;
+	}
+
+	return 0;
+}
+
+static int ubase_wait_ue_reset_ready(struct ubase_dev *udev)
+{
+	struct ubase_ue_reset_ready_cmd resp;
+	int ret;
+
+	if (!dev_num_vf(udev->dev))
+		return 0;
+
+	ret = ubase_query_ue_reset_ready(udev, &resp);
+	if (ret) {
+		ubase_err(udev,
+			  "failed to query ue reset status after notify, ret = %d.\n",
+			  ret);
+		return ret;
+	}
+
+	if (resp.ue_unready_num) {
+		ubase_err(udev,
+			  "wait ue reset ready timeout after notify! unready num = %u, ue_bitmap = 0x%llx.\n",
+			  resp.ue_unready_num, resp.ue_bitmap);
+
+		if (ubase_dev_mbx_proxy_supported(udev)) {
+			udev->reset_stat.force_reset_cnt++;
+			return ubase_mue_force_ue_reset(udev, resp.ue_bitmap);
+		}
+	}
+
+	return 0;
 }
 
 static int ubase_ue_reset_done_check(struct ubase_dev *udev)
@@ -288,13 +344,15 @@ static void ubase_resume_fail_handle(struct ubase_dev *udev)
 	ubase_reset_err_handle(udev);
 }
 
-void ubase_suspend(struct ubase_dev *udev)
+int ubase_suspend(struct ubase_dev *udev)
 {
+	int ret;
+
 	if (!test_bit(UBASE_STATE_INITED_B, &udev->state_bits) ||
 	    test_and_set_bit(UBASE_STATE_DISABLED_B, &udev->state_bits)) {
 		ubase_warn(udev,
 			   "failed to suspend ubase, device is not ready or removing.\n");
-		return;
+		return 0;
 	}
 
 	set_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits);
@@ -302,7 +360,7 @@ void ubase_suspend(struct ubase_dev *udev)
 
 	if (ubase_dev_pmu_supported(udev)) {
 		ubase_pmu_suspend(udev);
-		return;
+		return 0;
 	}
 
 	clear_bit(UBASE_STATE_RST_TIMEOUT_RETRY_B, &udev->state_bits);
@@ -311,7 +369,17 @@ void ubase_suspend(struct ubase_dev *udev)
 
 	udev->reset_stage = UBASE_RESET_STAGE_DOWN;
 	ubase_suspend_aux_devices(udev, UBASE_RESET_STAGE_DOWN);
-	ubase_wait_ue_reset_ready(udev);
+	ret = ubase_wait_ue_reset_ready(udev);
+	if (ret && ubase_dev_mbx_proxy_supported(udev)) {
+		udev->reset_stat.force_reset_fail_cnt++;
+		udev->reset_stage = UBASE_RESET_STAGE_NONE;
+		ubase_suspend_aux_devices(udev, UBASE_RESET_STAGE_ABORT);
+		clear_bit(UBASE_STATE_RST_WAIT_DEACTIVE_B, &udev->state_bits);
+		clear_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits);
+		clear_bit(UBASE_STATE_DISABLED_B, &udev->state_bits);
+		return ret;
+	}
+
 	udev->reset_stage = UBASE_RESET_STAGE_UNINIT;
 
 	udev->reset_stat.elr_reset_cnt++;
@@ -322,6 +390,8 @@ void ubase_suspend(struct ubase_dev *udev)
 	ubase_ctrlq_disable(udev);
 	ubase_irq_table_free(udev);
 	ubase_flush_workqueue(udev);
+
+	return 0;
 }
 
 void ubase_resume(struct ubase_dev *udev, int pret)

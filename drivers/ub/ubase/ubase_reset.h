@@ -31,10 +31,17 @@ struct ubase_notify_ue_reset_cmd {
 
 struct ubase_ue_reset_ready_cmd {
 	u16	ue_unready_num;
-	u8	rsv[22];
+	u8	rsv0[6];
+	u64	ue_bitmap;
+	u8	rsv1[8];
 };
 
-void ubase_suspend(struct ubase_dev *udev);
+struct ubase_mue_force_ue_reset_cmd {
+	u64	ue_bitmap;
+	u8	rsv[16];
+};
+
+int ubase_suspend(struct ubase_dev *udev);
 void ubase_resume(struct ubase_dev *udev, int pret);
 void ubase_reset_service(struct ubase_delay_work *ubase_work);
 void __ubase_reset_event(struct ubase_dev *udev,
