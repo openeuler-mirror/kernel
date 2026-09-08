@@ -3571,28 +3571,35 @@ static int uburma_cmd_import_jfr_ex(struct ubcore_device *ubc_dev,
 
 		mutex_lock(&vtpn->state_lock);
 		tpid_uobj_id = vtpn->tpid_uobj_id;
-		vtpn->tpid_uobj_id = 0;
-		mutex_unlock(&vtpn->state_lock);
-		ubcore_put_vtpn_for_tpid(vtpn);
 
 		if (tpid_uobj_id != 0) {
 			tpid_uobj = uobj_get_del(UOBJ_CLASS_TPID,
 						 tpid_uobj_id, file);
 			if (IS_ERR_OR_NULL(tpid_uobj)) {
+				mutex_unlock(&vtpn->state_lock);
 				uburma_log_err_rl("failed to find tpid_uobj, id:%llu.\n",
 						  tpid_uobj_id);
+				ubcore_put_vtpn_for_tpid(vtpn);
 				ubcore_unimport_jfr(tjfr);
 				uobj_alloc_abort(uobj);
 				UBCORE_PERF_TRACE_END(PERF_URMA_CMD_IMPORT_JFR_EX);
 				return -ENOENT;
 			}
+			/* Clear the back-pointer only after taking over the tpid_uobj,
+			 * keeping the vtpn <-> tpid_uobj link intact on error.
+			 */
+			vtpn->tpid_uobj_id = 0;
+			mutex_unlock(&vtpn->state_lock);
 			uobj_get(tpid_uobj);
 			tpid_uobj->object = NULL;
 			if (uobj_remove_commit(tpid_uobj) != 0)
 				uburma_log_err_rl("Remove tpid uobj failed.\n");
 			uobj_put(tpid_uobj);
 			uobj_put_del(tpid_uobj);
+		} else {
+			mutex_unlock(&vtpn->state_lock);
 		}
+		ubcore_put_vtpn_for_tpid(vtpn);
 	}
 
 	ret = uburma_tlv_append(hdr, (void *)&arg);
@@ -3909,28 +3916,35 @@ static int uburma_cmd_bind_jetty_ex(struct ubcore_device *ubc_dev,
 
 		mutex_lock(&vtpn->state_lock);
 		tpid_uobj_id = vtpn->tpid_uobj_id;
-		vtpn->tpid_uobj_id = 0;
-		mutex_unlock(&vtpn->state_lock);
-		ubcore_put_vtpn_for_tpid(vtpn);
 
 		if (tpid_uobj_id != 0) {
 			tpid_uobj = uobj_get_del(UOBJ_CLASS_TPID,
 						 tpid_uobj_id, file);
 			if (IS_ERR_OR_NULL(tpid_uobj)) {
+				mutex_unlock(&vtpn->state_lock);
 				uburma_log_err_rl("failed to find tpid_uobj, id:%llu.\n",
 						  tpid_uobj_id);
+				ubcore_put_vtpn_for_tpid(vtpn);
 				(void)ubcore_unbind_jetty(jetty_uobj->object);
 				uburma_put_jetty_tjetty_objs(jetty_uobj, tjetty_uobj);
 				UBCORE_PERF_TRACE_END(PERF_URMA_CMD_BIND_JETTY_EX);
 				return -ENOENT;
 			}
+			/* Clear the back-pointer only after taking over the tpid_uobj,
+			 * keeping the vtpn <-> tpid_uobj link intact on error.
+			 */
+			vtpn->tpid_uobj_id = 0;
+			mutex_unlock(&vtpn->state_lock);
 			uobj_get(tpid_uobj);
 			tpid_uobj->object = NULL;
 			if (uobj_remove_commit(tpid_uobj) != 0)
 				uburma_log_err_rl("Remove tpid uobj failed.\n");
 			uobj_put(tpid_uobj);
 			uobj_put_del(tpid_uobj);
+		} else {
+			mutex_unlock(&vtpn->state_lock);
 		}
+		ubcore_put_vtpn_for_tpid(vtpn);
 	}
 
 	uburma_tjetty = (struct uburma_tjetty_uobj *)(tjetty_uobj);
@@ -5343,21 +5357,25 @@ static int uburma_cmd_import_jetty_ex(struct ubcore_device *ubc_dev,
 
 		mutex_lock(&vtpn->state_lock);
 		tpid_uobj_id = vtpn->tpid_uobj_id;
-		vtpn->tpid_uobj_id = 0;
-		mutex_unlock(&vtpn->state_lock);
-		ubcore_put_vtpn_for_tpid(vtpn);
 
 		if (tpid_uobj_id != 0) {
 			tpid_uobj = uobj_get_del(UOBJ_CLASS_TPID,
 						 tpid_uobj_id, file);
 			if (IS_ERR_OR_NULL(tpid_uobj)) {
+				mutex_unlock(&vtpn->state_lock);
 				uburma_log_err_rl("failed to find tpid_uobj, id:%llu.\n",
 						  tpid_uobj_id);
+				ubcore_put_vtpn_for_tpid(vtpn);
 				(void)ubcore_unimport_jetty(tjetty);
 				uobj_alloc_abort(uobj);
 				UBCORE_PERF_TRACE_END(PERF_URMA_CMD_IMPORT_JETTY_EX);
 				return -ENOENT;
 			}
+			/* Clear the back-pointer only after taking over the tpid_uobj,
+			 * keeping the vtpn <-> tpid_uobj link intact on error.
+			 */
+			vtpn->tpid_uobj_id = 0;
+			mutex_unlock(&vtpn->state_lock);
 			uobj_get(tpid_uobj);
 			/* detach vtpn so the free callback skips ubcore_delete_vtpn_for_tpid */
 			tpid_uobj->object = NULL;
@@ -5365,7 +5383,10 @@ static int uburma_cmd_import_jetty_ex(struct ubcore_device *ubc_dev,
 				uburma_log_err_rl("Remove tpid uobj failed.\n");
 			uobj_put(tpid_uobj);
 			uobj_put_del(tpid_uobj);
+		} else {
+			mutex_unlock(&vtpn->state_lock);
 		}
+		ubcore_put_vtpn_for_tpid(vtpn);
 	}
 
 	ret = uburma_tlv_append(hdr, &arg);
