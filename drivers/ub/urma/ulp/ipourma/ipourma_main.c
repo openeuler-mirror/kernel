@@ -38,11 +38,11 @@ MODULE_PARM_DESC(page_level, "register 2^page_level bytes memory at once, should
 
 int ipourma_ctp_sl = IPOURMA_DEFAULT_CTP_SL;
 module_param_named(ctp_sl, ipourma_ctp_sl, int, 0644);
-MODULE_PARM_DESC(ipourma_ctp_sl, "ctp sl, default 3 in ipourma");
+MODULE_PARM_DESC(ipourma_ctp_sl, "ctp sl, -1 = auto-select from device cap (default)");
 
 int ipourma_utp_sl = IPOURMA_DEFAULT_UTP_SL;
 module_param_named(utp_sl, ipourma_utp_sl, int, 0644);
-MODULE_PARM_DESC(ipourma_utp_sl, "utp sl, default 0 in ipourma");
+MODULE_PARM_DESC(ipourma_utp_sl, "utp sl, -1 = auto-select from device cap (default)");
 
 int ipourma_min_eid_cnt = IPOURMA_MIN_EID_CNT;
 module_param_named(min_eid_cnt, ipourma_min_eid_cnt, int, 0644);

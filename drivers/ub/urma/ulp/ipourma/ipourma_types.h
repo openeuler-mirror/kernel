@@ -38,6 +38,8 @@ struct ipourma_header {
 	__be16 proto;
 };
 
+#define IPOURMA_SL_INVALID  (-1)
+
 enum {
 	IPOURMA_DEV_ADMIN_UP        = 1,
 	IPOURMA_DEV_OP_UP           = 2,
@@ -79,8 +81,8 @@ enum {
 	IPOURMA_TJETTY_TIMEOUT_S    = 60,
 	IPOURMA_TJETTY_TIMEOUT_MAX  = 65535,
 	IPOURMA_MAX_DEV_NAME        = 50,
-	IPOURMA_DEFAULT_CTP_SL      = 3,
-	IPOURMA_DEFAULT_UTP_SL      = 0,
+	IPOURMA_DEFAULT_CTP_SL      = IPOURMA_SL_INVALID,
+	IPOURMA_DEFAULT_UTP_SL      = IPOURMA_SL_INVALID,
 };
 
 enum {
