@@ -35,14 +35,13 @@ struct hi_message_device {
 	struct list_head timeout_msg_list;
 	spinlock_t timeout_msg_lock;
 	struct hi_cqe_state *cqe_state;
-	atomic_t msg_in_flight_cnt;
 	struct message_device mdev;
 };
 
 #define to_hi_message_device(dev) \
 	container_of(dev, struct hi_message_device, mdev)
 
-enum hi_cq_sw_state { CQ_SW_INIT, CQ_SW_HANDLED };
+enum hi_cq_sw_state { CQ_SW_INIT, CQ_SW_HANDLED, CQ_SW_AGED };
 
 struct hi_cqe_state {
 	u8 state;
@@ -65,9 +64,7 @@ static inline void cqe_state_set(struct hi_message_device *hmd, int idx,
 #define HI_MSG_AGING_PERIOD		2
 #define MAX_CQ_POLL_PER_TIME		64
 
-#define MSG_MAX (HI_SQ_CFG_DEPTH - 1)
 #define q_left_cnt(q) ((q)->depth - q_used_cnt((q)) - 1)
-#define sq_sw_left(hmd) (MSG_MAX - atomic_read(&(hmd)->msg_in_flight_cnt))
 #define sq_pld_entry_off(hmd, idx) \
 	((HI_MSG_SQE_SIZE * HI_SQ_CFG_DEPTH) + (HI_MSG_SQE_PLD_SIZE * (idx)))
 #define sq_pld_entry_sw(hmd, idx)                                   \
@@ -163,31 +160,18 @@ static void hi_msgq_hw_status(struct hi_msg_core *hmc)
 		hi_msg_reg_read(hmc, RQ_PI), hi_msg_reg_read(hmc, RQ_CI));
 }
 
-static void hi_msgq_sw_status(struct hi_message_device *hmd)
-{
-	dev_err_ratelimited(hmd->hmc.dev, "sq in flight msg:%d\n",
-			    atomic_read(&hmd->msg_in_flight_cnt));
-}
-
 static void hi_msgq_status(struct hi_message_device *hmd)
 {
 	hi_msgq_hw_status(&hmd->hmc);
-	hi_msgq_sw_status(hmd);
 }
 
-static int hi_msg_get_sq_idle_num(struct hi_message_device *hmd, int num,
-				  bool tx)
+static int hi_msg_get_sq_idle_num(struct hi_message_device *hmd, int num)
 {
 	struct hi_msg_queue *sq = &hmd->hmc.queue[MSG_SQ];
-	int real, sw_left, hw_left;
+	int real, hw_left;
 
 	hw_left = q_left_cnt(sq);
-	sw_left = sq_sw_left(hmd);
 	real = num;
-
-	/* Assure message in flight not overflow, just tx need check */
-	if (tx && real > sw_left)
-		real = sw_left;
 
 	/* If not enough, update ci by read hardware */
 	if (real > hw_left) {
@@ -202,7 +186,7 @@ static int hi_msg_get_sq_idle_num(struct hi_message_device *hmd, int num,
 
 static int hi_msg_sq_submit(struct hi_message_device *hmd,
 			    struct hi_msg_sqe *sqe, struct hi_msg_sqe_pld *pld,
-			    int num, bool wait)
+			    int num)
 {
 	struct hi_msg_queue *sq = &hmd->hmc.queue[MSG_SQ];
 	struct hi_msg_core *hmc = &hmd->hmc;
@@ -213,7 +197,7 @@ static int hi_msg_sq_submit(struct hi_message_device *hmd,
 
 	spin_lock_irqsave(&sq->lock, flags);
 
-	real = hi_msg_get_sq_idle_num(hmd, num, wait);
+	real = hi_msg_get_sq_idle_num(hmd, num);
 	if (!real) {
 		spin_unlock_irqrestore(&sq->lock, flags);
 		return 0;
@@ -231,8 +215,6 @@ static int hi_msg_sq_submit(struct hi_message_device *hmd,
 	sq->pi = q_ptr_idx(sq, pi, real);
 	wmb(); /* Ensure the register is written correctly. */
 	hi_msg_reg_write(hmc, SQ_PI, sq->pi);
-	if (wait)
-		atomic_add(real, &hmd->msg_in_flight_cnt);
 
 	spin_unlock_irqrestore(&sq->lock, flags);
 
@@ -285,7 +267,7 @@ static bool hi_msg_has_rx(struct hi_message_device *hmd, int ci, int pi)
 	for (i = 0; i < cnt; i++) {
 		idx = q_ptr_idx(cq, ci, i);
 		cqe = cq_entry(hmc, idx);
-		if (cqe_state_get(hmd, idx) != CQ_SW_HANDLED &&
+		if (cqe_state_get(hmd, idx) == CQ_SW_INIT &&
 		    cqe->task_type == PROTOCOL_MSG && cqe->type == MSG_REQ)
 			return true;
 	}
@@ -311,11 +293,12 @@ static void hi_msg_cq_update(struct hi_message_device *hmd)
 	cnt = q_used_cnt(cq);
 	for (i = 0; i < cnt; i++) {
 		idx = q_ptr_idx(cq, ci, i);
-		if (cqe_state_get(hmd, idx) != CQ_SW_HANDLED)
+		if (cqe_state_get(hmd, idx) == CQ_SW_INIT)
 			break;
 
 		cqe = cq_entry(hmc, idx);
-		if (cqe->task_type != PROTOCOL_MSG || cqe->type == MSG_RSP) {
+		if (cqe_state_get(hmd, idx) == CQ_SW_HANDLED &&
+		    (cqe->task_type != PROTOCOL_MSG || cqe->type == MSG_RSP)) {
 			hi_msn_put(cqe->task_type, cqe->msn);
 			release_cnt++;
 		}
@@ -332,7 +315,6 @@ static void hi_msg_cq_update(struct hi_message_device *hmd)
 	cq->ci = q_ptr_idx(cq, ci, i);
 	wmb(); /* Ensure the register is written correctly. */
 	hi_msg_reg_write(hmc, CQ_CI, cq->ci);
-	atomic_sub(release_cnt, &hmd->msg_in_flight_cnt);
 
 	if (atomic_read(&hmc->cq_int_mask)) {
 		/* Get newest pi, but not store in cq->pi */
@@ -370,7 +352,7 @@ static int hi_msg_cq_poller(struct hi_message_device *hmd)
 		idx = q_ptr_idx(cq, ci, i);
 		cqe = cq_entry(hmc, idx);
 
-		if (cqe_state_get(hmd, idx) == CQ_SW_HANDLED)
+		if (cqe_state_get(hmd, idx) != CQ_SW_INIT)
 			continue;
 
 		/* Now, just msg type has rx */
@@ -515,7 +497,7 @@ static int hi_message_sync(struct message_device *mdev, struct msg_info *info,
 	hi_msg_set_pkt_msn(info, task_type, msn, hmc->user);
 
 	cnt = hi_msg_sq_submit(
-		hmd, &sqe, (struct hi_msg_sqe_pld *)info->req_packet, 1, true);
+		hmd, &sqe, (struct hi_msg_sqe_pld *)info->req_packet, 1);
 	if (cnt != 1) {
 		dev_err(hmc->dev, "sq submit failed\n");
 		hi_msgq_status(hmd);
@@ -576,7 +558,7 @@ static int hi_message_response(struct message_device *mdev,
 	hi_msg_sqe_init(&sqe, header->src_tassn, info, PROTOCOL_MSG, code);
 
 	cnt = hi_msg_sq_submit(
-		hmd, &sqe, (struct hi_msg_sqe_pld *)info->req_packet, 1, false);
+		hmd, &sqe, (struct hi_msg_sqe_pld *)info->req_packet, 1);
 	if (cnt != 1) {
 		dev_err(hmd->hmc.dev, "rsp sq submit failed\n");
 		return -ENOSPC;
@@ -607,7 +589,7 @@ static int hi_message_send(struct message_device *mdev, struct msg_info *info,
 	hi_msg_set_pkt_msn(info, PROTOCOL_MSG, msn, hmc->user);
 
 	cnt = hi_msg_sq_submit(
-		hmd, &sqe, (struct hi_msg_sqe_pld *)info->req_packet, 1, false);
+		hmd, &sqe, (struct hi_msg_sqe_pld *)info->req_packet, 1);
 	if (cnt != 1) {
 		dev_err(hmc->dev, "sq submit failed\n");
 		hi_msgq_status(hmd);
@@ -676,7 +658,6 @@ static void hi_timeout_msg_ageing(struct hi_message_device *hmd)
 	list_for_each_entry_safe(msg, tmp, &hmd->timeout_msg_list, node) {
 		if (msg->age >= HI_MSG_AGING_PERIOD) {
 			hi_msn_put(msg->task_type, msg->msn);
-			atomic_sub(1, &hmd->msg_in_flight_cnt);
 			list_del(&msg->node);
 			dev_err_ratelimited(hmd->hmc.dev, "release aged timeout type=%u msn=%#x\n",
 					    msg->task_type, msg->msn);
@@ -694,7 +675,7 @@ static bool hi_cqe_ageing(struct hi_message_device *hmd, int idx)
 	struct hi_msg_cqe *cqe;
 	int ret;
 
-	if (cqe_state_get(hmd, idx) == CQ_SW_HANDLED)
+	if (cqe_state_get(hmd, idx) != CQ_SW_INIT)
 		return false;
 
 	if (cqe_age_get(hmd, idx) < HI_MSG_AGING_PERIOD) {
@@ -709,24 +690,25 @@ static bool hi_cqe_ageing(struct hi_message_device *hmd, int idx)
 		if (cqe->p_len > HI_MSG_RQE_SIZE) {
 			dev_err(hmc->dev, "ageing cqe p_len invalid\n");
 			ub_msg_dump_cq(cqe, NULL);
-			return true;
-		}
+		} else {
+			ret = message_rx_handler(ubc, rq_entry(hmc, cqe->rq_pi),
+						 cqe->p_len);
+			if (ret) {
+				dev_err(hmc->dev, "rx msg failed, ret=%d\n", ret);
+				ub_msg_dump_cq(cqe, rq_entry(hmc, cqe->rq_pi));
+			}
 
-		ret = message_rx_handler(ubc, rq_entry(hmc, cqe->rq_pi),
-					 cqe->p_len);
-		if (ret) {
-			dev_err(hmc->dev, "rx msg failed, ret=%d\n", ret);
-			ub_msg_dump_cq(cqe, rq_entry(hmc, cqe->rq_pi));
+			dev_warn_ratelimited(hmc->dev,
+					     "interrupt does not up, process unhandled cqe, idx=%d type=%u msn=%#x opcode=%#x\n",
+					     idx, cqe->task_type, cqe->msn, cqe->opcode);
 		}
-
-		dev_warn_ratelimited(hmc->dev, "interrupt does not up, process unhandled cqe, idx=%d type=%u msn=%#x opcode=%#x\n",
-				     idx, cqe->task_type, cqe->msn,
-				     cqe->opcode);
+		cqe_state_set(hmd, idx, CQ_SW_HANDLED);
 	} else {
 		dev_err_ratelimited(hmc->dev, "reset unhandled cqe, idx=%d type=%u msn=%#x, opcode=%#x\n",
 				    idx, cqe->task_type, cqe->msn,
 				    cqe->opcode);
 		ub_msg_dump_cq(cqe, rq_entry(hmc, cqe->rq_pi));
+		cqe_state_set(hmd, idx, CQ_SW_AGED);
 	}
 
 	return true;
@@ -747,6 +729,7 @@ static bool hi_is_timeout_msg(struct hi_message_device *hmd, int idx)
 			dev_err_ratelimited(hmc->dev, "Timeout Message Processed, task=%u msn=%#x\n",
 					    msg->task_type, msg->msn);
 			kfree(msg);
+			cqe_state_set(hmd, idx, CQ_SW_HANDLED);
 			return true;
 		}
 	}
@@ -778,7 +761,6 @@ static int hi_msg_timeout_poller(struct hi_message_device *hmd)
 	for (i = 0; i < cqe_cnt; i++) {
 		idx = q_ptr_idx(cq, ci, i);
 		if (hi_cqe_ageing(hmd, idx) || hi_is_timeout_msg(hmd, idx)) {
-			cqe_state_set(hmd, idx, CQ_SW_HANDLED);
 			handled_cnt++;
 			if (handled_cnt == MAX_CQ_POLL_PER_TIME)
 				break;
