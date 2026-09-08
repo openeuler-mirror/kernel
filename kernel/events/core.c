@@ -11149,7 +11149,7 @@ err_alloc:
 	 * and that will take care of freeing the event.
 	 */
 	if (!event_file)
-		free_event(event);
+		put_event(event);
 err_cred:
 	if (task)
 		mutex_unlock(&task->signal->cred_guard_mutex);
