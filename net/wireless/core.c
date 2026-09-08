@@ -1132,9 +1132,8 @@ static void __cfg80211_unregister_wdev(struct wireless_dev *wdev, bool sync)
 	kfree_sensitive(wdev->wext.keys);
 	wdev->wext.keys = NULL;
 #endif
-	/* only initialized if we have a netdev */
 	if (wdev->netdev)
-		flush_work(&wdev->disconnect_wk);
+		cancel_work_sync(&wdev->disconnect_wk);
 
 	cfg80211_cqm_config_free(wdev);
 }
@@ -1340,6 +1339,8 @@ static int cfg80211_netdev_notifier_call(struct notifier_block *nb,
 		break;
 	case NETDEV_GOING_DOWN:
 		cfg80211_leave(rdev, wdev);
+		if (wdev->netdev)
+			cancel_work_sync(&wdev->disconnect_wk);
 		break;
 	case NETDEV_DOWN:
 		cfg80211_update_iface_num(rdev, wdev->iftype, -1);
