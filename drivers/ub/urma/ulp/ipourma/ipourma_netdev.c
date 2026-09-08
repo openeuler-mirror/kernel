@@ -362,6 +362,7 @@ static int ipourma_stop(struct net_device *dev)
 
 static int ipourma_change_mtu(struct net_device *dev, int mtu)
 {
+	struct ipourma_dev_priv *priv = netdev_priv(dev);
 	bool flag;
 
 	if (IS_ERR_OR_NULL(dev))
@@ -374,7 +375,8 @@ static int ipourma_change_mtu(struct net_device *dev, int mtu)
 	}
 
 	/* check ranges */
-	if ((mtu < IPOURMA_MIN_MTU) || (mtu > IPOURMA_MAX_MTU))
+	if ((mtu < IPOURMA_MIN_MTU) ||
+	    (mtu > (int)(priv->urma_mtu - IPOURMA_HARD_LEN)))
 		return -EINVAL;
 
 	flag = netif_carrier_ok(dev);
@@ -541,6 +543,27 @@ static inline void ipourma_init_stats(struct ipourma_dev_priv *priv)
 }
 
 static void ipourma_create_redundant_jetty_callback(struct work_struct *work);
+
+static u32 ipourma_mtu_to_bytes(enum ubcore_mtu mtu)
+{
+	switch (mtu) {
+	case UBCORE_MTU_256:
+		return 256;
+	case UBCORE_MTU_512:
+		return 512;
+	case UBCORE_MTU_1024:
+		return 1024;
+	case UBCORE_MTU_2048:
+		return 2048;
+	case UBCORE_MTU_4096:
+		return 4096;
+	case UBCORE_MTU_8192:
+		return 8192;
+	default:
+		return IPOURMA_URMA_MAX_MTU;
+	}
+}
+
 static int ipourma_priv_base_init(struct net_device *dev,
 	struct ubcore_device *urma_dev)
 {
@@ -549,6 +572,8 @@ static int ipourma_priv_base_init(struct net_device *dev,
 	spin_lock_init(&priv->lock);
 	priv->urma_dev = urma_dev;
 	priv->dev = dev;
+	priv->urma_mtu = ipourma_mtu_to_bytes(urma_dev->attr.port_attr[0].max_mtu);
+	dev->mtu = priv->urma_mtu - IPOURMA_HARD_LEN;
 	priv->parent = NULL;
 	priv->eid_info = NULL;
 	priv->eid_count = 0;
