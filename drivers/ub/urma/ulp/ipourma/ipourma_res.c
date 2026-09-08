@@ -156,12 +156,8 @@ static int ipourma_alloc_tx_buf_aligned(struct ipourma_dev_priv *priv, u32 eid_i
 
 	tx_buf->buf_aligned = priv->tx_buf_aligned[eid_idx][blk_idx] + offset;
 
-	if (IS_ERR_OR_NULL(tx_buf->buf_aligned) ||
-		(u64)(tx_buf->buf_aligned) % IPOURMA_SEGMENT_ALIGN_SIZE != 0) {
+	if (IS_ERR_OR_NULL(tx_buf->buf_aligned)) {
 		tx_buf->buf_aligned = NULL;
-		netdev_warn(priv->dev, "%s: addr = 0x%llx, align = %d\n",
-					ipourma_err_desc(IPOURMA_ADDRESS_NOT_ALIGNED),
-					(u64)tx_buf->buf_aligned, IPOURMA_SEGMENT_ALIGN_SIZE);
 		return IPOURMA_ADDRESS_NOT_ALIGNED;
 	}
 
@@ -608,19 +604,13 @@ int ipourma_init_rings(struct net_device *dev)
 	struct ipourma_dev_priv *priv = netdev_priv(dev);
 	int ret = IPOURMA_OK;
 
-	priv->skb_buf_size = priv->urma_mtu < IPOURMA_SEGMENT_ALIGN_SIZE ?
-					IPOURMA_SEGMENT_ALIGN_SIZE : priv->urma_mtu;
+	priv->skb_buf_size = priv->urma_mtu;
 
 	ret = ipourma_init_rings_tables(dev);
 	if (ret != IPOURMA_OK)
 		return ret;
 
-	if (priv->urma_mtu > IPOURMA_SEGMENT_ALIGN_SIZE) {
-		priv->tx_buf_size = (priv->urma_mtu + IPOURMA_SEGMENT_ALIGN_SIZE - 1) &
-							~(IPOURMA_SEGMENT_ALIGN_SIZE - 1);
-	} else {
-		priv->tx_buf_size = IPOURMA_SEGMENT_ALIGN_SIZE;
-	}
+	priv->tx_buf_size = priv->urma_mtu;
 	priv->rx_buf_num = DIV_ROUND_UP(ipourma_rx_ring_size * priv->skb_buf_size,
 					ipourma_register_seg_size);
 	priv->tx_buf_num = DIV_ROUND_UP(ipourma_tx_ring_size * priv->tx_buf_size,
@@ -662,11 +652,29 @@ int ipourma_init_tjetty_hmap(struct net_device *dev)
 	return ret;
 }
 
+static int ipourma_jetty_pick_sl(const struct ubcore_device_attr *attr, int ctp_en)
+{
+	int i;
+
+	for (i = UBCORE_MAX_PRIORITY_CNT - 1; i >= 0; i--) {
+		if (ctp_en) {
+			if (attr->dev_cap.priority_info[i].tp_type.bs.ctp == 1)
+				return i;
+		} else {
+			if (attr->dev_cap.priority_info[i].tp_type.bs.utp == 1 ||
+			    attr->dev_cap.priority_info[i].tp_type.bs.rtp == 1)
+				return i;
+		}
+	}
+
+	return IPOURMA_SL_INVALID;
+}
+
 static int ipourma_jetty_set_priority(struct ipourma_dev_priv *priv,
 					struct ubcore_jetty_cfg *jetty_cfg)
 {
 	struct ubcore_device_attr attr = {0};
-	int ctp_en, ret;
+	int ctp_en, sl = IPOURMA_SL_INVALID, ret;
 
 	ret = ubcore_query_device_attr(priv->urma_dev, &attr);
 	if (ret != 0)
@@ -675,30 +683,31 @@ static int ipourma_jetty_set_priority(struct ipourma_dev_priv *priv,
 	if (ctp_en == 1) {
 		if (ipourma_ctp_sl >= 0 &&
 		    ipourma_ctp_sl < UBCORE_MAX_PRIORITY_CNT &&
-		    attr.dev_cap.priority_info[ipourma_ctp_sl].tp_type.bs.ctp == 1) {
-			jetty_cfg->priority = ipourma_ctp_sl;
-			netdev_info(priv->dev,
-				"ipourma create jetty set priority : %d, ty_type : ctp\n",
-				ipourma_ctp_sl);
-			return IPOURMA_OK;
-		}
+		    attr.dev_cap.priority_info[ipourma_ctp_sl].tp_type.bs.ctp == 1)
+			sl = ipourma_ctp_sl;
 	} else {
 		if (ipourma_utp_sl >= 0 &&
 		    ipourma_utp_sl < UBCORE_MAX_PRIORITY_CNT &&
 		    (attr.dev_cap.priority_info[ipourma_utp_sl].tp_type.bs.utp == 1 ||
-			    attr.dev_cap.priority_info[ipourma_utp_sl].tp_type.bs.rtp == 1)) {
-			jetty_cfg->priority = ipourma_utp_sl;
-			netdev_info(priv->dev,
-				"ipourma create jetty set priority : %d, ty_type : utp\n",
-				ipourma_utp_sl);
-			return IPOURMA_OK;
-		}
+		     attr.dev_cap.priority_info[ipourma_utp_sl].tp_type.bs.rtp == 1))
+			sl = ipourma_utp_sl;
 	}
 
-	netdev_err(priv->dev, "ipourma set jetty priority failed. the priority of %s cannot be set to %d\n",
-		   ctp_en ? "ctp" : "utp", ctp_en ? ipourma_ctp_sl : ipourma_utp_sl);
+	if (sl < 0)
+		sl = ipourma_jetty_pick_sl(&attr, ctp_en);
 
-	return -EINVAL;
+	if (sl < 0) {
+		netdev_err(priv->dev,
+			   "ipourma set jetty priority failed, no usable SL for %s\n",
+			   ctp_en ? "ctp" : "utp");
+		return -EINVAL;
+	}
+
+	jetty_cfg->priority = sl;
+	netdev_info(priv->dev,
+		    "ipourma create jetty set priority : %d, tp_type : %s\n",
+		    sl, ctp_en ? "ctp" : "utp");
+	return IPOURMA_OK;
 }
 
 static struct ubcore_jfr *ipourma_create_jfr(
@@ -864,7 +873,6 @@ void ipourma_uninit_urma_resources(struct net_device *dev)
 static int ipourma_init_misc(struct ipourma_dev_priv *priv)
 {
 	priv->max_send_sge = IPOURMA_MAX_URMA_SEND_SGES;
-	priv->urma_mtu = IPOURMA_URMA_MAX_MTU;
 	priv->urma_op_mode = UBCORE_OPC_SEND;
 	priv->urma_transport_mode = UBCORE_TP_UM;
 
