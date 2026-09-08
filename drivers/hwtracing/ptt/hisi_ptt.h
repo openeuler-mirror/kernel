@@ -41,6 +41,7 @@
 #define   HISI_PTT_TRACE_CTRL_RST	BIT(1)
 #define   HISI_PTT_TRACE_CTRL_RXTX_SEL	GENMASK(3, 2)
 #define   HISI_PTT_TRACE_CTRL_TYPE_SEL	GENMASK(7, 4)
+#define   HISI_PTT_TRACE_CTRL_PATTERN	BIT(8)
 #define   HISI_PTT_TRACE_CTRL_DATA_FORMAT	BIT(14)
 #define   HISI_PTT_TRACE_CTRL_FILTER_MODE	BIT(15)
 #define   HISI_PTT_TRACE_CTRL_TARGET_SEL	GENMASK(31, 16)
@@ -89,6 +90,7 @@
 #define HISI_PTT_PMU_DIRECTION_MASK	GENMASK(23, 20)
 #define HISI_PTT_PMU_TYPE_MASK		GENMASK(31, 24)
 #define HISI_PTT_PMU_FORMAT_MASK	GENMASK(35, 32)
+#define HISI_PTT_PMU_PATTERN_MASK	GENMASK(39, 36)
 
 /**
  * struct hisi_ptt_tune_desc - Describe tune event for PTT tune
@@ -127,6 +129,7 @@ struct hisi_ptt_dma_buffer {
  * @filter:    filter value for tracing the TLP headers
  * @format:    format of the TLP headers to trace
  * @type:      type of the TLP headers to trace
+ * @pattern:   pattern of the TLP headers to trace
  */
 struct hisi_ptt_trace_ctrl {
 	struct hisi_ptt_dma_buffer *trace_buf;
@@ -139,6 +142,7 @@ struct hisi_ptt_trace_ctrl {
 	u32 filter:16;
 	u32 format:1;
 	u32 type:4;
+	u32 pattern:4;
 };
 
 /*

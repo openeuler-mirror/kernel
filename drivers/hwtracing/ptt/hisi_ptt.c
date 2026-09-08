@@ -234,6 +234,10 @@ static int hisi_ptt_trace_start(struct hisi_ptt *hisi_ptt)
 	val |= FIELD_PREP(HISI_PTT_TRACE_CTRL_TARGET_SEL, hisi_ptt->trace_ctrl.filter);
 	if (!hisi_ptt->trace_ctrl.is_port)
 		val |= HISI_PTT_TRACE_CTRL_FILTER_MODE;
+	if (!ctrl->pattern)
+		val |= HISI_PTT_TRACE_CTRL_PATTERN;
+	else
+		val &= ~HISI_PTT_TRACE_CTRL_PATTERN;
 
 	/* Start the Trace */
 	val |= HISI_PTT_TRACE_CTRL_EN;
@@ -805,12 +809,14 @@ PMU_FORMAT_ATTR(filter,		"config:0-19");
 PMU_FORMAT_ATTR(direction,	"config:20-23");
 PMU_FORMAT_ATTR(type,		"config:24-31");
 PMU_FORMAT_ATTR(format,		"config:32-35");
+PMU_FORMAT_ATTR(pattern,	"config:36-39");
 
 static struct attribute *hisi_ptt_pmu_format_attrs[] = {
 	&format_attr_filter.attr,
 	&format_attr_direction.attr,
 	&format_attr_type.attr,
 	&format_attr_format.attr,
+	&format_attr_pattern.attr,
 	NULL
 };
 
@@ -940,6 +946,15 @@ static int hisi_ptt_trace_valid_format(u32 val)
 	return -EINVAL;
 }
 
+static int hisi_ptt_trace_valid_pattern(u32 val)
+{
+	/* Currently only bit0 is used, bit[3:1] are reserved for extension. */
+	if (val <= 1)
+		return 0;
+
+	return -EINVAL;
+}
+
 static int hisi_ptt_trace_valid_filter(struct hisi_ptt *hisi_ptt, u64 config)
 {
 	unsigned long val, port_mask = hisi_ptt->port_mask;
@@ -990,6 +1005,9 @@ static void hisi_ptt_pmu_init_configs(struct hisi_ptt *hisi_ptt, struct perf_eve
 
 	val = FIELD_GET(HISI_PTT_PMU_FORMAT_MASK, event->attr.config);
 	ctrl->format = val;
+
+	val = FIELD_GET(HISI_PTT_PMU_PATTERN_MASK, event->attr.config);
+	ctrl->pattern = val;
 }
 
 static int hisi_ptt_pmu_event_init(struct perf_event *event)
@@ -1024,7 +1042,12 @@ static int hisi_ptt_pmu_event_init(struct perf_event *event)
 		return ret;
 
 	val = FIELD_GET(HISI_PTT_PMU_FORMAT_MASK, event->attr.config);
-	return hisi_ptt_trace_valid_format(val);
+	ret = hisi_ptt_trace_valid_format(val);
+	if (ret < 0)
+		return ret;
+
+	val = FIELD_GET(HISI_PTT_PMU_PATTERN_MASK, event->attr.config);
+	return hisi_ptt_trace_valid_pattern(val);
 }
 
 static void *hisi_ptt_pmu_setup_aux(struct perf_event *event, void **pages,
