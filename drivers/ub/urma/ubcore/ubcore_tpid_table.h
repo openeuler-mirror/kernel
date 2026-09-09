@@ -69,6 +69,8 @@ struct ubcore_tpid_list {
 	struct kref ref_cnt;
 	struct completion comp;
 	struct mutex lock;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 struct ubcore_tpid_state {
@@ -89,6 +91,8 @@ struct ubcore_tpid_state {
 	struct kref ref_cnt;
 	struct completion comp;
 	struct mutex lock;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 struct ubcore_tpid_reuse {
@@ -112,6 +116,8 @@ struct ubcore_tpid_reuse {
 	struct completion comp;
 	struct mutex lock;
 	bool tp_handle_valid;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 #endif
