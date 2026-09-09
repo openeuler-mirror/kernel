@@ -38,7 +38,6 @@
 #include <linux/types.h>
 #include <linux/debugfs.h>
 #include <linux/blk-mq.h>
-#include <linux/xarray.h>
 
 #include <linux/uaccess.h>
 #include <asm/types.h>
@@ -94,7 +93,7 @@ struct nbd_config {
 	unsigned long runtime_flags;
 	u64 dead_conn_timeout;
 
-	struct xarray socks;
+	struct nbd_sock **socks;
 	int num_connections;
 	atomic_t live_connections;
 	wait_queue_head_t conn_wait;
@@ -163,6 +162,7 @@ static struct dentry *nbd_dbg_dir;
 
 static unsigned int nbds_max = 16;
 static int max_part = 16;
+static int pre_defined_connections = 1;
 static int part_shift;
 
 static int nbd_dev_dbg_init(struct nbd_device *nbd);
@@ -380,15 +380,15 @@ static void nbd_complete_rq(struct request *req)
 static void sock_shutdown(struct nbd_device *nbd)
 {
 	struct nbd_config *config = nbd->config;
-	struct nbd_sock *nsock;
-	unsigned long i;
+	int i;
 
 	if (config->num_connections == 0)
 		return;
 	if (test_and_set_bit(NBD_RT_DISCONNECTED, &config->runtime_flags))
 		return;
 
-	xa_for_each(&config->socks, i, nsock) {
+	for (i = 0; i < config->num_connections; i++) {
+		struct nbd_sock *nsock = config->socks[i];
 		mutex_lock(&nsock->tx_lock);
 		nbd_mark_nsock_dead(nbd, nsock, 0);
 		mutex_unlock(&nsock->tx_lock);
@@ -433,7 +433,6 @@ static enum blk_eh_timer_return nbd_xmit_timeout(struct request *req)
 	struct nbd_cmd *cmd = blk_mq_rq_to_pdu(req);
 	struct nbd_device *nbd = cmd->nbd;
 	struct nbd_config *config;
-	struct nbd_sock *nsock;
 
 	if (!mutex_trylock(&cmd->lock))
 		return BLK_EH_RESET_TIMER;
@@ -463,9 +462,10 @@ static enum blk_eh_timer_return nbd_xmit_timeout(struct request *req)
 		 * connection is configured, the submit path will wait util
 		 * a new connection is reconfigured or util dead timeout.
 		 */
-		if (!xa_empty(&config->socks)) {
-			nsock = xa_load(&config->socks, cmd->index);
-			if (nsock) {
+		if (config->socks) {
+			if (cmd->index < config->num_connections) {
+				struct nbd_sock *nsock =
+					config->socks[cmd->index];
 				mutex_lock(&nsock->tx_lock);
 				/* We can have multiple outstanding requests, so
 				 * we don't want to mark the nsock dead if we've
@@ -489,24 +489,22 @@ static enum blk_eh_timer_return nbd_xmit_timeout(struct request *req)
 		 * Userspace sets timeout=0 to disable socket disconnection,
 		 * so just warn and reset the timer.
 		 */
+		struct nbd_sock *nsock = config->socks[cmd->index];
 		cmd->retries++;
 		dev_info(nbd_to_dev(nbd), "Possible stuck request %p: control (%s@%llu,%uB). Runtime %u seconds\n",
 			req, nbdcmd_to_ascii(req_to_nbd_cmd_type(req)),
 			(unsigned long long)blk_rq_pos(req) << 9,
 			blk_rq_bytes(req), (req->timeout / HZ) * cmd->retries);
 
-		nsock = xa_load(&config->socks, cmd->index);
-		if (nsock) {
-			mutex_lock(&nsock->tx_lock);
-			if (cmd->cookie != nsock->cookie) {
-				nbd_requeue_cmd(cmd);
-				mutex_unlock(&nsock->tx_lock);
-				mutex_unlock(&cmd->lock);
-				nbd_config_put(nbd);
-				return BLK_EH_DONE;
-			}
+		mutex_lock(&nsock->tx_lock);
+		if (cmd->cookie != nsock->cookie) {
+			nbd_requeue_cmd(cmd);
 			mutex_unlock(&nsock->tx_lock);
+			mutex_unlock(&cmd->lock);
+			nbd_config_put(nbd);
+			return BLK_EH_DONE;
 		}
+		mutex_unlock(&nsock->tx_lock);
 		mutex_unlock(&cmd->lock);
 		nbd_config_put(nbd);
 		return BLK_EH_RESET_TIMER;
@@ -573,16 +571,8 @@ static int sock_xmit(struct nbd_device *nbd, int index, int send,
 		     struct iov_iter *iter, int msg_flags, int *sent)
 {
 	struct nbd_config *config = nbd->config;
-	struct nbd_sock *nsock;
-	struct socket *sock;
+	struct socket *sock = config->socks[index]->sock;
 
-	nsock = xa_load(&config->socks, index);
-	if (unlikely(!nsock)) {
-		dev_err_ratelimited(disk_to_dev(nbd->disk),
-				    "Attempted xmit on invalid socket\n");
-		return -EINVAL;
-	}
-	sock = nsock->sock;
 	return __sock_xmit(nbd, sock, send, iter, msg_flags, sent);
 }
 
@@ -603,7 +593,7 @@ static int nbd_send_cmd(struct nbd_device *nbd, struct nbd_cmd *cmd, int index)
 {
 	struct request *req = blk_mq_rq_from_pdu(cmd);
 	struct nbd_config *config = nbd->config;
-	struct nbd_sock *nsock;
+	struct nbd_sock *nsock = config->socks[index];
 	int result;
 	struct nbd_request request = {.magic = htonl(NBD_REQUEST_MAGIC)};
 	struct kvec iov = {.iov_base = &request, .iov_len = sizeof(request)};
@@ -613,14 +603,7 @@ static int nbd_send_cmd(struct nbd_device *nbd, struct nbd_cmd *cmd, int index)
 	u64 handle;
 	u32 type;
 	u32 nbd_cmd_flags = 0;
-	int sent, skip = 0;
-
-	nsock = xa_load(&config->socks, index);
-	if (unlikely(!nsock)) {
-		dev_err_ratelimited(disk_to_dev(nbd->disk),
-				    "Attempted send on invalid socket\n");
-		return BLK_STS_IOERR;
-	}
+	int sent = nsock->sent, skip = 0;
 
 	lockdep_assert_held(&cmd->lock);
 	lockdep_assert_held(&nsock->tx_lock);
@@ -645,7 +628,6 @@ static int nbd_send_cmd(struct nbd_device *nbd, struct nbd_cmd *cmd, int index)
 	 * request struct, so just go and send the rest of the pages in the
 	 * request.
 	 */
-	sent = nsock->sent;
 	if (sent) {
 		if (sent >= sizeof(request)) {
 			skip = sent - sizeof(request);
@@ -973,41 +955,42 @@ static int find_fallback(struct nbd_device *nbd, int index)
 {
 	struct nbd_config *config = nbd->config;
 	int new_index = -1;
-	struct nbd_sock *nsock;
-	struct nbd_sock *fallback_nsock;
-	unsigned long i;
-	int fallback;
+	struct nbd_sock *nsock = config->socks[index];
+	int fallback = nsock->fallback_index;
 
 	if (test_bit(NBD_RT_DISCONNECTED, &config->runtime_flags))
 		return new_index;
 
-	if (config->num_connections <= 1)
-		goto no_fallback;
-
-	nsock = xa_load(&config->socks, index);
-	if (unlikely(!nsock))
-		goto no_fallback;
-
-	fallback = nsock->fallback_index;
-	if (fallback >= 0) {
-		fallback_nsock = xa_load(&config->socks, fallback);
-		if (fallback_nsock && !fallback_nsock->dead)
-			return fallback;
+	if (config->num_connections <= 1) {
+		dev_err_ratelimited(disk_to_dev(nbd->disk),
+				    "Dead connection, failed to find a fallback\n");
+		return new_index;
 	}
 
-	xa_for_each(&config->socks, i, fallback_nsock) {
-		if (i != index && !fallback_nsock->dead) {
-			new_index = i;
-			break;
+	if (fallback >= 0 && fallback < config->num_connections &&
+	    !config->socks[fallback]->dead)
+		return fallback;
+
+	if (nsock->fallback_index < 0 ||
+	    nsock->fallback_index >= config->num_connections ||
+	    config->socks[nsock->fallback_index]->dead) {
+		int i;
+		for (i = 0; i < config->num_connections; i++) {
+			if (i == index)
+				continue;
+			if (!config->socks[i]->dead) {
+				new_index = i;
+				break;
+			}
+		}
+		nsock->fallback_index = new_index;
+		if (new_index < 0) {
+			dev_err_ratelimited(disk_to_dev(nbd->disk),
+					    "Dead connection, failed to find a fallback\n");
+			return new_index;
 		}
 	}
-	nsock->fallback_index = new_index;
-	if (new_index >= 0)
-		return new_index;
-
-no_fallback:
-	dev_err_ratelimited(disk_to_dev(nbd->disk),
-			    "Dead connection, failed to find a fallback\n");
+	new_index = nsock->fallback_index;
 	return new_index;
 }
 
@@ -1044,16 +1027,15 @@ static blk_status_t nbd_handle_cmd(struct nbd_cmd *cmd, int index)
 		return BLK_STS_IOERR;
 	}
 
-	cmd->status = BLK_STS_OK;
-again:
-	nsock = xa_load(&config->socks, index);
-	if (unlikely(!nsock)) {
+	if (index >= config->num_connections) {
 		dev_err_ratelimited(disk_to_dev(nbd->disk),
 				    "Attempted send on invalid socket\n");
 		nbd_config_put(nbd);
 		return BLK_STS_IOERR;
 	}
-
+	cmd->status = BLK_STS_OK;
+again:
+	nsock = config->socks[index];
 	mutex_lock(&nsock->tx_lock);
 	if (nsock->dead) {
 		int old_index = index;
@@ -1174,13 +1156,20 @@ static int nbd_add_socket(struct nbd_device *nbd, unsigned long arg,
 {
 	struct nbd_config *config = nbd->config;
 	struct socket *sock;
+	struct nbd_sock **socks;
 	struct nbd_sock *nsock;
-	unsigned int index;
 	int err;
 
 	/* Arg will be cast to int, check it to avoid overflow */
 	if (arg > INT_MAX)
 		return -EINVAL;
+
+	if (nbd->pid) {
+		dev_err(disk_to_dev(nbd->disk),
+			"Cannot add socket to a running device\n");
+		return -EBUSY;
+	}
+
 	sock = nbd_get_socket(nbd, arg, &err);
 	if (!sock)
 		return err;
@@ -1204,6 +1193,16 @@ static int nbd_add_socket(struct nbd_device *nbd, unsigned long arg,
 		goto put_socket;
 	}
 
+	socks = krealloc(config->socks, (config->num_connections + 1) *
+			 sizeof(struct nbd_sock *), GFP_KERNEL);
+	if (!socks) {
+		kfree(nsock);
+		err = -ENOMEM;
+		goto put_socket;
+	}
+
+	config->socks = socks;
+
 	nsock->fallback_index = -1;
 	nsock->dead = false;
 	mutex_init(&nsock->tx_lock);
@@ -1211,14 +1210,7 @@ static int nbd_add_socket(struct nbd_device *nbd, unsigned long arg,
 	nsock->pending = NULL;
 	nsock->sent = 0;
 	nsock->cookie = 0;
-
-	err = xa_alloc(&config->socks, &index, nsock, xa_limit_32b, GFP_KERNEL);
-	if (err < 0) {
-		kfree(nsock);
-		goto put_socket;
-	}
-
-	config->num_connections++;
+	socks[config->num_connections++] = nsock;
 	atomic_inc(&config->live_connections);
 
 	return 0;
@@ -1228,13 +1220,12 @@ put_socket:
 	return err;
 }
 
-static int nbd_reconnect_socket(struct nbd_device *nbd, unsigned long arg)
+static int nbd_genl_reconnect_sock_cb(struct nbd_device *nbd, unsigned long arg)
 {
 	struct nbd_config *config = nbd->config;
 	struct socket *sock, *old;
 	struct recv_thread_args *args;
-	struct nbd_sock *nsock;
-	unsigned long i;
+	int i;
 	int err;
 
 	sock = nbd_get_socket(nbd, arg, &err);
@@ -1247,7 +1238,9 @@ static int nbd_reconnect_socket(struct nbd_device *nbd, unsigned long arg)
 		return -ENOMEM;
 	}
 
-	xa_for_each(&config->socks, i, nsock) {
+	for (i = 0; i < config->num_connections; i++) {
+		struct nbd_sock *nsock = config->socks[i];
+
 		if (!nsock->dead)
 			continue;
 
@@ -1282,11 +1275,12 @@ static int nbd_reconnect_socket(struct nbd_device *nbd, unsigned long arg)
 
 		atomic_inc(&config->live_connections);
 		wake_up(&config->conn_wait);
+		dev_info(nbd_to_dev(nbd), "reconnected socket\n");
 		return 0;
 	}
 	sockfd_put(sock);
 	kfree(args);
-	return -ENOSPC;
+	return 1;
 }
 
 static void nbd_bdev_reset(struct nbd_device *nbd)
@@ -1322,11 +1316,10 @@ static void send_disconnects(struct nbd_device *nbd)
 	};
 	struct kvec iov = {.iov_base = &request, .iov_len = sizeof(request)};
 	struct iov_iter from;
-	struct nbd_sock *nsock;
-	unsigned long i;
-	int ret;
+	int i, ret;
 
-	xa_for_each(&config->socks, i, nsock) {
+	for (i = 0; i < config->num_connections; i++) {
+		struct nbd_sock *nsock = config->socks[i];
 
 		iov_iter_kvec(&from, ITER_SOURCE, &iov, 1, sizeof(request));
 		mutex_lock(&nsock->tx_lock);
@@ -1361,9 +1354,6 @@ static void nbd_config_put(struct nbd_device *nbd)
 	if (refcount_dec_and_mutex_lock(&nbd->config_refs,
 					&nbd->config_lock)) {
 		struct nbd_config *config = nbd->config;
-		struct nbd_sock *nsock;
-		unsigned long i;
-
 		nbd_dev_dbg_close(nbd);
 		invalidate_disk(nbd->disk);
 		if (nbd->config->bytesize)
@@ -1379,13 +1369,14 @@ static void nbd_config_put(struct nbd_device *nbd)
 			nbd->backend = NULL;
 		}
 		nbd_clear_sock(nbd);
-
-		xa_for_each(&config->socks, i, nsock) {
-			sockfd_put(nsock->sock);
-			kfree(nsock);
+		if (config->num_connections) {
+			int i;
+			for (i = 0; i < config->num_connections; i++) {
+				sockfd_put(config->socks[i]->sock);
+				kfree(config->socks[i]);
+			}
+			kfree(config->socks);
 		}
-		xa_destroy(&config->socks);
-
 		kfree(nbd->config);
 		nbd->config = NULL;
 
@@ -1403,13 +1394,11 @@ static int nbd_start_device(struct nbd_device *nbd)
 {
 	struct nbd_config *config = nbd->config;
 	int num_connections = config->num_connections;
-	int error = 0;
-	unsigned long i;
-	struct nbd_sock *nsock;
+	int error = 0, i;
 
 	if (nbd->pid)
 		return -EBUSY;
-	if (xa_empty(&config->socks))
+	if (!config->socks)
 		return -EINVAL;
 	if (num_connections > 1 &&
 	    !(config->flags & NBD_FLAG_CAN_MULTI_CONN)) {
@@ -1430,7 +1419,7 @@ static int nbd_start_device(struct nbd_device *nbd)
 	set_bit(NBD_RT_HAS_PID_FILE, &config->runtime_flags);
 
 	nbd_dev_dbg_init(nbd);
-	xa_for_each(&config->socks, i, nsock) {
+	for (i = 0; i < num_connections; i++) {
 		struct recv_thread_args *args;
 
 		args = kzalloc(sizeof(*args), GFP_KERNEL);
@@ -1448,14 +1437,15 @@ static int nbd_start_device(struct nbd_device *nbd)
 				flush_workqueue(nbd->recv_workq);
 			return -ENOMEM;
 		}
-		sk_set_memalloc(nsock->sock->sk);
+		sk_set_memalloc(config->socks[i]->sock->sk);
 		if (nbd->tag_set.timeout)
-			nsock->sock->sk->sk_sndtimeo = nbd->tag_set.timeout;
+			config->socks[i]->sock->sk->sk_sndtimeo =
+				nbd->tag_set.timeout;
 		atomic_inc(&config->recv_threads);
 		refcount_inc(&nbd->config_refs);
 		INIT_WORK(&args->work, recv_work);
 		args->nbd = nbd;
-		args->nsock = nsock;
+		args->nsock = config->socks[i];
 		args->index = i;
 		queue_work(nbd->recv_workq, &args->work);
 	}
@@ -1610,7 +1600,6 @@ static int nbd_alloc_and_init_config(struct nbd_device *nbd)
 		return -ENOMEM;
 	}
 
-	xa_init_flags(&config->socks, XA_FLAGS_ALLOC);
 	atomic_set(&config->recv_threads, 0);
 	init_waitqueue_head(&config->recv_wq);
 	init_waitqueue_head(&config->conn_wait);
@@ -1828,7 +1817,8 @@ static const struct blk_mq_ops nbd_mq_ops = {
 	.timeout	= nbd_xmit_timeout,
 };
 
-static struct nbd_device *nbd_dev_add(int index, unsigned int refs)
+static struct nbd_device *nbd_dev_add(int index, unsigned int refs,
+				       int nr_hw_queues)
 {
 	struct nbd_device *nbd;
 	struct gendisk *disk;
@@ -1839,7 +1829,7 @@ static struct nbd_device *nbd_dev_add(int index, unsigned int refs)
 		goto out;
 
 	nbd->tag_set.ops = &nbd_mq_ops;
-	nbd->tag_set.nr_hw_queues = 1;
+	nbd->tag_set.nr_hw_queues = nr_hw_queues;
 	nbd->tag_set.queue_depth = 128;
 	nbd->tag_set.numa_node = NUMA_NO_NODE;
 	nbd->tag_set.cmd_size = sizeof(struct nbd_cmd);
@@ -2000,6 +1990,58 @@ static int nbd_genl_size_set(struct genl_info *info, struct nbd_device *nbd)
 	return 0;
 }
 
+/*
+ * Walk the NBD_ATTR_SOCKETS nested list can call @cb for each socket fd.
+ *
+ * Return the number of fds walked, or a negative errno.
+ */
+static int nbd_genl_foreach_sock(struct genl_info *info,
+		int (*cb)(struct nbd_device *nbd, unsigned long fd),
+		struct nbd_device *nbd)
+{
+	struct nlattr *attr;
+	int rem, count = 0;
+
+	if (!info->attrs[NBD_ATTR_SOCKETS])
+		return 0;
+
+	nla_for_each_nested(attr, info->attrs[NBD_ATTR_SOCKETS], rem) {
+		struct nlattr *socks[NBD_SOCK_MAX + 1];
+		int ret;
+
+		if (nla_type(attr) != NBD_SOCK_ITEM) {
+			pr_err("socks must be embedded in a SOCK_ITEM attr\n");
+			return -EINVAL;
+		}
+
+		if (nla_parse_nested_deprecated(socks, NBD_SOCK_MAX,
+						attr,
+						nbd_sock_policy,
+						info->extack)) {
+			pr_err("error processing sock list\n");
+			return -EINVAL;
+		}
+
+		if (!socks[NBD_SOCK_FD])
+			continue;
+
+		count++;
+		if (cb) {
+			ret = cb(nbd, (int)nla_get_u32(socks[NBD_SOCK_FD]));
+			if (ret > 0)
+				return count;
+			if (ret < 0)
+				return ret;
+		}
+	}
+	return count;
+}
+
+static int nbd_genl_connect_sock_cb(struct nbd_device *nbd, unsigned long fd)
+{
+	return nbd_add_socket(nbd, fd, true);
+}
+
 static int nbd_genl_connect(struct sk_buff *skb, struct genl_info *info)
 {
 	struct nbd_device *nbd;
@@ -2052,7 +2094,11 @@ again:
 	mutex_unlock(&nbd_index_mutex);
 
 	if (!nbd) {
-		nbd = nbd_dev_add(index, 2);
+		ret = nbd_genl_foreach_sock(info, NULL, NULL);
+		if (ret < 0)
+			return ret;
+
+		nbd = nbd_dev_add(index, 2, ret > 0 ? ret : 1);
 		if (IS_ERR(nbd)) {
 			pr_err("failed to add new device\n");
 			return PTR_ERR(nbd);
@@ -2119,36 +2165,9 @@ again:
 		}
 	}
 
-	if (info->attrs[NBD_ATTR_SOCKETS]) {
-		struct nlattr *attr;
-		int rem, fd;
-
-		nla_for_each_nested(attr, info->attrs[NBD_ATTR_SOCKETS],
-				    rem) {
-			struct nlattr *socks[NBD_SOCK_MAX+1];
-
-			if (nla_type(attr) != NBD_SOCK_ITEM) {
-				pr_err("socks must be embedded in a SOCK_ITEM attr\n");
-				ret = -EINVAL;
-				goto out;
-			}
-			ret = nla_parse_nested_deprecated(socks, NBD_SOCK_MAX,
-							  attr,
-							  nbd_sock_policy,
-							  info->extack);
-			if (ret != 0) {
-				pr_err("error processing sock list\n");
-				ret = -EINVAL;
-				goto out;
-			}
-			if (!socks[NBD_SOCK_FD])
-				continue;
-			fd = (int)nla_get_u32(socks[NBD_SOCK_FD]);
-			ret = nbd_add_socket(nbd, fd, true);
-			if (ret)
-				goto out;
-		}
-	}
+	ret = nbd_genl_foreach_sock(info, nbd_genl_connect_sock_cb, nbd);
+	if (ret < 0)
+		goto out;
 
 	if (info->attrs[NBD_ATTR_BACKEND_IDENTIFIER]) {
 		nbd->backend = nla_strdup(info->attrs[NBD_ATTR_BACKEND_IDENTIFIER],
@@ -2333,40 +2352,10 @@ static int nbd_genl_reconfigure(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	if (info->attrs[NBD_ATTR_SOCKETS]) {
-		struct nlattr *attr;
-		int rem, fd;
-
-		nla_for_each_nested(attr, info->attrs[NBD_ATTR_SOCKETS],
-				    rem) {
-			struct nlattr *socks[NBD_SOCK_MAX+1];
-
-			if (nla_type(attr) != NBD_SOCK_ITEM) {
-				pr_err("socks must be embedded in a SOCK_ITEM attr\n");
-				ret = -EINVAL;
-				goto out;
-			}
-			ret = nla_parse_nested_deprecated(socks, NBD_SOCK_MAX,
-							  attr,
-							  nbd_sock_policy,
-							  info->extack);
-			if (ret != 0) {
-				pr_err("error processing sock list\n");
-				ret = -EINVAL;
-				goto out;
-			}
-			if (!socks[NBD_SOCK_FD])
-				continue;
-			fd = (int)nla_get_u32(socks[NBD_SOCK_FD]);
-			ret = nbd_reconnect_socket(nbd, fd);
-			if (ret) {
-				if (ret == -ENOSPC)
-					ret = 0;
-				goto out;
-			}
-			dev_info(nbd_to_dev(nbd), "reconnected socket\n");
-		}
-	}
+	ret = nbd_genl_foreach_sock(info, nbd_genl_reconnect_sock_cb, nbd);
+	/* foreach_sock returns a positive count on success; doit must return 0 */
+	if (ret >= 0)
+		ret = 0;
 out:
 	mutex_unlock(&nbd->config_lock);
 	nbd_config_put(nbd);
@@ -2602,6 +2591,12 @@ static int __init nbd_init(void)
 	if (nbds_max > 1UL << (MINORBITS - part_shift))
 		return -EINVAL;
 
+	/* An excessively large value will be adjusted in blk_mq_alloc_tag_set */
+	if (pre_defined_connections < 1) {
+		pr_err("pre_defined_connections must be >= 1\n");
+		return -EINVAL;
+	}
+
 	if (register_blkdev(NBD_MAJOR, "nbd"))
 		return -EIO;
 
@@ -2618,8 +2613,12 @@ static int __init nbd_init(void)
 	}
 	nbd_dbg_init();
 
+	/*
+	 * Set to the intended connection count so nbd_start_device() can skip
+	 * the queue-freezing blk_mq_update_nr_hw_queues() call.
+	 */
 	for (i = 0; i < nbds_max; i++)
-		nbd_dev_add(i, 1);
+		nbd_dev_add(i, 1, pre_defined_connections);
 	return 0;
 }
 
@@ -2680,3 +2679,6 @@ module_param(nbds_max, int, 0444);
 MODULE_PARM_DESC(nbds_max, "number of network block devices to initialize (default: 16)");
 module_param(max_part, int, 0444);
 MODULE_PARM_DESC(max_part, "number of partitions per device (default: 16)");
+module_param(pre_defined_connections, int, 0444);
+MODULE_PARM_DESC(pre_defined_connections,
+"number of connections for devices pre-created at module load (default: 1)");
