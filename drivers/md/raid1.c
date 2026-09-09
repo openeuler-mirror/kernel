@@ -1198,13 +1198,16 @@ static void raid1_read_request(struct mddev *mddev, struct bio *bio,
 	int rdisk;
 	bool r1bio_existed = !!r1_bio;
 	char b[BDEVNAME_SIZE];
+	struct md_thread *thread = rcu_dereference(mddev->thread);
+	gfp_t gfp = GFP_NOIO;
 
 	/*
-	 * If r1_bio is set, we are blocking the raid1d thread
-	 * so there is a tiny risk of deadlock.  So ask for
+	 * If we are in the error path, we are blocking the raid1d
+	 * thread so there is a tiny risk of deadlock.  So ask for
 	 * emergency memory if needed.
 	 */
-	gfp_t gfp = r1_bio ? (GFP_NOIO | __GFP_HIGH) : GFP_NOIO;
+	if (thread && current == thread->tsk)
+		gfp = GFP_NOIO | __GFP_HIGH;
 
 	if (r1bio_existed) {
 		/* Need to get the block device name carefully */
