@@ -108,72 +108,38 @@ static void debug_print_all_xprt(void)
 		enfs_iter_rpc_clnt(debug_show_clnt, NULL);
 }
 
-static bool is_valid_ip_address(const char *ip_str)
-{
-	struct in_addr addr4;
-	struct in6_addr addr6;
-
-	if (in4_pton(ip_str, -1, (u8 *)&addr4, '\0', NULL) == 1)
-		return true;
-
-	if (in6_pton(ip_str, -1, (u8 *)&addr6, '\0', NULL) == 1)
-		return true;
-
-	return false;
-}
-
 static void enfs_proc_format_xprt_addr_display(
-	struct rpc_clnt *clnt, struct rpc_xprt *xprt, char *local_name_buf,
-	int local_name_buf_len, char *remote_name_buf, int remote_name_buf_len)
+	struct rpc_xprt *xprt, char *local_name_buf, int local_name_buf_len,
+	char *remote_name_buf, int remote_name_buf_len)
 {
 	int err;
+	struct sockaddr *addr;
 	struct sockaddr_storage srcaddr;
 	struct enfs_xprt_context *ctx;
-	char local_name[INET6_ADDRSTRLEN];
-	const char *local = local_name;
 
 	ctx = (struct enfs_xprt_context *)xprt_get_reserve_context(xprt);
 
 	sockaddr_ip_to_str((struct sockaddr *)&xprt->addr, remote_name_buf,
 			   remote_name_buf_len);
 
-	// get local address depend one main or not
-	if (enfs_is_main_xprt(xprt)) {
-		err = rpc_localaddr(clnt, (struct sockaddr *)&srcaddr,
-				    sizeof(srcaddr));
-		if (err != 0)
-			(void)snprintf(local_name_buf, local_name_buf_len,
-				       "Unknown");
-		else {
-			if (ctx->protocol != XPRT_TRANSPORT_RDMA) {
-				sockaddr_ip_to_str((struct sockaddr *)&srcaddr,
-						   local_name_buf,
-						   local_name_buf_len);
-			} else {
-				sockaddr_ip_to_str(NULL, local_name_buf,
-						   local_name_buf_len);
-			}
-		}
-	} else {
-		if (ctx->protocol != XPRT_TRANSPORT_RDMA) {
-			sockaddr_ip_to_str((struct sockaddr *)&ctx->srcaddr,
-					   local_name, sizeof(local_name));
-			if (!is_valid_ip_address(local)) {
-				rpc_localalladdr(xprt,
-						 (struct sockaddr *)&srcaddr,
-						 sizeof(srcaddr));
-				sockaddr_ip_to_str((struct sockaddr *)&srcaddr,
-						   local_name_buf,
-						   local_name_buf_len);
-				return;
-			}
-			sockaddr_ip_to_str((struct sockaddr *)&ctx->srcaddr,
-					   local_name_buf, local_name_buf_len);
-		} else {
-			sockaddr_ip_to_str(NULL, local_name_buf,
-					   local_name_buf_len);
-		}
+	if (ctx->protocol == XPRT_TRANSPORT_RDMA) {
+		sockaddr_ip_to_str(NULL, local_name_buf, local_name_buf_len);
+		return;
 	}
+
+	/* ctx->srcaddr is the stable local endpoint identity of this xprt. */
+	addr = (struct sockaddr *)&ctx->srcaddr;
+	err = sockaddr_ip_to_str(addr, local_name_buf, local_name_buf_len);
+	if (err == 0)
+		return;
+
+	err = rpc_localalladdr(xprt, (struct sockaddr *)&srcaddr,
+			       sizeof(srcaddr));
+	addr = (struct sockaddr *)&srcaddr;
+	if (err == 0)
+		err = sockaddr_ip_to_str(addr, local_name_buf, local_name_buf_len);
+	if (err != 0)
+		(void)snprintf(local_name_buf, local_name_buf_len, "Unknown");
 }
 
 static int enfs_show_xprt_stats(struct rpc_clnt *clnt, struct rpc_xprt *xprt,
@@ -194,8 +160,8 @@ static int enfs_show_xprt_stats(struct rpc_clnt *clnt, struct rpc_xprt *xprt,
 		enfs_log_debug("multipath_context is null.\n");
 		return 0;
 	}
-	enfs_proc_format_xprt_addr_display(clnt, xprt, local_name,
-					   sizeof(local_name), remote_name,
+	enfs_proc_format_xprt_addr_display(xprt, local_name, sizeof(local_name),
+					   remote_name,
 					   sizeof(remote_name));
 
 	seq_printf(iter->seq, "%-6u%-*s%-*s", iter->id,
@@ -241,8 +207,8 @@ static int rpc_proc_show_path_status(struct rpc_clnt *clnt,
 		return 0;
 	}
 
-	enfs_proc_format_xprt_addr_display(clnt, xprt, local_name,
-					   sizeof(local_name), remote_name,
+	enfs_proc_format_xprt_addr_display(xprt, local_name, sizeof(local_name),
+					   remote_name,
 					   sizeof(remote_name));
 
 	pm_get_path_state_desc(xprt, multiapth_status,
@@ -272,8 +238,8 @@ static int enfs_get_max_addrs_length(struct rpc_clnt *clnt,
 		return 0;
 	}
 
-	enfs_proc_format_xprt_addr_display(clnt, xprt, local_name,
-					   sizeof(local_name), remote_name,
+	enfs_proc_format_xprt_addr_display(xprt, local_name, sizeof(local_name),
+					   remote_name,
 					   sizeof(remote_name));
 
 	if (iter->max_addrs_length < strlen(local_name))
