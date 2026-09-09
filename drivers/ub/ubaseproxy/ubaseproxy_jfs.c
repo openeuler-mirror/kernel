@@ -8,8 +8,8 @@
 
 #include "ubaseproxy_ctx_mgt.h"
 #include "ubaseproxy_jfc.h"
-#include "ubaseproxy_mbx.h"
 #include "ubaseproxy_jfr.h"
+#include "ubaseproxy_mbx.h"
 #include "ubaseproxy_jfs.h"
 
 #define UBASEPROXY_STATE_ARRAY_LEN 2
@@ -385,8 +385,8 @@ static int ubaseproxy_check_modify_jetty_mask(struct ubaseproxy_dev *udev,
 
 	modify_mask = &udev->caps.ue_default.jetty_default->modify_mask;
 	if (ctx_len == (UBASEPROXY_JETTY_CTX_BYTES + UBASEPROXY_JFS_MASK_OFFSET))
-		ctx_mask = (struct ubaseproxy_jetty_ctx *)(
-			   (char *)ctx + UBASEPROXY_JFS_MASK_OFFSET);
+		ctx_mask = (struct ubaseproxy_jetty_ctx *)((char *)ctx +
+			    UBASEPROXY_JFS_MASK_OFFSET);
 	else
 		ctx_mask = ctx + 1;
 
@@ -593,7 +593,7 @@ static int ubaseproxy_jfc_inc_jetty_cnt(struct ubaseproxy_dev *udev,
 				   "failed to increase rx jfc(%u) cnt by jetty(%u) res, ret=%d.\n",
 				   rx_jfcn, jettyn, ret);
 		ubaseproxy_jfc_ref_dec(udev, ue_ctx_xa, jettyn, tx_jfcn,
-					     mbx_ue_id);
+				       mbx_ue_id);
 	}
 
 	return ret;
@@ -667,8 +667,8 @@ ubaseproxy_update_jetty_ctx_res(struct ubase_proxy_req_msg *req,
 
 	jetty_ctx = (struct ubaseproxy_jetty_ctx *)req->data;
 	if (ctx_len == (UBASEPROXY_JETTY_CTX_BYTES + UBASEPROXY_JFS_MASK_OFFSET))
-		ctx_mask = (struct ubaseproxy_jetty_ctx *)(
-			   (char *)jetty_ctx + UBASEPROXY_JFS_MASK_OFFSET);
+		ctx_mask = (struct ubaseproxy_jetty_ctx *)((char *)jetty_ctx +
+			    UBASEPROXY_JFS_MASK_OFFSET);
 	else
 		ctx_mask = jetty_ctx + 1;
 
@@ -704,7 +704,7 @@ static int ubaseproxy_jfc_reduce_jetty_cnt(struct ubaseproxy_dev *udev,
 				   "failed to decrease rx jfc(%u) cnt by jetty(%u) res, ret=%d.\n",
 				   rx_jfcn, jettyn, ret);
 		ubaseproxy_jfc_ref_inc(udev, ue_ctx_xa, jettyn, tx_jfcn,
-					     mbx_ue_id);
+				       mbx_ue_id);
 	}
 
 	return ret;
