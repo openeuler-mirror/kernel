@@ -18,4 +18,5 @@ obj-$(CONFIG_INFINIBAND_ERDMA)		+= erdma/
 obj-$(CONFIG_HIROCE3)			+= hiroce3/
 obj-$(CONFIG_INFINIBAND_XSC)		+= xsc/
 obj-$(CONFIG_INFINIBAND_SXE2RDMA)	+= sxe2rdma/
+obj-$(CONFIG_INFINIBAND_NBL)		+= nebula-matrix/
 obj-$(CONFIG_INFINIBAND_ZRDMA)		+= zrdma/
