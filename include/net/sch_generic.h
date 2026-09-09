@@ -442,6 +442,8 @@ struct tcf_proto {
 	refcount_t		refcnt;
 	struct rcu_head		rcu;
 	struct hlist_node	destroy_ht_node;
+	KABI_EXTEND(bool counted)
+	KABI_EXTEND(bool usesw)
 };
 
 struct qdisc_skb_cb {
@@ -497,6 +499,7 @@ struct tcf_block {
 	struct rcu_head rcu;
 	DECLARE_HASHTABLE(proto_destroy_ht, 7);
 	struct mutex proto_destroy_lock; /* Lock for proto_destroy hashtable. */
+	KABI_EXTEND(atomic_t useswcnt)
 };
 
 static inline bool lockdep_tcf_chain_is_locked(struct tcf_chain *chain)
