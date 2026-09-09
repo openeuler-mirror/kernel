@@ -16,6 +16,7 @@
 #include <linux/ktime.h>
 #include <linux/timekeeping.h>
 #include <linux/cache.h>
+#include <linux/kabi.h>
 
 enum ub_perf_record_type {
 	PERF_URMA_CMD_CREATE_JETTY,
@@ -112,6 +113,8 @@ struct ubcore_latency_record_stat {
 	u64 p90_ns;
 	u64 p99_ns;
 	u64 p9999_ns;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 struct ubcore_latency_stat {
