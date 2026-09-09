@@ -46,6 +46,7 @@ struct ubcore_ctx {
 
 static LIST_HEAD(g_client_list);
 static LIST_HEAD(g_device_list);
+static LIST_HEAD(g_dying_device_list);
 
 /*
  * g_device_rwsem and g_lists_rwsem protect both g_device_list and g_client_list.
@@ -1434,15 +1435,21 @@ EXPORT_SYMBOL(ubcore_register_device);
 
 void ubcore_unregister_device(struct ubcore_device *dev)
 {
+	struct ubcore_dying_device dying_dev;
+
 	if (dev == NULL || strnlen(dev->dev_name, UBCORE_MAX_DEV_NAME) >=
 				   UBCORE_MAX_DEV_NAME) {
 		ubcore_log_warn("Invalid input dev is null ptr.\n");
 		return;
 	}
+
+	dying_dev.dev = dev;
+
 	down_write(&g_device_rwsem);
 
 	/* Remove device from g_device_list */
 	list_del(&dev->list_node);
+	list_add_tail(&dying_dev.list_node, &g_dying_device_list);
 
 	/* Destroy uburma device, may be scheduled.
 	 * This should not be done within a spin_lock_irqsave
@@ -1461,6 +1468,10 @@ void ubcore_unregister_device(struct ubcore_device *dev)
 	ubcore_remove_logic_devices(dev);
 	ubcore_destroy_main_device(dev);
 	up_read(&g_device_rwsem);
+
+	down_write(&g_device_rwsem);
+	list_del_init(&dying_dev.list_node);
+	up_write(&g_device_rwsem);
 
 	ubcore_free_dev_nl_sessions(dev);
 	/* Pair with set use_cnt = 1 when init device */
@@ -2561,6 +2572,7 @@ put_device:
 void ubcore_net_exit(struct net *net)
 {
 	struct ubcore_net *unet = net_generic(net, g_ubcore_net_id);
+	struct ubcore_dying_device *dying_dev;
 	struct ubcore_device *dev;
 
 	if (unet == NULL)
@@ -2583,6 +2595,13 @@ void ubcore_net_exit(struct net *net)
 			ubcore_reset_eid_ns(dev, net);
 			(void)ubcore_modify_dev_ns(dev, &init_net, true);
 		}
+		list_for_each_entry(dying_dev, &g_dying_device_list, list_node) {
+			dev = dying_dev->dev;
+			if (dev->transport_type != UBCORE_TRANSPORT_UB)
+				continue;
+			ubcore_remove_one_logic_device(dev, net);
+			write_pnet(&dev->ldev.net, &init_net);
+		}
 		up_read(&g_device_rwsem);
 	} else {
 		down_write(&g_device_rwsem);
@@ -2594,6 +2613,13 @@ void ubcore_net_exit(struct net *net)
 				ubcore_reset_eid_ns(dev, net);
 			else
 				ubcore_invalidate_eid_ns(dev, net);
+		}
+		list_for_each_entry(dying_dev, &g_dying_device_list, list_node) {
+			dev = dying_dev->dev;
+			if (dev->transport_type != UBCORE_TRANSPORT_UB)
+				continue;
+			ubcore_remove_one_logic_device(dev, net);
+			write_pnet(&dev->ldev.net, &init_net);
 		}
 		up_write(&g_device_rwsem);
 	}
