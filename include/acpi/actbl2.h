@@ -26,6 +26,7 @@
  */
 #define ACPI_SIG_AGDI           "AGDI"	/* Arm Generic Diagnostic Dump and Reset Device Interface */
 #define ACPI_SIG_APMT           "APMT"	/* Arm Performance Monitoring Unit table */
+#define ACPI_SIG_TLBI           "TLBI"	/* Translation Lookaside Buffer Invalidate Domain Table */
 #define ACPI_SIG_BDAT           "BDAT"	/* BIOS Data ACPI Table */
 #define ACPI_SIG_CCEL           "CCEL"	/* CC Event Log Table */
 #define ACPI_SIG_CDAT           "CDAT"	/* Coherent Device Attribute Table */
@@ -340,6 +341,34 @@ enum acpi_apmt_node_type {
 /* Values for ovflw_irq_flags type field above */
 
 #define ACPI_APMT_OVFLW_IRQ_FLAGS_TYPE_WIRED    (0<<1)
+
+/*******************************************************************************
+ * TLBI - Arm Translation Lookaside Buffer Invalidation Domain Table (TLBI)
+ *
+ ******************************************************************************/
+struct acpi_table_tlbi {
+	struct acpi_table_header header;	/* Common ACPI table header */
+	u32 nr_subtable;
+};
+
+struct acpi_tlbi_header {
+	u16 type;
+	u16 reserved;
+	u32 length;
+};
+
+struct acpi_tlbi_subtable {
+	struct acpi_tlbi_header header;
+	u32 identifier;
+	u32 nr_domain;
+	u32 offset;
+};
+
+enum acpi_tlbi_target_type {
+	ACPI_TLBI_TYPE_PROCESSOR = 1,
+	ACPI_TLBI_TYPE_SMMU,
+	ACPI_TLBI_TYPE_RESERVED,
+};
 
 /*******************************************************************************
  *
