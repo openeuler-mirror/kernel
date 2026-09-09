@@ -3827,8 +3827,10 @@ static int uburma_cmd_bind_jetty(struct ubcore_device *ubc_dev,
 	uburma_tjetty = (struct uburma_tjetty_uobj *)(tjetty_uobj);
 	uburma_tjetty->jetty_uobj = (struct uburma_jetty_uobj *)jetty_uobj;
 	ret = uburma_tlv_append(hdr, &arg);
-	if (ret != 0)
-		(void)ubcore_unbind_jetty(jetty_uobj->object);
+	if (ret != 0) {
+		if (ubcore_unbind_jetty(jetty_uobj->object) == 0)
+			uburma_tjetty->jetty_uobj = NULL;
+	}
 
 	uburma_put_jetty_tjetty_objs(jetty_uobj, tjetty_uobj);
 	return ret;
@@ -3950,8 +3952,10 @@ static int uburma_cmd_bind_jetty_ex(struct ubcore_device *ubc_dev,
 	uburma_tjetty = (struct uburma_tjetty_uobj *)(tjetty_uobj);
 	uburma_tjetty->jetty_uobj = (struct uburma_jetty_uobj *)jetty_uobj;
 	ret = uburma_tlv_append(hdr, &arg);
-	if (ret != 0)
-		(void)ubcore_unbind_jetty(jetty_uobj->object);
+	if (ret != 0) {
+		if (ubcore_unbind_jetty(jetty_uobj->object) == 0)
+			uburma_tjetty->jetty_uobj = NULL;
+	}
 
 	uburma_put_jetty_tjetty_objs(jetty_uobj, tjetty_uobj);
 	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_BIND_JETTY_EX);
@@ -4886,7 +4890,8 @@ static int uburma_cmd_bind_jetty_async(struct ubcore_device *ubc_dev,
 	uburma_tjetty->jetty_uobj = (struct uburma_jetty_uobj *)(jetty_uobj);
 	ret = uburma_tlv_append(hdr, &arg);
 	if (ret != 0) {
-		ubcore_unbind_jetty_async(jetty_uobj->object, 0, NULL);
+		if (ubcore_unbind_jetty_async(jetty_uobj->object, 0, NULL) == 0)
+			uburma_tjetty->jetty_uobj = NULL;
 	}
 
 	uburma_put_jetty_tjetty_objs(jetty_uobj, tjetty_uobj);
