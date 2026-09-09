@@ -234,7 +234,7 @@ int ubaseproxy_handle_create_jetty_grp_ctx_req(struct ubaseproxy_dev *udev,
 	int ret;
 
 	if (ctx_len != UBASEPROXY_JTG_CTX_BYTES) {
-		ubaseproxy_risk_rl(udev, mbx_ue_id, jtg_req_len,
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jtg_create_req_len,
 				   "failed to check create jetty group ctx len, len = %u.\n",
 				   ctx_len);
 		return -EINVAL;
@@ -300,7 +300,7 @@ int ubaseproxy_handle_destroy_jetty_grp_ctx_req(struct ubaseproxy_dev *udev,
 	int ret;
 
 	if (req->data_len) {
-		ubaseproxy_risk_rl(udev, mbx_ue_id, jtg_req_len,
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jtg_destroy_req_len,
 				   "failed to check destroy jetty group ctx len, len = %u.\n",
 				   req->data_len);
 		return -EINVAL;
@@ -351,7 +351,7 @@ int ubaseproxy_handle_query_jetty_grp_ctx_req(struct ubaseproxy_dev *udev,
 	int ret;
 
 	if (req->data_len) {
-		ubaseproxy_risk_rl(udev, mbx_ue_id, jtg_req_len,
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jtg_query_req_len,
 				   "failed to check query jetty group ctx len, len = %u.\n",
 				   req->data_len);
 		return -EINVAL;
@@ -424,23 +424,24 @@ ubaseproxy_check_modify_jetty_grp_jetty_number(struct ubaseproxy_dev *udev,
 #define UBASEPROXY_JTG_JETTY_NUMBER_FEILD_WIDTH 5
 
 	struct ubaseproxy_jetty_grp_ctx *ctx, *ctx_mask;
+	u16 mbx_ue_id = le16_to_cpu(req->mbx_ue_id);
 	u16 jtgn = req->tag;
 
 	ctx = (struct ubaseproxy_jetty_grp_ctx *)req->data;
 	ctx_mask = ctx + 1;
 	if (!ubaseproxy_check_ctx_mask_field(ctx_mask->jetty_number,
 					     UBASEPROXY_JTG_JETTY_NUMBER_FEILD_WIDTH)) {
-		ubaseproxy_err(udev,
-			       "failed to check jetty group(%u) jetty number mask.\n",
-			       jtgn);
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jtg_check_jetty_num_mask,
+				   "failed to check jetty group(%u) jetty number mask.\n",
+				  jtgn);
 		return -EINVAL;
 	}
 
 	if (ctx_mask->jetty_number == 0 &&
 	    ctx->jetty_number >= udev->caps.ue_caps.jfs_max_cnt) {
-		ubaseproxy_err(udev,
-			       "failed to modify jetty group(%u) jetty number, jetty number = %u.\n",
-			       jtgn, ctx->jetty_number);
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jtg_check_jetty_num,
+				   "failed to modify jetty group(%u) jetty number, jetty number = %u.\n",
+				   jtgn, ctx->jetty_number);
 		return -EINVAL;
 	}
 
@@ -544,6 +545,7 @@ ubaseproxy_check_modify_jetty_grp_valid(struct ubaseproxy_dev *udev,
 #define UBASEPROXY_JTG_VALID_FEILD_WIDTH 32
 
 	struct ubaseproxy_jetty_grp_ctx *ctx, *ctx_mask;
+	u16 mbx_ue_id = le16_to_cpu(req->mbx_ue_id);
 	u16 jtgn = req->tag;
 	int ret;
 
@@ -551,9 +553,9 @@ ubaseproxy_check_modify_jetty_grp_valid(struct ubaseproxy_dev *udev,
 	ctx_mask = ctx + 1;
 	if (!ubaseproxy_check_ctx_mask_field(ctx_mask->valid,
 					     UBASEPROXY_JTG_VALID_FEILD_WIDTH)) {
-		ubaseproxy_err(udev,
-			       "failed to check jetty group(%u) valid mask.\n",
-			       jtgn);
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jtg_check_jtg_valid_mask,
+				   "failed to check jetty group(%u) valid mask.\n",
+				   jtgn);
 		return -EINVAL;
 	}
 
@@ -561,9 +563,9 @@ ubaseproxy_check_modify_jetty_grp_valid(struct ubaseproxy_dev *udev,
 		ret = ubaseproxy_modify_jetty_grp_bound_jettys(udev, req,
 							       jtg, bound_jetty);
 		if (ret) {
-			ubaseproxy_err(udev,
-				       "failed to modify jetty group(%u) valid, valid = 0x%x, ret = %d.\n",
-				       jtgn, ctx->valid, ret);
+			ubaseproxy_risk_rl(udev, mbx_ue_id, jtg_check_jtg_valid,
+					   "failed to modify jetty group(%u) valid, valid = 0x%x, ret = %d.\n",
+					   jtgn, ctx->valid, ret);
 			return ret;
 		}
 	}
@@ -651,18 +653,18 @@ int ubaseproxy_handle_modify_jetty_grp_ctx_req(struct ubaseproxy_dev *udev,
 	int ret;
 
 	if (ctx_len != UBASEPROXY_JTG_CTX_BYTES * UBASEPROXY_CTXLEN_AND_MASK) {
-		ubaseproxy_err(udev,
-			       "failed to check modify jetty group ctx len, len = %u.\n",
-			       ctx_len);
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jtg_modify_req_len,
+				   "failed to check modify jetty group ctx len, len = %u.\n",
+				   ctx_len);
 		return -EINVAL;
 	}
 
 	ue_ctx_xa = ubaseproxy_get_ue_ctx_xa(udev, mbx_ue_id);
 	jtg = (struct ubaseproxy_jtg_key_words *)xa_load(&ue_ctx_xa->jetty_grp, jtgn);
 	if (!jtg) {
-		ubaseproxy_err(udev,
-			       "modified jetty group(%u) not exists.\n",
-			       jtgn);
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jtg_modify_jtg_not_exists,
+				   "modified jetty group(%u) not exists.\n",
+				   jtgn);
 		return -EINVAL;
 	}
 

@@ -62,7 +62,10 @@
 	} while (0)
 
 struct ubaseproxy_ue_risk_stats {
-	u64 jfc_req_len;
+	u64 jfc_create_req_len;
+	u64 jfc_destroy_req_len;
+	u64 jfc_modify_req_len;
+	u64 jfc_query_req_len;
 	u64 jfc_req_tag;
 	u64 jfc_ctx_fixed;
 	u64 jfc_field_cnt;
@@ -81,13 +84,17 @@ struct ubaseproxy_ue_risk_stats {
 	u64 jfc_mask_cqe_coalesce_cn;
 	u64 jfc_mask_cqe_coalesce_period;
 
-	u64 jfs_req_len;
+	u64 jfs_create_req_len;
+	u64 jfs_destroy_req_len;
+	u64 jfs_modify_req_len;
+	u64 jfs_query_req_len;
 	u64 jfs_req_tag;
 	u64 jfs_ctx_fixed;
 	u64 jfs_field_type;
 	u64 jfs_field_sqe_bb_shift;
 	u64 jfs_field_state;
 	u64 jfs_field_mode;
+	u64 jfs_field_next_send_ssn;
 	u64 jfs_create_jetty_already_exists;
 	u64 jfs_destroy_jetty_not_exists;
 	u64 jfs_modify_jetty_not_exists;
@@ -105,14 +112,15 @@ struct ubaseproxy_ue_risk_stats {
 	u64 jfs_check_jfr_type_not_match;
 	u64 jfs_tx_jfc_ref_inc;
 	u64 jfs_rx_jfc_ref_inc;
-	u64 jfs_init_load_tx_jfc;
 	u64 jfs_init_load_rx_jfc;
-	u64 jfs_init_load_jfr_xa;
 	u64 jfs_reduce_tx_jfc_dec;
 	u64 jfs_reduce_rx_jfc_dec;
 	u64 jfs_mask_state;
 
-	u64 jfr_req_len;
+	u64 jfr_create_req_len;
+	u64 jfr_destroy_req_len;
+	u64 jfr_modify_req_len;
+	u64 jfr_query_req_len;
 	u64 jfr_req_tag;
 	u64 jfr_ctx_fixed;
 	u64 jfr_field_rqe_shift;
@@ -142,9 +150,11 @@ struct ubaseproxy_ue_risk_stats {
 	u64 rc_destroy_rc_not_exists;
 	u64 rc_query_rc_not_exists;
 
-	u64 jtg_req_len;
+	u64 jtg_create_req_len;
+	u64 jtg_destroy_req_len;
+	u64 jtg_modify_req_len;
+	u64 jtg_query_req_len;
 	u64 jtg_req_tag;
-	u64 jtg_ctx_fixed;
 	u64 jtg_field_start_jetty_id;
 	u64 jtg_field_rsv;
 	u64 jtg_field_jetty_number;
@@ -157,14 +167,12 @@ struct ubaseproxy_ue_risk_stats {
 	u64 jtg_check_jetty_num;
 	u64 jtg_check_jtg_valid_mask;
 	u64 jtg_check_jtg_valid;
-	u64 jtg_bound_add;
-	u64 jtg_bound_del;
 	u64 jtg_del_jetty_bound;
 	u64 jtg_add_jetty_bound;
-	u64 jtg_evt_added_jetty;
-	u64 jtg_evt_deled_jetty;
 
-	u64 eq_req_len;
+	u64 eq_create_req_len;
+	u64 eq_destroy_req_len;
+	u64 eq_query_req_len;
 	u64 eq_req_tag;
 	u64 eq_ctx_fixed;
 	u64 eq_field_shift;
