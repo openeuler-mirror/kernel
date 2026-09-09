@@ -435,6 +435,9 @@ put:
 
 void ub_static_bus_instance_uninit(struct ub_bus_controller *ubc)
 {
+	if (!ubc->bi)
+		return;
+
 	if (ubc->ctl_no != 0)
 		(void)ub_cfg_eu_table(ubc, false, ubc->bi->info.eid,
 				      ubc->bi->info.upi);
