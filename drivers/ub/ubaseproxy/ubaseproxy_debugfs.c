@@ -113,7 +113,10 @@ static void ubaseproxy_dump_ue_risk_jfc(struct seq_file *s, u8 ue_id)
 {
 	struct ubaseproxy_dev *udev = dev_get_drvdata(s->private);
 
-	ubaseproxy_risk_printf(s, ue_id, jfc_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jfc_create_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jfc_destroy_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jfc_modify_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jfc_query_req_len);
 	ubaseproxy_risk_printf(s, ue_id, jfc_req_tag);
 	ubaseproxy_risk_printf(s, ue_id, jfc_ctx_fixed);
 	ubaseproxy_risk_printf(s, ue_id, jfc_field_cnt);
@@ -128,19 +131,26 @@ static void ubaseproxy_dump_ue_risk_jfc(struct seq_file *s, u8 ue_id)
 	ubaseproxy_risk_printf(s, ue_id, jfc_query_jfc_not_exists);
 	ubaseproxy_risk_printf(s, ue_id, jfc_ref_inc);
 	ubaseproxy_risk_printf(s, ue_id, jfc_ref_dec);
+	ubaseproxy_risk_printf(s, ue_id, jfc_mask_arm_st);
+	ubaseproxy_risk_printf(s, ue_id, jfc_mask_cqe_coalesce_cn);
+	ubaseproxy_risk_printf(s, ue_id, jfc_mask_cqe_coalesce_period);
 }
 
 static void ubaseproxy_dump_ue_risk_jfs(struct seq_file *s, u8 ue_id)
 {
 	struct ubaseproxy_dev *udev = dev_get_drvdata(s->private);
 
-	ubaseproxy_risk_printf(s, ue_id, jfs_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jfs_create_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jfs_destroy_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jfs_modify_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jfs_query_req_len);
 	ubaseproxy_risk_printf(s, ue_id, jfs_req_tag);
 	ubaseproxy_risk_printf(s, ue_id, jfs_ctx_fixed);
 	ubaseproxy_risk_printf(s, ue_id, jfs_field_type);
 	ubaseproxy_risk_printf(s, ue_id, jfs_field_sqe_bb_shift);
 	ubaseproxy_risk_printf(s, ue_id, jfs_field_state);
 	ubaseproxy_risk_printf(s, ue_id, jfs_field_mode);
+	ubaseproxy_risk_printf(s, ue_id, jfs_field_next_send_ssn);
 	ubaseproxy_risk_printf(s, ue_id, jfs_create_jetty_already_exists);
 	ubaseproxy_risk_printf(s, ue_id, jfs_destroy_jetty_not_exists);
 	ubaseproxy_risk_printf(s, ue_id, jfs_modify_jetty_not_exists);
@@ -158,18 +168,20 @@ static void ubaseproxy_dump_ue_risk_jfs(struct seq_file *s, u8 ue_id)
 	ubaseproxy_risk_printf(s, ue_id, jfs_check_jfr_type_not_match);
 	ubaseproxy_risk_printf(s, ue_id, jfs_tx_jfc_ref_inc);
 	ubaseproxy_risk_printf(s, ue_id, jfs_rx_jfc_ref_inc);
-	ubaseproxy_risk_printf(s, ue_id, jfs_init_load_tx_jfc);
 	ubaseproxy_risk_printf(s, ue_id, jfs_init_load_rx_jfc);
-	ubaseproxy_risk_printf(s, ue_id, jfs_init_load_jfr_xa);
 	ubaseproxy_risk_printf(s, ue_id, jfs_reduce_tx_jfc_dec);
 	ubaseproxy_risk_printf(s, ue_id, jfs_reduce_rx_jfc_dec);
+	ubaseproxy_risk_printf(s, ue_id, jfs_mask_state);
 }
 
 static void ubaseproxy_dump_ue_risk_jfr(struct seq_file *s, u8 ue_id)
 {
 	struct ubaseproxy_dev *udev = dev_get_drvdata(s->private);
 
-	ubaseproxy_risk_printf(s, ue_id, jfr_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jfr_create_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jfr_destroy_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jfr_modify_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jfr_query_req_len);
 	ubaseproxy_risk_printf(s, ue_id, jfr_req_tag);
 	ubaseproxy_risk_printf(s, ue_id, jfr_ctx_fixed);
 	ubaseproxy_risk_printf(s, ue_id, jfr_field_rqe_shift);
@@ -209,9 +221,11 @@ static void ubaseproxy_dump_ue_risk_jtg(struct seq_file *s, u8 ue_id)
 {
 	struct ubaseproxy_dev *udev = dev_get_drvdata(s->private);
 
-	ubaseproxy_risk_printf(s, ue_id, jtg_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jtg_create_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jtg_destroy_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jtg_modify_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jtg_query_req_len);
 	ubaseproxy_risk_printf(s, ue_id, jtg_req_tag);
-	ubaseproxy_risk_printf(s, ue_id, jtg_ctx_fixed);
 	ubaseproxy_risk_printf(s, ue_id, jtg_field_start_jetty_id);
 	ubaseproxy_risk_printf(s, ue_id, jtg_field_rsv);
 	ubaseproxy_risk_printf(s, ue_id, jtg_field_jetty_number);
@@ -224,19 +238,17 @@ static void ubaseproxy_dump_ue_risk_jtg(struct seq_file *s, u8 ue_id)
 	ubaseproxy_risk_printf(s, ue_id, jtg_check_jetty_num);
 	ubaseproxy_risk_printf(s, ue_id, jtg_check_jtg_valid_mask);
 	ubaseproxy_risk_printf(s, ue_id, jtg_check_jtg_valid);
-	ubaseproxy_risk_printf(s, ue_id, jtg_bound_add);
-	ubaseproxy_risk_printf(s, ue_id, jtg_bound_del);
 	ubaseproxy_risk_printf(s, ue_id, jtg_del_jetty_bound);
 	ubaseproxy_risk_printf(s, ue_id, jtg_add_jetty_bound);
-	ubaseproxy_risk_printf(s, ue_id, jtg_evt_added_jetty);
-	ubaseproxy_risk_printf(s, ue_id, jtg_evt_deled_jetty);
 }
 
 static void ubaseproxy_dump_ue_risk_eq(struct seq_file *s, u8 ue_id)
 {
 	struct ubaseproxy_dev *udev = dev_get_drvdata(s->private);
 
-	ubaseproxy_risk_printf(s, ue_id, eq_req_len);
+	ubaseproxy_risk_printf(s, ue_id, eq_create_req_len);
+	ubaseproxy_risk_printf(s, ue_id, eq_destroy_req_len);
+	ubaseproxy_risk_printf(s, ue_id, eq_query_req_len);
 	ubaseproxy_risk_printf(s, ue_id, eq_req_tag);
 	ubaseproxy_risk_printf(s, ue_id, eq_ctx_fixed);
 	ubaseproxy_risk_printf(s, ue_id, eq_field_shift);

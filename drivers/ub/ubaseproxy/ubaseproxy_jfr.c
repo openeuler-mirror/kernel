@@ -503,7 +503,7 @@ int ubaseproxy_handle_create_jfr_ctx_req(struct ubaseproxy_dev *udev,
 	int ret;
 
 	if (ctx_len != UBASEPROXY_JFR_CTX_BYTES) {
-		ubaseproxy_risk_rl(udev, mbx_ue_id, jfr_req_len,
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfr_create_req_len,
 				   "create jfr(%u) ctx_len(%u) error.\n",
 				   jfrn, ctx_len);
 		return -EINVAL;
@@ -560,7 +560,7 @@ int ubaseproxy_handle_destroy_jfr_ctx_req(struct ubaseproxy_dev *udev,
 	int ret;
 
 	if (req->data_len) {
-		ubaseproxy_risk_rl(udev, mbx_ue_id, jfr_req_len,
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfr_destroy_req_len,
 				   "destroy jfr(%u) data_len(%u) error.\n",
 				   jfrn, req->data_len);
 		return -EINVAL;
@@ -610,7 +610,7 @@ int ubaseproxy_handle_modify_jfr_ctx_req(struct ubaseproxy_dev *udev,
 	int ret;
 
 	if (ctx_len != UBASEPROXY_JFR_CTX_BYTES * UBASEPROXY_CTXLEN_AND_MASK) {
-		ubaseproxy_risk_rl(udev, mbx_ue_id, jfr_req_len,
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfr_modify_req_len,
 				   "modify jfr(%u) ctx_len(%u) error.\n",
 				   jfrn, ctx_len);
 		return -EINVAL;
@@ -658,7 +658,7 @@ int ubaseproxy_handle_query_jfr_ctx_req(struct ubaseproxy_dev *udev,
 	int ret;
 
 	if (req->data_len) {
-		ubaseproxy_risk_rl(udev, mbx_ue_id, jfr_req_len,
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfr_query_req_len,
 				   "query jfr(%u) data_len(%u) error.\n",
 				   jfrn, req->data_len);
 		return -EINVAL;
