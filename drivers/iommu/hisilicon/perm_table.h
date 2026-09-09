@@ -11,7 +11,6 @@
 #include <linux/maple_tree.h>
 
 #define UMMU_MAX_TOKEN_NUM 2
-#define MAPT_PER_LVL_BLOCK_CNT 4
 
 struct ummu_mapt_entry_node {
 	u32 valid : 1;
@@ -77,7 +76,8 @@ struct ummu_mapt_block {
 	size_t blk_size;
 	u32 block_id;
 	u16 level_cnt;
-	u16 level_entry_cnt[MAPT_PER_LVL_BLOCK_CNT];
+	u16 *level_entry_cnt;
+	u16 lvl_block_cnt;
 };
 
 #define ADDR_FULL(low, high) (((u64)(high) << 32) | (u64)(low))
@@ -85,7 +85,9 @@ struct ummu_mapt_block {
 struct ummu_mapt_table_ctx {
 	bool expan;
 	u16 block_cnt;
+	u16 lvl_block_cnt;
 	size_t blk_exp_size;
+	u32 level_block_bitmap_size;
 	unsigned long *level_block_bitmap;
 	struct maple_tree *granted_addr_mng;
 
