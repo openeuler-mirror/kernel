@@ -237,6 +237,7 @@ struct pool_workqueue {
 	int			work_color;	/* L: current color */
 	int			flush_color;	/* L: flushing color */
 	int			refcnt;		/* L: reference count */
+	int			total_in_flight; /* L: sum of nr_in_flight[] */
 	int			nr_in_flight[WORK_NR_COLORS];
 						/* L: nr of in_flight works */
 
@@ -1502,6 +1503,22 @@ static void pwq_activate_first_inactive(struct pool_workqueue *pwq)
 }
 
 /**
+ * pwq_inc_nr_in_flight - increment pwq's nr_in_flight
+ * @pwq: pwq of interest
+ * @work_color: color of the work item being queued
+ *
+ * A work item or a barrier with @work_color is being queued to @pwq.
+ *
+ * CONTEXT:
+ * raw_spin_lock_irq(pool->lock).
+ */
+static void pwq_inc_nr_in_flight(struct pool_workqueue *pwq, int work_color)
+{
+	pwq->nr_in_flight[work_color]++;
+	pwq->total_in_flight++;
+}
+
+/**
  * pwq_dec_nr_in_flight - decrement pwq's nr_in_flight
  * @pwq: pwq of interest
  * @work_data: work_data of work which left the queue
@@ -1526,6 +1543,7 @@ static void pwq_dec_nr_in_flight(struct pool_workqueue *pwq, unsigned long work_
 	}
 
 	pwq->nr_in_flight[color]--;
+	pwq->total_in_flight--;
 
 	/* is flush in progress and are we at the flushing tip? */
 	if (likely(pwq->flush_color != color))
@@ -1887,7 +1905,7 @@ retry:
 	if (WARN_ON(!list_empty(&work->entry)))
 		goto out;
 
-	pwq->nr_in_flight[pwq->work_color]++;
+	pwq_inc_nr_in_flight(pwq, pwq->work_color);
 	work_flags = work_color_to_flags(pwq->work_color);
 
 	if (likely(pwq->nr_active < pwq->max_active)) {
@@ -3201,7 +3219,7 @@ static void insert_wq_barrier(struct pool_workqueue *pwq,
 		__set_bit(WORK_STRUCT_LINKED_BIT, bits);
 	}
 
-	pwq->nr_in_flight[work_color]++;
+	pwq_inc_nr_in_flight(pwq, work_color);
 	work_flags |= work_color_to_flags(work_color);
 
 	insert_work(pwq, &barr->work, head, work_flags);
@@ -5068,11 +5086,8 @@ EXPORT_SYMBOL_GPL(alloc_workqueue);
 
 static bool pwq_busy(struct pool_workqueue *pwq)
 {
-	int i;
-
-	for (i = 0; i < WORK_NR_COLORS; i++)
-		if (pwq->nr_in_flight[i])
-			return true;
+	if (pwq->total_in_flight)
+		return true;
 
 	if ((pwq != pwq->wq->dfl_pwq) && (pwq->refcnt > 1))
 		return true;
