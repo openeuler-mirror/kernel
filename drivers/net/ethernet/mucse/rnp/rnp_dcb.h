@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright(c) 2022 - 2023 Mucse Corporation. */
+/* Copyright(c) 2022 - 2025 Mucse Corporation. */
 
 #ifndef __RNP_DCB_H__
 #define __RNP_DCB_H__
@@ -12,6 +12,7 @@ enum rnp_pause_low_thrsh {
 	RNP_PAUSE_144_SLOT_TIME,
 	RNP_PAUSE_256_SLOT_TIME,
 };
+
 /*Rx Flow Ctrl */
 #define RNP_RX_RFE BIT(0) /* Receive Flow Control Enable */
 #define RNP_UP BIT(1) /* Unicast Pause Packet Detect */
