@@ -4173,8 +4173,11 @@ static int __pci_request_region(struct pci_dev *pdev, int bar,
 					exclusive))
 			goto err_out;
 #ifdef CONFIG_HISI_CCADA_GUEST
-		if (ccada_init_mem_region(pdev, bar))
+		if (ccada_init_mem_region(pdev, bar)) {
+			release_mem_region(pci_resource_start(pdev, bar),
+					   pci_resource_len(pdev, bar));
 			goto err_out;
+		}
 #endif
 	}
 

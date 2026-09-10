@@ -18,6 +18,7 @@ struct rdev_node {
 	uint16_t dev_bdf;
 	struct device *dev;
 	struct list_head list;
+	bool attached; /* true after rmi_dev_attach() succeeds */
 };
 
 struct realm_dev_entry {
