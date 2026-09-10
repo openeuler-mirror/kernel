@@ -2971,3 +2971,13 @@ int sev_es_ghcb_map(struct vcpu_svm *svm, u64 ghcb_gpa)
 
 	return 0;
 }
+
+int csv_control_pre_system_reset(struct kvm *kvm)
+{
+	return 0;
+}
+
+int csv_control_post_system_reset(struct kvm *kvm)
+{
+	return 0;
+}

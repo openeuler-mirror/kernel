@@ -4763,6 +4763,9 @@ static struct kvm_x86_ops svm_x86_ops __initdata = {
 	.complete_emulated_msr = svm_complete_emulated_msr,
 
 	.vcpu_deliver_sipi_vector = svm_vcpu_deliver_sipi_vector,
+
+	.control_pre_system_reset = csv_control_pre_system_reset,
+	.control_post_system_reset = csv_control_post_system_reset,
 };
 
 static struct kvm_x86_init_ops svm_init_ops __initdata = {
