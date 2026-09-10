@@ -919,7 +919,8 @@ static int check_and_fill_jfs_attr(struct ubcore_jfs_cfg *cfg,
 	cfg->rnr_retry = user->rnr_retry;
 	cfg->err_timeout = user->err_timeout;
 	cfg->trans_mode = user->trans_mode;
-	cfg->jfs_context = user->jfs_context;
+	/* jfs is not published yet, no barrier needed */
+	RCU_INIT_POINTER(cfg->jfs_context, user->jfs_context);
 	cfg->jfc = user->jfc;
 	return 0;
 }
@@ -1211,7 +1212,8 @@ static int check_and_fill_jfr_attr(struct ubcore_jfr_cfg *cfg,
 	cfg->min_rnr_timer = user->min_rnr_timer;
 	cfg->trans_mode = user->trans_mode;
 	cfg->token_value = user->token_value;
-	cfg->jfr_context = user->jfr_context;
+	/* jfr is not published yet, no barrier needed */
+	RCU_INIT_POINTER(cfg->jfr_context, user->jfr_context);
 	cfg->jfc = user->jfc;
 	return 0;
 }
@@ -2180,7 +2182,8 @@ static int check_and_fill_jetty_attr(struct ubcore_jetty_cfg *cfg,
 	cfg->err_timeout = user->err_timeout;
 	cfg->min_rnr_timer = user->min_rnr_timer;
 	cfg->trans_mode = user->trans_mode;
-	cfg->jetty_context = user->jetty_context;
+	/* jetty is not published yet, no barrier needed */
+	RCU_INIT_POINTER(cfg->jetty_context, user->jetty_context);
 	cfg->token_value = user->token_value;
 	return 0;
 }

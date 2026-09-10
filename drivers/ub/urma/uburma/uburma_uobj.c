@@ -993,6 +993,12 @@ static int uburma_free_jfs(struct uburma_uobj *uobj,
 		if (ret) {
 			uburma_log_err("Failed to delete jfs, id: %u, ret: %d, why: %d.\n",
 			jfs_id, ret, why);
+			if (why != UBURMA_REMOVE_DESTROY) {
+				rcu_assign_pointer(jfs->jfs_cfg.jfs_context, NULL);
+				synchronize_rcu();
+				uburma_release_async_event(uobj->ufile,
+							   &jfs_uobj->async_event_list);
+			}
 			return ret;
 		}
 	} else {
@@ -1000,6 +1006,12 @@ static int uburma_free_jfs(struct uburma_uobj *uobj,
 		if (ret) {
 			uburma_log_err("Failed to free jfs, id: %u, ret: %d, why: %d.\n",
 				jfs_id, ret, why);
+			if (why != UBURMA_REMOVE_DESTROY) {
+				rcu_assign_pointer(jfs->jfs_cfg.jfs_context, NULL);
+				synchronize_rcu();
+				uburma_release_async_event(uobj->ufile,
+							   &jfs_uobj->async_event_list);
+			}
 			return ret;
 		}
 	}
@@ -1038,10 +1050,20 @@ static int uburma_free_jfs_batch(struct uburma_uobj **uobj_arr, int arr_num,
 	}
 
 	ret = ubcore_delete_jfs_batch(jfs_arr, arr_num, bad_jfs_index);
-	if (ret)
+	if (ret) {
 		end_index = *bad_jfs_index;
-	else
+		if (why != UBURMA_REMOVE_DESTROY) {
+			for (i = end_index; i < arr_num; ++i)
+				rcu_assign_pointer(jfs_arr[i]->jfs_cfg.jfs_context,
+						   NULL);
+			synchronize_rcu();
+			for (i = end_index; i < arr_num; ++i)
+				uburma_release_async_event(uobj_arr[i]->ufile,
+							   &jfs_uobj_arr[i]->async_event_list);
+		}
+	} else {
 		end_index = arr_num;
+	}
 
 	uburma_log_info(
 		"Delete jfs batch, ret: %d, bad_jfs_index: %d, why: %d.\n",
@@ -1075,6 +1097,12 @@ static int uburma_free_jfr(struct uburma_uobj *uobj,
 		if (ret) {
 			uburma_log_err("Failed to delete jfr, id: %u, ret: %d, why: %d.\n",
 			jfr_id, ret, why);
+			if (why != UBURMA_REMOVE_DESTROY) {
+				rcu_assign_pointer(jfr->jfr_cfg.jfr_context, NULL);
+				synchronize_rcu();
+				uburma_release_async_event(uobj->ufile,
+							   &jfr_uobj->async_event_list);
+			}
 			return ret;
 		}
 	} else {
@@ -1082,6 +1110,12 @@ static int uburma_free_jfr(struct uburma_uobj *uobj,
 		if (ret) {
 			uburma_log_err("Failed to free jfr, id: %u, ret: %d, why: %d.\n",
 				jfr_id, ret, why);
+			if (why != UBURMA_REMOVE_DESTROY) {
+				rcu_assign_pointer(jfr->jfr_cfg.jfr_context, NULL);
+				synchronize_rcu();
+				uburma_release_async_event(uobj->ufile,
+							   &jfr_uobj->async_event_list);
+			}
 			return ret;
 		}
 	}
@@ -1120,10 +1154,20 @@ static int uburma_free_jfr_batch(struct uburma_uobj **uobj_arr, int arr_num,
 	}
 
 	ret = ubcore_delete_jfr_batch(jfr_arr, arr_num, bad_jfr_index);
-	if (ret)
+	if (ret) {
 		end_index = *bad_jfr_index;
-	else
+		if (why != UBURMA_REMOVE_DESTROY) {
+			for (i = end_index; i < arr_num; ++i)
+				rcu_assign_pointer(jfr_arr[i]->jfr_cfg.jfr_context,
+						   NULL);
+			synchronize_rcu();
+			for (i = end_index; i < arr_num; ++i)
+				uburma_release_async_event(uobj_arr[i]->ufile,
+							   &jfr_uobj_arr[i]->async_event_list);
+		}
+	} else {
 		end_index = arr_num;
+	}
 
 	uburma_log_info(
 		"Delete jfr batch, ret: %d, bad_jfr_index: %d, why: %d.\n",
@@ -1158,6 +1202,12 @@ static int uburma_free_jetty(struct uburma_uobj *uobj,
 		if (ret) {
 			uburma_log_err("Failed to delete jetty, id: %u, ret: %d, why: %d.\n",
 				jetty_id, ret, why);
+			if (why != UBURMA_REMOVE_DESTROY) {
+				rcu_assign_pointer(jetty->jetty_cfg.jetty_context, NULL);
+				synchronize_rcu();
+				uburma_release_async_event(uobj->ufile,
+							   &jetty_uobj->async_event_list);
+			}
 			return ret;
 		}
 	} else {
@@ -1165,6 +1215,12 @@ static int uburma_free_jetty(struct uburma_uobj *uobj,
 		if (ret) {
 			uburma_log_err("Failed to free jetty_id, id: %u, ret: %d, why: %d.\n",
 				jetty_id, ret, why);
+			if (why != UBURMA_REMOVE_DESTROY) {
+				rcu_assign_pointer(jetty->jetty_cfg.jetty_context, NULL);
+				synchronize_rcu();
+				uburma_release_async_event(uobj->ufile,
+							   &jetty_uobj->async_event_list);
+			}
 			return ret;
 		}
 	}
@@ -1203,10 +1259,20 @@ static int uburma_free_jetty_batch(struct uburma_uobj **uobj_arr, int arr_num,
 	}
 
 	ret = ubcore_delete_jetty_batch(jetty_arr, arr_num, bad_jetty_index);
-	if (ret)
+	if (ret) {
 		end_index = *bad_jetty_index;
-	else
+		if (why != UBURMA_REMOVE_DESTROY) {
+			for (i = end_index; i < arr_num; ++i)
+				rcu_assign_pointer(
+					jetty_arr[i]->jetty_cfg.jetty_context, NULL);
+			synchronize_rcu();
+			for (i = end_index; i < arr_num; ++i)
+				uburma_release_async_event(uobj_arr[i]->ufile,
+							   &jetty_uobj_arr[i]->async_event_list);
+		}
+	} else {
 		end_index = arr_num;
+	}
 
 	uburma_log_info(
 		"Delete jetty batch, ret: %d, bad_jetty_index: %d, why: %d.\n",
