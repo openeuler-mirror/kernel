@@ -1720,7 +1720,6 @@ int _kvm_realm_enable_cap(struct kvm *kvm, struct kvm_enable_cap *cap)
 
 int realm_add_hugetlb_folios(struct realm *realm, struct folio *folio)
 {
-	int ret = 0;
 	unsigned long flags;
 	struct realm_hugetlb_folios *rhf;
 	struct realm_hugetlb_folios *free_rhf = NULL;
@@ -1737,25 +1736,22 @@ int realm_add_hugetlb_folios(struct realm *realm, struct folio *folio)
 		INIT_LIST_HEAD(&free_rhf->page_node);
 
 		spin_lock_irqsave(&realm->realm_lock, flags);
-		if (!realm->cur_rhf) {
+		if (!realm->cur_rhf ||
+		    realm->cur_rhf->folio_num >= REALM_HUGETLB_FOLIO_NUM) {
 			realm->cur_rhf = free_rhf;
 			list_add(&free_rhf->page_node, &realm->hugetlb_page_list);
 			free_rhf = NULL;
 		}
 		rhf = realm->cur_rhf;
-		if (rhf->folio_num >= REALM_HUGETLB_FOLIO_NUM) {
-			ret = -ENOMEM;
-			goto out;
-		}
 	}
+	folio_get(folio);
 	rhf->folio_addr[rhf->folio_num] = (unsigned long)folio;
 	rhf->folio_num++;
 
-out:
 	spin_unlock_irqrestore(&realm->realm_lock, flags);
 	if (free_rhf)
 		free_page((unsigned long)free_rhf);
-	return ret;
+	return 0;
 }
 
 int rmi_granule_delegate_get(unsigned long phys, void *realm_p)
