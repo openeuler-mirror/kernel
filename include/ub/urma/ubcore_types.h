@@ -1391,7 +1391,7 @@ struct ubcore_jfs_cfg {
 	uint32_t max_inline_data;
 	uint8_t rnr_retry;
 	uint8_t err_timeout;
-	void *jfs_context;
+	void __rcu *jfs_context;
 	struct ubcore_jfc *jfc;
 };
 
@@ -1449,7 +1449,7 @@ struct ubcore_jfr_cfg {
 	uint8_t min_rnr_timer;
 	struct ubcore_token token_value;
 	struct ubcore_jfc *jfc;
-	void *jfr_context;
+	void __rcu *jfr_context;
 };
 
 union ubcore_jfr_opt_mask {
@@ -1534,7 +1534,7 @@ struct ubcore_jetty_cfg {
 	struct ubcore_jfr *jfr; /* must set, shared jfr */
 	struct ubcore_jetty_group
 		 *jetty_grp; /* [Optional] user specified jetty group */
-	void *jetty_context;
+	void __rcu *jetty_context;
 };
 
 union ubcore_import_jetty_flag {
