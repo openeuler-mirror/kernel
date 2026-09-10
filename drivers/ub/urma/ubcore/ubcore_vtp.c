@@ -2298,12 +2298,19 @@ void ubcore_set_vtp_param(struct ubcore_device *dev, struct ubcore_jetty *jetty,
 			  struct ubcore_tjetty_cfg *cfg,
 			  struct ubcore_vtp_param *vtp_param)
 {
-	if (cfg->eid_index >= dev->eid_table.eid_cnt ||
-	    IS_ERR_OR_NULL(dev->eid_table.eid_entries)) {
-		ubcore_log_err("invalid param, eid_index[%u] >= eid_cnt[%u]",
-			       cfg->eid_index, dev->eid_table.eid_cnt);
+	uint32_t eid_index = cfg->eid_index;
+
+	spin_lock(&dev->eid_table.lock);
+	if (eid_index >= dev->eid_table.eid_cnt ||
+	    IS_ERR_OR_NULL(dev->eid_table.eid_entries) ||
+	    dev->eid_table.eid_entries[eid_index].valid == false) {
+		spin_unlock(&dev->eid_table.lock);
+		ubcore_log_err("Invalid parameter, eid_index: %u, eid_cnt: %u.\n",
+			       eid_index, dev->eid_table.eid_cnt);
 		return;
 	}
+	vtp_param->local_eid = dev->eid_table.eid_entries[eid_index].eid;
+	spin_unlock(&dev->eid_table.lock);
 
 	vtp_param->trans_mode = cfg->trans_mode;
 
@@ -2316,7 +2323,6 @@ void ubcore_set_vtp_param(struct ubcore_device *dev, struct ubcore_jetty *jetty,
 	 * RM/UM VTP for kernel app: how to get local eid ?
 	 * RC VTP: get eid from jetty
 	 */
-	vtp_param->local_eid = dev->eid_table.eid_entries[cfg->eid_index].eid;
 	vtp_param->peer_eid = cfg->id.eid;
 	if (jetty != NULL)
 		vtp_param->local_jetty = jetty->jetty_id.id;
