@@ -2148,6 +2148,11 @@ static int uburma_cmd_active_jfc(struct ubcore_device *ubc_dev,
 	}
 
 	jfc = (struct ubcore_jfc *)uobj->object;
+	if (jfc->jfc_opt.is_actived) {
+		uobj_put_write(uobj);
+		uburma_log_err("jfc has activated.\n");
+		return -EINVAL;
+	}
 
 	fill_udata(&udata, file->ucontext, &arg.udata);
 	(void)memcpy(&jfc->jfc_opt, &jfc_opt, sizeof(jfc_opt));
