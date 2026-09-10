@@ -370,11 +370,13 @@ void uburma_jfs_event_cb(struct ubcore_event *event,
 	if (!event->element.jfs)
 		return;
 
-	jfs_uobj = (struct uburma_jfs_uobj *)
-			   event->element.jfs->jfs_cfg.jfs_context;
-	uburma_write_async_event(ctx, event->element.jfs->urma_jfs,
-				 event->event_type, &jfs_uobj->async_event_list,
-				 &jfs_uobj->async_events_reported);
+	rcu_read_lock();
+	jfs_uobj = rcu_dereference(event->element.jfs->jfs_cfg.jfs_context);
+	if (!IS_ERR_OR_NULL(jfs_uobj))
+		uburma_write_async_event(ctx, event->element.jfs->urma_jfs,
+					 event->event_type, &jfs_uobj->async_event_list,
+					 &jfs_uobj->async_events_reported);
+	rcu_read_unlock();
 }
 
 void uburma_jfr_event_cb(struct ubcore_event *event,
@@ -385,11 +387,13 @@ void uburma_jfr_event_cb(struct ubcore_event *event,
 	if (event->element.jfr == NULL)
 		return;
 
-	jfr_uobj = (struct uburma_jfr_uobj *)
-			   event->element.jfr->jfr_cfg.jfr_context;
-	uburma_write_async_event(ctx, event->element.jfr->urma_jfr,
-				 event->event_type, &jfr_uobj->async_event_list,
-				 &jfr_uobj->async_events_reported);
+	rcu_read_lock();
+	jfr_uobj = rcu_dereference(event->element.jfr->jfr_cfg.jfr_context);
+	if (!IS_ERR_OR_NULL(jfr_uobj))
+		uburma_write_async_event(ctx, event->element.jfr->urma_jfr,
+					 event->event_type, &jfr_uobj->async_event_list,
+					 &jfr_uobj->async_events_reported);
+	rcu_read_unlock();
 }
 
 void uburma_jetty_event_cb(struct ubcore_event *event,
@@ -400,12 +404,14 @@ void uburma_jetty_event_cb(struct ubcore_event *event,
 	if (!event->element.jetty)
 		return;
 
-	jetty_uobj = (struct uburma_jetty_uobj *)
-			     event->element.jetty->jetty_cfg.jetty_context;
-	uburma_write_async_event(ctx, event->element.jetty->urma_jetty,
-				 event->event_type,
-				 &jetty_uobj->async_event_list,
-				 &jetty_uobj->async_events_reported);
+	rcu_read_lock();
+	jetty_uobj = rcu_dereference(event->element.jetty->jetty_cfg.jetty_context);
+	if (!IS_ERR_OR_NULL(jetty_uobj))
+		uburma_write_async_event(ctx, event->element.jetty->urma_jetty,
+					 event->event_type,
+					 &jetty_uobj->async_event_list,
+					 &jetty_uobj->async_events_reported);
+	rcu_read_unlock();
 }
 
 void uburma_jetty_grp_event_cb(struct ubcore_event *event,
@@ -417,12 +423,13 @@ void uburma_jetty_grp_event_cb(struct ubcore_event *event,
 		return;
 
 	jetty_grp_uobj =
-		(struct uburma_jetty_grp_uobj *)
+		(struct uburma_jetty_grp_uobj *)(uintptr_t)
 			event->element.jetty_grp->jetty_grp_cfg.user_ctx;
-	uburma_write_async_event(ctx, event->element.jetty_grp->urma_jetty_grp,
-				 event->event_type,
-				 &jetty_grp_uobj->async_event_list,
-				 &jetty_grp_uobj->async_events_reported);
+	if (!IS_ERR_OR_NULL(jetty_grp_uobj))
+		uburma_write_async_event(ctx, event->element.jetty_grp->urma_jetty_grp,
+					 event->event_type,
+					 &jetty_grp_uobj->async_event_list,
+					 &jetty_grp_uobj->async_events_reported);
 }
 
 static int uburma_cmd_create_jfs(struct ubcore_device *ubc_dev,
@@ -464,7 +471,7 @@ static int uburma_cmd_create_jfs(struct ubcore_device *ubc_dev,
 	}
 	jfs_uobj->async_events_reported = 0;
 	INIT_LIST_HEAD(&jfs_uobj->async_event_list);
-	cfg.jfs_context = jfs_uobj;
+	RCU_INIT_POINTER(cfg.jfs_context, jfs_uobj);
 
 	jfc_uobj = uobj_get_read(UOBJ_CLASS_JFC, arg.in.jfc_handle, file);
 	if (IS_ERR_OR_NULL(jfc_uobj)) {
@@ -508,7 +515,10 @@ static int uburma_cmd_create_jfs(struct ubcore_device *ubc_dev,
 err_put_jfae:
 	uburma_put_jfae(file);
 err_delete_jfs:
-	ubcore_delete_jfs(jfs);
+	if (ubcore_delete_jfs(jfs) != 0) {
+		rcu_assign_pointer(jfs->jfs_cfg.jfs_context, NULL);
+		synchronize_rcu();
+	}
 err_put_jfc:
 	uobj_put_read(jfc_uobj);
 err_alloc_abort:
@@ -770,7 +780,7 @@ static int uburma_cmd_alloc_jfs(struct ubcore_device *ubc_dev,
 	}
 	jfs_uobj->async_events_reported = 0;
 	INIT_LIST_HEAD(&jfs_uobj->async_event_list);
-	cfg.jfs_context = jfs_uobj;
+	RCU_INIT_POINTER(cfg.jfs_context, jfs_uobj);
 
 	jfc_uobj = uobj_get_read(UOBJ_CLASS_JFC, arg.in.jfc_handle, file);
 	if (IS_ERR_OR_NULL(jfc_uobj)) {
@@ -1250,7 +1260,7 @@ static int uburma_cmd_create_jfr(struct ubcore_device *ubc_dev,
 	}
 	jfr_uobj->async_events_reported = 0;
 	INIT_LIST_HEAD(&jfr_uobj->async_event_list);
-	cfg.jfr_context = jfr_uobj;
+	RCU_INIT_POINTER(cfg.jfr_context, jfr_uobj);
 
 	jfc_uobj = uobj_get_read(UOBJ_CLASS_JFC, arg.in.jfc_handle, file);
 	if (IS_ERR_OR_NULL(jfc_uobj)) {
@@ -1291,7 +1301,10 @@ static int uburma_cmd_create_jfr(struct ubcore_device *ubc_dev,
 err_put_jfae:
 	uburma_put_jfae(file);
 err_delete_jfr:
-	(void)ubcore_delete_jfr(jfr);
+	if (ubcore_delete_jfr(jfr) != 0) {
+		rcu_assign_pointer(jfr->jfr_cfg.jfr_context, NULL);
+		synchronize_rcu();
+	}
 err_put_jfc:
 	uobj_put_read(jfc_uobj);
 err_alloc_abort:
@@ -1549,7 +1562,7 @@ static int uburma_cmd_alloc_jfr(struct ubcore_device *ubc_dev,
 	}
 	jfr_uobj->async_events_reported = 0;
 	INIT_LIST_HEAD(&jfr_uobj->async_event_list);
-	cfg.jfr_context = jfr_uobj;
+	RCU_INIT_POINTER(cfg.jfr_context, jfr_uobj);
 
 	jfc_uobj = uobj_get_read(UOBJ_CLASS_JFC, arg.in.jfc_handle, file);
 	if (IS_ERR_OR_NULL(jfc_uobj)) {
@@ -2351,10 +2364,7 @@ static int uburma_cmd_alloc_jfc(struct ubcore_device *ubc_dev,
 err_put_jfae:
 	uburma_put_jfae(file);
 err_free_jfc:
-	if (ubcore_free_jfc(jfc, &udata) != 0) {
-		rcu_assign_pointer(jfc->jfc_cfg.jfc_context, NULL);
-		synchronize_rcu();
-	}
+	(void)ubcore_free_jfc(jfc, &udata);
 	/* Hardware has stopped invoking uburma_jfce_handler; drain any pending
 	 * tasklet run before uobj_alloc_abort() releases jfc_uobj.
 	 */
@@ -2590,7 +2600,7 @@ static int uburma_cmd_create_jetty(struct ubcore_device *ubc_dev,
 	}
 	jetty_uobj->async_events_reported = 0;
 	INIT_LIST_HEAD(&jetty_uobj->async_event_list);
-	cfg.jetty_context = jetty_uobj;
+	RCU_INIT_POINTER(cfg.jetty_context, jetty_uobj);
 
 	fill_create_jetty_attr(&cfg, &arg);
 	cfg.eid_index = file->ucontext->eid_index;
@@ -2668,7 +2678,10 @@ static int uburma_cmd_create_jetty(struct ubcore_device *ubc_dev,
 err_put_jfae:
 	uburma_put_jfae(file);
 err_delete_jetty:
-	(void)ubcore_delete_jetty(jetty);
+	if (ubcore_delete_jetty(jetty) != 0) {
+		rcu_assign_pointer(jetty->jetty_cfg.jetty_context, NULL);
+		synchronize_rcu();
+	}
 err_put:
 	if (!IS_ERR_OR_NULL(jetty_grp_uobj))
 		uobj_put_read(jetty_grp_uobj);
@@ -2941,7 +2954,7 @@ static int uburma_cmd_alloc_jetty(struct ubcore_device *ubc_dev,
 	}
 	jetty_uobj->async_events_reported = 0;
 	INIT_LIST_HEAD(&jetty_uobj->async_event_list);
-	cfg.jetty_context = jetty_uobj;
+	RCU_INIT_POINTER(cfg.jetty_context, jetty_uobj);
 
 	fill_create_jetty_attr(&cfg, arg);
 	cfg.eid_index = file->ucontext->eid_index;
