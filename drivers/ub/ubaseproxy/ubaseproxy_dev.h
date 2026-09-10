@@ -15,6 +15,7 @@
 #define UBASEPROXY_MAX_DEV_NAME		64
 #define UBASEPROXY_ERR_MSG_LEN		128
 #define UBASEPROXY_MAX_SEID_TABLE_SIZE	1024
+#define UBASEPROXY_MAX_BUS_UE_NUM	256
 
 enum ubaseproxy_dev_state {
 	UBASEPROXY_STATE_INITED,
@@ -96,6 +97,7 @@ struct ubaseproxy_ue_res_info {
 	struct ubaseproxy_ue_ctx_xarray	ue_ctx_xa;
 	struct ubaseproxy_ue_risk_stats	risk_stats;
 	struct ratelimit_state		rl_state;
+	u16				bus_ue_id;
 };
 
 struct ubaseproxy_dev {
@@ -108,6 +110,7 @@ struct ubaseproxy_dev {
 	u32				tid;
 	gfp_t				gfp;
 	atomic_t			virt_refcnt;
+	unsigned long			bus_ue_id_bitmap[BITS_TO_LONGS(UBASEPROXY_MAX_BUS_UE_NUM)];
 };
 
 struct ubaseproxy_func_map {
@@ -189,6 +192,12 @@ ubaseproxy_get_ue_seid_table(struct ubaseproxy_dev *udev, u16 mbx_ue_id)
 
 	ue_res_info = ubaseproxy_get_ue_ctx(udev, mbx_ue_id);
 	return &ue_res_info->ue_seid_table;
+}
+
+static inline bool
+ubaseproxy_ue_active(struct ubaseproxy_dev *udev, u16 bus_ue_id)
+{
+	return test_bit(bus_ue_id, udev->bus_ue_id_bitmap);
 }
 
 int ubaseproxy_dev_init(struct ubaseproxy_dev *udev);
