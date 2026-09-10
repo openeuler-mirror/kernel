@@ -49,6 +49,7 @@ void hisi_pcipc_ns_remove(const struct pci_device_id *id_table);
 bool is_hisi_pcipc_ns(struct device *dev);
 
 struct realm *rme_get_realm(u64 vttbr);
+void rme_put_realm(struct realm *realm);
 void rme_add_dev_entry(struct device *dev, u64 vttbr, bool realm, u64 ns_vttbr,
 		       bool pcipc_ns);
 u64 rme_get_ns_vttbr(struct device *dev);

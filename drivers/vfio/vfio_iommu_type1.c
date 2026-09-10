@@ -2651,7 +2651,7 @@ static int vfio_iommu_type1_attach_group(void *iommu_data,
 	if (iommu->realm) {
 		ret = iommu_enable_rme(domain->domain);
 		if (ret)
-			goto out_free_domain;
+			goto out_domain;
 	}
 #endif
 
