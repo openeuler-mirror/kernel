@@ -189,7 +189,7 @@ int uburma_open(struct inode *inode, struct file *filp)
 	srcu_idx = srcu_read_lock(&ubu_dev->ubc_dev_srcu);
 	ubc_dev = srcu_dereference(ubu_dev->ubc_dev, &ubu_dev->ubc_dev_srcu);
 	if (!ubc_dev) {
-		ret = EIO;
+		ret = -EIO;
 		uburma_log_err("can not find ubcore device.\n");
 		goto err;
 	}
