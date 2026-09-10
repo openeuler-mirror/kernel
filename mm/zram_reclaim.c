@@ -296,7 +296,7 @@ static ssize_t memory_zram_reclaim_write(struct kernfs_open_file *of,
 	struct memcg_reclaim_state *state = zram_reclaim_get_state(memcg);
 	char *token;
 	bool ratio_specified = false;
-	bool enable = false;
+	unsigned int enable;
 	unsigned long ratio = 0;
 	u32 snapshot, new_state;
 	unsigned int bank;
@@ -306,9 +306,11 @@ static ssize_t memory_zram_reclaim_write(struct kernfs_open_file *of,
 	if (!token)
 		return -EINVAL;
 
-	ret = kstrtobool(token, &enable);
+	ret = kstrtouint(token, 10, &enable);
 	if (ret)
 		return ret;
+	if (enable > 1)
+		return -EINVAL;
 
 	if (buf) {
 		token = strstrip(buf);
