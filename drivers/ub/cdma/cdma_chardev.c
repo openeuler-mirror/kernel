@@ -69,7 +69,9 @@ static long cdma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	struct cdma_ioctl_hdr hdr = { 0 };
 	int ret;
 
+	mutex_lock(&cfile->ctx_mutex);
 	if (!cfile->cdev || cfile->cdev->status >= CDMA_STATUS_SUSPENDED) {
+		mutex_unlock(&cfile->ctx_mutex);
 		pr_info("ioctl cdev is invalid\n");
 		return -ENODEV;
 	}
@@ -81,15 +83,18 @@ static long cdma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			pr_err("copy user ret = %d, input parameter len = %u\n",
 				ret, hdr.args_len);
 			cdma_ref_dec(&cfile->cdev->cmdcnt, &cfile->cdev->cmddone);
+			mutex_unlock(&cfile->ctx_mutex);
 			return -EINVAL;
 		}
 		ret = cdma_cmd_parse(cfile, &hdr);
 		cdma_ref_dec(&cfile->cdev->cmdcnt, &cfile->cdev->cmddone);
+		mutex_unlock(&cfile->ctx_mutex);
 		return ret;
 	}
 
 	pr_err("invalid ioctl command, command = %u\n", cmd);
 	cdma_ref_dec(&cfile->cdev->cmdcnt, &cfile->cdev->cmddone);
+	mutex_unlock(&cfile->ctx_mutex);
 	return -ENOIOCTLCMD;
 }
 
@@ -98,6 +103,11 @@ static int cdma_remap_check_jfs_id(struct cdma_file *cfile, u32 jfs_id)
 	struct cdma_dev *cdev = cfile->cdev;
 	struct cdma_jfs *jfs;
 	int ret = -EINVAL;
+
+	if (!cfile->uctx) {
+		dev_err(cdev->dev, "mmap rejected, no user context\n");
+		return ret;
+	}
 
 	spin_lock(&cdev->jfs_table.lock);
 	jfs = idr_find(&cdev->jfs_table.idr_pool.idr, jfs_id);
@@ -215,18 +225,20 @@ static void cdma_mmu_release(struct mmu_notifier *mn, struct mm_struct *mm)
 	struct cdma_mn *mn_notifier = container_of(mn, struct cdma_mn, mn);
 	struct cdma_file *cfile = container_of(mn_notifier, struct cdma_file, mn_notifier);
 
+	mutex_lock(&cdma_mmu_mutex);
 	if (mn_notifier->mm != mm || mn_notifier->mm == NULL) {
+		mutex_unlock(&cdma_mmu_mutex);
 		pr_info("mm already released\n");
 		return;
 	}
-	mn_notifier->mm = NULL;
 
 	mutex_lock(&cfile->ctx_mutex);
-	cdma_cleanup_context_uobj(cfile, CDMA_REMOVE_CLOSE);
+	cdma_cleanup_context_uobj(cfile);
 	if (cfile->uctx)
 		cdma_cleanup_context_res(cfile->uctx);
 	cfile->uctx = NULL;
 	mutex_unlock(&cfile->ctx_mutex);
+	mutex_unlock(&cdma_mmu_mutex);
 }
 
 static const struct mmu_notifier_ops cdma_mm_notifier_ops = {
@@ -255,7 +267,9 @@ static void cdma_unregister_mmu(struct cdma_file *cfile)
 	if (!mm)
 		return;
 
+	mutex_lock(&cdma_mmu_mutex);
 	cfile->mn_notifier.mm = NULL;
+	mutex_unlock(&cdma_mmu_mutex);
 	mmu_notifier_unregister(&cfile->mn_notifier.mn, mm);
 }
 
@@ -321,7 +335,7 @@ static int cdma_close(struct inode *inode, struct file *file)
 	mutex_unlock(&cdev->file_mutex);
 
 	mutex_lock(&cfile->ctx_mutex);
-	cdma_cleanup_context_uobj(cfile, CDMA_REMOVE_CLOSE);
+	cdma_cleanup_context_uobj(cfile);
 	if (cfile->uctx)
 		cdma_cleanup_context_res(cfile->uctx);
 	cfile->uctx = NULL;

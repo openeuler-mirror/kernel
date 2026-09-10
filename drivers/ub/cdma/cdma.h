@@ -18,6 +18,7 @@ extern struct list_head cdma_client_list;
 extern struct rw_semaphore cdma_clients_rwsem;
 extern struct rw_semaphore cdma_device_rwsem;
 extern struct mutex cdma_reset_mutex;
+extern struct mutex cdma_mmu_mutex;
 
 #define CDMA_HW_PAGE_SHIFT	12
 #define CDMA_HW_PAGE_SIZE	(1 << CDMA_HW_PAGE_SHIFT)
@@ -106,6 +107,7 @@ struct cdma_caps {
 	u8 cqe_size;
 	u8 cc_priority_cnt;
 	bool virtualization;
+	bool st64b_en;
 	struct cdma_oor_caps oor_caps;
 	struct cdma_cap_table src_addr;
 	struct cdma_cap_table seid;

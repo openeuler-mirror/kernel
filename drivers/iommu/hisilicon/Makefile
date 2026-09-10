@@ -23,9 +23,13 @@ ummu-y := ummu_main.o \
 	  logic_ummu/logic_ummu.o \
 	  iommu.o \
 	  nested.o \
-	  trace.o
+	  trace.o \
+	  plat_erratum.o
 
 ummu-$(CONFIG_UB_UMMU_SVA) += sva.o
 ummu-$(CONFIG_UB_UBMEM_UMMU) += ubmem-mmu/ubmem_mmu.o
 
 obj-$(CONFIG_UB_UBMEM_VMMU) += ubmem-mmu/
+
+# for tracing framework to find trace.h
+CFLAGS_trace.o := -I$(src)

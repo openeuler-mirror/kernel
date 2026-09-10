@@ -59,8 +59,10 @@ void rdma_restrack_clean(struct ib_device *dev)
  * rdma_restrack_count() - the current usage of specific object
  * @dev:  IB device
  * @type: actual type of object to operate
+ * @show_details: count driver specific objects
  */
-int rdma_restrack_count(struct ib_device *dev, enum rdma_restrack_type type)
+int rdma_restrack_count(struct ib_device *dev, enum rdma_restrack_type type,
+			bool show_details)
 {
 	struct rdma_restrack_root *rt = &dev->res[type];
 	struct rdma_restrack_entry *e;
@@ -68,8 +70,13 @@ int rdma_restrack_count(struct ib_device *dev, enum rdma_restrack_type type)
 	u32 cnt = 0;
 
 	xa_lock(&rt->xa);
-	xas_for_each(&xas, e, U32_MAX)
+	xas_for_each(&xas, e, U32_MAX) {
+		if (xa_is_zero(e))
+			continue;
+		if (xa_get_mark(&rt->xa, e->id, RESTRACK_DD) && !show_details)
+			continue;
 		cnt++;
+	}
 	xa_unlock(&rt->xa);
 	return cnt;
 }
@@ -198,6 +205,9 @@ void rdma_restrack_add(struct rdma_restrack_entry *res)
 		ret = xa_insert(&rt->xa, res->id, res, GFP_KERNEL);
 		if (ret)
 			res->id = 0;
+
+		if (qp->qp_type >= IB_QPT_DRIVER)
+			xa_set_mark(&rt->xa, res->id, RESTRACK_DD);
 	} else if (res->type == RDMA_RESTRACK_COUNTER) {
 		/* Special case to ensure that cntn points to right counter */
 		struct rdma_counter *counter;
@@ -265,6 +275,53 @@ int rdma_restrack_put(struct rdma_restrack_entry *res)
 	return kref_put(&res->kref, restrack_release);
 }
 EXPORT_SYMBOL(rdma_restrack_put);
+
+/**
+ * rdma_restrack_sync() - Fence concurrent netlink dumps on an entry
+ * @res:  resource entry
+ *
+ * After this returns any concurrent netlink dump threads will see the current
+ * value of the object. This is useful if the object has to be changed and there
+ * is not locking to protect the nl side. Eg for mr->pd. This effectively
+ * destroys the object from a kref/xarray perspective and then immediately
+ * restores it. The kref is acting like a lock to barrier concurrent nl threads.
+ * Callers must ensure rdma_restrack_del() is not concurrently called.
+ */
+void rdma_restrack_sync(struct rdma_restrack_entry *res)
+{
+	struct rdma_restrack_entry *old;
+	struct rdma_restrack_root *rt;
+	struct task_struct *task;
+	struct ib_device *dev;
+
+	if (!res->valid || res->no_track)
+		return;
+
+	dev = res_to_dev(res);
+	if (WARN_ON(!dev))
+		return;
+
+	rt = &dev->res[res->type];
+	if (WARN_ON(xa_get_mark(&rt->xa, res->id, RESTRACK_DD)))
+		return;
+
+	old = xa_cmpxchg(&rt->xa, res->id, res, XA_ZERO_ENTRY, GFP_KERNEL);
+	if (WARN_ON(old != res))
+		return;
+
+	task = res->task;
+	if (task)
+		get_task_struct(task);
+	rdma_restrack_put(res);
+	wait_for_completion(&res->comp);
+	reinit_completion(&res->comp);
+	if (task)
+		res->task = task;
+	kref_init(&res->kref);
+
+	xa_cmpxchg(&rt->xa, res->id, XA_ZERO_ENTRY, res, GFP_KERNEL);
+}
+EXPORT_SYMBOL(rdma_restrack_sync);
 
 /**
  * rdma_restrack_del() - delete object from the reource tracking database

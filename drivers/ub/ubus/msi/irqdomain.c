@@ -93,8 +93,7 @@ static bool ub_create_device_domain(struct ub_entity *uent,
 	if (!domain || !irq_domain_is_msi_parent(domain))
 		return true;
 
-	if (WARN_ON_ONCE(1))
-		pr_err("Create device irq domain failed.\n");
+	pr_err("Create device irq domain failed.\n");
 
 	return false;
 }

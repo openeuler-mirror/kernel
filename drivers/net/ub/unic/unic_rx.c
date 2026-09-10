@@ -1016,6 +1016,10 @@ static int unic_create_skb(struct unic_rq *rq, struct napi_struct *napi,
 
 	skb_mark_for_recycle(skb);
 
+	dma_sync_single_for_cpu(rq->parent_dev,
+				rqe_info->rqe_dma_addr + rqe_info->page_offset,
+				UNIC_RX_HEAD_SIZE, DMA_FROM_DEVICE);
+
 	pull_len = unic_get_skb_linear_len(rq, va, unic_dev);
 	__skb_put(skb, pull_len);
 	ret = unic_add_skb_frags(rq, napi, pkt_len, pull_len);

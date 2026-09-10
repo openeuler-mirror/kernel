@@ -565,9 +565,23 @@ static void destroy_gre_conntrack(struct nf_conn *ct)
 {
 #ifdef CONFIG_NF_CT_PROTO_GRE
 	struct nf_conn *master = ct->master;
+	struct nf_conn_help *help;
 
-	if (master)
-		nf_ct_gre_keymap_destroy(master);
+	if (!master)
+		return;
+
+	help = nfct_help(master);
+	if (help) {
+		struct nf_conntrack_helper *helper;
+
+		rcu_read_lock();
+		helper = rcu_dereference(help->helper);
+		/* Only pptp helper has a destroy callback. */
+		if (helper && helper->destroy)
+			nf_ct_gre_keymap_destroy(master);
+
+		rcu_read_unlock();
+	}
 #endif
 }
 
@@ -1691,15 +1705,17 @@ void nf_conntrack_free(struct nf_conn *ct)
 	 */
 	WARN_ON(refcount_read(&ct->ct_general.use) != 0);
 
+	rcu_read_lock();
 	if (ct->status & IPS_SRC_NAT_DONE) {
 		const struct nf_nat_hook *nat_hook;
 
-		rcu_read_lock();
 		nat_hook = rcu_dereference(nf_nat_hook);
 		if (nat_hook)
 			nat_hook->remove_nat_bysrc(ct);
-		rcu_read_unlock();
 	}
+
+	nf_ct_timeout_put(ct);
+	rcu_read_unlock();
 
 	kfree(ct->ext);
 	kmem_cache_free(nf_conntrack_cachep, ct);

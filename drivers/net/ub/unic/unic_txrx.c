@@ -12,6 +12,13 @@
 #include "unic_dev.h"
 #include "unic_txrx.h"
 
+static inline bool unic_support_jfc_flush(struct unic_dev *unic_dev)
+{
+	return (unic_dev->hw_ver == UBASE_HW_VER_A_0 ||
+		unic_dev->hw_ver == UBASE_HW_VER_K_0 ||
+		unic_dev->hw_ver == UBASE_HW_VER_S_0);
+}
+
 static u16 unic_get_cqe_period(u16 cqe_period)
 {
 	u16 period[] = {
@@ -231,7 +238,8 @@ static void unic_destroy_multi_jfc_context(struct unic_dev *unic_dev,
 			set_bit(i, &des_bitmap);
 	}
 
-	unic_jfc_wait_flush(unic_dev, type, num, des_bitmap);
+	if (unic_support_jfc_flush(unic_dev))
+		unic_jfc_wait_flush(unic_dev, type, num, des_bitmap);
 }
 
 int unic_create_cq(struct unic_dev *unic_dev, u32 idx, enum unic_cq_type type)

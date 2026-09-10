@@ -13,7 +13,7 @@
 #include <linux/ummu_core.h>
 #include <ub/ubfi/ubfi.h>
 #include <linux/hash.h>
-#include <linux/hisi_ummu.h>
+#include <uapi/linux/hisi_ummu.h>
 #include "../logic_ummu/logic_ummu.h"
 
 /* ubmem_vmmu driver version release no. */
@@ -25,8 +25,6 @@
 #define POLL_DELAY_TIME_US 100
 #define MAX_POLL_TIME_US 100000000
 #define MAX_COUNT_FOR_GET_SLOT 10000000
-#define MIN_PASIDS 65
-#define MAX_PASIDS ((1UL << 20) - 1)
 
 enum ubmem_vmmu_opcode {
 	UBMEM_VMMU_OPCODE_MAP = 0,
@@ -124,8 +122,6 @@ static bool ubmem_vmmu_support_call_back(struct tdev_attr *attr, bool *select)
 static bool ubmem_vmmu_tdev_support_attr(struct ummu_core_device *core_device,
 					struct tdev_attr *attr)
 {
-	struct hisi_ummu_tdev_info *info;
-
 	if (!attr->priv || !attr->priv_len)
 		return false;
 
@@ -134,14 +130,8 @@ static bool ubmem_vmmu_tdev_support_attr(struct ummu_core_device *core_device,
 		return false;
 	}
 
-	info = (struct hisi_ummu_tdev_info *)attr->priv;
-	if (info->v2.tid && info->v2.tid < core_device->iommu.min_pasids) {
-		pr_info("ubmem vmmu: match success\n");
-		return true;
-	}
-
-	pr_info("ubmem vmmu: mismatch, tid %u\n", info->v2.tid);
-	return false;
+	pr_info("match success\n");
+	return true;
 }
 
 static int ubmem_vmmu_attach_dev(struct iommu_domain *domain, struct device *dev)
@@ -193,6 +183,8 @@ static int ubmem_vmmu_handle_req_vm(struct ubm_request *req, u64 req_buf_size)
 			continue;
 		}
 		set_bit(slot_idx, ubmem_vmmu_dev->slot_bitmap);
+		addr = ubmem_vmmu_dev->rsp_slot + slot_idx * sizeof(struct response_slot);
+		iowrite64(0, addr);
 		memcpy_toio(ubmem_vmmu_dev->ring, req, req_buf_size);
 		iowrite32(slot_idx, ubmem_vmmu_dev->doorbell);
 		spin_unlock(&ubmem_vmmu_dev->slot_lock);
@@ -203,7 +195,6 @@ static int ubmem_vmmu_handle_req_vm(struct ubm_request *req, u64 req_buf_size)
 		return -ETIMEDOUT;
 	}
 
-	addr = ubmem_vmmu_dev->rsp_slot + slot_idx * sizeof(struct response_slot);
 	ret = readq_relaxed_poll_timeout(addr, rsp_info.val, rsp_info.inner.state != 0,
 					 POLL_DELAY_TIME_US, MAX_POLL_TIME_US);
 	if (ret) {
@@ -499,6 +490,11 @@ static struct iommu_device *ubmem_vmmu_probe_device(struct device *dev)
 	struct fwnode_handle *iommu_fwnode;
 	struct ubmem_vmmu_master *master;
 
+	if (!ubmem_vmmu_dev) {
+		pr_err("probe_device: global_ubmem_vmmu_dev not initialized\n");
+		return (struct iommu_device *)ERR_PTR(-ENODEV);
+	}
+
 	dev_iommu_fwspec = dev_iommu_fwspec_get(dev);
 	if (!dev_iommu_fwspec)
 		return (struct iommu_device *)ERR_PTR(-ENODEV);
@@ -560,12 +556,6 @@ const struct iommu_ops ubmem_vmmu_iommu_ops = {
 	.owner = THIS_MODULE,
 };
 
-static void ubmem_vmmu_device_ubrt_probe(struct ubmem_vmmu_device *ubmem_vmmu)
-{
-	ubmem_vmmu->core_dev.iommu.min_pasids = MIN_PASIDS;
-	ubmem_vmmu->core_dev.iommu.max_pasids = MAX_PASIDS;
-}
-
 static int ubmem_vmmu_init_ummu_device(struct ubmem_vmmu_device *ubmem_vmmu,
 				const struct iommu_ops *iommu_ops,
 				const struct ummu_core_ops *core_ops)
@@ -583,7 +573,7 @@ static int ubmem_vmmu_init_ummu_device(struct ubmem_vmmu_device *ubmem_vmmu,
 static int ubmem_vmmu_init_device_resource(struct platform_device *pdev,
 					   struct ubmem_vmmu_device *ubmem_vmmu)
 {
-	u32 slot_size, bitmap_size, area_num;
+	u64 slot_size, bitmap_size, area_num, res_len;
 	struct device *dev = &pdev->dev;
 	struct resource *res;
 
@@ -613,9 +603,20 @@ static int ubmem_vmmu_init_device_resource(struct platform_device *pdev,
 
 	ubmem_vmmu->slot_num = ioread64(ubmem_vmmu->rsp_slot);
 	ubmem_vmmu->rsp_slot += sizeof(u64);
+	res_len = resource_size(res);
 	slot_size = sizeof(struct response_slot) * ubmem_vmmu->slot_num;
+	if (ubmem_vmmu->slot_num == 0 || sizeof(u64) + slot_size > res_len) {
+		dev_err(dev, "slot header + slots exceed res: %llu + %llu > %llu\n",
+			(u64)sizeof(u64), slot_size, res_len);
+		return -EINVAL;
+	}
 	ubmem_vmmu->ring = ubmem_vmmu->rsp_slot + slot_size;
-	ubmem_vmmu->ring_size = (res->end - res->start) - (slot_size + sizeof(u64));
+	ubmem_vmmu->ring_size = res_len - (slot_size + sizeof(u64));
+	if (ubmem_vmmu->ring_size < sizeof(struct ubm_request)) {
+		dev_err(dev, "ring too small for one request: %llu < %zu\n",
+			ubmem_vmmu->ring_size, sizeof(struct ubm_request));
+		return -EINVAL;
+	}
 	area_num = (ubmem_vmmu->ring_size - sizeof(struct ubm_request)) /
 		   sizeof(((struct ubm_request *)0)->areas[0]);
 	ubmem_vmmu->max_req_area_num = (area_num > UBMEM_VMMU_ONCE_MAX_MAP_AREA_NUM) ?
@@ -626,16 +627,14 @@ static int ubmem_vmmu_init_device_resource(struct platform_device *pdev,
 	sizeof(((struct ubm_request *)0)->areas[0]) * ubmem_vmmu->max_req_area_num;
 	spin_lock_init(&ubmem_vmmu->slot_lock);
 
-	pr_info("ubmem_vmmu_test max_req_area_num %llu, max_req_size %llu, slot_num %llu, ring_size %llu\n",
+	pr_info("max_req_area_num %llu, max_req_size %llu, slot_num %llu, ring_size %llu\n",
 		ubmem_vmmu->max_req_area_num, ubmem_vmmu->max_req_size,
 		ubmem_vmmu->slot_num, ubmem_vmmu->ring_size);
 
-	bitmap_size = BITS_TO_COMPAT_LONGS(ubmem_vmmu->slot_num);
+	bitmap_size = BITS_TO_LONGS(ubmem_vmmu->slot_num) * sizeof(unsigned long);
 	ubmem_vmmu->slot_bitmap = kzalloc(bitmap_size, GFP_KERNEL);
-	if (ubmem_vmmu->slot_bitmap == NULL) {
-		dev_err(dev, "Alloc bitmap failed, size %u\n", bitmap_size);
+	if (ubmem_vmmu->slot_bitmap == NULL)
 		return -ENOMEM;
-	}
 
 	return 0;
 }
@@ -651,8 +650,6 @@ static int ubmem_vmmu_device_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	ubmem_vmmu->dev = dev;
-
-	ubmem_vmmu_device_ubrt_probe(ubmem_vmmu);
 
 	ret = ubmem_vmmu_init_device_resource(pdev, ubmem_vmmu);
 	if (ret) {
@@ -675,6 +672,7 @@ static int ubmem_vmmu_device_probe(struct platform_device *pdev)
 		goto deinit_ummu_core;
 	}
 
+	global_ubmem_vmmu_dev = ubmem_vmmu;
 	ret = ummu_core_device_register(&ubmem_vmmu->core_dev, REGISTER_TYPE_NORMAL);
 	if (ret) {
 		dev_err(dev, "register to ummu core failed, ret=%d\n", ret);
@@ -687,7 +685,6 @@ static int ubmem_vmmu_device_probe(struct platform_device *pdev)
 		goto register_scb_err;
 	}
 
-	global_ubmem_vmmu_dev = ubmem_vmmu;
 	dev_info(dev, "register ubmem_vmmu to ummu core success");
 	return 0;
 
@@ -699,6 +696,7 @@ deinit_ummu_core:
 	ummu_core_device_deinit(&ubmem_vmmu->core_dev);
 bitmap_free:
 	kfree(ubmem_vmmu->slot_bitmap);
+	global_ubmem_vmmu_dev = NULL;
 
 	return ret;
 }

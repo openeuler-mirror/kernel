@@ -439,7 +439,6 @@ int vtimer_irqbypass_init(struct irq_domain *domain,
 static DEFINE_PER_CPU(struct cpumask, __tmp_cpu_mask);
 bool same_affinity_group(struct its_vpe *vpe, const struct cpumask *mask_val)
 {
-	int col_idx;
 	bool ret = false;
 	unsigned long flags;
 	struct cpumask *table_mask;
@@ -453,12 +452,10 @@ bool same_affinity_group(struct its_vpe *vpe, const struct cpumask *mask_val)
 		raw_spin_lock(&vpe->its_vm->vmapp_lock);
 
 	raw_spin_lock_irqsave(&vpe->vpe_lock, flags);
-	col_idx = vpe->col_idx;
-	table_mask = its_get_affinity_mask(col_idx);
-	if (table_mask && cpumask_and(common, mask_val, table_mask)) {
+	table_mask = its_get_affinity_mask(vpe->col_idx);
+	if (table_mask && cpumask_and(common, mask_val, table_mask))
 		ret = true;
-		vpe->col_idx = cpumask_test_cpu(col_idx, common) ? col_idx : cpumask_first(common);
-	}
+
 	raw_spin_unlock_irqrestore(&vpe->vpe_lock, flags);
 
 	if (is_its_map_exist())

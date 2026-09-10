@@ -20,9 +20,12 @@ struct udma_context {
 	struct list_head hugepage_list;
 	struct mutex page_lock;
 	struct list_head page_list;
+	struct mutex reserved_lock;
+	struct list_head reserved_list;
 	struct device *ummu_dev;
 	struct mm_struct *mm;
 	struct udma_seg_tree *seg_tree;
+	struct mutex local_seg_lock;
 	bool dtu_en;
 	uint32_t dtu_win_num;
 };
@@ -53,7 +56,8 @@ void udma_free_u_hugepage(struct udma_context *ctx, uint64_t buf_addr);
 
 struct udma_page_priv *udma_get_map_page_priv(struct udma_context *ctx, uint64_t va, uint32_t len);
 void udma_put_map_page_priv(struct udma_context *ctx, struct udma_page_priv *priv);
-int udma_create_sgt_from_pages(struct sg_table *sgt, struct page **pages, uint32_t page_num,
-			       uint32_t page_size);
+
+int udma_matt_map_by_priv(struct udma_context *ctx, struct udma_hugepage_priv *priv);
+void udma_matt_unmap_by_priv(struct udma_context *ctx, struct udma_hugepage_priv *priv);
 
 #endif /* __UDMA_CTX_H__ */

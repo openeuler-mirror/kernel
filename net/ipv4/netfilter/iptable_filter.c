@@ -61,7 +61,7 @@ static int __net_init iptable_filter_net_init(struct net *net)
 
 static void __net_exit iptable_filter_net_pre_exit(struct net *net)
 {
-	ipt_unregister_table_pre_exit(net, "filter");
+	xt_unregister_table_pre_exit(net, NFPROTO_IPV4, "filter");
 }
 
 static void __net_exit iptable_filter_net_exit(struct net *net)
@@ -101,8 +101,8 @@ static int __init iptable_filter_init(void)
 
 static void __exit iptable_filter_fini(void)
 {
-	unregister_pernet_subsys(&iptable_filter_net_ops);
 	xt_unregister_template(&packet_filter);
+	unregister_pernet_subsys(&iptable_filter_net_ops);
 	kfree(filter_ops);
 }
 

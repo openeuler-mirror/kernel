@@ -292,6 +292,8 @@ static ssize_t iommufd_fault_fops_read(struct file *filep, char __user *buf,
 			}
 			done += fault_size;
 		}
+		if (rc)
+			break;
 
 		list_del(&group_extend->node);
 	}
@@ -446,6 +448,8 @@ int iommufd_fault_iopf_handler(struct iopf_group *group)
 
 	hwpt = group->attach_handle->domain->fault_data;
 	fault = hwpt->fault;
+
+	iopf_group_dequeue(group);
 
 	mutex_lock(&fault->mutex);
 	list_add_tail(&group_extend->node, &fault->deliver);

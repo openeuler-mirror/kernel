@@ -434,6 +434,8 @@ EXPORT_SYMBOL_GPL(nvme_complete_rq);
 void nvme_complete_batch_req(struct request *req)
 {
 	trace_nvme_complete_rq(req);
+	if (unlikely(nvme_req(req)->status && !(req->rq_flags & RQF_QUIET)))
+		nvme_log_error(req);
 	nvme_cleanup_cmd(req);
 	nvme_end_req_zoned(req);
 }
@@ -3452,7 +3454,7 @@ static struct nvme_ns_head *nvme_alloc_ns_head(struct nvme_ctrl *ctrl,
 	int ret = -ENOMEM;
 
 #ifdef CONFIG_NVME_MULTIPATH
-	size += num_possible_nodes() * sizeof(struct nvme_ns *);
+	size += nr_node_ids * sizeof(struct nvme_ns *);
 #endif
 
 	head = kzalloc(size, GFP_KERNEL);

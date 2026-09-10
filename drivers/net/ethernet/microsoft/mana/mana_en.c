@@ -481,7 +481,7 @@ static int mana_get_tx_queue(struct net_device *ndev, struct sk_buff *skb,
 	struct sock *sk = skb->sk;
 	int txq;
 
-	txq = apc->indir_table[hash & MANA_INDIRECT_TABLE_MASK];
+	txq = apc->indir_table[hash & (apc->indir_table_sz - 1)];
 
 	if (txq != old_q && sk && sk_fullsock(sk) &&
 	    rcu_access_pointer(sk->sk_dst_cache))
@@ -725,6 +725,13 @@ static void mana_cleanup_port_context(struct mana_port_context *apc)
 	apc->rxqs = NULL;
 }
 
+static void mana_cleanup_indir_table(struct mana_port_context *apc)
+{
+	apc->indir_table_sz = 0;
+	kfree(apc->indir_table);
+	kfree(apc->rxobj_table);
+}
+
 static int mana_init_port_context(struct mana_port_context *apc)
 {
 	apc->rxqs = kcalloc(apc->num_queues, sizeof(struct mana_rxq *),
@@ -966,7 +973,16 @@ static int mana_query_vport_cfg(struct mana_port_context *apc, u32 vport_index,
 
 	*max_sq = resp.max_num_sq;
 	*max_rq = resp.max_num_rq;
-	*num_indir_entry = resp.num_indirection_ent;
+	if (resp.num_indirection_ent > 0 &&
+	    resp.num_indirection_ent <= MANA_INDIRECT_TABLE_MAX_SIZE &&
+	    is_power_of_2(resp.num_indirection_ent)) {
+		*num_indir_entry = resp.num_indirection_ent;
+	} else {
+		netdev_warn(apc->ndev,
+			    "Setting indirection table size to default %d for vPort %d\n",
+			    MANA_INDIRECT_TABLE_DEF_SIZE, apc->port_idx);
+		*num_indir_entry = MANA_INDIRECT_TABLE_DEF_SIZE;
+	}
 
 	apc->port_handle = resp.vport;
 	ether_addr_copy(apc->mac_addr, resp.mac_addr);
@@ -1058,15 +1074,13 @@ static int mana_cfg_vport_steering(struct mana_port_context *apc,
 				   bool update_default_rxobj, bool update_key,
 				   bool update_tab)
 {
-	u16 num_entries = MANA_INDIRECT_TABLE_SIZE;
 	struct mana_cfg_rx_steer_req_v2 *req;
 	struct mana_cfg_rx_steer_resp resp = {};
 	struct net_device *ndev = apc->ndev;
-	mana_handle_t *req_indir_tab;
 	u32 req_buf_size;
 	int err;
 
-	req_buf_size = sizeof(*req) + sizeof(mana_handle_t) * num_entries;
+	req_buf_size = struct_size(req, indir_tab, apc->indir_table_sz);
 	req = kzalloc(req_buf_size, GFP_KERNEL);
 	if (!req)
 		return -ENOMEM;
@@ -1077,8 +1091,9 @@ static int mana_cfg_vport_steering(struct mana_port_context *apc,
 	req->hdr.req.msg_version = GDMA_MESSAGE_V2;
 
 	req->vport = apc->port_handle;
-	req->num_indir_entries = num_entries;
-	req->indir_tab_offset = sizeof(*req);
+	req->num_indir_entries = apc->indir_table_sz;
+	req->indir_tab_offset = offsetof(struct mana_cfg_rx_steer_req_v2,
+					 indir_tab);
 	req->rx_enable = rx;
 	req->rss_enable = apc->rss_state;
 	req->update_default_rxobj = update_default_rxobj;
@@ -1090,11 +1105,9 @@ static int mana_cfg_vport_steering(struct mana_port_context *apc,
 	if (update_key)
 		memcpy(&req->hashkey, apc->hashkey, MANA_HASH_KEY_SIZE);
 
-	if (update_tab) {
-		req_indir_tab = (mana_handle_t *)(req + 1);
-		memcpy(req_indir_tab, apc->rxobj_table,
-		       req->num_indir_entries * sizeof(mana_handle_t));
-	}
+	if (update_tab)
+		memcpy(req->indir_tab, apc->rxobj_table,
+		       flex_array_size(req, indir_tab, req->num_indir_entries));
 
 	err = mana_send_request(apc->ac, req, req_buf_size, &resp,
 				sizeof(resp));
@@ -1117,7 +1130,7 @@ static int mana_cfg_vport_steering(struct mana_port_context *apc,
 	}
 
 	netdev_info(ndev, "Configured steering vPort %llu entries %u\n",
-		    apc->port_handle, num_entries);
+		    apc->port_handle, apc->indir_table_sz);
 out:
 	kfree(req);
 	return err;
@@ -1303,6 +1316,9 @@ static void mana_fence_rqs(struct mana_port_context *apc)
 	unsigned int rxq_idx;
 	struct mana_rxq *rxq;
 	int err;
+
+	if (!apc->rxqs)
+		return;
 
 	for (rxq_idx = 0; rxq_idx < apc->num_queues; rxq_idx++) {
 		rxq = apc->rxqs[rxq_idx];
@@ -1736,6 +1752,19 @@ static void mana_process_rx_cqe(struct mana_rxq *rxq, struct mana_cq *cq,
 	rxbuf_oob = &rxq->rx_oobs[curr];
 	WARN_ON_ONCE(rxbuf_oob->wqe_inf.wqe_size_in_bu != 1);
 
+	if (unlikely(pktlen > rxq->datasize)) {
+		/* Increase it even if mana_rx_skb() isn't called. */
+		rxq->rx_cq.work_done++;
+
+		++ndev->stats.rx_dropped;
+		netdev_warn_once(ndev,
+				 "Dropped oversized RX packet: len=%u, datasize=%u\n",
+				 pktlen, rxq->datasize);
+
+		/* Reuse the RX buffer since rxbuf_oob is unchanged. */
+		goto drop;
+	}
+
 	mana_refill_rx_oob(dev, rxq, rxbuf_oob, &old_buf, &old_fp);
 
 	/* Unsuccessful refill will have old_buf == NULL.
@@ -1877,7 +1906,8 @@ static void mana_destroy_txq(struct mana_port_context *apc)
 			netif_napi_del(napi);
 			apc->tx_qp[i].txq.napi_initialized = false;
 		}
-		mana_destroy_wq_obj(apc, GDMA_SQ, apc->tx_qp[i].tx_object);
+		if (apc->tx_qp[i].tx_object != INVALID_MANA_HANDLE)
+			mana_destroy_wq_obj(apc, GDMA_SQ, apc->tx_qp[i].tx_object);
 
 		mana_deinit_cq(apc, &apc->tx_qp[i].tx_cq);
 
@@ -2334,13 +2364,16 @@ static void mana_destroy_vport(struct mana_port_context *apc)
 	struct mana_rxq *rxq;
 	u32 rxq_idx;
 
-	for (rxq_idx = 0; rxq_idx < apc->num_queues; rxq_idx++) {
-		rxq = apc->rxqs[rxq_idx];
-		if (!rxq)
-			continue;
+	if (apc->rxqs) {
 
-		mana_destroy_rxq(apc, rxq, true);
-		apc->rxqs[rxq_idx] = NULL;
+		for (rxq_idx = 0; rxq_idx < apc->num_queues; rxq_idx++) {
+			rxq = apc->rxqs[rxq_idx];
+			if (!rxq)
+				continue;
+
+			mana_destroy_rxq(apc, rxq, true);
+			apc->rxqs[rxq_idx] = NULL;
+		}
 	}
 
 	mana_destroy_txq(apc);
@@ -2371,11 +2404,33 @@ static int mana_create_vport(struct mana_port_context *apc,
 	return mana_create_txq(apc, net);
 }
 
+static int mana_rss_table_alloc(struct mana_port_context *apc)
+{
+	if (!apc->indir_table_sz) {
+		netdev_err(apc->ndev,
+			   "Indirection table size not set for vPort %d\n",
+			   apc->port_idx);
+		return -EINVAL;
+	}
+
+	apc->indir_table = kcalloc(apc->indir_table_sz, sizeof(u32), GFP_KERNEL);
+	if (!apc->indir_table)
+		return -ENOMEM;
+
+	apc->rxobj_table = kcalloc(apc->indir_table_sz, sizeof(mana_handle_t), GFP_KERNEL);
+	if (!apc->rxobj_table) {
+		kfree(apc->indir_table);
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
 static void mana_rss_table_init(struct mana_port_context *apc)
 {
 	int i;
 
-	for (i = 0; i < MANA_INDIRECT_TABLE_SIZE; i++)
+	for (i = 0; i < apc->indir_table_sz; i++)
 		apc->indir_table[i] =
 			ethtool_rxfh_indir_default(i, apc->num_queues);
 }
@@ -2395,7 +2450,7 @@ int mana_config_rss(struct mana_port_context *apc, enum TRI_STATE rx,
 	int i;
 
 	if (update_tab) {
-		for (i = 0; i < MANA_INDIRECT_TABLE_SIZE; i++) {
+		for (i = 0; i < apc->indir_table_sz; i++) {
 			queue_idx = apc->indir_table[i];
 			apc->rxobj_table[i] = apc->rxqs[queue_idx]->rxobj;
 		}
@@ -2455,7 +2510,6 @@ static int mana_init_port(struct net_device *ndev)
 	struct mana_port_context *apc = netdev_priv(ndev);
 	u32 max_txq, max_rxq, max_queues;
 	int port_idx = apc->port_idx;
-	u32 num_indirect_entries;
 	int err;
 
 	err = mana_init_port_context(apc);
@@ -2463,7 +2517,7 @@ static int mana_init_port(struct net_device *ndev)
 		return err;
 
 	err = mana_query_vport_cfg(apc, port_idx, &max_txq, &max_rxq,
-				   &num_indirect_entries);
+				   &apc->indir_table_sz);
 	if (err) {
 		netdev_err(ndev, "Failed to query info for vPort %d\n",
 			   port_idx);
@@ -2577,7 +2631,8 @@ static int mana_dealloc_queues(struct net_device *ndev)
 	if (apc->port_is_up)
 		return -EINVAL;
 
-	mana_chn_setxdp(apc, NULL);
+	if (apc->rxqs)
+		mana_chn_setxdp(apc, NULL);
 
 	if (gd->gdma_context->is_pf)
 		mana_pf_deregister_filter(apc);
@@ -2595,33 +2650,38 @@ static int mana_dealloc_queues(struct net_device *ndev)
 	 * number of queues.
 	 */
 
-	for (i = 0; i < apc->num_queues; i++) {
-		txq = &apc->tx_qp[i].txq;
-		tsleep = 1000;
-		while (atomic_read(&txq->pending_sends) > 0 &&
-		       time_before(jiffies, timeout)) {
-			usleep_range(tsleep, tsleep + 1000);
-			tsleep <<= 1;
-		}
-		if (atomic_read(&txq->pending_sends)) {
-			err = pcie_flr(to_pci_dev(gd->gdma_context->dev));
-			if (err) {
-				netdev_err(ndev, "flr failed %d with %d pkts pending in txq %u\n",
-					   err, atomic_read(&txq->pending_sends),
-					   txq->gdma_txq_id);
+	if (apc->tx_qp) {
+		for (i = 0; i < apc->num_queues; i++) {
+			txq = &apc->tx_qp[i].txq;
+			tsleep = 1000;
+			while (atomic_read(&txq->pending_sends) > 0 &&
+			       time_before(jiffies, timeout)) {
+				usleep_range(tsleep, tsleep + 1000);
+				tsleep <<= 1;
 			}
-			break;
+			if (atomic_read(&txq->pending_sends)) {
+				err =
+				    pcie_flr(to_pci_dev(gd->gdma_context->dev));
+				if (err) {
+					netdev_err(ndev, "flr failed %d with %d pkts pending in txq %u\n",
+						   err,
+					    atomic_read(&txq->pending_sends),
+					    txq->gdma_txq_id);
+				}
+				break;
+			}
+		}
+
+		for (i = 0; i < apc->num_queues; i++) {
+			txq = &apc->tx_qp[i].txq;
+			while ((skb = skb_dequeue(&txq->pending_skbs))) {
+				mana_unmap_skb(skb, apc);
+				dev_kfree_skb_any(skb);
+			}
+			atomic_set(&txq->pending_sends, 0);
 		}
 	}
 
-	for (i = 0; i < apc->num_queues; i++) {
-		txq = &apc->tx_qp[i].txq;
-		while ((skb = skb_dequeue(&txq->pending_skbs))) {
-			mana_unmap_skb(skb, apc);
-			dev_kfree_skb_any(skb);
-		}
-		atomic_set(&txq->pending_sends, 0);
-	}
 	/* We're 100% sure the queues can no longer be woken up, because
 	 * we're sure now mana_poll_tx_cq() can't be running.
 	 */
@@ -2714,6 +2774,10 @@ static int mana_probe_port(struct mana_context *ac, int port_idx,
 	if (err)
 		goto free_net;
 
+	err = mana_rss_table_alloc(apc);
+	if (err)
+		goto reset_apc;
+
 	netdev_lockdep_set_classes(ndev);
 
 	ndev->hw_features = NETIF_F_SG | NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM;
@@ -2729,11 +2793,13 @@ static int mana_probe_port(struct mana_context *ac, int port_idx,
 	err = register_netdev(ndev);
 	if (err) {
 		netdev_err(ndev, "Unable to register netdev.\n");
-		goto reset_apc;
+		goto free_indir;
 	}
 
 	return 0;
 
+free_indir:
+	mana_cleanup_indir_table(apc);
 reset_apc:
 	kfree(apc->rxqs);
 	apc->rxqs = NULL;
@@ -2866,16 +2932,30 @@ int mana_probe(struct gdma_dev *gd, bool resuming)
 	if (!resuming) {
 		for (i = 0; i < ac->num_ports; i++) {
 			err = mana_probe_port(ac, i, &ac->ports[i]);
-			if (err)
+			/* we log the port for which the probe failed and stop
+			 * probes for subsequent ports.
+			 * Note that we keep running ports, for which the probes
+			 * were successful, unless add_adev fails too
+			 */
+			if (err) {
+				dev_err(dev, "Probe Failed for port %d\n", i);
 				break;
+			}
 		}
 	} else {
 		for (i = 0; i < ac->num_ports; i++) {
 			rtnl_lock();
 			err = mana_attach(ac->ports[i]);
 			rtnl_unlock();
-			if (err)
+			/* we log the port for which the attach failed and stop
+			 * attach for subsequent ports
+			 * Note that we keep running ports, for which the attach
+			 * were successful, unless add_adev fails too
+			 */
+			if (err) {
+				dev_err(dev, "Attach Failed for port %d\n", i);
 				break;
+			}
 		}
 	}
 
@@ -2891,6 +2971,7 @@ void mana_remove(struct gdma_dev *gd, bool suspending)
 {
 	struct gdma_context *gc = gd->gdma_context;
 	struct mana_context *ac = gd->driver_data;
+	struct mana_port_context *apc;
 	struct device *dev = gc->dev;
 	struct net_device *ndev;
 	int err;
@@ -2902,6 +2983,7 @@ void mana_remove(struct gdma_dev *gd, bool suspending)
 
 	for (i = 0; i < ac->num_ports; i++) {
 		ndev = ac->ports[i];
+		apc = netdev_priv(ndev);
 		if (!ndev) {
 			if (i == 0)
 				dev_err(dev, "No net device to remove\n");
@@ -2925,6 +3007,7 @@ void mana_remove(struct gdma_dev *gd, bool suspending)
 		}
 
 		unregister_netdevice(ndev);
+		mana_cleanup_indir_table(apc);
 
 		rtnl_unlock();
 

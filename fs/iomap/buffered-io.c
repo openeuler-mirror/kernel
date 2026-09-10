@@ -61,13 +61,15 @@ static void ifs_set_range_uptodate(struct folio *folio,
 		struct iomap_folio_state *ifs, size_t off, size_t len)
 {
 	struct inode *inode = folio->mapping->host;
-	unsigned int first_blk = off >> inode->i_blkbits;
-	unsigned int last_blk = (off + len - 1) >> inode->i_blkbits;
-	unsigned int nr_blks = last_blk - first_blk + 1;
+	unsigned int first_blk, last_blk;
 	unsigned long flags;
 
 	spin_lock_irqsave(&ifs->state_lock, flags);
-	bitmap_set(ifs->state, first_blk, nr_blks);
+	if (len) {
+		first_blk = off >> inode->i_blkbits;
+		last_blk = (off + len - 1) >> inode->i_blkbits;
+		bitmap_set(ifs->state, first_blk, last_blk - first_blk + 1);
+	}
 	if (ifs_is_fully_uptodate(folio, ifs))
 		folio_mark_uptodate(folio);
 	spin_unlock_irqrestore(&ifs->state_lock, flags);
@@ -163,13 +165,17 @@ static void ifs_set_range_dirty(struct folio *folio,
 {
 	struct inode *inode = folio->mapping->host;
 	unsigned int blks_per_folio = i_blocks_per_folio(inode, folio);
-	unsigned int first_blk = (off >> inode->i_blkbits);
-	unsigned int last_blk = (off + len - 1) >> inode->i_blkbits;
-	unsigned int nr_blks = last_blk - first_blk + 1;
+	unsigned int first_blk, last_blk;
 	unsigned long flags;
 
+	if (!len)
+		return;
+
+	first_blk = off >> inode->i_blkbits;
+	last_blk = (off + len - 1) >> inode->i_blkbits;
 	spin_lock_irqsave(&ifs->state_lock, flags);
-	bitmap_set(ifs->state, first_blk + blks_per_folio, nr_blks);
+	bitmap_set(ifs->state, first_blk + blks_per_folio,
+		   last_blk - first_blk + 1);
 	spin_unlock_irqrestore(&ifs->state_lock, flags);
 }
 
@@ -1996,8 +2002,12 @@ new_ioend:
 	 * should not be trimmed in such cases.
 	 */
 	wpc->ioend->io_size += len;
-	if (pos < isize && pos + len > isize)
-		wpc->ioend->io_size = isize - wpc->ioend->io_offset;
+	if (wpc->ioend->io_offset + wpc->ioend->io_size > isize) {
+		if (wpc->ioend->io_offset >= isize)
+			wpc->ioend->io_size = 0;
+		else
+			wpc->ioend->io_size = isize - wpc->ioend->io_offset;
+	}
 
 	wbc_account_cgroup_owner(wbc, &folio->page, len);
 	return 0;

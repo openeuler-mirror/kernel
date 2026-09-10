@@ -26,7 +26,7 @@ static bool rxrpc_set_conn_aborted(struct rxrpc_connection *conn, struct sk_buff
 	bool aborted = false;
 
 	if (conn->state != RXRPC_CONN_ABORTED) {
-		spin_lock(&conn->state_lock);
+		spin_lock_irq(&conn->state_lock);
 		if (conn->state != RXRPC_CONN_ABORTED) {
 			conn->abort_code = abort_code;
 			conn->error	 = err;
@@ -37,7 +37,7 @@ static bool rxrpc_set_conn_aborted(struct rxrpc_connection *conn, struct sk_buff
 			set_bit(RXRPC_CONN_EV_ABORT_CALLS, &conn->events);
 			aborted = true;
 		}
-		spin_unlock(&conn->state_lock);
+		spin_unlock_irq(&conn->state_lock);
 	}
 
 	return aborted;
@@ -226,6 +226,28 @@ static void rxrpc_call_is_secure(struct rxrpc_call *call)
 		rxrpc_notify_socket(call);
 }
 
+static int rxrpc_verify_response(struct rxrpc_connection *conn,
+				 struct sk_buff *skb)
+{
+	unsigned int len = skb->len - sizeof(struct rxrpc_wire_header);
+	void *buffer;
+	int ret;
+
+	buffer = kmalloc(len, GFP_NOFS);
+	if (!buffer)
+		return -ENOMEM;
+
+	ret = skb_copy_bits(skb, sizeof(struct rxrpc_wire_header), buffer, len);
+	if (ret < 0)
+		goto out;
+
+	ret = conn->security->verify_response(conn, skb, buffer, len);
+
+out:
+	kfree(buffer);
+	return ret;
+}
+
 /*
  * connection-level Rx packet processor
  */
@@ -246,14 +268,14 @@ static int rxrpc_process_event(struct rxrpc_connection *conn,
 		return conn->security->respond_to_challenge(conn, skb);
 
 	case RXRPC_PACKET_TYPE_RESPONSE:
-		spin_lock(&conn->state_lock);
+		spin_lock_irq(&conn->state_lock);
 		if (conn->state != RXRPC_CONN_SERVICE_CHALLENGING) {
-			spin_unlock(&conn->state_lock);
+			spin_unlock_irq(&conn->state_lock);
 			return 0;
 		}
-		spin_unlock(&conn->state_lock);
+		spin_unlock_irq(&conn->state_lock);
 
-		ret = conn->security->verify_response(conn, skb);
+		ret = rxrpc_verify_response(conn, skb);
 		if (ret < 0)
 			return ret;
 
@@ -262,12 +284,12 @@ static int rxrpc_process_event(struct rxrpc_connection *conn,
 		if (ret < 0)
 			return ret;
 
-		spin_lock(&conn->state_lock);
+		spin_lock_irq(&conn->state_lock);
 		if (conn->state == RXRPC_CONN_SERVICE_CHALLENGING) {
 			conn->state = RXRPC_CONN_SERVICE;
 			secured = true;
 		}
-		spin_unlock(&conn->state_lock);
+		spin_unlock_irq(&conn->state_lock);
 
 		if (secured) {
 			/* Offload call state flipping to the I/O thread.  As

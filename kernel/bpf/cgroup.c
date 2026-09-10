@@ -41,6 +41,28 @@ static int __init cgroup_bpf_wq_init(void)
 }
 core_initcall(cgroup_bpf_wq_init);
 
+#ifdef CONFIG_BPF_LSM
+struct cgroup_lsm_atype {
+	u32 attach_btf_id;
+	int refcnt;
+	bool returns_errno;
+};
+
+static struct cgroup_lsm_atype cgroup_lsm_atype[CGROUP_LSM_NUM];
+
+static bool cgroup_bpf_hook_returns_errno(enum cgroup_bpf_attach_type atype)
+{
+	if (atype >= CGROUP_LSM_START && atype <= CGROUP_LSM_END)
+		return READ_ONCE(cgroup_lsm_atype[atype - CGROUP_LSM_START].returns_errno);
+	return true;
+}
+#else
+static bool cgroup_bpf_hook_returns_errno(enum cgroup_bpf_attach_type atype)
+{
+	return true;
+}
+#endif
+
 /* __always_inline is necessary to prevent indirect call through run_prog
  * function pointer.
  */
@@ -70,7 +92,8 @@ bpf_prog_run_array_cg(const struct cgroup_bpf *cgrp,
 			*(ret_flags) |= (func_ret >> 1);
 			func_ret &= 1;
 		}
-		if (!func_ret && !IS_ERR_VALUE((long)run_ctx.retval))
+		if (!func_ret && cgroup_bpf_hook_returns_errno(atype) &&
+		    !IS_ERR_VALUE((long)run_ctx.retval))
 			run_ctx.retval = -EPERM;
 		item++;
 	}
@@ -144,13 +167,6 @@ unsigned int __cgroup_bpf_run_lsm_current(const void *ctx,
 }
 
 #ifdef CONFIG_BPF_LSM
-struct cgroup_lsm_atype {
-	u32 attach_btf_id;
-	int refcnt;
-};
-
-static struct cgroup_lsm_atype cgroup_lsm_atype[CGROUP_LSM_NUM];
-
 static enum cgroup_bpf_attach_type
 bpf_cgroup_atype_find(enum bpf_attach_type attach_type, u32 attach_btf_id)
 {
@@ -179,10 +195,13 @@ void bpf_cgroup_atype_get(u32 attach_btf_id, int cgroup_atype)
 
 	lockdep_assert_held(&cgroup_mutex);
 
-	WARN_ON_ONCE(cgroup_lsm_atype[i].attach_btf_id &&
-		     cgroup_lsm_atype[i].attach_btf_id != attach_btf_id);
-
-	cgroup_lsm_atype[i].attach_btf_id = attach_btf_id;
+	if (!cgroup_lsm_atype[i].attach_btf_id) {
+		cgroup_lsm_atype[i].attach_btf_id = attach_btf_id;
+		WRITE_ONCE(cgroup_lsm_atype[i].returns_errno,
+			   bpf_lsm_hook_returns_errno(attach_btf_id));
+	} else {
+		WARN_ON_ONCE(cgroup_lsm_atype[i].attach_btf_id != attach_btf_id);
+	}
 	cgroup_lsm_atype[i].refcnt++;
 }
 
@@ -191,8 +210,10 @@ void bpf_cgroup_atype_put(int cgroup_atype)
 	int i = cgroup_atype - CGROUP_LSM_START;
 
 	cgroup_lock();
-	if (--cgroup_lsm_atype[i].refcnt <= 0)
+	if (--cgroup_lsm_atype[i].refcnt <= 0) {
+		WRITE_ONCE(cgroup_lsm_atype[i].returns_errno, true);
 		cgroup_lsm_atype[i].attach_btf_id = 0;
+	}
 	WARN_ON_ONCE(cgroup_lsm_atype[i].refcnt < 0);
 	cgroup_unlock();
 }
@@ -803,6 +824,20 @@ found:
 	}
 }
 
+static bool cgroup_bpf_storages_compatible(struct bpf_prog *old_prog,
+					   struct bpf_prog *new_prog)
+{
+	enum bpf_cgroup_storage_type stype;
+
+	for_each_cgroup_storage_type(stype) {
+		if (old_prog->aux->cgroup_storage[stype] !=
+		    new_prog->aux->cgroup_storage[stype])
+			return false;
+	}
+
+	return true;
+}
+
 /**
  * __cgroup_bpf_replace() - Replace link's program and propagate the change
  *                          to descendants
@@ -840,6 +875,9 @@ static int __cgroup_bpf_replace(struct cgroup *cgrp,
 	}
 	if (!found)
 		return -ENOENT;
+
+	if (!cgroup_bpf_storages_compatible(link->link.prog, new_prog))
+		return -EINVAL;
 
 	old_prog = xchg(&link->link.prog, new_prog);
 	replace_effective_prog(cgrp, atype, link);
@@ -1801,8 +1839,8 @@ int __cgroup_bpf_run_filter_sysctl(struct ctl_table_header *head,
 
 	kfree(ctx.cur_val);
 
-	if (ret == 1 && ctx.new_updated) {
-		kfree(*buf);
+	if (!ret && ctx.new_updated) {
+		kvfree(*buf);
 		*buf = ctx.new_val;
 		*pcount = ctx.new_len;
 	} else {
@@ -2063,7 +2101,7 @@ int __cgroup_bpf_run_filter_getsockopt_kern(struct sock *sk, int level,
 	if (ret < 0)
 		return ret;
 
-	if (ctx.optlen > *optlen)
+	if (ctx.optlen > *optlen || ctx.optlen < 0)
 		return -EFAULT;
 
 	/* BPF programs can shrink the buffer, export the modifications.

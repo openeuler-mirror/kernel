@@ -102,6 +102,11 @@ struct ubcore_host_info {
 	union ubcore_net_addr_union cna; // CNA address
 };
 
+struct ubcore_dying_device {
+	struct list_head list_node;
+	struct ubcore_device *dev;
+};
+
 extern uint32_t ubcore_max_retry_cnt;
 extern uint32_t ubmad_retry_interval_ms;
 

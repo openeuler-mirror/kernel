@@ -3,7 +3,7 @@
  * Copyright (c) HiSilicon Technologies Co., Ltd. 2025. All rights reserved.
  */
 
-#include "ubus_inner.h"
+#include <ub/ubus/ubus.h>
 
 struct ub_bus_controller *ub_ubc_get(struct ub_bus_controller *ubc)
 {

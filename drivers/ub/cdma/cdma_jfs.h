@@ -187,7 +187,6 @@ struct cdma_jfs {
 	struct cdma_base_jfs base_jfs;
 	struct cdma_dev *dev;
 	struct cdma_jetty_queue sq;
-	struct cdma_jfs_cfg cfg;
 	u64 jfs_addr;
 	u32 id;
 	u32 queue_id;

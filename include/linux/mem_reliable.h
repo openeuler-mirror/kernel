@@ -36,7 +36,6 @@ bool mem_reliable_counter_initialized(void);
 void reliable_report_meminfo(struct seq_file *m);
 void mem_reliable_out_of_memory(gfp_t gfp_mask, unsigned int order,
 				int preferred_nid, nodemask_t *nodemask);
-void reliable_report_usage(struct seq_file *m, struct mm_struct *mm);
 
 static inline bool mem_reliable_is_enabled(void)
 {
@@ -65,6 +64,9 @@ static inline bool folio_reliable(struct folio *folio)
 	if (!folio)
 		return false;
 
+	if (folio_test_pool(folio))
+		return false;
+
 	return folio_zonenum(folio) < ZONE_MOVABLE;
 }
 
@@ -78,7 +80,18 @@ static inline bool filemap_reliable_is_enabled(void)
 	return pagecache_reliable;
 }
 
-static inline bool skip_non_mirrored_zone(gfp_t gfp, struct zoneref *z)
+/*
+ * Is this an ordinary user allocation that memory-reliable routes to
+ * ZONE_MOVABLE (the non-mirrored region)? Such allocations can only
+ * consume pages from ZONE_MOVABLE. Shared by:
+ * - skip_non_mirrored_zone(): skip mirrored zones in the zonelist;
+ * - the reclaim-side filter in isolate_lru_folios(): restrict the LRU
+ *   scan to ZONE_MOVABLE so freed pages are usable by the caller.
+ *
+ * Conditions: reliable enabled, a user task (has mm, not kthread), and
+ * GFP_HIGHUSER_MOVABLE without __GFP_RELIABLE.
+ */
+static inline bool reliable_movable_only_alloc(gfp_t gfp)
 {
 	if (!mem_reliable_is_enabled())
 		return false;
@@ -86,12 +99,16 @@ static inline bool skip_non_mirrored_zone(gfp_t gfp, struct zoneref *z)
 	if (!current->mm || (current->flags & PF_KTHREAD))
 		return false;
 
+	return !(gfp & GFP_RELIABLE) && (gfp & __GFP_HIGHMEM) &&
+	       (gfp & __GFP_MOVABLE);
+}
+
+static inline bool skip_non_mirrored_zone(gfp_t gfp, struct zoneref *z)
+{
 	/* user tasks can only alloc memory from non-mirrored region */
-	if (!(gfp & GFP_RELIABLE) && (gfp & __GFP_HIGHMEM) &&
-	    (gfp & __GFP_MOVABLE)) {
-		if (zonelist_zone_idx(z) < ZONE_MOVABLE)
-			return true;
-	}
+	if (reliable_movable_only_alloc(gfp) &&
+	    zonelist_zone_idx(z) < ZONE_MOVABLE)
+		return true;
 
 	return false;
 }
@@ -189,45 +206,6 @@ static inline bool mem_reliable_should_reclaim(void)
 	return false;
 }
 
-static inline void reliable_page_counter_inner(struct mm_struct *mm, int val)
-{
-	atomic_long_add(val, &mm->reliable_nr_page);
-
-	/*
-	 * Update reliable page counter to zero if underflows.
-	 *
-	 * Since reliable page counter is used for debug purpose only,
-	 * there is no real function problem by doing this.
-	 */
-	if (unlikely(atomic_long_read(&mm->reliable_nr_page) < 0))
-		atomic_long_set(&mm->reliable_nr_page, 0);
-}
-
-static inline void add_reliable_folio_counter(struct folio *folio,
-		struct mm_struct *mm, int val)
-{
-	if (!folio_reliable(folio))
-		return;
-
-	reliable_page_counter_inner(mm, val);
-}
-
-static inline void add_reliable_page_counter(struct page *page,
-		struct mm_struct *mm, int val)
-{
-	if (!page_reliable(page))
-		return;
-
-	reliable_page_counter_inner(mm, val);
-}
-
-static inline void reliable_clear_page_counter(struct mm_struct *mm)
-{
-	if (!mem_reliable_is_enabled())
-		return;
-
-	atomic_long_set(&mm->reliable_nr_page, 0);
-}
 #else
 #define reliable_enabled 0
 
@@ -238,6 +216,10 @@ static inline void mem_reliable_init(bool has_unmirrored_mem,
 static inline bool page_reliable(struct page *page) { return false; }
 static inline bool folio_reliable(struct folio *folio) { return false; }
 static inline bool skip_non_mirrored_zone(gfp_t gfp, struct zoneref *z)
+{
+	return false;
+}
+static inline bool reliable_movable_only_alloc(gfp_t gfp)
 {
 	return false;
 }
@@ -265,13 +247,6 @@ static inline void mem_reliable_out_of_memory(gfp_t gfp_mask,
 					      int preferred_nid,
 					      nodemask_t *nodemask) {}
 static inline bool reliable_allow_fb_enabled(void) { return false; }
-static inline void add_reliable_page_counter(struct page *page,
-		struct mm_struct *mm, int val) {}
-static inline void add_reliable_folio_counter(struct folio *folio,
-		struct mm_struct *mm, int val) {}
-static inline void reliable_report_usage(struct seq_file *m,
-		struct mm_struct *mm) {}
-static inline void reliable_clear_page_counter(struct mm_struct *mm) {}
 #endif
 
 #endif

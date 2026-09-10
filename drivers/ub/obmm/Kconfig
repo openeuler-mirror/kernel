@@ -3,6 +3,8 @@ config OBMM
 	default n
 	tristate "OBMM(ownership based memory management) Support"
 	depends on UB_UMMU_CORE && UB_UBUS && HISI_SOC_CACHE && ARCH_HAS_COPY_MC
+	depends on NUMA && MEMORY_HOTPLUG && SPARSEMEM_VMEMMAP && ZONE_EXTMEM
+	depends on ARM64_4K_PAGES || ARM64_64K_PAGES
 	select NUMA_REMOTE
 	select PFN_RANGE_ALLOC
 	select RECLAIM_NOTIFY

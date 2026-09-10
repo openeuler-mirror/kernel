@@ -51,8 +51,8 @@ static struct file *ovl_open_realfile(const struct file *file,
 		if (!inode_owner_or_capable(real_idmap, realinode))
 			flags &= ~O_NOATIME;
 
-		realfile = backing_file_open(&file->f_path, flags, realpath,
-					     current_cred());
+		realfile = backing_file_open(file,
+					     flags, realpath, current_cred());
 	}
 	revert_creds(old_cred);
 
@@ -487,6 +487,7 @@ static loff_t ovl_copyfile(struct file *file_in, loff_t pos_in,
 			    struct file *file_out, loff_t pos_out,
 			    loff_t len, unsigned int flags, enum ovl_copyop op)
 {
+	struct inode *inode_in = file_inode(file_in);
 	struct inode *inode_out = file_inode(file_out);
 	struct fd real_in, real_out;
 	const struct cred *old_cred;
@@ -509,6 +510,22 @@ static loff_t ovl_copyfile(struct file *file_in, loff_t pos_in,
 	if (ret) {
 		fdput(real_out);
 		goto out_unlock;
+	}
+
+	/*
+	 * For cross-sb copy, vfs_copy_file_range() will verify read access with
+	 * the mounter creds of the dest fs mounter, so we need to explicitly
+	 * verify read access with the source mounter creds.
+	 */
+	if (unlikely(inode_in->i_sb != inode_out->i_sb)) {
+		old_cred = ovl_override_creds(inode_in->i_sb);
+		ret = rw_verify_area(READ, real_in.file, &pos_in, len);
+		revert_creds(old_cred);
+		if (unlikely(ret)) {
+			fdput(real_in);
+			fdput(real_out);
+			goto out_unlock;
+		}
 	}
 
 	old_cred = ovl_override_creds(file_inode(file_out)->i_sb);

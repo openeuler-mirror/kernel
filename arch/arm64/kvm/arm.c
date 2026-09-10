@@ -175,6 +175,11 @@ static int kvm_cap_arm_enable_hdbss(struct kvm *kvm,
 		return -EINVAL;
 	}
 
+	if (kvm->dirty_ring_size) {
+		kvm_err("Cannot enable HDBSS when dirty ring is enabled!\n");
+		return -EINVAL;
+	}
+
 	if (size < 0 || size > HDBSS_MAX_SIZE) {
 		kvm_err("Invalid HDBSS buffer size: %d!\n", size);
 		return -EINVAL;
@@ -2580,6 +2585,8 @@ static int __init init_subsystems(void)
 	switch (err) {
 	case 0:
 		vgic_present = true;
+		if (static_branch_unlikely(&kvm_vgic_global_state.gicv3_cpuif))
+			kvm_nvhe_sym(hyp_gicv3_nr_lr) = kvm_vgic_global_state.nr_lr;
 		break;
 	case -ENODEV:
 	case -ENXIO:

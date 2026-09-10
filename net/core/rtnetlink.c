@@ -2165,6 +2165,14 @@ struct net *rtnl_get_net_ns_capable(struct sock *sk, int netnsid)
 }
 EXPORT_SYMBOL_GPL(rtnl_get_net_ns_capable);
 
+bool rtnl_dev_link_net_capable(const struct net_device *dev,
+			       const struct net *link_net)
+{
+	return net_eq(link_net, dev_net(dev)) ||
+	       ns_capable(link_net->user_ns, CAP_NET_ADMIN);
+}
+EXPORT_SYMBOL_GPL(rtnl_dev_link_net_capable);
+
 static int rtnl_valid_dump_ifinfo_req(const struct nlmsghdr *nlh,
 				      bool strict_check, struct nlattr **tb,
 				      struct netlink_ext_ack *extack)
@@ -3860,6 +3868,14 @@ static int rtnl_getlink(struct sk_buff *skb, struct nlmsghdr *nlh,
 	nskb = nlmsg_new(if_nlmsg_size(dev, ext_filter_mask), GFP_KERNEL);
 	if (nskb == NULL)
 		goto out;
+
+	/* Synchronize the carrier state so we don't report a state
+	 * that we're not actually going to honour immediately; if
+	 * the driver just did a carrier off->on transition, we can
+	 * only TX if link watch work has run, but without this we'd
+	 * already report carrier on, even if it doesn't work yet.
+	 */
+	linkwatch_sync_dev(dev);
 
 	err = rtnl_fill_ifinfo(nskb, dev, net,
 			       RTM_NEWLINK, NETLINK_CB(skb).portid,

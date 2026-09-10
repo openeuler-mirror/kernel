@@ -13,29 +13,32 @@
 #include <linux/iommu.h>
 #include <linux/xarray.h>
 #include <linux/bitmap.h>
+#include <linux/log2.h>
 #include <linux/ummu_core.h>
 #include <linux/delay.h>
 #include <linux/maple_tree.h>
 #include <linux/interrupt.h>
 #include <ub/ubfi/ubfi.h>
-#include <linux/hisi_ummu.h>
+#include <uapi/linux/hisi_ummu.h>
 
 #include "../regs.h"
 #include "ubmem_mmu.h"
 
 #define UMMU_MEM_MAX_GRANULE 8
-#define UMMU_VENDOR_INFO_RESERVED 48
+#define UMMU_VENDOR_INFO_RESERVED 46
+#define UMMU_CHIP_VERSION_FIRST 0
+#define UMMU_GRANULE_MAX (UMMU_MEM_MAX_GRANULE - 1)
+#define UMAU_GRANULE_MAX 14
 static LIST_HEAD(ubmem_device_list);
 
 static ulong ubm_granule;
 module_param(ubm_granule, ulong, 0444);
 MODULE_PARM_DESC(ubm_granule,
-	"UB memory page table granule; range [0,7], default(0), addr|size must be aligned to 2M * 2^ubm_granule.");
-
-static unsigned long ummu_get_ubm_granule(void)
-{
-	return (ubm_granule >= UMMU_MEM_MAX_GRANULE) ? 0 : ubm_granule;
-}
+	"UB memory page table granule; default(0)\n"
+	"\t\tgranule_size = 2^granule * 2MB\n"
+	"\t\tfirst-gen: valid range [0,7], any value\n"
+	"\t\tother-gen: valid values 0,2,4,6,8,10,12,14 (even only)\n"
+	"\t\taddr and size must be aligned to the granule size.\n");
 
 /* REG DEFINE */
 #define UBMEM_REG_SHIFT 16
@@ -61,7 +64,7 @@ static unsigned long ummu_get_ubm_granule(void)
 #define MEM_ATE_INDEX_MASK GENMASK(16, 0)
 
 #define UMMU_MEM_DTLB_INVLD 0x10
-#define MEM_DTLB_INVLD_MASK (1UL)
+#define UMMU_MEM_DTLB_INVLD_MASK (1UL)
 
 #define SZ_2M_SHIFT (21UL)
 #define PHYS_ADDR_MASK GENMASK_ULL(43, 21)
@@ -93,7 +96,24 @@ static unsigned long ummu_get_ubm_granule(void)
 #define RESERVED_MSI_ADDR_H_SHIFT 32
 
 #define UMAU_MEM_DTLB_INVLD 0x2030
+#define UMAU_MEM_DTLB_INVLD_MASK (3UL)
 #define UMAU_MEM_START_ADDR 0x2000
+#define UMAU_MEM_ATTR_MASK GENMASK(30, 27)
+/*
+ * UMAU memory attributes (UMAU_MEM_ATTR_MASK field, register bits [30:27]):
+ *   attr[0] memattr_ewa       - early-write-allocate
+ *   attr[1] memattr_device    - device memory type
+ *   attr[2] memattr_cacheable - cacheable memory type
+ *   attr[3] memattr_allocate  - allocate-on-access
+ */
+#define UMAU_MEM_ATTR_EWA       BIT(0)
+#define UMAU_MEM_ATTR_DEVICE    BIT(1)
+#define UMAU_MEM_ATTR_CACHEABLE BIT(2)
+#define UMAU_MEM_ATTR_ALLOCATE  BIT(3)
+#define UMAU_MEM_ATTR_NORMAL    (UMAU_MEM_ATTR_EWA | \
+				 UMAU_MEM_ATTR_CACHEABLE | \
+				 UMAU_MEM_ATTR_ALLOCATE)
+
 #define UMAU_MEM_LEN_GRANU 0x2004
 #define UMAU_MEM_BTE 0x2008
 #define UMAU_MEM_INDEX 0x200C
@@ -106,6 +126,20 @@ static unsigned long ummu_get_ubm_granule(void)
 #define TTB_INIT_DONE BIT(0)
 #define UMAU_MEM_TAB_INIT_DONE_PROT 0x2014
 #define PTB_INIT_DONE BIT(0)
+
+#define UMAU_MEM_DFX_OFFSET 0x4
+#define UMAU_MEM_UPA_NUM 2
+
+/* UMAU DFX */
+#define UMAU_MEM_VA_L GENMASK(31, 0)
+#define UMAU_MEM_VA_H GENMASK(23, 8)
+#define UMAU_MEM_VA_GRANULE_SHIFT 6
+#define UMAU_MEM_ENTRYID GENMASK(7, 0)
+#define UMAU_MEM_TT_ADDR GENMASK(26, 0)
+#define UMAU_MEM_CLEAR BIT(31)
+#define UMAU_MEM_TOKENID GENMASK(16, 7)
+#define UMAU_MEM_ERR_CODE GENMASK(6, 2)
+#define UMAU_MEM_VLD BIT(0)
 
 enum ummu_ubif_reg_enum {
 	UBIF_MEM_CFG,
@@ -125,11 +159,11 @@ static u32 ummu_ubif_reg[UMMU_UBIF_MEM_MAX] = {
 };
 
 static u32 umau_ubif_reg[UMMU_UBIF_MEM_MAX] = {
-	[UBIF_MEM_CFG] = 0x1030,
-	[UBIF_MEM_DFX0] = 0x1034,
-	[UBIF_MEM_DFX1] = 0x1038,
-	[UBIF_MEM_DFX2] = 0x103C,
-	[UBIF_MEM_DFX3] = 0x1044,
+	[UBIF_MEM_CFG] = 0x3250,
+	[UBIF_MEM_DFX0] = 0x4000,
+	[UBIF_MEM_DFX1] = 0x4010,
+	[UBIF_MEM_DFX2] = 0x4020,
+	[UBIF_MEM_DFX3] = 0x4030,
 };
 
 struct ubmem_reg_offset {
@@ -159,16 +193,6 @@ static const struct ubmem_reg_offset reg_umau_v2 = {
 	.ubif_reg = umau_ubif_reg
 };
 
-enum ubmem_err_type {
-	BAD_REQUEST = 1,
-	BAD_TOKENID,
-	PT_ECC_2BITS,
-	PT_INVALID,
-	PT_BAD_ADDR,
-	ATT_ECC_2BITS,
-	ATT_INVALID,
-};
-
 struct ubmem_mmu_info {
 	u64 valid;
 	u32 cap0;
@@ -176,6 +200,8 @@ struct ubmem_mmu_info {
 	u64 reg_base;
 	u64 reg_size;
 	u8 reserved[UMMU_VENDOR_INFO_RESERVED];
+	u8 version;
+	u8 type;
 };
 
 struct ubmem_mmu_device {
@@ -190,6 +216,7 @@ struct ubmem_mmu_device {
 	u32 token_id_bits;
 	const struct ubmem_reg_offset *reg_offset;
 	struct ummu_core_device ummu_core;
+	u8 chip_version;
 };
 
 struct ubmem_mmu_domain {
@@ -234,36 +261,120 @@ to_ubmem_mmu_domain(struct iommu_domain *dom)
 	return container_of(base_domain, struct ubmem_mmu_domain, base_domain);
 }
 
-static irqreturn_t ubmem_error_handler(int irq, void *ummu)
+static bool ubmem_granule_is_valid(unsigned long granule, u8 chip_version)
 {
-	struct ubmem_mmu_device *mmu =
-				to_ubmem_mmu_dev((struct ummu_device *)ummu);
+	if (chip_version == UMMU_CHIP_VERSION_FIRST)
+		return granule <= UMMU_GRANULE_MAX;
+	return granule <= UMAU_GRANULE_MAX && !(granule & 1);
+}
+
+static void ubmem_granule_sanitize(struct ubmem_mmu_device *mmu)
+{
+	if (ubmem_granule_is_valid(ubm_granule, mmu->chip_version))
+		return;
+
+	if (mmu->chip_version == UMMU_CHIP_VERSION_FIRST)
+		pr_warn("granule %lu out of range, expect [0, %d], granule has been reset to 0\n",
+					ubm_granule, UMMU_GRANULE_MAX);
+	else
+		pr_warn("granule %lu is incorrect, expect [0,2,4,6,8,10,12,14], granule has been reset to 0\n",
+			ubm_granule);
+
+	ubm_granule = 0;
+}
+
+static bool ubmem_dfx_log_allow(void)
+{
+	static DEFINE_RATELIMIT_STATE(ubmem_dfx_rs, DEFAULT_RATELIMIT_INTERVAL,
+				      DEFAULT_RATELIMIT_BURST);
+
+	if (!__ratelimit(&ubmem_dfx_rs))
+		return false;
+
+	return true;
+}
+
+static void ubmem_umau_dfx_irq(struct ubmem_mmu_device *mmu)
+{
+	const u32 *reg = mmu->reg_offset->ubif_reg;
+	void __iomem *base = mmu->base;
+	u32 upa, off, dfx[UMMU_UBIF_MEM_MAX];
+	u8 code;
+	int i;
+
+	for (upa = 0; upa < UMAU_MEM_UPA_NUM; upa++) {
+		off = upa * UMAU_MEM_DFX_OFFSET;
+		for (i = UBIF_MEM_DFX0; i < UMMU_UBIF_MEM_MAX; i++)
+			dfx[i] = readl_relaxed(base + reg[i] + off);
+
+		if (!(dfx[UBIF_MEM_DFX3] & UMAU_MEM_VLD)) {
+			dev_info_ratelimited(mmu->dev,
+				"ummu mem dfx upa%u no valid fault.\n", upa);
+			continue;
+		}
+
+		code = FIELD_GET(UMAU_MEM_ERR_CODE, dfx[UBIF_MEM_DFX3]);
+		if (ubmem_dfx_log_allow()) {
+			dev_info(mmu->dev, "ummu mem dfx upa%u event 0x%x received.\n", upa, code);
+			dev_info(mmu->dev, "upa%u fault tid: 0x%x.\n", upa,
+				 (u32)FIELD_GET(UMAU_MEM_TOKENID, dfx[UBIF_MEM_DFX3]));
+			dev_info(mmu->dev, "upa%u fault entryid: 0x%x.\n", upa,
+				 (u32)FIELD_GET(UMAU_MEM_ENTRYID, dfx[UBIF_MEM_DFX1]));
+			dev_info(mmu->dev, "upa%u fault va: 0x%llx.\n", upa,
+				 ((u64)FIELD_GET(UMAU_MEM_VA_L, dfx[UBIF_MEM_DFX0]) |
+				  ((u64)FIELD_GET(UMAU_MEM_VA_H, dfx[UBIF_MEM_DFX1]) << 32))
+				  << UMAU_MEM_VA_GRANULE_SHIFT);
+			dev_info(mmu->dev, "upa%u fault tt_addr: 0x%x.\n", upa,
+				 (u32)FIELD_GET(UMAU_MEM_TT_ADDR, dfx[UBIF_MEM_DFX2]));
+		}
+
+		writel_relaxed(UMAU_MEM_CLEAR,
+			       base + reg[UBIF_MEM_DFX3] + off);
+	}
+}
+
+static void ubmem_ummu_dfx_irq(struct ubmem_mmu_device *mmu)
+{
 	void __iomem *dfx_base = mmu->dfx_base == NULL ? mmu->base : mmu->dfx_base;
+	const u32 *reg = mmu->reg_offset->ubif_reg;
 	u32 regs[UMMU_UBIF_MEM_MAX];
 	u8 code;
 	int i;
 
 	for (i = 0; i < UMMU_UBIF_MEM_MAX; i++)
-		regs[i] = readl_relaxed(dfx_base + mmu->reg_offset->ubif_reg[i]);
+		regs[i] = readl_relaxed(dfx_base + reg[i]);
 
 	if (!(regs[UBIF_MEM_DFX2] & UBIF_MEM_CHK_FAULT_VLD)) {
 		dev_info_ratelimited(mmu->dev, "received a unknown fault.\n");
-		return IRQ_HANDLED;
+		return;
 	}
 	code = FIELD_GET(UBIF_MEM_CHK_FAULT_ERR_CODE, regs[UBIF_MEM_DFX2]);
-	dev_info(mmu->dev, "event 0x%x received.\n", code);
-	dev_info(mmu->dev, "fault stage: 0x%lx.\n",
-		 regs[UBIF_MEM_DFX2] & UBIF_MEM_CHK_FAULT_STAGE);
-	dev_info(mmu->dev, "fault mode: 0x%lx.\n",
-		 regs[UBIF_MEM_CFG] & UBIF_MEM_CHK_FAULT_RECORD_MODE);
-	dev_info(mmu->dev, "fault tid: 0x%lx.\n",
-		 FIELD_GET(UBIF_MEM_CHK_FAULT_TOKENID, regs[UBIF_MEM_DFX2]));
-	dev_info(mmu->dev, "fault length: 0x%lx.\n",
-		 FIELD_GET(UBIF_MEM_CHK_FAULT_END_ADDR, regs[UBIF_MEM_DFX3]) -
-		 FIELD_GET(UBIF_MEM_CHK_FAULT_END_ADDR, regs[UBIF_MEM_DFX0]));
+	if (ubmem_dfx_log_allow()) {
+		dev_info(mmu->dev, "event 0x%x received.\n", code);
+		dev_info(mmu->dev, "fault stage: 0x%lx.\n",
+			 regs[UBIF_MEM_DFX2] & UBIF_MEM_CHK_FAULT_STAGE);
+		dev_info(mmu->dev, "fault mode: 0x%lx.\n",
+			 regs[UBIF_MEM_CFG] & UBIF_MEM_CHK_FAULT_RECORD_MODE);
+		dev_info(mmu->dev, "fault tid: 0x%lx.\n",
+			 FIELD_GET(UBIF_MEM_CHK_FAULT_TOKENID, regs[UBIF_MEM_DFX2]));
+		dev_info(mmu->dev, "fault length: 0x%lx.\n",
+			 FIELD_GET(UBIF_MEM_CHK_FAULT_END_ADDR, regs[UBIF_MEM_DFX3]) -
+			 FIELD_GET(UBIF_MEM_CHK_FAULT_END_ADDR, regs[UBIF_MEM_DFX0]));
+	}
 
-	writel_relaxed(UBIF_MEM_CHK_FAULT_CLEAR,
-		       dfx_base + mmu->reg_offset->ubif_reg[UBIF_MEM_DFX2]);
+	writel_relaxed(UBIF_MEM_CHK_FAULT_CLEAR, dfx_base + reg[UBIF_MEM_DFX2]);
+}
+
+static irqreturn_t ubmem_error_handler(int irq, void *ummu)
+{
+	struct ubmem_mmu_device *mmu =
+				to_ubmem_mmu_dev((struct ummu_device *)ummu);
+
+	if (mmu->chip_version != UMMU_CHIP_VERSION_FIRST)
+		ubmem_umau_dfx_irq(mmu);
+	else
+		ubmem_ummu_dfx_irq(mmu);
+
 	return IRQ_HANDLED;
 }
 
@@ -348,7 +459,7 @@ static struct ubmem_mmu_device *get_ubmem_mmu_from_fwnode(struct fwnode_handle *
 
 static void mmu_domain_cfg_clear(struct ubmem_mmu_domain *dom)
 {
-	dom->granule = ummu_get_ubm_granule();
+	dom->granule = ubm_granule;
 	dom->iova_start = 0;
 	dom->iova_len = 0;
 	dom->ate_count = 0;
@@ -411,6 +522,9 @@ static void write_ate_entries(struct ubmem_mmu_domain *dom,
 		cnt = info->size / granule_size;
 		for (i = 0; i < cnt; i++) {
 			reg = (start_addr & PHYS_ADDR_MASK) >> SZ_2M_SHIFT;
+			reg |= FIELD_PREP(UMAU_MEM_ATTR_MASK,
+				(dom->mmu->chip_version == UMMU_CHIP_VERSION_FIRST) ?
+				0 : UMAU_MEM_ATTR_NORMAL);
 			writel_relaxed(reg, mdev->base + mdev->reg_offset->mem_start_addr);
 
 			reg = MEM_TYPE_MASK | MEM_WR_MASK | MEM_VLD_MASK;
@@ -429,7 +543,9 @@ static void write_pte_entry(struct ubmem_mmu_domain *dom,
 	reg = (dom->iova_start & IOVA_MASK) >> SZ_2M_SHIFT;
 	writel_relaxed(reg, mdev->base + mdev->reg_offset->mem_start_addr);
 
-	reg = FIELD_PREP(MEM_GRANU_MASK, dom->granule);
+	reg = FIELD_PREP(MEM_GRANU_MASK,
+			 (dom->mmu->chip_version == UMMU_CHIP_VERSION_FIRST) ?
+			 dom->granule : dom->granule / 2);
 	reg |= FIELD_PREP(MEM_LEN_MASK, dom->ate_count - 1);
 	writel_relaxed(reg, mdev->base + mdev->reg_offset->mem_len_granu);
 
@@ -452,7 +568,8 @@ static void clear_pte_entry(struct ubmem_mmu_domain *dom,
 
 static void ubmem_mmu_flush_dtlb(struct ubmem_mmu_device *mdev)
 {
-	u32 reg = MEM_DTLB_INVLD_MASK;
+	u32 reg = mdev->chip_version == UMMU_CHIP_VERSION_FIRST ?
+		UMMU_MEM_DTLB_INVLD_MASK : UMAU_MEM_DTLB_INVLD_MASK;
 
 	writel_relaxed(reg, mdev->base + mdev->reg_offset->mem_dtlb_invld);
 }
@@ -745,8 +862,10 @@ static bool ubmem_mmu_tdev_support_attr(struct ummu_core_device *core_device,
 		return false;
 
 	info = (struct hisi_ummu_tdev_info *)attr->priv;
-	if (!info->v1.on_chip || !info->v1.ummu_idx_mask) {
-		dev_err(ubmem_dev->ummu.dev, "tdev_info is invalid.\n");
+	if (!info->v1.on_chip || !is_power_of_2(info->v1.ummu_idx_mask)) {
+		dev_err(ubmem_dev->ummu.dev,
+			"tdev_info is invalid: on_chip = %u, ummu_idx_mask = 0x%llx.\n",
+			(unsigned int)info->v1.on_chip, info->v1.ummu_idx_mask);
 		return false;
 	}
 
@@ -820,7 +939,7 @@ static int ubmem_mmu_init(struct platform_device *pdev,
 	if (!mmu->base)
 		return -ENOMEM;
 
-	if (mmu->ummu.cap.options & UMMU_OPT_UMAU) {
+	if (mmu->chip_version != UMMU_CHIP_VERSION_FIRST) {
 		mmu->dfx_base = NULL;
 		mmu->reg_offset = &reg_umau_v2;
 		ret = umau_tab_init(mmu);
@@ -854,11 +973,16 @@ static int ubmem_mmu_init(struct platform_device *pdev,
 static int register_to_ummu_core(struct platform_device *pdev, struct ubmem_mmu_device *mmu)
 {
 	struct ummu_core_init_args args = {0};
+	const struct tid_ops *tid_ops;
 	int ret;
+
+	tid_ops = ummu_core_get_tid_ops(DEFAULT_OPS);
+	if (!tid_ops)
+		return -EINVAL;
 
 	args.iommu_ops = &ubmm_mmu_iommu_ops;
 	args.hwdev = &pdev->dev;
-	args.tid_args.tid_ops = ummu_core_tid_ops[DEFAULT_OPS];
+	args.tid_args.tid_ops = tid_ops;
 	args.tid_args.max_tid = (1 << (mmu->token_id_bits)) - 1;
 	args.tid_args.min_tid = 0;
 	args.core_ops = &ubmm_mmu_core_ops;
@@ -888,6 +1012,9 @@ static int ubmem_mmu_device_probe(struct ummu_device *ummu)
 
 	info = (struct ubmem_mmu_info *)pdev->dev.platform_data;
 	mmu = (struct ubmem_mmu_device *)to_ubmem_mmu_dev(ummu);
+	mmu->chip_version = info->version;
+
+	ubmem_granule_sanitize(mmu);
 	ret = ubmem_mmu_init(pdev, info, mmu);
 	if (ret)
 		goto exit_err;
@@ -905,7 +1032,7 @@ static int ubmem_mmu_device_probe(struct ummu_device *ummu)
 	mmu->dev = &pdev->dev;
 	ubmm_mmu_iommu_ops.pgsize_bitmap = SZ_4K | SZ_2M | SZ_4M | SZ_8M |
 					   SZ_16M | SZ_32M | SZ_64M | SZ_128M |
-					   SZ_256M;
+					   SZ_256M | SZ_512M | SZ_2G | SZ_8G | SZ_32G;
 
 	return 0;
 
@@ -942,8 +1069,8 @@ struct ummu_device *ubmem_mmu_impl_init(struct ummu_device *ummu)
 	if (!info || (info->valid & UBMEM_VALID_MASK) != UBMEM_VALID_VALUE)
 		return ummu;
 
-	pr_info("valid = 0x%llx, cap0 = 0x%x, cap1 = 0x%x.\n",
-		info->valid, info->cap0, info->cap1);
+	pr_info("valid = 0x%llx, cap0 = 0x%x, cap1 = 0x%x, version = %u, type = %u.\n",
+		info->valid, info->cap0, info->cap1, info->version, info->type);
 	ubmem_mmu = devm_krealloc(dev, ummu, sizeof(*ubmem_mmu), GFP_KERNEL | __GFP_ZERO);
 	if (!ubmem_mmu)
 		return ERR_PTR(-ENOMEM);

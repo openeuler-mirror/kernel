@@ -83,7 +83,7 @@ static DEVICE_ATTR(sriov_totalvfs, 0444,
 			sriov_totalvfs_show, NULL);
 #endif /* !(HAVE_SRIOV_CONFIGURE || HAVE_RHEL6_SRIOV_CONFIGURE) */
 
-struct hinic5_uld_info hinic5_g_uld_info[SERVICE_T_MAX] = { {0} };
+struct hinic5_uld_info hinic5_g_uld_info[SERVICE_T_MAX];
 
 #define HINIC5_EVENT_PROCESS_TIMEOUT	10000
 struct mutex		hinic5_g_uld_mutex;  // Global mutex to protect ULD operations

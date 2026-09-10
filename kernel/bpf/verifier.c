@@ -4727,7 +4727,8 @@ static int check_stack_write_fixed_off(struct bpf_verifier_env *env,
 		bool sanitize = reg && is_spillable_regtype(reg->type);
 
 		for (i = 0; i < size; i++) {
-			u8 type = state->stack[spi].slot_type[i];
+			u8 type = state->stack[spi].slot_type[(slot - i) %
+							      BPF_REG_SIZE];
 
 			if (type != STACK_MISC && type != STACK_ZERO) {
 				sanitize = true;
@@ -6984,6 +6985,7 @@ static int check_mem_access(struct bpf_verifier_env *env, int insn_idx, u32 regn
 			 */
 			if (reg_type == SCALAR_VALUE) {
 				if (is_retval && get_func_retval_range(env->prog, &range)) {
+					mark_reg_unknown(env, regs, value_regno);
 					err = __mark_reg_s32_range(env, regs, value_regno,
 								   range.minval, range.maxval);
 					if (err)
@@ -9936,11 +9938,14 @@ static int prepare_func_exit(struct bpf_verifier_env *env, int *insn_idx)
 	return 0;
 }
 
-static void do_refine_retval_range(struct bpf_reg_state *regs, int ret_type,
+static void do_refine_retval_range(struct bpf_verifier_env *env,
+				   struct bpf_reg_state *regs, int ret_type,
 				   int func_id,
 				   struct bpf_call_arg_meta *meta)
 {
+	struct bpf_retval_range range;
 	struct bpf_reg_state *ret_reg = &regs[BPF_REG_0];
+	enum bpf_prog_type prog_type = resolve_prog_type(env->prog);
 
 	if (ret_type != RET_INTEGER)
 		return;
@@ -9966,6 +9971,31 @@ static void do_refine_retval_range(struct bpf_reg_state *regs, int ret_type,
 		ret_reg->u32_min_value = 0;
 		ret_reg->smin_value = 0;
 		ret_reg->s32_min_value = 0;
+		reg_bounds_sync(ret_reg);
+		break;
+	case BPF_FUNC_get_retval:
+		/*
+		 * bpf_get_retval may see arbitrary value passed by bpf_prog_run_array_cg for
+		 * CGROUP_GETSOCKOPT type.
+		 */
+		if (prog_type == BPF_PROG_TYPE_CGROUP_SOCKOPT &&
+		    env->prog->expected_attach_type == BPF_CGROUP_GETSOCKOPT)
+			break;
+
+		if (prog_type == BPF_PROG_TYPE_LSM &&
+		    env->prog->expected_attach_type == BPF_LSM_CGROUP) {
+			if (!env->prog->aux->attach_func_proto->type)
+				break;
+			bpf_lsm_get_retval_range(env->prog, &range);
+		} else {
+			range.minval = -MAX_ERRNO;
+			range.maxval = 0;
+		}
+
+		ret_reg->smin_value = range.minval;
+		ret_reg->smax_value = range.maxval;
+		ret_reg->s32_min_value = range.minval;
+		ret_reg->s32_max_value = range.maxval;
 		reg_bounds_sync(ret_reg);
 		break;
 	}
@@ -10354,6 +10384,23 @@ static int check_helper_call(struct bpf_verifier_env *env, struct bpf_insn *insn
 		}
 		break;
 	case BPF_FUNC_set_retval:
+	{
+		struct bpf_retval_range range = {
+			.minval = -MAX_ERRNO,
+			.maxval = 0,
+		};
+		struct bpf_reg_state *r1 = &regs[BPF_REG_1];
+
+		if (r1->type != SCALAR_VALUE) {
+			verbose(env, "R1 is not a scalar\n");
+			return -EINVAL;
+		}
+
+		/* CGROUP_GETSOCKOPT is allowed to return arbitrary value */
+		if (prog_type == BPF_PROG_TYPE_CGROUP_SOCKOPT &&
+		    env->prog->expected_attach_type == BPF_CGROUP_GETSOCKOPT)
+			break;
+
 		if (prog_type == BPF_PROG_TYPE_LSM &&
 		    env->prog->expected_attach_type == BPF_LSM_CGROUP) {
 			if (!env->prog->aux->attach_func_proto->type) {
@@ -10363,8 +10410,20 @@ static int check_helper_call(struct bpf_verifier_env *env, struct bpf_insn *insn
 				verbose(env, "BPF_LSM_CGROUP that attach to void LSM hooks can't modify return value!\n");
 				return -EINVAL;
 			}
+			bpf_lsm_get_retval_range(env->prog, &range);
 		}
+
+		err = mark_chain_precision(env, BPF_REG_1);
+		if (err)
+			return err;
+
+		if (!retval_range_within(range, r1, true)) {
+			verbose_invalid_scalar(env, r1, range, "At bpf_set_retval", "R1");
+			return -EINVAL;
+		}
+
 		break;
+	}
 	case BPF_FUNC_dynptr_data:
 	{
 		struct bpf_reg_state *reg;
@@ -10588,7 +10647,7 @@ static int check_helper_call(struct bpf_verifier_env *env, struct bpf_insn *insn
 		regs[BPF_REG_0].ref_obj_id = id;
 	}
 
-	do_refine_retval_range(regs, fn->ret_type, func_id, &meta);
+	do_refine_retval_range(env, regs, fn->ret_type, func_id, &meta);
 
 	err = check_map_func_compatibility(env, meta.map_ptr, func_id);
 	if (err)
@@ -12666,23 +12725,21 @@ static void sanitize_mark_insn_seen(struct bpf_verifier_env *env)
 		env->insn_aux_data[env->insn_idx].seen = env->pass_cnt;
 }
 
-static int sanitize_err(struct bpf_verifier_env *env,
-			const struct bpf_insn *insn, int reason,
-			const struct bpf_reg_state *off_reg,
-			const struct bpf_reg_state *dst_reg)
+static int sanitize_err(struct bpf_verifier_env *env, const struct bpf_insn *insn, int reason)
 {
 	static const char *err = "pointer arithmetic with it prohibited for !root";
 	const char *op = BPF_OP(insn->code) == BPF_ADD ? "add" : "sub";
 	u32 dst = insn->dst_reg, src = insn->src_reg;
+	struct bpf_reg_state *regs = cur_regs(env);
 
 	switch (reason) {
 	case REASON_BOUNDS:
 		verbose(env, "R%d has unknown scalar with mixed signed bounds, %s\n",
-			off_reg == dst_reg ? dst : src, err);
+			regs[src].type == SCALAR_VALUE ? src : dst, err);
 		break;
 	case REASON_TYPE:
 		verbose(env, "R%d has pointer with unsupported alu operation, %s\n",
-			off_reg == dst_reg ? src : dst, err);
+			regs[src].type == SCALAR_VALUE ? dst : src, err);
 		break;
 	case REASON_PATHS:
 		verbose(env, "R%d tried to %s from different maps, paths or scalars, %s\n",
@@ -12846,11 +12903,12 @@ static int adjust_ptr_min_max_vals(struct bpf_verifier_env *env,
 		break;
 	}
 
-	/* In case of 'scalar += pointer', dst_reg inherits pointer type and id.
-	 * The id may be overwritten later if we create a new variable offset.
+	/* For 'scalar += pointer', dst_reg inherits the complete pointer
+	 * register state. Individual fields may be adjusted later by pointer
+	 * arithmetic. Callers guarantee that below does not overwrite off_reg.
 	 */
-	dst_reg->type = ptr_reg->type;
-	dst_reg->id = ptr_reg->id;
+	if (dst_reg != ptr_reg)
+		*dst_reg = *ptr_reg;
 
 	if (!check_reg_sane_offset(env, off_reg, ptr_reg->type) ||
 	    !check_reg_sane_offset(env, ptr_reg, ptr_reg->type))
@@ -12863,7 +12921,7 @@ static int adjust_ptr_min_max_vals(struct bpf_verifier_env *env,
 		ret = sanitize_ptr_alu(env, insn, ptr_reg, off_reg, dst_reg,
 				       &info, false);
 		if (ret < 0)
-			return sanitize_err(env, insn, ret, off_reg, dst_reg);
+			return sanitize_err(env, insn, ret);
 	}
 
 	switch (opcode) {
@@ -12930,7 +12988,7 @@ static int adjust_ptr_min_max_vals(struct bpf_verifier_env *env,
 		}
 		break;
 	case BPF_SUB:
-		if (dst_reg == off_reg) {
+		if (dst_reg != ptr_reg) {
 			/* scalar -= pointer.  Creates an unknown scalar */
 			verbose(env, "R%d tried to subtract pointer from scalar\n",
 				dst);
@@ -13027,7 +13085,7 @@ static int adjust_ptr_min_max_vals(struct bpf_verifier_env *env,
 		ret = sanitize_ptr_alu(env, insn, dst_reg, off_reg, dst_reg,
 				       &info, true);
 		if (ret < 0)
-			return sanitize_err(env, insn, ret, off_reg, dst_reg);
+			return sanitize_err(env, insn, ret);
 	}
 
 	return 0;
@@ -13659,7 +13717,7 @@ static int adjust_scalar_min_max_vals(struct bpf_verifier_env *env,
 	if (sanitize_needed(opcode)) {
 		ret = sanitize_val_alu(env, insn);
 		if (ret < 0)
-			return sanitize_err(env, insn, ret, NULL, NULL);
+			return sanitize_err(env, insn, ret);
 	}
 
 	/* Calculate sign/unsigned bounds and tnum for alu32 and alu64 bit ops.
@@ -13804,8 +13862,8 @@ static int adjust_reg_min_max_vals(struct bpf_verifier_env *env,
 				err = mark_chain_precision(env, insn->dst_reg);
 				if (err)
 					return err;
-				return adjust_ptr_min_max_vals(env, insn,
-							       src_reg, dst_reg);
+				off_reg = *dst_reg;
+				return adjust_ptr_min_max_vals(env, insn, src_reg, &off_reg);
 			}
 		} else if (ptr_reg) {
 			/* pointer += scalar */
@@ -15274,6 +15332,23 @@ static int check_ld_abs(struct bpf_verifier_env *env, struct bpf_insn *insn)
 	mark_reg_unknown(env, regs, BPF_REG_0);
 	/* ld_abs load up to 32-bit skb data. */
 	regs[BPF_REG_0].subreg_def = env->insn_idx + 1;
+	/*
+	 * See bpf_gen_ld_abs() which emits a hidden BPF_EXIT with r0=0
+	 * which must be explored by the verifier when in a subprog.
+	 */
+	if (env->cur_state->curframe) {
+		struct bpf_verifier_state *branch;
+
+		mark_reg_scratched(env, BPF_REG_0);
+		branch = push_stack(env, env->insn_idx + 1, env->insn_idx, false);
+		if (!branch)
+			return -EFAULT;
+		mark_reg_known_zero(env, regs, BPF_REG_0);
+		err = prepare_func_exit(env, &env->insn_idx);
+		if (err)
+			return err;
+		env->insn_idx--;
+	}
 	return 0;
 }
 
@@ -19046,9 +19121,9 @@ static int jit_subprogs(struct bpf_verifier_env *env)
 		}
 		if (!bpf_pseudo_call(insn))
 			continue;
-		insn->off = env->insn_aux_data[i].call_imm;
-		subprog = find_subprog(env, i + insn->off + 1);
-		insn->imm = subprog;
+		insn->imm = env->insn_aux_data[i].call_imm;
+		subprog = find_subprog(env, i + insn->imm + 1);
+		insn->off = subprog;
 	}
 
 	prog->jited = 1;
@@ -19138,7 +19213,12 @@ static int fixup_call_args(struct bpf_verifier_env *env)
 		depth = get_callee_stack_depth(env, insn, i);
 		if (depth < 0)
 			return depth;
-		bpf_patch_call_args(insn, depth);
+		err = bpf_patch_call_args(insn, depth);
+		if (err) {
+			verbose(env, "stack depth %d exceeds interpreter stack depth limit\n",
+				depth);
+			return err;
+		}
 	}
 	err = 0;
 #endif
@@ -20723,8 +20803,10 @@ static bool can_be_sleepable(struct bpf_prog *prog)
 			return false;
 		}
 	}
-	return prog->type == BPF_PROG_TYPE_LSM ||
-	       prog->type == BPF_PROG_TYPE_KPROBE /* only for uprobes */ ||
+	if (prog->type == BPF_PROG_TYPE_LSM)
+		return prog->expected_attach_type != BPF_LSM_CGROUP;
+
+	return prog->type == BPF_PROG_TYPE_KPROBE /* only for uprobes */ ||
 	       prog->type == BPF_PROG_TYPE_STRUCT_OPS;
 }
 
@@ -20827,7 +20909,7 @@ static int check_attach_btf_id(struct bpf_verifier_env *env)
 		return -ENOMEM;
 
 	if (tgt_prog && tgt_prog->aux->tail_call_reachable)
-		tr->flags = BPF_TRAMP_F_TAIL_CALL_CTX;
+		bpf_trampoline_set_flags(tr, BPF_TRAMP_F_TAIL_CALL_CTX);
 
 	prog->aux->dst_trampoline = tr;
 	return 0;

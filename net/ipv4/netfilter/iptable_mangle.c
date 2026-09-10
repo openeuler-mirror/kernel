@@ -95,7 +95,7 @@ static int iptable_mangle_table_init(struct net *net)
 
 static void __net_exit iptable_mangle_net_pre_exit(struct net *net)
 {
-	ipt_unregister_table_pre_exit(net, "mangle");
+	xt_unregister_table_pre_exit(net, NFPROTO_IPV4, "mangle");
 }
 
 static void __net_exit iptable_mangle_net_exit(struct net *net)
@@ -134,8 +134,8 @@ static int __init iptable_mangle_init(void)
 
 static void __exit iptable_mangle_fini(void)
 {
-	unregister_pernet_subsys(&iptable_mangle_net_ops);
 	xt_unregister_template(&packet_mangler);
+	unregister_pernet_subsys(&iptable_mangle_net_ops);
 	kfree(mangle_ops);
 }
 

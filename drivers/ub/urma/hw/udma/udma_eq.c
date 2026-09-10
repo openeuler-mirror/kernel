@@ -37,7 +37,7 @@ static int udma_ae_tp_ctrlq_msg_deal(struct udma_dev *udma_dev,
 		ae_work->tpn = queue_num;
 		INIT_WORK(&ae_work->work, udma_tp_ae_work);
 		queue_work(udma_dev->ae_workq, &ae_work->work);
-		return 0;
+		return NOTIFY_OK;
 	case UBASE_EVENT_TYPE_TP_LEVEL_ERROR:
 		return udma_ctrlq_remove_single_tp(udma_dev, queue_num, TP_ERROR);
 	case UBASE_EVENT_TYPE_CHECK_TOKEN:
@@ -71,7 +71,7 @@ static void dump_ae_aux_info(struct udma_dev *dev, uint8_t event_type)
 	(void)udma_query_ae_aux_info(&dev->ub_dev, NULL, &in, &out);
 }
 
-static int udma_ae_tp_level_error(struct notifier_block *nb,
+static int udma_ae_tp_level(struct notifier_block *nb,
 				  unsigned long event, void *data)
 {
 	struct ubase_event_nb *ev_nb = container_of(nb, struct ubase_event_nb, nb);
@@ -248,7 +248,7 @@ static int udma_ae_jetty_group_check_err(struct auxiliary_device *adev, uint32_t
 	return 0;
 }
 
-static int udma_ae_jetty_level_error(struct notifier_block *nb,
+static int udma_ae_jetty_level(struct notifier_block *nb,
 				     unsigned long event, void *data)
 {
 	struct ubase_event_nb *ev_nb = container_of(nb, struct ubase_event_nb, nb);
@@ -287,12 +287,12 @@ struct ae_operation {
 };
 
 static struct ae_operation udma_ae_opts[] = {
-	{UBASE_EVENT_TYPE_JETTY_LEVEL_ERROR, udma_ae_jetty_level_error},
-	{UBASE_EVENT_TYPE_JFR_LIMIT_REACHED, udma_ae_jetty_level_error},
-	{UBASE_EVENT_TYPE_TP_LEVEL_ERROR, udma_ae_tp_level_error},
-	{UBASE_EVENT_TYPE_TP_FLUSH_DONE, udma_ae_tp_level_error},
+	{UBASE_EVENT_TYPE_JETTY_LEVEL_ERROR, udma_ae_jetty_level},
+	{UBASE_EVENT_TYPE_JFR_LIMIT_REACHED, udma_ae_jetty_level},
+	{UBASE_EVENT_TYPE_TP_LEVEL_ERROR, udma_ae_tp_level},
+	{UBASE_EVENT_TYPE_TP_FLUSH_DONE, udma_ae_tp_level},
 	/* TODO: Update this macro name when ubase changes according to chip documentation. */
-	{UBASE_EVENT_TYPE_CHECK_TOKEN, udma_ae_tp_level_error},
+	{UBASE_EVENT_TYPE_CHECK_TOKEN, udma_ae_tp_level},
 };
 
 void udma_unregister_ae_event(struct auxiliary_device *adev)
@@ -807,7 +807,7 @@ static int udma_ctrlq_check_tp_active(struct auxiliary_device *adev,
 				      uint8_t service_ver, void *data,
 				      uint16_t len, uint16_t seq)
 {
-	struct udma_ctrlq_check_tp_active_rsp_info *rsp_info;
+	struct udma_ctrlq_check_tp_active_rsp_info *rsp_info = NULL;
 	struct udma_dev *udev = get_udma_dev(adev);
 	struct ubase_ctrlq_msg msg = {};
 	uint32_t rsp_info_len = 0;

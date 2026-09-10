@@ -197,7 +197,8 @@ static int udma_specify_rsvd_jetty_id(struct udma_dev *udma_dev, uint32_t cfg_id
 
 	id = ida_alloc_range(&ida_table->ida, cfg_id, cfg_id, GFP_KERNEL);
 	if (id < 0) {
-		dev_err(udma_dev->dev, "user specified id %u has been used, ret=%d.\n", cfg_id, id);
+		dev_err(udma_dev->dev, "user specified id %u has been used, ret = %d.\n",
+				cfg_id, id);
 		return id;
 	}
 
@@ -1336,8 +1337,10 @@ int udma_batch_modify_and_destroy_jetty(struct udma_dev *dev,
 			if (sq_list[i]->jetty_grp) {
 				ret = udma_update_hw_grp_ctx_valid_only(dev,
 					to_udma_jetty_from_queue(sq_list[i]), false);
-				if (ret)
+				if (ret) {
+					*bad_jetty_index = 0;
 					return ret;
+				}
 			}
 
 			ret = udma_destroy_hw_jetty_ctx(dev, sq_list[i]->id);
@@ -2077,27 +2080,23 @@ uint32_t udma_get_type(uint32_t trans_mode, uint32_t order_type)
 
 int udma_check_tp_type_available(struct udma_dev *dev, struct ubcore_tjetty_cfg *cfg)
 {
-	unsigned long long type_bit = ubase_get_ub_feature();
-	uint32_t tp_ability_bit = 0;
+	bool tp_ability_bit = 0;
 
 	if (cfg->flag.bs.order_type == UBCORE_OI && cfg->tp_type == UBCORE_RTP) {
-		tp_ability_bit = !!(type_bit & UBASE_URMA_RTP_ROI);
+		tp_ability_bit = dev->caps.rm_tp.bs.rtp;
 	} else if (cfg->flag.bs.order_type == UBCORE_OI && cfg->tp_type == UBCORE_CTP) {
-		tp_ability_bit = !!(type_bit & UBASE_URMA_CTP_ROI);
+		tp_ability_bit = dev->caps.rm_tp.bs.ctp;
 	} else if (cfg->flag.bs.order_type == UBCORE_OL && cfg->tp_type == UBCORE_CTP) {
-		tp_ability_bit = !!(type_bit & UBASE_URMA_CTP_ROL);
+		tp_ability_bit = dev->caps.rc_tp.bs.ctp;
 	} else if (cfg->flag.bs.order_type == UBCORE_OL && cfg->tp_type == UBCORE_RTP) {
-		tp_ability_bit = !!(type_bit & UBASE_URMA_RTP_ROL);
+		tp_ability_bit = dev->caps.rc_tp.bs.rtp;
 	} else if (cfg->flag.bs.order_type == UBCORE_NO && cfg->tp_type == UBCORE_CTP) {
-		tp_ability_bit = !!(type_bit & UBASE_URMA_CTP_UNO);
+		tp_ability_bit = dev->caps.um_tp.bs.ctp;
 	} else if (cfg->flag.bs.order_type == UBCORE_NO && cfg->tp_type == UBCORE_UTP) {
-		tp_ability_bit = !!(type_bit & UBASE_URMA_UTP_UNO);
-	} else if (cfg->flag.bs.order_type == UBCORE_OT && cfg->tp_type == UBCORE_CTP) {
-		tp_ability_bit = !!(type_bit & UBASE_URMA_CTP_ROT);
-	} else if (cfg->flag.bs.order_type == UBCORE_OT && cfg->tp_type == UBCORE_RTP) {
-		tp_ability_bit = !!(type_bit & UBASE_URMA_RTP_ROT);
+		tp_ability_bit = dev->caps.um_tp.bs.utp;
 	} else {
-		dev_err(dev->dev, "tp mode is not recognized.\n");
+		dev_err(dev->dev, "tp mode is not recognized, order type: %u, tp type: %u.\n",
+			cfg->flag.bs.order_type, cfg->tp_type);
 		return -EINVAL;
 	}
 
@@ -2107,5 +2106,6 @@ int udma_check_tp_type_available(struct udma_dev *dev, struct ubcore_tjetty_cfg 
 			cfg->flag.bs.order_type, cfg->tp_type);
 		return -EINVAL;
 	}
+
 	return 0;
 }

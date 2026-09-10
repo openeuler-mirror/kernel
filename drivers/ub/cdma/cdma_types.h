@@ -17,12 +17,6 @@ enum cdma_event_type {
 	CDMA_EVENT_DEV_INVALID
 };
 
-enum cdma_remove_reason {
-	/* Context deletion. This call should delete the actual object itself */
-	CDMA_REMOVE_CLOSE,
-	/* Driver is being hot-unplugged. This call should delete the actual object itself */
-	CDMA_REMOVE_DRIVER_REMOVE,
-};
 
 struct cdma_ucontext {
 	struct cdma_dev *dev;

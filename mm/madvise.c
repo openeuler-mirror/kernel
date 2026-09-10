@@ -348,8 +348,7 @@ static inline bool can_do_file_pageout(struct vm_area_struct *vma)
 	 * otherwise we'd be including shared non-exclusive mappings, which
 	 * opens a side channel.
 	 */
-	return inode_owner_or_capable(&nop_mnt_idmap,
-				      file_inode(vma->vm_file)) ||
+	return file_owner_or_capable(vma->vm_file) ||
 	       file_permission(vma->vm_file, MAY_WRITE) == 0;
 }
 
@@ -1248,6 +1247,9 @@ madvise_behavior_valid(int behavior)
 	case MADV_SWAPFLAG:
 	case MADV_SWAPFLAG_REMOVE:
 #endif
+#ifdef CONFIG_CMA_FOLIO
+	case MADV_FCMA_ENABLE:
+#endif
 		return true;
 
 	default:
@@ -1718,6 +1720,15 @@ int do_madvise(struct mm_struct *mm, unsigned long start, size_t len_in, int beh
 	if (end == start)
 		return 0;
 
+#ifdef CONFIG_CMA_FOLIO
+	if (behavior == MADV_FCMA_ENABLE) {
+		if (!use_folio_cma())
+			return -EINVAL;
+		current->flags |= PF_FOLIO_CMA;
+		return 0;
+	}
+#endif
+
 	error = madvise_lock(mm, &madv_behavior);
 	if (error)
 		return error;
@@ -1835,8 +1846,8 @@ SYSCALL_DEFINE5(process_madvise, int, pidfd, const struct iovec __user *, vec,
 
 	/* Require PTRACE_MODE_READ to avoid leaking ASLR metadata. */
 	mm = mm_access(task, PTRACE_MODE_READ_FSCREDS);
-	if (IS_ERR_OR_NULL(mm)) {
-		ret = IS_ERR(mm) ? PTR_ERR(mm) : -ESRCH;
+	if (IS_ERR(mm)) {
+		ret = PTR_ERR(mm);
 		goto release_task;
 	}
 

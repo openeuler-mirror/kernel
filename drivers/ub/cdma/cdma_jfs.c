@@ -124,6 +124,16 @@ static int cdma_get_sq_buf(struct cdma_dev *cdev, struct cdma_jfs *jfs,
 		sq->sqe_bb_cnt = ucmd->sqe_bb_cnt;
 		if (sq->sqe_bb_cnt > MAX_WQEBB_NUM)
 			sq->sqe_bb_cnt = MAX_WQEBB_NUM;
+
+		if (!sq->buf.entry_cnt ||
+		    (sq->buf.entry_cnt & (sq->buf.entry_cnt - 1))) {
+			dev_err(cdev->dev,
+				"jfs sq entry_cnt must be power of 2, entry_cnt = %u\n",
+				sq->buf.entry_cnt);
+			cdma_put_umem(sq->buf.umem, false);
+			sq->buf.umem = NULL;
+			return -EINVAL;
+		}
 	} else {
 		spin_lock_init(&sq->lock);
 		sq->tid = cdev->tid;
@@ -475,7 +485,6 @@ static int cdma_modify_jfs_precondition(struct cdma_dev *cdev,
 static bool cdma_destroy_jfs_precondition(struct cdma_dev *cdev,
 					  struct cdma_jetty_queue *sq)
 {
-
 	if ((sq->state == CDMA_JETTY_READY) ||
 	    (sq->state == CDMA_JETTY_SUSPENDED)) {
 		if (cdma_modify_jfs_precondition(cdev, sq))
@@ -988,15 +997,41 @@ static int cdma_post_one_wr(struct cdma_jetty_queue *sq, struct cdma_jfs_wr *wr,
 	return 0;
 }
 
-static void cdma_write_dsqe(struct cdma_jetty_queue *sq,
+static void cdma_st64b(u64 *src, u64 __iomem *dst)
+{
+	asm volatile (
+		"mov x9, %0\n"
+		"mov x10, %1\n"
+		"ldr x0, [x9]\n"
+		"ldr x1, [x9, #8]\n"
+		"ldr x2, [x9, #16]\n"
+		"ldr x3, [x9, #24]\n"
+		"ldr x4, [x9, #32]\n"
+		"ldr x5, [x9, #40]\n"
+		"ldr x6, [x9, #48]\n"
+		"ldr x7, [x9, #56]\n"
+		".inst 0xf83f9140\n"
+		::"r" (src), "r"(dst)
+		: "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7",
+		  "x9", "x10", "cc", "memory"
+	);
+}
+
+static void cdma_write_dsqe(struct cdma_dev *cdev, struct cdma_jetty_queue *sq,
 			    struct cdma_sqe_ctl *ctrl)
 {
 #define DWQE_SIZE 8
 	int i;
 
 	ctrl->sqe_bb_idx = sq->pi;
-	for (i = 0; i < DWQE_SIZE; i++)
-		writeq_relaxed(*((u64 *)ctrl + i), (u64 *)sq->dwqe_addr + i);
+
+	if (cdev->caps.st64b_en) {
+		cdma_st64b((u64 *)ctrl, (u64 __iomem *)sq->dwqe_addr);
+	} else {
+		for (i = 0; i < DWQE_SIZE; i++)
+			writeq_relaxed(*((u64 *)ctrl + i),
+				       (u64 __iomem *)sq->dwqe_addr + i);
+	}
 }
 
 static inline void cdma_k_update_sq_db(struct cdma_jetty_queue *sq)
@@ -1034,7 +1069,7 @@ post_wr:
 			/* Ensure the order of write memory operations */
 			wmb();
 			if (wr_cnt == 1 && dwqe_enable && (sq->pi - sq->ci == 1))
-				cdma_write_dsqe(sq, dwqe_addr);
+				cdma_write_dsqe(cdev, sq, dwqe_addr);
 			else
 				cdma_k_update_sq_db(sq);
 		}

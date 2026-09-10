@@ -431,10 +431,8 @@ static int get_time_diff(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32
 {
 	int err;
 
-	if (!lld_dev || !buf_out) {
-		pr_err("Unexpect out buf size from user in size:%u\n", in_size);
+	if (!check_cmd_compatible(in_size, 0, *out_size, sizeof(s64)))
 		return -EINVAL;
-	}
 
 	err = hinic5_get_non_ptp_time_diff(lld_dev->hwdev, (s64 *)buf_out);
 	if (err != 0) {

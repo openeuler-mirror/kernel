@@ -69,6 +69,23 @@ static inline bool ub_entity_test_priv_flag(struct ub_entity *uent, int bit)
 
 struct ub_bus_controller *ub_find_bus_controller(u32 ctl_no);
 
+/**
+ * struct ub_manage_subsystem_ops - Operations for ubus management subsystem
+ * @vendor:		Vendor identifier of the management subsystem.
+ * @controller_probe:	Probe callback invoked when a bus controller is being
+ *			initialized. Returns 0 on success or a negative error
+ *			code on failure.
+ * @controller_remove:	Callback invoked when a bus controller is being removed,
+ *			used to release resources allocated during probe.
+ * @ras_handler_probe:	Probe callback to initialize the RAS (Reliability,
+ *			Availability, and Serviceability) error handler. Returns
+ *			0 on success or a negative error code on failure.
+ * @ras_handler_remove:	Callback to tear down and release the RAS error handler.
+ * @vdm_delay_work:	Callback to handle deferred processing of VDM (Vendor
+ *			Defined Message) work items.
+ * @feature_get:	Callback to retrieve the feature capability bitmap of
+ *			the management subsystem.
+ */
 struct ub_manage_subsystem_ops {
 	u32 vendor;
 	int (*controller_probe)(struct ub_bus_controller *ubc);

@@ -16,8 +16,12 @@
  * more details.
  *
  */
+#include <linux/capability.h>
+#include <linux/cred.h>
 #include <linux/delay.h>
 #include <linux/kthread.h>
+#include <linux/ptrace.h>
+#include <linux/security.h>
 #include <linux/slab.h>
 #include <linux/spinlock_types.h>
 #include <linux/syscalls.h>
@@ -541,6 +545,28 @@ static int xsched_setattr(struct task_struct *p, const struct xsched_attr *attr)
 	return 0;
 }
 
+static bool xsched_same_owner(struct task_struct *p)
+{
+	const struct cred *cred = current_cred(), *pcred;
+	bool same_owner;
+
+	rcu_read_lock();
+	pcred = __task_cred(p);
+	same_owner = uid_eq(cred->euid, pcred->euid) ||
+		uid_eq(cred->euid, pcred->uid);
+	rcu_read_unlock();
+
+	return same_owner;
+}
+
+static int xsched_setattr_permission(struct task_struct *p)
+{
+	if (!xsched_same_owner(p) && !capable(CAP_SYS_NICE))
+		return -EPERM;
+
+	return security_task_setscheduler(p);
+}
+
 SYSCALL_DEFINE2(xsched_setattr, pid_t, pid, struct xsched_attr __user *, arg)
 {
 	struct xsched_attr kattr;
@@ -571,7 +597,9 @@ SYSCALL_DEFINE2(xsched_setattr, pid_t, pid, struct xsched_attr __user *, arg)
 	rcu_read_unlock();
 
 	if (likely(p)) {
-		retval = xsched_setattr(p, &kattr);
+		retval = xsched_setattr_permission(p);
+		if (!retval)
+			retval = xsched_setattr(p, &kattr);
 		put_task_struct(p);
 	}
 
@@ -582,18 +610,29 @@ SYSCALL_DEFINE2(xsched_getattr, pid_t, pid, struct xsched_attr __user *, arg)
 {
 	struct xsched_attr kattr = { };
 	struct task_struct *p;
+	int retval;
 
 	if (pid < 0 || !arg)
 		return -EINVAL;
 
 	rcu_read_lock();
 	p = pid ? find_task_by_vpid(pid) : current;
-	if (!p) {
-		rcu_read_unlock();
-		return -ESRCH;
-	}
-	kattr = p->_resvd->xse_attr;
+	if (likely(p))
+		get_task_struct(p);
 	rcu_read_unlock();
+	if (!p)
+		return -ESRCH;
+
+	retval = -EPERM;
+	if (!ptrace_may_access(p, PTRACE_MODE_READ_REALCREDS))
+		goto out_put_task;
+
+	retval = security_task_getscheduler(p);
+	if (retval)
+		goto out_put_task;
+
+	kattr = p->_resvd->xse_attr;
+	put_task_struct(p);
 
 	kattr.xsched_priority = NR_XSE_PRIO - kattr.xsched_priority;
 
@@ -603,4 +642,8 @@ SYSCALL_DEFINE2(xsched_getattr, pid_t, pid, struct xsched_attr __user *, arg)
 	}
 
 	return 0;
+
+out_put_task:
+	put_task_struct(p);
+	return retval;
 }

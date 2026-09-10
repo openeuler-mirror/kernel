@@ -449,6 +449,21 @@ static void ubase_arq_service_task(struct work_struct *work)
 	ubase_cmd_arq_handler(ubase_work);
 }
 
+static void ubase_cancel_arq_service_task(struct ubase_dev *udev)
+{
+	if (udev->arq_service_task.service_task.work.func) {
+		set_bit(UBASE_STATE_ARQ_SERVICE_SCHED, &udev->arq_service_task.state);
+		cancel_delayed_work_sync(&udev->arq_service_task.service_task);
+	}
+}
+
+static int ubase_enable_arq_service_task(struct ubase_dev *udev)
+{
+	clear_bit(UBASE_STATE_ARQ_SERVICE_SCHED, &udev->arq_service_task.state);
+
+	return 0;
+}
+
 static void ubase_reset_service_task(struct work_struct *work)
 {
 	struct ubase_delay_work *ubase_work =
@@ -530,9 +545,17 @@ static int ubase_wq_init(struct ubase_dev *udev)
 		goto err_alloc_ubase_arq_wq;
 	}
 
+	udev->ubase_tp_fd_wq = UBASE_ALLOC_WQ("ubase_tp_fd_service");
+	if (!udev->ubase_tp_fd_wq) {
+		ubase_err(udev, "failed to alloc ubase tp flush workqueue.\n");
+		goto err_alloc_ubase_tp_fd_wq;
+	}
+
 	ubase_init_delayed_work(udev);
 	return 0;
 
+err_alloc_ubase_tp_fd_wq:
+	destroy_workqueue(udev->ubase_arq_wq);
 err_alloc_ubase_arq_wq:
 	destroy_workqueue(udev->ubase_period_wq);
 err_alloc_ubase_period_wq:
@@ -549,6 +572,7 @@ err_alloc_ubase_wq:
 
 static void ubase_wq_uninit(struct ubase_dev *udev)
 {
+	destroy_workqueue(udev->ubase_tp_fd_wq);
 	destroy_workqueue(udev->ubase_arq_wq);
 	destroy_workqueue(udev->ubase_period_wq);
 	destroy_workqueue(udev->ubase_reset_wq);
@@ -754,6 +778,8 @@ static void ubase_unregister_cmdq_crq_event(struct ubase_dev *udev)
 {
 	int i;
 
+	cancel_delayed_work_sync(&udev->service_task.service_task);
+
 	for (i = 0; i < ARRAY_SIZE(ubase_crq_events); i++)
 		__ubase_unregister_crq_event(udev, ubase_crq_events[i].opcode);
 }
@@ -845,7 +871,7 @@ static const struct ubase_init_function ubase_init_func_map[] = {
 		ubase_query_dev_res, NULL
 	},
 	{
-		"dtu memory", UBASE_SUP_UDMA, 0,
+		"dtu memory", UBASE_SUP_NO_PMU, 0,
 		ubase_dtu_mem_init, ubase_dtu_mem_uninit
 	},
 	{
@@ -925,6 +951,10 @@ static const struct ubase_init_function ubase_init_func_map[] = {
 		ubase_enable_period_service_task, ubase_cancel_period_service_task
 	},
 	{
+		"enable arq service task", UBASE_SUP_NO_PMU, 1,
+		ubase_enable_arq_service_task, ubase_cancel_arq_service_task
+	},
+	{
 		"update ue isolated state", UBASE_SUP_URMA, 1,
 		ubase_init_ue_isolated_state, NULL
 	},
@@ -979,7 +1009,7 @@ void ubase_dev_uninit(struct ubase_dev *udev)
 {
 	int i;
 
-	if (test_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state)) {
+	if (test_bit(UBASE_STATE_RST_FAILED_B, &udev->state_bits)) {
 		/* If ELR fails before remove, the cmdq & ctrlq may be disabled.
 		 * Since remove relies on cmdq\ctrlq, configuration messages
 		 * (e.g., destroy ctx res, close promiscuous, restore QoS..)
@@ -987,26 +1017,26 @@ void ubase_dev_uninit(struct ubase_dev *udev)
 		 * residue. Therefore, try to reinit these resources as much
 		 * as possible.
 		 */
-		ubase_warn(udev, "cmdq is disabled. try to restore it.\n");
+		ubase_warn(udev, "last reset failed, try to restore cmdq, ctrlq and irq.\n");
 		set_bit(UBASE_STATE_CMD_CRQ_UNAVAIL_B, &udev->state_bits);
 		ubase_ctrlq_uninit(udev);
 		ubase_irq_table_uninit(udev);
-		if (ubase_cmd_init(udev))
+		if (test_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state) &&
+		    ubase_cmd_init(udev))
 			goto start_uninit;
-		if (ubase_irq_table_init(udev))
+		if (test_bit(UBASE_STATE_IRQ_INVALID_B, &udev->state_bits) &&
+		    ubase_irq_table_init(udev))
 			goto start_uninit;
 		clear_bit(UBASE_STATE_CMD_CRQ_UNAVAIL_B, &udev->state_bits);
-		ubase_ctrlq_init(udev);
+		if (!test_bit(UBASE_CTRLQ_STATE_ENABLE, &udev->ctrlq.state))
+			ubase_ctrlq_init(udev);
 		ubase_register_ae_event(udev);
 		ubase_register_cmdq_crq_event(udev);
 	}
 
 start_uninit:
-	if (udev->service_task.service_task.work.func)
-		cancel_delayed_work_sync(&udev->service_task.service_task);
 	if (udev->reset_service_task.service_task.work.func)
 		cancel_delayed_work_sync(&udev->reset_service_task.service_task);
-	flush_workqueue(udev->ubase_async_wq);
 
 	for (i = ARRAY_SIZE(ubase_init_func_map) - 1; i >= 0; i--) {
 		if (!ubase_init_func_support(udev,
@@ -2047,6 +2077,7 @@ int ubase_deactivate_handler(struct ubase_dev *udev, u32 bus_ue_id)
 
 void ubase_flush_workqueue(struct ubase_dev *udev)
 {
+	flush_workqueue(udev->ubase_tp_fd_wq);
 	flush_workqueue(udev->ubase_wq);
 	flush_workqueue(udev->ubase_ctrlq_wq);
 	flush_workqueue(udev->ubase_async_wq);

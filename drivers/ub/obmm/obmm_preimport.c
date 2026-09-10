@@ -136,6 +136,9 @@ err_remove_memory_remote:
 	pr_debug("call external: remove_memory_remote(nid=%d)\n", pr->numa_id);
 	ret_err = remove_memory_remote(pr->numa_id, pr->start, pr->end - pr->start + 1);
 	pr_debug("external called: remove_memory_remote() returned %d\n", ret_err);
+	if (ret_err)
+		pr_err("failed to roll back add_memory_remote(nid=%d, pa=%#llx): %pe; remote memory may be orphaned.\n",
+		       pr->numa_id, pr->start, ERR_PTR(ret_err));
 	return ret;
 }
 

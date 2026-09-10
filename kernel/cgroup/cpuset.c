@@ -1007,10 +1007,6 @@ static int update_prefer_cpumask(struct cpuset *cs, struct cpuset *trialcs,
 			return retval;
 	}
 
-	/* Nothing to do if the cpus didn't change */
-	if (cpumask_equal(cs->prefer_cpus, trialcs->prefer_cpus))
-		return 0;
-
 	if (!cpumask_subset(trialcs->prefer_cpus, cs->cpus_allowed))
 		return -EINVAL;
 
@@ -1021,6 +1017,16 @@ static int update_prefer_cpumask(struct cpuset *cs, struct cpuset *trialcs,
 	spin_unlock_irq(&callback_lock);
 
 	return 0;
+}
+
+static inline bool prefer_cpus_updated(struct cpuset *cs, struct cpuset *oldcs)
+{
+	return !cpumask_equal(cs->prefer_cpus, oldcs->prefer_cpus);
+}
+#else
+static inline bool prefer_cpus_updated(struct cpuset *cs, struct cpuset *oldcs)
+{
+	return false;
 }
 #endif
 
@@ -2918,7 +2924,12 @@ static void update_tasks_nodemask(struct cpuset *cs)
 
 		migrate = is_memory_migrate(cs);
 
-		mpol_rebind_mm(mm, &cs->mems_allowed);
+		/*
+		 * For v1 we can have empty effective_mems, but we cannot
+		 * attach any tasks (see cpuset_can_attach_check()). For v2,
+		 * effective_mems is guaranteed to not be empty.
+		 */
+		mpol_rebind_mm(mm, &cs->effective_mems);
 		if (migrate)
 			cpuset_migrate_mm(mm, &cs->old_mems_allowed, &newmems);
 		else
@@ -3439,16 +3450,13 @@ static int cpuset_can_attach(struct cgroup_taskset *tset)
 		int cpu = cpumask_any_and(cpu_active_mask, cs->effective_cpus);
 
 		if (unlikely(cpu >= nr_cpu_ids)) {
-			reset_migrate_dl_data(cs);
 			ret = -EINVAL;
 			goto out_unlock;
 		}
 
 		ret = dl_bw_alloc(cpu, cs->sum_migrate_dl_bw);
-		if (ret) {
-			reset_migrate_dl_data(cs);
+		if (ret)
 			goto out_unlock;
-		}
 	}
 
 out_success:
@@ -3542,7 +3550,7 @@ static void cpuset_attach(struct cgroup_taskset *tset)
 	 * by skipping the task iteration and update.
 	 */
 	if (cgroup_subsys_on_dfl(cpuset_cgrp_subsys) &&
-	    !cpus_updated && !mems_updated) {
+	    !cpus_updated && !mems_updated && !prefer_cpus_updated(cs, oldcs)) {
 		cpuset_attach_nodemask_to = cs->effective_mems;
 		goto out;
 	}
@@ -4336,7 +4344,10 @@ static int cpuset_can_fork(struct task_struct *task, struct css_set *cset)
 	 * changes which zero cpus/mems_allowed.
 	 */
 	cs->attach_in_progress++;
+
 out_unlock:
+	if (ret)
+		reset_migrate_dl_data(cs);
 	mutex_unlock(&cpuset_mutex);
 	return ret;
 }
@@ -4573,6 +4584,13 @@ hotplug_update_tasks(struct cpuset *cs,
 		update_tasks_cpumask(cs, new_cpus);
 	if (mems_updated)
 		update_tasks_nodemask(cs);
+
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	if (!cpumask_subset(cs->prefer_cpus, cs->effective_cpus)) {
+		cpumask_and(cs->prefer_cpus, cs->prefer_cpus, cs->effective_cpus);
+		update_tasks_prefer_cpumask(cs);
+	}
+#endif
 }
 
 static bool force_rebuild;
@@ -5264,14 +5282,14 @@ __bpf_kfunc struct cpuset *bpf_cpuset_from_task(struct task_struct *task)
 	return task_cs(task);
 }
 
-__bpf_kfunc unsigned int bpf_cpumask_weight(struct cpumask *pmask)
+__bpf_kfunc unsigned int bpf_cpuset_cpumask_weight(struct cpumask *pmask)
 {
 	return cpumask_weight(pmask);
 }
 
 BTF_KFUNCS_START(bpf_cpuset_kfunc_ids)
 BTF_ID_FLAGS(func, bpf_cpuset_from_task, KF_RET_NULL | KF_RCU)
-BTF_ID_FLAGS(func, bpf_cpumask_weight)
+BTF_ID_FLAGS(func, bpf_cpuset_cpumask_weight)
 BTF_KFUNCS_END(bpf_cpuset_kfunc_ids)
 
 static const struct btf_kfunc_id_set bpf_cpuset_kfunc_set = {

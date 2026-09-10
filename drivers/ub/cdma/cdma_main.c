@@ -23,6 +23,7 @@
 
 static bool is_rmmod;
 DEFINE_MUTEX(cdma_reset_mutex);
+DEFINE_MUTEX(cdma_mmu_mutex);
 
 /* Enabling jfc_arm_mode will cause jfc to report cqe; otherwise, it will not. */
 uint jfc_arm_mode;
@@ -95,10 +96,11 @@ static void cdma_reset_unmap_vma_pages(struct cdma_dev *cdev, bool is_reset)
 	mutex_lock(&cdev->file_mutex);
 	list_for_each_entry(cfile, &cdev->file_list, list) {
 		mutex_lock(&cfile->ctx_mutex);
-		cdma_unmap_vma_pages(cfile);
 		if (is_reset && cfile->uctx != NULL)
 			cfile->uctx->invalid = true;
 		mutex_unlock(&cfile->ctx_mutex);
+
+		cdma_unmap_vma_pages(cfile);
 	}
 	mutex_unlock(&cdev->file_mutex);
 }
@@ -111,8 +113,9 @@ static void cdma_free_cfile_uobj(struct cdma_dev *cdev)
 	mutex_lock(&cdev->file_mutex);
 	list_for_each_entry_safe(cfile, next_cfile, &cdev->file_list, list) {
 		list_del(&cfile->list);
+
 		mutex_lock(&cfile->ctx_mutex);
-		cdma_cleanup_context_uobj(cfile, CDMA_REMOVE_DRIVER_REMOVE);
+		cdma_cleanup_context_uobj(cfile);
 		cfile->cdev = NULL;
 		if (cfile->uctx) {
 			jfae = cfile->jfae;
@@ -274,6 +277,7 @@ static int cdma_probe(struct auxiliary_device *auxdev,
 
 	cdma_client_callback(cdev, CDMA_CLIENT_OP_ADD);
 	ubase_reset_register(auxdev, cdma_reset_handler);
+	ubase_update_adev_status(auxdev, 0);
 
 	return 0;
 }

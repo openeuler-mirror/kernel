@@ -27,6 +27,7 @@
 #include <linux/wait.h>
 #include <linux/rbtree.h>
 #include <linux/uidgid.h>
+#include <linux/kabi.h>
 #include <uapi/linux/sysctl.h>
 
 /* For the /proc/sys support */
@@ -182,7 +183,7 @@ struct ctl_table_header {
 		struct rcu_head rcu;
 	};
 	struct completion *unregistering;
-	struct ctl_table *ctl_table_arg;
+	KABI_CONST struct ctl_table *ctl_table_arg;
 	struct ctl_table_root *root;
 	struct ctl_table_set *set;
 	struct ctl_dir *parent;

@@ -28,7 +28,22 @@
 #define __DC_FPU_H__
 
 void dc_assert_fp_enabled(void);
+bool dc_is_fp_enabled(void);
 void dc_fpu_begin(const char *function_name, const int line);
 void dc_fpu_end(const char *function_name, const int line);
+
+#ifdef CONFIG_DRM_AMD_DC_FP
+#define DC_RUN_WITH_PREEMPTION_ENABLED(code) \
+	do { \
+		bool dc_fp_enabled = dc_is_fp_enabled(); \
+		if (dc_fp_enabled) \
+			dc_fpu_end(__func__, __LINE__); \
+		code; \
+		if (dc_fp_enabled) \
+			dc_fpu_begin(__func__, __LINE__); \
+	} while (0)
+#else
+#define DC_RUN_WITH_PREEMPTION_ENABLED(code) code
+#endif /* CONFIG_DRM_AMD_DC_FP */
 
 #endif /* __DC_FPU_H__ */
