@@ -545,6 +545,13 @@ static bool vmemmap_should_optimize(const struct hstate *h, const struct page *h
 		 * vmemmap page.
 		 */
 		pmdp = pmd_off_k(vaddr);
+#ifdef CONFIG_ARM64
+		/*
+		 * Add lock to prevent concurrent modification of *pmdp by
+		 * split_vmemmap_huge_pmd() as described above.
+		 */
+		vmemmap_split_lock(&init_mm.page_table_lock);
+#endif
 		/*
 		 * The READ_ONCE() is used to stabilize *pmdp in a register or
 		 * on the stack so that it will stop changing under the code.
@@ -557,6 +564,9 @@ static bool vmemmap_should_optimize(const struct hstate *h, const struct page *h
 			vmemmap_page = pmd_page(pmd) + pte_index(vaddr);
 		else
 			vmemmap_page = pte_page(*pte_offset_kernel(pmdp, vaddr));
+#ifdef CONFIG_ARM64
+		vmemmap_split_unlock(&init_mm.page_table_lock);
+#endif
 		/*
 		 * Due to HugeTLB alignment requirements and the vmemmap pages
 		 * being at the start of the hotplugged memory region in

@@ -13,6 +13,7 @@
 #include <linux/kthread.h>
 #include <linux/delay.h>
 #include <linux/hashtable.h>
+#include <linux/io.h>
 #include <linux/auxiliary_bus.h>
 #include <ub/ubase/ubase_comm_dev.h>
 #include "cis_info_process.h"
@@ -23,7 +24,7 @@ MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Call ID Service Framework");
 
 static struct task_struct *uvb_poll_window_thread;
-DECLARE_HASHTABLE(uvb_lock_table, MAX_UVB_LOCK_IN_BITS);
+DECLARE_HASHTABLE(uvb_desc_table, MAX_UVB_DESC_BITS);
 
 int create_uvb_poll_window_thread(void)
 {
@@ -46,39 +47,66 @@ void uvb_poll_window_thread_stop(void)
 	}
 }
 
-static void free_uvb_window_lock(void)
+static void free_uvb_win_desc_map(void)
 {
-	struct uvb_window_lock *entry;
+	struct uvb_win_desc_map *entry;
 	struct hlist_node *tmp;
 	u32 bkt;
 
-	if (hash_empty(uvb_lock_table))
+	if (hash_empty(uvb_desc_table))
 		return;
 
-	hash_for_each_safe(uvb_lock_table, bkt, tmp, entry, node) {
+	hash_for_each_safe(uvb_desc_table, bkt, tmp, entry, node) {
 		hash_del(&entry->node);
+		if (entry->map_address)
+			memunmap(entry->map_address);
+		if (entry->map_obtain)
+			memunmap(entry->map_obtain);
+		if (entry->map_buffer)
+			memunmap(entry->map_buffer);
 		kfree(entry);
 	}
 }
 
-static int uvb_window_lock_init(void)
+static int uvb_win_desc_map_init(void)
 {
 	struct uvb *uvb;
-	struct uvb_window_lock *lock_node;
-	u16 i;
-	u16 j;
+	struct uvb_win_desc_map *entry;
+	u16 i, j;
+	u32 size = 0;
+	u64 obtain = 0, address = 0, buffer = 0;
 
 	for (i = 0; i < g_uvb_info->uvb_count; i++) {
 		uvb = g_uvb_info->uvbs[i];
 		for (j = 0; j < uvb->window_count; j++) {
-			lock_node = kzalloc(sizeof(struct uvb_window_lock), GFP_KERNEL);
-			if (!lock_node) {
-				free_uvb_window_lock();
+			address = uvb->wd[j].address;
+			obtain = uvb->wd[j].obtain;
+			buffer = uvb->wd[j].buffer;
+			size = uvb->wd[j].size;
+			if (!address || !obtain || !buffer) {
+				pr_err("uvb window description map init failed\n");
+				free_uvb_win_desc_map();
+				return -EINVAL;
+			}
+
+			entry = kzalloc(sizeof(struct uvb_win_desc_map), GFP_KERNEL);
+			if (!entry) {
+				free_uvb_win_desc_map();
 				return -ENOMEM;
 			}
-			atomic_set(&lock_node->lock, 0);
-			lock_node->window_address = uvb->wd[j].address;
-			hash_add(uvb_lock_table, &lock_node->node, uvb->wd[j].address);
+			atomic_set(&entry->lock, 0);
+			entry->window_address = address;
+			entry->map_address = memremap(address, sizeof(struct uvb_window),
+								MEMREMAP_WC);
+			entry->map_obtain = memremap(obtain, sizeof(u64), MEMREMAP_WC);
+			entry->map_buffer = memremap(buffer, size, MEMREMAP_WC);
+			if (!entry->map_address || !entry->map_obtain || !entry->map_buffer) {
+				pr_err("uvb window desc  memremap failed\n");
+				free_uvb_win_desc_map();
+				return -ENOMEM;
+			}
+
+			hash_add(uvb_desc_table, &entry->node, uvb->wd[j].address);
 		}
 	}
 	pr_info("uvb window lock init success.\n");
@@ -95,7 +123,7 @@ int init_uvb(void)
 		return -EOPNOTSUPP;
 	}
 
-	err = uvb_window_lock_init();
+	err = uvb_win_desc_map_init();
 	if (err) {
 		pr_err("Init uvb window lock failed\n");
 		return err;
@@ -104,18 +132,9 @@ int init_uvb(void)
 	err = create_uvb_poll_window_thread();
 	if (err) {
 		pr_err("create uvb poll thread did failed, err=%d\n", err);
-		free_uvb_window_lock();
+		free_uvb_win_desc_map();
 		return err;
 	}
-
-	return 0;
-}
-
-int init_global_vars(void)
-{
-	io_param_sync = kzalloc(sizeof(struct cis_message), GFP_KERNEL);
-	if (!io_param_sync)
-		return -ENOMEM;
 
 	return 0;
 }
@@ -130,17 +149,11 @@ int init_cis_table(void)
 	return 0;
 }
 
-void free_global_vars(void)
-{
-	kfree(io_param_sync);
-	io_param_sync = NULL;
-}
-
 void uninit_uvb(void)
 {
 	uvb_poll_window_thread_stop();
 	msleep(1000);
-	free_uvb_window_lock();
+	free_uvb_win_desc_map();
 }
 
 static const struct auxiliary_device_id uvb_id_table[] = {
@@ -167,16 +180,9 @@ static int __init cis_init(void)
 	if (err) {
 		pr_err("cis info init failed, err=%d\n", err);
 	} else {
-		err = init_global_vars();
-		if (err) {
-			pr_err("global vars malloc failed, err=%d\n", err);
-			return err;
-		}
-
 		err = init_uvb();
 		if (err) {
 			pr_err("uvb init failed, err=%d\n", err);
-			free_global_vars();
 			return err;
 		}
 		pr_info("cis uvb init success\n");
@@ -196,7 +202,6 @@ static int __init cis_init(void)
 static void __exit cis_exit(void)
 {
 	uninit_uvb();
-	free_global_vars();
 	auxiliary_driver_unregister(&uvb_drv);
 	pr_info("cis exit success\n");
 }
