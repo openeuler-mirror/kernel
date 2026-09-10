@@ -1491,12 +1491,14 @@ static int uburma_cmd_delete_jfr_batch(struct ubcore_device *ubc_dev,
 
 	for (i = 0; i < arr_num; ++i) {
 		uobj = uobj_get_del(UOBJ_CLASS_JFR, jfr_arr[i], file);
-		uobj_arr[i] = uobj;
 		if (IS_ERR(uobj)) {
 			uburma_log_err("failed to find jfr, index is %d.\n", i);
 			ret = -EINVAL;
+			uobj_put_batch(uobj_arr, i);
+			uobj_put_del_batch(uobj_arr, i);
 			goto free_uobj_arr;
 		}
+		uobj_arr[i] = uobj;
 		/* To get events_reported after obj removed. */
 		uobj_get(uobj);
 		jfr_uobj = container_of(uobj, struct uburma_jfr_uobj, uobj);
@@ -2253,12 +2255,14 @@ static int uburma_cmd_delete_jfc_batch(struct ubcore_device *ubc_dev,
 
 	for (i = 0; i < arr_num; ++i) {
 		uobj = uobj_get_del(UOBJ_CLASS_JFC, jfc_arr[i], file);
-		uobj_arr[i] = uobj;
 		if (IS_ERR(uobj)) {
 			uburma_log_err("failed to find jfc, index is %d.\n", i);
 			ret = -EINVAL;
+			uobj_put_batch(uobj_arr, i);
+			uobj_put_del_batch(uobj_arr, i);
 			goto free_uobj_arr;
 		}
+		uobj_arr[i] = uobj;
 		/* To get events_reported after obj removed. */
 		uobj_get(uobj);
 		jfc_uobj = container_of(uobj, struct uburma_jfc_uobj, uobj);
@@ -2897,13 +2901,15 @@ static int uburma_cmd_delete_jetty_batch(struct ubcore_device *ubc_dev,
 
 	for (i = 0; i < arr_num; ++i) {
 		uobj = uobj_get_del(UOBJ_CLASS_JETTY, jetty_arr[i], file);
-		uobj_arr[i] = uobj;
 		if (IS_ERR(uobj)) {
 			uburma_log_err("failed to find jetty, index is %d.\n",
 				       i);
 			ret = -EINVAL;
+			uobj_put_batch(uobj_arr, i);
+			uobj_put_del_batch(uobj_arr, i);
 			goto free_uobj_arr;
 		}
+		uobj_arr[i] = uobj;
 		/* To get events_reported after obj removed. */
 		uobj_get(uobj);
 		jetty_uobj = container_of(uobj, struct uburma_jetty_uobj, uobj);
