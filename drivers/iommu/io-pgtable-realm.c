@@ -587,7 +587,6 @@ static int realm_ns_map(struct realm_io_pgtable *data, unsigned long iova,
 
 	for (; lvl < REALM_MAX_LEVELS; lvl++) {
 		block_size = REALM_BLOCK_SIZE(lvl, data);
-
 		/* If we can install a leaf entry at this level, then do so */
 		if (size == block_size) {
 			lvl = rmi_smmu_map(pgdp, iova, paddr, prot, page_attr, &map_cnt);
@@ -693,6 +692,7 @@ static int realm_map_pages(struct io_pgtable_ops *ops, unsigned long iova,
 {
 	struct realm_io_pgtable *data = io_pgtable_ops_to_data(ops);
 	struct io_pgtable_cfg *cfg = &data->iop.cfg;
+	struct iommu_iotlb_gather gather;
 	int ret, lvl = data->start_level;
 	realm_iopte prot;
 	long iaext = (s64)iova >> cfg->ias;
@@ -743,8 +743,11 @@ static int realm_map_pages(struct io_pgtable_ops *ops, unsigned long iova,
 	return ret;
 
 err_unmap_host:
-	realm_host_unmap(data, NULL, iova, pgsize, pgcount, lvl,
+	iommu_iotlb_gather_init(&gather);
+	realm_host_unmap(data, &gather, iova, pgsize, pgcount, lvl,
 			 (realm_iopte *)data->pgd);
+	io_pgtable_tlb_flush_walk(&data->iop, iova, *mapped,
+				  REALM_GRANULE(data));
 	*mapped = 0;
 	return ret;
 }
@@ -764,7 +767,6 @@ static phys_addr_t realm_iova_to_phys(struct io_pgtable_ops *ops,
 		/* Grab the IOPTE we're interested in */
 		ptep += REALM_LVL_IDX(iova, lvl, data);
 		pte = READ_ONCE(*ptep);
-
 		/* Valid entry? */
 		if (!pte)
 			return 0;

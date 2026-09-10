@@ -1596,7 +1596,10 @@ static int kvm_create_realm(struct kvm *kvm)
 	ret = realm_attach_devs(realm);
 	if (ret) {
 		kvm_err("Fail to attach devs\n");
-		kvm_destroy_realm(kvm);
+		/*
+		 * realm_attach_devs() has rolled back its own partial attach;
+		 * leave the rest of cleanup to kvm_vm_release().
+		 */
 		return ret;
 	}
 #endif
