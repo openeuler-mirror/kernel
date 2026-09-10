@@ -830,7 +830,9 @@ int amdgpu_vce_ring_parse_cs(struct amdgpu_cs_parser *p, uint32_t ib_idx)
 			bs_idx = amdgpu_get_ib_value(p, ib_idx, idx + 7);
 			break;
 
-		case 0x01000001: /* create */
+		case 0x01000001: { /* create */
+			uint32_t width, height;
+
 			created |= 1 << session_idx;
 			if (destroyed & (1 << session_idx)) {
 				destroyed &= ~(1 << session_idx);
@@ -842,10 +844,21 @@ int amdgpu_vce_ring_parse_cs(struct amdgpu_cs_parser *p, uint32_t ib_idx)
 				goto out;
 			}
 
-			*size = amdgpu_get_ib_value(p, ib_idx, idx + 8) *
-				amdgpu_get_ib_value(p, ib_idx, idx + 10) *
-				8 * 3 / 2;
+			width = amdgpu_get_ib_value(p, ib_idx, idx + 8);
+			height = amdgpu_get_ib_value(p, ib_idx, idx + 10);
+
+			if (width == 0 || height == 0 ||
+			    width > 4096 || height > 2304) {
+				DRM_ERROR("invalid VCE image size: %ux%u\n",
+					  width, height);
+				r = -EINVAL;
+				goto out;
+			}
+
+			*size = width * height * 8 * 3 / 2;
+
 			break;
+		}
 
 		case 0x04000001: /* config extension */
 		case 0x04000002: /* pic control */
