@@ -679,6 +679,11 @@ static int uburma_cmd_delete_jfs_batch(struct ubcore_device *ubc_dev,
 		return ret;
 
 	arr_num = arg.in.jfs_num;
+	if (arr_num == 0) {
+		uburma_log_err("invalid jfs number: 0.\n");
+		return -EINVAL;
+	}
+
 	jfs_arr = kcalloc(arr_num, sizeof(uint64_t), GFP_KERNEL);
 	if (!jfs_arr)
 		return -ENOMEM;
@@ -1449,6 +1454,11 @@ static int uburma_cmd_delete_jfr_batch(struct ubcore_device *ubc_dev,
 		return ret;
 
 	arr_num = arg.in.jfr_num;
+	if (arr_num == 0) {
+		uburma_log_err("invalid jfr number: 0.\n");
+		return -EINVAL;
+	}
+
 	jfr_arr = kcalloc(arr_num, sizeof(uint64_t), GFP_KERNEL);
 	if (!jfr_arr)
 		return -ENOMEM;
@@ -2192,6 +2202,11 @@ static int uburma_cmd_delete_jfc_batch(struct ubcore_device *ubc_dev,
 		return ret;
 
 	arr_num = arg.in.jfc_num;
+	if (arr_num == 0) {
+		uburma_log_err("invalid jfc number: 0.\n");
+		return -EINVAL;
+	}
+
 	jfc_arr = kcalloc(arr_num, sizeof(uint64_t), GFP_KERNEL);
 	if (!jfc_arr)
 		return -ENOMEM;
@@ -2831,6 +2846,11 @@ static int uburma_cmd_delete_jetty_batch(struct ubcore_device *ubc_dev,
 		return ret;
 
 	arr_num = arg.in.jetty_num;
+	if (arr_num == 0) {
+		uburma_log_err("invalid jetty number: 0.\n");
+		return -EINVAL;
+	}
+
 	jetty_arr = kcalloc(arr_num, sizeof(uint64_t), GFP_KERNEL);
 	if (!jetty_arr)
 		return -ENOMEM;
