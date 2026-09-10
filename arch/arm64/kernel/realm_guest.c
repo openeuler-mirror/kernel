@@ -51,7 +51,7 @@ struct page *realm_alloc_swiotlb_shared_pages(gfp_t gfp, unsigned int order)
 
 bool realm_free_swiotlb_shared_pages(void *addr, unsigned int order)
 {
-	return swiotlb_free(&realm_alloc_device, (struct page *)addr,
+	return swiotlb_free(&realm_alloc_device, virt_to_page(addr),
 			    (1UL << order) * PAGE_SIZE);
 }
 
