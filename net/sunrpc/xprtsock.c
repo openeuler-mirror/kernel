@@ -1759,6 +1759,22 @@ static int xs_get_srcport(struct sock_xprt *transport)
 	return port;
 }
 
+static bool xs_srcaddr_is_any(const struct sockaddr *srcaddr)
+{
+	const struct sockaddr_in6 *sin6;
+
+	switch (srcaddr->sa_family) {
+	case AF_INET:
+		return ((const struct sockaddr_in *)srcaddr)->sin_addr.s_addr ==
+			htonl(INADDR_ANY);
+	case AF_INET6:
+		sin6 = (const struct sockaddr_in6 *)srcaddr;
+		return ipv6_addr_any(&sin6->sin6_addr);
+	default:
+		return true;
+	}
+}
+
 static unsigned short xs_sock_srcport(struct rpc_xprt *xprt)
 {
 	struct sock_xprt *sock = container_of(xprt, struct sock_xprt, xprt);
@@ -1789,6 +1805,34 @@ static int xs_sock_srcaddr(struct rpc_xprt *xprt, char *buf, size_t buflen)
 	return ret;
 }
 
+/**
+ * xs_xprt_set_srcaddr - set the source address for future connections
+ * @xprt: socket transport to update
+ * @srcaddr: source address to use
+ *
+ * The caller must ensure that no connect attempt can start while the source
+ * address is updated. The currently connected socket, if any, is unchanged.
+ */
+int xs_xprt_set_srcaddr(struct rpc_xprt *xprt,
+			const struct sockaddr *srcaddr)
+{
+	struct sock_xprt *transport;
+
+	if (!xprt || !srcaddr)
+		return -EINVAL;
+	if (xprt->xprt_class != &xs_udp_transport &&
+	    xprt->xprt_class != &xs_tcp_transport)
+		return -EOPNOTSUPP;
+	if (srcaddr->sa_family != xprt->addr.ss_family)
+		return -EAFNOSUPPORT;
+
+	transport = container_of(xprt, struct sock_xprt, xprt);
+	if (!rpc_copy_addr((struct sockaddr *)&transport->srcaddr, srcaddr))
+		return -EAFNOSUPPORT;
+	return 0;
+}
+EXPORT_SYMBOL_GPL(xs_xprt_set_srcaddr);
+
 static unsigned short xs_next_srcport(struct sock_xprt *transport, unsigned short port)
 {
 	if (transport->srcport != 0)
@@ -1805,12 +1849,16 @@ static int xs_bind(struct sock_xprt *transport, struct socket *sock)
 	int err, nloop = 0;
 	int port = xs_get_srcport(transport);
 	unsigned short last;
+	struct sockaddr *srcaddr = (struct sockaddr *)&transport->srcaddr;
 
 	/*
 	 * If we are asking for any ephemeral port (i.e. port == 0 &&
-	 * transport->xprt.resvport == 0), don't bind.  Let the local
-	 * port selection happen implicitly when the socket is used
-	 * (for example at connect time).
+	 * transport->xprt.resvport == 0) and no source address was
+	 * configured, don't bind. Let the local address and port selection
+	 * happen implicitly when the socket is used (for example at connect
+	 * time). A configured source address still needs bind(addr, 0) to
+	 * pin the address while leaving ephemeral port selection to the
+	 * network stack.
 	 *
 	 * This ensures that we can continue to establish TCP
 	 * connections even when all local ephemeral ports are already
@@ -1821,8 +1869,17 @@ static int xs_bind(struct sock_xprt *transport, struct socket *sock)
 	 * transport->xprt.resvport == 1) xs_get_srcport above will
 	 * ensure that port is non-zero and we will bind as needed.
 	 */
-	if (port <= 0)
+	if (port < 0)
 		return port;
+	if (port == 0) {
+		if (xs_srcaddr_is_any(srcaddr))
+			return 0;
+
+		memcpy(&myaddr, &transport->srcaddr, transport->xprt.addrlen);
+		rpc_set_port((struct sockaddr *)&myaddr, 0);
+		return kernel_bind(sock, (struct sockaddr *)&myaddr,
+				   transport->xprt.addrlen);
+	}
 
 	memcpy(&myaddr, &transport->srcaddr, transport->xprt.addrlen);
 	do {
