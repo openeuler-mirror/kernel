@@ -27,6 +27,7 @@
 #include <acpi/cppc_acpi.h>
 
 static bool boost_supported;
+static bool ffh_supported;
 
 struct cppc_workaround_oem_info {
 	char oem_id[ACPI_OEM_ID_SIZE + 1];
@@ -76,8 +77,8 @@ static int cppc_perf_from_fbctrs(struct cppc_cpudata *cpu_data,
 
 struct fb_ctr_pair {
 	u32 cpu;
-	struct cppc_perf_fb_ctrs fb_ctrs_t0;
-	struct cppc_perf_fb_ctrs fb_ctrs_t1;
+	struct cppc_perf_fb_ctrs *fb_ctrs_t0;
+	struct cppc_perf_fb_ctrs *fb_ctrs_t1;
 };
 
 /**
@@ -119,6 +120,9 @@ static void __cppc_scale_freq_tick(struct cppc_freq_invariance *cppc_fi)
 
 	perf = cppc_perf_from_fbctrs(cpu_data, &cppc_fi->prev_perf_fb_ctrs,
 				     &fb_ctrs);
+	if (!perf)
+		return;
+
 	cppc_fi->prev_perf_fb_ctrs = fb_ctrs;
 
 	perf <<= SCHED_CAPACITY_SHIFT;
@@ -779,11 +783,29 @@ static int cppc_perf_from_fbctrs(struct cppc_cpudata *cpu_data,
 	delta_delivered = get_delta(fb_ctrs_t1->delivered,
 				    fb_ctrs_t0->delivered);
 
-	/* Check to avoid divide-by zero and invalid delivered_perf */
+	/*
+	 * Avoid divide-by zero and unchanged feedback counters.
+	 * Leave it for callers to handle.
+	 */
 	if (!delta_reference || !delta_delivered)
-		return cpu_data->perf_ctrls.desired_perf;
+		return 0;
 
 	return (reference_perf * delta_delivered) / delta_reference;
+}
+
+static int cppc_get_perf_ctrs_sample(int cpu,
+				     struct cppc_perf_fb_ctrs *fb_ctrs_t0,
+				     struct cppc_perf_fb_ctrs *fb_ctrs_t1)
+{
+	int ret;
+
+	ret = cppc_get_perf_ctrs(cpu, fb_ctrs_t0);
+	if (ret)
+		return ret;
+
+	udelay(2); /* 2usec delay between sampling */
+
+	return cppc_get_perf_ctrs(cpu, fb_ctrs_t1);
 }
 
 static int cppc_get_perf_ctrs_pair(void *val)
@@ -793,7 +815,7 @@ static int cppc_get_perf_ctrs_pair(void *val)
 	int ret;
 	ktime_t timeout;
 
-	ret = cppc_get_perf_ctrs(cpu, &fb_ctrs->fb_ctrs_t0);
+	ret = cppc_get_perf_ctrs(cpu, fb_ctrs->fb_ctrs_t0);
 	if (ret)
 		return ret;
 
@@ -811,12 +833,25 @@ static int cppc_get_perf_ctrs_pair(void *val)
 		udelay(2); /* 2usec delay between sampling */
 	}
 
-	return cppc_get_perf_ctrs(cpu, &fb_ctrs->fb_ctrs_t1);
+	return cppc_get_perf_ctrs(cpu, fb_ctrs->fb_ctrs_t1);
+}
+
+static int cppc_get_perf_ctrs_on_cpu(unsigned int cpu,
+				     struct cppc_perf_fb_ctrs *fb_ctrs_t0,
+				     struct cppc_perf_fb_ctrs *fb_ctrs_t1)
+{
+	struct fb_ctr_pair fb_ctrs = {
+		.cpu = cpu,
+		.fb_ctrs_t0 = fb_ctrs_t0,
+		.fb_ctrs_t1 = fb_ctrs_t1,
+	};
+
+	return smp_call_on_cpu(cpu, cppc_get_perf_ctrs_pair, &fb_ctrs, false);
 }
 
 static unsigned int cppc_cpufreq_get_rate(unsigned int cpu)
 {
-	struct fb_ctr_pair fb_ctrs = { .cpu = cpu, };
+	struct cppc_perf_fb_ctrs fb_ctrs_t0 = {0}, fb_ctrs_t1 = {0};
 	struct cpufreq_policy *policy = cpufreq_cpu_get(cpu);
 	struct cppc_cpudata *cpu_data;
 	u64 delivered_perf;
@@ -829,18 +864,45 @@ static unsigned int cppc_cpufreq_get_rate(unsigned int cpu)
 
 	cpufreq_cpu_put(policy);
 
-	if (cpu_has_amu_feat(cpu))
-		ret = smp_call_on_cpu(cpu, cppc_get_perf_ctrs_pair,
-				      &fb_ctrs, false);
+	/*
+	 * Pick the feedback-counter sampling strategy from how BIOS exposes
+	 * the counters (ffh_supported is cached once in cppc_cpufreq_init):
+	 *
+	 * - FFH : cppc_get_perf_ctrs() reads both counters in a single IPI on
+	 *   the target core, so they are sampled together and a short udelay(2)
+	 *   window suffices.
+	 *
+	 * - non-FFH (PCC / system memory): run t0/window/t1 on the target core
+	 *   via smp_call_on_cpu() and wait 1ms with cond_resched() to amortize
+	 *   cpc_read() latency jitter under memory pressure (udelay(2) in atomic
+	 *   context).
+	 */
+	if (ffh_supported)
+		ret = cppc_get_perf_ctrs_sample(cpu, &fb_ctrs_t0, &fb_ctrs_t1);
 	else
-		ret = cppc_get_perf_ctrs_pair(&fb_ctrs);
+		ret = cppc_get_perf_ctrs_on_cpu(cpu, &fb_ctrs_t0, &fb_ctrs_t1);
 
 	if (ret)
-		return 0;
+		goto out_invalid_counters;
 
-	delivered_perf = cppc_perf_from_fbctrs(cpu_data,
-					      &fb_ctrs.fb_ctrs_t0,
-					      &fb_ctrs.fb_ctrs_t1);
+	delivered_perf = cppc_perf_from_fbctrs(cpu_data, &fb_ctrs_t0,
+					       &fb_ctrs_t1);
+
+	if (!delivered_perf)
+		goto out_invalid_counters;
+
+	return cppc_perf_to_khz(&cpu_data->perf_caps, delivered_perf);
+
+out_invalid_counters:
+	/*
+	 * Feedback counters could be unchanged or 0 when a cpu enters a
+	 * low-power idle state, e.g. clock-gated or power-gated.
+	 * Use desired perf for reflecting frequency.  Get the latest register
+	 * value first as some platforms may update the actual delivered perf
+	 * there; if failed, resort to the cached desired perf.
+	 */
+	if (cppc_get_desired_perf(cpu, &delivered_perf) || !delivered_perf)
+		delivered_perf = cpu_data->perf_ctrls.desired_perf;
 
 	return cppc_perf_to_khz(&cpu_data->perf_caps, delivered_perf);
 }
@@ -1064,6 +1126,8 @@ static int __init cppc_cpufreq_init(void)
 	cppc_check_hisi_workaround();
 	cppc_freq_invariance_init();
 	populate_efficiency_class();
+
+	ffh_supported = cppc_fb_ctrs_in_ffh();
 
 	ret = cpufreq_register_driver(&cppc_cpufreq_driver);
 	if (ret)

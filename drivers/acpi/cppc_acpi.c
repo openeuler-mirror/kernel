@@ -753,18 +753,19 @@ int acpi_cppc_processor_probe(struct acpi_processor *pr)
 	/*
 	 * Disregard _CPC if the number of entries in the return pachage is not
 	 * as expected, but support future revisions being proper supersets of
-	 * the v3 and only causing more entries to be returned by _CPC.
+	 * the v4 and only causing more entries to be returned by _CPC.
 	 */
 	if ((cpc_rev == CPPC_V2_REV && num_ent != CPPC_V2_NUM_ENT) ||
 	    (cpc_rev == CPPC_V3_REV && num_ent != CPPC_V3_NUM_ENT) ||
-	    (cpc_rev > CPPC_V3_REV && num_ent <= CPPC_V3_NUM_ENT)) {
+	    (cpc_rev == CPPC_V4_REV && num_ent != CPPC_V4_NUM_ENT) ||
+	    (cpc_rev > CPPC_V4_REV && num_ent <= CPPC_V4_NUM_ENT)) {
 		pr_debug("Unexpected number of _CPC return package entries (%d) for CPU:%d\n",
 			 num_ent, pr->id);
 		goto out_free;
 	}
-	if (cpc_rev > CPPC_V3_REV) {
-		num_ent = CPPC_V3_NUM_ENT;
-		cpc_rev = CPPC_V3_REV;
+	if (cpc_rev > CPPC_V4_REV) {
+		num_ent = CPPC_V4_NUM_ENT;
+		cpc_rev = CPPC_V4_REV;
 	}
 
 	cpc_ptr->num_entries = num_ent;
@@ -847,6 +848,16 @@ int acpi_cppc_processor_probe(struct acpi_processor *pr)
 
 			cpc_ptr->cpc_regs[i-2].type = ACPI_TYPE_BUFFER;
 			memcpy(&cpc_ptr->cpc_regs[i-2].cpc_entry.reg, gas_t, sizeof(*gas_t));
+		} else if (cpc_obj->type == ACPI_TYPE_PACKAGE && (i - 2) == RESOURCE_PRIORITY) {
+			/*
+			 * ACPI 6.6, s8.4.6.1.2.7 defines Resource Priority as a
+			 * Package of Resource Priority Register Descriptor sub-packages.
+			 * Parsing the full structure is not yet supported.
+			 * Mark the register as unsupported for now.
+			 */
+			pr_debug("CPU:%d Resource Priority not supported\n", pr->id);
+			cpc_ptr->cpc_regs[i-2].type = ACPI_TYPE_INTEGER;
+			cpc_ptr->cpc_regs[i-2].cpc_entry.int_value = 0;
 		} else {
 			pr_debug("Invalid entry type (%d) in _CPC for CPU:%d\n",
 				 i, pr->id);
@@ -980,6 +991,22 @@ EXPORT_SYMBOL_GPL(acpi_cppc_processor_exit);
 int __weak cpc_read_ffh(int cpunum, struct cpc_reg *reg, u64 *val)
 {
 	return -ENOTSUPP;
+}
+
+/**
+ * cpc_read_ffh_fb_ctrs() - Read FFH feedback counters together
+ * @cpunum:	Target CPU
+ * @reg1:	first CPPC register information
+ * @val1:	place holder for first return value
+ * @reg2:	second CPPC register information
+ * @val2:	place holder for second return value
+ *
+ * Return: 0 on success, error code otherwise
+ */
+int __weak cpc_read_ffh_fb_ctrs(int cpunum, struct cpc_reg *reg1,
+				u64 *val1, struct cpc_reg *reg2, u64 *val2)
+{
+	return -EOPNOTSUPP;
 }
 
 /**
@@ -1217,15 +1244,30 @@ static int cppc_get_perf(int cpunum, enum cppc_regs reg_idx, u64 *perf)
 	return 0;
 }
 
+static bool cppc_desired_perf_readable(const struct cpc_desc *cpc_desc)
+{
+	return cpc_desc->version < CPPC_V4_REV;
+}
+
 /**
  * cppc_get_desired_perf - Get the desired performance register value.
  * @cpunum: CPU from which to get desired performance.
  * @desired_perf: Return address.
  *
- * Return: 0 for success, -EIO otherwise.
- */
+ * Return: 0 for success, -EOPNOTSUPP for _CPC revision 4 or later, and a
+ * negative errno otherwise.
+*/
 int cppc_get_desired_perf(int cpunum, u64 *desired_perf)
 {
+	struct cpc_desc *cpc_desc = per_cpu(cpc_desc_ptr, cpunum);
+
+	if (!cpc_desc)
+		return -ENODEV;
+
+	/* _CPC revision 4 no longer specifies Desired Performance as readable. */
+	if (!cppc_desired_perf_readable(cpc_desc))
+		return -EOPNOTSUPP;
+
 	return cppc_get_perf(cpunum, DESIRED_PERF, desired_perf);
 }
 EXPORT_SYMBOL_GPL(cppc_get_desired_perf);
@@ -1381,22 +1423,38 @@ EXPORT_SYMBOL_GPL(cppc_get_perf_caps);
 bool cppc_perf_ctrs_in_pcc_cpu(unsigned int cpu)
 {
 	struct cpc_desc *cpc_desc = per_cpu(cpc_desc_ptr, cpu);
-	struct cpc_register_resource *ref_perf_reg;
-
-	/*
-	 * If reference perf register is not supported then we should use the
-	 * nominal perf value
-	 */
-	ref_perf_reg = &cpc_desc->cpc_regs[REFERENCE_PERF];
-	if (!CPC_SUPPORTED(ref_perf_reg))
-		ref_perf_reg = &cpc_desc->cpc_regs[NOMINAL_PERF];
 
 	return CPC_IN_PCC(&cpc_desc->cpc_regs[DELIVERED_CTR]) ||
-		CPC_IN_PCC(&cpc_desc->cpc_regs[REFERENCE_CTR]) ||
-		CPC_IN_PCC(&cpc_desc->cpc_regs[CTR_WRAP_TIME]) ||
-		CPC_IN_PCC(ref_perf_reg);
+		CPC_IN_PCC(&cpc_desc->cpc_regs[REFERENCE_CTR]);
 }
 EXPORT_SYMBOL_GPL(cppc_perf_ctrs_in_pcc_cpu);
+
+static int cppc_read_fb_ctrs(int cpunum,
+			     struct cpc_register_resource *delivered_reg,
+			     struct cpc_register_resource *reference_reg,
+			     u64 *delivered, u64 *reference)
+{
+	int ret;
+
+	/*
+	 * For FFH feedback counters, try a paired read first to reduce
+	 * sampling skew between delivered and reference counters. Fall
+	 * back to the existing per-register reads if unsupported.
+	 */
+	if (CPC_IN_FFH(delivered_reg) && CPC_IN_FFH(reference_reg)) {
+		ret = cpc_read_ffh_fb_ctrs(cpunum,
+					&delivered_reg->cpc_entry.reg, delivered,
+					&reference_reg->cpc_entry.reg, reference);
+		if (ret != -EOPNOTSUPP)
+			return ret;
+	}
+
+	ret = cpc_read(cpunum, delivered_reg, delivered);
+	if (ret)
+		return ret;
+
+	return cpc_read(cpunum, reference_reg, reference);
+}
 
 /**
  * cppc_perf_ctrs_in_pcc - Check if any perf counters are in a PCC region.
@@ -1419,6 +1477,31 @@ bool cppc_perf_ctrs_in_pcc(void)
 	return false;
 }
 EXPORT_SYMBOL_GPL(cppc_perf_ctrs_in_pcc);
+
+/**
+ * cppc_fb_ctrs_in_ffh - Check if any feedback counters are in a FFH region.
+ *
+ * Return: true if any of the counters are in FFH regions, false otherwise
+ */
+bool cppc_fb_ctrs_in_ffh(void)
+{
+	int cpu;
+
+	for_each_present_cpu(cpu) {
+		struct cpc_desc *cpc_desc;
+
+		cpc_desc = per_cpu(cpc_desc_ptr, cpu);
+		if (!cpc_desc)
+			continue;
+
+		if (CPC_IN_FFH(&cpc_desc->cpc_regs[DELIVERED_CTR]) ||
+		    CPC_IN_FFH(&cpc_desc->cpc_regs[REFERENCE_CTR]))
+			return true;
+	}
+
+	return false;
+}
+EXPORT_SYMBOL_GPL(cppc_fb_ctrs_in_ffh);
 
 /**
  * cppc_get_perf_ctrs - Read a CPU's performance feedback counters.
@@ -1463,8 +1546,10 @@ int cppc_get_perf_ctrs(int cpunum, struct cppc_perf_fb_ctrs *perf_fb_ctrs)
 		}
 	}
 
-	cpc_read(cpunum, delivered_reg, &delivered);
-	cpc_read(cpunum, reference_reg, &reference);
+	ret = cppc_read_fb_ctrs(cpunum, delivered_reg, reference_reg,
+				&delivered, &reference);
+	if (ret)
+		goto out_err;
 
 	/*
 	 * Per spec, if ctr_wrap_time optional register is unsupported, then the
