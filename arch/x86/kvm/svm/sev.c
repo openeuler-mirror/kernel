@@ -3011,11 +3011,14 @@ int csv_control_post_system_reset(struct kvm *kvm)
 	struct kvm_vcpu *vcpu;
 	int i, ret;
 
-	if (!sev_es_guest(kvm))
+	if (!sev_guest(kvm))
 		return 0;
 
-	/* Flush both host and guest caches of VMSA */
+	/* Flush both host and guest caches before next boot flow */
 	wbinvd_on_all_cpus();
+
+	if (!sev_es_guest(kvm))
+		return 0;
 
 	kvm_for_each_vcpu(i, vcpu, kvm) {
 		struct vcpu_svm *svm = to_svm(vcpu);
