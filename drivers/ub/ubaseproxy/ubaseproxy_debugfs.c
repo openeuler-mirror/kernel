@@ -59,6 +59,9 @@ static int ubaseproxy_dbg_dump_ue_qos_info(struct seq_file *s, void *data)
 	u8 managed_ue_num = ubase_caps->ue_num - 1, i;
 
 	for (i = 0; i < managed_ue_num; i++) {
+		if (!ubaseproxy_ue_active(udev, udev->ue_res_info[i].bus_ue_id))
+			continue;
+
 		seq_printf(s, "UE%u:\n", i);
 		seq_printf(s, "\tum_sl_bitmap: 0x%lx\n",
 			   udev->ue_res_info[i].ue_ctx_qos.um_sl_bitmap);
@@ -86,19 +89,22 @@ static int ubaseproxy_dbg_dump_ue_seid_idx(struct seq_file *s, void *data)
 	u16 j, count;
 
 	for (i = 0; i < managed_ue_num; i++) {
-		seq_printf(s, "ue_num: %u\n", i);
-		seq_puts(s, "seid idx:\n");
+		if (!ubaseproxy_ue_active(udev, udev->ue_res_info[i].bus_ue_id))
+			continue;
+
+		seq_printf(s, "UE%u:\n", i);
+		seq_puts(s, "\tseid idx:\n\t");
 		ue_seid_table = &udev->ue_res_info[i].ue_seid_table;
 		count = 0;
 		spin_lock_bh(&ue_seid_table->seid_lock);
 		for (j = 0; j < UBASEPROXY_MAX_SEID_TABLE_SIZE; j++) {
 			if (test_bit(j, ue_seid_table->seid_bmap)) {
-				seq_printf(s, "%6u", j);
+				seq_printf(s, "%-6u", j);
 				count++;
 			}
 
 			if (count == SEID_NUM_PER_LINE) {
-				seq_puts(s, "\n");
+				seq_puts(s, "\n\t");
 				count = 0;
 			}
 		}
@@ -299,6 +305,24 @@ static int ubaseproxy_dbg_dump_risk_stats(struct seq_file *s, void *data)
 	return 0;
 }
 
+static int ubaseproxy_dbg_dump_ue_active(struct seq_file *s, void *data)
+{
+	struct ubaseproxy_dev *udev = dev_get_drvdata(s->private);
+	struct ubase_caps *ubase_caps = ubase_get_dev_caps(udev->comdev.adev);
+	u8 managed_ue_num = ubase_caps->ue_num - 1, i;
+
+	seq_puts(s, "\tbus_ue_id\n");
+
+	for (i = 0; i < managed_ue_num; i++) {
+		if (!ubaseproxy_ue_active(udev, udev->ue_res_info[i].bus_ue_id))
+			continue;
+
+		seq_printf(s, "UE%u\t%9u\n", i, udev->ue_res_info[i].bus_ue_id);
+	}
+
+	return 0;
+}
+
 static struct ubase_dbg_cmd_info ubaseproxy_dbg_cmd[] = {
 	{
 		.name = "ue_context_spec",
@@ -331,6 +355,14 @@ static struct ubase_dbg_cmd_info ubaseproxy_dbg_cmd[] = {
 		.support = ubaseproxy_dbg_dentry_support,
 		.init = ubase_dbg_seq_file_init,
 		.read_func = ubaseproxy_dbg_dump_risk_stats,
+	},
+	{
+		.name = "ue_active",
+		.dentry_index = UBASEPROXY_DBG_DENTRY_ROOT,
+		.property = UBASE_SUP_UDMA | UBASE_SUP_UBL,
+		.support = ubaseproxy_dbg_dentry_support,
+		.init = ubase_dbg_seq_file_init,
+		.read_func = ubaseproxy_dbg_dump_ue_active,
 	},
 };
 
