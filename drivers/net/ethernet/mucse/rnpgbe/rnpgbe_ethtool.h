@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #ifndef _RNPGBE_ETHTOOL_H_
 #define _RNPGBE_ETHTOOL_H_
@@ -62,6 +62,8 @@ struct rnpgbe_rx_queue_ring_stat {
 #define RNP_STATS_LEN                                                          \
 	(RNP_GLOBAL_STATS_LEN + RNP_HWSTRINGS_STATS_LEN + RNP_QUEUE_STATS_LEN)
 
+int rnpgbe_wol_exclusion(struct rnpgbe_adapter *adapter,
+			 struct ethtool_wolinfo *wol);
 void rnpgbe_get_wol(struct net_device *netdev, struct ethtool_wolinfo *wol);
 int rnpgbe_wol_exclusion(struct rnpgbe_adapter *adapter,
 			 struct ethtool_wolinfo *wol);
@@ -72,7 +74,8 @@ u32 rnpgbe_get_msglevel(struct net_device *netdev);
 void rnpgbe_set_msglevel(struct net_device *netdev, u32 data);
 int rnpgbe_set_phys_id(struct net_device *netdev,
 		       enum ethtool_phys_id_state state);
-int rnpgbe_get_ts_info(struct net_device *dev, struct ethtool_ts_info *info);
+int rnpgbe_get_ts_info(struct net_device *dev,
+		       struct ethtool_ts_info *info);
 void rnpgbe_get_channels(struct net_device *dev, struct ethtool_channels *ch);
 int rnpgbe_set_channels(struct net_device *dev, struct ethtool_channels *ch);
 int rnpgbe_get_module_info(struct net_device *dev,
@@ -97,9 +100,11 @@ int rnpgbe_get_coalesce(struct net_device *netdev,
 			struct ethtool_coalesce *coal,
 			struct kernel_ethtool_coalesce *kernel_coal,
 			struct netlink_ext_ack *extack);
-int rnpgbe_set_coalesce(struct net_device *netdev, struct ethtool_coalesce *ec,
+int rnpgbe_set_coalesce(struct net_device *netdev,
+			struct ethtool_coalesce *ec,
 			struct kernel_ethtool_coalesce *kernel_coal,
 			struct netlink_ext_ack *extack);
+
 int rnpgbe_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd,
 		     u32 *rule_locs);
 int rnpgbe_set_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd);
