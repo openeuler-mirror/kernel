@@ -10,7 +10,9 @@ rnpm-objs :=   \
 		rnpm_pcs.o \
 		rnpm_mbx_fw.o\
 		rnpm_phy.o \
+		rnpm_sriov.o \
 		rnpm_sysfs.o \
+		rnpm_tc.o \
 		rnpm_mpe.o \
 		rnpm_ptp.o
 

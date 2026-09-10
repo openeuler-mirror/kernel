@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright(c) 2022 - 2023 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #ifndef VERSION_H
 #define VERSION_H
-#define GIT_COMMIT " 61fcc80"
+#define GIT_COMMIT " baa47c5"
 #endif
