@@ -8,8 +8,6 @@
 
 #include "ubaseproxy_dev.h"
 
-#define UBASEPROXY_JTG_MAX_JETTY_NUM 32
-
 struct ubaseproxy_jtg_key_words {
 	u16 start_jetty_id;
 	u8 jetty_number;
@@ -23,11 +21,13 @@ struct ubaseproxy_jetty_grp_ctx {
 	u32 valid;
 };
 
-struct ubaseproxy_jtg_bound_jetty {
-	u8 add_jetty[UBASEPROXY_JTG_MAX_JETTY_NUM];
-	u8 add_jetty_num;
-	u8 del_jetty[UBASEPROXY_JTG_MAX_JETTY_NUM];
-	u8 del_jetty_num;
+struct ubaseproxy_jtg_modify_info {
+	u32 to_bind;
+	u32 to_unbind;
+	u32 old_valid;
+	u32 new_valid;
+	u8 old_jetty_num;
+	u8 new_jetty_num;
 };
 
 int ubaseproxy_handle_create_jetty_grp_ctx_req(struct ubaseproxy_dev *udev,

@@ -20,7 +20,7 @@
 
 int ubaseproxy_jetty_bind_jetty_grp(struct ubaseproxy_dev *udev,
 				    struct ubaseproxy_ue_ctx_xarray *ue_ctx_xa,
-				    u16 jettyn, u16 mbx_ue_id)
+				    u32 jettyn, u16 mbx_ue_id, u16 jtgn)
 {
 	struct ubaseproxy_jetty_key_words *jetty;
 
@@ -28,22 +28,22 @@ int ubaseproxy_jetty_bind_jetty_grp(struct ubaseproxy_dev *udev,
 							     jettyn);
 	if (!jetty) {
 		ubaseproxy_risk_rl(udev, mbx_ue_id, jfs_bind_jetty_not_exists,
-				   "failed to bind jetty group, jetty(%u) not exist.\n",
-				   jettyn);
+				   "failed to bind jetty group(%u), jetty(%u) not exist.\n",
+				   jtgn, jettyn);
 		return -EINVAL;
 	}
 
 	if (jetty->mode != UBASEPROXY_JETTY_MODE) {
 		ubaseproxy_risk_rl(udev, mbx_ue_id, jfs_bind_not_in_jetty_mode,
-				   "failed to bind jetty group, jetty(%u) is not in jetty mode.\n",
-				   jettyn);
+				   "failed to bind jetty group(%u), jetty(%u) mode is jfs.\n",
+				   jtgn, jettyn);
 		return -EINVAL;
 	}
 
 	if (jetty->jtg_bind_state) {
 		ubaseproxy_risk_rl(udev, mbx_ue_id, jfs_bind_already_bound_group,
-				   "failed to bind jetty group, jetty(%u) has already bound a jetty group.\n",
-				   jettyn);
+				   "failed to bind jetty group(%u), jetty(%u) has already bound a jetty group.\n",
+				   jtgn, jettyn);
 		return -EINVAL;
 	}
 
@@ -54,7 +54,7 @@ int ubaseproxy_jetty_bind_jetty_grp(struct ubaseproxy_dev *udev,
 
 int ubaseproxy_jetty_unbind_jetty_grp(struct ubaseproxy_dev *udev,
 				      struct ubaseproxy_ue_ctx_xarray *ue_ctx_xa,
-				      u16 jettyn, u16 mbx_ue_id)
+				      u32 jettyn, u16 mbx_ue_id, u16 jtgn)
 {
 	struct ubaseproxy_jetty_key_words *jetty;
 
@@ -62,8 +62,8 @@ int ubaseproxy_jetty_unbind_jetty_grp(struct ubaseproxy_dev *udev,
 							     jettyn);
 	if (!jetty) {
 		ubaseproxy_risk_rl(udev, mbx_ue_id, jfs_unbind_jetty_not_exists,
-				   "failed to unbind jetty group, jetty(%u) not exist.\n",
-				   jettyn);
+				   "failed to unbind jetty group(%u), jetty(%u) not exist.\n",
+				   jtgn, jettyn);
 		return -EINVAL;
 	}
 
@@ -971,12 +971,12 @@ ubaseproxy_init_jetty_create_mask(struct ubaseproxy_jetty_default *jetty_default
 		GENMASK(31, 16), GENMASK(31, 0), GENMASK(31, 0), GENMASK(31, 0),
 		GENMASK(31, 0), GENMASK(31, 0),
 		/* DW22*/
-		GENMASK(3, 2),
+		GENMASK(3, 0),
 		/* DW23-DW30 */
 		GENMASK(31, 0), GENMASK(31, 16), GENMASK(31, 0), GENMASK(31, 0),
 		GENMASK(31, 0), GENMASK(31, 0), GENMASK(31, 0), GENMASK(31, 0),
 		/* DW31*/
-		GENMASK(9, 0),
+		GENMASK(31, 0),
 		/* DW32-DW63 */
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
