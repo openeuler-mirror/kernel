@@ -601,11 +601,22 @@ int __must_check uobj_remove_commit_batch(struct uburma_uobj **uobj_arr,
 	int ret;
 	int i;
 
-	if (arr_num > 0) {
-		uobj = uobj_arr[0];
-		ufile = uobj->ufile;
-		down_read(&ufile->cleanup_rwsem);
+	if (!uobj_arr || arr_num <= 0 || !bad_index) {
+		uburma_log_err("Invalid parameter.\n");
+		return -EINVAL;
 	}
+
+	for (i = 0; i < arr_num; ++i) {
+		if (IS_ERR_OR_NULL(uobj_arr[i])) {
+			uburma_log_err("Invalid uobj, index: %d.\n", i);
+			return -EINVAL;
+		}
+	}
+
+	uobj = uobj_arr[0];
+	ufile = uobj->ufile;
+	down_read(&ufile->cleanup_rwsem);
+
 	for (i = 0; i < arr_num; ++i) {
 		uobj = uobj_arr[i];
 		ufile = uobj->ufile;
@@ -621,8 +632,7 @@ int __must_check uobj_remove_commit_batch(struct uburma_uobj **uobj_arr,
 	ret = uobj_remove_commit_internal_batch(uobj_arr, arr_num, bad_index,
 						UBURMA_REMOVE_DESTROY);
 
-	if (arr_num > 0)
-		up_read(&ufile->cleanup_rwsem);
+	up_read(&ufile->cleanup_rwsem);
 
 	return ret;
 }
