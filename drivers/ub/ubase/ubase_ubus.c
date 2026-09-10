@@ -115,9 +115,9 @@ static int ubase_ubus_init(struct ub_entity *ue)
 	}
 
 	udev->hw.mem_base.addr_unmapped = ub_resource_start(ue, UBASE_UBUS_MEM_RESOURCE);
-	udev->hw.mem_base.addr = devm_ioremap_wc(&ue->dev,
-					ub_resource_start(ue, UBASE_UBUS_MEM_RESOURCE),
-					ub_resource_len(ue, UBASE_UBUS_MEM_RESOURCE));
+	udev->hw.mem_base.addr = devm_ioremap(&ue->dev,
+					      ub_resource_start(ue, UBASE_UBUS_MEM_RESOURCE),
+					      ub_resource_len(ue, UBASE_UBUS_MEM_RESOURCE));
 	if (!udev->hw.mem_base.addr) {
 		ubase_err(udev, "failed to map memory base.\n");
 		ret = -ENOMEM;
