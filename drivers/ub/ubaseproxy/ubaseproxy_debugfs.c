@@ -234,20 +234,21 @@ static void ubaseproxy_dump_ue_risk_jtg(struct seq_file *s, u8 ue_id)
 	ubaseproxy_risk_printf(s, ue_id, jtg_modify_req_len);
 	ubaseproxy_risk_printf(s, ue_id, jtg_query_req_len);
 	ubaseproxy_risk_printf(s, ue_id, jtg_req_tag);
+	ubaseproxy_risk_printf(s, ue_id, jtg_create_jtg_already_exists);
 	ubaseproxy_risk_printf(s, ue_id, jtg_field_start_jetty_id);
 	ubaseproxy_risk_printf(s, ue_id, jtg_field_rsv);
-	ubaseproxy_risk_printf(s, ue_id, jtg_field_jetty_number);
-	ubaseproxy_risk_printf(s, ue_id, jtg_create_jtg_already_exists);
+	ubaseproxy_risk_printf(s, ue_id, jtg_valid_exceeds_range);
+	ubaseproxy_risk_printf(s, ue_id, jtg_field_valid);
+	ubaseproxy_risk_printf(s, ue_id, jtg_create_bindings);
 	ubaseproxy_risk_printf(s, ue_id, jtg_destroy_jtg_not_exists);
 	ubaseproxy_risk_printf(s, ue_id, jtg_modify_jtg_not_exists);
+	ubaseproxy_risk_printf(s, ue_id, jtg_modify_mask);
+	ubaseproxy_risk_printf(s, ue_id, jtg_modify_jetty_num_mask);
+	ubaseproxy_risk_printf(s, ue_id, jtg_modify_valid_mask);
+	ubaseproxy_risk_printf(s, ue_id, jtg_modify_valid_exceeds_range);
+	ubaseproxy_risk_printf(s, ue_id, jtg_modify_valid);
+	ubaseproxy_risk_printf(s, ue_id, jtg_modify_bindings);
 	ubaseproxy_risk_printf(s, ue_id, jtg_query_jtg_not_exists);
-	ubaseproxy_risk_printf(s, ue_id, jtg_check_jetty_group_valid);
-	ubaseproxy_risk_printf(s, ue_id, jtg_check_jetty_num_mask);
-	ubaseproxy_risk_printf(s, ue_id, jtg_check_jetty_num);
-	ubaseproxy_risk_printf(s, ue_id, jtg_check_jtg_valid_mask);
-	ubaseproxy_risk_printf(s, ue_id, jtg_check_jtg_valid);
-	ubaseproxy_risk_printf(s, ue_id, jtg_del_jetty_bound);
-	ubaseproxy_risk_printf(s, ue_id, jtg_add_jetty_bound);
 }
 
 static void ubaseproxy_dump_ue_risk_eq(struct seq_file *s, u8 ue_id)

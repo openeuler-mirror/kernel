@@ -12,7 +12,6 @@
 
 #include "ubaseproxy_dev.h"
 #include "ubaseproxy_eq.h"
-#include "ubaseproxy_jetty_grp.h"
 #include "ubaseproxy_jfc.h"
 #include "ubaseproxy_jfr.h"
 #include "ubaseproxy_jfs.h"
