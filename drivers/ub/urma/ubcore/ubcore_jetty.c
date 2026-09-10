@@ -2150,6 +2150,7 @@ int ubcore_unimport_jfr(struct ubcore_tjetty *tjfr)
 	ret = dev->ops->unimport_jfr(tjfr);
 	UBCORE_PERF_TRACE_END(PERF_UB_UNIMPORT_JFR);
 	if (ret != 0) {
+		mutex_init(&tjfr->lock);
 		ubcore_log_err("[DRV] Failed to unimport jfr, dev_name: %s, eid_idx: %u, tjfr_id: %u.\n",
 			dev->dev_name, eid_index, tjfr_id);
 		UBCORE_PERF_TRACE_END(PERF_CORE_UNIMPORT_JFR);
@@ -3419,6 +3420,7 @@ int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty)
 	if (ret != 0) {
 		ubcore_log_err("[DRV] Failed to unimport_jetty, dev_name:%s, eid_idx:%u, id:%u, ret: %d.",
 			dev->dev_name, eid_idx, jetty_id, ret);
+		mutex_init(&tjetty->lock);
 		UBCORE_PERF_TRACE_END(PERF_CORE_UNIMPORT_JETTY);
 		return ret;
 	}
@@ -4055,7 +4057,14 @@ int ubcore_unimport_jetty_async(struct ubcore_tjetty *tjetty, int timeout,
 
 	mutex_destroy(&tjetty->lock);
 
-	return dev->ops->unimport_jetty(tjetty);
+	ret = dev->ops->unimport_jetty(tjetty);
+	if (ret != 0) {
+		mutex_init(&tjetty->lock);
+		ubcore_log_err("[DRV] Failed to unimport_jetty, dev_name:%s, ret: %d.",
+			dev->dev_name, ret);
+	}
+
+	return ret;
 }
 EXPORT_SYMBOL(ubcore_unimport_jetty_async);
 
