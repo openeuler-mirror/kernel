@@ -572,6 +572,11 @@ struct iommu_hw_info_arm_smmuv3 {
  * @__reserved: Must be 0
  * @iidr: Hisilicon UMMU supports different product versions
  * @aidr: Hisilicon UMMU architecture version
+ * @caps: Raw values of UMMU capability registers CAP0~CAP6,
+ *       used by VMM to emulate chip-generation-specific capabilities.
+ *       Trailing entries are zeroed by kernel if the user buffer
+ *       is larger than kernel supports (data_len negotiation).
+ * @kabi_reserved: Must be 0
  *
  * User space should read the underlying Hisilicon UMMU hardware information for
  * the list of supported features.
@@ -581,6 +586,8 @@ struct iommu_hw_info_ummu {
 	__u32 __reserved;
 	__u32 iidr;
 	__u32 aidr;
+	__u32 caps[7];
+	__u32 kabi_reserved;
 };
 
 /**

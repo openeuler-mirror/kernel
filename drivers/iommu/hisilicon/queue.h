@@ -301,7 +301,7 @@ struct ummu_mcmdq_ent {
 				} check_pa_conti;
 			};
 		} null_op;
-#define CMD_PLBI_OS_N 0x63
+#define CMD_PLBI_FREE_BIT 0x63
 		struct {
 			u32 tid;
 			u16 tecte_tag;

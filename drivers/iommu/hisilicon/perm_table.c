@@ -754,7 +754,7 @@ static void update_ummu_gather(struct ummu_plbi_gather *ummu_gather, u32 cmd_typ
 		ummu_gather->plbis[ummu_gather->data_cnt].plbi_va.va = data1;
 		ummu_gather->plbis[ummu_gather->data_cnt].plbi_va.size = data2;
 		break;
-	case CMD_PLBI_OS_N:
+	case CMD_PLBI_FREE_BIT:
 		ummu_gather->plbis[ummu_gather->data_cnt].plbi_f_bit.lvl_idx = data1;
 		ummu_gather->plbis[ummu_gather->data_cnt].plbi_f_bit.lvl_offset = data2;
 		break;
@@ -811,7 +811,7 @@ static int ummu_table_fill_head_node_free_bit(struct ummu_data_info *data_info,
 	if (cur_node->f_bit) {
 		ummu_table_fill_node(cur_node, node_base, node_limit,
 					data_info, false);
-		update_ummu_gather(data_info->ummu_gather, CMD_PLBI_OS_N,
+		update_ummu_gather(data_info->ummu_gather, CMD_PLBI_FREE_BIT,
 		cur_node->next_lv_index,
 		TABLE_LVL_OFFSET(cur_node->next_lv_offset_low,
 				cur_node->next_lv_offset_high));
@@ -1101,7 +1101,7 @@ static int ummu_table_clear_head_node_free_bit(struct ummu_data_info *data_info,
 			cur_node, node_base, node_limit);
 		if (cur_node->type == 1) {
 			ummu_table_clear_node(cur_node, data_info->mapt_info, pre_node);
-			update_ummu_gather(data_info->ummu_gather, CMD_PLBI_OS_N,
+			update_ummu_gather(data_info->ummu_gather, CMD_PLBI_FREE_BIT,
 					   lvl_idx, lvl_offset);
 		}
 

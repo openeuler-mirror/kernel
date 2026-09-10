@@ -520,7 +520,7 @@ static int logic_ummu_grant(struct iommu_domain *d, void *va, size_t size,
 			local_plb_gather.size = ummu_gather.plbis[idx].plbi_va.size;
 			logic_ummu_plb_sync(d, &local_plb_gather);
 			break;
-		case CMD_PLBI_OS_N:
+		case CMD_PLBI_FREE_BIT:
 			logic_ummu_plbi_free_bit(d, ummu_gather.plbis[idx].plbi_f_bit.lvl_idx,
 						 ummu_gather.plbis[idx].plbi_f_bit.lvl_offset);
 			break;
@@ -562,7 +562,7 @@ static int logic_ummu_ungrant(struct iommu_domain *d, void *va, size_t size,
 			local_plb_gather.size = ummu_gather.plbis[idx].plbi_va.size;
 			logic_ummu_plb_sync(d, &local_plb_gather);
 			break;
-		case CMD_PLBI_OS_N:
+		case CMD_PLBI_FREE_BIT:
 			logic_ummu_plbi_free_bit(d, ummu_gather.plbis[idx].plbi_f_bit.lvl_idx,
 						 ummu_gather.plbis[idx].plbi_f_bit.lvl_offset);
 			break;
