@@ -4,9 +4,18 @@
 #
 
 config INFINIBAND_SXE2RDMA
-	tristate "sxe2 network adapters support"
-	depends on (X86 || ARM64) && NETDEVICES && ETHERNET && PCI
-	help
-		This driver supports sxe2 PCI Express family of adapters.
+	tristate "sxe2 network adapters RDMA support"
+	depends on (X86 || ARM64)
+	depends on NETDEVICES
+	depends on ETHERNET
+	depends on PCI
+	depends on INET
+	depends on IPV6
+	depends on SXE2
+	select AUXILIARY_BUS
+	select CONFIGFS_FS
+	default n
 
-		To compile this driver as a module, choose M here.
+	help
+	  This driver supports sxe2 PCI Express family of adapters.
+	  To compile this driver as a module, choose M here.
