@@ -48,7 +48,9 @@ static void obmm_vma_close(struct vm_area_struct *vma)
 
 	mutex_lock(&reg->state_mutex);
 
-	cache_ops = update_vma_perm_count(reg, region_pgoff, npages, access, OBMM_SHM_MEM_NO_ACCESS);
+	/* NO_ACCESS target only decrements counters, which cannot overflow */
+	(void)update_vma_perm_count(reg, region_pgoff, npages, access, OBMM_SHM_MEM_NO_ACCESS,
+				    &cache_ops, NULL);
 
 	if (cache_ops != OBMM_SHM_CACHE_NONE && reg->mmap_mode == OBMM_MMAP_NORMAL) {
 		ret = obmm_region_flush_range(reg, region_pgoff << PAGE_SHIFT,
@@ -403,6 +405,7 @@ static int obmm_shm_fops_mmap(struct file *file, struct vm_area_struct *vma)
 	uint8_t mem_state;
 	enum obmm_mmap_mode old_mmap_mode;
 	enum obmm_mmap_granu mmap_granu, init_mmap_granu;
+	unsigned long done_npages;
 	uint8_t access;
 	int ret;
 	bool cacheable, o_sync;
@@ -501,8 +504,17 @@ static int obmm_shm_fops_mmap(struct file *file, struct vm_area_struct *vma)
 		}
 
 		access = vm_flags_to_access(vma->vm_flags);
-		update_vma_perm_count(reg, vma->vm_pgoff, size >> PAGE_SHIFT,
-				      OBMM_SHM_MEM_NO_ACCESS, access);
+		ret = update_vma_perm_count(reg, vma->vm_pgoff, size >> PAGE_SHIFT,
+					    OBMM_SHM_MEM_NO_ACCESS, access, NULL,
+					    &done_npages);
+		if (ret) {
+			pr_err("mmap region %d: failed to update ownership counters. ret=%pe\n",
+			       reg->regionid, ERR_PTR(ret));
+			/* undo only the prefix of pages that was committed */
+			update_vma_perm_count(reg, vma->vm_pgoff, done_npages,
+					      access, OBMM_SHM_MEM_NO_ACCESS, NULL, NULL);
+			goto reset_cur_osync;
+		}
 	} else {
 		/* cc-region with nc-mmap(o-sync) */
 		ret = map_obmm_region(vma, reg, mmap_granu);
@@ -672,7 +684,7 @@ static long obmm_shm_update_range(struct file *file,
 	uint8_t old_access, new_access;
 	vm_flags_t new_vm_flags, old_vm_flags;
 	unsigned long cursor, region_pgoff, npages, modified_end;
-	unsigned long region_offset, length;
+	unsigned long region_offset, length, done_npages;
 	uint8_t cache_ops, flush_op, old_mem_state, cache_bits;
 	bool cacheable;
 	int ret;
@@ -770,8 +782,25 @@ static long obmm_shm_update_range(struct file *file,
 		 */
 		vma->vm_private_data = (void *)(uintptr_t)vma->vm_flags;
 
-		cache_ops = update_vma_perm_count(reg, region_pgoff, npages,
-						  old_access, new_access);
+		ret = update_vma_perm_count(reg, region_pgoff, npages,
+					    old_access, new_access, &cache_ops,
+					    &done_npages);
+		if (ret) {
+			pr_err("Failed to update ownership counters: vma=[%#lx, %#lx) ret=%pe\n",
+			       vma->vm_start, vma->vm_end, ERR_PTR(ret));
+			/*
+			 * Undo the prefix of pages committed inside this VMA;
+			 * its vm_flags and page tables are not touched yet, so
+			 * shrink modified_end to exclude it from rollback.
+			 * VMAs before it were fully updated and are restored
+			 * symmetrically by the rollback below.
+			 */
+			if (done_npages)
+				update_vma_perm_count(reg, region_pgoff, done_npages,
+						      new_access, old_access, NULL, NULL);
+			modified_end = vma->vm_start;
+			goto rollback;
+		}
 
 		vm_flags_clear(vma, OBMM_UPDATE_VM_FLAGS_MASK);
 		vm_flags_set(vma, new_vm_flags & OBMM_UPDATE_VM_FLAGS_MASK);
@@ -833,7 +862,10 @@ rollback:
 		npages = (vma->vm_end - vma->vm_start) >> PAGE_SHIFT;
 
 		/* Restore counters */
-		update_vma_perm_count(reg, region_pgoff, npages, new_access, old_access);
+		if (update_vma_perm_count(reg, region_pgoff, npages,
+					  new_access, old_access, NULL, NULL))
+			pr_err("Failed to restore ownership counters: vma=[%#lx, %#lx)\n",
+			       vma->vm_start, vma->vm_end);
 
 		/* Restore vm_flags */
 		vm_flags_clear(vma, OBMM_UPDATE_VM_FLAGS_MASK);
