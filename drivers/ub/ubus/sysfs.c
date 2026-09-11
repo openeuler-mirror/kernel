@@ -301,16 +301,17 @@ static DEVICE_ATTR_RW(match_driver);
 static ssize_t direct_link_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
-	struct ub_entity *uent = to_ub_entity(dev);
+	struct ub_entity *r_uent, *uent = to_ub_entity(dev);
 	struct ub_port *port;
 	int cnt = 0;
 
 	for_each_uent_port(port, uent) {
-		if (!port->r_uent)
+		r_uent = ub_entity_get(port->r_uent);
+		if (!r_uent)
 			continue;
 		cnt += sysfs_emit_at(buf, cnt, "%#04x : %#04x [%#05x]\n",
-				     port->index, port->r_index,
-				     port->r_uent->uent_num);
+				     port->index, port->r_index, r_uent->uent_num);
+		ub_entity_put(r_uent);
 	}
 
 	return cnt;
