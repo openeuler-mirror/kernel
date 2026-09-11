@@ -15,7 +15,7 @@
  */
 struct ummu_plbi_node {
 	struct list_head list;
-	u32 opcode;	/* CMD_PLBI_OS_VA or CMD_PLBI_FREE_BIT */
+	u32 opcode; /* CMD_PLBI_OS_VA or CMD_PLBI_FREE_BIT */
 	union {
 		struct {
 			u64 va;
