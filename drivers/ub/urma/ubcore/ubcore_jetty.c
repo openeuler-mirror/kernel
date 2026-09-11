@@ -1769,9 +1769,10 @@ static bool ubcore_validate_order_type_for_um_ctp(
 {
 	/* Only validate for UM + CTP combination */
 	if (trans_mode == UBCORE_TP_UM && tp_type == UBCORE_CTP) {
-		/* order_type can only be 0(DEF) or 3(OL) */
-		if (order_type != UBCORE_DEF_ORDER && order_type != UBCORE_OL) {
-			ubcore_log_err("Invalid order_type %u for UM+CTP, only 0(DEF) or 3(OL) allowed.\n",
+		/* order_type can only be 0(DEF) or 3(OL) or 4(NO) */
+		if (order_type != UBCORE_DEF_ORDER && order_type != UBCORE_OL &&
+			order_type != UBCORE_NO) {
+			ubcore_log_err("Invalid order_type %u for UM+CTP, only 0(DEF)/3(OL)/4(NO) allowed.\n",
 				       order_type);
 			return false;
 		}
