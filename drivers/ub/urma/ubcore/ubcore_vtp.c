@@ -1272,6 +1272,38 @@ int ubcore_delete_vtpn_for_tpid(struct ubcore_vtpn *vtpn)
 }
 EXPORT_SYMBOL(ubcore_delete_vtpn_for_tpid);
 
+/*	Free the vtpn (and its tpid) keyed by tp_handle.
+ *	this failed import:
+ *   - not found in the hash table (never created / already freed): no-op;
+ *   - UBCORE_VTPS_READY: activated by another tjetty via reuse, skip;
+ *   - RESET (never activated) or WAIT_DESTROY (activation failed): free.
+ */
+void ubcore_import_rollback_to_free_vtpn(struct ubcore_device *dev, uint64_t tp_handle)
+{
+	struct ubcore_vtpn *vtpn;
+	bool can_free;
+
+	if (dev == NULL || tp_handle == 0)
+		return;
+
+	vtpn = ubcore_find_get_vtpn_by_tp_handle(dev, tp_handle);
+	if (vtpn == NULL) {
+		ubcore_log_warn_rl(
+			"vtpn not found in rollback, maybe compat or reuse tpid, tp_handle: %llu.\n",
+				tp_handle);
+		return;
+	}
+
+	mutex_lock(&vtpn->state_lock);
+	can_free = (vtpn->state != UBCORE_VTPS_READY);
+	mutex_unlock(&vtpn->state_lock);
+
+	ubcore_put_vtpn_for_tpid(vtpn);
+
+	if (can_free)
+		(void)ubcore_delete_vtpn_for_tpid(vtpn);
+}
+
 // Allocate a vtpn keyed by tp_handle, used by uburma_cmd_get_tp_list.
 struct ubcore_vtpn *ubcore_create_add_vtpn_for_tpid(struct ubcore_device *dev,
 						  uint64_t tp_handle)
