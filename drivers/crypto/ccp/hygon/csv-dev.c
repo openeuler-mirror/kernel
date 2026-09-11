@@ -686,6 +686,15 @@ int csv_get_extension_info(void *buf, size_t *size)
 	if (csv_version_greater_or_equal(2393))
 		*(uint32_t *)buf |= CSV_EXT_CSV3_LFINISH_EX;
 
+	/* Since firmware with build id 2600, support:
+	 *   d. issue CSV3_SET_GUEST_PRIVATE_MEMORY_EX and
+	 *      CSV3_CMD_UPDATE_NPT_EX commands
+	 * These commands enable extended NPT functionality and we refer to as
+	 * CSV_EXT_CSV3_NPT_EX.
+	 */
+	if (csv_version_greater_or_equal(2600))
+		*(uint32_t *)buf |= CSV_EXT_CSV3_NPT_EX;
+
 	return 0;
 }
 EXPORT_SYMBOL_GPL(csv_get_extension_info);

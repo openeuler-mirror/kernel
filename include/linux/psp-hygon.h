@@ -27,6 +27,8 @@
 #define CSV_EXT_CSV3_INJ_SECRET		(1 << CSV_EXT_CSV3_INJ_SECRET_BIT)
 #define CSV_EXT_CSV3_LFINISH_EX_BIT	2
 #define CSV_EXT_CSV3_LFINISH_EX		(1 << CSV_EXT_CSV3_LFINISH_EX_BIT)
+#define CSV_EXT_CSV3_NPT_EX_BIT		3
+#define CSV_EXT_CSV3_NPT_EX		(1 << CSV_EXT_CSV3_NPT_EX_BIT)
 
 /**
  * Guest/platform management commands for CSV
