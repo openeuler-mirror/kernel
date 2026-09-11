@@ -50,6 +50,8 @@ enum csv3_cmd {
 	/* Guest NPT(Nested Page Table) management commands */
 	CSV3_CMD_UPDATE_NPT			= 0x203,
 	CSV3_CMD_LAUNCH_FINISH_EX		= 0x204,
+	CSV3_CMD_SET_GUEST_PRIVATE_MEMORY_EX	= 0x205,
+	CSV3_CMD_UPDATE_NPT_EX			= 0x206,
 	/* Guest migration commands */
 	CSV3_CMD_SEND_ENCRYPT_DATA		= 0x210,
 	CSV3_CMD_SEND_ENCRYPT_CONTEXT		= 0x211,
@@ -252,6 +254,45 @@ struct csv3_data_update_npt {
 	u32 npages;			/* In/Out */
 } __packed;
 
+#define CSV3_UPDATE_NPT_TYPE_DEFAULT		0
+#define CSV3_UPDATE_NPT_TYPE_SECURE_CALL	1
+
+/**
+ * struct csv3_data_update_npt_ex - CSV3_CMD_UPDATE_NPT_EX command
+ *
+ * @handle: handle assigned to the VM
+ * @error_code: nested page fault error code
+ * @type: the trigger event of the npf, such as secure call
+ * @gpa: guest page address where npf happens
+ * @spa: physical address which maps to gpa in host page table
+ * @level: page level which can be mapped in nested page table
+ * @page_attr: page attribute for gpa
+ * @page_attr_mask: which page attribute bit should be set
+ * @npages: number of pages from gpa is handled.
+ * @sc_type: secure call command type, see enum csv_secure_command_type
+ * @sc_gpa: gpa of the memory region whose page attr are to be modified.
+ *	    Valid only when the @sc_type is %CSV_SECURE_CMD_ENC or
+ *	    %CSV_SECURE_CMD_DEC.
+ * @sc_size: size of the memory region whose page attr are to be modified.
+ *	     Valid only when the @sc_type is %CSV_SECURE_CMD_ENC or
+ *	     %CSV_SECURE_CMD_DEC.
+ */
+struct csv3_data_update_npt_ex {
+	u32 handle;			/* In */
+	u32 reserved;			/* In */
+	u32 error_code;			/* In */
+	u32 type;			/* Out */
+	u64 gpa;			/* In */
+	u64 spa;			/* In */
+	u64 level;			/* In */
+	u64 page_attr;			/* In */
+	u64 page_attr_mask;		/* In */
+	u32 npages;			/* In/Out */
+	u32 sc_type;			/* Out */
+	u64 sc_gpa;			/* Out */
+	u64 sc_size;			/* Out */
+} __packed;
+
 /**
  * struct csv3_data_mem_region - define a memory region
  *
@@ -260,6 +301,21 @@ struct csv3_data_update_npt {
  */
 struct csv3_data_memory_region {
 	u64 base_address;		/* In */
+	u64 size;			/* In */
+} __packed;
+
+/**
+ * struct csv3_data_mem_region_ex - define a memory region for extended memory
+ *				    management
+ *
+ * @base_address: base address of a memory region
+ * @guest_address: guest address of a memory region
+ * @size: size of memory region
+ */
+struct csv3_data_memory_region_ex {
+	u64 base_address;		/* In */
+	u64 guest_address;		/* In */
+	u64 reserved;			/* In */
 	u64 size;			/* In */
 } __packed;
 
