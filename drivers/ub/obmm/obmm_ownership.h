@@ -57,6 +57,15 @@ static inline unsigned long ownership_size_to_nentries(const struct obmm_region 
 	return size >> PAGE_SHIFT;
 }
 
+/* Convert ownership entry count back to VMA page count */
+static inline unsigned long ownership_nentries_to_npages(const struct obmm_region *reg,
+							 unsigned long nentries)
+{
+	if (reg->mmap_granu == OBMM_MMAP_GRANU_PMD)
+		return nentries << (PMD_SHIFT - PAGE_SHIFT);
+	return nentries;
+}
+
 /* Check if address is aligned according to mmap granularity */
 static inline bool obmm_is_aligned(const struct obmm_region *reg, unsigned long addr)
 {
@@ -79,11 +88,22 @@ static inline unsigned long vm_flags_to_mem_state(vm_flags_t vm_flags, bool cach
 /* Convert access bits to vm_flags (R/W only, preserves existing EXEC) */
 vm_flags_t access_to_vm_flags(uint8_t access);
 uint8_t merge_cache_ops(uint8_t ops1, uint8_t ops2);
-uint8_t update_vma_perm_count(struct obmm_region *reg,
-			      unsigned long region_pgoff,
-			      unsigned long npages,
-			      uint8_t old_access,
-			      uint8_t new_access);
+/*
+ * Update R/W counters for a VMA page range.
+ *
+ * The update is done in a single pass with a compute-then-commit per page:
+ * a page whose increment would overflow is left completely untouched and
+ * -EOVERFLOW is returned. On failure @done_npages (when non-NULL) reports
+ * how many leading pages were already committed, so callers can undo
+ * exactly that prefix - never a partially updated page.
+ */
+int update_vma_perm_count(struct obmm_region *reg,
+			  unsigned long region_pgoff,
+			  unsigned long npages,
+			  uint8_t old_access,
+			  uint8_t new_access,
+			  uint8_t *cache_ops,
+			  unsigned long *done_npages);
 int init_ownership_info(struct obmm_region *reg);
 void release_ownership_info(struct obmm_region *reg);
 
