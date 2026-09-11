@@ -20,7 +20,8 @@
 int ubagg_connect_init(void);
 void ubagg_connect_uninit(void);
 
-int ubagg_connect_xchg_seg(struct ubcore_seg *seg, uint32_t ue_idx,
+int ubagg_connect_xchg_seg(const struct ubcore_target_seg_cfg *cfg,
+			   uint32_t ue_idx,
 			   struct ubcore_device *dev,
 			   struct ubagg_seg_exchange_info *seg_info);
 

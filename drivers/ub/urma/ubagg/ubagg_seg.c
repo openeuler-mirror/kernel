@@ -138,6 +138,7 @@ struct ubcore_target_seg *ubagg_register_seg(struct ubcore_device *dev,
 
 	seg_node->ubagg_seg.seg.token_id = token_id;
 	seg_node->token_id = token_id;
+	seg_node->token_value = cfg->token_value;
 	seg_node->ubagg_seg.ub_dev = dev;
 	if (udata->udrv_data->in_addr != 0 &&
 	    udata->udrv_data->in_len > sizeof(struct ubagg_seg_exchange_info)) {
@@ -200,7 +201,7 @@ struct ubcore_target_seg *ubagg_import_seg(struct ubcore_device *dev,
 		return ERR_PTR(ret);
 	}
 
-	if (ubagg_connect_xchg_seg(&cfg->seg, ue_idx, dev, &seg_ex_info) != 0) {
+	if (ubagg_connect_xchg_seg(cfg, ue_idx, dev, &seg_ex_info) != 0) {
 		ubagg_log_err("failed to exchange udata when import seg\n");
 		return ERR_PTR(-ENOEXEC);
 	}
