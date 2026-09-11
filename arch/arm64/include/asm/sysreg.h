@@ -172,6 +172,9 @@
 #define SYS_SVCR_SMSTOP_SM_EL0		sys_reg(0, 3, 4, 2, 3)
 #define SYS_SVCR_SMSTART_SM_EL0		sys_reg(0, 3, 4, 3, 3)
 #define SYS_SVCR_SMSTOP_SMZA_EL0	sys_reg(0, 3, 4, 6, 3)
+#define SYS_DAIFSET(imm)		sys_reg(0, 3, 4, (imm), 6)
+#define SYS_DAIFCLR(imm)		sys_reg(0, 3, 4, (imm), 7)
+#define SYS_DAIF			sys_reg(3, 3, 4, 2, 1)
 
 #define SYS_DBGBVRn_EL1(n)		sys_reg(2, 0, 0, n, 4)
 #define SYS_DBGBCRn_EL1(n)		sys_reg(2, 0, 0, n, 5)

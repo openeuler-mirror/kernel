@@ -587,6 +587,69 @@ static bool handle_ampere1_tcr(struct kvm_vcpu *vcpu)
 	return true;
 }
 
+/*
+ * PVM DAIF virtualization: with SCTLR_EL1.UMA clear, EL0 accesses to DAIF
+ * trap as EC=0x18 SYS64 (DDI0487M.c C5.2.3: UMA=0 gives
+ * AArch64_SystemAccessTrap(0x18)).  They are MRS and MSR DAIF, and the
+ * immediate forms MSR DAIFSet and DAIFClr, which carry their 4-bit immediate
+ * in CRm.  Update only the virtual DAIF held in regs.pstate; the physical
+ * re-entry written by __kvm_skip_instr() always keeps DAIF open, so
+ * EL1-targeted interrupts are never masked in hardware while the guest
+ * executes.
+ */
+static bool kvm_hyp_handle_daif(struct kvm_vcpu *vcpu, u64 *exit_code)
+{
+	u64 esr = kvm_vcpu_get_esr(vcpu);
+	u32 sysreg = esr_sys64_to_sysreg(esr);
+	u32 imm = sys_reg_CRm(sysreg);
+	u64 old = *vcpu_cpsr(vcpu);
+	u64 daif;
+
+	/*
+	 * With SCTLR_EL1.UMA clear, EL0 DAIF accesses trap on real hardware
+	 * too.  Leave those of the guest's userspace to the host, which
+	 * refuses them, instead of emulating them with kernel privilege.
+	 */
+	if (pvm_vcpu_in_user_ctxt(vcpu))
+		return false;
+
+	if (sysreg == SYS_DAIF) {
+		int rt = kvm_vcpu_sys_get_rt(vcpu);
+
+		if (esr & ESR_ELx_SYS64_ISS_DIR_READ) {
+			vcpu_set_reg(vcpu, rt, old & DAIF_MASK);
+			__kvm_skip_instr(vcpu);
+			return true;
+		}
+		daif = vcpu_get_reg(vcpu, rt);
+	} else if (sysreg == SYS_DAIFSET(imm)) {
+		daif = old | FIELD_PREP(DAIF_MASK, imm);
+	} else if (sysreg == SYS_DAIFCLR(imm)) {
+		daif = old & ~FIELD_PREP(DAIF_MASK, imm);
+	} else {
+		return false;
+	}
+
+	*vcpu_cpsr(vcpu) = pvm_set_daif(old, daif);
+	__kvm_skip_instr(vcpu);
+
+	if ((old & PSR_I_BIT) && !(daif & PSR_I_BIT) &&
+	    pvm_vcpu_irq_queued(vcpu)) {
+		/*
+		 * Architecturally, clearing PSTATE.I while an interrupt is
+		 * pending takes the vector at the next instruction boundary.
+		 * Injection only runs on the host entry path, which this hyp
+		 * re-entry would bypass, so the guest's unmask window could
+		 * close again before any injection observes I=0.  Exit to the
+		 * host instead, so that its injection path runs.
+		 */
+		*exit_code = ARM_EXCEPTION_IRQ;
+		return false;
+	}
+
+	return true;
+}
+
 static inline bool kvm_hyp_handle_sysreg(struct kvm_vcpu *vcpu, u64 *exit_code)
 {
 	if (cpus_have_final_cap(ARM64_WORKAROUND_CAVIUM_TX2_219_TVM) &&
@@ -605,6 +668,9 @@ static inline bool kvm_hyp_handle_sysreg(struct kvm_vcpu *vcpu, u64 *exit_code)
 		return kvm_hyp_handle_ptrauth(vcpu, exit_code);
 
 	if (kvm_hyp_handle_cntpct(vcpu))
+		return true;
+
+	if (is_pvm_mode() && kvm_hyp_handle_daif(vcpu, exit_code))
 		return true;
 
 	return false;

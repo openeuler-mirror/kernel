@@ -196,6 +196,20 @@ static __always_inline bool pvm_vcpu_in_user_ctxt(const struct kvm_vcpu *vcpu)
 }
 
 /*
+ * Whether the guest may have an interrupt to take, for the hypervisor, which
+ * does not query the vGIC itself.  Every pending and enabled interrupt is
+ * queued on the AP list, so an empty list rules one out.  The list may also
+ * hold interrupts the guest cannot take yet, such as active or masked ones;
+ * these only cost an exit to the host, which makes the exact decision.  As in
+ * kvm_vgic_flush_hwstate(), the check is lockless: an interrupt queued after
+ * it kicks the vCPU out of the guest.
+ */
+static __always_inline bool pvm_vcpu_irq_queued(const struct kvm_vcpu *vcpu)
+{
+	return !list_empty(&vcpu->arch.vgic_cpu.ap_list_head);
+}
+
+/*
  * The guest's CPACR_EL1.FPEN grants FP/SIMD access per virtual EL, but PVM runs
  * both virtual EL0 and EL1 at physical EL0.  The physical EL0 enable therefore
  * follows the current virtual mode and must be refreshed whenever it changes.
