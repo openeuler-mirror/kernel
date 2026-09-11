@@ -762,7 +762,7 @@ static void ummu_plbi_issue(struct ummu_data_info *data_info, u32 cmd_type,
 			    u64 data1, u64 data2)
 {
 	struct iommu_plb_gather local_gather;
-	struct ummu_plbi_node node;	/* stack-allocated, zero alloc */
+	struct ummu_plbi_node node; /* stack-allocated, zero alloc */
 
 	if (!data_info->domain)
 		return;

@@ -448,7 +448,6 @@ EXPORT_SYMBOL_GPL(ummu_core_invalidate_cfg_table);
 
 int ummu_core_invalidate_cfg(struct ummu_invalid_cfg_param *param)
 {
-
 	if (!param || !param->mm)
 		return -EINVAL;
 
