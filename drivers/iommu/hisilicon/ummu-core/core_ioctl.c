@@ -94,7 +94,7 @@ static int proc_manager_open(struct inode *inode, struct file *filp)
 	int ret;
 
 	mutex_lock(&global_proc_mtx);
-	manager = xa_load(&proc_info_xa, (unsigned long)mm);
+	manager = xa_load(&proc_info_xa, (uintptr_t)mm);
 	if (manager) {
 		mutex_unlock(&global_proc_mtx);
 		return -EEXIST;
@@ -108,7 +108,7 @@ static int proc_manager_open(struct inode *inode, struct file *filp)
 
 	mutex_init(&manager->proc_mtx);
 	mutex_lock(&manager->proc_mtx);
-	ret = xa_err(xa_store(&proc_info_xa, (unsigned long)mm, manager, GFP_KERNEL));
+	ret = xa_err(xa_store(&proc_info_xa, (uintptr_t)mm, manager, GFP_KERNEL));
 	if (ret)
 		goto mtx_unlock;
 
@@ -172,13 +172,13 @@ static int proc_manager_close(struct inode *inode, struct file *filp)
 	unsigned long idx = 0;
 
 	mutex_lock(&global_proc_mtx);
-	manager = xa_load(&proc_info_xa, (unsigned long)mm);
+	manager = xa_load(&proc_info_xa, (uintptr_t)mm);
 	if (!manager) {
 		mutex_unlock(&global_proc_mtx);
 		return -EINVAL;
 	}
 
-	xa_erase(&proc_info_xa, (unsigned long)mm);
+	xa_erase(&proc_info_xa, (uintptr_t)mm);
 	mutex_lock(&manager->proc_mtx);
 	mutex_unlock(&global_proc_mtx);
 	mmdrop(mm);
@@ -852,7 +852,7 @@ int ummu_core_invalidate_tid(struct mm_struct *mm, u32 tid)
 	struct ktid_info *entry;
 
 	mutex_lock(&global_proc_mtx);
-	manager = xa_load(&proc_info_xa, (unsigned long)mm);
+	manager = xa_load(&proc_info_xa, (uintptr_t)mm);
 	if (!manager) {
 		mutex_unlock(&global_proc_mtx);
 		return -ESRCH;
