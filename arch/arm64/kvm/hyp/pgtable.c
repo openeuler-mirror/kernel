@@ -1339,7 +1339,7 @@ int kvm_pgtable_stage2_relax_perms(struct kvm_pgtable *pgt, u64 addr,
 	ret = stage2_update_leaf_attrs(pgt, addr, 1, set, clr, NULL, &level,
 				       KVM_PGTABLE_WALK_HANDLE_FAULT |
 				       KVM_PGTABLE_WALK_SHARED);
-	if (!ret)
+	if (!ret || ret == -EAGAIN)
 		kvm_call_hyp(__kvm_tlb_flush_vmid_ipa_nsh, pgt->mmu, addr, level);
 	return ret;
 }
@@ -1420,7 +1420,6 @@ kvm_pte_t *kvm_pgtable_stage2_create_unlinked(struct kvm_pgtable *pgt,
 				 level + 1);
 	if (ret) {
 		kvm_pgtable_stage2_free_unlinked(mm_ops, pgtable, level);
-		mm_ops->put_page(pgtable);
 		return ERR_PTR(ret);
 	}
 
@@ -1503,7 +1502,6 @@ static int stage2_split_walker(const struct kvm_pgtable_visit_ctx *ctx,
 
 	if (!stage2_try_break_pte(ctx, mmu)) {
 		kvm_pgtable_stage2_free_unlinked(mm_ops, childp, level);
-		mm_ops->put_page(childp);
 		return -EAGAIN;
 	}
 
