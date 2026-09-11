@@ -92,6 +92,9 @@ find_cur_topo_agg_dev(struct ubagg_topo_map *topo_map,
 		      const union ubcore_eid *bonding_eid);
 int ubagg_get_primary_eid_by_agg_eid(union ubcore_eid *agg_eid,
 	union ubcore_eid *primary_eid, uint32_t ue_id);
+bool ubagg_eid_belongs_to_agg(const union ubcore_eid *eid,
+	const union ubcore_eid *agg_eid);
+bool ubagg_eid_is_known(const union ubcore_eid *eid);
 int ubagg_get_topo_by_eid(const union ubcore_eid *eid,
 	struct ubagg_topo_by_eid_out *out);
 int ubagg_rebuild_topo_eid_index(struct ubagg_topo_map *topo_map);

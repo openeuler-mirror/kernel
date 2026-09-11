@@ -569,7 +569,7 @@ static int uburma_cmd_query_jfs(struct ubcore_device *ubc_dev,
 				struct uburma_file *file,
 				struct uburma_cmd_hdr *hdr)
 {
-	struct uburma_cmd_query_jfs arg;
+	struct uburma_cmd_query_jfs arg = { 0 };
 	struct ubcore_jfs_attr attr = { 0 };
 	struct ubcore_jfs_cfg cfg = { 0 };
 	struct uburma_uobj *uobj;
