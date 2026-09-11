@@ -656,11 +656,11 @@ static void __exit obmm_exit(void)
 {
 	pr_info("obmm_module: exit started\n");
 
+	misc_deregister(&obmm_dev_handle);
 	lowmem_notify_exit();
 	module_preimport_exit();
 	module_addr_check_exit();
 	obmm_shm_dev_exit();
-	misc_deregister(&obmm_dev_handle);
 	ubmempool_allocator_exit();
 
 	pr_info("obmm_module: exit completed\n");
