@@ -230,6 +230,7 @@ int ubase_handle_mbx_over_cmdq_resp(void *dev, void *data, u32 len)
 int ubase_mbox_cmd_init(struct ubase_dev *udev)
 {
 	struct ubase_mbx_event_context *ctx = &udev->mb_cmd.ctx;
+	int ret;
 
 	if (test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
 		return 0;
@@ -240,8 +241,14 @@ int ubase_mbox_cmd_init(struct ubase_dev *udev)
 	if (!udev->mb_cmd.pool)
 		return -ENOMEM;
 
-	if (!ubase_dev_mbx_supported(udev))
-		return ubase_mbox_over_cmdq_init(udev);
+	if (!ubase_dev_mbx_supported(udev)) {
+		ret = ubase_mbox_over_cmdq_init(udev);
+		if (ret) {
+			dma_pool_destroy(udev->mb_cmd.pool);
+			udev->mb_cmd.pool = NULL;
+		}
+		return ret;
+	}
 
 	sema_init(&udev->mb_cmd.sem, 1);
 	init_completion(&ctx->done);
