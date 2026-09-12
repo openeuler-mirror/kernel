@@ -34,9 +34,9 @@ int ubcore_get_max_mtu(struct ubcore_device *dev, enum ubcore_mtu *mtu);
 struct ubcore_nlmsg *ubcore_new_mue_dev_msg(struct ubcore_device *dev);
 /* Only valid for user space */
 bool ubcore_eid_accessible(struct ubcore_device *dev, uint32_t eid_index);
-/* Valid for both user space and kerner space */
-bool ubcore_eid_valid(struct ubcore_device *dev, uint32_t eid_index,
-		      struct ubcore_udata *udata);
+/* Valid for both user space and kernel space */
+int ubcore_eid_valid(struct ubcore_device *dev, uint32_t eid_index,
+		     struct ubcore_udata *udata, union ubcore_eid *eid_out);
 int ubcore_config_rsvd_jetty(struct ubcore_device *dev, uint32_t min_jetty_id,
 			     uint32_t max_jetty_id);
 
