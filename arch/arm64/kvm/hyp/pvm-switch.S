@@ -11,9 +11,6 @@
 #include <asm/kvm.h>
 #include <asm/kvm_arm.h>
 #include <asm/kvm_asm.h>
-#include <asm/kvm_mmu.h>
-#include <asm/kvm_mte.h>
-#include <asm/kvm_ptrauth.h>
 
 	.text
 
@@ -35,9 +32,6 @@ alternative_else_nop_endif
 1:
 	set_loaded_vcpu x0, x1, x2
 	add	x29, x0, #VCPU_CONTEXT
-
-	mte_switch_to_guest x29, x1, x2
-	ptrauth_switch_to_guest x29, x0, x1, x2
 
 	restore_sp_el0 x29, x0
 
@@ -86,8 +80,6 @@ SYM_INNER_LABEL(__pvm_guest_exit, SYM_L_GLOBAL)
 	save_sp_el0	x1, x2
 
 	adr_this_cpu x2, kvm_hyp_ctxt, x3
-	ptrauth_switch_to_hyp x1, x2, x3, x4, x5
-	mte_switch_to_hyp x1, x2, x3
 	restore_sp_el0 x2, x3
 	restore_callee_saved_regs x2
 	set_loaded_vcpu xzr, x2, x3
