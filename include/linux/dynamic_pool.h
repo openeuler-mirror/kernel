@@ -197,11 +197,6 @@ static inline int dynamic_pool_hugetlb_acct_memory(struct hstate *h, long delta,
 	return -ENOMEM;
 }
 
-static inline bool dynamic_pool_should_alloc(gfp_t gfp_mask, unsigned int order)
-{
-	return false;
-}
-
 static inline struct folio *dynamic_pool_alloc_hugepage(struct hugetlbfs_inode_info *p,
 					struct hstate *h, bool reserved)
 {
@@ -213,6 +208,11 @@ static inline void dynamic_pool_free_hugepage(struct folio *folio,
 {
 }
 #endif
+
+static inline bool dynamic_pool_should_alloc(gfp_t gfp_mask, unsigned int order)
+{
+	return false;
+}
 
 static inline void dynamic_pool_inherit(struct mem_cgroup *memcg)
 {
