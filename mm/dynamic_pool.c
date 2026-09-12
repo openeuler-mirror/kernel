@@ -1710,12 +1710,13 @@ int dpool_init(struct dpool_info *arg)
 		goto unlock;
 	}
 
-	dpool_global_pool = dpool;
-
 	BUG_ON(!dpool->ops->fill_pool);
 	ret = dpool->ops->fill_pool(dpool, arg);
 	if (ret)
 		dpool_put(dpool);
+	else
+		/* make dpool_global_pool visible iff dpool init succeed */
+		dpool_global_pool = dpool;
 
 unlock:
 	mutex_unlock(&dpool_mutex);
