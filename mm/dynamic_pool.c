@@ -193,7 +193,8 @@ bool page_in_dynamic_pool(struct page *page)
 				goto out;
 		}
 
-		/* The pfn is not in the range, set dpool to NULL */
+		/* The pfn is not in the range, release dpool & set dpool to NULL */
+		dpool_put(dpool);
 		dpool = NULL;
 	}
 
