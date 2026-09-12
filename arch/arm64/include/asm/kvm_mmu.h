@@ -303,6 +303,9 @@ static __always_inline u64 kvm_get_vttbr(struct kvm_s2_mmu *mmu)
 static __always_inline void __load_stage2(struct kvm_s2_mmu *mmu,
 					  struct kvm_arch *arch)
 {
+	if (is_pvm_mode())
+		return;
+
 	write_sysreg(arch->vtcr, vtcr_el2);
 	write_sysreg(kvm_get_vttbr(mmu), vttbr_el2);
 
