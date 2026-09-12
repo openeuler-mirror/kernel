@@ -937,14 +937,19 @@ struct ubcore_jfs *ubcore_create_jfs(struct ubcore_device *dev,
 				     struct ubcore_udata *udata)
 {
 	struct ubcore_jfs *jfs;
+	union ubcore_eid eid = { 0 };
 	uint32_t perf_create_jfs_type;
 	int ret;
 
 	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_CREATE_JFS);
 
 	if (!dev || !dev->ops || !dev->ops->create_jfs ||
-	    !dev->ops->destroy_jfs || !cfg || !cfg->jfc ||
-	    !ubcore_eid_valid(dev, cfg->eid_index, udata)) {
+	    !dev->ops->destroy_jfs || !cfg || !cfg->jfc) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFS);
+		return ERR_PTR(-EINVAL);
+	}
+
+	if (ubcore_eid_valid(dev, cfg->eid_index, udata, &eid) != 0) {
 		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFS);
 		return ERR_PTR(-EINVAL);
 	}
@@ -984,7 +989,7 @@ struct ubcore_jfs *ubcore_create_jfs(struct ubcore_device *dev,
 	jfs->ub_dev = dev;
 	jfs->uctx = ubcore_get_uctx(udata);
 	jfs->jfae_handler = jfae_handler;
-	jfs->jfs_id.eid = dev->eid_table.eid_entries[cfg->eid_index].eid;
+	jfs->jfs_id.eid = eid;
 	atomic_set(&jfs->use_cnt, 0);
 	kref_init(&jfs->ref_cnt);
 	init_completion(&jfs->comp);
@@ -1229,11 +1234,14 @@ int ubcore_alloc_jfs(struct ubcore_device *dev, struct ubcore_jfs_cfg *cfg,
 {
 	int ret;
 	int free_ret = 0;
+	union ubcore_eid eid = { 0 };
 	uint8_t order_type;
 
-	if (dev == NULL || cfg == NULL || dev->ops == NULL || dev->ops->alloc_jfs == NULL ||
-		dev->ops->free_jfs == NULL || jfs == NULL || cfg->jfc == NULL ||
-		!ubcore_eid_valid(dev, cfg->eid_index, udata))
+	if (!dev || !cfg || !dev->ops || !dev->ops->alloc_jfs ||
+	    !dev->ops->free_jfs || !jfs || !cfg->jfc)
+		return -EINVAL;
+
+	if (ubcore_eid_valid(dev, cfg->eid_index, udata, &eid) != 0)
 		return -EINVAL;
 
 	/* Convert order_type based on trans_mode if it's default */
@@ -1256,7 +1264,7 @@ int ubcore_alloc_jfs(struct ubcore_device *dev, struct ubcore_jfs_cfg *cfg,
 	(*jfs)->ub_dev = dev;
 	(*jfs)->uctx = ubcore_get_uctx(udata);
 	(*jfs)->jfae_handler = jfae_handler;
-	(*jfs)->jfs_id.eid = dev->eid_table.eid_entries[cfg->eid_index].eid;
+	(*jfs)->jfs_id.eid = eid;
 
 	atomic_set(&(*jfs)->use_cnt, 0);
 	kref_init(&(*jfs)->ref_cnt);
@@ -1509,14 +1517,19 @@ struct ubcore_jfr *ubcore_create_jfr(struct ubcore_device *dev,
 					 struct ubcore_udata *udata)
 {
 	struct ubcore_jfr *jfr;
+	union ubcore_eid eid = { 0 };
 	uint32_t perf_create_jfr_type;
 	int ret;
 
 	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_CREATE_JFR);
 
 	if (!dev || !dev->ops || !dev->ops->create_jfr ||
-	    !dev->ops->destroy_jfr || !cfg || !cfg->jfc ||
-	    !ubcore_eid_valid(dev, cfg->eid_index, udata)) {
+	    !dev->ops->destroy_jfr || !cfg || !cfg->jfc) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFR);
+		return ERR_PTR(-EINVAL);
+	}
+
+	if (ubcore_eid_valid(dev, cfg->eid_index, udata, &eid) != 0) {
 		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFR);
 		return ERR_PTR(-EINVAL);
 	}
@@ -1550,7 +1563,7 @@ struct ubcore_jfr *ubcore_create_jfr(struct ubcore_device *dev,
 	jfr->ub_dev = dev;
 	jfr->uctx = ubcore_get_uctx(udata);
 	jfr->jfae_handler = jfae_handler;
-	jfr->jfr_id.eid = dev->eid_table.eid_entries[cfg->eid_index].eid;
+	jfr->jfr_id.eid = eid;
 	atomic_set(&jfr->use_cnt, 0);
 	kref_init(&jfr->ref_cnt);
 	init_completion(&jfr->comp);
@@ -2238,11 +2251,14 @@ int ubcore_alloc_jfr(struct ubcore_device *dev, struct ubcore_jfr_cfg *cfg,
 {
 	int ret;
 	int free_ret = 0;
+	union ubcore_eid eid = { 0 };
 	uint8_t order_type;
 
-	if (dev == NULL || cfg == NULL || dev->ops == NULL || dev->ops->alloc_jfr == NULL ||
-		dev->ops->free_jfr == NULL || jfr == NULL || cfg->jfc == NULL ||
-		!ubcore_eid_valid(dev, cfg->eid_index, udata))
+	if (!dev || !cfg || !dev->ops || !dev->ops->alloc_jfr ||
+	    !dev->ops->free_jfr || !jfr || !cfg->jfc)
+		return -EINVAL;
+
+	if (ubcore_eid_valid(dev, cfg->eid_index, udata, &eid) != 0)
 		return -EINVAL;
 
 	/* Convert order_type based on trans_mode if it's default */
@@ -2265,7 +2281,7 @@ int ubcore_alloc_jfr(struct ubcore_device *dev, struct ubcore_jfr_cfg *cfg,
 	(*jfr)->ub_dev = dev;
 	(*jfr)->uctx = ubcore_get_uctx(udata);
 	(*jfr)->jfae_handler = jfae_handler;
-	(*jfr)->jfr_id.eid = dev->eid_table.eid_entries[cfg->eid_index].eid;
+	(*jfr)->jfr_id.eid = eid;
 
 	atomic_set(&(*jfr)->use_cnt, 0);
 	kref_init(&(*jfr)->ref_cnt);
@@ -2660,14 +2676,19 @@ struct ubcore_jetty *ubcore_create_jetty(struct ubcore_device *dev,
 					 struct ubcore_udata *udata)
 {
 	struct ubcore_jetty *jetty;
+	union ubcore_eid eid = { 0 };
 	int ret;
 	uint32_t perf_create_jetty_record_type;
 
 	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_CREATE_JETTY);
 
 	if (!dev || !cfg || !dev->ops ||
-	    !dev->ops->create_jetty || !dev->ops->destroy_jetty ||
-	    !ubcore_eid_valid(dev, cfg->eid_index, udata)) {
+	    !dev->ops->create_jetty || !dev->ops->destroy_jetty) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JETTY);
+		return ERR_PTR(-EINVAL);
+	}
+
+	if (ubcore_eid_valid(dev, cfg->eid_index, udata, &eid) != 0) {
 		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JETTY);
 		return ERR_PTR(-EINVAL);
 	}
@@ -2706,7 +2727,7 @@ struct ubcore_jetty *ubcore_create_jetty(struct ubcore_device *dev,
 
 	jetty->uctx = ubcore_get_uctx(udata);
 	jetty->jfae_handler = jfae_handler;
-	jetty->jetty_id.eid = dev->eid_table.eid_entries[cfg->eid_index].eid;
+	jetty->jetty_id.eid = eid;
 	if (jetty->jetty_cfg.trans_mode == UBCORE_TP_RC) {
 		jetty->tptable = ubcore_create_tptable();
 		if (!jetty->tptable) {
@@ -3862,13 +3883,16 @@ struct ubcore_jetty_group *ubcore_create_jetty_grp(
 	ubcore_event_callback_t jfae_handler, struct ubcore_udata *udata)
 {
 	struct ubcore_jetty_group *jetty_grp;
+	union ubcore_eid eid = { 0 };
 	uint32_t max_jetty_in_jetty_grp;
 	uint32_t i;
 
 	if (!dev || !cfg || !dev->ops ||
 	    !dev->ops->create_jetty_grp ||
-	    !dev->ops->delete_jetty_grp ||
-	    !ubcore_eid_valid(dev, cfg->eid_index, udata))
+	    !dev->ops->delete_jetty_grp)
+		return ERR_PTR(-EINVAL);
+
+	if (ubcore_eid_valid(dev, cfg->eid_index, udata, &eid) != 0)
 		return ERR_PTR(-EINVAL);
 
 	max_jetty_in_jetty_grp = dev->attr.dev_cap.max_jetty_in_jetty_grp;
@@ -3900,8 +3924,7 @@ struct ubcore_jetty_group *ubcore_create_jetty_grp(
 	jetty_grp->jetty_grp_cfg = *cfg;
 	jetty_grp->jfae_handler = jfae_handler;
 	jetty_grp->uctx = ubcore_get_uctx(udata);
-	jetty_grp->jetty_grp_id.eid =
-		dev->eid_table.eid_entries[cfg->eid_index].eid;
+	jetty_grp->jetty_grp_id.eid = eid;
 	mutex_init(&jetty_grp->lock);
 	jetty_grp->jetty_cnt = 0;
 	for (i = 0; i < max_jetty_in_jetty_grp; i++)
@@ -4305,11 +4328,15 @@ int ubcore_alloc_jetty(struct ubcore_device *dev, struct ubcore_jetty_cfg *cfg,
 	ubcore_event_callback_t jfae_handler,
 	struct ubcore_jetty **jetty, struct ubcore_udata *udata)
 {
+	union ubcore_eid eid = { 0 };
 	uint8_t order_type;
 	int ret;
 
-	if (dev == NULL || cfg == NULL || dev->ops == NULL || dev->ops->alloc_jetty == NULL ||
-		dev->ops->free_jetty == NULL || !ubcore_eid_valid(dev, cfg->eid_index, udata))
+	if (!dev || !cfg || !dev->ops || !dev->ops->alloc_jetty ||
+	    !dev->ops->free_jetty)
+		return -EINVAL;
+
+	if (ubcore_eid_valid(dev, cfg->eid_index, udata, &eid) != 0)
 		return -EINVAL;
 
 	/* Convert order_type based on trans_mode if it's default */
@@ -4339,7 +4366,7 @@ int ubcore_alloc_jetty(struct ubcore_device *dev, struct ubcore_jetty_cfg *cfg,
 
 	(*jetty)->uctx = ubcore_get_uctx(udata);
 	(*jetty)->jfae_handler = jfae_handler;
-	(*jetty)->jetty_id.eid = dev->eid_table.eid_entries[cfg->eid_index].eid;
+	(*jetty)->jetty_id.eid = eid;
 	if ((*jetty)->jetty_cfg.trans_mode == UBCORE_TP_RC) {
 		(*jetty)->tptable = ubcore_create_tptable();
 		if ((*jetty)->tptable == NULL) {
