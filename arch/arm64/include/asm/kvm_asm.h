@@ -376,6 +376,17 @@ void __noreturn __cold nvhe_hyp_panic_handler(u64 esr, u64 spsr, u64 elr_virt,
 	msr	sp_el0, \tmp
 .endm
 
+/* PVM mode: the L2 kernel's virtual SP_EL1 physically lives in sp_el0 */
+.macro save_sp_el1 ctxt, tmp
+	mrs	\tmp,	sp_el0
+	str	\tmp,	[\ctxt, #CPU_SP_EL1]
+.endm
+
+.macro restore_sp_el1 ctxt, tmp
+	ldr	\tmp,	[\ctxt, #CPU_SP_EL1]
+	msr	sp_el0,	\tmp
+.endm
+
 #endif
 
 #endif /* __ARM_KVM_ASM_H__ */

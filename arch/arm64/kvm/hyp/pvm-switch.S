@@ -11,6 +11,7 @@
 #include <asm/kvm.h>
 #include <asm/kvm_arm.h>
 #include <asm/kvm_asm.h>
+#include <asm/ptrace.h>
 
 	.text
 
@@ -33,8 +34,16 @@ alternative_else_nop_endif
 	set_loaded_vcpu x0, x1, x2
 	add	x29, x0, #VCPU_CONTEXT
 
+	/* The virtual EL1h stack also runs through physical SP_EL0. */
+	ldr	x0, [x29, #(CPU_USER_PT_REGS + S_PSTATE)]
+	and	x0, x0, #(PSR_MODE_MASK | PSR_MODE32_BIT)
+	cmp	x0, #PSR_MODE_EL1h
+	b.ne	1f
+	restore_sp_el1 x29, x0
+	b	2f
+1:
 	restore_sp_el0 x29, x0
-
+2:
 	ldp	x0, x1,   [x29, #CPU_XREG_OFFSET(0)]
 	ldp	x2, x3,   [x29, #CPU_XREG_OFFSET(2)]
 	ldp	x4, x5,   [x29, #CPU_XREG_OFFSET(4)]
@@ -77,8 +86,16 @@ SYM_INNER_LABEL(__pvm_guest_exit, SYM_L_GLOBAL)
 	stp	x16, x17, [x1, #CPU_XREG_OFFSET(16)]
 	save_callee_saved_regs x1
 
+	/* Read the retained virtual mode before PSTATE synchronization. */
+	ldr	x2, [x1, #(CPU_USER_PT_REGS + S_PSTATE)]
+	and	x2, x2, #(PSR_MODE_MASK | PSR_MODE32_BIT)
+	cmp	x2, #PSR_MODE_EL1h
+	b.ne	1f
+	save_sp_el1	x1, x2
+	b	2f
+1:
 	save_sp_el0	x1, x2
-
+2:
 	adr_this_cpu x2, kvm_hyp_ctxt, x3
 	restore_sp_el0 x2, x3
 	restore_callee_saved_regs x2
