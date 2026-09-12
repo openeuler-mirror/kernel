@@ -1386,13 +1386,30 @@ static struct dynamic_pool_ops hugetlb_dpool_ops = {
 	.restore_pool = dpool_merge_all,
 };
 
-/* If dynamic pool is disabled, hide the interface */
+/*
+ * Determines whether to hide dynamic pool control files based on
+ * cross-hiding logic.
+ *
+ * Cross-hiding behavior:
+ * - When enable_dpagelist is ON, hide dhugetlb files
+ * - When enable_dhugetlb is ON, hide dpagelist files
+ *
+ * Prevents conflicts when both features could interfere.
+ */
 bool dynamic_pool_hide_files(struct cftype *cft)
 {
-	if (dpool_enabled && enable_dhugetlb)
+	bool is_dhugetlb_file = !!strstr(cft->name, "dhugetlb");
+	bool is_dpagelist_file = !!strstr(cft->name, "dpool");
+	/* Non-related files are never hidden */
+	if (!is_dhugetlb_file && !is_dpagelist_file)
 		return false;
 
-	return !!strstr(cft->name, "dhugetlb");
+	/* Hide all related files when the dynamic pool feature is disabled */
+	if (!dpool_enabled)
+		return true;
+
+	return (enable_dpagelist && is_dhugetlb_file) ||
+	       (enable_dhugetlb && is_dpagelist_file);
 }
 
 int dynamic_pool_add_memory(struct mem_cgroup *memcg, int nid,
