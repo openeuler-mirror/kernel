@@ -37,6 +37,11 @@ static void __activate_traps(struct kvm_vcpu *vcpu)
 {
 	u64 val;
 
+	if (is_pvm_mode()) {
+		write_sysreg(__this_cpu_read(kvm_hyp_vector), vbar_el1);
+		return;
+	}
+
 	___activate_traps(vcpu);
 
 	if (has_cntpoff()) {
@@ -92,6 +97,13 @@ NOKPROBE_SYMBOL(__activate_traps);
 static void __deactivate_traps(struct kvm_vcpu *vcpu)
 {
 	const char *host_vectors = vectors;
+
+	if (is_pvm_mode()) {
+		if (!arm64_kernel_unmapped_at_el0())
+			host_vectors = __this_cpu_read(this_cpu_vector);
+		write_sysreg(host_vectors, vbar_el1);
+		return;
+	}
 
 	___deactivate_traps(vcpu);
 
@@ -199,7 +211,7 @@ static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, u64 *exit_code)
 	return __fixup_guest_exit(vcpu, exit_code, hyp_exit_handlers);
 }
 
-/* Switch to the guest for VHE systems running in EL2 */
+/* Run a guest using the VHE or PVM context switch. */
 static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
 {
 	struct kvm_cpu_context *host_ctxt;
@@ -236,7 +248,10 @@ static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
 
 	do {
 		/* Jump in the fire! */
-		exit_code = __guest_enter(vcpu);
+		if (is_pvm_mode())
+			exit_code = __pvm_guest_enter(vcpu);
+		else
+			exit_code = __guest_enter(vcpu);
 
 		/* And we're baaack! */
 	} while (fixup_guest_exit(vcpu, &exit_code));
