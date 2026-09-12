@@ -696,7 +696,7 @@ static inline void synchronize_vcpu_pstate(struct kvm_vcpu *vcpu, u64 *exit_code
 
 	pstate = read_sysreg_el2(SYS_SPSR);
 	if (is_pvm_mode()) {
-		/* The memory context owns the virtual mode. */
+		/* The memory context owns the virtual mode and interrupt masks. */
 		pstate = pvm_restore_virtual_pstate(pstate, *vcpu_cpsr(vcpu));
 	}
 	vcpu->arch.ctxt.regs.pstate = pstate;
