@@ -183,6 +183,20 @@ static __always_inline unsigned long *vcpu_cpsr(const struct kvm_vcpu *vcpu)
 	return (unsigned long *)&vcpu_gp_regs(vcpu)->pstate;
 }
 
+/* Keep the virtual mode in memory, never in the physical EL0 target. */
+static __always_inline unsigned long pvm_restore_virtual_pstate(unsigned long phys,
+								unsigned long virt)
+{
+	unsigned long mask = PSR_MODE_MASK | PSR_MODE32_BIT;
+
+	return (phys & ~mask) | (virt & mask);
+}
+
+static __always_inline unsigned long pvm_to_phys_pstate(unsigned long virt)
+{
+	return (virt & ~PSR_MODE_MASK) | PSR_MODE_EL0t;
+}
+
 static __always_inline bool vcpu_mode_is_32bit(const struct kvm_vcpu *vcpu)
 {
 	return !!(*vcpu_cpsr(vcpu) & PSR_MODE32_BIT);

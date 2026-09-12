@@ -26,6 +26,7 @@
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_nested.h>
 #include <asm/sigcontext.h>
+#include <asm/virt.h>
 #include <asm/kvm_tmi.h>
 
 #include "trace.h"
@@ -317,8 +318,11 @@ static int set_core_reg(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg)
 			if (!vcpu_has_nv(vcpu))
 				return -EINVAL;
 			fallthrough;
-		case PSR_MODE_EL0t:
 		case PSR_MODE_EL1t:
+			if (is_pvm_mode())
+				return -EINVAL;
+			fallthrough;
+		case PSR_MODE_EL0t:
 		case PSR_MODE_EL1h:
 			if (vcpu_el1_is_32bit(vcpu))
 				return -EINVAL;

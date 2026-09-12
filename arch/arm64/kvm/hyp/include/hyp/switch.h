@@ -677,6 +677,8 @@ static inline bool kvm_hyp_handle_exit(struct kvm_vcpu *vcpu, u64 *exit_code,
 
 static inline void synchronize_vcpu_pstate(struct kvm_vcpu *vcpu, u64 *exit_code)
 {
+	u64 pstate;
+
 	/*
 	 * Check for the conditions of Cortex-A510's #2077057. When these occur
 	 * SPSR_EL2 can't be trusted, but isn't needed either as it is
@@ -688,9 +690,16 @@ static inline void synchronize_vcpu_pstate(struct kvm_vcpu *vcpu, u64 *exit_code
 	    vcpu->guest_debug & KVM_GUESTDBG_SINGLESTEP			&&
 	    *vcpu_cpsr(vcpu) & DBG_SPSR_SS				&&
 	    ESR_ELx_EC(read_sysreg_el2(SYS_ESR)) == ESR_ELx_EC_PAC)
-		write_sysreg_el2(*vcpu_cpsr(vcpu), SYS_SPSR);
+		write_sysreg_el2(is_pvm_mode() ?
+				 pvm_to_phys_pstate(*vcpu_cpsr(vcpu)) :
+				 *vcpu_cpsr(vcpu), SYS_SPSR);
 
-	vcpu->arch.ctxt.regs.pstate = read_sysreg_el2(SYS_SPSR);
+	pstate = read_sysreg_el2(SYS_SPSR);
+	if (is_pvm_mode()) {
+		/* The memory context owns the virtual mode. */
+		pstate = pvm_restore_virtual_pstate(pstate, *vcpu_cpsr(vcpu));
+	}
+	vcpu->arch.ctxt.regs.pstate = pstate;
 }
 
 /*

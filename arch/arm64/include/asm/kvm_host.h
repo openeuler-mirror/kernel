@@ -1453,7 +1453,7 @@ bool kvm_arm_vcpu_is_finalized(struct kvm_vcpu *vcpu);
 	 test_bit(KVM_ARCH_FLAG_MTE_ENABLED, &(kvm)->arch.flags))
 
 #define kvm_supports_32bit_el0()				\
-	(system_supports_32bit_el0() &&				\
+	(!is_pvm_mode() && system_supports_32bit_el0() &&		\
 	 !static_branch_unlikely(&arm64_mismatched_32bit_el0))
 
 #define kvm_vm_has_ran_once(kvm)					\

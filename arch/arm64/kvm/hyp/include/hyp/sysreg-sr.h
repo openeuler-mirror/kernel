@@ -243,6 +243,11 @@ static inline void __sysreg_restore_el2_return_state(struct kvm_cpu_context *ctx
 	if (!(mode & PSR_MODE32_BIT) && mode >= PSR_MODE_EL2t)
 		pstate = PSR_MODE_EL2h | PSR_IL_BIT;
 
+	if (is_pvm_mode()) {
+		/* Translate the virtual EL1 mode to EL0 */
+		pstate = pvm_to_phys_pstate(pstate);
+	}
+
 	write_sysreg_el2(ctxt->regs.pc,			SYS_ELR);
 	write_sysreg_el2(pstate,			SYS_SPSR);
 
