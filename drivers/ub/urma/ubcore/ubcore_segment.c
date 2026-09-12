@@ -176,6 +176,7 @@ struct ubcore_target_seg *ubcore_register_seg(struct ubcore_device *dev,
 					      struct ubcore_udata *udata)
 {
 	union ubcore_token_id_flag flag = { 0 };
+	union ubcore_eid eid = { 0 };
 	bool alloc_token_id = false;
 	struct ubcore_seg_cfg tmp_cfg;
 	struct ubcore_target_seg *tseg;
@@ -184,6 +185,11 @@ struct ubcore_target_seg *ubcore_register_seg(struct ubcore_device *dev,
 	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_REGISTER_SEG);
 
 	if (ubcore_check_register_seg_para(dev, cfg, udata) != 0) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_REGISTER_SEG);
+		return ERR_PTR(-EINVAL);
+	}
+
+	if (ubcore_eid_valid(dev, cfg->eid_index, udata, &eid) != 0) {
 		UBCORE_PERF_TRACE_END(PERF_CORE_REGISTER_SEG);
 		return ERR_PTR(-EINVAL);
 	}
@@ -227,9 +233,7 @@ struct ubcore_target_seg *ubcore_register_seg(struct ubcore_device *dev,
 	tseg->seg.ubva.va = tmp_cfg.va;
 	tseg->token_id = tmp_cfg.token_id;
 
-	(void)memcpy(tseg->seg.ubva.eid.raw,
-		     dev->eid_table.eid_entries[cfg->eid_index].eid.raw,
-		     UBCORE_EID_SIZE);
+	(void)memcpy(tseg->seg.ubva.eid.raw, eid.raw, UBCORE_EID_SIZE);
 	(void)memcpy(&tseg->seg.attr, &cfg->flag,
 		     sizeof(union ubcore_reg_seg_flag));
 	tseg->seg.attr.bs.user_token_id = tmp_cfg.flag.bs.token_id_valid;
