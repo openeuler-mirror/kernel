@@ -454,17 +454,13 @@ static long uburma_jfce_ioctl(struct file *filp, unsigned int cmd,
 
 static int uburma_jfce_fasync(int fd, struct file *filp, int on)
 {
-	int ret;
 	struct uburma_uobj *uobj = filp->private_data;
 	struct uburma_jfce_uobj *jfce =
 		container_of(uobj, struct uburma_jfce_uobj, uobj);
 
 	if (!uobj)
 		return -EINVAL;
-	spin_lock_irq(&jfce->jfe.lock);
-	ret = fasync_helper(fd, filp, on, &jfce->jfe.async_queue);
-	spin_unlock_irq(&jfce->jfe.lock);
-	return ret;
+	return fasync_helper(fd, filp, on, &jfce->jfe.async_queue);
 }
 
 const struct file_operations uburma_jfce_fops = {
@@ -597,17 +593,13 @@ static long uburma_jfae_ioctl(struct file *filp, unsigned int cmd,
 
 static int uburma_jfae_fasync(int fd, struct file *filp, int on)
 {
-	int ret;
 	struct uburma_uobj *uobj = filp->private_data;
 	struct uburma_jfae_uobj *jfae =
 		container_of(uobj, struct uburma_jfae_uobj, uobj);
 
 	if (!uobj)
 		return -EINVAL;
-	spin_lock_irq(&jfae->jfe.lock);
-	ret = fasync_helper(fd, filp, on, &jfae->jfe.async_queue);
-	spin_unlock_irq(&jfae->jfe.lock);
-	return ret;
+	return fasync_helper(fd, filp, on, &jfae->jfe.async_queue);
 }
 
 const struct file_operations uburma_jfae_fops = {
@@ -933,17 +925,13 @@ static long uburma_notifier_ioctl(struct file *filp, unsigned int cmd,
 
 static int uburma_notifier_fasync(int fd, struct file *filp, int on)
 {
-	int ret;
 	struct uburma_uobj *uobj = filp->private_data;
 	struct uburma_notifier_uobj *notifier =
 		container_of(uobj, struct uburma_notifier_uobj, uobj);
 
 	if (!uobj)
 		return -EINVAL;
-	spin_lock_irq(&notifier->jfe.lock);
-	ret = fasync_helper(fd, filp, on, &notifier->jfe.async_queue);
-	spin_unlock_irq(&notifier->jfe.lock);
-	return ret;
+	return fasync_helper(fd, filp, on, &notifier->jfe.async_queue);
 }
 
 const struct file_operations uburma_notifier_fops = {
