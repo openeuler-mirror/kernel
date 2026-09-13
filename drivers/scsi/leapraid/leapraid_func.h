@@ -51,11 +51,11 @@
 #define LEAPRAID_BOARD_NAME_LENGTH      17
 #define LEAPRAID_AUTHOR                 "LeapIO Inc."
 #define LEAPRAID_DESCRIPTION            "LeapRAID Driver"
-#define LEAPRAID_DRIVER_VERSION         "2.00.01.02"
+#define LEAPRAID_DRIVER_VERSION         "2.00.01.10"
 #define LEAPRAID_MAJOR_VERSION          2
-#define LEAPRAID_MINOR_VERSION          00
-#define LEAPRAID_BUILD_VERSION          01
-#define LEAPRAID_RELEASE_VERSION        02
+#define LEAPRAID_MINOR_VERSION          0
+#define LEAPRAID_BUILD_VERSION          1
+#define LEAPRAID_RELEASE_VERSION        10
 #define LEAPRAID_MSG_VERSION            0x1021
 #define LEAPRAID_HEADER_VERSION         0x0000
 
@@ -77,7 +77,6 @@
 #define LEAPRAID_SG_DEPTH                       LEAPRAID_MAX_PHYS_SEGMENTS
 
 /* Firmware and config page operations. */
-#define LEAPRAID_SET_PARAMETER_SYNC_TIMESTAMP   0x81
 #define LEAPRAID_CFG_REQ_RETRY_TIMES    2
 
 /* Hardware access helpers. */
@@ -88,8 +87,6 @@
 /* Polling intervals. */
 #define LEAPRAID_PCIE_LOG_POLLING_INTERVAL      1
 #define LEAPRAID_FAULT_POLLING_INTERVAL         1000
-#define LEAPRAID_TIMESTAMP_SYNC_INTERVAL        900
-#define LEAPRAID_SMART_POLLING_INTERVAL         (300 * 1000)
 
 /* Init mask. */
 #define LEAPRAID_RESET_IRQ_MASK 0x40000000
@@ -103,7 +100,6 @@
 
 /* Target probe flag. */
 #define LEAPRAID_NO_ULD_ATTACH_FLAG 1
-#define LEAPRAID_ULD_ATTACH_FLAG    0
 
 /* SCSI device and queue limits. */
 #define LEAPRAID_MAX_SECTORS            2048
@@ -127,7 +123,6 @@
 
 /* SMP (Serial Management Protocol). */
 #define LEAPRAID_SMP_PT_FLAG_SGL_PTR            0x80
-#define LEAPRAID_SMP_FN_REPORT_PHY_ERR_LOG      0x91
 #define LEAPRAID_SMP_FRAME_HEADER_SIZE          4
 #define LEAPRAID_SCSI_HOST_SHIFT                16
 #define LEAPRAID_SCSI_DRIVER_SHIFT              24
@@ -171,13 +166,9 @@
 
 /* Basic constants and limits.   */
 #define LEAPRAID_BUSY_LIMIT             1
-#define LEAPRAID_INDEX_FIRST            0
-#define LEAPRAID_BITS_PER_BYTE          8
 #define LEAPRAID_INVALID_HOST_DIAG_VAL  0xFFFFFFFF
 
 /* Retry/Sleep configuration. */
-#define LEAPRAID_WRITE_SEQUENCE_OFFSET  0x4
-#define LEAPRAID_WRSEQ_KEY_VALUE_MASK   0xF
 #define LEAPRAID_WRSEQ_FLUSH_KEY_VALUE  0x0
 #define LEAPRAID_WRSEQ_1ST_KEY_VALUE    0xF
 #define LEAPRAID_WRSEQ_2ND_KEY_VALUE    0x4
@@ -187,7 +178,6 @@
 #define LEAPRAID_WRSEQ_6TH_KEY_VALUE    0xD
 #define LEAPRAID_UNLOCK_RETRY_LIMIT     20
 #define LEAPRAID_UNLOCK_SLEEP_MS        100
-#define LEAPRAID_MSLEEP_SHORT_MS        50
 #define LEAPRAID_MSLEEP_NORMAL_MS       100
 #define LEAPRAID_MSLEEP_EXTRA_LONG_MS   500
 #define LEAPRAID_IO_POLL_DELAY_US       500
@@ -198,17 +188,14 @@
 #define LEAPRAID_INVALID_DEV_HANDLE     0xFFFF
 
 /* Commands queue depth. */
-#define LEAPRAID_COALESCING_DEPTH_MAX   256
 #define LEAPRAID_DEFAULT_CMD_QD_OFFSET  64
 #define LEAPRAID_REPLY_QD_ALIGNMENT     16
 /* Task ID offset. */
 #define LEAPRAID_TASKID_OFFSET_CTRL_CMD         1
-#define LEAPRAID_TASKID_OFFSET_SCSIIO_CMD       2
 #define LEAPRAID_TASKID_OFFSET_CFG_OP_CMD               1
 #define LEAPRAID_TASKID_OFFSET_TRANSPORT_CMD            2
-#define LEAPRAID_TASKID_OFFSET_TIMESTAMP_SYNC_CMD       3
-#define LEAPRAID_TASKID_OFFSET_ENC_CMD                  4
-#define LEAPRAID_TASKID_OFFSET_NOTIFY_EVENT_CMD         5
+#define LEAPRAID_TASKID_OFFSET_ENC_CMD                  3
+#define LEAPRAID_TASKID_OFFSET_NOTIFY_EVENT_CMD         4
 
 /* Task ID offset for high-priority. */
 #define LEAPRAID_HP_TASKID_OFFSET_CTL_CMD       0
@@ -223,20 +210,11 @@
 #define LEAPRAID_CFG_OP_TIMEOUT                LEAPRAID_UNIFIED_TIMEOUT
 #define LEAPRAID_CTL_CMD_TIMEOUT               LEAPRAID_UNIFIED_TIMEOUT
 #define LEAPRAID_SCAN_DEV_CMD_TIMEOUT          300
-#define LEAPRAID_TIMESTAMP_SYNC_CMD_TIMEOUT    LEAPRAID_UNIFIED_TIMEOUT
-#define LEAPRAID_RAID_ACTION_CMD_TIMEOUT       LEAPRAID_UNIFIED_TIMEOUT
 #define LEAPRAID_ENC_CMD_TIMEOUT               LEAPRAID_UNIFIED_TIMEOUT
 #define LEAPRAID_IO_CMD_TIMEOUT                LEAPRAID_UNIFIED_TIMEOUT
 #define LEAPRAID_NOTIFY_EVENT_CMD_TIMEOUT      LEAPRAID_UNIFIED_TIMEOUT
 #define LEAPRAID_TM_CMD_TIMEOUT                LEAPRAID_UNIFIED_TIMEOUT
 #define LEAPRAID_TRANSPORT_CMD_TIMEOUT         LEAPRAID_UNIFIED_TIMEOUT
-
-/* Logsense command definitions. */
-#define LEAPRAID_LOGSENSE_DATA_LENGTH   16
-#define LEAPRAID_LOGSENSE_CDB_LENGTH    10
-#define LEAPRAID_LOGSENSE_CDB_CODE      0x6F
-#define LEAPRAID_LOGSENSE_TIMEOUT       LEAPRAID_UNIFIED_TIMEOUT
-#define LEAPRAID_LOGSENSE_SMART_CODE    0x5D
 
 /* Host DMA cap. */
 #define DMA_32_BITS    32
@@ -284,6 +262,8 @@ struct leapraid_adapter_features {
 	u8 max_volumes;
 	u16 max_dev_handle;
 	u16 min_dev_handle;
+	u16 msg_ver;
+	u16 product_id;
 };
 
 /**
@@ -424,7 +404,7 @@ struct leapraid_mem_desc {
 };
 
 /* internal cmd description */
-#define LEAPRAID_FIXED_INTER_CMDS       6
+#define LEAPRAID_FIXED_INTER_CMDS       5
 #define LEAPRAID_FIXED_HP_CMDS          2
 
 #define LEAPRAID_CMD_NOT_USED           0x8000
@@ -439,9 +419,6 @@ struct leapraid_mem_desc {
  * @LEAPRAID_SCAN_DEV_CB_IDX: Scan device callback index.
  * @LEAPRAID_CONFIG_CB_IDX: Configuration callback index.
  * @LEAPRAID_TRANSPORT_CB_IDX: Transport callback index.
- * @LEAPRAID_TIMESTAMP_SYNC_CB_IDX: Timestamp sync callback index.
- * @LEAPRAID_RAID_ACTION_CB_IDX: RAID action callback index.
- * @LEAPRAID_DRIVER_SCSIIO_CB_IDX: Driver SCSI I/O callback index.
  * @LEAPRAID_SAS_CTRL_CB_IDX: SAS controller callback index.
  * @LEAPRAID_ENC_CB_IDX: Encryption callback index.
  * @LEAPRAID_NOTIFY_EVENT_CB_IDX: Notify event callback index.
@@ -452,14 +429,11 @@ enum LEAPRAID_CB_INDEX {
 	LEAPRAID_SCAN_DEV_CB_IDX	= 0x1,
 	LEAPRAID_CONFIG_CB_IDX		= 0x2,
 	LEAPRAID_TRANSPORT_CB_IDX	= 0x3,
-	LEAPRAID_TIMESTAMP_SYNC_CB_IDX	= 0x4,
-	LEAPRAID_RAID_ACTION_CB_IDX	= 0x5,
-	LEAPRAID_DRIVER_SCSIIO_CB_IDX	= 0x6,
-	LEAPRAID_SAS_CTRL_CB_IDX	= 0x7,
-	LEAPRAID_ENC_CB_IDX		= 0x8,
-	LEAPRAID_NOTIFY_EVENT_CB_IDX	= 0x9,
-	LEAPRAID_CTL_CB_IDX		= 0xA,
-	LEAPRAID_TM_CB_IDX		= 0xB,
+	LEAPRAID_SAS_CTRL_CB_IDX	= 0x5,
+	LEAPRAID_ENC_CB_IDX		= 0x6,
+	LEAPRAID_NOTIFY_EVENT_CB_IDX	= 0x7,
+	LEAPRAID_CTL_CB_IDX		= 0x8,
+	LEAPRAID_TM_CB_IDX		= 0x9,
 	LEAPRAID_NUM_CB_IDXS
 };
 
@@ -522,28 +496,20 @@ struct leapraid_driver_cmd {
  * @scan_dev_cmd: Command used for asynchronous device scan operations.
  * @cfg_op_cmd: Command for configuration operations.
  * @transport_cmd: Command for transport-level operations.
- * @timestamp_sync_cmd: Command for synchronizing timestamp with firmware.
- * @raid_action_cmd: Command for RAID-related management or action requests.
- * @driver_scsiio_cmd: Command used for internal SCSI I/O processing.
  * @enc_cmd: Command for enclosure management operations.
  * @notify_event_cmd: Command for asynchronous event notification handling.
  * @ctl_cmd: Command for generic control or maintenance operations.
  * @tm_cmd: Task management command.
- * @internal_scmd: Pointer to internal SCSI command used by the driver.
  */
 struct leapraid_driver_cmds {
 	struct list_head special_cmd_list;
 	struct leapraid_driver_cmd scan_dev_cmd;
 	struct leapraid_driver_cmd cfg_op_cmd;
 	struct leapraid_driver_cmd transport_cmd;
-	struct leapraid_driver_cmd timestamp_sync_cmd;
-	struct leapraid_driver_cmd raid_action_cmd;
-	struct leapraid_driver_cmd driver_scsiio_cmd;
 	struct leapraid_driver_cmd enc_cmd;
 	struct leapraid_driver_cmd notify_event_cmd;
 	struct leapraid_driver_cmd ctl_cmd;
 	struct leapraid_driver_cmd tm_cmd;
-	struct scsi_cmnd *internal_scmd;
 };
 
 /**
@@ -599,6 +565,7 @@ struct leapraid_fw_evt_work {
  * @leapraid_evt_masks: Array of event masks for filtering firmware events.
  */
 struct leapraid_fw_evt_struct {
+	u32 leapraid_evt_masks[4];
 	char fw_evt_name[48];
 	struct workqueue_struct *fw_evt_thread;
 	spinlock_t fw_evt_lock; /* protects firmware event */
@@ -606,7 +573,6 @@ struct leapraid_fw_evt_struct {
 	struct leapraid_fw_evt_work *cur_evt;
 	struct task_struct *cur_evt_task;
 	u8 fw_evt_cleanup;
-	u32 leapraid_evt_masks[4];
 };
 
 /**
@@ -660,8 +626,8 @@ struct leapraid_blk_mq_poll_rq {
  * @msix_enable: Flag indicating MSI-X is enabled.
  * @irq_vectors_allocated: Flag indicating PCI IRQ vectors are allocated.
  * @irq_mode: Actual interrupt mode used for allocated PCI IRQ vectors.
- * @msix_cpu_map: CPU map for MSI-X interrupts.
- * @msix_cpu_map_sz: Size of the MSI-X CPU map.
+ * @msix_cpu_map: CPU-ID indexed MSI-X queue map.
+ * @msix_cpu_map_sz: Number of CPU-ID slots allocated in @msix_cpu_map.
  * @int_rqs: Array of interrupt request queues.
  * @int_rqs_allocated: Count of allocated interrupt request queues.
  * @blk_mq_poll_rqs: Array of blk-mq polling requests.
@@ -708,7 +674,6 @@ struct leapraid_overheat_desc {
  * @pending_io_cnt: Count of pending I/O operations.
  * @reset_wait_queue: Wait queue for reset operations.
  * @reset_cnt: Counter for reset operations.
- * @last_reset_cnt: Last observed adapter reset counter.
  */
 struct leapraid_reset_desc {
 	struct workqueue_struct *fault_reset_wq;
@@ -722,7 +687,6 @@ struct leapraid_reset_desc {
 	int pending_io_cnt;
 	wait_queue_head_t reset_wait_queue;
 	u32 reset_cnt;
-	u32 last_reset_cnt;
 };
 
 /**
@@ -776,7 +740,8 @@ struct leapraid_access_ctrl {
  * @fw_log_work: Delayed work structure for firmware log.
  * @open_pcie_trace: Flag indicating if PCIe tracing is open.
  * @fw_log_init_flag: Flag indicating if firmware log is initialized.
- * @pre_debug_log: Last DebugLog register snapshot for change detection.
+ * @mmap_refcnt: Number of active user VMAs on fw_log_buffer.
+ * @mmap_waitq: Waitqueue for fw_log_buffer VMA teardown.
  */
 struct leapraid_fw_log_desc {
 	u8 *fw_log_buffer;
@@ -786,7 +751,8 @@ struct leapraid_fw_log_desc {
 	struct delayed_work fw_log_work;
 	int open_pcie_trace;
 	int fw_log_init_flag;
-	u32 pre_debug_log[LEAPRAID_DEBUGLOG_SZ_MAX];
+	atomic_t mmap_refcnt;
+	wait_queue_head_t mmap_waitq;
 };
 
 #define LEAPRAID_CARD_PORT_FLG_DIRTY	0x01
@@ -940,19 +906,6 @@ struct leapraid_boot_devs {
 };
 
 /**
- * struct leapraid_smart_poll_desc - SMART polling descriptor
- *
- * @smart_poll_wq: Workqueue for SMART polling tasks.
- * @smart_poll_work: Delayed work for SMART polling operations.
- * @smart_poll_wq_name: Workqueue name string.
- */
-struct leapraid_smart_poll_desc {
-	struct workqueue_struct *smart_poll_wq;
-	struct delayed_work smart_poll_work;
-	char smart_poll_wq_name[48];
-};
-
-/**
  * struct leapraid_adapter - Main LeapRAID adapter structure
  *
  * @list: List head for adapter management.
@@ -961,7 +914,6 @@ struct leapraid_smart_poll_desc {
  * @iomem_base: I/O memory mapped base address.
  * @rep_msg_host_idx: Host index for reply messages.
  * @mask_int: Interrupt masking flag.
- * @timestamp_sync_cnt: Timestamp synchronization counter.
  * @adapter_attr: Adapter attributes.
  * @mem_desc: Memory descriptor.
  * @driver_cmds: Driver commands.
@@ -974,7 +926,6 @@ struct leapraid_smart_poll_desc {
  * @fw_log_desc: Firmware log descriptor.
  * @dev_topo: Device topology.
  * @boot_devs: Boot devices.
- * @smart_poll_desc: SMART polling descriptor.
  * @overheat_desc: Overheat processing descriptor.
  */
 struct leapraid_adapter {
@@ -984,7 +935,6 @@ struct leapraid_adapter {
 	struct leapraid_reg_base __iomem *iomem_base;
 	u32 rep_msg_host_idx;
 	u8 mask_int;
-	u32 timestamp_sync_cnt;
 
 	struct leapraid_adapter_attr adapter_attr;
 	struct leapraid_mem_desc mem_desc;
@@ -998,7 +948,6 @@ struct leapraid_adapter {
 	struct leapraid_fw_log_desc fw_log_desc;
 	struct leapraid_dev_topo dev_topo;
 	struct leapraid_boot_devs boot_devs;
-	struct leapraid_smart_poll_desc smart_poll_desc;
 	struct leapraid_overheat_desc overheat_desc;
 };
 
@@ -1116,6 +1065,7 @@ struct leapraid_starget_priv {
  * @starget_priv: Associated target private data.
  * @lun: Logical Unit Number.
  * @flg: Flags.
+ * @ncq_prio_enable: Enables NCQ command priority for RT I/O.
  * @block: Block flag.
  * @deleted: Deletion flag.
  * @sep: SEP flag.
@@ -1124,7 +1074,7 @@ struct leapraid_sdev_priv {
 	struct leapraid_starget_priv *starget_priv;
 	unsigned int lun;
 	u32 flg;
-	u8 ncq;
+	u8 ncq_prio_enable;
 	u8 block;
 	u8 deleted;
 	u8 sep;
@@ -1157,7 +1107,6 @@ struct leapraid_sdev_priv {
  * @enc_level: Enclosure level.
  * @port_connection: Port connection.
  * @connector_name: Connector name.
- * @support_smart: SMART support flag.
  */
 struct leapraid_sas_dev {
 	struct list_head list;
@@ -1184,7 +1133,6 @@ struct leapraid_sas_dev {
 	u8 enc_level;
 	u8 port_connection;
 	u8 connector_name[LEAPRAID_SAS_DEV_P0_CON_NAME_LEN + 1];
-	u8 support_smart;
 };
 
 static inline void leapraid_sdev_free(struct kref *ref)
@@ -1362,31 +1310,6 @@ struct leapraid_rep_manu_reply {
 	u8 vendor_specific[8];
 };
 
-/**
- * struct leapraid_scsi_cmd_desc - SCSI command descriptor
- *
- * @hdl: Device handle.
- * @lun: Logical Unit Number.
- * @raid_member: RAID member flag.
- * @dir: DMA data direction.
- * @data_length: Data transfer length.
- * @data_buffer: Data buffer pointer.
- * @cdb_length: CDB length.
- * @cdb: Command Descriptor Block.
- * @time_out: Timeout.
- */
-struct leapraid_scsi_cmd_desc {
-	u16 hdl;
-	u32 lun;
-	u8 raid_member;
-	enum dma_data_direction dir;
-	u32 data_length;
-	void *data_buffer;
-	u8 cdb_length;
-	u8 cdb[32];
-	u8 time_out;
-};
-
 extern struct list_head leapraid_adapter_list;
 extern spinlock_t leapraid_adapter_lock;
 extern char driver_name[LEAPRAID_NAME_LENGTH];
@@ -1446,7 +1369,7 @@ int leapraid_get_volume_cap(struct leapraid_adapter *adapter,
 int leapraid_internal_init_cmd_priv(
 		struct leapraid_adapter *adapter,
 		struct leapraid_io_req_tracker *io_tracker);
-int leapraid_internal_exit_cmd_priv(
+void leapraid_internal_exit_cmd_priv(
 		struct leapraid_adapter *adapter,
 		struct leapraid_io_req_tracker *io_tracker);
 void leapraid_clean_active_fw_evt(struct leapraid_adapter *adapter);
@@ -1517,7 +1440,7 @@ int leapraid_op_config_page(struct leapraid_adapter *adapter,
 			    void *cfgp, union cfg_param_1 cfgp1,
 			    union cfg_param_2 cfgp2,
 			    enum config_page_action cfg_op);
-void leapraid_log_req_context(struct leapraid_adapter *adapter,
+void leapraid_log_req_context(struct leapraid_adapter *adapter, u16 smid,
 			      const void *req_data);
 
 int leapraid_change_queue_depth(struct scsi_device *sdev, int qdepth);
@@ -1557,10 +1480,7 @@ void leapraid_transport_attach_phy_to_port(
 		u64 sas_address,
 		struct leapraid_card_port *card_port);
 int leapraid_queuecommand(struct Scsi_Host *shost, struct scsi_cmnd *scmd);
-void leapraid_smart_polling_start(struct leapraid_adapter *adapter);
-void leapraid_smart_polling_stop(struct leapraid_adapter *adapter);
 void leapraid_overheat_cleanup(struct leapraid_adapter *adapter);
 void leapraid_smart_fault_detect(struct leapraid_adapter *adapter, u16 hdl);
-void leapraid_free_internal_scsi_cmd(struct leapraid_adapter *adapter);
 
 #endif /* LEAPRAID_FUNC_H_INCLUDED */
