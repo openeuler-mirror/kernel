@@ -569,6 +569,11 @@ static void udma_dump_jetty_id_range(struct udma_dev *udma_dev)
 		dev_info(udma_dev->dev, "%s jetty start_idx=%u, max_cnt=%u\n",
 			 jetty_name[i], jetty_res_list[i]->start_idx,
 			 jetty_res_list[i]->max_cnt);
+
+	dev_info(udma_dev->dev, "ccu jfc start_idx=%u, max_cnt=%u\n",
+		 udma_dev->caps.ccu_jfc.start_idx, udma_dev->caps.ccu_jfc.max_cnt);
+	dev_info(udma_dev->dev, "stars jfc start_idx=%u, max_cnt=%u\n",
+		 udma_dev->caps.stars_jfc.start_idx, udma_dev->caps.stars_jfc.max_cnt);
 }
 
 static void udma_get_jetty_id_range(struct udma_dev *udma_dev,
