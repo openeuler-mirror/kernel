@@ -995,7 +995,7 @@ static inline bool __vcpu_read_sys_reg_from_cpu(int reg, u64 *val)
 	 * own MPIDR_EL1 and MPIDR_EL1 is accessed for VCPU A from VCPU B's
 	 * thread when emulating cross-VCPU communication.
 	 */
-	if (!has_vhe())
+	if (!has_vhe() || is_pvm_mode())
 		return false;
 
 	switch (reg) {
@@ -1039,7 +1039,7 @@ static inline bool __vcpu_write_sys_reg_to_cpu(u64 val, int reg)
 	 * should never be listed below, because the MPIDR should only be set
 	 * once, before running the VCPU, and never changed later.
 	 */
-	if (!has_vhe())
+	if (!has_vhe() || is_pvm_mode())
 		return false;
 
 	switch (reg) {
