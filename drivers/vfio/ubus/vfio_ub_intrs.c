@@ -115,14 +115,10 @@ static int vfio_ub_intr_set_vector_signal(struct vfio_ub_core_device *vdev,
 	if (ret)
 		goto err_irq;
 
-	vdev->ctx[vector].producer.irq = irq_vec;
-	vdev->ctx[vector].producer.token = trigger;
-	ret = irq_bypass_register_producer(&vdev->ctx[vector].producer);
-	if (unlikely(ret)) {
-		ub_info(uent,
-			"irq bypass producer registration failed, ret=%d\n", ret);
-		vdev->ctx[vector].producer.token = NULL;
-	}
+	ret = irq_bypass_register_producer(&vdev->ctx[vector].producer,
+										trigger, irq_vec);
+	if (unlikely(ret))
+		ub_info(uent, "irq bypass producer registration failed, ret=%d\n", ret);
 	vdev->ctx[vector].trigger = trigger;
 
 	return 0;

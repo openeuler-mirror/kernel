@@ -2592,17 +2592,14 @@ xlog_recover_process_intents(
 #endif
 
 	list_for_each_entry_safe(dfp, n, &log->r_dfops, dfp_list) {
-		struct xfs_log_item	*lip = dfp->dfp_intent;
-		const struct xfs_item_ops *ops = lip->li_ops;
-
-		ASSERT(xlog_item_is_intent(lip));
+		ASSERT(xlog_item_is_intent(dfp->dfp_intent));
 
 		/*
 		 * We should never see a redo item with a LSN higher than
 		 * the last transaction we found in the log at the start
 		 * of recovery.
 		 */
-		ASSERT(XFS_LSN_CMP(last_lsn, lip->li_lsn) >= 0);
+		ASSERT(XFS_LSN_CMP(last_lsn, dfp->dfp_intent->li_lsn) >= 0);
 
 		/*
 		 * NOTE: If your intent processing routine can create more
@@ -2611,16 +2608,13 @@ xlog_recover_process_intents(
 		 * replayed in the wrong order!
 		 *
 		 * The recovery function can free the log item, so we must not
-		 * access lip after it returns.
+		 * access dfp->dfp_intent after it returns.  It must dispose of
+		 * @dfp if it returns 0.
 		 */
-		error = ops->iop_recover(dfp, &capture_list);
-		if (error) {
-			trace_xlog_intent_recovery_failed(log->l_mp, error,
-					ops->iop_recover);
+		error = xfs_defer_finish_recovery(log->l_mp, dfp,
+				&capture_list);
+		if (error)
 			break;
-		}
-
-		xfs_defer_cancel_recovery(log->l_mp, dfp);
 	}
 	if (error)
 		goto err;
@@ -2654,15 +2648,22 @@ xlog_recover_cancel_intents(
 }
 
 /*
- * Transfer ownership of the recovered log intent item to the recovery
- * transaction.
+ * Transfer ownership of the recovered pending work to the recovery transaction
+ * and try to finish the work.  If there is more work to be done, the dfp will
+ * remain attached to the transaction.  If not, the dfp is freed.
  */
-void
-xlog_recover_transfer_intent(
+int
+xlog_recover_finish_intent(
 	struct xfs_trans		*tp,
 	struct xfs_defer_pending	*dfp)
 {
-	dfp->dfp_intent = NULL;
+	int				error;
+
+	list_move(&dfp->dfp_list, &tp->t_dfops);
+	error = xfs_defer_finish_one(tp, dfp);
+	if (error == -EAGAIN)
+		return 0;
+	return error;
 }
 
 /*
