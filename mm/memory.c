@@ -4174,6 +4174,14 @@ static struct folio *alloc_swap_folio(struct vm_fault *vmf)
 		goto fallback;
 
 	/*
+	 * dpool only buddy-charges order-0 folios.  A large swapin folio
+	 * is never buddy-charged, yet once split each tail page release
+	 * would underflow the buddy counter.  Fall back to order-0.
+	 */
+	if (mm_in_dynamic_pool(vma->vm_mm))
+		goto fallback;
+
+	/*
 	 * A large swapped out folio could be partially or fully in zswap. We
 	 * lack handling for such cases, so fallback to swapping in order-0
 	 * folio.

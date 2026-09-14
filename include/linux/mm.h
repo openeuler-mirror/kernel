@@ -2063,10 +2063,46 @@ static inline bool is_zero_folio(const struct folio *folio)
 	return is_zero_page(&folio->page);
 }
 
+#ifdef CONFIG_DYNAMIC_POOL
+DECLARE_STATIC_KEY_FALSE(dynamic_pool_key);
+#define dpool_enabled (static_branch_unlikely(&dynamic_pool_key))
+
+static inline bool page_from_dynamic_pool(struct page *page)
+{
+	if (!dpool_enabled)
+		return false;
+
+	return PagePool(page);
+}
+
+bool __mm_in_dynamic_pool(struct mm_struct *mm);
+#else
+#define dpool_enabled	0
+
+static inline bool page_from_dynamic_pool(struct page *page)
+{
+	return false;
+}
+
+static inline bool __mm_in_dynamic_pool(struct mm_struct *mm)
+{
+	return false;
+}
+#endif
+
 /* MIGRATE_CMA and ZONE_MOVABLE do not allow pin folios */
 #ifdef CONFIG_MIGRATION
 static inline bool folio_is_longterm_pinnable(struct folio *folio)
 {
+	/*
+	 * Memory migration and offlining will be prevented if a page is
+	 * pinned. However dpool memory must be unpinned and related
+	 * processes terminated before taking the dpool offline, which
+	 * avoids this interference.
+	 */
+	if (page_from_dynamic_pool(&folio->page))
+		return true;
+
 #ifdef CONFIG_CMA
 	int mt = folio_migratetype(folio);
 

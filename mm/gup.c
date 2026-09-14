@@ -2128,7 +2128,8 @@ static long __gup_longterm_locked(struct mm_struct *mm,
 	unsigned int flags;
 	long rc, nr_pinned_pages;
 
-	if (!(gup_flags & FOLL_LONGTERM))
+	if (!(gup_flags & FOLL_LONGTERM) ||
+	    __mm_in_dynamic_pool(mm))
 		return __get_user_pages_locked(mm, start, nr_pages, pages,
 					       locked, gup_flags);
 

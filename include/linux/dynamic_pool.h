@@ -8,9 +8,6 @@
 
 #ifdef CONFIG_DYNAMIC_POOL
 
-DECLARE_STATIC_KEY_FALSE(dynamic_pool_key);
-#define dpool_enabled (static_branch_unlikely(&dynamic_pool_key))
-
 enum pages_pool_type {
 	PAGES_POOL_1G,
 	PAGES_POOL_2M,
@@ -77,21 +74,12 @@ struct dpool_info {
 	struct range pfn_ranges[];
 };
 
-bool __mm_in_dynamic_pool(struct mm_struct *mm);
 static inline bool mm_in_dynamic_pool(struct mm_struct *mm)
 {
 	if (!dpool_enabled)
 		return false;
 
 	return __mm_in_dynamic_pool(mm);
-}
-
-static inline bool page_from_dynamic_pool(struct page *page)
-{
-	if (!dpool_enabled)
-		return false;
-
-	return PagePool(page);
 }
 
 static inline bool file_in_dynamic_pool(struct hugetlbfs_inode_info *p)
@@ -135,15 +123,8 @@ int dpool_init(struct dpool_info *arg);
 void dynamic_pool_show_meminfo(struct seq_file *m);
 
 #else
-#define dpool_enabled	0
-
 struct dynamic_pool {};
 struct dpool_info {};
-
-static inline bool page_from_dynamic_pool(struct page *page)
-{
-	return false;
-}
 
 static inline bool mm_in_dynamic_pool(struct mm_struct *mm)
 {
@@ -197,11 +178,6 @@ static inline int dynamic_pool_hugetlb_acct_memory(struct hstate *h, long delta,
 	return -ENOMEM;
 }
 
-static inline bool dynamic_pool_should_alloc(gfp_t gfp_mask, unsigned int order)
-{
-	return false;
-}
-
 static inline struct folio *dynamic_pool_alloc_hugepage(struct hugetlbfs_inode_info *p,
 					struct hstate *h, bool reserved)
 {
@@ -213,6 +189,11 @@ static inline void dynamic_pool_free_hugepage(struct folio *folio,
 {
 }
 #endif
+
+static inline bool dynamic_pool_should_alloc(gfp_t gfp_mask, unsigned int order)
+{
+	return false;
+}
 
 static inline void dynamic_pool_inherit(struct mem_cgroup *memcg)
 {
