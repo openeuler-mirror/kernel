@@ -470,6 +470,7 @@ static const struct arm64_ftr_bits ftr_id_aa64mmfr3[] = {
 };
 
 static const struct arm64_ftr_bits ftr_id_aa64mmfr4[] = {
+	ARM64_FTR_BITS(FTR_HIDDEN, FTR_STRICT, FTR_LOWER_SAFE, ID_AA64MMFR4_EL1_TLBID_SHIFT, 4, 0),
 	S_ARM64_FTR_BITS(FTR_HIDDEN, FTR_STRICT, FTR_LOWER_SAFE, ID_AA64MMFR4_EL1_E2H0_SHIFT, 4, 0),
 	ARM64_FTR_END,
 };
@@ -704,6 +705,18 @@ static const struct arm64_ftr_bits ftr_mpamidr[] = {
 	ARM64_FTR_END,
 };
 
+static const struct arm64_ftr_bits ftr_tlbididr[] = {
+	ARM64_FTR_BITS(FTR_HIDDEN, FTR_NONSTRICT, FTR_LOWER_SAFE,
+			TLBIDIDR_EL1_NVOS_SHIFT, TLBIDIDR_EL1_NVOS_WIDTH, 0),
+	ARM64_FTR_BITS(FTR_HIDDEN, FTR_NONSTRICT, FTR_LOWER_SAFE,
+			TLBIDIDR_EL1_NOS_SHIFT, TLBIDIDR_EL1_NOS_WIDTH, 0),
+	ARM64_FTR_BITS(FTR_HIDDEN, FTR_NONSTRICT, FTR_LOWER_SAFE,
+			TLBIDIDR_EL1_NVIS_SHIFT, TLBIDIDR_EL1_NVIS_WIDTH, 0),
+	ARM64_FTR_BITS(FTR_HIDDEN, FTR_NONSTRICT, FTR_LOWER_SAFE,
+			TLBIDIDR_EL1_NIS_SHIFT, TLBIDIDR_EL1_NIS_WIDTH, 0),
+	ARM64_FTR_END,
+};
+
 /*
  * Common ftr bits for a 32bit register with all hidden, strict
  * attributes, with 4bit feature fields and a default safe value of
@@ -830,6 +843,7 @@ static const struct __ftr_reg_entry {
 
 	/* Op1 = 0, CRn = 10, CRm = 4 */
 	ARM64_FTR_REG(SYS_MPAMIDR_EL1, ftr_mpamidr),
+	ARM64_FTR_REG(SYS_TLBIDIDR_EL1, ftr_tlbididr),
 
 	/* Op1 = 1, CRn = 0, CRm = 0 */
 	ARM64_FTR_REG(SYS_GMID_EL1, ftr_gmid),
@@ -1159,6 +1173,9 @@ void __init init_cpu_features(struct cpuinfo_arm64 *info)
 	    id_aa64pfr1_mpamfrac(info->reg_id_aa64pfr1)))
 		init_cpu_ftr_reg(SYS_MPAMIDR_EL1, info->reg_mpamidr);
 
+	if (id_aa64mmfr4_tlbid(info->reg_id_aa64mmfr4))
+		init_cpu_ftr_reg(SYS_TLBIDIDR_EL1, info->reg_tlbididr);
+
 	if (id_aa64pfr1_mte(info->reg_id_aa64pfr1))
 		init_cpu_ftr_reg(SYS_GMID_EL1, info->reg_gmid);
 
@@ -1431,6 +1448,10 @@ void update_cpu_features(int cpu,
 		taint |= check_update_ftr_reg(SYS_MPAMIDR_EL1, cpu,
 					info->reg_mpamidr, boot->reg_mpamidr);
 	}
+
+	if (id_aa64mmfr4_tlbid(info->reg_id_aa64mmfr4))
+		taint |= check_update_ftr_reg(SYS_TLBIDIDR_EL1, cpu,
+					info->reg_tlbididr, boot->reg_tlbididr);
 
 	/*
 	 * The kernel uses the LDGM/STGM instructions and the number of tags
@@ -2557,6 +2578,48 @@ static void mpam_extra_caps(void)
 		__enable_mpam_hcr();
 }
 
+static bool __maybe_unused
+test_has_tlbid(const struct arm64_cpu_capabilities *entry, int scope)
+{
+	u64 tlbididr = read_sanitised_ftr_reg(SYS_TLBIDIDR_EL1);
+	u64 mmfr4 = read_sanitised_ftr_reg(SYS_ID_AA64MMFR4_EL1);
+
+	if (!id_aa64mmfr4_tlbid(mmfr4))
+		return false;
+
+	return (FIELD_GET(TLBIDIDR_EL1_NOS, tlbididr) > 0) &&
+	       (FIELD_GET(TLBIDIDR_EL1_NIS, tlbididr) > 0);
+}
+
+static void __maybe_unused
+cpu_enable_tlbid(const struct arm64_cpu_capabilities *entry)
+{
+	if (is_kernel_in_hyp_mode()) {
+		/*
+		 * TODO:
+		 * - Configure HCRX_EL2 and HCR_EL2 to enable VTLBID transforms
+		 *   at EL1.
+		 * - Configure HFGRTR2_EL2 to trap MRS read of TLBIDIDR_EL1 at
+		 *   EL1.
+		 * - Configure SCTLR2MASK_EL2 to make SCTLR2_EL2.TLBOSNIS
+		 *   writable.
+		 * - Configure SCTLR2_EL2 to enable TLBI *OS* executed at EL2
+		 *   affect TLBs in both Outer shareability domain and Inner
+		 *   shareability domain.
+		 * - Reset VTLBIDn_EL1 and VTLBIDOSn_EL2.
+		 */
+	} else {
+		/*
+		 * TODO:
+		 * - Configure SCTLR2MASK_EL1 to make SCTLR2_EL1.TLBOSNIS
+		 *   writable.
+		 * - Configure SCTLR2_EL1 to enable TLBI *OS* executed at EL1
+		 *   affect TLBs in both Outer shareability domain and Inner
+		 *   shareability domain.
+		 */
+	}
+}
+
 #ifdef CONFIG_FAST_SYSCALL
 #include <asm/xcall.h>
 DEFINE_STATIC_KEY_FALSE(xcall_enable);
@@ -3342,6 +3405,15 @@ static const struct arm64_cpu_capabilities arm64_features[] = {
 		.matches = has_cpuid_feature,
 		ARM64_CPUID_FIELDS(ID_AA64ISAR2_EL1, SYSINSTR_128, IMP)
 	},
+#ifdef CONFIG_ARM64_TLBID
+	{
+		.desc = "TLBI Domains",
+		.capability = ARM64_HAS_TLBID,
+		.type = ARM64_CPUCAP_SYSTEM_FEATURE,
+		.matches = test_has_tlbid,
+		.cpu_enable = cpu_enable_tlbid,
+	},
+#endif
 	{},
 };
 

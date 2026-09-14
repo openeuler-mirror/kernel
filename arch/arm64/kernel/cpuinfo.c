@@ -353,6 +353,10 @@ static void __cpuinfo_store_cpu(struct cpuinfo_arm64 *info)
 	    id_aa64pfr1_mpamfrac(info->reg_id_aa64pfr1)))
 		info->reg_mpamidr = read_cpuid(MPAMIDR_EL1);
 
+	if (IS_ENABLED(CONFIG_ARM64_TLBID) &&
+	    id_aa64mmfr4_tlbid(info->reg_id_aa64mmfr4))
+		info->reg_tlbididr = read_cpuid(TLBIDIDR_EL1);
+
 	cpuinfo_detect_icache_policy(info);
 }
 

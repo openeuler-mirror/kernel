@@ -2303,6 +2303,26 @@ config ARM64_TLB_RANGE
 	  The feature introduces new assembly instructions, and they were
 	  support when binutils >= 2.30.
 
+config ARM64_TLBID
+	bool "Enable support for TLBID (TLBI Domains)"
+	default y
+	help
+	  TLBI broadcasting all PEs introduces performance noise. By
+	  combining hardware and software, TLBID (TLBI Domain) limit TLBI
+	  to an appropriate scope, avoiding the performance overhead caused
+	  by broadcasting.
+
+	  Arm Architecture defines the FEAT_TLBID extension since Armv9.3,
+	  when present, allows the OSPM to target TLB invalidations to
+	  a specific domain. A TLBI domain can be contained in multiple
+	  parent domains.
+
+	  The TLBI table lists all the PE and SMMU components and the TLBI
+	  Domains that each component belongs to.
+
+	  The feature is detected at runtime, and will remain disabled
+	  if the system does not implement the feature.
+
 config ARM64_MPAM
 	bool "Enable support for MPAM"
 	select ACPI_MPAM if ACPI

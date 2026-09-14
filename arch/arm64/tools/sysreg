@@ -2295,7 +2295,10 @@ UnsignedEnum	47:44	SRMASK
 	0b0000	NI
 	0b0001	IMP
 EndEnum
-Res0	43:40
+UnsignedEnum	43:40	TLBID
+	0b0000	NI
+	0b0001	IMP
+EndEnum
 UnsignedEnum	39:36	E3DSE
 	0b0000	NI
 	0b0001	IMP
@@ -3571,4 +3574,15 @@ Res0	7:6
 Field	5	F
 Field	4	P
 Field	3:0	Align
+EndSysreg
+
+Sysreg	TLBIDIDR_EL1	3	0	10	4	6
+Res0	63:45
+Field	44:40	NVOS
+Res0	39:37
+Field	36:32	NOS
+Res0	31:13
+Field	12:8	NVIS
+Res0	7:5
+Field	4:0	NIS
 EndSysreg

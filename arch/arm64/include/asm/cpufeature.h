@@ -666,6 +666,13 @@ static inline bool id_aa64pfr1_mte(u64 pfr1)
 	return val >= ID_AA64PFR1_EL1_MTE_MTE2;
 }
 
+static inline bool id_aa64mmfr4_tlbid(u64 mmfr4)
+{
+	u32 val = cpuid_feature_extract_unsigned_field(mmfr4, ID_AA64MMFR4_EL1_TLBID_SHIFT);
+
+	return val > 0;
+}
+
 void __init setup_cpu_features(void);
 void check_local_cpu_capabilities(void);
 
@@ -925,6 +932,13 @@ static inline bool system_supports_tlb_range(void)
 static inline bool system_supports_sysinstr128(void)
 {
 	return cpus_have_const_cap(ARM64_HAS_SYSINSTR128);
+}
+
+static inline bool system_supports_tlbid(void)
+{
+	return IS_ENABLED(CONFIG_ARM64_TLBID) &&
+		system_supports_sysinstr128() &&
+		cpus_have_const_cap(ARM64_HAS_TLBID);
 }
 
 static inline bool cpus_support_mpam(void)
