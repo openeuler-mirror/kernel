@@ -294,8 +294,8 @@ static int ubase_dbg_dump_ubcl_config(struct seq_file *s, void *data)
 	struct ubase_dev *udev = dev_get_drvdata(s->private);
 	struct ubase_ubcl_config_cmd resp = {0};
 	u16 read_size = sizeof(resp.data);
+	u16 total_size, resp_size;
 	u16 offset = 0;
-	u16 total_size;
 	u32 addr = 0;
 	int ret;
 
@@ -306,8 +306,8 @@ static int ubase_dbg_dump_ubcl_config(struct seq_file *s, void *data)
 	ret = ubase_query_ubcl_config(udev, offset, 1, 0, &resp);
 	if (ret)
 		return ret;
-	total_size = le16_to_cpu(resp.size);
 
+	total_size = le16_to_cpu(resp.size);
 	seq_puts(s, "UBCL_config:\n");
 	seq_printf(s, "total_size: %u\n", total_size);
 	while (offset < total_size) {
@@ -315,8 +315,16 @@ static int ubase_dbg_dump_ubcl_config(struct seq_file *s, void *data)
 		ret = ubase_query_ubcl_config(udev, offset, 0, read_size, &resp);
 		if (ret)
 			return ret;
-		offset += le16_to_cpu(resp.size);
 
+		resp_size = le16_to_cpu(resp.size);
+		if (!resp_size || resp_size > read_size) {
+			ubase_err(udev,
+				  "invalid resp size, resp size = %u, read size = %u.\n",
+				  resp_size, read_size);
+			return -EINVAL;
+		}
+
+		offset += resp_size;
 		ubase_dbg_fill_ubcl_content(&resp, &addr, s);
 	}
 
