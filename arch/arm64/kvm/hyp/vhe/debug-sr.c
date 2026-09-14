@@ -12,11 +12,17 @@
 
 void __debug_switch_to_guest(struct kvm_vcpu *vcpu)
 {
+	if (is_pvm_mode())
+		return;
+
 	__debug_switch_to_guest_common(vcpu);
 }
 
 void __debug_switch_to_host(struct kvm_vcpu *vcpu)
 {
+	if (is_pvm_mode())
+		return;
+
 	__debug_switch_to_host_common(vcpu);
 }
 
