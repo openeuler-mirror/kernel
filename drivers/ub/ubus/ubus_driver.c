@@ -23,7 +23,6 @@
 #include "task.h"
 #include "ubus_config.h"
 #include "ubus_controller.h"
-#include "ubus_inner.h"
 #include "ubus_entity.h"
 #include "services/service.h"
 #include "ubus_driver.h"

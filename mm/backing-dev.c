@@ -516,6 +516,7 @@ static void cgwb_free_rcu(struct rcu_head *rcu_head)
 			struct bdi_writeback, rcu);
 
 	percpu_ref_exit(&wb->refcnt);
+	kfree(wb->switch_ctx);
 	kfree(wb);
 }
 
@@ -545,6 +546,7 @@ static void cgwb_release_workfn(struct work_struct *work)
 	wb_exit(wb);
 	bdi_put(bdi);
 	WARN_ON_ONCE(!list_empty(&wb->b_attached));
+	WARN_ON_ONCE(work_pending(&wb->switch_ctx->switch_work));
 	call_rcu(&wb->rcu, cgwb_free_rcu);
 }
 
@@ -651,6 +653,14 @@ static int cgwb_create(struct backing_dev_info *bdi,
 	INIT_WORK(&wb->release_work, cgwb_release_workfn);
 	set_bit(WB_registered, &wb->state);
 	bdi_get(bdi);
+	wb->switch_ctx = kzalloc(sizeof(struct wb_switch_ctx), gfp);
+	if (!wb->switch_ctx) {
+		ret = -ENOMEM;
+		goto err_fprop_exit;
+	}
+	wb->switch_ctx->wb = wb;
+	INIT_WORK(&wb->switch_ctx->switch_work, inode_switch_wbs_work_fn);
+	init_llist_head(&wb->switch_ctx->switch_wbs_ctxs);
 
 	/*
 	 * The root wb determines the registered state of the whole bdi and
@@ -682,6 +692,7 @@ static int cgwb_create(struct backing_dev_info *bdi,
 	goto out_put;
 
 err_fprop_exit:
+	kfree(wb->switch_ctx);
 	bdi_put(bdi);
 	fprop_local_destroy_percpu(&wb->memcg_completions);
 err_ref_exit:
@@ -783,6 +794,17 @@ static int cgwb_bdi_init(struct backing_dev_info *bdi)
 	if (!ret) {
 		bdi->wb.memcg_css = &root_mem_cgroup->css;
 		bdi->wb.blkcg_css = blkcg_root_css;
+		bdi->wb.switch_ctx = kzalloc(sizeof(struct wb_switch_ctx),
+					     GFP_KERNEL);
+		if (!bdi->wb.switch_ctx) {
+			wb_exit(&bdi->wb);
+			ret = -ENOMEM;
+		} else {
+			bdi->wb.switch_ctx->wb = &bdi->wb;
+			INIT_WORK(&bdi->wb.switch_ctx->switch_work,
+				  inode_switch_wbs_work_fn);
+			init_llist_head(&bdi->wb.switch_ctx->switch_wbs_ctxs);
+		}
 	}
 	return ret;
 }
@@ -1129,6 +1151,9 @@ static void release_bdi(struct kref *ref)
 
 	WARN_ON_ONCE(test_bit(WB_registered, &bdi->wb.state));
 	WARN_ON_ONCE(bdi->dev);
+#ifdef CONFIG_CGROUP_WRITEBACK
+	kfree(bdi->wb.switch_ctx);
+#endif
 	wb_exit(&bdi->wb);
 	kfree(bdi);
 }

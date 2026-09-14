@@ -1492,6 +1492,10 @@ udma_create_lock_buffer_jetty(struct ubcore_device *dev, struct ubcore_jetty_cfg
 		goto err_store_jfs_sq;
 
 	udma_jetty->sq.activated = true;
+
+	if (dfx_switch)
+		udma_dfx_store_jetty_id(udma_dev, udma_jetty);
+
 	return &udma_jetty->ubcore_jetty;
 
 err_store_jfs_sq:

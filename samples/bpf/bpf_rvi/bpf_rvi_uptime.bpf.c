@@ -11,7 +11,7 @@ void bpf_task_release(struct task_struct *p) __ksym;
 struct task_struct *bpf_current_level1_reaper(void) __ksym;
 struct cpuset *bpf_cpuset_from_task(struct task_struct *p) __ksym;
 void cgroup_rstat_flush_atomic(struct cgroup *cgrp) __ksym;
-unsigned int bpf_cpumask_weight(struct cpumask *pmask) __ksym;
+unsigned int bpf_cpuset_cpumask_weight(struct cpumask *pmask) __ksym;
 u64 bpf_task_ca_cpuusage(struct task_struct *p) __ksym;
 
 char _license[] SEC("license") = "GPL";
@@ -24,7 +24,7 @@ static int task_effective_cpus_num(struct task_struct *reaper)
 	if (!cpuset)
 		return -1;
 
-	return bpf_cpumask_weight(cpuset->effective_cpus);
+	return bpf_cpuset_cpumask_weight(cpuset->effective_cpus);
 }
 
 /* cpuacct.usage of cgroup v1. See cpuusage_read(). */

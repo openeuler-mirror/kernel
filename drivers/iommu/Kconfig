@@ -169,7 +169,6 @@ config IOMMU_IOPF
 # Shared Kernel Virtual Addressing
 config IOMMU_KSVA
 	bool
-	default n
 	help
 	  Enable sharing kernel virtual address to devices.
 	  Say N unless you know you need this.

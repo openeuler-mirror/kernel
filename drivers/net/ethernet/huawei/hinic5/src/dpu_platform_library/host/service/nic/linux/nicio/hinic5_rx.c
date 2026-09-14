@@ -1070,7 +1070,6 @@ static struct page_pool *hinic5_create_page_pool(struct hinic5_nic_dev *nic_dev,
 #else
 		.flags = PP_FLAG_DMA_MAP | PP_FLAG_DMA_SYNC_DEV,
 #endif
-		.flags = PP_FLAG_DMA_MAP | PP_FLAG_PAGE_FRAG | PP_FLAG_DMA_SYNC_DEV,
 		.order = nic_dev->page_order,
 		.pool_size = rq_depth * nic_dev->rx_buff_len /
 			     (PAGE_SIZE << nic_dev->page_order),

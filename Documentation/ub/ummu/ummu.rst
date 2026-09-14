@@ -88,6 +88,15 @@ memory regions. It is recommended to enable the permission checking
 feature to enforce security policies and protect the SVA address space
 from unauthorized access.
 
+Interaction with ``iommu.passthrough``
+--------------------------------------
+
+The generic ``iommu.passthrough=1`` parameter is intended for PCI/IOMMU
+bypass and only affects the generic IOMMU framework path. UMMU does not
+respond to passthrough and keeps working normally even when
+``iommu.passthrough=1`` is configured for PCI devices on a system where
+PCI and UB coexist.
+
 UMMU Driver Initialization
 ==========================
 

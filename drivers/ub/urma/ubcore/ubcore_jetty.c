@@ -31,6 +31,10 @@
 #include "ubcore_device.h"
 #include "ubcore_opt.h"
 
+#define UBCORE_MAX_PRIORITY 15
+#define UBCORE_MAX_RNR_RETRY 7
+#define UBCORE_MAX_TIMEOUT_COUNT 31
+
 const struct ubcore_opt_map g_ubcore_jfc_opt_table[] = {
 	/* opt, mask, target, offset, size */
 	/* ---- CFG ---- */
@@ -887,6 +891,14 @@ static int check_jfs_cfg(struct ubcore_device *dev, struct ubcore_jfs_cfg *cfg)
 		return -EINVAL;
 	cfg->flag.bs.order_type = order_type;
 
+	if (cfg->priority > UBCORE_MAX_PRIORITY || cfg->rnr_retry > UBCORE_MAX_RNR_RETRY ||
+		cfg->err_timeout > UBCORE_MAX_TIMEOUT_COUNT) {
+		ubcore_log_err("jfs cfg is out of range, and depth = %d, priority = %d.\n",
+			cfg->depth, cfg->priority);
+		ubcore_log_err("jfs cfg is out of range, rnr_retry = %d, err_timeout = %d.\n",
+			cfg->rnr_retry, cfg->err_timeout);
+		return -EINVAL;
+	}
 	return 0;
 }
 
@@ -1473,6 +1485,13 @@ static int ubcore_check_jfr_cfg(struct ubcore_jfr_cfg *cfg)
 		return -EINVAL;
 	cfg->flag.bs.order_type = order_type;
 
+	if (cfg->min_rnr_timer > UBCORE_MAX_TIMEOUT_COUNT ||
+		cfg->flag.bs.token_policy > UBCORE_TOKEN_RESERVED) {
+		ubcore_log_err("Invalid min_rnr_timer: %d or token_policy: %d.",
+			cfg->min_rnr_timer, cfg->flag.bs.token_policy);
+		return -EINVAL;
+	}
+
 	return 0;
 }
 
@@ -1750,9 +1769,10 @@ static bool ubcore_validate_order_type_for_um_ctp(
 {
 	/* Only validate for UM + CTP combination */
 	if (trans_mode == UBCORE_TP_UM && tp_type == UBCORE_CTP) {
-		/* order_type can only be 0(DEF) or 3(OL) */
-		if (order_type != UBCORE_DEF_ORDER && order_type != UBCORE_OL) {
-			ubcore_log_err("Invalid order_type %u for UM+CTP, only 0(DEF) or 3(OL) allowed.\n",
+		/* order_type can only be 0(DEF) or 3(OL) or 4(NO) */
+		if (order_type != UBCORE_DEF_ORDER && order_type != UBCORE_OL &&
+			order_type != UBCORE_NO) {
+			ubcore_log_err("Invalid order_type %u for UM+CTP, only 0(DEF)/3(OL)/4(NO) allowed.\n",
 				       order_type);
 			return false;
 		}
@@ -2527,6 +2547,22 @@ static int check_jetty_check_dev_cap(struct ubcore_device *dev,
 				cfg->max_recv_sge, cap->max_jfr_sge);
 			return -EINVAL;
 		}
+	}
+
+	if (cfg->priority > UBCORE_MAX_PRIORITY || cfg->rnr_retry > UBCORE_MAX_RNR_RETRY ||
+		cfg->err_timeout > UBCORE_MAX_TIMEOUT_COUNT) {
+		ubcore_log_err("jetty cfg is out of range, priority = %d, rnr_retry = %d.\n",
+			cfg->priority, cfg->rnr_retry);
+		ubcore_log_err("jetty cfg is out of range, err_timeout = %d.\n",
+			cfg->err_timeout);
+		return -EINVAL;
+	}
+
+	if (cfg->jfr->jfr_cfg.min_rnr_timer > UBCORE_MAX_TIMEOUT_COUNT ||
+		cfg->jfr->jfr_cfg.flag.bs.token_policy > UBCORE_TOKEN_RESERVED) {
+		ubcore_log_err("Invalid min_rnr_timer: %d or token_policy: %d.",
+			cfg->jfr->jfr_cfg.min_rnr_timer, cfg->jfr->jfr_cfg.flag.bs.token_policy);
+		return -EINVAL;
 	}
 
 	return 0;
@@ -3648,8 +3684,23 @@ int ubcore_bind_jetty_ex(struct ubcore_jetty *jetty,
 		return -EINVAL;
 	}
 	if ((jetty->jetty_cfg.trans_mode != UBCORE_TP_RC) ||
-	    (tjetty->cfg.trans_mode != UBCORE_TP_RC)) {
-		ubcore_log_err("trans mode is not rc type.\n");
+		(tjetty->cfg.trans_mode != UBCORE_TP_RC)) {
+		ubcore_log_err_rl(
+			"jetty trans mode is not rc type, jetty mode: %d, tjetty mode: %d.\n",
+			jetty->jetty_cfg.trans_mode, tjetty->cfg.trans_mode);
+		UBCORE_PERF_TRACE_END(PERF_CORE_BIND_JETTY);
+		return -EINVAL;
+	}
+	// check if tp_handle is not rc type or rtp.
+	// ctp or utp, peer_tp_handle not need to check.
+	if ((active_tp_cfg->tp_handle.bs.trans_mode != UBCORE_TP_RC) ||
+		((active_tp_cfg->tp_handle.bs.rtp == 1) &&
+		(active_tp_cfg->tpid_reuse == NULL) &&
+		(active_tp_cfg->peer_tp_handle.bs.trans_mode != UBCORE_TP_RC))) {
+		ubcore_log_err_rl(
+			"tphdl trans mode is not rc type, tp_hdl mode: %d, peer_tphdl mode: %d.\n",
+			active_tp_cfg->tp_handle.bs.trans_mode,
+			active_tp_cfg->peer_tp_handle.bs.trans_mode);
 		UBCORE_PERF_TRACE_END(PERF_CORE_BIND_JETTY);
 		return -EINVAL;
 	}

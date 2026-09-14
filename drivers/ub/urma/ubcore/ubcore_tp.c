@@ -26,6 +26,7 @@
 #include "ubcore_log.h"
 #include "ubcore_dmac.h"
 #include "ubcore_hash_table.h"
+#include "ubcore_vtp.h"
 
 int ubcore_check_tp_type_valid(enum ubcore_transport_mode trans_mode, uint32_t tp_mode)
 {
@@ -389,6 +390,28 @@ int ubcore_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *cfg,
 		}
 		tp_list[idx].tp_handle.value = tp_handle.value;
 		actual_total_tp_cnt++;
+
+		/* Create vtpn. Ownership of vtpn depends on lifecycle stage:
+		    - Before import: tpid_uobj destructor (uburma_free_tpid_uobj) calls
+		      ubcore_delete_vtpn_for_tpid() on abnormal exit, freeing both.
+		    - After import: tpid_uobj is released; tjetty_uobj takes over and
+		      free vtpn on abnormal exit.
+		    - Normal exit: unimport disconnects and frees the vtpn.
+		*/
+		if (ubcore_create_add_vtpn_for_tpid(dev, tp_handle.value) == NULL) {
+			ubcore_log_err_rl(
+				"Failed to create vtpn for tp_handle: %llu in get tp list.\n",
+				tp_handle.value);
+			/* delete_tpid is inside ubcore_create_add_vtpn_for_tpid */
+			actual_total_tp_cnt--;
+			if (actual_total_tp_cnt > 0) {
+				ubcore_log_err_rl(
+					"vtpn creation failed, early end, actual_total_tp_cnt: %d.\n",
+					actual_total_tp_cnt);
+				goto success;
+			}
+			return -ENOMEM;
+		}
 	}
 
 success:
@@ -651,6 +674,12 @@ int ubcore_create_tpid_priv(struct ubcore_device *dev, struct ubcore_tpid_cfg *c
 		return -1;
 	}
 
+	/*	If it's CTP, the transmode key in the tpid_list table will be
+		uniformly stored as RM, needs to be converted back to the
+		correct transmode when returned. */
+	if (get_cfg.flag.bs.ctp == 1)
+		selected.tp_handle.bs.trans_mode = cfg->tp_mode;
+
 	*tp_handle = selected.tp_handle;
 	ubcore_log_info_rl("create tpid handle value = %llu.\n", selected.tp_handle.value);
 
@@ -675,6 +704,22 @@ struct ubcore_tpid *ubcore_create_tpid(struct ubcore_device *dev,
 		return NULL;
 	}
 	tpid->tp_handle = tp_handle;
+
+	/*	if ret == NULL, use_cnt will not inc and delete_tpid is already done
+		in create_add_vtpn_for_tpid.
+		if is kernel user, there are constraints that need use complete process
+		of create_tpid -> import_jetty_ex -> unimport_jetty
+		to ensure to delete tpid, and use_cnt will be transferred in
+		import_jetty_ex, which has been described in the doc.
+	*/
+	if (ubcore_create_add_vtpn_for_tpid(dev, tp_handle.value) == NULL) {
+		ubcore_log_err_rl(
+			"Failed to create vtpn for tp_handle: %llu in create tpid.\n",
+			tp_handle.value);
+		kfree(tpid);
+		return NULL;
+	}
+
 	return tpid;
 }
 EXPORT_SYMBOL(ubcore_create_tpid);
@@ -728,16 +773,15 @@ int ubcore_delete_tpid_priv(struct ubcore_device *dev, uint32_t tpid_val)
 
 int ubcore_delete_tpid(struct ubcore_device *dev, struct ubcore_tpid *tpid)
 {
-	uint32_t tpid_val;
-
 	if (dev == NULL || tpid == NULL) {
 		ubcore_log_err("Invalid parameter.\n");
 		return -EINVAL;
 	}
 
-	tpid_val = tpid->tp_handle.bs.tpid;
+	/*	unimport_jetty will delete tpid in free_vtpn_crlplane.
+		do not delete twice here. Only kfree tpid. */
 	kfree(tpid);
-	return ubcore_delete_tpid_priv(dev, tpid_val);
+	return 0;
 }
 EXPORT_SYMBOL(ubcore_delete_tpid);
 

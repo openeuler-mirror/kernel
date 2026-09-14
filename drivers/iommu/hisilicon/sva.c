@@ -385,10 +385,6 @@ static int ummu_sva_set_dev_pasid(struct iommu_domain *domain,
 		goto out_asid_put;
 
 	master = ummu_sva_master_get(dev, is_ksva);
-	if (!master) {
-		ret = -ENODEV;
-		goto out_asid_put;
-	}
 
 	ret = ummu_sva_collect_domain_cfg(u_domain, id);
 	if (ret)

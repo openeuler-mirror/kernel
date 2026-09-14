@@ -187,12 +187,14 @@ static int __must_check uobj_remove_commit_internal(
 		/* We couldn't remove the object, so just unlock the uobject */
 		atomic_set(&uobj->rcnt, 0);
 		uobj->type->type_class->lookup_put(uobj, UOBJ_ACCESS_NOLOCK);
-	} else if (!list_empty(&uobj->list)) {
+	} else {
 		mutex_lock(&ufile->uobjects_lock);
-		list_del_init(&uobj->list);
+		/* put the ref when del list node */
+		if (!list_empty(&uobj->list)) {
+			list_del_init(&uobj->list);
+			uobj_put(uobj);
+		}
 		mutex_unlock(&ufile->uobjects_lock);
-		/* put the ref we took when we created the object */
-		uobj_put(uobj);
 	}
 
 	return ret;
@@ -229,13 +231,13 @@ uobj_remove_commit_internal_batch(struct uburma_uobj **uobj_arr, int arr_num,
 
 	for (i = 0; i < end_index; ++i) {
 		uobj = uobj_arr[i];
+		mutex_lock(&ufile->uobjects_lock);
+		/* put the ref when del list node */
 		if (!list_empty(&uobj->list)) {
-			mutex_lock(&ufile->uobjects_lock);
 			list_del_init(&uobj->list);
-			mutex_unlock(&ufile->uobjects_lock);
-			/* put the ref we took when we created the object */
 			uobj_put(uobj);
 		}
+		mutex_unlock(&ufile->uobjects_lock);
 	}
 
 	return ret;
@@ -599,11 +601,22 @@ int __must_check uobj_remove_commit_batch(struct uburma_uobj **uobj_arr,
 	int ret;
 	int i;
 
-	if (arr_num > 0) {
-		uobj = uobj_arr[0];
-		ufile = uobj->ufile;
-		down_read(&ufile->cleanup_rwsem);
+	if (!uobj_arr || arr_num <= 0 || !bad_index) {
+		uburma_log_err("Invalid parameter.\n");
+		return -EINVAL;
 	}
+
+	for (i = 0; i < arr_num; ++i) {
+		if (IS_ERR_OR_NULL(uobj_arr[i])) {
+			uburma_log_err("Invalid uobj, index: %d.\n", i);
+			return -EINVAL;
+		}
+	}
+
+	uobj = uobj_arr[0];
+	ufile = uobj->ufile;
+	down_read(&ufile->cleanup_rwsem);
+
 	for (i = 0; i < arr_num; ++i) {
 		uobj = uobj_arr[i];
 		ufile = uobj->ufile;
@@ -619,8 +632,7 @@ int __must_check uobj_remove_commit_batch(struct uburma_uobj **uobj_arr,
 	ret = uobj_remove_commit_internal_batch(uobj_arr, arr_num, bad_index,
 						UBURMA_REMOVE_DESTROY);
 
-	if (arr_num > 0)
-		up_read(&ufile->cleanup_rwsem);
+	up_read(&ufile->cleanup_rwsem);
 
 	return ret;
 }

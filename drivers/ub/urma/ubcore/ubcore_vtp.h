@@ -209,4 +209,8 @@ struct ubcore_vtpn *
 	struct ubcore_vtp_param *param,
 	struct ubcore_active_tp_cfg *active_tp_cfg,
 	struct ubcore_udata *udata);
+
+/* vtpn helper for the get_tp_list path; internal to ubcore */
+struct ubcore_vtpn *ubcore_create_add_vtpn_for_tpid(struct ubcore_device *dev,
+						  uint64_t tp_handle);
 #endif

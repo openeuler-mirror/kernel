@@ -177,7 +177,8 @@ static int ubctl_query_dp_deal(struct ubctl_dev *ucdev,
 		if (query_dp[i].op_code != UBCTL_QUERY_TP_RX_BANK_DFX)
 			continue;
 		if (bank_idx >= UBCTL_TP_RX_BANK_NUM) {
-			ubctl_err(ucdev, "bank_idx is out of bounds: %u.\n", bank_idx);
+			ubctl_err(ucdev, "bank idx %u is out of bounds, it must be less than %u.\n",
+				  bank_idx, UBCTL_TP_RX_BANK_NUM);
 			return -EINVAL;
 		}
 
@@ -189,7 +190,7 @@ static int ubctl_query_dp_deal(struct ubctl_dev *ucdev,
 	ret = ubctl_query_data(ucdev, query_cmd_param, query_func,
 			       query_dp, query_dp_num);
 	if (ret)
-		ubctl_err(ucdev, "ubctl query data failed, ret = %d.\n", ret);
+		ubctl_err(ucdev, "failed to query data by ubctl, ret = %d.\n", ret);
 
 	return ret;
 }
@@ -414,7 +415,8 @@ static int ubctl_query_mar_table_data(struct ubctl_dev *ucdev,
 			(struct fwctl_pkt_in_table *)(query_cmd_param->in->data);
 
 	if (query_cmd_param->in->data_size != sizeof(*mar_table)) {
-		ubctl_err(ucdev, "user data of mar table is invalid.\n");
+		ubctl_err(ucdev, "mar table data size = %ubytes, it must be %zubytes.\n",
+			  query_cmd_param->in->data_size, sizeof(*mar_table));
 		return -EINVAL;
 	}
 
@@ -461,7 +463,8 @@ static int ubctl_config_scc_debug(struct ubctl_dev *ucdev,
 		return -EINVAL;
 
 	if (query_cmd_param->in->data_size != sizeof(struct fwctl_pkt_in_enable)) {
-		ubctl_err(ucdev, "user data of scc debug is invalid.\n");
+		ubctl_err(ucdev, "scc debug data size = %ubytes, it must be %zubytes.\n",
+			  query_cmd_param->in->data_size, sizeof(struct fwctl_pkt_in_enable));
 		return -EINVAL;
 	}
 	u8 *scc_debug_en = (u8 *)(query_cmd_param->in->data);
@@ -549,9 +552,9 @@ static int ubctl_config_loopback(struct ubctl_dev *ucdev,
 		return -EINVAL;
 
 	if (query_cmd_param->out->retval == -EBUSY)
-		ubctl_err(ucdev, "Current port has been enabled for another loopback mode.\n");
+		ubctl_err(ucdev, "current port has been enabled for another loopback mode.\n");
 	if (query_cmd_param->out->retval == -EMLINK)
-		ubctl_err(ucdev, "Another port has already been enabled.\n");
+		ubctl_err(ucdev, "another port has already been enabled.\n");
 
 	return ret;
 }
@@ -584,7 +587,7 @@ static int ubctl_config_prbs(struct ubctl_dev *ucdev,
 		return -EINVAL;
 
 	if (query_cmd_param->out->retval == -EMLINK)
-		ubctl_err(ucdev, "Another port has already been enabled.\n");
+		ubctl_err(ucdev, "another port has already been enabled.\n");
 
 	return ret;
 }

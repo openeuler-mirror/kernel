@@ -297,14 +297,15 @@ static int ubctl_probe(struct auxiliary_device *adev,
 
 	ret = fwctl_register(&ucdev->fwctl);
 	if (ret) {
-		ubctl_err(ucdev, "fwctl register failed, retval = %d.\n", ret);
+		ubctl_err(ucdev, "failed to execute fwctl register, retval = %d.\n", ret);
 		kfifo_free(&ucdev->ioctl_fifo);
 		return ret;
 	}
 
 	ret = ubctl_port_link_status_init(adev, ucdev);
 	if (ret)
-		ubctl_warn(ucdev, "fwctl register crq handler event failed, retval = %d.\n", ret);
+		ubctl_warn(ucdev, "failed to execute fwctl register crq handler event, retval = %d.\n",
+			   ret);
 
 	ucdev->adev = adev;
 	auxiliary_set_drvdata(adev, no_free_ptr(ucdev));

@@ -426,6 +426,7 @@ static loff_t iomap_dio_bio_iter(const struct iomap_iter *iter,
 			 * bio_iov_iter_get_pages() returns an error, above.
 			 */
 			ret = -EINVAL;
+			bio_release_pages(bio, false);
 			bio_put(bio);
 			goto zero_tail;
 		}

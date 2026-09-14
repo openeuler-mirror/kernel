@@ -2,4 +2,4 @@
 
 ubmempfd-y := ubmempfd_main.o
 
-obj-m += ubmempfd.o
+obj-$(CONFIG_UB_UBMEMPFD) += ubmempfd.o
