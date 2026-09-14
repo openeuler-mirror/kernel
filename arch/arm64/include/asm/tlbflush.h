@@ -16,6 +16,7 @@
 #include <linux/mmu_notifier.h>
 #include <asm/cputype.h>
 #include <asm/mmu.h>
+#include <asm/tlbid.h>
 
 /*
  * Raw TLBI operations.
@@ -165,6 +166,61 @@ static inline unsigned long get_trans_granule(void)
 		(__pages >> (5 * (scale) + 1)) - 1;			\
 	})
 
+enum tlb_flush_scope {
+	TLB_FLUSH_SCOPE_LOCAL,
+	TLB_FLUSH_SCOPE_DOMAIN,
+	TLB_FLUSH_SCOPE_BROADCAST,
+};
+
+/* This macro creates a properly formatted VA operand for the TLBID */
+#define __TLBI_DOMAIN(asid, domain)				\
+	({							\
+		unsigned long __ta = 0;				\
+		__ta |= FIELD_PREP(GENMASK_ULL(15, 0), domain);	\
+		__ta |= FIELD_PREP(GENMASK_ULL(63, 48), asid);	\
+		__ta;						\
+	})
+
+/*
+ * Determines whether the user tlbi invalidation can be performed only on the
+ * local CPU or whether it needs to be multicast or broadcast.
+ */
+static inline enum tlb_flush_scope flush_tlb_begin(struct mm_struct *mm,
+						   unsigned long *flags)
+{
+	if (!system_supports_tlbid()) {
+		dsb(ishst);
+		return TLB_FLUSH_SCOPE_BROADCAST;
+	}
+
+	local_irq_save(*flags);
+
+	if (cpumask_any_but(mm_cpumask(mm), smp_processor_id()) >= nr_cpu_ids) {
+		dsb(nshst);
+		return TLB_FLUSH_SCOPE_LOCAL;
+	} else {
+		dsb(ishst);
+		return TLB_FLUSH_SCOPE_DOMAIN;
+	}
+}
+
+static inline void flush_tlb_end(enum tlb_flush_scope scope, unsigned long flags)
+{
+	switch (scope) {
+	case TLB_FLUSH_SCOPE_LOCAL:
+		dsb(nsh);
+		local_irq_restore(flags);
+		break;
+	case TLB_FLUSH_SCOPE_DOMAIN:
+		dsb(ish);
+		local_irq_restore(flags);
+		break;
+	case TLB_FLUSH_SCOPE_BROADCAST:
+		dsb(ish);
+		break;
+	}
+}
+
 /*
  *	TLB Invalidation
  *	================
@@ -252,13 +308,26 @@ static inline void flush_tlb_all(void)
 
 static inline void flush_tlb_mm(struct mm_struct *mm)
 {
-	unsigned long asid;
+	enum tlb_flush_scope scope;
+	unsigned long asid, flags;
+	int domain;
 
-	dsb(ishst);
-	asid = __TLBI_VADDR(0, ASID(mm));
-	__tlbi(aside1is, asid);
-	__tlbi_user(aside1is, asid);
-	dsb(ish);
+	scope = flush_tlb_begin(mm, &flags);
+	if (scope == TLB_FLUSH_SCOPE_LOCAL) {
+		asid = __TLBI_VADDR(0, ASID(mm));
+		__tlbi(aside1, asid);
+		__tlbi_user(aside1, asid);
+	} else if (scope == TLB_FLUSH_SCOPE_BROADCAST) {
+		asid = __TLBI_VADDR(0, ASID(mm));
+		__tlbi(aside1is, asid);
+		__tlbi_user(aside1is, asid);
+	} else {
+		domain = pick_best_domain(mm_cpumask(mm));
+		asid = __TLBI_DOMAIN(ASID(mm), domain);
+		__tlbi(aside1is, asid);
+		__tlbi_user(aside1is, asid);
+	}
+	flush_tlb_end(scope, flags);
 	mmu_notifier_arch_invalidate_secondary_tlbs(mm, 0, -1UL);
 }
 
