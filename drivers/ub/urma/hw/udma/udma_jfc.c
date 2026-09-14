@@ -227,8 +227,10 @@ static int udma_alloc_k_cq(struct udma_dev *dev, struct udma_jfc *jfc)
 
 static void udma_free_cq(struct udma_dev *dev, struct udma_jfc *jfc)
 {
-	if (jfc->mode != UDMA_NORMAL_JFC_TYPE)
+	if (jfc->mode != UDMA_NORMAL_JFC_TYPE ||
+	   (jfc->mode == UDMA_NORMAL_JFC_TYPE && jfc->buf_cstm))
 		return;
+
 	if (jfc->buf.kva) {
 		udma_k_free_buf(dev, &jfc->buf);
 		udma_free_sw_db(dev, &jfc->db);
@@ -451,7 +453,7 @@ static int udma_alloc_normal_jfc_id(struct udma_dev *udma_dev, uint32_t min,
 	if (id < 0) {
 		dev_err(udma_dev->dev, "failed to alloc id, ret = %d, next = %u, max = %u.\n",
 			id, ida_table->next, max);
-		return id;
+		return id == -ENOSPC ? -ENOSR : id;
 	}
 
 	ida_table->next = (uint32_t)id + 1;
@@ -558,7 +560,7 @@ static int udma_jfc_alloc_resource(struct udma_dev *dev, struct ubcore_jfc_cfg *
 
 	udma_init_jfc_param(cfg, jfc);
 
-	if (jfc->mode == UDMA_NORMAL_JFC_TYPE)
+	if (!jfc->buf_cstm && jfc->mode == UDMA_NORMAL_JFC_TYPE)
 		ret = udata_exist ? udma_alloc_u_cq(dev, ucmd, jfc) : udma_alloc_k_cq(dev, jfc);
 	if (ret && !jfc_seted_before)
 		goto err_get_jfc_buf;
@@ -830,14 +832,16 @@ static int udma_set_jfc_cqe_base_addr(
 	}
 
 	if (ujfc->mode != UDMA_STARS_JFC_TYPE && ujfc->mode != UDMA_CCU_JFC_TYPE &&
-	    ujfc->mode != UDMA_UCP_JFC_TYPE) {
-		dev_err(dev->dev, "The JFC(JFC number:%u) is not of CCU or STARS or UCP type.\n",
-			ujfc->jfcn);
+	    ujfc->mode != UDMA_NORMAL_JFC_TYPE && ujfc->mode != UDMA_UCP_JFC_TYPE) {
+		dev_err(dev->dev, "The JFC mode is invalid, jfc_id = %u, jfc_mode = %u.\n",
+			ujfc->jfcn, ujfc->mode);
 		return -EINVAL;
 	}
 
-	if (udata == NULL || ujfc->mode == UDMA_UCP_JFC_TYPE) {
+	if (udata == NULL || ujfc->mode == UDMA_UCP_JFC_TYPE ||
+	   (udata != NULL && ujfc->mode == UDMA_NORMAL_JFC_TYPE)) {
 		ujfc->buf.addr = (dma_addr_t)base_addr;
+		ujfc->buf_cstm = true;
 		return 0;
 	}
 
@@ -853,6 +857,7 @@ static int udma_set_jfc_cqe_base_addr(
 
 	ujfc->buf.addr = (dma_addr_t)PFN_PHYS(pfn);
 	mmap_read_unlock(current->mm);
+	ujfc->buf_cstm = true;
 
 	return 0;
 
@@ -1212,6 +1217,7 @@ int udma_deactive_jfc(struct ubcore_jfc *ubcore_jfc, struct ubcore_udata *udata)
 	wait_for_completion(&ujfc->event_comp);
 
 	udma_free_cq(dev, ujfc);
+	ujfc->buf_cstm = false;
 
 	return 0;
 }
