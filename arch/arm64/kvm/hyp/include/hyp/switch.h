@@ -337,7 +337,7 @@ static inline bool kvm_hyp_handle_fpsimd(struct kvm_vcpu *vcpu, u64 *exit_code)
 	u8 esr_ec;
 	u64 reg;
 
-	if (!system_supports_fpsimd())
+	if (!system_supports_fpsimd() || is_pvm_mode())
 		return false;
 
 	sve_guest = vcpu_has_sve(vcpu);
