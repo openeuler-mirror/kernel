@@ -22,6 +22,7 @@
 #include <asm/traps.h>
 
 #include <kvm/arm_hypercalls.h>
+#include <pvm/pvm.h>
 
 #define CREATE_TRACE_POINTS
 #include "trace_handle_exit.h"
@@ -261,6 +262,9 @@ static int kvm_handle_eret(struct kvm_vcpu *vcpu)
 
 static int handle_svc(struct kvm_vcpu *vcpu)
 {
+	if (is_pvm_mode())
+		return kvm_pvm_inject_sync(vcpu, kvm_vcpu_get_esr(vcpu));
+
 	/*
 	 * So far, SVC traps only for NV via HFGITR_EL2. A SVC from a
 	 * 32bit guest would be caught by vpcu_mode_is_bad_32bit(), so
@@ -268,6 +272,22 @@ static int handle_svc(struct kvm_vcpu *vcpu)
 	 */
 	kvm_inject_nested_sync(vcpu, kvm_vcpu_get_esr(vcpu));
 	return 1;
+}
+
+/*
+ * A PVM guest runs at physical EL0, so its alignment faults trap to the host
+ * instead of reaching the guest kernel's vector.  Reflect them, along with the
+ * faulting PC that the hypervisor recorded for a PC alignment fault.
+ */
+static int handle_align_fault(struct kvm_vcpu *vcpu)
+{
+	if (!is_pvm_mode())
+		return kvm_handle_unknown_ec(vcpu);
+
+	if (kvm_vcpu_trap_get_class(vcpu) == ESR_ELx_EC_PC_ALIGN)
+		__vcpu_sys_reg(vcpu, FAR_EL1) = kvm_vcpu_get_hfar(vcpu);
+
+	return kvm_pvm_inject_sync(vcpu, kvm_vcpu_get_esr(vcpu));
 }
 
 static exit_handle_fn arm_exit_handlers[] = {
@@ -289,7 +309,9 @@ static exit_handle_fn arm_exit_handlers[] = {
 	[ESR_ELx_EC_SVE]	= handle_sve,
 	[ESR_ELx_EC_ERET]	= kvm_handle_eret,
 	[ESR_ELx_EC_IABT_LOW]	= kvm_handle_guest_abort,
+	[ESR_ELx_EC_PC_ALIGN]	= handle_align_fault,
 	[ESR_ELx_EC_DABT_LOW]	= kvm_handle_guest_abort,
+	[ESR_ELx_EC_SP_ALIGN]	= handle_align_fault,
 	[ESR_ELx_EC_SOFTSTP_LOW]= kvm_handle_guest_debug,
 	[ESR_ELx_EC_WATCHPT_LOW]= kvm_handle_guest_debug,
 	[ESR_ELx_EC_BREAKPT_LOW]= kvm_handle_guest_debug,

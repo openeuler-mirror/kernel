@@ -196,6 +196,26 @@ static __always_inline bool pvm_vcpu_in_user_ctxt(const struct kvm_vcpu *vcpu)
 }
 
 /*
+ * The guest's CPACR_EL1.FPEN grants FP/SIMD access per virtual EL, but PVM runs
+ * both virtual EL0 and EL1 at physical EL0.  The physical EL0 enable therefore
+ * follows the current virtual mode and must be refreshed whenever it changes.
+ */
+static __always_inline bool pvm_vcpu_fp_enabled(const struct kvm_vcpu *vcpu)
+{
+	u64 fpen = ctxt_sys_reg(&vcpu->arch.ctxt, CPACR_EL1) & CPACR_ELx_FPEN;
+
+	return fpen == CPACR_ELx_FPEN ||
+	       (fpen == CPACR_EL1_FPEN_EL1EN && !pvm_vcpu_in_user_ctxt(vcpu));
+}
+
+/* Project the guest's FP/SIMD permission for its current virtual mode. */
+static __always_inline void kvm_pvm_sync_fpen(struct kvm_vcpu *vcpu)
+{
+	sysreg_clear_set(cpacr_el1, CPACR_EL1_FPEN_EL0EN,
+			 pvm_vcpu_fp_enabled(vcpu) ? CPACR_EL1_FPEN_EL0EN : 0);
+}
+
+/*
  * PVM DAIF virtualization: the L2 guest's DAIF mask bits live only in
  * ctxt (regs.pstate); the physical eret target always runs EL0 with DAIF
  * forced open, so EL1-targeted physical/virtual interrupts are never

@@ -630,6 +630,20 @@ static inline bool kvm_hyp_handle_memory_fault(struct kvm_vcpu *vcpu,
 #define kvm_hyp_handle_iabt_low		kvm_hyp_handle_memory_fault
 #define kvm_hyp_handle_watchpt_low	kvm_hyp_handle_memory_fault
 
+/*
+ * A PC alignment fault of a PVM guest reports the faulting PC in FAR, which
+ * the host may overwrite with faults of its own before handle_exit() reflects
+ * the exception, so record it here.
+ */
+static inline bool kvm_hyp_handle_pc_align(struct kvm_vcpu *vcpu,
+					   u64 *exit_code)
+{
+	if (is_pvm_mode())
+		vcpu->arch.fault.far_el2 = read_sysreg_el2(SYS_FAR);
+
+	return false;
+}
+
 static inline bool kvm_hyp_handle_dabt_low(struct kvm_vcpu *vcpu, u64 *exit_code)
 {
 	if (kvm_hyp_handle_memory_fault(vcpu, exit_code))

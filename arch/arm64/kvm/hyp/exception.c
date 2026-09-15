@@ -48,7 +48,7 @@ static void __vcpu_write_spsr(struct kvm_vcpu *vcpu, unsigned long target_mode,
 			vcpu_write_sys_reg(vcpu, val, SPSR_EL1);
 		else
 			vcpu_write_sys_reg(vcpu, val, SPSR_EL2);
-	} else if (has_vhe()) {
+	} else if (has_vhe() && !is_pvm_mode()) {
 		write_sysreg_el1(val, SYS_SPSR);
 	} else {
 		__vcpu_sys_reg(vcpu, SPSR_EL1) = val;
