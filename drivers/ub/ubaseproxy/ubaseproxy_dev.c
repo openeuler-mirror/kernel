@@ -109,7 +109,7 @@ int ubaseproxy_dev_init(struct ubaseproxy_dev *udev)
 		if (ubaseproxy_dev_func_map[i].init_func) {
 			ret = ubaseproxy_dev_func_map[i].init_func(udev);
 			if (ret) {
-				ubaseproxy_err(udev, "failed to %s, ret = %d\n",
+				ubaseproxy_err(udev, "failed to %s, ret = %d.\n",
 					       ubaseproxy_dev_func_map[i].err_msg, ret);
 				goto err_init;
 			}

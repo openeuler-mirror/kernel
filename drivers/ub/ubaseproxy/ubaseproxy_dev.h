@@ -127,7 +127,6 @@ struct ubaseproxy_query_ue_res_cmd {
 	__le32 jfs_max_cnt;
 	__le32 jfs_depth;
 	__le32 jfr_max_cnt;
-
 	__le32 jfr_depth;
 	__le32 jfc_max_cnt;
 	__le32 jfc_depth;

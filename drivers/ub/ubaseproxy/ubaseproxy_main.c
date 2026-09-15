@@ -91,7 +91,7 @@ static int __init ubaseproxy_init(void)
 
 	ret = auxiliary_driver_register(&ubaseproxy_drv);
 	if (ret)
-		pr_err("failed to register auxiliary_driver\n");
+		pr_err("failed to register auxiliary_driver.\n");
 
 	return ret;
 }
