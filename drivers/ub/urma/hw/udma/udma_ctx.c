@@ -243,6 +243,7 @@ static void udma_destroy_u_reserved_list(struct udma_context *ctx)
 		}
 		if (debug_switch)
 			dev_info_ratelimited(ctx->dev->dev, "free_reserved, seq=%u.\n", priv->seq);
+		udma_id_free(&ctx->dev->sq_reserved_info.ida_table, priv->seq);
 		for (i = 0; i < priv->page_num; i++)
 			udma_free_pages(priv->pages[i], get_order(priv->page_size));
 		kfree(priv->pages);
@@ -259,10 +260,10 @@ int udma_free_ucontext(struct ubcore_ucontext *ucontext)
 
 	mutex_destroy(&ctx->pgdir_mutex);
 	udma_unset_dtu_va_info(udma_dev, ctx);
-	udma_put_usva_tid(udma_dev, ctx);
 	udma_destroy_u_hugepage_list(ctx);
 	mutex_destroy(&ctx->page_lock);
 	udma_destroy_u_reserved_list(ctx);
+	udma_put_usva_tid(udma_dev, ctx);
 	kfree(ctx);
 
 	return 0;
