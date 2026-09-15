@@ -284,6 +284,36 @@ struct kvm_xen_exit {
 #define KVM_EXIT_ARM_RME_DEV      50
 #endif
 
+#define KVM_EXIT_CSV3_SECURE_CALL 200
+
+/*
+ * Payload of the KVM_EXIT_CSV3_SECURE_CALL exit.
+ *
+ * Every member of the exit union of "struct kvm_run" starts at the same
+ * offset.  The payload is therefore carried in the reserved padding area
+ * of that union instead of being declared as a new union member, so that
+ * the layout of "struct kvm_run" stays as it is.  Use
+ * KVM_CSV3_SECURE_CALL_INFO() to access the payload; the padding area is
+ * 8-byte aligned, which matches the alignment of the payload.
+ */
+#define KVM_CSV3_SECURE_CALL_PG_ENC	1
+#define KVM_CSV3_SECURE_CALL_PG_DEC	2
+
+struct kvm_csv3_secure_call {
+	__u32 type;
+	union {
+		struct {
+			__u64 gpa;
+			__u64 size;
+			__u32 smr_size;
+			__u32 enc;
+		} enc_dec_info;
+	};
+};
+
+#define KVM_CSV3_SECURE_CALL_INFO(run) \
+	((struct kvm_csv3_secure_call *)(void *)(run)->padding)
+
 /* For KVM_EXIT_INTERNAL_ERROR */
 /* Emulate instruction failed. */
 #define KVM_INTERNAL_ERROR_EMULATION	1
@@ -942,6 +972,13 @@ struct kvm_ppc_resize_hpt {
 	__u32 shift;
 	__u32 pad;
 };
+
+/* support update NPT by CSV3 NPT_EX */
+#define KVM_CAP_HYGON_COCO_EXT_CSV3_NPT_EX        (1 << 5)
+#define KVM_CAP_EXIT_CSV3_SECURE_CALL 502
+#define KVM_CSV3_SECURE_CALL_PG_ENC_DEC      0
+#define KVM_CSV3_SECURE_CALL_PG_ENC_DEC_MASK (1UL << KVM_CSV3_SECURE_CALL_PG_ENC_DEC)
+#define KVM_EXIT_CSV3_SECURE_CALL_VALID_MASK KVM_CSV3_SECURE_CALL_PG_ENC_DEC_MASK
 
 #define KVMIO 0xAE
 

@@ -903,12 +903,13 @@ struct kvm_csv_info {
 	struct list_head hugetlb_list; /* List of 1G hugetlb (if used) */
 	unsigned long nodemask; /* Nodemask where CSV3 guest's memory resides */
 
-	/* The following 5 fields record the extension status for current VM */
+	/* The following 6 fields record the extension status for current VM */
 	bool fw_ext_valid;	/* if @fw_ext field is valid */
 	u32 fw_ext;		/* extensions supported by current platform */
 	bool kvm_ext_valid;	/* if @kvm_ext field is valid */
 	u32 kvm_ext;		/* extensions supported by KVM */
 	u32 inuse_ext;		/* extensions inused by current VM */
+	u64 secure_call_exit_enabled;	/* valid secure call exit mask */
 
 #ifdef CONFIG_SYSFS
 	unsigned long npt_size;
@@ -4102,6 +4103,13 @@ static int csv_get_hygon_coco_extension(struct kvm *kvm)
 			if (csv->fw_ext & CSV_EXT_CSV3_LFINISH_EX)
 				csv->kvm_ext |= KVM_CAP_HYGON_COCO_EXT_CSV3_LFINISH_EX;
 			csv->kvm_ext |= KVM_CAP_HYGON_COCO_EXT_CSV3_SP_MGR;
+
+			/* Expose CSV3_NPT_EX cap only when the private memory
+			 * of CSV3 VM is from 1G hugetlb.
+			 */
+			if ((csv->fw_ext & CSV_EXT_CSV3_NPT_EX) &&
+			    get_csv_smr_source() == USE_HUGETLB)
+				csv->kvm_ext |= KVM_CAP_HYGON_COCO_EXT_CSV3_NPT_EX;
 		}
 		csv->kvm_ext_valid = true;
 	}
@@ -4132,12 +4140,48 @@ static int csv_enable_hygon_coco_extension(struct kvm *kvm, u32 arg)
 	 */
 	if (csv->fw_ext_valid && csv->kvm_ext_valid && csv3_guest(kvm)) {
 		csv->inuse_ext = csv->kvm_ext & arg;
+
+		/* Use CSV3_NPT_EX cap only if the secure_call_exit is enabled
+		 * by userspace.
+		 */
+		if (csv->secure_call_exit_enabled == 0)
+			csv->inuse_ext &= ~KVM_CAP_HYGON_COCO_EXT_CSV3_NPT_EX;
+
 		pr_debug("%s: inuse_ext=%#x\n", __func__, csv->inuse_ext);
 		return csv->inuse_ext;
 	}
 
 	/* Userspace should not utilise the extensions */
 	return -EINVAL;
+}
+
+/**
+ * Enable CSV3 secure call exit to userspace.
+ * This func should be called between csv_get_hygon_coco_extension() and
+ * csv_enable_hygon_coco_extension().
+ */
+static int csv_enable_exit_csv3_secure_call(struct kvm *kvm, u64 arg)
+{
+	struct kvm_csv_info *csv;
+
+	if (!kvm)
+		return -EINVAL;
+
+	csv = &to_kvm_svm_csv(kvm)->csv_info;
+
+	/* Enabling secure_call_exit only when:
+	 *   - this is a CSV3 VM, and
+	 *   - firmware and kvm support CSV3 NPT_EX, and
+	 *   - the secure call mask is valid
+	 */
+	if (!csv3_guest(kvm) ||
+	    !csv->kvm_ext_valid ||
+	    !(csv->kvm_ext & KVM_CAP_HYGON_COCO_EXT_CSV3_NPT_EX) ||
+	    (arg & ~KVM_EXIT_CSV3_SECURE_CALL_VALID_MASK))
+		return -EINVAL;
+
+	csv->secure_call_exit_enabled = arg;
+	return 0;
 }
 
 void __init csv_hardware_setup(unsigned int max_csv_asid)
@@ -4195,6 +4239,7 @@ void __init csv_init(struct kvm_x86_ops *ops)
 	ops->control_post_system_reset = csv_control_post_system_reset;
 	ops->get_hygon_coco_extension = csv_get_hygon_coco_extension;
 	ops->enable_hygon_coco_extension = csv_enable_hygon_coco_extension;
+	ops->enable_exit_csv3_secure_call = csv_enable_exit_csv3_secure_call;
 
 	if (boot_cpu_has(X86_FEATURE_SEV_ES) && boot_cpu_has(X86_FEATURE_CSV3)) {
 		ops->vm_destroy = csv_vm_destroy;
