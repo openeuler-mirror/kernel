@@ -878,6 +878,9 @@ static inline u64 kvm_pvm_insn_to_esr(u32 insn, u64 esr)
 						    ESR_ELx_SYS64_ISS_DIR_WRITE);
 	}
 
+	if (aarch64_insn_is_eret(insn))
+		return ESR_ELx_IL | ESR_ELx_EC_ERET << ESR_ELx_EC_SHIFT;
+
 	return esr;
 }
 

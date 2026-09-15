@@ -216,6 +216,36 @@ static __always_inline void kvm_pvm_sync_fpen(struct kvm_vcpu *vcpu)
 }
 
 /*
+ * The physical ERET into a PVM guest always returns to EL0t, so the hardware
+ * never checks the virtual target mode of a guest kernel ERET: classify it
+ * before it is projected.  EL1t is architecturally legal, but PVM does not
+ * support it, see access_spsel().  EL2, EL3, the reserved encodings and
+ * AArch32, which PVM does not support either, make the return illegal, as
+ * does SPSR.IL.
+ */
+enum pvm_eret_target {
+	PVM_ERET_LEGAL,
+	PVM_ERET_ILLEGAL,
+	PVM_ERET_EL1T,
+};
+
+static __always_inline enum pvm_eret_target pvm_eret_target(u64 spsr)
+{
+	if (spsr & PSR_IL_BIT)
+		return PVM_ERET_ILLEGAL;
+
+	switch (spsr & (PSR_MODE_MASK | PSR_MODE32_BIT)) {
+	case PSR_MODE_EL0t:
+	case PSR_MODE_EL1h:
+		return PVM_ERET_LEGAL;
+	case PSR_MODE_EL1t:
+		return PVM_ERET_EL1T;
+	default:
+		return PVM_ERET_ILLEGAL;
+	}
+}
+
+/*
  * PVM DAIF virtualization: the L2 guest's DAIF mask bits live only in
  * ctxt (regs.pstate); the physical eret target always runs EL0 with DAIF
  * forced open, so EL1-targeted physical/virtual interrupts are never

@@ -238,6 +238,12 @@ static int kvm_handle_ptrauth(struct kvm_vcpu *vcpu)
 
 static int kvm_handle_eret(struct kvm_vcpu *vcpu)
 {
+	/* A PVM guest kernel ERET, see kvm_pvm_insn_to_esr(). */
+	if (is_pvm_mode()) {
+		kvm_pvm_emulate_eret(vcpu);
+		return 1;
+	}
+
 	if (kvm_vcpu_get_esr(vcpu) & ESR_ELx_ERET_ISS_ERET)
 		return kvm_handle_ptrauth(vcpu);
 

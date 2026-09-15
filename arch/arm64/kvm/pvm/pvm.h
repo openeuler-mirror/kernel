@@ -10,6 +10,7 @@
 
 struct kvm_vcpu;
 
+void kvm_pvm_emulate_eret(struct kvm_vcpu *vcpu);
 int kvm_pvm_inject_sync(struct kvm_vcpu *vcpu, u64 esr_el1);
 
 #endif /* __ARM64_KVM_PVM_H */
