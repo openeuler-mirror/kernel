@@ -33,11 +33,78 @@ DEFINE_PER_CPU(struct kvm_host_data, kvm_host_data);
 DEFINE_PER_CPU(struct kvm_cpu_context, kvm_hyp_ctxt);
 DEFINE_PER_CPU(unsigned long, kvm_hyp_vector);
 
+/* PVM mode: the SCTLR_EL1 value the guest runs with on this CPU */
+DEFINE_PER_CPU(u64, kvm_pvm_run_sctlr);
+
+/*
+ * SCTLR_EL1 bits taken from the guest: those that only control EL0, where the
+ * guest runs.  All other bits also control the host, which handles guest exits
+ * at EL1 under the guest-run value until __pvm_guest_exit() restores its own, so
+ * they keep the host value.  EE, for instance, sets the endianness of the
+ * host's data accesses and translation table walks.
+ */
+#define PVM_SCTLR_GUEST		(SCTLR_EL1_SA0 | SCTLR_EL1_CP15BEN | \
+				 SCTLR_EL1_ITD | SCTLR_EL1_SED | \
+				 SCTLR_EL1_EnRCTX | SCTLR_EL1_E0E | \
+				 SCTLR_EL1_nTLSMD | SCTLR_EL1_LSMAOE | \
+				 SCTLR_EL1_BT0 | SCTLR_EL1_TCF0_MASK | \
+				 SCTLR_EL1_ATA0 | SCTLR_EL1_TWEDEn | \
+				 SCTLR_EL1_TWEDEL_MASK | SCTLR_EL1_MSCEn | \
+				 SCTLR_EL1_EnASR | SCTLR_EL1_EnAS0 | \
+				 SCTLR_EL1_EnALS)
+
+/*
+ * SCTLR_EL1 bits forced on for the guest run, whatever the guest configured:
+ *  M:           PVM has no stage 2, so stage 1 is the only translation
+ *               between the guest and host memory.
+ *  C, I:        the host maps guest memory cacheable; keep the guest's
+ *               accesses cacheable as well, so the attributes never mismatch.
+ *  UCI:         the guest kernel runs at EL0 but maintains the caches by VA
+ *               as an EL1 kernel would; allow it instead of trapping each one.
+ *  DZE:         likewise for DC ZVA.
+ */
+#define PVM_SCTLR_FLAGS1	(SCTLR_EL1_M | SCTLR_EL1_C | \
+				 SCTLR_EL1_I | SCTLR_EL1_UCI | \
+				 SCTLR_EL1_DZE)
+
+/*
+ * SCTLR_EL1 bits forced off for the guest run:
+ *  UCT:         trap EL0 reads of CTR_EL0, so the guest sees the VM's value.
+ *  nTWI, nTWE:  trap WFI and WFE, so an idle vCPU blocks in KVM instead of
+ *               stalling the physical CPU.
+ *  SPAN:        set PSTATE.PAN on exception entry to EL1, where the host
+ *               handles guest exits, so the host does not reach
+ *               EL0-accessible guest memory by accident.
+ *  ITFSB, EPAN: these only affect EL1 behaviour, that is, the host while it
+ *               handles guest exits.
+ *  EnIA, EnIB, EnDA, EnDB:
+ *               PVM does not switch the pointer authentication keys, so the
+ *               guest would sign and authenticate with the host's keys.
+ */
+#define PVM_SCTLR_FLAGS2	(SCTLR_EL1_UCT | SCTLR_EL1_nTWI | \
+				 SCTLR_EL1_nTWE | SCTLR_EL1_SPAN | \
+				 SCTLR_EL1_ITFSB | SCTLR_EL1_EPAN | \
+				 SCTLR_EL1_EnIA | SCTLR_EL1_EnIB | \
+				 SCTLR_EL1_EnDA | SCTLR_EL1_EnDB)
+
 static void __activate_traps(struct kvm_vcpu *vcpu)
 {
 	u64 val;
 
 	if (is_pvm_mode()) {
+		struct kvm_cpu_context *ctxt = &vcpu->arch.ctxt;
+		u64 sctlr;
+
+		sctlr = ctxt_sys_reg(ctxt, SCTLR_EL1) & PVM_SCTLR_GUEST;
+		sctlr |= read_sysreg_el2(SYS_SCTLR) & ~PVM_SCTLR_GUEST;
+		sctlr |= PVM_SCTLR_FLAGS1;
+		sctlr &= ~PVM_SCTLR_FLAGS2;
+		/*
+		 * __pvm_guest_enter() installs it right before the ERET: compiled
+		 * code, with its pointer authentication, never runs under it.
+		 */
+		__this_cpu_write(kvm_pvm_run_sctlr, sctlr);
+
 		write_sysreg(__this_cpu_read(kvm_hyp_vector), vbar_el1);
 		return;
 	}
