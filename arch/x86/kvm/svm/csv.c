@@ -3713,6 +3713,9 @@ static int csv_release_shared_memory(struct kvm *kvm,
 	u32 num_pages = params->num_pages;
 	int i;
 
+	if (!(csv->inuse_ext & KVM_CAP_HYGON_COCO_EXT_CSV3_SP_MGR))
+		return -ENOTTY;
+
 	/* Initialize output fields */
 	params->start_hva = 0;
 	params->unpinned = 0;
@@ -3823,6 +3826,9 @@ static int csv_get_shared_memory(struct kvm *kvm,
 	u32 num_pages = params->num_pages;
 	int i, npinned, try_pin, try_alloc_sp;
 	int ret = 0;
+
+	if (!(csv->inuse_ext & KVM_CAP_HYGON_COCO_EXT_CSV3_SP_MGR))
+		return -ENOTTY;
 
 	/* Initialize output field */
 	params->pinned = 0;
@@ -4034,14 +4040,59 @@ static void csv_guest_memory_reclaimed(struct kvm *kvm)
 	}
 }
 
+static int csv3_clear_mmu_spte(struct kvm *kvm, gpa_t gpa, u32 num_pages)
+{
+	unsigned long i;
+	struct csv3_data_update_npt *update_npt;
+	struct kvm_svm *kvm_svm = to_kvm_svm(kvm);
+	struct kvm_csv_info *csv = &to_kvm_svm_csv(kvm)->csv_info;
+	int psp_ret = 0;
+	int r = 0;
+
+	if (!hygon_kvm_hooks.sev_hooks_installed)
+		return -EFAULT;
+
+	/* The ioctl is available only if userspace and KVM have negotiated
+	 * this extension for the CSV3 guest.
+	 */
+	if (!(csv->inuse_ext & KVM_CAP_HYGON_COCO_EXT_CSV3_CLEAR_MMU_SPTE))
+		return -ENOTTY;
+
+	update_npt = kzalloc(sizeof(*update_npt), GFP_KERNEL);
+	if (!update_npt)
+		return -ENOMEM;
+
+	for (i = 0; i < num_pages; i++) {
+		csv3_init_update_npt(update_npt, gpa + (i * PAGE_SIZE), 0x06,
+				     kvm_svm->sev_info.handle);
+		update_npt->handle = kvm_svm->sev_info.handle;
+		update_npt->page_attr = 0;
+		update_npt->page_attr_mask = 1;
+		update_npt->level = PG_LEVEL_4K;
+
+		r = hygon_kvm_hooks.sev_issue_cmd(kvm, CSV3_CMD_UPDATE_NPT,
+					  update_npt, &psp_ret);
+
+		if (r)
+			break;
+
+		if (psp_ret != SEV_RET_SUCCESS) {
+			r = -EFAULT;
+			break;
+		}
+	}
+
+	kfree(update_npt);
+
+	return r;
+}
+
 static int csv3_handle_memory(struct kvm *kvm, struct kvm_sev_cmd *argp)
 {
-	struct kvm_csv_info *csv = &to_kvm_svm_csv(kvm)->csv_info;
 	struct kvm_csv3_handle_memory params;
 	int r = -EINVAL;
 
-	if (!csv3_guest(kvm) ||
-	    !(csv->inuse_ext & KVM_CAP_HYGON_COCO_EXT_CSV3_SP_MGR))
+	if (!csv3_guest(kvm))
 		return -ENOTTY;
 
 	if (copy_from_user(&params, (void __user *)(uintptr_t)argp->data,
@@ -4054,6 +4105,9 @@ static int csv3_handle_memory(struct kvm *kvm, struct kvm_sev_cmd *argp)
 		break;
 	case KVM_CSV3_GET_SHARED_MEMORY:
 		r = csv_get_shared_memory(kvm, &params);
+		break;
+	case KVM_CSV3_CLEAR_MMU_SPTE:
+		r = csv3_clear_mmu_spte(kvm, params.gpa, params.num_pages);
 		break;
 	default:
 		goto out;
@@ -4539,6 +4593,7 @@ static int csv_get_hygon_coco_extension(struct kvm *kvm)
 			if (csv->fw_ext & CSV_EXT_CSV3_LFINISH_EX)
 				csv->kvm_ext |= KVM_CAP_HYGON_COCO_EXT_CSV3_LFINISH_EX;
 			csv->kvm_ext |= KVM_CAP_HYGON_COCO_EXT_CSV3_SP_MGR;
+			csv->kvm_ext |= KVM_CAP_HYGON_COCO_EXT_CSV3_CLEAR_MMU_SPTE;
 
 			/* Expose CSV3_NPT_EX cap only when the private memory
 			 * of CSV3 VM is from 1G hugetlb.

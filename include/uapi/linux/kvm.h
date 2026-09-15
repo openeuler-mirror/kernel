@@ -973,8 +973,6 @@ struct kvm_ppc_resize_hpt {
 	__u32 pad;
 };
 
-/* support update NPT by CSV3 NPT_EX */
-#define KVM_CAP_HYGON_COCO_EXT_CSV3_NPT_EX        (1 << 5)
 #define KVM_CAP_EXIT_CSV3_SECURE_CALL 502
 #define KVM_CSV3_SECURE_CALL_PG_ENC_DEC      0
 #define KVM_CSV3_SECURE_CALL_PG_ENC_DEC_MASK (1UL << KVM_CSV3_SECURE_CALL_PG_ENC_DEC)
@@ -1313,6 +1311,10 @@ struct kvm_ppc_resize_hpt {
 #define KVM_CAP_HYGON_COCO_EXT_CSV3_LFINISH_EX    (1 << 3)
 /* support userspace to request management of CSV3 shared pages */
 #define KVM_CAP_HYGON_COCO_EXT_CSV3_SP_MGR        (1 << 4)
+/* support update NPT by CSV3 NPT_EX */
+#define KVM_CAP_HYGON_COCO_EXT_CSV3_NPT_EX        (1 << 5)
+/* support userspace to request clearing CSV3 guest's nested page tables */
+#define KVM_CAP_HYGON_COCO_EXT_CSV3_CLEAR_MMU_SPTE (1 << 6)
 
 #define KVM_CAP_ARM_HW_DIRTY_STATE_TRACK 502
 
@@ -2268,16 +2270,20 @@ struct kvm_csv3_receive_encrypt_context {
  * This union is used to pass input and output parameters between userspace
  * and kernel for KVM_CSV3 memory management commands.
  *
- * It supports two ioctl commands:
+ * It supports three ioctl commands:
  *   - KVM_CSV3_RELEASE_SHARED_MEMORY: Notify userspace VMM to madvise pages
  *     as unused, releasing shared memory mappings.
  *   - KVM_CSV3_GET_SHARED_MEMORY: Query how many pages are currently pinned
  *     at a given GPA range.
+ *   - KVM_CSV3_CLEAR_MMU_SPTE: Ask the CSV firmware to clear the nested page
+ *     tables of the pages in the given GPA range.
  *
+
  * The union contains three nested structs:
- *   - Input (for both commands)
+ *   - Input (for all commands)
  *   - Output (for KVM_CSV3_RELEASE_SHARED_MEMORY)
  *   - Output (for KVM_CSV3_GET_SHARED_MEMORY)
+ *
  */
 struct kvm_csv3_handle_memory {
 	union {
@@ -2294,6 +2300,7 @@ struct kvm_csv3_handle_memory {
 			__u32 num_pages;
 #define KVM_CSV3_RELEASE_SHARED_MEMORY	0x0001
 #define KVM_CSV3_GET_SHARED_MEMORY	0x0002
+#define KVM_CSV3_CLEAR_MMU_SPTE		0x0003
 			__u32 opcode;
 		};
 		/* Output of ioctl command KVM_CSV3_RELEASE_SHARED_MEMORY. */
