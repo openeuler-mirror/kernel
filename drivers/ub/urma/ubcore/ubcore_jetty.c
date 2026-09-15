@@ -805,6 +805,12 @@ int ubcore_deactive_jfc(struct ubcore_jfc *jfc, struct ubcore_udata *udata)
 		return -EINVAL;
 	}
 
+	if (atomic_read(&jfc->use_cnt)) {
+		ubcore_log_err("The jfc is still being used, use_cnt is %d",
+			atomic_read(&jfc->use_cnt));
+		return -EBUSY;
+	}
+
 	jfc_id = jfc->id;
 	dev = jfc->ub_dev;
 	ubcore_hash_table_remove(&dev->ht[UBCORE_HT_JFC], &jfc->hnode);
