@@ -57,7 +57,7 @@ int ubaseproxy_ctrlq_handle_query_eid_resp(struct auxiliary_device *adev,
 
 	resp = (struct ubaseproxy_ctrlq_query_seid_info *)((u8 *)data + hdr_len);
 	if (resp->seid_num > UBASEPROXY_CTRLQ_SEID_NUM) {
-		ubaseproxy_err(udev, "invalid seid num[%u]].\n", resp->seid_num);
+		ubaseproxy_err(udev, "invalid seid num[%u].\n", resp->seid_num);
 		return 0;
 	}
 
@@ -67,7 +67,7 @@ int ubaseproxy_ctrlq_handle_query_eid_resp(struct auxiliary_device *adev,
 	bitmap_zero(ue_seid_table->seid_bmap, UBASEPROXY_MAX_SEID_TABLE_SIZE);
 	for (i = 0; i < resp->seid_num; i++) {
 		seid_idx = le32_to_cpu(resp->seids[i].seid_idx);
-		if (seid_idx > UBASEPROXY_MAX_SEID_TABLE_SIZE) {
+		if (seid_idx >= UBASEPROXY_MAX_SEID_TABLE_SIZE) {
 			ubaseproxy_err(udev,
 				       "invalid seid idx when query eid[%u].\n",
 				       seid_idx);
@@ -80,7 +80,7 @@ int ubaseproxy_ctrlq_handle_query_eid_resp(struct auxiliary_device *adev,
 	return 0;
 }
 
-int ubaseproxy_ctrlq_handle_updata_eid_resp(struct auxiliary_device *adev,
+int ubaseproxy_ctrlq_handle_update_eid_resp(struct auxiliary_device *adev,
 					    void *data, u16 len)
 {
 	struct ubaseproxy_dev *udev = get_ubaseproxy_dev(adev);
@@ -101,7 +101,8 @@ int ubaseproxy_ctrlq_handle_updata_eid_resp(struct auxiliary_device *adev,
 	resp = (struct ubaseproxy_ctrlq_update_seid_info *)((u8 *)data + hdr_len);
 
 	seid_cmd = le32_to_cpu(resp->seid_operation) & UBASEPROXY_CTRLQ_SEID_CMD;
-	if (seid_cmd != UBASEPROXY_CTRLQ_ADD_SEID && seid_cmd != UBASEPROXY_CTRLQ_DEL_SEID) {
+	if (seid_cmd != UBASEPROXY_CTRLQ_ADD_SEID &&
+	    seid_cmd != UBASEPROXY_CTRLQ_DEL_SEID) {
 		ubaseproxy_err(udev, "invalid seid cmd[%u].\n", seid_cmd);
 		return 0;
 	}
@@ -110,7 +111,7 @@ int ubaseproxy_ctrlq_handle_updata_eid_resp(struct auxiliary_device *adev,
 
 	spin_lock_bh(&ue_seid_table->seid_lock);
 	seid_idx = le32_to_cpu(resp->seid_info.seid_idx);
-	if (seid_idx > UBASEPROXY_MAX_SEID_TABLE_SIZE)
+	if (seid_idx >= UBASEPROXY_MAX_SEID_TABLE_SIZE)
 		ubaseproxy_err(udev,
 			       "invalid seid idx when update eid[%u].\n",
 			       seid_idx);

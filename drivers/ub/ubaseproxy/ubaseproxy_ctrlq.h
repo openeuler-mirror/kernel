@@ -50,7 +50,7 @@ int ubaseproxy_ctrlq_handle_query_sl_resp(struct auxiliary_device *adev,
 					  void *data, u16 len);
 int ubaseproxy_ctrlq_handle_query_eid_resp(struct auxiliary_device *adev,
 					   void *data, u16 len);
-int ubaseproxy_ctrlq_handle_updata_eid_resp(struct auxiliary_device *adev,
+int ubaseproxy_ctrlq_handle_update_eid_resp(struct auxiliary_device *adev,
 					    void *data, u16 len);
 
 #endif /* __UBASEPROXY_CTRLQ_H__ */

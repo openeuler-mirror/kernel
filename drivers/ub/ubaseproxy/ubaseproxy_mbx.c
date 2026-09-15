@@ -32,7 +32,7 @@ ubaseproxy_parse_ctx_buf(struct ubaseproxy_dev *udev, struct ubase_mbx_attr *att
 		{UBASE_MB_QUERY_JFR_CONTEXT, UBASEPROXY_MB_QUERY, &ue_ctx_buf->jfr},
 		{UBASE_MB_DESTROY_JFR_CONTEXT, UBASEPROXY_MB_DESTROY, &ue_ctx_buf->jfr},
 		{UBASE_MB_CREATE_JFC_CONTEXT, UBASEPROXY_MB_CREATE, &ue_ctx_buf->jfc},
-		{UBASE_MB_MODIFY_JFC_CONTEXT, UBASEPROXY_MB_MODIFY,  &ue_ctx_buf->jfc},
+		{UBASE_MB_MODIFY_JFC_CONTEXT, UBASEPROXY_MB_MODIFY, &ue_ctx_buf->jfc},
 		{UBASE_MB_QUERY_JFC_CONTEXT, UBASEPROXY_MB_QUERY, &ue_ctx_buf->jfc},
 		{UBASE_MB_DESTROY_JFC_CONTEXT, UBASEPROXY_MB_DESTROY, &ue_ctx_buf->jfc},
 		{UBASE_MB_CREATE_JETTY_GROUP_CONTEXT, UBASEPROXY_MB_CREATE, &ue_ctx_buf->jtg},

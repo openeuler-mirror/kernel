@@ -145,7 +145,7 @@ static void ubaseproxy_clear_ue_res(struct ubaseproxy_dev *udev, u16 bus_ue_id)
 static void ubaseproxy_virt_handler(struct auxiliary_device *adev, u16 bus_ue_id,
 				    bool is_en)
 {
-	struct ubaseproxy_dev *udev = (struct ubaseproxy_dev *)dev_get_drvdata(&adev->dev);
+	struct ubaseproxy_dev *udev = get_ubaseproxy_dev(adev);
 
 	if (is_en) {
 		if (!try_module_get(THIS_MODULE))
@@ -158,6 +158,7 @@ static void ubaseproxy_virt_handler(struct auxiliary_device *adev, u16 bus_ue_id
 	} else {
 		if (atomic_dec_if_positive(&udev->virt_refcnt) >= 0)
 			module_put(THIS_MODULE);
+
 		clear_bit(bus_ue_id, udev->bus_ue_id_bitmap);
 	}
 }
@@ -183,7 +184,7 @@ static struct ubase_ctrlq_ue_msg_nb ubaseproxy_ue_resp_events[] = {
 	{
 		.service_type = UBASE_CTRLQ_SER_TYPE_DEV_REGISTER,
 		.opcode = UBASEPROXY_CTRLQ_UPDATE_SEID_INFO,
-		.msg_handler = ubaseproxy_ctrlq_handle_updata_eid_resp,
+		.msg_handler = ubaseproxy_ctrlq_handle_update_eid_resp,
 	},
 };
 
