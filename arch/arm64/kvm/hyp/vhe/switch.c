@@ -87,13 +87,24 @@ DEFINE_PER_CPU(u64, kvm_pvm_run_sctlr);
 				 SCTLR_EL1_EnIA | SCTLR_EL1_EnIB | \
 				 SCTLR_EL1_EnDA | SCTLR_EL1_EnDB)
 
+/*
+ * The guest-run TCR_EL1 describes the page tables installed for the run,
+ * which the host side builds, not the guest's own: it is the host's value,
+ * with these bits forced off:
+ *  E0PD1:       the guest kernel runs at EL0 in the TTBR1 range, where E0PD1
+ *               would fault every one of its accesses.
+ * TCR2_EL1, PIR_EL1 and PIRE0_EL1 also describe the installed page tables, so
+ * they are not switched at all and keep the host's value.
+ */
+#define PVM_TCR_FLAGS		TCR_E0PD1
+
 static void __activate_traps(struct kvm_vcpu *vcpu)
 {
 	u64 val;
 
 	if (is_pvm_mode()) {
 		struct kvm_cpu_context *ctxt = &vcpu->arch.ctxt;
-		u64 sctlr;
+		u64 sctlr, tcr;
 
 		sctlr = ctxt_sys_reg(ctxt, SCTLR_EL1) & PVM_SCTLR_GUEST;
 		sctlr |= read_sysreg_el2(SYS_SCTLR) & ~PVM_SCTLR_GUEST;
@@ -104,6 +115,9 @@ static void __activate_traps(struct kvm_vcpu *vcpu)
 		 * code, with its pointer authentication, never runs under it.
 		 */
 		__this_cpu_write(kvm_pvm_run_sctlr, sctlr);
+
+		tcr = read_sysreg_el2(SYS_TCR) & ~PVM_TCR_FLAGS;
+		write_sysreg_el2(tcr, SYS_TCR);
 
 		write_sysreg(__this_cpu_read(kvm_hyp_vector), vbar_el1);
 		return;
@@ -278,6 +292,22 @@ static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, u64 *exit_code)
 	return __fixup_guest_exit(vcpu, exit_code, hyp_exit_handlers);
 }
 
+static void __sysreg_save_host_state_pvm(struct kvm_cpu_context *ctxt)
+{
+	if (!is_pvm_mode())
+		return;
+
+	ctxt_sys_reg(ctxt, TCR_EL1) = read_sysreg_el2(SYS_TCR);
+}
+
+static void __sysreg_restore_host_state_pvm(struct kvm_cpu_context *ctxt)
+{
+	if (!is_pvm_mode())
+		return;
+
+	write_sysreg_el2(ctxt_sys_reg(ctxt, TCR_EL1), SYS_TCR);
+}
+
 /* Run a guest using the VHE or PVM context switch. */
 static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
 {
@@ -290,6 +320,8 @@ static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
 	guest_ctxt = &vcpu->arch.ctxt;
 
 	sysreg_save_host_state_vhe(host_ctxt);
+
+	__sysreg_save_host_state_pvm(host_ctxt);
 
 	/*
 	 * ARM erratum 1165522 requires us to configure both stage 1 and
@@ -326,6 +358,8 @@ static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
 	sysreg_save_guest_state_vhe(guest_ctxt);
 
 	__deactivate_traps(vcpu);
+
+	__sysreg_restore_host_state_pvm(host_ctxt);
 
 	sysreg_restore_host_state_vhe(host_ctxt);
 
@@ -381,6 +415,7 @@ static void __hyp_call_panic(u64 spsr, u64 elr, u64 par)
 	vcpu = host_ctxt->__hyp_running_vcpu;
 
 	__deactivate_traps(vcpu);
+	__sysreg_restore_host_state_pvm(host_ctxt);
 	sysreg_restore_host_state_vhe(host_ctxt);
 
 	panic("HYP panic:\nPS:%08llx PC:%016llx ESR:%08llx\nFAR:%016llx HPFAR:%016llx PAR:%016llx\nVCPU:%p\n",
