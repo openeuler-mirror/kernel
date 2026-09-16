@@ -4569,6 +4569,7 @@ int ubcore_set_jetty_opt(struct ubcore_jetty *jetty, uint64_t opt, void *buf, ui
 	if (ret != 0) {
 		ubcore_log_err("[DRV_ERROR]Failed to set_jetty_opt, id:%u, ret %d, opt %llu.\n",
 			jetty->jetty_id.id, ret, opt);
+		ubcore_jetty_opt_rollback_old(jetty, opt);
 		return ret;
 	}
 	ret = ubcore_set_options_common(g_ubcore_jetty_opt_table,
