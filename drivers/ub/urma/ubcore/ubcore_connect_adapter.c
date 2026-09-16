@@ -2165,16 +2165,18 @@ int ubcore_bind_jetty_reuse_compat(struct ubcore_jetty *jetty,
 	struct ubcore_tpid_reuse *exist_tpid_reuse = NULL;
 	struct ubcore_tpid_reuse_key key = { 0 };
 	union ubcore_tp_handle tp_handle = {0};
+	struct ubcore_tjetty_cfg cfg = { 0 };
 	int ret;
 
-	ret = ubcore_fill_get_tp_cfg(dev, &get_tp_cfg, &tjetty->cfg);
+	memcpy(&cfg, &tjetty->cfg, sizeof(tjetty->cfg));
+	ret = ubcore_fill_get_tp_cfg(dev, &get_tp_cfg, &cfg);
 	if (ret != 0)
 		return ret;
 
 	union ubcore_net_addr_union bind_local_cna = {0};
 	union ubcore_net_addr_union bind_peer_cna = {0};
 
-	ret = ubcore_fill_bind_tpid_reuse_key(&key, &get_tp_cfg, &tjetty->cfg, jetty,
+	ret = ubcore_fill_bind_tpid_reuse_key(&key, &get_tp_cfg, &cfg, jetty,
 				      &bind_local_cna, &bind_peer_cna);
 	if (ret != 0) {
 		ubcore_log_err("Failed to fill bind tpid reuse key, ret=%d\n", ret);
@@ -2262,8 +2264,9 @@ int ubcore_bind_jetty_reuse_compat(struct ubcore_jetty *jetty,
 	if (tjetty->cfg.tp_type == UBCORE_RTP) {
 		tjetty->cfg.stp_cfg.stag = jetty->jetty_id.id;
 		tjetty->cfg.stp_cfg.dtag = tjetty->cfg.id.id;
+		cfg.stp_cfg = tjetty->cfg.stp_cfg;
 		ret = ubcore_exchange_tp_info(dev, &get_tp_cfg,
-			&active_tp_cfg, &tjetty->cfg, udata);
+			&active_tp_cfg, &cfg, udata);
 		if (ret != 0) {
 			ubcore_log_err("Failed to exchange tp info, ret: %d.\n", ret);
 			goto err_out;

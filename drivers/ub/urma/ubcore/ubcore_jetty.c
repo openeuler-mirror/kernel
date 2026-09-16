@@ -1859,7 +1859,7 @@ struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
 		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JFR);
 		return UBCORE_CHECK_RETURN_ERR_PTR(tjfr, UBCORE_DRV_ERRNO);
 	}
-	tjfr->cfg = *cfg;
+	memcpy(&tjfr->cfg, cfg, sizeof(tjfr->cfg));
 	tjfr->ub_dev = dev;
 	tjfr->uctx = ubcore_get_uctx(udata);
 	atomic_set(&tjfr->use_cnt, 0);
@@ -1933,7 +1933,7 @@ ubcore_import_jfr_ex_old(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cf
 		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JFR);
 		return UBCORE_CHECK_RETURN_ERR_PTR(tjfr, UBCORE_DRV_ERRNO);
 	}
-	tjfr->cfg = *cfg;
+	memcpy(&tjfr->cfg, cfg, sizeof(tjfr->cfg));
 	tjfr->ub_dev = dev;
 	tjfr->uctx = ubcore_get_uctx(udata);
 	atomic_set(&tjfr->use_cnt, 0);
@@ -1989,7 +1989,7 @@ ubcore_get_tjfr(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 			dev->dev_name, cfg->eid_index, cfg->id.id);
 		return UBCORE_CHECK_RETURN_ERR_PTR(tjfr, UBCORE_DRV_ERRNO);
 	}
-	tjfr->cfg = *cfg;
+	memcpy(&tjfr->cfg, cfg, sizeof(tjfr->cfg));
 	tjfr->ub_dev = dev;
 	tjfr->uctx = ubcore_get_uctx(udata);
 	tjfr->tp = NULL;
@@ -2012,8 +2012,10 @@ ubcore_import_jfr_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 		.active_cfg = active_tp_cfg,
 	};
 	struct ubcore_vtpn *vtpn = NULL;
+	struct ubcore_tpid_reuse *tpid_reuse;
 	int ret;
 	uint8_t order_type;
+	tpid_reuse = (struct ubcore_tpid_reuse *)active_tp_cfg->tpid_reuse;
 
 	ubcore_log_info_rl("Enter import jfr ex.\n");
 
@@ -2041,8 +2043,8 @@ ubcore_import_jfr_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 	if (dev->transport_type == UBCORE_TRANSPORT_UB &&
 		(cfg->trans_mode == UBCORE_TP_RM ||
 		 cfg->trans_mode == UBCORE_TP_UM)) {
-		mutex_lock(&active_tp_cfg->tpid_reuse->lock);
-		reuse_state = active_tp_cfg->tpid_reuse->reuse_state;
+		mutex_lock(&tpid_reuse->lock);
+		reuse_state = tpid_reuse->reuse_state;
 		if (reuse_state == UBCORE_TPID_REUSE_RESET) {
 			ret = ubcore_modify_tpid(dev, UBCORE_TPID_STATE_RTS, &modify_tpid_cfg);
 			ubcore_log_info_rl("tpid %u active.\n",
@@ -2050,11 +2052,11 @@ ubcore_import_jfr_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 			if (ret != 0) {
 				ubcore_log_err("Failed to modify tpid:%u to RTS, ret:%d.\n",
 						(uint32_t)active_tp_cfg->tp_handle.bs.tpid, ret);
-				mutex_unlock(&active_tp_cfg->tpid_reuse->lock);
+				mutex_unlock(&tpid_reuse->lock);
 				return ERR_PTR(ret);
 			}
 		}
-		mutex_unlock(&active_tp_cfg->tpid_reuse->lock);
+		mutex_unlock(&tpid_reuse->lock);
 
 		tjfr = ubcore_get_tjfr(dev, cfg, active_tp_cfg, udata);
 		if (IS_ERR_OR_NULL(tjfr)) {
@@ -2126,7 +2128,7 @@ int ubcore_unimport_jfr(struct ubcore_tjetty *tjfr)
 
 		if (is_tp_aware == false) {
 			ret = ubcore_disconnect_tpid_with_tpid_reuse(
-				tjfr->vtpn->tpid_reuse);
+				(struct ubcore_tpid_reuse *)tjfr->vtpn->tpid_reuse);
 		} else {
 			ret = ubcore_disconnect_vtp(tjfr->vtpn);
 		}
@@ -3116,7 +3118,7 @@ struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
 		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
 		return UBCORE_CHECK_RETURN_ERR_PTR(tjetty, UBCORE_DRV_ERRNO);
 	}
-	tjetty->cfg = *cfg;
+	memcpy(&tjetty->cfg, cfg, sizeof(tjetty->cfg));
 	tjetty->ub_dev = dev;
 	tjetty->uctx = ubcore_get_uctx(udata);
 
@@ -3192,7 +3194,7 @@ ubcore_import_jetty_ex_old(struct ubcore_device *dev, struct ubcore_tjetty_cfg *
 		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
 		return UBCORE_CHECK_RETURN_ERR_PTR(tjetty, UBCORE_DRV_ERRNO);
 	}
-	tjetty->cfg = *cfg;
+	memcpy(&tjetty->cfg, cfg, sizeof(tjetty->cfg));
 	tjetty->ub_dev = dev;
 	tjetty->uctx = ubcore_get_uctx(udata);
 
@@ -3257,7 +3259,7 @@ struct ubcore_tjetty *ubcore_get_tjetty(struct ubcore_device *dev, struct ubcore
 			dev->dev_name, cfg->eid_index, cfg->id.id);
 		return UBCORE_CHECK_RETURN_ERR_PTR(tjetty, UBCORE_DRV_ERRNO);
 	}
-	tjetty->cfg = *cfg;
+	memcpy(&tjetty->cfg, cfg, sizeof(tjetty->cfg));
 	tjetty->ub_dev = dev;
 	tjetty->uctx = ubcore_get_uctx(udata);
 	tjetty->tp = NULL;
@@ -3280,8 +3282,10 @@ ubcore_import_jetty_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 		.active_cfg = active_tp_cfg,
 	};
 	struct ubcore_vtpn *vtpn = NULL;
+	struct ubcore_tpid_reuse *tpid_reuse;
 	int ret;
 	uint8_t order_type;
+	tpid_reuse = (struct ubcore_tpid_reuse *)active_tp_cfg->tpid_reuse;
 
 	if (!dev || !dev->ops || !dev->ops->import_jetty_ex ||
 	    !dev->ops->unimport_jetty || !cfg || !active_tp_cfg ||
@@ -3308,8 +3312,8 @@ ubcore_import_jetty_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 	if (cfg->trans_mode == UBCORE_TP_RC)
 		return ubcore_get_tjetty(dev, cfg, active_tp_cfg, udata);
 
-	mutex_lock(&active_tp_cfg->tpid_reuse->lock);
-	reuse_state = active_tp_cfg->tpid_reuse->reuse_state;
+	mutex_lock(&tpid_reuse->lock);
+	reuse_state = tpid_reuse->reuse_state;
 	if (reuse_state == UBCORE_TPID_REUSE_RESET) {
 		ret = ubcore_modify_tpid(dev, UBCORE_TPID_STATE_RTS, &modify_tpid_cfg);
 		ubcore_log_info_rl("tpid %u active.\n",
@@ -3317,11 +3321,11 @@ ubcore_import_jetty_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 		if (ret != 0) {
 			ubcore_log_err("Failed to modify tpid:%u to RTS, ret:%d.\n",
 					(uint32_t)active_tp_cfg->tp_handle.bs.tpid, ret);
-			mutex_unlock(&active_tp_cfg->tpid_reuse->lock);
+			mutex_unlock(&tpid_reuse->lock);
 			return ERR_PTR(ret);
 		}
 	}
-	mutex_unlock(&active_tp_cfg->tpid_reuse->lock);
+	mutex_unlock(&tpid_reuse->lock);
 
 	tjetty = ubcore_get_tjetty(dev, cfg, active_tp_cfg, udata);
 	if (IS_ERR_OR_NULL(tjetty)) {
@@ -3384,7 +3388,7 @@ int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty)
 
 		if (is_tp_aware == false) {
 			ret = ubcore_disconnect_tpid_with_tpid_reuse(
-				tjetty->vtpn->tpid_reuse);
+				(struct ubcore_tpid_reuse *)tjetty->vtpn->tpid_reuse);
 		} else {
 			ret = ubcore_disconnect_vtp(tjetty->vtpn);
 		}
@@ -3449,6 +3453,7 @@ static int ubcore_inner_bind_ub_jetty(struct ubcore_jetty *jetty,
 				      struct ubcore_udata *udata)
 {
 	struct ubcore_vtp_param vtp_param = { 0 };
+	struct ubcore_tjetty_cfg cfg = { 0 };
 	struct ubcore_device *dev;
 	struct ubcore_vtpn *vtpn;
 	int ret;
@@ -3473,7 +3478,8 @@ static int ubcore_inner_bind_ub_jetty(struct ubcore_jetty *jetty,
 	if (!is_create_rc_shared_tp(jetty->jetty_cfg.trans_mode,
 				    jetty->jetty_cfg.flag.bs.order_type,
 				    tjetty->cfg.flag.bs.share_tp)) {
-		ubcore_set_vtp_param(dev, jetty, &tjetty->cfg, &vtp_param);
+		memcpy(&cfg, &tjetty->cfg, sizeof(tjetty->cfg));
+		ubcore_set_vtp_param(dev, jetty, &cfg, &vtp_param);
 		mutex_lock(&tjetty->lock);
 
 		if (tjetty->vtpn) {
@@ -3592,6 +3598,7 @@ static int ubcore_inner_bind_ub_jetty_ctrlplane(
 	struct ubcore_active_tp_cfg *active_tp_cfg, struct ubcore_udata *udata)
 {
 	struct ubcore_vtp_param vtp_param = { 0 };
+	struct ubcore_tjetty_cfg cfg = { 0 };
 	struct ubcore_device *dev;
 	struct ubcore_vtpn *vtpn;
 	int ret;
@@ -3617,7 +3624,8 @@ static int ubcore_inner_bind_ub_jetty_ctrlplane(
 	if (!is_create_rc_shared_tp(jetty->jetty_cfg.trans_mode,
 				    jetty->jetty_cfg.flag.bs.order_type,
 				    tjetty->cfg.flag.bs.share_tp)) {
-		ubcore_set_vtp_param(dev, jetty, &tjetty->cfg, &vtp_param);
+		memcpy(&cfg, &tjetty->cfg, sizeof(tjetty->cfg));
+		ubcore_set_vtp_param(dev, jetty, &cfg, &vtp_param);
 		mutex_lock(&tjetty->lock);
 
 		if (tjetty->vtpn) {
@@ -3759,7 +3767,7 @@ static int ubcore_inner_unbind_ub_jetty(struct ubcore_jetty *jetty,
 
 			if (is_tp_aware == false) {
 				ret = ubcore_disconnect_tpid_with_tpid_reuse(
-					tjetty->vtpn->tpid_reuse);
+					(struct ubcore_tpid_reuse *)tjetty->vtpn->tpid_reuse);
 			} else {
 				ret = ubcore_disconnect_vtp(tjetty->vtpn);
 			}
@@ -3964,7 +3972,7 @@ struct ubcore_tjetty *ubcore_import_jetty_async(struct ubcore_device *dev,
 			cfg->id.id);
 		return UBCORE_CHECK_RETURN_ERR_PTR(tjetty, UBCORE_DRV_ERRNO);
 	}
-	tjetty->cfg = *cfg;
+	memcpy(&tjetty->cfg, cfg, sizeof(tjetty->cfg));
 	tjetty->ub_dev = dev;
 	tjetty->uctx = ubcore_get_uctx(udata);
 
@@ -4067,6 +4075,7 @@ static int ubcore_inner_bind_ub_jetty_async(struct ubcore_jetty *jetty,
 					    struct ubcore_udata *udata)
 {
 	struct ubcore_vtp_param vtp_param = { 0 };
+	struct ubcore_tjetty_cfg cfg = { 0 };
 	struct ubcore_device *dev;
 	struct ubcore_vtpn *vtpn;
 	struct ubcore_vtpn_cb_para para = { 0 };
@@ -4097,7 +4106,8 @@ static int ubcore_inner_bind_ub_jetty_async(struct ubcore_jetty *jetty,
 	if (!is_create_rc_shared_tp(jetty->jetty_cfg.trans_mode,
 				    jetty->jetty_cfg.flag.bs.order_type,
 				    tjetty->cfg.flag.bs.share_tp)) {
-		ubcore_set_vtp_param(dev, jetty, &tjetty->cfg, &vtp_param);
+		memcpy(&cfg, &tjetty->cfg, sizeof(tjetty->cfg));
+		ubcore_set_vtp_param(dev, jetty, &cfg, &vtp_param);
 		mutex_lock(&tjetty->lock);
 
 		if (tjetty->vtpn) {

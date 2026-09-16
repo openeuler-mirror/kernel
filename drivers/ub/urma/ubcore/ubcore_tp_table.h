@@ -14,6 +14,7 @@
 
 #include "ubcore_hash_table.h"
 #include "ubcore_netlink.h"
+#include "ubcore_priv.h"
 
 /* Only jetty with RC mode needs tp_table currently */
 #define UBCORE_TP_TABLE_SIZE 16

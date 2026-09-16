@@ -1580,23 +1580,25 @@ struct ubcore_vtpn *
 		.active_cfg = active_tp_cfg,
 	};
 	struct ubcore_vtpn *vtpn;
+	struct ubcore_tpid_reuse *tpid_reuse;
 	int ret;
+	tpid_reuse = (struct ubcore_tpid_reuse *)active_tp_cfg->tpid_reuse;
 
 	if (!active_tp_cfg->tpid_reuse)
 		return ubcore_connect_rc_vtp_ctrlplane(dev, param, active_tp_cfg, udata);
 
-	mutex_lock(&active_tp_cfg->tpid_reuse->lock);
-	reuse_state = active_tp_cfg->tpid_reuse->reuse_state;
+	mutex_lock(&tpid_reuse->lock);
+	reuse_state = tpid_reuse->reuse_state;
 	if (reuse_state == UBCORE_TPID_REUSE_RESET) {
 		ret = ubcore_modify_tpid(dev, UBCORE_TPID_STATE_RTS, &modify_tpid_cfg);
 		if (ret != 0) {
 			ubcore_log_err("Failed to modify tpid:%u to RTS, ret:%d.\n",
 					(uint32_t)active_tp_cfg->tp_handle.bs.tpid, ret);
-			mutex_unlock(&active_tp_cfg->tpid_reuse->lock);
+			mutex_unlock(&tpid_reuse->lock);
 			return ERR_PTR(ret);
 		}
 	}
-	mutex_unlock(&active_tp_cfg->tpid_reuse->lock);
+	mutex_unlock(&tpid_reuse->lock);
 
 	vtpn = ubcore_get_vtpn(dev, param, active_tp_cfg, udata);
 	if (IS_ERR_OR_NULL(vtpn)) {
@@ -1606,7 +1608,7 @@ struct ubcore_vtpn *
 	}
 
 	mutex_lock(&vtpn->state_lock);
-	vtpn->tpid_reuse = active_tp_cfg->tpid_reuse;
+	vtpn->tpid_reuse = tpid_reuse;
 	mutex_unlock(&vtpn->state_lock);
 
 	ubcore_log_info_rl("connect vtpn:%u, trans_mode:%u, l_eid " EID_FMT

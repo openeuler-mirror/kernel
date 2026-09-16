@@ -18,6 +18,7 @@
 #include "ubcore_netlink.h"
 #include "ubcore_tp.h"
 #include "ubcore_tpid_table.h"
+#include "ubcore_priv.h"
 
 #define UBCORE_VTP_TARGET 1
 #define UBCORE_VTP_INITIATOR 0

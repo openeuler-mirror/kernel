@@ -16,66 +16,6 @@
 
 #include "ubcore_types.h"
 
-union ubcore_route_flag {
-	struct {
-		uint32_t rtp: 1;
-		uint32_t ctp: 1;
-		uint32_t utp: 1;
-		uint32_t reserved: 29;
-	} bs;
-	uint32_t value;
-};
-
-struct ubcore_route {
-	union ubcore_eid src;
-	union ubcore_eid dst;
-	union ubcore_route_flag flag;
-	uint32_t hops;	// Only supports direct routes, currently 0.
-	uint32_t chip_id;
-};
-
-struct ubcore_route_list {
-	uint32_t route_num;
-	struct ubcore_route buf[UBCORE_MAX_ROUTE_NUM];
-};
-
-enum ubcore_topo_type_t {
-	UBCORE_TOPO_TYPE_FULLMESH_1D,
-	UBCORE_TOPO_TYPE_CLOS,
-};
-
-struct ubcore_node_id {
-	uint32_t super_node_id;
-	uint32_t node_id;
-};
-
-union ubcore_port_id {
-	struct {
-		uint8_t chip_id;
-		uint8_t die_id;
-		uint8_t port_idx;
-		uint8_t reserved;
-	};
-	uint64_t value;
-};
-
-struct ubcore_path {
-	union ubcore_port_id src_port;
-	union ubcore_port_id dst_port;
-	union ubcore_eid src_eid;
-	union ubcore_eid dst_eid;
-};
-
-struct ubcore_path_set {
-	enum ubcore_topo_type_t topo_type;
-	struct ubcore_node_id src_node;
-	struct ubcore_node_id dst_node;
-	uint32_t chip_count;
-	uint32_t die_count;
-	uint32_t path_count;
-	struct ubcore_path paths[MAX_PATH_NUM];
-};
-
 /**
  * Application specifies the device to allocate an context.
  * @param[in] dev: ubcore_device found by add ops in the client.
