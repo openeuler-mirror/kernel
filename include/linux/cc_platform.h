@@ -126,4 +126,10 @@ static inline void cc_platform_clear(enum cc_attr attr) { }
 
 #endif	/* CONFIG_ARCH_HAS_CC_PLATFORM */
 
+#ifdef CONFIG_HYGON_CSV
+bool cc_platform_has_csv3(void);
+#else	/* !CONFIG_HYGON_CSV */
+static inline bool cc_platform_has_csv3(void) { return false; }
+#endif	/* CONFIG_HYGON_CSV */
+
 #endif	/* _LINUX_CC_PLATFORM_H */

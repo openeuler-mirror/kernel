@@ -327,6 +327,14 @@ static void __init *swiotlb_memblock_alloc(unsigned long nslabs,
 {
 	size_t bytes = PAGE_ALIGN(nslabs << IO_TLB_SHIFT);
 	void *tlb;
+	phys_addr_t align = PAGE_SIZE;
+
+	if (cc_platform_has_csv3()) {
+		if (memblock_phys_mem_size() > SZ_2G)
+			align = SZ_128M;
+		else
+			align = SZ_32M;
+	}
 
 	/*
 	 * By default allocate the bounce buffer memory from low memory, but
@@ -334,9 +342,9 @@ static void __init *swiotlb_memblock_alloc(unsigned long nslabs,
 	 * memory encryption.
 	 */
 	if (flags & SWIOTLB_ANY)
-		tlb = memblock_alloc(bytes, PAGE_SIZE);
+		tlb = memblock_alloc(bytes, align);
 	else
-		tlb = memblock_alloc_low(bytes, PAGE_SIZE);
+		tlb = memblock_alloc_low(bytes, align);
 
 	if (!tlb) {
 		pr_warn("%s: Failed to allocate %zu bytes tlb structure\n",
