@@ -1,0 +1,620 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+/* Copyright (c) 2018 - 2021 Beijing WangXun Technology Co., Ltd. */
+
+#ifndef _NSE_HW_REG_H_
+#define _NSE_HW_REG_H_
+
+#define NSE_REG_VALUE_RESET_MAGIC_1		0xDEADBEEF
+#define NSE_REG_VALUE_RESET_MAGIC_2		0xDEADBEAF
+#define NSE_REG_VALUE_RESET_MAGIC_3		0xFFFFFFFF
+
+#define NSE_REG_AQM_BA_MAGIC_DEINIT				0xFEDCBA00
+#define NSE_REG_VMBX_ARQBAL_MAGIC_PF_INIT		0xABCDEF00
+
+#define NSE_REG_CMD		0x0
+#define NSE_REG_CMD_VLD_S		31
+#define NSE_REG_CMD_VLD_M		BIT(31)
+#define NSE_REG_CMD_HOSTCMD_S	0
+#define NSE_REG_CMD_HOSTCMD_M	NSE_M(0x7FFFFFFF, 0)
+
+#define NSE_REG_RSP		0x4
+#define NSE_REG_RSP_VLD_S		31
+#define NSE_REG_RSP_VLD_M		BIT(31)
+#define NSE_REG_RSP_MNGCMD_S	0
+#define NSE_REG_RSP_MNGCMD_M	NSE_M(0x7FFFFFFF, 0)
+
+#define NSE_REG_ST		0x8
+#define NSE_REG_ST_PEC1_INIT_DN_S	31
+#define NSE_REG_ST_PEC1_INIT_DN_M	BIT(31)
+#define NSE_REG_ST_PEC0_INIT_DN_S	30
+#define NSE_REG_ST_PEC0_INIT_DN_M	BIT(30)
+#define NSE_REG_ST_MNG_INIT_DN_S	29
+#define NSE_REG_ST_MNG_INIT_DN_M	BIT(29)
+#define NSE_REG_ST_PEC1_INIT_FAIL_S		27
+#define NSE_REG_ST_PEC1_INIT_FAIL_M		BIT(27)
+#define NSE_REG_ST_PEC0_INIT_FAIL_S		26
+#define NSE_REG_ST_PEC0_INIT_FAIL_M		BIT(26)
+#define NSE_REG_ST_MNG_INIT_FAIL_S		25
+#define NSE_REG_ST_MNG_INIT_FAIL_M		BIT(25)
+#define NSE_REG_ST_TP_S					1
+#define NSE_REG_ST_TP_M					BIT(1)
+#define NSE_REG_ST_FR_DN_S				0
+#define NSE_REG_ST_FR_DN_M				BIT(0)
+
+#define NSE_REG_CTL		0xc
+
+#define NSE_REG_CTL_CLR_BME_S		17
+#define NSE_REG_CTL_CLR_BME_M		BIT(17)
+
+#define NSE_REG_CTL_CLR_FRTRIG_S	16
+#define NSE_REG_CTL_CLR_FRTRIG_M	BIT(16)
+
+#define NSE_REG_CTL_SET_BME_S		9
+#define NSE_REG_CTL_SET_BME_M		BIT(9)
+
+#define NSE_REG_CTL_SET_FRTRIG_S	8
+#define NSE_REG_CTL_SET_FRTRIG_M	BIT(8)
+
+#define NSE_REG_CTL_BME_STATUS_S	1
+#define NSE_REG_CTL_BME_STATUS_M	BIT(1)
+#define NSE_REG_CTL_FRTRIG_STATUS_S	0
+#define NSE_REG_CTL_FRTRIG_STATUS_M	BIT(0)
+
+#define NSE_REG_SYSTIME_H	0x10
+#define NSE_REG_SYSTIME_L	0x14
+
+#define NSE_REG_CMD_BUF(_i)		(0x20 + ((_i) * 4))
+
+#define NSE_REG_RSP_BUF(_i)		(0x30 + ((_i) * 4))
+
+#define NSE_REG_OICR_CTL		0x80
+#define NSE_REG_OICR_CTL_CAUSE_ENA_S	16
+#define NSE_REG_OICR_CTL_CAUSE_ENA_M	BIT(16)
+#define NSE_REG_OICR_CTL_MSIX_INDEX_S	0
+#define NSE_REG_OICR_CTL_MSIX_INDEX_M	NSE_M(0x3FF, 0)
+
+#define NSE_REG_OICR			0x84
+#define NSE_REG_OICR_CORE_RESET_S		31
+#define NSE_REG_OICR_CORE_RESET_M		BIT(31)
+#define NSE_REG_OICR_PERST_S			30
+#define NSE_REG_OICR_PERST_M			BIT(30)
+#define NSE_REG_OICR_OVERHEAT_S			29
+#define NSE_REG_OICR_OVERHEAT_M			BIT(29)
+#define NSE_REG_OICR_SPI_S				28
+#define NSE_REG_OICR_SPI_M				BIT(28)
+#define NSE_REG_OICR_REG_TIMEOUT_S		27
+#define NSE_REG_OICR_REG_TIMEOUT_M		BIT(27)
+#define NSE_REG_OICR_HI_INT_S			26
+#define NSE_REG_OICR_HI_INT_M			BIT(26)
+#define NSE_REG_OICR_ME_INT_S			25
+#define NSE_REG_OICR_ME_INT_M			BIT(25)
+#define NSE_REG_OICR_LO_INT_S			24
+#define NSE_REG_OICR_LO_INT_M			BIT(24)
+#define NSE_REG_OICR_INT_FLUSH_DN_S		23
+#define NSE_REG_OICR_INT_FLUSH_DN_M		BIT(23)
+#define NSE_REG_OICR_PCORE_EVENT_S		22
+#define NSE_REG_OICR_PCORE_EVENT_M		BIT(22)
+#define NSE_REG_OICR_TCP_TIMER_S		21
+#define NSE_REG_OICR_TCP_TIMER_M		BIT(21)
+#define NSE_REG_OICR_SWINT_S			20
+#define NSE_REG_OICR_SWINT_M			BIT(20)
+#define NSE_REG_OICR_PAUSE_DN_S			19
+#define NSE_REG_OICR_PAUSE_DN_M			BIT(19)
+#define NSE_REG_OICR_RPB_B_RX_MISS_S	18
+#define NSE_REG_OICR_RPB_B_RX_MISS_M	BIT(18)
+#define NSE_REG_OICR_RPB_A_RX_MISS_S	17
+#define NSE_REG_OICR_RPB_A_RX_MISS_M	BIT(17)
+#define NSE_REG_OICR_ETH_PCS_B_S		16
+#define NSE_REG_OICR_ETH_PCS_B_M		BIT(16)
+#define NSE_REG_OICR_ETH_PCS_A_S		15
+#define NSE_REG_OICR_ETH_PCS_A_M		BIT(15)
+#define NSE_REG_OICR_MNG_WDT_S			14
+#define NSE_REG_OICR_MNG_WDT_M			BIT(14)
+#define NSE_REG_OICR_PFC_DEADLOCK_S		13
+#define NSE_REG_OICR_PFC_DEADLOCK_M		BIT(13)
+#define NSE_REG_OICR_ETH_PHY_EVENT_S	12
+#define NSE_REG_OICR_ETH_PHY_EVENT_M	BIT(12)
+#define NSE_REG_OICR_ETH_MAC_B_EVENT_S	11
+#define NSE_REG_OICR_ETH_MAC_B_EVENT_M	BIT(11)
+#define NSE_REG_OICR_ETH_MAC_A_EVENT_S	10
+#define NSE_REG_OICR_ETH_MAC_A_EVENT_M	BIT(10)
+#define NSE_REG_OICR_TSC_REKEY_S		9
+#define NSE_REG_OICR_TSC_REKEY_M		BIT(9)
+#define NSE_REG_OICR_FDIR_S				8
+#define NSE_REG_OICR_FDIR_M				BIT(8)
+#define NSE_REG_OICR_TC_MRK_S			7
+#define NSE_REG_OICR_TC_MRK_M			BIT(7)
+#define NSE_REG_OICR_STORM_DETECT_S		6
+#define NSE_REG_OICR_STORM_DETECT_M		BIT(6)
+#define NSE_REG_OICR_WAKE_S				5
+#define NSE_REG_OICR_WAKE_M				BIT(5)
+#define NSE_REG_OICR_HMC_ERR_S			4
+#define NSE_REG_OICR_HMC_ERR_M			BIT(4)
+#define NSE_REG_OICR_PEC_WDT_S			3
+#define NSE_REG_OICR_PEC_WDT_M			BIT(3)
+#define NSE_REG_OICR_QUEUE_TIMEOUT_S	2
+#define NSE_REG_OICR_QUEUE_TIMEOUT_M	BIT(2)
+#define NSE_REG_OICR_MAL_DETECT_S		1
+#define NSE_REG_OICR_MAL_DETECT_M		BIT(1)
+#define NSE_REG_OICR_QUEUE_S			0
+#define NSE_REG_OICR_QUEUE_M			BIT(0)
+
+#define NSE_REG_OICR_ENA		0x88
+#define NSE_REG_OICR_MASK		0x8c
+#define NSE_REG_OICR_SET		0x90
+
+#define NSE_REG_VFRTRIG(_i)		(0x100 + ((_i) * 4))
+#define NSE_REG_VFRTRIG_TRIG_S		0
+#define NSE_REG_VFRTRIG_TRIG_M		BIT(0)
+
+#define NSE_REG_PMBX_ATQBAH		0x700
+#define NSE_REG_PMBX_ATQBAH_S	0
+#define NSE_REG_PMBX_ATQBAH_M	NSE_M(0xFFFFFFFF, 0)
+
+#define NSE_REG_PMBX_ATQBAL		0x704
+#define NSE_REG_PMBX_ATQBAL_LSB_S		0
+#define NSE_REG_PMBX_ATQBAL_LSB_M		NSE_M(0x3F, 0)
+#define NSE_REG_PMBX_ATQBAL_S			6
+#define NSE_REG_PMBX_ATQBAL_M			NSE_M(0x3FFFFFF, 6)
+
+/*  see <<aqm_rdl.html>>, not <<pf_bar0_rdl.html>>, latter is out-of-date, would align to
+ * <<aqm_rdl.html)) later
+ */
+#define NSE_REG_PMBX_ATQLEN		0x708
+#define NSE_REG_PMBX_ATQLEN_STAT_BIT_S				17
+#define NSE_REG_PMBX_ATQLEN_STAT_BIT_M				BIT(17)
+#define NSE_REG_PMBX_ATQLEN_EXEC_S					16
+#define NSE_REG_PMBX_ATQLEN_EXEC_M					BIT(16)
+#define NSE_REG_PMBX_ATQLEN_OP_S					15
+#define NSE_REG_PMBX_ATQLEN_OP_M					BIT(15)
+#define NSE_REG_PMBX_ATQLEN_STAT_Q_PAUSE_N_S		14
+#define NSE_REG_PMBX_ATQLEN_STAT_Q_PAUSE_N_M		BIT(14)
+#define NSE_REG_PMBX_ATQLEN_STAT_Q_EN_S				13
+#define NSE_REG_PMBX_ATQLEN_STAT_Q_EN_M				BIT(13)
+#define NSE_REG_PMBX_ATQLEN_CRIT_S		12
+#define NSE_REG_PMBX_ATQLEN_CRIT_M		BIT(12)
+#define NSE_REG_PMBX_ATQLEN_OVFL_S		11
+#define NSE_REG_PMBX_ATQLEN_OVFL_M		BIT(11)
+#define NSE_REG_PMBX_ATQLEN_VFE_S		10
+#define NSE_REG_PMBX_ATQLEN_VFE_M		BIT(10)
+#define NSE_REG_PMBX_ATQLEN_LEN_S		0
+#define NSE_REG_PMBX_ATQLEN_LEN_M		NSE_M(0x3FF, 0)
+
+#define NSE_REG_PMBX_ATQH		0x70c
+#define NSE_REG_PMBX_ATQH_HEAD_S		0
+#define NSE_REG_PMBX_ATQH_HEAD_M		NSE_M(0x3FF, 0)
+
+#define NSE_REG_PMBX_ATQT		0x710
+#define NSE_REG_PMBX_ATQT_TAIL_S		0
+#define NSE_REG_PMBX_ATQT_TAIL_M		NSE_M(0x3FF, 0)
+
+#define NSE_REG_PMBX_ARQBAH		0x714
+#define NSE_REG_PMBX_ARQBAH_S	0
+#define NSE_REG_PMBX_ARQBAH_M	NSE_M(0xFFFFFFFF, 0)
+
+#define NSE_REG_PMBX_ARQBAL		0x718
+#define NSE_REG_PMBX_ARQBAL_LSB_S		0
+#define NSE_REG_PMBX_ARQBAL_LSB_M		NSE_M(0x3F, 0)
+#define NSE_REG_PMBX_ARQBAL_S			6
+#define NSE_REG_PMBX_ARQBAL_M			NSE_M(0x3FFFFFF, 6)
+
+/* see <<aqm_rdl.html>>, not <<pf_bar0_rdl.html>>, latter is out-of-date */
+#define NSE_REG_PMBX_ARQLEN		0x71c
+#define NSE_REG_PMBX_ARQLEN_STAT_BIT_S				17
+#define NSE_REG_PMBX_ARQLEN_STAT_BIT_M				BIT(17)
+#define NSE_REG_PMBX_ARQLEN_EXEC_S					16
+#define NSE_REG_PMBX_ARQLEN_EXEC_M					BIT(16)
+#define NSE_REG_PMBX_ARQLEN_OP_S					15
+#define NSE_REG_PMBX_ARQLEN_OP_M					BIT(15)
+#define NSE_REG_PMBX_ARQLEN_STAT_Q_PAUSE_N_S		14
+#define NSE_REG_PMBX_ARQLEN_STAT_Q_PAUSE_N_M		BIT(14)
+#define NSE_REG_PMBX_ARQLEN_STAT_Q_EN_S				13
+#define NSE_REG_PMBX_ARQLEN_STAT_Q_EN_M				BIT(13)
+#define NSE_REG_PMBX_ARQLEN_CRIT_S		12
+#define NSE_REG_PMBX_ARQLEN_CRIT_M		BIT(12)
+#define NSE_REG_PMBX_ARQLEN_OVFL_S		11
+#define NSE_REG_PMBX_ARQLEN_OVFL_M		BIT(11)
+#define NSE_REG_PMBX_ARQLEN_VFE_S		10
+#define NSE_REG_PMBX_ARQLEN_VFE_M		BIT(10)
+#define NSE_REG_PMBX_ARQLEN_LEN_S		0
+#define NSE_REG_PMBX_ARQLEN_LEN_M		NSE_M(0x3FF, 0)
+
+#define NSE_REG_PMBX_ARQH		0x720
+#define NSE_REG_PMBX_ARQH_HEAD_S		0
+#define NSE_REG_PMBX_ARQH_HEAD_M		NSE_M(0x3FF, 0)
+
+#define NSE_REG_PMBX_ARQT		0x724
+#define NSE_REG_PMBX_ARQT_TAIL_S		0
+#define NSE_REG_PMBX_ARQT_TAIL_M		NSE_M(0x3FF, 0)
+
+#define NSE_REG_PMBX_CTL		0x728	/* <<aqm_rdl.html>> / aqctx, for this PF */
+
+#define NSE_REG_PMBX_CTL_PF_IDX_S		23
+#define NSE_REG_PMBX_CTL_PF_IDX_M		NSE_M(0x3, 23)
+
+#define NSE_REG_PMBX_CTL_MSIX_IDX_S		13
+#define NSE_REG_PMBX_CTL_MSIX_IDX_M		NSE_M(0x3FF, 13)
+
+#define NSE_REG_PMBX_CTL_CAUSE_EN_S		12
+#define NSE_REG_PMBX_CTL_CAUSE_EN_M		BIT(12)
+
+#define NSE_REG_PMBX_CTL_CPUID_S		4
+#define NSE_REG_PMBX_CTL_CPUID_M		NSE_M(0xFF, 4)
+
+#define NSE_REG_PMBX_CTL_TPHRDESC_S		3
+#define NSE_REG_PMBX_CTL_TPHRDESC_M		BIT(3)
+
+#define NSE_REG_PMBX_CTL_TPHRDATA_S		2
+#define NSE_REG_PMBX_CTL_TPHRDATA_M		BIT(2)
+
+#define NSE_REG_PMBX_CTL_TPHWDESC_S		1
+#define NSE_REG_PMBX_CTL_TPHWDESC_M		BIT(1)
+
+#define NSE_REG_PMBX_CTL_COALS_EN_S		0
+#define NSE_REG_PMBX_CTL_COALS_EN_M		BIT(0)
+
+#define NSE_REG_MNG_SWSM		0x72c
+
+#define NSE_REG_PEC_ATQBAH		0x740
+
+#define NSE_REG_PEC_ATQBAL	0x744
+
+#define NSE_REG_PEC_ATQLEN	0x748
+
+#define NSE_REG_PEC_ATQH	0x74c
+
+#define NSE_REG_PEC_ATQT	0x750
+
+#define NSE_REG_PEC_ARQBAH		0x754
+
+#define NSE_REG_PEC_ARQBAL	0x758
+
+#define NSE_REG_PEC_ARQLEN	0x75c
+
+#define NSE_REG_PEC_ARQH	0x760
+
+#define NSE_REG_PEC_ARQT	0x764
+
+#define NSE_REG_PEC_CTL		0x768
+
+#define NSE_REG_VMBX_ATQBAH(_i)		(0x800 + ((_i) * 4))
+#define NSE_REG_VMBX_ATQBAH_S	0
+#define NSE_REG_VMBX_ATQBAH_M	NSE_M(0xFFFFFFFF, 0)
+
+#define NSE_REG_VMBX_ATQBAL(_i)		(0xc00 + ((_i) * 4))
+#define NSE_REG_VMBX_ATQBAL_LSB_S		0
+#define NSE_REG_VMBX_ATQBAL_LSB_M		NSE_M(0x3F, 0)
+#define NSE_REG_VMBX_ATQBAL_S			6
+#define NSE_REG_VMBX_ATQBAL_M			NSE_M(0x3FFFFFF, 6)
+
+#define NSE_REG_VMBX_ATQLEN(_i)		(0x1000 + ((_i) * 4))
+#define NSE_REG_VMBX_ATQLEN_STAT_BIT_S				17
+#define NSE_REG_VMBX_ATQLEN_STAT_BIT_M				BIT(17)
+#define NSE_REG_VMBX_ATQLEN_EXEC_S					16
+#define NSE_REG_VMBX_ATQLEN_EXEC_M					BIT(16)
+#define NSE_REG_VMBX_ATQLEN_OP_S					15
+#define NSE_REG_VMBX_ATQLEN_OP_M					BIT(15)
+#define NSE_REG_VMBX_ATQLEN_STAT_Q_PAUSE_N_S		14
+#define NSE_REG_VMBX_ATQLEN_STAT_Q_PAUSE_N_M		BIT(14)
+#define NSE_REG_VMBX_ATQLEN_STAT_Q_EN_S				13
+#define NSE_REG_VMBX_ATQLEN_STAT_Q_EN_M				BIT(13)
+#define NSE_REG_VMBX_ATQLEN_CRIT_S		12
+#define NSE_REG_VMBX_ATQLEN_CRIT_M		BIT(12)
+#define NSE_REG_VMBX_ATQLEN_OVFL_S		11
+#define NSE_REG_VMBX_ATQLEN_OVFL_M		BIT(11)
+#define NSE_REG_VMBX_ATQLEN_VFE_S		10
+#define NSE_REG_VMBX_ATQLEN_VFE_M		BIT(10)
+#define NSE_REG_VMBX_ATQLEN_LEN_S		0
+#define NSE_REG_VMBX_ATQLEN_LEN_M		NSE_M(0x3FF, 0)
+
+#define NSE_REG_VMBX_ATQH(_i)		(0x1400 + ((_i) * 4))
+#define NSE_REG_VMBX_ATQH_HEAD_S		0
+#define NSE_REG_VMBX_ATQH_HEAD_M		NSE_M(0x3FF, 0)
+
+#define NSE_REG_VMBX_ATQT(_i)		(0x1800 + ((_i) * 4))
+#define NSE_REG_VMBX_ATQT_TAIL_S		0
+#define NSE_REG_VMBX_ATQT_TAIL_M		NSE_M(0x3FF, 0)
+
+#define NSE_REG_VMBX_ARQBAH(_i)		(0x1c00 + ((_i) * 4))
+#define NSE_REG_VMBX_ARQBAH_S	0
+#define NSE_REG_VMBX_ARQBAH_M	NSE_M(0xFFFFFFFF, 0)
+
+#define NSE_REG_VMBX_ARQBAL(_i)		(0x2000 + ((_i) * 4))
+#define NSE_REG_VMBX_ARQBAL_LSB_S		0
+#define NSE_REG_VMBX_ARQBAL_LSB_M		NSE_M(0x3F, 0)
+#define NSE_REG_VMBX_ARQBAL_S			6
+#define NSE_REG_VMBX_ARQBAL_M			NSE_M(0x3FFFFFF, 6)
+
+/* see <<aqm_rdl.html>>, not <<pf_bar0_rdl.html>>, latter is out-of-date */
+#define NSE_REG_VMBX_ARQLEN(_i)		(0x2400 + ((_i) * 4))
+#define NSE_REG_VMBX_ARQLEN_STAT_BIT_S				17
+#define NSE_REG_VMBX_ARQLEN_STAT_BIT_M				BIT(17)
+#define NSE_REG_VMBX_ARQLEN_EXEC_S					16
+#define NSE_REG_VMBX_ARQLEN_EXEC_M					BIT(16)
+#define NSE_REG_VMBX_ARQLEN_OP_S					15
+#define NSE_REG_VMBX_ARQLEN_OP_M					BIT(15)
+#define NSE_REG_VMBX_ARQLEN_STAT_Q_PAUSE_N_S		14
+#define NSE_REG_VMBX_ARQLEN_STAT_Q_PAUSE_N_M		BIT(14)
+#define NSE_REG_VMBX_ARQLEN_STAT_Q_EN_S				13
+#define NSE_REG_VMBX_ARQLEN_STAT_Q_EN_M				BIT(13)
+#define NSE_REG_VMBX_ARQLEN_CRIT_S		12
+#define NSE_REG_VMBX_ARQLEN_CRIT_M		BIT(12)
+#define NSE_REG_VMBX_ARQLEN_OVFL_S		11
+#define NSE_REG_VMBX_ARQLEN_OVFL_M		BIT(11)
+#define NSE_REG_VMBX_ARQLEN_VFE_S		10
+#define NSE_REG_VMBX_ARQLEN_VFE_M		BIT(10)
+#define NSE_REG_VMBX_ARQLEN_LEN_S		0
+#define NSE_REG_VMBX_ARQLEN_LEN_M		NSE_M(0x3FF, 0)
+
+#define NSE_REG_VMBX_ARQH(_i)		(0x2800 + ((_i) * 4))
+#define NSE_REG_VMBX_ARQH_HEAD_S		0
+#define NSE_REG_VMBX_ARQH_HEAD_M		NSE_M(0x3FF, 0)
+
+#define NSE_REG_VMBX_ARQT(_i)		(0x2c00 + ((_i) * 4))
+#define NSE_REG_VMBX_ARQT_TAIL_S		0
+#define NSE_REG_VMBX_ARQT_TAIL_M		NSE_M(0x3FF, 0)
+
+/* <<aqm_rdl.html>> / aqctx, for each VSI mailboxq context */
+#define NSE_REG_VMBX_CTL(_i)		(0x3000 + ((_i) * 4))
+#define NSE_REG_VMBX_CTL_PF_IDX_S		23
+#define NSE_REG_VMBX_CTL_PF_IDX_M		NSE_M(0x3, 23)
+
+#define NSE_REG_VMBX_CTL_MSIX_IDX_S		13
+#define NSE_REG_VMBX_CTL_MSIX_IDX_M		NSE_M(0x3FF, 13)
+
+#define NSE_REG_VMBX_CTL_CAUSE_EN_S		12
+#define NSE_REG_VMBX_CTL_CAUSE_EN_M		BIT(12)
+
+#define NSE_REG_VMBX_CTL_CPUID_S		4
+#define NSE_REG_VMBX_CTL_CPUID_M		NSE_M(0xFF, 4)
+
+#define NSE_REG_VMBX_CTL_TPHRDESC_S		3
+#define NSE_REG_VMBX_CTL_TPHRDESC_M		BIT(3)
+
+#define NSE_REG_VMBX_CTL_TPHRDATA_S		2
+#define NSE_REG_VMBX_CTL_TPHRDATA_M		BIT(2)
+
+#define NSE_REG_VMBX_CTL_TPHWDESC_S		1
+#define NSE_REG_VMBX_CTL_TPHWDESC_M		BIT(1)
+
+#define NSE_REG_VMBX_CTL_COALS_EN_S		0
+#define NSE_REG_VMBX_CTL_COALS_EN_M		BIT(0)
+
+#define NSE_REG_UTI_ATQBAH(_i)		(0x3400 + ((_i) * 4))
+#define NSE_REG_UTI_ATQBAH_S	0
+#define NSE_REG_UTI_ATQBAH_M	NSE_M(0xFFFFFFFF, 0)
+
+#define NSE_REG_UTI_ATQBAL(_i)		(0x3800 + ((_i) * 4))
+#define NSE_REG_UTI_ATQBAL_LSB_S		0
+#define NSE_REG_UTI_ATQBAL_LSB_M		NSE_M(0x3F, 0)
+#define NSE_REG_UTI_ATQBAL_S			6
+#define NSE_REG_UTI_ATQBAL_M			NSE_M(0x3FFFFFF, 6)
+
+#define NSE_REG_UTI_ATQLEN(_i)		(0x3c00 + ((_i) * 4))
+#define NSE_REG_UTI_ATQLEN_STAT_BIT_S			17
+#define NSE_REG_UTI_ATQLEN_STAT_BIT_M			BIT(17)
+#define NSE_REG_UTI_ATQLEN_EXEC_S				16
+#define NSE_REG_UTI_ATQLEN_EXEC_M				BIT(16)
+#define NSE_REG_UTI_ATQLEN_OP_S					15
+#define NSE_REG_UTI_ATQLEN_OP_M					BIT(15)
+#define NSE_REG_UTI_ATQLEN_STAT_Q_PAUSE_N_S		14
+#define NSE_REG_UTI_ATQLEN_STAT_Q_PAUSE_N_M		BIT(14)
+#define NSE_REG_UTI_ATQLEN_STAT_Q_EN_S			13
+#define NSE_REG_UTI_ATQLEN_STAT_Q_EN_M			BIT(13)
+#define NSE_REG_UTI_ATQLEN_CRIT_S		12
+#define NSE_REG_UTI_ATQLEN_CRIT_M		BIT(12)
+#define NSE_REG_UTI_ATQLEN_OVFL_S		11
+#define NSE_REG_UTI_ATQLEN_OVFL_M		BIT(11)
+#define NSE_REG_UTI_ATQLEN_VFE_S		10
+#define NSE_REG_UTI_ATQLEN_VFE_M		BIT(10)
+#define NSE_REG_UTI_ATQLEN_LEN_S		0
+#define NSE_REG_UTI_ATQLEN_LEN_M		NSE_M(0x3FF, 0)
+
+#define NSE_REG_UTI_ATQH(_i)		(0x4000 + ((_i) * 4))
+#define NSE_REG_UTI_ATQH_HEAD_S		0
+#define NSE_REG_UTI_ATQH_HEAD_M		NSE_M(0x3FF, 0)
+
+#define NSE_REG_UTI_ATQT(_i)		(0x4400 + ((_i) * 4))
+#define NSE_REG_UTI_ATQT_TAIL_S		0
+#define NSE_REG_UTI_ATQT_TAIL_M		NSE_M(0x3FF, 0)
+
+#define NSE_REG_UTI_CTL(_i)			(0x4800 + ((_i) * 4))
+#define NSE_REG_UTI_CTL_PF_IDX_S		23
+#define NSE_REG_UTI_CTL_PF_IDX_M		NSE_M(0x3, 23)
+
+#define NSE_REG_UTI_CTL_MSIX_IDX_S		13
+#define NSE_REG_UTI_CTL_MSIX_IDX_M		NSE_M(0x3FF, 13)
+
+#define NSE_REG_UTI_CTL_CAUSE_EN_S		12
+#define NSE_REG_UTI_CTL_CAUSE_EN_M		BIT(12)
+
+#define NSE_REG_UTI_CTL_CPUID_S			4
+#define NSE_REG_UTI_CTL_CPUID_M			NSE_M(0xFF, 4)
+
+#define NSE_REG_UTI_CTL_TPHRDESC_S		3
+#define NSE_REG_UTI_CTL_TPHRDESC_M		BIT(3)
+
+#define NSE_REG_UTI_CTL_TPHRDATA_S		2
+#define NSE_REG_UTI_CTL_TPHRDATA_M		BIT(2)
+
+#define NSE_REG_UTI_CTL_TPHWDESC_S		1
+#define NSE_REG_UTI_CTL_TPHWDESC_M		BIT(1)
+
+#define NSE_REG_UTI_CTL_COALS_EN_S		0
+#define NSE_REG_UTI_CTL_COALS_EN_M		BIT(0)
+
+#define NSE_REG_INT_DYN_CTLN(_i)	(0x5000 + ((_i) * 4))
+
+#define NSE_REG_INT_DYN_CTLN_WB_ON_ITR_S			30
+#define NSE_REG_INT_DYN_CTLN_WB_ON_ITR_M			BIT(30)
+
+#define NSE_REG_INT_DYN_CTLN_AUTO_MSK_DIS_VLD_S		25
+#define NSE_REG_INT_DYN_CTLN_AUTO_MSK_DIS_VLD_M		BIT(25)
+
+#define NSE_REG_INT_DYN_CTLN_AUTO_MSK_DIS_S			24
+#define NSE_REG_INT_DYN_CTLN_AUTO_MSK_DIS_M			BIT(24)
+
+#define NSE_REG_INT_CAUSE_CLR_S						23
+#define NSE_REG_INT_CAUSE_CLR_M						BIT(23)
+
+#define NSE_REG_INT_CAUSE_S							22
+#define NSE_REG_INT_CAUSE_M							BIT(22)
+
+#define NSE_REG_INT_DYN_CTLN_ITR_VALID_S			20
+#define NSE_REG_INT_DYN_CTLN_ITR_VALID_M			BIT(20)
+
+#define NSE_REG_INT_DYN_CTLN_ITR_INTERVAL_S			8
+#define NSE_REG_INT_DYN_CTLN_ITR_INTERVAL_M			NSE_M(0xFFF, 8)
+
+#define NSE_REG_INT_DYN_CTLN_SWINT_TYPE_S			5
+#define NSE_REG_INT_DYN_CTLN_SWINT_TYPE_M			BIT(5)
+
+	#define NSE_REG_INT_DYN_CTLN_SWINT_TYPE_NORMAL	0
+	#define NSE_REG_INT_DYN_CTLN_SWINT_TYPE_LLI		1
+
+#define NSE_REG_INT_DYN_CTLN_SWINT_TRIG_S			4
+#define NSE_REG_INT_DYN_CTLN_SWINT_TRIG_M			BIT(4)
+
+#define NSE_REG_INT_DYN_CTLN_CLEARPBA_S				2
+#define NSE_REG_INT_DYN_CTLN_CLEARPBA_M				BIT(2)
+
+#define NSE_REG_INT_DYN_CTLN_INTMSK_VLD_S			1
+#define NSE_REG_INT_DYN_CTLN_INTMSK_VLD_M			BIT(1)
+
+#define NSE_REG_INT_DYN_CTLN_INTMSK_S				0
+#define NSE_REG_INT_DYN_CTLN_INTMSK_M				BIT(0)
+
+#define NSE_REG_QTX_DBELL(_i)		(0x6000 + ((_i) * 8))
+
+#define NSE_REG_QRX_TAIL(_i)		(0x6004 + ((_i) * 8))
+
+#define NSE_REG_V2P_DNCTL(_vsi)		(0x10000 + ((_vsi) * 0x40))
+#define NSE_REG_V2P_DNCTL_VLD_S		31
+#define NSE_REG_V2P_DNCTL_VLD_M		BIT(31)
+
+#define NSE_REG_V2P_DNCTL_CTL_S		0
+#define NSE_REG_V2P_DNCTL_CTL_M		NSE_M(0x7FFFFFF, 0)
+
+#define NSE_REG_P2V_UPCTL(_vsi)	(0x10004 + ((_vsi) * 0x40))
+#define NSE_REG_P2V_UPCTL_VLD_S		31
+#define NSE_REG_P2V_UPCTL_VLD_M		BIT(31)
+
+#define NSE_REG_P2V_UPCTL_CTL_S		0
+#define NSE_REG_P2V_UPCTL_CTL_M		NSE_M(0x7FFFFFF, 0)
+
+#define NSE_REG_P2V_UPINT(_vsi)		(0x10008 + ((_vsi) * 0x40))
+#define NSE_REG_P2V_UPINT_VLD_S		31
+#define NSE_REG_P2V_UPINT_VLD_M		BIT(31)
+
+#define NSE_REG_P2V_UPINT_LLI_S		10
+#define NSE_REG_P2V_UPINT_LLI_M		BIT(10)
+
+#define NSE_REG_P2V_UPINT_MSIX_IDX_S		0
+#define NSE_REG_P2V_UPINT_MSIX_IDX_M		NSE_M(0x3FF, 0)
+
+#define NSE_REG_V2P_DNBUF(_vsi, _i)	(0x10020 + ((_i) * 0x4) + ((_vsi) * 0x40))
+#define NSE_REG_P2V_UPBUF(_vsi, _i)	(0x10030 + ((_i) * 0x4) + ((_vsi) * 0x40))
+
+#define NSE_REG_V2P_DNINT			0x1403C
+#define NSE_REG_V2P_DNINT_VLD_S			31
+#define NSE_REG_V2P_DNINT_VLD_M			BIT(31)
+
+#define NSE_REG_V2P_DNINT_LLI_S		10
+#define NSE_REG_V2P_DNINT_LLI_M		BIT(10)
+
+#define NSE_REG_V2P_DNINT_MSIX_IDX_S		0
+#define NSE_REG_V2P_DNINT_MSIX_IDX_M		NSE_M(0x3FF, 0)
+
+#define NSE_REG_DNCTL_STATUS(_i)	(0x14040 + ((_i) * 0x4))
+
+/**********************************************
+ *
+ * SIOV page registers
+ *
+ **********************************************/
+#define NSE_REG_SIOV_PAGE_MBX(_i)				(0x1000000 + ((_i) * 0x1000))
+#define NSE_REG_SIOV_PAGE_MBX_VMBX_ATQBAH(_i)		(0x1000000 + ((_i) * 0x1000))
+#define NSE_REG_SIOV_PAGE_MBX_VMBX_ATQBAL(_i)		(0x1000004 + ((_i) * 0x1000))
+#define NSE_REG_SIOV_PAGE_MBX_VMBX_ATQLEN(_i)		(0x1000008 + ((_i) * 0x1000))
+#define NSE_REG_SIOV_PAGE_MBX_VMBX_ATQH(_i)			(0x100000c + ((_i) * 0x1000))
+#define NSE_REG_SIOV_PAGE_MBX_VMBX_ATQT(_i)			(0x1000010 + ((_i) * 0x1000))
+#define NSE_REG_SIOV_PAGE_MBX_VMBX_ARQBAH(_i)		(0x1000014 + ((_i) * 0x1000))
+#define NSE_REG_SIOV_PAGE_MBX_VMBX_ARQBAL(_i)		(0x1000018 + ((_i) * 0x1000))
+#define NSE_REG_SIOV_PAGE_MBX_VMBX_ARQLEN(_i)		(0x100001c + ((_i) * 0x1000))
+#define NSE_REG_SIOV_PAGE_MBX_VMBX_ARQH(_i)			(0x1000020 + ((_i) * 0x1000))
+#define NSE_REG_SIOV_PAGE_MBX_VMBX_ARQT(_i)			(0x1000024 + ((_i) * 0x1000))
+#define NSE_REG_SIOV_PAGE_MBX_VMBX_CTL(_i)			(0x1000028 + ((_i) * 0x1000))
+#define NSE_REG_SIOV_PAGE_MBX_UTI_ATQBAH(_i)		(0x1000040 + ((_i) * 0x1000))
+#define NSE_REG_SIOV_PAGE_MBX_UTI_ATQBAL(_i)		(0x1000044 + ((_i) * 0x1000))
+#define NSE_REG_SIOV_PAGE_MBX_UTI_ATQLEN(_i)		(0x1000048 + ((_i) * 0x1000))
+#define NSE_REG_SIOV_PAGE_MBX_UTI_ATQH(_i)			(0x100004c + ((_i) * 0x1000))
+#define NSE_REG_SIOV_PAGE_MBX_UTI_ATQT(_i)			(0x1000050 + ((_i) * 0x1000))
+#define NSE_REG_SIOV_PAGE_MBX_UTI_CTL(_i)			(0x1000054 + ((_i) * 0x1000))
+
+#define NSE_REG_SIOV_PAGE_PE(_i)				(0x1200000 + ((_i) * 0x1000))
+
+#define NSE_REG_SIOV_PAGE_INT_DYN_CTLN(_i)		(0x1400000 + ((_i) * 0x1000))
+
+#define NSE_REG_SIOV_PAGE_QTX_DBELL(_i)			(0x1800000 + ((_i) * 0x1000))
+
+#define NSE_REG_SIOV_PAGE_QRX_TAIL(_i)			(0x1c00000 + ((_i) * 0x1000))
+
+#define NSEVF_MBX_ATQBAH1	0x200	/* Reset Source: CORER */
+#define NSEVF_MBX_ATQBAL1	0x204	/* Reset Source: CORER */
+#define NSEVF_MBX_ATQLEN1	0x208	/* Reset Source: PFR */
+#define NSEVF_MBX_ATQH1	0x20c	/* Reset Source: CORER */
+#define NSEVF_MBX_ATQT1	0x210	/* Reset Source: CORER */
+#define NSEVF_MBX_ARQBAH1	0x214	/* Reset Source: CORER */
+#define NSEVF_MBX_ARQBAL1	0x218	/* Reset Source: CORER */
+#define NSEVF_MBX_ARQLEN1	0x21c	/* Reset Source: PFR */
+#define NSEVF_MBX_ARQH1	0x220	/* Reset Source: CORER */
+#define NSEVF_MBX_ARQT1	0x224	/* Reset Source: CORER */
+
+/* _i=0...1023 */ /* Reset Source: CORER */
+#define NSEVF_QTX_TAIL(_DBQM)					(0x2000 + ((_DBQM) * 8))
+#define NSEVF_QRX_TAIL(_QRX)	(0x2004 + ((_QRX) * 8))	/* _i=0...1023 */ /* Reset Source: CORER */
+
+//#define NSE_SIOV_VFGEN_RSTAT1					0x00008800 /* Reset Source: VFR */
+#define NSE_VFINT_DYN_CTL0	0x1000	/* Reset Source: CORER */
+#define NSE_VFINT_DYN_CTLN(_i)	(0x1000 + ((_i) * 4))	/* _i=0...63 */ /* Reset Source: CORER */
+
+#define NSE_REG_AQM_QLEN_STAT_BIT_S				17
+#define NSE_REG_AQM_QLEN_STAT_BIT_M				BIT(17)
+
+#define NSE_REG_AQM_QLEN_EXEC_S					16
+#define NSE_REG_AQM_QLEN_EXEC_M					BIT(16)
+
+#define NSE_REG_AQM_QLEN_OP_S					15
+#define NSE_REG_AQM_QLEN_OP_M					BIT(15)
+	#define NSE_REG_AQM_QLEN_OP_SET_STAT			0
+	#define NSE_REG_AQM_QLEN_OP_CLR_STAT			1
+
+#define NSE_REG_AQM_QLEN_STAT_Q_PAUSE_N_S		14
+#define NSE_REG_AQM_QLEN_STAT_Q_PAUSE_N_M		BIT(14)
+
+#define NSE_REG_AQM_QLEN_STAT_Q_EN_S			13
+#define NSE_REG_AQM_QLEN_STAT_Q_EN_M			BIT(13)
+
+#define NSE_REG_AQM_QLEN_LEN_S					0
+#define NSE_REG_AQM_QLEN_LEN_M					NSE_M(0x3FF, 0)
+
+#if defined(NSE_DEBUG_EXT)
+
+#define NSE_RNOC_REG_BASE_IN_BAR0	0x200000	/* pf_bar0_rdl.html - rnoc */
+
+#define NSE_RNOC_REG_TDM_BASE(_dma_id)	(NSE_RNOC_REG_BASE_IN_BAR0 + ((_dma_id == 0) ? 0x150000 : 0x350000))
+#define NSE_RNOC_REG_TDM_QUE_GPTC_LO(_dma_id, _i)	((NSE_RNOC_REG_TDM_BASE(_dma_id)) + 0x4040 + (0x4 * (_i)))
+#define NSE_RNOC_REG_TDM_QUE_GPTC_HI(_dma_id, _i)	((NSE_RNOC_REG_TDM_BASE(_dma_id)) + 0x4080 + (0x4 * (_i)))
+#define NSE_RNOC_REG_TDM_QUE_DPTC_LO(_dma_id, _i)	((NSE_RNOC_REG_TDM_BASE(_dma_id)) + 0x40c0 + (0x4 * (_i)))
+#define NSE_RNOC_REG_TDM_QUE_DPTC_HI(_dma_id, _i)	((NSE_RNOC_REG_TDM_BASE(_dma_id)) + 0x4100 + (0x4 * (_i)))
+#define NSE_RNOC_REG_TDM_QUE_MPTC_LO(_dma_id, _i)	((NSE_RNOC_REG_TDM_BASE(_dma_id)) + 0x4140 + (0x4 * (_i)))
+#define NSE_RNOC_REG_TDM_QUE_MPTC_HI(_dma_id, _i)	((NSE_RNOC_REG_TDM_BASE(_dma_id)) + 0x4180 + (0x4 * (_i)))
+#define NSE_RNOC_REG_TDM_QUE_GOTC_LO(_dma_id, _i)	((NSE_RNOC_REG_TDM_BASE(_dma_id)) + 0x41c0 + (0x4 * (_i)))
+#define NSE_RNOC_REG_TDM_QUE_GOTC_HI(_dma_id, _i)	((NSE_RNOC_REG_TDM_BASE(_dma_id)) + 0x4200 + (0x4 * (_i)))
+#define NSE_RNOC_REG_TDM_QUE_BPTC_LO(_dma_id, _i)	((NSE_RNOC_REG_TDM_BASE(_dma_id)) + 0x4240 + (0x4 * (_i)))
+#define NSE_RNOC_REG_TDM_QUE_BPTC_HI(_dma_id, _i)	((NSE_RNOC_REG_TDM_BASE(_dma_id)) + 0x4280 + (0x4 * (_i)))
+
+#endif
+
+#endif	/* _NSE_HW_REG_H_ */
+

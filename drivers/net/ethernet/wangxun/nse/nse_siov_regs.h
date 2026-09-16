@@ -1,0 +1,58 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+/* Copyright (c) 2018 - 2021 Beijing WangXun Technology Co., Ltd. */
+
+#ifndef _SIOV_REGS_H_
+#define _SIOV_REGS_H_
+
+#define VDEV_MBX_START			0x20000 /* Begin at 128KB */
+#define VDEV_MBX_ATQBAH			(VDEV_MBX_START + 0x0000)
+#define VDEV_MBX_ATQBAL			(VDEV_MBX_START + 0x0004)
+#define VDEV_MBX_ATQLEN			(VDEV_MBX_START + 0x0008)
+#define VDEV_MBX_ATQH			(VDEV_MBX_START + 0x000c)
+#define VDEV_MBX_ATQT			(VDEV_MBX_START + 0x0010)
+#define VDEV_MBX_ARQBAH			(VDEV_MBX_START + 0x0014)
+#define VDEV_MBX_ARQBAL			(VDEV_MBX_START + 0x0018)
+#define VDEV_MBX_ARQLEN			(VDEV_MBX_START + 0x001c)
+#define VDEV_MBX_ARQH			(VDEV_MBX_START + 0x0020)
+#define VDEV_MBX_ARQT			(VDEV_MBX_START + 0x0024)
+#define VDEV_MBX_CTL			(VDEV_MBX_START + 0x0028)
+
+#define VDEV_UTL_START			0x21000
+#define VDEV_UTL_ATQBAH			(VDEV_UTL_START + 0x0000)
+#define VDEV_UTL_ATQBAL			(VDEV_UTL_START + 0x0004)
+#define VDEV_UTL_ATQLEN			(VDEV_UTL_START + 0x0008)
+#define VDEV_UTL_ATQH			(VDEV_UTL_START + 0x000c)
+#define VDEV_UTL_ATQT			(VDEV_UTL_START + 0x0010)
+#define VDEV_UTL_CTL			(VDEV_UTL_START + 0x0014)
+
+/* Begin at offset after 1MB (after 256 4k pages) */
+#define VDEV_QTX_DBELL_START	0x100000
+#define VDEV_QTX_DBELL(_i)		(VDEV_QTX_DBELL_START + ((_i) * 0x1000)) /* 1k Tx queues */
+
+/* Begin at offset after 2MB (after 256 4k pages) */
+#define VDEV_QRX_TAIL_START		0x200000
+#define VDEV_QRX_TAIL(_i)		(VDEV_QRX_TAIL_START + ((_i) * 0x1000)) /* 1k Rx queues */
+
+/* Begin at offset after 3MB (after 256 4k pages) */
+#define VDEV_INT_DYN_CTLN_START	0x300000
+#define VDEV_INT_DYN_CTLN(_i)	(VDEV_INT_DYN_CTLN_START + ((_i) * 0x1000)) /* 1k irq-vectors */
+
+/* Begin at offset after 4MB (after 256 4k pages) */
+#define VDEV_PEC_START			0x400000
+#define VDEV_PEC_IPCFG			(VDEV_PEC_START + 0x0000)
+#define VDEV_PEC_CQPLOW			(VDEV_PEC_START + 0x0004)
+#define VDEV_PEC_CQPHIGH		(VDEV_PEC_START + 0x0008)
+#define VDEV_PEC_CQPDB			(VDEV_PEC_START + 0x000c)
+#define VDEV_PEC_CQPTAIL		(VDEV_PEC_START + 0x0010)
+#define VDEV_PEC_CQARM			(VDEV_PEC_START + 0x0014)
+#define VDEV_PEC_CQACK			(VDEV_PEC_START + 0x0018)
+#define VDEV_PEC_AEQALLOC		(VDEV_PEC_START + 0x001c)
+#define VDEV_PEC_CQPERRCODES	(VDEV_PEC_START + 0x0020)
+#define VDEV_PEC_CQPSTATUS		(VDEV_PEC_START + 0x0024)
+#define VDEV_PEC_WQEALLOC		(VDEV_PEC_START + 0x0028)
+#define VDEV_PEC_MRTEIDXMASK	(VDEV_PEC_START + 0x002c)
+#define VDEV_PEC_CQEDROPCNT		(VDEV_PEC_START + 0x0030)
+#define VDEV_PEC_CEQEDROPCNT	(VDEV_PEC_START + 0x0034)
+#define VDEV_PEC_AEQEDROPCNT	(VDEV_PEC_START + 0x0038)
+
+#endif /* _SIOV_REGS_H_ */

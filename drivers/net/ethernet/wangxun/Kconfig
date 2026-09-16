@@ -49,5 +49,25 @@ config TXGBE
 
 	  To compile this driver as a module, choose M here. The module
 	  will be called txgbe.
+
+config NSE
+	tristate "Wangxun(R) 100GbE PCI Express adapters support"
+	depends on PCI
+	depends on PCI_MSI
+	depends on PTP_1588_CLOCK_OPTIONAL
+	select AUXILIARY_BUS
+	select DIMLIB
+	select NET_DEVLINK
+	select PLDMFW
+	help
+	  This driver supports Wangxun(R) 100GbE PCI Express family of
+	  adapters.
+
+	  More specific information on configuring the driver is in
+	  <file:Documentation/networking/device_drivers/ethernet/wangxun/nse.rst>.
+
+	  To compile this driver as a module, choose M here. The module
+	  will be called nse.
+
 endif # NET_VENDOR_WANGXUN
 
