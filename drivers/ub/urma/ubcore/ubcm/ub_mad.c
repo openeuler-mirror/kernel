@@ -195,6 +195,38 @@ static int ubmad_get_eid_info_by_eid(struct ubcore_device *dev,
 	return -ENOENT;
 }
 
+static int ubmad_find_main_eid_from_dev(struct ubcore_device *device,
+					 struct ubcore_eid_info *eid_info)
+{
+	struct ubcore_eid_info *eid_list = NULL;
+	union ubcore_eid main_ue_eid;
+	uint32_t cnt = 0;
+	uint32_t i;
+	int ret = -ENOENT;
+
+	eid_list = ubcore_get_eid_list(device, &cnt);
+	if (eid_list == NULL || cnt == 0)
+		return -ENOENT;
+
+	for (i = 0; i < cnt; i++) {
+		int lookup_ret;
+
+		lookup_ret = ubcore_lookup_main_ue_eid(&eid_list[i].eid,
+						       &main_ue_eid);
+		if (lookup_ret != 0)
+			continue;
+		if (memcmp(&eid_list[i].eid, &main_ue_eid,
+			   sizeof(union ubcore_eid)) != 0)
+			continue;
+		*eid_info = eid_list[i];
+		ret = 0;
+		break;
+	}
+
+	ubcore_free_eid_list(eid_list);
+	return ret;
+}
+
 static int
 ubmad_update_device_priv_resources(struct ubmad_device_priv *dev_priv,
 				   struct ubcore_eid_info *eid_info)
@@ -1033,7 +1065,7 @@ ubmad_create_device_priv_resources(struct ubmad_device_priv *dev_priv)
 		ubcore_log_warn(
 			"No eid_list in device: %s, do not create wk-jetty resource.\n",
 			device->dev_name);
-		return 0;
+		return -ENODEV;
 	}
 
 	ret = ubmad_init_jetty_rsrc_array(dev_priv->jetty_rsrc, dev_priv);
@@ -1231,6 +1263,52 @@ static int ubmad_close_device(struct ubcore_device *device)
 	return 0;
 }
 
+static void ubmad_try_create_rsrc_on_open(struct ubcore_device *device)
+{
+	struct ubmad_device_priv *dev_priv;
+	struct ubcore_eid_info eid_info = { 0 };
+	int ret;
+
+	dev_priv = ubmad_get_device_priv(device);
+	if (IS_ERR_OR_NULL(dev_priv))
+		return;
+
+	if (dev_priv->has_create_jetty_rsrc) {
+		ubmad_put_device_priv(dev_priv);
+		return;
+	}
+
+	if (ubmad_find_main_eid_from_dev(device, &eid_info) != 0) {
+		/* main ue eid not provisioned yet, keep lazy semantics and
+		 * wait for the FIRST_ADD event */
+		ubmad_put_device_priv(dev_priv);
+		return;
+	}
+
+	mutex_lock(&g_ubc_eid_lock);
+	if (!dev_priv->has_create_jetty_rsrc && !dev_priv->valid) {
+		(void)memcpy(&dev_priv->eid_info, &eid_info,
+			     sizeof(struct ubcore_eid_info));
+		ret = ubmad_create_device_priv_resources(dev_priv);
+		if (ret != 0) {
+			ubcore_log_err(
+				"Failed to eagerly create rsrc, dev: %s, ret: %d.\n",
+				device->dev_name, ret);
+			(void)memset(&dev_priv->eid_info, 0,
+				     sizeof(dev_priv->eid_info));
+		} else {
+			dev_priv->has_create_jetty_rsrc = true;
+			ubcore_log_info(
+				"Eagerly created wk-jetty rsrc, dev: %s, eid_idx: %u.\n",
+				device->dev_name,
+				dev_priv->eid_info.eid_index);
+		}
+	}
+	mutex_unlock(&g_ubc_eid_lock);
+
+	ubmad_put_device_priv(dev_priv);
+}
+
 static int ubmad_add_device(struct ubcore_device *device)
 {
 	/* Use main device, do not use namespace logic device */
@@ -1243,6 +1321,8 @@ static int ubmad_add_device(struct ubcore_device *device)
 			device->dev_name, ret);
 		return ret;
 	}
+
+	ubmad_try_create_rsrc_on_open(device);
 
 	return 0;
 }

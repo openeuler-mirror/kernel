@@ -16,6 +16,7 @@
 
 #include <ub/urma/ubcore_types.h>
 #include <ub/urma/ubcore_uapi.h>
+#include <ub/urma/ubcore_api.h>
 #include "ubcore_log.h"
 #include "ubcore_main_ue_eid.h"
 
@@ -235,6 +236,36 @@ static int ping_find_eid_by_main_ue_eid(const union ubcore_eid *main_ue_eid,
 	}
 	spin_unlock(&dev->eid_table.lock);
 	return -EINVAL;
+}
+
+static int ping_find_main_ue_eid_from_dev(struct ubcore_device *dev,
+					   union ubcore_eid *main_ue_eid)
+{
+	struct ubcore_eid_info *eid_list = NULL;
+	uint32_t cnt = 0;
+	uint32_t i;
+	int ret = -ENOENT;
+
+	eid_list = ubcore_get_eid_list(dev, &cnt);
+	if (eid_list == NULL || cnt == 0)
+		return -ENOENT;
+
+	for (i = 0; i < cnt; i++) {
+		int lookup_ret;
+
+		lookup_ret = ubcore_lookup_main_ue_eid(&eid_list[i].eid,
+						       main_ue_eid);
+		if (lookup_ret != 0)
+			continue;
+		if (memcmp(&eid_list[i].eid, main_ue_eid,
+			   sizeof(union ubcore_eid)) != 0)
+			continue;
+		ret = 0;
+		break;
+	}
+
+	ubcore_free_eid_list(eid_list);
+	return ret;
 }
 
 /* Workqueue func */
@@ -721,9 +752,13 @@ static void ping_start_wq(struct ubmgr_ping_ctx *ctx)
 	spin_unlock_irqrestore(&ctx->wq_lock, flags);
 }
 
+static void ping_try_init_ctx(const union ubcore_eid *main_ue_eid,
+			      struct ubcore_device *dev);
+
 static int ping_on_add_device(struct ubcore_device *dev)
 {
 	struct ubmgr_ping_ctx *ping_ctx;
+	union ubcore_eid main_ue_eid;
 	int ret;
 
 	ping_ctx = vzalloc(sizeof(struct ubmgr_ping_ctx));
@@ -748,6 +783,9 @@ static int ping_on_add_device(struct ubcore_device *dev)
 	}
 
 	ubcore_set_client_ctx_data(dev, &g_ping_client, ping_ctx);
+	if (ping_find_main_ue_eid_from_dev(dev, &main_ue_eid) == 0)
+		ping_try_init_ctx(&main_ue_eid, dev);
+
 	return 0;
 
 free_buf:
