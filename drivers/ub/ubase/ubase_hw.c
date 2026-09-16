@@ -361,6 +361,7 @@ static int ubase_fill_common_ctx_buf(struct ubase_dev *udev,
 		ret = xa_err(xa_store(&ctx_buf->ctx_xa, i, ctx_page,
 				      GFP_KERNEL));
 		if (ret) {
+			ubase_destroy_ctx_page(udev, ctx_page, ctx_buf);
 			ubase_err(udev, "failed to store page, ret = %d.\n",
 				  ret);
 			goto err_fill_ctx_page;
