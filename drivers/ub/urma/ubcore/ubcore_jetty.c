@@ -1259,6 +1259,7 @@ int ubcore_alloc_jfs(struct ubcore_device *dev, struct ubcore_jfs_cfg *cfg,
 	if (check_and_fill_jfs_attr(&(*jfs)->jfs_cfg, cfg) != 0) {
 		free_ret = dev->ops->free_jfs(*jfs, udata);
 		ubcore_log_err("jfs cfg is not qualified, ret is %d.\n", free_ret);
+		*jfs = NULL;
 		return -EINVAL;
 	}
 	(*jfs)->ub_dev = dev;
@@ -2276,6 +2277,7 @@ int ubcore_alloc_jfr(struct ubcore_device *dev, struct ubcore_jfr_cfg *cfg,
 	if (check_and_fill_jfr_attr(&(*jfr)->jfr_cfg, cfg) != 0) {
 		free_ret = dev->ops->free_jfr(*jfr, udata);
 		ubcore_log_err("jfr cfg is not qualified,ret is %d.\n", free_ret);
+		*jfr = NULL;
 		return -EINVAL;
 	}
 	(*jfr)->ub_dev = dev;
