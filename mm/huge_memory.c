@@ -20,6 +20,7 @@
 #include <linux/swapops.h>
 #include <linux/backing-dev.h>
 #include <linux/dax.h>
+#include <linux/dynamic_pool.h>
 #include <linux/mm_types.h>
 #include <linux/khugepaged.h>
 #include <linux/freezer.h>
@@ -113,6 +114,16 @@ unsigned long __thp_vma_allowable_orders(struct vm_area_struct *vma,
 		return 0;
 
 	if (thp_disabled_by_hw() || vma_thp_disabled(vma, vm_flags))
+		return 0;
+
+	/*
+	 * dpool serves order-0 allocations only.
+	 * dynamic_pool_should_alloc() rejects any higher order.
+	 * A huge folio would bypass the pool and come from the
+	 * global buddy allocator.  Block all huge orders so every
+	 * THP path falls back to order-0.
+	 */
+	if (mm_in_dynamic_pool(vma->vm_mm))
 		return 0;
 
 	/* khugepaged doesn't collapse DAX vma, but page fault is fine. */
