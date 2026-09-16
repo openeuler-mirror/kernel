@@ -262,15 +262,12 @@ int ubcore_unregister_seg(struct ubcore_target_seg *tseg)
 	}
 
 	dev = tseg->ub_dev;
-
-	if (tseg->token_id != NULL)
-		atomic_dec(&tseg->token_id->use_cnt);
+	token_id = tseg->token_id;
 
 	if (tseg->seg.attr.bs.user_token_id == UBCORE_TOKEN_ID_INVALID &&
 	    dev->transport_type == UBCORE_TRANSPORT_UB &&
 	    tseg->token_id != NULL && tseg->uctx == NULL) {
 		free_token_id = true;
-		token_id = tseg->token_id;
 	}
 
 	if (ubcore_is_bonding_dev(dev))
@@ -287,6 +284,9 @@ int ubcore_unregister_seg(struct ubcore_target_seg *tseg)
 		UBCORE_PERF_TRACE_END(PERF_CORE_UNREGISTER_SEG);
 		return ret;
 	}
+
+	if (token_id != NULL)
+		atomic_dec(&token_id->use_cnt);
 
 	if (free_token_id == true && token_id != NULL)
 		(void)ubcore_free_token_id(token_id);
