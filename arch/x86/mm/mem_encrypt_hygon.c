@@ -138,7 +138,7 @@ EXPORT_SYMBOL_GPL(csv3_active);
 
 /* Common CSV3 memory protection macros */
 #define NUM_SMR_ENTRIES			(8 * 1024)
-#define MIN_SMR_ENTRY_SHIFT		23
+#define MIN_SMR_ENTRY_SHIFT		25
 #define CSV_SMR_INFO_SIZE		(nr_node_ids * sizeof(struct csv_mem))
 #define CSV_SMCR_MAX_ENTRIES		64 /* 16GB SMCR */
 /* CSV3 CMA macros */
