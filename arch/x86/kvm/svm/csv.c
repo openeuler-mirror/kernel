@@ -1556,7 +1556,6 @@ static int csv3_set_hugetlb_smr(struct kvm *kvm, unsigned long vm_size,
 	struct csv3_data_memory_region *regions;
 
 	LIST_HEAD(tmp_list);
-	struct list_head *pos, *q;
 	u32 i = 0, count = 0, remainder;
 	int ret = 0;
 	u64 nr_smr = 0;
@@ -1581,7 +1580,7 @@ static int csv3_set_hugetlb_smr(struct kvm *kvm, unsigned long vm_size,
 
 	ret = csv3_init_1G_hugetlb_smrs(kvm);
 	if (ret)
-		goto e_free_hugetlb;
+		goto done;
 
 	smr_entry_shift = csv_get_smr_entry_shift();
 	nr_smr = vm_size >> smr_entry_shift;
@@ -1592,7 +1591,7 @@ static int csv3_set_hugetlb_smr(struct kvm *kvm, unsigned long vm_size,
 		smr = kzalloc(sizeof(*smr), GFP_KERNEL_ACCOUNT);
 		if (!smr) {
 			ret = -ENOMEM;
-			goto e_free_smr;
+			goto done;
 		}
 
 		if (metadata_allocated == false) {
@@ -1606,7 +1605,7 @@ static int csv3_set_hugetlb_smr(struct kvm *kvm, unsigned long vm_size,
 		if (!smr->hpa) {
 			kfree(smr);
 			ret = -ENOMEM;
-			goto e_free_smr;
+			goto done;
 		}
 
 		smr->npages = ((1UL << smr_entry_shift) >> PAGE_SHIFT);
@@ -1626,15 +1625,13 @@ static int csv3_set_hugetlb_smr(struct kvm *kvm, unsigned long vm_size,
 						CSV3_CMD_SET_GUEST_PRIVATE_MEMORY,
 						set_guest_private_memory, &argp->error);
 			if (ret)
-				goto e_free_smr;
+				goto done;
 
 			memset(regions, 0, PAGE_SIZE);
 			remainder -= count;
 			count = 0;
 		}
 	}
-
-	list_splice(&tmp_list, &csv->smr_list);
 
 #ifdef CONFIG_SYSFS
 	/* The NPT is allocated from global SMCR */
@@ -1647,29 +1644,9 @@ static int csv3_set_hugetlb_smr(struct kvm *kvm, unsigned long vm_size,
 	csv->pri_mem = 0;
 #endif
 
-	goto done;
-
-e_free_smr:
-	/* Remove temporary smr_list */
-	if (!list_empty(&tmp_list)) {
-		list_for_each_safe(pos, q, &tmp_list) {
-			smr = list_entry(pos, struct secure_memory_region, list);
-			if (smr) {
-				if (smr->type == CSV_METADATA)
-					csv_free_metadata(smr->hpa);
-
-				list_del(&smr->list);
-				kfree(smr);
-			}
-		}
-	}
-	/* Remove smr_list created by csv3_init_1G_hugetlb_smrs() */
-	csv3_free_smr_list(kvm);
-
-e_free_hugetlb:
-	csv3_free_1G_hugetlb_folios(kvm);
-
 done:
+	list_splice(&tmp_list, &csv->smr_list);
+
 	kfree(set_guest_private_memory);
 	kfree(regions);
 
@@ -1724,7 +1701,6 @@ static int csv3_set_cma_smr(struct kvm *kvm, unsigned long vm_size,
 	struct csv3_data_memory_region *regions;
 
 	LIST_HEAD(tmp_list);
-	struct list_head *pos, *q;
 	u32 i = 0, count = 0, remainder;
 	int ret = 0;
 	u64 nr_smr = 0;
@@ -1760,7 +1736,7 @@ static int csv3_set_cma_smr(struct kvm *kvm, unsigned long vm_size,
 		smr = kzalloc(sizeof(*smr), GFP_KERNEL_ACCOUNT);
 		if (!smr) {
 			ret = -ENOMEM;
-			goto e_free_smr;
+			goto done;
 		}
 
 		smr->hpa = csv_alloc_from_contiguous((1UL << smr_entry_shift),
@@ -1769,7 +1745,7 @@ static int csv3_set_cma_smr(struct kvm *kvm, unsigned long vm_size,
 		if (!smr->hpa) {
 			kfree(smr);
 			ret = -ENOMEM;
-			goto e_free_smr;
+			goto done;
 		}
 
 		smr->npages = ((1UL << smr_entry_shift) >> PAGE_SHIFT);
@@ -1789,15 +1765,13 @@ static int csv3_set_cma_smr(struct kvm *kvm, unsigned long vm_size,
 						CSV3_CMD_SET_GUEST_PRIVATE_MEMORY,
 						set_guest_private_memory, &argp->error);
 			if (ret)
-				goto e_free_smr;
+				goto done;
 
 			memset(regions, 0, PAGE_SIZE);
 			remainder -= count;
 			count = 0;
 		}
 	}
-
-	list_splice(&tmp_list, &csv->smr_list);
 
 #ifdef CONFIG_SYSFS
 	/**
@@ -1814,22 +1788,8 @@ static int csv3_set_cma_smr(struct kvm *kvm, unsigned long vm_size,
 	atomic_long_add(csv->pri_mem, &csv3_pri_mem);
 #endif
 
-	goto done;
-
-e_free_smr:
-	/* Remove temporary smr_list */
-	if (!list_empty(&tmp_list)) {
-		list_for_each_safe(pos, q, &tmp_list) {
-			smr = list_entry(pos, struct secure_memory_region, list);
-			if (smr) {
-				csv_release_to_contiguous(smr->hpa,
-							smr->npages << PAGE_SHIFT);
-				list_del(&smr->list);
-				kfree(smr);
-			}
-		}
-	}
 done:
+	list_splice(&tmp_list, &csv->smr_list);
 	kfree(set_guest_private_memory);
 	kfree(regions);
 
@@ -2049,7 +2009,6 @@ static int csv3_set_hugetlb_smr_ex(struct kvm *kvm, unsigned long vm_size,
 	struct csv3_data_memory_region_ex *regions;
 
 	LIST_HEAD(tmp_list);
-	struct list_head *pos, *q;
 	u32 i = 0, count = 0, remainder;
 	int ret = 0;
 	u64 nr_smr = 0;
@@ -2074,7 +2033,7 @@ static int csv3_set_hugetlb_smr_ex(struct kvm *kvm, unsigned long vm_size,
 
 	ret = csv3_init_1G_hugetlb_smrs_ex(kvm, &nr_smr);
 	if (ret)
-		goto e_clean_hugetlb_list;
+		goto done;
 
 	nr_smr += 1;
 
@@ -2084,7 +2043,7 @@ static int csv3_set_hugetlb_smr_ex(struct kvm *kvm, unsigned long vm_size,
 		smr = kzalloc(sizeof(*smr), GFP_KERNEL_ACCOUNT);
 		if (!smr) {
 			ret = -ENOMEM;
-			goto e_free_smr;
+			goto done;
 		}
 
 		if (metadata_allocated == false) {
@@ -2102,7 +2061,7 @@ static int csv3_set_hugetlb_smr_ex(struct kvm *kvm, unsigned long vm_size,
 		if (!smr->hpa) {
 			kfree(smr);
 			ret = -ENOMEM;
-			goto e_free_smr;
+			goto done;
 		}
 
 		list_add_tail(&smr->list, &tmp_list);
@@ -2129,7 +2088,7 @@ static int csv3_set_hugetlb_smr_ex(struct kvm *kvm, unsigned long vm_size,
 						CSV3_CMD_SET_GUEST_PRIVATE_MEMORY_EX,
 						set_guest_private_memory, &argp->error);
 			if (ret)
-				goto e_free_smr;
+				goto done;
 
 			memset(regions, 0, PAGE_SIZE);
 			remainder -= count;
@@ -2137,31 +2096,9 @@ static int csv3_set_hugetlb_smr_ex(struct kvm *kvm, unsigned long vm_size,
 		}
 	}
 
+done:
 	list_splice(&tmp_list, &csv->smr_list);
 
-	goto done;
-
-e_free_smr:
-	/* Remove temporary smr_list */
-	if (!list_empty(&tmp_list)) {
-		list_for_each_safe(pos, q, &tmp_list) {
-			smr = list_entry(pos, struct secure_memory_region, list);
-			if (smr) {
-				if (smr->type == CSV_METADATA)
-					csv_free_metadata(smr->hpa);
-
-				list_del(&smr->list);
-				kfree(smr);
-			}
-		}
-	}
-	/* Remove smr_list created by csv3_init_1G_hugetlb_smrs() */
-	csv3_free_smr_list(kvm);
-
-e_clean_hugetlb_list:
-	csv3_clean_1G_hugetlb_list(kvm);
-
-done:
 	kfree(set_guest_private_memory);
 	kfree(regions);
 
