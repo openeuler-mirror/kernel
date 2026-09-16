@@ -795,9 +795,13 @@ static int uburma_cmd_alloc_jfs(struct ubcore_device *ubc_dev,
 	}
 	cfg.jfc = jfc_uobj->object;
 	ret = ubcore_alloc_jfs(ubc_dev, &cfg, uburma_jfs_event_cb, &jfs, &udata);
+	if (ret != 0) {
+		uburma_log_err("create jfs failed, ret: %d.\n", ret);
+		goto err_put_jfc;
+	}
 	if (IS_ERR_OR_NULL(jfs)) {
 		uburma_log_err("create jfs or get jfs_id failed.\n");
-		ret = PTR_ERR(jfs);
+		ret = IS_ERR(jfs) ? PTR_ERR(jfs) : -EINVAL;
 		goto err_put_jfc;
 	}
 	jfs_uobj->uobj.object = jfs;
@@ -1584,9 +1588,13 @@ static int uburma_cmd_alloc_jfr(struct ubcore_device *ubc_dev,
 	}
 	cfg.jfc = jfc_uobj->object;
 	ret = ubcore_alloc_jfr(ubc_dev, &cfg, uburma_jfr_event_cb, &jfr, &udata);
+	if (ret != 0) {
+		uburma_log_err("create jfr failed, ret: %d.\n", ret);
+		goto err_put_jfc;
+	}
 	if (IS_ERR_OR_NULL(jfr)) {
 		uburma_log_err("create jfr or get jfr_id failed.\n");
-		ret = PTR_ERR(jfr);
+		ret = IS_ERR(jfr) ? PTR_ERR(jfr) : -EINVAL;
 		goto err_put_jfc;
 	}
 	jfr_uobj->uobj.object = jfr;
