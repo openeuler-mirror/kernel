@@ -421,6 +421,23 @@ int ubagg_get_primary_eid_by_agg_eid(union ubcore_eid *agg_eid,
 	return -EINVAL;
 }
 
+bool ubagg_eid_belongs_to_agg(const union ubcore_eid *eid,
+	const union ubcore_eid *agg_eid)
+{
+	struct ubagg_topo_agg_dev *agg_dev;
+
+	if (agg_eid == NULL ||
+	    ubagg_find_topo_by_eid(eid, NULL, &agg_dev, NULL) != 0)
+		return false;
+
+	return memcmp(agg_dev->agg_eid, agg_eid->raw, EID_LEN) == 0;
+}
+
+bool ubagg_eid_is_known(const union ubcore_eid *eid)
+{
+	return ubagg_find_topo_by_eid(eid, NULL, NULL, NULL) == 0;
+}
+
 int ubagg_get_topo_by_eid(const union ubcore_eid *eid,
 	struct ubagg_topo_by_eid_out *out)
 {
