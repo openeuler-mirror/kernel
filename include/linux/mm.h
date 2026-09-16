@@ -2843,10 +2843,16 @@ static inline s64 get_mm_counter_sum(struct mm_struct *mm, int member)
 
 static inline int mm_counter_try_switch_to_pcpu(struct mm_struct *mm)
 {
+	int ret;
+
 	if (!mm_counter_is_atomic())
 		return 0;
 
-	return percpu_counter_switch_to_pcpu_many(mm->rss_stat, NR_MM_COUNTERS);
+	spin_lock(&mm->arg_lock);
+	ret = percpu_counter_switch_to_pcpu_many(mm->rss_stat, NR_MM_COUNTERS);
+	spin_unlock(&mm->arg_lock);
+
+	return ret;
 }
 
 static inline int mm_counter_init(struct mm_struct *mm)
