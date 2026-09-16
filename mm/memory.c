@@ -4174,14 +4174,6 @@ static struct folio *alloc_swap_folio(struct vm_fault *vmf)
 		goto fallback;
 
 	/*
-	 * dpool only buddy-charges order-0 folios.  A large swapin folio
-	 * is never buddy-charged, yet once split each tail page release
-	 * would underflow the buddy counter.  Fall back to order-0.
-	 */
-	if (mm_in_dynamic_pool(vma->vm_mm))
-		goto fallback;
-
-	/*
 	 * A large swapped out folio could be partially or fully in zswap. We
 	 * lack handling for such cases, so fallback to swapping in order-0
 	 * folio.
@@ -4733,8 +4725,6 @@ static struct folio *alloc_anon_folio(struct vm_fault *vmf)
 	 * maintain the uffd semantics.
 	 */
 	if (unlikely(userfaultfd_armed(vma)))
-		goto fallback;
-	if (mm_in_dynamic_pool(vma->vm_mm))
 		goto fallback;
 
 	/*
@@ -5910,8 +5900,7 @@ static vm_fault_t __handle_mm_fault(struct vm_area_struct *vma,
 retry_pud:
 	if (pud_none(*vmf.pud) &&
 	    thp_vma_allowable_order(vma, vm_flags,
-				TVA_IN_PF | TVA_ENFORCE_SYSFS, PUD_ORDER) &&
-	    !mm_in_dynamic_pool(mm)) {
+				TVA_IN_PF | TVA_ENFORCE_SYSFS, PUD_ORDER)) {
 		ret = create_huge_pud(&vmf);
 		if (!(ret & VM_FAULT_FALLBACK))
 			return ret;
@@ -5946,8 +5935,7 @@ retry_pud:
 
 	if (pmd_none(*vmf.pmd) &&
 	    thp_vma_allowable_order(vma, vm_flags,
-				TVA_IN_PF | TVA_ENFORCE_SYSFS, PMD_ORDER) &&
-	    !mm_in_dynamic_pool(mm)) {
+				TVA_IN_PF | TVA_ENFORCE_SYSFS, PMD_ORDER)) {
 		ret = create_huge_pmd(&vmf);
 		if (!(ret & VM_FAULT_FALLBACK))
 			return ret;
