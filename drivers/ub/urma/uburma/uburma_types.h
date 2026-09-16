@@ -17,6 +17,7 @@
 #include <linux/kref.h>
 #include <linux/cdev.h>
 #include <linux/mutex.h>
+#include <linux/module.h>
 #include <linux/completion.h>
 #include <linux/mmu_notifier.h>
 #include "ub/urma/ubcore_types.h"
@@ -43,6 +44,8 @@ struct uburma_file {
 
 	struct uburma_device *ubu_dev;
 	struct ubcore_ucontext *ucontext;
+	/* module ref taken at open when ops->disassociate_ucontext is NULL */
+	struct module *ops_owner;
 
 	/* uobj */
 	struct mutex uobjects_lock;
