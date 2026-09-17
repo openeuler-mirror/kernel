@@ -412,6 +412,30 @@ bool kvm_pvm_vgic_cpuif_access(struct kvm_vcpu *vcpu, u32 sysreg,
 			*val = cpu_if->vgic_sre;
 		/* GICv3-only mode exposes SRE/DIB/DFB as RAO/WI. */
 		return true;
+	case SYS_ICC_AP0R0_EL1:
+		/* Group 0 is outside the supported guest configuration. */
+		if (!is_write)
+			*val = 0;
+		return true;
+	case SYS_ICC_AP1R0_EL1:
+		if (is_write)
+			cpu_if->vgic_ap1r[0] = (u32)*val;
+		else
+			*val = (u32)cpu_if->vgic_ap1r[0];
+		return true;
+	case SYS_ICC_AP0R1_EL1:
+	case SYS_ICC_AP0R2_EL1:
+	case SYS_ICC_AP0R3_EL1:
+	case SYS_ICC_AP1R1_EL1:
+	case SYS_ICC_AP1R2_EL1:
+	case SYS_ICC_AP1R3_EL1:
+		/*
+		 * The active-priority model tracks at most 32 levels in a
+		 * single Group 1 APR (vgic_ap1r[0]); all other APRs are unused.
+		 */
+		if (!is_write)
+			*val = 0;
+		return true;
 	default:
 		return false;
 	}
