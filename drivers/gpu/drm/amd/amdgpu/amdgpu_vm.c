@@ -2830,19 +2830,6 @@ static void amdgpu_vm_destroy_task_info(struct kref *kref)
 	kfree(ti);
 }
 
-static inline struct amdgpu_vm *
-amdgpu_vm_get_vm_from_pasid(struct amdgpu_device *adev, u32 pasid)
-{
-	struct amdgpu_vm *vm;
-	unsigned long flags;
-
-	spin_lock_irqsave(&adev->vm_manager.pasid_lock, flags);
-	vm = idr_find(&adev->vm_manager.pasid_idr, pasid);
-	spin_unlock_irqrestore(&adev->vm_manager.pasid_lock, flags);
-
-	return vm;
-}
-
 /**
  * amdgpu_vm_put_task_info - reference down the vm task_info ptr
  *
@@ -2888,8 +2875,16 @@ amdgpu_vm_get_task_info_vm(struct amdgpu_vm *vm)
 struct amdgpu_task_info *
 amdgpu_vm_get_task_info_pasid(struct amdgpu_device *adev, u32 pasid)
 {
-	return amdgpu_vm_get_task_info_vm(
-			amdgpu_vm_get_vm_from_pasid(adev, pasid));
+	struct amdgpu_task_info *ti;
+	struct amdgpu_vm *vm;
+	unsigned long flags;
+
+	spin_lock_irqsave(&adev->vm_manager.pasid_lock, flags);
+	vm = idr_find(&adev->vm_manager.pasid_idr, pasid);
+	ti = amdgpu_vm_get_task_info_vm(vm);
+	spin_unlock_irqrestore(&adev->vm_manager.pasid_lock, flags);
+
+	return ti;
 }
 
 static int amdgpu_vm_create_task_info(struct amdgpu_vm *vm)
@@ -3251,7 +3246,6 @@ void amdgpu_vm_fini(struct amdgpu_device *adev, struct amdgpu_vm *vm)
 
 	root = amdgpu_bo_ref(vm->root.base.bo);
 	amdgpu_bo_reserve(root, true);
-	amdgpu_vm_put_task_info(vm->task_info);
 	if (vm->pasid) {
 		unsigned long flags;
 
@@ -3260,6 +3254,7 @@ void amdgpu_vm_fini(struct amdgpu_device *adev, struct amdgpu_vm *vm)
 		spin_unlock_irqrestore(&adev->vm_manager.pasid_lock, flags);
 		vm->pasid = 0;
 	}
+	amdgpu_vm_put_task_info(vm->task_info);
 
 	dma_fence_wait(vm->last_unlocked, false);
 	dma_fence_put(vm->last_unlocked);
