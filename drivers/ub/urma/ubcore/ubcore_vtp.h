@@ -181,7 +181,7 @@ struct ubcore_vtp *ubcore_find_vtp(struct ubcore_device *dev, enum ubcore_transp
 struct ubcore_vtp *ubcore_find_get_vtp(struct ubcore_device *dev,
 	enum ubcore_transport_mode mode, union ubcore_eid *local_eid, union ubcore_eid *peer_eid);
 
-void ubcore_set_vtp_param(struct ubcore_device *dev, struct ubcore_jetty *jetty,
+int ubcore_set_vtp_param(struct ubcore_device *dev, struct ubcore_jetty *jetty,
 	struct ubcore_tjetty_cfg *cfg, struct ubcore_vtp_param *vtp_param);
 
 int ubcore_modify_vtp(struct ubcore_device *dev, struct ubcore_vtp_param *vtp_param,
