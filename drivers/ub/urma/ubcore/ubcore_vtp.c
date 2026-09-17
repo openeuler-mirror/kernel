@@ -2326,9 +2326,9 @@ struct ubcore_vtp *ubcore_find_get_vtp(struct ubcore_device *dev,
 	return vtp_entry;
 }
 
-void ubcore_set_vtp_param(struct ubcore_device *dev, struct ubcore_jetty *jetty,
-			  struct ubcore_tjetty_cfg *cfg,
-			  struct ubcore_vtp_param *vtp_param)
+int ubcore_set_vtp_param(struct ubcore_device *dev, struct ubcore_jetty *jetty,
+			 struct ubcore_tjetty_cfg *cfg,
+			 struct ubcore_vtp_param *vtp_param)
 {
 	uint32_t eid_index = cfg->eid_index;
 
@@ -2339,8 +2339,13 @@ void ubcore_set_vtp_param(struct ubcore_device *dev, struct ubcore_jetty *jetty,
 		spin_unlock(&dev->eid_table.lock);
 		ubcore_log_err("Invalid parameter, eid_index: %u, eid_cnt: %u.\n",
 			       eid_index, dev->eid_table.eid_cnt);
-		return;
+		return -EINVAL;
 	}
+	/*
+	 * RM/UM VTP for userspace app: get local eid from ucontext
+	 * RM/UM VTP for kernel app: how to get local eid ?
+	 * RC VTP: get eid from jetty
+	 */
 	vtp_param->local_eid = dev->eid_table.eid_entries[eid_index].eid;
 	spin_unlock(&dev->eid_table.lock);
 
@@ -2350,11 +2355,6 @@ void ubcore_set_vtp_param(struct ubcore_device *dev, struct ubcore_jetty *jetty,
 				   cfg->flag.bs.share_tp))
 		vtp_param->trans_mode = UBCORE_TP_RM;
 
-	/*
-	 * RM/UM VTP for userspace app: get local eid from ucontext
-	 * RM/UM VTP for kernel app: how to get local eid ?
-	 * RC VTP: get eid from jetty
-	 */
 	vtp_param->peer_eid = cfg->id.eid;
 	if (jetty != NULL)
 		vtp_param->local_jetty = jetty->jetty_id.id;
@@ -2363,6 +2363,7 @@ void ubcore_set_vtp_param(struct ubcore_device *dev, struct ubcore_jetty *jetty,
 
 	vtp_param->peer_jetty = cfg->id.id;
 	vtp_param->eid_index = cfg->eid_index;
+	return 0;
 }
 
 uint32_t ubcore_get_all_vtp_cnt(struct ubcore_hash_table *ht,
