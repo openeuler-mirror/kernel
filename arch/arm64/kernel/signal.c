@@ -180,6 +180,36 @@ int restore_fpsimd_context(struct user_ctxs *user)
 	return 0;
 }
 
+int preserve_fpmr_context(struct fpmr_context __user *ctx)
+{
+	int err = 0;
+	u64 fpmr;
+
+	current->thread.fpmr = read_sysreg_s(SYS_FPMR);
+	fpmr = current->thread.fpmr;
+
+	__put_user_error(FPMR_MAGIC, &ctx->head.magic, err);
+	__put_user_error(sizeof(*ctx), &ctx->head.size, err);
+	__put_user_error(fpmr, &ctx->fpmr, err);
+
+	return err;
+}
+
+int restore_fpmr_context(struct user_ctxs *user)
+{
+	u64 fpmr;
+	int err = 0;
+
+	if (user->fpmr_size != sizeof(*user->fpmr))
+		return -EINVAL;
+
+	__get_user_error(fpmr, &user->fpmr->fpmr, err);
+	if (!err)
+		write_sysreg_s(fpmr, SYS_FPMR);
+
+	return err;
+}
+
 
 #ifdef CONFIG_ARM64_SVE
 
@@ -556,6 +586,7 @@ int __parse_user_sigcontext(struct user_ctxs *user,
 	user->tpidr2 = NULL;
 	user->za = NULL;
 	user->zt = NULL;
+	user->fpmr = NULL;
 
 	if (!IS_ALIGNED((unsigned long)base, 16))
 		goto invalid;
@@ -648,6 +679,17 @@ int __parse_user_sigcontext(struct user_ctxs *user,
 
 			user->zt = (struct zt_context __user *)head;
 			user->zt_size = size;
+			break;
+
+		case FPMR_MAGIC:
+			if (!system_supports_fpmr())
+				goto invalid;
+
+			if (user->fpmr)
+				goto invalid;
+
+			user->fpmr = (struct fpmr_context __user *)head;
+			user->fpmr_size = size;
 			break;
 
 		case EXTRA_MAGIC:
@@ -815,6 +857,13 @@ int setup_sigframe_layout(struct rt_sigframe_user_layout *user, bool add_all)
 			if (err)
 				return err;
 		}
+	}
+
+	if (system_supports_fpmr()) {
+		err = sigframe_alloc(user, &user->fpmr_offset,
+				     sizeof(struct fpmr_context));
+		if (err)
+			return err;
 	}
 
 	return sigframe_alloc_end(user);
