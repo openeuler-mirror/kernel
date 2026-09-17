@@ -16,6 +16,7 @@
 #include <linux/file.h>
 #include <linux/poll.h>
 #include <linux/random.h>
+#include <linux/delay.h>
 #include <ub/urma/ubcore_types.h>
 #include <ub/urma/ubcore_uapi.h>
 #include <ub/urma/ubcore_jetty.h>
@@ -1798,10 +1799,12 @@ static struct ubcore_tjetty *ubcore_import_jfr_compat_retry(
 
 	for (retry = 0; retry < UBCORE_CONN_RETRY_MAX; retry++) {
 		tjfr = ubcore_import_jfr_compat(dev, cfg, udata);
-		if (tjfr != ERR_PTR(-EIO))
+		if (tjfr != ERR_PTR(-EAGAIN))
 			return tjfr;
+		usleep_range(UBCORE_TPID_REUSE_WAIT_MIN_US,
+				UBCORE_TPID_REUSE_WAIT_MAX_US);
 	}
-	return ERR_PTR(-EIO);
+	return tjfr;
 }
 
 struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
@@ -3056,10 +3059,12 @@ static struct ubcore_tjetty *ubcore_import_jetty_compat_retry(
 
 	for (retry = 0; retry < UBCORE_CONN_RETRY_MAX; retry++) {
 		tjetty = ubcore_import_jetty_compat(dev, cfg, udata);
-		if (tjetty != ERR_PTR(-EIO))
+		if (tjetty != ERR_PTR(-EAGAIN))
 			return tjetty;
+		usleep_range(UBCORE_TPID_REUSE_WAIT_MIN_US,
+				UBCORE_TPID_REUSE_WAIT_MAX_US);
 	}
-	return ERR_PTR(-EIO);
+	return tjetty;
 }
 
 struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
@@ -3441,11 +3446,13 @@ static int ubcore_bind_jetty_reuse_compat_retry(
 
 	for (retry = 0; retry < UBCORE_CONN_RETRY_MAX; retry++) {
 		ret = ubcore_bind_jetty_reuse_compat(jetty, tjetty, udata);
-		if (ret != -EIO)
+		if (ret != -EAGAIN)
 			return ret;
+		usleep_range(UBCORE_TPID_REUSE_WAIT_MIN_US,
+				UBCORE_TPID_REUSE_WAIT_MAX_US);
 	}
 
-	return -EIO;
+	return ret;
 }
 
 static int ubcore_inner_bind_ub_jetty(struct ubcore_jetty *jetty,
