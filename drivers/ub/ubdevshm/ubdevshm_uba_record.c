@@ -5,8 +5,10 @@
  */
 #define pr_fmt(fmt) "UBDEVSHM: " fmt
 
+#include <linux/printk.h>
 #include <linux/init.h>
 #include <linux/module.h>
+#include <linux/ratelimit.h>
 #include <linux/slab.h>
 #include <linux/list.h>
 #include <linux/errno.h>
@@ -121,7 +123,7 @@ void ubdevshm_cleanup_uba_records_in_ctx(struct access_ctx_inner *ctx)
 	struct uba_record *rec, *n;
 
 	list_for_each_entry_safe(rec, n, &ctx->uba_list, node) {
-		pr_warn("cleanup leftover uba_record id=%d\n", rec->id);
+		pr_warn_ratelimited("cleanup leftover uba_record id=%d\n", rec->id);
 		list_del(&rec->node);
 		(void)idr_remove(&uba_record_idr, (unsigned long)rec->id);
 		kfree(rec);
