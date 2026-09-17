@@ -12,8 +12,10 @@
 
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_hyp.h>
+#include <asm/kvm_pvm.h>
 #include <asm/kvm_rme.h>
 #include <asm/kvm_tmi.h>
+#include <asm/virt.h>
 
 #include "vgic.h"
 
@@ -974,6 +976,16 @@ void kvm_vgic_sync_hwstate(struct kvm_vcpu *vcpu)
 {
 	int used_lrs;
 
+	/*
+	 * PVM keeps pending and active state in struct vgic_irq. There are no
+	 * hardware LRs to fold, but affinity changes and inactive interrupts
+	 * still require AP-list pruning.
+	 */
+	if (is_pvm_mode()) {
+		vgic_prune_ap_list(vcpu);
+		return;
+	}
+
 	/* An empty ap_list_head implies used_lrs == 0 */
 	if (list_empty(&vcpu->arch.vgic_cpu.ap_list_head))
 		return;
@@ -1027,6 +1039,11 @@ static inline void vgic_restore_state(struct kvm_vcpu *vcpu)
 /* Flush our emulation state into the GIC hardware before entering the guest. */
 void kvm_vgic_flush_hwstate(struct kvm_vcpu *vcpu)
 {
+	if (is_pvm_mode()) {
+		kvm_pvm_vgic_flush_hwstate(vcpu);
+		return;
+	}
+
 	/*
 	 * If there are no virtual interrupts active or pending for this
 	 * VCPU, then there is no work to do and we can bail out without
@@ -1098,6 +1115,10 @@ void kvm_vgic_put(struct kvm_vcpu *vcpu)
 
 void kvm_vgic_vmcr_sync(struct kvm_vcpu *vcpu)
 {
+	/* PVM keeps VMCR and APR state in memory, not in ICH_* registers. */
+	if (is_pvm_mode())
+		return;
+
 	if (unlikely(!irqchip_in_kernel(vcpu->kvm)))
 		return;
 
@@ -1114,6 +1135,9 @@ int kvm_vgic_vcpu_pending_irq(struct kvm_vcpu *vcpu)
 	bool pending = false;
 	unsigned long flags;
 	struct vgic_vmcr vmcr;
+
+	if (is_pvm_mode())
+		return kvm_pvm_vgic_vcpu_pending_irq(vcpu);
 
 	if (!vcpu->kvm->arch.vgic.enabled)
 		return false;

@@ -18,6 +18,7 @@
 
 #include <kvm/arm_vgic.h>
 
+#include <asm/kvm_emulate.h>
 #include <asm/kvm_pvm.h>
 #include <asm/sysreg.h>
 
@@ -179,6 +180,25 @@ static u32 pvm_vgic_peek_hppir1(struct kvm_vcpu *vcpu)
 	return best ? best_intid : ICC_IAR1_EL1_SPURIOUS;
 }
 
+static u32 pvm_vgic_peek_iar1(struct kvm_vcpu *vcpu)
+{
+	struct vgic_cpu *vgic_cpu = &vcpu->arch.vgic_cpu;
+	struct vgic_irq *irq;
+	struct vgic_vmcr vmcr;
+	unsigned long flags;
+	u32 intid = ICC_IAR1_EL1_SPURIOUS;
+
+	vgic_v3_get_vmcr(vcpu, &vmcr);
+	raw_spin_lock_irqsave(&vgic_cpu->ap_list_lock, flags);
+	irq = pvm_vgic_pick_irq(vcpu, &vmcr,
+				pvm_vgic_running_priority(vcpu));
+	if (irq)
+		intid = irq->intid;
+	raw_spin_unlock_irqrestore(&vgic_cpu->ap_list_lock, flags);
+
+	return intid;
+}
+
 static u32 pvm_vgic_read_iar1(struct kvm_vcpu *vcpu)
 {
 	struct vgic_cpu *vgic_cpu = &vcpu->arch.vgic_cpu;
@@ -303,6 +323,29 @@ static void pvm_vgic_write_dir(struct kvm_vcpu *vcpu, u32 intid)
 		return;
 
 	pvm_vgic_deactivate(vcpu, intid);
+}
+
+bool kvm_pvm_vgic_vcpu_pending_irq(struct kvm_vcpu *vcpu)
+{
+	return pvm_vgic_peek_iar1(vcpu) != ICC_IAR1_EL1_SPURIOUS;
+}
+
+static void pvm_vgic_inject_irq(struct kvm_vcpu *vcpu)
+{
+	__kvm_adjust_pc(vcpu);
+	if (*vcpu_cpsr(vcpu) & PSR_I_BIT)
+		return;
+
+	kvm_pend_exception(vcpu, EXCEPT_AA64_EL1_IRQ);
+}
+
+void kvm_pvm_vgic_flush_hwstate(struct kvm_vcpu *vcpu)
+{
+	if (!irqchip_in_kernel(vcpu->kvm) || !vgic_initialized(vcpu->kvm))
+		return;
+
+	if (kvm_pvm_vgic_vcpu_pending_irq(vcpu))
+		pvm_vgic_inject_irq(vcpu);
 }
 
 static u64 pvm_vgic_read_ctlr(struct kvm_vcpu *vcpu,
