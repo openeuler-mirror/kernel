@@ -55,6 +55,15 @@ static const struct ftr_set_desc mmfr1 __initconst = {
 	},
 };
 
+static const struct ftr_set_desc mmfr2 __initconst = {
+	.name		= "id_aa64mmfr2",
+	.override	= &id_aa64mmfr2_override,
+	.fields		= {
+		FIELD("cnp", ID_AA64MMFR2_EL1_CnP_SHIFT, NULL),
+		{}
+	},
+};
+
 static bool __init pfr0_sve_filter(u64 val)
 {
 	/*
@@ -171,6 +180,7 @@ static const struct ftr_set_desc sw_features __initconst = {
 
 static const struct ftr_set_desc * const regs[] __initconst = {
 	&mmfr1,
+	&mmfr2,
 	&pfr0,
 	&pfr1,
 	&isar0,
@@ -186,6 +196,7 @@ static const struct {
 } aliases[] __initconst = {
 	{ "kvm-arm.mode=nvhe",		"id_aa64mmfr1.vh=0" },
 	{ "kvm-arm.mode=protected",	"id_aa64mmfr1.vh=0" },
+	{ "arm64.nocnp",		"id_aa64mmfr2.cnp=0" },
 	{ "arm64.nosve",		"id_aa64pfr0.sve=0" },
 	{ "arm64.nosme",		"id_aa64pfr1.sme=0" },
 	{ "arm64.nobti",		"id_aa64pfr1.bt=0" },
