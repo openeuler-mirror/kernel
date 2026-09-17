@@ -194,7 +194,6 @@ static int uburma_cmd_free_token_id(struct ubcore_device *ubc_dev,
 				    struct uburma_cmd_hdr *hdr)
 {
 	struct uburma_cmd_free_token_id arg;
-	struct ubcore_token_id *token;
 	struct uburma_uobj *uobj;
 	int ret;
 
@@ -211,13 +210,6 @@ static int uburma_cmd_free_token_id(struct ubcore_device *ubc_dev,
 		uburma_log_err("failed to find token id.\n");
 		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_FREE_TOKEN_ID);
 		return -EINVAL;
-	}
-
-	token = (struct ubcore_token_id *)uobj->object;
-	if (arg.in.token_id != token->token_id) {
-		uobj_put_del(uobj);
-		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_FREE_TOKEN_ID);
-		return -EPERM;
 	}
 
 	ret = uobj_remove_commit(uobj);
