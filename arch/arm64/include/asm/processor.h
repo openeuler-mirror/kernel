@@ -165,6 +165,7 @@ struct thread_struct {
 		unsigned long	tp_value;	/* TLS register */
 		unsigned long	tp2_value;
 		struct user_fpsimd_state fpsimd_state;
+		u64		fpmr;
 	} uw;
 
 	enum fp_type		fp_type;	/* registers FPSIMD or SVE? */
