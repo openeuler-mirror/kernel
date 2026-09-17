@@ -648,11 +648,12 @@ int vgic_v3_probe(const struct gic_kvm_info *info)
 
 	if (is_pvm_mode()) {
 		/*
-		 * Populate synthetic ListRegs, IDbits and PRIbits fields without
-		 * reading ICH_VTR_EL2. PRIbits encodes VGIC_PRI_BITS priority bits.
+		 * Advertise VGIC_PRI_BITS priority and preemption bits. Leave
+		 * IDbits at zero for 16-bit INTIDs, matching the virtual GICD
+		 * and ITS. No ICH_* register is read in PVM mode.
 		 */
 		ich_vtr_el2 = 0xf |
-				 ((u64)(VGIC_PRI_BITS - 1) << ICH_VTR_ID_BITS_SHIFT) |
+				 ((u64)(VGIC_PRI_BITS - 1) << ICH_VTR_PRE_BITS_SHIFT) |
 				 ((u64)(VGIC_PRI_BITS - 1) <<
 				  ICH_VTR_PRI_BITS_SHIFT);
 	} else {
@@ -740,7 +741,7 @@ int vgic_v3_probe(const struct gic_kvm_info *info)
 		static_branch_enable(&vgic_v3_cpuif_trap);
 	}
 
-	if (info->has_nmi) {
+	if (info->has_nmi && !is_pvm_mode()) {
 		kvm_vgic_global_state.has_nmi = !static_branch_unlikely(&vgic_v3_cpuif_trap);
 		kvm_info("GICv3 NMI support %s\n",
 			 kvm_vgic_global_state.has_nmi ? "enabled" : "disabled due to trapping");
