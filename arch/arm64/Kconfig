@@ -2306,6 +2306,7 @@ config ARM64_TLB_RANGE
 config ARM64_TLBID
 	bool "Enable support for TLBID (TLBI Domains)"
 	default y
+	depends on AS_HAS_TLBIP
 	help
 	  TLBI broadcasting all PEs introduces performance noise. By
 	  combining hardware and software, TLBID (TLBI Domain) limit TLBI
@@ -2322,6 +2323,14 @@ config ARM64_TLBID
 
 	  The feature is detected at runtime, and will remain disabled
 	  if the system does not implement the feature.
+
+config AS_HAS_TLBIP
+	def_bool $(as-instr,.arch_extension d128)
+	help
+	  The TLBIP instruction mnemonic requires the FEAT_D128 extension
+	  of the assembler. When the assembler does not support it, the
+	  kernel falls back to emitting TLBIP instructions as raw
+	  encodings.
 
 config ARM64_MPAM
 	bool "Enable support for MPAM"
