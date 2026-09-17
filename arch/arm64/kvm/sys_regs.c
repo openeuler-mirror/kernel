@@ -27,6 +27,7 @@
 #include <asm/kvm_hyp.h>
 #include <asm/kvm_mmu.h>
 #include <asm/kvm_nested.h>
+#include <asm/kvm_pvm.h>
 #include <asm/perf_event.h>
 #include <asm/sysreg.h>
 
@@ -421,6 +422,19 @@ static bool access_gic_sre(struct kvm_vcpu *vcpu,
 		return ignore_write(vcpu, p);
 
 	p->regval = vcpu->arch.vgic_cpu.vgic_v3.vgic_sre;
+	return true;
+}
+
+static bool access_pvm_vgic_cpuif(struct kvm_vcpu *vcpu,
+				  struct sys_reg_params *p,
+				  const struct sys_reg_desc *r)
+{
+	if (!kvm_pvm_vgic_cpuif_access(vcpu, reg_to_encoding(r),
+				       p->is_write, &p->regval)) {
+		kvm_inject_undefined(vcpu);
+		return false;
+	}
+
 	return true;
 }
 
@@ -2811,6 +2825,9 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 
 	{ SYS_DESC(SYS_ALLINT), undef_access },
 
+	{ SYS_DESC(SYS_ICC_PMR_EL1), undef_access,
+	  .pvm_access = access_pvm_vgic_cpuif },
+
 	{ SYS_DESC(SYS_AFSR0_EL1), access_vm_reg, reset_unknown, AFSR0_EL1 },
 	{ SYS_DESC(SYS_AFSR1_EL1), access_vm_reg, reset_unknown, AFSR1_EL1 },
 	{ SYS_DESC(SYS_ESR_EL1), access_vm_reg, reset_unknown, ESR_EL1,
@@ -2872,19 +2889,38 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 	  .pvm_access = access_rw },
 	{ SYS_DESC(SYS_DISR_EL1), NULL, reset_val, DISR_EL1, 0 },
 
-	{ SYS_DESC(SYS_ICC_IAR0_EL1), write_to_read_only },
-	{ SYS_DESC(SYS_ICC_EOIR0_EL1), read_from_write_only },
-	{ SYS_DESC(SYS_ICC_HPPIR0_EL1), write_to_read_only },
+	{ SYS_DESC(SYS_ICC_IAR0_EL1), write_to_read_only,
+	  .pvm_access = access_pvm_vgic_cpuif },
+	{ SYS_DESC(SYS_ICC_EOIR0_EL1), read_from_write_only,
+	  .pvm_access = access_pvm_vgic_cpuif },
+	{ SYS_DESC(SYS_ICC_HPPIR0_EL1), write_to_read_only,
+	  .pvm_access = access_pvm_vgic_cpuif },
+	{ SYS_DESC(SYS_ICC_BPR0_EL1), undef_access,
+	  .pvm_access = access_pvm_vgic_cpuif },
 	{ SYS_DESC(SYS_ICC_NMIAR1_EL1), undef_access },
-	{ SYS_DESC(SYS_ICC_DIR_EL1), read_from_write_only },
-	{ SYS_DESC(SYS_ICC_RPR_EL1), write_to_read_only },
+	{ SYS_DESC(SYS_ICC_DIR_EL1), read_from_write_only,
+	  .pvm_access = access_pvm_vgic_cpuif },
+	{ SYS_DESC(SYS_ICC_RPR_EL1), write_to_read_only,
+	  .pvm_access = access_pvm_vgic_cpuif },
 	{ SYS_DESC(SYS_ICC_SGI1R_EL1), access_gic_sgi },
 	{ SYS_DESC(SYS_ICC_ASGI1R_EL1), access_gic_sgi },
 	{ SYS_DESC(SYS_ICC_SGI0R_EL1), access_gic_sgi },
-	{ SYS_DESC(SYS_ICC_IAR1_EL1), write_to_read_only },
-	{ SYS_DESC(SYS_ICC_EOIR1_EL1), read_from_write_only },
-	{ SYS_DESC(SYS_ICC_HPPIR1_EL1), write_to_read_only },
-	{ SYS_DESC(SYS_ICC_SRE_EL1), access_gic_sre },
+	{ SYS_DESC(SYS_ICC_IAR1_EL1), write_to_read_only,
+	  .pvm_access = access_pvm_vgic_cpuif },
+	{ SYS_DESC(SYS_ICC_EOIR1_EL1), read_from_write_only,
+	  .pvm_access = access_pvm_vgic_cpuif },
+	{ SYS_DESC(SYS_ICC_HPPIR1_EL1), write_to_read_only,
+	  .pvm_access = access_pvm_vgic_cpuif },
+	{ SYS_DESC(SYS_ICC_BPR1_EL1), undef_access,
+	  .pvm_access = access_pvm_vgic_cpuif },
+	{ SYS_DESC(SYS_ICC_CTLR_EL1), undef_access,
+	  .pvm_access = access_pvm_vgic_cpuif },
+	{ SYS_DESC(SYS_ICC_SRE_EL1), access_gic_sre,
+	  .pvm_access = access_pvm_vgic_cpuif },
+	{ SYS_DESC(SYS_ICC_IGRPEN0_EL1), undef_access,
+	  .pvm_access = access_pvm_vgic_cpuif },
+	{ SYS_DESC(SYS_ICC_IGRPEN1_EL1), undef_access,
+	  .pvm_access = access_pvm_vgic_cpuif },
 
 	{ SYS_DESC(SYS_CONTEXTIDR_EL1), access_vm_reg, reset_val, CONTEXTIDR_EL1,
 	  0, .pvm_access = access_rw },
