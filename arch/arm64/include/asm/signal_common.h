@@ -192,6 +192,8 @@ static int restore_sigframe(struct pt_regs *regs,
 	 */
 	forget_syscall(regs);
 
+	fpsimd_save_and_flush_current_state();
+
 	err |= !valid_user_regs(&regs->user_regs, current);
 	if (err == 0)
 		err = parse_user_sigcontext(&user, sf);
@@ -379,7 +381,7 @@ static int __setup_rt_frame(int usig, struct ksignal *ksig,
 	struct rt_sigframe __user *frame;
 	int err = 0;
 
-	fpsimd_signal_preserve_current_state();
+	fpsimd_save_and_flush_current_state();
 
 	if (get_sigframe(&user, ksig, regs))
 		return 1;
