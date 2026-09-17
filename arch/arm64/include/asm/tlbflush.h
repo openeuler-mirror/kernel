@@ -331,32 +331,6 @@ static inline void flush_tlb_mm(struct mm_struct *mm)
 	mmu_notifier_arch_invalidate_secondary_tlbs(mm, 0, -1UL);
 }
 
-static inline void __flush_tlb_page_nosync(struct mm_struct *mm,
-					   unsigned long uaddr)
-{
-	unsigned long addr;
-
-	dsb(ishst);
-	addr = __TLBI_VADDR(uaddr, ASID(mm));
-	__tlbi(vale1is, addr);
-	__tlbi_user(vale1is, addr);
-	mmu_notifier_arch_invalidate_secondary_tlbs(mm, uaddr & PAGE_MASK,
-						(uaddr & PAGE_MASK) + PAGE_SIZE);
-}
-
-static inline void flush_tlb_page_nosync(struct vm_area_struct *vma,
-					 unsigned long uaddr)
-{
-	return __flush_tlb_page_nosync(vma->vm_mm, uaddr);
-}
-
-static inline void flush_tlb_page(struct vm_area_struct *vma,
-				  unsigned long uaddr)
-{
-	flush_tlb_page_nosync(vma, uaddr);
-	dsb(ish);
-}
-
 static inline bool arch_tlbbatch_should_defer(struct mm_struct *mm)
 {
 #ifdef CONFIG_ARM64_WORKAROUND_REPEAT_TLBI
@@ -708,6 +682,52 @@ static inline void flush_tlb_range(struct vm_area_struct *vma,
 	 * Set the tlb_level to 0 because we can not get enough information here.
 	 */
 	__flush_tlb_range(vma, start, end, PAGE_SIZE, false, 0);
+}
+
+static inline void __flush_tlb_page_nosync(struct mm_struct *mm,
+					   unsigned long uaddr)
+{
+	unsigned long asid = ASID(mm);
+	int domain, scope;
+	unsigned long lo, flags;
+
+	dsb(ishst);
+
+	scope = flush_tlb_begin(mm, &flags);
+	if (scope == TLB_FLUSH_SCOPE_DOMAIN) {
+		domain = pick_best_domain(mm_cpumask(mm));
+
+		lo = __tlbip_va_lo(asid, domain, 0);
+		__tlbip(vale1is, lo, __tlbip_addr_hi(uaddr));
+		__tlbip_user(vale1is, lo, __tlbip_addr_hi(uaddr));
+	} else {
+		unsigned long addr = __TLBI_VADDR(uaddr, asid);
+
+		if (scope == TLB_FLUSH_SCOPE_BROADCAST) {
+			__tlbi(vale1is, addr);
+			__tlbi_user(vale1is, addr);
+		} else {
+			__tlbi(vale1, addr);
+			__tlbi_user(vale1, addr);
+		}
+	}
+	flush_tlb_end(scope, flags);
+
+	mmu_notifier_arch_invalidate_secondary_tlbs(mm, uaddr & PAGE_MASK,
+					(uaddr & PAGE_MASK) + PAGE_SIZE);
+}
+
+static inline void flush_tlb_page_nosync(struct vm_area_struct *vma,
+				 unsigned long uaddr)
+{
+	return __flush_tlb_page_nosync(vma->vm_mm, uaddr);
+}
+
+static inline void flush_tlb_page(struct vm_area_struct *vma,
+				  unsigned long uaddr)
+{
+	flush_tlb_page_nosync(vma, uaddr);
+	dsb(ish);
 }
 
 static inline void flush_tlb_kernel_range(unsigned long start, unsigned long end)
