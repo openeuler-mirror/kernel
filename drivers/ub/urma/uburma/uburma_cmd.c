@@ -610,18 +610,6 @@ static int uburma_cmd_query_jfs(struct ubcore_device *ubc_dev,
 	return ret;
 }
 
-/* Workaround: invalidates the jfae_handler when destroying the jfs_uobj,
- * but does not fully resolve the race between driver invocation of jfae_handler
- * and jfae deletion.
- */
-static void uburma_invalidate_jfs_jfae_handler(struct uburma_jfs_uobj *jfs_uobj)
-{
-	struct ubcore_jfs *jfs;
-
-	jfs = jfs_uobj->uobj.object;
-	jfs->jfae_handler = NULL;
-}
-
 static int uburma_cmd_delete_jfs(struct ubcore_device *ubc_dev,
 				 struct uburma_file *file,
 				 struct uburma_cmd_hdr *hdr)
@@ -653,7 +641,6 @@ static int uburma_cmd_delete_jfs(struct ubcore_device *ubc_dev,
 	ret = uobj_remove_commit(uobj);
 	if (ret != 0) {
 		uburma_log_err("delete jfs failed, ret:%d.\n", ret);
-		uburma_invalidate_jfs_jfae_handler(jfs_uobj);
 		uobj_put(uobj);
 		uobj_put_del(uobj);
 		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_DELETE_JFS);
@@ -724,7 +711,6 @@ static int uburma_cmd_delete_jfs_batch(struct ubcore_device *ubc_dev,
 		uobj_get(uobj);
 		jfs_uobj = container_of(uobj, struct uburma_jfs_uobj, uobj);
 		async_events_reported += jfs_uobj->async_events_reported;
-		uburma_invalidate_jfs_jfae_handler(jfs_uobj);
 	}
 
 	ret = uobj_remove_commit_batch(uobj_arr, arr_num, &bad_jfs_index);
@@ -859,7 +845,6 @@ static int uburma_cmd_free_jfs(struct ubcore_device *ubc_dev,
 	ret = uobj_remove_commit(uobj);
 	if (ret != 0) {
 		uburma_log_err("delete jfs failed, ret:%d.\n", ret);
-		uburma_invalidate_jfs_jfae_handler(jfs_uobj);
 		uobj_put(uobj);
 		uobj_put_del(uobj);
 		return ret;
@@ -1402,18 +1387,6 @@ static int uburma_cmd_query_jfr(struct ubcore_device *ubc_dev,
 	return ret;
 }
 
-/* Workaround: invalidates the jfae_handler when destroying the jfr_uobj,
- * but does not fully resolve the race between driver invocation of jfae_handler
- * and jfae deletion.
- */
-static void uburma_invalidate_jfr_jfae_handler(struct uburma_jfr_uobj *jfr_uobj)
-{
-	struct ubcore_jfr *jfr;
-
-	jfr = jfr_uobj->uobj.object;
-	jfr->jfae_handler = NULL;
-}
-
 static int uburma_cmd_delete_jfr(struct ubcore_device *ubc_dev,
 				 struct uburma_file *file,
 				 struct uburma_cmd_hdr *hdr)
@@ -1445,7 +1418,6 @@ static int uburma_cmd_delete_jfr(struct ubcore_device *ubc_dev,
 	ret = uobj_remove_commit(uobj);
 	if (ret != 0) {
 		uburma_log_err("delete jfr failed, ret:%d.\n", ret);
-		uburma_invalidate_jfr_jfae_handler(jfr_uobj);
 		uobj_put(uobj);
 		uobj_put_del(uobj);
 		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_DELETE_JFR);
@@ -1516,7 +1488,6 @@ static int uburma_cmd_delete_jfr_batch(struct ubcore_device *ubc_dev,
 		uobj_get(uobj);
 		jfr_uobj = container_of(uobj, struct uburma_jfr_uobj, uobj);
 		async_events_reported += jfr_uobj->async_events_reported;
-		uburma_invalidate_jfr_jfae_handler(jfr_uobj);
 	}
 
 	ret = uobj_remove_commit_batch(uobj_arr, arr_num, &bad_jfr_index);
@@ -1648,7 +1619,6 @@ static int uburma_cmd_free_jfr(struct ubcore_device *ubc_dev,
 	ret = uobj_remove_commit(uobj);
 	if (ret != 0) {
 		uburma_log_err("delete jfr failed, ret:%d.\n", ret);
-		uburma_invalidate_jfr_jfae_handler(jfr_uobj);
 		uobj_put(uobj);
 		uobj_put_del(uobj);
 		return ret;
@@ -2071,18 +2041,6 @@ static void uburma_cleanup_jfce_references(struct uburma_jfc_uobj *jfc_uobj)
 	spin_unlock_irqrestore(&jfc_uobj->jfc_lock, flag);
 }
 
-/* Workaround: invalidates the jfae_handler when destroying the jfc_uobj,
- * but does not fully resolve the race between driver invocation of jfae_handler
- * and jfae deletion.
- */
-static void uburma_invalidate_jfc_jfae_handler(struct uburma_jfc_uobj *jfc_uobj)
-{
-	struct ubcore_jfc *jfc;
-
-	jfc = jfc_uobj->uobj.object;
-	jfc->jfae_handler = NULL;
-}
-
 static int uburma_cmd_delete_jfc(struct ubcore_device *ubc_dev,
 				 struct uburma_file *file,
 				 struct uburma_cmd_hdr *hdr)
@@ -2115,7 +2073,6 @@ static int uburma_cmd_delete_jfc(struct ubcore_device *ubc_dev,
 	if (ret != 0) {
 		uburma_log_err("delete jfc failed, ret:%d.\n", ret);
 		uburma_cleanup_jfce_references(jfc_uobj);
-		uburma_invalidate_jfc_jfae_handler(jfc_uobj);
 		uobj_put(uobj);
 		uobj_put_del(uobj);
 		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_DELETE_JFC);
@@ -2286,7 +2243,6 @@ static int uburma_cmd_delete_jfc_batch(struct ubcore_device *ubc_dev,
 		jfc_uobj = container_of(uobj, struct uburma_jfc_uobj, uobj);
 		comp_events_reported += jfc_uobj->comp_events_reported;
 		async_events_reported += jfc_uobj->async_events_reported;
-		uburma_invalidate_jfc_jfae_handler(jfc_uobj);
 	}
 
 	ret = uobj_remove_commit_batch(uobj_arr, arr_num, &bad_jfc_index);
@@ -2426,7 +2382,6 @@ static int uburma_cmd_free_jfc(struct ubcore_device *ubc_dev,
 	ret = uobj_remove_commit(uobj);
 	if (ret != 0) {
 		uburma_log_err("delete jfc failed, ret:%d.\n", ret);
-		uburma_invalidate_jfc_jfae_handler(jfc_uobj);
 		uobj_put(uobj);
 		uobj_put_del(uobj);
 		return ret;
@@ -2817,18 +2772,6 @@ static int uburma_cmd_query_jetty(struct ubcore_device *ubc_dev,
 	return ret;
 }
 
-/* Workaround: invalidates the jfae_handler when destroying the jetty_uobj,
- * but does not fully resolve the race between driver invocation of jfae_handler
- * and jfae deletion.
- */
-static void uburma_invalidate_jetty_jfae_handler(struct uburma_jetty_uobj *jetty_uobj)
-{
-	struct ubcore_jetty *jetty;
-
-	jetty = jetty_uobj->uobj.object;
-	jetty->jfae_handler = NULL;
-}
-
 static int uburma_cmd_delete_jetty(struct ubcore_device *ubc_dev,
 				   struct uburma_file *file,
 				   struct uburma_cmd_hdr *hdr)
@@ -2860,7 +2803,6 @@ static int uburma_cmd_delete_jetty(struct ubcore_device *ubc_dev,
 	ret = uobj_remove_commit(uobj);
 	if (ret != 0) {
 		uburma_log_err("delete jetty failed, ret:%d.\n", ret);
-		uburma_invalidate_jetty_jfae_handler(jetty_uobj);
 		uobj_put(uobj);
 		uobj_put_del(uobj);
 		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_DELETE_JETTY);
@@ -2932,7 +2874,6 @@ static int uburma_cmd_delete_jetty_batch(struct ubcore_device *ubc_dev,
 		uobj_get(uobj);
 		jetty_uobj = container_of(uobj, struct uburma_jetty_uobj, uobj);
 		async_events_reported += jetty_uobj->async_events_reported;
-		uburma_invalidate_jetty_jfae_handler(jetty_uobj);
 	}
 
 	ret = uobj_remove_commit_batch(uobj_arr, arr_num, &bad_jetty_index);
@@ -3095,7 +3036,6 @@ static int uburma_cmd_free_jetty(struct ubcore_device *ubc_dev,
 	ret = uobj_remove_commit(uobj);
 	if (ret != 0) {
 		uburma_log_err("free jetty failed, ret:%d.\n", ret);
-		uburma_invalidate_jetty_jfae_handler(jetty_uobj);
 		uobj_put(uobj);
 		uobj_put_del(uobj);
 		return ret;
@@ -4122,18 +4062,6 @@ err_alloc_abort:
 	return ret;
 }
 
-/* Workaround: invalidates the jfae_handler when destroying the jetty_grp_uobj,
- * but does not fully resolve the race between driver invocation of jfae_handler
- * and jfae deletion.
- */
-static void uburma_invalidate_jetty_grp_jfae_handler(struct uburma_jetty_grp_uobj *jetty_grp_uobj)
-{
-	struct ubcore_jetty_group *jetty_grp;
-
-	jetty_grp = jetty_grp_uobj->uobj.object;
-	jetty_grp->jfae_handler = NULL;
-}
-
 static int uburma_cmd_delete_jetty_grp(struct ubcore_device *ubc_dev,
 				       struct uburma_file *file,
 				       struct uburma_cmd_hdr *hdr)
@@ -4160,7 +4088,6 @@ static int uburma_cmd_delete_jetty_grp(struct ubcore_device *ubc_dev,
 	ret = uobj_remove_commit(uobj);
 	if (ret != 0) {
 		uburma_log_err("delete jfr failed, ret:%d.\n", ret);
-		uburma_invalidate_jetty_grp_jfae_handler(jetty_grp_uobj);
 		uobj_put(uobj);
 		uobj_put_del(uobj);
 		return ret;
