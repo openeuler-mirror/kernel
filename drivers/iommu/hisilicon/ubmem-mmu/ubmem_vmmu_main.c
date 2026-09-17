@@ -401,7 +401,7 @@ static int ubmem_vmmu_iotlb_sync_map(struct iommu_domain *domain,
 	u64 iova_end = iova + size;
 	bool ctx_match = false;
 	u64 req_buf_size;
-	int ret;
+	int ret = 0;
 
 	pr_debug("vmmu iotlb sync map, size 0x%zx, pid %d, hash_idx %u\n", size, pid, hash_idx);
 
