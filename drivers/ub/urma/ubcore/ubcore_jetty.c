@@ -1940,7 +1940,12 @@ struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
 	    dev->transport_type == UBCORE_TRANSPORT_UB &&
 	    (cfg->trans_mode == UBCORE_TP_RM ||
 	     cfg->trans_mode == UBCORE_TP_UM)) {
-		ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param);
+		if (ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param) != 0) {
+			mutex_destroy(&tjfr->lock);
+			(void)dev->ops->unimport_jfr(tjfr);
+			UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JFR);
+			return ERR_PTR(-EINVAL);
+		}
 		mutex_lock(&tjfr->lock);
 		vtpn = ubcore_connect_vtp(dev, &vtp_param);
 		if (IS_ERR_OR_NULL(vtpn)) {
@@ -2025,7 +2030,12 @@ ubcore_import_jfr_ex_old(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cf
 	if (dev->transport_type == UBCORE_TRANSPORT_UB &&
 	    (cfg->trans_mode == UBCORE_TP_RM ||
 	     cfg->trans_mode == UBCORE_TP_UM)) {
-		ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param);
+		if (ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param) != 0) {
+			mutex_destroy(&tjfr->lock);
+			(void)dev->ops->unimport_jfr(tjfr);
+			UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JFR);
+			return ERR_PTR(-EINVAL);
+		}
 		mutex_lock(&tjfr->lock);
 		vtpn = ubcore_connect_vtp_ctrlplane(dev, &vtp_param, active_tp_cfg, udata);
 		if (IS_ERR_OR_NULL(vtpn)) {
@@ -2146,7 +2156,12 @@ ubcore_import_jfr_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 			return UBCORE_CHECK_RETURN_ERR_PTR(tjfr, UBCORE_DRV_ERRNO);
 		}
 
-		ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param);
+		if (ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param) != 0) {
+			mutex_destroy(&tjfr->lock);
+			(void)dev->ops->unimport_jfr(tjfr);
+			(void)ubcore_modify_tpid(dev, UBCORE_TPID_STATE_ERR, &modify_tpid_cfg);
+			return ERR_PTR(-EINVAL);
+		}
 		mutex_lock(&tjfr->lock);
 		vtpn = ubcore_get_vtpn(dev, &vtp_param, active_tp_cfg, udata);
 		if (IS_ERR_OR_NULL(vtpn)) {
@@ -3223,7 +3238,12 @@ struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
 	     cfg->trans_mode == UBCORE_TP_UM ||
 	     is_create_rc_shared_tp(cfg->trans_mode, cfg->flag.bs.order_type,
 				    tjetty->cfg.flag.bs.share_tp))) {
-		ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param);
+		if (ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param) != 0) {
+			mutex_destroy(&tjetty->lock);
+			(void)dev->ops->unimport_jetty(tjetty);
+			UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
+			return ERR_PTR(-EINVAL);
+		}
 		mutex_lock(&tjetty->lock);
 		vtpn = ubcore_connect_vtp(dev, &vtp_param);
 		if (IS_ERR_OR_NULL(vtpn)) {
@@ -3310,7 +3330,12 @@ ubcore_import_jetty_ex_old(struct ubcore_device *dev, struct ubcore_tjetty_cfg *
 	     cfg->trans_mode == UBCORE_TP_UM ||
 	     is_create_rc_shared_tp(cfg->trans_mode, cfg->flag.bs.order_type,
 				    tjetty->cfg.flag.bs.share_tp))) {
-		ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param);
+		if (ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param) != 0) {
+			mutex_destroy(&tjetty->lock);
+			(void)dev->ops->unimport_jetty(tjetty);
+			UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
+			return ERR_PTR(-EINVAL);
+		}
 		mutex_lock(&tjetty->lock);
 		vtpn = ubcore_connect_vtp_ctrlplane(dev, &vtp_param, active_tp_cfg, udata);
 		if (IS_ERR_OR_NULL(vtpn)) {
@@ -3431,7 +3456,12 @@ ubcore_import_jetty_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 		return UBCORE_CHECK_RETURN_ERR_PTR(tjetty, UBCORE_DRV_ERRNO);
 	}
 
-	ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param);
+	if (ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param) != 0) {
+		mutex_destroy(&tjetty->lock);
+		(void)dev->ops->unimport_jetty(tjetty);
+		(void)ubcore_modify_tpid(dev, UBCORE_TPID_STATE_ERR, &modify_tpid_cfg);
+		return ERR_PTR(-EINVAL);
+	}
 	mutex_lock(&tjetty->lock);
 	vtpn = ubcore_get_vtpn(dev, &vtp_param, active_tp_cfg, udata);
 	if (IS_ERR_OR_NULL(vtpn)) {
@@ -3575,7 +3605,11 @@ static int ubcore_inner_bind_ub_jetty(struct ubcore_jetty *jetty,
 				    jetty->jetty_cfg.flag.bs.order_type,
 				    tjetty->cfg.flag.bs.share_tp)) {
 		memcpy(&cfg, &tjetty->cfg, sizeof(tjetty->cfg));
-		ubcore_set_vtp_param(dev, jetty, &cfg, &vtp_param);
+		if (ubcore_set_vtp_param(dev, jetty, &cfg, &vtp_param) != 0) {
+			ubcore_log_err("Failed to set vtp param.\n");
+			ret = -EINVAL;
+			goto unbind;
+		}
 		mutex_lock(&tjetty->lock);
 
 		if (tjetty->vtpn) {
@@ -3721,7 +3755,11 @@ static int ubcore_inner_bind_ub_jetty_ctrlplane(
 				    jetty->jetty_cfg.flag.bs.order_type,
 				    tjetty->cfg.flag.bs.share_tp)) {
 		memcpy(&cfg, &tjetty->cfg, sizeof(tjetty->cfg));
-		ubcore_set_vtp_param(dev, jetty, &cfg, &vtp_param);
+		if (ubcore_set_vtp_param(dev, jetty, &cfg, &vtp_param) != 0) {
+			ubcore_log_err("Failed to set vtp param.\n");
+			ret = -EINVAL;
+			goto unbind;
+		}
 		mutex_lock(&tjetty->lock);
 
 		if (tjetty->vtpn) {
@@ -4098,7 +4136,11 @@ struct ubcore_tjetty *ubcore_import_jetty_async(struct ubcore_device *dev,
 	     cfg->trans_mode == UBCORE_TP_UM ||
 	     is_create_rc_shared_tp(cfg->trans_mode, cfg->flag.bs.order_type,
 				    tjetty->cfg.flag.bs.share_tp))) {
-		ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param);
+		if (ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param) != 0) {
+			mutex_destroy(&tjetty->lock);
+			(void)dev->ops->unimport_jetty(tjetty);
+			return ERR_PTR(-EINVAL);
+		}
 		mutex_lock(&tjetty->lock);
 		vtpn = ubcore_connect_vtp_async(dev, &vtp_param, timeout,
 						&para);
@@ -4216,7 +4258,11 @@ static int ubcore_inner_bind_ub_jetty_async(struct ubcore_jetty *jetty,
 				    jetty->jetty_cfg.flag.bs.order_type,
 				    tjetty->cfg.flag.bs.share_tp)) {
 		memcpy(&cfg, &tjetty->cfg, sizeof(tjetty->cfg));
-		ubcore_set_vtp_param(dev, jetty, &cfg, &vtp_param);
+		if (ubcore_set_vtp_param(dev, jetty, &cfg, &vtp_param) != 0) {
+			ubcore_log_err("Failed to set vtp param.\n");
+			ret = -EINVAL;
+			goto unbind;
+		}
 		mutex_lock(&tjetty->lock);
 
 		if (tjetty->vtpn) {
