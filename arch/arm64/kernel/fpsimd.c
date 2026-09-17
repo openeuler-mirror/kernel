@@ -386,7 +386,7 @@ static void task_fpsimd_load(void)
 	WARN_ON(!have_cpu_fpsimd_context());
 
 	if (system_supports_fpmr())
-		write_sysreg_s(current->thread.uw.fpmr, SYS_FPMR);
+		write_sysreg_s(current->thread.fpmr, SYS_FPMR);
 
 	if (system_supports_sve() || system_supports_sme()) {
 		switch (current->thread.fp_type) {
@@ -1737,7 +1737,7 @@ static void fpsimd_bind_task_to_cpu(void)
 	last->sve_vl = task_get_sve_vl(current);
 	last->sme_vl = task_get_sme_vl(current);
 	last->svcr = &current->thread.svcr;
-	last->fpmr = &current->thread.uw.fpmr;
+	last->fpmr = &current->thread.fpmr;
 	last->fp_type = &current->thread.fp_type;
 	last->to_save = FP_STATE_CURRENT;
 	current->thread.fpsimd_cpu = smp_processor_id();
