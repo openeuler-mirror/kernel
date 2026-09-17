@@ -82,7 +82,7 @@ static int a32_preserve_vfp_context(struct a32_vfp_sigframe __user *frame)
 	 * Note that this also saves V16-31, which aren't visible
 	 * in AArch32.
 	 */
-	fpsimd_signal_preserve_current_state();
+	fpsimd_save_and_flush_current_state();
 
 	/* Place structure header on the stack */
 	__put_user_error(magic, &frame->magic, err);
@@ -148,14 +148,17 @@ static int a32_restore_vfp_context(struct a32_vfp_sigframe __user *frame)
 	fpsimd.fpsr = fpscr & VFP_FPSCR_STAT_MASK;
 	fpsimd.fpcr = fpscr & VFP_FPSCR_CTRL_MASK;
 
+	if (err)
+		return -EFAULT;
+
 	/*
 	 * We don't need to touch the exception register, so
 	 * reload the hardware state.
 	 */
-	if (!err)
-		fpsimd_update_current_state(&fpsimd);
+	fpsimd_save_and_flush_current_state();
+	current->thread.uw.fpsimd_state = fpsimd;
 
-	return err ? -EFAULT : 0;
+	return 0;
 }
 
 static int a32_restore_sigframe(struct pt_regs *regs,
