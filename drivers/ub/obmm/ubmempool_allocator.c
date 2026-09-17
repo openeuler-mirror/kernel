@@ -574,6 +574,11 @@ size_t ubmempool_contract(int nid, bool is_hugepage)
 		return 0;
 	}
 
+	if (!mem_allocators[nid].allocator.initialized) {
+		pr_err_ratelimited("Allocator not initialized, nid=%d.\n", nid);
+		return 0;
+	}
+
 	pr_debug_ratelimited("contract memory on nid: %d, is_hugepage: %d\n", nid, is_hugepage);
 	/* try to contract memory only when it is helpful */
 	a = &mem_allocators[nid].allocator;
@@ -706,7 +711,7 @@ void ubmempool_allocator_exit(void)
 
 	ghes_unregister_report_chain(&ghes_mem_ras_notifier_block);
 
-	for_each_online_local_node(i) {
+	for (i = 0; i < OBMM_MAX_LOCAL_NUMA_NODES; i++) {
 		if (!mem_allocators[i].allocator.initialized)
 			continue;
 
