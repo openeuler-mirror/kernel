@@ -184,4 +184,13 @@ config MGBEVF_OPTM_WITH_LARGE
 
           If unsure, say N.
 
+config MCEVF
+	tristate "Mucse Ethernet virtual function support"
+	depends on PCI && DIMLIB
+	select AUXILIARY_BUS
+	help
+	  This driver supports Mucse Ethernet virtual function PCI devices.
+
+	  To compile this driver as a module, choose M here. The module will
+	  be called mcevf.
 endif # NET_VENDOR_MUCSE
