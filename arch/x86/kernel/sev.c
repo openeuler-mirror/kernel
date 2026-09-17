@@ -1551,6 +1551,5 @@ bool __init handle_vc_boot_ghcb(struct pt_regs *regs)
 fail:
 	show_regs(regs);
 
-	while (true)
-		halt();
+	sev_es_terminate(GHCB_SEV_ES_REASON_GENERAL_REQUEST);
 }
