@@ -4047,12 +4047,24 @@ static int csv3_handle_page_fault(struct kvm_vcpu *vcpu, gpa_t gpa,
 {
 	gfn_t gfn = gpa_to_gfn(gpa);
 	struct kvm_memory_slot *slot = gfn_to_memslot(vcpu->kvm, gfn);
+	struct kvm_csv_info *csv = &to_kvm_svm_csv(vcpu->kvm)->csv_info;
 	int ret;
+
+	/* Retry PF if the GPA hit a memslot that is being deleted or moved. */
+	if (slot && (slot->flags & KVM_MEMSLOT_INVALID))
+		return 1;
 
 	if (kvm_is_visible_memslot(slot))
 		ret = csv3_page_fault(vcpu, slot, gfn, error_code);
-	else
+	else {
+		if ((csv->inuse_ext & KVM_CAP_HYGON_COCO_EXT_CSV3_NPT_EX) &&
+		    ((csv->tom != 0 && gpa < csv->tom) ||
+		     (csv->tom2 != 0 && (4ull << 30) <= gpa && gpa < csv->tom2))) {
+			/* Retry PF from guest */
+			return 1;
+		}
 		ret = csv3_mmio_page_fault(vcpu, gpa, error_code);
+	}
 
 	return ret;
 }
