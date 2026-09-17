@@ -243,7 +243,7 @@ static int ubmempfd_alloc_tdev(struct ubmempfd_ctx *ctx, u32 tid)
 	info.v2.tid = tid;
 
 	if (ctx->dev) {
-		pr_info("ummu dev exists, tid %u\n", tid);
+		pr_warn("ummu dev exists, tid %u\n", tid);
 		return 0;
 	}
 
