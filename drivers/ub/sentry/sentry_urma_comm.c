@@ -1006,6 +1006,7 @@ int import(void)
 	tjetty_cfg.flag.bs.token_policy = UBCORE_TOKEN_NONE;
 	tjetty_cfg.trans_mode = UBCORE_TP_RM;
 	tjetty_cfg.type = UBCORE_JETTY;
+	tjetty_cfg.tp_type = UBCORE_CTP;
 
 	/* Process each die */
 	for (die_index = 0; die_index < sentry_urma_ctx.server_eid_num_configured; die_index++) {
