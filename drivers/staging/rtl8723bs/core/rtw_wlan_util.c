@@ -1495,22 +1495,30 @@ unsigned int is_ap_in_tkip(struct adapter *padapter)
 		for (i = sizeof(struct ndis_802_11_fix_ie); i < pmlmeinfo->network.IELength;) {
 			pIE = (struct ndis_80211_var_ie *)(pmlmeinfo->network.IEs + i);
 
+			if (i + sizeof(*pIE) > pmlmeinfo->network.IELength)
+				break;
+			if (i + sizeof(*pIE) + pIE->Length > pmlmeinfo->network.IELength)
+				break;
+
 			switch (pIE->ElementID) {
 			case _VENDOR_SPECIFIC_IE_:
-				if ((!memcmp(pIE->data, RTW_WPA_OUI, 4)) && (!memcmp((pIE->data + 12), WPA_TKIP_CIPHER, 4)))
+				if (pIE->Length >= 16 &&
+				    !memcmp(pIE->data, RTW_WPA_OUI, 4) &&
+				    !memcmp((pIE->data + 12), WPA_TKIP_CIPHER, 4))
 					return true;
 
 				break;
 
 			case _RSN_IE_2_:
-				if (!memcmp((pIE->data + 8), RSN_TKIP_CIPHER, 4))
+				if (pIE->Length >= 12 &&
+				    !memcmp((pIE->data + 8), RSN_TKIP_CIPHER, 4))
 					return true;
 
 			default:
 				break;
 			}
 
-			i += (pIE->Length + 2);
+			i += sizeof(*pIE) + pIE->Length;
 		}
 
 		return false;
