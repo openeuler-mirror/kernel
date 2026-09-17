@@ -142,7 +142,6 @@ static int ubmem_vmmu_attach_dev(struct iommu_domain *domain, struct device *dev
 	u32 tid;
 	int ret;
 
-	pr_info("ubmem vmmu attach device\n");
 	if (mmu_domain->mmu) {
 		dev_err(dev, "attach failed, the domain has been occupied.\n");
 		return -EEXIST;
@@ -160,7 +159,7 @@ static int ubmem_vmmu_attach_dev(struct iommu_domain *domain, struct device *dev
 
 	mmu_domain->base_domain.tid = tid;
 	mmu_domain->mmu = mmu_device;
-	pr_info("ubmem vmmu attach device base_domain tid %u\n", tid);
+	pr_debug("ubmem vmmu attach device base_domain tid %u\n", tid);
 	return 0;
 }
 
@@ -516,7 +515,7 @@ static struct iommu_device *ubmem_vmmu_probe_device(struct device *dev)
 
 	master->ubmem_vmmu_dev = ubmem_vmmu_dev;
 	dev_iommu_priv_set(dev, master);
-	pr_info("ubm mmu probe device %s successful!\n", dev_name(dev));
+	pr_debug("ubm mmu probe device %s successful!\n", dev_name(dev));
 	return &ubmem_vmmu_dev->core_dev.iommu;
 }
 
@@ -685,7 +684,7 @@ static int ubmem_vmmu_device_probe(struct platform_device *pdev)
 		goto register_scb_err;
 	}
 
-	dev_info(dev, "register ubmem_vmmu to ummu core success");
+	dev_dbg(dev, "register ubmem_vmmu to ummu core success\n");
 	return 0;
 
 register_scb_err:

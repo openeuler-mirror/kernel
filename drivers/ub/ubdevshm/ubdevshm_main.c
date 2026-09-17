@@ -1266,7 +1266,7 @@ int ubdevshm_grant_access(unsigned long *handle, struct shm_user *user,
 	cntr->mode = USE_MODE_GRANT;
 	put_task_struct(utask);
 	shm_container_put(cntr);
-	pr_info("grant area with size[%llx] success\n", va->size);
+	pr_debug("grant area with size[%llx] success\n", va->size);
 	return 0;
 
 out:
@@ -1344,7 +1344,7 @@ int ubdevshm_ungrant_access(struct access_ctx *ctx)
 		goto out;
 	}
 	access_ctx_put(ctx_parent); // matching with grant
-	pr_info("ungrant area with size[%llx] success\n", ctx_parent->sa->size);
+	pr_debug("ungrant area with size[%llx] success\n", ctx_parent->sa->size);
 
 out:
 	shm_container_put(cntr);
@@ -1372,11 +1372,13 @@ static int __init ubdevshm_init(void)
 
 	init_rwsem(&ubdevshm_rw_semlock);
 	ubdevshm_init_state = true;
+	pr_info("ubdevshm driver loaded successfully.\n");
 	return 0;
 }
 
 static void __exit ubdevshm_exit(void)
 {
+	pr_info("ubdevshm driver unloaded.\n");
 	ubdevshm_init_state = false;
 
 	ubdevshm_attr_file_uninit();
