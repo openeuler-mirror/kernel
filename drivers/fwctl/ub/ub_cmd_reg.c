@@ -544,6 +544,18 @@ static int ubctl_query_queue_data(struct ubctl_dev *ucdev,
 				ARRAY_SIZE(query_dp));
 }
 
+static int ubctl_query_cmdq_data(struct ubctl_dev *ucdev,
+				 struct ubctl_query_cmd_param *query_cmd_param,
+				 struct ubctl_func_dispatch *query_func)
+{
+	struct ubctl_query_dp query_dp[] = {
+		{ UBCTL_QUERY_UE_STORM_DFX, UBCTL_UE_LEN, UBCTL_READ, NULL, 0 },
+	};
+
+	return ubctl_query_data(ucdev, query_cmd_param, query_func,
+				query_dp, ARRAY_SIZE(query_dp));
+}
+
 static int ubctl_query_loopback(struct ubctl_dev *ucdev,
 				struct ubctl_query_cmd_param *query_cmd_param,
 				struct ubctl_func_dispatch *query_func)
@@ -929,6 +941,7 @@ static struct ubctl_func_dispatch g_ubctl_query_reg[] = {
 
 	{ UTOOL_CMD_QUERY_ECC_2B, ubctl_query_ecc_2b_data, ubctl_query_data_deal },
 	{ UTOOL_CMD_QUERY_QUEUE, ubctl_query_queue_data, ubctl_query_data_deal },
+	{ UTOOL_CMD_QUERY_CMDQ_STATS, ubctl_query_cmdq_data, ubctl_query_data_deal },
 
 	{ UTOOL_CMD_QUERY_LOOPBACK, ubctl_query_loopback, ubctl_query_data_deal },
 	{ UTOOL_CMD_CONF_LOOPBACK, ubctl_config_loopback, ubctl_query_data_deal },
