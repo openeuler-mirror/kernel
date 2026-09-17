@@ -30,6 +30,17 @@
 #include <asm/csv.h>
 #include <asm/processor-hygon.h>
 
+/*
+ * CSV migration memory definition.
+ * 520MB = 256MB * 2 + 4MB * 2
+ */
+#define CSV_MIGRATION_MEM_ALIGN		(64ULL << 20)
+#define CSV_MIGRATION_MEM_SIZE		(520ULL << 20)
+#define CSV_MIGRATION_TRANSFER_SIZE	(256ULL << 20)
+#define CSV_MIGRATION_TRANSFER_NUM	2
+#define CSV_MIGRATION_GENERAL_SIZE	(4ULL << 20)
+#define CSV_MIGRATION_GENERAL_NUM	2
+
 u32 vendor_ebx __section(".data") = 0;
 u32 vendor_ecx __section(".data") = 0;
 u32 vendor_edx __section(".data") = 0;
@@ -203,6 +214,24 @@ struct csv_metadata {
 };
 static LIST_HEAD(csv_metadata_list);
 DEFINE_SPINLOCK(csv_metadata_lock);
+DEFINE_SPINLOCK(csv_migration_lock);
+
+struct csv_migration_data {
+	phys_addr_t mem_paddr;
+
+	/* 256MB block size for transfer buffer. */
+	phys_addr_t transfer_buf_paddr;
+	u64 transfer_buf_size;
+	u64 transfer_bitmap;
+
+	/* 16MB block size for general buffer. */
+	phys_addr_t general_buf_paddr;
+	u64 general_buf_size;
+	u64 general_bitmap;
+};
+
+static struct csv_migration_data csv_migration_mem;
+
 /**
  * The memory unit size managed by the hardware. Do not confuse this with
  * @csv_smr or @csv_smr_num.
@@ -363,6 +392,152 @@ static void __init csv_smcr_free_mem(void)
 		csv_smcr_num = 0;
 	}
 }
+
+static void __init csv_migration_reserve_mem(void)
+{
+	if (CSV_MIGRATION_TRANSFER_SIZE * CSV_MIGRATION_TRANSFER_NUM +
+	    CSV_MIGRATION_GENERAL_SIZE * CSV_MIGRATION_GENERAL_NUM > CSV_MIGRATION_MEM_SIZE)
+		return;
+
+	csv_migration_mem.mem_paddr = memblock_phys_alloc_try_nid(CSV_MIGRATION_MEM_SIZE,
+								CSV_MIGRATION_MEM_ALIGN,
+								NUMA_NO_NODE);
+	if (csv_migration_mem.mem_paddr) {
+		csv_migration_mem.transfer_buf_paddr = csv_migration_mem.mem_paddr;
+		csv_migration_mem.transfer_bitmap = 0ULL;
+		csv_migration_mem.transfer_buf_size = CSV_MIGRATION_TRANSFER_SIZE *
+						      CSV_MIGRATION_TRANSFER_NUM;
+
+		csv_migration_mem.general_buf_paddr = csv_migration_mem.mem_paddr +
+						      csv_migration_mem.transfer_buf_size;
+		csv_migration_mem.general_bitmap = 0ULL;
+		csv_migration_mem.general_buf_size = CSV_MIGRATION_GENERAL_SIZE *
+						     CSV_MIGRATION_GENERAL_NUM;
+
+		pr_info("CSV-MIGRATION: reserve mem  - paddr 0x%016llx, size 0x%016llx\n",
+			csv_migration_mem.mem_paddr, CSV_MIGRATION_MEM_SIZE);
+
+		pr_info("CSV-MIGRATION: transfer mem - paddr 0x%016llx, size 0x%016llx\n",
+			csv_migration_mem.transfer_buf_paddr,
+			csv_migration_mem.transfer_buf_size);
+
+		pr_info("CSV-MIGRATION: general mem  - paddr 0x%016llx, size 0x%016llx\n",
+			csv_migration_mem.general_buf_paddr,
+			csv_migration_mem.general_buf_size);
+	} else
+		pr_err("CSV-MIGRATION: Fail to reserve memory\n");
+}
+
+int csv_alloc_migration_transfer_mem(phys_addr_t *paddr, u64 *size)
+{
+	phys_addr_t hpa = 0;
+	int ret = -EBUSY;
+	u64 i = 0;
+
+	if (!csv_migration_mem.transfer_buf_paddr ||
+	    !csv_migration_mem.transfer_buf_size ||
+	    !csv_migration_mem.mem_paddr)
+		return -ENOMEM;
+
+	spin_lock(&csv_migration_lock);
+
+	for (i = 0; i < CSV_MIGRATION_TRANSFER_NUM; i++) {
+		if (!((1ull << i) & csv_migration_mem.transfer_bitmap)) {
+			hpa = csv_migration_mem.transfer_buf_paddr +
+				i * CSV_MIGRATION_TRANSFER_SIZE;
+			csv_migration_mem.transfer_bitmap |= (1ull << i);
+			ret = 0;
+			break;
+		}
+	}
+
+	spin_unlock(&csv_migration_lock);
+
+	if (paddr)
+		*paddr = hpa;
+
+	if (size)
+		*size = hpa ? CSV_MIGRATION_TRANSFER_SIZE : 0;
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(csv_alloc_migration_transfer_mem);
+
+void csv_free_migration_transfer_mem(phys_addr_t paddr)
+{
+	u64 i = 0;
+
+	if (!csv_migration_mem.transfer_buf_paddr ||
+	    !csv_migration_mem.transfer_buf_size ||
+	    !csv_migration_mem.mem_paddr)
+		return;
+
+	if (paddr < csv_migration_mem.transfer_buf_paddr ||
+	    paddr >= (csv_migration_mem.transfer_buf_paddr + csv_migration_mem.transfer_buf_size))
+		return;
+
+	i = (paddr - csv_migration_mem.transfer_buf_paddr) / CSV_MIGRATION_TRANSFER_SIZE;
+
+	spin_lock(&csv_migration_lock);
+	csv_migration_mem.transfer_bitmap &= ~(1ull << i);
+	spin_unlock(&csv_migration_lock);
+}
+EXPORT_SYMBOL_GPL(csv_free_migration_transfer_mem);
+
+int csv_alloc_migration_general_mem(phys_addr_t *paddr, u64 *size)
+{
+	phys_addr_t hpa = 0;
+	int ret = -EBUSY;
+	u64 i = 0;
+
+	if (!csv_migration_mem.general_buf_paddr ||
+	    !csv_migration_mem.general_buf_size ||
+	    !csv_migration_mem.mem_paddr)
+		return -ENOMEM;
+
+	spin_lock(&csv_migration_lock);
+
+	for (i = 0; i < CSV_MIGRATION_GENERAL_NUM; i++) {
+		if (!((1ull << i) & csv_migration_mem.general_bitmap)) {
+			hpa = csv_migration_mem.general_buf_paddr + i * CSV_MIGRATION_GENERAL_SIZE;
+			csv_migration_mem.general_bitmap |= (1ull << i);
+			ret = 0;
+			break;
+		}
+	}
+
+	spin_unlock(&csv_migration_lock);
+
+	if (paddr)
+		*paddr = hpa;
+
+	if (size)
+		*size = hpa ? CSV_MIGRATION_GENERAL_SIZE : 0;
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(csv_alloc_migration_general_mem);
+
+void csv_free_migration_general_mem(phys_addr_t paddr)
+{
+	u64 i = 0;
+
+	if (!csv_migration_mem.general_buf_paddr ||
+	    !csv_migration_mem.general_buf_size ||
+	    !csv_migration_mem.mem_paddr)
+		return;
+
+	if (paddr < csv_migration_mem.general_buf_paddr ||
+	    paddr >= (csv_migration_mem.general_buf_paddr + csv_migration_mem.general_buf_size))
+		return;
+
+	i = (paddr - csv_migration_mem.general_buf_paddr) / CSV_MIGRATION_GENERAL_SIZE;
+
+	spin_lock(&csv_migration_lock);
+	csv_migration_mem.general_bitmap &= ~(1ull << i);
+	spin_unlock(&csv_migration_lock);
+}
+EXPORT_SYMBOL_GPL(csv_free_migration_general_mem);
 
 static int __init csv_smcr_reserve_mem(void)
 {
@@ -931,6 +1106,7 @@ void __init early_csv_reserve_mem(void)
 		ret = csv_reserve_metadata();
 		if (ret)
 			goto err_free_smcr;
+		csv_migration_reserve_mem();
 
 		return;
 	}
