@@ -4,8 +4,8 @@
  * File Name     : hinic5_sriov.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : SR-IOV initialization, enable, disable and configure
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [NIC]" fmt
@@ -52,7 +52,7 @@ ssize_t hinic5_sriov_totalvfs_show(struct device *dev,
 {
 	struct pci_dev *pdev = to_pci_dev(dev);
 
-	return sprintf_s(buf, PAGE_SIZE, "%d\n", pci_sriov_get_totalvfs(pdev));
+	return sprintf(buf, "%d\n", pci_sriov_get_totalvfs(pdev));
 }
 
 ssize_t hinic5_sriov_numvfs_show(struct device *dev,
@@ -60,7 +60,7 @@ ssize_t hinic5_sriov_numvfs_show(struct device *dev,
 {
 	struct pci_dev *pdev = to_pci_dev(dev);
 
-	return sprintf_s(buf, PAGE_SIZE, "%d\n", pci_num_vf(pdev));
+	return sprintf(buf, "%d\n", pci_num_vf(pdev));
 }
 
 ssize_t hinic5_sriov_numvfs_store(struct device *dev,
@@ -183,7 +183,7 @@ int hinic5_pci_sriov_disable(struct pci_dev *dev)
 static int migration_init_vf(struct pci_dev *dev, int num_vfs, struct hinic5_sriov_info *sriov_info)
 {
 	int err = 0;
-	int (*migration_dev_init_vfs)(struct pci_dev *dev, uint32_t num_vfs);
+	int (*migration_dev_init_vfs)(struct pci_dev *, uint32_t);
 
 	migration_dev_init_vfs = __symbol_get("migration_dev_init_vfs");
 	if (migration_dev_init_vfs) {
@@ -200,12 +200,10 @@ static int migration_init_vf(struct pci_dev *dev, int num_vfs, struct hinic5_sri
 }
 #endif
 
-static void hinic5_event_callback_dev(struct hinic5_sriov_info *sriov_info,
-				      void *hwdev, int num_vfs)
+static void hinic5_event_callback_dev(struct hinic5_sriov_info *sriov_info, void *hwdev, int num_vfs)
 {
 	struct hinic5_event_info event = {0};
 	sriov_info->sriov_enabled = true;
-
 	sriov_info->num_vfs = (u32)num_vfs;
 
 	event.service = EVENT_SRV_COMM;
@@ -242,7 +240,7 @@ int hinic5_pci_sriov_enable(struct pci_dev *dev, int num_vfs)
 		clear_bit(HINIC5_SRIOV_ENABLE, &sriov_info->state);
 		return -ERANGE;
 	}
-	if (pre_existing_vfs != 0 && pre_existing_vfs != num_vfs) {
+	if ((pre_existing_vfs != 0) && (pre_existing_vfs != num_vfs)) {
 		err = hinic5_pci_sriov_disable(dev);
 		if (err != 0) {
 			clear_bit(HINIC5_SRIOV_ENABLE, &sriov_info->state);
@@ -255,8 +253,7 @@ int hinic5_pci_sriov_enable(struct pci_dev *dev, int num_vfs)
 
 	err = hinic5_init_vf_hw(hwdev, 1, (u16)num_vfs);
 	if (err != 0) {
-		sdk_err(&dev->dev,
-			"Failed to init vf in hardware before enable sriov, error %d\n", err);
+		sdk_err(&dev->dev, "Failed to init vf in hardware before enable sriov, error %d\n", err);
 		clear_bit(HINIC5_SRIOV_ENABLE, &sriov_info->state);
 		return err;
 	}
@@ -270,8 +267,9 @@ int hinic5_pci_sriov_enable(struct pci_dev *dev, int num_vfs)
 
 #if (defined CONFIG_ARM) || (defined CONFIG_ARM64)
 	err = migration_init_vf(dev, num_vfs, sriov_info);
-	if (err < 0)
+	if (err < 0) {
 		return err;
+	}
 #endif
 	hinic5_event_callback_dev(sriov_info, hwdev, num_vfs);
 	return num_vfs;

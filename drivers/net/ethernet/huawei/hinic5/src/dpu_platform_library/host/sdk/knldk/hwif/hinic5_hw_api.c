@@ -4,8 +4,8 @@
  * File Name     : hinic5_hw_api.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Hardware API implementations for the hinic5 driver.
  */
 
 #include "ossl_knl.h"
@@ -69,7 +69,7 @@ int hinic5_sm_ctr_rd16(void *hwdev, u8 node, u8 instance, u32 ctr_id,
 	if (!COMM_SUPPORT_API_CHAIN((struct hinic5_hwdev *)hwdev))
 		return -EPERM;
 
-	memset(&req, 0, sizeof(req));
+	(void)memset(&req, 0, sizeof(req));
 
 	hinic5_sml_ctr_read_build_req(&req, instance, CHIPIF_SM_CTR_OP_READ,
 				      CHIPIF_ACK, ctr_id);
@@ -110,7 +110,7 @@ int hinic5_sm_ctr_rd32(void *hwdev, u8 node, u8 instance, u32 ctr_id,
 	if (!COMM_SUPPORT_API_CHAIN((struct hinic5_hwdev *)hwdev))
 		return -EPERM;
 
-	memset(&req, 0, sizeof(req));
+	(void)memset(&req, 0, sizeof(req));
 
 	hinic5_sml_ctr_read_build_req(&req, instance, CHIPIF_SM_CTR_OP_READ,
 				      CHIPIF_ACK, ctr_id);
@@ -152,7 +152,7 @@ int hinic5_sm_ctr_rd32_clear(void *hwdev, u8 node, u8 instance,
 	if (!COMM_SUPPORT_API_CHAIN((struct hinic5_hwdev *)hwdev))
 		return -EPERM;
 
-	memset(&req, 0, sizeof(req));
+	(void)memset(&req, 0, sizeof(req));
 
 	hinic5_sml_ctr_read_build_req(&req, instance,
 				      CHIPIF_SM_CTR_OP_READ_CLEAR,
@@ -208,7 +208,7 @@ int hinic5_sm_ctr_rd64_pair(void *hwdev, u8 node, u8 instance,
 	if (!COMM_SUPPORT_API_CHAIN((struct hinic5_hwdev *)hwdev))
 		return -EPERM;
 
-	memset(&req, 0, sizeof(req));
+	(void)memset(&req, 0, sizeof(req));
 
 	hinic5_sml_ctr_read_build_req(&req, instance, CHIPIF_SM_CTR_OP_READ,
 				      CHIPIF_ACK, ctr_id);
@@ -292,7 +292,7 @@ int hinic5_sm_ctr_rd64(void *hwdev, u8 node, u8 instance, u32 ctr_id,
 	if (!COMM_SUPPORT_API_CHAIN((struct hinic5_hwdev *)hwdev))
 		return -EPERM;
 
-	memset(&req, 0, sizeof(req));
+	(void)memset(&req, 0, sizeof(req));
 
 	hinic5_sml_ctr_read_build_req(&req, instance, CHIPIF_SM_CTR_OP_READ,
 				      CHIPIF_ACK, ctr_id);
@@ -364,7 +364,8 @@ int hinic5_api_csr_rd32(void *hwdev, u8 dest, u32 addr, u32 *val)
 	if (!COMM_SUPPORT_API_CHAIN((struct hinic5_hwdev *)hwdev))
 		return -EPERM;
 
-	memset(&api_data, 0, sizeof(struct hinic5_csr_request_api_data));
+	(void)memset(&api_data, 0,
+		sizeof(struct hinic5_csr_request_api_data));
 	api_data.dw0 = 0;
 	api_data.dw1.bits.operation_id = HINIC5_CSR_OPERATION_READ_CSR;
 	api_data.dw1.bits.need_response = HINIC5_CSR_NEED_RESP_DATA;
@@ -399,7 +400,8 @@ int hinic5_api_csr_wr32(void *hwdev, u8 dest, u32 addr, u32 val)
 	if (!COMM_SUPPORT_API_CHAIN((struct hinic5_hwdev *)hwdev))
 		return -EPERM;
 
-	memset(&api_data, 0, sizeof(struct hinic5_csr_request_api_data));
+	(void)memset(&api_data, 0,
+		sizeof(struct hinic5_csr_request_api_data));
 	api_data.dw1.bits.operation_id = HINIC5_CSR_OPERATION_WRITE_CSR;
 	api_data.dw1.bits.need_response = HINIC5_CSR_NO_RESP_DATA;
 	api_data.dw1.bits.data_size = HINIC5_CSR_DATA_SZ_32;
@@ -434,7 +436,8 @@ int hinic5_api_csr_rd64(void *hwdev, u8 dest, u32 addr, u64 *val)
 	if (!COMM_SUPPORT_API_CHAIN((struct hinic5_hwdev *)hwdev))
 		return -EPERM;
 
-	memset(&api_data, 0, sizeof(struct hinic5_csr_request_api_data));
+	(void)memset(&api_data, 0,
+		sizeof(struct hinic5_csr_request_api_data));
 	api_data.dw0 = 0;
 	api_data.dw1.bits.operation_id = HINIC5_CSR_OPERATION_READ_CSR;
 	api_data.dw1.bits.need_response = HINIC5_CSR_NEED_RESP_DATA;

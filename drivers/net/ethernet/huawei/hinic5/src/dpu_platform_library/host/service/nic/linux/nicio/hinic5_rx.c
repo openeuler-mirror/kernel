@@ -4,8 +4,8 @@
  * File Name     : hinic5_rx.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   : RX queue implementation
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 RX (receive) path implementation
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [NIC]" fmt
@@ -46,7 +46,94 @@
 #include <linux/bpf_trace.h>
 #endif
 
-static bool rx_alloc_mapped_page(struct hinic5_nic_dev *nic_dev,
+/* ============================================================================
+ * Page Cache Implementation
+ * ============================================================================
+ * This cache is used only when page_pool is NOT enabled.
+ * It stores page entries with DMA mapping already established,
+ * avoiding repeated DMA map/unmap operations.
+ *
+ * Key design: Cache stores page-level info, not rx_info pointers.
+ * Each page can be shared by multiple rx_info (page sharing).
+ */
+
+static inline bool hinic5_rx_cache_put(struct hinic5_rxq *rxq,
+				       struct page *page, dma_addr_t dma_addr)
+{
+	struct hinic5_rx_page_cache *cache = &rxq->page_cache;
+	u32 tail_next = (cache->tail + 1) & (HINIC5_CACHE_SIZE - 1);
+
+	if (tail_next == cache->head) {
+		RXQ_STATS_INC(rxq, cache_full);
+		return false;
+	}
+
+	if (unlikely(page_to_nid(page) != numa_node_id())) {
+		RXQ_STATS_INC(rxq, cache_waive);
+		return false;
+	}
+
+	cache->cache[cache->tail].page = page;
+	cache->cache[cache->tail].dma_addr = dma_addr;
+	cache->tail = tail_next;
+	return true;
+}
+
+static inline bool hinic5_rx_cache_get(struct hinic5_rxq *rxq,
+				       struct page **page_out,
+				       dma_addr_t *dma_out)
+{
+	struct hinic5_rx_page_cache *cache = &rxq->page_cache;
+	struct page *page;
+
+	if (unlikely(cache->head == cache->tail)) {
+		RXQ_STATS_INC(rxq, cache_empty);
+		return false;
+	}
+
+	page = cache->cache[cache->head].page;
+
+	if (unlikely(page_ref_count(page) != 1)) {
+		RXQ_STATS_INC(rxq, cache_busy);
+		return false;
+	}
+
+	*page_out = page;
+	*dma_out = cache->cache[cache->head].dma_addr;
+
+	cache->head = (cache->head + 1) & (HINIC5_CACHE_SIZE - 1);
+
+	dma_sync_single_for_device(rxq->dev, *dma_out,
+				   rxq->dma_rx_buff_size, DMA_FROM_DEVICE);
+
+	return true;
+}
+
+/*
+ * hinic5_page_try_release - Try to release page to cache or free it
+ * @rxq: RX queue
+ * @page: Page to release
+ * @dma_addr: DMA address of the page
+ *
+ * This function should be called when the last buffer of a page is processed.
+ * It tries to put the page into cache first. If cache is full, it unmaps DMA
+ * and releases the page reference.
+ *
+ * IMPORTANT: The caller must ensure this is the last buffer of the page
+ * (i.e., no other rx_info or skb holds reference to this page).
+ */
+void hinic5_page_try_release(struct hinic5_rxq *rxq,
+				    struct page *page, dma_addr_t dma_addr)
+{
+	if (hinic5_rx_cache_put(rxq, page, dma_addr))
+		return;
+
+	dma_unmap_page(rxq->dev, dma_addr,
+		       rxq->dma_rx_buff_size, DMA_FROM_DEVICE);
+	put_page(page);
+}
+
+static bool rx_alloc_mapped_page(struct hinic5_nic_dev *nic_dev, struct hinic5_rxq *rxq,
 				 struct hinic5_rx_info *rx_info)
 {
 	struct page *page = rx_info->page;
@@ -68,6 +155,12 @@ static bool rx_alloc_mapped_page(struct hinic5_nic_dev *nic_dev,
 		goto set_rx_info;
 	}
 #endif
+
+	/* Prioritize retrieving the page from the cache. */
+	if (hinic5_rx_cache_get(rxq, &page, &dma)) {
+		goto set_rx_info;
+	}
+
 	page = alloc_pages_node(NUMA_NO_NODE, GFP_ATOMIC | __GFP_COLD |
 				__GFP_COMP, nic_dev->page_order);
 	if (unlikely(!page))
@@ -128,10 +221,8 @@ static u32 hinic5_rx_fill_wqe(struct hinic5_rxq *rxq)
 	return i;
 }
 
-static u32 hinic5_rx_fill_buffers(struct hinic5_rxq *rxq)
+static u32 hinic5_rx_fill_buffers_with_page_pool(struct hinic5_nic_dev *nic_dev, struct hinic5_rxq *rxq)
 {
-	struct net_device *netdev = rxq->netdev;
-	struct hinic5_nic_dev *nic_dev = netdev_priv(netdev);
 	struct hinic5_rq_wqe *rq_wqe = NULL;
 	struct hinic5_rx_info *rx_info = NULL;
 	dma_addr_t dma_addr;
@@ -140,15 +231,14 @@ static u32 hinic5_rx_fill_buffers(struct hinic5_rxq *rxq)
 	for (i = 0; i < free_wqebbs; i++) {
 		rx_info = &rxq->rx_info[rxq->next_to_update];
 
-		if (unlikely(!rx_alloc_mapped_page(nic_dev, rx_info))) {
+		if (unlikely(!rx_alloc_mapped_page(nic_dev, rxq, rx_info))) {
 			RXQ_STATS_INC(rxq, alloc_rx_buf_err);
 			break;
 		}
 
 #ifdef HAVE_XDP_SUPPORT
-		dma_addr = (rxq->xdp_headroom_flag == 0) ?
-			   rx_info->buf_dma_addr + rx_info->page_offset :
-			   rx_info->buf_dma_addr + rx_info->page_offset + XDP_PACKET_HEADROOM;
+		dma_addr = (rxq->xdp_headroom_flag == 0) ? rx_info->buf_dma_addr + rx_info->page_offset :
+		rx_info->buf_dma_addr + rx_info->page_offset + XDP_PACKET_HEADROOM;
 #else
 		dma_addr = rx_info->buf_dma_addr + rx_info->page_offset;
 #endif
@@ -166,11 +256,11 @@ static u32 hinic5_rx_fill_buffers(struct hinic5_rxq *rxq)
 
 	if (likely(i != 0)) {
 		hinic5_write_db(rxq->rq,
-				(rxq->q_id & 0x3),
-				RQ_CFLAG_DP,
-				(u16)((u32)rxq->next_to_update << rxq->rq->wqe_type));
+					(rxq->q_id & 0x3),
+					RQ_CFLAG_DP,
+					(u16)((u32)rxq->next_to_update <<
+					rxq->rq->wqe_type));
 		rxq->delta -= i;
-		rxq->next_to_alloc = rxq->next_to_update;
 	} else if (free_wqebbs == rxq->q_depth - 1) {
 		RXQ_STATS_INC(rxq, rx_buf_empty);
 	}
@@ -178,22 +268,103 @@ static u32 hinic5_rx_fill_buffers(struct hinic5_rxq *rxq)
 	return i;
 }
 
-static u32 hinic5_rx_alloc_buffers(struct hinic5_nic_dev *nic_dev, u32 rq_depth,
-				   struct hinic5_rx_info *rx_info_arr)
+static u32 hinic5_rx_fill_buffers_with_local_cache(struct hinic5_nic_dev *nic_dev, struct hinic5_rxq *rxq)
 {
-	u32 free_wqebbs = rq_depth - 1;
-	u32 idx;
+	struct hinic5_rq_wqe *rq_wqe = NULL;
+	struct hinic5_rx_info *rx_info = NULL;
+	struct page *page = rxq->remain_page;
+	dma_addr_t buf_dma_addr = rxq->remain_page_dma_addr;
+	dma_addr_t dma_addr;
+	u32 page_offset = rxq->remain_page_offset;
+	u16 buffs_in_page = rxq->remain_page_offset / nic_dev->rx_buff_len;
+	u16 buffs_per_page = nic_dev->buffs_per_page;
+	u32 i, free_wqebbs = rxq->delta - 1;
 
-	for (idx = 0; idx < free_wqebbs; idx++) {
-		if (!rx_alloc_mapped_page(nic_dev, &rx_info_arr[idx]))
-			break;
+	for (i = 0; i < free_wqebbs; i++) {
+		rx_info = &rxq->rx_info[rxq->next_to_update];
+
+		if (page == NULL) {
+			if (unlikely(!rx_alloc_mapped_page(nic_dev, rxq, rx_info))) {
+				RXQ_STATS_INC(rxq, alloc_rx_buf_err);
+				break;
+			}
+			page = rx_info->page;
+			buf_dma_addr = rx_info->buf_dma_addr;
+			buffs_in_page = 0;
+		} else {
+			rx_info->page = page;
+			rx_info->buf_dma_addr = buf_dma_addr;
+		}
+
+		rx_info->page_offset = page_offset;
+		rx_info->flags &= ~HINIC5_RX_BUF_LAST_IN_PAGE;
+
+		buffs_in_page++;
+		if (buffs_in_page == buffs_per_page) {
+			rx_info->flags |= HINIC5_RX_BUF_LAST_IN_PAGE;
+			page_offset = 0;
+			page = NULL;
+			buffs_in_page = 0;
+			rxq->remain_page = NULL;
+			rxq->remain_page_offset = 0;
+		} else {
+			page_offset += rxq->buf_len;
+		}
+
+#ifdef HAVE_XDP_SUPPORT
+		dma_addr = (rxq->xdp_headroom_flag == 0) ? rx_info->buf_dma_addr + rx_info->page_offset :
+		rx_info->buf_dma_addr + rx_info->page_offset + XDP_PACKET_HEADROOM;
+#else
+		dma_addr = rx_info->buf_dma_addr + rx_info->page_offset;
+#endif
+
+		rq_wqe = rx_info->rq_wqe;
+
+		/* Regardless of the WQE type, the address is located in the first 64 bits */
+		rq_wqe->compact_wqe.buf_hi_addr =
+			hinic5_hw_be32(upper_32_bits(dma_addr));
+		rq_wqe->compact_wqe.buf_lo_addr =
+			hinic5_hw_be32(lower_32_bits(dma_addr));
+
+		rxq->next_to_update = (u16)((rxq->next_to_update + 1) & rxq->q_mask);
 	}
 
-	return idx;
+	/*
+	 * Store the unspent page in rxq for priority use during the next refill.
+	 */
+	if (i > 0 && page != NULL) {
+		rxq->remain_page_offset = page_offset;
+		rxq->remain_page = page;
+		rxq->remain_page_dma_addr = rx_info->buf_dma_addr;
+	}
+
+	if (likely(i != 0)) {
+		hinic5_write_db(rxq->rq,
+					(rxq->q_id & 0x3),
+					RQ_CFLAG_DP,
+					(u16)((u32)rxq->next_to_update <<
+					rxq->rq->wqe_type));
+		rxq->delta -= i;
+	} else if (free_wqebbs == rxq->q_depth - 1) {
+		RXQ_STATS_INC(rxq, rx_buf_empty);
+	}
+
+	return i;
 }
 
-static void hinic5_rx_free_buffers(struct hinic5_nic_dev *nic_dev, u32 q_depth,
-				   struct hinic5_rx_info *rx_info_arr)
+static u32 hinic5_rx_fill_buffers(struct hinic5_rxq *rxq)
+{
+	struct net_device *netdev = rxq->netdev;
+	struct hinic5_nic_dev *nic_dev = netdev_priv(netdev);
+	if (nic_dev->page_pool_enabled) {
+		return hinic5_rx_fill_buffers_with_page_pool(nic_dev, rxq);
+	} else {
+		return hinic5_rx_fill_buffers_with_local_cache(nic_dev, rxq);
+	}
+}
+
+static void hinic5_rx_free_buffers(struct hinic5_nic_dev *nic_dev, struct hinic5_rxq *rxq,
+					u32 q_depth, struct hinic5_rx_info *rx_info_arr)
 {
 	struct hinic5_rx_info *rx_info = NULL;
 	u32 i;
@@ -205,17 +376,17 @@ static void hinic5_rx_free_buffers(struct hinic5_nic_dev *nic_dev, u32 q_depth,
 #ifdef HAVE_PAGE_POOL_SUPPORT
 		if (rx_info->page_pool && rx_info->page) {
 			page_pool_put_page(rx_info->page_pool,
-					   rx_info->page,
-					   nic_dev->rx_buff_len, false);
+						rx_info->page,
+						nic_dev->rx_buff_len,
+						false);
 			goto clean_info;
 		}
 #endif
-		if (rx_info->buf_dma_addr != 0) {
-			dma_unmap_page(nic_dev->lld_dev->dev,
-				       rx_info->buf_dma_addr,
-				       nic_dev->dma_rx_buff_size,
-				       DMA_FROM_DEVICE);
-			__free_pages(rx_info->page, nic_dev->page_order);
+		if (!rx_info->page)
+			continue;
+
+		if (rx_info->flags & HINIC5_RX_BUF_LAST_IN_PAGE) {
+			hinic5_page_try_release(rxq, rx_info->page, rx_info->buf_dma_addr);
 			goto clean_info;
 		}
 clean_info:
@@ -224,38 +395,14 @@ clean_info:
 	}
 }
 
-void hinic5_reuse_rx_page(struct hinic5_rxq *rxq,
-			  struct hinic5_rx_info *old_rx_info)
-{
-	struct hinic5_rx_info *new_rx_info = NULL;
-	u16 nta = rxq->next_to_alloc;
-
-	new_rx_info = &rxq->rx_info[nta];
-
-	/* update, and store next to alloc */
-	nta++;
-	rxq->next_to_alloc = (nta < rxq->q_depth) ? nta : 0;
-
-	new_rx_info->page = old_rx_info->page;
-	new_rx_info->page_offset = old_rx_info->page_offset;
-	new_rx_info->buf_dma_addr = old_rx_info->buf_dma_addr;
-
-	/* sync the buffer for use by the device */
-	dma_sync_single_range_for_device(rxq->dev, new_rx_info->buf_dma_addr,
-					 new_rx_info->page_offset,
-					 rxq->buf_len,
-					 DMA_FROM_DEVICE);
-}
-
 static bool hinic5_add_rx_frag(struct hinic5_rxq *rxq,
 			       struct hinic5_rx_info *rx_info,
 			       struct sk_buff *skb, u32 size, u8 packet_offset)
 {
-	struct page *page = NULL;
-	u8 *va = NULL;
+	struct page *page = rx_info->page;
+	bool last_in_page = rx_info->flags & HINIC5_RX_BUF_LAST_IN_PAGE;
+	u8 *va = (u8 *)page_address(page) + rx_info->page_offset;
 
-	page = rx_info->page;
-	va = (u8 *)page_address(page) + rx_info->page_offset;
 	prefetch(va);
 #if L1_CACHE_BYTES < 128
 	prefetch(va + L1_CACHE_BYTES);
@@ -277,13 +424,7 @@ static bool hinic5_add_rx_frag(struct hinic5_rxq *rxq,
 		}
 #endif
 
-		/* page is not reserved, we can reuse buffer as-is */
-		if (likely(page_to_nid(page) == numa_node_id()))
-			return true;
-
-		/* this page cannot be reused so discard it */
-		put_page(page);
-		goto discard_page;
+		return last_in_page;
 	}
 
 	skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags, page,
@@ -295,26 +436,8 @@ static bool hinic5_add_rx_frag(struct hinic5_rxq *rxq,
 		return false;
 	}
 #endif
-
-	/* avoid re-using remote pages */
-	if (unlikely(page_to_nid(page) != numa_node_id()))
-		goto discard_page;
-
-	/* if we are only owner of page we can reuse it */
-	if (unlikely(page_count(page) != 1))
-		goto discard_page;
-
-	/* flip page offset to other buffer */
-	rx_info->page_offset ^= rxq->buf_len;
 	get_page(page);
-
-	return true;
-
-discard_page:
-	/* we are not reusing the buffer so unmap it */
-	dma_unmap_page(rxq->dev, rx_info->buf_dma_addr,
-		       rxq->dma_rx_buff_size, DMA_FROM_DEVICE);
-	return false;
+	return last_in_page;
 }
 
 static void packaging_skb(struct hinic5_rxq *rxq, struct sk_buff *head_skb,
@@ -355,8 +478,9 @@ static void packaging_skb(struct hinic5_rxq *rxq, struct sk_buff *head_skb,
 			head_skb->truesize += rxq->buf_len;
 		}
 
-		if (likely(hinic5_add_rx_frag(rxq, rx_info, skb, size, temp_offset)))
-			hinic5_reuse_rx_page(rxq, rx_info);
+		if (hinic5_add_rx_frag(rxq, rx_info, skb, size, temp_offset)) {
+			hinic5_page_try_release(rxq, rx_info->page, rx_info->buf_dma_addr);
+		}
 
 		/* clear contents of buffer_info */
 		rx_info->buf_dma_addr = 0;
@@ -367,8 +491,7 @@ static void packaging_skb(struct hinic5_rxq *rxq, struct sk_buff *head_skb,
 	}
 }
 
-struct sk_buff *hinic5_fetch_rx_buffer(struct hinic5_rxq *rxq,
-				       const struct hinic5_cqe_info *cqe_info)
+struct sk_buff *hinic5_fetch_rx_buffer(struct hinic5_rxq *rxq, const struct hinic5_cqe_info *cqe_info)
 {
 	struct sk_buff *head_skb = NULL;
 	struct sk_buff *cur_skb = NULL;
@@ -380,7 +503,7 @@ struct sk_buff *hinic5_fetch_rx_buffer(struct hinic5_rxq *rxq,
 	u16 wqebb_cnt = 0;
 
 	head_skb = netdev_alloc_skb_ip_align(netdev, HINIC5_RX_HDR_SIZE);
-	if (unlikely(!head_skb))
+	if (unlikely((head_skb == NULL)))
 		return NULL;
 
 	sge_num = HINIC5_GET_SGE_NUM(pkt_len + packet_offset, rxq);
@@ -395,7 +518,7 @@ struct sk_buff *hinic5_fetch_rx_buffer(struct hinic5_rxq *rxq,
 		if (unlikely(!cur_skb))
 			goto alloc_skb_fail;
 
-		if (!skb) {
+		if (skb == NULL) {
 			skb_shinfo(head_skb)->frag_list = cur_skb;
 			skb = cur_skb;
 		} else {
@@ -442,6 +565,10 @@ void hinic5_rxq_get_stats(struct hinic5_rxq *rxq,
 		stats->xdp_large_pkt = rxq_stats->xdp_large_pkt;
 #endif
 		stats->rx_buf_empty = rxq_stats->rx_buf_empty;
+		stats->cache_empty = rxq_stats->cache_empty;
+		stats->cache_busy = rxq_stats->cache_busy;
+		stats->cache_full = rxq_stats->cache_full;
+		stats->cache_waive = rxq_stats->cache_waive;
 	} while (u64_stats_fetch_retry(&rxq_stats->syncp, start));
 	u64_stats_update_end(&stats->syncp);
 }
@@ -459,13 +586,18 @@ void hinic5_rxq_clean_stats(struct hinic5_rxq_stats *rxq_stats)
 
 	rxq_stats->alloc_skb_err = 0;
 	rxq_stats->alloc_rx_buf_err = 0;
-	rxq_stats->restore_drop_sge = 0;
 	rxq_stats->pkt_mc = 0;
 #ifdef HAVE_XDP_SUPPORT
 	rxq_stats->xdp_dropped = 0;
 	rxq_stats->xdp_redirected = 0;
 	rxq_stats->xdp_large_pkt = 0;
 #endif
+
+	/* Page cache statistics */
+	rxq_stats->cache_empty = 0;
+	rxq_stats->cache_busy = 0;
+	rxq_stats->cache_full = 0;
+	rxq_stats->cache_waive = 0;
 	u64_stats_update_end(&rxq_stats->syncp);
 }
 
@@ -503,8 +635,8 @@ static unsigned int hinic5_eth_get_headlen(unsigned char *data, unsigned int max
 	protocol = hdr.eth->h_proto;
 
 	/* L2 header */
-	if (protocol == htons(ETH_P_8021_AD) ||
-	    protocol == htons(ETH_P_8021_Q)) {
+	if (protocol == __constant_htons(ETH_P_8021_AD) ||
+	    protocol == __constant_htons(ETH_P_8021_Q)) {
 		if (unlikely(max_len < ETH_HLEN + VLAN_HLEN))
 			return max_len;
 
@@ -517,7 +649,7 @@ static unsigned int hinic5_eth_get_headlen(unsigned char *data, unsigned int max
 
 	/* L3 header */
 	switch (protocol) {
-	case htons(ETH_P_IP):
+	case __constant_htons(ETH_P_IP):
 		if ((int)(hdr.data - data) >
 		    (int)(max_len - sizeof(struct iphdr)))
 			return max_len;
@@ -534,7 +666,7 @@ static unsigned int hinic5_eth_get_headlen(unsigned char *data, unsigned int max
 		hdr.data += hlen;
 		break;
 
-	case htons(ETH_P_IPV6):
+	case __constant_htons(ETH_P_IPV6):
 		if ((int)(hdr.data - data) >
 		    (int)(max_len - sizeof(struct ipv6hdr)))
 			return max_len;
@@ -543,7 +675,7 @@ static unsigned int hinic5_eth_get_headlen(unsigned char *data, unsigned int max
 		hdr.data += sizeof(struct ipv6hdr);
 		break;
 
-	case htons(ETH_P_FCOE):
+	case __constant_htons(ETH_P_FCOE):
 		hdr.data += FCOE_HLEN;
 		break;
 
@@ -733,9 +865,7 @@ static int recv_one_pkt(struct hinic5_rxq *rxq, struct hinic5_cqe_info *cqe_info
 
 #ifdef HAVE_XDP_SUPPORT
 	if (hinic5_xdp_process_packet(rxq, cqe_info, &skb)) {
-		/* The XDP program has processed the packet
-		 * and does not need to be sent to the protocol stack
-		 */
+		/* The XDP program has processed the packet and does not need to be sent to the protocol stack */
 		return HINIC5_XDP_PROCESSED;
 	}
 #else
@@ -750,8 +880,9 @@ static int recv_one_pkt(struct hinic5_rxq *rxq, struct hinic5_cqe_info *cqe_info
 	if (skb_is_nonlinear(skb))
 		hinic5_pull_tail(skb);
 
-	if (cqe_info->ts_flag != 0)
+	if (cqe_info->ts_flag != 0) {
 		hinic5_ptp_rx_hwtstamp(nic_dev, skb);
+	}
 
 	hinic5_rx_csum(rxq, cqe_info, skb);
 
@@ -775,6 +906,13 @@ static int recv_one_pkt(struct hinic5_rxq *rxq, struct hinic5_cqe_info *cqe_info
 		hinic5_lro_set_gso_params(skb, cqe_info->lro_num);
 
 	skb_record_rx_queue(skb, rxq->q_id);
+
+	if (skb->len - ETH_HLEN < skb->data_len) {
+		RXQ_STATS_INC(rxq, dropped);
+		dev_kfree_skb_any(skb);
+		return HINIC5_RX_SKB_LEN_ERR;
+	}
+
 	skb->protocol = eth_type_trans(skb, netdev);
 
 	if (skb_has_frag_list(skb)) {
@@ -794,7 +932,7 @@ static int recv_one_pkt(struct hinic5_rxq *rxq, struct hinic5_cqe_info *cqe_info
 #define LRO_PKT_HDR_LEN(ip_type)		\
 	((ip_type) == HINIC5_RX_IPV6_PKT ? LRO_PKT_HDR_LEN_IPV6 : LRO_PKT_HDR_LEN_IPV4)
 
-void hinic5_rx_get_cqe_info(struct hinic5_rq_cqe *cqe,
+void hinic5_rx_get_cqe_info(volatile struct hinic5_rq_cqe *cqe,
 			    struct hinic5_cqe_info *info, u8 cqe_mode, bool enable_pfe)
 {
 	u32 dw0 = hinic5_hw_cpu32(cqe->status);
@@ -816,7 +954,7 @@ void hinic5_rx_get_cqe_info(struct hinic5_rq_cqe *cqe,
 	info->rss_hash_value = hinic5_hw_cpu32(cqe->hash_val);
 }
 
-void hinic5_rx_get_compact_cqe_info(struct hinic5_rq_cqe *cqe,
+void hinic5_rx_get_compact_cqe_info(volatile struct hinic5_rq_cqe *cqe,
 				    struct hinic5_cqe_info *info, u8 cqe_mode, bool enable_pfe)
 {
 	u32 dw0, dw1, dw2, dw3;
@@ -867,10 +1005,9 @@ void hinic5_rx_get_compact_cqe_info(struct hinic5_rq_cqe *cqe,
 			info->pfe_pkt_src = RQ_COMPACT_CQE_OFFLOAD_GET(dw2, PFE_PKT_SRC);
 			info->pfe_port_id = RQ_COMPACT_CQE_OFFLOAD_GET(dw2, PFE_PORT_ID);
 			info->flow_mark_vld = RQ_COMPACT_CQE_OFFLOAD_GET(dw2, FLOW_MARK_VLD);
-			info->src_func_id =
-				(u16)((RQ_COMPACT_CQE_OFFLOAD_GET(dw2, SRC_FUNC_ID_HIGH)
-				       << RQ_COMPACT_CQE_OFFLOAD_SRC_FUNC_ID_SHIFT) |
-				      RQ_COMPACT_CQE_OFFLOAD_GET(dw3, SRC_FUNC_ID_LOW));
+			info->src_func_id = (u16)((RQ_COMPACT_CQE_OFFLOAD_GET(dw2, SRC_FUNC_ID_HIGH) <<
+					    RQ_COMPACT_CQE_OFFLOAD_SRC_FUNC_ID_SHIFT) |
+					    RQ_COMPACT_CQE_OFFLOAD_GET(dw3, SRC_FUNC_ID_LOW));
 			info->flow_mark = RQ_COMPACT_CQE_OFFLOAD_GET(dw3, FLOW_MARK);
 		}
 	} else {
@@ -896,22 +1033,19 @@ bool hinic5_rx_integrated_cqe_done(struct hinic5_rxq *rxq, struct hinic5_rq_cqe 
 	if (hw_ci == sw_ci)
 		return false;
 	/* make sure we read cqe info in dma */
-	dma_sync_single_range_for_cpu(rxq->dev, rxq->rx_info[sw_ci].buf_dma_addr,
-				      rxq->rx_info[sw_ci].page_offset,
-				      rxq->buf_len, DMA_FROM_DEVICE);
+	dma_sync_single_range_for_cpu(rxq->dev,
+					rxq->rx_info[sw_ci].buf_dma_addr,
+					rxq->rx_info[sw_ci].page_offset,
+					rxq->buf_len,
+					DMA_FROM_DEVICE);
 #ifdef HAVE_XDP_SUPPORT
-	if (rxq->xdp_headroom_flag == 0)
-		*rx_cqe = (struct hinic5_rq_cqe *)
-			((u8 *)page_address(rxq->rx_info[sw_ci].page) +
-			 rxq->rx_info[sw_ci].page_offset);
-	else
-		*rx_cqe = (struct hinic5_rq_cqe *)
-			((u8 *)page_address(rxq->rx_info[sw_ci].page) +
-			 rxq->rx_info[sw_ci].page_offset + XDP_PACKET_HEADROOM);
+	if (rxq->xdp_headroom_flag == 0) {
+		*rx_cqe = (struct hinic5_rq_cqe *)((u8 *)page_address(rxq->rx_info[sw_ci].page) + rxq->rx_info[sw_ci].page_offset);
+	} else {
+		*rx_cqe = (struct hinic5_rq_cqe *)((u8 *)page_address(rxq->rx_info[sw_ci].page) + rxq->rx_info[sw_ci].page_offset + XDP_PACKET_HEADROOM);
+	}
 #else
-	*rx_cqe = (struct hinic5_rq_cqe *)
-		((u8 *)page_address(rxq->rx_info[sw_ci].page) +
-		 rxq->rx_info[sw_ci].page_offset);
+	*rx_cqe = (struct hinic5_rq_cqe *)((u8 *)page_address(rxq->rx_info[sw_ci].page) + rxq->rx_info[sw_ci].page_offset);
 #endif
 
 	return true;
@@ -931,8 +1065,7 @@ bool hinic5_rx_separate_cqe_done(struct hinic5_rxq *rxq, struct hinic5_rq_cqe **
 	return true;
 }
 
-void hinic5_rx_cqe_sendup_convert(struct hinic5_rq_cqe *rx_cqe,
-				  struct hinic5_rq_cqe *rx_cqe_sendup, u8 cqe_mode)
+void hinic5_rx_cqe_sendup_convert(struct hinic5_rq_cqe *rx_cqe, struct hinic5_rq_cqe *rx_cqe_sendup, u8 cqe_mode)
 {
 	if (cqe_mode == HINIC5_RQ_CQE_INTEGRATE) {
 		/*
@@ -957,8 +1090,7 @@ static int rx_cqe_check(struct hinic5_nic_dev *nic_dev, struct hinic5_rq_cqe *rx
 	int i, ret = 0;
 
 	for (i = 0; i < SERVICE_T_MAX; i++) {
-		if (nic_dev->tx_rx_ops.cqe_cb[i] &&
-		    test_bit(i, &nic_dev->tx_rx_ops.cqe_cb_state[i])) {
+		if (nic_dev->tx_rx_ops.cqe_cb[i] && test_bit(i, &nic_dev->tx_rx_ops.cqe_cb_state[i])) {
 			hinic5_rx_cqe_sendup_convert(rx_cqe, &rx_cqe_sendup, nic_dev->cqe_mode);
 			set_bit(i, &nic_dev->tx_rx_ops.cqe_cb_running[i]);
 			ret = nic_dev->tx_rx_ops.cqe_cb[i](nic_dev->lld_dev, &rx_cqe_sendup);
@@ -1000,8 +1132,9 @@ int hinic5_rx_poll(struct hinic5_rxq *rxq, int budget)
 	int ret = 0;
 
 	while (likely(pkts < budget)) {
-		if (!nic_dev->tx_rx_ops.rx_cqe_done(rxq, &rx_cqe))
+		if (!nic_dev->tx_rx_ops.rx_cqe_done(rxq, &rx_cqe)) {
 			break;
+		}
 		/* make sure we read rx_done before packet length */
 		rmb();
 
@@ -1017,10 +1150,13 @@ int hinic5_rx_poll(struct hinic5_rxq *rxq, int budget)
 		}
 
 		ret = recv_one_pkt(rxq, cqe_info);
-		if (ret < 0)
+		if (ret < 0) {
 			break;
+		} else if (ret == HINIC5_RX_SKB_LEN_ERR) {
+			continue;
+		}
 
-		/* In separate CQE mode, the done bit needs to be cleared */
+		/* In separated cqe scenario, need to clear the done bit */
 		if (nic_dev->cqe_mode == HINIC5_RQ_CQE_SEPARATE)
 			rx_cqe->status = 0;
 
@@ -1044,7 +1180,7 @@ int hinic5_rx_poll(struct hinic5_rxq *rxq, int budget)
 			break;
 	}
 
-	if (rxq->delta >= HINIC5_RX_BUFFER_WRITE)
+	if (rxq->delta >= nic_dev->buffs_replenish_thrd)
 		hinic5_rx_fill_buffers(rxq);
 
 	u64_stats_update_begin(&rxq->rxq_stats.syncp);
@@ -1095,7 +1231,6 @@ int hinic5_alloc_rxqs_res(struct hinic5_nic_dev *nic_dev, u16 num_rq,
 {
 	struct hinic5_dyna_rxq_res *rqres = NULL;
 	u16 idx;
-	u32 pkts;
 	u64 size;
 	u64 cqe_mem_size = sizeof(struct hinic5_rq_cqe) * rq_depth;
 	u64 cqe_info_mem_size = sizeof(struct hinic5_cqe_info) * rq_depth;
@@ -1105,13 +1240,14 @@ int hinic5_alloc_rxqs_res(struct hinic5_nic_dev *nic_dev, u16 num_rq,
 		size = sizeof(*rqres->rx_info) * rq_depth;
 		rqres->rx_info = kzalloc(size, GFP_KERNEL);
 
-		if (!rqres->rx_info)
+		if (!rqres->rx_info) {
+			nicif_err(nic_dev, drv, nic_dev->netdev,
+				  "Failed to alloc rxq%d rx info\n", idx);
 			goto err_alloc_rx_info;
+		}
 		if (nic_dev->cqe_mode == HINIC5_RQ_CQE_SEPARATE) {
-			rqres->cqe_start_vaddr = dma_zalloc_coherent(nic_dev->lld_dev->dev,
-								     cqe_mem_size,
-								     &rqres->cqe_start_paddr,
-								     GFP_KERNEL);
+			rqres->cqe_start_vaddr = dma_zalloc_coherent(nic_dev->lld_dev->dev, cqe_mem_size,
+						    &rqres->cqe_start_paddr, GFP_KERNEL);
 			if (!rqres->cqe_start_vaddr) {
 				nicif_err(nic_dev, drv, nic_dev->netdev,
 					  "Failed to alloc rxq%d cqe\n", idx);
@@ -1120,8 +1256,11 @@ int hinic5_alloc_rxqs_res(struct hinic5_nic_dev *nic_dev, u16 num_rq,
 		}
 
 		rqres->cqe_info = kzalloc(cqe_info_mem_size, GFP_KERNEL);
-		if (!rqres->cqe_info)
+		if (!rqres->cqe_info) {
+			nicif_err(nic_dev, drv, nic_dev->netdev,
+				"Failed to alloc rxq%d cqe_info\n", idx);
 			goto err_alloc_cqe_info;
+		}
 
 #ifdef HAVE_PAGE_POOL_SUPPORT
 		if (nic_dev->page_pool_enabled) {
@@ -1134,24 +1273,14 @@ int hinic5_alloc_rxqs_res(struct hinic5_nic_dev *nic_dev, u16 num_rq,
 			}
 		}
 #endif
-
-		pkts = hinic5_rx_alloc_buffers(nic_dev, rq_depth, rqres->rx_info);
-		if (pkts == 0) {
-			nicif_err(nic_dev, drv, nic_dev->netdev,
-				  "Failed to alloc rxq%d rx buffers\n", idx);
-			goto err_alloc_buffers;
-		}
-		rqres->next_to_alloc = (u16)pkts;
 	}
 
 	return 0;
 
-err_alloc_buffers:
 #ifdef HAVE_PAGE_POOL_SUPPORT
-	page_pool_destroy(rqres->page_pool);
 err_create_page_pool:
-#endif
 	kfree(rqres->cqe_info);
+#endif
 err_alloc_cqe_info:
 	if (nic_dev->cqe_mode == HINIC5_RQ_CQE_SEPARATE) {
 		dma_free_coherent(nic_dev->lld_dev->dev, cqe_mem_size, rqres->cqe_start_vaddr,
@@ -1169,21 +1298,44 @@ void hinic5_free_rxqs_res(struct hinic5_nic_dev *nic_dev, u16 num_rq,
 {
 	struct hinic5_dyna_rxq_res *rqres = NULL;
 	struct hinic5_rxq *rxq = NULL;
+	struct hinic5_rx_page_entry *cached_entry;
 	u64 cqe_mem_size = sizeof(struct hinic5_rq_cqe) * rq_depth;
 	int idx;
 
 	for (idx = 0; idx < num_rq; idx++) {
 		rxq = &nic_dev->rxqs[idx];
 		rqres = &rxqs_res[idx];
-		hinic5_rx_free_buffers(nic_dev, rq_depth, rqres->rx_info);
+		hinic5_rx_free_buffers(nic_dev, rxq, rq_depth, rqres->rx_info);
 #ifdef HAVE_PAGE_POOL_SUPPORT
 		if (rqres->page_pool)
 			page_pool_destroy(rqres->page_pool);
 #endif
+		/* clean up page cache */
+		while (rxq->page_cache.head != rxq->page_cache.tail) {
+			cached_entry = &rxq->page_cache.cache[rxq->page_cache.head];
+			rxq->page_cache.head = (rxq->page_cache.head + 1) & (HINIC5_CACHE_SIZE - 1);
+
+			if (cached_entry->page) {
+				dma_unmap_page(rxq->dev, cached_entry->dma_addr,
+					       rxq->dma_rx_buff_size, DMA_FROM_DEVICE);
+				put_page(cached_entry->page);
+				cached_entry->page = NULL;
+				cached_entry->dma_addr = 0;
+			}
+		}
+
+		/* clean up remain page */
+		if (rxq->remain_page) {
+			dma_unmap_page(rxq->dev, rxq->remain_page_dma_addr,
+						nic_dev->dma_rx_buff_size, DMA_FROM_DEVICE);
+			put_page(rxq->remain_page);
+			rxq->remain_page = NULL;
+		}
+
 		kfree(rqres->cqe_info);
 		if (nic_dev->cqe_mode == HINIC5_RQ_CQE_SEPARATE) {
-			dma_free_coherent(nic_dev->lld_dev->dev, cqe_mem_size,
-					  rqres->cqe_start_vaddr, rqres->cqe_start_paddr);
+			dma_free_coherent(nic_dev->lld_dev->dev, cqe_mem_size, rqres->cqe_start_vaddr,
+					rqres->cqe_start_paddr);
 		}
 		kfree(rqres->rx_info);
 	}
@@ -1193,12 +1345,8 @@ static inline void configure_rxq_init_default(struct hinic5_rxq *rxq)
 {
 	rxq->next_to_update = 0;
 	rxq->cons_idx = 0;
-	rxq->last_sw_ci = 0;
-	rxq->last_hw_ci = 0;
-	rxq->rx_check_err_cnt = 0;
-	rxq->rxq_print_times = 0;
-	rxq->last_packets = 0;
-	rxq->restore_buf_num = 0;
+	rxq->remain_page = NULL;
+	rxq->remain_page_offset = 0;
 }
 
 void hinic5_remove_configure_rxqs(struct hinic5_nic_dev *nic_dev)
@@ -1213,8 +1361,8 @@ void hinic5_remove_configure_rxqs(struct hinic5_nic_dev *nic_dev)
 		xdp_rxq_info_unreg(&rxq->xdp_rxq);
 	}
 #endif
+	return;
 }
-
 int hinic5_configure_rxqs(struct hinic5_nic_dev *nic_dev, u16 num_rq,
 			  u32 rq_depth, struct hinic5_dyna_rxq_res *rxqs_res)
 {
@@ -1227,7 +1375,6 @@ int hinic5_configure_rxqs(struct hinic5_nic_dev *nic_dev, u16 num_rq,
 	u32 idx, pkts;
 	int err = 0;
 
-	nic_dev->rxq_get_err_times = 0;
 	for (q_id = 0; q_id < num_rq; q_id++) {
 		rxq = &nic_dev->rxqs[q_id];
 		rqres = &rxqs_res[q_id];
@@ -1236,14 +1383,12 @@ int hinic5_configure_rxqs(struct hinic5_nic_dev *nic_dev, u16 num_rq,
 		configure_rxq_init_default(rxq);
 		rxq->irq_id = msix_entry->irq_id;
 		rxq->msix_entry_idx = msix_entry->msix_entry_idx;
-		rxq->next_to_alloc = rqres->next_to_alloc;
 		rxq->q_depth = rq_depth;
 		rxq->delta = rxq->q_depth;
 		rxq->q_mask = rxq->q_depth - 1;
-		rxq->last_sw_pi = rxq->q_depth - 1;
 		rxq->rx_info = rqres->rx_info;
 #ifdef HAVE_XDP_SUPPORT
-		rxq->xdp_headroom_flag = nic_dev->xdp_prog ? 1 : 0;
+		rxq->xdp_headroom_flag = (nic_dev->xdp_prog != NULL) ? 1 : 0;
 #endif
 
 		/* fill cqe */
@@ -1258,11 +1403,12 @@ int hinic5_configure_rxqs(struct hinic5_nic_dev *nic_dev, u16 num_rq,
 			}
 		}
 
-		for (idx = 0; idx < rq_depth; idx++)
+		for (idx = 0; idx < rq_depth; idx++) {
 			rxq->rx_info[idx].cqe_info = &rqres->cqe_info[idx];
+		}
 
 		rxq->rq = hinic5_get_nic_queue(nic_dev->hwdev, rxq->q_id, HINIC5_RQ);
-		if (!rxq->rq) {
+		if (rxq->rq == NULL) {
 			nicif_err(nic_dev, drv, nic_dev->netdev, "Failed to get rq\n");
 			return -EINVAL;
 		}
@@ -1318,8 +1464,10 @@ int hinic5_alloc_rxqs(struct net_device *netdev)
 	}
 
 	nic_dev->rxqs = kzalloc(rxq_size, GFP_KERNEL);
-	if (!nic_dev->rxqs)
+	if (nic_dev->rxqs == NULL) {
+		nic_err(dev, "Failed to allocate rxqs\n");
 		return -ENOMEM;
+	}
 
 	for (q_id = 0; q_id < num_rxqs; q_id++) {
 		rxq = &nic_dev->rxqs[q_id];
@@ -1331,6 +1479,10 @@ int hinic5_alloc_rxqs(struct net_device *netdev)
 		rxq->dma_rx_buff_size = nic_dev->dma_rx_buff_size;
 		rxq->q_depth = nic_dev->q_params.rq_depth;
 		rxq->q_mask = nic_dev->q_params.rq_depth - 1;
+
+		/* Initialize page cache */
+		rxq->page_cache.head = 0;
+		rxq->page_cache.tail = 0;
 
 		rxq_stats_init(rxq);
 	}
@@ -1346,7 +1498,7 @@ int hinic5_rx_configure(struct net_device *netdev, u8 dcb_en)
 
 	/* Set all rq mapping to all iq in default */
 
-	memset(rq2iq_map, 0xFF, sizeof(rq2iq_map));
+	(void)memset(rq2iq_map, 0xFF, sizeof(rq2iq_map));
 
 	if (test_bit(HINIC5_RSS_ENABLE, &nic_dev->flags) != 0) {
 		err = hinic5_rss_init(nic_dev, rq2iq_map, sizeof(rq2iq_map), dcb_en);
@@ -1367,203 +1519,16 @@ void hinic5_rx_remove_configure(struct net_device *netdev)
 		hinic5_rss_deinit(nic_dev);
 }
 
-int hinic5_rxq_restore(struct hinic5_nic_dev *nic_dev, u16 q_id, u16 hw_ci)
-{
-	struct hinic5_rxq *rxq = &nic_dev->rxqs[q_id];
-	struct hinic5_rq_wqe *rq_wqe = NULL;
-	struct hinic5_rx_info *rx_info = NULL;
-	dma_addr_t dma_addr;
-	u32 free_wqebbs = rxq->delta - rxq->restore_buf_num;
-	u32 buff_pi;
-	u32 i;
-	int err;
-
-	if (rxq->delta < rxq->restore_buf_num)
-		return -EINVAL;
-
-	if (rxq->restore_buf_num == 0) /* start restore process */
-		rxq->restore_pi = rxq->next_to_update;
-
-	buff_pi = rxq->restore_pi;
-
-	if ((((rxq->cons_idx & rxq->q_mask) + rxq->q_depth -
-	       rxq->next_to_update) % rxq->q_depth) != rxq->delta)
-		return -EINVAL;
-
-	for (i = 0; i < free_wqebbs; i++) {
-		rx_info = &rxq->rx_info[buff_pi];
-
-		if (unlikely(!rx_alloc_mapped_page(nic_dev, rx_info))) {
-			RXQ_STATS_INC(rxq, alloc_rx_buf_err);
-			rxq->restore_pi = (u16)((rxq->restore_pi + i) & rxq->q_mask);
-			return -ENOMEM;
-		}
-
-		dma_addr = rx_info->buf_dma_addr + rx_info->page_offset;
-
-		rq_wqe = rx_info->rq_wqe;
-
-		if (rxq->rq->wqe_type == HINIC5_EXTEND_RQ_WQE) {
-			rq_wqe->extend_wqe.buf_desc.sge.hi_addr =
-				hinic5_hw_be32(upper_32_bits(dma_addr));
-			rq_wqe->extend_wqe.buf_desc.sge.lo_addr =
-				hinic5_hw_be32(lower_32_bits(dma_addr));
-		} else {
-			rq_wqe->normal_wqe.buf_hi_addr =
-				hinic5_hw_be32(upper_32_bits(dma_addr));
-			rq_wqe->normal_wqe.buf_lo_addr =
-				hinic5_hw_be32(lower_32_bits(dma_addr));
-		}
-		buff_pi = (u16)((buff_pi + 1) & rxq->q_mask);
-		rxq->restore_buf_num++;
-	}
-
-	nic_info(nic_dev->lld_dev->dev, "rxq %u restore_buf_num:%u\n", q_id, rxq->restore_buf_num);
-
-	rx_info =  &rxq->rx_info[(hw_ci + rxq->q_depth - 1) & rxq->q_mask];
-	if (rx_info->buf_dma_addr != 0) {
-		dma_unmap_page(nic_dev->lld_dev->dev, rx_info->buf_dma_addr,
-			       nic_dev->dma_rx_buff_size, DMA_FROM_DEVICE);
-		rx_info->buf_dma_addr = 0;
-	}
-
-	if (rx_info->page) {
-		__free_pages(rx_info->page, nic_dev->page_order);
-		rx_info->page = NULL;
-	}
-
-	rxq->delta = 1;
-	rxq->next_to_update = (u16)((hw_ci + rxq->q_depth - 1) & rxq->q_mask);
-	rxq->cons_idx = (u16)((rxq->next_to_update + 1) & rxq->q_mask);
-	rxq->restore_buf_num = 0;
-	rxq->next_to_alloc = rxq->next_to_update;
-
-	for (i = 0; i < rxq->q_depth; i++) {
-		if (HINIC5_GET_RX_DONE(hinic5_hw_cpu32(rxq->rx_info[i].cqe->status)) == 0)
-			continue;
-
-		RXQ_STATS_INC(rxq, restore_drop_sge);
-		rxq->rx_info[i].cqe->status = 0;
-	}
-
-	err = hinic5_cache_out_qps_res(nic_dev->hwdev);
-	if (err != 0) {
-		clear_bit(HINIC5_RXQ_RECOVERY, &nic_dev->flags);
-		return err;
-	}
-
-	hinic5_write_db(rxq->rq, rxq->q_id & (NIC_DCB_COS_MAX - 1),
-			RQ_CFLAG_DP, (u16)((u32)rxq->next_to_update << rxq->rq->wqe_type));
-
-	return 0;
-}
-
-bool hinic5_rxq_is_normal(struct hinic5_rxq *rxq, struct rxq_check_info rxq_info)
-{
-	u32 status;
-
-	if (rxq->rxq_stats.packets != rxq->last_packets || rxq_info.hw_pi != rxq_info.hw_ci ||
-	    rxq_info.hw_ci != rxq->last_hw_ci || rxq->next_to_update != rxq->last_sw_pi)
-		return true;
-
-	/* hw rx no wqe and driver rx no packet recv */
-	status = rxq->rx_info[rxq->cons_idx & rxq->q_mask].cqe->status;
-	if (HINIC5_GET_RX_DONE(hinic5_hw_cpu32(status)) != 0)
-		return true;
-
-	if ((rxq->cons_idx & rxq->q_mask) != rxq->last_sw_ci ||
-	    rxq->rxq_stats.packets != rxq->last_packets ||
-	    rxq->next_to_update != rxq_info.hw_pi)
-		return true;
-
-	return false;
-}
-
-#define RXQ_CHECK_ERR_TIMES 2
-#define RXQ_PRINT_MAX_TIMES 3
-#define RXQ_GET_ERR_MAX_TIMES 3
-void hinic5_rxq_check_work_handler(struct work_struct *work)
-{
-	struct delayed_work *delay = to_delayed_work(work);
-	struct hinic5_nic_dev *nic_dev = container_of(delay, struct hinic5_nic_dev, rxq_check_work);
-	struct rxq_check_info *rxq_info = NULL;
-	struct hinic5_rxq *rxq = NULL;
-	u64 size;
-	u16 qid;
-	int err;
-
-	if (test_bit(HINIC5_INTF_UP, &nic_dev->flags) == 0)
-		return;
-
-	if (test_bit(HINIC5_RXQ_RECOVERY, &nic_dev->flags) != 0)
-		queue_delayed_work(nic_dev->workq, &nic_dev->rxq_check_work, HZ);
-
-#ifdef HAVE_PAGE_POOL_SUPPORT
-	if (nic_dev->page_pool_enabled)
-		return;
-#endif
-
-	size = sizeof(*rxq_info) * nic_dev->q_params.num_qps;
-	if (size == 0)
-		return;
-
-	rxq_info = kzalloc(size, GFP_KERNEL);
-	if (!rxq_info)
-		return;
-
-	err = hinic5_get_rxq_hw_info(nic_dev->hwdev, rxq_info, nic_dev->q_params.num_qps,
-				     nic_dev->rxqs[0].rq->wqe_type);
-	if (err != 0) {
-		nic_dev->rxq_get_err_times++;
-		if (nic_dev->rxq_get_err_times >= RXQ_GET_ERR_MAX_TIMES)
-			clear_bit(HINIC5_RXQ_RECOVERY, &nic_dev->flags);
-		goto free_rxq_info;
-	}
-
-	for (qid = 0; qid < nic_dev->q_params.num_qps; qid++) {
-		rxq = &nic_dev->rxqs[qid];
-		if (!hinic5_rxq_is_normal(rxq, rxq_info[qid])) {
-			rxq->rx_check_err_cnt++;
-			if (rxq->rx_check_err_cnt < RXQ_CHECK_ERR_TIMES)
-				continue;
-
-			if (rxq->rxq_print_times <= RXQ_PRINT_MAX_TIMES) {
-				nic_warn(nic_dev->lld_dev->dev, "rxq %u wqe abnormal, hw_pi:%u, hw_ci:%u, sw_pi:%u, sw_ci:%u delta:%u\n",
-					 qid, rxq_info[qid].hw_pi, rxq_info[qid].hw_ci,
-					 rxq->next_to_update,
-					 rxq->cons_idx & rxq->q_mask, rxq->delta);
-				rxq->rxq_print_times++;
-			}
-
-			if (hinic5_rxq_restore(nic_dev, qid, rxq_info[qid].hw_ci) != 0)
-				continue;
-		}
-
-		rxq->rxq_print_times = 0;
-		rxq->rx_check_err_cnt = 0;
-		rxq->last_sw_pi = rxq->next_to_update;
-		rxq->last_sw_ci = rxq->cons_idx & rxq->q_mask;
-		rxq->last_hw_ci = rxq_info[qid].hw_ci;
-		rxq->last_packets = rxq->rxq_stats.packets;
-	}
-
-	nic_dev->rxq_get_err_times = 0;
-
-free_rxq_info:
-	kfree(rxq_info);
-}
-
 int hinic5_register_cqe_cb(struct hinic5_lld_dev *lld_dev, enum hinic5_service_type event,
-			   hinic5_cqe_cb cqe_cb)
+			       hinic5_cqe_cb cqe_cb)
 {
 	struct hinic5_nic_dev *nic_dev = NULL;
 
-	if (!lld_dev || !cqe_cb || event >= SERVICE_T_MAX ||
-	    !hinic5_support_nic(lld_dev->hwdev, NULL))
+	if (!lld_dev || !cqe_cb || event >= SERVICE_T_MAX || !hinic5_support_nic(lld_dev->hwdev, NULL))
 		return -EINVAL;
 
 	nic_dev = hinic5_get_uld_dev_unsafe(lld_dev, SERVICE_T_NIC);
-	if (!nic_dev) {
+	if (nic_dev == NULL) {
 		nic_err(lld_dev->dev, "There's no net device attached on the pci device");
 		return -EINVAL;
 	}
@@ -1583,7 +1548,7 @@ void hinic5_unregister_cqe_cb(struct hinic5_lld_dev *lld_dev, enum hinic5_servic
 		return;
 
 	nic_dev = hinic5_get_uld_dev_unsafe(lld_dev, SERVICE_T_NIC);
-	if (!nic_dev)
+	if (nic_dev == NULL)
 		return;
 
 	clear_bit(event, &nic_dev->tx_rx_ops.cqe_cb_state[event]);

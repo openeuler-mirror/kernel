@@ -4,8 +4,8 @@
  * File Name     : hinic5_prof_adap.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Profile adapter for the hinic5 driver.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [PROF]" fmt
@@ -19,7 +19,7 @@
 #include "hinic5_profile.h"
 #include "hinic5_prof_adap.h"
 
-__weak
+__attribute__((weak))
 const struct hinic5_prof_adapter *hinic5_get_prof_adapter(void *hwdev)
 {
 	return NULL;
@@ -64,7 +64,7 @@ struct hinic5_prof_attr *hinic5_get_prof_attr(void *hwdev)
 {
 	struct hinic5_hwdev *dev = (struct hinic5_hwdev *)hwdev;
 
-	if (!hwdev) {
+	if (hwdev == NULL) {
 		pr_err("hwdev is NULL\n");
 		return NULL;
 	}

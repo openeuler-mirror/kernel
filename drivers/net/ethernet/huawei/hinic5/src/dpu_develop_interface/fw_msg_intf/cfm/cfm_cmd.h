@@ -4,7 +4,7 @@
  * File Name     : cfm_cmd.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
+ * Last Modified : 2026/09/16
  * Description   : cfm cmd define
  */
 
@@ -19,15 +19,15 @@ typedef enum tag_cfm_mpu_drv_cmd {
 	CFM_MPU_CMD_BOND_DELETE = 1,
 	CFM_MPU_CMD_BOND_SET = 2,
 	CFM_MPU_CMD_BOND_GET = 3,
-	CFM_MPU_CMD_BOND_CFG = 4, /* bond config and query */
+	CFM_MPU_CMD_BOND_CFG = 4, /* bond configuration and query */
 	CFM_MPU_CMD_BOND_LINK_INFO_GET = 5,
-	CFM_MPU_CMD_PASS_ARP_PKT = 6, /* send arp packet through mpu */
+	CFM_MPU_CMD_PASS_ARP_PKT = 6, /* Send arp packets through mpu */
 	CFM_MPU_CMD_CCP_COMM_PARA_GET = 16,
 	CFM_MPU_CMD_CCP_ALGO_PARA_GET = 17,
 	CFM_MPU_CMD_QOS_VPORT_MAPPING_SET = 32,
 	CFM_MPU_CMD_QOS_VPORT_SHAPER_SET = 33,
 	CFM_MPU_CMD_QOS_VPORT_SHAPER_CLR = 34,
-	CFM_MPU_CMD_QOS_VPORT_SHAPER_GET = 35, /* qos_base config and query */
+	CFM_MPU_CMD_QOS_VPORT_SHAPER_GET = 35, /* qos_base configuration and query */
 	CFM_MPU_CMD_QOS_CC_L2D_SET = 36, /* CFM QoS CC L2DMEM write operation */
 	CFM_MPU_CMD_QOS_CC_L2D_GET = 37, /* CFM QoS CC L2DMEM read operation */
 	CFM_MPU_CMD_EXTEND_END = 64

@@ -4,8 +4,8 @@
  * File Name     : hinic5_dbg.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 debug ioctl header file
  */
 
 #ifndef HINIC5_DBG_H

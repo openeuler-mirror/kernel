@@ -4,8 +4,8 @@
  * File Name     : hinic5_bus.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : bus abstraction layer for HINIC5 driver
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [COMM]" fmt
@@ -68,15 +68,17 @@ struct hinic5_bus_ops *hinic5_get_dev_ops(struct hinic5_adev *adev)
 }
 
 /*
- * SDK driver needs to support both UB and PCI scenarios, ub and pci drivers need to register
- */
+The SDK driver needs to support both UB and PCI scenarios,
+both ub and pci drivers need to be registered
+*/
 int hinic5_register_driver(void)
 {
 	int err;
 
 	err = hinic5_pci_register_driver();
-	if (err != 0)
+	if (err != 0) {
 		return err;
+	}
 
 #ifdef __UBUS_DRIVER__
 	err = hinic5_ubus_register_driver();
@@ -97,13 +99,13 @@ void hinic5_unregister_driver(void)
 }
 
 /**
- * @brief Determine if the current device is a VF type
- * @param adev Device adapter layer structure pointer
+ * @brief Determine whether the current device is a vf type
+ * @param adev device adapter layer struct pointer
  * @details vf is considered as pf in a virtual machine, that is
 			vf in host -- return 1
 			vf in vm   -- return 0
  *
- * @return 0 for PF, 1 for VF
+ * @return 0 indicates pf, 1 indicates vf
  */
 bool hinic5_adev_is_virtfn(struct hinic5_adev *adev)
 {

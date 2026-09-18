@@ -4,8 +4,8 @@
  * File Name     : hinic5_nic_io.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : hinic5 nic io definitions
  */
 
 #ifndef HINIC5_NIC_IO_H
@@ -33,10 +33,6 @@ enum hinic5_rq_wqe_type {
 	HINIC5_NORMAL_RQ_WQE,
 	HINIC5_EXTEND_RQ_WQE,
 };
-
-#define HINIC5_SQ_COALESCE BIT(0)
-#define HINIC5_RQ_COALESCE BIT(1)
-#define HINIC5_SQ_RQ_COALESCE (HINIC5_SQ_COALESCE | HINIC5_RQ_COALESCE)
 
 struct hinic5_io_queue {
 	struct hinic5_wq wq;
@@ -373,8 +369,7 @@ int hinic5_init_qps(void *hwdev, struct hinic5_dyna_qp_params *qp_params);
 void hinic5_deinit_qps(void *hwdev, struct hinic5_dyna_qp_params *qp_params);
 int hinic5_init_nicio_res(void *hwdev, u16 usr_qps_num);
 void hinic5_deinit_nicio_res(void *hwdev);
-int hinic5_set_sq_rq_coalesce_cfg(void *hwdev, u32 q_id, u32 type,
-				  struct hinic5_qp_coalesce_info *coal_info);
+int hinic5_set_intr_coalesce_cfg(void *hwdev, u32 q_id, struct hinic5_qp_coalesce_info *coal_info);
 int hinic5_get_rq_wqe_type(void *hwdev);
 void hinic5_nic_io_param_validate(void);
 

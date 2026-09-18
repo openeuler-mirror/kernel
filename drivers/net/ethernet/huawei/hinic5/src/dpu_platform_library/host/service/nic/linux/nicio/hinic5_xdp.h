@@ -4,8 +4,8 @@
  * File Name     : hinic5_xdp.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 XDP header file
  */
 
 #ifndef HINIC5_XDP_H
@@ -47,8 +47,7 @@ enum hinic5_xdp_pkt {
 	HINIC5_XDP_PKT_TX,
 };
 
-int tx_map_xdpf(struct hinic5_nic_dev *nic_dev, struct hinic5_txq *txq, u16 pi,
-		struct hinic5_sq_wqe_combo *wqe_combo);
+int tx_map_xdpf(struct hinic5_nic_dev *nic_dev, struct hinic5_txq *txq, u16 pi, struct hinic5_sq_wqe_combo *wqe_combo);
 
 void hinic5_prepare_xdp_sq_ctrl(struct hinic5_sq_wqe_combo *wqe_combo, u16 owner);
 
@@ -63,12 +62,10 @@ struct xdp_frame *xdp_convert_to_frame(struct xdp_buff *xdp, struct hinic5_nic_d
 
 int hinic5_run_xdp(struct hinic5_rxq *rxq, struct hinic5_cqe_info *cqe_info, struct xdp_buff *xdp);
 
-struct sk_buff *hinic5_fetch_rx_buffer_xdp(struct hinic5_rxq *rxq, u32 pkt_len,
-					   struct xdp_buff *xdp);
+struct sk_buff *hinic5_fetch_rx_buffer_xdp(struct hinic5_rxq *rxq, u32 pkt_len, struct xdp_buff *xdp);
 
 void hinic5_xdp_flush_if_needed(const struct hinic5_nic_dev *nic_dev);
 
-bool hinic5_xdp_process_packet(struct hinic5_rxq *rxq, struct hinic5_cqe_info *cqe_info,
-			       struct sk_buff **skb);
+bool hinic5_xdp_process_packet(struct hinic5_rxq *rxq, struct hinic5_cqe_info *cqe_info, struct sk_buff **skb);
 #endif
 #endif

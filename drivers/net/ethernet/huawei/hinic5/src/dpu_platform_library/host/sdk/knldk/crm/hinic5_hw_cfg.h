@@ -4,8 +4,8 @@
  * File Name     : hinic5_hw_cfg.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Hardware configuration definitions for the hinic5 driver.
  */
 
 #ifndef HINIC5_HW_CFG_H
@@ -300,6 +300,7 @@ struct service_cap {
 	u16 hash_bucket_num;
 
 	u8 cos_mask_mode;
+	u8 cos_mask_bitmap;
 
 	struct hisdk5_dcb_state dcb_state;
 
@@ -412,18 +413,16 @@ struct cfg_mgmt_info {
 #define IS_HIHTR_TYPE(dev) \
 		(((u32)(dev)->cfg_mgmt->svc_cap.chip_svc_type) & CFG_SERVICE_MASK_HIHTR)
 
-int hinic5_init_cfg_mgmt(struct hinic5_hwdev *dev);
+int init_cfg_mgmt(struct hinic5_hwdev *dev);
 
-void hinic5_free_cfg_mgmt(struct hinic5_hwdev *dev);
+void free_cfg_mgmt(struct hinic5_hwdev *dev);
 
-int hinic5_init_capability(struct hinic5_hwdev *dev);
+int init_capability(struct hinic5_hwdev *dev);
 
-void hinic5_free_capability(struct hinic5_hwdev *dev);
+void free_capability(struct hinic5_hwdev *dev);
 
-/* Reference: hwsdk/hinic5_cqm/hinic5_cqm_bat_cla.h#HINIC5_CQM_BAT_ENTRY_MAX */
-#define HINIC5_BAT_ENTRY_MAX	16
-/* Reference: hwsdk/hinic5_cqm/hinic5_cqm_bat_cla.h#HINIC5_CQM_BAT_ENTRY_SIZE */
-#define HINIC5_BAT_ENTRY_SIZE	16
+#define HINIC5_BAT_ENTRY_MAX	16 /* Reference: hwsdk/cqm/cqm_bat_cla.h#CQM_BAT_ENTRY_MAX */
+#define HINIC5_BAT_ENTRY_SIZE	16 /* Reference: hwsdk/cqm/cqm_bat_cla.h#CQM_BAT_ENTRY_SIZE */
 #define HINIC5_BAT_MAX		(HINIC5_BAT_ENTRY_MAX * HINIC5_BAT_ENTRY_SIZE)
 
 #define HINIC5_BAT_L3I_OFF_FT_RDMA_PF	(10 * HINIC5_BAT_ENTRY_SIZE)
@@ -433,8 +432,7 @@ void hinic5_free_capability(struct hinic5_hwdev *dev);
 
 struct hinic5_bat_entry_config {
 	bool mapping;           /* Whether this entry should be mapped into
-				 * the function address space.
-				 */
+				 * the function address space. */
 	u32  bat_entry_offset;  /* Offset of the entry in the BAT register file. */
 	u32  bat_entry_size;    /* Size of the entry in the BAT register file. */
 };

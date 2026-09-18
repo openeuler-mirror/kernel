@@ -4,8 +4,8 @@
  * File Name     : hinic5_hwdev.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Hardware device management for the hinic5 driver.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [COMM]" fmt
@@ -36,10 +36,10 @@
 #include "hinic5_cmdq.h"
 #include "hinic5_hw_cfg.h"
 #include "hinic5_hw_comm.h"
-#include "hinic5_hinic5_cqm.h"
+#include "hinic5_cqm.h"
 #include "sdk_pub_cmd.h"
 #if !defined(__WIN__)
-#include "hinic5_cqm_fast_msg.h"
+#include "cqm_fast_msg.h"
 #include "hinic5_devlink.h"
 #endif
 #include "mpu_inband_cmd.h"
@@ -53,20 +53,18 @@
 #include "hinic5_bus.h"
 #include "hinic5_lld.h"
 #include "hinic5_dev_mgmt.h"
-#include "hinic5_micro_log.h"
-#include "hinic5_non_ptp.h"
 #endif
 #include "hinic5_hwdev.h"
 
 static unsigned int wq_page_order = HINIC5_MAX_WQ_PAGE_SIZE_ORDER;
 module_param(wq_page_order, uint, 0444);
-MODULE_PARM_DESC(wq_page_order, "Set wq page size order, wq page size is 4K * " \
+MODULE_PARM_DESC(wq_page_order, "Set wq page size order, wq page size is 4K * "
 		 "(2 ^ wq_page_order) - default is 8");
 
 static ulong perf_en_bitmap;
 module_param(perf_en_bitmap, ulong, 0644);
 MODULE_PARM_DESC(perf_en_bitmap,
-		 "Set perf enable bitmap: 0-disable, 1-enable (bit(0)-cmdq, " \
+				 "Set perf enable bitmap: 0-disable, 1-enable (bit(0)-cmdq, "
 		 "bit(1)-mailbox) - default is 0");
 
 #define HINIC5_DMA_ATTR_INDIR_IDX_SHIFT				0
@@ -124,7 +122,7 @@ MODULE_PARM_DESC(perf_en_bitmap,
 				(BIT(RES_TYPE_FLUSH_BIT)) | (BIT(RES_TYPE_MQM)) | \
 				(BIT(RES_TYPE_SMF)) | (BIT(RES_TYPE_PF_BW_CFG)))
 
-void hinic5_set_slave_host_enable(void *hwdev, u8 host_id, bool enable)
+void set_slave_host_enable(void *hwdev, u8 host_id, bool enable)
 {
 	u32 reg_val;
 	struct hinic5_hwdev *dev = (struct hinic5_hwdev *)hwdev;
@@ -148,8 +146,9 @@ int hinic5_get_slave_host_enable(void *hwdev, u8 host_id, u8 *slave_en)
 
 	u32 reg_val;
 
-	if (!hwdev || !slave_en)
+	if ((hwdev == NULL) || (slave_en == NULL)) {
 		return -EINVAL;
+	}
 
 	if (HINIC5_FUNC_TYPE(dev) != TYPE_PPF) {
 		sdk_warn(dev->dev_hdl, "hwdev should be ppf\n");
@@ -167,7 +166,6 @@ int hinic5_get_slave_bitmap(void *hwdev, u8 *slave_host_bitmap)
 {
 	struct hinic5_hwdev *dev = hwdev;
 	struct service_cap *cap = NULL;
-
 	if (!dev || !dev->cfg_mgmt)
 		return -EINVAL;
 	cap = &dev->cfg_mgmt->svc_cap;
@@ -189,16 +187,18 @@ static void hinic5_init_host_mode_pre(struct hinic5_hwdev *hwdev)
 
 	switch (cap->srv_multi_host_mode) {
 	case HINIC5_SDI_MODE_BM:
-		if (host_id == cap->master_host_id)
+		if (host_id == cap->master_host_id) {
 			hwdev->func_mode = FUNC_MOD_MULTI_BM_MASTER;
-		else
+		} else {
 			hwdev->func_mode = FUNC_MOD_MULTI_BM_SLAVE;
+		}
 		break;
 	case HINIC5_SDI_MODE_VM:
-		if (host_id == cap->master_host_id)
+		if (host_id == cap->master_host_id) {
 			hwdev->func_mode = FUNC_MOD_MULTI_VM_MASTER;
-		else
+		} else {
 			hwdev->func_mode = FUNC_MOD_MULTI_VM_SLAVE;
+		}
 		break;
 	default:
 		hwdev->func_mode = FUNC_MOD_NORMAL_HOST;
@@ -213,7 +213,7 @@ STATIC int hinic5_multi_host_enable(struct hinic5_hwdev *hwdev, bool enable)
 	if (!IS_SLAVE_HOST(hwdev) || !HINIC5_IS_PPF(hwdev))
 		return 0;
 
-	hinic5_set_slave_host_enable(hwdev, hinic5_pcie_itf_id(hwdev), enable);
+	set_slave_host_enable(hwdev, hinic5_pcie_itf_id(hwdev), enable);
 
 	return 0;
 }
@@ -263,15 +263,15 @@ static void chip_fault_show(struct hinic5_hwdev *hwdev,
 {
 	char fault_level[FAULT_LEVEL_MAX][FAULT_SHOW_STR_LEN + 1] = {
 		"fatal", "reset", "host", "flr", "general", "suggestion"};
-	char level_str[FAULT_SHOW_STR_LEN + 1];
+	char level_str[FAULT_SHOW_STR_LEN + 1] = {0};
 	u8 level;
 
-	memset(level_str, 0, FAULT_SHOW_STR_LEN + 1);
 	level = event->event.chip.err_level;
-	if (level < FAULT_LEVEL_MAX)
-		strscpy(level_str, fault_level[level], sizeof(level_str));
-	else
-		strscpy(level_str, "Unknown", sizeof(level_str));
+	if (level < FAULT_LEVEL_MAX) {
+		(void)strncpy(level_str, fault_level[level], FAULT_SHOW_STR_LEN);
+	} else {
+		(void)strncpy(level_str, "Unknown", UNKNOWN_LEN);
+	}
 
 	if (level == FAULT_LEVEL_SERIOUS_FLR)
 		dev_err(hwdev->dev_hdl, "err_level: %u [%s], flr func_id: %u\n",
@@ -288,31 +288,26 @@ static void chip_fault_show(struct hinic5_hwdev *hwdev,
 static void fault_report_show(struct hinic5_hwdev *hwdev,
 			      struct hinic5_fault_event *event)
 {
-	char fault_type[FAULT_TYPE_MAX][FAULT_SHOW_STR_LEN + 1] = {
-		"chip", "ucode", "mem rd timeout", "mem wr timeout",
-		"reg rd timeout", "reg wr timeout", "phy fault", "tsensor fault"
-	};
+	char fault_type[FAULT_TYPE_MAX][FAULT_SHOW_STR_LEN + 1] = { "chip", "ucode", "mem rd timeout", "mem wr timeout",
+		"reg rd timeout", "reg wr timeout", "phy fault", "tsensor fault"};
 	char type_str[FAULT_SHOW_STR_LEN + 1] = {0};
 	struct fault_event_stats *fault = NULL;
 
-	sdk_err(hwdev->dev_hdl, "Fault event report received, func_id: %u\n",
-		hinic5_global_func_id(hwdev));
+	sdk_err(hwdev->dev_hdl, "Fault event report received, func_id: %u\n", hinic5_global_func_id(hwdev));
 
 	fault = &hwdev->hw_stats.fault_event_stats;
 
 	if (event->type < FAULT_TYPE_MAX) {
-		strscpy(type_str, fault_type[event->type], sizeof(type_str));
+		(void)strncpy(type_str, fault_type[event->type], FAULT_SHOW_STR_LEN);
 		atomic_inc(&fault->fault_type_stat[event->type]);
 	} else {
-		strscpy(type_str, "Unknown", sizeof(type_str));
+		(void)strncpy(type_str, "Unknown", UNKNOWN_LEN);
 	}
 
 	sdk_err(hwdev->dev_hdl, "Fault type: %u [%s]\n", event->type, type_str);
 	/* 0, 1, 2 and 3 word Represents array event->event.val index */
-	sdk_err(hwdev->dev_hdl,
-		"Fault val[0]: 0x%08x, val[1]: 0x%08x, val[2]: 0x%08x, val[3]: 0x%08x\n",
-		event->event.val[0x0], event->event.val[0x1],
-		event->event.val[0x2], event->event.val[0x3]);
+	sdk_err(hwdev->dev_hdl, "Fault val[0]: 0x%08x, val[1]: 0x%08x, val[2]: 0x%08x, val[3]: 0x%08x\n",
+		event->event.val[0x0], event->event.val[0x1], event->event.val[0x2], event->event.val[0x3]);
 
 	hinic5_show_chip_err_info(hwdev);
 
@@ -322,15 +317,12 @@ static void fault_report_show(struct hinic5_hwdev *hwdev,
 		break;
 	case FAULT_TYPE_UCODE:
 		sdk_err(hwdev->dev_hdl, "Cause_id: %u, core_id: %u, c_id: %u, epc: 0x%08x\n",
-			event->event.ucode.cause_id, event->event.ucode.core_id,
-			event->event.ucode.c_id, event->event.ucode.epc);
+			event->event.ucode.cause_id, event->event.ucode.core_id, event->event.ucode.c_id, event->event.ucode.epc);
 		break;
 	case FAULT_TYPE_MEM_RD_TIMEOUT:
 	case FAULT_TYPE_MEM_WR_TIMEOUT:
-		sdk_err(hwdev->dev_hdl,
-			"Err_csr_ctrl: 0x%08x, err_csr_data: 0x%08x, ctrl_tab: 0x%08x, mem_index: 0x%08x\n",
-			event->event.mem_timeout.err_csr_ctrl,
-			event->event.mem_timeout.err_csr_data,
+		sdk_err(hwdev->dev_hdl, "Err_csr_ctrl: 0x%08x, err_csr_data: 0x%08x, ctrl_tab: 0x%08x, mem_index: 0x%08x\n",
+			event->event.mem_timeout.err_csr_ctrl, event->event.mem_timeout.err_csr_data,
 			event->event.mem_timeout.ctrl_tab, event->event.mem_timeout.mem_index);
 		break;
 	case FAULT_TYPE_REG_RD_TIMEOUT:
@@ -338,10 +330,8 @@ static void fault_report_show(struct hinic5_hwdev *hwdev,
 		sdk_err(hwdev->dev_hdl, "Err_csr: 0x%08x\n", event->event.reg_timeout.err_csr);
 		break;
 	case FAULT_TYPE_PHY_FAULT:
-		sdk_err(hwdev->dev_hdl,
-			"Op_type: %u, port_id: %u, dev_ad: %u, csr_addr: 0x%08x, op_data: 0x%08x\n",
-			event->event.phy_fault.op_type,
-			event->event.phy_fault.port_id, event->event.phy_fault.dev_ad,
+		sdk_err(hwdev->dev_hdl, "Op_type: %u, port_id: %u, dev_ad: %u, csr_addr: 0x%08x, op_data: 0x%08x\n",
+			event->event.phy_fault.op_type, event->event.phy_fault.port_id, event->event.phy_fault.dev_ad,
 			event->event.phy_fault.csr_addr, event->event.phy_fault.op_data);
 		break;
 	default:
@@ -356,7 +346,6 @@ static void fault_event_handler(void *dev, void *buf_in, u16 in_size,
 	struct hinic5_fault_event *fault = NULL;
 	struct hinic5_event_info event_info;
 	struct hinic5_hwdev *hwdev = dev;
-	struct card_node *chip_info = hwdev->chip_node;
 	u8 fault_src = HINIC5_FAULT_SRC_TYPE_MAX;
 	u8 fault_level;
 
@@ -374,18 +363,11 @@ static void fault_event_handler(void *dev, void *buf_in, u16 in_size,
 	else
 		fault_level = FAULT_LEVEL_FATAL;
 
-	if (fault_event->event.type == FAULT_TYPE_CHIP &&
-	    fault_level <= (u8)FAULT_LEVEL_SERIOUS_RESET) {
-		chip_info->exception_flag = true;
-		sdk_err(hwdev->dev_hdl, "Set card error due to chip fault, lvl %u\n",
-			fault_level);
-	}
-
 	if (hwdev->event_callback) {
 		event_info.service = EVENT_SRV_COMM;
 		event_info.type = EVENT_COMM_FAULT;
 		fault = (void *)event_info.event_data;
-		memcpy(fault, &fault_event->event,
+		(void)memcpy(fault, &fault_event->event,
 		       sizeof(struct hinic5_fault_event));
 		fault->fault_level = fault_level;
 		hwdev->event_callback(hwdev->event_pri_handle, &event_info);
@@ -412,7 +394,7 @@ static void ffm_event_record(struct hinic5_hwdev *dev, struct dbgtool_k_glb_info
 	last_err_csr_addr = dbgtool_info->ffm->last_err_csr_addr;
 	last_err_csr_value = dbgtool_info->ffm->last_err_csr_value;
 	if (ffm_idx < FFM_RECORD_NUM_MAX) {
-		if (intr->err_csr_addr == last_err_csr_addr &&
+		if (ffm_idx > 0 && intr->err_csr_addr == last_err_csr_addr &&
 		    intr->err_csr_value == last_err_csr_value) {
 			dbgtool_info->ffm->ffm[ffm_idx - 1].times++;
 			sdk_err(dev->dev_hdl, "Receive intr same, ffm_idx: %u\n", ffm_idx - 1);
@@ -459,7 +441,7 @@ static void ffm_event_msg_handler(void *hwdev, void *buf_in, u16 in_size,
 	spinlock_t *lock = NULL;
 
 	if (in_size != sizeof(*intr)) {
-		sdk_err(dev->dev_hdl, "Invalid fault event report, length: %u, should be %ld.\n",
+		sdk_err(dev->dev_hdl, "Invalid fault event report, length: %u, should be %lu.\n",
 			in_size, sizeof(*intr));
 		return;
 	}
@@ -502,7 +484,7 @@ static void sw_watchdog_timeout_info_show(struct hinic5_hwdev *hwdev,
 	u64 *reg = NULL;
 
 	if (in_size != sizeof(*watchdog_info)) {
-		sdk_err(hwdev->dev_hdl, "Invalid mgmt watchdog report, length: %u, should be %ld\n",
+		sdk_err(hwdev->dev_hdl, "Invalid mgmt watchdog report, length: %hu, should be %ld\n",
 			in_size, sizeof(*watchdog_info));
 		return;
 	}
@@ -515,11 +497,9 @@ static void sw_watchdog_timeout_info_show(struct hinic5_hwdev *hwdev,
 		watchdog_info->curr_used, watchdog_info->peak_used,
 		watchdog_info->is_overflow, watchdog_info->stack_top, watchdog_info->stack_bottom);
 
-	sdk_err(hwdev->dev_hdl,
-		"Mgmt pc: 0x%llx, elr: 0x%llx, spsr: 0x%llx, far: 0x%llx, esr: 0x%llx, xzr: 0x%llx\n",
-		watchdog_info->pc, watchdog_info->reg_info.arm_reg.elr,
-		watchdog_info->reg_info.arm_reg.spsr, watchdog_info->reg_info.arm_reg.far,
-		watchdog_info->reg_info.arm_reg.esr, watchdog_info->reg_info.arm_reg.xzr);
+	sdk_err(hwdev->dev_hdl, "Mgmt pc: 0x%llx, elr: 0x%llx, spsr: 0x%llx, far: 0x%llx, esr: 0x%llx, xzr: 0x%llx\n",
+		watchdog_info->pc, watchdog_info->reg_info.arm_reg.elr, watchdog_info->reg_info.arm_reg.spsr,
+		watchdog_info->reg_info.arm_reg.far, watchdog_info->reg_info.arm_reg.esr, watchdog_info->reg_info.arm_reg.xzr);
 
 	sdk_err(hwdev->dev_hdl, "Mgmt register info\n");
 	reg = &watchdog_info->reg_info.arm_reg.x30;
@@ -626,7 +606,7 @@ static void mgmt_lastword_report_event_handler(void *hwdev, void *buf_in, u16 in
 	u32 reg_i, cnt, stack_len;
 
 	if (in_size != sizeof(*lastword_info)) {
-		sdk_err(dev->dev_hdl, "Invalid mgmt lastword, length: %u, should be %lu\n",
+		sdk_err(dev->dev_hdl, "Invalid mgmt lastword, length: %hu, should be %lu\n",
 			in_size, sizeof(*lastword_info));
 		return;
 	}
@@ -669,7 +649,7 @@ static int hisdk5_attach_vf_vroce(struct hinic5_lld_dev *lld_dev, u16 func_id)
 	if (!dst_adev)
 		return -EINVAL;
 
-	err = hinic5_attach_service(&dst_adev->lld_dev, SERVICE_T_ROCE);
+	err = hinic5_attach_service(&dst_adev->lld_dev, SERVICE_T_VROCE);
 	return err;
 }
 
@@ -769,7 +749,7 @@ static void hisdk5_attach_plug_service(struct hinic5_lld_dev *lld_dev, u8 srv_ty
 			err = hinic5_attach_service(lld_dev, SERVICE_T_NIC);
 			break;
 		case COMM_PLUG_SRV_VROCE:
-			err = hinic5_attach_service(lld_dev, SERVICE_T_ROCE);
+				err = hinic5_attach_service(lld_dev, SERVICE_T_VROCE);
 			break;
 		case COMM_PLUG_SRV_UB:
 			err = hinic5_attach_service(lld_dev, SERVICE_T_UB);
@@ -793,8 +773,11 @@ static void hisdk5_attach_plug_service(struct hinic5_lld_dev *lld_dev, u8 srv_ty
 		}
 	}
 
-	if (err != 0)
+	if (err != 0) {
 		sdk_err(dev->dev_hdl, "plug attach service failed.\n");
+	}
+
+	return;
 }
 
 static void hisdk5_detach_plug_service(struct hinic5_lld_dev *lld_dev, u8 srv_type,
@@ -812,7 +795,7 @@ static void hisdk5_detach_plug_service(struct hinic5_lld_dev *lld_dev, u8 srv_ty
 			hinic5_detach_service(lld_dev, SERVICE_T_UB);
 			break;
 		default:
-			sdk_err(dev->dev_hdl, "plug attach pf service type error.\n");
+				sdk_err(dev->dev_hdl, "plug detach pf service type error.\n");
 		}
 	} else {
 		switch (srv_type) {
@@ -829,6 +812,7 @@ static void hisdk5_detach_plug_service(struct hinic5_lld_dev *lld_dev, u8 srv_ty
 			sdk_err(dev->dev_hdl, "plug detach vf service type error.\n");
 		}
 	}
+	return;
 }
 
 static void hisdk5_plug_service_pre_handler(u8 srv_type, struct comm_cmd_plug_srv *plug_srv,
@@ -838,6 +822,7 @@ static void hisdk5_plug_service_pre_handler(u8 srv_type, struct comm_cmd_plug_sr
 		dev->cfg_mgmt->svc_cap.nic_cap.max_sqs = plug_srv->nic_cap.max_sqs;
 		dev->cfg_mgmt->svc_cap.nic_cap.max_rqs = plug_srv->nic_cap.max_rqs;
 	}
+	return;
 }
 
 static void mgmt_plug_report_event_handler(void *hwdev, void *buf_in, u16 in_size,
@@ -846,7 +831,7 @@ static void mgmt_plug_report_event_handler(void *hwdev, void *buf_in, u16 in_siz
 	struct comm_cmd_plug_srv *plug_srv = buf_in;
 	struct hinic5_hwdev *dev = hwdev;
 	struct hinic5_adev *adev = dev->adapter_hdl;
-	struct hinic5_lld_dev *lld_dev = &adev->lld_dev;
+	struct hinic5_lld_dev *lld_dev = &(adev->lld_dev);
 	u16 func_id;
 	u8 srv_type;
 	u8 attach_en;
@@ -872,6 +857,8 @@ static void mgmt_plug_report_event_handler(void *hwdev, void *buf_in, u16 in_siz
 		hisdk5_attach_plug_service(lld_dev, srv_type, dev, func_id);
 	else
 		hisdk5_detach_plug_service(lld_dev, srv_type, dev, func_id);
+
+	return;
 }
 #endif
 
@@ -879,11 +866,10 @@ static void mgmt_reset_event_handler(void *dev, void *buf_in, u16 in_size,
 				     void *buf_out, u16 *out_size)
 {
 	struct hinic5_hwdev *hwdev = dev;
-
 	sdk_err(hwdev->dev_hdl, "Event COMM_MGMT_CMD_MGMT_RESET from MPU\n");
 }
 
-const struct mgmt_event_handle hinic5_mgmt_event_proc[] = {
+const struct mgmt_event_handle mgmt_event_proc[] = {
 	{
 		.cmd	= COMM_MGMT_CMD_FAULT_REPORT,
 		.proc	= fault_event_handler,
@@ -922,15 +908,15 @@ static void pf_handle_mgmt_comm_event(void *handle, u16 cmd,
 				      u16 *out_size)
 {
 	struct hinic5_hwdev *hwdev = handle;
-	u32 i, event_num = (u32)ARRAY_LEN(hinic5_mgmt_event_proc);
+	u32 i, event_num = (u32)ARRAY_LEN(mgmt_event_proc);
 
 	if (!hwdev)
 		return;
 
 	for (i = 0; i < event_num; i++) {
-		if (cmd == hinic5_mgmt_event_proc[i].cmd) {
-			if (hinic5_mgmt_event_proc[i].proc)
-				hinic5_mgmt_event_proc[i].proc(handle, buf_in, in_size,
+		if (cmd == mgmt_event_proc[i].cmd) {
+			if (mgmt_event_proc[i].proc)
+				mgmt_event_proc[i].proc(handle, buf_in, in_size,
 							buf_out, out_size);
 			else
 				sdk_warn(hwdev->dev_hdl,
@@ -993,8 +979,9 @@ void hinic5_force_complete_all(void *dev)
 	struct hinic5_hwdev *hwdev = dev;
 	struct hinic5_mbox *func_to_func = NULL;
 
-	if (!dev || !hwdev->pf_to_mgmt)
+	if (!dev || !hwdev->pf_to_mgmt) {
 		return;
+	}
 
 	spin_lock_bh(&hwdev->channel_lock);
 	if (test_bit(HINIC5_HWDEV_MGMT_INITED, &hwdev->func_state)) {
@@ -1026,7 +1013,7 @@ void hinic5_detect_hw_present(void *hwdev)
 {
 	struct hinic5_hwdev *dev = (struct hinic5_hwdev *)hwdev;
 
-	if (!hinic5_get_card_present_state(dev)) {
+	if (!get_card_present_state(dev)) {
 		sdk_err(dev->dev_hdl, "Detect card absent.\n");
 		hinic5_set_chip_absent(hwdev);
 		hinic5_force_complete_all(hwdev);
@@ -1109,8 +1096,9 @@ static int init_ceqs_msix_attr(struct hinic5_hwdev *hwdev)
 	u16 q_id;
 	int err;
 
-	if (!ceqs)
+	if (!ceqs) {
 		return 0;
+	}
 
 	info.lli_set = 0;
 	info.interrupt_coalesc_set = 1;
@@ -1157,7 +1145,7 @@ static void hinic5_comm_clp_to_mgmt_free(struct hinic5_hwdev *hwdev)
 
 static int hinic5_comm_aeqs_init(struct hinic5_hwdev *hwdev)
 {
-	struct irq_info aeq_irqs[HINIC5_MAX_AEQS] = { { 0 } };
+	struct irq_info aeq_irqs[HINIC5_MAX_AEQS] = {{0}};
 	u16 num_aeqs, resp_num_irq = 0, i;
 	int err;
 
@@ -1215,13 +1203,14 @@ static int hinic5_comm_ceqs_init(struct hinic5_hwdev *hwdev)
 #ifdef __UEFI__
 	return 0;
 #endif
-	struct irq_info ceq_irqs[HINIC5_MAX_CEQS] = { { 0 } };
+	struct irq_info ceq_irqs[HINIC5_MAX_CEQS] = {{0}};
 	u16 num_ceqs, resp_num_irq = 0, i;
 	int err;
 
 	num_ceqs = HINIC5_HWIF_NUM_CEQS(hwdev->hwif);
-	if (num_ceqs == 0)
+	if (num_ceqs == 0) {
 		return 0;
+	}
 
 	if (num_ceqs > HINIC5_MAX_CEQS) {
 		sdk_warn(hwdev->dev_hdl, "Adjust ceq num to %d\n",
@@ -1264,36 +1253,37 @@ static void hinic5_comm_ceqs_free(struct hinic5_hwdev *hwdev)
 #ifdef __UEFI__
 	return;
 #endif
-	struct irq_info ceq_irqs[HINIC5_MAX_CEQS] = { { 0 } };
+	struct irq_info ceq_irqs[HINIC5_MAX_CEQS] = {{0}};
 	struct irq_info *ceq_irq = &ceq_irqs[0];
 	u16 num_irqs;
 	int i;
 
-	if (!hwdev->ceqs)
+	if (!hwdev->ceqs) {
 		return;
+	}
 
 	hinic5_get_ceq_irqs(hwdev, ceq_irq, &num_irqs);
 
 	hinic5_ceqs_free(hwdev);
 
-	for (i = 0; i < num_irqs; i++)
+	for (i = 0; i < num_irqs; i++) {
 		hinic5_free_irq(hwdev, SERVICE_T_INTF, ceq_irqs[i].irq_id);
+	}
 }
 
 /**
  * @brief Initialize communication between functions
  *
- * @param[in] hwdev device pointer
+ * @param[in] hwdev Device pointer
  *
  * @details
  *     Note that mpu is a special function
- *     Communication is implemented through mailbox
- *     1) Initialize mailbox related registers and resources
- *     2) Register callback for receiving mailbox data
+ *     The communication here is implemented via mailbox
+ *     1) Initialize mailbox-related registers and resources; 2) Register callback for receiving mailbox data
  *
  * @return:
- *     @retval 0 success
- *     @retval non-zero failure
+ *     @retval 0 Success
+ *     @retval non-zero Failure
  */
 static int hinic5_comm_func_to_func_init(struct hinic5_hwdev *hwdev)
 {
@@ -1331,10 +1321,11 @@ static void hinic5_comm_func_to_func_free(struct hinic5_hwdev *hwdev)
 	hinic5_aeq_unregister_hw_cb(hwdev, HINIC5_MBX_FROM_FUNC);
 	hinic5_aeq_unregister_hw_cb(hwdev, HINIC5_MSG_FROM_MGMT_CPU);
 
-	if (!HINIC5_IS_VF(hwdev))
+	if (!HINIC5_IS_VF(hwdev)) {
 		hinic5_unregister_pf_mbox_cb(hwdev, HINIC5_MOD_COMM);
-	else
+	} else {
 		hinic5_unregister_vf_mbox_cb(hwdev, HINIC5_MOD_COMM);
+	}
 
 	hinic5_func_to_func_free(hwdev);
 }
@@ -1484,9 +1475,10 @@ static int init_basic_mgmt_channel(struct hinic5_hwdev *hwdev)
 		goto aeqs_msix_attr_init_err;
 	}
 #if !defined(__UEFI__) && !defined(__WIN__) && !defined(__VMWARE__)
-	err = hinic5_cqm_init_fast_msg(hwdev);
-	if (err != 0)
+	err = cqm5_init_fast_msg(hwdev);
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to init fast msg\n");
+	}
 #endif
 	return 0;
 
@@ -1713,7 +1705,7 @@ static void hinic5_uninit_comm_ch(struct hinic5_hwdev *hwdev)
 
 	free_mgmt_msg_channel_post(hwdev);
 #if !defined(__UEFI__) && !defined(__WIN__) && !defined(__VMWARE__)
-	hinic5_cqm_deinit_fast_msg(hwdev);
+	cqm_deinit_fast_msg(hwdev);
 #endif
 	free_base_mgmt_channel(hwdev);
 }
@@ -1725,7 +1717,7 @@ static void hinic5_auto_sync_time_work(struct work_struct *work)
 	struct hinic5_hwdev *hwdev = container_of(delay, struct hinic5_hwdev, sync_time_task);
 	int err;
 
-	err = hinic5_sync_time(hwdev, hinic5_ossl_get_real_time());
+	err = hinic5_sync_time(hwdev, ossl_get_real_time());
 	if (err != 0)
 		sdk_err(hwdev->dev_hdl, "Synchronize UTC time to firmware failed, errno:%d.\n",
 			err);
@@ -1752,32 +1744,8 @@ static void hinic5_auto_channel_detect_work(struct work_struct *work)
 				   msecs_to_jiffies(HINIC5_CHANNEL_DETECT_PERIOD));
 }
 
-void hinic5_kernel_sync_time_work(struct work_struct *work)
-{
-	struct delayed_work *delay = to_delayed_work(work);
-	struct hinic5_hwdev *hwdev = container_of(delay, struct hinic5_hwdev,
-						  sync_kernel_time_task);
-	int err;
-
-	struct card_node *chip_node = (struct card_node *)(hwdev->chip_node);
-
-	if (!chip_node || !chip_node->non_ptp_info ||
-	    (chip_node->non_ptp_info->non_ptp_time_diff_enable == 0)) {
-		return;
-	}
-
-	err = hinic5_sync_kernel_time(hwdev);
-	if (err != 0)
-		sdk_err(hwdev->dev_hdl, "Synchronize kernel time failed, errno:%d.\n", err);
-
-	queue_delayed_work(hwdev->workq, &hwdev->sync_kernel_time_task,
-			   msecs_to_jiffies(HINIC5_NON_PTP_SYNC_FW_TIME_PERIOD));
-}
-
 static int hinic5_init_ppf_work(struct hinic5_hwdev *hwdev)
 {
-	int err;
-
 	if (hinic5_func_type(hwdev) != TYPE_PPF)
 		return 0;
 
@@ -1792,49 +1760,13 @@ static int hinic5_init_ppf_work(struct hinic5_hwdev *hwdev)
 				   msecs_to_jiffies(HINIC5_CHANNEL_DETECT_PERIOD));
 	}
 
-	if (COMM_SUPPORT_NON_PTP_SYNC(hwdev) != 0) {
-		err = hinic5_non_ptp_cdev_init(hwdev);
-		if (err != 0) {
-			sdk_err(hwdev->dev_hdl, "Failed to init non_ptp char dev\n");
-			goto init_non_ptp_err;
-		}
-		/* Register delayed task, initialized as disable */
-		INIT_DELAYED_WORK(&hwdev->sync_kernel_time_task, hinic5_kernel_sync_time_work);
-		hinic5_set_non_ptp_time_diff_en(hwdev, false);
-	}
-
-	if (!COMM_SUPPORT_HTN_CMD(hwdev)) {
-		err = hinic5_comm_micro_log_init(hwdev);
-		if (err != 0)
-			sdk_warn(hwdev->dev_hdl, "Failed to init micro log\n");
-	}
-
 	return 0;
-
-init_non_ptp_err:
-	if (COMM_SUPPORT_CHANNEL_DETECT(hwdev) != 0) {
-		hwdev->features[0] &= ~(COMM_F_CHANNEL_DETECT);
-		cancel_delayed_work_sync(&hwdev->channel_detect_task);
-	}
-
-	cancel_delayed_work_sync(&hwdev->sync_time_task);
-
-	return err;
 }
 
 static void hinic5_free_ppf_work(struct hinic5_hwdev *hwdev)
 {
 	if (hinic5_func_type(hwdev) != TYPE_PPF)
 		return;
-
-	if (!COMM_SUPPORT_HTN_CMD(hwdev))
-		hinic5_micro_log_uninit(hwdev);
-
-	if (COMM_SUPPORT_NON_PTP_SYNC(hwdev) != 0) {
-		hwdev->features[0] &= ~(COMM_F_NON_PTP_SYNC);
-		cancel_delayed_work_sync(&hwdev->sync_kernel_time_task);
-		hinic5_non_ptp_cdev_deinit(hwdev);
-	}
 
 	if (COMM_SUPPORT_CHANNEL_DETECT(hwdev)) {
 		hwdev->features[0] &= ~(COMM_F_CHANNEL_DETECT);
@@ -1914,7 +1846,7 @@ STATIC void hinic5_hwdev_init_timeout(struct hinic5_hwdev *hwdev, u8 hw_type)
 		temp_hw_type = HINIC5_HW_TYPE_FPGA;
 	}
 
-	hwdev->timeout_info = &g_sdk_timeout_info[temp_hw_type];
+	hwdev->timeout_info = &(g_sdk_timeout_info[temp_hw_type]);
 }
 
 static int init_hwdev(struct hinic5_init_para *para)
@@ -1931,7 +1863,6 @@ static int init_hwdev(struct hinic5_init_para *para)
 	hwdev->busdev_hdl = para->busdev_hdl;
 #endif
 	hwdev->dev_hdl = para->dev_hdl;
-	hwdev->chip_node = para->chip_node;
 	hwdev->poll = para->poll;
 	atomic_set(&hwdev->check_ob_flush_bypass_ref_cnt, 0);
 	hwdev->probe_fault_level = para->probe_fault_level;
@@ -1942,7 +1873,7 @@ static int init_hwdev(struct hinic5_init_para *para)
 		goto alloc_chip_fault_stats_err;
 
 	hwdev->stateful_ref_cnt = 0;
-	memset(hwdev->features, 0, sizeof(hwdev->features));
+	(void)memset(hwdev->features, 0, sizeof(hwdev->features));
 
 	hinic5_hwdev_init_timeout(hwdev, HINIC5_HW_TYPE_ASIC);
 
@@ -1986,9 +1917,8 @@ int hinic5_init_hwdev(struct hinic5_init_para *para)
 
 	hwdev = *para->hwdev;
 
-	err = hinic5_init_hwif(hwdev, para->fers2_reg_base, para->cfg_reg_base, para->intr_reg_base,
-			       para->mgmt_reg_base, para->db_base_phy, para->db_base,
-			       para->db_dwqe_len);
+	err = hinic5_init_hwif(hwdev, para->fers2_reg_base, para->cfg_reg_base, para->intr_reg_base, para->mgmt_reg_base,
+			       para->db_base_phy, para->db_base, para->db_dwqe_len);
 	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to init hwif\n");
 		goto init_hwif_err;
@@ -2012,14 +1942,13 @@ int hinic5_init_hwdev(struct hinic5_init_para *para)
 		goto alloc_workq_err;
 	}
 
-	(void)hinic5_set_heartbeat_period_and_linkdown_cnt((void *)hwdev, HINIC5_HEARTBEAT_PERIOD,
-							   DETECT_PCIE_LINK_DOWN_RETRY);
+	(void)hinic5_set_heartbeat_period_and_linkdown_cnt((void *)hwdev, HINIC5_HEARTBEAT_PERIOD, DETECT_PCIE_LINK_DOWN_RETRY);
 	hinic5_init_heartbeat_detect(hwdev);
 
-	err = hinic5_init_cfg_mgmt(hwdev);
+	err = init_cfg_mgmt(hwdev);
 	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to init config mgmt\n");
-		goto hinic5_init_cfg_mgmt_err;
+		goto init_cfg_mgmt_err;
 	}
 
 	err = hinic5_init_comm_ch(hwdev);
@@ -2036,7 +1965,7 @@ int hinic5_init_hwdev(struct hinic5_init_para *para)
 	}
 #endif
 
-	err = hinic5_init_capability(hwdev);
+	err = init_capability(hwdev);
 	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to init capability\n");
 		goto init_cap_err;
@@ -2069,7 +1998,7 @@ init_ppf_work_fail:
 	hinic5_multi_host_enable(hwdev, false);
 
 init_multi_host_fail:
-	hinic5_free_capability(hwdev);
+	free_capability(hwdev);
 
 init_cap_err:
 #ifdef HAVE_DEVLINK_FLASH_UPDATE_PARAMS
@@ -2080,9 +2009,9 @@ init_devlink_err:
 	hinic5_uninit_comm_ch(hwdev);
 
 init_comm_ch_err:
-	hinic5_free_cfg_mgmt(hwdev);
+	free_cfg_mgmt(hwdev);
 
-hinic5_init_cfg_mgmt_err:
+init_cfg_mgmt_err:
 	hinic5_destroy_heartbeat_detect(hwdev);
 	destroy_workqueue(hwdev->workq);
 
@@ -2104,7 +2033,7 @@ void hinic5_free_hwdev(void *hwdev)
 	struct hinic5_hwdev *dev = hwdev;
 	u64 drv_features[COMM_MAX_FEATURE_QWORD];
 
-	memset(drv_features, 0, sizeof(drv_features));
+	(void)memset(drv_features, 0, sizeof(drv_features));
 	hinic5_set_comm_features(hwdev, drv_features, COMM_MAX_FEATURE_QWORD);
 
 	hinic5_free_ppf_work(dev);
@@ -2113,7 +2042,7 @@ void hinic5_free_hwdev(void *hwdev)
 
 	hinic5_func_rx_tx_flush(hwdev, HINIC5_CHANNEL_COMM, true, 0);
 
-	hinic5_free_capability(dev);
+	free_capability(dev);
 
 #ifdef HAVE_DEVLINK_FLASH_UPDATE_PARAMS
 	hinic5_uninit_devlink(dev);
@@ -2121,7 +2050,7 @@ void hinic5_free_hwdev(void *hwdev)
 
 	hinic5_uninit_comm_ch(dev);
 
-	hinic5_free_cfg_mgmt(dev);
+	free_cfg_mgmt(dev);
 	hinic5_destroy_heartbeat_detect(hwdev);
 	destroy_workqueue(dev->workq);
 
@@ -2164,34 +2093,31 @@ void *hinic5_get_service_adapter(void *hwdev, enum hinic5_service_type type)
 {
 	struct hinic5_hwdev *dev = hwdev;
 
-	if (!hwdev || type < SERVICE_T_NIC || type >= SERVICE_T_MAX)
+	if (!hwdev || type < SERVICE_T_NIC || type >= SERVICE_T_MAX) {
 		return NULL;
+	}
 
 	return dev->service_adapter[type];
 }
 EXPORT_SYMBOL(hinic5_get_service_adapter);
 
-int hinic5_dbg_get_hw_stats(const void *hwdev, u8 *hw_stats, const u32 *out_size)
+int hisdk5_get_channel_busy_cnt(const void *hwdev, atomic_t *channel_busy_cnt)
 {
-	struct hinic5_hw_stats *tmp_hw_stats = (struct hinic5_hw_stats *)hw_stats;
-	struct card_node *chip_node = NULL;
-
 	if (!hwdev)
 		return -EINVAL;
 
-	if (*out_size != sizeof(struct hinic5_hw_stats) || !hw_stats) {
-		pr_err("Unexpect out buf size from user :%u, expect: %lu\n",
-		       *out_size, sizeof(struct hinic5_hw_stats));
-		return -EFAULT;
-	}
+	atomic_set(channel_busy_cnt,
+		   atomic_read(&((struct hinic5_hwdev *)hwdev)->channel_busy_cnt));
+	return 0;
+}
 
-	memcpy(hw_stats, &((struct hinic5_hwdev *)hwdev)->hw_stats,
-	       sizeof(struct hinic5_hw_stats));
+int hinic5_dbg_get_hw_stats(const void *hwdev, u8 *hw_stats)
+{
+	if (!hwdev)
+		return -EINVAL;
 
-	chip_node = ((struct hinic5_hwdev *)hwdev)->chip_node;
-
-	atomic_set(&tmp_hw_stats->nic_ucode_event_stats[HINIC5_CHANNEL_BUSY],
-		   atomic_read(&chip_node->channel_busy_cnt));
+	(void)memcpy(hw_stats, &((struct hinic5_hwdev *)hwdev)->hw_stats,
+		sizeof(struct hinic5_hw_stats));
 
 	return 0;
 }
@@ -2220,7 +2146,7 @@ int hinic5_dump_cmdq_wq(struct hinic5_hwdev *hwdev, u16 cmdq_id, struct hinic5_w
 	if (unlikely(err != 0))
 		return err;
 
-	memcpy(wq, &hwdev->cmdqs->cmdq[cmdq_id].wq, sizeof(struct hinic5_wq));
+	memcpy(wq, &(hwdev->cmdqs->cmdq[cmdq_id].wq), sizeof(struct hinic5_wq));
 
 	return 0;
 }
@@ -2248,32 +2174,44 @@ int hinic5_dump_cmdq_wqebb(struct hinic5_hwdev *hwdev, u16 cmdq_id, u16 wqe_idx,
 	wqe_idx_masked = WQ_MASK_IDX(wq, wqe_idx);
 	wqebb = hinic5_wq_wqebb_addr(wq, wqe_idx_masked);
 
-	memset((void *)wqe_desc->data, 0, sizeof(wqe_desc->data));
+	(void)memset((void *)wqe_desc->data, 0, sizeof(wqe_desc->data));
 	memcpy((void *)wqe_desc->data, wqebb, wqebb_size);
 
 	wqe_desc->wqebb_size = wqebb_size;
 	return 0;
 }
 
-u16 hinic5_dbg_clear_hw_stats(void *hwdev)
+int hisdk5_clear_channel_busy_cnt(void *hwdev)
 {
-	struct card_node *chip_node = NULL;
-	struct hinic5_hwdev *dev = hwdev;
+	struct hinic5_hwdev *dev = NULL;
 
-	memset((void *)&dev->hw_stats, 0, sizeof(struct hinic5_hw_stats));
-	memset((void *)dev->chip_fault_stats, 0, HINIC5_CHIP_FAULT_SIZE);
+	if (hwdev == NULL)
+		return -EFAULT;
 
-	chip_node = dev->chip_node;
-	if (COMM_SUPPORT_CHANNEL_DETECT(dev) && (atomic_read(&chip_node->channel_busy_cnt) != 0)) {
-		atomic_set(&chip_node->channel_busy_cnt, 0);
-		dev->aeq_busy_cnt = 0;
+	dev = (struct hinic5_hwdev *)hwdev;
+	if (!COMM_SUPPORT_CHANNEL_DETECT(dev) || (atomic_read(&dev->channel_busy_cnt) == 0))
+		return 0;
+
+	atomic_set(&dev->channel_busy_cnt, 0);
 #if !defined(__UEFI__) && !defined(__VMWARE__) && !defined(__WIN__)
-		queue_delayed_work(dev->workq, &dev->channel_detect_task,
-				   msecs_to_jiffies(HINIC5_CHANNEL_DETECT_PERIOD));
+	queue_delayed_work(dev->workq, &dev->channel_detect_task,
+				msecs_to_jiffies(HINIC5_CHANNEL_DETECT_PERIOD));
 #endif
-	}
 
-	return sizeof(struct hinic5_hw_stats);
+	return 0;
+}
+
+int hinic5_dbg_clear_hw_stats(void *hwdev, u32 *out_size)
+{
+	struct hinic5_hwdev *dev = hwdev;
+	if (hwdev == NULL)
+		return -EFAULT;
+
+	(void)memset((void *)&dev->hw_stats, 0, sizeof(struct hinic5_hw_stats));
+	(void)memset((void *)dev->chip_fault_stats, 0, HINIC5_CHIP_FAULT_SIZE);
+
+	*out_size = sizeof(struct hinic5_hw_stats);
+	return 0;
 }
 
 void hinic5_get_chip_fault_stats(const void *hwdev, u8 *chip_fault_stats,
@@ -2294,7 +2232,8 @@ void hinic5_get_chip_fault_stats(const void *hwdev, u8 *chip_fault_stats,
 	       ((struct hinic5_hwdev *)hwdev)->chip_fault_stats + offset, chip_fault_len);
 }
 
-int hinic5_event_register(void *dev, void *pri_handle, hinic5_event_handler callback)
+int hinic5_event_register(void *dev, void *pri_handle,
+			   hinic5_event_handler callback)
 {
 	struct hinic5_hwdev *hwdev = dev;
 
@@ -2380,34 +2319,30 @@ bool hinic5_need_init_stateful_default(void *hwdev)
 	if (lowpower_mode != 0)
 		return true;
 
-	/* Current virtio net have to init hinic5_cqm in PPF. */
-	if ((hinic5_func_type(hwdev) == TYPE_PPF) &&
-	    ((chip_svc_type & CFG_SERVICE_MASK_VIRTIO) != 0)) {
-		sdk_info(dev->dev_hdl, "sdk init ppf resource, chip_svc_type: 0x%x\n",
-			 chip_svc_type);
-		return true;
-	}
+	/* Current virtio net have to init cqm in PPF. */
+	if ((hinic5_func_type(hwdev) == TYPE_PPF) && ((chip_svc_type & CFG_SERVICE_MASK_VIRTIO) != 0)) {
+			sdk_info(dev->dev_hdl, "sdk init ppf resource, chip_svc_type: 0x%x\n", chip_svc_type);
+			return true;
+		}
 
-	/* vroce have to init hinic5_cqm */
+	/* vroce have to init cqm */
 	if (IS_MASTER_HOST(dev) && (hinic5_func_type(hwdev) != TYPE_PPF) &&
 	    (((chip_svc_type & CFG_SERVICE_MASK_VROCE) != 0)))
 		return true;
 
-	/* Other service type will init hinic5_cqm when uld call. */
+	/* Other service type will init cqm when uld call. */
 	return false;
 }
 
 static bool hinic5_ext_db_en(struct hinic5_hwdev *dev)
 {
 	u32 stateful_en = IS_FT_TYPE(dev) | IS_RDMA_TYPE(dev);
-
-	return (((stateful_en != 0) || IS_RDMA_ENABLE(dev) ||
-		IS_FT_ENABLE(dev)) && HINIC5_IS_PPF(dev));
+	return (((stateful_en != 0) || IS_RDMA_ENABLE(dev) || IS_FT_ENABLE(dev)) && HINIC5_IS_PPF(dev));
 }
 
 static inline void stateful_uninit(struct hinic5_hwdev *hwdev)
 {
-	hinic5_cqm_uninit(hwdev);
+	cqm5_uninit(hwdev);
 
 	if (hinic5_ext_db_en(hwdev))
 		hinic5_ppf_ext_db_deinit(hwdev);
@@ -2440,10 +2375,10 @@ int hinic5_stateful_init(void *hwdev)
 			goto out;
 	}
 
-	err = hinic5_cqm_init(dev);
+	err = cqm5_init(dev);
 	if (err != 0) {
-		sdk_err(dev->dev_hdl, "Failed to init hinic5_cqm, err: %d\n", err);
-		goto init_hinic5_cqm_err;
+		sdk_err(dev->dev_hdl, "Failed to init cqm, err: %d\n", err);
+		goto init_cqm_err;
 	}
 
 	mutex_unlock(&dev->stateful_mutex);
@@ -2451,7 +2386,7 @@ int hinic5_stateful_init(void *hwdev)
 
 	return 0;
 
-init_hinic5_cqm_err:
+init_cqm_err:
 	if (ext_db_en)
 		hinic5_ppf_ext_db_deinit(dev);
 
@@ -2487,7 +2422,7 @@ void hinic5_free_stateful(void *hwdev)
 {
 	struct hinic5_hwdev *dev = hwdev;
 
-	if (!dev || !hinic5_get_stateful_enable(dev) || dev->stateful_ref_cnt == 0)
+	if (!dev || !hinic5_get_stateful_enable(dev) || (dev->stateful_ref_cnt == 0))
 		return;
 
 	if (!hinic5_need_init_stateful_default(hwdev) || dev->stateful_ref_cnt > 1)
@@ -2500,23 +2435,22 @@ void hinic5_free_stateful(void *hwdev)
 }
 #endif /* __VMWARE__ */
 
-int hinic5_hinic5_get_card_present_state(void *hwdev, bool *card_present_state)
+int hinic5_get_card_present_state(void *hwdev, bool *card_present_state)
 {
 	struct hinic5_hwdev *dev = hwdev;
 
 	if (!hwdev || !card_present_state)
 		return -EINVAL;
 
-	*card_present_state = hinic5_get_card_present_state(dev);
+	*card_present_state = get_card_present_state(dev);
 
 	return 0;
 }
-EXPORT_SYMBOL(hinic5_hinic5_get_card_present_state);
+EXPORT_SYMBOL(hinic5_get_card_present_state);
 
 void hinic5_link_event_stats(void *dev, u8 link)
 {
 	struct hinic5_hwdev *hwdev = dev;
-
 	if (!hwdev) {
 		pr_err("hwdev is null\n");
 		return;
@@ -2532,9 +2466,9 @@ EXPORT_SYMBOL(hinic5_link_event_stats);
 int hinic5_get_link_down_cnt(void *dev, int *link_down_cnt)
 {
 	struct hinic5_hwdev *hwdev = dev;
-
-	if (!hwdev || !link_down_cnt)
+	if (!hwdev || !link_down_cnt) {
 		return -EINVAL;
+	}
 
 	*link_down_cnt = hwdev->hw_stats.link_event_stats.link_down_stats.counter;
 
@@ -2573,17 +2507,13 @@ void hinic5_probe_success(void *hwdev)
 
 static void hinic5_update_channel_status(struct hinic5_hwdev *hwdev)
 {
-	struct card_node *chip_node = hwdev->chip_node;
-
-	if (!chip_node)
-		return;
-
 	if ((hinic5_func_type(hwdev) != TYPE_PPF) || !COMM_SUPPORT_CHANNEL_DETECT(hwdev) ||
 	    hinic5_channel_detect_should_stop(hwdev))
 		return;
 
-	if (test_bit(HINIC5_HWDEV_MBOX_INITED, &hwdev->func_state) == 0)
+	if (test_bit(HINIC5_HWDEV_MBOX_INITED, &hwdev->func_state) == 0) {
 		return;
+	}
 
 	if (hwdev->last_recv_aeq_cnt != hwdev->cur_recv_aeq_cnt) {
 		hwdev->aeq_busy_cnt = 0;
@@ -2594,7 +2524,7 @@ static void hinic5_update_channel_status(struct hinic5_hwdev *hwdev)
 
 	hwdev->aeq_busy_cnt++;
 	if (hwdev->aeq_busy_cnt > hwdev->max_aeq_busy_cnt) {
-		atomic_inc(&chip_node->channel_busy_cnt);
+		atomic_inc(&hwdev->channel_busy_cnt);
 		hwdev->aeq_busy_cnt = 0;
 		sdk_err(hwdev->dev_hdl, "Detect channel busy\n");
 	}
@@ -2624,27 +2554,25 @@ static void hinic5_heartbeat_lost_handler(struct work_struct *work)
 	} else {
 		src = HINIC5_FAULT_SRC_HOST_HEARTBEAT_LOST;
 		level = FAULT_LEVEL_FATAL;
-		sdk_err(hwdev->dev_hdl, "Heart lost report received, func_id: %u\n",
+		sdk_err(hwdev->dev_hdl, "Heart lost report received, func_id: %hu\n",
 			hinic5_global_func_id(hwdev));
-	}
 
-	hinic5_show_chip_err_info(hwdev);
+		hinic5_show_chip_err_info(hwdev);
+	}
 
 	hisdk5_fault_post_process(hwdev, src, level);
 }
 
 #define HINIC5_HEARTBEAT_START_EXPIRE		5000
 
-/* Check if the current function is in available state */
+/* Check whether the current function is in an active state */
 bool hinic5_is_function_active(struct hinic5_hwdev *hwdev)
 {
-	return (atomic_read(&hwdev->bus_link_down) == 0 &&
-		atomic_read(&hwdev->heartbeat_lost) == 0);
+	return (atomic_read(&hwdev->bus_link_down) == 0 && atomic_read(&hwdev->heartbeat_lost) == 0);
 }
 
 static bool hinic5_is_hw_abnormal(struct hinic5_hwdev *hwdev)
 {
-	struct card_node *chip_info = hwdev->chip_node;
 	u32 status;
 
 	if (hinic5_get_chip_present_flag(hwdev) == 0)
@@ -2667,7 +2595,6 @@ static bool hinic5_is_hw_abnormal(struct hinic5_hwdev *hwdev)
 
 	if (status != 0) {
 		atomic_set(&hwdev->heartbeat_lost, true);
-		chip_info->exception_flag = true;
 		sdk_err(hwdev->dev_hdl, "Set card error due to heartbeat lost\n");
 		return true;
 	}
@@ -2677,17 +2604,15 @@ static bool hinic5_is_hw_abnormal(struct hinic5_hwdev *hwdev)
 	return false;
 }
 
-int hinic5_set_heartbeat_period_and_linkdown_cnt(void *hwdev, u32 heartbeat_period,
-						 u32 linkdown_threshold)
+int hinic5_set_heartbeat_period_and_linkdown_cnt(void *hwdev, u32 heartbeat_period, u32 linkdown_threshold)
 {
 	struct hinic5_hwdev *dev = (struct hinic5_hwdev *)hwdev;
-
-	if (!hwdev) {
+	if (hwdev == NULL) {
 		pr_err("Hwdev is NULL\n");
 		return -EINVAL;
 	}
 
-	if (heartbeat_period == 0 && linkdown_threshold == 0) {
+	if ((heartbeat_period == 0) && (linkdown_threshold == 0)) {
 		sdk_err(dev->dev_hdl, "heartbeat_period and linkdown_threshold is 0\n");
 		return -EINVAL;
 	}
@@ -2699,8 +2624,7 @@ int hinic5_set_heartbeat_period_and_linkdown_cnt(void *hwdev, u32 heartbeat_peri
 
 	if (linkdown_threshold != 0) {
 		dev->linkdown_threshold = linkdown_threshold;
-		sdk_info(dev->dev_hdl, "linkdown_threshold modify to %d\n",
-			 dev->linkdown_threshold);
+		sdk_info(dev->dev_hdl, "linkdown_threshold modify to %d\n", dev->linkdown_threshold);
 	}
 
 	return 0;
@@ -2720,7 +2644,7 @@ static void hinic5_heartbeat_timer_handler(ulong data)
 #endif
 
 	if (hinic5_is_hw_abnormal(hwdev)) {
-		hinic5_stop_timer(&hwdev->heartbeat_timer);
+		stop_timer(&hwdev->heartbeat_timer);
 		queue_work(hwdev->workq, &hwdev->heartbeat_lost_work);
 	} else {
 		mod_timer(&hwdev->heartbeat_timer,
@@ -2745,14 +2669,14 @@ static void hinic5_init_heartbeat_detect(struct hinic5_hwdev *hwdev)
 
 	INIT_WORK(&hwdev->heartbeat_lost_work, hinic5_heartbeat_lost_handler);
 
-	hinic5_add_to_timer(&hwdev->heartbeat_timer, hwdev->heartbeat_period);
+	add_to_timer(&hwdev->heartbeat_timer, hwdev->heartbeat_period);
 }
 
 static void hinic5_destroy_heartbeat_detect(struct hinic5_hwdev *hwdev)
 {
 	destroy_work(&hwdev->heartbeat_lost_work);
-	hinic5_stop_timer(&hwdev->heartbeat_timer);
-	hinic5_delete_timer(&hwdev->heartbeat_timer);
+	stop_timer(&hwdev->heartbeat_timer);
+	delete_timer(&hwdev->heartbeat_timer);
 }
 
 void hinic5_set_api_stop(void *hwdev)

@@ -4,7 +4,7 @@
  * File Name     : bond_common_defs.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
+ * Last Modified : 2026/09/16
  * Description   : South Interface---ovs mpu bond interface between mpu and driver
  */
 
@@ -32,7 +32,7 @@ enum bond_group_id {
 
 /**
  * @brief enum hinic5_bond_user
- * @details Bond user enumeration, for compatibility with version 23, not using common definition
+ * @details bond user enum, for compatibility with 23, do not use generic definition
  */
 enum hinic5_bond_user {
 	HINIC5_BOND_USER_OVS,
@@ -45,24 +45,24 @@ enum hinic5_bond_user {
 
 /**
  * @brief enum tag_bond_mode
- * @details Bond mode enumeration type
+ * @details enum type of bond mode
  */
 typedef enum tag_bond_mode {
 	BOND_MODE_NONE      = 0, /**< Disable network bonding */
 	BOND_MODE_BACKUP    = 1, /**< Active-backup mode, 1 indicates active-backup bonding */
 	BOND_MODE_BALANCE   = 2, /**< Load balancing mode, 2 indicates XOR load balancing bonding */
 	BOND_MODE_LACP      = 4, /**< LACP mode, 4 indicates 802.3ad bonding */
-	BOND_MODE_MAX            /**< Maximum value for network bonding mode */
+	BOND_MODE_MAX            /**< Maximum value of network bonding mode */
 } bond_mode_e;
 
 /**
  * @brief enum tag_bond_hash
- * @details Bond hash policy enumeration type
+ * @details enum type of bond hash policy
  */
 typedef enum tag_bond_hash {
-	BOND_HASH_L2   = 0,   /**< Use L2 address for hashing */
-	BOND_HASH_L23  = 1,   /**< Use L2 and L3 addresses for hashing */
-	BOND_HASH_L34  = 2,   /**< Use L3 and L4 addresses for hashing */
+	BOND_HASH_L2   = 0,   /**< Hash using L2 address */
+	BOND_HASH_L23  = 1,   /**< Hash using L2 and L3 address */
+	BOND_HASH_L34  = 2,   /**< Hash using L3 and L4 address */
 	BOND_HASH_MAX  = 3    /**< Maximum hash policy value */
 } bond_hash_e;
 
@@ -79,7 +79,7 @@ typedef enum ovs_bond_hash_policy {
 
 /**
  * @brief enum bond_port_duplex_state
- * @details Port duplex state enumeration type
+ * @details Port duplex state enum type
  */
 enum bond_port_duplex_state {
 	BOND_PORT_HALF_DUPLEX = 0, /**< Half duplex */

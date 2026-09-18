@@ -4,8 +4,8 @@
  * File Name     : hinic5_nic.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : hinic5 nic common definitions
  */
 
 #ifndef HINIC5_NIC_H
@@ -37,6 +37,7 @@
 #define HW_VF_ID_TO_OS_CO(vf_infos, vf)	\
 		((struct vf_data_storage *)((u64)(vf_infos) + \
 		(HW_VF_ID_TO_OS(vf) * sizeof(struct vf_data_storage))))
+
 
 enum hinic5_link_port_type {
 	LINK_PORT_UNKNOWN,
@@ -135,10 +136,12 @@ struct hinic5_nic_cfg {
 	u32			rsvd2;
 
 	struct hinic5_port_routine_cmd rt_cmd;
-
 	struct hinic5_port_routine_cmd_extern rt_cmd_ext;
-
 	struct mutex sfp_mutex; /* mutex used for copy sfp info */
+
+	u8			sfp_cmis_type;
+	u8			sfp_cmis_type_ext;
+	u16			rsvd3;
 };
 
 struct hinic5_nic_cmdq_ops;
@@ -164,11 +167,11 @@ struct hinic5_nic_io {
 	u16 num_qps;
 	u16 max_qps;
 
-	/* TX direction ci */
+	/* ci in TX direction */
 	void *sq_ci_vaddr_base;
 	dma_addr_t sq_ci_dma_base;
 
-	/* RX direction ci */
+	/* ci in RX direction */
 	void *rq_ci_vaddr_base;
 	dma_addr_t rq_ci_dma_base;
 
@@ -182,6 +185,7 @@ struct hinic5_nic_io {
 
 	struct vf_data_storage *vf_infos;
 	struct hinic5_dcb_state dcb_state;
+	u8 cos2dscp[NIC_DCB_UP_MAX];  /* Reverse mapping from cos to dscp, derived from dscp2cos, for comm layer query */
 	struct hinic5_nic_cfg nic_cfg;
 
 	u16 rx_buff_len;
@@ -211,10 +215,10 @@ int hinic5_set_sq_ci_ctx(struct hinic5_nic_io *nic_io, struct hinic5_sq_attr *at
 
 int hinic5_set_rq_ci_ctx(struct hinic5_nic_io *nic_io, struct hinic5_rq_attr *attr);
 
-int hinic5_l2nic_msg_to_mgmt_sync(void *hwdev, u16 cmd, void *buf_in, u16 in_size,
+int l2nic_msg_to_mgmt_sync(void *hwdev, u16 cmd, void *buf_in, u16 in_size,
 			   void *buf_out, u16 *out_size);
 
-int hinic5_l2nic_msg_to_mgmt_sync_ch(void *hwdev, u16 cmd, void *buf_in, u16 in_size,
+int l2nic_msg_to_mgmt_sync_ch(void *hwdev, u16 cmd, void *buf_in, u16 in_size,
 			      void *buf_out, u16 *out_size, u16 channel);
 
 int hinic5_cfg_vf_vlan(struct hinic5_nic_io *nic_io, u8 opcode, u16 vid,

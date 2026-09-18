@@ -4,8 +4,8 @@
  * File Name     : hinic5_rss_cfg.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : hinic5 RSS configuration implementation
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [NIC]" fmt
@@ -37,18 +37,18 @@ static int hinic5_rss_cfg_hash_key(struct hinic5_nic_io *nic_io, u8 opcode,
 	u16 out_size = sizeof(hash_key);
 	int err;
 
-	memset(&hash_key, 0, out_size);
+	(void)memset(&hash_key, 0, out_size);
 	hash_key.func_id = hinic5_global_func_id(nic_io->hwdev);
 	hash_key.opcode = opcode;
 
 	if (opcode == HINIC5_CMD_OP_SET)
 		memcpy(hash_key.key, key, key_size);
 
-	err = hinic5_l2nic_msg_to_mgmt_sync(nic_io->hwdev,
+	err = l2nic_msg_to_mgmt_sync(nic_io->hwdev,
 				     HINIC5_NIC_CMD_CFG_RSS_HASH_KEY,
 				     &hash_key, sizeof(hash_key),
 				     &hash_key, &out_size);
-	if (err != 0 || out_size == 0 || hash_key.msg_head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (hash_key.msg_head.status != 0)) {
 		nic_err(nic_io->dev_hdl, "Failed to %s hash key, err: %d, status: 0x%x, out size: 0x%x\n",
 			opcode == HINIC5_CMD_OP_SET ? "set" : "get",
 			err, hash_key.msg_head.status, out_size);
@@ -66,11 +66,11 @@ int hinic5_rss_set_hash_key(void *hwdev, const u8 *key)
 	struct hinic5_nic_io *nic_io = NULL;
 	u8 hash_key[NIC_RSS_KEY_SIZE];
 
-	if (!hwdev || !key)
+	if ((hwdev == NULL) || (key == NULL))
 		return -EINVAL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
 	memcpy(hash_key, key, NIC_RSS_KEY_SIZE);
@@ -81,11 +81,11 @@ int hinic5_rss_get_hash_key(void *hwdev, u8 *key)
 {
 	struct hinic5_nic_io *nic_io = NULL;
 
-	if (!hwdev || !key)
+	if ((hwdev == NULL) || (key == NULL))
 		return -EINVAL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
 	return hinic5_rss_cfg_hash_key(nic_io, HINIC5_CMD_OP_GET, key, NIC_RSS_KEY_SIZE);
@@ -99,15 +99,15 @@ int hinic5_rss_set_indir_tbl(void *hwdev, const u32 *indir_table)
 	u64 out_param = 0;
 	int err;
 
-	if (!hwdev || !indir_table)
+	if ((hwdev == NULL) || (indir_table == NULL))
 		return -EINVAL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
 	cmd_buf = hinic5_alloc_cmd_buf(hwdev);
-	if (!cmd_buf) {
+	if (cmd_buf == NULL) {
 		nic_err(nic_io->dev_hdl, "Failed to allocate cmd buf\n");
 		return -ENOMEM;
 	}
@@ -116,7 +116,7 @@ int hinic5_rss_set_indir_tbl(void *hwdev, const u32 *indir_table)
 
 	err = hinic5_cmdq_direct_resp(hwdev, HINIC5_MOD_L2NIC,
 				      cmd, cmd_buf, &out_param, 0, HINIC5_CHANNEL_NIC);
-	if (err != 0 || out_param != 0) {
+	if ((err != 0) || (out_param != 0)) {
 		nic_err(nic_io->dev_hdl, "Failed to set rss indir table\n");
 		err = -EFAULT;
 	}
@@ -134,14 +134,14 @@ static int hinic5_cmdq_set_rss_type(void *hwdev, struct nic_rss_type rss_type)
 	u64 out_param = 0;
 	int err;
 
-	if (!hwdev)
+	if (hwdev == NULL)
 		return -EINVAL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 	cmd_buf = hinic5_alloc_cmd_buf(hwdev);
-	if (!cmd_buf) {
+	if (cmd_buf == NULL) {
 		nic_err(nic_io->dev_hdl, "Failed to allocate cmd buf\n");
 		return -ENOMEM;
 	}
@@ -158,7 +158,7 @@ static int hinic5_cmdq_set_rss_type(void *hwdev, struct nic_rss_type rss_type)
 
 	cmd_buf->size = sizeof(struct nic_rss_context_tbl);
 	ctx_tbl = (struct nic_rss_context_tbl *)cmd_buf->buf;
-	memset(ctx_tbl, 0, sizeof(*ctx_tbl));
+	(void)memset(ctx_tbl, 0, sizeof(*ctx_tbl));
 	ctx_tbl->ctx = cpu_to_be32(ctx);
 
 	/* cfg the rss context table by command queue */
@@ -169,7 +169,7 @@ static int hinic5_cmdq_set_rss_type(void *hwdev, struct nic_rss_type rss_type)
 
 	hinic5_free_cmd_buf(hwdev, cmd_buf);
 
-	if (err != 0 || out_param != 0) {
+	if ((err != 0) || (out_param != 0)) {
 		nic_err(nic_io->dev_hdl, "cmdq set  set rss context table failed, err: %d\n",
 			err);
 		return -EFAULT;
@@ -186,13 +186,13 @@ static int hinic5_mgmt_set_rss_type(void *hwdev, struct nic_rss_type rss_type)
 	u16 out_size = sizeof(ctx_tbl);
 	int err;
 
-	if (!hwdev)
+	if (hwdev == NULL)
 		return -EINVAL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
-	memset(&ctx_tbl, 0, sizeof(ctx_tbl));
+	(void)memset(&ctx_tbl, 0, sizeof(ctx_tbl));
 	ctx_tbl.func_id = hinic5_global_func_id(hwdev);
 	ctx |= HINIC5_RSS_TYPE_SET(1, VALID) |
 	       HINIC5_RSS_TYPE_SET(rss_type.ipv4, IPV4) |
@@ -204,7 +204,7 @@ static int hinic5_mgmt_set_rss_type(void *hwdev, struct nic_rss_type rss_type)
 	       HINIC5_RSS_TYPE_SET(rss_type.udp_ipv4, UDP_IPV4) |
 	       HINIC5_RSS_TYPE_SET(rss_type.udp_ipv6, UDP_IPV6);
 	ctx_tbl.context = ctx;
-	err = hinic5_l2nic_msg_to_mgmt_sync(hwdev, HINIC5_NIC_CMD_SET_RSS_CTX_TBL_INTO_FUNC,
+	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC5_NIC_CMD_SET_RSS_CTX_TBL_INTO_FUNC,
 				     &ctx_tbl, sizeof(ctx_tbl),
 				     &ctx_tbl, &out_size);
 
@@ -237,20 +237,20 @@ int hinic5_get_rss_type(void *hwdev, struct nic_rss_type *rss_type)
 	struct hinic5_nic_io *nic_io = NULL;
 	int err;
 
-	if (!hwdev || !rss_type)
+	if ((hwdev == NULL) || (rss_type == NULL))
 		return -EINVAL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
-	memset(&ctx_tbl, 0, out_size);
+	(void)memset(&ctx_tbl, 0, out_size);
 	ctx_tbl.func_id = hinic5_global_func_id(hwdev);
 
-	err = hinic5_l2nic_msg_to_mgmt_sync(hwdev, HINIC5_NIC_CMD_GET_RSS_CTX_TBL,
+	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC5_NIC_CMD_GET_RSS_CTX_TBL,
 				     &ctx_tbl, sizeof(ctx_tbl),
 				     &ctx_tbl, &out_size);
-	if (err != 0 || out_size == 0 || ctx_tbl.msg_head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (ctx_tbl.msg_head.status != 0)) {
 		nic_err(nic_io->dev_hdl, "Failed to get hash type, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, ctx_tbl.msg_head.status, out_size);
 			return -EINVAL;
@@ -276,10 +276,10 @@ static int hinic5_rss_cfg_hash_engine(struct hinic5_nic_io *nic_io, u8 opcode,
 	u16 out_size = sizeof(hash_type);
 	int err;
 
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
-	memset(&hash_type, 0, out_size);
+	(void)memset(&hash_type, 0, out_size);
 
 	hash_type.func_id = hinic5_global_func_id(nic_io->hwdev);
 	hash_type.opcode = opcode;
@@ -287,11 +287,11 @@ static int hinic5_rss_cfg_hash_engine(struct hinic5_nic_io *nic_io, u8 opcode,
 	if (opcode == HINIC5_CMD_OP_SET)
 		hash_type.hash_engine = *type;
 
-	err = hinic5_l2nic_msg_to_mgmt_sync(nic_io->hwdev,
+	err = l2nic_msg_to_mgmt_sync(nic_io->hwdev,
 				     HINIC5_NIC_CMD_CFG_RSS_HASH_ENGINE,
 				     &hash_type, sizeof(hash_type),
 				     &hash_type, &out_size);
-	if (err != 0 || out_size == 0 || hash_type.msg_head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (hash_type.msg_head.status != 0)) {
 		nic_err(nic_io->dev_hdl, "Failed to %s hash engine, err: %d, status: 0x%x, out size: 0x%x\n",
 			opcode == HINIC5_CMD_OP_SET ? "set" : "get",
 			err, hash_type.msg_head.status, out_size);
@@ -308,11 +308,11 @@ int hinic5_rss_set_hash_engine(void *hwdev, u8 type)
 {
 	struct hinic5_nic_io *nic_io = NULL;
 
-	if (!hwdev)
+	if (hwdev == NULL)
 		return -EINVAL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 	return hinic5_rss_cfg_hash_engine(nic_io, HINIC5_CMD_OP_SET, &type);
 }
@@ -321,11 +321,11 @@ int hinic5_rss_get_hash_engine(void *hwdev, u8 *type)
 {
 	struct hinic5_nic_io *nic_io = NULL;
 
-	if (!hwdev || !type)
+	if ((hwdev == NULL) || (type == NULL))
 		return -EINVAL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 	return hinic5_rss_cfg_hash_engine(nic_io, HINIC5_CMD_OP_GET, type);
 }
@@ -338,14 +338,14 @@ int hinic5_rss_cfg(void *hwdev, u8 rss_en, u8 cos_num, u8 *prio_tc, u16 num_qps)
 	int err;
 
 	/* micro code required: number of TC should be power of 2 */
-	if (!hwdev || !prio_tc || ((cos_num & (cos_num - 1)) != 0))
+	if ((hwdev == NULL) || (prio_tc == NULL) || ((cos_num & (cos_num - 1)) != 0))
 		return -EINVAL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
-	memset(&rss_cfg, 0, out_size);
+	(void)memset(&rss_cfg, 0, out_size);
 	rss_cfg.func_id = hinic5_global_func_id(hwdev);
 	rss_cfg.rss_en = rss_en;
 	rss_cfg.rq_priority_number = (cos_num != 0) ? (u8)ilog2(cos_num) : 0;
@@ -353,10 +353,10 @@ int hinic5_rss_cfg(void *hwdev, u8 rss_en, u8 cos_num, u8 *prio_tc, u16 num_qps)
 
 	memcpy(rss_cfg.prio_tc, prio_tc, NIC_DCB_UP_MAX);
 
-	err = hinic5_l2nic_msg_to_mgmt_sync(hwdev, HINIC5_NIC_CMD_RSS_CFG,
+	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC5_NIC_CMD_RSS_CFG,
 				     &rss_cfg, sizeof(rss_cfg),
 				     &rss_cfg, &out_size);
-	if (err != 0 || out_size == 0 || rss_cfg.msg_head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (rss_cfg.msg_head.status != 0)) {
 		nic_err(nic_io->dev_hdl, "Failed to set rss cfg, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, rss_cfg.msg_head.status, out_size);
 		return -EINVAL;

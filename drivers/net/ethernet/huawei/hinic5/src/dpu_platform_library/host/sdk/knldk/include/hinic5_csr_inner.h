@@ -4,8 +4,8 @@
  * File Name     : hinic5_csr_inner.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Internal CSR register definitions for the hinic5 driver.
  */
 
 #ifndef HINIC5_CSR_INNER_H

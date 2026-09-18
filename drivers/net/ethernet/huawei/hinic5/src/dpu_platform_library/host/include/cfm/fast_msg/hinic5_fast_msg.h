@@ -4,8 +4,8 @@
  * File Name     : hinic5_fast_msg.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Fast message interface declarations
  */
 
 #ifndef HINIC5_FAST_MSG_H
@@ -25,11 +25,11 @@
 #define FAST_MSG_RQ_OFFSET_MASK         0xFFF
 #define FAST_MSG_RECV_MAX_CONCURRENT    10
 
-/* Indicate fast msg upper layer message format type */
+/* Identifies the upper layer message format type carried by fast msg */
 enum hisdk5_fast_msg_ulp_format {
 	HISDK5_FAST_MSG_ULP_FROMAT_NONE = 0,
 	HISDK5_FAST_MSG_ULP_FROMAT_MIG = 1,
-	/* 4bit width, type must be less than 16 */
+	/* 4-bit width, type must be less than 16 */
 	HISDK5_FAST_MSG_ULP_FROMAT_MAX = 16
 };
 
@@ -57,7 +57,7 @@ struct hisdk5_fast_msg_recv_work {
 	struct work_struct work;
 	struct hisdk5_fast_msg_to_func *fast_msg_to_func;
 	struct list_head msg_head;
-	spinlock_t lock;/* spinlock protecting the msg_head and work queue data */
+	spinlock_t lock;
 };
 
 struct hisdk5_fast_msg_to_func {
@@ -88,23 +88,23 @@ void hinic5_fast_msg_unregister_cb(void *hwdev, u8 mod);
 int hinic5_fast_msg_send(void *hwdev, struct hinic5_cmd_buf *cmd_buf, u64 *out_parm);
 
 /**
- * @brief fast msg message reorder execution
+ * @brief Re-order and execute fast msg messages
  *
  * @param hwdev SDK handle
- * @param src_func_id fastmsg message source function id
- * @param data callback function private data
+ * @param src_func_id source function id of the fastmsg message
+ * @param data private data for the callback function
  * @param callback callback function pointer
  *
- * @details After a function receives a fastmsg message, if the message needs to wait for all previous messages
- *      from another function to be processed, then fastmsg needs to be re-chained to ensure the message is
- *      processed serially in the task of another function
+ * @details After a function receives a fastmsg message, if the message needs to wait
+ *      for all preceding messages of another function to be processed, the fastmsg
+ *      needs to be re-chained to ensure the message is processed serially in the other function's task
  *
- * @return: 0 - message added to list successfully, other - message added to list failed
+ * @return: 0 - message added to list successfully, other - message failed to be added to list
  */
 int hinic5_fast_msg_forward(void *hwdev, u16 src_func_id, void *data, hinic5_fast_msg_forward_cb callback);
 
 /**
- * @brief Check if current function supports fast msg
+ * @brief Check whether this function supports fast msg
  *
  * @param hwdev SDK handle
  *

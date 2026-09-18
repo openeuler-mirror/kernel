@@ -4,97 +4,95 @@
  * File Name     : hinic5_wq.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Work queue (WQ) definitions and operations for hinic5
  */
 
 #ifndef HINIC5_WQ_H
 #define HINIC5_WQ_H
 
 #include <linux/types.h>
+#include <linux/string.h>
 
 #include "hinic5_common.h"
 
 /**
  * @brief struct hinic5_wq
- * @details Structure for describing work queue information; modifications need to be synchronized to user-space struct sdk_cmdq_info
+ * @details Used to describe the related information of a work queue; modifications need to be synchronized to the userspace struct sdk_cmdq_info
  */
 struct hinic5_wq {
-	u16 cons_idx;		/**< Consumer index */
-	u16 prod_idx;		/**< Producer index */
+	u16 cons_idx;           /**< Consumer index */
+	u16 prod_idx;           /**< Producer index */
 
-	u32 q_depth;		/**< Queue depth */
-	u16 idx_mask;		/**< Queue index mask */
-	u16 wqebb_size_shift;	/**< WQEBB shift */
+	u32 q_depth;            /**< Queue depth */
+	u16 idx_mask;           /**< Queue index mask */
+	u16 wqebb_size_shift;   /**< Shift of wqebb */
 	u16 rsvd1;
-	u16 num_wq_pages;	/**< Number of wq pages */
-	u32 wqebbs_per_page;	/**< Number of wqes per page */
+	u16 num_wq_pages;       /**< Number of wq pages */
+	u32 wqebbs_per_page;    /**< Number of wqebbs per page */
 	u16 wqebbs_per_page_shift;
 	u16 wqebbs_per_page_mask;
 
-	struct hinic5_dma_addr_align *wq_pages;	/* Pointer to DMA address alignment structure,
-						 * used to describe wq page information
-						 */
+	struct hinic5_dma_addr_align *wq_pages;     /**< Pointer to DMA address alignment struct, used to describe wq page related information */
 
-	dma_addr_t wq_block_paddr;	/**< WQ block physical address */
-	u64 *wq_block_vaddr;	/**< WQ block virtual address */
+	dma_addr_t wq_block_paddr;  /**< Physical address of wq block */
+	u64 *wq_block_vaddr;        /**< Virtual address of wq block */
 
-	void *dev_hdl;		/**< Pointer to pcidev->dev or Handler */
-	u32 wq_page_size;	/**< WQ page size */
-	u16 wqebb_size;		/**< WQEBB size */
+	void *dev_hdl;          /**< Pointer to pcidev->dev or Handler */
+	u32 wq_page_size;       /**< wq page size */
+	u16 wqebb_size;         /**< wqebb size */
 } ____cacheline_aligned;
 
 
 /**
- * @brief Define a macro for calculating mask value of specific index in given queue
+ * @brief Define a macro to calculate the mask value of a specific index in the given queue
  * @param wq Queue object
  * @param idx Index value
  *
- * @return Returns calculated mask value
+ * @return Returns the calculated mask value
  */
 #define WQ_MASK_IDX(wq, idx) (((u16)(idx)) & (wq)->idx_mask)
 /**
- * @brief Calculate masked page based on work queue and page index
+ * @brief Calculate the mask page based on the work queue and page index
  * @param wq Work queue
  * @param pg_idx Page index
  *
- * @return Returns page index if page index is less than work queue page count, otherwise returns 0
+ * @return If the page index is less than the number of pages in the work queue, return the page index, otherwise return 0
  */
 #define WQ_MASK_PAGE(wq, pg_idx) (((pg_idx) < (wq)->num_wq_pages) ? (pg_idx) : 0)
 /**
- * @brief Calculate page index
+ * @brief Calculate the page index
  * @param wq Wait queue
  * @param idx Index
  *
- * @return Returns calculated page index
+ * @return Returns the calculated page index
  */
 #define WQ_PAGE_IDX(wq, idx) ((idx) >> (wq)->wqebbs_per_page_shift)
 /**
- * @brief Calculate element offset in queue
+ * @brief Calculate the offset of an element in the queue
  * @param wq Queue pointer
  * @param idx Element index
  *
- * @return Returns element offset in page
+ * @return Returns the offset of the element within the page
  */
 #define WQ_OFFSET_IN_PAGE(wq, idx) ((idx) & (wq)->wqebbs_per_page_mask)
 /**
- * @brief Get WQEBB address
+ * @brief Get the WQEBB address
  * @param wq Work queue
  * @param pg_idx Page index
- * @param idx_in_pg Index within page
+ * @param idx_in_pg Index within the page
  *
- * @return u8* Returns WQEBB address
+ * @return u8* Returns the WQEBB address
  */
 #define WQ_GET_WQEBB_ADDR(wq, pg_idx, idx_in_pg) \
-	((u8 *)(wq)->wq_pages[(pg_idx)].align_vaddr + \
-	 (((u64)(idx_in_pg)) << (wq)->wqebb_size_shift))
+	((u8 *)(wq)->wq_pages[(pg_idx)].align_vaddr + (((u64)(idx_in_pg)) << (wq)->wqebb_size_shift))
 /**
- * @brief Check if queue is level 0
+ * @brief Determine whether the queue is level 0
  * @param wq Queue pointer
  *
  * @return
- *      @retval true If queue is level 0
- *      @retval false If queue is not level 0
+ *      @retval true If the queue is level 0
+ *      @retval false If the queue is not level 0
  */
 #define WQ_IS_0_LEVEL_CLA(wq) ((wq)->num_wq_pages == 1)
 
@@ -106,9 +104,7 @@ struct hinic5_wq {
  */
 static inline u16 hinic5_wq_free_wqebbs(struct hinic5_wq *wq)
 {
-	return (u16)(wq->q_depth
-		    - ((wq->q_depth + wq->prod_idx - wq->cons_idx) & wq->idx_mask)
-		    - 1);
+	return (u16)(wq->q_depth - ((wq->q_depth + wq->prod_idx - wq->cons_idx) & wq->idx_mask) - 1);
 }
 
 /**
@@ -241,11 +237,11 @@ static inline void hinic5_wq_reset(struct hinic5_wq *wq)
 	wq->prod_idx = 0;
 
 	for (pg_idx = 0; pg_idx < wq->num_wq_pages; pg_idx++)
-		memset(wq->wq_pages[pg_idx].align_vaddr, 0, wq->wq_page_size);
+		(void)memset(wq->wq_pages[pg_idx].align_vaddr, 0, wq->wq_page_size);
 }
 
 /**
- * @brief Initialize wq struct and allocate wq page
+ * @brief initial wq struct and alloc wq page
  * @param udkdev: device pointer to udkdev
  * @param wq: pointer of wq control struct
  * @param q_depth: wq depth
@@ -258,7 +254,7 @@ int hinic5_wq_create(void *hwdev, struct hinic5_wq *wq, u32 q_depth,
 		     u16 wqebb_size);
 
 /**
- * @brief Release wqe pages
+ * @brief release wqe pages
  * @param udkdev: device pointer to udkdev
  * @param wq: pointer of wq control struct
  */

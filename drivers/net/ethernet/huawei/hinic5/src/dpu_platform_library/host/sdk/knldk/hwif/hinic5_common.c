@@ -4,8 +4,8 @@
  * File Name     : hinic5_common.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Common utility functions for the hinic5 driver.
  */
 
 #include <linux/kernel.h>

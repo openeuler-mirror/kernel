@@ -4,7 +4,7 @@
  * File Name     : drv_nic_api.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
+ * Last Modified : 2026/09/16
  * Description   :
  */
 
@@ -22,78 +22,78 @@
  * @brief PF sets VF link state
  *
  * @param hwdev device pointer to hwdev
- * @param vf_link_forced VF forced link state, false--Link state follows PF, true--link state depends on link_state value
+ * @param vf_link_forced VF forced link state, false--link state follows PF, true--link state according to link_state value
  * @param link_state link state, false--Link down, true--link up
- * @details PF sets link state for all VFs under this PF. PF saves VF's link state.
- *     If not set, VF link state follows PF by default. After user setting, user's setting takes precedence.
+ * @details PF sets link state of all VFs under this PF, PF saves VF link state,
+ *     if not set, VF link state follows PF by default, after user sets it, user setting prevails
  *
- * @attention: Only PF supports this
+ * @attention: PF only
  *
  * @return: VF link state setting success or failure.
- *     @retval 0 Success
- *     @retval non-0 Failure
+ *     @retval 0 success
+ *     @retval non-0 failure
  */
 int hinic5_pf_set_vf_link_state(void *hwdev, bool vf_link_forced, bool link_state);
 
 /**
- * @brief Add device mac interface
+ * @brief add device mac interface
  *
  * @param hwdev device pointer to hwdev
- * @param mac_addr MAC address
- * @param vlan_id VLAN id range [0~4095]
- * @param func_id Global function index
- * @param channel Channel id, channel id used for mailbox sending
+ * @param mac_addr mac address
+ * @param vlan_id vlan id range [0~4095]
+ * @param func_id global function index
+ * @param channel channel id, channel id used for mailbox sending
  *
- * @details Add MAC address for corresponding function
+ * @details add mac address of the corresponding function
  *
- * @attention: This function involves sending mailbox messages and may sleep. Do not call in interrupt context or other contexts that do not allow sleeping.
+ * @attention: This function involves sending mailbox messages and will sleep, do not call in interrupt context or other processes that do not allow sleep
  *
- * @return: Add MAC returns success or failure.
- *     @retval 0 Success
- *     @retval non-0 Failure
+ * @return: add MAC returns success or failure.
+ *     @retval 0 success
+ *     @retval non-0 failure
  */
 int hinic5_set_mac(void *hwdev, const u8 *mac_addr, u16 vlan_id, u16 func_id, u16 channel);
 
 #if !defined(__UEFI__) && !defined(__VMWARE__)
 /**
- * @brief Get network device handle netdev structure pointer according to lld_dev
+ * @brief get network device handle netdev struct pointer according to lld_dev
  *
  * @param lld_dev device pointer to lld_dev
  *
- * @details Find nic uld device according to lld_dev to get netdev
+ * @details find nic uld device according to lld_dev to get netdev
  *
- * @attention: This interface returns without incrementing netdev reference count. If netdev is freed during use, it may lead to wild pointer access.
+ * @attention: this interface return will not increment netdev reference count, if netdev is freed during use, it may cause wild pointer access
 *
- * @return: Returns netdev structure pointer when successfully matching lld_dev, otherwise returns NULL
+ * @return: returns netdev struct pointer when lld_dev is successfully matched, otherwise returns NULL
  */
 struct net_device *hinic5_get_netdev_by_lld(struct hinic5_lld_dev *lld_dev);
 
 /**
- * @brief Register device private data
+ * @brief register device private data
  *
  * @param dev device pointer to net_device
- * @param priv Private data
+ * @param priv private data
  *
- * @details Register device private data through net_device
+ * @details register device private data through net_device
  *
- * @return: Private data registration success or failure.
- *     @retval 0 Success
- *     @retval non-0 Failure
+ * @return: private data registration success or failure.
+ *     @retval 0 success
+ *     @retval non-0 failure
  */
 int hinic5_netdev_priv_set(const struct net_device *dev, void *priv);
 
 /**
- * @brief Get device private data
+ * @brief get device private data
  *
  * @param dev device pointer to net_device
  *
- * @details Get device private data through net_device
+ * @details register device private data through net_device
  *
- * @attention: Need to call hinic5_netdev_priv_set interface to register device private data first
+ * @attention: need to call hinic5_netdev_priv_set interface first to register device private data
  *
- * @return: Private data.
- *     @retval NULL Failure
- *     @retval non-NULL Success
+ * @return: private data.
+ *     @retval NULL failure
+ *     @retval non-NULL success
  */
 void *hinic5_netdev_priv_get(const struct net_device *dev);
 
@@ -102,11 +102,11 @@ void *hinic5_netdev_priv_get(const struct net_device *dev);
  *
  * @param netdev device pointer to net_device
  *
- * @details Overloaded by product, can implement functions like registering filesystem files, modifying netdev name, etc.
+ * @details overloaded by product, can implement functions such as registering file system files, modifying netdev name, etc.
  *
- * @return: Hook function execution result.
- *     @retval 0 Success
- *     @retval non-0 Failure
+ * @return: hook function execution result.
+ *     @retval 0 success
+ *     @retval non-0 failure
  */
 int hinic5_probe_extend_hook(struct net_device *netdev);
 
@@ -115,11 +115,11 @@ int hinic5_probe_extend_hook(struct net_device *netdev);
  *
  * @param netdev device pointer to net_device
  *
- * @details Overloaded by product
+ * @details overloaded by product
  *
- * @return: Hook function execution result.
- *     @retval 0 Success
- *     @retval non-0 Failure
+ * @return: hook function execution result.
+ *     @retval 0 success
+ *     @retval non-0 failure
  */
 void hinic5_remove_extend_hook(struct net_device *netdev);
 
@@ -134,29 +134,29 @@ struct hinic5_nt_msg {
  * @brief NIC driver command hook function
  *
  * @param netdev device pointer to net_device
- * @param cmd Command word
- * @param nt_msg Command content
- * @param support Whether the command is supported, product needs to determine support based on command word
+ * @param cmd command word
+ * @param nt_msg command content
+ * @param support whether this command is supported, product needs to determine whether it is supported according to the command word
  *
- * @details Overloaded by product
+ * @details overloaded by product
  *
- * @return: Command execution result.
- *     @retval 0 Success
- *     @retval non-0 Failure
+ * @return: command execution result.
+ *     @retval 0 success
+ *     @retval non-0 failure
  */
 int hinic5_tool_cmd_extend_handle(struct net_device *netdev, u32 cmd,
 				  struct hinic5_nt_msg *nt_msg, bool *support);
 
 /**
- * @brief Product side interface to set user-space qps number
+ * @brief interface for product to set user-space qps count
  *
  * @param netdev device pointer to net_device
- * @param usr_qps_num Expected user-space qps number
- * @details Called by product
+ * @param usr_qps_num expected user-space qps count
+ * @details called by product
  *
- * @return: Command execution result.
- *    @retval 0 Success
- *    @retval non-0 Failure
+ * @return: command execution result.
+ *    @retval 0 success
+ *    @retval non-0 failure
  */
 int hinic5_set_usr_qps_num(struct net_device *netdev, u16 usr_qps_num);
 
@@ -166,11 +166,11 @@ int hinic5_set_usr_qps_num(struct net_device *netdev, u16 usr_qps_num);
   * @param dev device pointer to net_device
  *  @param addr MAC address
  *
- * @details Overloaded by product, can implement skip related settings after user-space queue is enabled
+ * @details overloaded by product, can implement the function of skipping related settings after user-space queue is enabled
  *
- * @return: Hook function execution result.
- *     @retval 0 Do not skip
- *     @retval non-0 Skip
+ * @return: hook function execution result.
+ *     @retval 0 do not skip
+ *     @retval non-0 skip
  */
 int hinic5_set_mac_addr_pre_hook(struct net_device *netdev, void *addr);
 
@@ -178,57 +178,57 @@ int hinic5_set_mac_addr_pre_hook(struct net_device *netdev, void *addr);
  * @brief NIC related skip MTU setting function
  *
  * @param netdev device pointer to net_device
- * @param new_mtu New MTU value
+ * @param new_mtu new mtu value
  *
- * @details Overloaded by product, can implement skip related settings after user-space queue is enabled
+ * @details overloaded by product, can implement the function of skipping related settings after user-space queue is enabled
  *
- * @return: Hook function execution result.
- *     @retval 0 Do not skip
- *     @retval non-0 Skip
+ * @return: hook function execution result.
+ *     @retval 0 do not skip
+ *     @retval non-0 skip
  */
 int hinic5_change_mtu_pre_hook(struct net_device *netdev, int new_mtu);
 
 /**
- * @brief NIC related skip ringparam setting function
+ * @brief NIC related skip MTU setting function
  *
  * @param netdev device pointer to net_device
- * @param ring Queue depth related parameters
+ * @param ring queue depth related parameters
  *
- * @details Overloaded by product, can implement skip related settings after user-space queue is enabled
+ * @details overloaded by product, can implement the function of skipping related settings after user-space queue is enabled
  *
- * @return: Hook function execution result.
- *     @retval 0 Do not skip
- *     @retval non-0 Skip
+ * @return: hook function execution result.
+ *     @retval 0 do not skip
+ *     @retval non-0 skip
  */
 int hinic5_set_ringparam_pre_hook(struct net_device *netdev, struct ethtool_ringparam *ring);
 
 /**
- * @brief Product side interface to set flow bifurcation enabled group number
+ * @brief interface for product to set flow bifurcation enabled group count
  *
  * @param netdev device pointer to net_device
- * @param group_num Expected group number
- * @details Called by product, group_num range is 1~8. 1: disable flow bifurcation, other values: enable flow bifurcation.
- * @attention When flow bifurcation is enabled, the actual effective value of group_num will be rounded up to power of 2.
+ * @param group_num expected group count
+ * @details called by product, group_num range is 1~8. 1: disable flow bifurcation, other values: enable flow bifurcation.
+ * @attention when flow bifurcation is enabled, the actual effective value of group_num will be rounded up to a power of 2.
  *
- * @return: Command execution result.
- *    @retval 0 Success
- *    @retval non-0 Failure
+ * @return: command execution result.
+ *    @retval 0 success
+ *    @retval non-0 failure
  */
 int hinic5_set_flow_bifurcation_group_num(struct net_device *netdev, u8 group_num);
 
 /**
- * @brief Product side query/set indirect table corresponding to groupId when flow bifurcation is enabled
+ * @brief interface for product to query/set the indirect table corresponding to groupId when flow bifurcation is enabled
  *
  * @param netdev device pointer to net_device
- * @param op_code 0: query; 1: set
- * @param group_id Group id used by device
- * @param indir Indirect table
- * @param indir_length Indirect table length
- * @details Called by product
+ * @param op_code 0 query; 1 set
+ * @param group_id group id used by the device
+ * @param indir indirect table
+ * @param indir_length indirect table length
+ * @details called by product
  *
- * @return: Command execution result.
- *    @retval 0 Success
- *    @retval non-0 Failure
+ * @return: command execution result.
+ *    @retval 0 success
+ *    @retval non-0 failure
  */
 int hinic5_cfg_flow_bifurcation_paras(struct net_device *netdev, u8 op_code,
 				      u8 group_id, u32 *indir, u16 indir_length);

@@ -4,8 +4,8 @@
  * File Name     : bond_pub_cmd.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   : Interface definition for interaction between bond tool and driver
+ * Last Modified : 2026/09/16
+ * Description   : bond tool and driver interaction interface definition
  */
 
 #ifndef BOND_PUB_CMD_H
@@ -21,10 +21,10 @@
  * @details Defines command types related to custom devices
  */
 enum hinic5_bond_cmd_to_custom_e {
-	CMD_CUSTOM_BOND_DEV_CREATE = 1,     /**< Create custom device */
-	CMD_CUSTOM_BOND_DEV_DELETE,         /**< Delete custom device */
-	CMD_CUSTOM_BOND_GET_CHIP_NAME,      /**< Get chip name */
-	CMD_CUSTOM_BOND_GET_CARD_INFO,      /**< Get card information */
+	CMD_CUSTOM_BOND_DEV_CREATE = 1,     /**< create custom device */
+	CMD_CUSTOM_BOND_DEV_DELETE,         /**< delete custom device */
+	CMD_CUSTOM_BOND_GET_CHIP_NAME,      /**< get chip name */
+	CMD_CUSTOM_BOND_GET_CARD_INFO,      /**< get card info */
 	CMD_CUSTOM_BOND_GET_ULD_DEV_NAME
 };
 
@@ -34,7 +34,7 @@ enum hinic5_bond_cmd_to_custom_e {
 
 /**
  * @brief struct bond_dfx_ops_info
- * @details DFX operations for bond binding and unbinding
+ * @details dfx operations for bond binding and unbinding
  */
 struct bond_dfx_ops_info {
 	struct mt_msg_head head;

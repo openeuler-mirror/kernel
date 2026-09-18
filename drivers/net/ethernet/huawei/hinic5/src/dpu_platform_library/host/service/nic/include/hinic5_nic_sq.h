@@ -4,8 +4,8 @@
  * File Name     : hinic5_nic_sq.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : hinic5 nic SQ definitions
  */
 
 #ifndef HINIC5_NIC_SQ_H
@@ -49,7 +49,7 @@ struct hinic5_sq_compact_wqe {
 struct hinic5_sq_extend_wqe {
 	struct hinic5_sq_wqe_desc wqe_desc;
 	struct hinic5_sq_task task;
-	struct hinic5_sq_bufdesc buf_desc[];
+	struct hinic5_sq_bufdesc buf_desc[0];
 };
 
 struct hinic5_sq_wqe {
@@ -104,7 +104,6 @@ struct hinic5_offload_info {
 	u16 vlan1_tag;
 	u32 ip_identify;
 };
-
 struct hinic5_queue_info {
 	u8 pri;
 	u8 uc;

@@ -4,8 +4,8 @@
  * File Name     : hinic5_hw_mt.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : hardware maintenance test interface implementation
  */
 
 #include <asm/byteorder.h>
@@ -16,6 +16,7 @@
 #include "comm_defs.h"
 #include "mpu_inband_cmd.h"
 #include "hinic5_fw_update.h"
+#include "hinic5_hwdev.h"
 #include "hinic5_hw_mt.h"
 
 #define	HINIC5_CMDQ_BUF_MAX_SIZE		2048U
@@ -27,9 +28,9 @@
 
 /* completion timeout interval, unit is millisecond */
 #define MGMT_MSG_UPDATE_TIMEOUT		200000
-#define EMU_TIMEOUT_MULTIPLE        2 // emu scenario timeout multiplier
+#define EMU_TIMEOUT_MULTIPLE        2 // timeout multiplier under emu scenario
 
-void hinic5_free_buff_in(void *hwdev, const struct msg_module *nt_msg, void *buf_in)
+void free_buff_in(void *hwdev, const struct msg_module *nt_msg, void *buf_in)
 {
 	if (!buf_in)
 		return;
@@ -40,20 +41,20 @@ void hinic5_free_buff_in(void *hwdev, const struct msg_module *nt_msg, void *buf
 		kfree(buf_in);
 }
 
-void hinic5_free_buff_out(void *hwdev, const struct msg_module *nt_msg,
+void free_buff_out(void *hwdev, const struct msg_module *nt_msg,
 		   void *buf_out)
 {
 	if (!buf_out)
 		return;
 
 	if (nt_msg->module == SEND_TO_NPU &&
-	    nt_msg->npu_cmd.direct_resp == 0)
+	    (nt_msg->npu_cmd.direct_resp == 0))
 		hinic5_free_cmd_buf(hwdev, buf_out);
 	else
 		kfree(buf_out);
 }
 
-int hinic5_alloc_buff_in(void *hwdev, const struct msg_module *nt_msg,
+int alloc_buff_in(void *hwdev, const struct msg_module *nt_msg,
 		  u32 in_size, void **buf_in)
 {
 	void *msg_buf = NULL;
@@ -94,21 +95,21 @@ int hinic5_alloc_buff_in(void *hwdev, const struct msg_module *nt_msg,
 	if (copy_from_user(msg_buf, nt_msg->in_buf, in_size) != 0) {
 		pr_err("%s:%d: Copy from user failed\n",
 		       __func__, __LINE__);
-		hinic5_free_buff_in(hwdev, nt_msg, *buf_in);
+		free_buff_in(hwdev, nt_msg, *buf_in);
 		return -EFAULT;
 	}
 
 	return 0;
 }
 
-int hinic5_alloc_buff_out(void *hwdev, const struct msg_module *nt_msg,
+int alloc_buff_out(void *hwdev, const struct msg_module *nt_msg,
 		   u32 out_size, void **buf_out)
 {
 	if (out_size == 0)
 		return 0;
 
 	if (nt_msg->module == SEND_TO_NPU &&
-	    nt_msg->npu_cmd.direct_resp == 0) {
+	    (nt_msg->npu_cmd.direct_resp == 0)) {
 		struct hinic5_cmd_buf *cmd_buf = NULL;
 
 		if (out_size > HINIC5_CMDQ_BUF_MAX_SIZE) {
@@ -117,6 +118,11 @@ int hinic5_alloc_buff_out(void *hwdev, const struct msg_module *nt_msg,
 		}
 
 		cmd_buf = hinic5_alloc_cmd_buf(hwdev);
+		if (cmd_buf) {
+			(void)memset(cmd_buf->buf, 0,
+				       cmd_buf->size);
+		}
+
 		*buf_out = (void *)cmd_buf;
 	} else {
 		if (out_size > MSG_MAX_OUT_SIZE) {
@@ -133,14 +139,18 @@ int hinic5_alloc_buff_out(void *hwdev, const struct msg_module *nt_msg,
 	return 0;
 }
 
-int hinic5_copy_buf_out_to_user(const struct msg_module *nt_msg,
+int copy_buf_out_to_user(const struct msg_module *nt_msg,
 			 u32 out_size, void *buf_out)
 {
 	int ret = 0;
 	void *msg_out = NULL;
 
-	if (nt_msg->module == SEND_TO_NPU &&
-	    nt_msg->npu_cmd.direct_resp == 0)
+	if ((buf_out == NULL) || (nt_msg->out_buf == NULL)) {
+		return 0;
+	}
+
+	if ((nt_msg->module == SEND_TO_NPU) &&
+	    (nt_msg->npu_cmd.direct_resp == 0))
 		msg_out = ((struct hinic5_cmd_buf *)buf_out)->buf;
 	else
 		msg_out = buf_out;
@@ -151,7 +161,7 @@ int hinic5_copy_buf_out_to_user(const struct msg_module *nt_msg,
 	return ret;
 }
 
-int hinic5_get_func_type(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
+int get_func_type(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
 		  void *buf_out, const u32 *out_size)
 {
 	u16 func_type;
@@ -168,7 +178,7 @@ int hinic5_get_func_type(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32
 	return 0;
 }
 
-int hinic5_get_func_id(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
+int get_func_id(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
 		void *buf_out, const u32 *out_size)
 {
 	u16 func_id;
@@ -185,29 +195,69 @@ int hinic5_get_func_id(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 i
 	return 0;
 }
 
-int hinic5_get_hw_driver_stats(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
+int get_hw_driver_stats(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
 			void *buf_out, const u32 *out_size)
 {
-	return hinic5_dbg_get_hw_stats(hinic5_get_sdk_hwdev_by_lld(lld_dev),
-		buf_out, out_size);
+	int ret;
+	struct hinic5_lld_dev *dev = NULL;
+	struct hinic5_hw_stats *tmp_hw_stats = (struct hinic5_hw_stats *)buf_out;
+
+	if (*out_size != sizeof(struct hinic5_hw_stats)) {
+		pr_err("Unexpect out buf size from user :%u, expect: %lu\n",
+		       *out_size, sizeof(struct hinic5_hw_stats));
+		return -EFAULT;
+	}
+	ret = hinic5_dbg_get_hw_stats(lld_dev->hwdev, buf_out);
+	if (ret != 0) {
+		pr_err("Failed get hw stats\n");
+		return ret;
+	}
+
+	dev = hinic5_get_ppf_lld_dev(lld_dev);
+	if (dev == NULL) {
+		pr_info("Failed get ppf lld dev\n");
+		atomic_set(&tmp_hw_stats->nic_ucode_event_stats[HINIC5_CHANNEL_BUSY], 0);
+		return 0;
+	}
+
+	ret = hisdk5_get_channel_busy_cnt(dev->hwdev, &tmp_hw_stats->nic_ucode_event_stats[HINIC5_CHANNEL_BUSY]);
+	if (ret != 0) {
+		pr_err("Failed get channel busy cnt\n");
+	}
+
+	hinic5_lld_dev_put(dev);
+	return ret;
 }
 
-int hinic5_clear_hw_driver_stats(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
+int clear_hw_driver_stats(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
 			  void *buf_out, const u32 *out_size)
 {
-	u16 size;
+	u32 size = 0;
+	int ret;
+	struct hinic5_lld_dev *dev = NULL;
 
-	size = hinic5_dbg_clear_hw_stats(hinic5_get_sdk_hwdev_by_lld(lld_dev));
-	if (*out_size != size) {
-		pr_err("Unexpect out buf size from user :%u, expect: %u\n",
-		       *out_size, size);
+	ret = hinic5_dbg_clear_hw_stats(lld_dev->hwdev, &size);
+	if ((ret != 0) || (*out_size != size)) {
+		pr_err("Faile clear hw stats,size from user :%u, expect: %u, ret: %d\n",
+		       *out_size, size, ret);
 		return -EFAULT;
 	}
 
-	return 0;
+	dev = hinic5_get_ppf_lld_dev(lld_dev);
+	if (dev == NULL) {
+		pr_info("failed get ppf lld dev\n");
+		return 0;
+	}
+	ret = hisdk5_clear_channel_busy_cnt(dev->hwdev);
+	if (ret != 0) {
+		pr_err("Failed clear ppf channel busy cnt\n");
+	}
+
+	hinic5_lld_dev_put(dev);
+	return ret;
 }
 
-int hinic5_get_self_test_result(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
+int get_self_test_result(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
 			 void *buf_out, const u32 *out_size)
 {
 	u32 result;
@@ -218,13 +268,13 @@ int hinic5_get_self_test_result(struct hinic5_lld_dev *lld_dev, const void *buf_
 		return -EFAULT;
 	}
 
-	result = hinic5_hinic5_get_self_test_result(hinic5_get_sdk_hwdev_by_lld(lld_dev));
+	result = hinic5_get_self_test_result(hinic5_get_sdk_hwdev_by_lld(lld_dev));
 	*(u32 *)buf_out = result;
 
 	return 0;
 }
 
-int hinic5_get_chip_faults_stats(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
+int get_chip_faults_stats(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
 			  void *buf_out, const u32 *out_size)
 {
 	u32 offset = 0;
@@ -321,6 +371,7 @@ static int api_csr_write(void *hwdev, struct msg_module *nt_msg,
 
 	data = kzalloc(csr_write_msg->rd_len, GFP_KERNEL);
 	if (!data) {
+		pr_err("No more memory\n");
 		return -ENOMEM;
 	}
 	if (copy_from_user(data, (void *)csr_write_msg->data, csr_write_msg->rd_len) != 0) {
@@ -349,8 +400,9 @@ static int api_csr_write(void *hwdev, struct msg_module *nt_msg,
 
 int hinic5_fw_update_cmd(void *hwdev, struct hinic5_mt_cmd_info *cmd_info)
 {
-	if (cmd_info->cmd == COMM_MGMT_CMD_UPDATE_FW)
+	if (cmd_info->cmd == COMM_MGMT_CMD_UPDATE_FW) {
 		return hinic5_fw_update_cmd_update(hwdev, cmd_info);
+	}
 
 	return hinic5_fw_update_cmd_hot_active(hwdev, cmd_info);
 }
@@ -360,8 +412,7 @@ int send_mbox_to_mgmt(void *hwdev, u8 mod, u16 cmd, void *buf_in, u16 in_size,
 {
 	struct hinic5_mt_cmd_info cmd_info = { 0 };
 
-	if (mod == HINIC5_MOD_COMM && (cmd == COMM_MGMT_CMD_UPDATE_FW ||
-	    cmd == COMM_MGMT_CMD_HOT_ACTIVE_FW)) {
+	if (mod == HINIC5_MOD_COMM && (cmd == COMM_MGMT_CMD_UPDATE_FW || cmd == COMM_MGMT_CMD_HOT_ACTIVE_FW)) {
 		cmd_info.mod = mod;
 		cmd_info.cmd = cmd;
 		cmd_info.buf_in = buf_in;
@@ -378,7 +429,7 @@ int send_mbox_to_mgmt(void *hwdev, u8 mod, u16 cmd, void *buf_in, u16 in_size,
 				       HINIC5_CHANNEL_DEFAULT);
 }
 
-int hinic5_send_to_mpu(void *hwdev, struct msg_module *nt_msg,
+int send_to_mpu(void *hwdev, struct msg_module *nt_msg,
 		void *buf_in, u32 in_size, void *buf_out, u32 *out_size)
 {
 	enum mt_api_type api_type;
@@ -397,8 +448,9 @@ int hinic5_send_to_mpu(void *hwdev, struct msg_module *nt_msg,
 	mod = (enum hinic5_mod_type)nt_msg->mpu_cmd.mod;
 	cmd = nt_msg->mpu_cmd.cmd;
 	timeout = nt_msg->timeout;
-	if (timeout == 0)
+	if (timeout == 0) {
 		timeout = get_mgmt_cmd_default_timeout(hwdev, mod, cmd);
+	}
 
 	switch (api_type) {
 	case API_TYPE_MBOX:
@@ -437,7 +489,7 @@ int hinic5_send_to_mpu(void *hwdev, struct msg_module *nt_msg,
 	return ret;
 }
 
-int hinic5_send_to_npu(void *hwdev, const struct msg_module *nt_msg,
+int send_to_npu(void *hwdev, const struct msg_module *nt_msg,
 		void *buf_in, u32 in_size, void *buf_out, u32 *out_size)
 {
 	int ret = 0;
@@ -596,7 +648,7 @@ struct sm_module_handle {
 	sm_module		sm_func;
 };
 
-const struct sm_module_handle hinic5_sm_module_cmd_handle[] = {
+const struct sm_module_handle sm_module_cmd_handle[] = {
 	{SM_CTR_RD16,		 sm_rd16},
 	{SM_CTR_RD32,		 sm_rd32},
 	{SM_CTR_RD64_PAIR,	 sm_rd64_pair},
@@ -606,13 +658,13 @@ const struct sm_module_handle hinic5_sm_module_cmd_handle[] = {
 	{SM_CTR_RD64_CLEAR,	 sm_rd64_clear}
 };
 
-int hinic5_send_to_sm(void *hwdev, const struct msg_module *nt_msg,
+int send_to_sm(void *hwdev, const struct msg_module *nt_msg,
 	       void *buf_in, u32 in_size, void *buf_out, u32 *out_size)
 {
 	struct sm_in_st *sm_in = buf_in;
 	struct sm_out_st *sm_out = buf_out;
 	u32 msg_formate = nt_msg->msg_formate;
-	int index, num_cmds = ARRAY_LEN(hinic5_sm_module_cmd_handle);
+	int index, num_cmds = ARRAY_LEN(sm_module_cmd_handle);
 	int ret = 0;
 
 	if (!buf_in || !buf_out || in_size != sizeof(*sm_in) || *out_size != sizeof(*sm_out)) {
@@ -622,10 +674,10 @@ int hinic5_send_to_sm(void *hwdev, const struct msg_module *nt_msg,
 	}
 
 	for (index = 0; index < num_cmds; index++) {
-		if (msg_formate != hinic5_sm_module_cmd_handle[index].sm_cmd_name)
+		if (msg_formate != sm_module_cmd_handle[index].sm_cmd_name)
 			continue;
 
-		ret = hinic5_sm_module_cmd_handle[index].sm_func(hwdev, (u32)sm_in->id,
+		ret = sm_module_cmd_handle[index].sm_func(hwdev, (u32)sm_in->id,
 							  (u8)sm_in->instance,
 							  (u8)sm_in->node, sm_out);
 		break;

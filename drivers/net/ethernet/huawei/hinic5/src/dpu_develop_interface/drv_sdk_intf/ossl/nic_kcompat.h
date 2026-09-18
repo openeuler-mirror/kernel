@@ -4,12 +4,12 @@
  * File Name     : nic_kcompat.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Temporary file - The actual nic_kcompat.h is generated during build.
  */
 
-#ifndef NIC_KCOMPAT_H
-#define NIC_KCOMPAT_H
+#ifndef _NIC_KCOMPAT_H_
+#define _NIC_KCOMPAT_H_
 #define NEED_NETIF_NAPI_ADD_NO_WEIGHT 1
 #define HAVE_NDO_TX_TIMEOUT_TXQ 1
 #define HAVE_NDO_BPF 1
@@ -45,17 +45,23 @@
 #define HAVE_TYPEDEF_SKB_FRAG_T_BIOVEC 1
 #define HAVE_SKBUFF_CSUM_LEVEL 1
 #define HAVE_ETH_GET_HEADLEN_NET_DEVICE_ARG 1
+#define HAVE_ETH_HW_ADDR_SET 1
 #define HAVE_ETH_GET_HEADLEN_FUNC 1
 #define NEED_ETH_P_8021AD 1
+#define HAVE_DIM 1
+#define HAVE_DIM_SUPPORT 1
 #define HAVE_NETIF_F_RXHASH 1
 #define HAVE_SOCK_CREATE_KERN_NET 1
 #define HAVE_UDP_TUNNEL_NIC_INFO 1
 #define NEED_DEFINE_FIELD_SIZEOF 1
 #define HAVE_XDP_SUPPORT 1
 #define HAVE_XDP_DATA_META 1
+#define HAVE_PAGE_POOL_SUPPORT 1
 #define HAVE_PAGE_POOL_OLD 1
 #define HAVE_PP_FLAG_PAGE_FRAG 1
 #define HAVE_FLOW_ACTION_PRIORITY 1
 #define HAVE_KOBJ_TYPE_DEFAULT_GROUPS 1
 #define HAVE_KOBJ_TYPE_DEFAULT_ATTRS 1
-#endif /* NIC_KCOMPAT_H */
+// nic_kcompat.h is an intermediate header file
+
+#endif /* _NIC_KCOMPAT_H_ */

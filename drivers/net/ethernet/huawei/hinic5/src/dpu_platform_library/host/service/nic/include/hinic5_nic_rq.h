@@ -4,8 +4,8 @@
  * File Name     : hinic5_nic_rq.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : hinic5 nic RQ definitions
  */
 
 #ifndef HINIC5_NIC_RQ_H
@@ -142,24 +142,24 @@
 /* compact cqe field */
 /* cqe dw0 */
 #define RQ_COMPACT_CQE_STATUS_RXDONE_SHIFT			31
-#define RQ_COMPACT_CQE_STATUS_CQE_TYPE_SHIFT			30
+#define RQ_COMPACT_CQE_STATUS_CQE_TYPE_SHIFT		30
 #define RQ_COMPACT_CQE_STATUS_TS_FLAG_SHIFT			29
 #define RQ_COMPACT_CQE_STATUS_VLAN_EN_SHIFT			28
-#define RQ_COMPACT_CQE_STATUS_PKT_FORMAT_SHIFT			25
+#define RQ_COMPACT_CQE_STATUS_PKT_FORMAT_SHIFT		25
 #define RQ_COMPACT_CQE_STATUS_IP_TYPE_SHIFT			24
 #define RQ_COMPACT_CQE_STATUS_CQE_LEN_SHIFT			23
 #define RQ_COMPACT_CQE_STATUS_PKT_MC_SHIFT			21
-#define RQ_COMPACT_CQE_STATUS_CSUM_ERR_SHIFT			19
-#define RQ_COMPACT_CQE_STATUS_PKT_TYPE_SHIFT			16
+#define RQ_COMPACT_CQE_STATUS_CSUM_ERR_SHIFT		19
+#define RQ_COMPACT_CQE_STATUS_PKT_TYPE_SHIFT		16
 #define RQ_COMPACT_CQE_STATUS_PKT_LEN_SHIFT			0
 
 #define RQ_COMPACT_CQE_STATUS_RXDONE_MASK			0x1U
 #define RQ_COMPACT_CQE_STATUS_CQE_TYPE_MASK			0x1U
 #define RQ_COMPACT_CQE_STATUS_TS_FLAG_MASK			0x1U
 #define RQ_COMPACT_CQE_STATUS_VLAN_EN_MASK			0x1U
-#define RQ_COMPACT_CQE_STATUS_PKT_FORMAT_MASK			0x7U
+#define RQ_COMPACT_CQE_STATUS_PKT_FORMAT_MASK		0x7U
 #define RQ_COMPACT_CQE_STATUS_IP_TYPE_MASK			0x1U
-#define RQ_COMPACT_CQE_STATUS_PKT_MC_MASK			0x3U
+#define RQ_COMPACT_CQE_STATUS_PKT_MC_MASK   		0x3U
 #define RQ_COMPACT_CQE_STATUS_CQE_LEN_MASK			0x1U
 #define RQ_COMPACT_CQE_STATUS_CSUM_ERR_MASK			0x3U
 #define RQ_COMPACT_CQE_STATUS_PKT_TYPE_MASK			0x7U
@@ -248,7 +248,7 @@ struct hinic5_cqe_info {
 	u8 rsvd0;
 
 	u32 flow_mark;
-} __aligned(32);
+} __attribute__((aligned(32)));
 
 struct hinic5_sge_sect {
 	struct hinic5_sge sge;

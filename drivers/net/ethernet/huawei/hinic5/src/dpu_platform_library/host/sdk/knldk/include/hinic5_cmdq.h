@@ -4,8 +4,8 @@
  * File Name     : hinic5_cmdq.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Command queue definitions for the hinic5 driver.
  */
 
 #ifndef HINIC5_CMDQ_H
@@ -248,12 +248,14 @@ void hinic5_cmdq_enable_channel_lock(struct hinic5_hwdev *hwdev, bool enable);
 
 void hinic5_cmdq_flush_sync_cmd(struct hinic5_hwdev *hwdev);
 
-void hinic5_enhanced_cmdq_set_wqe(struct hinic5_cmdq_wqe *wqe,
-			   enum hinic5_cmdq_cmd_type cmd_type,
-			   const struct hinic5_cmdq_cmd_param *cmd_buf,
-			   int wrapped);
-void hinic5_enhanced_cmdq_init_queue_ctxt(struct hinic5_cmdqs *cmdqs, struct hinic5_cmdq *cmdq);
-void hinic5_cmdqs_param_init(struct hinic5_hwdev *hwdev, struct hinic5_cmdqs *cmdqs);
+void enhanced_cmdq_set_wqe(struct hinic5_cmdq_wqe *wqe,
+						   enum hinic5_cmdq_cmd_type cmd_type,
+						   const struct hinic5_cmdq_cmd_param *cmd_buf,
+						   int wrapped);
+void enhanced_cmdq_init_queue_ctxt(struct hinic5_cmdqs *cmdqs,
+								   struct hinic5_cmdq *cmdq);
+void hinic5_cmdqs_param_init(struct hinic5_hwdev *hwdev,
+							 struct hinic5_cmdqs *cmdqs);
 int hinic5_send_fast_msg_need_resp(void *hwdev, u8 mod, u8 cmd,
 				   struct hinic5_cmd_buf *buf_in,
 				   u64 *out_param);

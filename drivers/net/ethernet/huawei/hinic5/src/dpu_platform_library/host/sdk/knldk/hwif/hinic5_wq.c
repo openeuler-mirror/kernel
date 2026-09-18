@@ -4,8 +4,8 @@
  * File Name     : hinic5_wq.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Work queue implementation for the hinic5 driver.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [COMM]" fmt
@@ -66,8 +66,10 @@ static int wq_alloc_pages(struct hinic5_wq *wq)
 
 	wq->wq_pages = kcalloc(wq->num_wq_pages, sizeof(*wq->wq_pages),
 			       GFP_KERNEL);
-	if (!wq->wq_pages)
+	if (!wq->wq_pages) {
+		sdk_err(wq->dev_hdl, "Failed to alloc wq pages handle\n");
 		return -ENOMEM;
+	}
 
 	for (page_idx = 0; page_idx < wq->num_wq_pages; page_idx++) {
 		err = hinic5_dma_zalloc_coherent_align(wq->dev_hdl,
@@ -125,14 +127,14 @@ int hinic5_wq_create(void *hwdev, struct hinic5_wq *wq, u32 q_depth,
 	wq_page_size = dev->wq_page_size;  // make sure HINIC5_HW_WQ_PAGE_SIZE align
 
 	if (q_depth < WQ_MIN_DEPTH || q_depth > WQ_MAX_DEPTH ||
-	    ((q_depth & (q_depth - 1)) != 0) || wqebb_size == 0 ||
+	    ((q_depth & (q_depth - 1)) != 0) || (wqebb_size == 0) ||
 	    ((wqebb_size & (wqebb_size - 1)) != 0)) {
 		sdk_err(dev->dev_hdl, "Wq q_depth(%u) or wqebb_size(%u) is invalid\n",
 			q_depth, wqebb_size);
 		return -EINVAL;
 	}
 
-	memset(wq, 0, sizeof(struct hinic5_wq));
+	(void)memset(wq, 0, sizeof(struct hinic5_wq));
 	wq->dev_hdl = dev->dev_hdl;
 	wq->q_depth = q_depth;
 	wq->idx_mask = (u16)(q_depth - 1);

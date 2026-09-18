@@ -4,8 +4,8 @@
  * File Name     : hinic5_ntuple.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 ethtool ntuple interface implementation
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [NIC]" fmt
@@ -172,10 +172,11 @@ static int hinic5_fdir_tcam_ipv4_l4_htn_init(struct hinic5_nic_dev *nic_dev,
 	if (err != 0)
 		return err;
 
-	if (fs->flow_type == TCP_V4_FLOW)
+	if (fs->flow_type == TCP_V4_FLOW) {
 		tcam_key->key_info_htn.ip_proto = IPPROTO_TCP;
-	else
+	} else {
 		tcam_key->key_info_htn.ip_proto = IPPROTO_UDP;
+	}
 	tcam_key->key_mask_htn.ip_proto = U8_MAX;
 
 	tcam_key->key_mask_htn.dport = mask->pdst;
@@ -278,8 +279,7 @@ static int ipv6_mask_parse(const u32 *ipv6_mask)
 	return IPV6_MASK_INVALID;
 }
 
-static void hinic5_ipv6_tcam_key_pares_src(struct tag_tcam_key *tcam_key,
-					   struct ethtool_tcpip6_spec *val)
+static void hinic5_ipv6_tcam_key_pares_src(struct tag_tcam_key *tcam_key, struct ethtool_tcpip6_spec *val)
 {
 	u32 temp;
 
@@ -306,8 +306,7 @@ static void hinic5_ipv6_tcam_key_pares_src(struct tag_tcam_key *tcam_key,
 	tcam_key->key_mask_ipv6.sipv6_key7 = U16_MAX;
 }
 
-static void hinic5_ipv6_tcam_key_pares_dst(struct tag_tcam_key *tcam_key,
-					   struct ethtool_tcpip6_spec *val)
+static void hinic5_ipv6_tcam_key_pares_dst(struct tag_tcam_key *tcam_key, struct ethtool_tcpip6_spec *val)
 {
 	u32 temp;
 
@@ -334,8 +333,7 @@ static void hinic5_ipv6_tcam_key_pares_dst(struct tag_tcam_key *tcam_key,
 	tcam_key->key_mask_ipv6.dipv6_key7 = U16_MAX;
 }
 
-static void hinic5_ipv6_tcam_key_htn_pares_src(struct tag_tcam_key *tcam_key,
-					       struct ethtool_tcpip6_spec *val)
+static void hinic5_ipv6_tcam_key_htn_pares_src(struct tag_tcam_key *tcam_key, struct ethtool_tcpip6_spec *val)
 {
 	u32 temp;
 
@@ -362,8 +360,7 @@ static void hinic5_ipv6_tcam_key_htn_pares_src(struct tag_tcam_key *tcam_key,
 	tcam_key->key_mask_ipv6_htn.sipv6_key7 = U16_MAX;
 }
 
-static void hinic5_ipv6_tcam_key_htn_pares_dst(struct tag_tcam_key *tcam_key,
-					       struct ethtool_tcpip6_spec *val)
+static void hinic5_ipv6_tcam_key_htn_pares_dst(struct tag_tcam_key *tcam_key, struct ethtool_tcpip6_spec *val)
 {
 	u32 temp;
 
@@ -432,10 +429,11 @@ static int hinic5_fdir_tcam_ipv6_l4_htn_init(struct hinic5_nic_dev *nic_dev,
 	if (err != 0)
 		return err;
 
-	if (fs->flow_type == TCP_V6_FLOW)
+	if (fs->flow_type == TCP_V6_FLOW) {
 		tcam_key->key_info_htn.ip_proto = IPPROTO_TCP;
-	else
+	} else {
 		tcam_key->key_info_htn.ip_proto = IPPROTO_UDP;
+	}
 	tcam_key->key_mask_htn.ip_proto = U8_MAX;
 
 	tcam_key->key_mask_htn.dport = mask->pdst;
@@ -578,7 +576,7 @@ static int hinic5_fdir_tcam_info_init(struct hinic5_nic_dev *nic_dev,
 		break;
 #endif
 	default:
-		return -EOPNOTSUPP;
+		return -ENOTSUPP;
 	}
 
 	tcam_key->key_info.tunnel_type = 0;
@@ -597,14 +595,13 @@ static int hinic5_fdir_tcam_info_htn_init(struct hinic5_nic_dev *nic_dev,
 {
 	int err;
 
-	if (flow_bifurcations)
+	if (flow_bifurcations == true)
 		fdir_tcam_rule->data.fdir_info.qid_htn.flag = flow_bifurcations;
 
 	tcam_key->key_mask_htn.function_id_h = UINT5_MAX;
 	tcam_key->key_mask_htn.function_id_l = UINT5_MAX;
 	tcam_key->key_info_htn.function_id_l = hinic5_global_func_id(nic_dev->hwdev) & UINT5_MAX;
-	tcam_key->key_info_htn.function_id_h =
-				(hinic5_global_func_id(nic_dev->hwdev) >> UINT5_WIDTH) & UINT5_MAX;
+	tcam_key->key_info_htn.function_id_h = (hinic5_global_func_id(nic_dev->hwdev) >> UINT5_WIDTH) & UINT5_MAX;
 
 	tcam_key->key_info_htn.tunnel_type = 0;
 	tcam_key->key_mask_htn.tunnel_type = UINT3_MAX;
@@ -636,7 +633,7 @@ static int hinic5_fdir_tcam_info_htn_init(struct hinic5_nic_dev *nic_dev,
 		break;
 #endif
 	default:
-		return -EOPNOTSUPP;
+		return -ENOTSUPP;
 	}
 
 	fdir_tcam_rule->data.fdir_info.qid_htn.qid = (u32)fs->ring_cookie;
@@ -695,8 +692,8 @@ hinic5_alloc_dynamic_block_resource(struct hinic5_nic_dev *nic_dev,
 	struct hinic5_tcam_dynamic_block *dynamic_block_ptr = NULL;
 
 	dynamic_block_ptr = kzalloc(sizeof(*dynamic_block_ptr), GFP_KERNEL);
-	if (!dynamic_block_ptr) {
-		nicif_err(nic_dev, drv, nic_dev->netdev, "fdir filter dynamic alloc block index %u memory failed\n",
+	if (dynamic_block_ptr == NULL) {
+		nicif_err(nic_dev, drv, nic_dev->netdev, "fdir filter dynamic alloc block index %hu memory failed\n",
 			  dynamic_block_id);
 		return NULL;
 	}
@@ -713,7 +710,7 @@ hinic5_alloc_dynamic_block_resource(struct hinic5_nic_dev *nic_dev,
 static void hinic5_free_dynamic_block_resource(struct hinic5_tcam_info *tcam_info,
 					       struct hinic5_tcam_dynamic_block *block_ptr)
 {
-	if (!block_ptr)
+	if (block_ptr == NULL)
 		return;
 
 	list_del(&block_ptr->block_list);
@@ -735,10 +732,10 @@ hinic5_dynamic_lookup_tcam_filter(struct hinic5_nic_dev *nic_dev,
 	list_for_each_entry(tmp,
 			    &tcam_info->tcam_dynamic_info.tcam_dynamic_list,
 			     block_list)
-		if (!tmp || tmp->dynamic_index_cnt < HINIC5_TCAM_DYNAMIC_BLOCK_SIZE)
+		if ((tmp == NULL) || tmp->dynamic_index_cnt < HINIC5_TCAM_DYNAMIC_BLOCK_SIZE)
 			break;
 
-	if (!tmp || tmp->dynamic_index_cnt >= HINIC5_TCAM_DYNAMIC_BLOCK_SIZE) {
+	if ((tmp == NULL) || tmp->dynamic_index_cnt >= HINIC5_TCAM_DYNAMIC_BLOCK_SIZE) {
 		nicif_err(nic_dev, drv, nic_dev->netdev, "Fdir filter dynamic lookup for index failed\n");
 		return NULL;
 	}
@@ -766,11 +763,10 @@ hinic5_dynamic_lookup_tcam_filter(struct hinic5_nic_dev *nic_dev,
 static int hinic5_tcam_filter_alloc_block(struct hinic5_tcam_info *tcam_info,
 					  struct hinic5_nic_dev *nic_dev,
 	u16 *tcam_block_index, int *block_alloc_flag,
-	const struct hinic5_tcam_dynamic_block *dynamic_block_ptr)
+	struct hinic5_tcam_dynamic_block **dynamic_block_ptr)
 {
 	int err;
 	u16 block_cnt = tcam_info->tcam_dynamic_info.dynamic_block_cnt;
-
 	if (tcam_info->tcam_rule_nums >= block_cnt * HINIC5_TCAM_DYNAMIC_BLOCK_SIZE) {
 		if (block_cnt >= (HINIC5_MAX_TCAM_FILTERS / HINIC5_TCAM_DYNAMIC_BLOCK_SIZE)) {
 			nicif_err(nic_dev, drv, nic_dev->netdev, "Dynamic tcam block is full, alloc failed\n");
@@ -786,9 +782,9 @@ static int hinic5_tcam_filter_alloc_block(struct hinic5_tcam_info *tcam_info,
 
 		*block_alloc_flag = 1;
 
-		dynamic_block_ptr =
+		*dynamic_block_ptr =
 			hinic5_alloc_dynamic_block_resource(nic_dev, tcam_info, *tcam_block_index);
-		if (!dynamic_block_ptr) {
+		if (*dynamic_block_ptr == NULL) {
 			nicif_err(nic_dev, drv, nic_dev->netdev,
 				  "Fdir filter dynamic alloc block memory failed\n");
 			hinic5_free_tcam_block(nic_dev->hwdev, tcam_block_index);
@@ -811,13 +807,14 @@ static int hinic5_add_tcam_filter(struct hinic5_nic_dev *nic_dev,
 	int err;
 
 	err = hinic5_tcam_filter_alloc_block(tcam_info, nic_dev, &tcam_block_index,
-					     &block_alloc_flag, dynamic_block_ptr);
-	if (err != 0)
+		&block_alloc_flag, &dynamic_block_ptr);
+	if (err != 0) {
 		return err;
+	}
 
-	tmp = hinic5_dynamic_lookup_tcam_filter(nic_dev, fdir_tcam_rule,
-						tcam_info, tcam_filter, &index);
-	if (!tmp) {
+	tmp = hinic5_dynamic_lookup_tcam_filter(nic_dev,
+		fdir_tcam_rule, tcam_info, tcam_filter, &index);
+	if (tmp == NULL) {
 		nicif_err(nic_dev, drv, nic_dev->netdev, "Dynamic lookup tcam filter failed\n");
 		goto lookup_tcam_index_failed;
 	}
@@ -829,7 +826,8 @@ static int hinic5_add_tcam_filter(struct hinic5_nic_dev *nic_dev,
 	}
 
 	nicif_info(nic_dev, drv, nic_dev->netdev,
-		   "Add fdir tcam rule, function_id: 0x%x, tcam_block_id: %hu, local_index: %hu, global_index: %u, queue: %u, tcam_rule_nums: %d succeed\n",
+		   "Add fdir tcam rule, function_id: 0x%x, tcam_block_id: %hu, local_index: %hu, \
+			global_index: %u, queue: %u, tcam_rule_nums: %d succeed\n",
 		   hinic5_global_func_id(nic_dev->hwdev),
 		   tcam_filter->dynamic_block_id, index, fdir_tcam_rule->index,
 		   fdir_tcam_rule->data.fdir_info.qid, tcam_info->tcam_rule_nums + 1);
@@ -877,7 +875,7 @@ static int hinic5_del_tcam_filter(struct hinic5_nic_dev *nic_dev,
 		if (tmp->dynamic_block_id == dynamic_block_id)
 			break;
 	}
-	if (!tmp || tmp->dynamic_block_id != dynamic_block_id) {
+	if ((tmp == NULL) || tmp->dynamic_block_id != dynamic_block_id) {
 		nicif_err(nic_dev, drv, nic_dev->netdev, "Fdir filter del dynamic lookup for block failed\n");
 		return -EFAULT;
 	}
@@ -947,8 +945,8 @@ static int hinic5_remove_one_rule(struct hinic5_nic_dev *nic_dev,
 	struct tag_tcam_key tcam_key;
 	int err;
 
-	memset(&fdir_tcam_rule, 0, sizeof(fdir_tcam_rule));
-	memset(&tcam_key, 0, sizeof(tcam_key));
+	(void)memset(&fdir_tcam_rule, 0, sizeof(fdir_tcam_rule));
+	(void)memset(&tcam_key, 0, sizeof(tcam_key));
 
 	if (hinic5_support_htn(nic_dev->hwdev)) {
 		err = hinic5_fdir_tcam_info_htn_init(nic_dev, &eth_rule->flow_spec, &tcam_key,
@@ -965,7 +963,7 @@ static int hinic5_remove_one_rule(struct hinic5_nic_dev *nic_dev,
 
 	tcam_filter = hinic5_tcam_filter_lookup(&tcam_info->tcam_list,
 						&tcam_key);
-	if (!tcam_filter) {
+	if (tcam_filter == NULL) {
 		nicif_err(nic_dev, drv, nic_dev->netdev, "Filter does not exists\n");
 		return -EEXIST;
 	}
@@ -973,12 +971,10 @@ static int hinic5_remove_one_rule(struct hinic5_nic_dev *nic_dev,
 	err = hinic5_del_tcam_filter(nic_dev, tcam_filter);
 	if (err != 0) {
 		nicif_err(nic_dev, drv, nic_dev->netdev, "Delete tcam filter failed\n");
-		goto free_tcam_filter;
+		return err;
 	}
 
 	del_ethtool_rule(nic_dev, eth_rule);
-
-free_tcam_filter:
 	kfree(tcam_filter);
 	tcam_filter = NULL;
 	return err;
@@ -1009,8 +1005,8 @@ static int hinic5_add_one_rule(struct hinic5_nic_dev *nic_dev,
 	struct hinic5_tcam_info *tcam_info = &nic_dev->tcam;
 	int err;
 
-	memset(&fdir_tcam_rule, 0, sizeof(fdir_tcam_rule));
-	memset(&tcam_key, 0, sizeof(tcam_key));
+	(void)memset(&fdir_tcam_rule, 0, sizeof(fdir_tcam_rule));
+	(void)memset(&tcam_key, 0, sizeof(tcam_key));
 
 	if (hinic5_support_htn(nic_dev->hwdev)) {
 		err = hinic5_fdir_tcam_info_htn_init(nic_dev, fs, &tcam_key,
@@ -1027,13 +1023,13 @@ static int hinic5_add_one_rule(struct hinic5_nic_dev *nic_dev,
 
 	tcam_filter = hinic5_tcam_filter_lookup(&tcam_info->tcam_list,
 						&tcam_key);
-	if (tcam_filter) {
+	if (tcam_filter != NULL) {
 		nicif_err(nic_dev, drv, nic_dev->netdev, "Filter exists\n");
 		return -EEXIST;
 	}
 
 	tcam_filter = kzalloc(sizeof(*tcam_filter), GFP_KERNEL);
-	if (!tcam_filter)
+	if (tcam_filter == NULL)
 		return -ENOMEM;
 	memcpy(&tcam_filter->tcam_key,
 	       &tcam_key, sizeof(struct tag_tcam_key));
@@ -1045,7 +1041,7 @@ static int hinic5_add_one_rule(struct hinic5_nic_dev *nic_dev,
 
 	/* driver save new rule filter */
 	eth_rule = kzalloc(sizeof(*eth_rule), GFP_KERNEL);
-	if (!eth_rule) {
+	if (eth_rule == NULL) {
 		err = -ENOMEM;
 		goto alloc_eth_rule_fail;
 	}
@@ -1056,7 +1052,11 @@ static int hinic5_add_one_rule(struct hinic5_nic_dev *nic_dev,
 	return 0;
 
 alloc_eth_rule_fail:
-	hinic5_del_tcam_filter(nic_dev, tcam_filter);
+	err = hinic5_del_tcam_filter(nic_dev, tcam_filter);
+	if (err != 0) {
+		nicif_err(nic_dev, drv, nic_dev->netdev, "Delete tcam filter failed\n");
+		return err;
+	}
 add_tcam_filter_fail:
 	kfree(tcam_filter);
 	tcam_filter = NULL;
@@ -1102,7 +1102,7 @@ static int validate_flow(struct hinic5_nic_dev *nic_dev,
 		break;
 	default:
 		nicif_err(nic_dev, drv, nic_dev->netdev, "flow type is not supported\n");
-		return -EOPNOTSUPP;
+		return -ENOTSUPP;
 	}
 
 	return 0;
@@ -1130,8 +1130,8 @@ int hinic5_ethtool_flow_replace(struct hinic5_nic_dev *nic_dev,
 
 	eth_rule = find_ethtool_rule(nic_dev, fs->location);
 	/* when location is same, delete old location rule. */
-	if (eth_rule) {
-		memcpy(&flow_spec_temp, &eth_rule->flow_spec,
+	if (eth_rule != NULL) {
+		(void)memcpy(&flow_spec_temp, &eth_rule->flow_spec,
 		       sizeof(struct ethtool_rx_flow_spec));
 		err = hinic5_remove_one_rule(nic_dev, eth_rule);
 		if (err != 0)
@@ -1167,7 +1167,7 @@ int hinic5_ethtool_flow_remove(struct hinic5_nic_dev *nic_dev, u32 location)
 		return -ENOSPC;
 
 	eth_rule = find_ethtool_rule(nic_dev, location);
-	if (!eth_rule)
+	if (eth_rule == NULL)
 		return -ENOENT;
 
 	err = hinic5_remove_one_rule(nic_dev, eth_rule);

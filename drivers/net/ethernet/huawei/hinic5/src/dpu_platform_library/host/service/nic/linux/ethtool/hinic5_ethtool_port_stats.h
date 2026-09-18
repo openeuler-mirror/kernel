@@ -4,8 +4,8 @@
  * File Name     : hinic5_ethtool_port_stats.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 ethtool port statistics header file
  */
 
 #ifndef HINIC5_ETHTOOL_PORT_STATS_H

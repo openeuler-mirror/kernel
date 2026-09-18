@@ -4,8 +4,8 @@
  * File Name     : 182x_cmdq_ops.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : 182x cmdq operations implementation
  */
 
 #include "nic_npu_cmd.h"
@@ -14,7 +14,7 @@
 
 #define HINIC5_DEAULT_DROP_THD_OFF           0
 
-#define WQ_PREFETCH_MAX						 4
+#define WQ_PREFETCH_MAX				  	 	 4
 #define WQ_PREFETCH_MIN						 1
 #define WQ_PREFETCH_THRESHOLD				 256
 
@@ -92,14 +92,16 @@ static u8 prepare_cmd_buf_set_rss_indir_table(const struct hinic5_nic_io *nic_io
 
 	indir_tbl = (struct nic_rss_indirect_tbl *)cmd_buf->buf;
 	cmd_buf->size = sizeof(struct nic_rss_indirect_tbl);
-	memset(indir_tbl, 0, sizeof(*indir_tbl));
+	(void)memset(indir_tbl, 0, sizeof(*indir_tbl));
 
-	for (i = 0; i < NIC_RSS_INDIR_SIZE; i++)
+	for (i = 0; i < NIC_RSS_INDIR_SIZE; i++) {
 		indir_tbl->entry[i] = (u16)(*(indir_table + i));
+	}
 	size = sizeof(indir_tbl->entry) / sizeof(u32);
 	temp = (u32 *)indir_tbl->entry;
-	for (i = 0; i < size; i++)
+	for (i = 0; i < size; i++) {
 		temp[i] = cpu_to_be32(temp[i]);
+	}
 
 	return (u8)HINIC5_UCODE_CMD_SET_RSS_INDIR_TABLE;
 }
@@ -108,7 +110,7 @@ static u8 prepare_cmd_buf_get_rss_indir_table(const struct hinic5_nic_io *nic_io
 					      const struct hinic5_cmd_buf *cmd_buf)
 {
 	(void)nic_io;
-	memset(cmd_buf->buf, 0, cmd_buf->size);
+	(void)memset(cmd_buf->buf, 0, cmd_buf->size);
 
 	return (u8)HINIC5_UCODE_CMD_GET_RSS_INDIR_TABLE;
 }
@@ -119,8 +121,9 @@ static void cmd_buf_to_rss_indir_table(const struct hinic5_cmd_buf *cmd_buf, u32
 	u16 *indir_tbl = NULL;
 
 	indir_tbl = (u16 *)cmd_buf->buf;
-	for (i = 0; i < NIC_RSS_INDIR_SIZE; i++)
+	for (i = 0; i < NIC_RSS_INDIR_SIZE; i++) {
 		indir_table[i] = *(indir_tbl + i);
+	}
 }
 
 static u8 prepare_cmd_buf_modify_svlan(struct hinic5_cmd_buf *cmd_buf,
@@ -151,18 +154,18 @@ static u8 prepare_cmd_buf_get_vport_stats(const struct hinic5_nic_io *nic_io,
 					  const struct hinic5_cmd_buf *cmd_buf, u16 func_id)
 {
 	(void)nic_io;
-	memset(cmd_buf->buf, 0, cmd_buf->size);
+	(void)memset(cmd_buf->buf, 0, cmd_buf->size);
 
 	return (u8)HINIC5_UCODE_CMD_GET_VPORT_STATS;
 }
 
-static void cmd_buf_to_vport_stats(const struct hinic5_cmd_buf *cmd_buf,
-				   struct hinic5_vport_stats *stats)
+static void cmd_buf_to_vport_stats(const struct hinic5_cmd_buf *cmd_buf, struct hinic5_vport_stats *stats)
 {
-	/* Microcode cmdq command word copy,
-		Later modification needs to consider hinic5_vport_stats and nic_cmdq_vport_stats differences */
+	/* Microcode cmdq get command word copy. Future modifications need to consider the difference between hinic5_vport_stats and nic_cmdq_vport_stats */
+	(void)memcpy(stats, cmd_buf->buf,
+		sizeof(struct hinic5_vport_stats));
 
-	memcpy(stats, cmd_buf->buf, sizeof(struct hinic5_vport_stats));
+	return;
 }
 
 static void prepare_sq_ctxt_drop_and_prefetch(struct hinic5_sq_ctxt *sq_ctxt)
@@ -177,8 +180,8 @@ static void prepare_sq_ctxt_drop_and_prefetch(struct hinic5_sq_ctxt *sq_ctxt)
 		SQ_CTXT_PREF_SET(WQ_PREFETCH_THRESHOLD, CACHE_THRESHOLD);
 }
 
-static void prepare_rq_ctxt_ceq_and_prefetch
-	(struct hinic5_io_queue *rq, struct hinic5_rq_ctxt *rq_ctxt, bool support_rq_sw_compact_wqe)
+static void prepare_rq_ctxt_ceq_and_prefetch(
+	struct hinic5_io_queue *rq, struct hinic5_rq_ctxt *rq_ctxt, bool support_rq_sw_compact_wqe)
 {
 	u16 wqe_type = rq->wqe_type;
 

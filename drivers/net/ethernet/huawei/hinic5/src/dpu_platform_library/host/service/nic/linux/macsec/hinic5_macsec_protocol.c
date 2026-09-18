@@ -4,9 +4,10 @@
  * File Name     : hinic5_macsec_protocol.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   : Adapt to Linux standard kernel macsec
+ * Last Modified : 2026/09/16
+ * Description   : Linux standard kernel MACsec adaptation
  */
+
 #define pr_fmt(fmt) KBUILD_MODNAME ": [MACsec]" fmt
 
 #include <linux/netdevice.h>
@@ -19,18 +20,12 @@
 #include "hinic5_macsec_dfx.h"
 #include "hinic5_macsec_dev.h"
 
-#if ((LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)) && \
-	IS_ENABLED(CONFIG_MACSEC) && \
-	defined(HAVE_NETDEVICE_MACSEC_OPS))
+#if ((LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)) && IS_ENABLED(CONFIG_MACSEC) && defined(HAVE_NETDEVICE_MACSEC_OPS))
 
 #include <net/macsec.h>
 
-#define htonll(x)	(htonl(1) == 1 ? (x) : \
-	((((uint64_t)htonl((x) & 0xFFFFFFFF)) << 32) | \
-	 htonl((x) >> 32)))
-#define ntohll(x)	(ntohl(1) == 1 ? (x) : \
-	((((uint64_t)ntohl((x) & 0xFFFFFFFF)) << 32) | \
-	 ntohl((x) >> 32)))
+#define htonll(x) ((1 == htonl(1)) ? (x) : ((uint64_t)htonl((x) & 0xFFFFFFFF) << 32) | htonl((x) >> 32))
+#define ntohll(x) ((1 == ntohl(1)) ? (x) : ((uint64_t)ntohl((x) & 0xFFFFFFFF) << 32) | ntohl((x) >> 32))
 #define VALIDATE_RET_OK 0x5a5aa5a5
 #define HIMACSEC_DEV_LINK_KIND "macsec"
 
@@ -38,13 +33,13 @@ struct hinic5_nic_dev *macsec_get_nic_dev_by_netdev(struct net_device *netdev)
 {
 	struct hinic5_nic_dev *nic_dev = NULL;
 
-	if (!netdev) {
+	if (netdev == NULL) {
 		pr_err("Get nic dev fail, netdev is NULL");
 		return NULL;
 	}
 
 	nic_dev = netdev_priv(netdev);
-	if (!nic_dev) {
+	if (nic_dev == NULL) {
 		pr_err("Get nic dev fail, nic_dev is NULL");
 		return NULL;
 	}
@@ -53,25 +48,27 @@ struct hinic5_nic_dev *macsec_get_nic_dev_by_netdev(struct net_device *netdev)
 
 int macsec_base_validate(struct hinic5_nic_dev *nic_dev, struct macsec_context *ctx)
 {
-	if (!nic_dev || !nic_dev->macsec_res) {
+	if (nic_dev == NULL || nic_dev->macsec_res == NULL) {
 		pr_err("NIC device is NULL");
 		return -ENODEV;
 	}
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
-	if (ctx->prepare != 0)
+	if (ctx->prepare != 0) {
 		return 0;
+	}
 #endif
 	return VALIDATE_RET_OK;
 }
 
-int macsec_sa_update_validate(struct hinic5_nic_dev *nic_dev, struct macsec_context *ctx,
-			      struct himacsec_sa **priv_sa, crypt_direction_e direct, u64 sci)
+int macsec_sa_update_validate(struct hinic5_nic_dev *nic_dev, struct macsec_context *ctx, struct himacsec_sa **priv_sa,
+	crypt_direction_e direct, u64 sci)
 {
 	int ret = macsec_base_validate(nic_dev, ctx);
 	u8 assoc_num = ctx->sa.assoc_num;
 
-	if (ret != VALIDATE_RET_OK)
+	if (ret != VALIDATE_RET_OK) {
 		return ret;
+	}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 5, 8)
 	if (ctx->sa.update_pn) {
@@ -81,26 +78,25 @@ int macsec_sa_update_validate(struct hinic5_nic_dev *nic_dev, struct macsec_cont
 #endif
 
 	*priv_sa = himacsec_get_valid_dev_sa(nic_dev, sci, assoc_num, direct);
-	if (!*priv_sa) {
-		macsec_err(nic_dev->lld_dev->dev, "Update sa failed, sa does not exist, sci=%llx, an=0x%x",
-			   sci, assoc_num);
+	if (*priv_sa == NULL) {
+		macsec_err(nic_dev->lld_dev->dev, "Update sa failed, sa does not exist, sci=%llx, an=0x%x", sci, assoc_num);
 		return -EINVAL;
 	}
 
 	return VALIDATE_RET_OK;
 }
 
-int himacsec_sa_active_update(struct hinic5_nic_dev *nic_dev,
-			      struct himacsec_sa *macsec_sa, u8 active)
+int himacsec_sa_active_update(struct hinic5_nic_dev *nic_dev, struct himacsec_sa *macsec_sa, u8 active)
 {
 	int ret;
 	u8 temp_active_status;
 
-	// 1. If sa active is the same before and after command, no processing
-	if (macsec_sa->info.enable_receive == active)
+	// 1. sa active is the same before and after the command, no action taken
+	if (macsec_sa->info.enable_receive == active) {
 		return 0;
+	}
 
-	// 2. Changed sa enable config
+	// 2. sa enable configuration changed
 	temp_active_status = macsec_sa->info.enable_receive;
 	macsec_sa->info.enable_receive = active;
 	ret = himacsec_cmd_exec_sa_op(nic_dev->lld_dev, &macsec_sa->info, MACSEC_CMD_DEC_SA_UPDATE);
@@ -116,10 +112,8 @@ void reverse_u8_array(u8 *array, u32 size)
 {
 	u32 left = 0;
 	u32 right = size - 1;
-
 	while (left < right) {
 		u8 temp = array[left];
-
 		array[left] = array[right];
 		array[right] = temp;
 		left++;
@@ -133,30 +127,24 @@ int macsec_secy_features_validate(struct macsec_context *ctx)
 	const struct macsec_secy *secy = ctx->secy;
 
 	if (secy->icv_len != HIMACSEC_ICV_LEN) {
-		pr_err("%s: MACsec offload is supported only when icv_len is %d",
-		       netdev->name, HIMACSEC_ICV_LEN);
+		pr_err("%s: MACsec offload is supported only when icv_len is %d", netdev->name, HIMACSEC_ICV_LEN);
 		return -EINVAL;
 	}
 
-	if (secy->key_len != HIMACSEC_KEY_LENGTH_128 &&
-	    secy->key_len != HIMACSEC_KEY_LENGTH_256) {
-		pr_err("%s: MACsec offload is supported only when key_len is 128bit or 256bit",
-		       netdev->name);
+	if ((secy->key_len != HIMACSEC_KEY_LENGTH_128) && (secy->key_len != HIMACSEC_KEY_LENGTH_256)) {
+		pr_err("%s: MACsec offload is supported only when key_len is 128bit or 256bit", netdev->name);
 		return -EINVAL;
 	}
 
 	if (secy->validate_frames >= __MACSEC_VALIDATE_END) {
-		pr_err("%s: MACsec offload is supported only when validate value was legal",
-		       netdev->name);
+		pr_err("%s: MACsec offload is supported only when validate value was legal", netdev->name);
 		return -EINVAL;
 	}
 
 	return 0;
 }
 
-/* direct:true macsec_key_length convert to reg_key_length;
- * false reg_key_length convert to macsec_key_length
- */
+/* direct:true macsec_key_length convert to reg_key_length; false reg_key_length convert to macsec_key_length */
 void macsec_adapt_convert_key_length(u8 *reg_key_length, u16 *macsec_key_length, bool direct)
 {
 	if (direct) {
@@ -176,17 +164,15 @@ void macsec_adapt_convert_key_length(u8 *reg_key_length, u16 *macsec_key_length,
 		} else if (*reg_key_length == HIMACSEC_REG_KEY_LENGTH_256) {
 			*macsec_key_length = HIMACSEC_KEY_LENGTH_256;
 		} else {
-			// Read the exception value from the register,
-			// request does not return failure, fill in the exception value
+			// Read the exception value from the register, request does not return failure, fill in the exception value
 			*macsec_key_length = 0;
 			pr_err("Parse sa key length failed, reg key length=%d", *reg_key_length);
 		}
 	}
 }
 
-void macsec_adapt_convert_validate_type(u8 *reg_validate_val,
-					enum macsec_validation_type *macsec_validation_val,
-					bool direct)
+void macsec_adapt_convert_validate_type(u8 *reg_validate_val, enum macsec_validation_type *macsec_validation_val,
+	bool direct)
 {
 	if (direct) {
 		// macsec val to reg val
@@ -207,19 +193,21 @@ void macsec_adapt_convert_validate_type(u8 *reg_validate_val,
 
 void macsec_adapt_key_handle(struct macsec_context *ctx, struct himacsec_sa *sa, u32 key_len)
 {
-	memcpy(sa->info.sak, ctx->sa.key, HIMACSEC_MAX_SAK_KEY_LEN);
-	memset(ctx->sa.key, 0, HIMACSEC_MAX_SAK_KEY_LEN);
+	(void)memcpy(sa->info.sak, ctx->sa.key, HIMACSEC_MAX_SAK_KEY_LEN);
+
+	// Clear key information in parameter buf, the kernel passes in temporary variables
+	(void)memset(ctx->sa.key, 0, HIMACSEC_MAX_SAK_KEY_LEN);
 	reverse_u8_array((u8 *)sa->info.sak, ctx->secy->key_len);
 
 	// set 128bit key in high 128bit
 	if (key_len == HIMACSEC_KEY_LENGTH_128) {
-		memcpy(((u8 *)sa->info.sak + HIMACSEC_KEY_LENGTH_128),
-		       sa->info.sak, HIMACSEC_KEY_LENGTH_128);
-		memset(sa->info.sak, 0, HIMACSEC_KEY_LENGTH_128);
+		(void)memcpy(((u8 *)sa->info.sak + HIMACSEC_KEY_LENGTH_128),
+			sa->info.sak, HIMACSEC_KEY_LENGTH_128);
+		(void)memset(sa->info.sak, 0, HIMACSEC_KEY_LENGTH_128);
 	}
 }
 
-/* Algorithm only has AES, length/xpn enable is in secy */
+/* Algorithm is AES only, length/xpn enabled in secy */
 int macsec_adapt_add_tx_sa(struct macsec_context *ctx)
 {
 	struct net_device *netdev = ctx->netdev;
@@ -227,16 +215,18 @@ int macsec_adapt_add_tx_sa(struct macsec_context *ctx)
 	struct hinic5_nic_dev *nic_dev = macsec_get_nic_dev_by_netdev(netdev);
 	int ret;
 
-	if (macsec_secy_features_validate(ctx) != 0)
+	if (macsec_secy_features_validate(ctx) != 0) {
 		return -EINVAL;
+	}
 
 	// Adapt kernel 2 stage commit offload
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
-	if (ctx->prepare != 0)
+	if (ctx->prepare != 0) {
 		return 0;
+	}
 #endif
 
-	if (!nic_dev) {
+	if (nic_dev == NULL) {
 		pr_err("Add protocol encryption sa failed, nic device is NULL");
 		return -ENODEV;
 	}
@@ -260,13 +250,13 @@ int macsec_adapt_add_tx_sa(struct macsec_context *ctx)
 	enc_sa.info.ssci = ntohl(ctx->sa.tx_sa->ssci);
 
 	// Salt value parameter processing
-	memcpy(enc_sa.info.salt, ctx->sa.tx_sa->key.salt.bytes, MACSEC_SALT_LEN);
+	(void)memcpy(enc_sa.info.salt, ctx->sa.tx_sa->key.salt.bytes, MACSEC_SALT_LEN);
 	reverse_u8_array((u8 *)enc_sa.info.salt, MACSEC_SALT_LEN);
 
 	ret = himacsec_create_sa(nic_dev, &enc_sa.info, MACSEC_OUTBOUND);
-	if (ret != 0)
-		macsec_err(nic_dev->lld_dev->dev, "%s: Add protocol encryption sa failed, ret=%d",
-			   netdev->name, ret);
+	if (ret != 0) {
+		macsec_err(nic_dev->lld_dev->dev, "%s: Add protocol encryption sa failed, ret=%d", netdev->name, ret);
+	}
 	return ret;
 }
 
@@ -279,11 +269,12 @@ int macsec_adapt_del_tx_sa(struct macsec_context *ctx)
 	struct hinic5_nic_dev *nic_dev = macsec_get_nic_dev_by_netdev(netdev);
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
-	if (ctx->prepare != 0)
+	if (ctx->prepare != 0) {
 		return 0;
+	}
 #endif
 
-	if (!nic_dev) {
+	if (nic_dev == NULL) {
 		pr_err("Del protocol encryption sa failed, nic device is NULL");
 		return -ENODEV;
 	}
@@ -291,9 +282,9 @@ int macsec_adapt_del_tx_sa(struct macsec_context *ctx)
 	sci = ntohll(ctx->secy->sci);
 	assoc_num = ctx->sa.assoc_num;
 	ret = himacsec_destroy_sa(nic_dev, sci, assoc_num, MACSEC_OUTBOUND);
-	if (ret != 0)
-		macsec_err(nic_dev->lld_dev->dev, "%s: Delete protocol encryption sa failed, ret=%d",
-			   netdev->name, ret);
+	if (ret != 0) {
+		macsec_err(nic_dev->lld_dev->dev, "%s: Delete protocol encryption sa failed, ret=%d", netdev->name, ret);
+	}
 	return ret;
 }
 
@@ -304,15 +295,17 @@ int macsec_adapt_add_rx_sa(struct macsec_context *ctx)
 	struct hinic5_nic_dev *nic_dev = macsec_get_nic_dev_by_netdev(netdev);
 	int ret;
 
-	if (macsec_secy_features_validate(ctx) != 0)
+	if (macsec_secy_features_validate(ctx) != 0) {
 		return -EINVAL;
+	}
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
-	if (ctx->prepare != 0)
+	if (ctx->prepare != 0) {
 		return 0;
+	}
 #endif
 
-	if (!nic_dev) {
+	if (nic_dev == NULL) {
 		pr_err("Add protocol decryption sa failed, macsec device is NULL");
 		return -ENODEV;
 	}
@@ -336,15 +329,15 @@ int macsec_adapt_add_rx_sa(struct macsec_context *ctx)
 
 	// Salt value parameter processing
 	dec_sa.info.ssci = ntohl(ctx->sa.rx_sa->ssci);
-	memcpy(dec_sa.info.salt, ctx->sa.rx_sa->key.salt.bytes, MACSEC_SALT_LEN);
+	(void)memcpy(dec_sa.info.salt, ctx->sa.rx_sa->key.salt.bytes, MACSEC_SALT_LEN);
 	reverse_u8_array((u8 *)dec_sa.info.salt, MACSEC_SALT_LEN);
 
 	/* TODO set lowest_pn */
 
 	ret = himacsec_create_sa(nic_dev, &dec_sa.info, MACSEC_INBOUND);
-	if (ret != 0)
-		macsec_err(nic_dev->lld_dev->dev, "%s: Add protocol decryption sa failed, ret=%d",
-			   netdev->name, ret);
+	if (ret != 0) {
+		macsec_err(nic_dev->lld_dev->dev, "%s: Add protocol decryption sa failed, ret=%d", netdev->name, ret);
+	}
 	return ret;
 }
 
@@ -356,20 +349,21 @@ int macsec_adapt_del_rx_sa(struct macsec_context *ctx)
 	int ret;
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
-	if (ctx->prepare != 0)
+	if (ctx->prepare != 0) {
 		return 0;
+	}
 #endif
 
-	if (!nic_dev) {
+	if (nic_dev == NULL) {
 		pr_err("Del protocol decryption sa failed, nic device is NULL");
 		return -ENODEV;
 	}
 
 	sci = ntohll(ctx->sa.rx_sa->sc->sci);
 	ret = himacsec_destroy_sa(nic_dev, sci, ctx->sa.assoc_num, MACSEC_INBOUND);
-	if (ret != 0)
-		macsec_err(nic_dev->lld_dev->dev, "%s Delete protocol decryption sa failed, ret=%d",
-			   netdev->name, ret);
+	if (ret != 0) {
+		macsec_err(nic_dev->lld_dev->dev, "%s Delete protocol decryption sa failed, ret=%d", netdev->name, ret);
+	}
 	return ret;
 }
 
@@ -380,61 +374,60 @@ int macsec_adapt_add_rx_sc(struct macsec_context *ctx)
 	struct hinic5_nic_dev *nic_dev = macsec_get_nic_dev_by_netdev(netdev);
 	int ret;
 
-	if (macsec_secy_features_validate(ctx) != 0)
+	if (macsec_secy_features_validate(ctx) != 0) {
 		return -EINVAL;
+	}
 
 	// adapt kernel 2 stage commit offload
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
-	if (ctx->prepare != 0)
+	if (ctx->prepare != 0) {
 		return 0;
+	}
 #endif
 
-	if (!nic_dev) {
+	if (nic_dev == NULL) {
 		pr_err("Add protocol decryption sc failed, nic device is NULL");
 		return -ENODEV;
 	}
 
 	dec_sc.info.sci = ntohll(ctx->rx_sc->sci);
-	macsec_adapt_convert_validate_type(&dec_sc.info.validate_frames,
-					   &ctx->secy->validate_frames, true);
+	macsec_adapt_convert_validate_type(&dec_sc.info.validate_frames, &ctx->secy->validate_frames, true);
 
 	ret = himacsec_create_sc(nic_dev, &dec_sc.info, MACSEC_INBOUND);
-	if (ret != 0)
-		macsec_err(nic_dev->lld_dev->dev, "%s: Add protocol decryption sc failed, ret=%d",
-			   netdev->name, ret);
+	if (ret != 0) {
+		macsec_err(nic_dev->lld_dev->dev, "%s: Add protocol decryption sc failed, ret=%d", netdev->name, ret);
+	}
 	return ret;
 }
 
-static int macsec_update_rxsa_by_rxsc(const struct macsec_rx_sc *ctx_rx_sc,
-				      struct hinic5_nic_dev *nic_dev, u64 sci)
+static int macsec_update_rxsa_by_rxsc(const struct macsec_rx_sc *ctx_rx_sc, struct hinic5_nic_dev *nic_dev, u64 sci)
 {
 	const struct macsec_rx_sa *rx_sa = NULL;
 	struct himacsec_sa *dec_sa = NULL;
 	int ret, i;
-
 	for (i = 0; i < MACSEC_NUM_AN; i++) {
 		rx_sa = ctx_rx_sc->sa[i];
-		if (!rx_sa)
+		if (rx_sa == NULL) {
 			continue;
+		}
 
 		dec_sa = himacsec_get_valid_dev_sa(nic_dev, sci, i, MACSEC_INBOUND);
-		if (!dec_sa) {
+		if (dec_sa == NULL) {
 			macsec_err(nic_dev->lld_dev->dev, "Update decryption sc failed, an=%d", i);
 			return -EINVAL;
 		}
 
 		if (ctx_rx_sc->active) {
-			/* rx_sc active, the state of SA is determined
-			 * by the SA state in the standard kernel
-			 */
+			/* rx_sc active, the state of SA is determined by the SA state in the standard kernel */
 			ret = himacsec_sa_active_update(nic_dev, dec_sa, rx_sa->active);
 		} else {
 			/* rx_sc not active, all SA off */
 			ret = himacsec_sa_active_update(nic_dev, dec_sa, (u8)ctx_rx_sc->active);
 		}
 
-		if (ret != 0)
+		if (ret != 0) {
 			return ret;
+		}
 	}
 	return 0;
 }
@@ -448,22 +441,21 @@ int macsec_adapt_update_rx_sc(struct macsec_context *ctx)
 	u64 sci;
 	int ret;
 
-	if (!ctx_rx_sc) {
-		pr_info("%s, nothing changed", __func__);
+	if (ctx_rx_sc == NULL) {
+		pr_info("macsec_adapt_update_rx_sc, nothing changed");
 		return 0;
 	}
 
 	ret = macsec_base_validate(nic_dev, ctx);
 	if (ret != VALIDATE_RET_OK) {
-		pr_err("%s, macsec_base_validate fail", __func__);
+		pr_err("macsec_adapt_update_rx_sc, macsec_base_validate fail");
 		return ret;
 	}
 
 	sci = ntohll(ctx->rx_sc->sci);
 	dec_sc = himacsec_get_valid_dev_sc(nic_dev, sci, MACSEC_INBOUND);
-	if (!dec_sc) {
-		macsec_err(nic_dev->lld_dev->dev, "Update decryption sc failed, not found sc, sci=%llx",
-			   sci);
+	if (dec_sc == NULL) {
+		macsec_err(nic_dev->lld_dev->dev, "Update decryption sc failed, not found sc, sci=%llx", sci);
 		return -EINVAL;
 	}
 
@@ -484,20 +476,21 @@ int macsec_adapt_del_rx_sc(struct macsec_context *ctx)
 
 	// adapt kernel 2 stage commit offload
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
-	if (ctx->prepare != 0)
+	if (ctx->prepare != 0) {
 		return 0;
+	}
 #endif
 
-	if (!nic_dev) {
+	if (nic_dev == NULL) {
 		pr_err("Del protocol decryption sc failed, nic device is NULL");
 		return -ENODEV;
 	}
 
 	sci = ntohll(ctx->rx_sc->sci);
 	ret = himacsec_destroy_sc(nic_dev, sci, MACSEC_INBOUND);
-	if (ret != 0)
-		macsec_err(nic_dev->lld_dev->dev, "%s: Delete protocol decryption sc failed, ret=%d",
-			   netdev->name, ret);
+	if (ret != 0) {
+		macsec_err(nic_dev->lld_dev->dev, "%s: Delete protocol decryption sc failed, ret=%d", netdev->name, ret);
+	}
 	return ret;
 }
 
@@ -509,65 +502,61 @@ int macsec_adapt_add_secy(struct macsec_context *ctx)
 	struct macsec_resource *macsec_res = NULL;
 	int ret;
 
-	if (macsec_secy_features_validate(ctx) != 0)
+	if (macsec_secy_features_validate(ctx) != 0) {
 		return -EINVAL;
+	}
 
 	// adapt kernel 2 stage commit offload
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
-	if (ctx->prepare != 0)
+	if (ctx->prepare != 0) {
 		return 0;
+	}
 #endif
 
-	if (!nic_dev) {
+	if (nic_dev == NULL) {
 		pr_err("Add protocol secy failed, nic device is NULL");
 		return -ENODEV;
 	}
 
 	macsec_res = nic_dev->macsec_res;
-	if (!macsec_res) {
+	if (macsec_res == NULL) {
 		macsec_err(nic_dev->lld_dev->dev, "Add protocol secy failed, macsec resource is NULL");
 		return -ENODEV;
 	}
-	// Save the offloaded vf index
-	if (ctx->secy->netdev)
-		macsec_res->offload_child_dev_idx[macsec_res->offload_dev_num++] =
-									ctx->secy->netdev->ifindex;
+	// Save offloaded vf index
+	if (ctx->secy->netdev != NULL) {
+		macsec_res->offload_child_dev_idx[macsec_res->offload_dev_num++] = ctx->secy->netdev->ifindex;
+	}
 
 	tx_sc.info.sci = ntohll(ctx->secy->sci);
 	tx_sc.info.use_es_enable = ctx->secy->tx_sc.end_station;
 	tx_sc.info.use_scb_enable = ctx->secy->tx_sc.scb;
 	tx_sc.info.include_sci_enable = ctx->secy->tx_sc.send_sci;
-	tx_sc.info.protect_frames = ctx->secy->protect_frames; // Indicates whether to protect
-							       // (verification is also protection)
-	/* 0: integrity only
-	 * 1:confidentiality, cannot configure offset protection
-	 */
-	tx_sc.info.protection_mode = ctx->secy->tx_sc.encrypt;
+	tx_sc.info.protect_frames = ctx->secy->protect_frames; // Indicates whether to protect (verification only is also protection)
+	tx_sc.info.protection_mode = ctx->secy->tx_sc.encrypt; // 0: integrity only 1: confidentiality, cannot configure offset protection
 
 	/* Call service layer */
 	ret = himacsec_create_sc(nic_dev, &tx_sc.info, MACSEC_OUTBOUND);
-	if (ret != 0)
-		macsec_err(nic_dev->lld_dev->dev, "%s: Add protocol encryption sc failed, ret=%d",
-			   netdev->name, ret);
+	if (ret != 0) {
+		macsec_err(nic_dev->lld_dev->dev, "%s: Add protocol encryption sc failed, ret=%d", netdev->name, ret);
+	}
 	return ret;
 }
 
-int macsec_adapt_clean_up_rx_sc(struct net_device *netdev, struct hinic5_nic_dev *nic_dev,
-				struct macsec_context *ctx)
+int macsec_adapt_clean_up_rx_sc(struct net_device *netdev, struct hinic5_nic_dev *nic_dev, struct macsec_context *ctx)
 {
 	struct macsec_rx_sc *rx_sc = NULL;
 	u64 rx_sci;
 	int ret = 0;
 
-	if (!ctx->secy || !ctx->secy->rx_sc) {
-		pr_info("%s: Delete protocol decryption sc skip, decryption sc not exist",
-			netdev->name);
+	if ((ctx->secy == NULL) || (ctx->secy->rx_sc == NULL)) {
+		pr_info("%s: Delete protocol decryption sc skip, decryption sc not exist", netdev->name);
 		return 0;
 	}
 
 	rx_sc = ctx->secy->rx_sc;
-	while (rx_sc) {
-		rx_sci = ntohll(ctx->secy->rx_sc->sci);
+	while (rx_sc != NULL) {
+		rx_sci = ntohll(rx_sc->sci);
 		ret |= himacsec_destroy_sc(nic_dev, rx_sci, MACSEC_INBOUND);
 		if (ret != 0) {
 			macsec_err(nic_dev->lld_dev->dev, "%s: Delete decryption sc failed, sci=%llx, ret=%d",
@@ -587,11 +576,12 @@ int macsec_adapt_del_secy(struct macsec_context *ctx)
 
 	// adapt kernel 2 stage commit offload
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
-	if (ctx->prepare != 0)
+	if (ctx->prepare != 0) {
 		return 0;
+	}
 #endif
 
-	if (!nic_dev) {
+	if (nic_dev == NULL) {
 		pr_err("Delete protocol secy failed, macsec device is NULL");
 		return -ENODEV;
 	}
@@ -606,9 +596,9 @@ int macsec_adapt_del_secy(struct macsec_context *ctx)
 
 	// delete macsec rx config
 	ret = macsec_adapt_clean_up_rx_sc(netdev, nic_dev, ctx);
-	if (ret != 0)
-		macsec_err(nic_dev->lld_dev->dev, "%s: Delete protocol decryption sc failed, ret=%d",
-			   netdev->name, ret);
+	if (ret != 0) {
+		macsec_err(nic_dev->lld_dev->dev, "%s: Delete protocol decryption sc failed, ret=%d", netdev->name, ret);
+	}
 
 	return ret;
 }
@@ -623,20 +613,22 @@ int macsec_adapt_update_tx_sa(struct macsec_context *ctx)
 	int ret;
 	u8 active;
 
-	if (!nic_dev) {
+	if (nic_dev == NULL) {
 		pr_err("Update encryption sa failed, nic device is NULL");
 		return -ENODEV;
 	}
 
 	ret = macsec_sa_update_validate(nic_dev, ctx, &macsec_sa, MACSEC_OUTBOUND, tx_sci);
-	if (ret != VALIDATE_RET_OK)
+	if (ret != VALIDATE_RET_OK) {
 		return ret;
+	}
 
-	// 1. If sa active is the same before and after command, no processing
-	if (macsec_sa->info.enable_transmit == (u8)ctx_tx_sa->active)
+	// 1. sa active is the same before and after the command, no action taken
+	if (macsec_sa->info.enable_transmit == (u8)ctx_tx_sa->active) {
 		return 0;
+	}
 
-	// 2. Changed sa enable config
+	// 2. sa enable configuration changed
 	active = macsec_sa->info.enable_transmit;
 	macsec_sa->info.enable_transmit = (u8)ctx_tx_sa->active;
 	ret = himacsec_cmd_exec_sa_op(nic_dev->lld_dev, &macsec_sa->info, MACSEC_CMD_ENC_SA_UPDATE);
@@ -658,37 +650,40 @@ int macsec_adapt_update_rx_sa(struct macsec_context *ctx)
 	int ret;
 
 	ret = macsec_sa_update_validate(nic_dev, ctx, &macsec_sa, MACSEC_INBOUND, rx_sci);
-	if (ret != VALIDATE_RET_OK)
+	if (ret != VALIDATE_RET_OK) {
 		return ret;
+	}
 
 	return himacsec_sa_active_update(nic_dev, macsec_sa, (u8)ctx_rx_sa->active);
 }
 
-static int macsec_update_txsa_by_txsc(const struct macsec_tx_sc *ctx_tx_sc,
-				      struct hinic5_nic_dev *nic_dev, u64 sci)
+static int macsec_update_txsa_by_txsc(const struct macsec_tx_sc *ctx_tx_sc, struct hinic5_nic_dev *nic_dev, u64 sci)
 {
 	struct macsec_tx_sa *tx_sa = NULL;
 	struct himacsec_sa *enc_sa = NULL;
 	int ret, i;
 
-	// Traverse and update ctx_tx_sa
+	// Iterate and update ctx_tx_sa
 	for (i = 0; i < MACSEC_NUM_AN; i++) {
 		tx_sa = ctx_tx_sc->sa[i];
-		if (!tx_sa)
+		if (tx_sa == NULL) {
 			continue;
+		}
 
 		enc_sa = himacsec_get_valid_dev_sa(nic_dev, sci, i, MACSEC_OUTBOUND);
-		if (!enc_sa) {
+		if (enc_sa == NULL) {
 			macsec_err(nic_dev->lld_dev->dev, "%s, get sa failed, an= %d", __func__, i);
 			return -EINVAL;
 		}
 
-		if (ctx_tx_sc->active)
+		if (ctx_tx_sc->active) {
 			ret = himacsec_sa_active_update(nic_dev, enc_sa, tx_sa->active);
-		else
+		} else {
 			ret = himacsec_sa_active_update(nic_dev, enc_sa, (u8)ctx_tx_sc->active);
-		if (ret != 0)
+		}
+		if (ret != 0) {
 			return ret;
+		}
 	}
 	return 0;
 }
@@ -702,8 +697,8 @@ static int macsec_adapt_update_tx_sc(struct macsec_context *ctx)
 	int ret;
 	u64 sci;
 
-	if (!ctx_tx_sc) {
-		pr_info("%s, nothing changed", __func__);
+	if (ctx_tx_sc == NULL) {
+		pr_info("macsec_adapt_update_tx_sc, nothing changed");
 		return 0;
 	}
 
@@ -715,15 +710,13 @@ static int macsec_adapt_update_tx_sc(struct macsec_context *ctx)
 
 	sci = ntohll(ctx->secy->sci);
 	enc_sc = himacsec_get_valid_dev_sc(nic_dev, sci, MACSEC_OUTBOUND);
-	if (!enc_sc) {
-		macsec_err(nic_dev->lld_dev->dev, "%s, update encryption sc failed, sc not found, sci=0x%llx",
-			   __func__, sci);
+	if (enc_sc == NULL) {
+		macsec_err(nic_dev->lld_dev->dev, "%s, update encryption sc failed, sc not found, sci=0x%llx", __func__, sci);
 		return -EINVAL;
 	}
 
 	if (ctx_tx_sc->encrypt) {
-		macsec_info(nic_dev->lld_dev->dev, "%s, encrypt is true, set protection_mode CONFIDENTIALITY",
-			    __func__);
+		macsec_info(nic_dev->lld_dev->dev, "%s, encrypt is true, set protection_mode CONFIDENTIALITY", __func__);
 		enc_sc->info.protection_mode = PROTECTION_MODE_CONFIDENTIALITY;
 	}
 
@@ -732,16 +725,14 @@ static int macsec_adapt_update_tx_sc(struct macsec_context *ctx)
 		enc_sc->info.encoding_sa = ctx_tx_sc->encoding_sa;
 		ret = himacsec_set_sc(nic_dev, &enc_sc->info, MACSEC_OUTBOUND);
 		if (ret != 0) {
-			macsec_err(nic_dev->lld_dev->dev, "%s, himacsec_set_sc(sci=0x%llx) failed, ret: %d",
-				   __func__, sci, ret);
+			macsec_err(nic_dev->lld_dev->dev, "%s, himacsec_set_sc(sci=0x%llx) failed, ret: %d", __func__, sci, ret);
 			return ret;
 		}
 	}
 
 	ret = macsec_update_txsa_by_txsc(ctx_tx_sc, nic_dev, sci);
 	if (ret != 0) {
-		macsec_err(nic_dev->lld_dev->dev, "%s, update encryption sc failed, ret= %d",
-			   __func__, ret);
+		macsec_err(nic_dev->lld_dev->dev, "%s, update encryption sc failed, ret= %d", __func__, ret);
 		return ret;
 	}
 
@@ -750,21 +741,22 @@ static int macsec_adapt_update_tx_sc(struct macsec_context *ctx)
 
 int macsec_adapt_update_secy(struct macsec_context *ctx)
 {
-	/* Secy involves all sc and sa config, complex flow, not allowed to modify temporarily */
+	/* Secy involves all sc and sa configurations; the flow is complex, modifications are not allowed for now */
 	int ret;
 
-	if (!macsec_secy_features_validate(ctx))
+	if (!macsec_secy_features_validate(ctx)) {
 		return -EINVAL;
+	}
 
 	ret = macsec_adapt_update_tx_sc(ctx);
 	if (ret != 0) {
-		pr_err("%s update tx_sc failed, ret=%d", __func__, ret);
+		pr_err("macsec_adapt_update_secy update tx_sc failed, ret=%d", ret);
 		return ret;
 	}
 
 	ret = macsec_adapt_update_rx_sc(ctx);
 	if (ret != 0) {
-		pr_err("%s update rx_sc failed, ret=%d", __func__, ret);
+		pr_err("macsec_adapt_update_secy update rx_sc failed, ret=%d", ret);
 		return ret;
 	}
 
@@ -797,8 +789,7 @@ void himacsec_offload_init(struct hinic5_nic_dev *nic_dev)
 	struct macsec_resource *macsec_res = nic_dev->macsec_res;
 
 	if (macsec_res->spec.max_sa == 2) { /* 2 SA mode */
-		macsec_info(nic_dev->lld_dev->dev, "%s: Sc mode is 0, do not support offload protocol macsec",
-			    netdev->name);
+		macsec_info(nic_dev->lld_dev->dev, "%s: Sc mode is 0, do not support offload protocol macsec", netdev->name);
 		return;
 	}
 
@@ -810,9 +801,11 @@ bool himacsec_check_offload(u32 ifindex, u32 *offload)
 {
 	u32 i;
 
-	for (i = 0; i < MACSEC_SC_NUM; i++)
-		if (offload[i] == ifindex)
+	for (i = 0; i < MACSEC_SC_NUM; i++) {
+		if (offload[i] == ifindex) {
 			return true;
+		}
+	}
 	return false;
 }
 
@@ -829,70 +822,64 @@ int himacsec_get_offload_idx(u32 ifindex, u32 *offload, u32 *index)
 	return -1;
 }
 
-/* Because vf ifindex is saved as array in himacsec_dev,
- * need to move forward from the currently deleted vf index when deleting
- */
+/* Because himacsec_dev stores vf ifindex in an array, when deleting, elements need to be shifted forward starting from the index of the vf to be deleted */
 int himacsec_dev_del_offload(u32 ifindex, struct macsec_resource *macsec_res)
 {
 	u32 index = 0;
 	int ret = 0;
 
-	if (macsec_res->offload_dev_num == 0)
+	if (macsec_res->offload_dev_num == 0) {
 		return 0;
+	}
 
 	ret = himacsec_get_offload_idx(ifindex, macsec_res->offload_child_dev_idx, &index);
-	if (ret < 0)
+	if (ret < 0) {
 		return ret;
+	}
 
-	for (; index < macsec_res->offload_dev_num - 1; index++)
-		macsec_res->offload_child_dev_idx[index] =
-						macsec_res->offload_child_dev_idx[index + 1];
-	// offload vf count minus 1
+	for (; index < macsec_res->offload_dev_num - 1; index++) {
+		macsec_res->offload_child_dev_idx[index] = macsec_res->offload_child_dev_idx[index + 1];
+	}
+	// offload vf count decremented by 1
 	macsec_res->offload_dev_num--;
 	return ret;
 }
 
-void himacsec_remove_macsec_offload(struct net_device *dev, struct macsec_resource *macsec_res,
-				    struct hinic5_lld_dev *lld_dev)
+void himacsec_remove_macsec_offload(struct net_device *dev, struct macsec_resource *macsec_res, struct hinic5_lld_dev *lld_dev)
 {
 	int ret = 0;
 
 	struct net_device *lower_dev;
 	struct list_head *iter;
-	// Traverse all lower devices
+	// Iterate all lower-level devices
 	rcu_read_lock();
 	netdev_for_each_upper_dev_rcu(dev, lower_dev, iter) {
-		// Check if it is a macsec device
+		// Check whether it is a macsec device
 		if (lower_dev->rtnl_link_ops &&
 		    lower_dev->rtnl_link_ops->kind &&
 		    strcmp(lower_dev->rtnl_link_ops->kind, HIMACSEC_DEV_LINK_KIND) == 0) {
 			macsec_info(lld_dev->dev, "Unregistering macsec offload for dev: %s, lower_dev %s, pf_ifindex: %d, vf_ifindex: %d ",
 				    dev->name, lower_dev->name, dev->ifindex, lower_dev->ifindex);
 
-			// Unregister link, delete vf device
-			if (himacsec_check_offload((u32)lower_dev->ifindex,
-						   macsec_res->offload_child_dev_idx)) {
-				macsec_info(lld_dev->dev, "dev %s is offload , delete link",
-					    lower_dev->name);
+			// Unload link, delete vf device
+			if (himacsec_check_offload((u32)lower_dev->ifindex, macsec_res->offload_child_dev_idx)) {
+				macsec_info(lld_dev->dev, "dev %s is offload , delete link", lower_dev->name);
 				rtnl_lock();
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)) /* LINUX_VERSION_CODE < 6.6.0 */
+				#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)) /* LINUX_VERSION_CODE < 6.6.0 */
 				rtnl_delete_link(lower_dev);
-#else /* LINUX_VERSION_CODE >= 6.6.0 */
+				#else /* LINUX_VERSION_CODE >= 6.6.0 */
 				rtnl_delete_link(lower_dev, 0, NULL);
-#endif
+				#endif
 				rtnl_unlock();
-				// Delete vf_ifindex recorded in offload_child_dev_idx
+				// Delete the vf_ifindex recorded in offload_child_dev_idx
 				ret = himacsec_dev_del_offload(lower_dev->ifindex, macsec_res);
 				if (ret < 0) {
 					macsec_err(lld_dev->dev, "delete child dev index fail: if_index is not in offload list, if_index: %d",
-						   lower_dev->ifindex);
+						lower_dev->ifindex);
 					break;
 				}
-			} else {
-				// Not unregistering link, return directly
-				// (vf link created by stack, no need to delete)
-				macsec_info(lld_dev->dev, "dev %s is not offload , skip delete link",
-					    lower_dev->name);
+			} else { // Non-offloaded link, return directly (vf link created by protocol stack, no need to delete)
+				macsec_info(lld_dev->dev, "dev %s is not offload , skip delete link", lower_dev->name);
 			}
 		} else {
 			macsec_info(lld_dev->dev, "%s is not a macsec device\n", lower_dev->name);
@@ -907,8 +894,9 @@ void himacsec_offload_deinit(struct hinic5_nic_dev *nic_dev)
 	struct net_device *netdev = nic_dev->netdev;
 	struct macsec_resource *macsec_res = nic_dev->macsec_res;
 
-	if (!netdev->macsec_ops)
+	if (netdev->macsec_ops == NULL) {
 		return;
+	}
 
 	netdev->macsec_ops = NULL;
 	netdev->features &= ~NETIF_F_HW_MACSEC;
@@ -920,10 +908,12 @@ void himacsec_offload_deinit(struct hinic5_nic_dev *nic_dev)
 
 void himacsec_offload_init(struct hinic5_nic_dev *nic_dev)
 {
+	return;
 }
 
 void himacsec_offload_deinit(struct hinic5_nic_dev *nic_dev)
 {
+	return;
 }
 
 #endif

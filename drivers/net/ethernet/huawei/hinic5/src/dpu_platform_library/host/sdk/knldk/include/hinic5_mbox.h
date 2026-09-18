@@ -4,8 +4,8 @@
  * File Name     : hinic5_mbox.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 mailbox header file
  */
 
 #ifndef HINIC5_MBOX_H
@@ -303,58 +303,65 @@ void mbox_msg_header_set_last(u64 *header, u16 msg_len, u8 mod,
 #define V0_MOD_ID_MAX 32
 static inline u64 hinic5_mbox_set_msg_len(u8 version, u16 msg_len)
 {
-	if (version != 0)
+	if (version != 0) {
 		return HINIC5_MSG_HEADER_SET_V1(msg_len / MBOX_MSG_LEN_UNIT, MSG_LEN);
-	else
+	} else {
 		return HINIC5_MSG_HEADER_SET_V0(msg_len, MSG_LEN);
+	}
 }
 
 static inline u16 hinic5_mbox_get_msg_len(u8 version, u64 *header)
 {
-	if (version != 0)
+	if (version != 0) {
 		return (u16)(HINIC5_MSG_HEADER_GET_V1(*header, MSG_LEN) * MBOX_MSG_LEN_UNIT);
-	else
+	} else {
 		return HINIC5_MSG_HEADER_GET_V0(*header, MSG_LEN);
+	}
 }
 
 static inline u64 hinic5_mbox_set_seg_len(u8 version, u16 seg_len)
 {
-	if (version != 0)
+	if (version != 0) {
 		return HINIC5_MSG_HEADER_SET_V1(seg_len / MBOX_SEG_LEN_UNIT, SEG_LEN);
-	else
+	} else {
 		return HINIC5_MSG_HEADER_SET_V0(seg_len, SEG_LEN);
+	}
 }
 
 static inline u8 hinic5_mbox_get_seg_len(u8 version, const u64 *header)
 {
-	if (version != 0)
+	if (version != 0) {
 		return (u8)(HINIC5_MSG_HEADER_GET_V1(*header, SEG_LEN) * MBOX_SEG_LEN_UNIT);
-	else
+	} else {
 		return HINIC5_MSG_HEADER_GET_V0(*header, SEG_LEN);
+	}
 }
 
 static inline u64 hinic5_mbox_set_mod_id(u8 version, u8 mod)
 {
-	if (version != 0)
+	if (version != 0) {
 		return HINIC5_MSG_HEADER_SET_V1(mod, MODULE);
-	else
+	} else {
 		return HINIC5_MSG_HEADER_SET_V0(mod, MODULE);
+	}
 }
 
 static inline u8 hinic5_mbox_get_mod_id(u8 version, const u64 *header)
 {
-	if (version != 0)
+	if (version != 0) {
 		return HINIC5_MSG_HEADER_GET_V1(*header, MODULE);
-	else
+	} else {
 		return HINIC5_MSG_HEADER_GET_V0(*header, MODULE);
+	}
 }
 
 static inline u64 hinic5_mbox_set_version(u8 version)
 {
-	if (version != 0)
+	if (version != 0) {
 		return HINIC5_MSG_HEADER_SET(MPU_MAILBOX_HEADER_VER_1, VERSION);
-	else
+	} else {
 		return HINIC5_MSG_HEADER_SET(MPU_MAILBOX_HEADER_VER_0, VERSION);
+	}
 }
 
 static inline u8 hinic5_mbox_get_version(const struct hinic5_hwdev *hwdev, const u64 *header)
@@ -369,16 +376,18 @@ static inline u8 hinic5_mbox_get_version(const struct hinic5_hwdev *hwdev, const
 
 static inline u64 hinic5_mbox_get_seg_len_mask(u8 version)
 {
-	if (version != 0)
+	if (version != 0) {
 		return MBOX_SEGLEN_MASK_V1;
-	else
+	} else {
 		return MBOX_SEGLEN_MASK_V0;
+	}
 }
 
 static inline u8 hinic5_mbox_get_send_version(const struct hinic5_hwdev *hwdev, u8 mod)
 {
-	if (COMM_SUPPORT_MBOX_HEAD_VER1(hwdev) && mod >= V0_MOD_ID_MAX)
+	if (COMM_SUPPORT_MBOX_HEAD_VER1(hwdev) && mod >= V0_MOD_ID_MAX) {
 		return MPU_MAILBOX_HEADER_VER_1;
+	}
 	return MPU_MAILBOX_HEADER_VER_0;
 }
 

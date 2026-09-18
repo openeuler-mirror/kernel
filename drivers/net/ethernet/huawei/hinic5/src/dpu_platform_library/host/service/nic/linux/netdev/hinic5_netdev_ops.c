@@ -4,8 +4,8 @@
  * File Name     : hinic5_netdev_ops.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   : Netdev operations implementation
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 netdev operations implementation
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [NIC]" fmt
@@ -27,9 +27,9 @@
 #endif
 #include "hinic5_hw.h"
 #include "hinic5_crm.h"
-#include "hinic5_vram_common.h"
+#include "vram_common.h"
 #include "nic_cfg_comm.h"
-#include "hinic5_hinic5_vram.h"
+#include "hinic5_vram.h"
 #include "hinic5_nic_io.h"
 #include "hinic5_nic_dev.h"
 #include "hinic5_srv_nic.h"
@@ -67,17 +67,16 @@ static int hinic5_alloc_txrxq_resources(struct hinic5_nic_dev *nic_dev,
 	u32 size;
 	int err;
 	u16 total_num_qps = q_params->num_qps + q_params->xdp_qps;
-
 	size = sizeof(*q_params->txqs_res) * (total_num_qps);
 	q_params->txqs_res = kzalloc(size, GFP_KERNEL);
-	if (!q_params->txqs_res) {
+	if (q_params->txqs_res == NULL) {
 		nicif_err(nic_dev, drv, nic_dev->netdev, "Failed to alloc txqs resources array\n");
 		return -ENOMEM;
 	}
 
 	size = sizeof(*q_params->rxqs_res) * (total_num_qps);
 	q_params->rxqs_res = kzalloc(size, GFP_KERNEL);
-	if (!q_params->rxqs_res) {
+	if (q_params->rxqs_res == NULL) {
 		nicif_err(nic_dev, drv, nic_dev->netdev, "Failed to alloc rxqs resource array\n");
 		err = -ENOMEM;
 		goto alloc_rxqs_res_arr_err;
@@ -85,7 +84,7 @@ static int hinic5_alloc_txrxq_resources(struct hinic5_nic_dev *nic_dev,
 
 	size = sizeof(*q_params->irq_cfg) * (total_num_qps);
 	q_params->irq_cfg = kzalloc(size, GFP_KERNEL);
-	if (!q_params->irq_cfg) {
+	if (q_params->irq_cfg == NULL) {
 		nicif_err(nic_dev, drv, nic_dev->netdev, "Failed to alloc irq resource array\n");
 		err = -ENOMEM;
 		goto alloc_irq_cfg_err;
@@ -149,6 +148,7 @@ static void hinic5_free_txrxq_resources(struct hinic5_nic_dev *nic_dev,
 static void hinic5_remove_configure_txrxqs(struct hinic5_nic_dev *nic_dev)
 {
 	hinic5_remove_configure_rxqs(nic_dev);
+	return;
 }
 
 static int hinic5_configure_txrxqs(struct hinic5_nic_dev *nic_dev,
@@ -156,7 +156,6 @@ static int hinic5_configure_txrxqs(struct hinic5_nic_dev *nic_dev,
 {
 	int err;
 	u16 total_num_qps = q_params->num_qps + q_params->xdp_qps;
-
 	err = hinic5_configure_txqs(nic_dev, total_num_qps,
 				    q_params->sq_depth, q_params->txqs_res);
 	if (err != 0) {
@@ -194,7 +193,7 @@ static void config_dcb_qps_map(struct hinic5_nic_dev *nic_dev)
 			  num_cos, nic_dev->q_params.num_qps);
 		nic_dev->q_params.num_cos = 0;
 		clear_bit(HINIC5_DCB_ENABLE, &nic_dev->flags);
-		clear_bit(HINIC5_DCB_ENABLE, &nic_dev->nic_hinic5_vram->flags);
+		clear_bit(HINIC5_DCB_ENABLE, &nic_dev->nic_vram->flags);
 		/* if we can't enable rss or get enough num_qps,
 		 * need to sync default configure to hw
 		 */
@@ -208,8 +207,7 @@ static int hinic5_configure(struct hinic5_nic_dev *nic_dev)
 {
 	struct net_device *netdev = nic_dev->netdev;
 	int err;
-	int is_in_kexec = hinic5_vram_get_kexec_flag();
-
+	int is_in_kexec = vram5_get_kexec_flag();
 	if (is_in_kexec == 0) {
 		err = hinic5_set_port_mtu(nic_dev->hwdev, (u16)netdev->mtu);
 		if (err != 0) {
@@ -279,7 +277,7 @@ static void config_dcb_num_qps(struct hinic5_nic_dev *nic_dev,
 {
 	u8 num_cos = q_params->num_cos;
 
-	if (num_cos == 0 || num_cos > nic_dev->cos_config_num_max || num_cos > max_qps)
+	if ((num_cos == 0) || num_cos > nic_dev->cos_config_num_max || num_cos > max_qps)
 		return; /* will disable DCB in config_dcb_qps_map() */
 
 	hinic5_update_qp_cos_cfg(nic_dev);
@@ -288,11 +286,9 @@ static void config_dcb_num_qps(struct hinic5_nic_dev *nic_dev,
 int hinic5_set_usr_qps_num(struct net_device *netdev, u16 usr_qps_num)
 {
 	struct hinic5_nic_dev *nic_dev = netdev_priv(netdev);
-
 	if (usr_qps_num + nic_dev->q_params.num_qps > nic_dev->max_qps) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "The usr qps num is too big, usr qps num: %u, knl qps num: %u\n",
-			  usr_qps_num, nic_dev->q_params.num_qps);
+		"The usr qps num is too big, usr qps num: %u, knl qps num: %u\n", usr_qps_num, nic_dev->q_params.num_qps);
 		return -EINVAL;
 	}
 	nic_dev->usr_qps_num = usr_qps_num;
@@ -301,14 +297,14 @@ int hinic5_set_usr_qps_num(struct net_device *netdev, u16 usr_qps_num)
 
 static void hinic5_knl_qps_num_check(struct hinic5_nic_dev *nic_dev)
 {
-	/* nic_dev->usr_qps_num is configured by product side */
-	if (nic_dev->usr_qps_num == 0)
+	/* nic_dev->usr_qps_num is configured by the product side */
+	if (nic_dev->usr_qps_num == 0) {
 		return;
+	}
 	if (nic_dev->usr_qps_num + nic_dev->q_params.num_qps > nic_dev->max_qps) {
 		nic_dev->q_params.num_qps = nic_dev->max_qps - nic_dev->usr_qps_num;
 		nicif_warn(nic_dev, drv, nic_dev->netdev,
-			   "Can not get enough knl qps, adjust kernel qps num to %u\n",
-			   nic_dev->q_params.num_qps);
+			"Can not get enough knl qps, adjust kernel qps num to %u\n", nic_dev->q_params.num_qps);
 	}
 }
 
@@ -318,11 +314,12 @@ static void hinic5_config_num_qps(struct hinic5_nic_dev *nic_dev,
 	u16 alloc_num_irq, cur_num_irq;
 	u16 dst_num_irq;
 
-	/* Validate knl qps based on usr qps */
+	/* Validate knl qps according to usr qps */
 	(void)hinic5_knl_qps_num_check(nic_dev);
 
-	if (test_bit(HINIC5_RSS_ENABLE, &nic_dev->flags) == 0)
+	if (test_bit(HINIC5_RSS_ENABLE, &nic_dev->flags) == 0) {
 		q_params->num_qps = 1;
+	}
 	config_dcb_num_qps(nic_dev, q_params, q_params->num_qps);
 
 	if (nic_dev->num_qp_irq >= q_params->num_qps + q_params->xdp_qps)
@@ -333,7 +330,7 @@ static void hinic5_config_num_qps(struct hinic5_nic_dev *nic_dev,
 	alloc_num_irq = hinic5_qp_irq_change(nic_dev, q_params->num_qps + q_params->xdp_qps);
 	if (alloc_num_irq < q_params->num_qps + q_params->xdp_qps) {
 		if (q_params->xdp_qps != 0) {
-			/* Enabling XDP and the number of XDP and kernel-equalized queues. */
+			/* Enable XDP, XDP and kernel share the queue count equally */
 			q_params->num_qps = alloc_num_irq / XDP_QPS_NUM_EXPANSION;
 			q_params->xdp_qps = alloc_num_irq / XDP_QPS_NUM_EXPANSION;
 		} else {
@@ -367,8 +364,10 @@ static int hinic5_setup_num_qps(struct hinic5_nic_dev *nic_dev)
 		return -EINVAL;
 	}
 	nic_dev->qps_irq_info = kzalloc(irq_size, GFP_KERNEL);
-	if (!nic_dev->qps_irq_info)
+	if (nic_dev->qps_irq_info == NULL) {
+		nicif_err(nic_dev, drv, netdev, "Failed to alloc qps_irq_info\n");
 		return -ENOMEM;
+	}
 
 	hinic5_config_num_qps(nic_dev, &nic_dev->q_params);
 
@@ -392,8 +391,9 @@ int hinic5_set_flow_bifurcation_group_num(struct net_device *netdev, u8 group_nu
 	u8 enable_queue_pooling;
 	struct hinic5_nic_dev *nic_dev = NULL;
 
-	if (!netdev)
+	if (netdev == NULL) {
 		return -ENODEV;
+	}
 
 	nic_dev = netdev_priv(netdev);
 	if (group_num < HINIC5_GROUP_NUMBER_MIN || group_num > HINIC5_GROUP_NUMBER_MAX) {
@@ -412,10 +412,8 @@ int hinic5_set_flow_bifurcation_group_num(struct net_device *netdev, u8 group_nu
 	hinic5_set_queue_pooling(nic_dev->hwdev, enable_queue_pooling);
 
 	if (nic_dev->q_params.num_qps > (nic_dev->max_qps / nic_dev->flow_bifur_group_num)) {
-		nicif_err(nic_dev, drv, netdev,
-			  "The value of qp_nums: %d in use is greater than (max_qps / group_num): %d\n",
-			  nic_dev->q_params.num_qps,
-			  (nic_dev->max_qps / nic_dev->flow_bifur_group_num));
+		nicif_err(nic_dev, drv, netdev, "The value of qp_nums: %d in use is greater than (max_qps / group_num): %d\n",
+			nic_dev->q_params.num_qps, (nic_dev->max_qps / nic_dev->flow_bifur_group_num));
 		return -EINVAL;
 	}
 
@@ -438,18 +436,19 @@ int hinic5_cfg_flow_bifurcation_paras(struct net_device *netdev, u8 op_code,
 	u16 indir_start;
 	struct hinic5_nic_dev *nic_dev = NULL;
 
-	if (!netdev)
+	if (netdev == NULL) {
 		return -ENODEV;
+	}
 
 	nic_dev = netdev_priv(netdev);
-	if (group_id < HINIC5_GROUP_NUMBER_MIN || group_id > nic_dev->flow_bifur_group_num) {
+	if (group_id < HINIC5_GROUP_NUMBER_MIN || group_id >= nic_dev->flow_bifur_group_num) {
 		nicif_err(nic_dev, drv, netdev,
 			  "The group id: %u is invalid, current group num: %u\n",
 			  group_id, nic_dev->flow_bifur_group_num);
 		return -EINVAL;
 	}
 
-	if (!indir) {
+	if (indir == NULL) {
 		nicif_err(nic_dev, drv, netdev, "The indir is NULL\n");
 		return -EINVAL;
 	}
@@ -464,11 +463,11 @@ int hinic5_cfg_flow_bifurcation_paras(struct net_device *netdev, u8 op_code,
 
 	indir_start = group_id * indir_length;
 	if (op_code == 0) {
-		memcpy(indir, nic_dev->rss_indir + indir_start, sizeof(u32) * indir_length);
+		(void)memcpy(indir, nic_dev->rss_indir + indir_start, sizeof(u32) * indir_length);
 		return 0;
 	}
 
-	memcpy(nic_dev->rss_indir + indir_start, indir, sizeof(u32) * indir_length);
+	(void)memcpy(nic_dev->rss_indir + indir_start, indir, sizeof(u32) * indir_length);
 	err = hinic5_rss_set_indir_tbl(nic_dev->hwdev, nic_dev->rss_indir);
 	if (err != 0) {
 		nicif_err(nic_dev, drv, netdev, "Failed to set rss indir table when cfg flow bifur.\n");
@@ -642,8 +641,9 @@ int hinic5_vport_up(struct hinic5_nic_dev *nic_dev)
 	int err;
 
 	err = hinic5_cache_out_qps_res(nic_dev->hwdev);
-	if (err != 0)
+	if (err != 0) {
 		return err;
+	}
 
 	glb_func_id = hinic5_global_func_id(nic_dev->hwdev);
 	err = hinic5_set_vport_enable(nic_dev->hwdev, glb_func_id, true,
@@ -668,14 +668,12 @@ int hinic5_vport_up(struct hinic5_nic_dev *nic_dev)
 		netif_carrier_on(netdev);
 	} else {
 		err = hinic5_get_link_state(nic_dev->hwdev, &link_status);
-		if (err == 0 && link_status != 0)
+		if ((err == 0) && (link_status != 0))
 			netif_carrier_on(netdev);
 	}
 
 	queue_delayed_work(nic_dev->workq, &nic_dev->moderation_task,
 			   HINIC5_MODERATONE_DELAY);
-	if (test_bit(HINIC5_RXQ_RECOVERY, &nic_dev->flags) != 0)
-		queue_delayed_work(nic_dev->workq, &nic_dev->rxq_check_work, HZ);
 
 	hinic5_print_link_message(nic_dev, link_status);
 
@@ -703,8 +701,6 @@ void hinic5_vport_down(struct hinic5_nic_dev *nic_dev)
 	netif_carrier_off(nic_dev->netdev);
 	netif_tx_disable(nic_dev->netdev);
 
-	cancel_delayed_work_sync(&nic_dev->rxq_check_work);
-
 	cancel_delayed_work_sync(&nic_dev->moderation_task);
 
 	if (hinic5_get_chip_present_flag(nic_dev->hwdev) != 0) {
@@ -727,11 +723,11 @@ void hinic5_vport_down(struct hinic5_nic_dev *nic_dev)
 		 */
 		msleep(nic_dev->timeout.wait_flush_qp_res_timeout);
 
-		if (nic_dev->usr_qps_num > 0)
-			hinic5_flush_qps_res_by_nums(nic_dev->hwdev,
-						     nic_dev->max_qps - nic_dev->usr_qps_num);
-		else
+		if (nic_dev->usr_qps_num > 0) {
+			hinic5_flush_qps_res_by_nums(nic_dev->hwdev, nic_dev->max_qps - nic_dev->usr_qps_num);
+		} else {
 			hinic5_flush_qps_res(nic_dev->hwdev);
+		}
 	}
 }
 
@@ -762,8 +758,9 @@ int hinic5_change_channel_settings(struct hinic5_nic_dev *nic_dev,
 					      &nic_dev->q_params);
 	}
 	num_qps = trxq_params->num_qps + trxq_params->xdp_qps;
-	if (nic_dev->num_qp_irq > num_qps)
+	if (nic_dev->num_qp_irq > num_qps) {
 		hinic5_qp_irq_change(nic_dev, num_qps);
+	}
 	nic_dev->q_params = *trxq_params;
 
 	err = hinic5_open_channel(nic_dev, &new_qp_params, trxq_params);
@@ -794,7 +791,7 @@ int hinic5_open(struct net_device *netdev)
 	struct hinic5_dyna_qp_params qp_params = {0};
 	int err;
 
-	err = hinic5_wait_for_devices_flush(NULL, 0, NULL);
+	err = wait5_for_devices_flush(NULL, 0, NULL);
 	if (err != 0)
 		return err;
 
@@ -853,9 +850,7 @@ int hinic5_set_xdp_num(struct hinic5_nic_dev *nic_dev, struct hinic5_dyna_txrxq_
 {
 	if (hinic5_is_xdp_enable(nic_dev)) {
 		trxq_params->xdp_qps = trxq_params->num_qps;
-		/* When XDP is enabled,
-		 * check that kernel queue num plus XDP queue num is less than max queue num
-		 */
+		/* When XDP is enabled, need to check that the sum of kernel queue count and XDP queue count is less than the max queue count */
 		if (trxq_params->num_qps + trxq_params->xdp_qps > nic_dev->max_qps) {
 			nicif_err(nic_dev, drv, nic_dev->netdev, "Failed to change num qps\n");
 			return -EINVAL;
@@ -924,10 +919,10 @@ int hinic5_flush_nic_dev(void *priv_data)
 	int err;
 
 	net_dev = hinic5_get_netdev_by_lld(lld_dev);
-	if (!net_dev)
+	if (net_dev == NULL)
 		return -ENODEV;
 
-	is_in_kexec = hinic5_vram_get_kexec_flag();
+	is_in_kexec = vram5_get_kexec_flag();
 
 	nic_dev = netdev_priv(net_dev);
 
@@ -976,8 +971,7 @@ static u32 calc_toep_rss(const u32 *rss_tuple, u32 len, const u32 *rss_key)
 static u8 parse_ipv6_info(struct sk_buff *skb, u32 *rss_tuple,
 			  u8 hash_engine, u32 *len, unsigned char *l3_hdr)
 {
-	unsigned char *l4_hdr = (skb->encapsulation != 0) ?
-		skb_inner_transport_header(skb) : skb_transport_header(skb);
+	unsigned char *l4_hdr = (skb->encapsulation != 0) ? skb_inner_transport_header(skb) : skb_transport_header(skb);
 	struct ipv6hdr *ipv6hdr = (struct ipv6hdr *)l3_hdr;
 	u32 *saddr = (u32 *)(u8 *)&ipv6hdr->saddr;
 	u32 *daddr = (u32 *)(u8 *)&ipv6hdr->daddr;
@@ -992,8 +986,7 @@ static u8 parse_ipv6_info(struct sk_buff *skb, u32 *rss_tuple,
 	*len = IPV6_ADDR_LEN + IPV6_ADDR_LEN;
 
 	/* IPv6 packets with extension headers(include IPv6 fragment packets)
-	 * re hashed according to L3(s_ip&d_ip), align with ucode RSS.
-	 */
+		are hashed according to L3(s_ip&d_ip), align with ucode RSS. */
 	if ((uintptr_t)l3_hdr + sizeof(*ipv6hdr) == (uintptr_t)l4_hdr)
 		return ipv6hdr->nexthdr;
 	return 0;
@@ -1009,7 +1002,6 @@ static u32 calc_rss_prepare(struct sk_buff *skb, u32 *rss_tuple, struct hinic5_n
 	u8 tunnel_flag = skb->encapsulation;
 	struct nic_rss_type rss_type = nic_dev->rss_type;
 	u8 hash_engine = nic_dev->rss_hash_engine;
-
 	l3_hdr = (tunnel_flag != 0) ? skb_inner_network_header(skb) : skb_network_header(skb);
 	iphdr = (struct iphdr *)l3_hdr;
 
@@ -1017,9 +1009,7 @@ static u32 calc_rss_prepare(struct sk_buff *skb, u32 *rss_tuple, struct hinic5_n
 		rss_tuple[len++] = RSS_VAL(iphdr->daddr, hash_engine);
 		rss_tuple[len++] = RSS_VAL(iphdr->saddr, hash_engine);
 
-		/* IP fragmented packets are hashed according to L3(s_ip&d_ip),
-		 * align with ucode RSS.
-		 */
+		/* IP fragmented packets are hashed according to L3(s_ip&d_ip), align with ucode RSS. */
 		l4_proto = ip_is_fragment(iphdr) ? 0 : iphdr->protocol;
 	} else if (iphdr->version == IPV6_VERSION) {
 		l4_proto = parse_ipv6_info(skb, (u32 *)rss_tuple, hash_engine, &len, l3_hdr);
@@ -1028,13 +1018,12 @@ static u32 calc_rss_prepare(struct sk_buff *skb, u32 *rss_tuple, struct hinic5_n
 	}
 
 	if ((iphdr->version == IPV4_VERSION &&
-	     ((l4_proto == IPPROTO_UDP && rss_type.udp_ipv4 != 0) ||
-	      (l4_proto == IPPROTO_TCP && rss_type.tcp_ipv4 != 0))) ||
-	    (iphdr->version == IPV6_VERSION &&
-	     ((l4_proto == IPPROTO_UDP && rss_type.udp_ipv6 != 0) ||
-		(l4_proto == IPPROTO_TCP && rss_type.tcp_ipv6 != 0)))) {
-		l4_hdr = (tunnel_flag != 0) ?
-			skb_inner_transport_header(skb) : skb_transport_header(skb);
+		((l4_proto == IPPROTO_UDP && (rss_type.udp_ipv4 != 0)) ||
+		(l4_proto == IPPROTO_TCP && (rss_type.tcp_ipv4 != 0)))) ||
+		(iphdr->version == IPV6_VERSION &&
+		((l4_proto == IPPROTO_UDP && (rss_type.udp_ipv6 != 0)) ||
+		(l4_proto == IPPROTO_TCP && (rss_type.tcp_ipv6 != 0))))) {
+		l4_hdr = (tunnel_flag != 0) ? skb_inner_transport_header(skb) : skb_transport_header(skb);
 		/* High 16 bits are dport, low 16 bits are sport. */
 		rss_tuple[len++] = ((u32)ntohs(*((u16 *)l4_hdr + 1U)) << 16) |
 			ntohs(*(u16 *)l4_hdr);
@@ -1066,8 +1055,7 @@ static u16 select_queue_by_hash_func(struct net_device *dev, struct sk_buff *skb
 	iphdr = ip_hdr(skb);
 
 	/* If the tunnel packet has outer IP fragmentation or an IPv6 extension header,
-	 * it should be hashed directly at the L3.
-	 */
+		 it should be hashed directly at the L3. */
 	if (skb->encapsulation != 0) {
 		if (iphdr->version == IPV4_VERSION) {
 			if (ip_is_fragment(iphdr)) {
@@ -1079,8 +1067,7 @@ static u16 select_queue_by_hash_func(struct net_device *dev, struct sk_buff *skb
 			ipv6hdr = ipv6_hdr(skb);
 			saddr = (u32 *)(u8 *)&ipv6hdr->saddr;
 			daddr = (u32 *)(u8 *)&ipv6hdr->daddr;
-			if (skb_network_header(skb) + sizeof(*ipv6hdr) !=
-			    skb_transport_header(skb)) {
+			if (skb_network_header(skb) + sizeof(*ipv6hdr) != skb_transport_header(skb)) {
 				for (len = 0; len < IPV6_ADDR_LEN; len++) {
 					rss_tuple[len] = RSS_VAL(daddr[len], hash_engine);
 					/* The offset of the sport relative to the dport is 4 */
@@ -1095,9 +1082,7 @@ static u16 select_queue_by_hash_func(struct net_device *dev, struct sk_buff *skb
 		}
 	}
 
-	/* Calculate the RSS tuple and length for
-	 * the inner layer of tunnel packets or non-tunnel packets.
-	 */
+	/* Calculate the RSS tuple and length for the inner layer of tunnel packets or non-tunnel packets. */
 	len = calc_rss_prepare(skb, (u32 *)rss_tuple, nic_dev);
 	if (len == 0)
 		return HINIC5_INVALID_QUEUE;
@@ -1243,7 +1228,7 @@ static struct net_device_stats *hinic5_get_stats(struct net_device *netdev)
 	dropped = 0;
 
 	hinic5_get_tx_stats64(nic_dev, &bytes, &packets, &dropped, &start);
-	/* Consistent with 1823V100, PF only to reduce channel pressure */
+	/* Consistent with 1823V100, PF only, to reduce channel pressure */
 	if (!HINIC5_FUNC_IS_VF(nic_dev->hwdev)) {
 		queue_work(nic_dev->workq, &nic_dev->update_stats_work);
 	}
@@ -1322,7 +1307,7 @@ static void hinic5_tx_timeout(struct net_device *netdev)
 		set_bit(EVENT_WORK_TX_TIMEOUT, &nic_dev->event_flag);
 }
 
-__weak int hinic5_change_mtu_pre_hook(struct net_device *netdev, int new_mtu)
+__attribute__((weak)) int hinic5_change_mtu_pre_hook(struct net_device *netdev, int new_mtu)
 {
 	return 0;
 }
@@ -1332,7 +1317,7 @@ static int hinic5_change_mtu(struct net_device *netdev, int new_mtu)
 	struct hinic5_nic_dev *nic_dev = netdev_priv(netdev);
 	u32 mtu = (u32)new_mtu;
 	int err = 0;
-	int is_in_kexec = hinic5_vram_get_kexec_flag();
+	int is_in_kexec = vram5_get_kexec_flag();
 #if defined(HAVE_XDP_SUPPORT) && (defined(HAVE_NDO_BPF) || defined(HAVE_NDO_XDP))
 	u32 xdp_max_mtu;
 #endif
@@ -1367,13 +1352,13 @@ static int hinic5_change_mtu(struct net_device *netdev, int new_mtu)
 		nicif_info(nic_dev, drv, nic_dev->netdev, "Change mtu from %u to %d\n",
 			   netdev->mtu, new_mtu);
 		netdev->mtu = mtu;
-		nic_dev->nic_hinic5_vram->hinic5_vram_mtu = mtu;
+		nic_dev->nic_vram->vram_mtu = mtu;
 	}
 
 	return err;
 }
 
-__weak int hinic5_set_mac_addr_pre_hook(struct net_device *netdev, void *addr)
+__attribute__((weak)) int hinic5_set_mac_addr_pre_hook(struct net_device *netdev, void *addr)
 {
 	return 0;
 }
@@ -1425,14 +1410,12 @@ static int hinic5_udp_tunnel_port_config(struct net_device *netdev,
 	switch (ti->type) {
 	case UDP_TUNNEL_TYPE_VXLAN:
 		dst_port = ntohs(ti->port);
-		ret = hinic5_vxlan_port_config(nic_dev->hwdev, func_id,
-					       dst_port, action, 0);
+		ret = hinic5_vxlan_port_config(nic_dev->hwdev, func_id, dst_port, action, 0);
 		if (ret != 0 && ret != -EOPNOTSUPP) {
 			nicif_warn(nic_dev, drv, netdev, "Setting vxlan port %u to device not supported\n",
-				   dst_port);
+				dst_port);
 			break;
 		}
-		fallthrough;
 	default:
 		ret = -EINVAL;
 	}
@@ -1457,6 +1440,7 @@ static void hinic5_udp_tunnel_del(struct net_device *netdev, struct udp_tunnel_i
 }
 #endif /* HAVE_NDO_UDP_TUNNEL_ADD */
 
+
 #ifdef HAVE_UDP_TUNNEL_NIC_INFO
 int hinic5_udp_tunnel_set_port(struct net_device *netdev, unsigned int table,
 			       unsigned int entry, struct udp_tunnel_info *ti)
@@ -1470,6 +1454,7 @@ int hinic5_udp_tunnel_unset_port(struct net_device *netdev, unsigned int table,
 	return hinic5_udp_tunnel_port_config(netdev, ti, HINIC5_CMD_OP_DEL);
 }
 #endif /* HAVE_UDP_TUNNEL_NIC_INFO */
+
 
 #if (KERNEL_VERSION(3, 3, 0) > LINUX_VERSION_CODE)
 static void
@@ -1876,7 +1861,7 @@ static int set_hw_vf_vlan(void *hwdev, u16 cur_vlanprio, int vf,
 	int err = 0;
 	u16 old_vlan = cur_vlanprio & VLAN_VID_MASK;
 
-	if (vlan != 0 || qos != 0) {
+	if ((vlan != 0) || (qos != 0)) {
 		if (cur_vlanprio != 0) {
 			err = hinic5_kill_vf_vlan(hwdev, OS_VF_ID_TO_HW(vf));
 			if (err != 0)
@@ -1887,8 +1872,9 @@ static int set_hw_vf_vlan(void *hwdev, u16 cur_vlanprio, int vf,
 		err = hinic5_kill_vf_vlan(hwdev, OS_VF_ID_TO_HW(vf));
 	}
 
-	if (err == 0)
+	if (err == 0) {
 		err = hinic5_update_mac_vlan(hwdev, old_vlan, vlan, OS_VF_ID_TO_HW(vf));
+	}
 
 	return err;
 }
@@ -2037,8 +2023,7 @@ static int is_set_vf_bw_param_valid(const struct hinic5_nic_dev *adapter,
 
 	/* verify VF is active */
 	if (vf >= enable_vf_num) {
-		nicif_err(adapter, drv, adapter->netdev,
-			  "VF number must be less than %d\n", enable_vf_num);
+		nicif_err(adapter, drv, adapter->netdev, "VF number must be less than %d\n", enable_vf_num);
 		return -EINVAL;
 	}
 
@@ -2089,7 +2074,7 @@ static int hinic5_ndo_set_vf_bw(struct net_device *netdev, int vf,
 
 	err = hinic5_get_port_info(adapter->hwdev, &port_info,
 				   HINIC5_CHANNEL_NIC);
-	if (err != 0 || port_info.speed >= PORT_SPEED_UNKNOWN)
+	if ((err != 0) || port_info.speed >= PORT_SPEED_UNKNOWN)
 		return -EIO;
 
 	/* rate limit cannot be less than 0 and greater than link speed */
@@ -2112,8 +2097,7 @@ static int hinic5_ndo_set_vf_bw(struct net_device *netdev, int vf,
 
 #ifdef HAVE_NDO_SET_VF_MIN_MAX_TX_RATE
 	nicif_info(adapter, drv, netdev,
-		   "Set VF %d max tx rate %d min tx rate %d successfully\n",
-		   vf, max_tx_rate, min_tx_rate);
+		"Set VF %d max tx rate %d min tx rate %d successfully\n", vf, max_tx_rate, min_tx_rate);
 #else
 	nicif_info(adapter, drv, netdev, "Set VF %d tx rate %d successfully\n", vf, max_tx_rate);
 #endif
@@ -2130,8 +2114,7 @@ bool hinic5_is_xdp_enable(struct hinic5_nic_dev *nic_dev)
 int hinic5_xdp_max_mtu(struct hinic5_nic_dev *nic_dev)
 {
 	/* To Check MTU, support use integreted cqe, XDP_PACKET_HEADROOM and skb_shared_info */
-	return nic_dev->rx_buff_len - (ETH_HLEN + ETH_FCS_LEN +
-	       VLAN_HLEN + VLAN_HLEN) - HINIC5_COMPACT_CQE_16B -
+	return nic_dev->rx_buff_len - (ETH_HLEN + ETH_FCS_LEN + VLAN_HLEN + VLAN_HLEN) - HINIC5_COMPACT_CQE_16B -
 	       XDP_PACKET_HEADROOM - SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
 }
 
@@ -2176,12 +2159,14 @@ static int hinic5_xdp_setup(struct hinic5_nic_dev *nic_dev,
 
 	if (!nic_dev->remove_flag && netif_running(nic_dev->netdev)) {
 		err = hinic5_safe_switch_channels(nic_dev);
-		if (err)
+		if (err) {
 			return err;
+		}
 	}
 
-	for (q_id = 0; q_id < nic_dev->max_qps; q_id++)
+	for (q_id = 0; q_id < nic_dev->max_qps; q_id++) {
 		xchg(&nic_dev->rxqs[q_id].xdp_prog, nic_dev->xdp_prog);
+	}
 
 	return 0;
 }

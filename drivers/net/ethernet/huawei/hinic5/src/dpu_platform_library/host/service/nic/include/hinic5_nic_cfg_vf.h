@@ -4,8 +4,8 @@
  * File Name     : hinic5_nic_cfg_vf.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : hinic5 nic VF configuration definitions
  */
 
 #ifndef HINIC5_NIC_CFG_VF_H

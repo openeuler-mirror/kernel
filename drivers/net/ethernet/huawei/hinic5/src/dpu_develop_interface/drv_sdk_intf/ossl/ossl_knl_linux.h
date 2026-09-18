@@ -4,8 +4,8 @@
  * File Name     : ossl_knl_linux.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Linux kernel compatibility layer for hinic5 driver
  */
 
 #ifndef OSSL_KNL_LINUX_H_
@@ -1562,7 +1562,7 @@ static inline int pci_set_consistent_dma_mask(struct pci_dev *dev, u64 mask)
 /*****************************************************************************/
 #if (KERNEL_VERSION(5, 5, 0) > LINUX_VERSION_CODE)
 #else /* >= 5.5.0 */
-#define HAVE_DEVLINK_FLASH_UPDATE_PARAMS // TODO, legacy, devlink feature macro switch
+#define HAVE_DEVLINK_FLASH_UPDATE_PARAMS // TODO, historical legacy, devlink functional macro switch
 #endif /* 5.5.0 */
 
 /* devlink_alloc */
@@ -1609,7 +1609,7 @@ static inline int pci_set_consistent_dma_mask(struct pci_dev *dev, u64 mask)
 #ifdef NEED_ETH_ZERO_ADDR
 static inline void hinic5_eth_zero_addr(u8 *addr)
 {
-	(void)memset_s(addr, ETH_ALEN, 0x00, ETH_ALEN);
+	(void)memset(addr, 0x00, ETH_ALEN);
 }
 
 #define eth_zero_addr(_addr) hinic5_eth_zero_addr(_addr)
@@ -1625,20 +1625,20 @@ unsigned int cpumask_local_spread(unsigned int i, int node);
 
 #define spin_lock_deinit(lock)	((void)(lock))
 
-struct file *hinic5_file_creat(const char *file_name);
+struct file *file_creat(const char *file_name);
 
-struct file *hinic5_file_open(const char *file_name);
+struct file *file_open(const char *file_name);
 
-void hinic5_file_close(struct file *file_handle);
+void file_close(struct file *file_handle);
 
-u32 hinic5_get_file_size(struct file *file_handle);
+u32 get_file_size(struct file *file_handle);
 
-void hinic5_set_file_position(struct file *file_handle, u32 position);
+void set_file_position(struct file *file_handle, u32 position);
 
-int hinic5_file_read(struct file *file_handle, char *log_buffer, u32 rd_length,
+int file_read(struct file *file_handle, char *log_buffer, u32 rd_length,
 	      u32 *file_pos);
 
-u32 hinic5_file_write(struct file *file_handle, const char *log_buffer, u32 wr_length);
+u32 file_write(struct file *file_handle, const char *log_buffer, u32 wr_length);
 
 struct sdk_thread_info {
 	struct task_struct *thread_obj;
@@ -1648,23 +1648,23 @@ struct sdk_thread_info {
 	void *data;
 };
 
-int hinic5_creat_thread(struct sdk_thread_info *thread_info);
+int creat_thread(struct sdk_thread_info *thread_info);
 
-void hinic5_stop_thread(struct sdk_thread_info *thread_info);
+void stop_thread(struct sdk_thread_info *thread_info);
 
 #define destroy_work(work)
-void hinic5_utctime_to_localtime(u64 utctime, u64 *localtime);
+void utctime_to_localtime(u64 utctime, u64 *localtime);
 
 #ifndef HAVE_TIMER_SETUP
 void initialize_timer(const void *adapter_hdl, struct timer_list *timer);
 #endif
 
-void hinic5_add_to_timer(struct timer_list *timer, u64 period);
-void hinic5_stop_timer(struct timer_list *timer);
-void hinic5_delete_timer(struct timer_list *timer);
-u64 hinic5_ossl_get_real_time(void);
+void add_to_timer(struct timer_list *timer, u64 period);
+void stop_timer(struct timer_list *timer);
+void delete_timer(struct timer_list *timer);
+u64 ossl_get_real_time(void);
 
-/* Does not exist in linux kernel, defined as empty */
+/* Does not exist in the linux kernel, defined as empty */
 #define destroy_completion(completion)
 #define sema_deinit(lock)
 #define mutex_deinit(lock)
@@ -1673,7 +1673,9 @@ u64 hinic5_ossl_get_real_time(void);
 #define tasklet_state(tasklet) ((tasklet)->state)
 
 #ifdef NEED_MATH64_MUL_U64_U64_DIV_U64
-u64 mul_u64_u64_div_u64(u64 a, u64 b, u64 c);
+u64 mul5_u64_u64_div_u64(u64 a, u64 b, u64 c);
+/* mul5_u64_u64_div_u64 macro renamed to mul_u64_u64_div_u64, used for kernel interface compatibility */
+#define mul_u64_u64_div_u64 mul5_u64_u64_div_u64
 #else
 #define HAVE_PTP_INFO_GETTIMEX64
 #endif

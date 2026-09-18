@@ -4,8 +4,8 @@
  * File Name     : hinic5_devlink.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : devlink interface for firmware update and configuration
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [COMM]" fmt
@@ -24,6 +24,7 @@
 #include "fw_typedef.h"
 
 #ifdef HAVE_DEVLINK_FLASH_UPDATE_METHOD
+
 static bool check_image_valid(struct hinic5_hwdev *hwdev, const u8 *buf,
 			      u32 size, struct host_image *host_image)
 {
@@ -44,26 +45,32 @@ static bool check_image_valid(struct hinic5_hwdev *hwdev, const u8 *buf,
 		return false;
 	}
 
+	if (size < FW_IMAGE_HEAD_SIZE) {
+		sdk_err(hwdev->dev_hdl, "Wrong fw size read from file, size: 0x%x\n", size);
+		return false;
+	}
+
 	for (i = 0, n = 0; i < fw_image->fw_info.section_cnt; i++) {
 		if (fw_image->section_info[i].section_type == UP_FW_UPDATE_L0FW) {
 			len += fw_image->section_info[i].section_len;
-			memcpy(&host_image->section_info[n++], &fw_image->section_info[i],
-			       sizeof(struct firmware_section));
+		(void)memcpy(&host_image->section_info[n++], &fw_image->section_info[i],
+		sizeof(struct firmware_section));
 			break;
 		}
 	}
 
 	for (i = 0; i < fw_image->fw_info.section_cnt; i++) {
-		if (fw_image->section_info[i].section_type == UP_FW_UPDATE_L0FW)
+		if (fw_image->section_info[i].section_type == UP_FW_UPDATE_L0FW) {
 			continue;
+		}
 		len += fw_image->section_info[i].section_len;
-		memcpy(&host_image->section_info[n++], &fw_image->section_info[i],
-		       sizeof(struct firmware_section));
+		(void)memcpy(&host_image->section_info[n++], &fw_image->section_info[i],
+		    sizeof(struct firmware_section));
 	}
 
 	if (len != fw_image->fw_len ||
 	    (u32)(fw_image->fw_len + FW_IMAGE_HEAD_SIZE) != size) {
-		sdk_err(hwdev->dev_hdl, "Wrong data size read from file\n");
+		sdk_err(hwdev->dev_hdl, "Wrong data size read from file, len: 0x%x, fw_len: 0x%x\n", len, fw_image->fw_len);
 		return false;
 	}
 
@@ -79,11 +86,11 @@ static bool check_image_device_type(struct hinic5_hwdev *hwdev, u32 device_type)
 {
 	struct comm_cmd_board_info board_info;
 
-	/* Cold upgrade takes firmware type as default value 0 */
+	/* For cold update, the firmware type is the default value 0 */
 	if (device_type == FW_DEFAULT_TYPE_COLD_UPDATE)
 		return true;
 
-	memset(&board_info, 0, sizeof(board_info));
+	(void)memset(&board_info, 0, sizeof(board_info));
 	if (hinic5_get_board_info(hwdev, &board_info.info, HINIC5_CHANNEL_COMM) != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to get board info\n");
 		return false;
@@ -98,27 +105,27 @@ static bool check_image_device_type(struct hinic5_hwdev *hwdev, u32 device_type)
 	return false;
 }
 
-static void encapsulate_update_cmd(struct hinic5_cmd_update_firmware *msg,
+static void encapsulate_update_cmd(struct cmd_update_fw *msg,
 				   struct firmware_section *section_info,
-				   const int *remain_len, u32 *send_len, const u32 *send_pos)
+				   const u32 *remain_len, u32 *send_len, const u32 *send_pos)
 {
-	memset(msg->data, 0, sizeof(msg->data));
-	msg->ctl_info.sf = (*remain_len == section_info->section_len) ? true : false;
-	msg->section_info.section_crc = section_info->section_crc;
-	msg->section_info.section_type = section_info->section_type;
-	msg->section_version = section_info->section_version;
-	msg->section_len = section_info->section_len;
-	msg->section_offset = *send_pos;
-	msg->ctl_info.bit_signed = section_info->section_flag & 0x1;
+	(void)memset(msg->data, 0, sizeof(msg->data));
+	msg->first_slice = (*remain_len == section_info->section_len) ? 1 : 0;
+	msg->fw_crc = section_info->section_crc;
+	msg->fw_type = section_info->section_type;
+	msg->fw_verion = section_info->section_version;
+	msg->bin_section_len = section_info->section_len;
+	msg->fw_offset = *send_pos;
+	msg->is_signed = section_info->section_flag & 0x1;
 
-	if (*remain_len <= FW_FRAGMENT_MAX_LEN) {
-		msg->ctl_info.sl = true;
-		msg->ctl_info.fragment_len = (u32)(*remain_len);
-		*send_len += section_info->section_len;
+	if (*remain_len <= sizeof(msg->data)) {
+		msg->last_slice = 1;
+		msg->slice_len = *remain_len;
+		*send_len += *remain_len;
 	} else {
-		msg->ctl_info.sl = false;
-		msg->ctl_info.fragment_len = FW_FRAGMENT_MAX_LEN;
-		*send_len += FW_FRAGMENT_MAX_LEN;
+		msg->last_slice = 0;
+		msg->slice_len = sizeof(msg->data);
+		*send_len += sizeof(msg->data);
 	}
 }
 
@@ -126,27 +133,30 @@ static int hinic5_flash_firmware(struct hinic5_hwdev *hwdev, const u8 *data,
 				 struct host_image *image)
 {
 	u32 send_pos, send_len, section_offset, i;
-	struct hinic5_cmd_update_firmware *update_msg = NULL;
-	u16 out_size = sizeof(*update_msg);
+	struct cmd_update_fw *update_msg = NULL;
+	u16 out_size;
 	bool total_flag = false;
-	int remain_len, err;
+	u32 remain_len;
+	int err;
 
 	update_msg = kzalloc(sizeof(*update_msg), GFP_KERNEL);
-	if (!update_msg)
+	if (!update_msg) {
+		sdk_err(hwdev->dev_hdl, "Failed to alloc update message\n");
 		return -ENOMEM;
+	}
 
 	for (i =  0; i < image->type_num; i++) {
 		section_offset = image->section_info[i].section_offset;
-		remain_len = (int)(image->section_info[i].section_len);
+		remain_len = (image->section_info[i].section_len);
 		send_len = 0;
 		send_pos = 0;
 
 		while (remain_len > 0) {
 			if (!total_flag) {
-				update_msg->total_len = image->image_info.total_len;
+				update_msg->bin_total_len = image->image_info.total_len;
 				total_flag = true;
 			} else {
-				update_msg->total_len = 0;
+				update_msg->bin_total_len = 0;
 			}
 
 			encapsulate_update_cmd(update_msg, &image->section_info[i],
@@ -154,25 +164,21 @@ static int hinic5_flash_firmware(struct hinic5_hwdev *hwdev, const u8 *data,
 
 			memcpy(update_msg->data,
 			       ((data + FW_IMAGE_HEAD_SIZE) + section_offset) + send_pos,
-			       update_msg->ctl_info.fragment_len);
+			       update_msg->slice_len);
 
-			err = hinic5_msg_to_mgmt_sync(hwdev, HINIC5_MOD_COMM,
-						      COMM_MGMT_CMD_UPDATE_FW,
-						      update_msg, sizeof(*update_msg),
-						      update_msg, &out_size,
-						      FW_UPDATE_MGMT_TIMEOUT, 0);
-			if (err != 0 || out_size == 0 || update_msg->msg_head.status != 0) {
-				sdk_err(hwdev->dev_hdl, "Failed to update firmware, err: %d, \
-					status: 0x%x, out size: 0x%x\n",
-					err, update_msg->msg_head.status, out_size);
-				err = (update_msg->msg_head.status != 0) ?
-				      update_msg->msg_head.status : -EIO;
+			out_size = sizeof(*update_msg);
+			err = hinic5_msg_to_mgmt_sync(hwdev, HINIC5_MOD_COMM, COMM_MGMT_CMD_UPDATE_FW,
+						     update_msg, sizeof(*update_msg), update_msg, &out_size, FW_UPDATE_MGMT_TIMEOUT, 0);
+			if ((err != 0) || (out_size == 0) || (update_msg->head.status != 0)) {
+				sdk_err(hwdev->dev_hdl, "Failed to update firmware, err: %d, status: 0x%x, out size: 0x%x\n",
+					err, update_msg->head.status, out_size);
+				err = (update_msg->head.status != 0) ? update_msg->head.status : -EIO;
 				kfree(update_msg);
 				return err;
 			}
 
 			send_pos = send_len;
-			remain_len = (int)(image->section_info[i].section_len - send_len);
+			remain_len = image->section_info[i].section_len - send_len;
 		}
 	}
 
@@ -201,13 +207,11 @@ static int hinic5_flash_update_notify(struct devlink *devlink, const struct firm
 	} else {
 		err = hinic5_activate_firmware(hwdev, 0);
 		if (err != 0) {
-			sdk_err(hwdev->dev_hdl, " Failed to activate firmware, err: %d\n", err);
-			devlink_flash_update_status_notify(devlink,
-							   "Activate firmware failed", NULL, 0, 0);
+			sdk_err(hwdev->dev_hdl, " Faild to activate firmware, err: %d\n", err);
+			devlink_flash_update_status_notify(devlink, "Activate firmware failed", NULL, 0, 0);
 		} else {
 			sdk_info(hwdev->dev_hdl, "Flash firmware end\n");
-			devlink_flash_update_status_notify(devlink,
-							   "Flash firmware end", NULL, 0, 0);
+			devlink_flash_update_status_notify(devlink, "Flash firmware end", NULL, 0, 0);
 		}
 	}
 #ifdef HAVE_DEVLINK_FLASH_UPDATE_BEGIN_END_NOTIFY
@@ -235,7 +239,6 @@ static int hinic5_devlink_flash_update(struct devlink *devlink, const char *file
 #endif
 	struct host_image *image = NULL;
 	int err;
-
 	image = kzalloc(sizeof(*image), GFP_KERNEL);
 	if (!image) {
 		sdk_err(hwdev->dev_hdl, "Failed to alloc host image\n");
@@ -248,7 +251,7 @@ static int hinic5_devlink_flash_update(struct devlink *devlink, const char *file
 #ifdef HAVE_DEVLINK_FLASH_UPDATE_PARAMS_FILE_NAME
 	err = request_firmware_direct(&fw, params->file_name, hwdev->dev_hdl);
 #else
-	// This scenario theoretically does not exist
+	// This scenario should not exist in theory
 	kfree(image);
 	err = -EINVAL;
 	goto devlink_param_reset;
@@ -481,6 +484,7 @@ register_devlink_params_err:
 
 register_devlink_err:
 	devlink_free(devlink);
+	hwdev->devlink_dev = NULL;
 
 	return -EFAULT;
 }
@@ -494,5 +498,6 @@ void hinic5_uninit_devlink(struct hinic5_hwdev *hwdev)
 				  ARRAY_SIZE(hinic5_devlink_params));
 	devlink_unregister(devlink);
 	devlink_free(devlink);
+	hwdev->devlink_dev = NULL;
 }
 #endif

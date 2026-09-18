@@ -4,8 +4,12 @@
  * File Name     : nic_mpu_cmd_extend.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   : This file is used to consolidate command codes from other product lines merged into Yinglong
+ * Last Modified : 2026/09/16
+ * Description   : NIC MPU command extensions
+ */
+
+/**
+ * This file is used to consolidate command words from other product lines into the Yinglong repository
  */
 
 #ifndef HINIC5_NIC_CMD_EXTEND_H

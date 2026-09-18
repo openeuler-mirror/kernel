@@ -4,7 +4,7 @@
  * File Name     : mpu_cmd_base_defs.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
+ * Last Modified : 2026/09/16
  * Description   : MPU common definitions
  */
 #ifndef MPU_CMD_BASE_DEFS_H
@@ -13,42 +13,38 @@
 #include "base_type.h"
 
 typedef enum {
-	RES_TYPE_FLUSH_BIT = 0, /* flush function reset flag bit */
-	RES_TYPE_MQM, /* mqm function reset flag bit */
-	RES_TYPE_SMF, /* smf function reset flag bit */
-	RES_TYPE_PF_BW_CFG, /* bandwidth configuration function reset flag bit */
+	RES_TYPE_FLUSH_BIT = 0, /**< function reset flag bit for flush */
+	RES_TYPE_MQM, /**< function reset flag bit for mqm */
+	RES_TYPE_SMF, /**< function reset flag bit for smf */
+	RES_TYPE_PF_BW_CFG, /**< function reset flag bit for bw configuration */
 
-	RES_TYPE_COMM = 10, /* common function reset flag bit */
-	RES_TYPE_COMM_MGMT_CH,  /* bandwidth configuration function reset flag bit,
-				 * clear mbox and aeq, The RES_TYPE_COMM bit must be set
-				 */
-	RES_TYPE_COMM_CMD_CH,   /* bandwidth configuration function reset flag bit,
-				 * clear cmdq and ceq, The RES_TYPE_COMM bit must be set
-				 */
-	RES_TYPE_NIC, /* nic function reset flag bit */
-	RES_TYPE_OVS, /* ovs function reset flag bit */
-	RES_TYPE_VBS, /* vbs function reset flag bit */
-	RES_TYPE_ROCE, /* roce function reset flag bit */
-	RES_TYPE_FC, /* fc function reset flag bit */
-	RES_TYPE_TOE, /* toe function reset flag bit */
-	RES_TYPE_IPSEC, /* ipsec function reset flag bit */
-	RES_TYPE_SMF_CACHE_INVALID, /* smf cache invalid function reset flag bit */
-	RES_TYPE_MAX, /* maximum function reset flag bit value */
-} func_reset_flag_e; /* function reset flag, used to indicate which resource to clear */
+	RES_TYPE_COMM = 10, /**< common function reset flag bit */
+	RES_TYPE_COMM_MGMT_CH,  /**< function reset flag bit for bw configuration, clear mbox and aeq, The RES_TYPE_COMM bit must be set */
+	RES_TYPE_COMM_CMD_CH,   /**< function reset flag bit for bw configuration, clear cmdq and ceq, The RES_TYPE_COMM bit must be set */
+	RES_TYPE_NIC, /**< function reset flag bit for nic */
+	RES_TYPE_OVS, /**< function reset flag bit for ovs */
+	RES_TYPE_VBS, /**< function reset flag bit for vbs */
+	RES_TYPE_ROCE, /**< function reset flag bit for roce */
+	RES_TYPE_FC, /**< function reset flag bit for fc */
+	RES_TYPE_TOE, /**< function reset flag bit for toe */
+	RES_TYPE_IPSEC, /**< function reset flag bit for ipsec */
+	RES_TYPE_SMF_CACHE_INVALID, /**< function reset flag bit for smf cache invalid */
+	RES_TYPE_MAX, /**< maximum value of function reset flag bit */
+} func_reset_flag_e; /**< func reset flag, used to indicate which resource to clear */
 
-#define DEVICE_TYPE_L2NIC                   0 /* L2NIC device */
-#define DEVICE_TYPE_NVME                    1 /* nvme device */
-#define DEVICE_TYPE_VIRTIO_NET              2 /* virtio net device */
-#define DEVICE_TYPE_VIRTIO_BLK              3 /* virtio blk device */
-#define DEVICE_TYPE_VIRTIO_VSOCK            4 /* virtio vsock device */
-#define DEVICE_TYPE_VIRTIO_NET_TRANSITION   5 /* virtio net transition device */
-#define DEVICE_TYPE_VIRTIO_BLK_TRANSITION   6 /* virtio blk transition device */
-#define DEVICE_TYPE_VIRTIO_SCSI_TRANSITION  7 /* virtio scsi transition device */
-#define DEVICE_TYPE_VIRTIO_HPC              8 /* virtio nhpc device */
-#define DEVICE_TYPE_VIRTIO_FS               9 /* virtio fs device */
+#define DEVICE_TYPE_L2NIC                   0 /**< L2NIC device */
+#define DEVICE_TYPE_NVME                    1 /**< nvme device */
+#define DEVICE_TYPE_VIRTIO_NET              2 /**< virtio net device */
+#define DEVICE_TYPE_VIRTIO_BLK              3 /**< virtio blk device */
+#define DEVICE_TYPE_VIRTIO_VSOCK            4 /**< virtio vsock device */
+#define DEVICE_TYPE_VIRTIO_NET_TRANSITION   5 /**< virtio net transition device */
+#define DEVICE_TYPE_VIRTIO_BLK_TRANSITION   6 /**< virtio blk  transition device */
+#define DEVICE_TYPE_VIRTIO_SCSI_TRANSITION  7 /**< virtio scsi transition device */
+#define DEVICE_TYPE_VIRTIO_HPC              8 /**< virtio nhpc device */
+#define DEVICE_TYPE_VIRTIO_FS               9 /**< virtio fs device */
 
 /**
- * @brief Check if device is virtio net device
+ * @brief Determine whether it is a virtio net device
  * @param device: device type
  * @return true or false
  */
@@ -56,7 +52,7 @@ typedef enum {
 	(((device) == DEVICE_TYPE_VIRTIO_NET) || ((device) == DEVICE_TYPE_VIRTIO_NET_TRANSITION))
 
 /**
- * @brief Check if device is virtio blk device
+ * @brief Determine whether it is a virtio blk device
  * @param device: device type
  * @return true or false
  */
@@ -64,7 +60,7 @@ typedef enum {
 	(((device) == DEVICE_TYPE_VIRTIO_BLK) || ((device) == DEVICE_TYPE_VIRTIO_BLK_TRANSITION))
 
 /**
- * @brief Check if device is virtio scsi device
+ * @brief Determine whether it is a virtio scsi device
  * @param device: device type
  * @return true or false
  */
@@ -72,7 +68,7 @@ typedef enum {
 	((device) == DEVICE_TYPE_VIRTIO_SCSI_TRANSITION)
 
 /**
- * @brief Check if device is virtio storage device
+ * @brief Determine whether it is a virtio storage device
  * @param device: device type
  * @return true or false
  */
@@ -80,13 +76,12 @@ typedef enum {
 	(MPU_DEVICE_IS_VIRTIO_BLK(device) || MPU_DEVICE_IS_VIRTIO_SCSI(device))
 
 /**
- * @brief Check if device is virtio device
+ * @brief Determine whether it is a virtio device
  * @param device: device type
  * @return true or false
  */
 #define MPU_DEVICE_IS_VIRTIO(device) \
-	(MPU_DEVICE_IS_VIRTIO_NET(device) || MPU_DEVICE_IS_VIRTIO_BLK(device) || \
-	 MPU_DEVICE_IS_VIRTIO_SCSI(device))
+	(MPU_DEVICE_IS_VIRTIO_NET(device) || MPU_DEVICE_IS_VIRTIO_BLK(device) || MPU_DEVICE_IS_VIRTIO_SCSI(device))
 
 enum hinic5_svc_type {
 	SVC_T_COMM = 0,
@@ -104,43 +99,41 @@ enum hinic5_svc_type {
 	SVC_T_MAX,
 };
 
-#define MGMT_MSG_CMD_OP_SET	1 /* Set command */
-#define MGMT_MSG_CMD_OP_GET	0 /* Get command */
-#define MGMT_MSG_CMD_OP_START	1 /* Start command */
-#define MGMT_MSG_CMD_OP_STOP	0 /* Stop command */
+#define MGMT_MSG_CMD_OP_SET	1 /**< Set command */
+#define MGMT_MSG_CMD_OP_GET	0 /**< Get command */
+#define MGMT_MSG_CMD_OP_START	1 /**< Start command */
+#define MGMT_MSG_CMD_OP_STOP	0 /**< Stop command */
 
-/* Get die id, input parameter is mgmt_msg_head structure */
-#define MGMT_GET_DIE_ID(msg_head) \
-		(((msg_head)->die_id_valid != 0) ? (msg_head)->die_id : 0)
+#define MGMT_GET_DIE_ID(msg_head) (((msg_head)->die_id_valid != 0) ? (msg_head)->die_id : 0) /**< Get die id, input parameter is mgmt_msg_head struct */
 
 struct mgmt_msg_head {
-	u8 status; /* Response message return value */
-	u8 version; /* Message version number */
-	u8 rep_aeq_num; /* response aeq number, unused for now */
-	u8 rsvd0; /* Reserved field */
-	u8 die_id_valid : 1; /* Dual die selection valid bit (tool command selects primary/secondary die) */
-	u8 die_id : 1; /* When die_id_valid is valid: die_id:0, primary die; die_id:1, secondary die */
-	u8 rsvd1 : 6; /* Reserved field */
-	u8 rsvd2[3]; /* Reserved field */
+	u8 status; /**< Return value of response message */
+	u8 version; /**< Message version number */
+	u8 rep_aeq_num; /**< response aeq number, unused for now */
+	u8 rsvd0; /**< Reserved field */
+	u8 die_id_valid : 1; /**< Dual-die selection valid bit (tool command selects master/slave die) */
+	u8 die_id : 1; /**< When die_id_valid is valid, die_id:0 master die  die_id:1 slave die */
+	u8 rsvd1 : 6; /**< Reserved field */
+	u8 rsvd2[3]; /**< Reserved field */
 };
 
 enum hinic5_fw_ver_type {
-	HINIC5_FW_VER_TYPE_BOOT, /* BOOT firmware */
-	HINIC5_FW_VER_TYPE_MPU, /* MPU firmware */
-	HINIC5_FW_VER_TYPE_NPU, /* NPU firmware */
-	HINIC5_FW_VER_TYPE_SMU_L0, /* SMU L0 firmware */
-	HINIC5_FW_VER_TYPE_SMU_L1, /* SMU L1 firmware */
-	HINIC5_FW_VER_TYPE_CFG, /* SMU configuration firmware */
-	HINIC5_FW_VER_TYPE_PLATFORM,  /* Basic platform */
-	HINIC5_FW_VER_TYPE_ROCE_SCC, /* roce scc firmware */
-	HINIC5_FW_VER_TYPE_ROCE_SCC_CS, /* roce scc customer firmware */
-	HINIC5_FW_VER_TYPE_ROCE_IMP, /* roce imp firmware */
-	HINIC5_FW_VER_TYPE_UBC_IMP, /* ubc imp firmware */
-	HINIC5_FW_VER_TYPE_IMP, /* imp firmware */
-	HINIC5_FW_VER_TYPE_PSM, /* PSM firmware */
-	HINIC5_FW_VER_TYPE_UBG_IMP, /* ubg imp firmware */
-	HINIC5_FW_VER_TYPE_UB_SCC, /* ub scc firmware */
-	HINIC5_FW_VER_TYPE_GRAY_NPU = 100, /* Gray card NPU firmware */
+	HINIC5_FW_VER_TYPE_BOOT, /**< BOOT firmware */
+	HINIC5_FW_VER_TYPE_MPU, /**< MPU firmware */
+	HINIC5_FW_VER_TYPE_NPU, /**< NPU firmware */
+	HINIC5_FW_VER_TYPE_SMU_L0, /**< SMU L0 firmware */
+	HINIC5_FW_VER_TYPE_SMU_L1, /**< SMU L1 firmware */
+	HINIC5_FW_VER_TYPE_CFG, /**< SMU configuration firmware */
+	HINIC5_FW_VER_TYPE_PLATFORM,  /**< Base platform */
+	HINIC5_FW_VER_TYPE_ROCE_SCC, /**< roce scc firmware */
+	HINIC5_FW_VER_TYPE_ROCE_SCC_CS, /**< roce scc customer firmware */
+	HINIC5_FW_VER_TYPE_ROCE_IMP, /**< roce imp firmware */
+	HINIC5_FW_VER_TYPE_UBC_IMP, /**< ubc imp firmware */
+	HINIC5_FW_VER_TYPE_IMP, /**< imp firmware */
+	HINIC5_FW_VER_TYPE_PSM, /**< PSM firmware */
+	HINIC5_FW_VER_TYPE_UBG_IMP, /**< ubg imp firmware */
+	HINIC5_FW_VER_TYPE_UB_SCC, /**< ub scc firmware */
+	HINIC5_FW_VER_TYPE_GRAY_NPU = 100, /**< Gray card NPU firmware */
 };
 
 #define PCIE_MODE_PORT_NUM 32
@@ -162,11 +155,11 @@ enum hinic5_fw_ver_type {
 #define PCIE_MODE_ALL_PORT_MAP 0x1111
 
 /**
- * @brief enum bus_type_e - Host side bus type
- * @details Used to distinguish different bus types on host side
+ * @brief enum bus_type_e - host-side bus type
+ * @details Used to distinguish different host-side bus types
  */
 typedef enum {
-	BUS_TYPE_PCIE = 0,      /**< pcie bus */
+	BUS_TYPE_PCIE = 0,      /**< PCIe bus */
 	BUS_TYPE_UBC = 1,       /**< ubc bus */
 } bus_type_e;
 
