@@ -242,7 +242,8 @@ struct ubase_ctrlq_ring {
 struct ubase_ctrlq_msg_ctx {
 	u8	valid : 1;
 	u8	is_sync : 1;
-	u8	rsv0 : 6;
+	u8	resp_done : 1;
+	u8	rsv0 : 5;
 	u8	mbx_ue_id;
 	u8	result;
 	u8	rsv1;
