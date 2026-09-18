@@ -4,8 +4,8 @@
  * File Name     : hinic5_netdev_ops.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 netdev operations header file
  */
 
 #ifndef HINIC5_NETDEV_OPS_H

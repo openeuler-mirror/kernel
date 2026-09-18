@@ -4,8 +4,8 @@
  * File Name     : hinic5_mt.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 MT (Management/Maintenance) interface definitions
  */
 
 #ifndef HINIC5_MT_H
@@ -14,7 +14,7 @@
 #include <linux/types.h>
 
 #ifdef __HIFC__     /**< If __HIFC__ macro is defined */
-#define HINIC5_DRV_NAME "hifc3"     /**< Define driver name as hifc3 */
+#define HINIC5_DRV_NAME "hifc5"     /**< Define driver name as hifc5 */
 #define HINIC5_CHIP_NAME "hifc"     /**< Define chip name as hifc */
 #else               /**< If __HIFC__ macro is not defined */
 #define HINIC5_DRV_NAME "hisdk5"    /**< Define driver name as hisdk5 */
@@ -26,33 +26,33 @@
 
 /**
  * @brief struct api_cmd_rd
- * @details Structure for receiving API commands
+ * @details Struct for receiving API commands
  */
 struct api_cmd_rd {
 	u32 pf_id;      /**< pf id */
 	u8 dest;        /**< node id */
 	u8 *cmd;        /**< Pointer to API command */
-	u16 size;       /**< Command size */
+	u16 size;       /**< Indicates command size */
 	void *ack;      /**< Pointer to command acknowledgment information */
-	u16 ack_size;   /**< Acknowledgment information size */
+	u16 ack_size;   /**< Indicates acknowledgment information size */
 };
 
 /**
  * @brief struct api_cmd_wr
- * @details Structure for API command write operation
+ * @details Struct for API command write operations
  */
 struct api_cmd_wr {
 	u32 pf_id;      /**< pf id */
 	u8 dest;        /**< node id */
 	u8 *cmd;        /**< Pointer to API command */
-	u16 size;       /**< Command size */
+	u16 size;       /**< Indicates command size */
 };
 
 #define PF_DEV_INFO_NUM  32
 
 /**
  * @brief struct pf_dev_info
- * @details Structure for storing PCI device information
+ * @details Struct storing PCI device information
  */
 struct pf_dev_info {
 	u64 bar0_size;     /**< bar0 size */
@@ -70,19 +70,19 @@ struct pf_dev_info {
 
 /**
  * @brief struct ffm_intr_info
- * @details Structure for storing interrupt information
+ * @details Struct storing interrupt information
  */
 struct ffm_intr_info {
-	u8 node_id;         /**< Interrupt source node ID */
-	u8 err_level;       /**< Interrupt source error level */
-	u16 err_type;       /**< Interrupt source error type */
-	u32 err_csr_addr;   /**< Interrupt source address */
-	u32 err_csr_value;  /**< Interrupt source value */
+	u8 node_id;         /**< Node ID of interrupt source */
+	u8 err_level;       /**< Error level of interrupt source */
+	u16 err_type;       /**< Error type of interrupt source */
+	u32 err_csr_addr;   /**< Address of interrupt source */
+	u32 err_csr_value;  /**< Value of interrupt source */
 };
 
 /**
  * @brief struct ffm_intr_tm_info
- * @details Structure for storing interrupt and time information
+ * @details Struct storing interrupt information and time information
  */
 struct ffm_intr_tm_info {
 	struct ffm_intr_info intr_info; /**< Interrupt information */
@@ -90,14 +90,14 @@ struct ffm_intr_tm_info {
 	u8 sec;         /**< Second */
 	u8 min;         /**< Minute */
 	u8 hour;        /**< Hour */
-	u8 mday;        /**< Day of month */
+	u8 mday;        /**< Day */
 	u8 mon;         /**< Month */
 	u16 year;       /**< Year */
 };
 
 /**
  * @brief struct ffm_record_info
- * @details Structure for storing FFM record information
+ * @details Struct for storing FFM record information
  */
 struct ffm_record_info {
 	u32 ffm_num;            /**< FFM number */
@@ -108,16 +108,16 @@ struct ffm_record_info {
 
 /**
  * @brief struct dbgtool_k_glb_info
- * @details Structure for storing debug tool global information
+ * @details Struct storing global information of debug tool
  */
 struct dbgtool_k_glb_info {
-	struct semaphore dbgtool_sem;   /**< Semaphore for synchronizing debug tool threads */
-	struct ffm_record_info *ffm;    /**< FFM record information */
+	struct semaphore dbgtool_sem;   /**< Semaphore, used to synchronize debug tool threads */
+	struct ffm_record_info *ffm;    /**< Store ffm record information */
 };
 
 /**
  * @brief struct msg_2_up
- * @details Structure for storing uplink message related information
+ * @details Struct storing uplink message related information
  */
 struct msg_2_up {
 	u8 pf_id;       /**< Protocol ID */
@@ -131,7 +131,7 @@ struct msg_2_up {
 
 /**
  * @brief struct dbgtool_param
- * @details Debug tool parameter structure
+ * @details Debug tool parameter struct
  */
 struct dbgtool_param {
 	union {
@@ -146,17 +146,17 @@ struct dbgtool_param {
 
 /**
  * @brief typedef enum
- * @details Represents debug tool command types
+ * @details Indicates the command type of the debug tool
  */
 typedef enum {
 	DBGTOOL_CMD_API_RD = 0,         /**< Read API command */
 	DBGTOOL_CMD_API_WR,             /**< Write API command */
 	DBGTOOL_CMD_FFM_RD,             /**< Read FFM command */
 	DBGTOOL_CMD_FFM_CLR,            /**< Clear FFM command */
-	DBGTOOL_CMD_PF_DEV_INFO_GET,    /**< Get PF device info command */
+	DBGTOOL_CMD_PF_DEV_INFO_GET,    /**< Get PF device information command */
 	DBGTOOL_CMD_MSG_2_UP,           /**< Send message to upper layer command */
 	DBGTOOL_CMD_FREE_MEM,           /**< Free memory command */
-	DBGTOOL_CMD_NUM                 /**< Number of command types */
+	DBGTOOL_CMD_NUM                 /**< Command type count */
 } dbgtool_cmd;
 
 #define PF_MAX_SIZE (16)
@@ -165,7 +165,7 @@ typedef enum {
 
 /**
  * @brief enum module_name
- * @details Represents different module names
+ * @details Indicates different module names
  */
 enum module_name {
 	SEND_TO_NPU = 1,            /**< Send to NPU module */
@@ -173,7 +173,7 @@ enum module_name {
 	SEND_TO_SM,                 /**< Send to SM module */
 	SEND_TO_HW_DRIVER,          /**< Send to hardware driver */
 #define SEND_TO_SRV_DRV_BASE (SEND_TO_HW_DRIVER + 1)
-	SEND_TO_NIC_DRIVER = SEND_TO_SRV_DRV_BASE,  /**< Send to network interface controller driver */
+	SEND_TO_NIC_DRIVER = SEND_TO_SRV_DRV_BASE,  /**< Send to NIC driver */
 	SEND_TO_OVS_DRIVER,         /**< Send to Open vSwitch driver */
 	SEND_TO_ROCE_DRIVER,        /**< Send to RDMA over Converged Ethernet driver */
 	SEND_TO_TOE_DRIVER,         /**< Send to TCP offload driver */
@@ -182,7 +182,7 @@ enum module_name {
 	SEND_TO_VBS_DRIVER,         /**< Send to virtual block storage driver */
 	SEND_TO_IPSEC_DRIVER,       /**< Send to IPsec driver */
 	SEND_TO_VIRTIO_DRIVER,      /**< Send to Virtio driver */
-	SEND_TO_MIGRATE_DRIVER,     /**< Send to migration driver */
+	SEND_TO_MIGRATE_DRIVER,     /**< Send to migrate driver */
 	SEND_TO_PPA_DRIVER,         /**< Send to PPA driver */
 	SEND_TO_CUSTOM_DRIVER = SEND_TO_SRV_DRV_BASE + 11,  /**< Send to custom driver */
 	SEND_TO_VROCE_DRIVER,       /**< Send to vRDMA over Converged Ethernet driver */
@@ -196,23 +196,23 @@ enum module_name {
 
 /**
  * @brief enum driver_cmd_type
- * @details Defines driver command type enumeration
+ * @details Defines driver command type enum
  */
 enum driver_cmd_type {
 	TX_INFO = 0x1,                     /**< Transmit information */
-	Q_NUM = 0x2,                       /**< Queue number */
-	TX_WQE_INFO = 0x3,                 /**< Transmit work queue information */
+	Q_NUM = 0x2,                       /**< Queue count */
+	TX_WQE_INFO = 0x3,                 /**< Transmit work queue element information */
 	TX_MAPPING = 0x4,                  /**< Transmit mapping */
 	RX_INFO = 0x5,                     /**< Receive information */
-	RX_WQE_INFO = 0x6,                 /**< Receive work queue information */
-	RX_CQE_INFO = 0x7,                 /**< Receive completion queue information */
+	RX_WQE_INFO = 0x6,                 /**< Receive work queue element information */
+	RX_CQE_INFO = 0x7,                 /**< Receive completion queue element information */
 	UPRINT_FUNC_EN = 0x8,              /**< Print function enable */
 	UPRINT_FUNC_RESET = 0x9,           /**< Print function reset */
 	UPRINT_SET_PATH = 0xa,             /**< Set print path */
 	UPRINT_GET_STATISTICS = 0xb,       /**< Get print statistics */
 	FUNC_TYPE = 0xc,                   /**< Function type */
 	GET_FUNC_IDX = 0xd,                /**< Get function index */
-	GET_INTER_NUM = 0xe,               /**< Get internal number */
+	GET_INTER_NUM = 0xe,               /**< Get internal count */
 	CLOSE_TX_STREAM = 0xf,             /**< Close transmit stream */
 	GET_DRV_VERSION = 0x10,            /**< Get driver version */
 	CLEAR_FUNC_STASTIC = 0x11,         /**< Clear function statistics */
@@ -242,14 +242,14 @@ enum driver_cmd_type {
 	SET_HOMOLOGUE = 0x29,              /**< Set peer information */
 	GET_SSET_COUNT = 0x2a,             /**< Get statistics count */
 	GET_SSET_ITEMS = 0x2b,             /**< Get statistics items */
-	IS_DRV_IN_VM = 0x2c,               /**< Check if in VM */
+	IS_DRV_IN_VM = 0x2c,               /**< Check whether in virtual machine */
 	LRO_ADPT_MGMT = 0x2d,              /**< Manage LRO adapter */
-	SET_INTER_COAL_PARAM = 0x2e,       /**< Set interrupt coalescing parameters */
-	GET_INTER_COAL_PARAM = 0x2f,       /**< Get interrupt coalescing parameters */
+	SET_INTER_COAL_PARAM = 0x2e,       /**< Set interrupt coalescing parameter */
+	GET_INTER_COAL_PARAM = 0x2f,       /**< Get interrupt coalescing parameter */
 	GET_CHIP_INFO = 0x30,              /**< Get chip information */
 	GET_NIC_STATS_LEN = 0x31,          /**< Get NIC statistics length */
 	GET_NIC_STATS_STRING = 0x32,       /**< Get NIC statistics string */
-	GET_NIC_STATS_INFO = 0x33,         /**< Get NIC statistics information */
+	GET_NIC_STATS_INFO = 0x33,         /**< Get NIC statistics */
 	GET_PF_ID = 0x34,                  /**< Get PF ID */
 	GET_MBOX_CNT = 0x35,               /**< Get mailbox count */
 	NIC_RSVD5 = 0x36,
@@ -266,13 +266,13 @@ enum driver_cmd_type {
 	RSS_CFG = 0x40,                    /**< RSS configuration */
 	RSS_INDIR = 0x41,                  /**< RSS indirect table */
 	PORT_ID = 0x42,                    /**< Port ID */
-	BOND_DFX_OPS = 0x43,               /**< BOND DFX operations */
+	BOND_DFX_OPS = 0x43,               /**< BOND DFX operation */
 
 	GET_FUNC_CAP = 0x50,               /**< Get function capability */
-	GET_XSFP_PRESENT = 0x51,           /**< Get XSFP presence status */
+	GET_XSFP_PRESENT = 0x51,           /**< Get XSFP present status */
 	GET_XSFP_INFO = 0x52,              /**< Get XSFP information */
 	DEV_NAME_TEST = 0x53,              /**< Device name test */
-	GET_XSFP_INFO_COMP_CMIS = 0x54,    /**< Get XSFP information (CMIS supported) */
+	GET_XSFP_INFO_COMP_CMIS = 0x54,    /**< Get XSFP information (CMIS compatible) */
 	CMD_GET_PROFILE_ID = 0x55,
 	CMD_SET_PROFILE_ID = 0x56,
 	CMD_MOVE_TCAM_TABLE = 0x57,
@@ -300,11 +300,11 @@ enum driver_cmd_type {
 	ROCE_CMD_GET_HW_COUNT = 0x8d,           /**< Get hardware count */
 	ROCE_CMD_GET_SPECIFICATIONS = 0x8e,     /**< Get device specifications from cache */
 
-	ROCE_CMD_START_CAP_PACKET = 0x90,       /**< Start packet capture */
-	ROCE_CMD_STOP_CAP_PACKET = 0x91,        /**< Stop packet capture */
+	ROCE_CMD_START_CAP_PACKET = 0x90,       /**< Start capture packet */
+	ROCE_CMD_STOP_CAP_PACKET = 0x91,        /**< Stop capture packet */
 	ROCE_CMD_QUERY_CAP_INFO = 0x92,         /**< Query capture information */
-	ROCE_CMD_ENABLE_QP_CAP_PACKET = 0x93,   /**< Enable QP packet capture */
-	ROCE_CMD_DISABLE_QP_CAP_PACKET = 0x94,  /**< Disable QP packet capture */
+	ROCE_CMD_ENABLE_QP_CAP_PACKET = 0x93,   /**< Enable QP capture packet */
+	ROCE_CMD_DISABLE_QP_CAP_PACKET = 0x94,  /**< Disable QP capture packet */
 	ROCE_CMD_QUERY_QP_CAP_INFO = 0x95,      /**< Query QP capture information */
 	ROCE_CMD_SET_BYPASS = 0x96,             /**< Set bypass */
 	ROCE_CMD_QUERY_BYPASS = 0x97,           /**< Query bypass */
@@ -315,32 +315,32 @@ enum driver_cmd_type {
 	ROCE_CMD_DISABLE_BW_CTRL = 0xa1,        /**< Disable bandwidth control */
 	ROCE_CMD_CHANGE_BW_CTRL_PARAM = 0xa2,   /**< Change bandwidth control parameter */
 	ROCE_CMD_QUERY_BW_CTRL_PARAM = 0xa3,    /**< Query bandwidth control parameter */
-	ROCE_CMD_SET_BW_WATERLINE = 0xa4,       /**< Set bandwidth watermark */
-	ROCE_CMD_GET_BW_WATERLINE = 0xa5,       /**< Get bandwidth watermark */
-	ROCE_CMD_SET_VNIC_WATERLINE = 0xa6,     /**< Set VNIC watermark */
-	ROCE_CMD_GET_VNIC_WATERLINE = 0xa7,     /**< Get VNIC watermark */
+	ROCE_CMD_SET_BW_WATERLINE = 0xa4,       /**< Set bandwidth waterline value */
+	ROCE_CMD_GET_BW_WATERLINE = 0xa5,       /**< Get bandwidth waterline value */
+	ROCE_CMD_SET_VNIC_WATERLINE = 0xa6,     /**< Set VNIC waterline value */
+	ROCE_CMD_GET_VNIC_WATERLINE = 0xa7,     /**< Get VNIC waterline value */
 	ROCE_CMD_ROCE_SET = 0xa8,               /**< Set ROCE related configuration */
 	ROCE_CMD_DFX_LATCH_QUERY = 0xa9,        /**< ROCE latch query */
 
 	ROCE_CMD_TIMEOUT_ALARM = 0xb0,          /**< Timeout alarm */
-	ROCE_CMD_PORT_TRAFFIC = 0Xb1,           /**< Port traffic */
-	ROCE_CMD_DFX_ATTACK = 0Xb2,             /**< ROCE host side attack prevention */
-	ROCE_CMD_ULD_IOCTL_EXTEND = 0xb3,       /**< User ioctl to driver entry */
+	ROCE_CMD_PORT_TRAFFIC = 0xb1,           /**< Port traffic */
+	ROCE_CMD_DFX_ATTACK = 0xb2,             /**< ROCE host side anti-attack */
+	ROCE_CMD_ULD_IOCTL_EXTEND = 0xb3,       /**< User ioctl to driver total entry */
 
-	MIG_QUERY_DFX = 0xc0,                   /**< Query migration DFX */
+	MIG_QUERY_DFX = 0xc0,                   /**< Query migrate DFX */
 
-	DRV_CMD_TYPE_RSV = 0xd0,                /**< Reserved, cannot use */
+	DRV_CMD_TYPE_RSV = 0xd0,                /**< Reserved, cannot be used */
 
 	NIC_CMD_ANTI_ATTACK = 0xd6,             /**< Anti-attack verification */
 
 	VM_COMPAT_TEST = 0xFF,                  /**< VM compatibility test */
 
-	SERVICE_DRV_BASE_CMD = 0x120,           /**< Service commands start from 0x120, commands before 0x120 are reserved for future product use */
+	SERVICE_DRV_BASE_CMD = 0x120,           /**< Service command starts from 0x120, before 0x120 is reserved for subsequent product use */
 };
 
 /**
  * @brief enum api_chain_cmd_type
- * @details Defines API chain command type enumeration
+ * @details Defines API chain command type enum
  */
 enum api_chain_cmd_type {
 	API_CSR_READ,       /**< Read CSR (Control and Status Register) */
@@ -349,7 +349,7 @@ enum api_chain_cmd_type {
 
 /**
  * @brief sm_cmd_type
- * @details Used to represent different command types
+ * @details Used to indicate different command types
  */
 enum sm_cmd_type {
 	SM_CTR_RD16 = 1,        /**< Command to read 16-bit data */
@@ -361,50 +361,50 @@ enum sm_cmd_type {
 	SM_CTR_RD64_CLEAR       /**< Command to clear 64-bit data */
 };
 
-#define HINIC5_CQM_AEQ_CALLBACK_CNT_MAX 128  /* Consistent with HINIC5_CQM_AEQ_BASE_T_MAX */
+#define CQM_AEQ_CALLBACK_CNT_MAX 128  /* Keep consistent with CQM_AEQ_BASE_T_MAX */
 
 /**
- * @brief struct hinic5_cqm_stats
- * @details Statistics of various operations in HINIC5_CQM module
+ * @brief struct cqm_stats
+ * @details Statistics of various operation counts in CQM module
  */
-struct hinic5_cqm_stats {
-	atomic_t hinic5_cqm_cmd_alloc_cnt;             /**< Statistics of HINIC5_CQM command allocation count */
-	atomic_t hinic5_cqm_cmd_free_cnt;              /**< Statistics of HINIC5_CQM command free count */
-	atomic_t hinic5_cqm_send_cmd_box_cnt;          /**< Statistics of HINIC5_CQM send command box count */
-	atomic_t hinic5_cqm_send_cmd_imm_cnt;          /**< Statistics of HINIC5_CQM send command count */
-	atomic_t hinic5_cqm_db_addr_alloc_cnt;         /**< Statistics of HINIC5_CQM database address allocation count */
-	atomic_t hinic5_cqm_db_addr_free_cnt;          /**< Statistics of HINIC5_CQM database address free count */
-	atomic_t hinic5_cqm_fc_srq_create_cnt;         /**< Statistics of HINIC5_CQM FC SRQ creation count */
-	atomic_t hinic5_cqm_srq_create_cnt;            /**< Statistics of HINIC5_CQM SRQ creation count */
-	atomic_t hinic5_cqm_rq_create_cnt;             /**< Statistics of HINIC5_CQM RQ creation count */
-	atomic_t hinic5_cqm_qpc_mpt_create_cnt;        /**< Statistics of HINIC5_CQM QPC and MPT creation count */
-	atomic_t hinic5_cqm_nonrdma_queue_create_cnt;  /**< Statistics of HINIC5_CQM non-RDMA queue creation count */
-	atomic_t hinic5_cqm_rdma_queue_create_cnt;     /**< Statistics of HINIC5_CQM RDMA queue creation count */
-	atomic_t hinic5_cqm_rdma_table_create_cnt;     /**< Statistics of HINIC5_CQM RDMA table creation count */
-	atomic_t hinic5_cqm_qpc_mpt_delete_cnt;        /**< Statistics of HINIC5_CQM QPC and MPT deletion count */
-	atomic_t hinic5_cqm_nonrdma_queue_delete_cnt;  /**< Statistics of HINIC5_CQM non-RDMA queue deletion count */
-	atomic_t hinic5_cqm_rdma_queue_delete_cnt;     /**< Statistics of HINIC5_CQM RDMA queue deletion count */
-	atomic_t hinic5_cqm_rdma_table_delete_cnt;     /**< Statistics of HINIC5_CQM RDMA table deletion count */
-	atomic_t hinic5_cqm_func_timer_clear_cnt;      /**< Statistics of HINIC5_CQM function timer clear count */
-	atomic_t hinic5_cqm_func_hash_buf_clear_cnt;   /**< Statistics of HINIC5_CQM function hash buffer clear count */
-	atomic_t hinic5_cqm_scq_callback_cnt;          /**< Statistics of HINIC5_CQM SCQ callback count */
-	atomic_t hinic5_cqm_ecq_callback_cnt;          /**< Statistics of HINIC5_CQM ECQ callback count */
-	atomic_t hinic5_cqm_nocq_callback_cnt;         /**< Statistics of HINIC5_CQM NOCQ callback count */
-	atomic_t hinic5_cqm_aeq_callback_cnt[HINIC5_CQM_AEQ_CALLBACK_CNT_MAX];    /**< Statistics of HINIC5_CQM AEQ callback count */
+struct cqm_stats {
+	atomic_t cqm5_cmd_alloc_cnt;             /**< Statistics of CQM command allocation count */
+	atomic_t cqm5_cmd_free_cnt;              /**< Statistics of CQM command free count */
+	atomic_t cqm5_send_cmd_box_cnt;          /**< Statistics of CQM send command box count */
+	atomic_t cqm5_send_cmd_imm_cnt;          /**< Statistics of CQM send command count */
+	atomic_t cqm5_db_addr_alloc_cnt;         /**< Statistics of CQM database address allocation count */
+	atomic_t cqm5_db_addr_free_cnt;          /**< Statistics of CQM database address free count */
+	atomic_t cqm_fc_srq_create_cnt;         /**< Statistics of CQM FC SRQ creation count */
+	atomic_t cqm_srq_create_cnt;            /**< Statistics of CQM SRQ creation count */
+	atomic_t cqm_rq_create_cnt;             /**< Statistics of CQM RQ creation count */
+	atomic_t cqm_qpc_mpt_create_cnt;        /**< Statistics of CQM QPC and MPT creation count */
+	atomic_t cqm_nonrdma_queue_create_cnt;  /**< Statistics of CQM non-RDMA queue creation count */
+	atomic_t cqm_rdma_queue_create_cnt;     /**< Statistics of CQM RDMA queue creation count */
+	atomic_t cqm_rdma_table_create_cnt;     /**< Statistics of CQM RDMA table creation count */
+	atomic_t cqm_qpc_mpt_delete_cnt;        /**< Statistics of CQM QPC and MPT deletion count */
+	atomic_t cqm_nonrdma_queue_delete_cnt;  /**< Statistics of CQM non-RDMA queue deletion count */
+	atomic_t cqm_rdma_queue_delete_cnt;     /**< Statistics of CQM RDMA queue deletion count */
+	atomic_t cqm_rdma_table_delete_cnt;     /**< Statistics of CQM RDMA table deletion count */
+	atomic_t cqm_func_timer_clear_cnt;      /**< Statistics of CQM function timer clear count */
+	atomic_t cqm_func_hash_buf_clear_cnt;   /**< Statistics of CQM function hash buffer clear count */
+	atomic_t cqm_scq_callback_cnt;          /**< Statistics of CQM SCQ callback count */
+	atomic_t cqm_ecq_callback_cnt;          /**< Statistics of CQM ECQ callback count */
+	atomic_t cqm_nocq_callback_cnt;         /**< Statistics of CQM NOCQ callback count */
+	atomic_t cqm_aeq_callback_cnt[CQM_AEQ_CALLBACK_CNT_MAX];    /**< Statistics of CQM AEQ callback count */
 };
 
 /**
  * @brief struct link_event_stats
- * @details Used to count the number of link events
+ * @details Used to count link events
  */
 struct link_event_stats {
-	atomic_t link_down_stats;       /**< Number of events indicating link has been disconnected */
-	atomic_t link_up_stats;         /**< Number of events indicating link has been connected */
+	atomic_t link_down_stats;       /**< Indicates the count of link down events */
+	atomic_t link_up_stats;         /**< Indicates the count of link up events */
 };
 
 /**
  * @brief enum hinic5_fault_err_level
- * @details Error level enumeration type
+ * @details Error level enum type
  */
 enum hinic5_fault_err_level {
 	FAULT_LEVEL_FATAL,          /**< Fatal error */
@@ -413,7 +413,7 @@ enum hinic5_fault_err_level {
 	FAULT_LEVEL_SERIOUS_FLR,    /**< Serious error, requires FLR (Function Level Reset) */
 	FAULT_LEVEL_GENERAL,        /**< General error */
 	FAULT_LEVEL_SUGGESTION,     /**< Suggestion error */
-	FAULT_LEVEL_MAX,            /**< Maximum error level value */
+	FAULT_LEVEL_MAX,            /**< Maximum error level */
 };
 
 /**
@@ -429,38 +429,39 @@ enum hinic5_fault_type {
 	FAULT_TYPE_REG_WR_TIMEOUT,  /**< Register write timeout fault */
 	FAULT_TYPE_PHY_FAULT,       /**< Physical fault */
 	FAULT_TYPE_TSENSOR_FAULT,   /**< Temperature sensor fault */
-	FAULT_TYPE_MAX,             /**< Maximum fault type value */
+	FAULT_TYPE_HEARTBEAT_LOST,  /**< Heartbeat lost fault */
+	FAULT_TYPE_MAX,             /**< Maximum fault type */
 };
 
 /**
  * @brief struct fault_event_stats
- * @details Fault event statistics structure
+ * @details Fault event statistics struct
  */
 struct fault_event_stats {
 	/* HINIC_NODE_ID_MAX: temp use the value of 1822(22) */
 	atomic_t chip_fault_stats[22][FAULT_LEVEL_MAX]; /**< Fault level statistics for each chip */
-	atomic_t fault_type_stat[FAULT_TYPE_MAX];       /**< Statistics for each fault type */
+	atomic_t fault_type_stat[FAULT_TYPE_MAX];       /**< Statistics of various fault types */
 	atomic_t pcie_fault_stats;                      /**< PCIE fault statistics */
 };
 
 /**
  * @brief enum hinic5_ucode_event_type
- * @details Enumeration of Ucode event types
+ * @details Defines Ucode event type enum
  */
 enum hinic5_ucode_event_type {
 	HINIC5_INTERNAL_OTHER_FATAL_ERROR = 0x0,    /**< Internal other fatal error */
 	HINIC5_HTN_PTP_EVENT = 0x1,                 /**< HTN PTP event */
 	HINIC5_CHANNEL_BUSY = 0x7,                  /**< Channel busy */
-	HINIC5_NIC_FATAL_ERROR_MAX = 0x8,           /**< Maximum NIC fatal error value */
+	HINIC5_NIC_FATAL_ERROR_MAX = 0x8,           /**< NIC fatal error maximum */
 };
 
 /**
  * @brief struct hinic5_hw_stats
- * @details Hardware statistics structure
+ * @details Hardware statistics struct
  */
 struct hinic5_hw_stats {
 	atomic_t heart_lost_stats;                                  /**< Heartbeat lost statistics */
-	struct hinic5_cqm_stats hinic5_cqm_stats;                                 /**< HINIC5_CQM statistics */
+	struct cqm_stats cqm_stats;                                 /**< CQM statistics */
 	struct link_event_stats link_event_stats;                   /**< Link event statistics */
 	struct fault_event_stats fault_event_stats;                 /**< Fault event statistics */
 	atomic_t nic_ucode_event_stats[HINIC5_NIC_FATAL_ERROR_MAX]; /**< NIC microcode event statistics */
@@ -472,7 +473,7 @@ struct hinic5_hw_stats {
 
 /**
  * @brief struct pf_info
- * @details Structure for storing network interface information
+ * @details Used to store network interface information
  */
 struct pf_info {
 	char name[IFNAMSIZ];        /**< Network interface name */
@@ -482,14 +483,14 @@ struct pf_info {
 
 /**
  * @brief struct card_info
- * @details Structure for storing card information
+ * @details Used to store card information
  * @param pf_num
- *              in_param: Accumulated pf num obtained (integer multiple of PF_MAX_SIZE)
- *              out_param: Number of pf_info obtained and sum of pf num to be obtained
+ *              in_param: Cumulative obtained pf num (integer multiple of PF_MAX_SIZE)
+ *              out_param: Current obtained pf_info count and total pf num of pending pf_info
  */
 struct card_info {
-	struct pf_info pf[PF_MAX_SIZE];     /**< Structure for storing card information */
-	u32 pf_num;                         /**< Number of cards */
+	struct pf_info pf[PF_MAX_SIZE];     /**< Used to store various card information */
+	u32 pf_num;                         /**< Used to store card count */
 };
 
 struct func_mbox_cnt_info {
@@ -505,7 +506,7 @@ struct card_mbox_cnt_info {
 
 /**
  * @brief struct hinic5_nic_loop_mode
- * @details Structure for loop mode
+ * @details Struct for loop mode
  */
 struct hinic5_nic_loop_mode {
 	u32 loop_mode;      /**< Loop mode identifier */
@@ -514,11 +515,11 @@ struct hinic5_nic_loop_mode {
 
 /**
  * @brief struct hinic5_pf_info
- * @details Structure for storing PF information
+ * @details Used to store PF information
  */
 struct hinic5_pf_info {
 	u32 isvalid;    /**< Flag indicating whether PF information is valid */
-	u32 pf_id;      /**< PF unique identifier */
+	u32 pf_id;      /**< Unique identifier of PF */
 };
 
 #define HINIC5_CHIP_FAULT_SIZE (110 * 1024)
@@ -526,24 +527,24 @@ struct hinic5_pf_info {
 
 /**
  * @brief struct nic_cmd_chip_fault_stats
- * @details Network interface command chip fault statistics structure
+ * @details Network interface command chip fault statistics information struct
  */
 struct nic_cmd_chip_fault_stats {
 	u32 offset;                             /**< Offset */
-	u8 chip_fault_stats[MAX_DRV_BUF_SIZE];  /**< Chip fault statistics array */
+	u8 chip_fault_stats[MAX_DRV_BUF_SIZE];  /**< Chip fault statistics information array */
 };
 
-#define NIC_TOOL_MAGIC 'x'      /**< NIC tool magic number */
+#define NIC_TOOL_MAGIC 'x'      /**< Indicates the magic number of NIC tool */
 
 #ifdef STORAGE_PANGEA
-#define CARD_MAX_SIZE (16)      /**< Maximum card size is 16 */
+#define CARD_MAX_SIZE (16)      /**< Define maximum card size as 16 */
 #else
 #define CARD_MAX_SIZE (64)      /**< Maximum card size is 64 */
 #endif
 
 /**
  * @brief struct nic_card_id
- * @details Structure for storing NIC ID and count
+ * @details Used to store NIC IDs and count
  */
 struct nic_card_id {
 	u32 id[CARD_MAX_SIZE];  /**< NIC ID array, maximum length is CARD_MAX_SIZE */
@@ -552,47 +553,47 @@ struct nic_card_id {
 
 /**
  * @brief struct func_dev_info
- * @details Structure for storing function-related dev information
+ * @details Used to store function-related dev information
  */
 struct func_dev_info {
-	u64 bar0_phy_addr;      /**< bar0 physical address */
-	u64 bar0_size;          /**< bar0 size */
-	u64 bar1_phy_addr;      /**< bar1 physical address */
-	u64 bar1_size;          /**< bar1 size */
-	u64 bar3_phy_addr;      /**< bar3 physical address */
-	u64 bar3_size;          /**< bar3 size */
+	u64 bar0_phy_addr;      /**< Physical address of bar0 */
+	u64 bar0_size;          /**< Size of bar0 */
+	u64 bar1_phy_addr;      /**< Physical address of bar1 */
+	u64 bar1_size;          /**< Size of bar1 */
+	u64 bar3_phy_addr;      /**< Physical address of bar3 */
+	u64 bar3_size;          /**< Size of bar3 */
 	u64 rsvd1[4];
 };
 
 /**
  * @brief struct hinic5_card_func_info
- * @details Structure for storing card function information
+ * @details Used to store card function information
  */
 struct hinic5_card_func_info {
-	u32 num_pf;             /**< Number of physical functions */
+	u32 num_pf;             /**< Physical function count */
 	u32 rsvd0;
 	u64 usr_api_phy_addr;   /**< User API physical address */
 	struct func_dev_info dev_info[CARD_MAX_SIZE]; /**< Function dev information array */
 };
 
-#define MAX_VER_INFO_LEN 128    /**< Maximum version information length constant */
+#define MAX_VER_INFO_LEN 128    /**< Define maximum version information length constant */
 /**
  * @brief struct drv_version_info
- * @details Driver version information structure definition
+ * @details Define driver version information struct
  */
 struct drv_version_info {
-	char ver[MAX_VER_INFO_LEN]; /**< Version information character array, length is MAX_VER_INFO_LEN */
+	char ver[MAX_VER_INFO_LEN]; /**< Define version information char array, length is MAX_VER_INFO_LEN */
 };
 
 #define MT_EPERM        1       /**< Operation not permitted */
 #define MT_EIO          2       /**< I/O error */
-#define MT_EINVAL       3       /**< Invalid argument */
+#define MT_EINVAL       3       /**< Invalid parameter */
 #define	MT_EBUSY        4       /**< Device or resource busy */
 #define MT_EOPNOTSUPP   0xFF    /**< Operation not supported */
 
 /**
  * @brief struct mt_msg_head
- * @details Structure for storing message header
+ * @details Struct used to store message header
  */
 struct mt_msg_head {
 	u8 status;      /**< Status */
@@ -601,18 +602,18 @@ struct mt_msg_head {
 
 /**
  * @brief enum mt_api_type
- * @details Enumeration for different API types
+ * @details Used to indicate different API types
  */
 enum mt_api_type {
 	API_TYPE_MBOX = 1,          /**< MBOX API type */
-	API_TYPE_API_CHAIN_BYPASS,  /**< API chain bypass API type */
-	API_TYPE_API_CHAIN_TO_MPU,  /**< API chain to MPU API type */
+	API_TYPE_API_CHAIN_BYPASS,  /**< API chain call bypass API type */
+	API_TYPE_API_CHAIN_TO_MPU,  /**< API chain call to MPU API type */
 	API_TYPE_CLP,               /**< CLP API type */
 };
 
 /**
  * @brief struct npu_cmd_st
- * @details Structure for describing NPU command
+ * @details Struct used to describe NPU commands
  */
 struct npu_cmd_st {
 	u32 mod : 8;            /**< Module ID, occupies 8 bits of 32 bits */
@@ -624,7 +625,7 @@ struct npu_cmd_st {
 
 /**
  * @brief struct mpu_cmd_st
- * @details Structure for storing MPU command
+ * @details Struct used to store MPU commands
  */
 struct mpu_cmd_st {
 	u32 api_type : 8;   /**< Defines a 32-bit unsigned integer for storing API type, occupies 8 bits */
@@ -634,13 +635,13 @@ struct mpu_cmd_st {
 
 /**
  * @brief struct msg_module
- * @details Message module structure for storing device name, module information, command format, timeout, function index, input/output buffer size, buffer pointer, bus number, Port ID and other information
+ * @details Message module struct, used to store device name, module information, command format, timeout, function index, input/output buffer size, buffer pointers, bus number, port ID, etc.
  */
 struct msg_module {
 	char device_name[IFNAMSIZ];     /**< Device name, stores device name */
 	u32 module;                     /**< Module information, stores module related information */
 	/**
-	 * @brief Message format storage
+     * @brief Stores message format
 	 */
 	union {
 		u32 msg_formate;
@@ -655,7 +656,7 @@ struct msg_module {
 	void *out_buf;          /**< Output buffer pointer, stores output buffer pointer */
 	int bus_num;            /**< Bus number, stores bus number information */
 	u8 port_id;             /**< Port ID, stores port ID information */
-	u8 use_func_idx;        /**< Indicates whether func_idx is used to send commands to device, used together with func_idx */
+	u8 use_func_idx;        /**< Indicates using func_idx to issue commands to device, used together with func_idx */
 	u8 rsvd1[2];
 	u32 rsvd2[4];
 };
@@ -707,21 +708,21 @@ struct hinic5_mt_msg {
 
 /**
  * @brief struct hinic5_non_ptp_info
- * @details Structure for storing non PTP time information
+ * @details Defines a struct used to store non ptp time information
  */
 struct hinic5_non_ptp_info {
-	char name[IFNAMSIZ];                         /**< Chip device name corresponding to time */
+	char name[IFNAMSIZ];                         /**< Stores the chip device name corresponding to the time */
 	u64 non_ptp_time_diff_enable;                /**< Non-PTP time difference enable */
 	s64 non_ptp_time_diff;                       /**< Non-PTP time difference */
-	atomic_t  ref_cnt;                            /**< Reference count for using this non PTP info */
+	atomic_t  ref_cnt;                            /**< Reference count using this non ptp info */
 };
 
 /**
  * @brief hinic5_set_freq_reduce_ratio
  * @param dev: device pointer
- * @param ratio: non PTP chip time frequency reduction ratio, must be greater than 0
+ * @param ratio: non ptp chip time frequency reduction ratio, needs to be greater than 0
  *
- * @return Success or failure
+ * @return Whether successful
  * 		@retval zero: success
  * 		@retval non-zero: failure
  */
@@ -730,9 +731,9 @@ int hinic5_set_freq_reduce_ratio(void *dev, u32 ratio);
 /**
  * @brief hinic5_set_non_ptp_time_diff_en
  * @param dev: device pointer
- * @param enable: non PTP chip time enable flag, 0 disable, 1 enable
+ * @param enable: non ptp chip time enable flag, 0 disable, 1 enable
  *
- * @return Success or failure
+ * @return Whether successful
  * 		@retval zero: success
  * 		@retval non-zero: failure
  */
@@ -744,14 +745,14 @@ int hinic5_set_non_ptp_time_diff_en(void *dev, bool enable);
  * @param lld_dev device pointer to hinic5_lld_dev
  * @param cmd Command word
  * @param nt_msg Command content
- * @param support Whether the command is supported, product needs to determine whether to support based on command word
+ * @param support Whether this command is supported, product needs to determine whether it supports based on the command word
  *
  * @details Overloaded by product
  *
  * @return: Command execution result.
  *     @retval 0 Success
- *     @retval non-zero Failure
+ *     @retval Non-zero Failure
  */
 int hinic5_nictool_cmd_extend_handle(void *lld_dev, u32 cmd, struct hinic5_mt_msg *mt_msg, bool *support);
 
-#endif /* _HINIC5_MT_H_ */
+#endif /* HINIC5_MT_H */

@@ -4,8 +4,8 @@
  * File Name     : hinic5_ethtool.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 ethtool header file
  */
 
 #ifndef HINIC5_ETHTOOL_H
@@ -24,6 +24,8 @@
 
 #define SFF8079_I2C_ADDRESS_HIGH	0x51
 #define HINIC5_ETHTOOL_PAGE_A2H		0x2
+
+#define ETHTOOL_EEPROM_PAGE_L00_OFFSET 0
 
 #ifndef SET_ETHTOOL_OPS
 #define SET_ETHTOOL_OPS(netdev, ops) \

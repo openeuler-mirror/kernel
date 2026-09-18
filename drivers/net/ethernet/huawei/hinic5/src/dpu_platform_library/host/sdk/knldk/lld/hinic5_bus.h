@@ -4,8 +4,8 @@
  * File Name     : hinic5_bus.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : bus abstraction layer header for HINIC5 driver
  */
 
 #ifndef HINIC5_BUS_H
@@ -40,7 +40,7 @@ struct hinic5_sriov_info {
 	bool sriov_enabled;
 	unsigned int num_vfs;
 	ulong state;
-	unsigned short first_ue_idx;    /* ubus first vf ue_idx under current pf */
+	unsigned short first_ue_idx;    /* first vf ue_idx under current pf of ubus */
 };
 
 bool hinic5_adev_is_virtfn(struct hinic5_adev *adev);
@@ -51,8 +51,7 @@ int hinic5_adev_get_vf_num(struct hinic5_adev *adev);
 u16 hinic5_adev_get_device_id(struct hinic5_adev *adev);
 
 #ifndef __UEFI__
-int hinic5_adev_irq_vectors_alloc(struct hinic5_adev *adev,
-				  void *entry, u32 irqs_min, u32 irqs_num);
+int hinic5_adev_irq_vectors_alloc(struct hinic5_adev *adev, void *entry, u32 irqs_min, u32 irqs_num);
 void hinic5_adev_irq_vectors_free(struct hinic5_adev *adev);
 int hinic5_adev_irq_vector(struct hinic5_adev *adev, u32 idx);
 #endif

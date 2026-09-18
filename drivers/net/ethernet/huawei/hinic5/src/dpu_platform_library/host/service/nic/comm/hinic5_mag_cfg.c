@@ -4,8 +4,8 @@
  * File Name     : hinic5_mag_cfg.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : hinic5 MAG configuration implementation
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [NIC]" fmt
@@ -34,6 +34,7 @@
 #include "nic_mpu_cmd.h"
 #include "hinic5_nic_event.h"
 #include "mag_mpu_cmd_defs.h"
+#include "mpu_mag_cmd_defs.h"
 #include "inband_mpu_cmd_defs.h"
 #include "hinic5_mag_cfg.h"
 
@@ -42,6 +43,8 @@ static int mag_msg_to_mgmt_sync(void *hwdev, u16 cmd, void *buf_in, u16 in_size,
 static int mag_msg_to_mgmt_sync_ch(void *hwdev, u16 cmd, void *buf_in,
 				   u16 in_size, void *buf_out, u16 *out_size,
 				   u16 channel);
+static void hinic5_prase_cmis_tlp_info(u8 *data, u32 len, u8 *sfp_tlv_info, u32 offset);
+static void process_sfp_data(u8 *sfp_data, u8 *sfp_type, u8 *sfp_type_ext);
 
 int hinic5_set_port_enable(void *hwdev, bool enable, u16 channel)
 {
@@ -50,16 +53,16 @@ int hinic5_set_port_enable(void *hwdev, bool enable, u16 channel)
 	struct hinic5_nic_io *nic_io = NULL;
 	int err;
 
-	if (!hwdev)
+	if (hwdev == NULL)
 		return -EINVAL;
 
 	if (hinic5_func_type(hwdev) == TYPE_VF)
 		return 0;
 
-	memset(&en_state, 0, sizeof(en_state));
+	(void)memset(&en_state, 0, sizeof(en_state));
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
 	en_state.function_id = hinic5_global_func_id(hwdev);
@@ -69,7 +72,7 @@ int hinic5_set_port_enable(void *hwdev, bool enable, u16 channel)
 	err = mag_msg_to_mgmt_sync_ch(hwdev, MAG_CMD_SET_PORT_ENABLE, &en_state,
 				      sizeof(en_state), &en_state, &out_size,
 				      channel);
-	if (err != 0 || out_size == 0 || en_state.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (en_state.head.status != 0)) {
 		nic_err(nic_io->dev_hdl, "Failed to set port state, err: %d, status: 0x%x, out size: 0x%x, channel: 0x%x\n",
 			err, en_state.head.status, out_size, channel);
 		return -EIO;
@@ -90,22 +93,22 @@ int hinic5_get_phy_port_stats(void *hwdev, struct mag_cmd_port_stats *stats)
 		return -ENOMEM;
 
 	port_stats = kzalloc(sizeof(*port_stats), GFP_KERNEL);
-	if (!port_stats)
+	if (port_stats == NULL)
 		return -ENOMEM;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io) {
+	if (nic_io == NULL) {
 		err = -EINVAL;
 		goto out;
 	}
 
-	memset(&stats_info, 0, sizeof(stats_info));
+	(void)memset(&stats_info, 0, sizeof(stats_info));
 	stats_info.port_id = hinic5_physical_port_id(hwdev);
 
 	err = mag_msg_to_mgmt_sync(hwdev, MAG_CMD_GET_PORT_STAT,
 				   &stats_info, sizeof(stats_info),
 				   port_stats, &out_size);
-	if (err != 0 || out_size == 0 || port_stats->head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (port_stats->head.status != 0)) {
 		nic_err(nic_io->dev_hdl,
 			"Failed to get port statistics, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, port_stats->head.status, out_size);
@@ -143,11 +146,11 @@ int hinic5_set_autoneg(void *hwdev, bool enable)
 	struct hinic5_nic_io *nic_io = NULL;
 	u32 set_settings = 0;
 
-	if (!hwdev)
+	if (hwdev == NULL)
 		return -EINVAL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
 	set_settings |= HILINK_LINK_SET_AUTONEG;
@@ -164,7 +167,7 @@ static int hinic5_cfg_loopback_mode(struct hinic5_nic_io *nic_io, u8 opcode,
 	u16 out_size = sizeof(lp);
 	int err;
 
-	memset(&lp, 0, sizeof(lp));
+	(void)memset(&lp, 0, sizeof(lp));
 	lp.port_id = hinic5_physical_port_id(nic_io->hwdev);
 	lp.opcode = opcode;
 	if (opcode == MGMT_MSG_CMD_OP_SET) {
@@ -174,7 +177,7 @@ static int hinic5_cfg_loopback_mode(struct hinic5_nic_io *nic_io, u8 opcode,
 
 	err = mag_msg_to_mgmt_sync(nic_io->hwdev, MAG_CMD_CFG_LOOPBACK_MODE,
 				   &lp, sizeof(lp), &lp, &out_size);
-	if (err != 0 || out_size == 0 || lp.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (lp.head.status != 0)) {
 		nic_err(nic_io->dev_hdl,
 			"Failed to %s loopback mode, err: %d, status: 0x%x, out size: 0x%x\n",
 			opcode == MGMT_MSG_CMD_OP_SET ? "set" : "get",
@@ -194,11 +197,11 @@ int hinic5_get_loopback_mode(void *hwdev, u8 *mode, u8 *enable)
 {
 	struct hinic5_nic_io *nic_io = NULL;
 
-	if (!hwdev || !mode || !enable)
+	if ((hwdev == NULL) || (mode == NULL) || (enable == NULL))
 		return -EINVAL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
 	return hinic5_cfg_loopback_mode(nic_io, MGMT_MSG_CMD_OP_GET, mode,
@@ -209,11 +212,11 @@ int hinic5_set_loopback_mode(void *hwdev, u8 mode, u8 enable)
 {
 	struct hinic5_nic_io *nic_io = NULL;
 
-	if (!hwdev)
+	if (hwdev == NULL)
 		return -EINVAL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
 	if (mode < LOOP_MODE_MIN || mode > LOOP_MODE_MAX) {
@@ -234,14 +237,14 @@ int hinic5_set_led_status(void *hwdev, enum mag_led_type type,
 	u16 out_size = sizeof(led_info);
 	int err;
 
-	if (!hwdev)
+	if (hwdev == NULL)
 		return -EFAULT;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
 	if (!nic_io)
 		return -EINVAL;
 
-	memset(&led_info, 0, sizeof(led_info));
+	(void)memset(&led_info, 0, sizeof(led_info));
 
 	led_info.function_id = hinic5_global_func_id(hwdev);
 	led_info.type = type;
@@ -249,7 +252,7 @@ int hinic5_set_led_status(void *hwdev, enum mag_led_type type,
 
 	err = mag_msg_to_mgmt_sync(hwdev, MAG_CMD_SET_LED_CFG, &led_info,
 				   sizeof(led_info), &led_info, &out_size);
-	if (err != 0 || led_info.head.status != 0 || out_size == 0) {
+	if ((err != 0) || (led_info.head.status != 0) || (out_size == 0)) {
 		nic_err(nic_io->dev_hdl, "Failed to set led status, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, led_info.head.status, out_size);
 		return -EIO;
@@ -266,13 +269,13 @@ int hinic5_set_link_settings(void *hwdev,
 	struct hinic5_nic_io *nic_io = NULL;
 	int err;
 
-	if (!hwdev || !settings)
+	if ((hwdev == NULL) || (settings == NULL))
 		return -EINVAL;
 
-	memset(&info, 0, sizeof(info));
+	(void)memset(&info, 0, sizeof(info));
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
 	info.port_id = hinic5_physical_port_id(hwdev);
@@ -283,7 +286,7 @@ int hinic5_set_link_settings(void *hwdev,
 
 	err = mag_msg_to_mgmt_sync(hwdev, MAG_CMD_SET_PORT_CFG, &info,
 				   sizeof(info), &info, &out_size);
-	if (err != 0 || out_size == 0 || info.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (info.head.status != 0)) {
 		nic_err(nic_io->dev_hdl, "Failed to set link settings, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, info.head.status, out_size);
 		return -EIO;
@@ -300,12 +303,9 @@ int hinic5_get_bond_link_state(void *hwdev, struct hinic5_nic_io *nic_io, u8 *li
 
 	bond_info.port_id = hinic5_physical_port_id(hwdev);
 
-	err = hinic5_msg_to_mgmt_sync(hwdev, HINIC5_MOD_CFM,
-				      CFM_MPU_CMD_BOND_LINK_INFO_GET, &bond_info,
-				      sizeof(bond_info), &bond_info, &out_size,
-				      HINIC5_BOND_MSG_TIMEOUT_MS,
-				      HINIC5_CHANNEL_NIC);
-	if (err != 0 || out_size == 0 || bond_info.head.status != 0) {
+	err = hinic5_msg_to_mgmt_sync(hwdev, HINIC5_MOD_CFM, CFM_MPU_CMD_BOND_LINK_INFO_GET, &bond_info,
+		sizeof(bond_info), &bond_info, &out_size, HINIC5_BOND_MSG_TIMEOUT_MS, HINIC5_CHANNEL_NIC);
+	if ((err != 0) || (out_size == 0) || (bond_info.head.status != 0)) {
 		nic_err(nic_io->dev_hdl, "Failed to get bond link state, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, bond_info.head.status, out_size);
 		return -EIO;
@@ -323,23 +323,23 @@ int hinic5_get_link_state(void *hwdev, u8 *link_state)
 	struct hinic5_nic_io *nic_io = NULL;
 	int err;
 
-	if (!hwdev || !link_state)
+	if ((hwdev == NULL) || (link_state == NULL))
 		return -EINVAL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
-	/* If this device has half-offload bond enabled, need to get status from bond */
+	/* If this device has half-offload bond enabled, status needs to be obtained from bond */
 	if ((nic_io->feature_cap & NIC_F_HALF_BOND_OFFLOAD) != 0)
 		return hinic5_get_bond_link_state(hwdev, nic_io, link_state);
 
-	memset(&get_link, 0, sizeof(get_link));
+	(void)memset(&get_link, 0, sizeof(get_link));
 	get_link.port_id = hinic5_physical_port_id(hwdev);
 
 	err = mag_msg_to_mgmt_sync(hwdev, MAG_CMD_GET_LINK_STATUS, &get_link,
 				   sizeof(get_link), &get_link, &out_size);
-	if (err != 0 || out_size == 0 || get_link.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (get_link.head.status != 0)) {
 		nic_err(nic_io->dev_hdl, "Failed to get link state, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, get_link.head.status, out_size);
 		return -EIO;
@@ -358,7 +358,7 @@ void hinic5_notify_vf_link_status(struct hinic5_nic_io *nic_io,
 	u16 out_size = sizeof(link);
 	int err;
 
-	memset(&link, 0, sizeof(link));
+	(void)memset(&link, 0, sizeof(link));
 	if (vf_infos[HW_VF_ID_TO_OS(vf_id)].registered) {
 		link.status = link_status;
 		link.port_id = hinic5_physical_port_id(nic_io->hwdev);
@@ -371,7 +371,7 @@ void hinic5_notify_vf_link_status(struct hinic5_nic_io *nic_io,
 			hinic5_unregister_vf(nic_io, vf_id);
 			return;
 		}
-		if (err != 0 || out_size == 0 || link.head.status != 0)
+		if ((err != 0) || (out_size == 0) || (link.head.status != 0))
 			nic_err(nic_io->dev_hdl,
 				"Send link change event to VF %d failed, err: %d, status: 0x%x, out_size: 0x%x\n",
 				HW_VF_ID_TO_OS(vf_id), err, link.head.status, out_size);
@@ -380,16 +380,18 @@ void hinic5_notify_vf_link_status(struct hinic5_nic_io *nic_io,
 
 void hinic5_notify_all_vfs_link_changed(void *hwdev, u8 link_status)
 {
+	struct vf_data_storage *vf_info = NULL;
 	struct hinic5_nic_io *nic_io = NULL;
 	u16 i;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return;
 
 	nic_io->link_status = link_status;
 	for (i = 1; i <= nic_io->max_vfs; i++) {
-		if (!nic_io->vf_infos[HW_VF_ID_TO_OS(i)].link_forced)
+		vf_info = HW_VF_ID_TO_OS_CO(nic_io->vf_infos, i);
+		if (vf_info && !vf_info->link_forced)
 			hinic5_notify_vf_link_status(nic_io, i, link_status);
 	}
 }
@@ -397,8 +399,7 @@ void hinic5_notify_all_vfs_link_changed(void *hwdev, u8 link_status)
 static char *g_hw_to_char_fec[HILINK_FEC_MAX_TYPE] = {"not set", "rsfec", "basefec",
 						      "nofec", "llrsfec"};
 static char *g_hw_to_speed_info[PORT_SPEED_UNKNOWN] = {"not set", "10MB", "100MB", "1GB", "10GB",
-						       "25GB", "40GB", "50GB", "100GB", "200GB",
-						       "400GB", "800GB"};
+						       "25GB", "40GB", "50GB", "100GB", "200GB", "400GB", "800GB"};
 static char *g_hw_to_an_state_info[PORT_CFG_AN_OFF + 1] = {"not set", "on", "off"};
 
 struct port_type_table {
@@ -439,46 +440,33 @@ static void get_port_type(struct hinic5_nic_io *nic_io,
 }
 
 static const char *const sfp_type_list[] = { "sfp", "Qsfp", "OSFP", "DSFP"};
-
-static int get_port_temperature_power(const struct mag_cmd_event_port_info *info,
-				      char *str, u16 str_len)
+static int get_port_temperature_power(const struct mag_cmd_event_port_info *info, char *str, u16 str_len)
 {
 	char arr[CAP_INFO_MAX_LEN] = {0};
 	int err = 0;
 
 	if (info->sfp_type < SFP_TYPE_COUNT) {
-		err = snprintf(arr, CAP_INFO_MAX_LEN, "%s, %s, Temperature: %u",
-				str, sfp_type_list[info->sfp_type], info->cable_temp);
+		err = sprintf(arr, "%s, %s, Temperature: %u", str, sfp_type_list[info->sfp_type], info->cable_temp);
 	}
 
 	switch (info->sfp_type) {
 	case SFP_TYPE_SFP:
 	case SFP_TYPE_DSFP:
-		err = snprintf(str, CAP_INFO_MAX_LEN, "%s, rx power: %uuW, tx power: %uuW",
-			       arr, info->power[POWER_CHANNEL_INDEX_0],
-			       info->power[POWER_CHANNEL_INDEX_1]);
-			break;
+		err = sprintf(str, "%s, rx power: %uuW, tx power: %uuW",
+			arr, info->power[POWER_CHANNEL_INDEX_0], info->power[POWER_CHANNEL_INDEX_1]);
+		break;
 	case SFP_TYPE_QSFP:
-		err = snprintf(str, CAP_INFO_MAX_LEN, "%s, rx power: %uuW %uuW %uuW %uuW",
-			       arr, info->power[POWER_CHANNEL_INDEX_0],
-			       info->power[POWER_CHANNEL_INDEX_1],
-			       info->power[POWER_CHANNEL_INDEX_2],
-			       info->power[POWER_CHANNEL_INDEX_3]);
-			break;
+		err = sprintf(str, "%s, rx power: %uuW %uuW %uuW %uuW",
+			arr, info->power[POWER_CHANNEL_INDEX_0], info->power[POWER_CHANNEL_INDEX_1], info->power[POWER_CHANNEL_INDEX_2], info->power[POWER_CHANNEL_INDEX_3]);
+		break;
 	case SFP_TYPE_OSFP:
-		err = snprintf(str, CAP_INFO_MAX_LEN, "%s, rx power: %uuW %uuW %uuW %uuW",
-			       arr, info->power[POWER_CHANNEL_INDEX_0],
-			       info->power[POWER_CHANNEL_INDEX_1],
-			       info->power[POWER_CHANNEL_INDEX_2],
-			       info->power[POWER_CHANNEL_INDEX_3]);
-		err = snprintf(str, CAP_INFO_MAX_LEN, "%s, %uuW %uuW %uuW %uuW",
-			       arr, info->osfp_power[POWER_CHANNEL_INDEX_0],
-			       info->osfp_power[POWER_CHANNEL_INDEX_1],
-			       info->osfp_power[POWER_CHANNEL_INDEX_2],
-			       info->osfp_power[POWER_CHANNEL_INDEX_3]);
+		err = sprintf(str, "%s, rx power: %uuW %uuW %uuW %uuW",
+			arr, info->power[POWER_CHANNEL_INDEX_0], info->power[POWER_CHANNEL_INDEX_1], info->power[POWER_CHANNEL_INDEX_2], info->power[POWER_CHANNEL_INDEX_3]);
+		err = sprintf(str, "%s, %uuW %uuW %uuW %uuW",
+			arr, info->osfp_power[POWER_CHANNEL_INDEX_0], info->osfp_power[POWER_CHANNEL_INDEX_1], info->osfp_power[POWER_CHANNEL_INDEX_2], info->osfp_power[POWER_CHANNEL_INDEX_3]);
 		break;
 	default:
-		err = snprintf(str, CAP_INFO_MAX_LEN, "%s, Invalid SFP TYPE! ", arr);
+		err = sprintf(str, "%s, Invalid SFP TYPE! ", arr);
 		break;
 	}
 
@@ -496,14 +484,15 @@ struct speed_mode_map_s speed_mode_map[] = {
 u32 get_real_port_speed_from_inner_speed(u8 speed)
 {
 	u32 i;
-
-	if (speed <= PORT_SPEED_MODE_START) { /* Speed <= 200G is not mapped */
+	if (speed <= PORT_SPEED_MODE_START) { // Speeds <= 200G are not mapped
 		return speed;
 	}
 
-	for (i = 0; i < ARRAY_SIZE(speed_mode_map); i++)
-		if (speed_mode_map[i].speed_mode == speed)
+	for (i = 0; i < ARRAY_SIZE(speed_mode_map); i++) {
+		if (speed_mode_map[i].speed_mode == speed) {
 			return speed_mode_map[i].real_speed;
+		}
+	}
 
 	pr_err("unsupported port speed mode: 0x%x\n", speed);
 	return speed;
@@ -535,10 +524,8 @@ static void print_cable_info(struct hinic5_nic_io *nic_io, struct mag_cmd_event_
 	memcpy(tmp_vendor, info->vendor_name, sizeof(info->vendor_name));
 	memcpy(tmp_vendor_sn, info->vendor_sn, sizeof(info->vendor_sn));
 
-	err = snprintf(tmp_str, CAP_INFO_MAX_LEN,
-		       "Vendor: %s, %s, %s, length: %um, max_speed: %uGbps",
-		       tmp_vendor, tmp_vendor_sn, port_type, info->cable_length,
-		       get_real_port_speed_from_inner_speed(info->max_speed));
+	err = sprintf(tmp_str, "Vendor: %s, %s, %s, length: %um, max_speed: %uGbps",
+		 tmp_vendor, tmp_vendor_sn, port_type, info->cable_length, get_real_port_speed_from_inner_speed(info->max_speed));
 	if (err <= 0) {
 		nic_info(nic_io->dev_hdl, "Print vendor failed.\n");
 		return;
@@ -554,8 +541,7 @@ static void print_cable_info(struct hinic5_nic_io *nic_io, struct mag_cmd_event_
 	nic_info(nic_io->dev_hdl, "Cable information: %s\n", tmp_str);
 }
 
-static void print_link_info(struct hinic5_nic_io *nic_io,
-			    const struct mag_cmd_event_port_info *info,
+static void print_link_info(struct hinic5_nic_io *nic_io, const struct mag_cmd_event_port_info *info,
 			    enum hinic5_nic_event_type type)
 {
 	char *fec = "None";
@@ -584,26 +570,22 @@ static void print_link_info(struct hinic5_nic_io *nic_io,
 		 speed, fec, an_state);
 }
 
-static void print_serdes_txrx_para_1872(struct hinic5_nic_io *nic_io,
-					struct mag_cmd_event_port_info *info)
+static void print_serdes_txrx_para_1872(struct hinic5_nic_io *nic_io, struct mag_cmd_event_port_info *info)
 {
 	u8 (*sds_txrx_para)[10] = info->sds_txrx_para;
 	u32 ds_mask = info->ds_mask;
 	u32 ds_id = 0;
-	for (ds_id = 0; ds_id < 8U; ds_id++) { /* 1872 has 1 macro with 8 lanes */
+	for (ds_id = 0; ds_id < 8U; ds_id++) { // 1872 has only 1 macro, 8 lanes in total
 		if (((ds_mask >> ds_id) & 0x1) == 0x0) {
 			continue;
 		}
-		nic_info(nic_io->dev_hdl,
-			 "ds_id: %u, TX pre2: %d, pre1 %d, main %u, post1: %d, post2: %d, RX cur_boost_index: %u, cur_gain_index: %u\n",
-			 ds_id, (s8)sds_txrx_para[ds_id][0], (s8)sds_txrx_para[ds_id][1],
-			 sds_txrx_para[ds_id][2], (s8)sds_txrx_para[ds_id][3],
-			 (s8)sds_txrx_para[ds_id][4], sds_txrx_para[ds_id][5],
-			 sds_txrx_para[ds_id][6]);
+		nic_info(nic_io->dev_hdl, "ds_id: %u, TX pre3: %d, pre2: %d, pre1 %d, main %u, post1: %d, post2: %d, RX cur_boost_index: %u, cur_gain_index: %u\n", ds_id,
+			(s8)sds_txrx_para[ds_id][7U], (s8)sds_txrx_para[ds_id][0], (s8)sds_txrx_para[ds_id][1], (s8)sds_txrx_para[ds_id][2U],
+			(s8)sds_txrx_para[ds_id][3U], (s8)sds_txrx_para[ds_id][4U], sds_txrx_para[ds_id][5U], sds_txrx_para[ds_id][6U]);
 	}
 }
 
-void hinic5_print_port_info(struct hinic5_nic_io *nic_io, struct mag_cmd_event_port_info *port_info,
+void print_port_info(struct hinic5_nic_io *nic_io, struct mag_cmd_event_port_info *port_info,
 		     enum hinic5_nic_event_type type)
 {
 	print_cable_info(nic_io, port_info);
@@ -623,9 +605,8 @@ void hinic5_print_port_info(struct hinic5_nic_io *nic_io, struct mag_cmd_event_p
 		 port_info->pcs_link, port_info->pcs_mac_link, port_info->pcs_err_cnt);
 	nic_info(nic_io->dev_hdl, "his_link_machine_state = 0x%08x, cur_link_machine_state = 0x%08x\n",
 		 port_info->his_link_machine_state, port_info->cur_link_machine_state);
-	if (HINIC5_SUPPORT_FEATURE(nic_io->hwdev, HTN_CMDQ)) { /* 1872 */
-		print_serdes_txrx_para_1872(nic_io, port_info);
-	}
+
+	print_serdes_txrx_para_1872(nic_io, port_info);
 }
 
 static int hinic5_get_vf_link_status_msg_handler(struct hinic5_nic_io *nic_io,
@@ -658,7 +639,7 @@ int hinic5_refresh_nic_cfg(void *hwdev, struct mag_port_info *port_info)
 	struct hinic5_nic_io *nic_io = NULL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io) {
+	if (nic_io == NULL) {
 		pr_err("Nic io is null\n");
 		return -ENODEV;
 	}
@@ -683,11 +664,11 @@ static void get_port_info(void *hwdev,
 	int err;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io) {
+	if (nic_io == NULL) {
 		pr_err("Nic io is null\n");
 		return;
 	}
-	if ((hinic5_func_type(hwdev) != TYPE_VF) && link_status->status != 0) {
+	if ((hinic5_func_type(hwdev) != TYPE_VF) && (link_status->status != 0)) {
 		err = hinic5_get_port_info(hwdev, &port_info, HINIC5_CHANNEL_NIC);
 		if (err != 0) {
 			nic_warn(nic_io->dev_hdl, "Failed to get port info\n");
@@ -713,8 +694,8 @@ static void link_status_event_handler(void *hwdev, void *buf_in,
 	struct hinic5_nic_io *nic_io = NULL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	 /* After bond is enabled, bond will notify link status */
-	if (!nic_io || ((nic_io->feature_cap & NIC_F_HALF_BOND_OFFLOAD) != 0))
+	 /* After bond is enabled, link status is notified by bond */
+	if (nic_io == NULL || ((nic_io->feature_cap & NIC_F_HALF_BOND_OFFLOAD) != 0))
 		return;
 
 	if (in_size != sizeof(*link_status)) {
@@ -753,13 +734,13 @@ static void port_info_event_printf(void *hwdev, void *buf_in, u16 in_size,
 	struct hinic5_event_info event_info;
 	enum hinic5_nic_event_type type;
 
-	if (!hwdev) {
+	if (hwdev == NULL) {
 		pr_err("hwdev is NULL\n");
 		return;
 	}
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io) {
+	if (nic_io == NULL) {
 		pr_err("Nic io is null\n");
 		return;
 	}
@@ -769,10 +750,9 @@ static void port_info_event_printf(void *hwdev, void *buf_in, u16 in_size,
 		return;
 	}
 
-	/* If bond is enabled, skip processing */
+	/* If bond is enabled, do not process */
 	if ((nic_io->feature_cap & NIC_F_HALF_BOND_OFFLOAD) != 0) {
-		nic_info(nic_io->dev_hdl, "bond enable ignore port event type: %d\n",
-			 port_info->event_type);
+		nic_info(nic_io->dev_hdl, "bond enable ignore port event type: %d\n", port_info->event_type);
 		return;
 	}
 
@@ -785,9 +765,9 @@ static void port_info_event_printf(void *hwdev, void *buf_in, u16 in_size,
 		return;
 	}
 
-	hinic5_print_port_info(nic_io, port_info, type);
+	print_port_info(nic_io, port_info, type);
 
-	memset(&event_info, 0, sizeof(event_info));
+	(void)memset(&event_info, 0, sizeof(event_info));
 	event_info.service = EVENT_SRV_NIC;
 	event_info.type = type;
 
@@ -806,7 +786,7 @@ static void cable_plug_event(void *hwdev, void *buf_in, u16 in_size,
 	struct hinic5_event_info event_info;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return;
 
 	if (in_size != sizeof(*plug_event)) {
@@ -815,7 +795,7 @@ static void cable_plug_event(void *hwdev, void *buf_in, u16 in_size,
 		return;
 	}
 
-	/* If bond is enabled, skip processing */
+	/* If bond is enabled, do not process */
 	if ((nic_io->feature_cap & NIC_F_HALF_BOND_OFFLOAD) != 0) {
 		nic_info(nic_io->dev_hdl, "bond enable ignore cable plug event\n");
 		return;
@@ -830,7 +810,7 @@ static void cable_plug_event(void *hwdev, void *buf_in, u16 in_size,
 	rt_cmd_ext->mpu_send_xsfp_tlv_info = false;
 	mutex_unlock(&nic_io->nic_cfg.sfp_mutex);
 
-	memset(&event_info, 0, sizeof(event_info));
+	(void)memset(&event_info, 0, sizeof(event_info));
 	event_info.service = EVENT_SRV_NIC;
 	event_info.type = EVENT_NIC_PORT_MODULE_EVENT;
 	((struct hinic5_port_module_event *)(void *)event_info.event_data)->type =
@@ -844,6 +824,13 @@ static void cable_plug_event(void *hwdev, void *buf_in, u16 in_size,
 	hinic5_event_callback(hwdev, &event_info);
 }
 
+static bool sfp_type_is_qsfp(u8 sfp_type)
+{
+	return (sfp_type == MODULE_TYPE_QSFP28 ||
+		sfp_type == MODULE_TYPE_QSFP ||
+		sfp_type == MODULE_TYPE_QSFP_PLUS);
+}
+
 static void port_sfp_info_event(void *hwdev, void *buf_in, u16 in_size,
 				void *buf_out, u16 *out_size)
 {
@@ -853,7 +840,7 @@ static void port_sfp_info_event(void *hwdev, void *buf_in, u16 in_size,
 	struct hinic5_nic_io *nic_io = NULL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return;
 	if (in_size != sizeof(*sfp_info)) {
 		nic_err(nic_io->dev_hdl, "Invalid sfp info cmd, length: %u, should be %lu\n",
@@ -864,12 +851,14 @@ static void port_sfp_info_event(void *hwdev, void *buf_in, u16 in_size,
 	rt_cmd = &nic_io->nic_cfg.rt_cmd;
 	rt_cmd_ext = &nic_io->nic_cfg.rt_cmd_ext;
 	mutex_lock(&nic_io->nic_cfg.sfp_mutex);
-	memcpy(&rt_cmd->std_sfp_info, sfp_info, sizeof(struct mag_cmd_get_xsfp_info));
+	(void)memcpy(&rt_cmd->std_sfp_info, sfp_info,
+	       sizeof(struct mag_cmd_get_xsfp_info));
+
 	rt_cmd->mpu_send_sfp_info = true;
-	rt_cmd_ext->mpu_send_xsfp_tlv_info = false;
+	if (!sfp_type_is_qsfp(rt_cmd->std_sfp_info.sfp_info[0]))
+		rt_cmd_ext->mpu_send_xsfp_tlv_info = false;
 	mutex_unlock(&nic_io->nic_cfg.sfp_mutex);
 }
-
 #define xsfp_tlv_pre_info_len 4
 static void port_xsfp_tlv_info_event(void *hwdev, void *buf_in, u16 in_size,
 				     void *buf_out, const u16 *out_size)
@@ -878,13 +867,14 @@ static void port_xsfp_tlv_info_event(void *hwdev, void *buf_in, u16 in_size,
 	struct hinic5_port_routine_cmd *rt_cmd = NULL;
 	struct hinic5_port_routine_cmd_extern *rt_cmd_ext = NULL;
 	struct hinic5_nic_io *nic_io = NULL;
+	u8 sfp_data[XSFP_CMIS_INFO_MAX_SIZE] = {0};
 	size_t cpy_len = in_size - sizeof(struct mgmt_msg_head) - xsfp_tlv_pre_info_len;
 
 	if (in_size <= sizeof(struct mgmt_msg_head) + xsfp_tlv_pre_info_len)
 		return;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return;
 
 	rt_cmd = &nic_io->nic_cfg.rt_cmd;
@@ -892,9 +882,13 @@ static void port_xsfp_tlv_info_event(void *hwdev, void *buf_in, u16 in_size,
 	mutex_lock(&nic_io->nic_cfg.sfp_mutex);
 	rt_cmd_ext->std_xsfp_tlv_info.port_id = xsfp_tlv_info->port_id;
 
-	memcpy(rt_cmd_ext->std_xsfp_tlv_info.tlv_buf, xsfp_tlv_info->tlv_buf, cpy_len);
+	memcpy(rt_cmd_ext->std_xsfp_tlv_info.tlv_buf,
+		       xsfp_tlv_info->tlv_buf, cpy_len);
 
-	rt_cmd->mpu_send_sfp_info = false;
+	hinic5_prase_cmis_tlp_info(sfp_data, XSFP_CMIS_INFO_MAX_SIZE, rt_cmd_ext->std_xsfp_tlv_info.tlv_buf, 0);
+	process_sfp_data(sfp_data, &nic_io->nic_cfg.sfp_cmis_type, &nic_io->nic_cfg.sfp_cmis_type_ext);
+	if (!sfp_type_is_qsfp(nic_io->nic_cfg.sfp_cmis_type))
+		rt_cmd->mpu_send_sfp_info = false;
 	rt_cmd_ext->mpu_send_xsfp_tlv_info = true;
 	mutex_unlock(&nic_io->nic_cfg.sfp_mutex);
 }
@@ -907,7 +901,7 @@ static void port_sfp_abs_event(void *hwdev, void *buf_in, u16 in_size,
 	struct hinic5_nic_io *nic_io = NULL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return;
 	if (in_size != sizeof(*sfp_abs)) {
 		nic_err(nic_io->dev_hdl, "Invalid sfp absent cmd, length: %u, should be %lu\n",
@@ -917,7 +911,8 @@ static void port_sfp_abs_event(void *hwdev, void *buf_in, u16 in_size,
 
 	rt_cmd = &nic_io->nic_cfg.rt_cmd;
 	mutex_lock(&nic_io->nic_cfg.sfp_mutex);
-	memcpy(&rt_cmd->abs, sfp_abs, sizeof(struct mag_cmd_get_xsfp_present));
+	(void)memcpy(&rt_cmd->abs, sfp_abs,
+	       sizeof(struct mag_cmd_get_xsfp_present));
 	rt_cmd->mpu_send_sfp_abs = true;
 	mutex_unlock(&nic_io->nic_cfg.sfp_mutex);
 }
@@ -933,10 +928,10 @@ bool hinic5_if_sfp_absent(void *hwdev)
 	bool sfp_abs_status = 0;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return true;
 
-	memset(&sfp_abs, 0, sizeof(sfp_abs));
+	(void)memset(&sfp_abs, 0, sizeof(sfp_abs));
 
 	rt_cmd = &nic_io->nic_cfg.rt_cmd;
 	mutex_lock(&nic_io->nic_cfg.sfp_mutex);
@@ -956,7 +951,7 @@ bool hinic5_if_sfp_absent(void *hwdev)
 	err = mag_msg_to_mgmt_sync(hwdev, MAG_CMD_GET_XSFP_PRESENT,
 				   &sfp_abs, sizeof(sfp_abs), &sfp_abs,
 				   &out_size);
-	if (sfp_abs.head.status != 0 || err != 0 || out_size == 0) {
+	if ((sfp_abs.head.status != 0) || (err != 0) || (out_size == 0)) {
 		nic_err(nic_io->dev_hdl,
 			"Failed to get port%u sfp absent status, err: %d, status: 0x%x, out size: 0x%x\n",
 			port_id, err, sfp_abs.head.status, out_size);
@@ -974,22 +969,22 @@ int hinic5_get_sfp_tlv_info(void *hwdev, struct drv_tag_mag_cmd_get_xsfp_tlv_rsp
 	u16 out_size = sizeof(*sfp_tlv_info);
 	int err;
 
-	if (!hwdev || !sfp_tlv_info)
+	if ((hwdev == NULL) || (sfp_tlv_info == NULL))
 		return -EINVAL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
 	rt_cmd_ext = &nic_io->nic_cfg.rt_cmd_ext;
 	mutex_lock(&nic_io->nic_cfg.sfp_mutex);
-	if (rt_cmd_ext->mpu_send_xsfp_tlv_info) {
+	if (rt_cmd_ext->mpu_send_xsfp_tlv_info == true) {
 		if (rt_cmd_ext->std_xsfp_tlv_info.head.status != 0) {
 			mutex_unlock(&nic_io->nic_cfg.sfp_mutex);
 			return -EIO;
 		}
 
-		memcpy(sfp_tlv_info, &rt_cmd_ext->std_xsfp_tlv_info, sizeof(*sfp_tlv_info));
+		(void)memcpy(sfp_tlv_info, &rt_cmd_ext->std_xsfp_tlv_info, sizeof(*sfp_tlv_info));
 		mutex_unlock(&nic_io->nic_cfg.sfp_mutex);
 		return 0;
 	}
@@ -998,7 +993,7 @@ int hinic5_get_sfp_tlv_info(void *hwdev, struct drv_tag_mag_cmd_get_xsfp_tlv_rsp
 
 	err = mag_msg_to_mgmt_sync(hwdev, MAG_CMD_GET_XSFP_TLV_INFO, (void *)sfp_tlv_info_req,
 				   sizeof(*sfp_tlv_info_req), sfp_tlv_info, &out_size);
-	if (sfp_tlv_info->head.status != 0 || err != 0 || out_size == 0) {
+	if ((sfp_tlv_info->head.status != 0) || (err != 0) || (out_size == 0)) {
 		nic_err(nic_io->dev_hdl,
 			"Failed to get port%u sfp eeprom information, err: %d, status: 0x%x, out size: 0x%x\n",
 			hinic5_physical_port_id(hwdev), err,
@@ -1014,13 +1009,13 @@ int hinic5_get_sfp_info(void *hwdev, struct mag_cmd_get_xsfp_info *sfp_info)
 	struct hinic5_nic_io *nic_io = NULL;
 	struct hinic5_port_routine_cmd *rt_cmd = NULL;
 	u16 out_size = sizeof(*sfp_info);
-	int err = 0;
+	int err;
 
-	if (!hwdev || !sfp_info)
+	if ((hwdev == NULL) || (sfp_info == NULL))
 		return -EINVAL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 	rt_cmd = &nic_io->nic_cfg.rt_cmd;
 	mutex_lock(&nic_io->nic_cfg.sfp_mutex);
@@ -1032,7 +1027,7 @@ int hinic5_get_sfp_info(void *hwdev, struct mag_cmd_get_xsfp_info *sfp_info)
 
 		memcpy(sfp_info, &rt_cmd->std_sfp_info, sizeof(*sfp_info));
 		mutex_unlock(&nic_io->nic_cfg.sfp_mutex);
-		return (err == 0) ? 0 : -ENOMEM;
+		return 0;
 	}
 	mutex_unlock(&nic_io->nic_cfg.sfp_mutex);
 
@@ -1040,10 +1035,11 @@ int hinic5_get_sfp_info(void *hwdev, struct mag_cmd_get_xsfp_info *sfp_info)
 	err = mag_msg_to_mgmt_sync(hwdev, MAG_CMD_GET_XSFP_INFO, sfp_info,
 				   sizeof(*sfp_info), sfp_info, &out_size);
 
-	if (sfp_info->head.status == HINIC5_MGMT_CMD_UNSUPPORTED)
+	if (sfp_info->head.status == HINIC5_MGMT_CMD_UNSUPPORTED) {
 		return -EOPNOTSUPP;
+	}
 
-	if (sfp_info->head.status != 0 || err != 0 || out_size == 0) {
+	if ((sfp_info->head.status != 0) || (err != 0) || (out_size == 0)) {
 		nic_err(nic_io->dev_hdl,
 			"Failed to get port%u sfp eeprom information, err: %d, status: 0x%x, out size: 0x%x\n",
 			hinic5_physical_port_id(hwdev), err,
@@ -1057,15 +1053,15 @@ int hinic5_get_sfp_info(void *hwdev, struct mag_cmd_get_xsfp_info *sfp_info)
 int hinic5_get_sfp_eeprom(void *hwdev, u8 *data, u32 len, u32 offset)
 {
 	struct mag_cmd_get_xsfp_info sfp_info;
-	int err = 0;
+	int err;
 
-	if (!hwdev || !data || len > PAGE_SIZE)
+	if ((hwdev == NULL) || (data == NULL) || len > PAGE_SIZE)
 		return -EINVAL;
 
 	if (hinic5_if_sfp_absent(hwdev))
 		return -ENXIO;
 
-	memset(&sfp_info, 0, sizeof(sfp_info));
+	(void)memset(&sfp_info, 0, sizeof(sfp_info));
 
 	err = hinic5_get_sfp_info(hwdev, &sfp_info);
 	if (err != 0)
@@ -1073,7 +1069,7 @@ int hinic5_get_sfp_eeprom(void *hwdev, u8 *data, u32 len, u32 offset)
 
 	memcpy(data, sfp_info.sfp_info + offset, len);
 
-	return (err == 0) ? 0 : -ENOMEM;
+	return 0;
 }
 
 static void hinic5_prase_cmis_tlp_info(u8 *data, u32 len, u8 *sfp_tlv_info, u32 offset)
@@ -1083,21 +1079,30 @@ static void hinic5_prase_cmis_tlp_info(u8 *data, u32 len, u8 *sfp_tlv_info, u32 
 	bool need_continue = true;
 	u8 temp_tlv_info[XSFP_CMIS_INFO_MAX_SIZE];
 	u32 temp_offset = 0;
+	u32 copy_size = 0;
 
 	while (need_continue) {
 		tlv_info = (struct mgmt_tlv_info *)tlv_buf;
 		switch (tlv_info->type) {
 		case MAG_XSFP_TYPE_PAGE:
 			if (tlv_info->length < MGMT_TLV_U32_SIZE ||
-			    tlv_info->length >= XSFP_CMIS_INFO_MAX_SIZE) {
+				tlv_info->length >= XSFP_CMIS_INFO_MAX_SIZE) {
 				need_continue = false;
 				break;
 			}
 
-			memcpy(temp_tlv_info + temp_offset,
-			       tlv_buf + MGMT_TLV_U32_SIZE + sizeof(struct mgmt_tlv_info),
-			       tlv_info->length - MGMT_TLV_U32_SIZE);
-			temp_offset += tlv_info->length - MGMT_TLV_U32_SIZE;
+			copy_size = tlv_info->length - MGMT_TLV_U32_SIZE;
+
+			if (temp_offset + copy_size > XSFP_CMIS_INFO_MAX_SIZE) {
+				need_continue = false;
+				break;
+			}
+
+			(void)memcpy(temp_tlv_info + temp_offset,
+						   tlv_buf + MGMT_TLV_U32_SIZE + sizeof(struct mgmt_tlv_info),
+						   copy_size);
+			temp_offset += copy_size;
+			break;
 
 		case MAG_XSFP_TYPE_WIRE_TYPE:
 			break;
@@ -1106,76 +1111,84 @@ static void hinic5_prase_cmis_tlp_info(u8 *data, u32 len, u8 *sfp_tlv_info, u32 
 			need_continue = false;
 			break;
 		}
-
 		tlv_buf += (sizeof(struct mgmt_tlv_info) + tlv_info->length);
 	}
-	memcpy(data, temp_tlv_info + offset, len);
+
+	(void)memcpy(data, temp_tlv_info + offset, len);
 }
 
-int hinic5_get_cmis_eeprom(void *hwdev, u8 *data, u32 len, u32 offset)
+static int hinic5_prase_cmis_tlv_info_by_page(u8 *data, u32 len, u8 *sfp_tlv_info, u8 target_page_id)
 {
-	struct drv_tag_mag_cmd_get_xsfp_tlv_rsp sfp_tlv_info;
+	struct tlv_block *tlv_info = NULL;
+	u8 *tlv_buf = sfp_tlv_info;
+	u32 temp_offset = 0;
+
+	while (temp_offset + sizeof(struct tlv_block) + len < XSFP_CMIS_INFO_MAX_SIZE) {
+		tlv_info = (struct tlv_block *)tlv_buf;
+
+		if (tlv_info->type != MAG_XSFP_TYPE_PAGE)
+			return -EOPNOTSUPP;
+		if (tlv_info->page_id == target_page_id) {
+			(void)memcpy(data, tlv_buf + sizeof(struct tlv_block), len);
+			return 0;
+		}
+
+		/* Note: avoid repeatedly calculating the length of page_id */
+		tlv_buf += (MGMT_TLV_U32_SIZE + tlv_info->length);
+		temp_offset += (MGMT_TLV_U32_SIZE + tlv_info->length);
+	}
+
+	return -EOPNOTSUPP;
+}
+
+static int hinic5_fetch_sfp_tlv_info(void *hwdev,
+				     struct drv_tag_mag_cmd_get_xsfp_tlv_rsp *sfp_tlv_info)
+{
 	struct tag_mag_cmd_get_xsfp_tlv_req sfp_tlv_info_req;
 	int err;
 
-	if (!hwdev)
+	if (hwdev == NULL)
 		return -EINVAL;
 
 	if (hinic5_if_sfp_absent(hwdev))
 		return -ENXIO;
 
-	memset(&sfp_tlv_info, 0, sizeof(sfp_tlv_info));
-	memset(&sfp_tlv_info_req, 0, sizeof(sfp_tlv_info_req));
+	(void)memset(sfp_tlv_info, 0, sizeof(*sfp_tlv_info));
+	(void)memset(&sfp_tlv_info_req, 0, sizeof(sfp_tlv_info_req));
 
 	sfp_tlv_info_req.port_id = hinic5_physical_port_id(hwdev);
 	sfp_tlv_info_req.rsp_buf_len = XSFP_CMIS_INFO_MAX_SIZE;
 
-	err = hinic5_get_sfp_tlv_info(hwdev, &sfp_tlv_info, &sfp_tlv_info_req);
+	err = hinic5_get_sfp_tlv_info(hwdev, sfp_tlv_info, &sfp_tlv_info_req);
+	return err;
+}
+
+int hinic5_get_cmis_eeprom(void *hwdev, u8 *data, u32 len, u32 offset)
+{
+	struct drv_tag_mag_cmd_get_xsfp_tlv_rsp sfp_tlv_info;
+	int err;
+
+	err = hinic5_fetch_sfp_tlv_info(hwdev, &sfp_tlv_info);
 	if (err != 0)
 		return err;
+
 	hinic5_prase_cmis_tlp_info(data, len, sfp_tlv_info.tlv_buf, offset);
 
 	return err;
 }
 
-u8 support_page[CMIS_MAX_PAGES] = {
-		HINIC5_PAGE_L00_H00_OFFSET, HINIC5_PAGE_H01_OFFSET,
-		HINIC5_PAGE_H02_OFFSET, HINIC5_PAGE_INVALID_OFFSET,
-		HINIC5_PAGE_INVALID_OFFSET, HINIC5_PAGE_INVALID_OFFSET,
-		HINIC5_PAGE_INVALID_OFFSET, HINIC5_PAGE_INVALID_OFFSET,
-		HINIC5_PAGE_INVALID_OFFSET, HINIC5_PAGE_INVALID_OFFSET,
-		HINIC5_PAGE_INVALID_OFFSET, HINIC5_PAGE_INVALID_OFFSET,
-		HINIC5_PAGE_INVALID_OFFSET, HINIC5_PAGE_INVALID_OFFSET,
-		HINIC5_PAGE_INVALID_OFFSET, HINIC5_PAGE_INVALID_OFFSET,
-		HINIC5_PAGE_H10_OFFSET, HINIC5_PAGE_H11_OFFSET
-};
-
-int hinic5_eeprom_page_check(u8 page_id, u32 offset, u32 len)
+int hinic5_get_cmis_eeprom_by_page(void *hwdev, u8 target_page_id, u8 *data, u32 len)
 {
-	u8 page_offset;
+	struct drv_tag_mag_cmd_get_xsfp_tlv_rsp sfp_tlv_info;
+	int err;
 
-	if (page_id >= CMIS_MAX_PAGES)
-		return -EINVAL;
+	err = hinic5_fetch_sfp_tlv_info(hwdev, &sfp_tlv_info);
+	if (err != 0)
+		return err;
 
-	page_offset = support_page[page_id];
+	err = hinic5_prase_cmis_tlv_info_by_page(data, len, sfp_tlv_info.tlv_buf, target_page_id);
 
-	if (page_offset == HINIC5_PAGE_INVALID_OFFSET)
-		return -EOPNOTSUPP;
-
-	if (len == 0 ||
-	    page_offset * QSFP_CMIS_PAGE_SIZE + offset + len >= XSFP_CMIS_INFO_MAX_SIZE)
-		return -EINVAL;
-
-	return 0;
-}
-
-int hinic5_get_cmis_eeprom_by_page(void *hwdev, u8 page_id, u32 offset, u8 *data, u32 len)
-{
-	u32 data_offset;
-
-	data_offset = support_page[page_id] * QSFP_CMIS_PAGE_SIZE + offset;
-
-	return hinic5_get_cmis_eeprom(hwdev, data, len, data_offset);
+	return err;
 }
 
 #define CMIS_UPPER_PAGE_00H_EXT_ID_OFFSET 0x81
@@ -1183,10 +1196,11 @@ static void process_sfp_data(u8 *sfp_data, u8 *sfp_type, u8 *sfp_type_ext)
 {
 	*sfp_type = sfp_data[0x0];
 
-	if (*sfp_type == MODULE_TYPE_SFF8024_ID_QSFP_PLUS_CMIS)
+	if (*sfp_type == MODULE_TYPE_SFF8024_ID_QSFP_PLUS_CMIS) {
 		*sfp_type_ext = sfp_data[CMIS_UPPER_PAGE_00H_EXT_ID_OFFSET];
-	else
+	} else {
 		*sfp_type_ext = sfp_data[0x1];
+	}
 }
 
 int hinic5_get_sfp_cmis_type(void *hwdev, u8 *sfp_type, u8 *sfp_type_ext)
@@ -1196,27 +1210,26 @@ int hinic5_get_sfp_cmis_type(void *hwdev, u8 *sfp_type, u8 *sfp_type_ext)
 	u8 sfp_data[XSFP_CMIS_INFO_MAX_SIZE] = {0};
 	int err;
 
-	if (!hwdev || !sfp_type || !sfp_type_ext)
+	if ((hwdev == NULL) || (sfp_type == NULL) || (sfp_type_ext == NULL))
 		return -EINVAL;
 
 	if (hinic5_if_sfp_absent(hwdev))
 		return -ENXIO;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 	rt_cmd_ext = &nic_io->nic_cfg.rt_cmd_ext;
 
 	mutex_lock(&nic_io->nic_cfg.sfp_mutex);
-	if (rt_cmd_ext->mpu_send_xsfp_tlv_info) {
+	if (rt_cmd_ext->mpu_send_xsfp_tlv_info == true) {
 		if (rt_cmd_ext->std_xsfp_tlv_info.head.status != 0) {
 			mutex_unlock(&nic_io->nic_cfg.sfp_mutex);
 			return -EIO;
 		}
 
-		hinic5_prase_cmis_tlp_info(sfp_data, XSFP_CMIS_INFO_MAX_SIZE,
-					   rt_cmd_ext->std_xsfp_tlv_info.tlv_buf, 0);
-		process_sfp_data(sfp_data, sfp_type, sfp_type_ext);
+		*sfp_type = nic_io->nic_cfg.sfp_cmis_type;
+		*sfp_type_ext = nic_io->nic_cfg.sfp_cmis_type_ext;
 
 		mutex_unlock(&nic_io->nic_cfg.sfp_mutex);
 		return 0;
@@ -1241,14 +1254,14 @@ int hinic5_get_sfp_type(void *hwdev, u8 *sfp_type, u8 *sfp_type_ext)
 	u8 sfp_data[STD_SFP_INFO_MAX_SIZE];
 	int err;
 
-	if (!hwdev || !sfp_type || !sfp_type_ext)
+	if ((hwdev == NULL) || (sfp_type == NULL) || (sfp_type_ext == NULL))
 		return -EINVAL;
 
 	if (hinic5_if_sfp_absent(hwdev))
 		return -ENXIO;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 	rt_cmd = &nic_io->nic_cfg.rt_cmd;
 
@@ -1284,11 +1297,11 @@ int hinic5_set_link_status_follow(void *hwdev, enum hinic5_link_follow_status st
 	u16 out_size = sizeof(follow);
 	int err;
 
-	if (!hwdev)
+	if (hwdev == NULL)
 		return -EINVAL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
 	if (status >= HINIC5_LINK_FOLLOW_STATUS_MAX) {
@@ -1296,14 +1309,14 @@ int hinic5_set_link_status_follow(void *hwdev, enum hinic5_link_follow_status st
 		return -EINVAL;
 	}
 
-	memset(&follow, 0, sizeof(follow));
+	(void)memset(&follow, 0, sizeof(follow));
 	follow.function_id = hinic5_global_func_id(hwdev);
 	follow.follow = status;
 
 	err = mag_msg_to_mgmt_sync(hwdev, MAG_CMD_SET_LINK_FOLLOW, &follow,
 				   sizeof(follow), &follow, &out_size);
-	if ((follow.head.status != HINIC5_MGMT_CMD_UNSUPPORTED && follow.head.status != 0) ||
-	    err != 0 || out_size == 0) {
+	if ((follow.head.status != HINIC5_MGMT_CMD_UNSUPPORTED && (follow.head.status != 0)) ||
+	    (err != 0) || (out_size == 0)) {
 		nic_err(nic_io->dev_hdl, "Failed to set link status follow port status, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, follow.head.status, out_size);
 		return -EFAULT;
@@ -1319,7 +1332,7 @@ int hinic5_update_pf_bw(void *hwdev)
 	int err;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
 	if (hinic5_func_type(hwdev) == TYPE_VF || !HINIC5_SUPPORT_RATE_LIMIT(hwdev)) {
@@ -1349,14 +1362,14 @@ int hinic5_set_pf_bw_limit(void *hwdev, u32 bw_limit)
 	u8 link_state = 0;
 	int err;
 
-	if (!hwdev)
+	if (hwdev == NULL)
 		return -EINVAL;
 
 	if (hinic5_func_type(hwdev) == TYPE_VF)
 		return 0;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
 	if (bw_limit > MAX_LIMIT_BW) {
@@ -1391,14 +1404,14 @@ int hinic5_get_pf_bw_limit(void *hwdev, u32 *bw_limit)
 {
 	struct hinic5_nic_io *nic_io = NULL;
 
-	if (!hwdev || !bw_limit)
+	if ((hwdev == NULL) || (bw_limit == NULL))
 		return -EINVAL;
 
 	if (hinic5_func_type(hwdev) == TYPE_VF)
 		return 0;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
 	*bw_limit = nic_io->nic_cfg.pf_bw_limit;
@@ -1422,11 +1435,11 @@ int hinic5_pf_mag_mbox_handler(void *hwdev, u16 vf_id,
 	struct hinic5_nic_io *nic_io = NULL;
 	const struct vf_msg_handler *handler = NULL;
 
-	if (!hwdev)
+	if (hwdev == NULL)
 		return -EFAULT;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EFAULT;
 
 	for (index = 0; index < cmd_size; index++) {
@@ -1483,12 +1496,12 @@ static int hinic5_mag_event_handler(void *hwdev, u16 cmd,
 	int size = ARRAY_LEN(mag_cmd_handler);
 	int i;
 
-	if (!hwdev)
+	if (hwdev == NULL)
 		return -EINVAL;
 
 	*out_size = 0;
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EFAULT;
 	for (i = 0; i < size; i++) {
 		if (cmd == mag_cmd_handler[i].cmd) {
@@ -1529,8 +1542,7 @@ static int _mag_msg_to_mgmt_sync(void *hwdev, u16 cmd, void *buf_in,
 {
 	int i, cmd_cnt = ARRAY_LEN(vf_mag_cmd_handler);
 
-	if (hinic5_func_type(hwdev) == TYPE_VF && (!hinic5_is_slave_host(hwdev)) &&
-	    (!hinic5_is_vf_isolation(hwdev))) {
+	if (hinic5_func_type(hwdev) == TYPE_VF && (!hinic5_is_slave_host(hwdev)) && (!hinic5_is_vf_isolation(hwdev))) {
 		for (i = 0; i < cmd_cnt; i++) {
 			if (cmd == vf_mag_cmd_handler[i].cmd) {
 				return hinic5_mbox_to_pf(hwdev, HINIC5_MOD_HILINK, cmd, buf_in,
@@ -1573,10 +1585,9 @@ int hinic5_set_fec(void *hwdev, u8 advertised_fec)
 	fec_msg.port_id = hinic5_physical_port_id(hwdev);
 	fec_msg.advertised_fec = advertised_fec;
 	err = mag_msg_to_mgmt_sync_ch(hwdev, MAG_CMD_CFG_FEC_MODE, &fec_msg, sizeof(fec_msg),
-				      &fec_msg, &out_size, HINIC5_CHANNEL_NIC);
-	if (err != 0 || fec_msg.head.status != 0 || out_size == 0) {
-		nic_err(nic_io->dev_hdl, "Set FEC mode failed, err: %d, status: 0x%x, out size: 0x%x\n",
-			err, fec_msg.head.status, out_size);
+					&fec_msg, &out_size, HINIC5_CHANNEL_NIC);
+	if ((err != 0) || (fec_msg.head.status != 0) || (out_size == 0)) {
+		nic_err(nic_io->dev_hdl, "Set FEC mode failed, err: %d, status: 0x%x, out size: 0x%x\n", err, fec_msg.head.status, out_size);
 		return -EINVAL;
 	}
 	return 0;
@@ -1599,15 +1610,14 @@ int hinic5_get_fec(void *hwdev, u8 *advertised_fec, u8 *supported_fec)
 	fec_msg.opcode = MAG_CMD_OPCODE_GET;
 	fec_msg.port_id = hinic5_physical_port_id(hwdev);
 	err = mag_msg_to_mgmt_sync_ch(hwdev, MAG_CMD_CFG_FEC_MODE, &fec_msg, sizeof(fec_msg),
-				      &fec_msg, &out_size, HINIC5_CHANNEL_NIC);
-	if (err != 0 || fec_msg.head.status != 0 || out_size == 0) {
-		nic_err(nic_io->dev_hdl, "Get FEC mode failed, err: %d, status: 0x%x, out size: 0x%x\n",
-			err, fec_msg.head.status, out_size);
+					&fec_msg, &out_size, HINIC5_CHANNEL_NIC);
+	if ((err != 0) || (fec_msg.head.status != 0) || (out_size == 0)) {
+		nic_err(nic_io->dev_hdl, "Get FEC mode failed, err: %d, status: 0x%x, out size: 0x%x\n", err, fec_msg.head.status, out_size);
 		return -EINVAL;
+	} else {
+		*advertised_fec = fec_msg.advertised_fec;
+		*supported_fec = fec_msg.supported_fec;
 	}
-
-	*advertised_fec = fec_msg.advertised_fec;
-	*supported_fec = fec_msg.supported_fec;
 
 	return 0;
 }

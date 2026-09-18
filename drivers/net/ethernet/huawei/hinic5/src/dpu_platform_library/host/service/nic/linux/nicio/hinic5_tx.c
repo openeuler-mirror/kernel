@@ -4,8 +4,8 @@
  * File Name     : hinic5_tx.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   : TX queue implementation
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 TX (transmit) path implementation
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [NIC]" fmt
@@ -38,15 +38,8 @@
 #include "hinic5_ptp.h"
 #include "hinic5_tx.h"
 
-/* 1872 FT B600 temporary solution, to be removed after config file adaptation */
-#define QP_COS_MASK	7
-static char qp_cos_mask = QP_COS_MASK;
-module_param(qp_cos_mask, byte, 0444);
-MODULE_PARM_DESC(qp_cos_mask, "QP COS mask, 0-255 (default=0)");
-
 /* The 1823v200 product non-tso SGEs is 32, and that of the 1825v100&1872v100 is 38.
- * The number of non-tso SGEs is strictly constrained to 32.
- */
+	The number of non-tso SGEs is strictly constrained to 32. */
 #define HINIC5_NONTSO_PKT_MAX_SGE	32
 
 #define MIN_SKB_LEN		32
@@ -124,7 +117,8 @@ void hinic5_xdptxq_get_stats(struct hinic5_txq *txq,
 	do {
 		start = u64_stats_fetch_begin(&xdptxq_stats->syncp);
 		stats->xdp_dropped = xdptxq_stats->xdp_dropped;
-		stats->xdp_xmits = xdptxq_stats->xdp_xmits;
+		stats->xdp_xmit_pkts = xdptxq_stats->xdp_xmit_pkts;
+		stats->xdp_xmit_bytes = xdptxq_stats->xdp_xmit_bytes;
 		stats->map_xdpf_err = xdptxq_stats->map_xdpf_err;
 	} while (u64_stats_fetch_retry(&xdptxq_stats->syncp, start));
 	u64_stats_update_end(&stats->syncp);
@@ -134,7 +128,8 @@ void hinic5_xdptxq_clean_stats(struct hinic5_xdptxq_stats *xdptxq_stats)
 {
 	u64_stats_update_begin(&xdptxq_stats->syncp);
 	xdptxq_stats->xdp_dropped = 0;
-	xdptxq_stats->xdp_xmits = 0;
+	xdptxq_stats->xdp_xmit_pkts = 0;
+	xdptxq_stats->xdp_xmit_bytes = 0;
 	xdptxq_stats->map_xdpf_err = 0;
 	u64_stats_update_end(&xdptxq_stats->syncp);
 }
@@ -375,8 +370,9 @@ static void hinic5_set_unknown_tunnel_csum(struct sk_buff *skb)
 	if (skb->ip_summed == CHECKSUM_NONE && l4_proto != IPPROTO_UDP) {
 		csum_offset = skb_checksum_start_offset(skb) + skb->csum_offset;
 		skb_csum = *(__sum16 *)(skb->data + csum_offset);
-		if (skb_csum == 0xffff)
+		if (skb_csum == 0xffff) {
 			*(__sum16 *)(skb->data + csum_offset) = 0;
+		}
 	}
 }
 
@@ -456,8 +452,7 @@ static void hinic5_set_tso_info(struct hinic5_offload_info *offload_info,
 }
 
 static inline void hinic5_inner_tso_offload(struct hinic5_offload_info *offload_info,
-					    struct hinic5_queue_info *queue_info,
-					    struct sk_buff *skb,
+					    struct hinic5_queue_info *queue_info, struct sk_buff *skb,
 					    union hinic5_ip ip, union hinic5_l4 l4)
 {
 	u8 l4_proto;
@@ -497,8 +492,8 @@ static inline void hinic5_inner_tso_offload(struct hinic5_offload_info *offload_
 			    skb_shinfo(skb)->gso_size);
 }
 
-static int hinic5_tso(struct hinic5_offload_info *offload_info,
-		      struct hinic5_queue_info *queue_info, struct sk_buff *skb)
+static int hinic5_tso(struct hinic5_offload_info *offload_info, struct hinic5_queue_info *queue_info,
+		      struct sk_buff *skb)
 {
 	union hinic5_ip ip;
 	union hinic5_l4 l4;
@@ -598,8 +593,9 @@ u32 hinic5_tx_offload(struct sk_buff *skb, struct hinic5_offload_info *offload_i
 	}
 	if (unlikely((skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP) != 0)) {
 		offload |= TX_OFFLOAD_PTP;
-		if (hinic5_ptp_tx_process(nic_dev, skb) == 0)
+		if (hinic5_ptp_tx_process(nic_dev, skb) == 0) {
 			offload_info->pkt_1588 = 1;
+		}
 	}
 
 	return offload;
@@ -726,7 +722,6 @@ void hinic5_tx_set_compact_task_offload(struct hinic5_offload_info *offload,
 					struct hinic5_sq_wqe_combo *wqe_combo)
 {
 	struct hinic5_sq_task *task = wqe_combo->task;
-
 	task->pkt_info0 =
 			SQ_TASK_INFO_SET(offload->out_l3_en, OUT_L3_EN) |
 			SQ_TASK_INFO_SET(offload->out_l4_en, OUT_L4_EN) |
@@ -791,6 +786,12 @@ static void hinic5_prepare_sq_ctrl(struct hinic5_sq_wqe_combo *wqe_combo,
 	wqe_desc->ctrl_len = hinic5_hw_be32(wqe_desc->ctrl_len);
 }
 
+static bool hinic5_check_cos_invalid(struct hinic5_nic_dev *nic_dev, u8 cos)
+{
+	/* DCB is enable and The cos is not assigned to NIC */
+	return (test_bit(HINIC5_DCB_ENABLE, &nic_dev->flags) != 0) && ((BIT(cos) & nic_dev->cos_assign_bitmap) == 0);
+}
+
 static netdev_tx_t hinic5_send_one_skb(struct sk_buff *skb,
 				       struct net_device *netdev,
 				       struct hinic5_txq *txq)
@@ -823,9 +824,13 @@ static netdev_tx_t hinic5_send_one_skb(struct sk_buff *skb,
 		}
 	}
 
+	if (hinic5_check_cos_invalid(nic_dev, txq->cos)) {
+		goto tx_drop_pkts;
+	}
+
 	max_wqe_len = skb_is_gso(skb) ? TSO_SKB_SIZE_MAX : NON_TSO_SKB_SIZE_MAX;
 	frag_size = skb_headlen(skb);
-	if (unlikely(frag_size > max_wqe_len || frag_size == 0)) {
+	if (unlikely((frag_size > max_wqe_len) || (frag_size == 0))) {
 		TXQ_STATS_INC(txq, frag_size_err);
 		goto tx_drop_pkts;
 	}
@@ -838,9 +843,7 @@ static netdev_tx_t hinic5_send_one_skb(struct sk_buff *skb,
 		if (unlikely(frag_size == 0)) {
 			find_zero_sge_len = true;
 			continue;
-		} else if (unlikely((find_zero_sge_len) ||
-			   (frag_size > max_wqe_len) ||
-			   (total_size > max_wqe_len))) {
+		} else if (unlikely((find_zero_sge_len) || (frag_size > max_wqe_len) || (total_size > max_wqe_len))) {
 			TXQ_STATS_INC(txq, frag_size_err);
 			goto tx_drop_pkts;
 		}
@@ -863,8 +866,9 @@ static netdev_tx_t hinic5_send_one_skb(struct sk_buff *skb,
 	} else if (offload == 0 && num_sge == 1) {
 		/* no TS in current wqe */
 		wqebb_cnt -= 1;
-		if (unlikely(num_sge == 1 && skb->len > COMPACET_WQ_SKB_MAX_LEN))
+		if (unlikely(num_sge == 1 && skb->len > COMPACET_WQ_SKB_MAX_LEN)) {
 			goto tx_drop_pkts;
+		}
 	} else if ((nic_dev->tx_wqe_compact_task != 0) &&
 			   ((offload & TX_OFFLOAD_TSO) == 0) &&
 			   num_sge == 1) {
@@ -898,7 +902,7 @@ static netdev_tx_t hinic5_send_one_skb(struct sk_buff *skb,
 
 	skb_tx_timestamp(skb);
 
-	hinic5_write_db(txq->sq, (txq->cos & nic_dev->cos_mask_mode) & (u8)qp_cos_mask, SQ_CFLAG_DP,
+	hinic5_write_db(txq->sq, txq->cos, SQ_CFLAG_DP,
 			hinic5_get_sq_local_pi(txq->sq));
 
 	return NETDEV_TX_OK;
@@ -930,8 +934,9 @@ bool hinic5_check_skb_need_dual_send(struct sk_buff *skb)
 	} *combined = NULL, _combined;
 
 	/* ARP packet */
-	if (skb->protocol == htons(ETH_P_ARP))
+	if (skb->protocol == htons(ETH_P_ARP)) {
 		return true;
+	}
 	if (skb->protocol == htons(ETH_P_IPV6)) {
 		combined = skb_header_pointer(skb, (int)skb_mac_header_len(skb),
 					      sizeof(_combined),
@@ -960,9 +965,8 @@ netdev_tx_t hinic5_xmit_frame(struct sk_buff *skb, struct net_device *netdev)
 		return NETDEV_TX_OK;
 	}
 
-	/* Check if ARP dual send is needed */
-	if (hinic5_check_dev_need_dual_send(nic_dev->hwdev) &&
-	    hinic5_check_skb_need_dual_send(skb)) {
+	/* Check whether arp dual-send is needed */
+	if (hinic5_check_dev_need_dual_send(nic_dev->hwdev) && hinic5_check_skb_need_dual_send(skb)) {
 		skb_queue_tail(&nic_dev->arp_queue, skb_get(skb));
 		queue_work(nic_dev->workq, &nic_dev->arp_dual_work);
 	}
@@ -1027,6 +1031,7 @@ static int txq_free_old_skbs(struct hinic5_txq *txq, int budget)
 	int pkts = 0;
 #ifdef HAVE_XDP_SUPPORT
 	u32 xmit_pkts = 0;
+	u64 xmit_bytes = 0;
 #endif
 	u16 wqebb_cnt = 0;
 	u16 hw_ci, sw_ci;
@@ -1039,7 +1044,7 @@ static int txq_free_old_skbs(struct hinic5_txq *txq, int budget)
 		tx_info = &txq->tx_info[sw_ci];
 
 		/* Whether all of the wqebb of this wqe is completed */
-		if (hw_ci == sw_ci ||
+		if ((hw_ci == sw_ci) ||
 		    ((u16)(hw_ci - sw_ci) & txq->q_mask) < tx_info->wqebb_cnt)
 			break;
 
@@ -1052,8 +1057,10 @@ static int txq_free_old_skbs(struct hinic5_txq *txq, int budget)
 		nr_pkts += tx_info->num_pkts;
 		pkts++;
 #ifdef HAVE_XDP_SUPPORT
-		if (tx_info->xdpf)
+		if (tx_info->xdpf) {
 			xmit_pkts++;
+			xmit_bytes += tx_info->xdpf->len;
+		}
 #endif
 		tx_free_skb(nic_dev, tx_info);
 	} while (likely(pkts < budget));
@@ -1069,9 +1076,10 @@ static int txq_free_old_skbs(struct hinic5_txq *txq, int budget)
 	u64_stats_update_end(&txq->txq_stats.syncp);
 
 #ifdef HAVE_XDP_SUPPORT
-	/* xmit_pkts stats will not appear simultaneously with tx_bytes stats */
+	/* xmit_pkts statistics do not appear simultaneously with tx_bytes statistics */
 	u64_stats_update_begin(&txq->xdptxq_stats.syncp);
-	txq->xdptxq_stats.xdp_xmits += xmit_pkts;
+	txq->xdptxq_stats.xdp_xmit_pkts += xmit_pkts;
+	txq->xdptxq_stats.xdp_xmit_bytes += xmit_bytes;
 	u64_stats_update_end(&txq->xdptxq_stats.syncp);
 #endif
 
@@ -1145,7 +1153,7 @@ int hinic5_alloc_txqs_res(struct hinic5_nic_dev *nic_dev, u16 num_sq,
 
 		size = sizeof(*tqres->tx_info) * sq_depth;
 		tqres->tx_info = kzalloc(size, GFP_KERNEL);
-		if (!tqres->tx_info) {
+		if (tqres->tx_info == NULL) {
 			nicif_err(nic_dev, drv, nic_dev->netdev,
 				  "Failed to alloc txq%d tx info\n", idx);
 			goto err_out;
@@ -1155,7 +1163,7 @@ int hinic5_alloc_txqs_res(struct hinic5_nic_dev *nic_dev, u16 num_sq,
 			(sq_depth * HINIC5_BDS_PER_SQ_WQEBB +
 			 HINIC5_MAX_SQ_SGE);
 		tqres->bds = kzalloc(size, GFP_KERNEL);
-		if (!tqres->bds) {
+		if (tqres->bds == NULL) {
 			kfree(tqres->tx_info);
 			nicif_err(nic_dev, drv, nic_dev->netdev,
 				  "Failed to alloc txq%d bds info\n", idx);
@@ -1214,7 +1222,7 @@ int hinic5_configure_txqs(struct hinic5_nic_dev *nic_dev, u16 num_sq,
 				&tqres->bds[idx * HINIC5_BDS_PER_SQ_WQEBB];
 
 		txq->sq = hinic5_get_nic_queue(nic_dev->hwdev, q_id, HINIC5_SQ);
-		if (!txq->sq) {
+		if (txq->sq == NULL) {
 			nicif_err(nic_dev, drv, nic_dev->netdev,
 				  "Failed to get %u sq\n", q_id);
 			return -EFAULT;
@@ -1239,8 +1247,10 @@ int hinic5_alloc_txqs(struct net_device *netdev)
 	}
 
 	nic_dev->txqs = kzalloc(txq_size, GFP_KERNEL);
-	if (!nic_dev->txqs)
+	if (nic_dev->txqs == NULL) {
+		nic_err(dev, "Failed to allocate txqs\n");
 		return -ENOMEM;
+	}
 
 	for (q_id = 0; q_id < num_txqs; q_id++) {
 		txq = &nic_dev->txqs[q_id];

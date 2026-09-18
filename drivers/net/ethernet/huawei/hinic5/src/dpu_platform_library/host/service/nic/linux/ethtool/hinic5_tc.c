@@ -4,8 +4,8 @@
  * File Name     : hinic5_tc.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 traffic control implementation
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [NIC]" fmt
@@ -71,15 +71,9 @@ static int hinic5_tc_info_init_from_reg(struct hinic5_nic_dev *nic_dev)
 		return ret;
 
 	mutex_lock(&tc_info->tc_lock);
-	tc_info->tunnel_opt = GET_MASK_VAL(cfg_info.reg_value,
-					   PFE_TUNNEL_OPT_SHIFT,
-					   PFE_TUNNEL_OPT_MASK);
-	tc_info->ipv6_shift_value = GET_MASK_VAL(cfg_info.reg_value,
-						 PFE_IPV6_SIP_SHIFT,
-						 PFE_IPV6_SIP_MASK);
-	tc_info->ipv6_shift_value2 = GET_MASK_VAL(cfg_info.reg_value2,
-						  PFE_IPV6_SIP_DIP_SHIFT,
-						  PFE_IPV6_SIP_DIP_MASK);
+	tc_info->tunnel_opt = GET_MASK_VAL(cfg_info.reg_value, PFE_TUNNEL_OPT_SHIFT, PFE_TUNNEL_OPT_MASK);
+	tc_info->ipv6_shift_value = GET_MASK_VAL(cfg_info.reg_value, PFE_IPV6_SIP_SHIFT, PFE_IPV6_SIP_MASK);
+	tc_info->ipv6_shift_value2 = GET_MASK_VAL(cfg_info.reg_value2, PFE_IPV6_SIP_DIP_SHIFT, PFE_IPV6_SIP_DIP_MASK);
 	mutex_unlock(&tc_info->tc_lock);
 
 	return 0;
@@ -130,7 +124,7 @@ static void hinic5_tc_match_basic(struct flow_rule *rule, struct hinic5_tc_flow 
 		struct flow_match_basic match;
 
 		flow_rule_match_basic(rule, &match);
-		if (match.key->n_proto != 0 && match.mask->n_proto != 0) {
+		if ((match.key->n_proto != 0) && (match.mask->n_proto != 0)) {
 			flow->l2_key.ether_type = match.key->n_proto;
 			flow->l2_mask.ether_type = match.mask->n_proto;
 			flow->key_flags |= BIT(HINIC5_TC_KEY_ETH_TYPE);
@@ -187,14 +181,13 @@ static void hinic5_tc_match_vlan(struct flow_rule *rule, struct hinic5_tc_flow *
 		}
 	} else {
 		flow->l2_key.vlan_tag = 0;
-		flow->l2_mask.vlan_tag = 0;  /* For ipv4 non-vlan packets */
+		flow->l2_mask.vlan_tag = 0;  // Adapt for IPv4 non-VLAN packets
 	}
 }
 
 static void hinic5_tc_match_ip_addrs(struct flow_rule *rule, struct hinic5_tc_flow *flow)
 {
 	struct flow_match_control ctrl_match;
-
 	flow_rule_match_control(rule, &ctrl_match);
 
 	if (ctrl_match.key->addr_type == FLOW_DISSECTOR_KEY_IPV4_ADDRS &&
@@ -319,106 +312,73 @@ static u16 hinic5_tc_get_key_flags(u16 profile_id, u16 tunnel_opt)
 {
 	u16 key_flags[HINIC5_TC_PROFILE_MAX] = {0};
 
-	key_flags[HINIC5_TC_PROFILE_TUN_ETH] = BIT(HINIC5_TC_KEY_VNI) |
-						BIT(HINIC5_TC_KEY_SRC_MAC) |
-						BIT(HINIC5_TC_KEY_DST_MAC) |
-						BIT(HINIC5_TC_KEY_ETH_TYPE);
+	key_flags[HINIC5_TC_PROFILE_TUN_ETH] = BIT(HINIC5_TC_KEY_VNI) | BIT(HINIC5_TC_KEY_SRC_MAC) |
+						BIT(HINIC5_TC_KEY_DST_MAC) | BIT(HINIC5_TC_KEY_ETH_TYPE);
 
-	key_flags[HINIC5_TC_PROFILE_TUN_ETH_VLAN] = BIT(HINIC5_TC_KEY_VNI) |
-						BIT(HINIC5_TC_KEY_SRC_MAC) |
-						BIT(HINIC5_TC_KEY_DST_MAC) |
-						BIT(HINIC5_TC_KEY_ETH_TYPE) |
+	key_flags[HINIC5_TC_PROFILE_TUN_ETH_VLAN] = BIT(HINIC5_TC_KEY_VNI) | BIT(HINIC5_TC_KEY_SRC_MAC) |
+						BIT(HINIC5_TC_KEY_DST_MAC) | BIT(HINIC5_TC_KEY_ETH_TYPE) |
 						BIT(HINIC5_TC_KEY_VLAN_TAG);
 
-	key_flags[HINIC5_TC_PROFILE_TUN_ETH_QINQ] = BIT(HINIC5_TC_KEY_VNI) |
-						BIT(HINIC5_TC_KEY_SRC_MAC) |
-						BIT(HINIC5_TC_KEY_DST_MAC) |
-						BIT(HINIC5_TC_KEY_ETH_TYPE) |
-						BIT(HINIC5_TC_KEY_VLAN_TAG) |
-						BIT(HINIC5_TC_KEY_CVLAN);
+	key_flags[HINIC5_TC_PROFILE_TUN_ETH_QINQ] = BIT(HINIC5_TC_KEY_VNI) | BIT(HINIC5_TC_KEY_SRC_MAC) |
+						BIT(HINIC5_TC_KEY_DST_MAC) | BIT(HINIC5_TC_KEY_ETH_TYPE) |
+						BIT(HINIC5_TC_KEY_VLAN_TAG) | BIT(HINIC5_TC_KEY_CVLAN);
 
 	key_flags[HINIC5_TC_PROFILE_ETH] = BIT(HINIC5_TC_KEY_SRC_MAC) | BIT(HINIC5_TC_KEY_DST_MAC) |
 						BIT(HINIC5_TC_KEY_ETH_TYPE);
 
-	key_flags[HINIC5_TC_PROFILE_ETH_VLAN] = BIT(HINIC5_TC_KEY_SRC_MAC) |
-						BIT(HINIC5_TC_KEY_DST_MAC) |
-						BIT(HINIC5_TC_KEY_ETH_TYPE) |
-						BIT(HINIC5_TC_KEY_VLAN_TAG);
+	key_flags[HINIC5_TC_PROFILE_ETH_VLAN] = BIT(HINIC5_TC_KEY_SRC_MAC) | BIT(HINIC5_TC_KEY_DST_MAC) |
+						BIT(HINIC5_TC_KEY_ETH_TYPE) | BIT(HINIC5_TC_KEY_VLAN_TAG);
 
-	key_flags[HINIC5_TC_PROFILE_ETH_QINQ] = BIT(HINIC5_TC_KEY_SRC_MAC) |
-						BIT(HINIC5_TC_KEY_DST_MAC) |
-						BIT(HINIC5_TC_KEY_ETH_TYPE) |
-						BIT(HINIC5_TC_KEY_VLAN_TAG) |
+	key_flags[HINIC5_TC_PROFILE_ETH_QINQ] = BIT(HINIC5_TC_KEY_SRC_MAC) | BIT(HINIC5_TC_KEY_DST_MAC) |
+						BIT(HINIC5_TC_KEY_ETH_TYPE) | BIT(HINIC5_TC_KEY_VLAN_TAG) |
 						BIT(HINIC5_TC_KEY_CVLAN);
 
-	key_flags[HINIC5_TC_PROFILE_TUN_ETH_IP4] = BIT(HINIC5_TC_KEY_VNI) |
-						BIT(HINIC5_TC_KEY_DST_MAC) |
-						BIT(HINIC5_TC_KEY_ETH_TYPE) |
-						BIT(HINIC5_TC_KEY_IPV4) |
+	key_flags[HINIC5_TC_PROFILE_TUN_ETH_IP4] = BIT(HINIC5_TC_KEY_VNI) | BIT(HINIC5_TC_KEY_DST_MAC) |
+						BIT(HINIC5_TC_KEY_ETH_TYPE) | BIT(HINIC5_TC_KEY_IPV4) |
 						BIT(HINIC5_TC_KEY_PROTOCOL);
 
-	key_flags[HINIC5_TC_PROFILE_TUN_ETH_IP4_TCPORUDP] = BIT(HINIC5_TC_KEY_VNI) |
-	BIT(HINIC5_TC_KEY_DST_MAC) |
-						BIT(HINIC5_TC_KEY_ETH_TYPE) |
-						BIT(HINIC5_TC_KEY_IPV4) |
-						BIT(HINIC5_TC_KEY_PROTOCOL) |
-						BIT(HINIC5_TC_KEY_PORTS);
+	key_flags[HINIC5_TC_PROFILE_TUN_ETH_IP4_TCPORUDP] = BIT(HINIC5_TC_KEY_VNI) | BIT(HINIC5_TC_KEY_DST_MAC) |
+						BIT(HINIC5_TC_KEY_ETH_TYPE) | BIT(HINIC5_TC_KEY_IPV4) |
+						BIT(HINIC5_TC_KEY_PROTOCOL) | BIT(HINIC5_TC_KEY_PORTS);
 
 	key_flags[HINIC5_TC_PROFILE_ETH_IP4] = BIT(HINIC5_TC_KEY_DST_MAC) |
-						BIT(HINIC5_TC_KEY_IPV4) |
-						BIT(HINIC5_TC_KEY_PROTOCOL);
+						BIT(HINIC5_TC_KEY_IPV4) | BIT(HINIC5_TC_KEY_PROTOCOL);
 
 	key_flags[HINIC5_TC_PROFILE_ETH_IP4_TCPORUDP] = BIT(HINIC5_TC_KEY_DST_MAC) |
-						BIT(HINIC5_TC_KEY_IPV4) |
-						BIT(HINIC5_TC_KEY_PROTOCOL) |
+						BIT(HINIC5_TC_KEY_IPV4) | BIT(HINIC5_TC_KEY_PROTOCOL) |
 						BIT(HINIC5_TC_KEY_PORTS);
 
 	if (tunnel_opt == TUNNEL_OPT_OFF) {
-		key_flags[HINIC5_TC_PROFILE_TUN_ETH_IP6] = BIT(HINIC5_TC_KEY_VNI) |
-						BIT(HINIC5_TC_KEY_IPV6) |
+		key_flags[HINIC5_TC_PROFILE_TUN_ETH_IP6] = BIT(HINIC5_TC_KEY_VNI) | BIT(HINIC5_TC_KEY_IPV6) |
 						BIT(HINIC5_TC_KEY_PROTOCOL);
-		key_flags[HINIC5_TC_PROFILE_TUN_ETH_IP6_TCPORUDP] = BIT(HINIC5_TC_KEY_VNI) |
-						BIT(HINIC5_TC_KEY_IPV6) |
-						BIT(HINIC5_TC_KEY_PROTOCOL) |
-						BIT(HINIC5_TC_KEY_PORTS);
+		key_flags[HINIC5_TC_PROFILE_TUN_ETH_IP6_TCPORUDP] = BIT(HINIC5_TC_KEY_VNI) | BIT(HINIC5_TC_KEY_IPV6) |
+						BIT(HINIC5_TC_KEY_PROTOCOL) | BIT(HINIC5_TC_KEY_PORTS);
 	} else {
-		key_flags[HINIC5_TC_PROFILE_TUN_ETH_IP6] = BIT(HINIC5_TC_KEY_VNI) |
-						BIT(HINIC5_TC_KEY_SRC_MAC) |
-						BIT(HINIC5_TC_KEY_DST_MAC) |
-						BIT(HINIC5_TC_KEY_ETH_TYPE) |
-						BIT(HINIC5_TC_KEY_IPV6) |
-						BIT(HINIC5_TC_KEY_PROTOCOL);
-		key_flags[HINIC5_TC_PROFILE_TUN_ETH_IP6_TCPORUDP] = BIT(HINIC5_TC_KEY_VNI) |
-						BIT(HINIC5_TC_KEY_SRC_MAC) |
-						BIT(HINIC5_TC_KEY_DST_MAC) |
-						BIT(HINIC5_TC_KEY_ETH_TYPE) |
-						BIT(HINIC5_TC_KEY_IPV6) |
-						BIT(HINIC5_TC_KEY_PROTOCOL) |
+		key_flags[HINIC5_TC_PROFILE_TUN_ETH_IP6] = BIT(HINIC5_TC_KEY_VNI) | BIT(HINIC5_TC_KEY_SRC_MAC) |
+						BIT(HINIC5_TC_KEY_DST_MAC) | BIT(HINIC5_TC_KEY_ETH_TYPE) |
+						BIT(HINIC5_TC_KEY_IPV6) | BIT(HINIC5_TC_KEY_PROTOCOL);
+		key_flags[HINIC5_TC_PROFILE_TUN_ETH_IP6_TCPORUDP] = BIT(HINIC5_TC_KEY_VNI) | BIT(HINIC5_TC_KEY_SRC_MAC) |
+						BIT(HINIC5_TC_KEY_DST_MAC) | BIT(HINIC5_TC_KEY_ETH_TYPE) |
+						BIT(HINIC5_TC_KEY_IPV6) | BIT(HINIC5_TC_KEY_PROTOCOL) |
 						BIT(HINIC5_TC_KEY_PORTS);
 	}
 
-	key_flags[HINIC5_TC_PROFILE_ETH_IP6] = BIT(HINIC5_TC_KEY_DST_MAC) |
-						BIT(HINIC5_TC_KEY_IPV6) |
+	key_flags[HINIC5_TC_PROFILE_ETH_IP6] = BIT(HINIC5_TC_KEY_DST_MAC) | BIT(HINIC5_TC_KEY_IPV6) |
 						BIT(HINIC5_TC_KEY_PROTOCOL);
 
-	key_flags[HINIC5_TC_PROFILE_ETH_IP6_TCPORUDP] = BIT(HINIC5_TC_KEY_DST_MAC) |
-						BIT(HINIC5_TC_KEY_IPV6) |
-						BIT(HINIC5_TC_KEY_PROTOCOL) |
-						BIT(HINIC5_TC_KEY_PORTS);
+	key_flags[HINIC5_TC_PROFILE_ETH_IP6_TCPORUDP] = BIT(HINIC5_TC_KEY_DST_MAC) | BIT(HINIC5_TC_KEY_IPV6) |
+						BIT(HINIC5_TC_KEY_PROTOCOL) | BIT(HINIC5_TC_KEY_PORTS);
 
-	key_flags[HINIC5_TC_PROFILE_OUTER_IP_INNER_IP] = BIT(HINIC5_TC_KEY_ENC_IP) |
-						BIT(HINIC5_TC_KEY_VNI) | BIT(HINIC5_TC_KEY_IPV4);
+	key_flags[HINIC5_TC_PROFILE_OUTER_IP_INNER_IP] = BIT(HINIC5_TC_KEY_ENC_IP) | BIT(HINIC5_TC_KEY_VNI) |
+						BIT(HINIC5_TC_KEY_IPV4);
 
-	key_flags[HINIC5_TC_PROFILE_OUTER_IP_INNER_IP_TCPORUDP] = BIT(HINIC5_TC_KEY_ENC_IP) |
-						BIT(HINIC5_TC_KEY_VNI) |
+	key_flags[HINIC5_TC_PROFILE_OUTER_IP_INNER_IP_TCPORUDP] = BIT(HINIC5_TC_KEY_ENC_IP) | BIT(HINIC5_TC_KEY_VNI) |
 						BIT(HINIC5_TC_KEY_IPV4) | BIT(HINIC5_TC_KEY_PORTS);
 
 	return key_flags[profile_id];
 }
 
-static void hinic5_tc_get_key_tun_eth(const u8 *attr[],
-				      const struct hinic5_tc_info *tc_info,
-				      u8 *mem)
+static void hinic5_tc_get_key_tun_eth(const u8 *attr[], const struct hinic5_tc_info *tc_info, u8 *mem)
 {
 	struct hinic5_tc_rule_tun_eth *rule_st = (struct hinic5_tc_rule_tun_eth *)mem;
 
@@ -428,9 +388,7 @@ static void hinic5_tc_get_key_tun_eth(const u8 *attr[],
 	WRITE_FIELD_U16(rule_st, ether_type, attr[HINIC5_TC_FIELD_ETH_TYPE]);
 }
 
-static void hinic5_tc_get_key_tun_eth_vlan(const u8 *attr[],
-					   const struct hinic5_tc_info *tc_info,
-					   u8 *mem)
+static void hinic5_tc_get_key_tun_eth_vlan(const u8 *attr[], const struct hinic5_tc_info *tc_info, u8 *mem)
 {
 	struct hinic5_tc_rule_tun_eth_vlan *rule_st = (struct hinic5_tc_rule_tun_eth_vlan *)mem;
 
@@ -441,9 +399,7 @@ static void hinic5_tc_get_key_tun_eth_vlan(const u8 *attr[],
 	WRITE_FIELD_SPLIT_U16(rule_st, vlan_tag, attr[HINIC5_TC_FIELD_VLAN_TAG]);
 }
 
-static void hinic5_tc_get_key_tun_eth_qinq(const u8 *attr[],
-					   const struct hinic5_tc_info *tc_info,
-					   u8 *mem)
+static void hinic5_tc_get_key_tun_eth_qinq(const u8 *attr[], const struct hinic5_tc_info *tc_info, u8 *mem)
 {
 	struct hinic5_tc_rule_tun_eth_qinq *rule_st = (struct hinic5_tc_rule_tun_eth_qinq *)mem;
 
@@ -464,9 +420,7 @@ static void hinic5_tc_get_key_eth(const u8 *attr[], const struct hinic5_tc_info 
 	WRITE_FIELD_U16(rule_st, ether_type, attr[HINIC5_TC_FIELD_ETH_TYPE]);
 }
 
-static void hinic5_tc_get_key_eth_vlan(const u8 *attr[],
-				       const struct hinic5_tc_info *tc_info,
-				       u8 *mem)
+static void hinic5_tc_get_key_eth_vlan(const u8 *attr[], const struct hinic5_tc_info *tc_info, u8 *mem)
 {
 	struct hinic5_tc_rule_eth_vlan *rule_st = (struct hinic5_tc_rule_eth_vlan *)mem;
 
@@ -476,9 +430,7 @@ static void hinic5_tc_get_key_eth_vlan(const u8 *attr[],
 	WRITE_FIELD_U16(rule_st, vlan_tag, attr[HINIC5_TC_FIELD_VLAN_TAG]);
 }
 
-static void hinic5_tc_get_key_eth_qinq(const u8 *attr[],
-				       const struct hinic5_tc_info *tc_info,
-				       u8 *mem)
+static void hinic5_tc_get_key_eth_qinq(const u8 *attr[], const struct hinic5_tc_info *tc_info, u8 *mem)
 {
 	struct hinic5_tc_rule_eth_qinq *rule_st = (struct hinic5_tc_rule_eth_qinq *)mem;
 
@@ -489,9 +441,7 @@ static void hinic5_tc_get_key_eth_qinq(const u8 *attr[],
 	WRITE_FIELD_U16(rule_st, cvlan_tag, attr[HINIC5_TC_FIELD_CVLAN_TAG]);
 }
 
-static void hinic5_tc_get_key_tun_eth_ip4(const u8 *attr[],
-					  const struct hinic5_tc_info *tc_info,
-					  u8 *mem)
+static void hinic5_tc_get_key_tun_eth_ip4(const u8 *attr[], const struct hinic5_tc_info *tc_info, u8 *mem)
 {
 	struct hinic5_tc_rule_tun_eth_ip4 *rule_st = (struct hinic5_tc_rule_tun_eth_ip4 *)mem;
 
@@ -503,12 +453,9 @@ static void hinic5_tc_get_key_tun_eth_ip4(const u8 *attr[],
 	WRITE_FIELD_U8(rule_st, proto, attr[HINIC5_TC_FIELD_PROTOCOL]);
 }
 
-static void hinic5_tc_get_key_tun_eth_ip4_tcporudp(const u8 *attr[],
-						   const struct hinic5_tc_info *tc_info,
-						   u8 *mem)
+static void hinic5_tc_get_key_tun_eth_ip4_tcporudp(const u8 *attr[], const struct hinic5_tc_info *tc_info, u8 *mem)
 {
-	struct hinic5_tc_rule_tun_eth_ip4_tcporudp *rule_st =
-			(struct hinic5_tc_rule_tun_eth_ip4_tcporudp *)mem;
+	struct hinic5_tc_rule_tun_eth_ip4_tcporudp *rule_st = (struct hinic5_tc_rule_tun_eth_ip4_tcporudp *)mem;
 
 	WRITE_VNI(rule_st, attr[HINIC5_TC_FIELD_VNI]);
 	WRITE_MAC(rule_st, dmac, attr[HINIC5_TC_FIELD_DST_MAC]);
@@ -520,9 +467,7 @@ static void hinic5_tc_get_key_tun_eth_ip4_tcporudp(const u8 *attr[],
 	WRITE_FIELD_U16(rule_st, dport, attr[HINIC5_TC_FIELD_DST_PORT]);
 }
 
-static void hinic5_tc_get_key_eth_ip4(const u8 *attr[],
-				      const struct hinic5_tc_info *tc_info,
-				      u8 *mem)
+static void hinic5_tc_get_key_eth_ip4(const u8 *attr[], const struct hinic5_tc_info *tc_info, u8 *mem)
 {
 	struct hinic5_tc_rule_eth_ip4 *rule_st = (struct hinic5_tc_rule_eth_ip4 *)mem;
 
@@ -533,12 +478,9 @@ static void hinic5_tc_get_key_eth_ip4(const u8 *attr[],
 	WRITE_FIELD_U8(rule_st, proto, attr[HINIC5_TC_FIELD_PROTOCOL]);
 }
 
-static void hinic5_tc_get_key_eth_ip4_tcporudp(const u8 *attr[],
-					       const struct hinic5_tc_info *tc_info,
-					       u8 *mem)
+static void hinic5_tc_get_key_eth_ip4_tcporudp(const u8 *attr[], const struct hinic5_tc_info *tc_info, u8 *mem)
 {
-	struct hinic5_tc_rule_eth_ip4_tcporudp *rule_st =
-			(struct hinic5_tc_rule_eth_ip4_tcporudp *)mem;
+	struct hinic5_tc_rule_eth_ip4_tcporudp *rule_st = (struct hinic5_tc_rule_eth_ip4_tcporudp *)mem;
 
 	WRITE_FIELD_U16(rule_st, vlan_tag, attr[HINIC5_TC_FIELD_VLAN_TAG]);
 	WRITE_MAC(rule_st, dmac, attr[HINIC5_TC_FIELD_DST_MAC]);
@@ -570,16 +512,13 @@ static void hinic5_tc_set_ip6_trunc(const u8 *attr[], const struct hinic5_tc_inf
 	switch (tc_info->profile_id) {
 	case HINIC5_TC_PROFILE_TUN_ETH_IP6:
 	case HINIC5_TC_PROFILE_TUN_ETH_IP6_TCPORUDP:
-		hinic5_tc_get_ip6_trunc(attr[HINIC5_TC_FIELD_SRC_IPV6], ip6_trunc->sip6,
-					IP6_ADDR_TRUNC_72BITS, tc_info->ipv6_shift_value2);
+		hinic5_tc_get_ip6_trunc(attr[HINIC5_TC_FIELD_SRC_IPV6], ip6_trunc->sip6, IP6_ADDR_TRUNC_72BITS, tc_info->ipv6_shift_value2);
 		attr[HINIC5_TC_FIELD_SRC_IPV6] = ip6_trunc->sip6;
-		hinic5_tc_get_ip6_trunc(attr[HINIC5_TC_FIELD_DST_IPV6], ip6_trunc->dip6,
-					IP6_ADDR_TRUNC_72BITS, tc_info->ipv6_shift_value2);
+		hinic5_tc_get_ip6_trunc(attr[HINIC5_TC_FIELD_DST_IPV6], ip6_trunc->dip6, IP6_ADDR_TRUNC_72BITS, tc_info->ipv6_shift_value2);
 		attr[HINIC5_TC_FIELD_DST_IPV6] = ip6_trunc->dip6;
 		break;
 	case HINIC5_TC_PROFILE_ETH_IP6_TCPORUDP:
-		hinic5_tc_get_ip6_trunc(attr[HINIC5_TC_FIELD_SRC_IPV6], ip6_trunc->sip6,
-					IP6_ADDR_TRUNC_96BITS, tc_info->ipv6_shift_value);
+		hinic5_tc_get_ip6_trunc(attr[HINIC5_TC_FIELD_SRC_IPV6], ip6_trunc->sip6, IP6_ADDR_TRUNC_96BITS, tc_info->ipv6_shift_value);
 		attr[HINIC5_TC_FIELD_SRC_IPV6] = ip6_trunc->sip6;
 		break;
 	default:
@@ -587,14 +526,10 @@ static void hinic5_tc_set_ip6_trunc(const u8 *attr[], const struct hinic5_tc_inf
 	}
 }
 
-static void hinic5_tc_get_key_tun_eth_ip6(const u8 *attr[],
-					  const struct hinic5_tc_info *tc_info,
-					  u8 *mem)
+static void hinic5_tc_get_key_tun_eth_ip6(const u8 *attr[], const struct hinic5_tc_info *tc_info, u8 *mem)
 {
-	struct hinic5_tc_rule_tun_eth_ip6_off *rule_st_off =
-			(struct hinic5_tc_rule_tun_eth_ip6_off *)mem;
-	struct hinic5_tc_rule_tun_eth_ip6_on *rule_st_on =
-			(struct hinic5_tc_rule_tun_eth_ip6_on *)mem;
+	struct hinic5_tc_rule_tun_eth_ip6_off *rule_st_off = (struct hinic5_tc_rule_tun_eth_ip6_off *)mem;
+	struct hinic5_tc_rule_tun_eth_ip6_on *rule_st_on = (struct hinic5_tc_rule_tun_eth_ip6_on *)mem;
 	struct hinic5_tc_ip6_trunc ip6_trunc = {0};
 
 	if (tc_info->tunnel_opt == TUNNEL_OPT_OFF) {
@@ -614,14 +549,10 @@ static void hinic5_tc_get_key_tun_eth_ip6(const u8 *attr[],
 	}
 }
 
-static void hinic5_tc_get_key_tun_eth_ip6_tcporudp(const u8 *attr[],
-						   const struct hinic5_tc_info *tc_info,
-						   u8 *mem)
+static void hinic5_tc_get_key_tun_eth_ip6_tcporudp(const u8 *attr[], const struct hinic5_tc_info *tc_info, u8 *mem)
 {
-	struct hinic5_tc_rule_tun_eth_ip6_tcporudp_off *rule_st_off =
-			(struct hinic5_tc_rule_tun_eth_ip6_tcporudp_off *)mem;
-	struct hinic5_tc_rule_tun_eth_ip6_tcporudp_on *rule_st_on =
-			(struct hinic5_tc_rule_tun_eth_ip6_tcporudp_on *)mem;
+	struct hinic5_tc_rule_tun_eth_ip6_tcporudp_off *rule_st_off = (struct hinic5_tc_rule_tun_eth_ip6_tcporudp_off *)mem;
+	struct hinic5_tc_rule_tun_eth_ip6_tcporudp_on *rule_st_on = (struct hinic5_tc_rule_tun_eth_ip6_tcporudp_on *)mem;
 	struct hinic5_tc_ip6_trunc ip6_trunc = {0};
 
 	if (tc_info->tunnel_opt == TUNNEL_OPT_OFF) {
@@ -645,9 +576,7 @@ static void hinic5_tc_get_key_tun_eth_ip6_tcporudp(const u8 *attr[],
 	}
 }
 
-static void hinic5_tc_get_key_eth_ip6(const u8 *attr[],
-				      const struct hinic5_tc_info *tc_info,
-				      u8 *mem)
+static void hinic5_tc_get_key_eth_ip6(const u8 *attr[], const struct hinic5_tc_info *tc_info, u8 *mem)
 {
 	struct hinic5_tc_rule_eth_ip6 *rule_st = (struct hinic5_tc_rule_eth_ip6 *)mem;
 
@@ -657,12 +586,9 @@ static void hinic5_tc_get_key_eth_ip6(const u8 *attr[],
 	WRITE_FIELD_U8(rule_st, proto, attr[HINIC5_TC_FIELD_PROTOCOL]);
 }
 
-static void hinic5_tc_get_key_eth_ip6_tcporudp(const u8 *attr[],
-					       const struct hinic5_tc_info *tc_info,
-					       u8 *mem)
+static void hinic5_tc_get_key_eth_ip6_tcporudp(const u8 *attr[], const struct hinic5_tc_info *tc_info, u8 *mem)
 {
-	struct hinic5_tc_rule_eth_ip6_tcporudp *rule_st =
-			(struct hinic5_tc_rule_eth_ip6_tcporudp *)mem;
+	struct hinic5_tc_rule_eth_ip6_tcporudp *rule_st = (struct hinic5_tc_rule_eth_ip6_tcporudp *)mem;
 	struct hinic5_tc_ip6_trunc ip6_trunc = {0};
 
 	hinic5_tc_set_ip6_trunc(attr, tc_info, &ip6_trunc);
@@ -674,17 +600,13 @@ static void hinic5_tc_get_key_eth_ip6_tcporudp(const u8 *attr[],
 	WRITE_FIELD_SPLIT_U16(rule_st, dport, attr[HINIC5_TC_FIELD_DST_PORT]);
 }
 
-static void hinic5_tc_get_key_outer_ip_inner_ip(const u8 *attr[],
-						const struct hinic5_tc_info *tc_info,
-						u8 *mem)
+static void hinic5_tc_get_key_outer_ip_inner_ip(const u8 *attr[], const struct hinic5_tc_info *tc_info, u8 *mem)
 {
-	struct hinic5_tc_rule_outer_ip_inner_ip *rule_st =
-			(struct hinic5_tc_rule_outer_ip_inner_ip *)mem;
+	struct hinic5_tc_rule_outer_ip_inner_ip *rule_st = (struct hinic5_tc_rule_outer_ip_inner_ip *)mem;
 
 	if (tc_info->enc_ip_type == ENC_IPV4_TYPE) {
 		WRITE_FIELD_U16(rule_st, outer_dip_6, attr[HINIC5_TC_FIELD_ENC_DST_IP]);
-		WRITE_FIELD_U16(rule_st, outer_dip_7,
-				attr[HINIC5_TC_FIELD_ENC_DST_IP] + OFFSET_2BYTE);
+		WRITE_FIELD_U16(rule_st, outer_dip_7, attr[HINIC5_TC_FIELD_ENC_DST_IP] + OFFSET_2BYTE);
 	} else {
 		WRITE_IP6_128BITS(rule_st, outer_dip, attr[HINIC5_TC_FIELD_ENC_DST_IPV6]);
 	}
@@ -694,17 +616,13 @@ static void hinic5_tc_get_key_outer_ip_inner_ip(const u8 *attr[],
 	WRITE_IP4(rule_st, dip, attr[HINIC5_TC_FIELD_DST_IP]);
 }
 
-static void hinic5_tc_get_key_outer_ip_inner_ip_tcporudp(const u8 *attr[],
-							 const struct hinic5_tc_info *tc_info,
-							 u8 *mem)
+static void hinic5_tc_get_key_outer_ip_inner_ip_tcporudp(const u8 *attr[], const struct hinic5_tc_info *tc_info, u8 *mem)
 {
-	struct hinic5_tc_rule_outer_ip_inner_ip_tcporudp *rule_st =
-			(struct hinic5_tc_rule_outer_ip_inner_ip_tcporudp *)mem;
+	struct hinic5_tc_rule_outer_ip_inner_ip_tcporudp *rule_st = (struct hinic5_tc_rule_outer_ip_inner_ip_tcporudp *)mem;
 
 	if (tc_info->enc_ip_type == ENC_IPV4_TYPE) {
 		WRITE_FIELD_U16(rule_st, outer_dip_6, attr[HINIC5_TC_FIELD_ENC_DST_IP]);
-		WRITE_FIELD_U16(rule_st, outer_dip_7,
-				attr[HINIC5_TC_FIELD_ENC_DST_IP] + OFFSET_2BYTE);
+		WRITE_FIELD_U16(rule_st, outer_dip_7, attr[HINIC5_TC_FIELD_ENC_DST_IP] + OFFSET_2BYTE);
 	} else {
 		WRITE_IP6_128BITS(rule_st, outer_dip, attr[HINIC5_TC_FIELD_ENC_DST_IPV6]);
 	}
@@ -766,8 +684,7 @@ static int hinic5_tc_parse_key(struct hinic5_tc_flow *flow,
 
 	flags = hinic5_tc_get_key_flags(profile_id, tunnel_opt);
 	if ((flow->key_flags & flags) != flags) {
-		hinic5_err(nic_dev, drv, "flow key flags not match, flow_flags(%u) key_flags(%u)\n",
-			   flow->key_flags, flags);
+		hinic5_err(nic_dev, drv, "flow key flags not match, flow_flags(%u) key_flags(%u)\n", flow->key_flags, flags);
 		return -EINVAL;
 	}
 
@@ -810,10 +727,10 @@ static int hinic5_tc_parse_action_tunnel(struct hinic5_tc_action_info *action,
 static void hinic5_tc_parse_action_output(struct hinic5_tc_action_info *action,
 					  const struct flow_action_entry *act)
 {
-	// action queue + action output temporary stub solution
+	// action queue + action output temporary stub scheme
 	/* output, chain_index[15:0]
-	 * queue index, chain_index[23:16]
-	 *queue flag, chain_index[31:24]
+		queue index, chain_index[23:16]
+		queue flag, chain_index[31:24]
 	 */
 	action->output = act->chain_index & U16_MAX;
 	action->action_flag |= BIT(HINIC5_TC_ACTION_FLOW_OUTPUT);
@@ -913,7 +830,7 @@ static int hinic5_tc_set_flow_info(struct hinic5_nic_dev *nic_dev,
 	}
 
 	/* parse mask, unassigned data set all f */
-	memset(info->mask_tcam_mem, 0xFF, TC_ACL_KEY_BYTE);
+	(void)memset(info->mask_tcam_mem, 0xFF, TC_ACL_KEY_BYTE);
 	ret = hinic5_tc_parse_key(flow, info->mask_tcam_mem, nic_dev, MASK_TYPE);
 	if (ret != 0) {
 		hinic5_err(nic_dev, drv, "parse mask failed\n");
@@ -1002,7 +919,7 @@ static int hinic5_add_cls_flower(struct flow_cls_offload *cls_flower,
 	if (info.group_id < PFE_GROUP_CNT_MAX) {
 		info.group_vld = (cls_flower->common.chain_index >> PFE_GROUP_VLD_SHIFT) & 0x1;
 	} else {
-		hinic5_err(nic_dev, drv, "invalid group id:0x%x\n", info.group_id);
+		hinic5_err(nic_dev, drv, "invaild group id:0x%x\n", info.group_id);
 		goto fail;
 	}
 
@@ -1041,7 +958,7 @@ static int hinic5_del_cls_flower(const struct flow_cls_offload *cls_flower,
 	struct hinic5_tc_info *tc_info = (struct hinic5_tc_info *)nic_dev->tc_info;
 	struct hinic5_tc_flow_node *flow_node = NULL;
 
-	if (!tc_info)
+	if (tc_info == NULL)
 		return 0;
 
 	flow_node = rhashtable_lookup_fast(&tc_info->flow_table, &cls_flower->cookie,
@@ -1101,7 +1018,7 @@ int hinic5_setup_tc(struct net_device *netdev, enum tc_setup_type type, void *ty
 	}
 }
 
-/* PFE default rule for LACP negotiation packets */
+/* PFE sets default rules for lacp negotiation packets */
 static int hinic5_set_default_rule_of_pfe_lcam(struct hinic5_nic_dev *nic_dev)
 {
 	struct hinic5_tc_info *tc_info = (struct hinic5_tc_info *)nic_dev->tc_info;
@@ -1144,7 +1061,7 @@ int hinic5_init_tc(struct hinic5_nic_dev *nic_dev)
 	int ret;
 
 	nic_dev->tc_info = kmalloc(sizeof(struct hinic5_tc_info), GFP_KERNEL);
-	if (!nic_dev->tc_info)
+	if (nic_dev->tc_info == NULL)
 		return -ENOMEM;
 	tc_info = (struct hinic5_tc_info *)nic_dev->tc_info;
 

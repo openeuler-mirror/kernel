@@ -4,8 +4,8 @@
  * File Name     : hinic5_mbox.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Mailbox communication implementation for the hinic5 driver.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [COMM]" fmt
@@ -171,9 +171,7 @@ enum hinic5_mbox_tx_status {
 static inline u8 inc_mbox_send_msg_id(struct hinic5_mbox *func_to_func)
 {
 	func_to_func->send_msg_id = (func_to_func->send_msg_id + 1) & MBOX_MSG_ID_MASK;
-	/* Consistent with old implementation, numbering starts from 1; otherwise dt is used for blocking,
-	 * it is speculated that some test cases may have assumed a specific starting msg_id
-	 */
+	/* Keep consistent with the old implementation, numbering starts from 1; otherwise dt blocks, presumably some test cases assume a specific starting msg_id */
 	return func_to_func->send_msg_id;
 }
 
@@ -409,7 +407,7 @@ static int recv_vf_mbox_handler(struct hinic5_mbox *func_to_func,
 	int ret;
 
 	if (recv_mbox->mod >= HINIC5_MOD_MAX) {
-		sdk_warn(func_to_func->hwdev->dev_hdl, "Receive illegal mbox message, mod = %u\n",
+		sdk_warn(func_to_func->hwdev->dev_hdl, "Receive illegal mbox message, mod = %hhu\n",
 			 recv_mbox->mod);
 		return -EINVAL;
 	}
@@ -477,7 +475,7 @@ static int recv_ppf_mbox_handler(struct hinic5_mbox *func_to_func,
 	int ret;
 
 	if (recv_mbox->mod >= HINIC5_MOD_MAX) {
-		sdk_warn(func_to_func->hwdev->dev_hdl, "Receive illegal mbox message, mod = %u\n",
+		sdk_warn(func_to_func->hwdev->dev_hdl, "Receive illegal mbox message, mod = %hhu\n",
 			 recv_mbox->mod);
 		return -EINVAL;
 	}
@@ -492,7 +490,7 @@ static int recv_ppf_mbox_handler(struct hinic5_mbox *func_to_func,
 			 pf_id, vf_id, recv_mbox->cmd, recv_mbox->msg,
 			 recv_mbox->msg_len, buf_out, out_size);
 	} else {
-		sdk_warn(func_to_func->hwdev->dev_hdl, "PPF mbox cb is not registered, mod = %u\n",
+		sdk_warn(func_to_func->hwdev->dev_hdl, "PPF mbox cb is not registered, mod = %hhu\n",
 			 recv_mbox->mod);
 		ret = -EINVAL;
 	}
@@ -513,7 +511,7 @@ static int recv_pf_from_vf_mbox_handler(struct hinic5_mbox *func_to_func,
 	int ret;
 
 	if (recv_mbox->mod >= HINIC5_MOD_MAX) {
-		sdk_warn(func_to_func->hwdev->dev_hdl, "Receive illegal mbox message, mod = %u\n",
+		sdk_warn(func_to_func->hwdev->dev_hdl, "Receive illegal mbox message, mod = %hhu\n",
 			 recv_mbox->mod);
 		return -EINVAL;
 	}
@@ -554,11 +552,11 @@ static void response_for_recv_func_mbox(struct hinic5_mbox *func_to_func,
 		msg_info.status = HINIC5_MBOX_PF_SEND_ERR;
 
 	/* if not data need to response, set out_size to 1 */
-	if (out_size == 0 || err != 0)
+	if ((out_size == 0) || (err != 0))
 		size = MBOX_MSG_NO_DATA_LEN;
 
 	if (size > HINIC5_MBOX_DATA_SIZE) {
-		sdk_err(func_to_func->hwdev->dev_hdl, "Response msg len(%u) exceed limit(%u)\n",
+		sdk_err(func_to_func->hwdev->dev_hdl, "Response msg len(%hu) exceed limit(%u)\n",
 			size, HINIC5_MBOX_DATA_SIZE);
 		size = HINIC5_MBOX_DATA_SIZE;
 	}
@@ -584,8 +582,7 @@ static void recv_func_mbox_handler(struct hinic5_mbox *func_to_func,
 	/* pf/ppf process */
 	if (IS_PF_OR_PPF_SRC(dev, src_func_idx)) {
 		if (HINIC5_IS_PPF(dev)) {
-			err = recv_ppf_mbox_handler(func_to_func, recv_mbox,
-						    (u8)src_func_idx, buf_out, &out_size);
+			err = recv_ppf_mbox_handler(func_to_func, recv_mbox, (u8)src_func_idx, buf_out, &out_size);
 				goto out;
 		} else {
 			err = recv_pf_from_ppf_handler(func_to_func, recv_mbox, buf_out, &out_size);
@@ -593,8 +590,7 @@ static void recv_func_mbox_handler(struct hinic5_mbox *func_to_func,
 		}
 	/* The source is neither PF nor PPF, so it is from VF */
 	} else {
-		err = recv_pf_from_vf_mbox_handler(func_to_func, recv_mbox,
-						   src_func_idx, buf_out, &out_size);
+		err = recv_pf_from_vf_mbox_handler(func_to_func, recv_mbox, src_func_idx, buf_out, &out_size);
 	}
 
 out:
@@ -704,6 +700,7 @@ static void recv_mbox_msg_handler(struct hinic5_mbox *func_to_func,
 
 	mbox_work = kzalloc(sizeof(*mbox_work), GFP_KERNEL);
 	if (!mbox_work) {
+		sdk_err(hwdev->dev_hdl, "Allocate mbox work memory failed.\n");
 		free_recv_mbox(recv_msg);
 		return;
 	}
@@ -755,7 +752,8 @@ static bool check_mbox_segment(struct hinic5_mbox *func_to_func,
 
 seg_err:
 	sdk_err(func_to_func->hwdev->dev_hdl,
-		"Mailbox segment check failed, src func id: 0x%x, front seg info: seq id: 0x%x, msg id: 0x%x, mod: 0x%x, cmd: 0x%x\n",
+		"Mailbox segment check failed, src func id: 0x%x, "
+		"front seg info: seq id: 0x%x, msg id: 0x%x, mod: 0x%x, cmd: 0x%x\n",
 		src_func_idx, msg_desc->seq_id, msg_desc->msg_info.msg_id,
 		msg_desc->mod, msg_desc->cmd);
 	sdk_err(func_to_func->hwdev->dev_hdl,
@@ -904,8 +902,7 @@ static int mbox_prepare_dma_entry(const struct hinic5_mbox *func_to_func, struct
 	void *dma_vaddr = NULL;
 
 	if (IS_MSG_QUEUE_FULL(mq)) {
-		sdk_err(func_to_func->hwdev->dev_hdl,
-		"Mbox sync message queue is busy, pi: %u, ci: %d\n",
+		sdk_err(func_to_func->hwdev->dev_hdl, "Mbox sync message queue is busy, pi: %hu, ci: %d\n",
 			mq->prod_idx, MQ_ID_MASK(mq, mq->cons_idx));
 		return -EBUSY;
 	}
@@ -949,22 +946,22 @@ static int mbox_prepare_dma_msg(struct hinic5_mbox *func_to_func, enum hinic5_ms
 #ifdef __UEFI__
 static void write_mbox_reg(struct hinic5_hwif *hwif, u32 offset, u32 val)
 {
-	BUS_IO_PROTOCOL *bus_io = hwif->bus_dev;
+	BUS_IO_PROTOCOL *BusIo = hwif->bus_dev;
 	EFI_STATUS Status;
 	u32 mbox_reg = HINIC5_FUNC_CSR_MAILBOX_DATA_OFF + offset;
 
-	if (!bus_io) {
-		DebugPrint(DEBUG_ERROR, "Write_reg() bus_io == NULL\n");
+	if (!BusIo) {
+		DebugPrint(DEBUG_ERROR, "Write_reg() BusIo == NULL\n");
 		return;
 	}
 
 	MemoryFence();
-	Status = bus_io->Mem.Write(bus_io, EfiBusIoWidthUint32, HINIC5_CFG_BAR,
+	Status = BusIo->Mem.Write(BusIo, EfiBusIoWidthUint32, HINIC5_CFG_BAR,
 				  mbox_reg, 1, (void *)(&val));
 	MemoryFence();
 	if (EFI_ERROR(Status))
 		DebugPrint(DEBUG_ERROR,
-			   "bus_io->Mem.Write() fails: %r\n", Status);
+			   "BusIo->Mem.Write() fails: %r\n", Status);
 }
 #endif
 
@@ -996,7 +993,7 @@ static int mbox_copy_send_data(struct hinic5_hwdev *hwdev,
 
 	/* The mbox message should be aligned in 4 bytes. */
 	if ((seg_len % chk_sz) != 0) {
-		memcpy(mbox_max_buf, seg, seg_len);
+		(void)memcpy(mbox_max_buf, seg, seg_len);
 		data = (u32 *)mbox_max_buf;
 	}
 
@@ -1037,7 +1034,7 @@ static void write_mbox_msg_attr(struct hinic5_mbox *func_to_func,
 
 	hinic5_hwif_write_reg(func_to_func->hwdev->hwif,
 			      HINIC5_FUNC_CSR_MAILBOX_INT_OFFSET_OFF, mbox_int);
-	wmb(); // Ensure all previous writes are completed before signaling the hardware
+	wmb();
 
 	mbox_ctrl = HINIC5_MBOX_CTRL_SET(TX_NOT_DONE, TX_STATUS) |
 		    HINIC5_MBOX_CTRL_SET(NOT_TRIGGER, TRIGGER_AEQE) |
@@ -1074,8 +1071,9 @@ static enum hinic5_wait_return check_mbox_wb_status(void *priv_data)
 	if (MBOX_MSG_CHANNEL_STOP(func_to_func) || !hinic5_is_chip_present(hwdev))
 		return WAIT_PROCESS_ERR;
 
-	if (check_outbound_enable_handler(hwdev) != WAIT_PROCESS_CPL)
+	if (check_outbound_enable_handler(hwdev) != WAIT_PROCESS_CPL) {
 		return WAIT_PROCESS_ERR;
+	}
 
 	wb_status = get_mbox_status(&func_to_func->send_mbox);
 
@@ -1173,7 +1171,7 @@ static int send_mbox_seg(struct hinic5_mbox *func_to_func, u64 header,
 		return err;
 
 	write_mbox_msg_attr(func_to_func, dst_func, dst_aeqn, seg_len);
-	wmb(); // Ensure all previous writes are completed before signaling the hardware
+	wmb();
 
 	err = wait_mbox_completed(func_to_func);
 	if (err != 0)
@@ -1190,44 +1188,33 @@ static int send_mbox_seg(struct hinic5_mbox *func_to_func, u64 header,
 	return 0;
 }
 
-static void mbox_msg_header_set_pre(u64 *header, const struct mbox_msg_info *msg_info,
-				    enum hinic5_msg_ack_type ack_type,
-				    struct hinic5_hwdev *hwdev)
+static void mbox_msg_header_set_pre(
+	u64 *header, const struct mbox_msg_info *msg_info, enum hinic5_msg_ack_type ack_type, struct hinic5_hwdev *hwdev)
 {
 	*header |=
-		HINIC5_MSG_HEADER_SET(msg_info->msg_id, MSG_ID) |
-		HINIC5_MSG_HEADER_SET((msg_info->status != 0), STATUS) |
-		HINIC5_MSG_HEADER_SET(hinic5_global_func_id(hwdev), SRC_GLB_FUNC_IDX) |
-		HINIC5_MSG_HEADER_SET(ack_type, NO_ACK);
+		HINIC5_MSG_HEADER_SET(msg_info->msg_id, MSG_ID) | HINIC5_MSG_HEADER_SET((msg_info->status != 0), STATUS) |
+		HINIC5_MSG_HEADER_SET(hinic5_global_func_id(hwdev), SRC_GLB_FUNC_IDX) | HINIC5_MSG_HEADER_SET(ack_type, NO_ACK);
 }
 
-static void mbox_msg_header_set_mid(u64 *header, u16 rsp_aeq_id, u16 cmd,
-				    enum hinic5_msg_direction_type direction,
-				    enum hinic5_data_type data_type)
+static void mbox_msg_header_set_mid(
+	u64 *header, u16 rsp_aeq_id, u16 cmd, enum hinic5_msg_direction_type direction, enum hinic5_data_type data_type)
 {
-	*header |= HINIC5_MSG_HEADER_SET(data_type, DATA_TYPE) |
-		   HINIC5_MSG_HEADER_SET(NOT_LAST_SEGMENT, LAST) |
-		   HINIC5_MSG_HEADER_SET(SEQ_ID_START_VAL, SEQID) |
-		   HINIC5_MSG_HEADER_SET(direction, DIRECTION) |
-		   HINIC5_MSG_HEADER_SET(cmd, CMD) |
-		   HINIC5_MSG_HEADER_SET(rsp_aeq_id, AEQ_ID) |
-		   HINIC5_MSG_HEADER_SET(HINIC5_MSG_FROM_MBOX, SOURCE);
+	*header |= HINIC5_MSG_HEADER_SET(data_type, DATA_TYPE) | HINIC5_MSG_HEADER_SET(NOT_LAST_SEGMENT, LAST) |
+		HINIC5_MSG_HEADER_SET(SEQ_ID_START_VAL, SEQID) | HINIC5_MSG_HEADER_SET(direction, DIRECTION) |
+		HINIC5_MSG_HEADER_SET(cmd, CMD) | HINIC5_MSG_HEADER_SET(rsp_aeq_id, AEQ_ID) |
+		HINIC5_MSG_HEADER_SET(HINIC5_MSG_FROM_MBOX, SOURCE);
 }
 
-void mbox_msg_header_set_last(u64 *header, u16 msg_len, u8 mod,
-			      u16 seg_len, struct hinic5_hwdev *hwdev)
+void mbox_msg_header_set_last(u64 *header, u16 msg_len, u8 mod, u16 seg_len, struct hinic5_hwdev *hwdev)
 {
 	u8 version = hinic5_mbox_get_send_version(hwdev, mod);
-	*header |= hinic5_mbox_set_msg_len(version, msg_len) |
-		   hinic5_mbox_set_mod_id(version, mod) |
-		   hinic5_mbox_set_seg_len(version, seg_len) |
-		   hinic5_mbox_set_version(version);
+	*header |= hinic5_mbox_set_msg_len(version, msg_len) | hinic5_mbox_set_mod_id(version, mod) |
+		hinic5_mbox_set_seg_len(version, seg_len) | hinic5_mbox_set_version(version);
 }
 
 static inline u16 mbox_msg_rsp_aeq(const struct hinic5_hwdev *hwdev)
 {
-	return (hwdev->poll || hwdev->hwif->attr.num_aeqs >= 0x2) ?
-	       HINIC5_MBOX_RSP_MSG_AEQ : HINIC5_ASYNC_MSG_AEQ;
+	return (hwdev->poll || hwdev->hwif->attr.num_aeqs >= 0x2) ? HINIC5_MBOX_RSP_MSG_AEQ : HINIC5_ASYNC_MSG_AEQ;
 }
 
 static inline void dump_mbox_header(struct hinic5_hwdev *hwdev, u64 header)
@@ -1235,12 +1222,21 @@ static inline void dump_mbox_header(struct hinic5_hwdev *hwdev, u64 header)
 	sdk_err(hwdev->dev_hdl, "Mailbox Header: %llx\n", header);
 }
 
+static inline bool hisdk5_mbox_inline_only_support(struct hinic5_hwdev *hwdev)
+{
+	if (hwdev->hwif->attr.mbox_inline_only_valid != 0) {
+		return hwdev->hwif->attr.mbox_inline_only != 0;
+	}
+
+	return hinic5_in_spu(hwdev);
+}
+
 /*
  * DMA message is only support send from non-SPU function to the MGMT.
  */
 static inline bool support_dma_msg(struct hinic5_hwdev *hwdev, u16 dst_func)
 {
-	return dst_func == HINIC5_MGMT_SRC_ID && !hinic5_in_spu(hwdev);
+	return dst_func == HINIC5_MGMT_SRC_ID && !hisdk5_mbox_inline_only_support(hwdev);
 }
 
 static int send_mbox_msg(struct hinic5_mbox *func_to_func, u8 mod, u16 cmd,
@@ -1262,20 +1258,8 @@ static int send_mbox_msg(struct hinic5_mbox *func_to_func, u8 mod, u16 cmd,
 	u16 msg_len_tmp = msg_len;
 	u8 version = hinic5_mbox_get_send_version(hwdev, mod);
 
-	if (!COMM_SUPPORT_MBOX_HEAD_VER1(hwdev) && mod >= V0_MOD_ID_MAX)
+	if (!COMM_SUPPORT_MBOX_HEAD_VER1(hwdev) && mod >= V0_MOD_ID_MAX) {
 		return -EINVAL;
-
-	if (unlikely(dst_func == HINIC5_MGMT_SRC_ID && hinic5_is_chip_error(hwdev))) {
-		/* Stop VF sending mailbox to the Mgmt when chip is error */
-		if (HINIC5_IS_VF(hwdev)) {
-			sdk_err(hwdev->dev_hdl,
-				"Stop sending mbox to mgmt, mod %u, cmd %u\n",
-				mod, cmd);
-			return -EPERM;
-		}
-
-		/* No longer support DMA msg when chip is error */
-		using_dma_msg = false;
 	}
 
 	rsp_aeq_id = mbox_msg_rsp_aeq(hwdev);
@@ -1302,8 +1286,7 @@ static int send_mbox_msg(struct hinic5_mbox *func_to_func, u8 mod, u16 cmd,
 	while (HINIC5_MSG_HEADER_GET(header, LAST) == 0) {
 		if (left <= MBOX_SEG_LEN) {
 			header &= ~(hinic5_mbox_get_seg_len_mask(version));
-			header |= (hinic5_mbox_set_seg_len(version, left) |
-				  HINIC5_MSG_HEADER_SET(LAST_SEGMENT, LAST));
+			header |= (hinic5_mbox_set_seg_len(version, left) | HINIC5_MSG_HEADER_SET(LAST_SEGMENT, LAST));
 
 			seg_len = left;
 		}
@@ -1311,8 +1294,7 @@ static int send_mbox_msg(struct hinic5_mbox *func_to_func, u8 mod, u16 cmd,
 		msg_info->header = header;
 		err = send_mbox_seg(func_to_func, header, dst_func, msg_seg, seg_len, msg_info);
 		if (err != 0) {
-			sdk_err(hwdev->dev_hdl, "Send mbox seg unsuccess, seq_id=0x%llx\n",
-				HINIC5_MSG_HEADER_GET(header, SEQID));
+			sdk_err(hwdev->dev_hdl, "Send mbox seg unsuccess, seq_id=0x%llx\n", HINIC5_MSG_HEADER_GET(header, SEQID));
 			dump_mbox_header(hwdev, header);
 			goto send_err;
 		}
@@ -1348,7 +1330,6 @@ static void set_mbox_to_func_event(struct hinic5_mbox *func_to_func,
 static inline bool is_mgmt_busy(struct hinic5_hwif *hwif)
 {
 	u32 val = hinic5_hwif_read_reg(hwif, MBOX_EXT_CSR_OFFSET);
-
 	return MBOX_EXT_GET(val, MGMT_BUSY) != 0;
 }
 
@@ -1384,8 +1365,9 @@ static enum hinic5_wait_return check_mbox_msg_finish(void *priv_data)
 	if (MBOX_MSG_CHANNEL_STOP(func_to_func) || !hinic5_is_chip_present(hwdev))
 		return WAIT_PROCESS_ERR;
 
-	if (check_outbound_enable_handler(hwdev) != WAIT_PROCESS_CPL)
+	if (check_outbound_enable_handler(hwdev) != WAIT_PROCESS_CPL) {
 		return WAIT_PROCESS_ERR;
+	}
 
 	if (hwdev->poll) {
 #if defined(__UEFI__) || defined(__VMWARE__)
@@ -1464,10 +1446,8 @@ static void mbox_cmd_cost_time(struct hinic5_hwdev *hwdev, u8 mod, u16 cmd, stru
 
 	if (hinic5_get_perf_en(HINIC5_MAILBOX_PERF)) {
 		do_gettimeofday(&end);
-		cost_usec = (u64)((end.tv_sec - start.tv_sec) * MSEC_PER_SEC * USEC_PER_MSEC +
-				  end.tv_usec - start.tv_usec);
-		sdk_info(hwdev->dev_hdl,
-			 "Mailbox mod: %u cmd: %u, cost time: %llu us\n", mod, cmd, cost_usec);
+		cost_usec = (u64)((end.tv_sec - start.tv_sec) * MSEC_PER_SEC * USEC_PER_MSEC + end.tv_usec - start.tv_usec);
+		sdk_info(hwdev->dev_hdl, "Mailbox mod: %u cmd: %u, cost time: %llu us\n", mod, cmd, cost_usec);
 	}
 }
 
@@ -1546,8 +1526,8 @@ int hinic5_mbox_to_func(struct hinic5_mbox *func_to_func, u8 mod, u16 cmd,
 		goto send_err;
 	}
 
-	if (!buf_out || !out_size) {
-		/* Scenario where no data needs to be transmitted */
+	if ((!buf_out) || (!out_size)) {
+		/* Scenario where no data transfer is needed */
 		goto send_err;
 	}
 
@@ -1564,7 +1544,7 @@ send_err:
 static int mbox_func_params_valid(struct hinic5_mbox *func_to_func,
 				  const void *buf_in, u16 in_size, u16 channel)
 {
-	if (!func_to_func || !buf_in || in_size == 0)
+	if (!func_to_func || !buf_in || (in_size == 0))
 		return -EINVAL;
 
 	if (in_size > HINIC5_MBOX_DATA_SIZE) {
@@ -1650,8 +1630,9 @@ void hinic5_response_mbox_to_mgmt(struct hinic5_hwdev *hwdev, u8 mod, u16 cmd,
 	err = send_mbox_msg(hwdev->func_to_func, mod, cmd, buf_in, in_size,
 			    HINIC5_MGMT_SRC_ID, HINIC5_MSG_RESPONSE,
 			    HINIC5_MSG_NO_ACK, &msg_info);
-	if (err != 0)
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to send mbox msg, err: %d\n", err);
+	}
 }
 
 int hinic5_send_mbox_to_mgmt_no_ack(struct hinic5_hwdev *hwdev, u8 mod, u16 cmd,
@@ -1970,7 +1951,7 @@ int hinic5_init_func_mbox_msg_channel(void *hwdev, u16 num_func)
 	u16 func_id, i;
 	int err;
 
-	if (!hwdev || num_func == 0 || num_func > HINIC5_MAX_FUNCTIONS)
+	if (!hwdev || (num_func == 0) || num_func > HINIC5_MAX_FUNCTIONS)
 		return -EINVAL;
 
 	func_to_func = dev->func_to_func;
@@ -1988,7 +1969,7 @@ int hinic5_init_func_mbox_msg_channel(void *hwdev, u16 num_func)
 		err = alloc_mbox_msg_channel(&func_to_func->func_msg[func_id]);
 		if (err != 0) {
 			sdk_err(func_to_func->hwdev->dev_hdl,
-				"Failed to alloc func %u message channel\n",
+				"Failed to alloc func %hu message channel\n",
 				func_id);
 			goto alloc_msg_ch_err;
 		}

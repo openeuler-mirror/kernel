@@ -4,9 +4,10 @@
  * File Name     : hinic5_sdk_attack.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : SDK attack test implementation
  */
+
 #include <linux/module.h>
 #include <linux/fs.h>
 #include <linux/mm.h>
@@ -23,14 +24,14 @@
 #include "fast_msg_common_define.h"
 #include "hinic5_sdk_attack.h"
 
-/* Current macro & structure & enum definition needs to be consistent with tools, see sdk_attack.h */
+/* The current macro, struct and enum type definitions must be consistent with the tool, see sdk_attack.h */
 #define SDK_ATTACK_DW_CNT 512
 typedef struct sdk_attack_info {
 	u32 type;
 	u32 dw_cnt;
 	union {
-		u32 data[SDK_ATTACK_DW_CNT];                   // Default max support attack 2K Bytes
-		hisdk5_fast_msg_header attack_fastmsg_header;  // fast_msg header type 16Bytes
+		u32 data[SDK_ATTACK_DW_CNT];                   // Default maximum support attack 2K Bytes
+		hisdk5_fast_msg_header attack_fastmsg_header;  // fast_msg header type, 16 Bytes
 	};
 } sdk_attack_info_t;
 
@@ -39,7 +40,7 @@ typedef enum sdk_attack_opcode {
 	SDK_ATTACK_INVALID_OPCODE = 0xFF
 } sdk_attack_opcode_e;
 
-/* Attack interface, fastmsg en interception removed */
+/* Attack interface, removed the interception of fastmsg en */
 int hinic5_attack_fast_msg(void *hwdev, struct hinic5_cmd_buf *cmd_buf, u64 *out_param)
 {
 	struct hinic5_hwdev *dev = hwdev;
@@ -56,15 +57,14 @@ int hinic5_attack_fast_msg(void *hwdev, struct hinic5_cmd_buf *cmd_buf, u64 *out
 		goto fail;
 	}
 
-	/* When cmdq number equals 2, fast_msg uses async queue */
+	/* When cmdq count equals 2, fast_msg shares the async queue */
 	if (dev->glb_attr.cmdq_num == fast_msg_qid) {
 		fast_msg_qid = HINIC5_CMDQ_ASYNC;
 	}
 
 	err = hinic5_cos_id_detail_resp(hwdev,
-					HINIC5_MOD_COMM, COMM_CMD_UCODE_FAST_MSG_CMD,
-					HINIC5_CMDQ_FAST_MSG, cmd_buf, cmd_buf,
-					out_param, 0, HINIC5_CHANNEL_COMM);
+					HINIC5_MOD_COMM, COMM_CMD_UCODE_FAST_MSG_CMD, HINIC5_CMDQ_FAST_MSG, cmd_buf, cmd_buf, out_param,
+					0, HINIC5_CHANNEL_COMM);
 	if (!hinic5_is_chip_present(dev)) {
 		err = -ETIMEDOUT;
 		goto fail;
@@ -81,8 +81,8 @@ fail:
 	return err;
 }
 
-int hinic5_sdk_attack_handler(struct hinic5_lld_dev *lld_dev, const void *buf_in,
-			      u32 in_size, void *buf_out, u32 *out_size)
+int hinic5_sdk_attack_handler(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
+							  void *buf_out, u32 *out_size)
 {
 	struct hinic5_hwdev *hwdev = (struct hinic5_hwdev *)lld_dev->hwdev;
 	struct hinic5_cmd_buf *cmd_buf = NULL;
@@ -100,17 +100,18 @@ int hinic5_sdk_attack_handler(struct hinic5_lld_dev *lld_dev, const void *buf_in
 		}
 		memset(cmd_buf->buf, 0, cmd_buf->size);
 		memcpy(cmd_buf->buf, &attack_info->attack_fastmsg_header,
-		       attack_len);
+				 attack_len);
 		sdk_info(hwdev->dev_hdl, "attack dw cnt %d\n", attack_info->dw_cnt);
-		for (; i < attack_info->dw_cnt; i++)
-			sdk_info(hwdev->dev_hdl,
-				 "fastmsg[dw%d]:0x%08x\n", i, ((u32 *)cmd_buf->buf)[i]);
+		for (; i < attack_info->dw_cnt; i++) {
+			sdk_info(hwdev->dev_hdl, "fastmsg[dw%d]:0x%08x\n", i, ((u32 *)cmd_buf->buf)[i]);
+		}
 		cmd_buf->size = sizeof(hisdk5_fast_msg_header) +
-					attack_info->attack_fastmsg_header.data_len;
+						attack_info->attack_fastmsg_header.data_len;
 		hinic5_cpu_to_be32(cmd_buf->buf, cmd_buf->size);
 		ret = hinic5_attack_fast_msg(lld_dev->hwdev, cmd_buf, buf_out);
-		if (ret != 0)
+		if (ret != 0) {
 			sdk_info(hwdev->dev_hdl, "fastmsg err ret %d\n", ret);
+		}
 		hinic5_free_cmd_buf(lld_dev->hwdev, cmd_buf);
 		break;
 	default:

@@ -4,10 +4,9 @@
  * File Name     : base_type.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   : basic data types, all basic type definitions should only be encapsulated here, other headers are prohibited from encapsulating basic types
+ * Last Modified : 2026/09/16
+ * Description   : basic data types, all definitions of basic types can only be wrapped here, other header files are forbidden from wrapping basic types
  */
-
 
 #ifndef BASE_TYPE_H
 #define BASE_TYPE_H

@@ -4,8 +4,8 @@
  * File Name     : hinic5_cmdq_enhance.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Enhanced command queue definitions for the hinic5 driver.
  */
 
 #ifndef HINIC5_ENHANCED_CMDQ_H

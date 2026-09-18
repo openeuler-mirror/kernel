@@ -4,8 +4,8 @@
  * File Name     : hinic5_nictool.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : NICTOOL header file
  */
 
 #ifndef HINIC5_NICTOOL_H
@@ -28,8 +28,8 @@
 
 #define MAX_CARD_NUM (64)
 
-int hinic5_nictool_k_init(void *hwdev, void *chip_node);
-void hinic5_nictool_k_uninit(void *hwdev, void *chip_node);
+int nictool_k_init(void *hwdev, void *chip_node);
+void nictool_k_uninit(void *hwdev, void *chip_node);
 
 void hinic5_get_all_chip_id(void *id_info);
 
@@ -40,7 +40,5 @@ bool hinic5_is_in_host(void);
 int hinic5_get_pf_id(struct card_node *chip_node, u32 port_id, u32 *pf_id, u32 *isvalid);
 
 void hinic5_get_mbox_cnt(const void *hwdev, void *buf_out);
-
-extern struct hinic5_uld_info hinic5_g_uld_info[SERVICE_T_MAX];
 
 #endif

@@ -4,8 +4,8 @@
  * File Name     : hinic5_id_tbl.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Device ID table definitions
  */
 
 #ifndef HINIC5_ID_TBL_H
@@ -40,16 +40,24 @@
 #define HINIC5_DEV_ID_72V1_VF			0x022a
 #endif /* CONFIG_SP_VID_DID */
 
-/* Hi1825V100 2X200G standard card, 1X400G standard card, 2X400G UBX UB carrier board UB EXP custom card, 2X200G 4X200G Tianqu 2.0 on-board card */
+/* Hi1825V100 2X200G standard card, 1X400G standard card, 2X400G UBX UB carrier board, UB EXP custom card, 2X200G 4X200G Tianqu 2.0 onboard card */
 #define HINIC5_DEV_ID_25V1_PF           0x0230
 #define HINIC5_DEV_ID_25V1_VF           0x0231
+
+/* Hi1826V100 */
+#define HINIC5_DEV_ID_26V1_PF           0x0240
+#define HINIC5_DEV_ID_26V1_VF           0x0241
+
+/* Hi1873V100 */
+#define HINIC5_DEV_ID_73V1_PF           0x0243
+#define HINIC5_DEV_ID_73V1_VF           0x0244
 
 #define HINIC5_IS_VF_DEV(dev_id)	(((dev_id) == HINIC5_DEV_ID_VF) || \
 				 ((dev_id) == HINIC5_DEV_ID_72V1_VF) || \
 				 ((dev_id) == HINIC5_DEV_ID_1823_VF_TEMP) || \
-				 ((dev_id) == HINIC5_DEV_ID_25V1_VF))
-#define HINIC5_IS_SPU_DEV(dev_id)	(((dev_id) == HINIC5_DEV_ID_SPU) || \
-				 ((dev_id) == HINIC5_DEV_ID_SDI_5_0_PF))
+				 ((dev_id) == HINIC5_DEV_ID_25V1_VF) || \
+				 ((dev_id) == HINIC5_DEV_ID_26V1_VF) || \
+				 ((dev_id) == HINIC5_DEV_ID_73V1_VF))
 
 #define HINIC5_UDEV_VENDOR_ID_HUAWEI            0xCC08
 #define HINIC5_UDEV_VENDOR_ID_HUAWEI_E0FC       0xE0FC /* Old Vendor ID, to be deleted */

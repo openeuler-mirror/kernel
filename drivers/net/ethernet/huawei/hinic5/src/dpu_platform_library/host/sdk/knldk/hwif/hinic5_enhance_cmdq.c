@@ -4,8 +4,8 @@
  * File Name     : hinic5_enhance_cmdq.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Enhanced command queue implementation for the hinic5 driver.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [COMM]" fmt
@@ -33,7 +33,7 @@
 #include "hinic5_hw_comm.h"
 #include "hinic5_cmdq.h"
 
-void hinic5_enhanced_cmdq_init_queue_ctxt(struct hinic5_cmdqs *cmdqs, struct hinic5_cmdq *cmdq)
+void enhanced_cmdq_init_queue_ctxt(struct hinic5_cmdqs *cmdqs, struct hinic5_cmdq *cmdq)
 {
 	struct enhance_cmdq_ctxt_info *ctxt_info = &cmdq->cmdq_enhance_ctxt;
 	struct hinic5_wq *wq = &cmdq->wq;
@@ -92,21 +92,19 @@ static void enhance_cmdq_set_completion(union hinic5_cmdq_enhance_completion *co
 	completion->sge_resp_len = buf_out->size;
 }
 
-static void cmdq_set_wqe_buf_desc(struct hinic5_enhanced_cmdq_wqe *enhanced_wqe,
-				  const struct hinic5_cmdq_cmd_param *cmd_buf, u32 len)
+static void cmdq_set_wqe_buf_desc(
+	struct hinic5_enhanced_cmdq_wqe *enhanced_wqe, const struct hinic5_cmdq_cmd_param *cmd_buf, u32 len)
 {
 	enhanced_wqe->buf_desc[0].sge_send_hi_addr = upper_32_bits(cmd_buf->buf_in->dma_addr + len);
 	enhanced_wqe->buf_desc[0].sge_send_lo_addr = lower_32_bits(cmd_buf->buf_in->dma_addr + len);
 	enhanced_wqe->buf_desc[0].len = len;
 
-	enhanced_wqe->buf_desc[1].sge_send_hi_addr =
-		upper_32_bits(cmd_buf->buf_in->dma_addr + (len << 1));
-	enhanced_wqe->buf_desc[1].sge_send_lo_addr =
-		lower_32_bits(cmd_buf->buf_in->dma_addr + (len << 1));
+	enhanced_wqe->buf_desc[1].sge_send_hi_addr = upper_32_bits(cmd_buf->buf_in->dma_addr + (len << 1));
+	enhanced_wqe->buf_desc[1].sge_send_lo_addr = lower_32_bits(cmd_buf->buf_in->dma_addr + (len << 1));
 	enhanced_wqe->buf_desc[1].len = cmd_buf->buf_in->size - (len << 1); /* remain data len */
 }
 
-void hinic5_enhanced_cmdq_set_wqe(struct hinic5_cmdq_wqe *wqe, enum hinic5_cmdq_cmd_type cmd_type,
+void enhanced_cmdq_set_wqe(struct hinic5_cmdq_wqe *wqe, enum hinic5_cmdq_cmd_type cmd_type,
 			   const struct hinic5_cmdq_cmd_param *cmd_buf, int wrapped)
 {
 	struct hinic5_enhanced_cmdq_wqe *enhanced_wqe = NULL;
@@ -119,8 +117,7 @@ void hinic5_enhanced_cmdq_set_wqe(struct hinic5_cmdq_wqe *wqe, enum hinic5_cmdq_
 
 	enhanced_wqe = &wqe->enhanced_cmdq_wqe;
 	/* Wqe should be 64B aligned, so we fill 3 sges
-	 * split data len as three parts carried with ctrl sec and two bdsl
-	 */
+	   split data len as three parts carried with ctrl sec and two bdsl */
 	len = cmd_buf->buf_in->size / 3;
 
 	if (cmd_type != HINIC5_CMD_TYPE_INLINE_DATA) {
@@ -137,7 +134,7 @@ void hinic5_enhanced_cmdq_set_wqe(struct hinic5_cmdq_wqe *wqe, enum hinic5_cmdq_
 		cmdq_set_wqe_buf_desc(enhanced_wqe, cmd_buf, len);
 	} else {
 		enhanced_wqe->ctrl_sec.header =
-			ENHANCE_CMDQ_WQE_HEADER_SET(cmd_buf->buf_in->size, BDSL) | /* 64B ALIGNED */
+			ENHANCE_CMDQ_WQE_HEADER_SET(cmd_buf->buf_in->size, BDSL) |  /* 64B ALIGNED */
 			ENHANCE_CMDQ_WQE_HEADER_SET(DATA_DIRECT, DF) |
 			ENHANCE_CMDQ_WQE_HEADER_SET(NORMAL_WQE_TYPE, DN) |
 			ENHANCE_CMDQ_WQE_HEADER_SET(COMPACT_WQE_TYPE, EC) |
@@ -156,8 +153,7 @@ void hinic5_enhanced_cmdq_set_wqe(struct hinic5_cmdq_wqe *wqe, enum hinic5_cmdq_
 		break;
 	case HINIC5_CMD_TYPE_SGE_RESP:
 		if (cmd_buf->buf_out) {
-			enhanced_wqe->completion.cs_format |=
-				ENHANCE_CMDQ_WQE_CS_SET(SGE_RESPONSE, CF);
+			enhanced_wqe->completion.cs_format |= ENHANCE_CMDQ_WQE_CS_SET(SGE_RESPONSE, CF);
 			enhance_cmdq_set_completion(&enhanced_wqe->completion, cmd_buf->buf_out);
 		}
 		break;
@@ -172,16 +168,15 @@ void hinic5_enhanced_cmdq_set_wqe(struct hinic5_cmdq_wqe *wqe, enum hinic5_cmdq_
 	}
 }
 
-static inline u32 enhanced_cmdq_completion_get_error_code
-			(union hinic5_cmdq_enhance_completion *completion)
+static inline u32 enhanced_cmdq_completion_get_error_code(
+			union hinic5_cmdq_enhance_completion *completion)
 {
 	u32 cs_dw0 = hinic5_hw_cpu32(completion->dw[0]);
-
 	return ENHANCE_CMDQ_WQE_CS_GET(cs_dw0, ERR_CODE);
 }
 
-static inline u32 enhanced_cmdq_completion_get_error_status
-			(union hinic5_cmdq_enhance_completion *completion)
+static inline u32 enhanced_cmdq_completion_get_error_status(
+			union hinic5_cmdq_enhance_completion *completion)
 {
 	u32 cs_dw0, cs_dw3, error_status;
 
@@ -195,8 +190,8 @@ static inline u32 enhanced_cmdq_completion_get_error_status
 	return error_status;
 }
 
-static inline u64 enhanced_cmdq_completion_get_udata
-			(union hinic5_cmdq_enhance_completion *completion,
+static inline u64 enhanced_cmdq_completion_get_udata(
+			union hinic5_cmdq_enhance_completion *completion,
 			struct hinic5_cmdq *cmdq)
 {
 	u64 udata_l, udata_h;
@@ -230,16 +225,14 @@ void enhanced_cmdq_update_cmd_status(struct hinic5_cmdq *cmdq,
 			*cmd_info->direct_resp = error_status;
 	} else {
 		/* Non-HTN enhanced CMDQ errcode try to align with normal CMDQ.
-		 * [30:29] is errcode from completion, which actually has only 1 bit,
-		 * [28:0] is error_status from completion
-		 */
+		   [30:29] is errcode from completion, which actually has only 1 bit,
+		   [28:0] is error_status from completion */
 		errcode = (errcode & HINIC5_CMDQ_CQE_DW0_ERR_CODE_MASK) <<
 			  HINIC5_CMDQ_CQE_DW0_ERR_CODE_SHIFT;
 		errcode |= error_status & HINIC5_CMDQ_CQE_DW0_ERR_STATUS_MASK;
 
 		*cmd_info->errcode = (int)errcode;
 		if (cmd_info->direct_resp)
-			*cmd_info->direct_resp =
-				enhanced_cmdq_completion_get_udata(completion, cmdq);
+			*cmd_info->direct_resp = enhanced_cmdq_completion_get_udata(completion, cmdq);
 	}
 }

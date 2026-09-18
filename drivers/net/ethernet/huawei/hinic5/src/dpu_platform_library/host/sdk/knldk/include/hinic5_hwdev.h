@@ -4,8 +4,8 @@
  * File Name     : hinic5_hwdev.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 hardware device header file
  */
 
 #ifndef HINIC5_HWDEV_H
@@ -16,8 +16,7 @@
 #include "hinic5_hw.h"
 #include "hinic5_profile.h"
 #include "hinic5_common.h"
-#include "hinic5_chip_info.h"
-#include "hinic5_vram_common.h"
+#include "vram_common.h"
 
 #ifndef __UEFI__
 #include <linux/mutex.h>
@@ -46,15 +45,12 @@ struct sdk_cmdq_wqe_desc;
 #define HINIC5_CHANNEL_DETECT_PERIOD    (5 * 1000)
 #define HINIC5_CHANNEL_DETECT_MAX_BUSY  (3)
 
-/**< System and chip time sync period unit in milliseconds */
-#define HINIC5_NON_PTP_SYNC_FW_TIME_PERIOD (500)
-
 /**
  * @brief Define a function pointer type for handling hinic5 events
- * @param handle Device handle
- * @param event Event information
+ * @param handle device handle
+ * @param event event information
  *
- * @return None
+ * @return none
  */
 typedef void (*hinic5_event_handler)(void *handle, struct hinic5_event_info *event);
 
@@ -133,15 +129,15 @@ enum hinic5_host_mode_e {
 	HINIC5_SDI_MODE_MAX,
 };
 
-struct mqm_eqm_hinic5_vram_name_s {
-	char hinic5_vram_name[HINIC5_VRAM_NAME_MAX_LEN];
+struct mqm_eqm_vram_name_s {
+	char vram_name[VRAM_NAME_MAX_LEN];
 };
 
 struct hinic5_sdk_timeout_info {
-	enum hinic5_hw_type hw_type;    /**< Hardware type FPGA etc. */
-	const char *hw_type_desc;    /**< Hardware type string representation. */
-	u32 mbox_poll_timeout;    /* < Timeout for waiting cpi to write back mailbox status */
-	u32 mbox_timeout;        /**< Timeout for waiting mailbox ack response */
+	enum hinic5_hw_type hw_type;    /**< hardware type FPGA etc. */
+	const char *hw_type_desc;    /**< string representation of hardware type. */
+	u32 mbox_poll_timeout;    /* < timeout for waiting cpi to write back mailbox status */
+	u32 mbox_timeout;        /**< timeout for waiting mailbox ack response */
 	u32 cmdq_timeout;        /**< cmdq timeout */
 };
 
@@ -179,16 +175,16 @@ struct hinic5_hwdev {
 
 	void *fw_update_hdl;
 
-	void *hinic5_cqm_hdl;
+	void *cqm_hdl;
 	struct mqm_addr_trans_tbl_info mqm_att;
 	struct hinic5_page_addr page_pa0;
 	struct hinic5_page_addr page_pa1;
 	u32 stateful_ref_cnt;
 	u32 rsvd2;
 
-	struct mqm_eqm_hinic5_vram_name_s *mqm_eqm_hinic5_vram_name;
+	struct mqm_eqm_vram_name_s *mqm_eqm_vram_name;
 
-	struct mutex stateful_mutex; /* protect hinic5_cqm init and deinit */
+	struct mutex stateful_mutex; /* protect cqm init and deinit */
 
 	struct hinic5_hw_stats hw_stats;
 	u8 *chip_fault_stats;
@@ -202,7 +198,7 @@ struct hinic5_hwdev {
 	struct delayed_work	sync_time_task;
 	struct delayed_work	sync_kernel_time_task;
 	struct delayed_work	channel_detect_task;
-	void *non_ptp_cdev; // TODO: Structure definition reference to be resolved
+	void *non_ptp_cdev; // TODO: pending resolution of struct definition reference
 #endif
 
 	struct hinic5_prof_attr	         *prof_attr;
@@ -233,6 +229,7 @@ struct hinic5_hwdev {
 	u64 last_recv_aeq_cnt;
 	u32 aeq_busy_cnt;
 	u32 max_aeq_busy_cnt;
+	atomic_t channel_busy_cnt;
 	u8 rsvd4[52];
 
 	u64 mbox_send_cnt;
@@ -240,7 +237,7 @@ struct hinic5_hwdev {
 
 	u8 cmdq_mode;
 	u8 cmdq_cos_offset;
-	u8 rsvd5[5];            // Reserved for hotpatch
+	u8 rsvd5[5];            // reserved for hot patch
 	struct hisdk5_fast_msg_to_func *fast_msg_to_func;
 	const struct hinic5_sdk_timeout_info *timeout_info;
 };
@@ -294,23 +291,9 @@ static inline bool hinic5_is_chip_present(const struct hinic5_hwdev *hwdev)
 	return hwdev->chip_present_flag == HINIC5_CHIP_PRESENT;
 }
 
-/**
- * The chip will be error when
- *  - heartbeat lost
- *  - Level-2 or lower chip faults, see enum hinic5_fault_err_level
- */
-static inline bool hinic5_is_chip_error(const struct hinic5_hwdev *hwdev)
+static inline bool hinic5_channel_detect_should_stop(struct hinic5_hwdev *hwdev)
 {
-	struct card_node *chip_info = (struct card_node *)hwdev->chip_node;
-
-	return chip_info->exception_flag;
-}
-
-static inline bool hinic5_channel_detect_should_stop(const struct hinic5_hwdev *hwdev)
-{
-	struct card_node *chip_node = (struct card_node *)hwdev->chip_node;
-
-	return atomic_read(&chip_node->channel_busy_cnt) >= HINIC5_CHANNEL_DETECT_MAX_BUSY;
+	return atomic_read(&hwdev->channel_busy_cnt) >= HINIC5_CHANNEL_DETECT_MAX_BUSY;
 }
 
 /**
@@ -319,7 +302,7 @@ static inline bool hinic5_channel_detect_should_stop(const struct hinic5_hwdev *
  * @param pri_handle: private data will be used by the callback
  * @param callback: callback function
  *
- * @return 0: success, non-zero: error code
+ * @return 0: success, non-0: error code
  */
 int hinic5_event_register(void *dev, void *pri_handle, hinic5_event_handler callback);
 
@@ -336,27 +319,49 @@ bool hinic5_is_function_active(struct hinic5_hwdev *hwdev);
 
 /**
  * @brief Dump CMDQ work queue wqebb
- * @param[in]  hwdev    Hardware device
+ * @param[in]  hwdev    hardware device
  * @param[in]  cmdq_id  CMDQ id to query
  * @param[in]  wqe_idx  wqebb idx to query
- * @param[out] wqe_desc Queried wqebb information
+ * @param[out] wqe_desc wqebb information queried
  *
- * @return Success or not
- *		@retval zero: success
- *		@retval non-zero: failure
+ * @return whether successful
+ * 		@retval zero: success
+ * 		@retval non-zero: failure
  */
 int hinic5_dump_cmdq_wqebb(struct hinic5_hwdev *hwdev, u16 cmdq_id, u16 wqe_idx,
 			   struct sdk_cmdq_wqe_desc *wqe_desc);
 
 /**
  * @brief Dump CMDQ work queue information
- * @param[in]  hwdev    Hardware device
+ * @param[in]  hwdev    hardware device
  * @param[in]  cmdq_id  CMDQ id to query
- * @param[out] wq       Queried CMDQ work queue information
+ * @param[out] wq       CMDQ work queue information queried
  *
- * @return Success or not
- *		@retval zero: success
- *		@retval non-zero: failure
+ * @return whether successful
+ * 		@retval zero: success
+ * 		@retval non-zero: failure
  */
 int hinic5_dump_cmdq_wq(struct hinic5_hwdev *hwdev, u16 cmdq_id, struct hinic5_wq *wq);
+
+/**
+ * @brief hinic5_dbg_get_hw_stats - get hardware stats
+ * @param hwdev: device pointer to hwdev
+ * @param hw_stats: pointer to memory caller to alloc
+ *
+ * @return
+ * 		@retval zero: success
+ * 		@retval non-zero: failure
+ */
+int hinic5_dbg_get_hw_stats(const void *hwdev, u8 *hw_stats);
+int hisdk5_get_channel_busy_cnt(const void *hwdev, atomic_t *channel_busy_cnt);
+
+/**
+ * @brief hinic5_dbg_clear_hw_stats - clear hardware stats
+ * @param hwdev: device pointer to hwdev
+ * @param out_size size of the hw stats data structure to clear
+ * @return clear hardware size
+ */
+int hinic5_dbg_clear_hw_stats(void *hwdev, u32 *out_size);
+int hisdk5_clear_channel_busy_cnt(void *hwdev);
+
 #endif

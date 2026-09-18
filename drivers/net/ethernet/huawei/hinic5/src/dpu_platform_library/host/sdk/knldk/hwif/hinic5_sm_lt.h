@@ -4,8 +4,8 @@
  * File Name     : hinic5_sm_lt.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : SM lookup table definitions for the hinic5 driver.
  */
 
 #ifndef CHIPIF_SM_LT_H

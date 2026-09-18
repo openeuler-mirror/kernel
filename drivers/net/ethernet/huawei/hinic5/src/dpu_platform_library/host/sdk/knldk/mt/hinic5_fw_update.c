@@ -4,8 +4,8 @@
  * File Name     : hinic5_fw_update.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : firmware update implementation with BAT L3I support
  */
 
 #include <asm/byteorder.h>
@@ -22,7 +22,7 @@
 #include "hinic5_typedef_inner.h"
 #include "hinic5_fw_update.h"
 
-/* Reference for below defines: hwsdk/hinic5_cqm/hinic5_cqm_bat_cla.h */
+/* Reference for below defines: hwsdk/cqm/cqm_bat_cla.h */
 #define SM_BAT_NO_BYPASS_CACHE	0
 #define SM_BAT_ENTRY_SIZE_256	0
 #define SM_CLA_LVL_0		0
@@ -33,7 +33,7 @@
 #define SM_CHIP_GPA_HI(gpa)	((u32)(((u64)((gpa)) >> 32) & SM_CHIP_GPA_HIMASK))
 #define SM_CHIP_GPA_LW(gpa)	((u32)((u64)(gpa) & SM_CHIP_GPA_LOMASK))
 
-/* Reference: hwsdk/hinic5_cqm/hinic5_cqm_bat_cla.h#tag_hinic5_cqm_bat_entry_standerd */
+/* Reference: hwsdk/cqm/cqm_bat_cla.h#tag_cqm_bat_entry_standerd */
 struct sm_bat_entry_standerd {
 	u32 entry_size : 2;
 	u32 rsv1 : 6;
@@ -124,10 +124,10 @@ static void mpu_set_bat_l3i_entry_print_data(struct tag_fw_update_handle *handle
 
 	p = buf;
 	pe = p + FUD_PR_BYTE_BUF_MAX;
-	memset(buf, 0, FUD_PR_BYTE_BUF_MAX);
+	(void)memset(buf, 0, FUD_PR_BYTE_BUF_MAX);
 
 	for (i = 0; i < size; i++) {
-		(void)sprintf_s(p, pe - p, "%02X ", cmd->data[i]);
+		(void)sprintf(p, "%02X ", cmd->data[i]);
 		p += FUD_PR_BYTE_MUL;
 	}
 
@@ -152,12 +152,13 @@ static int mgmt_set_bat_l3i_entry(struct tag_fw_update_handle *handle,
 
 	bat_l3i_fill_bat_entry_data(&bat_data, entry, handle);
 
-	memset(&buf, 0, sizeof(buf));
+	(void)memset(&buf, 0, sizeof(buf));
 	buf.func_id = func_id;
 	buf.smf_id = smf_id;
 	buf.bat_offset = l3i_entry_offset;
 	buf.data_size = sizeof(bat_data);
-	memcpy(buf.data, (void *)&bat_data, sizeof(bat_data));
+	(void)memcpy(buf.data,
+		       (void *)&bat_data, sizeof(bat_data));
 
 #ifdef __FW_UPDATE_DEBUG__
 	sdk_info(hwdev->dev_hdl,
@@ -172,10 +173,9 @@ static int mgmt_set_bat_l3i_entry(struct tag_fw_update_handle *handle,
 				      0, HINIC5_CHANNEL_COMM);
 	if (ret != 0 || out_size == 0 || buf.head.status != 0) {
 		sdk_err(hwdev->dev_hdl,
-			"Failed to set bat info, err: %d, \
-			status: 0x%x, out size: 0x%x, channel: 0x%x\n",
+			"Failed to set bat info, err: %d, status: 0x%x, out size: 0x%x, channel: 0x%x\n",
 			ret, buf.head.status, out_size, HINIC5_CHANNEL_COMM);
-		return ret;
+		return (ret != 0) ? ret : -EIO;
 	}
 
 	return 0;
@@ -191,7 +191,6 @@ static int fw_update_init_bat_l3i_entry(struct tag_fw_update_handle *handle,
 	dma_addr_t pa;
 	int ret;
 	void *va = (void *)(uintptr_t)__get_free_pages(GFP_KERNEL | __GFP_ZERO, page_order);
-
 	if (!va) {
 		sdk_err(hwdev->dev_hdl,
 			"BAT L3I buffer alloc failed, page_order %u\n",
@@ -338,8 +337,9 @@ static void fw_update_capability_init(struct tag_fw_update_handle *handle)
 	fw_update_capability_init_smf(handle);
 
 	handle->gpa_check_enable = true;
-	if (svc_cap->test_mode != 0)
+	if (svc_cap->test_mode != 0) {
 		handle->gpa_check_enable = svc_cap->test_gpa_check_enable;
+	}
 }
 
 static int fw_update_alloc(struct hinic5_hwdev *hwdev)
@@ -347,7 +347,7 @@ static int fw_update_alloc(struct hinic5_hwdev *hwdev)
 	struct tag_fw_update_handle *handle = NULL;
 
 	handle = kzalloc(sizeof(*handle), GFP_KERNEL);
-	if (unlikely(!handle)) {
+	if (unlikely(handle == NULL)) {
 		sdk_err(hwdev->dev_hdl, "fw_update_hdl alloc fail.\n");
 		return -ENOMEM;
 	}
@@ -365,7 +365,7 @@ int hinic5_fw_update_init(void *hwdev_hdl)
 	struct tag_fw_update_handle *handle = NULL;
 	int ret;
 
-	if (unlikely(!hwdev_hdl)) {
+	if (unlikely(hwdev_hdl == NULL)) {
 		pr_err("hwdev_hdl is null.\n");
 		return -EINVAL;
 	}
@@ -399,7 +399,7 @@ void hinic5_fw_update_deinit(void *hwdev_hdl)
 	struct hinic5_hwdev *hwdev = (struct hinic5_hwdev *)hwdev_hdl;
 	struct tag_fw_update_handle *handle = NULL;
 
-	if (likely(!hwdev || !hwdev->fw_update_hdl))
+	if (likely(hwdev == NULL || hwdev->fw_update_hdl == NULL))
 		return;
 
 	handle = (struct tag_fw_update_handle *)hwdev->fw_update_hdl;
@@ -422,11 +422,8 @@ bool hinic5_fw_update_ddr_enabled(void *hwdev_hdl)
 
 static struct fw_update_context *hinic5_fw_update_create_context(struct hinic5_hwdev *hwdev)
 {
-	struct fw_update_context *context;
-
-	context = vzalloc(sizeof(*context));
-
-	if (!context)
+	struct fw_update_context *context = vzalloc(sizeof(struct fw_update_context));
+	if (context == NULL)
 		return NULL;
 
 	context->sec_text.data_cap = get_device_capablity(hwdev)->fw_update_cap.fw_tile_text_size;
@@ -435,12 +432,12 @@ static struct fw_update_context *hinic5_fw_update_create_context(struct hinic5_h
 		context->sec_text.data_cap = FW_SEC_SIZE_TILE_TEXT;
 	}
 	context->sec_text.data = vzalloc(context->sec_text.data_cap);
-	if (!context->sec_text.data)
+	if (context->sec_text.data == NULL)
 		goto alloc_sec_text_data_failed;
 
 	context->sec_phy.data_cap = FW_SEC_SIZE_PHY;
 	context->sec_phy.data = vzalloc(FW_SEC_SIZE_PHY);
-	if (!context->sec_phy.data)
+	if (context->sec_phy.data == NULL)
 		goto alloc_sec_phy_data_failed;
 
 	return context;
@@ -456,7 +453,7 @@ void hinic5_fw_update_free_context(void *update_context_hdl)
 {
 	struct fw_update_context *context = (struct fw_update_context *)update_context_hdl;
 
-	if (!context)
+	if (context == NULL)
 		return;
 
 	if (context->sec_phy.data) {
@@ -476,28 +473,28 @@ static int fw_update_context_get(struct hinic5_hwdev *hwdev,
 				 struct fw_update_context **context)
 {
 	struct card_node *chip_node = hwdev->chip_node;
-	spinlock_t *lock = NULL;
+	struct mutex *lock = NULL;
 	int ret;
 
-	if (unlikely(!chip_node)) {
+	if (unlikely(chip_node == NULL)) {
 		sdk_warn(hwdev->dev_hdl, "fw_update: chip_node not init, try later.\n");
 		return -EAGAIN;
 	}
 
 	lock = &chip_node->fw_update_context_lock;
 
-	ret = spin_trylock(lock);
+	ret = mutex_trylock(lock);
 	if (unlikely(ret == 0)) {
 		sdk_warn(hwdev->dev_hdl, "fw_update: not allowed to concurrent update, ret %d, abort!",
 			 ret);
 		return -EBUSY;
 	}
 
-	if (unlikely(!chip_node->fw_update_context)) {
+	if (unlikely(chip_node->fw_update_context == NULL)) {
 		chip_node->fw_update_context = hinic5_fw_update_create_context(hwdev);
-		if (!chip_node->fw_update_context) {
+		if (chip_node->fw_update_context == NULL) {
 			pr_err("fw_update: create context failed.\n");
-			spin_unlock(lock);
+			mutex_unlock(lock);
 			return -ENOMEM;
 		}
 	}
@@ -510,7 +507,7 @@ static void fw_update_context_put(struct hinic5_hwdev *hwdev)
 {
 	struct card_node *chip_node = hwdev->chip_node;
 
-	spin_unlock(&chip_node->fw_update_context_lock);
+	mutex_unlock(&chip_node->fw_update_context_lock);
 }
 
 static void fw_update_context_reset(struct fw_update_context *context)
@@ -527,39 +524,39 @@ static void fw_update_context_reset(struct fw_update_context *context)
 }
 
 static int check_fw_section_update(struct fw_section_data *section,
-				   struct fw_update_msg_st *update)
+				   struct cmd_update_fw *update)
 {
-	u32 data_len = (u32)update->ctl_info.Fragment_Len;
+	u32 data_len = (u32)update->slice_len;
 
 	/* handle text section first transmission */
-	if (update->ctl_info.SF == 1) {
+	if (update->first_slice == 1) {
 		if (section->data_off != 0 || section->data_size != 0) {
 			pr_err("fw_update: broken fw section, last off %u, size %u\n",
 			       section->data_off, section->data_size);
 			return -EINVAL;
 		}
-		if (update->setion_total_len > section->data_cap) {
+		if (update->bin_section_len > section->data_cap) {
 			pr_err("fw_update: fw section size too large, type 0x%x, size 0x%x, cap 0x%x\n",
-			       update->section_info.FW_section_type,
-			       update->setion_total_len, section->data_cap);
+			       update->fw_type,
+			       update->bin_section_len, section->data_cap);
 			return -EFBIG;
 		}
 
-		memset(section->data, 0, section->data_cap);
-		section->data_size = update->setion_total_len;
+		(void)memset(section->data, 0, section->data_cap);
+		section->data_size = update->bin_section_len;
 		section->verified = 0;
 	}
 
-	if (section->data_off != update->section_offset) {
+	if (section->data_off != update->fw_offset) {
 		pr_err("fw_update: unmatched offset, data_off %u, in_off %u\n",
-		       section->data_off, update->section_offset);
+		       section->data_off, update->fw_offset);
 		return -EINVAL;
 	}
 
 	if (section->data_size - section->data_off < data_len)
 		return -EINVAL;
 
-	if (update->ctl_info.SL == 1) {
+	if (update->last_slice == 1) {
 		if (section->data_off + data_len != section->data_size) {
 			pr_err("fw_update: unmatched length\n");
 			return -EINVAL;
@@ -573,14 +570,13 @@ static inline int mgmt_cmd_update_fw_op(void *hwdev, struct hinic5_mt_cmd_info *
 {
 	return hinic5_msg_to_mgmt_sync(hwdev, cmd_info->mod, cmd_info->cmd,
 				       cmd_info->buf_in, cmd_info->in_size, cmd_info->buf_out,
-				       cmd_info->out_size, cmd_info->timeout,
-				       HINIC5_CHANNEL_DEFAULT);
+					   cmd_info->out_size, cmd_info->timeout, HINIC5_CHANNEL_DEFAULT);
 }
 
 static int handle_fw_section_update(void *hwdev, struct hinic5_mt_cmd_info *cmd_info,
 				    struct fw_section_data *section)
 {
-	struct fw_update_msg_st *update = (struct fw_update_msg_st *)(cmd_info->buf_in);
+	struct cmd_update_fw *update = (struct cmd_update_fw *)(cmd_info->buf_in);
 	struct mgmt_msg_head *result_head = NULL;
 	u32 data_len;
 	int ret = 0;
@@ -595,19 +591,18 @@ static int handle_fw_section_update(void *hwdev, struct hinic5_mt_cmd_info *cmd_
 		return ret;
 	}
 
-	if (*cmd_info->out_size < sizeof(struct mgmt_msg_head)) {
-		pr_err("fw_update: incompatible protocol, out_size %u\n", *cmd_info->out_size);
+	if (*(cmd_info->out_size) < sizeof(struct mgmt_msg_head)) {
+		pr_err("fw_update: incompatible protocol, out_size %u\n", *(cmd_info->out_size));
 		return -EINVAL;
 	}
 	result_head = (struct mgmt_msg_head *)(cmd_info->buf_out);
 
 	/* MPU will not return verify result if Repeat-Msg requested
-	 * so we skip updating section data
-	 */
+	 * so we skip updating section data */
 	if (result_head->status == MPU_FW_UPDATE_FLUSH_FLASH_REPEAT)
 		return 0;
 
-	if (update->ctl_info.SL == 1) {
+	if (update->last_slice == 1) {
 		/* check fw bin verification result */
 		if (result_head->status == MPU_FW_UPDATE_FW_VERIFY_ERR) {
 			pr_err("fw_update: invalid update file\n");
@@ -616,14 +611,15 @@ static int handle_fw_section_update(void *hwdev, struct hinic5_mt_cmd_info *cmd_
 		section->verified = 1;
 	}
 
-	data_len = (u32)update->ctl_info.Fragment_Len;
+	data_len = (u32)update->slice_len;
 
-	memcpy(section->data + section->data_off, update->data, data_len);
+	memcpy(section->data + section->data_off,
+		       update->data, data_len);
 	section->data_off += data_len;
 
-	if (update->ctl_info.SL == 1) {
+	if (update->last_slice == 1) {
 		pr_info("fw_update: tile text section upload success. section type 0x%x, size 0x%x\n",
-			update->section_info.FW_section_type, section->data_size);
+			update->fw_type, section->data_size);
 	}
 
 	return 0;
@@ -632,11 +628,11 @@ static int handle_fw_section_update(void *hwdev, struct hinic5_mt_cmd_info *cmd_
 static int handle_cmd_update(void *hwdev, struct hinic5_mt_cmd_info *cmd_info,
 			     struct fw_update_context *context)
 {
-	struct fw_update_msg_st *update = (struct fw_update_msg_st *)(cmd_info->buf_in);
+	struct cmd_update_fw *update = (struct cmd_update_fw *)(cmd_info->buf_in);
 	struct fw_section_data *section = NULL;
 	int ret = 0;
 
-	if (cmd_info->in_size < sizeof(struct fw_update_msg_st)) {
+	if (cmd_info->in_size < sizeof(struct cmd_update_fw)) {
 		pr_err("fw_update: invalid argument size\n");
 		ret = -EINVAL;
 		goto reset_update_context;
@@ -644,16 +640,16 @@ static int handle_cmd_update(void *hwdev, struct hinic5_mt_cmd_info *cmd_info,
 
 #ifdef __FW_UPDATE_DEBUG__
 	pr_info("fw_update: sec_type %u, off 0x%x, len %u\n",
-		update->section_info.FW_section_type,
-		update->section_offset,
-		(u32)update->ctl_info.Fragment_Len);
+		update->fw_type,
+		update->fw_offset,
+		(u32)update->slice_len);
 #endif
 
 	/* handle new update session */
-	if (update->total_len != 0) {
+	if (update->bin_total_len != 0) {
 		if (context->update_started != 0 &&
-		    (context->sec_text.data_off != context->sec_text.data_size ||
-		     context->sec_phy.data_off != context->sec_phy.data_size))
+		    ((context->sec_text.data_off != context->sec_text.data_size) ||
+		     (context->sec_phy.data_off != context->sec_phy.data_size)))
 			pr_warn("fw_update: previous update may not completed, .text off 0x%x size 0x%x, .phy off 0x%x size 0x%x\n",
 				context->sec_text.data_off, context->sec_text.data_size,
 				context->sec_phy.data_off, context->sec_phy.data_size);
@@ -666,10 +662,10 @@ static int handle_cmd_update(void *hwdev, struct hinic5_mt_cmd_info *cmd_info,
 		return -EINVAL;
 	}
 
-	if (update->section_info.FW_section_type == FW_SEC_TYPE_TILE_TEXT) {
+	if (update->fw_type == FW_SEC_TYPE_TILE_TEXT) {
 		section = &context->sec_text;
 		ret = handle_fw_section_update(hwdev, cmd_info, section);
-	} else if (update->section_info.FW_section_type == FW_SEC_TYPE_PHY) {
+	} else if (update->fw_type == FW_SEC_TYPE_PHY) {
 		section = &context->sec_phy;
 		ret = handle_fw_section_update(hwdev, cmd_info, section);
 	} else {
@@ -690,10 +686,10 @@ int hinic5_fw_update_cmd_update(void *hwdev_hdl, struct hinic5_mt_cmd_info *cmd_
 	int ret = 0;
 
 	/* use extended upload procedure if FW hot update via L3I
-	 * is enabled, otherwise use normal way
-	 */
-	if (!hinic5_fw_update_ddr_enabled(hwdev_hdl))
+	 * is enabled, otherwise use normal way */
+	if (!hinic5_fw_update_ddr_enabled(hwdev_hdl)) {
 		return mgmt_cmd_update_fw_op(hwdev_hdl, cmd_info);
+	}
 
 	ret = fw_update_context_get((struct hinic5_hwdev *)hwdev_hdl, &context);
 	if (ret != 0)
@@ -731,9 +727,9 @@ STATIC int hinic5_bat_l3i_store(const struct hinic5_hwdev *hwdev, const u8 *data
 	u8 *buf = NULL, *buf_end = NULL;
 	u8 *va = NULL, *va_end = NULL;
 
-	if (unlikely(!data || data_size == 0 ||
+	if (unlikely((data == NULL) || (data_size == 0) ||
 		     (data_size % cache_line != 0) ||
-		     data_size > FW_UPDATE_DDR_MAX))
+		     (data_size > FW_UPDATE_DDR_MAX)))
 		return -EINVAL;
 
 	smf_enabled_num = handle->smf_enabled_num;
@@ -773,23 +769,24 @@ STATIC void hinic5_bat_l3i_clean(const struct hinic5_hwdev *hwdev)
 	struct tag_fw_update_bat_l3i_entry *smf_entry = NULL;
 	u32 i, smf_id;
 
-	if (!handle)
+	if (handle == NULL)
 		return;
 
 	for (i = 0; i < handle->smf_enabled_num; i++) {
 		smf_id = handle->smf_enabled[i];
 		smf_entry = &handle->bat_l3i_entries[smf_id];
-		memset(smf_entry->buf_va, 0, smf_entry->buf_size);
+		(void)memset(smf_entry->buf_va, 0,
+		       smf_entry->buf_size);
 	}
 }
 
-static inline bool fw_section_data_valid(struct hinic5_hwdev *hwdev,
-					 const struct fw_section_data *section)
+static inline bool fw_section_data_valid(struct hinic5_hwdev *hwdev, const struct fw_section_data *section)
 {
 	u32 fw_img_hdr_size = get_device_capablity(hwdev)->fw_update_cap.fw_img_hdr_size;
 	/* for compatibility */
-	if (fw_img_hdr_size == 0)
+	if (fw_img_hdr_size == 0) {
 		fw_img_hdr_size = FW_SEC_HDR_SIZE;
+	}
 
 	return section->verified == 1 &&
 	       section->data_off == section->data_size &&
@@ -850,11 +847,12 @@ static int hot_active_fw_prepare(struct hinic5_hwdev *hwdev,
 		data_len_aligned = data_len;
 	}
 
-	sdk_info(hwdev->dev_hdl, "fw_update: update data size 0x%x, aligned size 0x%x\n",
+	sdk_info(hwdev->dev_hdl, "fw_update: udpate data size 0x%x, aligned size 0x%x\n",
 		 data_len, data_len_aligned);
 
 	data = vzalloc(data_len_aligned);
-	if (!data) {
+	if (data == NULL) {
+		sdk_err(hwdev->dev_hdl, "fw_update: no mem.\n");
 		return -ENOMEM;
 	}
 
@@ -862,7 +860,7 @@ static int hot_active_fw_prepare(struct hinic5_hwdev *hwdev,
 	       sec_text->data + fw_img_hdr_size,
 	       sec_text->data_size - fw_img_hdr_size);
 
-	if (has_phy_section && sec_phy->data_size > fw_img_hdr_size) {
+	if (has_phy_section && (sec_phy->data_size > fw_img_hdr_size)) {
 		data_off = sec_text->data_size - fw_img_hdr_size;
 		memcpy(data + data_off,
 		       sec_phy->data + fw_img_hdr_size,
@@ -874,6 +872,7 @@ static int hot_active_fw_prepare(struct hinic5_hwdev *hwdev,
 		sdk_err(hwdev->dev_hdl, "fw_update: hinic5_bat_l3i_store fail, data len %u\n",
 			data_len_aligned);
 
+	vfree(data);
 	return ret;
 }
 
@@ -889,15 +888,16 @@ int hinic5_fw_update_cmd_hot_active(void *hwdev_hdl, struct hinic5_mt_cmd_info *
 		return -EINVAL;
 	}
 
-	if (hot_active->type != FW_HOW_ACTIVE_TYPE_NPU)
+	if (hot_active->type != FW_HOW_ACTIVE_TYPE_NPU) {
 		return mgmt_cmd_update_fw_op(hwdev, cmd_info);
+	}
 
 	if (!hinic5_fw_update_ddr_enabled(hwdev_hdl)) {
 		sdk_info(hwdev->dev_hdl, "fw_update: this function does not support hot update via DDR.\n");
 		return mgmt_cmd_update_fw_op(hwdev, cmd_info);
 	}
 
-	if (unlikely(!hwdev->fw_update_hdl)) {
+	if (unlikely(hwdev->fw_update_hdl == NULL)) {
 		sdk_err(hwdev->dev_hdl, "fw_update: DDR not ready.\n");
 		return -EINVAL;
 	}

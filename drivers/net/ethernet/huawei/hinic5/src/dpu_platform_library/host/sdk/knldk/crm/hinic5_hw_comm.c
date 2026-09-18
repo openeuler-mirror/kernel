@@ -4,8 +4,8 @@
  * File Name     : hinic5_hw_comm.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Hardware common operations for the hinic5 driver.
  */
 
 #include <linux/kernel.h>
@@ -28,15 +28,15 @@
 #include "hinic5_cmdq.h"
 #include "mpu_inband_cmd_defs.h"
 #include "mpu_inband_cmd.h"
-#include "hinic5_vram_common.h"
-#include "hinic5_hinic5_vram_api.h"
+#include "vram_common.h"
+#include "hinic5_vram_api.h"
 #include "hinic5_hw_comm.h"
 
 unsigned char lowpower_mode;
-module_param(lowpower_mode, byte, 0644);
+module_param(lowpower_mode, byte, 0444);
 MODULE_PARM_DESC(lowpower_mode, "Set lowpower test mode, 0-sml rd loop, 1-writeback ddr, 2-off");
 
-/* 1872 FT B505 temporary modification, to be removed after MQM fixes CMQ constraint */
+/* 1872 FT B505 temporary workaround, to be deleted after MQM fixes CMQ constraints */
 static unsigned char cmdq_cos_offset;
 module_param(cmdq_cos_offset, byte, 0444);
 MODULE_PARM_DESC(cmdq_cos_offset, "Set cmdq cos start offset");
@@ -94,6 +94,15 @@ static inline int comm_msg_to_mgmt_sync_ch(struct hinic5_hwdev *hwdev, u16 cmd, 
 				       in_size, buf_out, out_size, 0, channel);
 }
 
+static inline size_t get_bank_pg0_size(void)
+{
+	if (likely(lowpower_mode == 0)) {
+		return HINIC5_HT_GPA_PAGE_SIZE;
+	}
+
+	return HINIC5_HT_GPA_PAGE_SIZE * HINIC5_HT_GPA_PAGE_LEN;
+}
+
 int hinic5_get_interrupt_cfg(void *dev, struct interrupt_info *info,
 			     u16 channel)
 {
@@ -105,7 +114,7 @@ int hinic5_get_interrupt_cfg(void *dev, struct interrupt_info *info,
 	if (!hwdev || !info)
 		return -EINVAL;
 
-	memset(&msix_cfg, 0, sizeof(msix_cfg));
+	(void)memset(&msix_cfg, 0, sizeof(msix_cfg));
 	msix_cfg.func_id = hinic5_global_func_id(hwdev);
 	msix_cfg.msix_index = info->msix_index;
 	msix_cfg.opcode = MGMT_MSG_CMD_OP_GET;
@@ -113,7 +122,7 @@ int hinic5_get_interrupt_cfg(void *dev, struct interrupt_info *info,
 	err = comm_msg_to_mgmt_sync_ch(hwdev, COMM_MGMT_CMD_CFG_MSIX_CTRL_REG,
 				       &msix_cfg, sizeof(msix_cfg), &msix_cfg,
 				       &out_size, channel);
-	if (err != 0 || out_size == 0 || msix_cfg.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (msix_cfg.head.status != 0)) {
 		sdk_err(hwdev->dev_hdl, "Failed to get interrupt config, err: %d, status: 0x%x, out size: 0x%x, channel: 0x%x\n",
 			err, msix_cfg.head.status, out_size, channel);
 		return -EINVAL;
@@ -138,7 +147,7 @@ int hinic5_set_interrupt_cfg_direct(void *hwdev, struct interrupt_info *info,
 	if (!hwdev)
 		return -EINVAL;
 
-	memset(&msix_cfg, 0, sizeof(msix_cfg));
+	(void)memset(&msix_cfg, 0, sizeof(msix_cfg));
 	msix_cfg.func_id = hinic5_global_func_id(hwdev);
 	msix_cfg.msix_index = info->msix_index;
 	msix_cfg.opcode = MGMT_MSG_CMD_OP_SET;
@@ -152,7 +161,7 @@ int hinic5_set_interrupt_cfg_direct(void *hwdev, struct interrupt_info *info,
 	err = comm_msg_to_mgmt_sync_ch(hwdev, COMM_MGMT_CMD_CFG_MSIX_CTRL_REG,
 				       &msix_cfg, sizeof(msix_cfg), &msix_cfg,
 				       &out_size, channel);
-	if (err != 0 || out_size == 0 || msix_cfg.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (msix_cfg.head.status) != 0) {
 		sdk_err(((struct hinic5_hwdev *)hwdev)->dev_hdl,
 			"Failed to set interrupt config, err: %d, status: 0x%x, out size: 0x%x, channel: 0x%x\n",
 			err, msix_cfg.head.status, out_size, channel);
@@ -218,7 +227,7 @@ int hinic5_set_wq_page_size(void *hwdev, u16 func_idx, u32 page_size,
 	u16 out_size = sizeof(page_size_info);
 	int err;
 
-	memset(&page_size_info, 0, sizeof(page_size_info));
+	(void)memset(&page_size_info, 0, sizeof(page_size_info));
 	page_size_info.func_id = func_idx;
 	page_size_info.page_size = HINIC5_PAGE_SIZE_HW(page_size);
 	page_size_info.opcode = MGMT_MSG_CMD_OP_SET;
@@ -226,7 +235,7 @@ int hinic5_set_wq_page_size(void *hwdev, u16 func_idx, u32 page_size,
 	err = comm_msg_to_mgmt_sync_ch(hwdev, COMM_MGMT_CMD_CFG_PAGESIZE,
 				       &page_size_info, sizeof(page_size_info),
 				       &page_size_info, &out_size, channel);
-	if (err != 0 || out_size == 0 || page_size_info.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (page_size_info.head.status != 0)) {
 		sdk_err(((struct hinic5_hwdev *)hwdev)->dev_hdl,
 			"Failed to set wq page size, err: %d, status: 0x%x, out_size: 0x%x, channel: 0x%x\n",
 			err, page_size_info.head.status, out_size, channel);
@@ -249,7 +258,7 @@ int hinic5_func_reset(void *dev, u16 func_id, u64 reset_flag, u16 channel)
 		return -EINVAL;
 	}
 
-	is_in_kexec = hinic5_vram_get_kexec_flag();
+	is_in_kexec = vram5_get_kexec_flag();
 	if (is_in_kexec != 0) {
 		sdk_info(hwdev->dev_hdl, "Skip function reset!\n");
 		return 0;
@@ -258,17 +267,17 @@ int hinic5_func_reset(void *dev, u16 func_id, u64 reset_flag, u16 channel)
 	sdk_info(hwdev->dev_hdl, "Function is reset, flag: 0x%llx, channel:0x%x\n",
 		 reset_flag, channel);
 
-	memset(&func_reset, 0, sizeof(func_reset));
+	(void)memset(&func_reset, 0, sizeof(func_reset));
 	func_reset.func_id = func_id;
 	func_reset.reset_flag = reset_flag;
-	/* During func reset, chip may have OUTBOUND_FLUSH_DISABLED, skip abnormality check */
+	/* During func reset, the chip may report OUTBOUND_FLUSH_DISABLED, skip anomaly detection */
 	atomic_inc(&hwdev->check_ob_flush_bypass_ref_cnt);
 	err = comm_msg_to_mgmt_sync_ch(hwdev, COMM_MGMT_CMD_FUNC_RESET,
 				       &func_reset, sizeof(func_reset),
 				       &func_reset, &out_size, channel);
-	if (err != 0 || out_size == 0 || func_reset.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (func_reset.head.status != 0)) {
 		sdk_err(hwdev->dev_hdl,
-			"Failed to reset func resources, reset_flag 0x%llx, err: %d, " \
+				"Failed to reset func resources, reset_flag 0x%llx, err: %d, "
 			"status: 0x%x, out_size: 0x%x\n",
 			reset_flag, err, func_reset.head.status, out_size);
 		err = -EIO;
@@ -326,7 +335,7 @@ int hinic5_set_root_ctxt(void *hwdev, u32 rq_depth, u32 sq_depth, u16 rx_buf_sz,
 	if (!hwdev)
 		return -EINVAL;
 
-	memset(&root_ctxt, 0, sizeof(root_ctxt));
+	(void)memset(&root_ctxt, 0, sizeof(root_ctxt));
 	root_ctxt.func_id = hinic5_global_func_id(hwdev);
 
 	root_ctxt.set_cmdq_depth = 0;
@@ -341,13 +350,14 @@ int hinic5_set_root_ctxt(void *hwdev, u32 rq_depth, u32 sq_depth, u16 rx_buf_sz,
 	err = comm_msg_to_mgmt_sync_ch(hwdev, COMM_MGMT_CMD_SET_VAT,
 				       &root_ctxt, sizeof(root_ctxt),
 				       &root_ctxt, &out_size, channel);
-	if (err != 0 || out_size == 0 || root_ctxt.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (root_ctxt.head.status != 0)) {
 		sdk_err(((struct hinic5_hwdev *)hwdev)->dev_hdl,
 			"Failed to set root context, err: %d, status: 0x%x, out_size: 0x%x, channel: 0x%x\n",
 			err, root_ctxt.head.status, out_size, channel);
 		return -EFAULT;
+	} else {
+	    return 0;
 	}
-	return 0;
 }
 EXPORT_SYMBOL(hinic5_set_root_ctxt);
 
@@ -360,13 +370,13 @@ int hinic5_clean_root_ctxt(void *hwdev, u16 channel)
 	if (!hwdev)
 		return -EINVAL;
 
-	memset(&root_ctxt, 0, sizeof(root_ctxt));
+	(void)memset(&root_ctxt, 0, sizeof(root_ctxt));
 	root_ctxt.func_id = hinic5_global_func_id(hwdev);
 
 	err = comm_msg_to_mgmt_sync_ch(hwdev, COMM_MGMT_CMD_SET_VAT,
 				       &root_ctxt, sizeof(root_ctxt),
 				       &root_ctxt, &out_size, channel);
-	if (err != 0 || out_size == 0 || root_ctxt.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (root_ctxt.head.status != 0)) {
 		sdk_err(((struct hinic5_hwdev *)hwdev)->dev_hdl,
 			"Failed to set root context, err: %d, status: 0x%x, out_size: 0x%x, channel: 0x%x\n",
 			err, root_ctxt.head.status, out_size, channel);
@@ -383,7 +393,7 @@ int hinic5_set_cmdq_depth(void *hwdev, u16 cmdq_depth)
 	u16 out_size = sizeof(root_ctxt);
 	int err;
 
-	memset(&root_ctxt, 0, sizeof(root_ctxt));
+	(void)memset(&root_ctxt, 0, sizeof(root_ctxt));
 	root_ctxt.func_id = hinic5_global_func_id(hwdev);
 
 	root_ctxt.set_cmdq_depth = 1;
@@ -395,7 +405,7 @@ int hinic5_set_cmdq_depth(void *hwdev, u16 cmdq_depth)
 
 	err = comm_msg_to_mgmt_sync(hwdev, COMM_MGMT_CMD_SET_VAT, &root_ctxt,
 				    sizeof(root_ctxt), &root_ctxt, &out_size);
-	if (err != 0 || out_size == 0 || root_ctxt.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (root_ctxt.head.status != 0)) {
 		sdk_err(((struct hinic5_hwdev *)hwdev)->dev_hdl,
 			"Failed to set cmdq depth, err: %d, status: 0x%x, out_size: 0x%x\n",
 			err, root_ctxt.head.status, out_size);
@@ -412,8 +422,8 @@ int hinic5_set_enhance_cmdq_ctxt(struct hinic5_hwdev *hwdev, u8 cmdq_id,
 	u16 out_size = sizeof(cmdq_ctxt);
 	int err;
 
-	memset(&cmdq_ctxt, 0, sizeof(cmdq_ctxt));
-	memcpy(&cmdq_ctxt.ctxt, ctxt, sizeof(*ctxt));
+	(void)memset(&cmdq_ctxt, 0, sizeof(cmdq_ctxt));
+	(void)memcpy(&cmdq_ctxt.ctxt, ctxt, sizeof(*ctxt));
 	cmdq_ctxt.func_id = hinic5_global_func_id(hwdev);
 	cmdq_ctxt.cmdq_id = cmdq_id | cmdq_cos_offset;
 	hwdev->cmdq_cos_offset = cmdq_cos_offset;
@@ -421,7 +431,7 @@ int hinic5_set_enhance_cmdq_ctxt(struct hinic5_hwdev *hwdev, u8 cmdq_id,
 	err = comm_msg_to_mgmt_sync(hwdev, COMM_MGMT_CMD_SET_ENHANCE_CMDQ_CTXT,
 				    &cmdq_ctxt, sizeof(cmdq_ctxt),
 				    &cmdq_ctxt, &out_size);
-	if (err != 0 || out_size == 0 || cmdq_ctxt.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (cmdq_ctxt.head.status != 0)) {
 		sdk_err(hwdev->dev_hdl, "Failed to set enhanced cmdq ctxt, err: %d, status: 0x%x, out_size: 0x%x\n",
 			err, cmdq_ctxt.head.status, out_size);
 		return -EFAULT;
@@ -437,15 +447,15 @@ int hinic5_set_cmdq_ctxt(struct hinic5_hwdev *hwdev, u8 cmdq_id,
 	u16 out_size = sizeof(cmdq_ctxt);
 	int err;
 
-	memset(&cmdq_ctxt, 0, sizeof(cmdq_ctxt));
-	memcpy(&cmdq_ctxt.ctxt, ctxt, sizeof(*ctxt));
+	(void)memset(&cmdq_ctxt, 0, sizeof(cmdq_ctxt));
+	(void)memcpy(&cmdq_ctxt.ctxt, ctxt, sizeof(*ctxt));
 	cmdq_ctxt.func_id = hinic5_global_func_id(hwdev);
 	cmdq_ctxt.cmdq_id = cmdq_id;
 
 	err = comm_msg_to_mgmt_sync(hwdev, COMM_MGMT_CMD_SET_CMDQ_CTXT,
 				    &cmdq_ctxt, sizeof(cmdq_ctxt),
 				    &cmdq_ctxt, &out_size);
-	if (err != 0 || out_size == 0 || cmdq_ctxt.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (cmdq_ctxt.head.status != 0)) {
 		sdk_err(hwdev->dev_hdl, "Failed to set cmdq ctxt, err: %d, status: 0x%x, out_size: 0x%x\n",
 			err, cmdq_ctxt.head.status, out_size);
 		return -EFAULT;
@@ -461,7 +471,7 @@ int hinic5_set_ceq_ctrl_reg(struct hinic5_hwdev *hwdev, u16 q_id,
 	u16 out_size = sizeof(ceq_ctrl);
 	int err;
 
-	memset(&ceq_ctrl, 0, sizeof(ceq_ctrl));
+	(void)memset(&ceq_ctrl, 0, sizeof(ceq_ctrl));
 	ceq_ctrl.func_id = hinic5_global_func_id(hwdev);
 	ceq_ctrl.q_id = q_id;
 	ceq_ctrl.ctrl0 = ctrl0;
@@ -470,7 +480,7 @@ int hinic5_set_ceq_ctrl_reg(struct hinic5_hwdev *hwdev, u16 q_id,
 	err = comm_msg_to_mgmt_sync(hwdev, COMM_MGMT_CMD_SET_CEQ_CTRL_REG,
 				    &ceq_ctrl, sizeof(ceq_ctrl),
 				    &ceq_ctrl, &out_size);
-	if (err != 0 || out_size == 0 || ceq_ctrl.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (ceq_ctrl.head.status != 0)) {
 		sdk_err(hwdev->dev_hdl, "Failed to set ceq %u ctrl reg, err: %d status: 0x%x, out_size: 0x%x\n",
 			q_id, err, ceq_ctrl.head.status, out_size);
 		return -EFAULT;
@@ -486,7 +496,7 @@ int hinic5_set_dma_attr_tbl(struct hinic5_hwdev *hwdev, u8 entry_idx, u8 st, u8 
 	u16 out_size = sizeof(dma_attr);
 	int err;
 
-	memset(&dma_attr, 0, sizeof(dma_attr));
+	(void)memset(&dma_attr, 0, sizeof(dma_attr));
 	dma_attr.func_id = hinic5_global_func_id(hwdev);
 	dma_attr.entry_idx = entry_idx;
 	dma_attr.st = st;
@@ -497,7 +507,7 @@ int hinic5_set_dma_attr_tbl(struct hinic5_hwdev *hwdev, u8 entry_idx, u8 st, u8 
 
 	err = comm_msg_to_mgmt_sync(hwdev, COMM_MGMT_CMD_SET_DMA_ATTR, &dma_attr, sizeof(dma_attr),
 				    &dma_attr, &out_size);
-	if (err != 0 || out_size == 0 || dma_attr.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (dma_attr.head.status != 0)) {
 		sdk_err(hwdev->dev_hdl, "Failed to set dma attr, err: %d, status: 0x%x, out_size: 0x%x\n",
 			err, dma_attr.head.status, out_size);
 		return -EIO;
@@ -515,7 +525,7 @@ int hinic5_set_bdf_ctxt(void *hwdev, u8 bus, u8 device, u8 function)
 	if (!hwdev)
 		return -EINVAL;
 
-	memset(&bdf_info, 0, sizeof(bdf_info));
+	(void)memset(&bdf_info, 0, sizeof(bdf_info));
 	bdf_info.function_idx = hinic5_global_func_id(hwdev);
 	bdf_info.bus = bus;
 	bdf_info.device = device;
@@ -524,7 +534,7 @@ int hinic5_set_bdf_ctxt(void *hwdev, u8 bus, u8 device, u8 function)
 	err = comm_msg_to_mgmt_sync(hwdev, COMM_MGMT_CMD_SEND_BDF_INFO,
 				    &bdf_info, sizeof(bdf_info),
 				    &bdf_info, &out_size);
-	if (err != 0 || out_size == 0 || bdf_info.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (bdf_info.head.status != 0)) {
 		sdk_err(((struct hinic5_hwdev *)hwdev)->dev_hdl,
 			"Failed to set bdf info to MPU, err: %d, status: 0x%x, out_size: 0x%x\n",
 			err, bdf_info.head.status, out_size);
@@ -540,11 +550,11 @@ int hinic5_sync_time(void *hwdev, u64 time)
 	u16 out_size = sizeof(time_info);
 	int err;
 
-	memset(&time_info, 0, sizeof(time_info));
+	(void)memset(&time_info, 0, sizeof(time_info));
 	time_info.mstime = time;
 	err = comm_msg_to_mgmt_sync(hwdev, COMM_MGMT_CMD_SYNC_TIME, &time_info,
 				    sizeof(time_info), &time_info, &out_size);
-	if (err != 0 || time_info.head.status != 0 || out_size == 0) {
+	if ((err != 0) || (time_info.head.status != 0) || (out_size == 0)) {
 		sdk_err(((struct hinic5_hwdev *)hwdev)->dev_hdl,
 			"Failed to sync time to mgmt, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, time_info.head.status, out_size);
@@ -564,14 +574,14 @@ int hinic5_set_ppf_flr_type(void *hwdev, enum hinic5_ppf_flr_type flr_type)
 	if (!hwdev)
 		return -EINVAL;
 
-	memset(&flr_type_set, 0, sizeof(flr_type_set));
+	(void)memset(&flr_type_set, 0, sizeof(flr_type_set));
 	flr_type_set.func_id = hinic5_global_func_id(hwdev);
 	flr_type_set.ppf_flr_type = flr_type;
 
 	err = comm_msg_to_mgmt_sync(hwdev, COMM_MGMT_CMD_SET_PPF_FLR_TYPE,
 				    &flr_type_set, sizeof(flr_type_set),
 				    &flr_type_set, &out_size);
-	if (err != 0 || out_size == 0 || flr_type_set.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (flr_type_set.head.status != 0)) {
 		sdk_err(dev->dev_hdl, "Failed to set ppf flr type, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, flr_type_set.head.status, out_size);
 		return -EIO;
@@ -593,13 +603,13 @@ int hinic5_set_ppf_tbl_hotreplace_flag(void *hwdev, u8 flag)
 		return -EINVAL;
 	}
 
-	memset(&htr_info, 0, sizeof(htr_info));
+	(void)memset(&htr_info, 0, sizeof(htr_info));
 
 	htr_info.hotreplace_flag = flag;
 	ret = comm_msg_to_mgmt_sync(hwdev, COMM_MGMT_CMD_SET_PPF_TBL_HTR_FLG,
 				    &htr_info, sizeof(htr_info), &htr_info, &out_size);
 	if (ret != 0 || htr_info.head.status != 0) {
-		sdk_err(dev->dev_hdl, "Send mbox to mpu failed in sdk, ret:%d, status:%u",
+		sdk_err(dev->dev_hdl, "Send mbox to mpu failed in sdk, ret:%d, status:%hu",
 			ret, htr_info.head.status);
 		return -EIO;
 	}
@@ -618,12 +628,12 @@ static int hinic5_get_fw_ver(struct hinic5_hwdev *hwdev, enum hinic5_fw_ver_type
 	if (!hwdev || !mgmt_ver)
 		return -EINVAL;
 
-	memset(&fw_ver, 0, sizeof(fw_ver));
+	(void)memset(&fw_ver, 0, sizeof(fw_ver));
 	fw_ver.fw_type = type;
 	err = comm_msg_to_mgmt_sync_ch(hwdev, COMM_MGMT_CMD_GET_FW_VERSION,
 				       &fw_ver, sizeof(fw_ver), &fw_ver,
 				       &out_size, channel);
-	if (err != 0 || out_size == 0 || fw_ver.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (fw_ver.head.status) != 0) {
 		sdk_err(hwdev->dev_hdl,
 			"Failed to get fw version, err: %d, status: 0x%x, out size: 0x%x, channel: 0x%x\n",
 			err, fw_ver.head.status, out_size, channel);
@@ -684,23 +694,25 @@ static int hinic5_comm_features_nego(void *hwdev, u8 opcode, u64 *s_feature,
 	if (!hwdev || !s_feature || size > COMM_MAX_FEATURE_QWORD)
 		return -EINVAL;
 
-	memset(&feature_nego, 0, sizeof(feature_nego));
+	(void)memset(&feature_nego, 0, sizeof(feature_nego));
 	feature_nego.func_id = hinic5_global_func_id(hwdev);
 	feature_nego.opcode = opcode;
-	if (opcode == MGMT_MSG_CMD_OP_SET)
+	if (opcode == MGMT_MSG_CMD_OP_SET) {
 		memcpy(feature_nego.s_feature, s_feature, (size * sizeof(u64)));
+	}
 
 	err = comm_msg_to_mgmt_sync(hwdev, COMM_MGMT_CMD_FEATURE_NEGO,
 				    &feature_nego, sizeof(feature_nego),
 				    &feature_nego, &out_size);
-	if (err != 0 || out_size == 0 || feature_nego.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (feature_nego.head.status != 0)) {
 		sdk_err(dev->dev_hdl, "Failed to negotiate feature, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, feature_nego.head.status, out_size);
 		return -EINVAL;
 	}
 
-	if (opcode == MGMT_MSG_CMD_OP_GET)
+	if (opcode == MGMT_MSG_CMD_OP_GET) {
 		memcpy(s_feature, feature_nego.s_feature, (COMM_MAX_FEATURE_QWORD * sizeof(u64)));
+	}
 
 	return 0;
 }
@@ -726,16 +738,15 @@ int hinic5_comm_channel_detect(struct hinic5_hwdev *hwdev)
 	if (!hwdev)
 		return -EINVAL;
 
-	memset(&channel_detect_info, 0, sizeof(channel_detect_info));
+	(void)memset(&channel_detect_info, 0, sizeof(channel_detect_info));
 	channel_detect_info.func_id = hinic5_global_func_id(hwdev);
 
 	err = comm_msg_to_mgmt_sync(hwdev, COMM_MGMT_CMD_CHANNEL_DETECT,
 				    &channel_detect_info, sizeof(channel_detect_info),
 				    &channel_detect_info, &out_size);
-	if ((channel_detect_info.head.status != HINIC5_MGMT_CMD_UNSUPPORTED &&
-	    channel_detect_info.head.status != 0) || err != 0 || out_size == 0) {
-		sdk_err(hwdev->dev_hdl,
-			"Failed to send channel detect, err: %d, status: 0x%x, out size: 0x%x\n",
+	if (((channel_detect_info.head.status != HINIC5_MGMT_CMD_UNSUPPORTED) &&
+	     (channel_detect_info.head.status != 0)) || (err != 0) || (out_size == 0)) {
+		sdk_err(hwdev->dev_hdl, "Failed to send channel detect, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, channel_detect_info.head.status, out_size);
 		return -EINVAL;
 	}
@@ -755,14 +766,14 @@ int hinic5_func_tmr_bitmap_set(void *hwdev, u16 func_id, bool en)
 	if (!hwdev)
 		return -EINVAL;
 
-	memset(&bitmap_op, 0, sizeof(bitmap_op));
+	(void)memset(&bitmap_op, 0, sizeof(bitmap_op));
 	bitmap_op.func_id = func_id;
 	bitmap_op.opcode = en ? FUNC_TMR_BITMAP_ENABLE : FUNC_TMR_BITMAP_DISABLE;
 
 	err = comm_msg_to_mgmt_sync(hwdev, COMM_MGMT_CMD_SET_FUNC_TMR_BITMAT,
 				    &bitmap_op, sizeof(bitmap_op),
 				    &bitmap_op, &out_size);
-	if (err != 0 || out_size == 0 || bitmap_op.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (bitmap_op.head.status != 0)) {
 		sdk_err(((struct hinic5_hwdev *)hwdev)->dev_hdl,
 			"Failed to set timer bitmap, err: %d, status: 0x%x, out_size: 0x%x\n",
 			err, bitmap_op.head.status, out_size);
@@ -782,7 +793,7 @@ int hinic5_func_vio_en(void *hwdev, bool en)
 	if (!hwdev)
 		return -EINVAL;
 
-	memset(&cmd, 0, sizeof(cmd));
+	(void)memset(&cmd, 0, sizeof(cmd));
 	cmd.msien_snap_2_virtio_en = en ? 0x1 : 0x0;
 
 	err = comm_msg_to_mgmt_sync(hwdev, COMM_MGMT_CMD_SET_VIO_EN,
@@ -791,7 +802,7 @@ int hinic5_func_vio_en(void *hwdev, bool en)
 		sdk_warn(dev->dev_hdl, "not support vio en");
 		return 0;
 	}
-	if (err != 0 || out_size == 0 || cmd.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (cmd.head.status != 0)) {
 		sdk_err(dev->dev_hdl,
 			"Failed to set vio %s, err: %d, status: 0x%x, out_size: 0x%x\n",
 			(en ? "enable" : "disable"),
@@ -805,17 +816,13 @@ int hinic5_func_vio_en(void *hwdev, bool en)
 static int alloc_bank_buf(struct hinic5_hwdev *hwdev, struct hinic5_page_addr *pg0,
 			  struct hinic5_page_addr *pg1, struct comm_cmd_ht_gpa *ht_gpa_set)
 {
-	size_t page_len = HINIC5_HT_GPA_PAGE_SIZE * HINIC5_HT_GPA_PAGE_LEN;
-
+	pg0->virt_addr = dma_zalloc_coherent(hwdev->dev_hdl,
+				 get_bank_pg0_size(),
+				 &pg0->phys_addr, GFP_KERNEL);
 	if (lowpower_mode != 0) {
-		pg0->virt_addr = dma_zalloc_coherent(hwdev->dev_hdl, page_len,
-						     &pg0->phys_addr, GFP_KERNEL);
 		ht_gpa_set->rsvd0[0] = lowpower_mode;
 		sdk_info(hwdev->dev_hdl, "Alloc pg0 page addr len: 0x%lx, lowpower_mode=%u\n",
-			 page_len, lowpower_mode);
-	} else {
-		pg0->virt_addr = dma_zalloc_coherent(hwdev->dev_hdl, HINIC5_HT_GPA_PAGE_SIZE,
-						     &pg0->phys_addr, GFP_KERNEL);
+			get_bank_pg0_size(), lowpower_mode);
 	}
 
 	if (!pg0->virt_addr) {
@@ -841,7 +848,7 @@ static int ht_gpa_set(struct hinic5_hwdev *hwdev, struct hinic5_page_addr *pg0,
 	u16 out_size = sizeof(ht_gpa_set);
 	int ret;
 
-	memset(&ht_gpa_set, 0, sizeof(ht_gpa_set));
+	(void)memset(&ht_gpa_set, 0, sizeof(ht_gpa_set));
 	ret = alloc_bank_buf(hwdev, pg0, pg1, &ht_gpa_set);
 	if (ret != 0)
 		return -EFAULT;
@@ -850,18 +857,21 @@ static int ht_gpa_set(struct hinic5_hwdev *hwdev, struct hinic5_page_addr *pg0,
 	ht_gpa_set.opcode = HT_GPA_SET;
 	ht_gpa_set.page_pa0 = pg0->phys_addr;
 	ht_gpa_set.page_pa1 = pg1->phys_addr;
-#ifndef __VMWARE__
-	sdk_info(hwdev->dev_hdl, "ht gpa set: page_addr0.pa=0x%llx, page_addr1.pa=0x%llx\n",
+#ifdef __LINUX__
+	sdk_info(hwdev->dev_hdl, "ht gpa set: page_addr0.pa=0x%pK, page_addr1.pa=0x%pK\n",
+		 (void *)pg0->phys_addr, (void *)pg1->phys_addr);
+#elif defined(__VMWARE__)
+	sdk_info(hwdev->dev_hdl, "ht gpa set: page_addr0.pa=0x%lx, page_addr1.pa=0x%lx\n",
 		 pg0->phys_addr, pg1->phys_addr);
 #else
-	sdk_info(hwdev->dev_hdl, "ht gpa set: page_addr0.pa=0x%lx, page_addr1.pa=0x%lx\n",
+	sdk_info(hwdev->dev_hdl, "ht gpa set: page_addr0.pa=0x%llx, page_addr1.pa=0x%llx\n",
 		 pg0->phys_addr, pg1->phys_addr);
 #endif
 	ret = comm_msg_to_mgmt_sync(hwdev, COMM_MGMT_CMD_SET_HT_GPA,
 				    &ht_gpa_set, sizeof(ht_gpa_set),
 				    &ht_gpa_set, &out_size);
-	if (ret != 0 || out_size == 0 || ht_gpa_set.head.status != 0) {
-		sdk_warn(hwdev->dev_hdl, "ht gpa set failed, ret: %d, status: 0x%x, out_size: 0x%x\n",
+	if ((ret != 0) || (out_size == 0) || (ht_gpa_set.head.status) != 0) {
+		sdk_warn(hwdev->dev_hdl, "ht gpa set unsuccessful, ret: %d, status: 0x%x, out_size: 0x%x\n",
 			 ret, ht_gpa_set.head.status, out_size);
 		return -EFAULT;
 	}
@@ -886,7 +896,7 @@ int hinic5_ht_gpa_init(struct hinic5_hwdev *hwdev)
 		return -EINVAL;
 	}
 
-	if (hwdev->page_pa0.phys_addr != 0 || hwdev->page_pa1.phys_addr != 0) {
+	if ((hwdev->page_pa0.phys_addr != 0) || (hwdev->page_pa1.phys_addr != 0)) {
 		sdk_err(hwdev->dev_hdl, "ht gpa have be inited.\n");
 		return 0;
 	}
@@ -900,7 +910,7 @@ int hinic5_ht_gpa_init(struct hinic5_hwdev *hwdev)
 	for (j = 0; j < i; j++) {
 		if (page_addr0[j].virt_addr) {
 			dma_free_coherent(hwdev->dev_hdl,
-					  HINIC5_HT_GPA_PAGE_SIZE,
+					  get_bank_pg0_size(),
 					  page_addr0[j].virt_addr,
 					  (dma_addr_t)page_addr0[j].phys_addr);
 			page_addr0[j].virt_addr = NULL;
@@ -929,7 +939,7 @@ static void ht_gpa_clear(struct hinic5_hwdev *hwdev)
 	u16 out_size = sizeof(ht_gpa_set);
 	int ret;
 
-	memset(&ht_gpa_set, 0, sizeof(ht_gpa_set));
+	(void)memset(&ht_gpa_set, 0, sizeof(ht_gpa_set));
 
 	ht_gpa_set.host_id = hinic5_host_id(hwdev);
 	ht_gpa_set.opcode = HT_GPA_CLEAR;
@@ -939,10 +949,12 @@ static void ht_gpa_clear(struct hinic5_hwdev *hwdev)
 	ret = comm_msg_to_mgmt_sync(hwdev, COMM_MGMT_CMD_SET_HT_GPA,
 				    &ht_gpa_set, sizeof(ht_gpa_set),
 				    &ht_gpa_set, &out_size);
-	if (ret != 0 || out_size == 0 || ht_gpa_set.head.status != 0) {
+	if ((ret != 0) || (out_size == 0) || (ht_gpa_set.head.status) != 0) {
 		sdk_warn(hwdev->dev_hdl, "ht gpa set failed, ret: %d, status: 0x%x, out_size: 0x%x\n",
 			 ret, ht_gpa_set.head.status, out_size);
 	}
+
+	return;
 }
 
 void hinic5_ht_gpa_deinit(struct hinic5_hwdev *hwdev)
@@ -954,15 +966,16 @@ void hinic5_ht_gpa_deinit(struct hinic5_hwdev *hwdev)
 
 	ht_gpa_clear(hwdev);
 
-	if (hwdev->page_pa0.virt_addr && hwdev->page_pa0.phys_addr != 0) {
-		dma_free_coherent(hwdev->dev_hdl, HINIC5_HT_GPA_PAGE_SIZE,
+	if ((hwdev->page_pa0.virt_addr != NULL) && (hwdev->page_pa0.phys_addr != 0)) {
+		dma_free_coherent(hwdev->dev_hdl,
+				  get_bank_pg0_size(),
 				  hwdev->page_pa0.virt_addr,
 				  (dma_addr_t)(hwdev->page_pa0.phys_addr));
 		hwdev->page_pa0.virt_addr = NULL;
 		hwdev->page_pa0.phys_addr = 0;
 	}
 
-	if (hwdev->page_pa1.virt_addr && hwdev->page_pa1.phys_addr != 0) {
+	if ((hwdev->page_pa1.virt_addr != NULL) && (hwdev->page_pa1.phys_addr != 0)) {
 		dma_free_coherent(hwdev->dev_hdl, HINIC5_HT_GPA_PAGE_SIZE,
 				  hwdev->page_pa1.virt_addr,
 				  (dma_addr_t)hwdev->page_pa1.phys_addr);
@@ -981,7 +994,7 @@ static int set_ppf_tmr_status(struct hinic5_hwdev *hwdev,
 	if (!hwdev)
 		return -EINVAL;
 
-	memset(&op, 0, sizeof(op));
+	(void)memset(&op, 0, sizeof(op));
 
 	if (hinic5_func_type(hwdev) != TYPE_PPF)
 		return -EFAULT;
@@ -991,7 +1004,7 @@ static int set_ppf_tmr_status(struct hinic5_hwdev *hwdev,
 
 	err = comm_msg_to_mgmt_sync(hwdev, COMM_MGMT_CMD_SET_PPF_TMR, &op,
 				    sizeof(op), &op, &out_size);
-	if (err != 0 || out_size == 0 || op.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (op.head.status != 0)) {
 		sdk_err(hwdev->dev_hdl, "Failed to set ppf timer, err: %d, status: 0x%x, out_size: 0x%x\n",
 			err, op.head.status, out_size);
 		return -EFAULT;
@@ -1009,7 +1022,7 @@ int hinic5_ppf_tmr_start(void *hwdev)
 		return -EINVAL;
 	}
 
-	is_in_kexec = hinic5_vram_get_kexec_flag();
+	is_in_kexec = vram5_get_kexec_flag();
 	if (is_in_kexec != 0) {
 		pr_info("Skip starting ppt timer during kexec");
 		return 0;
@@ -1030,17 +1043,17 @@ int hinic5_ppf_tmr_stop(void *hwdev)
 }
 EXPORT_SYMBOL(hinic5_ppf_tmr_stop);
 
-static int hinic5_hinic5_vram_kalloc_align(struct hinic5_hwdev *hwdev, char *name, u32 page_size,
-					   u32 page_num, struct hinic5_dma_addr_align *mem_align)
+static int hi5_vram_kalloc_align(struct hinic5_hwdev *hwdev, char *name, u32 page_size, u32 page_num,
+	struct hinic5_dma_addr_align *mem_align)
 {
 	void *vaddr = NULL, *align_vaddr = NULL;
 	dma_addr_t paddr, align_paddr;
 	u64 real_size = page_size;
 	u64 align = page_size;
 
-	vaddr = (void *)hinic5_hinic5_vram_kalloc(name, real_size);
-	if (!vaddr) {
-		sdk_err(hwdev->dev_hdl, "hinic5_vram kalloc failed, name:%s.\n", name);
+	vaddr = (void *)hi5_vram_kalloc(name, real_size);
+	if (vaddr == NULL) {
+		sdk_err(hwdev->dev_hdl, "vram kalloc failed, name:%s.\n", name);
 		return -ENOMEM;
 	}
 
@@ -1052,13 +1065,13 @@ static int hinic5_hinic5_vram_kalloc_align(struct hinic5_hwdev *hwdev, char *nam
 		goto out;
 	}
 
-	hinic5_hinic5_vram_kfree((void *)vaddr, name, real_size);
+	hi5_vram_kfree((void *)vaddr, name, real_size);
 
 	/* realloc memory for align */
 	real_size = page_size + align;
-	vaddr = (void *)hinic5_hinic5_vram_kalloc(name, real_size);
-	if (!vaddr) {
-		sdk_err(hwdev->dev_hdl, "hinic5_vram kalloc align failed, name:%s.\n", name);
+	vaddr = (void *)hi5_vram_kalloc(name, real_size);
+	if (vaddr == NULL) {
+		sdk_err(hwdev->dev_hdl, "vram kalloc align failed, name:%s.\n", name);
 		return -ENOMEM;
 	}
 
@@ -1080,59 +1093,56 @@ static void mqm_eqm_free_page_mem(struct hinic5_hwdev *hwdev)
 {
 	struct hinic5_dma_addr_align *page_addr = NULL;
 	u32 i;
-	int is_use_hinic5_vram = get_use_hinic5_vram_flag();
-	struct mqm_eqm_hinic5_vram_name_s *mqm_eqm_vram_name = hwdev->mqm_eqm_hinic5_vram_name;
+	int is_use_vram = get5_use_vram_flag();
+	struct mqm_eqm_vram_name_s *mqm_eqm_vram_name = hwdev->mqm_eqm_vram_name;
 
 	page_addr = hwdev->mqm_att.brm_srch_page_addr;
 
 	for (i = 0; i < hwdev->mqm_att.page_num; i++) {
-		if (is_use_hinic5_vram != 0) {
-			hinic5_hinic5_vram_kfree(page_addr->ori_vaddr,
-						 mqm_eqm_vram_name[i].hinic5_vram_name,
-						 page_addr->real_size);
+		if (is_use_vram != 0) {
+			hi5_vram_kfree(page_addr->ori_vaddr, mqm_eqm_vram_name[i].vram_name,
+				page_addr->real_size);
 		} else {
 			hinic5_dma_free_coherent_align(hwdev->dev_hdl, page_addr);
 		}
 		page_addr++;
 	}
 	kfree(mqm_eqm_vram_name);
-	hwdev->mqm_eqm_hinic5_vram_name = NULL;
+	hwdev->mqm_eqm_vram_name = NULL;
 }
 
 static int mqm_eqm_try_alloc_mem(struct hinic5_hwdev *hwdev, u32 page_size,
 				 u32 page_num)
 {
 	struct hinic5_dma_addr_align *page_addr = hwdev->mqm_att.brm_srch_page_addr;
-	int is_use_hinic5_vram = get_use_hinic5_vram_flag();
-	struct mqm_eqm_hinic5_vram_name_s *mqm_eqm_hinic5_vram_name = NULL;
+	int is_use_vram = get5_use_vram_flag();
+	struct mqm_eqm_vram_name_s *mqm_eqm_vram_name = NULL;
 	u32 valid_num = 0;
 	u32 flag = 1;
 	u32 i = 0;
 	int err;
 	u16 func_id;
 
-	mqm_eqm_hinic5_vram_name = kzalloc(sizeof(struct mqm_eqm_hinic5_vram_name_s) * page_num, GFP_KERNEL);
-	if (!mqm_eqm_hinic5_vram_name)
+	mqm_eqm_vram_name = kzalloc(sizeof(struct mqm_eqm_vram_name_s) * page_num, GFP_KERNEL);
+	if (mqm_eqm_vram_name == NULL) {
+		sdk_err(hwdev->dev_hdl, "mqm eqm alloc vram name failed.\n");
 		return -ENOMEM;
+	}
 
-	hwdev->mqm_eqm_hinic5_vram_name = mqm_eqm_hinic5_vram_name;
+	hwdev->mqm_eqm_vram_name = mqm_eqm_vram_name;
 	func_id = hinic5_global_func_id(hwdev);
 
 	for (i = 0; i < page_num; i++) {
-		if (is_use_hinic5_vram != 0) {
-			err = snprintf(mqm_eqm_hinic5_vram_name[i].hinic5_vram_name,
-				       HINIC5_VRAM_NAME_MAX_LEN, "%s%hu%s%u",
-				       HINIC5_VRAM_NIC_FUNC_BASE, func_id,
-				       HINIC5_VRAM_NIC_MQM, i);
+		if (is_use_vram != 0) {
+			err = snprintf(mqm_eqm_vram_name[i].vram_name, VRAM_NAME_MAX_LEN,
+				"%s%hu%s%u", VRAM_NIC_FUNC_BASE, func_id, VRAM_NIC_MQM, i);
 			if (err < 0) {
-				sdk_err(hwdev->dev_hdl,
-					"mqm eqm snprintf name fail, err:%d, index:%u\n", err, i);
+				sdk_err(hwdev->dev_hdl, "mqm eqm snprintf name fail, err:%d, index:%u\n", err, i);
 				flag = 0;
 				break;
 			}
-			err = hinic5_hinic5_vram_kalloc_align(hwdev,
-							      mqm_eqm_hinic5_vram_name[i].hinic5_vram_name,
-							      page_size, page_num, page_addr);
+			err = hi5_vram_kalloc_align(hwdev, mqm_eqm_vram_name[i].vram_name, page_size, page_num,
+				page_addr);
 		} else {
 			err = hinic5_dma_zalloc_coherent_align(hwdev->dev_hdl, page_size,
 							       page_size, GFP_KERNEL, page_addr);
@@ -1194,7 +1204,7 @@ static int mqm_eqm_set_cfg_2_hw(struct hinic5_hwdev *hwdev, u8 valid)
 	u16 out_size = sizeof(info_eqm_cfg);
 	int err;
 
-	memset(&info_eqm_cfg, 0, sizeof(info_eqm_cfg));
+	(void)memset(&info_eqm_cfg, 0, sizeof(info_eqm_cfg));
 
 	info_eqm_cfg.host_id = hinic5_host_id(hwdev);
 	info_eqm_cfg.page_size = hwdev->mqm_att.page_size;
@@ -1202,7 +1212,7 @@ static int mqm_eqm_set_cfg_2_hw(struct hinic5_hwdev *hwdev, u8 valid)
 	err = comm_msg_to_mgmt_sync(hwdev, COMM_MGMT_CMD_SET_MQM_CFG_INFO,
 				    &info_eqm_cfg, sizeof(info_eqm_cfg),
 				    &info_eqm_cfg, &out_size);
-	if (err != 0 || out_size == 0 || info_eqm_cfg.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (info_eqm_cfg.head.status != 0)) {
 		sdk_err(hwdev->dev_hdl, "Failed to init func table, err: %d, status: 0x%x, out_size: 0x%x\n",
 			err, info_eqm_cfg.head.status, out_size);
 		return -EFAULT;
@@ -1251,8 +1261,7 @@ static int mqm_eqm_set_page_2_hw(struct hinic5_hwdev *hwdev)
 			info->start_idx = start_idx;
 			info->host_id = hinic5_host_id(hwdev);
 			out_size = send_buf_size;
-			err = comm_msg_to_mgmt_sync(hwdev, cmd, info, (u16)send_buf_size,
-						    info, &out_size);
+			err = comm_msg_to_mgmt_sync(hwdev, cmd, info, (u16)send_buf_size, info, &out_size);
 			if (MSG_TO_MGMT_SYNC_RETURN_ERR(err, out_size, info->head.status)) {
 				sdk_err(hwdev->dev_hdl, "Set mqm srch gpa fail, err: %d, status: 0x%x, out_size: 0x%x\n",
 					err, info->head.status, out_size);
@@ -1291,11 +1300,11 @@ static int get_eqm_num(struct hinic5_hwdev *hwdev, struct comm_cmd_get_eqm_num *
 	int ret;
 	u16 len = sizeof(*info_eqm_fix);
 
-	memset(info_eqm_fix, 0, sizeof(*info_eqm_fix));
+	(void)memset(info_eqm_fix, 0, sizeof(*info_eqm_fix));
 
 	ret = comm_msg_to_mgmt_sync(hwdev, COMM_MGMT_CMD_GET_MQM_FIX_INFO,
 				    info_eqm_fix, sizeof(*info_eqm_fix), info_eqm_fix, &len);
-	if (ret != 0 || len == 0 || info_eqm_fix->head.status != 0) {
+	if ((ret != 0) || (len == 0) || (info_eqm_fix->head.status != 0)) {
 		sdk_err(hwdev->dev_hdl, "Get mqm fix info fail,err: %d, status: 0x%x, out_size: 0x%x\n",
 			ret, info_eqm_fix->head.status, len);
 		return -EFAULT;
@@ -1491,8 +1500,7 @@ static int wait_cmdq_stop(struct hinic5_hwdev *hwdev)
 	return err;
 }
 
-static int hinic5_rx_tx_flush(struct hinic5_hwdev *hwdev, u16 channel, bool wait_io,
-			      u32 flr_timeout_ms)
+static int hinic5_rx_tx_flush(struct hinic5_hwdev *hwdev, u16 channel, bool wait_io, u32 flr_timeout_ms)
 {
 	struct hinic5_hwif *hwif = hwdev->hwif;
 	struct comm_cmd_clear_doorbell clear_db;
@@ -1500,48 +1508,51 @@ static int hinic5_rx_tx_flush(struct hinic5_hwdev *hwdev, u16 channel, bool wait
 	u16 out_size;
 	int err;
 
-	if (HINIC5_FUNC_TYPE(hwdev) != TYPE_VF && wait_io == true)
+	if ((HINIC5_FUNC_TYPE(hwdev) != TYPE_VF) && (wait_io == true))
 		msleep(100); /* wait ucode 100 ms stop I/O */
 
 	err = wait_cmdq_stop(hwdev);
-	if (err != 0)
+	if (err != 0) {
 		sdk_warn(hwdev->dev_hdl, "CMDQ is still working, please check CMDQ timeout value is reasonable\n");
+	}
 
 	hinic5_disable_doorbell(hwif);
 
 	out_size = sizeof(clear_db);
-	memset(&clear_db, 0, sizeof(clear_db));
+	(void)memset(&clear_db, 0, sizeof(clear_db));
 	clear_db.func_id = HINIC5_HWIF_GLOBAL_IDX(hwif);
 
-	err = comm_msg_to_mgmt_sync_ch(hwdev,  COMM_MGMT_CMD_FLUSH_DOORBELL, &clear_db,
-				       sizeof(clear_db), &clear_db, &out_size, channel);
-	if (err != 0 || out_size == 0 || clear_db.head.status != 0) {
+	err = comm_msg_to_mgmt_sync_ch(hwdev,  COMM_MGMT_CMD_FLUSH_DOORBELL, &clear_db, sizeof(clear_db),
+				       &clear_db, &out_size, channel);
+	if ((err != 0) || (out_size == 0) || (clear_db.head.status != 0)) {
 		sdk_warn(hwdev->dev_hdl, "Failed to flush doorbell, err: %d, status: 0x%x, out_size: 0x%x, channel: 0x%x\n",
 			 err, clear_db.head.status, out_size, channel);
 	}
 
 	hinic5_set_pf_status(hwif, HINIC5_PF_STATUS_FLR_START_FLAG);
 
-	memset(&clr_res, 0, sizeof(clr_res));
+	(void)memset(&clr_res, 0, sizeof(clr_res));
 	clr_res.func_id = HINIC5_HWIF_GLOBAL_IDX(hwif);
 
 	err = hinic5_msg_to_mgmt_no_ack(hwdev, HINIC5_MOD_COMM, COMM_MGMT_CMD_START_FLUSH, &clr_res,
 					sizeof(clr_res), channel);
-	if (err != 0)
-		sdk_warn(hwdev->dev_hdl, "Failed to notice flush message, err: %d, channel: 0x%x\n",
-			 err, channel);
+	if (err != 0) {
+		sdk_warn(hwdev->dev_hdl, "Failed to notice flush message, err: %d, channel: 0x%x\n", err, channel);
+	}
 
 	if (HINIC5_FUNC_TYPE(hwdev) != TYPE_VF) {
 		err = wait_for_flr_finish(hwif, flr_timeout_ms);
-		if (err != 0)
+		if (err != 0) {
 			sdk_warn(hwdev->dev_hdl, "Wait firmware FLR timeout\n");
+		}
 	}
 
 	hinic5_enable_doorbell(hwif);
 
 	err = hinic5_reinit_cmdq_ctxts(hwdev);
-	if (err != 0)
+	if (err != 0) {
 		sdk_warn(hwdev->dev_hdl, "Failed to reinit cmdq\n");
+	}
 
 	return err;
 }
@@ -1570,18 +1581,18 @@ int hinic5_get_board_info(void *hwdev, struct hinic5_board_info *info,
 	if (!hwdev || !info)
 		return -EINVAL;
 
-	memset(&board_info, 0, sizeof(board_info));
+	(void)memset(&board_info, 0, sizeof(board_info));
 	err = comm_msg_to_mgmt_sync_ch(hwdev, COMM_MGMT_CMD_GET_BOARD_INFO,
 				       &board_info, sizeof(board_info),
 				       &board_info, &out_size, channel);
-	if (err != 0 || out_size == 0 || board_info.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (board_info.head.status != 0)) {
 		sdk_err(((struct hinic5_hwdev *)hwdev)->dev_hdl,
 			"Failed to get board info, err: %d, status: 0x%x, out size: 0x%x, channel: 0x%x\n",
 			err, board_info.head.status, out_size, channel);
 		return -EIO;
 	}
 
-	memcpy(info, &board_info.info, sizeof(*info));
+	(void)memcpy(info, &board_info.info, sizeof(*info));
 
 	return 0;
 }
@@ -1604,7 +1615,7 @@ int hinic5_get_hw_pf_infos(void *hwdev, struct hinic5_hw_pf_infos *infos,
 	err = comm_msg_to_mgmt_sync_ch(hwdev, COMM_MGMT_CMD_GET_HW_PF_INFOS,
 				       pf_infos, sizeof(*pf_infos),
 				       pf_infos, &out_size, channel);
-	if (err != 0 || out_size == 0 || pf_infos->head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (pf_infos->head.status) != 0) {
 		sdk_err(((struct hinic5_hwdev *)hwdev)->dev_hdl,
 			"Failed to get hw pf information, err: %d, status: 0x%x, out size: 0x%x, channel: 0x%x\n",
 			err, pf_infos->head.status, out_size, channel);
@@ -1612,7 +1623,7 @@ int hinic5_get_hw_pf_infos(void *hwdev, struct hinic5_hw_pf_infos *infos,
 		goto free_buf;
 	}
 
-	memcpy(infos, &pf_infos->infos, sizeof(struct hinic5_hw_pf_infos));
+	(void)memcpy(infos, &pf_infos->infos, sizeof(struct hinic5_hw_pf_infos));
 
 free_buf:
 	kfree(pf_infos);
@@ -1629,14 +1640,14 @@ int hinic5_get_global_attr(void *hwdev, struct comm_global_attr *attr)
 	err = comm_msg_to_mgmt_sync(hwdev, COMM_MGMT_CMD_GET_GLOBAL_ATTR,
 				    &get_attr, sizeof(get_attr), &get_attr,
 				    &out_size);
-	if (err != 0 || out_size == 0 || get_attr.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (get_attr.head.status) != 0) {
 		sdk_err(((struct hinic5_hwdev *)hwdev)->dev_hdl,
 			"Failed to get global attribute, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, get_attr.head.status, out_size);
 		return -EIO;
 	}
 
-	memcpy(attr, &get_attr.attr, sizeof(struct comm_global_attr));
+	(void)memcpy(attr, &get_attr.attr, sizeof(struct comm_global_attr));
 
 	return 0;
 }
@@ -1651,7 +1662,7 @@ int hinic5_set_func_svc_used_state(void *hwdev, u16 svc_type, u8 state,
 	if (!hwdev)
 		return -EINVAL;
 
-	memset(&used_state, 0, sizeof(used_state));
+	(void)memset(&used_state, 0, sizeof(used_state));
 	used_state.func_id = hinic5_global_func_id(hwdev);
 	used_state.svc_type = svc_type;
 	used_state.used_state = state;
@@ -1660,7 +1671,7 @@ int hinic5_set_func_svc_used_state(void *hwdev, u16 svc_type, u8 state,
 				       COMM_MGMT_CMD_SET_FUNC_SVC_USED_STATE,
 				       &used_state, sizeof(used_state),
 				       &used_state, &out_size, channel);
-	if (err != 0 || out_size == 0 || used_state.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (used_state.head.status != 0)) {
 		sdk_err(((struct hinic5_hwdev *)hwdev)->dev_hdl,
 			"Failed to set func service used state, err: %d, status: 0x%x, out size: 0x%x, channel: 0x%x\n\n",
 			err, used_state.head.status, out_size, channel);
@@ -1688,14 +1699,14 @@ int hinic5_get_sml_table_info(void *hwdev, u32 tbl_id, u8 *node_id, u8 *instance
 
 	err = comm_msg_to_mgmt_sync(hwdev, COMM_MGMT_CMD_GET_SML_TABLE_INFO,
 				    &sml_tbl, sizeof(sml_tbl), &sml_tbl, &out_size);
-	if (err != 0 || out_size == 0 || sml_tbl.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (sml_tbl.head.status != 0)) {
 		sdk_err(((struct hinic5_hwdev *)hwdev)->dev_hdl,
 			"Failed to get sml table information, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, sml_tbl.head.status, out_size);
 		return -EIO;
 	}
 
-	memcpy(&sml_table, sml_tbl.tbl_data, sizeof(sml_table));
+	(void)memcpy(&sml_table, sml_tbl.tbl_data, sizeof(sml_table));
 
 	*node_id = sml_table.node_id;
 	*instance_id = sml_table.instance_id;
@@ -1705,7 +1716,7 @@ int hinic5_get_sml_table_info(void *hwdev, u32 tbl_id, u8 *node_id, u8 *instance
 
 int hinic5_activate_firmware(void *hwdev, u8 cfg_index)
 {
-	struct hinic5_cmd_activate_firmware activate_msg;
+	struct cmd_cold_active_fw activate_msg;
 	u16 out_size = sizeof(activate_msg);
 	int err;
 
@@ -1715,17 +1726,17 @@ int hinic5_activate_firmware(void *hwdev, u8 cfg_index)
 	if (hinic5_func_type(hwdev) == TYPE_VF)
 		return -EOPNOTSUPP;
 
-	memset(&activate_msg, 0, sizeof(activate_msg));
+	(void)memset(&activate_msg, 0, sizeof(activate_msg));
 	activate_msg.index = cfg_index;
 
 	err = hinic5_msg_to_mgmt_sync(hwdev, HINIC5_MOD_COMM, COMM_MGMT_CMD_ACTIVE_FW,
 				      &activate_msg, sizeof(activate_msg),
 				      &activate_msg, &out_size, FW_UPDATE_MGMT_TIMEOUT, 0);
-	if (err != 0 || out_size == 0 || activate_msg.msg_head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (activate_msg.head.status != 0)) {
 		sdk_err(((struct hinic5_hwdev *)hwdev)->dev_hdl,
 			"Failed to activate firmware, err: %d, status: 0x%x, out size: 0x%x\n",
-			err, activate_msg.msg_head.status, out_size);
-		err = (activate_msg.msg_head.status != 0) ? activate_msg.msg_head.status : -EIO;
+			err, activate_msg.head.status, out_size);
+		err = (activate_msg.head.status != 0) ? activate_msg.head.status : -EIO;
 		return err;
 	} else {
 		return 0;
@@ -1734,7 +1745,7 @@ int hinic5_activate_firmware(void *hwdev, u8 cfg_index)
 
 int hinic5_switch_config(void *hwdev, u8 cfg_index)
 {
-	struct hinic5_cmd_switch_config switch_cfg;
+	struct cmd_cold_active_fw switch_cfg;
 	u16 out_size = sizeof(switch_cfg);
 	int err;
 
@@ -1747,17 +1758,17 @@ int hinic5_switch_config(void *hwdev, u8 cfg_index)
 	if (!COMM_SUPPORT_API_CHAIN((struct hinic5_hwdev *)hwdev))
 		return -EPERM;
 
-	memset(&switch_cfg, 0, sizeof(switch_cfg));
+	(void)memset(&switch_cfg, 0, sizeof(switch_cfg));
 	switch_cfg.index = cfg_index;
 
 	err = hinic5_pf_to_mgmt_sync(hwdev, HINIC5_MOD_COMM, COMM_MGMT_CMD_SWITCH_CFG,
 				     &switch_cfg, sizeof(switch_cfg),
 				     &switch_cfg, &out_size, FW_UPDATE_MGMT_TIMEOUT);
-	if (err != 0 || out_size == 0 || switch_cfg.msg_head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (switch_cfg.head.status != 0)) {
 		sdk_err(((struct hinic5_hwdev *)hwdev)->dev_hdl,
 			"Failed to switch cfg, err: %d, status: 0x%x, out size: 0x%x\n",
-			err, switch_cfg.msg_head.status, out_size);
-		err = (switch_cfg.msg_head.status != 0) ? switch_cfg.msg_head.status : -EIO;
+			err, switch_cfg.head.status, out_size);
+		err = (switch_cfg.head.status != 0) ? switch_cfg.head.status : -EIO;
 		return err;
 	}
 
@@ -1766,31 +1777,32 @@ int hinic5_switch_config(void *hwdev, u8 cfg_index)
 
 int hinic5_get_secure_mem_cfg(struct hinic5_hwdev *hwdev, dma_addr_t *gpa, u32 *len)
 {
-	struct hinic5_cqm_cmd_func_secure_mem mem_info;
+	struct cqm_cmd_func_secure_mem mem_info;
 	u16 out_size = sizeof(mem_info);
 	int ret;
 
 	if (!hwdev || !gpa || !len)
 		return -EPERM;
 
-	memset(&mem_info, 0, sizeof(mem_info));
+	(void)memset(&mem_info, 0, sizeof(mem_info));
 	mem_info.func_id = hinic5_global_func_id((void *)hwdev);
 
 	ret = comm_msg_to_mgmt_sync(hwdev, COMM_MGMT_CMD_GET_FUNC_SECURE_MEM,
 				    &mem_info, sizeof(mem_info),
 				    &mem_info, &out_size);
 	if (mem_info.head.status == HINIC5_MGMT_CMD_UNSUPPORTED)
-		return -EPERM;
+		return EPERM;
 
-	if (ret != 0 || out_size == 0 || mem_info.head.status != 0) {
+	if ((ret != 0) || (out_size == 0) || (mem_info.head.status != 0)) {
 		sdk_err(hwdev->dev_hdl,
 			"Failed to get memsec info, ret: %d, status: 0x%x, out size: 0x%x\n",
 			ret, mem_info.head.status, out_size);
 		return -EINVAL;
 	}
 
-	if (mem_info.valid == 0)
-		return -EPERM;
+	if (mem_info.valid == 0) {
+		return EPERM;
+	}
 
 	*len = mem_info.len;
 	*gpa = (dma_addr_t)MAKE_64BITS(mem_info.gpa_hi, mem_info.gpa_lo);
@@ -1801,7 +1813,8 @@ int hinic5_get_secure_mem_cfg(struct hinic5_hwdev *hwdev, dma_addr_t *gpa, u32 *
 #define PLUG_SRV_GET 1
 #define PLUG_SRV_SET 0
 
-int hisdk5_set_plug_srv_bitmap(void *hwdev, u8 srv_type, u16 func_id, u8 attach_en)
+int hisdk5_set_plug_srv_bitmap(void *hwdev, u8 srv_type,
+							   u16 func_id, u8 attach_en)
 {
 	struct comm_cmd_plug_srv plug_srv;
 	u16 out_size = sizeof(plug_srv);
@@ -1810,7 +1823,7 @@ int hisdk5_set_plug_srv_bitmap(void *hwdev, u8 srv_type, u16 func_id, u8 attach_
 	if (!hwdev)
 		return -EPERM;
 
-	memset(&plug_srv, 0, sizeof(plug_srv));
+	(void)memset(&plug_srv, 0, sizeof(plug_srv));
 	plug_srv.func_id = func_id;
 	plug_srv.srv_type = srv_type;
 	plug_srv.attach_en = attach_en;
@@ -1818,7 +1831,7 @@ int hisdk5_set_plug_srv_bitmap(void *hwdev, u8 srv_type, u16 func_id, u8 attach_
 	ret = comm_msg_to_mgmt_sync((struct hinic5_hwdev *)hwdev, COMM_MGMT_CMD_SET_FUNC_PLUG_SRV,
 				    &plug_srv, sizeof(plug_srv),
 				    &plug_srv, &out_size);
-	if (ret != 0 || out_size == 0 || plug_srv.head.status != 0) {
+	if ((ret != 0) || (out_size == 0) || (plug_srv.head.status != 0)) {
 		sdk_err(((struct hinic5_hwdev *)hwdev)->dev_hdl,
 			"Failed to set plug srv_bitmap, ret: %d, status: 0x%x, out size: 0x%x\n",
 			ret, plug_srv.head.status, out_size);
@@ -1829,23 +1842,24 @@ int hisdk5_set_plug_srv_bitmap(void *hwdev, u8 srv_type, u16 func_id, u8 attach_
 }
 EXPORT_SYMBOL(hisdk5_set_plug_srv_bitmap);
 
-int hisdk5_get_plug_srv_bitmap(void *hwdev, u8 srv_type, u16 func_id, u8 *attach_en)
+int hisdk5_get_plug_srv_bitmap(void *hwdev, u8 srv_type,
+							   u16 func_id, u8 *attach_en)
 {
 	struct comm_cmd_plug_srv plug_srv;
 	u16 out_size = sizeof(plug_srv);
 	int ret;
 
-	if (!hwdev)
+	if (!hwdev || !attach_en)
 		return -EPERM;
 
-	memset(&plug_srv, 0, sizeof(plug_srv));
+	(void)memset(&plug_srv, 0, sizeof(plug_srv));
 	plug_srv.func_id = func_id;
 	plug_srv.srv_type = srv_type;
 
 	ret = comm_msg_to_mgmt_sync((struct hinic5_hwdev *)hwdev, COMM_MGMT_CMD_GET_FUNC_PLUG_SRV,
 				    &plug_srv, sizeof(plug_srv),
 				    &plug_srv, &out_size);
-	if (ret != 0 || out_size == 0 || plug_srv.head.status != 0) {
+	if ((ret != 0) || (out_size == 0) || (plug_srv.head.status != 0)) {
 		sdk_err(((struct hinic5_hwdev *)hwdev)->dev_hdl,
 			"Failed to get plug srv_bitmap, ret: %d, status: 0x%x, out size: 0x%x\n",
 			ret, plug_srv.head.status, out_size);
@@ -1857,3 +1871,28 @@ int hisdk5_get_plug_srv_bitmap(void *hwdev, u8 srv_type, u16 func_id, u8 *attach
 	return 0;
 }
 EXPORT_SYMBOL(hisdk5_get_plug_srv_bitmap);
+
+#define DIE_ID_HIGH_OFFSET 32
+int hisdk5_get_udie_id(struct hinic5_hwdev *hwdev, u64 *udie_id)
+{
+	struct comm_cmd_get_die_id die_id = {0};
+	u16 out_len = sizeof(die_id);
+	int err;
+
+	err = comm_msg_to_mgmt_sync(hwdev, COMM_MGMT_CMD_GET_UDIE_ID,
+				      &die_id, sizeof(die_id),
+				      &die_id, &out_len);
+	if (die_id.head.status == HINIC5_MGMT_CMD_UNSUPPORTED) {
+		sdk_info(hwdev->dev_hdl, "Get udie id not support");
+		return -EOPNOTSUPP;
+	}
+	if ((err != 0) || (die_id.head.status != 0) || (out_len == 0)) {
+		sdk_err(hwdev->dev_hdl,
+			"Failed to get UEID, err: %d, status: 0x%x, out size: 0x%x\n",
+			err, die_id.head.status, out_len);
+		return -EIO;
+	}
+
+	*udie_id = (((u64)die_id.die_id_data[1]) << DIE_ID_HIGH_OFFSET) | die_id.die_id_data[0];
+	return 0;
+}

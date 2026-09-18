@@ -4,8 +4,8 @@
  * File Name     : hinic5_hw_cfg.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Hardware configuration management for the hinic5 driver.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [COMM]" fmt
@@ -55,7 +55,7 @@ static void parse_pub_res_cap_dfx(struct hinic5_hwdev *hwdev,
 		 cap->fake_vf_bfilter_start_addr, cap->fake_vf_bfilter_len);
 }
 
-static void parse_hinic5_cqm_res_cap(const struct hinic5_hwdev *hwdev, struct service_cap *cap,
+static void parse_cqm_res_cap(const struct hinic5_hwdev *hwdev, struct service_cap *cap,
 				     struct cfg_cmd_dev_cap *dev_cap)
 {
 	struct dev_sf_svc_attr *attr = &cap->sf_svc_attr;
@@ -128,6 +128,7 @@ static void parse_pub_res_cap(struct hinic5_hwdev *hwdev,
 	cap->cos_mask_mode = (dev_cap->cos_mask_mode == 0) ?
 		COS_DEFAULT_MASK_MODE : dev_cap->cos_mask_mode;
 	cap->dcb_state.default_cos = dev_cap->dev_default_cos;
+	cap->cos_mask_bitmap = dev_cap->cos_mask_bitmap;
 	cap->port_cos_valid_bitmap = dev_cap->port_cos_valid_bitmap;
 	cap->func_gpa_spu_en = dev_cap->func_gpa_spu_en;
 	cap->flexq_en = dev_cap->flexq_en;
@@ -147,7 +148,7 @@ static void parse_pub_res_cap(struct hinic5_hwdev *hwdev,
 		cap->max_vf = 0;
 	}
 
-	parse_hinic5_cqm_res_cap(hwdev, cap, dev_cap);
+	parse_cqm_res_cap(hwdev, cap, dev_cap);
 	parse_pub_res_cap_dfx(hwdev, cap);
 }
 
@@ -225,8 +226,7 @@ static void parse_roce_res_cap(struct hinic5_hwdev *hwdev,
 	roce_cap->wqe_cl_start = dev_cap->roce_wqe_cl_start;
 	roce_cap->wqe_cl_end = dev_cap->roce_wqe_cl_end;
 	roce_cap->wqe_cl_sz = dev_cap->roce_wqe_cl_size;
-	roce_cap->qpc_entry_sz = (dev_cap->hyper_qpc_entry_size_en == 0) ?
-		ROCE_QPC_ENTRY_SZ : HYPER_ROCE_QPC_ENTRY_SZ;
+	roce_cap->qpc_entry_sz = (dev_cap->hyper_qpc_entry_size_en == 0) ? ROCE_QPC_ENTRY_SZ : HYPER_ROCE_QPC_ENTRY_SZ;
 
 	sdk_info(hwdev->dev_hdl, "Get roce resource capbility, type: 0x%x\n",
 		 type);
@@ -257,14 +257,13 @@ static void parse_roce_res_cap(struct hinic5_hwdev *hwdev,
 	roce_cap->max_child_ctx_num = dev_cap->roce_max_child_ctx_num;
 }
 
-static void parse_roce_ext_res_cap(struct hinic5_hwdev *hwdev,
-				   struct cfg_cmd_ext_dev_cap *ext_dev_cap,
-				   struct service_cap *cap, u32 index)
+static void parse_roce_ext_res_cap(struct hinic5_hwdev *hwdev, struct cfg_cmd_ext_dev_cap *ext_dev_cap,
+			       struct service_cap *cap, u32 index)
 {
-	struct dev_roce_svc_own_cap *roce_cap = &cap->rdma_cap.dev_rdma_cap.roce_own_cap;
+	struct dev_roce_svc_own_cap *roce_cap = &(cap->rdma_cap.dev_rdma_cap.roce_own_cap);
 	struct cfg_roce_ext_caps *roce_ext_caps = NULL;
 
-	roce_ext_caps = (struct cfg_roce_ext_caps *)(&ext_dev_cap->ext_cap[index]);
+	roce_ext_caps = (struct cfg_roce_ext_caps *)(&(ext_dev_cap->ext_cap[index]));
 
 	roce_cap->reserved_qps = roce_ext_caps->rsvd_qp;
 	roce_cap->reserved_qps_back = roce_ext_caps->rsvd_qp_back;
@@ -389,10 +388,8 @@ static void parse_ipsec_res_cap(struct hinic5_hwdev *hwdev,
 		"Get IPsec resource capbility, max_sactxs: 0x%x, sa hash bucket num: 0x%x\n",
 		dev_cap->ipsec_max_sactxs, dev_cap->ipsec_sa_hash_bucket_num);
 	sdk_info(hwdev->dev_hdl,
-		 "Get IPsec resource capbility, max_spctxs: 0x%x, " \
-		 "sp hash bucket num: 0x%x, max cq: 0x%x\n",
-		 dev_cap->ipsec_max_spctxs, dev_cap->ipsec_sp_hash_bucket_num,
-		 dev_cap->ipsec_max_cq);
+		"Get IPsec resource capbility, max_spctxs: 0x%x, sp hash bucket num: 0x%x, max cq: 0x%x\n",
+		dev_cap->ipsec_max_spctxs, dev_cap->ipsec_sp_hash_bucket_num, dev_cap->ipsec_max_cq);
 }
 
 static void parse_vbs_res_cap(struct hinic5_hwdev *hwdev,
@@ -429,9 +426,8 @@ static void parse_jbof_res_cap(struct hinic5_hwdev *hwdev,
 	jbof_cap->hash_bucket_num = jbof_ext_caps->jbof_hash_bucket_num;
 
 	sdk_info(hwdev->dev_hdl,
-		 "Get jbof resource capbility, max_parent_qpc_num: 0x%x max_child_qpc_num:0x%x, hash_bucket_num: 0x%x\n",
-		 jbof_cap->max_parent_qpc_num, jbof_cap->max_child_qpc_num,
-		 jbof_cap->hash_bucket_num);
+		"Get jbof resource capbility, max_parent_qpc_num: 0x%x max_child_qpc_num:0x%x, hash_bucket_num: 0x%x\n",
+		jbof_cap->max_parent_qpc_num, jbof_cap->max_child_qpc_num, jbof_cap->hash_bucket_num);
 }
 
 static void parse_dmmu_res_cap(struct hinic5_hwdev *hwdev,
@@ -446,8 +442,7 @@ static void parse_dmmu_res_cap(struct hinic5_hwdev *hwdev,
 	dmmu_cap->cl_start = dev_cap->dmmu_cl_start;
 	dmmu_cap->cl_end = dev_cap->dmmu_cl_end;
 
-	sdk_info(hwdev->dev_hdl, "Get DMMU resource capbility, pasid_max: 0x%x\n",
-		 dmmu_cap->pasid_max);
+	sdk_info(hwdev->dev_hdl, "Get DMMU resource capbility, pasid_max: 0x%x\n", dmmu_cap->pasid_max);
 }
 
 static void parse_ub_res_cap(struct hinic5_hwdev *dev,
@@ -483,8 +478,7 @@ static void parse_ub_res_cap(struct hinic5_hwdev *dev,
 		 ub_caps->sdk_res.max_jetty, ub_caps->sdk_res.max_mpts, ub_caps->sdk_res.max_tp);
 
 	sdk_info(dev->dev_hdl, "cqc_entry_sz: 0x%x, srqc_entry_sz: 0x%x, qpc_entry_sz: 0x%x\n",
-		 ub_caps->sdk_res.cqc_entry_sz, ub_caps->sdk_res.srqc_entry_sz,
-		 ub_caps->sdk_res.qpc_entry_sz);
+		 ub_caps->sdk_res.cqc_entry_sz, ub_caps->sdk_res.srqc_entry_sz, ub_caps->sdk_res.qpc_entry_sz);
 }
 
 static void parse_fake_vf_ext_cap(struct hinic5_hwdev *hwdev,
@@ -524,19 +518,16 @@ static void parse_fw_update_ext_cap(struct hinic5_hwdev *hwdev,
 	cfg_fw_update_ext_caps *ext_caps = (cfg_fw_update_ext_caps *)(&ext_dev_cap->ext_cap[index]);
 
 	*(&cap->fw_update_cap) = *ext_caps;
-	sdk_info(hwdev->dev_hdl,
-		 "Get fw udpate capbility, fw_img_hdr_size 0x%x, fw_tile_text_size 0x%x\n",
-		 cap->fw_update_cap.fw_img_hdr_size, cap->fw_update_cap.fw_tile_text_size);
+	sdk_info(hwdev->dev_hdl, "Get fw udpate capbility, fw_img_hdr_size 0x%x, fw_tile_text_size 0x%x\n",
+		cap->fw_update_cap.fw_img_hdr_size, cap->fw_update_cap.fw_tile_text_size);
 }
 
 static void parse_comm_info_ext_cap(struct hinic5_hwdev *hwdev,
 				    struct cfg_cmd_ext_dev_cap *ext_dev_cap,
 				    struct service_cap *cap, u32 index)
 {
-	struct comm_info_ext_cap *ext_caps;
+	struct comm_info_ext_cap *ext_caps = (struct comm_info_ext_cap *)(&ext_dev_cap->ext_cap[index]);
 	struct cfm_service_cap *cfm_cap = &cap->cfm_cap;
-
-	ext_caps = (struct comm_info_ext_cap *)(&ext_dev_cap->ext_cap[index]);
 
 	/* BAT capabilities */
 	cap->bat_cid_index_bit_width = ext_caps->bat_cid_index_bit_width;
@@ -615,7 +606,7 @@ static void parse_all_res_cap(struct hinic5_hwdev *dev,
 			      struct service_cap *cap, u32 type, u32 index)
 {
 	switch (type) {
-	// Different types between SERVICE_BIT_UB and EXT_CAP_FAKE_VF, to eliminate warning
+		// SERVICE_BIT_UB and EXT_CAP_FAKE_VF have different types, suppress warning
 	case (u32)SERVICE_BIT_UB:
 		parse_ub_res_cap(dev, ext_dev_cap, cap, index);
 		break;
@@ -648,7 +639,7 @@ static void parse_ext_dev_cap(struct hinic5_hwdev *dev,
 
 	do {
 		tlv_hdr = (struct cfg_cmd_tlv_hdr *)&ext_dev_cap->ext_cap[index];
-		if (tlv_hdr->len == 0x0 || tlv_hdr->len % 0x4 != 0x0)
+		if ((tlv_hdr->len == 0x0) || (tlv_hdr->len % 0x4 != 0x0))
 			return;
 
 		parse_all_res_cap(dev, ext_dev_cap, cap, tlv_hdr->type, index + sizeof(*tlv_hdr));
@@ -663,7 +654,7 @@ static int get_legacy_dev_cap(struct hinic5_hwdev *hwdev, enum func_type type)
 	u16 out_len = sizeof(dev_cap);
 	int err;
 
-	memset(&dev_cap, 0, sizeof(dev_cap));
+	(void)memset(&dev_cap, 0, sizeof(dev_cap));
 	dev_cap.func_id = hinic5_global_func_id(hwdev);
 	sdk_info(hwdev->dev_hdl, "Get cap from fw, func_idx: %u\n",
 		 dev_cap.func_id);
@@ -672,7 +663,7 @@ static int get_legacy_dev_cap(struct hinic5_hwdev *hwdev, enum func_type type)
 				      &dev_cap, sizeof(dev_cap),
 				      &dev_cap, &out_len, 0,
 				      HINIC5_CHANNEL_COMM);
-	if (err != 0 || dev_cap.head.status != 0 || out_len == 0) {
+	if ((err != 0) || (dev_cap.head.status != 0) || (out_len == 0)) {
 		sdk_err(hwdev->dev_hdl,
 			"Failed to get capability from FW, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, dev_cap.head.status, out_len);
@@ -702,7 +693,7 @@ static int get_extend_dev_cap(struct hinic5_hwdev *hwdev, enum func_type type)
 				      ext_dev_cap, sizeof(*ext_dev_cap),
 				      ext_dev_cap, &out_len, 0,
 				      HINIC5_CHANNEL_COMM);
-	if (err != 0 || ext_dev_cap->head.status != 0 || out_len == 0) {
+	if ((err != 0) || (ext_dev_cap->head.status != 0) || (out_len == 0)) {
 		sdk_err(hwdev->dev_hdl,
 			"Failed to get extern capability from FW, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, ext_dev_cap->head.status, out_len);
@@ -736,8 +727,9 @@ static int get_smf_max_and_enabled_num(struct hinic5_hwdev *hwdev)
 	u8 smf_id, smf_enabled_num = 0;
 	int err;
 
-	if (cap->smf_max_num == 0)
+	if (cap->smf_max_num == 0) {
 		cap->smf_max_num = CHIP_SMF_NUM_MIN;
+	}
 
 	err = valid_smf_cap(cap);
 	if (err != 0) {
@@ -815,12 +807,13 @@ STATIC int parse_host_timer_cfg(struct service_cap *cap,
 	cap->timer_vf_id_start = cfg->timer_vf_id_start;
 	cap->timer_vf_num      = cfg->timer_vf_num;
 
-	memset(segs, 0, sizeof(cap->timer_vf_segs));
+	(void)memset(segs, 0,
+		     sizeof(cap->timer_vf_segs));
 
 	if (cfg->timer_vf_info_mode_segs != 0) {
-		memcpy(segs,
-		       &cfg->timer_vf_info.segs,
+		memcpy(segs, &cfg->timer_vf_info.segs,
 		       sizeof(cfg->timer_vf_info.segs));
+		return 0;
 	}
 
 	if (cfg->timer_vf_info_mode_fake != 0 &&
@@ -888,14 +881,14 @@ int hinic5_get_ppf_timer_cfg(void *hwdev)
 	u16 out_len = sizeof(cfg_host_timer);
 	int err;
 
-	memset(&cfg_host_timer, 0, sizeof(cfg_host_timer));
+	(void)memset(&cfg_host_timer, 0, sizeof(cfg_host_timer));
 	cfg_host_timer.host_id = dev->cfg_mgmt->svc_cap.host_id;
 
 	err = hinic5_msg_to_mgmt_sync(dev, HINIC5_MOD_CFGM, CFG_CMD_GET_HOST_TIMER,
 				      &cfg_host_timer, sizeof(cfg_host_timer),
 				      &cfg_host_timer, &out_len, 0,
 				      HINIC5_CHANNEL_COMM);
-	if (err != 0 || cfg_host_timer.head.status != 0 || out_len == 0) {
+	if ((err != 0) || (cfg_host_timer.head.status != 0) || (out_len == 0)) {
 		sdk_err(dev->dev_hdl,
 			"Failed to get host timer cfg from FW, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, cfg_host_timer.head.status, out_len);
@@ -1143,8 +1136,9 @@ static int cfg_init_eq(struct hinic5_hwdev *dev)
 	sdk_info(dev->dev_hdl, "Cfg mgmt: ceqs=0x%x, remain=0x%x\n",
 		 cfg_mgmt->eq_info.num_ceq, cfg_mgmt->eq_info.num_ceq_remain);
 
-	if (num_ceq == 0)
+	if (num_ceq == 0) {
 		return 0;
+	}
 
 	eq = kcalloc(num_ceq, sizeof(*eq), GFP_KERNEL);
 	if (!eq)
@@ -1184,6 +1178,11 @@ int hinic5_vector_to_eqn(void *hwdev, enum hinic5_service_type type, int vector)
 	cfg_mgmt = dev->cfg_mgmt;
 	if (!cfg_mgmt) {
 		sdk_err(dev->dev_hdl, "Service type :%d, cfg_mgmt is null.\n", type);
+		return -EINVAL;
+	}
+
+	if (cfg_mgmt->eq_info.num_ceq == 0) {
+		sdk_err(dev->dev_hdl, "Get eqn fail, num ceq is zero\n");
 		return -EINVAL;
 	}
 
@@ -1258,8 +1257,7 @@ static int cfg_enable_interrupt(struct hinic5_hwdev *dev)
 		for (i = 0; i < nreq; i++)
 			entry[i].entry = i;
 
-		actual_irq = hinic5_adev_irq_vectors_alloc(dev->adapter_hdl, entry,
-							   VECTOR_THRESHOLD, nreq);
+		actual_irq = hinic5_adev_irq_vectors_alloc(dev->adapter_hdl, entry, VECTOR_THRESHOLD, nreq);
 		if (actual_irq < 0) {
 			sdk_err(dev->dev_hdl, "Alloc msix entries with threshold 2 failed. actual_irq: %d\n",
 				actual_irq);
@@ -1316,7 +1314,7 @@ int hinic5_alloc_irqs(void *hwdev, enum hinic5_service_type type, u16 num,
 	if (!hwdev || !dev->cfg_mgmt || num == 0 || !irq_info_array || !act_num)
 		return -EINVAL;
 
-	if (type > SERVICE_T_HINIC5_CQM) {
+	if (type > SERVICE_T_CQM) {
 		pr_err("type is out of bounds\n");
 		return -EINVAL;
 	}
@@ -1511,7 +1509,7 @@ void hinic5_free_ceq(void *hwdev, enum hinic5_service_type type, int ceq_id)
 }
 EXPORT_SYMBOL(hinic5_free_ceq);
 
-int hinic5_init_cfg_mgmt(struct hinic5_hwdev *dev)
+int init_cfg_mgmt(struct hinic5_hwdev *dev)
 {
 	int err;
 	struct cfg_mgmt_info *cfg_mgmt = NULL;
@@ -1562,7 +1560,7 @@ free_mgmt_mem:
 	return err;
 }
 
-void hinic5_free_cfg_mgmt(struct hinic5_hwdev *dev)
+void free_cfg_mgmt(struct hinic5_hwdev *dev)
 {
 	struct cfg_mgmt_info *cfg_mgmt = dev->cfg_mgmt;
 
@@ -1587,7 +1585,7 @@ void hinic5_free_cfg_mgmt(struct hinic5_hwdev *dev)
 	kfree(cfg_mgmt);
 }
 
-int hinic5_init_capability(struct hinic5_hwdev *dev)
+int init_capability(struct hinic5_hwdev *dev)
 {
 	int err;
 	struct cfg_mgmt_info *cfg_mgmt = dev->cfg_mgmt;
@@ -1605,7 +1603,7 @@ int hinic5_init_capability(struct hinic5_hwdev *dev)
 	return 0;
 }
 
-void hinic5_free_capability(struct hinic5_hwdev *dev)
+void free_capability(struct hinic5_hwdev *dev)
 {
 	sdk_info(dev->dev_hdl, "Free capability success");
 }
@@ -1621,7 +1619,7 @@ bool hinic5_support_nic(void *hwdev, struct nic_service_cap *cap)
 		return false;
 
 	if (cap)
-		memcpy(cap, &dev->cfg_mgmt->svc_cap.nic_cap,
+		(void)memcpy(cap, &dev->cfg_mgmt->svc_cap.nic_cap,
 		       sizeof(struct nic_service_cap));
 
 	return true;
@@ -1639,7 +1637,7 @@ bool hinic5_support_ppa(void *hwdev, struct ppa_service_cap *cap)
 		return false;
 
 	if (cap)
-		memcpy(cap, &dev->cfg_mgmt->svc_cap.ppa_cap,
+		(void)memcpy(cap, &dev->cfg_mgmt->svc_cap.ppa_cap,
 		       sizeof(struct ppa_service_cap));
 
 	return true;
@@ -1674,7 +1672,7 @@ bool hinic5_support_ipsec(void *hwdev, struct ipsec_service_cap *cap)
 		return false;
 
 	if (cap)
-		memcpy(cap, &dev->cfg_mgmt->svc_cap.ipsec_cap,
+		(void)memcpy(cap, &dev->cfg_mgmt->svc_cap.ipsec_cap,
 		       sizeof(struct ipsec_service_cap));
 
 	return true;
@@ -1706,7 +1704,7 @@ bool hinic5_support_roce(void *hwdev, struct rdma_service_cap *cap)
 		return false;
 
 	if (cap)
-		memcpy(cap, &dev->cfg_mgmt->svc_cap.rdma_cap,
+		(void)memcpy(cap, &dev->cfg_mgmt->svc_cap.rdma_cap,
 		       sizeof(struct rdma_service_cap));
 
 	return true;
@@ -1724,7 +1722,7 @@ bool hinic5_support_fc(void *hwdev, struct fc_service_cap *cap)
 		return false;
 
 	if (cap)
-		memcpy(cap, &dev->cfg_mgmt->svc_cap.fc_cap,
+		(void)memcpy(cap, &dev->cfg_mgmt->svc_cap.fc_cap,
 		       sizeof(struct fc_service_cap));
 
 	return true;
@@ -1742,7 +1740,7 @@ bool hinic5_support_rdma(void *hwdev, struct rdma_service_cap *cap)
 		return false;
 
 	if (cap)
-		memcpy(cap, &dev->cfg_mgmt->svc_cap.rdma_cap,
+		(void)memcpy(cap, &dev->cfg_mgmt->svc_cap.rdma_cap,
 		       sizeof(struct rdma_service_cap));
 
 	return true;
@@ -1753,14 +1751,15 @@ bool hinic5_is_rdma_en(void *hwdev, struct rdma_service_cap *cap)
 {
 	struct hinic5_hwdev *dev = hwdev;
 
-	if (!hwdev)
+	if (hwdev == NULL)
 		return false;
 
 	if (!IS_RDMA_ENABLE(dev))
 		return false;
 
-	if (cap)
-		memcpy(cap, &dev->cfg_mgmt->svc_cap.rdma_cap, sizeof(struct rdma_service_cap));
+	if (cap != NULL)
+		(void)memcpy(cap, &dev->cfg_mgmt->svc_cap.rdma_cap,
+			sizeof(struct rdma_service_cap));
 
 	return true;
 }
@@ -1777,7 +1776,7 @@ bool hinic5_support_ovs(void *hwdev, struct ovs_service_cap *cap)
 		return false;
 
 	if (cap)
-		memcpy(cap, &dev->cfg_mgmt->svc_cap.ovs_cap,
+		(void)memcpy(cap, &dev->cfg_mgmt->svc_cap.ovs_cap,
 		       sizeof(struct ovs_service_cap));
 
 	return true;
@@ -1795,7 +1794,7 @@ bool hinic5_support_vbs(void *hwdev, struct vbs_service_cap *cap)
 		return false;
 
 	if (cap)
-		memcpy(cap, &dev->cfg_mgmt->svc_cap.vbs_cap,
+		(void)memcpy(cap, &dev->cfg_mgmt->svc_cap.vbs_cap,
 		       sizeof(struct vbs_service_cap));
 
 	return true;
@@ -1814,7 +1813,7 @@ bool hinic5_support_toe(void *hwdev, struct toe_service_cap *cap)
 		return false;
 
 	if (cap)
-		memcpy(cap, &dev->cfg_mgmt->svc_cap.toe_cap,
+		(void)memcpy(cap, &dev->cfg_mgmt->svc_cap.toe_cap,
 		       sizeof(struct toe_service_cap));
 
 	return true;
@@ -1834,7 +1833,7 @@ bool hinic5_support_ub(void *hwdev, struct ub_service_cap *cap)
 	}
 
 	if (cap)
-		memcpy(cap, &dev->cfg_mgmt->svc_cap.ub_cap,
+		(void)memcpy(cap, &dev->cfg_mgmt->svc_cap.ub_cap,
 		       sizeof(struct ub_service_cap));
 
 	return true;
@@ -1854,7 +1853,7 @@ bool hinic5_support_jbof(void *hwdev, struct jbof_service_cap *cap)
 	}
 
 	if (cap)
-		memcpy(cap, &dev->cfg_mgmt->svc_cap.jbof_cap,
+		(void)memcpy(cap, &dev->cfg_mgmt->svc_cap.jbof_cap,
 		       sizeof(struct jbof_service_cap));
 
 	return true;
@@ -1872,7 +1871,7 @@ bool hinic5_support_vroce(void *hwdev, struct rdma_service_cap *cap)
 		return false;
 
 	if (cap)
-		memcpy(cap, &dev->cfg_mgmt->svc_cap.rdma_cap,
+		(void)memcpy(cap, &dev->cfg_mgmt->svc_cap.rdma_cap,
 		       sizeof(struct rdma_service_cap));
 
 	return true;
@@ -1890,7 +1889,7 @@ bool hinic5_support_dmmu(void *hwdev, struct dmmu_service_cap *cap)
 		return false;
 
 	if (cap)
-		memcpy(cap, &dev->cfg_mgmt->svc_cap.dmmu_cap,
+		(void)memcpy(cap, &dev->cfg_mgmt->svc_cap.dmmu_cap,
 		       sizeof(struct dmmu_service_cap));
 
 	return true;
@@ -2018,6 +2017,18 @@ u8 hinic5_func_cos_mask_mode(void *hwdev)
 }
 EXPORT_SYMBOL(hinic5_func_cos_mask_mode);
 
+u8 hinic5_func_cos_mask_bitmap(void *hwdev)
+{
+	struct hinic5_hwdev *dev = hwdev;
+
+	if (!dev) {
+		pr_err("Hwdev pointer is NULL for getting function cos mask bitmap\n");
+		return 0;
+	}
+	return dev->cfg_mgmt->svc_cap.cos_mask_bitmap;
+}
+EXPORT_SYMBOL(hinic5_func_cos_mask_bitmap);
+
 u8 hinic5_func_dev_default_cos(void *hwdev)
 {
 	struct hinic5_hwdev *dev = hwdev;
@@ -2029,6 +2040,7 @@ u8 hinic5_func_dev_default_cos(void *hwdev)
 	return dev->cfg_mgmt->svc_cap.dcb_state.default_cos;
 }
 EXPORT_SYMBOL(hinic5_func_dev_default_cos);
+
 
 u8 hinic5_ep_id(void *hwdev)
 {
@@ -2101,7 +2113,7 @@ void hinic5_shutdown_hwdev(void *hwdev)
 		return;
 
 	if (IS_SLAVE_HOST(dev) != 0)
-		hinic5_set_slave_host_enable(hwdev, hinic5_pcie_itf_id(hwdev), false);
+		set_slave_host_enable(hwdev, hinic5_pcie_itf_id(hwdev), false);
 }
 
 u32 hinic5_host_pf_num(void *hwdev)
@@ -2187,7 +2199,8 @@ int hinic5_bat_get_l3i_entry_config(const struct hinic5_hwdev *hwdev,
 	bool ft_enable;
 	bool rdma_enable;
 
-	if (!hwdev || !hwdev->hwif || !hwdev->cfg_mgmt || !entry_config)
+	if (hwdev == NULL || hwdev->hwif == NULL || hwdev->cfg_mgmt == NULL ||
+	    entry_config == NULL)
 		return -EINVAL;
 
 	func_attr = &hwdev->hwif->attr;
@@ -2218,22 +2231,22 @@ int hinic5_bat_get_l3i_entry_config(const struct hinic5_hwdev *hwdev,
 	return 0;
 }
 
-int hinic5_dcb_state_op(void *hwdev, enum hisdk5_dcb_state_op op,
-			struct hisdk5_dcb_state *dcb_state)
+int hinic5_dcb_state_op(void *hwdev, enum hisdk5_dcb_state_op op, struct hisdk5_dcb_state *dcb_state)
 {
 	struct hinic5_hwdev *dev = hwdev;
 	struct hisdk5_dcb_state *state = NULL;
 
-	if (!dev || !dev->cfg_mgmt || !dcb_state) {
+	if ((!dev) || (!dev->cfg_mgmt) || (!dcb_state)) {
 		pr_err("Hwdev pointer or dcb_state pointer is NULL\n");
 		return -EINVAL;
 	}
 
 	state = &dev->cfg_mgmt->svc_cap.dcb_state;
-	if (op == HISDK5_DCB_STATE_GET)
-		memcpy(dcb_state, state, sizeof(struct hisdk5_dcb_state));
-	else
-		memcpy(state, dcb_state, sizeof(struct hisdk5_dcb_state));
+	if (op == HISDK5_DCB_STATE_GET) {
+		(void)memcpy(dcb_state, state, sizeof(struct hisdk5_dcb_state));
+	} else {
+		(void)memcpy(state, dcb_state, sizeof(struct hisdk5_dcb_state));
+	}
 
 	return 0;
 }
@@ -2253,7 +2266,7 @@ int hinic5_get_port_info(void *hwdev, struct mag_port_info *port_info, u16 chann
 
 	err = hinic5_msg_to_mgmt_sync(hwdev, HINIC5_MOD_HILINK, MAG_CMD_GET_PORT_INFO, &port_msg,
 				      sizeof(port_msg),  &port_msg, &out_size, 0, channel);
-	if (err != 0 || out_size == 0 || port_msg.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (port_msg.head.status != 0)) {
 		sdk_err(dev->dev_hdl,
 			"Failed to get port info, err: %d, status: 0x%x, out size: 0x%x, channel: 0x%x\n",
 			err, port_msg.head.status, out_size, channel);

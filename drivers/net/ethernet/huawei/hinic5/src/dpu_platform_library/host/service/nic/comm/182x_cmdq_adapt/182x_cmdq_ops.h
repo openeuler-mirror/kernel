@@ -4,8 +4,8 @@
  * File Name     : 182x_cmdq_ops.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : 182x cmdq private definitions
  */
 
 #ifndef _182X_CMDQ_PRIVATE_H_

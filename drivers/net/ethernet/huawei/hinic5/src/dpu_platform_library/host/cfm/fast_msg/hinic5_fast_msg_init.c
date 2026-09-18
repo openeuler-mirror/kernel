@@ -4,8 +4,8 @@
  * File Name     : hinic5_fast_msg_init.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   : hinic5_fast_msg_init.c
+ * Last Modified : 2026/09/16
+ * Description   : Fast message initialization implementation
  */
 
 #include "ossl_knl.h"
@@ -30,7 +30,7 @@ int hinic5_fast_msg_cap_get(struct hinic5_hwdev *hwdev, hisdk5_fast_msg_caps *ca
 	err = hinic5_msg_to_mgmt_sync(hwdev, HINIC5_MOD_COMM, COMM_MGMT_CMD_GET_FAST_MSG_CAP,
 				      &fast_msg_cap, out_size,
 				      &fast_msg_cap, &out_size, 0, HINIC5_CHANNEL_COMM);
-	if (err != 0 || out_size == 0 || fast_msg_cap.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (fast_msg_cap.head.status != 0)) {
 		sdk_err(hwdev->dev_hdl,
 			"Failed to get fast msg cap, ret = %d, status: 0x%x, out size: 0x%x\n",
 			err, fast_msg_cap.head.status, out_size);
@@ -49,22 +49,18 @@ void hinic5_fast_msg_rq_buf_deinit(struct hinic5_hwdev *hwdev)
 	struct hisdk5_fast_msg_to_func *fast_msg_to_func = NULL;
 	u32 page_idx;
 
-	if (!hwdev)
+	if (hwdev == NULL)
 		return;
 
-	if (!hwdev->fast_msg_to_func)
+	if (hwdev->fast_msg_to_func == NULL)
 		return;
 
 	fast_msg_to_func = hwdev->fast_msg_to_func;
 
 	for (page_idx = 0; page_idx < fast_msg_to_func->fast_msg_rq_page_num; page_idx++) {
-		if (fast_msg_to_func->rq_mem[page_idx])
-			dma_free_coherent(
-				hwdev->dev_hdl,
-				fast_msg_to_func->fast_msg_rq_page_size * FAST_MSG_ENTRY_UNIT,
-				fast_msg_to_func->rq_mem[page_idx],
-				fast_msg_to_func->rq_mem_paddr[page_idx]
-			);
+		if (fast_msg_to_func->rq_mem[page_idx] != NULL)
+			dma_free_coherent(hwdev->dev_hdl, fast_msg_to_func->fast_msg_rq_page_size * FAST_MSG_ENTRY_UNIT,
+				fast_msg_to_func->rq_mem[page_idx], fast_msg_to_func->rq_mem_paddr[page_idx]);
 	}
 }
 
@@ -83,11 +79,10 @@ void hinic5_fast_msg_clear_sml_table(struct hinic5_hwdev *hwdev)
 		return;
 	}
 
-	if (err != 0 || out_size == 0 || clear_info.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (clear_info.head.status != 0)) {
 		sdk_err(hwdev->dev_hdl,
-			"Failed to clear fast msg sml table, ret = %d, status: 0x%x, " \
-			"out size: 0x%x\n",
-			err, clear_info.head.status, out_size);
+				"Failed to clear fast msg sml table, ret = %d, status: 0x%x, out size: 0x%x\n",
+				err, clear_info.head.status, out_size);
 	}
 }
 
@@ -99,7 +94,7 @@ int hinic5_fast_msg_rq_buf_init(struct hinic5_hwdev *hwdev, hisdk5_fast_msg_caps
 	u32 page_idx;
 	void *page_vaddr = NULL;
 	dma_addr_t page_paddr;
-	gfp_t gfp_hinic5_vram;
+	gfp_t gfp_vram;
 
 	memset(&rq_addr, 0, sizeof(rq_addr));
 
@@ -109,15 +104,13 @@ int hinic5_fast_msg_rq_buf_init(struct hinic5_hwdev *hwdev, hisdk5_fast_msg_caps
 	hwdev->fast_msg_to_func->fast_msg_rq_page_size = caps->page_size;
 	out_size = sizeof(struct comm_cmd_set_fast_msg_rq_addr);
 
-	gfp_hinic5_vram = hinic5_hinic5_vram_get_gfp_hinic5_vram();
+	gfp_vram = hi5_vram_get_gfp_vram();
 
 	for (page_idx = 0; page_idx < rq_addr.page_num; page_idx++) {
-		page_vaddr = dma_zalloc_coherent(hwdev->dev_hdl,
-						 caps->page_size * FAST_MSG_ENTRY_UNIT,
-						 &page_paddr, GFP_KERNEL | gfp_hinic5_vram);
-		if (!page_vaddr) {
-			sdk_err(hwdev->dev_hdl,
-				"alloc fast msg rq mem failed, page_idx = 0x%x\n", page_idx);
+		page_vaddr = dma_zalloc_coherent(hwdev->dev_hdl, caps->page_size * FAST_MSG_ENTRY_UNIT,
+						&page_paddr, GFP_KERNEL | gfp_vram);
+		if (page_vaddr == NULL) {
+			sdk_err(hwdev->dev_hdl, "alloc fast msg rq mem failed, page_idx = 0x%x\n", page_idx);
 			err = -ENOMEM;
 			goto err_handler;
 		}
@@ -130,7 +123,7 @@ int hinic5_fast_msg_rq_buf_init(struct hinic5_hwdev *hwdev, hisdk5_fast_msg_caps
 	err = hinic5_msg_to_mgmt_sync(hwdev, HINIC5_MOD_COMM, COMM_MGMT_CMD_SET_FAST_MSG_RQ_ADDR,
 				      &rq_addr, out_size,
 				      &rq_addr, &out_size, 0, HINIC5_CHANNEL_COMM);
-	if (err != 0 || out_size == 0 || rq_addr.head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (rq_addr.head.status != 0)) {
 		sdk_err(hwdev->dev_hdl,
 			"Failed to get fast msg cap, ret = %d, status: 0x%x, out size: 0x%x\n",
 			err, rq_addr.head.status, out_size);
@@ -171,15 +164,16 @@ int hinic5_fast_msg_recv_init(struct hinic5_hwdev *hwdev, struct hisdk5_fast_msg
 	}
 
 	fast_msg->workq = alloc_workqueue(HINIC5_FAST_MSG_WQ_NAME, WQ_MEM_RECLAIM, 0);
-	if (!fast_msg->workq) {
+	if (fast_msg->workq == NULL) {
 		sdk_err(hwdev->dev_hdl, "Fail to alloc fast_msg workq\n");
 		err = -EINVAL;
 		goto alloc_workq_err;
 	}
 
 	fast_msg->recv_entries = kcalloc(fast_msg->fast_msg_rq_depth,
-					 sizeof(struct hisdk5_fast_msg_recv_entry), GFP_KERNEL);
-	if (!fast_msg->recv_entries) {
+		sizeof(struct hisdk5_fast_msg_recv_entry), GFP_KERNEL);
+	if (fast_msg->recv_entries == NULL) {
+		sdk_err(hwdev->dev_hdl, "Fail to alloc fast_msg recv nodes\n");
 		err = -ENOMEM;
 		goto alloc_recv_node_err;
 	}
@@ -191,12 +185,10 @@ int hinic5_fast_msg_recv_init(struct hinic5_hwdev *hwdev, struct hisdk5_fast_msg
 	}
 
 	fast_msg->num_concurrent_work = FAST_MSG_RECV_MAX_CONCURRENT;
-	fast_msg->recv_concurrent_work = kcalloc(
-		fast_msg->num_concurrent_work,
-		sizeof(struct hisdk5_fast_msg_recv_work),
-		GFP_KERNEL
-	);
-	if (!fast_msg->recv_concurrent_work) {
+	fast_msg->recv_concurrent_work = kcalloc(fast_msg->num_concurrent_work,
+		sizeof(struct hisdk5_fast_msg_recv_work), GFP_KERNEL);
+	if (fast_msg->recv_concurrent_work == NULL) {
+		sdk_err(hwdev->dev_hdl, "Fail to alloc fast_msg recv work\n");
 		err = -ENOMEM;
 		goto alloc_recv_work_err;
 	}
@@ -247,7 +239,8 @@ int hinic5_fast_msg_init(void *hwdev)
 	memset(&caps, 0, sizeof(caps));
 
 	fast_msg_to_func = kzalloc(sizeof(struct hisdk5_fast_msg_to_func), GFP_KERNEL);
-	if (!fast_msg_to_func) {
+	if (fast_msg_to_func == NULL) {
+		sdk_err(dev->dev_hdl, "Failed to alloc fast_msg_to_func\n");
 		return -ENOMEM;
 	}
 

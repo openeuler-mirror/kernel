@@ -4,8 +4,8 @@
  * File Name     : hinic5_profile.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : profile adapter interface for hinic5 device
  */
 
 #ifndef HINIC5_PROFILE_H
@@ -138,8 +138,8 @@ static inline struct hinic5_prof_adapter *hinic5_prof_init(void *device,
 
 /**
  * @brief  Deinitialize a hinic5 profile object
- * @param  prof_obj Profile object
- * @param  prof_attr Profile attributes
+ * @param  prof_obj Parameter description
+ * @param  prof_attr Parameter description
  *
  * @return None
  */
@@ -158,24 +158,24 @@ static inline void hinic5_prof_deinit(const struct hinic5_prof_adapter *prof_obj
  * @brief model-level interface
  */
 struct hinic5_module_ops {
-	int (*module_prof_pre_init)(void);			/**< Pre-initialize module profile config file, returns 0 on success, otherwise returns error code */
-	int (*module_prof_post_init)(void);			/**< Post-initialize module profile config file, returns 0 on success, otherwise returns error code */
-	void (*module_prof_pre_exit)(void);			/**< Pre-exit module profile config file */
-	void (*module_prof_post_exit)(void);			/**< Post-exit module profile config file */
+	int (*module_prof_pre_init)(void);				/**< Pre-initialize the module's profile, return 0 on success, otherwise return error code */
+	int (*module_prof_post_init)(void);				/**< Post-initialize the module's profile, return 0 on success, otherwise return error code */
+	void (*module_prof_pre_exit)(void);				/**< Pre-exit the module's profile */
+	void (*module_prof_post_exit)(void);				/**< Post-exit the module's profile */
 	void (*probe_fault_process)(void *pdev, u16 level);	/**< Handle probe fault */
 	int (*probe_pre_process)(void *pdev);			/**< Pre-process probe */
-	void (*probe_pre_unprocess)(void *pdev);		/**< Pre-process probe cancel */
+	void (*probe_pre_unprocess)(void *pdev);		/**< Undo probe pre-processing */
 };
 
 /**
- * @brief Get module performance operations function
+ * @brief Get the function for module performance operations
  *
- * @return Returns a pointer to hinic5_module_ops structure
+ * @return Returns a pointer to the hinic5_module_ops struct
  */
 struct hinic5_module_ops *hinic5_get_module_prof_ops(void);
 
 /**
- * @brief  Handle device probe error
+ * @brief  Used to handle device probe errors
  * @param  pdev Device pointer
  * @param  level Error level
  *
@@ -192,7 +192,7 @@ static inline void hinic5_probe_fault_process(void *pdev, u16 level)
 /**
  * @brief Module pre-initialization function
  *
- * @return Returns 0 on success, other values indicate failure
+ * @return Returns 0 on success, other values on failure
  */
 static inline int hinic5_module_pre_init(void)
 {
@@ -218,7 +218,7 @@ static inline void hinic5_module_post_exit(void)
 }
 
 /**
- * @brief  Pre-process before device probe in driver
+ * @brief  Pre-processing before device probe in the driver
  * @param  pdev Device pointer
  *
  * @return Returns 0 on success, -EINVAL on failure
@@ -234,7 +234,7 @@ static inline int hinic5_probe_pre_process(void *pdev)
 }
 
 /**
- * @brief  Handle device removal or load failure, matches hinic5_probe_pre_process
+ * @brief  Handle device removal or load failure, paired with hinic5_probe_pre_process
  * @param  pdev Device pointer
  *
  * @return None
@@ -250,7 +250,7 @@ static inline void hinic5_probe_pre_unprocess(void *pdev)
 /**
  * @brief Module post-initialization function
  *
- * @return Returns 0 on success, other values indicate failure
+ * @return Returns 0 on success, other values on failure
  */
 static inline int hinic5_module_post_init(void)
 {
@@ -278,8 +278,8 @@ static inline void hinic5_module_pre_exit(void)
 #else
 
 /**
- * @brief  Function description for hinic5_probe_fault_process
- * @param  pdev Device pointer for device operation
+ * @brief  Function of hinic5_probe_fault_process
+ * @param  pdev Device pointer, used to operate the device
  * @param  level Error level
  *
  * @return None
@@ -334,7 +334,7 @@ static inline void hinic5_probe_pre_unprocess(void *pdev) { };
 /**
  * @brief Module post-initialization function
  *
- * @return Returns 0 on success, other values indicate failure
+ * @return Returns 0 on success, other values on failure
  */
 static inline int hinic5_module_post_init(void)
 {
@@ -351,13 +351,13 @@ static inline void hinic5_module_pre_exit(void) { };
 #endif
 
 /**
- * @brief Get struct hinic5_prof_attr pointer
+ * @brief Get the struct hinic5_prof_attr pointer
  *
- * @param hwdev SDK driver internal hardware device pointer
+ * @param hwdev Hardware device pointer inside the SDK driver
  *
  * @return: Command execution result.
- *     @retval NULL Get failed
- *     @retval non-NULL Get successful
+ *     @retval NULL Failed to get
+ *     @retval Non-NULL Successfully obtained
  */
 struct hinic5_prof_attr *hinic5_get_prof_attr(void *hwdev);
 

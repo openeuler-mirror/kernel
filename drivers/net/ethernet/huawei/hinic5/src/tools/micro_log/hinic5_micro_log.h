@@ -4,8 +4,8 @@
  * File Name     : hinic5_micro_log.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   : Micro log header file
+ * Last Modified : 2026/09/16
+ * Description   : micro log
  */
 
 #ifndef __NIC_MICRO_LOG_H__
@@ -13,11 +13,11 @@
 
 #define MAX_PATH_NAME 256
 
-#define MAX_LEN_MICRO_LOG_DATA (64 * 1024)
+#define MAX_LEN_MICRO_LOG_DATA (64*1024)
 
-#define MAX_NUM_OF_ONE_TIME_ULOG (16 * 1024)
+#define MAX_NUM_OF_ONE_TIME_ULOG (16*1024)
 
-#define MAX_SIZE_OF_LOG_FILE (512 * 1024 * 1024)
+#define MAX_SIZE_OF_LOG_FILE (512*1024*1024)
 
 #define MICRO_LOG_ITEM_LEN 64
 
@@ -33,8 +33,7 @@
 #define MICRO_LOG_D2_CI_MASK (0x00FF)
 #define MICRO_LOG_ALL_MASK (0xFFFF)
 
-/* This must be fixed at 0, the tool auto-generated TBL_ID_DFX_LOG_POINTER is fixed at position 0 */
-#define TBL_ID_DFX_LOG_POINTER 0
+#define TBL_ID_DFX_LOG_POINTER 0 // This must be fixed to 0, the tool auto-generated TBL_ID_DFX_LOG_POINTER is fixed at position 0
 
 /* Type */
 #define ULOG_ERR 0
@@ -43,12 +42,11 @@
 #define ULOG_DEBUG 3
 
 int hinic5_comm_micro_log_init(struct hinic5_hwdev *hwdev);
+void hinic5_micro_log_uninit(void *hwdev);
 
 int hinic5_micro_log_func_en(void *hwdev, u8 is_en);
 
 int hinic5_micro_log_init(void *hwdev);
-
-void hinic5_micro_log_uninit(void *hwdev);
 
 void hinic5_micro_log_reset(void *hwdev);
 

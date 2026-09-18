@@ -4,8 +4,8 @@
  * File Name     : hinic5_fast_msg_init.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Fast message initialization interface declarations
  */
 
 #ifndef HINIC5_FAST_MSG_INIT

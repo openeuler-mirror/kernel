@@ -4,9 +4,10 @@
  * File Name     : hinic5_sysfs.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : sysfs driver and device attribute registration
  */
+
 #include <linux/kernel.h>
 #include <linux/device.h>
 #include <linux/sysfs.h>
@@ -22,7 +23,7 @@
 static ssize_t metadata_show(struct device_driver *dev, char *buf)
 {
 	return (ssize_t)sysfs_emit(buf, "commit: %s\ncompile time: %s\n",
-				   GIT_COMMIT_ID, "2026-05-20_00:00:00");
+				   GIT_COMMIT_ID, __TIME_STR__);
 }
 static DRIVER_ATTR_RO(metadata);
 
@@ -48,8 +49,9 @@ static ssize_t timeout_show(struct device *dev,
 	struct hinic5_hwdev *hwdev = adev->hwdev;
 	ssize_t len = 0;
 
-	if (!hwdev || !hwdev->timeout_info)
+	if (hwdev == NULL || hwdev->timeout_info == NULL) {
 		return len;
+	}
 
 	len += sysfs_emit(buf,
 			 "hw_type: %s\n"

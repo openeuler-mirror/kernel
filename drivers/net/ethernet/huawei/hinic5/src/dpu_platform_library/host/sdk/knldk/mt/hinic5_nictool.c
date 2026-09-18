@@ -4,8 +4,8 @@
  * File Name     : hinic5_nictool.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : NICTOOL kernel module implementation
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [COMM]" fmt
@@ -24,7 +24,7 @@
 #include "hinic5_hw_cfg.h"
 #include "hinic5_hwdev.h"
 #include "hinic5_lld.h"
-#include "hinic5_lld_inner.h"
+#include "hisdk5_lld.h"
 #include "hinic5_hw_mt.h"
 #include "hinic5_dev_mgmt.h"
 #include "hinic5_wq.h"
@@ -33,6 +33,7 @@
 #include "hinic5_comm_cmd.h"
 #include "hinic5_cmdq.h"
 #include "hinic5_sdk_attack.h"
+#include "hinic5_non_ptp.h"
 #include "hinic5_nictool.h"
 
 static int g_nictool_ref_cnt;
@@ -44,10 +45,10 @@ static struct cdev g_nictool_cdev;
 #define HINIC5_MAX_BUF_SIZE (2048 * 1024)
 #define HINIC5_S_TO_US_UNIT 1000000
 
-void *hinic5_g_card_node_array[MAX_CARD_NUM] = {0};
-void *hinic5_g_card_vir_addr[MAX_CARD_NUM] = {0};
-u64 hinic5_g_card_phy_addr[MAX_CARD_NUM] = {0};
-int hinic5_card_id;
+void *g_card_node_array[MAX_CARD_NUM] = {0};
+void *g_card_vir_addr[MAX_CARD_NUM] = {0};
+u64 g_card_phy_addr[MAX_CARD_NUM] = {0};
+int card_id;
 
 #ifdef __HIFC__
 #define HIADM3_DEV_PATH		"/dev/hifc_dev"
@@ -59,10 +60,9 @@ int hinic5_card_id;
 #define HIADM3_DEV_NAME		"hinic5_nictool_dev"
 #endif
 
-typedef int (*hw_driv_module)(struct hinic5_lld_dev *lld_dev,
-			      const void *buf_in, u32 in_size, void *buf_out, u32 *out_size);
+typedef int (*hw_driv_module)(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size, void *buf_out, u32 *out_size);
 struct hw_drv_module_handle {
-	u32	driv_cmd_name;
+	uint32_t	driv_cmd_name;
 	hw_driv_module		driv_func;
 };
 
@@ -88,14 +88,12 @@ static int get_single_card_info(struct hinic5_lld_dev *lld_dev, const void *buf_
 				u32 in_size, void *buf_out, u32 *out_size)
 {
 	if (!buf_in || in_size != sizeof(struct card_info)) {
-		pr_err("buf_in is NULL, or in_size(%u) != expect_in_size(%lu)\n",
-		       in_size, sizeof(struct card_info));
+		pr_err("buf_in is NULL, or in_size(%u) != expect_in_size(%lu)\n", in_size, sizeof(struct card_info));
 		return -EINVAL;
 	}
 
 	if (!buf_out || *out_size != sizeof(struct card_info)) {
-		pr_err("buf_out is NULL, or out_size(%u) != expect_out_size(%lu)\n",
-		       *out_size, sizeof(struct card_info));
+		pr_err("buf_out is NULL, or out_size(%u) != expect_out_size(%lu)\n", *out_size, sizeof(struct card_info));
 		return -EINVAL;
 	}
 
@@ -142,30 +140,29 @@ static int get_card_usr_api_chain_mem(int card_idx)
 	void *tmp = NULL;
 	int i;
 
-	hinic5_card_id = card_idx;
-	if (!hinic5_g_card_vir_addr[card_idx]) {
-		hinic5_g_card_vir_addr[card_idx] =
+	card_id = card_idx;
+	if (!g_card_vir_addr[card_idx]) {
+		g_card_vir_addr[card_idx] =
 			(void *)(uintptr_t)__get_free_pages(GFP_KERNEL,
 						 DBGTOOL_PAGE_ORDER);
-		if (!hinic5_g_card_vir_addr[card_idx]) {
+		if (!g_card_vir_addr[card_idx]) {
 			pr_err("Alloc api chain memory fail for card %d!\n", card_idx);
 			return -EFAULT;
 		}
 
-		memset(hinic5_g_card_vir_addr[card_idx], 0,
+		memset(g_card_vir_addr[card_idx], 0,
 		       PAGE_SIZE * (1 << DBGTOOL_PAGE_ORDER));
 
-		hinic5_g_card_phy_addr[card_idx] =
-			virt_to_phys(hinic5_g_card_vir_addr[card_idx]);
-		if (hinic5_g_card_phy_addr[card_idx] == 0) {
+		g_card_phy_addr[card_idx] =
+			virt_to_phys(g_card_vir_addr[card_idx]);
+		if (g_card_phy_addr[card_idx] == 0) {
 			pr_err("phy addr for card %d is 0\n", card_idx);
-			free_pages((unsigned long)(uintptr_t)hinic5_g_card_vir_addr[card_idx],
-				   DBGTOOL_PAGE_ORDER);
-			hinic5_g_card_vir_addr[card_idx] = NULL;
+			free_pages((unsigned long)(uintptr_t)g_card_vir_addr[card_idx], DBGTOOL_PAGE_ORDER);
+			g_card_vir_addr[card_idx] = NULL;
 			return -EFAULT;
 		}
 
-		tmp = hinic5_g_card_vir_addr[card_idx];
+		tmp = g_card_vir_addr[card_idx];
 		for (i = 0; i < (1 << DBGTOOL_PAGE_ORDER); i++) {
 			SetPageReserved(virt_to_page(tmp));
 			tmp += PAGE_SIZE;
@@ -180,18 +177,18 @@ static void dbgtool_knl_free_mem(u32 id)
 	void *tmp = NULL;
 	int i;
 
-	if (!hinic5_g_card_vir_addr[id])
+	if (!g_card_vir_addr[id])
 		return;
 
-	tmp = hinic5_g_card_vir_addr[id];
+	tmp = g_card_vir_addr[id];
 	for (i = 0; i < (1 << DBGTOOL_PAGE_ORDER); i++) {
 		ClearPageReserved(virt_to_page(tmp));
 		tmp += PAGE_SIZE;
 	}
 
-	free_pages((unsigned long)(uintptr_t)hinic5_g_card_vir_addr[id], DBGTOOL_PAGE_ORDER);
-	hinic5_g_card_vir_addr[id] = NULL;
-	hinic5_g_card_phy_addr[id] = 0;
+	free_pages((unsigned long)(uintptr_t)g_card_vir_addr[id], DBGTOOL_PAGE_ORDER);
+	g_card_vir_addr[id] = NULL;
+	g_card_phy_addr[id] = 0;
 }
 
 static int card_info_param_valid(const char *dev_name, const void *buf_out,
@@ -212,7 +209,7 @@ static int card_info_param_valid(const char *dev_name, const void *buf_out,
 	}
 
 	err = sscanf(dev_name, HINIC5_CHIP_NAME "%d", id);
-	if (err != 1) {
+	if (err <= 0) {
 		pr_err("Failed to get card id\n");
 		return err;
 	}
@@ -236,7 +233,7 @@ static void hinic5_get_card_func_info_by_card_name(const char *chip_name,
 
 	card_func->num_pf = 0;
 
-	hinic5_lld_hold();
+	lld_hold();
 
 	list_for_each_entry(chip_node, chip_list, node) {
 		if (strncmp(chip_node->chip_name, chip_name, IFNAMSIZ) != 0)
@@ -255,13 +252,13 @@ static void hinic5_get_card_func_info_by_card_name(const char *chip_name,
 
 			card_func->num_pf++;
 			if (card_func->num_pf >= CARD_MAX_SIZE) {
-				hinic5_lld_put();
+				lld_put();
 				return;
 			}
 		}
 	}
 
-	hinic5_lld_put();
+	lld_put();
 }
 
 static int get_card_func_info(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
@@ -289,7 +286,7 @@ static int get_card_func_info(struct hinic5_lld_dev *lld_dev, const void *buf_in
 		return -EFAULT;
 	}
 
-	card_func_info->usr_api_phy_addr = hinic5_g_card_phy_addr[id];
+	card_func_info->usr_api_phy_addr = g_card_phy_addr[id];
 
 	return 0;
 }
@@ -316,16 +313,16 @@ static int get_pf_cap_info(struct hinic5_lld_dev *lld_dev, const void *buf_in, u
 		return -EINVAL;
 	}
 
-	hinic5_lld_hold();
+	lld_hold();
 	hwdev = (struct hinic5_hwdev *)(card_info->func_handle_array)[svc_cap_info_in->func_idx];
 	if (!hwdev) {
-		hinic5_lld_put();
+		lld_put();
 		return -EINVAL;
 	}
 
 	func_cap = &hwdev->cfg_mgmt->svc_cap;
 	memcpy(&svc_cap_info_out->cap, func_cap, sizeof(struct service_cap));
-	hinic5_lld_put();
+	lld_put();
 
 	return 0;
 }
@@ -348,7 +345,7 @@ static int get_hw_drv_version(struct hinic5_lld_dev *lld_dev, const void *buf_in
 	}
 
 	err = snprintf(ver_info->ver, sizeof(ver_info->ver), "%s  %s",
-		       HINIC5_DRV_VERSION, "2026-05-20_00:00:00");
+		HINIC5_DRV_VERSION, __TIME_STR__);
 	if (err < 0)
 		return -EINVAL;
 
@@ -384,8 +381,8 @@ static int get_pf_id(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_
 }
 
 #ifdef CONFIG_HINIC5_SDK_DEBUG
-static int set_frequency_reduction_ratio(struct hinic5_lld_dev *lld_dev, const void *buf_in,
-					 u32 in_size, void *buf_out, u32 *out_size)
+static int set_frequency_reduction_ratio(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
+		     void *buf_out, u32 *out_size)
 {
 	u32 ratio;
 	int err;
@@ -476,7 +473,7 @@ static int detect_cmdq_channel(struct hinic5_lld_dev *lld_dev,
 	u64 out_param;
 	cmdq_npu_dft_s *cmdq_info = NULL;
 
-	if (!buf_in || !buf_out || !out_size) {
+	if ((buf_in == NULL) || (buf_out == NULL) || (out_size == NULL)) {
 		sdk_err(adev->dev, "Buf_in or buf_out or out_size is NULL.\n");
 		return -EINVAL;
 	}
@@ -498,24 +495,23 @@ static int detect_cmdq_channel(struct hinic5_lld_dev *lld_dev,
 	sdk_info(adev->dev, "debug: cmdq detect q_id=%d\n", cmdq_id);
 
 	cmd_buf = hinic5_alloc_cmd_buf(adev->hwdev);
-	if (!cmd_buf) {
+	if (cmd_buf == NULL) {
 		sdk_err(adev->hwdev, "Failed to allocate cmd buf\n");
 		return -ENOMEM;
 	}
 
 	/* Use dft_npu test command type = DFT_CMDQ_TYPE_NPU_CHANNEL_TEST,
-	 * value = DFT_CMDQ_VALUE_CHANNEL_TEST_LOG for connectivity test
-	 */
+	 * value = DFT_CMDQ_VALUE_CHANNEL_TEST_LOG for connectivity test */
 	cmd_buf->size = sizeof(cmdq_npu_dft_s);
 	cmdq_info = (cmdq_npu_dft_s *)cmd_buf->buf;
 	cmdq_info->type = 0;
 	cmdq_info->value = 0;
 	hinic5_cpu_to_be32(cmd_buf->buf, cmd_buf->size);
 
-	err = hinic5_cos_id_direct_resp
-		(adev->hwdev, HINIC5_MOD_COMM, COMM_CMD_SEND_NPU_DFT_CMD, cmdq_id, cmd_buf,
+	err = hinic5_cos_id_direct_resp(
+		adev->hwdev, HINIC5_MOD_COMM, COMM_CMD_SEND_NPU_DFT_CMD, cmdq_id, cmd_buf,
 		 &out_param, 0, HINIC5_CHANNEL_COMM);
-	if (err != 0 || out_param != 0) {
+	if ((err != 0) || (out_param != 0)) {
 		sdk_err(adev->dev, "Failed to send cmdq channel detect\n");
 		err = -EFAULT;
 	}
@@ -538,15 +534,14 @@ static int get_cmdq_wqe_desc(struct hinic5_lld_dev *lld_dev, const void *buf_in,
 				  *out_size, sizeof(struct sdk_cmdq_wqe_desc)))
 		return -EINVAL;
 
-	return hinic5_dump_cmdq_wqebb(lld_dev->hwdev,
-				      (u16)info->q_id, (u16)info->wqebb_id, buf_out);
+	return hinic5_dump_cmdq_wqebb(lld_dev->hwdev, (u16)info->q_id, (u16)info->wqebb_id, buf_out);
 }
 
 /* not support fc yet */
 static int get_mbox_cnt(struct hinic5_lld_dev *lld_dev, const void *buf_in,
 			u32 in_size, void *buf_out, u32 *out_size)
 {
-	if (!buf_out) {
+	if (buf_out == NULL) {
 		pr_err("buf_out is NULL");
 		return -EINVAL;
 	}
@@ -561,13 +556,13 @@ static int get_mbox_cnt(struct hinic5_lld_dev *lld_dev, const void *buf_in,
 	return 0;
 }
 
-struct hw_drv_module_handle hinic5_hw_driv_module_cmd_handle[] = {
-	{FUNC_TYPE,		(hw_driv_module)hinic5_get_func_type},
-	{GET_FUNC_IDX,		(hw_driv_module)hinic5_get_func_id},
-	{GET_HW_STATS,		(hw_driv_module)hinic5_get_hw_driver_stats},
-	{CLEAR_HW_STATS,	(hw_driv_module)hinic5_clear_hw_driver_stats},
-	{GET_SELF_TEST_RES,	(hw_driv_module)hinic5_get_self_test_result},
-	{GET_CHIP_FAULT_STATS,	(hw_driv_module)hinic5_get_chip_faults_stats},
+struct hw_drv_module_handle hw_driv_module_cmd_handle[] = {
+	{FUNC_TYPE,		(hw_driv_module)get_func_type},
+	{GET_FUNC_IDX,		(hw_driv_module)get_func_id},
+	{GET_HW_STATS,		(hw_driv_module)get_hw_driver_stats},
+	{CLEAR_HW_STATS,	(hw_driv_module)clear_hw_driver_stats},
+	{GET_SELF_TEST_RES,	(hw_driv_module)get_self_test_result},
+	{GET_CHIP_FAULT_STATS,	(hw_driv_module)get_chip_faults_stats},
 	{GET_SINGLE_CARD_INFO,	(hw_driv_module)get_single_card_info},
 	{IS_DRV_IN_VM,		is_driver_in_vm},
 	{GET_CHIP_ID,		get_all_chip_id_cmd},
@@ -592,13 +587,13 @@ static int alloc_tmp_buf(void *hwdev, struct msg_module *nt_msg, u32 in_size,
 {
 	int ret;
 
-	ret = hinic5_alloc_buff_in(hwdev, nt_msg, in_size, buf_in);
+	ret = alloc_buff_in(hwdev, nt_msg, in_size, buf_in);
 	if (ret != 0) {
 		pr_err("Alloc tool cmd buff in failed\n");
 		return ret;
 	}
 
-	ret = hinic5_alloc_buff_out(hwdev, nt_msg, out_size, buf_out);
+	ret = alloc_buff_out(hwdev, nt_msg, out_size, buf_out);
 	if (ret != 0) {
 		pr_err("Alloc tool cmd buff out failed\n");
 		goto out_free_buf_in;
@@ -607,7 +602,7 @@ static int alloc_tmp_buf(void *hwdev, struct msg_module *nt_msg, u32 in_size,
 	return 0;
 
 out_free_buf_in:
-	hinic5_free_buff_in(hwdev, nt_msg, *buf_in);
+	free_buff_in(hwdev, nt_msg, *buf_in);
 
 	return ret;
 }
@@ -615,12 +610,11 @@ out_free_buf_in:
 static void free_tmp_buf(void *hwdev, struct msg_module *nt_msg,
 			 void *buf_in, void *buf_out)
 {
-	hinic5_free_buff_out(hwdev, nt_msg, buf_out);
-	hinic5_free_buff_in(hwdev, nt_msg, buf_in);
+	free_buff_out(hwdev, nt_msg, buf_out);
+	free_buff_in(hwdev, nt_msg, buf_in);
 }
 
-__weak int hinic5_nictool_cmd_extend_handle(void *lld_dev, u32 cmd,
-					    struct hinic5_mt_msg *mt_msg, bool *support)
+__attribute__((weak)) int hinic5_nictool_cmd_extend_handle(void *lld_dev, u32 cmd, struct hinic5_mt_msg *mt_msg, bool *support)
 {
 	*support = false;
 
@@ -630,8 +624,8 @@ __weak int hinic5_nictool_cmd_extend_handle(void *lld_dev, u32 cmd,
 static int send_to_hw_driver(struct hinic5_lld_dev *lld_dev, struct msg_module *nt_msg,
 			     const void *buf_in, u32 in_size, void *buf_out, u32 *out_size)
 {
-	int index, num_cmds = (int)(sizeof(hinic5_hw_driv_module_cmd_handle) /
-				sizeof(hinic5_hw_driv_module_cmd_handle[0]));
+	int index, num_cmds = (int)(sizeof(hw_driv_module_cmd_handle) /
+				sizeof(hw_driv_module_cmd_handle[0]));
 	enum driver_cmd_type cmd_type =
 				(enum driver_cmd_type)(nt_msg->msg_formate);
 	struct hinic5_mt_msg mt_msg;
@@ -639,12 +633,14 @@ static int send_to_hw_driver(struct hinic5_lld_dev *lld_dev, struct msg_module *
 	int err = 0;
 
 	for (index = 0; index < num_cmds; index++) {
-		if (cmd_type != hinic5_hw_driv_module_cmd_handle[index].driv_cmd_name)
+		if (cmd_type != hw_driv_module_cmd_handle[index].driv_cmd_name) {
 			continue;
-		err = hinic5_hw_driv_module_cmd_handle[index].driv_func
+		}
+		err = hw_driv_module_cmd_handle[index].driv_func
 				(lld_dev, buf_in, in_size, buf_out, out_size);
-		if (err != 0)
+		if (err != 0) {
 			pr_err("Hw driver cmd %u process failed, err %d\n", cmd_type, err);
+		}
 		return err;
 	}
 
@@ -658,8 +654,9 @@ static int send_to_hw_driver(struct hinic5_lld_dev *lld_dev, struct msg_module *
 		return -EINVAL;
 	}
 
-	if (err != 0)
+	if (err != 0) {
 		pr_err("extend cmd %d process failed, err:%d\n", cmd_type, err);
+	}
 	*out_size = mt_msg.out_size;
 
 	return err;
@@ -669,14 +666,13 @@ static int send_to_service_driver(struct hinic5_lld_dev *lld_dev, struct msg_mod
 				  const void *buf_in, u32 in_size, void *buf_out, u32 *out_size)
 {
 	const struct hinic5_uld_info *uld_info = NULL;
-	const char **service_name = NULL;
+	const char **service_name = hinic5_get_uld_names();
 	enum hinic5_service_type type;
 	void *uld_dev = NULL;
 	int ret = -EINVAL;
 
-	service_name = hinic5_get_uld_names();
 	type = nt_msg->module - SEND_TO_SRV_DRV_BASE;
-	if (type >= SERVICE_T_MAX) {
+	if (type < 0 || type >= SERVICE_T_MAX) {
 		pr_err("Ioctl input module id: %u is incorrectly\n", nt_msg->module);
 		return -EINVAL;
 	}
@@ -692,13 +688,19 @@ static int send_to_service_driver(struct hinic5_lld_dev *lld_dev, struct msg_mod
 	}
 
 	uld_info = hinic5_get_uld_info_by_type(type);
-	if (!uld_info || !uld_info->ioctl)
-		return -EFAULT;
+	if (!uld_info || !uld_info->ioctl) {
+		ret = -EFAULT;
+		if (nt_msg->msg_formate == GET_DRV_VERSION)
+			ret = 0;
+		goto out;
+	}
 
 	ret = uld_info->ioctl(uld_dev, nt_msg->msg_formate,
-						buf_in, in_size, buf_out, out_size);
-	hinic5_uld_dev_put(lld_dev, type);
+			      buf_in, in_size, buf_out, out_size);
 
+out:
+	if (uld_dev)
+		uld5_dev_put(lld_dev, type);
 	return ret;
 }
 
@@ -712,15 +714,15 @@ static int nictool_exec_cmd(struct hinic5_lld_dev *lld_dev, struct msg_module *n
 		ret = send_to_hw_driver(lld_dev, nt_msg, buf_in, in_size, buf_out, out_size);
 		break;
 	case SEND_TO_MPU:
-		ret = hinic5_send_to_mpu(hinic5_get_sdk_hwdev_by_lld(lld_dev),
+		ret = send_to_mpu(hinic5_get_sdk_hwdev_by_lld(lld_dev),
 				  nt_msg, buf_in, in_size, buf_out, out_size);
 		break;
 	case SEND_TO_SM:
-		ret = hinic5_send_to_sm(hinic5_get_sdk_hwdev_by_lld(lld_dev),
+		ret = send_to_sm(hinic5_get_sdk_hwdev_by_lld(lld_dev),
 				 nt_msg, buf_in, in_size, buf_out, out_size);
 		break;
 	case SEND_TO_NPU:
-		ret = hinic5_send_to_npu(hinic5_get_sdk_hwdev_by_lld(lld_dev),
+		ret = send_to_npu(hinic5_get_sdk_hwdev_by_lld(lld_dev),
 				  nt_msg, buf_in, in_size, buf_out, out_size);
 		break;
 	default:
@@ -777,7 +779,7 @@ struct hinic5_lld_dev *get_lld_dev_by_nt_msg(struct msg_module *nt_msg)
 		    (cmd == COMM_MGMT_CMD_UPDATE_FW || cmd == COMM_MGMT_CMD_ACTIVE_FW ||
 		     cmd == COMM_MGMT_CMD_HOT_ACTIVE_FW)) {
 			lld_dev = hinic5_get_lld_dev_with_l3i_enabled(nt_msg->device_name);
-			if (lld_dev)
+			if (lld_dev != NULL)
 				return lld_dev;
 		}
 	}
@@ -789,31 +791,28 @@ struct hinic5_lld_dev *get_lld_dev_by_nt_msg(struct msg_module *nt_msg)
 	}
 
 	if (nt_msg->module == SEND_TO_HIHTR_DRIVER &&
-	    (nt_msg->msg_formate == ROCE_CMD_SET_BYPASS ||
-	    nt_msg->msg_formate == ROCE_CMD_QUERY_BYPASS)) {
+		(nt_msg->msg_formate == ROCE_CMD_SET_BYPASS || nt_msg->msg_formate == ROCE_CMD_QUERY_BYPASS)) {
 		return hinic5_get_lld_dev_by_chip_name(nt_msg->device_name);
 	}
 
 	if (nt_msg->module == SEND_TO_HIHTR_DRIVER &&
-	    (nt_msg->msg_formate >= ROCE_DRV_SCC_CMD_MIN &&
-	    nt_msg->msg_formate <= ROCE_DRV_SCC_CMD_MAX)) {
+		(nt_msg->msg_formate >= ROCE_DRV_SCC_CMD_MIN && nt_msg->msg_formate <= ROCE_DRV_SCC_CMD_MAX)) {
 		return hinic5_get_lld_dev_by_chip_name(nt_msg->device_name);
 	}
 
-	if (nt_msg->module == SEND_TO_CUSTOM_DRIVER)
+	if (nt_msg->module == SEND_TO_CUSTOM_DRIVER) {
 		return hinic5_get_lld_dev_by_chip_name(nt_msg->device_name);
+	}
 
 	if (nt_msg->module == SEND_TO_BIFUR_DRIVER) {
 		lld_dev = hinic5_get_lld_dev_by_chip_name(nt_msg->device_name);
 		if (!lld_dev)
-			lld_dev =
-				hinic5_get_lld_dev_by_dev_name(nt_msg->device_name, SERVICE_T_NIC);
+			lld_dev = hinic5_get_lld_dev_by_dev_name(nt_msg->device_name, SERVICE_T_NIC);
 		return lld_dev;
 	}
 
 	if (nt_msg->module == SEND_TO_IPSEC_DRIVER &&
-	    (nt_msg->msg_formate == HISEC_DRIVER_CMD_GET_TRNG ||
-	    nt_msg->msg_formate == HISEC_DRIVER_CMD_GET_IPSEC_INFO)) {
+		(nt_msg->msg_formate == HISEC_DRIVER_CMD_GET_TRNG || nt_msg->msg_formate == HISEC_DRIVER_CMD_GET_IPSEC_INFO)) {
 		return hinic5_get_lld_dev_by_chip_name(nt_msg->device_name);
 	}
 
@@ -825,9 +824,10 @@ struct hinic5_lld_dev *get_lld_dev_by_nt_msg(struct msg_module *nt_msg)
 		return lld_dev;
 	}
 
-	/* Support sdk sending dfx commands by specifying function id */
-	if (nt_msg->module == SEND_TO_HW_DRIVER && nt_msg->use_func_idx == 1)
+	/* Support sdk to send dfx commands by specifying function id */
+	if ((nt_msg->module == SEND_TO_HW_DRIVER) && (nt_msg->use_func_idx == 1)) {
 		return hinic5_get_lld_dev_by_func_id(nt_msg->device_name, nt_msg->func_idx);
+	}
 
 	lld_dev = hinic5_get_lld_dev_by_chip_name(nt_msg->device_name);
 	if (!lld_dev)
@@ -847,7 +847,7 @@ static long hinicadm_k_unlocked_ioctl(struct file *pfile, ulong arg)
 	u32 in_size = 0;
 	int ret = 0;
 
-	memset(&nt_msg, 0, sizeof(nt_msg));
+	(void)memset(&nt_msg, 0, sizeof(nt_msg));
 	if (cmd_parameter_valid(&nt_msg, arg, &out_size_expect, &in_size) != 0)
 		return -EFAULT;
 
@@ -887,7 +887,7 @@ static long hinicadm_k_unlocked_ioctl(struct file *pfile, ulong arg)
 		goto out_free_buf;
 	}
 
-	ret = hinic5_copy_buf_out_to_user(&nt_msg, out_size, buf_out);
+	ret = copy_buf_out_to_user(&nt_msg, out_size, buf_out);
 	if (ret != 0)
 		pr_err("Copy information to user failed\n");
 
@@ -929,30 +929,29 @@ static long dbgtool_k_unlocked_ioctl(struct file *pfile,
 	struct card_node *card_info = NULL;
 	int i;
 
-	memset(&param, 0, sizeof(param));
+	(void)memset(&param, 0, sizeof(param));
 
 	if (copy_from_user(&param, (void *)(uintptr_t)arg, sizeof(param)) != 0) {
 		pr_err("Copy param from user fail\n");
 		return -EFAULT;
 	}
 
-	hinic5_lld_hold();
+	lld_hold();
 	for (i = 0; i < MAX_CARD_NUM; i++) {
-		card_info = (struct card_node *)hinic5_g_card_node_array[i];
+		card_info = (struct card_node *)g_card_node_array[i];
 		if (!card_info)
 			continue;
-		if (memcmp(param.chip_name, card_info->chip_name,
-			   strlen(card_info->chip_name) + 1) == 0)
+		if (memcmp(param.chip_name, card_info->chip_name, strlen(card_info->chip_name) + 1) == 0)
 			break;
 	}
 
 	if (i == MAX_CARD_NUM || !card_info) {
-		hinic5_lld_put();
+		lld_put();
 		pr_err("Can't find this card %s\n", param.chip_name);
 		return -EFAULT;
 	}
 
-	hinic5_card_id = i;
+	card_id = i;
 	dbgtool_info = (struct dbgtool_k_glb_info *)card_info->dbgtool_info;
 
 	down(&dbgtool_info->dbgtool_sem);
@@ -965,6 +964,7 @@ static long dbgtool_k_unlocked_ioctl(struct file *pfile,
 		pr_err("Not suppose to use this cmd(0x%x).\n", real_cmd);
 		ret = 0;
 		break;
+
 	default:
 		pr_err("Dbgtool cmd(0x%x) not support now\n", real_cmd);
 		ret = -EFAULT;
@@ -972,7 +972,7 @@ static long dbgtool_k_unlocked_ioctl(struct file *pfile,
 
 	up(&dbgtool_info->dbgtool_sem);
 
-	hinic5_lld_put();
+	lld_put();
 
 	return (long)ret;
 }
@@ -1017,7 +1017,7 @@ static int hinic5_bar_mmap_param_valid(phys_addr_t phy_addr, u64 vmsize)
 	struct card_node *chip_node = NULL;
 	struct hinic5_adev *adev = NULL;
 
-	hinic5_lld_hold();
+	lld_hold();
 
 	/* get PF bar1 or bar3 physical address to verify */
 	list_for_each_entry(chip_node, chip_list, node) {
@@ -1025,17 +1025,15 @@ static int hinic5_bar_mmap_param_valid(phys_addr_t phy_addr, u64 vmsize)
 			if (hinic5_func_type(adev->hwdev) == TYPE_VF)
 				continue;
 
-			if (((phy_addr >= adev->cfg_base_phy) &&
-			     (phy_addr + vmsize <= (adev->cfg_base_phy + adev->cfg_base_len))) ||
-			    ((phy_addr >= adev->mgmt_base_phy) &&
-			     (phy_addr + vmsize <= (adev->mgmt_base_phy + adev->mgmt_base_len)))) {
-				hinic5_lld_put();
+			if (((phy_addr >= adev->cfg_base_phy) && (phy_addr + vmsize <= (adev->cfg_base_phy + adev->cfg_base_len))) ||
+			    ((phy_addr >= adev->mgmt_base_phy) && (phy_addr + vmsize <= (adev->mgmt_base_phy + adev->mgmt_base_len)))) {
+				lld_put();
 				return 0;
 			}
 		}
 	}
 
-	hinic5_lld_put();
+	lld_put();
 	return -EINVAL;
 }
 
@@ -1052,10 +1050,10 @@ static int hinic5_mem_mmap(struct file *filp, struct vm_area_struct *vma)
 	}
 
 	/* old version of tool set vma->vm_pgoff to 0 */
-	phy_addr = (offset != 0) ? offset : hinic5_g_card_phy_addr[hinic5_card_id];
+	phy_addr = (offset != 0) ? offset : g_card_phy_addr[card_id];
 
 	/* check phy_addr valid */
-	if (phy_addr != hinic5_g_card_phy_addr[hinic5_card_id]) {
+	if (phy_addr != g_card_phy_addr[card_id]) {
 		err = hinic5_bar_mmap_param_valid(phy_addr, vmsize);
 		if (err != 0) {
 			pr_err("mmap param invalid, err: %d\n", err);
@@ -1103,11 +1101,11 @@ static void free_dbgtool_info(void *hwdev, struct card_node *chip_info)
 		return;
 
 	err = sscanf(chip_info->chip_name, HINIC5_CHIP_NAME "%u", &id);
-	if (err != 1)
+	if (err <= 0)
 		pr_err("Failed to get card id\n");
 
 	if (id < MAX_CARD_NUM)
-		hinic5_g_card_node_array[id] = NULL;
+		g_card_node_array[id] = NULL;
 
 	dbgtool_info = chip_info->dbgtool_info;
 	/* FFM deinit */
@@ -1129,8 +1127,7 @@ static int alloc_dbgtool_info(void *hwdev, struct card_node *chip_info)
 	if (hinic5_func_type(hwdev) != TYPE_VF)
 		chip_info->func_handle_array[hinic5_global_func_id(hwdev)] = hwdev;
 
-	// Only the first function applies for dbgtool_info,
-	// subsequent functions only need to increment reference count, no memory allocation needed
+	// Only the first function allocates dbgtool_info, subsequent functions only need to increment the reference count, no memory allocation needed
 	if (chip_info->func_num != 0) {
 		chip_info->func_num++;
 		return 0;
@@ -1162,7 +1159,12 @@ static int alloc_dbgtool_info(void *hwdev, struct card_node *chip_info)
 		goto sscanf_chdev_fail;
 	}
 
-	hinic5_g_card_node_array[id] = chip_info;
+	if (id < 0 || id >= MAX_CARD_NUM) {
+		pr_err("Invalid card id %d, max %d\n", id, MAX_CARD_NUM);
+		goto sscanf_chdev_fail;
+	}
+
+	g_card_node_array[id] = chip_info;
 
 	return 0;
 
@@ -1181,10 +1183,10 @@ dbgtool_info_fail:
 }
 
 /**
- * hinic5_nictool_k_init - initialize the hw interface
+ * nictool_k_init - initialize the hw interface
  **/
 /* temp for dbgtool_info */
-int hinic5_nictool_k_init(void *hwdev, void *chip_node)
+int nictool_k_init(void *hwdev, void *chip_node)
 {
 	struct card_node *chip_info = (struct card_node *)chip_node;
 	struct device *pdevice = NULL;
@@ -1194,7 +1196,12 @@ int hinic5_nictool_k_init(void *hwdev, void *chip_node)
 	if (err != 0)
 		return err;
 
-	// Only the first function initializes and creates the character device, subsequent functions only need to increment reference count
+	err = hinic5_non_ptp_init(hwdev);
+	if (err != 0) {
+		goto non_ptp_init_err;
+	}
+
+	// Only the first function initializes and creates the character device, subsequent ones only need to increment the reference count by 1
 	if (g_nictool_ref_cnt != 0) {
 		/* already initialized */
 		g_nictool_ref_cnt++;
@@ -1253,16 +1260,21 @@ class_create_err:
 
 alloc_chdev_fail:
 	g_nictool_ref_cnt--;
+	hinic5_non_ptp_uninit(hwdev);
+
+non_ptp_init_err:
 	free_dbgtool_info(hwdev, chip_info);
 
 	return err;
 }
 
-void hinic5_nictool_k_uninit(void *hwdev, void *chip_node)
+void nictool_k_uninit(void *hwdev, void *chip_node)
 {
 	struct card_node *chip_info = (struct card_node *)chip_node;
 
 	free_dbgtool_info(hwdev, chip_info);
+
+	hinic5_non_ptp_uninit(hwdev);
 
 	if (g_nictool_ref_cnt == 0) {
 		pr_err("Nictool Unregister.\n");

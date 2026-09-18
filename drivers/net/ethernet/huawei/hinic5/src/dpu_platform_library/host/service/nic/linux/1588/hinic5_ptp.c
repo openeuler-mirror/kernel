@@ -4,8 +4,8 @@
  * File Name     : hinic5_ptp.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 PTP (Precision Time Protocol) implementation
  */
 
 #include <linux/skbuff.h>
@@ -157,8 +157,7 @@ u8 hinic5_ptp_tx_event_handle(void *dev, u8 event, const u8 *data)
 	if (((u32)ts.tv_sec & 0x3) < hw_ts.time_s && ts.tv_sec != 0) {  // 0x3 :lower 2bit sec
 		ts.tv_sec--;
 	}
-	/* 0x3 :lower 2bit sec */
-	ts.tv_sec = (u32)(ts.tv_sec - ((u32)ts.tv_sec & 0x3)) + hw_ts.time_s;
+	ts.tv_sec = (u32)(ts.tv_sec - ((u32)ts.tv_sec & 0x3)) + hw_ts.time_s;  // 0x3 :lower 2bit sec
 	nic_dev->ptp_ctrl.tx_saved_skb = NULL;
 	clear_bit(HINIC5_PTP_TX_BUSY, &nic_dev->ptp_ctrl.flags);
 	shhwtstamps.hwtstamp = timespec64_to_ktime(ts);
@@ -178,15 +177,13 @@ void hinic5_ptp_rx_hwtstamp(struct hinic5_nic_dev *nic_dev, struct sk_buff *skb)
 	hinic5_ptp_gettime64(&nic_dev->ptp_ctrl.ptp_info, &ts);
 
 	hw_ts32 = *(union hinic5_hw_ts32 *)(skb_tail_pointer(skb) - sizeof(union hinic5_hw_ts32));
-	/* Timestamp is filled at the end of the packet, removed after conversion */
-	skb->len = skb->len - PTP_SKB_HWTSTAMPS_LENGTH;
+	skb->len = skb->len - PTP_SKB_HWTSTAMPS_LENGTH;   // Timestamp is appended to the tail of the packet, remove it after conversion
 	skb_set_tail_pointer(skb, (int)(skb->len));
 	hw_ts32.val = be32_to_cpu(hw_ts32.val);
-	/* 0x3 :lower 2bit sec */
-	if (((u32)ts.tv_sec & 0x3) < hw_ts32.time_s && ts.tv_sec != 0)
+	if (((u32)ts.tv_sec & 0x3) < hw_ts32.time_s && ts.tv_sec != 0) {   // 0x3 :lower 2bit sec
 		ts.tv_sec--;
-	/* 0x3 :lower 2bit sec */
-	ts.tv_sec = (u32)(ts.tv_sec - ((u32)ts.tv_sec & 0x3)) + hw_ts32.time_s;
+	}
+	ts.tv_sec = (u32)(ts.tv_sec - ((u32)ts.tv_sec & 0x3)) + hw_ts32.time_s;  // 0x3 :lower 2bit sec
 	ts.tv_nsec = hw_ts32.time_ns;
 
 	skb_hwtstamps(skb)->hwtstamp = timespec64_to_ktime(ts);
@@ -249,7 +246,7 @@ void hinic5_ptp_init(struct hinic5_nic_dev *nic_dev)
 
 	ptp_info = &nic_dev->ptp_ctrl.ptp_info;
 	nic_dev->ptp_ctrl.hwdev = nic_dev->hwdev;
-	strscpy(ptp_info->name, HINIC5_CHIP_NAME, sizeof(ptp_info->name) - 1);
+	(void)strncpy(ptp_info->name, HINIC5_CHIP_NAME, sizeof(ptp_info->name));
 
 	ptp_info->name[sizeof(ptp_info->name) - 1] = '\0';
 	ptp_info->owner = THIS_MODULE;
@@ -274,7 +271,7 @@ void hinic5_ptp_init(struct hinic5_nic_dev *nic_dev)
 	// lower 16bit: 0.xx ns , 2: 2ns per cycle
 	nic_dev->ptp_ctrl.inc_val = 2 << 16;
 	nic_dev->ptp_ctrl.tx_saved_skb = NULL;
-	/* Software 1588 mode also needs to strip the 4B timestamp from the end of the packet */
+	/* Software 1588 mode also needs to strip the 4B timestamp at the packet tail */
 	nic_dev->ptp_ctrl.rx_enable = 1;
 	hinic5_ptp_set_config(nic_dev, &nic_dev->ptp_ctrl.config);
 	hinic5_ptp_set_inc_per_cycle(&nic_dev->ptp_ctrl, nic_dev->ptp_ctrl.inc_val);

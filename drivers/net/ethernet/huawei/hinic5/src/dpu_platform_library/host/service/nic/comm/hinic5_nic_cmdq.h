@@ -4,8 +4,8 @@
  * File Name     : hinic5_nic_cmdq.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : hinic5 nic cmdq definitions
  */
 
 #ifndef HINIC5_NIC_CMDQ_H
@@ -18,7 +18,7 @@
 #define HINIC5_Q_CTXT_MAX		31U /* (2048 - 8) / 64 */
 #define HINIC5_QP_CTXT_HEADER_SIZE	16U
 
-#define HINIC5_DEAULT_DROP_THD_ON        		(0xFFFF)
+#define HINIC5_DEAULT_DROP_THD_ON        	    (0xFFFF)
 
 #define SQ_CTXT_PKT_DROP_THD_ON_SHIFT			0
 #define SQ_CTXT_PKT_DROP_THD_OFF_SHIFT			16
@@ -62,6 +62,7 @@ enum hinic5_qp_ctxt_type {
 	HINIC5_QP_CTXT_TYPE_SQ,
 	HINIC5_QP_CTXT_TYPE_RQ,
 };
+
 
 struct hinic5_sq_ctxt {
 	u32	ci_pi;
@@ -121,24 +122,21 @@ struct hinic5_nic_cmdq_ops {
 	u8 (*prepare_cmd_buf_get_rss_indir_table)(const struct hinic5_nic_io *nic_io,
 						  const struct hinic5_cmd_buf *cmd_buf);
 	void (*cmd_buf_to_rss_indir_table)(const struct hinic5_cmd_buf *cmd_buf, u32 *indir_table);
-	void (*cmd_buf_to_vport_stats)(const struct hinic5_cmd_buf *cmd_buf,
-				       struct hinic5_vport_stats *stats);
+	void (*cmd_buf_to_vport_stats)(const struct hinic5_cmd_buf *cmd_buf, struct hinic5_vport_stats *stats);
 	u8 (*prepare_cmd_buf_get_vport_stats)(const struct hinic5_nic_io *nic_io,
 					      const struct hinic5_cmd_buf *cmd_buf, u16 func_id);
 	u8 (*prepare_cmd_buf_clear_vport_stats)(const struct hinic5_nic_io *nic_io,
 						const struct hinic5_cmd_buf *cmd_buf, u16 func_id);
 	void (*prepare_sq_ctxt_drop_and_prefetch)(struct hinic5_sq_ctxt *sq_ctxt);
 	void (*prepare_rq_ctxt_ceq_and_prefetch)(struct hinic5_io_queue *rq,
-						 struct hinic5_rq_ctxt *rq_ctxt,
-						 bool support_rq_sw_compact_wqe);
+				struct hinic5_rq_ctxt *rq_ctxt, bool support_rq_sw_compact_wqe);
 };
 
 struct hinic5_nic_cmdq_ops *hinic5_nic_cmdq_get_182x_ops(void);
 struct hinic5_nic_cmdq_ops *hinic5_nic_cmdq_get_187x_ops(void);
 
 void hinic5_nic_cmdq_adapt_init(struct hinic5_nic_io *nic_io);
-void hinic5_sq_prepare_ctxt(struct hinic5_nic_io *nic_io, struct hinic5_io_queue *sq, u16 sq_id,
-			    struct hinic5_sq_ctxt *sq_ctxt);
-void hinic5_rq_prepare_ctxt(struct hinic5_nic_io *nic_io, struct hinic5_io_queue *rq,
-			    struct hinic5_rq_ctxt *rq_ctxt);
+void hinic5_sq_prepare_ctxt(
+	struct hinic5_nic_io *nic_io, struct hinic5_io_queue *sq, u16 sq_id, struct hinic5_sq_ctxt *sq_ctxt);
+void hinic5_rq_prepare_ctxt(struct hinic5_nic_io *nic_io, struct hinic5_io_queue *rq, struct hinic5_rq_ctxt *rq_ctxt);
 #endif

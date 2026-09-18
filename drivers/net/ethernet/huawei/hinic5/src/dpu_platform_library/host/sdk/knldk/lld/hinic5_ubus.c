@@ -4,8 +4,8 @@
  * File Name     : hinic5_ubus.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : UBUS driver probe, remove, bar mapping and vDevice management
  */
 
 #ifdef __UBUS_DRIVER__
@@ -34,7 +34,7 @@
 #include "hinic5_dev_mgmt.h"
 #include "hinic5_nictool.h"
 #include "hinic5_hw.h"
-#include "hinic5_hinic5_vram.h"
+#include "hinic5_vram.h"
 #include "hinic5_fast_msg_init.h"
 #include "hinic5_lld.h"
 #include "hinic5_lld_private.h"
@@ -57,7 +57,7 @@ static enum ubus_device_type ubus_get_device_type(hinic_ub_dev *ubus_dev)
 {
 	if (HINIC_UB_GET_DEVICE_ID(ubus_dev) == HINIC5_UDEV_DEVICE_ID_1825_PF ||
 	    HINIC_UB_GET_DEVICE_ID(ubus_dev) == HINIC5_UDEV_DEVICE_ID_1825_VF ||
-	    HINIC_UB_GET_DEVICE_ID(ubus_dev) == HINIC5_UDEV_DEVICE_ID_1825_TEMP) {
+		HINIC_UB_GET_DEVICE_ID(ubus_dev) == HINIC5_UDEV_DEVICE_ID_1825_TEMP) {
 		return UBUS_DEVICE_TYPE_1825;
 	} else if (HINIC_UB_GET_DEVICE_ID(ubus_dev) == HINIC5_UDEV_DEVICE_ID_1872_PF ||
 		HINIC_UB_GET_DEVICE_ID(ubus_dev) == HINIC5_UDEV_DEVICE_ID_1872_VF) {
@@ -143,7 +143,7 @@ static int ubus_mapping_bar(hinic_ub_dev *ubus_dev, struct hinic5_adev *adev)
 	if (is_pf) {
 		adev->mgmt_reg_base = adev->fers2_reg_base + rs2->mgmt_reg_offset;
 		adev->mgmt_base_phy = adev->fers2_base_phy + rs2->mgmt_reg_offset;
-		adev->mgmt_base_len = rs2->mgmt_reg_offset;
+		adev->mgmt_base_len = rs2->mgmt_reg_size;
 	}
 
 	/* interrupt reg */
@@ -203,11 +203,12 @@ static int hinic5_ubus_init(hinic_ub_dev *ubus_dev)
 	struct hinic5_adev *adev = NULL;
 	int err;
 
-	/* Write config space, config comes from ubus driver after loading */
+	/* Write configuration space, configuration comes from ubus driver loading */
 	(void)HINIC_UB_SET_HOST_INFO(ubus_dev);
 
 	adev = devm_kzalloc(&ubus_dev->dev, sizeof(*adev), GFP_KERNEL);
 	if (!adev) {
+		sdk_err(&ubus_dev->dev, "Failed to alloc ub device adapter\n");
 		return -ENOMEM;
 	}
 	adev->dev = &ubus_dev->dev;
@@ -219,8 +220,7 @@ static int hinic5_ubus_init(hinic_ub_dev *ubus_dev)
 	HINIC_UB_UE_ENABLE(ubus_dev, 1);
 
 	sdk_info(&ubus_dev->dev, "Ubus DMA Bit Mask is (%u).\n", ubus_dma_bit_mask);
-	if (ubus_dma_bit_mask < HINIC5_UBUS_DMA_BIT_MASK_MIN ||
-	    ubus_dma_bit_mask > HINIC5_UBUS_DMA_BIT_MASK_MAX) {
+	if (ubus_dma_bit_mask < HINIC5_UBUS_DMA_BIT_MASK_MIN || ubus_dma_bit_mask > HINIC5_UBUS_DMA_BIT_MASK_MAX) {
 		err = -EPERM;
 		sdk_err(&ubus_dev->dev, "Ubus DMA Bit Mask Illegal\n");
 		goto dma_mask_err;
@@ -254,14 +254,11 @@ static int hinic5_remove_ubus_func(struct hinic5_adev *adev)
 
 	hinic5_detect_hw_present(adev->hwdev);
 
-	if (hinic5_func_type(adev->hwdev) != TYPE_VF)
+	if (hinic5_func_type(adev->hwdev) != TYPE_VF) {
 		wait_sriov_cfg_complete(adev);
+	}
 
 	hinic5_func_deinit(adev);
-
-	hinic5_lld_lock_chip_node();
-	hinic5_free_chip_node(adev);
-	hinic5_lld_unlock_chip_node();
 
 	ubus_unmapping_bar(adev);
 
@@ -294,25 +291,17 @@ static int hinic5_probe_ubus_func(hinic_ub_dev *ubus_dev, struct hinic5_adev *ad
 	int err;
 
 	err = probe_func_param_init(adev);
-	if (err == -EEXIST)
+	if (err == -EEXIST) {
 		return 0;
-	else if (err != 0)
+	} else if (err != 0) {
 		return err;
+	}
 
 	err = ubus_mapping_bar(ubus_dev, adev);
 	if (err != 0) {
 		sdk_err(&ubus_dev->dev, "Failed to map bar\n");
 		goto map_bar_failed;
 	}
-
-	hinic5_lld_lock_chip_node();
-	err = hinic5_alloc_chip_node(adev);
-	if (err != 0) {
-		hinic5_lld_unlock_chip_node();
-		sdk_err(&ubus_dev->dev, "Failed to add new chip node to global list\n");
-		goto alloc_chip_node_fail;
-	}
-	hinic5_lld_unlock_chip_node();
 
 	err = hinic5_func_init(adev);
 	if (err != 0)
@@ -327,11 +316,6 @@ static int hinic5_probe_ubus_func(hinic_ub_dev *ubus_dev, struct hinic5_adev *ad
 	return 0;
 
 func_init_err:
-	hinic5_lld_lock_chip_node();
-	hinic5_free_chip_node(adev);
-	hinic5_lld_unlock_chip_node();
-
-alloc_chip_node_fail:
 	ubus_unmapping_bar(adev);
 
 map_bar_failed:
@@ -363,10 +347,11 @@ static int hinic5_ubus_probe(hinic_ub_dev *ubus_dev, const struct ub_device_id *
 	adev->bus_ops = hinic5_get_dev_ops(adev);
 	adev->bus_dev = ubus_dev;
 	err = adev->bus_ops->init_device_info(adev);
-	if (err != 0)
+	if (err != 0) {
 		goto init_device_info_err;
+	}
 
-	hinic5_lld_dev_cnt_init(adev);
+	lld_dev_cnt_init(adev);
 
 	err = hinic5_probe_ubus_func(ubus_dev, adev);
 	if (err != 0)
@@ -454,7 +439,6 @@ static const struct ub_device_id hinic5_ubus_tbl[] = {
 u16 hinic5_ubus_get_device_id(struct hinic5_adev *adev)
 {
 	hinic_ub_dev *udev = HINIC_TO_UB_DEV(adev->dev);
-
 	return HINIC_UB_GET_DEVICE_ID(udev);
 }
 
@@ -462,7 +446,6 @@ bool hinic5_ubus_is_virtfn(struct hinic5_adev *adev)
 {
 	hinic_ub_dev *udev = HINIC_TO_UB_DEV(adev->dev);
 	u16 dev_id = hinic5_ubus_get_device_id(adev);
-
 	if (dev_id == HINIC5_UDEV_DEVICE_ID_1825_VF)
 		return true;
 	if (dev_id == HINIC5_UDEV_DEVICE_ID_1872_VF)
@@ -479,17 +462,15 @@ int hinic5_ub_init_device_info(struct hinic5_adev *adev)
 {
 	hinic_ub_dev *udev = HINIC_TO_UB_DEV(adev->dev);
 
-	adev->info.id = (u64)((udev->guid.bits.seq_num >> HINIC5_CARD_ID_OFFSET) &
-			      HINIC5_CARD_ID_MASK);
+	adev->info.id = (u64)((udev->guid.bits.seq_num >> HINIC5_CARD_ID_OFFSET) & HINIC5_CARD_ID_MASK);
 
 	if (sizeof(udev->guid) != sizeof(adev->info.guid)) {
 		sdk_err(adev->dev, "guid size is not matched.\n");
 		return -EINVAL;
 	}
-	memcpy(&adev->info.guid, &udev->guid, sizeof(udev->guid));
+	memcpy(&adev->info.guid, &(udev->guid), sizeof(udev->guid));
 
-	sdk_info(adev->dev, "card_id: %lld, seq_num: %lld\n",
-		 adev->info.id, (u64)(udev->guid.bits.seq_num));
+	sdk_info(adev->dev, "card_id: %lld, seq_num: 0x%llx\n", adev->info.id, (u64)(udev->guid.bits.seq_num));
 	return 0;
 }
 
@@ -542,7 +523,7 @@ int hinic5_ubus_set_func_en(struct hinic5_adev *dst_dev, bool en, u16 vf_func_id
 
 	mutex_lock(&dst_dev->adev_mutex);
 	/* unload invalid vf func id */
-	if (!en && vf_func_id != hinic5_global_func_id(dst_dev->hwdev) &&
+	if (!en && (vf_func_id != hinic5_global_func_id(dst_dev->hwdev)) &&
 	    (strcmp(des_udev->driver->name, HINIC5_DRV_NAME) == 0)) {
 		pr_err("dst_dev func id:%u, vf_func_id:%u\n",
 		hinic5_global_func_id(dst_dev->hwdev), vf_func_id);
@@ -626,11 +607,28 @@ static int hinic5_ubus_resume(struct device *dev)
 
 static SIMPLE_DEV_PM_OPS(hinic5_ubus_pm_ops, hinic5_ubus_suspend, hinic5_ubus_resume);
 
+static void hinic5_ubus_shutdown(hinic_ub_dev *ubus_dev)
+{
+	struct hinic5_adev *adev = dev_get_drvdata(&ubus_dev->dev);
+
+	sdk_info(&ubus_dev->dev, "Ubus device shutdown start\n");
+	if (adev)
+		hinic5_shutdown_hwdev(adev->hwdev);
+
+	HINIC_UB_UE_ENABLE(ubus_dev, 0);
+	HINIC_UB_UNSET_HOST_INFO(ubus_dev);
+
+	if (adev)
+		hinic5_set_api_stop(adev->hwdev);
+	sdk_info(&ubus_dev->dev, "Ubus device shutdown end\n");
+}
+
 static struct ub_driver hinic5_ubus_driver = {
 	.name		= HINIC5_DRV_NAME,
 	.id_table	= hinic5_ubus_tbl,
 	.probe		= hinic5_ubus_probe,
 	.remove		= hinic5_ubus_remove,
+	.shutdown	= hinic5_ubus_shutdown,
 	.virt_configure	= hinic5_ubus_virt_configure,
 	.err_handler	= &hinic5_ubus_err_handler,
 	.driver		= {

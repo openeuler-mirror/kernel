@@ -4,8 +4,8 @@
  * File Name     : hinic5_ethtool_link_stats.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 ethtool link statistics implementation
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [NIC]" fmt
@@ -41,18 +41,12 @@ struct hinic5_ethtool_fec {
 };
 
 static struct hinic5_ethtool_fec hinic5_ethtool_fec_info[HINIC_ETHTOOL_FEC_INFO_LEN] = {
-	{PORT_FEC_NOT_SET,  0xFF},  /* The ethtool does not have the
-				     * corresponding enumeration variable
-				     */
+	{PORT_FEC_NOT_SET,  0xFF},  /* The ethtool does not have the corresponding enumeration variable */
 	{PORT_FEC_RSFEC,    0x32},  /* ETHTOOL_LINK_MODE_FEC_RS_BIT */
 	{PORT_FEC_BASEFEC,  0x33},  /* ETHTOOL_LINK_MODE_FEC_BASER_BIT */
 	{PORT_FEC_NOFEC,    0x31},  /* ETHTOOL_LINK_MODE_FEC_NONE_BIT */
-	{PORT_FEC_LLRSFEC,  0x4A},  /* ETHTOOL_LINK_MODE_FEC_LLRS_BIT:
-				     * Available only in later versions
-				     */
-	{PORT_FEC_AUTO,     0XFF}   /* The ethtool does not have the
-				     * corresponding enumeration variable
-				     */
+	{PORT_FEC_LLRSFEC,  0x4A},  /* ETHTOOL_LINK_MODE_FEC_LLRS_BIT: Available only in later versions */
+	{PORT_FEC_AUTO,     0XFF}   /* The ethtool does not have the corresponding enumeration variable */
 };
 
 static const u32 hinic5_mag_link_mode_ge[] = {
@@ -286,7 +280,7 @@ static int hinic5_link_speed_set(struct hinic5_nic_dev *nic_dev,
 					     GET_ADVERTISED_MODE);
 
 	err = hinic5_get_link_state(nic_dev->hwdev, &link_state);
-	if (err == 0 && link_state != 0) {
+	if ((err == 0) && (link_state != 0)) {
 		link_settings->speed =
 			port_info->speed < ARRAY_LEN(hw_to_ethtool_speed) ?
 			hw_to_ethtool_speed[port_info->speed] :
@@ -351,13 +345,15 @@ static int get_link_pause_settings(struct hinic5_nic_dev *nic_dev,
 	}
 
 	ETHTOOL_ADD_SUPPORTED_LINK_MODE(link_settings, Pause);
-	if (nic_pause.rx_pause != 0 && nic_pause.tx_pause != 0) {
+	if ((nic_pause.rx_pause != 0) && (nic_pause.tx_pause != 0)) {
 		ETHTOOL_ADD_ADVERTISED_LINK_MODE(link_settings, Pause);
 	} else if (nic_pause.tx_pause != 0) {
-		ETHTOOL_ADD_ADVERTISED_LINK_MODE(link_settings, Asym_Pause);
+		ETHTOOL_ADD_ADVERTISED_LINK_MODE(link_settings,
+						 Asym_Pause);
 	} else if (nic_pause.rx_pause != 0) {
 		ETHTOOL_ADD_ADVERTISED_LINK_MODE(link_settings, Pause);
-		ETHTOOL_ADD_ADVERTISED_LINK_MODE(link_settings, Asym_Pause);
+		ETHTOOL_ADD_ADVERTISED_LINK_MODE(link_settings,
+						 Asym_Pause);
 	}
 
 	return 0;
@@ -374,20 +370,17 @@ static void ethtool_add_supported_advertised_fec(struct cmd_link_settings *link_
 						 u32 fec, u8 cmd)
 {
 	u8 i;
-
 	for (i = 0; i < HINIC_ETHTOOL_FEC_INFO_LEN; i++) {
 		if ((fec & BIT(hinic5_ethtool_fec_info[i].hinic_fec_offset)) == 0)
 			continue;
-		if (is_bit_offset_defined(hinic5_ethtool_fec_info[i].ethtool_bit_offset) &&
-		    cmd == HINIC_ADVERTISED_FEC_CMD) {
-			set_bit(hinic5_ethtool_fec_info[i].ethtool_bit_offset,
-				link_settings->advertising);
-			return; /* There can be only one advertised fec mode. */
+		if ((is_bit_offset_defined(hinic5_ethtool_fec_info[i].ethtool_bit_offset) == true) &&
+			(cmd == HINIC_ADVERTISED_FEC_CMD)) {
+				set_bit(hinic5_ethtool_fec_info[i].ethtool_bit_offset, link_settings->advertising);
+				return; /* There can be only one advertised fec mode. */
 		}
-		if (is_bit_offset_defined(hinic5_ethtool_fec_info[i].ethtool_bit_offset) &&
-		    cmd == HINIC_SUPPORTED_FEC_CMD)
-			set_bit(hinic5_ethtool_fec_info[i].ethtool_bit_offset,
-				link_settings->supported);
+		if ((is_bit_offset_defined(hinic5_ethtool_fec_info[i].ethtool_bit_offset) == true) &&
+			(cmd == HINIC_SUPPORTED_FEC_CMD))
+			set_bit(hinic5_ethtool_fec_info[i].ethtool_bit_offset, link_settings->supported);
 	}
 }
 
@@ -418,9 +411,7 @@ static int get_link_settings(struct net_device *netdev,
 
 	hinic5_link_port_type(link_settings, port_info.port_type);
 
-	/* port_info.fec is bit offset, value is BIT(port_info.fec);
-	 * but port_info.supported_fec_mode is bit value
-	 */
+	/* port_info.fec is bit offset, value is BIT(port_info.fec); but port_info.supported_fec_mode is bit value */
 	hinic5_link_fec_type(link_settings, BIT(port_info.fec), port_info.supported_fec_mode);
 
 	link_settings->autoneg = port_info.autoneg_state == PORT_CFG_AN_ON ?

@@ -4,8 +4,8 @@
  * File Name     : hinic5_ethtool.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 ethtool interface implementation
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [NIC]" fmt
@@ -40,9 +40,9 @@ static void hinic5_get_drvinfo(struct net_device *netdev,
 	u8 mgmt_ver[HINIC5_MGMT_VERSION_MAX_LEN] = {0};
 	int err;
 
-	strscpy(info->driver, HINIC5_NIC_DRV_NAME, sizeof(info->driver));
-	strscpy(info->version, HINIC5_NIC_DRV_VERSION, sizeof(info->version));
-	strscpy(info->bus_info, dev_name(nic_dev->lld_dev->dev), sizeof(info->bus_info));
+	strlcpy(info->driver, HINIC5_NIC_DRV_NAME, sizeof(info->driver));
+	strlcpy(info->version, HINIC5_NIC_DRV_VERSION, sizeof(info->version));
+	strlcpy(info->bus_info, dev_name(nic_dev->lld_dev->dev), sizeof(info->bus_info));
 
 	err = hinic5_get_mgmt_version(nic_dev->hwdev, mgmt_ver,
 				      HINIC5_MGMT_VERSION_MAX_LEN,
@@ -54,7 +54,7 @@ static void hinic5_get_drvinfo(struct net_device *netdev,
 
 	err = snprintf(info->fw_version, sizeof(info->fw_version), "%s", mgmt_ver);
 	if (err < 0)
-		nicif_err(nic_dev, drv, netdev, "Failed to snprintf_s fw version\n");
+		nicif_err(nic_dev, drv, netdev, "Failed to snprintf fw version\n");
 }
 
 static u32 hinic5_get_msglevel(struct net_device *netdev)
@@ -157,7 +157,7 @@ static int check_ringparam_valid(struct net_device *netdev,
 {
 	struct hinic5_nic_dev *nic_dev = netdev_priv(netdev);
 
-	if (ring->rx_jumbo_pending != 0 || ring->rx_mini_pending != 0) {
+	if ((ring->rx_jumbo_pending != 0) || (ring->rx_mini_pending != 0)) {
 		nicif_err(nic_dev, drv, netdev,
 			  "Unsupported rx_jumbo_pending/rx_mini_pending\n");
 		return -EINVAL;
@@ -177,8 +177,7 @@ static int check_ringparam_valid(struct net_device *netdev,
 	return 0;
 }
 
-__weak int hinic5_set_ringparam_pre_hook(struct net_device *netdev,
-					 struct ethtool_ringparam *ring)
+__attribute__((weak)) int hinic5_set_ringparam_pre_hook(struct net_device *netdev, struct ethtool_ringparam *ring)
 {
 	return 0;
 }
@@ -353,11 +352,7 @@ static void hinic5_get_pauseparam(struct net_device *netdev,
 		nicif_err(nic_dev, drv, netdev,
 			  "Failed to get pauseparam from hw\n");
 	} else {
-		/* For compatibility with 23v200,
-		 * the retrieved auto_neg is port rate autonegotiation (may be on),
-		 * but the actual auto_neg that should be retrieved is pause frame autonegotiation (off),
-		 * so it is directly set to off on the driver side
-		 */
+		/* For compatibility with 23v200, the auto_neg obtained is port rate auto-negotiation (may be on), but the actual auto_neg should be pause frame auto-negotiation (off), so it is uniformly set to off on the driver side */
 		pause->autoneg = AUTONEG_DISABLE;
 		pause->rx_pause = nic_pause.rx_pause;
 		pause->tx_pause = nic_pause.tx_pause;
@@ -383,7 +378,7 @@ static int hinic5_set_pauseparam(struct net_device *netdev,
 		return -EFAULT;
 	}
 
-	/* For compatibility with old version, configure according to port rate autonegotiation state */
+	/* Compatible with old version, configured by port rate auto-negotiation status */
 	nic_pause.auto_neg = port_info.autoneg_state;
 	nic_pause.rx_pause = (u8)pause->rx_pause;
 	nic_pause.tx_pause = (u8)pause->tx_pause;
@@ -460,11 +455,10 @@ static int hinic5_get_module_eeprom(struct net_device *netdev,
 	u8 sfp_data[STD_SFP_INFO_MAX_SIZE];
 	int err;
 
-	if (ee->len == 0 ||
-	    ((ee->len + ee->offset) > STD_SFP_INFO_MAX_SIZE) || ee->len > PAGE_SIZE)
+	if ((ee->len == 0) || ((ee->len + ee->offset) > STD_SFP_INFO_MAX_SIZE) || ee->len > PAGE_SIZE)
 		return -EINVAL;
 
-	memset(data, 0, ee->len);
+	(void)memset(data, 0, ee->len);
 
 	err = hinic5_get_sfp_eeprom(nic_dev->hwdev, (u8 *)sfp_data, ee->len, ee->offset);
 	if (err != 0)
@@ -472,7 +466,7 @@ static int hinic5_get_module_eeprom(struct net_device *netdev,
 
 	memcpy(data, sfp_data, ee->len);
 
-	return err == 0 ? 0 : -ENOMEM;
+	return 0;
 }
 #endif /* ETHTOOL_GMODULEEEPROM */
 
@@ -487,8 +481,9 @@ static int hinic5_get_module_eeprom_by_page(struct net_device *dev,
 	u32 offset;
 	u32 len;
 	int ret;
+	u32 target_page_id = 0;
 
-	if (!page_data || !page_data->data)
+	if (page_data == NULL || page_data->data == NULL)
 		return -EINVAL;
 
 	page_id = page_data->page;
@@ -496,15 +491,17 @@ static int hinic5_get_module_eeprom_by_page(struct net_device *dev,
 	len = page_data->length;
 	i2c_address = page_data->i2c_address;
 
-	if (i2c_address == SFF8079_I2C_ADDRESS_HIGH)
+	if (i2c_address == SFF8079_I2C_ADDRESS_HIGH) {
 		page_id = HINIC5_ETHTOOL_PAGE_A2H;
-	memset(page_data->data, 0, len);
+	}
+	(void)memset(page_data->data, 0, len);
 
-	ret = hinic5_eeprom_page_check(page_id, offset, len);
-	if (ret != 0)
-		return ret;
+	if (page_id == QSFP_CMIS_PAGE_00H && offset == ETHTOOL_EEPROM_PAGE_L00_OFFSET)
+		target_page_id = page_id;
+	else
+		target_page_id = page_id + 1;
 
-	ret = hinic5_get_cmis_eeprom_by_page(nic_dev->hwdev, page_id, offset, page_data->data, len);
+	ret = hinic5_get_cmis_eeprom_by_page(nic_dev->hwdev, target_page_id, page_data->data, len);
 	if (ret != 0)
 		return ret;
 	return len;
@@ -547,10 +544,8 @@ static int hinic5_get_ts_info(struct net_device *netdev, struct ethtool_ts_info 
 static const struct ethtool_ops hinic5_ethtool_ops = {
 #ifdef SUPPORTED_COALESCE_PARAMS
 	.supported_coalesce_params = ETHTOOL_COALESCE_USECS |
-				    ETHTOOL_COALESCE_PKT_RATE_RX_USECS |
-				    ETHTOOL_COALESCE_MAX_FRAMES |
-				    ETHTOOL_COALESCE_USECS_LOW_HIGH |
-				    ETHTOOL_COALESCE_MAX_FRAMES_LOW_HIGH,
+				    ETHTOOL_COALESCE_PKT_RATE_RX_USECS | ETHTOOL_COALESCE_MAX_FRAMES |
+				    ETHTOOL_COALESCE_USECS_LOW_HIGH | ETHTOOL_COALESCE_MAX_FRAMES_LOW_HIGH,
 #endif
 #ifdef ETHTOOL_GLINKSETTINGS
 #ifndef XENSERVER_HAVE_NEW_ETHTOOL_OPS
@@ -665,10 +660,8 @@ static const struct ethtool_ops_ext hinic5_ethtool_ops_ext = {
 static const struct ethtool_ops hinic5vf_ethtool_ops = {
 #ifdef SUPPORTED_COALESCE_PARAMS
 	.supported_coalesce_params = ETHTOOL_COALESCE_USECS |
-				     ETHTOOL_COALESCE_PKT_RATE_RX_USECS |
-				     ETHTOOL_COALESCE_MAX_FRAMES |
-				     ETHTOOL_COALESCE_USECS_LOW_HIGH |
-				     ETHTOOL_COALESCE_MAX_FRAMES_LOW_HIGH,
+				     ETHTOOL_COALESCE_PKT_RATE_RX_USECS | ETHTOOL_COALESCE_MAX_FRAMES |
+				     ETHTOOL_COALESCE_USECS_LOW_HIGH | ETHTOOL_COALESCE_MAX_FRAMES_LOW_HIGH,
 #endif
 #ifdef ETHTOOL_GLINKSETTINGS
 #ifndef XENSERVER_HAVE_NEW_ETHTOOL_OPS

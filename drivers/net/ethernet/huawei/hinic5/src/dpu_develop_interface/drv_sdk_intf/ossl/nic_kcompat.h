@@ -4,12 +4,12 @@
  * File Name     : nic_kcompat.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Temporary file - The actual nic_kcompat.h is generated during build.
  */
 
-#ifndef NIC_KCOMPAT_H
-#define NIC_KCOMPAT_H
+#ifndef _NIC_KCOMPAT_H_
+#define _NIC_KCOMPAT_H_
 #define HAVE_NETIF_NAPI_NO_WEIGHT 1
 #define HAVE_NETIF_NAPI_ADD_WEIGHT 1
 #define HAVE_NDO_TX_TIMEOUT_TXQ 1
@@ -51,6 +51,8 @@
 #define HAVE_ETH_GET_HEADLEN_FUNC 1
 #define NEED_ETH_P_8021AD 1
 #define HAVE_VM_FLAGS_SET 1
+#define HAVE_DIM 1
+#define HAVE_DIM_SUPPORT 1
 #define NEED_PDE_DATA 1
 #define HAVE_PDE_DATA_LOWERCASE 1
 #define HAVE_NETIF_F_RXHASH 1
@@ -66,4 +68,6 @@
 #define HAVE_PP_FLAG_PAGE_FRAG 1
 #define HAVE_FLOW_ACTION_PRIORITY 1
 #define HAVE_KOBJ_TYPE_DEFAULT_GROUPS 1
-#endif /* NIC_KCOMPAT_H */
+// nic_kcompat.h is an intermediate header file
+
+#endif /* _NIC_KCOMPAT_H_ */

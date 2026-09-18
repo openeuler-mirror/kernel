@@ -4,8 +4,8 @@
  * File Name     : hinic5_ubus.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : UBUS driver interface declarations
  */
 
 #ifndef HINIC5_UBUS_H
@@ -27,7 +27,7 @@ enum ubus_device_type {
 	UBUS_DEVICE_TYPE_INVALID
 };
 
-// TODO: UB B173 and later version interface differences, need to define UB_SUPPORT_ENTITY for 173 and later
+// TODO: UB interface differences after B173, define UB_SUPPORT_ENTITY required for 173 and later
 #ifdef UB_SUPPORT_ENTITY
 typedef struct ub_entity hinic_ub_dev;
 #define HINIC_UB_UE_ENABLE(ubus_dev, enable)    ub_entity_enable(ubus_dev, enable)
@@ -60,8 +60,7 @@ int hinic5_ubus_set_func_en(struct hinic5_adev *dst_dev, bool en, u16 vf_func_id
 struct hinic5_adev *hinic5_ubus_get_vf_adev_by_pf(struct hinic5_adev *adev, u16 func_id);
 int hinic5_ubus_get_vf_num(struct hinic5_adev *adev);
 u16 hinic5_ubus_get_device_id(struct hinic5_adev *adev);
-int hinic5_ubus_irq_vectors_alloc(struct hinic5_adev *adev,
-				  void *entry, u32 irqs_min, u32 irqs_num);
+int hinic5_ubus_irq_vectors_alloc(struct hinic5_adev *adev, void *entry, u32 irqs_min, u32 irqs_num);
 void hinic5_ubus_irq_vectors_free(struct hinic5_adev *adev);
 int hinic5_ubus_irq_vector(struct hinic5_adev *adev, u32 idx);
 int hinic5_ub_init_device_info(struct hinic5_adev *adev);

@@ -4,8 +4,8 @@
  * File Name     : hinic5_hw_comm.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Hardware common interface definitions for the hinic5 driver.
  */
 
 #ifndef HINIC5_COMM_H
@@ -70,9 +70,9 @@ int hinic5_get_board_info(void *hwdev, struct hinic5_board_info *info, u16 chann
 
 /**
  * @brief Initialize HT GPA
- * @param hwdev device handle
+ * @param hwdev Device handle
  *
- * @return whether success
+ * @return Whether successful
  *  @retval zero: success
  *  @retval non-zero: failure
  */
@@ -80,8 +80,10 @@ int hinic5_ht_gpa_init(struct hinic5_hwdev *hwdev);
 
 /**
  * @brief Deinitialize HT GPA
- * @param hwdev device handle
+ * @param hwdev Device handle
  */
 void hinic5_ht_gpa_deinit(struct hinic5_hwdev *hwdev);
+
+int hisdk5_get_udie_id(struct hinic5_hwdev *hwdev, u64 *udie_id);
 
 #endif

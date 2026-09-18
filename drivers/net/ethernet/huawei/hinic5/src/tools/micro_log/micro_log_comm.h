@@ -4,8 +4,8 @@
  * File Name     : micro_log_comm.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   : Micro log common header
+ * Last Modified : 2026/09/16
+ * Description   :
  */
 
 #ifndef MICRO_LOG_COMM_H_
@@ -13,12 +13,9 @@
 
 #include "ossl_knl.h"
 
-#define microlog_info(fmt, ...) \
-	pr_info("[MICRO_LOG][INFO][%s:%d]:" fmt "\n", __func__, __LINE__, ##__VA_ARGS__)
-#define microlog_warning(fmt, ...) \
-	pr_warn("[MICRO_LOG][WARN][%s:%d]:" fmt "\n", __func__, __LINE__, ##__VA_ARGS__)
-#define microlog_err(fmt, ...) \
-	pr_err("[MICRO_LOG][ERROR][%s:%d]:" fmt "\n", __func__, __LINE__, ##__VA_ARGS__)
+#define microlog_info(fmt, ...) pr_info("[MICRO_LOG][INFO][%s:%d]:" fmt "\n", __FUNCTION__, __LINE__, ##__VA_ARGS__)
+#define microlog_warning(fmt, ...) pr_warn("[MICRO_LOG][WARN][%s:%d]:" fmt "\n", __FUNCTION__, __LINE__, ##__VA_ARGS__)
+#define microlog_err(fmt, ...) pr_err("[MICRO_LOG][ERROR][%s:%d]:" fmt "\n", __FUNCTION__, __LINE__, ##__VA_ARGS__)
 
 #define MICRO_LOG_VIR_ADDR 0
 #define MICRO_LOG_PHY_ADDR 1
@@ -49,10 +46,10 @@ struct micro_log_info {
 	u32 all_ci;
 };
 
-/* 1) state = 0, do not print logs
+/* 1) state = 0, no log printing;
  * 2) state = 1, print err logs
- * 3) state = 2, warn logs: include err and warn logs
- * 4) state = 3, info logs: include err, warn, and info logs
+ * 3) state = 2, warn logs: includes err and warn logs
+ * 4) state = 3, info logs: includes err, warn and info logs
  */
 enum log_level_type {
 	ALL_LOG_DROP = 0,
@@ -68,7 +65,6 @@ struct log_level_message {
 
 int hinic5_set_microlog_cmdq(void *hwdev, void *microlog_msg, size_t msg_len, u8 cmd);
 int hinic5_microlog_gpa_set(void *hwdev, u64 p_addr, u8 lt_index);
-int hinic5_microlog_ctrl_info_set(void *hwdev, u8 microlog_en, u32 ci_index,
-				  enum log_level_type state);
+int hinic5_microlog_ctrl_info_set(void *hwdev, u8 microlog_en, u32 ci_index, enum log_level_type state);
 
 #endif /* MICRO_LOG_COMM_H_ */

@@ -4,8 +4,8 @@
  * File Name     : hinic5_ubus_sriov.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : UBUS SR-IOV related functions
  */
 
 #ifdef __UBUS_DRIVER__
@@ -59,7 +59,6 @@ static void hinic5_ubus_event_callback_dev(struct hinic5_sriov_info *sriov_info,
 {
 	struct hinic5_event_info event = {0};
 	sriov_info->sriov_enabled = true;
-
 	sriov_info->num_vfs = (u32)num_vfs;
 
 	event.service = EVENT_SRV_COMM;
@@ -110,8 +109,7 @@ int hinic5_ubus_sriov_enable(hinic_ub_dev *ubus_dev, int ue_idx)
 	}
 
 	if (test_and_set_bit(HINIC5_SRIOV_ENABLE, &sriov_info->state)) {
-		sdk_err(&ubus_dev->dev,
-			"SR-IOV enable in process, please wait, ue_idx %d\n", ue_idx);
+		sdk_err(&ubus_dev->dev, "SR-IOV enable in process, please wait, ue_idx %d\n", ue_idx);
 		return -EPERM;
 	}
 
@@ -121,7 +119,7 @@ int hinic5_ubus_sriov_enable(hinic_ub_dev *ubus_dev, int ue_idx)
 		return -ERANGE;
 	}
 
-	/* If not first enable, do not reinitialize FUNC MAILBOX channel */
+	/* If this is not the first ENABLE, do not initialize the FUNC MAILBOX channel again */
 	if (!sriov_info->sriov_enabled) {
 		err = hinic5_ubus_init_func_mbox_channel(hwdev);
 		sriov_info->first_ue_idx = ue_idx;
@@ -133,8 +131,7 @@ int hinic5_ubus_sriov_enable(hinic_ub_dev *ubus_dev, int ue_idx)
 
 	err = hinic5_ubus_init_vf_hw(hwdev, tmp_vf_id, tmp_vf_id);
 	if (err != 0) {
-		sdk_err(&ubus_dev->dev,
-			"Failed to init vf in hardware before enable sriov, error %d\n", err);
+		sdk_err(&ubus_dev->dev, "Failed to init vf in hardware before enable sriov, error %d\n", err);
 		clear_bit(HINIC5_SRIOV_ENABLE, &sriov_info->state);
 		return err;
 	}
@@ -149,6 +146,7 @@ int hinic5_ubus_sriov_enable(hinic_ub_dev *ubus_dev, int ue_idx)
 	hinic5_ubus_event_callback_dev(sriov_info, hwdev, (pre_existing_vfs + 1));
 	return 0;
 }
+
 
 int hinic5_ubus_sriov_disable(hinic_ub_dev *ubus_dev, int ue_idx)
 {
@@ -184,8 +182,7 @@ int hinic5_ubus_sriov_disable(hinic_ub_dev *ubus_dev, int ue_idx)
 	event.type = EVENT_COMM_SRIOV_STATE_CHANGE;
 	((struct hinic5_sriov_state_info *)(void *)event.event_data)->enable = 0;
 	((struct hinic5_sriov_state_info *)(void *)event.event_data)->vf_id = tmp_vf_id;
-	((struct hinic5_sriov_state_info *)(void *)event.event_data)->num_vfs =
-									(u16)(pre_existing_vfs - 1);
+	((struct hinic5_sriov_state_info *)(void *)event.event_data)->num_vfs = (u16)(pre_existing_vfs - 1);
 	hinic5_event_callback(hwdev, &event);
 
 	/* disable iov and allow time for transactions to clear */
@@ -198,19 +195,20 @@ int hinic5_ubus_sriov_disable(hinic_ub_dev *ubus_dev, int ue_idx)
 
 	sriov_info->num_vfs = pre_existing_vfs - 1;
 
-	if (sriov_info->num_vfs == 0)
+	if (sriov_info->num_vfs == 0) {
 		sriov_info->sriov_enabled = 0;
+	}
 	clear_bit(HINIC5_SRIOV_DISABLE, &sriov_info->state);
 	return 0;
 }
 
 /*
-	UBUS sriov implementation differs from PCIE, UBUS supports dynamic vf number modification
-	1) pcie needs echo 2 --> echo 0 --> echo 3, ubus does not,
-		ub_dev maintains vdevice list with start_vf_idx and end_vf_idx
-	2) pcie echo only calls driver interface once per echo,
-		decides how many vfs to enable based on vf_num parameter;
-		ubus echo calls driver interface multiple times based on vf_num
+	The UBUS SR-IOV implementation differs from PCIE; UBUS supports dynamically modifying the VF count.
+	1) PCIE requires echo 2 --> echo 0 --> echo 3, while UBUS does not; ub_dev maintains a vdevice list,
+	   start_vf_idx and end_vf_idx.
+	2) PCIE calls the driver interface only once per echo, and determines how many VFs to enable based on
+	   the vf_num parameter; UBUS determines how many times to call the driver interface based on vf_num
+	   for each echo.
  */
 int hinic5_ubus_virt_configure(hinic_ub_dev *ubus_dev, int ue_idx, bool is_en)
 {
@@ -229,14 +227,14 @@ int hinic5_ubus_virt_configure(hinic_ub_dev *ubus_dev, int ue_idx, bool is_en)
 		return -EFAULT;
 
 	/* The ubus framework have ensure that only primary entity can come
-	 * here, so we not need to check is this a primary entity again.
-	 */
+	* here, so we not need to check is this a primary entity again. */
 	dev_info(&ubus_dev->dev, "ubase virt configure set idx = %d en = %d.\n",
 		 ue_idx, is_en);
 
-	if (!is_en)
+	if (!is_en) {
 		return hinic5_ubus_sriov_disable(ubus_dev, ue_idx);
-	else
+	} else {
 		return hinic5_ubus_sriov_enable(ubus_dev, ue_idx);
+	}
 }
 #endif
