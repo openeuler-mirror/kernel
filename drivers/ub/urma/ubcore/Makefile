@@ -4,6 +4,10 @@
 #
 ccflags-y += -I$(src)
 
+ifeq ($(MIRROR_ENABLE), enable)
+	ccflags-y += -DMIRROR_ENABLE
+endif
+
 ubcore-objs := \
 ubcore_perf.o \
 ubcore_workqueue.o \
