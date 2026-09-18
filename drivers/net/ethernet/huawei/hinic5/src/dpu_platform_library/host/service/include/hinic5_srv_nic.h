@@ -4,8 +4,8 @@
  * File Name     : hinic5_srv_nic.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : nic service interface
  */
 
 #ifndef HINIC5_SRV_NIC_H
@@ -19,11 +19,11 @@
 #endif
 
 /**
- * @brief struct hinic5_event_link_info Port link event information
- * @details Port link information obtained after link event reporting
+ * @brief struct hinic5_event_link_info port link event information
+ * @details Port link information obtained after link event is reported
  */
 struct hinic5_event_link_info {
-	u8 valid; /**< Whether structure data is valid */
+	u8 valid; /**< Whether struct data is valid */
 	u8 port_type; /**< Port type */
 	u8 autoneg_cap; /**< Auto-negotiation capability */
 	u8 autoneg_state; /**< Auto-negotiation state */
@@ -44,8 +44,8 @@ enum port_module_event_type {
 };
 
 /**
- * @brief struct hinic5_port_module_event Port event information
- * @details DCB event reported DCB information
+ * @brief struct hinic5_port_module_event port event information
+ * @details DCB information reported by DCB event
  */
 struct hinic5_port_module_event {
 	enum port_module_event_type type; /**< Port cable event type */
@@ -54,7 +54,7 @@ struct hinic5_port_module_event {
 
 /**
  * @brief struct hinic5_dcb_info DCB information
- * @details DCB event reported DCB information
+ * @details DCB information reported by DCB event
  */
 struct hinic5_dcb_info {
 	u8 dcb_on; /**< DCB enable status */
@@ -71,69 +71,66 @@ enum hinic5_nic_event_type {
 
 #if !defined(__UEFI__) && !defined(__VMWARE__)
 /**
- * @brief Get lld_dev structure pointer according to netdev
+ * @brief Get lld_dev struct pointer by netdev
  *
- * @param netdev netdev structure pointer
+ * @param netdev netdev struct pointer
  *
- * @details Find lld_dev by netdev matching
+ * @details Match and find lld_dev by netdev
  *
- * @attention: This interface return will not increment lld_dev reference count++,
- * 	       If lld_dev is released during use, may lead to wild pointer access
+ * @attention: This interface does not increment the lld_dev reference count. If lld_dev is freed during use, it may cause a dangling pointer access
  *
- * @return: Returns lld_dev structure pointer when successfully matched to netdev, otherwise returns NULL
+ * @return: Returns lld_dev struct pointer when netdev is successfully matched, otherwise returns NULL
  */
 struct hinic5_lld_dev *hinic5_get_lld_dev_by_netdev(struct net_device *netdev);
 #endif
 
 /**
- * @brief Delete device mac interface
+ * @brief Delete device MAC interface
  *
  * @param hwdev device pointer to hwdev
- * @param mac_addr mac address
- * @param vlan_id vlan id range[0~4095]
+ * @param mac_addr MAC address
+ * @param vlan_id vlan id range [0~4095]
  * @param func_id global function index
- * @param channel mailbox send used channel id
+ * @param channel channel id, channel id used for mailbox sending
  *
- * @details Delete corresponding function mac address
+ * @details Delete the MAC address of the corresponding function
  *
- * @attention: Function internal involves sending mailbox messages which will sleep,
- * 	       Prohibited in interrupt context and other processes that do not allow sleeping
+ * @attention: This function involves sending mailbox messages and will sleep. It is forbidden to call it in interrupt context or other contexts where sleeping is not allowed
  *
- * @return: Delete MAC returns success or failure.
- *     @retval 0 Success
- *     @retval non-0 Failure
+ * @return: Returns success or failure of deleting MAC.
+ *     @retval 0 success
+ *     @retval non-0 failure
  */
 int hinic5_del_mac(void *hwdev, const u8 *mac_addr, u16 vlan_id, u16 func_id, u16 channel);
 
 /**
- * @brief Get device DCB state
+ * @brief Get device DCB status
  *
  * @param hwdev device pointer to hwdev
- * @param dcb_state: DCB state information
+ * @param dcb_state: DCB status information
  *
- * @details Get device DCB state
+ * @details Get device DCB status
  *
  * @attention: NA
- * @return: DCB state get returns success or failure
- *     @retval 0 Success
- *     @retval non-0 Failure
+ * @return: Returns success or failure of getting DCB status
+ *     @retval 0 success
+ *     @retval non-0 failure
  */
 int hinic5_get_dcb_state(void *hwdev, struct hinic5_dcb_state *dcb_state);
 
 /**
- * @brief Get PF DCB state
+ * @brief Get PF DCB status
  *
  * @param hwdev device pointer to hwdev
- * @param dcb_state: DCB state information
+ * @param dcb_state: DCB status information
  *
- * @details VF sends to PF through mailbox info, get PF DCB state information
+ * @details VF sends mailbox message to PF to get PF DCB status information
  *
- * @attention: Only VF supported, PF call returns failure; Function internal involves sending mailbox messages which will sleep,
- * 	       Prohibited in interrupt context and other processes that do not allow sleeping
+ * @attention: Only supported by VF, PF call returns failure; This function involves sending mailbox messages and will sleep. It is forbidden to call it in interrupt context or other contexts where sleeping is not allowed
  *
- * @return: VF get PF DCB state returns success or failure
- *     @retval 0 Success
- *     @retval non-0 Failure
+ * @return: Returns success or failure of VF getting PF DCB status
+ *     @retval 0 success
+ *     @retval non-0 failure
  */
 int hinic5_get_pf_dcb_state(void *hwdev, struct hinic5_dcb_state *dcb_state);
 
@@ -141,21 +138,37 @@ int hinic5_get_pf_dcb_state(void *hwdev, struct hinic5_dcb_state *dcb_state);
  * @brief Get corresponding cos value by priority
  *
  * @param hwdev device pointer to hwdev
- * @param pri Priority PCP mode[0~7] DSCP mode[0~63]
- * @param cos Output cos value [0~7]
+ * @param pri priority, PCP mode [0~7], DSCP mode [0~63]
+ * @param cos output cos value [0~7]
  *
- * @details Query corresponding cos value through user input pri, in PCP mode pri valid value is 0~7,
- * 	    In DSCP mode, pri valid value is 0~63
+ * @details Query the corresponding cos value by user-input pri. In PCP mode, valid pri range is 0~7. In DSCP mode, valid pri range is 0~63
  *
  * @attention: NA
  *
- * @return: pri map cos query success or failure.
- *     @retval 0 Success
- *     @retval non-0 Failure
+ * @return: Returns success or failure of pri-to-cos mapping query.
+ *     @retval 0 success
+ *     @retval non-0 failure
  */
 int hinic5_get_cos_by_pri(void *hwdev, u8 pri, u8 *cos);
 
-/* TO DO The following interfaces to be deleted */
+/**
+ * @brief Get corresponding valid dscp value by cos value
+ *
+ * @param hwdev device pointer to hwdev
+ * @param cos input cos value [0~7]
+ * @param dscp output dscp value [0~63]
+ *
+ * @details Query the corresponding dscp value by cos, taking the first dscp value mapped to this cos. Only valid when dcb is enabled and dscp mode is used.
+ *
+ * @attention: NA
+ *
+ * @return: Returns success or failure of cos-to-dscp mapping query.
+ *     @retval 0 success
+ *     @retval non-0 failure
+ */
+int hinic5_get_dscp_by_cos(void *hwdev, u8 cos, u8 *dscp);
+
+/* TO DO The following interfaces are to be deleted */
 #if !defined(__UEFI__) && !defined(__VMWARE__)
 typedef u8 (*hinic5_cqe_cb)(void *lld_dev, void *data);
 
@@ -175,7 +188,6 @@ enum hinic5_bonding_event_e {
 		BOND_EVENT_OPEN = 2,
 		BOND_EVENT_CLOSE = 3
 };
-
 /* *
  * @brief hinic5_bonding_register_service_func - bonding event register
  * @param type: hinic5 service type
@@ -184,8 +196,7 @@ enum hinic5_bonding_event_e {
  * @retval non-zero: failure
  */
 int hinic5_bonding_register_service_func(enum hinic5_service_type type, void (*func)(void *netdev,
-					 u32 bond_id, u8 new_slaves,
-					 enum hinic5_bonding_event_e event));
+									     u32 bond_id, u8 new_slaves, enum hinic5_bonding_event_e event));
 
 /* *
  * @brief hinic5_bonding_unregister_service_func - bonding event unregister
@@ -232,4 +243,12 @@ int hinic5_get_phy_port_id_by_netdev(struct net_device *netdev, uint8_t *phy_por
  */
 int hinic5_get_phy_port_stats(void *hwdev, struct mag_cmd_port_stats *stats);
 
+/* *
+ * @brief hinic5_set_veb_offload - set veb offload
+ * @param hwdev: device pointer to hwdev
+ * @param veb_offload_status:  veb offload status
+ * @retval zero: success
+ * @retval non-zero: failure
+ */
+int hinic5_set_veb_offload(void *hwdev, u16 veb_offload_status);
 #endif

@@ -4,8 +4,8 @@
  * File Name     : hinic5_devlink.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : devlink interface declarations for firmware update and configuration
  */
 
 #ifndef HINIC5_DEVLINK_H
@@ -16,7 +16,6 @@
 
 #define FW_MAGIC_NUM           0x5a5a1100
 #define FW_IMAGE_HEAD_SIZE     4096
-#define FW_FRAGMENT_MAX_LEN    1536
 #define FW_CFG_DEFAULT_INDEX   0xFF
 #define FW_TYPE_MAX_NUM        0x40
 #define FW_CFG_MAX_INDEX       7
@@ -33,8 +32,7 @@ enum hinic5_devlink_param_id {
 #define IMAGE_MPU_ALL_IN (BIT_ULL(UP_FW_UPDATE_UP_TEXT) | \
 			  BIT_ULL(UP_FW_UPDATE_UP_DATA) | \
 			  BIT_ULL(UP_FW_UPDATE_UP_DICT))
-// BIT_ULL(UP_FW_UPDATE_MPU_CNT_DICT)),
-// cnt index file integrity check needs consideration, temporarily not added for compatibility
+// BIT_ULL(UP_FW_UPDATE_MPU_CNT_DICT)), needs to consider the integrity verification of cnt index file, for compatibility consideration, not added for now
 
 #define IMAGE_NPU_ALL_IN (BIT_ULL(UP_FW_UPDATE_TILE_PCPTR) | \
 			  BIT_ULL(UP_FW_UPDATE_TILE_TEXT) |  \
@@ -43,8 +41,7 @@ enum hinic5_devlink_param_id {
 			  BIT_ULL(UP_FW_UPDATE_PPE_STATE) |  \
 			  BIT_ULL(UP_FW_UPDATE_PPE_BRANCH) | \
 			  BIT_ULL(UP_FW_UPDATE_PPE_EXTACT))
-// BIT_ULL(UP_FW_UPDATE_NPU_CNT_DICT)),
-// cnt index file integrity check needs consideration, temporarily not added for compatibility
+// BIT_ULL(UP_FW_UPDATE_NPU_CNT_DICT), needs to consider the integrity verification of cnt index file, for compatibility consideration, not added for now
 
 #define IMAGE_COLD_SUB_MODULES_MUST_IN (IMAGE_MPU_ALL_IN | IMAGE_NPU_ALL_IN)
 

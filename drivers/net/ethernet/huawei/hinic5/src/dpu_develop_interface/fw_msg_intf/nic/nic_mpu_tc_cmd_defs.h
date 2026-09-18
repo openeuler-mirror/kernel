@@ -4,8 +4,8 @@
  * File Name     : nic_mpu_tc_cmd_defs.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : NIC MPU TC command definitions
  */
 
 #ifndef NIC_MPU_TC_CMD_DEFS_H
@@ -34,7 +34,7 @@ enum tcam_clock_gating_status {
 	TCAM_CLOCK_GATING_ENABLED
 };
 
-/* Action address in struct hinic5_tc_default_action_info */
+/* action address in struct hinic5_tc_default_action_info */
 #define ACTION_REG_TX1_1 0
 #define ACTION_REG_TX1_2 1
 #define ACTION_REG_TX1_3 2
@@ -72,7 +72,7 @@ enum pfe_cnt_ops {
 	PFE_CNT_OPS_MAX
 };
 
-/* TCAM 3 frequency modes: 1:500MHz, 2:250MHz, 3:125MHz */
+/* TCAM 3 frequencies: 1:500MHz, 2:250MHz, 3:125MHz */
 #define MAX_PFE_TCAM_FREQ_MODE_NUM 3
 
 enum pfe_tcam_freq_ops {

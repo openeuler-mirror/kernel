@@ -4,7 +4,7 @@
  * File Name     : npu_cmdq_base_defs.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
+ * Last Modified : 2026/09/16
  * Description   : common command queue interface
  */
 
@@ -71,8 +71,7 @@ union cmdq_wqe_cs_dw1 {
 		u32 arm : 1;      // [16]
 		u32 rsvd : 14;    // [30:17]
 		u32 obit : 1;     // [31]
-	} wb;                 // The uCode writes back the structure of the CS_DW1.
-			      // The driver reads and uses the structure.
+	} wb;                 // The uCode writes back the structure of the CS_DW1. The driver reads and uses the structure.
 	u32 val;
 };
 

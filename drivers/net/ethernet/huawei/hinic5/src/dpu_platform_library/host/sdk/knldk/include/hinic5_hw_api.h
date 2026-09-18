@@ -4,8 +4,8 @@
  * File Name     : hinic5_hw_api.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Hardware API definitions for the hinic5 driver.
  */
 
 #ifndef HINIC5_HW_API_H

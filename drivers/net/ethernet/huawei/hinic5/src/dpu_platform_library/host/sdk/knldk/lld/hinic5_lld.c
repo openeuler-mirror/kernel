@@ -4,8 +4,8 @@
  * File Name     : hinic5_lld.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : LLD module for HINIC5 driver
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [COMM]" fmt
@@ -35,7 +35,7 @@
 #include "hinic5_dev_mgmt.h"
 #include "hinic5_nictool.h"
 #include "hinic5_hw.h"
-#include "hinic5_hinic5_vram.h"
+#include "hinic5_vram.h"
 #include "hinic5_fast_msg_init.h"
 #include "hinic5_profile.h"
 #include "hinic5_hwdev.h"
@@ -46,11 +46,13 @@
 #include "hinic5_typedef_inner.h"
 #include "hinic5_lld_private.h"
 #include "hinic5_hw_comm.h"
+#include "hinic5_micro_log.h"
+#include "hisdk5_lld.h"
 #include "hinic5_lld.h"
 
-static bool use_hinic5_vram;
-module_param(use_hinic5_vram, bool, 0644);
-MODULE_PARM_DESC(use_hinic5_vram, "use HINIC5_VRAM or not (only used in sdi_nanoos) - default is false");
+static bool use_vram;
+module_param(use_vram, bool, 0644);
+MODULE_PARM_DESC(use_vram, "use VRAM or not (only used in sdi_nanoos) - default is false");
 
 static bool disable_attach;
 module_param(disable_attach, bool, 0444);
@@ -77,29 +79,28 @@ MODULE_VERSION(HINIC5_DRV_VERSION);
 MODULE_LICENSE("GPL");
 
 #if !(defined(HAVE_SRIOV_CONFIGURE) || defined(HAVE_RHEL6_SRIOV_CONFIGURE))
-static DEVICE_ATTR(sriov_numvfs, 0644,
+static DEVICE_ATTR(sriov_numvfs, 0664,
 			hinic5_sriov_numvfs_show, hinic5_sriov_numvfs_store);
 static DEVICE_ATTR(sriov_totalvfs, 0444,
-			sriov_totalvfs_show, NULL);
+			hinic5_sriov_totalvfs_show, NULL);
 #endif /* !(HAVE_SRIOV_CONFIGURE || HAVE_RHEL6_SRIOV_CONFIGURE) */
 
-struct hinic5_uld_info hinic5_g_uld_info[SERVICE_T_MAX];
+STATIC struct hinic5_uld_info g_uld_info[SERVICE_T_MAX] = { {0} };
 
 #define HINIC5_EVENT_PROCESS_TIMEOUT	10000
-struct mutex		hinic5_g_uld_mutex;  // Global mutex to protect ULD operations
+STATIC struct mutex		g_uld_mutex;
 
 #define HINIC5_PROC_DIR "hisdk5"
-struct proc_dir_entry *g_proc_dir;
+STATIC struct proc_dir_entry *g_proc_dir;
 
 void hinic5_uld_lock_init(void)
 {
-	mutex_init(&hinic5_g_uld_mutex);
+	mutex_init(&g_uld_mutex);
 }
 
 static const char *s_uld_name[SERVICE_T_MAX] = {
 	"nic", "ovs", "roce", "toe", "ioe", "fc", "vbs", "ipsec", "virtio",
-	"migrate", "ppa", "custom", "vroce", "ub", "jbof", "macsec", "dmmu",
-	"cfm", "bifur", "hihtr"};
+	"migrate", "ppa", "custom", "vroce", "ub", "jbof", "macsec", "dmmu", "cfm", "bifur", "hihtr"};
 
 const char **hinic5_get_uld_names(void)
 {
@@ -111,7 +112,7 @@ const struct hinic5_uld_info *hinic5_get_uld_info_by_type(enum hinic5_service_ty
 	if (type >= SERVICE_T_MAX)
 		return NULL;
 
-	return &hinic5_g_uld_info[type];
+	return &g_uld_info[type];
 }
 
 static int attach_uld(struct hinic5_adev *adev, enum hinic5_service_type type,
@@ -167,7 +168,7 @@ static void wait_uld_unused(struct hinic5_adev *adev, enum hinic5_service_type t
 	while (atomic_read(&adev->uld_ref_cnt[type]) != 0) {
 		loop_cnt++;
 		if ((loop_cnt % PRINT_ULD_DETACH_TIMEOUT_INTERVAL == 0) &&
-		    print_cnt < PRINT_ULD_DETACH_TIMES) {
+			(print_cnt < PRINT_ULD_DETACH_TIMES)) {
 			sdk_err(adev->dev, "Wait for uld unused for %lds, reference count: %d\n",
 				(PRINT_ULD_DETACH_TIMES_INTERVAL * loop_cnt / MSEC_PER_SEC),
 				atomic_read(&adev->uld_ref_cnt[type]));
@@ -182,7 +183,7 @@ static void wait_uld_unused(struct hinic5_adev *adev, enum hinic5_service_type t
 static void detach_uld(struct hinic5_adev *adev,
 		       enum hinic5_service_type type)
 {
-	struct hinic5_uld_info *uld_info = &hinic5_g_uld_info[type];
+	struct hinic5_uld_info *uld_info = &g_uld_info[type];
 	ulong end;
 	bool timeout = true;
 
@@ -226,11 +227,10 @@ static void attach_ulds(struct hinic5_adev *adev)
 {
 	int type;
 
-	hinic5_lld_hold();
-	mutex_lock(&hinic5_g_uld_mutex);
+	mutex_lock(&g_uld_mutex);
 
 	for (type = SERVICE_T_NIC; type < SERVICE_T_MAX; type++) {
-		if (hinic5_g_uld_info[type].probe) {
+		if (g_uld_info[type].probe) {
 			/* vf in VM can not disable service load */
 			if ((hinic5_adev_is_virtfn(adev) != 0) &&
 			    (!hinic5_get_vf_service_load(adev, (u16)type))) {
@@ -238,28 +238,25 @@ static void attach_ulds(struct hinic5_adev *adev)
 					 type);
 				continue;
 			}
-			attach_uld(adev, (enum hinic5_service_type)type, &hinic5_g_uld_info[type]);
+			attach_uld(adev, (enum hinic5_service_type)type, &g_uld_info[type]);
 		}
 	}
-	mutex_unlock(&hinic5_g_uld_mutex);
-	hinic5_lld_put();
+	mutex_unlock(&g_uld_mutex);
 }
 
 static void detach_ulds(struct hinic5_adev *adev)
 {
 	int type;
 
-	hinic5_lld_hold();
-	mutex_lock(&hinic5_g_uld_mutex);
+	mutex_lock(&g_uld_mutex);
 	for (type = SERVICE_T_MAX - 1; type > SERVICE_T_NIC; type--) {
-		if (hinic5_g_uld_info[type].probe)
+		if (g_uld_info[type].probe)
 			detach_uld(adev, (enum hinic5_service_type)type);
 	}
 
-	if (hinic5_g_uld_info[SERVICE_T_NIC].probe)
+	if (g_uld_info[SERVICE_T_NIC].probe)
 		detach_uld(adev, SERVICE_T_NIC);
-	mutex_unlock(&hinic5_g_uld_mutex);
-	hinic5_lld_put();
+	mutex_unlock(&g_uld_mutex);
 }
 
 int hinic5_register_uld(enum hinic5_service_type type,
@@ -281,18 +278,18 @@ int hinic5_register_uld(enum hinic5_service_type type,
 		return -EINVAL;
 	}
 
-	hinic5_lld_hold();
-	mutex_lock(&hinic5_g_uld_mutex);
+	lld_hold();
+	mutex_lock(&g_uld_mutex);
 
-	if (hinic5_g_uld_info[type].probe) {
+	if (g_uld_info[type].probe) {
 		pr_err("%s driver has registered\n", s_uld_name[type]);
-		mutex_unlock(&hinic5_g_uld_mutex);
-		hinic5_lld_put();
+		mutex_unlock(&g_uld_mutex);
+		lld_put();
 		return -EINVAL;
 	}
 
 	chip_list = get_hinic5_chip_list();
-	memcpy(&hinic5_g_uld_info[type], uld_info, sizeof(struct hinic5_uld_info));
+	(void)memcpy(&g_uld_info[type], uld_info, sizeof(struct hinic5_uld_info));
 	list_for_each_entry(chip_node, chip_list, node) {
 		list_for_each_entry(adev, &chip_node->func_list, node) {
 			if (attach_uld(adev, type, uld_info) != 0) {
@@ -300,7 +297,7 @@ int hinic5_register_uld(enum hinic5_service_type type,
 					 "Cannot attach %s driver\n",
 					 s_uld_name[type]);
 #ifdef CONFIG_MODULE_PROF
-				adev->bus_ops->fault_process(adev, hinic5_func_max_vf(adev->hwdev));
+				adev->bus_ops->fault_process(adev);
 				break;
 #else
 				continue;
@@ -309,8 +306,8 @@ int hinic5_register_uld(enum hinic5_service_type type,
 		}
 	}
 
-	mutex_unlock(&hinic5_g_uld_mutex);
-	hinic5_lld_put();
+	mutex_unlock(&g_uld_mutex);
+	lld_put();
 
 	pr_info("Register %s driver succeed\n", s_uld_name[type]);
 	return 0;
@@ -330,8 +327,8 @@ void hinic5_unregister_uld(enum hinic5_service_type type)
 		return;
 	}
 
-	hinic5_lld_hold();
-	mutex_lock(&hinic5_g_uld_mutex);
+	lld_hold();
+	mutex_lock(&g_uld_mutex);
 	chip_list = get_hinic5_chip_list();
 	list_for_each_entry(chip_node, chip_list, node) {
 		/* detach vf first */
@@ -348,10 +345,10 @@ void hinic5_unregister_uld(enum hinic5_service_type type)
 				detach_uld(adev, type);
 	}
 
-	uld_info = &hinic5_g_uld_info[type];
-	memset(uld_info, 0, sizeof(struct hinic5_uld_info));
-	mutex_unlock(&hinic5_g_uld_mutex);
-	hinic5_lld_put();
+	uld_info = &g_uld_info[type];
+	(void)memset(uld_info, 0, sizeof(struct hinic5_uld_info));
+	mutex_unlock(&g_uld_mutex);
+	lld_put();
 }
 EXPORT_SYMBOL(hinic5_unregister_uld);
 
@@ -363,7 +360,7 @@ int hinic5_attach_nic(struct hinic5_lld_dev *lld_dev)
 		return -EINVAL;
 
 	adev = to_hinic5_adev(lld_dev);
-	return attach_uld(adev, SERVICE_T_NIC, &hinic5_g_uld_info[SERVICE_T_NIC]);
+	return attach_uld(adev, SERVICE_T_NIC, &g_uld_info[SERVICE_T_NIC]);
 }
 EXPORT_SYMBOL(hinic5_attach_nic);
 
@@ -390,7 +387,7 @@ int hinic5_attach_service(const struct hinic5_lld_dev *lld_dev, enum hinic5_serv
 	if (!adev)
 		return -EINVAL;
 
-	return attach_uld(adev, type, &hinic5_g_uld_info[type]);
+	return attach_uld(adev, type, &g_uld_info[type]);
 }
 EXPORT_SYMBOL(hinic5_attach_service);
 
@@ -430,7 +427,7 @@ static void hinic5_sync_time_to_fmw(struct hinic5_adev *adev)
 	}
 }
 
-static void send_uld_dev_event(struct hinic5_adev *adev,
+void send_uld_dev_event(struct hinic5_adev *adev,
 			       struct hinic5_event_info *event)
 {
 	int type;
@@ -442,8 +439,8 @@ static void send_uld_dev_event(struct hinic5_adev *adev,
 			continue;
 		}
 
-		if (hinic5_g_uld_info[type].event && adev->uld_dev[type])
-			hinic5_g_uld_info[type].event(&adev->lld_dev,
+		if (g_uld_info[type].event && (adev->uld_dev[type] != NULL))
+			g_uld_info[type].event(&adev->lld_dev,
 					       adev->uld_dev[type], event);
 		clear_bit((u32)type, &adev->state);
 	}
@@ -454,9 +451,9 @@ static void send_event_to_dst_pf(struct hinic5_adev *adev, u16 func_id,
 {
 	struct hinic5_adev *des_dev = NULL;
 
-	hinic5_lld_hold();
+	lld_hold();
 	list_for_each_entry(des_dev, &adev->chip_node->func_list, node) {
-		if (adev->lld_state == HINIC5_IN_REMOVE)
+		if (des_dev->lld_state == HINIC5_IN_REMOVE)
 			continue;
 
 		if (hinic5_func_type(des_dev->hwdev) == TYPE_VF)
@@ -467,7 +464,7 @@ static void send_event_to_dst_pf(struct hinic5_adev *adev, u16 func_id,
 			break;
 		}
 	}
-	hinic5_lld_put();
+	lld_put();
 }
 
 static void send_event_to_all_pf(struct hinic5_adev *adev,
@@ -475,9 +472,9 @@ static void send_event_to_all_pf(struct hinic5_adev *adev,
 {
 	struct hinic5_adev *des_adev = NULL;
 
-	hinic5_lld_hold();
+	lld_hold();
 	list_for_each_entry(des_adev, &adev->chip_node->func_list, node) {
-		if (adev->lld_state == HINIC5_IN_REMOVE)
+		if (des_adev->lld_state == HINIC5_IN_REMOVE)
 			continue;
 
 		if (hinic5_func_type(des_adev->hwdev) == TYPE_VF)
@@ -485,7 +482,7 @@ static void send_event_to_all_pf(struct hinic5_adev *adev,
 
 		send_uld_dev_event(des_adev, event);
 	}
-	hinic5_lld_put();
+	lld_put();
 }
 
 static void hinic5_event_process(void *adapter, struct hinic5_event_info *event)
@@ -502,7 +499,8 @@ static void hinic5_event_process(void *adapter, struct hinic5_event_info *event)
 		return;
 	}
 
-	if (event->type == EVENT_COMM_MGMT_WATCHDOG)
+	if (event->type == EVENT_COMM_MGMT_WATCHDOG ||
+		((event->type == EVENT_COMM_FAULT) && (fault->type == FAULT_TYPE_HEARTBEAT_LOST)))
 		send_event_to_all_pf(adapter, event);
 	else
 		send_uld_dev_event(adapter, event);
@@ -575,8 +573,9 @@ static void set_vf_load_state(struct hinic5_adev *adev)
 	if (!disable_attach) {
 #ifndef __HIFC__
 		if ((hinic5_func_type(adev->hwdev) != TYPE_VF) &&
-		    hinic5_is_multi_bm(adev->hwdev)) {
-			adev->bus_ops->virt_configure(adev, hinic5_func_max_vf(adev->hwdev));
+			hinic5_is_multi_bm(adev->hwdev)) {
+			adev->bus_ops->virt_configure(adev,
+											  hinic5_func_max_vf(adev->hwdev));
 		}
 #endif
 	}
@@ -591,12 +590,14 @@ static int hinic5_vpmd_proc_mmap(struct file *file, struct vm_area_struct *vma)
 	u64 pfn, vma_size, bar_size, ofst, check_size;
 	struct hinic5_adev *adev = NULL;
 
-	if (!file || !vma || vma->vm_end < vma->vm_start)
+	if ((file == NULL) || (vma == NULL) || (vma->vm_end < vma->vm_start)) {
 		return -EINVAL;
+	}
 
 	adev = (struct hinic5_adev *)PDE_DATA(file_inode(file));
-	if (!adev)
+	if (adev == NULL) {
 		return -EINVAL;
+	}
 
 	ofst = vma->vm_pgoff << PAGE_SHIFT;
 	if (ofst == 0) {
@@ -617,15 +618,13 @@ static int hinic5_vpmd_proc_mmap(struct file *file, struct vm_area_struct *vma)
 	/* bar_size align pagesize, check vma_size */
 	check_size = ALIGN(bar_size, PAGE_SIZE);
 	if (vma_size > check_size) {
-		pr_err("invalid vma_size:0x%llx, check_size:0x%llx, bar_size:0x%llx",
-		       vma_size, check_size, bar_size);
+		pr_err("invalid vma_size:0x%llx, check_size:0x%llx, bar_size:0x%llx", vma_size, check_size, bar_size);
 		return -EINVAL;
 	}
 
 	vm_flags_set(vma, VM_IO);
 	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
-	err = remap_pfn_range(vma, vma->vm_start, (unsigned long)pfn,
-			      (unsigned long)vma_size, vma->vm_page_prot);
+	err = remap_pfn_range(vma, vma->vm_start, (unsigned long)pfn, (unsigned long)vma_size, vma->vm_page_prot);
 	if (err != 0) {
 		pr_err("mmap vpmd failed, err %d\n", err);
 		return err;
@@ -655,12 +654,11 @@ static const struct file_operations hinic5_vpmd_proc_fops = {
 
 static int hinic5_init_vpmd_proc(struct hinic5_adev *adev)
 {
-	strscpy(adev->vpmd_proc_name, dev_name(adev->dev), sizeof(adev->vpmd_proc_name));
-	adev->vpmd_proc = proc_create_data(&adev->vpmd_proc_name[0], 0640, g_proc_dir,
-					   &hinic5_vpmd_proc_fops, adev);
-	if (!adev->vpmd_proc) {
-		sdk_err(adev->dev, "init vpmd proc failed, vpmd_proc_name:%s.",
-			adev->vpmd_proc_name);
+	strlcpy(adev->vpmd_proc_name, dev_name(adev->dev), sizeof(adev->vpmd_proc_name));
+	adev->vpmd_proc = proc_create_data(&adev->vpmd_proc_name[0], S_IRUSR | S_IRGRP | S_IWUSR, g_proc_dir,
+		&hinic5_vpmd_proc_fops, adev);
+	if (adev->vpmd_proc == NULL) {
+		sdk_err(adev->dev, "init vpmd proc failed, vpmd_proc_name:%s.", adev->vpmd_proc_name);
 		return -ENOMEM;
 	}
 
@@ -674,10 +672,15 @@ static bool hinic5_need_ht_gpa(struct hinic5_hwdev *hwdev)
 	return hinic5_func_type(hwdev) == TYPE_PPF;
 }
 
+static inline bool hinic5_support_micro_log(void *hwdev)
+{
+	return ((hinic5_func_type(hwdev) == TYPE_PPF) && (!COMM_SUPPORT_HTN_CMD((struct hinic5_hwdev *)hwdev)));
+}
+
 int hinic5_func_init(struct hinic5_adev *adev)
 {
 	struct hinic5_init_para init_para = {0};
-	bool hinic5_cqm_init_en = false;
+	bool cqm5_init_en = false;
 	int err;
 
 	uld_def_init(adev);
@@ -695,7 +698,6 @@ int hinic5_func_init(struct hinic5_adev *adev)
 	init_para.db_base_phy = adev->db_base_phy;
 	init_para.db_dwqe_len = adev->db_dwqe_len;
 	init_para.hwdev = &adev->hwdev;
-	init_para.chip_node = adev->chip_node;
 	init_para.probe_fault_level = adev->probe_fault_level;
 
 	err = hinic5_init_hwdev(&init_para);
@@ -704,6 +706,12 @@ int hinic5_func_init(struct hinic5_adev *adev)
 		adev->probe_fault_level = init_para.probe_fault_level;
 		sdk_err(adev->dev, "Failed to initialize hardware device\n");
 		return -EFAULT;
+	}
+
+	err = hisdk5_alloc_chip_node(adev);
+	if (err != 0) {
+		sdk_err(adev->dev, "Failed to add new chip node to global list\n");
+		goto alloc_chip_node_err;
 	}
 
 	if (COMM_SUPPORT_FAST_MSG((struct hinic5_hwdev *)adev->hwdev)) {
@@ -729,8 +737,15 @@ int hinic5_func_init(struct hinic5_adev *adev)
 		goto fw_update_init_err;
 	}
 
-	hinic5_cqm_init_en = hinic5_need_init_stateful_default(adev->hwdev);
-	if (hinic5_cqm_init_en) {
+	if (hinic5_support_micro_log(adev->hwdev)) {
+		err = hinic5_comm_micro_log_init((struct hinic5_hwdev *)adev->hwdev);
+		if (err != 0) {
+			sdk_warn(adev->dev, "Failed to init micro log\n");
+		}
+	}
+
+	cqm5_init_en = hinic5_need_init_stateful_default(adev->hwdev);
+	if (cqm5_init_en) {
 		err = hinic5_stateful_init(adev->hwdev);
 		if (err != 0) {
 			sdk_err(adev->dev, "Failed to init stateful\n");
@@ -754,15 +769,15 @@ int hinic5_func_init(struct hinic5_adev *adev)
 		hinic5_sync_time_to_fmw(adev);
 
 	/* dbgtool init */
-	hinic5_lld_lock_chip_node();
-	err = hinic5_nictool_k_init(adev->hwdev, adev->chip_node);
+	lld_lock_chip_node();
+	err = nictool_k_init(adev->hwdev, adev->chip_node);
 	if (err != 0) {
-		hinic5_lld_unlock_chip_node();
+		lld_unlock_chip_node();
 		sdk_err(adev->dev, "Failed to initialize dbgtool\n");
 		goto nictool_init_err;
 	}
 	list_add_tail(&adev->node, &adev->chip_node->func_list);
-	hinic5_lld_unlock_chip_node();
+	lld_unlock_chip_node();
 
 	set_vf_load_state(adev);
 
@@ -782,15 +797,18 @@ int hinic5_func_init(struct hinic5_adev *adev)
 	return 0;
 
 init_vpmd_proc_err:
-	hinic5_lld_lock_chip_node();
-	hinic5_nictool_k_uninit(adev->hwdev, adev->chip_node);
-	hinic5_lld_unlock_chip_node();
+	lld_lock_chip_node();
+	list_del(&adev->node);
+	nictool_k_uninit(adev->hwdev, adev->chip_node);
+	lld_unlock_chip_node();
 nictool_init_err:
 	hinic5_event_unregister(adev->hwdev);
 event_register_err:
-	if (hinic5_cqm_init_en)
+	if (cqm5_init_en)
 		hinic5_stateful_deinit(adev->hwdev);
 stateful_init_err:
+	if (hinic5_support_micro_log(adev->hwdev))
+		hinic5_micro_log_uninit(adev->hwdev);
 	hinic5_fw_update_deinit(adev->hwdev);
 fw_update_init_err:
 	if (hinic5_need_ht_gpa(adev->hwdev))
@@ -799,6 +817,9 @@ ht_gpa_init_err:
 	if (COMM_SUPPORT_FAST_MSG((struct hinic5_hwdev *)adev->hwdev))
 		hinic5_fast_msg_deinit(adev->hwdev);
 fast_msg_init_err:
+	hisdk5_free_chip_node(adev);
+
+alloc_chip_node_err:
 	hinic5_free_hwdev(adev->hwdev);
 	adev->hwdev = NULL;
 
@@ -820,23 +841,26 @@ void hinic5_func_deinit(struct hinic5_adev *adev)
 
 	hinic5_flush_mgmt_workq(adev->hwdev);
 
-	hinic5_lld_lock_chip_node();
+	lld_lock_chip_node();
 	list_del(&adev->node);
-	hinic5_lld_unlock_chip_node();
+	lld_unlock_chip_node();
 
 	detach_ulds(adev);
 
-	hinic5_wait_lld_dev_unused(adev);
+	wait_lld_dev_unused(adev);
 
 	hinic5_deinit_vpmd_proc(adev);
 
-	hinic5_lld_lock_chip_node();
-	hinic5_nictool_k_uninit(adev->hwdev, adev->chip_node);
-	hinic5_lld_unlock_chip_node();
+	lld_lock_chip_node();
+	nictool_k_uninit(adev->hwdev, adev->chip_node);
+	lld_unlock_chip_node();
 
 	hinic5_event_unregister(adev->hwdev);
 
 	hinic5_free_stateful(adev->hwdev);
+
+	if (hinic5_support_micro_log(adev->hwdev))
+		hinic5_micro_log_uninit(adev->hwdev);
 
 	hinic5_fw_update_deinit(adev->hwdev);
 
@@ -845,6 +869,8 @@ void hinic5_func_deinit(struct hinic5_adev *adev)
 
 	if (COMM_SUPPORT_FAST_MSG((struct hinic5_hwdev *)adev->hwdev))
 		hinic5_fast_msg_deinit(adev->hwdev);
+
+	hisdk5_free_chip_node(adev);
 
 	hinic5_free_hwdev(adev->hwdev);
 	adev->hwdev = NULL;
@@ -942,15 +968,17 @@ int probe_func_param_init(struct hinic5_adev *adev)
 static int hinic5_sdk_proc_init(void)
 {
 	g_proc_dir = proc_mkdir(HINIC5_PROC_DIR, NULL);
-	if (!g_proc_dir)
+	if (g_proc_dir == NULL) {
 		return -EPERM;
+	}
 	return 0;
 }
 
 static void hinic5_sdk_proc_deinit(void)
 {
-	if (!g_proc_dir)
+	if (g_proc_dir == NULL) {
 		return;
+	}
 
 	proc_remove(g_proc_dir);
 	g_proc_dir = NULL;
@@ -961,14 +989,14 @@ int hinic5_lld_init(void)
 	int err;
 
 	pr_info("%s - version %s\n", HINIC5_DRV_DESC, HINIC5_DRV_VERSION);
-	memset(hinic5_g_uld_info, 0, sizeof(hinic5_g_uld_info));
+	(void)memset(g_uld_info, 0, sizeof(g_uld_info));
 
 	hinic5_lld_lock_init();
 	hinic5_uld_lock_init();
-	set_use_hinic5_vram_flag(use_hinic5_vram);
+	set5_use_vram_flag(use_vram);
 
-	if (use_hinic5_vram) {
-		err = hisdk5_hinic5_vram_init();
+	if (use_vram) {
+		err = hisdk5_vram_init();
 		if (err != 0)
 			return err;
 	}
@@ -986,10 +1014,19 @@ int hinic5_lld_init(void)
 	}
 
 	err = hinic5_register_driver();
-	if (err != 0)
+	if (err != 0) {
 		goto register_driver_err;
+	}
+
+	err = hinic5_module_post_init();
+	if (err != 0) {
+		goto module_post_init_err;
+	}
 
 	return 0;
+
+module_post_init_err:
+	hinic5_unregister_driver();
 
 register_driver_err:
 	hinic5_module_post_exit();
@@ -998,20 +1035,21 @@ module_pre_init_err:
 	hinic5_sdk_proc_deinit();
 
 dir_create_err:
-	if (use_hinic5_vram)
-		hisdk5_hinic5_vram_deinit();
+	if (use_vram) {
+		hisdk5_vram_deinit();
+	}
 
 	return err;
 }
 
 void hinic5_lld_exit(void)
 {
-	if (use_hinic5_vram)
-		hisdk5_hinic5_vram_deinit();
-
+	hinic5_module_pre_exit();
 	hinic5_unregister_driver();
 	hinic5_module_post_exit();
 	hinic5_sdk_proc_deinit();
+	if (use_vram)
+		hisdk5_vram_deinit();
 }
 
 static bool is_uld_with_cleanup(enum hinic5_service_type type)
@@ -1021,7 +1059,6 @@ static bool is_uld_with_cleanup(enum hinic5_service_type type)
 	};
 	u32 uld_with_cleanup_size = sizeof(uld_with_cleanup) / sizeof(enum hinic5_service_type);
 	u32 i;
-
 	for (i = 0; i < uld_with_cleanup_size; i++) {
 		if (uld_with_cleanup[i] == type)
 			return true;
@@ -1040,13 +1077,13 @@ void hinic5_uld_cleanup_before_unregister(enum hinic5_service_type type, void (*
 		return;
 	}
 
-	if (!cleanup) {
+	if (cleanup == NULL) {
 		pr_info("this service no need to cleanup.\n");
 		return;
 	}
 
-	hinic5_lld_hold();
-	mutex_lock(&hinic5_g_uld_mutex);
+	lld_hold();
+	mutex_lock(&g_uld_mutex);
 	chip_list = get_hinic5_chip_list();
 	list_for_each_entry(chip_node, chip_list, node) {
 		/* detach vf first */
@@ -1062,15 +1099,14 @@ void hinic5_uld_cleanup_before_unregister(enum hinic5_service_type type, void (*
 			if (hinic5_func_type(adev->hwdev) == TYPE_PPF)
 				cleanup(adev->uld_dev[type]);
 	}
-	mutex_unlock(&hinic5_g_uld_mutex);
-	hinic5_lld_put();
+	mutex_unlock(&g_uld_mutex);
+	lld_put();
 }
 EXPORT_SYMBOL(hinic5_uld_cleanup_before_unregister);
 
 int hinic5_get_vf_num(struct hinic5_lld_dev *lld_dev)
 {
 	struct hinic5_adev *adev = NULL;
-
 	if (!lld_dev) {
 		pr_err("lld_dev is null.\n");
 		return -EINVAL;
@@ -1091,6 +1127,10 @@ int hinic5_get_chip_node_id(struct hinic5_lld_dev *lld_dev, u64 *chip_node_id)
 	}
 
 	adev = to_hinic5_adev(lld_dev);
+	if (adev->chip_node == NULL) {
+		pr_err("chip_node is null.\n");
+		return -EINVAL;
+	}
 	*chip_node_id = adev->chip_node->id;
 
 	return 0;

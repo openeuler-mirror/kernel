@@ -4,10 +4,9 @@
  * File Name     : ossl_knl_linux_nic.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
+ * Last Modified : 2026/09/16
  * Description   : Kernel compatibility layer for the NIC module across different OS kernels.
  */
-
 
 #ifndef OSSL_KNL_LINUX_NIC_H
 #define OSSL_KNL_LINUX_NIC_H
@@ -290,8 +289,7 @@ __be16 __vlan_get_protocol(struct sk_buff *skb, __be16 type, int *next_depth);
 #if defined(HAVE_NDO_SELECT_QUEUE_SB_DEV) && !defined(HAVE_NDO_SELECT_QUEUE_FALLBACK)
 #define HAVE_NDO_SELECT_QUEUE_SB_DEV_ONLY
 #elif defined(HAVE_NDO_SELECT_QUEUE_FALLBACK) && \
-	(defined(HAVE_NDO_SELECT_QUEUE_SB_DEV) || \
-	defined(HAVE_NDO_SELECT_QUEUE_ACCEL))
+	(defined(HAVE_NDO_SELECT_QUEUE_SB_DEV) || defined(HAVE_NDO_SELECT_QUEUE_ACCEL))
 #define HAVE_NDO_SELECT_QUEUE_ACCEL_FALLBACK
 #endif /* HAVE_NDO_SELECT_QUEUE_ACCEL */
 

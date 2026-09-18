@@ -4,8 +4,8 @@
  * File Name     : mag_mpu_cmd_defs.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   : serdesmag cmd definition between driver and mpu
+ * Last Modified : 2026/09/16
+ * Description   : serdes/mag cmd definition between driver and mpu
  */
 
 #ifndef MAG_MPU_CMD_DEFS_H
@@ -19,49 +19,6 @@
 #include "typedef.h"
 #endif
 #include "mpu_cmd_base_defs.h"
-
-/* serdes cmd struct definition */
-#define CMD_ARRAY_BUF_SIZE 64
-#define SERDES_CMD_DATA_BUF_SIZE 512
-#define RX_RSFEC_PHY_DFX_STA_TBL_SIZE 25
-
-struct serdes_in_info {
-	u32 chip_id : 16;
-	u32 macro_id : 16;
-	u32 start_sds_id : 16;
-	u32 sds_num : 16;
-
-	u32 cmd_type : 8; /* reserved for iotype */
-	u32 sub_cmd : 8;
-	u32 rw : 1; /* 0: read, 1: write */
-	u32 rsvd : 15;
-
-	u32 val;
-	union {
-		char field[CMD_ARRAY_BUF_SIZE];
-		u32 addr;
-		u8 *ex_param;
-	};
-};
-
-struct serdes_out_info {
-	u32 str_len; /* out_str length */
-	u32 result_offset;
-	u32 type; /* 0:data; 1:string */
-	char out_str[SERDES_CMD_DATA_BUF_SIZE];
-};
-
-struct serdes_cmd_in {
-	struct mgmt_msg_head head;
-
-	struct serdes_in_info serdes_in;
-};
-
-struct serdes_cmd_out {
-	struct mgmt_msg_head head;
-
-	struct serdes_out_info serdes_out;
-};
 
 struct mag_port_info {
 	u8 port_type;
@@ -168,22 +125,15 @@ enum mag_cmd_wire_node {
 #define CABLE_10G_SPEED     (1 << PORT_SPEED_10GB)
 #define CABLE_25G_SPEED     ((1 << PORT_SPEED_25GB) | (1 << PORT_SPEED_10GB))
 #define CABLE_40G_SPEED     ((1 << PORT_SPEED_40GB) | (1 << PORT_SPEED_10GB))
-#define CABLE_50G_SPEED     ((1 << PORT_SPEED_50GB) | (1 << PORT_SPEED_25GB) | \
-			     (1 << PORT_SPEED_10GB))
-#define CABLE_100G_SPEED    ((1 << PORT_SPEED_100GB) | (1 << PORT_SPEED_50GB) | \
-			     (1 << PORT_SPEED_40GB) | (1 << PORT_SPEED_25GB) | \
-			     (1 << PORT_SPEED_10GB))
-#define CABLE_200G_SPEED    ((1 << PORT_SPEED_200GB) | (1 << PORT_SPEED_100GB) | \
-			     (1 << PORT_SPEED_50GB) | (1 << PORT_SPEED_40GB) | \
-			     (1 << PORT_SPEED_25GB) | (1 << PORT_SPEED_10GB))
-#define CABLE_400G_SPEED    ((1 << PORT_SPEED_400GB) | (1 << PORT_SPEED_200GB) | \
-			     (1 << PORT_SPEED_100GB) | (1 << PORT_SPEED_50GB) | \
-			     (1 << PORT_SPEED_40GB) | (1 << PORT_SPEED_25GB) | \
-			     (1 << PORT_SPEED_10GB))
-#define CABLE_800G_SPEED    ((1 << PORT_SPEED_800GB) | (1 << PORT_SPEED_400GB) | \
-			     (1 << PORT_SPEED_200GB) | (1 << PORT_SPEED_100GB) | \
-			     (1 << PORT_SPEED_50GB) | (1 << PORT_SPEED_40GB) | \
-			     (1 << PORT_SPEED_25GB) | (1 << PORT_SPEED_10GB))
+#define CABLE_50G_SPEED     ((1 << PORT_SPEED_50GB) | (1 << PORT_SPEED_25GB) | (1 << PORT_SPEED_10GB))
+#define CABLE_100G_SPEED    ((1 << PORT_SPEED_100GB) | (1 << PORT_SPEED_50GB) | (1 << PORT_SPEED_40GB) | \
+							(1 << PORT_SPEED_25GB) | (1 << PORT_SPEED_10GB))
+#define CABLE_200G_SPEED    ((1 << PORT_SPEED_200GB) | (1 << PORT_SPEED_100GB) | (1 << PORT_SPEED_50GB) | \
+							(1 << PORT_SPEED_40GB) | (1 << PORT_SPEED_25GB) | (1 << PORT_SPEED_10GB))
+#define CABLE_400G_SPEED    ((1 << PORT_SPEED_400GB) | (1 << PORT_SPEED_200GB) | (1 << PORT_SPEED_100GB) | \
+							(1 << PORT_SPEED_50GB) | (1 << PORT_SPEED_40GB) | (1 << PORT_SPEED_25GB) | (1 << PORT_SPEED_10GB))
+#define CABLE_800G_SPEED    ((1 << PORT_SPEED_800GB) | (1 << PORT_SPEED_400GB) | (1 << PORT_SPEED_200GB) | \
+							(1 << PORT_SPEED_100GB) | (1 << PORT_SPEED_50GB) | (1 << PORT_SPEED_40GB) | (1 << PORT_SPEED_25GB) | (1 << PORT_SPEED_10GB))
 #define FIBER_10G_SPEED     (1 << PORT_SPEED_10GB)
 #define FIBER_25G_SPEED     (1 << PORT_SPEED_25GB)
 #define FIBER_40G_SPEED     (1 << PORT_SPEED_40GB)
@@ -222,7 +172,7 @@ struct mag_cmd_set_port_cfg {
 	u8 fec;
 	u8 lanes;
 	u8 rsvd1[19];
-	u8 adapt_en;    /* Cross-DIE addition, tool has not enabled this capability yet */
+	u8 adapt_en;    /* Added for cross-DIE, tool has not enabled this capability yet */
 };
 
 /* mag supported/advertised link mode bitmap */
@@ -294,37 +244,6 @@ enum mag_cmd_himac_prbs_type {
 #define CABLE_800GE_BASE_R8_BIT (LINK_MODE_800GE_BASE_R8_BIT | LINK_MODE_400GE_BASE_R8_BIT | \
 	LINK_MODE_200GE_BASE_R8_BIT)
 
-struct mag_cmd_ber_cor_cnt {
-	u32 corr_lane_sym_cnt;
-	u32 lane_cor0_cnt;
-	u32 lane_cor1_cnt;
-	u32 cfg_speed;
-};
-
-union mag_cmd_ber_data_u {
-	struct mag_cmd_ber_cor_cnt cor_cnt;
-	u32 data[RX_RSFEC_PHY_DFX_STA_TBL_SIZE];
-};
-
-struct mag_cmd_get_himac_ber {
-	struct mgmt_msg_head head;
-
-	u8 port_id;
-	u8 op_type;
-	u8 rsvd0[2];
-
-	union mag_cmd_ber_data_u ber_data;
-};
-
-struct mag_cmd_op_himac_thrd {
-	struct mgmt_msg_head head;
-
-	u8 port_id;
-	u8 op_type;
-	u8 cur_status;
-	u8 rsvd0;
-};
-
 struct mag_cmd_get_port_info {
 	struct mgmt_msg_head head;
 
@@ -345,38 +264,6 @@ struct mag_cmd_get_port_info {
 	u32 advertised_mode;
 	u32 supported_fec_mode;
 	u8 rsvd2[4];
-};
-
-struct mag_cmd_get_himac_bandwidth {
-	struct mgmt_msg_head head;
-
-	u8 port_id;
-	u8 txrx_sel;
-	u8 rsvd0[2];
-	u32 win_size;
-
-	u64 rate_mbps;
-	u64 packet_rate;
-	u32 rate_byte_h;
-	u32 rate_byte_l;
-	u32 rate_pkt;
-	u32 cal_time_us;
-	u32 ipg;
-};
-
-struct mag_cmd_himac_prbs {
-	struct mgmt_msg_head head;
-
-	u8 port_id;
-	u8 direction;
-	u8 prbs_type;
-	u8 scr_en;
-
-	u8 fec_link_status;
-	u8 sync_status;
-	u8 rsvd0[2];
-	u32 cw_cnt;
-	u32 err_cnt;
 };
 
 #define MAG_CMD_OPCODE_GET 0
@@ -416,9 +303,7 @@ struct mag_cmd_cfg_loopback_mode {
 struct mag_cmd_set_port_enable {
 	struct mgmt_msg_head head;
 
-	u16 function_id;	/* function_id should not more than
-				 * the max support pf_id(32)
-				 */
+	u16 function_id; /* function_id should not more than the max support pf_id(32) */
 	u16 rsvd0;
 
 	u8 state; /* bitmap bit0:tx_en bit1:rx_en */
@@ -437,15 +322,11 @@ struct mag_cmd_get_port_enable {
 #define PMA_FOLLOW_ENABLE 0x1
 #define PMA_FOLLOW_DISABLE 0x2
 #define PMA_FOLLOW_GET 0x4
-/* the physical port disable link follow only when
- * all pf of the port are set to follow disable
- */
+/* the physical port disable link follow only when all pf of the port are set to follow disable */
 struct mag_cmd_set_link_follow {
 	struct mgmt_msg_head head;
 
-	u16 function_id;	/* function_id should not more than
-				 * the max support pf_id(32)
-				 */
+	u16 function_id; /* function_id should not more than the max support pf_id(32) */
 	u16 rsvd0;
 
 	u8 follow;
@@ -464,9 +345,7 @@ struct mag_cmd_get_link_status {
 struct mag_cmd_set_pma_enable {
 	struct mgmt_msg_head head;
 
-	u16 function_id;	/* function_id should not more than
-				 * the max support pf_id(32)
-				 */
+	u16 function_id; /* function_id should not more than the max support pf_id(32) */
 	u16 enable;
 };
 
@@ -578,23 +457,6 @@ struct mag_cmd_set_pangea_adapt {
 	u32 rsvd1[3];
 };
 
-struct mag_cmd_cfg_bios_link_cfg {
-	struct mgmt_msg_head head;
-
-	u8 port_id;
-	u8 opcode; /* 0:get bios link info  1:set bios link cfg */
-	u8 clear;
-	u8 rsvd0;
-
-	u32 wire_type;
-	u8 an_en;
-	u8 speed;
-	u8 fec;
-	u8 rsvd1;
-	u32 speed_mode;
-	u32 rsvd2[3];
-};
-
 struct mag_cmd_restore_link_cfg {
 	struct mgmt_msg_head head;
 
@@ -698,49 +560,12 @@ struct mag_cmd_set_xsfp_rw {
 	u32 offset;
 	u8 misc;       /* bit [0:1]: means cmis bank_id, bit [2:7]: reserved */
 	/*
-	 * for qsfp and cmis, means upper page id.
-	 * for qsfp, if not specified, read the upper page specified last time.
-	 * for cmis, page_id must be specified.
+		for qsfp and cmis, means upper page id.
+		for qsfp, if not specified, read the upper page specified last time.
+		for cmis, page_id must be specified.
 	*/
 	u8 page_id;
 	u16 rsvd1;
-};
-
-struct mag_cmd_cfg_xsfp_temperature {
-	struct mgmt_msg_head head;
-
-	u8 opcode; /* 0:read  1:write */
-	u8 rsvd0[3];
-	s32 max_temp;
-	s32 min_temp;
-};
-
-struct mag_cmd_get_xsfp_temperature {
-	struct mgmt_msg_head head;
-
-	s16 sfp_temp[8];
-	u8 rsvd[32];
-	s32 max_temp;
-	s32 min_temp;
-};
-
-/* xsfp plug event */
-struct mag_cmd_wire_event {
-	struct mgmt_msg_head head;
-
-	u8 port_id;
-	u8 status; /* 0:present, 1:absent */
-	u8 rsvd[2];
-};
-
-/* link err type definition */
-#define MAG_CMD_ERR_XSFP_UNKNOWN 0x0
-struct mag_cmd_link_err_event {
-	struct mgmt_msg_head head;
-
-	u8 port_id;
-	u8 link_err_type;
-	u8 rsvd[2];
 };
 
 #define MAG_PARAM_TYPE_DEFAULT_CFG 0x0
@@ -823,34 +648,34 @@ struct mag_cmd_event_port_info {
 
 	/* Optical module related 16+4*3+4+16+8=56B */
 	u8 vendor_name[XSFP_VENDOR_NAME_LEN];
-	u32 port_type;		/* fiber / copper */
-	u32 port_sub_type;	/* sr / lr */
-	u32 cable_length;	/* 1/3/5m */
-	u8 cable_temp;		/* Temperature */
-	u8 max_speed;		/* Optical module max speed */
-	u8 sfp_type;		/* sfp/qsfp */
+	u32 port_type;                           /* fiber / copper */
+	u32 port_sub_type;                       /* sr / lr */
+	u32 cable_length;                        /* 1/3/5m */
+	u8 cable_temp;                           /* Temperature */
+	u8 max_speed;                            /* Optical module maximum speed */
+	u8 sfp_type;                             /* sfp/qsfp */
 	u8 rsvd1;
-	u32 power[4];		/* Optical power */
+	u32 power[4];                            /* Optical power */
 
 	u8 an_state;
 	u8 fec;
 	u16 speed;
 
-	u8 gpio_insert;		/* 0:present  1:absent */
+	u8 gpio_insert;                          /* 0:present  1:absent */
 	u8 alos;
-	u8 rx_los;		/* gpio get */
-	u8 pma_ctrl;		/* eth_ctrl.pma_ctrl.bits.rf_en; */
+	u8 rx_los;                               /* Get from gpio */
+	u8 pma_ctrl;                             /* eth_ctrl.pma_ctrl.bits.rf_en; */
 
 	/* himac related info 4*5+4=32B */
-	u32 pma_fifo_reg;	/* himac pma fifo status */
-	u32 pma_signal_ok_reg;	/* himac pma signal ok status */
-	u32 pcs_64_66b_reg;	/* himac V600 has no this register */
-	u32 rf_lf;		/* himac rxmac lf rf status */
-	u8 pcs_link;		/* himac pcs link status */
-	u8 pcs_mac_link;	/* link state after thread judgment */
-	u8 tx_enable;		/* himac txmac enable status */
-	u8 rx_enable;		/* himac rxmac enable status */
-	u32 pcs_err_cnt;	/* himac pcs ber err cnt */
+	u32 pma_fifo_reg;                        /* himac pma fifo status */
+	u32 pma_signal_ok_reg;                   /* himac pma signal ok status */
+	u32 pcs_64_66b_reg;                      /* himac V600 does not have this register */
+	u32 rf_lf;                               /* himac rxmac lf rf status */
+	u8 pcs_link;                             /* himac pcs link status */
+	u8 pcs_mac_link;                         /* link_state after link thread judgment */
+	u8 tx_enable;                            /* himac txmac enable status */
+	u8 rx_enable;                            /* himac rxmac enable status */
+	u32 pcs_err_cnt;                         /* himac pcs ber err cnt */
 
 	u8 eq_data[38];
 	u8 rsvd2[2];
@@ -866,9 +691,9 @@ struct mag_cmd_event_port_info {
 	/* an/adapt/link thread configuration info 4+4*24+16+36= */
 	struct mag_port_param_info param_info;
 
-	/* Auto-negotiation(an) and auto-adapt(adapt) related info 4+8=12B */
-	u32 speed_ability;	/* supported_mode & advertised_mode */
-	u32 fec_ability;	/* supported FEC modes */
+	/* Auto-negotiation (an) and adaptation (adapt) related info 4+8=12B */
+	u32 speed_ability;                       /* supported_mode & advertised_mode */
+	u32 fec_ability;                         /* supported FEC modes */
 	u8 duplex;
 
 	/* Cable SN ASCII representation 16B */
@@ -880,7 +705,7 @@ struct mag_cmd_event_port_info {
 	u8 ds_mask;
 
 	/* Ensure compatibility */
-	u8 rsvd3[238]; /* Reserved 238 bytes */
+	u8 rsvd3[238]; /* Reserve 238 bytes */
 };
 
 struct mag_cmd_port_stats {
@@ -1023,164 +848,35 @@ struct mag_cmd_dump_antrain_info {
 	u32 antrain_csr[256];
 };
 
-#define MAG_SFP_PORT_NUM 24
-/* Chip optical module temperature structure definition */
-struct mag_cmd_sfp_temp_in_info {
-	struct mgmt_msg_head head; /* 8B */
-	u8 opt_type;               /* 0:read operation 1:cfg operation */
-	u8 rsv[3];
-	s32 max_temp; /* Chip optical module threshold */
-	s32 min_temp; /* Chip optical module threshold */
-};
+typedef struct {
+	u8 minimum_value[2];                    /* LPL PM data 2 bytes – minimum value */
+	u8 average_value[2];                    /* LPL PM data 2 bytes – average (mean) value */
+	u8 maximum_value[2];                    /* LPL PM data 2 bytes – maximum value */
+} cdb_pam4_ltp_6bytes;
 
-struct mag_cmd_sfp_temp_out_info {
-	struct mgmt_msg_head head;           /* 8B */
-	s16 sfp_temp_data[MAG_SFP_PORT_NUM]; /* Read temperature */
-	s32 max_temp;                        /* Chip optical module threshold */
-	s32 min_temp;                        /* Chip optical module threshold */
-};
+typedef struct {
+	u8 minimum_value[2];                    /* LPL PM data 2 bytes – minimum value */
+	u8 average_value[2];                    /* LPL PM data 2 bytes – average (mean) value */
+	u8 maximum_value[2];                    /* LPL PM data 2 bytes – maximum value */
+	u8 current_value[2];                    /* LPL PM data 2 bytes – an optional current value */
+} cdb_pam4_ltp_8bytes;
 
-#define XSFP_CMIS_INFO_MAX_SIZE 1536
-#define QSFP_CMIS_PAGE_SIZE	128
-
-#define QSFP_CMIS_PAGE_00H	0x00 /* Lower: Control and Essentials, Upper: \
-				      * Administrative Information \
-				      */
-#define QSFP_CMIS_PAGE_01H	0x01 /* Advertising */
-#define QSFP_CMIS_PAGE_02H	0x02 /* Module and lane Thresholds */
-#define QSFP_CMIS_PAGE_03H	0x03 /* User EEPROM */
-#define QSFP_CMIS_PAGE_04H	0x04 /* Laser Capabilities Advertising \
-				      * (Page 04h, Optional) \
-				      */
-#define QSFP_CMIS_PAGE_05H	0x05
-#define QSFP_CMIS_PAGE_10H	0x10 /* Lane and Data Path Control */
-#define QSFP_CMIS_PAGE_11H	0x11 /* Lane Status */
-#define QSFP_CMIS_PAGE_12H	0x12
-#define QSFP_CMIS_PAGE_13H	0x13
-#define QSFP_CMIS_PAGE_14H	0x14
-#define QSFP_CMIS_PAGE_9FH	0x9f
-#define QSFP_CMIS_PAGE_B7H	0xb7
-#define QSFP_CMIS_PAGE_B8H	0xb8
-
-/* In ethtool, both lower page 00h and high page 00h have page id 0, with the latter offset being 128,
-but due to MPU defining high page 00h page id = 1, special handling is required */
-#define HINIC5_PAGE_L00_H00_OFFSET 0
-#define HINIC5_PAGE_H01_OFFSET 1
-#define HINIC5_PAGE_H02_OFFSET 2
-#define HINIC5_PAGE_H10_OFFSET 3
-#define HINIC5_PAGE_H11_OFFSET 4
-#define HINIC5_PAGE_INVALID_OFFSET 0xff
-
-/* Maximum page id 0x11 supported by ethtool 6.6 for parsing */
-#ifndef CMIS_MAX_PAGES
-#define CMIS_MAX_PAGES 18
-#endif
-
-#define MGMT_TLV_U8_SIZE        1
-#define MGMT_TLV_U16_SIZE       2
-#define MGMT_TLV_U32_SIZE       4
-
-#define MGMT_TLV_GET_U8(addr)          (*((u8 *)(void *)(addr)))
-#define MGMT_TLV_SET_U8(addr, value) \
-			((*((u8 *)(void *)(addr))) = ((u8)(value)))
-
-#define MGMT_TLV_GET_U16(addr)         (*((u16 *)(void *)(addr)))
-#define MGMT_TLV_SET_U16(addr, value) \
-			((*((u16 *)(void *)(addr))) = ((u16)(value)))
-
-#define MGMT_TLV_GET_U32(addr)         (*((u32 *)(void *)(addr)))
-#define MGMT_TLV_SET_U32(addr, value) \
-			((*((u32 *)(void *)(addr))) = ((u32)(value)))
-
-#define MGMT_TLV_TYPE_END       0xFFFF
-enum mag_xsfp_type {
-	/* Skip 0x00, reason for defining Type starting from 0x01: to distinguish from memset data */
-	MAG_XSFP_TYPE_PAGE      = 0x01,
-	MAG_XSFP_TYPE_WIRE_TYPE = 0x02,
-	MAG_XSFP_TYPE_END       = MGMT_TLV_TYPE_END
-};
-
-struct mgmt_tlv_info {
-	u16 type;
-	u16 length;
-	u8 value[0]; // When value is page content, data composition:
-		     // page_id(4byte) + page_context(128byte)
-};
-
-typedef struct tag_mag_cmd_set_xsfp_tlv_req {
-	struct mgmt_msg_head head;
-
-	/*
-	 * Parse according to struct mgmt_tlv_info format.
-	 * +---------------------------------------------+
-	 * |        TYPE        |  LEN  |      VALUE     |
-	 * +--------------------+-------+----------------+
-	 * | MAG_XSFP_TYPE_PAGE |   4   |   Page Number  |
-	 * +---------------------------------------------+
-	 *
-	 * Description:
-	 * 1、Page number definition: lower page 00h number is:
-	 * 	0, upper page 00h number is 1, and so on.
-	 * 2、Specification: Currently supports max 10 Pages, among which:
-	 * 	lower page 00h, upper page 00h/01h/02h/10h/11h are required,
-	 * 	Remaining 4 for extension reservation.
-	 */
-	u8 tlv_buf[0];
-} mag_cmd_set_xsfp_tlv_req;
-
-typedef struct tag_mag_cmd_set_xsfp_tlv_rsp {
-	struct mgmt_msg_head head;
-} mag_cmd_set_xsfp_tlv_rsp;
-
-typedef struct tag_mag_cmd_get_xsfp_tlv_req {
-	struct mgmt_msg_head head;
-
-	u8 port_id;
-	u8 rsvd;
-	u16 rsp_buf_len; /* In response: buffer space length for storing TLV format data */
-} mag_cmd_get_xsfp_tlv_req;
-
-typedef struct tag_mag_cmd_get_xsfp_tlv_rsp {
-	struct mgmt_msg_head head;
-
-	u8 port_id;
-	u8 rsvd[3];
-
-	/*
-	 * Assemble according to struct mgmt_tlv_info format.
-	 * +----------------------------------------------------------------------+
-	 * |          TYPE           |      LEN     |             VALUE           |
-	 * +-------------------------+--------------+-----------------------------+
-	 * | MAG_XSFP_TYPE_WIRE_TYPE |       4      |           Wire Type         |
-	 * +-------------------------+--------------+-----------------------------+
-	 * |    MAG_XSFP_TYPE_PAGE   | 4 + Page Len | Page Number + Page Content  |
-	 * +----------------------------------------------------------------------+
-	 *
-	 * Description:
-	 * 1、Page number definition: lower page 00h number is: 0, upper page 00h number is: 1, and so on.
-	 * 2、Caller needs to apply for enough space (including space for end Type and end Length).
-	 */
-	u8 tlv_buf[0];
-} mag_cmd_get_xsfp_tlv_rsp;
-
-#define XSFP_CMIS_PARSE_PAGE_NUM    10
-
-typedef struct mag_parse_tlv_info {
-	u8 tlv_page_info[XSFP_CMIS_INFO_MAX_SIZE + 1];
-	u32 tlv_page_info_len;
-	u32 tlv_page_num[XSFP_CMIS_PARSE_PAGE_NUM];
-	u32 wire_type;
-	u8 id;
-} parse_tlv_info;
-
-typedef struct drv_tag_mag_cmd_get_xsfp_tlv_rsp {
-	struct mgmt_msg_head head;
-
-	u8 port_id;
-	u8 rsvd[3];
-
-	u8 tlv_buf[XSFP_CMIS_INFO_MAX_SIZE];
-} drv_mag_cmd_get_xsfp_tlv_rsp;
+typedef struct {
+	u8 rsv[2];                              /* 136~137 reserved */
+	u8 max_ref_pot;                         /* 138 Channels 1-8 maximum reflection intensity point whether has return loss abnormal alarm, bit0-7: indicates channels 1-8, 0: no abnormal alarm, 1 indicates alarm (recommend cleaning the link) */
+	u8 sec_ref_pot;                         /* 139 Channels 1-8 second largest reflection intensity point whether has return loss abnormal alarm, bit0-7: indicates channels 1-8, 0: no abnormal alarm, 1 indicates alarm (recommend cleaning the link) */
+	u8 max_ref_val[8];                      /* 140~147 Channels 1-8 maximum reflection intensity, unsigned data, unit: -0.2 dB, e.g.: 0x0A indicates return loss intensity of -2db */
+	u8 max_ref_pos[8][3];                   /* 148~171 Position of channels 1-8 maximum reflection intensity point, unsigned data, unit: 0.1m, reporting 0xFFFFFFh indicates invalid value (maximum reflection point not detected) */
+	u8 sec_ref_val[8];                      /* 172~179 Channels 1-8 second largest reflection intensity, unsigned data, unit: -0.2 dB, e.g.: 0x0A indicates return loss intensity of -2db */
+	u8 sec_ref_pos[8][3];                   /* 180~203 Position of channels 1-8 second largest reflection intensity point, unsigned data, unit: 0.1m, reporting 0xFFFFFFh indicates invalid value (second largest reflection point not detected) */
+	u8 far_ref_val[8];                      /* 204~211 Channels 1-8 farthest reflection intensity, unsigned data, unit: -0.2 dB, e.g.: 0x0A indicates return loss intensity of -2db */
+	u8 far_ref_pos[8][3];                   /* 212~235 Position of channels 1-8 farthest reflection intensity point, unsigned data, unit: 0.1m, reporting 0xFFFFFFh indicates invalid value (farthest reflection point not detected) */
+	u8 peer_tx_alarm;                       /* 236 Peer TX optical port whether has alarm, bit0-7: TX optical ports 1-8, 0: no abnormal alarm, 1 indicates alarm (recommend cleaning the link) */
+	u8 peer_tx_val[8];                      /* 237~244 Peer TX optical ports 1-8 alarm degree, unsigned data */
+	u8 local_rx_alarm;                      /* 245 Local RX optical port whether has alarm, bit0-7: RX optical ports 1-8, 0: no abnormal alarm, 1 indicates alarm (recommend cleaning the link) */
+	u8 local_rx_val[8];                     /* 246~253 Local RX optical ports 1-8 alarm degree, unsigned data */
+	u8 rsv1[2];                             /* 254~255 reserved */
+} cdb_dirt_detection;
 
 typedef struct {
 	u8 resv0[14];                   /* Reg 0-13: Lower Memory: Page 00h */
@@ -1193,22 +889,17 @@ typedef struct {
 	u8 resv1[67];                   /* Reg 18-84 */
 	u8 media_type;                  /* Reg 85: Table 8-12 Byte 85 Module Media Type Encodings */
 
-	u8 electrical_interface_id;     /* Reg 86: ID from SFF-8024 IDs for
-					 * Host Electrical Interfaces
-					 */
-	u8 media_interface_id;          /* Reg 87: ID from table selected by Byte 85
-					 * (see Table 8-12)
-					 */
+	u8 electrical_interface_id;     /* Reg 86: ID from SFF-8024 IDs for Host Electrical Interfaces */
+	u8 media_interface_id;          /* Reg 87: ID from table selected by Byte 85 (see Table 8-12) */
 	u8 lane_count;                  /*
 					 * Reg 88: Lane Count, ApSel Code: 0001b.
 					 *   bit 7-4: Host Lane Count.
 					 *   bit 3-0: Media Lane Count.
 					 */
 	u8 lane_assignment_options;     /*
-					 * Reg 89: Bits 0-7 form a bit map corresponding
-					 * to Host Lanes 1-8.
-					 * A set bit indicates that the Application
-					 * may begin on the corresponding host lane.
+					 * Reg 89: Bits 0-7 form a bit map corresponding to Host Lanes 1-8.
+					 * A set bit indicates that the Application may begin on the corresponding
+					 * host lane.
 					 */
 	u8 resv2[38];                   /* Reg 90-127 */
 } qsfp_cmis_lower_page_00_s;
@@ -1218,108 +909,72 @@ typedef struct {
 	u8 vendor_name[16];             /* Reg 129-144: Vendor name (ASCII) */
 	u8 vendor_oui[3];               /* Reg 145-147: Vendor IEEE company ID */
 	u8 vendor_pn[16];               /* Reg 148-163: Part number provided by vendor (ASCII) */
-	u8 vendor_rev[2];               /* Reg 164-165: Revision level for part number provided
-					 * by vendor (ASCII)
-					 */
+	u8 vendor_rev[2];               /* Reg 164-165: Revision level for part number provided by vendor (ASCII) */
 	u8 vendor_sn[16];               /* Reg 166-181: Vendor Serial Number (ASCII) */
 	u8 date_code[8];                /* Reg 182-189: Vendor's manufacturing date code */
-	u8 clei_code[10];               /* Reg 190-199: Common Language Equipment
-					 * Identification code */
+	u8 clei_code[10];               /* Reg 190-199: Common Language Equipment Identification code */
 	u8 power_character[2];          /* Reg 200-201: Module power characteristics */
 	u8 cable_len;                   /*
-					 * Reg 202: bit 7-6: Length multiplier field
-					 * (Copper or active cable).
+					 * Reg 202: bit 7-6: Length multiplier field (Copper or active cable).
 					 * Reg 202: bit 5-0: Link length base value in meters.
-					 * To calculate actual link length use multiplier
-					 * in bits 7-6.
+					 *   To calculate actual link length use multiplier in bits 7-6.
 					 */
-	u8 connector;                   /* Reg 203: Type of connector present in the module.
-					 * See SFF-8024 for codes
-					 */
+	u8 connector;                   /* Reg 203: Type of connector present in the module. See SFF-8024 for codes */
 	u8 copper_cable_attenuation[6]; /* Reg 204-209: Copper Cable Attenuation */
-	u8 near_end_implementation;     /* Reg 210: Cable Assembly Lane Information,
-					 * Near end implementation
-					 */
-	u8 far_end_config;              /* Reg 211: Cable Assembly Lane Information:
-					 * Far End Configuration
-					 */
+	u8 near_end_implementation;     /* Reg 210: Cable Assembly Lane Information, Near end implementation */
+	u8 far_end_config;              /* Reg 211: Cable Assembly Lane Information: Far End Configuration */
 	u8 media_technology;            /* Reg 212: Media Interface Technology encodings */
 	u8 resv0[43];                   /* Reg 213-255 */
 } qsfp_cmis_upper_page_00_s;
 
 typedef struct {
-	u8 firmware_rev[2];             /* Reg 128-129: Numeric representation of
-					 * inactive module firmware revision
-					 */
-	u8 hardware_rev[2];             /* Reg 130-131: Numeric representation of
-					 * module hardware revision
-					 */
+	u8 firmware_rev[2];             /* Reg 128-129: Numeric representation of inactive module firmware revision */
+	u8 hardware_rev[2];             /* Reg 130-131: Numeric representation of module hardware revision */
 	u8 smf_len_km;                  /*
 					 * Reg 132: bit 7-6: Link length multiplier for SMF fiber.
-					 * 00 = 0.1 (1 t0 6.3 km)
-					 * 01 = 1 (1 to 63 km)
-					 * 10, 11 = reserved
+					 *   00 = 0.1 (1 t0 6.3 km)
+					 *   01 = 1 (1 to 63 km)
+					 *   10, 11 = reserved
 					 * Reg 132: bit 5-0: Base link length for SMF fiber.
-					 * Must be multiplied by value in bits 7-6
-					 * to calculate actual link length in km.
+					 *   Must be multiplied by value in bits 7-6 to calculate actual link length in km.
 					 */
-	u8 om5_len;                     /* Reg 133: Link length supported for OM5 fiber,
-					 * units of 2 m
-					 */
-	u8 om4_len;                     /* Reg 134: Link length supported for OM4 fiber,
-					 * units of 2 m
-					 */
-	u8 om3_len;                     /* Reg 135: Link length supported for EBW 50/125
-					 * µm fiber (OM3), units of 2m
-					 */
-	u8 om2_len;                     /* Reg 136: Link length supported for 50/125
-					 * µm fiber (OM2), units of 1m
-					 */
+	u8 om5_len;                     /* Reg 133: Link length supported for OM5 fiber, units of 2 m */
+	u8 om4_len;                     /* Reg 134: Link length supported for OM4 fiber, units of 2 m */
+	u8 om3_len;                     /* Reg 135: Link length supported for EBW 50/125 µm fiber (OM3), units of 2m */
+	u8 om2_len;                     /* Reg 136: Link length supported for 50/125 µm fiber (OM2), units of 1m */
 	u8 resv0;                       /* Reg 137: Reserved */
-	u8 wavelength[2];               /* Reg 138-139: Nominal laser wavelength
-					 * (Wavelength = value / 20 in nm)
-					 */
+	u8 wavelength[2];               /* Reg 138-139: Nominal laser wavelength (Wavelength = value / 20 in nm) */
 	u8 wavelength_tolerance[2];     /*
-					 * Reg 140-141: Guaranteed range of laser
-					 * wavelength (+/- value) from Nominal wavelength.
-					 * (Wavelength Tol. = value/200 in nm).
+					 * Reg 140-141: Guaranteed range of laser wavelength (+/- value)
+					 * from Nominal wavelength.(Wavelength Tol. = value/200 in nm).
 					 */
 	u8 pages_implement;             /* Reg 142: Implemented pages advertising */
 	u8 resv1[16];                   /* Reg 143-158 */
 	u8 monitor_implement[2];        /*
 					 * Reg 159-160: Implemented Monitors Advertisement.
 					 * Reg 159: bit 7-6: Reserved.
-					 *	bit 5: Custom monitor implemented
-					 *	bit 4-2: Aux3 ~ Aux1 monitor implemented
-					 *	bit 1: Internal 3.3 Volts monitor implemented
-					 *	bit 0: Temperature monitor implemented
+					 *          bit 5: Custom monitor implemented
+					 *          bit 4-2: Aux3 ~ Aux1 monitor implemented
+					 *          bit 1: Internal 3.3 Volts monitor implemented
+					 *          bit 0: Temperature monitor implemented
 					 * Reg 160: bit 7-5: Reserved.
-					 *	bit 4-3: Tx Bias current measurement
-					 *			and threshold multiplier.
-					 *	         00b = multiply x1
-					 *	         01b = multiply x2
-					 *	         10b = multiply x4
-					 *	         11b = reserved
-					 *	bit 2: Rx Optical Input Power monitor implemented
-					 *	bit 1: Tx Output Optical Power monitor implemented
-					 *	bit 0: Tx Bias monitor implemented
+					 *          bit 4-3: Tx Bias current measurement and threshold multiplier.
+					 *                   00b = multiply x1
+					 *                   01b = multiply x2
+					 *                   10b = multiply x4
+					 *                   11b = reserved
+					 *          bit 2: Rx Optical Input Power monitor implemented
+					 *          bit 1: Tx Output Optical Power monitor implemented
+					 *          bit 0: Tx Bias monitor implemented
 					 */
 	u8 resv2[95];                   /* Reg 161-255 */
 } qsfp_cmis_upper_page_01_s;
 
 typedef struct {
-	u8 temperature_high_alarm[2];   /* Reg 128-129: Threshold for internally
-					 * measured temperature monitor
-					 */
-	u8 temperature_low_alarm[2];    /* Reg 130-131: Threshold for internally
-					 * measured temperature monitor
-					 */
-	u8 temperature_high_warn[2];    /* Reg 132-133: Threshold for internally
-					 * measured temperature monitor
-					 */
-	u8 temperature_low_warn[2];     /* Reg 134-135: Threshold for internally
-					 * measured temperature monitor
-					 */
+	u8 temperature_high_alarm[2];   /* Reg 128-129: Threshold for internally measured temperature monitor */
+	u8 temperature_low_alarm[2];    /* Reg 130-131: Threshold for internally measured temperature monitor */
+	u8 temperature_high_warn[2];    /* Reg 132-133: Threshold for internally measured temperature monitor */
+	u8 temperature_low_warn[2];     /* Reg 134-135: Threshold for internally measured temperature monitor */
 	u8 volt_high_alarm[2];          /*
 					 * Reg 136-137: Thresholds for internally measured 3.3 volt
 					 * input supply voltage: in 100 µV increments.
@@ -1342,23 +997,19 @@ typedef struct {
 	u8 tx_power_high_warn[2];       /* Reg 180-181: Threshold for Tx optical power monitor */
 	u8 tx_power_low_warn[2];        /* Reg 182-183: Threshold for Tx optical power monitor */
 	u8 tx_bias_high_alarm[2];       /*
-					 * Reg 184-185: Threshold for Tx bias monitor:
-					 * unsigned inter in 2uA increments,
+					 * Reg 184-185: Threshold for Tx bias monitor: unsigned inter in 2uA increments,
 					 * times the multiplier from Table 8-33.
 					 */
 	u8 tx_bias_low_alarm[2];        /*
-					 * Reg 186-187: Threshold for Tx bias monitor:
-					 * unsigned inter in 2uA increments,
+					 * Reg 186-187: Threshold for Tx bias monitor: unsigned inter in 2uA increments,
 					 * times the multiplier from Table 8-33.
 					 */
 	u8 tx_bias_high_warn[2];        /*
-					 * Reg 188-189: Threshold for Tx bias monitor:
-					 * unsigned inter in 2uA increments,
+					 * Reg 188-189: Threshold for Tx bias monitor: unsigned inter in 2uA increments,
 					 * times the multiplier from Table 8-33.
 					 */
 	u8 tx_bias_low_warn[2];         /*
-					 * Reg 190-191: Threshold for Tx bias monitor:
-					 * unsigned inter in 2uA increments,
+					 * Reg 190-191: Threshold for Tx bias monitor: unsigned inter in 2uA increments,
 					 * times the multiplier from Table 8-33.
 					 */
 	u8 rx_power_high_alarm[2];      /* Reg 192-193: Threshold for Rx optical power monitor */
@@ -1369,41 +1020,33 @@ typedef struct {
 } qsfp_cmis_upper_page_02_s;
 
 typedef struct {
-	u8 resv0[QSFP_CMIS_PAGE_SIZE];  /* Reg 128-255: Upper Memory: Page 03H */
-} qsfp_cmis_upper_page_03_s;
-
-typedef struct {
 	u8 resv0[2];                    /* Reg 128-129: Upper Memory: Page 10H */
 	u8 tx_disable;                  /* Reg 130: Tx disable, 0b=enabled, 1b=disabled */
 	u8 resv1[125];                  /* Reg 131-255 */
 } qsfp_cmis_upper_page_10_s;
 
 typedef struct {
-	u8 resv0[7];		/* Reg 128-134: Upper Memory: Page 11H */
-	u8 tx_fault;		/* Reg 135: Latched Tx Fault flag, media lane 1 ~ 8 */
-	u8 tx_los;		/* Reg 136: Latched Tx LOS flag, lane 1 ~ 8 */
-	u8 tx_cdr_lol;		/* Reg 137: Latched Tx CDR LOL flag, lane 1 ~ 8 */
-	u8 resv1[9];		/* Reg 138-146 */
-	u8 rx_los;		/* Reg 147: Latched Rx LOS flag, media lane 1 ~ 8. Clear on Read */
-	u8 rx_cdr_lol;		/* Reg 148: Latched Rx CDR LOL flag, media lane 1 ~ 8.
-				 * Clear on Read
-				 */
-	u8 resv2[5];		/* Reg 149-153 */
-	u8 tx_power[16];	/* Reg 154-169: Internally measured Tx output optical power */
-	u8 tx_bias[16];		/* Reg 170-185: Internally measured Tx bias current monitor:
-				 * unsinged integer in 2uA increments,
-				 * times the multiplier from Table 8-33(Page 01H: Reg 160).
-				 */
-	u8 rx_power[16];	/* Reg 186-201: Internally measured Rx input optical power */
-	u8 resv3[54];		/* Reg 202-255 */
+	u8 resv0[7];                    /* Reg 128-134: Upper Memory: Page 11H */
+	u8 tx_fault;                    /* Reg 135: Latched Tx Fault flag, media lane 1 ~ 8 */
+	u8 tx_los;                      /* Reg 136: Latched Tx LOS flag, lane 1 ~ 8 */
+	u8 tx_cdr_lol;                  /* Reg 137: Latched Tx CDR LOL flag, lane 1 ~ 8 */
+	u8 resv1[9];                    /* Reg 138-146 */
+	u8 rx_los;                      /* Reg 147: Latched Rx LOS flag, media lane 1 ~ 8. Clear on Read */
+	u8 rx_cdr_lol;                  /* Reg 148: Latched Rx CDR LOL flag, media lane 1 ~ 8. Clear on Read */
+	u8 resv2[5];                    /* Reg 149-153 */
+	u8 tx_power[16];                /* Reg 154-169: Internally measured Tx output optical power */
+	u8 tx_bias[16];                 /*
+					 * Reg 170-185: Internally measured Tx bias current monitor: unsinged integer
+					 * in 2uA increments, times the multiplier from Table 8-33(Page 01H: Reg 160).
+					 */
+	u8 rx_power[16];                /* Reg 186-201: Internally measured Rx input optical power */
+	u8 resv3[54];                   /* Reg 202-255 */
 } qsfp_cmis_upper_page_11_s;
 
 typedef struct {
-	u8 resv0[2];				/* Reg 128-129: Upper Memory: Page 13H */
-	u8 diagnostic_reporting_capabilities;	/* Reg 130: The diagnostic reporting
-						 * capabilities of the module are advertised
-						 */
-	u8 resv1[125];				/* Reg 131-255 */
+	u8 resv0[2];                            /* Reg 128-129: Upper Memory: Page 13H */
+	u8 diagnostic_reporting_capabilities;   /* Reg 130: The diagnostic reporting capabilities of the module are advertised */
+	u8 resv1[125];                          /* Reg 131-255 */
 } qsfp_cmis_upper_page_13_s;
 
 #define CMIS_LANE_NUM                       8
@@ -1412,13 +1055,11 @@ typedef struct ber_lane_s {
 } ber_lane;
 
 typedef struct {
-	u8 diagnostics_selector; 		/* Reg 128: This selects the content of the data
-						 * in bytes 192-255: Page 14H
-						 */
-	u8 resv0;				/* Reg 129 */
-	u8 custom[2];				/* Reg 130-131 */
-	u8 latched_diagnostics_flags[8];	/* Reg 132-139 */
-	u8 resv1[52];				/* Reg 140-191 */
+	u8 diagnostics_selector;                /* Reg 128: This selects the content of the data in bytes 192-255: Page 14H */
+	u8 resv0;                               /* Reg 129 */
+	u8 custom[2];                           /* Reg 130-131 */
+	u8 latched_diagnostics_flags[8];        /* Reg 132-139 */
+	u8 resv1[52];                           /* Reg 140-191 */
 	union {
 		u8 contents[64];
 		struct {
@@ -1460,93 +1101,27 @@ typedef struct {
 			ber_lane host_ber;              /* Reg 192-193 */
 			ber_lane media_ber;             /* Reg 208-209 */
 		} host_and_media_ber;
-	} err_info;	/* Reg 192-255: Contents defined by Diagnostics Selector */
+	} err_info;                             /* Reg 192-255: Contents defined by Diagnostics Selector */
 } qsfp_cmis_upper_page_14_s;
 
 typedef struct {
-	u8 resv0[16];		/* Reg 128-143: Upper Memory: Page B7H */
-	u8 ret_loss_status[8];	/* Reg 144-151: Optical link return
-				 * loss detection status on lane 1~8
-				 */
-	u8 ret_loss_overview;	/* Reg 152: Optical link return loss detection overview */
-	u8 resv1[103];		/* Reg 153-255 */
-} qsfp_cmis_upper_page_b7_s;
-
-typedef struct {
-	u8 minimum_value[2];	/* LPL PM data 2 bytes – minimum value */
-	u8 average_value[2];	/* LPL PM data 2 bytes – average (mean) value */
-	u8 maximum_value[2];	/* LPL PM data 2 bytes – maximum value */
-} cdb_pam4_ltp_6bytes;
-
-typedef struct {
-	u8 minimum_value[2];	/* LPL PM data 2 bytes – minimum value */
-	u8 average_value[2];	/* LPL PM data 2 bytes – average (mean) value */
-	u8 maximum_value[2];	/* LPL PM data 2 bytes – maximum value */
-	u8 current_value[2];	/* LPL PM data 2 bytes – an optional current value */
-} cdb_pam4_ltp_8bytes;
-
-typedef struct {
-	u8 rsv[2];		/* 136~137 reserved */
-	u8 max_ref_pot;		/* 138 Whether channel 1-8 max reflection intensity point has return loss alarm,
-				 * bit0-7: indicates channel 1-8,
-				 * 0: no alarm, 1: has alarm (recommend cleaning link)
-				 */
-	u8 sec_ref_pot;		/* 139 Whether channel 1-8 second max reflection intensity point has return loss alarm,
-				 * bit0-7: indicates channel 1-8,
-				 * 0: no alarm, 1: has alarm (recommend cleaning link)
-				 */
-	u8 max_ref_val[8];	/* 140~147 Channel 1-8 max reflection intensity, unsigned data,
-				 * unit: -0.2 dB
-				 * for example: 0x0A means return loss intensity is -2db
-				 */
-	u8 max_ref_pos[8][3];	/* 148~171 Channel 1-8 max reflection intensity point position, unsigned data,
-				 * unit: 0.1m,
-				 * report 0xFFFFFFh means invalid value (max reflection point not detected)
-				 */
-	u8 sec_ref_val[8];	/* 172~179 Channel 1-8 second max reflection intensity, unsigned data,
-				 * unit: -0.2 dB
-				 * for example: 0x0A means return loss intensity is -2db
-				 */
-	u8 sec_ref_pos[8][3];	/* 180~203 Channel 1-8 second max reflection intensity point position,
-				 * unsigned data, unit: 0.1m, report 0xFFFFFFh means invalid value
-				 * (max reflection point not detected)
-				 */
-	u8 far_ref_val[8];	/* 204~211 Channel 1-8 farthest reflection intensity, unsigned data,
-				 * unit: -0.2 dB
-				 * for example: 0x0A means return loss intensity is -2db
-				 */
-	u8 far_ref_pos[8][3];	/* 212~235 Channel 1-8 farthest reflection intensity point position,
-				 * unsigned data, unit: 0.1m,
-				 * report 0xFFFFFFh means invalid value (max reflection point not detected)
-				 */
-	u8 peer_tx_alarm;	/* 236 Whether peer TX optical port has alarm, bit0-7: TX optical port 1-8,
-				 * 0: no alarm, 1: has alarm (recommend cleaning link)
-				 */
-	u8 peer_tx_val[8];	/* 237~244 Peer TX optical port 1-8 alarm level, unsigned data */
-	u8 local_rx_alarm;	/* 245 Whether local RX optical port has alarm, bit0-7: RX optical port 1-8,
-				 * 0: no alarm, 1: has alarm (recommend cleaning link)
-				 */
-	u8 local_rx_val[8];	/* 246~253 Local RX optical port 1-8 alarm level, unsigned data */
-	u8 rsv1[2];		/* 254~255 reserved */
-} cdb_dirt_detection;
-
-typedef struct {
-	u8 resv0[8];				/* Reg 128-135: Upper Memory: Page 9FH */
+	u8 resv0[8];                            /* Reg 128-135: Upper Memory: Page 9FH */
 	union {
-		u8 val[120];			/* Reg 136-255: LPL PM data 120 bytes */
-		cdb_pam4_ltp_6bytes ltp6[8];	/* Reg 136-183: LPL PM data: lane1~8 PAM4 LTP,
-						 * Each LTP contains 6 bytes of data.
-						 */
-		cdb_pam4_ltp_8bytes ltp8[8];	/* Reg 136-199: LPL PM data: lane1~8 PAM4 LTP,
-						 * Each LTP contains 8 bytes of data.
-						 */
-		cdb_dirt_detection dirt0;	/* Reg 136-255: Report max reflection,
-						 * second max reflection, farthest reflection and TX optical port detection info.
-						 */
+		u8 val[120];                        /* Reg 136-255: LPL PM data 120 bytes */
+		cdb_pam4_ltp_6bytes ltp6[8];        /* Reg 136-183: LPL PM data: lane1~8 PAM4 LTP, Each LTP contains 6 bytes of data. */
+		cdb_pam4_ltp_8bytes ltp8[8];        /* Reg 136-199: LPL PM data: lane1~8 PAM4 LTP, Each LTP contains 8 bytes of data. */
+		cdb_dirt_detection dirt0;           /* Reg 136-255: Report maximum reflection, second largest reflection, farthest reflection and TX optical port detection info. */
 	} lpl_pm_data;
 } qsfp_cmis_upper_page_9f_s;
 
-/* The default byte order (storage order) for numeric data types is defined in section 8.1.3.5 (big-endian). In the case of non-default storage order (little-endian), non-default byte order must be explicitly specified. */
+typedef struct {
+	u8 resv0[16];                           /* Reg 128-143: Upper Memory: Page B7H */
+	u8 ret_loss_status[8];                  /* Reg 144-151: Optical link return loss detection status on lane 1~8 */
+	u8 ret_loss_overview;                   /* Reg 152: Optical link return loss detection overview */
+	u8 resv1[103];                          /* Reg 153-255 */
+} qsfp_cmis_upper_page_b7_s;
+
+/* The default byte order (storage order) of numeric data types is defined in section 8.1.3.5 (big endian). In the case of non-default storage order (little endian), the non-default byte order must be explicitly specified. */
 typedef struct {
 	qsfp_cmis_lower_page_00_s lower_page_00;    /* QSFP-DD-CMIS lower page 00 128-byte data */
 	qsfp_cmis_upper_page_00_s upper_page_00;    /* QSFP-DD-CMIS upper page 00 128-byte data */
@@ -1560,123 +1135,17 @@ typedef struct {
 	qsfp_cmis_upper_page_b7_s upper_page_b7;    /* QSFP-DD-CMIS upper page b7 128-byte data */
 } qsfp_cmis_info_s;
 
-/* optical_speed */
-#define XSFP_MAC_SPEED_UNKNOWN 0   /* unknown */
-#define XSFP_MAC_SPEED_10M 10      /* 10 Mbps */
-#define XSFP_MAC_SPEED_100M 100    /* 100 Mbps */
-#define XSFP_MAC_SPEED_1G 1000     /* 1000 Mbps   = 1 Gbps */
-#define XSFP_MAC_SPEED_10G 10000   /* 10000 Mbps  = 10 Gbps */
-#define XSFP_MAC_SPEED_25G 25000   /* 25000 Mbps  = 25 Gbps */
-#define XSFP_MAC_SPEED_40G 40000   /* 40000 Mbps  = 40 Gbps */
-#define XSFP_MAC_SPEED_50G 50000   /* 50000 Mbps  = 50 Gbps */
-#define XSFP_MAC_SPEED_100G 100000 /* 100000 Mbps = 100 Gbps */
-#define XSFP_MAC_SPEED_200G 200000 /* 200000 Mbps = 200 Gbps */
-#define XSFP_MAC_SPEED_400G 400000 /* 400000 Mbps = 400 Gbps */
-#define XSFP_MAC_SPEED_800G 800000 /* 800000 Mbps = 800 Gbps */
+#define MGMT_TLV_U8_SIZE        1
+#define MGMT_TLV_U16_SIZE       2
+#define MGMT_TLV_U32_SIZE       4
 
-struct mag_bios_cfg {
-	u8 speed;      /* enum of port speed */
-	u8 auto_neg;   /* Auto-negotiation switch 0 - field invalid 1 - on 2 - off */
-	u8 lanes;      /* lane num */
-	u8 fec;        /* FEC mode, refer to enum mag_cmd_port_fec */
-	u8 auto_adapt; /* Auto-adapt mode configuration 0 - invalid config 1 - on 2 - off */
-};
+#define MGMT_TLV_GET_U8(addr)          (*((u8 *)(void *)(addr)))
+#define MGMT_TLV_SET_U8(addr, value)   ((*((u8 *)(void *)(addr))) = ((u8)(value)))
 
-#define VL_NUM      16
-#define LANE_NUM    8
+#define MGMT_TLV_GET_U16(addr)         (*((u16 *)(void *)(addr)))
+#define MGMT_TLV_SET_U16(addr, value)  ((*((u16 *)(void *)(addr))) = ((u16)(value)))
 
-typedef struct {
-	u32 ubmac_nl_id;
-	u32 ubmac_port_id;
-
-	u32 ubmac_port_info;                            // PORT_INFO
-	u32 ubmac_port_link_sta;                        // PORT_LINK_STA
-	u32 ubmac_phy_link_status_1;                    // PHY_LINK_STA_1
-	u32 ubmac_phy_link_status_2;                    // PHY_LINK_STA_2
-	u32 ubmac_phy_link_status_3;                    // PHY_LINK_STA_3
-	u32 ubmac_phy_link_err_status;                  // PHY_LINK_ERR_STA
-	u32 ubmac_fec_err_bit_num_low;                  // ST_MAC_FEC_ERR_BIT_NUM_LOW
-	u32 ubmac_fec_err_bit_num_high;                 // ST_MAC_FEC_ERR_BIT_NUM_HIGH
-	u32 ubmac_fec_decoding_fail_num_low;            // ST_MAC_FEC_DECODING_FAIL_NUM_LOW
-	u32 ubmac_fec_decoding_fail_num_high;           // ST_MAC_FEC_DECODING_FAIL_NUM_HIGH
-
-	u32 ubmac_dl_vl_enable;                         // CFG_LINK_CAP_11
-	u32 ubmac_dl_rx_flit_cnt[VL_NUM];               // RX_FLIT_CNT_0 ~ 15
-	u32 ubmac_dl_tx_flit_cnt[VL_NUM];               // TX_FLIT_CNT_0 ~ 15
-	u32 ubmac_dl_crd_exist_cnt[VL_NUM];             // ST_CRD_0 ~ 15
-	u32 ubmac_dl_crd_compensate_cnt[VL_NUM];        // ST_CRD_COMPENSATE_0 ~ 15
-	u32 ubmac_dl_crd_vn_return_limit[VL_NUM];       // DATA_LINK_PFM_OPT_CFG_0 ~ 7
-	u32 ubmac_dl_crd_vn_l1crd_limit[VL_NUM];        // DATA_LINK_PFM_OPT_CFG_8 ~ 15
-
-	u32 ubmac_pfa_tx_fast_err_pkt_int_cnt;          // PFA_TX_FAST_ERR_PKT_IN_CNT
-	u32 ubmac_pfa_tx_fast_pkt_int_cnt;              // PFA_TX_FAST_PKT_IN_CNT
-	u32 ubmac_pfa_tx_norm_pkt_int_cnt;              // PFA_TX_NORM_PKT_IN_CNT
-	u32 ubmac_pfa_rx_pkt_int_cnt;                   // PFA_RX_PKT_IN_CNT
-	u32 ubmac_pfa_tx_norm_err_pkt_int_cnt;          // PFA_TX_NORM_ERR_PKT_IN_CNT
-	u32 ubmac_pfa_rx_err_pkt_int_cnt;               // PFA_RX_ERR_PKT_IN_CNT
-	u32 ubmac_pfa_tx_fast_short_pkt_cnt;            // PFA_TX_FAST_SHORT_PKT_CNT
-	u32 ubmac_pfa_tx_fast_long_pkt_cnt;             // PFA_TX_FAST_LONG_PKT_CNT
-	u32 ubmac_pfa_tx_fast_mode_err_pkt_cnt;         // PFA_TX_FAST_MODE_ERR_PKT_CNT
-	u32 ubmac_pfa_tx_norm_short_pkt_cnt;            // PFA_TX_NORM_SHORT_PKT_CNT
-	u32 ubmac_pfa_tx_norm_long_pkt_cnt;             // PFA_TX_NORM_LONG_PKT_CNT
-	u32 ubmac_pfa_tx_norm_mode_err_pkt_cnt;         // PFA_TX_NORM_MODE_ERR_PKT_CNT
-	u32 ubmac_pfa_rx_short_pkt_cnt;                 // PFA_RX_SHORT_PKT_CNT
-	u32 ubmac_pfa_rx_mode_err_pkt_cnt;              // PFA_RX_MODE_ERR_PKT_CNT
-	u32 ubmac_pfa_dfx_tx_pkt_len_chk_en;            // PFA_DFX_TX_PKT_LEN_CHK_EN
-	u32 ubmac_pfa_dfx_rx_pkt_len_chk_en;            // PFA_DFX_RX_PKT_LEN_CHK_EN
-	u32 ubmac_pfa_dfx_pkt_info_chk_en;              // PFA_DFX_PKT_INFO_CHK_EN
-	u32 ubmac_pfa_dfx_tx_fifo_state;                // PFA_DFX_TX_FIFO_STATE
-	u32 ubmac_pfa_dfx_rx_fifo_state;                // PFA_DFX_RX_FIFO_STATE
-	u32 ubmac_pfa_dfx_work_mode;                    // PFA_DFX_WORK_MODE
-	u32 ubmac_pfa_dfx_tx_adp_fifo_state;            // PFA_DFX_TX_ADP_FIFO_STATE
-	u32 ubmac_pfa_tx_fast_lng_pkt_in_cnt;           // PFA_TX_FAST_LNG_PKT_IN_CNT
-	u32 ubmac_pfa_tx_fast_lng_err_pkt_in_cnt;       // PFA_TX_FAST_LNG_ERR_PKT_IN_CNT
-	u32 ubmac_pfa_tx_fast_lng_short_pkt_cnt;        // PFA_TX_FAST_LNG_SHORT_PKT_CNT
-	u32 ubmac_pfa_tx_fast_lng_long_pkt_cnt;         // PFA_TX_FAST_LNG_LONG_PKT_CNT
-	u32 ubmac_pfa_tx_fast_lng_mode_err_pkt_cnt;     // PFA_TX_FAST_LNG_MODE_ERR_PKT_CNT
-
-	u32 ubmac_pcs_lane_tsb_crc_cnt[LANE_NUM];       // ST_LANE0_TSB_CRC_CNT ~ 7
-} ubmac_counter_info_s;
-
-typedef struct {
-	struct mgmt_msg_head head;  /* 8B */
-	u8 nl_id;                   /* nl id 0~2 */
-	u8 port_id;                 /* port id 0~7 */
-	u8 rsvd;
-} ubmac_counter_cmd_req;
-
-typedef struct {
-	struct mgmt_msg_head head;  /* 8B */
-	ubmac_counter_info_s ubmac_cnt_info;
-} ubmac_counter_cmd_resp;
-
-/* Because the firmware return rate field is u8 which cannot well carry data above 200Ge, data above 200Ge needs to be converted before display
-	Refer to chip_attr_get_port_speed for conversion
-	The above content refers to tool side modification
-*/
-typedef enum {
-	PORT_SPEED_MODE_START = 200,
-	PORT_SPEED_MODE_400G = 201,
-	PORT_SPEED_MODE_800G = 202,
-	PORT_SPEED_MODE_END = 203,
-} port_speed_mode_e;
-
-typedef enum {
-	PORT_SPEED_UNKOWN = 0,
-	PORT_SPEED_1G = 1,
-	PORT_SPEED_10G = 10,
-	PORT_SPEED_25G = 25,
-	PORT_SPEED_40G = 40,
-	PORT_SPEED_50G = 50,
-	PORT_SPEED_100G = 100,
-	PORT_SPEED_200G = 200,
-	PORT_SPEED_400G = 400,
-	PORT_SPEED_800G = 800
-} port_speed_e;
-
-struct speed_mode_map_s {
-	u8 speed_mode;
-	u32 real_speed;
-};
+#define MGMT_TLV_GET_U32(addr)         (*((u32 *)(void *)(addr)))
+#define MGMT_TLV_SET_U32(addr, value)  ((*((u32 *)(void *)(addr))) = ((u32)(value)))
 
 #endif

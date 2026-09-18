@@ -4,8 +4,8 @@
  * File Name     : hinic5_sml_lt.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : SM lookup table operations for the hinic5 driver.
  */
 
 #include <linux/types.h>
@@ -68,9 +68,9 @@ static inline void sm_lt_load_build_req(struct sml_lt_load_req *req,
 static void sml_lt_store_data(u32 *dst, const u32 *src, u8 num)
 {
 	u32 sm_lt_idx;
-
-	if (num > SM_LT_NUM_2)
+	if (num > SM_LT_NUM_2) {
 		return;
+	}
 	for (sm_lt_idx = 0; sm_lt_idx <= num; sm_lt_idx++) {
 		// 16Byte each
 		u32 offset = sm_lt_idx * SM_LT_OFFSET_4;

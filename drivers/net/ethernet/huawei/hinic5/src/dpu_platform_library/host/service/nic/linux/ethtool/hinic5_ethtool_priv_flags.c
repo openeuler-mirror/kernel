@@ -4,8 +4,8 @@
  * File Name     : hinic5_ethtool_priv_flags.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 ethtool private flags implementation
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [NIC]" fmt
@@ -40,35 +40,7 @@ u32 hinic5_get_priv_flags(struct net_device *netdev)
 	if (test_bit(HINIC5_FORCE_LINK_UP, &nic_dev->flags))
 		priv_flags |= HINIC5_PRIV_FLAGS_LINK_UP;
 
-	if (test_bit(HINIC5_RXQ_RECOVERY, &nic_dev->flags))
-		priv_flags |= HINIC5_PRIV_FLAGS_RXQ_RECOVERY;
-
 	return priv_flags;
-}
-
-int hinic5_set_rxq_recovery_flag(struct net_device *netdev, u32 priv_flags)
-{
-	struct hinic5_nic_dev *nic_dev = netdev_priv(netdev);
-
-	if ((priv_flags & HINIC5_PRIV_FLAGS_RXQ_RECOVERY) != 0) {
-		if (HINIC5_SUPPORT_RXQ_RECOVERY(nic_dev->hwdev) == 0) {
-			nicif_info(nic_dev, drv, netdev,
-				   "Unsupport open rxq recovery\n");
-			return -EOPNOTSUPP;
-		}
-
-		if (test_and_set_bit(HINIC5_RXQ_RECOVERY, &nic_dev->flags) != 0)
-			return 0;
-		queue_delayed_work(nic_dev->workq, &nic_dev->rxq_check_work, HZ);
-		nicif_info(nic_dev, drv, netdev, "open rxq recovery\n");
-	} else {
-		if (test_and_clear_bit(HINIC5_RXQ_RECOVERY, &nic_dev->flags) == 0)
-			return 0;
-		cancel_delayed_work_sync(&nic_dev->rxq_check_work);
-		nicif_info(nic_dev, drv, netdev, "close rxq recovery\n");
-	}
-
-	return 0;
 }
 
 static int hinic5_set_symm_rss_flag(struct net_device *netdev, u32 priv_flags)
@@ -160,10 +132,6 @@ int hinic5_set_priv_flags(struct net_device *netdev, u32 priv_flags)
 	int err;
 
 	err = hinic5_set_symm_rss_flag(netdev, priv_flags);
-	if (err != 0)
-		return err;
-
-	err = hinic5_set_rxq_recovery_flag(netdev, priv_flags);
 	if (err != 0)
 		return err;
 

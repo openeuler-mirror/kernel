@@ -4,8 +4,8 @@
  * File Name     : ossl_knl_linux.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : OSSL kernel Linux OS adaptation layer
  */
 
 #include <linux/vmalloc.h>
@@ -182,22 +182,22 @@ unsigned int cpumask_local_spread(unsigned int i, int node)
 }
 #endif
 
-struct file *hinic5_file_creat(const char *file_name)
+struct file *file_creat(const char *file_name)
 {
 	return filp_open(file_name, O_CREAT | O_RDWR | O_APPEND, 0);
 }
 
-struct file *hinic5_file_open(const char *file_name)
+struct file *file_open(const char *file_name)
 {
 	return filp_open(file_name, O_RDONLY, 0);
 }
 
-void hinic5_file_close(struct file *file_handle)
+void file_close(struct file *file_handle)
 {
 	(void)filp_close(file_handle, NULL);
 }
 
-u32 hinic5_get_file_size(struct file *file_handle)
+u32 get_file_size(struct file *file_handle)
 {
 	struct inode *file_inode = NULL;
 
@@ -210,12 +210,12 @@ u32 hinic5_get_file_size(struct file *file_handle)
 	return (u32)(file_inode->i_size);
 }
 
-void hinic5_set_file_position(struct file *file_handle, u32 position)
+void set_file_position(struct file *file_handle, u32 position)
 {
 	file_handle->f_pos = position;
 }
 
-int hinic5_file_read(struct file *file_handle, char *log_buffer, u32 rd_length,
+int file_read(struct file *file_handle, char *log_buffer, u32 rd_length,
 	      u32 *file_pos)
 {
 	if (!file_handle || !log_buffer || rd_length == 0)
@@ -234,7 +234,7 @@ int hinic5_file_read(struct file *file_handle, char *log_buffer, u32 rd_length,
 #endif
 }
 
-u32 hinic5_file_write(struct file *file_handle, const char *log_buffer, u32 wr_length)
+u32 file_write(struct file *file_handle, const char *log_buffer, u32 wr_length)
 {
 	if (!file_handle || !log_buffer || wr_length == 0)
 		return -EINVAL;
@@ -263,23 +263,29 @@ static int _linux_thread_func(void *thread)
 	return 0;
 }
 
-int hinic5_creat_thread(struct sdk_thread_info *thread_info)
+int creat_thread(struct sdk_thread_info *thread_info)
 {
 	thread_info->thread_obj = kthread_run(_linux_thread_func, thread_info,
 					      thread_info->name);
-	if (!thread_info->thread_obj)
-		return -EFAULT;
+	if (IS_ERR(thread_info->thread_obj)) {
+		int err = PTR_ERR(thread_info->thread_obj);
+
+		thread_info->thread_obj = NULL;
+		return err;
+	}
 
 	return 0;
 }
 
-void hinic5_stop_thread(struct sdk_thread_info *thread_info)
+void stop_thread(struct sdk_thread_info *thread_info)
 {
-	if (thread_info->thread_obj)
+	if (thread_info->thread_obj) {
 		(void)kthread_stop(thread_info->thread_obj);
+		thread_info->thread_obj = NULL;
+	}
 }
 
-void hinic5_utctime_to_localtime(u64 utctime, u64 *localtime)
+void utctime_to_localtime(u64 utctime, u64 *localtime)
 {
 	*localtime = utctime - (u64)(sys_tz.tz_minuteswest * OSSL_MINUTE_BASE);
 }
@@ -294,7 +300,7 @@ void initialize_timer(const void *adapter_hdl, struct timer_list *timer)
 }
 #endif
 
-void hinic5_add_to_timer(struct timer_list *timer, u64 period)
+void add_to_timer(struct timer_list *timer, u64 period)
 {
 	if (!timer)
 		return;
@@ -302,9 +308,9 @@ void hinic5_add_to_timer(struct timer_list *timer, u64 period)
 	add_timer(timer);
 }
 
-void hinic5_stop_timer(struct timer_list *timer) {}
+void stop_timer(struct timer_list *timer) {}
 
-void hinic5_delete_timer(struct timer_list *timer)
+void delete_timer(struct timer_list *timer)
 {
 	if (!timer)
 		return;
@@ -312,7 +318,7 @@ void hinic5_delete_timer(struct timer_list *timer)
 	del_timer_sync(timer);
 }
 
-u64 hinic5_ossl_get_real_time(void)
+u64 ossl_get_real_time(void)
 {
 	struct timeval tv = {0};
 	u64 tv_msec;
@@ -324,7 +330,7 @@ u64 hinic5_ossl_get_real_time(void)
 }
 
 #ifdef NEED_MATH64_MUL_U64_U64_DIV_U64
-u64 mul_u64_u64_div_u64(u64 a, u64 b, u64 c)
+u64 mul5_u64_u64_div_u64(u64 a, u64 b, u64 c)
 {
 	u64 res = 0, div, rem;
 	int shift;
@@ -363,17 +369,17 @@ u64 mul_u64_u64_div_u64(u64 a, u64 b, u64 c)
 
 	return res + div64_u64(a * b, c);
 }
-EXPORT_SYMBOL(mul_u64_u64_div_u64);
+EXPORT_SYMBOL(mul5_u64_u64_div_u64);
 #endif
 
-#ifdef NEED_SYSFS_EMIT
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
 int sysfs_emit(char *buf, const char *fmt, ...)
 {
 	va_list args;
 	int len;
 
 	if (WARN(!buf || offset_in_page(buf),
-		 "invalid %s: buf:%p\n", __func__, buf))
+		 "invalid sysfs_emit: buf:%p\n", buf))
 		return 0;
 
 	va_start(args, fmt);

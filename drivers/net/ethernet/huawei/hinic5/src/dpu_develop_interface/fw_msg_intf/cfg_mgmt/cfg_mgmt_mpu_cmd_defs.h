@@ -4,7 +4,7 @@
  * File Name     : cfg_mgmt_mpu_cmd_defs.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
+ * Last Modified : 2026/09/16
  * Description   :
  */
 
@@ -28,8 +28,8 @@ typedef enum {
 	SERVICE_BIT_VIRTIO    = 6,
 	SERVICE_BIT_OVS       = 7,
 	SERVICE_BIT_NVME      = 8,
-	SERVICE_BIT_ROCEAA    = 9, // TBD to be replaced with SERVICE_BIT_ROCE_MIG
-	SERVICE_BIT_CURRENET  = 10, // TBD to be replaced with SERVICE_BIT_VIRTIO_MIG
+	SERVICE_BIT_ROCEAA    = 9, // TBD replace with SERVICE_BIT_ROCE_MIG
+	SERVICE_BIT_CURRENET  = 10, // TBD replace with SERVICE_BIT_VIRTIO_MIG
 	SERVICE_BIT_PPA       = 11,
 	SERVICE_BIT_MIGRATE   = 12,
 	SERVICE_BIT_VROCE     = 13,
@@ -43,7 +43,7 @@ typedef enum {
 	SERVICE_BIT_PFE       = 21,
 	SERVICE_BIT_UBCNET    = 22,
 	SERVICE_BIT_CFM       = 23,
-	SERVICE_BIT_BIFUR     = 24,
+	SERVICE_BIT_BIFUR     = 24, // TODO: MPU to uniformly adjust the bit positions of dmmu and bifur (dmmu->24;BIFUR->14)
 	SERVICE_BIT_HIHTR     = 25,
 	SERVICE_BIT_MAX
 } servic_bit_define_e;
@@ -67,8 +67,8 @@ typedef enum {
 #define CFG_SERVICE_MASK_VIRTIO     (0x1 << SERVICE_BIT_VIRTIO)
 #define CFG_SERVICE_MASK_OVS        (0x1 << SERVICE_BIT_OVS)
 #define CFG_SERVICE_MASK_NVME       (0x1 << SERVICE_BIT_NVME)
-#define CFG_SERVICE_MASK_ROCEAA     (0x1 << SERVICE_BIT_ROCEAA) // TBD to be replaced with SERVICE_BIT_ROCE_MIG
-#define CFG_SERVICE_MASK_CURRENET   (0x1 << SERVICE_BIT_CURRENET) // TBD to be replaced with SERVICE_BIT_VIRTIO_MIG
+#define CFG_SERVICE_MASK_ROCEAA     (0x1 << SERVICE_BIT_ROCEAA) // TBD replace with SERVICE_BIT_ROCE_MIG
+#define CFG_SERVICE_MASK_CURRENET   (0x1 << SERVICE_BIT_CURRENET) // TBD replace with SERVICE_BIT_VIRTIO_MIG
 #define CFG_SERVICE_MASK_PPA        (0x1 << SERVICE_BIT_PPA)
 #define CFG_SERVICE_MASK_MIGRATE    (0x1 << SERVICE_BIT_MIGRATE)
 #define CFG_SERVICE_MASK_VROCE      (0x1 << SERVICE_BIT_VROCE)
@@ -228,7 +228,8 @@ struct cfg_cmd_dev_cap {
 	u8 dev_cos_valid_bitmap;
 	u8 dev_default_cos;
 	u8 cos_mask_mode;
-	u8 rsvd_func2;
+	/* Determines the COS allocation for NIC and RoCE. bit0 = 1: COS0 used by NIC.*/
+	u8 cos_mask_bitmap;
 
 	u8 sf_svc_attr;
 	u8 func_sf_en;
@@ -246,7 +247,7 @@ struct cfg_cmd_dev_cap {
 	u8 master_host_id;
 	u8 srv_multi_host_mode;
 	u8 virtio_vq_size;
-	u16 vio_func_num; /* virtio + nvme function num, sharing the same cache */
+	u16 vio_func_num; /* virtio + nvme function num, share the same cache */
 	u16 nvme_qp_num;
 	u32 virtio_vq_num;
 	u32 rsvd_func4[3];

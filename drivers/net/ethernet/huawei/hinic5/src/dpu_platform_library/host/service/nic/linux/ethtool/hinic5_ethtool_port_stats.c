@@ -4,8 +4,8 @@
  * File Name     : hinic5_ethtool_port_stats.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 ethtool port statistics implementation
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [NIC]" fmt
@@ -89,6 +89,10 @@ static struct hinic5_stats hinic5_rx_queue_stats[] = {
 	HINIC5_RXQ_STAT(xdp_redirected),
 #endif
 	HINIC5_RXQ_STAT(rx_buf_empty),
+	HINIC5_RXQ_STAT(cache_empty),
+	HINIC5_RXQ_STAT(cache_busy),
+	HINIC5_RXQ_STAT(cache_full),
+	HINIC5_RXQ_STAT(cache_waive),
 };
 
 static struct hinic5_stats hinic5_rx_queue_stats_extern[] = {
@@ -97,7 +101,6 @@ static struct hinic5_stats hinic5_rx_queue_stats_extern[] = {
 #ifdef HAVE_XDP_SUPPORT
 	HINIC5_RXQ_STAT(xdp_large_pkt),
 #endif
-	HINIC5_RXQ_STAT(restore_drop_sge),
 	HINIC5_RXQ_STAT(pkt_mc),
 };
 
@@ -113,7 +116,8 @@ static struct hinic5_stats hinic5_tx_queue_stats[] = {
 #ifdef HAVE_XDP_SUPPORT
 static struct hinic5_stats hinic5_xdp_tx_queue_stats[] = {
 	HINIC5_XDPTXQ_STAT(xdp_dropped),
-	HINIC5_XDPTXQ_STAT(xdp_xmits),
+	HINIC5_XDPTXQ_STAT(xdp_xmit_pkts),
+	HINIC5_XDPTXQ_STAT(xdp_xmit_bytes),
 };
 #endif
 
@@ -242,7 +246,6 @@ static struct hinic5_stats hinic5_port_stats[] = {
 static char g_hinic_priv_flags_strings[][ETH_GSTRING_LEN] = {
 	"Symmetric-RSS",
 	"Force-Link-up",
-	"Rxq_Recovery",
 };
 
 u32 hinic5_get_io_stats_size(const struct hinic5_nic_dev *nic_dev)
@@ -268,7 +271,7 @@ u32 hinic5_get_io_stats_size(const struct hinic5_nic_dev *nic_dev)
 #define DEV_STATS_PACK(items, item_idx, array, stats_ptr) do {		\
 	int j;								\
 	for (j = 0; j < ARRAY_LEN(array); j++) {			\
-		memcpy((items)[item_idx].name, (array)[j].name,		\
+		(void)memcpy((items)[item_idx].name, (array)[j].name,		\
 		       HINIC5_SHOW_ITEM_LEN);				\
 		(items)[item_idx].hexadecimal = 0;			\
 		(items)[item_idx].value =				\
@@ -279,8 +282,7 @@ u32 hinic5_get_io_stats_size(const struct hinic5_nic_dev *nic_dev)
 } while (0)
 
 int hinic5_rx_queue_stat_pack(struct hinic5_show_item *item,
-			      struct hinic5_stats *stat,
-			      const struct hinic5_rxq_stats *rxq_stats, u16 qid)
+	struct hinic5_stats *stat, const struct hinic5_rxq_stats *rxq_stats, u16 qid)
 {
 	int ret;
 
@@ -295,8 +297,7 @@ int hinic5_rx_queue_stat_pack(struct hinic5_show_item *item,
 }
 
 int hinic5_tx_queue_stat_pack(struct hinic5_show_item *item,
-			      struct hinic5_stats *stat,
-			      const struct hinic5_txq_stats *txq_stats, u16 qid)
+	struct hinic5_stats *stat, const struct hinic5_txq_stats *txq_stats, u16 qid)
 {
 	int ret;
 
@@ -323,17 +324,15 @@ int hinic5_get_io_stats(const struct hinic5_nic_dev *nic_dev, void *stats)
 
 	for (qid = 0; qid < nic_dev->max_qps; qid++) {
 		for (idx = 0; idx < ARRAY_LEN(hinic5_tx_queue_stats); idx++) {
-			ret = hinic5_tx_queue_stat_pack(&items[item_idx++],
-							&hinic5_tx_queue_stats[idx],
-							&nic_dev->txqs[qid].txq_stats, qid);
+			ret = hinic5_tx_queue_stat_pack(&items[item_idx++], &hinic5_tx_queue_stats[idx],
+				&nic_dev->txqs[qid].txq_stats, qid);
 			if (ret != 0)
 				return -EINVAL;
 	}
 
 	for (idx = 0; idx < ARRAY_LEN(hinic5_tx_queue_stats_extern); idx++) {
-		ret = hinic5_tx_queue_stat_pack(&items[item_idx++],
-						&hinic5_tx_queue_stats_extern[idx],
-						&nic_dev->txqs[qid].txq_stats, qid);
+		ret = hinic5_tx_queue_stat_pack(&items[item_idx++], &hinic5_tx_queue_stats_extern[idx],
+			&nic_dev->txqs[qid].txq_stats, qid);
 		if (ret != 0)
 			return -EINVAL;
 		}
@@ -341,17 +340,15 @@ int hinic5_get_io_stats(const struct hinic5_nic_dev *nic_dev, void *stats)
 
 	for (qid = 0; qid < nic_dev->max_qps; qid++) {
 		for (idx = 0; idx < ARRAY_LEN(hinic5_rx_queue_stats); idx++) {
-			ret = hinic5_rx_queue_stat_pack(&items[item_idx++],
-							&hinic5_rx_queue_stats[idx],
-							&nic_dev->rxqs[qid].rxq_stats, qid);
+			ret = hinic5_rx_queue_stat_pack(&items[item_idx++], &hinic5_rx_queue_stats[idx],
+				&nic_dev->rxqs[qid].rxq_stats, qid);
 			if (ret != 0)
 				return -EINVAL;
 		}
 
 		for (idx = 0; idx < ARRAY_LEN(hinic5_rx_queue_stats_extern); idx++) {
-			ret = hinic5_rx_queue_stat_pack(&items[item_idx++],
-							&hinic5_rx_queue_stats_extern[idx],
-							&nic_dev->rxqs[qid].rxq_stats, qid);
+			ret = hinic5_rx_queue_stat_pack(&items[item_idx++], &hinic5_rx_queue_stats_extern[idx],
+				&nic_dev->rxqs[qid].rxq_stats, qid);
 			if (ret != 0)
 				return -EINVAL;
 		}
@@ -387,8 +384,9 @@ int hinic5_get_sset_count(struct net_device *netdev, int sset)
 		count += ARRAY_LEN(hinic5_xdp_tx_queue_stats) * xdp_num;
 #endif
 
-		if (!HINIC5_FUNC_IS_VF(nic_dev->hwdev))
+		if (!HINIC5_FUNC_IS_VF(nic_dev->hwdev)) {
 			count += ARRAY_LEN(hinic5_port_stats);
+		}
 		return count;
 
 	case ETH_SS_PRIV_FLAGS:
@@ -408,9 +406,9 @@ static void get_drv_queue_stats(struct hinic5_nic_dev *nic_dev, u64 *data)
 	u16 i = 0, j = 0, qid = 0;
 	char *p = NULL;
 
-	/* 1. Count kernel TX queues (num_qps), display regular statistic fields */
+	/* 1. Count kernel TX queues (num_qps), display regular statistics fields */
 	for (qid = 0; qid < nic_dev->q_params.num_qps; qid++) {
-		if (!nic_dev->txqs)
+		if (nic_dev->txqs == NULL)
 			break;
 
 		hinic5_txq_get_stats(&nic_dev->txqs[qid], &txq_stats);
@@ -424,7 +422,7 @@ static void get_drv_queue_stats(struct hinic5_nic_dev *nic_dev, u64 *data)
 
 	/* 3. Count RX queues (num_qps) (kernel queues only) */
 	for (qid = 0; qid < nic_dev->q_params.num_qps; qid++) {
-		if (!nic_dev->rxqs)
+		if (nic_dev->rxqs == NULL)
 			break;
 
 		hinic5_rxq_get_stats(&nic_dev->rxqs[qid], &rxq_stats);
@@ -436,15 +434,15 @@ static void get_drv_queue_stats(struct hinic5_nic_dev *nic_dev, u64 *data)
 		}
 	}
 
-	/* 2. Count XDP TX queues (xdp_qps), display XDP-related statistic fields only */
+	/* 2. Count XDP TX queues (xdp_qps), display XDP related statistics fields only */
 #ifdef HAVE_XDP_SUPPORT
 	for (qid = nic_dev->q_params.num_qps;
 	     qid < nic_dev->q_params.num_qps + nic_dev->q_params.xdp_qps; qid++) {
-		if (!nic_dev->txqs)
+		if (nic_dev->txqs == NULL)
 			break;
 
 		hinic5_xdptxq_get_stats(&nic_dev->txqs[qid], &xdptxq_stats);
-		/* Only display xdp_dropped and xdp_xmits */
+		/* Only display xdp_dropped, xdp_xmit_pkts and xdp_xmit_bytes */
 		for (j = 0; j < ARRAY_LEN(hinic5_xdp_tx_queue_stats); j++, i++) {
 			p = (char *)(&xdptxq_stats) +
 				hinic5_xdp_tx_queue_stats[j].offset;
@@ -463,9 +461,11 @@ static u16 get_ethtool_port_stats(struct hinic5_nic_dev *nic_dev, u64 *data)
 	int err;
 
 	port_stats = kzalloc(sizeof(*port_stats), GFP_KERNEL);
-	if (!port_stats) {
-		memset(&data[i], 0,
-		       ARRAY_LEN(hinic5_port_stats) * sizeof(*data));
+	if (port_stats == NULL) {
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Failed to malloc port stats\n");
+		(void)memset(&data[i], 0,
+			ARRAY_LEN(hinic5_port_stats) * sizeof(*data));
 		i += ARRAY_LEN(hinic5_port_stats);
 		return i;
 	}
@@ -552,19 +552,19 @@ static u16 get_drv_dev_strings(struct hinic5_nic_dev *nic_dev, char *p)
 	u16 i, cnt = 0;
 
 	for (i = 0; i < ARRAY_LEN(hinic5_netdev_stats); i++) {
-		memcpy(p, hinic5_netdev_stats[i].name, ETH_GSTRING_LEN);
+		(void)memcpy(p, hinic5_netdev_stats[i].name, ETH_GSTRING_LEN);
 		p += ETH_GSTRING_LEN;
 		cnt++;
 	}
 
 	for (i = 0; i < ARRAY_LEN(hinic5_nic_dev_stats); i++) {
-		memcpy(p, hinic5_nic_dev_stats[i].name, ETH_GSTRING_LEN);
+		(void)memcpy(p, hinic5_nic_dev_stats[i].name, ETH_GSTRING_LEN);
 		p += ETH_GSTRING_LEN;
 		cnt++;
 	}
 
 	for (i = 0; i < ARRAY_LEN(hinic5_port_link_stat); i++) {
-		memcpy(p, hinic5_port_link_stat[i].name, ETH_GSTRING_LEN);
+		(void)memcpy(p, hinic5_port_link_stat[i].name, ETH_GSTRING_LEN);
 		p += ETH_GSTRING_LEN;
 		cnt++;
 	}
@@ -577,14 +577,14 @@ static u16 get_hw_stats_strings(struct hinic5_nic_dev *nic_dev, char *p)
 	u16 i, cnt = 0;
 
 	for (i = 0; i < ARRAY_LEN(hinic5_function_stats); i++) {
-		memcpy(p, hinic5_function_stats[i].name, ETH_GSTRING_LEN);
+		(void)memcpy(p, hinic5_function_stats[i].name, ETH_GSTRING_LEN);
 		p += ETH_GSTRING_LEN;
 		cnt++;
 	}
 
 	if (!HINIC5_FUNC_IS_VF(nic_dev->hwdev)) {
 		for (i = 0; i < ARRAY_LEN(hinic5_port_stats); i++) {
-			memcpy(p, hinic5_port_stats[i].name, ETH_GSTRING_LEN);
+			(void)memcpy(p, hinic5_port_stats[i].name, ETH_GSTRING_LEN);
 			p += ETH_GSTRING_LEN;
 			cnt++;
 		}
@@ -598,7 +598,7 @@ static u16 get_qp_stats_strings(const struct hinic5_nic_dev *nic_dev, char *p)
 	u16 i = 0, j = 0, cnt = 0;
 	int err;
 
-	/* 1. Kernel TX queue statistic names (num_qps) */
+	/* 1. Kernel TX queue statistics names (num_qps) */
 	for (i = 0; i < nic_dev->q_params.num_qps; i++) {
 		for (j = 0; j < ARRAY_LEN(hinic5_tx_queue_stats); j++) {
 			err = sprintf(p, hinic5_tx_queue_stats[j].name, i);
@@ -611,7 +611,7 @@ static u16 get_qp_stats_strings(const struct hinic5_nic_dev *nic_dev, char *p)
 		}
 	}
 
-	/* 2 RX queue statistic names (kernel queues only) */
+	/* 2. RX queue statistics names (kernel queues only) */
 	for (i = 0; i < nic_dev->q_params.num_qps; i++) {
 		for (j = 0; j < ARRAY_LEN(hinic5_rx_queue_stats); j++) {
 			err = sprintf(p, hinic5_rx_queue_stats[j].name, i);
@@ -624,7 +624,7 @@ static u16 get_qp_stats_strings(const struct hinic5_nic_dev *nic_dev, char *p)
 		}
 	}
 
-	/* 3 XDP TX queue statistic names (xdp_qps) */
+	/* 3. XDP TX queue statistics names (xdp_qps) */
 #ifdef HAVE_XDP_SUPPORT
 	for (i = 0; i < nic_dev->q_params.xdp_qps; i++) {
 		for (j = 0; j < ARRAY_LEN(hinic5_xdp_tx_queue_stats); j++) {
@@ -650,7 +650,7 @@ void hinic5_get_strings(struct net_device *netdev, u32 stringset, u8 *data)
 
 	switch (stringset) {
 	case ETH_SS_TEST:
-		memcpy(data, *g_hinic5_test_strings, sizeof(g_hinic5_test_strings));
+		(void)memcpy(data, *g_hinic5_test_strings, sizeof(g_hinic5_test_strings));
 		return;
 	case ETH_SS_STATS:
 		offset = get_drv_dev_strings(nic_dev, p);
@@ -660,7 +660,7 @@ void hinic5_get_strings(struct net_device *netdev, u32 stringset, u8 *data)
 
 		return;
 	case ETH_SS_PRIV_FLAGS:
-		memcpy(data, g_hinic_priv_flags_strings, sizeof(g_hinic_priv_flags_strings));
+		(void)memcpy(data, g_hinic_priv_flags_strings, sizeof(g_hinic_priv_flags_strings));
 		return;
 	default:
 		nicif_err(nic_dev, drv, netdev,
@@ -713,13 +713,16 @@ static void fecparam_convert(u32 opcode, u8 in_fec_param, u8 *out_fec_param)
 /* When the ethtool is used to set the FEC mode */
 static bool check_fecparam_is_valid(u8 fec_param)
 {
-	if (fec_param == ETHTOOL_FEC_RS ||
-	    fec_param == ETHTOOL_FEC_BASER ||
+	if (
 #ifdef ETHTOOL_FEC_LLRS
-	    fec_param == ETHTOOL_FEC_LLRS ||
+		(fec_param == ETHTOOL_FEC_LLRS) ||
 #endif
-	    fec_param == ETHTOOL_FEC_OFF)
+		(fec_param == ETHTOOL_FEC_RS) ||
+		(fec_param == ETHTOOL_FEC_BASER) ||
+		(fec_param == ETHTOOL_FEC_OFF)
+		) {
 		return true;
+	}
 	return false;
 }
 
@@ -736,9 +739,8 @@ int hinic5_get_fecparam(struct net_device *netdev, struct ethtool_fecparam *fecp
 		return err;
 	}
 
-	fecparam_convert(MAG_CMD_OPCODE_GET, BIT(advertised_fec),
-			 (u8 *)(&fecparam->active_fec));
-	fecparam_convert(MAG_CMD_OPCODE_GET, supported_fec, (u8 *)(&fecparam->fec));
+	fecparam_convert(MAG_CMD_OPCODE_GET, BIT(advertised_fec), (u8 *)(&(fecparam->active_fec)));
+	fecparam_convert(MAG_CMD_OPCODE_GET, supported_fec, (u8 *)(&(fecparam->fec)));
 
 	nicif_info(nic_dev, drv, netdev, "Get fec param success\n");
 	return 0;

@@ -4,8 +4,8 @@
  * File Name     : hinic5_nic_event.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : hinic5 nic event handling implementation
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [NIC]" fmt
@@ -45,6 +45,8 @@ enum hinic5_aeq_cb_state {
 
 #define AEQ_USLEEP_LOW_BOUND		900
 #define AEQ_USLEEP_HIG_BOUND		1000
+
+#define PN_EXPIRED_SIZE_MAX         32
 
 static int hinic5_init_vf_config(struct hinic5_nic_io *nic_io, u16 vf_id)
 {
@@ -128,18 +130,19 @@ static int unregister_vf_msg_handler(struct hinic5_nic_io *nic_io, u16 vf_id)
 
 	vf_info->registered = false;
 
-	memset(&mac_info, 0, sizeof(mac_info));
+	(void)memset(&mac_info, 0, sizeof(mac_info));
 	mac_info.func_id = hinic5_glb_pf_vf_offset(nic_io->hwdev) + (u16)vf_id;
 	mac_info.vlan_id = vf_info->pf_vlan;
 	ether_addr_copy(mac_info.mac, vf_info->drv_mac_addr);
 
-	if (vf_info->use_specified_mac || vf_info->pf_vlan != 0) {
-		err = hinic5_l2nic_msg_to_mgmt_sync(nic_io->hwdev,
+	if (vf_info->use_specified_mac || (vf_info->pf_vlan != 0)) {
+		err = l2nic_msg_to_mgmt_sync(nic_io->hwdev,
 					     HINIC5_NIC_CMD_DEL_MAC,
 					     &mac_info, sizeof(mac_info),
 					     &mac_info, &out_size);
-		if (err != 0 || out_size == 0)
+		if (err != 0 || out_size == 0) {
 			goto ERR_DEL_MAC;
+		}
 
 		switch (mac_info.msg_head.status) {
 		case 0:
@@ -152,7 +155,7 @@ static int unregister_vf_msg_handler(struct hinic5_nic_io *nic_io, u16 vf_id)
 		}
 	}
 
-	memset(vf_info->drv_mac_addr, 0, ETH_ALEN);
+	(void)memset(vf_info->drv_mac_addr, 0, ETH_ALEN);
 
 	return 0;
 
@@ -172,7 +175,7 @@ static int hinic5_register_vf_msg_handler(struct hinic5_nic_io *nic_io,
 	struct vf_data_storage *vf_info = HW_VF_ID_TO_OS_CO(nic_io->vf_infos, vf_id);
 	int err;
 
-	if (!vf_info)
+	if (vf_info == NULL)
 		return -EINVAL;
 
 	if (register_vf->op_register != 0) {
@@ -195,7 +198,7 @@ void hinic5_unregister_vf(struct hinic5_nic_io *nic_io, u16 vf_id)
 {
 	struct vf_data_storage *vf_info = HW_VF_ID_TO_OS_CO(nic_io->vf_infos, vf_id);
 
-	if (!vf_info)
+	if (vf_info == NULL)
 		return;
 	unregister_vf_msg_handler(nic_io, vf_id);
 	vf_info->support_extra_feature = 0;
@@ -208,7 +211,8 @@ static int hinic5_get_vf_cos_msg_handler(struct hinic5_nic_io *nic_io,
 {
 	struct hinic5_cmd_vf_dcb_state *dcb_state = buf_out;
 
-	memcpy(&dcb_state->state, &nic_io->dcb_state, sizeof(nic_io->dcb_state));
+	memcpy(&dcb_state->state, &nic_io->dcb_state,
+	       sizeof(nic_io->dcb_state));
 	dcb_state->msg_head.status = 0;
 	*out_size = sizeof(*dcb_state);
 	return 0;
@@ -223,13 +227,13 @@ static int hinic5_get_vf_mac_msg_handler(struct hinic5_nic_io *nic_io, u16 vf,
 	struct hinic5_port_mac_set *mac_info = buf_out;
 	int err;
 
-	if (!mac_info || !vf_info)
+	if ((mac_info == NULL) || (vf_info == NULL))
 		return -EINVAL;
 
 	mac_in->func_id = vf + hinic5_glb_pf_vf_offset(nic_io->hwdev);
 
 	if (HINIC5_SUPPORT_VF_MAC(nic_io->hwdev) != 0) {
-		err = hinic5_l2nic_msg_to_mgmt_sync(nic_io->hwdev, HINIC5_NIC_CMD_GET_MAC, buf_in,
+		err = l2nic_msg_to_mgmt_sync(nic_io->hwdev, HINIC5_NIC_CMD_GET_MAC, buf_in,
 					     in_size, buf_out, out_size);
 		if (err == 0) {
 			if (is_zero_ether_addr(mac_info->mac))
@@ -254,7 +258,7 @@ static int hinic5_set_vf_mac_msg_handler(struct hinic5_nic_io *nic_io, u16 vf,
 	struct hinic5_port_mac_set *mac_out = buf_out;
 	int err;
 
-	if (!vf_info)
+	if (vf_info == NULL)
 		return -EINVAL;
 
 	mac_in->func_id = vf + hinic5_glb_pf_vf_offset(nic_io->hwdev);
@@ -271,16 +275,16 @@ static int hinic5_set_vf_mac_msg_handler(struct hinic5_nic_io *nic_io, u16 vf,
 	if (is_valid_ether_addr(mac_in->mac))
 		mac_in->vlan_id = vf_info->pf_vlan;
 
-	err = hinic5_l2nic_msg_to_mgmt_sync(nic_io->hwdev, HINIC5_NIC_CMD_SET_MAC,
+	err = l2nic_msg_to_mgmt_sync(nic_io->hwdev, HINIC5_NIC_CMD_SET_MAC,
 				     buf_in, in_size, buf_out, out_size);
-	if (err != 0 || (*out_size) == 0) {
+	if ((err != 0) || ((*out_size) == 0)) {
 		nic_err(nic_io->dev_hdl, "Failed to set VF %d MAC address, err: %d,status: 0x%x, out size: 0x%x\n",
 			HW_VF_ID_TO_OS(vf), err, mac_out->msg_head.status,
 			*out_size);
 		return -EFAULT;
 	}
 
-	if (is_valid_ether_addr(mac_in->mac) && mac_out->msg_head.status == 0)
+	if (is_valid_ether_addr(mac_in->mac) && (mac_out->msg_head.status == 0))
 		ether_addr_copy(vf_info->drv_mac_addr, mac_in->mac);
 
 	return err;
@@ -295,7 +299,7 @@ static int hinic5_del_vf_mac_msg_handler(struct hinic5_nic_io *nic_io, u16 vf,
 	struct hinic5_port_mac_set *mac_out = buf_out;
 	int err;
 
-	if (!vf_info)
+	if (vf_info == NULL)
 		return -EINVAL;
 
 	mac_in->func_id = vf + hinic5_glb_pf_vf_offset(nic_io->hwdev);
@@ -312,10 +316,11 @@ static int hinic5_del_vf_mac_msg_handler(struct hinic5_nic_io *nic_io, u16 vf,
 	if (is_valid_ether_addr(mac_in->mac))
 		mac_in->vlan_id = vf_info->pf_vlan;
 
-	err = hinic5_l2nic_msg_to_mgmt_sync(nic_io->hwdev, HINIC5_NIC_CMD_DEL_MAC,
+	err = l2nic_msg_to_mgmt_sync(nic_io->hwdev, HINIC5_NIC_CMD_DEL_MAC,
 				     buf_in, in_size, buf_out, out_size);
-	if (err != 0 || (*out_size) == 0)
+	if ((err != 0) || ((*out_size) == 0)) {
 		goto ERR_DEL_MAC;
+	}
 
 	switch (mac_out->msg_head.status) {
 	case 0:
@@ -348,7 +353,7 @@ static int hinic5_update_vf_mac_msg_handler(struct hinic5_nic_io *nic_io,
 	struct hinic5_port_mac_update *mac_out = buf_out;
 	int err;
 
-	if (!vf_info)
+	if (vf_info == NULL)
 		return -EINVAL;
 	if (!is_valid_ether_addr(mac_in->new_mac)) {
 		nic_err(nic_io->dev_hdl, "Update VF MAC is invalid.\n");
@@ -377,9 +382,9 @@ static int hinic5_update_vf_mac_msg_handler(struct hinic5_nic_io *nic_io,
 	}
 #endif
 	mac_in->vlan_id = vf_info->pf_vlan;
-	err = hinic5_l2nic_msg_to_mgmt_sync(nic_io->hwdev, HINIC5_NIC_CMD_UPDATE_MAC,
+	err = l2nic_msg_to_mgmt_sync(nic_io->hwdev, HINIC5_NIC_CMD_UPDATE_MAC,
 				     buf_in, in_size, buf_out, out_size);
-	if (err != 0 || (*out_size) == 0) {
+	if ((err != 0) || ((*out_size) == 0)) {
 		nic_warn(nic_io->dev_hdl, "Failed to update VF %d MAC, err: %d,status: 0x%x, out size: 0x%x\n",
 			 HW_VF_ID_TO_OS(vf), err, mac_out->msg_head.status,
 			 *out_size);
@@ -392,7 +397,7 @@ static int hinic5_update_vf_mac_msg_handler(struct hinic5_nic_io *nic_io,
 	return err;
 }
 
-const struct vf_msg_handler hinic5_vf_cmd_handler[] = {
+const struct vf_msg_handler vf_cmd_handler[] = {
 	{
 		.cmd = HINIC5_NIC_CMD_VF_REGISTER,
 		.handler = hinic5_register_vf_msg_handler,
@@ -424,16 +429,15 @@ const struct vf_msg_handler hinic5_vf_cmd_handler[] = {
 	},
 };
 
-static int _hinic5_l2nic_msg_to_mgmt_sync(void *hwdev, u16 cmd, void *buf_in,
+static int _l2nic_msg_to_mgmt_sync(void *hwdev, u16 cmd, void *buf_in,
 				   u16 in_size, void *buf_out, u16 *out_size,
 				   u16 channel)
 {
-	int i, cmd_cnt = ARRAY_LEN(hinic5_vf_cmd_handler);
+	int i, cmd_cnt = ARRAY_LEN(vf_cmd_handler);
 
-	if (hinic5_func_type(hwdev) == TYPE_VF && (!hinic5_is_slave_host(hwdev))
-				       && (!hinic5_is_vf_isolation(hwdev))) {
+	if (hinic5_func_type(hwdev) == TYPE_VF && (!hinic5_is_slave_host(hwdev)) && (!hinic5_is_vf_isolation(hwdev))) {
 		for (i = 0; i < cmd_cnt; i++) {
-			if (cmd == hinic5_vf_cmd_handler[i].cmd)
+			if (cmd == vf_cmd_handler[i].cmd)
 				return hinic5_mbox_to_pf(hwdev, HINIC5_MOD_L2NIC, cmd, buf_in,
 					in_size, buf_out, out_size, 0, channel);
 		}
@@ -443,17 +447,17 @@ static int _hinic5_l2nic_msg_to_mgmt_sync(void *hwdev, u16 cmd, void *buf_in,
 				       in_size, buf_out, out_size, 0, channel);
 }
 
-int hinic5_l2nic_msg_to_mgmt_sync(void *hwdev, u16 cmd, void *buf_in, u16 in_size,
+int l2nic_msg_to_mgmt_sync(void *hwdev, u16 cmd, void *buf_in, u16 in_size,
 			   void *buf_out, u16 *out_size)
 {
-	return _hinic5_l2nic_msg_to_mgmt_sync(hwdev, cmd, buf_in, in_size, buf_out,
+	return _l2nic_msg_to_mgmt_sync(hwdev, cmd, buf_in, in_size, buf_out,
 				       out_size, HINIC5_CHANNEL_NIC);
 }
 
-int hinic5_l2nic_msg_to_mgmt_sync_ch(void *hwdev, u16 cmd, void *buf_in, u16 in_size,
+int l2nic_msg_to_mgmt_sync_ch(void *hwdev, u16 cmd, void *buf_in, u16 in_size,
 			      void *buf_out, u16 *out_size, u16 channel)
 {
-	return _hinic5_l2nic_msg_to_mgmt_sync(hwdev, cmd, buf_in, in_size, buf_out,
+	return _l2nic_msg_to_mgmt_sync(hwdev, cmd, buf_in, in_size, buf_out,
 				       out_size, channel);
 }
 
@@ -462,19 +466,19 @@ int hinic5_pf_mbox_handler(void *hwdev,
 			   u16 vf_id, u16 cmd, void *buf_in, u16 in_size,
 			   void *buf_out, u16 *out_size)
 {
-	int index, cmd_size = ARRAY_LEN(hinic5_vf_cmd_handler);
+	int index, cmd_size = ARRAY_LEN(vf_cmd_handler);
 	struct hinic5_nic_io *nic_io = NULL;
 
-	if (!hwdev)
+	if (hwdev == NULL)
 		return -EFAULT;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
 	for (index = 0; index < cmd_size; index++) {
-		if (cmd == hinic5_vf_cmd_handler[index].cmd)
-			return hinic5_vf_cmd_handler[index].handler(nic_io, vf_id,
+		if (cmd == vf_cmd_handler[index].cmd)
+			return vf_cmd_handler[index].handler(nic_io, vf_id,
 							     buf_in, in_size,
 							     buf_out, out_size);
 	}
@@ -530,7 +534,7 @@ static void tx_pause_excp_event_handler(void *hwdev, void *buf_in, u16 in_size,
 	struct hinic5_nic_io *nic_io = NULL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io) {
+	if (nic_io == NULL) {
 		pr_err("Nic io is null\n");
 		return;
 	}
@@ -556,7 +560,7 @@ static void bond_active_event_handler(void *hwdev, void *buf_in, u16 in_size,
 	struct hinic5_event_info event_info = {0};
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io) {
+	if (nic_io == NULL) {
 		pr_err("Nic io is null\n");
 		return;
 	}
@@ -569,7 +573,8 @@ static void bond_active_event_handler(void *hwdev, void *buf_in, u16 in_size,
 
 	event_info.service = EVENT_SRV_NIC;
 	event_info.type = HINIC5_NIC_CMD_BOND_ACTIVE_NOTICE;
-	memcpy((void *)event_info.event_data, active_info, sizeof(*active_info));
+	memcpy((void *)event_info.event_data,
+			active_info, sizeof(*active_info));
 
 	hinic5_event_callback(nic_io->hwdev, &event_info);
 }
@@ -582,14 +587,12 @@ int bond_link_event_handler(struct hinic5_nic_io *nic_io, struct hinic5_bond_lin
 	struct hinic5_event_info event_info = {0};
 	struct hinic5_event_link_info *link_info = (void *)event_info.event_data;
 
-	/* After bond is deleted, need to get link status from mag */
+	/* After deleting bond, link status needs to be obtained from mag */
 	event_info.service = EVENT_SRV_NIC;
 	if (bond_info->bond_en != 0) {
-		nic_info(nic_io->dev_hdl, "bond link event, link_status: %u\n",
-			 bond_info->link_status);
+		nic_info(nic_io->dev_hdl, "bond link event, link_status: %u\n", bond_info->link_status);
 		nic_io->feature_cap |= NIC_F_HALF_BOND_OFFLOAD;
-		event_info.type = (bond_info->link_status != 0) ?
-			EVENT_NIC_LINK_UP : EVENT_NIC_LINK_DOWN;
+		event_info.type = (bond_info->link_status != 0) ? EVENT_NIC_LINK_UP : EVENT_NIC_LINK_DOWN;
 	} else {
 		nic_io->feature_cap &= ~NIC_F_HALF_BOND_OFFLOAD;
 		err = hinic5_get_link_state(nic_io->hwdev, &link_state);
@@ -602,13 +605,14 @@ int bond_link_event_handler(struct hinic5_nic_io *nic_io, struct hinic5_bond_lin
 	if (err != 0) {
 		nic_warn(nic_io->dev_hdl, "Failed to get port info\n");
 		return err;
+	} else {
+		link_info->valid = 1;
+		link_info->autoneg_cap = port_info.autoneg_cap;
+		link_info->port_type = port_info.port_type;
+		link_info->duplex = port_info.duplex;
+		link_info->speed = port_info.speed;
+		link_info->autoneg_state = port_info.autoneg_state;
 	}
-	link_info->valid = 1;
-	link_info->autoneg_cap = port_info.autoneg_cap;
-	link_info->port_type = port_info.port_type;
-	link_info->duplex = port_info.duplex;
-	link_info->speed = port_info.speed;
-	link_info->autoneg_state = port_info.autoneg_state;
 
 	hinic5_event_callback(nic_io->hwdev, &event_info);
 
@@ -623,7 +627,7 @@ void half_bond_link_event_handler(void *hwdev, void *buf_in, u16 in_size,
 	struct hinic5_nic_io *nic_io = NULL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io) {
+	if (nic_io == NULL) {
 		pr_err("Nic io is null\n");
 		return;
 	}
@@ -642,31 +646,38 @@ void half_bond_link_event_handler(void *hwdev, void *buf_in, u16 in_size,
 void macsec_pn_expired_msg_handler(void *hwdev, void *buf_in, u16 in_size,
 				   void *buf_out, u16 *out_size)
 {
-	struct macsec_pn_expired_report_cmd *cmd_in = (struct macsec_pn_expired_report_cmd *)buf_in;
+	struct macsec_pn_expired_report_cmd *cmd_in =
+		(struct macsec_pn_expired_report_cmd *)buf_in;
 	struct hinic5_nic_io *nic_io = NULL;
 	u8 index = 0;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io) {
+	if (nic_io == NULL) {
 		pr_err("Nic io is null\n");
 		return;
 	}
 
-	if (!buf_in) {
+	if (buf_in == NULL) {
 		nic_err(nic_io->dev_hdl, "MACsec event process error, in buf is null");
 		return;
 	}
 
 	if (in_size != sizeof(struct macsec_pn_expired_report_cmd)) {
-		nic_err(nic_io->dev_hdl, "MACsec event process error, in size(0x%x) is invalid",
-			in_size);
+		nic_err(nic_io->dev_hdl, "MACsec event process error, in size(0x%x) is invalid", in_size);
+		return;
+	}
+
+	if (cmd_in->info.pn_expired_size > PN_EXPIRED_SIZE_MAX) {
+		nic_err(nic_io->dev_hdl,
+				"MACsec event process error, pn_expired_size(%u) exceeds max(%u)",
+				cmd_in->info.pn_expired_size, PN_EXPIRED_SIZE_MAX);
 		return;
 	}
 
 	for (; index < cmd_in->info.pn_expired_size; index++) {
 		nic_info(nic_io->dev_hdl, "MACsec pn exceeding threshold, sci=0x%llx, an=0x%x",
 			 cmd_in->info.sci[index], cmd_in->info.an[index]);
-		/* TODO: Report to MKA software */
+		/* TODO report to MKA software */
 	}
 }
 
@@ -677,7 +688,7 @@ void offload_bond_cfg_event_handler(void *hwdev, void *buf_in, u16 in_size,
 	struct hinic5_nic_io *nic_io = NULL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io) {
+	if (nic_io == NULL) {
 		pr_err("Nic io is null\n");
 		return;
 	}
@@ -688,14 +699,16 @@ void offload_bond_cfg_event_handler(void *hwdev, void *buf_in, u16 in_size,
 		return;
 	}
 
-	/* Get the enable status of offload bond arp dual send */
-	if (bond_info->arp_en != 0)
+	/* Get offload bond arp dual-send enable status */
+	if (bond_info->arp_en != 0) {
 		nic_io->feature_cap |= NIC_F_ARP_DUAL;
-	else
+	} else {
 		nic_io->feature_cap &= ~NIC_F_ARP_DUAL;
+	}
 
-	nic_info(nic_io->dev_hdl, "Arp dual status: %s\n",
-		 (bond_info->arp_en != 0) ? "Enable" : "Disable");
+	nic_info(nic_io->dev_hdl, "Arp dual status: %s\n", (bond_info->arp_en != 0) ? "Enable" : "Disable");
+
+	return;
 }
 
 static const struct nic_event_handler nic_cmd_handler[] = {
@@ -732,12 +745,12 @@ static int _event_handler(void *hwdev, u16 cmd, void *buf_in, u16 in_size,
 	u32 size = sizeof(nic_cmd_handler) / sizeof(struct nic_event_handler);
 	u32 i;
 
-	if (!hwdev)
+	if (hwdev == NULL)
 		return -EINVAL;
 
 	*out_size = 0;
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
 	for (i = 0; i < size; i++) {
@@ -799,9 +812,8 @@ u8 hinic5_nic_sw_aeqe_cnt_handler(void *dev, u8 event, u8 *data)
  * @event: soft event for the handler
  * @sw_cb: callback function
  **/
-int hinic5_nic_aeq_register_swe_cb(void *hwdev, void *pri_handle,
-				   enum hinic5_ucode_event_type event,
-				   hinic5_aeq_swe_cb nic_aeq_swe_cb)
+int hinic5_nic_aeq_register_swe_cb(void *hwdev, void *pri_handle, enum hinic5_ucode_event_type event,
+			       hinic5_aeq_swe_cb nic_aeq_swe_cb)
 {
 	struct hinic5_nic_aeqs *nic_aeqs = NULL;
 	struct hinic5_nic_io *nic_io = NULL;
@@ -810,7 +822,7 @@ int hinic5_nic_aeq_register_swe_cb(void *hwdev, void *pri_handle,
 		return -EINVAL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
 	nic_aeqs = nic_io->nic_aeqs;
@@ -837,16 +849,18 @@ void hinic5_nic_aeq_unregister_swe_cb(void *hwdev, enum hinic5_ucode_event_type 
 	struct hinic5_nic_aeqs *nic_aeqs = NULL;
 	struct hinic5_nic_io *nic_io = NULL;
 
-	if (!hwdev || event >= HINIC5_NIC_FATAL_ERROR_MAX)
+	if (!hwdev || event >= HINIC5_NIC_FATAL_ERROR_MAX) {
 		return;
+	}
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return;
 
 	nic_aeqs = nic_io->nic_aeqs;
-	if (!nic_aeqs)
+	if (!nic_aeqs) {
 		return;
+	}
 
 	clear_bit(HINIC5_NIC_AEQ_SW_CB_REG, &nic_aeqs->nic_aeq_sw_cb_state[event]);
 
@@ -872,7 +886,7 @@ u8 hinic5_nic_aeqe_handler(void *hwdev, u8 event, u8 *data)
 		return -EINVAL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
 	nic_aeqs = nic_io->nic_aeqs;
@@ -884,10 +898,12 @@ u8 hinic5_nic_aeqe_handler(void *hwdev, u8 event, u8 *data)
 
 	set_bit(HINIC5_NIC_AEQ_SW_CB_RUNNING,
 		&nic_aeqs->nic_aeq_sw_cb_state[event]);
-	if (test_bit(HINIC5_NIC_AEQ_SW_CB_REG, &nic_aeqs->nic_aeq_sw_cb_state[event]))
+	if (test_bit(HINIC5_NIC_AEQ_SW_CB_REG,
+				&nic_aeqs->nic_aeq_sw_cb_state[event]))
 		nic_aeqs->nic_aeq_swe_cb[event](nic_aeqs->nic_aeq_swe_data[event], event, data);
 
-	clear_bit(HINIC5_NIC_AEQ_SW_CB_RUNNING, &nic_aeqs->nic_aeq_sw_cb_state[event]);
+	clear_bit(HINIC5_NIC_AEQ_SW_CB_RUNNING,
+			&nic_aeqs->nic_aeq_sw_cb_state[event]);
 
 	return 0;
 }
@@ -911,9 +927,8 @@ int hinic5_nic_aeqs_init(struct hinic5_nic_io *nic_io)
 
 	nic_io->nic_aeqs = nic_aeqs;
 
-	err = hinic5_nic_aeq_register_swe_cb(nic_io->hwdev, nic_io,
-					     HINIC5_INTERNAL_OTHER_FATAL_ERROR,
-					     hinic5_nic_sw_aeqe_cnt_handler);
+	err = hinic5_nic_aeq_register_swe_cb(nic_io->hwdev, nic_io, HINIC5_INTERNAL_OTHER_FATAL_ERROR,
+						   hinic5_nic_sw_aeqe_cnt_handler);
 	if (err != 0) {
 		nic_err(nic_io->dev_hdl, "Failed to register HINIC5_INTERNAL_OTHER_FATAL_ERROR\n");
 		goto err_out;
@@ -925,8 +940,7 @@ int hinic5_nic_aeqs_init(struct hinic5_nic_io *nic_io)
 		goto err_out;
 	}
 
-	err = hinic5_register_stateless_aeqs(nic_io->hwdev, nic_io->hwdev,
-					     (hinic5_aeq_swe_cb)hinic5_nic_aeqe_handler);
+	err = hinic5_register_stateless_aeqs(nic_io->hwdev, nic_io->hwdev, (hinic5_aeq_swe_cb)hinic5_nic_aeqe_handler);
 	if (err != 0) {
 		nic_err(nic_io->dev_hdl, "Failed to register stateless aeqs\n");
 		goto err_out;
@@ -949,20 +963,21 @@ void hinic5_nic_aeqs_free(struct hinic5_nic_io *nic_io)
 	struct hinic5_nic_aeqs *nic_aeqs = NULL;
 	u32 stateless_aeq_event;
 
-	if (!nic_io)
+	if (!nic_io) {
 		return;
+	}
 
 	hinic5_unregister_stateless_aeqs(nic_io->hwdev);
 
 	stateless_aeq_event = (u32)HINIC5_INTERNAL_OTHER_FATAL_ERROR;
 	nic_aeqs = nic_io->nic_aeqs;
 
-	if (!nic_aeqs)
+	if (!nic_aeqs) {
 		return;
+	}
 
 	for (; stateless_aeq_event < (u32)HINIC5_NIC_FATAL_ERROR_MAX; stateless_aeq_event++)
-		hinic5_nic_aeq_unregister_swe_cb(nic_io->hwdev,
-						 (enum hinic5_ucode_event_type)stateless_aeq_event);
+		hinic5_nic_aeq_unregister_swe_cb(nic_io->hwdev, (enum hinic5_ucode_event_type)stateless_aeq_event);
 
 	kfree(nic_aeqs);
 }

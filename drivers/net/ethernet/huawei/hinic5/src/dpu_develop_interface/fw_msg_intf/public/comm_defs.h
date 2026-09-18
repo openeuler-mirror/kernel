@@ -4,8 +4,8 @@
  * File Name     : comm_defs.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   : drivermpunpusmu COMM defines
+ * Last Modified : 2026/09/16
+ * Description   : driver/mpu/npu/smu COMM defines
  */
 
 #ifndef COMM_DEFS_H
@@ -17,7 +17,7 @@ typedef enum hinic5_mod_type {
 } hinic5_mod_type_e;
 
 /**
- * @brief Note: The following module macros must use direct numeric definitions, no calculations allowed, otherwise CMDQ REGISTER function will be disabled
+ * @brief Note: The following module macros must be defined with direct numeric values, no operations allowed, otherwise the CMDQ REGISTER function will fail
  */
 #define HINIC5_MOD_COMM     0 /* HW communication module */
 #define HINIC5_MOD_L2NIC    1 // (HINIC5_MOD_COMM + 1) /* L2NIC module */
@@ -27,8 +27,8 @@ typedef enum hinic5_mod_type {
 #define HINIC5_MOD_UB       5 // (HINIC5_MOD_TOE + 1)
 #define HINIC5_MOD_VROCE    6 // (HINIC5_MOD_UB + 1)
 #define HINIC5_MOD_CFGM     7 // (HINIC5_MOD_VROCE + 1) /* Configuration module */
-#define HINIC5_MOD_HINIC5_CQM      8 // (HINIC5_MOD_CFGM + 1)
-#define HINIC5_MOD_VMSEC    9 // (HINIC5_MOD_HINIC5_CQM + 1)
+#define HINIC5_MOD_CQM      8 // (HINIC5_MOD_CFGM + 1)
+#define HINIC5_MOD_VMSEC    9 // (HINIC5_MOD_CQM + 1)
 #define COMM_MOD_FC         10 // (HINIC5_MOD_VMSEC + 1)
 #define HINIC5_MOD_OVS      11 // (COMM_MOD_FC + 1)
 #define HINIC5_MOD_VBS      12 // (HINIC5_MOD_OVS + 1)

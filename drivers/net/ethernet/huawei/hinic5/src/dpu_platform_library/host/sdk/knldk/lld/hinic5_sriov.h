@@ -4,8 +4,8 @@
  * File Name     : hinic5_sriov.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : SR-IOV initialization, enable, disable and configure declarations
  */
 
 #ifndef HINIC5_SRIOV_H
@@ -15,8 +15,7 @@
 
 #include "hinic5_bus.h"
 
-#if !(defined(HAVE_SRIOV_CONFIGURE) || defined(HAVE_RHEL6_SRIOV_CONFIGURE) || \
-    defined(__WIN__) || defined(__VMWARE__))
+#if !(defined(HAVE_SRIOV_CONFIGURE) || defined(HAVE_RHEL6_SRIOV_CONFIGURE) || defined(__WIN__) || defined(__VMWARE__))
 ssize_t hinic5_sriov_totalvfs_show(struct device *dev,
 				   struct device_attribute *attr, char *buf);
 ssize_t hinic5_sriov_numvfs_show(struct device *dev,

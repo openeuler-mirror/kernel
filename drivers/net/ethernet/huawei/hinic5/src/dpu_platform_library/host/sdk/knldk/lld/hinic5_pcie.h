@@ -4,8 +4,8 @@
  * File Name     : hinic5_pcie.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : PCIe bus driver header for HINIC5
  */
 
 #ifndef HINIC5_PCIE_H

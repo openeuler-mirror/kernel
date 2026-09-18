@@ -4,8 +4,8 @@
  * File Name     : hinic5_nic_cfg_vf.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : hinic5 nic VF configuration implementation
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [NIC]" fmt
@@ -45,7 +45,7 @@ static int hinic5_set_vlan_ctx(struct hinic5_nic_io *nic_io, u16 func_id,
 	u8 cmd, vlan_mode;
 
 	cmd_buf = hinic5_alloc_cmd_buf(nic_io->hwdev);
-	if (!cmd_buf) {
+	if (cmd_buf == NULL) {
 		nic_err(nic_io->dev_hdl, "Failed to allocate cmd buf\n");
 		return -ENOMEM;
 	}
@@ -60,7 +60,7 @@ static int hinic5_set_vlan_ctx(struct hinic5_nic_io *nic_io, u16 func_id,
 
 	hinic5_free_cmd_buf(nic_io->hwdev, cmd_buf);
 
-	if (err != 0 || out_param != 0) {
+	if ((err != 0) || out_param != 0) {
 		nic_err(nic_io->dev_hdl, "Failed to set vlan context, err: %d, out_param: 0x%llx\n",
 			err, out_param);
 		return -EFAULT;
@@ -79,20 +79,20 @@ int hinic5_cfg_vf_vlan(struct hinic5_nic_io *nic_io, u8 opcode, u16 vid,
 	u16 vlan_tag;
 
 	/* VLAN 0 is a special case, don't allow it to be removed */
-	if (vid == 0 && opcode == HINIC5_CMD_OP_DEL)
+	if ((vid == 0) && opcode == HINIC5_CMD_OP_DEL)
 		return 0;
 
-	memset(&vf_vlan, 0, sizeof(vf_vlan));
+	(void)memset(&vf_vlan, 0, sizeof(vf_vlan));
 
 	vf_vlan.opcode = opcode;
 	vf_vlan.func_id = hinic5_glb_pf_vf_offset(nic_io->hwdev) + (u16)vf_id;
 	vf_vlan.vlan_id = vid;
 	vf_vlan.qos = qos;
 
-	err = hinic5_l2nic_msg_to_mgmt_sync(nic_io->hwdev, HINIC5_NIC_CMD_CFG_VF_VLAN,
+	err = l2nic_msg_to_mgmt_sync(nic_io->hwdev, HINIC5_NIC_CMD_CFG_VF_VLAN,
 				     &vf_vlan, sizeof(vf_vlan),
 				     &vf_vlan, &out_size);
-	if (err != 0 || out_size == 0 || vf_vlan.msg_head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (vf_vlan.msg_head.status != 0)) {
 		nic_err(nic_io->dev_hdl, "Failed to set VF %d vlan, err: %d, status: 0x%x,out size: 0x%x\n",
 			HW_VF_ID_TO_OS(vf_id), err, vf_vlan.msg_head.status,
 			out_size);
@@ -114,7 +114,7 @@ int hinic5_cfg_vf_vlan(struct hinic5_nic_io *nic_io, u8 opcode, u16 vid,
 			vf_vlan.opcode = HINIC5_CMD_OP_ADD;
 		else
 			vf_vlan.opcode = HINIC5_CMD_OP_DEL;
-		hinic5_l2nic_msg_to_mgmt_sync(nic_io->hwdev,
+		l2nic_msg_to_mgmt_sync(nic_io->hwdev,
 				       HINIC5_NIC_CMD_CFG_VF_VLAN, &vf_vlan,
 				       sizeof(vf_vlan), &vf_vlan, &out_size);
 		return err;
@@ -133,7 +133,7 @@ int hinic5_set_vf_mac(void *hwdev, int vf_id, const unsigned char *mac_addr)
 	struct hinic5_nic_io *nic_io = NULL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
 	vf_info = HW_VF_ID_TO_OS_CO(nic_io->vf_infos, vf_id);
@@ -157,7 +157,7 @@ int hinic5_add_vf_vlan(void *hwdev, int vf_id, u16 vlan, u8 qos)
 	int err;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
 	err = hinic5_cfg_vf_vlan(nic_io, HINIC5_CMD_OP_ADD, vlan, qos, vf_id);
@@ -180,7 +180,7 @@ int hinic5_kill_vf_vlan(void *hwdev, int vf_id)
 	int err;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
 	vf_infos = nic_io->vf_infos;
@@ -208,7 +208,7 @@ u16 hinic5_vf_info_vlanprio(void *hwdev, int vf_id)
 	u8 pf_qos;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 	pf_vlan = nic_io->vf_infos[HW_VF_ID_TO_OS(vf_id)].pf_vlan;
 	pf_qos = nic_io->vf_infos[HW_VF_ID_TO_OS(vf_id)].pf_qos;
@@ -223,7 +223,7 @@ int hinic5_set_vf_link_state(void *hwdev, u16 vf_id, int link)
 	struct vf_data_storage *vf_infos = NULL;
 	struct hinic5_nic_io *nic_io =
 		hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 	vf_infos = nic_io->vf_infos;
 
@@ -262,24 +262,24 @@ int hinic5_set_vf_spoofchk(void *hwdev, u16 vf_id, bool spoofchk)
 	struct hinic5_nic_io *nic_io = NULL;
 	int err;
 
-	if (!hwdev)
+	if (hwdev == NULL)
 		return -EINVAL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
 	vf_infos = nic_io->vf_infos;
 
-	memset(&spoofchk_cfg, 0, sizeof(spoofchk_cfg));
+	(void)memset(&spoofchk_cfg, 0, sizeof(spoofchk_cfg));
 
 	spoofchk_cfg.func_id = hinic5_glb_pf_vf_offset(hwdev) + vf_id;
 	spoofchk_cfg.state = spoofchk ? 1 : 0;
-	err = hinic5_l2nic_msg_to_mgmt_sync(hwdev, HINIC5_NIC_CMD_SET_SPOOFCHK_STATE,
+	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC5_NIC_CMD_SET_SPOOFCHK_STATE,
 				     &spoofchk_cfg,
 				     sizeof(spoofchk_cfg), &spoofchk_cfg,
 				     &out_size);
-	if (err != 0 || out_size == 0 || spoofchk_cfg.msg_head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (spoofchk_cfg.msg_head.status != 0)) {
 		nic_err(nic_io->dev_hdl, "Failed to set VF(%d) spoofchk, err: %d, status: 0x%x, out size: 0x%x\n",
 			HW_VF_ID_TO_OS(vf_id), err,
 			spoofchk_cfg.msg_head.status, out_size);
@@ -296,7 +296,7 @@ bool hinic5_vf_info_spoofchk(void *hwdev, int vf_id)
 	struct hinic5_nic_io *nic_io = NULL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return false;
 
 	return nic_io->vf_infos[HW_VF_ID_TO_OS(vf_id)].spoofchk;
@@ -310,11 +310,11 @@ int hinic5_set_vf_trust(void *hwdev, u16 vf_id, bool trust)
 	u16 out_size = sizeof(vf_trust);
 	int err;
 
-	if (!hwdev)
+	if (hwdev == NULL)
 		return -EINVAL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io || vf_id > nic_io->max_vfs)
+	if ((nic_io == NULL) || vf_id > nic_io->max_vfs)
 		return -EINVAL;
 
 	vf_trust.func_id = hinic5_glb_pf_vf_offset(nic_io->hwdev) + vf_id;
@@ -322,17 +322,17 @@ int hinic5_set_vf_trust(void *hwdev, u16 vf_id, bool trust)
 
 	nic_io->vf_infos[HW_VF_ID_TO_OS(vf_id)].trust = trust;
 
-	err = hinic5_l2nic_msg_to_mgmt_sync(nic_io->hwdev,
+	err = l2nic_msg_to_mgmt_sync(nic_io->hwdev,
 				     HINIC5_NIC_CMD_CFG_VF_TRUST,
 				     &vf_trust, out_size, &vf_trust,
 				     &out_size);
 	if (vf_trust.msg_head.status == NIC_VF_TRUST_UNSUPPORT && err == 0) {
-		nic_info(nic_io->dev_hdl, "Succeeded to set vf trust to driver, did not set vf trust to chip\n");
+		nic_info(nic_io->dev_hdl, "Successed to set vf trust to driver, did not set vf trust to chip\n");
 		return 0;
 	}
-	if (err != 0 || out_size == 0 || vf_trust.msg_head.status != 0)
-		nic_warn(nic_io->dev_hdl, "Failed to set vf trust, err: %d, out_size: 0x%x, status:0x%x\n",
-			 err, out_size, vf_trust.msg_head.status);
+	if ((err != 0) || out_size == 0 || vf_trust.msg_head.status != 0) {
+		nic_warn(nic_io->dev_hdl, "Failed to set vf trust, err: %d, out_size: 0x%x, status:0x%x\n", err, out_size, vf_trust.msg_head.status);
+	}
 
 	return 0;
 }
@@ -341,11 +341,11 @@ bool hinic5_get_vf_trust(void *hwdev, int vf_id)
 {
 	struct hinic5_nic_io *nic_io = NULL;
 
-	if (!hwdev)
+	if (hwdev == NULL)
 		return false;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io || vf_id > nic_io->max_vfs)
+	if ((nic_io == NULL) || vf_id > nic_io->max_vfs)
 		return false;
 
 	return nic_io->vf_infos[HW_VF_ID_TO_OS(vf_id)].trust;
@@ -360,18 +360,18 @@ static int hinic5_set_vf_tx_rate_max_min(struct hinic5_nic_io *nic_io,
 	u16 out_size = sizeof(rate_cfg_ret);
 	int err;
 
-	memset(&rate_cfg, 0, sizeof(rate_cfg));
+	(void)memset(&rate_cfg, 0, sizeof(rate_cfg));
 
 	rate_cfg.func_id = hinic5_glb_pf_vf_offset(nic_io->hwdev) + vf_id;
 	rate_cfg.pir = max_rate;
 	rate_cfg.cir = min_rate;
 	rate_cfg.direct = NIC_RATE_DIRECT_TX_BW;
 	rate_cfg.cfg_mode = NIC_RATE_OP_SET;
-	err = hinic5_l2nic_msg_to_mgmt_sync(nic_io->hwdev,
+	err = l2nic_msg_to_mgmt_sync(nic_io->hwdev,
 				     HINIC5_NIC_CMD_SET_MAX_MIN_RATE,
 				     &rate_cfg, sizeof(rate_cfg), &rate_cfg_ret,
 				     &out_size);
-	if (rate_cfg_ret.msg_head.status != 0 || err != 0 || out_size == 0) {
+	if ((rate_cfg_ret.msg_head.status != 0) || (err != 0) || (out_size == 0)) {
 		nic_err(nic_io->dev_hdl, "Failed to set VF %d max rate %u, min rate %u, err: %d, status: 0x%x, out size: 0x%x\n",
 			HW_VF_ID_TO_OS(vf_id), max_rate, min_rate, err,
 			rate_cfg_ret.msg_head.status, out_size);
@@ -387,7 +387,7 @@ int hinic5_set_vf_tx_rate(void *hwdev, u16 vf_id, u32 max_rate, u32 min_rate)
 	int err;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 	if (!HINIC5_SUPPORT_RATE_LIMIT(hwdev)) {
 		nic_err(nic_io->dev_hdl, "Current function doesn't support to set vf rate limit\n");
@@ -410,11 +410,11 @@ void hinic5_get_vf_config(void *hwdev, u16 vf_id, struct ifla_vf_info *ivi)
 	struct hinic5_nic_io *nic_io = NULL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return;
 
 	vfinfo = HW_VF_ID_TO_OS_CO(nic_io->vf_infos, vf_id);
-	if (!vfinfo)
+	if (vfinfo == NULL)
 		return;
 
 	ivi->vf = HW_VF_ID_TO_OS(vf_id);
@@ -507,7 +507,7 @@ static int vf_func_register(struct hinic5_nic_io *nic_io)
 		return 0;
 	}
 
-	memset(&register_info, 0, sizeof(register_info));
+	(void)memset(&register_info, 0, sizeof(register_info));
 	register_info.op_register = 1;
 	register_info.support_extra_feature = 0;
 	err = hinic5_mbox_to_pf(nic_io->hwdev, HINIC5_MOD_L2NIC,
@@ -515,7 +515,7 @@ static int vf_func_register(struct hinic5_nic_io *nic_io)
 				&register_info, sizeof(register_info),
 				&register_info, &out_size, 0,
 				HINIC5_CHANNEL_NIC);
-	if (err != 0 || out_size == 0 || register_info.msg_head.status != 0) {
+	if ((err != 0) || (out_size == 0) || (register_info.msg_head.status != 0)) {
 		nic_err(nic_io->dev_hdl, "Failed to register VF, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, register_info.msg_head.status, out_size);
 		err = -EIO;
@@ -545,7 +545,7 @@ static int pf_init_vf_infos(struct hinic5_nic_io *nic_io)
 		return 0;
 
 	nic_io->vf_infos = kzalloc(size, GFP_KERNEL);
-	if (!nic_io->vf_infos)
+	if (nic_io->vf_infos == NULL)
 		return -ENOMEM;
 
 	for (i = 0; i < nic_io->max_vfs; i++) {
@@ -613,7 +613,7 @@ void hinic5_vf_func_free(struct hinic5_nic_io *nic_io)
 	u16 out_size = sizeof(unregister);
 	int err;
 
-	memset(&unregister, 0, sizeof(unregister));
+	(void)memset(&unregister, 0, sizeof(unregister));
 	unregister.op_register = 0;
 	if (hinic5_func_type(nic_io->hwdev) == TYPE_VF) {
 		do {
@@ -630,7 +630,7 @@ void hinic5_vf_func_free(struct hinic5_nic_io *nic_io)
 						&unregister, sizeof(unregister),
 						&unregister, &out_size, 0,
 						HINIC5_CHANNEL_NIC);
-			if (err != 0 || out_size == 0 || unregister.msg_head.status != 0) {
+			if ((err != 0) || (out_size == 0) || (unregister.msg_head.status != 0)) {
 				nic_err(nic_io->dev_hdl, "Failed to unregister VF, err: %d, status: 0x%x, out_size: 0x%x\n",
 					err, unregister.msg_head.status, out_size);
 			}
@@ -638,15 +638,15 @@ void hinic5_vf_func_free(struct hinic5_nic_io *nic_io)
 		hinic5_unregister_vf_mbox_cb(nic_io->hwdev, HINIC5_MOD_HILINK);
 		hinic5_unregister_vf_mbox_cb(nic_io->hwdev, HINIC5_MOD_L2NIC);
 	} else {
-		if (nic_io->vf_infos) {
+		hinic5_unregister_mgmt_msg_cb(nic_io->hwdev, HINIC5_MOD_HILINK);
+		hinic5_unregister_mgmt_msg_cb(nic_io->hwdev, HINIC5_MOD_L2NIC);
+		if (nic_io->vf_infos != NULL) {
 			hinic5_unregister_pf_mbox_cb(nic_io->hwdev, HINIC5_MOD_HILINK);
 			hinic5_unregister_pf_mbox_cb(nic_io->hwdev, HINIC5_MOD_L2NIC);
-			hinic5_clear_vfs_info(nic_io->hwdev, 0, nic_io->max_vfs);
+			hinic5_clear_vfs_info(nic_io->hwdev, 0, nic_io->max_vfs - 1);
 			kfree(nic_io->vf_infos);
 			nic_io->vf_infos = NULL;
 		}
-		hinic5_unregister_mgmt_msg_cb(nic_io->hwdev, HINIC5_MOD_HILINK);
-		hinic5_unregister_mgmt_msg_cb(nic_io->hwdev, HINIC5_MOD_L2NIC);
 	}
 }
 
@@ -657,7 +657,7 @@ static void clear_vf_infos(void *hwdev, u16 vf_id)
 	u16 func_id;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io) {
+	if (nic_io == NULL) {
 		pr_err("Nic io is null\n");
 		return;
 	}
@@ -682,7 +682,7 @@ static void clear_vf_infos(void *hwdev, u16 vf_id)
 		hinic5_set_vf_trust(hwdev, vf_id, false);
 #endif
 
-	memset(vf_infos, 0, sizeof(*vf_infos));
+	(void)memset(vf_infos, 0, sizeof(*vf_infos));
 	/* set vf_infos to default */
 	hinic5_init_vf_infos(nic_io, HW_VF_ID_TO_OS(vf_id));
 }
@@ -691,13 +691,23 @@ void hinic5_clear_vfs_info(void *hwdev, u32 start_vf_id, u32 end_vf_id)
 {
 	struct hinic5_nic_io *nic_io =
 			hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	u16 i;
+	u32 i;
 
-	if (!nic_io) {
+	if (nic_io == NULL) {
 		pr_err("Nic io is null\n");
 		return;
 	}
 
-	for (i = 0; i < nic_io->max_vfs; i++)
-		clear_vf_infos(hwdev, OS_VF_ID_TO_HW(i));
+	if (start_vf_id > end_vf_id) {
+		pr_err("start_vf_id(%u) > end_vf_id(%u)\n", start_vf_id, end_vf_id);
+		return;
+	}
+
+	if (end_vf_id >= nic_io->max_vfs) {
+		pr_err("end_vf_id(%u) >= max_vfs(%u)\n", end_vf_id, nic_io->max_vfs);
+		return;
+	}
+
+	for (i = start_vf_id; i <= end_vf_id; i++)
+	    clear_vf_infos(hwdev, (u16)OS_VF_ID_TO_HW(i));
 }

@@ -4,8 +4,8 @@
  * File Name     : hinic5_hwif.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Hardware interface implementation for the hinic5 driver.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [COMM]" fmt
@@ -115,10 +115,16 @@
 #define HINIC5_AF6_MSIX_FLEX_EN_MASK	0x1
 
 #define HINIC5_AF6_HW_TYPE_SHIFT	17
-#define HINIC5_AF6_HW_TYPE_MASK		0x3
+#define HINIC5_AF6_HW_TYPE_MASK  	0x3
+
+#define HINIC5_AF6_MBOX_INLINE_ONLY_SHIFT	19
+#define HINIC5_AF6_MBOX_INLINE_ONLY_MASK  	0x1
+
+#define HINIC5_AF6_MBOX_INLINE_ONLY_VALID_SHIFT	20
+#define HINIC5_AF6_MBOX_INLINE_ONLY_VALID_MASK  0x1
 
 #define HINIC5_TASK1_MBOX_TIMEOUT_SHIFT		0
-#define HINIC5_TASK1_MBOX_TIMEOUT_MASK		0x1
+#define HINIC5_TASK1_MBOX_TIMEOUT_MASK  	0x1
 
 #define HINIC5_AF6_SET(val, member)				\
 	((((u32)(val)) & HINIC5_AF6_##member##_MASK) <<		\
@@ -204,15 +210,15 @@ u32 hinic5_hwif_read_reg(struct hinic5_hwif *hwif, u32 reg)
 		return be32_to_cpu(readl(hwif->cfg_regs_base +
 					 HINIC5_GET_REG_ADDR((u64)reg)));
 #else
-	UINT8 bar_idx;
+	UINT8 Bar_Idx;
 
 	if (HINIC5_GET_REG_FLAG(reg) == HINIC5_MGMT_REGS_FLAG)
-		bar_idx = HINIC5_MGMT_BAR;
+		Bar_Idx = HINIC5_MGMT_BAR;
 	else
-		bar_idx = HINIC5_CFG_BAR;
+		Bar_Idx = HINIC5_CFG_BAR;
 
 	return be32_to_cpu(readl_uefi(hwif->bus_dev, HINIC5_GET_REG_ADDR(reg),
-				      bar_idx));
+				      Bar_Idx));
 #endif
 }
 
@@ -226,24 +232,25 @@ void hinic5_hwif_write_reg(struct hinic5_hwif *hwif, u32 reg, u32 val)
 		writel(cpu_to_be32(val),
 		       hwif->cfg_regs_base + HINIC5_GET_REG_ADDR((u64)reg));
 #else
-	UINT8 bar_idx;
+	UINT8 Bar_Idx;
 
 	if (HINIC5_GET_REG_FLAG(reg) == HINIC5_MGMT_REGS_FLAG)
-		bar_idx = HINIC5_MGMT_BAR;
+		Bar_Idx = HINIC5_MGMT_BAR;
 	else
-		bar_idx = HINIC5_CFG_BAR;
+		Bar_Idx = HINIC5_CFG_BAR;
 
-	writel_uefi(hwif->bus_dev, HINIC5_GET_REG_ADDR(reg), bar_idx,
+	writel_uefi(hwif->bus_dev, HINIC5_GET_REG_ADDR(reg), Bar_Idx,
 		    be32_to_cpu(val));
 #endif
 }
 
-bool hinic5_get_card_present_state(struct hinic5_hwdev *hwdev)
+bool get_card_present_state(struct hinic5_hwdev *hwdev)
 {
 	u32 attr1;
 
-	if (!get_handshake_state(hwdev))
+	if (!get_handshake_state(hwdev)) {
 		return false;
+	}
 
 	attr1 = hinic5_hwif_read_reg(hwdev->hwif, HINIC5_CSR_FUNC_ATTR1_ADDR);
 	if (attr1 == HINIC5_BUS_LINK_DOWN) {
@@ -275,14 +282,15 @@ bool get_handshake_state(struct hinic5_hwdev *hwdev)
 #ifndef __UEFI__
 	u32 sw_handshake_chk;
 
-	if (!hinic5_check_htn_device_id(hwdev))
+	if (!hinic5_check_htn_device_id(hwdev)) {
 		return true;
+	}
 
 	sw_handshake_chk = readl(hwdev->hwif->fers2_reg_base +
-				 HINIC5_GET_REG_ADDR \
-				 ((u64)HINIC5_CSR_INTC_BAR_SW_HANDSHAKE_0_CSR0_REG));
-	if (sw_handshake_chk == UBC_SW_HANDSHAKE_NO_VALID)
+				 HINIC5_GET_REG_ADDR((u64)HINIC5_CSR_INTC_BAR_SW_HANDSHAKE_0_CSR0_REG));
+	if (sw_handshake_chk == UBC_SW_HANDSHAKE_NO_VALID) {
 		return false;
+	}
 #endif
 
 	return true;
@@ -329,7 +337,6 @@ int hinic5_set_host_migrate_enable(void *hwdev, u8 host_id, bool enable)
 
 	u32 reg_val;
 	int ret = hinic5_hwdev_check(dev);
-
 	if (ret != 0)
 		return ret;
 
@@ -352,7 +359,6 @@ int hinic5_get_host_migrate_enable(void *hwdev, u8 host_id, u8 *migrate_en)
 
 	u32 reg_val;
 	int ret = hinic5_hwdev_check(dev);
-
 	if (ret != 0)
 		return ret;
 
@@ -424,6 +430,8 @@ static void set_hwif_attr(struct hinic5_hwif *hwif, u32 attr0, u32 attr1,
 	hwif->attr.num_sq = HINIC5_AF6_GET(attr6, FUNC_MAX_SQ);
 	hwif->attr.msix_flex_en = HINIC5_AF6_GET(attr6, MSIX_FLEX_EN);
 	hwif->attr.hw_type = HINIC5_AF6_GET(attr6, HW_TYPE);
+	hwif->attr.mbox_inline_only = HINIC5_AF6_GET(attr6, MBOX_INLINE_ONLY);
+	hwif->attr.mbox_inline_only_valid = HINIC5_AF6_GET(attr6, MBOX_INLINE_ONLY_VALID);
 
 	sdk_info(hwdev->dev_hdl,
 		 "func_global_idx: 0x%x, port_to_port_idx: 0x%x, pci_intf_idx: 0x%x\n",
@@ -492,6 +500,9 @@ void hinic5_set_pf_status(struct hinic5_hwif *hwif,
 			  enum hinic5_pf_status status)
 {
 	u32 attr6 = hinic5_hwif_read_reg(hwif, HINIC5_CSR_FUNC_ATTR6_ADDR);
+	if (attr6 == HINIC5_BUS_LINK_DOWN) {
+		return;
+	}
 
 	attr6 = HINIC5_AF6_CLEAR(attr6, PF_STATUS);
 	attr6 |= HINIC5_AF6_SET(status, PF_STATUS);
@@ -610,8 +621,7 @@ static void set_mpf(struct hinic5_hwif *hwif)
 	hinic5_hwif_write_reg(hwif, addr, val);
 }
 
-static int init_hwif(struct hinic5_hwdev *hwdev, void *fers2_reg_base,
-		     void *cfg_reg_base, void *intr_reg_base,
+static int init_hwif(struct hinic5_hwdev *hwdev, void *fers2_reg_base, void *cfg_reg_base, void *intr_reg_base,
 		     void *mgmt_regs_base)
 {
 	struct hinic5_hwif *hwif = NULL;
@@ -725,8 +735,8 @@ int hinic5_alloc_db_addr(void *hwdev, void __iomem **db_base,
 	struct hinic5_hwif *hwif = NULL;
 	u32 idx = 0;
 #ifdef __HIFC__
-#define HIFC3_DB_ADDR_RSVD 12
-#define HIFC3_DB_MASK 128
+#define HIFC5_DB_ADDR_RSVD 12
+#define HIFC5_DB_MASK 128
 	u64 db_base_phy_fc;
 
 	if (!hwdev || !db_base)
@@ -734,10 +744,10 @@ int hinic5_alloc_db_addr(void *hwdev, void __iomem **db_base,
 
 	hwif = ((struct hinic5_hwdev *)hwdev)->hwif;
 
-	db_base_phy_fc = hwif->db_base_phy >> HIFC3_DB_ADDR_RSVD;
+	db_base_phy_fc = hwif->db_base_phy >> HIFC5_DB_ADDR_RSVD;
 
-	if (db_base_phy_fc & (HIFC3_DB_MASK - 1))
-		idx = HIFC3_DB_MASK - (db_base_phy_fc && (HIFC3_DB_MASK - 1));
+	if (db_base_phy_fc & (HIFC5_DB_MASK - 1))
+		idx = HIFC5_DB_MASK - (db_base_phy_fc && (HIFC5_DB_MASK - 1));
 #else
 	int err;
 
@@ -882,11 +892,10 @@ static enum hinic5_wait_return check_db_outbound_enable_handler(void *priv_data)
 enum hinic5_wait_return check_outbound_enable_handler(struct hinic5_hwdev *hwdev)
 {
 	enum outbound_flush_state outbound_ctrl;
-	/* bypass counter is non-zero, indicates a flow that may cause
-	 * outbound_ctrl_status to be non-zero is being executed, cmdq and mbox do not check
-	 */
-	if (atomic_read(&hwdev->check_ob_flush_bypass_ref_cnt) > 0)
+	/* Non-zero bypass count indicates a flow that may cause non-zero outbound_ctrl_status is in progress, cmdq and mbox skip detection */
+	if (atomic_read(&hwdev->check_ob_flush_bypass_ref_cnt) > 0) {
 		return WAIT_PROCESS_CPL;
+	}
 
 	outbound_ctrl = hinic5_get_outbound_ctrl_status(hwdev->hwif);
 	if (outbound_ctrl == OUTBOUND_FLUSH_DISABLED)
@@ -1055,7 +1064,6 @@ EXPORT_SYMBOL(hinic5_pcie_itf_id);
 bool hinic5_in_spu(void *hwdev)
 {
 	const u8 host_id = hinic5_pcie_itf_id(hwdev);
-
 	return SPU_HOST_ID_BASE <= host_id && host_id <= SPU_HOST_ID_MAX;
 }
 EXPORT_SYMBOL(hinic5_in_spu);
@@ -1255,16 +1263,14 @@ int hinic5_read_n_ptp_ts_data(struct hinic5_hwdev *hwdev, u64 *time_ns)
 
 	/* 80 bit non-ptp TimeStamp */
 	/* | [79 : 64]  | [63 : 32] | [31 : 29] | [28 : 0] |
-	 * | hi         | mid       |  rsv      | lo       |
-	 */
+	   | hi         | mid       |  rsv      | lo       | */
 	lo = hinic5_hwif_read_reg(hwdev->hwif, HINIC5_N_PTP_REG(RD_DATA2));
 	mid = hinic5_hwif_read_reg(hwdev->hwif, HINIC5_N_PTP_REG(RD_DATA1));
 	hi = hinic5_hwif_read_reg(hwdev->hwif, HINIC5_N_PTP_REG(RD_DATA0));
 
 	/* 64 bit nsec_lo */
 	/* | [63 : 61] | [60 : 29] | [28 : 0] |
-	 * | hi[2 : 0] | mid	   | lo	      |
-	 */
+	   | hi[2 : 0] | mid       | lo       | */
 	*time_ns = (((u64)(lo & HINIC5_N_PTP_LOW_MASK)) | (((u64)mid) << HINIC5_N_PTP_MID_SHIFT) |
 		   (((u64)(hi & HINIC5_N_PTP_HIGH_MASK)) << HINIC5_N_PTP_HIGH_SHIFT));
 	return 0;
@@ -1273,10 +1279,10 @@ int hinic5_read_n_ptp_ts_data(struct hinic5_hwdev *hwdev, u64 *time_ns)
 static inline int hinic5_hwif_wait_n_ptp_up_en(struct hinic5_hwif *hwif, u32 flags)
 {
 	u32 retry_cnt;
-
 	for (retry_cnt = 0; retry_cnt < MAX_TS_UP_EN_RETRY_CNT; retry_cnt++) {
-		if ((hinic5_hwif_read_reg(hwif, HINIC5_N_PTP_REG(UP_EN)) & flags) == 0)
+		if ((hinic5_hwif_read_reg(hwif, HINIC5_N_PTP_REG(UP_EN)) & flags) == 0) {
 			return 0;
+		}
 		udelay(1);
 	}
 	return -EBUSY;
@@ -1306,17 +1312,31 @@ u8 hinic5_host_ppf_idx(struct hinic5_hwdev *hwdev, u8 host_id)
 	return HINIC5_PPF_ELECT_PORT_GET(val, IDX);
 }
 
-u32 hinic5_hinic5_get_self_test_result(void *hwdev)
+u32 hinic5_get_self_test_result(void *hwdev)
 {
 	struct hinic5_hwif *hwif = ((struct hinic5_hwdev *)hwdev)->hwif;
 
 	return hinic5_hwif_read_reg(hwif, HINIC5_MGMT_HEALTH_STATUS_ADDR);
 }
 
+static inline enum func_type hisdk5_get_func_type(struct hinic5_hwif *hwif)
+{
+	u32 attr0;
+	enum func_type func_type = hwif->attr.func_type;
+	if (func_type != TYPE_UNKNOWN) {
+		return func_type;
+	}
+
+	attr0 = hinic5_hwif_read_reg(hwif, HINIC5_CSR_FUNC_ATTR0_ADDR);
+	if (attr0 == HINIC5_BUS_LINK_DOWN)
+		return TYPE_UNKNOWN;
+	return HINIC5_AF0_GET(attr0, FUNC_TYPE);
+}
+
 void hinic5_show_chip_err_info(struct hinic5_hwdev *hwdev)
 {
-	const enum func_type func_type = hinic5_func_type(hwdev);
 	struct hinic5_hwif *hwif = hwdev->hwif;
+	enum func_type func_type = hisdk5_get_func_type(hwif);
 	u32 value;
 
 	if (func_type != TYPE_PPF && func_type != TYPE_PF)

@@ -4,20 +4,20 @@
  * File Name     : mag_mpu_cmd.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   : serdesmag cmd definition between driver and mpu
+ * Last Modified : 2026/09/16
+ * Description   : serdes/mag cmd definition between driver and mpu
  */
 
 #ifndef MAG_MPU_CMD_H
 #define MAG_MPU_CMD_H
 
-/* serdes/mag message command code definition */
+/* serdes/mag message command word definition */
 enum mag_cmd {
-	/* serdes command code, unified encapsulation of all serdes commands */
+	/* serdes command word, uniformly encapsulates all serdes commands */
 	SERDES_CMD_PROCESS = 0,
 
-	/* mag command code, divided by function */
-	/* port configuration related 0-29 */
+	/* mag command word, divided by function */
+	/* Port configuration related 0-29 */
 	MAG_CMD_SET_PORT_CFG = 1,
 	MAG_CMD_SET_PORT_ADAPT = 2,
 	MAG_CMD_CFG_LOOPBACK_MODE = 3,
@@ -40,14 +40,14 @@ enum mag_cmd {
 	MAG_CMD_RESTORE_LINK_CFG = 32,
 	MAG_CMD_ACTIVATE_BIOS_LINK_CFG = 33,
 
-	/* optical module, LED, PHY and other peripheral configuration management 50-99 */
+	/* Optical module, LED, PHY and other peripheral configuration management 50-99 */
 	/* LED */
 	MAG_CMD_SET_LED_CFG = 50,
 
 	/* PHY */
 	MAG_CMD_GET_PHY_INIT_STATUS = 55, /* reserved for future use */
 
-	/* optical module */
+	/* Optical module */
 	MAG_CMD_GET_XSFP_INFO = 60,
 	MAG_CMD_SET_XSFP_ENABLE = 61,
 	MAG_CMD_GET_XSFP_PRESENT = 62,
@@ -56,7 +56,7 @@ enum mag_cmd {
 	MAG_CMD_SET_XSFP_TLV_INFO = 65,
 	MAG_CMD_GET_XSFP_TLV_INFO = 66,
 
-	/* event report 100-149 */
+	/* Event report 100-149 */
 	MAG_CMD_WIRE_EVENT = 100,
 	MAG_CMD_LINK_ERR_EVENT = 101,
 

@@ -4,8 +4,8 @@
  * File Name     : typedef.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Type definition header
  */
 
 #ifndef TYPEDEF_H

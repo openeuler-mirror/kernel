@@ -4,8 +4,8 @@
  * File Name     : hinic5_lld.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 LLD (Low-Level Driver) interface definitions
  */
 
 #ifndef HINIC5_LLD_H
@@ -19,9 +19,9 @@
  * @details NA
  */
 enum hinic5_dev_type {
-	HINIC5_DEVICE_T_PCI,   /**< Device connected via pci bus */
-	HINIC5_DEVICE_T_UB,    /**< Device connected via ub bus */
-	HINIC5_DEVICE_T_MAX,   /**< Number of supported bus types */
+	HINIC5_DEVICE_T_PCI	= 0,   /**< Device connected via pci bus */
+	HINIC5_DEVICE_T_UB	= 1,   /**< Device connected via ub bus */
+	HINIC5_DEVICE_T_MAX	= 2,   /**< Number of supported bus types */
 };
 
 #define HINIC5_CARD_ID_OFFSET  16
@@ -50,27 +50,27 @@ struct hinic5_device_info {
  * @details Device object used by uld, contains device type and hardware device pointer
  */
 struct hinic5_lld_dev {
-	void *hwdev;                      /**< Hardware device pointer inside sdk driver */
-	struct device *dev;               /**< Associated struct device */
-	enum hinic5_dev_type dev_type;    /**< device bus type */
+	void *hwdev;                      /**< Hardware device pointer internal to sdk driver */
+	struct device *dev;               /**< Associated struct device      */
+	enum hinic5_dev_type dev_type;    /**< device bus type         */
 };
 
 /**
  * @brief struct hinic5_uld_info
- * @details Defines a structure for storing user-level driver (uld) information
+ * @details Defines a struct used to store user-level driver (uld) information
  */
 struct hinic5_uld_info {
 	/* When the function does not need to initialize the corresponding uld,
 	 * @probe needs to return 0 and uld_dev is set to NULL;
 	 * if uld_dev is NULL, @remove will not be called when uninstalling
 	 */
-	int (*probe)(struct hinic5_lld_dev *lld_dev, void **uld_dev, char *uld_dev_name);	/**< Initialize user-level driver function */
-	void (*remove)(struct hinic5_lld_dev *lld_dev, void *uld_dev);	/**< Remove user-level driver function */
-	int (*suspend)(struct hinic5_lld_dev *lld_dev, void *uld_dev, pm_message_t state);	/**< Suspend user-level driver function */
-	int (*resume)(struct hinic5_lld_dev *lld_dev, void *uld_dev);	/**< Resume user-level driver function */
-	void (*event)(struct hinic5_lld_dev *lld_dev, void *uld_dev,	/**< Event handling function */
+	int (*probe)(struct hinic5_lld_dev *lld_dev, void **uld_dev, char *uld_dev_name);	/**< Function to initialize user-level driver */
+	void (*remove)(struct hinic5_lld_dev *lld_dev, void *uld_dev);	/**< Function to remove user-level driver */
+	int (*suspend)(struct hinic5_lld_dev *lld_dev, void *uld_dev, pm_message_t state);	/**< Function to suspend user-level driver */
+	int (*resume)(struct hinic5_lld_dev *lld_dev, void *uld_dev);	/**< Function to resume user-level driver */
+	void (*event)(struct hinic5_lld_dev *lld_dev, void *uld_dev,	/**< Function to handle events */
 		      struct hinic5_event_info *event);
-	int (*ioctl)(void *uld_dev, u32 cmd, const void *buf_in, u32 in_size,		/**< Execute ioctl operation function */
+	int (*ioctl)(void *uld_dev, u32 cmd, const void *buf_in, u32 in_size,		/**< Function to execute ioctl operation */
 		     void *buf_out, u32 *out_size);
 };
 
@@ -85,14 +85,14 @@ struct hinic5_uld_info {
  *      @retval non-zero: failure
  */
 
-int hinic5_get_card_nic_uld_array(struct hinic5_lld_dev *lld_dev, u32 *dev_cnt, void *array[]);
+int hinic5_get_card_nic_uld_array(struct hinic5_lld_dev *lld_dev, uint32_t *dev_cnt, void *array[]);
 
 /**
  * @brief Register user-level driver
  * @param type Service type
  * @param uld_info User-level driver information
  *
- * @details This function is used to register user-level driver based on the provided service type and user-level driver information
+ * @details This function is used to register user-level driver, based on the provided service type and user-level driver information
  *
  * @return
  *      @retval zero: success
@@ -101,10 +101,10 @@ int hinic5_get_card_nic_uld_array(struct hinic5_lld_dev *lld_dev, u32 *dev_cnt, 
 int hinic5_register_uld(enum hinic5_service_type type, struct hinic5_uld_info *uld_info);
 
 /**
- * @brief Unregister user-defined upper driver module
- * @param type Service type enumeration
+ * @brief Unregister user-defined upper-layer driver module
+ * @param type Service type enum
  *
- * @details This function is used to unregister user-defined upper driver module
+ * @details This function is used to unregister user-defined upper-layer driver module
  *
  * @return None
  */
@@ -113,19 +113,19 @@ void hinic5_unregister_uld(enum hinic5_service_type type);
 /**
  * @brief Wait for LLD device node change to complete
  *
- * @details Before calling this function, ensure no device node is being changed
+ * @details Before calling this function, ensure that no device nodes are being changed
  *
  * @return None
  */
-void hinic5_lld_hold(void);
+void lld_hold(void);
 /**
  * @brief This function is used to release the global lock
  *
- * @details Decrements device reference count through atomic operation. If reference count is 0, it means no device is using the lock and can be released
+ * @details Decrements the device reference count through atomic operation, if the reference count is 0, it means no device is using the lock and it can be released
  *
  * @return None
  */
-void hinic5_lld_put(void);
+void lld_put(void);
 
 /**
  * @brief hinic5_get_lld_dev_by_chip_name - get lld device by chip name
@@ -134,7 +134,7 @@ void hinic5_lld_put(void);
  * @details The value of lld_dev reference increases when lld_dev is obtained. The caller needs
  * 	    to release the reference by calling hinic5_lld_dev_put.
  *
- * @return lld device
+ * @return Returns lld device
  */
 struct hinic5_lld_dev *hinic5_get_lld_dev_by_chip_name(const char *chip_name);
 
@@ -162,7 +162,7 @@ void hinic5_lld_dev_put(struct hinic5_lld_dev *dev);
  * @details The value of lld_dev reference increases when lld_dev is obtained. The caller needs
  * 	    to release the reference by calling hinic5_lld_dev_put.
  *
- * @return Returns LLD device on success, otherwise returns NULL
+ * @return If successful, returns LLD device, otherwise returns NULL
  */
 struct hinic5_lld_dev *hinic5_get_lld_dev_by_dev_name(const char *dev_name,
 						      enum hinic5_service_type type);
@@ -178,7 +178,7 @@ struct hinic5_lld_dev *hinic5_get_lld_dev_by_dev_name(const char *dev_name,
  *			The caller must ensure that lld_dev will not be freed during the remove process
  * 			when using lld_dev.
  *
- * @return Returns LLD device on success, otherwise returns NULL
+ * @return If successful, returns LLD device, otherwise returns NULL
  */
 struct hinic5_lld_dev *hinic5_get_lld_dev_by_dev_name_unsafe(const char *dev_name,
 							     enum hinic5_service_type type);
@@ -188,7 +188,7 @@ struct hinic5_lld_dev *hinic5_get_lld_dev_by_dev_name_unsafe(const char *dev_nam
  * @param chip_name: chip name
  * @param port_id: port id
  *
- * @return Returns LLD device on success, otherwise returns NULL
+ * @return If successful, returns LLD device, otherwise returns NULL
  */
 struct hinic5_lld_dev *hinic5_get_lld_dev_by_chip_and_port(const char *chip_name, u8 port_id);
 
@@ -196,7 +196,7 @@ struct hinic5_lld_dev *hinic5_get_lld_dev_by_chip_and_port(const char *chip_name
  * @brief hinic5_get_lld_dev_with_l3i_enabled - get lld device which enables BAT L3I
  * @param chip_name: chip name
  *
- * @return Returns LLD device on success, otherwise returns NULL
+ * @return If successful, returns LLD device, otherwise returns NULL
  */
 struct hinic5_lld_dev *hinic5_get_lld_dev_with_l3i_enabled(const char *chip_name);
 
@@ -207,7 +207,7 @@ struct hinic5_lld_dev *hinic5_get_lld_dev_with_l3i_enabled(const char *chip_name
  * @details The value of lld_dev reference increases when lld_dev is obtained. The caller needs
  * 			to release the reference by calling hinic5_lld_dev_put.
  *
- * @return Returns LLD device on success, otherwise returns NULL
+ * @return If successful, returns LLD device, otherwise returns NULL
  */
 struct hinic5_lld_dev *hinic5_get_ppf_lld_dev(struct hinic5_lld_dev *lld_dev);
 
@@ -220,7 +220,7 @@ struct hinic5_lld_dev *hinic5_get_ppf_lld_dev(struct hinic5_lld_dev *lld_dev);
  *			The caller must ensure that ppf's lld_dev will not be freed during the remove process
  * 			when using ppf lld_dev.
  *
- * @return Returns LLD device on success, otherwise returns NULL
+ * @return If successful, returns LLD device, otherwise returns NULL
  */
 struct hinic5_lld_dev *hinic5_get_ppf_lld_dev_unsafe(struct hinic5_lld_dev *lld_dev);
 
@@ -234,22 +234,22 @@ struct hinic5_lld_dev *hinic5_get_ppf_lld_dev_unsafe(struct hinic5_lld_dev *lld_
 void *hinic5_get_ppf_hw_dev_unsafe(void *hwdev);
 
 /**
- * @brief hinic5_uld_dev_hold - get reference to uld_dev
+ * @brief uld5_dev_hold - get reference to uld_dev
  * @param lld_dev: lld device
  * @param type: uld service type
  *
  * @details Hold reference to uld device to keep it from being freed
  */
-void hinic5_uld_dev_hold(struct hinic5_lld_dev *lld_dev, enum hinic5_service_type type);
+void uld5_dev_hold(struct hinic5_lld_dev *lld_dev, enum hinic5_service_type type);
 
 /**
- * @brief hinic5_uld_dev_put - release reference to lld_dev
+ * @brief uld5_dev_put - release reference to lld_dev
  * @param dev: lld device
  * @param type: uld service type
  *
  * @details Release reference to uld device to allow it to be freed
  */
-void hinic5_uld_dev_put(struct hinic5_lld_dev *lld_dev, enum hinic5_service_type type);
+void uld5_dev_put(struct hinic5_lld_dev *lld_dev, enum hinic5_service_type type);
 
 /**
  * @brief hinic5_get_uld_dev - get uld device by lld device
@@ -257,7 +257,7 @@ void hinic5_uld_dev_put(struct hinic5_lld_dev *lld_dev, enum hinic5_service_type
  * @param type: uld service type
  *
  * @details The value of uld_dev reference increases when uld_dev is obtained. The caller needs
- * 			to release the reference by calling hinic5_uld_dev_put.
+ * 			to release the reference by calling uld5_dev_put.
  */
 void *hinic5_get_uld_dev(struct hinic5_lld_dev *lld_dev, enum hinic5_service_type type);
 
@@ -278,7 +278,7 @@ void *hinic5_get_uld_dev_unsafe(struct hinic5_lld_dev *lld_dev, enum hinic5_serv
  * @param chip_name: String for storing the chip name
  * @param max_len: Maximum number of characters to be copied for chip_name
  *
- * @return 0 on success, other values on failure
+ * @return 0 success, other values failure
  */
 int hinic5_get_chip_name(struct hinic5_lld_dev *lld_dev, char *chip_name, u16 max_len);
 
@@ -291,64 +291,64 @@ int hinic5_get_chip_name(struct hinic5_lld_dev *lld_dev, char *chip_name, u16 ma
 void *hinic5_get_sdk_hwdev_by_lld(struct hinic5_lld_dev *lld_dev);
 
 /**
- * @brief Set VF service enable switch, only PF calls
- * @param lld_dev Device structure pointer
+ * @brief Set VF service enable switch, only called by PF
+ * @param lld_dev Device struct pointer
  * @param service Service type
  * @param vf_srv_load Whether to enable virtual function service load
  *
- * @return Returns 0 on success, otherwise returns error code
+ * @return Returns 0 for success, otherwise returns error code
  */
 int hinic5_set_vf_service_load(struct hinic5_lld_dev *lld_dev, u16 service,
 			       bool vf_srv_load);
 
 /**
- * @brief Set VF load enable flag for this service
+ * @brief Set the VF load enable flag for this service
  * @param lld_dev Physical device
  * @param vf_func_id Virtual function ID
  * @param service Service type
  * @param en Whether to enable
  *
- * @return Returns 0 on success, otherwise returns error code
+ * @return Returns 0 for success, otherwise returns error code
  */
 int hinic5_set_vf_service_state(struct hinic5_lld_dev *lld_dev, u16 vf_func_id,
 				u16 service, bool en);
 
 /**
  * @brief Set VF load enable flag
- * @param lld_dev Device structure pointer
+ * @param lld_dev Device struct pointer
  * @param vf_load_state Virtual function load state
  *
- * @return Returns 0 on success, otherwise returns error code
+ * @return Returns 0 for success, otherwise returns error code
  */
 int hinic5_set_vf_load_state(struct hinic5_lld_dev *lld_dev, bool vf_load_state);
 
 /**
  * @brief Attach NIC device
- * @param lld_dev Low-level device structure pointer
+ * @param lld_dev Low-level device struct pointer
  *
- * @return Returns 0 on success, otherwise returns error code
+ * @return Returns 0 for success, otherwise returns error code
  */
 int hinic5_attach_nic(struct hinic5_lld_dev *lld_dev);
 
 /**
  * @brief  Detach NIC
- * @param  lld_dev Device low-level driver information
+ * @param  lld_dev Low-level driver information of the device
  *
  * @return None
  */
 void hinic5_detach_nic(const struct hinic5_lld_dev *lld_dev);
 
 /**
- * @brief  Attach specified service type to device
- * @param  lld_dev Device low-level driver information
+ * @brief  Attach the specified service type to the device
+ * @param  lld_dev Low-level driver information of the device
  * @param  type Service type
  *
- * @return Returns 0 on success, otherwise returns error code
+ * @return Returns 0 for success, returns error code for failure
  */
 int hinic5_attach_service(const struct hinic5_lld_dev *lld_dev, enum hinic5_service_type type);
 /**
- * @brief  hinic5_detach_service function is used to detach service
- * @param  lld_dev Device low-level driver information
+ * @brief  The hinic5_detach_service function detaches the service
+ * @param  lld_dev Low-level driver information of the device
  * @param  type Service type
  *
  * @return None
@@ -361,7 +361,7 @@ void hinic5_detach_service(const struct hinic5_lld_dev *lld_dev, enum hinic5_ser
  * @param type ULD service type
  * @param cleanup Callback
  *
- * @details All functions with ULD loaded, call cleanup callback in order
+ * @details Calls cleanup callback in order for all functions that loaded ULD
  *
  * @attention: NA
  *
@@ -370,16 +370,16 @@ void hinic5_detach_service(const struct hinic5_lld_dev *lld_dev, enum hinic5_ser
 void hinic5_uld_cleanup_before_unregister(enum hinic5_service_type type, void (*cleanup)(void *));
 
 /**
- * @brief  hinic5_get_vf_num function is used to get the number of enabled VFs for pci/ub device
- * @param  lld_dev Device low-level driver information
+ * @brief  The hinic5_get_vf_num function gets the number of enabled VFs for pci/ub device
+ * @param  lld_dev Low-level driver information of the device
  *
  * @return Number of enabled VFs
  */
 int hinic5_get_vf_num(struct hinic5_lld_dev *lld_dev);
 
 /**
- * @brief  hinic5_get_chip_node_id function is used to get the chip_node id to which pci/ub device belongs
- * @param  lld_dev Device low-level driver information
+ * @brief  The hinic5_get_chip_node_id function gets the chip_node id that the pci/ub device belongs to
+ * @param  lld_dev Low-level driver information of the device
  *
  * @return chip_node id
  */
@@ -389,17 +389,18 @@ int hinic5_get_chip_node_id(struct hinic5_lld_dev *lld_dev, u64 *chip_node_id);
  * @brief Get device information
  *
  * @param[in] lld_dev Device
- * @param[out] info Return device information
+ * @param[out] info Returns device information
  *
  * @details NULL
  *
  * @attention: NULL
  *
- * @return: Describes function return value.
+ * @return: Describe function return value.
  *     @retval 0 Success
- *     @retval non-zero Error code
+ *     @retval Non-zero Error code
  */
 int hinic5_get_device_info(struct hinic5_lld_dev *lld_dev, struct hinic5_device_info *info);
+
 int hinic5_lld_init(void);
 void hinic5_lld_exit(void);
 

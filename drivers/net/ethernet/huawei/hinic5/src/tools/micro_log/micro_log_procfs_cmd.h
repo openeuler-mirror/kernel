@@ -4,8 +4,8 @@
  * File Name     : micro_log_procfs_cmd.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   : Micro log procfs command header
+ * Last Modified : 2026/09/16
+ * Description   :
  */
 
 #ifndef MICRO_LOG_PROCFS_CMD_H_

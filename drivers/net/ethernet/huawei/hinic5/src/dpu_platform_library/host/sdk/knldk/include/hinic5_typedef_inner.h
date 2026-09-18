@@ -4,8 +4,8 @@
  * File Name     : hinic5_typedef_inner.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 typedef inner header file
  */
 
 #ifndef HINIC5_TYPESDEF_INNER_H
@@ -13,8 +13,8 @@
 
 /* static methods testable */
 #ifdef EXPORT_STATIC_SYMBOL
-#define STATIC (__weak noinline)
-#define INLINE (__weak noinline)
+#define STATIC __attribute__((weak, noinline))
+#define INLINE __attribute__((weak, noinline))
 #else
 #define STATIC static
 #define INLINE inline

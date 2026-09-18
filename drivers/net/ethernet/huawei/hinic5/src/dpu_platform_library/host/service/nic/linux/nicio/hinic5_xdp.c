@@ -4,8 +4,8 @@
  * File Name     : hinic5_xdp.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   : XDP implementation
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 XDP implementation
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [NIC]" fmt
@@ -31,8 +31,7 @@
 #include "hinic5_tx.h"
 #include "hinic5_xdp.h"
 
-int tx_map_xdpf(struct hinic5_nic_dev *nic_dev, struct hinic5_txq *txq, u16 pi,
-		struct hinic5_sq_wqe_combo *wqe_combo)
+int tx_map_xdpf(struct hinic5_nic_dev *nic_dev, struct hinic5_txq *txq, u16 pi, struct hinic5_sq_wqe_combo *wqe_combo)
 {
 	struct hinic5_sq_wqe_desc *wqe_desc = wqe_combo->ctrl_bd0;
 	struct hinic5_dma_info *dma_info = txq->tx_info[pi].dma_info;
@@ -57,7 +56,6 @@ int tx_map_xdpf(struct hinic5_nic_dev *nic_dev, struct hinic5_txq *txq, u16 pi,
 void hinic5_prepare_xdp_sq_ctrl(struct hinic5_sq_wqe_combo *wqe_combo, u16 owner)
 {
 	struct hinic5_sq_wqe_desc *wqe_desc = wqe_combo->ctrl_bd0;
-
 	wqe_desc->ctrl_len |=
 			SQ_CTRL_SET(SQ_NORMAL_WQE, DATA_FORMAT) |
 			SQ_CTRL_SET(wqe_combo->wqe_type, EXTENDED) |
@@ -65,6 +63,7 @@ void hinic5_prepare_xdp_sq_ctrl(struct hinic5_sq_wqe_combo *wqe_combo, u16 owner
 
 	wqe_desc->ctrl_len = hinic5_hw_be32(wqe_desc->ctrl_len);
 	wqe_desc->queue_info = 0;
+	return;
 }
 
 int hinic5_xdp_xmit_frame(struct hinic5_nic_dev *nic_dev, struct hinic5_txq *txq,
@@ -114,14 +113,13 @@ int hinic5_xdp_xmit_frames(struct net_device *dev, int n, struct xdp_frame **fra
 	if (unlikely(nic_dev->q_params.xdp_qps == 0))
 		return -EINVAL;
 
-	/* XDP queue is isolated from kernel TX queue, XDP uses the second half of queues */
+	/* xdp queues are isolated from kernel TX queues; xdp uses the latter half of queues */
 	q_id = raw_smp_processor_id() % nic_dev->q_params.xdp_qps + nic_dev->q_params.num_qps;
 
 	txq = &nic_dev->txqs[q_id];
 
 	for (i = 0; i < n; i++) {
 		struct xdp_frame *xdpf = frames[i];
-
 		if (unlikely(hinic5_xdp_xmit_frame(nic_dev, txq, xdpf) != 0)) {
 			xdp_return_frame(xdpf);
 			XDP_TXQ_STATS_INC(txq, xdp_dropped);
@@ -130,8 +128,8 @@ int hinic5_xdp_xmit_frames(struct net_device *dev, int n, struct xdp_frame **fra
 	}
 
 	if ((flags & XDP_XMIT_FLUSH) != 0) {
-		hinic5_write_db(txq->sq, (txq->cos & nic_dev->cos_mask_mode), SQ_CFLAG_DP,
-				hinic5_get_sq_local_pi(txq->sq));
+		hinic5_write_db(txq->sq, txq->cos, SQ_CFLAG_DP,
+			hinic5_get_sq_local_pi(txq->sq));
 	}
 	return n - drops;
 }
@@ -142,8 +140,9 @@ struct xdp_frame *xdp_convert_to_frame(struct xdp_buff *xdp, struct hinic5_nic_d
 	int metasize, headroom;
 
 #if (KERNEL_VERSION(5, 8, 0) < LINUX_VERSION_CODE)
-	if (xdp->rxq->mem.type == MEM_TYPE_XSK_BUFF_POOL)
-		return xdp_convert_zc_to_xdp_frame(xdp);
+	if (xdp->rxq->mem.type == MEM_TYPE_XSK_BUFF_POOL) {
+			return xdp_convert_zc_to_xdp_frame(xdp);
+	}
 
 #endif
 	xdp_frame = xdp->data_hard_start;
@@ -154,8 +153,9 @@ struct xdp_frame *xdp_convert_to_frame(struct xdp_buff *xdp, struct hinic5_nic_d
 	if (unlikely((headroom - metasize) < sizeof(*xdp_frame)))
 		return NULL;
 #ifdef HAVE_XDP_FRAME_SZ
-	if (unlikely(xdp->data_end > xdp_data_hard_end(xdp)))
+	if (unlikely(xdp->data_end > xdp_data_hard_end(xdp))) {
 		return NULL;
+	}
 	xdp_frame->frame_sz = xdp->frame_sz;
 #endif
 	xdp_frame->data = xdp->data;
@@ -176,7 +176,7 @@ bool hinic5_xmit_xdp_buff(struct net_device *netdev, u16 q_id, struct xdp_buff *
 	struct xdp_frame *xdpf = NULL;
 	u16 dst_qid;
 
-	/* XDP queue is isolated from kernel TX queue, XDP uses the second half of queues */
+	/* xdp queues are isolated from kernel TX queues; xdp uses the latter half of queues */
 	dst_qid = q_id + nic_dev->q_params.num_qps;
 	txq = &nic_dev->txqs[dst_qid];
 	xdpf = xdp_convert_to_frame(xdp, nic_dev);
@@ -190,7 +190,7 @@ bool hinic5_xmit_xdp_buff(struct net_device *netdev, u16 q_id, struct xdp_buff *
 		XDP_TXQ_STATS_INC(txq, xdp_dropped);
 		return false;
 	}
-	hinic5_write_db(txq->sq, (txq->cos & nic_dev->cos_mask_mode), SQ_CFLAG_DP,
+	hinic5_write_db(txq->sq, txq->cos, SQ_CFLAG_DP,
 			hinic5_get_sq_local_pi(txq->sq));
 
 	return true;
@@ -200,21 +200,11 @@ static void update_drop_rx_info(struct hinic5_rxq *rxq, u16 weqbb_num)
 {
 	struct hinic5_rx_info *rx_info = NULL;
 	u16 weqbb_num_tmp = weqbb_num;
-	struct net_device *netdev = rxq->netdev;
-	struct hinic5_nic_dev *nic_dev = netdev_priv(netdev);
 
 	while (weqbb_num_tmp != 0) {
 		rx_info = &rxq->rx_info[rxq->cons_idx & rxq->q_mask];
-		if (likely(page_to_nid(rx_info->page) == numa_node_id())) {
-			hinic5_reuse_rx_page(rxq, rx_info);
-		} else {
-			if (rx_info->buf_dma_addr != 0) {
-				dma_unmap_page(rxq->dev, rx_info->buf_dma_addr,
-					       rxq->dma_rx_buff_size, DMA_FROM_DEVICE);
-			}
-
-			if (rx_info->page)
-				__free_pages(rx_info->page, nic_dev->page_order);
+		if (likely(rx_info->flags & HINIC5_RX_BUF_LAST_IN_PAGE)) {
+			hinic5_page_try_release(rxq, rx_info->page, rx_info->buf_dma_addr);
 		}
 
 		rx_info->buf_dma_addr = 0;
@@ -226,43 +216,25 @@ static void update_drop_rx_info(struct hinic5_rxq *rxq, u16 weqbb_num)
 	}
 }
 
-static bool hinic5_add_rx_frag_with_xdp(struct hinic5_rxq *rxq, u32 pkt_len,
-					struct hinic5_rx_info *rx_info,
-					struct sk_buff *skb, struct xdp_buff *xdp)
+static bool hinic5_add_rx_frag_with_xdp(struct hinic5_rxq *rxq, u32 pkt_len, struct hinic5_rx_info *rx_info,
+										struct sk_buff *skb, struct xdp_buff *xdp)
 {
 	struct page *page = rx_info->page;
+	bool last_in_page = rx_info->flags & HINIC5_RX_BUF_LAST_IN_PAGE;
 
 	if (pkt_len <= HINIC5_RX_HDR_SIZE) {
 		__skb_put_data(skb, xdp->data, pkt_len);
-
-		if (likely(page_to_nid(page) == numa_node_id()))
-			return true;
-
-		put_page(page);
-		goto umap_page;
+		return last_in_page;
 	}
 
 	skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags, page,
 			(int)(rx_info->page_offset + (xdp->data - xdp->data_hard_start)),
 			(int)pkt_len, rxq->buf_len);
-
-	if (unlikely(page_to_nid(page) != numa_node_id()))
-		goto umap_page;
-	if (unlikely(page_count(page) != 1))
-		goto umap_page;
-
-	rx_info->page_offset ^= rxq->buf_len;
 	get_page(page);
-
-	return true;
-umap_page:
-	dma_unmap_page(rxq->dev, rx_info->buf_dma_addr,
-		       rxq->dma_rx_buff_size, DMA_FROM_DEVICE);
-	return false;
+	return last_in_page;
 }
 
-static void hinic5_xdp_set_data(struct hinic5_rxq *rxq, struct xdp_buff *xdp,
-				u8 *va, u32 pkt_len, u32 packet_offset)
+static void hinic5_xdp_set_data(struct hinic5_rxq *rxq, struct xdp_buff *xdp, u8 *va, u32 pkt_len, u32 packet_offset)
 {
 	xdp->data = (void *)((uintptr_t)va + packet_offset);
 	xdp->data_hard_start = va;
@@ -270,8 +242,7 @@ static void hinic5_xdp_set_data(struct hinic5_rxq *rxq, struct xdp_buff *xdp,
 	xdp->rxq = &rxq->xdp_rxq;
 }
 
-static int hinic5_run_xdp_prog(struct hinic5_rxq *rxq, struct bpf_prog *xdp_prog,
-			       struct xdp_buff *xdp, u32 *pkt_len)
+static int hinic5_run_xdp_prog(struct hinic5_rxq *rxq, struct bpf_prog *xdp_prog, struct xdp_buff *xdp, u32 *pkt_len)
 {
 	u32 act;
 	int err;
@@ -294,8 +265,9 @@ static int hinic5_run_xdp_prog(struct hinic5_rxq *rxq, struct bpf_prog *xdp_prog
 		rx_info = &rxq->rx_info[rxq->cons_idx & rxq->q_mask];
 		get_page(rx_info->page);
 #ifdef HAVE_XDP_FRAME_SZ
-		if (unlikely(xdp->data_end > xdp_data_hard_end(xdp)))
+		if (unlikely(xdp->data_end > xdp_data_hard_end(xdp))) {
 			goto out_failure;
+		}
 #endif
 		err = xdp_do_redirect(netdev, xdp, xdp_prog);
 		if (unlikely(err != 0)) {
@@ -309,10 +281,10 @@ static int hinic5_run_xdp_prog(struct hinic5_rxq *rxq, struct bpf_prog *xdp_prog
 	case XDP_DROP:
 		break;
 	default:
-		bpf_warn_invalid_xdp_action(netdev, xdp_prog, act);
+bpf_warn_invalid_xdp_action(netdev, xdp_prog, act);
 
 out_failure:
-		trace_xdp_exception(netdev, xdp_prog, act);
+	trace_xdp_exception(netdev, xdp_prog, act);
 	}
 
 	return result;
@@ -323,13 +295,12 @@ static void hinic5_prepare_xdp_buff(struct hinic5_rxq *rxq, struct xdp_buff *xdp
 {
 	u8 *va;
 	struct hinic5_rx_info *rx_info = NULL;
-
 	rx_info = &rxq->rx_info[rxq->cons_idx & rxq->q_mask];
 	va = (u8 *)page_address(rx_info->page) + rx_info->page_offset;
 	prefetch(va);
 	dma_sync_single_range_for_cpu(rxq->dev, rx_info->buf_dma_addr,
-				      rx_info->page_offset,
-				      rxq->buf_len, DMA_FROM_DEVICE);
+								rx_info->page_offset,
+								rxq->buf_len, DMA_FROM_DEVICE);
 	hinic5_xdp_set_data(rxq, xdp, va, pkt_len, packet_offset);
 
 #ifdef HAVE_XDP_FRAME_SZ
@@ -353,8 +324,9 @@ static void hinic5_handle_xdp_result(struct hinic5_rxq *rxq, int result, u16 weq
 	default:
 		break;
 	}
-	if (result != HINIC5_XDP_PKT_PASS)
+	if (result != HINIC5_XDP_PKT_PASS) {
 		update_drop_rx_info(rxq, weqbb_num);
+	}
 }
 
 int hinic5_run_xdp(struct hinic5_rxq *rxq, struct hinic5_cqe_info *cqe_info, struct xdp_buff *xdp)
@@ -397,24 +369,23 @@ unlock_rcu:
 	return result;
 }
 
-struct sk_buff *hinic5_fetch_rx_buffer_xdp(struct hinic5_rxq *rxq, u32 pkt_len,
-					   struct xdp_buff *xdp)
+struct sk_buff *hinic5_fetch_rx_buffer_xdp(struct hinic5_rxq *rxq, u32 pkt_len, struct xdp_buff *xdp)
 {
 	struct sk_buff *skb = NULL;
 	struct hinic5_rx_info *rx_info = NULL;
 	u32 sw_ci;
-	bool reuse;
 
 	sw_ci = rxq->cons_idx & rxq->q_mask;
 	rx_info = &rxq->rx_info[sw_ci];
 
 	skb = netdev_alloc_skb_ip_align(rxq->netdev, HINIC5_RX_HDR_SIZE);
-	if (unlikely(!skb))
+	if (unlikely(!skb)) {
 		return NULL;
+	}
 
-	reuse = hinic5_add_rx_frag_with_xdp(rxq, pkt_len, rx_info, skb, xdp);
-	if (likely(reuse))
-		hinic5_reuse_rx_page(rxq, rx_info);
+	if (hinic5_add_rx_frag_with_xdp(rxq, pkt_len, rx_info, skb, xdp)) {
+		hinic5_page_try_release(rxq, rx_info->page, rx_info->buf_dma_addr);
+	}
 
 	rx_info->buf_dma_addr = 0;
 	rx_info->page = NULL;
@@ -437,8 +408,7 @@ void hinic5_xdp_flush_if_needed(const struct hinic5_nic_dev *nic_dev)
 }
 
 /* Function to determine XDP status and build skb accordingly */
-bool hinic5_xdp_process_packet(struct hinic5_rxq *rxq, struct hinic5_cqe_info *cqe_info,
-			       struct sk_buff **skb)
+bool hinic5_xdp_process_packet(struct hinic5_rxq *rxq, struct hinic5_cqe_info *cqe_info, struct sk_buff **skb)
 {
 	u32 xdp_status;
 	struct xdp_buff xdp = { 0 };
@@ -453,10 +423,11 @@ bool hinic5_xdp_process_packet(struct hinic5_rxq *rxq, struct hinic5_cqe_info *c
 	}
 
 	/* Build skb based on XDP program configuration */
-	if (xdp_status != HINIC5_XDP_PROG_EMPTY)
+	if (xdp_status != HINIC5_XDP_PROG_EMPTY) {
 		*skb = hinic5_fetch_rx_buffer_xdp(rxq, cqe_info->pkt_len, &xdp);
-	else
+	} else {
 		*skb = hinic5_fetch_rx_buffer(rxq, cqe_info);
+	}
 
 	return 0;
 }

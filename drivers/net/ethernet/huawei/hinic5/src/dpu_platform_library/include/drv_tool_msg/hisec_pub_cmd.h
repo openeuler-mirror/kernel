@@ -4,7 +4,7 @@
  * File Name     : hisec_pub_cmd.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
+ * Last Modified : 2026/09/16
  * Description   : COMM Commands and struct define between hinicadmdfx and DRIVER(ipsec)
  */
 
@@ -13,7 +13,7 @@
 
 #include "base_type.h"
 
-/* hisec_cmd_table maximum size is 2MB, minus the size of ipsec_tbl_args */
+/* hisec_cmd_table maximum 2MB, minus the size of ipsec_tbl_args */
 #define IPSEC_TBL_BUF_MAX (2048 * 1024 - sizeof(ipsec_tbl_args))
 
 typedef enum hisec_driver_cmd_type {
@@ -66,12 +66,12 @@ typedef struct {
 	u16 exid;
 
 	u16 funcid;
-	u16 valid;
+	u16 vaild;
 	u16 dir;
 	u16 rsvd;
 
 	u64 bitmap[IPSEC_ANTIREPLAY_BITMAP_MAX_LEN];
-} ipsec_antireplay_info ;
+} ipsec_antireplay_info;
 
 struct ipsec_soft_antireplay_info {
 	ipsec_antireplay_info info;
@@ -80,8 +80,7 @@ struct ipsec_soft_antireplay_info {
 
 #define HISEC_ENABLE_HARDWARE_ANTIREPLAY 1
 #define HISEC_HARDWARE_ANTIREPLAY_WINDOW_SIZE 64
-/* Software constraint: software anti-replay window minimum size is 256 */
-#define HISEC_SOFTWARE_ANTIREPLAY_MIN_WINDOW_SIZE 256
+#define HISEC_SOFTWARE_ANTIREPLAY_MIN_WINDOW_SIZE 256    /* Software constrains the minimum software anti-replay window to 256 */
 
 struct hinic5_ipsec_driver_enc_info {
 	u8 proto;     /* tcp/udp */

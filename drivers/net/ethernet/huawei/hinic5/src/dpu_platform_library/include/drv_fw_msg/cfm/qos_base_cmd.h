@@ -4,8 +4,8 @@
  * File Name     : qos_base_cmd.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   : qos data structure
+ * Last Modified : 2026/09/16
+ * Description   : qos datastruct
  */
 
 #ifndef QOS_BASE_CMD_H
@@ -91,13 +91,12 @@ typedef struct tag_qos_cc_l2d_tbl {
 	u32 dw_rsvd[4];
 } qos_cc_l2d_tbl_s;
 
-/* For scalability, actual pass-through size is 32B, union occupies 64B */
-#define CFM_QOS_CC_L2D_DATA_LEN 64
+#define CFM_QOS_CC_L2D_DATA_LEN 64 /* considering extensibility, actual passthrough size is 32B, union occupies 64B */
 
 /* L2DMEM write request */
 typedef struct tag_cfm_l2dmem_req {
 	struct mgmt_msg_head head;
-	/* For scalability */
+	/* considering extensibility */
 	union {
 		u32 padding[CFM_QOS_CC_L2D_DATA_LEN];
 		qos_cc_l2d_tbl_s l2d_tbl;
