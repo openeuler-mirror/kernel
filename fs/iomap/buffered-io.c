@@ -2002,12 +2002,8 @@ new_ioend:
 	 * should not be trimmed in such cases.
 	 */
 	wpc->ioend->io_size += len;
-	if (wpc->ioend->io_offset + wpc->ioend->io_size > isize) {
-		if (wpc->ioend->io_offset >= isize)
-			wpc->ioend->io_size = 0;
-		else
-			wpc->ioend->io_size = isize - wpc->ioend->io_offset;
-	}
+	if (pos < isize && pos + len > isize)
+		wpc->ioend->io_size = isize - wpc->ioend->io_offset;
 
 	wbc_account_cgroup_owner(wbc, &folio->page, len);
 	return 0;
