@@ -1153,6 +1153,7 @@ static int uburma_cmd_import_seg(struct ubcore_device *ubc_dev,
 	cfg.seg.len = arg.in.len;
 	cfg.seg.attr.value = arg.in.flag;
 	cfg.seg.token_id = arg.in.token_id;
+	cfg.token_value.token = arg.in.token;
 	fill_udata(&udata, file->ucontext, &arg.udata);
 
 	tseg = ubcore_import_seg(ubc_dev, &cfg, &udata);

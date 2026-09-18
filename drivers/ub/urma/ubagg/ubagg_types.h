@@ -70,7 +70,10 @@ struct ubagg_seg_hash_node {
 	struct ubcore_target_seg ubagg_seg;
 	// unaccessable for ubcore
 	uint32_t token_id; // key
+	uint64_t va;
+	uint64_t len;
 	struct ubcore_token token_value;
+	bool token_value_valid;
 	struct ubagg_seg_exchange_info ex_info;
 	struct hlist_node hnode;
 };
