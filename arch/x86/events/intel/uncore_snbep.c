@@ -626,12 +626,12 @@ static u64 snbep_uncore_pci_read_counter(struct intel_uncore_box *box, struct pe
 	return count;
 }
 
-static void snbep_uncore_pci_init_box(struct intel_uncore_box *box)
+static int snbep_uncore_pci_init_box(struct intel_uncore_box *box)
 {
 	struct pci_dev *pdev = box->pci_dev;
 	int box_ctl = uncore_pci_box_ctl(box);
 
-	pci_write_config_dword(pdev, box_ctl, SNBEP_PMON_BOX_CTL_INT);
+	return pci_write_config_dword(pdev, box_ctl, SNBEP_PMON_BOX_CTL_INT);
 }
 
 static void snbep_uncore_msr_disable_box(struct intel_uncore_box *box)
@@ -679,12 +679,14 @@ static void snbep_uncore_msr_disable_event(struct intel_uncore_box *box,
 	wrmsrl(hwc->config_base, hwc->config);
 }
 
-static void snbep_uncore_msr_init_box(struct intel_uncore_box *box)
+static int snbep_uncore_msr_init_box(struct intel_uncore_box *box)
 {
 	unsigned msr = uncore_msr_box_ctl(box);
 
 	if (msr)
 		wrmsrl(msr, SNBEP_PMON_BOX_CTL_INT);
+
+	return 0;
 }
 
 static struct attribute *snbep_uncore_formats_attr[] = {
@@ -1383,6 +1385,29 @@ err:
 	return ret;
 }
 
+static int topology_gidnid_map(int nodeid, u32 gidnid)
+{
+	int i, die_id = -1;
+
+	/*
+	 * every three bits in the Node ID mapping register maps
+	 * to a particular node.
+	 */
+	for (i = 0; i < 8; i++) {
+		if (nodeid == GIDNIDMAP(gidnid, i)) {
+			if (topology_max_dies_per_package() > 1)
+				die_id = i;
+			else
+				die_id = topology_phys_to_logical_pkg(i);
+			if (die_id < 0)
+				die_id = -ENODEV;
+			break;
+		}
+	}
+
+	return die_id;
+}
+
 /*
  * build pci bus to socket mapping
  */
@@ -1422,22 +1447,7 @@ static int snbep_pci2phy_map_init(int devid, int nodeid_loc, int idmap_loc, bool
 				break;
 			}
 
-			/*
-			 * every three bits in the Node ID mapping register maps
-			 * to a particular node.
-			 */
-			for (i = 0; i < 8; i++) {
-				if (nodeid == GIDNIDMAP(config, i)) {
-					if (topology_max_dies_per_package() > 1)
-						die_id = i;
-					else
-						die_id = topology_phys_to_logical_pkg(i);
-					if (die_id < 0)
-						die_id = -ENODEV;
-					map->pbus_to_dieid[bus] = die_id;
-					break;
-				}
-			}
+			map->pbus_to_dieid[bus] = topology_gidnid_map(nodeid, config);
 			raw_spin_unlock(&pci2phy_map_lock);
 		} else {
 			segment = pci_domain_nr(ubox_dev->bus);
@@ -1498,18 +1508,21 @@ int snbep_uncore_pci_init(void)
 /* end of Sandy Bridge-EP uncore support */
 
 /* IvyTown uncore support */
-static void ivbep_uncore_msr_init_box(struct intel_uncore_box *box)
+static int ivbep_uncore_msr_init_box(struct intel_uncore_box *box)
 {
 	unsigned msr = uncore_msr_box_ctl(box);
 	if (msr)
 		wrmsrl(msr, IVBEP_PMON_BOX_CTL_INT);
+
+	return 0;
 }
 
-static void ivbep_uncore_pci_init_box(struct intel_uncore_box *box)
+static int ivbep_uncore_pci_init_box(struct intel_uncore_box *box)
 {
 	struct pci_dev *pdev = box->pci_dev;
 
-	pci_write_config_dword(pdev, SNBEP_PCI_PMON_BOX_CTL, IVBEP_PMON_BOX_CTL_INT);
+	return pci_write_config_dword(pdev, SNBEP_PCI_PMON_BOX_CTL,
+				      IVBEP_PMON_BOX_CTL_INT);
 }
 
 #define IVBEP_UNCORE_MSR_OPS_COMMON_INIT()			\
@@ -2775,7 +2788,7 @@ static struct intel_uncore_type hswep_uncore_cbox = {
 /*
  * Write SBOX Initialization register bit by bit to avoid spurious #GPs
  */
-static void hswep_uncore_sbox_msr_init_box(struct intel_uncore_box *box)
+static int hswep_uncore_sbox_msr_init_box(struct intel_uncore_box *box)
 {
 	unsigned msr = uncore_msr_box_ctl(box);
 
@@ -2789,6 +2802,8 @@ static void hswep_uncore_sbox_msr_init_box(struct intel_uncore_box *box)
 			wrmsrl(msr, flags);
 		}
 	}
+
+	return 0;
 }
 
 static struct intel_uncore_ops hswep_uncore_sbox_msr_ops = {
@@ -3695,25 +3710,6 @@ static int skx_msr_cpu_bus_read(int cpu, u64 *topology)
 	return 0;
 }
 
-static int die_to_cpu(int die)
-{
-	int res = 0, cpu, current_die;
-	/*
-	 * Using cpus_read_lock() to ensure cpu is not going down between
-	 * looking at cpu_online_mask.
-	 */
-	cpus_read_lock();
-	for_each_online_cpu(cpu) {
-		current_die = topology_logical_die_id(cpu);
-		if (current_die == die) {
-			res = cpu;
-			break;
-		}
-	}
-	cpus_read_unlock();
-	return res;
-}
-
 enum {
 	IIO_TOPOLOGY_TYPE,
 	UPI_TOPOLOGY_TYPE,
@@ -3782,11 +3778,17 @@ static void pmu_free_topology(struct intel_uncore_type *type)
 static int skx_pmu_get_topology(struct intel_uncore_type *type,
 				 int (*topology_cb)(struct intel_uncore_type*, int, int, u64))
 {
-	int die, ret = -EPERM;
+	int die, ret = -ENODEV;
 	u64 cpu_bus_msr;
+	int cpu;
 
+	cpus_read_lock();
 	for (die = 0; die < uncore_max_dies(); die++) {
-		ret = skx_msr_cpu_bus_read(die_to_cpu(die), &cpu_bus_msr);
+		cpu = uncore_die_to_cpu(die);
+		if (cpu == -1)
+			continue;
+
+		ret = skx_msr_cpu_bus_read(cpu, &cpu_bus_msr);
 		if (ret)
 			break;
 
@@ -3798,6 +3800,7 @@ static int skx_pmu_get_topology(struct intel_uncore_type *type,
 		if (ret)
 			break;
 	}
+	cpus_read_unlock();
 
 	return ret;
 }
@@ -4165,12 +4168,13 @@ static const struct attribute_group skx_upi_uncore_format_group = {
 	.attrs = skx_upi_uncore_formats_attr,
 };
 
-static void skx_upi_uncore_pci_init_box(struct intel_uncore_box *box)
+static int skx_upi_uncore_pci_init_box(struct intel_uncore_box *box)
 {
 	struct pci_dev *pdev = box->pci_dev;
 
 	__set_bit(UNCORE_BOX_FLAG_CTL_OFFS8, &box->flags);
-	pci_write_config_dword(pdev, SKX_UPI_PCI_PMON_BOX_CTL, IVBEP_PMON_BOX_CTL_INT);
+	return pci_write_config_dword(pdev, SKX_UPI_PCI_PMON_BOX_CTL,
+				      IVBEP_PMON_BOX_CTL_INT);
 }
 
 static struct intel_uncore_ops skx_upi_uncore_pci_ops = {
@@ -4326,12 +4330,13 @@ static struct intel_uncore_type skx_uncore_upi = {
 	.cleanup_mapping = skx_upi_cleanup_mapping,
 };
 
-static void skx_m2m_uncore_pci_init_box(struct intel_uncore_box *box)
+static int skx_m2m_uncore_pci_init_box(struct intel_uncore_box *box)
 {
 	struct pci_dev *pdev = box->pci_dev;
 
 	__set_bit(UNCORE_BOX_FLAG_CTL_OFFS8, &box->flags);
-	pci_write_config_dword(pdev, SKX_M2M_PCI_PMON_BOX_CTL, IVBEP_PMON_BOX_CTL_INT);
+	return pci_write_config_dword(pdev, SKX_M2M_PCI_PMON_BOX_CTL,
+				      IVBEP_PMON_BOX_CTL_INT);
 }
 
 static struct intel_uncore_ops skx_m2m_uncore_pci_ops = {
@@ -4834,13 +4839,13 @@ void snr_uncore_cpu_init(void)
 	uncore_msr_uncores = snr_msr_uncores;
 }
 
-static void snr_m2m_uncore_pci_init_box(struct intel_uncore_box *box)
+static int snr_m2m_uncore_pci_init_box(struct intel_uncore_box *box)
 {
 	struct pci_dev *pdev = box->pci_dev;
 	int box_ctl = uncore_pci_box_ctl(box);
 
 	__set_bit(UNCORE_BOX_FLAG_CTL_OFFS8, &box->flags);
-	pci_write_config_dword(pdev, box_ctl, IVBEP_PMON_BOX_CTL_INT);
+	return pci_write_config_dword(pdev, box_ctl, IVBEP_PMON_BOX_CTL_INT);
 }
 
 static struct intel_uncore_ops snr_m2m_uncore_pci_ops = {
@@ -5013,17 +5018,22 @@ static int snr_uncore_mmio_map(struct intel_uncore_box *box,
 	return 0;
 }
 
-static void __snr_uncore_mmio_init_box(struct intel_uncore_box *box,
+static int __snr_uncore_mmio_init_box(struct intel_uncore_box *box,
 				       unsigned int box_ctl, int mem_offset,
 				       unsigned int device)
 {
-	if (!snr_uncore_mmio_map(box, box_ctl, mem_offset, device))
+	int ret;
+
+	ret = snr_uncore_mmio_map(box, box_ctl, mem_offset, device);
+	if (!ret)
 		writel(IVBEP_PMON_BOX_CTL_INT, box->io_addr);
+
+	return ret;
 }
 
-static void snr_uncore_mmio_init_box(struct intel_uncore_box *box)
+static int snr_uncore_mmio_init_box(struct intel_uncore_box *box)
 {
-	__snr_uncore_mmio_init_box(box, uncore_mmio_box_ctl(box),
+	return __snr_uncore_mmio_init_box(box, uncore_mmio_box_ctl(box),
 				   SNR_IMC_MMIO_MEM0_OFFSET,
 				   SNR_MC_DEVICE_ID);
 }
@@ -5462,7 +5472,7 @@ static int discover_upi_topology(struct intel_uncore_type *type, int ubox_did, i
 	struct pci_dev *ubox = NULL;
 	struct pci_dev *dev = NULL;
 	u32 nid, gid;
-	int i, idx, lgc_pkg, ret = -EPERM;
+	int idx, lgc_pkg, ret = -EPERM;
 	struct intel_uncore_topology *upi;
 	unsigned int devfn;
 
@@ -5477,28 +5487,23 @@ static int discover_upi_topology(struct intel_uncore_type *type, int ubox_did, i
 			break;
 		}
 
-		for (i = 0; i < 8; i++) {
-			if (nid != GIDNIDMAP(gid, i))
-				continue;
-			lgc_pkg = topology_phys_to_logical_pkg(i);
-			if (lgc_pkg < 0) {
-				ret = -EPERM;
-				goto err;
+		lgc_pkg = topology_gidnid_map(nid, gid);
+		if (lgc_pkg < 0) {
+			ret = -EPERM;
+			goto err;
+		}
+		for (idx = 0; idx < type->num_boxes; idx++) {
+			upi = &type->topology[lgc_pkg][idx];
+			devfn = PCI_DEVFN(dev_link0 + idx, ICX_UPI_REGS_ADDR_FUNCTION);
+			dev = pci_get_domain_bus_and_slot(pci_domain_nr(ubox->bus),
+							  ubox->bus->number,
+							  devfn);
+			if (dev) {
+				ret = upi_fill_topology(dev, upi, idx);
+				pci_dev_put(dev);
+				if (ret)
+					goto err;
 			}
-			for (idx = 0; idx < type->num_boxes; idx++) {
-				upi = &type->topology[lgc_pkg][idx];
-				devfn = PCI_DEVFN(dev_link0 + idx, ICX_UPI_REGS_ADDR_FUNCTION);
-				dev = pci_get_domain_bus_and_slot(pci_domain_nr(ubox->bus),
-								  ubox->bus->number,
-								  devfn);
-				if (dev) {
-					ret = upi_fill_topology(dev, upi, idx);
-					pci_dev_put(dev);
-					if (ret)
-						goto err;
-				}
-			}
-			break;
 		}
 	}
 err:
@@ -5645,14 +5650,14 @@ int icx_uncore_pci_init(void)
 	return 0;
 }
 
-static void icx_uncore_imc_init_box(struct intel_uncore_box *box)
+static int icx_uncore_imc_init_box(struct intel_uncore_box *box)
 {
 	unsigned int box_ctl = box->pmu->type->box_ctl +
 			       box->pmu->type->mmio_offset * (box->pmu->pmu_idx % ICX_NUMBER_IMC_CHN);
 	int mem_offset = (box->pmu->pmu_idx / ICX_NUMBER_IMC_CHN) * ICX_IMC_MEM_STRIDE +
 			 SNR_IMC_MMIO_MEM0_OFFSET;
 
-	__snr_uncore_mmio_init_box(box, box_ctl, mem_offset,
+	return __snr_uncore_mmio_init_box(box, box_ctl, mem_offset,
 				   SNR_MC_DEVICE_ID);
 }
 
@@ -5709,12 +5714,12 @@ static struct uncore_event_desc icx_uncore_imc_freerunning_events[] = {
 	{ /* end: all zeroes */ },
 };
 
-static void icx_uncore_imc_freerunning_init_box(struct intel_uncore_box *box)
+static int icx_uncore_imc_freerunning_init_box(struct intel_uncore_box *box)
 {
 	int mem_offset = box->pmu->pmu_idx * ICX_IMC_MEM_STRIDE +
 			 SNR_IMC_MMIO_MEM0_OFFSET;
 
-	snr_uncore_mmio_map(box, uncore_mmio_box_ctl(box),
+	return snr_uncore_mmio_map(box, uncore_mmio_box_ctl(box),
 			    mem_offset, SNR_MC_DEVICE_ID);
 }
 
@@ -6011,10 +6016,10 @@ static struct intel_uncore_type spr_uncore_mdf = {
 	.name			= "mdf",
 };
 
-static void spr_uncore_mmio_offs8_init_box(struct intel_uncore_box *box)
+static int spr_uncore_mmio_offs8_init_box(struct intel_uncore_box *box)
 {
 	__set_bit(UNCORE_BOX_FLAG_CTL_OFFS8, &box->flags);
-	intel_generic_uncore_mmio_init_box(box);
+	return intel_generic_uncore_mmio_init_box(box);
 }
 
 static struct intel_uncore_ops spr_uncore_mmio_offs8_ops = {
@@ -6195,12 +6200,11 @@ static struct uncore_event_desc spr_uncore_imc_freerunning_events[] = {
 
 #define SPR_MC_DEVICE_ID	0x3251
 
-static void spr_uncore_imc_freerunning_init_box(struct intel_uncore_box *box)
+static int spr_uncore_imc_freerunning_init_box(struct intel_uncore_box *box)
 {
 	int mem_offset = box->pmu->pmu_idx * ICX_IMC_MEM_STRIDE + SNR_IMC_MMIO_MEM0_OFFSET;
-
-	snr_uncore_mmio_map(box, uncore_mmio_box_ctl(box),
-			    mem_offset, SPR_MC_DEVICE_ID);
+	return snr_uncore_mmio_map(box, uncore_mmio_box_ctl(box),
+				   mem_offset, SPR_MC_DEVICE_ID);
 }
 
 static struct intel_uncore_ops spr_uncore_imc_freerunning_ops = {
@@ -6889,20 +6893,24 @@ static unsigned int dmr_iio_freerunning_box_offsets[] = {
 	0x0, 0x8000, 0x18000, 0x20000
 };
 
-static void dmr_uncore_freerunning_init_box(struct intel_uncore_box *box)
+static int dmr_uncore_freerunning_init_box(struct intel_uncore_box *box)
 {
 	struct intel_uncore_type *type = box->pmu->type;
 	u64 mmio_base;
 
 	if (box->pmu->pmu_idx >= type->num_boxes)
-		return;
+		return -ENODEV;
 
 	mmio_base = DMR_IMH1_HIOP_MMIO_BASE;
 	mmio_base += dmr_iio_freerunning_box_offsets[box->pmu->pmu_idx];
 
 	box->io_addr = ioremap(mmio_base, type->mmio_map_size);
-	if (!box->io_addr)
+	if (!box->io_addr) {
 		pr_warn("perf uncore: Failed to ioremap for %s.\n", type->name);
+		return -ENOMEM;
+	}
+
+	return 0;
 }
 
 static struct intel_uncore_ops dmr_uncore_freerunning_ops = {
