@@ -4,8 +4,8 @@
  * File Name     : ossl_knl.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : OS abstraction layer entry for kernel space
  */
 
 #ifndef OSSL_KNL_H
@@ -21,6 +21,9 @@
 #else
 #include "ossl_knl_nic_win.h"
 #endif
+#endif
+#ifdef __UEFI__
+#include "ossl_knl_uefi.h"
 #endif
 
 #ifdef __VMWARE__

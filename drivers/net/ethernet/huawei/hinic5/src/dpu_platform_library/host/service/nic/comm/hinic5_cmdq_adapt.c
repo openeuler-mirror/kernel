@@ -4,8 +4,8 @@
  * File Name     : hinic5_cmdq_adapt.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : hinic5 cmdq adapt initialization
  */
 
 #include "hinic5_nic_cmdq.h"

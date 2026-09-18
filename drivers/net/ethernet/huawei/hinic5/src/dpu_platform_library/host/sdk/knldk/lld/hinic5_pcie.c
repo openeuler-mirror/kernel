@@ -4,8 +4,8 @@
  * File Name     : hinic5_pcie.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : PCIe bus driver for HINIC5
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [COMM]" fmt
@@ -33,10 +33,11 @@
 #include "hinic5_dev_mgmt.h"
 #include "hinic5_nictool.h"
 #include "hinic5_hw.h"
-#include "hinic5_hinic5_vram.h"
+#include "hinic5_vram.h"
 #include "hinic5_fast_msg_init.h"
 #include "hinic5_lld.h"
 #include "hinic5_lld_private.h"
+#include "hisdk5_lld.h"
 #include "hinic5_profile.h"
 #include "hinic5_hwdev.h"
 #include "hinic5_typedef_inner.h"
@@ -49,8 +50,8 @@
 
 #define HINIC5_VF_TIMER_DISABLE_MAX_TIMEOUT   50  /* 50 mseconds */
 #define HINIC5_VF_TIMER_DISABLE_WAIT_TIME     5   /* 5 mseconds */
-#define HINIC5_VF_NOTIFY_FLR_BIT       BIT(17)
-#define HINIC5_PF_HOST_MPU_NOTIFY_BIT  BIT(31)
+#define HINIC5_VF_NOTIFY_FLR_BIT       (1UL << 17)
+#define HINIC5_PF_HOST_MPU_NOTIFY_BIT  (1UL << 31)
 #define HINIC5_VF_FUNC_ATTRIBUTE6_OFFSET 0x2018
 #define HINIC5_PF_HOST_MPU_NOTIFY_OFFSET 0x60C0
 
@@ -91,7 +92,8 @@ static int mapping_bar(struct pci_dev *pdev,
 		return -ENOMEM;
 	}
 
-	adev->intr_reg_base = pci_ioremap_bar(pdev, HINIC5_PCI_INTR_REG_BAR);
+	adev->intr_reg_base = pci_ioremap_bar(pdev,
+							     HINIC5_PCI_INTR_REG_BAR);
 	if (!adev->intr_reg_base) {
 		sdk_err(&pdev->dev,
 			"Failed to map interrupt regs\n");
@@ -151,8 +153,10 @@ static int hinic5_pci_init(struct pci_dev *pdev)
 	int err;
 
 	adev = kzalloc(sizeof(*adev), GFP_KERNEL);
-	if (!adev)
+	if (!adev) {
+		sdk_err(&pdev->dev, "Failed to alloc pci device adapter\n");
 		return -ENOMEM;
+	}
 	adev->dev = &pdev->dev;
 	adev->bus_dev = pdev;
 	mutex_init(&adev->adev_mutex);
@@ -250,10 +254,6 @@ static int hinic5_remove_func(struct hinic5_adev *adev)
 
 	hinic5_func_deinit(adev);
 
-	hinic5_lld_lock_chip_node();
-	hinic5_free_chip_node(adev);
-	hinic5_lld_unlock_chip_node();
-
 	unmapping_bar(adev);
 
 	mutex_lock(&adev->adev_mutex);
@@ -285,8 +285,8 @@ static int hinic5_get_pf_info(struct hinic5_adev *dev, u16 service,
 		return -EFAULT;
 	}
 
-	pf_infos = kzalloc(sizeof(*pf_infos), GFP_KERNEL);
-	if (!pf_infos) {
+	*pf_infos = kzalloc(sizeof(struct hinic5_hw_pf_infos), GFP_KERNEL);
+	if (*pf_infos == NULL) {
 		sdk_err(dev->dev, "Failed to allocate pf infos\n");
 		return -ENOMEM;
 	}
@@ -330,9 +330,12 @@ static int hinic5_dst_pdev_valid(struct hinic5_adev *dst_dev,  struct pci_dev **
 	}
 
 	/* OVS sriov hw scene, when vf bind to vf_io return error. */
-	if (!en && (strcmp((*des_pdev_ptr)->driver->name, HINIC5_DRV_NAME) != 0)) {
-		pr_err("vf bind driver:%s\n", (*des_pdev_ptr)->driver->name);
-		return -EFAULT;
+	if (!en) {
+		struct pci_driver *drv = (*des_pdev_ptr)->driver;
+		if (!drv || strcmp(drv->name, HINIC5_DRV_NAME) != 0) {
+			pr_err("vf bind driver:%s\n", drv ? drv->name : "none");
+			return -EFAULT;
+		}
 	}
 
 	return 0;
@@ -361,8 +364,8 @@ void hinic5_notify_vf_timer_disable(struct pci_dev *pdev)
 	struct pci_dev *physfn = NULL;
 	u32 val;
 
-	if (!pdev || pdev->vendor != PCI_VENDOR_ID_HUAWEI ||
-	    (pdev->device != HINIC5_DEV_ID_VF && pdev->device != HINIC5_DEV_ID_25V1_VF))
+	if (pdev == NULL || pdev->vendor != PCI_VENDOR_ID_HUAWEI ||
+		((pdev->device != HINIC5_DEV_ID_VF) && (pdev->device != HINIC5_DEV_ID_25V1_VF)))
 		return;
 
 	sdk_warn(&pdev->dev, "Notify vf disable timer bitmap before flr\n");
@@ -387,10 +390,9 @@ void hinic5_notify_vf_timer_disable(struct pci_dev *pdev)
 	val = ioread32be(bar + HINIC5_VF_FUNC_ATTRIBUTE6_OFFSET);
 	iowrite32be(val | HINIC5_VF_NOTIFY_FLR_BIT, bar + HINIC5_VF_FUNC_ATTRIBUTE6_OFFSET);
 
-	/* Set PF HOST_MPU_NOTIFY to cause mpu interrupt */
+	/* Set PF HOST_MPU_NOTIFY to cause mpu intterrupt */
 	val = ioread32be(bar_physfn + HINIC5_PF_HOST_MPU_NOTIFY_OFFSET);
-	iowrite32be(val | HINIC5_PF_HOST_MPU_NOTIFY_BIT,
-		    bar_physfn + HINIC5_PF_HOST_MPU_NOTIFY_OFFSET);
+	iowrite32be(val | HINIC5_PF_HOST_MPU_NOTIFY_BIT, bar_physfn + HINIC5_PF_HOST_MPU_NOTIFY_OFFSET);
 
 	/* Wait for MPU disable vf timer bitmap */
 	timeout = jiffies + msecs_to_jiffies(HINIC5_VF_TIMER_DISABLE_MAX_TIMEOUT);
@@ -403,11 +405,11 @@ void hinic5_notify_vf_timer_disable(struct pci_dev *pdev)
 
 	iounmap(bar_physfn);
 	iounmap(bar);
+	return;
 }
 EXPORT_SYMBOL(hinic5_notify_vf_timer_disable);
 
-int hinic5_set_vf_service_state(struct hinic5_lld_dev *lld_dev,
-				u16 vf_func_id, u16 service, bool en)
+int hinic5_set_vf_service_state(struct hinic5_lld_dev *lld_dev, u16 vf_func_id, u16 service, bool en)
 {
 	struct hinic5_adev *dev = to_hinic5_adev(lld_dev);
 	struct hinic5_hw_pf_infos *pf_infos = NULL;
@@ -419,13 +421,12 @@ int hinic5_set_vf_service_state(struct hinic5_lld_dev *lld_dev,
 	bool find_dst_dev = false;
 
 	err = get_vf_service_state_param(lld_dev, dev, service, &pf_infos);
-	if (err != 0 || !pf_infos)
+	if (err != 0 || pf_infos == NULL)
 		return err;
 
-	hinic5_lld_hold();
+	lld_hold();
 	list_for_each_entry(dst_dev, &dev->chip_node->func_list, node) {
-		if (paramerter_is_unexpected(dst_dev, &func_id, &vf_start,
-					     &vf_end, vf_func_id) != 0)
+		if (paramerter_is_unexpected(dst_dev, &func_id, &vf_start, &vf_end, vf_func_id) != 0)
 			continue;
 
 		dst_pdev = container_of(dst_dev->dev, struct pci_dev, dev);
@@ -435,16 +436,19 @@ int hinic5_set_vf_service_state(struct hinic5_lld_dev *lld_dev,
 		if (err != 0) {
 			sdk_err(dev->dev, "Can not get vf func_id %u from pf %u\n",
 				vf_func_id, func_id);
-			hinic5_lld_put();
+			lld_put();
 			goto free_pf_info;
 		}
 
 		dst_dev = pci_get_drvdata(des_pdev);
 		/* When enable vf scene, if vf bind to vf-io, return ok */
-		if ((strcmp(des_pdev->driver->name, HINIC5_DRV_NAME) != 0) ||
+		if (!des_pdev->driver ||
+		    (strcmp(des_pdev->driver->name, HINIC5_DRV_NAME) != 0) ||
 		    !dst_dev || (!en && dst_dev->lld_state != HINIC5_PROBE_OK) ||
 		    (en && dst_dev->lld_state != HINIC5_NOT_PROBE)) {
-			hinic5_lld_put();
+			if (en)
+				pci_dev_put(des_pdev);
+			lld_put();
 			goto free_pf_info;
 		}
 
@@ -453,18 +457,18 @@ int hinic5_set_vf_service_state(struct hinic5_lld_dev *lld_dev,
 		find_dst_dev = true;
 		break;
 	}
-	hinic5_lld_put();
+	lld_put();
 
 	if (!find_dst_dev) {
 		err = -EFAULT;
-		sdk_err(dev->dev, "Invalid parameter vf_id %u\n", vf_func_id);
+		sdk_err(dev->dev, "Invalid parameter vf_id %u \n", vf_func_id);
 		goto free_pf_info;
 	}
 
 	err = hinic5_pci_set_func_en(dst_dev, en, vf_func_id);
 
 free_pf_info:
-	if (pf_infos)
+	if (pf_infos != NULL)
 		kfree(pf_infos);
 	return err;
 }
@@ -556,7 +560,7 @@ static void hinic5_pci_remove(struct pci_dev *pdev)
 
 #ifndef __HIFC__
 #ifdef CONFIG_PCI_IOV
-	if (pdev->is_virtfn != 0 && (hinic5_get_pf_device_id(pdev) == HINIC5_DEV_ID_SDI_6_0_PF) &&
+	if ((pdev->is_virtfn != 0) && (hinic5_get_pf_device_id(pdev) == HINIC5_DEV_ID_SDI_6_0_PF) &&
 	    hinic5_get_vf_load_state(pdev))
 		return;
 #endif
@@ -585,7 +589,6 @@ static void hinic5_mask_aer_comp_abort(struct pci_dev *pdev)
 	int pos;
 
 	struct pci_dev *rp = pcie_find_root_port(pdev);
-
 	if (!rp) {
 		sdk_warn(&pdev->dev, "Cannot find root port.\n");
 		return;
@@ -609,10 +612,11 @@ static int hinic5_probe_func(struct hinic5_adev *adev)
 	int err;
 
 	err = probe_func_param_init(adev);
-	if (err == -EEXIST)
+	if (err == -EEXIST) {
 		return 0;
-	else if (err != 0)
+	} else if (err != 0) {
 		return err;
+	}
 
 	err = mapping_bar(pdev, adev);
 	if (err != 0) {
@@ -620,27 +624,17 @@ static int hinic5_probe_func(struct hinic5_adev *adev)
 		goto map_bar_failed;
 	}
 
-	/* if chip information of pcie function exist, add the function into chip */
-	hinic5_lld_lock_chip_node();
-	err = hinic5_alloc_chip_node(adev);
-	if (err != 0) {
-		hinic5_lld_unlock_chip_node();
-		sdk_err(&pdev->dev, "Failed to add new chip node to global list\n");
-		goto alloc_chip_node_fail;
-	}
-	hinic5_lld_unlock_chip_node();
-
 	err = hinic5_func_init(adev);
 	if (err != 0)
 		goto func_init_err;
 
 #if (defined CONFIG_ARM) || (defined CONFIG_ARM64)
 	/* Prevent PF from being in an abnormal state
-	 * due to illegal memory access by its VF.
-	 */
+	   due to illegal memory access by its VF. */
 	if (hinic5_func_type(adev->hwdev) == TYPE_PPF) {
-		if (!hinic5_in_spu(adev->hwdev))
+		if (!hinic5_in_spu(adev->hwdev)) {
 			hinic5_mask_aer_comp_abort(pdev);
+		}
 	}
 #endif /* ARM */
 
@@ -673,11 +667,6 @@ create_sysfs_err:
 	hinic5_func_deinit(adev);
 
 func_init_err:
-	hinic5_lld_lock_chip_node();
-	hinic5_free_chip_node(adev);
-	hinic5_lld_unlock_chip_node();
-
-alloc_chip_node_fail:
 	unmapping_bar(adev);
 
 map_bar_failed:
@@ -689,7 +678,6 @@ bool hinic5_pci_is_virtfn(struct hinic5_adev *adev)
 {
 #ifdef CONFIG_PCI_IOV
 	struct pci_dev *pdev = to_pci_dev(adev->dev);
-
 	return (bool)(pdev->is_virtfn);
 #else
 	return false;
@@ -706,8 +694,14 @@ int hinic5_pci_get_vf_num(struct hinic5_adev *adev)
 int hinic5_pci_init_device_info(struct hinic5_adev *adev)
 {
 	struct hinic5_adev *pf_adev = hinic5_pdev_get_pf_adev(adev);
-	struct pci_dev *pdev = to_pci_dev(pf_adev->dev);
-	u64 bus_domain_nr = (u64)pci_domain_nr(pdev->bus);
+	struct pci_dev *pdev = NULL;
+	u64 bus_domain_nr;
+
+	if (!pf_adev)
+		return -EFAULT;
+
+	pdev = to_pci_dev(pf_adev->dev);
+	bus_domain_nr = (u64)pci_domain_nr(pdev->bus);
 
 	adev->info.id = (bus_domain_nr << PCI_BUS_NUM_SHIFT) + pdev->bus->number;
 
@@ -728,8 +722,9 @@ int hinic5_pci_set_func_en(struct hinic5_adev *dst_adev, bool en, u16 vf_func_id
 
 	mutex_lock(&dst_adev->adev_mutex);
 	/* unload invalid vf func id */
-	if (!en && vf_func_id != hinic5_global_func_id(dst_adev->hwdev) &&
-	    (strcmp(des_pdev->driver->name, HINIC5_DRV_NAME) == 0)) {
+	if (!en && (vf_func_id != hinic5_global_func_id(dst_adev->hwdev)) &&
+		des_pdev->driver &&
+		(strcmp(des_pdev->driver->name, HINIC5_DRV_NAME) == 0)) {
 		pr_err("dst_adev func id:%u, vf_func_id:%u\n",
 		       hinic5_global_func_id(dst_adev->hwdev), vf_func_id);
 		mutex_unlock(&dst_adev->adev_mutex);
@@ -776,6 +771,7 @@ static int hinic5_pf_get_vf_offset_info(struct hinic5_adev *des_adev, u16 *vf_of
 	if (g_vf_offset.valid == 0) {
 		pf_infos = kzalloc(sizeof(*pf_infos), GFP_KERNEL);
 		if (!pf_infos) {
+			sdk_err(pf_adev->dev, "Malloc pf_infos fail\n");
 			err = -ENOMEM;
 			goto err_malloc;
 		}
@@ -787,9 +783,12 @@ static int hinic5_pf_get_vf_offset_info(struct hinic5_adev *des_adev, u16 *vf_of
 			goto err_out;
 		}
 
-		g_vf_offset.valid = 1;
-		for (i = 0; i < CMD_MAX_MAX_PF_NUM; i++)
+		for (i = 0; i < CMD_MAX_MAX_PF_NUM; i++) {
 			g_vf_offset.vf_offset_from_pf[i] = pf_infos->infos[i].vf_offset;
+		}
+
+		wmb();
+		g_vf_offset.valid = 1;
 
 		kfree(pf_infos);
 	}
@@ -834,7 +833,13 @@ struct hinic5_adev *hinic5_pci_get_vf_adev_by_pf(struct hinic5_adev *adev, u16 f
 	bus_num = pdev->bus->number + des_fn / BUS_MAX_DEV_NUM;
 
 	dst_vf_pdev = pci_get_domain_bus_and_slot(0, bus_num, (des_fn % BUS_MAX_DEV_NUM));
+	if (!dst_vf_pdev)
+		return NULL;
 	dst_adev = pci_get_drvdata(dst_vf_pdev);
+	if (!dst_adev) {
+		pci_dev_put(dst_vf_pdev);
+		return NULL;
+	}
 	put_device(dst_adev->dev);
 	return dst_adev;
 }
@@ -846,7 +851,7 @@ STATIC int hinic5_get_vfid_by_vfpci(void *hwdev, struct pci_dev *pdev, u16 *glob
 	u16 pf_bus, vf_bus, vf_offset;
 	int err;
 
-	if (!pdev || !global_func_id || pdev->is_virtfn == 0)
+	if (!pdev || !global_func_id || (pdev->is_virtfn == 0))
 		return -EINVAL;
 
 	pf_pdev = pdev->physfn;
@@ -866,6 +871,7 @@ STATIC int hinic5_get_vfid_by_vfpci(void *hwdev, struct pci_dev *pdev, u16 *glob
 			sdk_err(&pdev->dev, "Pf offset get fail\n");
 			return -EFAULT;
 		}
+		rmb();
 	}
 
 	*global_func_id = (u16)((vf_bus - pf_bus) * BUS_MAX_DEV_NUM) + (u16)pdev->devfn +
@@ -927,7 +933,7 @@ static int hinic5_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id
 
 #ifndef __HIFC__
 #ifdef CONFIG_PCI_IOV
-	if (pdev->is_virtfn != 0 && (hinic5_get_pf_device_id(pdev) == HINIC5_DEV_ID_SDI_6_0_PF) &&
+	if ((pdev->is_virtfn != 0) && (hinic5_get_pf_device_id(pdev) == HINIC5_DEV_ID_SDI_6_0_PF) &&
 	    hinic5_get_vf_load_state(pdev)) {
 		sdk_info(&pdev->dev, "VFs are not binded to hinic\n");
 		return -EINVAL;
@@ -954,11 +960,12 @@ static int hinic5_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id
 	adev->lld_dev.dev_type = HINIC5_DEVICE_T_PCI;
 	adev->bus_ops = hinic5_get_dev_ops(adev);
 	err = adev->bus_ops->init_device_info(adev);
-	if (err != 0)
+	if (err != 0) {
 		goto init_device_info_err;
-	hinic5_lld_dev_cnt_init(adev);
+	}
+	lld_dev_cnt_init(adev);
 
-	if (pdev->is_virtfn != 0 && (!hinic5_get_vf_load_state(pdev)) &&
+	if ((pdev->is_virtfn != 0) && (!hinic5_get_vf_load_state(pdev)) &&
 	    (!hinic5_get_vf_nic_en_status(pdev))) {
 		sdk_info(&pdev->dev, "VF device disable load in host\n");
 		return 0;
@@ -1010,8 +1017,12 @@ static const struct pci_device_id hinic5_pci_table[] = {
 	{PCI_VDEVICE(HUAWEI, HINIC5_DEV_ID_72V1_VF), 0},
 	{PCI_VDEVICE(HUAWEI, HINIC5_DEV_ID_25V1_PF), 0},
 	{PCI_VDEVICE(HUAWEI, HINIC5_DEV_ID_25V1_VF), 0},
+	{PCI_VDEVICE(HUAWEI, HINIC5_DEV_ID_26V1_PF), 0},
+	{PCI_VDEVICE(HUAWEI, HINIC5_DEV_ID_26V1_VF), 0},
+	{PCI_VDEVICE(HUAWEI, HINIC5_DEV_ID_73V1_PF), 0},
+	{PCI_VDEVICE(HUAWEI, HINIC5_DEV_ID_73V1_VF), 0},
 #endif
-	{0,}
+	{0, 0}
 
 };
 
@@ -1061,14 +1072,35 @@ static void hinic5_pci_shutdown(struct pci_dev *pdev)
 		hinic5_set_api_stop(adev->hwdev);
 }
 
-#ifdef HAVE_PCIE_RESET_DONE
-STATIC void hinic5_reset_done(struct pci_dev *pdev)
+STATIC INLINE void hinic5_reset_prepare(struct pci_dev *pdev)
+{
+	struct hinic5_adev *adev = pci_get_drvdata(pdev);
+	struct hinic5_event_info event = {
+		.service    = EVENT_SRV_COMM,
+		.type       = EVENT_COMM_RESET_PREPARE,
+	};
+
+	if (unlikely(!adev))
+		return;
+	send_uld_dev_event(adev, &event);
+}
+
+STATIC INLINE void hinic5_reset_done(struct pci_dev *pdev)
 {
 	struct hinic5_adev *adev = pci_get_drvdata(pdev);
 
 	sdk_info(&pdev->dev, "pcie is reset done\n");
 	if (adev)
 		hinic5_set_api_stop(adev->hwdev);
+}
+
+#ifdef HAVE_PCIE_RESET_NOTIFY
+STATIC void hinic5_reset_notify(struct pci_dev *pdev, bool prepare)
+{
+	if (prepare)
+		hinic5_reset_prepare(pdev);
+	else
+		hinic5_reset_done(pdev);
 }
 #endif
 
@@ -1083,7 +1115,11 @@ static struct pci_driver_rh hinic5_driver_rh = {
  */
 static struct pci_error_handlers hinic5_err_handler = {
 	.error_detected = hinic5_io_error_detected,
+#ifdef HAVE_PCIE_RESET_NOTIFY
+	.reset_notify   = hinic5_reset_notify,
+#endif
 #ifdef HAVE_PCIE_RESET_DONE
+	.reset_prepare  = hinic5_reset_prepare,
 	.reset_done     = hinic5_reset_done,
 #endif
 };

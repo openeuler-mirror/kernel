@@ -4,8 +4,8 @@
  * File Name     : hinic5_hw.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 hardware interface definitions
  */
 
 #ifndef HINIC5_HW_H
@@ -17,11 +17,11 @@
 #include "hinic5_crm.h"
 
 #ifndef BIG_ENDIAN
-#define BIG_ENDIAN 0x4321		/**< Big endian byte order */
+#define BIG_ENDIAN 0x4321		/**< Indicates big-endian byte order */
 #endif
 
 #ifndef LITTLE_ENDIAN
-#define LITTLE_ENDIAN 0x1234	/**< Little endian byte order */
+#define LITTLE_ENDIAN 0x1234	/**< Indicates little-endian byte order */
 #endif
 
 #ifdef BYTE_ORDER
@@ -30,17 +30,16 @@
 /* X86 */
 #define BYTE_ORDER LITTLE_ENDIAN
 /* to use 0-level CLA, page size must be: SQ 16B(wqe) * 64k(max_q_depth) */
-#define HINIC5_DEFAULT_WQ_PAGE_SIZE 0x100000	/**< Default work queue page size */
-#define HINIC5_HW_WQ_PAGE_SIZE 0x1000			/**< Hardware send queue page size */
-#define HINIC5_MAX_WQ_PAGE_SIZE_ORDER 8			/**< Maximum work queue page size order */
-#define SPU_HOST_ID 4		/**< Host ID */
+#define HINIC5_DEFAULT_WQ_PAGE_SIZE 0x100000	/**< Defines default work queue page size */
+#define HINIC5_HW_WQ_PAGE_SIZE 0x1000			/**< Defines hardware transmit queue page size */
+#define HINIC5_MAX_WQ_PAGE_SIZE_ORDER 8			/**< Defines maximum work queue page size */
+#define SPU_HOST_ID 4		/**< Indicates host ID */
 
-/**< NIC resource type indicator */
-#define HINIC5_NIC_RES	BIT(RES_TYPE_NIC)
+#define HINIC5_NIC_RES	BIT(RES_TYPE_NIC)		/**< Indicates Network Interface Controller (NIC) resource */
 
 /**
  * @brief enum hinic5_channel_id - Channel type
- * @details Defines the enumeration type for Hinic5 channels
+ * @details Defines Hinic5 channel enum type
  */
 enum hinic5_channel_id {
 	HINIC5_CHANNEL_DEFAULT,
@@ -75,7 +74,7 @@ struct hinic5_cmd_buf {
 
 /**
  * @brief struct hinic5_cmdq_cmd_param - cmdq request object
- * @details Stores cmdq request parameters
+ * @details Stores parameters of a cmdq request
  */
 struct hinic5_cmdq_cmd_param {
 	u8 mod;   /**< mod id */
@@ -87,7 +86,7 @@ struct hinic5_cmdq_cmd_param {
 
 /**
  * @brief enum hinic5_hwdev_init_state
- * @details Defines the enumeration type for hardware device initialization state
+ * @details Defines the enum type of hardware device initialization states
  */
 enum hinic5_hwdev_init_state {
 	HINIC5_HWDEV_NONE_INITED = 0,	/**< Device not initialized */
@@ -97,7 +96,7 @@ enum hinic5_hwdev_init_state {
 };
 
 /**
- * @brief struct hinic5_ceq_info - CEQ configuration info description
+ * @brief struct hinic5_ceq_info - Describes ceq configuration information
  * @details NA
  */
 struct hinic5_ceq_info {
@@ -109,56 +108,56 @@ struct hinic5_ceq_info {
 };
 
 /**
- * @brief enum hinic5_ceq_event - CEQE event type
- * @details Defines Hinic5 interrupt event types
+ * @brief enum hinic5_ceq_event - Type of ceqe
+ * @details Defines the interrupt event types of Hinic5
  */
 enum hinic5_ceq_event {
 	HINIC5_NON_L2NIC_SCQ,		/**< Non-L2NIC SCQ interrupt event */
 	HINIC5_NON_L2NIC_ECQ,		/**< Non-L2NIC ECQ interrupt event */
-	HINIC5_NON_L2NIC_NO_CQ_EQ,	/**< Non-L2NIC no CQ interrupt event */
+	HINIC5_NON_L2NIC_NO_CQ_EQ,	/**< Non-L2NIC interrupt event without CQ */
 	HINIC5_CMDQ,		/**< Command queue interrupt event */
 	HINIC5_L2NIC_SQ,	/**< L2NIC send queue interrupt event */
 	HINIC5_L2NIC_RQ,	/**< L2NIC receive queue interrupt event */
 	HINIC5_CEQ_EVENT_RSVD,		/**< Reserved interrupt event */
 	HINIC5_FAST_MSG_RQ,			/**< Fast message receive queue interrupt event */
-	HINIC5_MAX_CEQ_EVENTS,		/**< Number of CEQE types */
+	HINIC5_MAX_CEQ_EVENTS,		/**< Number of ceqe types */
 };
 
 /**
  * @brief enum hinic5_mbox_seg_errcode
- * @details Mailbox error code enumeration type
+ * @details Mailbox error code enum type
  */
 enum hinic5_mbox_seg_errcode {
 	MBOX_ERRCODE_NO_ERRORS		= 0,
-	MBOX_ERRCODE_VF_TO_WRONG_FUNC	= 0x100,	/**< VF sends mailbox data to wrong target device */
-	MBOX_ERRCODE_PPF_TO_WRONG_FUNC	= 0x200,	/**< PPF sends mailbox data to wrong target device */
-	MBOX_ERRCODE_PF_TO_WRONG_FUNC	= 0x300,	/**< PF sends mailbox data to wrong target device */
-	MBOX_ERRCODE_ZERO_DATA_SIZE	= 0x400,		/**< Mailbox data size set to all zeros */
+	MBOX_ERRCODE_VF_TO_WRONG_FUNC	= 0x100,	/**< VF sent mailbox data to wrong target device */
+	MBOX_ERRCODE_PPF_TO_WRONG_FUNC	= 0x200,	/**< PPF sent mailbox data to wrong target device */
+	MBOX_ERRCODE_PF_TO_WRONG_FUNC	= 0x300,	/**< PF sent mailbox data to wrong target device */
+	MBOX_ERRCODE_ZERO_DATA_SIZE	= 0x400,		/**< Mailbox data size set to all zero */
 	MBOX_ERRCODE_UNKNOWN_SRC_FUNC	= 0x500,	/**< Unknown source device */
-	MBOX_ERRCODE_UNKNOWN_DES_FUNC	= 0x600,	/**< Unknown destination device */
+	MBOX_ERRCODE_UNKNOWN_DES_FUNC	= 0x600,	/**< Unknown target device */
 };
 
 /**
- * @brief Callback type for handling CEQE events
+ * @brief Callback type for handling ceqe events
  * @param pri_handle Callback private data
- * @param ceqe_data CEQE data
+ * @param ceqe_data ceqe data
  *
  * @return NA
  */
 typedef void (*hinic5_ceq_event_cb)(void *pri_handle, u32 ceqe_data);
 
 /**
- * @brief Define function pointer type named hinic5_aeq_swe_cb
- * @param pri_handle Parameter is a void pointer representing private handle
- * @param event Parameter is a u8 type representing event
- * @param data Parameter is a u8 pointer representing data
+ * @brief Defines a function pointer type named hinic5_aeq_swe_cb
+ * @param pri_handle Parameter is a void pointer, representing the private handle
+ * @param event Parameter is a u8 type, representing the event
+ * @param data Parameter is a u8 pointer, representing the data
  *
- * @return Return value is u8 type function pointer
+ * @return Function pointer with u8 return value
  */
 typedef u8 (*hinic5_aeq_swe_cb)(void *pri_handle, u8 event, u8 *data);
 
 /**
- * @brief Define a function pointer type for handling virtual function mailbox callback
+ * @brief Defines a function pointer type for handling virtual function mailbox callbacks
  * @param pri_handle Pointer to private handle
  * @param cmd Command
  * @param buf_in Input buffer
@@ -174,7 +173,7 @@ typedef int (*hinic5_vf_mbox_cb)(void *pri_handle, u16 cmd,
 	     void *buf_in, u16 in_size, void *buf_out, u16 *out_size);
 
 /**
- * @brief Define a function pointer type for handling PF mailbox callback
+ * @brief Defines a function pointer type for handling PF mailbox callbacks
  * @param pri_handle Master handle
  * @param vf_id Virtual function ID
  * @param cmd Command
@@ -191,7 +190,7 @@ typedef int (*hinic5_pf_mbox_cb)(void *pri_handle, u16 vf_id, u16 cmd, void *buf
 	     u16 in_size, void *buf_out, u16 *out_size);
 
 /**
- * @brief Define a function pointer type for handling PF to VF mailbox communication
+ * @brief Defines a function pointer type for handling PF-to-VF mailbox communication
  * @param pri_handle Device handle
  * @param pf_idx PF index
  * @param vf_id VF ID
@@ -209,7 +208,7 @@ typedef int (*hinic5_ppf_mbox_cb)(void *pri_handle, u16 pf_idx, u16 vf_id, u16 c
 	     u16 in_size, void *buf_out, u16 *out_size);
 
 /**
- * @brief Define a function pointer type for receiving messages from PPF mailbox
+ * @brief Defines a function pointer type for receiving messages from PPF mailbox
  * @param pri_handle Private handle
  * @param cmd Command
  * @param buf_in Input buffer
@@ -223,13 +222,13 @@ typedef int (*hinic5_pf_recv_from_ppf_mbox_cb)(void *pri_handle, u16 cmd, void *
 	     u16 in_size, void *buf_out, u16 *out_size);
 
 /**
- * @brief Define a function pointer type for handling management messages
- * @param pri_handle Private handle passed to callback function
- * @param cmd Command code representing the operation to be performed
- * @param buf_in Input buffer for passing input parameters
- * @param in_size Input buffer size for limiting input parameter length
- * @param buf_out Output buffer for passing output results
- * @param out_size Output buffer size for limiting output result length
+ * @brief Defines a function pointer type for handling management messages
+ * @param pri_handle Private handle, passed to the callback function
+ * @param cmd Command code, indicates the operation to be performed
+ * @param buf_in Input buffer, used to pass input parameters
+ * @param in_size Input buffer size, used to limit the length of input parameters
+ * @param buf_out Output buffer, used to pass output results
+ * @param out_size Output buffer size, used to limit the length of output results
  *
  * @return None
  */
@@ -249,9 +248,9 @@ u8 hinic5_nic_sw_aeqe_stats(void *hwdev, u8 event, u8 *data);
  *
  * @attention: NA
  *
- * @return: Function return value description.
- *     @retval 0 Registration success
- *     @retval non-zero Registration failure
+ * @return: Describe function return value.
+ *     @retval 0 Registration successful
+ *     @retval non-0 Registration failed
  */
 int hinic5_register_stateless_aeqs(void *hwdev, void *pri_handle, hinic5_aeq_swe_cb stateless_aeq_swe_cb);
 
@@ -288,64 +287,64 @@ int hinic5_ceq_register_cb(void *hwdev, void *pri_handle, enum hinic5_ceq_event 
 void hinic5_ceq_unregister_cb(void *hwdev, enum hinic5_ceq_event event);
 
 /**
- * @brief Register handler for PPF mailbox messages
+ * @brief Register handler for PPF to process mailbox messages
  *
  * @param hwdev Device object pointer
  * @param mod Service module, value is HINIC5_MOD_XXX macro definition
  * @param pri_handle Callback private data
- * @param callback Callback function
+ * @param callback Callback
  *
  * @details NA
  *
  * @attention: NA
  *
- * @return: Function return value description.
+ * @return: Describe function return value.
  *     @retval 0 Success
- *     @retval non-zero Failure
+ *     @retval Non-zero Failure
  */
 int hinic5_register_ppf_mbox_cb(void *hwdev, u8 mod, void *pri_handle,
 				hinic5_ppf_mbox_cb callback);
 
 /**
- * @brief Register handler for PF mailbox messages
+ * @brief Register handler for PF to process mailbox messages
  *
  * @param hwdev Device object pointer
  * @param mod Service module, value is HINIC5_MOD_XXX macro definition
  * @param pri_handle Callback private data
- * @param callback Callback function
+ * @param callback Callback
  *
  * @details NA
  *
  * @attention: NA
  *
- * @return: Function return value description.
+ * @return: Describe function return value.
  *     @retval 0 Success
- *     @retval non-zero Failure
+ *     @retval Non-zero Failure
  */
 int hinic5_register_pf_mbox_cb(void *hwdev, u8 mod, void *pri_handle,
 			       hinic5_pf_mbox_cb callback);
 
 /**
- * @brief Register handler for VF mailbox messages
+ * @brief Register handler for VF to process mailbox messages
  *
  * @param hwdev Device object pointer
  * @param mod Service module, value is HINIC5_MOD_XXX macro definition
  * @param pri_handle Callback private data
- * @param callback Callback function
+ * @param callback Callback
  *
  * @details NA
  *
  * @attention: NA
  *
- * @return: Function return value description.
+ * @return: Describe function return value.
  *     @retval 0 Success
- *     @retval non-zero Failure
+ *     @retval Non-zero Failure
  */
 int hinic5_register_vf_mbox_cb(void *hwdev, u8 mod, void *pri_handle,
 			       hinic5_vf_mbox_cb callback);
 
 /**
- * @brief Unregister PPF mailbox callback
+ * @brief Unregister PPF mailbox processing callback
  *
  * @param hwdev Device object pointer
  * @param mod Service module, value is HINIC5_MOD_XXX macro definition
@@ -359,7 +358,7 @@ int hinic5_register_vf_mbox_cb(void *hwdev, u8 mod, void *pri_handle,
 void hinic5_unregister_ppf_mbox_cb(void *hwdev, u8 mod);
 
 /**
- * @brief Unregister PF mailbox callback
+ * @brief Unregister PF mailbox processing callback
  *
  * @param hwdev Device object pointer
  * @param mod Service module, value is HINIC5_MOD_XXX macro definition
@@ -373,7 +372,7 @@ void hinic5_unregister_ppf_mbox_cb(void *hwdev, u8 mod);
 void hinic5_unregister_pf_mbox_cb(void *hwdev, u8 mod);
 
 /**
- * @brief Unregister VF mailbox callback
+ * @brief Unregister VF mailbox processing callback
  *
  * @param hwdev Device object pointer
  * @param mod Service module, value is HINIC5_MOD_XXX macro definition
@@ -387,7 +386,7 @@ void hinic5_unregister_pf_mbox_cb(void *hwdev, u8 mod);
 void hinic5_unregister_vf_mbox_cb(void *hwdev, u8 mod);
 
 /**
- * @brief Unregister PF mailbox callback
+ * @brief Unregister PF mailbox processing callback
  *
  * @param hwdev Device object pointer
  * @param mod Service module, value is HINIC5_MOD_XXX macro definition
@@ -401,26 +400,26 @@ void hinic5_unregister_vf_mbox_cb(void *hwdev, u8 mod);
 void hinic5_unregister_ppf_to_pf_mbox_cb(void *hwdev, u8 mod);
 
 /**
- * @brief Register handler for function mailbox messages
+ * @brief Register handler for function to process mailbox messages
  *
  * @param hwdev Device object pointer
  * @param mod Service module, value is HINIC5_MOD_XXX macro definition
  * @param pri_handle Callback private data
- * @param callback Callback function
+ * @param callback Callback
  *
  * @details source is MPU
  *
  * @attention: NA
  *
- * @return: Function return value description.
+ * @return: Describe function return value.
  *     @retval 0 Success
- *     @retval non-zero Failure
+ *     @retval Non-zero Failure
  */
 int hinic5_register_mgmt_msg_cb(void *hwdev, u8 mod, void *pri_handle,
 				hinic5_mgmt_msg_cb callback);
 
 /**
- * @brief Unregister function mailbox callback
+ * @brief Unregister function mailbox processing callback
  *
  * @param hwdev Device object pointer
  * @param mod Service module, value is HINIC5_MOD_XXX macro definition
@@ -562,7 +561,7 @@ int hinic5_clean_root_ctxt(void *hwdev, u16 channel);
  * 		@retval non-zero: success
  * 		@retval null: failure
  * @note
- * 		Allocated memory does not support default zeroing, caller should zero according to needs
+ * 		The allocated memory does not support default zeroing, the caller should clear as needed
  */
 struct hinic5_cmd_buf *hinic5_alloc_cmd_buf(void *hwdev);
 
@@ -581,7 +580,7 @@ void hinic5_free_cmd_buf(void *hwdev, struct hinic5_cmd_buf *cmd_buf);
  * @param ctr_id Counter ID
  * @param value Pointer to store the read counter value
  *
- * @return 0 on success, other values indicate failure
+ * @return 0 success, other values indicate failure
  */
 int hinic5_sm_ctr_rd16(void *hwdev, u8 node, u8 instance, u32 ctr_id, u16 *value);
 
@@ -636,10 +635,10 @@ int hinic5_sm_ctr_rd64_pair(void *hwdev, u8 node, u8 instance,
  * @param node Node number
  * @param instance Instance number
  * @param ctr_id Counter ID
- * @param value1 Pointer to store the first value of the 64-bit counter pair
- * @param value2 Pointer to store the second value of the 64-bit counter pair
+ * @param value1 Pointer to store the first value of the read 64-bit counter pair
+ * @param value2 Pointer to store the second value of the read 64-bit counter pair
  *
- * @return 0 on success, other values indicate failure
+ * @return 0 success, other values failure
  */
 int hinic5_sm_ctr_rd64_pair_clear(void *hwdev, u8 node, u8 instance,
 				  u32 ctr_id, u64 *value1, u64 *value2);
@@ -667,7 +666,7 @@ int hinic5_sm_ctr_rd64(void *hwdev, u8 node, u8 instance, u32 ctr_id,
  * @param ctr_id Counter ID
  * @param value Pointer to store the read counter value
  *
- * @return 0 on success, other values indicate failure
+ * @return 0 success, other values indicate failure
  */
 int hinic5_sm_ctr_rd64_clear(void *hwdev, u8 node, u8 instance,
 			     u32 ctr_id, u64 *value);
@@ -710,25 +709,6 @@ int hinic5_api_csr_wr32(void *hwdev, u8 dest, u32 addr, u32 val);
  * 		@retval non-zero: failure
  */
 int hinic5_api_csr_rd64(void *hwdev, u8 dest, u32 addr, u64 *val);
-
-/**
- * @brief hinic5_dbg_get_hw_stats - get hardware stats
- * @param hwdev: device pointer to hwdev
- * @param hw_stats: pointer to memory caller to alloc
- * @param out_size: out size
- *
- * @return
- * 		@retval zero: success
- * 		@retval non-zero: failure
- */
-int hinic5_dbg_get_hw_stats(const void *hwdev, u8 *hw_stats, const u32 *out_size);
-
-/**
- * @brief hinic5_dbg_clear_hw_stats - clear hardware stats
- * @param hwdev: device pointer to hwdev
- * @return clear hardware size
- */
-u16 hinic5_dbg_clear_hw_stats(void *hwdev);
 
 /**
  * @brief hinic5_get_chip_fault_stats - get chip fault stats
@@ -794,7 +774,7 @@ int hinic5_msg_to_mgmt_no_ack(void *hwdev, u8 mod, u16 cmd, void *buf_in,
 			      u16 in_size, u16 channel);
 
 /**
- * @brief Send async message to management processing chain
+ * @brief Send asynchronous message to management processing chain
  * @param hwdev Hardware device context
  * @param mod Message module
  * @param cmd Message command
@@ -1146,7 +1126,7 @@ int hinic5_init_func_mbox_msg_channel(void *hwdev, u16 num_func);
 
 /**
  * @brief Get SML table information
- * @param hwdev Hardware device info
+ * @param hwdev Hardware device information
  * @param tbl_id Table ID
  * @param node_id Node ID
  * @param instance_id Instance ID
@@ -1179,14 +1159,14 @@ int hinic5_mbox_ppf_to_host(void *hwdev, u8 mod, u16 cmd, u8 host_id,
 			    u16 *out_size, u32 timeout, u16 channel);
 
 /**
- * @brief Force complete all operations
+ * @brief Force completion of all operations
  * @param dev Device pointer
  *
  * @return None
  */
 void hinic5_force_complete_all(void *dev);
 /**
- * @brief Get CEQ page physical address
+ * @brief Get physical address of CEQ page
  * @param hwdev Hardware device context
  * @param q_id Queue ID
  * @param page_idx Page index
@@ -1209,10 +1189,10 @@ int hinic5_get_ceq_page_phy_addr(void *hwdev, u16 q_id,
  */
 int hinic5_set_ceq_irq_disable(void *hwdev, u16 q_id);
 /**
- * @brief Get CEQ information
- * @param hwdev Hardware device info
+ * @brief Get ceq information
+ * @param hwdev Hardware device information
  * @param q_id Queue ID
- * @param ceq_info CEQ information
+ * @param ceq_info ceq information
  *
  * @return Whether successful
  * 		@retval zero: success
@@ -1246,7 +1226,7 @@ void hinic5_set_api_stop(void *hwdev);
  */
 int hinic5_activate_firmware(void *hwdev, u8 cfg_index);
 /**
- * @brief  hinic5_switch_config function main purpose is to switch firmware version
+ * @brief  The main function of hinic5_switch_config is to switch the firmware version
  * @param  hwdev Device handle
  * @param  cfg_index Configuration index
  *
@@ -1273,12 +1253,12 @@ enum hinic5_hw_type {
  *
  * @attention: NA
  *
- * @return: Function return value description.
- *     @retval HINIC5_HW_TYPE_FPGA fpga type
- *     @retval HINIC5_HW_TYPE_ASIC asic type
- *     @retval HINIC5_HW_TYPE_EMU emu type
- *     @retval HINIC5_HW_TYPE_EDA eda type
- *     @retval HINIC5_HW_TYPE_INVALID invalid type
+ * @return: Describe function return value.
+ *     @retval HINIC5_HW_TYPE_FPGA FPGA type
+ *     @retval HINIC5_HW_TYPE_ASIC ASIC type
+ *     @retval HINIC5_HW_TYPE_EMU EMU type
+ *     @retval HINIC5_HW_TYPE_EDA EDA type
+ *     @retval HINIC5_HW_TYPE_INVALID Invalid type
  */
 u8 hinic5_get_hw_type(void *hwdev);
 

@@ -4,8 +4,8 @@
  * File Name     : hinic5_bond.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Bond device management implementation
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [BOND]" fmt
@@ -22,7 +22,7 @@
 #include "comm_defs.h"
 #include "cfg_mgmt_mpu_cmd_defs.h"
 #include "hinic5_lld.h"
-#include "hinic5_vram_common.h"
+#include "vram_common.h"
 #include "hinic5_srv_nic.h"
 #include "hinic5_hw.h"
 #include "bond_mpu_cmd_defs.h"
@@ -113,7 +113,6 @@ bool bond_call_srv_attach_func(enum hinic5_bond_user user, struct bonding *bond)
 static bool bond_dev_is_activated(struct hinic5_bond_dev *bdev)
 {
 	bool is_activated = false;
-
 	spin_lock(&bdev->lock);
 	is_activated = (bdev->status == BOND_DEV_STATUS_ACTIVATED);
 	spin_unlock(&bdev->lock);
@@ -138,7 +137,7 @@ static u32 bond_gen_uplink_id(struct hinic5_bond_dev *bdev)
 			if (lld_dev == NULL) {
 				continue;
 			}
-			/* TODO: Waiting for SDK to provide interface */
+			/* TODO: Wait for SDK to provide the interface */
 			pdev = to_pci_dev(lld_dev->dev);
 			domain = (u32)pci_domain_nr(pdev->bus);
 			bus = pdev->bus->number;
@@ -173,9 +172,7 @@ void bond_dev_free_chip_bond_id(struct hinic5_bond_dev *bdev)
 			if (bond_chip->chip_bond_id[chip_bid] == bdev->bond_attr.bond_id) {
 				bond_chip->chip_bond_id[chip_bid] = HINIC5_INVALID_BOND_ID;
 				bond_chip->bond_num--;
-				bond_master_info(bdev->bond->dev,
-						 "Bond chip %s bond id %u free success\n",
-						 bdev->chip_name, chip_bid);
+				bond_master_info(bdev->bond->dev, "Bond chip %s bond id %u free success\n", bdev->chip_name, chip_bid);
 				break;
 			}
 		}
@@ -183,8 +180,7 @@ void bond_dev_free_chip_bond_id(struct hinic5_bond_dev *bdev)
 		if (bond_chip->bond_num == 0) {
 			list_del(&bond_chip->node);
 			kfree(bond_chip);
-			bond_master_info(bdev->bond->dev, "Bond chip node %s free success\n",
-					 bdev->chip_name);
+			bond_master_info(bdev->bond->dev, "Bond chip node %s free success\n", bdev->chip_name);
 		}
 	}
 	mutex_unlock(&g_bond_mutex);
@@ -198,13 +194,8 @@ static int bond_dev_alloc_chip_bond_id(struct hinic5_bond_dev *bdev, char *chip_
 	int err = 0;
 
 	mutex_lock(&g_bond_mutex);
-	/* Initialize bdev chip name */
-	if (chip_name_len >= sizeof(bdev->chip_name)) {
-		err = -EINVAL;
-		goto exit;
-	}
-	memcpy(bdev->chip_name, chip_name, chip_name_len);
-	bdev->chip_name[chip_name_len] = '\0';
+	/* Initialize bdev's chip name */
+	(void)memcpy(bdev->chip_name, chip_name, chip_name_len);
 
 	list_for_each_entry(node_tmp, &bond_mngr.bond_chip_list, node) {
 		if (strncmp(node_tmp->chip_name, chip_name, chip_name_len) == 0) {
@@ -226,9 +217,7 @@ static int bond_dev_alloc_chip_bond_id(struct hinic5_bond_dev *bdev, char *chip_
 				bdev->chip_bond_id = chip_bid;
 				bond_chip->chip_bond_id[chip_bid] = (u8)bdev->bond_attr.bond_id;
 				bond_chip->bond_num++;
-				bond_master_info(bdev->bond->dev,
-						 "Bond chip %s bond id %u alloc success\n",
-						 bdev->chip_name, chip_bid);
+				bond_master_info(bdev->bond->dev, "Bond chip %s bond id %u alloc success\n", bdev->chip_name, chip_bid);
 				break;
 			}
 		}
@@ -259,8 +248,9 @@ static int bond_dev_alloc_chip_bond_id(struct hinic5_bond_dev *bdev, char *chip_
 		list_add_tail(&bond_chip->node, &bond_mngr.bond_chip_list);
 	}
 exit:
-	if (err != 0)
-		memset(bdev->chip_name, 0, sizeof(bdev->chip_name)); /* Clear bdev chip name */
+	if (err != 0) {
+		memset(bdev->chip_name, 0, sizeof(bdev->chip_name)); /* Clear bdev's chip name */
+	}
 	mutex_unlock(&g_bond_mutex);
 	return err;
 }
@@ -317,7 +307,7 @@ u8 bond_dev_track_port(struct hinic5_bond_dev *bdev, struct net_device *ndev)
 	/* attach netdev to the port position associated with it */
 	if (bdev->tracker.ndev[port_id]) {
 		is_replaced = true;
-		memcpy(ndev_name, bdev->tracker.ndev[port_id]->name,
+		(void)memcpy(ndev_name, bdev->tracker.ndev[port_id]->name,
 		       sizeof(bdev->tracker.ndev[port_id]->name));
 	} else {
 		bdev->tracker.cnt++;
@@ -327,10 +317,10 @@ u8 bond_dev_track_port(struct hinic5_bond_dev *bdev, struct net_device *ndev)
 	bdev->tracker.netdev_state[port_id].link_up = 0;
 	bdev->tracker.netdev_state[port_id].tx_enabled = 0;
 	spin_unlock(&bdev->lock);
-	if (is_replaced)
+	if (is_replaced) {
 		bond_slave_warn(bdev->bond->dev, ndev, "Old ndev: %s is replaced\n", ndev_name);
-	bond_slave_info(bdev->bond->dev, ndev, "TRACK cnt: %u, slave ndev name: %s\n",
-			tracker_cnt, ndev->name);
+	}
+	bond_slave_info(bdev->bond->dev, ndev, "TRACK cnt: %u, slave ndev name: %s\n", tracker_cnt, ndev->name);
 
 	return port_id;
 }
@@ -360,10 +350,8 @@ static int bond_get_service_en_bitmap(struct hinic5_bond_dev *bdev)
 	int err;
 	struct hinic5_board_info info = {0};
 	struct hinic5_lld_dev *lld_dev = hinic5_get_lld_dev_by_chip_name(bdev->chip_name);
-
-	if (!lld_dev) {
-		bond_master_err(bdev->bond->dev, "no available hinic5 lld device, chip_name: %s\n",
-				bdev->chip_name);
+	if (lld_dev == NULL) {
+		bond_master_err(bdev->bond->dev, "no available hinic5 lld device, chip_name: %s\n", bdev->chip_name);
 		return -ENXIO;
 	}
 	err = hinic5_get_board_info(lld_dev->hwdev, &info, HINIC5_CHANNEL_NIC);
@@ -385,24 +373,18 @@ static int bond_send_mpu_cfm_msg(struct hinic5_bond_dev *bdev, struct hinic5_bon
 	u16 out_size = sizeof(cfm_bond_cmd_s);
 	cfm_bond_cmd_s cfm_bond_cmd_info = {0};
 	struct hinic5_lld_dev *lld_dev = hinic5_get_lld_dev_by_chip_name(bdev->chip_name);
-
-	if (!lld_dev) {
-		bond_master_err(bdev->bond->dev,
-				"no available hinic5 lld device(cfm), chip_name: %s\n",
-				bdev->chip_name);
+	if (lld_dev == NULL) {
+		bond_master_err(bdev->bond->dev, "no available hinic5 lld device(cfm), chip_name: %s\n", bdev->chip_name);
 		return -ENXIO;
 	}
 
-	memcpy(&cfm_bond_cmd_info, (const void *)cmd_info, sizeof(struct hinic5_bond_cmd));
-	err = hinic5_msg_to_mgmt_sync(lld_dev->hwdev, HINIC5_MOD_CFM, msg_cmd_type,
-				      &cfm_bond_cmd_info, sizeof(cfm_bond_cmd_s),
-				      &cfm_bond_cmd_info, &out_size,
-				      HINIC5_BOND_MSG_TIMEOUT_MS, HINIC5_CHANNEL_NIC);
+	(void)memcpy(&cfm_bond_cmd_info, (const void *)cmd_info, sizeof(struct hinic5_bond_cmd));
+	cfm_bond_cmd_info.bond_type = BOND_TYPE_HALF;
+	err = hinic5_msg_to_mgmt_sync(lld_dev->hwdev, HINIC5_MOD_CFM, msg_cmd_type, &cfm_bond_cmd_info,
+		sizeof(cfm_bond_cmd_s), &cfm_bond_cmd_info, &out_size, HINIC5_BOND_MSG_TIMEOUT_MS, HINIC5_CHANNEL_NIC);
 	if (err != 0 || out_size == 0 || cfm_bond_cmd_info.comm_head.status != 0) {
-		bond_master_err(bdev->bond->dev,
-				"bond msg cmd type: %u failed, err: %d, " \
-				"cfm bond sts: %u, out size: %u\n",
-				msg_cmd_type, err, cfm_bond_cmd_info.comm_head.status, out_size);
+		bond_master_err(bdev->bond->dev, "bond msg cmd type: %u failed, err: %d, cfm bond sts: %u, out size: %u\n",
+						msg_cmd_type, err, cfm_bond_cmd_info.comm_head.status, out_size);
 		err = -EIO;
 	}
 	return err;
@@ -414,21 +396,16 @@ static int bond_send_mpu_ovs_msg(struct hinic5_bond_dev *bdev, struct hinic5_bon
 	u16 msg_cmd_type = g_cmd_covert[cmd_type];
 	u16 out_size = sizeof(struct hinic5_bond_cmd);
 	struct hinic5_lld_dev *lld_dev = hinic5_get_lld_dev_by_chip_name(bdev->chip_name);
-
-	if (!lld_dev) {
-		bond_master_err(bdev->bond->dev,
-				"no available hinic5 lld device(ovs), chip_name: %s\n",
-				bdev->chip_name);
+	if (lld_dev == NULL) {
+		bond_master_err(bdev->bond->dev, "no available hinic5 lld device(ovs), chip_name: %s\n", bdev->chip_name);
 		return -ENXIO;
 	}
 
 	err = hinic5_msg_to_mgmt_sync(lld_dev->hwdev, HINIC5_MOD_OVS, msg_cmd_type, cmd_info,
-				      sizeof(struct hinic5_bond_cmd), cmd_info, &out_size, 0,
-				      HINIC5_CHANNEL_NIC);
+		sizeof(struct hinic5_bond_cmd), cmd_info, &out_size, 0, HINIC5_CHANNEL_NIC);
 	if (err != 0 || out_size == 0 || cmd_info->comm_head.status != 0) {
-		bond_master_err(bdev->bond->dev,
-				"bond msg cmd type: %u failed, err: %d, sts: %u, out size: %u\n",
-				msg_cmd_type, err, cmd_info->comm_head.status, out_size);
+		bond_master_err(bdev->bond->dev, "bond msg cmd type: %u failed, err: %d, sts: %u, out size: %u\n", msg_cmd_type,
+						err, cmd_info->comm_head.status, out_size);
 		err = -EIO;
 	}
 	return err;
@@ -437,11 +414,11 @@ static int bond_send_mpu_ovs_msg(struct hinic5_bond_dev *bdev, struct hinic5_bon
 static int bond_send_mpu_msg(struct hinic5_bond_dev *bdev, struct hinic5_bond_cmd *cmd_info, u8 cmd_type)
 {
 	int err = 0;
-
 	if (bdev->service_en_bitmap == 0) {
 		err = bond_get_service_en_bitmap(bdev);
-		if (err != 0)
+		if (err != 0) {
 			return err;
+		}
 	}
 	if (BITMAP_JUDGE(bdev->service_en_bitmap, SERVICE_BIT_CFM) != 0)
 		return bond_send_mpu_cfm_msg(bdev, cmd_info, cmd_type);
@@ -455,16 +432,18 @@ static int bond_send_upcmd(struct hinic5_bond_dev *bdev, struct bond_attr *attr,
 	cmd_info.sub_cmd = 0;
 	cmd_info.comm_head.status = 0;
 
-	if (attr)
-		memcpy((void *)&cmd_info.attr, attr, sizeof(*attr));
-	else
+	if (attr) {
+		(void)memcpy((void *)&cmd_info.attr, attr, sizeof(*attr));
+	} else {
 		cmd_info.attr.slaves = bdev->bond_attr.slaves;
+	}
 
 	/* cmd_info bond_id is chip bond id */
 	cmd_info.attr.bond_id = (u16)bdev->chip_bond_id;
 
 	if (cmd_type == BOND_CREATE_CMD) {
-		strncpy((char *)cmd_info.attr.bond_name, bdev->name, sizeof(cmd_info.attr.bond_name));
+		(void)strncpy((char *)cmd_info.attr.bond_name, bdev->name,
+						sizeof(cmd_info.attr.bond_name));
 		cmd_info.attr.bond_name[sizeof(cmd_info.attr.bond_name) - 1] = '\0';
 	}
 
@@ -480,8 +459,9 @@ static int bond_upcmd_deactivate(struct hinic5_bond_dev *bdev)
 	spin_lock(&bdev->lock);
 	status = bdev->status;
 	spin_unlock(&bdev->lock);
-	if (status == BOND_DEV_STATUS_IDLE)
+	if (status == BOND_DEV_STATUS_IDLE) {
 		return 0;
+	}
 
 	bond_master_info(bdev->bond->dev, "hinic5_bond: deactivate bond: %u\n", bdev->bond_attr.bond_id);
 
@@ -489,7 +469,7 @@ static int bond_upcmd_deactivate(struct hinic5_bond_dev *bdev)
 	if (err == 0) {
 		spin_lock(&bdev->lock);
 		id_tmp = bdev->bond_attr.bond_id;
-		memset(&bdev->bond_attr, 0, sizeof(bdev->bond_attr));
+		(void)memset(&bdev->bond_attr, 0, sizeof(bdev->bond_attr));
 		bdev->status = BOND_DEV_STATUS_IDLE;
 		bdev->bond_attr.bond_id = id_tmp;
 		spin_unlock(&bdev->lock);
@@ -559,7 +539,7 @@ static int bond_upcmd_config(struct hinic5_bond_dev *bdev, struct bond_attr *att
 
 	err = bond_send_upcmd(bdev, attr, BOND_SET_CMD);
 	if (err == 0)
-		memcpy(&bdev->bond_attr, attr, sizeof(struct bond_attr));
+		(void)memcpy(&bdev->bond_attr, attr, sizeof(struct bond_attr));
 
 	return err;
 }
@@ -580,7 +560,7 @@ static int bond_upcmd_activate(struct hinic5_bond_dev *bdev, struct bond_attr *a
 		spin_lock(&bdev->lock);
 		bdev->status = BOND_DEV_STATUS_ACTIVATED;
 		spin_unlock(&bdev->lock);
-		err = bond_upcmd_config(bdev, attr); /* create first, then set, for compatibility with old firmware mpu processing flow */
+		err = bond_upcmd_config(bdev, attr); /* Create first then set to be compatible with old firmware mpu processing flow */
 	}
 
 	return err;
@@ -621,7 +601,7 @@ static void bond_do_work(struct work_struct *work)
 	struct delayed_work *delayed_work = to_delayed_work(work);
 	struct hinic5_bond_dev *bdev = container_of(delayed_work, struct hinic5_bond_dev, bond_work);
 
-	is_in_kexec = hinic5_vram_get_kexec_flag();
+	is_in_kexec = vram5_get_kexec_flag();
 	if (is_in_kexec != 0) {
 		bond_master_info(bdev->bond->dev, "Skip changing bond status during os replace\n");
 		return;
@@ -633,9 +613,8 @@ static void bond_do_work(struct work_struct *work)
 	spin_unlock(&bdev->lock);
 	attr.user_bitmap = bond_get_user_bitmap(bdev);
 
-	bond_master_info(bdev->bond->dev,
-			 "bond_do_work is_bonded: %d, bond_dev_is_activated(bdev): %d\n",
-			 is_bonded, bond_dev_is_activated(bdev));
+	bond_master_info(bdev->bond->dev, "bond_do_work is_bonded: %d, bond_dev_is_activated(bdev): %d\n", is_bonded,
+		bond_dev_is_activated(bdev));
 
 	/* is_bonded indicates whether bond should be activated. */
 	if (is_bonded && !bond_dev_is_activated(bdev)) {
@@ -667,11 +646,11 @@ static void bond_dev_deinit(struct hinic5_bond_dev *bdev)
 	WRITE_ONCE(bdev->dead, true);
 	spin_unlock(&bdev->lock);
 
-	/* Block and wait for bond_work task to finish */
+	/* Block waiting for bond_work task to finish */
 	cancel_delayed_work_sync(&bdev->bond_work);
-	/* Block and wait for all srcu read operations to finish */
+	/* Block waiting for all srcu read operations to finish */
 	synchronize_srcu(&bdev_srcu);
-	if (bdev->wq) {
+	if (bdev->wq != NULL) {
 		destroy_workqueue(bdev->wq);
 	}
 	if (bdev->bond != NULL) {
@@ -695,12 +674,7 @@ static struct hinic5_bond_dev *bond_dev_init(struct bonding *bond, const char *n
 		goto bdev_wq_err;
 	}
 
-	if (strlen(name) >= sizeof(bdev->name)) {
-		pr_err("hinic5_bond: bond name too long: %s (max %zu)\n",
-			name, sizeof(bdev->name) - 1);
-		goto bdev_name_err;
-	}
-	strncpy(bdev->name, name, sizeof(bdev->name));
+	(void)strncpy(bdev->name, name, strlen(name));
 
 	INIT_DELAYED_WORK(&bdev->bond_work, bond_do_work);
 	bdev->status = BOND_DEV_STATUS_IDLE;
@@ -712,8 +686,6 @@ static struct hinic5_bond_dev *bond_dev_init(struct bonding *bond, const char *n
 
 	return bdev;
 
-bdev_name_err:
-	destroy_workqueue(bdev->wq);
 bdev_wq_err:
 	kfree(bdev);
 	return NULL;
@@ -786,9 +758,7 @@ static struct hinic5_bond_dev *bond_dev_alloc(const char *name, struct bonding *
 			bdev->bond_attr.bond_id = i;
 			bond_mngr.bond_dev[i] = bdev;
 			bond_mngr.cnt++;
-			bond_master_info(bond->dev,
-					 "Create bond dev: %s, bond id: %u, bond cnt: %u\n",
-					 name, i, bond_mngr.cnt);
+			bond_master_info(bond->dev, "Create bond dev: %s, bond id: %u, bond cnt: %u\n", name, i, bond_mngr.cnt);
 			break;
 		}
 	}
@@ -819,13 +789,15 @@ static void bond_init_all_slave(struct hinic5_bond_dev *bdev, struct bonding *bo
 	}
 	rcu_read_unlock();
 
-	/* TODO: Check if this flow is redundant, to be confirmed later */
+	/* TODO: Whether this flow is redundant, to be further confirmed later */
 	for (i = 0; i < cnt; ++i) {
-		if (bond_dev_track_port(bdev, slave_ndev[i]) == PORT_INVALID_ID)
+		if (bond_dev_track_port(bdev, slave_ndev[i]) == PORT_INVALID_ID) {
 			continue;
+		}
 	}
-	for (i = 0; i < cnt; ++i)
+	for (i = 0; i < cnt; ++i) {
 		bond_handle_rtnl_event(slave_ndev[i]);
+	}
 	bond_handle_rtnl_event(bond->dev);
 
 	while (cnt != 0)
@@ -859,8 +831,8 @@ static void bond_dev_user_attach(struct hinic5_bond_dev *bdev, enum hinic5_bond_
 		kref_init(&bdev->ref);
 	} else {
 		user_bitmap = bond_get_user_bitmap(bdev);
-		bond_master_info(bdev->bond->dev, "Bond user %u attach bond %s, user_bitmap %#x\n",
-				 user, bdev->name, user_bitmap);
+		bond_master_info(bdev->bond->dev, "Bond user %u attach bond %s, user_bitmap %#x\n", user, bdev->name,
+			user_bitmap);
 		queue_delayed_work(bdev->wq, &bdev->bond_work, 0);
 	}
 }
@@ -879,8 +851,8 @@ static void bond_dev_user_detach(struct hinic5_bond_dev *bdev,
 			*freed = true;
 		if (kref_put(&bdev->ref, bond_dev_free) == 0) {
 			user_bitmap = bond_get_user_bitmap(bdev);
-			bond_master_info(bdev->bond->dev, "Bond: user %u detach bond %s, " \
-					 "user_bitmap %#x\n", user, bdev->name, user_bitmap);
+			bond_master_info(bdev->bond->dev, "Bond: user %u detach bond %s, user_bitmap %#x\n", user, bdev->name,
+				user_bitmap);
 			queue_delayed_work(bdev->wq, &bdev->bond_work, 0);
 		}
 	}
@@ -907,8 +879,7 @@ int hinic5_bond_event_attach(struct bonding *bond, enum hinic5_bond_user user)
 			return -ENODEV;
 		}
 	} else {
-		bond_master_info(bdev->bond->dev,
-				 "Bond event attach %s already exist\n", bond->dev->name);
+		bond_master_info(bdev->bond->dev, "Bond event attach %s already exist\n", bond->dev->name);
 	}
 
 	bond_dev_user_attach(bdev, user);
@@ -939,10 +910,10 @@ bool hinic5_bond_slave_is_match(struct bonding *bond)
 			goto out;
 		}
 
-		/* If the function in bond group contains vf, print warning */
+		/* If the function in the bond group contains VF, print a warning */
 		if (hinic5_func_type(lld_dev->hwdev) == TYPE_VF) {
 			bond_slave_warn(bond->dev, slave->dev, "Bond Slave device is VF\n");
-			continue;;
+			continue; ;
 		}
 
 		err = hinic5_get_chip_name(lld_dev, tmp_name, sizeof(chip_name));
@@ -953,16 +924,14 @@ bool hinic5_bond_slave_is_match(struct bonding *bond)
 		}
 
 		if (strlen(chip_name) == 0) {
-			memcpy(chip_name, tmp_name, sizeof(tmp_name));
+			(void)memcpy(chip_name, tmp_name, sizeof(tmp_name));
 			continue;
 		}
 
 		/* Only support bond for same card */
 		if (strcmp(tmp_name, chip_name) != 0) {
 			bond_slave_err(bond->dev, slave->dev,
-				       "Bond Slave not match err, bond dev chip_name %s, " \
-				       "slave chip name %s\n",
-					chip_name, tmp_name);
+				"Bond Slave not match err, bond dev chip_name %s, slave chip name %s\n", chip_name, tmp_name);
 			goto out;
 		}
 	}
@@ -1198,14 +1167,8 @@ int hinic5_bond_get_slaves(u16 bond_id, struct hinic5_bond_info_s *info)
 	info->cnt = 0;
 	for (i = 0; i < BOND_PORT_MAX_NUM; i++) {
 		if ((BITMAP_JUDGE(info->slaves, i) != 0) && tracker->ndev[i]) {
-			if (strlen(tracker->ndev[i]->name) >= sizeof(info->slaves_name[0])) {
-				bond_master_err(bond_mngr.bond_dev[bond_id]->bond->dev,
-						"hinic5_bond: port name too long: %s (max %zu)\n",
-						tracker->ndev[i]->name, sizeof(info->slaves_name[0]) - 1);
-				mutex_unlock(&g_bond_mutex);
-				return -EINVAL;
-			}
-			strncpy(info->slaves_name[info->cnt], tracker->ndev[i]->name, sizeof(info->slaves_name[0]));
+			(void)strncpy(info->slaves_name[info->cnt], tracker->ndev[i]->name,
+				sizeof(info->slaves_name[0]) - 1);
 			info->cnt++;
 		}
 	}

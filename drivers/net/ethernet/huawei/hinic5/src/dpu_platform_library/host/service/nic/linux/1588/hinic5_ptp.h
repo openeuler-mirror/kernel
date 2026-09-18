@@ -4,8 +4,8 @@
  * File Name     : hinic5_ptp.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 PTP (Precision Time Protocol) header file
  */
 
 #ifndef HINIC5_PTP_H
@@ -34,7 +34,7 @@ enum hinic5_ptp_flags {
 #endif
 
 #define PTP_CLOCK_MAX_ADJ_TIME_VALUE 0x3FFFFFFF
-#define PTP_SKB_HWTSTAMPS_LENGTH	0x4
+#define PTP_SKB_HWTSTAMPS_LENGTH 	 0x4
 #define PTP_WR_UP_EN_FLAG BIT(0)
 #define PTP_RD_UP_EN_FLAG BIT(1)
 

@@ -4,8 +4,8 @@
  * File Name     : hinic5_main.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 main entry and module initialization
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [NIC]" fmt
@@ -33,7 +33,7 @@
 #include "hinic5_hw.h"
 #include "hinic5_crm.h"
 #include "hinic5_mt.h"
-#include "hinic5_hinic5_vram.h"
+#include "hinic5_vram.h"
 #include "hinic5_nic_cfg.h"
 #include "hinic5_srv_nic.h"
 #include "hinic5_nic_io.h"
@@ -44,11 +44,13 @@
 #include "hinic5_lld.h"
 #include "hinic5_rss.h"
 #include "hinic5_dcb.h"
+#include "hinic5_id_tbl.h"
 #include "hinic5_ptp.h"
 #include "hinic5_nic_event.h"
-#include "hinic5_hinic5_vram_api.h"
+#include "hinic5_vram_api.h"
 #include "hinic5_macsec_api.h"
 #include "hinic5_main.h"
+#include "hinic5_crm_pub.h"
 
 #if defined(HAVE_NDO_UDP_TUNNEL_ADD) || defined(HAVE_UDP_TUNNEL_NIC_INFO)
 #include <net/udp_tunnel.h>
@@ -97,6 +99,10 @@ static bool macsec_enabled;
 module_param(macsec_enabled, bool, 0444);
 MODULE_PARM_DESC(macsec_enabled, "Set macsec module state, 0: DISABLE, 1: ENABLE (default=0)");
 
+static bool enable_interrupt_adaptive = true;
+module_param(enable_interrupt_adaptive, bool, 0444);
+MODULE_PARM_DESC(enable_interrupt_adaptive, "Set interrupt adaptive default enable state, 0: DISABLE, 1: ENABLE (default=1)");
+
 #define HINIC5_MAX_POLL_WEIGHT		16384
 
 #define HINIC5_MAX_LRO_REPLENISH_THLD	16384
@@ -107,7 +113,7 @@ MODULE_PARM_DESC(macsec_enabled, "Set macsec module state, 0: DISABLE, 1: ENABLE
 
 static inline void hinic5_main_param_validate(void)
 {
-	if (poll_weight == 0 || poll_weight > HINIC5_MAX_POLL_WEIGHT) {
+	if ((poll_weight == 0) || poll_weight > HINIC5_MAX_POLL_WEIGHT) {
 		poll_weight = DEFAULT_POLL_WEIGHT;
 		pr_warn("[NIC] poll_weight is out of range(0-%u), reset to default %u\n",
 			HINIC5_MAX_POLL_WEIGHT, DEFAULT_POLL_WEIGHT);
@@ -125,8 +131,7 @@ static inline void hinic5_main_param_validate(void)
 			HINIC5_DEAULT_TXRX_MSIX_COALESC_TIMER_CFG);
 	}
 
-	if (hinic5_rx_buff != RX_BUFF_VALID_2KB && hinic5_rx_buff != RX_BUFF_VALID_4KB &&
-	    hinic5_rx_buff != RX_BUFF_VALID_8KB) {
+	if (hinic5_rx_buff != RX_BUFF_VALID_2KB && hinic5_rx_buff != RX_BUFF_VALID_4KB && hinic5_rx_buff != RX_BUFF_VALID_8KB) {
 		hinic5_rx_buff = DEFAULT_RX_BUFF_LEN;
 		pr_warn("[NIC] hinic5_rx_buff is invalid(%u), only 2/4/8KB supported, reset to default %uKB\n",
 			hinic5_rx_buff, DEFAULT_RX_BUFF_LEN);
@@ -400,8 +405,7 @@ static void netdev_feature_init(struct net_device *netdev)
 	}
 
 	/* When the chip does not support parsing IPinIP tunnel packets,
-	 * disable the checksum offloading for inner SCTP.
-	 */
+	    disable the checksum offloading for inner SCTP. */
 	if (HINIC5_SUPPORT_IPXIP_OFFLOAD(nic_dev->hwdev))
 		netdev->hw_enc_features |= NETIF_F_SCTP_CRC;
 #endif /* HAVE_ENCAPSULATION_CSUM */
@@ -449,12 +453,14 @@ static int hinic5_init_intr_coalesce(struct hinic5_nic_dev *nic_dev)
 		return -EINVAL;
 	}
 	nic_dev->intr_coalesce = kzalloc(size, GFP_KERNEL);
-	if (!nic_dev->intr_coalesce)
+	if (nic_dev->intr_coalesce == NULL) {
+		nic_err(nic_dev->lld_dev->dev, "Failed to alloc intr coalesce\n");
 		return -ENOMEM;
+	}
 
 	init_intr_coal_param(nic_dev);
 
-	if (test_bit(HINIC5_INTR_ADAPT, &nic_dev->flags) != 0)
+	if (test_bit(HINIC5_INTR_ADAPT, &nic_dev->flags) != 0 && enable_interrupt_adaptive)
 		nic_dev->adaptive_rx_coal = 1;
 	else
 		nic_dev->adaptive_rx_coal = 0;
@@ -528,8 +534,9 @@ static void hinic5_sw_deinit(struct hinic5_nic_dev *nic_dev)
 static inline int invalid_mac_address(struct hinic5_nic_dev *nic_dev)
 {
 	if (!is_valid_ether_addr(nic_dev->netdev->dev_addr)) {
-		if (!HINIC5_FUNC_IS_VF(nic_dev->hwdev))
+		if (!HINIC5_FUNC_IS_VF(nic_dev->hwdev)) {
 			return -EIO;
+		}
 		nic_info(nic_dev->lld_dev->dev, "Invalid MAC address %pM, using random\n",
 			 nic_dev->netdev->dev_addr);
 		eth_hw_addr_random(nic_dev->netdev);
@@ -561,17 +568,17 @@ static void hinic5_tx_rx_ops_init(struct hinic5_nic_dev *nic_dev)
 		nic_dev->tx_rx_ops.tx_set_wqe_offload = hinic5_tx_set_normal_task_offload;
 
 	if (hinic5_get_rq_wqe_type(nic_dev->hwdev) == HINIC5_COMPACT_RQ_WQE) {
-		/* 1825/1872 integrated CQE */
+		/* 1825/1872 unified cqe */
 		nic_dev->tx_rx_ops.rx_get_cqe_info = hinic5_rx_get_compact_cqe_info;
 		nic_dev->cqe_mode = HINIC5_RQ_CQE_INTEGRATE;
 		nic_dev->tx_rx_ops.rx_cqe_done = hinic5_rx_integrated_cqe_done;
 	} else if (HINIC5_SUPPORT_RX_HW_COMPACT_CQE(nic_dev->hwdev)) {
-		/* 1872 separate CQE */
+		/* 1872 separated cqe */
 		nic_dev->tx_rx_ops.rx_get_cqe_info = hinic5_rx_get_compact_cqe_info;
 		nic_dev->cqe_mode = HINIC5_RQ_CQE_SEPARATE;
 		nic_dev->tx_rx_ops.rx_cqe_done = hinic5_rx_separate_cqe_done;
 	} else {
-		/* 1823/1825 separate CQE */
+		/* 1823/1825 separated cqe */
 		nic_dev->tx_rx_ops.rx_get_cqe_info = hinic5_rx_get_cqe_info;
 		nic_dev->cqe_mode = HINIC5_RQ_CQE_SEPARATE;
 		nic_dev->tx_rx_ops.rx_cqe_done = hinic5_rx_separate_cqe_done;
@@ -585,6 +592,13 @@ static void hinic5_set_hw_default_cos(struct hinic5_nic_dev *nic_dev)
 	hw_default_cos = hinic5_func_dev_default_cos(nic_dev->hwdev);
 	nic_dev->hw_default_cos_valid = HW_DEFAULT_COS_IS_VALID(hw_default_cos);
 	nic_dev->hw_default_cos = hw_default_cos & HW_DEFAULT_COS_VALID_BIT;
+}
+
+static void hinic5_init_cos_assign_bitmap(struct hinic5_nic_dev *nic_dev)
+{
+	nic_dev->cos_assign_bitmap = hinic5_func_cos_mask_bitmap(nic_dev->hwdev);
+	nic_dev->cos_assign_bitmap = nic_dev->cos_assign_bitmap != 0 ? nic_dev->cos_assign_bitmap : U8_MAX;
+	nic_info(nic_dev->lld_dev->dev, "cos_assign_bitmap: 0x%x\n", nic_dev->cos_assign_bitmap);
 }
 
 static int hinic5_sw_init(struct hinic5_nic_dev *nic_dev)
@@ -602,7 +616,7 @@ static int hinic5_sw_init(struct hinic5_nic_dev *nic_dev)
 
 	sema_init(&nic_dev->port_state_sem, 1);
 
-	nic_dev->cos_mask_mode = hinic5_func_cos_mask_mode(nic_dev->hwdev);
+	hinic5_init_cos_assign_bitmap(nic_dev);
 
 	hinic5_set_hw_default_cos(nic_dev);
 
@@ -637,7 +651,7 @@ static int hinic5_sw_init(struct hinic5_nic_dev *nic_dev)
 	 * MAC, and we can't consider this condition is error status during
 	 * driver probe procedure.
 	 */
-	if (err != 0 && err != HINIC5_PF_SET_VF_ALREADY) {
+	if ((err != 0) && (err != HINIC5_PF_SET_VF_ALREADY)) {
 		nic_err(nic_dev->lld_dev->dev, "Failed to set default MAC\n");
 		goto err_mac;
 	}
@@ -655,8 +669,7 @@ static int hinic5_sw_init(struct hinic5_nic_dev *nic_dev)
 	return 0;
 
 alloc_qps_err:
-	hinic5_del_mac(nic_dev->hwdev, netdev->dev_addr, 0,
-		       hinic5_global_func_id(nic_dev->hwdev),
+	hinic5_del_mac(nic_dev->hwdev, netdev->dev_addr, 0, hinic5_global_func_id(nic_dev->hwdev),
 		HINIC5_CHANNEL_NIC);
 
 err_mac:
@@ -715,14 +728,11 @@ static int set_interrupt_moder(struct hinic5_nic_dev *nic_dev, u16 q_id,
 	    q_id >= nic_dev->q_params.num_qps)
 		return 0;
 
-	memset(&coalesce_info, 0, sizeof(coalesce_info));
+	(void)memset(&coalesce_info, 0, sizeof(coalesce_info));
 	coalesce_info.rx_coalesce_timer_cfg = coalesc_timer_cfg;
 	coalesce_info.rx_pending_limt = pending_limt;
-	coalesce_info.tx_coalesce_timer_cfg = coalesc_timer_cfg;
-	coalesce_info.tx_pending_limt = pending_limt;
 
-	err = hinic5_set_sq_rq_coalesce_cfg(nic_dev->hwdev, q_id, HINIC5_SQ_RQ_COALESCE,
-					    &coalesce_info);
+	err = hinic5_set_intr_coalesce_cfg(nic_dev->hwdev, q_id, &coalesce_info);
 	if (err != 0) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
 			  "Failed to modify moderation for Queue: %u\n", q_id);
@@ -789,13 +799,18 @@ void hinic5_auto_moderation_work(struct work_struct *work)
 	u64 tx_packets, tx_bytes, tx_pkt_diff, tx_rate;
 	u16 qid;
 
+#ifdef HAVE_DIM_SUPPORT
+	if (test_bit(HINIC5_INTF_UP, &nic_dev->flags) == 0 || HINIC5_SUPPORT_SQ_RQ_CI_COALESCE(nic_dev->hwdev))
+		return;
+#else
 	if (test_bit(HINIC5_INTF_UP, &nic_dev->flags) == 0)
 		return;
+#endif
 
 	queue_delayed_work(nic_dev->workq, &nic_dev->moderation_task,
 			   HINIC5_MODERATONE_DELAY);
 
-	if (nic_dev->adaptive_rx_coal == 0 || period == 0)
+	if ((nic_dev->adaptive_rx_coal == 0) || (period == 0))
 		return;
 
 	for (qid = 0; qid < nic_dev->q_params.num_qps; qid++) {
@@ -873,12 +888,13 @@ void hinic5_arp_dual_work(struct work_struct *work)
 			continue;
 		}
 		kfree_skb(skb);
-		msleep(10);
-
+	usleep_range(10000, 10000);
 		ret = hinic5_send_arp_to_mpu(nic_dev->hwdev, &info);
-		if (ret < 0)
+		if (ret < 0) {
 			nic_err(nic_dev->lld_dev->dev, "Send ARP to mpu failed, ret:%d.\n", ret);
+		}
 	}
+	return;
 }
 
 void hinic5_update_stats_work(struct work_struct *work)
@@ -887,64 +903,61 @@ void hinic5_update_stats_work(struct work_struct *work)
 	struct hinic5_nic_dev *nic_dev =
 			container_of(work, struct hinic5_nic_dev, update_stats_work);
 
-	ret = hinic5_get_vport_stats(nic_dev->hwdev, hinic5_global_func_id(nic_dev->hwdev),
-				     &nic_dev->vport_stats);
-	if (ret != 0)
+	ret = hinic5_get_vport_stats(nic_dev->hwdev, hinic5_global_func_id(nic_dev->hwdev), &nic_dev->vport_stats);
+	if (ret != 0) {
 		nic_err(nic_dev->lld_dev->dev, "Failed to get function stats from fw, ret:%d.\n", ret);
+	}
 	return;
 }
 
-static int init_nic_dev_hinic5_vram(struct hinic5_nic_dev *nic_dev)
+static int init_nic_dev_vram(struct hinic5_nic_dev *nic_dev)
 {
-	int is_in_kexec = hinic5_vram_get_kexec_flag();
-	int is_use_hinic5_vram = get_use_hinic5_vram_flag();
+	int is_in_kexec = vram5_get_kexec_flag();
+	int is_use_vram = get5_use_vram_flag();
 	u16 func_id;
 	int ret;
 
-	if (is_use_hinic5_vram != 0) {
+	if (is_use_vram != 0) {
 		func_id = hinic5_global_func_id(nic_dev->hwdev);
-		ret = snprintf(nic_dev->nic_hinic5_vram_name, HINIC5_VRAM_NAME_MAX_LEN,
-			       "%s%hu", HINIC5_VRAM_NIC_HINIC5_VRAM, func_id);
+		ret = snprintf(nic_dev->nic_vram_name, VRAM_NAME_MAX_LEN,
+				 "%s%hu", VRAM_NIC_VRAM, func_id);
 		if (ret < 0) {
-			nic_err(nic_dev->lld_dev->dev,
-				"NIC hinic5_vram name snprintf_s failed, ret:%d.\n", ret);
+			nic_err(nic_dev->lld_dev->dev, "NIC vram name snprintf failed, ret:%d.\n", ret);
 			return -EINVAL;
 		}
 
-		nic_dev->nic_hinic5_vram =
-			(struct hinic5_hinic5_vram *)
-			hinic5_hinic5_vram_kalloc(nic_dev->nic_hinic5_vram_name,
-						  sizeof(struct hinic5_hinic5_vram));
-		if (!nic_dev->nic_hinic5_vram) {
-			nic_err(nic_dev->lld_dev->dev, "Failed to allocate nic hinic5_vram\n");
+		nic_dev->nic_vram = (struct hinic5_vram *)hi5_vram_kalloc(nic_dev->nic_vram_name,
+			sizeof(struct hinic5_vram));
+		if (!nic_dev->nic_vram) {
+			nic_err(nic_dev->lld_dev->dev, "Failed to allocate nic vram\n");
 			return -ENOMEM;
 		}
 
 		if (is_in_kexec == 0)
-			nic_dev->nic_hinic5_vram->hinic5_vram_mtu = nic_dev->netdev->mtu;
+			nic_dev->nic_vram->vram_mtu = nic_dev->netdev->mtu;
 		else
-			nic_dev->netdev->mtu = nic_dev->nic_hinic5_vram->hinic5_vram_mtu;
+			nic_dev->netdev->mtu = nic_dev->nic_vram->vram_mtu;
 	} else {
-		nic_dev->nic_hinic5_vram = kzalloc(sizeof(struct hinic5_hinic5_vram), GFP_KERNEL);
-		if (!nic_dev->nic_hinic5_vram)
+		nic_dev->nic_vram = kzalloc(sizeof(struct hinic5_vram), GFP_KERNEL);
+		if (!nic_dev->nic_vram) {
+			nic_err(nic_dev->lld_dev->dev, "Failed to allocate nic vram\n");
 			return -ENOMEM;
-		nic_dev->nic_hinic5_vram->hinic5_vram_mtu = nic_dev->netdev->mtu;
+		}
+		nic_dev->nic_vram->vram_mtu = nic_dev->netdev->mtu;
 	}
 
 	return 0;
 }
 
-static void free_nic_dev_hinic5_vram(struct hinic5_nic_dev *nic_dev)
+static void free_nic_dev_vram(struct hinic5_nic_dev *nic_dev)
 {
-	int is_use_hinic5_vram = get_use_hinic5_vram_flag();
-
-	if (is_use_hinic5_vram != 0)
-		hinic5_hinic5_vram_kfree((void *)nic_dev->nic_hinic5_vram,
-					 nic_dev->nic_hinic5_vram_name,
-					 sizeof(struct hinic5_hinic5_vram));
+	int is_use_vram = get5_use_vram_flag();
+	if (is_use_vram != 0)
+		hi5_vram_kfree((void *)nic_dev->nic_vram, nic_dev->nic_vram_name,
+			sizeof(struct hinic5_vram));
 	else
-		kfree(nic_dev->nic_hinic5_vram);
-	nic_dev->nic_hinic5_vram = NULL;
+		kfree(nic_dev->nic_vram);
+	nic_dev->nic_vram = NULL;
 }
 
 static void free_nic_dev(struct hinic5_nic_dev *nic_dev)
@@ -952,20 +965,24 @@ static void free_nic_dev(struct hinic5_nic_dev *nic_dev)
 	destroy_workqueue(nic_dev->workq);
 	kfree(nic_dev->vlan_bitmap);
 	nic_dev->vlan_bitmap = NULL;
-	free_nic_dev_hinic5_vram(nic_dev);
+	free_nic_dev_vram(nic_dev);
 }
 
 static void nic_dev_init(struct hinic5_nic_dev *nic_dev, struct net_device *netdev,
 			 struct hinic5_lld_dev *lld_dev)
 {
-	u8 rx_buff_per_page = RX_BUFF_NUM_PER_PAGE;
-	u32 page_num;
+	u16 rx_buff_len = (u16)(hinic5_rx_buff * CONVERT_UNIT);
+	bool single_buff;
+	u8 page_order;
 
 #ifdef HAVE_PAGE_POOL_SUPPORT
-	/* If page pool is enabled, page reuse not supported */
-	rx_buff_per_page = page_pool_enabled ? 1 : RX_BUFF_NUM_PER_PAGE;
+	nic_dev->page_pool_enabled = page_pool_enabled;
+#else
+	nic_dev->page_pool_enabled = false;
 #endif
 
+	single_buff = nic_dev->page_pool_enabled || rx_buff_len > PAGE_SIZE;
+	page_order = single_buff ? get_order(rx_buff_len) : 0;
 	nic_dev->netdev = netdev;
 	SET_NETDEV_DEV(netdev, lld_dev->dev);
 	nic_dev->lld_dev = lld_dev;
@@ -973,11 +990,11 @@ static void nic_dev_init(struct hinic5_nic_dev *nic_dev, struct net_device *netd
 	nic_dev->poll_weight = (int)poll_weight;
 	nic_dev->msg_enable = DEFAULT_MSG_ENABLE;
 	nic_dev->lro_replenish_thld = lro_replenish_thld;
-	nic_dev->rx_buff_len = (u16)(hinic5_rx_buff * CONVERT_UNIT);
-	nic_dev->dma_rx_buff_size = rx_buff_per_page * nic_dev->rx_buff_len;
-	page_num = nic_dev->dma_rx_buff_size / PAGE_SIZE;
-	nic_dev->page_order = (page_num > 0) ? ilog2(page_num) : 0;
-	nic_dev->page_pool_enabled = page_pool_enabled;
+	nic_dev->rx_buff_len = rx_buff_len;
+	nic_dev->buffs_per_page = single_buff ? 1 : (PAGE_SIZE / nic_dev->rx_buff_len);
+	nic_dev->buffs_replenish_thrd = max_t(u16, nic_dev->buffs_per_page, HINIC5_RX_BUFFER_REPLENISH_THRD_DEFAULT);
+	nic_dev->dma_rx_buff_size = PAGE_SIZE << page_order;
+	nic_dev->page_order = page_order;
 	nic_dev->support_htn = hinic5_support_htn(nic_dev->hwdev);
 }
 
@@ -998,7 +1015,7 @@ static int setup_nic_dev(struct net_device *netdev,
 
 	nic_dev_init(nic_dev, netdev, lld_dev);
 
-	ret = init_nic_dev_hinic5_vram(nic_dev);
+	ret = init_nic_dev_vram(nic_dev);
 	if (ret != 0)
 		return ret;
 
@@ -1012,14 +1029,13 @@ static int setup_nic_dev(struct net_device *netdev,
 	}
 
 	nic_dev->workq = create_singlethread_workqueue(HINIC5_NIC_DEV_WQ_NAME);
-	if (!nic_dev->workq) {
+	if (nic_dev->workq == NULL) {
 		nic_err(lld_dev->dev, "Failed to initialize nic workqueue\n");
 		ret = -ENOMEM;
 		goto create_workq_error;
 	}
 
 	INIT_DELAYED_WORK(&nic_dev->periodic_work, hinic5_periodic_work_handler);
-	INIT_DELAYED_WORK(&nic_dev->rxq_check_work, hinic5_rxq_check_work_handler);
 	init_list_head(nic_dev);
 	skb_queue_head_init(&nic_dev->arp_queue);
 	INIT_WORK(&nic_dev->rx_mode_work, hinic5_set_rx_mode_work);
@@ -1032,7 +1048,7 @@ create_workq_error:
 	kfree(nic_dev->vlan_bitmap);
 	nic_dev->vlan_bitmap = NULL;
 vlan_bitmap_error:
-	free_nic_dev_hinic5_vram(nic_dev);
+	free_nic_dev_vram(nic_dev);
 	return ret;
 }
 
@@ -1066,30 +1082,25 @@ static int hinic5_set_default_hw_feature(struct hinic5_nic_dev *nic_dev)
 		return err;
 	}
 
-	if (HINIC5_SUPPORT_RXQ_RECOVERY(nic_dev->hwdev) != 0)
-		set_bit(HINIC5_RXQ_RECOVERY, &nic_dev->flags);
-
 	return 0;
 }
 
 static int nic_init_for_hotreplace(struct hinic5_lld_dev *lld_dev, struct hinic5_nic_dev *nic_dev)
 {
-	int is_use_hinic5_vram = get_use_hinic5_vram_flag();
-	int is_in_kexec = hinic5_vram_get_kexec_flag();
+	int is_use_vram = get5_use_vram_flag();
+	int is_in_kexec = vram5_get_kexec_flag();
 	int err;
 
 	/* register netdev flush ops, required only in sdinanoos hotreplace */
-	if (is_use_hinic5_vram != 0) {
+	if (is_use_vram != 0) {
 		err = hiudk5_register_flush_fn(lld_dev, hinic5_flush_nic_dev);
 		if (err != 0) {
-			nic_err(lld_dev->dev, "Failed to register netdev flush ops, err:%d.\n",
-				err);
+			nic_err(lld_dev->dev, "Failed to register netdev flush ops, err:%d.\n", err);
 			return err;
 		}
 	}
 
-	if (is_in_kexec != 0 &&
-	    test_bit(HINIC5_DCB_ENABLE, &nic_dev->nic_hinic5_vram->flags) != 0) {
+	if (is_in_kexec != 0 && test_bit(HINIC5_DCB_ENABLE, &nic_dev->nic_vram->flags) != 0) {
 		err = hinic5_configure_dcb_hw(nic_dev, 1);
 		if (err != 0) {
 			nic_err(lld_dev->dev, "Failed to enable dcb during sdinanoos-hotreplace\n");
@@ -1103,8 +1114,7 @@ static int nic_init_for_hotreplace(struct hinic5_lld_dev *lld_dev, struct hinic5
 }
 
 #define hinic5_set_dpath_timeout(nic_dev, hw_type) { \
-	(nic_dev)->timeout.wait_flush_qp_res_timeout = \
-					HINIC5_GET_TIMEOUT(hw_type, WAIT_FLUSH_QP_RESOURCE); \
+	(nic_dev)->timeout.wait_flush_qp_res_timeout = HINIC5_GET_TIMEOUT(hw_type, WAIT_FLUSH_QP_RESOURCE); \
 }
 
 static void hinic5_init_dpath_timeout(struct hinic5_nic_dev *nic_dev)
@@ -1125,13 +1135,14 @@ static void hinic5_init_dpath_timeout(struct hinic5_nic_dev *nic_dev)
 	}
 }
 
-__weak int hinic5_probe_extend_hook(struct net_device *netdev)
+__attribute__((weak)) int hinic5_probe_extend_hook(struct net_device *netdev)
 {
 	return 0;
 }
 
-__weak void hinic5_remove_extend_hook(struct net_device *netdev)
+__attribute__((weak)) void hinic5_remove_extend_hook(struct net_device *netdev)
 {
+	return;
 }
 
 static int nic_probe(struct hinic5_lld_dev *lld_dev, void **uld_dev,
@@ -1150,8 +1161,9 @@ static int nic_probe(struct hinic5_lld_dev *lld_dev, void **uld_dev,
 	nic_info(lld_dev->dev, "NIC service probe begin\n");
 
 	err = hinic5_validate_parameters(lld_dev);
-	if (err != 0)
+	if (err != 0) {
 		goto err_out;
+	}
 
 	glb_func_id = hinic5_global_func_id(lld_dev->hwdev);
 	err = hinic5_func_reset(lld_dev->hwdev, glb_func_id, HINIC5_NIC_RES, HINIC5_CHANNEL_NIC);
@@ -1161,7 +1173,7 @@ static int nic_probe(struct hinic5_lld_dev *lld_dev, void **uld_dev,
 	}
 
 	netdev = alloc_etherdev_mq(sizeof(*nic_dev), hinic5_func_max_nic_qnum(lld_dev->hwdev));
-	if (!netdev) {
+	if (netdev == NULL) {
 		nic_err(lld_dev->dev, "Failed to allocate ETH device\n");
 		err = -ENOMEM;
 		goto err_out;
@@ -1226,8 +1238,9 @@ static int nic_probe(struct hinic5_lld_dev *lld_dev, void **uld_dev,
 
 	if (macsec_enabled && HINIC5_SUPPORT_FEATURE(nic_dev->hwdev, MACSEC_OFFLOAD)) {
 		err = macsec_init_offload(nic_dev);
-		if (err != 0)
+		if (err != 0) {
 			goto hinic5_init_macsec_err;
+		}
 	}
 
 	err = nic_init_for_hotreplace(lld_dev, nic_dev);
@@ -1242,13 +1255,15 @@ static int nic_probe(struct hinic5_lld_dev *lld_dev, void **uld_dev,
 	return 0;
 
 init_hotreplace_err:
-	if (macsec_enabled && HINIC5_SUPPORT_FEATURE(nic_dev->hwdev, MACSEC_OFFLOAD))
+	if (macsec_enabled && HINIC5_SUPPORT_FEATURE(nic_dev->hwdev, MACSEC_OFFLOAD)) {
 		macsec_cleanup_offload(nic_dev);
+	}
 
 hinic5_init_macsec_err:
 #if (KERNEL_VERSION(5, 1, 1) <= LINUX_VERSION_CODE)
-	if (HINIC5_SUPPORT_FEATURE(nic_dev->hwdev, TC_FLOWER_OFFLOAD))
+	if (HINIC5_SUPPORT_FEATURE(nic_dev->hwdev, TC_FLOWER_OFFLOAD)) {
 		hinic5_deinit_tc(nic_dev);
+	}
 hinic5_init_tc_err:
 #endif
 	hinic5_ptp_deinit(nic_dev);
@@ -1284,9 +1299,9 @@ static void nic_remove(struct hinic5_lld_dev *lld_dev, void *adapter)
 {
 	struct hinic5_nic_dev *nic_dev = adapter;
 	struct net_device *netdev = NULL;
-	int is_use_hinic5_vram = get_use_hinic5_vram_flag();
+	int is_use_vram = get5_use_vram_flag();
 
-	if (!nic_dev || !hinic5_support_nic(lld_dev->hwdev, NULL))
+	if ((nic_dev == NULL) || !hinic5_support_nic(lld_dev->hwdev, NULL))
 		return;
 
 	nic_info(lld_dev->dev, "NIC service remove begin\n");
@@ -1295,20 +1310,20 @@ static void nic_remove(struct hinic5_lld_dev *lld_dev, void *adapter)
 
 	netdev = nic_dev->netdev;
 
-	if (macsec_enabled && HINIC5_SUPPORT_FEATURE(nic_dev->hwdev, MACSEC_OFFLOAD))
+	if (macsec_enabled && HINIC5_SUPPORT_FEATURE(nic_dev->hwdev, MACSEC_OFFLOAD)) {
 		macsec_cleanup_offload(nic_dev);
+	}
 
 #if (KERNEL_VERSION(5, 1, 1) <= LINUX_VERSION_CODE)
-	if (HINIC5_SUPPORT_FEATURE(nic_dev->hwdev, TC_FLOWER_OFFLOAD))
+	if (HINIC5_SUPPORT_FEATURE(nic_dev->hwdev, TC_FLOWER_OFFLOAD)) {
 		hinic5_deinit_tc(nic_dev);
+	}
 #endif
 
 #ifdef HAVE_XDP_SUPPORT
 	nic_dev->remove_flag = true;
 #endif
-	/* Unregister the network device using kernel function,
-	 * and release queues, xdp programs and other related resources
-	 */
+	/* Kernel function unregisters the network device and releases queues, attached xdp programs and other related resources */
 	unregister_netdev(netdev);
 
 #ifdef HAVE_XDP_SUPPORT
@@ -1322,7 +1337,6 @@ static void nic_remove(struct hinic5_lld_dev *lld_dev, void *adapter)
 #endif
 
 	cancel_delayed_work_sync(&nic_dev->periodic_work);
-	cancel_delayed_work_sync(&nic_dev->rxq_check_work);
 	cancel_work_sync(&nic_dev->rx_mode_work);
 	cancel_work_sync(&nic_dev->arp_dual_work);
 	cancel_work_sync(&nic_dev->update_stats_work);
@@ -1341,16 +1355,14 @@ static void nic_remove(struct hinic5_lld_dev *lld_dev, void *adapter)
 	kfree(nic_dev->vlan_bitmap);
 	nic_dev->vlan_bitmap = NULL;
 
-	if (is_use_hinic5_vram != 0)
-		hinic5_hinic5_vram_kfree((void *)nic_dev->nic_hinic5_vram,
-					 nic_dev->nic_hinic5_vram_name,
-					 sizeof(struct hinic5_hinic5_vram));
+	if (is_use_vram != 0)
+		hi5_vram_kfree((void *)nic_dev->nic_vram, nic_dev->nic_vram_name, sizeof(struct hinic5_vram));
 	else
-		kfree(nic_dev->nic_hinic5_vram);
+		kfree(nic_dev->nic_vram);
 
 	free_netdev(netdev);
 
-	if (is_use_hinic5_vram != 0)
+	if (is_use_vram != 0)
 		hiudk5_unregister_flush_fn(lld_dev);
 
 	nic_info(lld_dev->dev, "NIC service removed\n");
@@ -1359,10 +1371,8 @@ static void nic_remove(struct hinic5_lld_dev *lld_dev, void *adapter)
 static void sriov_state_change(struct hinic5_nic_dev *nic_dev,
 			       const struct hinic5_sriov_state_info *info)
 {
-	/* todo: ubus scenario support to disable a single VF,
-	 * nic_dev records the actual active VF count, PCIe and ubus logic should be unified
-	 */
-	if (info->enable == 0)
+	/* todo: ubus scenario supports disabling a single vf independently; nic_dev records the real active vf count; pcie and ubus logic unified */
+	if ((info->enable == 0))
 		hinic5_clear_vfs_info(nic_dev->hwdev, info->vf_id, info->vf_id);
 }
 
@@ -1407,7 +1417,7 @@ static void nic_event(struct hinic5_lld_dev *lld_dev, void *adapter,
 	struct hinic5_nic_dev *nic_dev = adapter;
 	struct hinic5_fault_event *fault = NULL;
 
-	if (!nic_dev || !event || !hinic5_support_nic(lld_dev->hwdev, NULL))
+	if ((nic_dev == NULL) || (event == NULL) || !hinic5_support_nic(lld_dev->hwdev, NULL))
 		return;
 
 	switch (HINIC5_SRV_EVENT_TYPE(event->service, event->type)) {
@@ -1443,11 +1453,11 @@ struct net_device *hinic5_get_netdev_by_lld(struct hinic5_lld_dev *lld_dev)
 {
 	struct hinic5_nic_dev *nic_dev = NULL;
 
-	if (!lld_dev || !hinic5_support_nic(lld_dev->hwdev, NULL))
+	if ((lld_dev == NULL) || !hinic5_support_nic(lld_dev->hwdev, NULL))
 		return NULL;
 
 	nic_dev = hinic5_get_uld_dev_unsafe(lld_dev, SERVICE_T_NIC);
-	if (!nic_dev) {
+	if (nic_dev == NULL) {
 		nic_err(lld_dev->dev,
 			"There's no net device attached on the pci device");
 		return NULL;
@@ -1461,11 +1471,11 @@ struct hinic5_lld_dev *hinic5_get_lld_dev_by_netdev(struct net_device *netdev)
 {
 	struct hinic5_nic_dev *nic_dev = NULL;
 
-	if (!netdev || !hinic5_is_netdev_ops_match(netdev))
+	if ((netdev == NULL) || !hinic5_is_netdev_ops_match(netdev))
 		return NULL;
 
 	nic_dev = netdev_priv(netdev);
-	if (!nic_dev)
+	if (nic_dev == NULL)
 		return NULL;
 
 	return nic_dev->lld_dev;
@@ -1476,11 +1486,11 @@ int hinic5_get_phy_port_id_by_netdev(struct net_device *netdev, uint8_t *phy_por
 {
 	struct hinic5_lld_dev *lld_dev = NULL;
 
-	if (!netdev || !phy_port_id)
+	if ((netdev == NULL) || (phy_port_id == NULL))
 		return -EINVAL;
 
 	lld_dev = hinic5_get_lld_dev_by_netdev(netdev);
-	if (!lld_dev)
+	if (lld_dev == NULL)
 		return -ENXIO;
 
 	*phy_port_id = hinic5_physical_port_id(lld_dev->hwdev);
@@ -1492,7 +1502,7 @@ void *hinic5_netdev_priv_get(const struct net_device *dev)
 {
 	struct hinic5_nic_dev *nic_dev = NULL;
 
-	if (!dev)
+	if (dev == NULL)
 		return NULL;
 
 	nic_dev = netdev_priv(dev);
@@ -1504,7 +1514,7 @@ int hinic5_netdev_priv_set(const struct net_device *dev, void *priv)
 {
 	struct hinic5_nic_dev *nic_dev = NULL;
 
-	if (!dev || !priv)
+	if ((dev == NULL) || (priv == NULL))
 		return -EINVAL;
 
 	nic_dev = netdev_priv(dev);
@@ -1513,18 +1523,18 @@ int hinic5_netdev_priv_set(const struct net_device *dev, void *priv)
 	return 0;
 }
 
-struct hinic5_uld_info hinic5_g_nic_uld_info = {
+struct hinic5_uld_info g_nic_uld_info = {
 	.probe = nic_probe,
 	.remove = nic_remove,
 	.suspend = NULL,
 	.resume = NULL,
 	.event = nic_event,
-	.ioctl = hinic5_nic_ioctl,
+	.ioctl = nic_ioctl,
 };
 
-struct hinic5_uld_info *hinic5_get_nic_uld_info(void)
+struct hinic5_uld_info *get_nic_uld_info(void)
 {
-	return &hinic5_g_nic_uld_info;
+	return &g_nic_uld_info;
 }
 
 #define HINIC5_NIC_DRV_DESC "Intelligent Network Interface Card Driver"
@@ -1548,7 +1558,7 @@ static __init int hinic5_nic_lld_init(void)
 		goto hinic5_module_pre_init_fail;
 	}
 
-	err = hinic5_register_uld(SERVICE_T_NIC, &hinic5_g_nic_uld_info);
+	err = hinic5_register_uld(SERVICE_T_NIC, &g_nic_uld_info);
 	if (err != 0) {
 		pr_err("Register hinic5 uld failed\n");
 		goto hinic5_register_uld_fail;

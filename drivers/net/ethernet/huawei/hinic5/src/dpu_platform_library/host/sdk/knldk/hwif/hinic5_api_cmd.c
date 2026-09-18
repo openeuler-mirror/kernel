@@ -4,8 +4,8 @@
  * File Name     : hinic5_api_cmd.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : API command chain implementation for the hinic5 driver.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [COMM]" fmt
@@ -173,7 +173,7 @@ static int chain_busy(struct hinic5_api_cmd_chain *chain)
 	case HINIC5_API_CMD_MULTI_READ:
 	case HINIC5_API_CMD_POLL_READ:
 		resp_header = be64_to_cpu(ctxt->resp->header);
-		if (ctxt->status != 0 || (HINIC5_API_CMD_RESP_HEADER_VALID(resp_header) == 0)) {
+		if ((ctxt->status != 0) || (HINIC5_API_CMD_RESP_HEADER_VALID(resp_header) == 0)) {
 			sdk_err(dev, "Context(0x%x) busy!, pi: %u, resp_header: 0x%08x%08x\n",
 				ctxt->status, chain->prod_idx,
 				upper_32_bits(resp_header),
@@ -309,8 +309,7 @@ static void prepare_api_cmd(struct hinic5_api_cmd_chain *chain,
 	cell->desc |= HINIC5_API_CMD_DESC_SET(node_id, DEST) |
 		      HINIC5_API_CMD_DESC_SET(SIZE_4BYTES(cmd_size), SIZE);
 
-	cell->desc |= HINIC5_API_CMD_DESC_SET(xor_chksum_set(&cell->desc,
-					      sizeof(cell->desc)), XOR_CHKSUM);
+	cell->desc |= HINIC5_API_CMD_DESC_SET(xor_chksum_set(&cell->desc, sizeof(cell->desc)), XOR_CHKSUM);
 
 	/* The data in the HW should be in Big Endian Format */
 	cell->desc = cpu_to_be64(cell->desc);
@@ -474,8 +473,9 @@ static int wait_for_api_cmd_completion(struct hinic5_api_cmd_chain *chain,
 		err = wait_for_resp_polling(ctxt);
 		if (err == 0) {
 			err = copy_resp_data(ctxt, ack, ack_size);
-			if (err != 0)
+			if (err != 0) {
 				sdk_err(dev, "Copy resp data failed, ack_size: %u.\n", ack_size);
+			}
 		} else {
 			ctxt->status = 0;
 			sdk_err(dev, "API CMD poll response timeout\n");
@@ -1014,6 +1014,7 @@ static int api_chain_init(struct hinic5_api_cmd_chain *chain,
 
 	chain->cell_ctxt = kzalloc(cell_ctxt_size, GFP_KERNEL);
 	if (!chain->cell_ctxt) {
+		sdk_err(dev, "Failed to allocate cell contexts for a chain\n");
 		err = -ENOMEM;
 		goto alloc_cell_ctxt_err;
 	}

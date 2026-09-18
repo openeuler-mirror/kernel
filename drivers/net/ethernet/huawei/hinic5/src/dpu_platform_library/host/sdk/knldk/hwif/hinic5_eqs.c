@@ -4,8 +4,8 @@
  * File Name     : hinic5_eqs.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Event queue implementation for the hinic5 driver.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [COMM]" fmt
@@ -23,7 +23,7 @@
 #include <linux/cpumask.h>
 #endif
 
-#include "hinic5_vram_common.h"
+#include "vram_common.h"
 
 #include "ossl_knl.h"
 #include "hinic5_crm.h"
@@ -96,8 +96,7 @@ MODULE_PARM_DESC(g_num_ceqe_in_tasklet,
 
 static int g_aeq_cpu_affinity[HINIC5_AEQ_CPU_AFFINITY_MAX];
 static unsigned int g_aeq_cpu_affinity_nargs;
-module_param_array_named(aeq_cpu_affinity, g_aeq_cpu_affinity,
-			 int, &g_aeq_cpu_affinity_nargs, 0444);
+module_param_array_named(aeq_cpu_affinity, g_aeq_cpu_affinity, int, &g_aeq_cpu_affinity_nargs, 0444);
 MODULE_PARM_DESC(aeq_cpu_affinity, "Aeqs cpu affinity, max num 16");
 
 #define CEQ_CTRL_0_INTR_IDX_SHIFT		0
@@ -247,7 +246,7 @@ MODULE_PARM_DESC(aeq_cpu_affinity, "Aeqs cpu affinity, max num 16");
 #define CEQE_TYPE_SHIFT				23
 #define CEQE_TYPE_MASK				0x7
 
-#define CEQE_TYPE(type)			(((type) >> CEQE_TYPE_SHIFT) & \
+#define CEQE_TYPE(type)			(((type) >> CEQE_TYPE_SHIFT) &	\
 					 CEQE_TYPE_MASK)
 
 #define CEQE_DATA_MASK				0x3FFFFFF
@@ -393,12 +392,14 @@ int hinic5_ceq_register_cb(void *hwdev, void *pri_handle, enum hinic5_ceq_event 
 	return 0;
 #endif
 
-	if (!hwdev || event >= HINIC5_MAX_CEQ_EVENTS)
+	if (!hwdev || event >= HINIC5_MAX_CEQ_EVENTS) {
 		return -EINVAL;
+	}
 
 	ceqs = ((struct hinic5_hwdev *)hwdev)->ceqs;
-	if (!ceqs)
+	if (!ceqs) {
 		return 0;
+	}
 
 	ceqs->ceq_cb[event] = callback;
 	ceqs->ceq_cb_data[event] = pri_handle;
@@ -422,17 +423,20 @@ void hinic5_ceq_unregister_cb(void *hwdev, enum hinic5_ceq_event event)
 	return;
 #endif
 
-	if (!hwdev || event >= HINIC5_MAX_CEQ_EVENTS)
+	if (!hwdev || event >= HINIC5_MAX_CEQ_EVENTS) {
 		return;
+	}
 
 	ceqs = ((struct hinic5_hwdev *)hwdev)->ceqs;
-	if (!ceqs)
+	if (!ceqs) {
 		return;
+	}
 
 	clear_bit(HINIC5_CEQ_CB_REG, &ceqs->ceq_cb_state[event]);
 
-	while (test_bit(HINIC5_CEQ_CB_RUNNING, &ceqs->ceq_cb_state[event]))
+	while (test_bit(HINIC5_CEQ_CB_RUNNING, &ceqs->ceq_cb_state[event])) {
 		usleep_range(EQ_USLEEP_LOW_BOUND, EQ_USLEEP_HIG_BOUND);
+	}
 
 	ceqs->ceq_cb[event] = NULL;
 }
@@ -515,7 +519,7 @@ static void aeq_elem_handler(struct hinic5_eq *eq, u32 aeqe_desc)
 		sw_type = sw_event >= HINIC5_NIC_FATAL_ERROR_MAX ?
 			   HINIC5_STATEFUL_EVENT : HINIC5_STATELESS_EVENT;
 		/* SW event uses only the first 8B */
-		memcpy(data, aeqe_pos->aeqe_data, HINIC5_AEQE_DATA_SIZE);
+		(void)memcpy(data, aeqe_pos->aeqe_data, HINIC5_AEQE_DATA_SIZE);
 		hinic5_be32_to_cpu(data, HINIC5_AEQE_DATA_SIZE);
 		set_bit(HINIC5_AEQ_SW_CB_RUNNING,
 			&aeqs->aeq_sw_cb_state[sw_type]);
@@ -530,7 +534,7 @@ static void aeq_elem_handler(struct hinic5_eq *eq, u32 aeqe_desc)
 	}
 
 	if (event < HINIC5_MAX_AEQ_EVENTS) {
-		memcpy(data, aeqe_pos->aeqe_data, HINIC5_AEQE_DATA_SIZE);
+		(void)memcpy(data, aeqe_pos->aeqe_data, HINIC5_AEQE_DATA_SIZE);
 		hinic5_be32_to_cpu(data, HINIC5_AEQE_DATA_SIZE);
 
 		size = EQ_ELEM_DESC_GET(aeqe_desc, SIZE);
@@ -642,12 +646,12 @@ int hinic5_reschedule_eq(struct hinic5_hwdev *hwdev, enum hinic5_eq_type type,
 		if (eq_id >= hwdev->aeqs->num_aeqs)
 			return -EINVAL;
 
-		reschedule_eq_handler(&hwdev->aeqs->aeq[eq_id]);
+		reschedule_eq_handler(&(hwdev->aeqs->aeq[eq_id]));
 	} else {
 		if (eq_id >= hwdev->ceqs->num_ceqs)
 			return -EINVAL;
 
-		reschedule_eq_handler(&hwdev->ceqs->ceq[eq_id]);
+		reschedule_eq_handler(&(hwdev->ceqs->ceq[eq_id]));
 	}
 
 	return 0;
@@ -708,8 +712,9 @@ static struct hinic5_eq *find_eq(struct hinic5_hwdev *hwdev, int msix_entry_idx)
 			return eq;
 	}
 
-	if (!ceqs)
+	if (ceqs == NULL) {
 		return NULL;
+	}
 
 	for (i = 0; i < ceqs->num_ceqs; i++) {
 		struct hinic5_eq *eq = &ceqs->ceq[i];
@@ -945,24 +950,26 @@ static int alloc_eq_pages(struct hinic5_eq *eq)
 	u32 reg, init_val;
 	u16 pg_idx, i;
 	int err;
-	gfp_t gfp_hinic5_vram;
+	gfp_t gfp_vram;
 
 	eq->eq_pages = kcalloc(eq->num_pages, sizeof(*eq->eq_pages),
 			       GFP_KERNEL);
-	if (!eq->eq_pages)
+	if (!eq->eq_pages) {
+		sdk_err(eq->hwdev->dev_hdl, "Failed to alloc eq pages description\n");
 		return -ENOMEM;
+	}
 
-	gfp_hinic5_vram = hinic5_hinic5_vram_get_gfp_hinic5_vram();
+	gfp_vram = hi5_vram_get_gfp_vram();
 
 	for (pg_idx = 0; pg_idx < eq->num_pages; pg_idx++) {
 		eq_page = &eq->eq_pages[pg_idx];
 		err = hinic5_dma_zalloc_coherent_align(eq->hwdev->dev_hdl,
 						       eq->page_size,
 						       HINIC5_MIN_EQ_PAGE_SIZE,
-						       GFP_KERNEL | gfp_hinic5_vram,
+						       GFP_KERNEL | gfp_vram,
 						       eq_page);
 		if (err != 0) {
-			sdk_err(eq->hwdev->dev_hdl, "Failed to alloc eq page, page index: %u\n",
+			sdk_err(eq->hwdev->dev_hdl, "Failed to alloc eq page, page index: %hu\n",
 				pg_idx);
 			goto dma_alloc_err;
 		}
@@ -1033,7 +1040,7 @@ static inline u32 get_page_size(const struct hinic5_eq *eq)
 }
 
 #ifdef __VMWARE__
-static VMK_ReturnStatus eq_intr_ack_handler(void *data, vmk_intr_cookie intr_cookie)
+static VMK_ReturnStatus eq_intr_ack_handler(void *data, vmk_IntrCookie intrCookie)
 {
 	return VMK_OK;
 }
@@ -1052,8 +1059,9 @@ static int request_eq_irq(struct hinic5_eq *eq, struct irq_info *entry)
 		tasklet_init(&eq->ceq_tasklet, ceq_tasklet, (ulong)(uintptr_t)eq);
 
 	if (eq->type == HINIC5_AEQ) {
-		snprintf(eq->irq_name, sizeof(eq->irq_name),
-			 "hinic5_aeq%u@dev:%s", eq->q_id, dev_name(eq->hwdev->dev_hdl));
+		if (snprintf(eq->irq_name, sizeof(eq->irq_name),
+			"hinic5_aeq%u@dev:%s", eq->q_id, dev_name(eq->hwdev->dev_hdl)) < 0)
+			return -EFAULT;
 #ifdef __VMWARE__
 		st = request_irq(eq->hwdev->adapter_hdl, entry->irq_id,
 				 eq_intr_ack_handler, aeq_interrupt,
@@ -1068,8 +1076,9 @@ static int request_eq_irq(struct hinic5_eq *eq, struct irq_info *entry)
 				  eq->irq_name, eq);
 #endif
 	} else {
-		snprintf(eq->irq_name, sizeof(eq->irq_name),
-			 "hinic5_ceq%u@dev:%s", eq->q_id, dev_name(eq->hwdev->dev_hdl));
+		if (snprintf(eq->irq_name, sizeof(eq->irq_name),
+			"hinic5_ceq%u@dev:%s", eq->q_id, dev_name(eq->hwdev->dev_hdl)) < 0)
+			return -EFAULT;
 #ifdef __VMWARE__
 		st = request_irq(eq->hwdev->adapter_hdl, entry->irq_id,
 				 eq_intr_ack_handler, ceq_interrupt,
@@ -1109,7 +1118,7 @@ static void set_eq_cpu(struct hinic5_eq *eq, struct hinic5_hwdev *hwdev)
 
 	eq->cpu = WORK_CPU_UNBOUND;
 
-	if (eq->type == HINIC5_AEQ && aeqs->aeq_cpu_affinity_nargs > 0) {
+	if ((eq->type == HINIC5_AEQ) && (aeqs->aeq_cpu_affinity_nargs > 0)) {
 		i = hinic5_global_func_id(hwdev) + eq->q_id;
 		eq->cpu = aeqs->aeq_cpu_affinity[i % aeqs->aeq_cpu_affinity_nargs];
 	}
@@ -1256,7 +1265,7 @@ static void hinic5_aeqs_dump_cpu_affinity(struct hinic5_hwdev *hwdev)
 
 	pr_info("func %u aeq cpu affinity:", hinic5_global_func_id(hwdev));
 	for (q_id = 0; q_id < aeqs->num_aeqs; q_id++)
-		pr_info(" %d", aeqs->aeq[q_id].cpu);
+		pr_cont(" %d", aeqs->aeq[q_id].cpu);
 }
 
 void hinic5_filter_online_cpus(int *cpus, unsigned int *cpus_nargs)
@@ -1271,7 +1280,7 @@ void hinic5_filter_online_cpus(int *cpus, unsigned int *cpus_nargs)
 	j = 0;
 	for (i = 0; i < n; i++) {
 		cpu = cpus[i];
-		if (cpu >= 0 && cpu < num_possible_cpus() && (cpu_online(cpu) != 0)) {
+		if ((cpu >= 0) && (cpu < NR_CPUS) && (cpu_online(cpu) != 0)) {
 			cpus[j] = cpus[i];
 			j++;
 		}
@@ -1289,7 +1298,7 @@ static void hinic5_filter_aeq_cpu_affinity(struct hinic5_hwdev *hwdev)
 					  &aeqs->aeq_cpu_affinity_nargs);
 		pr_info("aeq cpu candidates (%u):", aeqs->aeq_cpu_affinity_nargs);
 		for (i = 0; i < aeqs->aeq_cpu_affinity_nargs; ++i)
-			pr_info(" %d", aeqs->aeq_cpu_affinity[i]);
+			pr_cont(" %d", aeqs->aeq_cpu_affinity[i]);
 	}
 }
 #endif
@@ -1301,8 +1310,8 @@ void hinic5_set_aeq_cpu_affinity(struct hinic5_hwdev *hwdev)
 	aeqs->aeq_cpu_affinity_nargs = 0;
 
 	if (g_aeq_cpu_affinity_nargs > 0) {
-		memcpy(aeqs->aeq_cpu_affinity, g_aeq_cpu_affinity,
-		       sizeof(int) * HINIC5_AEQ_CPU_AFFINITY_MAX);
+		(void)memcpy(aeqs->aeq_cpu_affinity,
+			       g_aeq_cpu_affinity, sizeof(int) * HINIC5_AEQ_CPU_AFFINITY_MAX);
 		aeqs->aeq_cpu_affinity_nargs = g_aeq_cpu_affinity_nargs;
 #ifndef __UEFI__
 		hinic5_filter_aeq_cpu_affinity(hwdev);
@@ -1457,8 +1466,9 @@ void hinic5_stateless_aeqs_free(void *hwdev)
 		return;
 
 	stateless_aeqs = dev->stateless_aeqs;
-	if (!stateless_aeqs)
+	if (!stateless_aeqs) {
 		return;
+	}
 
 	clear_bit(HINIC5_AEQ_SW_CB_REG, &stateless_aeqs->stateless_aeq_sw_cb_state);
 
@@ -1476,8 +1486,7 @@ void hinic5_stateless_aeqs_free(void *hwdev)
  * @hwdev: the pointer to hw device
  * Return: 0 - Success, Negative - failure
  **/
-int hinic5_register_stateless_aeqs(void *hwdev, void *pri_handle,
-				   hinic5_aeq_swe_cb stateless_aeq_swe_cb)
+int hinic5_register_stateless_aeqs(void *hwdev, void *pri_handle, hinic5_aeq_swe_cb stateless_aeq_swe_cb)
 {
 	struct hinic5_stateless_aeqs *stateless_aeqs = NULL;
 
@@ -1509,8 +1518,9 @@ void hinic5_unregister_stateless_aeqs(void *hwdev)
 		return;
 
 	stateless_aeqs = dev->stateless_aeqs;
-	if (!stateless_aeqs)
+	if (!stateless_aeqs) {
 		return;
+	}
 
 	clear_bit(HINIC5_AEQ_SW_CB_REG, &stateless_aeqs->stateless_aeq_sw_cb_state);
 
@@ -1520,6 +1530,8 @@ void hinic5_unregister_stateless_aeqs(void *hwdev)
 
 	stateless_aeqs->stateless_aeq_swe_cb = NULL;
 	stateless_aeqs->stateless_aeq_swe_cb_data = NULL;
+
+	return;
 }
 EXPORT_SYMBOL(hinic5_unregister_stateless_aeqs);
 
@@ -1536,10 +1548,9 @@ u8 hinic5_nic_sw_aeqe_handler(void *hwdev, u8 event, u8 *data)
 	set_bit(HINIC5_AEQ_SW_CB_RUNNING,
 		&stateless_aeqs->stateless_aeq_sw_cb_state);
 	if (stateless_aeqs->stateless_aeq_swe_cb &&
-	    test_bit(HINIC5_AEQ_SW_CB_REG,
-		     &stateless_aeqs->stateless_aeq_sw_cb_state))
-		stateless_aeqs->stateless_aeq_swe_cb(stateless_aeqs->stateless_aeq_swe_cb_data,
-						     event, data);
+		test_bit(HINIC5_AEQ_SW_CB_REG,
+				&stateless_aeqs->stateless_aeq_sw_cb_state))
+		stateless_aeqs->stateless_aeq_swe_cb(stateless_aeqs->stateless_aeq_swe_cb_data, event, data);
 
 	clear_bit(HINIC5_AEQ_SW_CB_RUNNING,
 		  &stateless_aeqs->stateless_aeq_sw_cb_state);
@@ -1757,14 +1768,13 @@ int hinic5_init_single_ceq_status(void *hwdev, u16 q_id)
 	struct hinic5_hwdev *dev = hwdev;
 	struct hinic5_eq *eq = NULL;
 
-	if (!hwdev) {
+	if (hwdev == NULL) {
 		pr_err("%s(%d), hwdev is null\n", __func__, __LINE__);
 		return -EINVAL;
 	}
 
 	if (q_id >= dev->ceqs->num_ceqs) {
-		sdk_err(dev->dev_hdl, "q_id=%u is larger than num_ceqs %u.\n",
-			q_id, dev->ceqs->num_ceqs);
+		sdk_err(dev->dev_hdl, "q_id=%u is larger than num_ceqs %u.\n", q_id, dev->ceqs->num_ceqs);
 		return -EINVAL;
 	}
 

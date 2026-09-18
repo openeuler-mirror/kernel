@@ -4,8 +4,8 @@
  * File Name     : hinic5_rx.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 RX (receive) path header file
  */
 
 #ifndef HINIC5_RX_H
@@ -16,16 +16,18 @@
 #include <linux/mm_types.h>
 #include <linux/netdevice.h>
 #include <linux/skbuff.h>
+#include <linux/atomic.h>
 #include <linux/u64_stats_sync.h>
 
 #include "ossl_knl.h"
+#include "hinic5_irq.h"
 #include "hinic5_nic_io.h"
 #include "hinic5_nic_sq.h"
 #include "hinic5_nic_rq.h"
 
 /* performance: ci addr RTE_CACHE_SIZE(64B) alignment */
 #define HINIC5_RX_HDR_SIZE			256
-#define HINIC5_RX_BUFFER_WRITE			16
+#define HINIC5_RX_BUFFER_REPLENISH_THRD_DEFAULT			16
 
 #define HINIC5_RX_TCP_PKT			0x3
 #define HINIC5_RX_UDP_PKT			0x4
@@ -65,6 +67,8 @@ do {							\
 #define HINIC5_COMPACT_CQE_8B 8
 #define HINIC5_COMPACT_CQE_16B 16
 
+#define HINIC5_RX_SKB_LEN_ERR	65
+
 #define HINIC5_RQ_CQE_SEPARATE	0
 #define HINIC5_RQ_CQE_INTEGRATE	1
 
@@ -74,6 +78,26 @@ do {							\
 /* flow bifurcation */
 #define HINIC5_GROUP_NUMBER_MIN 1
 #define HINIC5_GROUP_NUMBER_MAX 8
+
+/* rx_info flags for 64K page optimization */
+#define HINIC5_RX_BUF_LAST_IN_PAGE	BIT(0)  /* current buffer is the last in page */
+
+/* Page cache configuration */
+#define HINIC5_CACHE_UNIT		64  /* Base cache unit size */
+#define HINIC5_CACHE_SIZE		(HINIC5_CACHE_UNIT * 4)  /* 256 slots */
+
+/* Cached page entry for non-page_pool path */
+struct hinic5_rx_page_entry {
+	struct page *page;
+	dma_addr_t dma_addr;
+};
+
+/* Page cache for non-page_pool path - stores page + DMA address */
+struct hinic5_rx_page_cache {
+	u32 head;       /* Cache head index (get position) */
+	u32 tail;       /* Cache tail index (put position) */
+	struct hinic5_rx_page_entry cache[HINIC5_CACHE_SIZE];  /* Cached page entries */
+};
 
 struct hinic5_rxq_stats {
 	u64	packets;
@@ -86,7 +110,6 @@ struct hinic5_rxq_stats {
 
 	u64	alloc_skb_err;
 	u64	alloc_rx_buf_err;
-	u64	restore_drop_sge;
 	u64	pkt_mc;
 #ifdef HAVE_XDP_SUPPORT
 	u64	xdp_dropped;
@@ -98,6 +121,12 @@ struct hinic5_rxq_stats {
 #else
 	struct u64_stats_sync_empty	syncp;
 #endif
+
+	/* Page cache statistics */
+	u64	cache_empty;    /* Cache empty hits */
+	u64	cache_busy;     /* Page ref_count != 1 */
+	u64	cache_full;     /* Cache full */
+	u64	cache_waive;    /* Page waived (not reusable) */
 };
 
 struct hinic5_rx_info {
@@ -111,7 +140,8 @@ struct hinic5_rx_info {
 	struct page_pool *page_pool;
 #endif
 	u32 page_offset;
-	u32 rsvd1;
+	u8 flags;
+	u8 rsvd1[3];
 	struct hinic5_rq_wqe *rq_wqe;
 	struct sk_buff *saved_skb;
 	u32 skb_len;
@@ -151,7 +181,6 @@ struct hinic5_rxq {
 #endif
 
 	struct hinic5_irq *irq_cfg;
-	u16 next_to_alloc;
 	u16 next_to_update;
 	struct device *dev; /* device for DMA mapping */
 
@@ -159,27 +188,27 @@ struct hinic5_rxq {
 	dma_addr_t cqe_start_paddr;
 	void *cqe_start_vaddr;
 
-	u64 last_moder_packets;
-	u64 last_moder_bytes;
+#ifdef HAVE_DIM_SUPPORT
+#if defined(HAVE_DIM)
+	struct dim dim;
+#elif defined(HAVE_NET_DIM)
+	struct net_dim dim;
+#endif
+	atomic_t dim_applying;
+#endif
 	u8 last_coalesc_timer_cfg;
 	u8 last_pending_limt;
-	u16 restore_buf_num;
-	u32 rsvd5;
-	u64 rsvd6;
+	u64 last_moder_packets;
+	u64 last_moder_bytes;
+	struct page *remain_page;
+	dma_addr_t remain_page_dma_addr;
+	u32 remain_page_offset;
 
-	u32 last_sw_pi;
-	u32 last_sw_ci;
-
-	u32 last_hw_ci;
-	u8 rx_check_err_cnt;
-	u8 rxq_print_times;
-	u16 restore_pi;
-
-	u64 last_packets;
+	/* Local page cache */
+	struct hinic5_rx_page_cache page_cache;
 } ____cacheline_aligned;
 
 struct hinic5_dyna_rxq_res {
-	u16 next_to_alloc;
 	struct hinic5_rx_info *rx_info;
 	struct hinic5_cqe_info *cqe_info;
 	dma_addr_t cqe_start_paddr;
@@ -217,22 +246,18 @@ void hinic5_rxq_get_stats(struct hinic5_rxq *rxq,
 
 void hinic5_rxq_clean_stats(struct hinic5_rxq_stats *rxq_stats);
 
-void hinic5_rxq_check_work_handler(struct work_struct *work);
-
-void hinic5_rx_get_cqe_info(struct hinic5_rq_cqe *cqe,
+void hinic5_rx_get_cqe_info(volatile struct hinic5_rq_cqe *cqe,
 			    struct hinic5_cqe_info *info, u8 cqe_mode, bool enable_pfe);
 
-void hinic5_rx_get_compact_cqe_info(struct hinic5_rq_cqe *cqe,
+void hinic5_rx_get_compact_cqe_info(volatile struct hinic5_rq_cqe *cqe,
 				    struct hinic5_cqe_info *info, u8 cqe_mode, bool enable_pfe);
 
-void hinic5_reuse_rx_page(struct hinic5_rxq *rxq,
-			  struct hinic5_rx_info *old_rx_info);
-
-struct sk_buff *hinic5_fetch_rx_buffer(struct hinic5_rxq *rxq,
-				       const struct hinic5_cqe_info *cqe_info);
+struct sk_buff *hinic5_fetch_rx_buffer(struct hinic5_rxq *rxq, const struct hinic5_cqe_info *cqe_info);
 
 bool hinic5_rx_separate_cqe_done(struct hinic5_rxq *rxq, struct hinic5_rq_cqe **rx_cqe);
 
 bool hinic5_rx_integrated_cqe_done(struct hinic5_rxq *rxq, struct hinic5_rq_cqe **rx_cqe);
+
+void hinic5_page_try_release(struct hinic5_rxq *rxq, struct page *page, dma_addr_t dma_addr);
 
 #endif

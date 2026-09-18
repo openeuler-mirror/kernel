@@ -4,8 +4,8 @@
  * File Name     : hinic5_non_ptp.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Non-PTP header file
  */
 
 #ifndef HINIC5_NON_PTP_H
@@ -18,6 +18,8 @@
 
 #define HINIC5_NON_PTP_CDEV_MAX_DEVICES 1
 
+#define HINIC5_NON_PTP_SYNC_FW_TIME_PERIOD (500) /**< System and chip time synchronization period in milliseconds */
+
 struct hinic5_non_ptp_cdev {
 	dev_t devid;
 	struct cdev dev;
@@ -28,5 +30,8 @@ struct hinic5_non_ptp_cdev {
 int hinic5_non_ptp_cdev_init(struct hinic5_hwdev *hwdev);
 void hinic5_non_ptp_cdev_deinit(struct hinic5_hwdev *hwdev);
 int hinic5_sync_kernel_time(struct hinic5_hwdev *hwdev);
+int hinic5_non_ptp_init(void *hwdev);
+void hinic5_non_ptp_uninit(void *hwdev);
+
 #endif
 #endif

@@ -4,8 +4,8 @@
  * File Name     : hinic5_dev_mgmt.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : device management header for HINIC5 driver
  */
 
 #ifndef HINIC5_DEV_MGMT_H
@@ -40,11 +40,11 @@
 #define HINIC5_UBUS_INTR_REG_BAR        0
 
 /*
- * 1825 UBUS FERS2 resource space layout
+1825 UBUS FERS2 resource space layout
 ------------------------------------------
- * CPI VF BAR0 (CFG)       8 KB
- * CPI PF BAR1 (CFG)       64 KB
- * CPI PF BAR3 (MGMT)      128 KB
+CPI VF BAR0 (CFG)       8 KB
+CPI PF BAR1 (CFG)       64 KB
+CPI PF BAR3 (MGMT)      128 KB
  */
 
 #define HINIC5_VF_UBUS_CFG_REG_OFFSET   0
@@ -57,23 +57,22 @@
 #define HINIC5_PF_UBUS_MGMT_REG_SIZE    0x20000 /* 128 KB */
 
 /*
- * 1872 UBUS FERS2 resource space layout
- * Ref Semiconductor/Hi1872 V100/Docs/KIA2/0.1.System/1.4.FS/
- * Programming User Guide/Hi1872 V100 UB initialization.docx
+1872 UBUS FERS2 resource space layout
+Ref Semiconductor/Hi1872 V100/Docs/KIA2/0.1.System/1.4.FS/Programming User Guide/Hi1872 V100 UB Initialization.docx
 
- * PF FERS2
+PF FERS2
 ------------------------------------------
- * UB vendor space for UBD2H       128 KB
- * UB vendor space for UBG         128 KB
- * UMMU non-secure                 32 KB
- * CPI PF BAR3 (MGMT)              96 KB
- * CPI PF BAR1 (CFG)               128 KB
+UB vendor space for UBD2H       128 KB
+UB vendor space for UBG         128 KB
+UMMU non-secure                 32 KB
+CPI PF BAR3 (MGMT)              96 KB
+CPI PF BAR1 (CFG)               128 KB
 
- * VF FERS2
+VF FERS2
 ------------------------------------------
- * UB vendor space for UBD2H       128 KB
- * UB vendor space for UBG         128 KB
- * CPI VF BAR01 (CFG)              256 KB
+UB vendor space for UBD2H       128 KB
+UB vendor space for UBG         128 KB
+CPI VF BAR01 (CFG)              256 KB
  */
 
 #define HINIC5_HTN_VF_UBUS_CFG_REG_OFFSET       0x40000 /* 256 KB */
@@ -85,7 +84,7 @@
 #define HINIC5_HTN_PF_UBUS_MGMT_REG_OFFSET      0x48000 /* 288 KB */
 #define HINIC5_HTN_PF_UBUS_MGMT_REG_SIZE        0x18000 /* 96 KB */
 
-/* Default ubus dma bit mask */
+/* default ubus dma bit mask */
 #define HINIC5_UBUS_DMA_BIT_MASK_DEFAULT 48
 
 /* ubus dma bit mask control range */
@@ -100,20 +99,20 @@ enum {
 };
 
 #define HINIC5_VPMD_PROC_NAME_LEN 32
-/* Structure for device private data */
+/* Structure dev private */
 struct hinic5_adev {
 	struct hinic5_lld_dev lld_dev;
 	struct device *dev;
 	void *hwdev;
-	void *bus_dev; /* pdev in pcie scenario, ub dev in ubus scenario */
+	void *bus_dev; /* represents pdev in pcie scenario, represents ub dev in ubus scenario */
 	struct card_node *chip_node;
 	/* Record the service object address,
-	 * such as hinic5_dev, toe_dev, fc_dev
+	 * such as hinic5_dev and toe_dev, fc_dev
 	 */
 	void *uld_dev[SERVICE_T_MAX];
 	/* Record the service object name */
 	char uld_dev_name[SERVICE_T_MAX][IFNAMSIZ];
-	/* It is a global variable for driver to manage
+	/* It is a the global variable for driver to manage
 	 * all function device linked list
 	 */
 	struct list_head node;
@@ -129,11 +128,11 @@ struct hinic5_adev {
 	u64 db_base_phy;
 	u64 cfg_base_phy;
 	u64 cfg_base_len;
-	u64 mgmt_base_phy; /* PF only */
+	u64 mgmt_base_phy; // PF only
 	u64 mgmt_base_len;
 
-	/* Used for tool adaptation, temporarily storing fers2 address and size manually in driver,
-	 * to be removed after tool adaptation
+	/* used for adapter tool, temporarily store fers2 address and size in driver manually,
+	 * will be deleted after tool adaptation
 	 */
 	u64 fers2_base_phy;
 	u64 fers2_total_len;
@@ -154,7 +153,7 @@ struct hinic5_adev {
 
 	atomic_t uld_ref_cnt[SERVICE_T_MAX];
 	ulong uld_state;
-	spinlock_t uld_lock; /* Spinlock to protect ULD (Upper Layer Driver) operations */
+	spinlock_t uld_lock;
 
 	u16 probe_fault_level;
 	u16	rsvd2;
@@ -162,7 +161,7 @@ struct hinic5_adev {
 #ifdef __VMWARE__
 	#include "vm_pci.h"
 #endif
-	struct hinic5_bus_ops *bus_ops;
+	const struct hinic5_bus_ops *bus_ops;
 	struct hinic5_device_info info;
 
 	char vpmd_proc_name[HINIC5_VPMD_PROC_NAME_LEN];
@@ -170,7 +169,7 @@ struct hinic5_adev {
 };
 
 struct hinic_chip_info {
-	u8 chip_id;   /* chip ID within card */
+	u8 chip_id;   /* chip id within card */
 	u8 card_type; /* hinic_multi_chip_card_type */
 	u8 rsvd[10];  /* reserved 10 bytes */
 };
@@ -179,18 +178,18 @@ struct hinic_chip_info {
 
 struct list_head *get_hinic5_chip_list(void);
 
-int hinic5_alloc_chip_node(struct hinic5_adev *adev);
+int hisdk5_alloc_chip_node(struct hinic5_adev *adev);
 
-void hinic5_free_chip_node(struct hinic5_adev *adev);
+void hisdk5_free_chip_node(struct hinic5_adev *adev);
 
-void hinic5_lld_lock_chip_node(void);
+void lld_lock_chip_node(void);
 
-void hinic5_lld_unlock_chip_node(void);
+void lld_unlock_chip_node(void);
 
 void hinic5_lld_lock_init(void);
 
-void hinic5_lld_dev_cnt_init(struct hinic5_adev *adev);
-void hinic5_wait_lld_dev_unused(struct hinic5_adev *adev);
+void lld_dev_cnt_init(struct hinic5_adev *adev);
+void wait_lld_dev_unused(struct hinic5_adev *adev);
 
 struct card_node *hinic5_get_chip_node_by_lld(struct hinic5_lld_dev *lld_dev);
 

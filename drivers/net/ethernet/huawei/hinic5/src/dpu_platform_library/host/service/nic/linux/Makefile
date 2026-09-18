@@ -8,7 +8,7 @@ HWSDK_SRC_PATH = $(TRUNK_DIR)/src/dpu_platform_library/host/sdk/knldk
 SDK_DIR := ../../../sdk/knldk/lld
 
 # HWSDK INNER
-EXTRA_CFLAGS += -I$(HWSDK_SRC_PATH)/hinic5_cqm
+EXTRA_CFLAGS += -I$(HWSDK_SRC_PATH)/cqm
 EXTRA_CFLAGS += -I$(HWSDK_SRC_PATH)/crm
 EXTRA_CFLAGS += -I$(HWSDK_SRC_PATH)/lld
 EXTRA_CFLAGS += -I$(HWSDK_SRC_PATH)/hwif
@@ -29,7 +29,7 @@ EXTRA_CFLAGS += -I$(TRUNK_DIR)/src/dpu_develop_interface/drv_sdk_intf/ossl
 EXTRA_CFLAGS += -I$(TRUNK_DIR)/src/dpu_develop_interface/fw_msg_intf/public
 EXTRA_CFLAGS += -I$(TRUNK_DIR)/src/dpu_develop_interface/fw_msg_intf/mag
 EXTRA_CFLAGS += -I$(TRUNK_DIR)/src/dpu_develop_interface/fw_msg_intf/mpu
-EXTRA_CFLAGS += -I$(TRUNK_DIR)/src/dpu_develop_interface/fw_msg_intf/hinic5_cqm
+EXTRA_CFLAGS += -I$(TRUNK_DIR)/src/dpu_develop_interface/fw_msg_intf/cqm
 EXTRA_CFLAGS += -I$(TRUNK_DIR)/src/dpu_develop_interface/fw_msg_intf/bond
 EXTRA_CFLAGS += -I$(TRUNK_DIR)/src/dpu_develop_interface/fw_msg_intf/cfm
 EXTRA_CFLAGS += -I$(TRUNK_DIR)/src/dpu_develop_interface/fw_msg_intf/cfg_mgmt
@@ -78,6 +78,12 @@ EXTRA_CFLAGS += -DCONFIG_SP_VID_DID
 endif
 
 EXTRA_CFLAGS += -Werror -Wno-error=missing-prototypes -Wno-missing-braces
+EXTRA_CFLAGS += -Wno-implicit-fallthrough
+
+ifndef __TIME_STR__
+SYS_TIME=$(shell date +%Y-%m-%d_%H:%M:%S)
+ccflags-y += -D __TIME_STR__=\"$(SYS_TIME)\"
+endif
 
 V ?= 0
 
@@ -90,8 +96,8 @@ endif
 ccflags-y += -D__LINUX__
 
 hisdk5-objs := \
-		$(SDK_DIR)/../hinic5_vram/hinic5_vram_common.o \
-		$(SDK_DIR)/../hinic5_vram/hinic5_hinic5_vram.o \
+		$(SDK_DIR)/../vram/vram_common.o \
+		$(SDK_DIR)/../vram/hinic5_vram.o \
 		$(SDK_DIR)/../../../cfm/fast_msg/hinic5_fast_msg_init.o \
 		$(SDK_DIR)/../../../cfm/fast_msg/hinic5_fast_msg.o \
 		$(SDK_DIR)/../crm/hinic5_hwdev.o \
@@ -125,18 +131,18 @@ hisdk5-objs := \
 		$(SDK_DIR)/../mt/hinic5_non_ptp.o \
 		$(SDK_DIR)/../mt/hinic5_devlink.o \
 		$(SDK_DIR)/../../ossl/linux/kernel/ossl_knl_linux.o \
-		$(SDK_DIR)/../hinic5_cqm/hinic5_cqm_bat_cla.o \
-		$(SDK_DIR)/../hinic5_cqm/hinic5_cqm_bitmap_table.o \
-		$(SDK_DIR)/../hinic5_cqm/hinic5_cqm_object_intern.o \
-		$(SDK_DIR)/../hinic5_cqm/hinic5_cqm_bloomfilter.o \
-		$(SDK_DIR)/../hinic5_cqm/hinic5_cqm_cmd.o \
-		$(SDK_DIR)/../hinic5_cqm/hinic5_cqm_db.o \
-		$(SDK_DIR)/../hinic5_cqm/hinic5_cqm_fast_msg.o \
-		$(SDK_DIR)/../hinic5_cqm/hinic5_cqm_object.o \
-		$(SDK_DIR)/../hinic5_cqm/hinic5_cqm_main.o \
-		$(SDK_DIR)/../hinic5_cqm/hinic5_cqm_cmdq_adapt.o \
-		$(SDK_DIR)/../hinic5_cqm/hinic5_cqm_182x_cmdq_adapt/hinic5_cqm_182x_cmdq_ops.o \
-		$(SDK_DIR)/../hinic5_cqm/hinic5_cqm_187x_cmdq_adapt/hinic5_cqm_187x_cmdq_ops.o \
+		$(SDK_DIR)/../cqm/cqm_bat_cla.o \
+		$(SDK_DIR)/../cqm/cqm_bitmap_table.o \
+		$(SDK_DIR)/../cqm/cqm_object_intern.o \
+		$(SDK_DIR)/../cqm/cqm_bloomfilter.o \
+		$(SDK_DIR)/../cqm/cqm_cmd.o \
+		$(SDK_DIR)/../cqm/cqm_db.o \
+		$(SDK_DIR)/../cqm/cqm_fast_msg.o \
+		$(SDK_DIR)/../cqm/cqm_object.o \
+		$(SDK_DIR)/../cqm/cqm_main.o \
+		$(SDK_DIR)/../cqm/cqm_cmdq_adapt.o \
+		$(SDK_DIR)/../cqm/cqm_182x_cmdq_adapt/cqm_182x_cmdq_ops.o \
+		$(SDK_DIR)/../cqm/cqm_187x_cmdq_adapt/cqm_187x_cmdq_ops.o \
 
 hinic5-objs := \
 		./1588/hinic5_ptp.o \

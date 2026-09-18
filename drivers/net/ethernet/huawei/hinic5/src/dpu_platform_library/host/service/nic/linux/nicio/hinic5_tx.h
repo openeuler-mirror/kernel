@@ -4,8 +4,8 @@
  * File Name     : hinic5_tx.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 TX (transmit) path header file
  */
 
 #ifndef HINIC5_TX_H
@@ -89,7 +89,8 @@ struct hinic5_txq_stats {
 #ifdef HAVE_XDP_SUPPORT
 struct hinic5_xdptxq_stats {
 	u64	xdp_dropped;
-	u64	xdp_xmits;
+	u64	xdp_xmit_pkts;
+	u64	xdp_xmit_bytes;
 	u64	map_xdpf_err;
 
 #ifdef HAVE_NDO_GET_STATS64
@@ -154,9 +155,11 @@ struct hinic5_txq {
 	struct hinic5_tx_info *tx_info;
 	struct hinic5_io_queue *sq;
 
+	u8 last_coalesc_timer_cfg;
+	u8 last_pending_limt;
 	u64 last_moder_packets;
 	u64 last_moder_bytes;
-	u64 rsvd3;
+	u32 rsvd3;
 } ____cacheline_aligned;
 
 netdev_tx_t hinic5_lb_xmit_frame(struct sk_buff *skb,

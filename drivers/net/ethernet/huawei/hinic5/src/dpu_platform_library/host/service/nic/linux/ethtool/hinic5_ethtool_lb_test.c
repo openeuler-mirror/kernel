@@ -4,8 +4,8 @@
  * File Name     : hinic5_ethtool_lb_test.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 ethtool loopback test implementation
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [NIC]" fmt
@@ -22,6 +22,7 @@
 
 #include "drv_nic_api.h"
 #include "ossl_knl.h"
+#include "hinic5_srv_nic.h"
 #include "hinic5_hw.h"
 #include "hinic5_crm.h"
 #include "hinic5_nic_dev.h"
@@ -35,7 +36,6 @@ void hinic5_run_lp_init_data(struct ethhdr *eth_hdr, struct sk_buff *skb_tmp,
 {
 	u32 i;
 	u8 *test_data = NULL;
-
 	eth_hdr = __skb_put(skb_tmp, ETH_HLEN);
 	eth_hdr->h_proto = htons(ETH_P_ARP);
 	ether_addr_copy(eth_hdr->h_dest, nic_dev->netdev->dev_addr);
@@ -63,14 +63,18 @@ int hinic5_run_lp_test(struct hinic5_nic_dev *nic_dev, u32 test_time)
 	u8 j;
 
 	skb_tmp = alloc_skb(LP_PKT_LEN, GFP_ATOMIC);
-	if (!skb_tmp)
+	if (!skb_tmp) {
+		nicif_err(nic_dev, drv, netdev,
+			  "Alloc xmit skb template failed for loopback test\n");
 		return -ENOMEM;
+	}
 
 	hinic5_run_lp_init_data(eth_hdr, skb_tmp, nic_dev);
 
 	for (i = 0; i < cnt; i++) {
 		nic_dev->lb_test_rx_idx = 0;
-		memset(lb_test_rx_buf, 0, LP_PKT_CNT * LP_PKT_LEN);
+		(void)memset(lb_test_rx_buf, 0,
+			       LP_PKT_CNT * LP_PKT_LEN);
 
 		for (j = 0; j < LP_PKT_CNT; j++) {
 			skb = pskb_copy(skb_tmp, GFP_ATOMIC);
@@ -104,8 +108,7 @@ int hinic5_run_lp_test(struct hinic5_nic_dev *nic_dev, u32 test_time)
 				nicif_err(nic_dev, drv, netdev,
 					  "Compare pkt failed in loopback test(index=0x%02x, data[%d]=0x%02x)\n",
 					  (j + (i * LP_PKT_CNT)), (LP_PKT_LEN - 1),
-					  *((lb_test_rx_buf + ((u64)j * LP_PKT_LEN)) +
-					    (LP_PKT_LEN - 1)));
+					  *((lb_test_rx_buf + ((u64)j * LP_PKT_LEN)) + (LP_PKT_LEN - 1)));
 				return -EIO;
 			}
 		}
@@ -170,6 +173,8 @@ int do_lp_test(struct hinic5_nic_dev *nic_dev, u32 *flags, u32 test_time,
 
 	lb_test_rx_buf = vmalloc(LP_PKT_CNT * LP_PKT_LEN);
 	if (!lb_test_rx_buf) {
+		nicif_err(nic_dev, drv, netdev,
+			  "Failed to alloc RX buffer for loopback test\n");
 		err = -ENOMEM;
 	} else {
 		nic_dev->lb_test_rx_buf = lb_test_rx_buf;
@@ -235,14 +240,15 @@ void hinic5_lp_test(struct net_device *netdev, struct ethtool_test *eth_test,
 	netif_tx_wake_all_queues(netdev);
 
 	err = hinic5_get_link_state(nic_dev->hwdev, &link_status);
-	if (err == 0 && link_status != 0)
+	if ((err == 0) && (link_status != 0))
 		netif_carrier_on(netdev);
 }
 
 void hinic5_diag_test(struct net_device *netdev,
 		      struct ethtool_test *eth_test, u64 *data)
 {
-	memset(data, 0, DIAG_TEST_MAX * sizeof(u64));
+	(void)memset(data, 0,
+		       DIAG_TEST_MAX * sizeof(u64));
 
 	hinic5_lp_test(netdev, eth_test, data, 0);
 }

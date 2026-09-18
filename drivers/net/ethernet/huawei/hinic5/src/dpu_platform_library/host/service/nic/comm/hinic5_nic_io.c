@@ -4,8 +4,8 @@
  * File Name     : hinic5_nic_io.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : hinic5 nic io operations implementation
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [NIC]" fmt
@@ -30,8 +30,8 @@
 #define HINIC5_DEAULT_TX_CI_PENDING_LIMIT    1
 #define HINIC5_DEAULT_TX_CI_COALESCING_TIME  1
 #define HINIC5_DEAULT_TXRX_MSIX_RESEND_TIMER_CFG 7
-#define RX_CQE_TIMER_LOOP		     0
-#define RX_CQE_COALESCE_NUM		     0
+#define RX_CQE_TIMER_LOOP            0
+#define RX_CQE_COALESCE_NUM          0
 
 static unsigned char tx_pending_limit = HINIC5_DEAULT_TX_CI_PENDING_LIMIT;
 module_param(tx_pending_limit, byte, 0444);
@@ -54,8 +54,9 @@ MODULE_PARM_DESC(cqe_aggregate_num, "CQE aggregate num, 0-1023 (default=64)");
 
 inline void hinic5_nic_io_param_validate(void)
 {
-	if (cqe_aggregate_num > HINIC5_MAX_CQE_AGGREGATE_NUM)
+	if (cqe_aggregate_num > HINIC5_MAX_CQE_AGGREGATE_NUM) {
 		cqe_aggregate_num = HINIC5_DEFAULT_CQE_AGGREGATE_NUM;
+	}
 }
 
 /* performance: ci addr RTE_CACHE_SIZE(64B) alignment */
@@ -156,6 +157,7 @@ inline void hinic5_nic_io_param_validate(void)
 					RQ_CTXT_##member##_MASK) \
 					<< RQ_CTXT_##member##_SHIFT)
 
+
 #define RQ_CTXT_WQ_PAGE_HI_PFN_SHIFT			0
 #define RQ_CTXT_WQ_PAGE_WQE_TYPE_SHIFT			28
 #define RQ_CTXT_WQ_PAGE_OWNER_SHIFT			31
@@ -247,9 +249,7 @@ int hinic5_get_rq_wqe_type(void *hwdev)
 
 	struct hinic5_hwdev *dev = hwdev;
 
-	/* rq_wqe_type is the configuration when the driver is installed,
-	 * but it may not be the actual configuration.
-	 */
+	/* rq_wqe_type is the configuration when the driver is installed, but it may not be the actual configuration. */
 	if (HINIC5_SUPPORT_RX_HW_COMPACT_CQE(hwdev) || HINIC5_SUPPORT_RX_SW_COMPACT_CQE(hwdev)) {
 		if (rq_wqe_type != HINIC5_COMPACT_RQ_WQE && rq_wqe_type != HINIC5_NORMAL_RQ_WQE &&
 		    rq_wqe_type != HINIC5_EXTEND_RQ_WQE) {
@@ -260,8 +260,9 @@ int hinic5_get_rq_wqe_type(void *hwdev)
 			return HINIC5_NORMAL_RQ_WQE;
 	}
 
-	if (HINIC5_SUPPORT_FEATURE(dev, TC_FLOWER_OFFLOAD))
+	if (HINIC5_SUPPORT_FEATURE(dev, TC_FLOWER_OFFLOAD)) {
 		return (rq_wqe_type != HINIC5_COMPACT_RQ_WQE) ? rq_wqe_type : HINIC5_NORMAL_RQ_WQE;
+	}
 
 	return rq_wqe_type;
 }
@@ -270,7 +271,6 @@ static int hinic5_create_rq(struct hinic5_nic_io *nic_io, struct hinic5_io_queue
 			    u16 q_id, u32 rq_depth, u16 rq_msix_idx)
 {
 	int err;
-
 	rq->wqe_type = (u8)(hinic5_get_rq_wqe_type(nic_io->hwdev));
 
 	rq->q_id = q_id;
@@ -333,11 +333,11 @@ int hinic5_init_nicio_res(void *hwdev, u16 usr_qps_num)
 	void __iomem *db_base = NULL;
 	int err;
 
-	if (!hwdev)
+	if (hwdev == NULL)
 		return -EINVAL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io) {
+	if (nic_io == NULL) {
 		pr_err("Failed to get nic service adapter\n");
 		goto fail_to_out;
 	}
@@ -361,7 +361,7 @@ int hinic5_init_nicio_res(void *hwdev, u16 usr_qps_num)
 	nic_io->sq_ci_vaddr_base =
 		dma_zalloc_coherent(nic_io->dev_hdl, CI_TABLE_SIZE(nic_io->max_qps, PAGE_SIZE),
 				    &nic_io->sq_ci_dma_base, GFP_KERNEL);
-	if (!nic_io->sq_ci_vaddr_base) {
+	if (nic_io->sq_ci_vaddr_base == NULL) {
 		nic_err(nic_io->dev_hdl, "Failed to allocate sq ci area\n");
 		goto alloc_tx_vaddr_base_fail;
 	}
@@ -369,7 +369,7 @@ int hinic5_init_nicio_res(void *hwdev, u16 usr_qps_num)
 	nic_io->rq_ci_vaddr_base =
 		dma_zalloc_coherent(nic_io->dev_hdl, CI_TABLE_SIZE(nic_io->max_qps, PAGE_SIZE),
 				    &nic_io->rq_ci_dma_base, GFP_KERNEL);
-	if (!nic_io->rq_ci_vaddr_base) {
+	if (nic_io->rq_ci_vaddr_base == NULL) {
 		nic_err(nic_io->dev_hdl, "Failed to allocate rq ci area\n");
 		goto alloc_rx_vaddr_base_fail;
 	}
@@ -397,11 +397,11 @@ void hinic5_deinit_nicio_res(void *hwdev)
 {
 	struct hinic5_nic_io *nic_io = NULL;
 
-	if (!hwdev)
+	if (hwdev == NULL)
 		return;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io) {
+	if (nic_io == NULL) {
 		pr_err("Failed to get nic service adapter\n");
 		return;
 	}
@@ -427,27 +427,30 @@ int hinic5_alloc_qps(void *hwdev, struct irq_info *qps_msix_arry,
 	u16 q_id, i, total_num_qps;
 	int err;
 
-	if (!hwdev || !qps_msix_arry || !qp_params)
+	if ((hwdev == NULL) || (qps_msix_arry == NULL) || (qp_params == NULL))
 		return -EINVAL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io) {
+	if (nic_io == NULL) {
 		pr_err("Failed to get nic service adapter\n");
 		return -EFAULT;
 	}
 
 	total_num_qps = qp_params->num_qps + qp_params->xdp_qps;
-	if (total_num_qps > nic_io->max_qps || qp_params->num_qps == 0)
+	if (total_num_qps > nic_io->max_qps || qp_params->num_qps == 0) {
 		return -EINVAL;
+	}
 
 	sqs = kcalloc(total_num_qps, sizeof(*sqs), GFP_KERNEL);
-	if (!sqs) {
+	if (sqs == NULL) {
+		nic_err(nic_io->dev_hdl, "Failed to allocate sq\n");
 		err = -ENOMEM;
 		goto alloc_sqs_err;
 	}
 
 	rqs = kcalloc(total_num_qps, sizeof(*rqs), GFP_KERNEL);
-	if (!rqs) {
+	if (rqs == NULL) {
+		nic_err(nic_io->dev_hdl, "Failed to allocate rq\n");
 		err = -ENOMEM;
 		goto alloc_rqs_err;
 	}
@@ -485,11 +488,11 @@ void hinic5_free_qps(void *hwdev, struct hinic5_dyna_qp_params *qp_params)
 	struct hinic5_nic_io *nic_io = NULL;
 	u16 q_id, total_num_qps;
 
-	if (!hwdev || !qp_params)
+	if ((hwdev == NULL) || (qp_params == NULL))
 		return;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io) {
+	if (nic_io == NULL) {
 		pr_err("Failed to get nic service adapter\n");
 		return;
 	}
@@ -533,11 +536,11 @@ int hinic5_init_qps(void *hwdev, struct hinic5_dyna_qp_params *qp_params)
 {
 	struct hinic5_nic_io *nic_io = NULL;
 
-	if (!hwdev || !qp_params)
+	if ((hwdev == NULL) || (qp_params == NULL))
 		return -EINVAL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io) {
+	if (nic_io == NULL) {
 		pr_err("Failed to get nic service adapter\n");
 		return -EFAULT;
 	}
@@ -551,11 +554,11 @@ void hinic5_deinit_qps(void *hwdev, struct hinic5_dyna_qp_params *qp_params)
 {
 	struct hinic5_nic_io *nic_io = NULL;
 
-	if (!hwdev || !qp_params)
+	if ((hwdev == NULL) || (qp_params == NULL))
 		return;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io) {
+	if (nic_io == NULL) {
 		pr_err("Failed to get nic service adapter\n");
 		return;
 	}
@@ -565,8 +568,9 @@ void hinic5_deinit_qps(void *hwdev, struct hinic5_dyna_qp_params *qp_params)
 	qp_params->num_qps = nic_io->num_qps;
 	qp_params->xdp_qps = nic_io->xdp_qps;
 
-	if (nic_io->enable_queue_pooling == 0)
+	if (nic_io->enable_queue_pooling == 0) {
 		hinic5_free_qp_ctxts(hwdev);
+	}
 }
 
 int hinic5_create_qps(void *hwdev, u16 num_qp, u32 sq_depth, u32 rq_depth,
@@ -576,11 +580,11 @@ int hinic5_create_qps(void *hwdev, u16 num_qp, u32 sq_depth, u32 rq_depth,
 	struct hinic5_dyna_qp_params qp_params = {0};
 	int err;
 
-	if (!hwdev || !qps_msix_arry)
+	if ((hwdev == NULL) || (qps_msix_arry == NULL))
 		return -EFAULT;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io) {
+	if (nic_io == NULL) {
 		pr_err("Failed to get nic service adapter\n");
 		return -EFAULT;
 	}
@@ -610,11 +614,11 @@ void hinic5_destroy_qps(void *hwdev)
 	struct hinic5_nic_io *nic_io = NULL;
 	struct hinic5_dyna_qp_params qp_params =  {0};
 
-	if (!hwdev)
+	if (hwdev == NULL)
 		return;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return;
 
 	hinic5_deinit_qps(hwdev, &qp_params);
@@ -626,11 +630,11 @@ void *hinic5_get_nic_queue(void *hwdev, u16 q_id, enum hinic5_queue_type q_type)
 {
 	struct hinic5_nic_io *nic_io = NULL;
 
-	if (!hwdev || q_type >= HINIC5_MAX_QUEUE_TYPE)
+	if ((hwdev == NULL) || q_type >= HINIC5_MAX_QUEUE_TYPE)
 		return NULL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return NULL;
 	if (q_id >= nic_io->max_qps)
 		return NULL;
@@ -638,8 +642,8 @@ void *hinic5_get_nic_queue(void *hwdev, u16 q_id, enum hinic5_queue_type q_type)
 	return ((q_type == HINIC5_SQ) ? &nic_io->sq[q_id] : &nic_io->rq[q_id]);
 }
 
-void hinic5_sq_prepare_ctxt(struct hinic5_nic_io *nic_io, struct hinic5_io_queue *sq,
-			    u16 sq_id, struct hinic5_sq_ctxt *sq_ctxt)
+void hinic5_sq_prepare_ctxt(
+	struct hinic5_nic_io *nic_io, struct hinic5_io_queue *sq, u16 sq_id, struct hinic5_sq_ctxt *sq_ctxt)
 {
 	u64 wq_page_addr;
 	u64 wq_page_pfn, wq_block_pfn;
@@ -799,7 +803,7 @@ static inline u16 hinic5_get_max_ctxts(u16 num_qps, u16 cmd_buf_size)
 {
 	u16 max_ctxts = (cmd_buf_size - HINIC5_QP_CTXT_HEADER_SIZE) / sizeof(struct hinic5_rq_ctxt);
 
-	max_ctxts = min_t(u16, HINIC5_Q_CTXT_MAX, max_ctxts);
+	max_ctxts = min((u16)HINIC5_Q_CTXT_MAX, max_ctxts);
 	return (u16)min(max_ctxts, num_qps);
 }
 
@@ -813,7 +817,7 @@ static int init_sq_ctxts(struct hinic5_nic_io *nic_io)
 	u32 qp_nums = nic_io->num_qps + nic_io->xdp_qps;
 
 	cmd_buf = hinic5_alloc_cmd_buf(nic_io->hwdev);
-	if (!cmd_buf) {
+	if (cmd_buf == NULL) {
 		nic_err(nic_io->dev_hdl, "Failed to allocate cmd buf\n");
 		return -ENOMEM;
 	}
@@ -821,8 +825,7 @@ static int init_sq_ctxts(struct hinic5_nic_io *nic_io)
 	q_id = 0;
 	while (q_id < qp_nums) {
 		max_ctxts = hinic5_get_max_ctxts(qp_nums - q_id, cmd_buf->size);
-		use_buf_size =
-			HINIC5_QP_CTXT_HEADER_SIZE + max_ctxts * sizeof(struct hinic5_sq_ctxt);
+		use_buf_size = HINIC5_QP_CTXT_HEADER_SIZE + max_ctxts * sizeof(struct hinic5_sq_ctxt);
 		memset(cmd_buf->buf, 0, use_buf_size);
 
 		cmd = nic_io->cmdq_ops->prepare_cmd_buf_qp_context_multi_store(nic_io, cmd_buf,
@@ -830,7 +833,7 @@ static int init_sq_ctxts(struct hinic5_nic_io *nic_io)
 
 		err = hinic5_cmdq_direct_resp(nic_io->hwdev, HINIC5_MOD_L2NIC,
 					      cmd, cmd_buf, &out_param, 0, HINIC5_CHANNEL_NIC);
-		if (err != 0 || out_param != 0) {
+		if ((err != 0) || out_param != 0) {
 			nic_err(nic_io->dev_hdl, "Failed to set SQ ctxts, err: %d, out_param: 0x%llx\n",
 				err, out_param);
 
@@ -855,7 +858,7 @@ static int init_rq_ctxts(struct hinic5_nic_io *nic_io)
 	int err = 0;
 
 	cmd_buf = hinic5_alloc_cmd_buf(nic_io->hwdev);
-	if (!cmd_buf) {
+	if (cmd_buf == NULL) {
 		nic_err(nic_io->dev_hdl, "Failed to allocate cmd buf\n");
 		return -ENOMEM;
 	}
@@ -863,8 +866,7 @@ static int init_rq_ctxts(struct hinic5_nic_io *nic_io)
 	q_id = 0;
 	while (q_id < nic_io->num_qps) {
 		max_ctxts = hinic5_get_max_ctxts(nic_io->num_qps - q_id, cmd_buf->size);
-		use_buf_size =
-			HINIC5_QP_CTXT_HEADER_SIZE + max_ctxts * sizeof(struct hinic5_rq_ctxt);
+		use_buf_size = HINIC5_QP_CTXT_HEADER_SIZE + max_ctxts * sizeof(struct hinic5_rq_ctxt);
 		memset(cmd_buf->buf, 0, use_buf_size);
 
 		cmd = nic_io->cmdq_ops->prepare_cmd_buf_qp_context_multi_store(nic_io, cmd_buf,
@@ -872,7 +874,7 @@ static int init_rq_ctxts(struct hinic5_nic_io *nic_io)
 		err = hinic5_cmdq_direct_resp(nic_io->hwdev, HINIC5_MOD_L2NIC,
 					      cmd, cmd_buf, &out_param, 0,
 					      HINIC5_CHANNEL_NIC);
-		if (err != 0 || out_param != 0) {
+		if ((err != 0) || out_param != 0) {
 			nic_err(nic_io->dev_hdl, "Failed to set RQ ctxts, err: %d, out_param: 0x%llx\n",
 				err, out_param);
 
@@ -912,7 +914,7 @@ static int clean_queue_offload_ctxt(struct hinic5_nic_io *nic_io,
 	int err;
 
 	cmd_buf = hinic5_alloc_cmd_buf(nic_io->hwdev);
-	if (!cmd_buf) {
+	if (cmd_buf == NULL) {
 		nic_err(nic_io->dev_hdl, "Failed to allocate cmd buf\n");
 		return -ENOMEM;
 	}
@@ -920,13 +922,15 @@ static int clean_queue_offload_ctxt(struct hinic5_nic_io *nic_io,
 	if (nic_io->cmdq_ops)
 		cmd = nic_io->cmdq_ops->prepare_cmd_buf_clean_tso_lro_space(nic_io, cmd_buf,
 									    ctxt_type);
-	else
+	else {
+		hinic5_free_cmd_buf(nic_io->hwdev, cmd_buf);
 		return -ENOMEM;
+	}
 
 	err = hinic5_cmdq_direct_resp(nic_io->hwdev, HINIC5_MOD_L2NIC,
 				      cmd, cmd_buf, &out_param, 0,
 				      HINIC5_CHANNEL_NIC);
-	if (err != 0 || out_param != 0) {
+	if ((err != 0) || (out_param != 0)) {
 		nic_err(nic_io->dev_hdl, "Failed to clean queue offload ctxts, err: %d,out_param: 0x%llx\n",
 			err, out_param);
 
@@ -975,22 +979,20 @@ static int init_sq_ci_ctxts(struct hinic5_nic_io *nic_io)
 
 static int init_rq_ci_ctxts(struct hinic5_nic_io *nic_io)
 {
-	struct hinic5_rq_attr rq_attr;
-	u16 q_id;
-	int err;
+	struct hinic5_rq_attr rq_attr = {0};
+	u16 q_id = 0;
+	int err = 0;
 
 	for (q_id = 0; q_id < nic_io->num_qps; q_id++) {
 		rq_attr.ci_dma_base = 0;
-		rq_attr.pending_limit = 0;
-		rq_attr.coalescing_time = 0;
+		rq_attr.pending_limit = RX_CQE_COALESCE_NUM;
+		rq_attr.coalescing_time = RX_CQE_TIMER_LOOP;
 		rq_attr.intr_idx = nic_io->rq[q_id].msix_entry_idx;
 		rq_attr.l2nic_rqn = q_id;
 		rq_attr.cqe_type = 0;
 		if (hinic5_get_rq_wqe_type(nic_io->hwdev) == HINIC5_COMPACT_RQ_WQE) {
 			rq_attr.cqe_type = 1;
 			rq_attr.ci_dma_base = HINIC5_CI_PADDR(nic_io->rq_ci_dma_base, q_id);
-			rq_attr.coalescing_time = RX_CQE_TIMER_LOOP;
-			rq_attr.pending_limit = RX_CQE_COALESCE_NUM;
 		}
 
 		err = hinic5_set_rq_ci_ctx(nic_io, &rq_attr);
@@ -1010,11 +1012,11 @@ int hinic5_init_qp_ctxts(void *hwdev)
 	u32 rq_depth;
 	int err;
 
-	if (!hwdev)
+	if (hwdev == NULL)
 		return -EINVAL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EFAULT;
 
 	err = init_qp_ctxts(nic_io);
@@ -1042,14 +1044,16 @@ int hinic5_init_qp_ctxts(void *hwdev)
 	}
 
 	err = init_sq_ci_ctxts(nic_io);
-	if (err != 0)
+	if (err != 0) {
 		goto clean_root_ctxt;
+	}
 
 	if (HINIC5_SUPPORT_RX_HW_COMPACT_CQE(hwdev)) {
 		/* init rxq cqe context */
 		err = init_rq_ci_ctxts(nic_io);
-		if (err != 0)
+		if (err != 0) {
 			goto clean_root_ctxt;
+		}
 	}
 
 	return 0;
@@ -1062,93 +1066,30 @@ clean_root_ctxt:
 
 void hinic5_free_qp_ctxts(void *hwdev)
 {
-	if (!hwdev)
+	if (hwdev == NULL)
 		return;
 
 	hinic5_clean_root_ctxt(hwdev, HINIC5_CHANNEL_NIC);
 }
 
-static int hinic5_update_sq_coalesce(struct hinic5_nic_io *nic_io, u32 sq_id, u8 num, u8 time)
-{
-	struct hinic5_sq_attr sq_attr = {0};
-	int err;
-
-	sq_attr.ci_dma_base = HINIC5_CI_PADDR(nic_io->sq_ci_dma_base, sq_id);
-	sq_attr.pending_limit = num;
-	sq_attr.coalescing_time = time;
-	sq_attr.intr_en = 1;
-	sq_attr.intr_idx = nic_io->sq[sq_id].msix_entry_idx;
-	sq_attr.l2nic_sqn = sq_id;
-	err = hinic5_set_sq_ci_ctx(nic_io, &sq_attr);
-	if (err != 0) {
-		nic_err(nic_io->dev_hdl, "Failed to update sq coalesce\n");
-		return -EFAULT;
-	}
-
-	return 0;
-}
-
-static int hinic5_update_rq_coalesce(struct hinic5_nic_io *nic_io, u32 rq_id, u8 num, u8 time)
-{
-	struct hinic5_rq_attr rq_attr = {0};
-	int err;
-
-	rq_attr.ci_dma_base = 0;
-	rq_attr.pending_limit = num;
-	rq_attr.coalescing_time = time;
-	rq_attr.intr_idx = nic_io->rq[rq_id].msix_entry_idx;
-	rq_attr.l2nic_rqn = rq_id;
-	rq_attr.cqe_type = 0;
-	if (hinic5_get_rq_wqe_type(nic_io->hwdev) == HINIC5_COMPACT_RQ_WQE) {
-		rq_attr.cqe_type = 1;
-		rq_attr.ci_dma_base = HINIC5_CI_PADDR(nic_io->rq_ci_dma_base, rq_id);
-	}
-	err = hinic5_set_rq_ci_ctx(nic_io, &rq_attr);
-	if (err != 0) {
-		nic_err(nic_io->dev_hdl, "Failed to update rq coalesce\n");
-		return -EFAULT;
-	}
-
-	return 0;
-}
-
-int hinic5_set_sq_rq_coalesce_cfg(void *hwdev, u32 q_id, u32 type,
-				  struct hinic5_qp_coalesce_info *coal_info)
+int hinic5_set_intr_coalesce_cfg(void *hwdev, u32 q_id, struct hinic5_qp_coalesce_info *coal_info)
 {
 	struct hinic5_nic_io *nic_io = NULL;
 	struct interrupt_info info = {0};
-	int err;
 
-	if (!hwdev)
+	if (hwdev == NULL)
 		return -EINVAL;
 
 	nic_io = hinic5_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
+	if (nic_io == NULL)
 		return -EINVAL;
 
-	if (!HINIC5_SUPPORT_SQ_RQ_CI_COALESCE(hwdev)) {
-		info.coalesc_timer_cfg = coal_info->coalesce_timer_cfg;
-		info.pending_limt = coal_info->pending_limt;
-		info.interrupt_coalesc_set = 1;
-		info.msix_index = nic_io->sq[q_id].msix_entry_idx;
-		info.resend_timer_cfg = HINIC5_DEAULT_TXRX_MSIX_RESEND_TIMER_CFG;
-		return hinic5_set_interrupt_cfg(hwdev, info, HINIC5_CHANNEL_NIC);
-	}
-
-	if ((type & HINIC5_SQ_COALESCE) != 0) {
-		err = hinic5_update_sq_coalesce(nic_io, q_id, coal_info->tx_pending_limt,
-						coal_info->tx_coalesce_timer_cfg);
-		if (err != 0)
-			return err;
-	}
-
-	if ((type & HINIC5_RQ_COALESCE) != 0) {
-		err = hinic5_update_rq_coalesce(nic_io, q_id, coal_info->rx_pending_limt,
-						coal_info->rx_coalesce_timer_cfg);
-		if (err != 0)
-			return err;
-	}
-	return 0;
+	info.coalesc_timer_cfg = coal_info->coalesce_timer_cfg;
+	info.pending_limt = coal_info->pending_limt;
+	info.interrupt_coalesc_set = 1;
+	info.msix_index = nic_io->sq[q_id].msix_entry_idx;
+	info.resend_timer_cfg = HINIC5_DEAULT_TXRX_MSIX_RESEND_TIMER_CFG;
+	return hinic5_set_interrupt_cfg(hwdev, info, HINIC5_CHANNEL_NIC);
 }
 
 #ifdef __UEFI__

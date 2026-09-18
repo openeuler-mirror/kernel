@@ -4,12 +4,12 @@
  * File Name     : sdk_kcompat.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Temporary file - The actual sdk_kcompat.h is generated during build.
  */
 
-#ifndef SDK_KCOMPAT_H
-#define SDK_KCOMPAT_H
+#ifndef _SDK_KCOMPAT_H_
+#define _SDK_KCOMPAT_H_
 #define HAVE_PCIE_RESET_DONE 1
 #define NEED_PTP_ADJUST_BY_SCALED_PPM 1
 #define HAVE_TIMER_SETUP 1
@@ -25,4 +25,6 @@
 #define HAVE_DEVLINK_REGISTER_SET_DEV 1
 #define HAVE_DEVLINK_REGISTER_HAVE_RET 1
 #define HAVE_CLASS_CREATE_OWNER 1
-#endif /* SDK_KCOMPAT_H */
+// sdk_kcompat.h is an intermediate product header file
+
+#endif /* _SDK_KCOMPAT_H_ */

@@ -4,8 +4,8 @@
  * File Name     : hinic5_ethtool_coalesce.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 ethtool coalesce implementation
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [NIC]" fmt
@@ -121,17 +121,20 @@ int set_queue_coalesce(struct hinic5_nic_dev *nic_dev, u16 q_id,
 	 * don't need to set coalesce to hw
 	 */
 	if ((test_bit(HINIC5_INTF_UP, &nic_dev->flags) == 0) ||
-	    q_id >= nic_dev->q_params.num_qps || nic_dev->adaptive_rx_coal != 0)
+	    q_id >= nic_dev->q_params.num_qps || (nic_dev->adaptive_rx_coal != 0))
 		return 0;
 
+	err = hinic5_set_intr_coalesce_cfg(nic_dev->hwdev, q_id, intr_coal);
+	if (err != 0) {
+		nicif_warn(nic_dev, drv, netdev, "Failed to set queue%u coalesce", q_id);
+		return err;
+	}
 	nic_dev->rxqs[q_id].last_coalesc_timer_cfg = intr_coal->rx_coalesce_timer_cfg;
 	nic_dev->rxqs[q_id].last_pending_limt = intr_coal->rx_pending_limt;
-	err = hinic5_set_sq_rq_coalesce_cfg(nic_dev->hwdev, q_id, HINIC5_SQ_RQ_COALESCE, intr_coal);
-	if (err != 0)
-		nicif_warn(nic_dev, drv, netdev,
-			   "Failed to set queue%u coalesce", q_id);
+	nic_dev->txqs[q_id].last_coalesc_timer_cfg = intr_coal->tx_coalesce_timer_cfg;
+	nic_dev->txqs[q_id].last_pending_limt = intr_coal->tx_pending_limt;
 
-	return err;
+	return 0;
 }
 
 int is_coalesce_exceed_limit(struct net_device *netdev,
@@ -385,7 +388,10 @@ int set_coalesce(struct net_device *netdev,
 {
 	struct hinic5_nic_dev *nic_dev = netdev_priv(netdev);
 	struct hinic5_qp_coalesce_info intr_coal;
-	u32 last_adaptive_rx;
+	u32 last_adaptive_rx = 0;
+#ifdef HAVE_DIM_SUPPORT
+	u16 q_id = 0;
+#endif
 	int err = 0;
 
 	err = is_coalesce_legal(netdev, coal);
@@ -398,15 +404,15 @@ int set_coalesce(struct net_device *netdev,
 	if (err != 0)
 		return err;
 
-	memset(&intr_coal, 0, sizeof(intr_coal));
+	(void)memset(&intr_coal, 0, sizeof(intr_coal));
 	init_intr_coal_params(&intr_coal, coal);
 
 	last_adaptive_rx = nic_dev->adaptive_rx_coal;
 	nic_dev->adaptive_rx_coal = coal->use_adaptive_rx_coalesce;
 
 	/* coalesce timer or pending set to zero will disable coalesce */
-	if (nic_dev->adaptive_rx_coal == 0 &&
-	    (intr_coal.coalesce_timer_cfg == 0 || intr_coal.pending_limt == 0))
+	if ((nic_dev->adaptive_rx_coal == 0) &&
+	    ((intr_coal.coalesce_timer_cfg == 0) || (intr_coal.pending_limt == 0)))
 		nicif_warn(nic_dev, drv, netdev, "Coalesce will be disabled\n");
 
 	/* ensure coalesce paramester will not be changed in auto
@@ -418,6 +424,16 @@ int set_coalesce(struct net_device *netdev,
 		else if (last_adaptive_rx == 0)
 			queue_delayed_work(nic_dev->workq, &nic_dev->moderation_task,
 					   HINIC5_MODERATONE_DELAY);
+#ifdef HAVE_DIM_SUPPORT
+		if (HINIC5_SUPPORT_SQ_RQ_CI_COALESCE(nic_dev->hwdev) &&
+			nic_dev->adaptive_rx_coal == 0 && last_adaptive_rx != 0) {
+			for (q_id = 0; q_id < nic_dev->q_params.num_qps + nic_dev->q_params.xdp_qps; q_id++) {
+				cancel_work_sync(&nic_dev->rxqs[q_id].dim.work);
+				nic_dev->rxqs[q_id].dim.state = DIM_START_MEASURE;
+				nic_dev->rxqs[q_id].dim.profile_ix = DIM_START_PROFILE;
+			}
+		}
+#endif
 	}
 
 	return set_hw_coal_param(nic_dev, &intr_coal, queue);

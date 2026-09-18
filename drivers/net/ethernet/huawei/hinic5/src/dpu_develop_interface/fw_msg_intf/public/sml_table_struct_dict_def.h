@@ -4,9 +4,10 @@
  * File Name     : sml_table_struct_dict_def.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   : SML Table structure metadata registration macro definition
+ * Last Modified : 2026/09/16
+ * Description   : SML Table struct metadata registration macro definitions
  */
+
 #ifndef SML_TABLE_STRUCT_DICT_DEF_H
 #define SML_TABLE_STRUCT_DICT_DEF_H
 

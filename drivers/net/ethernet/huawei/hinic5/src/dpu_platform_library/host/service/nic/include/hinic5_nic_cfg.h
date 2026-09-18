@@ -4,8 +4,8 @@
  * File Name     : hinic5_nic_cfg.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : hinic5 nic configuration definitions
  */
 
 #ifndef HINIC5_NIC_CFG_H
@@ -17,6 +17,8 @@
 #include "nic_cfg_comm.h"
 #include "nic_mpu_tc_cmd_defs.h"
 #include "mag_mpu_cmd_defs.h"
+#include "mpu_sfp_cmd_defs.h"
+#include "mpu_mag_cmd_defs.h"
 
 #define nic_err(dev, format, ...) dev_err(dev, "[NIC]" format, ##__VA_ARGS__)
 #define nic_warn(dev, format, ...) dev_warn(dev, "[NIC]" format, ##__VA_ARGS__)
@@ -121,8 +123,6 @@ u64 hinic5_get_feature_cap(void *hwdev);
 #define HINIC5_SUPPORT_TX_WQE_COMPACT_TASK(hwdev) HINIC5_SUPPORT_FEATURE(hwdev, TX_WQE_COMPACT_TASK)
 #define HINIC5_SUPPORT_RX_HW_COMPACT_CQE(hwdev) HINIC5_SUPPORT_FEATURE(hwdev, RX_HW_COMPACT_CQE)
 #define HINIC5_SUPPORT_RX_SW_COMPACT_CQE(hwdev) HINIC5_SUPPORT_FEATURE(hwdev, RX_SW_COMPACT_CQE)
-
-#define HINIC5_SUPPORT_RXQ_RECOVERY(hwdev) HINIC5_SUPPORT_FEATURE(hwdev, RXQ_RECOVERY)
 #define HINIC5_SUPPORT_PTP_1588_V2(hwdev) HINIC5_SUPPORT_FEATURE(hwdev, PTP_1588_V2)
 #define HINIC5_SUPPORT_SQ_RQ_CI_COALESCE(hwdev) HINIC5_SUPPORT_FEATURE(hwdev, SQ_RQ_CI_COALESCE)
 #define HINIC5_SUPPORT_GET_COUNTER_BY_CMDQ(hwdev) HINIC5_SUPPORT_FEATURE(hwdev, GET_COUNTER_BY_CMDQ)
@@ -173,11 +173,6 @@ struct nic_pause_config {
 	u8 auto_neg;
 	u8 rx_pause;
 	u8 tx_pause;
-};
-
-struct rxq_check_info {
-	u16	hw_pi;
-	u16	hw_ci;
 };
 
 struct hinic5_rxq_hw {
@@ -311,15 +306,6 @@ int hinic5_set_rx_lro_state(void *hwdev, u8 lro_en, u32 lro_timer,
  * @retval non-zero: failure
  */
 int hinic5_get_veb_offload(void *hwdev, u16 *veb_offload_status);
-
-/* *
- * @brief hinic5_set_veb_offload - set veb offload
- * @param hwdev: device pointer to hwdev
- * @param veb_offload_status:  veb offload status
- * @retval zero: success
- * @retval non-zero: failure
- */
-int hinic5_set_veb_offload(void *hwdev, u16 veb_offload_status);
 
 /* *
  * @brief hinic5_set_vf_spoofchk - set vf spoofchk
@@ -579,7 +565,7 @@ int hinic5_get_sfp_cmis_type(void *hwdev, u8 *sfp_type, u8 *sfp_type_ext);
 int hinic5_get_sfp_eeprom(void *hwdev, u8 *data, u32 len, u32 offset);
 int hinic5_get_cmis_eeprom(void *hwdev, u8 *data, u32 len, u32 offset);
 int hinic5_eeprom_page_check(u8 page_id, u32 offset, u32 len);
-int hinic5_get_cmis_eeprom_by_page(void *hwdev, u8 page_id, u32 offset, u8 *data, u32 len);
+int hinic5_get_cmis_eeprom_by_page(void *hwdev, u8 target_page_id, u8 *data, u32 len);
 
 bool hinic5_if_sfp_absent(void *hwdev);
 int hinic5_get_sfp_info(void *hwdev, struct mag_cmd_get_xsfp_info *sfp_info);
@@ -644,8 +630,6 @@ int hinic5_get_pf_bw_limit(void *hwdev, u32 *bw_limit);
  */
 int hinic5_set_pf_rate(void *hwdev, u8 speed_level);
 
-int hinic5_get_rxq_hw_info(void *hwdev, struct rxq_check_info *rxq_info, u16 num_qps, u16 wqe_type);
-
 /* *
  * @brief hinic5_add_tc_flow_rule - add tc flow rule
  * @param hwdev: device pointer to hwdev
@@ -654,8 +638,7 @@ int hinic5_get_rxq_hw_info(void *hwdev, struct rxq_check_info *rxq_info, u16 num
  * @retval zero: success
  * @retval non-zero: failure
  */
-int hinic5_add_tc_flow_rule(void *hwdev, struct hinic5_tc_cfg_info *tc_flow_rule,
-			    bool default_rule);
+int hinic5_add_tc_flow_rule(void *hwdev, struct hinic5_tc_cfg_info *tc_flow_rule, bool default_rule);
 
 /* *
  * @brief hinic5_del_tc_flow_rule - del tc flow rule
@@ -738,20 +721,20 @@ int hinic5_flush_qps_res(void *hwdev);
 int hinic5_flush_qps_res_by_nums(void *hwdev, u16 qp_num);
 
 /**
- * @brief Set vport state
+ * @brief Set vport status
  *
  * @param hwdev device pointer to hwdev
  * @param func_id global function index
- * @param enable Set vport state value, true--enable, false--disable
- * @param channel, mailbox channel id used for sending
+ * @param enable vport status value to set, true--enable, false--disable
+ * @param channel channel id, channel id used for mailbox sending
  *
- * @details Set the vport enable state (function table valid flag) for the corresponding function,
- * sent to MPU via mailbox to configure MAG port state
- * @attention: This function involves sending mailbox messages and may sleep,
- * prohibited from being called in interrupt context or other contexts where sleeping is not allowed
- * @return: Returns success or failure for device vport state setting.
- *     @retval 0 Success
- *     @retval non-zero Failure
+ * @details Set the vport enable (function table valid flag bit) status of the corresponding function, sent to MPU via mailbox to set MAG port status
+ *
+ * @attention: This function involves sending mailbox messages and will sleep. It is forbidden to call it in interrupt context or other contexts where sleeping is not allowed
+ *
+ * @return: Returns success or failure of device vport status setting.
+ *     @retval 0 success
+ *     @retval non-0 failure
  */
 int hinic5_set_vport_enable(void *hwdev, u16 func_id, bool enable, u16 channel);
 
@@ -759,19 +742,19 @@ int hinic5_set_vport_enable(void *hwdev, u16 func_id, bool enable, u16 channel);
 int hinic5_vxlan_port_config(void *hwdev, u16 func_id, u16 port, u8 action, u8 pkt_fmt);
 
 /**
- * @brief Get chip NIC feature capability
+ * @brief Get chip nic feature capabilities
  *
  * @param hwdev device pointer to hwdev
- * @param s_feature: Returned chip capability bitmap
- * @param size: Number of bitmaps
+ * @param s_feature: returned chip capability bitmap
+ * @param size: bitmap count
  *
- * @details Send mailbox message to get chip NIC feature capability
+ * @details Send mbox message to get chip nic feature capabilities
  *
  * @attention: N/A
  *
- * @return: Returns success or failure
- *     @retval 0 Success
- *     @retval non-zero Failure
+ * @return: Returns success or failure of getting result
+ *     @retval 0 success
+ *     @retval non-0 failure
  */
 int hinic5_get_nic_feature_from_hw(void *hwdev, u64 *s_feature, u16 size);
 

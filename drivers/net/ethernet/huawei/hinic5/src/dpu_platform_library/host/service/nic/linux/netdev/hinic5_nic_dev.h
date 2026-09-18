@@ -4,8 +4,8 @@
  * File Name     : hinic5_nic_dev.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   : NIC device header file
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 NIC device header file
  */
 
 #ifndef HINIC5_NIC_DEV_H
@@ -28,10 +28,10 @@
 #include "hinic5_dcb.h"
 #include "hinic5_profile.h"
 #include "hinic5_macsec_dev.h"
-#include "hinic5_vram_common.h"
+#include "vram_common.h"
 
 #define HINIC5_NIC_DRV_NAME	"hinic5"
-#define HINIC5_NIC_DRV_VERSION	"100.0.1.102"
+#define HINIC5_NIC_DRV_VERSION	"100.0.2.101"
 
 #define HINIC5_FUNC_IS_VF(hwdev)	(hinic5_func_type(hwdev) == TYPE_VF)
 
@@ -54,7 +54,6 @@ enum hinic5_flags {
 	HINIC5_FORCE_LINK_UP,
 	HINIC5_BONDING_MASTER,
 	HINIC5_AUTONEG_RESET,
-	HINIC5_RXQ_RECOVERY,
 	HINIC5_BONDING_BLOCK,
 	HINIC5_PTP_CLOCK,
 	HINIC5_DCB_UP_COS_SETTING,
@@ -105,6 +104,9 @@ struct hinic5_irq {
 	struct net_device *netdev;
 	/* IRQ corresponding index number */
 	u16 msix_entry_idx;
+#ifdef HAVE_DIM_SUPPORT
+	u16 event_ctr;
+#endif
 	u16 rsvd1;
 	u32 irq_id;         /* The IRQ number from OS */
 
@@ -189,9 +191,9 @@ struct hinic5_tcam_info {
 	struct hinic5_tcam_dynamic_block_info tcam_dynamic_info;
 };
 
-struct hinic5_hinic5_vram {
-	u32 hinic5_vram_mtu;
-	u16 hinic5_vram_num_qps;
+struct hinic5_vram {
+	u32 vram_mtu;
+	u16 vram_num_qps;
 	unsigned long flags;
 
 	/* dcb */
@@ -222,7 +224,7 @@ typedef u8 (*hinic5_nic_cqe_cb)(void *llddev, void *data);
 struct hinic5_tx_rx_ops {
 	void (*tx_set_wqe_offload)(struct hinic5_offload_info *offload_info,
 				   struct hinic5_sq_wqe_combo *wqe_combo);
-	void (*rx_get_cqe_info)(struct hinic5_rq_cqe *rx_cqe,
+	void (*rx_get_cqe_info)(volatile struct hinic5_rq_cqe *rx_cqe,
 				struct hinic5_cqe_info *cqe_info, u8 cqe_mode, bool enable_pfe);
 	bool (*rx_cqe_done)(struct hinic5_rxq *rxq, struct hinic5_rq_cqe **rx_cqe);
 	hinic5_nic_cqe_cb cqe_cb[SERVICE_T_MAX];
@@ -234,7 +236,7 @@ struct hinic5_nic_dev {
 	struct net_device *netdev;
 	struct hinic5_lld_dev *lld_dev;
 	void *hwdev;
-	void *extend;	/* Product-specific custom data structure */
+	void *extend; /* Product custom data structure */
 
 	/* Currently, 1 indicates is_in_kexec. */
 	u32 state;
@@ -270,8 +272,8 @@ struct hinic5_nic_dev {
 
 	struct hinic5_dcb_config hw_dcb_cfg;
 
-	struct hinic5_hinic5_vram *nic_hinic5_vram;
-	char nic_hinic5_vram_name[HINIC5_VRAM_NAME_MAX_LEN];
+	struct hinic5_vram *nic_vram;
+	char nic_vram_name[VRAM_NAME_MAX_LEN];
 
 	int disable_port_cnt;
 
@@ -332,13 +334,12 @@ struct hinic5_nic_dev {
 
 	struct hinic5_nic_prof_attr *prof_attr;
 	struct hinic5_prof_adapter *prof_adap;
-	u64 rsvd8[7];
-	u8 cos_mask_mode;
+	u32 rsvd0;
+	u64 rsvd8[6];
+	u8 cos_assign_bitmap;
 	u8 hw_default_cos_valid;
 	u8 hw_default_cos;
 	u8 tx_wqe_compact_task;
-	u32 rxq_get_err_times;
-	struct delayed_work	rxq_check_work;
 	struct hinic5_ptp_ctrl ptp_ctrl;
 
 	struct hinic5_tx_rx_ops tx_rx_ops;
@@ -347,12 +348,15 @@ struct hinic5_nic_dev {
 
 	struct hinic5_timeout timeout;
 
-	struct macsec_resource *macsec_res;  // MACsec module uses resource
+	struct macsec_resource *macsec_res;  // Resources used by MACsec module
 	struct work_struct arp_dual_work;
 	struct sk_buff_head arp_queue;
 
 	struct work_struct update_stats_work;
 	struct hinic5_vport_stats vport_stats;
+
+	u16 buffs_per_page;
+	u16 buffs_replenish_thrd;
 };
 
 #define nicif_err(priv, type, dev, fmt, args...) \
@@ -368,7 +372,7 @@ struct hinic5_nic_dev {
 
 #define hinic_msg(level, nic_dev, msglvl, format, arg...)	\
 do {								\
-	if ((nic_dev)->netdev && (nic_dev)->netdev->reg_state	\
+	if ((nic_dev)->netdev != NULL && (nic_dev)->netdev->reg_state	\
 	    == NETREG_REGISTERED)				\
 		nicif_##level((nic_dev), msglvl, (nic_dev)->netdev,	\
 			      format, ## arg);			\
@@ -386,7 +390,7 @@ do {								\
 #define hinic5_err(nic_dev, msglvl, format, arg...)	\
 	hinic_msg(err, nic_dev, msglvl, format, ## arg)
 
-struct hinic5_uld_info *hinic5_get_nic_uld_info(void);
+struct hinic5_uld_info *get_nic_uld_info(void);
 
 u32 hinic5_get_io_stats_size(const struct hinic5_nic_dev *nic_dev);
 
@@ -402,7 +406,7 @@ void hinic5_set_ethtool_ops(struct net_device *netdev);
 
 void hinic5vf_set_ethtool_ops(struct net_device *netdev);
 
-int hinic5_nic_ioctl(void *uld_dev, u32 cmd, const void *buf_in,
+int nic_ioctl(void *uld_dev, u32 cmd, const void *buf_in,
 	      u32 in_size, void *buf_out, u32 *out_size);
 
 void hinic5_update_num_qps(struct net_device *netdev);
@@ -461,8 +465,7 @@ void hinic5_link_status_change(struct hinic5_nic_dev *nic_dev, bool status);
 bool hinic5_is_xdp_enable(struct hinic5_nic_dev *nic_dev);
 int hinic5_xdp_max_mtu(struct hinic5_nic_dev *nic_dev);
 int hinic5_safe_switch_channels(struct hinic5_nic_dev *nic_dev);
-int hinic5_set_xdp_num(struct hinic5_nic_dev *nic_dev,
-		       struct hinic5_dyna_txrxq_params *trxq_params);
+int hinic5_set_xdp_num(struct hinic5_nic_dev *nic_dev, struct hinic5_dyna_txrxq_params *trxq_params);
 #endif
 
 #if defined(ETHTOOL_GFECPARAM) && defined(ETHTOOL_SFECPARAM)
@@ -471,9 +474,8 @@ int hinic5_set_fecparam(struct net_device *netdev, struct ethtool_fecparam *fecp
 #endif
 
 #ifdef HAVE_UDP_TUNNEL_NIC_INFO
-/* set vxlan dport */
 int hinic5_udp_tunnel_set_port(struct net_device *netdev, unsigned int table,
-			       unsigned int entry, struct udp_tunnel_info *ti);
+	unsigned int entry, struct udp_tunnel_info *ti); /* Set vxlan dport */
 int hinic5_udp_tunnel_unset_port(struct net_device *netdev, unsigned int table,
 				 unsigned int entry, struct udp_tunnel_info *ti);
 #endif /* HAVE_UDP_TUNNEL_NIC_INFO */

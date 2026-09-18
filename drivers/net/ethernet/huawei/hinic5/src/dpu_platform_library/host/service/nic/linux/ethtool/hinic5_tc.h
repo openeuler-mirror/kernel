@@ -4,8 +4,8 @@
  * File Name     : hinic5_tc.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 traffic control header file
  */
 
 #ifndef HINIC5_TC_H
@@ -141,15 +141,15 @@ struct hinic5_tc_flow {
 	(rule_st)->field##_5 = (data)[FIELD_BYTE_5];	\
 } while (0)
 
-#define WRITE_VNI(rule_st, data) do {						\
-	(rule_st)->vni_h = FIELD_U16(data, FIELD_BYTE_2, FIELD_BYTE_1);		\
-	(rule_st)->vni_l = (data)[FIELD_BYTE_0];				\
+#define WRITE_VNI(rule_st, data) do {								\
+	(rule_st)->vni_h = FIELD_U16(data, FIELD_BYTE_2, FIELD_BYTE_1);	\
+	(rule_st)->vni_l = (data)[FIELD_BYTE_0];						\
 } while (0)
 
 #define WRITE_FIELD_U8(rule_st, field, data)	\
-	((rule_st)->field = (data)[FIELD_BYTE_0])
+	(rule_st)->field = (data)[FIELD_BYTE_0]
 
-#define WRITE_FIELD_U16(rule_st, field, data) \
+#define WRITE_FIELD_U16(rule_st, field, data)	\
 	((rule_st)->field = FIELD_U16(data, FIELD_BYTE_0, FIELD_BYTE_1))
 
 #define WRITE_FIELD_SPLIT_U16(rule_st, field, data) do {	\
@@ -164,57 +164,57 @@ struct hinic5_tc_flow {
 	(rule_st)->field##_3 = (data)[FIELD_BYTE_3];	\
 } while (0)
 
-#define WRITE_IP6_128BITS(rule_st, field, data) do {				\
-	(rule_st)->field##_0 = FIELD_U16(data, FIELD_BYTE_0, FIELD_BYTE_1);	\
-	(rule_st)->field##_1 = FIELD_U16(data, FIELD_BYTE_2, FIELD_BYTE_3);	\
-	(rule_st)->field##_2 = FIELD_U16(data, FIELD_BYTE_4, FIELD_BYTE_5);	\
-	(rule_st)->field##_3 = FIELD_U16(data, FIELD_BYTE_6, FIELD_BYTE_7);	\
-	(rule_st)->field##_4 = FIELD_U16(data, FIELD_BYTE_8, FIELD_BYTE_9);	\
+#define WRITE_IP6_128BITS(rule_st, field, data) do {						\
+	(rule_st)->field##_0 = FIELD_U16(data, FIELD_BYTE_0, FIELD_BYTE_1);		\
+	(rule_st)->field##_1 = FIELD_U16(data, FIELD_BYTE_2, FIELD_BYTE_3);		\
+	(rule_st)->field##_2 = FIELD_U16(data, FIELD_BYTE_4, FIELD_BYTE_5);		\
+	(rule_st)->field##_3 = FIELD_U16(data, FIELD_BYTE_6, FIELD_BYTE_7);		\
+	(rule_st)->field##_4 = FIELD_U16(data, FIELD_BYTE_8, FIELD_BYTE_9);		\
 	(rule_st)->field##_5 = FIELD_U16(data, FIELD_BYTE_10, FIELD_BYTE_11);	\
 	(rule_st)->field##_6 = FIELD_U16(data, FIELD_BYTE_12, FIELD_BYTE_13);	\
 	(rule_st)->field##_7 = FIELD_U16(data, FIELD_BYTE_14, FIELD_BYTE_15);	\
 } while (0)
 
-#define WRITE_IP6_96BITS(rule_st, field, data) do {				\
-	(rule_st)->field##_0 = FIELD_U16(data, FIELD_BYTE_0, FIELD_BYTE_1);	\
-	(rule_st)->field##_1 = FIELD_U16(data, FIELD_BYTE_2, FIELD_BYTE_3);	\
-	(rule_st)->field##_2 = FIELD_U16(data, FIELD_BYTE_4, FIELD_BYTE_5);	\
-	(rule_st)->field##_3 = FIELD_U16(data, FIELD_BYTE_6, FIELD_BYTE_7);	\
-	(rule_st)->field##_4 = FIELD_U16(data, FIELD_BYTE_8, FIELD_BYTE_9);	\
+#define WRITE_IP6_96BITS(rule_st, field, data) do {							\
+	(rule_st)->field##_0 = FIELD_U16(data, FIELD_BYTE_0, FIELD_BYTE_1);		\
+	(rule_st)->field##_1 = FIELD_U16(data, FIELD_BYTE_2, FIELD_BYTE_3);		\
+	(rule_st)->field##_2 = FIELD_U16(data, FIELD_BYTE_4, FIELD_BYTE_5);		\
+	(rule_st)->field##_3 = FIELD_U16(data, FIELD_BYTE_6, FIELD_BYTE_7);		\
+	(rule_st)->field##_4 = FIELD_U16(data, FIELD_BYTE_8, FIELD_BYTE_9);		\
 	(rule_st)->field##_5 = FIELD_U16(data, FIELD_BYTE_10, FIELD_BYTE_11);	\
 } while (0)
 
-#define WRITE_IP6_128BITS_OPT_OFF(rule_st, field, data) do {			\
-	(rule_st)->field##_0 = FIELD_U16(data, FIELD_BYTE_0, FIELD_BYTE_1);	\
-	(rule_st)->field##_1_h = (data)[FIELD_BYTE_2];				\
-	(rule_st)->field##_1_l = (data)[FIELD_BYTE_3];				\
-	(rule_st)->field##_2 = FIELD_U16(data, FIELD_BYTE_4, FIELD_BYTE_5);	\
-	(rule_st)->field##_3_h = (data)[FIELD_BYTE_6];				\
-	(rule_st)->field##_3_l = (data)[FIELD_BYTE_7];				\
-	(rule_st)->field##_4 = FIELD_U16(data, FIELD_BYTE_8, FIELD_BYTE_9);	\
-	(rule_st)->field##_5_h = (data)[FIELD_BYTE_10];				\
-	(rule_st)->field##_5_l = (data)[FIELD_BYTE_11];				\
+#define WRITE_IP6_128BITS_OPT_OFF(rule_st, field, data) do {				\
+	(rule_st)->field##_0 = FIELD_U16(data, FIELD_BYTE_0, FIELD_BYTE_1);		\
+	(rule_st)->field##_1_h = (data)[FIELD_BYTE_2];							\
+	(rule_st)->field##_1_l = (data)[FIELD_BYTE_3];							\
+	(rule_st)->field##_2 = FIELD_U16(data, FIELD_BYTE_4, FIELD_BYTE_5);		\
+	(rule_st)->field##_3_h = (data)[FIELD_BYTE_6];							\
+	(rule_st)->field##_3_l = (data)[FIELD_BYTE_7];							\
+	(rule_st)->field##_4 = FIELD_U16(data, FIELD_BYTE_8, FIELD_BYTE_9);		\
+	(rule_st)->field##_5_h = (data)[FIELD_BYTE_10];							\
+	(rule_st)->field##_5_l = (data)[FIELD_BYTE_11];							\
 	(rule_st)->field##_6 = FIELD_U16(data, FIELD_BYTE_12, FIELD_BYTE_13);	\
-	(rule_st)->field##_7_h = (data)[FIELD_BYTE_14];				\
-	(rule_st)->field##_7_l = (data)[FIELD_BYTE_15];				\
+	(rule_st)->field##_7_h = (data)[FIELD_BYTE_14];							\
+	(rule_st)->field##_7_l = (data)[FIELD_BYTE_15];							\
 } while (0)
 
-#define WRITE_SIP6_72BITS_OPT_ON(rule_st, data) do {				\
-	(rule_st)->sip6_0_h = (data)[FIELD_BYTE_0];				\
-	(rule_st)->sip6_0_l = (data)[FIELD_BYTE_1];				\
+#define WRITE_SIP6_72BITS_OPT_ON(rule_st, data) do {					\
+	(rule_st)->sip6_0_h = (data)[FIELD_BYTE_0];							\
+	(rule_st)->sip6_0_l = (data)[FIELD_BYTE_1];							\
 	(rule_st)->sip6_1 = FIELD_U16(data, FIELD_BYTE_2, FIELD_BYTE_3);	\
-	(rule_st)->sip6_2_h = (data)[FIELD_BYTE_4];				\
-	(rule_st)->sip6_2_l = (data)[FIELD_BYTE_5];				\
+	(rule_st)->sip6_2_h = (data)[FIELD_BYTE_4];							\
+	(rule_st)->sip6_2_l = (data)[FIELD_BYTE_5];							\
 	(rule_st)->sip6_3 = FIELD_U16(data, FIELD_BYTE_6, FIELD_BYTE_7);	\
-	(rule_st)->sip6_4_h = (data)[FIELD_BYTE_8];				\
+	(rule_st)->sip6_4_h = (data)[FIELD_BYTE_8];							\
 } while (0)
 
-#define WRITE_DIP6_72BITS_OPT_ON(rule_st, data) do {				\
+#define WRITE_DIP6_72BITS_OPT_ON(rule_st, data) do {					\
 	(rule_st)->dip6_0 = FIELD_U16(data, FIELD_BYTE_0, FIELD_BYTE_1);	\
 	(rule_st)->dip6_1 = FIELD_U16(data, FIELD_BYTE_2, FIELD_BYTE_3);	\
 	(rule_st)->dip6_2 = FIELD_U16(data, FIELD_BYTE_4, FIELD_BYTE_5);	\
 	(rule_st)->dip6_3 = FIELD_U16(data, FIELD_BYTE_6, FIELD_BYTE_7);	\
-	(rule_st)->dip6_4_h = (data)[FIELD_BYTE_8];				\
+	(rule_st)->dip6_4_h = (data)[FIELD_BYTE_8];							\
 } while (0)
 
 #define BYTE8_SIZE 8
@@ -240,21 +240,14 @@ struct hinic5_tc_flow_node {
 /* PFE tc info */
 struct hinic5_tc_info {
 	u16 profile_id;
-	/* PFE group key template 3-1 used: 1'b0: use template 3-1-1, 1'b1: use template 3-1-2 */
-	u16 tunnel_opt;
-	/* PFE group key template 3-2 IPV6 sip truncation offset value N,
-	 * truncate [N+len:N], maximum value is 32
-	 */
-	u16 ipv6_shift_value;
-	/* PFE group key template 3-1 IPV6 sip and dip truncation offset value N,
-	 * truncate [N+len:N], maximum value is 56
-	 */
-	u16 ipv6_shift_value2;
+	u16 tunnel_opt;  /* Template 3-1 used by PFE group key: 1'b0: use template 3-1-1, 1'b1: use template 3-1-2 */
+	u16 ipv6_shift_value;  /* Offset value N when PFE group key template 3-2 IPV6 sip truncation is used, extract [N+len:N], max value is 32 */
+	u16 ipv6_shift_value2;  /* Offset value N when PFE group key template 3-1 IPV6 sip and dip truncation is used, extract [N+len:N], max value is 56 */
 	u16 enc_ip_type; /* Tunnel packet outer IP type: 0-ipv4, 1-ipv6 */
 	ulong tcam_bitmap[HINIC5_TC_TCAM_BITMAP_LEN];
 	struct rhashtable flow_table;
 	struct rhashtable_params flow_ht_params;
-	struct mutex tc_lock; /* Mutex to protect this structure from concurrent access */
+	struct mutex tc_lock;
 };
 
 int hinic5_setup_tc(struct net_device *netdev, enum tc_setup_type type, void *type_data);

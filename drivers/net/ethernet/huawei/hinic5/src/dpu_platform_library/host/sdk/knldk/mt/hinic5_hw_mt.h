@@ -4,8 +4,8 @@
  * File Name     : hinic5_hw_mt.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : hardware maintenance test interface declarations
  */
 
 #ifndef HINIC5_HW_MT_H
@@ -46,22 +46,22 @@ struct hinic5_mt_cmd_info {
 	u32 timeout;
 };
 
-int hinic5_get_func_type(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
+int get_func_type(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
 		  void *buf_out, const u32 *out_size);
 
-int hinic5_get_func_id(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
+int get_func_id(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
 		void *buf_out, const u32 *out_size);
 
-int hinic5_get_hw_driver_stats(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
+int get_hw_driver_stats(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
 			void *buf_out, const u32 *out_size);
 
-int hinic5_clear_hw_driver_stats(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
+int clear_hw_driver_stats(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
 			  void *buf_out, const u32 *out_size);
 
-int hinic5_get_self_test_result(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
+int get_self_test_result(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
 			 void *buf_out, const u32 *out_size);
 
-int hinic5_get_chip_faults_stats(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
+int get_chip_faults_stats(struct hinic5_lld_dev *lld_dev, const void *buf_in, u32 in_size,
 			  void *buf_out, const u32 *out_size);
 
 #ifndef __WIN__
@@ -77,7 +77,7 @@ int hinic5_get_chip_faults_stats(struct hinic5_lld_dev *lld_dev, const void *buf
  *      @retval non-zero: failure
  */
 
-int hinic5_alloc_buff_in(void *hwdev, const struct msg_module *nt_msg, u32 in_size, void **buf_in);
+int alloc_buff_in(void *hwdev, const struct msg_module *nt_msg, u32 in_size, void **buf_in);
 
 /**
  * @brief alloc output buffer
@@ -91,7 +91,7 @@ int hinic5_alloc_buff_in(void *hwdev, const struct msg_module *nt_msg, u32 in_si
  *      @retval non-zero: failure
  */
 
-int hinic5_alloc_buff_out(void *hwdev, const struct msg_module *nt_msg, u32 out_size, void **buf_out);
+int alloc_buff_out(void *hwdev, const struct msg_module *nt_msg, u32 out_size, void **buf_out);
 
 /**
  * @brief free input buffer
@@ -104,7 +104,7 @@ int hinic5_alloc_buff_out(void *hwdev, const struct msg_module *nt_msg, u32 out_
  *      @retval non-zero: failure
  */
 
-void hinic5_free_buff_in(void *hwdev, const struct msg_module *nt_msg, void *buf_in);
+void free_buff_in(void *hwdev, const struct msg_module *nt_msg, void *buf_in);
 
 /**
  * @brief free output buffer
@@ -117,7 +117,7 @@ void hinic5_free_buff_in(void *hwdev, const struct msg_module *nt_msg, void *buf
  *      @retval non-zero: failure
  */
 
-void hinic5_free_buff_out(void *hwdev, const struct msg_module *nt_msg, void *buf_out);
+void free_buff_out(void *hwdev, const struct msg_module *nt_msg, void *buf_out);
 
 /**
  * @brief copy from message buffer to user buffer
@@ -130,7 +130,7 @@ void hinic5_free_buff_out(void *hwdev, const struct msg_module *nt_msg, void *bu
  *      @retval non-zero: failure
  */
 
-int hinic5_copy_buf_out_to_user(const struct msg_module *nt_msg, u32 out_size, void *buf_out);
+int copy_buf_out_to_user(const struct msg_module *nt_msg, u32 out_size, void *buf_out);
 #endif
 /**
  * @brief send message to mpu
@@ -146,8 +146,7 @@ int hinic5_copy_buf_out_to_user(const struct msg_module *nt_msg, u32 out_size, v
  *      @retval non-zero: failure
  */
 
-int hinic5_send_to_mpu(void *hwdev, struct msg_module *nt_msg,
-		void *buf_in, u32 in_size, void *buf_out, u32 *out_size);
+int send_to_mpu(void *hwdev, struct msg_module *nt_msg, void *buf_in, u32 in_size, void *buf_out, u32 *out_size);
 
 /**
  * @brief send message to npu
@@ -163,8 +162,7 @@ int hinic5_send_to_mpu(void *hwdev, struct msg_module *nt_msg,
  *      @retval non-zero: failure
  */
 
-int hinic5_send_to_npu(void *hwdev, const struct msg_module *nt_msg,
-		void *buf_in, u32 in_size, void *buf_out, u32 *out_size);
+int send_to_npu(void *hwdev, const struct msg_module *nt_msg, void *buf_in, u32 in_size, void *buf_out, u32 *out_size);
 
 /**
  * @brief send message to sm
@@ -180,7 +178,6 @@ int hinic5_send_to_npu(void *hwdev, const struct msg_module *nt_msg,
  *      @retval non-zero: failure
  */
 
-int hinic5_send_to_sm(void *hwdev, const struct msg_module *nt_msg,
-	       void *buf_in, u32 in_size, void *buf_out, u32 *out_size);
+int send_to_sm(void *hwdev, const struct msg_module *nt_msg, void *buf_in, u32 in_size, void *buf_out, u32 *out_size);
 
 #endif

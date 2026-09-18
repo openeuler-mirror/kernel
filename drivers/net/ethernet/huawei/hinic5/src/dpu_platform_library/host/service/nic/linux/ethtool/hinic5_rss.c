@@ -4,8 +4,8 @@
  * File Name     : hinic5_rss.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 RSS (Receive Side Scaling) implementation
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [NIC]" fmt
@@ -24,7 +24,7 @@
 
 #include "ossl_knl.h"
 #include "hinic5_crm.h"
-#include "hinic5_vram_common.h"
+#include "vram_common.h"
 #include "hinic5_nic_cfg.h"
 #include "hinic5_nic_dev.h"
 #include "hinic5_hw.h"
@@ -110,9 +110,7 @@ static int hinic5_get_rq2iq_map(struct hinic5_nic_dev *nic_dev,
 	return 0;
 }
 
-static inline void set_default_cos(u8 *default_cos,
-				   const struct hinic5_nic_dev *nic_dev,
-				   u8 valid_cos_map)
+static inline void set_default_cos(u8 *default_cos, const struct hinic5_nic_dev *nic_dev, u8 valid_cos_map)
 {
 	if ((BIT(nic_dev->hw_dcb_cfg.default_cos) & valid_cos_map) != 0) {
 		*default_cos = nic_dev->hw_dcb_cfg.default_cos;
@@ -131,13 +129,15 @@ static void hinic5_fillout_indir_tbl(struct hinic5_nic_dev *nic_dev, u8 group_nu
 	u8 j, cur_cos = 0, group = 0;
 	u32 i = 0;
 
-	if (!nic_dev)
+	if (nic_dev == NULL) {
 		return;
+	}
 
 	if (nic_dev->flow_bifur_group_num > HINIC5_GROUP_NUMBER_MIN) {
 		group_size = NIC_RSS_INDIR_SIZE / nic_dev->flow_bifur_group_num;
-		for (i = 0; i < group_size; i++)
+		for (i = 0; i < group_size; i++) {
 			indir[i] = i % nic_dev->q_params.num_qps;
+		}
 		return;
 	}
 
@@ -239,14 +239,12 @@ static void decide_num_qps(struct hinic5_nic_dev *nic_dev)
 	u16 tmp_num_qps = nic_dev->max_qps;
 	u16 num_cpus = 0;
 	int i, node;
-	int is_in_kexec = hinic5_vram_get_kexec_flag();
-
+	int is_in_kexec = vram5_get_kexec_flag();
 	if (is_in_kexec != 0) {
-		nic_dev->q_params.num_qps = nic_dev->nic_hinic5_vram->hinic5_vram_num_qps;
+		nic_dev->q_params.num_qps = nic_dev->nic_vram->vram_num_qps;
 		nicif_info(nic_dev, drv, nic_dev->netdev,
-			   "Os hotreplace use hinic5_vram to init num qps 1:%u 2:%u\n",
-			   nic_dev->q_params.num_qps,
-			   nic_dev->nic_hinic5_vram->hinic5_vram_num_qps);
+			"Os hotreplace use vram to init num qps 1:%hu 2:%hu\n",
+			nic_dev->q_params.num_qps, nic_dev->nic_vram->vram_num_qps);
 		return;
 	}
 
@@ -267,7 +265,7 @@ static void decide_num_qps(struct hinic5_nic_dev *nic_dev)
 		num_cpus = (u16)num_online_cpus();
 
 	nic_dev->q_params.num_qps = (u16)min_t(u16, tmp_num_qps, num_cpus);
-	nic_dev->nic_hinic5_vram->hinic5_vram_num_qps = nic_dev->q_params.num_qps;
+	nic_dev->nic_vram->vram_num_qps = nic_dev->q_params.num_qps;
 }
 
 static void copy_value_to_rss_hkey(struct hinic5_nic_dev *nic_dev,
@@ -276,7 +274,7 @@ static void copy_value_to_rss_hkey(struct hinic5_nic_dev *nic_dev,
 	u32 i;
 	u32 *rss_hkey = (u32 *)nic_dev->rss_hkey;
 
-	memcpy(nic_dev->rss_hkey, hkey, NIC_RSS_KEY_SIZE);
+	(void)memcpy(nic_dev->rss_hkey, hkey, NIC_RSS_KEY_SIZE);
 
 	/* make a copy of the key, and convert it to Big Endian */
 	for (i = 0; i < NIC_RSS_KEY_SIZE / sizeof(u32); i++)
@@ -327,7 +325,7 @@ void hinic5_try_to_enable_rss(struct hinic5_nic_dev *nic_dev)
 	u8 cos_map[NIC_DCB_UP_MAX] = {0};
 	int err = 0;
 
-	if (!nic_dev)
+	if (nic_dev == NULL)
 		return;
 
 	nic_dev->max_qps = hinic5_func_max_nic_qnum(nic_dev->hwdev);
@@ -349,9 +347,8 @@ void hinic5_try_to_enable_rss(struct hinic5_nic_dev *nic_dev)
 
 	hinic5_init_rss_parameters(nic_dev->netdev);
 	/* Attempt to deploy the RSS configuration; if deployment fails,
-	 * revert to a single queue mode and disable RSS
-	 * to ensure the functionality remains operational.
-	 */
+	   revert to a single queue mode and disable RSS
+	   to ensure the functionality remains operational. */
 	err = hinic5_set_hw_rss_parameters(nic_dev->netdev, 0, 0, cos_map,
 					   test_bit(HINIC5_DCB_ENABLE, &nic_dev->flags) ? 1 : 0);
 	if (err != 0) {
@@ -366,7 +363,7 @@ void hinic5_try_to_enable_rss(struct hinic5_nic_dev *nic_dev)
 set_q_params:
 	clear_bit(HINIC5_RSS_ENABLE, &nic_dev->flags);
 	nic_dev->q_params.num_qps = nic_dev->max_qps;
-	nic_dev->nic_hinic5_vram->hinic5_vram_num_qps = nic_dev->max_qps;
+	nic_dev->nic_vram->vram_num_qps = nic_dev->max_qps;
 }
 
 static int hinic5_config_rss_hw_resource(struct hinic5_nic_dev *nic_dev,
@@ -649,12 +646,11 @@ static u16 hinic5_max_channels(struct hinic5_nic_dev *nic_dev)
 
 static u16 hinic5_curr_channels(struct hinic5_nic_dev *nic_dev)
 {
-	if (netif_running(nic_dev->netdev)) {
+	if (netif_running(nic_dev->netdev))
 		return (nic_dev->q_params.num_qps != 0) ?
 				nic_dev->q_params.num_qps : 1;
-	} else {
+	else {
 		u16 hinic5_max_ch = hinic5_max_channels(nic_dev);
-
 		return (u16)min_t(u16, hinic5_max_ch,
 				  nic_dev->q_params.num_qps);
 	}
@@ -739,8 +735,7 @@ int hinic5_set_channels(struct net_device *netdev,
 	    !hinic5_validate_channel_setting_in_ntuple(nic_dev, count))
 		return -EOPNOTSUPP;
 
-	nicif_info(nic_dev, drv, netdev, "Set max combined queue number from %u to %u\n",
-		   nic_dev->q_params.num_qps, count);
+	nicif_info(nic_dev, drv, netdev, "Set max combined queue number from %u to %u\n", nic_dev->q_params.num_qps, count);
 
 	if (netif_running(netdev)) {
 		q_params = nic_dev->q_params;
@@ -765,7 +760,7 @@ int hinic5_set_channels(struct net_device *netdev,
 		nic_dev->q_params.num_qps = (u16)count;
 	}
 
-	nic_dev->nic_hinic5_vram->hinic5_vram_num_qps = nic_dev->q_params.num_qps;
+	nic_dev->nic_vram->vram_num_qps = nic_dev->q_params.num_qps;
 	return 0;
 }
 
@@ -783,12 +778,11 @@ u32 hinic5_get_rxfh_indir_size(struct net_device *netdev)
 static void cfg_indir(struct hinic5_nic_dev *nic_dev, u32 *dest_indir, const u32 *src_indir)
 {
 	u16 kernel_indir_len;
-
 	kernel_indir_len = (nic_dev->flow_bifur_group_num <= HINIC5_GROUP_NUMBER_MIN)
 				? NIC_RSS_INDIR_SIZE
 				: NIC_RSS_INDIR_SIZE / nic_dev->flow_bifur_group_num;
 
-	memcpy(dest_indir, src_indir, sizeof(u32) * kernel_indir_len);
+	(void)memcpy(dest_indir, src_indir, sizeof(u32) * kernel_indir_len);
 }
 
 static int set_rss_rxfh(struct net_device *netdev, const u32 *indir,
@@ -797,11 +791,12 @@ static int set_rss_rxfh(struct net_device *netdev, const u32 *indir,
 	struct hinic5_nic_dev *nic_dev = netdev_priv(netdev);
 	int err;
 
-	if (indir) {
+	if (indir != NULL) {
 		cfg_indir(nic_dev, nic_dev->rss_indir, indir);
 		err = hinic5_rss_set_indir_tbl(nic_dev->hwdev, nic_dev->rss_indir);
-		if (err != 0)
+		if (err != 0) {
 			return -EFAULT;
+		}
 		err = hinic5_rss_set_indir_tbl(nic_dev->hwdev, nic_dev->rss_indir);
 		if (err != 0) {
 			nicif_err(nic_dev, drv, netdev,
@@ -811,7 +806,7 @@ static int set_rss_rxfh(struct net_device *netdev, const u32 *indir,
 		nicif_info(nic_dev, drv, netdev, "Change rss indir success\n");
 	}
 
-	if (key) {
+	if (key != NULL) {
 		err = hinic5_rss_set_hash_key(nic_dev->hwdev, key);
 		if (err != 0) {
 			nicif_err(nic_dev, drv, netdev, "Failed to set rss key\n");
@@ -849,6 +844,8 @@ int hinic5_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key)
 #ifdef HAVE_ETHTOOL_RXFH_PARAM
 	u32 *indir = rxfh_param->indir;
 	u8 *key = rxfh_param->key;
+	rxfh_param->hfunc = (nic_dev->rss_hash_engine != 0) ?
+			ETH_RSS_HASH_TOP : ETH_RSS_HASH_XOR;
 #endif
 
 #ifdef HAVE_RXFH_HASHFUNC
@@ -857,11 +854,11 @@ int hinic5_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key)
 			ETH_RSS_HASH_TOP : ETH_RSS_HASH_XOR;
 #endif
 
-	if (indir)
+	if (indir != NULL)
 		cfg_indir(nic_dev, indir, nic_dev->rss_indir);
 
-	if (key)
-		memcpy(key, nic_dev->rss_hkey, NIC_RSS_KEY_SIZE);
+	if (key != NULL)
+		(void)memcpy(key, nic_dev->rss_hkey, NIC_RSS_KEY_SIZE);
 
 	return 0;
 }
@@ -883,6 +880,7 @@ int hinic5_set_rxfh(struct net_device *netdev, const u32 *indir, const u8 *key)
 #ifdef HAVE_ETHTOOL_RXFH_PARAM
 	u32 *indir = rxfh_param->indir;
 	u8 *key = rxfh_param->key;
+	u8 hfunc = rxfh_param->hfunc;
 #endif
 	struct hinic5_nic_dev *nic_dev = netdev_priv(netdev);
 	int err = 0;
@@ -893,13 +891,13 @@ int hinic5_set_rxfh(struct net_device *netdev, const u32 *indir, const u8 *key)
 		return -EOPNOTSUPP;
 	}
 
-	if ((test_bit(HINIC5_DCB_ENABLE, &nic_dev->flags) != 0) && indir) {
+	if ((test_bit(HINIC5_DCB_ENABLE, &nic_dev->flags) != 0) && (indir != NULL)) {
 		nicif_err(nic_dev, drv, netdev,
 			  "Not support to set indir when DCB is enabled\n");
 		return -EOPNOTSUPP;
 	}
 
-#ifdef HAVE_RXFH_HASHFUNC
+#if defined(HAVE_RXFH_HASHFUNC) || defined(HAVE_ETHTOOL_RXFH_PARAM)
 	if (hfunc != ETH_RSS_HASH_NO_CHANGE) {
 		if (hfunc != ETH_RSS_HASH_TOP && hfunc != ETH_RSS_HASH_XOR) {
 			nicif_err(nic_dev, drv, netdev,
@@ -961,7 +959,7 @@ int hinic5_get_rxfh_indir(struct net_device *netdev, u32 *indir)
 		return -EOPNOTSUPP;
 	}
 
-	if (indir)
+	if (indir != NULL)
 		cfg_indir(nic_dev, indir, nic_dev->rss_indir);
 
 	return 0;
@@ -994,7 +992,7 @@ int hinic5_set_rxfh_indir(struct net_device *netdev, const u32 *indir)
 		return -EOPNOTSUPP;
 	}
 
-	if ((test_bit(HINIC5_DCB_ENABLE, &nic_dev->flags) != 0) && indir) {
+	if ((test_bit(HINIC5_DCB_ENABLE, &nic_dev->flags) != 0) && (indir != NULL)) {
 		nicif_err(nic_dev, drv, netdev,
 			  "Not support to set indir when DCB is enabled\n");
 		return -EOPNOTSUPP;

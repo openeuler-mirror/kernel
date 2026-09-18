@@ -4,8 +4,8 @@
  * File Name     : nic_mpu_cmd_structs_extend.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : NIC MPU command structures extensions
  */
 
 #ifndef HINIC5_NIC_CMD_STRUCTS_EXTEND_H
@@ -21,8 +21,8 @@
 #ifndef FUNC_MAX_CLEAR_QP_NUM
 #define FUNC_MAX_CLEAR_QP_NUM 256
 /**
- * @brief Define a structure for clearing qp resources by queue level
- * @details qp_num indicates the number of queues to clear, qp indicates the local_id of the queues to clear under func
+ * @brief Defines a struct for clearing qp resources at queue level
+ * @details qp_num indicates the number of queues to clear, qp indicates the local_id of the queue to clear under func
  */
 struct hinic5_cmd_clear_assign_qp_res {
 	struct hinic5_mgmt_msg_head msg_head;

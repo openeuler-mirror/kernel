@@ -4,10 +4,9 @@
  * File Name     : fast_msg_common_define.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
+ * Last Modified : 2026/09/16
  * Description   : fast msg common define, for driver&micro_code usage, common struct defined
  */
-
 
 #ifndef FAST_MSG_COMMON_DEFINE_H
 #define FAST_MSG_COMMON_DEFINE_H

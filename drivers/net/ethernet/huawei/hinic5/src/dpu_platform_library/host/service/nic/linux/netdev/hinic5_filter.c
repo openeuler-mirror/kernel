@@ -4,8 +4,8 @@
  * File Name     : hinic5_filter.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : HINIC5 network device flow filter implementation
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [NIC]" fmt
@@ -92,7 +92,7 @@ static void hinic5_add_filter(struct hinic5_nic_dev *nic_dev,
 		return;
 
 	f = kzalloc(sizeof(*f), GFP_ATOMIC);
-	if (!f)
+	if (f == NULL)
 		return;
 
 	ether_addr_copy(f->addr, addr);
@@ -124,7 +124,7 @@ static struct hinic5_mac_filter *hinic5_mac_filter_entry_clone(const struct hini
 	struct hinic5_mac_filter *f = NULL;
 
 	f = kzalloc(sizeof(*f), GFP_ATOMIC);
-	if (!f)
+	if (f == NULL)
 		return NULL;
 
 	*f = *src;
@@ -159,7 +159,7 @@ static void hinic5_undo_add_filter_entries(struct list_head *filter_list,
 
 	list_for_each_entry_safe(f, ftmp, from, list) {
 		tmp = hinic5_find_mac(filter_list, f->addr);
-		if (tmp && tmp->state == HINIC5_MAC_HW_SYNCED)
+		if ((tmp != NULL) && tmp->state == HINIC5_MAC_HW_SYNCED)
 			tmp->state = HINIC5_MAC_WAIT_HW_SYNC;
 	}
 }
@@ -238,7 +238,7 @@ static int hinic5_mac_filter_sync(struct hinic5_nic_dev *nic_dev,
 			continue;
 
 		fclone = hinic5_mac_filter_entry_clone(f);
-		if (!fclone) {
+		if (fclone == NULL) {
 			err = -ENOMEM;
 			break;
 		}
@@ -272,7 +272,7 @@ static int hinic5_mac_filter_sync(struct hinic5_nic_dev *nic_dev,
 				continue;
 
 			fclone = hinic5_mac_filter_entry_clone(f);
-			if (!fclone)
+			if (fclone == NULL)
 				break;
 
 			f->state = HINIC5_MAC_WAIT_HW_SYNC;
@@ -333,7 +333,7 @@ static void hinic5_update_mac_filter(struct hinic5_nic_dev *nic_dev,
 	netif_addr_lock_bh(nic_dev->netdev);
 	netdev_hw_addr_list_for_each(ha, src_list) {
 		filter = hinic5_find_mac(filter_list, ha->addr);
-		if (!filter)
+		if (filter == NULL)
 			hinic5_add_filter(nic_dev, filter_list, ha->addr);
 		else if (filter->state == HINIC5_MAC_WAIT_HW_UNSYNC)
 			filter->state = HINIC5_MAC_HW_SYNCED;
@@ -372,7 +372,7 @@ static void hinic5_update_mc_filter(struct hinic5_nic_dev *nic_dev,
 	netif_addr_lock_bh(nic_dev->netdev);
 	netdev_for_each_mc_addr(ha, nic_dev->netdev) {
 		filter = hinic5_find_mac(filter_list, ha->da_addr);
-		if (!filter)
+		if (filter == NULL)
 			hinic5_add_filter(nic_dev, filter_list, ha->da_addr);
 		else if (filter->state == HINIC5_MAC_WAIT_HW_UNSYNC)
 			filter->state = HINIC5_MAC_HW_SYNCED;

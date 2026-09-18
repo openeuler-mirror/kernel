@@ -4,8 +4,8 @@
  * File Name     : hinic5_fw_update.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : firmware update interface declarations with BAT L3I support
  */
 
 #ifndef HINIC5_FW_UPDATE_H

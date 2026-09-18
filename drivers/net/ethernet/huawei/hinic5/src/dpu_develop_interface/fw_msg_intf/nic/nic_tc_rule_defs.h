@@ -4,8 +4,8 @@
  * File Name     : nic_tc_rule_defs.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : NIC TC rule definitions
  */
 
 #ifndef NIC_TC_RULE_DEFS_H

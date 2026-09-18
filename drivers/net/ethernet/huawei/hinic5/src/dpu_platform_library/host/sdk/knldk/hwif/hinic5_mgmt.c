@@ -4,8 +4,8 @@
  * File Name     : hinic5_mgmt.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Management message communication for the hinic5 driver.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [COMM]" fmt
@@ -223,7 +223,7 @@ static int prepare_mgmt_cmd(u8 *mgmt_cmd, u64 *header, const void *msg,
 {
 	u8 *mgmt_cmd_new = mgmt_cmd;
 
-	memset(mgmt_cmd_new, 0, MGMT_MSG_RSVD_FOR_DEV);
+	(void)memset(mgmt_cmd_new, 0, MGMT_MSG_RSVD_FOR_DEV);
 
 	mgmt_cmd_new += MGMT_MSG_RSVD_FOR_DEV;
 	memcpy(mgmt_cmd_new, header, sizeof(*header));
@@ -345,8 +345,7 @@ static int msg_to_mgmt_wait_completion(void *hwdev, u32 timeout)
 
 	ret = wait_for_completion_timeout(&recv_msg->recv_done, timeo);
 	if (ret == 0) {
-		sdk_err(dev, "Mgmt response sync cmd timeout, sync_msg_id: %u\n",
-			pf_to_mgmt->sync_msg_id);
+		sdk_err(dev, "Mgmt response sync cmd timeout, sync_msg_id: %u\n", pf_to_mgmt->sync_msg_id);
 		hinic5_dump_aeq_info((struct hinic5_hwdev *)hwdev);
 		pf_to_mgmt_send_event_set(pf_to_mgmt, SEND_EVENT_TIMEOUT);
 		return -ETIMEDOUT;
@@ -379,7 +378,7 @@ int hinic5_pf_to_mgmt_sync(void *hwdev, u8 mod, u16 cmd, void *buf_in,
 	if (!COMM_SUPPORT_API_CHAIN((struct hinic5_hwdev *)hwdev))
 		return -EPERM;
 
-	if (!buf_in || in_size == 0)
+	if ((buf_in == NULL) || (in_size == 0))
 		return -EINVAL;
 
 	err = msg_to_mgmt_pre(mod, buf_in, in_size);
@@ -415,8 +414,9 @@ int hinic5_pf_to_mgmt_sync(void *hwdev, u8 mod, u16 cmd, void *buf_in,
 			goto unlock_sync_msg;
 		}
 
-		if (recv_msg->msg_len != 0)
+		if (recv_msg->msg_len != 0) {
 			memcpy(buf_out, recv_msg->msg, recv_msg->msg_len);
+		}
 
 		*out_size = recv_msg->msg_len;
 	}
@@ -616,7 +616,7 @@ static void mgmt_recv_msg_handler(struct hinic5_msg_pf_to_mgmt *pf_to_mgmt,
 	enum hinic5_mod_type tmp_mod = mod;
 	u16 out_size = 0;
 
-	memset(buf_out, 0, MAX_PF_MGMT_BUF_SIZE);
+	(void)memset(buf_out, 0, MAX_PF_MGMT_BUF_SIZE);
 
 	if (mod >= HINIC5_MOD_HW_MAX) {
 		sdk_warn(dev, "Receive illegal message from mgmt cpu, mod = %u\n",
@@ -728,13 +728,17 @@ static void init_mgmt_msg_work(struct hinic5_msg_pf_to_mgmt *pf_to_mgmt,
 	struct hinic5_hwdev *hwdev = pf_to_mgmt->hwdev;
 
 	mgmt_work = kzalloc(sizeof(*mgmt_work), GFP_KERNEL);
-	if (!mgmt_work)
+	if (!mgmt_work) {
+		sdk_err(hwdev->dev_hdl, "Allocate mgmt work memory failed\n");
 		return;
+	}
 
 	if (recv_msg->msg_len != 0) {
 		mgmt_work->msg = kzalloc(recv_msg->msg_len, GFP_KERNEL);
-		if (!mgmt_work->msg)
+		if (!mgmt_work->msg) {
+			sdk_err(hwdev->dev_hdl, "Allocate mgmt msg memory failed\n");
 			goto msg_alloc_err;
+		}
 	}
 
 	mgmt_work->pf_to_mgmt = pf_to_mgmt;
@@ -775,7 +779,7 @@ static void recv_mgmt_msg_handler(struct hinic5_msg_pf_to_mgmt *pf_to_mgmt,
 	version = hinic5_mbox_get_version(hwdev, &mbox_header);
 	/* Don't need to get anything from hw when cmd is async */
 	dir = HINIC5_MSG_HEADER_GET(mbox_header, DIRECTION);
-	if (dir == HINIC5_MSG_RESPONSE &&
+	if ((dir == HINIC5_MSG_RESPONSE) &&
 	    ((HINIC5_MSG_HEADER_GET(mbox_header, MSG_ID) & ASYNC_MSG_FLAG) != 0))
 		return;
 
@@ -1036,7 +1040,7 @@ int hinic5_api_cmd_read_ack(void *hwdev, u8 dest, const void *cmd,
 	struct hinic5_msg_pf_to_mgmt *pf_to_mgmt = NULL;
 	struct hinic5_api_cmd_chain *chain = NULL;
 
-	if (!hwdev || !cmd || (ack_size != 0 && !ack) || size > MAX_PF_MGMT_BUF_SIZE)
+	if (!hwdev || !cmd || ((ack_size != 0) && !ack) || size > MAX_PF_MGMT_BUF_SIZE)
 		return -EINVAL;
 
 	if (!COMM_SUPPORT_API_CHAIN((struct hinic5_hwdev *)hwdev))
@@ -1063,7 +1067,7 @@ int hinic5_api_cmd_write_nack(void *hwdev, u8 dest, const void *cmd, u16 size)
 	struct hinic5_msg_pf_to_mgmt *pf_to_mgmt = NULL;
 	struct hinic5_api_cmd_chain *chain = NULL;
 
-	if (!hwdev || size == 0 || !cmd || size > MAX_PF_MGMT_BUF_SIZE)
+	if (!hwdev || (size == 0) || !cmd || size > MAX_PF_MGMT_BUF_SIZE)
 		return -EINVAL;
 
 	if (!COMM_SUPPORT_API_CHAIN((struct hinic5_hwdev *)hwdev))
@@ -1237,7 +1241,7 @@ static int hinic5_check_clp_init_status(struct hinic5_hwdev *hwdev)
 
 	err = hinic5_read_clp_reg(hwdev, HINIC5_CLP_REQ_HOST,
 				  HINIC5_CLP_BA_HOST, &reg_value);
-	if (err != 0 || reg_value == 0) {
+	if ((err != 0) || (reg_value == 0)) {
 		sdk_err(hwdev->dev_hdl, "Wrong req ba value: 0x%x\n",
 			reg_value);
 		return -EINVAL;
@@ -1245,7 +1249,7 @@ static int hinic5_check_clp_init_status(struct hinic5_hwdev *hwdev)
 
 	err = hinic5_read_clp_reg(hwdev, HINIC5_CLP_RSP_HOST,
 				  HINIC5_CLP_BA_HOST, &reg_value);
-	if (err != 0 || reg_value == 0) {
+	if ((err != 0) || (reg_value == 0)) {
 		sdk_err(hwdev->dev_hdl, "Wrong rsp ba value: 0x%x\n",
 			reg_value);
 		return -EINVAL;
@@ -1253,14 +1257,14 @@ static int hinic5_check_clp_init_status(struct hinic5_hwdev *hwdev)
 
 	err = hinic5_read_clp_reg(hwdev, HINIC5_CLP_REQ_HOST,
 				  HINIC5_CLP_SIZE_HOST, &reg_value);
-	if (err != 0 || reg_value == 0) {
+	if ((err != 0) || (reg_value == 0)) {
 		sdk_err(hwdev->dev_hdl, "Wrong req size\n");
 		return -EINVAL;
 	}
 
 	err = hinic5_read_clp_reg(hwdev, HINIC5_CLP_RSP_HOST,
 				  HINIC5_CLP_SIZE_HOST, &reg_value);
-	if (err != 0 || reg_value == 0) {
+	if ((err != 0) || (reg_value == 0)) {
 		sdk_err(hwdev->dev_hdl, "Wrong rsp size\n");
 		return -EINVAL;
 	}
@@ -1333,7 +1337,7 @@ static int hinic5_read_clp_data(struct hinic5_hwdev *hwdev,
 		delay_cnt++;
 		err = hinic5_read_clp_reg(hwdev, HINIC5_CLP_RSP_HOST,
 					  HINIC5_CLP_READY_RSP_HOST, &ready);
-		if (err != 0 || delay_cnt > HINIC5_CLP_DELAY_CNT_MAX) {
+		if ((err != 0) || delay_cnt > HINIC5_CLP_DELAY_CNT_MAX) {
 			sdk_err(hwdev->dev_hdl, "Timeout with delay_cnt: %u\n",
 				delay_cnt);
 			return -EINVAL;
@@ -1345,7 +1349,7 @@ static int hinic5_read_clp_data(struct hinic5_hwdev *hwdev,
 	if (err != 0)
 		return err;
 
-	if (temp_out_size > HINIC5_CLP_SRAM_SIZE_REG_MAX || temp_out_size == 0) {
+	if (temp_out_size > HINIC5_CLP_SRAM_SIZE_REG_MAX || (temp_out_size == 0)) {
 		sdk_err(hwdev->dev_hdl, "Invalid temp_out_size: %u\n",
 			temp_out_size);
 		return -EINVAL;
@@ -1387,7 +1391,7 @@ static int hinic5_write_clp_data(struct hinic5_hwdev *hwdev,
 		delay_cnt++;
 		err = hinic5_read_clp_reg(hwdev, HINIC5_CLP_REQ_HOST,
 					  HINIC5_CLP_START_REQ_HOST, &start);
-		if (err != 0 || delay_cnt > HINIC5_CLP_DELAY_CNT_MAX)
+		if ((err != 0) || delay_cnt > HINIC5_CLP_DELAY_CNT_MAX)
 			return -EINVAL;
 	}
 
@@ -1428,7 +1432,7 @@ static int clp_to_mgmt_response(void *hwdev, void *buf_out, const u16 *out_size)
 
 	clp_msg_buf = ((struct hinic5_hwdev *)hwdev)->clp_pf_to_mgmt->clp_msg_buf;
 
-	memset(clp_msg_buf, 0x0, HINIC5_CLP_INPUT_BUF_LEN_HOST);
+	(void)memset(clp_msg_buf, 0x0, HINIC5_CLP_INPUT_BUF_LEN_HOST);
 	ret = hinic5_read_clp_data(hwdev, clp_msg_buf, &real_size);
 	hinic5_clear_clp_data(dev, HINIC5_CLP_RSP_HOST);
 	if (ret != 0) {
@@ -1447,7 +1451,7 @@ static int clp_to_mgmt_response(void *hwdev, void *buf_out, const u16 *out_size)
 		return -EINVAL;
 	}
 
-	memcpy(buf_out, (clp_msg_buf + sizeof(header)), real_size);
+	(void)memcpy(buf_out, (clp_msg_buf + sizeof(header)), real_size);
 	return 0;
 }
 
@@ -1491,7 +1495,7 @@ int hinic5_pf_clp_to_mgmt(void *hwdev, u8 mod, u16 cmd, const void *buf_in,
 	hinic5_write_clp_reg(dev, HINIC5_CLP_RSP_HOST, HINIC5_CLP_READY_RSP_HOST, 0x0);
 
 	/* Send request */
-	memset(clp_msg_buf, 0x0, HINIC5_CLP_INPUT_BUF_LEN_HOST);
+	(void)memset(clp_msg_buf, 0x0, HINIC5_CLP_INPUT_BUF_LEN_HOST);
 	clp_prepare_header(dev, &header, in_size, mod, cmd);
 
 	memcpy(clp_msg_buf, &header, sizeof(header));

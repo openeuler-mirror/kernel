@@ -4,8 +4,8 @@
  * File Name     : hinic5_bond_event.c
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Bond event handling implementation
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": [BOND]" fmt
@@ -107,7 +107,6 @@ static void bond_dev_untrack_port(struct hinic5_bond_dev *bdev, u8 port_id)
 {
 	u32 track_cnt = 0;
 	const struct net_device *untrack_ndev = NULL;
-
 	spin_lock(&bdev->lock);
 	if (bdev->tracker.ndev[port_id] != NULL) {
 		untrack_ndev = bdev->tracker.ndev[port_id];
@@ -117,14 +116,14 @@ static void bond_dev_untrack_port(struct hinic5_bond_dev *bdev, u8 port_id)
 	spin_unlock(&bdev->lock);
 	if (track_cnt == 0)
 		bond_dev_free_chip_bond_id(bdev);
-	if (untrack_ndev)
+	if (untrack_ndev != NULL)
 		bond_master_info(bdev->bond->dev, "untrack port:%u, untrack ndev: %s, tracker cnt: %u\n",
 				 port_id, untrack_ndev->name, track_cnt);
 }
 
 static void bond_slave_event(struct hinic5_bond_dev *bdev, struct slave *slave)
 {
-	/* Compatible with low version kernel socket listen event dynamically adding slave PF */
+	/* Compatible with low-version kernel socket listener events for dynamically adding slave PF */
 	u8 port_id = bond_get_netdev_idx(bdev, slave->dev);
 	if (port_id == PORT_INVALID_ID)
 		port_id = bond_dev_track_port(bdev, slave->dev);
@@ -136,8 +135,9 @@ static void bond_slave_event(struct hinic5_bond_dev *bdev, struct slave *slave)
 	bdev->tracker.netdev_state[port_id].tx_enabled = bond_slave_is_up(slave) && bond_is_active_slave(slave);
 	spin_unlock(&bdev->lock);
 	/* If bdev is dead, terminate the flow */
-	if (unlikely(READ_ONCE(bdev->dead)))
+	if (unlikely(READ_ONCE(bdev->dead))) {
 		return;
+	}
 	queue_delayed_work(bdev->wq, &bdev->bond_work, 0);
 }
 
@@ -155,9 +155,9 @@ static void bond_master_event(struct hinic5_bond_dev *bdev, struct bonding *bond
 
 	bool slave_is_up[BOND_PORT_MAX_NUM] = {false};
 	bool slave_is_active[BOND_PORT_MAX_NUM] = {false};
-	struct net_device *slave_ndev[BOND_PORT_MAX_NUM]; /* Temporarily store network device pointers*/
+	struct net_device *slave_ndev[BOND_PORT_MAX_NUM]; /* Temporarily store network card device pointers */
 
-	/* No mutex allowed within rcu lock */
+	/* Cannot use mutex inside rcu lock */
 	rcu_read_lock();
 	bond_for_each_slave_rcu(bond, slave, iter) {
 		if (cnt >= BOND_PORT_MAX_NUM)
@@ -180,23 +180,20 @@ static void bond_master_event(struct hinic5_bond_dev *bdev, struct bonding *bond
 
 			spin_lock(&bdev->lock);
 			bdev->tracker.netdev_state[port_id].link_up = slave_is_up[i];
-			bdev->tracker.netdev_state[port_id].tx_enabled =
-				slave_is_up[i] && slave_is_active[i];
+			bdev->tracker.netdev_state[port_id].tx_enabled = slave_is_up[i] && slave_is_active[i];
 			spin_unlock(&bdev->lock);
 		}
 	}
 	while (cnt != 0)
 		dev_put(slave_ndev[--cnt]);
-	/* TODO: For logic completeness, spinlock modify bdev needs to check bdev->dead status,
-	   This issue will be uniformly modified when attach/detach new solution is modified */
+	/* TODO: For logic completeness, modifying bdev under spinlock needs to check bdev->dead state, this issue will be fixed when the attach/detach new scheme is modified */
 	spin_lock(&bdev->lock);
 	bdev->tracker.is_bonded = bond_eval_bonding_stats(bdev, bond);
 	spin_unlock(&bdev->lock);
 
-	/* Dynamic delete Slave PF scenario */
+	/* Dynamic remove Slave PF scenario */
 	for (port_id = 0; port_id < BOND_PORT_MAX_NUM; port_id++) {
-		/* If new bond_attr has no slave pf but old bond_attr has slave pf,
-		   need to delete old bond_attr's slave PF */
+		/* New bond_attr has no slave pf but old bond_attr has slave pf, need to delete old bond_attr's slave PF */
 		if (BITMAP_JUDGE(bdev->new_attr.slaves, port_id) == 0) {
 			if (BITMAP_JUDGE(bdev->bond_attr.slaves, port_id) != 0) {
 				bond_dev_untrack_port(bdev, port_id);
@@ -205,9 +202,10 @@ static void bond_master_event(struct hinic5_bond_dev *bdev, struct bonding *bond
 		}
 		bond_pf_bitmap_set(bdev, &bdev->new_attr, port_id);
 	}
-	/* Terminate the flow if bdev is dead */
-	if (unlikely(READ_ONCE(bdev->dead)))
+	/* If bdev is dead, terminate the flow */
+	if (unlikely(READ_ONCE(bdev->dead))) {
 		return;
+	}
 	queue_delayed_work(bdev->wq, &bdev->bond_work, 0);
 }
 
@@ -224,8 +222,9 @@ void bond_handle_rtnl_event(struct net_device *ndev)
 		bdev = bond_get_bdev(bond);
 	} else if (netif_is_bond_slave(ndev)) {
 		lld_dev = hinic5_get_lld_dev_by_netdev(ndev);
-		if (!lld_dev || hinic5_func_type(lld_dev->hwdev) == TYPE_VF)
+		if (lld_dev == NULL || hinic5_func_type(lld_dev->hwdev) == TYPE_VF) {
 			return;
+		}
 		slave = bond_slave_get_rtnl(ndev);
 		if (slave) {
 			bond = bond_get_bond_by_slave(slave);
@@ -235,9 +234,9 @@ void bond_handle_rtnl_event(struct net_device *ndev)
 	if (bond == NULL || bdev == NULL)
 		return;
 
-	/* TODO: Temporarily solve bdev async timing issue */
+	/* TODO: Temporary workaround for bdev async timing issue */
 	srcu_idx = srcu_read_lock(&bdev_srcu);
-	if (!bdev || unlikely(READ_ONCE(bdev->dead))) {
+	if (bdev == NULL || unlikely(READ_ONCE(bdev->dead))) {
 		srcu_read_unlock(&bdev_srcu, srcu_idx);
 
 		return;
@@ -252,7 +251,7 @@ void bond_handle_rtnl_event(struct net_device *ndev)
 	srcu_read_unlock(&bdev_srcu, srcu_idx);
 }
 
-/* If service registers attach_func, it will try to bind bond */
+/* If the service has registered attach_func, it will try to bind bond */
 void bond_try_attach_user(struct net_device *ndev)
 {
 	u32 user;
@@ -298,25 +297,25 @@ int bond_notifier_netdev_event(struct notifier_block *self, unsigned long event,
 	case NETDEV_CHANGEUPPER:
 		info = (struct netdev_notifier_changeupper_info *)ptr;
 
-		upper_dev = info->upper_dev;
-		if (!virt_addr_valid((void *)upper_dev)) /* Low kernel version register callback but dev may not have completed registration scenario */
-			break;
+			upper_dev = info->upper_dev;
+			if (!virt_addr_valid((void *)upper_dev)) /* Low kernel version registers callback but dev may not have completed registration */
+				break;
 
-		bond_try_attach_user(upper_dev);
-		bond_handle_rtnl_event(upper_dev);
-		break;
-	case NETDEV_UP:
-	case NETDEV_DOWN:
-	case NETDEV_CHANGEINFODATA:
-	case NETDEV_CHANGELOWERSTATE:
-		ndev = netdev_notifier_info_to_dev(ptr);
-		if (!virt_addr_valid((void *)ndev))
+			bond_try_attach_user(upper_dev);
+			bond_handle_rtnl_event(upper_dev);
 			break;
+		case NETDEV_UP:
+		case NETDEV_DOWN:
+		case NETDEV_CHANGEINFODATA:
+		case NETDEV_CHANGELOWERSTATE:
+			ndev = netdev_notifier_info_to_dev(ptr);
+			if (!virt_addr_valid((void *)ndev))
+				break;
 
-		bond_handle_rtnl_event(ndev);
-		break;
-	default:
-		return NOTIFY_DONE;
+			bond_handle_rtnl_event(ndev);
+			break;
+		default:
+			return NOTIFY_DONE;
 	}
 
 	return NOTIFY_DONE;

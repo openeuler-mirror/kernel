@@ -4,8 +4,8 @@
  * File Name     : hinic5_prof_adap.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : Profile adapter interface definitions for the hinic5 driver.
  */
 
 #ifndef HINIC5_PROF_ADAP_H

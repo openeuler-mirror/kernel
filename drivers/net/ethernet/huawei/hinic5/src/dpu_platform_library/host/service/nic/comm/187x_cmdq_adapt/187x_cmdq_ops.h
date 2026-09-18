@@ -4,8 +4,8 @@
  * File Name     : 187x_cmdq_ops.h
  * Version       : Initial Draft
  * Created       : 2026/5/20
- * Last Modified : 2026/5/20
- * Description   :
+ * Last Modified : 2026/09/16
+ * Description   : 187x cmdq private definitions
  */
 
 #ifndef _187X_CMDQ_PRIVATE_H_
@@ -61,14 +61,14 @@ struct hinic5_vlan_ctx {
 
 struct hinic5_car_cmd_header {
 	u32 rsv[2];
-	u32 op_num; /* Number of configured car_ids, minimum 1, maximum 32 */
+	u32 op_num; /* Number of car_id to configure, at least 1, at most 32 at a time */
 	u16 rsv1;
-	u16 index; /* Starting index of configuration, 16B unit, index must be 32B aligned */
+	u16 index; /* Start index to configure, in units of 16B, index must be 32B aligned */
 };
 
 struct hinic5_car_cmd_payload {
-	u32 context[4]; /* Written by hardware, read by driver */
-	u32 profile[4]; /* Written by driver, read by hardware */
+	u32 context[4]; /* Hardware writes, driver reads */
+	u32 profile[4]; /* Driver writes, hardware reads */
 };
 
 #endif
