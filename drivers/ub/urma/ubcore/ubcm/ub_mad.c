@@ -19,6 +19,9 @@
 #include "ubcore_log.h"
 #include "ubcore_main_ue_eid.h"
 
+#define SIZE_4MB (4 * 1024 * 1024)
+#define ORDER_4MB (get_order(SIZE_4MB))
+
 // udma jetty id starts from 1 currently
 #define WK_JETTY_ID_INITIALIZER                  \
 	{                                            \
@@ -737,9 +740,30 @@ static struct ubcore_target_seg *ubmad_register_seg(struct ubcore_device *dev,
 	struct ubcore_seg_cfg cfg = { 0 };
 	struct ubcore_target_seg *ret;
 
+#ifdef MIRROR_ENABLE
+	struct page *pages;
+#endif
+
+#ifdef MIRROR_ENABLE
+	ubcore_log_info("enable mirror memory.\n");
+	pages = alloc_pages_node(dev_to_node(dev->dev.parent),
+			GFP_HIGHUSER_MOVABLE | __GFP_ZERO | __GFP_COMP, ORDER_4MB);
+	if (!pages) {
+		ubcore_log_err_rl("Failed to alloc %llu bytes (order=%u).\n",
+				(uint64_t)SIZE_4MB, ORDER_4MB);
+		return ERR_PTR(-ENOMEM);
+	}
+	seg_va = page_address(pages);
+	if (!seg_va) {
+		ubcore_log_err_rl("page_address return null.\n");
+		ret = ERR_PTR(-EFAULT);
+		goto free;
+	}
+#else
 	seg_va = vzalloc(seg_len);
 	if (IS_ERR_OR_NULL(seg_va))
 		return ERR_PTR(-ENOMEM);
+#endif
 	flag.bs.token_policy = UBCORE_TOKEN_NONE;
 	flag.bs.cacheable = UBCORE_NON_CACHEABLE;
 	flag.bs.access = UBCORE_ACCESS_LOCAL_ONLY;
@@ -757,7 +781,12 @@ static struct ubcore_target_seg *ubmad_register_seg(struct ubcore_device *dev,
 	return ret;
 
 free:
+#ifdef MIRROR_ENABLE
+	if (pages)
+		__free_pages(pages, ORDER_4MB);
+#else
 	vfree(seg_va);
+#endif
 	return ret;
 }
 
@@ -766,7 +795,11 @@ static void ubmad_unregister_seg(struct ubcore_target_seg *seg)
 	uint64_t va = seg->seg.ubva.va;
 
 	(void)ubcore_unregister_seg(seg);
+#ifdef MIRROR_ENABLE
+	free_pages((unsigned long)va, ORDER_4MB);
+#else
 	vfree((void *)va);
+#endif
 }
 
 static int ubmad_create_seg(struct ubmad_jetty_resource *rsrc,
