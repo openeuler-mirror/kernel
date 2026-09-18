@@ -467,8 +467,6 @@ struct ubcore_seg {
 	uint64_t len;
 	union ubcore_seg_attr attr;
 	uint32_t token_id;
-	KABI_RESERVE(1)
-	KABI_RESERVE(2)
 };
 
 struct ubcore_target_seg_cfg {
@@ -487,8 +485,6 @@ struct ubcore_target_seg {
 	uint64_t mva;
 	struct ubcore_token_id *token_id;
 	atomic_t use_cnt;
-	KABI_RESERVE(1)
-	KABI_RESERVE(2)
 };
 
 enum ubcore_mtu {
