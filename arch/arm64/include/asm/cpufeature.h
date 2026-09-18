@@ -922,6 +922,11 @@ static inline bool system_supports_tlb_range(void)
 		cpus_have_const_cap(ARM64_HAS_TLB_RANGE);
 }
 
+static inline bool system_supports_sysinstr128(void)
+{
+	return cpus_have_const_cap(ARM64_HAS_SYSINSTR128);
+}
+
 static inline bool cpus_support_mpam(void)
 {
 	return IS_ENABLED(CONFIG_ARM64_MPAM) &&
