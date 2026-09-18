@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -258,6 +258,7 @@ static int ubase_wait_ue_reset_ready(struct ubase_dev *udev)
 			udev->reset_stat.force_reset_cnt++;
 			return ubase_mue_force_ue_reset(udev, resp.ue_bitmap);
 		}
+		return -EAGAIN;
 	}
 
 	return 0;
@@ -323,7 +324,7 @@ static void ubase_pmu_resume(struct ubase_dev *udev)
 	clear_bit(UBASE_STATE_DISABLED_B, &udev->state_bits);
 }
 
-static void ubase_resume_fail_handle(struct ubase_dev *udev)
+static void ubase_reset_fail_handle(struct ubase_dev *udev)
 {
 	udev->reset_stat.reset_fail_cnt++;
 	/* The cmdq is restored at the unified egress so that commands can
@@ -367,22 +368,25 @@ int ubase_suspend(struct ubase_dev *udev)
 
 	ubase_notify_all_ue_reset(udev);
 
+	udev->reset_stat.elr_reset_cnt++;
 	udev->reset_stage = UBASE_RESET_STAGE_DOWN;
 	ubase_suspend_aux_devices(udev, UBASE_RESET_STAGE_DOWN);
 	ret = ubase_wait_ue_reset_ready(udev);
-	if (ret && ubase_dev_mbx_proxy_supported(udev)) {
-		udev->reset_stat.force_reset_fail_cnt++;
-		udev->reset_stage = UBASE_RESET_STAGE_NONE;
-		ubase_suspend_aux_devices(udev, UBASE_RESET_STAGE_ABORT);
-		clear_bit(UBASE_STATE_RST_WAIT_DEACTIVE_B, &udev->state_bits);
-		clear_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits);
-		clear_bit(UBASE_STATE_DISABLED_B, &udev->state_bits);
+	if (ret) {
+		if (ubase_dev_mbx_proxy_supported(udev)) {
+			udev->reset_stat.reset_fail_cnt++;
+			udev->reset_stat.force_reset_fail_cnt++;
+			udev->reset_stage = UBASE_RESET_STAGE_NONE;
+			ubase_suspend_aux_devices(udev, UBASE_RESET_STAGE_ABORT);
+			clear_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits);
+			clear_bit(UBASE_STATE_DISABLED_B, &udev->state_bits);
+		} else {
+			ubase_reset_fail_handle(udev);
+		}
 		return ret;
 	}
 
 	udev->reset_stage = UBASE_RESET_STAGE_UNINIT;
-
-	udev->reset_stat.elr_reset_cnt++;
 
 	clear_bit(UBASE_STATE_CTX_READY_B, &udev->state_bits);
 	ubase_cmd_disable(udev);
@@ -464,7 +468,7 @@ void ubase_resume(struct ubase_dev *udev, int pret)
 timeout_resume:
 	set_bit(UBASE_STATE_RST_TIMEOUT_RETRY_B, &udev->state_bits);
 err_resume:
-	ubase_resume_fail_handle(udev);
+	ubase_reset_fail_handle(udev);
 }
 
 void ubase_errhandle_service_task(struct ubase_delay_work *ubase_work)
