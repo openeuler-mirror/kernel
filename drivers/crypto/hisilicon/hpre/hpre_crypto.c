@@ -22,20 +22,16 @@ struct hpre_ctx;
 #define HPRE_CRYPTO_ALG_PRI	80
 #define HPRE_ALIGN_SZ		64
 #define HPRE_BITS_2_BYTES_SHIFT	3
-#define HPRE_RSA_512BITS_KSZ	64
-#define HPRE_RSA_1536BITS_KSZ	192
 #define HPRE_CRT_PRMS		5
 #define HPRE_CRT_Q		2
 #define HPRE_CRT_P		3
 #define HPRE_CRT_INV		4
 #define HPRE_DH_G_FLAG		0x02
 #define HPRE_TRY_SEND_TIMES	100
-#define HPRE_INVLD_REQ_ID		(-1)
 #define HPRE_ALG_TYPE_MASK	0x1F
 
 #define HPRE_SQE_ALG_BITS	5
 #define HPRE_SQE_DONE_SHIFT	30
-#define HPRE_DH_MAX_P_SZ	512
 
 #define HPRE_DFX_SEC_TO_US	1000000
 #define HPRE_DFX_US_TO_NS	1000
@@ -151,7 +147,6 @@ struct hpre_asym_request {
 		struct kpp_request *ecdh;
 		struct kpp_request *curve25519;
 	} areq;
-	int err;
 	hpre_cb cb;
 	struct timespec64 req_time;
 	struct crypto_async_request *base;
