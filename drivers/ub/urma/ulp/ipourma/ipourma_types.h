@@ -319,6 +319,7 @@ struct ipourma_dev_priv {
 	struct work_struct set_dev_up;
 	struct work_struct set_dev_down;
 	struct work_struct set_ip;
+	struct work_struct unset_ip;
 	struct work_struct set_route;
 	struct work_struct unset_route;
 	struct work_struct set_route_entry;

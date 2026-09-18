@@ -105,3 +105,20 @@ ipv6_uninit:
 
 	pr_err("init_ipv6_addr failed\n");
 }
+
+void ipourma_unset_ipv6_addr(struct work_struct *work)
+{
+	struct ipourma_dev_priv *priv;
+	struct net_device *dev;
+	int i;
+
+	priv = container_of(work, struct ipourma_dev_priv, unset_ip);
+	dev = priv->dev;
+
+	for (i = 0; i < UBCORE_MAX_SIP; i++) {
+		if (eid_is_empty(&priv->eid_info[i].eid)
+				|| priv->eid_info[i].eid_index != i)
+			continue;
+		ipourma_send_ipv6_netlink(dev, &(priv->eid_info[i].eid), RTM_DELADDR);
+	}
+}
