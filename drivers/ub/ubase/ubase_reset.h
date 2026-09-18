@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -14,9 +14,9 @@
 
 #define UBASE_RESET_SCHED_TIMEOUT	(10 * HZ)
 
-#define UBASE_RST_WAIT_REG_COUNT	60
-#define UBASE_RST_WAIT_REG_TIME		50
-#define UBASE_RST_WAIT_CMD_COUNT	60
+#define UBASE_RST_WAIT_REG_COUNT	750
+#define UBASE_RST_WAIT_REG_TIME		20
+#define UBASE_RST_WAIT_CMD_COUNT	300
 #define UBASE_RST_WAIT_CMD_TIME		50
 
 #define UBASE_RST_UE_WAIT_REG_TIME	200
