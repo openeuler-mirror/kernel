@@ -879,6 +879,7 @@ static void ubase_ctrlq_addto_msg_queue(struct ubase_dev *udev, u16 seq,
 
 	dead_time = UBASE_CTRLQ_DEAD_TIME(msg->timeout ? msg->timeout : csq->tx_timeout);
 	ctx = &udev->ctrlq.msg_queue[seq % depth];
+	ctx->seq = seq;
 	ctx->valid = 1;
 	ctx->is_sync = ubase_ctrlq_msg_is_sync_req(msg) ? 1 : 0;
 	ctx->resp_done = 0;
@@ -1379,7 +1380,7 @@ void ubase_ctrlq_handle_crq_msg(struct ubase_dev *udev,
 	if (!is_pushed) {
 		spin_lock_bh(&csq->lock);
 		ctx = &udev->ctrlq.msg_queue[seq % depth];
-		if (!ctx->valid) {
+		if (!ctx->valid || ctx->seq != seq) {
 			spin_unlock_bh(&csq->lock);
 			ubase_dbg(udev,
 				  "seq is invalid, opcode = 0x%x, service_type = 0x%x, seq = %u.\n",
@@ -1452,7 +1453,7 @@ static void ubase_ctrlq_handle_other_msg(struct ubase_dev *udev,
 	if (!is_pushed) {
 		spin_lock_bh(&csq->lock);
 		ctx = udev->ctrlq.msg_queue[seq % depth];
-		if (!ctx.valid) {
+		if (!ctx.valid || ctx.seq != seq) {
 			spin_unlock_bh(&csq->lock);
 			ubase_warn_rl(udev, ctrlq_other_seq_invalid,
 				      "invalid seq = %u, opcode = 0x%x, service_type = 0x%x.\n",

@@ -247,6 +247,7 @@ struct ubase_ctrlq_msg_ctx {
 	u8	mbx_ue_id;
 	u8	result;
 	u8	rsv1;
+	u16	seq;
 	u16	ue_seq;
 	u16	bus_ue_id;
 	u16	out_size;
