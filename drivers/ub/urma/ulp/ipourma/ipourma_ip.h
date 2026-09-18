@@ -12,5 +12,6 @@
 
 int ipourma_send_ipv6_netlink(struct net_device *dev, union ubcore_eid *eid, int msg_type);
 void ipourma_init_ipv6_addr(struct work_struct *work);
+void ipourma_unset_ipv6_addr(struct work_struct *work);
 
 #endif

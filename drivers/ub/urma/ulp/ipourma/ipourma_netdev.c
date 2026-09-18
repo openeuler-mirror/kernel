@@ -355,6 +355,7 @@ static int ipourma_stop(struct net_device *dev)
 	netif_carrier_off(dev);
 	dev->flags &= ~IFF_RUNNING;
 	queue_work(priv->net_config_wq, &(priv->unset_route));
+	queue_work(priv->net_config_wq, &(priv->unset_ip));
 
 	netdev_info(dev, "Device closed.\n");
 
@@ -602,6 +603,7 @@ static int ipourma_priv_base_init(struct net_device *dev,
 	INIT_WORK(&(priv->set_dev_up), ipourma_open_dev);
 	INIT_WORK(&(priv->set_dev_down), ipourma_close_dev);
 	INIT_WORK(&(priv->set_ip), ipourma_init_ipv6_addr);
+	INIT_WORK(&(priv->unset_ip), ipourma_unset_ipv6_addr);
 	INIT_WORK(&(priv->set_route), ipourma_add_route);
 	INIT_WORK(&(priv->unset_route), ipourma_del_route);
 	INIT_WORK(&(priv->set_route_entry), ipourma_add_route_entry);
