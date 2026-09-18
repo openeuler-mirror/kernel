@@ -22,13 +22,109 @@
 
 #define HI_GET_UBMEM_EVENT_REQ_SIZE 4
 #define HI_GET_UBMEM_EVENT_RSP_SIZE 772
+#define HI_GET_UBMEM_EVENT_V2_RSP_SIZE 1156
 #define MEM_EVENT_MAX_NUM 16
 #define MAR_ERR_ADDR_COUNT 10
 #define MAR_ERR_ADDR_SIZE 2
 #define MEM_DECODER_NUMBER_V1 5
 #define MEM_DECODER_NUMBER_V2 2
+#define UBMEM_ERR_MISC_OFFSET 8
 
 #define hpa_gen(addr_h, addr_l) (((u64)(addr_h) << 32) | (addr_l))
+#define gen_ubmevt(module_id, module_event_id) \
+		(((u32)module_id << 16) | (u16)module_event_id)
+#define vendor_gen(vendor, device) \
+		(((u32)vendor << 16) | device)
+
+enum ubmem_event_module {
+	UBMEVT_LOCAL_BUS = 0x0001U,
+	UBMEVT_LOCAL_BUFFER = 0x0002U,
+	UBMEVT_LOCAL_OUTBOUND_ROUTE = 0x0003U,
+	UBMEVT_LOCAL_OUTBOUND_TRANSLATION = 0x0004U,
+	UBMEVT_LOCAL_INBOUND_TRANSLATION = 0x0005U,
+	UBMEVT_REMOTE = 0x8000U,
+	UBMEVT_UNDEFINE = 0xffffU,
+};
+
+enum ubmem_event_id {
+	UBMEVT_LOCAL_BUS_UNSUPPORTED_OP =
+		gen_ubmevt(UBMEVT_LOCAL_BUS, 0x0U),
+	UBMEVT_LOCAL_BUS_UNSUPPORTED_LOAD =
+		gen_ubmevt(UBMEVT_LOCAL_BUS, 0x1U),
+	UBMEVT_LOCAL_BUS_UNSUPPORTED_STORE =
+		gen_ubmevt(UBMEVT_LOCAL_BUS, 0x2U),
+	UBMEVT_LOCAL_BUS_DATA_POISONED =
+		gen_ubmevt(UBMEVT_LOCAL_BUS, 0x4U),
+	UBMEVT_LOCAL_INBOUND_NO_MAPPING_IN_ADDRESS_SPACE =
+		gen_ubmevt(UBMEVT_LOCAL_INBOUND_TRANSLATION, 0x0U),
+	UBMEVT_LOCAL_INBOUND_TOKENID_OUT_OF_RANGE =
+		gen_ubmevt(UBMEVT_LOCAL_INBOUND_TRANSLATION, 0x1U),
+	UBMEVT_LOCAL_INBOUND_INVALID_BUS_CONFIG =
+		gen_ubmevt(UBMEVT_LOCAL_INBOUND_TRANSLATION, 0x2U),
+	UBMEVT_LOCAL_OUTBOUND_NO_AVAILABLE_PORT =
+		gen_ubmevt(UBMEVT_LOCAL_OUTBOUND_ROUTE, 0x0U),
+	UBMEVT_LOCAL_OUTBOUND_DECODER_TAMPERED_ON_THE_FLY =
+		gen_ubmevt(UBMEVT_LOCAL_OUTBOUND_TRANSLATION, 0x2U),
+	UBMEVT_LOCAL_OUTBOUND_NO_MAPPING =
+		gen_ubmevt(UBMEVT_LOCAL_OUTBOUND_TRANSLATION, 0x3U),
+	UBMEVT_REMOTE_WRITE_RESPONSE_ERROR =
+		gen_ubmevt(UBMEVT_REMOTE, 0x0U),
+	UBMEVT_REMOTE_READ_RESPONSE_ERROR =
+		gen_ubmevt(UBMEVT_REMOTE, 0x1U),
+	UBMEVT_REMOTE_DATA_POISONED =
+		gen_ubmevt(UBMEVT_REMOTE, 0x2U),
+	UBMEVT_REMOTE_TIMEOUT =
+		gen_ubmevt(UBMEVT_REMOTE, 0x3U),
+	UBMEVT_UNDEFINE_NULL =
+		gen_ubmevt(UBMEVT_UNDEFINE, 0x0U),
+};
+
+struct upa_err_misc {
+	union {
+		struct {
+			u32 err_frl;
+			u32 err_frh;
+			u32 err_ctrll;
+			u32 err_ctrlh;
+			struct {
+				u32 ras_status_serr : 8;
+				u32 ras_status_ierr : 8;
+				u32 rsvd : 15;
+				u32 ras_status_av : 1;
+			} err_statusl;
+			u32 err_statush;
+			u32 err_addrl;
+			struct {
+				u32 ras_asddr_msb : 24;
+				u32 rsvd : 5;
+				u32 ras_address_ai : 1;
+				u32 rsvd1 : 2;
+			} err_addrh;
+			u32 err_misc0l;
+			u32 err_misc0h;
+			struct {
+				u32 upa_ras_timeout_int : 12;
+				u32 upa_ras_rps_int : 12;
+				u32 upa_rxsch_exceed_int : 8;
+			} err_misc1l;
+			struct {
+				u32 upa_ras_mem_ecc_int : 9;
+				u32 upa_ras_fifo_of_uf_int : 23;
+			} err_misc1h;
+			u32 err_misc2l;
+			struct {
+				u32 upa_ras_sys_decode_err_int : 5;
+				u32 upa_ras_so_outstanding_int : 1;
+				u32 rsvd : 2;
+				u32 upa_ras_sys_err_int : 16;
+				u32 upa_ras_rxsch_opcode_int : 8;
+			} err_misc2h;
+			u32 err_misc3l;
+			u32 err_misc3h;
+		};
+		u32 err_data[16];
+	};
+};
 
 static u8 ub_mem_num;
 
@@ -46,7 +142,10 @@ struct hi_ubmem_event {
 
 struct hi_get_ubmem_event_rsp {
 	u32 event_num;
-	struct hi_ubmem_event event_info[MEM_EVENT_MAX_NUM];
+	union {
+		struct hi_ubmem_event event_info[MEM_EVENT_MAX_NUM];
+		struct ub_mem_event_info event_info_v2[MEM_EVENT_MAX_NUM];
+	};
 };
 
 struct hi_get_ubmem_event_req {
@@ -59,6 +158,48 @@ struct hi_get_ubmem_event_pld {
 		struct hi_get_ubmem_event_rsp rsp;
 	};
 };
+
+struct ubmem_event_match {
+	enum ubmem_event_id event_id;
+	u8 serr;
+	u8 ierr;
+	u8 misc_num;
+	u32 valid_bit;
+};
+
+static const struct ubmem_event_match ubmem_event_table[] = {
+	{ UBMEVT_LOCAL_BUS_UNSUPPORTED_OP, 0x1, 0x1, 5, BIT(8)},
+	{ UBMEVT_LOCAL_BUS_UNSUPPORTED_LOAD, 0x1, 0x1, 5, BIT(9)},
+	{ UBMEVT_LOCAL_BUS_UNSUPPORTED_STORE, 0x1, 0x1, 5, BIT(10)},
+	{ UBMEVT_LOCAL_BUS_DATA_POISONED, 0x12, 0xC, 5, BIT(14)},
+	{ UBMEVT_LOCAL_INBOUND_NO_MAPPING_IN_ADDRESS_SPACE, 0xD, 0x3, 5, GENMASK(21, 20)},
+	{ UBMEVT_LOCAL_INBOUND_TOKENID_OUT_OF_RANGE, 0xD, 0x3, 5, BIT(19)},
+	{ UBMEVT_LOCAL_INBOUND_INVALID_BUS_CONFIG, 0xD, 0x4, 5, BIT(0)},
+	{ UBMEVT_LOCAL_OUTBOUND_NO_AVAILABLE_PORT, 0xD, 0xD, 5, BIT(15)},
+	{ UBMEVT_LOCAL_OUTBOUND_DECODER_TAMPERED_ON_THE_FLY, 0xD, 0xD, 5, BIT(17)},
+	{ UBMEVT_LOCAL_OUTBOUND_NO_MAPPING, 0xD, 0xD, 5, BIT(18)},
+	{ UBMEVT_REMOTE_WRITE_RESPONSE_ERROR, 0x12, 0xE, 5, BIT(22)},
+	{ UBMEVT_REMOTE_READ_RESPONSE_ERROR, 0x12, 0xE, 5, BIT(23)},
+	{ UBMEVT_REMOTE_DATA_POISONED, 0x12, 0xC, 5, BIT(13)},
+	{ UBMEVT_REMOTE_TIMEOUT, 0x13, 0x5, 2, GENMASK(15, 12)},
+};
+
+static enum ubmem_event_id find_match_event_id(const struct upa_err_misc *err_misc)
+{
+	const struct ubmem_event_match *match;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(ubmem_event_table); i++) {
+		match = &ubmem_event_table[i];
+		if (match->serr == err_misc->err_statusl.ras_status_serr &&
+			match->ierr == err_misc->err_statusl.ras_status_ierr &&
+			(err_misc->err_data[UBMEM_ERR_MISC_OFFSET + match->misc_num]
+			& match->valid_bit))
+			return match->event_id;
+	}
+
+	return UBMEVT_UNDEFINE_NULL;
+}
 
 static bool hi_mem_validate_pa(struct ub_bus_controller *ubc,
 			       u64 pa_start, u64 pa_end, bool cacheable);
@@ -125,9 +266,8 @@ static int save_ras_err_info(struct ub_mem_device *mem_device,
 	return 0;
 }
 
-static irqreturn_t hi_mem_ras_isr(int irq, void *context)
+static void hi_mem_ras_process_v1(struct ub_bus_controller *ubc)
 {
-	struct ub_bus_controller *ubc = (struct ub_bus_controller *)context;
 	struct ub_mem_ras_ctx *ras_ctx = &ubc->mem_device->ras_ctx;
 	struct ub_mem_ras_err_info err_info;
 	ubmem_ras_handler handler;
@@ -161,6 +301,57 @@ static irqreturn_t hi_mem_ras_isr(int irq, void *context)
 		}
 	}
 	mutex_unlock(&mem_ras_mutex);
+}
+
+static void hi_mem_ras_process_v2(struct ub_bus_controller *ubc)
+{
+	struct ub_mem_event_ctx *event_ctx = ubc->mem_device->event_ctx;
+	struct ub_mem_event_info event_data;
+	ubmem_event_handler event_handler;
+	struct upa_err_misc err_misc;
+	int ret;
+
+	mutex_lock(&mem_ras_mutex);
+	event_handler = ub_mem_event_handler_get();
+
+	while (kfifo_get(&event_ctx->event_fifo, &event_data)) {
+		struct ubmem_event event_info = {0};
+
+		if (!event_handler)
+			continue;
+
+		if (event_data.status0) {
+			memcpy(&err_misc, event_data.info, sizeof(err_misc));
+			event_info.event_id = find_match_event_id(&err_misc);
+			event_info.pa_valid = err_misc.err_statusl.ras_status_av &&
+				!err_misc.err_addrh.ras_address_ai;
+			if (event_info.pa_valid)
+				event_info.pa = hpa_gen(err_misc.err_addrh.ras_asddr_msb,
+							err_misc.err_addrl);
+		} else {
+			event_info.event_id = UBMEVT_UNDEFINE_NULL;
+		}
+		event_info.vendor_info = vendor_gen(ubc->uent->guid.bits.vendor,
+							    ubc->uent->guid.bits.device);
+		event_info.vendor_data_len = sizeof(event_data);
+		event_info.vendor_data = &event_data;
+
+		ret = event_handler(&event_info);
+		if (ret)
+			pr_err("UB memory event handler failed, ret=%d\n", ret);
+	}
+	mutex_unlock(&mem_ras_mutex);
+}
+
+static irqreturn_t hi_mem_ras_isr(int irq, void *context)
+{
+	struct ub_bus_controller *ubc = (struct ub_bus_controller *)context;
+	struct hi_ubc_private_data *data = (struct hi_ubc_private_data *)ubc->data;
+
+	if (data->ub_mem_version == UB_MEM_VERSION_2)
+		hi_mem_ras_process_v2(ubc);
+	else
+		hi_mem_ras_process_v1(ubc);
 
 	return IRQ_HANDLED;
 }
@@ -279,17 +470,40 @@ static int save_ras_err_info_all(struct ub_bus_controller *ubc, struct hi_ubmem_
 	return ret;
 }
 
+static int save_ras_err_info_v2(struct ub_bus_controller *ubc, struct ub_mem_event_info *info)
+{
+	if (!info->status0 && !info->status1) {
+		dev_err(&ubc->dev, "upa_status: %#08x, umau_status: %#08x\n",
+		 info->status0, info->status1);
+		return -EINVAL;
+	}
+
+	if (!kfifo_put(&ubc->mem_device->event_ctx->event_fifo, *info)) {
+		dev_err(&ubc->dev, "kfifo put failed!\n");
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
 static irqreturn_t hi_mem_ras_irq(int irq, void *context)
 {
 	struct ub_bus_controller *ubc = (struct ub_bus_controller *)context;
+	struct hi_ubc_private_data *data = (struct hi_ubc_private_data *)ubc->data;
 	struct hi_get_ubmem_event_pld pld = {};
 	struct msg_info info = {};
 	u32 event_cnt;
+	u32 rsp_size;
 	int ret;
+
+	if (data->ub_mem_version == UB_MEM_VERSION_2)
+		rsp_size = HI_GET_UBMEM_EVENT_V2_RSP_SIZE;
+	else
+		rsp_size = HI_GET_UBMEM_EVENT_RSP_SIZE;
 
 	message_info_init(&info, ubc->uent, &pld, &pld,
 			  (HI_GET_UBMEM_EVENT_REQ_SIZE << MSG_REQ_SIZE_OFFSET) |
-			  HI_GET_UBMEM_EVENT_RSP_SIZE);
+			  rsp_size);
 	ret = hi_message_private(ubc->mdev, &info, GET_UBMEM_EVENT_CMD);
 	if (ret) {
 		dev_err(&ubc->dev, "get ubmem event failed, ret=%d\n",
@@ -304,7 +518,10 @@ static irqreturn_t hi_mem_ras_irq(int irq, void *context)
 	}
 
 	for (u32 i = 0; i < event_cnt; i++) {
-		ret = save_ras_err_info_all(ubc, &pld.rsp.event_info[i]);
+		if (data->ub_mem_version == UB_MEM_VERSION_2)
+			ret = save_ras_err_info_v2(ubc, &pld.rsp.event_info_v2[i]);
+		else
+			ret = save_ras_err_info_all(ubc, &pld.rsp.event_info[i]);
 		if (ret == -EINVAL) {
 			dev_err(&ubc->dev, "save_ras_err_info failed, ret=%d\n", ret);
 			return IRQ_HANDLED;
@@ -394,6 +611,16 @@ int hi_mem_decoder_create(struct ub_bus_controller *ubc)
 		return -ENOMEM;
 	}
 
+	if (data->ub_mem_version == UB_MEM_VERSION_2) {
+		mem_device->event_ctx = kzalloc(sizeof(*mem_device->event_ctx),
+						GFP_KERNEL);
+		if (!mem_device->event_ctx) {
+			kfree(priv_data);
+			kfree(mem_device);
+			return -ENOMEM;
+		}
+	}
+
 	mem_device->dev = &ubc->dev;
 	mem_device->uent = ubc->uent;
 	mem_device->ubmem_irq_num = -1;
@@ -408,6 +635,7 @@ int hi_mem_decoder_create(struct ub_bus_controller *ubc)
 			for (int j = i - 1; j >= 0; j--)
 				hi_mem_decoder_remove_one(ubc, j);
 
+			kfree(mem_device->event_ctx);
 			kfree(mem_device->priv_data);
 			kfree(mem_device);
 			ubc->mem_device = NULL;
@@ -431,6 +659,7 @@ void hi_mem_decoder_remove(struct ub_bus_controller *ubc)
 	for (int i = 0; i < ub_mem_num; i++)
 		hi_mem_decoder_remove_one(ubc, i);
 
+	kfree(ubc->mem_device->event_ctx);
 	kfree(ubc->mem_device->priv_data);
 	kfree(ubc->mem_device);
 	ubc->mem_device = NULL;
@@ -465,6 +694,8 @@ void hi_register_ubmem_irq(struct ub_bus_controller *ubc)
 	}
 
 	INIT_KFIFO(ubc->mem_device->ras_ctx.ras_fifo);
+	if (ubc->mem_device->event_ctx)
+		INIT_KFIFO(ubc->mem_device->event_ctx->event_fifo);
 
 	ret = request_threaded_irq(irq_num, hi_mem_ras_irq,
 					   hi_mem_ras_isr, IRQF_SHARED,
