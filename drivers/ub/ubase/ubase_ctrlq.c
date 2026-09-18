@@ -10,6 +10,9 @@
 #include "ubase_trace.h"
 #include "ubase_ctrlq.h"
 
+/* msleep polling interval used while shutting down / cleaning the ctrlq. */
+#define UBASE_CTRLQ_CLEAN_SLEEP_TIME	5
+
 /* UBASE ctrlq msg white list */
 static const struct ubase_ctrlq_event_nb ubase_ctrlq_wlist_ubase[] = {
 	{
@@ -571,8 +574,6 @@ void ubase_ctrlq_disable_remote(struct ubase_dev *udev)
 
 static void ubase_ctrlq_clean_pending_msgs(struct ubase_dev *udev)
 {
-#define UBASE_CTRLQ_CLEAN_WAIT_TIME	5
-
 	struct ubase_ctrlq_ring *csq = &udev->ctrlq.csq;
 	u32 depth = ubase_ctrlq_msg_queue_depth(udev);
 	struct ubase_ctrlq_msg_ctx *ctx;
@@ -587,13 +588,11 @@ static void ubase_ctrlq_clean_pending_msgs(struct ubase_dev *udev)
 	spin_unlock_bh(&csq->lock);
 
 	while (atomic_read(&udev->ctrlq.req_cnt))
-		msleep(UBASE_CTRLQ_CLEAN_WAIT_TIME);
+		msleep(UBASE_CTRLQ_CLEAN_SLEEP_TIME);
 }
 
 void ubase_ctrlq_disable(struct ubase_dev *udev)
 {
-#define UBASE_CTRLQ_CLEAR_WAIT_TIME	5
-
 	if (!test_and_clear_bit(UBASE_CTRLQ_STATE_ENABLE, &udev->ctrlq.state))
 		return;
 
@@ -603,7 +602,7 @@ void ubase_ctrlq_disable(struct ubase_dev *udev)
 	if (!test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits)) {
 		while (test_bit(UBASE_STATE_CTRLQ_HANDLING,
 		       &udev->ctrlq_service_task.state))
-			msleep(UBASE_CTRLQ_CLEAR_WAIT_TIME);
+			msleep(UBASE_CTRLQ_CLEAN_SLEEP_TIME);
 	}
 
 	ubase_ctrlq_clean_pending_msgs(udev);
@@ -882,6 +881,7 @@ static void ubase_ctrlq_addto_msg_queue(struct ubase_dev *udev, u16 seq,
 	ctx = &udev->ctrlq.msg_queue[seq % depth];
 	ctx->valid = 1;
 	ctx->is_sync = ubase_ctrlq_msg_is_sync_req(msg) ? 1 : 0;
+	ctx->resp_done = 0;
 	ctx->result = ETIME;
 	ctx->dead_jiffies = jiffies + msecs_to_jiffies(dead_time);
 	ctx->out = msg->out;
@@ -1325,7 +1325,7 @@ int ubase_ctrlq_ue_req_event_callback(struct ubase_dev *udev,
 	u16 bus_ue_id, len;
 	int ret = 0;
 
-	len = le16_to_cpu(cmd->in_size) + ubase_ctrlq_ue_msg_header_len();
+	len = cmd->in_size + ubase_ctrlq_ue_msg_header_len();
 	bus_ue_id = le16_to_cpu(cmd->head.bus_ue_id);
 	mutex_lock(&ue_req_tab->lock);
 	list_for_each_entry(nbs, &ue_req_tab->ue_req_nbs.list, list) {
@@ -1387,6 +1387,14 @@ void ubase_ctrlq_handle_crq_msg(struct ubase_dev *udev,
 			return;
 		}
 		if (ctx->is_sync) {
+			if (ctx->resp_done) {
+				spin_unlock_bh(&csq->lock);
+				ubase_dbg(udev,
+					  "resp is duplicated, opcode = 0x%x, service_type = 0x%x, seq = %u.\n",
+					  head->opcode, head->service_type, seq);
+				return;
+			}
+			ctx->resp_done = 1;
 			ubase_ctrlq_notify_completed(udev, head, seq, msg_data,
 						     data_len);
 			spin_unlock_bh(&csq->lock);
