@@ -188,7 +188,7 @@ struct thread_struct {
 	u64			sctlr_user;
 	u64			svcr;
 	u64			tpidr2_el0;
-	KABI_RESERVE(1)
+	KABI_USE(1, u64 fpmr)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)

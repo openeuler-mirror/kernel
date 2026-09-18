@@ -133,6 +133,8 @@ int preserve_fpsimd_context(struct fpsimd_context __user *ctx)
 		&current->thread.uw.fpsimd_state;
 	int err;
 
+	sve_sync_to_fpsimd(current);
+
 	/* copy the FP and status/control registers */
 	err = __copy_to_user(ctx->vregs, fpsimd->vregs, sizeof(fpsimd->vregs));
 	__put_user_error(fpsimd->fpsr, &ctx->fpsr, err);
@@ -180,6 +182,36 @@ int restore_fpsimd_context(struct user_ctxs *user)
 	return 0;
 }
 
+int preserve_fpmr_context(struct fpmr_context __user *ctx)
+{
+	int err = 0;
+	u64 fpmr;
+
+	current->thread.fpmr = read_sysreg_s(SYS_FPMR);
+	fpmr = current->thread.fpmr;
+
+	__put_user_error(FPMR_MAGIC, &ctx->head.magic, err);
+	__put_user_error(sizeof(*ctx), &ctx->head.size, err);
+	__put_user_error(fpmr, &ctx->fpmr, err);
+
+	return err;
+}
+
+int restore_fpmr_context(struct user_ctxs *user)
+{
+	u64 fpmr;
+	int err = 0;
+
+	if (user->fpmr_size != sizeof(*user->fpmr))
+		return -EINVAL;
+
+	__get_user_error(fpmr, &user->fpmr->fpmr, err);
+	if (!err)
+		current->thread.fpmr = fpmr;
+
+	return err;
+}
+
 
 #ifdef CONFIG_ARM64_SVE
 
@@ -210,11 +242,6 @@ int preserve_sve_context(struct sve_context __user *ctx)
 	err |= __copy_to_user(&ctx->__reserved, reserved, sizeof(reserved));
 
 	if (vq) {
-		/*
-		 * This assumes that the SVE state has already been saved to
-		 * the task struct by calling the function
-		 * fpsimd_signal_preserve_current_state().
-		 */
 		err |= __copy_to_user((char __user *)ctx + SVE_SIG_REGS_OFFSET,
 				      current->thread.sve_state,
 				      SVE_SIG_REGS_SIZE(vq));
@@ -276,16 +303,6 @@ int restore_sve_fpsimd_context(struct user_ctxs *user)
 
 	if (user->sve_size < SVE_SIG_CONTEXT_SIZE(vq))
 		return -EINVAL;
-
-	/*
-	 * Careful: we are about __copy_from_user() directly into
-	 * thread.sve_state with preemption enabled, so protection is
-	 * needed to prevent a racing context switch from writing stale
-	 * registers back over the new data.
-	 */
-
-	fpsimd_flush_task_state(current);
-	/* From now, fpsimd_thread_switch() won't touch thread.sve_state */
 
 	if (sm) {
 		sme_alloc(current, false);
@@ -388,11 +405,6 @@ int preserve_za_context(struct za_context __user *ctx)
 	err |= __copy_to_user(&ctx->__reserved, reserved, sizeof(reserved));
 
 	if (vq) {
-		/*
-		 * This assumes that the ZA state has already been saved to
-		 * the task struct by calling the function
-		 * fpsimd_signal_preserve_current_state().
-		 */
 		err |= __copy_to_user((char __user *)ctx + ZA_SIG_REGS_OFFSET,
 				      current->thread.sme_state,
 				      ZA_SIG_REGS_SIZE(vq));
@@ -426,16 +438,6 @@ int restore_za_context(struct user_ctxs *user)
 
 	if (user->za_size < ZA_SIG_CONTEXT_SIZE(vq))
 		return -EINVAL;
-
-	/*
-	 * Careful: we are about __copy_from_user() directly into
-	 * thread.sme_state with preemption enabled, so protection is
-	 * needed to prevent a racing context switch from writing stale
-	 * registers back over the new data.
-	 */
-
-	fpsimd_flush_task_state(current);
-	/* From now, fpsimd_thread_switch() won't touch thread.sve_state */
 
 	sve_alloc(current, false);
 	if (!current->thread.sve_state)
@@ -478,11 +480,6 @@ int preserve_zt_context(struct zt_context __user *ctx)
 	BUILD_BUG_ON(sizeof(ctx->__reserved) != sizeof(reserved));
 	err |= __copy_to_user(&ctx->__reserved, reserved, sizeof(reserved));
 
-	/*
-	 * This assumes that the ZT state has already been saved to
-	 * the task struct by calling the function
-	 * fpsimd_signal_preserve_current_state().
-	 */
 	err |= __copy_to_user((char __user *)ctx + ZT_SIG_REGS_OFFSET,
 			      thread_zt_state(&current->thread),
 			      ZT_SIG_REGS_SIZE(1));
@@ -507,16 +504,6 @@ int restore_zt_context(struct user_ctxs *user)
 
 	if (nregs != 1)
 		return -EINVAL;
-
-	/*
-	 * Careful: we are about __copy_from_user() directly into
-	 * thread.zt_state with preemption enabled, so protection is
-	 * needed to prevent a racing context switch from writing stale
-	 * registers back over the new data.
-	 */
-
-	fpsimd_flush_task_state(current);
-	/* From now, fpsimd_thread_switch() won't touch ZT in thread state */
 
 	err = __copy_from_user(thread_zt_state(&current->thread),
 			       (char __user const *)user->zt +
@@ -556,6 +543,7 @@ int __parse_user_sigcontext(struct user_ctxs *user,
 	user->tpidr2 = NULL;
 	user->za = NULL;
 	user->zt = NULL;
+	user->fpmr = NULL;
 
 	if (!IS_ALIGNED((unsigned long)base, 16))
 		goto invalid;
@@ -648,6 +636,17 @@ int __parse_user_sigcontext(struct user_ctxs *user,
 
 			user->zt = (struct zt_context __user *)head;
 			user->zt_size = size;
+			break;
+
+		case FPMR_MAGIC:
+			if (!system_supports_fpmr())
+				goto invalid;
+
+			if (user->fpmr)
+				goto invalid;
+
+			user->fpmr = (struct fpmr_context __user *)head;
+			user->fpmr_size = size;
 			break;
 
 		case EXTRA_MAGIC:
@@ -817,6 +816,13 @@ int setup_sigframe_layout(struct rt_sigframe_user_layout *user, bool add_all)
 		}
 	}
 
+	if (system_supports_fpmr()) {
+		err = sigframe_alloc(user, &user->fpmr_offset,
+				     sizeof(struct fpmr_context));
+		if (err)
+			return err;
+	}
+
 	return sigframe_alloc_end(user);
 }
 
@@ -892,21 +898,9 @@ static void setup_return(struct pt_regs *regs, struct k_sigaction *ka,
 
 	/* Signal handlers are invoked with ZA and streaming mode disabled */
 	if (system_supports_sme()) {
-		/*
-		 * If we were in streaming mode the saved register
-		 * state was SVE but we will exit SM and use the
-		 * FPSIMD register state - flush the saved FPSIMD
-		 * register state in case it gets loaded.
-		 */
-		if (current->thread.svcr & SVCR_SM_MASK) {
-			memset(&current->thread.uw.fpsimd_state, 0,
-			       sizeof(current->thread.uw.fpsimd_state));
-			current->thread.fp_type = FP_STATE_FPSIMD;
-		}
-
-		current->thread.svcr &= ~(SVCR_ZA_MASK |
-					  SVCR_SM_MASK);
-		sme_smstop();
+		task_smstop_sm(current);
+		current->thread.svcr &= ~SVCR_ZA_MASK;
+		write_sysreg_s(0, SYS_TPIDR2_EL0);
 	}
 
 	if (ka->sa.sa_flags & SA_RESTORER)
