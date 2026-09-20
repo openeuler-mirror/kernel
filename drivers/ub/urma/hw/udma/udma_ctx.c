@@ -668,7 +668,7 @@ static int udma_remap_hugepage(struct udma_context *ctx, struct vm_area_struct *
 			(GFP_KERNEL | __GFP_NOWARN | __GFP_ZERO);
 		priv->pages[i] = udma_alloc_pages(flag, get_order(priv->page_size));
 		if (!priv->pages[i]) {
-			dev_err(ctx->dev->dev, "failed to alloc pages.\n");
+			dev_err_ratelimited(ctx->dev->dev, "failed to alloc pages.\n");
 			goto err_alloc_pages;
 		}
 		ret = udma_remap_pfn_range(vma, vma->vm_start + i * priv->page_size,
@@ -705,7 +705,7 @@ udma_alloc_u_hugepage_priv(struct udma_context *ctx, struct vm_area_struct *vma)
 		return NULL;
 
 	if (udma_remap_hugepage(ctx, vma, priv, UDMA_HUGEPAGE_SHIFT)) {
-		dev_warn(ctx->dev->dev,
+		dev_warn_ratelimited(ctx->dev->dev,
 			 "failed to alloc hugepage buf, switch to alloc normal buf.\n");
 		if (udma_remap_hugepage(ctx, vma, priv, PAGE_SHIFT))
 			goto err_remap_hugepage;
