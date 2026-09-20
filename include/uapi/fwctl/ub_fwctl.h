@@ -296,6 +296,11 @@ enum ub_fwctl_cmdrpc_type {
 	UTOOL_CMD_QUERY_ECC_2B = 0x00B1,
 
 	/**
+	 * @UTOOL_CMD_QUERY_CMDQ_STATS: Query the UE storm frequency limit status
+	 */
+	UTOOL_CMD_QUERY_CMDQ_STATS = 0x00C1,
+
+	/**
 	 * @UTOOL_CMD_QUERY_LOOPBACK: Query information of loopback
 	 */
 	UTOOL_CMD_QUERY_LOOPBACK = 0x00D1,

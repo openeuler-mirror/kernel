@@ -253,10 +253,6 @@ int ubctl_query_data_deal(struct ubctl_dev *ucdev,
 		ubctl_err(ucdev, "out_data is null.\n");
 		return -EINVAL;
 	}
-	if (!(cmd->out_data)) {
-		ubctl_err(ucdev, "out_data is null.\n");
-		return -EINVAL;
-	}
 	if (cmd->out_len != out_len) {
 		ubctl_err(ucdev, "out data size = %ubytes, and it must be %ubytes.\n",
 			  cmd->out_len, out_len);
