@@ -42,7 +42,8 @@ int udma_ctrlq_remove_single_tp(struct udma_dev *udev, uint32_t tpn, int status)
 
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &msg);
 	if (ret)
-		dev_err(udev->dev, "remove single TP %u failed, ret %d status %d.\n",
+		dev_err_ratelimited(udev->dev,
+			"remove single TP %u failed, ret %d status %d.\n",
 			tpn, ret, r_status);
 
 	return ret;
@@ -110,7 +111,8 @@ void udma_tp_ae_work(struct work_struct *work)
 	udma_ctrlq_set_tp_msg(&msg, (void *)&tp_cfg_req, sizeof(tp_cfg_req), NULL, 0);
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &msg);
 	if (ret)
-		dev_err(udev->dev, "TP asynchronous event work ctrl queue TP %u failed, ret %d.\n",
+		dev_err_ratelimited(udev->dev,
+			"TP asynchronous event work ctrl queue TP %u failed, ret %d.\n",
 			ae_work->tpn, ret);
 
 	kfree(ae_work);
@@ -128,7 +130,8 @@ int udma_ctrlq_notify_tp_port_change(struct udma_dev *udev, uint32_t tpn)
 
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &ctrlq_msg);
 	if (ret)
-		dev_err(udev->dev, "multi-plane TP port change, TP %u failed, ret %d.\n", tpn, ret);
+		dev_err_ratelimited(udev->dev,
+			"multi-plane TP port change, TP %u failed, ret %d.\n", tpn, ret);
 
 	return ret;
 }
@@ -527,7 +530,7 @@ static int udma_ctrlq_get_tpid_list(struct udma_dev *udev,
 
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &msg);
 	if (ret)
-		dev_err(udev->dev, "ctrl queue send message failed, ret = %d.\n", ret);
+		dev_err_ratelimited(udev->dev, "ctrl queue send message failed, ret = %d.\n", ret);
 
 	return ret;
 }
@@ -544,7 +547,8 @@ int udma_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *tpid_c
 
 	ret = udma_ctrlq_get_tpid_list(udev, &tp_cfg_req, tpid_cfg, &tpid_list_resp, tp_cnt);
 	if (ret) {
-		dev_err(udev->dev, "udma control queue get TP id list failed, ret = %d.\n", ret);
+		dev_err_ratelimited(udev->dev,
+			"udma control queue get TP id list failed, ret = %d.\n", ret);
 		return ret;
 	}
 
@@ -597,7 +601,7 @@ static int udma_k_ctrlq_create_active_tp_msg(struct udma_dev *udev,
 
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &msg);
 	if (ret) {
-		dev_err(udev->dev, "udma active TP send failed, ret = %d.\n", ret);
+		dev_err_ratelimited(udev->dev, "udma active TP send failed, ret = %d.\n", ret);
 		return ret;
 	}
 
@@ -638,7 +642,8 @@ static int udma_k_ctrlq_save_tpn(struct udma_dev *udev, uint32_t tp_id, uint32_t
 	msg.opcode = UDMA_CMD_CTRLQ_GET_TP_INFO;
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &msg);
 	if (ret != -EAGAIN && ret) {
-		dev_err(udev->dev, "get TP id = %u info failed, ret = %d.\n", tp_id, ret);
+		dev_err_ratelimited(udev->dev,
+			"get TP id = %u info failed, ret = %d.\n", tp_id, ret);
 		return ret;
 	}
 
@@ -677,7 +682,8 @@ int udma_k_ctrlq_deactive_tp(struct udma_dev *udev, union ubcore_tp_handle tp_ha
 
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &msg);
 	if (ret != -EAGAIN && ret) {
-		dev_err(udev->dev, "deactivate TP send message failed, TP id = %u, ret = %d.\n",
+		dev_err_ratelimited(udev->dev,
+			"deactivate TP send message failed, TP id = %u, ret = %d.\n",
 			tp_id, ret);
 		if (tp_num)
 			udma_open_ue_rx_with_retry(udev, true, false, false, tp_num);
@@ -927,7 +933,8 @@ int udma_set_tp_attr(struct ubcore_device *dev, const uint64_t tp_handle,
 
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &msg);
 	if (ret)
-		dev_err(udev->dev, "set TP attribute failed, TP id = %u, ret = %d.\n",
+		dev_err_ratelimited(udev->dev,
+			"set TP attribute failed, TP id = %u, ret = %d.\n",
 			tp_attr_req.tpid, ret);
 
 	return ret;
@@ -986,7 +993,8 @@ int udma_get_tp_attr(struct ubcore_device *dev, const uint64_t tp_handle,
 
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &msg);
 	if (ret) {
-		dev_err(udev->dev, "get TP attribute failed, TP id = %u, ret = %d.\n",
+		dev_err_ratelimited(udev->dev,
+			"get TP attribute failed, TP id = %u, ret = %d.\n",
 			tp_attr_req.tpid.tpid, ret);
 		return ret;
 	}
@@ -1030,7 +1038,7 @@ int udma_send_msg_to_ue(struct udma_dev *udma_dev, struct udma_entity_buf *add_b
 
 	ret = ubase_cmd_send_in(udma_dev->comdev.adev, &in);
 	if (ret)
-		dev_err(udma_dev->dev,
+		dev_err_ratelimited(udma_dev->dev,
 			"failed to send msg to ue, ret is %d.\n", ret);
 
 	kfree(send_msg);
@@ -1045,7 +1053,8 @@ int udma_active_tp(struct ubcore_device *dev, struct ubcore_active_tp_cfg *activ
 
 	ret = udma_ctrlq_set_active_tp_ex(udma_dev, active_cfg);
 	if (ret)
-		dev_err(udma_dev->dev, "failed to set active TP message, ret %d.\n", ret);
+		dev_err_ratelimited(udma_dev->dev,
+			"failed to set active TP message, ret %d.\n", ret);
 
 	return ret;
 }
@@ -1127,7 +1136,7 @@ int udma_get_eid_by_ip(struct ubcore_device *dev, const struct ubcore_net_addr *
 
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &msg);
 	if (ret) {
-		dev_err(udev->dev, "get EID by ip failed, addr_type = %u, ret = %d.\n",
+		dev_err_ratelimited(udev->dev, "get EID by ip failed, addr_type = %u, ret = %d.\n",
 			net_addr->type, ret);
 		return ret;
 	}
@@ -1154,7 +1163,7 @@ int udma_get_ip_by_eid(struct ubcore_device *dev, const union ubcore_eid *eid,
 
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &msg);
 	if (ret) {
-		dev_err(udev->dev, "get ip by EID failed, ret = %d.\n", ret);
+		dev_err_ratelimited(udev->dev, "get ip by EID failed, ret = %d.\n", ret);
 		return ret;
 	}
 
