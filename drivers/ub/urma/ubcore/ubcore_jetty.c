@@ -1561,6 +1561,8 @@ struct ubcore_jfr *ubcore_create_jfr(struct ubcore_device *dev,
 		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFR);
 		return ERR_PTR(-EINVAL);
 	}
+	/* Sync jfr_cfg.id to the driver-assigned jfr_id.id */
+	jfr->jfr_cfg.id = jfr->jfr_id.id;
 	jfr->ub_dev = dev;
 	jfr->uctx = ubcore_get_uctx(udata);
 	jfr->jfae_handler = jfae_handler;
@@ -2727,6 +2729,8 @@ struct ubcore_jetty *ubcore_create_jetty(struct ubcore_device *dev,
 		goto delete_jetty_to_grp;
 	}
 
+	/* Sync jetty_cfg.id to the driver-assigned jetty_id.id */
+	jetty->jetty_cfg.id = jetty->jetty_id.id;
 	jetty->uctx = ubcore_get_uctx(udata);
 	jetty->jfae_handler = jfae_handler;
 	jetty->jetty_id.eid = eid;
