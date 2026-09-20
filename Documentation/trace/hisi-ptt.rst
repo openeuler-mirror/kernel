@@ -255,7 +255,29 @@ directly from the TLP header.
      DW2 [                     Header DW2                            ]
      DW3 [                     Header DW3                            ]
 
-5. Memory Management
+5. Trace pattern
+-----------------
+
+You can control whether the trace is taken with the new version of the
+TLP header format by specifying the `pattern` parameter. The default
+value is 0, which means the legacy format is used for backward
+compatibility. The parameter value is 4 bit and bit[3:1] are currently
+reserved for extension. Current supported values are shown below:
+
+- 4'b0000: legacy trace format
+    DW0 (in 8DW format), DW1, DW2 and DW3 are printed with generic field names,
+    and no message-type-based field decoding. Consider using legacy trace format
+    when the current PCIe link generation is not higher than PCIe 6.0.
+- 4'b0001: trace format v1
+    DW0, DW1, DW2 and DW3 are decoded according to the TLP message type (MRd,
+    MWr, DMWr, Msg, AtomicOP, I/O, Cpl, Cfg) with detailed field names.
+    It is recommended to use trace format v1 when the current PCIe link
+    generation is higher than PCIe 6.0.
+
+For trace data recorded by an older tracer without the `pattern` parameter,
+the decoder will work as `pattern` forced to 0.
+
+6. Memory Management
 --------------------
 
 The traced TLP headers will be written to the memory allocated
@@ -274,7 +296,7 @@ will commit the AUX buffer first and then apply for a new one with
 the same size. The size of AUX buffer is default to 16MiB. User can
 adjust the size by specifying the `-m` parameter of the perf command.
 
-6. Decoding
+7. Decoding
 -----------
 
 You can decode the traced data with `perf report -D` command (currently

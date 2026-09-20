@@ -6,6 +6,7 @@
 
 #include <linux/kernel.h>
 #include <linux/types.h>
+#include <linux/bitfield.h>
 #include <linux/bitops.h>
 #include <linux/log2.h>
 #include <linux/zalloc.h>
@@ -19,6 +20,7 @@
 #include "../../../util/evlist.h"
 #include "../../../util/evsel.h"
 #include "../../../util/hisi-ptt.h"
+#include "../../../util/hisi-ptt-decoder/hisi-ptt-pkt-decoder.h"
 #include "../../../util/pmu.h"
 #include "../../../util/record.h"
 #include "../../../util/session.h"
@@ -48,15 +50,30 @@ static int hisi_ptt_info_fill(struct auxtrace_record *itr,
 	struct hisi_ptt_recording *pttr =
 			container_of(itr, struct hisi_ptt_recording, itr);
 	struct perf_pmu *hisi_ptt_pmu = pttr->hisi_ptt_pmu;
+	struct evsel *evsel;
+	u32 pattern = 0;
 
 	if (priv_size != HISI_PTT_AUXTRACE_PRIV_SIZE)
 		return -EINVAL;
 
 	if (!session->evlist->core.nr_mmaps)
 		return -EINVAL;
+	/*
+	 * Walk the evlist to find the hisi_ptt event and read out the pattern
+	 * bits from its config, which decides the decoder version used to
+	 * parse the trace data.
+	 */
+	evlist__for_each_entry(session->evlist, evsel) {
+		if (evsel->core.attr.type == hisi_ptt_pmu->type) {
+			pattern = FIELD_GET(HISI_PTT_PMU_PATTERN_MASK,
+					    evsel->core.attr.config);
+			break;
+		}
+	}
 
 	auxtrace_info->type = PERF_AUXTRACE_HISI_PTT;
 	auxtrace_info->priv[0] = hisi_ptt_pmu->type;
+	auxtrace_info->priv[1] = pattern;
 
 	return 0;
 }
