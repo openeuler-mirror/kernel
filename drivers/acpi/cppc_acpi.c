@@ -659,6 +659,109 @@ static int pcc_data_alloc(int pcc_ss_id)
 	return 0;
 }
 
+/**
+ * parse_cpc_element - Parse a single CPC element into a cpc_register_resource.
+ * @cpc_obj:          Pointer to the ACPI object representing the CPC element.
+ * @cpc_reg:          Output CPC register resource to populate.
+ * @pcc_subspace_id:  In/out pointer to PCC subspace ID; extracted once on first
+ *                    PCC-type register and validated for consistency thereafter.
+ * @cpu:              CPU number, used for debug messages.
+ * @entry_num:        Index within the CPC table entries, used for diagnostics.
+ *
+ * Handles ACPI_TYPE_INTEGER (static value) and ACPI_TYPE_BUFFER (register
+ * descriptor).  Sets up PCC subspace tracking, ioremap for SystemMemory,
+ * and validates SystemIO / FFH register parameters.
+ *
+ * Return: 0 on success, -ENODATA on invalid or unsupported data.
+ */
+static int parse_cpc_element(union acpi_object *cpc_obj,
+			     struct cpc_register_resource *cpc_reg,
+			     int *pcc_subspace_id, u32 cpu, unsigned int entry_num)
+{
+	struct cpc_reg *gas_t;
+
+	if (cpc_obj->type == ACPI_TYPE_INTEGER)	{
+		cpc_reg->type = ACPI_TYPE_INTEGER;
+		cpc_reg->cpc_entry.int_value = cpc_obj->integer.value;
+	} else if (cpc_obj->type == ACPI_TYPE_BUFFER) {
+		gas_t = (struct cpc_reg *)cpc_obj->buffer.pointer;
+
+		/*
+		 * The PCC Subspace index is encoded inside
+		 * the CPC table entries. The same PCC index
+		 * will be used for all the PCC entries,
+		 * so extract it only once.
+		 */
+		if (gas_t->space_id == ACPI_ADR_SPACE_PLATFORM_COMM) {
+			if (*pcc_subspace_id < 0) {
+				*pcc_subspace_id = gas_t->access_width;
+				if (pcc_data_alloc(*pcc_subspace_id))
+					return -ENODATA;
+			} else if (*pcc_subspace_id != gas_t->access_width) {
+				pr_debug("Mismatched PCC ids in _CPC for CPU:%d\n",
+					 cpu);
+				return -ENODATA;
+			}
+		} else if (gas_t->space_id == ACPI_ADR_SPACE_SYSTEM_MEMORY) {
+			if (gas_t->address) {
+				void __iomem *addr;
+				size_t access_width;
+
+				if (!osc_cpc_flexible_adr_space_confirmed) {
+					pr_debug("Flexible address space capability not supported\n");
+					if (!cpc_supported_by_cpu())
+						return -ENODATA;
+				}
+
+				access_width = GET_BIT_WIDTH(gas_t) / 8;
+				addr = ioremap(gas_t->address, access_width);
+				if (!addr)
+					return -ENODATA;
+				cpc_reg->sys_mem_vaddr = addr;
+			}
+		} else if (gas_t->space_id == ACPI_ADR_SPACE_SYSTEM_IO) {
+			if (gas_t->access_width < 1 || gas_t->access_width > 3) {
+				/*
+				 * 1 = 8-bit, 2 = 16-bit, and 3 = 32-bit.
+				 * SystemIO doesn't implement 64-bit
+				 * registers.
+				 */
+				pr_debug("Invalid access width %d for SystemIO register in _CPC\n",
+					 gas_t->access_width);
+				return -ENODATA;
+			}
+			if (gas_t->address & OVER_16BTS_MASK) {
+				/* SystemIO registers use 16-bit integer addresses */
+				pr_debug("Invalid IO port %llu for SystemIO register in _CPC\n",
+					 gas_t->address);
+				return -ENODATA;
+			}
+			if (!osc_cpc_flexible_adr_space_confirmed) {
+				pr_debug("Flexible address space capability not supported\n");
+				if (!cpc_supported_by_cpu())
+					return -ENODATA;
+			}
+		} else {
+			if (gas_t->space_id != ACPI_ADR_SPACE_FIXED_HARDWARE ||
+			    !cpc_ffh_supported()) {
+				/* Support only PCC, SystemMemory, SystemIO, and FFH type regs. */
+				pr_debug("Unsupported register type (%d) in _CPC\n",
+					 gas_t->space_id);
+				return -ENODATA;
+			}
+		}
+
+		cpc_reg->type = ACPI_TYPE_BUFFER;
+		memcpy(&cpc_reg->cpc_entry.reg, gas_t, sizeof(*gas_t));
+	} else {
+		pr_debug("Invalid entry type (%d) in _CPC for CPU:%d\n",
+			 entry_num, cpu);
+		return -ENODATA;
+	}
+
+	return 0;
+}
+
 /*
  * An example CPC table looks like the following.
  *
@@ -703,7 +806,6 @@ int acpi_cppc_processor_probe(struct acpi_processor *pr)
 	struct acpi_buffer output = {ACPI_ALLOCATE_BUFFER, NULL};
 	union acpi_object *out_obj, *cpc_obj;
 	struct cpc_desc *cpc_ptr;
-	struct cpc_reg *gas_t;
 	struct device *cpu_dev;
 	acpi_handle handle = pr->handle;
 	unsigned int num_ent, i, cpc_rev;
@@ -789,80 +891,7 @@ int acpi_cppc_processor_probe(struct acpi_processor *pr)
 	for (i = 2; i < num_ent; i++) {
 		cpc_obj = &out_obj->package.elements[i];
 
-		if (cpc_obj->type == ACPI_TYPE_INTEGER)	{
-			cpc_ptr->cpc_regs[i-2].type = ACPI_TYPE_INTEGER;
-			cpc_ptr->cpc_regs[i-2].cpc_entry.int_value = cpc_obj->integer.value;
-		} else if (cpc_obj->type == ACPI_TYPE_BUFFER) {
-			gas_t = (struct cpc_reg *)
-				cpc_obj->buffer.pointer;
-
-			/*
-			 * The PCC Subspace index is encoded inside
-			 * the CPC table entries. The same PCC index
-			 * will be used for all the PCC entries,
-			 * so extract it only once.
-			 */
-			if (gas_t->space_id == ACPI_ADR_SPACE_PLATFORM_COMM) {
-				if (pcc_subspace_id < 0) {
-					pcc_subspace_id = gas_t->access_width;
-					if (pcc_data_alloc(pcc_subspace_id))
-						goto out_free;
-				} else if (pcc_subspace_id != gas_t->access_width) {
-					pr_debug("Mismatched PCC ids in _CPC for CPU:%d\n",
-						 pr->id);
-					goto out_free;
-				}
-			} else if (gas_t->space_id == ACPI_ADR_SPACE_SYSTEM_MEMORY) {
-				if (gas_t->address) {
-					void __iomem *addr;
-					size_t access_width;
-
-					if (!osc_cpc_flexible_adr_space_confirmed) {
-						pr_debug("Flexible address space capability not supported\n");
-						if (!cpc_supported_by_cpu())
-							goto out_free;
-					}
-
-					access_width = GET_BIT_WIDTH(gas_t) / 8;
-					addr = ioremap(gas_t->address, access_width);
-					if (!addr)
-						goto out_free;
-					cpc_ptr->cpc_regs[i-2].sys_mem_vaddr = addr;
-				}
-			} else if (gas_t->space_id == ACPI_ADR_SPACE_SYSTEM_IO) {
-				if (gas_t->access_width < 1 || gas_t->access_width > 3) {
-					/*
-					 * 1 = 8-bit, 2 = 16-bit, and 3 = 32-bit.
-					 * SystemIO doesn't implement 64-bit
-					 * registers.
-					 */
-					pr_debug("Invalid access width %d for SystemIO register in _CPC\n",
-						 gas_t->access_width);
-					goto out_free;
-				}
-				if (gas_t->address & OVER_16BTS_MASK) {
-					/* SystemIO registers use 16-bit integer addresses */
-					pr_debug("Invalid IO port %llu for SystemIO register in _CPC\n",
-						 gas_t->address);
-					goto out_free;
-				}
-				if (!osc_cpc_flexible_adr_space_confirmed) {
-					pr_debug("Flexible address space capability not supported\n");
-					if (!cpc_supported_by_cpu())
-						goto out_free;
-				}
-			} else {
-				if (gas_t->space_id != ACPI_ADR_SPACE_FIXED_HARDWARE || !cpc_ffh_supported()) {
-					/* Support only PCC, SystemMemory, SystemIO, and FFH type regs. */
-					pr_debug("Unsupported register type (%d) in _CPC\n",
-						 gas_t->space_id);
-					goto out_free;
-				}
-			}
-
-			cpc_ptr->cpc_regs[i-2].type = ACPI_TYPE_BUFFER;
-			memcpy(&cpc_ptr->cpc_regs[i-2].cpc_entry.reg, gas_t, sizeof(*gas_t));
-		} else if (cpc_obj->type == ACPI_TYPE_PACKAGE && (i - 2) == RESOURCE_PRIORITY) {
+		if (cpc_obj->type == ACPI_TYPE_PACKAGE && (i - 2) == RESOURCE_PRIORITY) {
 			/*
 			 * ACPI 6.6, s8.4.6.1.2.7 defines Resource Priority as a
 			 * Package of Resource Priority Register Descriptor sub-packages.
@@ -873,9 +902,10 @@ int acpi_cppc_processor_probe(struct acpi_processor *pr)
 			cpc_ptr->cpc_regs[i-2].type = ACPI_TYPE_INTEGER;
 			cpc_ptr->cpc_regs[i-2].cpc_entry.int_value = 0;
 		} else {
-			pr_debug("Invalid entry type (%d) in _CPC for CPU:%d\n",
-				 i, pr->id);
-			goto out_free;
+			ret = parse_cpc_element(cpc_obj, &cpc_ptr->cpc_regs[i-2],
+						&pcc_subspace_id, pr->id, i);
+			if (ret)
+				goto out_free;
 		}
 	}
 	per_cpu(cpu_pcc_subspace_idx, pr->id) = pcc_subspace_id;
