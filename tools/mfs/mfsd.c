@@ -43,6 +43,15 @@ static int process_close(struct mfs_msg *msg)
 	return ret;
 }
 
+static int process_open(struct mfs_msg *msg)
+{
+	struct mfs_open *data = (struct mfs_open *)msg->data;
+
+	printf("%s: ino %llu pid %d\n", __func__,
+		data->ino, data->pid);
+	return 0;
+}
+
 static int process_local_read(struct mfs_msg *msg)
 {
 	struct mfs_read *read = (struct mfs_read *)msg->data;
@@ -127,6 +136,8 @@ static int process_req(int fd)
 		return process_read(msg);
 	if (msg->opcode == MFS_OP_CLOSE)
 		return process_close(msg);
+	if (msg->opcode == MFS_OP_OPEN)
+		return process_open(msg);
 
 	pr_err("invalid opcode:%d\n", msg->opcode);
 	return -1;
