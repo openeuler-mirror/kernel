@@ -3,6 +3,7 @@
 
 #include <linux/bug.h>
 #include <linux/err.h>
+#include <linux/overflow.h>
 #include <linux/random.h>
 #include <linux/slab.h>
 #include <linux/types.h>
@@ -111,6 +112,7 @@ struct ceph_mdsmap *ceph_mdsmap_decode(void **p, void *end)
 	int err = -EINVAL;
 	u8 mdsmap_v, mdsmap_cv;
 	u16 mdsmap_ev;
+	size_t export_targets_len;
 
 	m = kzalloc(sizeof(*m), GFP_NOFS);
 	if (!m)
@@ -192,8 +194,11 @@ struct ceph_mdsmap *ceph_mdsmap_decode(void **p, void *end)
 		*p += namelen;
 		if (info_v >= 2) {
 			ceph_decode_32_safe(p, end, num_export_targets, bad);
+			export_targets_len = array_size(num_export_targets,
+							sizeof(u32));
+			ceph_decode_need(p, end, export_targets_len, bad);
 			pexport_targets = *p;
-			*p += num_export_targets * sizeof(u32);
+			*p += export_targets_len;
 		} else {
 			num_export_targets = 0;
 		}
