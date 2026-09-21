@@ -82,6 +82,7 @@ struct io_tlb_slot {
 
 static bool swiotlb_force_bounce;
 static bool swiotlb_force_disable;
+static bool swiotlb_any;
 
 #ifdef CONFIG_SWIOTLB_DYNAMIC
 
@@ -200,6 +201,10 @@ setup_io_tlb_npages(char *str)
 		swiotlb_force_bounce = true;
 	else if (!strcmp(str, "noforce"))
 		swiotlb_force_disable = true;
+	if (*str == ',')
+		++str;
+	if (!strcmp(str, "any"))
+		swiotlb_any = true;
 
 	return 0;
 }
@@ -425,7 +430,8 @@ void __init swiotlb_init_remap(bool addressing_limit, unsigned int flags,
 
 void __init swiotlb_init(bool addressing_limit, unsigned int flags)
 {
-	swiotlb_init_remap(addressing_limit, flags, NULL);
+	swiotlb_init_remap(addressing_limit, flags | (swiotlb_any ? SWIOTLB_ANY : 0),
+			   NULL);
 }
 
 /*
