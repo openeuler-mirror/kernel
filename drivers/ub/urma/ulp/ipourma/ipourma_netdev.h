@@ -10,8 +10,6 @@
 
 #include "ipourma_types.h"
 
-extern int ipourma_min_eid_cnt;
-
 struct ipourma_set_ip_work {
 	struct list_head list;
 	struct delayed_work d_work;

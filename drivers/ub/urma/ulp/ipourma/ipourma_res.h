@@ -13,9 +13,8 @@
 extern int ipourma_ctp_sl;
 extern int ipourma_utp_sl;
 
-void ipourma_ub_size_init(void);
-void ipourma_uninit_rings_by_eid(struct ipourma_dev_priv *priv, u32 eid_idx);
-void ipourma_uninit_rx_bufs(struct ipourma_dev_priv *priv, u32 eid_idx);
+void ipourma_uninit_rings_by_jetty(struct ipourma_dev_priv *priv, u32 jetty_idx);
+void ipourma_uninit_rx_bufs(struct ipourma_dev_priv *priv, u32 jetty_idx);
 int ipourma_restart_rings(struct ipourma_dev_priv *priv);
 int ipourma_init_rings(struct net_device *dev);
 void ipourma_uninit_rings(struct net_device *dev);
@@ -23,9 +22,9 @@ int ipourma_init_tjetty_hmap(struct net_device *dev);
 void ipourma_uninit_tjetty_hmap(struct net_device *dev);
 void ipourma_uninit_urma_resources(struct net_device *dev);
 void ipourma_reset_rings(struct ipourma_dev_priv *priv);
-int ipourma_init_rings_by_eid(struct ipourma_dev_priv *priv, u32 eid_idx);
-void ipourma_uninit_urma_resources_by_eid(struct ipourma_dev_priv *priv, u32 eid_idx);
-int ipourma_init_urma_resources_by_eid(struct ipourma_dev_priv *priv, u32 eid_idx);
+int ipourma_init_rings_by_jetty(struct ipourma_dev_priv *priv, u32 jetty_idx);
+void ipourma_uninit_urma_resources_by_jetty(struct ipourma_dev_priv *priv, u32 jetty_idx);
+int ipourma_init_urma_resources_by_jetty(struct ipourma_dev_priv *priv, u32 jetty_idx);
 int ipourma_init_urma_resources(struct net_device *dev);
 
 #endif
