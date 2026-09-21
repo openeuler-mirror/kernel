@@ -727,7 +727,12 @@ struct l2cap_user {
 
 struct l2cap_pinfo {
 	struct bt_sock		bt;
+
+	/* With owning sk_socket chan may be read without lock, other access
+	 * should hold lock_sock.
+	 */
 	struct l2cap_chan	*chan;
+
 	struct sk_buff		*rx_busy_skb;
 };
 
