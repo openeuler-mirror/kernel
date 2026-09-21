@@ -109,6 +109,19 @@ enum cppc_regs {
 };
 
 /*
+ * Indices into each sub-package of the RESOURCE_PRIORITY entry.
+ * RESOURCE_PRIORITY_NUM serves as the element count / loop bound.
+ */
+enum resource_priority_regs {
+	CONTROLLED_RESOURCES,	/* Package of integer resource IDs */
+	ENABLE_VALUE,		/* Enable/disable value */
+	ENABLE_REGISTER,	/* Register for enable/disable control */
+	PRIORITY_COUNT,		/* Number of priority levels */
+	PRIORITY_REGISTER,	/* Register for priority setting */
+	RESOURCE_PRIORITY_NUM,	/* Number of elements (sentinel) */
+};
+
+/*
  * Categorization of registers as described
  * in the ACPI v.5.1 spec.
  * XXX: Only filling up ones which are used by governors
