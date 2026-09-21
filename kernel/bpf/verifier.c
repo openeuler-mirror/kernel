@@ -10359,6 +10359,10 @@ static int check_helper_call(struct bpf_verifier_env *env, struct bpf_insn *insn
 		err = check_bpf_snprintf_call(env, regs);
 		break;
 	case BPF_FUNC_loop:
+		if (regs[BPF_REG_1].type != SCALAR_VALUE) {
+			verbose(env, "R1 must be a scalar value for bpf_loop\n");
+			return -EINVAL;
+		}
 		update_loop_inline_state(env, meta.subprogno);
 		/* Verifier relies on R1 value to determine if bpf_loop() iteration
 		 * is finished, thus mark it precise.
