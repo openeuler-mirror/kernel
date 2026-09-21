@@ -900,13 +900,21 @@ int dfs_cache_find(const unsigned int xid, struct cifs_ses *ses,
 		goto out_free_path;
 	}
 
-	if (ref)
-		rc = setup_referral(path, ce, ref, get_tgt_name(ce));
-	else
+	if (ref) {
+		char *target = get_tgt_name(ce);
+
+		if (IS_ERR(target)) {
+			rc = PTR_ERR(target);
+			goto out_unlock;
+		}
+		rc = setup_referral(path, ce, ref, target);
+	} else {
 		rc = 0;
+	}
 	if (!rc && tgt_list)
 		rc = get_targets(ce, tgt_list);
 
+out_unlock:
 	up_read(&htable_rw_lock);
 
 out_free_path:
@@ -951,10 +959,17 @@ int dfs_cache_noreq_find(const char *path, struct dfs_info3_param *ref,
 		goto out_unlock;
 	}
 
-	if (ref)
-		rc = setup_referral(path, ce, ref, get_tgt_name(ce));
-	else
+	if (ref) {
+		char *target = get_tgt_name(ce);
+
+		if (IS_ERR(target)) {
+			rc = PTR_ERR(target);
+			goto out_unlock;
+		}
+		rc = setup_referral(path, ce, ref, target);
+	} else {
 		rc = 0;
+	}
 	if (!rc && tgt_list)
 		rc = get_targets(ce, tgt_list);
 
@@ -1013,7 +1028,8 @@ int dfs_cache_update_tgthint(const unsigned int xid, struct cifs_ses *ses,
 
 	t = ce->tgthint;
 
-	if (likely(!strcasecmp(it->it_name, t->name)))
+	/* Check 't' in case ce->tgthint was cleared by free_tgts() */
+	if (t && likely(!strcasecmp(it->it_name, t->name)))
 		goto out_unlock;
 
 	list_for_each_entry(t, &ce->tlist, list) {
@@ -1075,7 +1091,8 @@ int dfs_cache_noreq_update_tgthint(const char *path,
 	rc = 0;
 	t = ce->tgthint;
 
-	if (unlikely(!strcasecmp(it->it_name, t->name)))
+	/* Check 't' in case ce->tgthint was cleared by free_tgts() */
+	if (t && unlikely(!strcasecmp(it->it_name, t->name)))
 		goto out_unlock;
 
 	list_for_each_entry(t, &ce->tlist, list) {
@@ -1471,6 +1488,7 @@ static struct cifs_ses *find_root_ses(struct vol_info *vi,
 				      const char *path)
 {
 	char *rpath;
+	char *target;
 	int rc;
 	struct cache_entry *ce;
 	struct dfs_info3_param ref = {0};
@@ -1492,7 +1510,14 @@ static struct cifs_ses *find_root_ses(struct vol_info *vi,
 		goto out;
 	}
 
-	rc = setup_referral(path, ce, &ref, get_tgt_name(ce));
+	target = get_tgt_name(ce);
+
+	if (IS_ERR(target)) {
+		up_read(&htable_rw_lock);
+		ses = ERR_CAST(target);
+		goto out;
+	}
+	rc = setup_referral(path, ce, &ref, target);
 	if (rc) {
 		up_read(&htable_rw_lock);
 		ses = ERR_PTR(rc);
