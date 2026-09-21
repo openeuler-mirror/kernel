@@ -336,8 +336,10 @@ static bool amd_enc_status_change_finish(unsigned long vaddr, int npages, bool e
 	 * by secure processor. Private pages live in isolated memory region,
 	 * while shared pages live out of isolated memory region.
 	 */
-	if (csv3_active())
+	if (csv3_active()) {
 		csv_memory_enc_dec(vaddr, npages, enc);
+		clflush_cache_range((void *)vaddr, (unsigned long)npages * PAGE_SIZE);
+	}
 
 	return true;
 }
