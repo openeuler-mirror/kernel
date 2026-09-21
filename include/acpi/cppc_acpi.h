@@ -190,6 +190,14 @@ extern int cppc_get_epp_perf(int cpunum, u64 *epp_perf);
 extern int cppc_set_epp_perf(int cpu, struct cppc_perf_ctrls *perf_ctrls, bool enable);
 extern int cppc_get_auto_sel_caps(int cpunum, struct cppc_perf_caps *perf_caps);
 extern int cppc_set_auto_sel(int cpu, bool enable);
+extern int cppc_get_resource_priority_count(int cpu, int *count);
+extern int cppc_get_resource_priority_resources(int cpu, int index,
+						u32 *resources, int *num_resources);
+extern int cppc_get_res_priority_enable(int cpu, int index, bool *enable);
+extern int cppc_set_res_priority_enable(int cpu, int index, bool enable);
+extern int cppc_get_res_priority_count(int cpu, int index, u64 *count);
+extern int cppc_get_res_priority(int cpu, int index, u64 *priority);
+extern int cppc_set_res_priority(int cpu, int index, u64 priority);
 extern int cppc_get_epp_caps(int cpunum, u64 *epp_val);
 extern int cppc_set_epp(int cpu, u64 epp_val);
 extern int cppc_get_auto_act_window(int cpunum, u64 *auto_act_window);
@@ -303,6 +311,35 @@ static inline int cppc_get_auto_sel(int cpunum, u64 *auto_sel)
 	return -EOPNOTSUPP;
 }
 static inline int cppc_set_auto_sel_caps(int cpu, bool enable)
+{
+	return -EOPNOTSUPP;
+}
+static inline int cppc_get_resource_priority_count(int cpu, int *count)
+{
+	return -EOPNOTSUPP;
+}
+static inline int cppc_get_resource_priority_resources(int cpu, int index,
+						       u32 *resources, int *num_resources)
+{
+	return -EOPNOTSUPP;
+}
+static inline int cppc_get_res_priority_enable(int cpu, int index, bool *enable)
+{
+	return -EOPNOTSUPP;
+}
+static inline int cppc_set_res_priority_enable(int cpu, int index, bool enable)
+{
+	return -EOPNOTSUPP;
+}
+static inline int cppc_get_res_priority_count(int cpu, int index, u64 *count)
+{
+	return -EOPNOTSUPP;
+}
+static inline int cppc_get_res_priority(int cpu, int index, u64 *priority)
+{
+	return -EOPNOTSUPP;
+}
+static inline int cppc_set_res_priority(int cpu, int index, u64 priority)
 {
 	return -EOPNOTSUPP;
 }

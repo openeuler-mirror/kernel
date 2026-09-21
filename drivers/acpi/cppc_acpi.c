@@ -2243,6 +2243,270 @@ int cppc_set_perf(int cpu, struct cppc_perf_ctrls *perf_ctrls)
 EXPORT_SYMBOL_GPL(cppc_set_perf);
 
 /**
+ * get_res_prio_subpkg - Get pointer to the elements array of a RESOURCE_PRIORITY sub-package.
+ * @cpu: CPU number.
+ * @index: Sub-package index (0 to count-1).
+ *
+ * Return: Pointer to the sub-package's elements array, or NULL on error.
+ *
+ * The layout within each sub-package element is:
+ *   elements[CONTROLLED_RESOURCES] = [0]
+ *   elements[ENABLE_VALUE]         = [1]
+ *   elements[ENABLE_REGISTER]      = [2]
+ *   elements[PRIORITY_COUNT]       = [3]
+ *   elements[PRIORITY_REGISTER]    = [4]
+ */
+static struct cpc_register_resource *get_res_prio_subpkg(int cpu, int index)
+{
+	struct cpc_desc *cpc_desc = per_cpu(cpc_desc_ptr, cpu);
+	struct cpc_register_resource *rp_pkg;
+
+	if (!cpc_desc)
+		return NULL;
+
+	rp_pkg = &cpc_desc->cpc_regs[RESOURCE_PRIORITY];
+	if (rp_pkg->type != ACPI_TYPE_PACKAGE)
+		return NULL;
+
+	if (index < 0 || index >= rp_pkg->cpc_entry.package.count)
+		return NULL;
+
+	return rp_pkg->cpc_entry.package.elements[index].cpc_entry.package.elements;
+}
+
+/**
+ * cppc_get_resource_priority_count - Get number of Resource Priority sub-packages.
+ * @cpu: CPU number.
+ * @count: Output number of resource priority groups.
+ *
+ * Return: 0 on success, -EOPNOTSUPP if RESOURCE_PRIORITY not provided by firmware.
+ */
+int cppc_get_resource_priority_count(int cpu, int *count)
+{
+	struct cpc_desc *cpc_desc = per_cpu(cpc_desc_ptr, cpu);
+	struct cpc_register_resource *rp_pkg;
+
+	if (!count)
+		return -EINVAL;
+
+	if (!cpc_desc)
+		return -ENODEV;
+
+	rp_pkg = &cpc_desc->cpc_regs[RESOURCE_PRIORITY];
+	if (rp_pkg->type != ACPI_TYPE_PACKAGE)
+		return -EOPNOTSUPP;
+
+	*count = rp_pkg->cpc_entry.package.count;
+	if (*count <= 0)
+		return -EOPNOTSUPP;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(cppc_get_resource_priority_count);
+
+/**
+ * cppc_get_resource_priority_resources - Read Controlled Resources list for a sub-package.
+ * @cpu: CPU number.
+ * @index: Sub-package index (0 to count-1).
+ * @resources: Output array of resource type IDs (caller-allocated).
+ * @num_resources: Input = array capacity, output = actual count.
+ *
+ * Return: 0 on success, -EOPNOTSUPP, -EINVAL, etc.
+ */
+int cppc_get_resource_priority_resources(int cpu, int index,
+					 u32 *resources, int *num_resources)
+{
+	struct cpc_register_resource *elems;
+	struct cpc_register_resource *cr_pkg;
+	int i, cr_count;
+
+	if (!resources || !num_resources || *num_resources <= 0)
+		return -EINVAL;
+
+	elems = get_res_prio_subpkg(cpu, index);
+	if (!elems)
+		return -EOPNOTSUPP;
+
+	cr_pkg = &elems[CONTROLLED_RESOURCES];
+	if (cr_pkg->type != ACPI_TYPE_PACKAGE)
+		return -EOPNOTSUPP;
+
+	cr_count = cr_pkg->cpc_entry.package.count;
+	if (cr_count <= 0) {
+		*num_resources = 0;
+		return 0;
+	}
+
+	*num_resources = min(cr_count, *num_resources);
+
+	for (i = 0; i < *num_resources; i++)
+		resources[i] = cr_pkg->cpc_entry.package.elements[i].cpc_entry.int_value;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(cppc_get_resource_priority_resources);
+
+/**
+ * cppc_get_res_priority_enable - Read enable state of a Resource Priority register.
+ * @cpu: CPU number.
+ * @index: Sub-package index.
+ * @enable: Output true if enabled, false if disabled.
+ *
+ * Compares the current ENABLE_REGISTER value against ENABLE_VALUE.
+ * If ENABLE_REGISTER is null/unsupported, returns -EOPNOTSUPP.
+ *
+ * Return: 0 on success, negative error otherwise.
+ */
+int cppc_get_res_priority_enable(int cpu, int index, bool *enable)
+{
+	struct cpc_register_resource *elems;
+	struct cpc_register_resource *enable_reg;
+	u64 reg_val, enable_val;
+	int ret;
+
+	if (!enable)
+		return -EINVAL;
+
+	elems = get_res_prio_subpkg(cpu, index);
+	if (!elems)
+		return -EOPNOTSUPP;
+
+	enable_reg = &elems[ENABLE_REGISTER];
+	if (enable_reg->type != ACPI_TYPE_BUFFER ||
+	    IS_NULL_REG(&enable_reg->cpc_entry.reg))
+		return -EOPNOTSUPP;
+
+	ret = cpc_read_reg(cpu, enable_reg, &reg_val);
+	if (ret)
+		return ret;
+
+	ret = cpc_read_reg(cpu, &elems[ENABLE_VALUE], &enable_val);
+	if (ret)
+		return ret;
+
+	*enable = (reg_val == enable_val);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(cppc_get_res_priority_enable);
+
+/**
+ * cppc_set_res_priority_enable - Set enable state of a Resource Priority register.
+ * @cpu: CPU number.
+ * @index: Sub-package index.
+ * @enable: true to enable (write ENABLE_VALUE), false to disable (write 0).
+ *
+ * Return: 0 on success, negative error otherwise.
+ */
+int cppc_set_res_priority_enable(int cpu, int index, bool enable)
+{
+	struct cpc_register_resource *elems;
+	struct cpc_register_resource *enable_reg;
+	u64 val;
+	int ret;
+
+	elems = get_res_prio_subpkg(cpu, index);
+	if (!elems)
+		return -EOPNOTSUPP;
+
+	enable_reg = &elems[ENABLE_REGISTER];
+
+	if (enable) {
+		ret = cpc_read_reg(cpu, &elems[ENABLE_VALUE], &val);
+		if (ret)
+			return ret;
+	} else {
+		val = 0;
+	}
+
+	return cpc_write_reg(cpu, enable_reg, val);
+}
+EXPORT_SYMBOL_GPL(cppc_set_res_priority_enable);
+
+/**
+ * cppc_get_res_priority_count - Read priority count for a Resource Priority register.
+ * @cpu: CPU number.
+ * @index: Sub-package index.
+ * @count: Output priority count (>= 2 per spec).
+ *
+ * Return: 0 on success, negative error otherwise.
+ */
+int cppc_get_res_priority_count(int cpu, int index, u64 *count)
+{
+	struct cpc_register_resource *elems;
+
+	if (!count)
+		return -EINVAL;
+
+	elems = get_res_prio_subpkg(cpu, index);
+	if (!elems)
+		return -EOPNOTSUPP;
+
+	return cpc_read_reg(cpu, &elems[PRIORITY_COUNT], count);
+}
+EXPORT_SYMBOL_GPL(cppc_get_res_priority_count);
+
+/**
+ * cppc_get_res_priority - Read priority value for a Resource Priority register.
+ * @cpu: CPU number.
+ * @index: Sub-package index.
+ * @priority: Output priority value.
+ *
+ * Return: 0 on success, negative error otherwise.
+ */
+int cppc_get_res_priority(int cpu, int index, u64 *priority)
+{
+	struct cpc_register_resource *elems;
+	struct cpc_register_resource *prio_reg;
+
+	if (!priority)
+		return -EINVAL;
+
+	elems = get_res_prio_subpkg(cpu, index);
+	if (!elems)
+		return -EOPNOTSUPP;
+
+	prio_reg = &elems[PRIORITY_REGISTER];
+	if (prio_reg->type != ACPI_TYPE_BUFFER ||
+	    IS_NULL_REG(&prio_reg->cpc_entry.reg))
+		return -EOPNOTSUPP;
+
+	return cpc_read_reg(cpu, prio_reg, priority);
+}
+EXPORT_SYMBOL_GPL(cppc_get_res_priority);
+
+/**
+ * cppc_set_res_priority - Write priority value for a Resource Priority register.
+ * @cpu: CPU number.
+ * @index: Sub-package index.
+ * @priority: Priority value to write (valid range: [0, PriorityCount - 1]).
+ *
+ * Return: 0 on success, negative error otherwise.
+ */
+int cppc_set_res_priority(int cpu, int index, u64 priority)
+{
+	struct cpc_register_resource *elems;
+	struct cpc_register_resource *prio_reg;
+	u64 prio_count;
+	int ret;
+
+	elems = get_res_prio_subpkg(cpu, index);
+	if (!elems)
+		return -EOPNOTSUPP;
+
+	ret = cpc_read_reg(cpu, &elems[PRIORITY_COUNT], &prio_count);
+	if (ret)
+		return ret;
+
+	if (priority >= prio_count)
+		return -EINVAL;
+
+	prio_reg = &elems[PRIORITY_REGISTER];
+
+	return cpc_write_reg(cpu, prio_reg, priority);
+}
+EXPORT_SYMBOL_GPL(cppc_set_res_priority);
+
+/**
  * cppc_get_transition_latency - returns frequency transition latency in ns
  * @cpu_num: CPU number for per_cpu().
  *
