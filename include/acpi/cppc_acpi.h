@@ -56,6 +56,14 @@ struct cpc_register_resource {
 	union {
 		struct cpc_reg reg;
 		u64 int_value;
+		/*
+		 * CPPC v4: nested Package (e.g. RESOURCE_PRIORITY),
+		 * elements dynamically allocated
+		 */
+		struct {
+			u32 count;
+			struct cpc_register_resource *elements;
+		} package;
 	} cpc_entry;
 };
 
