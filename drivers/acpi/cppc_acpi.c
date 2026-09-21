@@ -762,6 +762,30 @@ static int parse_cpc_element(union acpi_object *cpc_obj,
 	return 0;
 }
 
+/**
+ * free_reg_resource - Free resources held by a CPC register resource.
+ * @cpc_reg: Pointer to the CPC register resource to clean up.
+ *
+ * Releases any iomapped SystemMemory address and, for Package-type
+ * resources, recursively frees all nested elements before freeing the
+ * elements array itself.
+ */
+static void free_reg_resource(struct cpc_register_resource *cpc_reg)
+{
+	void __iomem *addr = cpc_reg->sys_mem_vaddr;
+	int i;
+
+	if (addr)
+		iounmap(addr);
+
+	if (cpc_reg->type == ACPI_TYPE_PACKAGE) {
+		for (i = 0; i < cpc_reg->cpc_entry.package.count; i++)
+			free_reg_resource(&cpc_reg->cpc_entry.package.elements[i]);
+
+		kfree(cpc_reg->cpc_entry.package.elements);
+	}
+}
+
 /*
  * An example CPC table looks like the following.
  *
@@ -968,12 +992,9 @@ int acpi_cppc_processor_probe(struct acpi_processor *pr)
 
 out_free:
 	/* Free all the mapped sys mem areas for this CPU */
-	for (i = 2; i < cpc_ptr->num_entries; i++) {
-		void __iomem *addr = cpc_ptr->cpc_regs[i-2].sys_mem_vaddr;
+	for (i = 2; i < cpc_ptr->num_entries; i++)
+		free_reg_resource(&cpc_ptr->cpc_regs[i-2]);
 
-		if (addr)
-			iounmap(addr);
-	}
 	kfree(cpc_ptr);
 
 out_buf_free:
@@ -992,7 +1013,6 @@ void acpi_cppc_processor_exit(struct acpi_processor *pr)
 {
 	struct cpc_desc *cpc_ptr;
 	unsigned int i;
-	void __iomem *addr;
 	int pcc_ss_id = per_cpu(cpu_pcc_subspace_idx, pr->id);
 
 	if (pcc_ss_id >= 0 && pcc_data[pcc_ss_id]) {
@@ -1010,12 +1030,9 @@ void acpi_cppc_processor_exit(struct acpi_processor *pr)
 	if (!cpc_ptr)
 		return;
 
-	/* Free all the mapped sys mem areas for this CPU */
-	for (i = 2; i < cpc_ptr->num_entries; i++) {
-		addr = cpc_ptr->cpc_regs[i-2].sys_mem_vaddr;
-		if (addr)
-			iounmap(addr);
-	}
+	/* Free all the mapped sys mem areas and nested package resources for this CPU */
+	for (i = 2; i < cpc_ptr->num_entries; i++)
+		free_reg_resource(&cpc_ptr->cpc_regs[i-2]);
 
 	kobject_put(&cpc_ptr->kobj);
 	kfree(cpc_ptr);
