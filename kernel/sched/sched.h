@@ -1241,6 +1241,7 @@ struct rq {
 	unsigned long		core_cookie;
 	unsigned char		core_forceidle;
 	unsigned int		core_forceidle_seq;
+	unsigned int		core_pick_in_flight;
 #endif
 
 #if defined(CONFIG_QOS_SCHED_PRIO_LB) && !defined(__GENKSYMS__)

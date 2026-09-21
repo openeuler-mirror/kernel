@@ -266,6 +266,17 @@ static void __sched_core_flip(bool enabled)
 
 		sched_core_lock(cpu, &flags);
 
+		/*
+		 * A core-wide selection may have the shared rq lock temporarily
+		 * released by a lock-dropping ->pick_task(). Flipping would
+		 * rebind rq_lockp() under it. Wait it out.
+		 */
+		while (cpu_rq(cpu)->core->core_pick_in_flight) {
+			sched_core_unlock(cpu, &flags);
+			cpu_relax();
+			sched_core_lock(cpu, &flags);
+		}
+
 		for_each_cpu(t, smt_mask)
 			cpu_rq(t)->core_enabled = enabled;
 
@@ -4912,6 +4923,13 @@ pick_next_task(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 		goto out;
 	}
 
+	/*
+	 * The shared core-wide lock can be dropped below (e.g. while pulling
+	 * tasks in put_prev_task_balance()). Keep the flip out until the
+	 * selection is done so it cannot rebind rq_lockp() underneath us.
+	 */
+	rq->core->core_pick_in_flight++;
+
 	put_prev_task_balance(rq, prev, rf);
 
 	smt_mask = cpu_smt_mask(cpu);
@@ -5061,6 +5079,7 @@ pick_next_task(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 	}
 
 out_set_next:
+	rq->core->core_pick_in_flight--;
 	set_next_task(rq, next);
 out:
 	if (rq->core->core_forceidle && next == rq->idle)
@@ -5255,6 +5274,13 @@ static void sched_core_cpu_deactivate(unsigned int cpu)
 	core_rq->core_cookie        = rq->core_cookie;
 	core_rq->core_forceidle     = rq->core_forceidle;
 	core_rq->core_forceidle_seq = rq->core_forceidle_seq;
+
+	/*
+	 * A stale leftover would bias the count forever if this CPU later
+	 * returns as its own leader. Move, don't copy.
+	 */
+	core_rq->core_pick_in_flight = rq->core_pick_in_flight;
+	rq->core_pick_in_flight      = 0;
 
 	/* install new leader */
 	for_each_cpu(t, smt_mask) {
@@ -8411,6 +8437,7 @@ void __init sched_init(void)
 		rq->core_enabled = 0;
 		rq->core_tree = RB_ROOT;
 		rq->core_forceidle = false;
+		rq->core_pick_in_flight = 0;
 
 		rq->core_cookie = 0UL;
 #endif
