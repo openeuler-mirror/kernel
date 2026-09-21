@@ -138,10 +138,11 @@ static DEFINE_PER_CPU(struct cpc_desc *, cpc_desc_ptr);
 #define REG_OPTIONAL (0x1FC7D0)
 
 /*
- * Use the index of the register in per-cpu cpc_regs[] to check if
- * it's an optional one.
+ * Each bit indicates the optionality of the register in resource
+ * priority register descriptor with the corresponding index. 0 means
+ * mandatory and 1 means optional.
  */
-#define IS_OPTIONAL_CPC_REG(reg_idx) (REG_OPTIONAL & (1U << (reg_idx)))
+#define RES_PRIO_OPTIONAL (0x6)
 
 /*
  * Arbitrary Retries in case the remote processor is slow to respond
@@ -854,7 +855,7 @@ static int parse_priority_regs(union acpi_object *cpc_obj,
 		}
 
 		reg_elements[0].type = ACPI_TYPE_PACKAGE;
-		reg_elements[0].cpc_entry.package.count = resources_count;
+		reg_elements[0].optional = RES_PRIO_OPTIONAL & 1U;
 
 		for (j = 0; j < reg_elements[0].cpc_entry.package.count; j++) {
 			reg_elements[0].cpc_entry.package.elements[j].type = ACPI_TYPE_INTEGER;
@@ -863,6 +864,7 @@ static int parse_priority_regs(union acpi_object *cpc_obj,
 		}
 
 		for (j = 1; j < RESOURCE_PRIORITY_NUM; j++) {
+			reg_elements[j].optional = RES_PRIO_OPTIONAL & (1U << j);
 			ret = parse_cpc_element(&reg_desc_obj.package.elements[j], &reg_elements[j],
 						pcc_subspace_id, cpu, RESOURCE_PRIORITY);
 			if (ret)
@@ -1003,6 +1005,7 @@ int acpi_cppc_processor_probe(struct acpi_processor *pr)
 	/* Iterate through remaining entries in _CPC */
 	for (i = 2; i < num_ent; i++) {
 		cpc_obj = &out_obj->package.elements[i];
+		cpc_ptr->cpc_regs[i-2].optional = REG_OPTIONAL & (1U << (i-2));
 
 		/*
 		 * Package-type entries are used for nested structures such as
@@ -1064,6 +1067,7 @@ int acpi_cppc_processor_probe(struct acpi_processor *pr)
 	 * LOWEST_FREQ and NOMINAL_FREQ regs as unsupported
 	 */
 	for (i = num_ent - 2; i < MAX_CPC_REG_ENT; i++) {
+		cpc_ptr->cpc_regs[i].optional = true;
 		cpc_ptr->cpc_regs[i].type = ACPI_TYPE_INTEGER;
 		cpc_ptr->cpc_regs[i].cpc_entry.int_value = 0;
 	}
@@ -1430,7 +1434,7 @@ static int cppc_get_reg_val(int cpu, enum cppc_regs reg_idx, u64 *val)
 
 	reg = &cpc_desc->cpc_regs[reg_idx];
 
-	if ((reg->type == ACPI_TYPE_INTEGER && IS_OPTIONAL_CPC_REG(reg_idx) &&
+	if ((reg->type == ACPI_TYPE_INTEGER && reg->optional &&
 	     !reg->cpc_entry.int_value) || (reg->type != ACPI_TYPE_INTEGER &&
 	     IS_NULL_REG(&reg->cpc_entry.reg))) {
 		pr_debug("CPC register is not supported\n");

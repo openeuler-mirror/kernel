@@ -65,6 +65,7 @@ struct cpc_register_resource {
 			struct cpc_register_resource *elements;
 		} package;
 	} cpc_entry;
+	bool optional;
 };
 
 /* Container to hold the CPC details for each CPU */
