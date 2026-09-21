@@ -1394,7 +1394,7 @@ static int cpc_write(int cpu, struct cpc_register_resource *reg_res, u64 val)
 	return ret_val;
 }
 
-static int cppc_get_reg_val_in_pcc(int cpu, struct cpc_register_resource *reg, u64 *val)
+static int cpc_read_in_pcc(int cpu, struct cpc_register_resource *reg, u64 *val)
 {
 	int pcc_ss_id = per_cpu(cpu_pcc_subspace_idx, cpu);
 	struct cppc_pcc_data *pcc_ss_data = NULL;
@@ -1419,32 +1419,49 @@ static int cppc_get_reg_val_in_pcc(int cpu, struct cpc_register_resource *reg, u
 	return ret;
 }
 
+/**
+ * cpc_read_reg - Read value from a register element that may be Integer or Buffer.
+ * @cpu: CPU number.
+ * @reg: Pointer to the CPC register element.
+ * @val: Output value.
+ *
+ * Return: 0 on success, -EOPNOTSUPP if null/unsupported, negative on error.
+ */
+static int cpc_read_reg(int cpu, struct cpc_register_resource *reg, u64 *val)
+{
+	if (val == NULL)
+		return -EINVAL;
+
+	if (reg->type == ACPI_TYPE_INTEGER) {
+		if (reg->optional && !reg->cpc_entry.int_value)
+			goto err_unsupported;
+	} else if (reg->type == ACPI_TYPE_BUFFER) {
+		if (IS_NULL_REG(&reg->cpc_entry.reg))
+			goto err_unsupported;
+	} else {
+		goto err_unsupported;
+	}
+
+	if (CPC_IN_PCC(reg))
+		return cpc_read_in_pcc(cpu, reg, val);
+
+	return cpc_read(cpu, reg, val);
+
+err_unsupported:
+	pr_debug("CPC register is not supported\n");
+	return -EOPNOTSUPP;
+}
+
 static int cppc_get_reg_val(int cpu, enum cppc_regs reg_idx, u64 *val)
 {
 	struct cpc_desc *cpc_desc = per_cpu(cpc_desc_ptr, cpu);
-	struct cpc_register_resource *reg;
-
-	if (val == NULL)
-		return -EINVAL;
 
 	if (!cpc_desc) {
 		pr_debug("No CPC descriptor for CPU:%d\n", cpu);
 		return -ENODEV;
 	}
 
-	reg = &cpc_desc->cpc_regs[reg_idx];
-
-	if ((reg->type == ACPI_TYPE_INTEGER && reg->optional &&
-	     !reg->cpc_entry.int_value) || (reg->type != ACPI_TYPE_INTEGER &&
-	     IS_NULL_REG(&reg->cpc_entry.reg))) {
-		pr_debug("CPC register is not supported\n");
-		return -EOPNOTSUPP;
-	}
-
-	if (CPC_IN_PCC(reg))
-		return cppc_get_reg_val_in_pcc(cpu, reg, val);
-
-	return cpc_read(cpu, reg, val);
+	return cpc_read_reg(cpu, &cpc_desc->cpc_regs[reg_idx], val);
 }
 
 static bool cppc_desired_perf_readable(const struct cpc_desc *cpc_desc)
@@ -1452,7 +1469,7 @@ static bool cppc_desired_perf_readable(const struct cpc_desc *cpc_desc)
 	return cpc_desc->version < CPPC_V4_REV;
 }
 
-static int cppc_set_reg_val_in_pcc(int cpu, struct cpc_register_resource *reg, u64 val)
+static int cpc_write_in_pcc(int cpu, struct cpc_register_resource *reg, u64 val)
 {
 	int pcc_ss_id = per_cpu(cpu_pcc_subspace_idx, cpu);
 	struct cppc_pcc_data *pcc_ss_data = NULL;
@@ -1477,18 +1494,16 @@ static int cppc_set_reg_val_in_pcc(int cpu, struct cpc_register_resource *reg, u
 	return ret;
 }
 
-static int cppc_set_reg_val(int cpu, enum cppc_regs reg_idx, u64 val)
+/**
+ * cpc_write_reg - Write a CPC register.
+ * @cpu: CPU number.
+ * @reg: Pointer to the CPC register resource.
+ * @val: Value to write.
+ *
+ * Return: 0 on success, negative error code otherwise.
+ */
+static int cpc_write_reg(int cpu, struct cpc_register_resource *reg, u64 val)
 {
-	struct cpc_desc *cpc_desc = per_cpu(cpc_desc_ptr, cpu);
-	struct cpc_register_resource *reg;
-
-	if (!cpc_desc) {
-		pr_debug("No CPC descriptor for CPU:%d\n", cpu);
-		return -ENODEV;
-	}
-
-	reg = &cpc_desc->cpc_regs[reg_idx];
-
 	/* if a register is writeable, it must be a buffer and not null */
 	if ((reg->type != ACPI_TYPE_BUFFER) || IS_NULL_REG(&reg->cpc_entry.reg)) {
 		pr_debug("CPC register is not supported\n");
@@ -1496,9 +1511,21 @@ static int cppc_set_reg_val(int cpu, enum cppc_regs reg_idx, u64 val)
 	}
 
 	if (CPC_IN_PCC(reg))
-		return cppc_set_reg_val_in_pcc(cpu, reg, val);
+		return cpc_write_in_pcc(cpu, reg, val);
 
 	return cpc_write(cpu, reg, val);
+}
+
+static int cppc_set_reg_val(int cpu, enum cppc_regs reg_idx, u64 val)
+{
+	struct cpc_desc *cpc_desc = per_cpu(cpc_desc_ptr, cpu);
+
+	if (!cpc_desc) {
+		pr_debug("No CPC descriptor for CPU:%d\n", cpu);
+		return -ENODEV;
+	}
+
+	return cpc_write_reg(cpu, &cpc_desc->cpc_regs[reg_idx], val);
 }
 
 /**
