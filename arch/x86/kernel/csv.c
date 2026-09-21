@@ -28,6 +28,12 @@ static DEFINE_PER_CPU(int, secure_call_page_idx);
 typedef void (*csv3_secure_call_func)(u64 base_address, u64 num_pages,
 				      enum csv3_secure_command_type cmd_type);
 
+bool cc_platform_has_csv3(void)
+{
+	return csv3_active();
+}
+EXPORT_SYMBOL_GPL(cc_platform_has_csv3);
+
 void __init csv_early_reset_memory(struct boot_params *bp)
 {
 	if (!csv3_active())
