@@ -937,11 +937,11 @@ static inline bool system_supports_haft(void)
 		cpus_have_final_cap(ARM64_HAFT);
 }
 
-bool cpu_supports_bbml2_noabort(void);
+bool cpu_supports_bbml3(void);
 
-static inline bool system_supports_bbml2_noabort(void)
+static inline bool system_supports_bbml3(void)
 {
-	return alternative_has_cap_unlikely(ARM64_HAS_BBML2_NOABORT);
+	return alternative_has_cap_unlikely(ARM64_HAS_BBML3);
 }
 
 int do_emulate_mrs(struct pt_regs *regs, u32 sys_reg, u32 rt);
