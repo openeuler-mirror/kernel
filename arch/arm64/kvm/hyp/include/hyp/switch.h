@@ -246,7 +246,10 @@ static inline void __activate_traps_common(struct kvm_vcpu *vcpu)
 
 		if (cpus_have_final_cap(ARM64_HAS_LS64_V))
 			hcrx |= HCRX_EL2_EnASR;
-
+#ifdef CONFIG_ENABLE_KVM_FPMR
+		if (kvm_has_fpmr(kern_hyp_va(vcpu->kvm)))
+			hcrx |= HCRX_EL2_EnFPM;
+#endif
 		ctxt_sys_reg(hctxt, HCRX_EL2) = read_sysreg_s(SYS_HCRX_EL2);
 		write_sysreg_s(hcrx, SYS_HCRX_EL2);
 	}
