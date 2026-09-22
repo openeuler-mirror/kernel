@@ -214,4 +214,7 @@ struct ubcore_vtpn *
 /* vtpn helper for the get_tp_list path; internal to ubcore */
 struct ubcore_vtpn *ubcore_create_add_vtpn_for_tpid(struct ubcore_device *dev,
 						  uint64_t tp_handle);
+
+/* Free the vtpn keyed by tp_handle when the owning import/bind failed. */
+void ubcore_import_rollback_to_free_vtpn(struct ubcore_device *dev, uint64_t tp_handle);
 #endif
