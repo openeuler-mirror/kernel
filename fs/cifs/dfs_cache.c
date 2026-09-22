@@ -118,6 +118,9 @@ static inline void free_tgts(struct cache_entry *ce)
 		kfree(t->name);
 		kfree(t);
 	}
+
+	ce->numtgts = 0;
+	WRITE_ONCE(ce->tgthint, NULL);
 }
 
 static inline void flush_cache_ent(struct cache_entry *ce)
@@ -377,12 +380,6 @@ static int copy_ref_data(const struct dfs_info3_param *refs, int numrefs,
 {
 	int i;
 
-	ce->ttl = refs[0].ttl;
-	ce->etime = get_expire_time(ce->ttl);
-	ce->srvtype = refs[0].server_type;
-	ce->flags = refs[0].ref_flag;
-	ce->path_consumed = refs[0].path_consumed;
-
 	for (i = 0; i < numrefs; i++) {
 		struct cache_dfs_tgt *t;
 
@@ -397,11 +394,17 @@ static int copy_ref_data(const struct dfs_info3_param *refs, int numrefs,
 		} else {
 			list_add_tail(&t->list, &ce->tlist);
 		}
-		ce->numtgts++;
 	}
 
 	ce->tgthint = list_first_entry_or_null(&ce->tlist,
 					       struct cache_dfs_tgt, list);
+
+	ce->ttl = refs[0].ttl;
+	ce->etime = get_expire_time(ce->ttl);
+	ce->srvtype = refs[0].server_type;
+	ce->flags = refs[0].ref_flag;
+	ce->path_consumed = refs[0].path_consumed;
+	ce->numtgts = numrefs;
 
 	return 0;
 }
@@ -646,7 +649,6 @@ static int __update_cache_entry(const char *path,
 	}
 
 	free_tgts(ce);
-	ce->numtgts = 0;
 
 	rc = copy_ref_data(refs, numrefs, ce, th);
 
@@ -900,13 +902,21 @@ int dfs_cache_find(const unsigned int xid, struct cifs_ses *ses,
 		goto out_free_path;
 	}
 
-	if (ref)
-		rc = setup_referral(path, ce, ref, get_tgt_name(ce));
-	else
+	if (ref) {
+		char *target = get_tgt_name(ce);
+
+		if (IS_ERR(target)) {
+			rc = PTR_ERR(target);
+			goto out_unlock;
+		}
+		rc = setup_referral(path, ce, ref, target);
+	} else {
 		rc = 0;
+	}
 	if (!rc && tgt_list)
 		rc = get_targets(ce, tgt_list);
 
+out_unlock:
 	up_read(&htable_rw_lock);
 
 out_free_path:
@@ -951,10 +961,17 @@ int dfs_cache_noreq_find(const char *path, struct dfs_info3_param *ref,
 		goto out_unlock;
 	}
 
-	if (ref)
-		rc = setup_referral(path, ce, ref, get_tgt_name(ce));
-	else
+	if (ref) {
+		char *target = get_tgt_name(ce);
+
+		if (IS_ERR(target)) {
+			rc = PTR_ERR(target);
+			goto out_unlock;
+		}
+		rc = setup_referral(path, ce, ref, target);
+	} else {
 		rc = 0;
+	}
 	if (!rc && tgt_list)
 		rc = get_targets(ce, tgt_list);
 
@@ -1013,7 +1030,8 @@ int dfs_cache_update_tgthint(const unsigned int xid, struct cifs_ses *ses,
 
 	t = ce->tgthint;
 
-	if (likely(!strcasecmp(it->it_name, t->name)))
+	/* Check 't' in case ce->tgthint was cleared by free_tgts() */
+	if (t && likely(!strcasecmp(it->it_name, t->name)))
 		goto out_unlock;
 
 	list_for_each_entry(t, &ce->tlist, list) {
@@ -1075,7 +1093,8 @@ int dfs_cache_noreq_update_tgthint(const char *path,
 	rc = 0;
 	t = ce->tgthint;
 
-	if (unlikely(!strcasecmp(it->it_name, t->name)))
+	/* Check 't' in case ce->tgthint was cleared by free_tgts() */
+	if (t && unlikely(!strcasecmp(it->it_name, t->name)))
 		goto out_unlock;
 
 	list_for_each_entry(t, &ce->tlist, list) {
@@ -1471,6 +1490,7 @@ static struct cifs_ses *find_root_ses(struct vol_info *vi,
 				      const char *path)
 {
 	char *rpath;
+	char *target;
 	int rc;
 	struct cache_entry *ce;
 	struct dfs_info3_param ref = {0};
@@ -1492,7 +1512,14 @@ static struct cifs_ses *find_root_ses(struct vol_info *vi,
 		goto out;
 	}
 
-	rc = setup_referral(path, ce, &ref, get_tgt_name(ce));
+	target = get_tgt_name(ce);
+
+	if (IS_ERR(target)) {
+		up_read(&htable_rw_lock);
+		ses = ERR_CAST(target);
+		goto out;
+	}
+	rc = setup_referral(path, ce, &ref, target);
 	if (rc) {
 		up_read(&htable_rw_lock);
 		ses = ERR_PTR(rc);
