@@ -10,6 +10,7 @@
 #include <asm/cpuidle.h>
 #include <asm/cpufeature.h>
 #include <asm/sysreg.h>
+#include <asm/vip_smt.h>
 
 /*
  *	cpu_do_idle()
@@ -72,46 +73,38 @@ struct arm_cpuidle_xcall_xint_context {
 };
 
 DEFINE_PER_CPU_ALIGNED(struct arm_cpuidle_xcall_xint_context, contexts);
-
-void arch_cpu_idle_enter(void)
-{
-	struct arm_cpuidle_xcall_xint_context *context;
-
-	smt_measurement_begin();
-
-	if (!system_uses_xcall_xint())
-		return;
-
-	context = &get_cpu_var(contexts);
-	context->actlr_el1 = read_sysreg(actlr_el1);
-	if (read_sysreg(CurrentEL) == CurrentEL_EL2)
-		context->actlr_el2 = read_sysreg(actlr_el2);
-	put_cpu_var(contexts);
-}
-
-void arch_cpu_idle_exit(void)
-{
-	struct arm_cpuidle_xcall_xint_context *context;
-
-	smt_measurement_done();
-
-	if (!system_uses_xcall_xint())
-		return;
-
-	context = &get_cpu_var(contexts);
-	write_sysreg(context->actlr_el1, actlr_el1);
-	if (read_sysreg(CurrentEL) == CurrentEL_EL2)
-		write_sysreg(context->actlr_el2, actlr_el2);
-	put_cpu_var(contexts);
-}
-#else
-void arch_cpu_idle_enter(void)
-{
-	smt_measurement_begin();
-}
-
-void arch_cpu_idle_exit(void)
-{
-	smt_measurement_done();
-}
 #endif
+
+void arch_cpu_idle_enter(void)
+{
+#ifdef CONFIG_ACTLR_XCALL_XINT
+	struct arm_cpuidle_xcall_xint_context *context;
+
+	if (system_uses_xcall_xint()) {
+		context = &get_cpu_var(contexts);
+		context->actlr_el1 = read_sysreg(actlr_el1);
+		if (read_sysreg(CurrentEL) == CurrentEL_EL2)
+			context->actlr_el2 = read_sysreg(actlr_el2);
+		put_cpu_var(contexts);
+	}
+#endif
+	smt_measurement_begin();
+	vip_smt_enter_idle();
+}
+
+void arch_cpu_idle_exit(void)
+{
+#ifdef CONFIG_ACTLR_XCALL_XINT
+	struct arm_cpuidle_xcall_xint_context *context;
+
+	if (system_uses_xcall_xint()) {
+		context = &get_cpu_var(contexts);
+		write_sysreg(context->actlr_el1, actlr_el1);
+		if (read_sysreg(CurrentEL) == CurrentEL_EL2)
+			write_sysreg(context->actlr_el2, actlr_el2);
+		put_cpu_var(contexts);
+	}
+#endif
+	smt_measurement_done();
+	vip_smt_exit_idle();
+}
