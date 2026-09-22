@@ -502,6 +502,10 @@ struct kvm_host_data {
 	struct kvm_cpu_context host_ctxt;
 	struct user_fpsimd_state *fpsimd_state;	/* hyp VA */
 
+#ifdef CONFIG_ENABLE_KVM_FPMR
+	u64 fpmr;
+#endif
+
 	/* Ownership of the FP regs */
 	enum {
 		FP_STATE_FREE,
