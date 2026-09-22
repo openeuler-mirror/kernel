@@ -129,6 +129,21 @@ static DEFINE_PER_CPU(struct cpc_desc *, cpc_desc_ptr);
 #define CPC_SUPPORTED(cpc) ((cpc)->type == ACPI_TYPE_INTEGER ?		\
 				!!(cpc)->cpc_entry.int_value :		\
 				!IS_NULL_REG(&(cpc)->cpc_entry.reg))
+
+/*
+ * Each bit indicates the optionality of the register in per-cpu
+ * cpc_regs[] with the corresponding index. 0 means mandatory and 1
+ * means optional.
+ */
+#define REG_OPTIONAL (0x1FC7D0)
+
+/*
+ * Each bit indicates the optionality of the register in resource
+ * priority register descriptor with the corresponding index. 0 means
+ * mandatory and 1 means optional.
+ */
+#define RES_PRIO_OPTIONAL (0x6)
+
 /*
  * Arbitrary Retries in case the remote processor is slow to respond
  * to PCC commands. Keeping it high enough to cover emulators where
@@ -645,6 +660,221 @@ static int pcc_data_alloc(int pcc_ss_id)
 	return 0;
 }
 
+/**
+ * parse_cpc_element - Parse a single CPC element into a cpc_register_resource.
+ * @cpc_obj:          Pointer to the ACPI object representing the CPC element.
+ * @cpc_reg:          Output CPC register resource to populate.
+ * @pcc_subspace_id:  In/out pointer to PCC subspace ID; extracted once on first
+ *                    PCC-type register and validated for consistency thereafter.
+ * @cpu:              CPU number, used for debug messages.
+ * @entry_num:        Index within the CPC table entries, used for diagnostics.
+ *
+ * Handles ACPI_TYPE_INTEGER (static value) and ACPI_TYPE_BUFFER (register
+ * descriptor).  Sets up PCC subspace tracking, ioremap for SystemMemory,
+ * and validates SystemIO / FFH register parameters.
+ *
+ * Return: 0 on success, -ENODATA on invalid or unsupported data.
+ */
+static int parse_cpc_element(union acpi_object *cpc_obj,
+			     struct cpc_register_resource *cpc_reg,
+			     int *pcc_subspace_id, u32 cpu, unsigned int entry_num)
+{
+	struct cpc_reg *gas_t;
+
+	if (cpc_obj->type == ACPI_TYPE_INTEGER)	{
+		cpc_reg->type = ACPI_TYPE_INTEGER;
+		cpc_reg->cpc_entry.int_value = cpc_obj->integer.value;
+	} else if (cpc_obj->type == ACPI_TYPE_BUFFER) {
+		gas_t = (struct cpc_reg *)cpc_obj->buffer.pointer;
+
+		/*
+		 * The PCC Subspace index is encoded inside
+		 * the CPC table entries. The same PCC index
+		 * will be used for all the PCC entries,
+		 * so extract it only once.
+		 */
+		if (gas_t->space_id == ACPI_ADR_SPACE_PLATFORM_COMM) {
+			if (*pcc_subspace_id < 0) {
+				*pcc_subspace_id = gas_t->access_width;
+				if (pcc_data_alloc(*pcc_subspace_id))
+					return -ENODATA;
+			} else if (*pcc_subspace_id != gas_t->access_width) {
+				pr_debug("Mismatched PCC ids in _CPC for CPU:%d\n",
+					 cpu);
+				return -ENODATA;
+			}
+		} else if (gas_t->space_id == ACPI_ADR_SPACE_SYSTEM_MEMORY) {
+			if (gas_t->address) {
+				void __iomem *addr;
+				size_t access_width;
+
+				if (!osc_cpc_flexible_adr_space_confirmed) {
+					pr_debug("Flexible address space capability not supported\n");
+					if (!cpc_supported_by_cpu())
+						return -ENODATA;
+				}
+
+				access_width = GET_BIT_WIDTH(gas_t) / 8;
+				addr = ioremap(gas_t->address, access_width);
+				if (!addr)
+					return -ENODATA;
+				cpc_reg->sys_mem_vaddr = addr;
+			}
+		} else if (gas_t->space_id == ACPI_ADR_SPACE_SYSTEM_IO) {
+			if (gas_t->access_width < 1 || gas_t->access_width > 3) {
+				/*
+				 * 1 = 8-bit, 2 = 16-bit, and 3 = 32-bit.
+				 * SystemIO doesn't implement 64-bit
+				 * registers.
+				 */
+				pr_debug("Invalid access width %d for SystemIO register in _CPC\n",
+					 gas_t->access_width);
+				return -ENODATA;
+			}
+			if (gas_t->address & OVER_16BTS_MASK) {
+				/* SystemIO registers use 16-bit integer addresses */
+				pr_debug("Invalid IO port %llu for SystemIO register in _CPC\n",
+					 gas_t->address);
+				return -ENODATA;
+			}
+			if (!osc_cpc_flexible_adr_space_confirmed) {
+				pr_debug("Flexible address space capability not supported\n");
+				if (!cpc_supported_by_cpu())
+					return -ENODATA;
+			}
+		} else {
+			if (gas_t->space_id != ACPI_ADR_SPACE_FIXED_HARDWARE ||
+			    !cpc_ffh_supported()) {
+				/* Support only PCC, SystemMemory, SystemIO, and FFH type regs. */
+				pr_debug("Unsupported register type (%d) in _CPC\n",
+					 gas_t->space_id);
+				return -ENODATA;
+			}
+		}
+
+		cpc_reg->type = ACPI_TYPE_BUFFER;
+		memcpy(&cpc_reg->cpc_entry.reg, gas_t, sizeof(*gas_t));
+	} else {
+		pr_debug("Invalid entry type (%d) in _CPC for CPU:%d\n",
+			 entry_num, cpu);
+		return -ENODATA;
+	}
+
+	return 0;
+}
+
+/**
+ * free_reg_resource - Free resources held by a CPC register resource.
+ * @cpc_reg: Pointer to the CPC register resource to clean up.
+ *
+ * Releases any iomapped SystemMemory address and, for Package-type
+ * resources, recursively frees all nested elements before freeing the
+ * elements array itself.
+ */
+static void free_reg_resource(struct cpc_register_resource *cpc_reg)
+{
+	void __iomem *addr = cpc_reg->sys_mem_vaddr;
+	int i;
+
+	if (addr)
+		iounmap(addr);
+
+	if (cpc_reg->type == ACPI_TYPE_PACKAGE) {
+		for (i = 0; i < cpc_reg->cpc_entry.package.count; i++)
+			free_reg_resource(&cpc_reg->cpc_entry.package.elements[i]);
+
+		kfree(cpc_reg->cpc_entry.package.elements);
+	}
+}
+
+/**
+ * parse_priority_regs - Parse the RESOURCE_PRIORITY nested package structure.
+ * @cpc_obj:         ACPI Package object for the RESOURCE_PRIORITY entry.
+ * @regs:            Output array of cpc_register_resource to fill.
+ * @pcc_subspace_id: In/out pointer to PCC subspace ID.
+ * @cpu:             CPU number, used for debug messages.
+ *
+ * The RESOURCE_PRIORITY entry (CPPC v4) is a Package of sub-packages.
+ * Each sub-package has RESOURCE_PRIORITY_NUM elements:
+ *   [0] = Package of integers (CONTROLLED_RESOURCES list)
+ *   [1] = ENABLE_VALUE, [2] = ENABLE_REGISTER,
+ *   [3] = PRIORITY_COUNT, [4] = PRIORITY_REGISTER
+ *
+ * Return: 0 on success, -ENODATA on malformed data, -ENOMEM on allocation failure.
+ */
+static int parse_priority_regs(union acpi_object *cpc_obj,
+			       struct cpc_register_resource *regs,
+			       int *pcc_subspace_id, u32 cpu)
+{
+	struct cpc_register_resource *reg_elements;
+	union acpi_object reg_desc_obj;
+	unsigned int i, j, resources_count;
+	int ret;
+
+	for (i = 0; i < cpc_obj->package.count; i++) {
+		reg_desc_obj = cpc_obj->package.elements[i];
+		if (reg_desc_obj.type != ACPI_TYPE_PACKAGE ||
+		    reg_desc_obj.package.count != RESOURCE_PRIORITY_NUM) {
+			pr_debug("Malformed priority regs sub-pkg: type %d count %d, expected %d for CPU:%d\n",
+				 reg_desc_obj.type, reg_desc_obj.package.count,
+				 RESOURCE_PRIORITY_NUM, cpu);
+			return -ENODATA;
+		}
+
+		reg_elements = kzalloc(RESOURCE_PRIORITY_NUM *
+					sizeof(struct cpc_register_resource), GFP_KERNEL);
+		if (!reg_elements) {
+			pr_debug("Failed to allocate reg_elements for CPU:%d\n", cpu);
+			return -ENOMEM;
+		}
+
+		/*
+		 * Assign values immediately after successful allocation to ensure that resources
+		 * can be properly released.
+		 */
+		regs[i].type = ACPI_TYPE_PACKAGE;
+		regs[i].cpc_entry.package.count = RESOURCE_PRIORITY_NUM;
+		regs[i].cpc_entry.package.elements = reg_elements;
+
+		resources_count = reg_desc_obj.package.elements[0].package.count;
+
+		if (reg_desc_obj.package.elements[0].type != ACPI_TYPE_PACKAGE ||
+		    !resources_count) {
+			pr_debug("Invalid priority sub-elements: type %d count %d for CPU:%d\n",
+				 reg_desc_obj.package.elements[0].type, resources_count, cpu);
+			return -ENODATA;
+		}
+
+		reg_elements[0].cpc_entry.package.elements =
+			kzalloc(resources_count * sizeof(struct cpc_register_resource),
+				GFP_KERNEL);
+		if (!reg_elements[0].cpc_entry.package.elements) {
+			pr_debug("Failed to allocate %d priority sub-elements for CPU:%d\n",
+				 resources_count, cpu);
+			return -ENOMEM;
+		}
+
+		reg_elements[0].type = ACPI_TYPE_PACKAGE;
+		reg_elements[0].optional = RES_PRIO_OPTIONAL & 1U;
+
+		for (j = 0; j < reg_elements[0].cpc_entry.package.count; j++) {
+			reg_elements[0].cpc_entry.package.elements[j].type = ACPI_TYPE_INTEGER;
+			reg_elements[0].cpc_entry.package.elements[j].cpc_entry.int_value =
+				reg_desc_obj.package.elements[0].package.elements[j].integer.value;
+		}
+
+		for (j = 1; j < RESOURCE_PRIORITY_NUM; j++) {
+			reg_elements[j].optional = RES_PRIO_OPTIONAL & (1U << j);
+			ret = parse_cpc_element(&reg_desc_obj.package.elements[j], &reg_elements[j],
+						pcc_subspace_id, cpu, RESOURCE_PRIORITY);
+			if (ret)
+				return ret;
+		}
+	}
+
+	return 0;
+}
+
 /*
  * An example CPC table looks like the following.
  *
@@ -687,15 +917,16 @@ static inline void arch_init_invariance_cppc(void) { }
 int acpi_cppc_processor_probe(struct acpi_processor *pr)
 {
 	struct acpi_buffer output = {ACPI_ALLOCATE_BUFFER, NULL};
+	struct cpc_register_resource *pkg_elements;
 	union acpi_object *out_obj, *cpc_obj;
 	struct cpc_desc *cpc_ptr;
-	struct cpc_reg *gas_t;
 	struct device *cpu_dev;
 	acpi_handle handle = pr->handle;
 	unsigned int num_ent, i, cpc_rev;
 	int pcc_subspace_id = -1;
 	acpi_status status;
 	int ret = -ENODATA;
+	u32 pkg_count;
 
 	if (!osc_sb_cppc2_support_acked) {
 		pr_debug("CPPC v2 _OSC not acked\n");
@@ -774,94 +1005,58 @@ int acpi_cppc_processor_probe(struct acpi_processor *pr)
 	/* Iterate through remaining entries in _CPC */
 	for (i = 2; i < num_ent; i++) {
 		cpc_obj = &out_obj->package.elements[i];
+		cpc_ptr->cpc_regs[i-2].optional = REG_OPTIONAL & (1U << (i-2));
 
-		if (cpc_obj->type == ACPI_TYPE_INTEGER)	{
-			cpc_ptr->cpc_regs[i-2].type = ACPI_TYPE_INTEGER;
-			cpc_ptr->cpc_regs[i-2].cpc_entry.int_value = cpc_obj->integer.value;
-		} else if (cpc_obj->type == ACPI_TYPE_BUFFER) {
-			gas_t = (struct cpc_reg *)
-				cpc_obj->buffer.pointer;
+		/*
+		 * Package-type entries are used for nested structures such as
+		 * RESOURCE_PRIORITY (CPPC v4). Only RESOURCE_PRIORITY is
+		 * currently supported; any other Package entry is rejected.
+		 */
+		if (cpc_obj->type == ACPI_TYPE_PACKAGE) {
+			cpc_ptr->cpc_regs[i-2].type = ACPI_TYPE_PACKAGE;
+			cpc_ptr->cpc_regs[i-2].cpc_entry.package.count = 0;
+			cpc_ptr->cpc_regs[i-2].cpc_entry.package.elements = NULL;
 
-			/*
-			 * The PCC Subspace index is encoded inside
-			 * the CPC table entries. The same PCC index
-			 * will be used for all the PCC entries,
-			 * so extract it only once.
-			 */
-			if (gas_t->space_id == ACPI_ADR_SPACE_PLATFORM_COMM) {
-				if (pcc_subspace_id < 0) {
-					pcc_subspace_id = gas_t->access_width;
-					if (pcc_data_alloc(pcc_subspace_id))
-						goto out_free;
-				} else if (pcc_subspace_id != gas_t->access_width) {
-					pr_debug("Mismatched PCC ids in _CPC for CPU:%d\n",
-						 pr->id);
-					goto out_free;
-				}
-			} else if (gas_t->space_id == ACPI_ADR_SPACE_SYSTEM_MEMORY) {
-				if (gas_t->address) {
-					void __iomem *addr;
-					size_t access_width;
-
-					if (!osc_cpc_flexible_adr_space_confirmed) {
-						pr_debug("Flexible address space capability not supported\n");
-						if (!cpc_supported_by_cpu())
-							goto out_free;
-					}
-
-					access_width = GET_BIT_WIDTH(gas_t) / 8;
-					addr = ioremap(gas_t->address, access_width);
-					if (!addr)
-						goto out_free;
-					cpc_ptr->cpc_regs[i-2].sys_mem_vaddr = addr;
-				}
-			} else if (gas_t->space_id == ACPI_ADR_SPACE_SYSTEM_IO) {
-				if (gas_t->access_width < 1 || gas_t->access_width > 3) {
-					/*
-					 * 1 = 8-bit, 2 = 16-bit, and 3 = 32-bit.
-					 * SystemIO doesn't implement 64-bit
-					 * registers.
-					 */
-					pr_debug("Invalid access width %d for SystemIO register in _CPC\n",
-						 gas_t->access_width);
-					goto out_free;
-				}
-				if (gas_t->address & OVER_16BTS_MASK) {
-					/* SystemIO registers use 16-bit integer addresses */
-					pr_debug("Invalid IO port %llu for SystemIO register in _CPC\n",
-						 gas_t->address);
-					goto out_free;
-				}
-				if (!osc_cpc_flexible_adr_space_confirmed) {
-					pr_debug("Flexible address space capability not supported\n");
-					if (!cpc_supported_by_cpu())
-						goto out_free;
-				}
-			} else {
-				if (gas_t->space_id != ACPI_ADR_SPACE_FIXED_HARDWARE || !cpc_ffh_supported()) {
-					/* Support only PCC, SystemMemory, SystemIO, and FFH type regs. */
-					pr_debug("Unsupported register type (%d) in _CPC\n",
-						 gas_t->space_id);
-					goto out_free;
-				}
+			pkg_count = cpc_obj->package.count;
+			if (!pkg_count) {
+				pr_debug("Empty package entry at index %d for CPU:%d\n",
+					 i, pr->id);
+				continue;
 			}
 
-			cpc_ptr->cpc_regs[i-2].type = ACPI_TYPE_BUFFER;
-			memcpy(&cpc_ptr->cpc_regs[i-2].cpc_entry.reg, gas_t, sizeof(*gas_t));
-		} else if (cpc_obj->type == ACPI_TYPE_PACKAGE && (i - 2) == RESOURCE_PRIORITY) {
+			pkg_elements = kzalloc(pkg_count * sizeof(struct cpc_register_resource),
+					       GFP_KERNEL);
+			if (!pkg_elements) {
+				ret = -ENOMEM;
+				goto out_free;
+			}
+
 			/*
-			 * ACPI 6.6, s8.4.6.1.2.7 defines Resource Priority as a
-			 * Package of Resource Priority Register Descriptor sub-packages.
-			 * Parsing the full structure is not yet supported.
-			 * Mark the register as unsupported for now.
+			 * Assign values immediately after successful allocation to ensure that
+			 * resources can be properly released.
 			 */
-			pr_debug("CPU:%d Resource Priority not supported\n", pr->id);
-			cpc_ptr->cpc_regs[i-2].type = ACPI_TYPE_INTEGER;
-			cpc_ptr->cpc_regs[i-2].cpc_entry.int_value = 0;
+			cpc_ptr->cpc_regs[i-2].cpc_entry.package.count = pkg_count;
+			cpc_ptr->cpc_regs[i-2].cpc_entry.package.elements = pkg_elements;
+
+			if (i - 2 == RESOURCE_PRIORITY) {
+				ret = parse_priority_regs(cpc_obj, pkg_elements,
+							  &pcc_subspace_id, pr->id);
+				if (ret)
+					goto out_free;
+
+				pr_debug("Parsed RESOURCE_PRIORITY (%d sub-pkgs) for CPU:%d\n",
+					 pkg_count, pr->id);
+			} else {
+				pr_debug("Unexpected ACPI_TYPE_PACKAGE at index %d for CPU:%d\n",
+					 i, pr->id);
+				ret = -ENODATA;
+				goto out_free;
+			}
 		} else {
-			pr_debug("Invalid entry type (%d) in _CPC for CPU:%d\n",
-				 i, pr->id);
-			goto out_free;
+			ret = parse_cpc_element(cpc_obj, &cpc_ptr->cpc_regs[i-2],
+						&pcc_subspace_id, pr->id, i);
+			if (ret)
+				goto out_free;
 		}
 	}
 	per_cpu(cpu_pcc_subspace_idx, pr->id) = pcc_subspace_id;
@@ -872,6 +1067,7 @@ int acpi_cppc_processor_probe(struct acpi_processor *pr)
 	 * LOWEST_FREQ and NOMINAL_FREQ regs as unsupported
 	 */
 	for (i = num_ent - 2; i < MAX_CPC_REG_ENT; i++) {
+		cpc_ptr->cpc_regs[i].optional = true;
 		cpc_ptr->cpc_regs[i].type = ACPI_TYPE_INTEGER;
 		cpc_ptr->cpc_regs[i].cpc_entry.int_value = 0;
 	}
@@ -924,12 +1120,9 @@ int acpi_cppc_processor_probe(struct acpi_processor *pr)
 
 out_free:
 	/* Free all the mapped sys mem areas for this CPU */
-	for (i = 2; i < cpc_ptr->num_entries; i++) {
-		void __iomem *addr = cpc_ptr->cpc_regs[i-2].sys_mem_vaddr;
+	for (i = 2; i < cpc_ptr->num_entries; i++)
+		free_reg_resource(&cpc_ptr->cpc_regs[i-2]);
 
-		if (addr)
-			iounmap(addr);
-	}
 	kfree(cpc_ptr);
 
 out_buf_free:
@@ -948,7 +1141,6 @@ void acpi_cppc_processor_exit(struct acpi_processor *pr)
 {
 	struct cpc_desc *cpc_ptr;
 	unsigned int i;
-	void __iomem *addr;
 	int pcc_ss_id = per_cpu(cpu_pcc_subspace_idx, pr->id);
 
 	if (pcc_ss_id >= 0 && pcc_data[pcc_ss_id]) {
@@ -966,12 +1158,9 @@ void acpi_cppc_processor_exit(struct acpi_processor *pr)
 	if (!cpc_ptr)
 		return;
 
-	/* Free all the mapped sys mem areas for this CPU */
-	for (i = 2; i < cpc_ptr->num_entries; i++) {
-		addr = cpc_ptr->cpc_regs[i-2].sys_mem_vaddr;
-		if (addr)
-			iounmap(addr);
-	}
+	/* Free all the mapped sys mem areas and nested package resources for this CPU */
+	for (i = 2; i < cpc_ptr->num_entries; i++)
+		free_reg_resource(&cpc_ptr->cpc_regs[i-2]);
 
 	kobject_put(&cpc_ptr->kobj);
 	kfree(cpc_ptr);
@@ -1205,48 +1394,138 @@ static int cpc_write(int cpu, struct cpc_register_resource *reg_res, u64 val)
 	return ret_val;
 }
 
-static int cppc_get_perf(int cpunum, enum cppc_regs reg_idx, u64 *perf)
+static int cpc_read_in_pcc(int cpu, struct cpc_register_resource *reg, u64 *val)
 {
-	struct cpc_desc *cpc_desc = per_cpu(cpc_desc_ptr, cpunum);
-	struct cpc_register_resource *reg;
+	int pcc_ss_id = per_cpu(cpu_pcc_subspace_idx, cpu);
+	struct cppc_pcc_data *pcc_ss_data = NULL;
+	int ret;
 
-	if (!cpc_desc) {
-		pr_debug("No CPC descriptor for CPU:%d\n", cpunum);
+	if (pcc_ss_id < 0) {
+		pr_debug("Invalid pcc_ss_id\n");
 		return -ENODEV;
 	}
 
-	reg = &cpc_desc->cpc_regs[reg_idx];
+	pcc_ss_data = pcc_data[pcc_ss_id];
 
-	if (CPC_IN_PCC(reg)) {
-		int pcc_ss_id = per_cpu(cpu_pcc_subspace_idx, cpunum);
-		struct cppc_pcc_data *pcc_ss_data = NULL;
-		int ret = 0;
+	down_write(&pcc_ss_data->pcc_lock);
 
-		if (pcc_ss_id < 0)
-			return -EIO;
+	if (send_pcc_cmd(pcc_ss_id, CMD_READ) >= 0)
+		ret = cpc_read(cpu, reg, val);
+	else
+		ret = -EIO;
 
-		pcc_ss_data = pcc_data[pcc_ss_id];
+	up_write(&pcc_ss_data->pcc_lock);
 
-		down_write(&pcc_ss_data->pcc_lock);
+	return ret;
+}
 
-		if (send_pcc_cmd(pcc_ss_id, CMD_READ) >= 0)
-			cpc_read(cpunum, reg, perf);
-		else
-			ret = -EIO;
+/**
+ * cpc_read_reg - Read value from a register element that may be Integer or Buffer.
+ * @cpu: CPU number.
+ * @reg: Pointer to the CPC register element.
+ * @val: Output value.
+ *
+ * Return: 0 on success, -EOPNOTSUPP if null/unsupported, negative on error.
+ */
+static int cpc_read_reg(int cpu, struct cpc_register_resource *reg, u64 *val)
+{
+	if (val == NULL)
+		return -EINVAL;
 
-		up_write(&pcc_ss_data->pcc_lock);
-
-		return ret;
+	if (reg->type == ACPI_TYPE_INTEGER) {
+		if (reg->optional && !reg->cpc_entry.int_value)
+			goto err_unsupported;
+	} else if (reg->type == ACPI_TYPE_BUFFER) {
+		if (IS_NULL_REG(&reg->cpc_entry.reg))
+			goto err_unsupported;
+	} else {
+		goto err_unsupported;
 	}
 
-	cpc_read(cpunum, reg, perf);
+	if (CPC_IN_PCC(reg))
+		return cpc_read_in_pcc(cpu, reg, val);
 
-	return 0;
+	return cpc_read(cpu, reg, val);
+
+err_unsupported:
+	pr_debug("CPC register is not supported\n");
+	return -EOPNOTSUPP;
+}
+
+static int cppc_get_reg_val(int cpu, enum cppc_regs reg_idx, u64 *val)
+{
+	struct cpc_desc *cpc_desc = per_cpu(cpc_desc_ptr, cpu);
+
+	if (!cpc_desc) {
+		pr_debug("No CPC descriptor for CPU:%d\n", cpu);
+		return -ENODEV;
+	}
+
+	return cpc_read_reg(cpu, &cpc_desc->cpc_regs[reg_idx], val);
 }
 
 static bool cppc_desired_perf_readable(const struct cpc_desc *cpc_desc)
 {
 	return cpc_desc->version < CPPC_V4_REV;
+}
+
+static int cpc_write_in_pcc(int cpu, struct cpc_register_resource *reg, u64 val)
+{
+	int pcc_ss_id = per_cpu(cpu_pcc_subspace_idx, cpu);
+	struct cppc_pcc_data *pcc_ss_data = NULL;
+	int ret;
+
+	if (pcc_ss_id < 0) {
+		pr_debug("Invalid pcc_ss_id\n");
+		return -ENODEV;
+	}
+
+	ret = cpc_write(cpu, reg, val);
+	if (ret)
+		return ret;
+
+	pcc_ss_data = pcc_data[pcc_ss_id];
+
+	down_write(&pcc_ss_data->pcc_lock);
+	/* after writing CPC, transfer the ownership of PCC to platform */
+	ret = send_pcc_cmd(pcc_ss_id, CMD_WRITE);
+	up_write(&pcc_ss_data->pcc_lock);
+
+	return ret;
+}
+
+/**
+ * cpc_write_reg - Write a CPC register.
+ * @cpu: CPU number.
+ * @reg: Pointer to the CPC register resource.
+ * @val: Value to write.
+ *
+ * Return: 0 on success, negative error code otherwise.
+ */
+static int cpc_write_reg(int cpu, struct cpc_register_resource *reg, u64 val)
+{
+	/* if a register is writeable, it must be a buffer and not null */
+	if ((reg->type != ACPI_TYPE_BUFFER) || IS_NULL_REG(&reg->cpc_entry.reg)) {
+		pr_debug("CPC register is not supported\n");
+		return -EOPNOTSUPP;
+	}
+
+	if (CPC_IN_PCC(reg))
+		return cpc_write_in_pcc(cpu, reg, val);
+
+	return cpc_write(cpu, reg, val);
+}
+
+static int cppc_set_reg_val(int cpu, enum cppc_regs reg_idx, u64 val)
+{
+	struct cpc_desc *cpc_desc = per_cpu(cpc_desc_ptr, cpu);
+
+	if (!cpc_desc) {
+		pr_debug("No CPC descriptor for CPU:%d\n", cpu);
+		return -ENODEV;
+	}
+
+	return cpc_write_reg(cpu, &cpc_desc->cpc_regs[reg_idx], val);
 }
 
 /**
@@ -1268,7 +1547,7 @@ int cppc_get_desired_perf(int cpunum, u64 *desired_perf)
 	if (!cppc_desired_perf_readable(cpc_desc))
 		return -EOPNOTSUPP;
 
-	return cppc_get_perf(cpunum, DESIRED_PERF, desired_perf);
+	return cppc_get_reg_val(cpunum, DESIRED_PERF, desired_perf);
 }
 EXPORT_SYMBOL_GPL(cppc_get_desired_perf);
 
@@ -1281,7 +1560,7 @@ EXPORT_SYMBOL_GPL(cppc_get_desired_perf);
  */
 int cppc_get_nominal_perf(int cpunum, u64 *nominal_perf)
 {
-	return cppc_get_perf(cpunum, NOMINAL_PERF, nominal_perf);
+	return cppc_get_reg_val(cpunum, NOMINAL_PERF, nominal_perf);
 }
 
 /**
@@ -1293,7 +1572,7 @@ int cppc_get_nominal_perf(int cpunum, u64 *nominal_perf)
  */
 int cppc_get_highest_perf(int cpunum, u64 *highest_perf)
 {
-	return cppc_get_perf(cpunum, HIGHEST_PERF, highest_perf);
+	return cppc_get_reg_val(cpunum, HIGHEST_PERF, highest_perf);
 }
 EXPORT_SYMBOL_GPL(cppc_get_highest_perf);
 
@@ -1306,7 +1585,7 @@ EXPORT_SYMBOL_GPL(cppc_get_highest_perf);
  */
 int cppc_get_epp_perf(int cpunum, u64 *epp_perf)
 {
-	return cppc_get_perf(cpunum, ENERGY_PERF, epp_perf);
+	return cppc_get_reg_val(cpunum, ENERGY_PERF, epp_perf);
 }
 EXPORT_SYMBOL_GPL(cppc_get_epp_perf);
 
@@ -1794,44 +2073,14 @@ EXPORT_SYMBOL_GPL(cppc_set_auto_sel_caps);
  */
 int cppc_get_auto_sel_caps(int cpunum, struct cppc_perf_caps *perf_caps)
 {
-	struct cpc_desc *cpc_desc = per_cpu(cpc_desc_ptr, cpunum);
-	struct cpc_register_resource *auto_sel_reg;
-	u64  auto_sel;
+	u64 auto_sel;
+	int ret;
 
-	if (!cpc_desc) {
-		pr_debug("No CPC descriptor for CPU:%d\n", cpunum);
-		return -ENODEV;
-	}
-
-	auto_sel_reg = &cpc_desc->cpc_regs[AUTO_SEL_ENABLE];
-
-	if (!CPC_SUPPORTED(auto_sel_reg))
-		pr_warn_once("Autonomous mode is not unsupported!\n");
-
-	if (CPC_IN_PCC(auto_sel_reg)) {
-		int pcc_ss_id = per_cpu(cpu_pcc_subspace_idx, cpunum);
-		struct cppc_pcc_data *pcc_ss_data = NULL;
-		int ret = 0;
-
-		if (pcc_ss_id < 0)
-			return -ENODEV;
-
-		pcc_ss_data = pcc_data[pcc_ss_id];
-
-		down_write(&pcc_ss_data->pcc_lock);
-
-		if (send_pcc_cmd(pcc_ss_id, CMD_READ) >= 0) {
-			cpc_read(cpunum, auto_sel_reg, &auto_sel);
-			perf_caps->auto_sel = (bool)auto_sel;
-		} else {
-			ret = -EIO;
-		}
-
-		up_write(&pcc_ss_data->pcc_lock);
-
+	ret = cppc_get_reg_val(cpunum, AUTO_SEL_ENABLE, &auto_sel);
+	if (ret)
 		return ret;
-	}
 
+	perf_caps->auto_sel = (bool)auto_sel;
 	return 0;
 }
 EXPORT_SYMBOL_GPL(cppc_get_auto_sel_caps);
@@ -1843,43 +2092,7 @@ EXPORT_SYMBOL_GPL(cppc_get_auto_sel_caps);
  */
 int cppc_set_auto_sel(int cpu, bool enable)
 {
-	int pcc_ss_id = per_cpu(cpu_pcc_subspace_idx, cpu);
-	struct cpc_register_resource *auto_sel_reg;
-	struct cpc_desc *cpc_desc = per_cpu(cpc_desc_ptr, cpu);
-	struct cppc_pcc_data *pcc_ss_data = NULL;
-	int ret = -EINVAL;
-
-	if (!cpc_desc) {
-		pr_debug("No CPC descriptor for CPU:%d\n", cpu);
-		return -ENODEV;
-	}
-
-	auto_sel_reg = &cpc_desc->cpc_regs[AUTO_SEL_ENABLE];
-
-	if (CPC_IN_PCC(auto_sel_reg)) {
-		if (pcc_ss_id < 0) {
-			pr_debug("Invalid pcc_ss_id\n");
-			return -ENODEV;
-		}
-
-		if (CPC_SUPPORTED(auto_sel_reg)) {
-			ret = cpc_write(cpu, auto_sel_reg, enable);
-			if (ret)
-				return ret;
-		}
-
-		pcc_ss_data = pcc_data[pcc_ss_id];
-
-		down_write(&pcc_ss_data->pcc_lock);
-		/* after writing CPC, transfer the ownership of PCC to platform */
-		ret = send_pcc_cmd(pcc_ss_id, CMD_WRITE);
-		up_write(&pcc_ss_data->pcc_lock);
-	} else {
-		ret = -ENOTSUPP;
-		pr_debug("_CPC in PCC is not supported\n");
-	}
-
-	return ret;
+	return cppc_set_reg_val(cpu, AUTO_SEL_ENABLE, enable);
 }
 EXPORT_SYMBOL_GPL(cppc_set_auto_sel);
 
@@ -1893,38 +2106,7 @@ EXPORT_SYMBOL_GPL(cppc_set_auto_sel);
  */
 int cppc_set_enable(int cpu, bool enable)
 {
-	int pcc_ss_id = per_cpu(cpu_pcc_subspace_idx, cpu);
-	struct cpc_register_resource *enable_reg;
-	struct cpc_desc *cpc_desc = per_cpu(cpc_desc_ptr, cpu);
-	struct cppc_pcc_data *pcc_ss_data = NULL;
-	int ret = -EINVAL;
-
-	if (!cpc_desc) {
-		pr_debug("No CPC descriptor for CPU:%d\n", cpu);
-		return -EINVAL;
-	}
-
-	enable_reg = &cpc_desc->cpc_regs[ENABLE];
-
-	if (CPC_IN_PCC(enable_reg)) {
-
-		if (pcc_ss_id < 0)
-			return -EIO;
-
-		ret = cpc_write(cpu, enable_reg, enable);
-		if (ret)
-			return ret;
-
-		pcc_ss_data = pcc_data[pcc_ss_id];
-
-		down_write(&pcc_ss_data->pcc_lock);
-		/* after writing CPC, transfer the ownership of PCC to platfrom */
-		ret = send_pcc_cmd(pcc_ss_id, CMD_WRITE);
-		up_write(&pcc_ss_data->pcc_lock);
-		return ret;
-	}
-
-	return cpc_write(cpu, enable_reg, enable);
+	return cppc_set_reg_val(cpu, ENABLE, enable);
 }
 EXPORT_SYMBOL_GPL(cppc_set_enable);
 
@@ -2059,6 +2241,270 @@ int cppc_set_perf(int cpu, struct cppc_perf_ctrls *perf_ctrls)
 	return ret;
 }
 EXPORT_SYMBOL_GPL(cppc_set_perf);
+
+/**
+ * get_res_prio_subpkg - Get pointer to the elements array of a RESOURCE_PRIORITY sub-package.
+ * @cpu: CPU number.
+ * @index: Sub-package index (0 to count-1).
+ *
+ * Return: Pointer to the sub-package's elements array, or NULL on error.
+ *
+ * The layout within each sub-package element is:
+ *   elements[CONTROLLED_RESOURCES] = [0]
+ *   elements[ENABLE_VALUE]         = [1]
+ *   elements[ENABLE_REGISTER]      = [2]
+ *   elements[PRIORITY_COUNT]       = [3]
+ *   elements[PRIORITY_REGISTER]    = [4]
+ */
+static struct cpc_register_resource *get_res_prio_subpkg(int cpu, int index)
+{
+	struct cpc_desc *cpc_desc = per_cpu(cpc_desc_ptr, cpu);
+	struct cpc_register_resource *rp_pkg;
+
+	if (!cpc_desc)
+		return NULL;
+
+	rp_pkg = &cpc_desc->cpc_regs[RESOURCE_PRIORITY];
+	if (rp_pkg->type != ACPI_TYPE_PACKAGE)
+		return NULL;
+
+	if (index < 0 || index >= rp_pkg->cpc_entry.package.count)
+		return NULL;
+
+	return rp_pkg->cpc_entry.package.elements[index].cpc_entry.package.elements;
+}
+
+/**
+ * cppc_get_resource_priority_count - Get number of Resource Priority sub-packages.
+ * @cpu: CPU number.
+ * @count: Output number of resource priority groups.
+ *
+ * Return: 0 on success, -EOPNOTSUPP if RESOURCE_PRIORITY not provided by firmware.
+ */
+int cppc_get_resource_priority_count(int cpu, int *count)
+{
+	struct cpc_desc *cpc_desc = per_cpu(cpc_desc_ptr, cpu);
+	struct cpc_register_resource *rp_pkg;
+
+	if (!count)
+		return -EINVAL;
+
+	if (!cpc_desc)
+		return -ENODEV;
+
+	rp_pkg = &cpc_desc->cpc_regs[RESOURCE_PRIORITY];
+	if (rp_pkg->type != ACPI_TYPE_PACKAGE)
+		return -EOPNOTSUPP;
+
+	*count = rp_pkg->cpc_entry.package.count;
+	if (*count <= 0)
+		return -EOPNOTSUPP;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(cppc_get_resource_priority_count);
+
+/**
+ * cppc_get_resource_priority_resources - Read Controlled Resources list for a sub-package.
+ * @cpu: CPU number.
+ * @index: Sub-package index (0 to count-1).
+ * @resources: Output array of resource type IDs (caller-allocated).
+ * @num_resources: Input = array capacity, output = actual count.
+ *
+ * Return: 0 on success, -EOPNOTSUPP, -EINVAL, etc.
+ */
+int cppc_get_resource_priority_resources(int cpu, int index,
+					 u32 *resources, int *num_resources)
+{
+	struct cpc_register_resource *elems;
+	struct cpc_register_resource *cr_pkg;
+	int i, cr_count;
+
+	if (!resources || !num_resources || *num_resources <= 0)
+		return -EINVAL;
+
+	elems = get_res_prio_subpkg(cpu, index);
+	if (!elems)
+		return -EOPNOTSUPP;
+
+	cr_pkg = &elems[CONTROLLED_RESOURCES];
+	if (cr_pkg->type != ACPI_TYPE_PACKAGE)
+		return -EOPNOTSUPP;
+
+	cr_count = cr_pkg->cpc_entry.package.count;
+	if (cr_count <= 0) {
+		*num_resources = 0;
+		return 0;
+	}
+
+	*num_resources = min(cr_count, *num_resources);
+
+	for (i = 0; i < *num_resources; i++)
+		resources[i] = cr_pkg->cpc_entry.package.elements[i].cpc_entry.int_value;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(cppc_get_resource_priority_resources);
+
+/**
+ * cppc_get_res_priority_enable - Read enable state of a Resource Priority register.
+ * @cpu: CPU number.
+ * @index: Sub-package index.
+ * @enable: Output true if enabled, false if disabled.
+ *
+ * Compares the current ENABLE_REGISTER value against ENABLE_VALUE.
+ * If ENABLE_REGISTER is null/unsupported, returns -EOPNOTSUPP.
+ *
+ * Return: 0 on success, negative error otherwise.
+ */
+int cppc_get_res_priority_enable(int cpu, int index, bool *enable)
+{
+	struct cpc_register_resource *elems;
+	struct cpc_register_resource *enable_reg;
+	u64 reg_val, enable_val;
+	int ret;
+
+	if (!enable)
+		return -EINVAL;
+
+	elems = get_res_prio_subpkg(cpu, index);
+	if (!elems)
+		return -EOPNOTSUPP;
+
+	enable_reg = &elems[ENABLE_REGISTER];
+	if (enable_reg->type != ACPI_TYPE_BUFFER ||
+	    IS_NULL_REG(&enable_reg->cpc_entry.reg))
+		return -EOPNOTSUPP;
+
+	ret = cpc_read_reg(cpu, enable_reg, &reg_val);
+	if (ret)
+		return ret;
+
+	ret = cpc_read_reg(cpu, &elems[ENABLE_VALUE], &enable_val);
+	if (ret)
+		return ret;
+
+	*enable = (reg_val == enable_val);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(cppc_get_res_priority_enable);
+
+/**
+ * cppc_set_res_priority_enable - Set enable state of a Resource Priority register.
+ * @cpu: CPU number.
+ * @index: Sub-package index.
+ * @enable: true to enable (write ENABLE_VALUE), false to disable (write 0).
+ *
+ * Return: 0 on success, negative error otherwise.
+ */
+int cppc_set_res_priority_enable(int cpu, int index, bool enable)
+{
+	struct cpc_register_resource *elems;
+	struct cpc_register_resource *enable_reg;
+	u64 val;
+	int ret;
+
+	elems = get_res_prio_subpkg(cpu, index);
+	if (!elems)
+		return -EOPNOTSUPP;
+
+	enable_reg = &elems[ENABLE_REGISTER];
+
+	if (enable) {
+		ret = cpc_read_reg(cpu, &elems[ENABLE_VALUE], &val);
+		if (ret)
+			return ret;
+	} else {
+		val = 0;
+	}
+
+	return cpc_write_reg(cpu, enable_reg, val);
+}
+EXPORT_SYMBOL_GPL(cppc_set_res_priority_enable);
+
+/**
+ * cppc_get_res_priority_count - Read priority count for a Resource Priority register.
+ * @cpu: CPU number.
+ * @index: Sub-package index.
+ * @count: Output priority count (>= 2 per spec).
+ *
+ * Return: 0 on success, negative error otherwise.
+ */
+int cppc_get_res_priority_count(int cpu, int index, u64 *count)
+{
+	struct cpc_register_resource *elems;
+
+	if (!count)
+		return -EINVAL;
+
+	elems = get_res_prio_subpkg(cpu, index);
+	if (!elems)
+		return -EOPNOTSUPP;
+
+	return cpc_read_reg(cpu, &elems[PRIORITY_COUNT], count);
+}
+EXPORT_SYMBOL_GPL(cppc_get_res_priority_count);
+
+/**
+ * cppc_get_res_priority - Read priority value for a Resource Priority register.
+ * @cpu: CPU number.
+ * @index: Sub-package index.
+ * @priority: Output priority value.
+ *
+ * Return: 0 on success, negative error otherwise.
+ */
+int cppc_get_res_priority(int cpu, int index, u64 *priority)
+{
+	struct cpc_register_resource *elems;
+	struct cpc_register_resource *prio_reg;
+
+	if (!priority)
+		return -EINVAL;
+
+	elems = get_res_prio_subpkg(cpu, index);
+	if (!elems)
+		return -EOPNOTSUPP;
+
+	prio_reg = &elems[PRIORITY_REGISTER];
+	if (prio_reg->type != ACPI_TYPE_BUFFER ||
+	    IS_NULL_REG(&prio_reg->cpc_entry.reg))
+		return -EOPNOTSUPP;
+
+	return cpc_read_reg(cpu, prio_reg, priority);
+}
+EXPORT_SYMBOL_GPL(cppc_get_res_priority);
+
+/**
+ * cppc_set_res_priority - Write priority value for a Resource Priority register.
+ * @cpu: CPU number.
+ * @index: Sub-package index.
+ * @priority: Priority value to write (valid range: [0, PriorityCount - 1]).
+ *
+ * Return: 0 on success, negative error otherwise.
+ */
+int cppc_set_res_priority(int cpu, int index, u64 priority)
+{
+	struct cpc_register_resource *elems;
+	struct cpc_register_resource *prio_reg;
+	u64 prio_count;
+	int ret;
+
+	elems = get_res_prio_subpkg(cpu, index);
+	if (!elems)
+		return -EOPNOTSUPP;
+
+	ret = cpc_read_reg(cpu, &elems[PRIORITY_COUNT], &prio_count);
+	if (ret)
+		return ret;
+
+	if (priority >= prio_count)
+		return -EINVAL;
+
+	prio_reg = &elems[PRIORITY_REGISTER];
+
+	return cpc_write_reg(cpu, prio_reg, priority);
+}
+EXPORT_SYMBOL_GPL(cppc_set_res_priority);
 
 /**
  * cppc_get_transition_latency - returns frequency transition latency in ns
