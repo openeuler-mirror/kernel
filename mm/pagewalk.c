@@ -553,18 +553,6 @@ EXPORT_SYMBOL_GPL(walk_page_range);
 int walk_kernel_page_table_range(unsigned long start, unsigned long end,
 		const struct mm_walk_ops *ops, pgd_t *pgd, void *private)
 {
-	struct mm_struct *mm = &init_mm;
-	struct mm_walk walk = {
-		.ops		= ops,
-		.mm		= mm,
-		.pgd		= pgd,
-		.private	= private,
-		.no_vma		= true
-	};
-
-	if (start >= end)
-		return -EINVAL;
-
 	/*
 	 * Kernel intermediate page tables are usually not freed, so the mmap
 	 * read lock is sufficient. But there are some exceptions.
@@ -573,7 +561,31 @@ int walk_kernel_page_table_range(unsigned long start, unsigned long end,
 	 * specified address range from being freed. The caller should take
 	 * other actions to prevent this race.
 	 */
-	mmap_assert_locked(mm);
+	mmap_assert_locked(&init_mm);
+
+	return walk_kernel_page_table_range_lockless(start, end, ops, pgd,
+						     private);
+}
+
+/*
+ * Use this function to walk the kernel page tables locklessly. It should be
+ * guaranteed that the caller has exclusive access over the range they are
+ * operating on - that there should be no concurrent access, for example,
+ * changing permissions for vmalloc objects.
+ */
+int walk_kernel_page_table_range_lockless(unsigned long start, unsigned long end,
+		const struct mm_walk_ops *ops, pgd_t *pgd, void *private)
+{
+	struct mm_walk walk = {
+		.ops		= ops,
+		.mm		= &init_mm,
+		.pgd		= pgd,
+		.private	= private,
+		.no_vma		= true
+	};
+
+	if (start >= end)
+		return -EINVAL;
 
 	return walk_pgd_range(start, end, &walk);
 }
