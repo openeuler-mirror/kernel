@@ -834,16 +834,19 @@ union csv3_page_attr {
 	u64 val;
 };
 
+/* 256MB dirty pages to secure processor at once */
+#define CSV_MIGRATION_DIRTY_PAGE_NUM	(512 * 128)
+
 struct guest_paddr_block {
 	struct {
 		u64 share:	1;
 		u64 reserved:	11;
 		u64 gfn:	52;
-	} entry[512];
+	} entry[CSV_MIGRATION_DIRTY_PAGE_NUM];
 };
 
 struct trans_paddr_block {
-	u64	trans_paddr[512];
+	u64	trans_paddr[CSV_MIGRATION_DIRTY_PAGE_NUM];
 };
 
 struct vmcb_paddr_block {
@@ -2389,10 +2392,13 @@ static int csv3_send_encrypt_data(struct kvm *kvm, struct kvm_sev_cmd *argp)
 	struct csv3_data_send_encrypt_data data;
 	struct kvm_csv3_send_encrypt_data params;
 	void *hdr;
+	phys_addr_t trans_paddr = 0;
+	u64 trans_size;
+	phys_addr_t general_paddr = 0;
+	u64 general_size;
 	void *trans_data;
 	struct trans_paddr_block *trans_block;
 	struct guest_paddr_block *guest_block;
-	unsigned long pfn;
 	u32 offset;
 	int ret = 0;
 	int i;
@@ -2422,96 +2428,101 @@ static int csv3_send_encrypt_data(struct kvm *kvm, struct kvm_sev_cmd *argp)
 	    (params.trans_len & ~PAGE_MASK) != 0)
 		return -EINVAL;
 
+	ret = csv_alloc_migration_transfer_mem(&trans_paddr, &trans_size);
+	if (ret)
+		goto exit;
+
+	if (trans_size < ARRAY_SIZE(trans_block->trans_paddr) * PAGE_SIZE) {
+		ret = -ENOMEM;
+		goto e_free_transfer_mem;
+	}
+
+	ret = csv_alloc_migration_general_mem(&general_paddr, &general_size);
+	if (ret)
+		goto e_free_transfer_mem;
+
+	if (general_size < sizeof(*guest_block) + sizeof(*trans_block)) {
+		ret = -ENOMEM;
+		goto e_free_general_mem;
+	}
+
 	/* allocate memory for header and transport buffer */
 	hdr = kzalloc(params.hdr_len, GFP_KERNEL_ACCOUNT);
 	if (!hdr) {
 		ret = -ENOMEM;
-		goto exit;
+		goto e_free_general_mem;
 	}
 
-	guest_block = kzalloc(sizeof(*guest_block), GFP_KERNEL_ACCOUNT);
-	if (!guest_block) {
-		ret = -ENOMEM;
-		goto e_free_hdr;
-	}
-
+	guest_block = __va(general_paddr);
 	if (copy_from_user(guest_block,
 			   (void __user *)(uintptr_t)params.guest_addr_data,
 			   params.guest_addr_len)) {
 		ret = -EFAULT;
-		goto e_free_guest_block;
+		goto e_free_hdr;
 	}
 
-	trans_block = kzalloc(sizeof(*trans_block), GFP_KERNEL_ACCOUNT);
-	if (!trans_block) {
-		ret = -ENOMEM;
-		goto e_free_guest_block;
-	}
-	trans_data = vzalloc(params.trans_len);
-	if (!trans_data) {
-		ret = -ENOMEM;
-		goto e_free_trans_block;
-	}
-
+	trans_block = __va(general_paddr + sizeof(*guest_block));
+	trans_data = __va(trans_paddr);
 	for (offset = 0, i = 0; offset < params.trans_len; offset += PAGE_SIZE) {
-		pfn = vmalloc_to_pfn(offset + trans_data);
-		trans_block->trans_paddr[i] = __sme_set(pfn_to_hpa(pfn));
+		trans_block->trans_paddr[i] = __sme_set(trans_paddr + offset);
 		i++;
 	}
 	memset(&data, 0, sizeof(data));
 	data.hdr_address = __psp_pa(hdr);
 	data.hdr_len = params.hdr_len;
-	data.trans_block = __psp_pa(trans_block);
+	data.trans_block = __sme_set(general_paddr + sizeof(*guest_block));
 	data.trans_len = params.trans_len;
 
-	data.guest_block = __psp_pa(guest_block);
+	data.guest_block = __sme_set(general_paddr);
 	data.guest_len = params.guest_addr_len;
 	data.handle = sev->handle;
 
+	/* Must be set zero as firmware defaults to using all-zero shared pages for HMAC. */
+	memset(trans_data, 0x00, params.trans_len);
 	clflush_cache_range(hdr, params.hdr_len);
 	clflush_cache_range(trans_data, params.trans_len);
-	clflush_cache_range(trans_block, PAGE_SIZE);
-	clflush_cache_range(guest_block, PAGE_SIZE);
+	clflush_cache_range(trans_block, sizeof(*trans_block));
+	clflush_cache_range(guest_block, sizeof(*guest_block));
 
 	data.flag = CSV3_SEND_ENCRYPT_DATA_SET_READONLY;
 	ret = hygon_kvm_hooks.sev_issue_cmd(kvm, CSV3_CMD_SEND_ENCRYPT_DATA,
 					    &data, &argp->error);
 	if (ret)
-		goto e_free_trans_data;
+		goto e_free_hdr;
 
 	kvm_flush_remote_tlbs(kvm);
+	wbinvd_on_all_cpus();
 
 	data.flag = CSV3_SEND_ENCRYPT_DATA_MIGRATE_PAGE;
 	ret = hygon_kvm_hooks.sev_issue_cmd(kvm, CSV3_CMD_SEND_ENCRYPT_DATA,
 					    &data, &argp->error);
 	if (ret)
-		goto e_free_trans_data;
+		goto e_free_hdr;
 
 	ret = -EFAULT;
+
 	/* copy transport buffer to user space */
 	if (copy_to_user((void __user *)(uintptr_t)params.trans_uaddr,
 			 trans_data, params.trans_len))
-		goto e_free_trans_data;
+		goto e_free_hdr;
 
 	/* copy guest address block to user space */
 	if (copy_to_user((void __user *)(uintptr_t)params.guest_addr_data,
 			 guest_block, params.guest_addr_len))
-		goto e_free_trans_data;
+		goto e_free_hdr;
 
 	/* copy packet header to userspace. */
 	if (copy_to_user((void __user *)(uintptr_t)params.hdr_uaddr, hdr,
 			 params.hdr_len))
-		goto e_free_trans_data;
+		goto e_free_hdr;
 
 	ret = 0;
-e_free_trans_data:
-	vfree(trans_data);
-e_free_trans_block:
-	kfree(trans_block);
-e_free_guest_block:
-	kfree(guest_block);
 e_free_hdr:
 	kfree(hdr);
+e_free_general_mem:
+	csv_free_migration_general_mem(general_paddr);
+e_free_transfer_mem:
+	csv_free_migration_transfer_mem(trans_paddr);
 exit:
 	return ret;
 }
@@ -2545,9 +2556,12 @@ static int csv3_send_encrypt_context(struct kvm *kvm, struct kvm_sev_cmd *argp)
 	struct csv3_data_send_encrypt_context data;
 	struct kvm_csv3_send_encrypt_context params;
 	void *hdr;
+	phys_addr_t trans_paddr = 0;
+	u64 trans_size;
+	phys_addr_t general_paddr = 0;
+	u64 general_size;
 	void *trans_data;
 	struct trans_paddr_block *trans_block;
-	unsigned long pfn;
 	unsigned long i;
 	u32 offset;
 	int ret = 0;
@@ -2569,34 +2583,42 @@ static int csv3_send_encrypt_context(struct kvm *kvm, struct kvm_sev_cmd *argp)
 	if (params.trans_len > ARRAY_SIZE(trans_block->trans_paddr) * PAGE_SIZE)
 		return -EINVAL;
 
+	ret = csv_alloc_migration_transfer_mem(&trans_paddr, &trans_size);
+	if (ret)
+		goto exit;
+
+	if (trans_size < ARRAY_SIZE(trans_block->trans_paddr) * PAGE_SIZE) {
+		ret = -ENOMEM;
+		goto e_free_transfer_mem;
+	}
+
+	ret = csv_alloc_migration_general_mem(&general_paddr, &general_size);
+	if (ret)
+		goto e_free_transfer_mem;
+
+	if (general_size < sizeof(*trans_block)) {
+		ret = -ENOMEM;
+		goto e_free_general_mem;
+	}
+
 	/* allocate memory for header and transport buffer */
 	hdr = kzalloc(params.hdr_len, GFP_KERNEL_ACCOUNT);
 	if (!hdr) {
 		ret = -ENOMEM;
-		goto exit;
+		goto e_free_general_mem;
 	}
 
-	trans_block = kzalloc(sizeof(*trans_block), GFP_KERNEL_ACCOUNT);
-	if (!trans_block) {
-		ret = -ENOMEM;
-		goto e_free_hdr;
-	}
-	trans_data = vzalloc(params.trans_len);
-	if (!trans_data) {
-		ret = -ENOMEM;
-		goto e_free_trans_block;
-	}
-
+	trans_block = __va(general_paddr);
+	trans_data = __va(trans_paddr);
 	for (offset = 0, i = 0; offset < params.trans_len; offset += PAGE_SIZE) {
-		pfn = vmalloc_to_pfn(offset + trans_data);
-		trans_block->trans_paddr[i] = __sme_set(pfn_to_hpa(pfn));
+		trans_block->trans_paddr[i] = __sme_set(trans_paddr + offset);
 		i++;
 	}
 
 	memset(&data, 0, sizeof(data));
 	data.hdr_address = __psp_pa(hdr);
 	data.hdr_len = params.hdr_len;
-	data.trans_block = __psp_pa(trans_block);
+	data.trans_block = __sme_set(general_paddr);
 	data.trans_len = params.trans_len;
 	data.handle = sev->handle;
 
@@ -2607,28 +2629,28 @@ static int csv3_send_encrypt_context(struct kvm *kvm, struct kvm_sev_cmd *argp)
 					    &data, &argp->error);
 
 	if (ret)
-		goto e_free_trans_data;
+		goto e_free_hdr;
 
 	/* copy transport buffer to user space */
 	if (copy_to_user((void __user *)(uintptr_t)params.trans_uaddr,
 			 trans_data, params.trans_len)) {
 		ret = -EFAULT;
-		goto e_free_trans_data;
+		goto e_free_hdr;
 	}
 
 	/* copy packet header to userspace. */
 	if (copy_to_user((void __user *)(uintptr_t)params.hdr_uaddr, hdr,
 			 params.hdr_len)) {
 		ret = -EFAULT;
-		goto e_free_trans_data;
+		goto e_free_hdr;
 	}
 
-e_free_trans_data:
-	vfree(trans_data);
-e_free_trans_block:
-	kfree(trans_block);
 e_free_hdr:
 	kfree(hdr);
+e_free_general_mem:
+	csv_free_migration_general_mem(general_paddr);
+e_free_transfer_mem:
+	csv_free_migration_transfer_mem(trans_paddr);
 exit:
 	return ret;
 }
@@ -2640,10 +2662,13 @@ static int csv3_receive_encrypt_data(struct kvm *kvm, struct kvm_sev_cmd *argp)
 	struct csv3_data_receive_encrypt_data data;
 	struct kvm_csv3_receive_encrypt_data params;
 	void *hdr;
+	phys_addr_t trans_paddr = 0;
+	u64 trans_size;
+	phys_addr_t general_paddr = 0;
+	u64 general_size;
 	void *trans_data;
 	struct trans_paddr_block *trans_block;
 	struct guest_paddr_block *guest_block;
-	unsigned long pfn;
 	int i;
 	u32 offset;
 	int ret = 0;
@@ -2673,11 +2698,29 @@ static int csv3_receive_encrypt_data(struct kvm *kvm, struct kvm_sev_cmd *argp)
 	if (params.trans_len > ARRAY_SIZE(trans_block->trans_paddr) * PAGE_SIZE)
 		return -EINVAL;
 
+	ret = csv_alloc_migration_transfer_mem(&trans_paddr, &trans_size);
+	if (ret)
+		goto exit;
+
+	if (trans_size < ARRAY_SIZE(trans_block->trans_paddr) * PAGE_SIZE) {
+		ret = -ENOMEM;
+		goto e_free_transfer_mem;
+	}
+
+	ret = csv_alloc_migration_general_mem(&general_paddr, &general_size);
+	if (ret)
+		goto e_free_transfer_mem;
+
+	if (general_size < sizeof(*guest_block) + sizeof(*trans_block)) {
+		ret = -ENOMEM;
+		goto e_free_general_mem;
+	}
+
 	/* allocate memory for header and transport buffer */
 	hdr = kzalloc(params.hdr_len, GFP_KERNEL_ACCOUNT);
 	if (!hdr) {
 		ret = -ENOMEM;
-		goto exit;
+		goto e_free_general_mem;
 	}
 
 	if (copy_from_user(hdr,
@@ -2687,67 +2730,50 @@ static int csv3_receive_encrypt_data(struct kvm *kvm, struct kvm_sev_cmd *argp)
 		goto e_free_hdr;
 	}
 
-	guest_block = kzalloc(sizeof(*guest_block), GFP_KERNEL_ACCOUNT);
-	if (!guest_block) {
-		ret = -ENOMEM;
-		goto e_free_hdr;
-	}
-
+	guest_block = __va(general_paddr);
 	if (copy_from_user(guest_block,
 			   (void __user *)(uintptr_t)params.guest_addr_data,
 			   params.guest_addr_len)) {
 		ret = -EFAULT;
-		goto e_free_guest_block;
+		goto e_free_hdr;
 	}
 
-	trans_block = kzalloc(sizeof(*trans_block), GFP_KERNEL_ACCOUNT);
-	if (!trans_block) {
-		ret = -ENOMEM;
-		goto e_free_guest_block;
-	}
-	trans_data = vzalloc(params.trans_len);
-	if (!trans_data) {
-		ret = -ENOMEM;
-		goto e_free_trans_block;
-	}
-
+	trans_block = __va(general_paddr + sizeof(*guest_block));
+	trans_data = __va(trans_paddr);
 	if (copy_from_user(trans_data,
 			   (void __user *)(uintptr_t)params.trans_uaddr,
 			   params.trans_len)) {
 		ret = -EFAULT;
-		goto e_free_trans_data;
+		goto e_free_hdr;
 	}
 
 	for (offset = 0, i = 0; offset < params.trans_len; offset += PAGE_SIZE) {
-		pfn = vmalloc_to_pfn(offset + trans_data);
-		trans_block->trans_paddr[i] = __sme_set(pfn_to_hpa(pfn));
+		trans_block->trans_paddr[i] = __sme_set(trans_paddr + offset);
 		i++;
 	}
 
 	memset(&data, 0, sizeof(data));
 	data.hdr_address = __psp_pa(hdr);
 	data.hdr_len = params.hdr_len;
-	data.trans_block = __psp_pa(trans_block);
+	data.trans_block = __sme_set(general_paddr + sizeof(*guest_block));
 	data.trans_len = params.trans_len;
-	data.guest_block = __psp_pa(guest_block);
+	data.guest_block = __sme_set(general_paddr);
 	data.guest_len = params.guest_addr_len;
 	data.handle = sev->handle;
 
 	clflush_cache_range(hdr, params.hdr_len);
 	clflush_cache_range(trans_data, params.trans_len);
-	clflush_cache_range(trans_block, PAGE_SIZE);
-	clflush_cache_range(guest_block, PAGE_SIZE);
+	clflush_cache_range(trans_block, sizeof(*trans_block));
+	clflush_cache_range(guest_block, sizeof(*guest_block));
 	ret = hygon_kvm_hooks.sev_issue_cmd(kvm, CSV3_CMD_RECEIVE_ENCRYPT_DATA,
 					    &data, &argp->error);
 
-e_free_trans_data:
-	vfree(trans_data);
-e_free_trans_block:
-	kfree(trans_block);
-e_free_guest_block:
-	kfree(guest_block);
 e_free_hdr:
 	kfree(hdr);
+e_free_general_mem:
+	csv_free_migration_general_mem(general_paddr);
+e_free_transfer_mem:
+	csv_free_migration_transfer_mem(trans_paddr);
 exit:
 	return ret;
 }
@@ -2758,11 +2784,14 @@ static int csv3_receive_encrypt_context(struct kvm *kvm, struct kvm_sev_cmd *arg
 	struct csv3_data_receive_encrypt_context data;
 	struct kvm_csv3_receive_encrypt_context params;
 	void *hdr;
+	phys_addr_t trans_paddr = 0;
+	u64 trans_size;
+	phys_addr_t general_paddr = 0;
+	u64 general_size;
 	void *trans_data;
 	struct trans_paddr_block *trans_block;
 	struct vmcb_paddr_block *shadow_vmcb_block;
 	struct vmcb_paddr_block *secure_vmcb_block;
-	unsigned long pfn;
 	u32 offset;
 	int ret = 0;
 	struct kvm_vcpu *vcpu;
@@ -2782,6 +2811,25 @@ static int csv3_receive_encrypt_context(struct kvm *kvm, struct kvm_sev_cmd *arg
 	if (params.trans_len > ARRAY_SIZE(trans_block->trans_paddr) * PAGE_SIZE)
 		return -EINVAL;
 
+	ret = csv_alloc_migration_transfer_mem(&trans_paddr, &trans_size);
+	if (ret)
+		goto exit;
+
+	if (trans_size < ARRAY_SIZE(trans_block->trans_paddr) * PAGE_SIZE) {
+		ret = -ENOMEM;
+		goto e_free_transfer_mem;
+	}
+
+	ret = csv_alloc_migration_general_mem(&general_paddr, &general_size);
+	if (ret)
+		goto e_free_transfer_mem;
+
+	if (general_size < sizeof(*trans_block) + sizeof(*secure_vmcb_block) +
+			   sizeof(*shadow_vmcb_block)) {
+		ret = -ENOMEM;
+		goto e_free_general_mem;
+	}
+
 	/* allocate memory for header and transport buffer */
 	hdr = kzalloc(params.hdr_len, GFP_KERNEL_ACCOUNT);
 	if (!hdr) {
@@ -2796,43 +2844,23 @@ static int csv3_receive_encrypt_context(struct kvm *kvm, struct kvm_sev_cmd *arg
 		goto e_free_hdr;
 	}
 
-	trans_block = kzalloc(sizeof(*trans_block), GFP_KERNEL_ACCOUNT);
-	if (!trans_block) {
-		ret = -ENOMEM;
-		goto e_free_hdr;
-	}
-	trans_data = vzalloc(params.trans_len);
-	if (!trans_data) {
-		ret = -ENOMEM;
-		goto e_free_trans_block;
-	}
-
+	trans_block = __va(general_paddr);
+	trans_data = __va(trans_paddr);
 	if (copy_from_user(trans_data,
 			   (void __user *)(uintptr_t)params.trans_uaddr,
 			   params.trans_len)) {
 		ret = -EFAULT;
-		goto e_free_trans_data;
+		goto e_free_hdr;
 	}
 
 	for (offset = 0, i = 0; offset < params.trans_len; offset += PAGE_SIZE) {
-		pfn = vmalloc_to_pfn(offset + trans_data);
-		trans_block->trans_paddr[i] = __sme_set(pfn_to_hpa(pfn));
+		trans_block->trans_paddr[i] = __sme_set(trans_paddr + offset);
 		i++;
 	}
 
-	secure_vmcb_block = kzalloc(sizeof(*secure_vmcb_block),
-				    GFP_KERNEL_ACCOUNT);
-	if (!secure_vmcb_block) {
-		ret = -ENOMEM;
-		goto e_free_trans_data;
-	}
-
-	shadow_vmcb_block = kzalloc(sizeof(*shadow_vmcb_block),
-				    GFP_KERNEL_ACCOUNT);
-	if (!shadow_vmcb_block) {
-		ret = -ENOMEM;
-		goto e_free_secure_vmcb_block;
-	}
+	secure_vmcb_block = __va(general_paddr + sizeof(*trans_block));
+	shadow_vmcb_block = __va(general_paddr + sizeof(*trans_block) +
+				sizeof(*secure_vmcb_block));
 
 	memset(&data, 0, sizeof(data));
 
@@ -2841,7 +2869,7 @@ static int csv3_receive_encrypt_context(struct kvm *kvm, struct kvm_sev_cmd *arg
 
 		if (i >= ARRAY_SIZE(shadow_vmcb_block->vmcb_paddr)) {
 			ret = -EINVAL;
-			goto e_free_shadow_vmcb_block;
+			goto e_free_hdr;
 		}
 		shadow_vmcb_block->vmcb_paddr[i] = __sme_pa(svm->vmcb);
 		data.vmcb_block_len += sizeof(shadow_vmcb_block->vmcb_paddr[0]);
@@ -2849,29 +2877,30 @@ static int csv3_receive_encrypt_context(struct kvm *kvm, struct kvm_sev_cmd *arg
 
 	data.hdr_address = __psp_pa(hdr);
 	data.hdr_len = params.hdr_len;
-	data.trans_block = __psp_pa(trans_block);
+	data.trans_block = __sme_set(general_paddr);
 	data.trans_len = params.trans_len;
-	data.shadow_vmcb_block = __psp_pa(shadow_vmcb_block);
-	data.secure_vmcb_block = __psp_pa(secure_vmcb_block);
+	data.shadow_vmcb_block = __sme_set(general_paddr + sizeof(*trans_block) +
+				sizeof(*secure_vmcb_block));
+	data.secure_vmcb_block = __sme_set(general_paddr + sizeof(*trans_block));
 	data.handle = sev->handle;
 
 	clflush_cache_range(hdr, params.hdr_len);
 	clflush_cache_range(trans_data, params.trans_len);
-	clflush_cache_range(trans_block, PAGE_SIZE);
-	clflush_cache_range(shadow_vmcb_block, PAGE_SIZE);
-	clflush_cache_range(secure_vmcb_block, PAGE_SIZE);
+	clflush_cache_range(trans_block, sizeof(*trans_block));
+	clflush_cache_range(shadow_vmcb_block, sizeof(*shadow_vmcb_block));
+	clflush_cache_range(secure_vmcb_block, sizeof(*secure_vmcb_block));
 
 	ret = hygon_kvm_hooks.sev_issue_cmd(kvm, CSV3_CMD_RECEIVE_ENCRYPT_CONTEXT,
 					    &data, &argp->error);
 	if (ret)
-		goto e_free_shadow_vmcb_block;
+		goto e_free_hdr;
 
 	kvm_for_each_vcpu(i, vcpu, kvm) {
 		struct vcpu_svm *svm = to_svm(vcpu);
 
 		if (i >= ARRAY_SIZE(secure_vmcb_block->vmcb_paddr)) {
 			ret = -EINVAL;
-			goto e_free_shadow_vmcb_block;
+			goto e_free_hdr;
 		}
 
 		svm->current_vmcb->pa = secure_vmcb_block->vmcb_paddr[i];
@@ -2887,16 +2916,12 @@ static int csv3_receive_encrypt_context(struct kvm *kvm, struct kvm_sev_cmd *arg
 		svm_enable_lbrv(vcpu);
 	}
 
-e_free_shadow_vmcb_block:
-	kfree(shadow_vmcb_block);
-e_free_secure_vmcb_block:
-	kfree(secure_vmcb_block);
-e_free_trans_data:
-	vfree(trans_data);
-e_free_trans_block:
-	kfree(trans_block);
 e_free_hdr:
 	kfree(hdr);
+e_free_general_mem:
+	csv_free_migration_general_mem(general_paddr);
+e_free_transfer_mem:
+	csv_free_migration_transfer_mem(trans_paddr);
 exit:
 	return ret;
 }

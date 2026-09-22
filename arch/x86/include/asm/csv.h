@@ -60,6 +60,11 @@ phys_addr_t csv3_alloc_mem_block(void);
 void csv3_free_mem_block(phys_addr_t phys_addr);
 size_t csv3_get_mem_block_size(void);
 
+int csv_alloc_migration_transfer_mem(phys_addr_t *paddr, u64 *size);
+void csv_free_migration_transfer_mem(phys_addr_t paddr);
+int csv_alloc_migration_general_mem(phys_addr_t *paddr, u64 *size);
+void csv_free_migration_general_mem(phys_addr_t paddr);
+
 #else	/* !CONFIG_HYGON_CSV */
 
 #define csv_smr		NULL
@@ -80,6 +85,13 @@ static inline void csv_free_metadata(u64 hpa) { }
 static inline enum csv_smr_source get_csv_smr_source(void) { return NOT_SUPPORTED; }
 
 static inline uint32_t csv_get_smr_entry_shift(void) { return 0; }
+
+static inline int csv_alloc_migration_transfer_mem(phys_addr_t *paddr, u64 *size)
+						{ return -1; }
+static inline void csv_free_migration_transfer_mem(phys_addr_t paddr) { }
+static inline int csv_alloc_migration_general_mem(phys_addr_t *paddr, u64 *size)
+						{ return -1; }
+static inline void csv_free_migration_general_mem(phys_addr_t paddr) { }
 
 #endif	/* CONFIG_HYGON_CSV */
 
