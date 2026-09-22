@@ -418,7 +418,9 @@ enum vcpu_sysreg {
 	PIR_EL1,       /* Permission Indirection Register 1 (EL1) */
 	PIRE0_EL1,     /*  Permission Indirection Register 0 (EL1) */
 
+#ifdef CONFIG_ENABLE_KVM_FPMR
 	FPMR,
+#endif
 
 	/* 32bit specific registers. */
 	DACR32_EL2,	/* Domain Access Control Register */
