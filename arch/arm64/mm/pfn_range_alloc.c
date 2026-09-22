@@ -510,7 +510,7 @@ int set_linear_mapping_invalid(unsigned long start_pfn, unsigned long end_pfn,
 	start = (unsigned long)page_to_virt(pfn_to_page(start_pfn));
 	end = start + (end_pfn - start_pfn) * PAGE_SIZE;
 	mmap_write_lock(&init_mm);
-	walk_page_range_novma(&init_mm, start, end,
+	walk_kernel_page_table_range(start, end,
 				&invalid_ops, NULL, (void *)set_invalid);
 	mmap_write_unlock(&init_mm);
 	if (set_invalid)
@@ -593,10 +593,10 @@ int set_linear_mapping_nc(unsigned long start_pfn, unsigned long end_pfn, bool s
 		return ret;
 
 	mmap_write_lock(&init_mm);
-	walk_page_range_novma(&init_mm, start, end,
+	walk_kernel_page_table_range(start, end,
 				&invalid_ops, NULL, (void *)true);
 	flush_tlb_kernel_range(start, end);
-	walk_page_range_novma(&init_mm, start, end,
+	walk_kernel_page_table_range(start, end,
 				&nc_ops, NULL, (void *)set_nc);
 	mmap_write_unlock(&init_mm);
 
