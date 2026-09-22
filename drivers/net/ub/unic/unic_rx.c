@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -912,7 +912,7 @@ static void unic_fill_skb_frags(struct unic_rq *rq, struct sk_buff *skb,
 }
 
 static int unic_add_skb_frags(struct unic_rq *rq, struct napi_struct *napi,
-			      u16 pkt_len, u32 pull_len)
+			      u16 pkt_len, u32 pull_len, u16 *unfragged_idx)
 {
 	u16 buff_len = unic_get_rx_buff_len(rq);
 	u16 rqe_num = DIV_ROUND_UP(pkt_len, buff_len);
@@ -936,6 +936,7 @@ static int unic_add_skb_frags(struct unic_rq *rq, struct napi_struct *napi,
 			new_skb = napi_alloc_skb(napi, 0);
 			if (unlikely(!new_skb)) {
 				unic_rq_stats_inc(rq, alloc_skb_err);
+				*unfragged_idx = i;
 				return -ENOMEM;
 			}
 
@@ -980,13 +981,13 @@ static u32 unic_get_skb_linear_len(struct unic_rq *rq, u8 *va,
 }
 
 static int unic_create_skb(struct unic_rq *rq, struct napi_struct *napi,
-			   u16 pkt_len)
+			   u16 pkt_len, u16 rqe_num)
 {
 	struct unic_dev *unic_dev = netdev_priv(rq->netdev);
+	u16 rqe_mask, unfragged_idx = 0;
 	struct unic_rqe_info *rqe_info;
 	struct sk_buff *skb;
 	u32 pull_len;
-	u16 rqe_mask;
 	int ret;
 	u8 *va;
 
@@ -996,6 +997,7 @@ static int unic_create_skb(struct unic_rq *rq, struct napi_struct *napi,
 	skb = napi_alloc_skb(napi, UNIC_RX_HEAD_SIZE);
 	if (unlikely(!skb)) {
 		unic_rq_stats_inc(rq, alloc_skb_err);
+		unic_page_pool_put_frags(rq, rqe_num);
 		return -ENOMEM;
 	}
 
@@ -1022,10 +1024,12 @@ static int unic_create_skb(struct unic_rq *rq, struct napi_struct *napi,
 
 	pull_len = unic_get_skb_linear_len(rq, va, unic_dev);
 	__skb_put(skb, pull_len);
-	ret = unic_add_skb_frags(rq, napi, pkt_len, pull_len);
+	ret = unic_add_skb_frags(rq, napi, pkt_len, pull_len, &unfragged_idx);
 	if (unlikely(ret)) {
 		dev_kfree_skb_any(rq->skb);
 		rq->skb = NULL;
+		rq->ci += unfragged_idx;
+		unic_page_pool_put_frags(rq, rqe_num - unfragged_idx);
 		return ret;
 	}
 
@@ -1067,25 +1071,22 @@ static int unic_rx_construct_skb(struct unic_rq *rq, struct napi_struct *napi,
 	unic_fix_rq_ci(rq, cqe);
 	rqe_num = DIV_ROUND_UP(pkt_len, buff_len);
 	rq->pending_buf += rqe_num;
-	ret = unic_create_skb(rq, napi, pkt_len);
+	ret = unic_create_skb(rq, napi, pkt_len, rqe_num);
 	if (unlikely(ret))
-		goto err_create_skb;
+		return ret;
 
 	ret = unic_handle_cqe(rq, cqe);
-	if (unlikely(ret))
-		goto destroy_skb;
+	if (unlikely(ret)) {
+		dev_kfree_skb_any(rq->skb);
+		rq->skb = NULL;
+		rq->ci += rqe_num;
+		return ret;
+	}
 
 	*bytes += pkt_len;
 	rq->ci += rqe_num;
 
 	return 0;
-
-destroy_skb:
-	dev_kfree_skb_any(rq->skb);
-err_create_skb:
-	rq->skb = NULL;
-	unic_page_pool_put_frags(rq, rqe_num);
-	return ret;
 }
 
 static bool unic_refill_rx_buffers(struct unic_rq *rq)
