@@ -10,6 +10,7 @@
 #include <asm/cpuidle.h>
 #include <asm/cpufeature.h>
 #include <asm/sysreg.h>
+#include <asm/vip_smt.h>
 
 /*
  *	cpu_do_idle()
@@ -88,6 +89,7 @@ void arch_cpu_idle_enter(void)
 	}
 #endif
 	smt_measurement_begin();
+	vip_smt_enter_idle();
 }
 
 void arch_cpu_idle_exit(void)
@@ -104,4 +106,5 @@ void arch_cpu_idle_exit(void)
 	}
 #endif
 	smt_measurement_done();
+	vip_smt_exit_idle();
 }

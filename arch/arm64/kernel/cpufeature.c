@@ -95,6 +95,7 @@
 #include <asm/traps.h>
 #include <asm/vectors.h>
 #include <asm/virt.h>
+#include <asm/vip_smt.h>
 
 /* Kernel representation of AT_HWCAP and AT_HWCAP2 */
 static DECLARE_BITMAP(elf_hwcap, MAX_CPU_FEATURES) __read_mostly;
@@ -3279,6 +3280,14 @@ static const struct arm64_cpu_capabilities arm64_features[] = {
 		.cpu_enable = cpu_enable_fpmr,
 		ARM64_CPUID_FIELDS(ID_AA64PFR2_EL1, FPMR, IMP)
 	},
+#ifdef CONFIG_ARM64_VIP_SMT
+	{
+		.desc = "VIP-SMT",
+		.capability = ARM64_HAS_VIP_SMT,
+		.type = ARM64_CPUCAP_SYSTEM_FEATURE,
+		.matches = has_vip_smt_support,
+	},
+#endif
 	{},
 };
 

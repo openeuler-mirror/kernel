@@ -10,6 +10,7 @@
 #include <asm/cputype.h>
 #include <asm/cpufeature.h>
 #include <asm/fpsimd.h>
+#include <asm/vip_smt.h>
 
 #include <linux/bitops.h>
 #include <linux/bug.h>
@@ -208,6 +209,12 @@ static int cpuid_cpu_online(unsigned int cpu)
 	rc = kobject_add(&info->kobj, &dev->kobj, "regs");
 	if (rc)
 		goto out;
+
+#ifdef CONFIG_ARM64_VIP_SMT
+	/* Add sysfs attribute group */
+	vip_smt_cpu_sysfs_create(cpu, info);
+#endif
+
 	rc = sysfs_create_group(&info->kobj, &cpuregs_attr_group);
 	if (rc)
 		kobject_del(&info->kobj);

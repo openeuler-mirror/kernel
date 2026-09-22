@@ -112,4 +112,20 @@ config SMT_QOS
 	  SMT running LS task could occupy more uarch resources to reach better
 	  IPC.
 
+config ARM64_VIP_SMT
+	bool "Enable support for VIP-SMT"
+	default y
+	depends on ARM64 && SMP && ARCH_HISI
+	help
+	  VIP-SMT is an ARM64 SMT enhancement feature that allows
+	  configuring VIP (high-priority) threads and non-VIP threads
+	  within the same physical core. It uses hardware registers
+	  to control thread priority and resource allocation.
+
+	  This feature requires hardware support for SMT QoS mode.
+	  When enabled, sysfs interfaces are created under
+	  /sys/devices/system/cpu/regs/vip-smt to configure VIP-SMT settings.
+
+	  Say N if you want to disable this feature.
+
 endmenu # "Turbo features selection"

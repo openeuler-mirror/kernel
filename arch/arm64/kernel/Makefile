@@ -90,6 +90,7 @@ obj-$(CONFIG_HISI_VIRTCCA_HOST)		+= virtcca_cvm_host.o
 CFLAGS_patch-scs.o			+= -mbranch-protection=none
 obj-$(CONFIG_SCHED_PARAL)		+= prefer_numa.o
 obj-$(CONFIG_BPF_RVI)			+= bpf-rvi.o
+obj-$(CONFIG_ARM64_VIP_SMT)		+= vip_smt.o
 
 # Force dependency (vdso*-wrap.S includes vdso.so through incbin)
 $(obj)/vdso-wrap.o: $(obj)/vdso/vdso.so
