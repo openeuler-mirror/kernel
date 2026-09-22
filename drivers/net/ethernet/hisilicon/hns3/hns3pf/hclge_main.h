@@ -287,7 +287,7 @@ struct hclge_mac {
 	u8 req_autoneg;
 	u8 duplex;
 	u8 req_duplex;
-	u8 support_autoneg;	/* for non-copper port */
+	u8 support_autoneg;
 	u8 speed_type;	/* 0: sfp speed, 1: active speed */
 	u8 lane_num;
 	u8 req_lane_num;

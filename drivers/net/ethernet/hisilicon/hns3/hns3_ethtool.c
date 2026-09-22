@@ -959,7 +959,10 @@ static int hns3_set_link_ksettings(struct net_device *netdev,
 	if (media_type == HNAE3_MEDIA_TYPE_COPPER) {
 		if (!ops->set_phy_link_ksettings)
 			return -EOPNOTSUPP;
-		return ops->set_phy_link_ksettings(handle, cmd);
+		ret = ops->set_phy_link_ksettings(handle, cmd);
+		if (ret != -ENODEV)
+			return ret;
+		/* PHY_INEXISTENT, use MAC-level configuration */
 	}
 
 	if (ae_dev->dev_version < HNAE3_DEVICE_VERSION_V2)

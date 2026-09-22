@@ -1539,11 +1539,13 @@ static int hclge_configure(struct hclge_dev *hdev)
 		return ret;
 	}
 	hdev->hw.mac.req_speed = hdev->hw.mac.speed;
+	hdev->hw.mac.req_autoneg = AUTONEG_ENABLE;
 	hdev->hw.mac.req_duplex = DUPLEX_FULL;
-	if (hdev->hw.mac.media_type == HNAE3_MEDIA_TYPE_COPPER)
-		hdev->hw.mac.req_autoneg = AUTONEG_ENABLE;
-	else
-		hdev->hw.mac.req_autoneg = AUTONEG_DISABLE;
+
+	/* When lane_num is 0, the firmware will automatically
+	 * select the appropriate lane_num based on the speed.
+	 */
+	hdev->hw.mac.req_lane_num = 0;
 
 	hclge_parse_link_mode(hdev, cfg.speed_ability);
 
@@ -2642,9 +2644,12 @@ static int hclge_cfg_mac_speed_dup_h(struct hnae3_handle *handle, int speed,
 	if (ret)
 		return ret;
 
-	hdev->hw.mac.req_speed = (u32)speed;
-	hdev->hw.mac.req_duplex = duplex;
 	hdev->hw.mac.req_lane_num = lane_num;
+	if (speed != SPEED_UNKNOWN)
+		hdev->hw.mac.req_speed = (u32)speed;
+	if (duplex != DUPLEX_UNKNOWN)
+		hdev->hw.mac.req_duplex = duplex;
+
 	return 0;
 }
 
@@ -2966,6 +2971,7 @@ static int hclge_mac_init(struct hclge_dev *hdev)
 
 	if (!test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state))
 		hdev->hw.mac.duplex = HCLGE_MAC_FULL;
+
 	mac->link = 0;
 
 	if (mac->user_fec_mode & BIT(HNAE3_FEC_USER_DEF)) {
@@ -3363,6 +3369,12 @@ hclge_ethtool_ksettings_set(struct hnae3_handle *handle,
 	u32 advertising;
 	int ret;
 
+	if (cmd->base.autoneg == AUTONEG_DISABLE &&
+	    ((cmd->base.speed != SPEED_100 && cmd->base.speed != SPEED_10) ||
+	     (cmd->base.duplex != DUPLEX_HALF &&
+	      cmd->base.duplex != DUPLEX_FULL)))
+		return -EINVAL;
+
 	hclge_cmd_setup_basic_desc(&desc[0], HCLGE_OPC_PHY_LINK_KSETTING,
 				   false);
 	desc[0].flag |= cpu_to_le16(HCLGE_COMM_CMD_FLAG_NEXT);
@@ -3382,11 +3394,14 @@ hclge_ethtool_ksettings_set(struct hnae3_handle *handle,
 	req1->master_slave_cfg = cmd->base.master_slave_cfg;
 
 	ret = hclge_cmd_send(&hdev->hw, desc, HCLGE_PHY_LINK_SETTING_BD_NUM);
+	if (ret) {
+		dev_err(&hdev->pdev->dev,
+			"failed to set phy link ksettings, ret = %d.\n", ret);
+		return ret;
+	}
 
-	if (!ret)
-		linkmode_copy(hdev->hw.mac.advertising, cmd->link_modes.advertising);
-
-	return ret;
+	linkmode_copy(hdev->hw.mac.advertising, cmd->link_modes.advertising);
+	return 0;
 }
 
 static int
@@ -3395,24 +3410,18 @@ hclge_set_phy_link_ksettings(struct hnae3_handle *handle,
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
-	int ret;
+	int ret = -ENODEV;
 
-	if (cmd->base.autoneg == AUTONEG_DISABLE &&
-	    ((cmd->base.speed != SPEED_100 && cmd->base.speed != SPEED_10) ||
-	     (cmd->base.duplex != DUPLEX_HALF &&
-	      cmd->base.duplex != DUPLEX_FULL)))
-		return -EINVAL;
-
-	if (hnae3_dev_phy_imp_supported(hdev))
+	if (hnae3_dev_phy_imp_supported(hdev)) {
 		ret = hclge_ethtool_ksettings_set(handle, cmd);
-	else
+	} else if (handle->netdev->phydev) {
+		if (cmd->base.speed == SPEED_1000 &&
+		    cmd->base.autoneg == AUTONEG_DISABLE)
+			return -EINVAL;
 		ret = phy_ethtool_ksettings_set(handle->netdev->phydev, cmd);
-
-	if (ret) {
-		dev_err(&hdev->pdev->dev,
-			"failed to set phy link ksettings, ret = %d.\n", ret);
-		return ret;
 	}
+	if (ret)
+		return ret;
 
 	hdev->hw.mac.req_autoneg = cmd->base.autoneg;
 	if (cmd->base.speed != SPEED_UNKNOWN)
@@ -9776,7 +9785,6 @@ static int hclge_set_autoneg_speed_dup(struct hclge_dev *hdev)
 	return 0;
 }
 
-
 static int hclge_init_ae_dev(struct hnae3_ae_dev *ae_dev)
 {
 	struct pci_dev *pdev = ae_dev->pdev;
@@ -9938,15 +9946,8 @@ static int hclge_init_ae_dev(struct hnae3_ae_dev *ae_dev)
 	if (ret)
 		goto err_ptp_uninit;
 
-	if (hdev->hw.mac.media_type == HNAE3_MEDIA_TYPE_COPPER)
-		hdev->hw.mac.req_autoneg = AUTONEG_ENABLE;
-	else
+	if (hdev->hw.mac.media_type != HNAE3_MEDIA_TYPE_COPPER)
 		hdev->hw.mac.req_autoneg = hdev->hw.mac.autoneg;
-
-	/* When lane_num is 0, the firmware will automatically
-	 * select the appropriate lane_num based on the speed.
-	 */
-	hdev->hw.mac.req_lane_num = 0;
 
 	ret = hclge_set_autoneg_speed_dup(hdev);
 	if (ret) {
