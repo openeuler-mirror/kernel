@@ -1445,8 +1445,10 @@ static u64 __kvm_read_sanitised_id_reg(const struct kvm_vcpu *vcpu,
 	case SYS_ID_MMFR4_EL1:
 		val &= ~ARM64_FEATURE_MASK(ID_MMFR4_EL1_CCIDX);
 		break;
+	case SYS_ID_AA64PFR2_EL1:
+		val &= ID_AA64PFR2_EL1_FPMR_MASK;
+		break;
 	}
-
 	return val;
 }
 
@@ -2474,7 +2476,7 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 	  .set_user = set_id_aa64pfr1_el1,
 	  .reset = kvm_read_sanitised_id_reg,
 	  .val = ID_AA64PFR1_EL1_NMI},
-	ID_UNALLOCATED(4,2),
+	ID_WRITABLE(ID_AA64PFR2_EL1, ID_AA64PFR2_EL1_FPMR),
 	ID_UNALLOCATED(4,3),
 	ID_WRITABLE(ID_AA64ZFR0_EL1, ~ID_AA64ZFR0_EL1_RES0),
 	ID_HIDDEN(ID_AA64SMFR0_EL1),
