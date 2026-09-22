@@ -167,8 +167,12 @@ int ubaseproxy_handle_create_eq_ctx_req(struct ubaseproxy_dev *udev,
 	struct xarray *eq_xa;
 	int ret;
 
-	if (req->data_len != UBASEPROXY_EQ_CTX_BYTES)
+	if (req->data_len != UBASEPROXY_EQ_CTX_BYTES) {
+		ubaseproxy_risk_rl(udev, mbx_ue_id, eq_create_req_len,
+				   "create eq(%u) ctx_len(%u) error.\n",
+				   eqn, req->data_len);
 		return -EINVAL;
+	}
 
 	ue_ctx_xa = ubaseproxy_get_ue_ctx_xa(udev, mbx_ue_id);
 	eq_xa = req->opcode == UBASE_MB_CREATE_AEQ_CONTEXT ?
@@ -223,8 +227,12 @@ int ubaseproxy_handle_destroy_eq_ctx_req(struct ubaseproxy_dev *udev,
 	struct xarray *eq_xa;
 	int ret;
 
-	if (req->data_len)
+	if (req->data_len) {
+		ubaseproxy_risk_rl(udev, mbx_ue_id, eq_destroy_req_len,
+				   "destroy eq(%u) ctx_len(%u) error.\n",
+				   eqn, req->data_len);
 		return -EINVAL;
+	}
 
 	ue_ctx_xa = ubaseproxy_get_ue_ctx_xa(udev, mbx_ue_id);
 	eq_xa = req->opcode == UBASE_MB_DESTROY_AEQ_CONTEXT ?
@@ -273,8 +281,12 @@ int ubaseproxy_handle_query_eq_ctx_req(struct ubaseproxy_dev *udev,
 	struct xarray *eq_xa;
 	int ret;
 
-	if (req->data_len)
+	if (req->data_len) {
+		ubaseproxy_risk_rl(udev, mbx_ue_id, eq_query_req_len,
+				   "query eq(%u) ctx_len(%u) error.\n",
+				   eqn, req->data_len);
 		return -EINVAL;
+	}
 
 	ue_ctx_xa = ubaseproxy_get_ue_ctx_xa(udev, mbx_ue_id);
 	eq_xa = req->opcode == UBASE_MB_QUERY_AEQ_CONTEXT ?

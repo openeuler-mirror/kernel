@@ -8,8 +8,8 @@
 
 #include "ubaseproxy_ctx_mgt.h"
 #include "ubaseproxy_jfc.h"
-#include "ubaseproxy_mbx.h"
 #include "ubaseproxy_jfr.h"
+#include "ubaseproxy_mbx.h"
 #include "ubaseproxy_jfs.h"
 
 #define UBASEPROXY_STATE_ARRAY_LEN 2
@@ -20,7 +20,7 @@
 
 int ubaseproxy_jetty_bind_jetty_grp(struct ubaseproxy_dev *udev,
 				    struct ubaseproxy_ue_ctx_xarray *ue_ctx_xa,
-				    u16 jettyn, u16 mbx_ue_id)
+				    u32 jettyn, u16 mbx_ue_id, u16 jtgn)
 {
 	struct ubaseproxy_jetty_key_words *jetty;
 
@@ -28,22 +28,22 @@ int ubaseproxy_jetty_bind_jetty_grp(struct ubaseproxy_dev *udev,
 							     jettyn);
 	if (!jetty) {
 		ubaseproxy_risk_rl(udev, mbx_ue_id, jfs_bind_jetty_not_exists,
-				   "failed to bind jetty group, jetty(%u) not exist.\n",
-				   jettyn);
+				   "failed to bind jetty group(%u), jetty(%u) not exist.\n",
+				   jtgn, jettyn);
 		return -EINVAL;
 	}
 
 	if (jetty->mode != UBASEPROXY_JETTY_MODE) {
 		ubaseproxy_risk_rl(udev, mbx_ue_id, jfs_bind_not_in_jetty_mode,
-				   "failed to bind jetty group, jetty(%u) is not in jetty mode.\n",
-				   jettyn);
+				   "failed to bind jetty group(%u), jetty(%u) mode is jfs.\n",
+				   jtgn, jettyn);
 		return -EINVAL;
 	}
 
 	if (jetty->jtg_bind_state) {
 		ubaseproxy_risk_rl(udev, mbx_ue_id, jfs_bind_already_bound_group,
-				   "failed to bind jetty group, jetty(%u) has already bound a jetty group.\n",
-				   jettyn);
+				   "failed to bind jetty group(%u), jetty(%u) has already bound a jetty group.\n",
+				   jtgn, jettyn);
 		return -EINVAL;
 	}
 
@@ -54,7 +54,7 @@ int ubaseproxy_jetty_bind_jetty_grp(struct ubaseproxy_dev *udev,
 
 int ubaseproxy_jetty_unbind_jetty_grp(struct ubaseproxy_dev *udev,
 				      struct ubaseproxy_ue_ctx_xarray *ue_ctx_xa,
-				      u16 jettyn, u16 mbx_ue_id)
+				      u32 jettyn, u16 mbx_ue_id, u16 jtgn)
 {
 	struct ubaseproxy_jetty_key_words *jetty;
 
@@ -62,8 +62,8 @@ int ubaseproxy_jetty_unbind_jetty_grp(struct ubaseproxy_dev *udev,
 							     jettyn);
 	if (!jetty) {
 		ubaseproxy_risk_rl(udev, mbx_ue_id, jfs_unbind_jetty_not_exists,
-				   "failed to unbind jetty group, jetty(%u) not exist.\n",
-				   jettyn);
+				   "failed to unbind jetty group(%u), jetty(%u) not exist.\n",
+				   jtgn, jettyn);
 		return -EINVAL;
 	}
 
@@ -190,9 +190,9 @@ static int ubaseproxy_check_jfr_exists(struct ubaseproxy_dev *udev,
 		+ ctx->jfrn_l;
 	jfr = (struct ubaseproxy_jfr_key_words *)xa_load(&ue_ctx_xa->jfr, jfrn);
 	if (!jfr) {
-		ubaseproxy_err(udev,
-				"failed to check jetty(%u), jfr(%u) not exists.\n",
-				req->tag, jfrn);
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfs_check_jfr_not_exists,
+				   "failed to check jetty(%u), jfr(%u) not exists.\n",
+				   req->tag, jfrn);
 		return -EINVAL;
 	}
 
@@ -308,9 +308,11 @@ ubaseproxy_check_jetty_ctx_range_values(struct ubaseproxy_dev *udev,
 	}
 
 	if (ctx->next_send_ssn != ctx->next_rcv_ssn) {
-		ubaseproxy_err(udev,
-			       "failed to check jetty ctx, jettyn = %u, next_send_ssn = %u, next_rcv_ssn = %u.\n",
-			       jettyn, ctx->next_send_ssn, ctx->next_rcv_ssn);
+		ubaseproxy_risk_rl(udev, le16_to_cpu(req->mbx_ue_id),
+				   jfs_field_next_send_ssn,
+				   "failed to check jetty ctx, jettyn = %u, next_send_ssn = %u, next_rcv_ssn = %u.\n",
+				   jettyn, ctx->next_send_ssn,
+				   ctx->next_rcv_ssn);
 		return -EINVAL;
 	}
 
@@ -384,11 +386,7 @@ static int ubaseproxy_check_modify_jetty_mask(struct ubaseproxy_dev *udev,
 	int ret;
 
 	modify_mask = &udev->caps.ue_default.jetty_default->modify_mask;
-	if (ctx_len == (UBASEPROXY_JETTY_CTX_BYTES + UBASEPROXY_JFS_MASK_OFFSET))
-		ctx_mask = (struct ubaseproxy_jetty_ctx *)(
-			   (char *)ctx + UBASEPROXY_JFS_MASK_OFFSET);
-	else
-		ctx_mask = ctx + 1;
+	ctx_mask = (struct ubaseproxy_jetty_ctx *)((char *)ctx + UBASEPROXY_JFS_MASK_OFFSET);
 
 	ret = ubaseproxy_check_ctx_mask_value(udev, ctx_mask, modify_mask,
 					      modify_mask,
@@ -593,7 +591,7 @@ static int ubaseproxy_jfc_inc_jetty_cnt(struct ubaseproxy_dev *udev,
 				   "failed to increase rx jfc(%u) cnt by jetty(%u) res, ret=%d.\n",
 				   rx_jfcn, jettyn, ret);
 		ubaseproxy_jfc_ref_dec(udev, ue_ctx_xa, jettyn, tx_jfcn,
-					     mbx_ue_id);
+				       mbx_ue_id);
 	}
 
 	return ret;
@@ -667,8 +665,8 @@ ubaseproxy_update_jetty_ctx_res(struct ubase_proxy_req_msg *req,
 
 	jetty_ctx = (struct ubaseproxy_jetty_ctx *)req->data;
 	if (ctx_len == (UBASEPROXY_JETTY_CTX_BYTES + UBASEPROXY_JFS_MASK_OFFSET))
-		ctx_mask = (struct ubaseproxy_jetty_ctx *)(
-			   (char *)jetty_ctx + UBASEPROXY_JFS_MASK_OFFSET);
+		ctx_mask = (struct ubaseproxy_jetty_ctx *)((char *)jetty_ctx +
+			    UBASEPROXY_JFS_MASK_OFFSET);
 	else
 		ctx_mask = jetty_ctx + 1;
 
@@ -704,7 +702,7 @@ static int ubaseproxy_jfc_reduce_jetty_cnt(struct ubaseproxy_dev *udev,
 				   "failed to decrease rx jfc(%u) cnt by jetty(%u) res, ret=%d.\n",
 				   rx_jfcn, jettyn, ret);
 		ubaseproxy_jfc_ref_inc(udev, ue_ctx_xa, jettyn, tx_jfcn,
-					     mbx_ue_id);
+				       mbx_ue_id);
 	}
 
 	return ret;
@@ -754,8 +752,12 @@ int ubaseproxy_handle_create_jfs_ctx_req(struct ubaseproxy_dev *udev,
 	u16 jettyn = req->tag;
 	int ret;
 
-	if (ctx_len != UBASEPROXY_JETTY_CTX_BYTES)
+	if (ctx_len != UBASEPROXY_JETTY_CTX_BYTES) {
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfs_create_req_len,
+				   "create jetty(%u) ctx_len(%u) error.\n",
+				   jettyn, ctx_len);
 		return -EINVAL;
+	}
 
 	ue_ctx_xa = ubaseproxy_get_ue_ctx_xa(udev, mbx_ue_id);
 	jetty = (struct ubaseproxy_jetty_key_words *)xa_load(&ue_ctx_xa->jetty,
@@ -810,8 +812,12 @@ int ubaseproxy_handle_destroy_jfs_ctx_req(struct ubaseproxy_dev *udev,
 	u16 jettyn = req->tag;
 	int ret;
 
-	if (req->data_len)
+	if (req->data_len) {
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfs_destroy_req_len,
+				   "destroy jetty(%u) ctx_len(%u) error.\n",
+				   jettyn, req->data_len);
 		return -EINVAL;
+	}
 
 	ue_ctx_xa = ubaseproxy_get_ue_ctx_xa(udev, mbx_ue_id);
 	jetty = (struct ubaseproxy_jetty_key_words *)xa_load(&ue_ctx_xa->jetty,
@@ -857,9 +863,12 @@ int ubaseproxy_handle_modify_jfs_ctx_req(struct ubaseproxy_dev *udev,
 	u16 jettyn = req->tag;
 	int ret;
 
-	if (ctx_len != (UBASEPROXY_JETTY_CTX_BYTES + UBASEPROXY_JFS_MASK_OFFSET) &&
-	    ctx_len != (UBASEPROXY_JETTY_CTX_BYTES * UBASEPROXY_CTXLEN_AND_MASK))
+	if (ctx_len != (UBASEPROXY_JETTY_CTX_BYTES + UBASEPROXY_JFS_MASK_OFFSET)) {
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfs_modify_req_len,
+				   "modify jetty(%u) ctx_len(%u) error.\n",
+				   jettyn, ctx_len);
 		return -EINVAL;
+	}
 
 	ue_ctx_xa = ubaseproxy_get_ue_ctx_xa(udev, mbx_ue_id);
 	jetty = (struct ubaseproxy_jetty_key_words *)xa_load(&ue_ctx_xa->jetty,
@@ -904,8 +913,12 @@ int ubaseproxy_handle_query_jfs_ctx_req(struct ubaseproxy_dev *udev,
 	u16 jettyn = req->tag;
 	int ret;
 
-	if (req->data_len)
+	if (req->data_len) {
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfs_query_req_len,
+				   "query jetty(%u) ctx_len(%u) error.\n",
+				   jettyn, req->data_len);
 		return -EINVAL;
+	}
 
 	ue_ctx_xa = ubaseproxy_get_ue_ctx_xa(udev, mbx_ue_id);
 	jetty = (struct ubaseproxy_jetty_key_words *)xa_load(&ue_ctx_xa->jetty,
@@ -952,18 +965,18 @@ ubaseproxy_init_jetty_create_mask(struct ubaseproxy_jetty_default *jetty_default
 		/* DW0-DW15 */
 		GENMASK(18, 16), GENMASK(11, 9), 0, GENMASK(31, 0), 0,
 		GENMASK(11, 8), GENMASK(31, 10), 0, 0,
-		GENMASK(31, 22) | GENMASK(1, 1), GENMASK(31, 24),
+		GENMASK(31, 22) | GENMASK(1, 0), GENMASK(31, 24),
 		GENMASK(31, 20), GENMASK(23, 20), 0, 0, GENMASK(31, 0),
 		/* DW16-DW21 */
 		GENMASK(31, 16), GENMASK(31, 0), GENMASK(31, 0), GENMASK(31, 0),
 		GENMASK(31, 0), GENMASK(31, 0),
 		/* DW22*/
-		GENMASK(3, 2),
+		GENMASK(3, 0),
 		/* DW23-DW30 */
 		GENMASK(31, 0), GENMASK(31, 16), GENMASK(31, 0), GENMASK(31, 0),
 		GENMASK(31, 0), GENMASK(31, 0), GENMASK(31, 0), GENMASK(31, 0),
 		/* DW31*/
-		GENMASK(9, 0),
+		GENMASK(31, 0),
 		/* DW32-DW63 */
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,

@@ -59,6 +59,9 @@ static int ubaseproxy_dbg_dump_ue_qos_info(struct seq_file *s, void *data)
 	u8 managed_ue_num = ubase_caps->ue_num - 1, i;
 
 	for (i = 0; i < managed_ue_num; i++) {
+		if (!ubaseproxy_ue_active(udev, udev->ue_res_info[i].bus_ue_id))
+			continue;
+
 		seq_printf(s, "UE%u:\n", i);
 		seq_printf(s, "\tum_sl_bitmap: 0x%lx\n",
 			   udev->ue_res_info[i].ue_ctx_qos.um_sl_bitmap);
@@ -86,19 +89,22 @@ static int ubaseproxy_dbg_dump_ue_seid_idx(struct seq_file *s, void *data)
 	u16 j, count;
 
 	for (i = 0; i < managed_ue_num; i++) {
-		seq_printf(s, "ue_num: %u\n", i);
-		seq_puts(s, "seid idx:\n");
+		if (!ubaseproxy_ue_active(udev, udev->ue_res_info[i].bus_ue_id))
+			continue;
+
+		seq_printf(s, "UE%u:\n", i);
+		seq_puts(s, "\tseid idx:\n\t");
 		ue_seid_table = &udev->ue_res_info[i].ue_seid_table;
 		count = 0;
 		spin_lock_bh(&ue_seid_table->seid_lock);
 		for (j = 0; j < UBASEPROXY_MAX_SEID_TABLE_SIZE; j++) {
 			if (test_bit(j, ue_seid_table->seid_bmap)) {
-				seq_printf(s, "%6u", j);
+				seq_printf(s, "%-6u", j);
 				count++;
 			}
 
 			if (count == SEID_NUM_PER_LINE) {
-				seq_puts(s, "\n");
+				seq_puts(s, "\n\t");
 				count = 0;
 			}
 		}
@@ -113,7 +119,10 @@ static void ubaseproxy_dump_ue_risk_jfc(struct seq_file *s, u8 ue_id)
 {
 	struct ubaseproxy_dev *udev = dev_get_drvdata(s->private);
 
-	ubaseproxy_risk_printf(s, ue_id, jfc_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jfc_create_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jfc_destroy_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jfc_modify_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jfc_query_req_len);
 	ubaseproxy_risk_printf(s, ue_id, jfc_req_tag);
 	ubaseproxy_risk_printf(s, ue_id, jfc_ctx_fixed);
 	ubaseproxy_risk_printf(s, ue_id, jfc_field_cnt);
@@ -128,19 +137,26 @@ static void ubaseproxy_dump_ue_risk_jfc(struct seq_file *s, u8 ue_id)
 	ubaseproxy_risk_printf(s, ue_id, jfc_query_jfc_not_exists);
 	ubaseproxy_risk_printf(s, ue_id, jfc_ref_inc);
 	ubaseproxy_risk_printf(s, ue_id, jfc_ref_dec);
+	ubaseproxy_risk_printf(s, ue_id, jfc_mask_arm_st);
+	ubaseproxy_risk_printf(s, ue_id, jfc_mask_cqe_coalesce_cn);
+	ubaseproxy_risk_printf(s, ue_id, jfc_mask_cqe_coalesce_period);
 }
 
 static void ubaseproxy_dump_ue_risk_jfs(struct seq_file *s, u8 ue_id)
 {
 	struct ubaseproxy_dev *udev = dev_get_drvdata(s->private);
 
-	ubaseproxy_risk_printf(s, ue_id, jfs_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jfs_create_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jfs_destroy_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jfs_modify_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jfs_query_req_len);
 	ubaseproxy_risk_printf(s, ue_id, jfs_req_tag);
 	ubaseproxy_risk_printf(s, ue_id, jfs_ctx_fixed);
 	ubaseproxy_risk_printf(s, ue_id, jfs_field_type);
 	ubaseproxy_risk_printf(s, ue_id, jfs_field_sqe_bb_shift);
 	ubaseproxy_risk_printf(s, ue_id, jfs_field_state);
 	ubaseproxy_risk_printf(s, ue_id, jfs_field_mode);
+	ubaseproxy_risk_printf(s, ue_id, jfs_field_next_send_ssn);
 	ubaseproxy_risk_printf(s, ue_id, jfs_create_jetty_already_exists);
 	ubaseproxy_risk_printf(s, ue_id, jfs_destroy_jetty_not_exists);
 	ubaseproxy_risk_printf(s, ue_id, jfs_modify_jetty_not_exists);
@@ -158,18 +174,20 @@ static void ubaseproxy_dump_ue_risk_jfs(struct seq_file *s, u8 ue_id)
 	ubaseproxy_risk_printf(s, ue_id, jfs_check_jfr_type_not_match);
 	ubaseproxy_risk_printf(s, ue_id, jfs_tx_jfc_ref_inc);
 	ubaseproxy_risk_printf(s, ue_id, jfs_rx_jfc_ref_inc);
-	ubaseproxy_risk_printf(s, ue_id, jfs_init_load_tx_jfc);
 	ubaseproxy_risk_printf(s, ue_id, jfs_init_load_rx_jfc);
-	ubaseproxy_risk_printf(s, ue_id, jfs_init_load_jfr_xa);
 	ubaseproxy_risk_printf(s, ue_id, jfs_reduce_tx_jfc_dec);
 	ubaseproxy_risk_printf(s, ue_id, jfs_reduce_rx_jfc_dec);
+	ubaseproxy_risk_printf(s, ue_id, jfs_mask_state);
 }
 
 static void ubaseproxy_dump_ue_risk_jfr(struct seq_file *s, u8 ue_id)
 {
 	struct ubaseproxy_dev *udev = dev_get_drvdata(s->private);
 
-	ubaseproxy_risk_printf(s, ue_id, jfr_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jfr_create_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jfr_destroy_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jfr_modify_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jfr_query_req_len);
 	ubaseproxy_risk_printf(s, ue_id, jfr_req_tag);
 	ubaseproxy_risk_printf(s, ue_id, jfr_ctx_fixed);
 	ubaseproxy_risk_printf(s, ue_id, jfr_field_rqe_shift);
@@ -196,7 +214,9 @@ static void ubaseproxy_dump_ue_risk_rc(struct seq_file *s, u8 ue_id)
 {
 	struct ubaseproxy_dev *udev = dev_get_drvdata(s->private);
 
-	ubaseproxy_risk_printf(s, ue_id, rc_req_len);
+	ubaseproxy_risk_printf(s, ue_id, rc_create_req_len);
+	ubaseproxy_risk_printf(s, ue_id, rc_destroy_req_len);
+	ubaseproxy_risk_printf(s, ue_id, rc_query_req_len);
 	ubaseproxy_risk_printf(s, ue_id, rc_req_tag);
 	ubaseproxy_risk_printf(s, ue_id, rc_ctx_fixed);
 	ubaseproxy_risk_printf(s, ue_id, rc_field_rce_shift);
@@ -209,34 +229,35 @@ static void ubaseproxy_dump_ue_risk_jtg(struct seq_file *s, u8 ue_id)
 {
 	struct ubaseproxy_dev *udev = dev_get_drvdata(s->private);
 
-	ubaseproxy_risk_printf(s, ue_id, jtg_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jtg_create_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jtg_destroy_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jtg_modify_req_len);
+	ubaseproxy_risk_printf(s, ue_id, jtg_query_req_len);
 	ubaseproxy_risk_printf(s, ue_id, jtg_req_tag);
-	ubaseproxy_risk_printf(s, ue_id, jtg_ctx_fixed);
+	ubaseproxy_risk_printf(s, ue_id, jtg_create_jtg_already_exists);
 	ubaseproxy_risk_printf(s, ue_id, jtg_field_start_jetty_id);
 	ubaseproxy_risk_printf(s, ue_id, jtg_field_rsv);
-	ubaseproxy_risk_printf(s, ue_id, jtg_field_jetty_number);
-	ubaseproxy_risk_printf(s, ue_id, jtg_create_jtg_already_exists);
+	ubaseproxy_risk_printf(s, ue_id, jtg_valid_exceeds_range);
+	ubaseproxy_risk_printf(s, ue_id, jtg_field_valid);
+	ubaseproxy_risk_printf(s, ue_id, jtg_create_bindings);
 	ubaseproxy_risk_printf(s, ue_id, jtg_destroy_jtg_not_exists);
 	ubaseproxy_risk_printf(s, ue_id, jtg_modify_jtg_not_exists);
+	ubaseproxy_risk_printf(s, ue_id, jtg_modify_mask);
+	ubaseproxy_risk_printf(s, ue_id, jtg_modify_jetty_num_mask);
+	ubaseproxy_risk_printf(s, ue_id, jtg_modify_valid_mask);
+	ubaseproxy_risk_printf(s, ue_id, jtg_modify_valid_exceeds_range);
+	ubaseproxy_risk_printf(s, ue_id, jtg_modify_valid);
+	ubaseproxy_risk_printf(s, ue_id, jtg_modify_bindings);
 	ubaseproxy_risk_printf(s, ue_id, jtg_query_jtg_not_exists);
-	ubaseproxy_risk_printf(s, ue_id, jtg_check_jetty_group_valid);
-	ubaseproxy_risk_printf(s, ue_id, jtg_check_jetty_num_mask);
-	ubaseproxy_risk_printf(s, ue_id, jtg_check_jetty_num);
-	ubaseproxy_risk_printf(s, ue_id, jtg_check_jtg_valid_mask);
-	ubaseproxy_risk_printf(s, ue_id, jtg_check_jtg_valid);
-	ubaseproxy_risk_printf(s, ue_id, jtg_bound_add);
-	ubaseproxy_risk_printf(s, ue_id, jtg_bound_del);
-	ubaseproxy_risk_printf(s, ue_id, jtg_del_jetty_bound);
-	ubaseproxy_risk_printf(s, ue_id, jtg_add_jetty_bound);
-	ubaseproxy_risk_printf(s, ue_id, jtg_evt_added_jetty);
-	ubaseproxy_risk_printf(s, ue_id, jtg_evt_deled_jetty);
 }
 
 static void ubaseproxy_dump_ue_risk_eq(struct seq_file *s, u8 ue_id)
 {
 	struct ubaseproxy_dev *udev = dev_get_drvdata(s->private);
 
-	ubaseproxy_risk_printf(s, ue_id, eq_req_len);
+	ubaseproxy_risk_printf(s, ue_id, eq_create_req_len);
+	ubaseproxy_risk_printf(s, ue_id, eq_destroy_req_len);
+	ubaseproxy_risk_printf(s, ue_id, eq_query_req_len);
 	ubaseproxy_risk_printf(s, ue_id, eq_req_tag);
 	ubaseproxy_risk_printf(s, ue_id, eq_ctx_fixed);
 	ubaseproxy_risk_printf(s, ue_id, eq_field_shift);
@@ -274,6 +295,9 @@ static int ubaseproxy_dbg_dump_risk_stats(struct seq_file *s, void *data)
 	ubase_caps = ubase_get_dev_caps(udev->comdev.adev);
 	managed_ue_num = ubase_caps->ue_num - 1;
 	for (i = 0; i < managed_ue_num; i++) {
+		if (!ubaseproxy_ue_active(udev, udev->ue_res_info[i].bus_ue_id))
+			continue;
+
 		seq_printf(s, "\nUE(%u) risk stats:\n", i);
 		ubaseproxy_dump_ue_risk_jfc(s, i);
 		ubaseproxy_dump_ue_risk_jfs(s, i);
@@ -282,6 +306,24 @@ static int ubaseproxy_dbg_dump_risk_stats(struct seq_file *s, void *data)
 		ubaseproxy_dump_ue_risk_jtg(s, i);
 		ubaseproxy_dump_ue_risk_eq(s, i);
 		ubaseproxy_dump_ue_risk_misc(s, i);
+	}
+
+	return 0;
+}
+
+static int ubaseproxy_dbg_dump_ue_active(struct seq_file *s, void *data)
+{
+	struct ubaseproxy_dev *udev = dev_get_drvdata(s->private);
+	struct ubase_caps *ubase_caps = ubase_get_dev_caps(udev->comdev.adev);
+	u8 managed_ue_num = ubase_caps->ue_num - 1, i;
+
+	seq_puts(s, "\tbus_ue_id\n");
+
+	for (i = 0; i < managed_ue_num; i++) {
+		if (!ubaseproxy_ue_active(udev, udev->ue_res_info[i].bus_ue_id))
+			continue;
+
+		seq_printf(s, "UE%u\t%9u\n", i, udev->ue_res_info[i].bus_ue_id);
 	}
 
 	return 0;
@@ -319,6 +361,14 @@ static struct ubase_dbg_cmd_info ubaseproxy_dbg_cmd[] = {
 		.support = ubaseproxy_dbg_dentry_support,
 		.init = ubase_dbg_seq_file_init,
 		.read_func = ubaseproxy_dbg_dump_risk_stats,
+	},
+	{
+		.name = "ue_active",
+		.dentry_index = UBASEPROXY_DBG_DENTRY_ROOT,
+		.property = UBASE_SUP_UDMA | UBASE_SUP_UBL,
+		.support = ubaseproxy_dbg_dentry_support,
+		.init = ubase_dbg_seq_file_init,
+		.read_func = ubaseproxy_dbg_dump_ue_active,
 	},
 };
 

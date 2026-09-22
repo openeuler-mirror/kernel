@@ -12,7 +12,6 @@
 
 #include "ubaseproxy_dev.h"
 #include "ubaseproxy_eq.h"
-#include "ubaseproxy_jetty_grp.h"
 #include "ubaseproxy_jfc.h"
 #include "ubaseproxy_jfr.h"
 #include "ubaseproxy_jfs.h"
@@ -507,13 +506,8 @@ int ubaseproxy_check_ctx_mask_value(struct ubaseproxy_dev *udev,
 	default_arr = (u32 *)default_value;
 
 	for (i = 0; i < size; i++) {
-		if ((ctx_arr[i] & mask_arr[i]) != default_arr[i]) {
-			ubaseproxy_err(udev,
-				       "failed to check ctx(%u) value, ctx: 0x%x, mask: 0x%x, default: 0x%x.\n",
-				       i, ctx_arr[i], mask_arr[i],
-				       default_arr[i]);
+		if ((ctx_arr[i] & mask_arr[i]) != default_arr[i])
 			return -EINVAL;
-		}
 	}
 
 	return 0;

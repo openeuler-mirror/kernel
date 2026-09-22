@@ -15,22 +15,30 @@
 
 static int ubaseproxy_handle_crq_msg(void *dev, void *data, u32 len)
 {
+	struct ubaseproxy_ue_res_info *ue_res_info;
 	struct ubase_proxy_req_msg *req = data;
 	struct auxiliary_device *adev = dev;
 	struct ubaseproxy_dev *udev = get_ubaseproxy_dev(adev);
+	u16 bus_ue_id = le16_to_cpu(req->bus_ue_id);
+	u16 mbx_ue_id = le16_to_cpu(req->mbx_ue_id);
 	u32 data_len;
 	int ret;
 
+	if (!test_bit(bus_ue_id, udev->bus_ue_id_bitmap))
+		return 0;
+
+	ue_res_info = ubaseproxy_get_ue_ctx(udev, mbx_ue_id);
+	ue_res_info->bus_ue_id = bus_ue_id;
+
 	if (len < sizeof(*req)) {
-		ubaseproxy_risk_rl(udev, le16_to_cpu(req->mbx_ue_id),
-				   crq_msg_len,
+		ubaseproxy_risk_rl(udev, mbx_ue_id, crq_msg_len,
 				   "req msg len error, len = %u.\n", len);
 		return -EINVAL;
 	}
 
 	data_len = len - sizeof(*req);
 	if (data_len < req->data_len) {
-		ubaseproxy_risk_rl(udev, le16_to_cpu(req->mbx_ue_id),
+		ubaseproxy_risk_rl(udev, mbx_ue_id,
 				   crq_data_len,
 				   "req data len error, req->data_len = %u, data_len = %u.\n",
 				   req->data_len, data_len);
@@ -43,7 +51,7 @@ static int ubaseproxy_handle_crq_msg(void *dev, void *data, u32 len)
 		ret = ubaseproxy_handle_mbox_req(udev, req);
 		break;
 	default:
-		ubaseproxy_risk_rl(udev, le16_to_cpu(req->mbx_ue_id),
+		ubaseproxy_risk_rl(udev, mbx_ue_id,
 				   crq_req_module,
 				   "unsupported module is %u.\n",
 				   req->module);
@@ -105,6 +113,35 @@ static void ubaseproxy_unregister_crq_event(struct ubaseproxy_dev *udev)
 					   ubaseproxy_crq_events[i].opcode);
 }
 
+static void ubaseproxy_clear_ue_res(struct ubaseproxy_dev *udev, u16 bus_ue_id)
+{
+	struct ubase_caps *ubase_caps = ubase_get_dev_caps(udev->comdev.adev);
+	struct ubaseproxy_ue_seid_table *ue_seid_table;
+	u8 managed_ue_num = ubase_caps->ue_num - 1, i;
+	struct ubaseproxy_ue_res_info *ue_res_info;
+	struct ubaseproxy_ue_ctx_qos *ue_ctx_qos;
+
+	for (i = 0; i < managed_ue_num; i++) {
+		ue_res_info = &udev->ue_res_info[i];
+		if (ue_res_info->bus_ue_id != bus_ue_id)
+			continue;
+
+		ue_ctx_qos = &ue_res_info->ue_ctx_qos;
+		memset(ue_ctx_qos, 0, sizeof(*ue_ctx_qos));
+
+		ue_seid_table = &ue_res_info->ue_seid_table;
+		spin_lock_bh(&ue_seid_table->seid_lock);
+		bitmap_zero(ue_seid_table->seid_bmap,
+			    UBASEPROXY_MAX_SEID_TABLE_SIZE);
+		spin_unlock_bh(&ue_seid_table->seid_lock);
+
+		memset(&ue_res_info->risk_stats, 0,
+		       sizeof(ue_res_info->risk_stats));
+
+		break;
+	}
+}
+
 static void ubaseproxy_virt_handler(struct auxiliary_device *adev, u16 bus_ue_id,
 				    bool is_en)
 {
@@ -115,9 +152,13 @@ static void ubaseproxy_virt_handler(struct auxiliary_device *adev, u16 bus_ue_id
 			ubaseproxy_err(udev, "failed to handle virt event.\n");
 		else
 			atomic_inc(&udev->virt_refcnt);
+
+		ubaseproxy_clear_ue_res(udev, bus_ue_id);
+		set_bit(bus_ue_id, udev->bus_ue_id_bitmap);
 	} else {
 		if (atomic_dec_if_positive(&udev->virt_refcnt) >= 0)
 			module_put(THIS_MODULE);
+		clear_bit(bus_ue_id, udev->bus_ue_id_bitmap);
 	}
 }
 
