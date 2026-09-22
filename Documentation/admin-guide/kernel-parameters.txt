@@ -3998,6 +3998,10 @@
 			nosmt=force: Force disable SMT, cannot be undone
 				     via the sysfs control file.
 
+	novipsmt	[ARM64] Disable VIP-SMT sysfs interface at boot.
+			When specified, vip_smt directory will not be created
+			under /sys/devices/system/cpu/cpuX/regs/.
+
 	nosoftlockup	[KNL] Disable the soft-lockup detector.
 
 	nospec_store_bypass_disable

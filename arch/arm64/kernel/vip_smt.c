@@ -213,7 +213,7 @@ struct vip_smt_reg_data {
  */
 bool vip_smt_available(void)
 {
-	return cpus_have_cap(ARM64_HAS_VIP_SMT);
+	return (vip_smt_control == VIP_SMT_ENABLED) && cpus_have_cap(ARM64_HAS_VIP_SMT);
 }
 EXPORT_SYMBOL_GPL(vip_smt_available);
 
@@ -361,6 +361,9 @@ static const struct attribute_group vip_smt_attr_group = {
 
 int vip_smt_cpu_sysfs_create(unsigned int cpu, struct cpuinfo_arm64 *info)
 {
+	if (vip_smt_control != VIP_SMT_ENABLED)
+		return -1;
+
 	if (!vip_smt_core_has_smt(cpu))
 		return -1;
 
@@ -411,6 +414,33 @@ void vip_smt_exit_idle(void)
 }
 
 /**
+ * vip_smt_disable - Disable VIP-SMT feature
+ * @state: Disable state ("force" means force disable)
+ */
+static void __init vip_smt_disable(char *state)
+{
+	if (!state) {
+		vip_smt_control = VIP_SMT_DISABLED;
+		pr_info("VIP-SMT: Disabled via cmdline\n");
+	} else if (strcmp(state, "force") == 0) {
+		vip_smt_control = VIP_SMT_FORCE_DISABLED;
+		pr_info("VIP-SMT: Force disabled via cmdline\n");
+	} else {
+		vip_smt_control = VIP_SMT_DISABLED;
+	}
+}
+
+/**
+ * vip_smt_cmdline_disable - cmdline parameter handler
+ */
+static int __init vip_smt_cmdline_disable(char *str)
+{
+	vip_smt_disable(str);
+	return 0;
+}
+early_param("novipsmt", vip_smt_cmdline_disable);
+
+/**
  * vip_smt_probe - Detect hardware support for VIP-SMT
  *
  * Determine by MIDR.
@@ -431,6 +461,12 @@ static bool vip_smt_probe(void)
 
 bool has_vip_smt_support(const struct arm64_cpu_capabilities *entry, int __unused)
 {
+	/* If hardware not supported or disabled, set to NOT_SUPPORTED */
+	if (vip_smt_control != VIP_SMT_ENABLED) {
+		pr_info("VIP-SMT: Disabled in cmdline.\n");
+		return false;
+	}
+
 	/* Only can access from el2 for now!, configure in el3. */
 	if (!is_kernel_in_hyp_mode()) {
 		pr_info("VIP-SMT: Only support in EL2 for now.\n");
