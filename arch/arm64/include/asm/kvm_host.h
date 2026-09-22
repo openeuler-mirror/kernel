@@ -1449,4 +1449,11 @@ extern bool kvm_ncsnp_support;
 extern bool kvm_dvmbm_support;
 extern bool enable_vmovp_elision;
 
+#ifdef CONFIG_ENABLE_KVM_FPMR
+#define kvm_has_fpmr(k)				\
+	(system_supports_fpmr() &&		\
+	 (FIELD_GET(ID_AA64PFR2_EL1_FPMR_MASK,			\
+		    kvm_read_vm_id_reg((k), SYS_ID_AA64PFR2_EL1)) >= \
+	  ID_AA64PFR2_EL1_FPMR_IMP))
+#endif
 #endif /* __ARM64_KVM_HOST_H__ */
