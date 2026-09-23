@@ -30,12 +30,14 @@ struct session_data_exchange_udata {
 	int *result;
 	void *udata_out;
 	uint32_t udata_out_size;
+	union ubcore_eid bonding_eid;
 };
 
 struct msg_seg_info_req {
 	struct ubcore_ubva ubva;
 	uint64_t len;
 	uint32_t token_id;
+	struct ubcore_token token_value;
 };
 
 struct msg_jetty_info_req {
@@ -113,22 +115,22 @@ static struct ubcore_device *find_phys_dev(struct ubcore_device *bonding_dev,
 	return ubcore_get_device_by_eid(primary_eid, UBCORE_TRANSPORT_UB);
 }
 
-static struct ubagg_session *alloc_xchg_session(struct ubcore_device *dev,
-						int *result, void *udata_out,
-						uint32_t udata_out_size)
+static struct ubagg_session *alloc_xchg_session(int *result, void *udata_out,
+						uint32_t udata_out_size,
+						const union ubcore_eid *bonding_eid)
 {
 	struct ubagg_session *session;
 	struct session_data_exchange_udata *session_data;
 
-	session_data =
-		kzalloc(sizeof(struct session_data_exchange_udata), GFP_KERNEL);
-	if (IS_ERR_OR_NULL(session_data)) {
+	session_data = kzalloc(sizeof(*session_data), GFP_KERNEL);
+	if (!session_data) {
 		ubagg_log_err("Failed to alloc exchange seg info user arg");
 		return NULL;
 	}
 	session_data->result = result;
 	session_data->udata_out = udata_out;
 	session_data->udata_out_size = udata_out_size;
+	session_data->bonding_eid = *bonding_eid;
 
 	session = ubagg_session_create(NULL, session_data,
 				       UBAGG_CONN_MAX_TIMEOUT, NULL, NULL);
@@ -243,7 +245,8 @@ static int send_jetty_resp(struct ubcore_device *dev, void *conn,
 	return 0;
 }
 
-int ubagg_connect_xchg_seg(struct ubcore_seg *seg, uint32_t ue_idx,
+int ubagg_connect_xchg_seg(const struct ubcore_target_seg_cfg *cfg,
+			   uint32_t ue_idx,
 			   struct ubcore_device *dev,
 			   struct ubagg_seg_exchange_info *seg_info)
 {
@@ -253,6 +256,9 @@ int ubagg_connect_xchg_seg(struct ubcore_seg *seg, uint32_t ue_idx,
 	uint64_t start, duration;
 	int ret, result = -1;
 
+	if (cfg == NULL)
+		return -EINVAL;
+
 	start = ktime_get_ns();
 
 	physical_dev = find_phys_dev(dev, ue_idx);
@@ -261,16 +267,17 @@ int ubagg_connect_xchg_seg(struct ubcore_seg *seg, uint32_t ue_idx,
 		return -EINVAL;
 	}
 
-	session = alloc_xchg_session(physical_dev, &result, seg_info,
-				     sizeof(*seg_info));
+	session = alloc_xchg_session(&result, seg_info,
+				     sizeof(*seg_info), &cfg->seg.ubva.eid);
 	if (!session) {
 		ret = -ENOMEM;
 		goto put_device;
 	}
 
-	req.ubva = seg->ubva;
-	req.len = seg->len;
-	req.token_id = seg->token_id;
+	req.ubva = cfg->seg.ubva;
+	req.len = cfg->seg.len;
+	req.token_id = cfg->seg.token_id;
+	req.token_value = cfg->token_value;
 	ret = send_seg_req(physical_dev, ubagg_session_get_id(session), &req,
 			   ue_idx);
 	if (ret != 0) {
@@ -320,8 +327,8 @@ int ubagg_connect_xchg_jetty(struct ubcore_tjetty_cfg *cfg, uint32_t ue_idx,
 		return -EINVAL;
 	}
 
-	session = alloc_xchg_session(physical_dev, &result, jetty_info,
-				     sizeof(*jetty_info));
+	session = alloc_xchg_session(&result, jetty_info,
+				     sizeof(*jetty_info), &cfg->id.eid);
 	if (!session) {
 		ret = -ENOMEM;
 		goto put_device;
@@ -364,16 +371,22 @@ static void handle_seg_req(struct ubcore_device *dev,
 			   struct ubcore_comm_msg *msg, void *conn)
 {
 	struct msg_seg_info_req *req = (struct msg_seg_info_req *)msg->data;
-	struct ubagg_device *ubagg_dev =
-		ubagg_get_device_by_eid(&req->ubva.eid);
+	struct ubagg_device *ubagg_dev = NULL;
 	struct ubagg_hash_table *ubagg_seg_ht;
 	struct ubagg_seg_hash_node *tmp_seg = NULL;
 	struct msg_seg_info_resp resp = { 0 };
 	int ret = 0;
 
+	if (conn != NULL && !ubagg_eid_is_known(conn)) {
+		ubagg_log_err_rl("Rejected seg info request from unknown peer.\n");
+		ret = -EACCES;
+		goto send_resp_and_put_device;
+	}
+
+	ubagg_dev = ubagg_get_device_by_eid(&req->ubva.eid);
 	if (ubagg_dev == NULL || ubagg_dev->segment_bitmap == NULL) {
 		ubagg_log_err_rl("ubagg_dev->segment_bitmap NULL");
-		ret = -1;
+		ret = -EACCES;
 		goto send_resp_and_put_device;
 	}
 
@@ -381,10 +394,13 @@ static void handle_seg_req(struct ubcore_device *dev,
 	spin_lock(&ubagg_seg_ht->lock);
 	tmp_seg = ubagg_hash_table_lookup_nolock(ubagg_seg_ht, req->token_id,
 						 &req->token_id);
-	if (tmp_seg == NULL) {
+	if (tmp_seg == NULL ||
+	    tmp_seg->va != req->ubva.va || tmp_seg->len != req->len ||
+	    (tmp_seg->token_value_valid &&
+	     tmp_seg->token_value.token != req->token_value.token)) {
 		spin_unlock(&ubagg_seg_ht->lock);
-		ubagg_log_err_rl("Failed to find seg.\n");
-		ret = -1;
+		ubagg_log_err_rl("Failed to authenticate seg info request.\n");
+		ret = -EACCES;
 		goto send_resp_and_put_device;
 	}
 
@@ -474,6 +490,13 @@ static void handle_xchg_resp(struct ubcore_device *dev, void *conn,
 	session_data =
 		(struct session_data_exchange_udata *)ubagg_session_get_data(
 			session);
+	if (conn != NULL &&
+	    !ubagg_eid_belongs_to_agg(conn, &session_data->bonding_eid)) {
+		ubagg_log_err_rl("Unexpected response source for session %u.\n",
+				 session_id);
+		ubagg_session_ref_release(session);
+		return;
+	}
 
 	if (result != 0) {
 		*session_data->result = result;

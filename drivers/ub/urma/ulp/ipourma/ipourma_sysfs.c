@@ -38,7 +38,10 @@ static DEVICE_ATTR_RO(urma_mtu);
 static ssize_t ipourma_tx_ring_size_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	return sysfs_emit(buf, "%d\n", ipourma_tx_ring_size);
+	struct net_device *ndev = to_net_dev(dev);
+	struct ipourma_dev_priv *priv = netdev_priv(ndev);
+
+	return sysfs_emit(buf, "%u\n", priv->tx_ring_size);
 }
 
 static DEVICE_ATTR_RO(ipourma_tx_ring_size);
@@ -47,7 +50,10 @@ static DEVICE_ATTR_RO(ipourma_tx_ring_size);
 static ssize_t ipourma_rx_ring_size_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	return sysfs_emit(buf, "%d\n", ipourma_rx_ring_size);
+	struct net_device *ndev = to_net_dev(dev);
+	struct ipourma_dev_priv *priv = netdev_priv(ndev);
+
+	return sysfs_emit(buf, "%u\n", priv->rx_ring_size);
 }
 
 static DEVICE_ATTR_RO(ipourma_rx_ring_size);
@@ -219,7 +225,8 @@ static ssize_t format_stats(char *buf, struct ipourma_dev_priv *priv, ssize_t bu
 		"num_post_wr: %llu\n"
 		"alloc_skb_failed: %llu\n"
 		"register_seg_failed: %llu\n"
-		"post_wr_failed: %llu\n",
+		"post_wr_failed: %llu\n"
+		"alloc_skb_retry: %llu\n",
 		prx->poll_jfc_success,
 		prx->poll_jfc_failed,
 		prx->rearm_success,
@@ -231,7 +238,8 @@ static ssize_t format_stats(char *buf, struct ipourma_dev_priv *priv, ssize_t bu
 		prx->num_post_wr,
 		prx->alloc_skb_failed,
 		prx->register_seg_failed,
-		prx->post_wr_failed);
+		prx->post_wr_failed,
+		prx->alloc_skb_retry);
 	if (ret < 0 || ret + len >= buf_size)
 		goto FORMAT_ERR;
 
@@ -320,8 +328,9 @@ static ssize_t max_concurrent_conn_store(struct device *dev,
 	 * prefix: '0x'--hexadecimal, '0'--octal, others--decimal format
 	 */
 	ret = kstrtoint(buf, 0, &new_capacity);
-	/* The new value must be between ipourma_jfs_depth and ipourma_tx_jfc_depth */
-	if (ret != 0 || new_capacity < ipourma_jfs_depth || new_capacity > ipourma_tx_jfc_depth) {
+	/* The new value must be less than the hash bucket count */
+	if (ret != 0 || new_capacity <= 0 ||
+		new_capacity > IPOURMA_TJETTY_HMAP_SIZE) {
 		pr_err("%s: invalid input!\n", __func__);
 		return -EINVAL;
 	}
@@ -427,8 +436,11 @@ static ssize_t tjetty_aging_interval_s_store(struct device *dev,
 	priv->tjetty_lru.tjetty_aging_interval_s = current_interval;
 	spin_unlock(&priv->tjetty_lru.lock);
 
-	cancel_delayed_work_sync(work);
-	schedule_delayed_work(work, msecs_to_jiffies((u32)current_interval * MSEC_PER_SEC));
+	if (ipourma_tjetty_aging_en) {
+		cancel_delayed_work_sync(work);
+		schedule_delayed_work(work,
+			msecs_to_jiffies((u32)current_interval * MSEC_PER_SEC));
+	}
 
 	return count;
 }

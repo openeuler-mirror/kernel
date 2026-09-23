@@ -25,28 +25,32 @@
 #include "ipourma_main.h"
 
 static int tx_ring_size = IPOURMA_TX_RING_SIZE;
-module_param(tx_ring_size, int, 0644);
-MODULE_PARM_DESC(tx_ring_size, "size of tx ring, should be in [32, 2048]");
+module_param(tx_ring_size, int, 0444);
+MODULE_PARM_DESC(tx_ring_size, "size of tx ring, minimum 16, limited by device capability");
 
 static int rx_ring_size = IPOURMA_RX_RING_SIZE;
-module_param(rx_ring_size, int, 0644);
-MODULE_PARM_DESC(rx_ring_size, "size of rx ring, should be in [tx_ring_size, 4096]");
+module_param(rx_ring_size, int, 0444);
+MODULE_PARM_DESC(rx_ring_size, "size of rx ring, minimum 32, limited by device capability");
 
 static int page_level = IPOURMA_DEF_PAGE_LEVEL;
-module_param(page_level, int, 0644);
+module_param(page_level, int, 0444);
 MODULE_PARM_DESC(page_level, "register 2^page_level bytes memory at once, should be in [12, 21]");
 
-int ipourma_ctp_sl = IPOURMA_DEFAULT_CTP_SL;
-module_param_named(ctp_sl, ipourma_ctp_sl, int, 0644);
-MODULE_PARM_DESC(ipourma_ctp_sl, "ctp sl, default 3 in ipourma");
+int ipourma_ctp_sl = IPOURMA_SL_INVALID;
+module_param_named(ctp_sl, ipourma_ctp_sl, int, 0444);
+MODULE_PARM_DESC(ctp_sl, "ctp sl, -1 = auto-select from device cap (default)");
 
-int ipourma_utp_sl = IPOURMA_DEFAULT_UTP_SL;
-module_param_named(utp_sl, ipourma_utp_sl, int, 0644);
-MODULE_PARM_DESC(ipourma_utp_sl, "utp sl, default 0 in ipourma");
+int ipourma_utp_sl = IPOURMA_SL_INVALID;
+module_param_named(utp_sl, ipourma_utp_sl, int, 0444);
+MODULE_PARM_DESC(utp_sl, "utp sl, -1 = auto-select from device cap (default)");
 
-int ipourma_min_eid_cnt = IPOURMA_MIN_EID_CNT;
-module_param_named(min_eid_cnt, ipourma_min_eid_cnt, int, 0644);
-MODULE_PARM_DESC(ipourma_min_eid_cnt, "min eid cnt, default 9 in ipourma");
+int ipourma_tjetty_aging_en;
+module_param_named(tjetty_aging_en, ipourma_tjetty_aging_en, int, 0444);
+MODULE_PARM_DESC(tjetty_aging_en, "enable tjetty aging, 0: disabled (default), 1: enabled");
+
+int ipourma_min_eid_cnt = IPOURMA_DEF_JETTY_CNT;
+module_param_named(min_eid_cnt, ipourma_min_eid_cnt, int, 0444);
+MODULE_PARM_DESC(min_eid_cnt, "number of jetties created per device, default 9");
 
 static int ipourma_ubcore_add_device(struct ubcore_device *ubc_dev);
 static void ipourma_ubcore_remove_device(struct ubcore_device *ubc_dev, void *client_ctx);
@@ -204,19 +208,31 @@ static int ipourma_priv_eid_init(struct net_device *dev)
 	uint32_t eid_cnt;
 	uint32_t i, j = 0;
 
-	priv->eid_info = kcalloc(IPOURMA_MAX_EID_CNT,
+	priv->eid_info = kcalloc(UBCORE_MAX_SIP,
 		sizeof(struct ubcore_eid_info), GFP_KERNEL);
 	if (IS_ERR_OR_NULL(priv->eid_info)) {
 		priv->eid_count = 0;
 		pr_err("eid_info create failed.\n");
-		return -1;
+		return -ENOMEM;
 	}
-	priv->tx_ring_is_full = kcalloc(IPOURMA_MAX_EID_CNT, sizeof(bool), GFP_KERNEL);
-	if (IS_ERR_OR_NULL(priv->tx_ring_is_full)) {
+	priv->eid_info_exist = kcalloc(UBCORE_MAX_SIP,
+		sizeof(struct ubcore_eid_info), GFP_KERNEL);
+	if (IS_ERR_OR_NULL(priv->eid_info_exist)) {
 		kfree(priv->eid_info);
+		priv->eid_info = NULL;
+		priv->eid_count = 0;
+		pr_err("eid_info_exist create failed.\n");
+		return -ENOMEM;
+	}
+	priv->tx_ring_is_full = kcalloc(priv->jetty_cnt, sizeof(bool), GFP_KERNEL);
+	if (IS_ERR_OR_NULL(priv->tx_ring_is_full)) {
+		kfree(priv->eid_info_exist);
+		priv->eid_info_exist = NULL;
+		kfree(priv->eid_info);
+		priv->eid_info = NULL;
 		priv->eid_count = 0;
 		pr_err("tx_ring_is_full create failed.\n");
-		return -1;
+		return -ENOMEM;
 	}
 
 	priv->eid_change_handler.event_callback = ipourma_do_eid_change_handler;
@@ -225,8 +241,7 @@ static int ipourma_priv_eid_init(struct net_device *dev)
 	spin_lock(&urma_dev->eid_table.lock);
 	if (IS_ERR_OR_NULL(urma_dev->eid_table.eid_entries))
 		goto eid_table_unlock;
-	eid_cnt = (urma_dev->eid_table.eid_cnt < IPOURMA_MAX_EID_CNT) ?
-		urma_dev->eid_table.eid_cnt : IPOURMA_MAX_EID_CNT;
+	eid_cnt = urma_dev->eid_table.eid_cnt;
 	for (i = 0; i < eid_cnt; i++) {
 		if (eid_is_empty(&urma_dev->eid_table.eid_entries[i].eid))
 			continue;
@@ -303,8 +318,8 @@ void ipourma_register_netdev(struct work_struct *work)
 		pr_err("%s init eid resources failed, ret = %d\n", priv->dev->name, ret);
 		goto ALLOC_RESOURCE_ERR;
 	}
-	ipourma_proc_eid_exist(priv);
 	queue_work(priv->net_config_wq, &(priv->set_dev_up));
+	ipourma_proc_eid_exist(priv);
 
 	ipourma_register_sysfs(priv);
 	return;
@@ -351,7 +366,6 @@ static void ipourma_do_eid_change_handler(struct ubcore_event *event,
 	spin_lock(&ub_dev->eid_table.lock);
 	eid_cnt = ub_dev->eid_table.eid_cnt;
 	if (eid_idx >= eid_cnt ||
-		eid_idx >= IPOURMA_MAX_EID_CNT ||
 		IS_ERR_OR_NULL(ub_dev->eid_table.eid_entries))
 		goto unlock_table_out;
 	eid_idx_tmp = ub_dev->eid_table.eid_entries[eid_idx].eid_index;
@@ -364,6 +378,10 @@ static void ipourma_do_eid_change_handler(struct ubcore_event *event,
 	priv = ubcore_get_client_ctx_data(ub_dev, &g_ipourma_ubcore_client);
 	if (IS_ERR_OR_NULL(priv))
 		return;
+	if (eid_idx >= UBCORE_MAX_SIP || IS_ERR_OR_NULL(priv->eid_info)) {
+		netdev_warn(priv->dev, "eid index exceed, eid index:%u\n", eid_idx);
+		return;
+	}
 	if (eid_is_empty(&eid)) {
 		netdev_warn(priv->dev, "get an empty eid. eid index:%u\n", eid_idx);
 		return;
@@ -392,12 +410,20 @@ unlock_table_out:
 
 static int ipourma_param_init(void)
 {
-	if (tx_ring_size > IPOURMA_MAX_TX_RING_SIZE ||
-		rx_ring_size > IPOURMA_MAX_RX_RING_SIZE ||
-		tx_ring_size < IPOURMA_MIN_TX_RING_SIZE ||
-		rx_ring_size < IPOURMA_MIN_RX_RING_SIZE ||
-		tx_ring_size > rx_ring_size) {
+	/* ring sizes here are requested values only, the actual sizes
+	 * are derived from device capability at device init
+	 */
+	if (tx_ring_size < IPOURMA_MIN_TX_RING_SIZE ||
+		rx_ring_size < IPOURMA_MIN_RX_RING_SIZE) {
 		pr_err("invalid ring size.\n");
+		return -EOPNOTSUPP;
+	}
+
+	if (rx_ring_size < tx_ring_size)
+		pr_info("rx ring size is recommended to be no less than tx ring size for better throughput\n");
+
+	if (ipourma_min_eid_cnt <= 0) {
+		pr_err("invalid min_eid_cnt %d.\n", ipourma_min_eid_cnt);
 		return -EOPNOTSUPP;
 	}
 
@@ -406,15 +432,9 @@ static int ipourma_param_init(void)
 		return -EOPNOTSUPP;
 	}
 
-	if (ipourma_min_eid_cnt > IPOURMA_MAX_EID_CNT) {
-		pr_err("invalid minimum eid count.\n");
-		return -EOPNOTSUPP;
-	}
-
 	ipourma_tx_ring_size = tx_ring_size;
 	ipourma_rx_ring_size = rx_ring_size;
 	ipourma_register_seg_size = (1 << page_level);
-	ipourma_ub_size_init();
 
 	return 0;
 }

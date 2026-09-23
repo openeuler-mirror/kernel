@@ -223,7 +223,7 @@ void ipourma_add_route(struct work_struct *work)
 
 	priv = container_of(work, struct ipourma_dev_priv, set_route);
 
-	for (i = 0; i < IPOURMA_MAX_EID_CNT; i++) {
+	for (i = 0; i < UBCORE_MAX_SIP; i++) {
 		if (eid_is_empty(&priv->eid_info[i].eid)
 				|| priv->eid_info[i].eid_index != i)
 			continue;
@@ -248,7 +248,7 @@ static void ipourma_del_route(struct work_struct *work)
 	priv = container_of(work, struct ipourma_dev_priv, unset_route);
 	ipourma_del_route_entry(priv);
 	if (!IS_ERR_OR_NULL(priv->eid_info)) {
-		for (int i = 0; i < IPOURMA_MAX_EID_CNT; i++) {
+		for (int i = 0; i < UBCORE_MAX_SIP; i++) {
 			if (eid_is_empty(&priv->eid_info[i].eid)
 					|| priv->eid_info[i].eid_index != i)
 				continue;
@@ -349,6 +349,7 @@ static int ipourma_stop(struct net_device *dev)
 		flush_workqueue(priv->tx_wq);
 	if (!IS_ERR_OR_NULL(priv->rx_wq))
 		flush_workqueue(priv->rx_wq);
+	priv->anchor_eid_idx = -1;
 	ipourma_reset_rings(priv);
 	ipourma_lru_clear(&priv->tjetty_lru);
 	netif_carrier_off(dev);
@@ -362,6 +363,7 @@ static int ipourma_stop(struct net_device *dev)
 
 static int ipourma_change_mtu(struct net_device *dev, int mtu)
 {
+	struct ipourma_dev_priv *priv = netdev_priv(dev);
 	bool flag;
 
 	if (IS_ERR_OR_NULL(dev))
@@ -374,7 +376,8 @@ static int ipourma_change_mtu(struct net_device *dev, int mtu)
 	}
 
 	/* check ranges */
-	if ((mtu < IPOURMA_MIN_MTU) || (mtu > IPOURMA_MAX_MTU))
+	if ((mtu < IPOURMA_MIN_MTU) ||
+	    (mtu > (int)(priv->urma_mtu - IPOURMA_HARD_LEN)))
 		return -EINVAL;
 
 	flag = netif_carrier_ok(dev);
@@ -450,10 +453,10 @@ static void ipourma_timeout(struct net_device *dev, unsigned int txqueue)
 	priv = netdev_priv(dev);
 	netdev_err(dev, "Transmit timeout at %ld, latency %d\n",
 		jiffies, jiffies_to_msecs(jiffies - dev_trans_start(dev)));
-	if (IS_ERR_OR_NULL(priv->eid_info))
+	if (IS_ERR_OR_NULL(priv->tx_ring))
 		return;
-	for (int i = 0; i < IPOURMA_MAX_EID_CNT; i++) {
-		if (eid_is_empty(&priv->eid_info[i].eid))
+	for (int i = 0; i < (int)priv->jetty_cnt; i++) {
+		if (IS_ERR_OR_NULL(priv->tx_ring[i]))
 			continue;
 		netdev_err(dev, "queue stopped %d, tx_head %u, tx_tail %u\n",
 			netif_queue_stopped(dev), priv->tx_head[i], priv->tx_tail[i]);
@@ -533,6 +536,18 @@ static inline void ipourma_open_dev(struct work_struct *work)
 	rtnl_unlock();
 }
 
+static inline void ipourma_close_dev(struct work_struct *work)
+{
+	struct ipourma_dev_priv *priv = container_of(work, struct ipourma_dev_priv,
+						     set_dev_down);
+	struct net_device *dev = priv->dev;
+
+	rtnl_lock();
+	if (netif_running(dev))
+		dev_change_flags(dev, dev->flags & ~IFF_UP, NULL);
+	rtnl_unlock();
+}
+
 static inline void ipourma_init_stats(struct ipourma_dev_priv *priv)
 {
 	memset(&(priv->runtime_stats.tx_stats), 0, sizeof(priv->runtime_stats.tx_stats));
@@ -540,7 +555,26 @@ static inline void ipourma_init_stats(struct ipourma_dev_priv *priv)
 	spin_lock_init(&(priv->runtime_stats.lock));
 }
 
-static void ipourma_create_redundant_jetty_callback(struct work_struct *work);
+static u32 ipourma_mtu_to_bytes(enum ubcore_mtu mtu)
+{
+	switch (mtu) {
+	case UBCORE_MTU_256:
+		return 256;
+	case UBCORE_MTU_512:
+		return 512;
+	case UBCORE_MTU_1024:
+		return 1024;
+	case UBCORE_MTU_2048:
+		return 2048;
+	case UBCORE_MTU_4096:
+		return 4096;
+	case UBCORE_MTU_8192:
+		return 8192;
+	default:
+		return IPOURMA_URMA_MAX_MTU;
+	}
+}
+
 static int ipourma_priv_base_init(struct net_device *dev,
 	struct ubcore_device *urma_dev)
 {
@@ -549,8 +583,16 @@ static int ipourma_priv_base_init(struct net_device *dev,
 	spin_lock_init(&priv->lock);
 	priv->urma_dev = urma_dev;
 	priv->dev = dev;
+	priv->urma_mtu = ipourma_mtu_to_bytes(urma_dev->attr.port_attr[0].max_mtu);
+	if (priv->urma_mtu - IPOURMA_HARD_LEN < IPOURMA_MIN_MTU) {
+		netdev_err(dev, "device mtu %u too small, min %u required (urma_mtu - header >= %u)\n",
+			   priv->urma_mtu, IPOURMA_MIN_MTU + IPOURMA_HARD_LEN, IPOURMA_MIN_MTU);
+		return -1;
+	}
+	dev->mtu = priv->urma_mtu - IPOURMA_HARD_LEN;
 	priv->parent = NULL;
 	priv->eid_info = NULL;
+	priv->eid_info_exist = NULL;
 	priv->eid_count = 0;
 	priv->tjetty_lru.count = 0;
 	priv->need_restart_ring = false;
@@ -558,18 +600,21 @@ static int ipourma_priv_base_init(struct net_device *dev,
 
 	ipourma_init_stats(priv);
 	INIT_WORK(&(priv->set_dev_up), ipourma_open_dev);
+	INIT_WORK(&(priv->set_dev_down), ipourma_close_dev);
 	INIT_WORK(&(priv->set_ip), ipourma_init_ipv6_addr);
 	INIT_WORK(&(priv->set_route), ipourma_add_route);
 	INIT_WORK(&(priv->unset_route), ipourma_del_route);
 	INIT_WORK(&(priv->set_route_entry), ipourma_add_route_entry);
 	INIT_WORK(&(priv->rx_cr_event), ipourma_rx_cr_event);
 	INIT_WORK(&(priv->register_netdev), ipourma_register_netdev);
-	INIT_DELAYED_WORK(&(priv->redundant_dwork), ipourma_create_redundant_jetty_callback);
 	atomic_set(&priv->rx_jfr_ref, 0);
 	atomic_set(&priv->tx_ring_blocked, 0);
 	atomic_set(&priv->need_set_ip, 1);
+	atomic_set(&priv->need_anchor, 0);
+	priv->anchor_eid_idx = -1;
 	spin_lock_init(&priv->tjetty_lru.lock);
 	spin_lock_init(&priv->set_ip_lock);
+	spin_lock_init(&priv->anchor_lock);
 	INIT_LIST_HEAD(&priv->tjetty_lru.list);
 	INIT_LIST_HEAD(&priv->set_ip_list);
 
@@ -611,6 +656,8 @@ static inline void ipourma_priv_eid_uninit(struct ipourma_dev_priv *priv)
 {
 	kfree(priv->eid_info);
 	priv->eid_info = NULL;
+	kfree(priv->eid_info_exist);
+	priv->eid_info_exist = NULL;
 	kfree(priv->tx_ring_is_full);
 	priv->tx_ring_is_full = NULL;
 	priv->eid_count = 0;
@@ -680,56 +727,32 @@ static void ipourma_init_set_ip_work(struct ipourma_dev_priv *priv, u32 eid_idx)
 	schedule_delayed_work(d_work, msecs_to_jiffies(MSEC_PER_SEC));
 }
 
-static int ipourma_get_redundant_eid(struct ipourma_dev_priv *priv, u32 *eid_idx)
-{
-	int i;
-
-	for (i = 0; i < IPOURMA_MAX_EID_CNT; i++) {
-		if (!eid_is_empty(&priv->eid_info[i].eid)) {
-			*eid_idx = priv->eid_info[i].eid_index;
-			return IPOURMA_OK;
-		}
-	}
-	return -EINVAL;
-}
-
-static void ipourma_create_redundant_jetty_callback(struct work_struct *work)
-{
-	struct delayed_work *d_work = container_of(work, struct delayed_work, work);
-	struct ipourma_dev_priv *priv;
-	u32 eid_idx;
-	int i;
-
-	priv = container_of(d_work,
-		struct ipourma_dev_priv, redundant_dwork);
-
-	if (ipourma_get_redundant_eid(priv, &eid_idx))
-		return;
-	for (i = 0; i < ipourma_min_eid_cnt; i++) {
-		if (!eid_is_empty(&priv->eid_info[i].eid))
-			continue;
-		priv->eid_info[i] = priv->eid_info[eid_idx];
-		if (ipourma_urma_init_by_eid(priv, i) != IPOURMA_OK) {
-			memset(&priv->eid_info[i].eid, 0, UBCORE_EID_SIZE);
-			continue;
-		}
-		netdev_info(priv->dev, "create redundant jetty id: %d by eid: %d!\n",
-						 i, priv->eid_info[i].eid_index);
-	}
-}
-
 int ipourma_create_new_eid(struct ipourma_dev_priv *priv, u32 eid_idx)
 {
+	bool is_first = false;
 	int ret;
 
-	ret = ipourma_urma_init_by_eid(priv, eid_idx);
-	if (ret != IPOURMA_OK) {
-		memset(&priv->eid_info[eid_idx], 0, sizeof(priv->eid_info[eid_idx]));
-		return ret;
+	spin_lock(&priv->anchor_lock);
+	if (atomic_read(&priv->need_anchor) == 0) {
+		atomic_set(&priv->need_anchor, 1);
+		priv->anchor_eid_idx = (int)eid_idx;
+		is_first = true;
+	}
+	spin_unlock(&priv->anchor_lock);
+
+	if (is_first) {
+		for (u32 i = 0; i < priv->jetty_cnt; i++) {
+			ret = ipourma_urma_init_by_jetty(priv, i);
+			if (ret != IPOURMA_OK) {
+				netdev_err(priv->dev,
+					"init urma resources failed on eid %u jetty %u, closing device\n",
+					eid_idx, i);
+				if (!IS_ERR_OR_NULL(priv->net_config_wq))
+					queue_work(priv->net_config_wq, &priv->set_dev_down);
+				return ret;
+			}
+		}
 	}
 	ipourma_init_set_ip_work(priv, eid_idx);
-	cancel_delayed_work_sync(&priv->redundant_dwork);
-	queue_delayed_work(priv->net_config_wq, &priv->redundant_dwork,
-				IPOURMA_DWORK_TIME * msecs_to_jiffies(MSEC_PER_SEC));
 	return IPOURMA_OK;
 }

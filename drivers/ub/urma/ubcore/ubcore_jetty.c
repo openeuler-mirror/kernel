@@ -805,6 +805,12 @@ int ubcore_deactive_jfc(struct ubcore_jfc *jfc, struct ubcore_udata *udata)
 		return -EINVAL;
 	}
 
+	if (atomic_read(&jfc->use_cnt)) {
+		ubcore_log_err("The jfc is still being used, use_cnt is %d",
+			atomic_read(&jfc->use_cnt));
+		return -EBUSY;
+	}
+
 	jfc_id = jfc->id;
 	dev = jfc->ub_dev;
 	ubcore_hash_table_remove(&dev->ht[UBCORE_HT_JFC], &jfc->hnode);
@@ -919,7 +925,8 @@ static int check_and_fill_jfs_attr(struct ubcore_jfs_cfg *cfg,
 	cfg->rnr_retry = user->rnr_retry;
 	cfg->err_timeout = user->err_timeout;
 	cfg->trans_mode = user->trans_mode;
-	cfg->jfs_context = user->jfs_context;
+	/* jfs is not published yet, no barrier needed */
+	RCU_INIT_POINTER(cfg->jfs_context, user->jfs_context);
 	cfg->jfc = user->jfc;
 	return 0;
 }
@@ -930,14 +937,19 @@ struct ubcore_jfs *ubcore_create_jfs(struct ubcore_device *dev,
 				     struct ubcore_udata *udata)
 {
 	struct ubcore_jfs *jfs;
+	union ubcore_eid eid = { 0 };
 	uint32_t perf_create_jfs_type;
 	int ret;
 
 	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_CREATE_JFS);
 
 	if (!dev || !dev->ops || !dev->ops->create_jfs ||
-	    !dev->ops->destroy_jfs || !cfg || !cfg->jfc ||
-	    !ubcore_eid_valid(dev, cfg->eid_index, udata)) {
+	    !dev->ops->destroy_jfs || !cfg || !cfg->jfc) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFS);
+		return ERR_PTR(-EINVAL);
+	}
+
+	if (ubcore_eid_valid(dev, cfg->eid_index, udata, &eid) != 0) {
 		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFS);
 		return ERR_PTR(-EINVAL);
 	}
@@ -977,7 +989,7 @@ struct ubcore_jfs *ubcore_create_jfs(struct ubcore_device *dev,
 	jfs->ub_dev = dev;
 	jfs->uctx = ubcore_get_uctx(udata);
 	jfs->jfae_handler = jfae_handler;
-	jfs->jfs_id.eid = dev->eid_table.eid_entries[cfg->eid_index].eid;
+	jfs->jfs_id.eid = eid;
 	atomic_set(&jfs->use_cnt, 0);
 	kref_init(&jfs->ref_cnt);
 	init_completion(&jfs->comp);
@@ -1211,7 +1223,8 @@ static int check_and_fill_jfr_attr(struct ubcore_jfr_cfg *cfg,
 	cfg->min_rnr_timer = user->min_rnr_timer;
 	cfg->trans_mode = user->trans_mode;
 	cfg->token_value = user->token_value;
-	cfg->jfr_context = user->jfr_context;
+	/* jfr is not published yet, no barrier needed */
+	RCU_INIT_POINTER(cfg->jfr_context, user->jfr_context);
 	cfg->jfc = user->jfc;
 	return 0;
 }
@@ -1221,11 +1234,14 @@ int ubcore_alloc_jfs(struct ubcore_device *dev, struct ubcore_jfs_cfg *cfg,
 {
 	int ret;
 	int free_ret = 0;
+	union ubcore_eid eid = { 0 };
 	uint8_t order_type;
 
-	if (dev == NULL || cfg == NULL || dev->ops == NULL || dev->ops->alloc_jfs == NULL ||
-		dev->ops->free_jfs == NULL || jfs == NULL || cfg->jfc == NULL ||
-		!ubcore_eid_valid(dev, cfg->eid_index, udata))
+	if (!dev || !cfg || !dev->ops || !dev->ops->alloc_jfs ||
+	    !dev->ops->free_jfs || !jfs || !cfg->jfc)
+		return -EINVAL;
+
+	if (ubcore_eid_valid(dev, cfg->eid_index, udata, &eid) != 0)
 		return -EINVAL;
 
 	/* Convert order_type based on trans_mode if it's default */
@@ -1243,12 +1259,13 @@ int ubcore_alloc_jfs(struct ubcore_device *dev, struct ubcore_jfs_cfg *cfg,
 	if (check_and_fill_jfs_attr(&(*jfs)->jfs_cfg, cfg) != 0) {
 		free_ret = dev->ops->free_jfs(*jfs, udata);
 		ubcore_log_err("jfs cfg is not qualified, ret is %d.\n", free_ret);
+		*jfs = NULL;
 		return -EINVAL;
 	}
 	(*jfs)->ub_dev = dev;
 	(*jfs)->uctx = ubcore_get_uctx(udata);
 	(*jfs)->jfae_handler = jfae_handler;
-	(*jfs)->jfs_id.eid = dev->eid_table.eid_entries[cfg->eid_index].eid;
+	(*jfs)->jfs_id.eid = eid;
 
 	atomic_set(&(*jfs)->use_cnt, 0);
 	kref_init(&(*jfs)->ref_cnt);
@@ -1501,14 +1518,19 @@ struct ubcore_jfr *ubcore_create_jfr(struct ubcore_device *dev,
 					 struct ubcore_udata *udata)
 {
 	struct ubcore_jfr *jfr;
+	union ubcore_eid eid = { 0 };
 	uint32_t perf_create_jfr_type;
 	int ret;
 
 	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_CREATE_JFR);
 
 	if (!dev || !dev->ops || !dev->ops->create_jfr ||
-	    !dev->ops->destroy_jfr || !cfg || !cfg->jfc ||
-	    !ubcore_eid_valid(dev, cfg->eid_index, udata)) {
+	    !dev->ops->destroy_jfr || !cfg || !cfg->jfc) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFR);
+		return ERR_PTR(-EINVAL);
+	}
+
+	if (ubcore_eid_valid(dev, cfg->eid_index, udata, &eid) != 0) {
 		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFR);
 		return ERR_PTR(-EINVAL);
 	}
@@ -1539,10 +1561,12 @@ struct ubcore_jfr *ubcore_create_jfr(struct ubcore_device *dev,
 		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFR);
 		return ERR_PTR(-EINVAL);
 	}
+	/* Sync jfr_cfg.id to the driver-assigned jfr_id.id */
+	jfr->jfr_cfg.id = jfr->jfr_id.id;
 	jfr->ub_dev = dev;
 	jfr->uctx = ubcore_get_uctx(udata);
 	jfr->jfae_handler = jfae_handler;
-	jfr->jfr_id.eid = dev->eid_table.eid_entries[cfg->eid_index].eid;
+	jfr->jfr_id.eid = eid;
 	atomic_set(&jfr->use_cnt, 0);
 	kref_init(&jfr->ref_cnt);
 	init_completion(&jfr->comp);
@@ -1779,6 +1803,60 @@ static bool ubcore_validate_order_type_for_um_ctp(
 	}
 	return true;
 }
+static int ubcore_check_tjetty_order_type(struct ubcore_tjetty_cfg *cfg)
+{
+	uint8_t order_type;
+
+	if (!ubcore_validate_order_type_for_um_ctp(cfg->trans_mode,
+						   cfg->tp_type,
+						   cfg->flag.bs.order_type))
+		return -EINVAL;
+
+	/* Convert order_type based on trans_mode if it's default */
+	order_type = (uint8_t)cfg->flag.bs.order_type;
+	if (ubcore_convert_order_type(cfg->trans_mode, &order_type) != 0) {
+		ubcore_log_err_rl(
+			"convert order_type failed, order_type: %u, trans_mode: %d.\n",
+			order_type, cfg->trans_mode);
+		return -EINVAL;
+	}
+	cfg->flag.bs.order_type = order_type;
+
+	return 0;
+}
+
+/*	Roll back the vtpn created by get_tp_list/create_tpid for a failed
+	import/bind:
+	- import path (is_bind == false): UB + RM/UM/shared-RC;
+	- bind path (is_bind == true): UB + RC non-shared.
+	if is compat path failed vtpn will not find in hash table, safe.
+*/
+static void ubcore_rollback_vtpn_active_fail(struct ubcore_device *dev,
+					       enum ubcore_transport_mode trans_mode,
+					       union ubcore_import_jetty_flag flag,
+					       struct ubcore_active_tp_cfg *active_tp_cfg,
+					       bool is_bind)
+{
+	bool shared_rc = is_create_rc_shared_tp(trans_mode,
+						flag.bs.order_type,
+						flag.bs.share_tp);
+
+	if (dev == NULL || active_tp_cfg == NULL ||
+	    dev->transport_type != UBCORE_TRANSPORT_UB)
+		return;
+
+	if (is_bind) {
+		if (trans_mode == UBCORE_TP_RC && shared_rc == false)
+			ubcore_import_rollback_to_free_vtpn(dev,
+				active_tp_cfg->tp_handle.value);
+		return;
+	}
+
+	if (trans_mode == UBCORE_TP_RM ||
+	    trans_mode == UBCORE_TP_UM || shared_rc)
+		ubcore_import_rollback_to_free_vtpn(dev,
+			active_tp_cfg->tp_handle.value);
+}
 
 static struct ubcore_tjetty *ubcore_import_jfr_compat_retry(
 	struct ubcore_device *dev,
@@ -1862,7 +1940,12 @@ struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
 	    dev->transport_type == UBCORE_TRANSPORT_UB &&
 	    (cfg->trans_mode == UBCORE_TP_RM ||
 	     cfg->trans_mode == UBCORE_TP_UM)) {
-		ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param);
+		if (ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param) != 0) {
+			mutex_destroy(&tjfr->lock);
+			(void)dev->ops->unimport_jfr(tjfr);
+			UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JFR);
+			return ERR_PTR(-EINVAL);
+		}
 		mutex_lock(&tjfr->lock);
 		vtpn = ubcore_connect_vtp(dev, &vtp_param);
 		if (IS_ERR_OR_NULL(vtpn)) {
@@ -1910,6 +1993,16 @@ ubcore_import_jfr_ex_old(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cf
 		return ERR_PTR(-EINVAL);
 	}
 
+	if (ubcore_check_tjetty_order_type(cfg) != 0) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JFR);
+		ubcore_log_err_rl(
+			"[DRV] check tjetty order_type failed, dev_name: %s, eid_idx: %u, jfr_id:%u.\n",
+			dev->dev_name, cfg->eid_index, cfg->id.id);
+		ubcore_rollback_vtpn_active_fail(dev, cfg->trans_mode, cfg->flag,
+						 active_tp_cfg, false);
+		return ERR_PTR(-EINVAL);
+	}
+
 	if (ubcore_is_bonding_dev(dev))
 		perf_import_jfr_type = PERF_AGG_IMPORT_JFR;
 	else
@@ -1923,6 +2016,8 @@ ubcore_import_jfr_ex_old(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cf
 		ubcore_log_err("[DRV] failed to import jfr ex, dev_name: %s, jfr_id:%u.\n",
 			dev->dev_name, cfg->id.id);
 		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JFR);
+		ubcore_rollback_vtpn_active_fail(dev, cfg->trans_mode, cfg->flag,
+						 active_tp_cfg, false);
 		return UBCORE_CHECK_RETURN_ERR_PTR(tjfr, UBCORE_DRV_ERRNO);
 	}
 	memcpy(&tjfr->cfg, cfg, sizeof(tjfr->cfg));
@@ -1935,7 +2030,12 @@ ubcore_import_jfr_ex_old(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cf
 	if (dev->transport_type == UBCORE_TRANSPORT_UB &&
 	    (cfg->trans_mode == UBCORE_TP_RM ||
 	     cfg->trans_mode == UBCORE_TP_UM)) {
-		ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param);
+		if (ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param) != 0) {
+			mutex_destroy(&tjfr->lock);
+			(void)dev->ops->unimport_jfr(tjfr);
+			UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JFR);
+			return ERR_PTR(-EINVAL);
+		}
 		mutex_lock(&tjfr->lock);
 		vtpn = ubcore_connect_vtp_ctrlplane(dev, &vtp_param, active_tp_cfg, udata);
 		if (IS_ERR_OR_NULL(vtpn)) {
@@ -1943,6 +2043,8 @@ ubcore_import_jfr_ex_old(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cf
 			mutex_destroy(&tjfr->lock);
 			(void)dev->ops->unimport_jfr(tjfr);
 			ubcore_log_err("Failed to setup tp connection.\n");
+			ubcore_rollback_vtpn_active_fail(dev, cfg->trans_mode, cfg->flag,
+						 active_tp_cfg, false);
 			if (!vtpn) {
 				UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JFR);
 				return ERR_PTR(-ECONNREFUSED);
@@ -2006,7 +2108,6 @@ ubcore_import_jfr_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 	struct ubcore_vtpn *vtpn = NULL;
 	struct ubcore_tpid_reuse *tpid_reuse;
 	int ret;
-	uint8_t order_type;
 	tpid_reuse = (struct ubcore_tpid_reuse *)active_tp_cfg->tpid_reuse;
 
 	ubcore_log_info_rl("Enter import jfr ex.\n");
@@ -2016,22 +2117,19 @@ ubcore_import_jfr_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 		dev->attr.dev_cap.max_eid_cnt <= cfg->eid_index)
 		return ERR_PTR(-EINVAL);
 
-	if (!ubcore_validate_order_type_for_um_ctp(cfg->trans_mode,
-						   cfg->tp_type,
-						   cfg->flag.bs.order_type))
-		return ERR_PTR(-EINVAL);
-
-	/* Convert order_type based on trans_mode if it's default */
-	order_type = (uint8_t)cfg->flag.bs.order_type;
-	if (ubcore_convert_order_type(cfg->trans_mode, &order_type) != 0)
-		return ERR_PTR(-EINVAL);
-	cfg->flag.bs.order_type = order_type;
-
 	if (!active_tp_cfg->tpid_reuse) {
 		ubcore_log_info_rl(
 			"active_tp_cfg tpid_reuse is false, do import_jfr_ex_old.\n");
 		return ubcore_import_jfr_ex_old(dev, cfg, active_tp_cfg, udata);
 	}
+
+	if (ubcore_check_tjetty_order_type(cfg) != 0) {
+		ubcore_log_err_rl(
+			"[DRV] check tjetty order_type failed, dev_name: %s, eid_idx: %u, jfr_id:%u.\n",
+			dev->dev_name, cfg->eid_index, cfg->id.id);
+		return ERR_PTR(-EINVAL);
+	}
+
 	if (dev->transport_type == UBCORE_TRANSPORT_UB &&
 		(cfg->trans_mode == UBCORE_TP_RM ||
 		 cfg->trans_mode == UBCORE_TP_UM)) {
@@ -2058,7 +2156,12 @@ ubcore_import_jfr_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 			return UBCORE_CHECK_RETURN_ERR_PTR(tjfr, UBCORE_DRV_ERRNO);
 		}
 
-		ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param);
+		if (ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param) != 0) {
+			mutex_destroy(&tjfr->lock);
+			(void)dev->ops->unimport_jfr(tjfr);
+			(void)ubcore_modify_tpid(dev, UBCORE_TPID_STATE_ERR, &modify_tpid_cfg);
+			return ERR_PTR(-EINVAL);
+		}
 		mutex_lock(&tjfr->lock);
 		vtpn = ubcore_get_vtpn(dev, &vtp_param, active_tp_cfg, udata);
 		if (IS_ERR_OR_NULL(vtpn)) {
@@ -2142,6 +2245,7 @@ int ubcore_unimport_jfr(struct ubcore_tjetty *tjfr)
 	ret = dev->ops->unimport_jfr(tjfr);
 	UBCORE_PERF_TRACE_END(PERF_UB_UNIMPORT_JFR);
 	if (ret != 0) {
+		mutex_init(&tjfr->lock);
 		ubcore_log_err("[DRV] Failed to unimport jfr, dev_name: %s, eid_idx: %u, tjfr_id: %u.\n",
 			dev->dev_name, eid_index, tjfr_id);
 		UBCORE_PERF_TRACE_END(PERF_CORE_UNIMPORT_JFR);
@@ -2180,7 +2284,8 @@ static int check_and_fill_jetty_attr(struct ubcore_jetty_cfg *cfg,
 	cfg->err_timeout = user->err_timeout;
 	cfg->min_rnr_timer = user->min_rnr_timer;
 	cfg->trans_mode = user->trans_mode;
-	cfg->jetty_context = user->jetty_context;
+	/* jetty is not published yet, no barrier needed */
+	RCU_INIT_POINTER(cfg->jetty_context, user->jetty_context);
 	cfg->token_value = user->token_value;
 	return 0;
 }
@@ -2228,11 +2333,14 @@ int ubcore_alloc_jfr(struct ubcore_device *dev, struct ubcore_jfr_cfg *cfg,
 {
 	int ret;
 	int free_ret = 0;
+	union ubcore_eid eid = { 0 };
 	uint8_t order_type;
 
-	if (dev == NULL || cfg == NULL || dev->ops == NULL || dev->ops->alloc_jfr == NULL ||
-		dev->ops->free_jfr == NULL || jfr == NULL || cfg->jfc == NULL ||
-		!ubcore_eid_valid(dev, cfg->eid_index, udata))
+	if (!dev || !cfg || !dev->ops || !dev->ops->alloc_jfr ||
+	    !dev->ops->free_jfr || !jfr || !cfg->jfc)
+		return -EINVAL;
+
+	if (ubcore_eid_valid(dev, cfg->eid_index, udata, &eid) != 0)
 		return -EINVAL;
 
 	/* Convert order_type based on trans_mode if it's default */
@@ -2250,12 +2358,13 @@ int ubcore_alloc_jfr(struct ubcore_device *dev, struct ubcore_jfr_cfg *cfg,
 	if (check_and_fill_jfr_attr(&(*jfr)->jfr_cfg, cfg) != 0) {
 		free_ret = dev->ops->free_jfr(*jfr, udata);
 		ubcore_log_err("jfr cfg is not qualified,ret is %d.\n", free_ret);
+		*jfr = NULL;
 		return -EINVAL;
 	}
 	(*jfr)->ub_dev = dev;
 	(*jfr)->uctx = ubcore_get_uctx(udata);
 	(*jfr)->jfae_handler = jfae_handler;
-	(*jfr)->jfr_id.eid = dev->eid_table.eid_entries[cfg->eid_index].eid;
+	(*jfr)->jfr_id.eid = eid;
 
 	atomic_set(&(*jfr)->use_cnt, 0);
 	kref_init(&(*jfr)->ref_cnt);
@@ -2650,14 +2759,19 @@ struct ubcore_jetty *ubcore_create_jetty(struct ubcore_device *dev,
 					 struct ubcore_udata *udata)
 {
 	struct ubcore_jetty *jetty;
+	union ubcore_eid eid = { 0 };
 	int ret;
 	uint32_t perf_create_jetty_record_type;
 
 	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_CREATE_JETTY);
 
 	if (!dev || !cfg || !dev->ops ||
-	    !dev->ops->create_jetty || !dev->ops->destroy_jetty ||
-	    !ubcore_eid_valid(dev, cfg->eid_index, udata)) {
+	    !dev->ops->create_jetty || !dev->ops->destroy_jetty) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JETTY);
+		return ERR_PTR(-EINVAL);
+	}
+
+	if (ubcore_eid_valid(dev, cfg->eid_index, udata, &eid) != 0) {
 		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JETTY);
 		return ERR_PTR(-EINVAL);
 	}
@@ -2694,9 +2808,11 @@ struct ubcore_jetty *ubcore_create_jetty(struct ubcore_device *dev,
 		goto delete_jetty_to_grp;
 	}
 
+	/* Sync jetty_cfg.id to the driver-assigned jetty_id.id */
+	jetty->jetty_cfg.id = jetty->jetty_id.id;
 	jetty->uctx = ubcore_get_uctx(udata);
 	jetty->jfae_handler = jfae_handler;
-	jetty->jetty_id.eid = dev->eid_table.eid_entries[cfg->eid_index].eid;
+	jetty->jetty_id.eid = eid;
 	if (jetty->jetty_cfg.trans_mode == UBCORE_TP_RC) {
 		jetty->tptable = ubcore_create_tptable();
 		if (!jetty->tptable) {
@@ -3122,7 +3238,12 @@ struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
 	     cfg->trans_mode == UBCORE_TP_UM ||
 	     is_create_rc_shared_tp(cfg->trans_mode, cfg->flag.bs.order_type,
 				    tjetty->cfg.flag.bs.share_tp))) {
-		ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param);
+		if (ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param) != 0) {
+			mutex_destroy(&tjetty->lock);
+			(void)dev->ops->unimport_jetty(tjetty);
+			UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
+			return ERR_PTR(-EINVAL);
+		}
 		mutex_lock(&tjetty->lock);
 		vtpn = ubcore_connect_vtp(dev, &vtp_param);
 		if (IS_ERR_OR_NULL(vtpn)) {
@@ -3169,6 +3290,16 @@ ubcore_import_jetty_ex_old(struct ubcore_device *dev, struct ubcore_tjetty_cfg *
 		return ERR_PTR(-EINVAL);
 	}
 
+	if (ubcore_check_tjetty_order_type(cfg) != 0) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
+		ubcore_log_err_rl(
+			"[DRV] check tjetty order_type failed, dev_name: %s, eid_idx: %u, jetty_id:%u.\n",
+			dev->dev_name, cfg->eid_index, cfg->id.id);
+		ubcore_rollback_vtpn_active_fail(dev, cfg->trans_mode, cfg->flag,
+						 active_tp_cfg, false);
+		return ERR_PTR(-EINVAL);
+	}
+
 	if (ubcore_is_bonding_dev(dev))
 		perf_import_jetty_type = PERF_AGG_IMPORT_JETTY;
 	else
@@ -3182,6 +3313,8 @@ ubcore_import_jetty_ex_old(struct ubcore_device *dev, struct ubcore_tjetty_cfg *
 		ubcore_log_err("[DRV] failed to import jetty, dev_name: %s, eid_idx: %u, jetty_id:%u.\n",
 			dev->dev_name, cfg->eid_index, cfg->id.id);
 		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
+		ubcore_rollback_vtpn_active_fail(dev, cfg->trans_mode, cfg->flag,
+						 active_tp_cfg, false);
 		return UBCORE_CHECK_RETURN_ERR_PTR(tjetty, UBCORE_DRV_ERRNO);
 	}
 	memcpy(&tjetty->cfg, cfg, sizeof(tjetty->cfg));
@@ -3197,7 +3330,12 @@ ubcore_import_jetty_ex_old(struct ubcore_device *dev, struct ubcore_tjetty_cfg *
 	     cfg->trans_mode == UBCORE_TP_UM ||
 	     is_create_rc_shared_tp(cfg->trans_mode, cfg->flag.bs.order_type,
 				    tjetty->cfg.flag.bs.share_tp))) {
-		ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param);
+		if (ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param) != 0) {
+			mutex_destroy(&tjetty->lock);
+			(void)dev->ops->unimport_jetty(tjetty);
+			UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
+			return ERR_PTR(-EINVAL);
+		}
 		mutex_lock(&tjetty->lock);
 		vtpn = ubcore_connect_vtp_ctrlplane(dev, &vtp_param, active_tp_cfg, udata);
 		if (IS_ERR_OR_NULL(vtpn)) {
@@ -3205,6 +3343,8 @@ ubcore_import_jetty_ex_old(struct ubcore_device *dev, struct ubcore_tjetty_cfg *
 			mutex_destroy(&tjetty->lock);
 			(void)dev->ops->unimport_jetty(tjetty);
 			ubcore_log_err("Failed to setup tp connection.\n");
+			ubcore_rollback_vtpn_active_fail(dev, cfg->trans_mode, cfg->flag,
+						 active_tp_cfg, false);
 			if (!vtpn) {
 				UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
 				return ERR_PTR(-ECONNREFUSED);
@@ -3274,7 +3414,6 @@ ubcore_import_jetty_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 	struct ubcore_vtpn *vtpn = NULL;
 	struct ubcore_tpid_reuse *tpid_reuse;
 	int ret;
-	uint8_t order_type;
 	tpid_reuse = (struct ubcore_tpid_reuse *)active_tp_cfg->tpid_reuse;
 
 	if (!dev || !dev->ops || !dev->ops->import_jetty_ex ||
@@ -3282,22 +3421,14 @@ ubcore_import_jetty_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 	    dev->attr.dev_cap.max_eid_cnt <= cfg->eid_index)
 		return ERR_PTR(-EINVAL);
 
-	if (!ubcore_validate_order_type_for_um_ctp(cfg->trans_mode,
-						   cfg->tp_type,
-						   cfg->flag.bs.order_type))
-		return ERR_PTR(-EINVAL);
-
-	/* Convert order_type based on trans_mode if it's default */
-	order_type = (uint8_t)cfg->flag.bs.order_type;
-	if (ubcore_convert_order_type(cfg->trans_mode, &order_type) != 0)
-		return ERR_PTR(-EINVAL);
-	cfg->flag.bs.order_type = order_type;
-
 	if (!active_tp_cfg->tpid_reuse) {
 		ubcore_log_info_rl(
 			"active_tp_cfg tpid_reuse is false, do import_jetty_ex_old.\n");
 		return ubcore_import_jetty_ex_old(dev, cfg, active_tp_cfg, udata);
 	}
+
+	if (ubcore_check_tjetty_order_type(cfg) != 0)
+		return ERR_PTR(-EINVAL);
 
 	if (cfg->trans_mode == UBCORE_TP_RC)
 		return ubcore_get_tjetty(dev, cfg, active_tp_cfg, udata);
@@ -3325,7 +3456,12 @@ ubcore_import_jetty_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 		return UBCORE_CHECK_RETURN_ERR_PTR(tjetty, UBCORE_DRV_ERRNO);
 	}
 
-	ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param);
+	if (ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param) != 0) {
+		mutex_destroy(&tjetty->lock);
+		(void)dev->ops->unimport_jetty(tjetty);
+		(void)ubcore_modify_tpid(dev, UBCORE_TPID_STATE_ERR, &modify_tpid_cfg);
+		return ERR_PTR(-EINVAL);
+	}
 	mutex_lock(&tjetty->lock);
 	vtpn = ubcore_get_vtpn(dev, &vtp_param, active_tp_cfg, udata);
 	if (IS_ERR_OR_NULL(vtpn)) {
@@ -3410,6 +3546,7 @@ int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty)
 	if (ret != 0) {
 		ubcore_log_err("[DRV] Failed to unimport_jetty, dev_name:%s, eid_idx:%u, id:%u, ret: %d.",
 			dev->dev_name, eid_idx, jetty_id, ret);
+		mutex_init(&tjetty->lock);
 		UBCORE_PERF_TRACE_END(PERF_CORE_UNIMPORT_JETTY);
 		return ret;
 	}
@@ -3468,7 +3605,11 @@ static int ubcore_inner_bind_ub_jetty(struct ubcore_jetty *jetty,
 				    jetty->jetty_cfg.flag.bs.order_type,
 				    tjetty->cfg.flag.bs.share_tp)) {
 		memcpy(&cfg, &tjetty->cfg, sizeof(tjetty->cfg));
-		ubcore_set_vtp_param(dev, jetty, &cfg, &vtp_param);
+		if (ubcore_set_vtp_param(dev, jetty, &cfg, &vtp_param) != 0) {
+			ubcore_log_err("Failed to set vtp param.\n");
+			ret = -EINVAL;
+			goto unbind;
+		}
 		mutex_lock(&tjetty->lock);
 
 		if (tjetty->vtpn) {
@@ -3614,7 +3755,11 @@ static int ubcore_inner_bind_ub_jetty_ctrlplane(
 				    jetty->jetty_cfg.flag.bs.order_type,
 				    tjetty->cfg.flag.bs.share_tp)) {
 		memcpy(&cfg, &tjetty->cfg, sizeof(tjetty->cfg));
-		ubcore_set_vtp_param(dev, jetty, &cfg, &vtp_param);
+		if (ubcore_set_vtp_param(dev, jetty, &cfg, &vtp_param) != 0) {
+			ubcore_log_err("Failed to set vtp param.\n");
+			ret = -EINVAL;
+			goto unbind;
+		}
 		mutex_lock(&tjetty->lock);
 
 		if (tjetty->vtpn) {
@@ -3683,6 +3828,9 @@ int ubcore_bind_jetty_ex(struct ubcore_jetty *jetty,
 			 struct ubcore_active_tp_cfg *active_tp_cfg,
 			 struct ubcore_udata *udata)
 {
+	struct ubcore_device *dev;
+	int ret = -EINVAL;
+
 	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_BIND_JETTY);
 
 	if (!jetty || !tjetty || !jetty->ub_dev ||
@@ -3691,13 +3839,14 @@ int ubcore_bind_jetty_ex(struct ubcore_jetty *jetty,
 		UBCORE_PERF_TRACE_END(PERF_CORE_BIND_JETTY);
 		return -EINVAL;
 	}
+	dev = jetty->ub_dev;
+
 	if ((jetty->jetty_cfg.trans_mode != UBCORE_TP_RC) ||
 		(tjetty->cfg.trans_mode != UBCORE_TP_RC)) {
 		ubcore_log_err_rl(
 			"jetty trans mode is not rc type, jetty mode: %d, tjetty mode: %d.\n",
 			jetty->jetty_cfg.trans_mode, tjetty->cfg.trans_mode);
-		UBCORE_PERF_TRACE_END(PERF_CORE_BIND_JETTY);
-		return -EINVAL;
+		goto err_rollback;
 	}
 	// check if tp_handle is not rc type or rtp.
 	// ctp or utp, peer_tp_handle not need to check.
@@ -3709,8 +3858,7 @@ int ubcore_bind_jetty_ex(struct ubcore_jetty *jetty,
 			"tphdl trans mode is not rc type, tp_hdl mode: %d, peer_tphdl mode: %d.\n",
 			active_tp_cfg->tp_handle.bs.trans_mode,
 			active_tp_cfg->peer_tp_handle.bs.trans_mode);
-		UBCORE_PERF_TRACE_END(PERF_CORE_BIND_JETTY);
-		return -EINVAL;
+		goto err_rollback;
 	}
 	if (jetty->remote_jetty == tjetty) {
 		ubcore_log_info("bind reentry, jetty: %u bind tjetty: %u.\n",
@@ -3721,8 +3869,7 @@ int ubcore_bind_jetty_ex(struct ubcore_jetty *jetty,
 	if (jetty->remote_jetty) {
 		ubcore_log_err(
 			"The same jetty, different tjetty, prevent duplicate bind.\n");
-		UBCORE_PERF_TRACE_END(PERF_CORE_BIND_JETTY);
-		return -EINVAL;
+		goto err_rollback;
 	}
 
 	if (tjetty->vtpn &&
@@ -3731,13 +3878,22 @@ int ubcore_bind_jetty_ex(struct ubcore_jetty *jetty,
 				     tjetty->cfg.flag.bs.share_tp))) {
 		ubcore_log_err(
 			"The tjetty, has already connect vtpn, prevent duplicate bind.\n");
-		UBCORE_PERF_TRACE_END(PERF_CORE_BIND_JETTY);
-		return -EINVAL;
+		goto err_rollback;
 	}
 
-	UBCORE_PERF_TRACE_END(PERF_CORE_BIND_JETTY);
-	return ubcore_inner_bind_jetty_ctrlplane(jetty, tjetty, active_tp_cfg,
+	ret = ubcore_inner_bind_jetty_ctrlplane(jetty, tjetty, active_tp_cfg,
 						 udata);
+	if (ret != 0)
+		goto err_rollback;
+
+	UBCORE_PERF_TRACE_END(PERF_CORE_BIND_JETTY);
+	return ret;
+
+err_rollback:
+	ubcore_rollback_vtpn_active_fail(dev, tjetty->cfg.trans_mode, tjetty->cfg.flag,
+					 active_tp_cfg, true);
+	UBCORE_PERF_TRACE_END(PERF_CORE_BIND_JETTY);
+	return ret;
 }
 EXPORT_SYMBOL(ubcore_bind_jetty_ex);
 
@@ -3851,13 +4007,16 @@ struct ubcore_jetty_group *ubcore_create_jetty_grp(
 	ubcore_event_callback_t jfae_handler, struct ubcore_udata *udata)
 {
 	struct ubcore_jetty_group *jetty_grp;
+	union ubcore_eid eid = { 0 };
 	uint32_t max_jetty_in_jetty_grp;
 	uint32_t i;
 
 	if (!dev || !cfg || !dev->ops ||
 	    !dev->ops->create_jetty_grp ||
-	    !dev->ops->delete_jetty_grp ||
-	    !ubcore_eid_valid(dev, cfg->eid_index, udata))
+	    !dev->ops->delete_jetty_grp)
+		return ERR_PTR(-EINVAL);
+
+	if (ubcore_eid_valid(dev, cfg->eid_index, udata, &eid) != 0)
 		return ERR_PTR(-EINVAL);
 
 	max_jetty_in_jetty_grp = dev->attr.dev_cap.max_jetty_in_jetty_grp;
@@ -3889,8 +4048,7 @@ struct ubcore_jetty_group *ubcore_create_jetty_grp(
 	jetty_grp->jetty_grp_cfg = *cfg;
 	jetty_grp->jfae_handler = jfae_handler;
 	jetty_grp->uctx = ubcore_get_uctx(udata);
-	jetty_grp->jetty_grp_id.eid =
-		dev->eid_table.eid_entries[cfg->eid_index].eid;
+	jetty_grp->jetty_grp_id.eid = eid;
 	mutex_init(&jetty_grp->lock);
 	jetty_grp->jetty_cnt = 0;
 	for (i = 0; i < max_jetty_in_jetty_grp; i++)
@@ -3978,7 +4136,11 @@ struct ubcore_tjetty *ubcore_import_jetty_async(struct ubcore_device *dev,
 	     cfg->trans_mode == UBCORE_TP_UM ||
 	     is_create_rc_shared_tp(cfg->trans_mode, cfg->flag.bs.order_type,
 				    tjetty->cfg.flag.bs.share_tp))) {
-		ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param);
+		if (ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param) != 0) {
+			mutex_destroy(&tjetty->lock);
+			(void)dev->ops->unimport_jetty(tjetty);
+			return ERR_PTR(-EINVAL);
+		}
 		mutex_lock(&tjetty->lock);
 		vtpn = ubcore_connect_vtp_async(dev, &vtp_param, timeout,
 						&para);
@@ -4046,7 +4208,14 @@ int ubcore_unimport_jetty_async(struct ubcore_tjetty *tjetty, int timeout,
 
 	mutex_destroy(&tjetty->lock);
 
-	return dev->ops->unimport_jetty(tjetty);
+	ret = dev->ops->unimport_jetty(tjetty);
+	if (ret != 0) {
+		mutex_init(&tjetty->lock);
+		ubcore_log_err("[DRV] Failed to unimport_jetty, dev_name:%s, ret: %d.",
+			dev->dev_name, ret);
+	}
+
+	return ret;
 }
 EXPORT_SYMBOL(ubcore_unimport_jetty_async);
 
@@ -4089,7 +4258,11 @@ static int ubcore_inner_bind_ub_jetty_async(struct ubcore_jetty *jetty,
 				    jetty->jetty_cfg.flag.bs.order_type,
 				    tjetty->cfg.flag.bs.share_tp)) {
 		memcpy(&cfg, &tjetty->cfg, sizeof(tjetty->cfg));
-		ubcore_set_vtp_param(dev, jetty, &cfg, &vtp_param);
+		if (ubcore_set_vtp_param(dev, jetty, &cfg, &vtp_param) != 0) {
+			ubcore_log_err("Failed to set vtp param.\n");
+			ret = -EINVAL;
+			goto unbind;
+		}
 		mutex_lock(&tjetty->lock);
 
 		if (tjetty->vtpn) {
@@ -4287,11 +4460,15 @@ int ubcore_alloc_jetty(struct ubcore_device *dev, struct ubcore_jetty_cfg *cfg,
 	ubcore_event_callback_t jfae_handler,
 	struct ubcore_jetty **jetty, struct ubcore_udata *udata)
 {
+	union ubcore_eid eid = { 0 };
 	uint8_t order_type;
 	int ret;
 
-	if (dev == NULL || cfg == NULL || dev->ops == NULL || dev->ops->alloc_jetty == NULL ||
-		dev->ops->free_jetty == NULL || !ubcore_eid_valid(dev, cfg->eid_index, udata))
+	if (!dev || !cfg || !dev->ops || !dev->ops->alloc_jetty ||
+	    !dev->ops->free_jetty)
+		return -EINVAL;
+
+	if (ubcore_eid_valid(dev, cfg->eid_index, udata, &eid) != 0)
 		return -EINVAL;
 
 	/* Convert order_type based on trans_mode if it's default */
@@ -4321,7 +4498,7 @@ int ubcore_alloc_jetty(struct ubcore_device *dev, struct ubcore_jetty_cfg *cfg,
 
 	(*jetty)->uctx = ubcore_get_uctx(udata);
 	(*jetty)->jfae_handler = jfae_handler;
-	(*jetty)->jetty_id.eid = dev->eid_table.eid_entries[cfg->eid_index].eid;
+	(*jetty)->jetty_id.eid = eid;
 	if ((*jetty)->jetty_cfg.trans_mode == UBCORE_TP_RC) {
 		(*jetty)->tptable = ubcore_create_tptable();
 		if ((*jetty)->tptable == NULL) {
@@ -4551,6 +4728,7 @@ int ubcore_set_jetty_opt(struct ubcore_jetty *jetty, uint64_t opt, void *buf, ui
 	if (ret != 0) {
 		ubcore_log_err("[DRV_ERROR]Failed to set_jetty_opt, id:%u, ret %d, opt %llu.\n",
 			jetty->jetty_id.id, ret, opt);
+		ubcore_jetty_opt_rollback_old(jetty, opt);
 		return ret;
 	}
 	ret = ubcore_set_options_common(g_ubcore_jetty_opt_table,
