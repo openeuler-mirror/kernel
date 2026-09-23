@@ -151,17 +151,14 @@ out:
 void uburma_release_file(struct kref *ref)
 {
 	struct uburma_file *file = container_of(ref, struct uburma_file, ref);
-	struct ubcore_device *ubc_dev;
-	int srcu_idx;
 
-	srcu_idx = srcu_read_lock(&file->ubu_dev->ubc_dev_srcu);
-	ubc_dev = srcu_dereference(file->ubu_dev->ubc_dev,
-				   &file->ubu_dev->ubc_dev_srcu);
-	if (ubc_dev && !ubc_dev->ops->disassociate_ucontext &&
-	    ubc_dev->ops->owner)
-		module_put(ubc_dev->ops->owner);
-
-	srcu_read_unlock(&file->ubu_dev->ubc_dev_srcu, srcu_idx);
+	/* Use the module reference recorded at open time. ubc_dev may already
+	 * have been cleared by uburma_remove_device(), in which case reading it
+	 * here would otherwise leak the reference (e.g. for devices whose ops
+	 * do not implement disassociate_ucontext).
+	 */
+	if (file->ops_owner)
+		module_put(file->ops_owner);
 
 	uburma_unregister_mmu(file);
 	if (atomic_dec_and_test(&file->ubu_dev->refcnt))
@@ -179,6 +176,7 @@ int uburma_open(struct inode *inode, struct file *filp)
 	struct uburma_device *ubu_dev;
 	struct ubcore_device *ubc_dev;
 	struct uburma_file *file;
+	struct module *ops_owner = NULL;
 	int srcu_idx;
 	int ret;
 
@@ -198,7 +196,8 @@ int uburma_open(struct inode *inode, struct file *filp)
 
 	if (!ubc_dev->ops->disassociate_ucontext &&
 	    ubc_dev->ops->owner) {
-		if (!try_module_get(ubc_dev->ops->owner)) {
+		ops_owner = ubc_dev->ops->owner;
+		if (!try_module_get(ops_owner)) {
 			ret = -ENODEV;
 			goto err;
 		}
@@ -208,11 +207,14 @@ int uburma_open(struct inode *inode, struct file *filp)
 	if (!file) {
 		ret = -ENOMEM;
 		uburma_log_err("can not alloc memory.\n");
+		if (ops_owner)
+			module_put(ops_owner);
 		goto err;
 	}
 
 	file->ubu_dev = ubu_dev;
 	file->ucontext = NULL;
+	file->ops_owner = ops_owner;
 	kref_init(&file->ref);
 	init_rwsem(&file->ucontext_rwsem);
 	uburma_init_uobj_context(file);
@@ -222,6 +224,8 @@ int uburma_open(struct inode *inode, struct file *filp)
 	ret = uburma_register_mmu(file);
 	if (ret != 0) {
 		uburma_log_err("fail to register mmu ret:%u\n", ret);
+		if (file->ops_owner)
+			module_put(file->ops_owner);
 		kfree(file);
 		goto err;
 	}

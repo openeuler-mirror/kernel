@@ -1618,15 +1618,27 @@ void ubcore_dispatch_async_event(struct ubcore_event *event)
 }
 EXPORT_SYMBOL(ubcore_dispatch_async_event);
 
-bool ubcore_eid_valid(struct ubcore_device *dev, uint32_t eid_index,
-		      struct ubcore_udata *udata)
+/**
+ * ubcore_eid_valid - check an eid and return a snapshot of it.
+ * @udata: NULL for kernel space, otherwise the ucontext that owns the eid.
+ * @eid_out: optional, filled with the eid when the check succeeds.
+ *
+ * User space also checks the netns rule of ubcore_eid_accessible(). The check
+ * and the copy are done under eid_table.lock.
+ *
+ * Return: 0 on success, -EINVAL or -EPERM on failure.
+ */
+int ubcore_eid_valid(struct ubcore_device *dev, uint32_t eid_index,
+		     struct ubcore_udata *udata, union ubcore_eid *eid_out)
 {
-	/* For user space */
+	struct ubcore_eid_entry *entry;
+	struct net *net = NULL;
+
 	if (udata != NULL) {
 		/* uctx must be set */
 		if (udata->uctx == NULL) {
 			ubcore_log_err("Invalid parameter.\n");
-			return false;
+			return -EINVAL;
 		}
 
 		/* compare uctx->eid_index with the given eid_index */
@@ -1634,31 +1646,44 @@ bool ubcore_eid_valid(struct ubcore_device *dev, uint32_t eid_index,
 			ubcore_log_err(
 				"eid_indx: %u is consistent with the eid_indx: %u in uctx.\n",
 				eid_index, udata->uctx->eid_index);
-			return false;
-		}
-	} else {
-		/* For kernel space */
-		/* Check if given eid_idx exists without checking ns,
-		 * as the current->nsproxy->net_ns can be changed.
-		 */
-		if (eid_index >= dev->eid_table.eid_cnt) {
-			ubcore_log_err("eid_indx: %u is over the up limit: %u",
-				       eid_index, dev->eid_table.eid_cnt);
-			return false;
+			return -EINVAL;
 		}
 
-		spin_lock(&dev->eid_table.lock);
-		if (IS_ERR_OR_NULL(dev->eid_table.eid_entries)) {
-			spin_unlock(&dev->eid_table.lock);
-			return false;
-		}
-		if (!dev->eid_table.eid_entries[eid_index].valid) {
-			spin_unlock(&dev->eid_table.lock);
-			return false;
-		}
-		spin_unlock(&dev->eid_table.lock);
+		net = current->nsproxy->net_ns;
 	}
-	return true;
+
+	spin_lock(&dev->eid_table.lock);
+	if (eid_index >= dev->eid_table.eid_cnt) {
+		spin_unlock(&dev->eid_table.lock);
+		ubcore_log_err("eid_indx: %u is over the up limit: %u",
+			       eid_index, dev->eid_table.eid_cnt);
+		return -EINVAL;
+	}
+
+	if (IS_ERR_OR_NULL(dev->eid_table.eid_entries)) {
+		spin_unlock(&dev->eid_table.lock);
+		return -EINVAL;
+	}
+
+	entry = &dev->eid_table.eid_entries[eid_index];
+	if (!entry->valid) {
+		spin_unlock(&dev->eid_table.lock);
+		return -EINVAL;
+	}
+
+	/* Kernel space has no meaningful current netns, so the netns is checked
+	 * for user space only, same rule as ubcore_eid_accessible().
+	 */
+	if (net && !ubcore_eid_ns_shared() && !net_eq(entry->net, net)) {
+		spin_unlock(&dev->eid_table.lock);
+		return -EPERM;
+	}
+
+	if (eid_out)
+		*eid_out = entry->eid;
+	spin_unlock(&dev->eid_table.lock);
+
+	return 0;
 }
 
 bool ubcore_eid_accessible(struct ubcore_device *dev, uint32_t eid_index)

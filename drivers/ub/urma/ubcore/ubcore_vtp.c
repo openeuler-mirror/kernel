@@ -1272,6 +1272,38 @@ int ubcore_delete_vtpn_for_tpid(struct ubcore_vtpn *vtpn)
 }
 EXPORT_SYMBOL(ubcore_delete_vtpn_for_tpid);
 
+/*	Free the vtpn (and its tpid) keyed by tp_handle.
+ *	this failed import:
+ *   - not found in the hash table (never created / already freed): no-op;
+ *   - UBCORE_VTPS_READY: activated by another tjetty via reuse, skip;
+ *   - RESET (never activated) or WAIT_DESTROY (activation failed): free.
+ */
+void ubcore_import_rollback_to_free_vtpn(struct ubcore_device *dev, uint64_t tp_handle)
+{
+	struct ubcore_vtpn *vtpn;
+	bool can_free;
+
+	if (dev == NULL || tp_handle == 0)
+		return;
+
+	vtpn = ubcore_find_get_vtpn_by_tp_handle(dev, tp_handle);
+	if (vtpn == NULL) {
+		ubcore_log_warn_rl(
+			"vtpn not found in rollback, maybe compat or reuse tpid, tp_handle: %llu.\n",
+				tp_handle);
+		return;
+	}
+
+	mutex_lock(&vtpn->state_lock);
+	can_free = (vtpn->state != UBCORE_VTPS_READY);
+	mutex_unlock(&vtpn->state_lock);
+
+	ubcore_put_vtpn_for_tpid(vtpn);
+
+	if (can_free)
+		(void)ubcore_delete_vtpn_for_tpid(vtpn);
+}
+
 // Allocate a vtpn keyed by tp_handle, used by uburma_cmd_get_tp_list.
 struct ubcore_vtpn *ubcore_create_add_vtpn_for_tpid(struct ubcore_device *dev,
 						  uint64_t tp_handle)
@@ -2294,16 +2326,28 @@ struct ubcore_vtp *ubcore_find_get_vtp(struct ubcore_device *dev,
 	return vtp_entry;
 }
 
-void ubcore_set_vtp_param(struct ubcore_device *dev, struct ubcore_jetty *jetty,
-			  struct ubcore_tjetty_cfg *cfg,
-			  struct ubcore_vtp_param *vtp_param)
+int ubcore_set_vtp_param(struct ubcore_device *dev, struct ubcore_jetty *jetty,
+			 struct ubcore_tjetty_cfg *cfg,
+			 struct ubcore_vtp_param *vtp_param)
 {
-	if (cfg->eid_index >= dev->eid_table.eid_cnt ||
-	    IS_ERR_OR_NULL(dev->eid_table.eid_entries)) {
-		ubcore_log_err("invalid param, eid_index[%u] >= eid_cnt[%u]",
-			       cfg->eid_index, dev->eid_table.eid_cnt);
-		return;
+	uint32_t eid_index = cfg->eid_index;
+
+	spin_lock(&dev->eid_table.lock);
+	if (eid_index >= dev->eid_table.eid_cnt ||
+	    IS_ERR_OR_NULL(dev->eid_table.eid_entries) ||
+	    dev->eid_table.eid_entries[eid_index].valid == false) {
+		spin_unlock(&dev->eid_table.lock);
+		ubcore_log_err("Invalid parameter, eid_index: %u, eid_cnt: %u.\n",
+			       eid_index, dev->eid_table.eid_cnt);
+		return -EINVAL;
 	}
+	/*
+	 * RM/UM VTP for userspace app: get local eid from ucontext
+	 * RM/UM VTP for kernel app: how to get local eid ?
+	 * RC VTP: get eid from jetty
+	 */
+	vtp_param->local_eid = dev->eid_table.eid_entries[eid_index].eid;
+	spin_unlock(&dev->eid_table.lock);
 
 	vtp_param->trans_mode = cfg->trans_mode;
 
@@ -2311,12 +2355,6 @@ void ubcore_set_vtp_param(struct ubcore_device *dev, struct ubcore_jetty *jetty,
 				   cfg->flag.bs.share_tp))
 		vtp_param->trans_mode = UBCORE_TP_RM;
 
-	/*
-	 * RM/UM VTP for userspace app: get local eid from ucontext
-	 * RM/UM VTP for kernel app: how to get local eid ?
-	 * RC VTP: get eid from jetty
-	 */
-	vtp_param->local_eid = dev->eid_table.eid_entries[cfg->eid_index].eid;
 	vtp_param->peer_eid = cfg->id.eid;
 	if (jetty != NULL)
 		vtp_param->local_jetty = jetty->jetty_id.id;
@@ -2325,6 +2363,7 @@ void ubcore_set_vtp_param(struct ubcore_device *dev, struct ubcore_jetty *jetty,
 
 	vtp_param->peer_jetty = cfg->id.id;
 	vtp_param->eid_index = cfg->eid_index;
+	return 0;
 }
 
 uint32_t ubcore_get_all_vtp_cnt(struct ubcore_hash_table *ht,
