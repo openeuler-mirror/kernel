@@ -101,10 +101,6 @@ struct msg_isref_conn_resp {
 	int result; /* Refer to enum msg_isref_conn_result */
 };
 
-#define UBCORE_TPID_REUSE_WAIT_MIN_US 100
-#define UBCORE_TPID_REUSE_WAIT_MAX_US 200
-#define UBCORE_TPID_REUSE_MAX_WAIT_TIMES \
-	(30 * 1000 * 1000 / UBCORE_TPID_REUSE_WAIT_MAX_US)
 #define UBCORE_ENABLE_SHARED_CTP_DEFAULT false
 
 /* Default as 30s */
@@ -522,7 +518,7 @@ static struct ubcore_tpid_reuse *ubcore_reuse_tpid(struct ubcore_tpid_reuse *tpi
 				atomic_dec(&tpid_reuse->use_cnt);
 				mutex_unlock(&tpid_reuse->lock);
 				ubcore_tpid_reuse_kref_put(tpid_reuse);
-				return NULL;
+				return ERR_PTR(-EAGAIN);
 			}
 		} else {
 			atomic_inc(&tpid_reuse->use_cnt);
@@ -552,7 +548,7 @@ static struct ubcore_tpid_reuse *ubcore_reuse_tpid(struct ubcore_tpid_reuse *tpi
 					atomic_dec(&tpid_reuse->use_cnt);
 					mutex_unlock(&tpid_reuse->lock);
 					ubcore_tpid_reuse_kref_put(tpid_reuse);
-					return NULL;
+					return ERR_PTR(-EAGAIN);
 				}
 			} else {
 				atomic_inc(&tpid_reuse->use_cnt);
@@ -566,14 +562,19 @@ static struct ubcore_tpid_reuse *ubcore_reuse_tpid(struct ubcore_tpid_reuse *tpi
 				UBCORE_TPID_REUSE_WAIT_MAX_US);
 			mutex_lock(&tpid_reuse->lock);
 		} else if (tpid_reuse->reuse_state == UBCORE_TPID_REUSE_ERROR) {
-			break;
+			ubcore_log_err_rl(
+				"tpid_reuse:%u state is ERROR, maybe first importer unimport, advise retry.\n",
+				tpid_reuse->tp_handle.bs.tpid);
+			mutex_unlock(&tpid_reuse->lock);
+			ubcore_tpid_reuse_kref_put(tpid_reuse);
+			return ERR_PTR(-EAGAIN);
 		}
 	}
-	ubcore_log_err_rl("failed to reuse tpid_reuse:%u, use_cnt:%d",
+	ubcore_log_err_rl("failed to reuse tpid_reuse:%u, use_cnt:%d, maybe wait timeout.\n",
 			  tpid_reuse->tp_handle.bs.tpid, atomic_read(&tpid_reuse->use_cnt));
 	mutex_unlock(&tpid_reuse->lock);
 	ubcore_tpid_reuse_kref_put(tpid_reuse);
-	return NULL;
+	return ERR_PTR(-EAGAIN);
 }
 
 int ubcore_free_tpid_reuse(struct ubcore_tpid_reuse *tpid_reuse)
@@ -1825,8 +1826,8 @@ struct ubcore_tjetty *ubcore_import_jfr_compat(struct ubcore_device *dev,
 	}
 	if (tpid_reuse != NULL) {
 		tpid_reuse = ubcore_reuse_tpid(tpid_reuse);
-		if (tpid_reuse == NULL)
-			return ERR_PTR(-EIO);
+		if (IS_ERR_OR_NULL(tpid_reuse))
+			return (void *)tpid_reuse;
 		active_tp_cfg.tp_handle = tpid_reuse->tp_handle;
 		active_tp_cfg.tpid_reuse = tpid_reuse;
 		active_tp_cfg.tp_attr.tx_psn = tpid_reuse->tx_psn;
@@ -1848,8 +1849,8 @@ struct ubcore_tjetty *ubcore_import_jfr_compat(struct ubcore_device *dev,
 		exist_tpid_reuse =
 			ubcore_reuse_tpid(exist_tpid_reuse);
 		(void)ubcore_free_tpid_reuse(tpid_reuse);
-		if (exist_tpid_reuse == NULL)
-			return ERR_PTR(-EIO);
+		if (IS_ERR_OR_NULL(exist_tpid_reuse))
+			return (void *)exist_tpid_reuse;
 		active_tp_cfg.tp_handle = exist_tpid_reuse->tp_handle;
 		active_tp_cfg.tpid_reuse = exist_tpid_reuse;
 		active_tp_cfg.tp_attr.tx_psn = exist_tpid_reuse->tx_psn;
@@ -1984,8 +1985,8 @@ struct ubcore_tjetty *ubcore_import_jetty_compat(struct ubcore_device *dev,
 	if (tpid_reuse != NULL) {
 		ubcore_log_info_rl("tpid reuse get. reuse tpid.\n");
 		tpid_reuse = ubcore_reuse_tpid(tpid_reuse);
-		if (tpid_reuse == NULL)
-			return ERR_PTR(-EIO);
+		if (IS_ERR_OR_NULL(tpid_reuse))
+			return (void *)tpid_reuse;
 		active_tp_cfg.tp_handle = tpid_reuse->tp_handle;
 		active_tp_cfg.tpid_reuse = tpid_reuse;
 		active_tp_cfg.tp_attr.tx_psn = tpid_reuse->tx_psn;
@@ -2009,8 +2010,8 @@ struct ubcore_tjetty *ubcore_import_jetty_compat(struct ubcore_device *dev,
 		exist_tpid_reuse =
 			ubcore_reuse_tpid(exist_tpid_reuse);
 		(void)ubcore_free_tpid_reuse(tpid_reuse);
-		if (exist_tpid_reuse == NULL)
-			return ERR_PTR(-EIO);
+		if (IS_ERR_OR_NULL(exist_tpid_reuse))
+			return (void *)exist_tpid_reuse;
 		active_tp_cfg.tp_handle = exist_tpid_reuse->tp_handle;
 		active_tp_cfg.tpid_reuse = exist_tpid_reuse;
 		active_tp_cfg.tp_attr.tx_psn = exist_tpid_reuse->tx_psn;
@@ -2198,8 +2199,9 @@ int ubcore_bind_jetty_reuse_compat(struct ubcore_jetty *jetty,
 	}
 	if (tpid_reuse != NULL) {
 		tpid_reuse = ubcore_reuse_tpid(tpid_reuse);
-		if (tpid_reuse == NULL)
-			return -EIO;
+		/* NULL must not fall into PTR_ERR(): PTR_ERR(NULL) == 0 means success */
+		if (IS_ERR_OR_NULL(tpid_reuse))
+			return tpid_reuse == NULL ? -EIO : PTR_ERR(tpid_reuse);
 		active_tp_cfg.tp_handle = tpid_reuse->tp_handle;
 		active_tp_cfg.tpid_reuse = tpid_reuse;
 		active_tp_cfg.tp_attr.tx_psn = tpid_reuse->tx_psn;
@@ -2224,8 +2226,9 @@ int ubcore_bind_jetty_reuse_compat(struct ubcore_jetty *jetty,
 		exist_tpid_reuse =
 			ubcore_reuse_tpid(exist_tpid_reuse);
 		(void)ubcore_free_tpid_reuse(tpid_reuse);
-		if (exist_tpid_reuse == NULL)
-			return -EIO;
+		/* NULL must not fall into PTR_ERR(): PTR_ERR(NULL) == 0 means success */
+		if (IS_ERR_OR_NULL(exist_tpid_reuse))
+			return exist_tpid_reuse == NULL ? -EIO : PTR_ERR(exist_tpid_reuse);
 		active_tp_cfg.tp_handle = exist_tpid_reuse->tp_handle;
 		active_tp_cfg.tpid_reuse = exist_tpid_reuse;
 		active_tp_cfg.tp_attr.tx_psn = exist_tpid_reuse->tx_psn;
