@@ -73,7 +73,7 @@ static int realm_smmu_write_reg_sync(struct arm_smmu_device *smmu, u32 val,
 void realm_smmu_write_ste(struct arm_smmu_master *master, u32 sid,
 			  const struct arm_smmu_ste *target)
 {
-	u64 ns_vttbr;
+	u64 ns_vttbr, ste_0_cfg;
 	bool lvl_strtab;
 	struct arm_smmu_ste *rste;
 	struct arm_smmu_device *smmu = master->smmu;
@@ -82,6 +82,10 @@ void realm_smmu_write_ste(struct arm_smmu_master *master, u32 sid,
 		return;
 
 	if (!rme_is_pcipc_ns_dev(master->dev))
+		return;
+
+	ste_0_cfg = FIELD_GET(STRTAB_STE_0_CFG, le64_to_cpu(target->data[0]));
+	if (ste_0_cfg != STRTAB_STE_0_CFG_S2_TRANS && ste_0_cfg != 0)
 		return;
 
 	lvl_strtab = !!(smmu->features & ARM_SMMU_FEAT_2_LVL_STRTAB);
@@ -98,9 +102,9 @@ void realm_smmu_write_ste(struct arm_smmu_master *master, u32 sid,
 
 	memcpy(rste, target, sizeof(struct arm_smmu_ste));
 
-	if (rste->data[3] & STRTAB_STE_3_S2TTB_MASK) {
+	if (rste->data[3] & cpu_to_le64(STRTAB_STE_3_S2TTB_MASK)) {
 		ns_vttbr = rme_get_ns_vttbr(master->dev);
-		rste->data[3] =  ns_vttbr & STRTAB_STE_3_S2TTB_MASK;
+		rste->data[3] = cpu_to_le64(ns_vttbr & STRTAB_STE_3_S2TTB_MASK);
 	}
 
 	if (rmi_smmu_ste_write(smmu->realm.ioaddr, sid, virt_to_phys(rste),
@@ -186,7 +190,7 @@ void realm_smmu_domain_clear(struct arm_smmu_domain *smmu_domain)
 {
 	struct arm_smmu_device *smmu = smmu_domain->smmu;
 
-	if (!arm_smmu_support_rme(smmu))
+	if (!smmu || !arm_smmu_support_rme(smmu))
 		return;
 
 	write_lock(&smmu->realm.fwd_lock);
@@ -269,7 +273,7 @@ int realm_smmu_cmdq_issue_cmdlist(struct arm_smmu_device *smmu, u64 *cmds,
 		return -EINVAL;
 	}
 
-	rcmds = (u64 *)get_zeroed_page(GFP_KERNEL);
+	rcmds = (u64 *)get_zeroed_page(GFP_ATOMIC);
 	if (!rcmds)
 		return -ENOMEM;
 
@@ -344,7 +348,7 @@ out_undelegate:
 	if (WARN_ON(granule_undelegate_range(q->base_dma, qsz)))
 		return ret;
 out_free:
-	dma_free_coherent(smmu->dev, qsz, q->base, q->base_dma);
+	dma_free_coherent(smmu->dev, qsz, base, q->base_dma);
 	return ret;
 }
 
@@ -384,6 +388,7 @@ static int realm_smmu_init_strtab_2lvl(struct arm_smmu_device *smmu)
 
 out_free_l1_desc:
 	kfree(cfg->l1_desc);
+	cfg->l1_desc = NULL;
 out_undelegate:
 	if (WARN_ON(granule_undelegate_range(cfg->strtab_dma, l1size)))
 		return ret;
@@ -689,6 +694,7 @@ void arm_r_smmu_device_init(struct arm_smmu_device *smmu, resource_size_t ioaddr
 		return;
 
 	rwlock_init(&realm->fwd_lock);
+	mutex_init(&realm->strtab_l2_lock);
 
 	realm->rcmdq.max_n_shift = smmu->cmdq.q.llq.max_n_shift;
 	/* realm cmdq */
@@ -785,6 +791,10 @@ void arm_r_smmu_device_remove(struct arm_smmu_device *smmu)
 
 	if (!is_support_rme() || is_realm_world())
 		return;
+
+	realm_smmu_write_reg_sync(smmu, 0, SMMU_R_IRQ_CTRL,
+				  SMMU_R_IRQ_CTRLACK);
+	realm_smmu_write_reg_sync(smmu, 0, SMMU_R_CR0, SMMU_R_CR0ACK);
 
 	if (smmu->features & ARM_SMMU_FEAT_2_LVL_STRTAB) {
 		l1size = cfg->num_l1_ents * (STRTAB_L1_DESC_DWORDS << 3);

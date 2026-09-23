@@ -71,7 +71,7 @@ config HISI_CCA
 
 config HISI_CCADA_HOST
 	bool "Enable hisilicon CCA device assignment host feature"
-	depends on KVM && ARM_SMMU_V3
+	depends on KVM && ARM_SMMU_V3 && HISI_CCA
 	help
 	  Support hisilicon CCA device assignment in the host
 

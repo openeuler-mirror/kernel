@@ -126,7 +126,6 @@ static int hisi_cca_create_data_page_unknown(struct realm *realm,
 		}
 
 		ret = rmi_data_create_unknown(rd, phys, ipa);
-
 		if (RMI_RETURN_STATUS(ret) == RMI_ERROR_RTT) {
 			/* Create missing RTTs and retry */
 			int level = RMI_RETURN_INDEX(ret);
@@ -228,10 +227,8 @@ static int hisi_cca_create_data_block_unknown(struct realm *realm,
 					      unsigned long level)
 {
 	unsigned long map_size = rme_rtt_level_mapsize(level);
-	phys_addr_t dst_phys;
+	phys_addr_t dst_phys = page_to_phys(dst_pages[0]);
 	int ret;
-
-	dst_phys = page_to_phys(dst_pages[0]);
 
 	if (rmi_cca_hisi_delegate_range_get(dst_phys, map_size, realm)) {
 		/* Race with another thread. */
@@ -504,7 +501,6 @@ static int hisi_cca_destroy_data(struct realm *realm, unsigned long ipa,
 
 	ret = rmi_cca_hisi_data_destroy(rd, ipa, &pa, &size, &granule_type,
 					next_addr);
-
 	if (WARN_ON(ret))
 		return -ENXIO;
 
@@ -582,7 +578,6 @@ int realm_hisi_cca_set_ipa_state(struct kvm_vcpu *vcpu, unsigned long start,
 		unsigned long next;
 
 		ret = rmi_rtt_set_ripas(rd_phys, rec_phys, ipa, end, &next);
-
 		if (RMI_RETURN_STATUS(ret) == RMI_SUCCESS) {
 			ipa = next;
 		} else if (RMI_RETURN_STATUS(ret) == RMI_ERROR_RTT) {
@@ -590,7 +585,6 @@ int realm_hisi_cca_set_ipa_state(struct kvm_vcpu *vcpu, unsigned long start,
 			int level = find_map_level(realm, ipa, end);
 
 			ret = rtt_complement(realm, ipa, walk_level, level);
-
 			if (ret)
 				break;
 			/* Retry with RTTs created */
