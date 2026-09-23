@@ -98,6 +98,7 @@ struct ummu_mapt_table_ctx {
 struct ummu_mapt_info {
 	struct iommu_domain *domain;
 	enum ummu_mapt_mode mode;
+	atomic_t mapt_blk_cnt;
 	union {
 		struct ummu_mapt_entry_node *entry_block;
 		struct ummu_mapt_table_ctx *table_ctx;
