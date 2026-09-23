@@ -562,20 +562,28 @@ BPF_CALL_3(bpf_get_stackid, struct pt_regs *, regs, struct bpf_map *, map,
 		return -EINVAL;
 
 	max_depth = stack_map_calculate_max_depth(map->value_size, elem_size, flags);
+
+	preempt_disable();
 	trace = get_perf_callchain(regs, 0, kernel, user, max_depth,
 				   false, false);
-
-	if (unlikely(!trace))
+	if (unlikely(!trace)) {
 		/* couldn't fetch the stack trace */
+		preempt_enable();
 		return -EFAULT;
+	}
 
 	err = stackid_fastpath(&stackid, map, trace, flags);
-	if (err != -ENOENT)
+	if (err != -ENOENT) {
+		preempt_enable();
 		return err;
+	}
 
 	new_bucket = stackid_new_bucket(&stackid, map);
-	if (!new_bucket)
+	if (!new_bucket) {
+		preempt_enable();
 		return -ENOMEM;
+	}
+	preempt_enable();
 
 	return stackid_install(&stackid, map, new_bucket, flags);
 }
