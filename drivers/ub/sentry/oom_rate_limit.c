@@ -46,6 +46,7 @@ static int parse_config_string(const char *buf, size_t len,
 				   struct event_rate_limit_config *config)
 {
 	char *copy_str;
+	char *orig_str;
 	char *token;
 	char *event_name;
 	char *limit_str;
@@ -57,6 +58,7 @@ static int parse_config_string(const char *buf, size_t len,
 	copy_str = kzalloc(len + 1, GFP_KERNEL);
 	if (!copy_str)
 		return -ENOMEM;
+	orig_str = copy_str;
 
 	memcpy(copy_str, buf, len);
 	copy_str[len] = '\0';
@@ -101,7 +103,7 @@ static int parse_config_string(const char *buf, size_t len,
 	ret = config_event_limit_num;
 
 out:
-	kfree(copy_str);
+	kfree(orig_str);
 	return ret;
 }
 
