@@ -427,10 +427,10 @@ __bpf_kfunc void bpf_cpuacct_kcpustat_cpu_fetch(struct kernel_cpustat *dst,
 	memcpy(dst, per_cpu_ptr(ca->cpustat, cpu), sizeof(struct kernel_cpustat));
 }
 
-BTF_SET8_START(bpf_cpuacct_kfunc_ids)
+BTF_KFUNCS_START(bpf_cpuacct_kfunc_ids)
 BTF_ID_FLAGS(func, bpf_task_ca_cpuusage)
 BTF_ID_FLAGS(func, bpf_cpuacct_kcpustat_cpu_fetch)
-BTF_SET8_END(bpf_cpuacct_kfunc_ids)
+BTF_KFUNCS_END(bpf_cpuacct_kfunc_ids)
 
 static const struct btf_kfunc_id_set bpf_cpuacct_kfunc_set = {
 	.owner		= THIS_MODULE,
