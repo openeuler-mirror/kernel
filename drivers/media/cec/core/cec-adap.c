@@ -913,13 +913,25 @@ int cec_transmit_msg_fh(struct cec_adapter *adap, struct cec_msg *msg,
 	 */
 	mutex_unlock(&adap->lock);
 	wait_for_completion_killable(&data->c);
-	if (!data->completed)
-		cancel_delayed_work_sync(&data->work);
 	mutex_lock(&adap->lock);
 
 	/* Cancel the transmit if it was interrupted */
-	if (!data->completed)
+	if (!data->completed) {
 		cec_data_cancel(data, CEC_TX_STATUS_ABORTED);
+		/*
+		 * Cancel the reply timeout work. The transmit is canceled
+		 * now, so cec_transmit_done_ts() can no longer arm the work;
+		 * canceling it under adap->lock makes sure it is not re-armed
+		 * after the cancel and before data is freed. Drop the lock
+		 * around the synchronous cancel to avoid deadlocking against
+		 * a running cec_wait_timeout().
+		 */
+		if (!cancel_delayed_work(&data->work)) {
+			mutex_unlock(&adap->lock);
+			cancel_delayed_work_sync(&data->work);
+			mutex_lock(&adap->lock);
+		}
+	}
 
 	/* The transmit completed (possibly with an error) */
 	*msg = data->msg;
