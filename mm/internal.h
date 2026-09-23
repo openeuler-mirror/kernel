@@ -10,6 +10,7 @@
 #include <linux/fs.h>
 #include <linux/mm.h>
 #include <linux/pagemap.h>
+#include <linux/pagewalk.h>
 #include <linux/rmap.h>
 #include <linux/swap.h>
 #include <linux/swapops.h>
@@ -1602,5 +1603,9 @@ static inline struct folio *folio_alloc_cma_mpol(gfp_t gfp, unsigned int order,
 
 static inline void folio_put_cma_fallback(struct folio *folio) {}
 #endif /* CONFIG_CMA_FOLIO */
+
+int walk_page_range_debug(struct mm_struct *mm, unsigned long start,
+			  unsigned long end, const struct mm_walk_ops *ops,
+			  pgd_t *pgd, void *private);
 
 #endif	/* __MM_INTERNAL_H */

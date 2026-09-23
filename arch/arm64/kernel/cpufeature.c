@@ -85,6 +85,7 @@
 #include <asm/insn.h>
 #include <asm/kvm_host.h>
 #include <asm/mmu_context.h>
+#include <asm/mmu.h>
 #include <asm/mpam.h>
 #include <asm/mte.h>
 #include <asm/nmi.h>
@@ -1855,16 +1856,15 @@ void create_kpti_ng_temp_pgd(pgd_t *pgdir, phys_addr_t phys, unsigned long virt,
 			     phys_addr_t size, pgprot_t prot,
 			     phys_addr_t (*pgtable_alloc)(int), int flags);
 
-static phys_addr_t kpti_ng_temp_alloc;
+static phys_addr_t __initdata kpti_ng_temp_alloc;
 
-static phys_addr_t kpti_ng_pgd_alloc(int shift)
+static phys_addr_t __init kpti_ng_pgd_alloc(int shift)
 {
 	kpti_ng_temp_alloc -= PAGE_SIZE;
 	return kpti_ng_temp_alloc;
 }
 
-static void
-kpti_install_ng_mappings(const struct arm64_cpu_capabilities *__unused)
+static int __init __kpti_install_ng_mappings(void *__unused)
 {
 	typedef void (kpti_remap_fn)(int, int, phys_addr_t, unsigned long);
 	extern kpti_remap_fn idmap_kpti_install_ng_mappings;
@@ -1876,20 +1876,6 @@ kpti_install_ng_mappings(const struct arm64_cpu_capabilities *__unused)
 	u64 kpti_ng_temp_pgd_pa = 0;
 	pgd_t *kpti_ng_temp_pgd;
 	u64 alloc = 0;
-
-	if (__this_cpu_read(this_cpu_vector) == vectors) {
-		const char *v = arm64_get_bp_hardening_vector(EL1_VECTOR_KPTI);
-
-		__this_cpu_write(this_cpu_vector, v);
-	}
-
-	/*
-	 * We don't need to rewrite the page-tables if either we've done
-	 * it already or we have KASLR enabled and therefore have not
-	 * created any global mappings at all.
-	 */
-	if (arm64_use_ng_mappings)
-		return;
 
 	remap_fn = (void *)__pa_symbol(idmap_kpti_install_ng_mappings);
 
@@ -1927,13 +1913,43 @@ kpti_install_ng_mappings(const struct arm64_cpu_capabilities *__unused)
 		free_pages(alloc, order);
 		arm64_use_ng_mappings = true;
 	}
+
+	return 0;
 }
+
+static void __init kpti_install_ng_mappings(void)
+{
+	/* Check whether KPTI is going to be used */
+	if (!cpus_have_cap(ARM64_UNMAP_KERNEL_AT_EL0))
+		return;
+
+	/*
+	 * We don't need to rewrite the page-tables if either we've done
+	 * it already or we have KASLR enabled and therefore have not
+	 * created any global mappings at all.
+	 */
+	if (arm64_use_ng_mappings)
+		return;
+
+	init_idmap_kpti_bbml3_flag();
+	stop_machine(__kpti_install_ng_mappings, NULL, cpu_online_mask);
+}
+
 #else
-static void
-kpti_install_ng_mappings(const struct arm64_cpu_capabilities *__unused)
+static inline void kpti_install_ng_mappings(void)
 {
 }
 #endif	/* CONFIG_UNMAP_KERNEL_AT_EL0 */
+
+static void cpu_enable_kpti(struct arm64_cpu_capabilities const *cap)
+{
+	if (__this_cpu_read(this_cpu_vector) == vectors) {
+		const char *v = arm64_get_bp_hardening_vector(EL1_VECTOR_KPTI);
+
+		__this_cpu_write(this_cpu_vector, v);
+	}
+
+}
 
 static int __init parse_kpti(char *str)
 {
@@ -2046,8 +2062,6 @@ int get_cpu_with_amu_feat(void)
 static void cpu_amu_enable(struct arm64_cpu_capabilities const *cap)
 {
 	if (has_cpuid_feature(cap, SCOPE_LOCAL_CPU)) {
-		pr_info("detected CPU%d: Activity Monitors Unit (AMU)\n",
-			smp_processor_id());
 		cpumask_set_cpu(smp_processor_id(), &amu_cpus);
 
 		/* 0 reference values signal broken/disabled counters */
@@ -2125,6 +2139,28 @@ static bool hvhe_possible(const struct arm64_cpu_capabilities *entry,
 
 	val = arm64_sw_feature_override.val & arm64_sw_feature_override.mask;
 	return cpuid_feature_extract_unsigned_field(val, ARM64_SW_FEATURE_OVERRIDE_HVHE);
+}
+
+bool cpu_supports_bbml3(void)
+{
+	/* CPUs that support BBML3 but dont advertise through ID_AA64MMFR2_EL1 */
+	static const struct midr_range supports_bbml3_list[] = {
+		MIDR_REV_RANGE(MIDR_CORTEX_X4, 0, 3, 0xf),
+		MIDR_REV_RANGE(MIDR_NEOVERSE_V3, 0, 2, 0xf),
+		MIDR_ALL_VERSIONS(MIDR_HISI_HIP13),
+		{}
+	};
+	u64 mmfr2 = __read_sysreg_by_encoding(SYS_ID_AA64MMFR2_EL1);
+
+	if (SYS_FIELD_GET(ID_AA64MMFR2_EL1, BBM, mmfr2) >= ID_AA64MMFR2_EL1_BBM_3)
+		return true;
+
+	return is_midr_in_range_list(supports_bbml3_list);
+}
+
+static bool has_bbml3(const struct arm64_cpu_capabilities *caps, int scope)
+{
+	return cpu_supports_bbml3();
 }
 
 #ifdef CONFIG_ARM64_PAN
@@ -2786,7 +2822,7 @@ static const struct arm64_cpu_capabilities arm64_features[] = {
 		.desc = "Kernel page table isolation (KPTI)",
 		.capability = ARM64_UNMAP_KERNEL_AT_EL0,
 		.type = ARM64_CPUCAP_BOOT_RESTRICTED_CPU_LOCAL_FEATURE,
-		.cpu_enable = kpti_install_ng_mappings,
+		.cpu_enable = cpu_enable_kpti,
 		.matches = unmap_kernel_at_el0,
 		/*
 		 * The ID feature fields below are used to indicate that
@@ -2840,16 +2876,12 @@ static const struct arm64_cpu_capabilities arm64_features[] = {
 #endif /* CONFIG_ARM64_RAS_EXTN */
 #ifdef CONFIG_ARM64_AMU_EXTN
 	{
-		/*
-		 * The feature is enabled by default if CONFIG_ARM64_AMU_EXTN=y.
-		 * Therefore, don't provide .desc as we don't want the detection
-		 * message to be shown until at least one CPU is detected to
-		 * support the feature.
-		 */
+		.desc = "Activity Monitors Unit (AMU)",
 		.capability = ARM64_HAS_AMU_EXTN,
 		.type = ARM64_CPUCAP_WEAK_LOCAL_CPU_FEATURE,
 		.matches = has_amu,
 		.cpu_enable = cpu_amu_enable,
+		.cpus = &amu_cpus,
 		ARM64_CPUID_FIELDS(ID_AA64PFR0_EL1, AMU, IMP)
 	},
 #endif /* CONFIG_ARM64_AMU_EXTN */
@@ -3168,6 +3200,12 @@ static const struct arm64_cpu_capabilities arm64_features[] = {
 		.type = ARM64_CPUCAP_SYSTEM_FEATURE,
 		.matches = has_cpuid_feature,
 		ARM64_CPUID_FIELDS(ID_AA64MMFR2_EL1, EVT, IMP)
+	},
+	{
+		.desc = "BBM Level 3",
+		.capability = ARM64_HAS_BBML3,
+		.type = ARM64_CPUCAP_EARLY_LOCAL_CPU_FEATURE,
+		.matches = has_bbml3,
 	},
 	{
 		.desc = "Non-maskable Interrupts present",
@@ -3598,18 +3636,49 @@ static void update_cpu_capabilities(u16 scope_mask)
 
 	scope_mask &= ARM64_CPUCAP_SCOPE_MASK;
 	for (i = 0; i < ARM64_NCAPS; i++) {
+		bool match_all = false;
+		bool caps_set = false;
+		bool boot_cpu = false;
+
 		caps = cpucap_ptrs[i];
-		if (!caps || !(caps->type & scope_mask) ||
-		    cpus_have_cap(caps->capability) ||
-		    !caps->matches(caps, cpucap_default_scope(caps)))
+		if (!caps || !(caps->type & scope_mask))
 			continue;
 
-		if (caps->desc)
+		match_all = cpucap_match_all_early_cpus(caps);
+		caps_set = cpus_have_cap(caps->capability);
+		boot_cpu = scope_mask & SCOPE_BOOT_CPU;
+
+		/*
+		 * Unless it's a match-all CPUs feature, avoid probing if
+		 * already detected.
+		 */
+		if (!match_all && caps_set)
+			continue;
+
+		/*
+		 * A match-all CPUs capability is only set when probing the
+		 * boot CPU. It may be cleared subsequently if not detected on
+		 * secondary ones.
+		 */
+		if (match_all && !caps_set && !boot_cpu)
+			continue;
+
+		if (!caps->matches(caps, cpucap_default_scope(caps))) {
+			if (match_all)
+				__clear_bit(caps->capability, system_cpucaps);
+			continue;
+		}
+
+		/*
+		 * Match-all CPUs capabilities are logged later when the
+		 * system capabilities are finalised.
+		 */
+		if (!match_all && caps->desc && !caps->cpus)
 			pr_info("detected: %s\n", caps->desc);
 
 		__set_bit(caps->capability, system_cpucaps);
 
-		if ((scope_mask & SCOPE_BOOT_CPU) && (caps->type & SCOPE_BOOT_CPU))
+		if (boot_cpu && (caps->type & SCOPE_BOOT_CPU))
 			set_bit(caps->capability, boot_cpucaps);
 	}
 }
@@ -3960,6 +4029,7 @@ unsigned long cpu_get_elf_hwcap3(void)
 
 static void __init setup_system_capabilities(void)
 {
+	int i;
 	/*
 	 * We have finalised the system-wide safe feature
 	 * registers, finalise the capabilities that depend
@@ -3968,6 +4038,26 @@ static void __init setup_system_capabilities(void)
 	 */
 	update_cpu_capabilities(SCOPE_SYSTEM);
 	enable_cpu_capabilities(SCOPE_ALL & ~SCOPE_BOOT_CPU);
+
+	for (i = 0; i < ARM64_NCAPS; i++) {
+		const struct arm64_cpu_capabilities *caps = cpucap_ptrs[i];
+
+		if (!caps || !caps->desc)
+			continue;
+
+		/*
+		 * Log any cpucaps with a cpumask as these aren't logged by
+		 * update_cpu_capabilities().
+		 */
+		if (caps->cpus && cpumask_any(caps->cpus) < nr_cpu_ids)
+			pr_info("detected: %s on CPU%*pbl\n",
+				caps->desc, cpumask_pr_args(caps->cpus));
+
+		/* Log match-all CPUs capabilities */
+		if (cpucap_match_all_early_cpus(caps) &&
+		    cpus_have_cap(caps->capability))
+			pr_info("detected: %s\n", caps->desc);
+	}
 }
 
 void __init setup_cpu_features(void)
@@ -3985,6 +4075,9 @@ void __init setup_cpu_features(void)
 
 	if (system_uses_ttbr0_pan())
 		pr_info("emulated: Privileged Access Never (PAN) using TTBR0_EL1 switching\n");
+
+	linear_map_maybe_split_to_ptes();
+	kpti_install_ng_mappings();
 
 	sve_setup();
 	sme_setup();
