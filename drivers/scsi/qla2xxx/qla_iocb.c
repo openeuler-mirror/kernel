@@ -2385,7 +2385,7 @@ qla2x00_els_dcmd_iocb_timeout(void *data)
 	struct scsi_qla_host *vha = sp->vha;
 	struct srb_iocb *lio = &sp->u.iocb_cmd;
 	unsigned long flags = 0;
-	int res, h;
+	int res, h, found;
 
 	ql_dbg(ql_dbg_io, vha, 0x3069,
 	    "%s Timeout, hdl=%x, portid=%02x%02x%02x\n",
@@ -2397,15 +2397,18 @@ qla2x00_els_dcmd_iocb_timeout(void *data)
 	if (res) {
 		ql_dbg(ql_dbg_io, vha, 0x3070,
 		    "mbx abort_command failed.\n");
+		found = 0;
 		spin_lock_irqsave(sp->qpair->qp_lock_ptr, flags);
 		for (h = 1; h < sp->qpair->req->num_outstanding_cmds; h++) {
 			if (sp->qpair->req->outstanding_cmds[h] == sp) {
 				sp->qpair->req->outstanding_cmds[h] = NULL;
+				found = 1;
 				break;
 			}
 		}
 		spin_unlock_irqrestore(sp->qpair->qp_lock_ptr, flags);
-		complete(&lio->u.els_logo.comp);
+		if (found)
+			complete(&lio->u.els_logo.comp);
 	} else {
 		ql_dbg(ql_dbg_io, vha, 0x3071,
 		    "mbx abort_command success.\n");
@@ -2582,7 +2585,7 @@ qla2x00_els_dcmd2_iocb_timeout(void *data)
 	fc_port_t *fcport = sp->fcport;
 	struct scsi_qla_host *vha = sp->vha;
 	unsigned long flags = 0;
-	int res, h;
+	int res, h, found;
 
 	ql_dbg(ql_dbg_io + ql_dbg_disc, vha, 0x3069,
 	    "%s hdl=%x ELS Timeout, %8phC portid=%06x\n",
@@ -2594,15 +2597,18 @@ qla2x00_els_dcmd2_iocb_timeout(void *data)
 	    "mbx abort_command %s\n",
 	    (res == QLA_SUCCESS) ? "successful" : "failed");
 	if (res) {
+		found = 0;
 		spin_lock_irqsave(sp->qpair->qp_lock_ptr, flags);
 		for (h = 1; h < sp->qpair->req->num_outstanding_cmds; h++) {
 			if (sp->qpair->req->outstanding_cmds[h] == sp) {
 				sp->qpair->req->outstanding_cmds[h] = NULL;
+				found = 1;
 				break;
 			}
 		}
 		spin_unlock_irqrestore(sp->qpair->qp_lock_ptr, flags);
-		sp->done(sp, QLA_FUNCTION_TIMEOUT);
+		if (found)
+			sp->done(sp, QLA_FUNCTION_TIMEOUT);
 	}
 }
 
