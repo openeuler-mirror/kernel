@@ -141,4 +141,7 @@ static inline void netif_set_gro_ipv4_max_size(struct net_device *dev,
 }
 
 int rps_cpumask_housekeeping(struct cpumask *mask);
+
+struct softnet_data;
+void skb_defer_node_flush(struct softnet_data *sd);
 #endif
