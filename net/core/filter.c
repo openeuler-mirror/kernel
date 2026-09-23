@@ -12174,13 +12174,13 @@ BTF_ID_FLAGS(func, bpf_sock_addr_set_sun_path)
 BTF_KFUNCS_END(bpf_kfunc_check_set_sock_addr)
 
 #ifdef CONFIG_HISOCK
-BTF_SET8_START(bpf_kfunc_check_set_sock_ops)
+BTF_KFUNCS_START(bpf_kfunc_check_set_sock_ops)
 BTF_ID_FLAGS(func, bpf_skops_get_ingress_dst, KF_RET_NULL)
-BTF_SET8_END(bpf_kfunc_check_set_sock_ops)
+BTF_KFUNCS_END(bpf_kfunc_check_set_sock_ops)
 
-BTF_SET8_START(bpf_kfunc_check_set_hisock)
+BTF_KFUNCS_START(bpf_kfunc_check_set_hisock)
 BTF_ID_FLAGS(func, bpf_skb_change_dev)
-BTF_SET8_END(bpf_kfunc_check_set_hisock)
+BTF_KFUNCS_END(bpf_kfunc_check_set_hisock)
 #endif
 
 static const struct btf_kfunc_id_set bpf_kfunc_set_skb = {
