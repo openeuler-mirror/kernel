@@ -74,7 +74,6 @@ enum ubcore_opcode {
 	UBCORE_OPC_NOP = 0x51,
 	UBCORE_OPC_WRITE_ATOMIC = 0x60,
 	UBCORE_OPC_FLUSH_DMA = 0x80,
-	UBCORE_OPC_LAST
 };
 
 /* completion information */
@@ -98,7 +97,7 @@ enum ubcore_cr_status { // completion record status
 	UBCORE_CR_WR_FLUSH_ERR_DONE,
 	UBCORE_CR_WR_UNHANDLED,
 	UBCORE_CR_LOC_DATA_POISON,
-	UBCORE_CR_REM_DATA_POISON
+	UBCORE_CR_REM_DATA_POISON,
 };
 
 /* Must be consistent with urma_cr_opcode_t */
@@ -107,14 +106,14 @@ enum ubcore_cr_opcode {
 	UBCORE_CR_OPC_SEND_WITH_IMM,
 	UBCORE_CR_OPC_SEND_WITH_INV,
 	UBCORE_CR_OPC_WRITE_WITH_IMM,
-	UBCORE_CR_OPC_FLUSH_WRITE
+	UBCORE_CR_OPC_FLUSH_WRITE,
 };
 
 enum ubcore_slice {
 	UBCORE_SLICE_32K = 1 << 15,
 	UBCORE_SLICE_64K = 1 << 16,
 	UBCORE_SLICE_128K = 1 << 17,
-	UBCORE_SLICE_256K = 1 << 18
+	UBCORE_SLICE_256K = 1 << 18,
 };
 
 /* JFS Options */

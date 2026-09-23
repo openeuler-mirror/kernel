@@ -40,6 +40,18 @@
 #define UBCORE_WQ_THRESHOLD_MS     10
 #define UBCORE_CONN_RETRY_MAX      3
 
+#define UBCORE_MAX_JETTY_IN_JETTY_GRP 32U
+#define UBCORE_MAX_UE_CNT 1024
+#define UBCORE_HASH_TABLE_SIZE 10240
+#define UBCORE_EID_STR_LEN (39)
+#define UBCORE_MAX_MSG 4096
+#define UBCORE_RESERVED_JETTY_ID_MIN 0
+#define UBCORE_RESERVED_JETTY_ID_MAX 1023
+#define UBCORE_CC_IDX_TABLE_SIZE 80
+#define UBCORE_VTPS_DELETED 2
+#define UBCORE_CHECK_RETURN_ERR_PTR(ptr, err) \
+	((ptr) == NULL ? ERR_PTR(-(err)) : (ptr))
+
 enum ubcore_uvs_state {
 	UBCORE_UVS_STATE_DEAD = 0,
 	UBCORE_UVS_STATE_ALIVE,
@@ -105,6 +117,22 @@ struct ubcore_host_info {
 struct ubcore_dying_device {
 	struct list_head list_node;
 	struct ubcore_device *dev;
+};
+
+struct ubcore_ta {
+	enum ubcore_ta_type type;
+	union {
+		struct ubcore_jfs *jfs;
+		struct ubcore_jfr *jfr;
+		struct ubcore_jetty *jetty;
+	};
+	struct ubcore_jetty_id tjetty_id; /* peer jetty id */
+};
+
+struct ubcore_client_ctx {
+	struct list_head list_node;
+	void *data; // Each ubep device create some data on the client, such as uburma_device.
+	struct ubcore_client *client;
 };
 
 extern uint32_t ubcore_max_retry_cnt;

@@ -3545,7 +3545,6 @@ static int uburma_cmd_import_jfr_ex(struct ubcore_device *ubc_dev,
 	cfg.eid_index = file->ucontext->eid_index;
 	cfg.stp_cfg.stag = arg.in.stag;
 	cfg.stp_cfg.dtag = arg.in.dtag;
-	cfg.stp_cfg.local_import = 1;
 	active_tp_cfg.tp_handle.value = arg.in.tp_handle;
 	active_tp_cfg.peer_tp_handle.value = arg.in.peer_tp_handle;
 	active_tp_cfg.tag = arg.in.tag;
@@ -5033,8 +5032,8 @@ static int uburma_cmd_get_tp_list(struct ubcore_device *ubc_dev,
 	}
 
 	arg->out.tp_cnt = tp_cnt;
-	(void)memcpy(arg->out.tp_handle, tp_list,
-		     tp_cnt * sizeof(struct ubcore_tp_info));
+	for (i = 0; i < tp_cnt; i++)
+		arg->out.tp_handle[i] = tp_list[i].tp_handle.value;
 	ret = uburma_tlv_append(hdr, arg);
 	if (ret != 0)
 		goto rollback_tp_uobjs;
@@ -5327,7 +5326,6 @@ static int uburma_cmd_import_jetty_ex(struct ubcore_device *ubc_dev,
 	cfg.tp_type = (enum ubcore_tp_type)arg.in.tp_type;
 	cfg.stp_cfg.stag = arg.in.stag;
 	cfg.stp_cfg.dtag = arg.in.dtag;
-	cfg.stp_cfg.local_import = 1;
 	cfg.eid_index = file->ucontext->eid_index;
 
 	active_tp_cfg.tp_handle.value = arg.in.tp_handle;
