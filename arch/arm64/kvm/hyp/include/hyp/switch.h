@@ -246,7 +246,10 @@ static inline void __activate_traps_common(struct kvm_vcpu *vcpu)
 
 		if (cpus_have_final_cap(ARM64_HAS_LS64_V))
 			hcrx |= HCRX_EL2_EnASR;
-
+#ifdef CONFIG_ENABLE_KVM_FPMR
+		if (kvm_has_fpmr(kern_hyp_va(vcpu->kvm)))
+			hcrx |= HCRX_EL2_EnFPM;
+#endif
 		ctxt_sys_reg(hctxt, HCRX_EL2) = read_sysreg_s(SYS_HCRX_EL2);
 		write_sysreg_s(hcrx, SYS_HCRX_EL2);
 	}
@@ -369,14 +372,24 @@ static inline bool kvm_hyp_handle_fpsimd(struct kvm_vcpu *vcpu, u64 *exit_code)
 	isb();
 
 	/* Write out the host state if it's in the registers */
-	if (*host_data_ptr(fp_owner) == FP_STATE_HOST_OWNED)
+	if (*host_data_ptr(fp_owner) == FP_STATE_HOST_OWNED) {
 		__fpsimd_save_state(*host_data_ptr(fpsimd_state));
+#ifdef CONFIG_ENABLE_KVM_FPMR
+		if (system_supports_fpmr())
+			*host_data_ptr(fpmr) = read_sysreg_s(SYS_FPMR);
+#endif
+	}
 
 	/* Restore the guest state */
 	if (sve_guest)
 		__hyp_sve_restore_guest(vcpu);
 	else
 		__fpsimd_restore_state(&vcpu->arch.ctxt.fp_regs);
+
+#ifdef CONFIG_ENABLE_KVM_FPMR
+	if (kvm_has_fpmr(kern_hyp_va(vcpu->kvm)))
+		write_sysreg_s(__vcpu_sys_reg(vcpu, FPMR), SYS_FPMR);
+#endif
 
 	/* Skip restoring fpexc32 for AArch64 guests */
 	if (!(read_sysreg(hcr_el2) & HCR_RW))

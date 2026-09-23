@@ -105,6 +105,11 @@ config KVM_ARM_MULTI_LPI_TRANSLATE_CACHE
 	depends on ARM_GIC_V3_ITS
 	default n
 
+config ENABLE_KVM_FPMR
+	bool "Enable FEAT_FPMR in KVM"
+	depends on KVM
+	default n
+
 config ARCH_VCPU_STAT
 	bool "export kvm exits to vcpu_stat"
 	depends on KVM

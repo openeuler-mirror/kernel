@@ -1435,6 +1435,9 @@ static u64 __kvm_read_sanitised_id_reg(const struct kvm_vcpu *vcpu,
 			val &= ~ARM64_FEATURE_MASK(ID_AA64ISAR2_EL1_WFxT);
 		val &= ~ARM64_FEATURE_MASK(ID_AA64ISAR2_EL1_MOPS);
 		break;
+	case SYS_ID_AA64ISAR3_EL1:
+		val &= ID_AA64ISAR3_EL1_FAMINMAX | ID_AA64ISAR3_EL1_LSUI;
+		break;
 	case SYS_ID_AA64MMFR2_EL1:
 		val &= ~ID_AA64MMFR2_EL1_CCIDX_MASK;
 		break;
@@ -1445,8 +1448,10 @@ static u64 __kvm_read_sanitised_id_reg(const struct kvm_vcpu *vcpu,
 	case SYS_ID_MMFR4_EL1:
 		val &= ~ARM64_FEATURE_MASK(ID_MMFR4_EL1_CCIDX);
 		break;
+	case SYS_ID_AA64PFR2_EL1:
+		val &= ID_AA64PFR2_EL1_FPMR_MASK;
+		break;
 	}
-
 	return val;
 }
 
@@ -1565,6 +1570,17 @@ static unsigned int sve_visibility(const struct kvm_vcpu *vcpu,
 
 	return REG_HIDDEN;
 }
+
+#ifdef CONFIG_ENABLE_KVM_FPMR
+static unsigned int fp8_visibility(const struct kvm_vcpu *vcpu,
+				   const struct sys_reg_desc *rd)
+{
+	if (kvm_has_fpmr(vcpu->kvm))
+		return 0;
+
+	return REG_HIDDEN;
+}
+#endif
 
 static u64 read_sanitised_id_aa64pfr0_el1(struct kvm_vcpu *vcpu,
 					  const struct sys_reg_desc *rd)
@@ -2463,12 +2479,12 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 	  .set_user = set_id_aa64pfr1_el1,
 	  .reset = kvm_read_sanitised_id_reg,
 	  .val = ID_AA64PFR1_EL1_NMI},
-	ID_UNALLOCATED(4,2),
+	ID_WRITABLE(ID_AA64PFR2_EL1, ID_AA64PFR2_EL1_FPMR),
 	ID_UNALLOCATED(4,3),
 	ID_WRITABLE(ID_AA64ZFR0_EL1, ~ID_AA64ZFR0_EL1_RES0),
 	ID_HIDDEN(ID_AA64SMFR0_EL1),
 	ID_UNALLOCATED(4,6),
-	ID_UNALLOCATED(4,7),
+	ID_WRITABLE(ID_AA64FPFR0_EL1, ~ID_AA64FPFR0_EL1_RES0),
 
 	/* CRm=5 */
 	{ SYS_DESC(SYS_ID_AA64DFR0_EL1),
@@ -2510,7 +2526,8 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 					ID_AA64ISAR2_EL1_MOPS |
 					ID_AA64ISAR2_EL1_APA3 |
 					ID_AA64ISAR2_EL1_GPA3)),
-	ID_UNALLOCATED(6,3),
+	ID_WRITABLE(ID_AA64ISAR3_EL1, (ID_AA64ISAR3_EL1_FAMINMAX |
+					ID_AA64ISAR3_EL1_LSUI)),
 	ID_UNALLOCATED(6,4),
 	ID_UNALLOCATED(6,5),
 	ID_UNALLOCATED(6,6),
@@ -2659,6 +2676,11 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 					CTR_EL0_L1Ip_MASK |
 					CTR_EL0_IminLine_MASK),
 	{ SYS_DESC(SYS_SVCR), undef_access },
+
+#ifdef CONFIG_ENABLE_KVM_FPMR
+	{ SYS_DESC(SYS_FPMR), undef_access, reset_val, FPMR, 0,
+	  .visibility = fp8_visibility },
+#endif
 
 	{ PMU_SYS_REG(PMCR_EL0), .access = access_pmcr, .reset = reset_pmcr,
 	  .reg = PMCR_EL0, .get_user = get_pmcr, .set_user = set_pmcr },
