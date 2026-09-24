@@ -2323,14 +2323,10 @@ static int __init null_init(void)
 	config_group_init(&nullb_subsys.su_group);
 	mutex_init(&nullb_subsys.su_mutex);
 
-	ret = configfs_register_subsystem(&nullb_subsys);
-	if (ret)
-		goto err_tagset;
-
 	null_major = register_blkdev(0, "nullb");
 	if (null_major < 0) {
 		ret = null_major;
-		goto err_conf;
+		goto err_tagset;
 	}
 
 	for (i = 0; i < nr_devices; i++) {
@@ -2338,6 +2334,10 @@ static int __init null_init(void)
 		if (ret)
 			goto err_dev;
 	}
+
+	ret = configfs_register_subsystem(&nullb_subsys);
+	if (ret)
+		goto err_dev;
 
 	pr_info("module loaded\n");
 	return 0;
@@ -2348,8 +2348,6 @@ err_dev:
 		null_destroy_dev(nullb);
 	}
 	unregister_blkdev(null_major, "nullb");
-err_conf:
-	configfs_unregister_subsystem(&nullb_subsys);
 err_tagset:
 	if (g_queue_mode == NULL_Q_MQ && shared_tags)
 		blk_mq_free_tag_set(&tag_set);
