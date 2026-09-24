@@ -17,13 +17,13 @@
 #include "udma_jetty.h"
 #include "udma_jetty_group.h"
 
-static uint32_t udma_get_jetty_grp_jetty_id(uint32_t *valid, uint32_t *next)
+static uint32_t udma_get_jetty_grp_jetty_id(unsigned long *valid, uint32_t *next)
 {
 	uint32_t bit_idx;
 
-	bit_idx = find_next_zero_bit((unsigned long *)valid, UDMA_BITS_PER_INT, *next);
+	bit_idx = find_next_zero_bit(valid, UDMA_BITS_PER_INT, *next);
 	if (bit_idx >= UDMA_BITS_PER_INT)
-		bit_idx = find_next_zero_bit((unsigned long *)valid, UDMA_BITS_PER_INT, 0);
+		bit_idx = find_next_zero_bit(valid, UDMA_BITS_PER_INT, 0);
 
 	*next = (*next + 1) >= UDMA_BITS_PER_INT ? 0 : *next + 1;
 
@@ -69,7 +69,7 @@ int add_jetty_to_grp(struct udma_dev *udma_dev, struct ubcore_jetty_group *jetty
 						      &udma_jetty_grp->next_jetty_id);
 
 	if (bit_idx >= UDMA_BITS_PER_INT || (udma_jetty_grp->valid & BIT(bit_idx))) {
-		dev_err(udma_dev->dev, "jetty group(%u.%u) valid %u is full or user id(%u) error",
+		dev_err(udma_dev->dev, "jetty group(%u.%u) valid %lu is full or user id(%u) error",
 			udma_jetty_grp->jetty_grp_id, udma_jetty_grp->start_jetty_id,
 			udma_jetty_grp->valid, cfg_id);
 		ret = -ENOMEM;
@@ -301,7 +301,7 @@ int udma_delete_jetty_grp(struct ubcore_jetty_group *jetty_grp)
 
 	if (udma_jetty_grp->valid != 0)
 		dev_err(udma_dev->dev,
-			"jetty group been used, jetty valid is 0x%x.\n",
+			"jetty group been used, jetty valid is 0x%lx.\n",
 			udma_jetty_grp->valid);
 
 	mutex_destroy(&udma_jetty_grp->valid_lock);

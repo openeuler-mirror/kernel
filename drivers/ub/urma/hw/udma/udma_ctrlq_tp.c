@@ -427,6 +427,13 @@ int udma_recv_resp_from_mue(struct udma_dev *udev,
 	struct udma_cmdq_info *info = udev->wait_cmdq_info;
 	struct udma_cmdq_wait_info *wait_completion;
 
+	if (len < sizeof(*resp) + sizeof(int)) {
+		dev_err(udev->dev,
+			"length of control queue response is too small, len = %u.\n",
+			len);
+		return -EINVAL;
+	}
+
 	xa_lock(&info->seq_tbl);
 	wait_completion = xa_load(&info->seq_tbl, resp->buf.seq_num);
 	if (!wait_completion) {
