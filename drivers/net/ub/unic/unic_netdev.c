@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -67,7 +67,7 @@ static int unic_netdev_set_tcs(struct net_device *netdev)
 				    vl->queue_offset[i]);
 
 	for (i = 0; i < UNIC_MAX_PRIO_NUM; i++) {
-		if (vl->prio_vl[i] > channels->rss_vl_num)
+		if (vl->prio_vl[i] >= channels->rss_vl_num)
 			netdev_set_prio_tc_map(netdev, i, UNIC_OS_DEFAULT_VL);
 		else
 			netdev_set_prio_tc_map(netdev, i, vl->prio_vl[i]);
@@ -437,65 +437,81 @@ int unic_net_stop(struct net_device *netdev)
 static void unic_fetch_stats_tx(struct rtnl_link_stats64 *stats,
 				struct unic_channel *channel)
 {
+	struct rtnl_link_stats64 tmp_stats;
 	unsigned int start;
 
 	do {
+		memset(&tmp_stats, 0, sizeof(tmp_stats));
 		start = u64_stats_fetch_begin(&channel->sq->syncp);
 
-		stats->tx_bytes += channel->sq->stats.bytes;
-		stats->tx_packets += channel->sq->stats.packets;
-		stats->tx_errors += channel->sq->stats.pad_err;
-		stats->tx_errors += channel->sq->stats.over_max_sge_num;
-		stats->tx_errors += channel->sq->stats.csum_err;
-		stats->tx_errors += channel->sq->stats.vlan_err;
-		stats->tx_errors += channel->sq->stats.fd_cnt;
-		stats->tx_errors += channel->sq->stats.drop_cnt;
-		stats->tx_errors += channel->sq->stats.cfg5_drop_cnt;
-		stats->tx_errors += channel->sq->stats.abn_cqe_total_cnt;
+		tmp_stats.tx_bytes += channel->sq->stats.bytes;
+		tmp_stats.tx_packets += channel->sq->stats.packets;
+		tmp_stats.tx_errors += channel->sq->stats.pad_err;
+		tmp_stats.tx_errors += channel->sq->stats.over_max_sge_num;
+		tmp_stats.tx_errors += channel->sq->stats.csum_err;
+		tmp_stats.tx_errors += channel->sq->stats.vlan_err;
+		tmp_stats.tx_errors += channel->sq->stats.fd_cnt;
+		tmp_stats.tx_errors += channel->sq->stats.drop_cnt;
+		tmp_stats.tx_errors += channel->sq->stats.cfg5_drop_cnt;
+		tmp_stats.tx_errors += channel->sq->stats.abn_cqe_total_cnt;
 
-		stats->tx_dropped += channel->sq->stats.pad_err;
-		stats->tx_dropped += channel->sq->stats.over_max_sge_num;
-		stats->tx_dropped += channel->sq->stats.csum_err;
-		stats->tx_dropped += channel->sq->stats.vlan_err;
-		stats->tx_dropped += channel->sq->stats.fd_cnt;
-		stats->tx_dropped += channel->sq->stats.drop_cnt;
-		stats->tx_dropped += channel->sq->stats.cfg5_drop_cnt;
-		stats->tx_dropped += channel->sq->stats.abn_cqe_total_cnt;
+		tmp_stats.tx_dropped += channel->sq->stats.pad_err;
+		tmp_stats.tx_dropped += channel->sq->stats.over_max_sge_num;
+		tmp_stats.tx_dropped += channel->sq->stats.csum_err;
+		tmp_stats.tx_dropped += channel->sq->stats.vlan_err;
+		tmp_stats.tx_dropped += channel->sq->stats.fd_cnt;
+		tmp_stats.tx_dropped += channel->sq->stats.drop_cnt;
+		tmp_stats.tx_dropped += channel->sq->stats.cfg5_drop_cnt;
+		tmp_stats.tx_dropped += channel->sq->stats.abn_cqe_total_cnt;
 	} while (u64_stats_fetch_retry(&channel->sq->syncp, start));
+
+	stats->tx_bytes += tmp_stats.tx_bytes;
+	stats->tx_packets += tmp_stats.tx_packets;
+	stats->tx_errors += tmp_stats.tx_errors;
+	stats->tx_dropped += tmp_stats.tx_dropped;
 }
 
 static void unic_fetch_stats_rx(struct rtnl_link_stats64 *stats,
 				struct unic_channel *channel)
 {
+	struct rtnl_link_stats64 tmp_stats;
 	unsigned int start;
 
 	do {
+		memset(&tmp_stats, 0, sizeof(tmp_stats));
 		start = u64_stats_fetch_begin(&channel->rq->syncp);
 
-		stats->rx_bytes += channel->rq->stats.bytes;
-		stats->rx_packets += channel->rq->stats.packets;
-		stats->rx_crc_errors += channel->rq->stats.l2_err;
-		stats->rx_errors += channel->rq->stats.l3_l4_csum_err;
-		stats->rx_errors += channel->rq->stats.l2_err;
-		stats->rx_length_errors += channel->rq->stats.err_pkt_len_cnt;
+		tmp_stats.rx_bytes += channel->rq->stats.bytes;
+		tmp_stats.rx_packets += channel->rq->stats.packets;
+		tmp_stats.rx_crc_errors += channel->rq->stats.l2_err;
+		tmp_stats.rx_errors += channel->rq->stats.l3_l4_csum_err;
+		tmp_stats.rx_errors += channel->rq->stats.l2_err;
+		tmp_stats.rx_length_errors += channel->rq->stats.err_pkt_len_cnt;
 
-		stats->rx_dropped += channel->rq->stats.alloc_skb_err;
-		stats->rx_dropped += channel->rq->stats.l2_err;
-		stats->rx_dropped += channel->rq->stats.err_pkt_len_cnt;
-		stats->rx_dropped += channel->rq->stats.trunc_cnt;
-		stats->rx_dropped += channel->rq->stats.doi_cnt;
-		stats->multicast += channel->rq->stats.multicast;
+		tmp_stats.rx_dropped += channel->rq->stats.alloc_skb_err;
+		tmp_stats.rx_dropped += channel->rq->stats.l2_err;
+		tmp_stats.rx_dropped += channel->rq->stats.err_pkt_len_cnt;
+		tmp_stats.rx_dropped += channel->rq->stats.trunc_cnt;
+		tmp_stats.rx_dropped += channel->rq->stats.doi_cnt;
+		tmp_stats.multicast += channel->rq->stats.multicast;
 	} while (u64_stats_fetch_retry(&channel->rq->syncp, start));
+
+	stats->rx_bytes += tmp_stats.rx_bytes;
+	stats->rx_packets += tmp_stats.rx_packets;
+	stats->rx_crc_errors += tmp_stats.rx_crc_errors;
+	stats->rx_errors += tmp_stats.rx_errors;
+	stats->rx_length_errors += tmp_stats.rx_length_errors;
+	stats->rx_dropped += tmp_stats.rx_dropped;
+	stats->multicast += tmp_stats.multicast;
 }
 
 static void unic_get_stats64(struct net_device *netdev,
 			     struct rtnl_link_stats64 *stats)
 {
 	struct unic_dev *unic_dev = netdev_priv(netdev);
-	u32 channel_num = unic_dev->channels.num;
 	struct rtnl_link_stats64 total_stats;
 	struct unic_channel *channel;
-	u32 i;
+	u32 i, channel_num;
 
 	if (test_bit(UNIC_STATE_DOWN, &unic_dev->state))
 		return;
@@ -506,6 +522,7 @@ static void unic_get_stats64(struct net_device *netdev,
 		return;
 	}
 
+	channel_num = unic_dev->channels.num;
 	memset(&total_stats, 0, sizeof(total_stats));
 	for (i = 0; i < channel_num; i++) {
 		channel = &unic_dev->channels.c[i];

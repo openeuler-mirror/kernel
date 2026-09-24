@@ -250,6 +250,9 @@ static void unic_sync_mac_table_common(struct unic_vport *vport,
 	all_added = unic_comm_sync_addr_table(vport, mac_list,
 					      &vport->addr_tbl.mac_list_lock,
 					      sync, unsync);
+	if (!all_added)
+		set_bit(UNIC_VPORT_STATE_MAC_TBL_CHANGE, &vport->state);
+
 	if (mac_type == UNIC_MAC_ADDR_UC) {
 		if (all_added)
 			vport->overflow_promisc_flags &= ~UNIC_OVERFLOW_UP_MAC;

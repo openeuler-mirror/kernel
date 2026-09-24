@@ -1250,7 +1250,6 @@ static void unic_tx_compensate_doorbell(struct unic_sq *sq)
 	if (sq->last_pi == sq->pi)
 		return;
 
-	trace_unic_tx_sqe(sq, 0, unic_get_sqe_mask(sq));
 	jfs_db.pi = cpu_to_le16(sq->pi);
 	writel(*(u32 *)&jfs_db, sq->db_addr);
 	sq->last_pi = sq->pi;
