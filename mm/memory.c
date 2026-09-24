@@ -2605,15 +2605,20 @@ static int remap_try_huge_pmd(struct mm_struct *mm, pmd_t *pmd,
 	if (!IS_ALIGNED(pfn, HPAGE_PMD_NR))
 		return 0;
 
-	if (pmd_present(*pmd) && !pmd_free_pte_page(pmd, addr))
+	if (!pmd_none(*pmd))
 		return 0;
 
 	pgtable = pte_alloc_one(mm);
 	if (unlikely(!pgtable))
 		return 0;
 
-	mm_inc_nr_ptes(mm);
 	ptl = pmd_lock(mm, pmd);
+	if (!pmd_none(*pmd)) {
+		pte_free(mm, pgtable);
+		spin_unlock(ptl);
+		return 0;
+	}
+	mm_inc_nr_ptes(mm);
 	set_pmd_at(mm, addr, pmd, pmd_mkspecial(pmd_mkhuge(pfn_pmd(pfn, prot))));
 	pgtable_trans_huge_deposit(mm, pmd, pgtable);
 	spin_unlock(ptl);
