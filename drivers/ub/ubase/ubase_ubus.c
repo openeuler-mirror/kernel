@@ -363,7 +363,7 @@ static void ubase_ubus_shutdown(struct ub_entity *ue)
 	while (test_and_set_bit(UBASE_STATE_DISABLED_B, &udev->state_bits))
 		msleep(UBASE_RST_WAIT_TIME);
 
-	set_bit(UBASE_STATE_SHUTDOWN, &udev->state_bits);
+	set_bit(UBASE_STATE_SHUTDOWN_B, &udev->state_bits);
 
 	ubase_info(udev, "ubase shutdown start.\n");
 

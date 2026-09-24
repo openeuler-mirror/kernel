@@ -520,7 +520,7 @@ int ubase_ctrlq_init(struct ubase_dev *udev)
 	sema_init(&udev->ctrlq.msg_queue_sem, ubase_ctrlq_msg_queue_depth(udev));
 
 success:
-	set_bit(UBASE_CTRLQ_STATE_ENABLE, &udev->ctrlq.state);
+	set_bit(UBASE_STATE_CTRLQ_ENABLE_B, &udev->state_bits);
 	return 0;
 
 err_table_init:
@@ -593,7 +593,7 @@ static void ubase_ctrlq_clean_pending_msgs(struct ubase_dev *udev)
 
 void ubase_ctrlq_disable(struct ubase_dev *udev)
 {
-	if (!test_and_clear_bit(UBASE_CTRLQ_STATE_ENABLE, &udev->ctrlq.state))
+	if (!test_and_clear_bit(UBASE_STATE_CTRLQ_ENABLE_B, &udev->state_bits))
 		return;
 
 	/* wait to ensure that the crq completes the possible left
@@ -962,7 +962,7 @@ static int ubase_ctrlq_check_send_state(struct ubase_dev *udev,
 		return -EAGAIN;
 	}
 
-	if (!test_bit(UBASE_CTRLQ_STATE_ENABLE, &udev->ctrlq.state)) {
+	if (!test_bit(UBASE_STATE_CTRLQ_ENABLE_B, &udev->state_bits)) {
 		ubase_warn_rl(udev, ctrlq_is_disabled,
 			      "ctrlq is disabled in csq.\n");
 		return -EAGAIN;
@@ -1110,7 +1110,7 @@ int __ubase_ctrlq_send(struct ubase_dev *udev, struct ubase_ctrlq_msg *msg,
 	int ret;
 	u16 num;
 
-	if (!test_bit(UBASE_CTRLQ_STATE_ENABLE, &udev->ctrlq.state)) {
+	if (!test_bit(UBASE_STATE_CTRLQ_ENABLE_B, &udev->state_bits)) {
 		dev_warn_ratelimited(udev->dev, "ctrlq is disabled.\n");
 		return -EAGAIN;
 	}
@@ -1549,7 +1549,7 @@ static void ubase_ctrlq_crq_handler(struct ubase_dev *udev)
 
 	while (cnt++ < UBASE_CTRLQ_CRQ_POLLING_BUDGET &&
 	       !ubase_ctrlq_crq_is_empty(udev, &udev->hw)) {
-		if (!test_bit(UBASE_CTRLQ_STATE_ENABLE, &udev->ctrlq.state)) {
+		if (!test_bit(UBASE_STATE_CTRLQ_ENABLE_B, &udev->state_bits)) {
 			dev_err_ratelimited(udev->dev,
 					    "ctrlq is disabled in crq.\n");
 			return;
@@ -1627,7 +1627,7 @@ void ubase_ctrlq_clean_service_task(struct ubase_dev *udev)
 	struct ubase_ctrlq_msg_ctx *ctx;
 	u32 loop = 0, up_cnt = 0;
 
-	if (!test_bit(UBASE_CTRLQ_STATE_ENABLE, &udev->ctrlq.state) ||
+	if (!test_bit(UBASE_STATE_CTRLQ_ENABLE_B, &udev->state_bits) ||
 	    ubase_dev_pmu_supported(udev))
 		return;
 

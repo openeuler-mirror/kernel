@@ -332,7 +332,7 @@ static void ubase_reset_fail_handle(struct ubase_dev *udev)
 	 * is executed before reset_stage is set to NONE, which enables
 	 * ubase_cmd_uninit to skip the sleep.
 	 */
-	if (test_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state)) {
+	if (test_bit(UBASE_STATE_CMD_DISABLE_B, &udev->state_bits)) {
 		ubase_cmd_uninit(udev);
 		if (ubase_cmd_init(udev))
 			ubase_err(udev, "failed to reinit cmdq after reset failure.\n");
