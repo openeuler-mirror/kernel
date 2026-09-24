@@ -87,10 +87,6 @@ struct ubase_cmdq_desc {
 	__le32 data[UBASE_DESC_DATA_LEN];
 };
 
-enum ubase_cmd_state {
-	UBASE_STATE_CMD_DISABLE
-};
-
 struct ubase_query_version_cmd {
 	__le32	fw_version;
 	u8	rsv[20];
@@ -392,12 +388,12 @@ void ubase_cmd_uninit(struct ubase_dev *udev);
 
 static inline void __ubase_cmd_enable(struct ubase_dev *udev)
 {
-	clear_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state);
+	clear_bit(UBASE_STATE_CMD_DISABLE_B, &udev->state_bits);
 }
 
 static inline void __ubase_cmd_disable(struct ubase_dev *udev)
 {
-	set_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state);
+	set_bit(UBASE_STATE_CMD_DISABLE_B, &udev->state_bits);
 }
 
 void ubase_cmd_disable(struct ubase_dev *udev);

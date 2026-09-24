@@ -1037,14 +1037,14 @@ void ubase_dev_uninit(struct ubase_dev *udev)
 		set_bit(UBASE_STATE_CMD_CRQ_UNAVAIL_B, &udev->state_bits);
 		ubase_ctrlq_uninit(udev);
 		ubase_irq_table_uninit(udev);
-		if (test_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state) &&
+		if (test_bit(UBASE_STATE_CMD_DISABLE_B, &udev->state_bits) &&
 		    ubase_cmd_init(udev))
 			goto start_uninit;
 		if (test_bit(UBASE_STATE_IRQ_INVALID_B, &udev->state_bits) &&
 		    ubase_irq_table_init(udev))
 			goto start_uninit;
 		clear_bit(UBASE_STATE_CMD_CRQ_UNAVAIL_B, &udev->state_bits);
-		if (!test_bit(UBASE_CTRLQ_STATE_ENABLE, &udev->ctrlq.state))
+		if (!test_bit(UBASE_STATE_CTRLQ_ENABLE_B, &udev->state_bits))
 			ubase_ctrlq_init(udev);
 		ubase_register_ae_event(udev);
 		ubase_register_cmdq_crq_event(udev);
@@ -2063,7 +2063,7 @@ static int ubase_send_activate_dev_req(struct ubase_dev *udev, bool activate,
 		return -EPERM;
 
 	if (test_bit(UBASE_STATE_REMOVING_B, &udev->state_bits) &&
-	    test_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state)) {
+	    test_bit(UBASE_STATE_CMD_DISABLE_B, &udev->state_bits)) {
 		ubase_warn(udev, "cmdq is disabled, can't send %s req.\n",
 			   activate ? "activate" : "deactivate");
 		return 0;
