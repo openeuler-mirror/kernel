@@ -295,6 +295,7 @@ void *ubase_dtu_alloc(struct ubase_dev *udev, struct page **page,
 
 err_iommu_map:
 	__free_pages(*page, order);
+	*page = NULL;
 
 	return NULL;
 }
