@@ -270,7 +270,7 @@ static int udma_config_device(struct ubcore_device *ubcore_dev,
 
 	if ((cfg->mask.bs.reserved_jetty_id_min && cfg->reserved_jetty_id_min != 0) ||
 	    (cfg->mask.bs.reserved_jetty_id_max && cfg->reserved_jetty_id_max !=
-	    dev->caps.public_jetty.max_cnt - 1)) {
+	    dev->caps.public_jetty.max_cnt + dev->caps.public_jetty.start_idx - 1)) {
 		dev_err(dev->dev, "public jetty range must 0-%u.\n",
 			dev->caps.public_jetty.max_cnt - 1);
 		return -EINVAL;
