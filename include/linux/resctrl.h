@@ -119,7 +119,6 @@ struct rdt_domain {
 	unsigned long			*rmid_busy_llc;
 	struct mbm_state		*mbm_total;
 	struct mbm_state		*mbm_local;
-	struct mbm_state		*mbm_core;
 	struct delayed_work		mbm_over;
 	struct delayed_work		cqm_limbo;
 	int				mbm_work_cpu;
@@ -127,6 +126,7 @@ struct rdt_domain {
 	struct pseudo_lock_region	*plr;
 	struct resctrl_staged_config	staged_config[CDP_NUM_TYPES];
 	u32				*mbps_val;
+	struct rdt_resource		*res;		/* Just for MPAM */
 };
 
 /**
@@ -444,6 +444,27 @@ void resctrl_arch_reset_rmid_all(struct rdt_resource *r, struct rdt_domain *d);
 extern unsigned int resctrl_rmid_realloc_threshold;
 extern unsigned int resctrl_rmid_realloc_limit;
 
+/**
+ * rmid_is_occupied() - Check whether the specified rmid has been
+ *                      allocated.
+ * @closid:	Specify the closid that matches the rmid.
+ * @rmid:	Specify the rmid entry to check status.
+ *
+ * This function checks if the rmid_entry is currently allocated by testing
+ * whether its list node is empty (removed from the free list).
+ *
+ * Return:
+ * True if the specified rmid is still in use.
+ */
+bool rmid_is_occupied(u32 closid, u32 rmid);
+
+/**
+ * rmid_entry_reassign_closid() - Update the closid field of a rmid_entry.
+ * @closid:	Specify the reassigned closid.
+ * @rmid:	Specify the rmid entry to update closid.
+ */
+void rmid_entry_reassign_closid(u32 closid, u32 rmid);
+
 extern bool resctrl_mounted;
 
 int resctrl_init(void);
@@ -451,6 +472,18 @@ void resctrl_exit(void);
 
 int resctrl_arch_mon_resource_init(void);
 void mbm_config_rftype_init(const char *config);
+
+void resctrl_setup_dom_overflow(struct rdt_resource *r);
+void resctrl_setup_dom_overflow_exclude_cpu(struct rdt_resource *r,
+					    struct rdt_domain *d,
+					    unsigned int exclude_cpu);
+void resctrl_arch_setup_res_mbm_over(void);
+void resctrl_arch_setup_res_mbm_over_exclude_cpu(unsigned int exclude_cpu);
+
+void resctrl_mbm_update_one(struct rdt_resource *r, struct rdt_domain *d,
+			    enum resctrl_event_id evtid,
+			    u32 closid, u32 rmid);
+void resctrl_arch_mbm_update(struct rdt_domain *d, u32 closid, u32 rmid);
 
 /* When supported, the architecture must implement these */
 #ifdef CONFIG_RESCTRL_IOMMU

@@ -111,13 +111,6 @@ void rdt_staged_configs_clear(void)
 	}
 }
 
-static bool resctrl_is_mbm_enabled(void)
-{
-	return (resctrl_arch_is_mbm_total_enabled() ||
-		resctrl_arch_is_mbm_local_enabled() ||
-		resctrl_arch_is_mbm_core_enabled());
-}
-
 static bool resctrl_is_mbm_event(int e)
 {
 	return (e == QOS_L3_MBM_TOTAL_EVENT_ID ||
@@ -822,17 +815,21 @@ static int rdt_move_group_iommus(struct rdtgroup *from, struct rdtgroup *to)
 		kobject_get(group_kobj);
 
 		group = iommu_group_get_from_kobj(group_kobj);
-		if (!group)
+		if (!group) {
+			kobject_put(group_kobj);
 			continue;
+		}
 
 		if (!from || iommu_matches_rdtgroup(group, from)) {
 			err = kstrtoint(group_kobj->name, 0, &iommu_group_id);
-			if (err)
-				break;
+			if (!err)
+				err = rdtgroup_move_iommu(iommu_group_id, to);
+		}
 
-			err = rdtgroup_move_iommu(iommu_group_id, to);
-			if (err)
-				break;
+		iommu_group_put(group);
+		if (err) {
+			kobject_put(group_kobj);
+			break;
 		}
 	}
 
@@ -933,11 +930,15 @@ static void show_rdt_iommu(struct rdtgroup *r, struct seq_file *s)
 		kobject_get(group_kobj);
 
 		group = iommu_group_get_from_kobj(group_kobj);
-		if (!group)
+		if (!group) {
+			kobject_put(group_kobj);
 			continue;
+		}
 
 		if (iommu_matches_rdtgroup(group, r))
 			seq_printf(s, "iommu_group:%s\n", group_kobj->name);
+
+		iommu_group_put(group);
 	}
 
 	kset_put(iommu_groups);
@@ -2686,12 +2687,22 @@ static void schemata_list_destroy(void)
 	}
 }
 
+void resctrl_setup_dom_overflow(struct rdt_resource *r)
+{
+	struct rdt_domain *d;
+
+	if (resctrl_arch_is_mbm_enabled(r->rid) &&
+	    resctrl_arch_would_mbm_overflow()) {
+		list_for_each_entry(d, &r->domains, list)
+			mbm_setup_overflow_handler(d, MBM_OVERFLOW_INTERVAL,
+						   RESCTRL_PICK_ANY_CPU);
+	}
+}
+
 static int rdt_get_tree(struct fs_context *fc)
 {
-	struct rdt_resource *l3 = resctrl_arch_get_resource(RDT_RESOURCE_L3);
 	struct rdt_fs_context *ctx = rdt_fc2context(fc);
 	unsigned long flags = RFTYPE_CTRL_BASE;
-	struct rdt_domain *dom;
 	int ret;
 
 	cpus_read_lock();
@@ -2765,11 +2776,7 @@ static int rdt_get_tree(struct fs_context *fc)
 	if (resctrl_arch_alloc_capable() || resctrl_arch_mon_capable())
 		resctrl_mounted = true;
 
-	if (resctrl_is_mbm_enabled() && resctrl_arch_would_mbm_overflow()) {
-		list_for_each_entry(dom, &l3->domains, list)
-			mbm_setup_overflow_handler(dom, MBM_OVERFLOW_INTERVAL,
-						   RESCTRL_PICK_ANY_CPU);
-	}
+	resctrl_arch_setup_res_mbm_over();
 
 	goto out;
 
@@ -3000,17 +3007,37 @@ static void rmdir_all_sub(void)
 	kernfs_remove(kn_mondata);
 }
 
+static void rdt_flush_limbo(void)
+{
+	struct rdt_resource *r = resctrl_arch_get_resource(RDT_RESOURCE_L3);
+	struct rdt_domain *d;
+
+	if (!IS_ENABLED(CONFIG_RESCTRL_RMID_DEPENDS_ON_CLOSID))
+		return;
+
+	if (!resctrl_arch_is_llc_occupancy_enabled())
+		return;
+
+	list_for_each_entry(d, &r->domains, list) {
+		if (has_busy_rmid(d)) {
+			__check_limbo(d, true);
+			cancel_delayed_work(&d->cqm_limbo);
+		}
+	}
+}
+
 static void rdt_kill_sb(struct super_block *sb)
 {
 	cpus_read_lock();
 	mutex_lock(&rdtgroup_mutex);
 
-	rdt_disable_ctx();
-
 	/* Put everything back to default values. */
 	resctrl_arch_reset_resources();
 
 	rmdir_all_sub();
+	rdt_flush_limbo();
+	rdt_disable_ctx();
+
 	if (IS_ENABLED(CONFIG_RESCTRL_FS_PSEUDO_LOCK))
 		rdt_pseudo_lock_release();
 	rdtgroup_default.mode = RDT_MODE_SHAREABLE;
@@ -3844,8 +3871,6 @@ static void mongrp_reparent(struct rdtgroup *rdtgrp,
 	list_move_tail(&rdtgrp->mon.crdtgrp_list,
 		       &new_prdtgrp->mon.crdtgrp_list);
 
-	free_rmid(rdtgrp->closid, rdtgrp->mon.rmid);
-	rdtgrp->mon.rmid = alloc_rmid(new_prdtgrp->closid);
 	rdtgrp->mon.parent = new_prdtgrp;
 	rdtgrp->closid = new_prdtgrp->closid;
 
@@ -3860,10 +3885,12 @@ static int rdtgroup_rename(struct kernfs_node *kn,
 {
 	struct kernfs_node *kn_parent;
 	struct rdtgroup *new_prdtgrp;
-	struct rmid_entry *entry;
 	struct rdtgroup *rdtgrp;
 	cpumask_var_t tmpmask;
 	int ret;
+
+	if (IS_ENABLED(CONFIG_ARM64_MPAM))
+		return -EPERM;
 
 	rdtgrp = kernfs_to_rdtgroup(kn);
 	new_prdtgrp = kernfs_to_rdtgroup(new_parent);
@@ -3918,20 +3945,6 @@ static int rdtgroup_rename(struct kernfs_node *kn,
 		rdt_last_cmd_puts("Cannot move a MON group that monitors CPUs\n");
 		ret = -EPERM;
 		goto out;
-	}
-
-	/*
-	 * Unlike RDT, the rmid and closid in MPAM have a hierarchical
-	 * relationship. Therefore, first check whether there are still
-	 * free rmids available under the target closid.
-	 */
-	if (IS_ENABLED(CONFIG_ARM64_MPAM)) {
-		entry = resctrl_find_free_rmid(new_prdtgrp->closid);
-		if (IS_ERR(entry)) {
-			rdt_last_cmd_puts("Destination has been out of RMIDs\n");
-			ret = PTR_ERR(entry);
-			goto out;
-		}
 	}
 
 	/*
@@ -4051,7 +4064,7 @@ void resctrl_offline_domain(struct rdt_resource *r, struct rdt_domain *d)
 	if (resctrl_mounted && resctrl_arch_mon_capable())
 		rmdir_mondata_subdir_allrdtgrp(r, d->id);
 
-	if (resctrl_is_mbm_enabled() && resctrl_arch_would_mbm_overflow())
+	if (resctrl_arch_is_mbm_enabled(r->rid) && resctrl_arch_would_mbm_overflow())
 		cancel_delayed_work(&d->mbm_over);
 	if (resctrl_arch_is_llc_occupancy_enabled() && has_busy_rmid(d)) {
 		/*
@@ -4099,16 +4112,6 @@ static int domain_setup_mon_state(struct rdt_resource *r, struct rdt_domain *d)
 			return -ENOMEM;
 		}
 	}
-	if (resctrl_arch_is_mbm_core_enabled()) {
-		tsize = sizeof(*d->mbm_core);
-		d->mbm_core = kcalloc(idx_limit, tsize, GFP_KERNEL);
-		if (!d->mbm_core) {
-			bitmap_free(d->rmid_busy_llc);
-			kfree(d->mbm_total);
-			kfree(d->mbm_local);
-			return -ENOMEM;
-		}
-	}
 
 	return 0;
 }
@@ -4132,7 +4135,7 @@ int resctrl_online_domain(struct rdt_resource *r, struct rdt_domain *d)
 	if (err)
 		goto out_unlock;
 
-	if (resctrl_is_mbm_enabled() && resctrl_arch_would_mbm_overflow()) {
+	if (resctrl_arch_is_mbm_enabled(r->rid) && resctrl_arch_would_mbm_overflow()) {
 		INIT_DELAYED_WORK(&d->mbm_over, mbm_handle_overflow);
 		mbm_setup_overflow_handler(d, MBM_OVERFLOW_INTERVAL,
 					   RESCTRL_PICK_ANY_CPU);
@@ -4174,6 +4177,21 @@ static void clear_childcpus(struct rdtgroup *r, unsigned int cpu)
 	}
 }
 
+void resctrl_setup_dom_overflow_exclude_cpu(struct rdt_resource *r,
+					    struct rdt_domain *d,
+					    unsigned int exclude_cpu)
+{
+	if (!d)
+		return;
+
+	if (resctrl_arch_is_mbm_enabled(r->rid) &&
+	    exclude_cpu == d->mbm_work_cpu &&
+	    resctrl_arch_would_mbm_overflow()) {
+		cancel_delayed_work(&d->mbm_over);
+		mbm_setup_overflow_handler(d, 0, exclude_cpu);
+	}
+}
+
 void resctrl_offline_cpu(unsigned int cpu)
 {
 	struct rdt_resource *l3 = resctrl_arch_get_resource(RDT_RESOURCE_L3);
@@ -4193,17 +4211,14 @@ void resctrl_offline_cpu(unsigned int cpu)
 
 	d = resctrl_get_domain_from_cpu(cpu, l3);
 	if (d) {
-		if (resctrl_is_mbm_enabled() && cpu == d->mbm_work_cpu &&
-		    resctrl_arch_would_mbm_overflow()) {
-			cancel_delayed_work(&d->mbm_over);
-			mbm_setup_overflow_handler(d, 0, cpu);
-		}
 		if (resctrl_arch_is_llc_occupancy_enabled() &&
 		    cpu == d->cqm_work_cpu && has_busy_rmid(d)) {
 			cancel_delayed_work(&d->cqm_limbo);
 			cqm_setup_limbo_handler(d, 0, cpu);
 		}
 	}
+
+	resctrl_arch_setup_res_mbm_over_exclude_cpu(cpu);
 
 out_unlock:
 	mutex_unlock(&rdtgroup_mutex);

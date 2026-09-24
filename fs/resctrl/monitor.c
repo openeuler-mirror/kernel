@@ -115,6 +115,8 @@ static void limbo_release_entry(struct rmid_entry *entry)
 
 	if (IS_ENABLED(CONFIG_RESCTRL_RMID_DEPENDS_ON_CLOSID))
 		closid_num_dirty_rmid[entry->closid]--;
+
+	resctrl_arch_rmid_reclaim(entry->closid, entry->rmid);
 }
 
 /*
@@ -178,7 +180,7 @@ bool has_busy_rmid(struct rdt_domain *d)
 	return find_first_bit(d->rmid_busy_llc, idx_limit) != idx_limit;
 }
 
-struct rmid_entry *resctrl_find_free_rmid(u32 closid)
+static struct rmid_entry *__resctrl_find_free_rmid(u32 closid)
 {
 	struct rmid_entry *itr;
 	u32 itr_idx, cmp_idx;
@@ -195,13 +197,37 @@ struct rmid_entry *resctrl_find_free_rmid(u32 closid)
 		 * very first entry will be returned.
 		 */
 		itr_idx = resctrl_arch_rmid_idx_encode(itr->closid, itr->rmid);
+		if (itr_idx == U32_MAX)
+			continue;
+
 		cmp_idx = resctrl_arch_rmid_idx_encode(closid, itr->rmid);
+		if (cmp_idx == U32_MAX)
+			continue;
 
 		if (itr_idx == cmp_idx)
 			return itr;
 	}
 
 	return ERR_PTR(-ENOSPC);
+}
+
+static struct rmid_entry *resctrl_find_free_rmid(u32 closid)
+{
+	struct rmid_entry *err;
+	int ret;
+
+	err = __resctrl_find_free_rmid(closid);
+	if (err == ERR_PTR(-ENOSPC)) {
+		ret = resctrl_arch_rmid_expand(closid);
+		if (ret < 0)
+			/* Out of rmid */
+			goto out;
+
+		/* Try it again */
+		return __resctrl_find_free_rmid(closid);
+	}
+out:
+	return err;
 }
 
 /**
@@ -265,7 +291,7 @@ int alloc_rmid(u32 closid)
 	if (IS_ERR(entry))
 		return PTR_ERR(entry);
 
-	list_del(&entry->list);
+	list_del_init(&entry->list);
 	return entry->rmid;
 }
 
@@ -320,8 +346,17 @@ void free_rmid(u32 closid, u32 rmid)
 
 	if (resctrl_arch_is_llc_occupancy_enabled())
 		add_rmid_to_limbo(entry);
-	else
+	else {
 		list_add_tail(&entry->list, &rmid_free_lru);
+		resctrl_arch_rmid_reclaim(closid, rmid);
+	}
+}
+
+bool rmid_is_occupied(u32 closid, u32 rmid)
+{
+	u32 idx = resctrl_arch_rmid_idx_encode(closid, rmid);
+
+	return list_empty(&rmid_ptrs[idx].list);
 }
 
 static struct mbm_state *get_mbm_state(struct rdt_domain *d, u32 closid,
@@ -548,8 +583,9 @@ static void update_mba_bw(struct rdtgroup *rgrp, struct rdt_domain *dom_mbm)
 	}
 }
 
-static void mbm_update(struct rdt_resource *r, struct rdt_domain *d,
-		       u32 closid, u32 rmid)
+void resctrl_mbm_update_one(struct rdt_resource *r, struct rdt_domain *d,
+			    enum resctrl_event_id evtid,
+			    u32 closid, u32 rmid)
 {
 	struct rmid_read rr;
 
@@ -561,56 +597,26 @@ static void mbm_update(struct rdt_resource *r, struct rdt_domain *d,
 	 * This is protected from concurrent reads from user
 	 * as both the user and we hold the global mutex.
 	 */
-	if (resctrl_arch_is_mbm_total_enabled()) {
-		rr.evtid = QOS_L3_MBM_TOTAL_EVENT_ID;
-		rr.val = 0;
-		rr.arch_mon_ctx = resctrl_arch_mon_ctx_alloc(rr.r, rr.evtid);
-		if (IS_ERR(rr.arch_mon_ctx)) {
-			pr_warn_ratelimited("Failed to allocate monitor context: %ld",
-					    PTR_ERR(rr.arch_mon_ctx));
-			return;
-		}
-
-		__mon_event_count(closid, rmid, &rr);
-
-		resctrl_arch_mon_ctx_free(rr.r, rr.evtid, rr.arch_mon_ctx);
+	rr.evtid = evtid;
+	rr.val = 0;
+	rr.arch_mon_ctx = resctrl_arch_mon_ctx_alloc(rr.r, rr.evtid);
+	if (IS_ERR(rr.arch_mon_ctx)) {
+		pr_warn_ratelimited("Failed to allocate monitor context: %ld",
+				     PTR_ERR(rr.arch_mon_ctx));
+		return;
 	}
-	if (resctrl_arch_is_mbm_local_enabled()) {
-		rr.evtid = QOS_L3_MBM_LOCAL_EVENT_ID;
-		rr.val = 0;
-		rr.arch_mon_ctx = resctrl_arch_mon_ctx_alloc(rr.r, rr.evtid);
-		if (IS_ERR(rr.arch_mon_ctx)) {
-			pr_warn_ratelimited("Failed to allocate monitor context: %ld",
-					    PTR_ERR(rr.arch_mon_ctx));
-			return;
-		}
 
-		__mon_event_count(closid, rmid, &rr);
+	__mon_event_count(closid, rmid, &rr);
 
-		/*
-		 * Call the MBA software controller only for the
-		 * control groups and when user has enabled
-		 * the software controller explicitly.
-		 */
-		if (is_mba_sc(NULL))
-			mbm_bw_count(closid, rmid, &rr);
+	/*
+	 * Call the MBA software controller only for the
+	 * control groups and when user has enabled
+	 * the software controller explicitly.
+	 */
+	if ((evtid == QOS_L3_MBM_LOCAL_EVENT_ID) && is_mba_sc(NULL))
+		mbm_bw_count(closid, rmid, &rr);
 
-		resctrl_arch_mon_ctx_free(rr.r, rr.evtid, rr.arch_mon_ctx);
-	}
-	if (resctrl_arch_is_mbm_core_enabled()) {
-		rr.evtid = QOS_L2_MBM_CORE_EVENT_ID;
-		rr.val = 0;
-		rr.arch_mon_ctx = resctrl_arch_mon_ctx_alloc(rr.r, rr.evtid);
-		if (IS_ERR(rr.arch_mon_ctx)) {
-			pr_warn_ratelimited("Failed to allocate monitor context: %ld",
-					    PTR_ERR(rr.arch_mon_ctx));
-			return;
-		}
-
-		__mon_event_count(closid, rmid, &rr);
-
-		resctrl_arch_mon_ctx_free(rr.r, rr.evtid, rr.arch_mon_ctx);
-	}
+	resctrl_arch_mon_ctx_free(rr.r, rr.evtid, rr.arch_mon_ctx);
 }
 
 /*
@@ -666,7 +672,6 @@ void mbm_handle_overflow(struct work_struct *work)
 	unsigned long delay = msecs_to_jiffies(MBM_OVERFLOW_INTERVAL);
 	struct rdtgroup *prgrp, *crgrp;
 	struct list_head *head;
-	struct rdt_resource *r;
 	struct rdt_domain *d;
 
 	cpus_read_lock();
@@ -679,15 +684,14 @@ void mbm_handle_overflow(struct work_struct *work)
 	if (!resctrl_mounted || !resctrl_arch_mon_capable())
 		goto out_unlock;
 
-	r = resctrl_arch_get_resource(RDT_RESOURCE_L3);
 	d = container_of(work, struct rdt_domain, mbm_over.work);
 
 	list_for_each_entry(prgrp, &rdt_all_groups, rdtgroup_list) {
-		mbm_update(r, d, prgrp->closid, prgrp->mon.rmid);
+		resctrl_arch_mbm_update(d, prgrp->closid, prgrp->mon.rmid);
 
 		head = &prgrp->mon.crdtgrp_list;
 		list_for_each_entry(crgrp, head, mon.crdtgrp_list)
-			mbm_update(r, d, crgrp->closid, crgrp->mon.rmid);
+			resctrl_arch_mbm_update(d, crgrp->closid, crgrp->mon.rmid);
 
 		if (is_mba_sc(NULL))
 			update_mba_bw(prgrp, d);
@@ -731,6 +735,13 @@ void mbm_setup_overflow_handler(struct rdt_domain *dom, unsigned long delay_ms,
 
 	if (cpu < nr_cpu_ids)
 		schedule_delayed_work_on(cpu, &dom->mbm_over, delay);
+}
+
+void rmid_entry_reassign_closid(u32 closid, u32 rmid)
+{
+	u32 idx = resctrl_arch_rmid_idx_encode(closid, rmid);
+
+	rmid_ptrs[idx].closid = closid;
 }
 
 static int dom_data_init(struct rdt_resource *r)
@@ -780,7 +791,7 @@ static int dom_data_init(struct rdt_resource *r)
 	idx = resctrl_arch_rmid_idx_encode(RESCTRL_RESERVED_CLOSID,
 					   RESCTRL_RESERVED_RMID);
 	entry = __rmid_entry(idx);
-	list_del(&entry->list);
+	list_del_init(&entry->list);
 
 out_unlock:
 	mutex_unlock(&rdtgroup_mutex);

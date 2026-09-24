@@ -7,6 +7,7 @@
 #include <linux/arm_mpam.h>
 #include <linux/atomic.h>
 #include <linux/cpumask.h>
+#include <linux/debugfs.h>
 #include <linux/io.h>
 #include <linux/jump_label.h>
 #include <linux/mailbox_client.h>
@@ -58,6 +59,7 @@ struct mpam_msc
 	bool			error_irq_requested;
 	bool			error_irq_hw_enabled;
 	u16			partid_max;
+	u16			intpartid_max;
 	u8			pmg_max;
 	unsigned long		ris_idxs[128 / BITS_PER_LONG];
 	u32			ris_max;
@@ -74,6 +76,8 @@ struct mpam_msc
 	spinlock_t		mon_sel_lock;
 	void __iomem *		mapped_hwpage;
 	size_t			mapped_hwpage_sz;
+
+	struct dentry		*debugfs;
 };
 
 /*
@@ -109,6 +113,7 @@ enum mpam_device_features {
 	mpam_feat_msmon_mbwu_63counter,
 	mpam_feat_msmon_mbwu_capture,
 	mpam_feat_msmon_mbwu_rwbw,
+	mpam_feat_msmon_mbwu_scale,
 	mpam_feat_msmon_capt,
 	mpam_feat_partid_nrw,
 	MPAM_FEATURE_LAST,
@@ -127,6 +132,7 @@ struct mpam_props
 	u16			dspri_wd;
 	u16			num_csu_mon;
 	u16			num_mbwu_mon;
+	u8			mbwu_scale;
 };
 
 #define mpam_has_feature(_feat, x)	((1<<_feat) & (x)->features)
@@ -155,6 +161,8 @@ struct mpam_class
 
 	struct ida		ida_csu_mon;
 	struct ida		ida_mbwu_mon;
+
+	struct dentry		*debugfs;
 };
 
 struct mpam_config {
@@ -197,6 +205,8 @@ struct mpam_component
 
 	/* parent: */
 	struct mpam_class	*class;
+
+	struct dentry		*debugfs;
 };
 
 /* The values for MSMON_CFG_MBWU_FLT.RWBW */
@@ -234,6 +244,8 @@ struct msmon_mbwu_state {
 struct mpam_msc_ris {
 	u8			ris_idx;
 	u64			idr;
+	u32			cpor_idr;
+	u32			ccap_idr;
 	struct mpam_props	props;
 	bool			in_reset_state;
 
@@ -251,6 +263,8 @@ struct mpam_msc_ris {
 
 	/* msmon mbwu configuration is preserved over reset */
 	struct msmon_mbwu_state	*mbwu_state;
+
+	struct dentry		*debugfs;
 };
 
 struct mpam_resctrl_dom {
@@ -303,6 +317,7 @@ extern struct srcu_struct mpam_srcu;
 
 /* System wide partid/pmg values */
 extern u16 mpam_partid_max;
+extern u16 mpam_intpartid_max;
 extern u8 mpam_pmg_max;
 
 /* Scheduled work callback to enable mpam once all MSC have been probed */
@@ -312,7 +327,7 @@ void mpam_disable(struct work_struct *work);
 void mpam_reset_class(struct mpam_class *class);
 
 int mpam_apply_config(struct mpam_component *comp, u16 partid,
-		      struct mpam_config *cfg);
+		      struct mpam_config *cfg, bool sync);
 
 int mpam_msmon_read(struct mpam_component *comp, struct mon_cfg *ctx,
 		    enum mpam_device_features, u64 *val);
@@ -327,6 +342,7 @@ void mpam_resctrl_exit(void);
 
 u16 mpam_cpbm_wd_hisi_workaround(u16 cpbm_wd, enum mpam_device_features feat, u8 cache_level);
 bool mpam_cpbm_hisi_check_invalid(struct rdt_resource *r, unsigned long val);
+u32 mpam_min_cbm_bits(enum resctrl_res_level rid);
 
 /*
  * MPAM MSCs have the following register layout. See:
@@ -432,6 +448,7 @@ bool mpam_cpbm_hisi_check_invalid(struct rdt_resource *r, unsigned long val);
 
 /* MPAMF_MBWUMON_IDR - MPAM memory bandwidth usage monitor ID register */
 #define MPAMF_MBWUMON_IDR_NUM_MON       GENMASK(15, 0)
+#define MPAMF_MBWUMON_IDR_SCALE         GENMASK(20, 16)
 #define MPAMF_MBWUMON_IDR_HAS_RWBW      BIT(28)
 #define MPAMF_MBWUMON_IDR_LWD           BIT(29)
 #define MPAMF_MBWUMON_IDR_HAS_LONG      BIT(30)
@@ -591,5 +608,7 @@ bool mpam_cpbm_hisi_check_invalid(struct rdt_resource *r, unsigned long val);
 #define MSMON_CAPT_EVNT_NOW    BIT(0)
 
 int mpam_resctrl_prepare_offline(void);
+
+u32 get_num_reqpartid(void);
 
 #endif /* MPAM_INTERNAL_H */

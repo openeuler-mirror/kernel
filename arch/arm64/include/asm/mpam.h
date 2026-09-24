@@ -129,18 +129,13 @@ static inline u64 mpam_get_regval(struct task_struct *tsk)
 #endif
 }
 
-static inline void resctrl_arch_set_rmid(struct task_struct *tsk, u32 rmid)
+u32 req2intpartid(u32 reqpartid);
+
+static inline u32 mpam_get_regval_partid(u64 regval)
 {
-#ifdef CONFIG_ARM64_MPAM
-	u64 regval = mpam_get_regval(tsk);
+	u32 reqpartid = (regval & MPAM_SYSREG_PARTID_D) >> 16;
 
-	regval &= ~MPAM_SYSREG_PMG_D;
-	regval &= ~MPAM_SYSREG_PMG_I;
-	regval |= FIELD_PREP(MPAM_SYSREG_PMG_D, rmid);
-	regval |= FIELD_PREP(MPAM_SYSREG_PMG_I, rmid);
-
-	WRITE_ONCE(task_thread_info(tsk)->mpam_partid_pmg, regval);
-#endif
+	return req2intpartid(reqpartid);
 }
 
 static inline void mpam_thread_switch(struct task_struct *tsk)
@@ -153,7 +148,7 @@ static inline void mpam_thread_switch(struct task_struct *tsk)
 	    !static_branch_likely(&mpam_enabled))
 		return;
 
-	if (!regval)
+	if (!regval || !mpam_get_regval_partid(regval))
 		regval = READ_ONCE(per_cpu(arm64_mpam_default, cpu));
 
 	oldregval = READ_ONCE(per_cpu(arm64_mpam_current, cpu));

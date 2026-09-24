@@ -94,6 +94,7 @@ enum resctrl_res_level {
 	RDT_RESOURCE_L2_PRI,
 	RDT_RESOURCE_MB_PRI,
 	RDT_RESOURCE_MB_HDL,
+	RDT_RESOURCE_MB_OPT,
 #endif
 
 	/* Must be the last */
@@ -120,6 +121,7 @@ enum resctrl_event_id {
 
 	QOS_L2_OCCUP_EVENT_ID,
 	QOS_L2_MBM_CORE_EVENT_ID,
+	QOS_L2_MBM_CORE_OVERFLOW_EVENT_ID,
 };
 
 #endif /* CONFIG_X86_CPU_RESCTRL */
