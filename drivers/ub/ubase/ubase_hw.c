@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -453,6 +453,19 @@ static void ubase_free_and_clear_ctx_buf(struct ubase_dev *udev,
 	ctx_buf->dma_ctx_buf_ba = 0;
 }
 
+static void ubase_free_ctx_buf_by_dtu(struct ubase_dev *udev,
+				      struct ubase_ctx_buf_cap *ctx_buf,
+				      size_t size)
+{
+	if (!ctx_buf->page || !ctx_buf->dma_ctx_buf_ba)
+		return;
+
+	ubase_dtu_free(udev, ctx_buf->page, size, ctx_buf->dma_ctx_buf_ba);
+
+	ctx_buf->page = NULL;
+	ctx_buf->dma_ctx_buf_ba = 0;
+}
+
 static int ubase_config_ctx_buf_by_dtu(struct ubase_dev *udev,
 				       struct ubase_ctx_buf_cap *ctx_buf,
 				       struct ubase_mbx_attr *attr,
@@ -475,7 +488,7 @@ static int ubase_config_ctx_buf_by_dtu(struct ubase_dev *udev,
 	if (ret) {
 		ubase_err(udev,
 			  "failed to config ctx buf, ret = %d.\n", ret);
-		ubase_dtu_free(udev, ctx_buf->page, size, ctx_buf->dma_ctx_buf_ba);
+		ubase_free_ctx_buf_by_dtu(udev, ctx_buf, size);
 	}
 
 	return ret;
@@ -500,20 +513,17 @@ static int ubase_config_jfs_ctx_buf_by_pmem(struct ubase_dev *udev,
 void __ubase_cmd_ctx_buf_free(struct ubase_dev *udev,
 			      struct ubase_ctx_buf_cap *ctx_buf)
 {
-	size_t size;
-
-	if (!ctx_buf || !ctx_buf->slot)
-		return;
-
-	size = ctx_buf->entry_cnt * ctx_buf->entry_size;
+	size_t size = ctx_buf->entry_cnt * ctx_buf->entry_size;
 	if (!size)
 		return;
 
 	if (ubase_dev_dtu_supported(udev)) {
-		ubase_dtu_free(udev, ctx_buf->page, size,
-			       ctx_buf->dma_ctx_buf_ba);
+		ubase_free_ctx_buf_by_dtu(udev, ctx_buf, size);
 		return;
 	}
+
+	if (!ctx_buf->slot)
+		return;
 
 	ubase_free_and_clear_ctx_buf(udev, ctx_buf);
 	xa_destroy(&ctx_buf->ctx_xa);
@@ -681,6 +691,24 @@ static void ubase_free_ta_buf(struct ubase_dev *udev, struct ubase_dma_buf *buf)
 	buf->addr = NULL;
 }
 
+static void ubase_free_dma_buf(struct ubase_dev *udev,
+			       struct ubase_dma_buf *buf)
+{
+	if (!buf->addr || !buf->dma_addr)
+		return;
+
+	ubase_free_ta_buf(udev, buf);
+
+	buf->dma_addr = 0;
+	buf->page = NULL;
+}
+
+static void ubase_uninit_dma_buf(struct ubase_dev *udev,
+				 struct ubase_dma_buf *buf)
+{
+	ubase_free_dma_buf(udev, buf);
+}
+
 static int ubase_init_dma_buf(struct ubase_dev *udev, struct ubase_dma_buf *buf,
 			      u16 opc)
 {
@@ -699,18 +727,9 @@ static int ubase_init_dma_buf(struct ubase_dev *udev, struct ubase_dma_buf *buf,
 
 	ret = ubase_config_dma_buf(udev, opc, buf->dma_addr);
 	if (ret)
-		ubase_free_ta_buf(udev, buf);
+		ubase_free_dma_buf(udev, buf);
 
 	return ret;
-}
-
-static void ubase_uninit_dma_buf(struct ubase_dev *udev,
-				 struct ubase_dma_buf *buf)
-{
-	if (!buf->addr)
-		return;
-
-	ubase_free_ta_buf(udev, buf);
 }
 
 static int ubase_init_ta_ext_buf(struct ubase_dev *udev)
