@@ -198,6 +198,7 @@ struct bpf_verifier_stack_elem {
 static int acquire_reference_state(struct bpf_verifier_env *env, int insn_idx);
 static int release_reference(struct bpf_verifier_env *env, int ref_obj_id);
 static void invalidate_non_owning_refs(struct bpf_verifier_env *env);
+static void invalidate_rcu_protected_refs(struct bpf_verifier_env *env);
 static bool in_rbtree_lock_required_cb(struct bpf_verifier_env *env);
 static int ref_set_non_owning(struct bpf_verifier_env *env,
 			      struct bpf_reg_state *reg);
@@ -7651,6 +7652,7 @@ static int process_spin_lock(struct bpf_verifier_env *env, int regno,
 			cur->active_lock.ptr = btf;
 		cur->active_lock.id = reg->id;
 	} else {
+		bool was_in_rcu_cs;
 		void *ptr;
 
 		if (map)
@@ -7668,10 +7670,15 @@ static int process_spin_lock(struct bpf_verifier_env *env, int regno,
 			return -EINVAL;
 		}
 
+		was_in_rcu_cs = in_rcu_cs(env);
+
 		invalidate_non_owning_refs(env);
 
 		cur->active_lock.ptr = NULL;
 		cur->active_lock.id = 0;
+
+		if (was_in_rcu_cs && !in_rcu_cs(env))
+			invalidate_rcu_protected_refs(env);
 	}
 	return 0;
 }
@@ -9386,6 +9393,20 @@ static void invalidate_non_owning_refs(struct bpf_verifier_env *env)
 	bpf_for_each_reg_in_vstate(env->cur_state, unused, reg, ({
 		if (type_is_non_owning_ref(reg->type))
 			mark_reg_invalid(env, reg);
+	}));
+}
+
+static void invalidate_rcu_protected_refs(struct bpf_verifier_env *env)
+{
+	struct bpf_func_state *state;
+	struct bpf_reg_state *reg;
+	u32 clear_mask = (1 << STACK_SPILL) | (1 << STACK_ITER);
+
+	bpf_for_each_reg_in_vstate_mask(env->cur_state, state, reg, clear_mask, ({
+		if (reg->type & MEM_RCU) {
+			reg->type &= ~(MEM_RCU | PTR_MAYBE_NULL);
+			reg->type |= PTR_UNTRUSTED;
+		}
 	}));
 }
 
@@ -12155,10 +12176,6 @@ static int check_kfunc_call(struct bpf_verifier_env *env, struct bpf_insn *insn,
 	rcu_unlock = is_kfunc_bpf_rcu_read_unlock(&meta);
 
 	if (env->cur_state->active_rcu_lock) {
-		struct bpf_func_state *state;
-		struct bpf_reg_state *reg;
-		u32 clear_mask = (1 << STACK_SPILL) | (1 << STACK_ITER);
-
 		if (in_rbtree_lock_required_cb(env) && (rcu_lock || rcu_unlock)) {
 			verbose(env, "Calling bpf_rcu_read_{lock,unlock} in unnecessary rbtree callback\n");
 			return -EACCES;
@@ -12168,12 +12185,7 @@ static int check_kfunc_call(struct bpf_verifier_env *env, struct bpf_insn *insn,
 			verbose(env, "nested rcu read lock (kernel function %s)\n", func_name);
 			return -EINVAL;
 		} else if (rcu_unlock) {
-			bpf_for_each_reg_in_vstate_mask(env->cur_state, state, reg, clear_mask, ({
-				if (reg->type & MEM_RCU) {
-					reg->type &= ~(MEM_RCU | PTR_MAYBE_NULL);
-					reg->type |= PTR_UNTRUSTED;
-				}
-			}));
+			invalidate_rcu_protected_refs(env);
 			env->cur_state->active_rcu_lock = false;
 		} else if (sleepable) {
 			verbose(env, "kernel func %s is sleepable within rcu_read_lock region\n", func_name);
