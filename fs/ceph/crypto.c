@@ -369,7 +369,7 @@ int ceph_encode_encrypted_fname(struct inode *parent, struct dentry *dentry,
  *
  * Returns 0 on success or negative error code on error.
  */
-int ceph_fname_to_usr(const struct ceph_fname *fname, struct fscrypt_str *tname,
+int ceph_fname_to_usr(const struct ceph_fname *fname, unsigned char *tname,
 		      struct fscrypt_str *oname, bool *is_nokey)
 {
 	struct inode *dir = fname->dir;
@@ -426,15 +426,15 @@ int ceph_fname_to_usr(const struct ceph_fname *fname, struct fscrypt_str *tname,
 			ret = fscrypt_fname_alloc_buffer(NAME_MAX, &_tname);
 			if (ret)
 				goto out_inode;
-			tname = &_tname;
+			tname = _tname.name;
 		}
 
-		declen = ceph_base64_decode(name, name_len, tname->name);
+		declen = ceph_base64_decode(name, name_len, tname);
 		if (declen <= 0) {
 			ret = -EIO;
 			goto out;
 		}
-		iname.name = tname->name;
+		iname.name = tname;
 		iname.len = declen;
 	} else {
 		iname.name = fname->ctext;
