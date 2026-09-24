@@ -395,7 +395,6 @@ static void handle_seg_req(struct ubcore_device *dev,
 	tmp_seg = ubagg_hash_table_lookup_nolock(ubagg_seg_ht, req->token_id,
 						 &req->token_id);
 	if (tmp_seg == NULL ||
-	    tmp_seg->va != req->ubva.va || tmp_seg->len != req->len ||
 	    (tmp_seg->token_value_valid &&
 	     tmp_seg->token_value.token != req->token_value.token)) {
 		spin_unlock(&ubagg_seg_ht->lock);
