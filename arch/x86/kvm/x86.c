@@ -4815,6 +4815,12 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 	case KVM_CAP_READONLY_MEM:
 		r = kvm ? kvm_arch_has_readonly_mem(kvm) : 1;
 		break;
+	case KVM_CAP_EXIT_CSV3_SECURE_CALL:
+		r = 0;
+
+		if (is_x86_vendor_hygon())
+			r = KVM_EXIT_CSV3_SECURE_CALL_VALID_MASK;
+		break;
 	default:
 		break;
 	}
@@ -6764,6 +6770,12 @@ split_irqchip_unlock:
 		if (is_x86_vendor_hygon() && kvm_x86_ops.enable_hygon_coco_extension)
 			r = static_call(kvm_x86_enable_hygon_coco_extension)(kvm,
 								(u32)cap->args[0]);
+		break;
+	case KVM_CAP_EXIT_CSV3_SECURE_CALL:
+		r = -EINVAL;
+
+		if (is_x86_vendor_hygon() && kvm_x86_ops.enable_exit_csv3_secure_call)
+			r = static_call(kvm_x86_enable_exit_csv3_secure_call)(kvm, cap->args[0]);
 		break;
 	default:
 		r = -EINVAL;

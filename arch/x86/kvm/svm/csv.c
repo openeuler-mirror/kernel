@@ -906,12 +906,17 @@ struct kvm_csv_info {
 	struct list_head hugetlb_list; /* List of 1G hugetlb (if used) */
 	unsigned long nodemask; /* Nodemask where CSV3 guest's memory resides */
 
-	/* The following 5 fields record the extension status for current VM */
+	/* The following 6 fields record the extension status for current VM */
 	bool fw_ext_valid;	/* if @fw_ext field is valid */
 	u32 fw_ext;		/* extensions supported by current platform */
 	bool kvm_ext_valid;	/* if @kvm_ext field is valid */
 	u32 kvm_ext;		/* extensions supported by KVM */
 	u32 inuse_ext;		/* extensions inused by current VM */
+	u64 secure_call_exit_enabled;	/* valid secure call exit mask */
+
+	/* The following 2 fields are used when CSV3_NPT_EX cap is in use. */
+	u64 tom;
+	u64 tom2;
 
 #ifdef CONFIG_SYSFS
 	unsigned long npt_size;
@@ -1301,6 +1306,17 @@ static bool csv3_guest(struct kvm *kvm)
 
 static inline void csv3_init_update_npt(struct csv3_data_update_npt *update_npt,
 					gpa_t gpa, u32 error, u32 handle)
+{
+	memset(update_npt, 0x00, sizeof(*update_npt));
+
+	update_npt->gpa = gpa & PAGE_MASK;
+	update_npt->error_code = error;
+	update_npt->handle = handle;
+}
+
+static inline
+void csv3_init_update_npt_ex(struct csv3_data_update_npt_ex *update_npt,
+			     gpa_t gpa, u32 error, u32 handle)
 {
 	memset(update_npt, 0x00, sizeof(*update_npt));
 
@@ -1820,7 +1836,8 @@ done:
 	return ret;
 }
 
-static int csv3_set_guest_private_memory(struct kvm *kvm, struct kvm_sev_cmd *argp)
+static int __csv3_set_guest_private_memory(struct kvm *kvm,
+					   struct kvm_sev_cmd *argp)
 {
 	struct kvm_csv_info *csv = &to_kvm_svm_csv(kvm)->csv_info;
 	struct kvm_memslots *slots = kvm_memslots(kvm);
@@ -1840,8 +1857,6 @@ static int csv3_set_guest_private_memory(struct kvm *kvm, struct kvm_sev_cmd *ar
 	unsigned long vm_size;
 	enum csv_smr_source source;
 
-	if (!csv3_guest(kvm))
-		return -ENOTTY;
 
 	/* The smr_list should be initialized only once */
 	if (!list_empty(&csv->smr_list))
@@ -1896,6 +1911,327 @@ static int csv3_set_guest_private_memory(struct kvm *kvm, struct kvm_sev_cmd *ar
 	}
 
 	return ret;
+}
+
+/**
+ * This helper function is used when userspace membackend of CSV3 VM is
+ * allocated from 1G hugetlb.
+ */
+static void csv3_clean_1G_hugetlb_list(struct kvm *kvm)
+{
+	struct kvm_csv_info *csv = &to_kvm_svm_csv(kvm)->csv_info;
+	struct csv3_hugetlb *hugetlb;
+	struct list_head *pos, *q;
+
+	list_for_each_safe(pos, q, &csv->hugetlb_list) {
+		hugetlb = list_entry(pos, struct csv3_hugetlb, list);
+		if (hugetlb) {
+			list_del(&hugetlb->list);
+			kfree(hugetlb);
+		}
+	}
+}
+
+/**
+ * This helper function is used when userspace membackend of CSV3 VM is
+ * allocated from 1G hugetlb.
+ */
+static int csv3_setup_1G_hugetlb_list(struct kvm *kvm,
+				      unsigned long size,
+				      nodemask_t *nodemask)
+{
+	struct kvm_csv_info *csv = &to_kvm_svm_csv(kvm)->csv_info;
+	struct page *page;
+	struct csv3_hugetlb *hugetlb;
+	gpa_t gpa = 0;
+	u64 hva;
+	u64 npages;
+	int huge_count;
+	int i;
+
+	huge_count = ALIGN(size, PUD_SIZE) / PUD_SIZE;
+
+	for (i = 0; i < huge_count; i++) {
+		hugetlb = kzalloc(sizeof(*hugetlb), GFP_KERNEL_ACCOUNT);
+		if (!hugetlb)
+			goto err;
+
+retry:
+		hva = gfn_to_hva(kvm, gpa >> PAGE_SHIFT);
+		/* Increment gpa so that we can skip memory holes. */
+		gpa += 1 << PUD_SHIFT;
+		if (kvm_is_error_hva(hva))
+			goto retry;
+
+		npages = get_user_pages_unlocked(hva, 1, &page, FOLL_HWPOISON);
+		if (npages != 1) {
+			kfree(hugetlb);
+			goto err;
+		}
+
+		/* The userspace membackend must be 1G hugetlb. */
+		if (compound_order(compound_head(page)) != (PUD_SHIFT - PAGE_SHIFT)) {
+			kfree(hugetlb);
+			put_page(page);
+			goto err;
+		}
+		put_page(page);
+		hugetlb->folio = page_folio(page);
+		list_add_tail(&hugetlb->list, &csv->hugetlb_list);
+	}
+
+	return 0;
+
+err:
+	csv3_clean_1G_hugetlb_list(kvm);
+
+	return -ENOMEM;
+}
+
+/**
+ * This helper function is used when userspace membackend of CSV3 VM is
+ * allocated from 1G hugetlb.
+ */
+static int csv3_init_1G_hugetlb_smrs_ex(struct kvm *kvm, u64 *nr_smr)
+{
+	struct kvm_csv_info *csv = &to_kvm_svm_csv(kvm)->csv_info;
+	struct csv3_hugetlb *hugetlb;
+	struct secure_memory_region *smr;
+	struct list_head *pos, *q;
+	u64 hpa;
+	int ret = 0;
+
+	if (!nr_smr)
+		return -EINVAL;
+
+	*nr_smr = 0;
+
+	list_for_each_safe(pos, q, &csv->hugetlb_list) {
+		hugetlb = list_entry(pos, struct csv3_hugetlb, list);
+		if (!hugetlb) {
+			WARN_ON(1);
+			ret = -ENOMEM;
+			goto err;
+		}
+
+		hpa = folio_pfn(hugetlb->folio) << PAGE_SHIFT;
+		smr = kzalloc(sizeof(*smr), GFP_KERNEL_ACCOUNT);
+		if (!smr) {
+			ret = -ENOMEM;
+			goto err;
+		}
+
+		smr->hpa = hpa;
+		smr->npages = PUD_SIZE >> PAGE_SHIFT;
+		list_add_tail(&smr->list, &csv->smr_list);
+		(*nr_smr)++;
+	}
+
+	return 0;
+
+err:
+	csv3_free_smr_list(kvm);
+
+	return ret;
+}
+
+/**
+ * This helper function is used when userspace membackend of CSV3 VM is
+ * allocated from 1G hugetlb.
+ */
+static int csv3_set_hugetlb_smr_ex(struct kvm *kvm, unsigned long vm_size,
+				   nodemask_t *nodemask, struct kvm_sev_cmd *argp)
+{
+	struct kvm_sev_info *sev = &to_kvm_svm(kvm)->sev_info;
+	struct kvm_csv_info *csv = &to_kvm_svm_csv(kvm)->csv_info;
+	struct csv3_data_set_guest_private_memory *set_guest_private_memory;
+	struct secure_memory_region *smr;
+	struct csv3_data_memory_region_ex *regions;
+
+	LIST_HEAD(tmp_list);
+	struct list_head *pos, *q;
+	u32 i = 0, count = 0, remainder;
+	int ret = 0;
+	u64 nr_smr = 0;
+	u64 gpa = 0;
+	u64 tom;
+	bool metadata_allocated = false;
+
+	set_guest_private_memory = kzalloc(sizeof(*set_guest_private_memory),
+					GFP_KERNEL_ACCOUNT);
+	if (!set_guest_private_memory)
+		return -ENOMEM;
+
+	regions = kzalloc(PAGE_SIZE, GFP_KERNEL_ACCOUNT);
+	if (!regions) {
+		kfree(set_guest_private_memory);
+		return -ENOMEM;
+	}
+
+	ret = csv3_setup_1G_hugetlb_list(kvm, vm_size, nodemask);
+	if (ret)
+		goto done;
+
+	ret = csv3_init_1G_hugetlb_smrs_ex(kvm, &nr_smr);
+	if (ret)
+		goto e_clean_hugetlb_list;
+
+	nr_smr += 1;
+
+	tom = csv->tom;
+	remainder = nr_smr;
+	for (i = 0; i < nr_smr; i++) {
+		smr = kzalloc(sizeof(*smr), GFP_KERNEL_ACCOUNT);
+		if (!smr) {
+			ret = -ENOMEM;
+			goto e_free_smr;
+		}
+
+		if (metadata_allocated == false) {
+			smr->hpa = csv_alloc_metadata();
+			smr->type = CSV_METADATA;
+			smr->npages = (1UL << csv_get_smr_entry_shift()) >> PAGE_SHIFT;
+			regions[count].guest_address = -1UL;
+			metadata_allocated = true;
+		} else {
+			smr->hpa = csv3_get_1G_hugetlb_smr(kvm);
+			smr->type = CSV_SEC_MEM;
+			smr->npages = PUD_SIZE >> PAGE_SHIFT;
+			regions[count].guest_address = gpa;
+		}
+		if (!smr->hpa) {
+			kfree(smr);
+			ret = -ENOMEM;
+			goto e_free_smr;
+		}
+
+		list_add_tail(&smr->list, &tmp_list);
+
+		regions[count].size = smr->npages << PAGE_SHIFT;
+		regions[count].base_address = smr->hpa;
+		if (smr->type == CSV_SEC_MEM) {
+			gpa += regions[count].size;
+			/* The range between @tom and 4G is memory hole. */
+			if (gpa >= tom) {
+				gpa = 4UL << PUD_SHIFT;
+				tom = -1UL;
+			}
+		}
+		count++;
+
+		if (count >= (PAGE_SIZE / sizeof(regions[0])) || (remainder == count)) {
+			set_guest_private_memory->nregions = count;
+			set_guest_private_memory->handle = sev->handle;
+			set_guest_private_memory->regions_paddr = __sme_pa(regions);
+
+			/* set secury memory region for launch enrypt data */
+			ret = hygon_kvm_hooks.sev_issue_cmd(kvm,
+						CSV3_CMD_SET_GUEST_PRIVATE_MEMORY_EX,
+						set_guest_private_memory, &argp->error);
+			if (ret)
+				goto e_free_smr;
+
+			memset(regions, 0, PAGE_SIZE);
+			remainder -= count;
+			count = 0;
+		}
+	}
+
+	list_splice(&tmp_list, &csv->smr_list);
+
+	goto done;
+
+e_free_smr:
+	/* Remove temporary smr_list */
+	if (!list_empty(&tmp_list)) {
+		list_for_each_safe(pos, q, &tmp_list) {
+			smr = list_entry(pos, struct secure_memory_region, list);
+			if (smr) {
+				if (smr->type == CSV_METADATA)
+					csv_free_metadata(smr->hpa);
+
+				list_del(&smr->list);
+				kfree(smr);
+			}
+		}
+	}
+	/* Remove smr_list created by csv3_init_1G_hugetlb_smrs() */
+	csv3_free_smr_list(kvm);
+
+e_clean_hugetlb_list:
+	csv3_clean_1G_hugetlb_list(kvm);
+
+done:
+	kfree(set_guest_private_memory);
+	kfree(regions);
+
+	return ret;
+}
+
+static int __csv3_set_guest_private_memory_ex(struct kvm *kvm,
+					      struct kvm_sev_cmd *argp)
+{
+	struct kvm_csv_info *csv = &to_kvm_svm_csv(kvm)->csv_info;
+	struct kvm_memslots *slots = kvm_memslots(kvm);
+	struct kvm_memory_slot *memslot;
+	nodemask_t nodemask;
+	nodemask_t *nodemask_ptr;
+	u64 tom = 0;
+	u64 tom2 = 0;
+	u64 t;
+	u32 i = 0;
+	u32 smr_entry_shift;
+	int bkt;
+	u64 nr_pages = 0;
+	unsigned long vm_size;
+
+	nodes_clear(nodemask);
+	for_each_set_bit(i, &csv->nodemask, BITS_PER_LONG)
+		if (i < MAX_NUMNODES)
+			node_set(i, nodemask);
+
+	nodemask_ptr = csv->nodemask ? &nodemask : &node_online_map;
+
+	/* Get guest secure memory size */
+	kvm_for_each_memslot(memslot, bkt, slots) {
+		if (memslot->flags & KVM_MEM_READONLY)
+			continue;
+
+		t = memslot->base_gfn + memslot->npages;
+		t = t << PAGE_SHIFT;
+		if (t < (4UL << PUD_SHIFT) && t > tom)
+			tom = t;
+
+		if (t > (4UL << PUD_SHIFT) && t > tom2)
+			tom2 = t;
+
+		nr_pages += memslot->npages;
+	}
+
+	csv->tom = tom;
+	csv->tom2 = tom2;
+
+	smr_entry_shift = csv_get_smr_entry_shift();
+	vm_size = ALIGN((nr_pages << PAGE_SHIFT), 1UL << smr_entry_shift);
+
+	return csv3_set_hugetlb_smr_ex(kvm, vm_size, nodemask_ptr, argp);
+}
+
+static int csv3_set_guest_private_memory(struct kvm *kvm, struct kvm_sev_cmd *argp)
+{
+	struct kvm_csv_info *csv = &to_kvm_svm_csv(kvm)->csv_info;
+
+	if (!csv3_guest(kvm))
+		return -ENOTTY;
+
+	/* The smr_list should be initialized only once */
+	if (!list_empty(&csv->smr_list))
+		return -EFAULT;
+
+	if (csv->inuse_ext & KVM_CAP_HYGON_COCO_EXT_CSV3_NPT_EX)
+		return __csv3_set_guest_private_memory_ex(kvm, argp);
+	else
+		return __csv3_set_guest_private_memory(kvm, argp);
 }
 
 /**
@@ -2948,7 +3284,8 @@ static void csv3_mark_page_dirty(struct kvm_vcpu *vcpu, gva_t gpa,
 #endif
 }
 
-static int csv3_mmio_page_fault(struct kvm_vcpu *vcpu, gva_t gpa, u32 error_code)
+static int __csv3_mmio_page_fault(struct kvm_vcpu *vcpu,
+				  gva_t gpa, u32 error_code)
 {
 	int r = 0;
 	struct kvm_svm *kvm_svm = to_kvm_svm(vcpu->kvm);
@@ -2983,7 +3320,58 @@ static int csv3_mmio_page_fault(struct kvm_vcpu *vcpu, gva_t gpa, u32 error_code
 
 	kfree(update_npt);
 exit:
-	return r;
+	/* If CSV_CMD_UPDATE_NPT command is success, then return 1 and resume
+	 * the guest.
+	 */
+	return r == 0 ? 1 : r;
+}
+
+static int __csv3_mmio_page_fault_ex(struct kvm_vcpu *vcpu,
+				     gva_t gpa, u32 error_code)
+{
+	int r = 0;
+	struct kvm_svm *kvm_svm = to_kvm_svm(vcpu->kvm);
+	union csv3_page_attr page_attr = {.mmio = 1};
+	union csv3_page_attr page_attr_mask = {.mmio = 1};
+	struct csv3_data_update_npt_ex *update_npt;
+	int psp_ret;
+
+	update_npt = kzalloc(sizeof(*update_npt), GFP_KERNEL);
+	if (!update_npt) {
+		WARN_ONCE(1, "Failure create npt command\n");
+		r = -ENOMEM;
+		goto exit;
+	}
+
+	csv3_init_update_npt_ex(update_npt, gpa, error_code,
+				kvm_svm->sev_info.handle);
+	update_npt->page_attr = page_attr.val;
+	update_npt->page_attr_mask = page_attr_mask.val;
+	update_npt->level = CSV3_PG_LEVEL_4K;
+
+	r = hygon_kvm_hooks.sev_issue_cmd(vcpu->kvm, CSV3_CMD_UPDATE_NPT_EX, update_npt, &psp_ret);
+
+	if (psp_ret != SEV_RET_SUCCESS) {
+		WARN_ONCE(1, "Failure update NPT\n");
+		r = -EFAULT;
+	}
+
+	kfree(update_npt);
+exit:
+	/* If CSV3_CMD_UPDATE_NPT_EX command is success, then return 1 and
+	 * resume the guest.
+	 */
+	return r == 0 ? 1 : r;
+}
+
+static int csv3_mmio_page_fault(struct kvm_vcpu *vcpu, gva_t gpa, u32 error_code)
+{
+	struct kvm_csv_info *csv = &to_kvm_svm_csv(vcpu->kvm)->csv_info;
+
+	if (csv->inuse_ext & KVM_CAP_HYGON_COCO_EXT_CSV3_NPT_EX)
+		return __csv3_mmio_page_fault_ex(vcpu, gpa, error_code);
+	else
+		return __csv3_mmio_page_fault(vcpu, gpa, error_code);
 }
 
 static int __csv3_page_fault(struct kvm_vcpu *vcpu, gva_t gpa,
@@ -3026,6 +3414,82 @@ static int __csv3_page_fault(struct kvm_vcpu *vcpu, gva_t gpa,
 
 	kfree(update_npt);
 exit:
+	/* If CSV_CMD_UPDATE_NPT command is success, then return 1 and resume
+	 * the guest.
+	 */
+	return r == 0 ? 1 : r;
+}
+
+static int __csv3_page_fault_ex(struct kvm_vcpu *vcpu, gva_t gpa,
+				u32 error_code, struct kvm_memory_slot *slot,
+				int *psp_ret_ptr, kvm_pfn_t pfn, u32 level)
+{
+	int r = 0;
+	struct csv3_data_update_npt_ex *update_npt;
+	struct kvm_svm *kvm_svm = to_kvm_svm(vcpu->kvm);
+	struct kvm_csv_info *csv = &to_kvm_svm_csv(vcpu->kvm)->csv_info;
+	int psp_ret = 0;
+
+	update_npt = kzalloc(sizeof(*update_npt), GFP_KERNEL);
+	if (!update_npt) {
+		r = -ENOMEM;
+		goto exit;
+	}
+
+	csv3_init_update_npt_ex(update_npt, gpa, error_code,
+				kvm_svm->sev_info.handle);
+
+	update_npt->spa = pfn << PAGE_SHIFT;
+	update_npt->level = level;
+
+	if (!csv3_is_mmio_pfn(pfn))
+		update_npt->spa |= sme_me_mask;
+
+	r = hygon_kvm_hooks.sev_issue_cmd(vcpu->kvm, CSV3_CMD_UPDATE_NPT_EX, update_npt, &psp_ret);
+
+	kvm_make_request(KVM_REQ_TLB_FLUSH, vcpu);
+	kvm_flush_remote_tlbs(vcpu->kvm);
+
+	csv3_mark_page_dirty(vcpu, update_npt->gpa, update_npt->npages);
+
+	if (psp_ret_ptr)
+		*psp_ret_ptr = psp_ret;
+
+	/* If CSV3_CMD_UPDATE_NPT_EX command is fail, then return error to the
+	 * caller.
+	 */
+	if (r)
+		goto exit;
+
+	if (update_npt->type == CSV3_UPDATE_NPT_TYPE_SECURE_CALL &&
+	    (csv->secure_call_exit_enabled & KVM_CSV3_SECURE_CALL_PG_ENC_DEC_MASK) &&
+	    (update_npt->sc_type == CSV3_SECURE_CMD_ENC ||
+	     update_npt->sc_type == CSV3_SECURE_CMD_DEC)) {
+		bool enc = update_npt->sc_type == CSV3_SECURE_CMD_ENC ? true : false;
+		struct kvm_csv3_secure_call *sc;
+		/* The payload must fit into the reserved padding of kvm_run. */
+		BUILD_BUG_ON(sizeof(*sc) > sizeof(vcpu->run->padding));
+		BUILD_BUG_ON(offsetof(struct kvm_run, padding) %
+				__alignof__(struct kvm_csv3_secure_call));
+
+		vcpu->run->exit_reason = KVM_EXIT_CSV3_SECURE_CALL;
+		sc = KVM_CSV3_SECURE_CALL_INFO(vcpu->run);
+		sc->type = enc ? KVM_CSV3_SECURE_CALL_PG_ENC :
+				KVM_CSV3_SECURE_CALL_PG_DEC;
+		sc->enc_dec_info.gpa = update_npt->sc_gpa;
+		sc->enc_dec_info.size = update_npt->sc_size;
+		sc->enc_dec_info.smr_size = 1 << csv_get_smr_entry_shift();
+		sc->enc_dec_info.enc = enc ? 1 : 0;
+
+		/* Indicate exit to userspace. */
+		r = 0;
+	} else {
+		/* Indicate resume the guest. */
+		r = 1;
+	}
+exit:
+	kfree(update_npt);
+
 	return r;
 }
 
@@ -3266,8 +3730,12 @@ static int csv3_page_fault(struct kvm_vcpu *vcpu, struct kvm_memory_slot *slot,
 		level = csv3_mapping_level(vcpu, gfn, pfn, slot);
 	}
 
-	ret = __csv3_page_fault(vcpu, gfn << PAGE_SHIFT, error_code, slot,
-				&psp_ret, pfn, level);
+	if (csv->inuse_ext & KVM_CAP_HYGON_COCO_EXT_CSV3_NPT_EX)
+		ret = __csv3_page_fault_ex(vcpu, gfn << PAGE_SHIFT, error_code, slot,
+					   &psp_ret, pfn, level);
+	else
+		ret = __csv3_page_fault(vcpu, gfn << PAGE_SHIFT, error_code, slot,
+					&psp_ret, pfn, level);
 
 	if (psp_ret != SEV_RET_SUCCESS) {
 		WARN_ONCE(1, "Failure update NPT\n");
@@ -3563,8 +4031,9 @@ static void csv_vm_destroy(struct kvm *kvm)
 	if (!list_empty(smr_head))
 		csv3_free_smr_list(kvm);
 
-	/* Free hugetlb if CSV3 private memory is allocated from 1G hugetlb */
-	if (source == USE_HUGETLB)
+	if (csv->inuse_ext & KVM_CAP_HYGON_COCO_EXT_CSV3_NPT_EX)
+		csv3_clean_1G_hugetlb_list(kvm);
+	else if (source == USE_HUGETLB)
 		csv3_free_1G_hugetlb_folios(kvm);
 
 #ifdef CONFIG_SYSFS
@@ -3579,17 +4048,13 @@ static int csv3_handle_page_fault(struct kvm_vcpu *vcpu, gpa_t gpa,
 	gfn_t gfn = gpa_to_gfn(gpa);
 	struct kvm_memory_slot *slot = gfn_to_memslot(vcpu->kvm, gfn);
 	int ret;
-	int r = -EIO;
 
 	if (kvm_is_visible_memslot(slot))
 		ret = csv3_page_fault(vcpu, slot, gfn, error_code);
 	else
 		ret = csv3_mmio_page_fault(vcpu, gpa, error_code);
 
-	if (!ret)
-		r = 1;
-
-	return r;
+	return ret;
 }
 
 static int csv_handle_exit(struct kvm_vcpu *vcpu, fastpath_t exit_fastpath)
@@ -4127,6 +4592,13 @@ static int csv_get_hygon_coco_extension(struct kvm *kvm)
 			if (csv->fw_ext & CSV_EXT_CSV3_LFINISH_EX)
 				csv->kvm_ext |= KVM_CAP_HYGON_COCO_EXT_CSV3_LFINISH_EX;
 			csv->kvm_ext |= KVM_CAP_HYGON_COCO_EXT_CSV3_SP_MGR;
+
+			/* Expose CSV3_NPT_EX cap only when the private memory
+			 * of CSV3 VM is from 1G hugetlb.
+			 */
+			if ((csv->fw_ext & CSV_EXT_CSV3_NPT_EX) &&
+			    get_csv_smr_source() == USE_HUGETLB)
+				csv->kvm_ext |= KVM_CAP_HYGON_COCO_EXT_CSV3_NPT_EX;
 		}
 		csv->kvm_ext_valid = true;
 	}
@@ -4157,12 +4629,48 @@ static int csv_enable_hygon_coco_extension(struct kvm *kvm, u32 arg)
 	 */
 	if (csv->fw_ext_valid && csv->kvm_ext_valid && csv3_guest(kvm)) {
 		csv->inuse_ext = csv->kvm_ext & arg;
+
+		/* Use CSV3_NPT_EX cap only if the secure_call_exit is enabled
+		 * by userspace.
+		 */
+		if (csv->secure_call_exit_enabled == 0)
+			csv->inuse_ext &= ~KVM_CAP_HYGON_COCO_EXT_CSV3_NPT_EX;
+
 		pr_debug("%s: inuse_ext=%#x\n", __func__, csv->inuse_ext);
 		return csv->inuse_ext;
 	}
 
 	/* Userspace should not utilise the extensions */
 	return -EINVAL;
+}
+
+/**
+ * Enable CSV3 secure call exit to userspace.
+ * This func should be called between csv_get_hygon_coco_extension() and
+ * csv_enable_hygon_coco_extension().
+ */
+static int csv_enable_exit_csv3_secure_call(struct kvm *kvm, u64 arg)
+{
+	struct kvm_csv_info *csv;
+
+	if (!kvm)
+		return -EINVAL;
+
+	csv = &to_kvm_svm_csv(kvm)->csv_info;
+
+	/* Enabling secure_call_exit only when:
+	 *   - this is a CSV3 VM, and
+	 *   - firmware and kvm support CSV3 NPT_EX, and
+	 *   - the secure call mask is valid
+	 */
+	if (!csv3_guest(kvm) ||
+	    !csv->kvm_ext_valid ||
+	    !(csv->kvm_ext & KVM_CAP_HYGON_COCO_EXT_CSV3_NPT_EX) ||
+	    (arg & ~KVM_EXIT_CSV3_SECURE_CALL_VALID_MASK))
+		return -EINVAL;
+
+	csv->secure_call_exit_enabled = arg;
+	return 0;
 }
 
 void __init csv_hardware_setup(unsigned int max_csv_asid)
@@ -4220,6 +4728,7 @@ void __init csv_init(struct kvm_x86_ops *ops)
 	ops->control_post_system_reset = csv_control_post_system_reset;
 	ops->get_hygon_coco_extension = csv_get_hygon_coco_extension;
 	ops->enable_hygon_coco_extension = csv_enable_hygon_coco_extension;
+	ops->enable_exit_csv3_secure_call = csv_enable_exit_csv3_secure_call;
 
 	if (boot_cpu_has(X86_FEATURE_SEV_ES) && boot_cpu_has(X86_FEATURE_CSV3)) {
 		ops->vm_destroy = csv_vm_destroy;

@@ -53,9 +53,11 @@ int csv_cmd_buffer_len(int cmd)
 	case CSV3_CMD_LAUNCH_ENCRYPT_DATA:	return sizeof(struct csv3_data_launch_encrypt_data);
 	case CSV3_CMD_LAUNCH_ENCRYPT_VMCB:	return sizeof(struct csv3_data_launch_encrypt_vmcb);
 	case CSV3_CMD_UPDATE_NPT:		return sizeof(struct csv3_data_update_npt);
+	case CSV3_CMD_UPDATE_NPT_EX:		return sizeof(struct csv3_data_update_npt_ex);
 	case CSV3_CMD_SET_SMR:			return sizeof(struct csv3_data_set_smr);
 	case CSV3_CMD_SET_SMCR:			return sizeof(struct csv3_data_set_smcr);
 	case CSV3_CMD_SET_GUEST_PRIVATE_MEMORY:
+	case CSV3_CMD_SET_GUEST_PRIVATE_MEMORY_EX:
 					return sizeof(struct csv3_data_set_guest_private_memory);
 	case CSV3_CMD_DBG_READ_VMSA:		return sizeof(struct csv3_data_dbg_read_vmsa);
 	case CSV3_CMD_DBG_READ_MEM:		return sizeof(struct csv3_data_dbg_read_mem);
@@ -685,6 +687,15 @@ int csv_get_extension_info(void *buf, size_t *size)
 	 */
 	if (csv_version_greater_or_equal(2393))
 		*(uint32_t *)buf |= CSV_EXT_CSV3_LFINISH_EX;
+
+	/* Since firmware with build id 2600, support:
+	 *   d. issue CSV3_SET_GUEST_PRIVATE_MEMORY_EX and
+	 *      CSV3_CMD_UPDATE_NPT_EX commands
+	 * These commands enable extended NPT functionality and we refer to as
+	 * CSV_EXT_CSV3_NPT_EX.
+	 */
+	if (csv_version_greater_or_equal(2600))
+		*(uint32_t *)buf |= CSV_EXT_CSV3_NPT_EX;
 
 	return 0;
 }

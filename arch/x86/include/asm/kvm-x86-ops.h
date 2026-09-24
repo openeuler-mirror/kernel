@@ -146,6 +146,7 @@ KVM_X86_OP_OPTIONAL(alloc_apic_backing_page)
 KVM_X86_OP_OPTIONAL_RET0(gmem_prepare)
 KVM_X86_OP_OPTIONAL_RET0(private_max_mapping_level)
 KVM_X86_OP_OPTIONAL(gmem_invalidate)
+KVM_X86_OP_OPTIONAL(enable_exit_csv3_secure_call)
 
 #undef KVM_X86_OP
 #undef KVM_X86_OP_OPTIONAL
