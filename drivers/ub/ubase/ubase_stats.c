@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -370,7 +370,8 @@ static int ubase_query_batch_dl_pkt_stats(struct ubase_dev *udev, u64 port_bitma
 
 	for (loop = 0; loop < max_loop; loop++) {
 		query_bitmap = 0;
-		for (cnt = 0; cnt < UBASE_MAX_BATCH_QUERY_PORTS; bit_idx++) {
+		for (cnt = 0; cnt < UBASE_MAX_BATCH_QUERY_PORTS && bit_idx < UBASE_MAX_PORT_NUM;
+		     bit_idx++) {
 			if (test_bit(bit_idx, (unsigned long *)&port_bitmap)) {
 				set_bit(bit_idx, (unsigned long *)&query_bitmap);
 				cnt++;

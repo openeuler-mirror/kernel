@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -70,7 +70,7 @@ static int unic_dbg_query_vport_ctx(struct seq_file *s)
 {
 	struct unic_dev *unic_dev = dev_get_drvdata(s->private);
 	struct unic_vport_ctx_cmd resp;
-	u16 offset = 0;
+	u16 offset = 0, next;
 	int ret;
 
 	do {
@@ -78,10 +78,13 @@ static int unic_dbg_query_vport_ctx(struct seq_file *s)
 		ret = unic_query_vport_ctx(unic_dev, offset, &resp);
 		if (ret)
 			return ret;
-		offset = resp.offset;
+		next = le16_to_cpu(resp.offset);
+		if (next && next <= offset)
+			return -EINVAL;
+		offset = next;
 
 		unic_dbg_fill_vport_ctx_content(&resp, s);
-	} while (resp.offset);
+	} while (next);
 
 	return 0;
 }

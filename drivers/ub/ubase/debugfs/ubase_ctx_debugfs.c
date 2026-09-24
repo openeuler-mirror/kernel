@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -256,8 +256,8 @@ static int ubase_dbg_query_eq_ctx(struct ubase_dev *udev, void *buf,
 				  ctx_info->ctx_name, ret);
 			goto out;
 		}
-		ubase_mask_ctx_key_words(buf + offset, ctx_type);
 		memcpy(buf + offset, mailbox->buf, ctx_info->ctx_size);
+		ubase_mask_ctx_key_words(buf + offset, ctx_type);
 		offset += ctx_info->ctx_size;
 	}
 
@@ -277,7 +277,7 @@ static int ubase_dbg_dump_ctx_hw(struct seq_file *s, void *data,
 
 	ctx_num = ubase_get_ctx_num(udev, ctx_type);
 	ubase_get_ctx_info(udev, ctx_type, &ctx_info);
-	ctx_arr = kzalloc(ctx_num * ctx_info.ctx_size, GFP_KERNEL);
+	ctx_arr = kcalloc(ctx_num, ctx_info.ctx_size, GFP_KERNEL);
 	if (!ctx_arr)
 		return -ENOMEM;
 
