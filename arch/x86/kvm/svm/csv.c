@@ -1871,25 +1871,6 @@ static int __csv3_set_guest_private_memory(struct kvm *kvm,
  * This helper function is used when userspace membackend of CSV3 VM is
  * allocated from 1G hugetlb.
  */
-static void csv3_clean_1G_hugetlb_list(struct kvm *kvm)
-{
-	struct kvm_csv_info *csv = &to_kvm_svm_csv(kvm)->csv_info;
-	struct csv3_hugetlb *hugetlb;
-	struct list_head *pos, *q;
-
-	list_for_each_safe(pos, q, &csv->hugetlb_list) {
-		hugetlb = list_entry(pos, struct csv3_hugetlb, list);
-		if (hugetlb) {
-			list_del(&hugetlb->list);
-			kfree(hugetlb);
-		}
-	}
-}
-
-/**
- * This helper function is used when userspace membackend of CSV3 VM is
- * allocated from 1G hugetlb.
- */
 static int csv3_setup_1G_hugetlb_list(struct kvm *kvm,
 				      unsigned long size,
 				      nodemask_t *nodemask)
@@ -1929,7 +1910,6 @@ retry:
 			put_page(page);
 			goto err;
 		}
-		put_page(page);
 		hugetlb->folio = page_folio(page);
 		list_add_tail(&hugetlb->list, &csv->hugetlb_list);
 	}
@@ -1937,7 +1917,7 @@ retry:
 	return 0;
 
 err:
-	csv3_clean_1G_hugetlb_list(kvm);
+	csv3_free_1G_hugetlb_folios(kvm);
 
 	return -ENOMEM;
 }
@@ -3422,6 +3402,7 @@ static int __csv3_page_fault_ex(struct kvm_vcpu *vcpu, gva_t gpa,
 		/* Indicate resume the guest. */
 		r = 1;
 	}
+
 exit:
 	kfree(update_npt);
 
@@ -3966,9 +3947,7 @@ static void csv_vm_destroy(struct kvm *kvm)
 	if (!list_empty(smr_head))
 		csv3_free_smr_list(kvm);
 
-	if (csv->inuse_ext & KVM_CAP_HYGON_COCO_EXT_CSV3_NPT_EX)
-		csv3_clean_1G_hugetlb_list(kvm);
-	else if (source == USE_HUGETLB)
+	if (source == USE_HUGETLB)
 		csv3_free_1G_hugetlb_folios(kvm);
 
 #ifdef CONFIG_SYSFS
