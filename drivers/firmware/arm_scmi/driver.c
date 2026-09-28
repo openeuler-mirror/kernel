@@ -2938,6 +2938,9 @@ static int scmi_remove(struct platform_device *pdev)
 	list_del(&info->node);
 	mutex_unlock(&scmi_list_mutex);
 
+	blocking_notifier_chain_unregister(&scmi_requested_devices_nh,
+					   &info->dev_req_nb);
+
 	/* Stop transport callbacks before tearing down notifications. */
 	scmi_notification_quiesce(&info->handle);
 	scmi_cleanup_txrx_channels(info);
@@ -2951,8 +2954,6 @@ static int scmi_remove(struct platform_device *pdev)
 		of_node_put(child);
 	idr_destroy(&info->active_protocols);
 
-	blocking_notifier_chain_unregister(&scmi_requested_devices_nh,
-					   &info->dev_req_nb);
 	bus_unregister_notifier(&scmi_bus_type, &info->bus_nb);
 
 	ida_free(&scmi_id, info->id);
