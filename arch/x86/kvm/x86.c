@@ -11009,6 +11009,8 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 				goto out;
 			}
 		}
+		if (kvm_check_request(KVM_REQ_VMSA_PAGE_RELOAD, vcpu))
+			static_call_cond(kvm_x86_reload_vmsa)(vcpu);
 	}
 
 	if (kvm_check_request(KVM_REQ_EVENT, vcpu) || req_int_win ||
@@ -13740,6 +13742,11 @@ int kvm_arch_gmem_prepare(struct kvm *kvm, gfn_t gfn, kvm_pfn_t pfn, int max_ord
 void kvm_arch_gmem_invalidate(kvm_pfn_t start, kvm_pfn_t end)
 {
 	static_call_cond(kvm_x86_gmem_invalidate)(start, end);
+}
+
+void kvm_arch_gmem_invalidate_range(struct kvm *kvm, struct kvm_gfn_range *range)
+{
+	static_call_cond(kvm_x86_gmem_invalidate_range)(kvm, range);
 }
 #endif
 
