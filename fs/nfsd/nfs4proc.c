@@ -1535,11 +1535,12 @@ nfsd4_copy(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 		if (atomic_inc_return(&nn->pending_async_copies) >
 				(int)rqstp->rq_pool->sp_nrthreads)
 			goto out_err;
-		if (!nfs4_init_copy_state(nn, copy))
-			goto out_err;
-		memcpy(&copy->cp_res.cb_stateid, &copy->cp_stateid.stid,
-			sizeof(copy->cp_res.cb_stateid));
 		dup_copy_fields(copy, async_copy);
+
+		if (!nfs4_init_copy_state(nn, async_copy))
+			goto out_err;
+		memcpy(&copy->cp_res.cb_stateid, &async_copy->cp_stateid.stid,
+			sizeof(copy->cp_res.cb_stateid));
 		async_copy->copy_task = kthread_create(nfsd4_do_async_copy,
 				async_copy, "%s", "copy thread");
 		if (IS_ERR(async_copy->copy_task))
