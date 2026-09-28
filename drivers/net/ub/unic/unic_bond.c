@@ -11,6 +11,7 @@
 #include <ub/ubase/ubase_comm_ctrlq.h>
 
 #include "unic_comm_addr.h"
+#include "unic_ip.h"
 #include "unic_bond.h"
 
 static int unic_send_bond_ip_notify_msg(struct auxiliary_device *adev,
@@ -62,6 +63,31 @@ static int unic_sync_bond_ip(struct unic_vport *vport,
 	return unic_send_bond_ip_notify_msg(adev, &req);
 }
 
+static void unic_update_bond_addr_state(struct unic_comm_addr_node *addr_node,
+					enum UNIC_COMM_ADDR_STATE state)
+{
+	switch (state) {
+	case UNIC_COMM_ADDR_TO_ADD:
+		if (addr_node->state == UNIC_COMM_ADDR_TO_DEL)
+			addr_node->state = UNIC_COMM_ADDR_ACTIVE;
+		break;
+	case UNIC_COMM_ADDR_TO_DEL:
+		if (addr_node->state == UNIC_COMM_ADDR_TO_ADD) {
+			list_del(&addr_node->node);
+			kfree(addr_node);
+		} else {
+			addr_node->state = UNIC_COMM_ADDR_TO_DEL;
+		}
+		break;
+	case UNIC_COMM_ADDR_ACTIVE:
+		if (addr_node->state == UNIC_COMM_ADDR_TO_ADD)
+			addr_node->state = UNIC_COMM_ADDR_ACTIVE;
+		break;
+	default:
+		break;
+	}
+}
+
 static int unic_update_bond_addr_list(struct list_head *list,
 				      spinlock_t *addr_list_lock,
 				      enum UNIC_COMM_ADDR_STATE state,
@@ -71,13 +97,15 @@ static int unic_update_bond_addr_list(struct list_head *list,
 	int ret = 0;
 
 	spin_lock_bh(addr_list_lock);
+
 	addr_node = unic_comm_find_addr_node(list, addr, ip_mask);
 	if (addr_node) {
-		if (addr_node->state != state) {
-			list_del(&addr_node->node);
-			kfree(addr_node);
-		}
-		ret = -EEXIST;
+		unic_update_bond_addr_state(addr_node, state);
+		goto out;
+	}
+
+	if (state == UNIC_COMM_ADDR_TO_DEL) {
+		ret = -ENOENT;
 		goto out;
 	}
 
@@ -97,56 +125,83 @@ out:
 	return ret;
 }
 
-static void unic_restore_bond_addr_list(struct list_head *list,
-					spinlock_t *addr_list_lock,
-					struct unic_comm_addr_node *ip_node)
-{
-	struct unic_comm_addr_node *addr_node;
-
-	spin_lock_bh(addr_list_lock);
-	addr_node = unic_comm_find_addr_node(list, (u8 *)&ip_node->ip_addr,
-					     ip_node->node_mask);
-	if (addr_node) {
-		list_del(&ip_node->node);
-		kfree(ip_node);
-		goto out;
-	}
-
-	list_move_tail(&ip_node->node, list);
-
-out:
-	spin_unlock_bh(addr_list_lock);
-}
-
 static void unic_notify_bond_ip_list(struct unic_vport *vport,
 				     struct list_head *list,
-				     struct list_head *bond_list,
-				     spinlock_t *addr_list_lock,
 				     enum unic_bond_ip_notify_cmd state)
 {
+	struct auxiliary_device *adev = vport->back->comdev.adev;
+	char format_masked_ip_addr[UNIC_MASKED_FORMAT_IP_LEN];
 	struct unic_comm_addr_node *ip_node, *tmp;
-	bool bond_service_task_flag = false;
 
 	list_for_each_entry_safe(ip_node, tmp, list, node) {
 		if (unic_sync_bond_ip(vport, ip_node, state)) {
-			unic_restore_bond_addr_list(bond_list, addr_list_lock,
-						    ip_node);
-			bond_service_task_flag = true;
+			unic_format_masked_ip_addr(format_masked_ip_addr,
+						   ip_node->unic_addr);
+			dev_err_ratelimited(&adev->dev,
+					    "failed to %s bond ip %s\n",
+					    state == UNIC_BOND_IP_NOTIFY_CMD_ADD ?
+					    "add" : "delete",
+					    format_masked_ip_addr);
+			set_bit(UNIC_VPORT_STATE_BOND_IP_CHANGE, &vport->state);
+			continue;
+		}
+
+		if (state == UNIC_BOND_IP_NOTIFY_CMD_ADD) {
+			ip_node->state = UNIC_COMM_ADDR_ACTIVE;
 		} else {
 			list_del(&ip_node->node);
 			kfree(ip_node);
 		}
 	}
+}
 
-	if (bond_service_task_flag)
-		set_bit(UNIC_VPORT_STATE_BOND_IP_CHANGE, &vport->state);
+static void unic_bond_sync_from_del_list(struct list_head *del_list,
+					 struct list_head *bond_list)
+{
+	struct unic_comm_addr_node *ip_node, *tmp, *new_node;
+
+	list_for_each_entry_safe(ip_node, tmp, del_list, node) {
+		new_node = unic_comm_find_addr_node(bond_list,
+						    ip_node->unic_addr,
+						    ip_node->node_mask);
+		if (new_node) {
+			new_node->state = UNIC_COMM_ADDR_ACTIVE;
+			list_del(&ip_node->node);
+			kfree(ip_node);
+		} else {
+			list_move_tail(&ip_node->node, bond_list);
+		}
+	}
+}
+
+static void unic_bond_sync_from_add_list(struct list_head *add_list,
+					 struct list_head *bond_list)
+{
+	struct unic_comm_addr_node *ip_node, *tmp, *new_node;
+
+	list_for_each_entry_safe(ip_node, tmp, add_list, node) {
+		new_node = unic_comm_find_addr_node(bond_list,
+						    ip_node->unic_addr,
+						    ip_node->node_mask);
+		if (new_node) {
+			unic_update_bond_addr_state(new_node, ip_node->state);
+			list_del(&ip_node->node);
+			kfree(ip_node);
+		} else if (ip_node->state == UNIC_COMM_ADDR_ACTIVE) {
+			ip_node->state = UNIC_COMM_ADDR_TO_DEL;
+			list_move_tail(&ip_node->node, bond_list);
+		} else {
+			list_del(&ip_node->node);
+			kfree(ip_node);
+		}
+	}
 }
 
 static void unic_sync_bond_addr_table(struct unic_vport *vport,
 				      struct list_head *list,
 				      spinlock_t *addr_list_lock)
 {
-	struct unic_comm_addr_node *addr_node, *tmp;
+	struct unic_comm_addr_node *addr_node, *tmp, *new_node;
 	struct list_head tmp_add_list, tmp_del_list;
 
 	INIT_LIST_HEAD(&tmp_add_list);
@@ -154,17 +209,36 @@ static void unic_sync_bond_addr_table(struct unic_vport *vport,
 
 	spin_lock_bh(addr_list_lock);
 	list_for_each_entry_safe(addr_node, tmp, list, node) {
-		if (addr_node->state == UNIC_COMM_ADDR_TO_DEL)
+		switch (addr_node->state) {
+		case UNIC_COMM_ADDR_TO_DEL:
 			list_move_tail(&addr_node->node, &tmp_del_list);
-		else
-			list_move_tail(&addr_node->node, &tmp_add_list);
+			break;
+		case UNIC_COMM_ADDR_TO_ADD:
+			new_node = kzalloc(sizeof(*new_node), GFP_ATOMIC);
+			if (!new_node)
+				goto stop_traverse;
+			memcpy(new_node->unic_addr, addr_node->unic_addr, UNIC_ADDR_LEN);
+			new_node->state = addr_node->state;
+			new_node->node_mask = addr_node->node_mask;
+			list_add_tail(&new_node->node, &tmp_add_list);
+			break;
+		default:
+			break;
+		}
 	}
+
+stop_traverse:
 	spin_unlock_bh(addr_list_lock);
 
-	unic_notify_bond_ip_list(vport, &tmp_del_list, list, addr_list_lock,
-				 UNIC_BOND_IP_NOTIFY_CMD_DEL);
-	unic_notify_bond_ip_list(vport, &tmp_add_list, list, addr_list_lock,
-				 UNIC_BOND_IP_NOTIFY_CMD_ADD);
+	unic_notify_bond_ip_list(vport, &tmp_del_list, UNIC_BOND_IP_NOTIFY_CMD_DEL);
+	unic_notify_bond_ip_list(vport, &tmp_add_list, UNIC_BOND_IP_NOTIFY_CMD_ADD);
+
+	spin_lock_bh(addr_list_lock);
+
+	unic_bond_sync_from_del_list(&tmp_del_list, list);
+	unic_bond_sync_from_add_list(&tmp_add_list, list);
+
+	spin_unlock_bh(addr_list_lock);
 }
 
 void unic_sync_bond_ip_table(struct unic_dev *unic_dev)
@@ -179,6 +253,7 @@ void unic_sync_bond_ip_table(struct unic_dev *unic_dev)
 int unic_update_bond_ipaddr(struct unic_dev *unic_dev, struct sockaddr *sa,
 			    u16 ip_mask, enum UNIC_COMM_ADDR_STATE state)
 {
+	char format_masked_ip_addr[UNIC_MASKED_FORMAT_IP_LEN];
 	struct unic_vport *vport = &unic_dev->vport;
 	struct in6_addr ip_addr;
 	int ret;
@@ -186,6 +261,12 @@ int unic_update_bond_ipaddr(struct unic_dev *unic_dev, struct sockaddr *sa,
 	ret = unic_convert_ip_addr(unic_dev, sa, &ip_addr);
 	if (ret)
 		return ret;
+
+	unic_format_masked_ip_addr(format_masked_ip_addr, (u8 *)&ip_addr);
+	unic_info(unic_dev,
+		  "stack %s a bond ip %s.\n",
+		  state == UNIC_COMM_ADDR_TO_ADD ? "added" : "deleted",
+		  format_masked_ip_addr);
 
 	ret = unic_update_bond_addr_list(&vport->addr_tbl.bond_ip_list,
 					 &vport->addr_tbl.bond_ip_list_lock,
