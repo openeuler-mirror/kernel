@@ -1613,6 +1613,9 @@ static int csv3_set_hugetlb_smr(struct kvm *kvm, unsigned long vm_size,
 
 		regions[count].size = (1UL << smr_entry_shift);
 		regions[count].base_address = smr->hpa;
+
+		clflush_cache_range(__va(regions[count].base_address),
+				    regions[count].size);
 		count++;
 
 		if (count >= (PAGE_SIZE / sizeof(regions[0])) || (remainder == count)) {
@@ -2059,6 +2062,10 @@ static int csv3_set_hugetlb_smr_ex(struct kvm *kvm, unsigned long vm_size,
 
 		regions[count].size = smr->npages << PAGE_SHIFT;
 		regions[count].base_address = smr->hpa;
+
+		clflush_cache_range(__va(regions[count].base_address),
+				    regions[count].size);
+
 		if (smr->type == CSV_SEC_MEM) {
 			gpa += regions[count].size;
 			/* The range between @tom and 4G is memory hole. */
