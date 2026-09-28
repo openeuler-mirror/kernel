@@ -364,7 +364,7 @@ struct ubase_prealloc_mem_info {
 };
 
 struct ubase_mbox_over_cmdq_info {
-	u32 seq_num;
+	atomic_t seq_num;
 	struct xarray seq_tbl;
 	wait_queue_head_t queue;
 };
