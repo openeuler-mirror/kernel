@@ -84,7 +84,7 @@ ubaseproxy_init_jfc_modify_mask(struct ubaseproxy_jfc_default *jfc_default)
 		/* DW0-DW2 */
 		GENMASK(1, 0) | GENMASK(31, 4), GENMASK(31, 0), GENMASK(31, 0),
 		/* DW3-DW5 */
-		GENMASK(31, 0), GENMASK(21, 0), GENMASK(21, 0) || GENMASK(31, 25),
+		GENMASK(31, 0), GENMASK(21, 0), GENMASK(21, 0) | GENMASK(31, 25),
 		/* DW6-DW31 */
 		GENMASK(31, 0), GENMASK(31, 0), GENMASK(31, 0), GENMASK(31, 0),
 		GENMASK(31, 0), GENMASK(31, 0), GENMASK(31, 0), GENMASK(31, 0),
@@ -234,6 +234,8 @@ ubaseproxy_create_jfc_res(struct ubaseproxy_dev *udev,
 	if (ret) {
 		ubaseproxy_err(udev, "create jfc(%u) failed, ret=%d.\n", jfcn,
 			       ret);
+		ubaseproxy_ceq_ref_dec(udev, ue_ctx_xa, jfc->ceqn,
+				       le16_to_cpu(req->mbx_ue_id));
 		kfree(jfc);
 		return NULL;
 	}
