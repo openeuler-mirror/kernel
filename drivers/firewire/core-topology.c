@@ -161,6 +161,19 @@ static inline struct fw_node *fw_node(struct list_head *l)
 	return list_entry(l, struct fw_node, link);
 }
 
+typedef void (*fw_node_callback_t)(struct fw_card *card,
+				   struct fw_node *node,
+				   struct fw_node *parent);
+
+static void for_each_fw_node(struct fw_card *card, struct fw_node *root,
+			     fw_node_callback_t callback);
+
+static void free_fw_node(struct fw_card *card,
+			 struct fw_node *node, struct fw_node *parent)
+{
+	fw_node_put(node);
+}
+
 /*
  * This function builds the tree representation of the topology given
  * by the self IDs from the latest bus reset.  During the construction
@@ -193,19 +206,19 @@ static struct fw_node *build_tree(struct fw_card *card,
 
 		if (next_sid == NULL) {
 			fw_err(card, "inconsistent extended self IDs\n");
-			return NULL;
+			goto error;
 		}
 
 		q = *sid;
 		if (phy_id != SELF_ID_PHY_ID(q)) {
 			fw_err(card, "PHY ID mismatch in self ID: %d != %d\n",
 			       phy_id, SELF_ID_PHY_ID(q));
-			return NULL;
+			goto error;
 		}
 
 		if (child_port_count > stack_depth) {
 			fw_err(card, "topology stack underflow\n");
-			return NULL;
+			goto error;
 		}
 
 		/*
@@ -220,10 +233,30 @@ static struct fw_node *build_tree(struct fw_card *card,
 		 */
 		child = fw_node(h);
 
+		parent_count = 0;
+		for (i = 0; i < port_count; i++) {
+			if (get_port_type(sid, i) == SELFID_PORT_PARENT)
+				parent_count++;
+		}
+
+		/*
+		 * Check that the node reports exactly one parent
+		 * port, except for the root, which of course should
+		 * have no parents.  Do this before allocating the
+		 * node so that a malformed self ID sequence does not
+		 * leak it.
+		 */
+		if ((next_sid == end && parent_count != 0) ||
+		    (next_sid < end && parent_count != 1)) {
+			fw_err(card, "parent port inconsistency for node %d: "
+			       "parent_count=%d\n", phy_id, parent_count);
+			goto error;
+		}
+
 		node = fw_node_create(q, port_count, card->color);
 		if (node == NULL) {
 			fw_err(card, "out of memory while building topology\n");
-			return NULL;
+			goto error;
 		}
 
 		if (phy_id == (card->node_id & 0x3f))
@@ -231,8 +264,6 @@ static struct fw_node *build_tree(struct fw_card *card,
 
 		if (SELF_ID_CONTENDER(q))
 			irm_node = node;
-
-		parent_count = 0;
 
 		for (i = 0; i < port_count; i++) {
 			switch (get_port_type(sid, i)) {
@@ -247,7 +278,6 @@ static struct fw_node *build_tree(struct fw_card *card,
 				 * handle the parent node, we fix up
 				 * the reference.
 				 */
-				parent_count++;
 				node->color = i;
 				break;
 
@@ -262,18 +292,6 @@ static struct fw_node *build_tree(struct fw_card *card,
 				child = fw_node(child->link.next);
 				break;
 			}
-		}
-
-		/*
-		 * Check that the node reports exactly one parent
-		 * port, except for the root, which of course should
-		 * have no parents.
-		 */
-		if ((next_sid == end && parent_count != 0) ||
-		    (next_sid < end && parent_count != 1)) {
-			fw_err(card, "parent port inconsistency for node %d: "
-			       "parent_count=%d\n", phy_id, parent_count);
-			return NULL;
 		}
 
 		/* Pop the child nodes off the stack and push the new node. */
@@ -304,11 +322,19 @@ static struct fw_node *build_tree(struct fw_card *card,
 	card->beta_repeaters_present = beta_repeaters_present;
 
 	return local_node;
+error:
+	/*
+	 * A malformed self ID sequence was found, so the tree is not
+	 * usable.  Each node allocated so far is either an entry of the
+	 * local stack or reachable through the ports of such an entry.
+	 * Bump the color so that for_each_fw_node() can tell the nodes
+	 * apart, then release every remaining node.
+	 */
+	++card->color;
+	list_for_each_entry_safe(node, child, &stack, link)
+		for_each_fw_node(card, node, free_fw_node);
+	return NULL;
 }
-
-typedef void (*fw_node_callback_t)(struct fw_card * card,
-				   struct fw_node * node,
-				   struct fw_node * parent);
 
 static void for_each_fw_node(struct fw_card *card, struct fw_node *root,
 			     fw_node_callback_t callback)
