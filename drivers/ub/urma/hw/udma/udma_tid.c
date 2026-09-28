@@ -18,7 +18,10 @@ static int udma_get_key_id_from_user(struct udma_dev *udma_dev,
 		dev_err(udma_dev->dev, "user driver data or input address is null.\n");
 		return -EINVAL;
 	}
-
+	if (!udata->udrv_data->in_len) {
+		dev_err(udma_dev->dev, "user driver data in_len==0.\n");
+		return -EINVAL;
+	}
 	byte = copy_from_user(&tid, (void *)(uintptr_t)udata->udrv_data->in_addr,
 			      min(udata->udrv_data->in_len,
 			      (uint32_t)sizeof(tid)));
