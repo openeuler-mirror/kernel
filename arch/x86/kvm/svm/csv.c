@@ -1810,9 +1810,7 @@ static int __csv3_set_guest_private_memory(struct kvm *kvm,
 	u32 smr_entry_shift;
 	int bkt;
 
-	unsigned int flags = FOLL_HWPOISON;
-	u64 npages, nr_pages = 0;
-	struct page *page;
+	u64 nr_pages = 0;
 
 	unsigned long vm_size;
 	enum csv_smr_source source;
@@ -1834,14 +1832,7 @@ static int __csv3_set_guest_private_memory(struct kvm *kvm,
 		if (memslot->flags & KVM_MEM_READONLY)
 			continue;
 
-		npages = get_user_pages_unlocked(memslot->userspace_addr, 1,
-						&page, flags);
-		if (npages != 1)
-			continue;
-
 		nr_pages += memslot->npages;
-
-		put_page(page);
 	}
 
 	smr_entry_shift = csv_get_smr_entry_shift();
