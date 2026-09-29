@@ -243,8 +243,7 @@ struct unic_vlan_tbl {
 	bool			cur_vlan_fltr_en;
 	unsigned long		vlan_del_fail_bmap[BITS_TO_LONGS(VLAN_N_VID)];
 	struct list_head	vlan_list; /* Store vlan table */
-	spinlock_t		vlan_lock; /* protect vlan list */
-	struct mutex		vlan_cmd_mutex; /* serialize vlan table & hw cmd */
+	struct mutex		mutex; /* protects vlan table, filter state and hw cmd */
 };
 
 struct unic_vlan_cfg {
