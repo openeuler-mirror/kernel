@@ -41,6 +41,7 @@ Contents:
    marvell/octeontx2
    mellanox/mlx5
    microsoft/netvsc
+   mucse/index
    neterion/s2io
    neterion/vxge
    netronome/nfp
