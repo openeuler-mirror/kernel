@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #include <linux/types.h>
 #include <linux/module.h>
@@ -57,6 +57,7 @@ static const struct rnpvf_stats rnp_gstrings_net_stats[] = {
 };
 
 #define RNPVF_GLOBAL_STATS_LEN ARRAY_SIZE(rnp_gstrings_net_stats)
+
 #define RNPVF_HW_STAT(_name, _stat)                                       \
 	{                                                                 \
 		.stat_string = _name,                                     \
@@ -69,6 +70,7 @@ static struct rnpvf_stats rnpvf_hwstrings_stats[] = {
 	RNPVF_HW_STAT("vlan_strip_cnt", hw_stats.vlan_strip_cnt),
 	RNPVF_HW_STAT("rx_csum_offload_errors", hw_stats.csum_err),
 	RNPVF_HW_STAT("rx_csum_offload_good", hw_stats.csum_good),
+	RNPVF_HW_STAT("tx_spoof_dropped", hw_stats.spoof_dropped),
 };
 
 #define RNPVF_HWSTRINGS_STATS_LEN ARRAY_SIZE(rnpvf_hwstrings_stats)
@@ -100,12 +102,6 @@ struct rnpvf_rx_queue_ring_stat {
 	(RNPVF_GLOBAL_STATS_LEN + RNP_QUEUE_STATS_LEN + \
 	 RNPVF_HWSTRINGS_STATS_LEN)
 
-static const char rnp_gstrings_test[][ETH_GSTRING_LEN] = {
-	"Register test  (offline)", "Link test   (on/offline)"
-};
-
-#define RNPVF_TEST_LEN (sizeof(rnp_gstrings_test) / ETH_GSTRING_LEN)
-
 enum priv_bits {
 	padding_enable = 0,
 };
@@ -128,11 +124,13 @@ static int rnpvf_get_link_ksettings(struct net_device *netdev,
 	struct rnpvf_hw *hw = &adapter->hw;
 	bool autoneg = false;
 	bool link_up;
-	u32 supported, advertising;
+	u32 supported = 0;
+	u32 advertising = 0;
 	u32 link_speed = 0;
 
 	ethtool_convert_link_mode_to_legacy_u32(&supported,
 						cmd->link_modes.supported);
+
 	hw->mac.ops.check_link(hw, &link_speed, &link_up, false);
 
 	switch (link_speed) {
@@ -175,6 +173,7 @@ static int rnpvf_get_link_ksettings(struct net_device *netdev,
 		cmd->base.autoneg = AUTONEG_DISABLE;
 	}
 
+	/* set pause support */
 	supported |= SUPPORTED_Pause;
 
 	switch (hw->fc.current_mode) {
@@ -220,7 +219,7 @@ static int rnpvf_get_link_ksettings(struct net_device *netdev,
 	ethtool_convert_legacy_u32_to_link_mode(cmd->link_modes.supported,
 						supported);
 	ethtool_convert_legacy_u32_to_link_mode(cmd->link_modes.advertising,
-						supported);
+						advertising);
 	return 0;
 }
 
@@ -246,10 +245,10 @@ static void rnpvf_get_drvinfo(struct net_device *netdev,
 	drvinfo->n_priv_flags = RNPVF_PRIV_FLAGS_STR_LEN;
 }
 
-void rnpvf_get_ringparam(struct net_device *netdev,
-			 struct ethtool_ringparam *ring,
-			 struct kernel_ethtool_ringparam __always_unused *ker,
-			 struct netlink_ext_ack __always_unused *extack)
+static void rnpvf_get_ringparam(struct net_device *netdev,
+				struct ethtool_ringparam *ring,
+				struct kernel_ethtool_ringparam __always_unused *ker,
+				struct netlink_ext_ack __always_unused *extack)
 {
 	struct rnpvf_adapter *adapter = netdev_priv(netdev);
 
@@ -645,6 +644,7 @@ static void rnpvf_get_ethtool_stats(struct net_device *netdev,
 		ring = adapter->rx_ring[j];
 
 		if (!ring) {
+			/* ===== rx-ring == */
 			data[i++] = 0;
 			data[i++] = 0;
 
@@ -763,6 +763,7 @@ static const struct ethtool_ops rnpvf_ethtool_ops = {
 	.get_coalesce = rnpvf_get_coalesce,
 	.set_coalesce = rnpvf_set_coalesce,
 	.supported_coalesce_params = ETHTOOL_COALESCE_USECS,
+
 	.get_channels = rnpvf_get_channels,
 };
 

@@ -1,5 +1,5 @@
-/* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+// SPDX-License-Identifier: GPL-2.0
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #ifndef _RNPVF_MBX_H_
 #define _RNPVF_MBX_H_
@@ -64,7 +64,10 @@ struct mbx_shm {
 #define RNP_VF_GET_MTU 0x0c /* vf read reg */
 #define RNP_VF_SET_MTU 0x0d /* vf read reg */
 #define RNP_VF_GET_FW 0x0e /* vf read reg */
-#define RNP_VF_RESET_PF 0x13 /* vf read reg */
+#define RNP_VF_RESET_PF 0x11 /* vf read reg */
+#define RNP_VF_SET_PROMISCE 0x16
+
+#define VF_ALLOC_FEATURE BIT(0)
 
 #define RNP_PF_VFNUM_MASK (0x3f << 21)
 #define RNP_PF_SET_FCS 0x10 /* PF set fcs status */
@@ -75,6 +78,7 @@ struct mbx_shm {
 #define RNP_PF_SET_LINK 0x15
 #define RNP_PF_SET_MTU 0x16
 #define RNP_PF_SET_RESET 0x17
+#define RNP_PF_SET_MAC_SPOOF 0x18
 #define RNP_PF_LINK_UP (0x1 << 31)
 
 #define RNP_PF_REMOVE 0x0f
@@ -108,7 +112,6 @@ struct rnpvf_hw;
 enum MBX_ID {
 	MBX_VF0 = 0,
 	MBX_VF1,
-	//...
 	MBX_VF63,
 	MBX_CM3CPU,
 	MBX_VFCNT
@@ -116,8 +119,10 @@ enum MBX_ID {
 
 #define PF2VF_MBOX_VEC(mbx, vf) (mbx->pf2vf_mbox_vec_base + 4 * (vf))
 #define CPU2VF_MBOX_VEC(mbx, vf) (mbx->cpu2vf_mbox_vec_base + 4 * (vf))
-#define PF_VF_SHM(mbx, vf)                                                     \
-	((mbx->pf_vf_shm_base) +                                               \
+
+/* == PF <--> VF mailbox ==== */
+#define PF_VF_SHM(mbx, vf)       \
+	((mbx->pf_vf_shm_base) + \
 	 (64 * (vf)))
 #define PF2VF_COUNTER(mbx, vf) (PF_VF_SHM(mbx, vf) + 0)
 #define VF2PF_COUNTER(mbx, vf) (PF_VF_SHM(mbx, vf) + 4)
@@ -132,6 +137,7 @@ enum MBX_ID {
 #define VF2CPU_MBOX_CTRL(mbx, vf) (mbx->vf2cpu_mbox_ctrl_base + 64 * (vf))
 #define CPU_VF_MBOX_MASK_LO(mbx, vf) (mbx->cpu_vf_mbox_mask_lo_base + 64 * (vf))
 #define CPU_VF_MBOX_MASK_HI(mbx, vf) (mbx->cpu_vf_mbox_mask_hi_base + 64 * (vf))
+
 #define MBOX_CTRL_REQ (0x1 << 0) /* WO */
 #define MBOX_CTRL_VF_HOLD_SHM (0x1 << 2) /* VF:WR, PF:RO */
 #define MBOX_IRQ_EN 0
