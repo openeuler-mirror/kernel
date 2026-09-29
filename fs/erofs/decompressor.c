@@ -336,6 +336,9 @@ static int z_erofs_transform_plain(struct z_erofs_decompress_req *rq,
 		return 0;
 	}
 
+	if (rq->alg == Z_EROFS_COMPRESSION_INTERLACED)
+		DBG_BUGON(rq->pageofs_in & (rq->sb->s_blocksize - 1));
+
 	src = kmap_local_page(rq->in[inpages - 1]) + rq->pageofs_in;
 	if (rq->out[0])
 		memcpy_to_page(rq->out[0], rq->pageofs_out,
