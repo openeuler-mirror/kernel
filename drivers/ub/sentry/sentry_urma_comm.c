@@ -2245,6 +2245,11 @@ int urma_recv(struct sentry_binary_msg *buf_arr, size_t array_size)
 			/* Check if binary message */
 			binary_msg = (struct sentry_binary_msg *)
 				sentry_urma_ctx.urma_recv_cr[i].user_ctx;
+			if (!binary_msg) {
+				pr_warn("%s: cr[%d] user_ctx is null, skip\n",
+					__func__, i);
+				continue;
+			}
 			pr_info("%s: get msg from %s, msg type is %d\n",
 				__func__,
 				sentry_urma_dev[tmp_die_index].server_eid_array[node_idx],

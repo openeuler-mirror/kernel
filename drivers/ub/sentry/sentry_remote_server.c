@@ -491,6 +491,11 @@ int cis_ubios_remote_msg_cb(struct cis_message *cis_msg)
 	int ret;
 	struct sentry_binary_msg event_msg;
 
+	if (!cis_msg || !cis_msg->input) {
+		pr_err("%s: invalid param, cis_msg or input is null\n", __func__);
+		return -EINVAL;
+	}
+
 	if (cis_msg->input_size != sizeof(struct sentry_binary_msg)) {
 		pr_err("%s: invalid input size: %d, expect %lu\n",
 			__func__, cis_msg->input_size, sizeof(struct sentry_binary_msg));
