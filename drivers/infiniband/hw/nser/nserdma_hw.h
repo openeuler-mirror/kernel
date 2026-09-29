@@ -1,0 +1,113 @@
+/* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
+/* Copyright (c) 2018 - 2025 Beijing WangXun Technology Co., Ltd. */
+#ifndef NSERDMA_HW_H
+#define NSERDMA_HW_H
+
+#include "nser.h"
+
+#define VFPE_REG_BADDR				0x400
+#define VFPE_CCQPLOW1				VFPE_REG_BADDR
+#define VFPE_CCQPHIGH1				(VFPE_REG_BADDR + 0x4)
+#define VFPE_CQPERRCODES1			(VFPE_REG_BADDR + 0x8)
+#define VFPE_CCQPSTATUS1			(VFPE_REG_BADDR + 0xc)
+#define VFPE_IPCFG1					(VFPE_REG_BADDR + 0x10)
+#define VFPE_CQPDB1					(VFPE_REG_BADDR + 0x14)
+#define VFPE_CQPTAIL1				(VFPE_REG_BADDR + 0x18)
+#define VFPE_CQARM1					(VFPE_REG_BADDR + 0x1c)
+#define VFPE_CQACK1					(VFPE_REG_BADDR + 0x20)
+#define VFPE_AEQALLOC1				(VFPE_REG_BADDR + 0x24)
+#define VFPE_WQEALLOC1				(VFPE_REG_BADDR + 0x28)
+
+#define VFPE_MRTEIDXMASK1			(VFPE_REG_BADDR + 0x2c)
+#define VFPE_CQEDROPCNT1			(VFPE_REG_BADDR + 0x30)
+#define VFPE_CEQEDROPCNT1			(VFPE_REG_BADDR + 0x34)
+#define VFPE_AEQEDROPCNT1			(VFPE_REG_BADDR + 0x38)
+#define VFPE_PECSTATUS1				(VFPE_REG_BADDR + 0x3c)
+
+#define VFINT_DYN_CTLN(_i)	(0x00001000 + ((_i) * 4)) /* _i=0...63 */
+
+#define PFPE_REG_BADDR				0x20000
+#define PFPE_CCQPLOW(_VSI)			(PFPE_REG_BADDR + (_VSI) * 64)
+#define PFPE_CCQPHIGH(_VSI)			(PFPE_REG_BADDR + (_VSI) * 64 + 0x4)
+#define PFPE_CQPERRCODES(_VSI)		(PFPE_REG_BADDR + (_VSI) * 64 + 0x8)
+#define PFPE_CCQPSTATUS(_VSI)		(PFPE_REG_BADDR + (_VSI) * 64 + 0xc)
+#define PFPE_IPCFG(_VSI)			(PFPE_REG_BADDR + (_VSI) * 64 + 0x10)
+#define PFPE_CQPDB(_VSI)			(PFPE_REG_BADDR + (_VSI) * 64 + 0x14)
+#define PFPE_CQPTAIL(_VSI)			(PFPE_REG_BADDR + (_VSI) * 64 + 0x18)
+#define PFPE_CQARM(_VSI)			(PFPE_REG_BADDR + (_VSI) * 64 + 0x1c)
+#define PFPE_CQACK(_VSI)			(PFPE_REG_BADDR + (_VSI) * 64 + 0x20)
+#define PFPE_AEQALLOC(_VSI)			(PFPE_REG_BADDR + (_VSI) * 64 + 0x24)
+#define PFPE_WQEALLOC(_VSI)			(PFPE_REG_BADDR + (_VSI) * 64 + 0x28)
+
+#define PFPE_MRTEIDXMASK(_VSI)		(PFPE_REG_BADDR + (_VSI) * 64 + 0x2c)
+#define PFPE_CQEDROPCNT(_VSI)		(PFPE_REG_BADDR + (_VSI) * 64 + 0x30)
+#define PFPE_CEQEDROPCNT(_VSI)		(PFPE_REG_BADDR + (_VSI) * 64 + 0x34)
+#define PFPE_AEQEDROPCNT(_VSI)		(PFPE_REG_BADDR + (_VSI) * 64 + 0x38)
+#define PFPE_PECSTATUS(_VSI)		(PFPE_REG_BADDR + (_VSI) * 64 + 0x3c)
+
+#define GLINT_DYN_CTL(_INT)	(0x00005000 + ((_INT) * 4)) /* _i=0...1023 */
+
+//#define BAR0_ST_REG_BADDR			0x00000008
+//#define GLPE_CRITERR				0xbeefbeef
+
+#define PRTMAC_HSEC_CTL_RX_PAUSE_ENABLE_0	0x001e3180
+#define PRTMAC_HSEC_CTL_RX_PAUSE_ENABLE_1	0x001e3184
+#define PRTMAC_HSEC_CTL_RX_PAUSE_ENABLE_2	0x001e3188
+#define PRTMAC_HSEC_CTL_RX_PAUSE_ENABLE_3	0x001e318c
+
+#define PRTMAC_HSEC_CTL_TX_PAUSE_ENABLE_0	0x001e31a0
+#define PRTMAC_HSEC_CTL_TX_PAUSE_ENABLE_1	0x001e31a4
+#define PRTMAC_HSEC_CTL_TX_PAUSE_ENABLE_2	0x001e31a8
+#define PRTMAC_HSEC_CTL_TX_PAUSE_ENABLE_3	0x001e31aC
+
+#define PRTMAC_HSEC_CTL_RX_ENABLE_GPP_0		0x001e34c0
+#define PRTMAC_HSEC_CTL_RX_ENABLE_GPP_1		0x001e34c4
+#define PRTMAC_HSEC_CTL_RX_ENABLE_GPP_2		0x001e34c8
+#define PRTMAC_HSEC_CTL_RX_ENABLE_GPP_3		0x001e34cC
+
+#define PRTMAC_HSEC_CTL_RX_ENABLE_PPP_0		0x001e35c0
+#define PRTMAC_HSEC_CTL_RX_ENABLE_PPP_1		0x001e35c4
+#define PRTMAC_HSEC_CTL_RX_ENABLE_PPP_2		0x001e35c8
+#define PRTMAC_HSEC_CTL_RX_ENABLE_PPP_3		0x001e35cC
+
+#define GLDCB_TC2PFC				0x001d2694
+#define PRTMAC_HSEC_CTL_RX_ENABLE_GCP		0x001e31c0
+
+#define NSERDMA_DB_ADDR_OFFSET(_VSI)	(1024 * 1024 + (_VSI) * 4096)
+#define NSERDMA_VF_DB_ADDR_OFFSET	(12  * 1024)
+
+#define NSERDMA_CCQPSTATUS_CCQP_DONE_S 0
+#define NSERDMA_CCQPSTATUS_CCQP_DONE BIT_ULL(0)
+#define NSERDMA_CCQPSTATUS_CCQP_ERR_S 31
+#define NSERDMA_CCQPSTATUS_CCQP_ERR BIT_ULL(31)
+#define NSERDMA_CQPSQ_STAG_PDID_S 46
+#define NSERDMA_CQPSQ_STAG_PDID GENMASK_ULL(63, 46)
+#define NSERDMA_CQPSQ_CQ_CEQID_S 22
+#define NSERDMA_CQPSQ_CQ_CEQID GENMASK_ULL(31, 22)
+#define NSERDMA_CQPSQ_CQ_CQID_S 0
+#define NSERDMA_CQPSQ_CQ_CQID GENMASK_ULL(18, 0)
+#define NSERDMA_COMMIT_FPM_CQCNT_S 0
+#define NSERDMA_COMMIT_FPM_CQCNT GENMASK_ULL(19, 0)
+#define NSERDMA_CQPSQ_UPESD_HMCFNID_S 0
+#define NSERDMA_CQPSQ_UPESD_HMCFNID GENMASK_ULL(5, 0)
+
+enum nserdma_device_caps_const {
+	NSERDMA_MAX_WQ_FRAGMENT_COUNT		= 13,
+	NSERDMA_MAX_SGE_RD			= 13,
+	NSERDMA_MAX_STATS_COUNT = 128,
+
+	NSERDMA_MAX_IRD_SIZE			= 64,
+	NSERDMA_MAX_ORD_SIZE			= 128,
+	NSERDMA_MIN_WQ_SIZE			= 128 /* WQEs */,
+
+};
+
+void nserdma_init_hw(struct nser_sc_dev *dev);
+void nser_init_config_check(struct nser_config_check *cc,
+			     u8 traffic_class,
+			     u16 qs_handle);
+bool nser_is_config_ok(struct nser_config_check *cc, struct nser_sc_vsi *vsi);
+void nser_check_fc_for_tc_update(struct nser_sc_vsi *vsi,
+				  struct nser_l2params *l2params);
+void nser_check_fc_for_qp(struct nser_sc_vsi *vsi, struct nser_sc_qp *sc_qp);
+#endif /* NSERDMA_HW_H*/
