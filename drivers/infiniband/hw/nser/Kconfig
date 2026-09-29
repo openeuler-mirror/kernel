@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-2.0-only
+config INFINIBAND_NSER
+	tristate "WangXun Ethernet Protocol Driver for RDMA"
+	depends on INET
+	depends on IPV6 || !IPV6
+	depends on PCI
+	select GENERIC_ALLOCATOR
+	select AUXILIARY_BUS
+	help
+	  This driver provides RDMA support for WangXun Ethernet
+	  adapters. It registers an RDMA device with the IB core and
+	  works together with the corresponding Ethernet driver to
+	  offload RDMA operations.
