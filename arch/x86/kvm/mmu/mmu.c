@@ -6948,6 +6948,20 @@ void kvm_arch_flush_shadow_all(struct kvm *kvm)
 void kvm_arch_flush_shadow_memslot(struct kvm *kvm,
 				   struct kvm_memory_slot *slot)
 {
+#ifdef CONFIG_HAVE_KVM_ARCH_GMEM_INVALIDATE
+	if (slot->gmem.file) {
+		struct kvm_gfn_range range = {
+			.slot = slot,
+			.start = slot->base_gfn,
+			.end = slot->base_gfn + slot->npages,
+			.attr_filter = KVM_FILTER_PRIVATE,
+		};
+
+		write_lock(&kvm->mmu_lock);
+		kvm_arch_gmem_invalidate_range(kvm, &range);
+		write_unlock(&kvm->mmu_lock);
+	}
+#endif
 	kvm_mmu_zap_all_fast(kvm);
 }
 

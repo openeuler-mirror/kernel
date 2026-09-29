@@ -1522,6 +1522,8 @@ static int svm_vcpu_create(struct kvm_vcpu *vcpu)
 	if (vmsa_page)
 		svm->sev_es.vmsa = page_address(vmsa_page);
 
+	svm->sev_es.snp_guest_vmsa_gpa = INVALID_PAGE;
+
 	svm->guest_state_loaded = false;
 
 	return 0;
@@ -5320,6 +5322,7 @@ static struct kvm_x86_ops svm_x86_ops __initdata = {
 	.mem_enc_register_region = sev_mem_enc_register_region,
 	.mem_enc_unregister_region = sev_mem_enc_unregister_region,
 	.guest_memory_reclaimed = sev_guest_memory_reclaimed,
+	.reload_vmsa = sev_snp_reload_vmsa,
 
 	.vm_copy_enc_context_from = sev_vm_copy_enc_context_from,
 	.vm_move_enc_context_from = sev_vm_move_enc_context_from,
@@ -5338,6 +5341,9 @@ static struct kvm_x86_ops svm_x86_ops __initdata = {
 
 	.gmem_prepare = sev_gmem_prepare,
 	.gmem_invalidate = sev_gmem_invalidate,
+#ifdef CONFIG_HAVE_KVM_ARCH_GMEM_INVALIDATE
+	.gmem_invalidate_range = sev_gmem_invalidate_range,
+#endif
 	.private_max_mapping_level = sev_private_max_mapping_level,
 };
 
