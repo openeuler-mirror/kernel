@@ -66,5 +66,20 @@ config NSE
 	  To compile this driver as a module, choose M here. The module
 	  will be called nse.
 
+config NSEVF
+	tristate "Wangxun(R) 100GbE PCI Express adapters Virtual Function support"
+	depends on PCI
+	depends on PCI_MSI
+	select AUXILIARY_BUS
+	select DIMLIB
+	help
+	  This driver supports Wangxun(R) 100GbE PCI Express family of adapters
+	  Virtual Function support
+
+	  More specific information on configuring the driver is in
+	  <file:Documentation/networking/device_drivers/ethernet/wangxun/nsevf.rst>.
+
+	  To compile this driver as a module, choose M here. The module
+	  will be called nsevf.
 endif # NET_VENDOR_WANGXUN
 
