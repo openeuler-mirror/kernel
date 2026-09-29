@@ -329,20 +329,23 @@ nfsd_sanitize_attrs(struct inode *inode, struct iattr *iap)
 }
 
 static __be32
-nfsd_get_write_access(struct svc_rqst *rqstp, struct svc_fh *fhp,
-		struct iattr *iap)
+nfsd_may_truncate(struct svc_rqst *rqstp, struct svc_fh *fhp,
+		  struct iattr *iap)
+{
+	struct inode *inode = d_inode(fhp->fh_dentry);
+
+	if (iap->ia_size >= i_size_read(inode))
+		return nfs_ok;
+
+	return nfsd_permission(rqstp, fhp->fh_export, fhp->fh_dentry,
+			       NFSD_MAY_TRUNC | NFSD_MAY_OWNER_OVERRIDE);
+}
+
+static __be32
+nfsd_get_write_access(struct svc_fh *fhp, struct iattr *iap)
 {
 	struct inode *inode = d_inode(fhp->fh_dentry);
 	int host_err;
-
-	if (iap->ia_size < inode->i_size) {
-		__be32 err;
-
-		err = nfsd_permission(rqstp, fhp->fh_export, fhp->fh_dentry,
-				NFSD_MAY_TRUNC | NFSD_MAY_OWNER_OVERRIDE);
-		if (err)
-			return err;
-	}
 
 	host_err = get_write_access(inode);
 	if (host_err)
@@ -429,7 +432,7 @@ nfsd_setattr(struct svc_rqst *rqstp, struct svc_fh *fhp, struct iattr *iap,
 	 * setattr call.
 	 */
 	if (size_change) {
-		err = nfsd_get_write_access(rqstp, fhp, iap);
+		err = nfsd_get_write_access(fhp, iap);
 		if (err)
 			return err;
 	}
@@ -450,6 +453,10 @@ nfsd_setattr(struct svc_rqst *rqstp, struct svc_fh *fhp, struct iattr *iap,
 
 		host_err = -EFBIG;
 		if (iap->ia_size < 0)
+			goto out_unlock;
+
+		err = nfsd_may_truncate(rqstp, fhp, iap);
+		if (err)
 			goto out_unlock;
 
 		host_err = notify_change(dentry, &size_attr, NULL);
@@ -476,7 +483,7 @@ out_unlock:
 out:
 	if (!host_err)
 		host_err = commit_metadata(fhp);
-	return nfserrno(host_err);
+	return err ? err : nfserrno(host_err);
 }
 
 #if defined(CONFIG_NFSD_V4)
