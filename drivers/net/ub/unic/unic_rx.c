@@ -473,6 +473,17 @@ static void unic_modify_jfr_state(struct auxiliary_device *adev, u32 idx,
 	ubase_free_cmd_mailbox(adev, mailbox);
 }
 
+static bool unic_rx_cqe_ready(const union unic_cqe *cqe, u8 shift, u32 ci)
+{
+	u8 owner = READ_ONCE(*(const u8 *)cqe) & BIT(0);
+
+	if (!unic_cqe_owner_is_soft(shift, ci, owner))
+		return false;
+
+	dma_rmb();
+	return true;
+}
+
 static int unic_get_last_rqe_idx(struct unic_dev *unic_dev, struct unic_rq *rq)
 {
 	u8 jfc_shift = unic_dev->channels.rq_jfc_shift;
@@ -485,9 +496,8 @@ static int unic_get_last_rqe_idx(struct unic_dev *unic_dev, struct unic_rq *rq)
 
 	ci = cq->ci;
 	cq_mask = unic_get_rq_cqe_mask(unic_dev);
-	dma_rmb(); /* Memory barrier before read cqe */
 	cqe = &cq->cqe[ci & cq_mask];
-	while (unic_cqe_owner_is_soft(jfc_shift, ci, cqe->rx.owner)) {
+	while (unic_rx_cqe_ready(cqe, jfc_shift, ci)) {
 		pkt_len = cqe->rx.packet_len;
 		rqe_num = DIV_ROUND_UP(pkt_len, buff_len);
 		rqe_idx = cqe->rx.start_rqe_idx + rqe_num;
@@ -754,7 +764,8 @@ int unic_create_rq(struct unic_dev *unic_dev, u32 idx)
 	channels_num = unic_dev->channels.num;
 	unic_init_jfr_ctx(rq, rqe_depth, channels_num, idx, unic_dev->tid);
 
-	*(u16 *)(rq->sw_db.db_addr) = rqe_depth;
+	dma_wmb();
+	WRITE_ONCE(*(__le16 *)rq->sw_db.db_addr, cpu_to_le16(rqe_depth));
 
 	ret = unic_mbx_create_jfr_context(adev, rq, idx);
 	if (ret)
@@ -1111,13 +1122,15 @@ static bool unic_refill_rx_buffers(struct unic_rq *rq)
 		}
 
 		rqe = &rq->rqe[i & rqe_mask];
-		rqe->buff_addr = rqe_info->rqe_dma_addr + rqe_info->page_offset;
+		rqe->buff_addr = cpu_to_le64(rqe_info->rqe_dma_addr +
+					     rqe_info->page_offset);
 		rq->pi++;
 	}
 
 	if (likely(i > rq_ci - pd_buff)) {
 		rq->pending_buf = rq_ci - i;
-		*(u16 *)(rq->sw_db.db_addr) = rq->pi;
+		dma_wmb();
+		WRITE_ONCE(*(__le16 *)rq->sw_db.db_addr, cpu_to_le16(rq->pi));
 	}
 
 	return ret;
@@ -1160,9 +1173,8 @@ int unic_poll_rx(struct unic_channel *c, int budget,
 			failure = failure || unic_refill_rx_buffers(rq);
 		}
 
-		dma_rmb(); /* Memory barrier before read cqe */
 		cqe = &cq->cqe[cq->ci & cq_mask];
-		if (!unic_cqe_owner_is_soft(jfc_shift, cq->ci, cqe->rx.owner))
+		if (!unic_rx_cqe_ready(cqe, jfc_shift, cq->ci))
 			break;
 
 		trace_unic_rx_cqe(rq->netdev, cq, rq->pi, rq->ci, cq_mask);
@@ -1219,7 +1231,7 @@ void unic_clear_rq(struct unic_rq *rq)
 	union unic_cqe *cqe;
 
 	cqe = &cq->cqe[cq->ci & cq_mask];
-	while (unic_cqe_owner_is_soft(jfc_shift, cq->ci, cqe->rx.owner)) {
+	while (unic_rx_cqe_ready(cqe, jfc_shift, cq->ci)) {
 		unic_clear_rq_buffers(rq, cqe);
 		cq->ci++;
 		cqe = &cq->cqe[cq->ci & cq_mask];

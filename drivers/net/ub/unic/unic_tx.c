@@ -1194,6 +1194,9 @@ static void unic_handle_sge_section(struct unic_sq *sq, struct sk_buff *skb,
 		page_info = &tx_buff->page_info[tx_buff->pi % tx_buff->num];
 		len = i < sge_num - 1 ? PAGE_SIZE : size;
 		memcpy(page_info->sge_va_addr, skb->data + i * PAGE_SIZE, len);
+		dma_sync_single_for_device(sq->parent_dev,
+					   page_info->sge_dma_addr, PAGE_SIZE,
+					   DMA_TO_DEVICE);
 		unic_fill_sge_section(sge, (u64)page_info->sge_dma_addr, len);
 
 		sge = unic_get_next_sge(&sec_num, sge, sq, sqebb_mask, &sq_pi);
