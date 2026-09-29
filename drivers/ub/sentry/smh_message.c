@@ -268,6 +268,11 @@ int smh_message_ack(struct sentry_msg_helper_msg *msg)
 	struct smh_msg_handler *handle;
 	bool found = false;
 
+	if (!msg) {
+		pr_err("%s: Invalid param, failed to ack data\n", __func__);
+		return -EINVAL;
+	}
+
 	RM_LOG_INFO("%s: %llu\n", __func__, msg->msgid);
 
 	FIND_AND_REMOVE_TIMEOUT_FROM_LIST(handle, &msg_ctx.msgbuf_ack_lock,
