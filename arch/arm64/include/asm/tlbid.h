@@ -19,6 +19,10 @@ struct tlbi_target {
 int add_target(int type, struct tlbi_target *target);
 void tlbid_data_reset(void);
 int __init parse_tlbid_topology(void);
+int pick_best_domain(const cpumask_t *active_cpus);
+
+#else
+static inline int pick_best_domain(const cpumask_t *active_cpus) { return 0; }
 
 #endif /* ! CONFIG_ARM64_TLBID */
 #endif

@@ -207,6 +207,42 @@ int add_target(int type, struct tlbi_target *target)
 }
 
 /*
+ * pick_best_domain - Select optimal TLBI domain for given CPUs
+ *
+ * Iterates through cpu_domain table to find a domain whose cpumask exactly
+ * matches the given active CPUs. This allows targeted TLBI instead of
+ * broadcasting to all CPUs, improving TLB invalidation efficiency.
+ * Returns domain ID on success, 0 on failure.
+ */
+int pick_best_domain(const cpumask_t *active_cpus)
+{
+	struct tlbi_domain *domain;
+	cpumask_t tmp;
+	int nr_cpu;
+
+	/* Domain 0 is the only supported for Innern Shareable TLBI */
+	if (unlikely(tlbid_data.nr_acpi_domain == 1))
+		goto domain0;
+
+	nr_cpu = cpumask_weight(active_cpus);
+	if (unlikely(nr_cpu == 0))
+		goto domain0;
+
+	do {
+		domain = &tlbid_data.cpu_domain[nr_cpu - 1][0];
+		while (domain->id != TLBI_INV_DOMAIN) {
+			if (cpumask_and(&tmp, active_cpus, &domain->cpumask) &&
+			    cpumask_equal(&tmp, active_cpus))
+				return domain->id;
+			domain++;
+		}
+	} while (++nr_cpu <= num_possible_cpus());
+
+domain0:
+	return 0;
+}
+
+/*
  * parse_tlbid_topology - Initialize TLBI domain mapping tables
  *
  * Allocates and populates the cpu_domain table:
