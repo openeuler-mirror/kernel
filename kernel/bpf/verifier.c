@@ -200,6 +200,7 @@ static int release_reference(struct bpf_verifier_env *env, int ref_obj_id);
 static void invalidate_non_owning_refs(struct bpf_verifier_env *env);
 static void invalidate_rcu_protected_refs(struct bpf_verifier_env *env);
 static bool in_rbtree_lock_required_cb(struct bpf_verifier_env *env);
+static bool is_tracing_prog_type(enum bpf_prog_type type);
 static int ref_set_non_owning(struct bpf_verifier_env *env,
 			      struct bpf_reg_state *reg);
 static void specialize_kfunc(struct bpf_verifier_env *env,
@@ -11372,6 +11373,11 @@ static int check_reg_allocation_locked(struct bpf_verifier_env *env, struct bpf_
 	return 0;
 }
 
+static bool is_bpf_obj_drop_kfunc(u32 func_id)
+{
+	return func_id == special_kfunc_list[KF_bpf_obj_drop_impl];
+}
+
 static bool is_bpf_list_api_kfunc(u32 btf_id)
 {
 	return btf_id == special_kfunc_list[KF_bpf_list_push_front_impl] ||
@@ -12120,6 +12126,7 @@ static int check_kfunc_call(struct bpf_verifier_env *env, struct bpf_insn *insn,
 	struct bpf_reg_state *regs = cur_regs(env);
 	const char *func_name, *ptr_type_name;
 	bool sleepable, rcu_lock, rcu_unlock;
+	enum bpf_prog_type prog_type = resolve_prog_type(env->prog);
 	struct bpf_kfunc_call_arg_meta meta;
 	struct bpf_insn_aux_data *insn_aux;
 	int err, insn_idx = *insn_idx_p;
@@ -12161,6 +12168,20 @@ static int check_kfunc_call(struct bpf_verifier_env *env, struct bpf_insn *insn,
 	err = check_kfunc_args(env, &meta, insn_idx);
 	if (err < 0)
 		return err;
+
+	if (is_bpf_obj_drop_kfunc(meta.func_id) && (is_tracing_prog_type(prog_type) ||
+	     /* is_tracing_prog_type() for now doesn't cover non-iterator tracing progs. */
+	     (prog_type == BPF_PROG_TYPE_TRACING && env->prog->expected_attach_type != BPF_TRACE_ITER
+	      && !env->prog->sleepable))) {
+		struct btf_struct_meta *struct_meta;
+
+		struct_meta = btf_find_struct_meta(meta.arg_btf, meta.arg_btf_id);
+		if (struct_meta && btf_record_has_nmi_unsafe_fields(struct_meta->record)) {
+			verbose(env, "%s cannot be used in tracing programs on types with NMI unsafe fields\n",
+				func_name);
+			return -EINVAL;
+		}
+	}
 
 	if (meta.func_id == special_kfunc_list[KF_bpf_rbtree_add_impl]) {
 		err = push_callback_call(env, insn, insn_idx, meta.subprogno,
