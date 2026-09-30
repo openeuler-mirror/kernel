@@ -4815,6 +4815,7 @@ nfs4_laundromat(struct nfsd_net *nn)
 		list_del_init(&clp->cl_lru);
 		expire_client(clp);
 	}
+	spin_lock(&nn->client_lock);
 	spin_lock(&state_lock);
 	list_for_each_safe(pos, next, &nn->del_recall_lru) {
 		dp = list_entry (pos, struct nfs4_delegation, dl_recall_lru);
@@ -4823,15 +4824,27 @@ nfs4_laundromat(struct nfsd_net *nn)
 			new_timeo = min(new_timeo, t);
 			break;
 		}
+		clp = dp->dl_stid.sc_client;
+		if (is_client_expired(clp))
+			continue;
+		/*
+		 * Pin the client so it cannot be torn down and freed
+		 * while revoke_delegation() reaps this delegation below.
+		 */
+		atomic_inc(&clp->cl_refcount);
 		WARN_ON(!unhash_delegation_locked(dp));
 		list_add(&dp->dl_recall_lru, &reaplist);
 	}
 	spin_unlock(&state_lock);
+	spin_unlock(&nn->client_lock);
 	while (!list_empty(&reaplist)) {
 		dp = list_first_entry(&reaplist, struct nfs4_delegation,
 					dl_recall_lru);
+		clp = dp->dl_stid.sc_client;
 		list_del_init(&dp->dl_recall_lru);
 		revoke_delegation(dp);
+		/* Unpin without renewing the reaped client's lease. */
+		atomic_dec(&clp->cl_refcount);
 	}
 
 	spin_lock(&nn->client_lock);
