@@ -100,9 +100,9 @@ static void __init cpu_features_init(void)
 	if (cpu_has_crc32)
 		static_branch_enable(&cpu_crc32_support);
 	if (cpu_has_ual) {
-		crc3way_table_init();
 		static_branch_enable(&cpu_ual_support);
 	}
+	crc3way_table_init();
 }
 
 void __init arch_cpu_finalize_init(void)
