@@ -12,6 +12,7 @@
 #include <linux/platform_device.h>
 #include <linux/perf_event.h>
 #include <linux/msi.h>
+#include <ub/ubfi/ubfi.h>
 
 #define UMMU_PMCG_MAX_COUNTERS 8
 
@@ -965,7 +966,12 @@ static int ummu_pmu_probe(struct platform_device *pdev)
 	struct ummu_pmu *ummu_pmu;
 	struct resource *res;
 	char *name;
+	u32 ummu_node_count;
 	int ret;
+
+	ummu_node_count = ubrt_get_ummu_pmu_node_count();
+	if (!ummu_node_count)
+		return dev_err_probe(dev, -ENODEV, "ummu pmu node num is zero\n");
 
 	ummu_pmu = devm_kzalloc(dev, sizeof(*ummu_pmu), GFP_KERNEL);
 	if (!ummu_pmu)
@@ -1189,5 +1195,4 @@ module_exit(ummu_pmu_module_exit);
 
 MODULE_DESCRIPTION("PMU driver for UMMU Performance Monitors Extension");
 MODULE_LICENSE("GPL");
-MODULE_SOFTDEP("pre: ubfi");
 MODULE_ALIAS("platform:" UMMU_PMU_DRV_NAME);

@@ -220,6 +220,13 @@ extern u8 ubc_feature;
  */
 void ubrt_iommu_get_resv_regions(struct device *dev, struct list_head *list);
 
+/**
+ * ubrt_get_ummu_pmu_node_count() - Get the count of UMMU PMU nodes
+ *
+ * Return: The count of UMMU PMU nodes added from the UBRT table.
+ */
+u32 ubrt_get_ummu_pmu_node_count(void);
+
 #else /* !CONFIG_UB_UBFI */
 
 static inline
