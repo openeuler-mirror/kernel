@@ -76,7 +76,6 @@ struct cis_sm4_ctx {
 	struct sm4_ctx ctx;
 	struct sm4_ctx tweak_ctx;
 	struct crypto_shash *ghash_tfm;
-	struct shash_desc *ghash_desc;
 };
 
 #define CRYPTO_SM4_CTX_SIZE		 sizeof(struct cis_sm4_ctx)
@@ -639,10 +638,8 @@ static int sm4_gcm_init(struct crypto_aead *tfm)
 {
 	struct cis_sm4_ctx *cis_ctx = crypto_aead_ctx(tfm);
 	struct crypto_shash *ghash = NULL;
-	struct shash_desc *sdesc = NULL;
 
 	cis_ctx->ghash_tfm = NULL;
-	cis_ctx->ghash_desc = NULL;
 
 	ghash = crypto_alloc_shash("__ghash-pclmulqdqni",
 		CRYPTO_ALG_INTERNAL, 0);
@@ -650,16 +647,8 @@ static int sm4_gcm_init(struct crypto_aead *tfm)
 		pr_warn("load ghash-pclmulqdqni failed\n");
 		return PTR_ERR(ghash);
 	}
-	sdesc = kzalloc(sizeof(struct shash_desc) +
-				   crypto_shash_descsize(ghash), GFP_KERNEL);
-	if (unlikely(!sdesc)) {
-		crypto_free_shash(ghash);
-		return -ENOMEM;
-	}
 
-	sdesc->tfm = ghash;
 	cis_ctx->ghash_tfm = ghash;
-	cis_ctx->ghash_desc = sdesc;
 
 	return 0;
 }
@@ -670,8 +659,6 @@ static void sm4_gcm_exit(struct crypto_aead *tfm)
 
 	if (cis_ctx->ghash_tfm)
 		crypto_free_shash(cis_ctx->ghash_tfm);
-
-	kfree(cis_ctx->ghash_desc);
 }
 
 static int sm4_gcm_set_key(struct crypto_aead *tfm,
@@ -679,16 +666,28 @@ static int sm4_gcm_set_key(struct crypto_aead *tfm,
 {
 	struct cis_sm4_ctx *cis_ctx = crypto_aead_ctx(tfm);
 	struct sm4_ctx *ctx = &cis_ctx->ctx;
-	int i = 0;
+	u8 H[GHASH_BLOCK_SIZE] = {0};
+	int i = 0, err;
 
 	if (key_len != SM4_KEY_SIZE)
 		return -EINVAL;
 
 	kernel_fpu_begin();
 	cis_sm4_set_key(key, ctx->rkey_enc);
+	cis_sm4_blk(ctx->rkey_enc, H, H);
 	kernel_fpu_end();
+
 	for (i = 0; i < SM4_RKEY_WORDS; i++)
 		ctx->rkey_dec[i] = ctx->rkey_enc[SM4_RKEY_WORDS - 1 - i];
+
+	/*
+	 * H = E(K, 0^128) depends only on the key, so derive the GHASH
+	 * subkey once here. ghash_setkey() writes the shared shash tfm
+	 * context, which must not be done per request.
+	 */
+	err = crypto_shash_setkey(cis_ctx->ghash_tfm, H, sizeof(H));
+	if (err)
+		return err;
 
 	return 0;
 }
@@ -717,13 +716,13 @@ static int sm4_gcm_do_crypt(struct aead_request *req, bool encrypt)
 	struct crypto_aead *tfm = crypto_aead_reqtfm(req);
 	struct cis_sm4_ctx *cis_ctx = crypto_aead_ctx(tfm);
 	struct sm4_ctx *ctx = &cis_ctx->ctx;
+	SHASH_DESC_ON_STACK(ghash_desc, cis_ctx->ghash_tfm);
 	struct scatter_walk assoc_sg_walk;
 	struct skcipher_walk walk;
 	unsigned long auth_tag_len = crypto_aead_authsize(tfm);
 	be128 tail = {cpu_to_be64(req->assoclen * 8), 0};
 	u8 iv[SM4_BLOCK_SIZE] = {0};
 	u8 ghash[GHASH_BLOCK_SIZE] = {0};
-	u8 H[GHASH_BLOCK_SIZE] = {0};
 	u8 keystream[SM4_BLOCK_SIZE] = {0};
 	u8 auth_tag[SM4_BLOCK_SIZE] = {0};
 	u8 auth_tag_msg[SM4_BLOCK_SIZE];
@@ -733,8 +732,10 @@ static int sm4_gcm_do_crypt(struct aead_request *req, bool encrypt)
 	gfp_t flags;
 	int err = 0;
 
-	if (!cis_ctx->ghash_tfm || !cis_ctx->ghash_desc)
+	if (!cis_ctx->ghash_tfm)
 		return -EPERM;
+
+	ghash_desc->tfm = cis_ctx->ghash_tfm;
 
 	tail.b = encrypt ? cpu_to_be64(req->cryptlen * 8) :
 			cpu_to_be64((req->cryptlen - auth_tag_len) * 8);
@@ -745,11 +746,9 @@ static int sm4_gcm_do_crypt(struct aead_request *req, bool encrypt)
 
 	kernel_fpu_begin();
 	cis_sm4_blk(ctx->rkey_enc, auth_tag, auth_tag);
-	cis_sm4_blk(ctx->rkey_enc, H, H);
 	kernel_fpu_end();
 
-	crypto_shash_setkey(cis_ctx->ghash_tfm, H, sizeof(H));
-	crypto_shash_init(cis_ctx->ghash_desc);
+	crypto_shash_init(ghash_desc);
 
 	if (req->assoclen > 0) {
 		if (req->src->length >= req->assoclen) {
@@ -769,9 +768,9 @@ static int sm4_gcm_do_crypt(struct aead_request *req, bool encrypt)
 		}
 
 		zfilled = ALIGN(req->assoclen, GHASH_BLOCK_SIZE) - req->assoclen;
-		crypto_shash_update(cis_ctx->ghash_desc, assoc, req->assoclen);
+		crypto_shash_update(ghash_desc, assoc, req->assoclen);
 		if (zfilled)
-			crypto_shash_update(cis_ctx->ghash_desc, pad, zfilled);
+			crypto_shash_update(ghash_desc, pad, zfilled);
 
 		if (!assocmem)
 			scatterwalk_unmap(assoc);
@@ -795,10 +794,10 @@ static int sm4_gcm_do_crypt(struct aead_request *req, bool encrypt)
 					walk.src.virt.addr, walk.dst.virt.addr, iv, nbytes);
 				kernel_fpu_end();
 
-				crypto_shash_update(cis_ctx->ghash_desc,
+				crypto_shash_update(ghash_desc,
 					walk.dst.virt.addr, nbytes);
 			} else {
-				crypto_shash_update(cis_ctx->ghash_desc,
+				crypto_shash_update(ghash_desc,
 					walk.src.virt.addr, nbytes);
 
 				kernel_fpu_begin();
@@ -818,11 +817,11 @@ static int sm4_gcm_do_crypt(struct aead_request *req, bool encrypt)
 					   keystream, remain);
 
 				memcpy(pad, walk.dst.virt.addr + nbytes, remain);
-				crypto_shash_update(cis_ctx->ghash_desc,
+				crypto_shash_update(ghash_desc,
 					pad, GHASH_BLOCK_SIZE);
 			} else {
 				memcpy(pad, walk.src.virt.addr + nbytes, remain);
-				crypto_shash_update(cis_ctx->ghash_desc,
+				crypto_shash_update(ghash_desc,
 					pad, GHASH_BLOCK_SIZE);
 
 				crypto_xor_cpy(walk.dst.virt.addr + nbytes,
@@ -839,8 +838,8 @@ static int sm4_gcm_do_crypt(struct aead_request *req, bool encrypt)
 		if (err)
 			break;
 	}
-	crypto_shash_update(cis_ctx->ghash_desc, (const u8 *)&tail, sizeof(tail));
-	crypto_shash_final(cis_ctx->ghash_desc, ghash);
+	crypto_shash_update(ghash_desc, (const u8 *)&tail, sizeof(tail));
+	crypto_shash_final(ghash_desc, ghash);
 
 	crypto_xor(auth_tag, ghash, SM4_BLOCK_SIZE);
 	if (encrypt) {
