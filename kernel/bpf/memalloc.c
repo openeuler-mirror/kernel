@@ -315,18 +315,9 @@ static void enque_to_free(struct bpf_mem_cache *c, void *obj)
 	llist_add(llnode, &c->free_by_rcu_ttrace);
 }
 
-static void do_call_rcu_ttrace(struct bpf_mem_cache *c)
+static void __do_call_rcu_ttrace(struct bpf_mem_cache *c)
 {
 	struct llist_node *llnode, *t;
-
-	if (atomic_xchg(&c->call_rcu_ttrace_in_progress, 1)) {
-		if (unlikely(READ_ONCE(c->draining))) {
-			scoped_guard(raw_spinlock_irqsave, &c->lock)
-				llnode = llist_del_all(&c->free_by_rcu_ttrace);
-			free_all(c, llnode, !!c->percpu_size);
-		}
-		return;
-	}
 
 	WARN_ON_ONCE(!llist_empty(&c->waiting_for_gp_ttrace));
 	llist_for_each_safe(llnode, t, llist_del_all(&c->free_by_rcu_ttrace))
@@ -343,6 +334,22 @@ static void do_call_rcu_ttrace(struct bpf_mem_cache *c)
 	 * progs to finish and finally do free_one() on each element.
 	 */
 	call_rcu_tasks_trace(&c->rcu_ttrace, __free_rcu_tasks_trace);
+}
+
+static void do_call_rcu_ttrace(struct bpf_mem_cache *c)
+{
+	struct llist_node *llnode;
+
+	if (atomic_xchg(&c->call_rcu_ttrace_in_progress, 1)) {
+		if (unlikely(READ_ONCE(c->draining))) {
+			scoped_guard(raw_spinlock_irqsave, &c->lock)
+				llnode = llist_del_all(&c->free_by_rcu_ttrace);
+			free_all(c, llnode, !!c->percpu_size);
+		}
+		return;
+	}
+
+	__do_call_rcu_ttrace(c);
 }
 
 static void free_bulk(struct bpf_mem_cache *c)
