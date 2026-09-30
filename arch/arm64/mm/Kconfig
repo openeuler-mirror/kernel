@@ -14,3 +14,13 @@ config PFN_RANGE_ALLOC
 		the linear mapping granule of this range is never larger than PMD.
 
 		If unsure, say N.
+
+config TLBID_KUNIT_TEST
+	bool "KUnit tests for TLBI" if !KUNIT_ALL_TESTS
+	depends on KUNIT=y
+	depends on ARM64_TLBID && ACPI
+	default KUNIT_ALL_TESTS
+	help
+	  Enable this option to run tests for TLBID.
+
+	  If unsure, say N.

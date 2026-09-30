@@ -335,3 +335,7 @@ static int __init arm64_tlbid_register_cpus(void)
 }
 /* Must occur before acpi_tlbid_init() from acpi_arm_init() */
 arch_initcall(arm64_tlbid_register_cpus)
+
+#ifdef CONFIG_TLBID_KUNIT_TEST
+#include "test_tlbid.c"
+#endif
