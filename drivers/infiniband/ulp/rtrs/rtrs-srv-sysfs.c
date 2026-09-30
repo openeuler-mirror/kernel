@@ -300,8 +300,8 @@ remove_group:
 put_kobj:
 	kobject_del(&sess->kobj);
 destroy_root:
-	kobject_put(&sess->kobj);
 	rtrs_srv_destroy_once_sysfs_root_folders(sess);
+	kobject_put(&sess->kobj);
 
 	return err;
 }
