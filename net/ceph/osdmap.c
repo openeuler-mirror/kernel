@@ -502,6 +502,8 @@ static struct crush_map *crush_decode(void *pbyval, void *end)
 		if (b->id != -1 - i)
 			goto bad;
 		b->type = ceph_decode_16(p);
+		if (b->type == 0)
+			goto bad;
 		b->alg = ceph_decode_8(p);
 		if (b->alg != alg) {
 			b->alg = 0;
