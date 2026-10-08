@@ -278,6 +278,19 @@ bool enfs_test_reconnect_time(void)
 
 	return ret;
 }
+
+bool enfs_test_fault_recovery_state(void)
+{
+	/* A recovered fault is normal until the reconnect limit is reached. */
+	if (enfs_reconnect_next_state(PM_STATE_FAULT, false, false) !=
+	    PM_STATE_NORMAL)
+		return false;
+	if (enfs_reconnect_next_state(PM_STATE_FAULT, false, true) !=
+	    PM_STATE_UNSTABLE)
+		return false;
+
+	return true;
+}
 #endif
 
 // Default callback for async RPC calls

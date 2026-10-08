@@ -24,4 +24,9 @@ int pm_ping_rpc_test_xprt_with_callback(struct rpc_clnt *clnt,
 					struct rpc_xprt *xprt,
 					void (*func)(void *data), void *data);
 
+#if IS_ENABLED(CONFIG_ENFS_KUNIT_TEST)
+bool enfs_test_reconnect_time(void);
+bool enfs_test_fault_recovery_state(void);
+#endif
+
 #endif // PM_PING_H
