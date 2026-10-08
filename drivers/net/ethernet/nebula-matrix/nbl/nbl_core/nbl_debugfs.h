@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0*/
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (c) 2022 nebula-matrix Limited.
  * Author:
@@ -28,6 +28,7 @@
 
 struct nbl_debugfs_mgt {
 	struct dentry *nbl_debugfs_root;
+	struct nbl_adapter *adapter;
 	struct nbl_service_ops_tbl *serv_ops_tbl;
 	struct nbl_dispatch_ops_tbl *disp_ops_tbl;
 	struct nbl_channel_ops_tbl *chan_ops_tbl;

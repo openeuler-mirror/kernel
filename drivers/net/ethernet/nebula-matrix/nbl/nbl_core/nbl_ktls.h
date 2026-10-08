@@ -1,7 +1,7 @@
-/* SPDX-License-Identifier: GPL-2.0*/
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Copyright (c) 2022 nebula-matrix Limited.
- * Author:
+ * Copyright (c) 2023 nebula-matrix Limited.
+ * Author: Rocky Xie <rocky.xie@nebula-matrix.com>
  */
 
 #ifndef _NBL_KTLS_H
@@ -12,7 +12,7 @@
 #include <linux/kernel.h>
 #include <linux/types.h>
 #include <linux/if_vlan.h>
-#ifdef CONFIG_TLS_DEVICE
+#if IS_ENABLED(CONFIG_TLS_DEVICE)
 #include <net/tls.h>
 
 #define NBL_KTLS_AES_GCM_128			0

@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0*/
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (c) 2022 nebula-matrix Limited.
  * Author:
@@ -13,16 +13,27 @@
 #define NBL_PHY_MGT_TO_DEV(phy_mgt)		NBL_COMMON_TO_DEV(NBL_PHY_MGT_TO_COMMON(phy_mgt))
 #define NBL_MEMORY_BAR				(0)
 #define NBL_MAILBOX_BAR				(2)
+#define NBL_RDMA_BAR				(4)
 #define NBL_RDMA_NOTIFY_OFF			(8192)
+#define NBL_RDMA_NOTIFY_OFF_PF_DRACO		(512 * 1024)
+
+enum nbl_ethdev_repr_flag {
+	NBL_ETHDEV_VIRTIO_REP = 0,
+	NBL_ETHDEV_ETH_REP,
+	NBL_ETHDEV_PF_REP,
+	NBL_ETHDEV_INVALID_REP,
+};
 
 struct nbl_phy_mgt {
 	struct nbl_common_info *common;
 	u8 __iomem *hw_addr;
 	u8 __iomem *mailbox_bar_hw_addr;
+	u8 __iomem *rdma_bar_hw_addr;
 	u64 notify_offset;
 	u32 version;
 	u32 hw_size;
 	spinlock_t reg_lock;  /* Protect reg access */
+	struct mutex mutex_lock;
 	bool should_lock;
 	u8 resv[3];
 	enum nbl_hw_status hw_status;
@@ -190,8 +201,9 @@ struct nbl_phy_mgt_leonis {
 	bool ro_enable;
 };
 
-struct nbl_phy_mgt_bootis {
+struct nbl_phy_mgt_draco {
 	struct nbl_phy_mgt phy_mgt;
+	bool ro_enable;
 };
 
 #endif

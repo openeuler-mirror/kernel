@@ -1,9 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0*/
-/*
- * Copyright (c) 2022 nebula-matrix Limited.
- * Author:
- */
-
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __NBL_TC_TUN_H__
 #define __NBL_TC_TUN_H__
 
@@ -35,17 +30,6 @@ enum {
 
 struct nbl_decap_key {
 	struct ethhdr key;
-};
-
-struct nbl_tc_tunnel_route_info {
-	struct net_device *out_dev;
-	struct net_device *real_out_dev;
-	union {
-		struct flowi4 fl4;
-		struct flowi6 fl6;
-	} fl;
-	struct neighbour *n;
-	u8 ttl;
 };
 
 struct nbl_tc_tunnel {

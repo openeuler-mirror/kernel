@@ -1,7 +1,7 @@
-/* SPDX-License-Identifier: GPL-2.0*/
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Copyright (c) 2022 nebula-matrix Limited.
- * Author:
+ * Copyright (c) 2023 nebula-matrix Limited.
+ *
  */
 
 #ifndef _NBL_TC_OFFLOAD_H

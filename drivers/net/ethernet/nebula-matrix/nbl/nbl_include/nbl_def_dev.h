@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0*/
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (c) 2022 nebula-matrix Limited.
  * Author:
@@ -22,8 +22,8 @@ struct nbl_dev_ops_tbl {
 
 int nbl_dev_init(void *p, struct nbl_init_param *param);
 void nbl_dev_remove(void *p);
-int nbl_dev_start(void *p, struct nbl_init_param *param);
-void nbl_dev_stop(void *p);
+int nbl_dev_start(void *p, struct nbl_init_param *param, bool probe_stage);
+void nbl_dev_stop(void *p, bool remove_stage);
 int nbl_dev_init_emp_class(void);
 void nbl_dev_destroy_emp_class(void);
 
@@ -38,4 +38,5 @@ void nbl_dev_register_dev_name(void *p);
 void nbl_dev_get_dev_name(void *p, char *dev_name);
 int nbl_dev_resume(void *p);
 int nbl_dev_suspend(void *p);
+int nbl_dev_dump_ldev(void *p, struct seq_file *m);
 #endif

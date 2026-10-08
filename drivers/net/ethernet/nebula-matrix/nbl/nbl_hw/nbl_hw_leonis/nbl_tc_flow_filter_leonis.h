@@ -1,9 +1,8 @@
-/* SPDX-License-Identifier: GPL-2.0*/
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (c) 2022 nebula-matrix Limited.
  * Author:
  */
-
 #ifndef _NBL_TC_FLOW_FILTER_LEONIS_H_
 #define _NBL_TC_FLOW_FILTER_LEONIS_H_
 

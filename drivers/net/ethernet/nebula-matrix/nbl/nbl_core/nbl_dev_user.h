@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0*/
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (c) 2022 nebula-matrix Limited.
  * Author:
@@ -70,7 +70,7 @@ struct nbl_dev_user_dma_unmap {
 
 #define NBL_DEV_USER_SET_MCAST_MODE	_IO(NBL_DEV_USER_TYPE, 11)
 
-void nbl_dev_start_user_dev(struct nbl_adapter *adapter);
-void nbl_dev_stop_user_dev(struct nbl_adapter *adapter);
+void nbl_dev_setup_user_dev(struct nbl_adapter *adapter);
+void nbl_dev_remove_user_dev(struct nbl_adapter *adapter);
 
 #endif

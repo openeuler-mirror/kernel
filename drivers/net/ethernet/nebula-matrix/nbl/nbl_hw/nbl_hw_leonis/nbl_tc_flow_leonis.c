@@ -10,6 +10,7 @@
 #include "nbl_tc_tun_leonis.h"
 #include "nbl_tc_pedit.h"
 #include "nbl_resource_leonis.h"
+#include "nbl_tc_flow.h"
 
 static struct nbl_profile_msg g_prf_msg[NBL_ALL_PROFILE_NUM] = {
 	{
@@ -2422,210 +2423,6 @@ static struct nbl_profile_assoc_graph g_prf_graph[NBL_ASSOC_PROFILE_GRAPH_NUM] =
 
 static u8 g_profile_graph_count = 23;
 
-static void nbl_assign_key(u32 *kt_data, bool full,
-			   u32 offset, u16 length, u32 value)
-{
-	u32 full_offset = NBL_FEM_KT_LEN - offset - length;
-	u32 index = full_offset / NBL_BITS_IN_U32;
-	u32 remain = full_offset % NBL_BITS_IN_U32;
-	u32 shifted = 0;
-
-	if (NBL_BITS_IN_U32 - remain < length) {
-		/* if the value span across u32 boundary */
-		shifted = NBL_BITS_IN_U32 - remain;
-		kt_data[index] += (value << remain);
-		kt_data[index + 1] += (value >> shifted);
-	} else {
-		kt_data[index] += (value << remain);
-	}
-}
-
-static void nbl_assign_flow_key_input(u32 *kt_data, bool full,
-				      const struct nbl_flow_key_info *key,
-				      struct nbl_fdir_fltr *input,
-				      u16 tab_index)
-{
-	const u32 *data = NULL;
-	const u32 *mask = NULL;
-	u16 temp_etype = 0;
-	u16 length = (u16)(key->length / NBL_BITS_IN_U32);
-	int i = 0;
-
-	switch (1ULL << key->key_id) {
-	case NBL_FLOW_KEY_TABLE_IDX_FLAG:
-		nbl_assign_key(kt_data, full, key->offset, key->length,
-			       tab_index);
-		break;
-	case NBL_FLOW_KEY_INPORT8_FLAG:
-		nbl_assign_key(kt_data, full, key->offset, key->length,
-			       input->port & 0xFF);
-		break;
-	case NBL_FLOW_KEY_INPORT4_FLAG:
-		nbl_assign_key(kt_data, full, key->offset, key->length,
-			       (input->port >> NBL_BITS_IN_U8) & 0xF);
-		break;
-	case NBL_FLOW_KEY_T_DIPV4_FLAG:
-		nbl_assign_key(kt_data, full, key->offset, key->length,
-			       input->ip_outer.dst_ip.addr);
-		break;
-	case NBL_FLOW_KEY_T_DIPV6_FLAG:
-		data = (u32 *)(&input->ip_outer.dst_ip.v6_addr);
-		for (i = length - 1; i >= 0; i--, data++)
-			nbl_assign_key(kt_data, full,
-				       key->offset + NBL_BITS_IN_U32 * i,
-				       NBL_BITS_IN_U32, (*data));
-		break;
-	case NBL_FLOW_KEY_T_SRCPORT_FLAG:
-		nbl_assign_key(kt_data, full, key->offset, key->length,
-			       input->l4_outer.src_port);
-		break;
-	case NBL_FLOW_KEY_T_DSTPORT_FLAG:
-		nbl_assign_key(kt_data, full, key->offset, key->length,
-			       input->l4_outer.dst_port);
-		break;
-	case NBL_FLOW_KEY_T_PROTOCOL_FLAG:
-		nbl_assign_key(kt_data, full, key->offset, key->length,
-			       input->ip_outer.proto);
-		break;
-	case NBL_FLOW_KEY_T_TOS_FLAG:
-		nbl_assign_key(kt_data, full, key->offset, key->length,
-			       input->ip_outer.tos);
-		break;
-	case NBL_FLOW_KEY_T_TTL_FLAG:
-		nbl_assign_key(kt_data, full, key->offset, key->length,
-			       input->ip_outer.ttl);
-		break;
-	case NBL_FLOW_KEY_T_VNI_FLAG:
-		nbl_assign_key(kt_data, full, key->offset, key->length,
-			       input->tnl.vni);
-		break;
-	case NBL_FLOW_KEY_SIPV4_FLAG:
-		nbl_assign_key(kt_data, full, key->offset, key->length,
-			       input->ip.src_ip.addr & input->ip_mask.src_ip.addr);
-		break;
-	case NBL_FLOW_KEY_SIPV6_FLAG:
-		data = (u32 *)(&input->ip.src_ip.v6_addr);
-		mask = (u32 *)(&input->ip_mask.src_ip.v6_addr);
-		for (i = length - 1; i >= 0; i--, data++, mask++)
-			nbl_assign_key(kt_data, full,
-				       key->offset + NBL_BITS_IN_U32 * i,
-				       NBL_BITS_IN_U32, (*data) & (*mask));
-		break;
-	case NBL_FLOW_KEY_DIPV4_FLAG:
-		nbl_assign_key(kt_data, full, key->offset, key->length,
-			       input->ip.dst_ip.addr);
-		break;
-	case NBL_FLOW_KEY_DIPV6_FLAG:
-		data = (u32 *)(&input->ip.dst_ip.v6_addr);
-		for (i = length - 1; i >= 0; i--, data++, mask++)
-			nbl_assign_key(kt_data, full,
-				       key->offset + NBL_BITS_IN_U32 * i,
-				       NBL_BITS_IN_U32, (*data));
-		break;
-	case NBL_FLOW_KEY_DSTMAC_FLAG:
-		data = (u32 *)input->l2_data.dst_mac;
-		nbl_assign_key(kt_data, full, key->offset + NBL_BITS_IN_U16,
-			       NBL_BITS_IN_U32, *data);
-		nbl_assign_key(kt_data, full, key->offset, NBL_BITS_IN_U16,
-			       (*(data + 1)) & 0x0000FFFF);
-		break;
-	case NBL_FLOW_KEY_SRCMAC_FLAG:
-		data = (u32 *)input->l2_data.src_mac;
-		nbl_assign_key(kt_data, full, key->offset + NBL_BITS_IN_U16,
-			       NBL_BITS_IN_U32, *data);
-		nbl_assign_key(kt_data, full, key->offset, NBL_BITS_IN_U16,
-			       (*(data + 1)) & 0x0000FFFF);
-		break;
-	case NBL_FLOW_KEY_SVLAN_FLAG:
-		nbl_assign_key(kt_data, full, key->offset, key->length,
-			       input->svlan_tag);
-		break;
-	case NBL_FLOW_KEY_CVLAN_FLAG:
-		nbl_assign_key(kt_data, full, key->offset, key->length,
-			       input->cvlan_tag);
-		break;
-	case NBL_FLOW_KEY_ETHERTYPE_FLAG:
-		if (input->cvlan_type)
-			temp_etype = input->cvlan_type;
-		else if (input->svlan_type)
-			temp_etype = input->svlan_type;
-		else
-			temp_etype = input->l2_data.ether_type;
-		nbl_assign_key(kt_data, full, key->offset, key->length,
-			       temp_etype);
-		break;
-	case NBL_FLOW_KEY_SRCPORT_FLAG:
-		nbl_assign_key(kt_data, full, key->offset, key->length,
-			       input->l4.src_port & input->l4_mask.src_port);
-		break;
-	case NBL_FLOW_KEY_DSTPORT_FLAG:
-		nbl_assign_key(kt_data, full, key->offset, key->length,
-			       input->l4.dst_port & input->l4_mask.dst_port);
-		break;
-	case NBL_FLOW_KEY_PROTOCOL_FLAG:
-		nbl_assign_key(kt_data, full, key->offset, key->length,
-			       input->ip.proto & input->ip_mask.proto);
-		break;
-	case NBL_FLOW_KEY_TCPSTAT_FLAG:
-		nbl_assign_key(kt_data, full, key->offset, key->length,
-			       input->l4.tcp_flag);
-		break;
-	case NBL_FLOW_KEY_TOS_FLAG:
-		nbl_assign_key(kt_data, full, key->offset, key->length,
-			       input->ip.tos);
-		break;
-	case NBL_FLOW_KEY_TTL_FLAG:
-		nbl_assign_key(kt_data, full, key->offset, key->length,
-			       input->ip.ttl);
-		break;
-	case NBL_FLOW_KEY_T_DSTMAC_FLAG:
-	case NBL_FLOW_KEY_T_SRCMAC_FLAG:
-	case NBL_FLOW_KEY_T_SVLAN_FLAG:
-	case NBL_FLOW_KEY_T_CVLAN_FLAG:
-	case NBL_FLOW_KEY_T_ETHERTYPE_FLAG:
-	case NBL_FLOW_KEY_T_NPROTO_FLAG:
-	case NBL_FLOW_KEY_T_TCPSTAT_FLAG:
-	case NBL_FLOW_KEY_ARP_OP_FLAG:
-	case NBL_FLOW_KEY_ICMPV6_TYPE_FLAG:
-	case NBL_FLOW_KEY_RDMA_ACK_SEQ_FLAG:
-	case NBL_FLOW_KEY_RDMA_QPN_FLAG:
-	case NBL_FLOW_KEY_RDMA_OP_FLAG:
-	case NBL_FLOW_KEY_INPORT2_FLAG:
-	case NBL_FLOW_KEY_INPORT2L_FLAG:
-	default:
-		break;
-	}
-}
-
-/* kt_data: five u64 data */
-static void nbl_assign_hash_key_key(u32 *kt_data,
-				    struct nbl_flow_key_info *key,
-				    struct nbl_profile_msg *prf_msg,
-				    struct nbl_fdir_fltr *input,
-				    u16 tab_index)
-{
-	/* assign profile id, key PHVs (key and action data) */
-	/* ignore bit setter and masks, actions */
-	switch (key->key_type) {
-	case NBL_FLOW_KEY_TYPE_PID:
-		nbl_assign_key(kt_data, prf_msg->key_full, key->offset,
-			       key->length, prf_msg->profile_id);
-		break;
-	case NBL_FLOW_KEY_TYPE_PHV:
-		nbl_assign_flow_key_input(kt_data, prf_msg->key_full, key,
-					  input, tab_index);
-		break;
-	case NBL_FLOW_KEY_TYPE_ACTION:
-		break;
-	case NBL_FLOW_KEY_TYPE_BTS:
-		break;
-	case NBL_FLOW_KEY_TYPE_MASK:
-		break;
-	default:
-		break;
-	}
-}
-
 static void nbl_debug_print_hash_key(struct nbl_common_info *common,
 				     struct nbl_flow_tab_conf *hash_key,
 				     struct nbl_profile_msg *prf_msg,
@@ -2688,90 +2485,90 @@ static void nbl_debug_print_hash_key(struct nbl_common_info *common,
 
 	/* print out all the fields */
 	for (index = 0; index < 10; index++)
-		nbl_debug(common, NBL_DEBUG_FLOW, "tc flow hw kt data[%ld]: %x\n", index,
+		nbl_debug(common, NBL_DEBUG_FLOW, "tc flow hw kt data[%zu]: %x\n", index,
 			  hash_key->key_value[index]);
 
 	if ((prf_msg->key_flag & test_tnl_v4) == test_tnl_v4) {
 		nbl_debug(common, NBL_DEBUG_FLOW,
-			  "v4:id %d, dipv4 0x%x, optdata 0x%x, optclass 0x%x, dport 0x%x\n",
+			  "tc flow hw calculated tv4 profile: id %d, dipv4 0x%x, optdata 0x%x, optclass 0x%x, dport 0x%x\n",
 			  p0->info.template, p0->info.dst_ip,
 			  p0->info.option_data, p0->info.option_class,
 			  p0->info.dst_port);
 		nbl_debug(common, NBL_DEBUG_FLOW,
-			  "v4:id %d, dipv4 0x%x, dport 0x%x\n",
+			  "tc flow hw original tv4 profile: id %d, dipv4 0x%x, dport 0x%x\n",
 			  prf_msg->profile_id, input->ip_outer.dst_ip.addr,
 			  input->l4_outer.dst_port);
 	} else if ((prf_msg->key_flag & test_tnl_v6) == test_tnl_v6) {
 		nbl_debug(common, NBL_DEBUG_FLOW,
-			  "v6:id %d, dipv6 0x%lx 0x%lx, optdata 0x%x, optclass 0x%x, dport 0x%x\n",
+			  "tc flow hw calculated tv6 profile: id %d, dipv6 0x%lx 0x%lx, optdata 0x%x, optclass 0x%x, dport 0x%x\n",
 			  p1->info.template, (unsigned long)p1->info.dst_ipv6_1,
 			  (unsigned long)p1->info.dst_ipv6_2,
 			  p1->info.option_data, p1->info.option_class,
 			  p1->info.dst_port);
 		nbl_debug(common, NBL_DEBUG_FLOW,
-			  "v6:id %d, dipv6 0x%x, dport 0x%x\n",
+			  "tc flow hw originla tv6 profile: id %d, dipv6 0x%x, dport 0x%x\n",
 			  prf_msg->profile_id, input->ip_outer.dst_ip.addr,
 			  input->l4_outer.dst_port);
 	} else if ((prf_msg->key_flag & test_tnl_l2) == test_tnl_l2) {
 		nbl_debug(common, NBL_DEBUG_FLOW,
-			  "l2:id %d,vni %d, dstmac 0x%lx, etype 0x%04x, cvlan %d, svlan %d\n",
+			  "tc flow hw calculated tnl l2 profile: id %d, vni %d, dstmac 0x%lx, etype 0x%04x, cvlan %d, svlan %d\n",
 			  p2->info.template, p2->info.vni,
 			  (unsigned long)p2->info.dst_mac, p2->info.ether_type,
 			  p2->info.cvlan_id, p2->info.svlan_id);
 		nbl_debug(common, NBL_DEBUG_FLOW,
-			  "l2:id %d, dstmac 0x%llx, etype 0x%04x, cvlan %d, svlan %d\n",
+			  "tc flow hw original tnl l2 profile: id %d, dstmac 0x%llx, etype 0x%04x, cvlan %d, svlan %d\n",
 			  prf_msg->profile_id,
 			  *(u64 *)input->l2_data.dst_mac,
 			  input->l2_data.ether_type, input->cvlan_tag,
 			  input->svlan_tag);
 	} else if ((prf_msg->key_flag & test_l2_notnl) == test_l2_notnl) {
 		nbl_debug(common, NBL_DEBUG_FLOW,
-			  "l2:id %d, dstmac 0x%lx, etype 0x%04x, svlan %d, cvlan %d\n",
+			  "tc flow hw calculated l2 profile: id %d, dstmac 0x%lx, etype 0x%04x, svlan %d, cvlan %d\n",
 			  p3->info.template, (unsigned long)p3->info.dst_mac,
 			  p3->info.ether_type, p3->info.svlan_id,
 			  p3->info.cvlan_id);
 		nbl_debug(common, NBL_DEBUG_FLOW,
-			  "l2:id %d, dstmac 0x%llx, etype 0x%04x, svlan %d, cvlan %d\n",
+			  "tc flow hw original l2 profile: id %d, dstmac 0x%llx, etype 0x%04x, svlan %d, cvlan %d\n",
 			  prf_msg->profile_id,
 			  *(u64 *)input->l2_data.dst_mac,
 			  input->l2_data.ether_type, input->svlan_tag,
 			  input->cvlan_tag);
 	} else if ((prf_msg->key_flag & test_l3_v4) == test_l3_v4) {
 		nbl_debug(common, NBL_DEBUG_FLOW,
-			  "l3 v4: id %d, dip 0x%x, ttl %d, dscp %d\n",
+			  "tc flow hw calculated l3 v4: id %d, dip 0x%x, ttl %d, dscp %d\n",
 			  p4->info.template, p4->info.dst_ip, p4->info.ttl,
 			  p4->info.dscp);
 		nbl_debug(common, NBL_DEBUG_FLOW,
-			  "l3 v4: id %d, dip 0x%x, ttl %d, dscp %d\n",
+			  "tc flow hw original l3 v4: id %d, dip 0x%x, ttl %d, dscp %d\n",
 			  prf_msg->profile_id, input->ip.dst_ip.addr,
 			  input->ip.ttl, input->ip.tos);
 	} else if ((prf_msg->key_flag & test_l3_v6) == test_l3_v6) {
 		nbl_debug(common, NBL_DEBUG_FLOW,
-			  "l3 v6: id %d, dip 0x%llx-%llx, ttl %d, dscp %d\n",
+			  "tc flow hw calculated l3 v6: id %d, dip 0x%llx-%llx, ttl %d, dscp %d\n",
 			  p5->info.template, p5->info.dst_ipv6_1,
 			  p5->info.dst_ipv6_2, p5->info.hoplimit, p5->info.dscp);
 		nbl_debug(common, NBL_DEBUG_FLOW,
-			  "l3 v6: id %d, dip 0x%llx-%llx, ttl %d, dscp %d\n",
+			  "tc flow hw original l3 v6: id %d, dip 0x%llx-%llx, ttl %d, dscp %d\n",
 			  prf_msg->profile_id,
 			  *(u64 *)input->ip.dst_ip.v6_addr,
 			  *((u64 *)input->ip.dst_ip.v6_addr + 1),
 			  input->ip.ttl, input->ip.tos);
 	} else if ((prf_msg->key_flag & test_t5_ipv4) == test_t5_ipv4) {
 		nbl_debug(common, NBL_DEBUG_FLOW,
-			  "ipv4: id %d, sip 0x%x, srcport %d, dstport %d, protocol %d\n",
+			  "tc flow hw calculated t5 ipv4 profile: id %d, sip 0x%x, srcport %d, dstport %d, protocol %d\n",
 			  p8->info.template, p8->info.src_ip, p8->info.src_port,
 			  p8->info.dst_port, p8->info.proto);
 		nbl_debug(common, NBL_DEBUG_FLOW,
-			  "sip: 0x%x, srcport %d, dstport %d, protocol %d\n",
+			  "tc flow hw original data: sip: 0x%x, srcport %d,  dstport %d, protocol %d\n",
 			  input->ip.src_ip.addr, input->l4.src_port,
 			  input->l4.dst_port, input->ip.proto);
 	} else if ((prf_msg->key_flag & test_t5_ipv6) == test_t5_ipv6) {
 		nbl_debug(common, NBL_DEBUG_FLOW,
-			  "ipv6: sip 0x%llx-%llx, srcport %d, dstport %d, protocol %d\n",
+			  "tc flow hw calculated t5 ipv6 profile: sip 0x%llx-%llx, srcport %d, dstport %d, protocol %d\n",
 			  p9->info.src_ipv6_1, p9->info.src_ipv6_2,
 			  p9->info.src_port, p9->info.dst_port, p9->info.proto);
 		nbl_debug(common, NBL_DEBUG_FLOW,
-			  "sip: 0x%llx-%llx, srcport %d, dstport %d, protocol %d\n",
+			  "tc flow hw original data: sip: 0x%llx-%llx, srcport %d,  dstport %d, protocol %d\n",
 			  *(u64 *)input->ip.src_ip.v6_addr,
 			  *((u64 *)input->ip.src_ip.v6_addr + 1),
 			  input->l4.src_port, input->l4.dst_port,
@@ -2804,56 +2601,11 @@ static void nbl_assign_hash_key(struct nbl_flow_tab_conf *hash_key,
 		}
 
 		nbl_assign_hash_key_key(kt_data, key_info, prf_msg,
-					&filter->input, off_msg->assoc_tbl_id);
+					&filter->input, prf_msg->profile_id, off_msg->assoc_tbl_id);
 	}
 
 	/* print out the 320 bit key */
 	nbl_debug_print_hash_key(common, hash_key, prf_msg, &filter->input);
-}
-
-static inline void nbl_flow_set_bits(u8 *p, u8 mask)
-{
-	*p |= mask;
-}
-
-static inline void nbl_flow_clr_bits(u8 *p, u8 mask)
-{
-	*p &= ~mask;
-}
-
-static void nbl_flow_resource_available(struct nbl_tc_flow_mgt *tc_flow_mgt)
-{
-	nbl_flow_set_bits(&tc_flow_mgt->init_status, NBL_FLOW_AVAILABLE_BIT);
-}
-
-void nbl_flow_resource_unavailable(struct nbl_tc_flow_mgt *tc_flow_mgt)
-{
-	nbl_flow_clr_bits(&tc_flow_mgt->init_status, NBL_FLOW_AVAILABLE_BIT);
-}
-
-bool nbl_flow_is_available(struct nbl_tc_flow_mgt *tc_flow_mgt)
-{
-	u8 ret = tc_flow_mgt->init_status & NBL_FLOW_AVAILABLE_BIT;
-
-	return ret != 0;
-}
-
-static bool nbl_flow_is_resource_ready(struct nbl_tc_flow_mgt *tc_flow_mgt)
-{
-	u8 ret = tc_flow_mgt->init_status & NBL_FLOW_INIT_BIT;
-
-	return ret != 0;
-}
-
-static void nbl_flow_set_resource_init_status(struct nbl_tc_flow_mgt *tc_flow_mgt,
-					      bool status)
-{
-	if (status)
-		nbl_flow_set_bits(&tc_flow_mgt->init_status,
-				  NBL_FLOW_INIT_BIT);
-	else
-		nbl_flow_clr_bits(&tc_flow_mgt->init_status,
-				  NBL_FLOW_INIT_BIT);
 }
 
 /**
@@ -2951,38 +2703,6 @@ nbl_flow_tab_filter_lookup(struct nbl_resource_mgt *res_mgt,
 }
 
 /**
- * @brief: flow_tab.insert hash tab node func
- *
- * @param[in] tc_flow_mgt: tc flow hw mgt
- * @param[in] node: node key info
- * @return int: 0-success other-fail
- */
-static int nbl_insert_flow_tab_filter(struct nbl_resource_mgt *res_mgt,
-				      struct nbl_flow_tab_conf *key,
-				      struct nbl_flow_tab_filter *node,
-				       struct nbl_flow_tab_filter **new_node,
-				      u8 profile_id)
-{
-	struct nbl_tc_flow_mgt *tc_flow_mgt = NBL_RES_MGT_TO_TC_FLOW_MGT(res_mgt);
-	struct nbl_common_info *common = NBL_RES_MGT_TO_COMMON(res_mgt);
-	int ret;
-
-	if (!tc_flow_mgt->flow_tab_hash[profile_id].flow_tab_hash)
-		return -EINVAL;
-
-	ret = nbl_common_alloc_hash_node(tc_flow_mgt->flow_tab_hash[profile_id].flow_tab_hash, key,
-					 node, (void **)new_node);
-	if (ret)
-		return ret;
-
-	tc_flow_mgt->flow_tab_hash[profile_id].tab_cnt++;
-	nbl_debug(common, NBL_DEBUG_FLOW, "tc flow hw insert pid=%d tab_cnt++ =%d\n",
-		  profile_id, tc_flow_mgt->flow_tab_hash[profile_id].tab_cnt);
-
-	return 0;
-}
-
-/**
  * @brief:delete ipv4-tnl-hash-list
  * @param[in] tc_flow_mgt: tc flow hw mgt
  * @return int: 0-success other-fail
@@ -3033,13 +2753,13 @@ static int nbl_rmv_flow_tab_filter(struct nbl_resource_mgt *res_mgt,
 	struct nbl_common_info *common = NBL_RES_MGT_TO_COMMON(res_mgt);
 	int ret = 0;
 
-	spin_lock(&tc_flow_mgt->flow_lock);
+	mutex_lock(&tc_flow_mgt->flow_lock);
 	node = nbl_flow_tab_filter_lookup(res_mgt, key, profile_id);
 	if (!node) {
-		spin_unlock(&tc_flow_mgt->flow_lock);
+		mutex_unlock(&tc_flow_mgt->flow_lock);
 	} else if (node && node->ref_cnt > NBL_FLOW_TAB_ONE_TIME) {
 		node->ref_cnt--;
-		spin_unlock(&tc_flow_mgt->flow_lock);
+		mutex_unlock(&tc_flow_mgt->flow_lock);
 	} else {
 		memcpy(&tmp_node, node, sizeof(*node));
 		if (node->edit_item.is_mir)
@@ -3047,7 +2767,7 @@ static int nbl_rmv_flow_tab_filter(struct nbl_resource_mgt *res_mgt,
 					  &tmp_node.edit_item.tc_mcc_list);
 
 		if (node->assoc_tbl_id >= NBL_FLOW_TABLE_NUM) {
-			spin_unlock(&tc_flow_mgt->flow_lock);
+			mutex_unlock(&tc_flow_mgt->flow_lock);
 			nbl_err(common, NBL_DEBUG_FLOW, "tc flow hw assoc_tbl_id invalid %u.\n",
 				node->assoc_tbl_id);
 			return -EINVAL;
@@ -3068,11 +2788,11 @@ static int nbl_rmv_flow_tab_filter(struct nbl_resource_mgt *res_mgt,
 		} else {
 			nbl_err(common, NBL_DEBUG_FLOW, "tc flow hw rmv pid=%d tab_cnt=%d, do not reduce\n",
 				profile_id, tc_flow_mgt->flow_tab_hash[profile_id].tab_cnt);
-			spin_unlock(&tc_flow_mgt->flow_lock);
+			mutex_unlock(&tc_flow_mgt->flow_lock);
 			return -EINVAL;
 		}
 
-		spin_unlock(&tc_flow_mgt->flow_lock);
+		mutex_unlock(&tc_flow_mgt->flow_lock);
 
 		/* del hw */
 		ret = 0;
@@ -3118,12 +2838,12 @@ static int nbl_flow_tab_hash_add(struct nbl_resource_mgt *res_mgt,
 	}
 	nbl_assign_hash_key(&hash_key, filter, res_mgt, prof_off_msg);
 
-	spin_lock(&tc_flow_mgt->flow_lock);
+	mutex_lock(&tc_flow_mgt->flow_lock);
 	node = nbl_flow_tab_filter_lookup(res_mgt, &hash_key, profile_id);
 	if (node) {
 		if (prof_off_msg->last_stage) {
 			nbl_info(common, NBL_DEBUG_FLOW, "tc flow offload already, drop this one");
-			spin_unlock(&tc_flow_mgt->flow_lock);
+			mutex_unlock(&tc_flow_mgt->flow_lock);
 			return -EEXIST;
 		}
 
@@ -3131,7 +2851,7 @@ static int nbl_flow_tab_hash_add(struct nbl_resource_mgt *res_mgt,
 		*ptr = node;
 		tc_flow_ptr->profile_id[profile_stage] = profile_id;
 		tc_flow_ptr->profile_rule[profile_stage] = node;
-		spin_unlock(&tc_flow_mgt->flow_lock);
+		mutex_unlock(&tc_flow_mgt->flow_lock);
 		nbl_debug(common, NBL_DEBUG_FLOW, "tc flow hw flow_tab refcnt ++.\n");
 		return 0;
 	}
@@ -3141,12 +2861,12 @@ static int nbl_flow_tab_hash_add(struct nbl_resource_mgt *res_mgt,
 	} else if (profile_id <= NBL_PP2_PROFILE_ID_MAX && profile_id > NBL_PP1_PROFILE_ID_MAX) {
 		entries = NBL_FLOW_TABLE_LEN * 8;
 	} else {
-		spin_unlock(&tc_flow_mgt->flow_lock);
+		mutex_unlock(&tc_flow_mgt->flow_lock);
 		return 0;
 	}
 
 	if (tc_flow_mgt->flow_tab_hash[profile_id].tab_cnt >= entries) {
-		spin_unlock(&tc_flow_mgt->flow_lock);
+		mutex_unlock(&tc_flow_mgt->flow_lock);
 		nbl_debug(common, NBL_DEBUG_FLOW, "tc flow hw pid=%d flow_tab num is greater than %d.",
 			  profile_id, entries);
 		return -EINVAL;
@@ -3163,7 +2883,7 @@ static int nbl_flow_tab_hash_add(struct nbl_resource_mgt *res_mgt,
 	ret = nbl_tc_flow_alloc_bmp_id(tc_flow_mgt->assoc_table_bmp,
 				       NBL_FLOW_TABLE_NUM, 0, &filter_data.assoc_tbl_id);
 	if (ret) {
-		spin_unlock(&tc_flow_mgt->flow_lock);
+		mutex_unlock(&tc_flow_mgt->flow_lock);
 		nbl_debug(common, NBL_DEBUG_FLOW, "tc flow hw failed to alloc id for flow tab.\n");
 		return -ENOSPC;
 	}
@@ -3172,19 +2892,20 @@ static int nbl_flow_tab_hash_add(struct nbl_resource_mgt *res_mgt,
 		ret = nbl_tc_flow_alloc_bmp_id(tc_flow_mgt->assoc_table_bmp,
 					       NBL_FLOW_TABLE_NUM, 0, &filter_data.assoc_tbl_id);
 		if (ret) {
-			spin_unlock(&tc_flow_mgt->flow_lock);
+			mutex_unlock(&tc_flow_mgt->flow_lock);
 			nbl_debug(common, NBL_DEBUG_FLOW, "tc flow hw failed to alloc id for flow tab.\n");
 			return -ENOSPC;
 		}
 	}
 
 insert_filter:
-	ret = nbl_insert_flow_tab_filter(res_mgt, &hash_key, &filter_data, &node, profile_id);
+	ret = nbl_insert_flow_tab_filter(res_mgt, &hash_key, &filter_data,
+					 (void **)&node, profile_id);
 	if (ret) {
 		if (!prof_off_msg->last_stage)
 			nbl_tc_flow_free_bmp_id(tc_flow_mgt->assoc_table_bmp,
 						filter_data.assoc_tbl_id, 0);
-		spin_unlock(&tc_flow_mgt->flow_lock);
+		mutex_unlock(&tc_flow_mgt->flow_lock);
 		nbl_info(common, NBL_DEBUG_FLOW,
 			 "tc flow hw failed to insert flow tab filter to hash table %d.\n", ret);
 		return ret;
@@ -3193,7 +2914,7 @@ insert_filter:
 	*ptr = node;
 	tc_flow_ptr->profile_id[profile_stage] = profile_id;
 	tc_flow_ptr->profile_rule[profile_stage] = node;
-	spin_unlock(&tc_flow_mgt->flow_lock);
+	mutex_unlock(&tc_flow_mgt->flow_lock);
 	return ret;
 }
 
@@ -3220,7 +2941,7 @@ static int nbl_flow_tab_storage(struct nbl_resource_mgt *res_mgt,
 	ret = nbl_flow_tab_hash_add(res_mgt, filter, tc_flow_ptr,
 				    (void **)&flow_tab_node, prof_off_msg);
 	if (ret || !flow_tab_node) {
-		nbl_info(common, NBL_DEBUG_FLOW, "tc hw hash-list op fail, ret %d,node %p.\n",
+		nbl_info(common, NBL_DEBUG_FLOW, "tc flow hw flow_tab hash-list storage fail, ret %d, to store flow node %p.\n",
 			 ret, flow_tab_node);
 		return ret;
 	}
@@ -3311,64 +3032,12 @@ fail_flow_tab:
 						 asso_graph->profile_id[i]);
 		if (ret_2 != 0 && ret_2 != -ENONET) {
 			nbl_err(common, NBL_DEBUG_FLOW,
-				"tc flow hw del failed tnl_flag %d, ret_2 %d.\n",
+				"tc flow hw del failed when flow table storage failed. tnl_flag %d, ret_2 %d.\n",
 				filter->input.tnl_flag, ret_2);
 			return ret_2;
 		}
 	}
 	return ret;
-}
-
-struct nbl_tc_flow *
-nbl_tc_flow_index_lookup(struct nbl_resource_mgt *res_mgt, struct nbl_flow_index_key *key)
-{
-	struct nbl_tc_flow *tc_flow_node = NULL;
-	struct nbl_tc_flow_mgt *tc_flow_mgt = NBL_RES_MGT_TO_TC_FLOW_MGT(res_mgt);
-	struct nbl_index_key_extra extra_key;
-
-	spin_lock(&tc_flow_mgt->flow_lock);
-	NBL_INDEX_EXTRA_KEY_INIT(&extra_key, 0, 0, true);
-	nbl_common_get_index_with_data(tc_flow_mgt->flow_idx_tbl, key, &extra_key, NULL,
-				       0, (void **)&tc_flow_node);
-	spin_unlock(&tc_flow_mgt->flow_lock);
-
-	return tc_flow_node;
-}
-
-struct nbl_tc_flow *
-nbl_tc_flow_insert_index(struct nbl_resource_mgt *res_mgt, struct nbl_flow_index_key *key)
-{
-	int idx;
-	struct nbl_tc_flow *tc_flow_node = NULL;
-	struct nbl_tc_flow_mgt *tc_flow_mgt = NBL_RES_MGT_TO_TC_FLOW_MGT(res_mgt);
-	struct nbl_common_info *common = NBL_RES_MGT_TO_COMMON(res_mgt);
-	struct nbl_tc_flow tc_node_tmp;
-
-	spin_lock(&tc_flow_mgt->flow_lock);
-	memset(&tc_node_tmp, 0, sizeof(struct nbl_tc_flow));
-	idx = nbl_common_alloc_index(tc_flow_mgt->flow_idx_tbl, key, NULL, &tc_node_tmp,
-				     sizeof(tc_node_tmp), (void **)&tc_flow_node);
-	if (idx == U32_MAX)
-		goto out;
-
-	nbl_debug(common, NBL_DEBUG_FLOW, "tc flow hw cookie=%llx add success!\n", key->cookie);
-out:
-	spin_unlock(&tc_flow_mgt->flow_lock);
-	return tc_flow_node;
-}
-
-int nbl_tc_flow_delete_index(struct nbl_resource_mgt *res_mgt, struct nbl_flow_index_key *key)
-{
-	struct nbl_tc_flow_mgt *tc_flow_mgt = NBL_RES_MGT_TO_TC_FLOW_MGT(res_mgt);
-	struct nbl_common_info *common = NBL_RES_MGT_TO_COMMON(res_mgt);
-
-	spin_lock(&tc_flow_mgt->flow_lock);
-	nbl_common_free_index(tc_flow_mgt->flow_idx_tbl, key);
-	nbl_debug(common, NBL_DEBUG_FLOW,
-		  "tc flow hw delete flow cookie=0x%llx success.\n", key->cookie);
-	spin_unlock(&tc_flow_mgt->flow_lock);
-
-	return 0;
 }
 
 /**
@@ -3425,28 +3094,22 @@ int nbl_flow_flush(struct nbl_resource_mgt *res_mgt)
 	if (!nbl_flow_is_available(tc_flow_mgt))
 		return -EINVAL;
 
-	spin_lock(&tc_flow_mgt->flow_lock);
+	mutex_lock(&tc_flow_mgt->flow_lock);
 
 	ret = nbl_flow_flush_hash_list(res_mgt);
 	if (ret) {
-		spin_unlock(&tc_flow_mgt->flow_lock);
+		mutex_unlock(&tc_flow_mgt->flow_lock);
 		nbl_err(common, NBL_DEBUG_FLOW, "tc flow hw flush_hash_list failed %d.\n", ret);
 		return -EINVAL;
 	}
 
-	spin_unlock(&tc_flow_mgt->flow_lock);
+	mutex_unlock(&tc_flow_mgt->flow_lock);
 
 	mutex_lock(&tc_flow_mgt->encap_tbl_lock);
 	nbl_flow_tc_encap_tbl_uninit(res_mgt);
 	mutex_unlock(&tc_flow_mgt->encap_tbl_lock);
 
 	return ret;
-}
-
-static void nbl_flow_clean_create_destroy_cnt(struct nbl_tc_flow_mgt *tc_flow_mgt)
-{
-	atomic64_set(&tc_flow_mgt->destroy_num, 0);
-	atomic64_set(&tc_flow_mgt->create_num, 0);
 }
 
 /**
@@ -4024,14 +3687,25 @@ static int nbl_flow_mcc_init(struct nbl_resource_mgt *res_mgt)
 static void nbl_tc_flow_set_pedit_res(struct nbl_tc_pedit_res_info *pedit_res)
 {
 	pedit_res[NBL_FLOW_PED_UMAC_TYPE].pedit_num = NBL_FLOW_TC_PEDIT_MAC;
-	pedit_res[NBL_FLOW_PED_DMAC_TYPE].pedit_num = NBL_FLOW_TC_PEDIT_MAC;
 	pedit_res[NBL_FLOW_PED_UMAC_TYPE].pedit_base_id = NBL_FLOW_TC_PEDIT_MAC_BASE;
+	pedit_res[NBL_FLOW_PED_UMAC_TYPE].pedit_key_len = NBL_TC_PEDIT_KEY_LEN;
+	pedit_res[NBL_FLOW_PED_UMAC_TYPE].pedit_data_len = sizeof(struct nbl_tc_pedit_entry);
+
+	pedit_res[NBL_FLOW_PED_DMAC_TYPE].pedit_num = NBL_FLOW_TC_PEDIT_MAC;
 	pedit_res[NBL_FLOW_PED_DMAC_TYPE].pedit_base_id = NBL_FLOW_TC_PEDIT_MAC_BASE;
+	pedit_res[NBL_FLOW_PED_DMAC_TYPE].pedit_key_len = NBL_TC_PEDIT_KEY_LEN;
+	pedit_res[NBL_FLOW_PED_DMAC_TYPE].pedit_data_len = sizeof(struct nbl_tc_pedit_entry);
 
 	pedit_res[NBL_FLOW_PED_UIP_TYPE].pedit_num = NBL_FLOW_TC_PEDIT_IP;
-	pedit_res[NBL_FLOW_PED_DIP_TYPE].pedit_num = NBL_FLOW_TC_PEDIT_IP;
 	pedit_res[NBL_FLOW_PED_UIP_TYPE].pedit_base_id = NBL_FLOW_TC_PEDIT_IP_BASE;
+	pedit_res[NBL_FLOW_PED_UIP_TYPE].pedit_key_len = NBL_TC_PEDIT_KEY_LEN;
+	pedit_res[NBL_FLOW_PED_UIP_TYPE].pedit_data_len = sizeof(struct nbl_tc_pedit_entry);
+
+	pedit_res[NBL_FLOW_PED_DIP_TYPE].pedit_num = NBL_FLOW_TC_PEDIT_IP;
 	pedit_res[NBL_FLOW_PED_DIP_TYPE].pedit_base_id = NBL_FLOW_TC_PEDIT_IP_BASE;
+	pedit_res[NBL_FLOW_PED_DIP_TYPE].pedit_key_len = NBL_TC_PEDIT_KEY_LEN;
+	pedit_res[NBL_FLOW_PED_DIP_TYPE].pedit_data_len = sizeof(struct nbl_tc_pedit_entry);
+
 	/* special handle:leonis ipv6 need 2 ped-addr, v4 & v6 could share the same hw-resource */
 	pedit_res[NBL_FLOW_PED_UIP_TYPE].pedit_num_h = NBL_FLOW_TC_PEDIT_IP6;
 	pedit_res[NBL_FLOW_PED_DIP_TYPE].pedit_num_h = NBL_FLOW_TC_PEDIT_IP6;
@@ -4052,7 +3726,7 @@ static int nbl_tc_flow_init_pedit(struct nbl_resource_mgt *res_mgt)
 	pedit_mgt->common = common;
 
 	/*set pedit hw-resource */
-	ret = nbl_tc_pedit_init(pedit_mgt);
+	ret = nbl_tc_pedit_init(common, pedit_mgt->pedit_res, NBL_FLOW_PED_RES_MAX);
 
 	if (ret)
 		nbl_info(common, NBL_DEBUG_FLOW, "tc_pedit init failed");
@@ -4068,7 +3742,7 @@ static void nbl_tc_flow_uninit_pedit(struct nbl_resource_mgt *res_mgt)
 	struct nbl_tc_flow_mgt *tc_flow_mgt = NBL_RES_MGT_TO_TC_FLOW_MGT(res_mgt);
 	int ret = 0;
 
-	ret = nbl_tc_pedit_uninit(&tc_flow_mgt->pedit_mgt);
+	ret = nbl_tc_pedit_uninit(tc_flow_mgt->pedit_mgt.pedit_res, NBL_FLOW_PED_RES_MAX);
 	if (ret)
 		nbl_info(common, NBL_DEBUG_FLOW, "tc_pedit uninit failed");
 	else
@@ -4145,12 +3819,12 @@ void nbl_flow_info_uninit_list(struct nbl_resource_mgt *res_mgt)
 	u32 idx;
 	struct nbl_tc_flow_mgt *tc_flow_mgt = NBL_RES_MGT_TO_TC_FLOW_MGT(res_mgt);
 
-	spin_lock(&tc_flow_mgt->flow_lock);
+	mutex_lock(&tc_flow_mgt->flow_lock);
 	for (idx = 0; idx < ARRAY_SIZE(flow_info_uninit_list); idx++)
 		flow_info_uninit_list[idx].uninit_func(res_mgt);
 
 	nbl_flow_pp_at_tbl_uninit(res_mgt);
-	spin_unlock(&tc_flow_mgt->flow_lock);
+	mutex_unlock(&tc_flow_mgt->flow_lock);
 }
 
 static int nbl_tc_flow_resource_init(struct nbl_resource_mgt *res_mgt)
@@ -4159,7 +3833,7 @@ static int nbl_tc_flow_resource_init(struct nbl_resource_mgt *res_mgt)
 	struct nbl_tc_flow_mgt *tc_flow_mgt = NBL_RES_MGT_TO_TC_FLOW_MGT(res_mgt);
 	struct nbl_common_info *common = NBL_RES_MGT_TO_COMMON(res_mgt);
 
-	spin_lock_init(&tc_flow_mgt->flow_lock);
+	mutex_init(&tc_flow_mgt->flow_lock);
 
 	ret = nbl_flow_info_init_list(res_mgt);
 	if (ret) {
@@ -4178,9 +3852,87 @@ flow_info_init_failed:
 
 static int nbl_flow_resource_free(struct nbl_resource_mgt *res_mgt)
 {
+	struct nbl_tc_flow_mgt *tc_flow_mgt = NBL_RES_MGT_TO_TC_FLOW_MGT(res_mgt);
+
 	nbl_flow_flush(res_mgt);
 
 	nbl_flow_info_uninit_list(res_mgt);
+
+	kfree(tc_flow_mgt->parse_info);
+	tc_flow_mgt->parse_info = NULL;
+
+	return 0;
+}
+
+static int nbl_leonis_tc_flow_set_in_port_info(struct nbl_tc_flow_param *param,
+					       struct nbl_flow_pattern_conf *filter)
+{
+	switch (param->in.type) {
+	case NBL_TC_PORT_TYPE_VSI:
+		filter->input.port = param->in.id | NBL_FLOW_IN_PORT_TYPE_VSI;
+		break;
+	case NBL_TC_PORT_TYPE_ETH:
+		filter->input.port = param->in.id;
+		break;
+	case NBL_TC_PORT_TYPE_BOND:
+		filter->input.port = param->in.id | NBL_FLOW_IN_PORT_TYPE_LAG;
+		break;
+	default:
+		nbl_err(param->common, NBL_DEBUG_FLOW, "tc flow invalid in_port type:%d\n",
+			param->in.type);
+		return -EINVAL;
+	}
+
+	nbl_debug(param->common, NBL_DEBUG_FLOW, "tc flow set in_port info: type:%d, port:%u\n",
+		  param->in.type, filter->input.port);
+
+	return 0;
+}
+
+static int nbl_leonis_tc_flow_set_out_port_info(struct nbl_tc_flow_param *param,
+						struct nbl_rule_action *rule_act)
+{
+	/* special process bond and eth when not encap */
+	if (!param->encap) {
+		switch (param->out.type) {
+		case NBL_TC_PORT_TYPE_VSI:
+			rule_act->port_id = param->out.id;
+			break;
+		case NBL_TC_PORT_TYPE_ETH:
+			rule_act->port_id = param->out.id | NBL_FLOW_OUT_PORT_TYPE_ETH;
+			rule_act->vlan.port_id = param->out.id + NBL_VLAN_TYPE_ETH_BASE;
+			break;
+		case NBL_TC_PORT_TYPE_BOND:
+			rule_act->port_id = (param->out.id << 2) | NBL_FLOW_OUT_PORT_TYPE_LAG;
+			rule_act->vlan.port_id = param->out.id;
+			break;
+		default:
+			nbl_err(param->common, NBL_DEBUG_FLOW, "tc flow invalid out_port type:%d, param->in.type:%d, encap:%u.\n",
+				param->out.type, param->in.type, param->encap);
+			return -EINVAL;
+		}
+	}
+
+	nbl_debug(param->common, NBL_DEBUG_FLOW,
+		  "tc flow set out_port info: type:%d, port:%u, encap:%u.\n",
+		  param->out.type, rule_act->port_id, param->encap);
+
+	return 0;
+}
+
+static int nbl_tc_flow_set_parse_info(struct nbl_tc_flow_mgt *tc_flow_mgt)
+{
+	tc_flow_mgt->parse_info = kzalloc(sizeof(*tc_flow_mgt->parse_info), GFP_KERNEL);
+	if (!tc_flow_mgt->parse_info)
+		return -ENOMEM;
+
+	tc_flow_mgt->parse_info->set_in_port_info = nbl_leonis_tc_flow_set_in_port_info;
+	tc_flow_mgt->parse_info->set_out_port_info = nbl_leonis_tc_flow_set_out_port_info;
+
+	memset(tc_flow_mgt->parse_info->key_parse_info, 0,
+	       sizeof(tc_flow_mgt->parse_info->key_parse_info));
+	memset(tc_flow_mgt->parse_info->act_parse_info, 0,
+	       sizeof(tc_flow_mgt->parse_info->act_parse_info));
 
 	return 0;
 }
@@ -4214,6 +3966,8 @@ static int nbl_tc_flow_init(struct nbl_resource_mgt *res_mgt)
 	memcpy(tc_flow_mgt->profile_graph, g_prf_graph,
 	       sizeof(struct nbl_profile_assoc_graph) * NBL_ASSOC_PROFILE_GRAPH_NUM);
 
+	nbl_tc_flow_set_parse_info(tc_flow_mgt);
+
 	ret = nbl_tc_flow_resource_init(res_mgt);
 	if (ret == 0) {
 		nbl_flow_set_resource_init_status(tc_flow_mgt, true);
@@ -4239,29 +3993,26 @@ static void nbl_flow_fini(struct nbl_resource_mgt *res_mgt, bool available)
 	if (!nbl_flow_is_resource_ready(tc_flow_mgt))
 		return;
 
-	if (!available)
-		return;
+	if (available) {
+		nbl_flow_resource_free(res_mgt);
+		kfree(tc_flow_mgt->parse_info);
+		tc_flow_mgt->parse_info = NULL;
+	}
 
-	nbl_flow_resource_free(res_mgt);
 	nbl_flow_set_resource_init_status(tc_flow_mgt, false);
 }
 
-static void
-nbl_flow_wait_flows_free_done(struct nbl_tc_flow_mgt *tc_flow_mgt)
+static void nbl_get_tc_flow_parse_info(void *priv, struct nbl_tc_parse_info **parse_info)
 {
-#define WAIT_CNT 100
-#define WAIT_TIME 10 /* ms */
-	u32 cnt = 0;
+	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
+	struct nbl_tc_flow_mgt *tc_flow_mgt = NBL_RES_MGT_TO_TC_FLOW_MGT(res_mgt);
 
-	while (1) {
-		if (cnt > WAIT_CNT)
-			break;
-		cnt++;
-
-		if (!atomic64_read(&tc_flow_mgt->ref_cnt))
-			break;
-		mdelay(WAIT_TIME);
+	if (!tc_flow_mgt || !nbl_flow_is_available(tc_flow_mgt)) {
+		*parse_info = NULL;
+		return;
 	}
+
+	*parse_info = tc_flow_mgt->parse_info;
 }
 
 static int nbl_tc_flow_add_tc_flow(void *priv, struct nbl_tc_flow_param *param)
@@ -4452,19 +4203,6 @@ static int nbl_tc_flow_del_tc_flow(void *priv, struct nbl_tc_flow_param *param)
 	return ret;
 }
 
-static int nbl_tc_flow_idx_lookup(void *priv, struct nbl_flow_index_key key)
-{
-	int ret = -ENOKEY;
-	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
-	struct nbl_tc_flow *tc_flow_ptr = NULL;
-
-	tc_flow_ptr = nbl_tc_flow_index_lookup(res_mgt, &key);
-	if (tc_flow_ptr)
-		ret = 0;
-
-	return ret;
-}
-
 static void nbl_tc_flow_node_del_action_func(void *priv, int index, void *data)
 {
 	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
@@ -4493,11 +4231,12 @@ int nbl_tc_flow_flush_flow(struct nbl_resource_mgt *res_mgt)
  *
  * Use X Macros to reduce setup and remove codes.
  */
-#define NBL_TC_FLOW_OPS_TBL						\
-do {									\
-	NBL_TC_FLOW_SET_OPS(add_tc_flow, nbl_tc_flow_add_tc_flow);	\
-	NBL_TC_FLOW_SET_OPS(del_tc_flow, nbl_tc_flow_del_tc_flow);	\
-	NBL_TC_FLOW_SET_OPS(flow_index_lookup, nbl_tc_flow_idx_lookup);	\
+#define NBL_TC_FLOW_OPS_TBL								\
+do {											\
+	NBL_TC_FLOW_SET_OPS(get_tc_flow_parse_info, nbl_get_tc_flow_parse_info);	\
+	NBL_TC_FLOW_SET_OPS(add_tc_flow, nbl_tc_flow_add_tc_flow);			\
+	NBL_TC_FLOW_SET_OPS(del_tc_flow, nbl_tc_flow_del_tc_flow);			\
+	NBL_TC_FLOW_SET_OPS(flow_index_lookup, nbl_tc_flow_idx_lookup);			\
 } while (0)
 
 /* Structure starts here, adding an op should not modify anything below */
@@ -4555,12 +4294,16 @@ void nbl_tc_flow_mgt_stop_leonis(struct nbl_resource_mgt *res_mgt)
 	if (!(*tc_flow_mgt))
 		return;
 
+	/* Mark resource unavailable first to prevent new stats queries */
+	available = nbl_flow_is_available(*tc_flow_mgt);
+	nbl_flow_resource_unavailable(*tc_flow_mgt);
+
+	/* Wait for in-flight operations to complete */
 	mdelay(NBL_SAFE_THREADS_WAIT_TIME);
 	nbl_flow_wait_flows_free_done(*tc_flow_mgt);
+	synchronize_rcu();
 
-	available = nbl_flow_is_available(*tc_flow_mgt);
 	nbl_flow_fini(res_mgt, available);
-	nbl_flow_resource_unavailable(*tc_flow_mgt);
 	nbl_fc_mgt_stop_leonis(res_mgt);
 	nbl_tc_flow_remove_mgt(dev, tc_flow_mgt);
 }

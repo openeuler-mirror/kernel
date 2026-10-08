@@ -1,12 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (c) 2022 nebula-matrix Limited.
- * Author:
- */
-
 #include "nbl_ktls.h"
-#ifdef CONFIG_TLS_DEVICE
-
+#if IS_ENABLED(CONFIG_TLS_DEVICE)
 static void nbl_ktls_free_tx_index(struct net_device *netdev, u32 index)
 {
 	struct nbl_service_mgt *serv_mgt;
@@ -15,7 +9,7 @@ static void nbl_ktls_free_tx_index(struct net_device *netdev, u32 index)
 	serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	disp_ops->free_ktls_tx_index(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), index);
+	disp_ops->free_ktls_tx_index(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &index);
 }
 
 static void nbl_ktls_free_rx_index(struct net_device *netdev, u32 index)
@@ -26,7 +20,7 @@ static void nbl_ktls_free_rx_index(struct net_device *netdev, u32 index)
 	serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	disp_ops->free_ktls_rx_index(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), index);
+	disp_ops->free_ktls_rx_index(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &index);
 }
 
 static int nbl_ktls_alloc_tx_index(struct net_device *netdev)
@@ -41,7 +35,7 @@ static int nbl_ktls_alloc_tx_index(struct net_device *netdev)
 	common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	vsi = NBL_COMMON_TO_VSI_ID(common);
 
-	return disp_ops->alloc_ktls_tx_index(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi);
+	return disp_ops->alloc_ktls_tx_index(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &vsi);
 }
 
 static int nbl_ktls_alloc_rx_index(struct net_device *netdev)
@@ -56,7 +50,7 @@ static int nbl_ktls_alloc_rx_index(struct net_device *netdev)
 	common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	vsi = NBL_COMMON_TO_VSI_ID(common);
 
-	return disp_ops->alloc_ktls_rx_index(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi);
+	return disp_ops->alloc_ktls_rx_index(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &vsi);
 }
 
 static void nbl_ktls_cfg_tx_keymat(struct net_device *netdev, u32 index,
@@ -64,45 +58,73 @@ static void nbl_ktls_cfg_tx_keymat(struct net_device *netdev, u32 index,
 				   struct nbl_ktls_offload_context_tx *priv_tx)
 {
 	struct nbl_service_mgt *serv_mgt;
+	struct nbl_common_info *common;
 	struct nbl_dispatch_ops *disp_ops;
 	struct tls12_crypto_info_aes_gcm_128 *crypto_info_aes_128;
 	struct tls12_crypto_info_aes_gcm_256 *crypto_info_aes_256;
+	struct nbl_ch_prm_cfg_ktls_keymat keymat = {0};
 	struct tls12_crypto_info_sm4_gcm *crypto_info_sm4;
 
 	serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
+	common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
 	switch (crypto_info->cipher_type) {
 	case TLS_CIPHER_AES_GCM_128:
 		crypto_info_aes_128 = (struct tls12_crypto_info_aes_gcm_128 *)crypto_info;
 
-		disp_ops->cfg_ktls_tx_keymat(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), index,
-					     NBL_KTLS_AES_GCM_128,
-					     crypto_info_aes_128->salt,
-					     crypto_info_aes_128->key,
-					     TLS_CIPHER_AES_GCM_128_KEY_SIZE);
+		/* Leonis cfg key and salt through register */
+		keymat.index = index;
+		keymat.mode = NBL_KTLS_AES_GCM_128;
+		memcpy(keymat.salt, crypto_info_aes_128->salt, sizeof(keymat.salt));
+		memcpy(keymat.key, crypto_info_aes_128->key, TLS_CIPHER_AES_GCM_128_KEY_SIZE);
+		keymat.key_len = TLS_CIPHER_AES_GCM_128_KEY_SIZE;
+		disp_ops->cfg_ktls_tx_keymat(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &keymat);
+
+		/* Draco cfg key and salt through pkt, so store them in ctx */
+		memcpy(priv_tx->salt, crypto_info_aes_128->salt, NBL_KTLS_SALT_LEN);
+		memcpy(priv_tx->key + NBL_KTLS_KEY_HALF, crypto_info_aes_128->key,
+		       TLS_CIPHER_AES_GCM_128_KEY_SIZE);
+		priv_tx->crypto_type = 0;
+
 		memcpy(priv_tx->iv, crypto_info_aes_128->iv, NBL_KTLS_IV_LEN);
 		memcpy(priv_tx->rec_num, crypto_info_aes_128->rec_seq, NBL_KTLS_REC_LEN);
 		break;
 	case TLS_CIPHER_AES_GCM_256:
 		crypto_info_aes_256 = (struct tls12_crypto_info_aes_gcm_256 *)crypto_info;
 
-		disp_ops->cfg_ktls_tx_keymat(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), index,
-					     NBL_KTLS_AES_GCM_256,
-					     crypto_info_aes_256->salt,
-					     crypto_info_aes_256->key,
-					     TLS_CIPHER_AES_GCM_256_KEY_SIZE);
+		/* Leonis cfg key and salt through register */
+		keymat.index = index;
+		keymat.mode = NBL_KTLS_AES_GCM_256;
+		memcpy(keymat.salt, crypto_info_aes_256->salt, sizeof(keymat.salt));
+		memcpy(keymat.key, crypto_info_aes_256->key, TLS_CIPHER_AES_GCM_256_KEY_SIZE);
+		keymat.key_len = TLS_CIPHER_AES_GCM_256_KEY_SIZE;
+		disp_ops->cfg_ktls_tx_keymat(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &keymat);
+
+		/* Draco cfg key and salt through pkt, so store them in ctx */
+		memcpy(priv_tx->salt, crypto_info_aes_256->salt, NBL_KTLS_SALT_LEN);
+		memcpy(priv_tx->key, crypto_info_aes_256->key, TLS_CIPHER_AES_GCM_256_KEY_SIZE);
+		priv_tx->crypto_type = 1;
+
 		memcpy(priv_tx->iv, crypto_info_aes_256->iv, NBL_KTLS_IV_LEN);
 		memcpy(priv_tx->rec_num, crypto_info_aes_256->rec_seq, NBL_KTLS_REC_LEN);
 		break;
 	case TLS_CIPHER_SM4_GCM:
 		crypto_info_sm4 = (struct tls12_crypto_info_sm4_gcm *)crypto_info;
 
-		disp_ops->cfg_ktls_tx_keymat(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), index,
-					     NBL_KTLS_SM4_GCM,
-					     crypto_info_sm4->salt,
-					     crypto_info_sm4->key,
-					     TLS_CIPHER_SM4_GCM_KEY_SIZE);
+		/* Leonis cfg key and salt through register */
+		keymat.index = index;
+		keymat.mode = NBL_KTLS_SM4_GCM;
+		memcpy(keymat.salt, crypto_info_sm4->salt, sizeof(keymat.salt));
+		memcpy(keymat.key, crypto_info_sm4->key, TLS_CIPHER_SM4_GCM_KEY_SIZE);
+		keymat.key_len = TLS_CIPHER_SM4_GCM_KEY_SIZE;
+		disp_ops->cfg_ktls_tx_keymat(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &keymat);
+
+		/* Draco cfg key and salt through pkt, so store them in ctx */
+		memcpy(priv_tx->salt, crypto_info_sm4->salt, NBL_KTLS_SALT_LEN);
+		memcpy(priv_tx->key, crypto_info_sm4->key, TLS_CIPHER_SM4_GCM_KEY_SIZE);
+		priv_tx->crypto_type = 2;
+
 		memcpy(priv_tx->iv, crypto_info_sm4->iv, NBL_KTLS_IV_LEN);
 		memcpy(priv_tx->rec_num, crypto_info_sm4->rec_seq, NBL_KTLS_REC_LEN);
 		break;
@@ -152,6 +174,7 @@ static void nbl_ktls_cfg_rx_keymat(struct net_device *netdev, u32 index,
 	struct nbl_dispatch_ops *disp_ops;
 	struct tls12_crypto_info_aes_gcm_128 *crypto_info_aes_128;
 	struct tls12_crypto_info_aes_gcm_256 *crypto_info_aes_256;
+	struct nbl_ch_prm_cfg_ktls_keymat keymat = {0};
 	struct tls12_crypto_info_sm4_gcm *crypto_info_sm4;
 
 	serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
@@ -161,31 +184,34 @@ static void nbl_ktls_cfg_rx_keymat(struct net_device *netdev, u32 index,
 	case TLS_CIPHER_AES_GCM_128:
 		crypto_info_aes_128 = (struct tls12_crypto_info_aes_gcm_128 *)crypto_info;
 
-		disp_ops->cfg_ktls_rx_keymat(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), index,
-					     NBL_KTLS_AES_GCM_128,
-					     crypto_info_aes_128->salt,
-					     crypto_info_aes_128->key,
-					     TLS_CIPHER_AES_GCM_128_KEY_SIZE);
+		keymat.index = index;
+		keymat.mode = NBL_KTLS_AES_GCM_128;
+		memcpy(keymat.salt, crypto_info_aes_128->salt, sizeof(keymat.salt));
+		memcpy(keymat.key, crypto_info_aes_128->key, TLS_CIPHER_AES_GCM_128_KEY_SIZE);
+		keymat.key_len = TLS_CIPHER_AES_GCM_128_KEY_SIZE;
+		disp_ops->cfg_ktls_rx_keymat(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &keymat);
 		memcpy(priv_rx->rec_num, crypto_info_aes_128->rec_seq, NBL_KTLS_REC_LEN);
 		break;
 	case TLS_CIPHER_AES_GCM_256:
 		crypto_info_aes_256 = (struct tls12_crypto_info_aes_gcm_256 *)crypto_info;
 
-		disp_ops->cfg_ktls_rx_keymat(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), index,
-					     NBL_KTLS_AES_GCM_256,
-					     crypto_info_aes_256->salt,
-					     crypto_info_aes_256->key,
-					     TLS_CIPHER_AES_GCM_256_KEY_SIZE);
+		keymat.index = index;
+		keymat.mode = NBL_KTLS_AES_GCM_256;
+		memcpy(keymat.salt, crypto_info_aes_256->salt, sizeof(keymat.salt));
+		memcpy(keymat.key, crypto_info_aes_256->key, TLS_CIPHER_AES_GCM_256_KEY_SIZE);
+		keymat.key_len = TLS_CIPHER_AES_GCM_256_KEY_SIZE;
+		disp_ops->cfg_ktls_rx_keymat(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &keymat);
 		memcpy(priv_rx->rec_num, crypto_info_aes_256->rec_seq, NBL_KTLS_REC_LEN);
 		break;
 	case TLS_CIPHER_SM4_GCM:
 		crypto_info_sm4 = (struct tls12_crypto_info_sm4_gcm *)crypto_info;
 
-		disp_ops->cfg_ktls_rx_keymat(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), index,
-					     NBL_KTLS_SM4_GCM,
-					     crypto_info_sm4->salt,
-					     crypto_info_sm4->key,
-					     TLS_CIPHER_SM4_GCM_KEY_SIZE);
+		keymat.index = index;
+		keymat.mode = NBL_KTLS_SM4_GCM;
+		memcpy(keymat.salt, crypto_info_sm4->salt, sizeof(keymat.salt));
+		memcpy(keymat.key, crypto_info_sm4->key, TLS_CIPHER_SM4_GCM_KEY_SIZE);
+		keymat.key_len = TLS_CIPHER_SM4_GCM_KEY_SIZE;
+		disp_ops->cfg_ktls_rx_keymat(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &keymat);
 		memcpy(priv_rx->rec_num, crypto_info_sm4->rec_seq, NBL_KTLS_REC_LEN);
 		break;
 	}
@@ -194,16 +220,21 @@ static void nbl_ktls_cfg_rx_keymat(struct net_device *netdev, u32 index,
 static void nbl_ktls_cfg_rx_record(struct net_device *netdev, u32 index,
 				   u32 tcp_sn, u64 rec_num, bool init)
 {
-	struct nbl_service_mgt *serv_mgt;
-	struct nbl_dispatch_ops *disp_ops;
+	struct nbl_service_mgt *serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
+	struct nbl_ch_prm_cfg_ktls_record record = {0};
 
-	serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
-	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	if (common->product_type == NBL_LEONIS_TYPE && init)
+		rec_num--;
 
 	netdev_info(netdev, "nbl ktls cfg index %u, tcp_seq %u, rec_num %llu, init %u.\n",
 		    index, tcp_sn, rec_num, init);
-	disp_ops->cfg_ktls_rx_record(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), index,
-				     tcp_sn, rec_num, init);
+	record.init = init;
+	record.index = index;
+	record.tcp_sn = tcp_sn;
+	record.rec_num = rec_num;
+	disp_ops->cfg_ktls_rx_record(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &record);
 }
 
 static int nbl_ktls_add_rx_flow(struct net_device *netdev, u32 index, struct sock *sk)
@@ -214,6 +245,7 @@ static int nbl_ktls_add_rx_flow(struct net_device *netdev, u32 index, struct soc
 	u32 data[NBL_KTLS_FLOW_TOTAL_LEN] = {0};
 	u32 sip[NBL_KTLS_FLOW_IP_LEN] = {0};
 	u32 dip[NBL_KTLS_FLOW_IP_LEN] = {0};
+	struct nbl_ch_prm_cfg_ktls_flow prm = {0};
 
 	serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
@@ -239,8 +271,10 @@ static int nbl_ktls_add_rx_flow(struct net_device *netdev, u32 index, struct soc
 	data[NBL_KTLS_FLOW_DPORT_OFF] = ntohs(inet_sk(sk)->inet_dport);
 	data[NBL_KTLS_FLOW_SPORT_OFF] = ntohs(inet_sk(sk)->inet_sport);
 
-	return disp_ops->add_ktls_rx_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), index, data,
-					  NBL_COMMON_TO_VSI_ID(common));
+	prm.index = index;
+	prm.vsi = NBL_COMMON_TO_VSI_ID(common);
+	memcpy(prm.data, data, sizeof(prm.data));
+	return disp_ops->add_ktls_rx_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &prm);
 }
 
 static int nbl_ktls_add_rx(struct net_device *netdev, struct sock *sk,
@@ -250,7 +284,6 @@ static int nbl_ktls_add_rx(struct net_device *netdev, struct sock *sk,
 	struct nbl_ktls_offload_context_rx **ctx;
 	struct tls_context *tls_ctx;
 	int index;
-	u64 rec_num;
 	int ret = 0;
 
 	priv_rx = kzalloc(sizeof(*priv_rx), GFP_KERNEL);
@@ -275,8 +308,8 @@ static int nbl_ktls_add_rx(struct net_device *netdev, struct sock *sk,
 		return -ENOSPC;
 	}
 	nbl_ktls_cfg_rx_keymat(netdev, index, crypto_info, priv_rx);
-	rec_num = be64_to_cpu(*(__be64 *)priv_rx->rec_num) - 1;
-	nbl_ktls_cfg_rx_record(netdev, index, start_offload_tcp_sn, rec_num, true);
+	nbl_ktls_cfg_rx_record(netdev, index, start_offload_tcp_sn,
+			       be64_to_cpu(*(__be64 *)priv_rx->rec_num), true);
 
 	priv_rx->index = (u32)index;
 	tls_ctx = tls_get_ctx(sk);
@@ -323,11 +356,13 @@ static void nbl_ktls_del_rx_flow(struct net_device *netdev, u32 index)
 {
 	struct nbl_service_mgt *serv_mgt;
 	struct nbl_dispatch_ops *disp_ops;
+	struct nbl_ch_prm_cfg_ktls_flow prm = {0};
 
 	serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	disp_ops->del_ktls_rx_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), index);
+	prm.index = index;
+	disp_ops->del_ktls_rx_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &prm);
 }
 
 static void nbl_ktls_del_rx(struct net_device *netdev, struct tls_context *tls_ctx)

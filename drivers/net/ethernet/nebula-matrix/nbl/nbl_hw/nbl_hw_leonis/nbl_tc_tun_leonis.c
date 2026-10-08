@@ -1,8 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (c) 2022 nebula-matrix Limited.
- * Author:
- */
 #include "nbl_resource.h"
 #include "nbl_tc_tun_leonis.h"
 
@@ -142,7 +138,7 @@ static int nbl_tc_tun_encap_add(void *priv, struct nbl_rule_action *action)
 	phy_ops->add_tnl_encap(NBL_RES_MGT_TO_PHY_PRIV(res_mgt), action->encap_buf,
 			       action->encap_idx, action->encap_idx_info);
 
-	nbl_debug(common, NBL_DEBUG_FLOW, "add encap_idx %u, cnt %d vni %u, size %u, out_dev %s",
+	nbl_debug(common, NBL_DEBUG_FLOW, "nbl tc add new encap, encap_idx %u, encap_cnt %d vni %u, encap_size %u, out_dev %s",
 		  encap_idx, encap_cnt, e.vni, e.encap_size, netdev_name(e.out_dev));
 
 err:

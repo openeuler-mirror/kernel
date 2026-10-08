@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0*/
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (c) 2022 nebula-matrix Limited.
  * Author:
@@ -92,10 +92,10 @@
 #define SFF_8636_QSFP28_TEMP_MAX	(0x204)
 #define SFF_8636_QSFP28_TEMP_CIRT	(0x200)
 
-#define NBL_ADMINQ_ETH_WOL_REG_OFFSET	(0x1604000 + 0x500)
+#define NBL_ADMINQ_ETH_WOL_REG_OFFSET_LEONIS	(0x1604000 + 0x500)
+#define NBL_ADMINQ_ETH_WOL_REG_OFFSET_DRACO	(0x1600500)
 
 /* Firmware version */
-#define FIRMWARE_MAGIC		"M181FWV0"
 #define BCD2BYTE(b)		({ typeof(b) _b = (b);			\
 				(((_b) & 0xF) + (((_b) >> 4) & 0xF) * 10); })
 #define BCD2SHORT(s)		({ typeof(s) _s = (s);			\
@@ -107,12 +107,15 @@
 #define NBL_VSI_PF_MAX_QUEUE_NUM(num)		(((num) * 2) + NBL_DEFAULT_REP_HW_QUEUE_NUM)
 #define NBL_VSI_VF_REAL_QUEUE_NUM(num)		(num)
 
+#define	NBL_ADMINQ_RESID_FSI_SECTION_HBC	(0x3000)
+#define	NBL_ADMINQ_RESID_FSI_TLV_SERIAL_NUMBER	(0x3801)
 #define NBL_ADMINQ_PFA_TLV_VF_NUM		(0x5804)
 #define NBL_ADMINQ_PFA_TLV_NET_RING_NUM		(0x5805)
 #define NBL_ADMINQ_PFA_TLV_REP_RING_NUM		(0x5806)
 #define NBL_ADMINQ_PFA_TLV_ECPU_RING_NUM	(0x5807)
 #define NBL_ADMINQ_PFA_TLV_RDMA_CAP		(0x5808)
 #define NBL_ADMINQ_PFA_TLV_RDMA_MEM_TYPE	(0x5809)
+#define NBL_ADMINQ_PFA_TLV_INTERNAL_CFG		(0x580e)
 
 enum {
 	NBL_FW_VERSION_BANK0 = 0,
@@ -223,8 +226,110 @@ struct nbl_leonis_eth_stats {
 	struct nbl_leonis_eth_rx_stats rx_stats;
 };
 
-struct nbl_leonis_eth_stats_info {
+struct nbl_eth_stats_info {
 	const char *descp;
+};
+
+struct nbl_draco_eth_tx_stats {
+	u64 frames_txd;
+	u64 frames_txd_ok;
+	u64 unicast_frames_txd;
+	u64 multicast_frames_txd;
+	u64 multicast_frames_txd_ok;
+	u64 broadcast_frames_txd;
+	u64 broadcast_frames_txd_ok;
+	u64 underflow_error_frames_txd;
+	u64 pause_frames_txd;
+	u64 vlan_frames_txd;
+	u64 frames_txd_sizerange0;
+	u64 frames_txd_sizerange1;
+	u64 frames_txd_sizerange2;
+	u64 frames_txd_sizerange3;
+	u64 frames_txd_sizerange4;
+	u64 frames_txd_sizerange5;
+	u64 octets_txd;
+};
+
+struct nbl_draco_eth_rx_stats {
+	u64 frames_rxd;
+	u64 undersize_frames_rxd_good;
+	u64 oversize_frames_rxd_good;
+	u64 unicast_frames_rxd_ok;
+	u64 multicast_frames_rxd_ok;
+	u64 broadcast_frames_rxd_ok;
+	u64 crc_error_frames_rxd;
+	u64 runt_error_frames_rxd;
+	u64 jabber_error_frames_rxd;
+	u64 length_error_frames_rxd;
+	u64 out_of_range_type_frames_rxd;
+	u64 pause_frames_rxd;
+	u64 vlan_frames_rxd;
+	u64 watchdog_error_frames_rxd;
+	u64 frames_rxd_sizerange0;
+	u64 frames_rxd_sizerange1;
+	u64 frames_rxd_sizerange2;
+	u64 frames_rxd_sizerange3;
+	u64 frames_rxd_sizerange4;
+	u64 frames_rxd_sizerange5;
+	u64 octets_rxd;
+	u64 octets_rxd_ok;
+};
+
+struct nbl_draco_eth_stats {
+	struct nbl_draco_eth_tx_stats tx_stats;
+	struct nbl_draco_eth_rx_stats rx_stats;
+};
+
+union nbl_eth_stats_union {
+	struct nbl_leonis_eth_stats leonis;
+	struct nbl_draco_eth_stats draco;
+};
+
+#define OFFSET_U64(type, member) (offsetof(type, member) / sizeof(u64))
+
+#define ETH_STATIS_LOC(off, vld) (((off) << 1) + (vld))
+#define ETH_STATIS_OFFSET(f) (((f) >> 1) & 0x7FFF)
+#define ETH_STATIS_VLD(f) ((f) & 0x1)
+#define ETH_STATIS_GET(ptr, off, vld) ((vld) ? (ptr)[(off)] : 0)
+
+enum {
+	NBL_MACCTRL_FRAME_TX_OK,
+	NBL_MACCTRL_FRAME_RX,
+	NBL_UNSUPPORTED_OPCODES_RX,
+	NBL_PAUSE_FRAME_TX,
+	NBL_PAUSE_FRAME_RX,
+	NBL_FRAME_RX_BADFCS,
+	NBL_FRAME_RX,
+	NBL_FRAME_RX_OK,
+	NBL_UNDERSIZE_FRAME_RX_GOODFAS,
+	NBL_OVERSIZE_FRAME_RX_GOODFAS,
+	NBL_OCTETS_RX_OK,
+	NBL_OCTETS_TX_OK,
+	NBL_FRAME_TX_OK,
+	NBL_MUL_FRAME_TXD_OK,
+	NBL_BROAD_FRAME_TXD_OK,
+	NBL_MUL_FRAME_RXD_OK,
+	NBL_BROAD_FRAME_RXD_OK,
+	NBL_UNI_FRAME_RXD_OK,
+	NBL_UNDERSIZE_FRAME_RX_BADFAS,
+	NBL_OVERSIZE_FRAME_RX_BADFAS,
+	NBL_FRAME_RX_sizerange0,
+	NBL_FRAME_RX_sizerange1,
+	NBL_FRAME_RX_sizerange2,
+	NBL_FRAME_RX_sizerange3,
+	NBL_FRAME_RX_sizerange4,
+	NBL_FRAME_RX_sizerange5,
+	NBL_FRAME_RX_sizerange6,
+	NBL_FRAME_RX_sizerange7,
+	NBL_FRAME_TX_sizerange0,
+	NBL_FRAME_TX_sizerange1,
+	NBL_FRAME_TX_sizerange2,
+	NBL_FRAME_TX_sizerange3,
+	NBL_FRAME_TX_sizerange4,
+	NBL_FRAME_TX_sizerange5,
+	NBL_FRAME_TX_sizerange6,
+	NBL_FRAME_TX_sizerange7,
+	NBL_ETH_STATISC_MAX,
 };
 
 struct nbl_port_key {

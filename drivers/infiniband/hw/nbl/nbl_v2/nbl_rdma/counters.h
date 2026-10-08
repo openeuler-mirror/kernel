@@ -1,0 +1,362 @@
+/* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
+/* Copyright (c) 2021, NEBULARMATRIX */
+
+#ifndef NBL_IB_COUNTERS_H
+#define NBL_IB_COUNTERS_H
+
+#include "main.h"
+
+#define NBL_MAX_TRY_DUMP_CNT 5
+#define NBL_STATS_RETRY_WAIT 1 /* 1ms */
+#define NBL_STATS_WAIT_DMA 5 /* 5ms */
+
+#define NBL_STATS_VLD 0x8000000000000000ULL
+#define NBL_MAX_STATS_60 0xFFFFFFFFFFFFFFFULL
+/**
+ *  ASIC v2r1 vf_max=64  stat_id:valid:2-38,invalid:0/1 opcode:128 Errcode:256 PF=2/4
+ *  DF200     vf_max=64  stat_id:valid:2-64,invalid:0/1 opcode:256 Errcode:256 PF=2
+ *  RNIC400   vf_max=64  stat_id:valid:2-64,invalid:0/1 opcode:256 Errcode:256 PF=1
+ */
+
+enum nbl_stat_group_size {
+	NBL_STAT_GROUP_CNT_ASIC_V2R1 = 39,
+	NBL_STAT_GROUP_CNT_DF200 = 65,
+	NBL_STAT_GROUP_CNT_RNIC400 = 65
+};
+
+enum nbl_total_entry_size {
+	NBL_TOTAL_ENTRY_CNT_ASIC_V2R1 = 384,
+	NBL_TOTAL_ENTRY_CNT_DF200 = 512,
+	NBL_TOTAL_ENTRY_CNT_RNIC400 = 512
+};
+
+enum nbl_opcode_size {
+	NBL_OPCODE_CNT_ASIC_V2R1 = 128,
+	NBL_OPCODE_CNT_DF200 = 256,
+	NBL_OPCODE_CNT_RNIC400 = 256
+};
+
+enum nbl_errcode_size {
+	NBL_ERRCODE_CNT_ASIC_V2R1 = 256,
+	NBL_ERRCODE_CNT_DF200 = 256,
+	NBL_ERRCODE_CNT_RNIC400 = 256
+};
+
+#define NBL_MAX_DMA_CNT_PER_STAT_ID 8
+#define NBL_ERRCODE_DMA_START_CNT 4
+
+#define NBL_STATS_GROUP_NUM_V1 128
+#define NBL_STATS_GROUP_NUM_V2 82
+#define NBL_STATS_GROUP_OPCODE_CNTS_V4 256
+#define NBL_STATS_GROUP_ENTRY_CNTS_V4 512
+
+#define NBL_STATS_GROUP_START_NUM 2
+#define NBL_VF_CNTS 8
+#define NBL_STATS_GROUP_OPCODE_CNTS 128
+
+#define NBL_DUMP_VF_SIZE 64
+#define NBL_DUMP_STATS_MAX_SIZE 512
+#define NBL_DUMP_STATS_MAX_CNT 64
+
+#define NBL_DEBUGFS_DUMP_QPC_SIZE 3145728
+#define NBL_DEBUGFS_DUMP_MRT_SIZE 3145728
+#define NBL_DEBUGFS_DUMP_CQC_SIZE 3145728
+#define NBL_FUNDBG_READ_BUF_SIZE 11
+
+#define NBL_CMDBUF_STR_LEN_MAX 64
+#define NBL_HW_COUNTERS_CNT 6
+
+#define NBL_PACKET_SEQ_ERR 0x2d
+#define NBL_OUT_OF_SEQUENCE_LOW 0x23
+#define NBL_OUT_OF_SEQUENCE_HIGH 0x24
+#define NBL_ROCE_ADP_RETRANS 0x58
+#define NBL_STATS_RX_CNP 53
+#define NBL_STATS_RX_ECN 54
+#define NBL_STATS_TX_CNP 57
+
+/**
+ * op_info
+ *	[0]:op_status
+ *	[1]:op_err_warning
+ *	[2]:op_rc
+ *	[6:3]op_table_sel
+ *	[15:7]op_id
+ *	[23:16]op_len
+ *	[31:24]op_add_sel
+ */
+#define NBL_STATS_OP_STATUS_S 0
+#define NBL_STATS_OP_STATUS_M BIT_ULL(NBL_STATS_OP_STATUS_S)
+#define NBL_STATS_OP_ERR_WARN_S 1
+#define NBL_STATS_OP_ERR_WARN_M BIT_ULL(NBL_STATS_OP_ERR_WARN_S)
+#define NBL_STATS_OP_RC_S 2
+#define NBL_STATS_OP_RC_M BIT_ULL(NBL_STATS_OP_RC_S)
+#define NBL_STATS_OP_TABLE_SEL_S 3
+#define NBL_STATS_OP_TABLE_SEL_M (0xfULL << NBL_STATS_OP_TABLE_SEL_S)
+#define NBL_STATS_OP_ID_S 7
+#define NBL_STATS_OP_ID_M (0x1ffULL << NBL_STATS_OP_ID_S)
+#define NBL_STATS_OP_LEN_S 16
+#define NBL_STATS_OP_LEN_M (0xffULL << NBL_STATS_OP_LEN_S)
+#define NBL_STATS_OP_ADD_SEL_S 24
+#define NBL_STATS_OP_ADD_SEL_M (0xffULL << NBL_STATS_OP_ADD_SEL_S)
+
+#define LS_32(val, field) (((val) << field##_S) & (field##_M))
+#define RS_32(val, field) (((val)&field##_M) >> field##_S)
+#define U64_HI(val) ((u32)(((u64)(val)) >> 32))
+#define U64_LO(val) ((u32)(((u64)(val)) & 0xFFFFFFFF))
+
+#define NBL_DUMP_STAT_GROUP_SIZE 3
+#define NBL_DEFAULT_CM_STAT_ID_OFFSET 1
+#define NBL_DEFAULT_DUMP_STAT_ID_OFFSET 2
+#define NBL_DEFAULT_VF_STAT_ID 0
+#define NBL_DEFAULT_PF_STAT_ID(x) \
+	(((x) * NBL_DUMP_STAT_GROUP_SIZE) + \
+		NBL_DEFAULT_DUMP_STAT_ID_OFFSET)
+
+struct stat_work {
+	struct work_struct work;
+	struct nbl_device *nbl_dev;
+};
+
+struct nbl_stats_info {
+	u64 total_stats;
+	u64 last_stats;
+};
+
+struct nbl_qp_func {
+	struct list_head list;
+	u32 qpn;
+	u16 func_id;
+};
+
+struct nbl_func_file {
+	size_t used_len;
+	size_t total_len;
+	struct dentry *file;
+	char cmd[NBL_CMDBUF_STR_LEN_MAX];
+	char *buf;
+};
+
+struct nbl_rdma_stat {
+	struct nbl_device *nbldev;
+	struct nbl_stats_info vf_mem[NBL_VF_CNTS];
+	struct nbl_stats_info stat_id_mem[NBL_STATS_GROUP_NUM_V1][NBL_STATS_GROUP_ENTRY_CNTS_V4];
+	struct nbl_dma_mem dma_vf_mem;
+	struct nbl_dma_mem dma_stat_id_mem[NBL_STATS_GROUP_NUM_V1][NBL_MAX_DMA_CNT_PER_STAT_ID];
+	spinlock_t stat_mem_lock;
+	struct nbl_func_file func_file;
+};
+
+struct nbl_dump_info {
+	struct nbl_func_file dump_func_file;
+	int fun_type;
+};
+
+enum nbl_op_stats_type {
+	OP_STATS_CLEAR = 0,
+	OP_STATS_READ,
+};
+
+enum nbl_stats_table_type {
+	NBL_VF_TABLE = 0,
+	NBL_STATS_ID_TABLE = 1,
+	NBL_CLEAR_ALL = 1 << 3
+};
+
+enum nbl_vf_stats_index {
+	NBL_HW_VF_STATS_INDEX_RXRESP = 0,
+	NBL_HW_VF_STATS_INDEX_RXREQ = 1,
+	NBL_HW_VF_STATS_INDEX_RX_QPN_ERR = 2,
+	NBL_HW_VF_STATS_INDEX_RX_ERR = 3,
+	NBL_HW_VF_STATS_INDEX_TXRESP = 4,
+	NBL_HW_VF_STATS_INDEX_TXREQ = 5,
+	NBL_HW_VF_STATS_INDEX_TX_QPN_ERR = 6,
+	NBL_HW_VF_STATS_INDEX_TX_ERR = 7
+};
+
+enum nbl_qp_opcode_stats_index {
+	NBL_STATS_TYPE_OP_MIN = 0,
+		/* rx rc opcode */
+	NBL_STATS_TYPE_RX_RC_OP_SEND_FIRST_PAYLD = NBL_STATS_TYPE_OP_MIN,
+	NBL_STATS_TYPE_RX_RC_OP_SEND_MIDDLE_PAYLD = 1,
+	NBL_STATS_TYPE_RX_RC_OP_SEND_LAST_PAYLD = 2,
+	NBL_STATS_TYPE_RX_RC_OP_SEND_LAST_IMMD_PAYLD = 3,
+	NBL_STATS_TYPE_RX_RC_OP_SEND_ONLY_PAYLD = 4,
+	NBL_STATS_TYPE_RX_RC_OP_SEND_ONLY_IMMD_PAYLD = 5,
+	NBL_STATS_TYPE_RX_RC_OP_WRITE_FIRST_PAYLD = 6,
+	NBL_STATS_TYPE_RX_RC_OP_WRITE_MIDDLE_PAYLD = 7,
+	NBL_STATS_TYPE_RX_RC_OP_WRITE_LAST_PAYLD = 8,
+	NBL_STATS_TYPE_RX_RC_OP_WRITE_LAST_IMMD_PAYLD = 9,
+	NBL_STATS_TYPE_RX_RC_OP_WRITE_ONLY_PAYLD = 10,
+	NBL_STATS_TYPE_RX_RC_OP_WRITE_ONLY_IMMD_PAYLD = 11,
+	NBL_STATS_TYPE_RX_RC_OP_REQ_RETH = 12,
+	NBL_STATS_TYPE_RX_RC_OP_RESP_FIRST_AETH_PAYLD = 13,
+	NBL_STATS_TYPE_RX_RC_OP_RESP_MIDDLE_AETH_PAYLD = 14,
+	NBL_STATS_TYPE_RX_RC_OP_RESP_LAST_AETH_PAYLD = 15,
+	NBL_STATS_TYPE_RX_RC_OP_RESP_ONLY_AETH_PAYLD = 16,
+	NBL_STATS_TYPE_RX_RC_OP_ACK_AETH = 17,
+	NBL_STATS_TYPE_RX_RC_OP_ATOMIC_ACK_AETH = 18,
+	NBL_STATS_TYPE_RX_RC_OP_CMPSWAP_AETH = 19,
+	NBL_STATS_TYPE_RX_RC_OP_FETCHADD_AETH = 20,
+	NBL_STATS_TYPE_RX_RC_OP_RSV_21 = 21,
+	NBL_STATS_TYPE_RX_RC_OP_SEND_LAST_INVALIDATE_IETH = 22,
+	NBL_STATS_TYPE_RX_RC_OP_SEND_ONLY_INVALIDATE_IETH = 23,
+
+	/* rx ud opcode */
+	NBL_STATS_TYPE_RX_UD_SEND_ONLY_DETH = 24,
+	NBL_STATS_TYPE_RX_UD_SEND_ONLY_IMMD_DETH = 25,
+
+	/* rx normal db */
+	NBL_STATS_TYPE_RX_DB_OP_NORMAL_FLUSH_RQ = 26,
+	NBL_STATS_TYPE_RX_DB_OP_NORMAL_RAQ = 27,
+
+	NBL_STATS_TYPE_RX_RSV_28 = 28,
+	NBL_STATS_TYPE_RX_RSV_29 = 29,
+	NBL_STATS_TYPE_RX_RSV_30 = 30,
+	NBL_STATS_TYPE_RX_RSV_31 = 31,
+
+	/* CC OAM */
+	NBL_STATS_TYPE_SEND_OAM_REQ = 32,
+	NBL_STATS_TYPE_SEND_OAM_ACK = 33,
+
+	/* rx rsv */
+	NBL_STATS_TYPE_RX_RSV_34 = 34,
+	NBL_STATS_TYPE_RX_RSV_35 = 35,
+	NBL_STATS_TYPE_RX_RSV_36 = 36,
+	NBL_STATS_TYPE_RX_RSV_37 = 37,
+	NBL_STATS_TYPE_RX_RSV_38 = 38,
+	NBL_STATS_TYPE_RX_RSV_39 = 39,
+	NBL_STATS_TYPE_RX_RSV_40 = 40,
+	NBL_STATS_TYPE_RX_RSV_41 = 41,
+	NBL_STATS_TYPE_RX_RSV_42 = 42,
+	NBL_STATS_TYPE_RX_RSV_43 = 43,
+	NBL_STATS_TYPE_RX_RSV_44 = 44,
+	NBL_STATS_TYPE_RX_RSV_45 = 45,
+	NBL_STATS_TYPE_RX_RSV_46 = 46,
+	NBL_STATS_TYPE_RX_RSV_47 = 47,
+
+	/* tx drop DB */
+	NBL_STATS_TYPE_TX_DB_OP_DROP_INVAILD = 48,
+	NBL_STATS_TYPE_TX_DB_OP_DROP_SWSQ = 49,
+	NBL_STATS_TYPE_TX_DB_OP_DROP_TXPSQ = 50,
+	NBL_STATS_TYPE_TX_DB_OP_DROP_TQRECHECK = 51,
+	NBL_STATS_TYPE_TX_DB_OP_DROP_TQRNR = 52,
+	NBL_STATS_TYPE_TX_DB_OP_DROP_TQRTO = 53,
+	NBL_STATS_TYPE_TX_DB_OP_DROP_PSNERR = 54,
+	NBL_STATS_TYPE_TX_DB_OP_DROP_RAQ = 55,
+	NBL_STATS_TYPE_TX_DB_OP_DROP_TXPRAQ = 56,
+	NBL_STATS_TYPE_TX_DB_OP_DROP_TQ_WAITACK = 57,
+	NBL_STATS_TYPE_TX_DB_OP_DROP_OAMACK = 58,
+
+	/* rx rsv */
+	NBL_STATS_TYPE_RX_RSV_59 = 59,
+	NBL_STATS_TYPE_RX_RSV_60 = 60,
+	NBL_STATS_TYPE_RX_RSV_61 = 61,
+	NBL_STATS_TYPE_RX_RSV_62 = 62,
+	NBL_STATS_TYPE_RX_RSV_63 = 63,
+
+	/* tx rc opcode */
+	NBL_STATS_TYPE_TX_RC_OP_SEND_FIRST_PAYLD = 64,
+	NBL_STATS_TYPE_TX_RC_OP_SEND_MIDDLE_PAYLD = 65,
+	NBL_STATS_TYPE_TX_RC_OP_SEND_LAST_PAYLD = 66,
+	NBL_STATS_TYPE_TX_RC_OP_SEND_LAST_IMMD_PAYLD = 67,
+	NBL_STATS_TYPE_TX_RC_OP_SEND_ONLY_PAYLD = 68,
+	NBL_STATS_TYPE_TX_RC_OP_SEND_ONLY_IMMD_PAYLD = 69,
+	NBL_STATS_TYPE_TX_RC_OP_WRITE_FIRST_PAYLD = 70,
+	NBL_STATS_TYPE_TX_RC_OP_WRITE_MIDDLE_PAYLD = 71,
+	NBL_STATS_TYPE_TX_RC_OP_WRITE_LAST_PAYLD = 72,
+	NBL_STATS_TYPE_TX_RC_OP_WRITE_LAST_IMMD_PAYLD = 73,
+	NBL_STATS_TYPE_TX_RC_OP_WRITE_ONLY_PAYLD = 74,
+	NBL_STATS_TYPE_TX_RC_OP_WRITE_ONLY_IMMD_PAYLD = 75,
+	NBL_STATS_TYPE_TX_RC_OP_REQ_RETH = 76,
+	NBL_STATS_TYPE_TX_RC_OP_RESP_FIRST_AETH_PAYLD = 77,
+	NBL_STATS_TYPE_TX_RC_OP_RESP_MIDDLE_AETH_PAYLD = 78,
+	NBL_STATS_TYPE_TX_RC_OP_RESP_LAST_AETH_PAYLD = 79,
+	NBL_STATS_TYPE_TX_RC_OP_RESP_ONLY_AETH_PAYLD = 80,
+	NBL_STATS_TYPE_TX_RC_OP_ACK_AETH = 81,
+	NBL_STATS_TYPE_TX_RC_OP_ATOMIC_ACK_AETH = 82,
+	NBL_STATS_TYPE_TX_RC_OP_CMPSWAP_AETH = 83,
+	NBL_STATS_TYPE_TX_RC_OP_FETCHADD_AETH = 84,
+	NBL_STATS_TYPE_TX_RC_OP_RSV_85 = 85,
+	NBL_STATS_TYPE_TX_RC_OP_SEND_LAST_INVALIDATE_IETH = 86,
+	NBL_STATS_TYPE_TX_RC_OP_SEND_ONLY_INVALIDATE_IETH = 87,
+
+	/* tx ud opcode */
+	NBL_STATS_TYPE_TX_UD_SEND_ONLY_DETH = 88,
+	NBL_STATS_TYPE_TX_UD_SEND_ONLY_IMMD_DETH = 89,
+
+	/* local */
+	NBL_STATS_TYPE_TX_OP_BIND_MW_LOCAL = 90,
+	NBL_STATS_TYPE_TX_OP_LOCAL_INV_LOCAL = 91,
+	NBL_STATS_TYPE_TX_OP_FRMR_LOCAL = 92,
+	NBL_STATS_TYPE_TX_OP_NOP_FOR_LOCAL = 93,
+
+	/* tx rsv*/
+	NBL_STATS_TYPE_TX_RSV_94 = 94,
+	NBL_STATS_TYPE_TX_RSV_95 = 95,
+
+	/* CC OAM */
+	NBL_STATS_TYPE_SD_OAM_REQ = 96,
+	NBL_STATS_TYPE_SD_OAM_ACK = 97,
+
+	/* tx rsv*/
+	NBL_STATS_TYPE_TX_RSV_98 = 98,
+	NBL_STATS_TYPE_TX_RSV_99 = 99,
+	NBL_STATS_TYPE_TX_RSV_100 = 100,
+	NBL_STATS_TYPE_TX_RSV_101 = 101,
+	NBL_STATS_TYPE_TX_RSV_102 = 102,
+	NBL_STATS_TYPE_TX_RSV_103 = 103,
+	NBL_STATS_TYPE_TX_RSV_104 = 104,
+	NBL_STATS_TYPE_TX_RSV_105 = 105,
+	NBL_STATS_TYPE_TX_RSV_106 = 106,
+	NBL_STATS_TYPE_TX_RSV_107 = 107,
+	NBL_STATS_TYPE_TX_RSV_108 = 108,
+	NBL_STATS_TYPE_TX_RSV_109 = 109,
+	NBL_STATS_TYPE_TX_RSV_110 = 110,
+	NBL_STATS_TYPE_TX_RSV_111 = 111,
+
+	/* tx normal DB */
+	NBL_STATS_TYPE_TX_DB_OP_NORMAL_INVALID = 112,
+	NBL_STATS_TYPE_TX_DB_OP_NORMAL_SWSQ = 113,
+	NBL_STATS_TYPE_TX_DB_OP_NORMAL_TXPSQ = 114,
+	NBL_STATS_TYPE_TX_DB_OP_NORMAL_TQRECHECK = 115,
+	NBL_STATS_TYPE_TX_DB_OP_NORMAL_TQRNR = 116,
+	NBL_STATS_TYPE_TX_DB_OP_NORMAL_TQRTO = 117,
+	NBL_STATS_TYPE_TX_DB_OP_NORMAL_PSNERR = 118,
+	NBL_STATS_TYPE_TX_DB_OP_NORMAL_RAQ = 119,
+	NBL_STATS_TYPE_TX_DB_OP_NORMAL_TXPRAQ = 120,
+	NBL_STATS_TYPE_TX_DB_OP_NORMAL_TQ_WAITACK = 121,
+	NBL_STATS_TYPE_TX_DB_OP_NORMAL_OAMACK = 122,
+
+	/* tx rsv*/
+	NBL_STATS_TYPE_TX_RSV_123 = 123,
+	NBL_STATS_TYPE_TX_RSV_124 = 124,
+	NBL_STATS_TYPE_TX_RSV_125 = 125,
+	NBL_STATS_TYPE_TX_RSV_126 = 126,
+	NBL_STATS_TYPE_TX_RSV_127 = 127,
+	NBL_STATS_TYPE_OP_MAX = 128
+};
+
+int update_vf_stats(struct nbl_device *nbl_dev);
+int update_qp_stats(struct nbl_device *nbl_dev, int stat_id);
+int update_all_stats(struct nbl_device *nbl_dev);
+void nbl_stats_mem_clear(struct nbl_device *nbl_dev,
+					struct nbl_stats_reg_info *reg_info);
+
+int grc_stat_clear(struct nbl_pci_f *rf,
+						struct nbl_stats_reg_info *reg_info);
+int grc_stat_errcode_enable(struct nbl_pci_f *rf, bool enable);
+
+int nbl_counters_func_init(struct nbl_device *nbl_dev);
+void nbl_counters_func_deinit(struct nbl_device *nbl_dev);
+
+int nbl_grc_hw_stat_read_v2(struct nbl_pci_f *rf, struct nbl_stats_reg_info *reg_info);
+int nbl_grc_hw_stat_clear_v2(struct nbl_pci_f *rf, struct nbl_stats_reg_info *reg_info);
+int nbl_grc_hw_stat_errcode_enable_v2(struct nbl_pci_f *rf, bool enable);
+
+struct rdma_hw_stats *nbl_alloc_hw_stats(struct ib_device *ibdev, u32 port_num);
+
+int nbl_get_hw_stats(struct ib_device *ibdev, struct rdma_hw_stats *stats,
+			u32 port_num, int index);
+int get_hw_status_v2(struct nbl_pci_f *rf, u32 *status);
+
+#endif /* NBL_IB_COUNTERS_H */

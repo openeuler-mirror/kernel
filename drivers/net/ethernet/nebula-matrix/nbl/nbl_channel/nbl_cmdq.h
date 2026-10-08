@@ -1,9 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0*/
-/*
- * Copyright (c) 2022 nebula-matrix Limited.
- * Author:
- */
-
+/* SPDX-License-Identifier: GPL-2.0 */
 /* Nebula-matrix DPDK user-network
  * Copyright(c) 2021-2030 nBL, Inc.
  */
@@ -16,13 +11,12 @@
 #define NBL_CMDQ_HI_DWORD(x) ((u32)(((x) >> 32) & 0xFFFFFFFF))
 #define NBL_CMDQ_LO_DWORD(x) ((u32)(x) & 0xFFFFFFFF)
 
-#define NBL_CMDQ_TIMEOUT 100000
-#define NBL_CMDQ_FLIGHT_DELAY 500
-#define NBL_CMDQ_HALF_DESC_LENGTH 16
-
+#define NBL_CMDQ_TIMEOUT		100000
+#define NBL_CMDQ_HALF_DESC_LENGTH	16
+#define NBL_CMDQ_PARAM_BYTES		8
+#define NBL_CMDQ_PARAM_HALF_BITS	32
 /* command resend and reset */
 #define NBL_CMDQ_RESEND_MAX_TIMES	3
-#define NBL_CMDQ_RESET_MAX_WAIT	5
 
 /* initial value of descriptor */
 #define NBL_CMDQ_DESC_FLAG_DD		BIT(0)
@@ -38,10 +32,53 @@
 #define NBL_CMDQ_DESC_FLAG_DONE		BIT(15)
 
 #define NBL_CMDQ_SQ_WAIT_USEC	1
+#define NBL_CMDQ_WAIT_WARN	10
 #define NBL_CMDQ_BUF_SIZE	256
 #define NBL_CMDQ_RING_DEPTH	4096	/* max: 2^16 */
 #define NBL_CMDQ_RQ_RING_DEPTH	4096	/* max: 2^15 */
 #define NBL_CMDQ_DOORBELL_MASK	0x1FFFF
+#define NBL_CMDQ_WAIT_DESC_US	50
+
+enum nbl_cmdq_cmd_status {
+	NBL_CMD_STATUS_HW_READY,
+	NBL_CMD_STATUS_SW_READY,
+	NBL_CMD_STATUS_HW_ERROR,
+	NBL_CMD_STATUS_CLEAN_READY,
+};
+
+enum nbl_cmdq_cmd_type {
+	NBL_CMD_TYPE_BARE,
+	NBL_CMD_TYPE_HW_R,
+	NBL_CMD_TYPE_HW_W,
+	NBL_CMD_TYPE_HW_RW,
+};
+
+enum nbl_cmdq_exe_status {
+	NBL_CMD_EXE_STATUS_SUCCESS,
+	NBL_CMD_EXE_STATUS_FAIL,
+	NBL_CMD_EXE_STATUS_ERROR,
+	NBL_CMD_EXE_STATUS_NOHIT,
+};
+
+enum nbl_cmdq_fem_fail_code {
+	NBL_CMDQ_ERRCODE_KEY_FULL = 1,
+	NBL_CMDQ_ERRCODE_KEY_MISS,
+	NBL_CMDQ_ERRCODE_KT_PF_UNMATCH,
+	NBL_CMDQ_ERRCODE_KT_INDEX,
+	NBL_CMDQ_ERRCODE_NO_KT_BLK,
+	NBL_CMDQ_ERRCODE_KT_UNMATCH = 7,
+	NBL_CMDQ_ERRCODE_OFT_WRITE = 8,
+};
+
+enum nbl_draco_cmd_status {
+	NBL_DRACO_CMD_SUCCESS,
+	NBL_DRACO_CMD_FAIL,
+	NBL_DRACO_CMD_ERROR,
+	NBL_DRACO_CMD_NOHIT,
+};
+
+#define NBL_CMD_DESC_INTF_ERR_OFT 5
+#define NBL_CMD_DESC_PRO_ERR_MASK 0b00011111
 
 struct nbl_cmdq_dma_mem {
 	void *va;
@@ -93,6 +130,7 @@ struct nbl_cmd_queue {
 	spinlock_t sq_lock;  /* used to lock the send queue */
 	u32 sq_timeout;
 	enum nbl_cmd_status sq_last_status;
+	bool in_reset;
 
 	struct nbl_channel_mgt *chan_mgt;
 };
@@ -135,6 +173,38 @@ struct nbl_cmd_desc {
 	u32 send_high;
 };
 
+struct nbl_draco_cmd_desc {
+	u32 cmd_status:2;
+	u32 cmd_type:2;
+	u32 si:1;
+	u32 rsv0:11;
+	u32 module:4;
+	u32 table:4;
+	u32 opcode:4;
+	u32 rsv1:4;
+	u32 errcode:8;
+	u32 exe_status:2;
+	u32 rsv2:6;
+	u32 cmd_len:8;
+	u32 rsv3:8;
+	u32 param_low;
+	u32 param_high;
+	u32 recv_low; /* hardware writeback */
+	u32 recv_high;
+	u32 send_low; /* hardware read */
+	u32 send_high;
+};
+
+union nbl_cmdq_notify_val {
+	struct {
+		u16 qid:2;
+		u16 rsv:14;
+		u16 tail_ptr;
+	} info;
+
+	u32 value;
+};
+
 struct nbl_cmd_rq_desc {
 	u32 head_data;
 	u32 contents[7];
@@ -155,6 +225,8 @@ struct nbl_cmd_rq_desc_age {
 
 #define NBL_CMDQ_GET_DESC(ring, index)	\
 	(&(((struct nbl_cmd_desc *)((ring).desc.va))[index]))
+#define NBL_DRACO_CMDQ_GET_DESC(ring, index)	\
+	(&(((struct nbl_draco_cmd_desc *)((ring).desc.va))[index]))
 
 #define NBL_CMDQ_GET_RQ_DESC(ring, index)	\
 	(&(((struct nbl_cmd_rq_desc *)((ring).desc.va))[(index) + 1]))
