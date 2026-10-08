@@ -1451,6 +1451,8 @@ struct kvm_x86_ops {
 	 * Attestation interface for HYGON CSV guest
 	 */
 	int (*vm_attestation)(struct kvm *kvm, unsigned long gpa, unsigned long len);
+	int (*control_pre_system_reset)(struct kvm *kvm);
+	int (*control_post_system_reset)(struct kvm *kvm);
 };
 
 struct kvm_x86_nested_ops {

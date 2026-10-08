@@ -207,6 +207,8 @@ struct vcpu_svm {
 
 	/* CSV2 migrated ghcb mapping state support */
 	bool receiver_ghcb_map_fail;
+	/* CSV2 reboot vmsa */
+	struct vmcb_save_area *reset_vmsa;
 };
 
 struct svm_cpu_data {
@@ -610,6 +612,9 @@ void sev_es_vcpu_put(struct vcpu_svm *svm);
 void sev_vcpu_deliver_sipi_vector(struct kvm_vcpu *vcpu, u8 vector);
 int sev_es_ghcb_map(struct vcpu_svm *svm, u64 ghcb_gpa);
 void sev_es_unmap_ghcb(struct vcpu_svm *svm);
+
+int csv_control_pre_system_reset(struct kvm *kvm);
+int csv_control_post_system_reset(struct kvm *kvm);
 
 /* vmenter.S */
 
