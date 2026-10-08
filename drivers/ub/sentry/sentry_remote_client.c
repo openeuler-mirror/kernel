@@ -65,8 +65,6 @@ struct sentry_client_context {
 	bool is_in_panic_status;
 
 	uint32_t random_id;
-
-	bool is_uvb_cis_func_registered;
 };
 
 static struct sentry_client_context sentry_client_ctx = {
@@ -79,7 +77,6 @@ static struct sentry_client_context sentry_client_ctx = {
 	.use_urma = true,
 	.is_in_panic_status = false,
 	.random_id = 0,
-	.is_uvb_cis_func_registered = false,
 };
 
 /**
@@ -407,8 +404,13 @@ int kernel_reboot_handler(struct notifier_block *nb, unsigned long code, void *u
 			     sentry_client_ctx.kernel_reboot_timeout_ms);
 	pr_info("Kernel reboot handler: Blocking finished\n");
 
-	/* Stop URMA thread proactively */
-	sentry_panic_reporter_exit();
+	/*
+	 * Stop URMA thread and destroy sentry workqueue. sentry_remote_server_cleanup
+	 * unregisters the UVB CIS callback before destroying the workqueue, so
+	 * peer-sent UVB messages arriving during the reboot window cannot reach
+	 * create_kworker_to_process_msg -> queue_work(NULL, ...).
+	 */
+	sentry_remote_server_cleanup();
 	return NOTIFY_OK;
 }
 
@@ -764,7 +766,7 @@ static ssize_t proc_reporter_cna_write(struct file *file, const char __user *ubu
 		return -EINVAL;
 	}
 
-	if (sentry_client_ctx.is_uvb_cis_func_registered) {
+	if (sentry_remote_ctx.is_uvb_cis_func_registered) {
 		/* Repeated registration will fail, unregister first */
 		unregister_local_cis_func(UBIOS_CALL_ID_PANIC_CALL, UBIOS_USER_ID_UB_DEVICE);
 	}
@@ -776,7 +778,7 @@ static ssize_t proc_reporter_cna_write(struct file *file, const char __user *ubu
 		return ret;
 	}
 
-	sentry_client_ctx.is_uvb_cis_func_registered = true;
+	sentry_remote_ctx.is_uvb_cis_func_registered = true;
 	g_local_cna = val;
 	return cnt;
 }
@@ -1070,7 +1072,7 @@ unregister_kernel_reboot:
 free_msg_array:
 	kfree(sentry_client_ctx.msg_array);
 stop_kthread:
-	sentry_panic_reporter_exit();
+	sentry_remote_server_cleanup();
 uvb_comm_exit:
 	sentry_uvb_comm_exit();
 urma_comm_exit:
@@ -1097,12 +1099,7 @@ static void __exit sentry_remote_reporter_exit(void)
 	if (sentry_client_ctx.panic_proc_dir)
 		proc_remove(sentry_client_ctx.panic_proc_dir);
 
-	sentry_panic_reporter_exit();
-
-	if (sentry_client_ctx.is_uvb_cis_func_registered) {
-		unregister_local_cis_func(UBIOS_CALL_ID_PANIC_CALL, UBIOS_USER_ID_UB_DEVICE);
-		pr_info("UVB CIS function unregistered\n");
-	}
+	sentry_remote_server_cleanup();
 
 	sentry_uvb_comm_exit();
 	sentry_urma_comm_exit();
