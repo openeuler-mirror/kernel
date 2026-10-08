@@ -390,7 +390,10 @@ static int ummu_sva_set_dev_pasid(struct iommu_domain *domain,
 	if (ret)
 		goto out_master_put;
 
-	(void)ummu_write_tct_desc(ummu, &u_domain->cfgs, false);
+	ret = ummu_write_tct_desc(ummu, &u_domain->cfgs, false);
+	if (ret)
+		goto out_master_put;
+
 	return 0;
 
 out_master_put:
