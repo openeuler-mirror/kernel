@@ -17464,8 +17464,8 @@ static int save_aux_ptr_type(struct bpf_verifier_env *env, enum bpf_reg_type typ
 		 * Reject it.
 		 */
 		if (allow_trust_missmatch &&
-		    base_type(type) == PTR_TO_BTF_ID &&
-		    base_type(*prev_type) == PTR_TO_BTF_ID) {
+		    bpf_is_ptr_to_mem_or_btf_id(type) &&
+		    bpf_is_ptr_to_mem_or_btf_id(*prev_type)) {
 			/*
 			 * Have to support a use case when one path through
 			 * the program yields TRUSTED pointer while another
@@ -18801,6 +18801,7 @@ static int convert_ctx_accesses(struct bpf_verifier_env *env)
 
 	for (i = 0; i < insn_cnt; i++, insn++) {
 		bpf_convert_ctx_access_t convert_ctx_access;
+		enum bpf_reg_type ptr_type;
 		u8 mode;
 
 		if (insn->code == (BPF_LDX | BPF_MEM | BPF_B) ||
@@ -18842,7 +18843,8 @@ static int convert_ctx_accesses(struct bpf_verifier_env *env)
 			continue;
 		}
 
-		switch ((int)env->insn_aux_data[i + delta].ptr_type) {
+		ptr_type = env->insn_aux_data[i + delta].ptr_type;
+		switch ((int)ptr_type) {
 		case PTR_TO_CTX:
 			if (!ops->convert_ctx_access)
 				continue;
@@ -18858,26 +18860,31 @@ static int convert_ctx_accesses(struct bpf_verifier_env *env)
 		case PTR_TO_XDP_SOCK:
 			convert_ctx_access = bpf_xdp_sock_convert_ctx_access;
 			break;
-		case PTR_TO_BTF_ID:
-		case PTR_TO_BTF_ID | PTR_UNTRUSTED:
-		/* PTR_TO_BTF_ID | MEM_ALLOC always has a valid lifetime, unlike
-		 * PTR_TO_BTF_ID, and an active ref_obj_id, but the same cannot
-		 * be said once it is marked PTR_UNTRUSTED, hence we must handle
-		 * any faults for loads into such types. BPF_WRITE is disallowed
-		 * for this case.
-		 */
-		case PTR_TO_BTF_ID | MEM_ALLOC | PTR_UNTRUSTED:
-			if (type == BPF_READ) {
+		default:
+			/*
+			 * A pointer which may fault on a dereference must not
+			 * be loaded from without fault protection, hence turn
+			 * the BPF_LDX into a BPF_PROBE_MEM one so that a bad
+			 * address is handled rather than panicking the kernel.
+			 * A store through one is rejected earlier, there is no
+			 * probed counterpart to rewrite it into.
+			 */
+			if (bpf_is_ptr_to_mem_or_btf_id(ptr_type) &&
+			    bpf_may_fault_on_deref(ptr_type) &&
+			    type == BPF_READ) {
 				if (BPF_MODE(insn->code) == BPF_MEM)
 					insn->code = BPF_LDX | BPF_PROBE_MEM |
-						     BPF_SIZE((insn)->code);
+						     BPF_SIZE(insn->code);
 				else
 					insn->code = BPF_LDX | BPF_PROBE_MEMSX |
-						     BPF_SIZE((insn)->code);
+						     BPF_SIZE(insn->code);
 				env->prog->aux->num_exentries++;
+				continue;
 			}
-			continue;
-		default:
+			if (bpf_may_fault_on_deref(ptr_type)) {
+				verbose(env, "access to a fault prone pointer is not rewritten as a probed one");
+				return -EFAULT;
+			}
 			continue;
 		}
 
