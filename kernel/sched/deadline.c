@@ -2209,21 +2209,32 @@ static int find_later_rq(struct task_struct *task)
 
 static struct task_struct *pick_next_pushable_dl_task(struct rq *rq)
 {
+	struct rb_node *next_node;
 	struct task_struct *p;
 
 	if (!has_pushable_dl_tasks(rq))
 		return NULL;
 
-	p = __node_2_pdl(rb_first_cached(&rq->dl.pushable_dl_tasks_root));
+	next_node = rb_first_cached(&rq->dl.pushable_dl_tasks_root);
+	while (next_node) {
+		p = __node_2_pdl(next_node);
 
-	WARN_ON_ONCE(rq->cpu != task_cpu(p));
-	WARN_ON_ONCE(task_current(rq, p));
-	WARN_ON_ONCE(p->nr_cpus_allowed <= 1);
+		/* skip tasks that cannot be migrated */
+		if (!task_on_cpu(rq, p) && !is_migration_disabled(p)) {
+			WARN_ON_ONCE(rq->cpu != task_cpu(p));
+			WARN_ON_ONCE(task_current(rq, p));
+			WARN_ON_ONCE(p->nr_cpus_allowed <= 1);
 
-	WARN_ON_ONCE(!task_on_rq_queued(p));
-	WARN_ON_ONCE(!dl_task(p));
+			WARN_ON_ONCE(!task_on_rq_queued(p));
+			WARN_ON_ONCE(!dl_task(p));
 
-	return p;
+			return p;
+		}
+
+		next_node = rb_next(next_node);
+	}
+
+	return NULL;
 }
 
 /* Locks the rq it finds */
