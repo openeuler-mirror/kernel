@@ -734,6 +734,33 @@ void ub_notify_share_port(struct ub_port *port,
 }
 EXPORT_SYMBOL_GPL(ub_notify_share_port);
 
+DEFINE_MUTEX(ub_port_auth_mutex);
+EXPORT_SYMBOL_GPL(ub_port_auth_mutex);
+
+static ub_port_auth_handler handler;
+
+void ub_port_auth_handler_register(ub_port_auth_handler rh)
+{
+	mutex_lock(&ub_port_auth_mutex);
+	handler = rh;
+	mutex_unlock(&ub_port_auth_mutex);
+}
+EXPORT_SYMBOL_GPL(ub_port_auth_handler_register);
+
+void ub_port_auth_handler_unregister(void)
+{
+	mutex_lock(&ub_port_auth_mutex);
+	handler = NULL;
+	mutex_unlock(&ub_port_auth_mutex);
+}
+EXPORT_SYMBOL_GPL(ub_port_auth_handler_unregister);
+
+ub_port_auth_handler ub_port_auth_handler_get(void)
+{
+	return handler;
+}
+EXPORT_SYMBOL_GPL(ub_port_auth_handler_get);
+
 bool ub_port_check_link_up(struct ub_port *port)
 {
 	u8 val;

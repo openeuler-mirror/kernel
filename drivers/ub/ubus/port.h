@@ -29,5 +29,7 @@ struct ub_share_port_ops *ub_port_event_handler_get(void);
 int ub_port_read_byte(struct ub_port *port, u32 pos, u8 *val);
 int ub_port_write_dword(struct ub_port *port, u32 pos, u32 val);
 bool ub_port_check_link_up(struct ub_port *port);
+extern struct mutex ub_port_auth_mutex;
+ub_port_auth_handler ub_port_auth_handler_get(void);
 
 #endif /* __PORT_H__ */

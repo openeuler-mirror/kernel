@@ -586,6 +586,8 @@ typedef int (*write_byte_f)(struct ub_entity *uent, u64 pos, u8 val);
 typedef int (*write_word_f)(struct ub_entity *uent, u64 pos, u16 val);
 typedef int (*write_dword_f)(struct ub_entity *uent, u64 pos, u32 val);
 
+typedef bool (*ub_port_auth_handler)(void *data);
+
 #ifdef CONFIG_UB_UBUS
 extern struct bus_type ub_bus_type;
 #define dev_is_ub(d) ((d)->bus == &ub_bus_type)
@@ -787,6 +789,25 @@ int ub_register_share_port(struct ub_entity *uent, u16 port_id,
  */
 void ub_unregister_share_port(struct ub_entity *uent, u16 port_id,
 			      struct ub_share_port_ops *ops);
+
+/**
+ * ub_port_auth_handler_register() - Register ub port authentication handler.
+ * @rh: ub port auth handler.
+ *
+ * Register the callback function of UB port authentication.
+ *
+ * Context: Process context only. Must not be called from atomic/IRQ context.
+ */
+void ub_port_auth_handler_register(ub_port_auth_handler rh);
+
+/**
+ * ub_port_auth_handler_unregister() - Unregister ub port authentication handler.
+ *
+ * Clear the callback function.
+ *
+ * Context: Process context only. Must not be called from atomic/IRQ context.
+ */
+void ub_port_auth_handler_unregister(void);
 
 /**
  * ub_reset_entity() - Function entity level reset.
@@ -1170,6 +1191,8 @@ static inline int ub_register_share_port(struct ub_entity *uent, u16 port_id,
 { return -ENODEV; }
 static inline void ub_unregister_share_port(struct ub_entity *uent, u16 port_id,
 					    struct ub_share_port_ops *ops) {}
+static inline void ub_port_auth_handler_register(ub_port_auth_handler rh) {}
+static inline void ub_port_auth_handler_unregister(void) {}
 static inline int ub_reset_entity(struct ub_entity *uent)
 { return -ENODEV; }
 static inline int ub_device_reset(struct ub_entity *uent)
