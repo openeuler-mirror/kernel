@@ -36,6 +36,7 @@ static void ummu_release_dev(struct device *dev)
 	struct tid_dev *tdev;
 
 	tdev = to_tid_dev(dev);
+	mutex_destroy(&tdev->sva_mutex);
 	kfree(tdev->pdev.name);
 	kfree(tdev);
 }
@@ -44,10 +45,15 @@ static void ummu_release_dev(struct device *dev)
 static int attr_get_tid(struct device *dev, u32 *tid)
 {
 	struct tid_dev *tdev;
+	int ret;
 
 	tdev = to_tid_dev(dev);
 
-	return ummu_get_tid(dev, tdev->sva, tid);
+	mutex_lock(&tdev->sva_mutex);
+	ret = ummu_get_tid(dev, tdev->sva, tid);
+	mutex_unlock(&tdev->sva_mutex);
+
+	return ret;
 }
 
 static ssize_t tid_val_show(struct device *dev, struct device_attribute *attr,
@@ -188,6 +194,7 @@ struct device *ummu_alloc_tdev(struct tdev_attr *attr, u32 *ptid)
 		return NULL;
 
 	kref_init(&tdev->ref);
+	mutex_init(&tdev->sva_mutex);
 
 	ret = iommu_fwspec_init(&tdev->pdev.dev, iommu_dev->fwnode, iommu_dev->ops);
 	if (ret)
@@ -216,6 +223,7 @@ struct device *ummu_alloc_tdev(struct tdev_attr *attr, u32 *ptid)
 fwspec_free:
 	iommu_fwspec_free(&tdev->pdev.dev);
 dev_free:
+	mutex_destroy(&tdev->sva_mutex);
 	kfree(tdev);
 	return NULL;
 }

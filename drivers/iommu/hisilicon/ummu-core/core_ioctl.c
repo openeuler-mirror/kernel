@@ -154,6 +154,15 @@ static void disable_dev_feat(struct device *dev)
 
 static void release_tid_resource(struct ktid_info *entry)
 {
+	struct tid_dev *tdev = NULL;
+
+	if (entry->dev) {
+		tdev = to_tid_dev(entry->dev);
+		mutex_lock(&tdev->sva_mutex);
+		tdev->sva = NULL;
+		mutex_unlock(&tdev->sva_mutex);
+	}
+
 	if (entry->sva)
 		iommu_sva_unbind_device_isolated(entry->sva);
 
@@ -605,7 +614,9 @@ static int user_mode_device_init(struct ktid_info *entry)
 		goto unbind;
 
 	tdev = to_tid_dev(entry->dev);
+	mutex_lock(&tdev->sva_mutex);
 	tdev->sva = entry->sva;
+	mutex_unlock(&tdev->sva_mutex);
 
 	return 0;
 
