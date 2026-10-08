@@ -1324,6 +1324,18 @@ static bool access_arch_timer(struct kvm_vcpu *vcpu,
 	u64 reg = reg_to_encoding(r);
 
 	switch (reg) {
+	case SYS_CNTV_TVAL_EL0:
+		tmr = TIMER_VTIMER;
+		treg = TIMER_REG_TVAL;
+		break;
+	case SYS_CNTV_CTL_EL0:
+		tmr = TIMER_VTIMER;
+		treg = TIMER_REG_CTL;
+		break;
+	case SYS_CNTV_CVAL_EL0:
+		tmr = TIMER_VTIMER;
+		treg = TIMER_REG_CVAL;
+		break;
 	case SYS_CNTP_TVAL_EL0:
 	case SYS_AARCH32_CNTP_TVAL:
 		tmr = TIMER_PTIMER;
@@ -1351,11 +1363,75 @@ static bool access_arch_timer(struct kvm_vcpu *vcpu,
 		return false;
 	}
 
+	/* Architectural counters are read-only, including in the guest kernel. */
+	if (is_pvm_mode() && treg == TIMER_REG_CNT && p->is_write) {
+		kvm_inject_undefined(vcpu);
+		return false;
+	}
+
+	/*
+	 * A PVM guest's userspace traps at the same physical EL0 as its kernel,
+	 * so apply the guest's own CNTKCTL_EL1 EL0 access controls, as the
+	 * hardware would for a native EL0 access.
+	 */
+	if (pvm_vcpu_in_user_ctxt(vcpu)) {
+		u64 en;
+
+		if (treg == TIMER_REG_CNT)
+			en = tmr == TIMER_VTIMER ? ARCH_TIMER_USR_VCT_ACCESS_EN :
+						     ARCH_TIMER_USR_PCT_ACCESS_EN;
+		else
+			en = tmr == TIMER_VTIMER ? ARCH_TIMER_USR_VT_ACCESS_EN :
+						     ARCH_TIMER_USR_PT_ACCESS_EN;
+
+		if (!(__vcpu_sys_reg(vcpu, CNTKCTL_EL1) & en)) {
+			kvm_inject_undefined(vcpu);
+			return false;
+		}
+	}
+
 	if (p->is_write)
 		kvm_arm_timer_write_sysreg(vcpu, tmr, treg, p->regval);
 	else
 		p->regval = kvm_arm_timer_read_sysreg(vcpu, tmr, treg);
 
+	return true;
+}
+
+/*
+ * PVM clears the hardware EL0VCTEN bit to trap guest CNTVCT reads.  When
+ * guest userspace traps, apply the guest's virtual CNTKCTL permission before
+ * returning the RV timer count used by the virtual timer KVM ABI.
+ */
+static bool access_pvm_vcounter(struct kvm_vcpu *vcpu,
+				struct sys_reg_params *p,
+				const struct sys_reg_desc *r)
+{
+	if (!is_pvm_mode() || p->is_write ||
+	    (pvm_vcpu_in_user_ctxt(vcpu) &&
+	     !(__vcpu_sys_reg(vcpu, CNTKCTL_EL1) &
+	       ARCH_TIMER_USR_VCT_ACCESS_EN))) {
+		kvm_inject_undefined(vcpu);
+		return false;
+	}
+
+	p->regval = kvm_arm_timer_get_reg(vcpu, KVM_REG_ARM_TIMER_CNT);
+	return true;
+}
+
+static bool access_pvm_counter_freq(struct kvm_vcpu *vcpu,
+				    struct sys_reg_params *p,
+				    const struct sys_reg_desc *r)
+{
+	if (!is_pvm_mode() || p->is_write ||
+	    (pvm_vcpu_in_user_ctxt(vcpu) &&
+	     !(__vcpu_sys_reg(vcpu, CNTKCTL_EL1) &
+	       (ARCH_TIMER_USR_PCT_ACCESS_EN | ARCH_TIMER_USR_VCT_ACCESS_EN)))) {
+		kvm_inject_undefined(vcpu);
+		return false;
+	}
+
+	p->regval = read_sysreg(cntfrq_el0);
 	return true;
 }
 
@@ -2947,7 +3023,8 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 
 	{ SYS_DESC(SYS_SCXTNUM_EL1), undef_access },
 
-	{ SYS_DESC(SYS_CNTKCTL_EL1), NULL, reset_val, CNTKCTL_EL1, 0},
+	{ SYS_DESC(SYS_CNTKCTL_EL1), NULL, reset_val, CNTKCTL_EL1, 0,
+	  .pvm_access = access_rw },
 
 	{ SYS_DESC(SYS_CCSIDR_EL1), access_ccsidr,
 	  .pvm_access = access_ccsidr },
@@ -3088,11 +3165,28 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 	AMU_AMEVTYPER1_EL0(14),
 	AMU_AMEVTYPER1_EL0(15),
 
-	{ SYS_DESC(SYS_CNTPCT_EL0), access_arch_timer },
-	{ SYS_DESC(SYS_CNTPCTSS_EL0), access_arch_timer },
-	{ SYS_DESC(SYS_CNTP_TVAL_EL0), access_arch_timer },
-	{ SYS_DESC(SYS_CNTP_CTL_EL0), access_arch_timer },
-	{ SYS_DESC(SYS_CNTP_CVAL_EL0), access_arch_timer },
+	{ SYS_DESC(SYS_CNTFRQ_EL0), access_pvm_counter_freq,
+	  .pvm_access = access_pvm_counter_freq },
+	{ SYS_DESC(SYS_CNTPCT_EL0), access_arch_timer,
+	  .pvm_access = access_arch_timer },
+	{ SYS_DESC(SYS_CNTVCT_EL0), access_pvm_vcounter,
+	  .pvm_access = access_pvm_vcounter },
+	{ SYS_DESC(SYS_CNTPCTSS_EL0), access_arch_timer,
+	  .pvm_access = access_arch_timer },
+	{ SYS_DESC(SYS_CNTVCTSS_EL0), access_pvm_vcounter,
+	  .pvm_access = access_pvm_vcounter },
+	{ SYS_DESC(SYS_CNTP_TVAL_EL0), access_arch_timer,
+	  .pvm_access = access_arch_timer },
+	{ SYS_DESC(SYS_CNTP_CTL_EL0), access_arch_timer,
+	  .pvm_access = access_arch_timer },
+	{ SYS_DESC(SYS_CNTP_CVAL_EL0), access_arch_timer,
+	  .pvm_access = access_arch_timer },
+	{ SYS_DESC(SYS_CNTV_TVAL_EL0), access_arch_timer,
+	  .pvm_access = access_arch_timer },
+	{ SYS_DESC(SYS_CNTV_CTL_EL0), access_arch_timer,
+	  .pvm_access = access_arch_timer },
+	{ SYS_DESC(SYS_CNTV_CVAL_EL0), access_arch_timer,
+	  .pvm_access = access_arch_timer },
 
 	/* PMEVCNTRn_EL0 */
 	PMU_PMEVCNTR_EL0(0),

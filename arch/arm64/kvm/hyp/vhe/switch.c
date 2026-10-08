@@ -110,13 +110,22 @@ DEFINE_PER_CPU(u64, kvm_pvm_run_sctlr);
 #define PVM_CPACR_FLAGS		(CPACR_EL1_ZEN_EL0EN | \
 				 CPACR_EL1_SMEN_EL0EN)
 
+/*
+ * PVM runs the guest kernel at physical EL0. Trap both timer classes so
+ * accesses are emulated against the single RV timer state.
+ */
+#define PVM_CNTKCTL_FLAGS	(ARCH_TIMER_USR_PCT_ACCESS_EN | \
+				 ARCH_TIMER_USR_VCT_ACCESS_EN | \
+				 ARCH_TIMER_USR_PT_ACCESS_EN | \
+				 ARCH_TIMER_USR_VT_ACCESS_EN)
+
 static void __activate_traps(struct kvm_vcpu *vcpu)
 {
 	u64 val;
 
 	if (is_pvm_mode()) {
 		struct kvm_cpu_context *ctxt = &vcpu->arch.ctxt;
-		u64 sctlr, tcr, cpacr;
+		u64 sctlr, tcr, cpacr, cntkctl;
 
 		sctlr = ctxt_sys_reg(ctxt, SCTLR_EL1) & PVM_SCTLR_GUEST;
 		sctlr |= read_sysreg_el2(SYS_SCTLR) & ~PVM_SCTLR_GUEST;
@@ -138,6 +147,10 @@ static void __activate_traps(struct kvm_vcpu *vcpu)
 		cpacr |= CPACR_ELx_TTA;
 		cpacr &= ~PVM_CPACR_FLAGS;
 		write_sysreg(cpacr, cpacr_el1);
+
+		cntkctl = read_sysreg_el2(SYS_CNTKCTL);
+		cntkctl &= ~PVM_CNTKCTL_FLAGS;
+		write_sysreg_el2(cntkctl, SYS_CNTKCTL);
 
 		write_sysreg(__this_cpu_read(kvm_hyp_vector), vbar_el1);
 		return;
@@ -322,6 +335,7 @@ static void __sysreg_save_host_state_pvm(struct kvm_cpu_context *ctxt)
 
 	ctxt_sys_reg(ctxt, TCR_EL1) = read_sysreg_el2(SYS_TCR);
 	ctxt_sys_reg(ctxt, CPACR_EL1) = read_sysreg_el2(SYS_CPACR);
+	ctxt_sys_reg(ctxt, CNTKCTL_EL1) = read_sysreg_el2(SYS_CNTKCTL);
 }
 
 static void __sysreg_restore_host_state_pvm(struct kvm_cpu_context *ctxt)
@@ -331,6 +345,7 @@ static void __sysreg_restore_host_state_pvm(struct kvm_cpu_context *ctxt)
 
 	write_sysreg_el2(ctxt_sys_reg(ctxt, TCR_EL1), SYS_TCR);
 	write_sysreg_el2(ctxt_sys_reg(ctxt, CPACR_EL1), SYS_CPACR);
+	write_sysreg_el2(ctxt_sys_reg(ctxt, CNTKCTL_EL1), SYS_CNTKCTL);
 }
 
 /* Run a guest using the VHE or PVM context switch. */
