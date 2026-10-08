@@ -1957,22 +1957,33 @@ static int find_lowest_rq(struct task_struct *task)
 
 static struct task_struct *pick_next_pushable_task(struct rq *rq)
 {
+	struct plist_head *head = &rq->rt.pushable_tasks;
 	struct task_struct *p;
 
 	if (!has_pushable_tasks(rq))
 		return NULL;
 
-	p = plist_first_entry(&rq->rt.pushable_tasks,
-			      struct task_struct, pushable_tasks);
+	/*
+	 * Return the highest priority pushable task that can actually be
+	 * migrated. A task that is currently running, or whose migration has
+	 * been disabled, must stay where it is and must not keep the runqueue
+	 * marked overloaded.
+	 */
+	plist_for_each_entry(p, head, pushable_tasks) {
+		/* skip tasks that cannot be migrated */
+		if (!task_on_cpu(rq, p) && !is_migration_disabled(p)) {
+			BUG_ON(rq->cpu != task_cpu(p));
+			BUG_ON(task_current(rq, p));
+			BUG_ON(p->nr_cpus_allowed <= 1);
 
-	BUG_ON(rq->cpu != task_cpu(p));
-	BUG_ON(task_current(rq, p));
-	BUG_ON(p->nr_cpus_allowed <= 1);
+			BUG_ON(!task_on_rq_queued(p));
+			BUG_ON(!rt_task(p));
 
-	BUG_ON(!task_on_rq_queued(p));
-	BUG_ON(!rt_task(p));
+			return p;
+		}
+	}
 
-	return p;
+	return NULL;
 }
 
 /* Will lock the rq it finds */
