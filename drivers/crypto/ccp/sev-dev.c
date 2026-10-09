@@ -33,6 +33,7 @@
 
 #include "hygon/psp-dev.h"
 #include "hygon/csv-dev.h"
+#include "hygon/sp-dev.h"
 
 #define DEVICE_NAME		"sev"
 #define SEV_FW_FILE		"amd/sev.fw"
@@ -599,7 +600,8 @@ static int sev_update_firmware(struct device *dev)
 	u64 data_size;
 
 	if (sev_get_firmware(dev, &firmware) == -ENOENT) {
-		dev_dbg(dev, "No SEV firmware file present\n");
+		dev_dbg(dev, "No %s firmware file present\n",
+			is_vendor_hygon() ? "CSV" : "SEV");
 		return -1;
 	}
 
