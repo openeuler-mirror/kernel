@@ -89,7 +89,14 @@ static inline struct minix_inode_info *minix_i(struct inode *inode)
 
 static inline unsigned minix_blocks_needed(unsigned bits, unsigned blocksize)
 {
-	return DIV_ROUND_UP(bits, blocksize * 8);
+	unsigned divisor = blocksize * 8;
+
+	/*
+	 * Avoid DIV_ROUND_UP() here: the round-up addition can overflow for a
+	 * near-UINT_MAX @bits.  @divisor is always a power of two, so divide
+	 * first and add the round-up term without overflowing.
+	 */
+	return bits / divisor + !!(bits & (divisor - 1));
 }
 
 #if defined(CONFIG_MINIX_FS_NATIVE_ENDIAN) && \
