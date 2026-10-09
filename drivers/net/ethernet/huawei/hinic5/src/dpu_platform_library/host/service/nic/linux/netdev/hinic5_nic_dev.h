@@ -31,7 +31,7 @@
 #include "vram_common.h"
 
 #define HINIC5_NIC_DRV_NAME	"hinic5"
-#define HINIC5_NIC_DRV_VERSION	"100.0.1.102"
+#define HINIC5_NIC_DRV_VERSION	"100.0.2.101"
 
 #define HINIC5_FUNC_IS_VF(hwdev)	(hinic5_func_type(hwdev) == TYPE_VF)
 
