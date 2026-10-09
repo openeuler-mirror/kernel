@@ -160,20 +160,19 @@ again:
 	return page;
 }
 
-static void *dma_direct_alloc_from_pool(struct device *dev, size_t size,
-		dma_addr_t *dma_handle, gfp_t gfp)
+static struct page *dma_direct_alloc_from_pool(struct device *dev, size_t size,
+		dma_addr_t *dma_handle, void **cpu_addr, gfp_t gfp)
 {
 	struct page *page;
 	u64 phys_mask;
-	void *ret;
 
 	gfp |= dma_direct_optimal_gfp_mask(dev, dev->coherent_dma_mask,
 					   &phys_mask);
-	page = dma_alloc_from_pool(dev, size, &ret, gfp, dma_coherent_ok);
+	page = dma_alloc_from_pool(dev, size, cpu_addr, gfp, dma_coherent_ok);
 	if (!page)
 		return NULL;
 	*dma_handle = phys_to_dma_direct(dev, page_to_phys(page));
-	return ret;
+	return page;
 }
 
 void *dma_direct_alloc(struct device *dev, size_t size,
@@ -216,8 +215,11 @@ void *dma_direct_alloc(struct device *dev, size_t size,
 	    (force_dma_unencrypted(dev) ||
 	     (IS_ENABLED(CONFIG_DMA_DIRECT_REMAP) &&
 	      !dev_is_dma_coherent(dev))) &&
-	    !is_swiotlb_for_alloc(dev))
-		return dma_direct_alloc_from_pool(dev, size, dma_handle, gfp);
+	    !is_swiotlb_for_alloc(dev)) {
+		page = dma_direct_alloc_from_pool(dev, size, dma_handle,
+						  &ret, gfp);
+		return page ? ret : NULL;
+	}
 
 	/* we always manually zero the memory once we are done */
 	page = __dma_direct_alloc_pages(dev, size, gfp & ~__GFP_ZERO);
@@ -323,7 +325,7 @@ struct page *dma_direct_alloc_pages(struct device *dev, size_t size,
 	if (IS_ENABLED(CONFIG_DMA_COHERENT_POOL) &&
 	    force_dma_unencrypted(dev) && !gfpflags_allow_blocking(gfp) &&
 	    !is_swiotlb_for_alloc(dev))
-		return dma_direct_alloc_from_pool(dev, size, dma_handle, gfp);
+		return dma_direct_alloc_from_pool(dev, size, dma_handle, &ret, gfp);
 
 	page = __dma_direct_alloc_pages(dev, size, gfp);
 	if (!page)
