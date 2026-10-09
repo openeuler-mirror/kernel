@@ -28,7 +28,7 @@ struct sk_buff *validate_xmit_xfrm(struct sk_buff *skb, netdev_features_t featur
 	int err;
 	unsigned long flags;
 	struct xfrm_state *x;
-	struct sk_buff *skb2;
+	struct sk_buff *skb2, *pskb = NULL;
 	struct softnet_data *sd;
 	netdev_features_t esp_features = features;
 	struct xfrm_offload *xo = xfrm_offload(skb);
@@ -119,18 +119,26 @@ struct sk_buff *validate_xmit_xfrm(struct sk_buff *skb, netdev_features_t featur
 		} else {
 			if (skb == skb2)
 				skb = nskb;
-
-			if (!skb)
-				return NULL;
+			else
+				pskb->next = nskb;
 
 			goto skip_push;
 		}
 
 		skb_push(skb2, skb2->data - skb_mac_header(skb2));
+		pskb = skb2;
 
 skip_push:
 		skb2 = nskb;
 	} while (skb2);
+
+	/* skb_gso_segment() set skb->prev to the last segment, but async
+	 * crypto may have stolen it above without updating ->prev.  Repoint
+	 * it at the last retained segment so validate_xmit_skb_list() does
+	 * not chain onto a segment now owned by the crypto engine.
+	 */
+	if (skb)
+		skb->prev = pskb;
 
 	return skb;
 }
