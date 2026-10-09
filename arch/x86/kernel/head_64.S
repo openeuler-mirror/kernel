@@ -243,6 +243,16 @@ SYM_INNER_LABEL(secondary_startup_64_no_verify, SYM_L_GLOBAL)
 	 */
 	movq initial_stack(%rip), %rsp
 
+#ifdef CONFIG_AMD_MEM_ENCRYPT
+	/*
+	 * Ensure .bss.decrypted memory's stale caches which lived in earlier
+	 * stage to be flushed.
+	 */
+	pushq	%rsi
+	call	early_clflush_bss_decrypted_section
+	popq	%rsi
+#endif
+
 	/* Setup and Load IDT */
 	pushq	%rsi
 	call	early_setup_idt
@@ -369,6 +379,8 @@ SYM_DATA(initial_code,	.quad x86_64_start_kernel)
 SYM_DATA(initial_gs,	.quad INIT_PER_CPU_VAR(fixed_percpu_data))
 #ifdef CONFIG_AMD_MEM_ENCRYPT
 SYM_DATA(initial_vc_handler,	.quad handle_vc_boot_ghcb)
+SYM_DATA(bsp_flush_bss_decrypted_section_done,	.byte 0x0)
+	.balign	8
 #endif
 
 /*
