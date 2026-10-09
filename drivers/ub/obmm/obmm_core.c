@@ -149,7 +149,7 @@ struct obmm_region *search_deactivate_obmm_region(int regionid)
 
 	if (!success) {
 		pr_err("failed to deactivate: region %d is being used or in creation/destruction process.\n",
-		       region->regionid);
+		       regionid);
 		return ERR_PTR(-EBUSY);
 	}
 
@@ -333,12 +333,15 @@ int init_obmm_region(struct obmm_region *region)
 	return 0;
 }
 
+/*
+ * Publish the region device and insert the region on the global list;
+ * on failure the caller unwinds, finishing with obmm_shm_dev_put().
+ */
 int register_obmm_region(struct obmm_region *region)
 {
 	int retval;
 
-	/* create device */
-	retval = obmm_shm_dev_add(region);
+	retval = obmm_shm_dev_publish(region);
 	if (retval) {
 		pr_err("Failed to create device %d. ret=%pe\n", region->regionid, ERR_PTR(retval));
 		return retval;
@@ -349,17 +352,18 @@ int register_obmm_region(struct obmm_region *region)
 	if (retval < 0) {
 		pr_err("Failed to insert obmm region %d on creation. ret=%pe\n", region->regionid,
 		       ERR_PTR(retval));
-		obmm_shm_dev_del(region);
+		obmm_shm_dev_unpublish(region);
 		return retval;
 	}
 
 	return 0;
 }
 
+/* Remove the region from the global list and unpublish its device. */
 void deregister_obmm_region(struct obmm_region *region)
 {
 	remove_obmm_region(region);
-	obmm_shm_dev_del(region);
+	obmm_shm_dev_unpublish(region);
 }
 
 int set_obmm_region_priv(struct obmm_region *region, unsigned int priv_len, const void __user *priv)

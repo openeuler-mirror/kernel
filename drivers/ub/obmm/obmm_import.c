@@ -369,15 +369,12 @@ static bool validate_pa_range(phys_addr_t pa, size_t size)
 
 static bool validate_import_region(const struct obmm_import_region *i_reg)
 {
-	bool preimport;
-
 	/* size and alignment check */
 	if (i_reg->region.mem_size == 0) {
 		pr_err("Zero memory segment size is invalid\n");
 		return false;
 	}
 
-	preimport = region_preimport(&i_reg->region);
 	/* PA as parameter */
 	if (!validate_pa_range(i_reg->pa, i_reg->region.mem_size))
 		return false;
@@ -473,8 +470,6 @@ int obmm_import(struct obmm_cmd_import *cmd_import)
 	if (i_reg == NULL)
 		return -ENOMEM;
 
-	atomic_set(&i_reg->region.device_released, 1);
-
 	/* arguments to region (logs produced by callee) */
 	retval = init_import_region_from_cmd(cmd_import, i_reg);
 	if (retval)
@@ -484,10 +479,15 @@ int obmm_import(struct obmm_cmd_import *cmd_import)
 	if (retval)
 		goto out_free_ireg;
 
+	/* from here on the device core owns the region's memory */
+	retval = obmm_shm_dev_init_device(&i_reg->region);
+	if (retval)
+		goto out_region_uninit;
+
 	retval = prepare_import_memory(i_reg);
 	if (retval) {
 		pr_err("Failed to prepare import memory: ret=%pe\n", ERR_PTR(retval));
-		goto out_region_uninit;
+		goto out_dev_put;
 	}
 
 	numa_id = i_reg->numa_id;
@@ -512,10 +512,14 @@ out_release_memory:
 	if (rollback_ret)
 		pr_warn("Failed to release import memory on rollback, ret=%pe.\n",
 			ERR_PTR(rollback_ret));
+out_dev_put:
+	uninit_obmm_region(&i_reg->region);
+	/* frees the region via the device release callback */
+	obmm_shm_dev_put(&i_reg->region);
+	return retval;
 out_region_uninit:
 	uninit_obmm_region(&i_reg->region);
 out_free_ireg:
-	wait_until_dev_released(&i_reg->region);
 	kfree(i_reg);
 	return retval;
 }
@@ -554,8 +558,8 @@ int obmm_unimport(const struct obmm_cmd_unimport *cmd_unimport)
 
 	deregister_obmm_region(reg);
 	uninit_obmm_region(reg);
-	wait_until_dev_released(&i_reg->region);
-	kfree(i_reg);
+	/* the region is freed by the device release callback */
+	obmm_shm_dev_put(reg);
 
 	pr_debug("%s: mem_id=%llu completed.\n", __func__, cmd_unimport->mem_id);
 	return 0;
