@@ -21,6 +21,7 @@
  * CSV guest/platform commands
  */
 enum {
+	CSV_PLATFORM_INIT = 101,
 	CSV_DOWNLOAD_FIRMWARE = 128,
 	CSV_HGSC_CERT_IMPORT = 201,
 

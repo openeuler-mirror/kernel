@@ -192,6 +192,9 @@ static long csv_ioctl(struct file *file, unsigned int ioctl, unsigned long arg)
 	case CSV_HGSC_CERT_IMPORT:
 		ret = csv_ioctl_do_hgsc_import(&input);
 		break;
+	case CSV_PLATFORM_INIT:
+		ret = hygon_psp_hooks.__sev_platform_init_locked(&input.error);
+		break;
 	case CSV_DOWNLOAD_FIRMWARE:
 		ret = csv_ioctl_do_download_firmware(&input);
 		break;
