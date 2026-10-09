@@ -53,17 +53,37 @@ static int sentry_poll_jfc(struct ubcore_jfc *jfc, int cr_cnt, struct ubcore_cr 
 #define URMA_LOCK			1
 #define URMA_UNLOCK			0
 #define EID_PART_NUM			8
-#define CLIENT_INFO_MAX_LEN		(((EID_MAX_LEN + 1) * MAX_NODE_NUM - 1) * 2 + 1 + 1 + \
-					 JETTY_ID_MAX_LEN + 1)
+
+/* The maximum length of the single die all server_eid content in client info */
+#define SINGLE_DIE_SERVER_EID_PART_LEN  ((EID_MAX_LEN + 1) * MAX_NODE_NUM - 1 + 1)
+
 /* The maximum length of the server_eid content in client info */
-#define SERVER_EID_PART_MAX_LEN		(((EID_MAX_LEN + 1) * MAX_NODE_NUM - 1) * 2 + 1 + 1)
-#define SINGLE_SERVER_PART_LEN		((EID_MAX_LEN + 1) * MAX_NODE_NUM - 1 + 1)
+#define ALL_DIE_SERVER_EID_PART_MAX_LEN	 ((SINGLE_DIE_SERVER_EID_PART_LEN - 1) * \
+					 MAX_DIE_NUM + 1 + 1)
 
 /*
- * 32 * （EID_MAX_LEN + 1） + 32 (31 * ";" + 1 * " ") + jetty_id + '\n' + '\0' +
- * "server_id:, client_jetty_id:"
+ * ((eidi + ",") * MAX_NODE_NUM - ",") * MAX_DIE_NUM + ";" +  " " + JETTY_ID_MAX_LEN + '\0'
  */
-#define CLIENT_INFO_BUF_MAX_LEN ((MAX_NODE_NUM + 1) * (EID_MAX_LEN + 1) + JETTY_ID_MAX_LEN + 35)
+#define WRITE_CLIENT_INFO_MAX_LEN (ALL_DIE_SERVER_EID_PART_MAX_LEN + JETTY_ID_MAX_LEN + 1)
+
+/*
+ * WRITE_CLIENT_INFO_MAX_LEN + '\n' + "server_eid:, client_jetty_id:"
+ */
+#define READ_CLIENT_INFO_MAX_LEN (WRITE_CLIENT_INFO_MAX_LEN + 1 + 29)
+
+/*
+ * Length of the trailing ", client_jetty_id:%d\n" segment in the show string,
+ * including the '\0': ", client_jetty_id:" (18) + digits of MAX_JETTY_ID (4,
+ * since MAX_JETTY_ID == 1023) + "\n" (1) + '\0' (1) = 24.
+ */
+#define CLIENT_JETTY_ID_SEG_MAX_LEN 24
+
+/*
+ * Space needed to append one server EID plus an optional ',' separator with
+ * its '\0': EID string is at most EID_MAX_LEN-1 chars (39) + separator (1) +
+ * '\0' (1). Used as the per-EID "write whole or skip" threshold.
+ */
+#define CLIENT_EID_SEG_MAX_LEN (EID_MAX_LEN + 1)
 
 struct ubcore_dev_list {
 	struct ubcore_device *dev;
@@ -133,7 +153,7 @@ struct sentry_urma_context {
 	int server_eid_num_configured;
 	bool is_panic_mode;
 
-	char *client_info_buf; /* for proc_read */
+	char *client_info_show_buf; /* for proc_read */
 	bool is_valid_client_info;
 
 	struct ubcore_cr *update_recv_cnt_cr;
@@ -379,8 +399,8 @@ static struct ubcore_client sentry_ubcore_client = {
  */
 void free_global_char(void)
 {
-	kfree(sentry_urma_ctx.client_info_buf);
-	sentry_urma_ctx.client_info_buf = NULL;
+	kfree(sentry_urma_ctx.client_info_show_buf);
+	sentry_urma_ctx.client_info_show_buf = NULL;
 
 	kfree(sentry_urma_ctx.update_recv_cnt_cr);
 	sentry_urma_ctx.update_recv_cnt_cr = NULL;
@@ -406,32 +426,22 @@ void free_global_char(void)
  */
 int init_global_char(void)
 {
-	sentry_urma_ctx.client_info_buf = kzalloc(CLIENT_INFO_BUF_MAX_LEN, GFP_KERNEL);
-	if (!sentry_urma_ctx.client_info_buf) {
-		pr_err("kzalloc client_info_buf failed\n");
+	sentry_urma_ctx.client_info_show_buf = kzalloc(READ_CLIENT_INFO_MAX_LEN, GFP_KERNEL);
+	if (!sentry_urma_ctx.client_info_show_buf)
 		goto err_free;
-	}
 
 	sentry_urma_ctx.update_recv_cnt_cr = kzalloc(sizeof(struct ubcore_cr) * MAX_NODE_NUM, GFP_KERNEL);
-	if (!sentry_urma_ctx.update_recv_cnt_cr) {
-		pr_err("kzalloc update_recv_cnt_cr failed\n");
+	if (!sentry_urma_ctx.update_recv_cnt_cr)
 		goto err_free;
-	}
 	sentry_urma_ctx.heartbeat_thread_cr = kzalloc(sizeof(struct ubcore_cr) * MAX_NODE_NUM, GFP_KERNEL);
-	if (!sentry_urma_ctx.heartbeat_thread_cr) {
-		pr_err("kzalloc heartbeat_thread_cr failed\n");
+	if (!sentry_urma_ctx.heartbeat_thread_cr)
 		goto err_free;
-	}
 	sentry_urma_ctx.urma_recv_cr = kzalloc(sizeof(struct ubcore_cr) * MAX_NODE_NUM, GFP_KERNEL);
-	if (!sentry_urma_ctx.urma_recv_cr) {
-		pr_err("kzalloc urma_recv_cr failed\n");
+	if (!sentry_urma_ctx.urma_recv_cr)
 		goto err_free;
-	}
 	sentry_urma_ctx.urma_recv_sender_cr = kzalloc(sizeof(struct ubcore_cr) * MAX_NODE_NUM, GFP_KERNEL);
-	if (!sentry_urma_ctx.urma_recv_sender_cr) {
-		pr_err("kzalloc urma_recv_sender_cr failed\n");
+	if (!sentry_urma_ctx.urma_recv_sender_cr)
 		goto err_free;
-	}
 
 	return 0;
 
@@ -1262,40 +1272,102 @@ static void format_client_info_show_str(void)
 {
 	bool is_not_single_die = false;
 	char *p;
+	size_t left;
 	int i, j;
 
 	/* Clean up old data */
-	if (sentry_urma_ctx.client_info_buf && sentry_urma_ctx.is_valid_client_info)
-		memset(sentry_urma_ctx.client_info_buf, 0, CLIENT_INFO_BUF_MAX_LEN);
+	if (sentry_urma_ctx.client_info_show_buf && sentry_urma_ctx.is_valid_client_info)
+		memset(sentry_urma_ctx.client_info_show_buf, 0, READ_CLIENT_INFO_MAX_LEN);
 
 	if (sentry_urma_ctx.is_valid_client_info) {
-		p = sentry_urma_ctx.client_info_buf;
+		char *buf = sentry_urma_ctx.client_info_show_buf;
+
+		p = buf;
+		left = READ_CLIENT_INFO_MAX_LEN;
 
 		for (i = 0; i < sentry_urma_ctx.local_eid_num_configured; i++) {
+			int valid_num = sentry_urma_dev[i].server_eid_valid_num;
+
 			if (!sentry_urma_dev[i].is_created) {
 				pr_err("invalid value for sentry_urma_dev[%d].is_created\n", i);
-				break;
+				goto fallback;
+			}
+
+			/*
+			 * Stop once the buffer can only hold the terminator. Using
+			 * scnprintf (returns chars actually written) and tracking the
+			 * remaining space via |left| keeps p inside the buffer even on
+			 * truncation; advancing p by snprintf's would-be-written count
+			 * here would run past the end and make the next
+			 * "MAX_LEN - (p - buf)" size_t underflow into a huge value.
+			 */
+			if (left <= 1) {
+				pr_warn("client_info_show_buf space exhausted: left=%zu at die %d/%d\n",
+					left, i, sentry_urma_ctx.local_eid_num_configured);
+				goto fallback;
 			}
 
 			if (is_not_single_die)
-				p += snprintf(p, CLIENT_INFO_BUF_MAX_LEN, "%s", ";");
+				p += scnprintf(p, left, "%s", ";");
 			else
-				p += snprintf(p, CLIENT_INFO_BUF_MAX_LEN, "%s", "server_eid:");
+				p += scnprintf(p, left, "%s", "server_eid:");
+			left = READ_CLIENT_INFO_MAX_LEN - (p - buf);
 
-			for (j = 0; j < sentry_urma_dev[i].server_eid_valid_num; j++) {
-				p += snprintf(p, CLIENT_INFO_BUF_MAX_LEN - (p - sentry_urma_ctx.client_info_buf),
-					      "%s%s", sentry_urma_dev[i].server_eid_array[j],
-					      j != sentry_urma_dev[i].server_eid_valid_num - 1 ? "," : "");
+			for (j = 0; j < valid_num; j++) {
+				/*
+				 * Write a whole EID or fall back: with left <
+				 * CLIENT_EID_SEG_MAX_LEN, scnprintf would truncate the
+				 * EID, producing a misleading partial string. Since a
+				 * truncated EID list is not useful and could be mistaken
+				 * for a valid, shorter one, fall back to the canonical
+				 * "server_eid:null, client_jetty_id:-1" show string
+				 * instead of emitting a partial result.
+				 */
+				if (left < CLIENT_EID_SEG_MAX_LEN) {
+					pr_warn("client_info_show_buf space exhausted: left=%zu, need>=%d, at die %d eid %d/%d\n",
+						left, CLIENT_EID_SEG_MAX_LEN, i, j,
+						valid_num);
+					goto fallback;
+				}
+				p += scnprintf(p, left, "%s%s",
+					       sentry_urma_dev[i].server_eid_array[j],
+					       j != valid_num - 1 ? "," : "");
+				left = READ_CLIENT_INFO_MAX_LEN - (p - buf);
 			}
 			is_not_single_die = true;
 		}
 
-		snprintf(p, CLIENT_INFO_BUF_MAX_LEN, ", client_jetty_id:%d\n",
-			 sentry_urma_ctx.client_jetty_id);
-	} else {
-		snprintf(sentry_urma_ctx.client_info_buf, CLIENT_INFO_BUF_MAX_LEN,
-			 "server_eid:%s, client_jetty_id:%d\n", "null", DEFAULT_INVALID_JETTY_ID);
+		/*
+		 * Only emit the trailing ", client_jetty_id:..." segment when at
+		 * least the "server_eid:" prefix has been written (p advanced past
+		 * the buffer start) and there is room for the whole segment.
+		 * Otherwise the show string would be a bare, misleading
+		 * ", client_jetty_id:..." with no server_eid prefix, or a truncated
+		 * jetty_id value; fall back to the canonical show string instead.
+		 */
+		if (p == buf) {
+			pr_warn("client_info_show_buf empty: no server_eid prefix written, client_jetty_id segment dropped\n");
+			goto fallback;
+		}
+		if (left < CLIENT_JETTY_ID_SEG_MAX_LEN) {
+			pr_warn("client_info_show_buf space exhausted: left=%zu, need>=%d, client_jetty_id segment dropped\n",
+				left, CLIENT_JETTY_ID_SEG_MAX_LEN);
+			goto fallback;
+		}
+		scnprintf(p, left, ", client_jetty_id:%d\n", sentry_urma_ctx.client_jetty_id);
+		return;
 	}
+
+	/*
+	 * Canonical fallback show string, shared by the invalid-info case and
+	 * every space-exhaustion / missing-prefix case above: any condition that
+	 * prevents a complete, valid EID list from being emitted yields the same
+	 * "server_eid:null, client_jetty_id:-1\n" rather than a partial or
+	 * truncated result.
+	 */
+fallback:
+	scnprintf(sentry_urma_ctx.client_info_show_buf, READ_CLIENT_INFO_MAX_LEN,
+		  "server_eid:%s, client_jetty_id:%d\n", "null", DEFAULT_INVALID_JETTY_ID);
 }
 
 /**
@@ -1375,7 +1447,7 @@ static int process_server_eid_str(char *server_buf,
 			return -EINVAL;
 		}
 
-		if (strlen(single_server_eid_part) > SINGLE_SERVER_PART_LEN) {
+		if (strlen(single_server_eid_part) > SINGLE_DIE_SERVER_EID_PART_LEN) {
 			pr_err("Invalid server eid format: str too long: %s\n",
 			       single_server_eid_part);
 			return -EINVAL;
@@ -1431,17 +1503,17 @@ static ssize_t proc_client_info_write(struct file *file, const char __user *user
 	char *server_buf_part; /* save service eid strings */
 	char *client_jetty_id_part; /* save jetty id */
 
-	if (count > CLIENT_INFO_MAX_LEN - 1) {
+	if (count > WRITE_CLIENT_INFO_MAX_LEN - 1) {
 		pr_err("invalid server eid info, max len %d, actual %lu\n",
-		       CLIENT_INFO_MAX_LEN - 1, count);
+		       WRITE_CLIENT_INFO_MAX_LEN - 1, count);
 		return -EINVAL;
 	}
 
-	kbuf = kzalloc(CLIENT_INFO_MAX_LEN, GFP_KERNEL);
+	kbuf = kzalloc(WRITE_CLIENT_INFO_MAX_LEN, GFP_KERNEL);
 	if (!kbuf)
 		return -ENOMEM;
 
-	server_buf_part = kzalloc(SERVER_EID_PART_MAX_LEN, GFP_KERNEL);
+	server_buf_part = kzalloc(ALL_DIE_SERVER_EID_PART_MAX_LEN, GFP_KERNEL);
 	if (!server_buf_part) {
 		kfree(kbuf);
 		return -ENOMEM;
@@ -1463,9 +1535,9 @@ static ssize_t proc_client_info_write(struct file *file, const char __user *user
 	pr_info("%s kbuf is %s\n", __func__, kbuf);
 
 	/*
-	 * Parse server EID part and client jetty ID part
-	 * ((39 + 1) * 32 - 1) * 2 + 1 = 2559
-	 * client_jetty_id_part buffer size is JETTY_ID_MAX_LEN (6),
+	 * Parse server EID part and client jetty ID part.
+	 * server EID part max len is ((39 + 1) * 32 - 1) * 2 + 1 = 2559,
+	 * client jetty ID part max len is JETTY_ID_MAX_LEN (6),
 	 * so use %5[^\n] to read max 5 chars + null terminator = 6
 	 */
 	ret = sscanf(kbuf, "%2559[^ ] %5[^\n]%n",
@@ -1561,8 +1633,8 @@ static ssize_t proc_client_info_show(struct file *file, char __user *buf,
 {
 	format_client_info_show_str();
 	return simple_read_from_buffer(buf, count, ppos,
-				       sentry_urma_ctx.client_info_buf,
-				       strlen(sentry_urma_ctx.client_info_buf));
+				       sentry_urma_ctx.client_info_show_buf,
+				       strlen(sentry_urma_ctx.client_info_show_buf));
 }
 
 static const struct proc_ops proc_client_info_file_operations = {
