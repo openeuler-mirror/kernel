@@ -320,7 +320,6 @@ int udma_batch_modify_and_destroy_jetty(struct udma_dev *dev,
 					uint32_t jetty_cnt, int *bad_jetty_index);
 int udma_add_xa_and_create_hw_ctx(struct udma_dev *udma_dev, struct udma_jetty *udma_jetty,
 				  struct ubcore_jetty_cfg *cfg);
-void udma_free_lock_buffer_sq_buf(struct udma_dev *udma_dev, struct udma_jetty *udma_jetty);
 
 int udma_verify_jetty_opt(struct udma_dev *udma_dev, struct udma_jetty_opt_attr attr);
 int udma_set_jetty_field(struct udma_dev *udma_dev, struct udma_jetty_queue *sq,
