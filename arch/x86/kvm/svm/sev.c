@@ -2780,7 +2780,10 @@ int sev_handle_vmgexit(struct vcpu_svm *svm)
 					    svm->ghcb_sa);
 		break;
 	case SVM_VMGEXIT_NMI_COMPLETE:
-		ret = svm_invoke_exit_handler(svm, SVM_EXIT_IRET);
+		++svm->vcpu.stat.nmi_window_exits;
+		svm->nmi_masked = false;
+		kvm_make_request(KVM_REQ_EVENT, &svm->vcpu);
+		ret = 1;
 		break;
 	case SVM_VMGEXIT_AP_HLT_LOOP:
 		ret = kvm_emulate_ap_reset_hold(&svm->vcpu);

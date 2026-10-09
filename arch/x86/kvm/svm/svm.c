@@ -2423,12 +2423,15 @@ static int cpuid_interception(struct vcpu_svm *svm)
 
 static int iret_interception(struct vcpu_svm *svm)
 {
+	WARN_ON_ONCE(sev_es_guest(svm->vcpu.kvm));
+
 	++svm->vcpu.stat.nmi_window_exits;
 	svm->awaiting_iret_completion = true;
 	if (!sev_es_guest(svm->vcpu.kvm)) {
 		svm_clr_intercept(svm, INTERCEPT_IRET);
-		svm->nmi_iret_rip = kvm_rip_read(&svm->vcpu);
 	}
+	svm->nmi_iret_rip = kvm_rip_read(&svm->vcpu);
+
 	kvm_make_request(KVM_REQ_EVENT, &svm->vcpu);
 	return 1;
 }
@@ -3744,12 +3747,11 @@ static void svm_complete_interrupts(struct vcpu_svm *svm)
 	svm->int3_injected = 0;
 
 	/*
-	 * If we've made progress since setting HF_IRET_MASK, we've
+	 * If we've made progress since setting awaiting_iret_completion, we've
 	 * executed an IRET and can allow NMI injection.
 	 */
 	if (svm->awaiting_iret_completion &&
-	    (sev_es_guest(svm->vcpu.kvm) ||
-	     kvm_rip_read(&svm->vcpu) != svm->nmi_iret_rip)) {
+	    kvm_rip_read(&svm->vcpu) != svm->nmi_iret_rip) {
 		svm->awaiting_iret_completion = false;
 		svm->nmi_masked = false;
 		kvm_make_request(KVM_REQ_EVENT, &svm->vcpu);
