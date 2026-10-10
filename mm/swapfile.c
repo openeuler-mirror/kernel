@@ -3209,6 +3209,15 @@ SYSCALL_DEFINE2(swapon, const char __user *, specialfile, int, swap_flags)
 	if (!swap_avail_heads)
 		return -ENOMEM;
 
+	/*
+	 * Reliable memory excludes swap: user pages must stay in the
+	 * mirrored region and never be written out to a swap device.
+	 */
+	if (mem_reliable_is_enabled()) {
+		pr_warn_once("swapon rejected: memory reliable is enabled\n");
+		return -EPERM;
+	}
+
 	p = alloc_swap_info();
 	if (IS_ERR(p))
 		return PTR_ERR(p);
@@ -3244,6 +3253,13 @@ SYSCALL_DEFINE2(swapon, const char __user *, specialfile, int, swap_flags)
 	}
 	if (IS_SWAPFILE(inode)) {
 		error = -EBUSY;
+		goto bad_swap_unlock_inode;
+	}
+	if (IS_ENCRYPTED(inode)) {
+		pr_warn_once(
+			"Filesystem-level encrypted swapfile '%s' is unsupported. Create a loop device over it, or use dm-crypt\n",
+			name->name);
+		error = -EINVAL;
 		goto bad_swap_unlock_inode;
 	}
 

@@ -1075,6 +1075,9 @@ void md_super_write(struct mddev *mddev, struct md_rdev *rdev,
 	 * If an error occurred, call md_error
 	 */
 	struct bio *bio;
+	struct block_device *bdev;
+	blk_opf_t opf = REQ_OP_WRITE | REQ_SYNC | REQ_IDLE | REQ_META
+			| REQ_PREFLUSH | REQ_FUA;
 
 	if (!page)
 		return;
@@ -1082,11 +1085,12 @@ void md_super_write(struct mddev *mddev, struct md_rdev *rdev,
 	if (test_bit(Faulty, &rdev->flags))
 		return;
 
-	bio = bio_alloc_bioset(rdev->meta_bdev ? rdev->meta_bdev : rdev->bdev,
-			      1,
-			      REQ_OP_WRITE | REQ_SYNC | REQ_IDLE | REQ_META
-				  | REQ_PREFLUSH | REQ_FUA,
-			      GFP_NOIO, &mddev->sync_set);
+	bdev = rdev->meta_bdev ? rdev->meta_bdev : rdev->bdev;
+
+	if (bioset_initialized(&mddev->sync_set))
+		bio = bio_alloc_bioset(bdev, 1, opf, GFP_NOIO, &mddev->sync_set);
+	else
+		bio = bio_alloc(bdev, 1, opf, GFP_NOIO);
 
 	atomic_inc(&rdev->nr_pending);
 

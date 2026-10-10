@@ -11,6 +11,7 @@
 #include <linux/mm_types.h>
 #include <linux/module.h>
 #include <linux/device.h>
+#include <linux/err.h>
 #include <linux/ioctl.h>
 #include <linux/init.h>
 #include <linux/slab.h>
@@ -242,7 +243,7 @@ static int ubmempfd_alloc_tdev(struct ubmempfd_ctx *ctx, u32 tid)
 	info.v2.tid = tid;
 
 	if (ctx->dev) {
-		pr_info("ummu dev exists, tid %u\n", tid);
+		pr_warn("ummu dev exists, tid %u\n", tid);
 		return 0;
 	}
 
@@ -280,29 +281,38 @@ static int ubmempfd_open(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-static int ubmempfd_check_req(const char __user *buf, size_t count)
+static struct ubm_request *ubmempfd_get_req(const char __user *buf, size_t count)
 {
-	size_t req_len = sizeof(struct ubm_request);
-	struct ubm_request req;
+	size_t min_req_len = sizeof(struct ubm_request);
+	size_t area_size = sizeof(((struct ubm_request *)0)->areas[0]);
+	size_t max_req_len = min_req_len +
+		UBMEMPFD_MAX_AREA_NUM * area_size;
+	struct ubm_request *req;
 
-	if (count < req_len) {
-		pr_err("Invalid count\n");
-		return -EINVAL;
+	if (count < min_req_len || count > max_req_len) {
+		pr_err("Invalid count %zu\n", count);
+		return ERR_PTR(-EINVAL);
 	}
 
-	if (copy_from_user(&req, buf, req_len)) {
-		pr_err("Failed to copy ubm request from user, size %zu\n", req_len);
-		return -EFAULT;
+	req = vzalloc(count);
+	if (!req)
+		return ERR_PTR(-ENOMEM);
+
+	if (copy_from_user(req, buf, count)) {
+		pr_err("Failed to copy ubm request from user, size %zu\n", count);
+		vfree(req);
+		return ERR_PTR(-EFAULT);
 	}
 
-	if (req.areas_num > UBMEMPFD_MAX_AREA_NUM ||
-	    sizeof(((struct ubm_request *)0)->areas[0]) * req.areas_num != count - req_len) {
+	if (req->areas_num > UBMEMPFD_MAX_AREA_NUM ||
+	    area_size * req->areas_num != count - min_req_len) {
 		pr_err("Failed to check req size, req size %zu, areas num %llu\n",
-		       count, req.areas_num);
-		return -EINVAL;
+		       count, req->areas_num);
+		vfree(req);
+		return ERR_PTR(-EINVAL);
 	}
 
-	return 0;
+	return req;
 }
 
 static ssize_t ubmempfd_write(struct file *filp, const char __user *buf,
@@ -318,19 +328,9 @@ static ssize_t ubmempfd_write(struct file *filp, const char __user *buf,
 		return -EINVAL;
 	}
 
-	ret = ubmempfd_check_req(buf, count);
-	if (ret)
-		return ret;
-
-	req = vzalloc(count);
-	if (!req)
-		return -ENOMEM;
-
-	if (copy_from_user(req, buf, count)) {
-		pr_err("Failed to copy ubm request from user, size %zu\n", count);
-		ret = -EFAULT;
-		goto free_req;
-	}
+	req = ubmempfd_get_req(buf, count);
+	if (IS_ERR(req))
+		return PTR_ERR(req);
 
 	if (ctx->work_state && !ctx->dev) {
 		down_write(&ctx->mapping_wr_lock);

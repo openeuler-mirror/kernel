@@ -19,6 +19,33 @@
 
 static u32 cpu_family, cpu_model, ibs_fetch_type, ibs_op_type;
 static bool zen4_ibs_extensions;
+static bool ldlat_cap;
+static bool dtlb_pgsize_cap;
+static bool rmtsocket_cap;
+static bool strmst_cap;
+
+/*
+ * Status fields of IBS_FETCH_CTL and IBS_FETCH_CTL_EXT are valid only if
+ * IBS_FETCH_CTL[PhyAddrValid] is set.
+ */
+static int fetch_ctl_depends_on_phy_addr_valid(void)
+{
+	static int depends = -1; /* -1: Don't know, 1: Yes, 0: No */
+
+	if (depends != -1)
+		return depends;
+
+	depends = 0;
+	if (cpu_family > 0x1a ||
+	    (cpu_family == 0x1a && (
+	     (cpu_model >= 0x50 && cpu_model <= 0x5f) ||
+	     (cpu_model >= 0x80 && cpu_model <= 0xaf) ||
+	     (cpu_model >= 0xc0 && cpu_model <= 0xcf)))) {
+		depends = 1;
+	}
+
+	return depends;
+}
 
 static void pr_ibs_fetch_ctl(union ibs_fetch_ctl reg)
 {
@@ -41,6 +68,18 @@ static void pr_ibs_fetch_ctl(union ibs_fetch_ctl reg)
 	const char *ic_miss_str = NULL;
 	const char *l1tlb_pgsz_str = NULL;
 	char l3_miss_str[sizeof(" L3MissOnly _ FetchOcMiss _ FetchL3Miss _")] = "";
+	char l3_miss_only_str[sizeof(" L3MissOnly _")] = "";
+
+	if (fetch_ctl_depends_on_phy_addr_valid() && !reg.phy_addr_valid) {
+		snprintf(l3_miss_only_str, sizeof(l3_miss_only_str),
+			 " L3MissOnly %d", reg.l3_miss_only);
+
+		printf("ibs_fetch_ctl:\t%016llx MaxCnt %7d Cnt %7d En %d Val %d Comp %d "
+		       "PhyAddrValid 0 RandEn %d%s\n", reg.val, reg.fetch_maxcnt << 4,
+		       reg.fetch_cnt << 4, reg.fetch_en, reg.fetch_val, reg.fetch_comp,
+		       reg.rand_en, l3_miss_only_str);
+		return;
+	}
 
 	if (cpu_family == 0x19 && cpu_model < 0x10) {
 		/*
@@ -70,22 +109,31 @@ static void pr_ibs_fetch_ctl(union ibs_fetch_ctl reg)
 		l3_miss_str);
 }
 
-static void pr_ic_ibs_extd_ctl(union ic_ibs_extd_ctl reg)
+static void pr_ic_ibs_extd_ctl(union ibs_fetch_ctl fetch_ctl, union ic_ibs_extd_ctl reg)
 {
+	if (fetch_ctl_depends_on_phy_addr_valid() && !fetch_ctl.phy_addr_valid)
+		return;
+
 	printf("ic_ibs_ext_ctl:\t%016llx IbsItlbRefillLat %3d\n", reg.val, reg.itlb_refill_lat);
 }
 
 static void pr_ibs_op_ctl(union ibs_op_ctl reg)
 {
 	char l3_miss_only[sizeof(" L3MissOnly _")] = "";
+	char ldlat[sizeof(" LdLatThrsh __ LdLatEn _")] = "";
 
 	if (zen4_ibs_extensions)
 		snprintf(l3_miss_only, sizeof(l3_miss_only), " L3MissOnly %d", reg.l3_miss_only);
 
-	printf("ibs_op_ctl:\t%016llx MaxCnt %9d%s En %d Val %d CntCtl %d=%s CurCnt %9d\n",
+	if (ldlat_cap) {
+		snprintf(ldlat, sizeof(ldlat), " LdLatThrsh %2d LdLatEn %d",
+			 reg.ldlat_thrsh, reg.ldlat_en);
+	}
+
+	printf("ibs_op_ctl:\t%016llx MaxCnt %9d%s En %d Val %d CntCtl %d=%s CurCnt %9d%s\n",
 		reg.val, ((reg.opmaxcnt_ext << 16) | reg.opmaxcnt) << 4, l3_miss_only,
 		reg.op_en, reg.op_val, reg.cnt_ctl,
-		reg.cnt_ctl ? "uOps" : "cycles", reg.opcurcnt);
+		reg.cnt_ctl ? "uOps" : "cycles", reg.opcurcnt, ldlat);
 }
 
 static void pr_ibs_op_data(union ibs_op_data reg)
@@ -118,8 +166,16 @@ static void pr_ibs_op_data2_extended(union ibs_op_data2 reg)
 		/* 13 to 31 are reserved. Avoid printing them. */
 	};
 	int data_src = (reg.data_src_hi << 3) | reg.data_src_lo;
+	char rmtsocket[sizeof("RmtSocket _ ")] = "";
+	char strmst[sizeof("StrmSt _ ")] = "";
 
-	printf("ibs_op_data2:\t%016llx %sRmtNode %d%s\n", reg.val,
+	if (rmtsocket_cap)
+		snprintf(rmtsocket, sizeof(rmtsocket), "RmtSocket %d ", reg.rmt_socket);
+	if (strmst_cap)
+		snprintf(strmst, sizeof(strmst), "StrmSt %d ", reg.strm_st);
+
+	printf("ibs_op_data2:\t%016llx %s%s%sRmtNode %d%s\n", reg.val,
+		rmtsocket, strmst,
 		(data_src == 1 || data_src == 2 || data_src == 5) ?
 			(reg.cache_hit_st ? "CacheHitSt 1=O-State " : "CacheHitSt 0=M-state ") : "",
 		reg.rmt_node,
@@ -138,8 +194,16 @@ static void pr_ibs_op_data2_default(union ibs_op_data2 reg)
 		" DataSrc 6=(reserved)",
 		" DataSrc 7=Other"
 	};
+	char rmtsocket[sizeof("RmtSocket _ ")] = "";
+	char strmst[sizeof("StrmSt _ ")] = "";
 
-	printf("ibs_op_data2:\t%016llx %sRmtNode %d%s\n", reg.val,
+	if (rmtsocket_cap)
+		snprintf(rmtsocket, sizeof(rmtsocket), "RmtSocket %d ", reg.rmt_socket);
+	if (strmst_cap)
+		snprintf(strmst, sizeof(strmst), "StrmSt %d ", reg.strm_st);
+
+	printf("ibs_op_data2:\t%016llx %s%s%sRmtNode %d%s\n", reg.val,
+	       rmtsocket, strmst,
 	       reg.data_src_lo == 2 ? (reg.cache_hit_st ? "CacheHitSt 1=O-State "
 						     : "CacheHitSt 0=M-state ") : "",
 	       reg.rmt_node, data_src_str[reg.data_src_lo]);
@@ -154,9 +218,21 @@ static void pr_ibs_op_data2(union ibs_op_data2 reg)
 
 static void pr_ibs_op_data3(union ibs_op_data3 reg)
 {
-	char l2_miss_str[sizeof(" L2Miss _")] = "";
-	char op_mem_width_str[sizeof(" OpMemWidth _____ bytes")] = "";
+	static const char * const dc_page_sizes[] = {
+		"  4K",
+		"  2M",
+		"  1G",
+		"  ??",
+	};
 	char op_dc_miss_open_mem_reqs_str[sizeof(" OpDcMissOpenMemReqs __")] = "";
+	char dc_l1_l2tlb_miss_str[sizeof(" DcL1TlbMiss _ DcL2TlbMiss _")] = "";
+	char dc_l1tlb_hit_str[sizeof(" DcL1TlbHit2M _ DcL1TlbHit1G _")] = "";
+	char op_mem_width_str[sizeof(" OpMemWidth _____ bytes")] = "";
+	char tlb_refill_lat_str[sizeof(" TlbRefillLat _____")] = "";
+	char dc_l2tlb_hit_2m_str[sizeof(" DcL2TlbHit2M _")] = "";
+	char dc_l2tlb_hit_1g_str[sizeof(" DcL2TlbHit1G _")] = "";
+	char dc_page_size_str[sizeof(" DcPageSize ____")] = "";
+	char l2_miss_str[sizeof(" L2Miss _")] = "";
 
 	/*
 	 * Erratum #1293
@@ -172,16 +248,46 @@ static void pr_ibs_op_data3(union ibs_op_data3 reg)
 		snprintf(op_mem_width_str, sizeof(op_mem_width_str),
 			 " OpMemWidth %2d bytes", 1 << (reg.op_mem_width - 1));
 
-	printf("ibs_op_data3:\t%016llx LdOp %d StOp %d DcL1TlbMiss %d DcL2TlbMiss %d "
-		"DcL1TlbHit2M %d DcL1TlbHit1G %d DcL2TlbHit2M %d DcMiss %d DcMisAcc %d "
-		"DcWcMemAcc %d DcUcMemAcc %d DcLockedOp %d DcMissNoMabAlloc %d DcLinAddrValid %d "
-		"DcPhyAddrValid %d DcL2TlbHit1G %d%s SwPf %d%s%s DcMissLat %5d TlbRefillLat %5d\n",
-		reg.val, reg.ld_op, reg.st_op, reg.dc_l1tlb_miss, reg.dc_l2tlb_miss,
-		reg.dc_l1tlb_hit_2m, reg.dc_l1tlb_hit_1g, reg.dc_l2tlb_hit_2m, reg.dc_miss,
-		reg.dc_mis_acc, reg.dc_wc_mem_acc, reg.dc_uc_mem_acc, reg.dc_locked_op,
-		reg.dc_miss_no_mab_alloc, reg.dc_lin_addr_valid, reg.dc_phy_addr_valid,
-		reg.dc_l2_tlb_hit_1g, l2_miss_str, reg.sw_pf, op_mem_width_str,
-		op_dc_miss_open_mem_reqs_str, reg.dc_miss_lat, reg.tlb_refill_lat);
+	if (dtlb_pgsize_cap) {
+		if (reg.dc_phy_addr_valid) {
+			int idx = (reg.dc_l1tlb_hit_1g << 1) | reg.dc_l1tlb_hit_2m;
+
+			snprintf(dc_l1_l2tlb_miss_str, sizeof(dc_l1_l2tlb_miss_str),
+				 " DcL1TlbMiss %d DcL2TlbMiss %d",
+				 reg.dc_l1tlb_miss, reg.dc_l2tlb_miss);
+			snprintf(dc_page_size_str, sizeof(dc_page_size_str),
+				 " DcPageSize %4s", dc_page_sizes[idx]);
+		}
+	} else {
+		snprintf(dc_l1_l2tlb_miss_str, sizeof(dc_l1_l2tlb_miss_str),
+			 " DcL1TlbMiss %d DcL2TlbMiss %d",
+			 reg.dc_l1tlb_miss, reg.dc_l2tlb_miss);
+		snprintf(dc_l1tlb_hit_str, sizeof(dc_l1tlb_hit_str),
+			 " DcL1TlbHit2M %d DcL1TlbHit1G %d",
+			 reg.dc_l1tlb_hit_2m, reg.dc_l1tlb_hit_1g);
+		snprintf(dc_l2tlb_hit_2m_str, sizeof(dc_l2tlb_hit_2m_str),
+			 " DcL2TlbHit2M %d", reg.dc_l2tlb_hit_2m);
+		snprintf(dc_l2tlb_hit_1g_str, sizeof(dc_l2tlb_hit_1g_str),
+			 " DcL2TlbHit1G %d", reg.dc_l2_tlb_hit_1g);
+	}
+
+	/* Use !zen4_ibs_extensions as a proxy for Zen3 and earlier */
+	if (!zen4_ibs_extensions || reg.dc_phy_addr_valid) {
+		snprintf(tlb_refill_lat_str, sizeof(tlb_refill_lat_str),
+			 " TlbRefillLat %5d", reg.tlb_refill_lat);
+	}
+
+	printf("ibs_op_data3:\t%016llx LdOp %d StOp %d%s%s%s DcMiss %d DcMisAcc %d "
+		"DcWcMemAcc %d DcUcMemAcc %d DcLockedOp %d DcMissNoMabAlloc %d "
+		"DcLinAddrValid %d DcPhyAddrValid %d%s%s SwPf %d%s%s "
+		"DcMissLat %5d%s\n",
+		reg.val, reg.ld_op, reg.st_op, dc_l1_l2tlb_miss_str,
+		dtlb_pgsize_cap ? dc_page_size_str : dc_l1tlb_hit_str,
+		dc_l2tlb_hit_2m_str, reg.dc_miss, reg.dc_mis_acc, reg.dc_wc_mem_acc,
+		reg.dc_uc_mem_acc, reg.dc_locked_op, reg.dc_miss_no_mab_alloc,
+		reg.dc_lin_addr_valid, reg.dc_phy_addr_valid, dc_l2tlb_hit_1g_str,
+		l2_miss_str, reg.sw_pf, op_mem_width_str, op_dc_miss_open_mem_reqs_str,
+		reg.dc_miss_lat, tlb_refill_lat_str);
 }
 
 /*
@@ -210,8 +316,12 @@ static void amd_dump_ibs_op(struct perf_sample *sample)
 	pr_ibs_op_data3(*op_data3);
 	if (op_data3->dc_lin_addr_valid)
 		printf("IbsDCLinAd:\t%016llx\n", *(rip + 4));
-	if (op_data3->dc_phy_addr_valid)
+
+	/* Use !zen4_ibs_extensions as a proxy for Zen3 and earlier */
+	if (op_data3->dc_phy_addr_valid && *(rip + 5) &&
+	    (!zen4_ibs_extensions || op_data3->dc_lin_addr_valid)) {
 		printf("IbsDCPhysAd:\t%016llx\n", *(rip + 5));
+	}
 	if (op_data->op_brn_ret && *(rip + 6))
 		printf("IbsBrTarget:\t%016llx\n", *(rip + 6));
 }
@@ -231,7 +341,7 @@ static void amd_dump_ibs_fetch(struct perf_sample *sample)
 	printf("IbsFetchLinAd:\t%016llx\n", *addr++);
 	if (fetch_ctl->phy_addr_valid)
 		printf("IbsFetchPhysAd:\t%016llx\n", *addr);
-	pr_ic_ibs_extd_ctl(*extd_ctl);
+	pr_ic_ibs_extd_ctl(*fetch_ctl, *extd_ctl);
 }
 
 /*
@@ -330,6 +440,18 @@ bool evlist__has_amd_ibs(struct evlist *evlist)
 
 	if (perf_env__find_pmu_cap(env, "ibs_op", "zen4_ibs_extensions"))
 		zen4_ibs_extensions = 1;
+
+	if (perf_env__find_pmu_cap(env, "ibs_op", "ldlat"))
+		ldlat_cap = 1;
+
+	if (perf_env__find_pmu_cap(env, "ibs_op", "dtlb_pgsize"))
+		dtlb_pgsize_cap = 1;
+
+	if (perf_env__find_pmu_cap(env, "ibs_op", "rmtsocket"))
+		rmtsocket_cap = 1;
+
+	if (perf_env__find_pmu_cap(env, "ibs_op", "strmst"))
+		strmst_cap = 1;
 
 	if (ibs_fetch_type || ibs_op_type) {
 		if (!cpu_family)

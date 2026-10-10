@@ -4205,7 +4205,15 @@ should_reclaim_retry(gfp_t gfp_mask, unsigned order,
 	else
 		(*no_progress_loops)++;
 
-	if (*no_progress_loops > MAX_RECLAIM_RETRIES)
+	/*
+	 * A MOVABLE-bound allocation whose direct reclaim freed nothing
+	 * will keep freeing nothing: the reliable filter skips
+	 * mirrored-zone folios, so retrying only re-walks the same
+	 * skipped LRU. Give up after one zero-progress pass instead of
+	 * MAX_RECLAIM_RETRIES.
+	 */
+	if (*no_progress_loops >
+	    (reliable_movable_only_alloc(gfp_mask) ? 0 : MAX_RECLAIM_RETRIES))
 		goto out;
 
 

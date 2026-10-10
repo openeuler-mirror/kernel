@@ -335,10 +335,40 @@ void __vgic_v3_deactivate_traps(struct vgic_v3_cpu_if *cpu_if)
 		write_gicreg(0, ICH_HCR_EL2);
 }
 
+static struct kvm_vcpu *vgic_v3_cpu_if_to_vcpu(struct vgic_v3_cpu_if *cpu_if)
+{
+	struct vgic_cpu *vgic_cpu = container_of(cpu_if, struct vgic_cpu, vgic_v3);
+
+	return container_of(vgic_cpu, struct kvm_vcpu, arch.vgic_cpu);
+}
+
+/*
+ * vNMI is only usable if the guest has selected NMI support
+ * (vgic.has_nmi) and the vcpu has FEAT_NMI (pfr1_nmi).
+ *
+ * This drives the width of the ICH_AP1Rn_EL2 accesses: with vNMI the
+ * registers are 64bit (the NMI priority lives in ICH_AP1R0_EL2[63]),
+ * without it only the low 32 bits are valid.
+ */
+bool vgic_v3_vcpu_has_vnmi(struct kvm_vcpu *vcpu)
+{
+	struct kvm *kvm = kern_hyp_va(vcpu->kvm);
+
+	return kvm->arch.vgic.has_nmi &&
+	       kvm->arch.pfr1_nmi == ID_AA64PFR1_EL1_NMI_IMP;
+}
+
 void __vgic_v3_save_aprs(struct vgic_v3_cpu_if *cpu_if)
 {
 	u64 val;
 	u32 nr_pre_bits;
+	/*
+	 * ICH_AP1Rn_EL2 are only 64bit when the vcpu has vNMI: the NMI
+	 * priority is encoded in ICH_AP1R0_EL2[63].  Without vNMI, the
+	 * upper bits are RES0 and only the low 32 bits must be
+	 * preserved.
+	 */
+	bool vnmi = vgic_v3_vcpu_has_vnmi(vgic_v3_cpu_if_to_vcpu(cpu_if));
 
 	val = read_gicreg(ICH_VTR_EL2);
 	nr_pre_bits = vtr_to_nr_pre_bits(val);
@@ -357,14 +387,18 @@ void __vgic_v3_save_aprs(struct vgic_v3_cpu_if *cpu_if)
 
 	switch (nr_pre_bits) {
 	case 7:
-		cpu_if->vgic_ap1r[3] = __vgic_v3_read_ap1rn(3);
-		cpu_if->vgic_ap1r[2] = __vgic_v3_read_ap1rn(2);
+		cpu_if->vgic_ap1r[3] = vnmi ? __vgic_v3_read_ap1rn(3)
+					    : (u32)__vgic_v3_read_ap1rn(3);
+		cpu_if->vgic_ap1r[2] = vnmi ? __vgic_v3_read_ap1rn(2)
+					    : (u32)__vgic_v3_read_ap1rn(2);
 		fallthrough;
 	case 6:
-		cpu_if->vgic_ap1r[1] = __vgic_v3_read_ap1rn(1);
+		cpu_if->vgic_ap1r[1] = vnmi ? __vgic_v3_read_ap1rn(1)
+					    : (u32)__vgic_v3_read_ap1rn(1);
 		fallthrough;
 	default:
-		cpu_if->vgic_ap1r[0] = __vgic_v3_read_ap1rn(0);
+		cpu_if->vgic_ap1r[0] = vnmi ? __vgic_v3_read_ap1rn(0)
+					    : (u32)__vgic_v3_read_ap1rn(0);
 	}
 }
 
@@ -372,6 +406,7 @@ void __vgic_v3_restore_aprs(struct vgic_v3_cpu_if *cpu_if)
 {
 	u64 val;
 	u32 nr_pre_bits;
+	bool vnmi = vgic_v3_vcpu_has_vnmi(vgic_v3_cpu_if_to_vcpu(cpu_if));
 
 	val = read_gicreg(ICH_VTR_EL2);
 	nr_pre_bits = vtr_to_nr_pre_bits(val);
@@ -390,14 +425,18 @@ void __vgic_v3_restore_aprs(struct vgic_v3_cpu_if *cpu_if)
 
 	switch (nr_pre_bits) {
 	case 7:
-		__vgic_v3_write_ap1rn(cpu_if->vgic_ap1r[3], 3);
-		__vgic_v3_write_ap1rn(cpu_if->vgic_ap1r[2], 2);
+		__vgic_v3_write_ap1rn(vnmi ? cpu_if->vgic_ap1r[3]
+					   : (u32)cpu_if->vgic_ap1r[3], 3);
+		__vgic_v3_write_ap1rn(vnmi ? cpu_if->vgic_ap1r[2]
+					   : (u32)cpu_if->vgic_ap1r[2], 2);
 		fallthrough;
 	case 6:
-		__vgic_v3_write_ap1rn(cpu_if->vgic_ap1r[1], 1);
+		__vgic_v3_write_ap1rn(vnmi ? cpu_if->vgic_ap1r[1]
+					   : (u32)cpu_if->vgic_ap1r[1], 1);
 		fallthrough;
 	default:
-		__vgic_v3_write_ap1rn(cpu_if->vgic_ap1r[0], 0);
+		__vgic_v3_write_ap1rn(vnmi ? cpu_if->vgic_ap1r[0]
+					   : (u32)cpu_if->vgic_ap1r[0], 0);
 	}
 }
 

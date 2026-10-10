@@ -26,59 +26,88 @@ uint8_t merge_cache_ops(uint8_t ops1, uint8_t ops2)
 	return ops1;
 }
 
-/* Update R/W counters for a page, return cache op needed */
-static uint8_t update_page_ownership(struct obmm_ownership_info *ownership,
-				     unsigned long pgoff,
-				     uint8_t old_access,
-				     uint8_t new_access)
+static int update_page_ownership(struct obmm_ownership_info *ownership,
+				 unsigned long pgoff,
+				 uint8_t old_access,
+				 uint8_t new_access,
+				 uint8_t *cache_op)
 {
 	struct obmm_page_state *page = &ownership->page_states[pgoff];
 	uint16_t old_w = page->w_count;
 	uint16_t old_r = page->r_count;
-	uint16_t new_w, new_r;
+	uint16_t new_w = old_w, new_r = old_r;
 
 	if (obmm_access_is_writer(old_access))
-		page->w_count--;
+		new_w--;
 	if (obmm_access_is_reader(old_access))
-		page->r_count--;
-	if (obmm_access_is_writer(new_access))
-		page->w_count++;
-	if (obmm_access_is_reader(new_access))
-		page->r_count++;
+		new_r--;
+	if (obmm_access_is_writer(new_access)) {
+		if (new_w == U16_MAX) {
+			pr_err("obmm ownership: writer count overflow at pgoff=%lu\n", pgoff);
+			return -EOVERFLOW;
+		}
+		new_w++;
+	}
+	if (obmm_access_is_reader(new_access)) {
+		if (new_r == U16_MAX) {
+			pr_err("obmm ownership: reader count overflow at pgoff=%lu\n", pgoff);
+			return -EOVERFLOW;
+		}
+		new_r++;
+	}
 
-	new_w = page->w_count;
-	new_r = page->r_count;
+	page->w_count = new_w;
+	page->r_count = new_r;
 
-	if (old_w > 0 && new_w == 0)
-		return new_r > 0 ? OBMM_SHM_CACHE_WB_ONLY : OBMM_SHM_CACHE_WB_INVAL;
+	if (old_w > 0 && new_w == 0) {
+		*cache_op = new_r > 0 ? OBMM_SHM_CACHE_WB_ONLY : OBMM_SHM_CACHE_WB_INVAL;
+		return 0;
+	}
 	if (old_r > 0 && new_r == 0 && new_w == 0)
-		return OBMM_SHM_CACHE_INVAL;
-	return OBMM_SHM_CACHE_NONE;
+		*cache_op = OBMM_SHM_CACHE_INVAL;
+	else
+		*cache_op = OBMM_SHM_CACHE_NONE;
+	return 0;
 }
 
-/* Update counters for VMA range, return combined cache op */
-uint8_t update_vma_perm_count(struct obmm_region *reg,
-			      unsigned long region_pgoff,
-			      unsigned long npages,
-			      uint8_t old_access,
-			      uint8_t new_access)
+int update_vma_perm_count(struct obmm_region *reg,
+			  unsigned long region_pgoff,
+			  unsigned long npages,
+			  uint8_t old_access,
+			  uint8_t new_access,
+			  uint8_t *cache_ops,
+			  unsigned long *done_npages)
 {
 	struct obmm_ownership_info *ownership = reg->ownership_info;
 	uint8_t combined_ops = OBMM_SHM_CACHE_NONE, op;
 	unsigned long start_idx, nentries, i;
+	int ret;
+
+	if (cache_ops)
+		*cache_ops = OBMM_SHM_CACHE_NONE;
+	if (done_npages)
+		*done_npages = npages;
 
 	if (!ownership)
-		return OBMM_SHM_CACHE_NONE;
+		return 0;
 
 	start_idx = ownership_pgoff_to_index(reg, region_pgoff);
 	nentries = ownership_size_to_nentries(reg, npages << PAGE_SHIFT);
 
 	for (i = 0; i < nentries; i++) {
-		op = update_page_ownership(ownership, start_idx + i, old_access, new_access);
+		ret = update_page_ownership(ownership, start_idx + i, old_access, new_access, &op);
+		if (ret) {
+			if (done_npages)
+				*done_npages = ownership_nentries_to_npages(reg, i);
+			return ret;
+		}
 		combined_ops = merge_cache_ops(combined_ops, op);
 	}
 
-	return combined_ops;
+	if (cache_ops)
+		*cache_ops = combined_ops;
+
+	return 0;
 }
 
 /* Convert access bits to vm_flags (R/W only, preserves existing EXEC) */

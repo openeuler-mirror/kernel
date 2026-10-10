@@ -88,8 +88,10 @@ static inline bool filemap_reliable_is_enabled(void)
  * - the reclaim-side filter in isolate_lru_folios(): restrict the LRU
  *   scan to ZONE_MOVABLE so freed pages are usable by the caller.
  *
- * Conditions: reliable enabled, a user task (has mm, not kthread), and
- * GFP_HIGHUSER_MOVABLE without __GFP_RELIABLE.
+ * Conditions: reliable enabled, a user task (has mm, not a kthread or
+ * a PF_RELIABLE task), and GFP_HIGHUSER_MOVABLE without __GFP_RELIABLE.
+ * PF_RELIABLE tasks allocate from the reliable region, so they are
+ * excluded even when their gfp happens to be MOVABLE-bound.
  */
 static inline bool reliable_movable_only_alloc(gfp_t gfp)
 {
@@ -97,6 +99,9 @@ static inline bool reliable_movable_only_alloc(gfp_t gfp)
 		return false;
 
 	if (!current->mm || (current->flags & PF_KTHREAD))
+		return false;
+
+	if (current->flags & PF_RELIABLE)
 		return false;
 
 	return !(gfp & GFP_RELIABLE) && (gfp & __GFP_HIGHMEM) &&
@@ -206,6 +211,31 @@ static inline bool mem_reliable_should_reclaim(void)
 	return false;
 }
 
+/*
+ * Is there reclaimable pagecache on ZONE_MOVABLE for a
+ * ZONE_MOVABLE-bound direct reclaim? Returns false once reliable
+ * pagecache fills nearly all of the file LRU (within
+ * MAX_ORDER_NR_PAGES), so the caller can bail out early. Uses
+ * read_positive() for O(1) hot-path cost; the MAX_ORDER_NR_PAGES
+ * margin absorbs the per-CPU drift.
+ */
+static inline bool has_movable_pagecache(void)
+{
+	unsigned long file_total;
+	s64 reliable;
+
+	if (!mem_reliable_is_enabled())
+		return true;
+
+	file_total = global_node_page_state(NR_LRU_BASE +
+					    LRU_ACTIVE_FILE) +
+		    global_node_page_state(NR_LRU_BASE +
+					   LRU_INACTIVE_FILE);
+	reliable = percpu_counter_read_positive(&pagecache_reliable_pages);
+
+	return file_total && reliable + MAX_ORDER_NR_PAGES < file_total;
+}
+
 #else
 #define reliable_enabled 0
 
@@ -242,6 +272,7 @@ static inline bool reliable_mem_limit_check(unsigned long nr_page)
 	return false;
 }
 static inline bool mem_reliable_should_reclaim(void) { return false; }
+static inline bool has_movable_pagecache(void) { return true; }
 static inline void mem_reliable_out_of_memory(gfp_t gfp_mask,
 					      unsigned int order,
 					      int preferred_nid,
