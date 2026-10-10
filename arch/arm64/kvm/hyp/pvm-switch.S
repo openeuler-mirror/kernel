@@ -101,10 +101,10 @@ alternative_else
 	nop
 2:
 alternative_endif
-	/* Preserve EL2 exception state across the pending-SError window. */
-	mrs	x2, elr_el2
-	mrs	x3, esr_el2
-	mrs	x4, spsr_el2
+	/* Preserve EL1 exception state across the pending-SError window. */
+	mrs	x2, elr_el1
+	mrs	x3, esr_el1
+	mrs	x4, spsr_el1
 	mov	x5, x0
 	msr	daifclr, #4
 .Lpvm_abort_guest_exit_start:
@@ -118,9 +118,9 @@ alternative_endif
 9997:
 	msr	daifset, #4
 	mov	x0, #(1 << ARM_EXIT_WITH_SERROR_BIT)
-	msr	elr_el2, x2
-	msr	esr_el2, x3
-	msr	spsr_el2, x4
+	msr	elr_el1, x2
+	msr	esr_el1, x3
+	msr	spsr_el1, x4
 	orr	x0, x0, x5
 	ret
 SYM_FUNC_END(__pvm_guest_enter)

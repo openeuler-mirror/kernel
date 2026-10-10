@@ -745,9 +745,12 @@ guest:
 static inline void __kvm_unexpected_el2_exception(void)
 {
 	extern char __guest_exit_panic[];
+#ifdef __KVM_VHE_HYPERVISOR__
+	extern char __pvm_guest_exit_panic[];
+#endif
 	unsigned long addr, fixup;
 	struct kvm_exception_table_entry *entry, *end;
-	unsigned long elr_el2 = read_sysreg(elr_el2);
+	unsigned long elr = read_sysreg_el2(SYS_ELR);
 
 	entry = &__start___kvm_ex_table;
 	end = &__stop___kvm_ex_table;
@@ -756,17 +759,22 @@ static inline void __kvm_unexpected_el2_exception(void)
 		addr = (unsigned long)&entry->insn + entry->insn;
 		fixup = (unsigned long)&entry->fixup + entry->fixup;
 
-		if (addr != elr_el2) {
+		if (addr != elr) {
 			entry++;
 			continue;
 		}
 
-		write_sysreg(fixup, elr_el2);
+		write_sysreg_el2(fixup, SYS_ELR);
 		return;
 	}
 
 	/* Trigger a panic after restoring the hyp context. */
-	write_sysreg(__guest_exit_panic, elr_el2);
+	fixup = (unsigned long)__guest_exit_panic;
+#ifdef __KVM_VHE_HYPERVISOR__
+	if (is_pvm_mode())
+		fixup = (unsigned long)__pvm_guest_exit_panic;
+#endif
+	write_sysreg_el2(fixup, SYS_ELR);
 }
 
 #endif /* __ARM64_KVM_HYP_SWITCH_H__ */
