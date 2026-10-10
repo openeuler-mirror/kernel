@@ -537,6 +537,9 @@ static int ccwchain_fetch_direct(struct ccwchain *chain,
 	} else {
 		iova = ccw->cda;
 	}
+	/* Save the read address for later */
+	cp->guest_iova = iova;
+
 	idaw_nr = idal_nr_words((void *)iova, bytes);
 	idal_len = idaw_nr * sizeof(*idaws);
 
@@ -563,6 +566,12 @@ static int ccwchain_fetch_direct(struct ccwchain *chain,
 		ret = copy_from_iova(cp->mdev, idaws, ccw->cda, idal_len);
 		if (ret)
 			goto out_unpin;
+
+		/* Unexpected mismatch from earlier read */
+		if (idaws[0] != cp->guest_iova) {
+			ret = -EINVAL;
+			goto out_unpin;
+		}
 
 		/*
 		 * Copy guest IDAWs into pfn_array, in case the memory they
