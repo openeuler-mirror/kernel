@@ -443,6 +443,11 @@ static void __hyp_call_panic(u64 spsr, u64 elr, u64 par)
 	__sysreg_restore_host_state_pvm(host_ctxt);
 	sysreg_restore_host_state_vhe(host_ctxt);
 
+	if (is_pvm_mode())
+		panic("PVM panic at EL1:\n"
+		      "PS:%08llx PC:%016llx ESR_EL1:%08llx\nFAR_EL1:%016llx PAR_EL1:%016llx\nVCPU:%p\n",
+		      spsr, elr, read_sysreg_el2(SYS_ESR), read_sysreg_el2(SYS_FAR), par, vcpu);
+
 	panic("HYP panic:\nPS:%08llx PC:%016llx ESR:%08llx\nFAR:%016llx HPFAR:%016llx PAR:%016llx\nVCPU:%p\n",
 	      spsr, elr,
 	      read_sysreg_el2(SYS_ESR), read_sysreg_el2(SYS_FAR),
