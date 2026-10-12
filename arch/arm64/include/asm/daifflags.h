@@ -17,6 +17,7 @@
 #define DAIF_PROCCTX_NOIRQ	(PSR_I_BIT | PSR_F_BIT)
 #define DAIF_ERRCTX		(PSR_A_BIT | PSR_I_BIT | PSR_F_BIT)
 #define DAIF_MASK		(PSR_D_BIT | PSR_A_BIT | PSR_I_BIT | PSR_F_BIT)
+#define DAIF_ALLINT_MASK	(system_uses_nmi() ? (ALLINT_ALLINT | DAIF_MASK) : DAIF_MASK)
 
 
 /* mask/save/unmask/restore all exceptions, including interrupts. */
