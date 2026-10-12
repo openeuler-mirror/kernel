@@ -1059,6 +1059,7 @@ static void sev_dev_install_hooks(void)
 	hygon_psp_hooks.__sev_do_cmd_locked = __sev_do_cmd_locked;
 	hygon_psp_hooks.__sev_platform_init_locked = __sev_platform_init_locked;
 	hygon_psp_hooks.__sev_platform_shutdown_locked = __sev_platform_shutdown_locked;
+	hygon_psp_hooks.sev_do_cmd = sev_do_cmd;
 	hygon_psp_hooks.sev_wait_cmd_ioc = sev_wait_cmd_ioc;
 	hygon_psp_hooks.sev_ioctl = sev_ioctl;
 
@@ -1173,7 +1174,8 @@ EXPORT_SYMBOL_GPL(sev_issue_cmd_external_user);
 void sev_pci_init(void)
 {
 	struct sev_device *sev = psp_master->sev_data;
-	int error, rc;
+	int error = 0;
+	int rc    = 0;
 
 	if (!sev)
 		return;
@@ -1196,6 +1198,10 @@ void sev_pci_init(void)
 	else
 		dev_warn(sev->dev,
 			 "SEV: TMR allocation failed, SEV-ES support unavailable\n");
+
+	/* Set SMR for HYGON CSV3 */
+	if (is_vendor_hygon() && boot_cpu_has(X86_FEATURE_CSV3))
+		csv_platform_cmd_set_secure_memory_region(sev, &error);
 
 	/* Initialize the platform */
 	rc = sev_platform_init(&error);
