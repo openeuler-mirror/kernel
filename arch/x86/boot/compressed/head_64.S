@@ -589,6 +589,16 @@ SYM_FUNC_START_LOCAL_NOALIGN(.Lrelocated)
  */
 	pushq	%rsi
 	call	set_sev_encryption_mask
+#ifdef CONFIG_HYGON_CSV
+	/*
+	 * Check CSV active status. The CSV and CSV2 guest are indicated by
+	 * MSR_AMD64_SEV_ENABLED_BIT and MSR_AMD64_SEV_ES_ENABLED_BIT in MSR
+	 * register 0xc0010131, respectively.
+	 * The CSV3 guest is indicated by MSR_CSV3_ENABLED in MSR register
+	 * 0xc0010131.
+	 */
+	call	csv_set_status
+#endif
 	call	load_stage2_idt
 
 	/* Pass boot_params to initialize_identity_maps() */
