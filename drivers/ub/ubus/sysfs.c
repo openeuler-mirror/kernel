@@ -106,7 +106,7 @@ static ssize_t ub_read_config(struct file *filp, struct kobject *kobj,
 	u64 cur_pos = usr_pos;
 	u8 *data = (u8 *)buf;
 	size_t len = count >> 1;
-	u32 val;
+	u32 val = 0xffffffff;
 
 	if (count == PAGE_SIZE || len == 0)
 		return -EINVAL;
