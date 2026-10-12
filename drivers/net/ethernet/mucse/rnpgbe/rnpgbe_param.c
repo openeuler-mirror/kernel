@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #include <linux/types.h>
 #include <linux/module.h>
@@ -32,7 +32,7 @@
 	static int X[RNP_MAX_NIC + 1] = RNP_PARAM_INIT;          \
 	static unsigned int num_##X;                                           \
 	module_param_array_named(X, X, int, &num_##X, 0);                      \
-	MODULE_PARM_DESC(X, desc);
+	MODULE_PARM_DESC(X, desc)
 /* IntMode (Interrupt Mode)
  *
  * Valid Range: 0-2
@@ -50,8 +50,7 @@ RNP_PARAM(IntMode, "Change Interrupt Mode (0=Legacy, 1=MSI, 2=MSI-X), default 2"
 #if IS_ENABLED(CONFIG_PCI_IOV)
 /* max_vfs - SR I/O Virtualization
  *
- * Valid Range: 0-63 for n10
- * Valid Range: 0-7 for n400/n10
+ * Valid Range: 0-7 for n500/n210
  *  - 0 Disables SR-IOV
  *  - 1-x - enables SR-IOV and sets the number of VFs enabled
  *
@@ -59,7 +58,7 @@ RNP_PARAM(IntMode, "Change Interrupt Mode (0=Legacy, 1=MSI, 2=MSI-X), default 2"
  */
 
 RNP_PARAM(max_vfs, "Number of Virtual Functions: 0 = disable (default), "
-		   "1-" XSTRINGIFY(MAX_SRIOV_VFS) " = enable this many VFs");
+		"1-" XSTRINGIFY(MAX_SRIOV_VFS) " = enable this many VFs");
 
 /* SRIOV_Mode (SRIOV Mode)
  *
@@ -77,8 +76,7 @@ RNP_PARAM(SRIOV_Mode, "Change SRIOV Mode (0=MAC_MODE, 1=VLAN_MODE), default 0");
 
 /* pf_msix_counts_set - Limit max msix counts
  *
- * Valid Range: 2-63 for n10
- * Valid Range: 2-7 for n400/n10
+ * Valid Range: 2-26 for n500/n210
  *
  * Default Value: 0 (un-limit)
  */
@@ -197,10 +195,8 @@ static int rnpgbe_validate_option(struct net_device *netdev,
  **/
 void rnpgbe_check_options(struct rnpgbe_adapter *adapter)
 {
-	//unsigned int mdd;
 	int bd = adapter->bd_number;
 	u32 *aflags = &adapter->flags;
-	//struct rnpgbe_ring_feature *feature = adapter->ring_feature;
 
 	if (bd >= RNP_MAX_NIC) {
 		netdev_notice(adapter->netdev,
@@ -209,7 +205,6 @@ void rnpgbe_check_options(struct rnpgbe_adapter *adapter)
 			      "Using defaults for all values\n");
 	}
 
-	// try to setup new irq mode
 	{ /* Interrupt Mode */
 		unsigned int int_mode;
 		static struct rnpgbe_option opt = {
@@ -221,70 +216,90 @@ void rnpgbe_check_options(struct rnpgbe_adapter *adapter)
 					.max = RNP_INT_MSIX } }
 		};
 
-		int_mode = IntMode[bd];
-		if (int_mode == OPTION_UNSET)
-			int_mode = RNP_INT_MSIX;
-		rnpgbe_validate_option(adapter->netdev, &int_mode,
-				       &opt);
-		switch (int_mode) {
-		case RNP_INT_MSIX:
-			if (!(*aflags & RNP_FLAG_MSIX_CAPABLE)) {
-				netdev_info(adapter->netdev,
-					    "Ignoring MSI-X setting; "
-					    "support unavailable\n");
-			} else {
+		if (num_IntMode > bd) {
+			int_mode = IntMode[bd];
+			if (int_mode == OPTION_UNSET)
+				int_mode = RNP_INT_MSIX;
+			rnpgbe_validate_option(adapter->netdev, &int_mode,
+					       &opt);
+			switch (int_mode) {
+			case RNP_INT_MSIX:
+				if (!(*aflags & RNP_FLAG_MSIX_CAPABLE)) {
+					netdev_info(adapter->netdev,
+						    "Ignoring MSI-X setting; "
+						    "support unavailable\n");
+				} else {
+					adapter->irq_mode = irq_mode_msix;
+				}
+				break;
+			case RNP_INT_MSI:
+				if (!(*aflags & RNP_FLAG_MSI_CAPABLE)) {
+					netdev_info(adapter->netdev,
+						    "Ignoring MSI setting; "
+						    "support unavailable\n");
+				} else {
+					adapter->irq_mode = irq_mode_msi;
+				}
+				break;
+			case RNP_INT_LEGACY:
+				if (!(*aflags & RNP_FLAG_LEGACY_CAPABLE)) {
+					netdev_info(adapter->netdev,
+						    "Ignoring MSI setting; "
+						    "support unavailable\n");
+				} else {
+					adapter->irq_mode = irq_mode_legency;
+				}
+				break;
+			}
+		} else {
+			/* default settings */
+			if (*aflags & RNP_FLAG_MSIX_CAPABLE)
 				adapter->irq_mode = irq_mode_msix;
-			}
-			break;
-		case RNP_INT_MSI:
-			if (!(*aflags & RNP_FLAG_MSI_CAPABLE)) {
-				netdev_info(adapter->netdev,
-					    "Ignoring MSI setting; "
-					    "support unavailable\n");
-			} else {
+			else if (*aflags & RNP_FLAG_MSI_CAPABLE)
 				adapter->irq_mode = irq_mode_msi;
-			}
-			break;
-		case RNP_INT_LEGACY:
-			if (!(*aflags & RNP_FLAG_LEGACY_CAPABLE)) {
-				netdev_info(adapter->netdev,
-					    "Ignoring MSI setting; "
-					    "support unavailable\n");
-			} else {
+			else
 				adapter->irq_mode = irq_mode_legency;
-			}
-			break;
 		}
 	}
 
-#if IS_ENABLED(CONFIG_PCI_IOV)
+#ifdef CONFIG_PCI_IOV
 	{ /* Single Root I/O Virtualization (SR-IOV) */
 		struct rnpgbe_hw *hw = &adapter->hw;
-		unsigned int vfs = max_vfs[bd];
 		static struct rnpgbe_option opt = {
 			.type = range_option,
 			.name = "I/O Virtualization (IOV)",
 			.err = "defaulting to Disabled",
 			.def = OPTION_DISABLED,
 			.arg = { .r = { .min = OPTION_DISABLED,
-					.max = OPTION_DISABLED } }
+					.max = OPTION_DISABLED} }
 		};
 
 		opt.arg.r.max = hw->max_vfs;
+		if (num_max_vfs > bd) {
+			unsigned int vfs = max_vfs[bd];
 
-		if (rnpgbe_validate_option(adapter->netdev, &vfs,
-					   &opt)) {
-			vfs = 0;
-			DPRINTK(PROBE, INFO,
-				"max_vfs out of range Disabling SR-IOV.\n");
+			if (rnpgbe_validate_option(adapter->netdev, &vfs,
+						   &opt)) {
+				vfs = 0;
+				DPRINTK(PROBE, INFO,
+					"max_vfs out of range Disabling SR-IOV.\n");
+			}
+
+			adapter->num_vfs = vfs;
+
+			if (vfs)
+				*aflags |= RNP_FLAG_SRIOV_ENABLED;
+			else
+				*aflags &= ~RNP_FLAG_SRIOV_ENABLED;
+		} else {
+			if (opt.def == OPTION_DISABLED) {
+				adapter->num_vfs = 0;
+				*aflags &= ~RNP_FLAG_SRIOV_ENABLED;
+			} else {
+				adapter->num_vfs = opt.def;
+				*aflags |= RNP_FLAG_SRIOV_ENABLED;
+			}
 		}
-
-		adapter->num_vfs = vfs;
-
-		if (vfs)
-			*aflags |= RNP_FLAG_SRIOV_ENABLED;
-		else
-			*aflags &= ~RNP_FLAG_SRIOV_ENABLED;
 	}
 
 	{ /* Interrupt Mode */
@@ -298,15 +313,22 @@ void rnpgbe_check_options(struct rnpgbe_adapter *adapter)
 					.max = RNP_SRIOV_VLAN_MODE } }
 		};
 
-		sriov_mode = SRIOV_Mode[bd];
-		if (sriov_mode == OPTION_UNSET)
-			sriov_mode = RNP_SRIOV_MAC_MODE;
-		rnpgbe_validate_option(adapter->netdev, &sriov_mode,
-				       &opt);
+		if (num_SRIOV_Mode > bd) {
+			sriov_mode = SRIOV_Mode[bd];
+			if (sriov_mode == OPTION_UNSET)
+				sriov_mode = RNP_SRIOV_MAC_MODE;
+			rnpgbe_validate_option(adapter->netdev, &sriov_mode,
+					       &opt);
 
-		if (sriov_mode == RNP_SRIOV_VLAN_MODE)
-			adapter->priv_flags |=
-				RNP_PRIV_FLAG_SRIOV_VLAN_MODE;
+			if (sriov_mode == RNP_SRIOV_VLAN_MODE)
+				adapter->priv_flags |=
+					RNP_PRIV_FLAG_SRIOV_VLAN_MODE;
+
+		} else {
+			/* default settings */
+			/* msix -> msi -> Legacy */
+			adapter->priv_flags &= (~RNP_PRIV_FLAG_SRIOV_VLAN_MODE);
+		}
 	}
 #endif /* CONFIG_PCI_IOV */
 
@@ -323,21 +345,24 @@ void rnpgbe_check_options(struct rnpgbe_adapter *adapter)
 		};
 
 		opt.arg.r.max = hw->max_msix_vectors;
-		pf_msix_counts = pf_msix_counts_set[bd];
-		if (pf_msix_counts == OPTION_DISABLED)
-			pf_msix_counts = 0;
-		rnpgbe_validate_option(adapter->netdev, &pf_msix_counts,
-				       &opt);
+		if (num_pf_msix_counts_set > bd) {
+			pf_msix_counts = pf_msix_counts_set[bd];
+			if (pf_msix_counts == OPTION_DISABLED)
+				pf_msix_counts = 0;
+			rnpgbe_validate_option(adapter->netdev, &pf_msix_counts,
+					       &opt);
 
-		if (pf_msix_counts) {
-			if (hw->ops.update_msix_count)
-				hw->ops.update_msix_count(hw, pf_msix_counts);
+			if (pf_msix_counts) {
+				if (hw->ops.update_msix_count)
+					hw->ops.update_msix_count(hw, pf_msix_counts);
+			}
+
+		} else {
 		}
 	}
 
 	{ /* LPI tx expiration time in msec */
 		unsigned int eee_timer_delay;
-		//struct rnpgbe_hw *hw = &adapter->hw;
 		static struct rnpgbe_option opt = {
 			.type = range_option,
 			.name = "eee timer exp",
@@ -347,17 +372,20 @@ void rnpgbe_check_options(struct rnpgbe_adapter *adapter)
 					.max = RNP_EEE_MAX } }
 		};
 
-		eee_timer_delay = eee_timer[bd];
-		if (eee_timer_delay == OPTION_DISABLED)
-			eee_timer_delay = RNP_EEE_DEFAULT;
-		rnpgbe_validate_option(adapter->netdev,
-				       &eee_timer_delay, &opt);
-		adapter->eee_timer = eee_timer_delay;
+		if (num_eee_timer > bd) {
+			eee_timer_delay = eee_timer[bd];
+			if (eee_timer_delay == OPTION_DISABLED)
+				eee_timer_delay = RNP_EEE_DEFAULT;
+			rnpgbe_validate_option(adapter->netdev,
+					       &eee_timer_delay, &opt);
+			adapter->eee_timer = eee_timer_delay;
+		} else {
+			adapter->eee_timer = RNP_EEE_DEFAULT;
+		}
 	}
 
 	{ /* rx_skip in DW */
 		unsigned int rx_skip_priv;
-		//struct rnpgbe_hw *hw = &adapter->hw;
 		static struct rnpgbe_option opt = {
 			.type = range_option,
 			.name = "rx_skip in DW",
@@ -367,15 +395,21 @@ void rnpgbe_check_options(struct rnpgbe_adapter *adapter)
 					.max = RNP_RX_SKIP_MAX } }
 		};
 
-		rx_skip_priv = rx_skip[bd];
-		if (rx_skip_priv == OPTION_DISABLED)
-			rx_skip_priv = RNP_RX_SKIP_DEFAULT;
-		rnpgbe_validate_option(adapter->netdev, &rx_skip_priv,
-				       &opt);
-		if (rx_skip_priv) {
-			adapter->priv_skip_count = rx_skip_priv - 1;
-			adapter->priv_flags |= RNP_PRIV_FLAG_RX_SKIP_EN;
+		if (num_rx_skip > bd) {
+			rx_skip_priv = rx_skip[bd];
+			if (rx_skip_priv == OPTION_DISABLED)
+				rx_skip_priv = RNP_RX_SKIP_DEFAULT;
+			rnpgbe_validate_option(adapter->netdev, &rx_skip_priv,
+					       &opt);
+			if (rx_skip_priv) {
+				adapter->priv_skip_count = rx_skip_priv - 1;
+				adapter->priv_flags |= RNP_PRIV_FLAG_RX_SKIP_EN;
+			} else {
+				adapter->priv_flags &=
+					~RNP_PRIV_FLAG_RX_SKIP_EN;
+			}
 		} else {
+			adapter->priv_skip_count = RNP_RX_SKIP_DEFAULT;
 			adapter->priv_flags &= ~RNP_PRIV_FLAG_RX_SKIP_EN;
 		}
 	}
