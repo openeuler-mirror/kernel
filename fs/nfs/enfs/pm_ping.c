@@ -160,12 +160,27 @@ enfs_update_reconnect_time(
 	}
 }
 
+static enum enfs_path_state
+enfs_reconnect_next_state(enum enfs_path_state curr_state, bool is_empty,
+			  bool is_full)
+{
+	bool is_normal;
+
+	is_normal = curr_state == PM_STATE_INIT ||
+		    (is_empty && curr_state == PM_STATE_UNSTABLE) ||
+		    (!is_full && (curr_state == PM_STATE_NORMAL ||
+				  curr_state == PM_STATE_FAULT));
+
+	return is_normal ? PM_STATE_NORMAL : PM_STATE_UNSTABLE;
+}
+
 static void enfs_check_reconnect(struct rpc_xprt *xprt)
 {
 	struct enfs_xprt_context *ctx = NULL;
 	struct enfs_reconnect_time *time;
-	bool is_empty, is_full, is_normal;
+	bool is_empty, is_full;
 	enum enfs_path_state curr_state = pm_get_path_state(xprt);
+	enum enfs_path_state next_state;
 
 	xprt_get(xprt);
 
@@ -180,13 +195,8 @@ static void enfs_check_reconnect(struct rpc_xprt *xprt)
 	is_empty = enfs_is_time_buf_empty(time);
 	is_full = enfs_is_time_buf_full(time);
 
-	is_normal = curr_state == PM_STATE_INIT ||
-		    (is_empty && curr_state == PM_STATE_UNSTABLE) ||
-		    (!is_full && curr_state == PM_STATE_NORMAL);
-	if (is_normal)
-		pm_set_path_state(xprt, PM_STATE_NORMAL);
-	else
-		pm_set_path_state(xprt, PM_STATE_UNSTABLE);
+	next_state = enfs_reconnect_next_state(curr_state, is_empty, is_full);
+	pm_set_path_state(xprt, next_state);
 
 out:
 	xprt_put(xprt);
@@ -267,6 +277,19 @@ bool enfs_test_reconnect_time(void)
 		return false;
 
 	return ret;
+}
+
+bool enfs_test_fault_recovery_state(void)
+{
+	/* A recovered fault is normal until the reconnect limit is reached. */
+	if (enfs_reconnect_next_state(PM_STATE_FAULT, false, false) !=
+	    PM_STATE_NORMAL)
+		return false;
+	if (enfs_reconnect_next_state(PM_STATE_FAULT, false, true) !=
+	    PM_STATE_UNSTABLE)
+		return false;
+
+	return true;
 }
 #endif
 
