@@ -35,7 +35,10 @@
 
 #include "cma.h"
 
-struct cma cma_areas[MAX_CMA_AREAS];
+static struct cma cma_areas_data[MAX_CMA_AREAS];
+static unsigned int cma_areas_size = MAX_CMA_AREAS;
+struct cma *cma_areas = cma_areas_data;
+
 unsigned cma_area_count;
 static DEFINE_MUTEX(cma_mutex);
 
@@ -152,6 +155,25 @@ static int __init cma_init_reserved_areas(void)
 }
 core_initcall(cma_init_reserved_areas);
 
+int __init cma_alloc_areas(unsigned int max_cma_size)
+{
+	struct cma *data;
+
+	if (max_cma_size <= MAX_CMA_AREAS)
+		return 0;
+
+	if (cma_area_count || cma_areas != cma_areas_data)
+		return -EPERM;
+
+	data = memblock_alloc(max_cma_size * sizeof(*cma_areas), SMP_CACHE_BYTES);
+	if (!data)
+		return -ENOMEM;
+
+	cma_areas = data;
+	cma_areas_size = max_cma_size;
+	return 0;
+}
+
 /**
  * cma_init_reserved_mem() - create custom contiguous area from reserved memory
  * @base: Base address of the reserved area
@@ -173,7 +195,7 @@ int __init cma_init_reserved_mem(phys_addr_t base, phys_addr_t size,
 	phys_addr_t alignment;
 
 	/* Sanity checks */
-	if (cma_area_count == ARRAY_SIZE(cma_areas)) {
+	if (cma_area_count == cma_areas_size) {
 		pr_err("Not enough slots for CMA reserved regions!\n");
 		return -ENOSPC;
 	}
@@ -253,7 +275,7 @@ int __init cma_declare_contiguous_nid(phys_addr_t base,
 	pr_debug("%s(size %pa, base %pa, limit %pa alignment %pa)\n",
 		__func__, &size, &base, &limit, &alignment);
 
-	if (cma_area_count == ARRAY_SIZE(cma_areas)) {
+	if (cma_area_count == cma_areas_size) {
 		pr_err("Not enough slots for CMA reserved regions!\n");
 		return -ENOSPC;
 	}
