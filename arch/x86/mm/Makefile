@@ -6,6 +6,8 @@ KCOV_INSTRUMENT_mem_encrypt_identity.o	:= n
 
 KASAN_SANITIZE_mem_encrypt.o		:= n
 KASAN_SANITIZE_mem_encrypt_identity.o	:= n
+KASAN_SANITIZE_mem_encrypt_hygon.o	:= n
+CFLAGS_mem_encrypt_hygon.o		:= $(DISABLE_FTRACE)
 
 # Disable KCSAN entirely, because otherwise we get warnings that some functions
 # reference __initdata sections.
