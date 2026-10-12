@@ -144,7 +144,8 @@ static int psp_init(struct psp_device *psp, unsigned int capability)
 			return ret;
 	}
 
-	if (!psp_check_tee_support(psp, capability)) {
+	if ((boot_cpu_data.x86_vendor != X86_VENDOR_HYGON) &&
+	    !psp_check_tee_support(psp, capability)) {
 		ret = tee_dev_init(psp);
 		if (ret)
 			return ret;

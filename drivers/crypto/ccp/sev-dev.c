@@ -33,6 +33,7 @@
 
 #include "hygon/psp-dev.h"
 #include "hygon/csv-dev.h"
+#include "hygon/sp-dev.h"
 
 #define DEVICE_NAME		"sev"
 #define SEV_FW_FILE		"amd/sev.fw"
@@ -552,6 +553,14 @@ static int sev_get_firmware(struct device *dev,
 	char fw_name_specific[SEV_FW_NAME_SIZE];
 	char fw_name_subset[SEV_FW_NAME_SIZE];
 
+	if (is_vendor_hygon()) {
+		/* Check for CSV FW to using generic name: csv.fw */
+		if (firmware_request_nowarn(firmware, CSV_FW_FILE, dev) >= 0)
+			return 0;
+		else
+			return -ENOENT;
+	}
+
 	snprintf(fw_name_specific, sizeof(fw_name_specific),
 		 "amd/amd_sev_fam%.2xh_model%.2xh.sbin",
 		 boot_cpu_data.x86, boot_cpu_data.x86_model);
@@ -591,7 +600,8 @@ static int sev_update_firmware(struct device *dev)
 	u64 data_size;
 
 	if (sev_get_firmware(dev, &firmware) == -ENOENT) {
-		dev_dbg(dev, "No SEV firmware file present\n");
+		dev_dbg(dev, "No %s firmware file present\n",
+			is_vendor_hygon() ? "CSV" : "SEV");
 		return -1;
 	}
 
@@ -623,9 +633,11 @@ static int sev_update_firmware(struct device *dev)
 
 	ret = sev_do_cmd(SEV_CMD_DOWNLOAD_FIRMWARE, data, &error);
 	if (ret)
-		dev_dbg(dev, "Failed to update SEV firmware: %#x\n", error);
+		dev_dbg(dev, "Failed to update %s firmware: %#x\n",
+			is_vendor_hygon() ? "CSV" : "SEV", error);
 	else
-		dev_info(dev, "SEV firmware update successful\n");
+		dev_info(dev, "%s firmware update successful\n",
+			 is_vendor_hygon() ? "CSV" : "SEV");
 
 	__free_pages(p, order);
 
@@ -1045,6 +1057,8 @@ static void sev_dev_install_hooks(void)
 	hygon_psp_hooks.psp_cmd_timeout = &psp_cmd_timeout;
 	hygon_psp_hooks.sev_cmd_buffer_len = sev_cmd_buffer_len;
 	hygon_psp_hooks.__sev_do_cmd_locked = __sev_do_cmd_locked;
+	hygon_psp_hooks.__sev_platform_init_locked = __sev_platform_init_locked;
+	hygon_psp_hooks.__sev_platform_shutdown_locked = __sev_platform_shutdown_locked;
 	hygon_psp_hooks.sev_wait_cmd_ioc = sev_wait_cmd_ioc;
 	hygon_psp_hooks.sev_ioctl = sev_ioctl;
 
@@ -1170,6 +1184,7 @@ void sev_pci_init(void)
 		goto err;
 
 	if (sev_version_greater_or_equal(0, 15) &&
+	    (!is_vendor_hygon() || csv_version_greater_or_equal(1667)) &&
 	    sev_update_firmware(sev->dev) == 0)
 		sev_get_api_version();
 
