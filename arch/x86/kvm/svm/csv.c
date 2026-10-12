@@ -15,6 +15,7 @@
 #include <linux/kvm_types.h>
 #include <asm/cacheflush.h>
 #include <asm/csv.h>
+#include <asm/fpu/api.h>
 #include "kvm_cache_regs.h"
 #include "svm.h"
 #include "csv.h"
@@ -913,6 +914,81 @@ exit:
 	return ret;
 }
 
+static int csv3_sync_vmsa(struct vcpu_svm *svm)
+{
+	struct vmcb_save_area *save = &svm->vmcb->save;
+
+	/* Check some debug related fields before encrypting the VMSA */
+	if (svm->vcpu.guest_debug || (save->dr7 & ~DR7_FIXED_1))
+		return -EINVAL;
+
+	/* Sync registgers per spec. */
+	save->rax = svm->vcpu.arch.regs[VCPU_REGS_RAX];
+	save->rdx = svm->vcpu.arch.regs[VCPU_REGS_RDX];
+	save->rip = svm->vcpu.arch.regs[VCPU_REGS_RIP];
+	save->xcr0 = svm->vcpu.arch.xcr0;
+	save->xss  = svm->vcpu.arch.ia32_xss;
+
+	memcpy(svm->vmsa, save, sizeof(*save));
+	return 0;
+}
+
+static int csv3_launch_encrypt_vmcb(struct kvm *kvm, struct kvm_sev_cmd *argp)
+{
+	struct kvm_csv_info *csv = &to_kvm_svm_csv(kvm)->csv_info;
+	struct csv3_data_launch_encrypt_vmcb *encrypt_vmcb = NULL;
+	struct kvm_vcpu *vcpu;
+	int ret = 0;
+	unsigned long i = 0;
+
+	if (!csv3_guest(kvm))
+		return -ENOTTY;
+
+	encrypt_vmcb = kzalloc(sizeof(*encrypt_vmcb), GFP_KERNEL);
+	if (!encrypt_vmcb) {
+		ret = -ENOMEM;
+		goto exit;
+	}
+
+	kvm_for_each_vcpu(i, vcpu, kvm) {
+		struct vcpu_svm *svm = to_svm(vcpu);
+
+		ret = csv3_sync_vmsa(svm);
+		if (ret)
+			goto e_free;
+		clflush_cache_range(svm->vmsa, PAGE_SIZE);
+		clflush_cache_range(svm->vmcb, PAGE_SIZE);
+		encrypt_vmcb->handle = csv->sev->handle;
+		encrypt_vmcb->vcpu_id = i;
+		encrypt_vmcb->vmsa_addr = __sme_pa(svm->vmsa);
+		encrypt_vmcb->vmsa_len = PAGE_SIZE;
+		encrypt_vmcb->shadow_vmcb_addr = __sme_pa(svm->vmcb);
+		encrypt_vmcb->shadow_vmcb_len = PAGE_SIZE;
+		ret = hygon_kvm_hooks.sev_issue_cmd(kvm,
+						CSV3_CMD_LAUNCH_ENCRYPT_VMCB,
+						encrypt_vmcb, &argp->error);
+		if (ret)
+			goto e_free;
+
+		svm->vmcb_pa = encrypt_vmcb->secure_vmcb_addr;
+
+		/*
+		 * CSV3 guests maintain an encrypted version of their FPU
+		 * state which is restored and saved on VMRUN and VMEXIT.
+		 * Mark vcpu->arch.guest_fpu->fpstate as scratch so it won't
+		 * do xsave/xrstor on it.
+		 */
+		fpstate_set_confidential(&vcpu->arch.guest_fpu);
+
+		svm->vcpu.arch.guest_state_protected = true;
+	}
+
+e_free:
+	kfree(encrypt_vmcb);
+exit:
+	return ret;
+}
+
 static int csv_mem_enc_ioctl(struct kvm *kvm, void __user *argp)
 {
 	struct kvm_sev_cmd sev_cmd;
@@ -945,6 +1021,9 @@ static int csv_mem_enc_ioctl(struct kvm *kvm, void __user *argp)
 		break;
 	case KVM_CSV3_LAUNCH_ENCRYPT_DATA:
 		r = csv3_launch_encrypt_data(kvm, &sev_cmd);
+		break;
+	case KVM_CSV3_LAUNCH_ENCRYPT_VMCB:
+		r = csv3_launch_encrypt_vmcb(kvm, &sev_cmd);
 		break;
 	default:
 		/*
