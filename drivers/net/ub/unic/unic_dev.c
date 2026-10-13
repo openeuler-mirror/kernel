@@ -849,7 +849,8 @@ static int unic_init_netdev_priv(struct net_device *netdev,
 	priv->msg_enable = netif_msg_init(netif_debug, DEFAULT_MSG_LEVEL);
 	priv->tid = ubase_get_dev_caps(adev)->tid;
 	priv->hw_ver = ubase_get_hw_ver(adev);
-	mutex_init(&priv->act_info.mutex);
+	mutex_init(&priv->act_info.period_mutex);
+	mutex_init(&priv->act_info.event_mutex);
 	mutex_init(&priv->bond_status.mutex);
 	mutex_init(&priv->stats.bond_record.lock);
 	mutex_init(&priv->vport.vlan_tbl.mutex);
@@ -902,7 +903,8 @@ err_uninit_vport:
 destroy_lock:
 	mutex_destroy(&priv->stats.bond_record.lock);
 	mutex_destroy(&priv->bond_status.mutex);
-	mutex_destroy(&priv->act_info.mutex);
+	mutex_destroy(&priv->act_info.period_mutex);
+	mutex_destroy(&priv->act_info.event_mutex);
 	mutex_destroy(&priv->vport.vlan_tbl.mutex);
 
 	return ret;
@@ -919,7 +921,8 @@ static void unic_uninit_netdev_priv(struct net_device *netdev)
 	unic_uninit_vport(priv);
 	mutex_destroy(&priv->stats.bond_record.lock);
 	mutex_destroy(&priv->bond_status.mutex);
-	mutex_destroy(&priv->act_info.mutex);
+	mutex_destroy(&priv->act_info.period_mutex);
+	mutex_destroy(&priv->act_info.event_mutex);
 	mutex_destroy(&priv->vport.vlan_tbl.mutex);
 }
 

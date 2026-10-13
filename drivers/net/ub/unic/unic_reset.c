@@ -37,18 +37,18 @@ static void unic_reset_down(struct auxiliary_device *adev)
 
 	unic_remove_period_task(priv);
 
-	/* due to lack of cmdq when resetting, need to close promisc first,
-	 * to prevent that concurrent deactivate event ubable to close promisc
-	 * when resetting
+	/* When resetting and deactivating are performed concurrently, the
+	 * operation of disabling promisc mode and deleting MAC address needs
+	 * to be performed only once.
 	 */
-	if (unic_dev_eth_mac_supported(priv))
-		unic_deactivate_mac_table(priv);
+	if (!test_bit(UNIC_STATE_DEACTIVATE, &priv->state)) {
+		if (unic_dev_eth_mac_supported(priv))
+			unic_deactivate_mac_table(priv);
 
-	ret = unic_activate_promisc_mode(priv, false);
-	if (ret)
-		unic_warn(priv, "failed to close promisc, ret = %d.\n", ret);
-	else
-		set_bit(UNIC_VPORT_STATE_PROMISC_CHANGE, &priv->vport.state);
+		ret = unic_activate_promisc_mode(priv, false);
+		if (!ret)
+			set_bit(UNIC_VPORT_STATE_PROMISC_CHANGE, &priv->vport.state);
+	}
 
 	rtnl_lock();
 	ret = netif_running(netdev) ? unic_net_stop(netdev) : 0;
@@ -132,8 +132,10 @@ static void unic_reset_abort(struct auxiliary_device *adev)
 int unic_reset_handler(struct auxiliary_device *adev,
 		       enum ubase_reset_stage stage)
 {
+	struct unic_dev *priv = (struct unic_dev *)dev_get_drvdata(&adev->dev);
 	int ret = 0;
 
+	mutex_lock(&priv->act_info.event_mutex);
 	switch (stage) {
 	case UBASE_RESET_STAGE_DOWN:
 		unic_reset_down(adev);
@@ -150,6 +152,7 @@ int unic_reset_handler(struct auxiliary_device *adev,
 	default:
 		break;
 	}
+	mutex_unlock(&priv->act_info.event_mutex);
 
 	return ret;
 }

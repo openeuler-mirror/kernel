@@ -271,7 +271,7 @@ void unic_sync_mac_table(struct unic_dev *unic_dev)
 	struct unic_act_info *act_info = &unic_dev->act_info;
 	struct unic_vport *vport = &unic_dev->vport;
 
-	if (!mutex_trylock(&act_info->mutex))
+	if (!mutex_trylock(&act_info->period_mutex))
 		return;
 
 	if (act_info->deactivate)
@@ -284,7 +284,7 @@ void unic_sync_mac_table(struct unic_dev *unic_dev)
 	unic_sync_mac_table_common(vport, UNIC_MAC_ADDR_MC);
 
 out:
-	mutex_unlock(&act_info->mutex);
+	mutex_unlock(&act_info->period_mutex);
 }
 
 static int unic_update_mac_list(struct net_device *netdev,
