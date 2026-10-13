@@ -1802,6 +1802,8 @@ static int dc_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
+	dc->irq_num = irq;
+
 	dc->hw.reg_base = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(dc->hw.reg_base)) {
 		ret = PTR_ERR(dc->hw.reg_base);
@@ -1828,8 +1830,6 @@ static int dc_probe(struct platform_device *pdev)
 		ret = PTR_ERR(dc->axi_clk);
 		goto err_deconstruct;
 	}
-
-	dc->irq_num = irq;
 
 	dev_set_drvdata(dev, dc);
 

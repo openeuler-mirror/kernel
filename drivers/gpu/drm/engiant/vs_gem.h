@@ -40,7 +40,6 @@ struct vs_gem_object {
 	struct sg_table *sgt;
 
 	struct drm_mm_node *vram;
-	void __iomem *cpu_addr;
 	u64 offset;
 	struct dma_resv *resv;
 };

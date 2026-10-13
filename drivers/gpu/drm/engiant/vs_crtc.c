@@ -322,11 +322,14 @@ static int vs_crtc_atomic_set_property(struct drm_crtc *crtc, struct drm_crtc_st
 #ifdef CONFIG_ENGIANT_VS_RCD_BLUR_BRT
 	struct drm_minor *minor = dev->primary;
 	struct drm_file *file_priv = NULL;
+	bool found = false;
 
 	mutex_lock(&dev->filelist_mutex);
 	list_for_each_entry(file_priv, &dev->filelist, lhead) {
-		if (file_priv->minor == minor)
+		if (file_priv->minor == minor) {
+			found = true;
 			break;
+		}
 	}
 	mutex_unlock(&dev->filelist_mutex);
 #endif
@@ -377,19 +380,19 @@ static int vs_crtc_atomic_set_property(struct drm_crtc *crtc, struct drm_crtc_st
 	}
 #endif
 #ifdef CONFIG_ENGIANT_VS_RCD
-	else if (property == vs_crtc->rcd_mask_fb) {
+	else if ((property == vs_crtc->rcd_mask_fb) && found) {
 		vs_crtc_state->rcd_mask =
 			drm_framebuffer_lookup(crtc->dev, file_priv, (u32)(val & 0xFFFFFFFF));
 	}
 #endif
 #ifdef CONFIG_ENGIANT_VS_BLUR
-	else if (property == vs_crtc->blur_mask_fb) {
+	else if ((property == vs_crtc->blur_mask_fb) && found) {
 		vs_crtc_state->blur_mask =
 			drm_framebuffer_lookup(crtc->dev, file_priv, (u32)(val & 0xFFFFFFFF));
 	}
 #endif
 #ifdef CONFIG_ENGIANT_VS_BRIGHTNESS
-	else if (property == vs_crtc->brightness_mask_fb) {
+	else if ((property == vs_crtc->brightness_mask_fb) && found) {
 		vs_crtc_state->brightness_mask =
 			drm_framebuffer_lookup(crtc->dev, file_priv, (u32)(val & 0xFFFFFFFF));
 	}

@@ -167,7 +167,6 @@ static __maybe_unused void vs_gem_free_buf(struct vs_gem_object *vs_obj)
 void vs_egt_gem_free_object(struct drm_gem_object *obj)
 {
 	struct vs_gem_object *vs_obj = to_vs_gem_object(obj);
-	struct pci_dev *pdev = to_pci_dev(obj->dev->dev);
 
 	if (vs_obj->vram) {
 		pr_debug("Free drm_mm_node address is %pa\n", &(vs_obj->vram->start));
@@ -177,12 +176,6 @@ void vs_egt_gem_free_object(struct drm_gem_object *obj)
 		vs_obj->vram = NULL;
 	} else if (obj->import_attach) {
 		drm_prime_gem_destroy(obj, vs_obj->sgt);
-	}
-
-	/* Unmap CPU address if mapped */
-	if (vs_obj->cpu_addr) {
-		pci_iounmap(pdev, vs_obj->cpu_addr);
-		vs_obj->cpu_addr = NULL;
 	}
 
 	/* Release mmap offset */
@@ -242,7 +235,6 @@ struct drm_gem_object *vs_egt_gem_create_with_handle(struct drm_device *dev,
 {
 	struct vs_gem_object *vs_obj;
 	struct drm_mm_node *node;
-	struct pci_dev *pdev = to_pci_dev(dev->dev);
 	int ret;
 
 	vs_obj = vs_egt_gem_create_object(dev, size);
@@ -269,13 +261,7 @@ struct drm_gem_object *vs_egt_gem_create_with_handle(struct drm_device *dev,
 	vs_obj->vram = node;
 	vs_obj->dma_addr = vs_obj->vram->start;
 	vs_obj->resv = vs_obj->base.resv;
-	vs_obj->cpu_addr = pci_iomap_range(pdev, 2, 0, pci_resource_len(pdev, 2));
-	if (!vs_obj->cpu_addr) {
-		ret = -ENOMEM;
-		goto err_free_vs_obj;
-	}
 	vs_obj->offset = vs_obj->dma_addr-(u64)gem_priv->pci_addr;
-
 	pr_debug("alloc device memory address is %pad  offset = %#llx size = %#llx\n",
 			&vs_obj->dma_addr,
 			(unsigned long long)vs_obj->offset,
