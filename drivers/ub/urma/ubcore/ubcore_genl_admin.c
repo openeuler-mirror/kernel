@@ -1094,6 +1094,8 @@ static int ubcore_tpid_emit_list_hdr(struct sk_buff *skb,
 		return -EMSGSIZE;
 
 	mutex_lock(&tl->lock);
+	ubcore_log_info("tp-trace|tpid_list|dev=%s|sm=%u|tt=%u|tm=%u\n",
+		tl->ub_dev->dev_name, tl->lk.share_mode, tl->lk.tp_type, tl->lk.trans_mode);
 	if (nla_put(skb, UBCORE_TPID_SHOW_ATTR_LOCAL_EID,
 		    sizeof(tl->lk.local_eid), &tl->lk.local_eid) != 0 ||
 	    nla_put(skb, UBCORE_TPID_SHOW_ATTR_PEER_EID,
@@ -1219,6 +1221,9 @@ static int ubcore_tpid_emit_reuse(struct sk_buff *skb,
 		return -EMSGSIZE;
 
 	mutex_lock(&reuse->lock);
+	ubcore_log_info("tp-trace|tpid_reuse|dev=%s|sm=%u|tt=%u|tm=%u\n",
+		reuse->ub_dev->dev_name, reuse->rk.lk.share_mode, reuse->rk.lk.tp_type,
+		reuse->rk.lk.trans_mode);
 	if (nla_put(skb, UBCORE_TPID_SHOW_ATTR_LOCAL_EID,
 		    sizeof(reuse->rk.lk.local_eid),
 		    &reuse->rk.lk.local_eid) != 0 ||
@@ -1328,7 +1333,7 @@ static int ubcore_tpid_dump_reuse(struct sk_buff *skb,
 			hlist_for_each_entry(reuse, &ht->head[bucket], hnode) {
 				if (cnt == pos) {
 					found = reuse;
-					kref_get(&found->ref_cnt);
+					ubcore_tpid_reuse_get(found);
 					break;
 				}
 				cnt++;
