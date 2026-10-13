@@ -33,11 +33,18 @@ static inline void kvm_skip_instr(struct kvm_vcpu *vcpu)
 static inline void __kvm_skip_instr(struct kvm_vcpu *vcpu)
 {
 	*vcpu_pc(vcpu) = read_sysreg_el2(SYS_ELR);
-	vcpu_gp_regs(vcpu)->pstate = read_sysreg_el2(SYS_SPSR);
+	if (is_pvm_mode())
+		vcpu_gp_regs(vcpu)->pstate =
+			pvm_restore_virtual_pstate(read_sysreg_el2(SYS_SPSR),
+						   vcpu_gp_regs(vcpu)->pstate);
+	else
+		vcpu_gp_regs(vcpu)->pstate = read_sysreg_el2(SYS_SPSR);
 
 	kvm_skip_instr(vcpu);
 
-	write_sysreg_el2(vcpu_gp_regs(vcpu)->pstate, SYS_SPSR);
+	write_sysreg_el2(is_pvm_mode() ?
+			 pvm_to_phys_pstate(vcpu_gp_regs(vcpu)->pstate) :
+			 vcpu_gp_regs(vcpu)->pstate, SYS_SPSR);
 	write_sysreg_el2(*vcpu_pc(vcpu), SYS_ELR);
 }
 
