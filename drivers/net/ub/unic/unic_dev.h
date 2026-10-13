@@ -267,7 +267,8 @@ struct unic_vport {
 
 struct unic_act_info {
 	bool		deactivate;
-	struct mutex	mutex; /* protects modify deactivate state */
+	struct mutex	period_mutex; /* prevent periodic tasks changing states */
+	struct mutex	event_mutex; /* protect deactivate and reset concurrency */
 };
 
 struct unic_bond_status {
