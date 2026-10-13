@@ -142,6 +142,17 @@ netdev_txq_completed_mb(struct netdev_queue *dev_queue,
 #define netif_txq_completed_wake(txq, pkts, bytes, get_desc, start_thrs) \
 	__netif_txq_completed_wake(txq, pkts, bytes, get_desc, start_thrs, false)
 
+static inline unsigned int netif_xmit_timeout_ms(struct netdev_queue *txq)
+{
+	unsigned long trans_start = READ_ONCE(txq->trans_start);
+
+	if (netif_xmit_stopped(txq) &&
+	    time_after(jiffies, trans_start + txq->dev->watchdog_timeo))
+		return jiffies_to_msecs(jiffies - trans_start);
+
+	return 0;
+}
+
 /* subqueue variants follow */
 
 #define netif_subqueue_try_stop(dev, idx, get_desc, start_thrs)		\
