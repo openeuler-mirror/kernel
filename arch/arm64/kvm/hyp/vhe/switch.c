@@ -77,6 +77,8 @@ DEFINE_PER_CPU(u64, kvm_pvm_run_sctlr);
  *               EL0-accessible guest memory by accident.
  *  ITFSB, EPAN: these only affect EL1 behaviour, that is, the host while it
  *               handles guest exits.
+ *  UMA:         trap EL0 DAIF accesses, so that they are emulated against
+ *               the virtual PSTATE.
  *  EnIA, EnIB, EnDA, EnDB:
  *               PVM does not switch the pointer authentication keys, so the
  *               guest would sign and authenticate with the host's keys.
@@ -84,8 +86,9 @@ DEFINE_PER_CPU(u64, kvm_pvm_run_sctlr);
 #define PVM_SCTLR_FLAGS2	(SCTLR_EL1_UCT | SCTLR_EL1_nTWI | \
 				 SCTLR_EL1_nTWE | SCTLR_EL1_SPAN | \
 				 SCTLR_EL1_ITFSB | SCTLR_EL1_EPAN | \
-				 SCTLR_EL1_EnIA | SCTLR_EL1_EnIB | \
-				 SCTLR_EL1_EnDA | SCTLR_EL1_EnDB)
+				 SCTLR_EL1_UMA | SCTLR_EL1_EnIA | \
+				 SCTLR_EL1_EnIB | SCTLR_EL1_EnDA | \
+				 SCTLR_EL1_EnDB)
 
 /*
  * The guest-run TCR_EL1 describes the page tables installed for the run,
