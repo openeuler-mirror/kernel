@@ -4,6 +4,14 @@
 #ifndef _TXGBE_HW_H_
 #define _TXGBE_HW_H_
 
+#define TXGBE_SP_MAX_TX_QUEUES  128
+#define TXGBE_SP_MAX_RX_QUEUES  128
+
+#define TXGBE_SP_RAR_ENTRIES    128
+#define TXGBE_SP_MC_TBL_SIZE    128
+#define TXGBE_SP_VFT_TBL_SIZE   128
+#define TXGBE_SP_RX_PB_SIZE     512
+
 #define TXGBE_EMC_INTERNAL_DATA         0x00
 #define TXGBE_EMC_INTERNAL_THERM_LIMIT  0x20
 #define TXGBE_EMC_DIODE1_DATA           0x01
@@ -120,44 +128,32 @@ struct txgbe_dec_ptype {
 
 extern struct txgbe_dec_ptype txgbe_ptype_lookup[256];
 
-s32 txgbe_check_mac_link_sp(struct txgbe_hw *hw, u32 *speed,
-			    bool *link_up, bool link_up_wait_to_complete);
-u32 rd32_ephy(struct txgbe_hw *hw, u32 addr);
-u32 txgbe_rd32_epcs(struct txgbe_hw *hw, u32 addr);
-void txgbe_wr32_ephy(struct txgbe_hw *hw, u32 addr, u32 data);
-void txgbe_wr32_epcs(struct txgbe_hw *hw, u32 addr, u32 data);
 
 void txgbe_dcb_get_rtrup2tc(struct txgbe_hw *hw, u8 *map);
-u16 txgbe_get_pcie_msix_count(struct txgbe_hw *hw);
-s32 txgbe_init_hw(struct txgbe_hw *hw);
-s32 txgbe_start_hw(struct txgbe_hw *hw);
-s32 txgbe_clear_hw_cntrs(struct txgbe_hw *hw);
-s32 txgbe_read_pba_string(struct txgbe_hw *hw, u8 *pba_num,
+int txgbe_init_hw(struct txgbe_hw *hw);
+int txgbe_start_hw(struct txgbe_hw *hw);
+int txgbe_clear_hw_cntrs(struct txgbe_hw *hw);
+int txgbe_read_pba_string(struct txgbe_hw *hw, u8 *pba_num,
 			  u32 pba_num_size);
-s32 txgbe_get_mac_addr(struct txgbe_hw *hw, u8 *mac_addr);
-s32 txgbe_get_bus_info(struct txgbe_hw *hw);
-void txgbe_set_pci_config_data(struct txgbe_hw *hw, u16 link_status);
+int txgbe_get_mac_addr(struct txgbe_hw *hw, u8 *mac_addr);
+int txgbe_get_bus_info(struct txgbe_hw *hw);
 void txgbe_set_lan_id_multi_port_pcie(struct txgbe_hw *hw);
-s32 txgbe_stop_adapter(struct txgbe_hw *hw);
+int txgbe_stop_adapter(struct txgbe_hw *hw);
 
-s32 txgbe_led_on(struct txgbe_hw *hw, u32 index);
-s32 txgbe_led_off(struct txgbe_hw *hw, u32 index);
+int txgbe_led_on(struct txgbe_hw *hw, u32 index);
+int txgbe_led_off(struct txgbe_hw *hw, u32 index);
 
-s32 txgbe_set_rar(struct txgbe_hw *hw, u32 index, u8 *addr, u64 pools,
+int txgbe_set_rar(struct txgbe_hw *hw, u32 index, u8 *addr, u64 pools,
 		  u32 enable_addr);
-s32 txgbe_clear_rar(struct txgbe_hw *hw, u32 index);
-s32 txgbe_init_rx_addrs(struct txgbe_hw *hw);
-s32 txgbe_update_mc_addr_list(struct txgbe_hw *hw, u8 *mc_addr_list,
+int txgbe_clear_rar(struct txgbe_hw *hw, u32 index);
+int txgbe_init_rx_addrs(struct txgbe_hw *hw);
+int txgbe_update_mc_addr_list(struct txgbe_hw *hw, u8 *mc_addr_list,
 			      u32 mc_addr_count,
 				      txgbe_mc_addr_itr func, bool clear);
-s32 txgbe_update_uc_addr_list(struct txgbe_hw *hw, u8 *addr_list,
-			      u32 addr_count, txgbe_mc_addr_itr func);
-s32 txgbe_enable_mc(struct txgbe_hw *hw);
-s32 txgbe_disable_mc(struct txgbe_hw *hw);
-s32 txgbe_disable_sec_rx_path(struct txgbe_hw *hw);
-s32 txgbe_enable_sec_rx_path(struct txgbe_hw *hw);
-s32 txgbe_disable_sec_tx_path(struct txgbe_hw *hw);
-s32 txgbe_enable_sec_tx_path(struct txgbe_hw *hw);
+int txgbe_disable_sec_rx_path(struct txgbe_hw *hw);
+int txgbe_enable_sec_rx_path(struct txgbe_hw *hw);
+int txgbe_disable_sec_tx_path(struct txgbe_hw *hw);
+int txgbe_enable_sec_tx_path(struct txgbe_hw *hw);
 
 #ifndef read_poll_timeout
 #define read_poll_timeout(op, val, cond, sleep_us, timeout_us, \
@@ -186,165 +182,109 @@ s32 txgbe_enable_sec_tx_path(struct txgbe_hw *hw);
 })
 #endif
 
-s32 txgbe_fc_enable(struct txgbe_hw *hw);
+int txgbe_fc_enable(struct txgbe_hw *hw);
 bool txgbe_device_supports_autoneg_fc(struct txgbe_hw *hw);
-void txgbe_fc_autoneg(struct txgbe_hw *hw);
-s32 txgbe_setup_fc(struct txgbe_hw *hw);
+int txgbe_setup_fc(struct txgbe_hw *hw);
 
-s32 txgbe_validate_mac_addr(u8 *mac_addr);
-s32 txgbe_acquire_swfw_sync(struct txgbe_hw *hw, u32 mask);
+int txgbe_acquire_swfw_sync(struct txgbe_hw *hw, u32 mask);
 void txgbe_release_swfw_sync(struct txgbe_hw *hw, u32 mask);
-s32 txgbe_disable_pcie_master(struct txgbe_hw *hw);
+int txgbe_disable_pcie_master(struct txgbe_hw *hw);
 
-s32 txgbe_get_san_mac_addr(struct txgbe_hw *hw, u8 *san_mac_addr);
-s32 txgbe_set_san_mac_addr(struct txgbe_hw *hw, u8 *san_mac_addr);
-
-s32 txgbe_set_vmdq(struct txgbe_hw *hw, u32 rar, u32 vmdq);
-s32 txgbe_set_vmdq_san_mac(struct txgbe_hw *hw, u32 vmdq);
-s32 txgbe_clear_vmdq(struct txgbe_hw *hw, u32 rar, u32 vmdq);
-s32 txgbe_insert_mac_addr(struct txgbe_hw *hw, u8 *addr, u32 vmdq);
-s32 txgbe_init_uta_tables(struct txgbe_hw *hw);
-s32 txgbe_set_vfta(struct txgbe_hw *hw, u32 vlan,
+int txgbe_set_vmdq_san_mac(struct txgbe_hw *hw, u32 vmdq);
+int txgbe_init_uta_tables(struct txgbe_hw *hw);
+int txgbe_set_vfta(struct txgbe_hw *hw, u32 vlan,
 		   u32 vind, bool vlan_on);
-s32 txgbe_set_vlvf(struct txgbe_hw *hw, u32 vlan, u32 vind,
-		   bool vlan_on, bool *vfta_changed);
-s32 txgbe_clear_vfta(struct txgbe_hw *hw);
-s32 txgbe_find_vlvf_slot(struct txgbe_hw *hw, u32 vlan);
+int txgbe_clear_vfta(struct txgbe_hw *hw);
 
-s32 txgbe_get_wwn_prefix(struct txgbe_hw *hw, u16 *wwnn_prefix,
-			 u16 *wwpn_prefix);
-
-void txgbe_set_mac_anti_spoofing(struct txgbe_hw *hw, bool enable, int pf);
 void txgbe_set_vlan_anti_spoofing(struct txgbe_hw *hw, bool enable, int vf);
 void txgbe_set_ethertype_anti_spoofing(struct txgbe_hw *hw,
 				       bool enable, int vf);
-s32 txgbe_get_device_caps(struct txgbe_hw *hw, u16 *device_caps);
 void txgbe_set_rxpba(struct txgbe_hw *hw, int num_pb, u32 headroom,
 		     int strategy);
-s32 txgbe_set_fw_drv_ver(struct txgbe_hw *hw, u8 maj, u8 min,
-			 u8 build, u8 ver);
-s32 txgbe_reset_hostif(struct txgbe_hw *hw);
-u8 txgbe_calculate_checksum(u8 *buffer, u32 length);
-s32 txgbe_host_interface_command(struct txgbe_hw *hw, u32 *buffer,
-				 u32 length, u32 timeout, bool return_data);
-
-void txgbe_clear_tx_pending(struct txgbe_hw *hw);
+int txgbe_reset_hostif(struct txgbe_hw *hw);
 bool txgbe_mng_present(struct txgbe_hw *hw);
 bool txgbe_check_mng_access(struct txgbe_hw *hw);
 
-s32 txgbe_get_thermal_sensor_data(struct txgbe_hw *hw);
-s32 txgbe_init_thermal_sensor_thresh(struct txgbe_hw *hw);
+int txgbe_get_thermal_sensor_data(struct txgbe_hw *hw);
+int txgbe_init_thermal_sensor_thresh(struct txgbe_hw *hw);
 void txgbe_enable_rx(struct txgbe_hw *hw);
 void txgbe_disable_rx(struct txgbe_hw *hw);
-s32 txgbe_setup_mac_link_multispeed_fiber(struct txgbe_hw *hw,
+int txgbe_setup_mac_link_multispeed_fiber(struct txgbe_hw *hw,
 					  u32 speed,
 					  bool autoneg_wait_to_complete);
 int txgbe_check_flash_load(struct txgbe_hw *hw, u32 check_bit);
 
 /* @txgbe_api.h */
-s32 txgbe_reinit_fdir_tables(struct txgbe_hw *hw);
-s32 txgbe_init_fdir_signature(struct txgbe_hw *hw, u32 fdirctrl);
-s32 txgbe_init_fdir_perfect(struct txgbe_hw *hw, u32 fdirctrl,
-			    bool cloud_mode);
-s32 txgbe_fdir_add_signature_filter(struct txgbe_hw *hw,
+int txgbe_reinit_fdir_tables(struct txgbe_hw *hw);
+int txgbe_init_fdir_signature(struct txgbe_hw *hw, u32 fdirctrl);
+int txgbe_init_fdir_perfect(struct txgbe_hw *hw, u32 fdirctrl);
+int txgbe_fdir_add_signature_filter(struct txgbe_hw *hw,
 				    union txgbe_atr_hash_dword input,
 					  union txgbe_atr_hash_dword common,
 					  u8 queue);
-s32 txgbe_fdir_set_input_mask(struct txgbe_hw *hw,
-			      union txgbe_atr_input *input_mask, bool cloud_mode);
-s32 txgbe_fdir_write_perfect_filter(struct txgbe_hw *hw,
+int txgbe_fdir_set_input_mask(struct txgbe_hw *hw,
+			      union txgbe_atr_input *input_mask);
+int txgbe_fdir_set_flex_conf(struct txgbe_hw *hw,
+			     struct txgbe_fdir_filter *input,
+			     union txgbe_atr_input *input_mask);
+int txgbe_fdir_write_perfect_filter(struct txgbe_hw *hw,
 				    union txgbe_atr_input *input,
-				  u16 soft_id, u8 queue, bool cloud_mode);
-s32 txgbe_fdir_erase_perfect_filter(struct txgbe_hw *hw,
+				    u16 soft_id, u8 queue);
+int txgbe_fdir_erase_perfect_filter(struct txgbe_hw *hw,
 				    union txgbe_atr_input *input,
 					  u16 soft_id);
-s32 txgbe_fdir_add_perfect_filter(struct txgbe_hw *hw,
-				  union txgbe_atr_input *input,
-					union txgbe_atr_input *mask,
-					u16 soft_id,
-					u8 queue,
-					bool cloud_mode);
 void txgbe_atr_compute_perfect_hash(union txgbe_atr_input *input,
 				    union txgbe_atr_input *mask);
-u32 txgbe_atr_compute_sig_hash(union txgbe_atr_hash_dword input,
-			       union txgbe_atr_hash_dword common);
+int txgbe_check_reset_blocked(struct txgbe_hw *hw);
 
-s32 txgbe_get_link_capabilities_sp(struct txgbe_hw *hw,
-				   u32 *speed, bool *autoneg);
-enum txgbe_media_type txgbe_get_media_type_sp(struct txgbe_hw *hw);
 void txgbe_disable_tx_laser_multispeed_fiber(struct txgbe_hw *hw);
 void txgbe_enable_tx_laser_multispeed_fiber(struct txgbe_hw *hw);
 void txgbe_flap_tx_laser_multispeed_fiber(struct txgbe_hw *hw);
-void txgbe_set_hard_rate_select_speed(struct txgbe_hw *hw,
-				      u32 speed);
+void txgbe_set_hard_rate_select_speed(struct txgbe_hw *hw, u32 speed);
+
 int txgbe_init_shared_code(struct txgbe_hw *hw);
-s32 txgbe_setup_mac_link_sp(struct txgbe_hw *hw, u32 speed,
-			    bool autoneg_wait_to_complete);
-void txgbe_init_mac_link_ops_sp(struct txgbe_hw *hw);
-s32 txgbe_reset_hw(struct txgbe_hw *hw);
-s32 txgbe_identify_phy(struct txgbe_hw *hw);
-s32 txgbe_init_phy_ops_sp(struct txgbe_hw *hw);
-s32 txgbe_enable_rx_dma(struct txgbe_hw *hw, u32 regval);
-s32 txgbe_init_ops_generic(struct txgbe_hw *hw);
-s32 txgbe_setup_eee(struct txgbe_hw *hw, bool enable_eee);
+int txgbe_get_invariants_generic(struct txgbe_hw *hw);
+void txgbe_release_hw_control(struct txgbe_hw *hw);
+void txgbe_get_hw_control(struct txgbe_hw *hw);
+int txgbe_reset_hw_generic(struct txgbe_hw *hw);
+int txgbe_identify_phy_generic(struct txgbe_hw *hw);
+int txgbe_enable_rx_dma(struct txgbe_hw *hw, u32 regval);
+int txgbe_setup_eee(struct txgbe_hw *hw, bool enable_eee);
 int txgbe_reconfig_mac(struct txgbe_hw *hw);
 
-s32 txgbe_init_flash_params(struct txgbe_hw *hw);
-s32 txgbe_read_flash_buffer(struct txgbe_hw *hw, u32 offset,
-			    u32 dwords, u32 *data);
-s32 txgbe_write_flash_buffer(struct txgbe_hw *hw, u32 offset,
+int txgbe_write_flash_buffer(struct txgbe_hw *hw, u32 offset,
 			     u32 dwords, u32 *data);
 
-s32 txgbe_read_eeprom(struct txgbe_hw *hw,
-		      u16 offset, u16 *data);
-s32 txgbe_read_eeprom_buffer(struct txgbe_hw *hw, u16 offset,
-			     u16 words, u16 *data);
-s32 txgbe_init_eeprom_params(struct txgbe_hw *hw);
-s32 txgbe_update_eeprom_checksum(struct txgbe_hw *hw);
-s32 txgbe_calc_eeprom_checksum(struct txgbe_hw *hw);
-s32 txgbe_validate_eeprom_checksum(struct txgbe_hw *hw,
+int txgbe_init_eeprom_params(struct txgbe_hw *hw);
+int txgbe_update_eeprom_checksum(struct txgbe_hw *hw);
+int txgbe_validate_eeprom_checksum(struct txgbe_hw *hw,
 				   u16 *checksum_val);
-s32 txgbe_update_flash(struct txgbe_hw *hw);
 int txgbe_upgrade_flash(struct txgbe_hw *hw, u32 region,
 			const u8 *data, u32 size);
-s32 txgbe_write_ee_hostif_buffer(struct txgbe_hw *hw,
+int txgbe_write_ee_hostif_buffer(struct txgbe_hw *hw,
 				 u16 offset, u16 words, u16 *data);
-s32 txgbe_write_ee_hostif(struct txgbe_hw *hw, u16 offset,
-			  u16 data);
-s32 txgbe_read_ee_hostif_buffer(struct txgbe_hw *hw,
+int txgbe_read_ee_hostif_buffer(struct txgbe_hw *hw,
 				u16 offset, u16 words, u16 *data);
-s32 txgbe_read_ee_hostif(struct txgbe_hw *hw, u16 offset, u16 *data);
-u32 txgbe_rd32_epcs(struct txgbe_hw *hw, u32 addr);
-void txgbe_wr32_epcs(struct txgbe_hw *hw, u32 addr, u32 data);
-void txgbe_wr32_ephy(struct txgbe_hw *hw, u32 addr, u32 data);
-u32 rd32_ephy(struct txgbe_hw *hw, u32 addr);
+int txgbe_read_ee_hostif(struct txgbe_hw *hw, u16 offset, u16 *data);
 
-s32 txgbe_upgrade_flash_hostif(struct txgbe_hw *hw,  u32 region,
+int txgbe_upgrade_flash_hostif(struct txgbe_hw *hw,  u32 region,
 			       const u8 *data, u32 size);
 
-s32 txgbe_close_notify(struct txgbe_hw *hw);
-s32 txgbe_open_notify(struct txgbe_hw *hw);
-
-s32 txgbe_set_link_to_kr(struct txgbe_hw *hw, bool autoneg);
-s32 txgbe_set_link_to_kx4(struct txgbe_hw *hw, bool autoneg);
-
-s32 txgbe_set_link_to_kx(struct txgbe_hw *hw,
-			 u32 speed,
-			       bool autoneg);
 int txgbe_flash_read_dword(struct txgbe_hw *hw, u32 addr, u32 *data);
-s32 txgbe_hic_write_lldp(struct txgbe_hw *hw, u32 open);
+int txgbe_hic_write_lldp(struct txgbe_hw *hw, u32 open);
 int txgbe_is_lldp(struct txgbe_hw *hw);
-s32 txgbe_set_sgmii_an37_ability(struct txgbe_hw *hw);
 int txgbe_set_pps(struct txgbe_hw *hw, bool enable, u64 nsec, u64 cycles);
 void txgbe_hic_write_autoneg_status(struct txgbe_hw *hw, bool autoneg);
 int txgbe_enable_rx_adapter(struct txgbe_hw *hw);
-
-s32 txgbe_init_ops_aml(struct txgbe_hw *hw);
-s32 txgbe_init_ops_aml40(struct txgbe_hw *hw);
 
 void txgbe_set_queue_rate_limit(struct txgbe_hw *hw, int queue, u16 max_tx_rate);
 
 int txgbe_hic_notify_led_active(struct txgbe_hw *hw, int active_flag);
 bool txgbe_is_backplane(struct txgbe_hw *hw);
+bool txgbe_gpio_ext_check(struct txgbe_hw *hw, u8 gpio_ext_mask);
 
+int txgbe_host_interface_command(struct txgbe_hw *hw, u32 *buffer,
+				 u32 length, u32 timeout, bool return_data);
+int txgbe_is_10g_fiber_sfp(struct txgbe_hw *hw);
+void txgbe_ephy_oem_config(struct txgbe_hw *hw, u32 *speed, bool *autoneg);
 #endif /* _TXGBE_HW_H_ */

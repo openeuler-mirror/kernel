@@ -629,7 +629,9 @@ static bool txgbe_xmit_zc(struct txgbe_ring *xdp_ring, unsigned int budget)
 		/* memory fence read desc */
 		smp_wmb();
 		tx_bi->next_to_watch = tx_desc;
+#ifdef TXGBE_TXHEAD_WB
 		tx_bi->next_eop = ntu;
+#endif
 
 		xdp_ring->next_rs_idx = ntu;
 		ntu++;
@@ -683,6 +685,7 @@ bool txgbe_clean_xdp_tx_irq(struct txgbe_q_vector *q_vector,
 	u16 i;
 	struct txgbe_adapter *adapter = q_vector->adapter;
 	struct txgbe_hw *hw = &adapter->hw;
+#ifdef TXGBE_TXHEAD_WB
 	u32 head = 0;
 	u32 temp = tx_ring->next_to_clean;
 
@@ -703,7 +706,9 @@ bool txgbe_clean_xdp_tx_irq(struct txgbe_q_vector *q_vector,
 			else
 				frames_ready = next_rs_idx + tx_ring->count - ntc;
 		}
-	} else {
+	} else
+#endif
+	{
 		next_rs_desc = TXGBE_TX_DESC(tx_ring, next_rs_idx);
 		if (next_rs_desc->wb.status &
 		cpu_to_le32(TXGBE_TXD_STAT_DD)) {

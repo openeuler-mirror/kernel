@@ -1,13 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0
 /* Copyright (c) 2019 - 2022 Beijing WangXun Technology Co., Ltd. */
 
+#include "txgbe_bp_base.h"
 #include "txgbe_e56.h"
-#include "txgbe_hw.h"
-
-#include "txgbe.h"
-#include "txgbe_type.h"
 #include "txgbe_e56_bp.h"
-#include "txgbe_bp.h"
 
 static int txgbe_e56_set_rxs_ufine_lemax(struct txgbe_adapter *adapter, u32 speed)
 {
@@ -484,10 +480,10 @@ static int txgbe_e56_rxs_post_cdr_lock_temp_track_seq(struct txgbe_adapter *adap
 	return status;
 }
 
-static int txgbe_e56_ctle_bypass_seq(struct txgbe_adapter *adapter)
+static void txgbe_e56_ctle_bypass_seq(struct txgbe_adapter *adapter,
+					    u8 bplinkmode)
 {
 	struct txgbe_hw *hw = &adapter->hw;
-	int status = 0;
 	u32 rdata;
 
 	txgbe_e56_ephy_config(E56G__RXS0_ANA_OVRDVAL_0, ana_ctle_bypass_i, 1);
@@ -510,7 +506,57 @@ static int txgbe_e56_ctle_bypass_seq(struct txgbe_adapter *adapter)
 		1;
 	EPHY_WREG(E56G__PMD_RXS0_OVRDEN_1);
 
-	return status;
+	if (bplinkmode == 40) {
+		//1. Program the following RXS registers as mentioned below.
+		//RXS::ANA_OVRDVAL[0]::ana_ctle_bypass_i = 1
+		//RXS::ANA_OVRDEN[0]::ovrd_en_ana_ctle_bypass_i = 1
+		txgbe_e56_ephy_config(E56G__RXS1_ANA_OVRDVAL_0, ana_ctle_bypass_i, 1);
+		txgbe_e56_ephy_config(E56G__RXS1_ANA_OVRDEN_0, ovrd_en_ana_ctle_bypass_i, 1);
+		txgbe_e56_ephy_config(E56G__RXS2_ANA_OVRDVAL_0, ana_ctle_bypass_i, 1);
+		txgbe_e56_ephy_config(E56G__RXS2_ANA_OVRDEN_0, ovrd_en_ana_ctle_bypass_i, 1);
+		txgbe_e56_ephy_config(E56G__RXS3_ANA_OVRDVAL_0, ana_ctle_bypass_i, 1);
+		txgbe_e56_ephy_config(E56G__RXS3_ANA_OVRDEN_0, ovrd_en_ana_ctle_bypass_i, 1);
+
+		//RXS::ANA_OVRDVAL[3]::ana_ctle_cz_cstm_i[4:0] = 0
+		//RXS::ANA_OVRDEN[0]::ovrd_en_ana_ctle_cz_cstm_i = 1
+		txgbe_e56_ephy_config(E56G__RXS1_ANA_OVRDVAL_3, ana_ctle_cz_cstm_i, 0);
+		txgbe_e56_ephy_config(E56G__RXS1_ANA_OVRDEN_0, ovrd_en_ana_ctle_cz_cstm_i, 1);
+		txgbe_e56_ephy_config(E56G__RXS2_ANA_OVRDVAL_3, ana_ctle_cz_cstm_i, 0);
+		txgbe_e56_ephy_config(E56G__RXS2_ANA_OVRDEN_0, ovrd_en_ana_ctle_cz_cstm_i, 1);
+		txgbe_e56_ephy_config(E56G__RXS3_ANA_OVRDVAL_3, ana_ctle_cz_cstm_i, 0);
+		txgbe_e56_ephy_config(E56G__RXS3_ANA_OVRDEN_0, ovrd_en_ana_ctle_cz_cstm_i, 1);
+
+		//2. Program the following PDIG registers as mentioned below.
+		//PDIG::RXS<n>_OVRDVAL[1]::rxs<n>_rx0_ctle_train_en_i = 0
+		//PDIG::RXS<n>_OVRDEN[1]::ovrd_en_rxs<n>_rx0_ctle_train_en_i = 1
+		//PDIG::RXS<n>_OVRDVAL[1]::rxs<n>_rx0_ctle_train_done_o = 1
+		//PDIG::RXS<n>_OVRDEN[1]::ovrd_en_rxs<n>_rx0_ctle_train_done_o = 1
+		EPHY_RREG(E56G__PMD_RXS1_OVRDVAL_1);
+		EPHY_XFLD(E56G__PMD_RXS1_OVRDVAL_1, rxs1_rx0_ctle_train_en_i) = 0;
+		EPHY_XFLD(E56G__PMD_RXS1_OVRDVAL_1, rxs1_rx0_ctle_train_done_o) = 1;
+		EPHY_WREG(E56G__PMD_RXS1_OVRDVAL_1);
+		EPHY_RREG(E56G__PMD_RXS2_OVRDVAL_1);
+		EPHY_XFLD(E56G__PMD_RXS2_OVRDVAL_1, rxs2_rx0_ctle_train_en_i) = 0;
+		EPHY_XFLD(E56G__PMD_RXS2_OVRDVAL_1, rxs2_rx0_ctle_train_done_o) = 1;
+		EPHY_WREG(E56G__PMD_RXS2_OVRDVAL_1);
+		EPHY_RREG(E56G__PMD_RXS3_OVRDVAL_1);
+		EPHY_XFLD(E56G__PMD_RXS3_OVRDVAL_1, rxs3_rx0_ctle_train_en_i) = 0;
+		EPHY_XFLD(E56G__PMD_RXS3_OVRDVAL_1, rxs3_rx0_ctle_train_done_o) = 1;
+		EPHY_WREG(E56G__PMD_RXS3_OVRDVAL_1);
+
+		EPHY_RREG(E56G__PMD_RXS1_OVRDEN_1);
+		EPHY_XFLD(E56G__PMD_RXS1_OVRDEN_1, ovrd_en_rxs1_rx0_ctle_train_en_i) = 1;
+		EPHY_XFLD(E56G__PMD_RXS1_OVRDEN_1, ovrd_en_rxs1_rx0_ctle_train_done_o) = 1;
+		EPHY_WREG(E56G__PMD_RXS1_OVRDEN_1);
+		EPHY_RREG(E56G__PMD_RXS2_OVRDEN_1);
+		EPHY_XFLD(E56G__PMD_RXS2_OVRDEN_1, ovrd_en_rxs2_rx0_ctle_train_en_i) = 1;
+		EPHY_XFLD(E56G__PMD_RXS2_OVRDEN_1, ovrd_en_rxs2_rx0_ctle_train_done_o) = 1;
+		EPHY_WREG(E56G__PMD_RXS2_OVRDEN_1);
+		EPHY_RREG(E56G__PMD_RXS3_OVRDEN_1);
+		EPHY_XFLD(E56G__PMD_RXS3_OVRDEN_1, ovrd_en_rxs3_rx0_ctle_train_en_i) = 1;
+		EPHY_XFLD(E56G__PMD_RXS3_OVRDEN_1, ovrd_en_rxs3_rx0_ctle_train_done_o) = 1;
+		EPHY_WREG(E56G__PMD_RXS3_OVRDEN_1);
+	}
 }
 
 static int txgbe_e56_rxs_adc_adapt_seq(struct txgbe_adapter *adapter, u32 bypass_ctle)
@@ -815,8 +861,8 @@ static int txgbe_e56_rxs_calib_adapt_seq(struct txgbe_adapter *adapter, u8 bplin
 		txgbe_field_set(&rdata, 6, 6, 0x1);
 		txgbe_wr32_ephy(hw, addr, rdata);
 	}
-	if (bypass_ctle != 0)
-		status |= txgbe_e56_ctle_bypass_seq(adapter);
+	if (bypass_ctle)
+		txgbe_e56_ctle_bypass_seq(adapter, bplinkmode);
 
 	status |= txgbe_e56_rxs_oscinit_temp_track(adapter, bplinkmode);
 
@@ -946,23 +992,6 @@ static int txgbe_e56_cms_cfg_temp_track_range(struct txgbe_adapter *adapter,
 	return status;
 }
 
-static int txgbe_e56_phy_tx_ffe_cfg(struct txgbe_adapter *adapter)
-{
-	struct txgbe_hw *hw = &adapter->hw;
-
-	/* Setting the TX EQ main/pre1/pre2/post value */
-	adapter->aml_txeq.main = S25G_TX_FFE_CFG_DAC_MAIN;
-	adapter->aml_txeq.pre1 = S25G_TX_FFE_CFG_DAC_PRE1;
-	adapter->aml_txeq.pre2 = S25G_TX_FFE_CFG_DAC_PRE2;
-	adapter->aml_txeq.post = S25G_TX_FFE_CFG_DAC_POST;
-	txgbe_wr32_ephy(hw, 0x141c, adapter->aml_txeq.main);
-	txgbe_wr32_ephy(hw, 0x1420, adapter->aml_txeq.pre1);
-	txgbe_wr32_ephy(hw, 0x1424, adapter->aml_txeq.pre2);
-	txgbe_wr32_ephy(hw, 0x1428, adapter->aml_txeq.post);
-
-	return 0;
-}
-
 static int txgbe_e56_25g_cfg(struct txgbe_adapter *adapter)
 {
 	struct txgbe_hw *hw = &adapter->hw;
@@ -1048,7 +1077,7 @@ static int txgbe_e56_25g_cfg(struct txgbe_adapter *adapter)
 	txgbe_field_set(&rdata, E56PHY_TXS_ANA_OVRDEN_0_OVRD_EN_ANA_TEST_DAC_I, 0x1);
 	txgbe_wr32_ephy(hw, addr, rdata);
 
-	txgbe_e56_phy_tx_ffe_cfg(adapter);
+	txgbe_xlgpcs_txffe_set(adapter, TXGBE_LINK_SPEED_25GB_FULL);
 
 	rdata = 0x0000;
 	addr = E56PHY_RXS_RXS_CFG_0_ADDR;
@@ -1454,8 +1483,10 @@ static int txgbe_e56_25g_cfg(struct txgbe_adapter *adapter)
 	rdata = 0x0000;
 	addr = E56PHY_FETX_FFE_TRAIN_CFG_0_ADDR;
 	rdata = rd32_ephy(hw, addr);
+	txgbe_field_set(&rdata, E56PHY_FETX_FFE_TRAIN_CFG_0_KRT_FETX_INIT_FFE_CFG_0,
+			hw->phy.oem.training_mode);
 	txgbe_field_set(&rdata, E56PHY_FETX_FFE_TRAIN_CFG_0_KRT_FETX_INIT_FFE_CFG_2,
-			0x2);
+			hw->phy.oem.training_mode);
 	txgbe_wr32_ephy(hw, addr, rdata);
 
 	return 0;
@@ -1531,7 +1562,7 @@ static int txgbe_e56_10g_cfg(struct txgbe_adapter *adapter)
 	txgbe_field_set(&rdata, E56PHY_TXS_ANA_OVRDEN_0_OVRD_EN_ANA_TEST_DAC_I, 0x1);
 	txgbe_wr32_ephy(hw, addr, rdata);
 
-	txgbe_e56_phy_tx_ffe_cfg(adapter);
+	txgbe_xlgpcs_txffe_set(adapter, TXGBE_LINK_SPEED_25GB_FULL);
 
 	rdata = 0x0000;
 	addr = E56PHY_RXS_RXS_CFG_0_ADDR;
@@ -1936,7 +1967,7 @@ static int setphylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 			  u32 bypass_ctle)
 {
 	struct txgbe_hw *hw = &adapter->hw;
-	int lane_num = 0, status = 0;
+	int status = 0;
 	u32 rdata = 0;
 
 	u32 speed_select = 0;
@@ -1949,7 +1980,6 @@ static int setphylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 	switch (bplinkmode) {
 	case 10:
 		bplinkmode = 10;
-		lane_num = 1;
 		speed_select = 0; /* 10 Gb/s */
 		pcs_type_sel = 0; /* 10GBASE-R PCS Type */
 		cns_en = 0; /* CNS_EN disable */
@@ -1959,7 +1989,6 @@ static int setphylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 		break;
 	case 40:
 		bplinkmode = 40;
-		lane_num = 4;
 		speed_select = 3; /* 40 Gb/s */
 		pcs_type_sel = 4; /* 40GBASE-R PCS Type */
 		cns_en = 0; /* CNS_EN disable */
@@ -1969,7 +1998,6 @@ static int setphylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 		break;
 	case 25:
 		bplinkmode = 25;
-		lane_num = 1;
 		speed_select = 5; /* 25 Gb/s */
 		pcs_type_sel = 7; /* 25GBASE-R PCS Type */
 		cns_en = 1; /* CNS_EN */
@@ -1983,7 +2011,7 @@ static int setphylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 		break;
 	}
 
-	adapter->curbp_link_mode = bplinkmode;
+	adapter->bp_link_mode = bplinkmode;
 	/* To switch to the 40G mode Ethernet operation, complete the following steps:*/
 	/* 1. Initiate the vendor-specific software reset by programming
 	 * the VR_RST field (bit [15]) of the VR_PCS_DIG_CTRL1 register to 1.
@@ -2083,7 +2111,7 @@ static int setphylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 
 	rdata = 0x0000;
 	rdata = rd32_ephy(hw, ANA_OVRDVAL5);
-	txgbe_field_set(&rdata, 24, 24, 0x0);
+	txgbe_field_set(&rdata, 24, 24, 0x1);
 	txgbe_wr32_ephy(hw, ANA_OVRDVAL5, rdata);
 
 	rdata = 0x0000;
@@ -2170,7 +2198,7 @@ int txgbe_e56_set_phylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 			      u32 bypass_ctle)
 {
 	struct txgbe_hw *hw = &adapter->hw;
-	int status = 0;
+	int status = 0, ret = 0;
 	u32 rdata;
 
 	switch (bplinkmode) {
@@ -2193,7 +2221,7 @@ int txgbe_e56_set_phylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 	}
 
 	adapter->an_done = false;
-	if (adapter->curbp_link_mode == 10)
+	if (adapter->bp_link_mode == 110)
 		return 0;
 	kr_dbg(KR_MODE, "Setup to backplane mode ==========\n");
 
@@ -2218,43 +2246,28 @@ int txgbe_e56_set_phylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 		txgbe_field_set(&rdata, 12, 12, 0x1);
 		txgbe_wr32_epcs(hw, 0x070000, rdata);
 		txgbe_wr32_epcs(hw, 0x078002, 0x0000);
+		txgbe_wr32_epcs(hw, 0x78001, 0x7);
 		/* pcs case fec en to work around first */
 		txgbe_wr32_epcs(hw, 0x100ab, 1);
 
-		if (txgbe_is_backplane(hw)) {
-			if ((hw->device_id & 0xFF) == 0x10) {
-				backplane_mode |= 0x80;
-				fec_advertise |= TXGBE_10G_FEC_ABL;
-			} else if ((hw->device_id & 0xFF) == 0x25) {
-				backplane_mode |= 0xc000;
-				fec_advertise |= TXGBE_25G_RS_FEC_REQ |
-						 TXGBE_25G_BASE_FEC_REQ;
-			} else if ((hw->device_id & 0xFF) == 0x40) {
-				backplane_mode |= BIT(9) | BIT(8);
-				fec_advertise |= TXGBE_10G_FEC_ABL;
-			}
-		} else {
-			if ((hw->phy.fiber_suppport_speed &
-			     TXGBE_LINK_SPEED_10GB_FULL) ==
-			    TXGBE_LINK_SPEED_10GB_FULL) {
-				backplane_mode |= 0x80;
-				fec_advertise |= TXGBE_10G_FEC_ABL;
-			}
-
-			if ((hw->phy.fiber_suppport_speed &
-			     TXGBE_LINK_SPEED_25GB_FULL) ==
-			    TXGBE_LINK_SPEED_25GB_FULL) {
-				backplane_mode |= 0xc000;
-				fec_advertise |= TXGBE_25G_RS_FEC_REQ |
-						 TXGBE_25G_BASE_FEC_REQ;
-			}
-
-			if ((hw->phy.fiber_suppport_speed &
-			     TXGBE_LINK_SPEED_40GB_FULL) ==
-			    TXGBE_LINK_SPEED_40GB_FULL) {
-				backplane_mode |= BIT(9) | BIT(8);
-				fec_advertise |= TXGBE_10G_FEC_ABL;
-			}
+		/* backplane 10G/25G/40G */
+		/* 10GKR:7-25KR:14/15-40GKR:8-40GCR:9 */
+		/* default all speed */
+		if ((bplinkmode & TXGBE_LINK_SPEED_10GB_FULL) ||
+		     bplinkmode == 10) {
+			backplane_mode |= BIT(7);
+			fec_advertise |= TXGBE_10G_FEC_ABL;
+		}
+		if ((bplinkmode & TXGBE_LINK_SPEED_25GB_FULL) ||
+		    bplinkmode == 25) {
+			backplane_mode |= BIT(14) | BIT(15);
+			fec_advertise |= TXGBE_25G_RS_FEC_REQ |
+					 TXGBE_25G_BASE_FEC_REQ;
+		}
+		if ((bplinkmode & TXGBE_LINK_SPEED_40GB_FULL) ||
+		    bplinkmode == 40) {
+			backplane_mode |= BIT(9) | BIT(8);
+			fec_advertise |= TXGBE_10G_FEC_ABL;
 		}
 
 		txgbe_wr32_epcs(hw, 0x070010, 0x0001);
@@ -2272,14 +2285,14 @@ int txgbe_e56_set_phylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 
 		/* config timer */
 		txgbe_wr32_epcs(hw, 0x078004, 0x003c);
-		txgbe_wr32_epcs(hw, 0x078005, 3000);
+		txgbe_wr32_epcs(hw, 0x078005, hw->phy.oem.linkfail_timeout);
 		txgbe_wr32_epcs(hw, 0x078006, 25);
 		txgbe_wr32_epcs(hw, 0x078000, 0x0008 | BIT(2));
 
 		kr_dbg(KR_MODE, "1.2 Wait 10G KR phy/pcs mode init ....\n");
 		status = setphylinkmode(adapter, 10, bypass_ctle);
-		if (status)
-			return status;
+		kr_dbg(KR_MODE, "Wait 10g phy/pcs mode init = %x, %s.\n", rdata,
+		       status ? "FAILED" : "SUCCESS");
 
 		/* 5. CM_ENABLE */
 		rdata = rd32_ephy(hw, 0x1400);
@@ -2296,8 +2309,8 @@ int txgbe_e56_set_phylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 
 		kr_dbg(KR_MODE, "1.3 Wait 10G PHY RXS....\n");
 		status = txgbe_e56_rxs_oscinit_temp_track(adapter, 10);
-		if (status)
-			return status;
+		kr_dbg(KR_MODE, "Wait 10G PHY/RXS mode init = %x, %s.\n", rdata,
+		       status ? "FAILED" : "SUCCESS");
 
 		/* Wait an 10g fsm_rx_sts */
 		status = read_poll_timeout(rd32_ephy, rdata,
@@ -2311,6 +2324,9 @@ int txgbe_e56_set_phylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 		txgbe_field_set(&rdata, 12, 12, 0x1);
 		txgbe_wr32_epcs(hw, 0x070000, rdata);
 		kr_dbg(KR_MODE, "Setup the backplane mode========end ==\n");
+
+		/* set to 10G NRZ mode */
+		adapter->bp_link_mode = 110;
 	} else {
 		if ((hw->phy.fiber_suppport_speed &
 		     TXGBE_LINK_SPEED_40GB_FULL) == TXGBE_LINK_SPEED_40GB_FULL)
@@ -2327,7 +2343,7 @@ int txgbe_e56_set_phylinkmode(struct txgbe_adapter *adapter, u8 bplinkmode,
 						 TXGBE_LINK_SPEED_10GB_FULL);
 	}
 
-	return status;
+	return ret;
 }
 
 static void txgbe_e56_print_page_status(struct txgbe_adapter *adapter,
@@ -2395,14 +2411,19 @@ static void txgbe_e56_print_page_status(struct txgbe_adapter *adapter,
 	       ((rdata >> 13) & 0x01), ((rdata >> 12) & 0x01));
 	tlpbkp_an73_ability->fec_ability = rdata;
 	adapter->fec_mode = 0;
-	if (rdata & TXGBE_25G_RS_FEC_REQ)
+	if ((tbkp_an73_ability->fec_ability & TXGBE_25G_RS_FEC_REQ) &&
+	    (tlpbkp_an73_ability->fec_ability & TXGBE_25G_RS_FEC_REQ)) {
 		adapter->fec_mode |= TXGBE_25G_RS_FEC_REQ;
-	if (rdata & TXGBE_25G_BASE_FEC_REQ)
+	} else if ((tbkp_an73_ability->fec_ability & TXGBE_25G_BASE_FEC_REQ) &&
+		   (tlpbkp_an73_ability->fec_ability & TXGBE_25G_BASE_FEC_REQ)) {
 		adapter->fec_mode |= TXGBE_25G_BASE_FEC_REQ;
-	if (rdata & TXGBE_10G_FEC_ABL)
-		adapter->fec_mode |= TXGBE_10G_FEC_ABL;
-	if (rdata & TXGBE_10G_FEC_REQ)
-		adapter->fec_mode |= TXGBE_10G_FEC_REQ;
+	} else if ((tbkp_an73_ability->fec_ability & TXGBE_10G_FEC_ABL) &&
+		 (tlpbkp_an73_ability->fec_ability & TXGBE_10G_FEC_ABL)) {
+		if ((tbkp_an73_ability->fec_ability & TXGBE_10G_FEC_REQ) &&
+		    (tlpbkp_an73_ability->fec_ability & TXGBE_10G_FEC_REQ)) {
+			adapter->fec_mode |= TXGBE_10G_FEC_REQ;
+		}
+	}
 	kr_dbg(KR_MODE, "\tread 70015 data %0x\n", rdata);
 
 	kr_dbg(KR_MODE, "\tread 70016 data %0x\n",
@@ -2419,65 +2440,30 @@ static void txgbe_e56_print_page_status(struct txgbe_adapter *adapter,
 	       txgbe_rd32_epcs(hw, 0x7001b));
 }
 
-static int chk_bkp_ability(struct txgbe_adapter *adapter,
-			   struct bkpan73ability tbkp_an73_ability,
-			   struct bkpan73ability tlpbkp_an73_ability)
-{
-	unsigned int com_link_ability;
-
-	kr_dbg(KR_MODE, "CheckBkpAn73Ability():\n");
-	/* Check the common link ability and take action based on the result*/
-	com_link_ability = tbkp_an73_ability.link_ability &
-			 tlpbkp_an73_ability.link_ability;
-	kr_dbg(KR_MODE, "comAbility= 0x%x, Ability= 0x%x, lpAbility= 0x%x\n",
-	       com_link_ability, tbkp_an73_ability.link_ability,
-	       tlpbkp_an73_ability.link_ability);
-
-	if (com_link_ability == 0) {
-		adapter->bp_link_mode = 0;
-		kr_dbg(KR_MODE, "Do not support any compatible speed mode!\n");
-		return -EINVAL;
-	} else if (com_link_ability & BIT(ABILITY_40GBASE_CR4)) {
-		kr_dbg(KR_MODE, "Link mode is [ABILITY_40GBASE_CR4].\n");
-		adapter->bp_link_mode = 40;
-	} else if (com_link_ability & BIT(ABILITY_25GBASE_KRCR_S)) {
-		kr_dbg(KR_MODE, "Link mode is [ABILITY_25GBASE_KRCR_S].\n");
-		adapter->fec_mode = TXGBE_25G_RS_FEC_REQ;
-		adapter->bp_link_mode = 25;
-	} else if (com_link_ability & BIT(ABILITY_25GBASE_KRCR)) {
-		kr_dbg(KR_MODE, "Link mode is [ABILITY_25GBASE_KRCR].\n");
-		adapter->bp_link_mode = 25;
-	} else if (com_link_ability & BIT(ABILITY_10GBASE_KR)) {
-		kr_dbg(KR_MODE, "Link mode is [ABILITY_10GBASE_KR].\n");
-		adapter->bp_link_mode = 10;
-	}
-
-	return 0;
-}
-
 static int txgbe_e56_exchange_page(struct txgbe_adapter *adapter)
 {
 	struct bkpan73ability tbkp_an73_ability = { 0 }, tlpbkp_an73_ability = { 0 };
 	struct txgbe_hw *hw = &adapter->hw;
 	u32 an_int, base_page = 0;
-	int count = 0;
+	int count = 0, count2 = 0;
 
 	an_int = txgbe_rd32_epcs(hw, 0x78002);
-	if (!(an_int & TXGBE_E56_AN_PG_RCV))
+	if (!(an_int & TXGBE_PCS_AN_PG_RCV))
 		return -EINVAL;
 
 	/* 500ms timeout */
-	for (count = 0; count < 5000; count++) {
+	for (count = 0; count < 50; count++) {
 		u32 fsm = txgbe_rd32_epcs(hw, 0x78010);
 
 		kr_dbg(KR_MODE, "-----count----- %d - fsm: %x\n",
 		       count, fsm);
-		if (an_int & TXGBE_E56_AN_PG_RCV) {
+		if (an_int & TXGBE_PCS_AN_PG_RCV) {
 			u8 next_page = 0;
 			u32 rdata, addr;
 
 			txgbe_e56_print_page_status(adapter, &tbkp_an73_ability,
 						    &tlpbkp_an73_ability);
+			count2++;
 			addr = base_page == 0 ? 0x70013 : 0x70019;
 			rdata = txgbe_rd32_epcs(hw, addr);
 			if (rdata & BIT(14)) {
@@ -2503,17 +2489,51 @@ static int txgbe_e56_exchange_page(struct txgbe_adapter *adapter)
 			txgbe_field_set(&rdata, 2, 2, 0x0);
 			txgbe_wr32_epcs(hw, 0x78002, rdata);
 			if (next_page == 0) {
-				if ((fsm & 0x8) == 0x8) {
-					adapter->fsm = 0x8;
+				if ((fsm & 0x8) == 0x8)
 					goto check_ability;
-				}
 			}
 		}
 		usec_delay(100);
 	}
 
 check_ability:
-	return chk_bkp_ability(adapter, tbkp_an73_ability, tlpbkp_an73_ability);
+	return txgbe_chk_bkp_ability(adapter, tbkp_an73_ability, tlpbkp_an73_ability);
+}
+
+static void txgbe_e56_get_txffe(struct txgbe_adapter *adapter)
+{
+	/* 21. read txffe to check kr training status */
+	u32 rdata = 0, pmd_ctrl = 0, lane_num = 0;
+	struct txgbe_hw *hw = &adapter->hw;
+
+	switch (adapter->bp_link_mode) {
+	case 10:
+		lane_num = 1;
+		break;
+	case 40:
+		lane_num = 4;
+		break;
+	case 25:
+		lane_num = 1;
+		break;
+	default:
+		kr_dbg(KR_MODE, "%s %d :Invalid speed\n", __func__, __LINE__);
+		break;
+	}
+
+	kr_dbg(KR_MODE, "%dG phy kr training check.... fsm: %x\n",
+	       adapter->bp_link_mode, txgbe_rd32_epcs(hw, 0x78010));
+	rdata = rd32_ephy(hw, 0x163c) & GENMASK(lane_num, 1);
+	pmd_ctrl = rd32_ephy(hw, 0x1644);
+	kr_dbg(KR_MODE, "KR TRAINNING CHECK = %x. pmd_ctrl:%lx-%lx-%lx-%lx\n",
+	       rdata,
+	       FIELD_GET_M(GENMASK(3, 0), pmd_ctrl),
+	       FIELD_GET_M(GENMASK(7, 4), pmd_ctrl),
+	       FIELD_GET_M(GENMASK(11, 8), pmd_ctrl),
+	       FIELD_GET_M(GENMASK(15, 12), pmd_ctrl));
+	kr_dbg(KR_MODE, "before: %x-%x-%x-%x\n",
+	       rd32_ephy(hw, 0x141c), rd32_ephy(hw, 0x1420),
+	       rd32_ephy(hw, 0x1424), rd32_ephy(hw, 0x1428));
 }
 
 static int txgbe_e56_cl72_trainning(struct txgbe_adapter *adapter)
@@ -2522,9 +2542,8 @@ static int txgbe_e56_cl72_trainning(struct txgbe_adapter *adapter)
 	struct txgbe_hw *hw = &adapter->hw;
 	u8 bypass_ctle = hw->bypass_ctle;
 	int status = 0, temp_data = 0;
-	u32 lane_num = 0, lane_idx = 0;
+	u32 lane_num = 0;
 	u32 pmd_ctrl = 0;
-	u32 txffe = 0;
 	int ret = 0;
 	u32 rdata;
 
@@ -2617,14 +2636,7 @@ static int txgbe_e56_cl72_trainning(struct txgbe_adapter *adapter)
 	       rd32_ephy(hw, 0x1420), rd32_ephy(hw, 0x1424),
 	       rd32_ephy(hw, 0x1428));
 
-	for (lane_idx = 0; lane_idx < lane_num; lane_idx++) {
-		txffe = rd32_ephy(hw, 0x828 + lane_idx * 0x100);
-		kr_dbg(KR_MODE, "after[%x]: %lx-%lx-%lx-%lx\n", lane_idx,
-		       FIELD_GET_M(GENMASK(6, 0), txffe),
-		       FIELD_GET_M(GENMASK(21, 16), txffe),
-		       FIELD_GET_M(GENMASK(29, 24), txffe),
-		       FIELD_GET_M(GENMASK(13, 8), txffe));
-	}
+	txgbe_e56_get_txffe(adapter);
 
 	/* 22 */
 	kr_dbg(KR_MODE, "2.7 Wait %dG phy Rx adc.... fsm:%x\n", bylinkmode,
@@ -2639,21 +2651,6 @@ static int handle_e56_bkp_an73_flow(struct txgbe_adapter *adapter)
 	struct txgbe_hw *hw = &adapter->hw;
 	int status = 0;
 	u32 rdata;
-
-	kr_dbg(KR_MODE, "2.1 Wait page changed ....\n");
-	status = txgbe_e56_exchange_page(adapter);
-	if (status) {
-		kr_dbg(KR_MODE, "Exchange page failed\n");
-		return status;
-	}
-
-	kr_dbg(KR_MODE, "2.2 Wait page changed ..done..\n");
-	txgbe_wr32_epcs(hw, 0x100ab, 0);
-
-	rdata = txgbe_rd32_epcs(hw, 0x78002);
-	kr_dbg(KR_MODE, "read 78002 data %0x and clear page int\n", rdata);
-	txgbe_field_set(&rdata, 2, 2, 0x0);
-	txgbe_wr32_epcs(hw, 0x78002, rdata);
 
 	/* 10  RXS_DISABLE - TXS_DISABLE - CMS_DISABLE */
 	/* dis phy tx/rx lane */
@@ -2714,43 +2711,68 @@ static int handle_e56_bkp_an73_flow(struct txgbe_adapter *adapter)
 	return status;
 }
 
+static void txgbe_e56_bp_watchdog_event_fw(struct txgbe_adapter *adapter)
+{
+	struct txgbe_hw *hw = &adapter->hw;
+	u32 value = 0;
+
+	/* when an disable just check mac link up is ok */
+	if (!(txgbe_xpcs_an_enabled(hw)) && !KR_MODE) {
+		kr_dbg(KR_MODE, "%s %d\n", __func__, __LINE__);
+		return;
+	}
+
+	value = txgbe_rd32_epcs(hw, 0x78002);
+	if (value & TXGBE_PCS_AN_INT_CMPLT) {
+		adapter->an_done = true;
+		adapter->flags |= TXGBE_FLAG_NEED_LINK_UPDATE;
+	}
+
+	if (value & TXGBE_PCS_AN_TXDIS)
+		adapter->an_done = false;
+
+	kr_dbg(KR_MODE,
+	       "RLU:%x MLU:%x INT:%x AN_CTL:%x an_done:%d by:%d oem: %x\n",
+	       txgbe_rd32_epcs(hw, 0x30001), rd32(hw, 0x14404), value,
+	       txgbe_rd32_epcs(hw, 0x70000), adapter->an_done,
+	       hw->bypass_ctle, hw->phy.oem_flag);
+}
+
 void txgbe_e56_bp_watchdog_event(struct txgbe_adapter *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
-	u32 rlu = 0, an_int = 0, an_int1 = 0;
+	u32 an_int = 0, value = 0;
 	struct txgbe_hw *hw = &adapter->hw;
-	u32 value = 0, fsm = 0;
+	bool exchange_done = false;
 	int ret = 0;
-
-	if (!(hw->phy.sfp_type == txgbe_sfp_type_da_cu_core0 ||
-	      hw->phy.sfp_type == txgbe_sfp_type_da_cu_core1 ||
-	      hw->phy.sfp_type == txgbe_qsfp_type_40g_cu_core0 ||
-	      hw->phy.sfp_type == txgbe_qsfp_type_40g_cu_core1 ||
-	      txgbe_is_backplane(hw)))
-		return;
 
 	/* only continue if link is down */
 	if (netif_carrier_ok(netdev))
 		return;
 
-	if (!adapter->backplane_an)
+	if (test_bit(TXGBE_FLAG_FW_CONTROL_PHY, adapter->flag)) {
+		txgbe_e56_bp_watchdog_event_fw(adapter);
+		return;
+	}
+
+	if (!(txgbe_xpcs_an_enabled(hw)))
 		return;
 
 	value = txgbe_rd32_epcs(hw, 0x78002);
 	an_int = value;
-	if (value & TXGBE_E56_AN_INT_CMPLT) {
+	if (value & TXGBE_PCS_AN_INT_CMPLT) {
 		adapter->an_done = true;
 		adapter->flags |= TXGBE_FLAG_NEED_LINK_UPDATE;
 		txgbe_field_set(&value, 0, 0, 0);
 		txgbe_wr32_epcs(hw, 0x78002, value);
 	}
 
-	if (value & TXGBE_E56_AN_INC_LINK) {
+	if (value & TXGBE_PCS_AN_INC_LINK) {
 		txgbe_field_set(&value, 1, 1, 0);
 		txgbe_wr32_epcs(hw, 0x78002, value);
 	}
 
-	if (value & TXGBE_E56_AN_TXDIS) {
+	if (value & TXGBE_PCS_AN_TXDIS) {
 		txgbe_field_set(&value, 3, 3, 0);
 		txgbe_wr32_epcs(hw, 0x78002, value);
 		mutex_lock(&adapter->e56_lock);
@@ -2759,13 +2781,23 @@ void txgbe_e56_bp_watchdog_event(struct txgbe_adapter *adapter)
 		goto an_status;
 	}
 
-	if (value & TXGBE_E56_AN_PG_RCV) {
-		kr_dbg(KR_MODE, "Enter training\n");
+	if (value & TXGBE_PCS_AN_PG_RCV) {
+		kr_dbg(KR_MODE, "2.1 *** Wait page changed ....\n");
+		ret = txgbe_e56_exchange_page(adapter);
+		if (ret) {
+			kr_dbg(KR_MODE, "2.2 *** Exchange page failed\n");
+			goto an_status;
+		} else {
+			kr_dbg(KR_MODE, "2.2 *** Wait page changed ..done..\n");
+			txgbe_wr32_epcs(hw, 0x100ab, 0);
+			exchange_done = true;
+		}
+	}
+
+	if (exchange_done) {
+		kr_dbg(KR_MODE, "2.2.2 *** Enter training\n");
 		ret = handle_e56_bkp_an73_flow(adapter);
 
-		fsm = txgbe_rd32_epcs(hw, 0x78010);
-		if (fsm & 0x8)
-			goto an_status;
 		if (ret) {
 			kr_dbg(KR_MODE, "Training FAILED, do reset\n");
 			mutex_lock(&adapter->e56_lock);
@@ -2777,15 +2809,11 @@ void txgbe_e56_bp_watchdog_event(struct txgbe_adapter *adapter)
 	}
 
 an_status:
-	an_int1 = txgbe_rd32_epcs(hw, 0x78002);
-	if (an_int1 & TXGBE_E56_AN_INT_CMPLT) {
-		adapter->an_done = true;
-		adapter->flags |= TXGBE_FLAG_NEED_LINK_UPDATE;
-	}
-	rlu = txgbe_rd32_epcs(hw, 0x30001);
 	kr_dbg(KR_MODE,
-	       "RLU:%x MLU:%x INT:%x-%x CTL:%x fsm:%x pmd_cfg0:%x an_done:%d by:%d\n",
-	       txgbe_rd32_epcs(hw, 0x30001), rd32(hw, 0x14404), an_int, an_int1,
-	       txgbe_rd32_epcs(hw, 0x70000), txgbe_rd32_epcs(hw, 0x78010),
-	       rd32_ephy(hw, 0x1400), adapter->an_done, hw->bypass_ctle);
+	       "RLU:%x-%x Link_s:%x MLU:%x INT:%x-%x CTL:%x fsm:%x pmd_cfg0:%x an_done:%d by:%d\n",
+	       txgbe_rd32_epcs(hw, 0x30001), txgbe_rd32_epcs(hw, 0x30001),
+	       rd32(hw, 0x110b0), rd32(hw, 0x14404), an_int,
+	       txgbe_rd32_epcs(hw, 0x78002), txgbe_rd32_epcs(hw, 0x70000),
+	       txgbe_rd32_epcs(hw, 0x78010), rd32_ephy(hw, 0x1400),
+	       adapter->an_done, hw->bypass_ctle);
 }

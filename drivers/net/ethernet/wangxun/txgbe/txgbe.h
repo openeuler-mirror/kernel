@@ -4,6 +4,8 @@
 #ifndef _TXGBE_H_
 #define _TXGBE_H_
 
+#include "txgbe_osdep.h"
+
 #include <net/ip.h>
 #include <linux/bitops.h>
 #include <linux/types.h>
@@ -31,6 +33,7 @@
 #endif /* CONFIG_FCOE */
 
 #include <net/xdp.h>
+#include <net/page_pool/helpers.h>
 
 #include <linux/timecounter.h>
 #include <linux/clocksource.h>
@@ -44,8 +47,18 @@
 DECLARE_STATIC_KEY_FALSE(txgbe_xdp_locking_key);
 
 /* TX/RX descriptor defines */
+#if defined(DEFAULT_TXD)
+#define TXGBE_DEFAULT_TXD               DEFAULT_TXD
+#else
 #define TXGBE_DEFAULT_TXD               1024
+#endif
+
+#if defined(DEFAULT_TX_WORK)
+#define TXGBE_DEFAULT_TX_WORK           DEFAULT_TX_WORK
+#else
 #define TXGBE_DEFAULT_TX_WORK           256
+#endif
+
 #define TXGBE_MAX_TXD                   8192
 #define TXGBE_MIN_TXD                   256
 #define TXGBE_MIN_TXD_AML               512
@@ -70,7 +83,11 @@ DECLARE_STATIC_KEY_FALSE(txgbe_xdp_locking_key);
 #define TXGBE_MIN_FCRTH                 0x600
 #define TXGBE_MAX_FCRTH                 0x7FFF0
 
+#if defined(DEFAULT_FCPAUSE)
+#define TXGBE_DEFAULT_FCPAUSE           DEFAULT_FCPAUSE
+#else
 #define TXGBE_DEFAULT_FCPAUSE           0xFFFF
+#endif
 
 #define TXGBE_MIN_FCPAUSE               0
 #define TXGBE_MAX_FCPAUSE               0xFFFF
@@ -85,6 +102,8 @@ DECLARE_STATIC_KEY_FALSE(txgbe_xdp_locking_key);
 #define TXGBE_RXBUFFER_8K       8192
 #define TXGBE_RXBUFFER_15K      15360
 #define TXGBE_MAX_RXBUFFER      16384  /* largest size for single descriptor */
+
+#define TXGBE_PAGE_POOL_RX_BUF_SIZE 4096
 
 #define TXGBE_BP_M_NULL                      0
 #define TXGBE_BP_M_SFI                       1
@@ -172,6 +191,7 @@ struct vf_data_storage {
 	int xcast_mode;
 	unsigned int vf_api;
 	u16 ft_filter_idx[TXGBE_MAX_RDB_5T_CTL0_FILTERS];
+	u16 *fdir_filter_idx;
 	u16 queue_max_tx_rate[TXGBE_VF_MAX_TX_QUEUES];
 };
 
@@ -268,6 +288,7 @@ enum txgbe_ring_state_t {
 	__TXGBE_RX_FCOE,
 #endif
 	__TXGBE_TX_DISABLED,
+	__TXGBE_RX_PAGE_POOL_ENABLED,
 };
 
 struct txgbe_fwd_adapter {
@@ -307,6 +328,13 @@ struct txgbe_fwd_adapter {
 #define clear_ring_xdp(ring) \
 	clear_bit(__TXGBE_TX_XDP_RING, &(ring)->state)
 
+#define ring_is_page_pool_enabled(ring) \
+	test_bit(__TXGBE_RX_PAGE_POOL_ENABLED, &(ring)->state)
+#define set_ring_page_pool_enabled(ring) \
+	set_bit(__TXGBE_RX_PAGE_POOL_ENABLED, &(ring)->state)
+#define clear_ring_page_pool_enabled(ring) \
+	clear_bit(__TXGBE_RX_PAGE_POOL_ENABLED, &(ring)->state)
+
 struct txgbe_ring {
 	struct txgbe_ring *next;        /* pointer to next ring in q_vector */
 	struct txgbe_q_vector *q_vector; /* backpointer to host q_vector */
@@ -314,6 +342,7 @@ struct txgbe_ring {
 	struct device *dev;             /* device for DMA mapping */
 	struct bpf_prog *xdp_prog;
 	struct txgbe_fwd_adapter *accel;
+	struct page_pool *page_pool;
 	void *desc;                     /* descriptor ring memory */
 	union {
 		struct txgbe_tx_buffer *tx_buffer_info;
@@ -475,6 +504,9 @@ static inline unsigned int txgbe_rx_bufsz(struct txgbe_ring __maybe_unused *ring
 #if (PAGE_SIZE < 8192)
 	if (ring_uses_build_skb(ring))
 		return TXGBE_MAX_2K_FRAME_BUILD_SKB;
+#else
+	if (ring_uses_build_skb(ring))
+		return TXGBE_RXBUFFER_3K;  /* for build_skb mode safety memory bound */
 #endif
 	return TXGBE_RXBUFFER_2K;
 #endif
@@ -701,17 +733,10 @@ struct txgbe_therm_proc_data {
 #define TXGBE_FLAG2_GLOBAL_RESET_REQUESTED      BIT(20)
 #define TXGBE_FLAG2_CLOUD_SWITCH_ENABLED        BIT(21)
 #define TXGBE_FLAG2_MNG_REG_ACCESS_DISABLED     BIT(22)
-#define TXGBE_FLAG2_KR_TRAINING                 BIT(24)
-#define TXGBE_FLAG2_KR_AUTO                     BIT(25)
-#define TXGBE_FLAG2_LINK_DOWN                   BIT(26)
-#define TXGBE_FLAG2_KR_PRO_DOWN                 BIT(27)
-#define TXGBE_FLAG2_KR_PRO_REINIT               BIT(28)
+#define TXGBE_FLAG2_RX_PAGE_POOL				BIT(23)
 #define TXGBE_FLAG2_ECC_ERR_RESET               BIT(29)
 #define TXGBE_FLAG2_RX_LEGACY					BIT(30)
 #define TXGBE_FLAG2_PCIE_NEED_RECOVER           BIT(31)
-
-#define TXGBE_FLAG3_PHY_EVENT                   BIT(0)
-#define TXGBE_FLAG3_TEMP_SENSOR_INPROGRESS      BIT(1)
 
 #define TXGBE_SET_FLAG(_input, _flag, _result) \
 	(((_flag) <= (_result)) ? \
@@ -726,11 +751,13 @@ enum txgbe_isb_idx {
 	TXGBE_ISB_MAX
 };
 
-#define TXGBE_PHY_FEC_RS	BIT(0)
-#define TXGBE_PHY_FEC_BASER	BIT(1)
-#define TXGBE_PHY_FEC_OFF	BIT(2)
-#define TXGBE_PHY_FEC_AUTO (TXGBE_PHY_FEC_OFF | TXGBE_PHY_FEC_BASER |\
-			   TXGBE_PHY_FEC_RS)
+enum txgbe_state_flags {
+	TXGBE_FLAG_CONTROL_RATE_LED,
+	TXGBE_FLAG_FW_CONTROL_PHY,
+	TXGBE_FLAG_TEMP_SENSOR_INPROGRESS,
+	TXGBE_FLAG_E56PHY_EVENT,
+	TXGBE_FUCTIONS_FLAGS_NBITS		/* must be last */
+};
 
 /* board specific private data structure */
 struct txgbe_adapter {
@@ -742,31 +769,25 @@ struct txgbe_adapter {
 	struct pci_dev *pdev;
 
 	unsigned long state;
+	DECLARE_BITMAP(flag, TXGBE_FUCTIONS_FLAGS_NBITS);
 	u32 bp_link_mode;
-	u32 curbp_link_mode;
 	/* Some features need tri-state capability,
 	 * thus the additional *_CAPABLE flags.
 	 */
 	u32 flags;
 	u32 flags2;
-	u32 flags3;
 	u8 tx_unidir_mode;
-	u8  an73_mode;
 	u8  backplane_an;
-	u8  an73;
 	u8  autoneg;
-	u16 ffe_main;
-	u16 ffe_pre;
-	u16 ffe_post;
+	u32 ffe_main;
+	u32 ffe_pre1;
+	u32 ffe_pre2;
+	u32 ffe_post;
 	u8  ffe_set;
 	u16 fec_mode;
 	u8  backplane_mode;
 	u8  backplane_auto;
-	struct phytxeq aml_txeq;
 	bool an_done;
-	u32 fsm;
-
-	bool cloud_mode;
 
 	/* Tx fast path data */
 	int num_tx_queues;
@@ -854,11 +875,16 @@ struct txgbe_adapter {
 	/* mutex for amblite phy access */
 	struct mutex e56_lock;
 
+	/* workqueue for per func */
+	struct workqueue_struct *txgbe_wq;
+
 	struct timer_list service_timer;
 	struct timer_list irq_timer;
 	struct work_struct service_task;
 	struct work_struct sfp_sta_task;
 	struct work_struct temp_task;
+	struct timer_list pcie_recover_timer;
+	struct work_struct pcie_recover_task;
 	struct hlist_head fdir_filter_list;
 	unsigned long fdir_overflow; /* number of times ATR was backed off */
 	union txgbe_atr_input fdir_mask;
@@ -882,7 +908,6 @@ struct txgbe_adapter {
 
 	u16 bridge_mode;
 
-	u8 fec_link_mode;
 	u8 cur_fec_link;
 	bool link_valid;
 	u32 etrack_id;
@@ -897,7 +922,7 @@ struct txgbe_adapter {
 	struct ptp_clock_info ptp_caps;
 	struct work_struct ptp_tx_work;
 	struct sk_buff *ptp_tx_skb;
-	struct hwtstamp_config tstamp_config;
+	struct kernel_hwtstamp_config tstamp_config;
 	unsigned long ptp_tx_start;
 	unsigned long last_overflow_check;
 	unsigned long last_rx_ptp_check;
@@ -923,6 +948,7 @@ struct txgbe_adapter {
 	int vf_rate_link_speed;
 	struct vf_macvlans vf_mvs;
 	struct vf_macvlans *mv_list;
+	bool notify_down;
 #ifdef CONFIG_PCI_IOV
 	u32 timer_event_accumulator;
 	u32 vferr_refcount;
@@ -956,6 +982,8 @@ struct txgbe_adapter {
 	u64 eth_priv_flags;
 #define TXGBE_ETH_PRIV_FLAG_LLDP		BIT(0)
 #define TXGBE_ETH_PRIV_FLAG_LEGACY_RX	BIT(1)
+#define TXGBE_ETH_PRIV_FLAG_PAGE_POOL	BIT(2)
+#define TXGBE_ETH_PRIV_FLAG_LINK_DOWN_ON_CLOSE	BIT(3)
 
 	/* AF_XDP zero-copy */
 	struct xsk_buff_pool **xsk_pools;
@@ -985,14 +1013,11 @@ static inline u32 txgbe_misc_isb(struct txgbe_adapter *adapter,
 				 enum txgbe_isb_idx idx)
 {
 	u32 cur_tag = 0;
-	u32 cur_diff = 0;
 
 	cur_tag = adapter->isb_mem[TXGBE_ISB_HEADER];
-	cur_diff = cur_tag - adapter->isb_tag[idx];
-
 	adapter->isb_tag[idx] = cur_tag;
 
-	return adapter->isb_mem[idx];
+	return (__force u32)cpu_to_le32(adapter->isb_mem[idx]);
 }
 
 static inline u8 txgbe_max_rss_indices(struct txgbe_adapter *adapter)
@@ -1007,6 +1032,7 @@ struct txgbe_fdir_filter {
 	union txgbe_atr_input filter;
 	u16 sw_idx;
 	u64 action;
+	u16 flex_offset;
 };
 
 enum txgbe_state_t {
@@ -1022,6 +1048,7 @@ enum txgbe_state_t {
 	__TXGBE_PTP_RUNNING,
 	__TXGBE_PTP_TX_IN_PROGRESS,
 	__TXGBE_SWFW_BUSY,
+	__TXGBE_PCIE_RECOVERY_IN_PROGRESS,
 };
 
 struct txgbe_cb {
@@ -1034,10 +1061,6 @@ struct txgbe_cb {
 
 #define TXGBE_CB(skb) ((struct txgbe_cb *)(skb)->cb)
 
-#define TXGBE_1588_PPS_WIDTH 100
-#define TXGBE_1588_TOD_ENABLE 1
-#define TXGBE_1588_PPS_LEVEL 1
-
 /* ESX txgbe CIM IOCTL definition */
 void txgbe_sysfs_exit(struct txgbe_adapter *adapter);
 int txgbe_sysfs_init(struct txgbe_adapter *adapter);
@@ -1048,7 +1071,6 @@ int txgbe_copy_dcb_cfg(struct txgbe_adapter *adapter, int tc_max);
 u8 txgbe_dcb_txq_to_tc(struct txgbe_adapter *adapter, u8 index);
 
 /* needed by txgbe_main.c */
-int txgbe_validate_mac_addr(u8 *mc_addr);
 void txgbe_check_options(struct txgbe_adapter *adapter);
 void txgbe_assign_netdev_ops(struct net_device *netdev);
 
@@ -1146,7 +1168,7 @@ static inline struct netdev_queue *txring_txq(const struct txgbe_ring *ring)
 }
 
 #if IS_ENABLED(CONFIG_DCB)
-s32 txgbe_dcb_hw_ets(struct txgbe_hw *hw, struct ieee_ets *ets, int max_frame);
+int txgbe_dcb_hw_ets(struct txgbe_hw *hw, struct ieee_ets *ets, int max_frame);
 #endif /* CONFIG_DCB */
 
 int txgbe_wol_supported(struct txgbe_adapter *adapter);
@@ -1166,8 +1188,11 @@ void txgbe_ptp_suspend(struct txgbe_adapter *adapter);
 void txgbe_ptp_overflow_check(struct txgbe_adapter *adapter);
 void txgbe_ptp_rx_hang(struct txgbe_adapter *adapter);
 void txgbe_ptp_rx_hwtstamp(struct txgbe_adapter *adapter, struct sk_buff *skb);
-int txgbe_ptp_set_ts_config(struct txgbe_adapter *adapter, struct ifreq *ifr);
-int txgbe_ptp_get_ts_config(struct txgbe_adapter *adapter, struct ifreq *ifr);
+int txgbe_ptp_hwtstamp_get(struct net_device *netdev,
+			   struct kernel_hwtstamp_config *config);
+int txgbe_ptp_hwtstamp_set(struct net_device *netdev,
+			   struct kernel_hwtstamp_config *config,
+			   struct netlink_ext_ack *extack);
 void txgbe_ptp_start_cyclecounter(struct txgbe_adapter *adapter);
 void txgbe_ptp_reset(struct txgbe_adapter *adapter);
 void txgbe_ptp_check_pps_event(struct txgbe_adapter *adapter);
@@ -1197,6 +1222,10 @@ int txgbe_find_nth_limited_vlan(struct txgbe_adapter *adapter, int vlan);
 void txgbe_del_vlan_limit(struct txgbe_adapter *adapter, int vlan);
 void txgbe_set_vlan_limit(struct txgbe_adapter *adapter, int vlan, int rate_limit);
 void txgbe_check_vlan_rate_limit(struct txgbe_adapter *adapter);
+int txgbe_add_ethtool_fdir_entry(struct txgbe_adapter *adapter,
+				 struct ethtool_rxnfc *cmd);
+int txgbe_del_ethtool_fdir_entry(struct txgbe_adapter *adapter,
+				 struct ethtool_rxnfc *cmd);
 
 /**
  * interrupt masking operations. each bit in PX_ICn correspond to a interrupt.
@@ -1279,6 +1308,8 @@ struct txgbe_msg *txgbe_hw_to_msg(const struct txgbe_hw *hw);
 	netdev_dbg(txgbe_hw_to_netdev(hw), format, ## arg)
 #define hw_err(hw, format, arg...) \
 	netdev_err(txgbe_hw_to_netdev(hw), format, ## arg)
+#define hw_info(hw, format, arg...) \
+	netdev_info(txgbe_hw_to_netdev(hw), format, ## arg)
 #define e_dev_info(format, arg...) \
 	dev_info(pci_dev_to_dev(adapter->pdev), format, ## arg)
 #define e_dev_warn(format, arg...) \

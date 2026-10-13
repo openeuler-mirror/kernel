@@ -14,16 +14,8 @@
 #define TXGBE_VF_LINK_STATE_ENABLE 2
 
 void txgbe_restore_vf_multicasts(struct txgbe_adapter *adapter);
-int txgbe_set_vf_vlan(struct txgbe_adapter *adapter, int add, int vid, u16 vf);
-void txgbe_set_vmolr(struct txgbe_hw *hw, u16 vf, bool aupe);
 void txgbe_msg_task(struct txgbe_adapter *adapter);
-int txgbe_set_vf_mac(struct txgbe_adapter *adapter,
-		     u16 vf, unsigned char *mac_addr);
-void txgbe_disable_tx_rx(struct txgbe_adapter *adapter);
-void txgbe_ping_all_vfs(struct txgbe_adapter *adapter);
 void txgbe_ping_all_vfs_with_link_status(struct txgbe_adapter *adapter, bool link_up);
-void txgbe_ping_vf_with_link_status(struct txgbe_adapter *adapter, bool link_up, u16 vf);
-int txgbe_trans_vf_link_state(int state);
 void txgbe_set_all_vfs(struct txgbe_adapter *adapter);
 
 int txgbe_ndo_set_vf_mac(struct net_device *netdev, int queue, u8 *mac);
@@ -49,7 +41,5 @@ void txgbe_enable_sriov(struct txgbe_adapter *adapter);
 #endif
 int txgbe_pci_sriov_configure(struct pci_dev *dev, int num_vfs);
 void txgbe_check_vf_rate_limit(struct txgbe_adapter *adapter);
-void txgbe_set_vf_link_state(struct txgbe_adapter *adapter, int vf, int state);
-#define TXGBE_DEV_ID_SP_VF                      0x1000
 #endif /* _TXGBE_SRIOV_H_ */
 

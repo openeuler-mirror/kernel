@@ -25,9 +25,10 @@ static int __txgbe_enable_sriov(struct txgbe_adapter *adapter,
 				unsigned int num_vfs)
 {
 	struct txgbe_hw *hw = &adapter->hw;
-	int num_vf_macvlans, i;
+	int num_vf_macvlans, i, j;
 	struct vf_macvlans *mv_list;
 	u32 value = 0;
+	u16 fdir_max = (1024 << adapter->fdir_pballoc) - 2;
 
 	adapter->flags |= TXGBE_FLAG_SRIOV_ENABLED;
 	e_dev_info("SR-IOV enabled with %d VFs\n", num_vfs);
@@ -122,6 +123,15 @@ static int __txgbe_enable_sriov(struct txgbe_adapter *adapter,
 
 		/* set the default xcast mode */
 		adapter->vfinfo[i].xcast_mode = TXGBEVF_XCAST_MODE_NONE;
+
+		/* set the default unavailable fdir filter index */
+		adapter->vfinfo[i].fdir_filter_idx = kcalloc(fdir_max,
+							     sizeof(u16),
+							     GFP_KERNEL);
+		if (!adapter->vfinfo[i].fdir_filter_idx)
+			return -ENOMEM;
+		for (j = 0; j < fdir_max; j++)
+			adapter->vfinfo[i].fdir_filter_idx[j] = 0x1FFF;
 	}
 
 	return 0;
@@ -189,7 +199,7 @@ static void txgbe_get_vfs(struct txgbe_adapter *adapter)
 }
 
 /**
- * txgbe_pet_vfs - Release references to all vf devices
+ * txgbe_put_vfs - Release references to all vf devices
  * @adapter: Pointer to adapter struct
  */
 static void txgbe_put_vfs(struct txgbe_adapter *adapter)
@@ -273,19 +283,10 @@ void txgbe_enable_sriov(struct txgbe_adapter *adapter)
 int txgbe_disable_sriov(struct txgbe_adapter *adapter)
 {
 	struct txgbe_hw *hw = &adapter->hw;
+	int i;
 
-#ifdef CONFIG_PCI_IOV
-	/* If our VFs are assigned we cannot shut down SR-IOV
-	 * without causing issues, so just leave the hardware
-	 * available but disabled
-	 */
-	if (pci_vfs_assigned(adapter->pdev)) {
-		e_dev_warn("Unloading driver while VFs are assigned VFs will not be deallocated\n");
-		return -EPERM;
-	}
-	/* disable iov and allow time for transactions to clear */
-	pci_disable_sriov(adapter->pdev);
-#endif
+	for (i = 0; i < adapter->num_vfs; i++)
+		kfree(adapter->vfinfo[i].fdir_filter_idx);
 
 	/* set num VFs to 0 to prevent access to vfinfo */
 	adapter->num_vfs = 0;
@@ -302,6 +303,19 @@ int txgbe_disable_sriov(struct txgbe_adapter *adapter)
 	/* free macvlan list */
 	kfree(adapter->mv_list);
 	adapter->mv_list = NULL;
+
+#ifdef CONFIG_PCI_IOV
+	/* If our VFs are assigned we cannot shut down SR-IOV
+	 * without causing issues, so just leave the hardware
+	 * available but disabled
+	 */
+	if (pci_vfs_assigned(adapter->pdev)) {
+		e_dev_warn("Unloading driver while VFs are assigned VFs will not be deallocated\n");
+		return -EPERM;
+	}
+	/* disable iov and allow time for transactions to clear */
+	pci_disable_sriov(adapter->pdev);
+#endif
 
 	/* if SR-IOV is already disabled then there is nothing to do */
 	if (!(adapter->flags & TXGBE_FLAG_SRIOV_ENABLED))
@@ -398,7 +412,7 @@ void txgbe_restore_vf_multicasts(struct txgbe_adapter *adapter)
 	txgbe_full_sync_mac_table(adapter);
 }
 
-int txgbe_set_vf_vlan(struct txgbe_adapter *adapter, int add, int vid, u16 vf)
+static int txgbe_set_vf_vlan(struct txgbe_adapter *adapter, int add, int vid, u16 vf)
 {
 	struct txgbe_hw *hw = &adapter->hw;
 
@@ -422,7 +436,7 @@ static int txgbe_set_vf_lpe(struct txgbe_adapter *adapter, u32 max_frame,
 	 * account before we can enable the VF for receive
 	 */
 	u32 reg_offset, vf_shift, vfre;
-	s32 err = 0;
+	int err = 0;
 
 	/* determine VF receive enable location */
 	vf_shift = vf % 32;
@@ -454,11 +468,11 @@ static int txgbe_set_vf_lpe(struct txgbe_adapter *adapter, u32 max_frame,
 	return 0;
 }
 
-void txgbe_set_vmolr(struct txgbe_hw *hw, u16 vf, bool aupe)
+static void txgbe_set_vmolr(struct txgbe_hw *hw, u16 vf, bool aupe)
 {
 	u32 vmolr = rd32(hw, TXGBE_PSR_VM_L2CTL(vf));
 
-	vmolr |=  TXGBE_PSR_VM_L2CTL_BAM;
+	vmolr &= ~TXGBE_PSR_VM_L2CTL_VACC;
 	if (aupe)
 		vmolr |= TXGBE_PSR_VM_L2CTL_AUPE;
 	else
@@ -524,10 +538,10 @@ static inline void txgbe_vf_reset_event(struct txgbe_adapter *adapter, u16 vf)
 	adapter->vfinfo[vf].vf_api = txgbe_mbox_api_10;
 }
 
-int txgbe_set_vf_mac(struct txgbe_adapter *adapter,
-		     u16 vf, unsigned char *mac_addr)
+static int txgbe_set_vf_mac(struct txgbe_adapter *adapter,
+			    u16 vf, unsigned char *mac_addr)
 {
-	s32 retval = 0;
+	int retval = 0;
 
 	txgbe_del_mac_filter(adapter, adapter->vfinfo[vf].vf_mac_addresses, vf);
 	retval = txgbe_add_mac_filter(adapter, mac_addr, vf);
@@ -552,6 +566,7 @@ static int txgbe_negotiate_vf_api(struct txgbe_adapter *adapter,
 	case txgbe_mbox_api_13:
 	case txgbe_mbox_api_21:
 	case txgbe_mbox_api_22:
+	case txgbe_mbox_api_23:
 		adapter->vfinfo[vf].vf_api = api;
 		return 0;
 	default:
@@ -573,6 +588,7 @@ static int txgbe_get_vf_queues(struct txgbe_adapter *adapter,
 
 	/* verify the PF is supporting the correct APIs */
 	switch (adapter->vfinfo[vf].vf_api) {
+	case txgbe_mbox_api_23:
 	case txgbe_mbox_api_22:
 	case txgbe_mbox_api_21:
 	case txgbe_mbox_api_20:
@@ -611,7 +627,7 @@ static int txgbe_set_vf_macvlan(struct txgbe_adapter *adapter,
 {
 	struct list_head *pos;
 	struct vf_macvlans *entry;
-	s32 retval = 0;
+	int retval = 0;
 
 	if (index <= 1) {
 		list_for_each(pos, &adapter->vf_mvs.l) {
@@ -821,7 +837,7 @@ static int txgbe_set_vf_mac_addr(struct txgbe_adapter *adapter,
 static int txgbe_find_vlvf_entry(struct txgbe_hw *hw, u32 vlan)
 {
 	u32 vlvf;
-	s32 regindex;
+	int regindex;
 
 	/* short cut the special case */
 	if (vlan == 0)
@@ -885,7 +901,7 @@ static int txgbe_set_vf_vlan_msg(struct txgbe_adapter *adapter,
 	 */
 	if (!add && adapter->netdev->flags & IFF_PROMISC) {
 		u32 bits, vlvf;
-		s32 reg_ndx;
+		int reg_ndx;
 
 		reg_ndx = txgbe_find_vlvf_entry(hw, vid);
 		if (reg_ndx < 0)
@@ -976,6 +992,7 @@ static int txgbe_update_vf_xcast_mode(struct txgbe_adapter *adapter,
 	case txgbe_mbox_api_20:
 	case txgbe_mbox_api_21:
 	case txgbe_mbox_api_22:
+	case txgbe_mbox_api_23:
 		break;
 	default:
 		return -EOPNOTSUPP;
@@ -991,23 +1008,23 @@ static int txgbe_update_vf_xcast_mode(struct txgbe_adapter *adapter,
 
 	switch (xcast_mode) {
 	case TXGBEVF_XCAST_MODE_NONE:
-		disable = TXGBE_PSR_VM_L2CTL_BAM | TXGBE_PSR_VM_L2CTL_ROMPE |
+		disable = TXGBE_PSR_VM_L2CTL_ROMPE |
 			  TXGBE_PSR_VM_L2CTL_MPE | TXGBE_PSR_VM_L2CTL_UPE | TXGBE_PSR_VM_L2CTL_VPE;
-		enable = 0;
+		enable = TXGBE_PSR_VM_L2CTL_BAM;
 		break;
 	case TXGBEVF_XCAST_MODE_MULTI:
 		disable = TXGBE_PSR_VM_L2CTL_MPE | TXGBE_PSR_VM_L2CTL_UPE | TXGBE_PSR_VM_L2CTL_VPE;
 		enable = TXGBE_PSR_VM_L2CTL_BAM | TXGBE_PSR_VM_L2CTL_ROMPE;
 		break;
 	case TXGBEVF_XCAST_MODE_ALLMULTI:
-		disable = TXGBE_PSR_VM_L2CTL_UPE;
+		disable = TXGBE_PSR_VM_L2CTL_UPE | TXGBE_PSR_VM_L2CTL_VPE;
 		enable = TXGBE_PSR_VM_L2CTL_BAM | TXGBE_PSR_VM_L2CTL_ROMPE |
-			 TXGBE_PSR_VM_L2CTL_MPE | TXGBE_PSR_VM_L2CTL_VPE;
+			 TXGBE_PSR_VM_L2CTL_MPE;
 		break;
 	case TXGBEVF_XCAST_MODE_PROMISC:
-		disable = 0;
+		disable = TXGBE_PSR_VM_L2CTL_VPE;
 		enable = TXGBE_PSR_VM_L2CTL_BAM | TXGBE_PSR_VM_L2CTL_ROMPE |
-			 TXGBE_PSR_VM_L2CTL_MPE | TXGBE_PSR_VM_L2CTL_UPE | TXGBE_PSR_VM_L2CTL_VPE;
+			 TXGBE_PSR_VM_L2CTL_MPE | TXGBE_PSR_VM_L2CTL_UPE;
 		break;
 	default:
 		return -EOPNOTSUPP;
@@ -1037,6 +1054,7 @@ static int txgbe_get_vf_link_state(struct txgbe_adapter *adapter,
 	case txgbe_mbox_api_13:
 	case txgbe_mbox_api_21:
 	case txgbe_mbox_api_22:
+	case txgbe_mbox_api_23:
 		break;
 	default:
 		return -EOPNOTSUPP;
@@ -1058,6 +1076,7 @@ static int txgbe_get_fw_version(struct txgbe_adapter *adapter,
 	case txgbe_mbox_api_13:
 	case txgbe_mbox_api_21:
 	case txgbe_mbox_api_22:
+	case txgbe_mbox_api_23:
 		break;
 	default:
 		return -EOPNOTSUPP;
@@ -1093,6 +1112,7 @@ static int txgbe_add_5tuple_filter_vf(struct txgbe_adapter *adapter,
 	}
 	if (sw_idx >= TXGBE_MAX_RDB_5T_CTL0_FILTERS) {
 		e_err(drv, "5tuple filters are full.\n");
+		msgbuf[0] |= TXGBE_VT_MSGTYPE_SPEC;
 		return -EINVAL;
 	}
 
@@ -1155,12 +1175,131 @@ static int txgbe_set_5tuple_filter_vf(struct txgbe_adapter *adapter,
 	return 0;
 }
 
+static int txgbe_add_fdir_filter_vf(struct txgbe_adapter *adapter,
+				    u32 *msgbuf, u32 vf)
+{
+	struct ethtool_rxnfc rxnfc = { 0 };
+	struct ethtool_rx_flow_spec *fsp;
+	u16 index, sw_idx;
+	u8 flow_type;
+	int err = 0;
+
+	fsp = &rxnfc.fs;
+
+	/* ring index */
+	fsp->ring_cookie = (msgbuf[TXGBEVF_FDIR_CMD] >> 16) & 0xFF;
+	fsp->ring_cookie |= ((u64)(vf + 1) << ETHTOOL_RX_FLOW_SPEC_RING_VF_OFF) &
+			    ETHTOOL_RX_FLOW_SPEC_RING_VF;
+
+	/* filter index */
+	sw_idx = (1024 << adapter->fdir_pballoc) - 3;
+	sw_idx -= adapter->etype_filter_info.count;
+	sw_idx -= adapter->fdir_filter_count;
+	fsp->location = sw_idx;
+
+	/* flow type */
+	flow_type = (msgbuf[TXGBEVF_FDIR_CMD] & GENMASK(30, 24)) >> 24;
+	switch (flow_type) {
+	case TXGBE_ATR_FLOW_TYPE_TCPV4:
+		fsp->flow_type = TCP_V4_FLOW;
+		break;
+	case TXGBE_ATR_FLOW_TYPE_UDPV4:
+		fsp->flow_type = UDP_V4_FLOW;
+		break;
+	case TXGBE_ATR_FLOW_TYPE_SCTPV4:
+		fsp->flow_type = SCTP_V4_FLOW;
+		break;
+	case TXGBE_ATR_FLOW_TYPE_IPV4:
+		fsp->flow_type = IP_USER_FLOW;
+		fsp->h_u.usr_ip4_spec.proto = 0;
+		fsp->m_u.usr_ip4_spec.proto = 0;
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	/* rule format */
+	fsp->h_u.tcp_ip4_spec.ip4src = msgbuf[TXGBEVF_FDIR_IP4SA];
+	fsp->h_u.tcp_ip4_spec.ip4dst = msgbuf[TXGBEVF_FDIR_IP4DA];
+	fsp->h_u.tcp_ip4_spec.psrc = msgbuf[TXGBEVF_FDIR_PORT] & 0xFFFF;
+	fsp->h_u.tcp_ip4_spec.pdst = msgbuf[TXGBEVF_FDIR_PORT] >> 16;
+	fsp->m_u.tcp_ip4_spec.ip4src = msgbuf[TXGBEVF_FDIR_IP4SM];
+	fsp->m_u.tcp_ip4_spec.ip4dst = msgbuf[TXGBEVF_FDIR_IP4DM];
+	fsp->m_u.tcp_ip4_spec.psrc = msgbuf[TXGBEVF_FDIR_PORTM] & 0xFFFF;
+	fsp->m_u.tcp_ip4_spec.pdst = msgbuf[TXGBEVF_FDIR_PORTM] >> 16;
+
+	/* flex bytes not supported yet*/
+	if (msgbuf[TXGBEVF_FDIR_FLEX] >> 16)
+		return -EOPNOTSUPP;
+
+	err = txgbe_add_ethtool_fdir_entry(adapter, &rxnfc);
+	if (err)
+		return err;
+
+	index = msgbuf[TXGBEVF_FDIR_CMD] & 0xFFFF;
+	adapter->vfinfo[vf].fdir_filter_idx[index] = sw_idx;
+
+	return 0;
+}
+
+static int txgbe_del_fdir_filter_vf(struct txgbe_adapter *adapter,
+				    u32 *msgbuf, u32 vf)
+{
+	u16 fdir_max = (1024 << adapter->fdir_pballoc) - 2;
+	struct ethtool_rxnfc rxnfc = { 0 };
+	u16 index, sw_idx;
+	int err = 0;
+
+	/* delete all enties */
+	if (msgbuf[TXGBEVF_FDIR_CMD] & BIT(16)) {
+		for (index = 0; index < fdir_max; index++) {
+			sw_idx = adapter->vfinfo[vf].fdir_filter_idx[index];
+			if (sw_idx == 0x1FFF)
+				continue;
+			adapter->vfinfo[vf].fdir_filter_idx[index] = 0x1FFF;
+			rxnfc.fs.location = sw_idx;
+			err += txgbe_del_ethtool_fdir_entry(adapter, &rxnfc);
+		}
+		if (err)
+			e_err(drv,
+			      "VF %d flush FDIR failed, please manually delete them\n", vf);
+		return 0;
+	}
+
+	index = msgbuf[TXGBEVF_FDIR_CMD] & 0xFFFF;
+	sw_idx = adapter->vfinfo[vf].fdir_filter_idx[index];
+	rxnfc.fs.location = sw_idx;
+
+	err = txgbe_del_ethtool_fdir_entry(adapter, &rxnfc);
+	if (!err)
+		adapter->vfinfo[vf].fdir_filter_idx[index] = 0x1FFF;
+
+	return err;
+}
+
+static int txgbe_set_fdir_filter_vf(struct txgbe_adapter *adapter,
+				    u32 *msgbuf, u32 vf)
+{
+	u32 cmd = msgbuf[TXGBEVF_FDIR_CMD];
+	bool add;
+
+	/* verify the PF is supporting the correct API */
+	if (adapter->vfinfo[vf].vf_api < txgbe_mbox_api_23)
+		return -EOPNOTSUPP;
+
+	add = !!(cmd & BIT(31));
+	if (add)
+		return txgbe_add_fdir_filter_vf(adapter, msgbuf, vf);
+
+	return txgbe_del_fdir_filter_vf(adapter, msgbuf, vf);
+}
+
 static int txgbe_rcv_msg_from_vf(struct txgbe_adapter *adapter, u16 vf)
 {
 	u16 mbx_size = TXGBE_VXMAILBOX_SIZE;
 	u32 msgbuf[TXGBE_VXMAILBOX_SIZE];
 	struct txgbe_hw *hw = &adapter->hw;
-	s32 retval;
+	int retval;
 
 	retval = txgbe_read_mbx(hw, msgbuf, mbx_size, vf);
 
@@ -1227,6 +1366,9 @@ static int txgbe_rcv_msg_from_vf(struct txgbe_adapter *adapter, u16 vf)
 	case TXGBE_VF_SET_5TUPLE:
 		retval = txgbe_set_5tuple_filter_vf(adapter, msgbuf, vf);
 		break;
+	case TXGBE_VF_SET_FDIR:
+		retval = txgbe_set_fdir_filter_vf(adapter, msgbuf, vf);
+		break;
 	case TXGBE_VF_QUEUE_RATE_LIMIT:
 		retval = txgbe_set_queue_rate_limit_vf(adapter, msgbuf, vf);
 		break;
@@ -1284,58 +1426,17 @@ void txgbe_msg_task(struct txgbe_adapter *adapter)
 	}
 }
 
-void txgbe_disable_tx_rx(struct txgbe_adapter *adapter)
-{
-	struct txgbe_hw *hw = &adapter->hw;
-
-	/* disable transmit and receive for all vfs */
-	wr32(hw, TXGBE_TDM_VF_TE(0), 0);
-	wr32(hw, TXGBE_TDM_VF_TE(1), 0);
-
-	wr32(hw, TXGBE_RDM_VF_RE(0), 0);
-	wr32(hw, TXGBE_RDM_VF_RE(1), 0);
-}
-
 static inline void txgbe_ping_vf(struct txgbe_adapter *adapter, int vf)
 {
 	struct txgbe_hw *hw = &adapter->hw;
-	u32 ping;
+	u32 ping[2] = {0, 0};
 
-	ping = TXGBE_PF_CONTROL_MSG;
+	ping[0] = TXGBE_PF_CONTROL_MSG;
+	if (adapter->notify_down)
+		ping[1] |= TXGBE_PF_NOFITY_VF_NET_NOT_RUNNING;
 	if (adapter->vfinfo[vf].clear_to_send)
-		ping |= TXGBE_VT_MSGTYPE_CTS;
-	txgbe_write_mbx(hw, &ping, 1, vf);
-}
-
-void txgbe_ping_all_vfs(struct txgbe_adapter *adapter)
-{
-	struct txgbe_hw *hw = &adapter->hw;
-	u32 ping;
-	u16 i;
-
-	for (i = 0 ; i < adapter->num_vfs; i++) {
-		ping = TXGBE_PF_CONTROL_MSG;
-		if (adapter->vfinfo[i].clear_to_send)
-			ping |= TXGBE_VT_MSGTYPE_CTS;
-		txgbe_write_mbx(hw, &ping, 1, i);
-	}
-}
-
-void txgbe_ping_vf_with_link_status(struct txgbe_adapter *adapter, bool link_up, u16 vf)
-{
-	struct txgbe_hw *hw = &adapter->hw;
-	u32 msgbuf[2] = {0, 0};
-
-	if (vf > adapter->num_vfs)
-		return;
-
-	msgbuf[0] = TXGBE_PF_NOFITY_VF_LINK_STATUS | TXGBE_PF_CONTROL_MSG;
-	msgbuf[1] = (adapter->speed << 1) | link_up;
-	//if (adapter->notify_down)
-	//	msgbuf[1] |= TXGBE_PF_NOFITY_VF_NET_NOT_RUNNING;
-	if (adapter->vfinfo[vf].clear_to_send)
-		msgbuf[0] |= TXGBE_VT_MSGTYPE_CTS;
-	txgbe_write_mbx(hw, msgbuf, 2, vf);
+		ping[0] |= TXGBE_VT_MSGTYPE_CTS;
+	txgbe_write_mbx(hw, ping, 2, vf);
 }
 
 void txgbe_ping_all_vfs_with_link_status(struct txgbe_adapter *adapter, bool link_up)
@@ -1349,7 +1450,7 @@ void txgbe_ping_all_vfs_with_link_status(struct txgbe_adapter *adapter, bool lin
 
 	msgbuf[0] = TXGBE_PF_NOFITY_VF_LINK_STATUS | TXGBE_PF_CONTROL_MSG;
 	if (link_up)
-		msgbuf[1] = (adapter->speed << 1) | link_up;
+		msgbuf[1] = (hw->phy.link_info.link_speed << 1) | link_up;
 	//if (adapter->notify_down)
 	//	msgbuf[1] |= TXGBE_PF_NOFITY_VF_NET_NOT_RUNNING;
 	for (i = 0 ; i < adapter->num_vfs; i++) {
@@ -1357,6 +1458,48 @@ void txgbe_ping_all_vfs_with_link_status(struct txgbe_adapter *adapter, bool lin
 			msgbuf[0] |= TXGBE_VT_MSGTYPE_CTS;
 		txgbe_write_mbx(hw, msgbuf, 2, i);
 	}
+}
+
+/**
+ * txgbe_set_vf_link_state - Set link state
+ * @adapter: Pointer to adapter struct
+ * @vf: VF identifier
+ * @state: required link state
+ *
+ * Set a link force state on/off a single vf
+ **/
+static void txgbe_set_vf_link_state(struct txgbe_adapter *adapter, int vf, int state)
+{
+	bool link_up = adapter->link_up;
+
+	adapter->vfinfo[vf].link_state = state;
+
+	switch (state) {
+	case TXGBE_VF_LINK_STATE_AUTO:
+		if (test_bit(__TXGBE_DOWN, &adapter->state)) {
+			adapter->vfinfo[vf].link_enable = false;
+		} else {
+			link_up = adapter->link_up;
+			adapter->vfinfo[vf].link_enable = true;
+		}
+		break;
+	case TXGBE_VF_LINK_STATE_ENABLE:
+		adapter->vfinfo[vf].link_enable = true;
+		link_up = true;
+		break;
+	case TXGBE_VF_LINK_STATE_DISABLE:
+		adapter->vfinfo[vf].link_enable = false;
+		link_up = false;
+		break;
+	}
+
+	/* restart the VF */
+	adapter->vfinfo[vf].clear_to_send = false;
+	txgbe_ping_vf(adapter, vf);
+
+	//txgbe_ping_vf_with_link_status(adapter, link_up, vf);
+
+	txgbe_set_vf_rx_tx(adapter, vf);
 }
 
 /**
@@ -1485,7 +1628,7 @@ int txgbe_pci_sriov_configure(struct pci_dev *dev, int num_vfs)
 
 int txgbe_ndo_set_vf_mac(struct net_device *netdev, int vf, u8 *mac)
 {
-	s32 retval = 0;
+	int retval = 0;
 	struct txgbe_adapter *adapter = netdev_priv(netdev);
 
 	if (vf < 0 || vf >= adapter->num_vfs)
@@ -1662,6 +1805,8 @@ static void txgbe_set_vf_rate_limit(struct txgbe_adapter *adapter, int vf)
 	int link_speed;
 	u16 queue, queues_per_pool;
 	u16 max_tx_rate = adapter->vfinfo[vf].max_tx_rate;
+	u32 adjusted_max_tx_rate;
+	u32 tdm_adj_value;
 
 	/* determine how many queues per pool based on VMDq mask */
 	queues_per_pool = __ALIGN_MASK(1, ~vmdq->mask);
@@ -1676,11 +1821,23 @@ static void txgbe_set_vf_rate_limit(struct txgbe_adapter *adapter, int vf)
 		if (max_tx_rate) {
 			u16 frac;
 
-			link_speed = adapter->vf_rate_link_speed / 1000 * 1024;
+			/* Step 1
+			 *   Config csr_rl_adj as (16 - target_speed / clk) bytes,
+			 *   where Amber-Lite clk = 400 MHz, SP clk = 156.25 MHz.
+			 */
+			tdm_adj_value = 16 - max_tx_rate / TXGBE_TDM_CLK_BYTE_AML;
+			wr32(hw, TXGBE_TDM_RL_ADJ_AML, tdm_adj_value);
+
+			/* Step 2.
+			 *   Adjust target_speed by a factor of 0.975 to config
+			 *   RL frac register.
+			 */
+			link_speed = adapter->vf_rate_link_speed;
+			adjusted_max_tx_rate = (max_tx_rate * 39) / 40;
 
 			/* Calculate the rate factor values to set */
-			factor_int = link_speed / max_tx_rate;
-			frac = (link_speed % max_tx_rate) * 10000 / max_tx_rate;
+			factor_int = link_speed / adjusted_max_tx_rate;
+			frac = (link_speed % adjusted_max_tx_rate) * 10000 / adjusted_max_tx_rate;
 			factor_fra = txgbe_frac_to_bi(frac, 10000, 14);
 
 			wr32(hw, TXGBE_TDM_RL_VM_IDX, vf);
@@ -1698,8 +1855,12 @@ static void txgbe_set_vf_rate_limit(struct txgbe_adapter *adapter, int vf)
 			      TXGBE_TDM_RL_EN, 0);
 		}
 	} else {
-		max_tx_rate /= queues_per_pool;
-		bcnrc_val = TXGBE_TDM_RP_RATE_MAX(max_tx_rate);
+		tdm_adj_value = 16 - max_tx_rate / TXGBE_TDM_CLK_BYTE_SP;
+		wr32(hw, TXGBE_TDM_RL_ADJ_SP, tdm_adj_value);
+
+		adjusted_max_tx_rate = (max_tx_rate * 39) / 40;
+		adjusted_max_tx_rate /= queues_per_pool;
+		bcnrc_val = TXGBE_TDM_RP_RATE_MAX(adjusted_max_tx_rate);
 
 		/* write value for all Tx queues belonging to VF */
 		for (queue = 0; queue < queues_per_pool; queue++) {
@@ -1747,6 +1908,8 @@ txgbe_set_queue_rate_limit_vf(struct txgbe_adapter *adapter,
 	struct txgbe_hw *hw = &adapter->hw;
 	u16 queue, queues_per_pool, max_tx_rate;
 	int factor_int, factor_fra, link_speed;
+	u32 adjusted_max_tx_rate;
+	u32 tdm_adj_value;
 	u32 reg_idx;
 
 	if (hw->mac.type != txgbe_mac_aml)
@@ -1774,11 +1937,15 @@ txgbe_set_queue_rate_limit_vf(struct txgbe_adapter *adapter,
 	if (max_tx_rate) {
 		u16 frac;
 
-		link_speed = txgbe_link_mbps(adapter) / 1000 * 1024;
+		tdm_adj_value = 16 - max_tx_rate / TXGBE_TDM_CLK_BYTE_AML;
+		wr32(hw, TXGBE_TDM_RL_ADJ_AML, tdm_adj_value);
+
+		link_speed = txgbe_link_mbps(adapter);
+		adjusted_max_tx_rate = (max_tx_rate * 39) / 40;
 
 		/* Calculate the rate factor values to set */
-		factor_int = link_speed / max_tx_rate;
-		frac = (link_speed % max_tx_rate) * 10000 / max_tx_rate;
+		factor_int = link_speed / adjusted_max_tx_rate;
+		frac = (link_speed % adjusted_max_tx_rate) * 10000 / adjusted_max_tx_rate;
 		factor_fra = txgbe_frac_to_bi(frac, 10000, 14);
 
 		wr32(hw, TXGBE_TDM_RL_QUEUE_IDX, reg_idx);
@@ -1906,56 +2073,12 @@ static void txgbe_set_vf_rx_tx(struct txgbe_adapter *adapter, int vf)
 		if (reg_cur_rx & reg_req_rx)
 			wr32(hw, TXGBE_RDM_VFRE_CLR(reg_offset), reg_req_rx);
 	}
-	if (adapter->vfinfo[vf].link_state == IFLA_VF_LINK_STATE_ENABLE &&
-	    !(rd32(hw, TXGBE_MAC_TX_CFG) & TXGBE_MAC_TX_CFG_TE)) {
-		wr32m(hw, TXGBE_MAC_TX_CFG, TXGBE_MAC_TX_CFG_TE,
-		      TXGBE_MAC_TX_CFG_TE);
+	if (adapter->vfinfo[vf].link_state == IFLA_VF_LINK_STATE_ENABLE) {
+		int reg = rd32(hw, TXGBE_MAC_TX_CFG);
+		wr32(hw, TXGBE_MAC_TX_CFG, TXGBE_MAC_TX_CFG_TE);
 		TXGBE_WRITE_FLUSH(hw);
-		wr32m(hw, TXGBE_MAC_TX_CFG, TXGBE_MAC_TX_CFG_TE,
-		      TXGBE_MAC_TX_CFG_TE);
+		wr32(hw, TXGBE_MAC_TX_CFG, reg);
 	}
-}
-
-/**
- * txgbe_set_vf_link_state - Set link state
- * @adapter: Pointer to adapter struct
- * @vf: VF identifier
- * @state: required link state
- *
- * Set a link force state on/off a single vf
- **/
-void txgbe_set_vf_link_state(struct txgbe_adapter *adapter, int vf, int state)
-{
-	bool link_up = adapter->link_up;
-
-	adapter->vfinfo[vf].link_state = state;
-
-	switch (state) {
-	case TXGBE_VF_LINK_STATE_AUTO:
-		if (test_bit(__TXGBE_DOWN, &adapter->state)) {
-			adapter->vfinfo[vf].link_enable = false;
-		} else {
-			link_up = adapter->link_up;
-			adapter->vfinfo[vf].link_enable = true;
-		}
-		break;
-	case TXGBE_VF_LINK_STATE_ENABLE:
-		adapter->vfinfo[vf].link_enable = true;
-		link_up = true;
-		break;
-	case TXGBE_VF_LINK_STATE_DISABLE:
-		adapter->vfinfo[vf].link_enable = false;
-		link_up = false;
-		break;
-	}
-
-	/* restart the VF */
-	adapter->vfinfo[vf].clear_to_send = false;
-	txgbe_ping_vf(adapter, vf);
-
-	txgbe_ping_vf_with_link_status(adapter, link_up, vf);
-
-	txgbe_set_vf_rx_tx(adapter, vf);
 }
 
 /**
@@ -2004,7 +2127,7 @@ out:
 	return ret;
 }
 
-int txgbe_trans_vf_link_state(int state)
+static int txgbe_trans_vf_link_state(int state)
 {
 	switch (state) {
 	case TXGBE_VF_LINK_STATE_ENABLE:

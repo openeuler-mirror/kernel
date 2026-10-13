@@ -94,7 +94,14 @@ static int txgbe_report_error_detected(struct pci_dev *dev,
 	pci_ers_result_t vote;
 	const struct pci_error_handlers *err_handler;
 
-	device_lock(&dev->dev);
+	/* Use trylock to avoid deadlock with pciehp remove path, which may
+	 * hold this device lock while waiting for this recovery worker to
+	 * finish (cancel_work_sync).
+	 */
+	if (!device_trylock(&dev->dev)) {
+		*result = PCI_ERS_RESULT_DISCONNECT;
+		return 0;
+	}
 	if (!dev->driver ||
 	    !dev->driver->err_handler ||
 		!dev->driver->err_handler->error_detected) {
@@ -127,7 +134,10 @@ static int txgbe_report_mmio_enabled(struct pci_dev *dev, void *data)
 	pci_ers_result_t vote, *result = data;
 	const struct pci_error_handlers *err_handler;
 
-	device_lock(&dev->dev);
+	if (!device_trylock(&dev->dev)) {
+		*result = PCI_ERS_RESULT_DISCONNECT;
+		return 0;
+	}
 	if (!dev->driver ||
 	    !dev->driver->err_handler ||
 		!dev->driver->err_handler->mmio_enabled)
@@ -146,7 +156,10 @@ static int txgbe_report_slot_reset(struct pci_dev *dev, void *data)
 	pci_ers_result_t vote, *result = data;
 	const struct pci_error_handlers *err_handler;
 
-	device_lock(&dev->dev);
+	if (!device_trylock(&dev->dev)) {
+		*result = PCI_ERS_RESULT_DISCONNECT;
+		return 0;
+	}
 	if (!dev->driver ||
 	    !dev->driver->err_handler ||
 		!dev->driver->err_handler->slot_reset)
@@ -164,7 +177,8 @@ static int txgbe_report_resume(struct pci_dev *dev, void *data)
 {
 	const struct pci_error_handlers *err_handler;
 
-	device_lock(&dev->dev);
+	if (!device_trylock(&dev->dev))
+		return 0;
 	dev->error_state = pci_channel_io_normal;
 	if (!dev->driver ||
 	    !dev->driver->err_handler ||

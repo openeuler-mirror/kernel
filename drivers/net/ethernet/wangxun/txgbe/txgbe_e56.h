@@ -102,7 +102,7 @@ union txgbe_e56_cms_ana_ovrdval0 {
 #define VR_PMA_CTRL3 0x180a8
 #define VR_PMA_CTRL4 0x180a9
 #define SR_PMA_RS_FEC_CTRL 0x100c8
-#define CMS_ANA_OVRDEN0 0xca4
+#define ANA_OVRDEN0 0xca4
 #define ANA_OVRDEN1 0xca8
 #define ANA_OVRDVAL0 0xcb0
 #define ANA_OVRDVAL5 0xcc4
@@ -515,6 +515,8 @@ union txgbe_e56_cms_ana_ovrdval0 {
 	FORMAT_NOPARENTHERSES(23, 16)
 
 #define E56PHY_FETX_FFE_TRAIN_CFG_0_ADDR (E56PHY_PMD_BASE_ADDR + 0x2BC)
+#define E56PHY_FETX_FFE_TRAIN_CFG_0_KRT_FETX_INIT_FFE_CFG_0 \
+	FORMAT_NOPARENTHERSES(1, 0)
 #define E56PHY_FETX_FFE_TRAIN_CFG_0_KRT_FETX_INIT_FFE_CFG_2 \
 	FORMAT_NOPARENTHERSES(9, 8)
 #define E56PHY_FETX_FFE_TRAIN_CFG_0_KRT_FETX_INIT_FFE_CFG_3 \
@@ -1774,21 +1776,6 @@ typedef union {
 #define S10G_CMVAR_UFINE_FMIN_WRAP 0x2
 #define S10G_CMVAR_FINE_FMIN_WRAP 0x5
 
-#define S10G_TX_FFE_CFG_MAIN 0x2c2c2c2c
-#define S10G_TX_FFE_CFG_PRE1 0x0
-#define S10G_TX_FFE_CFG_PRE2 0x0
-#define S10G_TX_FFE_CFG_POST 0x6060606
-#define S25G_TX_FFE_CFG_MAIN 49
-#define S25G_TX_FFE_CFG_PRE1 4
-#define S25G_TX_FFE_CFG_PRE2 1
-#define S25G_TX_FFE_CFG_POST 9
-
-/* for dac test*/
-#define S25G_TX_FFE_CFG_DAC_MAIN 0x2a
-#define S25G_TX_FFE_CFG_DAC_PRE1 0x3
-#define S25G_TX_FFE_CFG_DAC_PRE2 0x0
-#define S25G_TX_FFE_CFG_DAC_POST 0x11
-
 #define BYPASS_CTLE_TAG 0x0
 
 #define S10G_PHY_RX_CTLE_TAPWT_WEIGHT1 0x1
@@ -1807,41 +1794,15 @@ typedef union {
 
 #define TXGBE_E56_PHY_LINK_UP 0x4
 
-#define __bf_shf_m(x) (ffs(x) - 1)
-
-#define FIELD_PREP_M(_mask, _val)					\
-	({								\
-		((typeof(_mask))(_val) << __bf_shf_m(_mask)) & (_mask);	\
-	})
-
-/* FIELD_GET_M() - extract a bitfield element
- * @_mask: shifted mask defining the field's length and position
- * @_reg:  value of entire bitfield
- *
- * FIELD_GET_M() extracts the field specified by @_mask from the
- * bitfield passed in as @_reg by masking and shifting it down.
- */
-#define FIELD_GET_M(_mask, _reg)						\
-	({								\
-		(typeof(_mask))(((_reg) & (_mask)) >> __bf_shf_m(_mask));	\
-	})
-
-void txgbe_field_set(u32 *psrcdata, u32 bithigh, u32 bitlow, u32 setvalue);
 int txgbe_e56_rxrd_sec_code(struct txgbe_hw *hw, int *SECOND_CODE);
-u32 txgbe_e56_cfg_25g(struct txgbe_hw *hw);
-u32 txgbe_e56_cfg_10g(struct txgbe_hw *hw);
-u32 txgbe_e56_cfg_40g(struct txgbe_hw *hw);
+void txgbe_e56_cfg_40g(struct txgbe_hw *hw);
 
 int txgbe_set_link_to_amlite(struct txgbe_hw *hw, u32 speed);
-u32 txgbe_e56_cfg_temp(struct txgbe_hw *hw);
 int txgbe_e56_get_temp(struct txgbe_hw *hw, int *temp);
-int txgbe_e56_reconfig_rx(struct txgbe_hw *hw, u32 speed);
-int txgbe_e56_config_rx_40G(struct txgbe_hw *hw, u32 speed);
 int txgbe_temp_track_seq(struct txgbe_hw *hw, u32 speed);
 int txgbe_temp_track_seq_40g(struct txgbe_hw *hw, u32 speed);
 int txgbe_get_cur_fec_mode(struct txgbe_hw *hw);
-int txgbe_e56_set_fec_mode(struct txgbe_hw *hw, u8 fec_mode);
 int txgbe_e56_fec_mode_polling(struct txgbe_hw *hw, bool *link_up);
-s32 txgbe_e56_check_phy_link(struct txgbe_hw *hw, u32 *speed, bool *link_up);
+int txgbe_e56_check_phy_link(struct txgbe_hw *hw, u32 *speed, bool *link_up);
 
 #endif /* _TXGBE_E56_H_ */

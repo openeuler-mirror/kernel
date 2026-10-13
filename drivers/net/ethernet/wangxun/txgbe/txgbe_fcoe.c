@@ -15,13 +15,6 @@
 #include <scsi/libfc.h>
 #include <scsi/libfcoe.h>
 
-/**
- * txgbe_fcoe_clear_ddp - clear the given ddp context
- * @ddp - ptr to the txgbe_fcoe_ddp
- *
- * Returns : none
- *
- */
 static inline void txgbe_fcoe_clear_ddp(struct txgbe_fcoe_ddp *ddp)
 {
 	ddp->len = 0;
@@ -109,6 +102,7 @@ out_ddp_put:
  * @xid: the exchange id requesting ddp
  * @sgl: the scatter-gather list for this request
  * @sgc: the number of scatter-gather items
+ * @target_mode: whether this is a target mode request
  *
  * Returns : 1 for success and 0 for no ddp
  **/
@@ -928,11 +922,6 @@ int txgbe_fcoe_get_wwn(struct net_device *netdev, u64 *wwn, int type)
 	return rc;
 }
 
-/* txgbe_fcoe_get_tc - get the current TC that fcoe is mapped to
- * @adapter - pointer to the device adapter structure
- *
- * Return : TC that FCoE is mapped to
- */
 u8 txgbe_fcoe_get_tc(struct txgbe_adapter *adapter)
 {
 	return netdev_get_prio_tc_map(adapter->netdev, adapter->fcoe.up);

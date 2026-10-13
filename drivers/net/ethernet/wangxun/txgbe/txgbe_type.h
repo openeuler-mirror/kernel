@@ -142,36 +142,6 @@
 #define TNX_FW_REV                              0xB
 #define AQ_FW_REV                               0x20
 
-/* AMLITE ETH PHY Registers */
-#define SR_AN_CTRL                              0x70000
-#define VR_PCS_DIG_CTRL1                        0x38000
-#define SR_PCS_CTRL1                            0x30000
-#define SR_PCS_CTRL2                            0x30007
-#define SR_PMA_CTRL2                            0x10007
-#define VR_PCS_DIG_CTRL3                        0x38003
-#define VR_PMA_CTRL3                            0x180a8
-#define VR_PMA_CTRL4                            0x180a9
-#define SR_PMA_RS_FEC_CTRL                      0x100c8
-#define ANA_OVRDEN0                             0xca4
-#define ANA_OVRDEN1                             0xca8
-#define ANA_OVRDVAL0                            0xcb0
-#define ANA_OVRDVAL5                            0xcc4
-#define OSC_CAL_N_CDR4                          0x14
-#define PLL0_CFG0                               0xc10
-#define PLL0_CFG2                               0xc18
-#define PLL0_DIV_CFG0                           0xc1c
-#define PLL1_CFG0                               0xc48
-#define PLL1_CFG2                               0xc50
-#define PIN_OVRDEN0                             0xc8c
-#define PIN_OVRDVAL0                            0xc94
-#define DATAPATH_CFG0                           0x142c
-#define DATAPATH_CFG1                           0x1430
-#define AN_CFG1                                 0x1438
-#define SPARE52                                 0x16fc
-#define RXS_CFG0                                0x000
-#define PMD_CFG0                                0x1400
-#define SR_PCS_STS1                             0x30001
-
 /* ETH PHY Registers */
 #define TXGBE_SR_XS_PCS_MMD_STATUS1             0x30001
 #define TXGBE_SR_PCS_CTL2                       0x30007
@@ -804,9 +774,11 @@ struct txgbe_thermal_sensor_data {
 #define TXGBE_TDM_RP_RATE_MIN(v) ((0x3FFF & (v)))
 #define TXGBE_TDM_RP_RATE_MAX(v) ((0x3FFF & (v)) << 16)
 
+#define TXGBE_TDM_RL_ADJ_AML          0x1820C
 #define TXGBE_TDM_RL_QUEUE_IDX        0x18210
 #define TXGBE_TDM_RL_QUEUE_CFG        0x18214
 
+#define TXGBE_TDM_RL_ADJ_SP        0x18210
 #define TXGBE_TDM_RL_VM_IDX        0x18218
 #define TXGBE_TDM_RL_VM_CFG        0x1821C
 #define TXGBE_TDM_RL_CFG           0x18400
@@ -817,6 +789,9 @@ struct txgbe_thermal_sensor_data {
 #define TXGBE_TDM_FACTOR_FRA_SHIFT 2
 #define TXGBE_TDM_FACTOR_INT_MASK  0xffff0000
 #define TXGBE_TDM_FACTOR_FRA_MASK  0xfffc
+
+#define TXGBE_TDM_CLK_BYTE_AML     3200
+#define TXGBE_TDM_CLK_BYTE_SP      1250
 
 #define TXGBE_TDM_RL_EN        0x00000001U
 
@@ -1152,6 +1127,22 @@ enum txgbe_fdir_pballoc_type {
 #define TXGBE_PSR_VLAN_CTL_CFI          0x10000000U  /* bit 28 */
 #define TXGBE_PSR_VLAN_CTL_CFIEN        0x20000000U  /* bit 29 */
 #define TXGBE_PSR_VLAN_CTL_VFE          0x40000000U  /* bit 30 */
+
+/*storm controller*/
+#define TXGBE_PSR_STORM_CTL                0x15004
+#define TXGBE_PSR_STORM_CTL_INTERVAL_MASK  0x3ff00
+#define TXGBE_PSR_STORM_CTL_INTERVAL_MAX   0x3ff
+#define TXGBE_PSR_STORM_CTL_MC_MASK        0x3
+#define TXGBE_PSR_STORM_CTL_MC_PREV        0x1
+#define TXGBE_PSR_STORM_CTL_MC_CUR         0x2
+#define TXGBE_PSR_STORM_CTL_BC_MASK        0xc
+#define TXGBE_PSR_STORM_CTL_BC_PREV        0x4
+#define TXGBE_PSR_STORM_CTL_BC_CUR         0x8
+#define TXGBE_PSR_STORM_CTL_UC             0x10
+#define TXGBE_PSR_STORM_CTL_INTEVAL_MASK   0x3FF00U
+#define TXGBE_PSR_STORM_THRE               0x15008
+#define TXGBE_PSR_STORM_THRE_BC_MASK       0xFFFF0000U
+#define TXGBE_PSR_STORM_THRE_MC_MASK       0x0000FFFFU
 
 /* vm L2 contorl */
 #define TXGBE_PSR_VM_L2CTL(_i)          (0x15600 + ((_i) * 4))
@@ -1579,6 +1570,7 @@ enum txgbe_fdir_pballoc_type {
 #define TXGBE_MAC_ADDRESS0_HIGH         0x11300
 #define TXGBE_MAC_ADDRESS0_LOW          0x11304
 #define TXGBE_MAC_MISC_CTL              0x11f00
+#define TXGBE_MAC_INTR_STA              0x110b0
 
 #define TXGBE_MAC_TX_CFG_TE             0x00000001U
 #define TXGBE_MAC_TX_CFG_SPEED_MASK     0x60000000U
@@ -1633,12 +1625,15 @@ enum TXGBE_MSCA_CMD_value {
 
 /* statistic */
 #define TXGBE_MAC_LXONRXC               0x11E0C
+#define TXGBE_AML_MAC_LXONRXC           0x11f84
+#define TXGBE_AML_MAC_LXOFFRXC          0x11f80
 #define TXGBE_MAC_LXOFFRXC              0x11988
 #define TXGBE_MAC_PXONRXC(_i)           (0x11E30 + ((_i) * 4)) /* 8 of these */
 #define TXGBE_MAC_PXOFFRXC              0x119DC
 #define TXGBE_AML_MAC_PXONRXC(_i)       (0x11FC0 + ((_i) * 4)) /* 8 of these */
 #define TXGBE_AML_MAC_PXOFFRXC(_i)      (0x11FA0 + ((_i) * 4)) /* 8 of these */
 #define TXGBE_RX_BC_FRAMES_GOOD_LOW     0x11918
+#define TXGBE_RX_MC_FRAMES_GOOD_LOW     0x11920
 #define TXGBE_RX_CRC_ERROR_FRAMES_LOW   0x11928
 #define TXGBE_RX_LEN_ERROR_FRAMES_LOW   0x11978
 #define TXGBE_RX_UNDERSIZE_FRAMES_GOOD  0x11938
@@ -1744,18 +1739,30 @@ enum TXGBE_MSCA_CMD_value {
 //#define TXGBE_PX_MISC_IEN_MNG_HOST_MBOX 0x40000000U
 #define TXGBE_PX_MISC_IEN_TIMER         0x80000000U
 
-#define TXGBE_PX_MISC_IEN_MASK ( \
-				TXGBE_PX_MISC_IEN_ETH_LKDN | \
-				TXGBE_PX_MISC_IEN_DEV_RST | \
-				TXGBE_PX_MISC_IEN_ETH_EVENT | \
-				TXGBE_PX_MISC_IEN_ETH_LK | \
-				TXGBE_PX_MISC_IEN_ETH_AN | \
-				TXGBE_PX_MISC_IEN_INT_ERR | \
-				TXGBE_PX_MISC_IEN_VF_MBOX | \
-				TXGBE_PX_MISC_IEN_GPIO | \
-				TXGBE_PX_MISC_IEN_STALL | \
-				TXGBE_PX_MISC_IEN_PCIE_REQ_ERR | \
-				TXGBE_PX_MISC_IEN_TIMER)
+#define TXGBE_PX_MISC_IEN_MASK_SP ( \
+				   TXGBE_PX_MISC_IEN_ETH_LKDN | \
+				   TXGBE_PX_MISC_IEN_DEV_RST | \
+				   TXGBE_PX_MISC_IEN_ETH_EVENT | \
+				   TXGBE_PX_MISC_IEN_ETH_LK | \
+				   TXGBE_PX_MISC_IEN_ETH_AN | \
+				   TXGBE_PX_MISC_IEN_INT_ERR | \
+				   TXGBE_PX_MISC_IEN_VF_MBOX | \
+				   TXGBE_PX_MISC_IEN_GPIO | \
+				   TXGBE_PX_MISC_IEN_STALL | \
+				   TXGBE_PX_MISC_IEN_PCIE_REQ_ERR | \
+				   TXGBE_PX_MISC_IEN_TIMER)
+
+#define TXGBE_PX_MISC_IEN_MASK_AML ( \
+				    TXGBE_PX_MISC_AML_ETH_LK_CHANGE | \
+				    TXGBE_PX_MISC_IEN_DEV_RST | \
+				    TXGBE_PX_MISC_AML_ETH_PHY_EVENT | \
+				    TXGBE_PX_MISC_IEN_ETH_AN | \
+				    TXGBE_PX_MISC_IEN_INT_ERR | \
+				    TXGBE_PX_MISC_IEN_VF_MBOX | \
+				    TXGBE_PX_MISC_IEN_GPIO | \
+				    TXGBE_PX_MISC_IEN_STALL | \
+				    TXGBE_PX_MISC_IEN_PCIE_REQ_ERR | \
+				    TXGBE_PX_MISC_IEN_TIMER)
 
 /* General purpose Interrupt Enable */
 #define TXGBE_PX_GPIE_MODEL             0x00000001U
@@ -2389,11 +2396,8 @@ union txgbe_atr_input {
 	/* Byte layout in order, all values with MSB first:
 	 * vm_pool      - 1 byte
 	 * flow_type    - 1 byte
-	 * vlan_id      - 2 bytes
+	 * pkt_type     - 2 bytes
 	 * src_ip       - 16 bytes
-	 * inner_mac    - 6 bytes
-	 * cloud_mode   - 2 bytes
-	 * tni_vni      - 4 bytes
 	 * dst_ip       - 16 bytes
 	 * src_port     - 2 bytes
 	 * dst_port     - 2 bytes
@@ -2403,7 +2407,7 @@ union txgbe_atr_input {
 	struct {
 		u8 vm_pool;
 		u8 flow_type;
-		__be16 vlan_id;
+		__be16 pkt_type;
 		__be32 dst_ip[4];
 		__be32 src_ip[4];
 		__be16 src_port;
@@ -2419,7 +2423,7 @@ union txgbe_atr_hash_dword {
 	struct {
 		u8 vm_pool;
 		u8 flow_type;
-		__be16 vlan_id;
+		__be16 pkt_type;
 	} formatted;
 	__be32 ip;
 	struct {
@@ -2459,6 +2463,7 @@ struct txgbe_5tuple_filter_info {
 #define TXGBE_HI_FLASH_UPDATE_TIMEOUT   5000 /* Process Update command limit */
 #define TXGBE_HI_FLASH_VERIFY_TIMEOUT   60000 /* Process Apply command limit */
 #define TXGBE_HI_PHY_MGMT_REQ_TIMEOUT   2000 /* Wait up to 2 seconds */
+#define TXGBE_HI_COMMAND_TIMEOUT_SHORT  500
 
 /* CEM Support */
 #define FW_CEM_HDR_LEN                  0x4
@@ -2895,14 +2900,6 @@ enum txgbe_fc_mode {
 	txgbe_fc_default
 };
 
-/* Smart Speed Settings */
-#define TXGBE_SMARTSPEED_MAX_RETRIES    3
-enum txgbe_smart_speed {
-	txgbe_smart_speed_auto = 0,
-	txgbe_smart_speed_on,
-	txgbe_smart_speed_off
-};
-
 /* PCI bus types */
 enum txgbe_bus_type {
 	txgbe_bus_type_unknown = 0,
@@ -2977,18 +2974,22 @@ struct txgbe_hw_stats {
 	u64 errbc;
 	u64 mspdc;
 	u64 mpctotal;
-	u64 mpc[8];
+	u64 mpc;
 	u64 mlfc;
 	u64 mrfc;
 	u64 rlec;
 	u64 lxontxc;
 	u64 lxonrxc;
+	u64 lxonrxc_reset;
 	u64 lxofftxc;
 	u64 lxoffrxc;
+	u64 lxoffrxc_reset;
 	u64 pxontxc[8];
 	u64 pxonrxc[8];
 	u64 pxofftxc[8];
 	u64 pxoffrxc[8];
+	u64 pxonrxc_reset[8];
+	u64 pxoffrxc_reset[8];
 	u64 prc64;
 	u64 prc127;
 	u64 prc255;
@@ -3065,60 +3066,37 @@ struct txgbe_hw;
 typedef u8* (*txgbe_mc_addr_itr) (struct txgbe_hw *hw, u8 **mc_addr_ptr,
 				  u32 *vmdq);
 
-/* Function pointer table */
-struct txgbe_eeprom_operations {
-	s32 (*init_params)(struct txgbe_hw *hw);
-	s32 (*read)(struct txgbe_hw *hw, u16 offset, u16 *data);
-	s32 (*read_buffer)(struct txgbe_hw *hw, u16 offset, u16 words, u16 *data);
-	s32 (*write)(struct txgbe_hw *hw, u16 offset, u16 data);
-	s32 (*write_buffer)(struct txgbe_hw *hw, u16 offset, u16 words, u16 *data);
-	s32 (*validate_checksum)(struct txgbe_hw *hw, u16 *checksum_val);
-	s32 (*update_checksum)(struct txgbe_hw *hw);
-	s32 (*calc_checksum)(struct txgbe_hw *hw);
-};
-
-struct txgbe_flash_operations {
-	s32 (*init_params)(struct txgbe_hw *hw);
-	s32 (*read_buffer)(struct txgbe_hw *hw, u32 offset, u32 dwords, u32 *data);
-	s32 (*write_buffer)(struct txgbe_hw *hw, u32 offset, u32 dwords, u32 *data);
-};
-
 struct txgbe_mac_operations {
-	s32 (*init_hw)(struct txgbe_hw *hw);
-	s32 (*reset_hw)(struct txgbe_hw *hw);
-	s32 (*start_hw)(struct txgbe_hw *hw);
-	s32 (*clear_hw_cntrs)(struct txgbe_hw *hw);
+	int (*init_hw)(struct txgbe_hw *hw);
+	int (*reset_hw)(struct txgbe_hw *hw);
+	int (*start_hw)(struct txgbe_hw *hw);
+	int (*clear_hw_cntrs)(struct txgbe_hw *hw);
 	enum txgbe_media_type (*get_media_type)(struct txgbe_hw *hw);
-	s32 (*get_mac_addr)(struct txgbe_hw *hw, u8 *mac_addr);
-	s32 (*get_san_mac_addr)(struct txgbe_hw *hw, u8 *san_mac_addr);
-	s32 (*set_san_mac_addr)(struct txgbe_hw *hw, u8 *san_mac_addr);
-	s32 (*get_device_caps)(struct txgbe_hw *hw, u16 *device_caps);
-	s32 (*get_wwn_prefix)(struct txgbe_hw *hw, u16 *wwnn_prefix, u16 *wwpn_prefix);
-	s32 (*stop_adapter)(struct txgbe_hw *hw);
-	s32 (*get_bus_info)(struct txgbe_hw *hw);
+	int (*get_mac_addr)(struct txgbe_hw *hw, u8 *mac_addr);
+	int (*get_wwn_prefix)(struct txgbe_hw *hw, u16 *wwnn_prefix, u16 *wwpn_prefix);
+	int (*stop_adapter)(struct txgbe_hw *hw);
+	int (*get_bus_info)(struct txgbe_hw *hw);
 	void (*set_lan_id)(struct txgbe_hw *hw);
-	s32 (*setup_sfp)(struct txgbe_hw *hw);
-	s32 (*enable_rx_dma)(struct txgbe_hw *hw, u32 regval);
-	s32 (*disable_sec_rx_path)(struct txgbe_hw *hw);
-	s32 (*enable_sec_rx_path)(struct txgbe_hw *hw);
-	s32 (*disable_sec_tx_path)(struct txgbe_hw *hw);
-	s32 (*enable_sec_tx_path)(struct txgbe_hw *hw);
-	s32 (*acquire_swfw_sync)(struct txgbe_hw *hw, u32 mask);
-	void (*release_swfw_sync)(struct txgbe_hw *hw, u32 mask);
+	int (*setup_sfp)(struct txgbe_hw *hw);
+	int (*enable_rx_dma)(struct txgbe_hw *hw, u32 regval);
+	int (*disable_sec_rx_path)(struct txgbe_hw *hw);
+	int (*enable_sec_rx_path)(struct txgbe_hw *hw);
+	int (*disable_sec_tx_path)(struct txgbe_hw *hw);
+	int (*enable_sec_tx_path)(struct txgbe_hw *hw);
 
 	/* Link */
 	void (*disable_tx_laser)(struct txgbe_hw *hw);
 	void (*enable_tx_laser)(struct txgbe_hw *hw);
 	void (*flap_tx_laser)(struct txgbe_hw *hw);
-	s32 (*setup_link)(struct txgbe_hw *hw,
+	int (*setup_link)(struct txgbe_hw *hw,
 			  u32 speed,
 			       bool autoneg_wait_to_complete);
-	s32 (*setup_mac_link)(struct txgbe_hw *hw,
+	int (*setup_mac_link)(struct txgbe_hw *hw,
 			      u32 speed,
 			       bool autoneg_wait_to_complete);
-	s32 (*check_link)(struct txgbe_hw *hw, u32 *speed,
+	int (*check_link)(struct txgbe_hw *hw, u32 *speed,
 			  bool *link_up, bool link_up_wait_to_complete);
-	s32 (*get_link_capabilities)(struct txgbe_hw *hw,
+	int (*get_link_capabilities)(struct txgbe_hw *hw,
 				     u32 *speed,
 				      bool *autoneg);
 	void (*set_rate_select_speed)(struct txgbe_hw *hw, u32 speed);
@@ -3127,89 +3105,62 @@ struct txgbe_mac_operations {
 	void (*setup_rxpba)(struct txgbe_hw *hw, int num_pb, u32 headroom,
 			    int strategy);
 
-	/* LED */
-	s32 (*led_on)(struct txgbe_hw *hw, u32 index);
-	s32 (*led_off)(struct txgbe_hw *hw, u32 index);
-
 	/* RAR, Multicast, VLAN */
-	s32 (*set_rar)(struct txgbe_hw *hw, u32 index, u8 *addr, u64 pools, u32 enable_addr);
-	s32 (*clear_rar)(struct txgbe_hw *hw, u32 index);
-	s32 (*insert_mac_addr)(struct txgbe_hw *hw, u8 *addr, u32 vmdq);
-	s32 (*set_vmdq_san_mac)(struct txgbe_hw *hw, u32 vmdq);
-	s32 (*init_rx_addrs)(struct txgbe_hw *hw);
-	s32 (*update_uc_addr_list)(struct txgbe_hw *hw, u8 *addr_list,
-				   u32 addr_count, txgbe_mc_addr_itr next);
-	s32 (*update_mc_addr_list)(struct txgbe_hw *hw, u8 *mc_addr_list,
+	int (*set_rar)(struct txgbe_hw *hw, u32 index, u8 *addr, u64 pools, u32 enable_addr);
+	int (*clear_rar)(struct txgbe_hw *hw, u32 index);
+	int (*set_vmdq_san_mac)(struct txgbe_hw *hw, u32 vmdq);
+	int (*init_rx_addrs)(struct txgbe_hw *hw);
+	int (*update_mc_addr_list)(struct txgbe_hw *hw, u8 *mc_addr_list,
 				   u32 mc_addr_count, txgbe_mc_addr_itr next,
 				      bool clear);
-	s32 (*enable_mc)(struct txgbe_hw *hw);
-	s32 (*disable_mc)(struct txgbe_hw *hw);
-	s32 (*clear_vfta)(struct txgbe_hw *hw);
-	s32 (*set_vfta)(struct txgbe_hw *hw, u32 vlan, u32 vind,
+	int (*clear_vfta)(struct txgbe_hw *hw);
+	int (*set_vfta)(struct txgbe_hw *hw, u32 vlan, u32 vind,
 			bool vlan_on);
-	s32 (*set_vlvf)(struct txgbe_hw *hw, u32 vlan, u32 vind,
-			bool vlan_on, bool *vfta_changed);
-	s32 (*init_uta_tables)(struct txgbe_hw *hw);
-	void (*set_mac_anti_spoofing)(struct txgbe_hw *hw, bool enable, int pf);
+	int (*init_uta_tables)(struct txgbe_hw *hw);
 	void (*set_vlan_anti_spoofing)(struct txgbe_hw *hw, bool enable, int vf);
 
 	/* Flow Control */
-	s32 (*fc_enable)(struct txgbe_hw *hw);
-	s32 (*setup_fc)(struct txgbe_hw *hw);
+	int (*fc_enable)(struct txgbe_hw *hw);
+	int (*setup_fc)(struct txgbe_hw *hw);
 
 	/* Manageability interface */
-	s32 (*set_fw_drv_ver)(struct txgbe_hw *hw, u8 maj, u8 min,
-			      u8 build, u8 sub);
-	s32 (*get_thermal_sensor_data)(struct txgbe_hw *hw);
-	s32 (*init_thermal_sensor_thresh)(struct txgbe_hw *hw);
+	int (*get_thermal_sensor_data)(struct txgbe_hw *hw);
+	int (*init_thermal_sensor_thresh)(struct txgbe_hw *hw);
 	void (*get_rtrup2tc)(struct txgbe_hw *hw, u8 *map);
 	void (*disable_rx)(struct txgbe_hw *hw);
 	void (*enable_rx)(struct txgbe_hw *hw);
 	void (*set_ethertype_anti_spoofing)(struct txgbe_hw *hw,
 					    bool enable, int vf);
-	s32 (*dmac_config)(struct txgbe_hw *hw);
-	s32 (*setup_eee)(struct txgbe_hw *hw, bool enable_eee);
+	int (*setup_eee)(struct txgbe_hw *hw, bool enable_eee);
+	int (*dmac_config)(struct txgbe_hw *hw);
 };
 
 struct txgbe_phy_operations {
-	s32 (*identify)(struct txgbe_hw *hw);
-	s32 (*identify_sfp)(struct txgbe_hw *hw);
-	s32 (*setup_sfp)(struct txgbe_hw *hw);
-	s32 (*init)(struct txgbe_hw *hw);
-	s32 (*reset)(struct txgbe_hw *hw);
-	s32 (*read_reg)(struct txgbe_hw *hw, u32 reg_addr,
-			u32 device_type, u16 *phy_data);
-	s32 (*write_reg)(struct txgbe_hw *hw, u32 reg_addr,
-			 u32 device_type, u16 phy_data);
-	s32 (*read_reg_mdi)(struct txgbe_hw *hw, u32 reg_addr, u32 device_type,
-			    u16 *phy_data);
-	s32 (*write_reg_mdi)(struct txgbe_hw *hw, u32 reg_addr,
-			     u32 device_type, u16 phy_data);
+	int (*identify)(struct txgbe_hw *hw);
+	int (*identify_sfp)(struct txgbe_hw *hw);
+	int (*init)(struct txgbe_hw *hw);
 	u32 (*setup_link)(struct txgbe_hw *hw, u32 speed_set, bool autoneg_wait_to_complete);
 	u32 (*setup_link_speed)(struct txgbe_hw *hw,
 				u32 speed,
 				       bool autoneg_wait_to_complete);
-	s32 (*get_firmware_version)(struct txgbe_hw *hw,
-				    u16 *firmware_version);
-	s32 (*read_i2c_byte)(struct txgbe_hw *hw, u8 byte_offset,
+	int (*read_i2c_byte)(struct txgbe_hw *hw, u8 byte_offset,
 			     u8 dev_addr, u8 *data);
-	s32 (*write_i2c_byte)(struct txgbe_hw *hw, u8 byte_offset,
+	int (*write_i2c_byte)(struct txgbe_hw *hw, u8 byte_offset,
 			      u8 dev_addr, u8 data);
-	s32 (*read_i2c_sff8472)(struct txgbe_hw *hw, u8 byte_offset,
+	int (*read_i2c_sff8472)(struct txgbe_hw *hw, u8 byte_offset,
 				u8 *sff8472_data);
-	s32 (*read_i2c_sff8636)(struct txgbe_hw *hw, u8 page, u8 byte_offset,
+	int (*read_i2c_sff8636)(struct txgbe_hw *hw, u8 page, u8 byte_offset,
 				u8 *sff8636_data);
-	s32 (*read_i2c_eeprom)(struct txgbe_hw *hw, u8 byte_offset,
+	int (*read_i2c_eeprom)(struct txgbe_hw *hw, u8 byte_offset,
 			       u8 *eeprom_data);
-	s32 (*read_i2c_sfp_phy)(struct txgbe_hw *hw, u16 byte_offset,
+	int (*read_i2c_sfp_phy)(struct txgbe_hw *hw, u16 byte_offset,
 				u16 *data);
-	s32 (*write_i2c_eeprom)(struct txgbe_hw *hw, u8 byte_offset,
+	int (*write_i2c_eeprom)(struct txgbe_hw *hw, u8 byte_offset,
 				u8 eeprom_data);
-	s32 (*check_overtemp)(struct txgbe_hw *hw);
+	int (*check_overtemp)(struct txgbe_hw *hw);
 };
 
 struct txgbe_eeprom_info {
-	struct txgbe_eeprom_operations ops;
 	enum txgbe_eeprom_type type;
 	u32 semaphore_delay;
 	u16 word_size;
@@ -3227,7 +3178,6 @@ enum txgbe_mac_type {
 };
 
 struct txgbe_flash_info {
-	struct txgbe_flash_operations ops;
 	u32 semaphore_delay;
 	u32 dword_size;
 	u16 address_bits;
@@ -3248,7 +3198,8 @@ struct txgbe_mac_info {
 #define TXGBE_MAX_MTA                   128
 #define TXGBE_MAX_VFTA_ENTRIES          128
 	u32 mta_shadow[TXGBE_MAX_MTA];
-	s32 mc_filter_type;
+	int mc_filter_type;
+	u32 vft_shadow[TXGBE_MAX_VFTA_ENTRIES];
 	u32 mcft_size;
 	u32 vft_size;
 	u32 num_rar_entries;
@@ -3275,8 +3226,69 @@ struct txgbe_mac_info {
 	bool autoneg;
 };
 
+struct txgbe_link_status {
+	u16 link_speed;
+	u16 req_speeds;
+	u8 link_cfg_err;
+	u8 lse_ena;	/* Link Status Event notification */
+	u8 link_info;
+#define TXGBE_PHY_LINK_UP			BIT(0)	/* Link Status */
+	u8 an_info;
+	u8 fec_info;
+};
+
+enum txgbe_fec_mode {
+	TXGBE_FEC_NONE = 0,
+	TXGBE_FEC_RS,
+	TXGBE_FEC_BASER,
+	TXGBE_FEC_AUTO
+};
+
+#define TXGBE_PHY_FEC_RS	(1U)
+#define TXGBE_PHY_FEC_BASER	BIT(1)
+#define TXGBE_PHY_FEC_OFF	BIT(2)
+#define TXGBE_PHY_FEC_AUTO (TXGBE_PHY_FEC_OFF | TXGBE_PHY_FEC_BASER |\
+			   TXGBE_PHY_FEC_RS)
+
+struct txgbe_hic_ephy_customizable {
+	u16 sr_an_adv1;	/* 0x70010 */
+	u16 sr_an_adv2;	/* 0x70011 */
+	u16 sr_an_adv3;	/* 0x70012 */
+	u16 oem_auto;	/* 0x70000 */
+	u32 txeq_main;	/* 0x141c */
+	u32 txeq_pre1;	/* 0x1420 */
+	u32 txeq_pre2;	/* 0x1424 */
+	u32 txeq_post;	/* 0x1428 */
+	u16 training_mode;	/* training mode: 0 PRESET 2 INITIALIZE */
+	u16 linkfail_timeout;	/* 0x78005 */
+	u8 ctlebypass;	/* ctle bypass */
+	u8 resv[3];
+};
+
 struct txgbe_phy_info {
 	struct txgbe_phy_operations ops;
+	u32 oem_flag;	/* OEM customization flag 1: fw_oem 3: sw_oem */
+#define EPHY_OEM_NONE			BIT(0)
+#define EPHY_OEM_FROM_FW		BIT(1)
+#define EPHY_OEM_FROM_SW		BIT(2)
+#define EPHY_OEM_SW_OVERRIDE_FW		BIT(3)
+#define EPHY_SR_AN_ADV_EN		BIT(16)
+#define EPHY_SR_AN_CTRL_EN		BIT(17)
+#define EPHY_VR_AN_TIMER_EN		BIT(18)
+#define EPHY_CTLE_BYPASS_EN		BIT(19)
+#define EPHY_TXEQ_EN			BIT(20)
+#define EPHY_TRAINNING_MODE_EN		BIT(21)
+	struct txgbe_hic_ephy_customizable oem;
+	struct txgbe_link_status link_info;
+	struct txgbe_link_status link_info_old;
+	enum txgbe_fec_mode curr_user_fec_req;
+	u8 link_fec_options;
+#define TXGBE_PHY_FEC_10G_KR_40G_KR4_EN		BIT(0)
+#define TXGBE_PHY_FEC_10G_KR_40G_KR4_REQ	BIT(1)
+#define TXGBE_PHY_FEC_25G_RS_528_REQ		BIT(2)
+#define TXGBE_PHY_FEC_25G_KR_REQ		BIT(3)
+#define TXGBE_PHY_FEC_25G_KR_CLAUSE74_EN	BIT(4)
+#define TXGBE_PHY_FEC_25G_RS_CLAUSE91_EN	BIT(5)
 	enum txgbe_phy_type type;
 	u32 addr;
 	u32 id;
@@ -3288,8 +3300,6 @@ struct txgbe_phy_info {
 	u32 phy_semaphore_mask;
 	u8 lan_id; /* to be delete */
 	txgbe_autoneg_advertised autoneg_advertised;
-	enum txgbe_smart_speed smart_speed;
-	bool smart_speed_active;
 	bool multispeed_fiber;
 	bool reset_if_overtemp;
 	txgbe_physical_layer link_mode;
@@ -3298,21 +3308,13 @@ struct txgbe_phy_info {
 #include "txgbe_mbx.h"
 
 struct txgbe_mbx_operations {
-	void (*init_params)(struct txgbe_hw *hw);
-	s32 (*read)(struct txgbe_hw *hw, u32 *msg, u16 size, u16 vf);
-	s32 (*write)(struct txgbe_hw *hw, u32 *msg, u16 size, u16 vf);
-	s32 (*read_posted)(struct txgbe_hw *hw, u32 *msg, u16 size, u16 mbx_id);
-	s32 (*write_posted)(struct txgbe_hw *hw, u32 *msg, u16 size, u16 mbx_id);
-	s32 (*check_for_msg)(struct txgbe_hw *hw, u16 __always_unused mbx_id);
-	s32 (*check_for_ack)(struct txgbe_hw *hw, u16 __always_unused mbx_id);
-	s32 (*check_for_rst)(struct txgbe_hw *hw, u16 __always_unused mbx_id);
-};
-
-struct phytxeq {
-	u32 main; //TX EQ main (bit[5:0])
-	u32 pre1; //TX EQ pre1 (bit[5:0])
-	u32 pre2; //TX EQ pre2 (bit[5:0])
-	u32 post; //TX EQ post (bit[5:0])
+	int (*read)(struct txgbe_hw *hw, u32 *msg, u16 size, u16 vf);
+	int (*write)(struct txgbe_hw *hw, u32 *msg, u16 size, u16 vf);
+	int (*read_posted)(struct txgbe_hw *hw, u32 *msg, u16 size, u16 mbx_id);
+	int (*write_posted)(struct txgbe_hw *hw, u32 *msg, u16 size, u16 mbx_id);
+	int (*check_for_msg)(struct txgbe_hw *hw, u16 __always_unused mbx_id);
+	int (*check_for_ack)(struct txgbe_hw *hw, u16 __always_unused mbx_id);
+	int (*check_for_rst)(struct txgbe_hw *hw, u16 __always_unused mbx_id);
 };
 
 struct txgbe_mbx_stats {
@@ -3333,13 +3335,25 @@ struct txgbe_mbx_info {
 	u16 size;
 };
 
+extern const struct txgbe_info txgbe_sp_info;
+extern const struct txgbe_info txgbe_aml_info;
+extern const struct txgbe_info txgbe_aml40_info;
+
+struct txgbe_info {
+	enum txgbe_mac_type			mac;
+	int					(*get_invariants)(struct txgbe_hw *hw);
+	const struct txgbe_mac_operations	*mac_ops;
+	const struct txgbe_phy_operations	*phy_ops;
+	const struct txgbe_mbx_operations	*mbx_ops;
+};
+
 enum txgbe_reset_type {
 	TXGBE_LAN_RESET = 0,
 	TXGBE_SW_RESET,
 	TXGBE_GLOBAL_RESET
 };
 
-enum txgbe_link_status {
+enum txgbe_link_layer_status {
 	TXGBE_LINK_STATUS_NONE = 0,
 	TXGBE_LINK_STATUS_KX,
 	TXGBE_LINK_STATUS_KX4
@@ -3369,12 +3383,11 @@ struct txgbe_hw {
 	bool wol_enabled;
 	bool fdir_enabled;
 	struct mtd_dev phy_dev;
-	enum txgbe_link_status link_status;
+	enum txgbe_link_layer_status link_status;
 	u16 tpid[8];
 	u16 oem_ssid;
 	u16 oem_svid;
 	bool f2c_mod_status;         /* fiber to copper modules internal phy link status */
-	bool dac_sfp;         /* force dac sfp to kr mode */
 	bool bypass_ctle; /* DAC cable length */
 	u32 q_tx_regs[512];
 };
@@ -3407,7 +3420,6 @@ struct txgbe_hw {
 #define TXGBE_ERR_SFP_NO_INIT_SEQ_PRESENT       -(TXGBE_ERR + 21)
 #define TXGBE_ERR_NO_SAN_ADDR_PTR               -(TXGBE_ERR + 22)
 #define TXGBE_ERR_FDIR_REINIT_FAILED            -(TXGBE_ERR + 23)
-#define TXGBE_ERR_EEPROM_VERSION                -(TXGBE_ERR + 24)
 #define TXGBE_ERR_NO_SPACE                      -(TXGBE_ERR + 25)
 #define TXGBE_ERR_OVERTEMP                      -(TXGBE_ERR + 26)
 #define TXGBE_ERR_UNDERTEMP                     -(TXGBE_ERR + 27)
@@ -3430,6 +3442,8 @@ struct txgbe_hw {
 #define TXGBE_ERR_REGISTER                      -(TXGBE_ERR + 45)
 #define TXGBE_ERR_MBX                           -(TXGBE_ERR + 46)
 #define TXGBE_ERR_MNG_ACCESS_FAILED             -(TXGBE_ERR + 47)
+#define TXGBE_ERR_MNG_UNSUPPORT_SFP             -(TXGBE_ERR + 48)
+#define TXGBE_ERR_MNG_UNKNOWN_CMD               -(TXGBE_ERR + 49)
 
 /**
  * register operations
@@ -3528,9 +3542,10 @@ wr32m(struct txgbe_hw *hw, u32 reg, u32 mask, u32 field)
 
 /* poll register */
 #define TXGBE_MDIO_TIMEOUT 1000
-#define TXGBE_I2C_TIMEOUT  1000
+#define TXGBE_I2C_TIMEOUT  5000
+
 #define TXGBE_SPI_TIMEOUT  1000
-static inline s32
+static inline int
 po32m(struct txgbe_hw *hw, u32 reg, u32 mask, u32 field, int usecs, int count)
 {
 	int loop;
