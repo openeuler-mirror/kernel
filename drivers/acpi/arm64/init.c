@@ -12,4 +12,6 @@ void __init acpi_arm_init(void)
 		acpi_iort_init();
 	if (IS_ENABLED(CONFIG_ARM_AMBA))
 		acpi_amba_init();
+	if (IS_ENABLED(CONFIG_ARM64_TLBID))
+		acpi_tlbid_init();
 }

@@ -127,6 +127,7 @@ union acpi_subtable_headers {
 	struct acpi_hmat_structure hmat;
 	struct acpi_prmt_module_header prmt;
 	struct acpi_cedt_header cedt;
+	struct acpi_tlbi_header tlbi;
 };
 
 typedef int (*acpi_tbl_table_handler)(struct acpi_table_header *table);

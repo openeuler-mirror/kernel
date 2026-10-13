@@ -206,6 +206,9 @@ static u64 new_context(struct mm_struct *mm)
 	/* We have more ASIDs than CPUs, so this will always succeed */
 	asid = find_next_zero_bit(asid_map, NUM_USER_ASIDS, 1);
 
+	if (system_supports_tlbid())
+		cpumask_clear(mm_cpumask(mm));
+
 set_asid:
 	__set_bit(asid, asid_map);
 	cur_idx = asid;
@@ -215,8 +218,8 @@ set_asid:
 void check_and_switch_context(struct mm_struct *mm)
 {
 	unsigned long flags;
-	unsigned int cpu;
 	u64 asid, old_active_asid;
+	unsigned int cpu = smp_processor_id();
 
 	if (system_supports_cnp())
 		cpu_set_reserved_ttbr0();
@@ -251,7 +254,6 @@ void check_and_switch_context(struct mm_struct *mm)
 		atomic64_set(&mm->context.id, asid);
 	}
 
-	cpu = smp_processor_id();
 	if (cpumask_test_and_clear_cpu(cpu, &tlb_flush_pending))
 		local_flush_tlb_all();
 
@@ -261,6 +263,9 @@ void check_and_switch_context(struct mm_struct *mm)
 switch_mm_fastpath:
 
 	arm64_apply_bp_hardening();
+
+	if (system_supports_tlbid())
+		cpumask_set_cpu(cpu, mm_cpumask(mm));
 
 	/*
 	 * Defer TTBR0_EL1 setting for user threads to uaccess_enable() when

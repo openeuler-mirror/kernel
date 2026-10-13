@@ -47,6 +47,7 @@ struct cpuinfo_arm64 {
 	u64		reg_gmid;
 	u64		reg_smidr;
 	u64		reg_mpamidr;
+	u64		reg_tlbididr;
 
 	u64		reg_id_aa64dfr0;
 	u64		reg_id_aa64dfr1;
@@ -58,6 +59,7 @@ struct cpuinfo_arm64 {
 	u64		reg_id_aa64mmfr1;
 	u64		reg_id_aa64mmfr2;
 	u64		reg_id_aa64mmfr3;
+	u64		reg_id_aa64mmfr4;
 	u64		reg_id_aa64pfr0;
 	u64		reg_id_aa64pfr1;
 	u64		reg_id_aa64pfr2;

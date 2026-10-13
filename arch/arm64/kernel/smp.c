@@ -351,6 +351,9 @@ void arch_cpuhp_cleanup_dead_cpu(unsigned int cpu)
 
 	pr_debug("CPU%u: shutdown\n", cpu);
 
+	if (system_supports_tlbid())
+		clear_tasks_mm_cpumask(cpu);
+
 	/*
 	 * Now that the dying CPU is beyond the point of no return w.r.t.
 	 * in-kernel synchronisation, try to get the firwmare to help us to

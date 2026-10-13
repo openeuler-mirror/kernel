@@ -16,6 +16,7 @@
 #include <linux/mmu_notifier.h>
 #include <asm/cputype.h>
 #include <asm/mmu.h>
+#include <asm/tlbid.h>
 
 /*
  * Raw TLBI operations.
@@ -165,6 +166,61 @@ static inline unsigned long get_trans_granule(void)
 		(__pages >> (5 * (scale) + 1)) - 1;			\
 	})
 
+enum tlb_flush_scope {
+	TLB_FLUSH_SCOPE_LOCAL,
+	TLB_FLUSH_SCOPE_DOMAIN,
+	TLB_FLUSH_SCOPE_BROADCAST,
+};
+
+/* This macro creates a properly formatted VA operand for the TLBID */
+#define __TLBI_DOMAIN(asid, domain)				\
+	({							\
+		unsigned long __ta = 0;				\
+		__ta |= FIELD_PREP(GENMASK_ULL(15, 0), domain);	\
+		__ta |= FIELD_PREP(GENMASK_ULL(63, 48), asid);	\
+		__ta;						\
+	})
+
+/*
+ * Determines whether the user tlbi invalidation can be performed only on the
+ * local CPU or whether it needs to be multicast or broadcast.
+ */
+static inline enum tlb_flush_scope flush_tlb_begin(struct mm_struct *mm,
+						   unsigned long *flags)
+{
+	if (!system_supports_tlbid()) {
+		dsb(ishst);
+		return TLB_FLUSH_SCOPE_BROADCAST;
+	}
+
+	local_irq_save(*flags);
+
+	if (cpumask_any_but(mm_cpumask(mm), smp_processor_id()) >= nr_cpu_ids) {
+		dsb(nshst);
+		return TLB_FLUSH_SCOPE_LOCAL;
+	} else {
+		dsb(ishst);
+		return TLB_FLUSH_SCOPE_DOMAIN;
+	}
+}
+
+static inline void flush_tlb_end(enum tlb_flush_scope scope, unsigned long flags)
+{
+	switch (scope) {
+	case TLB_FLUSH_SCOPE_LOCAL:
+		dsb(nsh);
+		local_irq_restore(flags);
+		break;
+	case TLB_FLUSH_SCOPE_DOMAIN:
+		dsb(ish);
+		local_irq_restore(flags);
+		break;
+	case TLB_FLUSH_SCOPE_BROADCAST:
+		dsb(ish);
+		break;
+	}
+}
+
 /*
  *	TLB Invalidation
  *	================
@@ -252,40 +308,27 @@ static inline void flush_tlb_all(void)
 
 static inline void flush_tlb_mm(struct mm_struct *mm)
 {
-	unsigned long asid;
+	enum tlb_flush_scope scope;
+	unsigned long asid, flags;
+	int domain;
 
-	dsb(ishst);
-	asid = __TLBI_VADDR(0, ASID(mm));
-	__tlbi(aside1is, asid);
-	__tlbi_user(aside1is, asid);
-	dsb(ish);
+	scope = flush_tlb_begin(mm, &flags);
+	if (scope == TLB_FLUSH_SCOPE_LOCAL) {
+		asid = __TLBI_VADDR(0, ASID(mm));
+		__tlbi(aside1, asid);
+		__tlbi_user(aside1, asid);
+	} else if (scope == TLB_FLUSH_SCOPE_BROADCAST) {
+		asid = __TLBI_VADDR(0, ASID(mm));
+		__tlbi(aside1is, asid);
+		__tlbi_user(aside1is, asid);
+	} else {
+		domain = pick_best_domain(mm_cpumask(mm));
+		asid = __TLBI_DOMAIN(ASID(mm), domain);
+		__tlbi(aside1is, asid);
+		__tlbi_user(aside1is, asid);
+	}
+	flush_tlb_end(scope, flags);
 	mmu_notifier_arch_invalidate_secondary_tlbs(mm, 0, -1UL);
-}
-
-static inline void __flush_tlb_page_nosync(struct mm_struct *mm,
-					   unsigned long uaddr)
-{
-	unsigned long addr;
-
-	dsb(ishst);
-	addr = __TLBI_VADDR(uaddr, ASID(mm));
-	__tlbi(vale1is, addr);
-	__tlbi_user(vale1is, addr);
-	mmu_notifier_arch_invalidate_secondary_tlbs(mm, uaddr & PAGE_MASK,
-						(uaddr & PAGE_MASK) + PAGE_SIZE);
-}
-
-static inline void flush_tlb_page_nosync(struct vm_area_struct *vma,
-					 unsigned long uaddr)
-{
-	return __flush_tlb_page_nosync(vma->vm_mm, uaddr);
-}
-
-static inline void flush_tlb_page(struct vm_area_struct *vma,
-				  unsigned long uaddr)
-{
-	flush_tlb_page_nosync(vma, uaddr);
-	dsb(ish);
 }
 
 static inline bool arch_tlbbatch_should_defer(struct mm_struct *mm)
@@ -398,6 +441,150 @@ do {									\
 #define __flush_s2_tlb_range_op(op, start, pages, stride, tlb_level) \
 	__flush_tlb_range_op(op, start, pages, stride, 0, tlb_level, false)
 
+/*
+ * TLBIP is the 128-bit form of TLBI (an alias of the SYSP system
+ * instruction, FEAT_SYSINSTR128) and takes a pair of consecutive,
+ * even-aligned registers (Xt, Xt+1), of which only Xt is encoded in the
+ * instruction. With FEAT_TLBID the invalidation is restricted to the PEs
+ * that are within both the broadcast shareability domain and the TLBI
+ * Domain held in bits [15:0] of Xt. This allows a range invalidation to
+ * be multicast to the CPUs of a single domain instead of being broadcast
+ * to every CPU in the system.
+ *
+ * The operand pair of the *E1IS range instructions is laid out as:
+ *
+ *	Xt  : [63:48] ASID, [47:46] TG, [45:44] SCALE, [43:39] NUM,
+ *	      [38:37] TTL, [32] TTL64, [15:0] TLBID
+ *	Xt+1: [43:0] BaseADDR[55:12]
+ *
+ * and for the non-range VAE1IS/VALE1IS instructions as:
+ *
+ *	Xt  : [63:48] ASID, [47:44] TTL, [32] TTL64, [15:0] TLBID
+ *	Xt+1: [43:0] VA[55:12]
+ *
+ * TTL64 is always set so that the TTL hint applies to the VMSAv8-64 TLB
+ * entries, which are the only ones the kernel creates. When the assembler
+ * does not support the TLBIP mnemonic (CONFIG_AS_HAS_TLBIP), the
+ * instructions are emitted as raw encodings instead.
+ */
+#define __TLBI_PAIR_LO	"x10"
+#define __TLBI_PAIR_HI	"x11"
+
+#define __TLBIP_PREAMBLE	".arch_extension d128\n"
+#define __tlbip(op, lo, hi)							\
+do {										\
+	register unsigned long __tlbip_lo asm (__TLBI_PAIR_LO) = (lo);		\
+	register unsigned long __tlbip_hi asm (__TLBI_PAIR_HI) = (hi);		\
+										\
+	asm volatile(__TLBIP_PREAMBLE						\
+		     "tlbip " #op ", " __TLBI_PAIR_LO ", " __TLBI_PAIR_HI "\n\t" \
+		     : : "r" (__tlbip_lo), "r" (__tlbip_hi));			\
+} while (0)
+
+#define __tlbip_user(insn, lo, hi)				\
+do {								\
+	if (arm64_kernel_unmapped_at_el0())			\
+		__tlbip(insn, (lo) | USER_ASID_FLAG, hi);	\
+} while (0)
+
+/* Build the lower register of a TLBIP operand pair carrying @asid. */
+static __always_inline unsigned long
+__tlbip_range_lo(unsigned long asid, unsigned long domain,
+		 int scale, int num, int ttl)
+{
+	return FIELD_PREP(GENMASK_ULL(63, 48), asid) |
+	       FIELD_PREP(GENMASK_ULL(47, 46), get_trans_granule()) |
+	       FIELD_PREP(GENMASK_ULL(45, 44), scale) |
+	       FIELD_PREP(GENMASK_ULL(43, 39), num) |
+	       FIELD_PREP(GENMASK_ULL(38, 37), ttl) |
+	       FIELD_PREP(BIT_ULL(32), 1) |		/* TTL64 */
+	       FIELD_PREP(GENMASK_ULL(15, 0), domain);
+}
+
+/* Build the upper register of a TLBIP operand pair. */
+static __always_inline unsigned long __tlbip_addr_hi(unsigned long addr)
+{
+	return FIELD_PREP(GENMASK_ULL(43, 0), addr >> PAGE_SHIFT);
+}
+
+/*
+ * Build the lower register of the non-range TLBIP VAE1IS/VALE1IS operand
+ * pair. The TTL field uses the same granule+level encoding as
+ * __tlbi_level().
+ */
+static __always_inline unsigned long
+__tlbip_va_lo(unsigned long asid, unsigned long domain, int tlb_level)
+{
+	unsigned long lo = FIELD_PREP(GENMASK_ULL(63, 48), asid) |
+			   FIELD_PREP(BIT_ULL(32), 1) |		/* TTL64 */
+			   FIELD_PREP(GENMASK_ULL(15, 0), domain);
+
+	if (cpus_have_const_cap(ARM64_HAS_ARMv8_4_TTL) && tlb_level) {
+		unsigned long ttl = (tlb_level & 3) |
+				    (get_trans_granule() << 2);
+
+		lo |= FIELD_PREP(GENMASK_ULL(47, 44), ttl);
+	}
+
+	return lo;
+}
+
+/*
+ * __flush_tlb_range_domain_op - Perform a TLBIP range operation restricted
+ * to a single TLBI Domain
+ *
+ * Same algorithm as __flush_tlb_range_op(), except that the invalidation is
+ * issued with the TLBIP *E1IS instructions carrying @domain, so that only
+ * the PEs of that domain have to process it. Like the regular TLBI
+ * instructions they broadcast to the Inner Shareable domain and are
+ * completed with the usual DSB ISH.
+ *
+ * @op:	TLBIP operation name for the non-range instruction
+ * @rop:	TLBIP operation name for the range instruction
+ * @start:	The start address of the range
+ * @pages:	Range as the number of pages from 'start'
+ * @stride:	Flush granularity
+ * @asid:	The ASID of the task
+ * @domain:	The TLBI Domain the invalidation targets
+ * @tlb_level:	Translation Table level hint, if known
+ */
+#define __flush_tlb_range_domain_op(op, rop, start, pages, stride,	\
+				    asid, domain, tlb_level)		\
+do {									\
+	typeof(start) __flush_start = start;				\
+	typeof(pages) __flush_pages = pages;				\
+	int num = 0;							\
+	int scale = 3;							\
+	unsigned long __lo;						\
+									\
+	while (__flush_pages > 0) {					\
+		if (!system_supports_tlb_range() ||			\
+		    __flush_pages == 1) {				\
+			__lo = __tlbip_va_lo(asid, domain, tlb_level);	\
+			__tlbip(op, __lo,				\
+				__tlbip_addr_hi(__flush_start));	\
+			__tlbip_user(op, __lo,				\
+				__tlbip_addr_hi(__flush_start));	\
+			__flush_start += stride;			\
+			__flush_pages -= stride >> PAGE_SHIFT;		\
+			continue;					\
+		}							\
+									\
+		num = __TLBI_RANGE_NUM(__flush_pages, scale);		\
+		if (num >= 0) {						\
+			__lo = __tlbip_range_lo(asid, domain,		\
+						scale, num, tlb_level);	\
+			__tlbip(rop, __lo,				\
+				__tlbip_addr_hi(__flush_start));	\
+			__tlbip_user(rop, __lo,				\
+				__tlbip_addr_hi(__flush_start));	\
+			__flush_start += __TLBI_RANGE_PAGES(num, scale) << PAGE_SHIFT; \
+			__flush_pages -= __TLBI_RANGE_PAGES(num, scale);\
+		}							\
+		scale--;						\
+	}								\
+} while (0)
+
 static inline bool __flush_tlb_range_limit_excess(unsigned long start,
 		unsigned long end, unsigned long pages, unsigned long stride)
 {
@@ -415,12 +602,22 @@ static inline bool __flush_tlb_range_limit_excess(unsigned long start,
 	return false;
 }
 
+/*
+ * Issue the TLBI operations for the range [start, end) without a trailing
+ * DSB, which the caller is responsible for issuing.
+ *
+ * When the CPUs the mm has run on fit into a single TLBI Domain, the
+ * invalidation is multicast to that domain with the TLBIP *E1IS
+ * instructions, sparing the CPUs outside of it from having to process the
+ * broadcast.
+ */
 static inline void __flush_tlb_range_nosync(struct mm_struct *mm,
-				     unsigned long start, unsigned long end,
-				     unsigned long stride, bool last_level,
-				     int tlb_level)
+					    unsigned long start, unsigned long end,
+					    unsigned long stride, bool last_level,
+					    int tlb_level)
 {
-	unsigned long asid, pages;
+	unsigned long asid, pages, flags;
+	int domain, scope;
 
 	start = round_down(start, stride);
 	end = round_up(end, stride);
@@ -434,10 +631,34 @@ static inline void __flush_tlb_range_nosync(struct mm_struct *mm,
 	dsb(ishst);
 	asid = ASID(mm);
 
-	if (last_level)
-		__flush_tlb_range_op(vale1is, start, pages, stride, asid, tlb_level, true);
-	else
-		__flush_tlb_range_op(vae1is, start, pages, stride, asid, tlb_level, true);
+	scope = flush_tlb_begin(mm, &flags);
+	if (scope == TLB_FLUSH_SCOPE_DOMAIN) {
+		domain = pick_best_domain(mm_cpumask(mm));
+
+		if (last_level)
+			__flush_tlb_range_domain_op(vale1is, rvale1is,
+						    start, pages, stride, asid, domain,
+						    tlb_level);
+		else
+			__flush_tlb_range_domain_op(vae1is, rvae1is,
+						    start, pages, stride, asid, domain,
+						    tlb_level);
+	} else if (scope == TLB_FLUSH_SCOPE_BROADCAST) {
+		if (last_level)
+			__flush_tlb_range_op(vale1is, start, pages, stride,
+					     asid, tlb_level, true);
+		else
+			__flush_tlb_range_op(vae1is, start, pages, stride,
+					     asid, tlb_level, true);
+	} else {
+		if (last_level)
+			__flush_tlb_range_op(vale1, start, pages, stride,
+					     asid, tlb_level, true);
+		else
+			__flush_tlb_range_op(vae1, start, pages, stride,
+					     asid, tlb_level, true);
+	}
+	flush_tlb_end(scope, flags);
 
 	mmu_notifier_arch_invalidate_secondary_tlbs(mm, start, end);
 }
@@ -461,6 +682,52 @@ static inline void flush_tlb_range(struct vm_area_struct *vma,
 	 * Set the tlb_level to 0 because we can not get enough information here.
 	 */
 	__flush_tlb_range(vma, start, end, PAGE_SIZE, false, 0);
+}
+
+static inline void __flush_tlb_page_nosync(struct mm_struct *mm,
+					   unsigned long uaddr)
+{
+	unsigned long asid = ASID(mm);
+	int domain, scope;
+	unsigned long lo, flags;
+
+	dsb(ishst);
+
+	scope = flush_tlb_begin(mm, &flags);
+	if (scope == TLB_FLUSH_SCOPE_DOMAIN) {
+		domain = pick_best_domain(mm_cpumask(mm));
+
+		lo = __tlbip_va_lo(asid, domain, 0);
+		__tlbip(vale1is, lo, __tlbip_addr_hi(uaddr));
+		__tlbip_user(vale1is, lo, __tlbip_addr_hi(uaddr));
+	} else {
+		unsigned long addr = __TLBI_VADDR(uaddr, asid);
+
+		if (scope == TLB_FLUSH_SCOPE_BROADCAST) {
+			__tlbi(vale1is, addr);
+			__tlbi_user(vale1is, addr);
+		} else {
+			__tlbi(vale1, addr);
+			__tlbi_user(vale1, addr);
+		}
+	}
+	flush_tlb_end(scope, flags);
+
+	mmu_notifier_arch_invalidate_secondary_tlbs(mm, uaddr & PAGE_MASK,
+					(uaddr & PAGE_MASK) + PAGE_SIZE);
+}
+
+static inline void flush_tlb_page_nosync(struct vm_area_struct *vma,
+				 unsigned long uaddr)
+{
+	return __flush_tlb_page_nosync(vma->vm_mm, uaddr);
+}
+
+static inline void flush_tlb_page(struct vm_area_struct *vma,
+				  unsigned long uaddr)
+{
+	flush_tlb_page_nosync(vma, uaddr);
+	dsb(ish);
 }
 
 static inline void flush_tlb_kernel_range(unsigned long start, unsigned long end)

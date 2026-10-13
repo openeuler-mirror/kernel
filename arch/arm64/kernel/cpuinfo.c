@@ -333,6 +333,7 @@ static void __cpuinfo_store_cpu(struct cpuinfo_arm64 *info)
 	info->reg_id_aa64mmfr1 = read_cpuid(ID_AA64MMFR1_EL1);
 	info->reg_id_aa64mmfr2 = read_cpuid(ID_AA64MMFR2_EL1);
 	info->reg_id_aa64mmfr3 = read_cpuid(ID_AA64MMFR3_EL1);
+	info->reg_id_aa64mmfr4 = read_cpuid(ID_AA64MMFR4_EL1);
 	info->reg_id_aa64pfr0 = read_cpuid(ID_AA64PFR0_EL1);
 	info->reg_id_aa64pfr1 = read_cpuid(ID_AA64PFR1_EL1);
 	info->reg_id_aa64pfr2 = read_cpuid(ID_AA64PFR2_EL1);
@@ -351,6 +352,10 @@ static void __cpuinfo_store_cpu(struct cpuinfo_arm64 *info)
 	   (id_aa64pfr0_mpam(info->reg_id_aa64pfr0) ||
 	    id_aa64pfr1_mpamfrac(info->reg_id_aa64pfr1)))
 		info->reg_mpamidr = read_cpuid(MPAMIDR_EL1);
+
+	if (IS_ENABLED(CONFIG_ARM64_TLBID) &&
+	    id_aa64mmfr4_tlbid(info->reg_id_aa64mmfr4))
+		info->reg_tlbididr = read_cpuid(TLBIDIDR_EL1);
 
 	cpuinfo_detect_icache_policy(info);
 }
