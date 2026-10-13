@@ -78,12 +78,29 @@ void sctp_inq_free(struct sctp_inq *queue)
  */
 void sctp_inq_push(struct sctp_inq *q, struct sctp_chunk *chunk)
 {
-	/* Directly call the packet handling routine. */
-	if (chunk->rcvr->dead) {
-		sctp_chunk_free(chunk);
-		return;
+	struct sctp_transport *t;
+
+	/* Directly call the packet handling routine.  Drop the chunk if the
+	 * receiver or the transport it was looked up on is gone.
+	 */
+	if (chunk->rcvr->dead)
+		goto drop;
+
+	if (chunk->transport) {
+		/* Drop the chunk if its transport has been removed from the
+		 * association (e.g. by an ASCONF DEL-IP), so that it is not
+		 * put back into asoc->peer.last_data_from and later used
+		 * after the transport is freed.
+		 */
+		list_for_each_entry(t, &chunk->asoc->peer.transport_addr_list,
+				    transports) {
+			if (t == chunk->transport)
+				goto push;
+		}
+		goto drop;
 	}
 
+push:
 	/* We are now calling this either from the soft interrupt
 	 * or from the backlog processing.
 	 * Eventually, we should clean up inqueue to not rely
@@ -93,6 +110,10 @@ void sctp_inq_push(struct sctp_inq *q, struct sctp_chunk *chunk)
 	if (chunk->asoc)
 		chunk->asoc->stats.ipackets++;
 	q->immediate.func(&q->immediate);
+	return;
+
+drop:
+	sctp_chunk_free(chunk);
 }
 
 /* Peek at the next chunk on the inqeue. */
