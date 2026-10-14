@@ -3,6 +3,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2025-2025. All rights reserved.
  */
 #include <linux/string.h>
+#include <linux/overflow.h>
 #include <linux/sunrpc/clnt.h>
 #include <linux/nfs.h>
 #include <linux/nfs_fs.h>
@@ -17,6 +18,11 @@
 #define ENFS_DNS_MAX_NAME_LEN 256
 #define NUM0 0
 #define NUM1 1
+#define ENFS_SHARD_V1_XDR_SIZE 12
+#define ENFS_SHARD_XDR_SIZE 8
+#define ENFS_LIF_V1_XDR_SIZE 32
+#define ENFS_LIF_XDR_SIZE 28
+#define ENFS_LS_XDR_SIZE 12
 
 typedef int (*ENfsDecodeFunc)(struct enfs_extend3_rsp **extend3ResOut, __be32 *p,
 			      struct xdr_stream *xdrStream);
@@ -83,6 +89,8 @@ NfsExtendProcInfoExtendEncode(
 
 	if (opcode == NFS3_GET_FSINFO_OP) {
 		start = xdr_reserve_space(&xdrStream, sizeof(struct enfs_file_uuid));
+		if (unlikely(!start))
+			return -EMSGSIZE;
 		len = sizeof(struct enfs_file_uuid) - sizeof(uint32_t);
 		quadlen = XDR_QUADLEN(len);
 		padding = (quadlen << 2) - len;
@@ -98,6 +106,8 @@ NfsExtendProcInfoExtendEncode(
 		start = xdr_reserve_space(
 			&xdrStream, 8 + pObj->extend_args_u.lifArgs.ipNumber *
 						    MAX_IPV6_ADDR_LEN);
+		if (unlikely(!start))
+			return -EMSGSIZE;
 		*start++ = cpu_to_be32(pObj->extend_args_u.lifArgs.tenantId);
 		*start++ = cpu_to_be32(pObj->extend_args_u.lifArgs.ipNumber);
 		len = pObj->extend_args_u.lifArgs.ipNumber * MAX_IPV6_ADDR_LEN;
@@ -115,6 +125,8 @@ NfsExtendProcInfoExtendEncode(
 			&xdrStream,
 			8 + pObj->extend_args_u.dnsArgs.dnsNameCount *
 					ENFS_DNS_MAX_NAME_LEN);
+		if (unlikely(!start))
+			return -EMSGSIZE;
 		*start++ = cpu_to_be32(pObj->extend_args_u.dnsArgs.ipType);
 		*start++ =
 			cpu_to_be32(pObj->extend_args_u.dnsArgs.dnsNameCount);
@@ -136,7 +148,7 @@ int NfsExtendDecodeFsShardV1(struct enfs_extend3_rsp **extend3ResOut, __be32 *p,
 			     struct xdr_stream *xdrStream)
 {
 	uint32_t i;
-	uint32_t extend3ResLen = 0;
+	size_t extend3ResLen;
 	uint64_t clusterId;
 	uint32_t storagePoolId;
 	uint32_t fsId;
@@ -152,13 +164,16 @@ int NfsExtendDecodeFsShardV1(struct enfs_extend3_rsp **extend3ResOut, __be32 *p,
 	fsId = be32_to_cpup(p++);
 	tenantId = be32_to_cpup(p++);
 	shardNumber = be32_to_cpup(p++);
+	if (shardNumber > MAX_SHARD_NUMBER_IN_CLUSTER_4FS)
+		return -E2BIG;
 
-	p = xdr_inline_decode(
-		xdrStream, shardNumber * (sizeof(uint64_t) + sizeof(uint32_t)));
+	p = xdr_inline_decode(xdrStream,
+			      size_mul(shardNumber, ENFS_SHARD_V1_XDR_SIZE));
 	if (unlikely(p == NULL))
 		return true;
-	extend3ResLen = sizeof(struct enfs_extend3_rsp) +
-			sizeof(struct enfs_shard_view_single) * shardNumber;
+	extend3ResLen = size_add(sizeof(*extend3Res),
+				 size_mul(sizeof(struct enfs_shard_view_single),
+					  shardNumber));
 	extend3Res = kmalloc(extend3ResLen, GFP_KERNEL);
 	if (extend3Res == NULL)
 		return -ENOMEM;
@@ -181,7 +196,7 @@ int NfsExtendDecodeFsShard(struct enfs_extend3_rsp **extend3ResOut, __be32 *p,
 			   struct xdr_stream *xdrStream)
 {
 	uint32_t i;
-	uint32_t extend3ResLen = 0;
+	size_t extend3ResLen;
 	uint64_t clusterId;
 	uint32_t storagePoolId;
 	uint32_t fsId;
@@ -197,12 +212,16 @@ int NfsExtendDecodeFsShard(struct enfs_extend3_rsp **extend3ResOut, __be32 *p,
 	fsId = be32_to_cpup(p++);
 	tenantId = be32_to_cpup(p++);
 	shardNumber = be32_to_cpup(p++);
+	if (shardNumber > MAX_SHARD_NUMBER_IN_CLUSTER_4FS)
+		return -E2BIG;
 
-	p = xdr_inline_decode(xdrStream, shardNumber * 8);
+	p = xdr_inline_decode(xdrStream,
+			      size_mul(shardNumber, ENFS_SHARD_XDR_SIZE));
 	if (unlikely(p == NULL))
 		return true;
-	extend3ResLen = sizeof(struct enfs_extend3_rsp) +
-			sizeof(struct enfs_shard_view_single) * shardNumber;
+	extend3ResLen = size_add(sizeof(*extend3Res),
+				 size_mul(sizeof(struct enfs_shard_view_single),
+					  shardNumber));
 	extend3Res = kmalloc(extend3ResLen, GFP_KERNEL);
 	if (extend3Res == NULL)
 		return -ENOMEM;
@@ -225,7 +244,7 @@ int NfsExtendDecodeLifInfoV1(struct enfs_extend3_rsp **extend3ResOut, __be32 *p,
 			     struct xdr_stream *xdrStream)
 {
 	uint32_t i;
-	uint32_t extend3ResLen = 0;
+	size_t extend3ResLen;
 	uint32_t lifNum;
 	struct enfs_extend3_rsp *extend3Res = NULL;
 
@@ -233,12 +252,16 @@ int NfsExtendDecodeLifInfoV1(struct enfs_extend3_rsp **extend3ResOut, __be32 *p,
 	if (unlikely(p == NULL))
 		return true;
 	lifNum = be32_to_cpup(p++);
+	if (lifNum > MAX_SUPPORTED_REMOTE_IP_COUNT)
+		return -E2BIG;
 
-	p = xdr_inline_decode(xdrStream, sizeof(struct enfs_lif_port_info_single) * lifNum);
+	p = xdr_inline_decode(xdrStream,
+			      size_mul(lifNum, ENFS_LIF_V1_XDR_SIZE));
 	if (unlikely(p == NULL))
 		return true;
-	extend3ResLen =
-		sizeof(struct enfs_extend3_rsp) + sizeof(struct enfs_lif_port_info_single) * lifNum;
+	extend3ResLen = size_add(sizeof(*extend3Res),
+				 size_mul(sizeof(struct enfs_lif_port_info_single),
+					  lifNum));
 	extend3Res = kmalloc(extend3ResLen, GFP_KERNEL);
 	if (extend3Res == NULL)
 		return -ENOMEM;
@@ -266,7 +289,7 @@ int NfsExtendDecodeLifInfo(struct enfs_extend3_rsp **extend3ResOut, __be32 *p,
 			   struct xdr_stream *xdrStream)
 {
 	uint32_t i;
-	uint32_t extend3ResLen = 0;
+	size_t extend3ResLen;
 	uint32_t lifNum;
 	struct enfs_extend3_rsp *extend3Res = NULL;
 
@@ -274,12 +297,16 @@ int NfsExtendDecodeLifInfo(struct enfs_extend3_rsp **extend3ResOut, __be32 *p,
 	if (unlikely(p == NULL))
 		return true;
 	lifNum = be32_to_cpup(p++);
+	if (lifNum > MAX_SUPPORTED_REMOTE_IP_COUNT)
+		return -E2BIG;
 
-	p = xdr_inline_decode(xdrStream, 32 * lifNum);
+	p = xdr_inline_decode(xdrStream,
+			      size_mul(lifNum, ENFS_LIF_XDR_SIZE));
 	if (unlikely(p == NULL))
 		return true;
-	extend3ResLen =
-		sizeof(struct enfs_extend3_rsp) + sizeof(struct enfs_lif_port_info_single) * lifNum;
+	extend3ResLen = size_add(sizeof(*extend3Res),
+				 size_mul(sizeof(struct enfs_lif_port_info_single),
+					  lifNum));
 	extend3Res = kmalloc(extend3ResLen, GFP_KERNEL);
 	if (extend3Res == NULL)
 		return -ENOMEM;
@@ -307,7 +334,7 @@ int NfsExtendDecodeDnsInfoV1(struct enfs_extend3_rsp **extend3ResOut, __be32 *p,
 			     struct xdr_stream *xdrStream)
 {
 	uint32_t i;
-	uint32_t extend3ResLen = 0;
+	size_t extend3ResLen;
 	uint32_t ipNumber;
 	struct enfs_extend3_rsp *extend3Res = NULL;
 	// 4 means dnsres's ipNumber
@@ -315,17 +342,16 @@ int NfsExtendDecodeDnsInfoV1(struct enfs_extend3_rsp **extend3ResOut, __be32 *p,
 	if (unlikely(p == NULL))
 		return true;
 	ipNumber = be32_to_cpup(p++);
-	// 3 means dnsres's op and vers and ipNumber
-	extend3ResLen = sizeof(uint32_t) * 3 +
-			sizeof(struct enfs_dns_query_ip_info_single) * ipNumber;
+	if (ipNumber == 0 || ipNumber > MAX_SUPPORTED_REMOTE_IP_COUNT)
+		return -E2BIG;
+
+	extend3ResLen = size_add(sizeof(*extend3Res),
+				 size_mul(sizeof(struct enfs_dns_query_ip_info_single),
+					  ipNumber));
 	extend3Res = kmalloc(extend3ResLen, GFP_KERNEL);
 	if (extend3Res == NULL)
 		return -ENOMEM;
 
-	if (ipNumber == 0) {
-		kfree(extend3Res);
-		return true;
-	}
 	extend3Res->extend_res_u.dnsQueryIpInfo.ipNumber = ipNumber;
 	for (i = 0; i < extend3Res->extend_res_u.dnsQueryIpInfo.ipNumber; i++) {
 		// 4 means dnsres's cpuid
@@ -354,6 +380,8 @@ int NfsExtendDecodeDnsInfoV1(struct enfs_extend3_rsp **extend3ResOut, __be32 *p,
 		}
 		memcpy(extend3Res->extend_res_u.dnsQueryIpInfo.ipInfo[i].ipAddr,
 		       p, MAX_IPV6_ADDR_LEN);
+		extend3Res->extend_res_u.dnsQueryIpInfo.ipInfo[i]
+			.ipAddr[MAX_IPV6_ADDR_LEN - 1] = '\0';
 	}
 	*extend3ResOut = extend3Res;
 	return 0;
@@ -363,7 +391,7 @@ int NfsExtendDecodeLsId(struct enfs_extend3_rsp **extend3ResOut, __be32 *p,
 			struct xdr_stream *xdrStream)
 {
 	uint32_t i;
-	uint32_t extend3ResLen = 0;
+	size_t extend3ResLen;
 	uint32_t lsNum;
 	uint64_t clusterId;
 	struct enfs_extend3_rsp *extend3Res = NULL;
@@ -372,6 +400,8 @@ int NfsExtendDecodeLsId(struct enfs_extend3_rsp **extend3ResOut, __be32 *p,
 	if (unlikely(p == NULL))
 		return -ENOMEM;
 	lsNum = be32_to_cpup(p++);
+	if (lsNum > MAX_GLOBAL_CTRL_NODE_NUM)
+		return -E2BIG;
 
 	p = xdr_inline_decode(xdrStream, 8);
 	if (unlikely(p == NULL))
@@ -379,12 +409,12 @@ int NfsExtendDecodeLsId(struct enfs_extend3_rsp **extend3ResOut, __be32 *p,
 	p = xdr_decode_hyper(p, &clusterId);
 
 	p = xdr_inline_decode(xdrStream,
-			      (sizeof(struct enfs_get_ls_version_single)) * lsNum);
+			      size_mul(lsNum, ENFS_LS_XDR_SIZE));
 	if (unlikely(p == NULL))
-		return -ENOMEM;
-	// clusterId and op and vers and lsNum
-	extend3ResLen = sizeof(uint32_t) * 3 + sizeof(uint64_t) +
-			sizeof(struct enfs_get_ls_version_single) * lsNum;
+		return -EBADMSG;
+	extend3ResLen = size_add(sizeof(*extend3Res),
+				 size_mul(sizeof(struct enfs_get_ls_version_single),
+					  lsNum));
 	extend3Res = kmalloc(extend3ResLen, GFP_KERNEL);
 	if (extend3Res == NULL)
 		return -ENOMEM;
@@ -811,7 +841,11 @@ int dorado_query_lifview(struct rpc_clnt *clnt, struct rpc_xprt *xprt,
 	struct enfs_extend3_args *args = NULL;
 	struct enfs_extend3_rsp *extend3Res = NULL;
 	char *curIP;
-	int bufLen = sizeof(uint32_t) * 4 + ipNumber * MAX_IPV6_ADDR_LEN;
+	int bufLen;
+
+	if (!ipNumber || ipNumber > MAX_SUPPORTED_REMOTE_IP_COUNT)
+		return -EINVAL;
+	bufLen = sizeof(uint32_t) * 4 + ipNumber * MAX_IPV6_ADDR_LEN;
 
 	buf = kmalloc(EXTEND_CMD_MAX_BUF_LEN, GFP_KERNEL);
 	if (!buf) {
@@ -848,10 +882,14 @@ int dorado_query_lifview(struct rpc_clnt *clnt, struct rpc_xprt *xprt,
 	ret = NfsExtendProcInfoExtendDecode(buf, bufLen, &extend3Res);
 	if (ret)
 		goto out;
+	if (extend3Res->extend_res_u.lifInfo.lifNumber != ipNumber) {
+		ret = -EBADMSG;
+		goto out;
+	}
 
 	curIP = ipAddr;
 	for (i = 0; i < extend3Res->extend_res_u.lifInfo.lifNumber; i++) {
-		curIP = &ipAddr[i * 64];
+		curIP = &ipAddr[i * MAX_IPV6_ADDR_LEN];
 		strscpy(lifInfo[i].ipAddr, curIP, MAX_IPV6_ADDR_LEN);
 		lifInfo[i].lsId =
 			extend3Res->extend_res_u.lifInfo.lifport[i].lsId;
@@ -885,7 +923,7 @@ int enfs_query_lifview(struct rpc_clnt *clnt, struct rpc_xprt *xprt,
 		       uint32_t *cpuId)
 {
 	int ret;
-	struct enfs_lif_port_info lif_info;
+	struct enfs_lif_port_info lif_info = { 0 };
 
 	ret = dorado_query_lifview(clnt, xprt, ipaddr, 1, &lif_info);
 	if (ret || lif_info.workStatus == 0) {
