@@ -478,7 +478,7 @@ static void fpsimd_save(void)
 	if (test_thread_flag(TIF_FOREIGN_FPSTATE))
 		return;
 
-	if (system_supports_fpmr())
+	if (system_supports_fpmr() && last->fpmr)
 		*(last->fpmr) = read_sysreg_s(SYS_FPMR);
 
 	/*
