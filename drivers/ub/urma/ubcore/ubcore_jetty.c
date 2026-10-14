@@ -2046,8 +2046,9 @@ ubcore_import_jfr_ex_old(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cf
 			mutex_destroy(&tjfr->lock);
 			(void)dev->ops->unimport_jfr(tjfr);
 			ubcore_log_err("Failed to setup tp connection.\n");
-			ubcore_rollback_vtpn_active_fail(dev, cfg->trans_mode, cfg->flag,
-						 active_tp_cfg, false);
+			if (vtpn != ERR_PTR(-EAGAIN))
+				ubcore_rollback_vtpn_active_fail(dev, cfg->trans_mode, cfg->flag,
+							active_tp_cfg, false);
 			if (!vtpn) {
 				UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JFR);
 				return ERR_PTR(-ECONNREFUSED);
@@ -3348,8 +3349,9 @@ ubcore_import_jetty_ex_old(struct ubcore_device *dev, struct ubcore_tjetty_cfg *
 			mutex_destroy(&tjetty->lock);
 			(void)dev->ops->unimport_jetty(tjetty);
 			ubcore_log_err("Failed to setup tp connection.\n");
-			ubcore_rollback_vtpn_active_fail(dev, cfg->trans_mode, cfg->flag,
-						 active_tp_cfg, false);
+			if (vtpn != ERR_PTR(-EAGAIN))
+				ubcore_rollback_vtpn_active_fail(dev, cfg->trans_mode, cfg->flag,
+							active_tp_cfg, false);
 			if (!vtpn) {
 				UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
 				return ERR_PTR(-ECONNREFUSED);
@@ -3897,7 +3899,8 @@ int ubcore_bind_jetty_ex(struct ubcore_jetty *jetty,
 	return ret;
 
 err_rollback:
-	ubcore_rollback_vtpn_active_fail(dev, tjetty->cfg.trans_mode, tjetty->cfg.flag,
+	if (ret != -EAGAIN)
+		ubcore_rollback_vtpn_active_fail(dev, tjetty->cfg.trans_mode, tjetty->cfg.flag,
 					 active_tp_cfg, true);
 	UBCORE_PERF_TRACE_END(PERF_CORE_BIND_JETTY);
 	return ret;
