@@ -947,7 +947,9 @@ mtype_test_cidrs(struct ip_set *set, struct mtype_elem *d,
 		if (!n)
 			continue;
 		for (i = 0; i < n->pos; i++) {
-			if (!test_bit(i, n->used))
+			/* Pairs with mtype_add()'s smp_mb__before_atomic(). */
+			if (!(smp_load_acquire(&n->used[BIT_WORD(i)]) &
+			      BIT_MASK(i)))
 				continue;
 			data = ahash_data(n, i, set->dsize);
 			if (!mtype_data_equal(data, d, &multi))
@@ -1002,7 +1004,9 @@ mtype_test(struct ip_set *set, void *value, const struct ip_set_ext *ext,
 		goto out;
 	}
 	for (i = 0; i < n->pos; i++) {
-		if (!test_bit(i, n->used))
+		/* Pairs with mtype_add()'s smp_mb__before_atomic(). */
+		if (!(smp_load_acquire(&n->used[BIT_WORD(i)]) &
+		      BIT_MASK(i)))
 			continue;
 		data = ahash_data(n, i, set->dsize);
 		if (!mtype_data_equal(data, d, &multi))
@@ -1128,7 +1132,9 @@ mtype_list(const struct ip_set *set,
 		if (!n)
 			continue;
 		for (i = 0; i < n->pos; i++) {
-			if (!test_bit(i, n->used))
+			/* Pairs with mtype_add()'s smp_mb__before_atomic(). */
+			if (!(smp_load_acquire(&n->used[BIT_WORD(i)]) &
+			      BIT_MASK(i)))
 				continue;
 			e = ahash_data(n, i, set->dsize);
 			if (SET_WITH_TIMEOUT(set) &&
