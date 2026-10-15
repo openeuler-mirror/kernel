@@ -1114,6 +1114,9 @@ void nfs4_put_copy(struct nfsd4_copy *copy)
 {
 	if (!refcount_dec_and_test(&copy->refcount))
 		return;
+	/* Drop the task_struct pinned in nfsd4_copy(); NULL on error paths. */
+	if (copy->copy_task)
+		put_task_struct(copy->copy_task);
 	atomic_dec(&copy->cp_nn->pending_async_copies);
 	kfree(copy);
 }
@@ -1525,6 +1528,7 @@ nfsd4_copy(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 		sizeof(struct knfsd_fh));
 	if (!copy->cp_synchronous) {
 		struct nfsd_net *nn = net_generic(SVC_NET(rqstp), nfsd_net_id);
+		struct task_struct *task;
 
 		async_copy = kzalloc(sizeof(struct nfsd4_copy), GFP_KERNEL);
 		if (!async_copy)
@@ -1541,10 +1545,16 @@ nfsd4_copy(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 			goto out_err;
 		memcpy(&copy->cp_res.cb_stateid, &async_copy->cp_stateid.stid,
 			sizeof(copy->cp_res.cb_stateid));
-		async_copy->copy_task = kthread_create(nfsd4_do_async_copy,
-				async_copy, "%s", "copy thread");
-		if (IS_ERR(async_copy->copy_task))
+		task = kthread_create(nfsd4_do_async_copy, async_copy,
+				      "%s", "copy thread");
+		if (IS_ERR(task))
 			goto out_err;
+		/*
+		 * Pin the task_struct so kthread_stop() is safe even after
+		 * this one-shot kthread exits. Released by nfs4_put_copy().
+		 */
+		get_task_struct(task);
+		async_copy->copy_task = task;
 		spin_lock(&async_copy->cp_clp->async_lock);
 		list_add(&async_copy->copies,
 				&async_copy->cp_clp->async_copies);
