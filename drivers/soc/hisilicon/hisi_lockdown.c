@@ -53,7 +53,7 @@ static int hisi_l3t_sccl_action(struct hisi_sccl *sccl, unsigned long addr,
 	return 0;
 }
 
-struct hisi_sccl *get_valid_sccl(int nid)
+static struct hisi_sccl *get_valid_sccl(int nid)
 {
 	struct hisi_sccl *sccl;
 

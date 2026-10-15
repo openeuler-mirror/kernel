@@ -139,20 +139,28 @@ static void __l3t_update_and_wait(void __iomem *addr, u32 b_update, u32 b_wait)
 		pr_warn_ratelimited("read reg timeout\n");
 }
 
-static void __l3t_maintain_do_lock(void __iomem *addr, int slot_idx,
-				   unsigned long s_addr, int size)
+/* Return the bank address of slot_idx, or NULL if it is invalid. */
+static void __iomem *l3t_slot_addr(void __iomem *base, int slot_idx)
 {
 	if (slot_idx < 0 || slot_idx >= L3T_REG_NUM) {
 		pr_err("slot index is invalid: %d\n", slot_idx);
-		return;
+		return NULL;
 	}
 
-	if (!addr) {
-		pr_err("invalid unlock addr\n");
-		return;
+	if (!base) {
+		pr_err("invalid l3t base addr\n");
+		return NULL;
 	}
 
-	addr += slot_idx * L3T_LOCK_STEP;
+	return base + slot_idx * L3T_LOCK_STEP;
+}
+
+static void __l3t_maintain_do_lock(void __iomem *addr, int slot_idx,
+				   unsigned long s_addr, int size)
+{
+	addr = l3t_slot_addr(addr, slot_idx);
+	if (!addr)
+		return;
 
 	writeq(s_addr, addr + L3T_LOCK_START_L);
 	writel(size, addr + L3T_LOCK_AREA);
@@ -162,17 +170,9 @@ static void __l3t_maintain_do_lock(void __iomem *addr, int slot_idx,
 
 static void __l3t_maintain_do_unlock(void __iomem *addr, int slot_idx)
 {
-	if (slot_idx < 0 || slot_idx >= L3T_REG_NUM) {
-		pr_err("slot index is invalid: %d\n", slot_idx);
+	addr = l3t_slot_addr(addr, slot_idx);
+	if (!addr)
 		return;
-	}
-
-	if (!addr) {
-		pr_err("invalid unlock addr\n");
-		return;
-	}
-
-	addr += slot_idx * L3T_LOCK_STEP;
 
 	__l3t_update_and_wait(addr + L3T_LOCK_CTRL, UNLOCK_EN, UNLOCK_DONE);
 
@@ -203,7 +203,7 @@ static void hisi_l3t_read_inner(void __iomem *addr, int locksel,
 	if (!addr) {
 		*s_addr = 0;
 		*size = 0;
-		pr_err("invalid unlock addr\n");
+		pr_err("invalid l3t base addr\n");
 		return;
 	}
 
