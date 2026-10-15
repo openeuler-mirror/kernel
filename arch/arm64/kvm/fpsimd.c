@@ -122,7 +122,7 @@ void kvm_arch_vcpu_ctxflush_fp(struct kvm_vcpu *vcpu)
  */
 void kvm_arch_vcpu_ctxsync_fp(struct kvm_vcpu *vcpu)
 {
-	struct cpu_fp_state fp_state;
+	struct cpu_fp_state fp_state = { };
 
 	WARN_ON_ONCE(!irqs_disabled());
 
@@ -139,6 +139,8 @@ void kvm_arch_vcpu_ctxsync_fp(struct kvm_vcpu *vcpu)
 		fp_state.svcr = &vcpu->arch.svcr;
 #ifdef CONFIG_ENABLE_KVM_FPMR
 		fp_state.fpmr = &__vcpu_sys_reg(vcpu, FPMR);
+#else
+		fp_state.fpmr = NULL;
 #endif
 		fp_state.fp_type = &vcpu->arch.fp_type;
 
