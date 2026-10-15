@@ -411,11 +411,15 @@ static void svc_rdma_build_arg_xdr(struct svc_rqst *rqstp,
  *	    to the first byte past the Read list. rc_read_pcl and
  *	    rc_call_pcl cl_count fields are set to the number of
  *	    Read segments in the list.
- *  %false: Read list is corrupt. @rctxt's xdr_stream is left in an
- *	    unknown state.
+ *  %false: Read list is corrupt or exceeds the page budget. @rctxt's
+ *	    xdr_stream is left in an unknown state.
  */
-static bool xdr_count_read_segments(struct svc_rdma_recv_ctxt *rctxt, __be32 *p)
+static bool xdr_count_read_segments(struct svc_rdma_recv_ctxt *rctxt, __be32 *p,
+				    unsigned int maxpages)
 {
+	unsigned int maxlen = maxpages << PAGE_SHIFT;
+	unsigned int total_len = 0;
+
 	rctxt->rc_call_pcl.cl_count = 0;
 	rctxt->rc_read_pcl.cl_count = 0;
 	while (xdr_item_is_present(p)) {
@@ -429,6 +433,11 @@ static bool xdr_count_read_segments(struct svc_rdma_recv_ctxt *rctxt, __be32 *p)
 
 		xdr_decode_read_segment(p, &position, &handle,
 					    &length, &offset);
+		if (length > maxlen)
+			return false;
+		total_len += length;
+		if (PAGE_ALIGN(total_len) > maxlen)
+			return false;
 		if (position) {
 			if (position & 3)
 				return false;
@@ -456,14 +465,15 @@ static bool xdr_count_read_segments(struct svc_rdma_recv_ctxt *rctxt, __be32 *p)
  *  %false: Read list is corrupt. @rctxt's xdr_stream is left
  *	    in an unknown state.
  */
-static bool xdr_check_read_list(struct svc_rdma_recv_ctxt *rctxt)
+static bool xdr_check_read_list(struct svc_rdma_recv_ctxt *rctxt,
+				unsigned int maxpages)
 {
 	__be32 *p;
 
 	p = xdr_inline_decode(&rctxt->rc_stream, sizeof(*p));
 	if (!p)
 		return false;
-	if (!xdr_count_read_segments(rctxt, p))
+	if (!xdr_count_read_segments(rctxt, p, maxpages))
 		return false;
 	if (!pcl_alloc_call(rctxt, p))
 		return false;
@@ -651,7 +661,8 @@ static void svc_rdma_get_inv_rkey(struct svcxprt_rdma *rdma,
  * - The transport header is entirely contained in the head iovec.
  */
 static int svc_rdma_xdr_decode_req(struct xdr_buf *rq_arg,
-				   struct svc_rdma_recv_ctxt *rctxt)
+				   struct svc_rdma_recv_ctxt *rctxt,
+				   unsigned int maxpages)
 {
 	__be32 *p, *rdma_argp;
 	unsigned int hdr_len;
@@ -681,7 +692,7 @@ static int svc_rdma_xdr_decode_req(struct xdr_buf *rq_arg,
 		goto out_proc;
 	}
 
-	if (!xdr_check_read_list(rctxt))
+	if (!xdr_check_read_list(rctxt, maxpages))
 		goto out_inval;
 	if (!xdr_check_write_list(rctxt))
 		goto out_inval;
@@ -825,7 +836,8 @@ int svc_rdma_recvfrom(struct svc_rqst *rqstp)
 				   DMA_FROM_DEVICE);
 	svc_rdma_build_arg_xdr(rqstp, ctxt);
 
-	ret = svc_rdma_xdr_decode_req(&rqstp->rq_arg, ctxt);
+	ret = svc_rdma_xdr_decode_req(&rqstp->rq_arg, ctxt,
+				      rqstp->rq_page_end - rqstp->rq_pages);
 	if (ret < 0)
 		goto out_err;
 	if (ret == 0)
