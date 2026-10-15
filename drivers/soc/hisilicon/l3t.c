@@ -8,10 +8,12 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
+#include <linux/debugfs.h>
 #include <linux/kallsyms.h>
 #include <linux/mm.h>
 #include <linux/slab.h>
 #include <linux/platform_device.h>
+#include <linux/seq_file.h>
 #include <linux/smp.h>
 #include <linux/xarray.h>
 #include <linux/irqchip.h>
@@ -245,6 +247,78 @@ struct hisi_sccl *hisi_l3t_get_sccl(int nid)
 	return xa_load(&l3t_mapping, nid);
 }
 
+/* Dump every slot bank of one l3t. */
+static void l3t_dump_slots(struct seq_file *m, struct hisi_l3t *l3t)
+{
+	unsigned long s_addr;
+	void __iomem *bank;
+	u32 ctrl;
+	int size, i;
+
+	for (i = 0; i < L3T_REG_NUM; i++) {
+		bank = l3t_slot_addr(l3t->base, i);
+		if (!bank)
+			continue;
+
+		ctrl = readl(bank + L3T_LOCK_CTRL);
+		hisi_l3t_read(l3t, i, &s_addr, &size);
+
+		seq_printf(m, "    slot %d: ctrl %#x addr %#lx size %#x\n",
+			   i, ctrl, s_addr, size);
+	}
+}
+
+/*
+ * sccl->l3t may hold holes and a failed probe can leave an empty
+ * sccl behind, so check each level.
+ */
+static int l3t_dump_show(struct seq_file *m, void *unused)
+{
+	struct hisi_sccl *sccl;
+	struct hisi_l3t *l3t;
+	unsigned long nid;
+	int i;
+
+	mutex_lock(&l3t_mutex);
+	xa_for_each(&l3t_mapping, nid, sccl) {
+		seq_printf(m, "node %d: ccl_cnt %d\n", sccl->nid,
+			   sccl->ccl_cnt);
+		if (!sccl->l3t)
+			continue;
+
+		for (i = 0; i < sccl->ccl_cnt; i++) {
+			l3t = sccl->l3t[i];
+			if (!l3t)
+				continue;
+
+			seq_printf(m, "  ccl %d (sccl %d)\n", l3t->ccl_id,
+				   l3t->sccl_id);
+			l3t_dump_slots(m, l3t);
+		}
+	}
+	mutex_unlock(&l3t_mutex);
+
+	return 0;
+}
+
+DEFINE_SHOW_ATTRIBUTE(l3t_dump);
+
+static struct dentry *l3t_dbgfs_root;
+
+/* Root only. */
+static void hisi_l3t_dbgfs_init(void)
+{
+	l3t_dbgfs_root = debugfs_create_dir("hisi_l3t", NULL);
+	debugfs_create_file("dump", 0400, l3t_dbgfs_root, NULL,
+			    &l3t_dump_fops);
+}
+
+static void hisi_l3t_dbgfs_uninit(void)
+{
+	debugfs_remove_recursive(l3t_dbgfs_root);
+	l3t_dbgfs_root = NULL;
+}
+
 static const struct acpi_device_id hisi_l3t_acpi_match[] = {
 	{ "HISI0502", },
 	{}
@@ -307,13 +381,21 @@ static int __init hisi_l3t_init(void)
 		MIDR_ALL_VERSIONS(MIDR_HISI_HIP10),
 		{}
 	};
+	int ret;
+
 	if (!is_midr_in_range_list(read_cpuid_id(), l3t_support_list))
 		return -ENODEV;
 
 	mutex_init(&l3t_mutex);
 	xa_init(&l3t_mapping);
 
-	return platform_driver_register(&hisi_l3t_driver);
+	ret = platform_driver_register(&hisi_l3t_driver);
+	if (ret)
+		return ret;
+
+	hisi_l3t_dbgfs_init();
+
+	return 0;
 }
 module_init(hisi_l3t_init);
 
@@ -330,8 +412,9 @@ static void hisi_l3t_destroy_sccl(void)
 
 static void __exit hisi_l3t_exit(void)
 {
-	platform_driver_unregister(&hisi_l3t_driver);
+	hisi_l3t_dbgfs_uninit();
 
+	platform_driver_unregister(&hisi_l3t_driver);
 	hisi_l3t_destroy_sccl();
 	xa_destroy(&l3t_mapping);
 }
