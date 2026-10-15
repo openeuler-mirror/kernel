@@ -60,6 +60,12 @@ static int hisi_l3t_init_data(struct platform_device *pdev,
 				     &l3t->ccl_id))
 		return -EINVAL;
 
+	/* Keeps the id inside the sccl->l3t[] array. */
+	if (l3t->ccl_id < 0 || l3t->ccl_id >= HISI_L3T_MAX_CCL) {
+		dev_err(&pdev->dev, "invalid l3t ccl-id: %d\n", l3t->ccl_id);
+		return -EINVAL;
+	}
+
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!mem)
 		return -ENODEV;
@@ -77,7 +83,7 @@ static int hisi_l3t_init_data(struct platform_device *pdev,
 
 static int hisi_l3t_insert_to_sccl(struct hisi_sccl *sccl, struct hisi_l3t *l3t)
 {
-	void *tmp_l3t;
+	struct hisi_l3t **tmp_l3t;
 
 	if (sccl->ccl_cnt > l3t->ccl_id)
 		goto set;
@@ -88,6 +94,13 @@ static int hisi_l3t_insert_to_sccl(struct hisi_sccl *sccl, struct hisi_l3t *l3t)
 	if (!tmp_l3t)
 		return -ENOMEM;
 
+	/*
+	 * krealloc() leaves the grown slots uninitialized; a skipped
+	 * probe must read as NULL, not as a stale pointer.
+	 */
+	memset(tmp_l3t + sccl->ccl_cnt, 0,
+	       (l3t->ccl_id + 1 - sccl->ccl_cnt) * sizeof(struct hisi_l3t *));
+
 	sccl->ccl_cnt = l3t->ccl_id + 1;
 	sccl->l3t = tmp_l3t;
 
@@ -96,11 +109,8 @@ set:
 	return 0;
 }
 
-/*
- * Use xarray to store the mapping b/t nid to sccl
- * all ccls belong be one sccl is store with vla in sccl->l3t
- */
-static int hisi_l3t_init_mapping(struct device *dev, struct hisi_l3t *l3t)
+/* nid -> sccl; the ccls of one sccl live in sccl->l3t[]. */
+static int hisi_l3t_init_mapping(struct hisi_l3t *l3t)
 {
 	struct hisi_sccl *sccl;
 	int ret = -ENOMEM;
@@ -108,12 +118,20 @@ static int hisi_l3t_init_mapping(struct device *dev, struct hisi_l3t *l3t)
 	mutex_lock(&l3t_mutex);
 	sccl = xa_load(&l3t_mapping, l3t->nid);
 	if (!sccl) {
-		sccl = devm_kzalloc(dev, sizeof(*sccl), GFP_KERNEL);
+		/*
+		 * l3t_mapping owns the sccl until module exit, so a
+		 * failed probe leaves a valid entry for the next one.
+		 */
+		sccl = kzalloc(sizeof(*sccl), GFP_KERNEL);
 		if (!sccl)
 			goto unlock;
 		sccl->nid = l3t->nid;
 
-		xa_store(&l3t_mapping, l3t->nid, sccl, GFP_KERNEL);
+		ret = xa_insert(&l3t_mapping, l3t->nid, sccl, GFP_KERNEL);
+		if (ret) {
+			kfree(sccl);
+			goto unlock;
+		}
 	}
 
 	ret = hisi_l3t_insert_to_sccl(sccl, l3t);
@@ -233,6 +251,23 @@ static const struct acpi_device_id hisi_l3t_acpi_match[] = {
 };
 MODULE_DEVICE_TABLE(acpi, hisi_l3t_acpi_match);
 
+/*
+ * Detach the device instance from the module-lifetime mapping.
+ * Devres runs this before the instance and its ioremap are freed;
+ * clearing the slot here keeps the later teardown safe.
+ */
+static void hisi_l3t_dev_release(void *data)
+{
+	struct hisi_l3t *l3t = data;
+	struct hisi_sccl *sccl;
+
+	mutex_lock(&l3t_mutex);
+	sccl = hisi_l3t_get_sccl(l3t->nid);
+	if (sccl && l3t->ccl_id < sccl->ccl_cnt)
+		sccl->l3t[l3t->ccl_id] = NULL;
+	mutex_unlock(&l3t_mutex);
+}
+
 static int hisi_l3t_probe(struct platform_device *pdev)
 {
 	struct hisi_l3t *l3t;
@@ -247,10 +282,13 @@ static int hisi_l3t_probe(struct platform_device *pdev)
 	ret = hisi_l3t_init_data(pdev, l3t);
 	if (!ret) {
 		l3t->dev = &pdev->dev;
-		ret = hisi_l3t_init_mapping(&pdev->dev, l3t);
+		ret = hisi_l3t_init_mapping(l3t);
 	}
+	if (ret)
+		return ret;
 
-	return ret;
+	return devm_add_action_or_reset(&pdev->dev, hisi_l3t_dev_release,
+					l3t);
 }
 
 static struct platform_driver hisi_l3t_driver = {
@@ -284,8 +322,10 @@ static void hisi_l3t_destroy_sccl(void)
 	struct hisi_sccl *sccl;
 	unsigned long nid;
 
-	xa_for_each(&l3t_mapping, nid, sccl)
+	xa_for_each(&l3t_mapping, nid, sccl) {
 		kfree(sccl->l3t);
+		kfree(sccl);
+	}
 }
 
 static void __exit hisi_l3t_exit(void)

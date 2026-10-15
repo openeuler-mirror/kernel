@@ -16,6 +16,9 @@
 
 #define L3T_REG_NUM		4
 
+/* upper bound for the ccl-id of one SCCL */
+#define HISI_L3T_MAX_CCL	256
+
 extern struct mutex l3t_mutex;
 
 struct hisi_l3t {
