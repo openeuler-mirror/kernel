@@ -245,6 +245,15 @@ static int l0_mmap(struct file *filp, struct vm_area_struct *vma)
 		goto free_data;
 	}
 
+	/*
+	 * The allocation path never zeroes these pages, so clear the
+	 * previous owner's data.  Yields under mmap_write_lock.
+	 */
+	for (i = 0; i < page_cnt; i++) {
+		clear_highpage(page + i);
+		cond_resched();
+	}
+
 	nid = page_to_nid(page);
 	ret = l3t_shared_lock(nid, page_to_pfn(page), cont_size);
 	if (ret) {
