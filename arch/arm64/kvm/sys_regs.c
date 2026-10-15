@@ -276,6 +276,34 @@ static bool access_vm_reg(struct kvm_vcpu *vcpu,
 	return true;
 }
 
+#ifdef CONFIG_KVM_ARM_VTLBID
+static bool access_tlbididr(struct kvm_vcpu *vcpu,
+			 struct sys_reg_params *p,
+			 const struct sys_reg_desc *r)
+{
+	struct tlbidomain *vdomain = &vcpu->kvm->arch.tlbidomain;
+
+	if (p->is_write)
+		return ignore_write(vcpu, p);
+
+	if (!vdomain->kvm_tlbid_enabled) {
+		kvm_inject_undefined(vcpu);
+		return false;
+	}
+
+	p->regval = vdomain->tlbididr_val;
+	return true;
+}
+#else
+static bool access_tlbididr(struct kvm_vcpu *vcpu,
+			 struct sys_reg_params *p,
+			 const struct sys_reg_desc *r)
+{
+	kvm_inject_undefined(vcpu);
+	return false;
+}
+#endif
+
 static bool access_actlr(struct kvm_vcpu *vcpu,
 			 struct sys_reg_params *p,
 			 const struct sys_reg_desc *r)
@@ -2633,6 +2661,7 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 	{ SYS_DESC(SYS_LORN_EL1), trap_loregion },
 	{ SYS_DESC(SYS_LORC_EL1), trap_loregion },
 	{ SYS_DESC(SYS_MPAMIDR_EL1), workaround_bad_mpam_abi },
+	{ SYS_DESC(SYS_TLBIDIDR_EL1), access_tlbididr },
 	{ SYS_DESC(SYS_LORID_EL1), trap_loregion },
 
 	{ SYS_DESC(SYS_MPAM1_EL1), workaround_bad_mpam_abi },

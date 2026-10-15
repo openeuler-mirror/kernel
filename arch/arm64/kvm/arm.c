@@ -336,6 +336,13 @@ static int kvm_arm_init_tlbidomain(struct kvm *kvm)
 	vdomain->nvis = min_t(u8, FIELD_GET(TLBIDIDR_EL1_NVIS_MASK, tlbididr),
 			      KVM_VTLBID_MAX_NVIS);
 	vdomain->num_domains = -1;
+	/*
+	 * Guest-visible TLBIDIDR: the NIS/NOS fields carry the virtual
+	 * domain counts (NVIS/NVOS), since the guest uses vDomains.
+	 */
+	vdomain->tlbididr_val = FIELD_PREP(TLBIDIDR_EL1_NIS_MASK, vdomain->nvis) |
+				FIELD_PREP(TLBIDIDR_EL1_NOS_MASK,
+					   FIELD_GET(TLBIDIDR_EL1_NVOS_MASK, tlbididr));
 	max_vdomains = 1 << vdomain->nvis;
 
 	kvm_info("TLBIDIDR: 0x%llx, NIS: %d, NVIS: %d\n", tlbididr, vdomain->nis, vdomain->nvis);
