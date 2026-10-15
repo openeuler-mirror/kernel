@@ -26,6 +26,7 @@ struct l0_vma_data {
 	struct page *page;
 	unsigned long size;
 	int nid;
+	refcount_t refcnt;
 };
 
 static int get_node_node(struct vm_area_struct *vma, nodemask_t *nmask)
@@ -149,6 +150,23 @@ static void l0_free_block(struct l0_vma_data *data)
 	}
 }
 
+/*
+ * Duplicated vmas (fork, mremap rollback) share data; only the
+ * last close may release the block.
+ */
+static void l0_vma_open(struct vm_area_struct *vma)
+{
+	struct l0_vma_data *data = vma->vm_private_data;
+
+	if (!data) {
+		pr_err("%s: pid: %d, invalid private data\n", current->comm,
+		       current->pid);
+		return;
+	}
+
+	refcount_inc(&data->refcnt);
+}
+
 static void l0_vma_close(struct vm_area_struct *vma)
 {
 	struct l0_vma_data *data;
@@ -159,6 +177,9 @@ static void l0_vma_close(struct vm_area_struct *vma)
 		       current->pid);
 		return;
 	}
+
+	if (!refcount_dec_and_test(&data->refcnt))
+		return;
 
 	l3t_shared_unlock(data->nid, page_to_pfn(data->page), data->size);
 	l0_free_block(data);
@@ -182,6 +203,7 @@ static int l0_may_split(struct vm_area_struct *vma, unsigned long addr)
 
 static const struct vm_operations_struct l0_vm_ops = {
 	.huge_fault = l0_huge_fault,
+	.open = l0_vma_open,
 	.close = l0_vma_close,
 	.split = l0_may_split,
 	.mremap = l0_mremap,
@@ -249,6 +271,7 @@ static int l0_mmap(struct file *filp, struct vm_area_struct *vma)
 	data->page = page;
 	data->size = cont_size;
 	data->nid = nid;
+	refcount_set(&data->refcnt, 1);
 
 	vma->vm_ops = &l0_vm_ops;
 	vma->vm_flags |= (VM_MIXEDMAP | VM_DONTCOPY | VM_DONTEXPAND);
