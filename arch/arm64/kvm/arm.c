@@ -958,6 +958,16 @@ static void kvm_vcpu_reload_tlbid(struct kvm *kvm)
 	preempt_enable();
 }
 
+static inline void set_tlbididr_trap(void)
+{
+	u64 val;
+
+	val = read_sysreg_s(SYS_HFGRTR2_EL2);
+	val &= ~HFGRTR2_EL2_nTLBIDIDR_EL1_MASK;
+	write_sysreg_s(val, SYS_HFGRTR2_EL2);
+	isb();
+}
+
 static void kvm_tlbidomain_vcpu_load(struct kvm_vcpu *vcpu)
 {
 	struct kvm *kvm = vcpu->kvm;
@@ -974,6 +984,8 @@ static void kvm_tlbidomain_vcpu_load(struct kvm_vcpu *vcpu)
 	 */
 	if (!vdomain->kvm_tlbid_enabled)
 		return;
+
+	set_tlbididr_trap();
 
 	current_data = xa_load(&vdomain->vcpu_data_array, vcpu->vcpu_idx);
 	if (WARN_ON_ONCE(!current_data))
@@ -1076,6 +1088,16 @@ unlock:
 	spin_unlock(&vdomain->tlbid_lock);
 }
 
+static inline void clear_tlbididr_trap(void)
+{
+	u64 val;
+
+	val = read_sysreg_s(SYS_HFGRTR2_EL2);
+	val |= HFGRTR2_EL2_nTLBIDIDR_EL1_MASK;
+	write_sysreg_s(val, SYS_HFGRTR2_EL2);
+	isb();
+}
+
 static void kvm_tlbidomain_vcpu_put(struct kvm_vcpu *vcpu)
 {
 	struct kvm *kvm = vcpu->kvm;
@@ -1083,6 +1105,8 @@ static void kvm_tlbidomain_vcpu_put(struct kvm_vcpu *vcpu)
 
 	if (!vdomain->kvm_tlbid_enabled)
 		return;
+
+	clear_tlbididr_trap();
 }
 #else
 static inline void kvm_vcpu_reload_tlbid(struct kvm *kvm) { }
