@@ -328,6 +328,13 @@ static void vs_dc_enable(struct device *dev, struct drm_crtc *crtc)
 	struct drm_display_mode *mode = &crtc->state->adjusted_mode;
 	struct dc_hw_display_mode display = { 0 };
 	const struct drm_vs_egt_r2y_config *r2y_config = NULL;
+	u32 bdf;
+
+	bdf = readl(dc->pci_base + 0x144);
+	if ((bdf == 0xffffffff) || (bdf == 0)) {
+		DRM_ERROR("PCIe link is down before frame commit!\n");
+		return;
+	}
 
 	/* get the output id info from encoder ID, if the ENCODER NONE, the output_id = hw_id */
 	if (crtc_state->encoder_type == DRM_MODE_ENCODER_NONE)
@@ -386,7 +393,7 @@ static void vs_dc_enable(struct device *dev, struct drm_crtc *crtc)
 
 	display.enable = crtc_state->base.active;
 
-	egt_dc_hw_setup_display_mode(&dc->hw, vs_crtc->id, &display);
+	egt_dc_hw_setup_display_mode(&dc->hw, vs_crtc->id, &display, dp);
 
 	/* Send an mbox to BMC, DC has been reset done */
 	if (dp)
@@ -399,12 +406,13 @@ static void vs_dc_enable(struct device *dev, struct drm_crtc *crtc)
 static void vs_dc_disable(struct device *dev, struct drm_crtc *crtc)
 {
 	struct vs_dc *dc = dev_get_drvdata(dev);
+	struct egt_displayport *dp = dc->dp;
 	struct vs_crtc *vs_crtc = to_vs_crtc(crtc);
 	struct dc_hw_display_mode display;
 
 	display.enable = false;
 
-	egt_dc_hw_setup_display_mode(&dc->hw, vs_crtc->id, &display);
+	egt_dc_hw_setup_display_mode(&dc->hw, vs_crtc->id, &display, dp);
 
 	egt_dc_hw_config_display_status(&dc->hw, vs_crtc->id, true);
 	pr_debug("[%s - %d]\n", __func__, __LINE__);
@@ -416,13 +424,6 @@ static bool vs_dc_mode_fixup(struct device *dev,
 {
 	struct vs_dc *dc = dev_get_drvdata(dev);
 	long clk_rate;
-	u32 bdf;
-
-	bdf = readl(dc->pci_base + 0x144);
-	if ((bdf == 0xffffffff) || (bdf == 0)) {
-		DRM_ERROR("PCIe link is down before frame commit!\n");
-		return false;
-	}
 
 	pr_debug("[%s - %d] adjusted_mode [%d x %d]\n", __func__, __LINE__,
 			adjusted_mode->hdisplay, adjusted_mode->vdisplay);

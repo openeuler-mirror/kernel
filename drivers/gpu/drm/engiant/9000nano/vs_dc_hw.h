@@ -16,6 +16,7 @@
 #ifdef CONFIG_ENGIANT_VS_DEBUG
 #include "vs_debug.h"
 #endif
+#include "egt_dp.h"
 
 #define __vsFIELDSTART(reg_field)   (reg_field##_START_FIELD)
 
@@ -389,7 +390,7 @@ struct dc_hw_sub_funcs {
 
 struct dc_hw_funcs {
 	void (*set_mode)(struct dc_hw *hw, u8 output_id, struct dc_hw_display *display,
-			 struct dc_hw_display_mode *mode);
+			 struct dc_hw_display_mode *mode, struct egt_displayport *dp);
 	void (*plane)(struct dc_hw *hw, u8 display_id);
 	void (*display)(struct dc_hw *hw, u8 display_id);
 };
@@ -452,7 +453,8 @@ void egt_dc_hw_update_plane_std_bld(struct dc_hw *hw, u8 zpos, struct dc_hw_std_
 void egt_dc_hw_update_cursor(struct dc_hw *hw, u8 id, struct dc_hw_cursor *cursor);
 void egt_dc_hw_update_gamma(struct dc_hw *hw, u8 id, u16 index, u16 r, u16 g, u16 b);
 void egt_dc_hw_enable_gamma(struct dc_hw *hw, u8 id, bool enable);
-void egt_dc_hw_setup_display_mode(struct dc_hw *hw, u8 id, struct dc_hw_display_mode *mode);
+void egt_dc_hw_setup_display_mode(struct dc_hw *hw, u8 id, struct dc_hw_display_mode *mode,
+				struct egt_displayport *dp);
 u32 egt_dc_hw_get_vblank_count(struct dc_hw *hw, u8 id);
 void egt_dc_hw_config_plane_status(struct dc_hw *hw, u8 id, bool config);
 void egt_dc_hw_config_display_status(struct dc_hw *hw, u8 id, bool config);
