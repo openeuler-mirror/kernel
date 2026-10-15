@@ -55,10 +55,15 @@ config HISI_L3T
 
 config HISI_L0
 	tristate "Add support L0 cache"
-	depends on ARM64 && HISI_L3T
+	depends on ARM64 && HISI_L3T && CONTIG_ALLOC && NUMA
+	depends on TRANSPARENT_HUGEPAGE && ARM64_4K_PAGES
 	help
 	  L0 driver for platforms such Kunpeng 920. This provides interfaces to
 	  for user to alloc and lock memory
+
+	  The driver maps one buddy compound page per PMD block, which
+	  fits inside MAX_ORDER for every arm64 page size; the 4K page
+	  restriction is a product decision, not a MAX_ORDER constraint.
 
 	  If not sure say no.
 
