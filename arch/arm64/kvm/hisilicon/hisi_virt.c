@@ -243,6 +243,15 @@ bool hisi_dvmbm_supported(void)
 		return false;
 	}
 
+	/*
+	 * When TLBID is enabled, DVMBM cannot be enabled.
+	 * After BIOS enables TLBID, the DVMBM field of AIDR
+	 * remains set, therefore interception needs to be
+	 * performed in the code.
+	 */
+	if (system_supports_tlbid())
+		return false;
+
 	/* Determine whether DVMBM is supported by the hardware */
 	if (!(read_sysreg(aidr_el1) & AIDR_EL1_DVMBM_MASK))
 		return false;
