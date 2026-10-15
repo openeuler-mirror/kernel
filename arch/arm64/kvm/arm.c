@@ -1029,6 +1029,9 @@ static void kvm_tlbidomain_vcpu_load(struct kvm_vcpu *vcpu)
 				(unsigned long *)&other_data->vdomain_bitmap, max_vdomains);
 		}
 	}
+	trace_kvm_tlbid_vcpu_info(vcpu->vcpu_idx, vcpu->cpu,
+				  current_data->last_pcpu,
+				  current_data->vdomain_bitmap);
 
 	if (!vdomain->guest_tlbid_enabled) {
 		old_map = vdomain->domain_map[0];
@@ -1041,6 +1044,10 @@ static void kvm_tlbidomain_vcpu_load(struct kvm_vcpu *vcpu)
 							   0,
 							   current_data->last_pcpu,
 							   test_bit(0, clear_bits));
+		trace_kvm_tlbid_domain_mapping(0,
+					       vdomain->vdomain_cpumasks[0],
+					       vdomain->domain_map[0]);
+
 		if (vdomain->domain_map[0] == old_map)
 			goto unlock;
 	} else {
@@ -1058,6 +1065,9 @@ static void kvm_tlbidomain_vcpu_load(struct kvm_vcpu *vcpu)
 								   i,
 								   current_data->last_pcpu,
 								   test_bit(i, clear_bits));
+			trace_kvm_tlbid_domain_mapping(i,
+						       vdomain->vdomain_cpumasks[i],
+						       vdomain->domain_map[i]);
 
 			if (vdomain->domain_map[i] != old_map)
 				domain_map_changed = true;

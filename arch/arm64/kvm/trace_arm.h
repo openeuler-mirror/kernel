@@ -408,6 +408,53 @@ TRACE_EVENT(kvm_pvspin_kick_vcpu,
 		  __entry->vcpu_id, __entry->target_vcpu_id)
 );
 
+TRACE_EVENT(kvm_tlbid_vcpu_info,
+	TP_PROTO(int vcpu_idx, int current_pcpu, int last_pcpu,
+		 u32 vdomain_bitmap),
+	TP_ARGS(vcpu_idx, current_pcpu, last_pcpu, vdomain_bitmap),
+
+	TP_STRUCT__entry(
+		__field(int,	vcpu_idx)
+		__field(int,	current_pcpu)
+		__field(int,	last_pcpu)
+		__field(u32,	vdomain_bitmap)
+	),
+
+	TP_fast_assign(
+		__entry->vcpu_idx	= vcpu_idx;
+		__entry->current_pcpu	= current_pcpu;
+		__entry->last_pcpu	= last_pcpu;
+		__entry->vdomain_bitmap	= vdomain_bitmap;
+	),
+
+	TP_printk("vcpu=%d current_pcpu=%d last_pcpu=%d vdomain_bitmap=0x%x",
+		  __entry->vcpu_idx, __entry->current_pcpu,
+		  __entry->last_pcpu, __entry->vdomain_bitmap)
+);
+
+TRACE_EVENT(kvm_tlbid_domain_mapping,
+	TP_PROTO(int vdomain_id, const struct cpumask *cpumask,
+		 int pdomain_id),
+	TP_ARGS(vdomain_id, cpumask, pdomain_id),
+
+	TP_STRUCT__entry(
+		__field(int,	vdomain_id)
+		__cpumask(cpumask)
+		__field(int,	pdomain_id)
+	),
+
+	TP_fast_assign(
+		__entry->vdomain_id	= vdomain_id;
+		__assign_cpumask(cpumask, cpumask_bits(cpumask));
+		__entry->pdomain_id	= pdomain_id;
+	),
+
+	TP_printk("Domain mapping: vDomain=%d, cpumask=%s, pDomain=%d",
+		  __entry->vdomain_id,
+		  __get_cpumask(cpumask),
+		  __entry->pdomain_id)
+);
+
 #endif /* _TRACE_ARM_ARM64_KVM_H */
 
 #undef TRACE_INCLUDE_PATH
