@@ -51,6 +51,7 @@
 static enum kvm_mode kvm_mode = KVM_MODE_DEFAULT;
 
 #include "hisilicon/hisi_virt.h"
+#include "sys_regs.h"
 
 DEFINE_STATIC_KEY_FALSE(kvm_rme_is_available);
 
@@ -2343,6 +2344,8 @@ static int kvm_arm_vcpu_set_vdomain(struct kvm_vcpu *vcpu,
 	td->guest_tlbid_enabled = true;
 
 	kvm_info("vCPU%d: vDomain bitmap: 0x%x\n", vcpu->vcpu_idx, vdomain_bitmap);
+
+	kvm_update_aa64mmfr4_tlbid(vcpu->kvm);
 
 	return 0;
 }
