@@ -1327,6 +1327,9 @@ static void svm_vcpu_reset(struct kvm_vcpu *vcpu, bool init_event)
 					   MSR_IA32_APICBASE_ENABLE;
 		if (kvm_vcpu_is_reset_bsp(&svm->vcpu))
 			svm->vcpu.arch.apic_base |= MSR_IA32_APICBASE_BSP;
+
+		svm->nmi_masked = false;
+		svm->awaiting_iret_completion = false;
 	}
 	init_vmcb(svm);
 
@@ -2419,12 +2422,15 @@ static int cpuid_interception(struct vcpu_svm *svm)
 
 static int iret_interception(struct vcpu_svm *svm)
 {
+	WARN_ON_ONCE(sev_es_guest(svm->vcpu.kvm));
+
 	++svm->vcpu.stat.nmi_window_exits;
-	svm->vcpu.arch.hflags |= HF_IRET_MASK;
+	svm->awaiting_iret_completion = true;
 	if (!sev_es_guest(svm->vcpu.kvm)) {
 		svm_clr_intercept(svm, INTERCEPT_IRET);
-		svm->nmi_iret_rip = kvm_rip_read(&svm->vcpu);
 	}
+	svm->nmi_iret_rip = kvm_rip_read(&svm->vcpu);
+
 	kvm_make_request(KVM_REQ_EVENT, &svm->vcpu);
 	return 1;
 }
@@ -3482,7 +3488,7 @@ static void svm_inject_nmi(struct kvm_vcpu *vcpu)
 	struct vcpu_svm *svm = to_svm(vcpu);
 
 	svm->vmcb->control.event_inj = SVM_EVTINJ_VALID | SVM_EVTINJ_TYPE_NMI;
-	vcpu->arch.hflags |= HF_NMI_MASK;
+	svm->nmi_masked = true;
 	if (!sev_es_guest(svm->vcpu.kvm))
 		svm_set_intercept(svm, INTERCEPT_IRET);
 	++vcpu->stat.nmi_injections;
@@ -3535,7 +3541,7 @@ bool svm_nmi_blocked(struct kvm_vcpu *vcpu)
 		return false;
 
 	ret = (vmcb->control.int_state & SVM_INTERRUPT_SHADOW_MASK) ||
-	      (svm->vcpu.arch.hflags & HF_NMI_MASK);
+	       svm->nmi_masked;
 
 	return ret;
 }
@@ -3555,9 +3561,7 @@ static int svm_nmi_allowed(struct kvm_vcpu *vcpu, bool for_injection)
 
 static bool svm_get_nmi_mask(struct kvm_vcpu *vcpu)
 {
-	struct vcpu_svm *svm = to_svm(vcpu);
-
-	return !!(svm->vcpu.arch.hflags & HF_NMI_MASK);
+	return to_svm(vcpu)->nmi_masked;
 }
 
 static void svm_set_nmi_mask(struct kvm_vcpu *vcpu, bool masked)
@@ -3565,11 +3569,11 @@ static void svm_set_nmi_mask(struct kvm_vcpu *vcpu, bool masked)
 	struct vcpu_svm *svm = to_svm(vcpu);
 
 	if (masked) {
-		svm->vcpu.arch.hflags |= HF_NMI_MASK;
+		svm->nmi_masked = true;
 		if (!sev_es_guest(svm->vcpu.kvm))
 			svm_set_intercept(svm, INTERCEPT_IRET);
 	} else {
-		svm->vcpu.arch.hflags &= ~HF_NMI_MASK;
+		svm->nmi_masked = false;
 		if (!sev_es_guest(svm->vcpu.kvm))
 			svm_clr_intercept(svm, INTERCEPT_IRET);
 	}
@@ -3645,8 +3649,7 @@ static void enable_nmi_window(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 
-	if ((svm->vcpu.arch.hflags & (HF_NMI_MASK | HF_IRET_MASK))
-	    == HF_NMI_MASK)
+	if (svm->nmi_masked && !svm->awaiting_iret_completion)
 		return; /* IRET will cause a vm exit */
 
 	if (!gif_set(svm)) {
@@ -3743,13 +3746,13 @@ static void svm_complete_interrupts(struct vcpu_svm *svm)
 	svm->int3_injected = 0;
 
 	/*
-	 * If we've made progress since setting HF_IRET_MASK, we've
+	 * If we've made progress since setting awaiting_iret_completion, we've
 	 * executed an IRET and can allow NMI injection.
 	 */
-	if ((svm->vcpu.arch.hflags & HF_IRET_MASK) &&
-	    (sev_es_guest(svm->vcpu.kvm) ||
-	     kvm_rip_read(&svm->vcpu) != svm->nmi_iret_rip)) {
-		svm->vcpu.arch.hflags &= ~(HF_NMI_MASK | HF_IRET_MASK);
+	if (svm->awaiting_iret_completion &&
+	    kvm_rip_read(&svm->vcpu) != svm->nmi_iret_rip) {
+		svm->awaiting_iret_completion = false;
+		svm->nmi_masked = false;
 		kvm_make_request(KVM_REQ_EVENT, &svm->vcpu);
 	}
 
