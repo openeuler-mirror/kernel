@@ -145,4 +145,16 @@ config VIRT_TIMER_EARLY_INJECT
 	  The hypervisor can control the early injection latency via
 	  the module parameter: timer_early_inject_ns
 
+config KVM_ARM_VTLBID
+	bool "Virtual TLBID support for KVM guests"
+	depends on KVM && ARM64_TLBID
+	default n
+	help
+	  Enable virtualization of FEAT_TLBID so that each KVM guest can
+	  use TLBI Domains independently of the host. The host TLBID
+	  hardware is partitioned per-VM through VTLBID_EL2 registers
+	  managed on the vCPU load/put path.
+
+	  If unsure, say N.
+
 endif # VIRTUALIZATION

@@ -1315,6 +1315,7 @@ struct kvm_ppc_resize_hpt {
 #define KVM_CAP_HYGON_COCO_EXT_CSV3_SP_MGR        (1 << 4)
 
 #define KVM_CAP_ARM_HW_DIRTY_STATE_TRACK 502
+#define KVM_CAP_ARM_TLBIDOMAIN 503
 
 #define KVM_CAP_ARM_HISI_IPIV 798
 #define KVM_CAP_ARM_VIRT_MSI_BYPASS 799
@@ -2357,5 +2358,18 @@ struct kvm_pre_fault_memory {
 	__u64 flags;
 	__u64 padding[5];
 };
+
+struct kvm_arm_get_vdomain {
+	__u8 max_vdomains;
+};
+
+#define KVM_ARM_GET_VDOMAIN_NUM	_IOR(KVMIO, 0xd7, struct kvm_arm_get_vdomain)
+
+struct kvm_arm_set_vdomain {
+	__u32 vdomain_bitmap;
+	__u8 num_vdomains;
+};
+
+#define KVM_ARM_VCPU_SET_VDOMAIN	_IOW(KVMIO, 0xd8, struct kvm_arm_set_vdomain)
 
 #endif /* __LINUX_KVM_H */

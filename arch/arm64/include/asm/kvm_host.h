@@ -45,6 +45,20 @@
 #define KVM_VCPU_MAX_FEATURES 9
 #define KVM_VCPU_VALID_FEATURES	(BIT(KVM_VCPU_MAX_FEATURES) - 1)
 
+#define NIS_RANGE_MIN_1_8 1
+#define NIS_RANGE_MAX_1_8 8
+#define NIS_RANGE_MIN_9_16 9
+#define NIS_RANGE_MAX_9_16 16
+#define VTLBID_TD_WIDTH_NIS_1_8 8
+#define VTLBID_TD_WIDTH_NIS_9_16 16
+#define VTLBID_EL2_WIDTH 64
+/*
+ * Cap the supported NVIS so per-vDomain bitmaps have a compile-time
+ * upper bound; the hardware field itself is 5 bits wide.
+ */
+#define KVM_VTLBID_MAX_NVIS		5
+#define KVM_VTLBID_MAX_VDOMAINS		(1U << KVM_VTLBID_MAX_NVIS)
+
 #define KVM_REQ_SLEEP \
 	KVM_ARCH_REQ_FLAGS(0, KVM_REQUEST_WAIT | KVM_REQUEST_NO_WAKEUP)
 #define KVM_REQ_IRQ_PENDING	KVM_ARCH_REQ(1)
@@ -57,6 +71,7 @@
 #define KVM_REQ_RELOAD_TLBI_DVMBM	KVM_ARCH_REQ(8)
 #define KVM_REQ_RELOAD_WFI_TRAPS       KVM_ARCH_REQ(9)
 #define KVM_REQ_RELOAD_TIMER_EARLY_INJECT KVM_ARCH_REQ(10)
+#define KVM_REQ_RELOAD_VTLBID	KVM_ARCH_REQ(11)
 
 #define KVM_DIRTY_LOG_MANUAL_CAPS   (KVM_DIRTY_LOG_MANUAL_PROTECT_ENABLE | \
 				     KVM_DIRTY_LOG_INITIALLY_SET)
@@ -208,6 +223,40 @@ struct kvm_protected_vm {
 	struct kvm_hyp_memcache teardown_mc;
 };
 
+struct vcpu_tlbid_data {
+	/* Node in per-pCPU vCPU list of tlbidomain */
+	struct list_head pcpu_node;
+	/* Store vDomain bitmap, indexed by vCPU ID */
+	u32 vdomain_bitmap;
+	/* Record the last pCPU where vCPU was running, indexed by vCPU ID */
+	int last_pcpu;
+};
+
+struct tlbidomain {
+	/* Using xarray to dynamically allocate vCPU-related TLBID info */
+	struct xarray vcpu_data_array;
+	/* The number of vDomains */
+	int num_domains;
+	/* Mapping of pDomain to vDomain, indexed by vDomain ID */
+	int *domain_map;
+	/* Record the bitmap of pCPUs mapped to vDomain, indexed by vDomain ID */
+	cpumask_var_t *vdomain_cpumasks;
+	/* Whether virt-TLBID is enabled by KVM */
+	bool kvm_tlbid_enabled;
+	/* Whether virt-TLBID is enabled by Guest */
+	bool guest_tlbid_enabled;
+	/* TLBIDIDR.NVIS */
+	u8 nvis;
+	/* TLBIDIDR.NIS */
+	u8 nis;
+	/* Guest-visible TLBIDIDR value (NIS/NOS carry virtual domain counts) */
+	u64 tlbididr_val;
+	/* Used to prevent concurrent modifications to the domain mapping. */
+	spinlock_t tlbid_lock;
+	/* Per-pCPU list of vCPUs whose last_pcpu equals this pCPU */
+	struct list_head *pcpu_vcpu_list;
+};
+
 struct kvm_arch {
 	struct kvm_s2_mmu mmu;
 
@@ -332,6 +381,10 @@ struct kvm_arch {
 	KABI_EXTEND(u64 midr_el1)
 	KABI_EXTEND(u64 revidr_el1)
 	KABI_EXTEND(u64 aidr_el1)
+
+#ifdef CONFIG_KVM_ARM_VTLBID
+	struct tlbidomain tlbidomain;
+#endif
 };
 
 struct kvm_vcpu_fault_info {
