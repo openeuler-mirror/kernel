@@ -202,7 +202,6 @@ static int l0_mmap(struct file *filp, struct vm_area_struct *vma)
 	if (ret) {
 		pr_err("%s: pid: %d, l3t lock failed, ret: %d\n", current->comm,
 		       current->pid, ret);
-		ret = -ENOMEM;
 		goto free_page;
 	}
 

@@ -94,7 +94,7 @@ int l3t_shared_lock(int nid, unsigned long pfn, unsigned long size)
 
 	ret = hisi_l3t_sccl_action(sccl, pfn << PAGE_SHIFT, size, &ops);
 	if (ret)
-		return -ENOMEM;
+		return -ENOSPC;
 
 	return 0;
 }
@@ -133,7 +133,7 @@ int l3t_shared_unlock(int nid, unsigned long pfn, unsigned long size)
 
 	ret = hisi_l3t_sccl_action(sccl, pfn << PAGE_SHIFT, size, &ops);
 	if (ret)
-		return -EINVAL;
+		return -ENOENT;
 
 	return 0;
 }
