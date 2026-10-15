@@ -28,15 +28,33 @@ struct l0_vma_data {
 	int nid;
 };
 
-static int get_node_node(struct vm_area_struct *vma)
+static int get_node_node(struct vm_area_struct *vma, nodemask_t *nmask)
 {
 	struct mempolicy *pol;
-	nodemask_t *nmask;
+	nodemask_t *pol_nmask;
 	int nid;
 
-	nid = get_vma_policy_node(vma, vma->vm_start, GFP_KERNEL, &pol, &nmask);
-	if (pol->mode == MPOL_BIND || pol->mode == MPOL_PREFERRED_MANY)
-		nid = first_node(*nmask);
+	nid = get_vma_policy_node(vma, vma->vm_start, GFP_KERNEL, &pol,
+				  &pol_nmask);
+	/*
+	 * An out-of-range nid is fed to node_zonelist() unchecked, so
+	 * fall back to the local node.
+	 */
+	if (pol->mode == MPOL_BIND) {
+		nid = first_node(*pol_nmask);
+		if (nid >= MAX_NUMNODES) {
+			nodes_clear(*nmask);
+			nid = numa_node_id();
+		} else {
+			*nmask = *pol_nmask;
+		}
+	} else {
+		/* Soft policies keep their fallback. */
+		if (pol->mode == MPOL_PREFERRED_MANY)
+			nid = first_node(*pol_nmask);
+		if (nid < 0 || nid >= MAX_NUMNODES)
+			nid = numa_node_id();
+	}
 
 	return nid;
 }
@@ -175,6 +193,7 @@ static int l0_mmap(struct file *filp, struct vm_area_struct *vma)
 	struct l0_vma_data *data;
 	int page_cnt, nid, ret, i, pmd_nr;
 	struct page *page;
+	nodemask_t nmask;
 
 	pr_debug("%s: pid: %d, vma_start: %#lx, vma_end: %#lx vma_flags: %pGv\n",
 		current->comm, current->pid, vma->vm_start, vma->vm_end,
@@ -191,13 +210,20 @@ static int l0_mmap(struct file *filp, struct vm_area_struct *vma)
 		return -ENOMEM;
 
 	page_cnt = cont_size >> PAGE_SHIFT;
-	nid = get_node_node(vma);
-	page = alloc_contig_pages(page_cnt, GFP_KERNEL, nid, NULL);
+	/*
+	 * BIND fills the mask.  Soft policies pass NULL
+	 * and keep the fallback.
+	 */
+	nodes_clear(nmask);
+	nid = get_node_node(vma, &nmask);
+	page = alloc_contig_pages(page_cnt, GFP_KERNEL, nid,
+				  nodes_empty(nmask) ? NULL : &nmask);
 	if (!page) {
 		ret = -ENOMEM;
 		goto free_data;
 	}
 
+	nid = page_to_nid(page);
 	ret = l3t_shared_lock(nid, page_to_pfn(page), cont_size);
 	if (ret) {
 		pr_err("%s: pid: %d, l3t lock failed, ret: %d\n", current->comm,
