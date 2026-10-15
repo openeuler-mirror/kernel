@@ -66,7 +66,7 @@ static int hisi_l3t_init_data(struct platform_device *pdev,
 
 	l3t->base = devm_ioremap(&pdev->dev, mem->start, resource_size(mem));
 	if (IS_ERR_OR_NULL(l3t->base))
-		return PTR_ERR(l3t->base);
+		return -ENOMEM;
 
 	l3t->nid = sccl_to_node_id(l3t->sccl_id);
 	if (l3t->nid < 0)
