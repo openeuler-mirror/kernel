@@ -494,6 +494,8 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 			goto err_free_cpumask;
 	}
 
+	kvm_arm_init_tlbidomain(kvm);
+
 	return 0;
 
 err_free_cpumask:
@@ -531,6 +533,7 @@ void kvm_arch_destroy_vm(struct kvm *kvm)
 
 	kvm_arm_teardown_hypercalls(kvm);
 	kvm_destroy_realm(kvm);
+	free_tlbid_vdomain(kvm);
 }
 
 #ifdef CONFIG_ARM64_HISI_IPIV
@@ -683,6 +686,12 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 			r = 0;
 		break;
 #endif
+	case KVM_CAP_ARM_TLBIDOMAIN:
+		if (IS_ENABLED(CONFIG_KVM_ARM_VTLBID) && system_supports_tlbid())
+			r = 1;
+		else
+			r = 0;
+		break;
 	case KVM_CAP_ARM_RME:
 		r = static_key_enabled(&kvm_rme_is_available);
 		break;
@@ -2205,7 +2214,9 @@ static int kvm_arch_vcpu_ioctl_vcpu_init(struct kvm_vcpu *vcpu,
 	kvm_arm_pvtimer_status_set_active(vcpu, false);
 #endif
 
-	return 0;
+	ret = kvm_arm_tlbidomain_vcpu_init(vcpu);
+
+	return ret;
 }
 
 static int kvm_arm_vcpu_set_attr(struct kvm_vcpu *vcpu,
@@ -2469,6 +2480,17 @@ long kvm_arch_vcpu_ioctl(struct file *filp,
 			return -EFAULT;
 		return kvm_arm_vcpu_rmm_psci_complete(vcpu, &req);
 	}
+	case KVM_ARM_VCPU_SET_VDOMAIN: {
+		struct kvm_arm_set_vdomain vdomain;
+
+		if (!kvm_vcpu_initialized(vcpu))
+			return -ENOEXEC;
+
+		if (copy_from_user(&vdomain, argp, sizeof(vdomain)))
+			return -EFAULT;
+
+		return kvm_arm_vcpu_set_vdomain(vcpu, &vdomain);
+	}
 	default:
 		r = -EINVAL;
 	}
@@ -2661,6 +2683,19 @@ int kvm_arch_vm_ioctl(struct file *filp, unsigned int ioctl, unsigned long arg)
 		if (copy_from_user(&range, argp, sizeof(range)))
 			return -EFAULT;
 		return kvm_vm_ioctl_get_reg_writable_masks(kvm, &range);
+	}
+	case KVM_ARM_GET_VDOMAIN_NUM: {
+		struct kvm_arm_get_vdomain vdomain;
+		int ret;
+
+		ret = kvm_arm_get_vdomain_num(kvm, &vdomain);
+		if (ret)
+			return ret;
+
+		if (copy_to_user(argp, &vdomain, sizeof(vdomain)))
+			return -EFAULT;
+
+		return 0;
 	}
 	default:
 		return -EINVAL;
