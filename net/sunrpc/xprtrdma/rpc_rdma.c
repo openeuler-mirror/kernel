@@ -1146,6 +1146,8 @@ rpcrdma_is_bcall(struct rpcrdma_xprt *r_xprt, struct rpcrdma_rep *rep)
 
 	/* Peek at stream contents without advancing. */
 	p = xdr_inline_decode(xdr, 0);
+	if ((char *)xdr->end - (char *)p < 5 * XDR_UNIT)
+		return false;
 
 	/* Chunk lists */
 	if (xdr_item_is_present(p++))
@@ -1177,7 +1179,7 @@ rpcrdma_is_bcall(struct rpcrdma_xprt *r_xprt, struct rpcrdma_rep *rep)
 
 out_short:
 	pr_warn("RPC/RDMA short backward direction call\n");
-	return true;
+	return false;
 }
 #else	/* CONFIG_SUNRPC_BACKCHANNEL */
 {
