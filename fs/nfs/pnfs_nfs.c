@@ -1037,6 +1037,8 @@ nfs4_decode_mp_ds_addr(struct net *net, struct xdr_stream *xdr, gfp_t gfp_flags)
 	if (unlikely(!p))
 		goto out_err;
 	nlen = be32_to_cpup(p++);
+	if (unlikely(nlen <= 0))
+		goto out_err;
 
 	p = xdr_inline_decode(xdr, nlen);
 	if (unlikely(!p))
@@ -1054,6 +1056,8 @@ nfs4_decode_mp_ds_addr(struct net *net, struct xdr_stream *xdr, gfp_t gfp_flags)
 	if (unlikely(!p))
 		goto out_free_netid;
 	rlen = be32_to_cpup(p);
+	if (unlikely(rlen <= 0))
+		goto out_free_netid;
 
 	p = xdr_inline_decode(xdr, rlen);
 	if (unlikely(!p))
