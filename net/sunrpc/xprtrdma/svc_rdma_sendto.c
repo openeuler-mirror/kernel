@@ -547,6 +547,20 @@ static int svc_rdma_dma_map_buf(struct svcxprt_rdma *rdma,
 				     offset_in_page(base), len);
 }
 
+static unsigned int
+svc_rdma_inline_reply_len(__be32 *wr_lst, struct xdr_buf *xdr)
+{
+	unsigned int len = xdr->len;
+
+	if (wr_lst) {
+		len -= xdr->page_len;
+		if (xdr->tail[0].iov_len)
+			len -= xdr_padsize(xdr->page_len);
+	}
+
+	return len;
+}
+
 /**
  * svc_rdma_sync_reply_hdr - DMA sync the transport header buffer
  * @rdma: controlling transport
@@ -569,10 +583,12 @@ void svc_rdma_sync_reply_hdr(struct svcxprt_rdma *rdma,
  * transmit in a single RDMA Send, then the reply will
  * have to be copied into a bounce buffer.
  */
-static bool svc_rdma_pull_up_needed(struct svcxprt_rdma *rdma,
-				    struct xdr_buf *xdr,
-				    __be32 *wr_lst)
+static int svc_rdma_check_pull_up(struct svcxprt_rdma *rdma,
+				  struct svc_rdma_send_ctxt *ctxt,
+				  struct xdr_buf *xdr,
+				  __be32 *wr_lst)
 {
+	unsigned int inline_len;
 	int elements;
 
 	/* xdr->head */
@@ -597,8 +613,15 @@ static bool svc_rdma_pull_up_needed(struct svcxprt_rdma *rdma,
 	if (xdr->tail[0].iov_len)
 		++elements;
 
-	/* assume 1 SGE is needed for the transport header */
-	return elements >= rdma->sc_max_send_sges;
+	if (elements < rdma->sc_max_send_sges)
+		return 0;
+
+	inline_len = svc_rdma_inline_reply_len(wr_lst, xdr);
+	if (ctxt->sc_sges[0].length > rdma->sc_max_req_size ||
+	    inline_len > rdma->sc_max_req_size - ctxt->sc_sges[0].length)
+		return -E2BIG;
+
+	return 1;
 }
 
 /* The device is not capable of sending the reply directly.
@@ -650,7 +673,7 @@ static int svc_rdma_pull_up_reply_msg(struct svcxprt_rdma *rdma,
 	if (taillen)
 		memcpy(dst, tailbase, taillen);
 
-	ctxt->sc_sges[0].length += xdr->len;
+	ctxt->sc_sges[0].length += svc_rdma_inline_reply_len(wr_lst, xdr);
 	ib_dma_sync_single_for_device(rdma->sc_pd->device,
 				      ctxt->sc_sges[0].addr,
 				      ctxt->sc_sges[0].length,
@@ -681,7 +704,10 @@ int svc_rdma_map_reply_msg(struct svcxprt_rdma *rdma,
 	u32 xdr_pad;
 	int ret;
 
-	if (svc_rdma_pull_up_needed(rdma, xdr, wr_lst))
+	ret = svc_rdma_check_pull_up(rdma, ctxt, xdr, wr_lst);
+	if (ret < 0)
+		return ret;
+	if (ret)
 		return svc_rdma_pull_up_reply_msg(rdma, ctxt, xdr, wr_lst);
 
 	++ctxt->sc_cur_sge_no;
@@ -816,7 +842,8 @@ static int svc_rdma_send_error_msg(struct svcxprt_rdma *rdma,
 				   struct svc_rqst *rqstp)
 {
 	__be32 *p;
-	int ret;
+
+	ctxt->sc_send_wr.num_sge = 0;
 
 	p = ctxt->sc_xprt_buf;
 	trace_svcrdma_err_chunk(*p);
@@ -828,13 +855,7 @@ static int svc_rdma_send_error_msg(struct svcxprt_rdma *rdma,
 	svc_rdma_save_io_pages(rqstp, ctxt);
 
 	ctxt->sc_send_wr.opcode = IB_WR_SEND;
-	ret = svc_rdma_send(rdma, &ctxt->sc_send_wr);
-	if (ret) {
-		svc_rdma_send_ctxt_put(rdma, ctxt);
-		return ret;
-	}
-
-	return 0;
+	return svc_rdma_send(rdma, &ctxt->sc_send_wr);
 }
 
 void svc_rdma_prep_reply_hdr(struct svc_rqst *rqstp)
@@ -907,6 +928,8 @@ int svc_rdma_sendto(struct svc_rqst *rqstp)
 	svc_rdma_sync_reply_hdr(rdma, sctxt, svc_rdma_reply_hdr_len(rdma_resp));
 	ret = svc_rdma_send_reply_msg(rdma, sctxt, rdma_argp, rqstp,
 				      wr_lst, rp_ch);
+	if (ret == -E2BIG)
+		goto err2;
 	if (ret < 0)
 		goto err1;
 	return 0;
