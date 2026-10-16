@@ -3852,6 +3852,7 @@ static ssize_t __cifs_writev(
 		return -ENOMEM;
 
 	ctx->cfile = cifsFileInfo_get(cfile);
+	atomic_inc(&cifs_sb->outstanding_rreq);
 
 	if (!is_sync_kiocb(iocb))
 		ctx->iocb = iocb;
@@ -4387,6 +4388,7 @@ static ssize_t __cifs_readv(
 	ctx->direct_io	= direct;
 	ctx->len	= len;
 	ctx->cfile	= cifsFileInfo_get(cfile);
+	atomic_inc(&cifs_sb->outstanding_rreq);
 	ctx->nr_pinned_pages = 0;
 
 	if (!is_sync_kiocb(iocb))
