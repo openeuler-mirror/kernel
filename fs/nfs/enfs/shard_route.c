@@ -486,14 +486,31 @@ static void copy_ls_entry(struct ls_info *info,
 	int i;
 	int target;
 
+	if (ls_view->num > MAX_GLOBAL_CTRL_NODE_NUM) {
+		*flag = FAULT_DETECTED;
+		return;
+	}
+
+	if (info->num != ls_view->num)
+		*flag = FAULT_DETECTED;
+
 	for (i = 0; i < ls_view->num; i++) {
-		target = find_same_lsid(info, ls_view->num, ls_view->lsInfo[i].lsId);
+		target = find_same_lsid(info, info->num,
+					ls_view->lsInfo[i].lsId);
+		if (target < 0) {
+			*flag = FAULT_DETECTED;
+			continue;
+		}
 		if (info->entry[target].lsVersion !=
 			ls_view->lsInfo[i].lsVersion) {
 			*flag = FAULT_DETECTED;
-			info->entry[target].lsVersion =
-				ls_view->lsInfo[i].lsVersion;
 		}
+	}
+
+	info->num = ls_view->num;
+	for (i = 0; i < ls_view->num; i++) {
+		info->entry[i].lsId = ls_view->lsInfo[i].lsId;
+		info->entry[i].lsVersion = ls_view->lsInfo[i].lsVersion;
 	}
 }
 
