@@ -268,82 +268,6 @@ static void unic_backup_channels_param(struct unic_dev *unic_dev,
 	channels_param->rx_buff_len = unic_dev->channels.rx_buff_len;
 }
 
-static int unic_alloc_txrx_stats(struct unic_dev *unic_dev,
-				 struct unic_sq_stats **sq_stats,
-				 struct unic_rq_stats **rq_stats)
-{
-	if (unic_tx_changed(unic_dev)) {
-		*sq_stats = kcalloc(unic_dev->channels.num, sizeof(**sq_stats),
-				    GFP_KERNEL);
-		if (ZERO_OR_NULL_PTR(*sq_stats))
-			return -ENOMEM;
-	}
-
-	if (unic_rx_changed(unic_dev)) {
-		*rq_stats = kcalloc(unic_dev->channels.num, sizeof(**rq_stats),
-				    GFP_KERNEL);
-		if (ZERO_OR_NULL_PTR(*rq_stats)) {
-			if (unic_tx_changed(unic_dev))
-				kfree(*sq_stats);
-			return -ENOMEM;
-		}
-	}
-
-	return 0;
-}
-
-static void unic_free_txrx_stats(struct unic_dev *unic_dev,
-				 struct unic_sq_stats *sq_stats,
-				 struct unic_rq_stats *rq_stats)
-{
-	if (unic_tx_changed(unic_dev))
-		kfree(sq_stats);
-
-	if (unic_rx_changed(unic_dev))
-		kfree(rq_stats);
-}
-
-static void unic_backup_sqrq_stats(struct unic_dev *unic_dev,
-				   struct unic_sq_stats *sq_stats,
-				   struct unic_rq_stats *rq_stats)
-{
-	u32 i;
-
-	for (i = 0; i < unic_dev->channels.num; i++) {
-		if (unic_tx_changed(unic_dev))
-			memcpy(&sq_stats[i], &unic_dev->channels.c[i].sq->stats,
-			       sizeof(struct unic_sq_stats));
-		if (unic_rx_changed(unic_dev))
-			memcpy(&rq_stats[i], &unic_dev->channels.c[i].rq->stats,
-			       sizeof(struct unic_rq_stats));
-	}
-}
-
-static void unic_backup_param_and_stats(struct unic_dev *unic_dev,
-					struct unic_channel_param *channels_param,
-					struct unic_sq_stats *sq_stats,
-					struct unic_rq_stats *rq_stats)
-{
-	unic_backup_channels_param(unic_dev, channels_param);
-	unic_backup_sqrq_stats(unic_dev, sq_stats, rq_stats);
-}
-
-static void unic_restore_sqrq_stats(struct unic_dev *unic_dev,
-				    struct unic_sq_stats *sq_stats,
-				    struct unic_rq_stats *rq_stats)
-{
-	u32 i;
-
-	for (i = 0; i < unic_dev->channels.num; i++) {
-		if (unic_rx_changed(unic_dev))
-			memcpy(&unic_dev->channels.c[i].rq->stats, &rq_stats[i],
-			       sizeof(struct unic_rq_stats));
-		if (unic_tx_changed(unic_dev))
-			memcpy(&unic_dev->channels.c[i].sq->stats, &sq_stats[i],
-			       sizeof(struct unic_sq_stats));
-	}
-}
-
 int unic_set_channels_param(struct net_device *ndev,
 			    struct ethtool_ringparam *param,
 			    struct kernel_ethtool_ringparam *kernel_param,
@@ -351,8 +275,6 @@ int unic_set_channels_param(struct net_device *ndev,
 {
 	struct unic_channel_param new_param, org_param;
 	struct unic_dev *unic_dev = netdev_priv(ndev);
-	struct unic_sq_stats *sq_stats;
-	struct unic_rq_stats *rq_stats;
 	int ret, ret1;
 
 	ret = unic_check_channels_param(unic_dev, param, kernel_param);
@@ -363,13 +285,7 @@ int unic_set_channels_param(struct net_device *ndev,
 					    &new_param))
 		return 0;
 
-	ret = unic_alloc_txrx_stats(unic_dev, &sq_stats, &rq_stats);
-	if (ret) {
-		unic_err(unic_dev, "failed to alloc txrx stats, ret = %d.\n", ret);
-		goto out;
-	}
-
-	unic_backup_param_and_stats(unic_dev, &org_param, sq_stats, rq_stats);
+	unic_backup_channels_param(unic_dev, &org_param);
 
 	unic_info(unic_dev,
 		  "changing tx/rx depth from %u/%u to %u/%u, changing rx buffer len from %u to %u.\n",
@@ -387,16 +303,11 @@ int unic_set_channels_param(struct net_device *ndev,
 			unic_err(unic_dev,
 				 "failed to revert to old value, ret1 = %d.\n",
 				 ret1);
-			unic_free_txrx_stats(unic_dev, sq_stats, rq_stats);
 			unic_clear_txrx_channels_state(unic_dev);
 			return ret1;
 		}
 	}
 
-	unic_restore_sqrq_stats(unic_dev, sq_stats, rq_stats);
-	unic_free_txrx_stats(unic_dev, sq_stats, rq_stats);
-
-out:
 	unic_clear_txrx_channels_state(unic_dev);
 
 	return ret;

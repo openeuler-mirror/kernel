@@ -19,10 +19,13 @@ struct unic_dev;
 #define UNIC_ETH_MAC_STATS_FIELD_OFFSET(fld) offsetof(struct ubase_eth_mac_stats, fld)
 #define UNIC_ETH_MAC_STATS_FLD_CAP_1(fld) {#fld, UNIC_ETH_MAC_STATS_CAP_1, \
 					   UNIC_ETH_MAC_STATS_FIELD_OFFSET(fld)}
-#define UNIC_SQ_STATS_FIELD_OFFSET(fld) (offsetof(struct unic_sq, stats) + \
-					 offsetof(struct unic_sq_stats, fld))
-#define UNIC_RQ_STATS_FIELD_OFFSET(fld) (offsetof(struct unic_rq, stats) + \
-					 offsetof(struct unic_rq_stats, fld))
+
+#define UNIC_SQ_STATS_FIELD_OFFSET(fld) \
+	(offsetof(struct unic_channel_stats, sq_stats) + \
+	 offsetof(struct unic_sq_stats, fld))
+#define UNIC_RQ_STATS_FIELD_OFFSET(fld) \
+	(offsetof(struct unic_channel_stats, rq_stats) + \
+	 offsetof(struct unic_rq_stats, fld))
 
 #define UNIC_STATS_READ(p, offset) (*(u64 *)((u8 *)(p) + (offset)))
 

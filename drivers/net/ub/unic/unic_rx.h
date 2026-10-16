@@ -42,11 +42,15 @@ struct unic_dev;
 #define UNIC_RX_BUF_LEN_2K 2048
 #define UNIC_RX_BUF_LEN_4K 4096
 
-#define unic_rq_stats_inc(rq, cnt)	do {		\
-		typeof(rq) _rq = (rq);			\
-		u64_stats_update_begin(&(_rq)->syncp);	\
-		((_rq)->stats.cnt)++;			\
-		u64_stats_update_end(&(_rq)->syncp);	\
+#define unic_rq_stats_inc(rq, cnt) do {					\
+		typeof(rq) _rq = (rq);					\
+		struct unic_dev *_dev =					\
+			netdev_priv((_rq)->netdev);			\
+		struct unic_channel_stats *_c_stats =			\
+			&_dev->channels.c_stats[(_rq)->queue_index];	\
+		u64_stats_update_begin(&_c_stats->rq_syncp);		\
+		(_c_stats->rq_stats.cnt)++;				\
+		u64_stats_update_end(&_c_stats->rq_syncp);		\
 	} while (0)
 
 enum unic_jfr_state {
@@ -151,8 +155,6 @@ struct unic_sw_db {
 
 struct unic_rq {
 	struct device		*parent_dev;
-	struct unic_rq_stats	stats;
-	struct u64_stats_sync	syncp;
 	struct unic_jfr_ctx	jfr_ctx;
 	struct unic_rqe		*rqe;
 	dma_addr_t		rqe_base_dma_addr;
