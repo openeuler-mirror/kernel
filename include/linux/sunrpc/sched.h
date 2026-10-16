@@ -149,7 +149,7 @@ struct rpc_task_setup {
 #define RPC_TASK_CRED_NOREF	0x8000		/* No refcount on the credential */
 #if IS_ENABLED(CONFIG_SUNRPC_ENFS)
 #define RPC_TASK_FIXED		0x0040
-#define RPC_TASK_ENFS		0x0008	  /* enfs rpc program task */
+#define RPC_TASK_ENFS		0x0008		/* enfs rpc program task */
 #endif
 #define RPC_IS_ASYNC(t)		((t)->tk_flags & RPC_TASK_ASYNC)
 #define RPC_IS_SWAPPER(t)	((t)->tk_flags & RPC_TASK_SWAPPER)

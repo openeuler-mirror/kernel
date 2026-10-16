@@ -70,15 +70,13 @@ void enfs_debug_print_name_list(void)
 	list_for_each_entry(list, &dns_cache_list, next) {
 		enfs_log_info("domain name:%s\n", list->name);
 		for (i = 0; i < list->inet.count; i++) {
-			sockaddr_ip_to_str(
-				(struct sockaddr *)&list->inet.address[i], buf,
-				128);
+			sockaddr_ip_to_str((struct sockaddr *)&list->inet.address[i],
+					   buf, 128);
 			enfs_log_info("%s\n", buf);
 		}
 		for (i = 0; i < list->inet6.count; i++) {
-			sockaddr_ip_to_str(
-				(struct sockaddr *)&list->inet6.address[i], buf,
-				128);
+			sockaddr_ip_to_str((struct sockaddr *)&list->inet6.address[i],
+					   buf, 128);
 			enfs_log_info("%s\n", buf);
 		}
 	}
@@ -100,16 +98,14 @@ void enfs_update_domain_name(char *name, struct nfs_ip_list *ip_list)
 			addr = (struct sockaddr *)&ip_list->address[i];
 			switch (addr->sa_family) {
 			case AF_INET:
-				enfs_insert_ip_list(
-					&name_list->inet,
-					enfs_get_config_link_count_per_mount(),
-					&ip_list->address[i]);
+				enfs_insert_ip_list(&name_list->inet,
+						    enfs_get_config_link_count_per_mount(),
+						    &ip_list->address[i]);
 				break;
 			case AF_INET6:
-				enfs_insert_ip_list(
-					&name_list->inet6,
-					enfs_get_config_link_count_per_mount(),
-					&ip_list->address[i]);
+				enfs_insert_ip_list(&name_list->inet6,
+						    enfs_get_config_link_count_per_mount(),
+						    &ip_list->address[i]);
 				break;
 			}
 		}
@@ -280,7 +276,7 @@ static int multi_query_dns(struct nfs_ip_list *ip_list, char *name, int slot,
 	net = current->nsproxy->net_ns;
 	enfs_log_debug("domain_name:%s option:%s\n", name, options);
 	ip_len = dns_query(net, NULL, name, strlen(name), options,
-				      &ip_addr, NULL, true);
+			   &ip_addr, NULL, true);
 	if (ip_len <= 0) {
 		enfs_log_debug("dns query:%s error.\n", ip_addr);
 		return -ESRCH;
@@ -354,161 +350,162 @@ static bool query_domain_name_in_cache(struct nfs_ip_list *ip_list, char *name,
 	return ret;
 }
 
-int enfs_quick_sort(int low, int high, struct enfs_dns_query_ip_info_single *dnsQueryIpInfo)
+int enfs_quick_sort(int low, int high, struct enfs_dns_query_ip_info_single *dns_query_ip_info)
 {
 	int i = low;
 	int j = high;
-	uint64_t key = dnsQueryIpInfo[i].lsId;
+	u64 key = dns_query_ip_info[i].lsId;
 
-	strscpy(dns_sort_ip, dnsQueryIpInfo[i].ipAddr, IP_ADDRESS_LEN_MAX);
+	strscpy(dns_sort_ip, dns_query_ip_info[i].ipAddr, IP_ADDRESS_LEN_MAX);
 
 	while (i < j) {
-		while (i < j && dnsQueryIpInfo[j].lsId >= key)
+		while (i < j && dns_query_ip_info[j].lsId >= key)
 			j--;
 
-		dnsQueryIpInfo[i].lsId = dnsQueryIpInfo[j].lsId;
-		strscpy(dnsQueryIpInfo[i].ipAddr, dnsQueryIpInfo[j].ipAddr, IP_ADDRESS_LEN_MAX);
+		dns_query_ip_info[i].lsId = dns_query_ip_info[j].lsId;
+		strscpy(dns_query_ip_info[i].ipAddr,
+			dns_query_ip_info[j].ipAddr, IP_ADDRESS_LEN_MAX);
 
-		while (i < j && dnsQueryIpInfo[i].lsId <= key)
+		while (i < j && dns_query_ip_info[i].lsId <= key)
 			i++;
 
-		dnsQueryIpInfo[j].lsId = dnsQueryIpInfo[i].lsId;
-		strscpy(dnsQueryIpInfo[j].ipAddr, dnsQueryIpInfo[i].ipAddr, IP_ADDRESS_LEN_MAX);
+		dns_query_ip_info[j].lsId = dns_query_ip_info[i].lsId;
+		strscpy(dns_query_ip_info[j].ipAddr,
+			dns_query_ip_info[i].ipAddr, IP_ADDRESS_LEN_MAX);
 	}
-	dnsQueryIpInfo[i].lsId = key;
-	strscpy(dnsQueryIpInfo[i].ipAddr, dns_sort_ip, IP_ADDRESS_LEN_MAX);
+	dns_query_ip_info[i].lsId = key;
+	strscpy(dns_query_ip_info[i].ipAddr, dns_sort_ip, IP_ADDRESS_LEN_MAX);
 	if (i - 1 > low)
-		enfs_quick_sort(low, i - 1, dnsQueryIpInfo);
+		enfs_quick_sort(low, i - 1, dns_query_ip_info);
 
 	if (i + 1 < high)
-		enfs_quick_sort(i + 1, high, dnsQueryIpInfo);
+		enfs_quick_sort(i + 1, high, dns_query_ip_info);
 	memset(dns_sort_ip, 0, sizeof(dns_sort_ip));
 
 	return 0;
 }
 
-int enfs_dns_process_ip(struct enfs_dns_query_ip_info_single *dnsQueryIpInfo,
-			struct enfs_dns_query_lsid_rsp **dnsQueryLsidInfo, int *lsidCount,
+int enfs_dns_process_ip(struct enfs_dns_query_ip_info_single *dns_query_ip_info,
+			struct enfs_dns_query_lsid_rsp **dns_query_lsid_info, int *lsid_count,
 			int ipNumber)
 {
 	int i;
 	int index = 0;
 	int count = 1;
-	struct enfs_dns_query_lsid_rsp *lsIdInfo = NULL;
+	struct enfs_dns_query_lsid_rsp *ls_id_info = NULL;
 
 	// sort all ip by lsid
-	enfs_quick_sort(0, ipNumber - 1, dnsQueryIpInfo);
+	enfs_quick_sort(0, ipNumber - 1, dns_query_ip_info);
 	for (i = 1; i < ipNumber; i++) {
-		if (dnsQueryIpInfo[i - 1].lsId != dnsQueryIpInfo[i].lsId)
+		if (dns_query_ip_info[i - 1].lsId != dns_query_ip_info[i].lsId)
 			count++;
 	}
 
-	*lsidCount = count;
+	*lsid_count = count;
 	// combine ip by lsis,while ip's lsid is same,all of them combined to one structure
-	lsIdInfo = kmalloc_array(count, sizeof(struct enfs_dns_query_lsid_rsp), GFP_KERNEL);
-	if (lsIdInfo == NULL)
+	ls_id_info = kmalloc_array(count, sizeof(struct enfs_dns_query_lsid_rsp), GFP_KERNEL);
+	if (!ls_id_info)
 		return -ENOMEM;
 
 	for (i = 0; i < ipNumber; i++) {
 		if (i != 0 &&
-		    dnsQueryIpInfo[i - 1].lsId == dnsQueryIpInfo[i].lsId) {
-			lsIdInfo[index].count++;
+		    dns_query_ip_info[i - 1].lsId == dns_query_ip_info[i].lsId) {
+			ls_id_info[index].count++;
 			continue;
 		}
 		if (i != 0)
 			index++;
-		lsIdInfo[index].lsId = dnsQueryIpInfo[i].lsId;
-		lsIdInfo[index].offset = 0;
-		lsIdInfo[index].count = 0;
-		lsIdInfo[index].count++;
+		ls_id_info[index].lsId = dns_query_ip_info[i].lsId;
+		ls_id_info[index].offset = 0;
+		ls_id_info[index].count = 0;
+		ls_id_info[index].count++;
 	}
 
-	*dnsQueryLsidInfo = lsIdInfo;
+	*dns_query_lsid_info = ls_id_info;
 	return 0;
 }
 
 int enfs_server_query_dns(struct rpc_clnt *clnt, struct enfs_route_dns_info *dns_info,
-			  struct nfs_ip_list *ipList, int slot,
-			  uint32_t ip_type, uint32_t dnsNamecount,
-			  char *dnsName)
+			  struct nfs_ip_list *ip_list, int slot,
+			  u32 ip_type, u32 dns_namecount,
+			  char *dns_name)
 {
 	int ret;
 	int i = 0;
 	int offset = 0;
-	int tmpSlot = slot;
-	struct enfs_dns_query_lsid_rsp *dnsQueryLsidInfo = NULL;
-	struct enfs_dns_query_ip_info_single *dnsQueryIpInfo = NULL;
+	int tmp_slot = slot;
+	struct enfs_dns_query_lsid_rsp *dns_query_lsid_info = NULL;
+	struct enfs_dns_query_ip_info_single *dns_query_ip_info = NULL;
 	// malloc max node 256
 	int ipNumber;
-	int lsidCount;
+	int lsid_count;
 
-	ret = dorado_query_dns(clnt, &dnsQueryIpInfo, ip_type, dnsNamecount,
-			       dnsName, &ipNumber);
+	ret = dorado_query_dns(clnt, &dns_query_ip_info, ip_type, dns_namecount,
+			       dns_name, &ipNumber);
 	if (ret)
 		return ret;
 
-	if (dnsQueryIpInfo == NULL)
+	if (!dns_query_ip_info)
 		return ret;
 
-	ret = enfs_dns_process_ip(dnsQueryIpInfo, &dnsQueryLsidInfo, &lsidCount,
+	ret = enfs_dns_process_ip(dns_query_ip_info, &dns_query_lsid_info, &lsid_count,
 				  ipNumber);
 	if (ret)
 		return ret;
 
 	i = 0;
-	while (ipList->count <
+	while (ip_list->count <
 	       (enfs_get_config_link_count_per_mount() < ipNumber ?
 			enfs_get_config_link_count_per_mount() :
 			ipNumber)) {
-		if (dnsQueryLsidInfo[i].offset < dnsQueryLsidInfo[i].count) {
+		if (dns_query_lsid_info[i].offset < dns_query_lsid_info[i].count) {
 			if (i != 0)
-				offset += dnsQueryLsidInfo[i - 1].count;
+				offset += dns_query_lsid_info[i - 1].count;
 			ret = dns_resolver_name_list(
-				dnsQueryIpInfo[offset +
-					       dnsQueryLsidInfo[i].offset]
-					.ipAddr,
-				&tmpSlot, ipList);
+				dns_query_ip_info[offset +
+						 dns_query_lsid_info[i].offset].ipAddr,
+				&tmp_slot, ip_list);
 			if (ret)
 				goto out;
-			dnsQueryLsidInfo[i].offset++;
+			dns_query_lsid_info[i].offset++;
 			i++;
 		} else {
 			i++;
 		}
-		if (i == lsidCount) {
+		if (i == lsid_count) {
 			offset = 0;
 			i = 0;
 		}
 	}
 
 out:
-	kfree(dnsQueryIpInfo);
-	kfree(dnsQueryLsidInfo);
+	kfree(dns_query_ip_info);
+	kfree(dns_query_lsid_info);
 	return ret;
 }
 
 void query_dns_each_name(struct enfs_route_dns_info *dns_info, int slot,
-			 struct nfs_ip_list *ipList, unsigned short family,
+			 struct nfs_ip_list *ip_list, unsigned short family,
 			 bool use_cache)
 {
 	int ret;
 	int i;
-	char *dnsName = NULL;
+	char *dns_name = NULL;
 
 	for (i = 0; i < dns_info->dnsNameCount; i++) {
-		dnsName = dns_info->routeRemoteDnsList[i].dnsname;
-		enfs_log_debug("query DNS:%s\n", dnsName);
+		dns_name = dns_info->routeRemoteDnsList[i].dnsname;
+		enfs_log_debug("query DNS:%s\n", dns_name);
 
 		if (use_cache &&
-		    query_domain_name_in_cache(ipList, dnsName, slot, family)) {
-			enfs_log_debug("cache name:%s.\n", dnsName);
+		    query_domain_name_in_cache(ip_list, dns_name, slot, family)) {
+			enfs_log_debug("cache name:%s.\n", dns_name);
 			continue;
 		}
-		ret = query_dns_cross_protocol(ipList, dnsName, slot, family);
+		ret = query_dns_cross_protocol(ip_list, dns_name, slot, family);
 		if (ret != 0)
 			enfs_log_debug("dns multi query dns failed.\n");
 		else
-			enfs_update_domain_name(dnsName, ipList);
+			enfs_update_domain_name(dns_name, ip_list);
 	}
 }
 
@@ -520,9 +517,9 @@ int multipath_query_dns(struct multipath_mount_options *opt,
 	int i;
 	int slot = 0;
 	struct enfs_route_dns_info *dns_info;
-	char *dnsName = NULL;
+	char *dns_name = NULL;
 	struct nfs_ip_list *ip_list;
-	uint32_t ip_type = 0;
+	u32 ip_type = 0;
 
 	if (!opt->pRemoteDnsInfo || opt->pRemoteDnsInfo->dnsNameCount <= 0 ||
 	    opt->pRemoteDnsInfo->dnsNameCount > MAX_DNS_SUPPORTED) {
@@ -534,8 +531,8 @@ int multipath_query_dns(struct multipath_mount_options *opt,
 		return -ENOMEM;
 	ip_list->count = 0;
 	dns_info = opt->pRemoteDnsInfo;
-	dnsName = kmalloc(dns_info->dnsNameCount * EXTEND_MAX_DNS_NAME_LEN, GFP_KERNEL);
-	if (!dnsName) {
+	dns_name = kmalloc(dns_info->dnsNameCount * EXTEND_MAX_DNS_NAME_LEN, GFP_KERNEL);
+	if (!dns_name) {
 		kfree(ip_list);
 		return -ENOMEM;
 	}
@@ -544,16 +541,15 @@ int multipath_query_dns(struct multipath_mount_options *opt,
 		if (family == AF_INET6)
 			ip_type = IP_TYPE_BOTH;
 		for (i = 0; i < dns_info->dnsNameCount; i++) {
-			sprintf(dnsName + i * EXTEND_MAX_DNS_NAME_LEN, "%s",
+			sprintf(dns_name + i * EXTEND_MAX_DNS_NAME_LEN, "%s",
 				dns_info->routeRemoteDnsList[i].dnsname);
 		}
 
 		slot = enfs_get_config_link_count_per_mount() /
 		       dns_info->dnsNameCount;
-		ret = enfs_server_query_dns(
-			clnt, dns_info, ip_list,
-			enfs_get_config_link_count_per_mount(), ip_type,
-			dns_info->dnsNameCount, dnsName);
+		ret = enfs_server_query_dns(clnt, dns_info, ip_list,
+					    enfs_get_config_link_count_per_mount(), ip_type,
+					    dns_info->dnsNameCount, dns_name);
 		if (ret != 0) {
 			query_dns_each_name(dns_info, slot, ip_list, family,
 					    use_cache);
@@ -562,7 +558,7 @@ int multipath_query_dns(struct multipath_mount_options *opt,
 		query_dns_each_name(dns_info, slot, ip_list, family, use_cache);
 	}
 
-	kfree(dnsName);
+	kfree(dns_name);
 	if (ip_list->count == 0) {
 		enfs_log_debug("query dns failed, no IP is found.\n");
 		kfree(ip_list);
@@ -585,7 +581,7 @@ int enfs_iter_nfs_clnt(enfs_iter_clnt fn, void *data)
 	rcu_read_lock();
 	for_each_net_rcu(net) {
 		nn = net_generic(net, nfs_net_id);
-		if (nn == NULL)
+		if (!nn)
 			continue;
 
 		if (list_empty(&nn->nfs_client_list))
@@ -616,8 +612,7 @@ void enfs_add_domain_name(struct multipath_mount_options *opt)
 	for (i = 0;
 	     i < MAX_DNS_SUPPORTED && i < opt->pRemoteDnsInfo->dnsNameCount;
 	     i++) {
-		enfs_domain_inc(
-			opt->pRemoteDnsInfo->routeRemoteDnsList[i].dnsname);
+		enfs_domain_inc(opt->pRemoteDnsInfo->routeRemoteDnsList[i].dnsname);
 	}
 }
 
@@ -629,8 +624,7 @@ static int collect_clnt_name(struct nfs_client *clp, void *data)
 	for (i = 0; i < MAX_DNS_SUPPORTED &&
 		    i < clp_info->pRemoteDnsInfo->dnsNameCount;
 	     i++) {
-		enfs_domain_inc(
-			clp_info->pRemoteDnsInfo->routeRemoteDnsList[i].dnsname);
+		enfs_domain_inc(clp_info->pRemoteDnsInfo->routeRemoteDnsList[i].dnsname);
 	}
 	return 0;
 }

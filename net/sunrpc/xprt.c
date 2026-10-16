@@ -2090,22 +2090,16 @@ struct rpc_xprt *xprt_create_transport(struct xprt_create *args)
 		xprt_destroy(xprt);
 		return ERR_PTR(-EINVAL);
 	}
-#if IS_ENABLED(CONFIG_SUNRPC_ENFS)
 	xprt->servername = rpc_multipath_set_servername(args->servername, GFP_KERNEL);
-#else
-	xprt->servername = kstrdup(args->servername, GFP_KERNEL);
-#endif
 	if (xprt->servername == NULL) {
 		xprt_destroy(xprt);
 		return ERR_PTR(-ENOMEM);
 	}
 
-#if IS_ENABLED(CONFIG_SUNRPC_ENFS)
 	if (!rpc_multipath_ops_create_xprt(xprt)) {
 		xprt_destroy(xprt);
 		return ERR_PTR(-ENOMEM);
 	}
-#endif
 
 	rpc_xprt_debugfs_register(xprt);
 
@@ -2126,11 +2120,7 @@ static void xprt_destroy_cb(struct work_struct *work)
 	rpc_destroy_wait_queue(&xprt->pending);
 	rpc_destroy_wait_queue(&xprt->sending);
 	rpc_destroy_wait_queue(&xprt->backlog);
-#if IS_ENABLED(CONFIG_SUNRPC_ENFS)
 	rpc_multipath_free_servername(xprt);
-#else
-	kfree(xprt->servername);
-#endif
 	/*
 	 * Destroy any existing back channel
 	 */

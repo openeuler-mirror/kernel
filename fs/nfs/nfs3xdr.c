@@ -29,7 +29,6 @@
 #endif
 #define NFSDBG_FACILITY		NFSDBG_XDR
 
-
 /* Mapping from NFS error code to "errno" error code. */
 #define errno_NFSERR_IO		EIO
 
@@ -2509,10 +2508,8 @@ static int nfs3_xdr_dec_extend3res(struct rpc_rqst *req, struct xdr_stream *xdr,
 	memcpy(decArg->pBuf, p, decArg->buflen);
 	dprintk("NFS: extend response size (%u)\n", length);
 
-
 out:
 	return error;
-
 
 out_default:
 	return nfs3_stat_to_errno(status);

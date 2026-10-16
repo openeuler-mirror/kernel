@@ -120,5 +120,10 @@ static inline void nfs_multipath_set_mount_data(void **opt, const char *hostname
 {
 }
 
+static inline bool enfs_check_have_lookup_cache_flag(struct nfs_server *server, int flag)
+{
+	return (server->flags & NFS_MOUNT_LOOKUP_CACHE_NONE);
+}
+
 #endif // CONFIG_ENFS
 #endif
