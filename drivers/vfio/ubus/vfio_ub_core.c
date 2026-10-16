@@ -60,6 +60,7 @@ void vfio_ub_core_unregister_device(struct vfio_ub_core_device *vdev)
 static int vfio_usi_info_init(struct vfio_ub_core_device *vdev)
 {
 	struct ub_entity *uent = vdev->uent;
+	resource_size_t res_len;
 	u32 low32;
 	u32 high32;
 	u16 num;
@@ -67,6 +68,7 @@ static int vfio_usi_info_init(struct vfio_ub_core_device *vdev)
 
 	/* when device supports int type2, read usi info from cfgspace */
 	if (uent->no_intr == 0 && uent->intr_type1 == 0) {
+		res_len = ub_resource_len(vdev->uent, 0);
 		ret = ub_cfg_read_dword(vdev->uent, UB_INT_VECTOR_TBL_SA_L, &low32);
 		ret |= ub_cfg_read_dword(vdev->uent, UB_INT_VECTOR_TBL_SA_H, &high32);
 		ret |= ub_cfg_read_word(vdev->uent, UB_NUM_OF_INTR_VECTOR_TBL, &num);
@@ -75,6 +77,9 @@ static int vfio_usi_info_init(struct vfio_ub_core_device *vdev)
 
 		vdev->usi_vector_offset = (u64)high32 << 32 | low32;
 		vdev->usi_vector_size = (num + 1) * UB_INTR_VECTOR_ENTRY_SIZE;
+		if (res_len == 0 || vdev->usi_vector_offset >= res_len ||
+		    vdev->usi_vector_size > res_len - vdev->usi_vector_offset)
+			return -EINVAL;
 
 		ret = ub_cfg_read_dword(vdev->uent, UB_INT_ADDR_TBL_SA_L, &low32);
 		ret |= ub_cfg_read_dword(vdev->uent, UB_INT_ADDR_TBL_SA_H, &high32);
@@ -84,6 +89,9 @@ static int vfio_usi_info_init(struct vfio_ub_core_device *vdev)
 
 		vdev->usi_addr_offset = (u64)high32 << 32 | low32;
 		vdev->usi_addr_size = (num + 1) * UB_INTR_ADDR_ENTRY_SIZE;
+		if (vdev->usi_addr_offset >= res_len ||
+		    vdev->usi_addr_size > res_len - vdev->usi_addr_offset)
+			return -EINVAL;
 	} else {
 		vdev->usi_vector_offset = 0;
 		vdev->usi_vector_size = 0;
@@ -383,7 +391,7 @@ int vfio_ub_core_mmap(struct vfio_device *core_vdev, struct vm_area_struct *vma)
 {
 	struct vfio_ub_core_device *vdev =
 		container_of(core_vdev, struct vfio_ub_core_device, vdev);
-	u64 phys_len, req_len, pgoff, req_start;
+	u64 phys_len, req_len, pgoff, req_start, start;
 	struct ub_entity *uent = vdev->uent;
 	unsigned int index;
 
@@ -410,10 +418,14 @@ int vfio_ub_core_mmap(struct vfio_device *core_vdev, struct vm_area_struct *vma)
 	if (req_start + req_len > phys_len)
 		return -EINVAL;
 
+	start = ub_resource_start(uent, index);
+	if (!start || !phys_len)
+		return -EINVAL;
+
 	vm_flags_set(vma, VM_IO | VM_DONTCOPY | VM_DONTEXPAND | VM_DONTDUMP |
 		     VM_PFNMAP | VM_WIPEONFORK);
 	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
-	vma->vm_pgoff = (ub_resource_start(uent, index) >> PAGE_SHIFT) + pgoff;
+	vma->vm_pgoff = (start >> PAGE_SHIFT) + pgoff;
 	if (remap_pfn_range(vma, vma->vm_start, vma->vm_pgoff,
 		vma->vm_end - vma->vm_start, vma->vm_page_prot))
 		return -EAGAIN;
