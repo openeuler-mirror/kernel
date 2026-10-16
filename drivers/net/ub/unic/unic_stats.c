@@ -473,21 +473,20 @@ void unic_get_regs(struct net_device *netdev, struct ethtool_regs *cmd,
 
 static u64 *unic_get_queues_stats(struct unic_dev *unic_dev,
 				  const struct unic_stats_desc *stats,
-				  u32 stats_size, enum unic_queue_type type,
-				  u64 *data)
+				  u32 stats_size, u64 *data)
 {
 	struct unic_channel *c;
+	u8 *c_stats;
 	u32 i, j;
-	u8 *q;
 
 	for (i = 0; i < unic_dev->channels.num; i++) {
 		c = &unic_dev->channels.c[i];
-		q = (type == UNIC_QUEUE_TYPE_SQ) ? (u8 *)c->sq : (u8 *)c->rq;
+		c_stats = (u8 *)&unic_dev->channels.c_stats[c->c_idx];
 		for (j = 0; j < stats_size; j++) {
 			if (stats[j].is_supported && !stats[j].is_supported(unic_dev))
 				continue;
 
-			*data = UNIC_STATS_READ(q, stats[j].offset);
+			*data = UNIC_STATS_READ(c_stats, stats[j].offset);
 			data++;
 		}
 	}
@@ -539,12 +538,10 @@ void unic_get_stats(struct net_device *netdev,
 	}
 
 	p = unic_get_queues_stats(unic_dev, unic_sq_stats_str,
-				  ARRAY_SIZE(unic_sq_stats_str),
-				  UNIC_QUEUE_TYPE_SQ, p);
+				  ARRAY_SIZE(unic_sq_stats_str), p);
 
 	p = unic_get_queues_stats(unic_dev, unic_rq_stats_str,
-				  ARRAY_SIZE(unic_rq_stats_str),
-				  UNIC_QUEUE_TYPE_RQ, p);
+				  ARRAY_SIZE(unic_rq_stats_str), p);
 	unic_get_mac_stats(unic_dev, p);
 }
 

@@ -1154,6 +1154,7 @@ int unic_poll_rx(struct unic_channel *c, int budget,
 	struct unic_rq *rq = c->rq;
 	struct unic_dev *unic_dev = netdev_priv(rq->netdev);
 	u8 jfc_shift = unic_dev->channels.rq_jfc_shift;
+	struct unic_channel_stats *c_stats;
 	struct unic_cq *cq = rq->cq;
 	struct napi_struct *napi;
 	u32 last_ci = cq->ci;
@@ -1195,10 +1196,11 @@ int unic_poll_rx(struct unic_channel *c, int budget,
 		failure = failure || unic_refill_rx_buffers(rq);
 	}
 
-	u64_stats_update_begin(&rq->syncp);
-	rq->stats.packets += (u64)packets;
-	rq->stats.bytes += bytes;
-	u64_stats_update_end(&rq->syncp);
+	c_stats = &unic_dev->channels.c_stats[c->c_idx];
+	u64_stats_update_begin(&c_stats->rq_syncp);
+	c_stats->rq_stats.packets += (u64)packets;
+	c_stats->rq_stats.bytes += bytes;
+	u64_stats_update_end(&c_stats->rq_syncp);
 
 	return failure ? budget : packets;
 }

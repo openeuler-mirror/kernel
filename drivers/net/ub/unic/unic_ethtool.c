@@ -435,56 +435,6 @@ unic_check_coalesce_para(struct net_device *netdev,
 	return ret;
 }
 
-static int unic_backup_stats(struct unic_dev *unic_dev,
-			     struct unic_sq_stats **sq_stats,
-			     struct unic_rq_stats **rq_stats)
-{
-	struct unic_sq_stats *tx_stats;
-	struct unic_rq_stats *rx_stats;
-	u32 i;
-
-	if (test_bit(UNIC_STATE_CHANNEL_INVALID, &unic_dev->state))
-		return -EINVAL;
-
-	tx_stats = kcalloc(unic_dev->channels.num, sizeof(*tx_stats),
-			   GFP_KERNEL);
-	if (!tx_stats)
-		return -ENOMEM;
-
-	rx_stats = kcalloc(unic_dev->channels.num, sizeof(*rx_stats),
-			   GFP_KERNEL);
-	if (!rx_stats) {
-		kfree(tx_stats);
-		return -ENOMEM;
-	}
-
-	for (i = 0; i < unic_dev->channels.num; i++) {
-		memcpy(&tx_stats[i], &unic_dev->channels.c[i].sq->stats,
-		       sizeof(struct unic_sq_stats));
-		memcpy(&rx_stats[i], &unic_dev->channels.c[i].rq->stats,
-		       sizeof(struct unic_rq_stats));
-	}
-
-	*sq_stats = tx_stats;
-	*rq_stats = rx_stats;
-
-	return 0;
-}
-
-static void unic_restore_stats(struct unic_dev *unic_dev,
-			       struct unic_sq_stats *sq_stats,
-			       struct unic_rq_stats *rq_stats)
-{
-	u32 i;
-
-	for (i = 0; i < unic_dev->channels.num; i++) {
-		memcpy(&unic_dev->channels.c[i].rq->stats, &rq_stats[i],
-		       sizeof(struct unic_rq_stats));
-		memcpy(&unic_dev->channels.c[i].sq->stats, &sq_stats[i],
-		       sizeof(struct unic_sq_stats));
-	}
-}
-
 static int unic_set_coalesce(struct net_device *netdev,
 			     struct ethtool_coalesce *cmd,
 			     struct kernel_ethtool_coalesce *kernel_coal,
@@ -495,8 +445,6 @@ static int unic_set_coalesce(struct net_device *netdev,
 	struct unic_coalesce *tx_coal = &unic_coal->tx_coal;
 	struct unic_coalesce *rx_coal = &unic_coal->rx_coal;
 	struct unic_coalesce old_tx_coal, old_rx_coal;
-	struct unic_sq_stats *sq_stats;
-	struct unic_rq_stats *rq_stats;
 	int ret, ret1;
 
 	if (netif_running(netdev)) {
@@ -511,13 +459,6 @@ static int unic_set_coalesce(struct net_device *netdev,
 	ret = unic_check_coalesce_para(netdev, cmd, kernel_coal);
 	if (ret)
 		return ret;
-
-	ret = unic_backup_stats(unic_dev, &sq_stats, &rq_stats);
-	if (ret) {
-		unic_err(unic_dev, "failed to backup txrx stats, ret = %d.\n",
-			 ret);
-		return ret;
-	}
 
 	memcpy(&old_tx_coal, tx_coal, sizeof(struct unic_coalesce));
 	memcpy(&old_rx_coal, rx_coal, sizeof(struct unic_coalesce));
@@ -536,19 +477,11 @@ static int unic_set_coalesce(struct net_device *netdev,
 		memcpy(tx_coal, &old_tx_coal, sizeof(struct unic_coalesce));
 		memcpy(rx_coal, &old_rx_coal, sizeof(struct unic_coalesce));
 		ret1 = unic_init_channels(unic_dev, unic_dev->channels.num);
-		if (ret1) {
+		if (ret1)
 			unic_err(unic_dev,
 				 "failed to recover old channels, ret = %d.\n",
 				 ret1);
-			goto err_recover_channels;
-		}
 	}
-
-	unic_restore_stats(unic_dev, sq_stats, rq_stats);
-
-err_recover_channels:
-	kfree(sq_stats);
-	kfree(rq_stats);
 
 	return ret;
 }

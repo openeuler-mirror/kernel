@@ -194,6 +194,23 @@ static bool unic_check_hw_ci_late(struct unic_sq *sq, u32 sq_pi, u32 sq_ci)
 	return false;
 }
 
+static void unic_sq_abn_cqe_inc(struct unic_sq *sq, unsigned int status,
+				unsigned int sub_status)
+{
+	struct unic_dev *unic_dev = netdev_priv(sq->netdev);
+	struct unic_channel_stats *c_stats;
+
+	if (status > UNIC_CQE_OTHERS_STATUS)
+		status = UNIC_CQE_OTHERS_STATUS;
+	if (sub_status > UNIC_CQE_OTHERS_SUB_STATUS)
+		sub_status = UNIC_CQE_OTHERS_SUB_STATUS;
+	c_stats = &unic_dev->channels.c_stats[sq->queue_index];
+	u64_stats_update_begin(&c_stats->sq_syncp);
+	c_stats->sq_stats.abn_cqe_total_cnt++;
+	c_stats->sq_stats.abn_cqe_cnt[status][sub_status]++;
+	u64_stats_update_end(&c_stats->sq_syncp);
+}
+
 static void unic_count_tx_comp_stats(struct unic_sq *sq, union unic_cqe *cqe,
 				     struct unic_tx_comp_stats *stats,
 				     struct sk_buff *skb)
@@ -276,16 +293,19 @@ void unic_poll_tx(struct unic_sq *sq, int budget)
 
 	struct net_device *netdev = sq->netdev;
 	struct unic_tx_comp_stats stats = {0};
+	struct unic_channel_stats *c_stats;
 	struct netdev_queue *dev_queue;
 	struct unic_dev *unic_dev;
 
 	if (unlikely(!unic_reclaim_sq_space(sq, budget, false, &stats)))
 		return;
 
-	u64_stats_update_begin(&sq->syncp);
-	sq->stats.bytes += stats.bytes;
-	sq->stats.packets += stats.packets;
-	u64_stats_update_end(&sq->syncp);
+	unic_dev = netdev_priv(netdev);
+	c_stats = &unic_dev->channels.c_stats[sq->queue_index];
+	u64_stats_update_begin(&c_stats->sq_syncp);
+	c_stats->sq_stats.bytes += stats.bytes;
+	c_stats->sq_stats.packets += stats.packets;
+	u64_stats_update_end(&c_stats->sq_syncp);
 
 	dev_queue = netdev_get_tx_queue(netdev, sq->queue_index);
 	netdev_tx_completed_queue(dev_queue, stats.packets + stats.abn_packets,
@@ -294,7 +314,6 @@ void unic_poll_tx(struct unic_sq *sq, int budget)
 	if (unlikely(netif_carrier_ok(netdev) &&
 		     unic_get_spare_sqebb_num(sq) >= UNIC_MIN_SPARE_SQEBB &&
 		     unic_get_spare_page_num(sq->tx_buff) >= UNIC_MIN_SPARE_PAGE)) {
-		unic_dev = netdev_priv(netdev);
 		if (netif_tx_queue_stopped(dev_queue) &&
 		    !test_bit(UNIC_STATE_DOWN, &unic_dev->state)) {
 			netif_tx_wake_queue(dev_queue);
@@ -1346,7 +1365,7 @@ void unic_dump_sq_stats(struct net_device *netdev, u32 queue_idx)
 
 	channel = &unic_dev->channels.c[queue_idx];
 	sq = channel->sq;
-	sq_stats = &sq->stats;
+	sq_stats = &unic_dev->channels.c_stats[channel->c_idx].sq_stats;
 
 	unic_info(unic_dev,
 		  "tx timeout, queue index: %u, state: %lu\n"

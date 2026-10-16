@@ -17,6 +17,7 @@
 static void unic_dev_suspend(struct unic_dev *unic_dev)
 {
 	unic_uninit_channels(unic_dev);
+	unic_clear_channel_stats(unic_dev);
 }
 
 static void unic_reset_down(struct auxiliary_device *adev)
