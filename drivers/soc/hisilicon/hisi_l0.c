@@ -283,7 +283,13 @@ static int l0_mmap(struct file *filp, struct vm_area_struct *vma)
 	refcount_set(&data->refcnt, 1);
 
 	vma->vm_ops = &l0_vm_ops;
-	vma->vm_flags |= (VM_MIXEDMAP | VM_DONTCOPY | VM_DONTEXPAND);
+	/*
+	 * A first fault on a pmd_none entry reaches .huge_fault
+	 * only while the VMA is THP-eligible.  The vma has no
+	 * .fault handler, so a PTE-level fault would SIGBUS.
+	 */
+	vma->vm_flags |= (VM_MIXEDMAP | VM_DONTCOPY | VM_DONTEXPAND |
+			  VM_HUGEPAGE);
 	vma->vm_private_data = data;
 
 	return 0;
