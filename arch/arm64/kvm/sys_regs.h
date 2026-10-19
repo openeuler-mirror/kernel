@@ -238,6 +238,12 @@ int kvm_sys_reg_get_user(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg,
 int kvm_sys_reg_set_user(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg,
 			 const struct sys_reg_desc table[], unsigned int num);
 
+#ifdef CONFIG_KVM_ARM_VTLBID
+void kvm_update_aa64mmfr4_tlbid(struct kvm *kvm);
+#else
+static inline void kvm_update_aa64mmfr4_tlbid(struct kvm *kvm) { }
+#endif
+
 #define AA32(_x)	.aarch32_map = AA32_##_x
 #define Op0(_x) 	.Op0 = _x
 #define Op1(_x) 	.Op1 = _x

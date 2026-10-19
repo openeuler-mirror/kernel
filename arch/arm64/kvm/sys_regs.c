@@ -276,6 +276,34 @@ static bool access_vm_reg(struct kvm_vcpu *vcpu,
 	return true;
 }
 
+#ifdef CONFIG_KVM_ARM_VTLBID
+static bool access_tlbididr(struct kvm_vcpu *vcpu,
+			 struct sys_reg_params *p,
+			 const struct sys_reg_desc *r)
+{
+	struct tlbidomain *vdomain = &vcpu->kvm->arch.tlbidomain;
+
+	if (p->is_write)
+		return ignore_write(vcpu, p);
+
+	if (!vdomain->kvm_tlbid_enabled) {
+		kvm_inject_undefined(vcpu);
+		return false;
+	}
+
+	p->regval = vdomain->tlbididr_val;
+	return true;
+}
+#else
+static bool access_tlbididr(struct kvm_vcpu *vcpu,
+			 struct sys_reg_params *p,
+			 const struct sys_reg_desc *r)
+{
+	kvm_inject_undefined(vcpu);
+	return false;
+}
+#endif
+
 static bool access_actlr(struct kvm_vcpu *vcpu,
 			 struct sys_reg_params *p,
 			 const struct sys_reg_desc *r)
@@ -1445,6 +1473,18 @@ static u64 __kvm_read_sanitised_id_reg(const struct kvm_vcpu *vcpu,
 		val &= ID_AA64MMFR3_EL1_TCRX | ID_AA64MMFR3_EL1_S1POE |
 			ID_AA64MMFR3_EL1_S1PIE;
 		break;
+	case SYS_ID_AA64MMFR4_EL1:
+	{
+#ifdef CONFIG_KVM_ARM_VTLBID
+		struct tlbidomain *vdomain = &vcpu->kvm->arch.tlbidomain;
+
+		if (!vdomain->guest_tlbid_enabled)
+			val &= ~ID_AA64MMFR4_EL1_TLBID;
+#else
+		val &= ~ID_AA64MMFR4_EL1_TLBID;
+#endif
+		break;
+	}
 	case SYS_ID_MMFR4_EL1:
 		val &= ~ARM64_FEATURE_MASK(ID_MMFR4_EL1_CCIDX);
 		break;
@@ -2552,7 +2592,7 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 	ID_WRITABLE(ID_AA64MMFR3_EL1, (ID_AA64MMFR3_EL1_TCRX	|
 				       ID_AA64MMFR3_EL1_S1PIE   |
 				       ID_AA64MMFR3_EL1_S1POE)),
-	ID_UNALLOCATED(7,4),
+	ID_WRITABLE(ID_AA64MMFR4_EL1, ID_AA64MMFR4_EL1_TLBID_MASK),
 	ID_UNALLOCATED(7,5),
 	ID_UNALLOCATED(7,6),
 	ID_UNALLOCATED(7,7),
@@ -2633,6 +2673,7 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 	{ SYS_DESC(SYS_LORN_EL1), trap_loregion },
 	{ SYS_DESC(SYS_LORC_EL1), trap_loregion },
 	{ SYS_DESC(SYS_MPAMIDR_EL1), workaround_bad_mpam_abi },
+	{ SYS_DESC(SYS_TLBIDIDR_EL1), access_tlbididr },
 	{ SYS_DESC(SYS_LORID_EL1), trap_loregion },
 
 	{ SYS_DESC(SYS_MPAM1_EL1), workaround_bad_mpam_abi },
@@ -3770,6 +3811,42 @@ const struct sys_reg_desc *get_reg_by_id(u64 id,
 
 	return find_reg(&params, table, num);
 }
+
+/*
+ * Update the VM's stored value for an ID register.
+ */
+#ifdef CONFIG_KVM_ARM_VTLBID
+void kvm_update_aa64mmfr4_tlbid(struct kvm *kvm)
+{
+	struct tlbidomain *vdomain = &kvm->arch.tlbidomain;
+	u64 val, tlbid_val;
+
+	mutex_lock(&kvm->arch.config_lock);
+
+	if (kvm_vm_has_ran_once(kvm)) {
+		/*
+		 * ID_AA64MMFR4 is a VM-level register already set during
+		 * the first vCPU init. Skip the write to avoid triggering
+		 * KVM_BUG_ON in kvm_set_vm_id_reg(). The per-vCPU
+		 * vdomain_bitmap is still updated by the caller.
+		 */
+		mutex_unlock(&kvm->arch.config_lock);
+		return;
+	}
+
+	val = kvm_read_vm_id_reg(kvm, SYS_ID_AA64MMFR4_EL1);
+	tlbid_val = read_sanitised_ftr_reg(SYS_ID_AA64MMFR4_EL1);
+	tlbid_val &= ID_AA64MMFR4_EL1_TLBID_MASK;
+
+	val &= ~ID_AA64MMFR4_EL1_TLBID_MASK;
+	if (vdomain->guest_tlbid_enabled)
+		val |= tlbid_val;
+
+	kvm_set_vm_id_reg(kvm, SYS_ID_AA64MMFR4_EL1, val);
+
+	mutex_unlock(&kvm->arch.config_lock);
+}
+#endif
 
 /* Decode an index value, and find the sys_reg_desc entry. */
 static const struct sys_reg_desc *

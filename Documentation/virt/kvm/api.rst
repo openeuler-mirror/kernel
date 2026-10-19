@@ -6424,6 +6424,48 @@ the capability to be present.
 
 `flags` must currently be zero.
 
+4.145 KVM_ARM_GET_VDOMAIN_NUM
+------------------------------
+
+:Capability: KVM_CAP_ARM_TLBIDOMAIN
+:Architectures: arm64
+:Type: vm ioctl
+:Parameters: struct kvm_arm_get_vdomain (out)
+:Returns: 0 on success, < 0 on error
+
+Parameters are specified via the following structure::
+
+	struct kvm_arm_get_vdomain {
+		__u8 max_vdomains;
+	};
+
+The ``max_vdomains`` field is the maximum number of vDomains supported
+by the virtual TLBID implementation. This value is derived from
+TLBIDIDR_EL1.NVIS and is capped at 32.
+
+4.146 KVM_ARM_VCPU_SET_VDOMAIN
+------------------------------
+
+:Capability: KVM_CAP_ARM_TLBIDOMAIN
+:Architectures: arm64
+:Type: vcpu ioctl
+:Parameters: struct kvm_arm_set_vdomain (in)
+:Returns: 0 on success, < 0 on error
+
+This ioctl allows KVM to obtain TLBI Domain of Guest.
+
+Parameters are specified via the following structure::
+
+	struct kvm_arm_set_vdomain {
+		__u32 vdomain_bitmap;
+		__u8 num_vdomains;
+	};
+
+The ``vdomain_bitmap`` field is a bitmap, where '1' indicates that vDomain
+includes this vCPU. For example, ``vCPU0:  vdomain_bitmap=0b1011`` indicates
+that vCPU0 included in vDomain(0, 1, 3).
+
+The ``num_vdomains`` field is the number of vDomains.
 
 5. The kvm_run structure
 ========================
@@ -8217,6 +8259,22 @@ Used to configure and set up the memory for a Realm. The available actions are:
                                   configuration, and VCPUs are not permitted to
                                   enter the realm until it has been activated.
 ================================= =============================================
+
+7.39 KVM_CAP_ARM_TLBIDOMAIN
+-------------------------------------
+
+:Architectures: arm64
+:Target: VM
+:Parameters: None
+:Returns: 0 on success, negative value on error
+
+This capability enables TLBID virtualization, which optimizes tlbi broadcast
+range to avoid unnecessary broadcasts.
+
+When this capability is enabled, KVM can obtain the vDomain bitmaps of VM. When
+a vCPU is loaded, KVM writes the mapping between the vDomain and the pDomain
+into the VTLBID(n). If guest enabled TLBID, hardware will convert vDomain id to
+pDomain id for TLBI broadcast.
 
 8. Other capabilities.
 ======================

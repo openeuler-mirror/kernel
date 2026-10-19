@@ -250,6 +250,10 @@ static inline void __activate_traps_common(struct kvm_vcpu *vcpu)
 		if (kvm_has_fpmr(kern_hyp_va(vcpu->kvm)))
 			hcrx |= HCRX_EL2_EnFPM;
 #endif
+#ifdef CONFIG_KVM_ARM_VTLBID
+		if (kern_hyp_va(vcpu->kvm)->arch.tlbidomain.kvm_tlbid_enabled)
+			hcrx |= HCRX_EL2_VTLBIDEn;
+#endif
 		ctxt_sys_reg(hctxt, HCRX_EL2) = read_sysreg_s(SYS_HCRX_EL2);
 		write_sysreg_s(hcrx, SYS_HCRX_EL2);
 	}

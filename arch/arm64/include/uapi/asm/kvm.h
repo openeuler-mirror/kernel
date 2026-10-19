@@ -253,6 +253,8 @@ struct kvm_arm_counter_offset {
 
 #define ARM64_SYS_REG(...) (__ARM64_SYS_REG(__VA_ARGS__) | KVM_REG_SIZE_U64)
 
+#define KVM_REG_ARM_ID_AA64MMFR4_EL1 ARM64_SYS_REG(3, 0, 0, 7, 4)
+
 /* Physical Timer EL0 Registers */
 #define KVM_REG_ARM_PTIMER_CTL		ARM64_SYS_REG(3, 3, 14, 2, 1)
 #define KVM_REG_ARM_PTIMER_CVAL		ARM64_SYS_REG(3, 3, 14, 2, 2)
