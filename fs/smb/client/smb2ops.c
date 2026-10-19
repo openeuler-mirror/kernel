@@ -3538,6 +3538,8 @@ static long smb3_simple_falloc(struct file *file, struct cifs_tcon *tcon,
 			return rc;
 		}
 
+	inode_lock(inode);
+
 	/*
 	 * Extending the file
 	 */
@@ -3628,6 +3630,7 @@ static long smb3_simple_falloc(struct file *file, struct cifs_tcon *tcon,
 	rc = 0;
 
 out:
+	inode_unlock(inode);
 	if (rc)
 		trace_smb3_falloc_err(xid, cfile->fid.persistent_fid, tcon->tid,
 				tcon->ses->Suid, off, len, rc);
