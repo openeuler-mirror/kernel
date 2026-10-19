@@ -45,9 +45,9 @@ int ngbe_ndo_set_vf_link_state(struct net_device *netdev, int vf, int state);
 int ngbe_ndo_set_vf_trust(struct net_device *netdev, int vf, bool setting);
 int ngbe_ndo_get_vf_config(struct net_device *netdev, int vf, struct ifla_vf_info *ivi);
 int ngbe_disable_sriov(struct ngbe_adapter *adapter);
+void ngbe_set_vf_link_state(struct ngbe_adapter *adapter, int vf, int state);
 #ifdef CONFIG_PCI_IOV
 int ngbe_vf_configuration(struct pci_dev *pdev, unsigned int event_mask);
-void ngbe_set_vf_link_state(struct ngbe_adapter *adapter, int vf, int state);
 void ngbe_enable_sriov(struct ngbe_adapter *adapter);
 #endif
 int ngbe_pci_sriov_configure(struct pci_dev *dev, int num_vfs);

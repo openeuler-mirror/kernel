@@ -240,18 +240,6 @@ int ngbe_disable_sriov(struct ngbe_adapter *adapter)
 	struct ngbe_hw *hw = &adapter->hw;
 
 #ifdef CONFIG_PCI_IOV
-	/* If our VFs are assigned we cannot shut down SR-IOV
-	 * without causing issues, so just leave the hardware
-	 * available but disabled
-	 */
-	if (pci_vfs_assigned(adapter->pdev)) {
-		e_dev_warn("Unloading driver while VFs are assigned.\n");
-		return -EPERM;
-	}
-	/* disable iov and allow time for transactions to clear */
-	pci_disable_sriov(adapter->pdev);
-#endif
-
 	/* set num VFs to 0 to prevent access to vfinfo */
 	adapter->num_vfs = 0;
 
@@ -266,6 +254,18 @@ int ngbe_disable_sriov(struct ngbe_adapter *adapter)
 	/* free macvlan list */
 	kfree(adapter->mv_list);
 	adapter->mv_list = NULL;
+
+	/* If our VFs are assigned we cannot shut down SR-IOV
+	 * without causing issues, so just leave the hardware
+	 * available but disabled
+	 */
+	if (pci_vfs_assigned(adapter->pdev)) {
+		e_dev_warn("Unloading driver while VFs are assigned.\n");
+		return -EPERM;
+	}
+	/* disable iov and allow time for transactions to clear */
+	pci_disable_sriov(adapter->pdev);
+#endif
 
 	/* if SR-IOV is already disabled then there is nothing to do */
 	if (!(adapter->flags & NGBE_FLAG_SRIOV_ENABLED))
@@ -419,6 +419,8 @@ void ngbe_set_vmolr(struct ngbe_hw *hw, u16 vf, bool aupe)
 	u32 vmolr = rd32(hw, NGBE_PSR_VM_L2CTL(vf));
 
 	vmolr |= NGBE_PSR_VM_L2CTL_BAM;
+	vmolr &= ~NGBE_PSR_VM_L2CTL_VACC;
+
 	if (aupe)
 		vmolr |= NGBE_PSR_VM_L2CTL_AUPE;
 	else
@@ -939,10 +941,9 @@ static int ngbe_update_vf_xcast_mode(struct ngbe_adapter *adapter, u32 *msgbuf,
 			 NGBE_PSR_VM_L2CTL_MPE;
 		break;
 	case NGBEVF_XCAST_MODE_PROMISC:
-		disable = 0;
+		disable = NGBE_PSR_VM_L2CTL_VPE;
 		enable = NGBE_PSR_VM_L2CTL_BAM | NGBE_PSR_VM_L2CTL_ROMPE |
-			 NGBE_PSR_VM_L2CTL_MPE | NGBE_PSR_VM_L2CTL_UPE |
-			 NGBE_PSR_VM_L2CTL_VPE;
+			 NGBE_PSR_VM_L2CTL_MPE | NGBE_PSR_VM_L2CTL_UPE;
 		break;
 	default:
 		return -EOPNOTSUPP;
@@ -1142,12 +1143,14 @@ void ngbe_disable_tx_rx(struct ngbe_adapter *adapter)
 static inline void ngbe_ping_vf(struct ngbe_adapter *adapter, int vf)
 {
 	struct ngbe_hw *hw = &adapter->hw;
-	u32 ping;
+	u32 ping[2] = { 0, 0 };
 
-	ping = NGBE_PF_CONTROL_MSG;
+	ping[0] = NGBE_PF_CONTROL_MSG;
 	if (adapter->vfinfo[vf].clear_to_send)
-		ping |= NGBE_VT_MSGTYPE_CTS;
-	ngbe_write_mbx(hw, &ping, 1, vf);
+		ping[0] |= NGBE_VT_MSGTYPE_CTS;
+	if (!adapter->pf_running)
+		ping[1] |= NGBE_PF_NOFITY_VF_NET_NOT_RUNNING;
+	ngbe_write_mbx(hw, ping, 2, vf);
 }
 
 void ngbe_ping_all_vfs(struct ngbe_adapter *adapter)
@@ -1174,7 +1177,8 @@ void ngbe_set_all_vfs(struct ngbe_adapter *adapter)
 	int i;
 
 	for (i = 0; i < adapter->num_vfs; i++)
-		ngbe_set_vf_rx_tx(adapter, i);
+		ngbe_set_vf_link_state(adapter, i,
+				       adapter->vfinfo[i].link_state);
 }
 
 void ngbe_ping_all_vfs_with_link_status(struct ngbe_adapter *adapter,
@@ -1203,25 +1207,6 @@ void ngbe_ping_all_vfs_with_link_status(struct ngbe_adapter *adapter,
 		ngbe_write_mbx(hw, msgbuf, 2, i);
 	}
 	spin_unlock_irqrestore(&adapter->mbx_lock, flags);
-}
-
-static void ngbe_ping_vf_with_link_status(struct ngbe_adapter *adapter,
-					  bool link_up, u16 vf)
-{
-	struct ngbe_hw *hw = &adapter->hw;
-	u32 msgbuf[2] = { 0, 0 };
-	u32 link_speed = adapter->speed;
-
-	if (vf > adapter->num_vfs)
-		return;
-
-	msgbuf[0] = NGBE_NOFITY_VF_LINK_STATUS | NGBE_PF_CONTROL_MSG;
-	msgbuf[1] = (link_speed << 1) | link_up;
-	//if (adapter->notify_down)
-	//	msgbuf[1] |= NGBE_PF_NOFITY_VF_NET_NOT_RUNNING;
-	if (adapter->vfinfo[vf].clear_to_send)
-		msgbuf[0] |= NGBE_VT_MSGTYPE_CTS;
-	ngbe_write_mbx(hw, msgbuf, 2, vf);
 }
 
 int ngbe_ndo_set_vf_trust(struct net_device *netdev, int vf, bool setting)
@@ -1554,7 +1539,7 @@ static void ngbe_set_vf_rx_tx(struct ngbe_adapter *adapter, int vf)
 		if (reg_cur_rx & reg_req_rx)
 			wr32(hw, NGBE_RDM_VFRE_CLR, reg_req_rx);
 	}
-	if (adapter->vfinfo[vf].link_state == IFLA_VF_LINK_STATE_ENABLE &&
+	if (adapter->vfinfo[vf].link_state == NGBE_VF_LINK_STATE_ENABLE &&
 	    !(rd32(hw, NGBE_MAC_TX_CFG) & NGBE_MAC_TX_CFG_TE)) {
 		wr32m(hw, NGBE_MAC_TX_CFG, NGBE_MAC_TX_CFG_TE,
 		      NGBE_MAC_TX_CFG_TE);
@@ -1599,8 +1584,6 @@ void ngbe_set_vf_link_state(struct ngbe_adapter *adapter, int vf, int state)
 	/* restart the VF */
 	adapter->vfinfo[vf].clear_to_send = false;
 	ngbe_ping_vf(adapter, vf);
-
-	ngbe_ping_vf_with_link_status(adapter, link_up, vf);
 
 	ngbe_set_vf_rx_tx(adapter, vf);
 }

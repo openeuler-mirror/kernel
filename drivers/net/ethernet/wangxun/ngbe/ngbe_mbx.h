@@ -110,6 +110,7 @@ enum ngbe_pfvf_api_rev {
 #define NGBE_VF_GET_QUEUES     0x09 /* get queue configuration */
 
 #define NGBE_NOFITY_VF_LINK_STATUS 0x01
+#define NGBE_PF_NOFITY_VF_NET_NOT_RUNNING BIT(31)
 
 /* mailbox API, version 1.2 VF requests */
 #define NGBE_VF_GET_RETA      0x0a    /* VF request for RETA */

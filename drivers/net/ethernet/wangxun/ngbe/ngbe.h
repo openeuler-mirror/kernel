@@ -96,6 +96,13 @@
 #define NGBE_1588_PPS_WIDTH 120
 
 #define NGBE_1588_TOD_ENABLE 1
+
+#define NGBE_STORM_INTERVAL 100
+#define NGBE_STORM_UC 0
+#define NGBE_STORM_BC 0
+#define NGBE_STORM_BC_THRE 100
+#define NGBE_STORM_MC 0
+#define NGBE_STORM_MC_THRE 100
 /* NOTE: netdev_alloc_skb reserves up to 64 bytes, NET_IP_ALIGN means we
  * reserve 64 more, and skb_shared_info adds an additional 320 bytes more,
  * this adds up to 448 bytes of extra data.
@@ -601,6 +608,7 @@ struct ngbe_mac_addr {
 /* default to trying for four seconds */
 #define NGBE_TRY_LINK_TIMEOUT (4 * HZ)
 #define NGBE_SFP_POLL_JIFFIES (2 * HZ) /* SFP poll every 2 seconds */
+#define NGBE_VF_POST_UP_DELAY (5 * HZ)
 
 /**
  * ngbe_adapter.flag
@@ -655,8 +663,11 @@ struct ngbe_mac_addr {
 #define NGBE_FLAG2_FDIR_REQUIRES_REINIT BIT(8)
 #define NGBE_FLAG2_RSS_FIELD_IPV4_UDP BIT(9)
 #define NGBE_FLAG2_RSS_FIELD_IPV6_UDP BIT(10)
+#define NGBE_FLAG2_RSS_FIELD_IPV4_SCTP BIT(25)
+#define NGBE_FLAG2_RSS_FIELD_IPV6_SCTP BIT(26)
 #define NGBE_FLAG2_RSS_ENABLED BIT(12)
 #define NGBE_FLAG2_PTP_PPS_ENABLED BIT(11)
+#define NGBE_FLAG2_RING_DUMP BIT(13)
 #define NGBE_FLAG2_EEE_CAPABLE BIT(14)
 #define NGBE_FLAG2_EEE_ENABLED BIT(15)
 #define NGBE_FLAG2_VXLAN_REREG_NEEDED BIT(16)
@@ -776,7 +787,6 @@ struct ngbe_adapter {
 	bool need_delay;
 	unsigned long sfp_poll_time;
 	unsigned long link_check_timeout;
-
 	struct timer_list service_timer;
 	struct work_struct service_task;
 	struct timer_list link_check_timer;
@@ -852,11 +862,13 @@ struct ngbe_adapter {
 	u32 hang_cnt;
 	u64 eth_priv_flags;
 #define NGBE_ETH_PRIV_FLAG_LLDP BIT(0)
+#define NGBE_ETH_PRIV_FLAG_LINK_DOWN_ON_CLOSE BIT(1)
 	/* AF_XDP zero-copy */
 	struct xsk_buff_pool **xsk_pools;
 	u16 num_xsk_pools_used;
 	u16 num_xsk_pools;
 	bool cmplt_to_dis;
+	bool io_err;
 };
 
 static inline u32 ngbe_misc_isb(struct ngbe_adapter *adapter,

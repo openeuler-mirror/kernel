@@ -199,6 +199,10 @@ NGBE_PARAM(RxBufferMode, "0=(default)no header split\n\t\t\t1=hdr split\n");
  */
 NGBE_PARAM(YtUniMode, "0=(default)disable unidirectional mode\n\t\t\t1=enable\n");
 
+/* BASE-T1 PHY master/slave mode: 0 = master, 1 = slave. */
+NGBE_PARAM(BaseT1Mode, "0=(default) BaseT1 master mode\n"
+			"\t\t\t1=BaseT1 slave mode\n");
+
 #define NGBE_RXBUFMODE_NO_HEADER_SPLIT 0
 #define NGBE_RXBUFMODE_HEADER_SPLIT 1
 #define NGBE_DEFAULT_RXBUFMODE NGBE_RXBUFMODE_NO_HEADER_SPLIT
@@ -276,6 +280,25 @@ static int ngbe_validate_option(u32 *value, struct ngbe_option *opt)
 	return -1;
 }
 
+#define PARAM_BESET(opt) ((opt)[0] != OPTION_UNSET)
+static bool ngbe_check_any_option_use(void)
+{
+	if (PARAM_BESET(InterruptType) || PARAM_BESET(IntMode) ||
+	    PARAM_BESET(MQ) || PARAM_BESET(RSS) || PARAM_BESET(VMDQ) ||
+	    PARAM_BESET(InterruptThrottleRate) || PARAM_BESET(LLIPort) ||
+	    PARAM_BESET(LLISize) || PARAM_BESET(LLIEType) ||
+	    PARAM_BESET(LLIVLANP) || PARAM_BESET(AtrSampleRate) ||
+	    PARAM_BESET(LRO) || PARAM_BESET(dmac_watchdog) ||
+	    PARAM_BESET(RxBufferMode) || PARAM_BESET(YtUniMode) ||
+	    PARAM_BESET(BaseT1Mode))
+		return true;
+#ifdef CONFIG_PCI_IOV
+	if (PARAM_BESET(max_vfs) || PARAM_BESET(VEPA))
+		return true;
+#endif
+	return false;
+}
+
 /**
  * ngbe_check_options - Range Checking for Command Line Parameters
  * @adapter: board private structure
@@ -292,9 +315,13 @@ void ngbe_check_options(struct ngbe_adapter *adapter)
 	u32 vmdq;
 
 	if (bd >= NGBE_MAX_NIC) {
-		pr_notice("Warning: no configuration for board #%d\n", bd);
+		pr_notice("Info: no configuration for board #%d\n", bd);
 		pr_notice("Using defaults for all values\n");
 	}
+
+	/* Warn about module parameter indexing after unbind and bind. */
+	if (ngbe_check_any_option_use())
+		e_dev_info("Module parameters may be misaligned after unbind/bind\n");
 
 	{ /* Interrupt Mode */
 		u32 int_mode;
@@ -735,6 +762,22 @@ void ngbe_check_options(struct ngbe_adapter *adapter)
 			adapter->hw.phy.yt_unidirectional = (u16)yt_uni_mode;
 		} else {
 			adapter->hw.phy.yt_unidirectional = opt.def;
+		}
+	}
+	{ /* 1000base-t1 phy master-slave mode */
+		static struct ngbe_option opt = {
+			.type = enable_option,
+			.name = "1000base-t1 phy slave mode",
+			.err  = "using default.",
+			.def  = OPTION_DISABLED,
+		};
+		if (num_BaseT1Mode > bd) {
+			u32 baset1_mode = BaseT1Mode[bd];
+
+			ngbe_validate_option(&baset1_mode, &opt);
+			adapter->hw.phy.baset1_mode = (u16)baset1_mode;
+		} else {
+			adapter->hw.phy.baset1_mode = opt.def;
 		}
 	}
 }
