@@ -546,6 +546,9 @@ static int ipiv_irq;
 
 void kvm_vgic_cpu_up(void)
 {
+	if (is_pvm_mode())
+		return;
+
 	enable_percpu_irq(kvm_vgic_global_state.maint_irq, 0);
 #ifdef CONFIG_ARM64_HISI_IPIV
 	if (static_branch_unlikely(&ipiv_enable))
@@ -556,6 +559,9 @@ void kvm_vgic_cpu_up(void)
 
 void kvm_vgic_cpu_down(void)
 {
+	if (is_pvm_mode())
+		return;
+
 	disable_percpu_irq(kvm_vgic_global_state.maint_irq);
 #ifdef CONFIG_ARM64_HISI_IPIV
 	if (static_branch_unlikely(&ipiv_enable))
@@ -619,6 +625,9 @@ void kvm_vgic_init_cpu_hardware(void)
 {
 	BUG_ON(preemptible());
 
+	if (is_pvm_mode())
+		return;
+
 	/*
 	 * We want to make sure the list registers start out clear so that we
 	 * only have the program the used registers.
@@ -639,6 +648,25 @@ int kvm_vgic_hyp_init(void)
 {
 	bool has_mask;
 	int ret;
+
+	if (is_pvm_mode()) {
+		/*
+		 * gic_kvm_info describes the host GIC as an EL2 CPU interface
+		 * would use it: maintenance interrupt, GICv4, GICV MMIO window
+		 * and NMI.  A software vgic provides none of these, and the
+		 * hardware values must not leak into the guest configuration
+		 * (on a host with EL2 the driver does fill them in).
+		 * Synthesize the software GICv3 configuration instead.
+		 */
+		struct gic_kvm_info *info = kzalloc(sizeof(*info), GFP_KERNEL);
+
+		if (!info)
+			return -ENOMEM;
+		info->type = GIC_V3;
+		info->no_maint_irq_mask = true;
+		kfree(gic_kvm_info);
+		gic_kvm_info = info;
+	}
 
 	if (!gic_kvm_info)
 		return -ENODEV;
@@ -683,6 +711,11 @@ int kvm_vgic_hyp_init(void)
 
 	if (ret)
 		return ret;
+
+	if (is_pvm_mode()) {
+		kvm_info("PVM: software GICv3 CPU interface enabled\n");
+		return 0;
+	}
 
 	if (!has_mask && !kvm_vgic_global_state.maint_irq)
 		return 0;

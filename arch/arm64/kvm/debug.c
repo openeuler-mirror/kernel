@@ -77,6 +77,9 @@ static void restore_guest_debug_regs(struct kvm_vcpu *vcpu)
 
 void kvm_arm_init_debug(void)
 {
+	if (is_pvm_mode())
+		return;
+
 	__this_cpu_write(mdcr_el2, kvm_call_hyp_ret(__kvm_get_mdcr_el2));
 }
 
@@ -169,6 +172,9 @@ void kvm_arm_reset_debug_ptr(struct kvm_vcpu *vcpu)
 void kvm_arm_setup_debug(struct kvm_vcpu *vcpu)
 {
 	unsigned long mdscr, orig_mdcr_el2 = vcpu->arch.mdcr_el2;
+
+	if (is_pvm_mode())
+		return;
 
 	trace_kvm_arm_setup_debug(vcpu, vcpu->guest_debug);
 
@@ -279,6 +285,9 @@ void kvm_arm_setup_debug(struct kvm_vcpu *vcpu)
 
 void kvm_arm_clear_debug(struct kvm_vcpu *vcpu)
 {
+	if (is_pvm_mode())
+		return;
+
 	trace_kvm_arm_clear_debug(vcpu->guest_debug);
 
 	/*
@@ -319,7 +328,7 @@ void kvm_arch_vcpu_load_debug_state_flags(struct kvm_vcpu *vcpu)
 	u64 dfr0;
 
 	/* For VHE, there is nothing to do */
-	if (has_vhe())
+	if (has_vhe() || is_pvm_mode())
 		return;
 
 	dfr0 = read_sysreg(id_aa64dfr0_el1);

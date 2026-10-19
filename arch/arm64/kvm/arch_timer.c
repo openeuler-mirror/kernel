@@ -1271,6 +1271,9 @@ void kvm_timer_init_vm(struct kvm *kvm)
 
 void kvm_timer_cpu_up(void)
 {
+	if (is_pvm_mode())
+		return;
+
 #ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
 	if (vtimer_is_irqbypass()) {
 		enable_percpu_irq(host_ptimer_irq, host_ptimer_irq_flags);
@@ -1284,6 +1287,9 @@ void kvm_timer_cpu_up(void)
 
 void kvm_timer_cpu_down(void)
 {
+	if (is_pvm_mode())
+		return;
+
 #ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
 	if (vtimer_is_irqbypass())
 		return;
@@ -1624,6 +1630,9 @@ int __init kvm_timer_hyp_init(bool has_gic)
 		kvm_err("kvm_arch_timer: uninitialized timecounter\n");
 		return -ENODEV;
 	}
+
+	if (is_pvm_mode())
+		return 0;
 
 #ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
 	/*

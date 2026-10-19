@@ -44,6 +44,7 @@
 #include <asm/sections.h>
 #include <asm/kvm_tmi.h>
 #include <asm/tlbid.h>
+#include <asm/kvm_pvm.h>
 #include <kvm/arm_hypercalls.h>
 #include <kvm/arm_pmu.h>
 #include <kvm/arm_psci.h>
@@ -433,6 +434,10 @@ static inline void free_tlbid_vdomain(struct kvm *kvm) { }
 int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 {
 	int ret;
+
+	/* PVM guest execution requires the separate vCPU run-path support. */
+	if (is_pvm_mode())
+		return -EOPNOTSUPP;
 
 	ret = kvm_sched_affinity_vm_init(kvm);
 	if (ret)
@@ -2821,7 +2826,8 @@ static int kvm_init_vector_slots(void)
 	base = kern_hyp_va(kvm_ksym_ref(__bp_harden_hyp_vecs));
 	kvm_init_vector_slot(base, HYP_VECTOR_SPECTRE_DIRECT);
 
-	if (kvm_system_needs_idmapped_vectors() &&
+	/* PVM uses the kernel mappings, not an EL2 idmapped trampoline. */
+	if (!is_pvm_mode() && kvm_system_needs_idmapped_vectors() &&
 	    !is_protected_kvm_enabled()) {
 		err = create_hyp_exec_mappings(__pa_symbol(__bp_harden_hyp_vecs),
 					       __BP_HARDEN_HYP_VECS_SZ, &base);
@@ -2913,7 +2919,7 @@ static void cpu_init_hyp_mode(void)
 
 static void cpu_hyp_reset(void)
 {
-	if (!is_kernel_in_hyp_mode())
+	if (!is_kernel_in_hyp_mode() && !is_pvm_mode())
 		__hyp_reset_vectors();
 }
 
@@ -2952,7 +2958,7 @@ static void cpu_hyp_init_context(void)
 {
 	kvm_init_host_cpu_context(host_data_ptr(host_ctxt));
 
-	if (!is_kernel_in_hyp_mode())
+	if (!is_kernel_in_hyp_mode() && !is_pvm_mode())
 		cpu_init_hyp_mode();
 }
 
@@ -3520,7 +3526,10 @@ static __init int kvm_arm_init(void)
 	int err;
 	bool in_hyp_mode;
 
-	if (!is_hyp_mode_available()) {
+	if (kvm_get_mode() == KVM_MODE_PVM)
+		kvm_arm_init_pvm();
+
+	if (!is_hyp_mode_available() && !is_pvm_mode()) {
 		kvm_info("HYP mode not available\n");
 		return -ENODEV;
 	}
@@ -3569,7 +3578,7 @@ static __init int kvm_arm_init(void)
 		return err;
 	}
 
-	if (!in_hyp_mode) {
+	if (!in_hyp_mode && !is_pvm_mode()) {
 		err = init_hyp_mode();
 		if (err)
 			goto out_err;
@@ -3589,6 +3598,8 @@ static __init int kvm_arm_init(void)
 		kvm_info("Protected nVHE mode initialized successfully\n");
 	} else if (in_hyp_mode) {
 		kvm_info("VHE mode initialized successfully\n");
+	} else if (is_pvm_mode()) {
+		kvm_info("PVM mode initialized successfully\n");
 	} else {
 		kvm_info("Hyp mode initialized successfully\n");
 	}
@@ -3616,6 +3627,8 @@ out_hyp:
 		teardown_hyp_mode();
 out_err:
 	kvm_arm_vmid_alloc_free();
+	if (is_pvm_mode())
+		kvm_arm_destroy_pvm();
 	return err;
 }
 
@@ -3626,6 +3639,11 @@ static int __init early_kvm_mode_cfg(char *arg)
 
 	if (strcmp(arg, "none") == 0) {
 		kvm_mode = KVM_MODE_NONE;
+		return 0;
+	}
+
+	if (strcmp(arg, "pvm") == 0) {
+		kvm_mode = KVM_MODE_PVM;
 		return 0;
 	}
 

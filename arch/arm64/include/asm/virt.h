@@ -82,6 +82,7 @@ bool is_kvm_arm_initialised(void);
 
 DECLARE_STATIC_KEY_FALSE(kvm_protected_mode_initialized);
 DECLARE_STATIC_KEY_FALSE(kvm_rme_is_available);
+DECLARE_STATIC_KEY_FALSE(kvm_pvm_is_available);
 
 /* Reports the availability of HYP mode */
 static inline bool is_hyp_mode_available(void)
@@ -155,6 +156,11 @@ static __always_inline bool has_hvhe(void)
 static inline bool is_hyp_nvhe(void)
 {
 	return is_hyp_mode_available() && !is_kernel_in_hyp_mode();
+}
+
+static inline bool is_pvm_mode(void)
+{
+	return static_branch_likely(&kvm_pvm_is_available);
 }
 
 #endif /* __ASSEMBLY__ */

@@ -86,6 +86,7 @@ enum kvm_mode {
 	KVM_MODE_DEFAULT,
 	KVM_MODE_PROTECTED,
 	KVM_MODE_NV,
+	KVM_MODE_PVM,
 	KVM_MODE_NONE,
 };
 #ifdef CONFIG_KVM
@@ -1144,7 +1145,7 @@ void kvm_arm_resume_guest(struct kvm *kvm);
  */
 #define kvm_call_hyp(f, ...)						\
 	do {								\
-		if (has_vhe()) {					\
+		if (has_vhe() || is_pvm_mode()) {					\
 			f(__VA_ARGS__);					\
 			isb();						\
 		} else {						\
@@ -1156,7 +1157,7 @@ void kvm_arm_resume_guest(struct kvm *kvm);
 	({								\
 		typeof(f(__VA_ARGS__)) ret;				\
 									\
-		if (has_vhe()) {					\
+		if (has_vhe() || is_pvm_mode()) {					\
 			ret = f(__VA_ARGS__);				\
 			isb();						\
 		} else {						\

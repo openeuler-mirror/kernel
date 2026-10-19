@@ -2689,6 +2689,9 @@
 				virtualization. Requires at least ARMv8.3
 				hardware.
 
+			pvm: software hypervisor mode that does not
+			     rely on EL2.
+
 			Defaults to VHE/nVHE based on hardware support. Setting
 			mode to "protected" will disable kexec and hibernation
 			for the host. "nested" is experimental and should be
