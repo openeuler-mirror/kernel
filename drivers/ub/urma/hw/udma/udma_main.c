@@ -1638,6 +1638,8 @@ int udma_reset_abort(struct auxiliary_device *adev)
 int udma_probe(struct auxiliary_device *adev,
 	       const struct auxiliary_device_id *id)
 {
+	struct udma_dev *udma_dev = NULL;
+
 	if (udma_init_dev(adev, true)) {
 		ubase_adev_fault_log(adev, UDMA_FAULT_EVENT_ID_PROBE, NULL);
 		return -EINVAL;
@@ -1646,6 +1648,10 @@ int udma_probe(struct auxiliary_device *adev,
 	ubase_reinit_register(adev, udma_reinit_handler);
 	ubase_reset_register(adev, udma_reset_handler);
 	ubase_update_adev_status(adev, 0);
+
+	udma_dev = get_udma_dev(adev);
+	if (udma_dev)
+		ubase_update_adev_name(adev, udma_dev->dev_name);
 
 	return 0;
 }

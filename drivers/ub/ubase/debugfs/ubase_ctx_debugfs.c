@@ -411,6 +411,46 @@ int ubase_dbg_get_aeq_ctx_hw(struct device *dev, void *buf, u32 *size)
 EXPORT_SYMBOL(ubase_dbg_get_aeq_ctx_hw);
 
 /**
+ * ubase_dbg_get_aeq_ctx_hw_by_name() - get aeq ctx hw by name
+ * @dev_name: device name
+ * @buf: aeq ctx buffer
+ * @size: aeq ctx buffer size
+ *
+ * The function is used to get hardware aeq ctx.
+ *
+ * Context: Any context.
+ * Return: 0 on success, negative error code otherwise
+ */
+int ubase_dbg_get_aeq_ctx_hw_by_name(const char *dev_name, void *buf, u32 *size)
+{
+	struct ubase_dev *udev;
+	int ret;
+
+	if (!dev_name || !buf || !size)
+		return -EINVAL;
+
+	ubase_adev_list_read_lock();
+	udev = ubase_get_dev_from_adev_list_locked(dev_name);
+	if (!udev) {
+		ret = -ENODEV;
+		goto out;
+	}
+
+	if (*size < udev->caps.dev_caps.num_aeq_vectors * UBASE_AEQ_CTX_SIZE) {
+		ubase_err(udev, "size of aeq ctx buf is too small, size = %u.\n",
+			  *size);
+		ret = -EINVAL;
+		goto out;
+	}
+
+	ret = __ubase_dbg_get_eq_ctx_hw(udev, buf, size, UBASE_DBG_AEQ_CTX);
+out:
+	ubase_adev_list_read_unlock();
+	return ret;
+}
+EXPORT_SYMBOL(ubase_dbg_get_aeq_ctx_hw_by_name);
+
+/**
  * ubase_dbg_get_ceq_ctx_hw() - get ceq ctx hw
  * @dev: device
  * @buf: ceq ctx buffer
@@ -438,3 +478,43 @@ int ubase_dbg_get_ceq_ctx_hw(struct device *dev, void *buf, u32 *size)
 	return __ubase_dbg_get_eq_ctx_hw(udev, buf, size, UBASE_DBG_CEQ_CTX);
 }
 EXPORT_SYMBOL(ubase_dbg_get_ceq_ctx_hw);
+
+/**
+ * ubase_dbg_get_ceq_ctx_hw_by_name() - get ceq ctx hw by name
+ * @dev_name: device name
+ * @buf: ceq ctx buffer
+ * @size: ceq ctx buffer size
+ *
+ * The function is used to get hardware ceq ctx by name.
+ *
+ * Context: Any context.
+ * Return: 0 on success, negative error code otherwise
+ */
+int ubase_dbg_get_ceq_ctx_hw_by_name(const char *dev_name, void *buf, u32 *size)
+{
+	struct ubase_dev *udev;
+	int ret;
+
+	if (!dev_name || !buf || !size)
+		return -EINVAL;
+
+	ubase_adev_list_read_lock();
+	udev = ubase_get_dev_from_adev_list_locked(dev_name);
+	if (!udev) {
+		ret = -ENODEV;
+		goto out;
+	}
+
+	if (*size < udev->caps.dev_caps.num_ceq_vectors * UBASE_CEQ_CTX_SIZE) {
+		ubase_err(udev, "size of ceq ctx buf is too small, size = %u.\n",
+			  *size);
+		ret = -EINVAL;
+		goto out;
+	}
+
+	ret = __ubase_dbg_get_eq_ctx_hw(udev, buf, size, UBASE_DBG_CEQ_CTX);
+out:
+	ubase_adev_list_read_unlock();
+	return ret;
+}
+EXPORT_SYMBOL(ubase_dbg_get_ceq_ctx_hw_by_name);

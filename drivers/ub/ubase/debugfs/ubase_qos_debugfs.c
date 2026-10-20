@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -75,6 +75,55 @@ int ubase_dbg_get_sl_vl_map(struct device *dev, struct ubase_dbg_sl_vl_map *map)
 }
 EXPORT_SYMBOL(ubase_dbg_get_sl_vl_map);
 
+/**
+ * ubase_dbg_get_sl_vl_map_by_name() - get sl vl map by name
+ * @dev_name: dev_name
+ * @map: debug sl vl map
+ *
+ * The function is used to get sl vl map by name.
+ *
+ * Context: Any context.
+ * Return: 0 on success, negative error code otherwise
+ */
+int ubase_dbg_get_sl_vl_map_by_name(const char *dev_name,
+				    struct ubase_dbg_sl_vl_map *map)
+{
+	u8 sl_vl[UBASE_MAX_SL_NUM] = {0};
+	struct ubase_dev *udev;
+	int ret;
+
+	if (!dev_name || !map)
+		return -EINVAL;
+
+	ubase_adev_list_read_lock();
+	udev = ubase_get_dev_from_adev_list_locked(dev_name);
+	if (!udev) {
+		ret = -ENODEV;
+		goto out;
+	}
+
+	if (!ubase_dev_urma_supported(udev) && !ubase_dev_cdma_supported(udev)) {
+		ret = -EOPNOTSUPP;
+		goto out;
+	}
+
+	if (!test_bit(UBASE_STATE_INITED_B, &udev->state_bits) ||
+	    test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits)) {
+		ret = -EBUSY;
+		goto out;
+	}
+
+	ret = ubase_query_sl_vl_map(udev, sl_vl);
+	if (ret)
+		goto out;
+
+	memcpy(map->hw_vl, sl_vl, UBASE_MAX_SL_NUM);
+out:
+	ubase_adev_list_read_unlock();
+	return ret;
+}
+EXPORT_SYMBOL(ubase_dbg_get_sl_vl_map_by_name);
+
 int ubase_dbg_dump_udma_dscp_vl_map(struct seq_file *s, void *data)
 {
 	struct ubase_dev *udev = dev_get_drvdata(s->private);
@@ -131,6 +180,55 @@ int ubase_dbg_get_dscp_vl_map(struct device *dev,
 	return 0;
 }
 EXPORT_SYMBOL(ubase_dbg_get_dscp_vl_map);
+
+/**
+ * ubase_dbg_get_dscp_vl_map_by_name() - get_dscp_vl_map_by_name
+ * @dev_name: device name
+ * @map: debug dscp vl map
+ *
+ * The function is used to get dscp vl map by name.
+ *
+ * Context: Any context.
+ * Return: 0 on success, negative error code otherwise
+ */
+int ubase_dbg_get_dscp_vl_map_by_name(const char *dev_name,
+				      struct ubase_dbg_dscp_vl_map *map)
+{
+	struct ubase_query_vl_map_cmd resp = {0};
+	struct ubase_dev *udev;
+	int ret;
+
+	if (!dev_name || !map)
+		return -EINVAL;
+
+	ubase_adev_list_read_lock();
+	udev = ubase_get_dev_from_adev_list_locked(dev_name);
+	if (!udev) {
+		ret = -ENODEV;
+		goto out;
+	}
+
+	if (!ubase_dev_eth_mac_supported(udev)) {
+		ret = -EOPNOTSUPP;
+		goto out;
+	}
+
+	if (!test_bit(UBASE_STATE_INITED_B, &udev->state_bits) ||
+	    test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits)) {
+		ret = -EBUSY;
+		goto out;
+	}
+
+	ret = ubase_query_vl_map(udev, &resp);
+	if (ret)
+		goto out;
+
+	memcpy(map->hw_vl, resp.dscp_vl, sizeof(map->hw_vl));
+out:
+	ubase_adev_list_read_unlock();
+	return ret;
+}
+EXPORT_SYMBOL(ubase_dbg_get_dscp_vl_map_by_name);
 
 int ubase_dbg_dump_ets_tc_info(struct seq_file *s, void *data)
 {
