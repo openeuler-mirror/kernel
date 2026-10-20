@@ -25,9 +25,6 @@ static void ummu_build_nested_domain_tct(struct ummu_domain *u_domain,
 		FIELD_PREP(TECT_ENT1_TCT_PTR_MD1, TECT_ENT1_MD_CACHE_WBRA) |
 		FIELD_PREP(TECT_ENT1_TCT_PTR_MSD, TECT_ENT1_MD_CACHE_WB));
 
-	if (!(ummu->cap.features & UMMU_FEAT_STALLS))
-		target->data[1] |= cpu_to_le64(TECT_ENT1_TCT_STALL_DISABLE);
-
 	tcr_sel = (ummu->cap.features & UMMU_FEAT_E2H) ? TECT_ENT0_TCR_EL2 :
 						  TECT_ENT0_TCR_NSEL1;
 	target->data[0] |= cpu_to_le64(

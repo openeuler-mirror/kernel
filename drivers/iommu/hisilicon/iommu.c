@@ -497,8 +497,10 @@ static void ummu_release_device(struct device *dev)
 	u32 tid;
 	int ret;
 
-	if (WARN_ON(ummu_master_sva_enabled(master)) && master->ummu->evtq.iopf)
+	if (WARN_ON(ummu_master_sva_enabled(master)) && master->ummu->evtq.iopf) {
+		iopf_queue_flush_dev(dev);
 		iopf_queue_remove_device(master->ummu->evtq.iopf, dev);
+	}
 
 	ret = ummu_get_tid(dev, NULL, &tid);
 	if (ret || tid == UMMU_INVALID_TID)
