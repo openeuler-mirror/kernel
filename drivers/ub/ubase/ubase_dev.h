@@ -176,6 +176,7 @@ struct ubase_reset_stat {
 	u32 reset_done_cnt;
 	u32 hw_reset_done_cnt;
 	u32 elr_reset_cnt;
+	u32 ras_elr_reset_cnt;
 	u32 reset_fail_cnt;
 	u32 reset_retry_cnt;
 	u32 port_reset_cnt;
@@ -552,6 +553,11 @@ static inline bool ubase_dev_ta_extdb_buf_supported(struct ubase_dev *udev)
 static inline bool ubase_dev_ta_timer_buf_supported(struct ubase_dev *udev)
 {
 	return ubase_get_cap_bit(udev, UBASE_SUPPORT_TA_TIMER_BUF_B);
+}
+
+static inline bool ubase_dev_ue_elr_ras_supported(struct ubase_dev *udev)
+{
+	return ubase_get_cap_bit(udev, UBASE_SUPPORT_UE_ELR_RAS_B);
 }
 
 static inline bool ubase_dev_err_handle_supported(struct ubase_dev *udev)
