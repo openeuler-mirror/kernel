@@ -9,6 +9,7 @@
 #include <linux/stat.h>
 #include <linux/slab.h>
 #include <linux/pagemap.h>
+#include <linux/rmap.h>
 #include <linux/freezer.h>
 #include <linux/sched/signal.h>
 #include <linux/wait_bit.h>
@@ -2909,20 +2910,84 @@ int cifs_truncate_page(struct address_space *mapping, loff_t from)
 	return rc;
 }
 
-void cifs_setsize(struct inode *inode, loff_t offset)
+/*
+ * Zero any data left in the pagecache within the [@from, @to) hole by a
+ * write through an mmap so that it isn't exposed as file content once the
+ * file is extended.  Only the uptodate folio straddling @from can hold such
+ * data as pages wholly beyond the EOF can't be faulted in, so the zeroing
+ * is limited to that folio.  The folio is zeroed rather than dropped so
+ * that a concurrent extending write can't lose data.
+ *
+ * For callers that hold i_rwsem exclusively across the whole resize and
+ * have already updated i_size to @to, no genuine concurrent buffered writer
+ * can be racing, a lockless stat() adopting a server-confirmed size mid-resize
+ * has no data behind it and never dirties the folio, so it can't fool this
+ * check into skipping the zeroing.
+ *
+ * Do not use the folio's dirty state as the staleness criterion here: unlike
+ * netfs writeback, this tree's cifs writeback does not zero the part of a
+ * folio beyond i_size, so a folio cleaned by the setattr-side
+ * filemap_write_and_wait() can still hold stale bytes.
+ *
+ * pagecache_isize_extended() can't be reused here: it is keyed on a
+ * sub-page block size (a no-op when the block size is >= PAGE_SIZE, as on
+ * network filesystems), runs after i_size is updated, and doesn't wait for
+ * writeback.  Keep the two in sync if either is changed.
+ */
+static void cifs_clear_stale_post_isize(struct inode *inode,
+					unsigned long long from,
+					unsigned long long to)
+{
+	struct address_space *mapping = inode->i_mapping;
+	fgf_t fgp = FGP_LOCK;
+	struct folio *folio;
+
+	if (from >= to)
+		return;
+
+	folio = __filemap_get_folio(mapping, from >> PAGE_SHIFT, fgp, 0);
+	if (IS_ERR(folio))
+		return;
+
+	folio_wait_writeback(folio);
+
+	if (folio_mkclean(folio))
+		folio_mark_dirty(folio);
+
+	if (folio_test_uptodate(folio)) {
+		unsigned long long fpos = folio_pos(folio);
+
+		if (from < to && from < fpos + folio_size(folio)) {
+			size_t end = umin(to - fpos, folio_size(folio));
+			size_t offset = from - fpos;
+
+			folio_zero_segment(folio, offset, end);
+		}
+	}
+
+	folio_unlock(folio);
+	folio_put(folio);
+}
+
+void cifs_setsize(struct inode *inode, loff_t old_size, loff_t offset)
 {
 	struct cifsInodeInfo *cifs_i = CIFS_I(inode);
-	loff_t old_size;
 
 	spin_lock(&inode->i_lock);
-	old_size = i_size_read(inode);
 	i_size_write(inode, offset);
 	spin_unlock(&inode->i_lock);
 
 	/* Cached inode must be refreshed on truncate */
 	cifs_i->time = 0;
+
+	/*
+	 * Zero the tail of the folio straddling the old EOF so data dirtied
+	 * past EOF through an mmap isn't exposed.  truncate_pagecache() then
+	 * drops any pagecache beyond the new EOF, as in truncate_setsize().
+	 */
 	if (offset > old_size)
-		pagecache_isize_extended(inode, old_size, offset);
+		cifs_clear_stale_post_isize(inode, old_size, offset);
+
 	truncate_pagecache(inode, offset);
 }
 
@@ -2934,6 +2999,7 @@ cifs_set_file_size(struct inode *inode, struct iattr *attrs,
 	struct cifsFileInfo *open_file;
 	struct cifsInodeInfo *cifsInode = CIFS_I(inode);
 	struct cifs_sb_info *cifs_sb = CIFS_SB(inode->i_sb);
+	loff_t old_size = i_size_read(inode);
 	struct tcon_link *tlink = NULL;
 	struct cifs_tcon *tcon = NULL;
 	struct TCP_Server_Info *server;
@@ -2990,7 +3056,7 @@ cifs_set_file_size(struct inode *inode, struct iattr *attrs,
 set_size_out:
 	if (rc == 0) {
 		cifsInode->server_eof = attrs->ia_size;
-		cifs_setsize(inode, attrs->ia_size);
+		cifs_setsize(inode, old_size, attrs->ia_size);
 		/*
 		 * i_blocks is not related to (i_size / i_blksize), but instead
 		 * 512 byte (2**9) size is required for calculating num blocks.
