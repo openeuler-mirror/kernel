@@ -43,19 +43,39 @@ static int ubaseproxy_ctrlq_check_ue_msg(struct auxiliary_device *adev,
 int ubaseproxy_ctrlq_handle_query_eid_resp(struct auxiliary_device *adev,
 					   void *data, u16 len)
 {
+#define RSVD_BYTES_NUM	3
+
 	struct ubaseproxy_dev *udev = get_ubaseproxy_dev(adev);
 	struct ubaseproxy_ue_seid_table *ue_seid_table;
 	struct ubase_ctrlq_ue_msg_info msg_info = {0};
 	struct ubaseproxy_ctrlq_query_seid_info *resp;
 	u16 hdr_len = ubase_ctrlq_ue_msg_header_len();
-	u32 i, seid_idx;
+	u32 i, seid_idx, expect_len;
 	int ret;
 
-	ret = ubaseproxy_ctrlq_check_ue_msg(adev, data, len, hdr_len, &msg_info);
+	expect_len = hdr_len;
+	ret = ubaseproxy_ctrlq_check_ue_msg(adev, data, len, expect_len, &msg_info);
 	if (ret)
 		return 0;
 
 	resp = (struct ubaseproxy_ctrlq_query_seid_info *)((u8 *)data + hdr_len);
+	expect_len = hdr_len + sizeof(resp->seid_num);
+	if (len < expect_len) {
+		ubaseproxy_err(udev,
+			       "failed to check msg len, msg not contain seid num, len = %u, expect len = %u.\n",
+			       len, expect_len);
+		return 0;
+	}
+
+	expect_len = hdr_len + sizeof(resp->seid_num) + RSVD_BYTES_NUM +
+		     resp->seid_num * sizeof(struct ubaseproxy_seid_info);
+	if (len < expect_len) {
+		ubaseproxy_err(udev,
+			       "failed to check msg len, msg not contain seid info, len = %u, expect len = %u.\n",
+			       len, expect_len);
+		return 0;
+	}
+
 	if (resp->seid_num > UBASEPROXY_CTRLQ_SEID_NUM) {
 		ubaseproxy_err(udev, "invalid seid num[%u].\n", resp->seid_num);
 		return 0;

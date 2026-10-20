@@ -757,19 +757,25 @@ static u16 ubase_calc_bd_num(struct ubase_cmd_buf *buf)
 static int ubase_cmd_buf_check(struct ubase_dev *udev, struct ubase_cmd_buf *in,
 			       struct ubase_cmd_buf *out, u16 *num)
 {
+#define MAX_BB_NUM	32
+
+	u32 max_data_size = MAX_BB_NUM * sizeof(struct ubase_cmdq_desc) -
+			    UBASE_CMD_HEADER_LENGTH;
+
 	if (in->is_read && (!out || !out->data || out->data_size == 0)) {
 		ubase_err(udev, "output buffer is empty.\n");
 		return -EINVAL;
 	}
 
-	*num = max_t(u16, ubase_calc_bd_num(in), ubase_calc_bd_num(out));
-	if (*num > UBASE_CMDQ_DESC_NUM) {
+	if (max_t(u32, in->data_size, out->data_size) > max_data_size) {
 		ubase_err(udev,
-			  "requested space(%u) exceeds the maximum(%lu).\n",
+			  "data size(%u) exceeds the maximum(%u).\n",
 			  max_t(u32, in->data_size, out->data_size),
-			  UBASE_CMD_MAX_DESC_SIZE);
+			  max_data_size);
 		return -EINVAL;
 	}
+
+	*num = max_t(u16, ubase_calc_bd_num(in), ubase_calc_bd_num(out));
 
 	return 0;
 }

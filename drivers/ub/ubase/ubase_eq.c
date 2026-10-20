@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -280,10 +280,11 @@ static bool ubase_is_udma_ras_event(struct ubase_dev *udev, u32 queue_id,
 
 static bool ubase_is_udma_tp_event(struct ubase_dev *udev, u32 tpn)
 {
-	struct ubase_tpg *tpg = udev->tp_ctx.tpg;
+	struct ubase_tpg *tpg;
 	u32 i;
 
 	spin_lock(&udev->tp_ctx.tpg_lock);
+	tpg = udev->tp_ctx.tpg;
 	if (!tpg) {
 		spin_unlock(&udev->tp_ctx.tpg_lock);
 		dev_warn_ratelimited(udev->dev,

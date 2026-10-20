@@ -8,7 +8,7 @@
 
 #include "ubaseproxy_dev.h"
 
-#define UBASEPROXY_CTRLQ_SEID_NUM	64
+#define UBASEPROXY_CTRLQ_SEID_NUM	32
 #define UBASEPROXY_CTRLQ_SEID_CMD	GENMASK(3, 0)
 
 enum ubaseproxy_ctrlq_seid_event {

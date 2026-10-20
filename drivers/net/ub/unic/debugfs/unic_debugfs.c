@@ -197,7 +197,7 @@ static int unic_dbg_dump_page_pool_info(struct seq_file *s, void *data)
 		return -EBUSY;
 
 	if (__unic_resetting(unic_dev) ||
-	    !unic_dev->channels.c) {
+	    test_bit(UNIC_STATE_CHANNEL_INVALID, &unic_dev->state)) {
 		ret = -EBUSY;
 		goto out;
 	}
@@ -430,7 +430,8 @@ static int unic_dbg_dump_abn_cqe_cnt(struct seq_file *s, void *data)
 	if (!mutex_trylock(&unic_dev->channels.mutex))
 		return -EBUSY;
 
-	if (__unic_resetting(unic_dev) || !unic_dev->channels.c) {
+	if (__unic_resetting(unic_dev) ||
+	    test_bit(UNIC_STATE_CHANNEL_INVALID, &unic_dev->state)) {
 		ret = -EBUSY;
 		goto out;
 	}

@@ -531,7 +531,8 @@ void unic_get_stats(struct net_device *netdev,
 	struct unic_dev *unic_dev = netdev_priv(netdev);
 	u64 *p = data;
 
-	if (unic_resetting(netdev) || !unic_dev->channels.c) {
+	if (unic_resetting(netdev) ||
+	    test_bit(UNIC_STATE_CHANNEL_INVALID, &unic_dev->state)) {
 		unic_err(unic_dev,
 			 "dev resetting or channel is null, could not get stats.\n");
 		return;
