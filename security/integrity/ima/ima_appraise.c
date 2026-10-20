@@ -510,7 +510,7 @@ int ima_appraise_measurement(enum ima_hooks func,
 #ifdef CONFIG_IMA_DIGEST_LIST
 		break;
 	case INTEGRITY_UNKNOWN:
-		if (ima_appraise_req_evm &&
+		if (ima_appraise_req_evm && xattr_value &&
 		    xattr_value->type != EVM_IMA_XATTR_DIGSIG && !found_digest)
 			goto out;
 #else
@@ -535,7 +535,7 @@ int ima_appraise_measurement(enum ima_hooks func,
 		 * are signed or found in a digest list (immutable)
 		 */
 		if (func == DIGEST_LIST_CHECK || ima_current_is_parser()) {
-			if (xattr_value->type == EVM_IMA_XATTR_DIGSIG)
+			if (xattr_value && xattr_value->type == EVM_IMA_XATTR_DIGSIG)
 				break;
 			if (found_digest &&
 			    ima_digest_is_immutable(found_digest))
