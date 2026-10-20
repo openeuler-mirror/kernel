@@ -85,7 +85,7 @@ static int ummu_master_sva_enable_iopf(struct ummu_master *master)
 	int ret;
 
 	if (master->iopf_enabled)
-		return -EBUSY;
+		return 0;
 
 	/* bus controller support stall as default. */
 	iopfq = master->ummu->evtq.iopf;
@@ -497,7 +497,7 @@ void ummu_sva_tcte_invalidate(struct ummu_domain *u_domain)
 	struct ummu_tct_desc *tct_desc = &u_domain->cfgs.s1_cfg.tct;
 
 	guard(mutex)(&ummu_sva_mutex);
-	tct_desc->tcr0 &= ~TCT_ENT0_FBR;
+	tct_desc->tcr0 &= ~(TCT_ENT0_FBR | TCT_ENT0_FBS);
 	tct_desc->tcr1 |= TCT_ENT1_TTWD;
 	ummu_write_tct_desc(ummu, &u_domain->cfgs, false);
 	ummu_flush_iotlb_all(&u_domain->base_domain.domain);
