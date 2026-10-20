@@ -2328,7 +2328,7 @@ static int alloc_pool_huge_page(struct hstate *h, nodemask_t *nodes_allowed,
 		gfp_t gfp = 0;
 
 		/* Use __GFP_MEMALLOC to make sure all pages can be allocated */
-		if (numa_remote_hugetlb_nowatermark(node))
+		if (numa_remote_hugetlb_nowatermark(node) && !hstate_is_gigantic(h))
 			gfp |= __GFP_MEMALLOC;
 
 		folio = alloc_fresh_hugetlb_folio(h, gfp_mask | gfp, node,
