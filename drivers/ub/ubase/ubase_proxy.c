@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -56,12 +56,11 @@ int ubase_update_ue_isolated_state(struct ubase_dev *udev)
 #define BITMAP_LEN 32U
 
 	struct ubase_query_ue_isolated_state_cmd resp = {0};
-	u32 new_bitmap[ARRAY_SIZE(resp.bitmap)];
 	struct ubase_ue_node *ue_node;
 	struct ubase_cmd_buf in, out;
+	unsigned long new_bitmap;
 	u32 offset, idx, shift;
 	int ret;
-	u16 i;
 
 	if (!ubase_dev_mbx_proxy_supported(udev))
 		return -EOPNOTSUPP;
@@ -78,21 +77,19 @@ int ubase_update_ue_isolated_state(struct ubase_dev *udev)
 		return ret;
 	}
 
-	for (i = 0; i < ARRAY_SIZE(resp.bitmap); i++)
-		new_bitmap[i] = le32_to_cpu(resp.bitmap[i]);
-
 	mutex_lock(&udev->ue_list_lock);
 	list_for_each_entry(ue_node, &udev->ue_list, list) {
-		if (ue_node->bus_ue_id < resp.first_bus_ue_id)
+		if (ue_node->bus_ue_id < le16_to_cpu(resp.first_bus_ue_id))
 			continue;
 
-		offset = ue_node->bus_ue_id - resp.first_bus_ue_id;
+		offset = ue_node->bus_ue_id - le16_to_cpu(resp.first_bus_ue_id);
 		if (offset >= BITMAP_MAX_LEN)
 			continue;
 
 		idx = offset / BITMAP_LEN;
 		shift = offset % BITMAP_LEN;
-		if (test_bit(shift, (unsigned long *)&new_bitmap[idx]))
+		new_bitmap = le32_to_cpu(resp.bitmap[idx]);
+		if (test_bit(shift, &new_bitmap))
 			ue_node->isolated = 1;
 		else
 			ue_node->isolated = 0;

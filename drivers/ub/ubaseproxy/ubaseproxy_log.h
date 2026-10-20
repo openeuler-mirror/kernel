@@ -113,8 +113,6 @@ struct ubaseproxy_ue_risk_stats {
 	u64 jfs_tx_jfc_ref_inc;
 	u64 jfs_rx_jfc_ref_inc;
 	u64 jfs_init_load_rx_jfc;
-	u64 jfs_reduce_tx_jfc_dec;
-	u64 jfs_reduce_rx_jfc_dec;
 	u64 jfs_mask_state;
 
 	u64 jfr_create_req_len;
@@ -134,7 +132,6 @@ struct ubaseproxy_ue_risk_stats {
 	u64 jfr_create_jfc_not_exists;
 	u64 jfr_create_jfc_inc;
 	u64 jfr_destroy_jfr_not_exists;
-	u64 jfr_destroy_jfc_dec;
 	u64 jfr_modify_jfr_not_exists;
 	u64 jfr_modify_state_ctx_mask;
 	u64 jfr_modify_state_check;

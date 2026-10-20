@@ -141,7 +141,7 @@ ubaseproxy_check_jetty_ctx_fixed_values(struct ubaseproxy_dev *udev,
 
 static int ubaseproxy_check_jetty_type_match(struct ubaseproxy_dev *udev,
 					     struct ubase_proxy_req_msg *req,
-					     u16 jfrn)
+					     u32 jfrn)
 {
 	u16 mbx_ue_id = le16_to_cpu(req->mbx_ue_id);
 	struct ubaseproxy_ue_ctx_xarray *ue_ctx_xa;
@@ -463,8 +463,7 @@ static int ubaseproxy_check_modify_jetty_ctx(struct ubaseproxy_dev *udev,
 static inline bool ubaseproxy_jfs_flush_ssn_vld(struct ubaseproxy_jetty_ctx *ctx)
 {
 #define UBASEPROXY_RCV_SEND_MAX_DIFF_VAL	512U
-	u16 rcv_send_diff = le16_to_cpu(ctx->next_rcv_ssn) -
-			    le16_to_cpu(ctx->next_send_ssn);
+	u16 rcv_send_diff = ctx->next_rcv_ssn - ctx->next_send_ssn;
 
 	return ctx->flush_ssn_vld &&
 	       (rcv_send_diff < UBASEPROXY_RCV_SEND_MAX_DIFF_VAL);
@@ -686,9 +685,9 @@ static int ubaseproxy_jfc_reduce_jetty_cnt(struct ubaseproxy_dev *udev,
 	ret = ubaseproxy_jfc_ref_dec(udev, ue_ctx_xa, jettyn, tx_jfcn,
 				     mbx_ue_id);
 	if (ret) {
-		ubaseproxy_risk_rl(udev, mbx_ue_id, jfs_reduce_tx_jfc_dec,
-				   "failed to decrease tx jfc(%u) cnt by jetty(%u) res, ret=%d.\n",
-				   tx_jfcn, jettyn, ret);
+		ubaseproxy_err(udev,
+			       "failed to decrease tx jfc(%u) cnt by jetty(%u) res, ret=%d.\n",
+			       tx_jfcn, jettyn, ret);
 		return ret;
 	}
 
@@ -698,9 +697,9 @@ static int ubaseproxy_jfc_reduce_jetty_cnt(struct ubaseproxy_dev *udev,
 	ret = ubaseproxy_jfc_ref_dec(udev, ue_ctx_xa, jettyn, rx_jfcn,
 				     mbx_ue_id);
 	if (ret) {
-		ubaseproxy_risk_rl(udev, mbx_ue_id, jfs_reduce_rx_jfc_dec,
-				   "failed to decrease rx jfc(%u) cnt by jetty(%u) res, ret=%d.\n",
-				   rx_jfcn, jettyn, ret);
+		ubaseproxy_err(udev,
+			       "failed to decrease rx jfc(%u) cnt by jetty(%u) res, ret=%d.\n",
+			       rx_jfcn, jettyn, ret);
 		ubaseproxy_jfc_ref_inc(udev, ue_ctx_xa, jettyn, tx_jfcn,
 				       mbx_ue_id);
 	}
@@ -713,12 +712,8 @@ static void ubaseproxy_destroy_jetty_res(struct ubaseproxy_dev *udev,
 					 struct ubaseproxy_jetty_key_words *jetty,
 					 u16 jettyn, u16 mbx_ue_id)
 {
-	int ret;
-
-	ret = ubaseproxy_jfc_reduce_jetty_cnt(udev, ue_ctx_xa, jetty, jettyn,
-					      mbx_ue_id);
-	if (ret)
-		return;
+	ubaseproxy_jfc_reduce_jetty_cnt(udev, ue_ctx_xa, jetty, jettyn,
+					mbx_ue_id);
 
 	ubaseproxy_del_jetty_res(udev, ue_ctx_xa, jetty, jettyn);
 }
@@ -971,7 +966,7 @@ ubaseproxy_init_jetty_create_mask(struct ubaseproxy_jetty_default *jetty_default
 		GENMASK(31, 16), GENMASK(31, 0), GENMASK(31, 0), GENMASK(31, 0),
 		GENMASK(31, 0), GENMASK(31, 0),
 		/* DW22*/
-		GENMASK(3, 0),
+		GENMASK(31, 0),
 		/* DW23-DW30 */
 		GENMASK(31, 0), GENMASK(31, 16), GENMASK(31, 0), GENMASK(31, 0),
 		GENMASK(31, 0), GENMASK(31, 0), GENMASK(31, 0), GENMASK(31, 0),
@@ -998,14 +993,14 @@ ubaseproxy_init_jetty_modify_mask(struct ubaseproxy_jetty_default *jetty_default
 {
 #define REVTMASK(h, l) (~GENMASK(h, l) & 0xFFFFFFFF)
 #define JETTY_STATE_MASK REVTMASK(18, 16)
-#define JETTY_STATE_OFSET_IDX 0
+#define JETTY_STATE_OFFSET_IDX 0
 #define JETTY_INVALID_MASK 0xFF
 
 	u32 *modify_mask;
 
 	modify_mask = (u32 *)&jetty_default->modify_mask;
 	memset(modify_mask, JETTY_INVALID_MASK, UBASEPROXY_JETTY_CTX_BYTES);
-	modify_mask[JETTY_STATE_OFSET_IDX] = JETTY_STATE_MASK;
+	modify_mask[JETTY_STATE_OFFSET_IDX] = JETTY_STATE_MASK;
 }
 
 int ubaseproxy_init_ue_jetty_ctx_default(struct ubaseproxy_dev *udev)
