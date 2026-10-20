@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -423,8 +423,7 @@ static bool unic_jfs_schedule_complete(struct unic_jfs_ctx *ctx)
 {
 	u16 rcv_send_diff;
 
-	rcv_send_diff = le16_to_cpu(ctx->next_rcv_ssn) -
-			le16_to_cpu(ctx->next_send_ssn);
+	rcv_send_diff = ctx->next_rcv_ssn - ctx->next_send_ssn;
 	if (ctx->state == UNIC_JFS_STATE_READY && ctx->PI == ctx->CI &&
 	    rcv_send_diff < UNIC_RCV_SEND_MAX_DIFF_VAL)
 		return true;
@@ -463,8 +462,7 @@ out:
 
 static inline bool unic_jfs_flush_ssn_vld(struct unic_jfs_ctx *ctx)
 {
-	u16 rcv_send_diff = le16_to_cpu(ctx->next_rcv_ssn) -
-			    le16_to_cpu(ctx->next_send_ssn);
+	u16 rcv_send_diff = ctx->next_rcv_ssn - ctx->next_send_ssn;
 
 	return ctx->flush_ssn_vld &&
 	       (rcv_send_diff < UNIC_RCV_SEND_MAX_DIFF_VAL);

@@ -115,12 +115,10 @@ static void ubaseproxy_destroy_jfr_res(struct ubaseproxy_dev *udev,
 
 	ret = ubaseproxy_jfc_ref_dec(udev, ue_ctx_xa, jfrn, jfr->jfcn,
 				     mbx_ue_id);
-	if (ret) {
-		ubaseproxy_risk_rl(udev, mbx_ue_id, jfr_destroy_jfc_dec,
-				   "failed to decrease jfc(%u) cnt by jfr(%u) res, ret=%d.\n",
-				   jfr->jfcn, jfrn, ret);
-		return;
-	}
+	if (ret)
+		ubaseproxy_err(udev,
+			       "failed to decrease jfc(%u) cnt by jfr(%u) res, ret=%d.\n",
+			       jfr->jfcn, jfrn, ret);
 
 	ubaseproxy_del_jfr_res(ue_ctx_xa, jfr, jfrn);
 }

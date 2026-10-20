@@ -175,8 +175,6 @@ static void ubaseproxy_dump_ue_risk_jfs(struct seq_file *s, u8 ue_id)
 	ubaseproxy_risk_printf(s, ue_id, jfs_tx_jfc_ref_inc);
 	ubaseproxy_risk_printf(s, ue_id, jfs_rx_jfc_ref_inc);
 	ubaseproxy_risk_printf(s, ue_id, jfs_init_load_rx_jfc);
-	ubaseproxy_risk_printf(s, ue_id, jfs_reduce_tx_jfc_dec);
-	ubaseproxy_risk_printf(s, ue_id, jfs_reduce_rx_jfc_dec);
 	ubaseproxy_risk_printf(s, ue_id, jfs_mask_state);
 }
 
@@ -201,7 +199,6 @@ static void ubaseproxy_dump_ue_risk_jfr(struct seq_file *s, u8 ue_id)
 	ubaseproxy_risk_printf(s, ue_id, jfr_create_jfc_not_exists);
 	ubaseproxy_risk_printf(s, ue_id, jfr_create_jfc_inc);
 	ubaseproxy_risk_printf(s, ue_id, jfr_destroy_jfr_not_exists);
-	ubaseproxy_risk_printf(s, ue_id, jfr_destroy_jfc_dec);
 	ubaseproxy_risk_printf(s, ue_id, jfr_modify_jfr_not_exists);
 	ubaseproxy_risk_printf(s, ue_id, jfr_modify_state_ctx_mask);
 	ubaseproxy_risk_printf(s, ue_id, jfr_modify_state_check);
