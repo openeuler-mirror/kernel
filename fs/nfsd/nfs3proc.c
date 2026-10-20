@@ -27,6 +27,25 @@ static int	nfs3_ftypes[] = {
 };
 
 /*
+ * Reject a client-supplied atime or mtime whose nanoseconds field is out
+ * of range. Such a value is well-formed on the wire but is not a valid
+ * timespec64, and storing it verbatim can corrupt on-disk timestamps.
+ * tv_nsec is a long, so it is cast to unsigned long (the same width) to
+ * catch both an over-large value and one that became negative when an
+ * out-of-range u32 wire nseconds was assigned to a 32-bit long.
+ */
+static bool nfsd3_time_in_range(const struct iattr *iap)
+{
+	if ((iap->ia_valid & ATTR_ATIME_SET) &&
+	    (unsigned long)iap->ia_atime.tv_nsec >= NSEC_PER_SEC)
+		return false;
+	if ((iap->ia_valid & ATTR_MTIME_SET) &&
+	    (unsigned long)iap->ia_mtime.tv_nsec >= NSEC_PER_SEC)
+		return false;
+	return true;
+}
+
+/*
  * NULL call.
  */
 static __be32
@@ -71,6 +90,10 @@ nfsd3_proc_setattr(struct svc_rqst *rqstp)
 				SVCFH_fmt(&argp->fh));
 
 	fh_copy(&resp->fh, &argp->fh);
+	if (!nfsd3_time_in_range(&argp->attrs)) {
+		resp->status = nfserr_inval;
+		return rpc_success;
+	}
 	resp->status = nfsd_setattr(rqstp, &resp->fh, &argp->attrs,
 				    argp->check_guard, argp->guardtime);
 	return rpc_success;
@@ -240,6 +263,10 @@ nfsd3_proc_create(struct svc_rqst *rqstp)
 	}
 
 	/* Now create the file and set attributes */
+	if (!nfsd3_time_in_range(attr)) {
+		resp->status = nfserr_inval;
+		return rpc_success;
+	}
 	resp->status = do_nfsd_create(rqstp, dirfhp, argp->name, argp->len,
 				      attr, newfhp, argp->createmode,
 				      (u32 *)argp->verf, NULL, NULL);
@@ -263,6 +290,10 @@ nfsd3_proc_mkdir(struct svc_rqst *rqstp)
 	argp->attrs.ia_valid &= ~ATTR_SIZE;
 	fh_copy(&resp->dirfh, &argp->fh);
 	fh_init(&resp->fh, NFS3_FHSIZE);
+	if (!nfsd3_time_in_range(&argp->attrs)) {
+		resp->status = nfserr_inval;
+		return rpc_success;
+	}
 	resp->status = nfsd_create(rqstp, &resp->dirfh, argp->name, argp->len,
 				   &argp->attrs, S_IFDIR, 0, &resp->fh);
 	fh_unlock(&resp->dirfh);
@@ -275,6 +306,10 @@ nfsd3_proc_symlink(struct svc_rqst *rqstp)
 	struct nfsd3_symlinkargs *argp = rqstp->rq_argp;
 	struct nfsd3_diropres *resp = rqstp->rq_resp;
 
+	if (!nfsd3_time_in_range(&argp->attrs)) {
+		resp->status = nfserr_inval;
+		goto out;
+	}
 	if (argp->tlen == 0) {
 		resp->status = nfserr_inval;
 		goto out;
@@ -334,6 +369,11 @@ nfsd3_proc_mknod(struct svc_rqst *rqstp)
 		}
 	} else if (argp->ftype != NF3SOCK && argp->ftype != NF3FIFO) {
 		resp->status = nfserr_badtype;
+		goto out;
+	}
+
+	if (!nfsd3_time_in_range(&argp->attrs)) {
+		resp->status = nfserr_inval;
 		goto out;
 	}
 
