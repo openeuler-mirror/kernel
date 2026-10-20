@@ -89,6 +89,14 @@ struct ubase_mbx_event_context {
 	struct ubase_cmd_mailbox	*mbx_buff;
 };
 
+#define UBASE_ADEV_NAME_MAX_LEN	64
+struct ubase_adev_node {
+	struct list_head	list;
+	struct auxiliary_device *adev;
+	struct ubase_dev	*udev;
+	char name[UBASE_ADEV_NAME_MAX_LEN];
+};
+
 struct ubase_adev {
 	struct auxiliary_device adev;
 	struct ubase_dev *udev;
@@ -718,5 +726,9 @@ void ubase_free_buf(struct ubase_dev *udev, size_t size,
 int ubase_reinit_aux_devices(struct ubase_dev *udev);
 int __ubase_activate_dev(struct ubase_dev *udev);
 u32 __ubase_get_hw_ver(struct ubase_dev *udev);
+void ubase_adev_list_read_lock(void);
+void ubase_adev_list_read_unlock(void);
+struct list_head *ubase_get_adev_list(void);
+struct ubase_dev *ubase_get_dev_from_adev_list_locked(const char *dev_name);
 
 #endif /* __UBASE_DEV_H__ */

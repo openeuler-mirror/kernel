@@ -33,6 +33,23 @@ module_param_named(debug, ubase_debug, int, 0644);
 MODULE_PARM_DESC(debug, "enable ubase debug log, 0:disable, others:enable, default:0");
 
 static DEFINE_IDA(ubase_adev_ida);
+static DECLARE_RWSEM(ubase_adev_rwsem);
+static LIST_HEAD(ubase_adev_list);
+
+void ubase_adev_list_read_lock(void)
+{
+	down_read(&ubase_adev_rwsem);
+}
+
+void ubase_adev_list_read_unlock(void)
+{
+	up_read(&ubase_adev_rwsem);
+}
+
+struct list_head *ubase_get_adev_list(void)
+{
+	return &ubase_adev_list;
+}
 
 bool ubase_dev_urma_supported(struct ubase_dev *udev)
 {
@@ -268,6 +285,66 @@ static struct ubase_adev *ubase_create_one_adev(struct ubase_dev *udev, int idx)
 	return uadev;
 }
 
+struct ubase_dev *ubase_get_dev_from_adev_list_locked(const char *dev_name)
+{
+	struct ubase_dev *udev = NULL;
+	struct ubase_adev_node *pos;
+
+	list_for_each_entry(pos, &ubase_adev_list, list) {
+		if (strcmp(pos->name, dev_name) == 0) {
+			udev = pos->udev;
+			break;
+		}
+	}
+
+	return udev;
+}
+
+static int ubase_add_adev_list(struct ubase_adev *uadev)
+{
+	struct ubase_adev_node *pos, *new_node;
+
+	down_write(&ubase_adev_rwsem);
+	list_for_each_entry(pos, &ubase_adev_list, list) {
+		if (pos->adev == &uadev->adev) {
+			up_write(&ubase_adev_rwsem);
+			return -EEXIST;
+		}
+	}
+
+	new_node = kzalloc(sizeof(*new_node), GFP_KERNEL);
+	if (!new_node) {
+		up_write(&ubase_adev_rwsem);
+		return -ENOMEM;
+	}
+
+	new_node->adev = &uadev->adev;
+	new_node->udev = uadev->udev;
+
+	list_add_tail(&new_node->list, &ubase_adev_list);
+
+	up_write(&ubase_adev_rwsem);
+
+	return 0;
+}
+
+static void ubase_del_adev_list(struct ubase_adev *uadev)
+{
+	struct ubase_adev_node *pos_node;
+
+	down_write(&ubase_adev_rwsem);
+
+	list_for_each_entry(pos_node, &ubase_adev_list, list) {
+		if (pos_node->adev == &uadev->adev) {
+			list_del(&pos_node->list);
+			kfree(pos_node);
+			break;
+		}
+	}
+
+	up_write(&ubase_adev_rwsem);
+}
+
 static int ubase_add_one_adev(struct ubase_dev *udev, int idx)
 {
 	struct ubase_adev *uadev;
@@ -284,6 +361,12 @@ static int ubase_add_one_adev(struct ubase_dev *udev, int idx)
 			  uadev->adev.name, udev->dev_id, ret);
 		ubase_destroy_one_adev(uadev);
 		return ret;
+	}
+
+	ret = ubase_add_adev_list(uadev);
+	if (ret) {
+		ubase_err(udev, "failed to add adev node, ret = %d\n", ret);
+		goto err_adev_list_add;
 	}
 
 	ret = auxiliary_device_add(&uadev->adev);
@@ -309,6 +392,8 @@ static int ubase_add_one_adev(struct ubase_dev *udev, int idx)
 err_probe_fail:
 	auxiliary_device_delete(&uadev->adev);
 err_adev_add:
+	ubase_del_adev_list(uadev);
+err_adev_list_add:
 	auxiliary_device_uninit(&uadev->adev);
 	udev->priv.uadev[idx] = NULL;
 
@@ -323,6 +408,7 @@ static void ubase_del_one_adev(struct ubase_dev *udev, int idx)
 		return;
 
 	auxiliary_device_delete(&uadev->adev);
+	ubase_del_adev_list(uadev);
 	auxiliary_device_uninit(&uadev->adev);
 	udev->priv.uadev[idx] = NULL;
 }
@@ -2559,3 +2645,46 @@ void ubase_update_adev_status(struct auxiliary_device *adev, unsigned long statu
 		   adev->name, udev->dev_id, status);
 }
 EXPORT_SYMBOL(ubase_update_adev_status);
+
+/**
+ * ubase_update_adev_name() - Update the name of auxiliary device.
+ * @adev: auxiliary device
+ * @dev_name: device name
+ *
+ * This function is used to update the name of auxiliary device.
+ *
+ * Context: Any context.
+ * Return: 0 on success, negative error code otherwise
+ */
+int ubase_update_adev_name(struct auxiliary_device *adev, const char *dev_name)
+{
+	struct ubase_adev_node *pos_node;
+	struct ubase_dev *udev;
+	int len;
+
+	if (!adev || !dev_name)
+		return -EINVAL;
+
+	len = strnlen(dev_name, UBASE_ADEV_NAME_MAX_LEN);
+	udev = __ubase_get_udev_by_adev(adev);
+	if (len >= UBASE_ADEV_NAME_MAX_LEN || !len) {
+		ubase_err(udev, "dev name len %d is out of range(0, %d).\n", len,
+			  UBASE_ADEV_NAME_MAX_LEN);
+		return -EINVAL;
+	}
+
+	down_write(&ubase_adev_rwsem);
+	list_for_each_entry(pos_node, &ubase_adev_list, list) {
+		if (pos_node->adev == adev) {
+			strscpy(pos_node->name, dev_name, UBASE_ADEV_NAME_MAX_LEN);
+			up_write(&ubase_adev_rwsem);
+			return 0;
+		}
+	}
+
+	up_write(&ubase_adev_rwsem);
+
+	ubase_err(udev, "adev not found in adev list.\n");
+	return -ENODEV;
+}
+EXPORT_SYMBOL(ubase_update_adev_name);
