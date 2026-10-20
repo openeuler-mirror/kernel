@@ -434,6 +434,10 @@ static void ubase_period_service_task(struct work_struct *work)
 		ubase_ctrlq_clean_service_task(udev);
 
 	if (test_bit(UBASE_STATE_INITED_B, &udev->state_bits) &&
+	    !test_bit(UBASE_SERVICE_STATE_ERR_SCHED, &udev->service_task.state))
+		ubase_elr_ras_service_task(udev);
+
+	if (test_bit(UBASE_STATE_INITED_B, &udev->state_bits) &&
 	    !(udev->serv_proc_cnt % UBASE_RL_LOG_TIMER_INTERVAL))
 		ubase_report_rate_limited_log_cnt(udev);
 

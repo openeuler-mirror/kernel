@@ -46,7 +46,7 @@ void ubase_resume(struct ubase_dev *udev, int pret);
 void ubase_reset_service(struct ubase_delay_work *ubase_work);
 void __ubase_reset_event(struct ubase_dev *udev,
 			 enum ubase_reset_type reset_type);
-void ubase_port_reset(struct ubase_dev *udev);
+void ubase_elr_ras_service_task(struct ubase_dev *udev);
 void ubase_errhandle_service_task(struct ubase_delay_work *ubase_work);
 void ubase_reset_task_schedule_immediately(struct ubase_dev *udev);
 int ubase_reset_done(struct ubase_dev *udev);

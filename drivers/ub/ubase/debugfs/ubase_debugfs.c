@@ -30,6 +30,7 @@ static int ubase_dbg_dump_rst_info(struct seq_file *s, void *data)
 	int i;
 
 	seq_printf(s, "ELR reset count: %u\n", udev->reset_stat.elr_reset_cnt);
+	seq_printf(s, "RAS ELR reset count: %u\n", udev->reset_stat.ras_elr_reset_cnt);
 	seq_printf(s, "port reset count: %u\n", udev->reset_stat.port_reset_cnt);
 	seq_printf(s, "himac reset count: %u\n", udev->reset_stat.himac_reset_cnt);
 	seq_printf(s, "reset done count: %u\n", udev->reset_stat.reset_done_cnt);
@@ -76,6 +77,7 @@ static void ubase_dbg_dump_caps_bits(struct seq_file *s, struct ubase_dev *udev)
 	PRINT_CAP(ucp, ubase_ucp_supported);
 	PRINT_CAP(non_mirror_mem, ubase_dev_non_mirror_mem_supported);
 	PRINT_CAP(batch_query_pmu, ubase_dev_batch_query_pmu_supported);
+	PRINT_CAP(ue_elr_ras, ubase_dev_ue_elr_ras_supported);
 }
 
 static void ubase_dbg_dump_caps_info(struct seq_file *s, struct ubase_dev *udev)

@@ -122,12 +122,6 @@ void ubase_enable_misc_vector(struct ubase_dev *udev, bool enable)
 			enable ? 0 : 1);
 }
 
-static void ubase_save_ras_type(struct ubase_dev *udev, u32 reg)
-{
-	if (ubase_dev_ubl_supported(udev))
-		set_bit(UBASE_STATE_PORT_RESETTING_B, &udev->state_bits);
-}
-
 static unsigned long ubase_check_event_cause(struct ubase_dev *udev)
 {
 	unsigned long event_cause = 0;
@@ -142,10 +136,8 @@ static unsigned long ubase_check_event_cause(struct ubase_dev *udev)
 	if (ubase_dev_err_handle_supported(udev)) {
 		sw_handshake_0_reg = ubase_read_dev(&udev->hw,
 						    UBASE_SW_HANDSHAKE_0_REG);
-		if (sw_handshake_0_reg & BIT(UBASE_SW_HANDSHAKE_0_RAS_B)) {
-			ubase_save_ras_type(udev, sw_handshake_0_reg);
+		if (sw_handshake_0_reg & BIT(UBASE_SW_HANDSHAKE_0_RAS_B))
 			event_cause |= BIT(UBASE_ASYNC_EVENT_RAS_B);
-		}
 	}
 
 	if (ubase_dev_ctrlq_supported(udev)) {
@@ -169,9 +161,7 @@ static void ubase_clear_event_cause(struct ubase_dev *udev,
 	if (test_bit(UBASE_ASYNC_EVENT_RAS_B, &event_cause)) {
 		sw_handshake_0_reg = ubase_read_dev(&udev->hw,
 						    UBASE_SW_HANDSHAKE_0_REG);
-		sw_handshake_0_reg &= ~(BIT(UBASE_SW_HANDSHAKE_0_RAS_B) |
-					BIT(UBASE_SW_HANDSHAKE_0_PORT_RESET_B) |
-					BIT(UBASE_SW_HANDSHAKE_0_HIMAC_RESET_B));
+		sw_handshake_0_reg &= ~BIT(UBASE_SW_HANDSHAKE_0_RAS_B);
 		ubase_write_dev(&udev->hw, UBASE_SW_HANDSHAKE_0_REG,
 				sw_handshake_0_reg);
 	}
