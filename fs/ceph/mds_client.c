@@ -3363,9 +3363,11 @@ static void check_new_map(struct ceph_mds_client *mdsc,
 				mutex_lock(&mdsc->mutex);
 			} else {
 				/* just close it */
+				get_session(s);
 				mutex_unlock(&mdsc->mutex);
 				mutex_lock(&s->s_mutex);
 				mutex_lock(&mdsc->mutex);
+				ceph_put_mds_session(s);
 				ceph_con_close(&s->s_con);
 				mutex_unlock(&s->s_mutex);
 				s->s_state = CEPH_MDS_SESSION_RESTARTING;
@@ -3379,9 +3381,11 @@ static void check_new_map(struct ceph_mds_client *mdsc,
 		 */
 		if (s->s_state == CEPH_MDS_SESSION_RESTARTING &&
 		    newstate >= CEPH_MDS_STATE_RECONNECT) {
+			get_session(s);
 			mutex_unlock(&mdsc->mutex);
 			send_mds_reconnect(mdsc, s);
 			mutex_lock(&mdsc->mutex);
+			ceph_put_mds_session(s);
 		}
 
 		/*
