@@ -59,6 +59,7 @@
 int hugetlb_max_hstate __read_mostly;
 unsigned int default_hstate_idx;
 struct hstate hstates[HUGE_MAX_HSTATE];
+int movable_gigantic_pages;
 
 #ifdef CONFIG_CMA
 static struct cma *hugetlb_cma[MAX_NUMNODES];
@@ -2327,7 +2328,7 @@ static int alloc_pool_huge_page(struct hstate *h, nodemask_t *nodes_allowed,
 		gfp_t gfp = 0;
 
 		/* Use __GFP_MEMALLOC to make sure all pages can be allocated */
-		if (numa_remote_hugetlb_nowatermark(node))
+		if (numa_remote_hugetlb_nowatermark(node) && !hstate_is_gigantic(h))
 			gfp |= __GFP_MEMALLOC;
 
 		folio = alloc_fresh_hugetlb_folio(h, gfp_mask | gfp, node,
@@ -5129,6 +5130,15 @@ static struct ctl_table hugetlb_table[] = {
 		.mode		= 0644,
 		.proc_handler	= hugetlb_overcommit_handler,
 	},
+#ifdef CONFIG_ARCH_ENABLE_HUGEPAGE_MIGRATION
+	{
+		.procname	= "movable_gigantic_pages",
+		.data		= &movable_gigantic_pages,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+#endif
 	{ }
 };
 
