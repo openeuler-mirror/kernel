@@ -55,6 +55,7 @@ struct sentry_remote_context {
 	atomic_t remote_event_ack_done;
 	struct task_struct *urma_receiver_thread;
 	struct workqueue_struct *sentry_msg_wq;
+	bool is_uvb_cis_func_registered;
 };
 
 /* Must be 4-byte aligned */
@@ -90,7 +91,7 @@ extern uint32_t g_local_cna;
 #define UVB_RECEIVER_ID_SYSSENTRY(cna) (UBIOS_USER_ID_UB_DEVICE | (cna))
 
 int sentry_panic_reporter_init(void);
-void sentry_panic_reporter_exit(void);
+void sentry_remote_server_cleanup(void);
 
 // sentry uvb comm init/exit
 int sentry_uvb_comm_init(void);

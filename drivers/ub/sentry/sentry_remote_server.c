@@ -307,6 +307,23 @@ int create_kworker_to_process_msg(const struct sentry_binary_msg *event_msg,
 	int i, node_idx = -1, die_idx = -1;
 	union ubcore_eid dst_eid;
 
+	/*
+	 * Fast-path drop: once sentry_remote_server_cleanup() has torn the
+	 * workqueue down there is nothing to queue against. This is only an
+	 * optimization — it is a racy read of the global pointer, so passing
+	 * it does not prove the workqueue is still valid by the time
+	 * queue_work() runs. The authoritative protection is the mutex-guarded
+	 * snapshot at the queue_work() site below, which is what actually
+	 * prevents queue_work(NULL, ...) and use-after-free on a destroyed
+	 * workqueue when an in-flight cis callback (dispatched outside its RCU
+	 * read-side lock) reaches here after unregister returned.
+	 */
+	if (!sentry_remote_ctx.sentry_msg_wq) {
+		pr_warn("%s: sentry_msg_wq is null, dropping %s message\n",
+			__func__, comm_type == COMM_TYPE_URMA ? "urma" : "uvb");
+		return -ENODEV;
+	}
+
 	ret = convert_binary_to_smh_msg(event_msg, &msg, &random_id);
 	if (ret) {
 		pr_err("%s: convert %s binary data: to smh msg failed\n",
@@ -409,8 +426,31 @@ int create_kworker_to_process_msg(const struct sentry_binary_msg *event_msg,
 	child_data->node_idx = node_idx;
 	INIT_WORK(&child_data->work, process_remote_event_msg);
 
+	/*
+	 * Snapshot sentry_msg_wq under sentry_msg_info_mutex and queue against
+	 * the snapshot. sentry_remote_server_cleanup() clears sentry_msg_wq to
+	 * NULL (and only afterward destroys the workqueue) under this same
+	 * mutex, so while we hold it the pointer cannot be torn down beneath
+	 * us. This closes the window between the entry NULL check above and
+	 * this queue_work() call — which previously re-read the global pointer
+	 * and could observe NULL (or freed memory) when an in-flight cis
+	 * callback was delayed past destroy_workqueue() by mutex contention or
+	 * scheduling. An in-flight callback now either queues cleanly against a
+	 * still-valid workqueue or drops here; it never reaches
+	 * queue_work(NULL, ...) nor a use-after-free.
+	 */
+	mutex_lock(&sentry_msg_info_mutex);
+	if (!sentry_remote_ctx.sentry_msg_wq) {
+		sentry_remote_ctx.node_msg_info[node_idx].work_pending = false;
+		mutex_unlock(&sentry_msg_info_mutex);
+		kfree(child_data->msg);
+		kfree(child_data);
+		pr_warn("%s: sentry_msg_wq torn down, dropping %s message\n",
+			__func__, comm_type == COMM_TYPE_URMA ? "urma" : "uvb");
+		return -ENODEV;
+	}
+
 	if (!queue_work(sentry_remote_ctx.sentry_msg_wq, &child_data->work)) {
-		mutex_lock(&sentry_msg_info_mutex);
 		sentry_remote_ctx.node_msg_info[node_idx].work_pending = false;
 		mutex_unlock(&sentry_msg_info_mutex);
 		kfree(child_data->msg);
@@ -419,6 +459,7 @@ int create_kworker_to_process_msg(const struct sentry_binary_msg *event_msg,
 			msg.helper_msg_info.remote_info.eid);
 		return -EBUSY;
 	}
+	mutex_unlock(&sentry_msg_info_mutex);
 	return 0;
 }
 
@@ -552,16 +593,43 @@ int sentry_panic_reporter_init(void)
 }
 
 /**
- * sentry_panic_reporter_exit - Cleanup sentry panic reporter module
+ * sentry_remote_server_cleanup - Cleanup sentry remote server sources
  *
- * This function stops the URMA receiver thread first to prevent new work
- * items from being queued, then drains and destroys the sentry workqueue.
- * destroy_workqueue waits for all pending and running work items to
- * complete before returning, ensuring safe module unload.
+ * This function unregisters the UVB CIS callback first (so no new messages
+ * arrive via cis_ubios_remote_msg_cb), then stops the URMA receiver thread
+ * (so no new messages arrive via the URMA polling loop), and finally drains
+ * and destroys the sentry workqueue. Each of these sources can enqueue work
+ * items onto sentry_msg_wq, so all of them must be shut down before the
+ * workqueue is freed to prevent queue_work(NULL, ...) NULL dereferences.
+ *
+ * The cis framework dispatches its callback outside the RCU read-side lock,
+ * so unregister_local_cis_func()'s synchronize_rcu() does not wait for an
+ * already-running callback. Such an in-flight callback can therefore still
+ * be inside create_kworker_to_process_msg() when this function reaches the
+ * workqueue teardown. To make the teardown safe against that in-flight path,
+ * sentry_msg_wq is cleared to NULL under sentry_msg_info_mutex (the same lock
+ * create_kworker_to_process_msg() snapshots the pointer under and holds
+ * across queue_work()) before destroy_workqueue() is called.
  */
-void sentry_panic_reporter_exit(void)
+void sentry_remote_server_cleanup(void)
 {
 	int i;
+	struct workqueue_struct *wq;
+
+	/*
+	 * Unregister the UVB CIS callback first so no new messages arrive via
+	 * cis_ubios_remote_msg_cb. unregister_local_cis_func() uses
+	 * list_del_rcu + synchronize_rcu(), so after it returns no new
+	 * callbacks will fire. This must happen before the workqueue is
+	 * destroyed: the callback path enqueues work via
+	 * create_kworker_to_process_msg -> queue_work(sentry_msg_wq, ...),
+	 * and queue_work on a NULL wq is a NULL pointer dereference.
+	 */
+	if (sentry_remote_ctx.is_uvb_cis_func_registered) {
+		unregister_local_cis_func(UBIOS_CALL_ID_PANIC_CALL, UBIOS_USER_ID_UB_DEVICE);
+		sentry_remote_ctx.is_uvb_cis_func_registered = false;
+		pr_info("UVB CIS function unregistered\n");
+	}
 
 	/* Stop URMA receiver first so no new work items are queued */
 	if (sentry_remote_ctx.urma_receiver_thread) {
@@ -571,15 +639,22 @@ void sentry_panic_reporter_exit(void)
 	}
 
 	/*
-	 * Drain and destroy the sentry workqueue. destroy_workqueue waits
-	 * for all currently pending and executing work items to complete
-	 * before freeing the workqueue. This guarantees safe module unload:
-	 * after this call returns, no work handler code is running, so the
-	 * module can be safely unloaded.
+	 * Clear sentry_msg_wq under sentry_msg_info_mutex before destroying
+	 * the workqueue. create_kworker_to_process_msg() snapshots the pointer
+	 * under the same mutex and holds it across queue_work(), so by the time
+	 * we acquire the mutex here any in-flight cis callback that already
+	 * passed its entry check has finished queueing (its work is now pending
+	 * and will be drained by destroy_workqueue below), and any callback that
+	 * arrives later observes NULL and drops. destroy_workqueue is called
+	 * after the mutex is released so it cannot deadlock against the work
+	 * handler process_remote_event_msg, which also takes this mutex.
 	 */
-	if (sentry_remote_ctx.sentry_msg_wq) {
-		destroy_workqueue(sentry_remote_ctx.sentry_msg_wq);
-		sentry_remote_ctx.sentry_msg_wq = NULL;
+	mutex_lock(&sentry_msg_info_mutex);
+	wq = sentry_remote_ctx.sentry_msg_wq;
+	sentry_remote_ctx.sentry_msg_wq = NULL;
+	mutex_unlock(&sentry_msg_info_mutex);
+	if (wq) {
+		destroy_workqueue(wq);
 		pr_info("Sentry message workqueue destroyed\n");
 	}
 
