@@ -2828,10 +2828,16 @@ static int kvm_init_vector_slots(void)
 	int err;
 	void *base;
 
-	base = kern_hyp_va(kvm_ksym_ref(__kvm_hyp_vector));
+	if (is_pvm_mode())
+		base = __pvm_hyp_vector;
+	else
+		base = kern_hyp_va(kvm_ksym_ref(__kvm_hyp_vector));
 	kvm_init_vector_slot(base, HYP_VECTOR_DIRECT);
 
-	base = kern_hyp_va(kvm_ksym_ref(__bp_harden_hyp_vecs));
+	if (is_pvm_mode())
+		base = __bp_harden_pvm_vecs;
+	else
+		base = kern_hyp_va(kvm_ksym_ref(__bp_harden_hyp_vecs));
 	kvm_init_vector_slot(base, HYP_VECTOR_SPECTRE_DIRECT);
 
 	/* PVM uses the kernel mappings, not an EL2 idmapped trampoline. */
