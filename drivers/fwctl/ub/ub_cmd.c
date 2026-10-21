@@ -219,13 +219,6 @@ struct ubctl_msgq_phy_addr {
 	u64 cq_entry_phy_addr;
 };
 
-struct ubctl_rt_bandwidth_data {
-	u32 port_id;
-	u32 is_valid;
-	u64 tx_bandwidth;
-	u64 rx_bandwidth;
-};
-
 struct ubctl_port_link_info {
 	time64_t time;
 	u32 link_status;
@@ -315,6 +308,8 @@ struct ucdev_list_node {
 
 static LIST_HEAD(g_port_link_list);
 static DEFINE_MUTEX(g_ubctl_port_link_mutex);
+
+static DEFINE_MUTEX(g_ubctl_rt_bandwidth_mutex);
 
 static int ubctl_trace_data_deal(struct ubctl_dev *ucdev,
 				 struct ubctl_query_cmd_param *query_cmd_param,
@@ -1794,12 +1789,67 @@ static int ubctl_query_port_link_status(struct ubctl_dev *ucdev,
 	return 0;
 }
 
+static int ubctl_check_result_data_invalid(struct ubctl_dev *ucdev,
+					   struct ubase_ub_dl_pkt_stats_result *result_data)
+{
+#define UBCTL_IS_VALID 1
+
+	u32 port_index = 0;
+	int ret = 0;
+	u32 i = 0;
+
+	for (; i < UBCTL_MAX_PORT_NUM; i++) {
+		if (result_data[i].valid != UBCTL_IS_VALID)
+			continue;
+
+		port_index = result_data[i].port_id;
+		if (port_index >= UBCTL_MAX_PORT_NUM) {
+			ubctl_warn(ucdev, "the port id is invalid and exceeds the maximum value %u.\n",
+				   UBCTL_MAX_PORT_NUM - 1);
+			continue;
+		}
+		if ((ucdev->rt_bandwidth_data[port_index].port_id == result_data[i].port_id) &&
+		(result_data[i].rx_pkt_bytes < ucdev->rt_bandwidth_data[port_index].rx_bandwidth ||
+		result_data[i].tx_pkt_bytes < ucdev->rt_bandwidth_data[port_index].tx_bandwidth)) {
+			ubctl_warn(ucdev, "first rx data = %llubytes, second rx data = %llubytes, first tx data = %llubytes, second tx data = %llubytes, port_index = %u.\n",
+				   ucdev->rt_bandwidth_data[port_index].rx_bandwidth,
+				   result_data[i].rx_pkt_bytes,
+				   ucdev->rt_bandwidth_data[port_index].tx_bandwidth,
+				   result_data[i].tx_pkt_bytes, port_index);
+			ret = -EBUSY;
+		}
+		ucdev->rt_bandwidth_data[port_index].port_id = result_data[i].port_id;
+		ucdev->rt_bandwidth_data[port_index].is_valid = result_data[i].valid;
+		ucdev->rt_bandwidth_data[port_index].rx_bandwidth = result_data[i].rx_pkt_bytes;
+		ucdev->rt_bandwidth_data[port_index].tx_bandwidth = result_data[i].tx_pkt_bytes;
+	}
+
+	return ret;
+}
+
+static int ubctl_rt_bandwidth_check_param(struct ubctl_dev *ucdev,
+					  struct ubctl_query_cmd_param *query_cmd_param)
+{
+	if (query_cmd_param->in->data_size != sizeof(struct fwctl_pkt_in_port)) {
+		ubctl_err(ucdev, "user in data size = %ubytes, it must be %zubytes.\n",
+			  query_cmd_param->in->data_size, sizeof(struct fwctl_pkt_in_port));
+		return -EINVAL;
+	}
+	if (query_cmd_param->out_len !=
+	    UBCTL_MAX_PORT_NUM * sizeof(struct ubctl_rt_bandwidth_data)) {
+		ubctl_err(ucdev, "out length = %zubytes, it must be %zubytes.\n",
+			  query_cmd_param->out_len,
+			  UBCTL_MAX_PORT_NUM * sizeof(struct ubctl_rt_bandwidth_data));
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int ubctl_query_rt_bandwidth(struct ubctl_dev *ucdev,
 				    struct ubctl_query_cmd_param *query_cmd_param,
 				    struct ubctl_func_dispatch *query_func)
 {
-#define UTOOL_MAX_PORT_NUM 64U
-
 	struct ubase_ub_dl_pkt_stats_result *result_data;
 	struct ubctl_rt_bandwidth_data *usr_out_data;
 	struct fwctl_pkt_in_port *pkt_in;
@@ -1807,43 +1857,46 @@ static int ubctl_query_rt_bandwidth(struct ubctl_dev *ucdev,
 	int ret = 0;
 	u32 i = 0;
 
-	if (query_cmd_param->in->data_size != sizeof(struct fwctl_pkt_in_port)) {
-		ubctl_err(ucdev, "user in data size = %ubytes, it must be %zubytes.\n",
-			  query_cmd_param->in->data_size, sizeof(struct fwctl_pkt_in_port));
-		return -EINVAL;
-	}
-	if (query_cmd_param->out_len != UTOOL_MAX_PORT_NUM * sizeof(*usr_out_data)) {
-		ubctl_err(ucdev, "out length = %zubytes, it must be %zubytes.\n",
-			  query_cmd_param->out_len, UTOOL_MAX_PORT_NUM * sizeof(*usr_out_data));
-		return -EINVAL;
-	}
+	ret = ubctl_rt_bandwidth_check_param(ucdev, query_cmd_param);
+	if (ret)
+		return ret;
 
 	pkt_in = (struct fwctl_pkt_in_port *)query_cmd_param->in->data;
-	result_data = kvzalloc((UTOOL_MAX_PORT_NUM * sizeof(*result_data)), GFP_KERNEL);
+	result_data = kvzalloc((UBCTL_MAX_PORT_NUM * sizeof(*result_data)), GFP_KERNEL);
 	if (!result_data)
 		return -ENOMEM;
 
 	port_bitmap = (u64)pkt_in->port_id;
-	ret = ubase_get_ub_dl_pkt_stats(ucdev->adev, port_bitmap, result_data, UTOOL_MAX_PORT_NUM);
+	ret = ubase_get_ub_dl_pkt_stats(ucdev->adev, port_bitmap, result_data, UBCTL_MAX_PORT_NUM);
 	if (ret) {
 		if (ret == -EBUSY) {
 			query_cmd_param->out->retval = -EBUSY;
 			ret = 0;
 		} else {
-			ubctl_err(ucdev, "failed to query real time bandwidth by ubctl, ret = %d.\n",
-				  ret);
+			ubctl_err(ucdev,
+				  "failed to query real time bandwidth by ubctl, ret = %d.\n", ret);
 		}
 		goto query_rt_bw_end;
 	}
 
+	mutex_lock(&g_ubctl_rt_bandwidth_mutex);
+	ret = ubctl_check_result_data_invalid(ucdev, result_data);
+	if (ret) {
+		query_cmd_param->out->retval = -EBUSY;
+		ret = 0;
+		mutex_unlock(&g_ubctl_rt_bandwidth_mutex);
+		goto query_rt_bw_end;
+	}
+	mutex_unlock(&g_ubctl_rt_bandwidth_mutex);
+
 	usr_out_data = (struct ubctl_rt_bandwidth_data *)query_cmd_param->out->data;
-	for (; i < UTOOL_MAX_PORT_NUM; i++) {
+	for (; i < UBCTL_MAX_PORT_NUM; i++) {
 		usr_out_data[i].port_id = result_data[i].port_id;
 		usr_out_data[i].is_valid = result_data[i].valid;
 		usr_out_data[i].rx_bandwidth = result_data[i].rx_pkt_bytes;
 		usr_out_data[i].tx_bandwidth = result_data[i].tx_pkt_bytes;
 	}
-	query_cmd_param->out->data_size = UTOOL_MAX_PORT_NUM * sizeof(*usr_out_data);
+	query_cmd_param->out->data_size = UBCTL_MAX_PORT_NUM * sizeof(*usr_out_data);
 
 query_rt_bw_end:
 	kvfree(result_data);

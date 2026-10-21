@@ -26,6 +26,7 @@
 #define UBCTL_WRITE false
 #define UBCTL_PORT_TYPE_ETH 0U
 #define UBCTL_PORT_TYPE_UB 1U
+#define UBCTL_MAX_PORT_NUM 64U
 #define UBCTL_MODULE "ub_fwctl"
 #define UBCTL_SET_USED(x) ((void)(x))
 
@@ -50,16 +51,25 @@
 #define UBCTL_EXTRACT_BITS(value, start, end) \
 	(((value) >> (start)) & ((1UL << ((end) - (start) + 1)) - 1))
 
+struct ubctl_rt_bandwidth_data {
+	u32 port_id;
+	u32 is_valid;
+	u64 tx_bandwidth;
+	u64 rx_bandwidth;
+};
+
 /**
  * struct ubctl_dev - Device struct of framework
  * @fwctl: The device of fwctl
  * @data_size: Length of @data
  * @adev: data transmitted to users
+ * @rt_bandwidth_data: The data of rt_bandwidth
  */
 struct ubctl_dev {
 	struct fwctl_device fwctl;
 	DECLARE_KFIFO_PTR(ioctl_fifo, unsigned long);
 	struct auxiliary_device *adev;
+	struct ubctl_rt_bandwidth_data rt_bandwidth_data[UBCTL_MAX_PORT_NUM];
 };
 
 /**

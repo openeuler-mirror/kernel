@@ -17,7 +17,6 @@
 #define TIME_WINDOW_JIFFIES msecs_to_jiffies(TIME_WINDOW_MS)
 #define UBCTL_CMD_CNT_MAX 100
 
-static u32 g_env_type;
 static bool g_dev_client_init_flag;
 
 static DEFINE_MUTEX(g_fifo_lock);
@@ -25,6 +24,11 @@ static DEFINE_MUTEX(g_dev_client_init_mutex);
 
 struct ubctl_uctx {
 	struct fwctl_uctx uctx;
+};
+
+struct ubctl_data_len {
+	size_t in_len;
+	size_t out_len;
 };
 
 static const u32 g_ubctl_env_type_a0_unsupported_cmds[] = {
@@ -88,7 +92,7 @@ static int ubctl_check_cmd_cnt(struct ubctl_dev *ucdev)
 	return 0;
 }
 
-static int ubctl_check_env_type(struct ubctl_dev *ucdev, u32 rpc_cmd)
+static int ubctl_check_env_type(struct ubctl_dev *ucdev, u32 rpc_cmd, u32 env_type)
 {
 	const u32 *unsupported_cmds = NULL;
 	u32 cmd_count = 0;
@@ -96,9 +100,8 @@ static int ubctl_check_env_type(struct ubctl_dev *ucdev, u32 rpc_cmd)
 
 	if (ubctl_check_cmd_cnt(ucdev))
 		return -ENOTTY;
-	g_env_type = ubase_get_hw_ver(ucdev->adev);
 
-	switch (g_env_type) {
+	switch (env_type) {
 	case UBASE_HW_VER_A_0:
 		unsupported_cmds = g_ubctl_env_type_a0_unsupported_cmds;
 		cmd_count = ARRAY_SIZE(g_ubctl_env_type_a0_unsupported_cmds);
@@ -116,14 +119,14 @@ static int ubctl_check_env_type(struct ubctl_dev *ucdev, u32 rpc_cmd)
 		cmd_count = ARRAY_SIZE(g_ubctl_env_type_k1_unsupported_cmds);
 		break;
 	default:
-		ubctl_err(ucdev, "env type(%u) is not support.\n", g_env_type);
+		ubctl_err(ucdev, "env type(%u) is not support.\n", env_type);
 		return -ENOTTY;
 	}
 
 	for (i = 0; i < cmd_count; i++) {
 		if (unsupported_cmds[i] == rpc_cmd) {
 			ubctl_err(ucdev, "rpc cmd(0x%x) cannot be used in current env type(%u)\n",
-				  rpc_cmd, g_env_type);
+				  rpc_cmd, env_type);
 			return -ENOTTY;
 		}
 	}
@@ -152,7 +155,7 @@ static int ubctl_check_cmd_frequency(struct ubctl_dev *ucdev, enum fwctl_rpc_sco
 		if (!kfifo_ret) {
 			mutex_unlock(&g_fifo_lock);
 			ubctl_err(ucdev, "unexpected events occurred while obtaining data.\n");
-			return kfifo_ret;
+			return -EBADMSG;
 		}
 	}
 
@@ -166,28 +169,42 @@ static int ubctl_check_cmd_frequency(struct ubctl_dev *ucdev, enum fwctl_rpc_sco
 	if (!kfifo_ret) {
 		mutex_unlock(&g_fifo_lock);
 		ubctl_err(ucdev, "unexpected events occurred while writing data.\n");
-		return kfifo_ret;
+		return -EBADMSG;
 	}
 	mutex_unlock(&g_fifo_lock);
 	return 0;
 }
 
-static int ubctl_legitimacy_rpc(struct ubctl_dev *ucdev, size_t out_len,
-				enum fwctl_rpc_scope scope, u32 rpc_cmd)
+static int ubctl_legitimacy_rpc(struct ubctl_dev *ucdev, struct ubctl_data_len data_len,
+				enum fwctl_rpc_scope scope, void *rpc_in, u32 env_type)
 {
+	u32 in_data_size = ((struct fwctl_rpc_ub_in *)rpc_in)->data_size;
+	u32 rpc_cmd = ((struct fwctl_rpc_ub_in *)rpc_in)->rpc_cmd;
 	int ret;
 
 	if (scope != FWCTL_RPC_CONFIGURATION &&
 	    scope != FWCTL_RPC_DEBUG_READ_ONLY)
 		return -EOPNOTSUPP;
 
-	if (out_len < sizeof(struct fwctl_rpc_ub_out)) {
+	if (data_len.out_len < sizeof(struct fwctl_rpc_ub_out)) {
 		ubctl_dbg(ucdev, "outlen %zu is less than min value %zu.\n",
-			  out_len, sizeof(struct fwctl_rpc_ub_out));
+			  data_len.out_len, sizeof(struct fwctl_rpc_ub_out));
 		return -EBADMSG;
 	}
 
-	ret = ubctl_check_env_type(ucdev, rpc_cmd);
+	if (data_len.in_len < sizeof(struct fwctl_rpc_ub_in)) {
+		ubctl_dbg(ucdev, "inlen %zu is less than min value %zu.\n",
+			  data_len.in_len, sizeof(struct fwctl_rpc_ub_in));
+		return -EBADMSG;
+	}
+
+	if (in_data_size + sizeof(struct fwctl_rpc_ub_in) > data_len.in_len) {
+		ubctl_dbg(ucdev, "in data size = %u, in head =  %zu, inlen = %zu.\n",
+			  in_data_size, sizeof(struct fwctl_rpc_ub_in), data_len.in_len);
+		return -EBADMSG;
+	}
+
+	ret = ubctl_check_env_type(ucdev, rpc_cmd, env_type);
 	if (ret)
 		return ret;
 
@@ -255,8 +272,6 @@ static int ub_cmd_do(struct ubctl_dev *ucdev,
 	ubctl_query_reg = ubctl_get_query_reg_func(ucdev, rpc_cmd);
 	ubctl_query_func = ubctl_get_query_func(ucdev, rpc_cmd);
 
-	query_cmd_param->out->env_version = g_env_type;
-
 	switch (rpc_cmd) {
 	case UTOOL_CMD_QUERY_DEV_INFO:
 		return ubctl_check_ucdev(ucdev, query_cmd_param);
@@ -320,13 +335,18 @@ static void *ubctl_fw_rpc(struct fwctl_uctx *uctx, enum fwctl_rpc_scope scope,
 					       fwctl);
 	u32 opcode = ((struct fwctl_rpc_ub_in *)rpc_in)->rpc_cmd;
 	struct ubctl_query_cmd_param query_cmd_param;
+	struct ubctl_data_len data_len = {};
 	void *rpc_out;
+	u32 env_type;
 	int ret;
 
 	ubctl_dbg(ucdev, "cmdif: opcode 0x%x inlen %zu outlen %zu\n",
 		  opcode, in_len, *out_len);
 
-	ret = ubctl_legitimacy_rpc(ucdev, *out_len, scope, opcode);
+	env_type = ubase_get_hw_ver(ucdev->adev);
+	data_len.in_len = in_len;
+	data_len.out_len = *out_len;
+	ret = ubctl_legitimacy_rpc(ucdev, data_len, scope, rpc_in, env_type);
 	if (ret)
 		return ERR_PTR(ret);
 
@@ -339,6 +359,7 @@ static void *ubctl_fw_rpc(struct fwctl_uctx *uctx, enum fwctl_rpc_scope scope,
 	query_cmd_param.out_len = *out_len - offsetof(struct fwctl_rpc_ub_out, data);
 	query_cmd_param.in_len = in_len;
 
+	query_cmd_param.out->env_version = env_type;
 	ret = ub_cmd_do(ucdev, &query_cmd_param);
 
 	ubctl_dbg(ucdev, "cmdif: opcode 0x%x retval %d\n", opcode, ret);
