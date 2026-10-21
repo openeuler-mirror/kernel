@@ -3321,9 +3321,9 @@ static void check_new_map(struct ceph_mds_client *mdsc,
 	     newmap->m_epoch, oldmap->m_epoch);
 
 	for (i = 0; i < oldmap->m_num_mds && i < mdsc->max_sessions; i++) {
-		if (!mdsc->sessions[i])
+		s = __ceph_lookup_mds_session(mdsc, i);
+		if (!s)
 			continue;
-		s = mdsc->sessions[i];
 		oldstate = ceph_mdsmap_get_state(oldmap, i);
 		newstate = ceph_mdsmap_get_state(newmap, i);
 
@@ -3341,13 +3341,10 @@ static void check_new_map(struct ceph_mds_client *mdsc,
 			if (s->s_state == CEPH_MDS_SESSION_OPENING) {
 				/* the session never opened, just close it
 				 * out now */
-				get_session(s);
 				__unregister_session(mdsc, s);
 				__wake_requests(mdsc, &s->s_waiting);
-				ceph_put_mds_session(s);
 			} else if (i >= newmap->m_num_mds) {
 				/* force close session for stopped mds */
-				get_session(s);
 				__unregister_session(mdsc, s);
 				__wake_requests(mdsc, &s->s_waiting);
 				kick_requests(mdsc, i);
@@ -3358,21 +3355,18 @@ static void check_new_map(struct ceph_mds_client *mdsc,
 				remove_session_caps(s);
 				mutex_unlock(&s->s_mutex);
 
-				ceph_put_mds_session(s);
-
 				mutex_lock(&mdsc->mutex);
 			} else {
 				/* just close it */
-				get_session(s);
 				mutex_unlock(&mdsc->mutex);
 				mutex_lock(&s->s_mutex);
 				mutex_lock(&mdsc->mutex);
-				ceph_put_mds_session(s);
 				ceph_con_close(&s->s_con);
 				mutex_unlock(&s->s_mutex);
 				s->s_state = CEPH_MDS_SESSION_RESTARTING;
 			}
 		} else if (oldstate == newstate) {
+			ceph_put_mds_session(s);
 			continue;  /* nothing new with this mds */
 		}
 
@@ -3381,11 +3375,9 @@ static void check_new_map(struct ceph_mds_client *mdsc,
 		 */
 		if (s->s_state == CEPH_MDS_SESSION_RESTARTING &&
 		    newstate >= CEPH_MDS_STATE_RECONNECT) {
-			get_session(s);
 			mutex_unlock(&mdsc->mutex);
 			send_mds_reconnect(mdsc, s);
 			mutex_lock(&mdsc->mutex);
-			ceph_put_mds_session(s);
 		}
 
 		/*
@@ -3400,6 +3392,7 @@ static void check_new_map(struct ceph_mds_client *mdsc,
 			ceph_kick_flushing_caps(mdsc, s);
 			wake_up_session_caps(s, 1);
 		}
+		ceph_put_mds_session(s);
 	}
 
 	for (i = 0; i < newmap->m_num_mds && i < mdsc->max_sessions; i++) {
