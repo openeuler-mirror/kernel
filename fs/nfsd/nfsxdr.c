@@ -12,6 +12,16 @@
 #define NFSDDBG_FACILITY		NFSDDBG_XDR
 
 /*
+ * Sun convention: a sattr time-useconds field of one full second (an
+ * otherwise out-of-range value) means "set this time to the current
+ * server time." It's needed to make permissions checks for the "touch"
+ * program across NFSv2 mounts work correctly. See description of
+ * sattr in section 6.1 of "NFS Illustrated" by Brent Callaghan,
+ * Addison-Wesley, ISBN 0-201-32750-5
+ */
+#define NFS2_SATTR_SET_TO_SERVER_TIME	(1000000)
+
+/*
  * Mapping of S_IF* types to NFS file types
  */
 static u32	nfs_ftypes[] = {
@@ -101,25 +111,27 @@ decode_sattr(__be32 *p, struct iattr *iap, struct user_namespace *userns)
 	}
 	tmp  = ntohl(*p++); tmp1 = ntohl(*p++);
 	if (tmp != (u32)-1 && tmp1 != (u32)-1) {
+		/*
+		 * Range test here to prevent the multiplication from
+		 * wrapping to a valid (but incorrect) value on 32-bit
+		 * platforms.
+		 */
+		if (tmp1 > NFS2_SATTR_SET_TO_SERVER_TIME)
+			return NULL;
 		iap->ia_valid |= ATTR_ATIME | ATTR_ATIME_SET;
 		iap->ia_atime.tv_sec = tmp;
-		iap->ia_atime.tv_nsec = tmp1 * 1000; 
+		iap->ia_atime.tv_nsec = tmp1 * 1000;
+		if (tmp1 == NFS2_SATTR_SET_TO_SERVER_TIME)
+			iap->ia_valid &= ~ATTR_ATIME_SET;
 	}
 	tmp  = ntohl(*p++); tmp1 = ntohl(*p++);
 	if (tmp != (u32)-1 && tmp1 != (u32)-1) {
+		if (tmp1 > NFS2_SATTR_SET_TO_SERVER_TIME)
+			return NULL;
 		iap->ia_valid |= ATTR_MTIME | ATTR_MTIME_SET;
 		iap->ia_mtime.tv_sec = tmp;
-		iap->ia_mtime.tv_nsec = tmp1 * 1000; 
-		/*
-		 * Passing the invalid value useconds=1000000 for mtime
-		 * is a Sun convention for "set both mtime and atime to
-		 * current server time".  It's needed to make permissions
-		 * checks for the "touch" program across v2 mounts to
-		 * Solaris and Irix boxes work correctly. See description of
-		 * sattr in section 6.1 of "NFS Illustrated" by
-		 * Brent Callaghan, Addison-Wesley, ISBN 0-201-32750-5
-		 */
-		if (tmp1 == 1000000)
+		iap->ia_mtime.tv_nsec = tmp1 * 1000;
+		if (tmp1 == NFS2_SATTR_SET_TO_SERVER_TIME)
 			iap->ia_valid &= ~(ATTR_ATIME_SET|ATTR_MTIME_SET);
 	}
 	return p;
@@ -399,7 +411,9 @@ nfssvc_decode_symlinkargs(struct svc_rqst *rqstp, __be32 *p)
 			return 0;
 		p += xdrlen;
 	}
-	decode_sattr(p, &args->attrs, nfsd_user_namespace(rqstp));
+	p = decode_sattr(p, &args->attrs, nfsd_user_namespace(rqstp));
+	if (!p)
+		return 0;
 
 	return 1;
 }
