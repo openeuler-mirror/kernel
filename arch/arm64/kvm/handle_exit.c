@@ -25,6 +25,7 @@
 #include <kvm/arm_hypercalls.h>
 #include <pvm/mmu.h>
 #include <pvm/pvm.h>
+#include <pvm/tlbi.h>
 
 #define CREATE_TRACE_POINTS
 #include "trace_handle_exit.h"
@@ -238,6 +239,12 @@ static int kvm_handle_unknown(struct kvm_vcpu *vcpu)
 	if (aarch64_insn_is_eret(insn)) {
 		kvm_pvm_emulate_eret(vcpu);
 		return 1;
+	}
+
+	if (aarch64_insn_is_tlbi(insn)) {
+		ret = kvm_pvm_emulate_tlbi(vcpu, insn);
+		if (ret)
+			return ret;
 	}
 
 	if (aarch64_insn_is_mrs(insn) || aarch64_insn_is_msr_reg(insn) ||
