@@ -2204,6 +2204,10 @@ bool kvm_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 	if (!kvm->arch.mmu.pgt)
 		return false;
 
+	/* A GFN does not identify all aliases in the GVA-indexed shadows. */
+	if (is_pvm_mode())
+		return true;
+
 	/* We don't support aging for Realms */
 	if (_kvm_is_realm(kvm))
 		return true;
@@ -2219,6 +2223,9 @@ bool kvm_test_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 
 	if (!kvm->arch.mmu.pgt)
 		return false;
+
+	if (is_pvm_mode())
+		return true;
 
 	/* We don't support aging for Realms */
 	if (_kvm_is_realm(kvm))
