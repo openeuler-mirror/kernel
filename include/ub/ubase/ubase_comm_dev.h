@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -488,5 +488,6 @@ void ubase_reinit_unregister(struct auxiliary_device *adev);
 
 void ubase_update_dev_status(struct auxiliary_device *adev, unsigned long status);
 void ubase_update_adev_status(struct auxiliary_device *adev, unsigned long status);
+int ubase_update_adev_name(struct auxiliary_device *adev, const char *dev_name);
 
 #endif /* _UB_UBASE_COMM_DEV_H_ */

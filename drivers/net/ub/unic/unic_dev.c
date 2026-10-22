@@ -707,7 +707,6 @@ static void unic_init_vport_info(struct unic_dev *unic_dev)
 	spin_lock_init(&unic_dev->vport.addr_tbl.bond_ip_list_lock);
 
 	INIT_LIST_HEAD(&unic_dev->vport.vlan_tbl.vlan_list);
-	spin_lock_init(&unic_dev->vport.vlan_tbl.vlan_lock);
 
 	if (unic_dev_eth_mac_supported(unic_dev)) {
 		INIT_LIST_HEAD(&unic_dev->vport.addr_tbl.uc_mac_list);
@@ -853,7 +852,7 @@ static int unic_init_netdev_priv(struct net_device *netdev,
 	mutex_init(&priv->act_info.mutex);
 	mutex_init(&priv->bond_status.mutex);
 	mutex_init(&priv->stats.bond_record.lock);
-	mutex_init(&priv->vport.vlan_tbl.vlan_cmd_mutex);
+	mutex_init(&priv->vport.vlan_tbl.mutex);
 
 	ret = unic_query_dev_res(priv);
 	if (ret)
@@ -904,7 +903,7 @@ destroy_lock:
 	mutex_destroy(&priv->stats.bond_record.lock);
 	mutex_destroy(&priv->bond_status.mutex);
 	mutex_destroy(&priv->act_info.mutex);
-	mutex_destroy(&priv->vport.vlan_tbl.vlan_cmd_mutex);
+	mutex_destroy(&priv->vport.vlan_tbl.mutex);
 
 	return ret;
 }
@@ -921,7 +920,7 @@ static void unic_uninit_netdev_priv(struct net_device *netdev)
 	mutex_destroy(&priv->stats.bond_record.lock);
 	mutex_destroy(&priv->bond_status.mutex);
 	mutex_destroy(&priv->act_info.mutex);
-	mutex_destroy(&priv->vport.vlan_tbl.vlan_cmd_mutex);
+	mutex_destroy(&priv->vport.vlan_tbl.mutex);
 }
 
 int unic_init_wq(void)

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -443,8 +443,8 @@ static int unic_backup_stats(struct unic_dev *unic_dev,
 	struct unic_rq_stats *rx_stats;
 	u32 i;
 
-	if (!unic_dev->channels.c)
-		return -EEXIST;
+	if (test_bit(UNIC_STATE_CHANNEL_INVALID, &unic_dev->state))
+		return -EINVAL;
 
 	tx_stats = kcalloc(unic_dev->channels.num, sizeof(*tx_stats),
 			   GFP_KERNEL);

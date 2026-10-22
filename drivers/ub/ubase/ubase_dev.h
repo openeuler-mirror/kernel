@@ -79,7 +79,6 @@ struct ubase_hw {
 	struct ubase_resource_space io_base;
 	struct ubase_resource_space mem_base;
 	struct ubase_cmdq cmdq;
-	unsigned long state;
 };
 
 struct ubase_mbx_event_context {
@@ -88,6 +87,14 @@ struct ubase_mbx_event_context {
 	u64				out_param;
 	u16				seq_num;
 	struct ubase_cmd_mailbox	*mbx_buff;
+};
+
+#define UBASE_ADEV_NAME_MAX_LEN	64
+struct ubase_adev_node {
+	struct list_head	list;
+	struct auxiliary_device *adev;
+	struct ubase_dev	*udev;
+	char name[UBASE_ADEV_NAME_MAX_LEN];
 };
 
 struct ubase_adev {
@@ -177,6 +184,7 @@ struct ubase_reset_stat {
 	u32 reset_done_cnt;
 	u32 hw_reset_done_cnt;
 	u32 elr_reset_cnt;
+	u32 ras_elr_reset_cnt;
 	u32 reset_fail_cnt;
 	u32 reset_retry_cnt;
 	u32 port_reset_cnt;
@@ -186,20 +194,26 @@ struct ubase_reset_stat {
 };
 
 enum ubase_dev_state_bit {
-	UBASE_STATE_INITED_B,
-	UBASE_STATE_DISABLED_B,
-	UBASE_STATE_RST_HANDLING_B,
-	UBASE_STATE_IRQ_INVALID_B,
-	UBASE_STATE_PORT_RESETTING_B,
-	UBASE_STATE_CTX_READY_B,
-	UBASE_STATE_PREALLOC_OK_B,
-	UBASE_STATE_RST_WAIT_DEACTIVE_B,
-	UBASE_STATE_SHUTDOWN,
-	UBASE_STATE_CMD_CRQ_UNAVAIL_B,
-	UBASE_STATE_REMOVING_B,
-	UBASE_STATE_INIT_AGAIN_B,
-	UBASE_STATE_RST_TIMEOUT_RETRY_B,
-	UBASE_STATE_RST_FAILED_B,
+	UBASE_STATE_INITED_B		= 0,
+	UBASE_STATE_DISABLED_B		= 1,
+	UBASE_STATE_RST_HANDLING_B	= 2,
+	UBASE_STATE_IRQ_INVALID_B	= 3,
+	UBASE_STATE_PORT_RESETTING_B	= 4,
+	UBASE_STATE_CTX_READY_B		= 5,
+	UBASE_STATE_PREALLOC_OK_B	= 6,
+	UBASE_STATE_RST_WAIT_DEACTIVE_B	= 7,
+	UBASE_STATE_SHUTDOWN_B		= 8,
+	UBASE_STATE_CMD_CRQ_UNAVAIL_B	= 9,
+	UBASE_STATE_REMOVING_B		= 10,
+	UBASE_STATE_INIT_AGAIN_B	= 11,
+	UBASE_STATE_RST_TIMEOUT_RETRY_B	= 12,
+	UBASE_STATE_RST_FAILED_B	= 13,
+
+	/* cmd channel state */
+	UBASE_STATE_CMD_DISABLE_B	= 32,
+
+	/* ctrlq state */
+	UBASE_STATE_CTRLQ_ENABLE_B	= 40,
 };
 
 struct ubase_crq_event_nbs {
@@ -285,7 +299,6 @@ struct ubase_ctrlq_ue_resp_table {
 
 struct ubase_ctrlq {
 	u16				csq_next_seq;
-	unsigned long			state;
 	atomic_t			req_cnt;
 	struct ubase_ctrlq_ring		csq;
 	struct ubase_ctrlq_ring		crq;
@@ -364,7 +377,7 @@ struct ubase_prealloc_mem_info {
 };
 
 struct ubase_mbox_over_cmdq_info {
-	u32 seq_num;
+	atomic_t seq_num;
 	struct xarray seq_tbl;
 	wait_queue_head_t queue;
 };
@@ -550,6 +563,11 @@ static inline bool ubase_dev_ta_timer_buf_supported(struct ubase_dev *udev)
 	return ubase_get_cap_bit(udev, UBASE_SUPPORT_TA_TIMER_BUF_B);
 }
 
+static inline bool ubase_dev_ue_elr_ras_supported(struct ubase_dev *udev)
+{
+	return ubase_get_cap_bit(udev, UBASE_SUPPORT_UE_ELR_RAS_B);
+}
+
 static inline bool ubase_dev_err_handle_supported(struct ubase_dev *udev)
 {
 	return ubase_get_cap_bit(udev, UBASE_SUPPORT_ERR_HANDLE_B);
@@ -657,7 +675,7 @@ static inline bool ubase_mbx_ue_id_is_valid(u16 mbx_ue_id,
 
 static inline bool ubase_shutting_down(struct ubase_dev *udev)
 {
-	return test_bit(UBASE_STATE_SHUTDOWN, &udev->state_bits);
+	return test_bit(UBASE_STATE_SHUTDOWN_B, &udev->state_bits);
 }
 
 static inline bool ubase_is_ctrl_node(struct ubase_dev *udev)
@@ -708,5 +726,9 @@ void ubase_free_buf(struct ubase_dev *udev, size_t size,
 int ubase_reinit_aux_devices(struct ubase_dev *udev);
 int __ubase_activate_dev(struct ubase_dev *udev);
 u32 __ubase_get_hw_ver(struct ubase_dev *udev);
+void ubase_adev_list_read_lock(void);
+void ubase_adev_list_read_unlock(void);
+struct list_head *ubase_get_adev_list(void);
+struct ubase_dev *ubase_get_dev_from_adev_list_locked(const char *dev_name);
 
 #endif /* __UBASE_DEV_H__ */

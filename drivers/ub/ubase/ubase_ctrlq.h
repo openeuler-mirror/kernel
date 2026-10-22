@@ -30,10 +30,6 @@
 #define UBASE_CTRLQ_UE_MSG_HDR_LEN \
 	(sizeof(struct ubase_ue2ue_ctrlq_head) + UBASE_CTRLQ_HDR_LEN)
 
-enum ubase_ctrlq_state {
-	UBASE_CTRLQ_STATE_ENABLE,
-};
-
 struct ubase_ctrlq_ue_info {
 	u8	mbx_ue_id;
 	u16	seq;

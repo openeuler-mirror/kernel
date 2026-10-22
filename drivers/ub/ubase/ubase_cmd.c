@@ -481,7 +481,7 @@ static int ubase_csq_clean(struct ubase_dev *udev)
 			   hw_ci, csq->pi, csq->ci);
 		ubase_warn(udev,
 			   "any further commands to the firmware are disabled!\n");
-		set_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state);
+		set_bit(UBASE_STATE_CMD_DISABLE_B, &udev->state_bits);
 		ubase_warn(udev,
 			   "the firmware watchdog is expected to reset soon!\n");
 		return -EIO;
@@ -506,7 +506,7 @@ int ubase_send_cmd(struct ubase_dev *udev,
 
 	spin_lock_bh(&csq->lock);
 	atomic_inc(&udev->hw.cmdq.csq_cnt);
-	if (test_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state)) {
+	if (test_bit(UBASE_STATE_CMD_DISABLE_B, &udev->state_bits)) {
 		atomic_dec(&udev->hw.cmdq.csq_cnt);
 		spin_unlock_bh(&csq->lock);
 		return -EBUSY;
@@ -662,7 +662,7 @@ int ubase_cmd_init(struct ubase_dev *udev)
 {
 	int ret;
 
-	set_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state);
+	set_bit(UBASE_STATE_CMD_DISABLE_B, &udev->state_bits);
 
 	if (!test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits)) {
 		ret = ubase_cmd_init_handshake_reg(udev);
@@ -688,7 +688,7 @@ int ubase_cmd_init(struct ubase_dev *udev)
 	if (ret)
 		goto err_query_version;
 
-	clear_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state);
+	clear_bit(UBASE_STATE_CMD_DISABLE_B, &udev->state_bits);
 	return 0;
 
 err_query_version:
@@ -757,19 +757,25 @@ static u16 ubase_calc_bd_num(struct ubase_cmd_buf *buf)
 static int ubase_cmd_buf_check(struct ubase_dev *udev, struct ubase_cmd_buf *in,
 			       struct ubase_cmd_buf *out, u16 *num)
 {
+#define MAX_BB_NUM	32
+
+	u32 max_data_size = MAX_BB_NUM * sizeof(struct ubase_cmdq_desc) -
+			    UBASE_CMD_HEADER_LENGTH;
+
 	if (in->is_read && (!out || !out->data || out->data_size == 0)) {
 		ubase_err(udev, "output buffer is empty.\n");
 		return -EINVAL;
 	}
 
-	*num = max_t(u16, ubase_calc_bd_num(in), ubase_calc_bd_num(out));
-	if (*num > UBASE_CMDQ_DESC_NUM) {
+	if (max_t(u32, in->data_size, out->data_size) > max_data_size) {
 		ubase_err(udev,
-			  "requested space(%u) exceeds the maximum(%lu).\n",
+			  "data size(%u) exceeds the maximum(%u).\n",
 			  max_t(u32, in->data_size, out->data_size),
-			  UBASE_CMD_MAX_DESC_SIZE);
+			  max_data_size);
 		return -EINVAL;
 	}
+
+	*num = max_t(u16, ubase_calc_bd_num(in), ubase_calc_bd_num(out));
 
 	return 0;
 }
@@ -931,7 +937,7 @@ static void ubase_cmd_crq_handler(struct ubase_dev *udev)
 	int ret;
 
 	while (!ubase_cmd_crq_empty(udev, &udev->hw)) {
-		if (test_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state)) {
+		if (test_bit(UBASE_STATE_CMD_DISABLE_B, &udev->state_bits)) {
 			ubase_warn_rl(udev, cmdq_is_disable,
 				      "command queue needs re-initializing.\n");
 			return;
@@ -976,9 +982,7 @@ void ubase_crq_service_task(struct ubase_delay_work *ubase_work)
 	struct ubase_crq_table *crq_table = &udev->crq_table;
 
 	if (!test_and_clear_bit(UBASE_STATE_CRQ_SERVICE_SCHED,
-				&udev->service_task.state) ||
-		test_and_set_bit(UBASE_STATE_CRQ_HANDLING,
-				 &udev->service_task.state))
+				&udev->service_task.state))
 		return;
 
 	if (time_is_before_eq_jiffies(crq_table->last_crq_scheduled +
@@ -989,8 +993,6 @@ void ubase_crq_service_task(struct ubase_delay_work *ubase_work)
 			   smp_processor_id());
 
 	ubase_cmd_crq_handler(udev);
-
-	clear_bit(UBASE_STATE_CRQ_HANDLING, &udev->service_task.state);
 }
 
 static inline bool ubase_mbx_need_extend_timeout(struct ubase_dev *udev,
@@ -1195,7 +1197,7 @@ int ubase_cmd_send_inout_ex(struct auxiliary_device *aux_dev,
 	if (!time_out)
 		return __ubase_cmd_send_inout(udev, in, out);
 
-	while (test_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state) &&
+	while (test_bit(UBASE_STATE_CMD_DISABLE_B, &udev->state_bits) &&
 	       (try_cnt * UBASE_CMDQ_WAIT_TIME) < time_out) {
 		msleep(UBASE_CMDQ_WAIT_TIME);
 		try_cnt++;

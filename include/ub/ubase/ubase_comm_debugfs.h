@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -138,6 +138,13 @@ int ubase_dbg_get_dscp_vl_map(struct device *dev,
 			      struct ubase_dbg_dscp_vl_map *map);
 int ubase_dbg_get_sl_vl_map(struct device *dev,
 			    struct ubase_dbg_sl_vl_map *map);
+
+int ubase_dbg_get_aeq_ctx_hw_by_name(const char *dev_name, void *buf, u32 *size);
+int ubase_dbg_get_ceq_ctx_hw_by_name(const char *dev_name, void *buf, u32 *size);
+int ubase_dbg_get_caps_info_by_name(const char *dev_name, struct ubase_dbg_caps_info *info);
+int ubase_dbg_get_dscp_vl_map_by_name(const char *dev_name, struct ubase_dbg_dscp_vl_map *map);
+int ubase_dbg_get_sl_vl_map_by_name(const char *dev_name, struct ubase_dbg_sl_vl_map *map);
+
 int ubase_dbg_seq_file_init(struct device *dev,
 			    struct ubase_dbg_dentry_info *dirs,
 			    struct ubase_dbgfs *dbgfs, u32 idx);

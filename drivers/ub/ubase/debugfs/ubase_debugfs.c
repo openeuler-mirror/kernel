@@ -30,6 +30,7 @@ static int ubase_dbg_dump_rst_info(struct seq_file *s, void *data)
 	int i;
 
 	seq_printf(s, "ELR reset count: %u\n", udev->reset_stat.elr_reset_cnt);
+	seq_printf(s, "RAS ELR reset count: %u\n", udev->reset_stat.ras_elr_reset_cnt);
 	seq_printf(s, "port reset count: %u\n", udev->reset_stat.port_reset_cnt);
 	seq_printf(s, "himac reset count: %u\n", udev->reset_stat.himac_reset_cnt);
 	seq_printf(s, "reset done count: %u\n", udev->reset_stat.reset_done_cnt);
@@ -76,6 +77,7 @@ static void ubase_dbg_dump_caps_bits(struct seq_file *s, struct ubase_dev *udev)
 	PRINT_CAP(ucp, ubase_ucp_supported);
 	PRINT_CAP(non_mirror_mem, ubase_dev_non_mirror_mem_supported);
 	PRINT_CAP(batch_query_pmu, ubase_dev_batch_query_pmu_supported);
+	PRINT_CAP(ue_elr_ras, ubase_dev_ue_elr_ras_supported);
 }
 
 static void ubase_dbg_dump_caps_info(struct seq_file *s, struct ubase_dev *udev)
@@ -243,6 +245,46 @@ int ubase_dbg_get_caps_info(struct device *dev, struct ubase_dbg_caps_info *info
 	return 0;
 }
 EXPORT_SYMBOL(ubase_dbg_get_caps_info);
+
+/**
+ * ubase_dbg_get_caps_info_by_name() - get caps info by name
+ * @dev_name: device name
+ * @map: debug get caps info
+ *
+ * The function is used to get caps info by name.
+ *
+ * Context: Any context.
+ * Return: 0 on success, negative error code otherwise
+ */
+int ubase_dbg_get_caps_info_by_name(const char *dev_name,
+				    struct ubase_dbg_caps_info *info)
+{
+	struct ubase_caps *dev_caps;
+	struct ubase_dev *udev;
+
+	if (!dev_name || !info)
+		return -EINVAL;
+
+	ubase_adev_list_read_lock();
+	udev = ubase_get_dev_from_adev_list_locked(dev_name);
+	if (!udev) {
+		ubase_adev_list_read_unlock();
+		return -ENODEV;
+	}
+
+	dev_caps = &udev->caps.dev_caps;
+	info->aeq_num = dev_caps->num_aeq_vectors;
+	info->ceq_num = dev_caps->num_ceq_vectors;
+	info->aeq_ctx_size = UBASE_AEQ_CTX_SIZE;
+	info->ceq_ctx_size = UBASE_CEQ_CTX_SIZE;
+	info->die_id = dev_caps->die_id;
+	info->io_port_logic_id = dev_caps->io_port_logic_id;
+
+	ubase_adev_list_read_unlock();
+
+	return 0;
+}
+EXPORT_SYMBOL(ubase_dbg_get_caps_info_by_name);
 
 static int ubase_query_ubcl_config(struct ubase_dev *udev, u16 offset,
 				   u16 is_query, u16 size,
@@ -649,6 +691,28 @@ static int ubase_dbg_dump_udma_mac_tbl_list_hw(struct seq_file *s, void *data)
 	return ret;
 }
 
+static int ubase_dbg_dump_adev_list_info(struct seq_file *s, void *data)
+{
+	struct ubase_dev *udev = dev_get_drvdata(s->private);
+	struct ubase_adev_node *pos_node;
+	struct list_head *adev_list;
+
+	if (!test_bit(UBASE_STATE_INITED_B, &udev->state_bits) ||
+	    test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
+		return -EBUSY;
+
+	adev_list = ubase_get_adev_list();
+
+	ubase_adev_list_read_lock();
+	list_for_each_entry(pos_node, adev_list, list) {
+		if (pos_node->name[0])
+			seq_printf(s, "%s\n", pos_node->name);
+	}
+	ubase_adev_list_read_unlock();
+
+	return 0;
+}
+
 static bool __ubase_dbg_dentry_support(struct device *dev, u32 property)
 {
 	struct ubase_dev *udev = dev_get_drvdata(dev);
@@ -1017,6 +1081,14 @@ static struct ubase_dbg_cmd_info ubase_dbg_cmd[] = {
 		.support = ubase_dbg_dev_proxy_support,
 		.init = __ubase_dbg_seq_file_init,
 		.read_func = ubase_dbg_dump_ue_cmdq_ratelimit_record,
+	},
+	{
+		.name = "all_adev_name",
+		.dentry_index = UBASE_DBG_DENTRY_ROOT,
+		.property = UBASE_SUP_URMA | UBASE_SUP_UBL_ETH,
+		.support = __ubase_dbg_dentry_support,
+		.init = __ubase_dbg_seq_file_init,
+		.read_func = ubase_dbg_dump_adev_list_info,
 	}
 };
 

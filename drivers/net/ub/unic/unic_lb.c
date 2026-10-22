@@ -179,7 +179,7 @@ static int unic_selftest_prepare(struct net_device *ndev, bool if_running,
 				 u8 autoneg)
 {
 	struct unic_dev *unic_dev = netdev_priv(ndev);
-	int ret;
+	int ret, ret1;
 
 	ret = if_running ? unic_net_stop(ndev) : 0;
 	if (ret) {
@@ -198,9 +198,9 @@ static int unic_selftest_prepare(struct net_device *ndev, bool if_running,
 	return 0;
 
 restore_net:
-	ret = if_running ? unic_net_open(ndev) : 0;
-	if (ret)
-		unic_err(unic_dev, "failed to restore net, ret = %d.\n", ret);
+	ret1 = if_running ? unic_net_open(ndev) : 0;
+	if (ret1)
+		unic_err(unic_dev, "failed to restore net, ret = %d.\n", ret1);
 
 	return ret;
 }

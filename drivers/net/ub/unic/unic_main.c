@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -39,6 +39,7 @@ static int unic_probe(struct auxiliary_device *adev,
 
 	set_bit(UNIC_STATE_INITED, &unic_dev->state);
 	ubase_update_adev_status(adev, 0);
+	ubase_update_adev_name(adev, unic_dev->comdev.netdev->name);
 
 	return 0;
 }

@@ -12,6 +12,7 @@
 #include "ubase.h"
 #include "ubase_cmd.h"
 #include "ubase_ctrlq.h"
+#include "ubase_eq.h"
 #include "ubase_hw.h"
 #include "ubase_mailbox.h"
 #include "ubase_ubus.h"
@@ -70,13 +71,6 @@ static void ubase_reset_err_handle(struct ubase_dev *udev)
 	ubase_err(udev, "failed to reset, too many attempts.\n");
 }
 
-void ubase_port_reset(struct ubase_dev *udev)
-{
-	ubase_port_down(udev);
-	ubase_port_up(udev);
-	udev->reset_stat.port_reset_cnt++;
-}
-
 void ubase_reset_service(struct ubase_delay_work *ubase_work)
 {
 	struct ubase_dev *udev = container_of(ubase_work, struct ubase_dev,
@@ -106,6 +100,9 @@ void __ubase_reset_event(struct ubase_dev *udev,
 			 enum ubase_reset_type reset_type)
 {
 	udev->reset_type = reset_type;
+
+	if (test_bit(UBASE_STATE_REMOVING_B, &udev->state_bits))
+		return;
 
 	switch (reset_type) {
 	case UBASE_UE_RESET:
@@ -332,7 +329,7 @@ static void ubase_reset_fail_handle(struct ubase_dev *udev)
 	 * is executed before reset_stage is set to NONE, which enables
 	 * ubase_cmd_uninit to skip the sleep.
 	 */
-	if (test_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state)) {
+	if (test_bit(UBASE_STATE_CMD_DISABLE_B, &udev->state_bits)) {
 		ubase_cmd_uninit(udev);
 		if (ubase_cmd_init(udev))
 			ubase_err(udev, "failed to reinit cmdq after reset failure.\n");
@@ -458,6 +455,10 @@ void ubase_resume(struct ubase_dev *udev, int pret)
 	if (ret)
 		goto err_resume;
 
+	if (test_and_clear_bit(UBASE_STATE_ERR_HANDLING,
+			       &udev->service_task.state))
+		udev->reset_stat.ras_elr_reset_cnt++;
+
 	udev->reset_stat.reset_done_cnt++;
 	udev->reset_stat.reset_retry_cnt = 0;
 	clear_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits);
@@ -469,6 +470,26 @@ timeout_resume:
 	set_bit(UBASE_STATE_RST_TIMEOUT_RETRY_B, &udev->state_bits);
 err_resume:
 	ubase_reset_fail_handle(udev);
+}
+
+static void ubase_elr_ras_reset(struct ubase_dev *udev)
+{
+	if (!ubase_dev_ue_elr_ras_supported(udev))
+		return;
+
+	/*
+	 * Consider the race between the periodic task and the interrupt, both
+	 * detecting the handshake register. Regardless of which of them
+	 * triggers the ELR reset first, flush_workqueue is invoked during the
+	 * reset, so the workqueue woken by the other one runs, finds the
+	 * UBASE_STATE_ERR_HANDLING bit already set, and returns immediately.
+	 */
+	if (test_and_set_bit(UBASE_STATE_ERR_HANDLING,
+			     &udev->service_task.state))
+		return;
+
+	ubase_info(udev, "elr ras occurred, ubase need to reset.\n");
+	__ubase_reset_event(udev, UBASE_ELR_RESET);
 }
 
 void ubase_errhandle_service_task(struct ubase_delay_work *ubase_work)
@@ -486,10 +507,24 @@ void ubase_errhandle_service_task(struct ubase_delay_work *ubase_work)
 		return;
 	}
 
-	if (test_and_clear_bit(UBASE_STATE_PORT_RESETTING_B, &udev->state_bits)) {
-		ubase_info(udev, "ras occurred, ubase need to reset port.\n");
-		ubase_port_reset(udev);
-	}
+	ubase_elr_ras_reset(udev);
+}
+
+void ubase_elr_ras_service_task(struct ubase_dev *udev)
+{
+	u32 reg;
+
+	if (!ubase_dev_err_handle_supported(udev))
+		return;
+
+	reg = ubase_read_dev(&udev->hw, UBASE_SW_HANDSHAKE_0_REG);
+	if (!(reg & BIT(UBASE_SW_HANDSHAKE_0_RAS_B)))
+		return;
+
+	reg &= ~BIT(UBASE_SW_HANDSHAKE_0_RAS_B);
+	ubase_write_dev(&udev->hw, UBASE_SW_HANDSHAKE_0_REG, reg);
+
+	ubase_elr_ras_reset(udev);
 }
 
 static int ubase_notify_himac_reset(struct ubase_dev *udev)

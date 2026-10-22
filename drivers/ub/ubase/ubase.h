@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -25,13 +25,12 @@
 
 enum ubase_service_state {
 	UBASE_STATE_CRQ_SERVICE_SCHED,
-	UBASE_STATE_CRQ_HANDLING,
 	UBASE_SERVICE_STATE_ERR_SCHED,
 	UBASE_SERVICE_STATE_RESET_SCHED,
 	UBASE_STATE_CTRLQ_SERVICE_SCHED,
 	UBASE_STATE_CTRLQ_HANDLING,
 	UBASE_STATE_ARQ_SERVICE_SCHED,
-	UBASE_STATE_ARQ_HANDLING,
+	UBASE_STATE_ERR_HANDLING,
 };
 
 struct ubase_delay_work {
@@ -63,6 +62,7 @@ enum {
 	UBASE_SUPPORT_PMU_IRQ_B			= 24,
 	UBASE_SUPPORT_NON_MIRROR_MEM_B		= 25,
 	UBASE_SUPPORT_BATCH_QUERY_PMU_B		= 27,
+	UBASE_SUPPORT_UE_ELR_RAS_B		= 28,
 	/* must be last entry and it should <= UBASE_CAP_LEN * 32 */
 	UBASE_SUPPORT_MASK_NBITS
 };
