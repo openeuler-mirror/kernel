@@ -1363,6 +1363,11 @@ static int stage2_update_leaf_attrs(struct kvm_pgtable *pgt, u64 addr,
 
 int kvm_pgtable_stage2_wrprotect(struct kvm_pgtable *pgt, u64 addr, u64 size)
 {
+	if (is_pvm_mode())
+		return stage2_update_leaf_attrs(pgt, addr, size,
+					       KVM_PTE_LEAF_ATTR_LO_S1_AP2, 0,
+					       NULL, NULL, 0);
+
 	return stage2_update_leaf_attrs(pgt, addr, size, 0,
 					KVM_PTE_LEAF_ATTR_LO_S2_S2AP_W,
 					NULL, NULL, 0);

@@ -1194,6 +1194,50 @@ static void stage2_wp_range(struct kvm_s2_mmu *mmu, phys_addr_t addr, phys_addr_
 	stage2_apply_range_resched(mmu, addr, end, kvm_pgtable_stage2_wrprotect);
 }
 
+static void pvm_wp_all(struct kvm *kvm)
+{
+	struct kvm_pvm *pvm = kvm_to_pvm(kvm);
+	size_t i;
+
+	lockdep_assert_held_write(&kvm->mmu_lock);
+	pvm->invalidating++;
+	pvm->invalidate_seq++;
+	for (i = 0; i < pvm->suser_mmus_size; i++) {
+		struct kvm_s2_mmu *mmu = &pvm->suser_mmus[i]->mmu;
+
+		stage2_wp_range(mmu, 0, BIT_ULL(mmu->pgt->ia_bits));
+	}
+	for (i = 0; i < pvm->skern_mmus_size; i++) {
+		struct kvm_s2_mmu *mmu = &pvm->skern_mmus[i]->mmu;
+
+		stage2_wp_range(mmu, PVM_SHADOW_S1_KERNEL_BASE,
+				PVM_SHADOW_S1_KERNEL_BASE + BIT_ULL(PVM_GKERNEL_VA_BITS));
+	}
+	stage2_wp_range(&kvm->arch.mmu, 0,
+			min_t(u64, kvm_phys_size(kvm), PVM_SHADOW_S1_KERNEL_BASE));
+	/*
+	 * PVM's __kvm_tlb_flush_vmid() performs vmalle1is regardless of the
+	 * MMU passed in, so this also invalidates the user and kernel shadow
+	 * roots protected above.
+	 */
+	kvm_call_hyp(__kvm_tlb_flush_vmid, &kvm->arch.mmu);
+	pvm->invalidate_seq++;
+	pvm->invalidating--;
+}
+
+/*
+ * Re-arm dirty logging once the bitmap batch has been cleared.  PVM snapshot
+ * save and restore requires all vCPUs and other guest memory writers paused.
+ */
+void kvm_arch_finish_dirty_log(struct kvm *kvm,
+			       struct kvm_memory_slot *memslot)
+{
+	lockdep_assert_held_write(&kvm->mmu_lock);
+
+	if (is_pvm_mode())
+		pvm_wp_all(kvm);
+}
+
 /**
  * kvm_mmu_wp_memory_region() - write protect stage 2 entries for memory slot
  * @kvm:	The KVM pointer
@@ -1220,7 +1264,10 @@ static void kvm_mmu_wp_memory_region(struct kvm *kvm, int slot)
 	end = (memslot->base_gfn + memslot->npages) << PAGE_SHIFT;
 
 	write_lock(&kvm->mmu_lock);
-	stage2_wp_range(&kvm->arch.mmu, start, end);
+	if (is_pvm_mode())
+		pvm_wp_all(kvm);
+	else
+		stage2_wp_range(&kvm->arch.mmu, start, end);
 	write_unlock(&kvm->mmu_lock);
 	kvm_flush_remote_tlbs_memslot(kvm, memslot);
 }
@@ -1273,6 +1320,10 @@ void kvm_arch_mmu_enable_log_dirty_pt_masked(struct kvm *kvm,
 	phys_addr_t end = (base_gfn + __fls(mask) + 1) << PAGE_SHIFT;
 
 	lockdep_assert_held_write(&kvm->mmu_lock);
+
+	/* Protect all PVM aliases once the complete bitmap batch is cleared. */
+	if (is_pvm_mode())
+		return;
 
 #ifdef CONFIG_HISI_VIRTCCA_HOST
 	if (kvm_is_realm(kvm)) {

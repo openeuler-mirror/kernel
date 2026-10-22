@@ -1438,6 +1438,12 @@ struct kvm *kvm_arch_alloc_vm(void);
 
 #define __KVM_HAVE_ARCH_FLUSH_REMOTE_TLBS_RANGE
 
+#define __KVM_HAVE_ARCH_FINISH_DIRTY_LOG
+#define kvm_arch_manual_dirty_log_supported() (!is_pvm_mode())
+struct kvm_memory_slot;
+void kvm_arch_finish_dirty_log(struct kvm *kvm,
+			       struct kvm_memory_slot *memslot);
+
 static inline bool kvm_vm_is_protected(struct kvm *kvm)
 {
 	return false;

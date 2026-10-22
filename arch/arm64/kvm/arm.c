@@ -782,6 +782,16 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
 {
 	int err;
 
+	/*
+	 * PVM supports snapshot save and restore with the vCPUs paused, not
+	 * live migration.  PVM does not re-arm shadows after a dirty ring
+	 * reset, so refuse a VM that enabled one instead of losing writes.
+	 */
+	if (is_pvm_mode() && vcpu->kvm->dirty_ring_size) {
+		kvm_err("PVM: dirty-ring logging is not supported\n");
+		return -EINVAL;
+	}
+
 	spin_lock_init(&vcpu->arch.mp_state_lock);
 
 #ifdef CONFIG_LOCKDEP

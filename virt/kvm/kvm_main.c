@@ -2435,6 +2435,8 @@ static int kvm_get_dirty_log_protect(struct kvm *kvm, struct kvm_dirty_log *log)
 			kvm_arch_mmu_enable_log_dirty_pt_masked(kvm, memslot,
 								offset, mask);
 		}
+		if (flush)
+			kvm_arch_finish_dirty_log(kvm, memslot);
 		KVM_MMU_UNLOCK(kvm);
 	}
 
@@ -2557,6 +2559,8 @@ static int kvm_clear_dirty_log_protect(struct kvm *kvm,
 								offset, mask);
 		}
 	}
+	if (flush)
+		kvm_arch_finish_dirty_log(kvm, memslot);
 	KVM_MMU_UNLOCK(kvm);
 
 	if (flush)
@@ -5111,7 +5115,8 @@ static int kvm_vm_ioctl_check_extension_generic(struct kvm *kvm, long arg)
 #endif
 #ifdef CONFIG_KVM_GENERIC_DIRTYLOG_READ_PROTECT
 	case KVM_CAP_MANUAL_DIRTY_LOG_PROTECT2:
-		return KVM_DIRTY_LOG_MANUAL_CAPS;
+		return kvm_arch_manual_dirty_log_supported() ?
+			KVM_DIRTY_LOG_MANUAL_CAPS : 0;
 #endif
 #ifdef CONFIG_HAVE_KVM_IRQ_ROUTING
 	case KVM_CAP_IRQ_ROUTING:
@@ -5245,6 +5250,9 @@ static int kvm_vm_ioctl_enable_cap_generic(struct kvm *kvm,
 #ifdef CONFIG_KVM_GENERIC_DIRTYLOG_READ_PROTECT
 	case KVM_CAP_MANUAL_DIRTY_LOG_PROTECT2: {
 		u64 allowed_options = KVM_DIRTY_LOG_MANUAL_PROTECT_ENABLE;
+
+		if (!kvm_arch_manual_dirty_log_supported())
+			return -EINVAL;
 
 		if (cap->args[0] & KVM_DIRTY_LOG_MANUAL_PROTECT_ENABLE)
 			allowed_options = KVM_DIRTY_LOG_MANUAL_CAPS;
