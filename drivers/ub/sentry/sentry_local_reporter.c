@@ -814,8 +814,9 @@ static ssize_t proc_link_event_enable_show(struct file *file,
 					   char __user *buf,
 					   size_t count, loff_t *ppos)
 {
-	const char *value = READ_ONCE(g_link_event_enable) ? "on" : "off";
-	size_t len = READ_ONCE(g_link_event_enable) ? 2 : 3;
+	bool enabled = READ_ONCE(g_link_event_enable);
+	const char *value = enabled ? "on" : "off";
+	size_t len = enabled ? 2 : 3;
 
 	return simple_read_from_buffer(buf, count, ppos, value, len);
 }
