@@ -24,7 +24,9 @@ static ssize_t state_store(struct device *d, struct device_attribute *attr,
 	acpi_handle handle = adev->handle;
 	acpi_status status = AE_OK;
 
-	mutex_lock(&cache_lock);
+	if (!mutex_trylock(&cache_lock))
+		return -EBUSY;
+
 	switch (type) {
 	case STATE_ONLINE:
 		status = acpi_evaluate_object(handle, "_ON", NULL, NULL);
