@@ -442,3 +442,34 @@ int kvm_pvm_walk_shadow_s1(struct kvm_vcpu *vcpu, u64 va,
 
 	return ret;
 }
+
+bool kvm_pvm_s1_access_denied(struct kvm_vcpu *vcpu,
+			      struct kvm_s1_trans *result)
+{
+	bool denied;
+
+	if (kvm_vcpu_trap_is_iabt(vcpu))
+		denied = !(result->px || result->ux);
+	else if (kvm_is_write_fault(vcpu))
+		denied = !(result->pw || result->uw);
+	else
+		denied = !(result->pr || result->ur);
+
+	if (denied)
+		result->esr = pvm_s1_fault_esr(vcpu,
+					       pvm_s1_fsc(result->level, ESR_ELx_FSC_PERM));
+	return denied;
+}
+
+int kvm_pvm_inject_s1_fault(struct kvm_vcpu *vcpu, u32 fsc)
+{
+	unsigned long far = kvm_vcpu_get_hfar(vcpu);
+	u64 esr = pvm_s1_fault_esr(vcpu, fsc);
+
+	if (kvm_vcpu_trap_is_iabt(vcpu))
+		kvm_inject_pabt(vcpu, far);
+	else
+		kvm_inject_dabt(vcpu, far);
+	ctxt_sys_reg(&vcpu->arch.ctxt, ESR_EL1) = esr;
+	return 1;
+}

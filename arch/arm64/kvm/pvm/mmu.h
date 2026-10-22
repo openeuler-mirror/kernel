@@ -87,5 +87,8 @@ void kvm_pvm_vcpu_put_mmu(struct kvm_vcpu *vcpu);
 bool kvm_pvm_vcpu_mmu_enabled(struct kvm_vcpu *vcpu);
 int kvm_pvm_walk_shadow_s1(struct kvm_vcpu *vcpu, u64 va,
 			   struct kvm_s1_trans *result);
+bool kvm_pvm_s1_access_denied(struct kvm_vcpu *vcpu,
+			      struct kvm_s1_trans *result);
+int kvm_pvm_inject_s1_fault(struct kvm_vcpu *vcpu, u32 fsc);
 
 #endif /* __ARM64_KVM_PVM_MMU_H__ */
