@@ -848,6 +848,9 @@ void kvm_arch_vcpu_postcreate(struct kvm_vcpu *vcpu)
 
 void kvm_arch_vcpu_destroy(struct kvm_vcpu *vcpu)
 {
+	if (is_pvm_mode())
+		kvm_pvm_vcpu_put_mmu(vcpu);
+
 	kvm_mmu_free_memory_cache(&vcpu->arch.mmu_page_cache);
 	kvm_timer_vcpu_terminate(vcpu);
 	kvm_pmu_vcpu_destroy(vcpu);
@@ -1757,6 +1760,15 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 
 		if (ret > 0 && vcpu_is_rec(vcpu))
 			ret = kvm_rec_pre_enter(vcpu);
+
+		if (ret > 0 && is_pvm_mode()) {
+			int err = kvm_pvm_vcpu_select_mmu(vcpu, true);
+
+			if (err) {
+				ret = err == -EAGAIN ? 1 : err;
+				continue;
+			}
+		}
 
 		/*
 		 * Preparing the interrupts to be injected also
