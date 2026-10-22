@@ -10,9 +10,13 @@
 
 #include <kvm/arm_rv_timer.h>
 
+struct kvm_pvm_mmu;
+
 struct kvm_pvm {
 	struct kvm kvm;
 	struct rv_timer_vm_data timer_data;
+	struct kvm_pvm_mmu **suser_mmus;
+	size_t suser_mmus_size;
 };
 
 struct kvm_pvm_vcpu {

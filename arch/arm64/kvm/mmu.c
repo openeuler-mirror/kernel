@@ -24,6 +24,7 @@
 #include <asm/kvm_tmi.h>
 #endif
 #include "trace.h"
+#include "pvm/mmu.h"
 
 static struct kvm_pgtable *hyp_pgtable;
 static DEFINE_MUTEX(kvm_hyp_pgd_mutex);
@@ -901,17 +902,7 @@ static int kvm_init_ipa_range(struct kvm *kvm,
 	return 0;
 }
 
-/**
- * kvm_init_stage2_mmu - Initialise a S2 MMU structure
- * @kvm:	The pointer to the KVM structure
- * @mmu:	The pointer to the s2 MMU structure
- * @type:	The machine type of the virtual machine
- *
- * Allocates only the stage-2 HW PGD level table(s).
- * Note we don't need locking here as this is only called when the VM is
- * created, which can only be done once.
- */
-int kvm_init_stage2_mmu(struct kvm *kvm, struct kvm_s2_mmu *mmu, unsigned long type)
+static int __kvm_init_stage2_mmu(struct kvm *kvm, struct kvm_s2_mmu *mmu)
 {
 	int cpu, err;
 	struct kvm_pgtable *pgt;
@@ -920,10 +911,6 @@ int kvm_init_stage2_mmu(struct kvm *kvm, struct kvm_s2_mmu *mmu, unsigned long t
 		kvm_err("kvm_arch already initialized?\n");
 		return -EINVAL;
 	}
-
-	err = kvm_init_ipa_range(kvm, mmu, type);
-	if (err)
-		return err;
 
 	pgt = kzalloc(sizeof(*pgt), GFP_KERNEL_ACCOUNT);
 	if (!pgt)
@@ -957,6 +944,38 @@ out_destroy_pgtable:
 out_free_pgtable:
 	kfree(pgt);
 	return err;
+}
+
+/**
+ * kvm_init_stage2_mmu - Initialise a stage-2 MMU structure
+ * @kvm: The VM that owns the MMU
+ * @mmu: The stage-2 MMU structure
+ * @type: The machine type of the virtual machine
+ *
+ * Establish the VM-wide IPA configuration before allocating its root.
+ */
+int kvm_init_stage2_mmu(struct kvm *kvm, struct kvm_s2_mmu *mmu,
+			unsigned long type)
+{
+	int ret;
+
+	ret = kvm_init_ipa_range(kvm, mmu, type);
+	if (ret)
+		return ret;
+
+	return __kvm_init_stage2_mmu(kvm, mmu);
+}
+
+/**
+ * kvm_init_shadow_mmu - Allocate an additional shadow MMU root
+ * @kvm: The VM that owns the MMU
+ * @mmu: The shadow MMU structure
+ *
+ * Use the IPA configuration already established for the VM.
+ */
+int kvm_init_shadow_mmu(struct kvm *kvm, struct kvm_s2_mmu *mmu)
+{
+	return __kvm_init_stage2_mmu(kvm, mmu);
 }
 
 void kvm_uninit_stage2_mmu(struct kvm *kvm)
@@ -2226,6 +2245,12 @@ void kvm_arch_memslots_updated(struct kvm *kvm, u64 gen)
 
 void kvm_arch_flush_shadow_all(struct kvm *kvm)
 {
+	if (is_pvm_mode()) {
+		write_lock(&kvm->mmu_lock);
+		kvm_pvm_unmap_all(kvm, true);
+		write_unlock(&kvm->mmu_lock);
+		return;
+	}
 	kvm_uninit_stage2_mmu(kvm);
 }
 

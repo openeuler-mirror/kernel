@@ -49,6 +49,7 @@
 #include <kvm/arm_pmu.h>
 #include <kvm/arm_psci.h>
 
+#include "pvm/mmu.h"
 #include "pvm/pvm.h"
 
 static enum kvm_mode kvm_mode = KVM_MODE_DEFAULT;
@@ -544,6 +545,11 @@ void kvm_arch_destroy_vm(struct kvm *kvm)
 		pkvm_destroy_hyp_vm(kvm);
 
 	kvm_destroy_vcpus(kvm);
+
+	if (is_pvm_mode()) {
+		kvm_pvm_destroy_mmu(kvm);
+		kvm_uninit_stage2_mmu(kvm);
+	}
 
 	kvm_unshare_hyp(kvm, kvm + 1);
 
@@ -2116,6 +2122,9 @@ static int kvm_setup_vcpu(struct kvm_vcpu *vcpu)
 	 */
 	if (kvm_vcpu_has_pmu(vcpu) && !kvm->arch.arm_pmu)
 		ret = kvm_arm_set_default_pmu(kvm);
+
+	if (!ret && is_pvm_mode())
+		ret = kvm_pvm_init_vcpu_mmu(vcpu);
 
 	return ret;
 }
