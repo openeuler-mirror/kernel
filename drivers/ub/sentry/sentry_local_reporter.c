@@ -15,6 +15,7 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/mm.h>
+#include <linux/mutex.h>
 #include <linux/delay.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
@@ -695,6 +696,12 @@ static struct ub_share_port_ops sentry_share_port_ops = {
 static struct ub_entity *g_ubc_entities[MAX_UBC_NUM];
 static unsigned int g_ubc_count;
 
+/* Serializes g_ubc_entities/g_ubc_count/g_link_event_enable config against
+ * concurrent on/off writes and module exit. init/fini are only called under
+ * this lock, so the bare accesses to g_ubc_count below are race-free.
+ */
+static DEFINE_MUTEX(g_link_event_lock);
+
 static int sentry_link_event_init(void)
 {
 	struct ub_entity *uent;
@@ -781,6 +788,7 @@ static ssize_t proc_link_event_enable_write(struct file *file,
 	if (cnt > 0 && enable[cnt - 1] == '\n')
 		enable[cnt - 1] = '\0';
 
+	mutex_lock(&g_link_event_lock);
 	if (strcmp(enable, "on") == 0) {
 		if (g_ubc_count > 0) {
 			WRITE_ONCE(g_link_event_enable, true);
@@ -793,6 +801,7 @@ static ssize_t proc_link_event_enable_write(struct file *file,
 			} else {
 				WRITE_ONCE(g_link_event_enable, false);
 				pr_info("link event init failed\n");
+				mutex_unlock(&g_link_event_lock);
 				return -EINVAL;
 			}
 		}
@@ -804,8 +813,10 @@ static ssize_t proc_link_event_enable_write(struct file *file,
 		}
 	} else {
 		pr_err("invalid value for link_event\n");
+		mutex_unlock(&g_link_event_lock);
 		return -EINVAL;
 	}
+	mutex_unlock(&g_link_event_lock);
 	pr_info("%s link event report\n", READ_ONCE(g_link_event_enable) ? "enable" : "disable");
 	return cnt;
 }
@@ -898,12 +909,6 @@ remove_proc_dir:
  */
 static void __exit sentry_reporter_exit(void)
 {
-	WRITE_ONCE(g_link_event_enable, false);
-	if (g_ubc_count > 0) {
-		sentry_link_event_fini();
-		pr_info("link event fini successful\n");
-	}
-
 	unregister_acpi_power_notifier(&acpi_power_notifier);
 	pr_info("power notifier unregistered\n");
 
@@ -913,8 +918,19 @@ static void __exit sentry_reporter_exit(void)
 	ub_mem_ras_handler_unregister();
 	pr_info("ub_mem notifier unregistered\n");
 
+	/* Remove proc entries before tearing down link-event state so that no
+	 * new on/off write can start; the mutex drains any in-flight writer.
+	 */
 	proc_remove(g_sentry_reporter_proc_dir);
 	pr_info("proc file removed\n");
+
+	mutex_lock(&g_link_event_lock);
+	WRITE_ONCE(g_link_event_enable, false);
+	if (g_ubc_count > 0) {
+		sentry_link_event_fini();
+		pr_info("link event fini successful\n");
+	}
+	mutex_unlock(&g_link_event_lock);
 }
 
 module_init(sentry_reporter_init);
