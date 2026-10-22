@@ -1903,13 +1903,9 @@ query_rt_bw_end:
 	return ret;
 }
 
-static int ubctl_get_device(struct ubctl_dev *ucdev,
-			    struct ubctl_query_cmd_param *query_cmd_param,
-			    struct device **dev)
+static int ubctl_check_dev_name(struct ubctl_dev *ucdev,
+				struct ubctl_query_cmd_param *query_cmd_param)
 {
-	struct fwctl_pkt_in_dev_name *pkt_in;
-	struct device *adev;
-
 	if (!query_cmd_param || !query_cmd_param->in)
 		return -EINVAL;
 
@@ -1919,15 +1915,6 @@ static int ubctl_get_device(struct ubctl_dev *ucdev,
 		return -EINVAL;
 	}
 
-	pkt_in = (struct fwctl_pkt_in_dev_name *)query_cmd_param->in->data;
-
-	adev = ubctl_find_device_by_name(pkt_in->dev_name);
-	if (!adev || !adev->parent) {
-		ubctl_err(ucdev, "no such device or not supported %s.\n", pkt_in->dev_name);
-		return -ENXIO;
-	}
-	*dev = adev->parent;
-
 	return 0;
 }
 
@@ -1936,26 +1923,32 @@ static int ubctl_query_dscp(struct ubctl_dev *ucdev,
 			    struct ubctl_func_dispatch *query_func)
 {
 	struct ubase_dbg_dscp_vl_map map = {};
-	struct device *dev;
+	struct fwctl_pkt_in_dev_name *pkt_in;
 	u32 *out_data_size;
 	u32 out_size;
 	void *buf;
 	int ret;
 
-	ret = ubctl_get_device(ucdev, query_cmd_param, &dev);
+	ret = ubctl_check_dev_name(ucdev, query_cmd_param);
 	if (ret)
 		return ret;
 
+	pkt_in = (struct fwctl_pkt_in_dev_name *)query_cmd_param->in->data;
+	pkt_in->dev_name[UBCTL_MAX_DEV_NAME - 1] = '\0';
 	out_data_size = &query_cmd_param->out->data_size;
 	out_size = query_cmd_param->out_len;
 	if (out_size > sizeof(struct ubase_dbg_dscp_vl_map)) {
 		ubctl_err(ucdev, "data size(%u) is too large, out data size(%zu).\n", out_size,
 			  sizeof(struct ubase_dbg_dscp_vl_map));
-		return -EINVAL;
+		ret = -EINVAL;
+		return ret;
 	}
 
 	buf = (void *)query_cmd_param->out->data;
-	ret = ubase_dbg_get_dscp_vl_map(dev, &map);
+	ret = ubase_dbg_get_dscp_vl_map_by_name(pkt_in->dev_name, &map);
+	if (ret == -ENODEV)
+		ubctl_err(ucdev, "no such device or not supported %s.\n", pkt_in->dev_name);
+
 	if (ret) {
 		ubctl_err(ucdev, "failed to get dscp vl map, ret = %d.\n", ret);
 		return ret;
@@ -1963,7 +1956,6 @@ static int ubctl_query_dscp(struct ubctl_dev *ucdev,
 
 	*out_data_size = out_size;
 	memcpy(buf, &map, *out_data_size);
-
 	return ret;
 }
 
@@ -1971,27 +1963,33 @@ static int ubctl_query_sl_vl_map(struct ubctl_dev *ucdev,
 				 struct ubctl_query_cmd_param *query_cmd_param,
 				 struct ubctl_func_dispatch *query_func)
 {
+	struct fwctl_pkt_in_dev_name *pkt_in;
 	struct ubase_dbg_sl_vl_map map = {};
-	struct device *dev;
 	u32 *out_data_size;
 	u32 out_size;
 	void *buf;
 	int ret;
 
-	ret = ubctl_get_device(ucdev, query_cmd_param, &dev);
+	ret = ubctl_check_dev_name(ucdev, query_cmd_param);
 	if (ret)
 		return ret;
 
+	pkt_in = (struct fwctl_pkt_in_dev_name *)query_cmd_param->in->data;
+	pkt_in->dev_name[UBCTL_MAX_DEV_NAME - 1] = '\0';
 	out_data_size = &query_cmd_param->out->data_size;
 	out_size = query_cmd_param->out_len;
 	if (out_size > sizeof(struct ubase_dbg_sl_vl_map)) {
 		ubctl_err(ucdev, "data size(%u) is too large, out data size(%zu).\n", out_size,
 			  sizeof(struct ubase_dbg_sl_vl_map));
-		return -EINVAL;
+		ret = -EINVAL;
+		return ret;
 	}
 
 	buf = (void *)query_cmd_param->out->data;
-	ret = ubase_dbg_get_sl_vl_map(dev, &map);
+	ret = ubase_dbg_get_sl_vl_map_by_name(pkt_in->dev_name, &map);
+	if (ret == -ENODEV)
+		ubctl_err(ucdev, "no such device or not supported %s.\n", pkt_in->dev_name);
+
 	if (ret) {
 		ubctl_err(ucdev, "failed to get sl vl map, ret = %d.\n", ret);
 		return ret;
@@ -1999,7 +1997,6 @@ static int ubctl_query_sl_vl_map(struct ubctl_dev *ucdev,
 
 	*out_data_size = out_size;
 	memcpy(buf, &map, *out_data_size);
-
 	return ret;
 }
 
@@ -2007,27 +2004,33 @@ static int ubctl_query_caps_info(struct ubctl_dev *ucdev,
 				 struct ubctl_query_cmd_param *query_cmd_param,
 				 struct ubctl_func_dispatch *query_func)
 {
+	struct fwctl_pkt_in_dev_name *pkt_in;
 	struct ubase_dbg_caps_info info = {};
-	struct device *dev;
 	u32 *out_data_size;
 	u32 out_size;
 	void *buf;
 	int ret;
 
-	ret = ubctl_get_device(ucdev, query_cmd_param, &dev);
+	ret = ubctl_check_dev_name(ucdev, query_cmd_param);
 	if (ret)
 		return ret;
 
+	pkt_in = (struct fwctl_pkt_in_dev_name *)query_cmd_param->in->data;
+	pkt_in->dev_name[UBCTL_MAX_DEV_NAME - 1] = '\0';
 	out_data_size = &query_cmd_param->out->data_size;
 	out_size = query_cmd_param->out_len;
 	if (out_size > sizeof(struct ubase_dbg_caps_info)) {
 		ubctl_err(ucdev, "data size(%u) is too large, out data size(%zu).\n", out_size,
 			  sizeof(struct ubase_dbg_caps_info));
-		return -EINVAL;
+		ret = -EINVAL;
+		return ret;
 	}
-	buf = (void *)query_cmd_param->out->data;
 
-	ret = ubase_dbg_get_caps_info(dev, &info);
+	buf = (void *)query_cmd_param->out->data;
+	ret = ubase_dbg_get_caps_info_by_name(pkt_in->dev_name, &info);
+	if (ret == -ENODEV)
+		ubctl_err(ucdev, "no such device or not supported %s.\n", pkt_in->dev_name);
+
 	if (ret) {
 		ubctl_err(ucdev, "failed to get caps info, ret = %d.\n", ret);
 		return ret;
@@ -2035,7 +2038,6 @@ static int ubctl_query_caps_info(struct ubctl_dev *ucdev,
 
 	*out_data_size = out_size;
 	memcpy(buf, &info, *out_data_size);
-
 	return ret;
 }
 
@@ -2043,24 +2045,30 @@ static int ubctl_query_aeqc(struct ubctl_dev *ucdev,
 			    struct ubctl_query_cmd_param *query_cmd_param,
 			    struct ubctl_func_dispatch *query_func)
 {
-	struct device *dev;
+	struct fwctl_pkt_in_dev_name *pkt_in;
 	u32 buf_size;
 	void *buf;
 	int ret;
 
-	ret = ubctl_get_device(ucdev, query_cmd_param, &dev);
+	ret = ubctl_check_dev_name(ucdev, query_cmd_param);
 	if (ret)
 		return ret;
 
+	pkt_in = (struct fwctl_pkt_in_dev_name *)query_cmd_param->in->data;
+	pkt_in->dev_name[UBCTL_MAX_DEV_NAME - 1] = '\0';
 	buf_size = query_cmd_param->out_len;
 	buf = (void *)query_cmd_param->out->data;
 
-	ret = ubase_dbg_get_aeq_ctx_hw(dev, buf, &buf_size);
-	if (ret)
+	ret = ubase_dbg_get_aeq_ctx_hw_by_name(pkt_in->dev_name, buf, &buf_size);
+	if (ret == -ENODEV)
+		ubctl_err(ucdev, "no such device or not supported %s.\n", pkt_in->dev_name);
+
+	if (ret) {
 		ubctl_err(ucdev, "failed to get aeq ctx, ret = %d.\n", ret);
+		return ret;
+	}
 
 	query_cmd_param->out->data_size = buf_size;
-
 	return ret;
 }
 
@@ -2068,24 +2076,30 @@ static int ubctl_query_ceqc(struct ubctl_dev *ucdev,
 			    struct ubctl_query_cmd_param *query_cmd_param,
 			    struct ubctl_func_dispatch *query_func)
 {
-	struct device *dev;
+	struct fwctl_pkt_in_dev_name *pkt_in;
 	u32 buf_size;
 	void *buf;
 	int ret;
 
-	ret = ubctl_get_device(ucdev, query_cmd_param, &dev);
+	ret = ubctl_check_dev_name(ucdev, query_cmd_param);
 	if (ret)
 		return ret;
 
+	pkt_in = (struct fwctl_pkt_in_dev_name *)query_cmd_param->in->data;
+	pkt_in->dev_name[UBCTL_MAX_DEV_NAME - 1] = '\0';
 	buf_size = query_cmd_param->out_len;
 	buf = (void *)query_cmd_param->out->data;
 
-	ret = ubase_dbg_get_ceq_ctx_hw(dev, buf, &buf_size);
-	if (ret)
+	ret = ubase_dbg_get_ceq_ctx_hw_by_name(pkt_in->dev_name, buf, &buf_size);
+	if (ret == -ENODEV)
+		ubctl_err(ucdev, "no such device or not supported %s.\n", pkt_in->dev_name);
+
+	if (ret) {
 		ubctl_err(ucdev, "failed to get ceq ctx, ret = %d.\n", ret);
+		return ret;
+	}
 
 	query_cmd_param->out->data_size = buf_size;
-
 	return ret;
 }
 
