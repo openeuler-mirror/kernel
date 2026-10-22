@@ -3553,8 +3553,11 @@ static __init int kvm_arm_init(void)
 	int err;
 	bool in_hyp_mode;
 
-	if (kvm_get_mode() == KVM_MODE_PVM)
+	if (kvm_get_mode() == KVM_MODE_PVM) {
 		kvm_arm_init_pvm();
+		if (is_hyp_mode_available())
+			kvm_mode = KVM_MODE_DEFAULT;
+	}
 
 	if (!is_hyp_mode_available() && !is_pvm_mode()) {
 		kvm_info("HYP mode not available\n");
