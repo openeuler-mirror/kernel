@@ -4,7 +4,7 @@ menu "Hisilicon SoC drivers"
 	depends on ARCH_HISI || COMPILE_TEST
 
 config HISI_HBMDEV
-	tristate "add extra support for hbm memory device"
+	bool "add extra support for hbm memory device"
 	depends on ACPI_HOTPLUG_MEMORY && ARCH_HISI
 	select ACPI_CONTAINER
 	help
