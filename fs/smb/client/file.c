@@ -2797,8 +2797,14 @@ static int cifs_partialpagewrite(struct page *page, unsigned from, unsigned to)
 	}
 
 	/* check to make sure that we are not extending the file */
-	if (mapping->host->i_size - offset < (loff_t)to)
+	if (mapping->host->i_size - offset < (loff_t)to) {
 		to = (unsigned)(mapping->host->i_size - offset);
+		/*
+		 * Zero the post-EOF tail to avoid later extension expose
+		 * the stale bytes.
+		 */
+		zero_user_segment(page, to, PAGE_SIZE);
+	}
 
 	rc = cifs_get_writable_file(CIFS_I(mapping->host), FIND_WR_ANY,
 				    &open_file);
@@ -2845,6 +2851,7 @@ static void cifs_extend_writeback(struct address_space *mapping,
 	size_t len;
 	bool stop = true;
 	unsigned int i;
+	unsigned long long fpos;
 
 	folio_batch_init(&batch);
 
@@ -2932,6 +2939,13 @@ static void cifs_extend_writeback(struct address_space *mapping,
 
 		for (i = 0; i < folio_batch_count(&batch); i++) {
 			folio = batch.folios[i];
+			fpos = folio_pos(folio);
+
+			/* This folio straddles i_size: zero its tail. */
+			if (fpos < i_size && i_size - fpos < folio_size(folio))
+				folio_zero_segment(folio, i_size - fpos,
+						   folio_size(folio));
+
 			/* The folio should be locked, dirty and not undergoing
 			 * writeback from the loop above.
 			 */
@@ -3037,6 +3051,13 @@ static ssize_t cifs_write_back_from_locked_folio(struct address_space *mapping,
 		}
 	}
 	len = min_t(unsigned long long, len, i_size - start);
+
+	/*
+	 * If this folio straddles i_size, zero its post-EOF
+	 * tail to avoid later extension expose the stale bytes.
+	 */
+	if (start < i_size && len < folio_size(folio))
+		folio_zero_segment(folio, len, folio_size(folio));
 
 	/* We now have a contiguous set of dirty pages, each with writeback
 	 * set; the first page is still locked at this point, but all the rest

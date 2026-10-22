@@ -2919,15 +2919,11 @@ int cifs_truncate_page(struct address_space *mapping, loff_t from)
  * that a concurrent extending write can't lose data.
  *
  * For callers that hold i_rwsem exclusively across the whole resize and
- * have already updated i_size to @to, no genuine concurrent buffered writer
- * can be racing, a lockless stat() adopting a server-confirmed size mid-resize
- * has no data behind it and never dirties the folio, so it can't fool this
- * check into skipping the zeroing.
- *
- * Do not use the folio's dirty state as the staleness criterion here: unlike
- * netfs writeback, this tree's cifs writeback does not zero the part of a
- * folio beyond i_size, so a folio cleaned by the setattr-side
- * filemap_write_and_wait() can still hold stale bytes.
+ * have already updated i_size to @to, staleness is decided from the folio's
+ * dirty state instead: since no genuine concurrent buffered writer can be
+ * racing, a lockless stat() adopting a server-confirmed size mid-resize has
+ * no data behind it and never dirties the folio, so it can't fool this check
+ * into skipping the zeroing.
  *
  * pagecache_isize_extended() can't be reused here: it is keyed on a
  * sub-page block size (a no-op when the block size is >= PAGE_SIZE, as on
@@ -2954,7 +2950,7 @@ static void cifs_clear_stale_post_isize(struct inode *inode,
 	if (folio_mkclean(folio))
 		folio_mark_dirty(folio);
 
-	if (folio_test_uptodate(folio)) {
+	if (folio_test_uptodate(folio) && folio_test_dirty(folio)) {
 		unsigned long long fpos = folio_pos(folio);
 
 		if (from < to && from < fpos + folio_size(folio)) {
