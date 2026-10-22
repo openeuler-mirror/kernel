@@ -223,7 +223,7 @@ static int __ubase_config_tm_vl_sch(struct ubase_dev *udev, u16 vl_bitmap,
 
 	ret = __ubase_cmd_send_in(udev, &in);
 	if (ret && ret != -EPERM)
-		ubase_err(udev, "failed to config tm vl sch, ret = %d", ret);
+		ubase_err(udev, "failed to config tm vl sch, ret = %d.\n", ret);
 
 	return ret;
 }
@@ -609,7 +609,7 @@ static void ubase_gather_udma_req_resp_vl(struct ubase_dev *udev, u8 *req_vl,
 			if (req_vl[i] == dev_caps->req_vl[j]) {
 				dev_caps->resp_vl[j] = req_vl[i] + resp_vl_off;
 				ubase_warn(udev,
-					   "vl %u has been allocated to other traffic type",
+					   "vl %u has been allocated to other traffic type.\n",
 					   req_vl[i]);
 				break;
 			}

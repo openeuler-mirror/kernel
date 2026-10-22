@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -175,8 +175,10 @@ bool unic_comm_sync_addr_table(struct unic_vport *vport,
 			break;
 		case UNIC_COMM_ADDR_TO_ADD:
 			new_node = kzalloc(sizeof(*new_node), GFP_ATOMIC);
-			if (!new_node)
+			if (!new_node) {
+				all_added = false;
 				goto stop_traverse;
+			}
 			memcpy(new_node->unic_addr, addr_node->unic_addr,
 			       UNIC_ADDR_LEN);
 			new_node->state = addr_node->state;

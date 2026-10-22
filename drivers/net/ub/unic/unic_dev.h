@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -244,6 +244,7 @@ struct unic_vlan_tbl {
 	unsigned long		vlan_del_fail_bmap[BITS_TO_LONGS(VLAN_N_VID)];
 	struct list_head	vlan_list; /* Store vlan table */
 	spinlock_t		vlan_lock; /* protect vlan list */
+	struct mutex		vlan_cmd_mutex; /* serialize vlan table & hw cmd */
 };
 
 struct unic_vlan_cfg {

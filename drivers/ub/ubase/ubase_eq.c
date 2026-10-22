@@ -530,9 +530,15 @@ static int ubase_alloc_eq_buf(struct ubase_dev *udev, struct ubase_eq *eq)
 
 static void ubase_free_eq_buf(struct ubase_dev *udev, struct ubase_eq *eq)
 {
+	if (!eq->addr.addr || !eq->addr.dma_addr)
+		return;
+
 	ubase_free_buf(udev, eq->addr.size, eq->addr.addr, eq->addr.dma_addr,
 		       eq->addr.page);
+
 	eq->addr.addr = NULL;
+	eq->addr.dma_addr = 0;
+	eq->addr.page = NULL;
 }
 
 static int ubase_fill_eq_attribute(struct ubase_dev *udev, struct ubase_eq *eq,

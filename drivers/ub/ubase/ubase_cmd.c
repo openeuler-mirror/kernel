@@ -779,13 +779,14 @@ static void ubase_cmd_setup_desc_by_inbuf(struct ubase_dev *udev,
 					  struct ubase_cmdq_desc *desc,
 					  u16 num)
 {
+#define UBASE_CMDQ_DESC_MEMCPY_COMMENT					\
+	"the size of the desc is the larger value between in and out."	\
+	"the data_size is copied and filled into the subsequent desc."
+
 	ubase_cmd_setup_basic_desc(&desc[0], in->opcode, in->is_read, num);
-	if (in->data) {
-		/* the size of the desc is the larger value between in and out.
-		 * the data_size is copied and filled into the subsequent desc.
-		 */
-		memcpy(desc->data, in->data, in->data_size);
-	}
+	if (in->data)
+		unsafe_memcpy(desc->data, in->data, in->data_size,
+			      UBASE_CMDQ_DESC_MEMCPY_COMMENT);
 }
 
 static void ubase_cmd_setup_desc_by_outbuf(struct ubase_dev *udev,

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -94,7 +94,8 @@ TRACE_EVENT(unic_tx_sqe,
 				memcpy(__entry->sqebb, &sq->sqebb[__entry->real_pi],
 				       (sqebb_mask - __entry->real_pi + 1) *
 				       sizeof(struct unic_sqebb));
-				memcpy(&__entry->sqebb[sqebb_mask - __entry->real_pi + 1],
+				memcpy(&__entry->sqebb[trace_sqebb_num(sqebb_mask -
+				       __entry->real_pi + 1)],
 				       &sq->sqebb[0],
 				       (__entry->real_pi + sqebb_num - 1 - sqebb_mask) *
 				       sizeof(struct unic_sqebb));

@@ -270,6 +270,7 @@ static int ubase_ubus_probe(struct ub_entity *ue,
 	udev = devm_kzalloc(&ue->dev, sizeof(*udev), GFP_KERNEL);
 	if (!udev) {
 		dev_err(&ue->dev, "failed to alloc ubase dev.\n");
+		ub_unset_user_info(ue);
 		return -ENOMEM;
 	}
 
@@ -279,6 +280,7 @@ static int ubase_ubus_probe(struct ub_entity *ue,
 		ubase_err(udev,
 			  "failed to alloc dev id(%d).\n", udev->dev_id);
 		devm_kfree(&ue->dev, udev);
+		ub_unset_user_info(ue);
 		return udev->dev_id;
 	}
 

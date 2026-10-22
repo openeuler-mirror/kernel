@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -330,11 +330,10 @@ static void unic_lb_poll_tx(struct unic_dev *unic_dev, struct sk_buff *skb)
 	pre_pkt = sq->stats.packets;
 	pre_byte = sq->stats.bytes;
 
+	/* The free skb process is executed within poll tx */
 	unic_poll_tx(sq, 0);
-	if (sq->pi != sq->ci) {
+	if (sq->pi != sq->ci)
 		unic_err(unic_dev, "cqe error, sp pi doesn't match sp ci.\n");
-		kfree_skb(skb);
-	}
 
 	sq->stats.packets = pre_pkt;
 	sq->stats.bytes = pre_byte;
@@ -364,7 +363,9 @@ static int unic_lb_run_test(struct net_device *ndev, int loop_mode)
 	 * 1. When the chip reports cqe normally, skb is released through
 	 *    kfree_skb and napi_consume_skb in success situation.
 	 * 2. When the chip reports cqe abnormally, pi and ci are not equal,
-	 *    skb is released through kfree_skb twice in success situation.
+	 *    skb is released through kfree_skb once in success situation.
+	 *    If the cqe is reported at a later time, a second kfree_skb is
+	 *    performed during the tx poll process.
 	 * 3. In dropped situation, pi and ci are equal, skb is released through
 	 *    kfree_skb and dev_kfree_skb_any.
 	 * 4. In busy situation, skb is released through kfree_skb twice.
