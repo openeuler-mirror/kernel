@@ -10,6 +10,7 @@
 #include <linux/bitfield.h>
 #include <asm/cpufeature.h>
 #include <asm/kvm_pgtable.h>
+#include <asm/kvm_pvm.h>
 #include <asm/stage2_pgtable.h>
 
 
@@ -1553,6 +1554,11 @@ int __kvm_pgtable_stage2_init(struct kvm_pgtable *pgt, struct kvm_s2_mmu *mmu,
 	u32 ia_bits = VTCR_EL2_IPA(vtcr);
 	u32 sl0 = FIELD_GET(VTCR_EL2_SL0_MASK, vtcr);
 	u32 start_level = VTCR_EL2_TGRAN_SL0_BASE - sl0;
+
+	if (is_pvm_mode()) {
+		ia_bits = PVM_SHADOW_S1_VA_BITS;
+		start_level = 0;
+	}
 
 	pgd_sz = kvm_pgd_pages(ia_bits, start_level) * PAGE_SIZE;
 	pgt->pgd = (kvm_pteref_t)mm_ops->zalloc_pages_exact(pgd_sz);

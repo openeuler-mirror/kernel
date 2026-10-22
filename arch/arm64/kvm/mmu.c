@@ -14,6 +14,7 @@
 #include <asm/cacheflush.h>
 #include <asm/kvm_arm.h>
 #include <asm/kvm_mmu.h>
+#include <asm/kvm_pvm.h>
 #include <asm/kvm_pgtable.h>
 #include <asm/kvm_ras.h>
 #include <asm/kvm_asm.h>
@@ -885,7 +886,7 @@ static int kvm_init_ipa_range(struct kvm *kvm,
 		    phys_shift < ARM64_MIN_PARANGE_BITS)
 			return -EINVAL;
 	} else {
-		phys_shift = KVM_PHYS_SHIFT;
+		phys_shift = is_pvm_mode() ? KVM_PVM_IPA_BITS : KVM_PHYS_SHIFT;
 		if (phys_shift > kvm_ipa_limit) {
 			pr_warn_once("%s using unsupported default IPA limit, upgrade your VMM\n",
 				     current->comm);
