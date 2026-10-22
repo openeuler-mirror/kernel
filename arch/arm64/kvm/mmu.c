@@ -1048,9 +1048,13 @@ void stage2_unmap_vm(struct kvm *kvm)
 	mmap_read_lock(current->mm);
 	write_lock(&kvm->mmu_lock);
 
-	slots = kvm_memslots(kvm);
-	kvm_for_each_memslot(memslot, bkt, slots)
-		stage2_unmap_memslot(kvm, memslot);
+	if (is_pvm_mode()) {
+		kvm_pvm_unmap_all(kvm, true);
+	} else {
+		slots = kvm_memslots(kvm);
+		kvm_for_each_memslot(memslot, bkt, slots)
+			stage2_unmap_memslot(kvm, memslot);
+	}
 
 	write_unlock(&kvm->mmu_lock);
 	mmap_read_unlock(current->mm);
@@ -2083,6 +2087,11 @@ bool kvm_unmap_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range)
 	if (!kvm->arch.mmu.pgt)
 		return false;
 
+	if (is_pvm_mode()) {
+		kvm_pvm_unmap_all(kvm, range->may_block);
+		return false;
+	}
+
 	__unmap_stage2_range(&kvm->arch.mmu, range->start << PAGE_SHIFT,
 			     (range->end - range->start) << PAGE_SHIFT,
 			     range->may_block,
@@ -2097,6 +2106,11 @@ bool kvm_set_spte_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 
 	if (!kvm->arch.mmu.pgt)
 		return false;
+
+	if (is_pvm_mode()) {
+		kvm_pvm_unmap_all(kvm, false);
+		return false;
+	}
 
 	WARN_ON(range->end - range->start != 1);
 
@@ -2414,7 +2428,10 @@ void kvm_arch_flush_shadow_memslot(struct kvm *kvm,
 	phys_addr_t size = slot->npages << PAGE_SHIFT;
 
 	write_lock(&kvm->mmu_lock);
-	unmap_stage2_range(&kvm->arch.mmu, gpa, size, true);
+	if (is_pvm_mode())
+		kvm_pvm_unmap_all(kvm, true);
+	else
+		unmap_stage2_range(&kvm->arch.mmu, gpa, size, true);
 	write_unlock(&kvm->mmu_lock);
 }
 
