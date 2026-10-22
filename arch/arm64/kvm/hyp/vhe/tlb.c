@@ -9,6 +9,7 @@
 #include <asm/kvm_hyp.h>
 #include <asm/kvm_mmu.h>
 #include <asm/tlbflush.h>
+#include <asm/virt.h>
 
 struct tlb_inv_context {
 	unsigned long	flags;
@@ -79,10 +80,39 @@ static void __tlb_switch_to_host(struct tlb_inv_context *cxt)
 	local_irq_restore(cxt->flags);
 }
 
+static void pvm_tlb_flush_all(void)
+{
+	dsb(ishst);
+	__tlbi(vmalle1is);
+	dsb(ish);
+	isb();
+}
+
+/*
+ * Permission relaxation only widens access and needs no break-before-make,
+ * so the invalidation has to reach this CPU only: a PE that still holds
+ * the old entry merely takes a permission fault and retries after the
+ * grant.  Stay local and target the VA being relaxed instead of the whole
+ * EL1 TLB.  The shadow ASID is not tracked yet, so use the all-ASID form;
+ * the VA alone already bounds the invalidation.
+ */
+static void pvm_tlb_flush_ipa_nsh(phys_addr_t ipa)
+{
+	dsb(nshst);
+	__tlbi(vaae1, __TLBI_VADDR(ipa, 0));
+	dsb(nsh);
+	isb();
+}
+
 void __kvm_tlb_flush_vmid_ipa(struct kvm_s2_mmu *mmu,
 			      phys_addr_t ipa, int level)
 {
 	struct tlb_inv_context cxt;
+
+	if (is_pvm_mode()) {
+		pvm_tlb_flush_all();
+		return;
+	}
 
 	dsb(ishst);
 
@@ -115,6 +145,11 @@ void __kvm_tlb_flush_vmid_ipa_nsh(struct kvm_s2_mmu *mmu,
 				  phys_addr_t ipa, int level)
 {
 	struct tlb_inv_context cxt;
+
+	if (is_pvm_mode()) {
+		pvm_tlb_flush_ipa_nsh(ipa);
+		return;
+	}
 
 	dsb(nshst);
 
@@ -149,6 +184,11 @@ void __kvm_tlb_flush_vmid_range(struct kvm_s2_mmu *mmu,
 	struct tlb_inv_context cxt;
 	unsigned long stride;
 
+	if (is_pvm_mode()) {
+		pvm_tlb_flush_all();
+		return;
+	}
+
 	/*
 	 * Since the range of addresses may not be mapped at
 	 * the same level, assume the worst case as PAGE_SIZE
@@ -175,6 +215,11 @@ void __kvm_tlb_flush_vmid(struct kvm_s2_mmu *mmu)
 {
 	struct tlb_inv_context cxt;
 
+	if (is_pvm_mode()) {
+		pvm_tlb_flush_all();
+		return;
+	}
+
 	dsb(ishst);
 
 	/* Switch to requested VMID */
@@ -191,6 +236,14 @@ void __kvm_flush_cpu_context(struct kvm_s2_mmu *mmu)
 {
 	struct tlb_inv_context cxt;
 
+	if (is_pvm_mode()) {
+		pvm_tlb_flush_all();
+		asm volatile("ic iallu");
+		dsb(ish);
+		isb();
+		return;
+	}
+
 	/* Switch to requested VMID */
 	__tlb_switch_to_guest(mmu, &cxt);
 
@@ -204,6 +257,11 @@ void __kvm_flush_cpu_context(struct kvm_s2_mmu *mmu)
 
 void __kvm_flush_vm_context(void)
 {
+	if (is_pvm_mode()) {
+		pvm_tlb_flush_all();
+		return;
+	}
+
 	dsb(ishst);
 	__tlbi(alle1is);
 	dsb(ish);
