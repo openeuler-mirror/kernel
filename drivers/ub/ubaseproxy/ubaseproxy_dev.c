@@ -38,11 +38,11 @@ static void ubaseproxy_parse_ue_res(struct ubaseproxy_dev *udev,
 	ue_caps->jfc_max_cnt = le32_to_cpu(resp->jfc_max_cnt);
 	if (jfc_depth < UBASEPROXY_JFC_DEPTH_SHIFT_MIN) {
 		ubaseproxy_warn(udev, "jfc depth(%u) is less than %lu.\n",
-			       jfc_depth, UBASEPROXY_JFC_DEPTH_SHIFT_MIN);
+				jfc_depth, UBASEPROXY_JFC_DEPTH_SHIFT_MIN);
 		jfc_depth = UBASEPROXY_JFC_DEPTH_SHIFT_MIN;
 	} else if (jfc_depth > UBASEPROXY_JFC_DEPTH_SHIFT_MAX) {
 		ubaseproxy_warn(udev, "jfc depth(%u) is more than %lu.\n",
-			       jfc_depth, UBASEPROXY_JFC_DEPTH_SHIFT_MAX);
+				jfc_depth, UBASEPROXY_JFC_DEPTH_SHIFT_MAX);
 		jfc_depth = UBASEPROXY_JFC_DEPTH_SHIFT_MAX;
 	}
 	ue_caps->jfc_depth = jfc_depth;
@@ -109,7 +109,7 @@ int ubaseproxy_dev_init(struct ubaseproxy_dev *udev)
 		if (ubaseproxy_dev_func_map[i].init_func) {
 			ret = ubaseproxy_dev_func_map[i].init_func(udev);
 			if (ret) {
-				ubaseproxy_err(udev, "failed to %s, ret = %d\n",
+				ubaseproxy_err(udev, "failed to %s, ret = %d.\n",
 					       ubaseproxy_dev_func_map[i].err_msg, ret);
 				goto err_init;
 			}

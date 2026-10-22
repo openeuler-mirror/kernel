@@ -727,18 +727,22 @@ static int ubase_handle_activate_resp(void *dev, void *data, u32 len)
 	ubase_dbg(udev, "recv activate resp.\n");
 
 	msn = le16_to_cpu(resp->msn);
+	mutex_lock(&udev->act_ctx.lock);
 	self = &udev->act_ctx.self;
 	if (self->wait_msn == msn) {
 		self->result = -resp->result;
+		mutex_unlock(&udev->act_ctx.lock);
 		complete(&self->activate_done);
 		return 0;
 	}
 	other = &udev->act_ctx.other;
 	if (other->wait_msn == msn) {
 		other->result = -resp->result;
+		mutex_unlock(&udev->act_ctx.lock);
 		complete(&other->activate_done);
 		return 0;
 	}
+	mutex_unlock(&udev->act_ctx.lock);
 
 	ubase_warn_rl(udev, err_msn_in_act_resp,
 		      "unknown msn in activate resp, msn = %u, self msn = %u, other msn = %u.\n",
@@ -1999,19 +2003,8 @@ static int ubase_wait_activate_done(struct ubase_dev *udev, u16 bus_ue_id,
 	return info->result;
 }
 
-static void ubase_record_msn(struct ubase_dev *udev, u16 bus_ue_id, u16 msn)
-{
-	struct ub_entity *ue = container_of(udev->dev, struct ub_entity, dev);
-	struct ubase_act_info *info;
-
-	info = (ue->entity_idx == bus_ue_id) ? &udev->act_ctx.self :
-		&udev->act_ctx.other;
-
-	info->wait_msn = msn;
-	reinit_completion(&info->activate_done);
-}
-
-static void ubase_alloc_msn(struct ubase_dev *udev, u16 *msn)
+static void ubase_alloc_msn(struct ubase_dev *udev, struct ubase_act_info *info,
+			    u16 *msn)
 {
 	struct ubase_act_ctx *ctx = &udev->act_ctx;
 
@@ -2023,6 +2016,8 @@ static void ubase_alloc_msn(struct ubase_dev *udev, u16 *msn)
 	++ctx->msn;
 	if (!ctx->msn)
 		ctx->msn = 1;
+
+	info->wait_msn = ctx->msn;
 	*msn = ctx->msn;
 	mutex_unlock(&ctx->lock);
 }
@@ -2077,9 +2072,9 @@ static int ubase_send_activate_dev_req(struct ubase_dev *udev, bool activate,
 	req.activate = activate ? 1 : 0;
 	req.bus_ue_id = cpu_to_le16(bus_ue_id);
 	req.shutdown = ubase_shutting_down(udev);
-	ubase_alloc_msn(udev, &msn);
+	ubase_alloc_msn(udev, info, &msn);
 	req.msn = cpu_to_le16(msn);
-	ubase_record_msn(udev, bus_ue_id, msn);
+	reinit_completion(&info->activate_done);
 
 	ubase_fill_inout_buf(&in, UBASE_OPC_ACTIVATE_REQ, false, sizeof(req),
 			     &req);

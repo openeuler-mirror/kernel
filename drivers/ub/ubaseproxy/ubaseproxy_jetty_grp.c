@@ -33,7 +33,8 @@ ubaseproxy_check_jetty_grp_mbx_header(struct ubaseproxy_dev *udev,
 static int
 ubaseproxy_bind_jettys_to_jetty_grp(struct ubaseproxy_dev *udev,
 				    struct ubase_proxy_req_msg *req,
-				    u16 start_jetty_id, u32 valid)
+				    u16 start_jetty_id,
+				    unsigned long valid)
 {
 	u16 mbx_ue_id = le16_to_cpu(req->mbx_ue_id);
 	struct ubaseproxy_ue_ctx_xarray *ue_ctx_xa;
@@ -43,8 +44,8 @@ ubaseproxy_bind_jettys_to_jetty_grp(struct ubaseproxy_dev *udev,
 
 	ue_ctx_xa = ubaseproxy_get_ue_ctx_xa(udev, mbx_ue_id);
 
-	for (i = 0; i < fls(valid); i++) {
-		if (!test_bit(i, (unsigned long *)&valid))
+	for (i = 0; i < fls_long(valid); i++) {
+		if (!test_bit(i, &valid))
 			continue;
 
 		jetty_id = start_jetty_id + i;
@@ -58,7 +59,7 @@ ubaseproxy_bind_jettys_to_jetty_grp(struct ubaseproxy_dev *udev,
 
 err_bind:
 	for (i -= 1; i >= 0; i--) {
-		if (!test_bit(i, (unsigned long *)&valid))
+		if (!test_bit(i, &valid))
 			continue;
 
 		jetty_id = start_jetty_id + i;
@@ -72,7 +73,8 @@ err_bind:
 static void
 ubaseproxy_unbind_jettys_from_jetty_grp(struct ubaseproxy_dev *udev,
 					struct ubase_proxy_req_msg *req,
-					u16 start_jetty_id, u32 valid)
+					u16 start_jetty_id,
+					unsigned long valid)
 {
 	u16 mbx_ue_id = le16_to_cpu(req->mbx_ue_id);
 	struct ubaseproxy_ue_ctx_xarray *ue_ctx_xa;
@@ -82,8 +84,8 @@ ubaseproxy_unbind_jettys_from_jetty_grp(struct ubaseproxy_dev *udev,
 
 	ue_ctx_xa = ubaseproxy_get_ue_ctx_xa(udev, mbx_ue_id);
 
-	for (i = 0; i < fls(valid); i++) {
-		if (!test_bit(i, (unsigned long *)&valid))
+	for (i = 0; i < fls_long(valid); i++) {
+		if (!test_bit(i, &valid))
 			continue;
 
 		jetty_id = start_jetty_id + i;
@@ -290,13 +292,15 @@ ubaseproxy_update_jetty_grp_bindings(struct ubaseproxy_dev *udev,
 {
 	u16 mbx_ue_id = le16_to_cpu(req->mbx_ue_id), jtgn = req->tag;
 	struct ubaseproxy_ue_ctx_xarray *ue_ctx_xa;
+	unsigned long to_unbind = info->to_unbind;
+	unsigned long to_bind = info->to_bind;
 	int ret, i, j;
 	u32 jetty_id;
 
 	ue_ctx_xa = ubaseproxy_get_ue_ctx_xa(udev, mbx_ue_id);
 
-	for (i = 0; i < fls(info->to_bind); i++) {
-		if (!test_bit(i, (unsigned long *)&info->to_bind))
+	for (i = 0; i < fls_long(to_bind); i++) {
+		if (!test_bit(i, &to_bind))
 			continue;
 
 		jetty_id = jtg->start_jetty_id + i;
@@ -306,8 +310,8 @@ ubaseproxy_update_jetty_grp_bindings(struct ubaseproxy_dev *udev,
 			goto err_bind;
 	}
 
-	for (j = 0; j < fls(info->to_unbind); j++) {
-		if (!test_bit(j, (unsigned long *)&info->to_unbind))
+	for (j = 0; j < fls_long(to_unbind); j++) {
+		if (!test_bit(j, &to_unbind))
 			continue;
 
 		jetty_id = jtg->start_jetty_id + j;
@@ -324,7 +328,7 @@ ubaseproxy_update_jetty_grp_bindings(struct ubaseproxy_dev *udev,
 
 err_unbind:
 	for (j -= 1; j >= 0; j--) {
-		if (!test_bit(j, (unsigned long *)&info->to_unbind))
+		if (!test_bit(j, &to_unbind))
 			continue;
 
 		jetty_id = jtg->start_jetty_id + j;
@@ -334,7 +338,7 @@ err_unbind:
 
 err_bind:
 	for (i -= 1; i >= 0; i--) {
-		if (!test_bit(i, (unsigned long *)&info->to_bind))
+		if (!test_bit(i, &to_bind))
 			continue;
 
 		jetty_id = jtg->start_jetty_id + i;
@@ -417,13 +421,15 @@ ubaseproxy_restore_jetty_grp_bindings(struct ubaseproxy_dev *udev,
 {
 	u16 mbx_ue_id = le16_to_cpu(req->mbx_ue_id), jtgn = req->tag;
 	struct ubaseproxy_ue_ctx_xarray *ue_ctx_xa;
+	unsigned long to_unbind = info->to_unbind;
+	unsigned long to_bind = info->to_bind;
 	u32 jetty_id;
 	int i;
 
 	ue_ctx_xa = ubaseproxy_get_ue_ctx_xa(udev, mbx_ue_id);
 
-	for (i = 0; i < fls(info->to_bind); i++) {
-		if (!test_bit(i, (unsigned long *)&info->to_bind))
+	for (i = 0; i < fls_long(to_bind); i++) {
+		if (!test_bit(i, &to_bind))
 			continue;
 
 		jetty_id = jtg->start_jetty_id + i;
@@ -431,8 +437,8 @@ ubaseproxy_restore_jetty_grp_bindings(struct ubaseproxy_dev *udev,
 						  mbx_ue_id, jtgn);
 	}
 
-	for (i = 0; i < fls(info->to_unbind); i++) {
-		if (!test_bit(i, (unsigned long *)&info->to_unbind))
+	for (i = 0; i < fls_long(to_unbind); i++) {
+		if (!test_bit(i, &to_unbind))
 			continue;
 
 		jetty_id = jtg->start_jetty_id + i;

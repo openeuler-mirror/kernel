@@ -354,7 +354,7 @@ ubaseproxy_init_rc_default_value(struct ubaseproxy_rc_default *rc_default)
 {
 	rc_default->default_value.state = UBASEPROXY_RC_STATE_READY;
 	rc_default->default_value.type = UBASEPROXY_RC_TYPE;
-	rc_default->default_value.avail_sgmt_ost = DEFAULT_AVAIL_SGMT_OST_VAL;
+	rc_default->default_value.avail_sgmt_ost = DEFAULT_RC_AVAIL_SGMT_OST_VAL;
 }
 
 int ubaseproxy_init_ue_rc_ctx_default(struct ubaseproxy_dev *udev)

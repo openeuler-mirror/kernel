@@ -54,7 +54,7 @@ static int ubaseproxy_create_ctx_page(struct ubaseproxy_dev *udev,
 				   UBASE_IOVA_COMM_PFN_CNT,
 				   udev->gfp | __GFP_ZERO);
 	if (ret) {
-		ubaseproxy_err(udev, "failed to fill pages in ummu, ret = %d\n",
+		ubaseproxy_err(udev, "failed to fill pages in ummu, ret = %d.\n",
 			       ret);
 		kfree(*ctx_page);
 		*ctx_page = NULL;
@@ -139,7 +139,7 @@ void ubaseproxy_free_buf_ctx_page(struct ubaseproxy_dev *udev,
 	ctx_page = (struct ubaseproxy_ctx_page *)xa_load(&ctx_buf->ctx_xa, npage);
 	if (!ctx_page) {
 		ubaseproxy_err(udev,
-			       "no find ctx page in free buf page, npage = %u.\n",
+			       "failed to find ctx page in free buf page, npage = %u.\n",
 			       npage);
 		mutex_unlock(&ctx_buf->ctx_mutex);
 		return;
@@ -147,8 +147,8 @@ void ubaseproxy_free_buf_ctx_page(struct ubaseproxy_dev *udev,
 
 	refcount_dec(&ctx_page->refcount);
 	if (refcount_dec_if_one(&ctx_page->refcount)) {
-		ubaseproxy_info(udev,
-				"refcount of ctx page is equal to one and the ctx_page is going to be erased.\n");
+		ubaseproxy_dbg(udev,
+			       "refcount of ctx page is equal to one and the ctx_page is going to be erased.\n");
 		xa_erase(&ctx_buf->ctx_xa, npage);
 		ubaseproxy_destroy_ctx_page(udev, ctx_buf, ctx_page);
 	}
@@ -582,7 +582,7 @@ int ubaseproxy_handle_ue_ctx_va_req(void *dev, void *data, u32 len)
 	if (len != sizeof(*cmd)) {
 		ubaseproxy_risk_rl(udev, le16_to_cpu(cmd->mbx_ue_id),
 				   ctx_msg_len,
-				   "ubaseproxy handle ctx va event msg len error, len = %u.\n",
+				   "ctx va event msg len error, len = %u.\n",
 				   len);
 		return -EINVAL;
 	}
@@ -591,7 +591,7 @@ int ubaseproxy_handle_ue_ctx_va_req(void *dev, void *data, u32 len)
 	if (ctx_type >= UBASE_CTX_VA_TYPE_NUM) {
 		ubaseproxy_risk_rl(udev, le16_to_cpu(cmd->mbx_ue_id),
 				   ctx_ctx_type,
-				   "ubaseproxy handle ctx va event ctx type error, ctx_type = %u.\n",
+				   "ctx va event ctx type error, ctx_type = %u.\n",
 				   ctx_type);
 		return -EINVAL;
 	}

@@ -34,10 +34,10 @@ static void ubase_parse_dtu_info(struct ubase_dev *udev,
 							 va_base_addr_l);
 	udev->caps.dev_caps.dtu_pa_size = ubase_size_gen(pa_size_h, pa_size_l);
 
-	mem_node_id_l_first_bit =
-		find_first_bit((const unsigned long *)&mem_node_id_l, UBASE_BIT_32);
-	mem_node_id_h_first_bit =
-		find_first_bit((const unsigned long *)&mem_node_id_h, UBASE_BIT_32);
+	mem_node_id_l_first_bit = mem_node_id_l ?
+				  ffs(mem_node_id_l) - 1 : UBASE_BIT_32;
+	mem_node_id_h_first_bit = mem_node_id_h ?
+				  ffs(mem_node_id_h) - 1 : UBASE_BIT_32;
 
 	if (mem_node_id_l_first_bit == UBASE_BIT_32)
 		udev->dtu_info.dtu_mem_node_id = UBASE_BIT_32 + mem_node_id_h_first_bit;

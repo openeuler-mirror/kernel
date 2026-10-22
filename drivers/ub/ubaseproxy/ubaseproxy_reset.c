@@ -19,7 +19,7 @@ int ubaseproxy_handle_ue_reset_notify(void *dev, void *data, u32 len)
 	if (len != sizeof(*cmd)) {
 		ubaseproxy_risk_rl(udev, le16_to_cpu(cmd->mbx_ue_id),
 				   reset_len,
-				   "ubaseproxy handle ue reset notify msg len error, len = %u.\n",
+				   "ue reset notify event msg len error, len = %u.\n",
 				   len);
 		return -EINVAL;
 	}
@@ -37,8 +37,8 @@ int ubaseproxy_handle_ue_reset_notify(void *dev, void *data, u32 len)
 
 static void ubaseproxy_reset_uninit(struct auxiliary_device *adev)
 {
-	struct ubaseproxy_dev *udev = (struct ubaseproxy_dev *)dev_get_drvdata(&adev->dev);
 	struct ubase_caps *ubase_caps = ubase_get_dev_caps(adev);
+	struct ubaseproxy_dev *udev = get_ubaseproxy_dev(adev);
 	u8 managed_ue_num = ubase_caps->ue_num - 1, i;
 
 	if (!managed_ue_num)

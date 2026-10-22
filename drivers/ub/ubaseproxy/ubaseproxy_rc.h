@@ -11,6 +11,7 @@
 #include "ubaseproxy_dev.h"
 
 #define UBASEPROXY_RC_TYPE 2U
+#define DEFAULT_RC_AVAIL_SGMT_OST_VAL 512
 
 #define UBASEPROXY_RC_ADDR_L_OFFSET 12U
 #define UBASEPROXY_RC_ADDR_L_MASK GENMASK(19, 0)
