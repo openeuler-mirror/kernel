@@ -1578,10 +1578,12 @@ static inline void acpi_init_ffh(void) { }
 #ifdef CONFIG_ACPI
 extern void acpi_device_notify(struct device *dev);
 extern void acpi_device_notify_remove(struct device *dev);
+extern void flush_hotplug_workqueue(void);
 extern acpi_status acpi_hotplug_schedule(struct acpi_device *adev, u32 src);
 #else
 static inline void acpi_device_notify(struct device *dev) { }
 static inline void acpi_device_notify_remove(struct device *dev) { }
+static inline void flush_hotplug_workqueue(void) {}
 #endif
 #ifdef CONFIG_ACPI_APEI_MEMORY_FAILURE
 int register_apei_page_offline_notifier(struct notifier_block *nb);
