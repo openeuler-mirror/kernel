@@ -531,6 +531,8 @@ int multipath_query_dns(struct multipath_mount_options *opt,
 		return -ENOMEM;
 	ip_list->count = 0;
 	dns_info = opt->pRemoteDnsInfo;
+	slot = enfs_get_config_link_count_per_mount() /
+	       dns_info->dnsNameCount;
 	dns_name = kmalloc(dns_info->dnsNameCount * EXTEND_MAX_DNS_NAME_LEN, GFP_KERNEL);
 	if (!dns_name) {
 		kfree(ip_list);
@@ -545,8 +547,6 @@ int multipath_query_dns(struct multipath_mount_options *opt,
 				dns_info->routeRemoteDnsList[i].dnsname);
 		}
 
-		slot = enfs_get_config_link_count_per_mount() /
-		       dns_info->dnsNameCount;
 		ret = enfs_server_query_dns(clnt, dns_info, ip_list,
 					    enfs_get_config_link_count_per_mount(), ip_type,
 					    dns_info->dnsNameCount, dns_name);
