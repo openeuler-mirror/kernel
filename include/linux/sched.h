@@ -597,8 +597,6 @@ struct sched_entity {
 	u64				vruntime;
 	/* Approximated virtual lag: */
 	s64				vlag;
-	/* 'Protected' deadline, to give out minimum quantums: */
-	u64				vprot;
 	u64				slice;
 
 	u64				nr_migrations;
@@ -625,7 +623,8 @@ struct sched_entity {
 #endif
 	KABI_USE(1, u64 min_slice)
 	KABI_USE(2, u64 max_slice)
-	KABI_RESERVE(3)
+	/* 'Protected' deadline, to give out minimum quantums: */
+	KABI_USE(3, u64 vprot)
 	KABI_RESERVE(4)
 };
 
