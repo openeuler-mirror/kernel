@@ -224,6 +224,7 @@ int enfs_query_lookup_cache(struct lookupcache_work *work_info)
 						"The xprt multipath ctx is not valid.\n");
 					xprt_put(pos->client->cl_xprt);
 					spin_unlock(&nn->nfs_client_lock);
+					rcu_read_unlock();
 					return ret;
 				}
 				if (enfsRes.version ==
