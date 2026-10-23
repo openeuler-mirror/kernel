@@ -168,8 +168,8 @@ void enfs_destroy_clnt_list(struct list_head *head)
 
 	while (!list_empty(head)) {
 		item = list_entry(head->next, struct clnt_release_item, node);
+		rpc_release_client(item->clnt);
 		nfs_put_client(item->client);
-		//rpc_release_client(item->clnt);
 		list_del(&item->node);
 		kfree(item);
 	}

@@ -784,8 +784,8 @@ static void do_dns_update(struct work_struct *work)
 	find_and_remount(wk->clp, wk);
 
 	enfs_free_nfsclient_info(wk->clp_info);
+	rpc_release_client(wk->clRpcclient);
 	nfs_put_client(wk->clp);
-	//rpc_release_client(wk->clRpcclient);
 	kfree(wk);
 	wk = NULL;
 }
