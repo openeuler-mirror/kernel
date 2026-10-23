@@ -1,9 +1,8 @@
-/* SPDX-License-Identifier: GPL-2.0*/
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (c) 2022 nebula-matrix Limited.
  * Author:
  */
-
 #ifndef _NBL_TC_FLOW_LEONIS_H_
 #define _NBL_TC_FLOW_LEONIS_H_
 
@@ -46,15 +45,13 @@
 #define NBL_KEY_TYPE_160				0
 #define NBL_KEY_TYPE_320				1
 
-#define NBL_FEM_KT_LEN					320
-#define NBL_FEM_KT_HALF_LEN				160
 #define NBL_FEM_AT_LEN					32
 #define NBL_FEM_AT_HALF_LEN				16
 #define NBL_AT_WIDTH					22
 
-#define NBL_PP1_AT2_OFFSET				(92 * 1024)
-#define NBL_PP1_AT_OFFSET				(80 * 1024)
-#define NBL_PP2_AT2_OFFSET				(64 * 1024)
+	#define NBL_PP1_AT2_OFFSET				(92 * 1024)
+	#define NBL_PP1_AT_OFFSET				(80 * 1024)
+	#define NBL_PP2_AT2_OFFSET				(64 * 1024)
 
 #define NBL_PP1_POWER					13
 #define NBL_PP2_POWER					14
@@ -66,8 +63,6 @@
 #define NBL_HT0_HASH					1
 #define NBL_HT1_HASH					2
 
-#define NBL_SAFE_THREADS_WAIT_TIME (200)
-
 #define NBL_MASK_16	0xffff
 
 #define NBL_PP_STAGE_PROFILE_NUM			(48)
@@ -77,18 +72,9 @@
 #define NBL_TABLE_KEY_VALUE_LEN				(40)
 #define NBL_TABLE_KEY_DATA_LEN				(10)
 
-#define NBL_BITS_IN_NIBBLE				(4)
-#define NBL_BITS_IN_U8					(8)
-#define NBL_BITS_IN_U16					(16)
-#define NBL_BITS_IN_U32					(32)
-#define NBL_BITS_IN_U64					(64)
-
 #define NBL_FLOW_PROFILE_START				16
 #define NBL_FLOW_LEN_INVALID				(0xffffffff)
 
-#define NBL_FLOW_TAB_ONE_TIME				1
-#define NBL_FLOW_TAB_TWO_TIME				2
-#define NBL_INVALID_U32					0xFFFFFFFF
 #define NBL_FLOW_TABLE_L4_PORT_DEFAULT_MASK		0xFFFF
 #define NBL_FLOW_TABLE_FULL_MASK_AS_U32			0xFFFFFFFF
 #define NBL_FLOW_TABLE_FULL_MASK_AS_U16			0xFFFF
@@ -107,19 +93,6 @@
 /* at node's idx has two continuous idx, and the begin idx need to be even number */
 #define NBL_FLOW_AT_IDX_NUM				2
 #define NBL_FLOW_AT_IDX_MULTIPLE			2
-
-struct nbl_tc_flow {
-	u8 acl_flag:1;
-	int flow_stat_id;
-	u64 act_flags;
-	u8  profile_id[NBL_ASSOC_PROFILE_STAGE_NUM];
-
-	struct {
-		void *profile_rule[NBL_ASSOC_PROFILE_STAGE_NUM];
-	};
-	struct nbl_encap_key *encap_key;
-	struct nbl_tc_pedit_node_res pedit_node;
-};
 
 struct nbl_tcam_item {
 	union nbl_tc_common_data_u kt_data;
@@ -199,14 +172,6 @@ struct nbl_flow_idx_info {
 	bool	pt_cmd;
 };
 
-struct nbl_profile_offload_msg {
-	u16 assoc_tbl_id;
-	u8 profile_id;
-	u8 profile_stage;
-	bool	pt_cmd;
-	bool    last_stage;
-};
-
 struct nbl_mt_input {
 	u32 tbl_id;
 	u16 depth;
@@ -257,8 +222,6 @@ int nbl_insert_pp_at(struct nbl_resource_mgt *res_mgt, u8 pp_type, u8 at_type,
 
 struct nbl_tc_flow *
 nbl_tc_flow_index_lookup(struct nbl_resource_mgt *res_mgt, struct nbl_flow_index_key *key);
-struct nbl_tc_flow *
-nbl_tc_flow_insert_index(struct nbl_resource_mgt *res_mgt, struct nbl_flow_index_key *key);
 int nbl_tc_flow_delete_index(struct nbl_resource_mgt *res_mgt, struct nbl_flow_index_key *key);
 
 int nbl_tcam_key_lookup(struct nbl_flow_tcam_key_mng *tcam_pp_key_mng,

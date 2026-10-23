@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0*/
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (c) 2022 nebula-matrix Limited.
  * Author:
@@ -36,7 +36,8 @@
 #define NBL_ADAPTER_TO_DEV_OPS_TBL(adapter)	((adapter)->intf.dev_ops_tbl)
 #define NBL_ADAPTER_TO_CHAN_OPS_TBL(adapter)	((adapter)->intf.channel_ops_tbl)
 
-#define NBL_ADAPTER_TO_RES_PT_OPS(adapter)	(&(NBL_ADAPTER_TO_SERV_OPS_TBL(adapter)->pt_ops))
+#define NBL_ADAPTER_TO_RES_PT_TBL(adapter)	(&(NBL_ADAPTER_TO_SERV_OPS_TBL(adapter)->pt_tbl))
+#define NBL_ADAPTER_TO_RES_PT_OPS(adapter)	(&(NBL_ADAPTER_TO_RES_PT_TBL(adapter)->pt_ops))
 
 #define NBL_NETDEV_PRIV_TO_ADAPTER(priv)	((priv)->adapter)
 
@@ -72,6 +73,7 @@
 #define NBL_CAP_IS_DPU_ECPU(val)		({ typeof(val) _val = (val);			\
 						!NBL_CAP_TEST_BIT(_val, NBL_CAP_IS_NIC_BIT) &&	\
 						!NBL_CAP_TEST_BIT(_val, NBL_CAP_DPU_IS_HOST_BIT); })
+#define NBL_CAP_IS_DRACO(val)			NBL_CAP_TEST_BIT(val, NBL_CAP_IS_DRACO_BIT)
 #define NBL_CAP_IS_LEONIS(val)			NBL_CAP_TEST_BIT(val, NBL_CAP_IS_LEONIS_BIT)
 #define NBL_CAP_IS_BOOTIS(val)			NBL_CAP_TEST_BIT(val, NBL_CAP_IS_BOOTIS_BIT)
 #define NBL_CAP_IS_VIRTIO(val)			NBL_CAP_TEST_BIT(val, NBL_CAP_IS_VIRTIO_BIT)
@@ -84,6 +86,7 @@ enum {
 	NBL_CAP_SUPPORT_LAG_BIT,
 	NBL_CAP_IS_NIC_BIT,
 	NBL_CAP_DPU_IS_HOST_BIT,
+	NBL_CAP_IS_DRACO_BIT,
 	NBL_CAP_IS_LEONIS_BIT,
 	NBL_CAP_IS_BOOTIS_BIT,
 	NBL_CAP_IS_VIRTIO_BIT,
@@ -105,6 +108,7 @@ enum nbl_adapter_state {
 	NBL_USER,
 	NBL_FATAL_ERR,
 	NBL_XDP,
+	NBL_PCI_ERR_RECOVERING,
 	NBL_STATE_NBITS
 };
 
@@ -161,13 +165,13 @@ struct nbl_netdev_priv {
 	struct nbl_adapter *adapter;
 	struct nbl_rep_data *rep;
 	struct net_device *netdev;
+	void *txrx_mgt;
 	u16 tx_queue_num;
 	u16 rx_queue_num;
-	u16 queue_size;
 	/* default traffic destination in kernel/dpdk/coexist scene */
 	u16 data_vsi;
 	u16 user_vsi;
-	s64 last_st_time;
+	u8 trust_mode;
 };
 
 struct nbl_indr_dev_priv {
@@ -196,6 +200,7 @@ struct nbl_software_tool_id_entry {
 	u8 refcount;
 };
 
+/* support max 24 cards in one server, draco every pf has res char dev */
 #define NBL_ST_MAX_DEVICE_NUM			96
 struct nbl_software_tool_table {
 	DECLARE_BITMAP(devid, NBL_ST_MAX_DEVICE_NUM);
@@ -225,5 +230,8 @@ int nbl_st_init(struct nbl_software_tool_table *st_table);
 void nbl_st_remove(struct nbl_software_tool_table *st_table);
 struct nbl_software_tool_table *nbl_get_st_table(void);
 struct dentry *nbl_get_debugfs_root(void);
-
+void nbl_dev_pci_err_stop(struct nbl_adapter *adapter);
+void nbl_dev_pci_err_start(struct nbl_adapter *adapter);
+int nbl_dev_wait_my_ctrl_initdone(struct nbl_adapter *adapter);
+void nbl_dev_check_fast_remove(struct nbl_adapter *adapter);
 #endif

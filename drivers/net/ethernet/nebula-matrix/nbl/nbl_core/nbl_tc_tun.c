@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (c) 2022 nebula-matrix Limited.
- * Author:
- */
-
 #include <net/vxlan.h>
+#include <net/route.h>
 #include <linux/if_vlan.h>
 #include <linux/udp.h>
 #include <linux/phy.h>
@@ -70,41 +66,88 @@ static void nbl_tc_tun_route_cleanup(struct nbl_tc_tunnel_route_info *tun_route_
 		dev_put(tun_route_info->real_out_dev);
 }
 
-static int nbl_route_lookup_ipv4(const struct nbl_common_info *common,
-				 struct net_device *encap_mirred_dev,
-				 struct nbl_tc_tunnel_route_info *tun_route_info,
-				 struct nbl_serv_netdev_ops *netdev_ops)
+static int nbl_route_lookup(const struct nbl_common_info *common,
+			    struct net_device *encap_mirred_dev,
+			    struct nbl_tc_tunnel_route_info *tun_route_info,
+			    struct nbl_serv_netdev_ops *netdev_ops,
+			    u32 skprio)
 {
 	int ret = 0;
 	struct net_device *out_dev;
 	struct net_device *real_out_dev;
-	struct net_device *parent_dev;
+	struct net_device *parent_dev, *parent_parent;
 	struct neighbour *n;
-	struct rtable *rt;
+	struct dst_entry *dst;
+	struct rtable *rt = NULL;
+	u8 vlan_num = 0;
+	bool is_ip6 = tun_route_info->is_ip6;
 
-	rt = ip_route_output_key(dev_net(encap_mirred_dev), &tun_route_info->fl.fl4);
-	if (IS_ERR(rt))
-		return (int)PTR_ERR(rt);
-
-	if (rt->rt_type != RTN_UNICAST) {
-		ret = -ENETUNREACH;
-		nbl_err(common, NBL_DEBUG_FLOW, "get route table failed, the route type is not unicast.");
-		goto rt_err;
+	if (is_ip6) {
+		dst = ipv6_stub->ipv6_dst_lookup_flow(dev_net(encap_mirred_dev), NULL,
+						      &tun_route_info->fl.fl6, NULL);
+		if (IS_ERR(dst))
+			return (int)PTR_ERR(dst);
+	} else {
+		rt = ip_route_output_key(dev_net(encap_mirred_dev), &tun_route_info->fl.fl4);
+		if (IS_ERR(rt))
+			return (int)PTR_ERR(rt);
+		dst = &rt->dst;
+		if (rt->rt_type != RTN_UNICAST) {
+			ret = -ENETUNREACH;
+			nbl_err(common, NBL_DEBUG_FLOW, "get route table failed, the route type is not unicast.");
+			goto err;
+		}
 	}
 
-	out_dev = rt->dst.dev;
+	out_dev = dst->dev;
 	if (is_vlan_dev(out_dev)) {
+		vlan_num = 1;
 		parent_dev = vlan_dev_real_dev(out_dev);
+		real_out_dev = vlan_dev_real_dev(out_dev);
 		if (is_vlan_dev(parent_dev)) {
-			nbl_debug(common, NBL_DEBUG_FLOW, "encap o_dev is %s p_dev:%s\n",
-				  out_dev->name, parent_dev ? parent_dev->name : "NULL");
-			ret = -EOPNOTSUPP;
-			goto rt_err;
+			if (common->product_type == NBL_LEONIS_TYPE) {
+				nbl_debug(common, NBL_DEBUG_FLOW, "ipv%u encap out dev is %s, parent_dev:%s is vlan, not support two vlan\n",
+					  is_ip6 ? 6 : 4, out_dev->name,
+					parent_dev ? parent_dev->name : "NULL");
+				ret = -EOPNOTSUPP;
+				goto err;
+			} else {
+				parent_parent = vlan_dev_real_dev(parent_dev);
+				if (is_vlan_dev(parent_parent)) {
+					nbl_err(common, NBL_DEBUG_FLOW, "ipv%u encap out dev is %s,parent_dev:%s parent_parent:%s, real_out_dev:%s, not support two vlan.\n",
+						is_ip6 ? 6 : 4, out_dev->name,
+						parent_dev ? parent_dev->name : "NULL",
+						parent_parent ? parent_parent->name : "NULL",
+						real_out_dev ? real_out_dev->name : "NULL");
+					ret = -EOPNOTSUPP;
+					goto err;
+				}
+				tun_route_info->out_dev_parent = parent_dev;
+				vlan_num = 2;
+			}
 		}
 
-		real_out_dev = vlan_dev_real_dev(out_dev);
-		nbl_debug(common, NBL_DEBUG_FLOW, "ipv4 encap out dev is %s, real_out_dev:%s\n",
-			  out_dev->name, real_out_dev ? real_out_dev->name : "NULL");
+		if (vlan_num == 2)
+			real_out_dev = vlan_dev_real_dev(parent_dev);
+		tun_route_info->vlan_num = vlan_num;
+		tun_route_info->ovlan_id = vlan_dev_vlan_id(out_dev);
+		tun_route_info->ovlan_pcp =
+			(u8)(vlan_dev_get_egress_qos_mask(out_dev, skprio) >> VLAN_PRIO_SHIFT);
+		if (vlan_num == 2) {
+			tun_route_info->ivlan_id = vlan_dev_vlan_id(out_dev);
+			tun_route_info->ivlan_pcp =
+				(u8)(vlan_dev_get_egress_qos_mask(out_dev, skprio) >>
+										VLAN_PRIO_SHIFT);
+			tun_route_info->ovlan_id = vlan_dev_vlan_id(parent_dev);
+			tun_route_info->ovlan_pcp =
+				(u8)(vlan_dev_get_egress_qos_mask(parent_dev, skprio) >>
+										VLAN_PRIO_SHIFT);
+		}
+		nbl_debug(common, NBL_DEBUG_FLOW, "ipv%u encap out dev is %s, real_out_dev:%s, ivlan_pcp:%u, ivlan_id:%u, ovlan_pcp:%u, ovlan_id:%u, vlan_num:%u\n",
+			  is_ip6 ? 6 : 4, out_dev->name, real_out_dev ? real_out_dev->name : "NULL",
+			  tun_route_info->ivlan_pcp, tun_route_info->ivlan_id,
+			  tun_route_info->ovlan_pcp, tun_route_info->ovlan_id,
+			  tun_route_info->vlan_num);
 	} else {
 		real_out_dev = out_dev;
 	}
@@ -113,28 +156,30 @@ static int nbl_route_lookup_ipv4(const struct nbl_common_info *common,
 	    real_out_dev->netdev_ops != netdev_ops->pf_netdev_ops &&
 	    real_out_dev->netdev_ops != netdev_ops->rep_netdev_ops) {
 		nbl_info(common, NBL_DEBUG_FLOW, "encap out dev is %s, not ours, not support\n",
-			 real_out_dev->name);
+			 out_dev->name);
 		ret = -EOPNOTSUPP;
-		goto rt_err;
+		goto err;
 	}
 
 	dev_hold(real_out_dev);
 	if (!tun_route_info->ttl)
-		tun_route_info->ttl = (u8)ip4_dst_hoplimit(&rt->dst);
+		tun_route_info->ttl =
+			is_ip6 ? (u8)ip6_dst_hoplimit(dst) : (u8)ip4_dst_hoplimit(dst);
 
-	nbl_debug(common, NBL_DEBUG_FLOW, "route: type:%u, dev:%s, ops:%p, real_dev:%s, ttl:%u",
-		  rt->rt_type, rt->dst.dev ? rt->dst.dev->name : "null",
-		  rt->dst.ops, real_out_dev ? real_out_dev->name : "NULL",
+	nbl_debug(common, NBL_DEBUG_FLOW, "route lookup: dst->dev:%s, dst->ops:%p, real_dev:%s, ttl:%u",
+		  dst->dev ? dst->dev->name : "null",
+		  dst->ops, real_out_dev ? real_out_dev->name : "NULL",
 		  tun_route_info->ttl);
 
-	n = dst_neigh_lookup(&rt->dst, &tun_route_info->fl.fl4.daddr);
+	n = is_ip6 ? dst_neigh_lookup(dst, &tun_route_info->fl.fl6.daddr)
+		   : dst_neigh_lookup(dst, &tun_route_info->fl.fl4.daddr);
 	if (!n) {
 		ret = -ENONET;
 		nbl_info(common, NBL_DEBUG_FLOW, "get neigh failed.");
 		goto dev_release;
 	}
-	ip_rt_put(rt);
 
+	dst_release(dst);
 	tun_route_info->out_dev = out_dev;
 	tun_route_info->real_out_dev = real_out_dev;
 	tun_route_info->n = n;
@@ -143,8 +188,8 @@ static int nbl_route_lookup_ipv4(const struct nbl_common_info *common,
 
 dev_release:
 	dev_put(real_out_dev);
-rt_err:
-	ip_rt_put(rt);
+err:
+	dst_release(dst);
 	return ret;
 }
 
@@ -165,7 +210,7 @@ static char *nbl_tc_tun_gen_eth_hdr(char *buf, struct net_device *dev,
 		eth->h_proto = vlan_dev_vlan_proto(dev);
 		vlan->h_vlan_TCI = htons(vlan_dev_vlan_id(dev));
 		vlan->h_vlan_encapsulated_proto = htons(proto);
-		nbl_debug(common, NBL_DEBUG_FLOW, "TCI:0x%x, vlan_proto:0x%x, eth_proto:0x%x",
+		nbl_debug(common, NBL_DEBUG_FLOW, "output is vlan dev: vlan_TCI:0x%x, vlan_proto:0x%x, eth_proto:0x%x",
 			  vlan->h_vlan_TCI, vlan->h_vlan_encapsulated_proto,
 			  eth->h_proto);
 	} else {
@@ -176,56 +221,25 @@ static char *nbl_tc_tun_gen_eth_hdr(char *buf, struct net_device *dev,
 	return ip;
 }
 
-static int nbl_tc_tun_create_header_ipv4(struct nbl_rule_action *rule_act,
-					 struct nbl_tc_flow_param *param,
-					 struct net_device *encap_mirred_dev,
-					 struct nbl_encap_key *key)
+static int nbl_tc_tun_create_header_ipv4_leonis(const struct nbl_common_info *common,
+						struct nbl_rule_action *rule_act,
+						unsigned char *hw_dst,
+						struct nbl_tc_tunnel_route_info *tun_route_info,
+						struct nbl_encap_key *key)
 {
 	int ret = 0;
-	const struct nbl_common_info *common = param->common;
-	const struct ip_tunnel_key *tun_key = &key->ip_tun_key;
-	struct nbl_serv_netdev_ops *netdev_ops = &param->serv_mgt->net_resource_mgt->netdev_ops;
 	struct iphdr *ip;
-	struct nbl_tc_tunnel_route_info tun_route_info;
 	struct udphdr *udp;
 	struct vxlanhdr *vxh;
-	unsigned char hw_dst[ETH_ALEN];
-
-	u8 total_len = 0;
-	u8 eth_len = 0;
-	u8 l4_len = 0;
-	u8 nud_state;
-
-	memset(&tun_route_info, 0, sizeof(tun_route_info));
-	memset(hw_dst, 0, sizeof(hw_dst));
-	tun_route_info.fl.fl4.flowi4_tos = tun_key->tos;
-	tun_route_info.fl.fl4.flowi4_proto = IPPROTO_UDP;
-	tun_route_info.fl.fl4.fl4_dport = tun_key->tp_dst;
-	tun_route_info.fl.fl4.daddr = tun_key->u.ipv4.dst;
-	tun_route_info.fl.fl4.saddr = tun_key->u.ipv4.src;
-	tun_route_info.ttl = tun_key->ttl;
-
-	ret = nbl_route_lookup_ipv4(common, encap_mirred_dev, &tun_route_info, netdev_ops);
-	if (ret) {
-		nbl_info(common, NBL_DEBUG_FLOW, "get route failed in create encap head v4, encap_dev:%s, ret %d",
-			 encap_mirred_dev->name, ret);
-		return ret;
-	}
-
-	rule_act->tc_tun_encap_out_dev = tun_route_info.real_out_dev;
-
-	/* cpoy mac */
-	read_lock_bh(&tun_route_info.n->lock);
-	nud_state = tun_route_info.n->nud_state;
-	ether_addr_copy(hw_dst, tun_route_info.n->ha);
-	read_unlock_bh(&tun_route_info.n->lock);
+	u8 total_len = 0, eth_len = 0, l4_len = 0;
+	const struct ip_tunnel_key *tun_key = &key->ip_tun_key;
 
 	/* add ether header */
-	ip = (struct iphdr *)nbl_tc_tun_gen_eth_hdr(rule_act->encap_buf,
-				tun_route_info.out_dev, hw_dst, ETH_P_IP, common);
+	ip = (struct iphdr *)nbl_tc_tun_gen_eth_hdr((char *)rule_act->encap_buf,
+				tun_route_info->out_dev, hw_dst, ETH_P_IP, common);
 
 	total_len += sizeof(struct ethhdr);
-	if (is_vlan_dev(tun_route_info.out_dev)) {
+	if (is_vlan_dev(tun_route_info->out_dev)) {
 		rule_act->encap_idx_info.info.vlan_offset = total_len - 2;
 		total_len += sizeof(struct vlan_hdr);
 	}
@@ -239,9 +253,9 @@ static int nbl_tc_tun_create_header_ipv4(struct nbl_rule_action *rule_act,
 	ip->version = NBL_FLOW_IPV4;
 	ip->ihl = NBL_FLOW_IHL;
 	ip->frag_off = NBL_FLOW_DF;
-	ip->ttl = tun_route_info.ttl;
-	ip->saddr = tun_route_info.fl.fl4.saddr;
-	ip->daddr = tun_route_info.fl.fl4.daddr;
+	ip->ttl = tun_route_info->ttl;
+	ip->saddr = tun_route_info->fl.fl4.saddr;
+	ip->daddr = tun_route_info->fl.fl4.daddr;
 
 	rule_act->encap_idx_info.info.len_en0 = 1;
 	rule_act->encap_idx_info.info.len_offset0 = total_len + NBL_FLOW_IPV4_LEN_OFFSET;
@@ -254,7 +268,7 @@ static int nbl_tc_tun_create_header_ipv4(struct nbl_rule_action *rule_act,
 		sizeof(struct iphdr), &ip->protocol, &key->ip_tun_key);
 	if (ret) {
 		nbl_err(common, NBL_DEBUG_FLOW, "nbl tc flow gen tun hdr err, ret:%d", ret);
-		goto destroy_neigh;
+		return ret;
 	}
 
 	rule_act->encap_idx_info.info.phid3_offset = total_len;
@@ -282,142 +296,107 @@ static int nbl_tc_tun_create_header_ipv4(struct nbl_rule_action *rule_act,
 	rule_act->encap_size = total_len;
 	rule_act->vni = be32_to_cpu(vxh->vx_vni);
 
-	if (!(nud_state & NUD_VALID)) {
-		neigh_event_send(tun_route_info.n, NULL);
-		goto destroy_neigh;
-	}
-
-	nbl_tc_tun_route_cleanup(&tun_route_info);
-
-	nbl_debug(common, NBL_DEBUG_FLOW, "create ipv4 header ok: encap_len:%d", total_len);
-
-	return 0;
-
-destroy_neigh:
-	nbl_tc_tun_route_cleanup(&tun_route_info);
+	nbl_debug(common, NBL_DEBUG_FLOW, "leonis create ipv4 tnl header ok, encap_len:%d",
+		  total_len);
 
 	return ret;
 }
 
-static int nbl_route_lookup_ipv6(const struct nbl_common_info *common,
-				 struct net_device *encap_mirred_dev,
-				 struct nbl_tc_tunnel_route_info *tun_route_info,
-				 struct nbl_serv_netdev_ops *netdev_ops)
+static int nbl_tc_tun_create_header_draco(struct nbl_tc_flow_param *param,
+					  struct nbl_rule_action *rule_act,
+					  unsigned char *hw_dst,
+					  struct nbl_tc_tunnel_route_info *tun_route,
+					  struct nbl_encap_key *key)
 {
 	int ret = 0;
-	struct net_device *out_dev;
-	struct net_device *real_out_dev;
-	struct net_device *parent_dev;
-	struct neighbour *n;
-	struct dst_entry *dst;
+	struct nbl_dispatch_mgt *disp_mgt = NBL_SERV_MGT_TO_DISP_PRIV(param->serv_mgt);
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(param->serv_mgt);
+	struct nbl_tc_tun_create_header_param hdr_param = {
+		.rule_act = rule_act,
+		.hw_dst = hw_dst,
+		.tun_route = tun_route,
+		.key = key,
+	};
 
-	dst = ipv6_stub->ipv6_dst_lookup_flow(dev_net(encap_mirred_dev), NULL,
-					      &tun_route_info->fl.fl6, NULL);
-	if (IS_ERR(dst))
-		return (int)PTR_ERR(dst);
+	ret = disp_ops->tc_tun_create_header(disp_mgt, &hdr_param);
 
-	out_dev = dst->dev;
-	if (is_vlan_dev(out_dev)) {
-		parent_dev = vlan_dev_real_dev(out_dev);
-		real_out_dev = vlan_dev_real_dev(out_dev);
-		if (is_vlan_dev(parent_dev)) {
-			nbl_debug(common, NBL_DEBUG_FLOW, "ipv6 encap o_dev is %s, p_dev:%s\n",
-				  out_dev->name, parent_dev ? parent_dev->name : "NULL");
-			ret = -EOPNOTSUPP;
-			goto err;
-		}
-		nbl_debug(common, NBL_DEBUG_FLOW, "ipv6 encap out dev is %s, real_out_dev:%s\n",
-			  out_dev->name, real_out_dev ? real_out_dev->name : "NULL");
-	} else {
-		real_out_dev = out_dev;
-	}
-
-	if (!netif_is_lag_master(real_out_dev) &&
-	    real_out_dev->netdev_ops != netdev_ops->pf_netdev_ops &&
-	    real_out_dev->netdev_ops != netdev_ops->rep_netdev_ops) {
-		nbl_err(common, NBL_DEBUG_FLOW, "encap out dev is %s, not ours, not support\n",
-			out_dev->name);
-		ret = -EOPNOTSUPP;
-		goto err;
-	}
-
-	dev_hold(real_out_dev);
-#ifdef CONFIG_IPV6
-	if (!tun_route_info->ttl)
-		tun_route_info->ttl = (u8)ip6_dst_hoplimit(dst);
-#endif
-	n = dst_neigh_lookup(dst, &tun_route_info->fl.fl6.daddr);
-	if (!n) {
-		ret = -ENONET;
-		nbl_err(common, NBL_DEBUG_FLOW, "get neigh failed.");
-		goto dev_release;
-	}
-
-	dst_release(dst);
-	tun_route_info->out_dev = out_dev;
-	tun_route_info->real_out_dev = real_out_dev;
-	tun_route_info->n = n;
-
-	return 0;
-
-dev_release:
-	dev_put(real_out_dev);
-err:
-	dst_release(dst);
 	return ret;
 }
 
-static int nbl_tc_tun_create_header_ipv6(struct nbl_rule_action *rule_act,
+static int nbl_tc_tun_create_header_ipv4(struct nbl_rule_action *rule_act,
 					 struct nbl_tc_flow_param *param,
 					 struct net_device *encap_mirred_dev,
 					 struct nbl_encap_key *key)
 {
 	int ret = 0;
-	const struct nbl_common_info *common = param->common;
+	struct nbl_common_info *common = param->common;
 	const struct ip_tunnel_key *tun_key = &key->ip_tun_key;
 	struct nbl_serv_netdev_ops *netdev_ops = &param->serv_mgt->net_resource_mgt->netdev_ops;
-	struct ipv6hdr *ip;
 	struct nbl_tc_tunnel_route_info tun_route_info;
-	struct udphdr *udp;
-	struct vxlanhdr *vxh;
-	unsigned char hw_dst[ETH_ALEN];
 
-	u8 total_len = 0;
-	u8 eth_len = 0;
-	u8 l4_len = 0;
+	unsigned char hw_dst[ETH_ALEN];
 	u8 nud_state;
 
 	memset(&tun_route_info, 0, sizeof(tun_route_info));
 	memset(hw_dst, 0, sizeof(hw_dst));
-	tun_route_info.fl.fl6.flowlabel =
-			ip6_make_flowinfo(RT_TOS(tun_key->tos), tun_key->label);
-	tun_route_info.fl.fl6.fl6_dport = tun_key->tp_dst;
-	tun_route_info.fl.fl6.fl6_sport = tun_key->tp_src;
-	tun_route_info.fl.fl6.daddr = tun_key->u.ipv6.dst;
-	tun_route_info.fl.fl6.saddr = tun_key->u.ipv6.src;
+	tun_route_info.fl.fl4.flowi4_tos = tun_key->tos;
+	tun_route_info.fl.fl4.flowi4_proto = IPPROTO_UDP;
+	tun_route_info.fl.fl4.fl4_dport = tun_key->tp_dst;
+	tun_route_info.fl.fl4.daddr = tun_key->u.ipv4.dst;
+	tun_route_info.fl.fl4.saddr = tun_key->u.ipv4.src;
 	tun_route_info.ttl = tun_key->ttl;
+	tun_route_info.common = common;
 
-	ret = nbl_route_lookup_ipv6(common, encap_mirred_dev, &tun_route_info, netdev_ops);
+	ret = nbl_route_lookup(common, encap_mirred_dev, &tun_route_info, netdev_ops,
+			       rt_tos2priority(tun_key->tos));
 	if (ret) {
-		nbl_info(common, NBL_DEBUG_FLOW, "get route failed in create encap head v6, encap_dev:%s, ret %d",
+		nbl_info(common, NBL_DEBUG_FLOW,
+			 "get route failed in create encap head v4, encap_dev:%s, ret %d",
 			 encap_mirred_dev->name, ret);
 		return ret;
 	}
 
 	rule_act->tc_tun_encap_out_dev = tun_route_info.real_out_dev;
 
-	/* copy mac */
+	/* cpoy mac */
 	read_lock_bh(&tun_route_info.n->lock);
 	nud_state = tun_route_info.n->nud_state;
 	ether_addr_copy(hw_dst, tun_route_info.n->ha);
 	read_unlock_bh(&tun_route_info.n->lock);
 
+	if (common->product_type == NBL_LEONIS_TYPE)
+		ret = nbl_tc_tun_create_header_ipv4_leonis(common, rule_act, hw_dst,
+							   &tun_route_info, key);
+	else
+		ret = nbl_tc_tun_create_header_draco(param, rule_act, hw_dst, &tun_route_info, key);
+
+	if (!(nud_state & NUD_VALID))
+		neigh_event_send(tun_route_info.n, NULL);
+
+	nbl_tc_tun_route_cleanup(&tun_route_info);
+
+	return ret;
+}
+
+static int nbl_tc_tun_create_header_ipv6_leonis(const struct nbl_common_info *common,
+						struct nbl_rule_action *rule_act,
+						unsigned char *hw_dst,
+						struct nbl_tc_tunnel_route_info *tun_route,
+						struct nbl_encap_key *key)
+{
+	int ret = 0;
+	u8 total_len = 0, eth_len = 0, l4_len = 0;
+	const struct ip_tunnel_key *tun_key = &key->ip_tun_key;
+	struct ipv6hdr *ip;
+	struct udphdr *udp;
+	struct vxlanhdr *vxh;
+
 	/* add ether header */
-	ip = (struct ipv6hdr *)nbl_tc_tun_gen_eth_hdr(rule_act->encap_buf,
-				tun_route_info.out_dev, hw_dst, ETH_P_IPV6, common);
+	ip = (struct ipv6hdr *)nbl_tc_tun_gen_eth_hdr((char *)rule_act->encap_buf,
+				tun_route->out_dev, hw_dst, ETH_P_IPV6, common);
 
 	total_len += sizeof(struct ethhdr);
-	if (is_vlan_dev(tun_route_info.out_dev)) {
+	if (is_vlan_dev(tun_route->out_dev)) {
 		rule_act->encap_idx_info.info.vlan_offset = total_len - 2;
 		total_len += sizeof(struct vlan_hdr);
 	}
@@ -428,9 +407,9 @@ static int nbl_tc_tun_create_header_ipv6(struct nbl_rule_action *rule_act,
 
 	/* add ip header */
 	ip6_flow_hdr(ip, tun_key->tos, 0);
-	ip->hop_limit = tun_route_info.ttl;
-	ip->saddr = tun_route_info.fl.fl6.saddr;
-	ip->daddr = tun_route_info.fl.fl6.daddr;
+	ip->hop_limit = tun_route->ttl;
+	ip->saddr = tun_route->fl.fl6.saddr;
+	ip->daddr = tun_route->fl.fl6.daddr;
 
 	rule_act->encap_idx_info.info.len_en0 = 1;
 	rule_act->encap_idx_info.info.len_offset0 = total_len + NBL_FLOW_IPV6_LEN_OFFSET;
@@ -442,7 +421,7 @@ static int nbl_tc_tun_create_header_ipv6(struct nbl_rule_action *rule_act,
 		sizeof(struct ipv6hdr), &ip->nexthdr, &key->ip_tun_key);
 	if (ret) {
 		nbl_err(common, NBL_DEBUG_FLOW, "nbl tc flow gen v6 tun hdr err, ret:%d", ret);
-		goto destroy_neigh;
+		return ret;
 	}
 
 	rule_act->encap_idx_info.info.phid3_offset = total_len;
@@ -470,18 +449,61 @@ static int nbl_tc_tun_create_header_ipv6(struct nbl_rule_action *rule_act,
 	rule_act->encap_size = total_len;
 	rule_act->vni = be32_to_cpu(vxh->vx_vni);
 
-	if (!(nud_state & NUD_VALID)) {
-		neigh_event_send(tun_route_info.n, NULL);
-		goto destroy_neigh;
+	nbl_debug(common, NBL_DEBUG_FLOW, "leonis create ipv6 header ok: encap_len:%d", total_len);
+
+	return ret;
+}
+
+static int nbl_tc_tun_create_header_ipv6(struct nbl_rule_action *rule_act,
+					 struct nbl_tc_flow_param *param,
+					 struct net_device *encap_mirred_dev,
+					 struct nbl_encap_key *key)
+{
+	int ret = 0;
+	struct nbl_common_info *common = param->common;
+	const struct ip_tunnel_key *tun_key = &key->ip_tun_key;
+	struct nbl_serv_netdev_ops *netdev_ops = &param->serv_mgt->net_resource_mgt->netdev_ops;
+	struct nbl_tc_tunnel_route_info tun_route_info;
+	unsigned char hw_dst[ETH_ALEN];
+	u8 nud_state;
+
+	memset(&tun_route_info, 0, sizeof(tun_route_info));
+	memset(hw_dst, 0, sizeof(hw_dst));
+	tun_route_info.fl.fl6.flowlabel = ip6_make_flowinfo(RT_TOS(tun_key->tos), tun_key->label);
+	tun_route_info.fl.fl6.fl6_dport = tun_key->tp_dst;
+	tun_route_info.fl.fl6.fl6_sport = tun_key->tp_src;
+	tun_route_info.fl.fl6.daddr = tun_key->u.ipv6.dst;
+	tun_route_info.fl.fl6.saddr = tun_key->u.ipv6.src;
+	tun_route_info.ttl = tun_key->ttl;
+	tun_route_info.is_ip6 = true;
+	tun_route_info.common = common;
+
+	ret = nbl_route_lookup(common, encap_mirred_dev, &tun_route_info, netdev_ops,
+			       rt_tos2priority(tun_key->tos));
+	if (ret) {
+		nbl_info(common, NBL_DEBUG_FLOW,
+			 "get route failed in create encap head v6, encap_dev:%s, ret %d",
+			 encap_mirred_dev->name, ret);
+		return ret;
 	}
 
-	nbl_tc_tun_route_cleanup(&tun_route_info);
+	rule_act->tc_tun_encap_out_dev = tun_route_info.real_out_dev;
 
-	nbl_debug(common, NBL_DEBUG_FLOW, "create ipv6 header ok: encap_len:%d", total_len);
+	/* copy mac */
+	read_lock_bh(&tun_route_info.n->lock);
+	nud_state = tun_route_info.n->nud_state;
+	ether_addr_copy(hw_dst, tun_route_info.n->ha);
+	read_unlock_bh(&tun_route_info.n->lock);
 
-	return 0;
+	if (common->product_type == NBL_LEONIS_TYPE)
+		ret = nbl_tc_tun_create_header_ipv6_leonis(common, rule_act, hw_dst,
+							   &tun_route_info, key);
+	else
+		ret = nbl_tc_tun_create_header_draco(param, rule_act, hw_dst, &tun_route_info, key);
 
-destroy_neigh:
+	if (!(nud_state & NUD_VALID))
+		neigh_event_send(tun_route_info.n, NULL);
+
 	nbl_tc_tun_route_cleanup(&tun_route_info);
 
 	return ret;
@@ -539,6 +561,8 @@ int nbl_tc_tun_parse_encap_info(struct nbl_rule_action *rule_act,
 		nbl_info(common, NBL_DEBUG_FLOW, "add tnl encap hash failed, ret %d!", ret);
 		goto malloc_err;
 	}
+
+	nbl_debug(common, NBL_DEBUG_FLOW, "parse tnl encap finish");
 
 parse_encap_finish:
 	kfree(rule_act->tunnel);

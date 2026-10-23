@@ -200,7 +200,7 @@ static int nbl_flow_ht_assign_proc(struct nbl_resource_mgt *res_mgt,
 			     tcam_item->key_mode == NBL_TC_KT_HALF_MODE)) {
 				tcam_item->tcam_flag = true;
 				nbl_debug(common, NBL_DEBUG_FLOW,
-					  "tc flow :pp%d ht0=%x,cnt=%d,ht1=%x,cnt=%d, to tcam.\n",
+					  "tc flow tcam:pp%d ht0=%x,cnt=%d,ht1=%x,cnt=%d, put it to tcam.\n",
 					  mt_input->pp_type, ht0_hash,
 					  pp_ht0_node->ref_cnt, ht1_hash,
 					  pp_ht1_node->ref_cnt);
@@ -991,10 +991,10 @@ static int nbl_flow_insert_at(struct nbl_resource_mgt *res_mgt,
 	}
 
 	mt_input->at_num = nbl_flow_act_num(mt_input, item);
-	spin_lock(&tc_flow_mgt->flow_lock);
+	mutex_lock(&tc_flow_mgt->flow_lock);
 
 	ret = nbl_flow_at_num_proc(res_mgt, mt_input, item, buf, at_item);
-	spin_unlock(&tc_flow_mgt->flow_lock);
+	mutex_unlock(&tc_flow_mgt->flow_lock);
 
 	return ret;
 }
@@ -1573,7 +1573,7 @@ nbl_cmdq_send_flow_ktat(struct nbl_tc_ht_item *ht_item,
 		ktat.info.at_size = 1;
 		memcpy(&ktat.info.at_data, &at1.info, sizeof(at1));
 		nbl_debug(common, NBL_DEBUG_FLOW,
-			  "tc flow kt index=0x%x,hw_index=0x%x, data:0x%x-%x-%x-%x-%x-%x-%x-%x.",
+			  "tc flow kt index=0x%x,at_hw_index=0x%x,at data:0x%x-%x-%x-%x-%x-%x-%x-%x.",
 			  ktat.info.kt_index, at_item->act_collect.act_hw_index,
 			  at1.info.at1, at1.info.at2, at1.info.at3, at1.info.at4,
 			  at1.info.at5, at1.info.at6, at1.info.at7, at1.info.at8);
@@ -1847,14 +1847,14 @@ static int nbl_flow_tab_add(struct nbl_flow_tab_filter *node,
 
 	nbl_tc_assign_key_for_hash(mt_input, node);
 
-	spin_lock(&tc_flow_mgt->flow_lock);
+	mutex_lock(&tc_flow_mgt->flow_lock);
 	if (mt_input->key_full) {
 		tcam_item.key_mode = NBL_TC_KT_FULL_MODE;
 		ret = nbl_tc_flow_alloc_bmp_id(select_input->pp_kt_bmp,
 					       select_input->pp_kt_num,
 					       tcam_item.key_mode, &node->tbl_id);
 		if (ret) {
-			spin_unlock(&tc_flow_mgt->flow_lock);
+			mutex_unlock(&tc_flow_mgt->flow_lock);
 			nbl_debug(common, NBL_DEBUG_FLOW,
 				  "tc flow failed to alloc id for full table, ret %d.\n", ret);
 			return -ENOSPC;
@@ -1865,7 +1865,7 @@ static int nbl_flow_tab_add(struct nbl_flow_tab_filter *node,
 					       select_input->pp_kt_num,
 					       tcam_item.key_mode, &node->tbl_id);
 		if (ret) {
-			spin_unlock(&tc_flow_mgt->flow_lock);
+			mutex_unlock(&tc_flow_mgt->flow_lock);
 			nbl_debug(common, NBL_DEBUG_FLOW,
 				  "tc flow failed to alloc id for half table, ret %d.\n", ret);
 			return -ENOSPC;
@@ -1878,7 +1878,7 @@ static int nbl_flow_tab_add(struct nbl_flow_tab_filter *node,
 				      select_input->pp_ht0_mng,
 				      select_input->pp_ht1_mng, &ht_item,
 				      &tcam_item);
-	spin_unlock(&tc_flow_mgt->flow_lock);
+	mutex_unlock(&tc_flow_mgt->flow_lock);
 
 	if (ret)
 		goto ret_bitmap_fail;
@@ -1924,14 +1924,14 @@ static int nbl_flow_tab_add(struct nbl_flow_tab_filter *node,
 	}
 
 	if (tcam_item.tcam_flag) {
-		spin_lock(&tc_flow_mgt->flow_lock);
+		mutex_lock(&tc_flow_mgt->flow_lock);
 		tcam_item.pp_type = select_input->pp_type;
 		tcam_item.sw_hash_id = node->sw_hash_id;
 		tcam_item.profile_id = idx_info->profile_id;
 		ret = nbl_tc_flow_send_tcam_2hw(res_mgt, select_input->tcam_pp_key_mng,
 						select_input->tcam_pp_ad_mng, &tcam_item);
 		node->tcam_index = tcam_item.tcam_index;
-		spin_unlock(&tc_flow_mgt->flow_lock);
+		mutex_unlock(&tc_flow_mgt->flow_lock);
 		goto ret_fail;
 	}
 
@@ -1942,14 +1942,14 @@ ret_fail:
 	kfree(at_item);
 ret_bitmap_fail:
 	if (ret) {
-		spin_lock(&tc_flow_mgt->flow_lock);
+		mutex_lock(&tc_flow_mgt->flow_lock);
 		if (mt_input->key_full)
 			nbl_tc_flow_free_bmp_id(select_input->pp_kt_bmp,
 						node->tbl_id, NBL_TC_KT_FULL_MODE);
 		else
 			nbl_tc_flow_free_bmp_id(select_input->pp_kt_bmp,
 						node->tbl_id, NBL_TC_KT_HALF_MODE);
-		spin_unlock(&tc_flow_mgt->flow_lock);
+		mutex_unlock(&tc_flow_mgt->flow_lock);
 	}
 
 	return ret;
@@ -1965,7 +1965,7 @@ static int nbl_flow_tab_del(struct nbl_flow_tab_filter *node, struct nbl_resourc
 
 	memset(&tcam_item, 0, sizeof(tcam_item));
 
-	spin_lock(&tc_flow_mgt->flow_lock);
+	mutex_lock(&tc_flow_mgt->flow_lock);
 	if (node->tcam_flag) {
 		if (mt_input->key_full)
 			tcam_item.key_mode = NBL_TC_KT_FULL_MODE;
@@ -2009,7 +2009,7 @@ ret_tcam_success:
 				       &node->edit_item.tc_mcc_list);
 
 ret_fail:
-	spin_unlock(&tc_flow_mgt->flow_lock);
+	mutex_unlock(&tc_flow_mgt->flow_lock);
 	return ret;
 }
 

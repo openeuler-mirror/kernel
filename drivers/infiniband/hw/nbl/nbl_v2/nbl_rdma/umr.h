@@ -1,0 +1,49 @@
+/* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
+/* Copyright (c) 2021, NEBULARMATRIX */
+
+#ifndef NBL_IB_UMR_H
+#define NBL_IB_UMR_H
+
+#include <rdma/ib_verbs.h>
+#include "nbl_adapt.h"
+#include "qp.h"
+#include "ah.h"
+#include "pble.h"
+#include "mr.h"
+#include "mem.h"
+
+#define NBL_DEFF_QKEY 0x11111111
+
+enum {
+	MAX_UMR_WR = 128,
+	MAX_UMR_CQE = 256,
+};
+
+enum {
+	NBL_UMR_STATE_UNINIT,
+	NBL_UMR_STATE_ACTIVE,
+	NBL_UMR_STATE_ERR,
+};
+
+enum {
+	NBL_UMR_OP_REVOKE,
+	NBL_UMR_OP_FLDPBL,
+	NBL_UMR_OP_MAX
+};
+
+struct nbl_umr_context {
+	struct ib_cqe cqe;
+	enum ib_wc_status status;
+	struct completion done;
+};
+
+void __nbl_umr_resource_cleanup(struct nbl_device *dev);
+void nbl_umr_resource_cleanup(struct nbl_device *dev);
+int __nbl_umr_resource_init(struct nbl_device *dev);
+int nbl_umr_resource_init(struct nbl_device *dev);
+int nbl_umr_revoke_mr(struct nbl_mr *mr);
+int nbl_umr_dmabuf_invcb_mr(struct nbl_mr *mr);
+int nbl_umr_dbgfs_handle(struct nbl_device *nbl_dev, u32 stag, u8 op);
+void nbl_invalidate_umem(struct ib_umem *umem, void *priv);
+
+#endif /* NBL_IB_UMR_H */

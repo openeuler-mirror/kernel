@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (c) 2022 nebula-matrix Limited.
- * Author:
+/* Nebula-matrix DPDK user-network
+ * Copyright(c) 2021-2030 nbl, Inc.
  */
 
 #include <linux/string.h>
@@ -9,6 +8,17 @@
 
 static u8 g_seq_index;
 spinlock_t nbl_tc_flow_inst_lock; /* used to protect global instance resources */
+
+static void
+nbl_draco_cmdq_debug_show_desc(const struct nbl_draco_cmd_desc *desc, u32 index,
+			       struct nbl_common_info *common)
+{
+	nbl_err(common, NBL_DEBUG_FLOW, "DESC [0x%x: %p] {cmd_status 0x%x, cmd_type 0x%x, module:%u, table:%u, opcode 0x%x, datalen 0x%x, exe_status 0x%x, errcode 0x%x, param 0x%x-0x%x; in buffer 0x%x-0x%x, out buffer 0x%x-0x%x}\n",
+		index, desc, desc->cmd_status, desc->cmd_type,
+		desc->module, desc->table, desc->opcode, desc->cmd_len, desc->exe_status,
+		desc->errcode, desc->param_high, desc->param_low, desc->send_low,
+		desc->send_high, desc->recv_low, desc->recv_high);
+}
 
 static inline void *nbl_cmdq_alloc_dma_mem(struct device *dma_dev,
 					   struct nbl_cmdq_dma_mem *mem,
@@ -69,7 +79,7 @@ nbl_cmdq_alloc_queue_bufs(const struct nbl_cmd_queue *queue,
 	ring->out_buffer_dma_head = kcalloc(queue->cmd_ring_depth, sizeof(struct nbl_cmdq_dma_mem),
 					    GFP_ATOMIC);
 	if (!ring->out_buffer_dma_head)
-		return -ENOMEM;
+		goto dealloc_cmd_queue_in_mem;
 
 	ring->out_buffer_info = (struct nbl_cmdq_dma_mem *)ring->out_buffer_dma_head;
 
@@ -92,8 +102,7 @@ dealloc_cmd_queue_out_bufs:
 	ring->out_buffer_info = NULL;
 	kfree(ring->out_buffer_dma_head);
 	ring->out_buffer_dma_head = NULL;
-	i = queue->cmd_ring_depth;
-
+dealloc_cmd_queue_in_mem:
 	nbl_cmdq_free_dma_mem(dma_dev, &ring->in_mem);
 	for (i = 0; i < queue->cmd_ring_depth; i++) {
 		bi = &ring->in_buffer_info[i];
@@ -254,6 +263,12 @@ nbl_cmdq_flag_check_cmd_done(const struct nbl_cmd_desc *desc) {
 	return (desc->flags & NBL_CMDQ_DESC_FLAG_DONE);
 }
 
+static inline bool
+nbl_draco_cmdq_flag_check_cmd_done(const struct nbl_draco_cmd_desc *desc)
+{
+	return (desc->cmd_status == NBL_CMD_STATUS_CLEAN_READY);
+}
+
 /**
  * @brief: free command queue ring and return free count
  * @cmd_queue: input, pointer to the hardware related properties
@@ -286,6 +301,33 @@ nbl_cmdq_clean_sq_ring(struct nbl_cmd_queue *cmd_queue)
 		+ ring->next_to_clean - ring->next_to_use - 1;
 }
 
+static enum nbl_cmd_status
+nbl_draco_cmdq_clean_sq_ring(struct nbl_cmd_queue *cmd_queue)
+{
+	struct nbl_cmd_ring *ring = &cmd_queue->sq_ring;
+	u16 ntc = ring->next_to_clean;
+	struct nbl_draco_cmd_desc *desc = NBL_DRACO_CMDQ_GET_DESC(*ring, ntc);
+
+	while (1) {
+		if (nbl_draco_cmdq_flag_check_cmd_done(desc))
+			memset(desc, 0, sizeof(*desc));
+		else
+			break;
+
+		ntc++;
+		if (ntc == ring->count)
+			ntc = 0;
+
+		/* next descriptor */
+		desc = NBL_DRACO_CMDQ_GET_DESC(*ring, ntc);
+	}
+
+	desc = NULL;
+	ring->next_to_clean = ntc;
+	return (ring->next_to_clean > ring->next_to_use ? 0 : ring->count)
+		+ ring->next_to_clean - ring->next_to_use - 1;
+}
+
 /**
  * @brief: check the command queue to see if command processed
  * @desc: input, pointer to the hardware related properties
@@ -298,9 +340,22 @@ nbl_cmdq_flag_check_dd(const struct nbl_cmd_desc *desc)
 }
 
 static inline bool
+nbl_draco_cmdq_flag_check_dd(const struct nbl_draco_cmd_desc *desc)
+{
+	return (desc->cmd_status == NBL_CMD_STATUS_SW_READY) ||
+	       (desc->cmd_status == NBL_CMD_STATUS_HW_ERROR);
+}
+
+static inline bool
 nbl_cmdq_flag_check_out_buffer(const struct nbl_cmd_desc *desc)
 {
 	return (desc->flags & NBL_CMDQ_DESC_FLAG_BUF_OUT);
+}
+
+static inline bool
+nbl_draco_cmdq_flag_check_out_buffer(const struct nbl_draco_cmd_desc *desc)
+{
+	return (desc->cmd_type >= NBL_CMD_TYPE_HW_W);
 }
 
 static inline bool
@@ -310,14 +365,32 @@ nbl_cmdq_flag_check_error(const struct nbl_cmd_desc *desc)
 }
 
 static inline bool
+nbl_draco_cmdq_flag_check_error(const struct nbl_draco_cmd_desc *desc)
+{
+	return (desc->cmd_status == NBL_CMD_STATUS_HW_ERROR);
+}
+
+static inline bool
 nbl_cmdq_flag_check_hit(const struct nbl_cmd_desc *desc)
 {
 	return (desc->flags & NBL_CMDQ_DESC_FLAG_HIT);
 }
 
+static inline bool
+nbl_draco_cmdq_flag_check_hit(const struct nbl_draco_cmd_desc *desc)
+{
+	return (desc->exe_status != NBL_CMD_EXE_STATUS_NOHIT);
+}
+
 static inline void
 nbl_cmdq_flag_mark_cmd_done(struct nbl_cmd_desc *desc) {
 	desc->flags |= NBL_CMDQ_DESC_FLAG_DONE;
+}
+
+static inline void
+nbl_draco_cmdq_flag_mark_cmd_done(struct nbl_draco_cmd_desc *desc)
+{
+	desc->cmd_status = NBL_CMD_STATUS_CLEAN_READY;
 }
 
 static inline bool
@@ -374,11 +447,89 @@ nbl_cmdq_execution_nolock(struct nbl_cmd_queue *queue,
 	if (ring->next_to_use == ring->count)
 		ring->next_to_use = 0;
 
-	/* wmb for cmdq notify */
+	/* write barrier to ensure command writes complete before updating the tail */
 	wmb();
 	phy_ops->update_cmdq_tail(NBL_CHAN_MGT_TO_PHY_PRIV(queue->chan_mgt),
 				  (ring->doorbell) & NBL_CMDQ_DOORBELL_MASK);
 	return NBL_CMDQ_SUCCESS;
+}
+
+static enum nbl_cmd_status
+nbl_draco_cmdq_execution_nolock(struct nbl_cmd_queue *queue,
+				struct nbl_cmd_ring *ring,
+				const struct nbl_cmd_hdr *hdr,
+				struct nbl_draco_cmd_desc *desc,
+				const struct nbl_cmd_content *cmd)
+{
+	struct nbl_phy_ops *phy_ops = NBL_CHAN_MGT_TO_PHY_OPS(queue->chan_mgt);
+	union nbl_cmdq_notify_val value;
+	struct nbl_common_info *common = queue->chan_mgt->common;
+
+	memset(&value, 0, sizeof(value));
+
+	/* clean the cmd send queue to reclaim descriptors */
+	if (nbl_draco_cmdq_clean_sq_ring(queue) == 0) {
+		nbl_err(common, NBL_DEBUG_FLOW, "tc flow cmd send queue full!");
+		return NBL_CMDQ_CQ_FULL;
+	}
+
+	/* fill descriptor */
+	desc->module = cpu_to_le16(hdr->module);
+	desc->table = cpu_to_le16(hdr->table);
+	desc->opcode = cpu_to_le16(hdr->opcode);
+	desc->param_high = cpu_to_le32(NBL_HI_DWORD(cmd->in_params));
+	desc->param_low = cpu_to_le32(NBL_LO_DWORD(cmd->in_params));
+	desc->cmd_len = cmd->in_length;
+	desc->exe_status = NBL_DRACO_CMD_NOHIT;
+
+	/* data to send */
+	if (cmd->in_va && cmd->in) {
+		desc->send_high = cpu_to_le32(NBL_HI_DWORD(cmd->in));
+		desc->send_low = cpu_to_le32(NBL_LO_DWORD(cmd->in));
+	}
+
+	/* data to receive */
+	if (cmd->out_va && cmd->out) {
+		desc->recv_high = cpu_to_le32(NBL_HI_DWORD(cmd->out));
+		desc->recv_low = cpu_to_le32(NBL_LO_DWORD(cmd->out));
+	}
+
+	if (cmd->in_va && cmd->out_va)
+		desc->cmd_type = NBL_CMD_TYPE_HW_RW;
+	else if (cmd->in_va)
+		desc->cmd_type = NBL_CMD_TYPE_HW_R;
+	else if (cmd->out_va)
+		desc->cmd_type = NBL_CMD_TYPE_HW_W;
+	else
+		desc->cmd_type = NBL_CMD_TYPE_BARE;
+
+	/* update next_to_use */
+	(ring->next_to_use)++;
+	(ring->doorbell)++;
+	if (ring->next_to_use == ring->count)
+		ring->next_to_use = 0;
+
+	/* wmb */
+	wmb();
+	value.info.qid = common->mgt_pf;
+	value.info.tail_ptr = (uint16_t)ring->doorbell;
+	phy_ops->update_cmdq_tail(NBL_CHAN_MGT_TO_PHY_PRIV(queue->chan_mgt), value.value);
+
+	return NBL_CMDQ_SUCCESS;
+}
+
+static inline enum nbl_cmd_status
+nbl_draco_cmdq_check_content(const struct nbl_cmd_queue *queue,
+			     const struct nbl_cmd_content *cmd)
+{
+	enum nbl_cmd_status status = NBL_CMDQ_SUCCESS;
+
+	if ((!cmd->in_va && cmd->in_length > NBL_CMDQ_HALF_DESC_LENGTH) ||
+	    (cmd->in_va && cmd->in_length > queue->sq_buf_size)) {
+		status = NBL_CMDQ_CQ_ERR_PARAMS;
+	}
+
+	return status;
 }
 
 static inline enum nbl_cmd_status
@@ -400,6 +551,29 @@ nbl_cmdq_check_content(const struct nbl_cmd_queue *queue,
 		status = NBL_CMDQ_CQ_ERR_PARAMS;
 
 	return status;
+}
+
+static inline bool
+nbl_draco_cmdq_flag_check_interface_error(struct nbl_draco_cmd_desc *desc)
+{
+	return (desc->errcode >> NBL_CMD_DESC_INTF_ERR_OFT);
+}
+
+static inline bool
+nbl_draco_cmdq_flag_check_hw_full(struct nbl_draco_cmd_desc *desc)
+{
+	return (((desc->errcode & 0x1f) == NBL_CMDQ_ERRCODE_KEY_FULL ||
+		 (desc->errcode & 0x1f) == NBL_CMDQ_ERRCODE_NO_KT_BLK) &&
+		desc->exe_status == NBL_CMD_EXE_STATUS_FAIL);
+}
+
+static inline void
+nbl_draco_cmdq_desc_check_errcode(const struct nbl_draco_cmd_desc *desc,
+				  struct nbl_common_info *common)
+{
+	if (desc->exe_status != NBL_CMD_EXE_STATUS_SUCCESS)
+		nbl_err(common, NBL_DEBUG_FLOW, "failed cmdq: status %d, errcode %d",
+			desc->exe_status, desc->errcode);
 }
 
 static inline enum nbl_cmd_status
@@ -493,6 +667,196 @@ nbl_cmdq_fetch_response(struct nbl_cmd_queue *queue, struct nbl_cmd_desc *desc,
 
 fetch_response_end:
 	queue->sq_last_status = status;
+	return status;
+}
+
+static enum nbl_cmd_status
+nbl_draco_cmdq_fetch_response(struct nbl_cmd_queue *queue, struct nbl_draco_cmd_desc *desc,
+			      struct nbl_cmd_content *cmd, struct nbl_cmdq_dma_mem *buffer)
+{
+	int *va, *out_va;
+	u8 errcode;
+	enum nbl_cmd_status status = NBL_CMDQ_SUCCESS;
+	struct nbl_common_info *common = queue->chan_mgt->common;
+
+	/* check descriptor flag error bit for firmware business */
+	if (nbl_draco_cmdq_flag_check_error(desc)) {
+		status = NBL_CMDQ_FAILED;
+		errcode = desc->errcode;
+		if (errcode) {
+			nbl_err(common, NBL_DEBUG_FLOW, "flow cmd queue error code: %d", errcode);
+		} else {
+			nbl_err(common, NBL_DEBUG_FLOW,
+				"flow cmd desc error in flag but no errorcode");
+		}
+
+		goto fetch_response_end;
+	}
+
+	/* check return buffer flag bit */
+	if (cmd->out_va && cmd->out && !nbl_draco_cmdq_flag_check_out_buffer(desc)) {
+		nbl_err(common, NBL_DEBUG_FLOW, "flow cmd response buffer bit not matched");
+		status = NBL_CMDQ_NOBUF_ERR;
+		goto fetch_response_end;
+	}
+
+	/* process out buffer */
+	if (cmd->out_va && cmd->out && buffer) {
+		cmd->out_length = le16_to_cpu(desc->cmd_len) - NBL_CMDQ_HALF_DESC_LENGTH;
+		if (cmd->out_length > queue->sq_buf_size) {
+			nbl_err(common, NBL_DEBUG_FLOW, "flow cmd buffer larger than allowed, out_length:%u, allowed_length:%u.\n",
+				cmd->out_length, queue->sq_buf_size);
+			status = NBL_CMDQ_CQ_ERR_BUFFER;
+			goto fetch_response_end;
+		}
+
+		memcpy((u8 *)cmd->out_va, (u8 *)&desc->param_low, NBL_CMDQ_PARAM_BYTES);
+		if ((desc->cmd_type == NBL_CMD_TYPE_HW_W ||
+		     desc->cmd_type == NBL_CMD_TYPE_HW_RW) && cmd->out_va) {
+			memcpy((u8 *)cmd->out_va + NBL_CMDQ_PARAM_BYTES,
+			       buffer->va, cmd->out_length);
+		}
+
+		va = buffer->va;
+		out_va = cmd->out_va;
+	}
+
+	if (desc->cmd_type == NBL_CMD_TYPE_BARE || desc->cmd_type == NBL_CMD_TYPE_HW_R)
+		memcpy((u8 *)&cmd->out_params, (u8 *)&desc->param_low, NBL_CMDQ_PARAM_BYTES);
+
+fetch_response_end:
+
+	if (nbl_draco_cmdq_flag_check_hw_full(desc))
+		status = NBL_CMDQ_EXCEED_RANGE;
+
+	queue->sq_last_status = status;
+
+	return status;
+}
+
+static enum nbl_cmd_status
+nbl_draco_cmdq_do_send(void *priv, const struct nbl_cmd_hdr *hdr, struct nbl_cmd_content *cmd)
+{
+	struct nbl_channel_mgt *chan_mgt = (struct nbl_channel_mgt *)priv;
+	struct nbl_cmdq_mgt *cmdq_mgt = chan_mgt->cmdq_mgt;
+	bool hit = false;
+	bool completed = false;
+	u32 desc_index = 0;
+	u32 total_delay = 0;
+	enum nbl_cmd_status status = NBL_CMDQ_SUCCESS;
+	struct nbl_cmd_queue *queue = &cmdq_mgt->cmd_queue;
+	struct nbl_cmd_ring *ring = &queue->sq_ring;
+	struct nbl_draco_cmd_desc *desc = NULL;
+	struct nbl_cmdq_dma_mem *in_buffer = NULL;
+	struct nbl_cmdq_dma_mem *out_buffer = NULL;
+	struct nbl_common_info *common = queue->chan_mgt->common;
+
+	/* check cmd queue status */
+	status = nbl_cmdq_check_queue(ring, common);
+	if (status)
+		goto abnormal_send;
+
+	/* check parameters: the sending part */
+	status = nbl_draco_cmdq_check_content(queue, cmd);
+	if (status)
+		goto abnormal_send;
+
+	/* lock the ring, assign buffer and send command */
+	spin_lock(&queue->sq_lock);
+
+	desc_index = ring->next_to_use;
+	/* assign pre-allocated dma for buffers */
+	if (cmd->in_va) {
+		in_buffer = &ring->in_buffer_info[desc_index];
+		memcpy(in_buffer->va, cmd->in_va, cmd->in_length - NBL_CMDQ_HALF_DESC_LENGTH);
+		cmd->in = in_buffer->pa;
+	}
+
+	if (cmd->out_va) {
+		out_buffer = &ring->out_buffer_info[desc_index];
+		cmd->out = out_buffer->pa;
+	}
+
+	desc = NBL_DRACO_CMDQ_GET_DESC(*ring, desc_index);
+	status = nbl_draco_cmdq_execution_nolock(queue, ring, hdr, desc, cmd);
+
+	/* check if queue is full */
+	if (status == NBL_CMDQ_CQ_FULL) {
+		nbl_err(common, NBL_DEBUG_FLOW, "cmdq never full cuz we wait until it get idle, cmdq full, cmdq len:%u, , next-to-use:%u, next-to-clean:%u, desc-idx:%u, opcode:%u, module:%u, table:%u.",
+			ring->len, ring->next_to_use, ring->next_to_clean,
+			desc_index, desc->opcode, desc->module, desc->table);
+		spin_unlock(&queue->sq_lock);
+		goto cmd_send_end;
+	}
+
+	do {
+		if (nbl_draco_cmdq_flag_check_dd(desc)) {
+			completed = true;
+			break;
+		}
+
+		total_delay++;
+		udelay(NBL_CMDQ_SQ_WAIT_USEC);
+	} while (total_delay < queue->sq_timeout);
+	if (total_delay > NBL_CMDQ_WAIT_WARN)
+		nbl_err(common, NBL_DEBUG_FLOW, "cmd time: %d us",
+			total_delay * NBL_CMDQ_SQ_WAIT_USEC);
+
+	hit = nbl_draco_cmdq_flag_check_hit(desc);
+	/* check interface error, while holding the lock */
+	spin_unlock(&queue->sq_lock);
+	prefetch(desc);
+	if (completed && hit) {
+		status = nbl_draco_cmdq_flag_check_interface_error(desc);
+		if (status) {
+			if (!hdr->is_from_tcam_eviction_cb)
+				nbl_err(common, NBL_DEBUG_FLOW, "cmd exe status 0x%x, errcode: 0x%x!\n",
+					desc->exe_status, desc->errcode);
+			if (nbl_draco_cmdq_flag_check_hw_full(desc))
+				status = NBL_CMDQ_EXCEED_RANGE;
+			goto cmd_send_end;
+		}
+	}
+
+	if (completed && hit) {
+		/* if ready, return output */
+		nbl_draco_cmdq_desc_check_errcode(desc, common);
+		status = nbl_draco_cmdq_fetch_response(queue, desc, cmd, out_buffer);
+	} else if (!completed) {
+		/* timeout error */
+		status = NBL_CMDQ_TIMEOUT_ERR;
+		nbl_err(common, NBL_DEBUG_FLOW, "tc flow cmdq firmware timeout!\n");
+		nbl_draco_cmdq_debug_show_desc(desc, ring->next_to_use, common);
+		nbl_err(common, NBL_DEBUG_FLOW, "timeout, cmd not completed! [0x%x: %p] {cmd_status 0x%x; cmd_type 0x%x; opcode 0x%x;exe status 0x%x, errcode 0x%x}\n",
+			ring->next_to_use, desc, desc->cmd_status, desc->cmd_type,
+			desc->opcode, desc->exe_status, desc->errcode);
+	} else {
+		status = NBL_CMDQ_NOHIT_ERR;
+		nbl_err(common, NBL_DEBUG_FLOW, "tc flow cmdq param error, module:%d table:%d, opcode: 0x%x, errcode: 0x%x.\n",
+			desc->module, desc->table, desc->opcode, desc->errcode);
+	}
+
+cmd_send_end:
+	/* mark desc as done by driver */
+	nbl_draco_cmdq_flag_mark_cmd_done(desc);
+
+abnormal_send:
+	desc = NULL;
+	ring = NULL;
+	queue = NULL;
+
+	return status;
+}
+
+static enum nbl_cmd_status
+nbl_draco_cmdq_send(void *priv, const void *vhdr, void *vcmd)
+{
+	enum nbl_cmd_status status;
+	const struct nbl_cmd_hdr *hdr = (const struct nbl_cmd_hdr *)vhdr;
+	struct nbl_cmd_content *cmd = (struct nbl_cmd_content *)vcmd;
+
+	/* command execution */
+	status = nbl_draco_cmdq_do_send(priv, hdr, cmd);
 	return status;
 }
 
@@ -630,12 +994,15 @@ nbl_cmdq_init_ring(struct nbl_cmdq_mgt *cmdq_mgt)
 static enum nbl_cmd_status
 nbl_cmdq_init_queue(struct nbl_cmdq_mgt *cmdq_mgt)
 {
+	enum nbl_cmd_status ret;
+
 	nbl_cmdq_init_queue_parameters(&cmdq_mgt->cmd_queue);
 
 	/* init queue lock */
 	spin_lock_init(&cmdq_mgt->cmd_queue.sq_lock);
-	nbl_cmdq_init_ring(cmdq_mgt);
-	return 0;
+	ret = nbl_cmdq_init_ring(cmdq_mgt);
+
+	return ret;
 }
 
 static int nbl_cmdq_init(void *priv, void *param)
@@ -659,8 +1026,9 @@ static int nbl_cmdq_reset(void *priv)
 {
 	struct nbl_channel_mgt *chan_mgt = (struct nbl_channel_mgt *)priv;
 	struct nbl_phy_ops *phy_ops = NBL_CHAN_MGT_TO_PHY_OPS(chan_mgt);
+	struct nbl_chan_cmdq_init_info cmdq_param;
 
-	phy_ops->reset_cmdq(NBL_CHAN_MGT_TO_PHY_PRIV(chan_mgt));
+	phy_ops->reset_cmdq(NBL_CHAN_MGT_TO_PHY_PRIV(chan_mgt), &cmdq_param);
 	return 0;
 }
 
@@ -675,19 +1043,74 @@ static void nbl_cmdq_get_param(void *priv, void *cmdq_param)
 	param->len = NBL_CMDQ_RING_DEPTH;
 }
 
+static void
+nbl_draco_cmdq_clean_sq_ring_all(struct nbl_cmd_queue *cmd_queue)
+{
+	struct nbl_cmd_ring *ring = &cmd_queue->sq_ring;
+	struct nbl_draco_cmd_desc *desc;
+	u16 index;
+
+	for (index = 0; index < ring->count; ++index) {
+		desc = NBL_DRACO_CMDQ_GET_DESC(*ring, index);
+		memset(desc, 0, sizeof(*desc));
+	}
+}
+
+static int nbl_draco_cmdq_reset(void *priv)
+{
+	struct nbl_channel_mgt *chan_mgt = (struct nbl_channel_mgt *)priv;
+	struct nbl_common_info *common = chan_mgt->common;
+	struct nbl_phy_ops *phy_ops = NBL_CHAN_MGT_TO_PHY_OPS(chan_mgt);
+	struct nbl_chan_cmdq_init_info cmdq_param;
+	struct nbl_cmd_queue *queue = &chan_mgt->cmdq_mgt->cmd_queue;
+	struct nbl_cmd_ring *ring = &queue->sq_ring;
+
+	memset(&cmdq_param, 0, sizeof(cmdq_param));
+
+	spin_lock(&queue->sq_lock);
+	queue->in_reset = true;
+	cmdq_param.vsi_id = common->vsi_id;
+	cmdq_param.bdf_num = (common->bus << 8 | common->devid << 3 |
+				NBL_COMMON_TO_PCI_FUNC_ID(common));
+	nbl_cmdq_get_param(chan_mgt, &cmdq_param);
+	phy_ops->reset_cmdq(NBL_CHAN_MGT_TO_PHY_PRIV(chan_mgt), &cmdq_param);
+
+	/* hardware ready, now clean all desc of the cmdq ring */
+	nbl_draco_cmdq_clean_sq_ring_all(queue);
+
+	ring->next_to_clean = 0;
+	ring->next_to_use = 0;
+	ring->doorbell = 0;
+	queue->in_reset = false;
+	spin_unlock(&queue->sq_lock);
+
+	return 0;
+}
+
 int nbl_chan_send_cmdq(void *priv, const void *hdr, void *cmd)
 {
 	struct nbl_channel_mgt *chan_mgt = (struct nbl_channel_mgt *)priv;
+	struct nbl_common_info *common = chan_mgt->common;
 	int ret;
 
-	if (!chan_mgt->cmdq_mgt)
+	if (!chan_mgt->cmdq_mgt) {
+		nbl_err(common, NBL_DEBUG_FLOW, "tc flow cmdq not initialized yet");
 		return NBL_CMDQ_NOT_READY;
+	}
 
-	ret = nbl_cmdq_send(priv, hdr, cmd);
-	if (ret == (int)NBL_CMDQ_NEED_RESET)
-		ret = nbl_cmdq_reset(priv);
-	else if (ret == (int)NBL_CMDQ_NEED_RESEND)
-		nbl_cmdq_send(priv, hdr, cmd);
+	if (common->product_type == NBL_DRACO_TYPE) {
+		ret = nbl_draco_cmdq_send(priv, hdr, cmd);
+		if (ret == (int)NBL_CMDQ_NEED_RESET)
+			ret = nbl_draco_cmdq_reset(priv);
+		else if (ret == (int)NBL_CMDQ_NEED_RESEND)
+			ret = nbl_draco_cmdq_send(priv, hdr, cmd);
+	} else {
+		ret = nbl_cmdq_send(priv, hdr, cmd);
+		if (ret == (int)NBL_CMDQ_NEED_RESET)
+			ret = nbl_cmdq_reset(priv);
+		else if (ret == (int)NBL_CMDQ_NEED_RESEND)
+			ret = nbl_cmdq_send(priv, hdr, cmd);
+	}
 
 	return ret;
 }
@@ -713,9 +1136,11 @@ int nbl_chan_cmdq_mgt_start(struct device *dev, void *priv)
 	struct nbl_channel_mgt *chan_mgt = (struct nbl_channel_mgt *)priv;
 	struct nbl_common_info *common = chan_mgt->common;
 	struct nbl_cmdq_mgt **cmdq_mgt = &chan_mgt->cmdq_mgt;
-	struct nbl_chan_cmdq_init_info cmdq_param = {0};
+	struct nbl_chan_cmdq_init_info cmdq_param;
 	u8 idx = 0;
 	int ret = 0;
+
+	memset(&cmdq_param, 0, sizeof(cmdq_param));
 
 	/* if cmdq not ready, setup command queue */
 	if (!(*cmdq_mgt)) {
@@ -746,7 +1171,8 @@ int nbl_chan_cmdq_mgt_start(struct device *dev, void *priv)
 				      NBL_COMMON_TO_PCI_FUNC_ID(common));
 		nbl_cmdq_get_param(chan_mgt, &cmdq_param);
 		nbl_cmdq_init(chan_mgt, &cmdq_param);
-		nbl_info(common, NBL_DEBUG_FLOW, "tc flow cmdq inited\n");
+		nbl_info(common, NBL_DEBUG_FLOW, "tc flow cmdq inited, vsi_id:%u, mgt_pf:%u\n",
+			 common->vsi_id, common->mgt_pf);
 	}
 
 	(*cmdq_mgt)->cmdq_refcount++;

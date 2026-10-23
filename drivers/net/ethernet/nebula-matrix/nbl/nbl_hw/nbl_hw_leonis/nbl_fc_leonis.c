@@ -24,7 +24,7 @@ static void nbl_fc_get_spec_sz(u16 *hit_sz, u16 *bytes_sz)
 	*bytes_sz = NBL_SPEC_STAT_BYTES_SIZE;
 }
 
-static void nbl_fc_get_flow_sz(u16 *hit_sz, u16 *bytes_sz)
+static void nbl_fc_get_flow_sz(struct nbl_fc_mgt *mgt, u16 *hit_sz, u16 *bytes_sz)
 {
 	*hit_sz = NBL_FLOW_STAT_HIT_SIZE;
 	*bytes_sz = NBL_FLOW_STAT_BYTES_SIZE;
@@ -36,7 +36,8 @@ static void nbl_fc_get_spec_stats(struct nbl_flow_counter *counter, u64 *pkts, u
 	NBL_GET_SPEC_STAT_BYTES(counter->cache.bytes, counter->lastbytes, bytes);
 }
 
-static void nbl_fc_get_flow_stats(struct nbl_flow_counter *counter, u64 *pkts, u64 *bytes)
+static void nbl_fc_get_flow_stats(struct nbl_fc_mgt *mgt, struct nbl_flow_counter *counter,
+				  u64 *pkts, u64 *bytes)
 {
 	NBL_GET_FLOW_STAT_HITS(counter->cache.packets, counter->lastpackets, pkts);
 	NBL_GET_FLOW_STAT_BYTES(counter->cache.bytes, counter->lastbytes, bytes);
@@ -44,7 +45,7 @@ static void nbl_fc_get_flow_stats(struct nbl_flow_counter *counter, u64 *pkts, u
 
 static int nbl_fc_update_flow_stats(struct nbl_fc_mgt *mgt,
 				    struct nbl_flow_query_counter *counter_array,
-				    u32 flow_num, u32 clear, enum nbl_pp_fc_type fc_type)
+				    u32 flow_num, u32 clear, bool is_spec_id)
 {
 	int ret = 0;
 	u32 idx = 0;
@@ -60,12 +61,12 @@ static int nbl_fc_update_flow_stats(struct nbl_fc_mgt *mgt,
 	memset(&squery_out, 0, sizeof(squery_out));
 
 	cmd.out_va = &fquery_out;
-	if (fc_type == NBL_FC_SPEC_TYPE) {
+	if (is_spec_id) {
 		hdr = mgt->cmd_hdr[NBL_ACL_STATID_READ];
 		cmd.out_va = &squery_out;
 		mgt->fc_ops.get_spec_stat_sz(&hit_size, &bytes_size);
 	} else {
-		mgt->fc_ops.get_flow_stat_sz(&hit_size, &bytes_size);
+		mgt->fc_ops.get_flow_stat_sz(mgt, &hit_size, &bytes_size);
 	}
 
 	cmd.in_va = counter_array->counter_id;
@@ -84,7 +85,7 @@ static int nbl_fc_update_flow_stats(struct nbl_fc_mgt *mgt,
 	}
 
 	for (idx = 0; idx < flow_num; idx++) {
-		if (fc_type == NBL_FC_SPEC_TYPE) {
+		if (is_spec_id) {
 			memcpy(&data_info.bytes, squery_out.info.all_data[idx].bytes, bytes_size);
 			memcpy(&data_info.packets, &squery_out.info.all_data[idx].hits, hit_size);
 		} else {
@@ -95,7 +96,7 @@ static int nbl_fc_update_flow_stats(struct nbl_fc_mgt *mgt,
 		nbl_debug(mgt->common, NBL_DEBUG_FLOW, "nbl flow fc get %u-%lu: packets:%llu-bytes:%llu\n",
 			  data_info.flow_id, counter_array->cookie[idx],
 			  data_info.packets, data_info.bytes);
-		ret = nbl_fc_set_stats(mgt, &data_info, counter_array->cookie[idx]);
+		ret = nbl_fc_set_stats(mgt, &data_info, counter_array->cookie[idx], is_spec_id);
 		if (ret)
 			goto set_stat_error;
 	}
@@ -107,7 +108,8 @@ cmd_send_error:
 	return ret;
 
 set_stat_error:
-	nbl_debug(mgt->common, NBL_DEBUG_FLOW, "set stats err.id:%u, cookie: %lu, ret(%u): %d",
+	nbl_debug(mgt->common, NBL_DEBUG_FLOW,
+		  "nbl flow fc set flow stats failed. count_id:%u, cookie: %lu, ret(%u): %d",
 		  counter_array->counter_id[idx], counter_array->cookie[idx], idx, ret);
 	return ret;
 }

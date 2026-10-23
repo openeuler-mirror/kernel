@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0*/
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (c) 2022 nebula-matrix Limited.
  * Author:
@@ -44,9 +44,16 @@ struct nbl_flow_l2_data {
 		struct nbl_flow_mcc_group *mcc_group;
 		u16 vsi;
 	};
+	u8 mac[ETH_ALEN];
+	u16 vlan;
 	bool multi;
 	bool mcast_flow;
 
+};
+
+struct nbl_flow_clear_data {
+	void *priv;
+	u16 vsi;
 };
 
 union nbl_l2_phy_up_data_u {
@@ -81,6 +88,24 @@ union nbl_l2_phy_lldp_lacp_data_u {
 		/ sizeof(u32))
 	u32 data[NBL_L2_PHY_LLDP_LACP_DATA_TAB_WIDTH];
 	u8 hash_key[sizeof(struct nbl_l2_phy_lldp_lacp_data)];
+};
+
+union nbl_ecn_count_data_u {
+	struct nbl_ecn_count_data {
+		u32 act0:22;
+		u32 act1:22;
+		u64 rsv0:36;
+		u64 rsv1;
+		u32 padding:4;
+		u32 sport:4;
+		u32 ecn:4;
+		u32 template:4;
+		u32 rsv[5];
+	} __packed info;
+#define NBL_ECN_COUNT_DATA_TAB_WIDTH (sizeof(struct nbl_ecn_count_data) \
+		/ sizeof(u32))
+	u32 data[NBL_ECN_COUNT_DATA_TAB_WIDTH];
+	u8 hash_key[sizeof(struct nbl_ecn_count_data)];
 };
 
 union nbl_l2_phy_up_multi_mcast_data_u {

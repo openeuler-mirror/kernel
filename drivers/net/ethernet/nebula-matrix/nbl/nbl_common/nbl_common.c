@@ -7,10 +7,8 @@
 #include "nbl_common.h"
 
 struct nbl_common_wq_mgt {
-	struct workqueue_struct *ctrl_dev_wq1;
 	struct workqueue_struct *ctrl_dev_wq2;
 	struct workqueue_struct *net_dev_wq;
-	struct workqueue_struct *keepalive_wq;
 	struct workqueue_struct *rdma_wq;
 	struct workqueue_struct *rdma_event_wq;
 };
@@ -25,11 +23,9 @@ void nbl_convert_mac(u8 *mac, u8 *reverse_mac)
 
 static struct nbl_common_wq_mgt *wq_mgt;
 
-void nbl_common_queue_work(struct work_struct *task, bool ctrl_task, bool singlethread)
+void nbl_common_queue_work(struct work_struct *task, bool ctrl_task)
 {
-	if (ctrl_task && singlethread)
-		queue_work(wq_mgt->ctrl_dev_wq1, task);
-	else if (ctrl_task && !singlethread)
+	if (ctrl_task)
 		queue_work(wq_mgt->ctrl_dev_wq2, task);
 	else if (!ctrl_task)
 		queue_work(wq_mgt->net_dev_wq, task);
@@ -43,20 +39,12 @@ void nbl_common_queue_work_rdma(struct work_struct *task, bool singlethread)
 		queue_work(wq_mgt->rdma_event_wq, task);
 }
 
-void nbl_common_queue_delayed_work(struct delayed_work *task, u32 msec,
-				   bool ctrl_task, bool singlethread)
+void nbl_common_queue_delayed_work(struct delayed_work *task, u32 msec, bool ctrl_task)
 {
-	if (ctrl_task && singlethread)
-		queue_delayed_work(wq_mgt->ctrl_dev_wq1, task, msecs_to_jiffies(msec));
-	else if (ctrl_task && !singlethread)
+	if (ctrl_task)
 		queue_delayed_work(wq_mgt->ctrl_dev_wq2, task, msecs_to_jiffies(msec));
 	else if (!ctrl_task)
 		queue_delayed_work(wq_mgt->net_dev_wq, task, msecs_to_jiffies(msec));
-}
-
-void nbl_common_queue_delayed_work_keepalive(struct delayed_work *task, u32 msec)
-{
-	queue_delayed_work(wq_mgt->keepalive_wq, task, msecs_to_jiffies(msec));
 }
 
 void nbl_common_release_task(struct work_struct *task)
@@ -84,14 +72,17 @@ void nbl_common_flush_task(struct work_struct *task)
 	flush_work(task);
 }
 
+void nbl_common_flush_delay_task(struct delayed_work *task)
+{
+	flush_delayed_work(task);
+}
+
 void nbl_common_destroy_wq(void)
 {
 	destroy_workqueue(wq_mgt->rdma_event_wq);
 	destroy_workqueue(wq_mgt->rdma_wq);
-	destroy_workqueue(wq_mgt->keepalive_wq);
 	destroy_workqueue(wq_mgt->net_dev_wq);
 	destroy_workqueue(wq_mgt->ctrl_dev_wq2);
-	destroy_workqueue(wq_mgt->ctrl_dev_wq1);
 	kfree(wq_mgt);
 }
 
@@ -100,12 +91,6 @@ int nbl_common_create_wq(void)
 	wq_mgt = kzalloc(sizeof(*wq_mgt), GFP_KERNEL);
 	if (!wq_mgt)
 		return -ENOMEM;
-
-	wq_mgt->ctrl_dev_wq1 = create_singlethread_workqueue("nbl_ctrldev_wq1");
-	if (!wq_mgt->ctrl_dev_wq1) {
-		pr_err("Failed to create workqueue nbl_ctrldev_wq1\n");
-		goto alloc_ctrl_dev_wq1_failed;
-	}
 
 	wq_mgt->ctrl_dev_wq2 = alloc_workqueue("%s", WQ_MEM_RECLAIM | WQ_UNBOUND,
 					       0, "nbl_ctrldev_wq2");
@@ -133,17 +118,8 @@ int nbl_common_create_wq(void)
 		goto alloc_rdma_event_wq_failed;
 	}
 
-	wq_mgt->keepalive_wq = alloc_workqueue("%s", WQ_MEM_RECLAIM | WQ_UNBOUND,
-					       0, "nbl_keepalive_wq1");
-	if (!wq_mgt->keepalive_wq) {
-		pr_err("Failed to create workqueue nbl_keepalive_wq1\n");
-		goto alloc_keepalive_wq_failed;
-	}
-
 	return 0;
 
-alloc_keepalive_wq_failed:
-	destroy_workqueue(wq_mgt->rdma_event_wq);
 alloc_rdma_event_wq_failed:
 	destroy_workqueue(wq_mgt->rdma_wq);
 alloc_rdma_wq_failed:
@@ -151,8 +127,6 @@ alloc_rdma_wq_failed:
 alloc_net_dev_wq_failed:
 	destroy_workqueue(wq_mgt->ctrl_dev_wq2);
 alloc_ctrl_dev_wq2_failed:
-	destroy_workqueue(wq_mgt->ctrl_dev_wq1);
-alloc_ctrl_dev_wq1_failed:
 	kfree(wq_mgt);
 	return -ENOMEM;
 }
@@ -170,7 +144,6 @@ u32 nbl_common_pf_id_subtraction_mgtpf_id(struct nbl_common_info *common, u32 pf
 /**
  * alloc a index resource poll, the index_size max is 64 * 1024
  * the poll support start_index not zero;
- * the poll support multi thread
  */
 void *nbl_common_init_index_table(struct nbl_index_tbl_key *key)
 {
@@ -1105,11 +1078,11 @@ void nbl_common_remove_hash_xy_table(void *priv, struct nbl_hash_xy_tbl_del_key 
 	devm_kfree(dev, tbl_mgt);
 }
 
-void nbl_flow_direct_parse_tlv_data(u8 *tlv, u32 length, handle_tlv callback, void *data)
+int nbl_flow_direct_parse_tlv_data(u8 *tlv, u32 length, handle_tlv callback, void *data)
 {
 	u32 offset = 0;
 	u16 type, len;
-	int ret;
+	int ret = 0;
 
 	while (offset + NBL_CHAN_FDIR_TLV_HEADER_LEN <= length) {
 		type = *(u16 *)tlv;
@@ -1121,4 +1094,5 @@ void nbl_flow_direct_parse_tlv_data(u8 *tlv, u32 length, handle_tlv callback, vo
 		offset += (NBL_CHAN_FDIR_TLV_HEADER_LEN + len);
 		tlv += (NBL_CHAN_FDIR_TLV_HEADER_LEN + len);
 	}
+	return ret;
 }

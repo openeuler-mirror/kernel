@@ -1,0 +1,106 @@
+/* SPDX-License-Identifier: ((GPL-2.0 WITH Linux-syscall-note) or Linux-OpenIB) */
+/* Copyright (c) 2021, NEBULARMATRIX */
+
+#ifndef NBL_USER_IOCTL_CMDS_H
+#define NBL_USER_IOCTL_CMDS_H
+
+#include <rdma/ib_user_ioctl_cmds.h>
+
+enum nbl_ib_uapi_uar_alloc_type {
+	NBL_IB_UAPI_UAR_ALLOC_TYPE_SQDB = 0x0,
+};
+
+enum nbl_ib_devx_other_attrs {
+	NBL_IB_ATTR_DEVX_OTHER_CMD_IN = (1U << UVERBS_ID_NS_SHIFT),
+	NBL_IB_ATTR_DEVX_OTHER_CMD_OUT,
+};
+
+enum nbl_ib_devx_query_uar_attrs {
+	NBL_IB_ATTR_DEVX_QUERY_UAR_USER_IDX = (1U << UVERBS_ID_NS_SHIFT),
+	NBL_IB_ATTR_DEVX_QUERY_UAR_DEV_IDX,
+};
+
+enum nbl_ib_devx_query_eqn_attrs {
+	NBL_IB_ATTR_DEVX_QUERY_EQN_USER_VEC = (1U << UVERBS_ID_NS_SHIFT),
+	NBL_IB_ATTR_DEVX_QUERY_EQN_DEV_EQN,
+};
+
+enum nbl_ib_devx_methods {
+	NBL_IB_METHOD_DEVX_OTHER = (1U << UVERBS_ID_NS_SHIFT),
+	NBL_IB_METHOD_DEVX_QUERY_UAR,
+	NBL_IB_METHOD_DEVX_QUERY_EQN,
+};
+
+enum nbl_ib_devx_obj_create_attrs {
+	NBL_IB_ATTR_DEVX_OBJ_CREATE_HANDLE = (1U << UVERBS_ID_NS_SHIFT),
+	NBL_IB_ATTR_DEVX_OBJ_CREATE_CMD_IN,
+	NBL_IB_ATTR_DEVX_OBJ_CREATE_CMD_OUT,
+};
+
+enum nbl_ib_devx_obj_destroy_attrs {
+	NBL_IB_ATTR_DEVX_OBJ_DESTROY_HANDLE = (1U << UVERBS_ID_NS_SHIFT),
+};
+
+enum nbl_ib_devx_obj_modify_attrs {
+	NBL_IB_ATTR_DEVX_OBJ_MODIFY_HANDLE = (1U << UVERBS_ID_NS_SHIFT),
+	NBL_IB_ATTR_DEVX_OBJ_MODIFY_CMD_IN,
+	NBL_IB_ATTR_DEVX_OBJ_MODIFY_CMD_OUT,
+};
+
+enum nbl_ib_devx_obj_query_attrs {
+	NBL_IB_ATTR_DEVX_OBJ_QUERY_HANDLE = (1U << UVERBS_ID_NS_SHIFT),
+	NBL_IB_ATTR_DEVX_OBJ_QUERY_CMD_IN,
+	NBL_IB_ATTR_DEVX_OBJ_QUERY_CMD_OUT,
+};
+
+enum nbl_ib_devx_obj_methods {
+	NBL_IB_METHOD_DEVX_OBJ_CREATE = (1U << UVERBS_ID_NS_SHIFT),
+	NBL_IB_METHOD_DEVX_OBJ_DESTROY,
+	NBL_IB_METHOD_DEVX_OBJ_MODIFY,
+	NBL_IB_METHOD_DEVX_OBJ_QUERY,
+};
+
+enum nbl_ib_devx_umem_reg_attrs {
+	NBL_IB_ATTR_DEVX_UMEM_REG_HANDLE = (1U << UVERBS_ID_NS_SHIFT),
+	NBL_IB_ATTR_DEVX_UMEM_REG_ADDR,
+	NBL_IB_ATTR_DEVX_UMEM_REG_LEN,
+	NBL_IB_ATTR_DEVX_UMEM_REG_ACCESS,
+	NBL_IB_ATTR_DEVX_UMEM_REG_OUT_ID,
+	NBL_IB_ATTR_DEVX_UMEM_REG_PGSZ_BITMAP,
+	NBL_IB_ATTR_DEVX_UMEM_REG_DMABUF_FD,
+};
+
+enum nbl_ib_devx_umem_dereg_attrs {
+	NBL_IB_ATTR_DEVX_UMEM_DEREG_HANDLE = (1U << UVERBS_ID_NS_SHIFT),
+};
+
+enum nbl_ib_devx_umem_methods {
+	NBL_IB_METHOD_DEVX_UMEM_REG = (1U << UVERBS_ID_NS_SHIFT),
+	NBL_IB_METHOD_DEVX_UMEM_DEREG,
+};
+
+enum nbl_ib_uar_alloc_attrs {
+	NBL_IB_ATTR_UAR_OBJ_ALLOC_HANDLE = (1U << UVERBS_ID_NS_SHIFT),
+	NBL_IB_ATTR_UAR_OBJ_ALLOC_TYPE,
+	NBL_IB_ATTR_UAR_OBJ_ALLOC_MMAP_OFFSET,
+	NBL_IB_ATTR_UAR_OBJ_ALLOC_MMAP_LENGTH,
+	NBL_IB_ATTR_UAR_OBJ_ALLOC_PAGE_ID,
+};
+
+enum nbl_ib_uar_obj_destroy_attrs {
+	NBL_IB_ATTR_UAR_OBJ_DESTROY_HANDLE = (1U << UVERBS_ID_NS_SHIFT),
+};
+
+enum nbl_ib_uar_obj_methods {
+	NBL_IB_METHOD_UAR_OBJ_ALLOC = (1U << UVERBS_ID_NS_SHIFT),
+	NBL_IB_METHOD_UAR_OBJ_DESTROY,
+};
+
+enum nbl_ib_objects {
+	NBL_IB_OBJECT_DEVX = (1U << UVERBS_ID_NS_SHIFT),
+	NBL_IB_OBJECT_DEVX_OBJ,
+	NBL_IB_OBJECT_DEVX_UMEM,
+	NBL_IB_OBJECT_UAR,
+};
+
+#endif

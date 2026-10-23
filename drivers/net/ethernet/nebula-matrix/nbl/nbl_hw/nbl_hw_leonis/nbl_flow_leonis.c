@@ -58,7 +58,7 @@ static u16 nbl_flow_cfg_action_set_dport_mcc_vsi(u16 vsi)
 {
 	union nbl_action_data set_dport = {.data = 0};
 
-	set_dport.dport.up.upcall_flag = AUX_FWD_TYPE_NML_FWD;
+	set_dport.dport.up.upcall_flag = AUX_FWD_TYPE_UPCALL;
 	set_dport.dport.up.port_type = SET_DPORT_TYPE_VSI_HOST;
 	set_dport.dport.up.port_id = vsi;
 	set_dport.dport.up.next_stg_sel = NEXT_STG_SEL_ACL_S0;
@@ -97,7 +97,7 @@ static int nbl_flow_cfg_action_up_tnl(struct nbl_flow_param param, u32 *action0,
 {
 	*action1 = 0;
 	if (param.mcc_id == NBL_MCC_ID_INVALID)
-		*action0 = nbl_flow_cfg_action_set_dport(AUX_FWD_TYPE_NML_FWD,
+		*action0 = nbl_flow_cfg_action_set_dport(AUX_FWD_TYPE_UPCALL,
 							 SET_DPORT_TYPE_VSI_HOST,
 							 param.vsi, NEXT_STG_SEL_ACL_S0);
 	else
@@ -109,7 +109,7 @@ static int nbl_flow_cfg_action_up_tnl(struct nbl_flow_param param, u32 *action0,
 static int nbl_flow_cfg_action_lldp_lacp_up(struct nbl_flow_param param, u32 *action0, u32 *action1)
 {
 	*action1 = 0;
-	*action0 = nbl_flow_cfg_action_set_dport(AUX_FWD_TYPE_NML_FWD, SET_DPORT_TYPE_VSI_HOST,
+	*action0 = nbl_flow_cfg_action_set_dport(AUX_FWD_TYPE_UPCALL, SET_DPORT_TYPE_VSI_HOST,
 						 param.vsi, NEXT_STG_SEL_ACL_S0);
 
 	return 0;
@@ -119,7 +119,7 @@ static int nbl_flow_cfg_action_up(struct nbl_flow_param param, u32 *action0, u32
 {
 	*action1 = 0;
 	if (param.mcc_id == NBL_MCC_ID_INVALID)
-		*action0 = nbl_flow_cfg_action_set_dport(AUX_FWD_TYPE_NML_FWD,
+		*action0 = nbl_flow_cfg_action_set_dport(AUX_FWD_TYPE_UPCALL,
 							 SET_DPORT_TYPE_VSI_HOST,
 							 param.vsi, NEXT_STG_SEL_NONE);
 	else
@@ -286,7 +286,7 @@ static int nbl_flow_cfg_tls_up_key_value(union nbl_common_data_u *data,
 	dport = (0x2 << 10) + param.vsi;
 
 	if (param.type == NBL_KT_HALF_MODE) {
-		kt_data->ipv4_info.template = NBL_EM0_PT_PHY_UL4S_IPV4;
+		kt_data->ipv4_info.template = nbl_em0_pt_phy_ul4s_ipv4;
 		kt_data->ipv4_info.sip_high = param.data[1] >> 4;
 		kt_data->ipv4_info.sip_low = param.data[1];
 		kt_data->ipv4_info.dip_high = param.data[5] >> 4;
@@ -295,7 +295,7 @@ static int nbl_flow_cfg_tls_up_key_value(union nbl_common_data_u *data,
 		kt_data->ipv4_info.l4_dport = param.data[10];
 		kt_data->ipv4_info.sport = sport;
 	} else {
-		kt_data->ipv6_info.template = NBL_EM0_PT_PHY_UL4S_IPV6;
+		kt_data->ipv6_info.template = nbl_em0_pt_phy_ul4s_ipv6;
 		kt_data->ipv6_info.sip1 = ((u64)param.data[1] << 28) + (param.data[2] >> 4);
 		kt_data->ipv6_info.sip2 = ((u64)param.data[2] << 60) +
 					  ((u64)param.data[3] << 28) + (param.data[4] >> 4);
@@ -402,6 +402,40 @@ static void nbl_flow_cfg_kt_action_nd_upcall(union nbl_common_data_u *data,
 
 	kt_data->info.act0 = action0;
 	kt_data->info.act1 = action1;
+}
+
+static int nbl_flow_cfg_action_ecn_count(struct nbl_flow_param param, u32 *action0, u32 *action1)
+{
+	union nbl_action_data flow_idx = {.data = 0};
+
+	flow_idx.flow_idx.flow_id = NBL_FLOW_IDX_MAX_FLOW_ID - param.eth;
+	*action0 = flow_idx.data + (NBL_ACT_SET_FLOW_STAT1 << 16);
+	*action1 = 0;
+
+	return 0;
+}
+
+static int nbl_flow_cfg_ecn_count_key_value(union nbl_common_data_u *data,
+					    struct nbl_flow_param param, u8 eth_mode)
+{
+	union nbl_ecn_count_data_u *kt_data = (union nbl_ecn_count_data_u *)data;
+	u8 sport;
+
+	kt_data->info.template = NBL_EM1_PT_PHY_ECN_COUNT;
+	kt_data->info.ecn = NBL_EM1_PT_PHY_ECN;
+
+	sport = param.eth;
+	kt_data->info.sport = sport + NBL_SPORT_ETH_OFFSET;
+
+	return 0;
+}
+
+static void nbl_flow_cfg_kt_action_ecn_count(union nbl_common_data_u *data,
+					     u32 action0, u32 action1)
+{
+	union nbl_l2_phy_lldp_lacp_data_u *kt_data = (union nbl_l2_phy_lldp_lacp_data_u *)data;
+
+	kt_data->info.act0 = action0;
 }
 
 static int nbl_flow_cfg_action_multi_mcast(struct nbl_flow_param param, u32 *action0, u32 *action1)
@@ -535,6 +569,10 @@ static const struct nbl_flow_rule_cfg_ops cfg_ops[] = {
 			       nbl_flow_cfg_action_multi_mcast,
 			       nbl_flow_cfg_l3down_multi_mcast_key_value,
 			       nbl_flow_cfg_kt_action_l2down_multi_mcast),
+	NBL_FLOW_OPS_ARR_ENTRY(NBL_FLOW_ECN_COUNT,
+			       nbl_flow_cfg_action_ecn_count,
+			       nbl_flow_cfg_ecn_count_key_value,
+			       nbl_flow_cfg_kt_action_ecn_count),
 };
 
 static int nbl_flow_alloc_flow_id(struct nbl_flow_mgt *flow_mgt, struct nbl_flow_fem_entry *flow)
@@ -859,10 +897,10 @@ static int nbl_flow_del_2hw(struct nbl_resource_mgt *res_mgt, struct nbl_ht_item
 }
 
 static void nbl_flow_cfg_tcam(struct nbl_tcam_item *tcam_item, struct nbl_ht_item *ht_item,
-			      struct nbl_kt_item *kt_item, u32 action0, u32 action1)
+			      struct nbl_kt_item *kt_item, u32 action0, u32 action1, u8 pp_type)
 {
 	tcam_item->key_mode = NBL_KT_HALF_MODE;
-	tcam_item->pp_type = NBL_PT_PP0;
+	tcam_item->pp_type = pp_type;
 	tcam_item->tcam_action[0] = action0;
 	tcam_item->tcam_action[1] = action1;
 	memcpy(&tcam_item->ht_item, ht_item, sizeof(struct nbl_ht_item));
@@ -875,7 +913,7 @@ static int nbl_flow_add_tcam(struct nbl_resource_mgt *res_mgt, struct nbl_tcam_i
 
 	return phy_ops->add_tcam(NBL_RES_MGT_TO_PHY_PRIV(res_mgt), tcam_item.tcam_index,
 				 tcam_item.kt_item.kt_data.hash_key, tcam_item.tcam_action,
-				 tcam_item.key_mode, NBL_PT_PP0);
+				 tcam_item.key_mode, tcam_item.pp_type);
 }
 
 static void nbl_flow_del_tcam(struct nbl_resource_mgt *res_mgt, struct nbl_tcam_item tcam_item)
@@ -883,7 +921,7 @@ static void nbl_flow_del_tcam(struct nbl_resource_mgt *res_mgt, struct nbl_tcam_
 	struct nbl_phy_ops *phy_ops = NBL_RES_MGT_TO_PHY_OPS(res_mgt);
 
 	phy_ops->del_tcam(NBL_RES_MGT_TO_PHY_PRIV(res_mgt), tcam_item.tcam_index,
-			  tcam_item.key_mode, NBL_PT_PP0);
+			  tcam_item.key_mode, tcam_item.pp_type);
 }
 
 static int nbl_flow_add_flow(struct nbl_resource_mgt *res_mgt, struct nbl_flow_param param,
@@ -929,6 +967,7 @@ static int nbl_flow_add_flow(struct nbl_resource_mgt *res_mgt, struct nbl_flow_p
 			goto free_mem;
 		}
 	}
+
 	ret = nbl_flow_alloc_flow_id(flow_mgt, flow);
 	if (ret)
 		goto free_mem;
@@ -965,7 +1004,7 @@ static int nbl_flow_add_flow(struct nbl_resource_mgt *res_mgt, struct nbl_flow_p
 		if (ret)
 			goto out;
 
-		nbl_flow_cfg_tcam(tcam_item, &ht_item, &kt_item, action0, action1);
+		nbl_flow_cfg_tcam(tcam_item, &ht_item, &kt_item, action0, action1, NBL_PT_PP0);
 		flow->tcam_index = tcam_item->tcam_index;
 
 		ret = nbl_flow_add_tcam(res_mgt, *tcam_item);
@@ -1021,11 +1060,13 @@ static void nbl_flow_del_flow(struct nbl_resource_mgt *res_mgt, struct nbl_flow_
 		nbl_flow_del_2hw(res_mgt, ht_item, kt_item, flow->flow_type);
 	} else {
 		tcam_item.tcam_index = flow->tcam_index;
+		tcam_item.pp_type = NBL_PT_PP0;
 		nbl_flow_del_tcam(res_mgt, tcam_item);
 		nbl_flow_free_tcam_id(flow_mgt, &tcam_item);
 	}
 
 	nbl_flow_free_flow_id(flow_mgt, flow);
+
 	if (flow->type >= NBL_FLOW_ACCEL_BEGIN && flow->type < NBL_FLOW_ACCEL_END) {
 		if (flow->flow_type == NBL_KT_FULL_MODE)
 			flow_mgt->accel_flow_count -= 2;
@@ -1103,7 +1144,7 @@ static int nbl_flow_add_mcc_node(struct nbl_resource_mgt *res_mgt,
 
 		WARN_ON(!nbl_list_empty(list));
 		ret = phy_ops->add_mcc(NBL_RES_MGT_TO_PHY_PRIV(res_mgt), mcc_node->mcc_id,
-				       prev_mcc_id, NBL_MCC_ID_INVALID, mcc_node->mcc_action);
+				       prev_mcc_id, NBL_MCC_ID_INVALID, mcc_node->mcc_action, 0, 0);
 		goto check_ret;
 	}
 
@@ -1126,13 +1167,13 @@ static int nbl_flow_add_mcc_node(struct nbl_resource_mgt *res_mgt,
 			prev_mcc_id = mcc_head->mcc_id;
 			ret |= phy_ops->add_mcc(NBL_RES_MGT_TO_PHY_PRIV(res_mgt), mcc_node->mcc_id,
 						prev_mcc_id, next_mcc_id,
-						mcc_node->mcc_action);
+						mcc_node->mcc_action, 0, 0);
 		}
 		goto check_ret;
 	}
 
-	ret = phy_ops->add_mcc(NBL_RES_MGT_TO_PHY_PRIV(res_mgt),
-			       mcc_node->mcc_id, prev_mcc_id, next_mcc_id, mcc_node->mcc_action);
+	ret = phy_ops->add_mcc(NBL_RES_MGT_TO_PHY_PRIV(res_mgt), mcc_node->mcc_id,
+			       prev_mcc_id, next_mcc_id, mcc_node->mcc_action, 0, 0);
 check_ret:
 	if (ret) {
 		list_del(&mcc_node->node);
@@ -1153,8 +1194,8 @@ static void nbl_flow_del_mcc_node(struct nbl_resource_mgt *res_mgt,
 	struct nbl_flow_mcc_node *mcc_head = NULL;
 	u16 prev_mcc_id, next_mcc_id;
 
-	if (list_entry_is_head(mcc_node, head, node) ||
-	    list_entry_is_head(mcc_node, list, node))
+	if (nbl_list_entry_is_head(mcc_node, head, node) ||
+	    nbl_list_entry_is_head(mcc_node, list, node))
 		return;
 
 	if (mcc_node->mcc_head) {
@@ -1162,7 +1203,7 @@ static void nbl_flow_del_mcc_node(struct nbl_resource_mgt *res_mgt,
 		prev_mcc_id = NBL_MCC_ID_INVALID;
 		next_mcc_id = NBL_MCC_ID_INVALID;
 		phy_ops->del_mcc(NBL_RES_MGT_TO_PHY_PRIV(res_mgt), mcc_node->mcc_id,
-				prev_mcc_id, next_mcc_id);
+				prev_mcc_id, next_mcc_id, 0, 0);
 		goto free_node;
 	}
 
@@ -1184,13 +1225,13 @@ static void nbl_flow_del_mcc_node(struct nbl_resource_mgt *res_mgt,
 		list_for_each_entry(mcc_head, head, node) {
 			prev_mcc_id = mcc_head->mcc_id;
 			phy_ops->del_mcc(NBL_RES_MGT_TO_PHY_PRIV(res_mgt),
-					 mcc_node->mcc_id, prev_mcc_id, next_mcc_id);
+					 mcc_node->mcc_id, prev_mcc_id, next_mcc_id, 0, 0);
 		}
 		goto free_node;
 	}
 
 	phy_ops->del_mcc(NBL_RES_MGT_TO_PHY_PRIV(res_mgt), mcc_node->mcc_id,
-			 prev_mcc_id, next_mcc_id);
+			 prev_mcc_id, next_mcc_id, 0, 0);
 free_node:
 	list_del(&mcc_node->node);
 }
@@ -1370,11 +1411,8 @@ static void nbl_flow_macvlan_node_del_action_func(void *priv, void *x_key, void 
 	struct nbl_flow_l2_data *rule_data = (struct nbl_flow_l2_data *)data;
 	int i;
 
-	for (i = 0; i < NBL_FLOW_MACVLAN_MAX; i++) {
-		if (i == NBL_FLOW_UP_TNL && rule_data->multi)
-			continue;
+	for (i = 0; i < NBL_FLOW_MACVLAN_MAX; i++)
 		nbl_flow_del_flow(res_mgt, &rule_data->entry[i]);
-	}
 
 	/* delete mcc */
 	if (rule_data->mcast_flow)
@@ -1500,6 +1538,8 @@ static int nbl_flow_add_macvlan(void *priv, u8 *mac, u16 vlan, u16 vsi)
 		alloc_rule = 1;
 		rule_data->multi = is_multicast_ether_addr(mac);
 		rule_data->mcast_flow = 0;
+		memcpy(rule_data->mac, mac, sizeof(rule_data->mac));
+		rule_data->vlan = vlan;
 	}
 
 	if (rule_data->multi)
@@ -1524,20 +1564,14 @@ static int nbl_flow_add_macvlan(void *priv, u8 *mac, u16 vlan, u16 vsi)
 	}
 
 	if (!alloc_rule) {
-		for (i = 0; i < NBL_FLOW_MACVLAN_MAX; i++) {
-			if (i == NBL_FLOW_UP_TNL && rule_data->multi)
-				continue;
-
+		for (i = 0; i < NBL_FLOW_MACVLAN_MAX; i++)
 			nbl_flow_del_flow(res_mgt, &rule_data->entry[i]);
-		}
 
 		if (pend_group)
 			nbl_flow_free_mcc_group(res_mgt, pend_group);
 	}
 
 	for (i = 0; i < NBL_FLOW_MACVLAN_MAX; i++) {
-		if (i == NBL_FLOW_UP_TNL && rule_data->multi)
-			continue;
 		if (mcc_group) {
 			if (i <= NBL_FLOW_UP)
 				param.mcc_id = mcc_group->up_mcc_id;
@@ -1576,11 +1610,8 @@ success:
 	return 0;
 
 add_flow_failed:
-	while (--i + 1) {
-		if (i == NBL_FLOW_UP_TNL && rule_data->multi)
-			continue;
+	while (--i + 1)
 		nbl_flow_del_flow(res_mgt, &rule_data->entry[i]);
-	}
 	if (!alloc_rule)
 		nbl_common_free_hash_xy_node(res->mac_hash_tbl, mac, &vlan);
 	if (mcc_group)
@@ -1671,12 +1702,8 @@ static void nbl_flow_del_macvlan(void *priv, u8 *mac, u16 vlan, u16 vsi)
 		}
 	}
 
-	for (i = 0; i < NBL_FLOW_MACVLAN_MAX; i++) {
-		if (i == NBL_FLOW_UP_TNL && rule_data->multi)
-			continue;
-
+	for (i = 0; i < NBL_FLOW_MACVLAN_MAX; i++)
 		nbl_flow_del_flow(res_mgt, &rule_data->entry[i]);
-	}
 
 	if (pend_group)
 		nbl_flow_free_mcc_group(res_mgt, pend_group);
@@ -1690,8 +1717,6 @@ static void nbl_flow_del_macvlan(void *priv, u8 *mac, u16 vlan, u16 vsi)
 						flow_mgt->vsi_max_per_switch) + vsi_base;
 
 		for (i = 0; i < NBL_FLOW_MACVLAN_MAX; i++) {
-			if (i == NBL_FLOW_UP_TNL && rule_data->multi)
-				continue;
 			if (mcc_group) {
 				if (i <= NBL_FLOW_UP)
 					param.mcc_id = mcc_group->up_mcc_id;
@@ -1727,13 +1752,10 @@ alloc_mcc_group_failed:
 	return;
 
 add_flow_failed:
-	while (--i + 1) {
-		if (i == NBL_FLOW_UP_TNL && rule_data->multi)
-			continue;
+	while (--i + 1)
 		nbl_flow_del_flow(res_mgt, &rule_data->entry[i]);
-	}
 	if (mcc_group)
-		nbl_flow_free_mcc_group(res_mgt, pend_group);
+		nbl_flow_free_mcc_group(res_mgt, mcc_group);
 	nbl_common_free_hash_xy_node(res->mac_hash_tbl, mac, &vlan);
 	kfree(vsi_bitmap);
 	nbl_common_scan_hash_xy_node(res->mac_hash_tbl, &scan_key);
@@ -1741,10 +1763,33 @@ add_flow_failed:
 		clear_bit(vf_id, res->vf_bitmap);
 		res->active_vfs--;
 	}
-
 }
 
-static int nbl_flow_add_lag(void *priv, u16 vsi)
+int nbl_flow_set_decap_set(void *priv, struct nbl_ch_prm_set_decap_set *param)
+{
+	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
+	struct nbl_common_info *common = NBL_RES_MGT_TO_COMMON(res_mgt);
+	struct nbl_phy_ops *phy_ops = NBL_RES_MGT_TO_PHY_OPS(res_mgt);
+	u16 vsi_id = nbl_res_func_id_to_vsi_id(res_mgt, NBL_COMMON_TO_MGT_PF(common),
+					       NBL_VSI_SERV_PF_DATA_TYPE);
+
+	phy_ops->set_decap_set(NBL_RES_MGT_TO_PHY_PRIV(res_mgt), param->mac, param->vlan_0,
+			       param->vlan_1, param->vlan_layer, param->idx, param->is_add, vsi_id);
+
+	return 0;
+}
+
+static void nbl_flow_macvlan_clear_del_action_func(void *priv, void *x_key, void *y_key,
+						   void *data)
+{
+	struct nbl_flow_clear_data *clear_data = (struct nbl_flow_clear_data *)priv;
+	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)clear_data->priv;
+	struct nbl_flow_l2_data *rule_data = (struct nbl_flow_l2_data *)data;
+
+	nbl_flow_del_macvlan(res_mgt, rule_data->mac, rule_data->vlan, clear_data->vsi);
+}
+
+static int nbl_flow_add_lag(void *priv, u16 *vsi)
 {
 	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
 	struct nbl_flow_mgt *flow_mgt = NBL_RES_MGT_TO_FLOW_MGT(res_mgt);
@@ -1753,30 +1798,30 @@ static int nbl_flow_add_lag(void *priv, u16 vsi)
 	struct nbl_flow_param param = {0};
 
 	list_for_each_entry(rule, &flow_mgt->lacp_list, node)
-		if (rule->vsi == vsi)
+		if (rule->vsi == *vsi)
 			return 0;
 
 	rule = kzalloc(sizeof(*rule), GFP_KERNEL);
 	if (!rule)
 		return -ENOMEM;
 
-	param.eth = nbl_res_vsi_id_to_eth_id(res_mgt, vsi);
-	param.vsi = vsi;
+	param.eth = nbl_res_vsi_id_to_eth_id(res_mgt, *vsi);
+	param.vsi = *vsi;
 	param.ether_type = ETH_P_SLOW;
 
 	if (nbl_flow_add_flow(res_mgt, param, NBL_FLOW_LLDP_LACP_UP, &rule->entry)) {
-		nbl_err(common, NBL_DEBUG_FLOW, "Fail to add lag flow for vsi %d", vsi);
+		nbl_err(common, NBL_DEBUG_FLOW, "Fail to add lag flow for vsi %d", *vsi);
 		kfree(rule);
 		return -EFAULT;
 	}
 
-	rule->vsi = vsi;
+	rule->vsi = *vsi;
 	list_add_tail(&rule->node, &flow_mgt->lacp_list);
 
 	return 0;
 }
 
-static void nbl_flow_del_lag(void *priv, u16 vsi)
+static int nbl_flow_del_lag(void *priv, u16 *vsi)
 {
 	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
 	struct nbl_flow_mgt *flow_mgt;
@@ -1785,19 +1830,21 @@ static void nbl_flow_del_lag(void *priv, u16 vsi)
 	flow_mgt = NBL_RES_MGT_TO_FLOW_MGT(res_mgt);
 
 	list_for_each_entry(rule, &flow_mgt->lacp_list, node)
-		if (rule->vsi == vsi)
+		if (rule->vsi == *vsi)
 			break;
 
-	if (list_entry_is_head(rule, &flow_mgt->lacp_list, node))
-		return;
+	if (nbl_list_entry_is_head(rule, &flow_mgt->lacp_list, node))
+		return 0;
 
 	nbl_flow_del_flow(res_mgt, &rule->entry);
 
 	list_del(&rule->node);
 	kfree(rule);
+
+	return 0;
 }
 
-static int nbl_flow_add_lldp(void *priv, u16 vsi)
+static int nbl_flow_add_lldp(void *priv, u16 *vsi)
 {
 	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
 	struct nbl_flow_mgt *flow_mgt = NBL_RES_MGT_TO_FLOW_MGT(res_mgt);
@@ -1806,30 +1853,30 @@ static int nbl_flow_add_lldp(void *priv, u16 vsi)
 	struct nbl_flow_param param = {0};
 
 	list_for_each_entry(rule, &flow_mgt->lldp_list, node)
-		if (rule->vsi == vsi)
+		if (rule->vsi == *vsi)
 			return 0;
 
 	rule = kzalloc(sizeof(*rule), GFP_KERNEL);
 	if (!rule)
 		return -ENOMEM;
 
-	param.eth = nbl_res_vsi_id_to_eth_id(res_mgt, vsi);
-	param.vsi = vsi;
+	param.eth = nbl_res_vsi_id_to_eth_id(res_mgt, *vsi);
+	param.vsi = *vsi;
 	param.ether_type = ETH_P_LLDP;
 
 	if (nbl_flow_add_flow(res_mgt, param, NBL_FLOW_LLDP_LACP_UP, &rule->entry)) {
-		nbl_err(common, NBL_DEBUG_FLOW, "Fail to add lldp flow for vsi %d", vsi);
+		nbl_err(common, NBL_DEBUG_FLOW, "Fail to add lldp flow for vsi %d", *vsi);
 		kfree(rule);
 		return -EFAULT;
 	}
 
-	rule->vsi = vsi;
+	rule->vsi = *vsi;
 	list_add_tail(&rule->node, &flow_mgt->lldp_list);
 
 	return 0;
 }
 
-static void nbl_flow_del_lldp(void *priv, u16 vsi)
+static int nbl_flow_del_lldp(void *priv, u16 *vsi)
 {
 	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
 	struct nbl_flow_mgt *flow_mgt;
@@ -1838,16 +1885,18 @@ static void nbl_flow_del_lldp(void *priv, u16 vsi)
 	flow_mgt = NBL_RES_MGT_TO_FLOW_MGT(res_mgt);
 
 	list_for_each_entry(rule, &flow_mgt->lldp_list, node)
-		if (rule->vsi == vsi)
+		if (rule->vsi == *vsi)
 			break;
 
-	if (list_entry_is_head(rule, &flow_mgt->lldp_list, node))
-		return;
+	if (nbl_list_entry_is_head(rule, &flow_mgt->lldp_list, node))
+		return 0;
 
 	nbl_flow_del_flow(res_mgt, &rule->entry);
 
 	list_del(&rule->node);
 	kfree(rule);
+
+	return 0;
 }
 
 static int nbl_flow_change_mcc_group_chain(struct nbl_resource_mgt *res_mgt, u8 eth,
@@ -1947,6 +1996,21 @@ static int nbl_flow_add_multi_group(struct nbl_resource_mgt *res_mgt, u8 eth)
 	struct nbl_flow_mcc_node *down_node;
 	int i, ret;
 
+	/* The structure for MCC allmulti list is:
+	 *
+	 *    l2/l3_mc_mcast_up
+	 *         |
+	 *         |
+	 *        BMC       ->       |
+	 *                           VSI 0       ->       VSI 1       -> ...
+	 *        ETH       ->       |
+	 *         |
+	 *         |
+	 *    l2/l3_mc_mcast_down
+	 *
+	 * So that the up mc pkts will be send to BMC, not need broadcast to eth,
+	 * but the down mc pkts will send to eth, not send to BMC.
+	 */
 	down_node = nbl_flow_alloc_mcc_node(flow_mgt, NBL_MCC_INDEX_ETH, eth, 1);
 	if (!down_node)
 		return -ENOSPC;
@@ -2070,12 +2134,148 @@ fail:
 	return ret;
 }
 
+static int nbl_flow_add_tcam_flow(struct nbl_resource_mgt *res_mgt, struct nbl_flow_param param,
+				  s32 type, struct nbl_flow_fem_entry *flow)
+{
+	struct nbl_common_info *common = NBL_RES_MGT_TO_COMMON(res_mgt);
+	struct nbl_ht_item ht_item;
+	struct nbl_kt_item kt_item;
+	struct nbl_tcam_item *tcam_item = NULL;
+	u32 action0, action1;
+	u32 tcam_id;
+	int ret = 0;
+
+	memset(&ht_item, 0, sizeof(ht_item));
+	memset(&kt_item, 0, sizeof(kt_item));
+
+	tcam_item = kzalloc(sizeof(*tcam_item), GFP_ATOMIC);
+	if (!tcam_item)
+		return -ENOMEM;
+
+	flow->flow_type = param.type;
+	flow->type = type;
+	flow->flow_id = 0xFFFF;
+
+	ret = cfg_ops[type].cfg_action(param, &action0, &action1);
+	if (ret)
+		goto free_mem;
+
+	ret = cfg_ops[type].cfg_key(&kt_item.kt_data, param, NBL_COMMON_TO_ETH_MODE(common));
+	if (ret)
+		goto free_mem;
+
+	tcam_id = NBL_MAX_TCAM_ID - param.eth;
+	tcam_item->tcam_index = tcam_id;
+	nbl_flow_cfg_tcam(tcam_item, &ht_item, &kt_item, action0, action1, NBL_PT_PP1);
+	flow->tcam_index = tcam_item->tcam_index;
+
+	ret = nbl_flow_add_tcam(res_mgt, *tcam_item);
+
+free_mem:
+	kfree(tcam_item);
+
+	return ret;
+}
+
+static int nbl_flow_add_ecn(void *priv, u16 eth)
+{
+	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
+	struct nbl_flow_mgt *flow_mgt = NBL_RES_MGT_TO_FLOW_MGT(res_mgt);
+	struct nbl_common_info *common = NBL_RES_MGT_TO_COMMON(res_mgt);
+	struct nbl_flow_ecn_rule *rule;
+	struct nbl_flow_param param = {0};
+
+	list_for_each_entry(rule, &flow_mgt->ecn_list, node)
+		if (rule->eth == eth)
+			return 0;
+
+	rule = kzalloc(sizeof(*rule), GFP_KERNEL);
+	if (!rule)
+		return -ENOMEM;
+
+	param.eth = eth;
+	param.type = NBL_KT_HALF_MODE;
+
+	if (nbl_flow_add_tcam_flow(res_mgt, param, NBL_FLOW_ECN_COUNT, &rule->entry)) {
+		nbl_err(common, NBL_DEBUG_FLOW, "Fail to add ecn flow for eth %d", eth);
+		kfree(rule);
+		return -EFAULT;
+	}
+
+	rule->eth = eth;
+	list_add_tail(&rule->node, &flow_mgt->ecn_list);
+
+	return 0;
+}
+
+static void nbl_flow_del_tcam_flow(struct nbl_resource_mgt *res_mgt,
+				   struct nbl_flow_fem_entry *flow)
+{
+	struct nbl_tcam_item tcam_item;
+
+	memset(&tcam_item, 0, sizeof(tcam_item));
+
+	tcam_item.tcam_index = flow->tcam_index;
+	tcam_item.pp_type = NBL_PT_PP1;
+	nbl_flow_del_tcam(res_mgt, tcam_item);
+}
+
+static void nbl_flow_del_ecn(void *priv, u16 eth)
+{
+	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
+	struct nbl_flow_mgt *flow_mgt;
+	struct nbl_flow_ecn_rule *rule;
+
+	flow_mgt = NBL_RES_MGT_TO_FLOW_MGT(res_mgt);
+
+	list_for_each_entry(rule, &flow_mgt->ecn_list, node)
+		if (rule->eth == eth)
+			break;
+
+	if (nbl_list_entry_is_head(rule, &flow_mgt->ecn_list, node))
+		return;
+
+	nbl_flow_del_tcam_flow(res_mgt, &rule->entry);
+
+	list_del(&rule->node);
+	kfree(rule);
+}
+
+static void nbl_flow_remove_ecn_stats(void *priv)
+{
+	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
+	struct nbl_eth_info *eth_info = NBL_RES_MGT_TO_ETH_INFO(res_mgt);
+	int i;
+
+	for_each_set_bit(i, eth_info->eth_bitmap, NBL_MAX_ETHERNET)
+		nbl_flow_del_ecn(res_mgt, i);
+}
+
+static int nbl_flow_setup_ecn_stats(void *priv)
+{
+	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
+	struct nbl_eth_info *eth_info = NBL_RES_MGT_TO_ETH_INFO(res_mgt);
+	int i, ret = 0;
+
+	for_each_set_bit(i, eth_info->eth_bitmap, NBL_MAX_ETHERNET) {
+		ret = nbl_flow_add_ecn(res_mgt, i);
+		if (ret)
+			goto fail;
+	}
+
+	return 0;
+
+fail:
+	nbl_flow_remove_ecn_stats(res_mgt);
+	return ret;
+}
+
 static int nbl_res_flow_cfg_duppkt_mcc(void *priv, struct nbl_lag_member_list_param *param)
 {
 	return 0;
 }
 
-static void nbl_flow_clear_accel_flow(void *priv, u16 vsi_id)
+static int nbl_flow_clear_accel_flow(void *priv, u16 *vsi_id)
 {
 	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
 	struct nbl_flow_mgt *flow_mgt = NBL_RES_MGT_TO_FLOW_MGT(res_mgt);
@@ -2083,18 +2283,20 @@ static void nbl_flow_clear_accel_flow(void *priv, u16 vsi_id)
 	struct nbl_flow_ul4s_rule *ul4s_rule, *ul4s_rule_safe;
 
 	list_for_each_entry_safe(dipsec_rule, dipsec_rule_safe, &flow_mgt->dprbac_head, node)
-		if (dipsec_rule->vsi == vsi_id) {
+		if (dipsec_rule->vsi == *vsi_id) {
 			nbl_flow_del_flow(res_mgt, &dipsec_rule->dipsec_entry);
 			list_del(&dipsec_rule->node);
 			kfree(dipsec_rule);
 		}
 
 	list_for_each_entry_safe(ul4s_rule, ul4s_rule_safe, &flow_mgt->ul4s_head, node)
-		if (ul4s_rule->vsi == vsi_id) {
+		if (ul4s_rule->vsi == *vsi_id) {
 			nbl_flow_del_flow(res_mgt, &ul4s_rule->ul4s_entry);
 			list_del(&ul4s_rule->node);
 			kfree(ul4s_rule);
 		}
+
+	return 0;
 }
 
 static u16 nbl_vsi_mtu_index(struct nbl_resource_mgt *res_mgt, u16 vsi_id)
@@ -2122,24 +2324,29 @@ static void nbl_clear_mtu_entry(struct nbl_resource_mgt *res_mgt, u16 vsi_id)
 	}
 }
 
-static void nbl_flow_clear_flow(void *priv, u16 vsi_id)
+static int nbl_flow_clear_flow(void *priv, u16 *vsi_id)
 {
 	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
 	struct nbl_flow_mgt *flow_mgt = NBL_RES_MGT_TO_FLOW_MGT(res_mgt);
+	struct nbl_flow_clear_data data;
 	void *mac_hash_tbl;
 	struct nbl_hash_xy_tbl_scan_key scan_key;
 	u8 eth_id;
 
-	eth_id = nbl_res_vsi_id_to_eth_id(res_mgt, vsi_id);
+	eth_id = nbl_res_vsi_id_to_eth_id(res_mgt, *vsi_id);
 	mac_hash_tbl = flow_mgt->switch_res[eth_id].mac_hash_tbl;
+	data.priv = priv;
+	data.vsi = *vsi_id;
 
-	nbl_clear_mtu_entry(res_mgt, vsi_id);
-	NBL_HASH_XY_TBL_SCAN_KEY_INIT(&scan_key, NBL_HASH_TBL_OP_DELETE, NBL_HASH_TBL_ALL_SCAN,
-				      false, NULL, NULL, &vsi_id,
-				      &nbl_flow_macvlan_node_vsi_match_func, res_mgt,
-				      &nbl_flow_macvlan_node_del_action_func);
+	nbl_clear_mtu_entry(res_mgt, *vsi_id);
+	NBL_HASH_XY_TBL_SCAN_KEY_INIT(&scan_key, NBL_HASH_TBL_OP_SHOW, NBL_HASH_TBL_ALL_SCAN,
+				      false, NULL, NULL, vsi_id,
+				      &nbl_flow_macvlan_node_vsi_match_func, &data,
+				      &nbl_flow_macvlan_clear_del_action_func);
 	nbl_common_scan_hash_xy_node(mac_hash_tbl, &scan_key);
-	nbl_flow_del_multi_mcast(res_mgt, vsi_id);
+	nbl_flow_del_multi_mcast(res_mgt, *vsi_id);
+
+	return 0;
 }
 
 char templete_name[NBL_FLOW_TYPE_MAX][16] = {
@@ -2197,11 +2404,8 @@ static void nbl_flow_macvlan_node_show_action_func(void *priv, void *x_key, void
 	seq_printf(m, "\nvlan %d MAC address %02X:%02X:%02X:%02X:%02X:%02X, multi %u, mcast %u\n",
 		   vlan, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], rule_data->multi,
 		   rule_data->mcast_flow);
-	for (i = 0; i < NBL_FLOW_MACVLAN_MAX; i++) {
-		if (i == NBL_FLOW_UP_TNL && rule_data->multi)
-			continue;
+	for (i = 0; i < NBL_FLOW_MACVLAN_MAX; i++)
 		nbl_flow_id_dump(m, &rule_data->entry[i], templete_name[i]);
-	}
 	if (!rule_data->mcast_flow)
 		seq_printf(m, "rule action to vsi %u\n", rule_data->vsi);
 	else
@@ -2217,6 +2421,7 @@ static void nbl_flow_dump_flow(void *priv, struct seq_file *m)
 	struct nbl_flow_mcc_node *mcc_node;
 	struct nbl_flow_lldp_rule *lldp_rule;
 	struct nbl_flow_lacp_rule *lacp_rule;
+	struct nbl_flow_ecn_rule *ecn_rule;
 	struct nbl_flow_fem_entry *entry;
 	struct nbl_hash_xy_tbl_scan_key scan_key;
 	int i, j;
@@ -2256,13 +2461,20 @@ static void nbl_flow_dump_flow(void *priv, struct seq_file *m)
 	list_for_each_entry(lldp_rule, &flow_mgt->lldp_list, node)
 		seq_printf(m, "LLDP rule: vsi %d\n", lldp_rule->vsi);
 
+	list_for_each_entry(ecn_rule, &flow_mgt->ecn_list, node)
+		seq_printf(m, "ECN rule: eth %d tcam_index %d\n",
+			   ecn_rule->eth, ecn_rule->entry.tcam_index);
+
 	seq_puts(m, "\n");
 	list_for_each_entry(lacp_rule, &flow_mgt->lacp_list, node)
 		seq_printf(m, "LACP rule: vsi %d\n", lacp_rule->vsi);
 }
 
-static int nbl_flow_add_ktls_rx_flow(void *priv, u32 index, u32 *data, u16 vsi)
+static int nbl_flow_add_ktls_rx_flow(void *priv, struct nbl_ch_prm_cfg_ktls_flow *prm)
 {
+	u32 index = prm->index;
+	u32 *data = prm->data;
+	u16 vsi = prm->vsi;
 	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
 	struct nbl_flow_mgt *flow_mgt;
 	struct nbl_common_info *common;
@@ -2297,8 +2509,9 @@ static int nbl_flow_add_ktls_rx_flow(void *priv, u32 index, u32 *data, u16 vsi)
 	return 0;
 }
 
-static void nbl_flow_del_ktls_rx_flow(void *priv, u32 index)
+static int nbl_flow_del_ktls_rx_flow(void *priv, struct nbl_ch_prm_cfg_ktls_flow *prm)
 {
+	u32 index = prm->index;
 	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
 	struct nbl_flow_mgt *flow_mgt;
 	struct nbl_flow_ul4s_rule *rule;
@@ -2309,16 +2522,21 @@ static void nbl_flow_del_ktls_rx_flow(void *priv, u32 index)
 		if (rule->index == index)
 			break;
 
-	if (list_entry_is_head(rule, &flow_mgt->ul4s_head, node))
-		return;
+	if (nbl_list_entry_is_head(rule, &flow_mgt->ul4s_head, node))
+		return 0;
 
 	nbl_flow_del_flow(res_mgt, &rule->ul4s_entry);
 	list_del(&rule->node);
 	kfree(rule);
+
+	return 0;
 }
 
-static int nbl_flow_add_ipsec_tx_flow(void *priv, u32 index, u32 *data, u16 vsi)
+static int nbl_flow_add_ipsec_tx_flow(void *priv, struct nbl_ch_prm_cfg_ipsec_flow *prm)
 {
+	u32 index = prm->index;
+	u32 *data = prm->data;
+	u16 vsi = prm->vsi;
 	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
 	struct nbl_flow_mgt *flow_mgt;
 	struct nbl_common_info *common;
@@ -2353,8 +2571,9 @@ static int nbl_flow_add_ipsec_tx_flow(void *priv, u32 index, u32 *data, u16 vsi)
 	return 0;
 }
 
-static void nbl_flow_del_ipsec_tx_flow(void *priv, u32 index)
+static int nbl_flow_del_ipsec_tx_flow(void *priv, struct nbl_ch_prm_cfg_ipsec_flow *prm)
 {
+	u32 index = prm->index;
 	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
 	struct nbl_flow_mgt *flow_mgt;
 	struct nbl_flow_dipsec_rule *rule;
@@ -2365,32 +2584,32 @@ static void nbl_flow_del_ipsec_tx_flow(void *priv, u32 index)
 		if (rule->index == index)
 			break;
 
-	if (list_entry_is_head(rule, &flow_mgt->dprbac_head, node))
-		return;
+	if (nbl_list_entry_is_head(rule, &flow_mgt->dprbac_head, node))
+		return 0;
 
 	nbl_flow_del_flow(res_mgt, &rule->dipsec_entry);
 	list_del(&rule->node);
 	kfree(rule);
+
+	return 0;
 }
 
 static void nbl_res_flr_clear_accel_flow(void *priv, u16 vf_id)
 {
 	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
 	u16 func_id = vf_id + NBL_MAX_PF;
-	u16 vsi_id = nbl_res_func_id_to_vsi_id(res_mgt, func_id, NBL_VSI_SERV_VF_DATA_TYPE);
+	u16 vsi_id = nbl_res_func_id_to_vsi_id(res_mgt, func_id, NBL_VSI_DATA);
 
-	if (nbl_res_vf_is_active(priv, func_id))
-		nbl_flow_clear_accel_flow(priv, vsi_id);
+	nbl_flow_clear_accel_flow(priv, &vsi_id);
 }
 
 static void nbl_res_flr_clear_flow(void *priv, u16 vf_id)
 {
 	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
 	u16 func_id = vf_id + NBL_MAX_PF;
-	u16 vsi_id = nbl_res_func_id_to_vsi_id(res_mgt, func_id, NBL_VSI_SERV_VF_DATA_TYPE);
+	u16 vsi_id = nbl_res_func_id_to_vsi_id(res_mgt, func_id, NBL_VSI_DATA);
 
-	if (nbl_res_vf_is_active(priv, func_id))
-		nbl_flow_clear_flow(priv, vsi_id);
+	nbl_flow_clear_flow(priv, &vsi_id);
 }
 
 static void nbl_res_flow_del_nd_upcall_flow(void *priv)
@@ -2410,7 +2629,7 @@ static void nbl_res_flow_del_nd_upcall_flow(void *priv)
 	}
 
 	rule = list_entry(flow_mgt->nd_upcall_list.next, struct nbl_flow_nd_upcall_rule, node);
-	if (list_entry_is_head(rule, &flow_mgt->nd_upcall_list, node))
+	if (nbl_list_entry_is_head(rule, &flow_mgt->nd_upcall_list, node))
 		return;
 
 	for (i = 0; i < NBL_FLOW_PMD_ND_UPCALL_FLOW_NUM; i++)
@@ -2474,13 +2693,13 @@ static int nbl_res_flow_add_nd_upcall_flow(void *priv, u16 vsi, bool for_pmd)
 	return 0;
 }
 
-static int nbl_res_flow_check_flow_table_spec(void *priv, u16 vlan_cnt,
-					      u16 unicast_cnt, u16 multicast_cnt)
+static int nbl_res_flow_check_flow_table_spec(void *priv, struct nbl_ch_prm_flow_table_spec *param)
 {
 	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
 	struct nbl_flow_mgt *flow_mgt = NBL_RES_MGT_TO_FLOW_MGT(res_mgt);
 	u32 reserve_cnt = nbl_flow_get_reserve_macvlan_cnt(res_mgt);
-	u32 need = vlan_cnt * (3 * unicast_cnt + 2 * multicast_cnt);
+	u32 need = param->vlan_list_cnt * NBL_FLOW_MACVLAN_MAX *
+		(param->unicast_mac_cnt + param->multi_mac_cnt);
 
 	if (reserve_cnt + need > flow_mgt->flow_id_cnt)
 		return -ENOSPC;
@@ -2591,6 +2810,7 @@ static void nbl_flow_cfg_mirror_outputport_event(void *priv, bool enable)
 do {											\
 	NBL_FLOW_SET_OPS(add_macvlan, nbl_flow_add_macvlan);				\
 	NBL_FLOW_SET_OPS(del_macvlan, nbl_flow_del_macvlan);				\
+	NBL_FLOW_SET_OPS(set_decap_set, nbl_flow_set_decap_set);			\
 	NBL_FLOW_SET_OPS(add_lag_flow, nbl_flow_add_lag);				\
 	NBL_FLOW_SET_OPS(del_lag_flow, nbl_flow_del_lag);				\
 	NBL_FLOW_SET_OPS(add_lldp_flow, nbl_flow_add_lldp);				\
@@ -2599,6 +2819,8 @@ do {											\
 	NBL_FLOW_SET_OPS(del_multi_mcast, nbl_flow_del_multi_mcast);			\
 	NBL_FLOW_SET_OPS(setup_multi_group, nbl_flow_setup_multi_group);		\
 	NBL_FLOW_SET_OPS(remove_multi_group, nbl_flow_remove_multi_group);		\
+	NBL_FLOW_SET_OPS(setup_ecn_stats, nbl_flow_setup_ecn_stats);			\
+	NBL_FLOW_SET_OPS(remove_ecn_stats, nbl_flow_remove_ecn_stats);			\
 	NBL_FLOW_SET_OPS(clear_accel_flow, nbl_flow_clear_accel_flow);			\
 	NBL_FLOW_SET_OPS(clear_flow, nbl_flow_clear_flow);				\
 	NBL_FLOW_SET_OPS(dump_flow, nbl_flow_dump_flow);				\
@@ -2701,6 +2923,7 @@ static int nbl_flow_setup_mgt(struct device *dev, struct nbl_resource_mgt *res_m
 	INIT_LIST_HEAD(&flow_mgt->ul4s_head);
 	INIT_LIST_HEAD(&flow_mgt->dprbac_head);
 	INIT_LIST_HEAD(&flow_mgt->nd_upcall_list);
+	INIT_LIST_HEAD(&flow_mgt->ecn_list);
 
 	flow_mgt->vsi_max_per_switch = NBL_VSI_MAX_ID / eth_info->eth_num;
 

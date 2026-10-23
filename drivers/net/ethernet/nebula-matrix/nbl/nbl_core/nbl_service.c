@@ -3,20 +3,20 @@
  * Copyright (c) 2022 nebula-matrix Limited.
  * Author:
  */
-
 #include "nbl_ethtool.h"
 #include "nbl_ktls.h"
 #include "nbl_ipsec.h"
+#include "nbl_macsec.h"
 #include "nbl_p4_version.h"
 #include "nbl_tc.h"
 #include <crypto/hash.h>
 
-static void nbl_serv_set_link_state(struct nbl_service_mgt *serv_mgt, struct net_device *netdev);
+static void nbl_serv_set_link_state(void *priv, struct net_device *netdev);
 static int nbl_serv_update_default_vlan(struct nbl_service_mgt *serv_mgt, u16 vid);
 
 static void nbl_serv_set_queue_param(struct nbl_serv_ring *ring, u16 desc_num,
 				     struct nbl_txrx_queue_param *param, u16 vsi_id,
-				     u16 global_vector_id)
+				     u16 global_vector_id, u16 half_offload_en)
 {
 	param->vsi_id = vsi_id;
 	param->dma = ring->dma;
@@ -28,15 +28,12 @@ static void nbl_serv_set_queue_param(struct nbl_serv_ring *ring, u16 desc_num,
 	param->extend_header = 1;
 	param->rxcsum = 1;
 	param->split = 0;
+	param->half_offload_en = half_offload_en;
 }
 
-/**
- * In virtio mode, the emulator triggers the configuration of
- * txrx_registers only based on tx_ring, so the rx_info needs
- * to be delivered first before the tx_info can be delivered.
- */
-static int
-nbl_serv_setup_queues(struct nbl_service_mgt *serv_mgt, struct nbl_serv_ring_vsi_info *vsi_info)
+static int nbl_serv_setup_queues(struct nbl_service_mgt *serv_mgt,
+				 struct nbl_serv_ring_vsi_info *vsi_info,
+				 u16 half_offload_en)
 {
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_serv_ring_mgt *ring_mgt = NBL_SERV_MGT_TO_RING_MGT(serv_mgt);
@@ -46,6 +43,10 @@ nbl_serv_setup_queues(struct nbl_service_mgt *serv_mgt, struct nbl_serv_ring_vsi
 	u16 start = vsi_info->ring_offset, end = vsi_info->ring_offset + vsi_info->ring_num;
 	int vector_offset = 0;
 	int i, ret = 0;
+	bool interleave_seg_disable;
+	struct nbl_ch_prm_setup_queue setup_q_prm;
+
+	interleave_seg_disable = test_bit(NBL_FLAG_INTERLEAVE_SEG_DISABLE, &serv_mgt->flags);
 
 	if (vsi_info->vsi_index == NBL_VSI_XDP)
 		vector_offset = ring_mgt->xdp_ring_offset;
@@ -54,9 +55,12 @@ nbl_serv_setup_queues(struct nbl_service_mgt *serv_mgt, struct nbl_serv_ring_vsi
 		vector = &ring_mgt->vectors[i - vector_offset];
 		ring = &ring_mgt->rx_rings[i];
 		nbl_serv_set_queue_param(ring, ring_mgt->rx_desc_num, &param,
-					 vsi_info->vsi_id, vector->global_vector_id);
-
-		ret = disp_ops->setup_queue(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &param, false);
+					 vsi_info->vsi_id, vector->global_vector_id,
+					 half_offload_en);
+		memcpy(&setup_q_prm.param, &param, sizeof(param));
+		setup_q_prm.is_tx = false;
+		setup_q_prm.interleave_seg_disable = false;
+		ret = disp_ops->setup_queue(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &setup_q_prm);
 		if (ret)
 			return ret;
 	}
@@ -64,11 +68,13 @@ nbl_serv_setup_queues(struct nbl_service_mgt *serv_mgt, struct nbl_serv_ring_vsi
 	for (i = start; i < end; i++) {
 		vector = &ring_mgt->vectors[i - vector_offset];
 		ring = &ring_mgt->tx_rings[i];
-
 		nbl_serv_set_queue_param(ring, ring_mgt->tx_desc_num, &param,
-					 vsi_info->vsi_id, vector->global_vector_id);
-
-		ret = disp_ops->setup_queue(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &param, true);
+					 vsi_info->vsi_id, vector->global_vector_id,
+					 half_offload_en);
+		memcpy(&setup_q_prm.param, &param, sizeof(param));
+		setup_q_prm.is_tx = true;
+		setup_q_prm.interleave_seg_disable = interleave_seg_disable;
+		ret = disp_ops->setup_queue(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &setup_q_prm);
 		if (ret)
 			return ret;
 	}
@@ -76,8 +82,8 @@ nbl_serv_setup_queues(struct nbl_service_mgt *serv_mgt, struct nbl_serv_ring_vsi
 	return 0;
 }
 
-static void
-nbl_serv_flush_rx_queues(struct nbl_service_mgt *serv_mgt, u16 ring_offset, u16 ring_num)
+static void nbl_serv_flush_rx_queues(struct nbl_service_mgt *serv_mgt, u16 ring_offset,
+				     u16 ring_num)
 {
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	int i;
@@ -93,10 +99,19 @@ static int nbl_serv_setup_rings(struct nbl_service_mgt *serv_mgt, struct net_dev
 	struct nbl_serv_ring_mgt *ring_mgt = NBL_SERV_MGT_TO_RING_MGT(serv_mgt);
 	u16 start = vsi_info->ring_offset, end = vsi_info->ring_offset + vsi_info->ring_num;
 	int i, ret = 0;
+	bool interleave_seg_disable;
+	bool rxq_large_buf;
+	struct nbl_tx_ring_start_param tx_ring_prm;
+	struct nbl_rx_ring_start_param rx_ring_prm;
 
+	interleave_seg_disable = test_bit(NBL_FLAG_INTERLEAVE_SEG_DISABLE, &serv_mgt->flags);
+	rxq_large_buf = test_bit(NBL_FLAG_RXQ_LARGE_BUFF, &serv_mgt->flags);
+	tx_ring_prm.interleave_seg_disable = interleave_seg_disable;
+	tx_ring_prm.queue_size = ring_mgt->tx_desc_num;
 	for (i = start; i < end; i++) {
+		tx_ring_prm.ring_index = i;
 		ring_mgt->tx_rings[i].dma =
-			disp_ops->start_tx_ring(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), i);
+			disp_ops->start_tx_ring(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &tx_ring_prm);
 		if (!ring_mgt->tx_rings[i].dma) {
 			netdev_err(netdev, "Fail to start tx ring %d", i);
 			ret = -EFAULT;
@@ -109,9 +124,13 @@ static int nbl_serv_setup_rings(struct nbl_service_mgt *serv_mgt, struct net_dev
 		goto tx_err;
 	}
 
+	rx_ring_prm.rxq_large_buf = rxq_large_buf;
+	rx_ring_prm.queue_size = ring_mgt->rx_desc_num;
+	rx_ring_prm.use_napi = use_napi;
 	for (i = start; i < end; i++) {
+		rx_ring_prm.ring_index = i;
 		ring_mgt->rx_rings[i].dma =
-			disp_ops->start_rx_ring(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), i, use_napi);
+			disp_ops->start_rx_ring(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &rx_ring_prm);
 		if (!ring_mgt->rx_rings[i].dma) {
 			netdev_err(netdev, "Fail to start rx ring %d", i);
 			ret = -EFAULT;
@@ -281,15 +300,16 @@ static void nbl_serv_check_flow_table_spec(struct nbl_service_mgt *serv_mgt)
 {
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_serv_flow_mgt *flow_mgt = NBL_SERV_MGT_TO_FLOW_MGT(serv_mgt);
+	struct nbl_ch_prm_flow_table_spec spec_prm;
 	int ret;
 
 	if (!flow_mgt->force_promisc)
 		return;
 
-	ret = disp_ops->check_flow_table_spec(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					      flow_mgt->vlan_list_cnt,
-					      flow_mgt->unicast_mac_cnt + 1,
-					      flow_mgt->multi_mac_cnt);
+	spec_prm.vlan_list_cnt = flow_mgt->vlan_list_cnt;
+	spec_prm.unicast_mac_cnt = flow_mgt->unicast_mac_cnt + 1;
+	spec_prm.multi_mac_cnt = flow_mgt->multi_mac_cnt;
+	ret = disp_ops->check_flow_table_spec(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &spec_prm);
 
 	if (!ret) {
 		flow_mgt->force_promisc = 0;
@@ -578,6 +598,7 @@ static void nbl_serv_del_all_vlans(struct nbl_service_mgt *serv_mgt)
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_serv_vlan_node *vlan_node, *vlan_node_safe;
 
+	rtnl_lock();
 	list_for_each_entry_safe(vlan_node, vlan_node_safe, &flow_mgt->vlan_list, node) {
 		if (vlan_node->primary_mac_effective)
 			disp_ops->del_macvlan(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), flow_mgt->mac,
@@ -586,6 +607,7 @@ static void nbl_serv_del_all_vlans(struct nbl_service_mgt *serv_mgt)
 		list_del(&vlan_node->node);
 		nbl_serv_free_vlan_node(vlan_node);
 	}
+	rtnl_unlock();
 }
 
 static void nbl_serv_del_all_submacs(struct nbl_service_mgt *serv_mgt, u16 vsi)
@@ -594,6 +616,7 @@ static void nbl_serv_del_all_submacs(struct nbl_service_mgt *serv_mgt, u16 vsi)
 	struct nbl_serv_submac_node *submac_node, *submac_node_safe;
 	int i;
 
+	rtnl_lock();
 	for (i = 0; i < NBL_SUBMAC_MAX; i++)
 		list_for_each_entry_safe(submac_node, submac_node_safe,
 					 &flow_mgt->submac_list[i], node) {
@@ -606,6 +629,7 @@ static void nbl_serv_del_all_submacs(struct nbl_service_mgt *serv_mgt, u16 vsi)
 				flow_mgt->unicast_mac_cnt--;
 			nbl_serv_free_submac_node(submac_node);
 		}
+	rtnl_unlock();
 }
 
 static int nbl_serv_validate_tc_config(struct tc_mqprio_qopt_offload *mqprio_qopt,
@@ -632,12 +656,13 @@ static int nbl_serv_validate_tc_config(struct tc_mqprio_qopt_offload *mqprio_qop
 			return -EINVAL;
 		}
 
+		/* kernel unit is Bps, convert to Mbps */
 		tx_rate = div_u64(mqprio_qopt->max_rate[i], NBL_TC_MBPS_DIVSIOR);
 
 		if (mqprio_qopt->max_rate[i] && tx_rate < NBL_TC_WEIGHT_GRAVITY) {
 			nbl_err(common, NBL_DEBUG_QUEUE,
 				"Invalid max tx rate for TC %d, minimum %d Mbps",
-				i, NBL_TC_MBPS_DIVSIOR);
+				i, NBL_TC_WEIGHT_GRAVITY);
 			return -EINVAL;
 		}
 
@@ -659,20 +684,6 @@ static int nbl_serv_validate_tc_config(struct tc_mqprio_qopt_offload *mqprio_qop
 	return 0;
 }
 
-void nbl_serv_cpu_affinity_init(void *priv, u16 rings_num)
-{
-	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
-	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
-	struct nbl_serv_ring_mgt *ring_mgt = NBL_SERV_MGT_TO_RING_MGT(serv_mgt);
-	int i;
-
-	for (i = 0; i < rings_num; i++) {
-		cpumask_set_cpu(cpumask_local_spread(i, NBL_COMMON_TO_DEV(common)->numa_node),
-				&ring_mgt->vectors[i].cpumask);
-		netif_set_xps_queue(ring_mgt->vectors[i].netdev, &ring_mgt->vectors[i].cpumask, i);
-	}
-}
-
 static int nbl_serv_setup_tc_mqprio(struct net_device *netdev, void *type_data)
 {
 	struct nbl_netdev_priv *priv = netdev_priv(netdev);
@@ -687,6 +698,9 @@ static int nbl_serv_setup_tc_mqprio(struct net_device *netdev, void *type_data)
 	u8 num_tc = mqprio_qopt->qopt.num_tc, total_qps = 0;
 	struct nbl_serv_ring_vsi_info *vsi_info;
 	int i, ret = 0;
+
+	if (!netif_device_present(netdev))
+		return -ENODEV;
 
 	memset(&param, 0, sizeof(param));
 
@@ -714,7 +728,7 @@ static int nbl_serv_setup_tc_mqprio(struct net_device *netdev, void *type_data)
 
 			goto exit;
 		} else {
-			return -EINVAL;
+			return 0;
 		}
 	}
 
@@ -764,7 +778,7 @@ static int nbl_serv_setup_tc_mqprio(struct net_device *netdev, void *type_data)
 	if (ret) {
 		netdev_err(netdev, "Fail to cfg qdisc mqprio");
 		tc_mgt->num_tc = 0;
-		return ret;
+		goto exit;
 	}
 
 	netdev_reset_tc(netdev);
@@ -784,7 +798,6 @@ exit:
 	 */
 	if (total_qps && NETREG_REGISTERED == netdev->reg_state &&
 	    !test_bit(NBL_DOWN, adapter->state)) {
-		nbl_serv_cpu_affinity_init(serv_mgt, total_qps);
 		netif_set_real_num_rx_queues(netdev, total_qps);
 		netif_set_real_num_tx_queues(netdev, total_qps);
 
@@ -798,60 +811,47 @@ exit:
 	return ret;
 }
 
-static int nbl_serv_ipv6_exthdr_num(struct sk_buff *skb, int start, u8 nexthdr)
+static void nbl_serv_reset_tc_mqprio(struct net_device *dev)
 {
-	int exthdr_num = 0;
-	struct ipv6_opt_hdr _hdr, *hp;
-	unsigned int hdrlen;
+	struct tc_mqprio_qopt_offload mqprio_qopt;
 
-	while (ipv6_ext_hdr(nexthdr)) {
-		if (nexthdr == NEXTHDR_NONE)
-			return -1;
-
-		hp = skb_header_pointer(skb, start, sizeof(_hdr), &_hdr);
-		if (!hp)
-			return -1;
-
-		exthdr_num++;
-
-		if (nexthdr == NEXTHDR_FRAGMENT)
-			hdrlen = 8;
-		else if (nexthdr == NEXTHDR_AUTH)
-			hdrlen = ipv6_authlen(hp);
-		else
-			hdrlen = ipv6_optlen(hp);
-
-		nexthdr = hp->nexthdr;
-		start += hdrlen;
-	}
-
-	return exthdr_num;
+	memset(&mqprio_qopt, 0, sizeof(mqprio_qopt));
+	nbl_serv_setup_tc_mqprio(dev, &mqprio_qopt);
 }
 
-static void nbl_serv_set_sfp_state(void *priv, struct net_device *netdev, u8 eth_id,
+static void nbl_serv_set_sfp_state(void *priv, u8 eth_id,
 				   bool open, bool is_force)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_ch_prm_set_sfp_state sfp_prm = {0};
 	int ret = 0;
 
-	if (test_bit(NBL_FLAG_LINK_DOWN_ON_CLOSE, serv_mgt->flags) || is_force) {
+	if (test_bit(NBL_FLAG_LINK_DOWN_ON_CLOSE, &serv_mgt->flags) || is_force) {
+		sfp_prm.eth_id = eth_id;
 		if (open) {
+			sfp_prm.state = NBL_SFP_MODULE_ON;
 			ret = disp_ops->set_sfp_state(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-						      eth_id, NBL_SFP_MODULE_ON);
-			if (ret)
-				netdev_info(netdev, "Fail to open sfp\n");
-			else
-				netdev_info(netdev, "open sfp\n");
+						      &sfp_prm);
+			nbl_info(common, NBL_DEBUG_COMMON, "open sfp ret: %d", ret);
 		} else {
+			sfp_prm.state = NBL_SFP_MODULE_OFF;
 			ret = disp_ops->set_sfp_state(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-						      eth_id, NBL_SFP_MODULE_OFF);
-			if (ret)
-				netdev_info(netdev, "Fail to close sfp\n");
-			else
-				netdev_info(netdev, "close sfp\n");
+						      &sfp_prm);
+			nbl_info(common, NBL_DEBUG_COMMON, "close sfp ret: %d", ret);
 		}
 	}
+}
+
+static int nbl_serv_get_firmware_version(void *priv, struct nbl_ch_prm_get_firmware_version *output)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+
+	disp_ops->get_firmware_version(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), output);
+
+	return 0;
 }
 
 static void nbl_serv_set_netdev_carrier_state(void *priv, struct net_device *netdev, u8 link_state)
@@ -889,8 +889,17 @@ static void nbl_serv_set_netdev_carrier_state(void *priv, struct net_device *net
 	}
 }
 
-static void nbl_serv_set_link_state(struct nbl_service_mgt *serv_mgt, struct net_device *netdev)
+static void nbl_serv_set_port_state_update(void *priv, u8 port_state_update)
 {
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
+
+	net_resource_mgt->port_state_update = port_state_update;
+}
+
+static void nbl_serv_set_link_state(void *priv, struct net_device *netdev)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
@@ -947,6 +956,87 @@ static int nbl_serv_rep_netdev_stop(struct net_device *netdev)
 	return 0;
 }
 
+static void nbl_serv_cfg_rx_half_offload(void *priv, struct net_device *netdev,
+					 struct nbl_serv_ring_vsi_info *vsi_info,
+					 u16 *enable)
+{
+	enum nbl_fix_cap_type cap_type = NBL_UDF_EXTRACT_CAP;
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_serv_net_resource_mgt *net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
+	struct nbl_serv_ring_mgt *ring_mgt = NBL_SERV_MGT_TO_RING_MGT(serv_mgt);
+	u16 half_offload_en = false;
+	u16 rx_vlan_mode;
+	u16 rss_hash_mode;
+	struct nbl_cfg_rx_half_offload_param half_prm = {0};
+	struct nbl_ch_prm_cfg_rx_vlan_parse vlan_prm = {0};
+	struct nbl_ch_prm_cfg_rss_hash rss_prm = {0};
+	struct nbl_cfg_txrx_vlan_param tvlan_prm = {0};
+
+	if (!(ring_mgt->ethtool_rx_vlan_mode)) {
+		if (!(netdev->features & NETIF_F_HW_VLAN_CTAG_RX) &&
+		    !(netdev->features & NETIF_F_HW_VLAN_STAG_RX))
+			rx_vlan_mode = RX_VLAN_PARSE_OFF;
+		else if ((netdev->features & NETIF_F_HW_VLAN_CTAG_RX) &&
+			 !(netdev->features & NETIF_F_HW_VLAN_STAG_RX))
+			rx_vlan_mode = RX_VLAN_PARSE_CVLAN;
+		else if (!(netdev->features & NETIF_F_HW_VLAN_CTAG_RX) &&
+			 (netdev->features & NETIF_F_HW_VLAN_STAG_RX))
+			rx_vlan_mode = RX_VLAN_PARSE_SVLAN;
+		else
+			rx_vlan_mode = RX_VLAN_PARSE_CVLAN_OR_SVLAN;
+	} else {
+		rx_vlan_mode = ring_mgt->ethtool_rx_vlan_mode;
+	}
+
+	/* vlan offload priority higher than vlan subinterface */
+	switch (net_resource_mgt->vlan_proto) {
+	case ETH_P_8021Q:
+		rx_vlan_mode = RX_VLAN_PARSE_CVLAN;
+		break;
+	case ETH_P_8021AD:
+		rx_vlan_mode = RX_VLAN_PARSE_SVLAN;
+		break;
+	default:
+		break;
+	};
+
+	if (!(ring_mgt->ethtool_rss_hash_mode)) {
+		if (netdev->features & NETIF_F_RXHASH)
+			rss_hash_mode = RX_RSS_HASH_ON;
+		else
+			rss_hash_mode = RX_RSS_HASH_OFF;
+	} else {
+		rss_hash_mode = ring_mgt->ethtool_rss_hash_mode;
+	}
+
+	if (rss_hash_mode > RX_RSS_HASH_OFF)
+		half_offload_en = true;
+
+	if (!disp_ops->get_product_fix_cap(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+					   &cap_type))
+		half_offload_en = false;
+
+	netdev_info(netdev, "set half_offload_en:%d, rx_vlan_mode:%d, rss_hash_mode:%d\n",
+		    half_offload_en, rx_vlan_mode, rss_hash_mode);
+	*enable = half_offload_en;
+
+	half_prm.vsi_index = NBL_VSI_DATA;
+	half_prm.half_offload_en = half_offload_en;
+	disp_ops->cfg_rx_half_offload(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &half_prm);
+	vlan_prm.vsi_id = vsi_info->vsi_id;
+	vlan_prm.rx_vlan_mode = rx_vlan_mode;
+	disp_ops->cfg_rx_vlan_parse(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &vlan_prm);
+	rss_prm.vsi_id = vsi_info->vsi_id;
+	rss_prm.rss_hash_mode = rss_hash_mode;
+	disp_ops->cfg_rss_hash(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &rss_prm);
+
+	tvlan_prm.vlan_tci = net_resource_mgt->vlan_tci;
+	tvlan_prm.vlan_proto = net_resource_mgt->vlan_proto;
+	tvlan_prm.vsi_index = NBL_VSI_DATA;
+	disp_ops->cfg_txrx_vlan(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &tvlan_prm);
+}
+
 int nbl_serv_vsi_open(void *priv, struct net_device *netdev, u16 vsi_index,
 		      u16 real_qps, bool use_napi)
 {
@@ -956,10 +1046,15 @@ int nbl_serv_vsi_open(void *priv, struct net_device *netdev, u16 vsi_index,
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_serv_ring_vsi_info *vsi_info = &ring_mgt->vsi_info[vsi_index];
+	u16 half_offload_en = 0;
+	struct nbl_cfg_txrx_vlan_param tvlan_prm = {0};
 	int ret = 0;
 
 	if (vsi_info->started)
 		return 0;
+
+	if (vsi_index == NBL_VSI_DATA)
+		nbl_serv_cfg_rx_half_offload(serv_mgt, netdev, vsi_info, &half_offload_en);
 
 	ret = nbl_serv_setup_rings(serv_mgt, netdev, vsi_info, use_napi);
 	if (ret) {
@@ -967,17 +1062,20 @@ int nbl_serv_vsi_open(void *priv, struct net_device *netdev, u16 vsi_index,
 		goto setup_rings_fail;
 	}
 
-	ret = nbl_serv_setup_queues(serv_mgt, vsi_info);
+	ret = nbl_serv_setup_queues(serv_mgt, vsi_info, half_offload_en);
 	if (ret) {
 		netdev_err(netdev, "Fail to setup queues\n");
 		goto setup_queue_fail;
 	}
 	nbl_serv_flush_rx_queues(serv_mgt, vsi_info->ring_offset, vsi_info->ring_num);
 
-	if (vsi_index == NBL_VSI_DATA)
-		disp_ops->cfg_txrx_vlan(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					net_resource_mgt->vlan_tci, net_resource_mgt->vlan_proto,
-					vsi_index);
+	ring_mgt->half_offload_en = half_offload_en;
+	if (vsi_index == NBL_VSI_DATA) {
+		tvlan_prm.vlan_tci = net_resource_mgt->vlan_tci;
+		tvlan_prm.vlan_proto = net_resource_mgt->vlan_proto;
+		tvlan_prm.vsi_index = vsi_index;
+		disp_ops->cfg_txrx_vlan(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &tvlan_prm);
+	}
 
 	ret = disp_ops->cfg_dsch(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
 				 vsi_info->vsi_id, true);
@@ -1007,25 +1105,34 @@ setup_rings_fail:
 	return ret;
 }
 
+static int nbl_serv_vsi_hw_stop(void *priv, u16 vsi_id)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+
+	/* disable and rest tx/rx logic queue */
+	disp_ops->remove_all_queues(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id);
+
+	/* modify defalt action and rss configuration */
+	disp_ops->remove_cqs(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id);
+
+	/* clear dsch config */
+	disp_ops->cfg_dsch(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id, false);
+
+	return 0;
+}
+
 int nbl_serv_vsi_stop(void *priv, u16 vsi_index)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_serv_ring_mgt *ring_mgt = NBL_SERV_MGT_TO_RING_MGT(serv_mgt);
-	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_serv_ring_vsi_info *vsi_info = &ring_mgt->vsi_info[vsi_index];
 
 	if (!vsi_info->started)
 		return 0;
 
 	vsi_info->started = false;
-	/* modify defalt action and rss configuration */
-	disp_ops->remove_cqs(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_info->vsi_id);
-
-	/* clear dsch config */
-	disp_ops->cfg_dsch(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_info->vsi_id, false);
-
-	/* disable and rest tx/rx logic queue */
-	disp_ops->remove_all_queues(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_info->vsi_id);
+	nbl_serv_vsi_hw_stop(priv, vsi_info->vsi_id);
 
 	/* free tx and rx bufs */
 	nbl_serv_stop_rings(serv_mgt, vsi_info);
@@ -1058,13 +1165,18 @@ static int nbl_serv_suspend_data_vsi_traffic(struct nbl_service_mgt *serv_mgt)
 	struct nbl_netdev_priv *net_priv = netdev_priv(dev);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_serv_flow_mgt *flow_mgt = NBL_SERV_MGT_TO_FLOW_MGT(serv_mgt);
+	struct nbl_ch_prm_cfg_multi_mcast mcast;
+	struct nbl_ch_prm_set_promisc_mode promisc_prm = {0};
 
 	rtnl_lock();
-	disp_ops->cfg_multi_mcast(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				  net_priv->data_vsi, 0);
-	disp_ops->set_promisc_mode(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				   net_priv->data_vsi, 0);
+	mcast.vsi = net_priv->data_vsi;
+	mcast.enable = 0;
+	disp_ops->cfg_multi_mcast(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &mcast);
+	promisc_prm.vsi_id = net_priv->data_vsi;
+	promisc_prm.mode = 0;
+	disp_ops->set_promisc_mode(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &promisc_prm);
 
+	nbl_serv_update_promisc_vlan(serv_mgt, 0, net_priv->data_vsi);
 	disp_ops->add_macvlan(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), flow_mgt->mac,
 			      0, net_priv->user_vsi);
 
@@ -1073,7 +1185,7 @@ static int nbl_serv_suspend_data_vsi_traffic(struct nbl_service_mgt *serv_mgt)
 	flow_mgt->promisc |= BIT(NBL_USER_FLOW);
 	rtnl_unlock();
 
-	nbl_common_queue_work(&net_resource_mgt->rx_mode_async, false, false);
+	nbl_common_queue_work(&net_resource_mgt->rx_mode_async, false);
 
 	return 0;
 }
@@ -1085,15 +1197,21 @@ static int nbl_serv_restore_vsi_traffic(struct nbl_service_mgt *serv_mgt)
 	struct nbl_netdev_priv *net_priv = netdev_priv(dev);
 	struct nbl_serv_flow_mgt *flow_mgt = NBL_SERV_MGT_TO_FLOW_MGT(serv_mgt);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_ch_prm_cfg_multi_mcast mcast;
+	struct nbl_ch_prm_set_promisc_mode promisc_prm = {0};
 
 	rtnl_lock();
 	disp_ops->del_macvlan(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), flow_mgt->mac,
 			      0, net_priv->user_vsi);
-	disp_ops->cfg_multi_mcast(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), net_priv->user_vsi, 0);
-	disp_ops->set_promisc_mode(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), net_priv->user_vsi, 0);
+	mcast.vsi = net_priv->user_vsi;
+	mcast.enable = 0;
+	disp_ops->cfg_multi_mcast(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &mcast);
+	promisc_prm.vsi_id = net_priv->user_vsi;
+	promisc_prm.mode = 0;
+	disp_ops->set_promisc_mode(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &promisc_prm);
 	flow_mgt->promisc &= ~BIT(NBL_USER_FLOW);
 	rtnl_unlock();
-	nbl_common_queue_work(&net_resource_mgt->rx_mode_async, false, false);
+	nbl_common_queue_work(&net_resource_mgt->rx_mode_async, false);
 
 	return 0;
 }
@@ -1126,9 +1244,13 @@ static int nbl_serv_stop_abnormal_sw_queue(struct nbl_service_mgt *serv_mgt,
 					   u16 local_queue_id, int type)
 {
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_stop_abnormal_sw_queue_param prm = {0};
+
+	prm.local_queue_id = local_queue_id;
+	prm.type = type;
 
 	return disp_ops->stop_abnormal_sw_queue(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-						local_queue_id, type);
+						&prm);
 }
 
 static int nbl_serv_chan_stop_abnormal_sw_queue_req(struct nbl_service_mgt *serv_mgt,
@@ -1181,18 +1303,26 @@ static dma_addr_t nbl_serv_netdev_queue_restore(struct nbl_service_mgt *serv_mgt
 						u16 local_queue_id, int type)
 {
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_abnormal_ring_param prm = {0};
+
+	prm.ring_index = local_queue_id;
+	prm.type = type;
 
 	return disp_ops->restore_abnormal_ring(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					       local_queue_id, type);
+					       &prm);
 }
 
 static int nbl_serv_netdev_queue_restart(struct nbl_service_mgt *serv_mgt,
 					 u16 local_queue_id, int type)
 {
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_abnormal_ring_param prm = {0};
+
+	prm.ring_index = local_queue_id;
+	prm.type = type;
 
 	return disp_ops->restart_abnormal_ring(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					       local_queue_id, type);
+					       &prm);
 }
 
 static dma_addr_t nbl_serv_chan_restore_netdev_queue_req(struct nbl_service_mgt *serv_mgt,
@@ -1296,24 +1426,34 @@ nbl_serv_start_abnormal_hw_queue(struct nbl_service_mgt *serv_mgt, u16 vsi_id, u
 	struct nbl_serv_vector *vector;
 	struct nbl_serv_ring *ring;
 	int ret = 0;
+	bool interleave_seg_disable;
+	struct nbl_ch_prm_setup_queue setup_q_prm;
+
+	interleave_seg_disable = test_bit(NBL_FLAG_INTERLEAVE_SEG_DISABLE, &serv_mgt->flags);
 
 	switch (type) {
 	case NBL_TX:
 		vector = &ring_mgt->vectors[local_queue_id];
 		ring = &ring_mgt->tx_rings[local_queue_id];
 		ring->dma = dma;
-		nbl_serv_set_queue_param(ring, ring_mgt->tx_desc_num, &param,
-					 vsi_id, vector->global_vector_id);
-		ret = disp_ops->setup_queue(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &param, true);
+		nbl_serv_set_queue_param(ring, ring_mgt->tx_desc_num, &param, vsi_id,
+					 vector->global_vector_id, ring_mgt->half_offload_en);
+		memcpy(&setup_q_prm.param, &param, sizeof(param));
+		setup_q_prm.is_tx = true;
+		setup_q_prm.interleave_seg_disable = interleave_seg_disable;
+		ret = disp_ops->setup_queue(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &setup_q_prm);
 		return ret;
 	case NBL_RX:
 		vector = &ring_mgt->vectors[local_queue_id];
 		ring = &ring_mgt->rx_rings[local_queue_id];
 		ring->dma = dma;
 
-		nbl_serv_set_queue_param(ring, ring_mgt->rx_desc_num, &param,
-					 vsi_id, vector->global_vector_id);
-		ret = disp_ops->setup_queue(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &param, false);
+		nbl_serv_set_queue_param(ring, ring_mgt->rx_desc_num, &param, vsi_id,
+					 vector->global_vector_id, ring_mgt->half_offload_en);
+		memcpy(&setup_q_prm.param, &param, sizeof(param));
+		setup_q_prm.is_tx = false;
+		setup_q_prm.interleave_seg_disable = false;
+		ret = disp_ops->setup_queue(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &setup_q_prm);
 		return 0;
 	default:
 		break;
@@ -1326,8 +1466,9 @@ static void nbl_serv_restore_queue(struct nbl_service_mgt *serv_mgt, u16 vsi_id,
 				   u16 local_queue_id, u16 type, bool dif_err)
 {
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
-	u16 func_id = disp_ops->get_function_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id);
+	u16 func_id = disp_ops->get_function_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &vsi_id);
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
+	struct nbl_ch_prm_stop_abnormal_hw_queue prm = {0};
 	u16 global_queue_id;
 	dma_addr_t dma = 0;
 	int ret = 0;
@@ -1339,8 +1480,12 @@ static void nbl_serv_restore_queue(struct nbl_service_mgt *serv_mgt, u16 vsi_id,
 	if (ret)
 		goto unlock;
 
-	ret = disp_ops->stop_abnormal_hw_queue(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id,
-					       local_queue_id, type);
+	prm.vsi_id = vsi_id;
+	prm.local_queue_id = local_queue_id;
+	prm.type = type;
+
+	ret = disp_ops->stop_abnormal_hw_queue(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+					       &prm);
 	if (ret)
 		goto unlock;
 
@@ -1357,9 +1502,14 @@ static void nbl_serv_restore_queue(struct nbl_service_mgt *serv_mgt, u16 vsi_id,
 		goto unlock;
 
 	if (dif_err && type == NBL_TX) {
+		struct nbl_ch_prm_get_vsi_global_qid prm = {0};
+
+		prm.vsi_id = vsi_id;
+		prm.local_qid = local_queue_id;
+
 		global_queue_id =
-			disp_ops->get_vsi_global_queue_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-							  vsi_id, local_queue_id);
+			disp_ops->get_vsi_global_qid(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+						     &prm);
 		nbl_info(common, NBL_DEBUG_COMMON,
 			 "dvn int_status:0, queue_id:%d\n", global_queue_id);
 	}
@@ -1375,14 +1525,12 @@ static void nbl_serv_handle_tx_timeout(struct work_struct *work)
 	struct nbl_service_mgt *serv_mgt = serv_net_resource_mgt->serv_mgt;
 	struct nbl_serv_ring_mgt *ring_mgt = NBL_SERV_MGT_TO_RING_MGT(serv_mgt);
 	struct nbl_serv_ring_vsi_info *vsi_info;
-	struct nbl_serv_vector *vector;
 	int i = 0;
 
 	vsi_info = &ring_mgt->vsi_info[NBL_VSI_DATA];
 
 	for (i = vsi_info->ring_offset; i < vsi_info->ring_offset + vsi_info->ring_num; i++) {
 		if (ring_mgt->tx_rings[i].need_recovery) {
-			vector = &ring_mgt->vectors[i];
 			nbl_serv_restore_queue(serv_mgt, vsi_info->vsi_id, i, NBL_TX, false);
 			ring_mgt->tx_rings[i].need_recovery = false;
 		}
@@ -1422,7 +1570,8 @@ static void nbl_serv_chan_notify_link_forced_resp(void *priv, u16 src_id, u16 ms
 		     NBL_CHAN_RESP_OK, NULL, 0);
 	chan_ops->send_ack(NBL_SERV_MGT_TO_CHAN_PRIV(serv_mgt), &chan_ack);
 
-	nbl_common_queue_work(&net_resource_mgt->update_link_state, false, false);
+	nbl_serv_set_port_state_update(serv_mgt, true);
+	nbl_common_queue_work(&net_resource_mgt->update_link_state, false);
 }
 
 static void nbl_serv_register_link_forced_notify(struct nbl_service_mgt *serv_mgt)
@@ -1436,18 +1585,6 @@ static void nbl_serv_register_link_forced_notify(struct nbl_service_mgt *serv_mg
 	chan_ops->register_msg(NBL_SERV_MGT_TO_CHAN_PRIV(serv_mgt),
 			       NBL_CHAN_MSG_NOTIFY_LINK_FORCED,
 			       nbl_serv_chan_notify_link_forced_resp, serv_mgt);
-}
-
-static void nbl_serv_unregister_link_forced_notify(struct nbl_service_mgt *serv_mgt)
-{
-	struct nbl_channel_ops *chan_ops = NBL_SERV_MGT_TO_CHAN_OPS(serv_mgt);
-
-	if (!chan_ops->check_queue_exist(NBL_SERV_MGT_TO_CHAN_PRIV(serv_mgt),
-					 NBL_CHAN_TYPE_MAILBOX))
-		return;
-
-	chan_ops->unregister_msg(NBL_SERV_MGT_TO_CHAN_PRIV(serv_mgt),
-				 NBL_CHAN_MSG_NOTIFY_LINK_FORCED);
 }
 
 static void nbl_serv_update_vlan(struct work_struct *work)
@@ -1474,7 +1611,7 @@ static void nbl_serv_update_vlan(struct work_struct *work)
 
 		err = nbl_serv_netdev_open(netdev);
 		if (err) {
-			netdev_err(netdev, "Netdev open failed after update_vlan\n");
+			netdev_err(netdev, "Netdev open failed after setting ringparam\n");
 			goto netdev_open_fail;
 		}
 	}
@@ -1507,7 +1644,7 @@ static void nbl_serv_chan_notify_vlan_resp(void *priv, u16 src_id, u16 msg_id,
 	net_resource_mgt->vlan_tci = param->vlan_tci;
 	net_resource_mgt->vlan_proto = param->vlan_proto;
 
-	nbl_common_queue_work(&net_resource_mgt->update_vlan, false, false);
+	nbl_common_queue_work(&net_resource_mgt->update_vlan, false);
 
 	NBL_CHAN_ACK(chan_ack, src_id, NBL_CHAN_MSG_NOTIFY_VLAN, msg_id,
 		     NBL_CHAN_RESP_OK, NULL, 0);
@@ -1524,17 +1661,6 @@ static void nbl_serv_register_vlan_notify(struct nbl_service_mgt *serv_mgt)
 
 	chan_ops->register_msg(NBL_SERV_MGT_TO_CHAN_PRIV(serv_mgt), NBL_CHAN_MSG_NOTIFY_VLAN,
 			       nbl_serv_chan_notify_vlan_resp, serv_mgt);
-}
-
-static void nbl_serv_unregister_vlan_notify(struct nbl_service_mgt *serv_mgt)
-{
-	struct nbl_channel_ops *chan_ops = NBL_SERV_MGT_TO_CHAN_OPS(serv_mgt);
-
-	if (!chan_ops->check_queue_exist(NBL_SERV_MGT_TO_CHAN_PRIV(serv_mgt),
-					 NBL_CHAN_TYPE_MAILBOX))
-		return;
-
-	chan_ops->unregister_msg(NBL_SERV_MGT_TO_CHAN_PRIV(serv_mgt), NBL_CHAN_MSG_NOTIFY_VLAN);
 }
 
 static int nbl_serv_chan_notify_trust_req(struct nbl_service_mgt *serv_mgt,
@@ -1560,7 +1686,7 @@ static void nbl_serv_chan_notify_trust_resp(void *priv, u16 src_id, u16 msg_id,
 
 	flow_mgt->trusted_en = *trusted;
 	flow_mgt->trusted_update = 1;
-	nbl_common_queue_work(&net_resource_mgt->rx_mode_async, false, false);
+	nbl_common_queue_work(&net_resource_mgt->rx_mode_async, false);
 
 	NBL_CHAN_ACK(chan_ack, src_id, NBL_CHAN_MSG_NOTIFY_TRUST, msg_id,
 		     NBL_CHAN_RESP_OK, NULL, 0);
@@ -1579,17 +1705,6 @@ static void nbl_serv_register_trust_notify(struct nbl_service_mgt *serv_mgt)
 			       nbl_serv_chan_notify_trust_resp, serv_mgt);
 }
 
-static void nbl_serv_unregister_trust_notify(struct nbl_service_mgt *serv_mgt)
-{
-	struct nbl_channel_ops *chan_ops = NBL_SERV_MGT_TO_CHAN_OPS(serv_mgt);
-
-	if (!chan_ops->check_queue_exist(NBL_SERV_MGT_TO_CHAN_PRIV(serv_mgt),
-					 NBL_CHAN_TYPE_MAILBOX))
-		return;
-
-	chan_ops->unregister_msg(NBL_SERV_MGT_TO_CHAN_PRIV(serv_mgt), NBL_CHAN_MSG_NOTIFY_TRUST);
-}
-
 static void nbl_serv_update_mirror_outputport(struct work_struct *work)
 {
 	struct nbl_serv_net_resource_mgt *net_resource_mgt =
@@ -1603,7 +1718,7 @@ static void nbl_serv_update_mirror_outputport(struct work_struct *work)
 	nbl_event_notify(NBL_EVENT_MIRROR_OUTPUTPORT_DEVLAYER, &mirror,
 			 NBL_COMMON_TO_VSI_ID(common), NBL_COMMON_TO_BOARD_ID(common));
 
-	nbl_common_queue_work(&net_resource_mgt->rx_mode_async, false, false);
+	nbl_common_queue_work(&net_resource_mgt->rx_mode_async, false);
 }
 
 static int nbl_serv_chan_notify_mirror_outputport_req(struct nbl_service_mgt *serv_mgt, u16 func_id,
@@ -1632,7 +1747,7 @@ static void nbl_serv_chan_notify_mirror_outputport_resp(void *priv, u16 src_id, 
 			flow_mgt->promisc |= BIT(NBL_MIRROR);
 		else
 			flow_mgt->promisc &= ~BIT(NBL_MIRROR);
-		nbl_common_queue_work(&net_resource_mgt->update_mirror_outputport, false, false);
+		nbl_common_queue_work(&net_resource_mgt->update_mirror_outputport, false);
 	}
 
 	NBL_CHAN_ACK(chan_ack, src_id, NBL_CHAN_MSG_MIRROR_OUTPUTPORT_NOTIFY, msg_id,
@@ -1651,18 +1766,6 @@ static void nbl_serv_register_mirror_outputport_notify(struct nbl_service_mgt *s
 	chan_ops->register_msg(NBL_SERV_MGT_TO_CHAN_PRIV(serv_mgt),
 			       NBL_CHAN_MSG_MIRROR_OUTPUTPORT_NOTIFY,
 			       nbl_serv_chan_notify_mirror_outputport_resp, serv_mgt);
-}
-
-static void nbl_serv_unregister_mirror_outputport_notify(struct nbl_service_mgt *serv_mgt)
-{
-	struct nbl_channel_ops *chan_ops = NBL_SERV_MGT_TO_CHAN_OPS(serv_mgt);
-
-	if (!chan_ops->check_queue_exist(NBL_SERV_MGT_TO_CHAN_PRIV(serv_mgt),
-					 NBL_CHAN_TYPE_MAILBOX))
-		return;
-
-	chan_ops->unregister_msg(NBL_SERV_MGT_TO_CHAN_PRIV(serv_mgt),
-				 NBL_CHAN_MSG_MIRROR_OUTPUTPORT_NOTIFY);
 }
 
 static int nbl_serv_chan_get_vf_stats_req(struct nbl_service_mgt *serv_mgt,
@@ -1714,17 +1817,6 @@ static void nbl_serv_register_get_vf_stats(struct nbl_service_mgt *serv_mgt)
 			       nbl_serv_chan_get_vf_stats_resp, serv_mgt);
 }
 
-static void nbl_serv_unregister_get_vf_stats(struct nbl_service_mgt *serv_mgt)
-{
-	struct nbl_channel_ops *chan_ops = NBL_SERV_MGT_TO_CHAN_OPS(serv_mgt);
-
-	if (!chan_ops->check_queue_exist(NBL_SERV_MGT_TO_CHAN_PRIV(serv_mgt),
-					 NBL_CHAN_TYPE_MAILBOX))
-		return;
-
-	chan_ops->unregister_msg(NBL_SERV_MGT_TO_CHAN_PRIV(serv_mgt), NBL_CHAN_MSG_GET_VF_STATS);
-}
-
 int nbl_serv_netdev_open(struct net_device *netdev)
 {
 	struct nbl_adapter *adapter = NBL_NETDEV_TO_ADAPTER(netdev);
@@ -1746,7 +1838,7 @@ int nbl_serv_netdev_open(struct net_device *netdev)
 				 NBL_COMMON_TO_VSI_ID(common), NBL_COMMON_TO_BOARD_ID(common));
 
 	netif_carrier_off(netdev);
-	nbl_serv_set_sfp_state(serv_mgt, netdev, NBL_COMMON_TO_ETH_ID(common), true, false);
+	nbl_serv_set_sfp_state(serv_mgt, NBL_COMMON_TO_ETH_ID(common), true, false);
 	vsi_info = &ring_mgt->vsi_info[NBL_VSI_DATA];
 
 	if (tc_mgt->num_tc) {
@@ -1769,7 +1861,7 @@ int nbl_serv_netdev_open(struct net_device *netdev)
 	if (ret)
 		goto setup_real_qps_fail;
 
-	netif_tx_start_all_queues(netdev);
+	netif_tx_wake_all_queues(netdev);
 	clear_bit(NBL_DOWN, adapter->state);
 	set_bit(NBL_RUNNING, adapter->state);
 	nbl_serv_set_link_state(serv_mgt, netdev);
@@ -1797,18 +1889,19 @@ int nbl_serv_netdev_stop(struct net_device *netdev)
 	bool netdev_open = false;
 
 	if (!test_bit(NBL_RUNNING, adapter->state))
-		return -EBUSY;
+		return 0;
 
 	netdev_info(netdev, "Nbl stop\n");
 	set_bit(NBL_DOWN, adapter->state);
 	clear_bit(NBL_RUNNING, adapter->state);
 
-	nbl_serv_set_sfp_state(serv_mgt, netdev, NBL_COMMON_TO_ETH_ID(common), false, false);
+	nbl_serv_set_sfp_state(serv_mgt, NBL_COMMON_TO_ETH_ID(common), false, false);
 
 	netif_tx_stop_all_queues(netdev);
 	netif_carrier_off(netdev);
 	netif_tx_disable(netdev);
 	synchronize_net();
+	synchronize_rcu();
 	nbl_serv_vsi_stop(serv_mgt, NBL_VSI_DATA);
 
 	if (ring_mgt->xdp_prog)
@@ -1833,12 +1926,16 @@ static int nbl_serv_change_mtu(struct net_device *netdev, int new_mtu)
 	struct nbl_service_mgt *serv_mgt = NBL_ADAPTER_TO_SERV_MGT(adapter);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	int was_running = 0, err = 0;
-	int max_mtu;
+	int max_mtu = 0;
+	int ret = 0;
+	int rtnl_locked = rtnl_is_locked(); /* is call by os, it has locked */
 
-	max_mtu = disp_ops->get_max_mtu(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
-	if (new_mtu > max_mtu)
-		netdev_notice(netdev, "Netdev already bind xdp prog: new_mtu(%d) > current_max_mtu(%d), try to rebuild rx buffer\n",
-			      new_mtu, max_mtu);
+	ret = disp_ops->check_mtu(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), 0, new_mtu, &max_mtu);
+	if (ret) {
+		netdev_warn(netdev, "Mtu(%d) > %d, too big for an XDP program not aware of multi buffer\n",
+			    new_mtu, max_mtu);
+		return -EINVAL;
+	}
 
 	if (new_mtu) {
 		netdev->mtu = new_mtu;
@@ -1847,17 +1944,23 @@ static int nbl_serv_change_mtu(struct net_device *netdev, int new_mtu)
 
 		was_running = netif_running(netdev);
 		if (was_running) {
+			if (!rtnl_locked)
+				rtnl_lock();
+
 			err = nbl_serv_netdev_stop(netdev);
 			if (err) {
 				netdev_err(netdev, "Netdev stop failed while change mtu\n");
-				return err;
+				goto out;
 			}
 
 			err = nbl_serv_netdev_open(netdev);
 			if (err) {
 				netdev_err(netdev, "Netdev open failed after change mtu\n");
-				return err;
+				goto out;
 			}
+
+			if (!rtnl_locked)
+				rtnl_unlock();
 		}
 	}
 
@@ -1865,6 +1968,12 @@ static int nbl_serv_change_mtu(struct net_device *netdev, int new_mtu)
 			  NBL_COMMON_TO_VSI_ID(common), new_mtu);
 
 	return 0;
+
+out:
+	if (!rtnl_locked)
+		rtnl_unlock();
+
+	return -EFAULT;
 }
 
 static int nbl_serv_set_mac(struct net_device *dev, void *p)
@@ -1877,8 +1986,10 @@ static int nbl_serv_set_mac(struct net_device *dev, void *p)
 	struct nbl_serv_vlan_node *vlan_node;
 	struct sockaddr *addr = p;
 	struct nbl_netdev_priv *priv = netdev_priv(dev);
+	struct nbl_ch_prm_set_spoof_check_addr spoof_prm;
 	int ret = 0;
 
+	memset(&spoof_prm, 0, sizeof(spoof_prm));
 	if (!is_valid_ether_addr(addr->sa_data)) {
 		netdev_err(dev, "Temp to change a invalid mac address %pM\n", addr->sa_data);
 		return -EADDRNOTAVAIL;
@@ -1911,8 +2022,9 @@ static int nbl_serv_set_mac(struct net_device *dev, void *p)
 		}
 	}
 
-	disp_ops->set_spoof_check_addr(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				       priv->data_vsi, addr->sa_data);
+	spoof_prm.vsi_id = priv->data_vsi;
+	ether_addr_copy(spoof_prm.mac, addr->sa_data);
+	disp_ops->set_spoof_check_addr(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &spoof_prm);
 
 	ether_addr_copy(flow_mgt->mac, addr->sa_data);
 	eth_hw_addr_set(dev, addr->sa_data);
@@ -2107,6 +2219,9 @@ static void nbl_serv_get_stats64(struct net_device *netdev, struct rtnl_link_sta
 		return;
 	}
 
+	if (!netif_device_present(netdev))
+		return;
+
 	disp_ops->get_net_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &net_stats);
 
 	stats->rx_packets = net_stats.rx_packets;
@@ -2206,6 +2321,7 @@ static void nbl_modify_submacs(struct nbl_serv_net_resource_mgt *net_resource_mg
 
 static void nbl_modify_promisc_mode(struct nbl_serv_net_resource_mgt *net_resource_mgt)
 {
+	enum nbl_fix_cap_type cap_type = NBL_PROMISC_NOT_SUPPORT;
 	struct net_device *netdev = net_resource_mgt->netdev;
 	struct nbl_netdev_priv *priv = netdev_priv(netdev);
 	struct nbl_service_mgt *serv_mgt = net_resource_mgt->serv_mgt;
@@ -2214,6 +2330,8 @@ static void nbl_modify_promisc_mode(struct nbl_serv_net_resource_mgt *net_resour
 	bool mode = 0, multi = 0;
 	bool need_flow = 1;
 	bool unicast_enable, multicast_enable;
+	struct nbl_ch_prm_cfg_multi_mcast mcast;
+	struct nbl_ch_prm_set_promisc_mode promisc_prm = {0};
 
 	rtnl_lock();
 	net_resource_mgt->curr_promiscuout_mode = netdev->flags;
@@ -2234,29 +2352,42 @@ static void nbl_modify_promisc_mode(struct nbl_serv_net_resource_mgt *net_resour
 	if (!flow_mgt->trusted_en)
 		multi = 0;
 
+	if (disp_ops->get_product_fix_cap(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+					  &cap_type))
+		mode = 0;
+
 	unicast_enable = !mode && need_flow;
 	multicast_enable = !multi && need_flow;
 
 	if ((flow_mgt->promisc & BIT(NBL_PROMISC)) ^ (mode << NBL_PROMISC))
 		if (!NBL_COMMON_TO_VF_CAP(NBL_SERV_MGT_TO_COMMON(serv_mgt))) {
+			promisc_prm.vsi_id = priv->data_vsi;
+			promisc_prm.mode = mode;
 			disp_ops->set_promisc_mode(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-						priv->data_vsi, mode);
+						   &promisc_prm);
 			if (mode)
 				flow_mgt->promisc |= BIT(NBL_PROMISC);
 			else
 				flow_mgt->promisc &= ~BIT(NBL_PROMISC);
 		}
 
+	if ((flow_mgt->multicast_flow_enable ^ multicast_enable) && multi) {
+		nbl_serv_update_mcast_submac(serv_mgt, multicast_enable,
+					     unicast_enable, priv->data_vsi);
+		flow_mgt->multicast_flow_enable = multicast_enable;
+	}
+
 	if ((flow_mgt->promisc & BIT(NBL_ALLMULTI)) ^ (multi << NBL_ALLMULTI)) {
-		disp_ops->cfg_multi_mcast(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				  priv->data_vsi, multi);
+		mcast.vsi = priv->data_vsi;
+		mcast.enable = multi;
+		disp_ops->cfg_multi_mcast(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &mcast);
 		if (multi)
 			flow_mgt->promisc |= BIT(NBL_ALLMULTI);
 		else
 			flow_mgt->promisc &= ~BIT(NBL_ALLMULTI);
 	}
 
-	if (flow_mgt->multicast_flow_enable ^ multicast_enable) {
+	if ((flow_mgt->multicast_flow_enable ^ multicast_enable) && !multi) {
 		nbl_serv_update_mcast_submac(serv_mgt, multicast_enable,
 					     unicast_enable, priv->data_vsi);
 		flow_mgt->multicast_flow_enable = multicast_enable;
@@ -2286,7 +2417,7 @@ static void nbl_serv_set_rx_mode(struct net_device *dev)
 	serv_mgt = NBL_ADAPTER_TO_SERV_MGT(adapter);
 	net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
 
-	nbl_common_queue_work(&net_resource_mgt->rx_mode_async, false, false);
+	nbl_common_queue_work(&net_resource_mgt->rx_mode_async, false);
 }
 
 static void nbl_serv_change_rx_flags(struct net_device *dev, int flag)
@@ -2299,122 +2430,7 @@ static void nbl_serv_change_rx_flags(struct net_device *dev, int flag)
 	serv_mgt = NBL_ADAPTER_TO_SERV_MGT(adapter);
 	net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
 
-	nbl_common_queue_work(&net_resource_mgt->rx_mode_async, false, false);
-}
-
-static netdev_features_t
-nbl_serv_features_check(struct sk_buff *skb, struct net_device *dev, netdev_features_t features)
-{
-	u32 l2_l3_hrd_len = 0, l4_hrd_len = 0, total_hrd_len = 0;
-	u8 l4_proto = 0;
-	__be16 protocol, frag_off;
-	int ret;
-	unsigned char *exthdr;
-	unsigned int offset = 0;
-	int nexthdr = 0;
-	int exthdr_num = 0;
-	union {
-		struct iphdr *v4;
-		struct ipv6hdr *v6;
-		unsigned char *hdr;
-	} ip;
-	union {
-		struct tcphdr *tcp;
-		struct udphdr *udp;
-		unsigned char *hdr;
-	} l4;
-
-	/* No point in doing any of this if neither checksum nor GSO are
-	 * being requested for this frame. We can rule out both by just
-	 * checking for CHECKSUM_PARTIAL.
-	 */
-	if (skb->ip_summed != CHECKSUM_PARTIAL)
-		return features;
-
-	/* We cannot support GSO if the MSS is going to be less than
-	 * 256 bytes or bigger than 16383 bytes. If it is then we need to drop support for GSO.
-	 */
-	if (skb_is_gso(skb) && (skb_shinfo(skb)->gso_size < NBL_TX_TSO_MSS_MIN ||
-				skb_shinfo(skb)->gso_size > NBL_TX_TSO_MSS_MAX))
-		features &= ~NETIF_F_GSO_MASK;
-
-	l2_l3_hrd_len = (u32)(skb_transport_header(skb) - skb->data);
-
-	ip.hdr = skb_network_header(skb);
-	l4.hdr = skb_transport_header(skb);
-	protocol = vlan_get_protocol(skb);
-
-	if (protocol == htons(ETH_P_IP)) {
-		l4_proto = ip.v4->protocol;
-	} else if (protocol == htons(ETH_P_IPV6)) {
-		exthdr = ip.hdr + sizeof(*ip.v6);
-		l4_proto = ip.v6->nexthdr;
-		if (l4.hdr != exthdr) {
-			ret = ipv6_skip_exthdr(skb, exthdr - skb->data, &l4_proto, &frag_off);
-			if (ret < 0)
-				goto out_rm_features;
-		}
-
-		/* IPV6 extension headers
-		 * (1) donot support routing and destination extension headers
-		 * (2) support 2 extension headers mostly
-		 */
-		nexthdr = ipv6_find_hdr(skb, &offset, NEXTHDR_ROUTING, NULL, NULL);
-		if (nexthdr == NEXTHDR_ROUTING) {
-			netdev_info(dev, "skb contain ipv6 routing ext header\n");
-			goto out_rm_features;
-		}
-
-		nexthdr = ipv6_find_hdr(skb, &offset, NEXTHDR_DEST, NULL, NULL);
-		if (nexthdr == NEXTHDR_DEST) {
-			netdev_info(dev, "skb contain ipv6 routing dest header\n");
-			goto out_rm_features;
-		}
-
-		exthdr_num = nbl_serv_ipv6_exthdr_num(skb, exthdr - skb->data, ip.v6->nexthdr);
-		if (exthdr_num < 0 || exthdr_num > 2) {
-			netdev_info(dev, "skb ipv6 exthdr_num:%d\n", exthdr_num);
-			goto out_rm_features;
-		}
-	} else {
-		goto out_rm_features;
-	}
-
-	switch (l4_proto) {
-	case IPPROTO_TCP:
-		l4_hrd_len = (l4.tcp->doff) * 4;
-		break;
-	case IPPROTO_UDP:
-		l4_hrd_len = sizeof(struct udphdr);
-		break;
-	case IPPROTO_SCTP:
-		l4_hrd_len = sizeof(struct sctphdr);
-		break;
-	default:
-		goto out_rm_features;
-	}
-
-	total_hrd_len = l2_l3_hrd_len + l4_hrd_len;
-
-	// TX checksum offload support total header len is [0, 255]
-	if (total_hrd_len > NBL_TX_CHECKSUM_OFFLOAD_L2L3L4_HDR_LEN_MAX)
-		goto out_rm_features;
-
-	// TSO support total header len is [42, 128]
-	if (total_hrd_len < NBL_TX_TSO_L2L3L4_HDR_LEN_MIN ||
-	    total_hrd_len > NBL_TX_TSO_L2L3L4_HDR_LEN_MAX)
-		features &= ~NETIF_F_GSO_MASK;
-
-	if (skb->encapsulation)
-		goto out_rm_features;
-
-	return features;
-
-out_rm_features:
-	return features & ~(NETIF_F_IP_CSUM |
-			    NETIF_F_IPV6_CSUM |
-			    NETIF_F_SCTP_CRC |
-			    NETIF_F_GSO_MASK);
+	nbl_common_queue_work(&net_resource_mgt->rx_mode_async, false);
 }
 
 static int nbl_serv_config_rxhash(void *priv, bool enable)
@@ -2430,7 +2446,7 @@ static int nbl_serv_config_rxhash(void *priv, bool enable)
 	int i = 0;
 
 	disp_ops->get_rxfh_indir_size(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				NBL_COMMON_TO_VSI_ID(common), &rxfh_indir_size);
+				&NBL_COMMON_TO_VSI_ID(common), &rxfh_indir_size);
 	indir = devm_kcalloc(dev, rxfh_indir_size, sizeof(u32), GFP_KERNEL);
 	if (!indir)
 		return -ENOMEM;
@@ -2456,9 +2472,30 @@ static int nbl_serv_set_features(struct net_device *netdev, netdev_features_t fe
 	struct nbl_service_mgt *serv_mgt = NBL_ADAPTER_TO_SERV_MGT(adapter);
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_serv_ring_mgt *ring_mgt = NBL_SERV_MGT_TO_RING_MGT(serv_mgt);
 	netdev_features_t changed = netdev->features ^ features;
+	int rx_vlan_features_changed = false;
+	int rss_hash_features_changed = false;
+	int was_running;
+	int err = 0;
 	u16 vsi_id = NBL_COMMON_TO_VSI_ID(common);
 	bool enable = false;
+
+	if (changed & (NETIF_F_HW_VLAN_CTAG_RX | NETIF_F_HW_VLAN_STAG_RX)) {
+		rx_vlan_features_changed = true;
+		if (!(features & NETIF_F_HW_VLAN_CTAG_RX) &&
+		    !(features & NETIF_F_HW_VLAN_STAG_RX))
+			ring_mgt->ethtool_rx_vlan_mode = RX_VLAN_PARSE_OFF;
+		if ((features & NETIF_F_HW_VLAN_CTAG_RX) &&
+		    !(features & NETIF_F_HW_VLAN_STAG_RX))
+			ring_mgt->ethtool_rx_vlan_mode = RX_VLAN_PARSE_CVLAN;
+		else if (!(features & NETIF_F_HW_VLAN_CTAG_RX) &&
+			 (features & NETIF_F_HW_VLAN_STAG_RX))
+			ring_mgt->ethtool_rx_vlan_mode = RX_VLAN_PARSE_SVLAN;
+		else if ((features & NETIF_F_HW_VLAN_CTAG_RX) &&
+			 (features & NETIF_F_HW_VLAN_STAG_RX))
+			ring_mgt->ethtool_rx_vlan_mode = RX_VLAN_PARSE_CVLAN_OR_SVLAN;
+	}
 
 	if (!common->is_vf) {
 		if (changed & NETIF_F_NTUPLE) {
@@ -2470,11 +2507,40 @@ static int nbl_serv_set_features(struct net_device *netdev, netdev_features_t fe
 	}
 
 	if (changed & NETIF_F_RXHASH) {
+		rss_hash_features_changed = true;
+		if (features & NETIF_F_RXHASH)
+			ring_mgt->ethtool_rss_hash_mode = RX_RSS_HASH_ON;
+		else
+			ring_mgt->ethtool_rss_hash_mode = RX_RSS_HASH_OFF;
 		enable = !!(features & NETIF_F_RXHASH);
 		nbl_serv_config_rxhash(serv_mgt, enable);
 	}
 
+	if (rx_vlan_features_changed || rss_hash_features_changed) {
+		was_running = netif_running(netdev);
+
+		if (was_running) {
+			err = nbl_serv_netdev_stop(netdev);
+			if (err) {
+				netdev_err(netdev, "Netdev stop failed while setting ringparam\n");
+				goto netdev_stop_fail;
+			}
+		}
+
+		if (was_running) {
+			err = nbl_serv_netdev_open(netdev);
+			if (err) {
+				netdev_err(netdev, "Netdev open failed after setting ringparam\n");
+				goto netdev_open_fail;
+			}
+		}
+	}
+
 	return 0;
+
+netdev_open_fail:
+netdev_stop_fail:
+	return -EIO;
 }
 
 static int nbl_serv_config_fd_flow_state(void *priv, enum nbl_chan_fdir_rule_type type, u32 state)
@@ -2493,6 +2559,9 @@ static LIST_HEAD(nbl_serv_block_cb_list);
 static int nbl_serv_setup_tc(struct net_device *dev, enum tc_setup_type type, void *type_data)
 {
 	struct nbl_netdev_priv *priv = netdev_priv(dev);
+
+	if (!priv)
+		return -EINVAL;
 
 	switch (type) {
 	case TC_SETUP_BLOCK: {
@@ -2513,13 +2582,33 @@ static int nbl_serv_set_vf_mac(struct net_device *dev, int vf_id, u8 *mac)
 	struct nbl_service_mgt *serv_mgt = NBL_NETDEV_TO_SERV_MGT(dev);
 	struct nbl_serv_net_resource_mgt *net_resource_mgt =
 					NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
+	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	u16 function_id = U16_MAX;
+	u8 default_mac[6] = {0};
+	int i;
 
-	function_id = nbl_serv_get_vf_function_id(serv_mgt, vf_id);
+	if (vf_id >= net_resource_mgt->total_vfs || !net_resource_mgt->vf_info)
+		return -EINVAL;
+
+	function_id = disp_ops->get_vf_function_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+						   NBL_COMMON_TO_VSI_ID(common), vf_id);
+
 	if (function_id == U16_MAX) {
 		netdev_info(dev, "vf id %d invalid\n", vf_id);
 		return -EINVAL;
+	}
+	if (is_multicast_ether_addr(mac))
+		return -EINVAL;
+	if (!ether_addr_equal(default_mac, mac)) {
+		for (i = 0; i < net_resource_mgt->total_vfs; i++) {
+			if (i == vf_id)
+				continue;
+			if (ether_addr_equal(net_resource_mgt->vf_info[i].mac, mac) &&
+			    net_resource_mgt->vf_info[i].vlan ==
+			    net_resource_mgt->vf_info[vf_id].vlan)
+				return -EINVAL;
+		}
 	}
 
 	ether_addr_copy(net_resource_mgt->vf_info[vf_id].mac, mac);
@@ -2564,14 +2653,19 @@ static int nbl_serv_set_vf_spoofchk(struct net_device *dev, int vf_id, bool ena)
 					NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_ch_prm_set_vf_spoof_check vf_spoof_prm = {0};
 	int ret = 0;
 
 	if (vf_id >= net_resource_mgt->total_vfs || !net_resource_mgt->vf_info)
 		return -EINVAL;
 
-	if (vf_id < net_resource_mgt->num_vfs)
+	if (vf_id < net_resource_mgt->num_vfs) {
+		vf_spoof_prm.vsi_id = NBL_COMMON_TO_VSI_ID(common);
+		vf_spoof_prm.vf_id = vf_id;
+		vf_spoof_prm.enable = ena;
 		ret = disp_ops->set_vf_spoof_check(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-						   NBL_COMMON_TO_VSI_ID(common), vf_id, ena);
+						   &vf_spoof_prm);
+	}
 
 	if (!ret)
 		net_resource_mgt->vf_info[vf_id].spoof_check = ena;
@@ -2584,12 +2678,18 @@ static int nbl_serv_set_vf_link_state(struct net_device *dev, int vf_id, int lin
 	struct nbl_service_mgt *serv_mgt = NBL_NETDEV_TO_SERV_MGT(dev);
 	struct nbl_serv_net_resource_mgt *net_resource_mgt =
 					NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
+	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	u16 function_id = U16_MAX;
 	bool should_notify = false;
 	int ret = 0;
 
-	function_id = nbl_serv_get_vf_function_id(serv_mgt, vf_id);
+	if (vf_id >= net_resource_mgt->total_vfs || !net_resource_mgt->vf_info)
+		return -EINVAL;
+
+	function_id = disp_ops->get_vf_function_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+						   NBL_COMMON_TO_VSI_ID(common), vf_id);
+
 	if (function_id == U16_MAX) {
 		netdev_info(dev, "vf id %d invalid\n", vf_id);
 		return -EINVAL;
@@ -2611,12 +2711,18 @@ static int nbl_serv_set_vf_trust(struct net_device *dev, int vf_id, bool trusted
 	struct nbl_service_mgt *serv_mgt = NBL_NETDEV_TO_SERV_MGT(dev);
 	struct nbl_serv_net_resource_mgt *net_resource_mgt =
 						NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
+	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	u16 function_id = U16_MAX;
 	bool should_notify = false;
 	int ret = 0;
 
-	function_id = nbl_serv_get_vf_function_id(serv_mgt, vf_id);
+	if (vf_id >= net_resource_mgt->total_vfs || !net_resource_mgt->vf_info)
+		return -EINVAL;
+
+	function_id = disp_ops->get_vf_function_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+						   NBL_COMMON_TO_VSI_ID(common), vf_id);
+
 	if (function_id == U16_MAX) {
 		netdev_info(dev, "vf id %d invalid\n", vf_id);
 		return -EINVAL;
@@ -2702,16 +2808,34 @@ static int nbl_serv_set_vf_vlan(struct net_device *dev, int vf_id, u16 vlan, u8 
 	struct nbl_service_mgt *serv_mgt = NBL_NETDEV_TO_SERV_MGT(dev);
 	struct nbl_serv_net_resource_mgt *net_resource_mgt =
 					NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
+	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_serv_notify_vlan_param param = {0};
 	int ret = 0;
+	int i;
 	u16 function_id = U16_MAX;
 	bool should_notify = false;
+	u8 default_mac[6] = {0};
+
+	if (vf_id >= net_resource_mgt->total_vfs || !net_resource_mgt->vf_info)
+		return -EINVAL;
 
 	if (vlan > 4095 || qos > 7)
 		return -EINVAL;
+	if (!ether_addr_equal(default_mac, net_resource_mgt->vf_info[vf_id].mac)) {
+		for (i = 0; i < net_resource_mgt->total_vfs; i++) {
+			if (i == vf_id)
+				continue;
+			if (ether_addr_equal(net_resource_mgt->vf_info[i].mac,
+					     net_resource_mgt->vf_info[vf_id].mac) &&
+					     net_resource_mgt->vf_info[i].vlan == vlan)
+				return -EINVAL;
+			}
+	}
 
-	function_id = nbl_serv_get_vf_function_id(serv_mgt, vf_id);
+	function_id = disp_ops->get_vf_function_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+						   NBL_COMMON_TO_VSI_ID(common), vf_id);
+
 	if (function_id == U16_MAX) {
 		netdev_info(dev, "vf id %d invalid\n", vf_id);
 		return -EINVAL;
@@ -2752,6 +2876,9 @@ static int nbl_serv_get_vf_config(struct net_device *dev, int vf_id, struct ifla
 					NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
 	struct nbl_serv_vf_info *vf_info = net_resource_mgt->vf_info;
 
+	if (!netif_device_present(dev))
+		return -EOPNOTSUPP;
+
 	if (vf_id >= net_resource_mgt->total_vfs || !net_resource_mgt->vf_info)
 		return -EINVAL;
 
@@ -2760,6 +2887,7 @@ static int nbl_serv_get_vf_config(struct net_device *dev, int vf_id, struct ifla
 	ivi->linkstate = vf_info[vf_id].state;
 	ivi->max_tx_rate = vf_info[vf_id].max_tx_rate;
 	ivi->vlan = vf_info[vf_id].vlan;
+	ivi->trusted = vf_info[vf_id].trusted;
 	ivi->vlan_proto = htons(vf_info[vf_id].vlan_proto);
 	ivi->qos = vf_info[vf_id].vlan_qos;
 	ivi->trusted = vf_info[vf_id].trusted;
@@ -2768,16 +2896,28 @@ static int nbl_serv_get_vf_config(struct net_device *dev, int vf_id, struct ifla
 	return 0;
 }
 
+static bool nbl_serv_check_vf_is_active(void *priv, u16 func_id)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_dispatch_ops *disp_ops;
+
+	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+
+	return disp_ops->check_vf_is_active(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), func_id);
+}
+
 static int nbl_serv_get_vf_stats(struct net_device *dev, int vf_id, struct ifla_vf_stats *vf_stats)
 {
 	struct nbl_service_mgt *serv_mgt = NBL_NETDEV_TO_SERV_MGT(dev);
+	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_vf_stats stats = {0};
 	u16 func_id = U16_MAX;
 	u8 is_vdpa = 0;
 	int ret = 0;
 
-	func_id = nbl_serv_get_vf_function_id(serv_mgt, vf_id);
+	func_id = disp_ops->get_vf_function_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+						   NBL_COMMON_TO_VSI_ID(common), vf_id);
 	if (func_id == U16_MAX) {
 		netdev_info(dev, "vf id %d invalid\n", vf_id);
 		return -EINVAL;
@@ -2821,18 +2961,21 @@ static u8 nbl_get_dscp_up(struct nbl_serv_net_resource_mgt *net_resource_mgt, st
 	return net_resource_mgt->qos_info.dscp2prio_map[dscp];
 }
 
-static u16
-nbl_serv_select_queue(struct net_device *netdev, struct sk_buff *skb,
-		      struct net_device *sb_dev)
+static u16 nbl_serv_select_queue(struct net_device *netdev, struct sk_buff *skb
+	, struct net_device *sb_dev
+)
 {
 	struct nbl_netdev_priv *priv = netdev_priv(netdev);
-	struct nbl_adapter *adapter = NBL_NETDEV_PRIV_TO_ADAPTER(priv);
-	struct nbl_service_mgt *serv_mgt = NBL_ADAPTER_TO_SERV_MGT(adapter);
-	struct nbl_serv_net_resource_mgt *net_resource_mgt =
-					NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
 
-	if (net_resource_mgt->qos_info.trust_mode == NBL_TRUST_MODE_DSCP)
+	if (priv->trust_mode == NBL_TRUST_MODE_DSCP) {
+		struct nbl_adapter *adapter = NBL_NETDEV_PRIV_TO_ADAPTER(priv);
+		struct nbl_service_mgt *serv_mgt = NBL_ADAPTER_TO_SERV_MGT(adapter);
+		struct nbl_serv_net_resource_mgt *net_resource_mgt =
+						NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
+
 		skb->priority = nbl_get_dscp_up(net_resource_mgt, skb);
+	}
+
 	return netdev_pick_tx(netdev, skb, sb_dev);
 }
 
@@ -2852,7 +2995,7 @@ static void nbl_serv_tx_timeout(struct net_device *netdev, unsigned int txqueue)
 
 	nbl_warn(common, NBL_DEBUG_QUEUE, "TX timeout on queue %d", txqueue);
 
-	nbl_common_queue_work(&NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt)->tx_timeout, false, false);
+	nbl_common_queue_work(&NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt)->tx_timeout, false);
 }
 
 static int nbl_serv_bridge_getlink(struct sk_buff *skb, u32 pid, u32 seq,
@@ -2912,10 +3055,10 @@ static int nbl_serv_get_phys_port_name(struct net_device *dev, char *name, size_
 	struct nbl_common_info *common = NBL_NETDEV_TO_COMMON(dev);
 	u8 pf_id;
 
-	pf_id = common->eth_id;
-	if ((NBL_COMMON_TO_ETH_MODE(common) == NBL_TWO_ETHERNET_PORT) && common->eth_id == 2)
-		pf_id = 1;
+	if (common->devlink_port && common->devlink_port->devlink)
+		return -EOPNOTSUPP;
 
+	pf_id = NBL_COMMON_TO_LOGIC_ETH_ID(common);
 	if (snprintf(name, len, "p%u", pf_id) >= len)
 		return -EOPNOTSUPP;
 	return 0;
@@ -2934,7 +3077,8 @@ static int nbl_serv_get_port_parent_id(struct net_device *dev, struct netdev_phy
 		return -EOPNOTSUPP;
 
 	/* return success to avoid linkwatch_do_dev report warnning */
-	if (test_bit(NBL_FATAL_ERR, adapter->state))
+	if (test_bit(NBL_FATAL_ERR, adapter->state) ||
+	    test_bit(NBL_PCI_ERR_RECOVERING, adapter->state))
 		return 0;
 
 	disp_ops->get_base_mac_addr(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), mac);
@@ -2945,7 +3089,7 @@ static int nbl_serv_get_port_parent_id(struct net_device *dev, struct netdev_phy
 	return 0;
 }
 
-static int nbl_serv_register_net(void *priv, struct nbl_register_net_param *register_param,
+static int nbl_serv_register_net(void *priv, struct nbl_ch_prm_register_net_info *param,
 				 struct nbl_register_net_result *register_result)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
@@ -2953,14 +3097,14 @@ static int nbl_serv_register_net(void *priv, struct nbl_register_net_param *regi
 	int p4_type, ret = 0;
 
 	ret = disp_ops->register_net(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				     register_param, register_result);
+				     param, register_result);
 	if (ret)
 		return ret;
 
 	p4_type = disp_ops->get_p4_used(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
 	switch (p4_type) {
 	case NBL_P4_DEFAULT:
-		set_bit(NBL_FLAG_P4_DEFAULT, serv_mgt->flags);
+		set_bit(NBL_FLAG_P4_DEFAULT, &serv_mgt->flags);
 		break;
 	default:
 		nbl_warn(NBL_SERV_MGT_TO_COMMON(serv_mgt), NBL_DEBUG_CUSTOMIZED_P4,
@@ -2970,14 +3114,14 @@ static int nbl_serv_register_net(void *priv, struct nbl_register_net_param *regi
 	return 0;
 }
 
-static int nbl_serv_unregister_net(void *priv)
+static int nbl_serv_unregister_net(void *priv, u16 func_id)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops;
 
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	return disp_ops->unregister_net(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
+	return disp_ops->unregister_net(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &func_id);
 }
 
 static int nbl_serv_setup_txrx_queues(void *priv, u16 vsi_id, u16 queue_num, u16 net_vector_id)
@@ -2987,9 +3131,14 @@ static int nbl_serv_setup_txrx_queues(void *priv, u16 vsi_id, u16 queue_num, u16
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_serv_vector *vector;
 	int i, ret = 0;
+	struct nbl_ch_prm_get_global_vec global_vec;
+	struct nbl_vec_info_param vec_prm;
+	struct nbl_ch_prm_alloc_txrx_queues txrx_q_prm;
 
 	/* queue_num include user&kernel queue */
-	ret = disp_ops->alloc_txrx_queues(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id, queue_num);
+	txrx_q_prm.vsi_id = vsi_id;
+	txrx_q_prm.queue_num = queue_num;
+	ret = disp_ops->alloc_txrx_queues(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &txrx_q_prm);
 	if (ret)
 		return -EFAULT;
 
@@ -3002,18 +3151,22 @@ static int nbl_serv_setup_txrx_queues(void *priv, u16 vsi_id, u16 queue_num, u16
 	for (i = 0; i < ring_mgt->xdp_ring_offset; i++) {
 		vector = &ring_mgt->vectors[i];
 		vector->local_vector_id = i + net_vector_id;
+		global_vec.vsi_id = vsi_id;
+		global_vec.vector_id = vector->local_vector_id;
 		vector->global_vector_id =
 			disp_ops->get_global_vector(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-						    vsi_id, vector->local_vector_id);
+						    &global_vec);
 		vector->irq_enable_base =
 			disp_ops->get_msix_irq_enable_info(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
 							   vector->global_vector_id,
-							   &vector->irq_data);
+							   &vector->irq_data,
+							   &vector->irq_mask_data);
 
-		disp_ops->set_vector_info(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					  vector->irq_enable_base,
-					  vector->irq_data, i,
-					  ring_mgt->net_msix_mask_en);
+		vec_prm.irq_enable_base = vector->irq_enable_base;
+		vec_prm.irq_data = vector->irq_data;
+		vec_prm.index = i;
+		vec_prm.mask_en = ring_mgt->net_msix_mask_en;
+		disp_ops->set_vector_info(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &vec_prm);
 	}
 
 	return 0;
@@ -3028,7 +3181,7 @@ static void nbl_serv_remove_txrx_queues(void *priv, u16 vsi_id)
 	ring_mgt = NBL_SERV_MGT_TO_RING_MGT(serv_mgt);
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	disp_ops->free_txrx_queues(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id);
+	disp_ops->free_txrx_queues(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &vsi_id);
 }
 
 static int nbl_serv_init_tx_rate(void *priv, u16 vsi_id)
@@ -3040,7 +3193,7 @@ static int nbl_serv_init_tx_rate(void *priv, u16 vsi_id)
 	int ret = 0;
 
 	if (net_resource_mgt->max_tx_rate) {
-		func_id = disp_ops->get_function_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id);
+		func_id = disp_ops->get_function_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &vsi_id);
 		ret = disp_ops->set_tx_rate(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
 					    func_id, net_resource_mgt->max_tx_rate, 0);
 	}
@@ -3080,20 +3233,21 @@ static void nbl_serv_remove_rss(void *priv, u16 vsi_id)
 	disp_ops->remove_rss(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id);
 }
 
-static int nbl_serv_setup_rss_indir(void *priv, u16 vsi_id)
+static int nbl_serv_setup_rss_indir(void *priv, u16 vsi_index)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct device *dev = NBL_SERV_MGT_TO_DEV(serv_mgt);
 	struct nbl_serv_ring_mgt *ring_mgt = NBL_SERV_MGT_TO_RING_MGT(serv_mgt);
-	struct nbl_serv_ring_vsi_info *vsi_info = &ring_mgt->vsi_info[NBL_VSI_DATA];
+	struct nbl_serv_ring_vsi_info *vsi_info = &ring_mgt->vsi_info[vsi_index];
 	u32 rxfh_indir_size = 0;
+	u16 vsi_id = vsi_info->vsi_id;
 	int num_cpus = 0, real_qps = 0;
 	u32 *indir = NULL;
 	int i = 0;
 
 	disp_ops->get_rxfh_indir_size(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				      vsi_id, &rxfh_indir_size);
+				      &vsi_id, &rxfh_indir_size);
 	indir = devm_kcalloc(dev, rxfh_indir_size, sizeof(u32), GFP_KERNEL);
 	if (!indir)
 		return -ENOMEM;
@@ -3110,7 +3264,7 @@ static int nbl_serv_setup_rss_indir(void *priv, u16 vsi_id)
 	return 0;
 }
 
-static int nbl_serv_alloc_rings(void *priv, struct net_device *netdev, struct nbl_ring_param *param)
+static int nbl_serv_alloc_rings(void *priv, struct nbl_ring_param *param)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct device *dev;
@@ -3128,18 +3282,19 @@ static int nbl_serv_alloc_rings(void *priv, struct net_device *netdev, struct nb
 	ring_mgt->rx_desc_num = param->queue_size;
 	ring_mgt->xdp_ring_offset = param->xdp_ring_offset;
 
-	ret = disp_ops->alloc_rings(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), netdev, param);
+	ret = disp_ops->alloc_rings(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), param);
 	if (ret)
 		goto alloc_rings_fail;
 
-	ret = nbl_serv_set_tx_rings(ring_mgt, netdev, dev);
+	ret = nbl_serv_set_tx_rings(ring_mgt, param->netdev, dev);
 	if (ret)
 		goto set_tx_fail;
-	ret = nbl_serv_set_rx_rings(ring_mgt, netdev, dev);
+
+	ret = nbl_serv_set_rx_rings(ring_mgt, param->netdev, dev);
 	if (ret)
 		goto set_rx_fail;
 
-	ret = nbl_serv_set_vectors(serv_mgt, netdev, dev);
+	ret = nbl_serv_set_vectors(serv_mgt, param->netdev, dev);
 	if (ret)
 		goto set_vectors_fail;
 
@@ -3180,32 +3335,6 @@ static void nbl_serv_free_rings(void *priv)
 	disp_ops->remove_rings(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
 }
 
-static int nbl_serv_enable_napis(void *priv, u16 vsi_index)
-{
-	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
-	struct nbl_serv_ring_mgt *ring_mgt = NBL_SERV_MGT_TO_RING_MGT(serv_mgt);
-	struct nbl_serv_ring_vsi_info *vsi_info = &ring_mgt->vsi_info[vsi_index];
-	u16 start = vsi_info->ring_offset, end = vsi_info->ring_offset + vsi_info->ring_num;
-	int i;
-
-	for (i = start; i < end; i++)
-		napi_enable(&ring_mgt->vectors[i].nbl_napi->napi);
-
-	return 0;
-}
-
-static void nbl_serv_disable_napis(void *priv, u16 vsi_index)
-{
-	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
-	struct nbl_serv_ring_mgt *ring_mgt = NBL_SERV_MGT_TO_RING_MGT(serv_mgt);
-	struct nbl_serv_ring_vsi_info *vsi_info = &ring_mgt->vsi_info[vsi_index];
-	u16 start = vsi_info->ring_offset, end = vsi_info->ring_offset + vsi_info->ring_num;
-	int i;
-
-	for (i = start; i < end; i++)
-		napi_disable(&ring_mgt->vectors[i].nbl_napi->napi);
-}
-
 static void nbl_serv_set_mask_en(void *priv, bool enable)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
@@ -3223,6 +3352,7 @@ static int nbl_serv_start_net_flow(void *priv, struct net_device *netdev, u16 vs
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_serv_flow_mgt *flow_mgt = NBL_SERV_MGT_TO_FLOW_MGT(serv_mgt);
+	struct nbl_serv_net_resource_mgt *net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
 	struct nbl_serv_vlan_node *vlan_node;
 	u8 mac[ETH_ALEN];
 	int ret = 0;
@@ -3230,8 +3360,8 @@ static int nbl_serv_start_net_flow(void *priv, struct net_device *netdev, u16 vs
 	flow_mgt->unicast_flow_enable = true;
 	flow_mgt->multicast_flow_enable = true;
 	/* Clear cfgs, in case this function exited abnormaly last time */
-	disp_ops->clear_accel_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id);
-	disp_ops->clear_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id);
+	disp_ops->clear_accel_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &vsi_id);
+	disp_ops->clear_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &vsi_id);
 	disp_ops->set_mtu(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
 			  NBL_COMMON_TO_VSI_ID(common), netdev->mtu);
 	if (!common->is_vf)
@@ -3241,33 +3371,57 @@ static int nbl_serv_start_net_flow(void *priv, struct net_device *netdev, u16 vs
 	if (!list_empty(&flow_mgt->vlan_list))
 		return -ECONNRESET;
 
+	ret = disp_ops->add_multi_rule(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &vsi_id);
+	if (ret)
+		goto add_multi_fail;
+
 	vlan_node = nbl_serv_alloc_vlan_node();
 	if (!vlan_node)
 		goto alloc_fail;
 
 	flow_mgt->vid = vid;
-	flow_mgt->trusted_en = trusted;
 	vlan_node->vid = vid;
 	ether_addr_copy(flow_mgt->mac, netdev->dev_addr);
+	rtnl_lock();
 	ret = nbl_serv_update_vlan_node_effective(serv_mgt, vlan_node, 1, vsi_id);
+	rtnl_unlock();
 	if (ret)
 		goto add_macvlan_fail;
 
+	rtnl_lock();
 	list_add(&vlan_node->node, &flow_mgt->vlan_list);
+	rtnl_unlock();
 	flow_mgt->vlan_list_cnt++;
 
 	memset(mac, 0xFF, ETH_ALEN);
+	rtnl_lock();
 	ret = nbl_serv_add_submac_node(serv_mgt, mac, vsi_id, 0);
+	rtnl_unlock();
 	if (ret)
 		goto add_submac_failed;
+
+	/*if flow_mgt->promisc is allmulti, this means that during resume,
+	 *flow_mgt->trusted_en is the value awating resumption, can't change to trusted
+	 */
+	if (flow_mgt->promisc & BIT(NBL_ALLMULTI)) {
+		flow_mgt->promisc &= ~BIT(NBL_ALLMULTI);
+		nbl_common_queue_work(&net_resource_mgt->rx_mode_async, false);
+	} else {
+		flow_mgt->trusted_en = trusted;
+	}
 
 	return 0;
 
 add_submac_failed:
+	rtnl_lock();
 	nbl_serv_update_vlan_node_effective(serv_mgt, vlan_node, 0, vsi_id);
+	list_del(&vlan_node->node);
+	rtnl_unlock();
 add_macvlan_fail:
 	nbl_serv_free_vlan_node(vlan_node);
 alloc_fail:
+	disp_ops->del_multi_rule(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &vsi_id);
+add_multi_fail:
 	return ret;
 }
 
@@ -3280,6 +3434,7 @@ static void nbl_serv_stop_net_flow(void *priv, u16 vsi_id)
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_serv_flow_mgt *flow_mgt = NBL_SERV_MGT_TO_FLOW_MGT(serv_mgt);
+	struct nbl_ch_prm_cfg_multi_mcast mcast;
 
 	nbl_serv_del_all_submacs(serv_mgt, net_priv->data_vsi);
 	nbl_serv_del_all_vlans(serv_mgt);
@@ -3288,11 +3443,23 @@ static void nbl_serv_stop_net_flow(void *priv, u16 vsi_id)
 		disp_ops->config_fd_flow_state(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
 					       NBL_CHAN_FDIR_RULE_NORMAL, vsi_id, 0);
 
-	disp_ops->del_multi_rule(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id);
+	disp_ops->del_multi_rule(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &vsi_id);
 
-	disp_ops->set_vf_spoof_check(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				     vsi_id, -1, false);
+	if (flow_mgt->promisc & BIT(NBL_ALLMULTI)) {
+		mcast.vsi = vsi_id;
+		mcast.enable = 0;
+		disp_ops->cfg_multi_mcast(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &mcast);
+	}
+
 	memset(flow_mgt->mac, 0, sizeof(flow_mgt->mac));
+}
+
+static void nbl_serv_unregister_upcall_port(void *priv)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+
+	disp_ops->unregister_upcall_port(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
 }
 
 static void nbl_serv_clear_flow(void *priv, u16 vsi_id)
@@ -3300,23 +3467,23 @@ static void nbl_serv_clear_flow(void *priv, u16 vsi_id)
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	disp_ops->clear_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id);
+	disp_ops->clear_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &vsi_id);
 }
 
-static int nbl_serv_set_promisc_mode(void *priv, u16 vsi_id, u16 mode)
+static int nbl_serv_set_promisc_mode(void *priv, struct nbl_ch_prm_set_promisc_mode *param)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	return disp_ops->set_promisc_mode(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id, mode);
+	return disp_ops->set_promisc_mode(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), param);
 }
 
-static int nbl_serv_cfg_multi_mcast(void *priv, u16 vsi_id, u16 enable)
+static int nbl_serv_cfg_multi_mcast(void *priv, struct nbl_ch_prm_cfg_multi_mcast *param)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	return disp_ops->cfg_multi_mcast(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id, enable);
+	return disp_ops->cfg_multi_mcast(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), param);
 }
 
 static int nbl_serv_set_lldp_flow(void *priv, u16 vsi_id)
@@ -3324,31 +3491,48 @@ static int nbl_serv_set_lldp_flow(void *priv, u16 vsi_id)
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	return disp_ops->add_lldp_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id);
+	return disp_ops->add_lldp_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &vsi_id);
 }
 
-static void nbl_serv_remove_lldp_flow(void *priv, u16 vsi_id)
+static int nbl_serv_remove_lldp_flow(void *priv, u16 vsi_id)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	disp_ops->del_lldp_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id);
+	return disp_ops->del_lldp_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &vsi_id);
 }
 
 static int nbl_serv_start_mgt_flow(void *priv)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	int ret = 0;
 
-	return disp_ops->setup_multi_group(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
+	ret = disp_ops->alloc_kt(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
+	if (ret)
+		return ret;
+
+	ret = disp_ops->setup_multi_group(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
+	if (ret)
+		return ret;
+
+	ret = disp_ops->setup_ecn_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
+	if (ret)
+		return ret;
+	ret = disp_ops->set_rdma_rx_vsi_remap(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), true);
+	return ret;
 }
 
 static void nbl_serv_stop_mgt_flow(void *priv)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_ch_prm_tx_mirror_to_rdma mirror_param = {.mt_id = 0, .enable = false};
 
-	return disp_ops->remove_multi_group(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
+	disp_ops->remove_multi_group(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
+	disp_ops->remove_ecn_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
+	disp_ops->set_rdma_rx_vsi_remap(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), false);
+	disp_ops->configure_tx_mirror_to_rdma(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &mirror_param);
 }
 
 static u32 nbl_serv_get_tx_headroom(void *priv)
@@ -3368,8 +3552,7 @@ static bool nbl_serv_get_product_flex_cap(void *priv, enum nbl_flex_cap_type cap
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	return disp_ops->get_product_flex_cap(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-						       cap_type);
+	return disp_ops->get_product_flex_cap(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &cap_type);
 }
 
 /**
@@ -3382,7 +3565,18 @@ static bool nbl_serv_get_product_fix_cap(void *priv, enum nbl_fix_cap_type cap_t
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
 	return disp_ops->get_product_fix_cap(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-						       cap_type);
+						       &cap_type);
+}
+
+static int nbl_serv_enable_driver(void *priv)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_dispatch_ops *disp_ops;
+
+	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+
+	disp_ops->set_driver_status(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), true);
+	return 0;
 }
 
 static int nbl_serv_init_chip(void *priv)
@@ -3403,13 +3597,13 @@ static int nbl_serv_init_chip(void *priv)
 		goto module_init_fail;
 	}
 
-	ret = disp_ops->queue_init(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
+	ret = disp_ops->init_queue(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
 	if (ret) {
 		dev_err(dev, "queue_init failed\n");
 		goto queue_init_fail;
 	}
 
-	ret = disp_ops->vsi_init(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
+	ret = disp_ops->init_vsi(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
 	if (ret) {
 		dev_err(dev, "vsi_init failed\n");
 		goto vsi_init_fail;
@@ -3425,27 +3619,44 @@ module_init_fail:
 
 static int nbl_serv_destroy_chip(void *p)
 {
+	enum nbl_fix_cap_type cap_type = NBL_NEED_DESTROY_CHIP;
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)p;
+	struct nbl_dispatch_ops *disp_ops;
+
+	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+
+	if (!disp_ops->get_product_fix_cap(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+					   &cap_type))
+		return 0;
+
+	disp_ops->set_driver_status(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), false);
 	return 0;
 }
 
-static int nbl_serv_configure_msix_map(void *priv, u16 num_net_msix, u16 num_others_msix,
+static int nbl_serv_configure_msix_map(void *priv, u16 func_id,
+				       u16 num_net_msix, u16 num_others_msix,
 				       bool net_msix_mask_en)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops;
 	int ret = 0;
+	struct nbl_ch_prm_cfg_msix_map msix_map;
 
+	msix_map.sfid = func_id;
+	msix_map.num_net_msix = num_net_msix;
+	msix_map.num_others_msix = num_others_msix;
+	msix_map.net_msix_mask_en = net_msix_mask_en;
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	ret = disp_ops->configure_msix_map(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), num_net_msix,
-					   num_others_msix, net_msix_mask_en);
+	ret = disp_ops->configure_msix_map(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+					   &msix_map);
 	if (ret)
 		return -EIO;
 
 	return 0;
 }
 
-static int nbl_serv_destroy_msix_map(void *priv)
+static int nbl_serv_destroy_msix_map(void *priv, u16 func_id)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops;
@@ -3453,39 +3664,64 @@ static int nbl_serv_destroy_msix_map(void *priv)
 
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	ret = disp_ops->destroy_msix_map(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
+	ret = disp_ops->destroy_msix_map(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &func_id);
 	if (ret)
 		return -EIO;
 
 	return 0;
 }
 
-static int nbl_serv_enable_mailbox_irq(void *priv, u16 vector_id, bool enable_msix)
+static int nbl_serv_enable_mailbox_irq(void *priv, u16 func_id, u16 vector_id, bool enable_msix)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops;
 	int ret = 0;
+	struct nbl_ch_prm_enable_irq mbx_irq;
 
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	ret = disp_ops->enable_mailbox_irq(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					   vector_id, enable_msix);
+	mbx_irq.sfid = func_id;
+	mbx_irq.vector_id = vector_id;
+	mbx_irq.enable_msix = enable_msix;
+	ret = disp_ops->enable_mailbox_irq(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &mbx_irq);
 	if (ret)
 		return -EIO;
 
 	return 0;
 }
 
-static int nbl_serv_enable_abnormal_irq(void *priv, u16 vector_id, bool enable_msix)
+static int nbl_serv_enable_abnormal_irq(void *priv, u16 func_id, u16 vector_id, bool enable_msix)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops;
 	int ret = 0;
+	struct nbl_ch_prm_enable_irq ab_irq;
 
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	ret = disp_ops->enable_abnormal_irq(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					    vector_id, enable_msix);
+	ab_irq.sfid = func_id;
+	ab_irq.vector_id = vector_id;
+	ab_irq.enable_msix = enable_msix;
+	ret = disp_ops->enable_abnormal_irq(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &ab_irq);
+	if (ret)
+		return -EIO;
+
+	return 0;
+}
+
+static int nbl_serv_enable_sfp_plug_irq(void *priv, u16 vector_id, bool enable_msix)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_dispatch_ops *disp_ops;
+	int ret = 0;
+	struct nbl_ch_prm_enable_irq irq;
+
+	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+
+	irq.vector_id = vector_id;
+	irq.enable_msix = enable_msix;
+	ret = disp_ops->enable_sfp_plug_irq(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+					    &irq);
 	if (ret)
 		return -EIO;
 
@@ -3496,9 +3732,44 @@ static irqreturn_t nbl_serv_clean_rings(int __always_unused irq, void *data)
 {
 	struct nbl_serv_vector *vector = (struct nbl_serv_vector *)data;
 
+	vector->nbl_napi->irq_cnt++;
+	/* set irq raised flag */
+	atomic_set_release(&vector->nbl_napi->is_irq, 1);
 	napi_schedule_irqoff(&vector->nbl_napi->napi);
 
 	return IRQ_HANDLED;
+}
+
+static irqreturn_t nbl_serv_clean_rings_mask(int __always_unused irq, void *data)
+{
+	struct nbl_serv_vector *vector = (struct nbl_serv_vector *)data;
+
+	vector->nbl_napi->irq_cnt++;
+	if (napi_schedule_prep(&vector->nbl_napi->napi)) {
+		vector->nbl_napi->mask_cnt++;
+		writel(vector->irq_mask_data, vector->irq_enable_base);
+		/* set irq raised flag */
+		atomic_set_release(&vector->nbl_napi->is_irq, 1);
+		__napi_schedule_irqoff(&vector->nbl_napi->napi);
+	}
+
+	return IRQ_HANDLED;
+}
+
+void nbl_serv_cpu_affinity_init(void *priv, u16 ring_num)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
+	struct nbl_serv_ring_mgt *ring_mgt = NBL_SERV_MGT_TO_RING_MGT(serv_mgt);
+	int i;
+
+	for (i = 0; i < ring_num; i++) {
+		cpumask_set_cpu(cpumask_local_spread(i, dev_to_node(NBL_COMMON_TO_DEV(common))),
+				&ring_mgt->vectors[i].cpumask);
+		if (NBL_COMMON_TO_ETH_MAX_SPEED(common) < SPEED_100000)
+			netif_set_xps_queue(ring_mgt->vectors[i].netdev,
+					    &ring_mgt->vectors[i].cpumask, i);
+	}
 }
 
 static int nbl_serv_request_net_irq(void *priv, struct nbl_msix_info_param *msix_info)
@@ -3523,10 +3794,14 @@ static int nbl_serv_request_net_irq(void *priv, struct nbl_msix_info_param *msix
 		irq_num = msix_info->msix_entries[i].vector;
 		snprintf(vector->name, sizeof(vector->name), "nbl_txrx%d@pci:%s",
 			 i, pci_name(NBL_COMMON_TO_PDEV(common)));
-		ret = devm_request_irq(dev, irq_num, nbl_serv_clean_rings, 0,
-				       vector->name, vector);
+		if (vector->irq_mask_data)
+			ret = devm_request_irq(dev, irq_num, nbl_serv_clean_rings_mask, 0,
+					       vector->name, vector);
+		else
+			ret = devm_request_irq(dev, irq_num, nbl_serv_clean_rings, 0,
+					       vector->name, vector);
 		if (ret) {
-			nbl_err(common, NBL_DEBUG_INTR, "TxRx Queue %u req irq with error %d",
+			nbl_err(common, NBL_DEBUG_INTR, "TxRx Queue %u requests MSIX irq failed with error %d",
 				i, ret);
 			goto request_irq_err;
 		}
@@ -3573,36 +3848,39 @@ static u16 nbl_serv_get_global_vector(void *priv, u16 local_vector_id)
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_ch_prm_get_global_vec global_vec;
 
-	return disp_ops->get_global_vector(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					   NBL_COMMON_TO_VSI_ID(common), local_vector_id);
-}
-
-static u16 nbl_serv_get_msix_entry_id(void *priv, u16 local_vector_id)
-{
-	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
-	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
-	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
-
-	return disp_ops->get_msix_entry_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					   NBL_COMMON_TO_VSI_ID(common), local_vector_id);
+	global_vec.vsi_id = NBL_COMMON_TO_VSI_ID(common);
+	global_vec.vector_id = local_vector_id;
+	return disp_ops->get_global_vector(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &global_vec);
 }
 
 static u16 nbl_serv_get_vsi_id(void *priv, u16 func_id, u16 type)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_ch_prm_get_vsi param;
 
-	return disp_ops->get_vsi_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), func_id, type);
+	param.sfid = func_id;
+	param.type = type;
+	return disp_ops->get_vsi_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &param);
 }
 
-static void nbl_serv_get_eth_id(void *priv, u16 vsi_id, u8 *eth_mode, u8 *eth_id, u8 *logic_eth_id)
+static int nbl_serv_get_my_pf(void *priv, u16 *sfid, u8 *my_pf)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	return disp_ops->get_eth_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id,
-				    eth_mode, eth_id, logic_eth_id);
+	return disp_ops->get_my_pf(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), sfid, my_pf);
+}
+
+static int nbl_serv_get_eth_id(void *priv, struct nbl_ch_prm_get_eth_id *param,
+			       struct nbl_ch_prm_get_eth_id *output)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+
+	return disp_ops->get_eth_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), param, output);
 }
 
 void nbl_serv_get_rep_drop_stats(struct nbl_service_mgt *serv_mgt, u16 rep_vsi_id,
@@ -3612,24 +3890,21 @@ void nbl_serv_get_rep_drop_stats(struct nbl_service_mgt *serv_mgt, u16 rep_vsi_i
 	struct nbl_serv_net_resource_mgt *net_resource_mgt;
 	struct nbl_serv_rep_drop *rep_drop;
 	u16 rep_data_index;
-	unsigned int start;
 
 	net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
-	rep_data_index = disp_ops->get_rep_index(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), rep_vsi_id);
+	rep_data_index = disp_ops->get_rep_index(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &rep_vsi_id);
 	if (rep_data_index >= net_resource_mgt->num_vfs)
 		return;
 
 	rep_drop = &net_resource_mgt->rep_drop[rep_data_index];
-	do {
-		start = u64_stats_fetch_begin(&rep_drop->rep_drop_syncp);
-		rep_stats->dropped = rep_drop->tx_dropped;
-	} while (u64_stats_fetch_retry(&rep_drop->rep_drop_syncp, start));
+	rep_stats->dropped = rep_drop->tx_dropped;
 }
 
 static void nbl_serv_rep_get_stats64(struct net_device *netdev, struct rtnl_link_stats64 *stats)
 {
 	struct nbl_netdev_priv *rep_priv = netdev_priv(netdev);
 	struct nbl_rep_stats rep_stats = { 0 };
+	struct nbl_get_rep_stats_param rep_stats_prm = {0};
 	struct nbl_adapter *adapter;
 	struct nbl_service_mgt *serv_mgt;
 	struct nbl_dispatch_ops *disp_ops;
@@ -3647,13 +3922,14 @@ static void nbl_serv_rep_get_stats64(struct net_device *netdev, struct rtnl_link
 		return;
 	}
 
-	disp_ops->get_rep_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				rep_priv->rep->rep_vsi_id, &rep_stats, true);
+	rep_stats_prm.rep_vsi_id = rep_priv->rep->rep_vsi_id;
+	rep_stats_prm.is_tx = true;
+	disp_ops->get_rep_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &rep_stats_prm, &rep_stats);
 	stats->tx_packets += rep_stats.packets;
 	stats->tx_bytes += rep_stats.bytes;
 
-	disp_ops->get_rep_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				rep_priv->rep->rep_vsi_id, &rep_stats, false);
+	rep_stats_prm.is_tx = false;
+	disp_ops->get_rep_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &rep_stats_prm, &rep_stats);
 	stats->rx_packets += rep_stats.packets;
 	stats->rx_bytes += rep_stats.bytes;
 
@@ -3708,6 +3984,9 @@ static LIST_HEAD(nbl_serv_rep_block_cb_list);
 static int nbl_serv_rep_setup_tc(struct net_device *dev, enum tc_setup_type type, void *type_data)
 {
 	struct nbl_netdev_priv *priv = netdev_priv(dev);
+
+	if (!priv)
+		return -EINVAL;
 
 	switch (type) {
 	case TC_SETUP_BLOCK: {
@@ -3862,6 +4141,9 @@ static int nbl_serv_indr_dev_setup_tc(struct net_device *dev, struct Qdisc *sch,
 {
 	struct nbl_netdev_priv *priv = cb_priv;
 
+	if (!priv)
+		return -EINVAL;
+
 	switch (type) {
 	case TC_SETUP_BLOCK:
 		return nbl_serv_indr_dev_setup_block(dev, sch, priv, type_data,
@@ -3895,18 +4177,22 @@ static void nbl_serv_get_rep_queue_info(void *priv, u16 *queue_num, u16 *queue_s
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_ch_prm_get_queue_info param = { 0 };
 
-	disp_ops->get_rep_queue_info(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				     queue_num, queue_size);
+	disp_ops->get_rep_queue_info(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &param);
+	*queue_num = param.queue_num;
+	*queue_size = param.queue_size;
 }
 
 static void nbl_serv_get_user_queue_info(void *priv, u16 *queue_num, u16 *queue_size, u16 vsi_id)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_ch_prm_get_queue_info param = { 0 };
 
-	disp_ops->get_user_queue_info(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				      queue_num, queue_size, vsi_id);
+	disp_ops->get_user_queue_info(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &vsi_id, &param);
+	*queue_num = param.queue_num;
+	*queue_size = param.queue_size;
 }
 
 static int nbl_serv_rep_enqueue(struct sk_buff *skb,
@@ -3931,7 +4217,7 @@ static struct sk_buff *nbl_serv_rep_dequeue(struct nbl_serv_rep_queue_mgt *rep_q
 		skb = __ptr_ring_consume(&rep_queue_mgt->ring);
 
 	if (unlikely(!skb)) {
-		/* smp_mb for dequeue */
+		/* order the failed consume against the empty re-check below */
 		smp_mb__after_atomic();
 		if (!__ptr_ring_empty(&rep_queue_mgt->ring))
 			skb = __ptr_ring_consume(&rep_queue_mgt->ring);
@@ -3960,7 +4246,7 @@ static void nbl_serv_rep_update_drop_stats(void *priv, struct sk_buff *skb)
 
 	rep_vsi_id = *(u16 *)&skb->cb[NBL_SKB_FILL_VSI_ID_OFF];
 	net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
-	rep_data_index = disp_ops->get_rep_index(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), rep_vsi_id);
+	rep_data_index = disp_ops->get_rep_index(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &rep_vsi_id);
 	dev_kfree_skb_any(skb);
 	if (rep_data_index >= net_resource_mgt->num_vfs)
 		return;
@@ -4069,6 +4355,8 @@ static int nbl_serv_alloc_rep_queue_mgt(void *priv, struct net_device *netdev)
 
 	dev_info(dev, "nbl serv alloc rep queue mgt start\n");
 	nbl_serv_get_rep_queue_num(serv_mgt, &base_queue_id, &rep_queue_num);
+	dev_dbg(dev, "base_queue_id:%u, rep_queue_num:%u\n", base_queue_id, rep_queue_num);
+
 	serv_mgt->rep_queue_mgt = devm_kcalloc(dev, rep_queue_num,
 					       sizeof(struct nbl_serv_rep_queue_mgt), GFP_KERNEL);
 	if (!serv_mgt->rep_queue_mgt)
@@ -4125,29 +4413,32 @@ static int nbl_serv_free_rep_queue_mgt(void *priv)
 	return 0;
 }
 
-static void nbl_serv_set_eswitch_mode(void *priv, u16 eswitch_mode)
+static int nbl_serv_set_eswitch_mode(void *priv, u16 switch_mode)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_common_info *common =  NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_serv_net_resource_mgt *net_resource_mgt;
+	struct nbl_ch_prm_set_func_vld prm = {0};
 
 	net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
 
-	if (eswitch_mode == NBL_ESWITCH_OFFLOADS) {
-		disp_ops->set_dport_fc_th_vld(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					      common->eth_id, false);
+	if (switch_mode == NBL_ESWITCH_OFFLOADS) {
+		prm.eth_id = common->eth_id;
+		prm.vld = false;
+		disp_ops->set_dport_fc_th_vld(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &prm);
 		if (net_resource_mgt->lag_info && net_resource_mgt->lag_info->lag_num > 1)
 			disp_ops->set_shaping_dport_vld(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-							common->eth_id, false);
+							&prm);
 	} else {
-		disp_ops->set_dport_fc_th_vld(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					      common->eth_id, true);
+		prm.eth_id = common->eth_id;
+		prm.vld = true;
+		disp_ops->set_dport_fc_th_vld(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &prm);
 		if (net_resource_mgt->lag_info && net_resource_mgt->lag_info->lag_num > 1)
 			disp_ops->set_shaping_dport_vld(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-							common->eth_id, true);
+							&prm);
 	}
-	disp_ops->set_eswitch_mode(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), eswitch_mode);
+	return disp_ops->set_eswitch_mode(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &switch_mode);
 }
 
 static u16 nbl_serv_get_eswitch_mode(void *priv)
@@ -4158,7 +4449,7 @@ static u16 nbl_serv_get_eswitch_mode(void *priv)
 	return disp_ops->get_eswitch_mode(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
 }
 
-static int nbl_serv_alloc_rep_data(void *priv, int num_vfs, u16 vf_base_vsi_id)
+static int nbl_serv_alloc_rep_data(void *priv, struct nbl_alloc_rep_data_param *param)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_serv_net_resource_mgt *net_resource_mgt;
@@ -4172,15 +4463,14 @@ static int nbl_serv_alloc_rep_data(void *priv, int num_vfs, u16 vf_base_vsi_id)
 	net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	net_resource_mgt->rep_drop = devm_kcalloc(dev, num_vfs,
+	net_resource_mgt->rep_drop = devm_kcalloc(dev, param->num_vfs,
 						  sizeof(struct nbl_serv_rep_drop),
 						  GFP_KERNEL);
 	if (!net_resource_mgt->rep_drop)
 		return -ENOMEM;
 
-	net_resource_mgt->num_vfs = num_vfs;
-	return disp_ops->alloc_rep_data(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), num_vfs,
-					vf_base_vsi_id);
+	net_resource_mgt->num_vfs = param->num_vfs;
+	return disp_ops->alloc_rep_data(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), param);
 }
 
 static void nbl_serv_free_rep_data(void *priv)
@@ -4229,7 +4519,7 @@ static int nbl_serv_disable_phy_flow(void *priv, u8 eth_id)
 
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	return disp_ops->disable_phy_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), eth_id);
+	return disp_ops->disable_phy_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &eth_id);
 }
 
 static int nbl_serv_enable_phy_flow(void *priv, u8 eth_id)
@@ -4239,7 +4529,7 @@ static int nbl_serv_enable_phy_flow(void *priv, u8 eth_id)
 
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	return disp_ops->enable_phy_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), eth_id);
+	return disp_ops->enable_phy_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &eth_id);
 }
 
 static void nbl_serv_init_acl(void *priv)
@@ -4266,12 +4556,16 @@ static int nbl_serv_set_upcall_rule(void *priv, u8 eth_id, u16 vsi_id)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops;
+	struct nbl_ch_prm_set_upcall param = {0};
 
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
 	disp_ops->add_nd_upcall_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id, 0);
 
-	return disp_ops->set_upcall_rule(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), eth_id, vsi_id);
+	param.eth_id = eth_id;
+	param.vsi_id = vsi_id;
+
+	return disp_ops->set_upcall_rule(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &param);
 }
 
 static int nbl_serv_unset_upcall_rule(void *priv, u8 eth_id)
@@ -4283,7 +4577,7 @@ static int nbl_serv_unset_upcall_rule(void *priv, u8 eth_id)
 
 	disp_ops->del_nd_upcall_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
 
-	return disp_ops->unset_upcall_rule(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), eth_id);
+	return disp_ops->unset_upcall_rule(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &eth_id);
 }
 
 static int nbl_serv_switchdev_init_cmdq(void *priv)
@@ -4348,7 +4642,7 @@ static void nbl_serv_unregister_indr_dev_tc_offload(void *priv, struct net_devic
 				 nbl_serv_indr_dev_block_unbind);
 }
 
-static void nbl_serv_set_lag_info(void *priv, struct net_device *bond_netdev, u8 lag_id)
+static void nbl_serv_set_lag_info(void *priv, u8 lag_id, u16 lag_num)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
@@ -4359,10 +4653,11 @@ static void nbl_serv_set_lag_info(void *priv, struct net_device *bond_netdev, u8
 						  GFP_KERNEL);
 	if (!net_resource_mgt->lag_info)
 		return;
-	net_resource_mgt->lag_info->bond_netdev = bond_netdev;
-	net_resource_mgt->lag_info->lag_id = lag_id;
 
-	dev_info(dev, "set lag info, bond_netdev:%p, lag_id:%d\n", bond_netdev, lag_id);
+	net_resource_mgt->lag_info->lag_id = lag_id;
+	net_resource_mgt->lag_info->lag_num = lag_num;
+
+	dev_info(dev, "set lag info, lag_id:%d, mem_num:%d\n", lag_id, lag_num);
 }
 
 static void nbl_serv_unset_lag_info(void *priv)
@@ -4378,71 +4673,78 @@ static void nbl_serv_unset_lag_info(void *priv)
 	}
 }
 
-static void
-nbl_serv_set_netdev_ops(void *priv, const struct net_device_ops *net_device_ops, bool is_pf)
+static void nbl_serv_set_netdev_ops(void *priv,
+				    const struct net_device_ops *netdev_ops,
+				    bool is_pf)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
 	struct device *dev = NBL_SERV_MGT_TO_DEV(serv_mgt);
 
-	dev_info(dev, "set netdev ops:%p is_pf:%d\n", net_device_ops, is_pf);
+	dev_info(dev, "set netdev ops:%p is_pf:%d\n", netdev_ops, is_pf);
 	if (is_pf)
-		net_resource_mgt->netdev_ops.pf_netdev_ops = (void *)net_device_ops;
+		net_resource_mgt->netdev_ops.pf_netdev_ops = (void *)netdev_ops;
 	else
-		net_resource_mgt->netdev_ops.rep_netdev_ops = (void *)net_device_ops;
+		net_resource_mgt->netdev_ops.rep_netdev_ops = (void *)netdev_ops;
 }
 
-static int nbl_serv_enable_lag_protocol(void *priv, u16 eth_id, bool lag_en)
+static int nbl_serv_set_lag_status(void *priv, bool *lag_en)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
-	struct nbl_serv_net_resource_mgt *net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
-	struct net_device *dev = net_resource_mgt->netdev;
-	struct nbl_netdev_priv *net_priv = netdev_priv(dev);
+
+	return disp_ops->set_lag_status(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), lag_en);
+}
+
+static int nbl_serv_enable_lag_protocol(void *priv,
+					struct nbl_ch_prm_enable_lag_protocol *param)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	int ret = 0;
 
-	ret = disp_ops->enable_lag_protocol(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), eth_id, lag_en);
-	if (lag_en)
+	ret = disp_ops->enable_lag_protocol(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), param);
+	if (param->lag_en)
 		ret = disp_ops->add_lag_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					     net_priv->data_vsi);
+					     &NBL_COMMON_TO_VSI_ID(common));
 	else
-		disp_ops->del_lag_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), net_priv->data_vsi);
-
+		disp_ops->del_lag_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+				       &NBL_COMMON_TO_VSI_ID(common));
 	return ret;
 }
 
-static int nbl_serv_cfg_lag_hash_algorithm(void *priv, u16 eth_id, u16 lag_id,
-					   enum netdev_lag_hash hash_type)
+static int nbl_serv_cfg_lag_hash_algorithm(void *priv,
+					   struct nbl_ch_prm_cfg_lag_hash_algorithm *param)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	return disp_ops->cfg_lag_hash_algorithm(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-						eth_id, lag_id, hash_type);
+	return disp_ops->cfg_lag_hash_algorithm(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), param);
 }
 
-static int nbl_serv_cfg_lag_member_fwd(void *priv, u16 eth_id, u16 lag_id, u8 fwd)
+static int nbl_serv_cfg_lag_member_fwd(void *priv, struct nbl_ch_prm_cfg_lag_member_fwd *param)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
-	struct nbl_serv_net_resource_mgt *net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_ch_prm_cfg_lag_mcc mcc_prm = {0};
 
-	if (net_resource_mgt->lag_info)
-		net_resource_mgt->lag_info->lag_id = lag_id;
-
-	return disp_ops->cfg_lag_member_fwd(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					    eth_id, lag_id, fwd);
+	mcc_prm.eth_id = param->eth_id;
+	mcc_prm.lag_id = param->lag_id;
+	mcc_prm.enable = param->fwd;
+	disp_ops->cfg_lag_mcc(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &mcc_prm);
+	return disp_ops->cfg_lag_member_fwd(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), param);
 }
 
 static int nbl_serv_cfg_lag_member_list(void *priv, struct nbl_lag_member_list_param *param)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
-	struct nbl_serv_net_resource_mgt *net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_common_info *common =  NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	int ret = 0;
 	u16 cur_eswitch_mode = NBL_ESWITCH_NONE;
 	bool shaping_vld = true;
+	struct nbl_ch_prm_set_func_vld prm = {0};
 
 	ret = disp_ops->cfg_lag_member_list(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), param);
 	if (ret)
@@ -4452,14 +4754,12 @@ static int nbl_serv_cfg_lag_member_list(void *priv, struct nbl_lag_member_list_p
 	if (ret)
 		return ret;
 
-	if (net_resource_mgt->lag_info)
-		net_resource_mgt->lag_info->lag_num = param->lag_num;
-
 	cur_eswitch_mode = disp_ops->get_eswitch_mode(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
 	if (cur_eswitch_mode == NBL_ESWITCH_OFFLOADS) {
 		shaping_vld = param->lag_num > 1 ? false : true;
-		disp_ops->set_shaping_dport_vld(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-						common->eth_id, shaping_vld);
+		prm.eth_id = common->eth_id;
+		prm.vld = shaping_vld;
+		disp_ops->set_shaping_dport_vld(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &prm);
 	}
 
 	ret = disp_ops->cfg_eth_bond_info(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), param);
@@ -4471,13 +4771,24 @@ static int nbl_serv_cfg_lag_member_list(void *priv, struct nbl_lag_member_list_p
 	return ret;
 }
 
-static int nbl_serv_cfg_lag_member_up_attr(void *priv, u16 eth_id, u16 lag_id, bool enable)
+static int nbl_serv_cfg_lag_member_up_attr(void *priv,
+					   struct nbl_ch_prm_cfg_lag_member_up_attr *param)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	return disp_ops->cfg_lag_member_up_attr(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-						eth_id, lag_id, enable);
+	return disp_ops->cfg_lag_member_up_attr(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), param);
+}
+
+static void nbl_serv_update_drop_stats(struct nbl_service_mgt *serv_mgt)
+{
+	struct nbl_serv_net_resource_mgt *net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+
+	if (!net_resource_mgt->hw_stats.update_ustore)
+		return;
+
+	disp_ops->get_pkt_drop_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
 }
 
 static void nbl_serv_net_stats_update_task(struct work_struct *work)
@@ -4487,14 +4798,25 @@ static void nbl_serv_net_stats_update_task(struct work_struct *work)
 	struct nbl_service_mgt *serv_mgt;
 
 	serv_mgt = serv_net_resource_mgt->serv_mgt;
-
 	nbl_serv_update_stats(serv_mgt, false);
+	nbl_serv_update_drop_stats(serv_mgt);
 }
 
 static void nbl_serv_rx_mode_async_task(struct work_struct *work)
 {
 	struct nbl_serv_net_resource_mgt *serv_net_resource_mgt =
 		container_of(work, struct nbl_serv_net_resource_mgt, rx_mode_async);
+	struct nbl_service_mgt *serv_mgt = serv_net_resource_mgt->serv_mgt;
+	struct nbl_serv_flow_mgt *flow_mgt = NBL_SERV_MGT_TO_FLOW_MGT(serv_mgt);
+	struct net_device *netdev = serv_net_resource_mgt->netdev;
+	struct sockaddr addr = {0};
+
+	if (!ether_addr_equal(flow_mgt->mac, netdev->dev_addr)) {
+		ether_addr_copy(addr.sa_data, netdev->dev_addr);
+		rtnl_lock();
+		nbl_serv_set_mac(netdev, &addr);
+		rtnl_unlock();
+	}
 
 	nbl_modify_submacs(serv_net_resource_mgt);
 	nbl_modify_promisc_mode(serv_net_resource_mgt);
@@ -4503,15 +4825,20 @@ static void nbl_serv_rx_mode_async_task(struct work_struct *work)
 static void nbl_serv_net_task_service_timer(struct timer_list *t)
 {
 	struct nbl_serv_net_resource_mgt *net_resource_mgt =
-					from_timer(net_resource_mgt, t, serv_timer);
+		container_of(t, struct nbl_serv_net_resource_mgt, serv_timer);
+	struct nbl_adapter *adapter = NBL_NETDEV_TO_ADAPTER(net_resource_mgt->netdev);
 	struct nbl_service_mgt *serv_mgt = net_resource_mgt->serv_mgt;
 	struct nbl_serv_flow_mgt *flow_mgt = NBL_SERV_MGT_TO_FLOW_MGT(serv_mgt);
 
 	mod_timer(&net_resource_mgt->serv_timer,
 		  round_jiffies(net_resource_mgt->serv_timer_period + jiffies));
-	nbl_common_queue_work(&net_resource_mgt->net_stats_update, false, false);
+
+	if (test_bit(NBL_PCI_ERR_RECOVERING, adapter->state))
+		return;
+
+	nbl_common_queue_work(&net_resource_mgt->net_stats_update, false);
 	if (flow_mgt->pending_async_work) {
-		nbl_common_queue_work(&net_resource_mgt->rx_mode_async, false, false);
+		nbl_common_queue_work(&net_resource_mgt->rx_mode_async, false);
 		flow_mgt->pending_async_work = 0;
 	}
 }
@@ -4563,33 +4890,50 @@ static void nbl_serv_remove_net_resource_mgt(void *priv)
 {
 	struct device *dev;
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
-	struct nbl_serv_net_resource_mgt *net_resource_mgt;
+	struct nbl_serv_net_resource_mgt *net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 
-	net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
 	dev = NBL_COMMON_TO_DEV(common);
 
-	if (net_resource_mgt) {
-		if (common->is_vf) {
-			nbl_serv_unregister_link_forced_notify(serv_mgt);
-			nbl_serv_unregister_vlan_notify(serv_mgt);
-			nbl_serv_unregister_get_vf_stats(serv_mgt);
-			nbl_serv_unregister_trust_notify(serv_mgt);
-			nbl_serv_unregister_mirror_outputport_notify(serv_mgt);
-		}
-		nbl_serv_set_wake(serv_mgt);
-		del_timer_sync(&net_resource_mgt->serv_timer);
-		nbl_common_release_task(&net_resource_mgt->rx_mode_async);
-		nbl_common_release_task(&net_resource_mgt->net_stats_update);
-		nbl_common_release_task(&net_resource_mgt->tx_timeout);
-		if (common->is_vf) {
-			nbl_common_release_task(&net_resource_mgt->update_link_state);
-			nbl_common_release_task(&net_resource_mgt->update_vlan);
-			nbl_common_release_task(&net_resource_mgt->update_mirror_outputport);
-		}
-		devm_kfree(dev, net_resource_mgt);
-		NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt) = NULL;
+	nbl_serv_set_wake(serv_mgt);
+	nbl_common_release_task(&net_resource_mgt->rx_mode_async);
+	nbl_common_release_task(&net_resource_mgt->net_stats_update);
+	nbl_common_release_task(&net_resource_mgt->tx_timeout);
+
+	if (common->is_vf) {
+		nbl_common_release_task(&net_resource_mgt->update_link_state);
+		nbl_common_release_task(&net_resource_mgt->update_vlan);
+		nbl_common_release_task(&net_resource_mgt->update_mirror_outputport);
 	}
+
+	nbl_serv_unset_lag_info(priv);
+	devm_kfree(dev, net_resource_mgt);
+	NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt) = NULL;
+}
+
+static void nbl_serv_stop_net_resource_mgt(void *priv)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_serv_net_resource_mgt *net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
+
+	timer_delete_sync(&net_resource_mgt->serv_timer);
+}
+
+static void nbl_serv_stop_net_dev_timer(void *priv)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_serv_net_resource_mgt *net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
+
+	timer_delete_sync(&net_resource_mgt->serv_timer);
+}
+
+static void nbl_serv_start_net_dev_timer(void *priv)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_serv_net_resource_mgt *net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
+
+	mod_timer(&net_resource_mgt->serv_timer,
+		  round_jiffies(net_resource_mgt->serv_timer_period + jiffies));
 }
 
 static int nbl_serv_phy_init(struct nbl_serv_net_resource_mgt *net_resource_mgt)
@@ -4603,7 +4947,7 @@ static int nbl_serv_phy_init(struct nbl_serv_net_resource_mgt *net_resource_mgt)
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
 	disp_ops->get_phy_caps(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-			       eth_id, &net_resource_mgt->phy_caps);
+			       &eth_id, &net_resource_mgt->phy_caps);
 
 	/* disable wol when driver init */
 	if (!common->is_vf && common->is_ocp)
@@ -4616,8 +4960,11 @@ static void nbl_init_qos_config(struct nbl_serv_net_resource_mgt *net_resource_m
 {
 	struct nbl_service_mgt *serv_mgt = net_resource_mgt->serv_mgt;
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
-	struct nbl_serv_qos_info *qos_info = &net_resource_mgt->qos_info;
+	struct nbl_qos_info *qos_info = &net_resource_mgt->qos_info;
 	struct nbl_dispatch_ops *disp_ops;
+	struct nbl_ch_prm_configure_qos qos_param = {0};
+	struct nbl_ch_prm_get_pfc_buffer_size param = {0};
+	struct nbl_ch_prm_get_pfc_buffer_size_resp output = {0};
 	int i;
 
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
@@ -4634,17 +4981,23 @@ static void nbl_init_qos_config(struct nbl_serv_net_resource_mgt *net_resource_m
 	for (i = 0; i < NBL_DSCP_MAX; i++)
 		qos_info->dscp2prio_map[i] = i / NBL_MAX_PFC_PRIORITIES;
 
-	for (i = 0; i < NBL_MAX_PFC_PRIORITIES; i++)
+	for (i = 0; i < NBL_MAX_PFC_PRIORITIES; i++) {
+		param.eth_id =  NBL_COMMON_TO_ETH_ID(common);
+		param.prio = i;
 		disp_ops->get_pfc_buffer_size(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					      NBL_COMMON_TO_ETH_ID(common), i,
-					      &qos_info->buffer_sizes[i][0],
-					      &qos_info->buffer_sizes[i][1]);
-
-	disp_ops->configure_qos(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), NBL_COMMON_TO_ETH_ID(common),
-				qos_info->pfc, qos_info->trust_mode, qos_info->dscp2prio_map);
+					      &param,
+					      &output);
+		qos_info->buffer_sizes[i][0] = output.xoff;
+		qos_info->buffer_sizes[i][1] = output.xon;
+	}
+	qos_param.eth_id = NBL_COMMON_TO_ETH_ID(common);
+	qos_param.trust = qos_info->trust_mode;
+	memcpy(qos_param.pfc, qos_info->pfc, NBL_MAX_PFC_PRIORITIES);
+	memcpy(qos_param.dscp2prio_map, qos_info->dscp2prio_map, NBL_DSCP_MAX);
+	disp_ops->configure_qos(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &qos_param);
 }
 
-static int nbl_serv_init_hw_stats(void *priv)
+static int nbl_serv_init_hw_stats(void *priv, const struct nbl_init_param *param)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
@@ -4654,7 +5007,7 @@ static int nbl_serv_init_hw_stats(void *priv)
 	struct nbl_serv_ring_mgt *ring_mgt = NBL_SERV_MGT_TO_RING_MGT(serv_mgt);
 	u8 eth_id = NBL_COMMON_TO_ETH_ID(common);
 	struct nbl_serv_ring_vsi_info *vsi_info = &ring_mgt->vsi_info[NBL_VSI_DATA];
-	struct nbl_ustore_stats ustore_stats = {0};
+	struct nbl_chan_param_drop_stats_resp drop_stats = {0};
 	int ret = 0;
 
 	net_resource_mgt->hw_stats.total_uvn_stat_pkt_drop =
@@ -4664,20 +5017,28 @@ static int nbl_serv_init_hw_stats(void *priv)
 		goto alloc_total_uvn_stat_pkt_drop_fail;
 	}
 
+	if (param->caps.has_ctrl) {
+		net_resource_mgt->hw_stats.update_ustore = true;
+		nbl_serv_update_drop_stats(serv_mgt); /* call it before get ustore_init_stats */
+	}
+
 	if (!common->is_vf) {
-		ret = disp_ops->get_ustore_total_pkt_drop_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-								eth_id, &ustore_stats);
+		disp_ops->get_total_pkt_drop_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), 0,
+						   STAT_TYPE_FAKE, &drop_stats);
+		net_resource_mgt->hw_stats.start_fake_drop = drop_stats.rx_drop_packets;
+		ret = disp_ops->get_total_pkt_drop_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+							 eth_id, STAT_TYPE_USTORE, &drop_stats);
 		if (ret)
-			goto get_ustore_total_pkt_drop_stats_fail;
-		net_resource_mgt->hw_stats.start_ustore_stats.rx_drop_packets =
-			ustore_stats.rx_drop_packets;
-		net_resource_mgt->hw_stats.start_ustore_stats.rx_trun_packets =
-			ustore_stats.rx_trun_packets;
+			goto get_total_pkt_drop_stats_fail;
+		net_resource_mgt->hw_stats.start_drop_stats.rx_drop_packets =
+			drop_stats.rx_drop_packets;
+		net_resource_mgt->hw_stats.start_drop_stats.rx_trun_packets =
+			drop_stats.rx_trun_packets;
 	}
 
 	return 0;
 
-get_ustore_total_pkt_drop_stats_fail:
+get_total_pkt_drop_stats_fail:
 	devm_kfree(dev, net_resource_mgt->hw_stats.total_uvn_stat_pkt_drop);
 alloc_total_uvn_stat_pkt_drop_fail:
 	return ret;
@@ -4694,7 +5055,7 @@ static int nbl_serv_remove_hw_stats(void *priv)
 	return 0;
 }
 
-static int nbl_serv_get_rx_dropped(void *priv, u64 *rx_dropped)
+static int nbl_serv_get_rx_dropped(void *priv, u64 *rx_dropped, u64 *rx_dropped_queue_disable)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
@@ -4702,7 +5063,8 @@ static int nbl_serv_get_rx_dropped(void *priv, u64 *rx_dropped)
 	struct nbl_serv_ring_mgt *ring_mgt = NBL_SERV_MGT_TO_RING_MGT(serv_mgt);
 	struct nbl_serv_ring_vsi_info *vsi_info = &ring_mgt->vsi_info[NBL_VSI_DATA];
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
-	struct nbl_ustore_stats ustore_stats = {0};
+	struct nbl_chan_param_drop_stats_resp drop_stats = {0};
+	void *disp = NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt);
 	u8 eth_id = NBL_COMMON_TO_ETH_ID(common);
 	int i = 0;
 
@@ -4710,12 +5072,16 @@ static int nbl_serv_get_rx_dropped(void *priv, u64 *rx_dropped)
 		*rx_dropped += net_resource_mgt->hw_stats.total_uvn_stat_pkt_drop[i];
 
 	if (!common->is_vf) {
-		disp_ops->get_ustore_total_pkt_drop_stats
-			(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), eth_id, &ustore_stats);
-		*rx_dropped += ustore_stats.rx_drop_packets -
-			net_resource_mgt->hw_stats.start_ustore_stats.rx_drop_packets;
-		*rx_dropped += ustore_stats.rx_trun_packets -
-			net_resource_mgt->hw_stats.start_ustore_stats.rx_trun_packets;
+		disp_ops->get_total_pkt_drop_stats(disp, eth_id, STAT_TYPE_USTORE, &drop_stats);
+		*rx_dropped += drop_stats.rx_drop_packets -
+			net_resource_mgt->hw_stats.start_drop_stats.rx_drop_packets;
+		*rx_dropped += drop_stats.rx_trun_packets -
+			net_resource_mgt->hw_stats.start_drop_stats.rx_trun_packets;
+
+		disp_ops->get_total_pkt_drop_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+						   eth_id, STAT_TYPE_RX_DROPPED_QUEUE_DISABLE,
+						   &drop_stats);
+		*rx_dropped_queue_disable = drop_stats.rx_drop_packets;
 	}
 	return 0;
 }
@@ -4727,8 +5093,6 @@ static int nbl_serv_setup_net_resource_mgt(void *priv, struct net_device *netdev
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct device *dev = NBL_COMMON_TO_DEV(common);
 	struct nbl_serv_net_resource_mgt *net_resource_mgt;
-	u32 delay_time;
-	unsigned long hw_stats_delay_time = 0;
 
 	net_resource_mgt = devm_kzalloc(dev, sizeof(struct nbl_serv_net_resource_mgt), GFP_KERNEL);
 	if (!net_resource_mgt)
@@ -4741,8 +5105,6 @@ static int nbl_serv_setup_net_resource_mgt(void *priv, struct net_device *netdev
 	net_resource_mgt->max_tx_rate = rate;
 	NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt) = net_resource_mgt;
 
-	nbl_serv_phy_init(net_resource_mgt);
-	nbl_init_qos_config(net_resource_mgt);
 	nbl_serv_register_restore_netdev_queue(serv_mgt);
 	if (common->is_vf) {
 		nbl_serv_register_link_forced_notify(serv_mgt);
@@ -4751,12 +5113,8 @@ static int nbl_serv_setup_net_resource_mgt(void *priv, struct net_device *netdev
 		nbl_serv_register_trust_notify(serv_mgt);
 		nbl_serv_register_mirror_outputport_notify(serv_mgt);
 	}
-	net_resource_mgt->hw_stats_period = NBL_HW_STATS_PERIOD_SECONDS * HZ;
-	get_random_bytes(&delay_time, sizeof(delay_time));
-	hw_stats_delay_time = delay_time % net_resource_mgt->hw_stats_period;
-	timer_setup(&net_resource_mgt->serv_timer, nbl_serv_net_task_service_timer, 0);
 
-	net_resource_mgt->serv_timer_period = HZ;
+	timer_setup(&net_resource_mgt->serv_timer, nbl_serv_net_task_service_timer, 0);
 	nbl_common_alloc_task(&net_resource_mgt->rx_mode_async, nbl_serv_rx_mode_async_task);
 	nbl_common_alloc_task(&net_resource_mgt->net_stats_update, nbl_serv_net_stats_update_task);
 	nbl_common_alloc_task(&net_resource_mgt->tx_timeout, nbl_serv_handle_tx_timeout);
@@ -4769,16 +5127,31 @@ static int nbl_serv_setup_net_resource_mgt(void *priv, struct net_device *netdev
 				      nbl_serv_update_mirror_outputport);
 	}
 
+	INIT_LIST_HEAD(&net_resource_mgt->indr_dev_priv_list);
 	INIT_LIST_HEAD(&net_resource_mgt->tmp_add_filter_list);
 	INIT_LIST_HEAD(&net_resource_mgt->tmp_del_filter_list);
-	INIT_LIST_HEAD(&net_resource_mgt->indr_dev_priv_list);
 	net_resource_mgt->get_stats_jiffies = jiffies;
-
-	mod_timer(&net_resource_mgt->serv_timer,
-		  jiffies + net_resource_mgt->serv_timer_period +
-		  hw_stats_delay_time);
+	nbl_serv_set_port_state_update(serv_mgt, true);
 
 	return 0;
+}
+
+static void nbl_serv_start_net_resource_mgt(void *priv)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_serv_net_resource_mgt *net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
+	u32 delay_time;
+	unsigned long hw_stats_delay_time = 0;
+
+	net_resource_mgt->hw_stats_period = NBL_HW_STATS_PERIOD_SECONDS * HZ;
+	net_resource_mgt->serv_timer_period = HZ;
+	get_random_bytes(&delay_time, sizeof(delay_time));
+	hw_stats_delay_time = delay_time % net_resource_mgt->hw_stats_period;
+	mod_timer(&net_resource_mgt->serv_timer,
+		  jiffies + net_resource_mgt->serv_timer_period + hw_stats_delay_time);
+
+	nbl_serv_phy_init(net_resource_mgt);
+	nbl_init_qos_config(net_resource_mgt);
 }
 
 static int nbl_serv_enable_adminq_irq(void *priv, u16 vector_id, bool enable_msix)
@@ -4786,47 +5159,82 @@ static int nbl_serv_enable_adminq_irq(void *priv, u16 vector_id, bool enable_msi
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops;
 	int ret = 0;
+	struct nbl_ch_prm_enable_irq irq;
 
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
-
-	ret = disp_ops->enable_adminq_irq(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					    vector_id, enable_msix);
+	irq.vector_id = vector_id;
+	irq.enable_msix = enable_msix;
+	ret = disp_ops->enable_adminq_irq(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &irq);
 	if (ret)
 		return -EIO;
 
 	return 0;
 }
 
-static u16 nbl_serv_get_rdma_cap_num(void *priv)
+static int nbl_serv_enable_up_rdma_bypass(void *priv, u16 vsi_id, bool enable)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_serv_flow_mgt *flow_mgt = NBL_SERV_MGT_TO_FLOW_MGT(serv_mgt);
+	struct nbl_enable_up_rdma_bypass_param bypass_prm;
 
-	return disp_ops->get_rdma_cap_num(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
+	memset(&bypass_prm, 0, sizeof(bypass_prm));
+	bypass_prm.vsi_id = vsi_id;
+	bypass_prm.enable = enable;
+	memcpy(bypass_prm.mac, flow_mgt->mac, ETH_ALEN);
+
+	return disp_ops->enable_up_rdma_bypass(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+					       &bypass_prm);
 }
 
-static void nbl_serv_setup_rdma_id(void *priv)
+static void nbl_serv_get_rdma_cap_num(void *priv, u16 *cap_num, u16 *my_cap_num)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	disp_ops->setup_rdma_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
+	disp_ops->get_rdma_cap_num(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), cap_num, my_cap_num);
 }
 
-static void nbl_serv_remove_rdma_id(void *priv)
+static void nbl_serv_setup_rdma_id(void *priv, struct ida *adev_ida, struct ida *grc_adev_ida,
+				   struct mutex *lock)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	disp_ops->remove_rdma_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
+	disp_ops->setup_rdma_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), adev_ida, grc_adev_ida, lock);
 }
 
-static void nbl_serv_register_rdma(void *priv, u16 vsi_id, struct nbl_rdma_register_param *param)
+static void nbl_serv_remove_rdma_id(void *priv, struct ida *adev_ida, struct ida *grc_adev_ida,
+				    struct mutex *lock)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	disp_ops->register_rdma(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id, param);
+	disp_ops->remove_rdma_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), adev_ida, grc_adev_ida, lock);
+}
+
+static int nbl_serv_register_rdma_grc_id(void *priv, u16 vsi_id, int *grc_id)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+
+	return disp_ops->register_rdma_grc_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &vsi_id, grc_id);
+}
+
+static void nbl_serv_unregister_rdma_grc_id(void *priv, u16 vsi_id)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+
+	disp_ops->unregister_rdma_grc_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &vsi_id);
+}
+
+static int nbl_serv_register_rdma(void *priv, u16 vsi_id, struct nbl_rdma_register_param *param)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+
+	return disp_ops->register_rdma(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &vsi_id, param);
 }
 
 static void nbl_serv_unregister_rdma(void *priv, u16 vsi_id)
@@ -4834,25 +5242,7 @@ static void nbl_serv_unregister_rdma(void *priv, u16 vsi_id)
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	disp_ops->unregister_rdma(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id);
-}
-
-static void nbl_serv_register_rdma_bond(void *priv, struct nbl_lag_member_list_param *list_param,
-					struct nbl_rdma_register_param *register_param)
-{
-	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
-	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
-
-	disp_ops->register_rdma_bond(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				     list_param, register_param);
-}
-
-static void nbl_serv_unregister_rdma_bond(void *priv, u16 lag_id)
-{
-	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
-	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
-
-	disp_ops->unregister_rdma_bond(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), lag_id);
+	disp_ops->unregister_rdma(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &vsi_id);
 }
 
 static u8 __iomem *nbl_serv_get_hw_addr(void *priv, size_t *size)
@@ -4863,12 +5253,20 @@ static u8 __iomem *nbl_serv_get_hw_addr(void *priv, size_t *size)
 	return disp_ops->get_hw_addr(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), size);
 }
 
+static u8 __iomem *nbl_serv_get_rdma_hw_addr(void *priv)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+
+	return disp_ops->get_rdma_hw_addr(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
+}
+
 static u64 nbl_serv_get_real_hw_addr(void *priv, u16 vsi_id)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	return disp_ops->get_real_hw_addr(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id);
+	return disp_ops->get_real_hw_addr(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &vsi_id);
 }
 
 static u16 nbl_serv_get_function_id(void *priv, u16 vsi_id)
@@ -4876,47 +5274,42 @@ static u16 nbl_serv_get_function_id(void *priv, u16 vsi_id)
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	return disp_ops->get_function_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id);
+	return disp_ops->get_function_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &vsi_id);
 }
 
 static void nbl_serv_get_real_bdf(void *priv, u16 vsi_id, u8 *bus, u8 *dev, u8 *function)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_ch_prm_get_real_bdf output = {0};
 
-	return disp_ops->get_real_bdf(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id,
-				      bus, dev, function);
+	disp_ops->get_real_bdf(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &vsi_id, &output);
+	*bus = output.bus;
+	*dev = output.dev;
+	*function = output.function;
 }
 
-#ifdef CONFIG_NET_DEVLINK
 static int nbl_serv_get_devlink_info(struct devlink *devlink, struct devlink_info_req *req,
 				     struct netlink_ext_ack *extack)
 {
 	struct nbl_devlink_priv *priv = devlink_priv(devlink);
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv->priv;
-	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
-	char firmware_version[NBL_DEVLINK_INFO_FRIMWARE_VERSION_LEN] = {0};
+	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	int ret = 0;
 
-	disp_ops->get_firmware_version(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				       firmware_version, sizeof(firmware_version));
-	if (ret)
-		return ret;
-
-	ret = devlink_info_version_fixed_put(req, "FW Version:", firmware_version);
+	ret = devlink_info_version_fixed_put(req, "FW Version:", common->firmware_version);
 	if (ret)
 		return ret;
 
 	return ret;
 }
-#endif
 
 /* Why do we need this?
  * Because the original function in kernel cannot handle when we set subvendor and subdevice
  * to be 0xFFFF, so write a correct one.
  */
-static bool
-nbl_serv_pldmfw_op_pci_match_record(struct pldmfw *context, struct pldmfw_record *record)
+static bool nbl_serv_pldmfw_op_pci_match_record(struct pldmfw *context,
+						struct pldmfw_record *record)
 {
 	struct pci_dev *pdev = to_pci_dev(context->dev);
 	struct nbl_serv_pldm_pci_record_id id = {
@@ -5017,6 +5410,7 @@ static int nbl_serv_flash_component(struct pldmfw *context, struct pldmfw_compon
 	struct nbl_service_mgt *serv_mgt = priv->serv_mgt;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
+	struct nbl_flash_image_param flash_prm = {0};
 	u32 component_crc, calculated_crc;
 	size_t data_len = component->component_size - NBL_DEVLINK_FLASH_COMPONENT_CRC_SIZE;
 	int ret = 0;
@@ -5031,8 +5425,10 @@ static int nbl_serv_flash_component(struct pldmfw *context, struct pldmfw_compon
 		return -EFAULT;
 	}
 
-	ret = disp_ops->flash_image(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), component->identifier,
-				    component->component_data, data_len);
+	flash_prm.module = component->identifier;
+	flash_prm.data = component->component_data;
+	flash_prm.len = data_len;
+	ret = disp_ops->flash_image(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &flash_prm);
 	if (ret)
 		disp_ops->flash_unlock(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
 
@@ -5067,7 +5463,6 @@ static const struct pldmfw_ops nbl_update_fw_ops = {
 int nbl_serv_update_firmware(struct nbl_service_mgt *serv_mgt, const struct firmware *fw,
 			     struct netlink_ext_ack *extack)
 {
-#ifdef CONFIG_FW_PLDM
 	struct nbl_serv_update_fw_priv priv = {{0}};
 	int ret = 0;
 
@@ -5079,12 +5474,8 @@ int nbl_serv_update_firmware(struct nbl_service_mgt *serv_mgt, const struct firm
 	ret = pldmfw_flash_image(&priv.context, fw);
 
 	return ret;
-#else
-	return 0;
-#endif
 }
 
-#ifdef CONFIG_NET_DEVLINK
 static int nbl_serv_update_devlink_flash(struct devlink *devlink,
 					 struct devlink_flash_update_params *params,
 					 struct netlink_ext_ack *extack)
@@ -5105,7 +5496,6 @@ static int nbl_serv_update_devlink_flash(struct devlink *devlink,
 						   NULL, 0, 0);
 	return ret;
 }
-#endif
 
 static u32 nbl_serv_get_adminq_tx_buf_size(void *priv)
 {
@@ -5113,14 +5503,6 @@ static u32 nbl_serv_get_adminq_tx_buf_size(void *priv)
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
 	return disp_ops->get_adminq_tx_buf_size(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
-}
-
-static int nbl_serv_emp_console_write(void *priv, char *buf, size_t count)
-{
-	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
-	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
-
-	return disp_ops->emp_console_write(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), buf, count);
 }
 
 static bool nbl_serv_check_fw_heartbeat(void *priv)
@@ -5159,6 +5541,8 @@ static void nbl_serv_get_ctrl_irq_num(void *priv, struct nbl_ctrl_irq_num *irq_n
 	irq_num->adminq_irq_num = disp_ops->get_adminq_irq_num(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
 	irq_num->abnormal_irq_num =
 		disp_ops->get_abnormal_irq_num(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
+	irq_num->sfp_plug_irq_num =
+		disp_ops->get_sfp_plug_irq_num(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
 }
 
 static int nbl_serv_check_offload_status(void *priv)
@@ -5179,20 +5563,26 @@ static int nbl_serv_check_offload_status(void *priv)
 	return ret;
 }
 
-static u32 nbl_serv_get_chip_temperature(void *priv, enum nbl_hwmon_type type, u32 senser_id)
+static int nbl_serv_get_chip_temperature(void *priv, enum nbl_hwmon_type type, u32 senser_id)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_ch_prm_get_hwmon hw_mon;
 
-	return disp_ops->get_chip_temperature(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), type, senser_id);
+	hw_mon.type = type;
+	hw_mon.senser_id = senser_id;
+	return disp_ops->get_chip_temperature(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &hw_mon);
 }
 
 static int nbl_serv_get_module_temperature(void *priv, u8 eth_id, enum nbl_hwmon_type type)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_ch_prm_get_hwmon hw_mon;
 
-	return disp_ops->get_module_temperature(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), eth_id, type);
+	hw_mon.type = type;
+	hw_mon.senser_id = eth_id;
+	return disp_ops->get_module_temperature(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &hw_mon);
 }
 
 static int nbl_serv_get_port_attributes(void *priv)
@@ -5228,7 +5618,27 @@ static int nbl_serv_update_template_config(void *priv)
 	if (ret)
 		return ret;
 
+	ret = disp_ops->update_internal_cfg(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
+	if (ret)
+		return ret;
+
 	return 0;
+}
+
+static int nbl_serv_get_part_number(void *priv, char *part_number)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+
+	return disp_ops->get_part_number(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), part_number);
+}
+
+static int nbl_serv_get_serial_number(void *priv, char *serial_number)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+
+	return disp_ops->get_serial_number(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), serial_number);
 }
 
 static int nbl_serv_enable_port(void *priv, bool enable)
@@ -5256,15 +5666,6 @@ static void nbl_serv_init_port(void *priv)
 	disp_ops->init_port(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
 }
 
-static void nbl_serv_configure_rdma_msix_off(void *priv, u16 vector)
-{
-	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
-	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
-
-	disp_ops->configure_rdma_msix_off(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vector);
-
-}
-
 static int nbl_serv_set_eth_mac_addr(void *priv, u8 *mac, u8 eth_id)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
@@ -5278,15 +5679,41 @@ static int nbl_serv_set_eth_mac_addr(void *priv, u8 *mac, u8 eth_id)
 						  mac, eth_id);
 }
 
+static int nbl_serv_process_sfp_plug_event(void *priv)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+
+	return disp_ops->process_sfp_plug_event(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
+}
+
+static int nbl_serv_get_owned_pf_bitmap(void *priv,
+					unsigned long **owned_pf_bitmap, u8 *max_pf, u16 *bdf)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+
+	return disp_ops->get_owned_pf_bitmap(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+					     owned_pf_bitmap, max_pf, bdf);
+}
+
 static void nbl_serv_adapt_desc_gother(void *priv)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	if (test_bit(NBL_FLAG_HIGH_THROUGHPUT, serv_mgt->flags))
+	if (test_bit(NBL_FLAG_HIGH_THROUGHPUT, &serv_mgt->flags))
 		disp_ops->set_desc_high_throughput(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
 	else
 		disp_ops->adapt_desc_gother(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
+}
+
+static void nbl_serv_process_qinfo_cfg(void *priv, u16 vfid)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+
+	disp_ops->flr_qinfo_cfg(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vfid);
 }
 
 static void nbl_serv_process_flr(void *priv, u16 vfid)
@@ -5311,29 +5738,15 @@ static u16 nbl_serv_covert_vfid_to_vsi_id(void *priv, u16 vfid)
 	return disp_ops->covert_vfid_to_vsi_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vfid);
 }
 
-static void nbl_serv_recovery_abnormal(void *priv)
-{
-	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
-	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
-
-	disp_ops->unmask_all_interrupts(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
-}
-
-static void nbl_serv_keep_alive(void *priv)
-{
-	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
-	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
-
-	disp_ops->keep_alive(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
-}
-
 static int nbl_serv_register_vsi_info(void *priv, struct nbl_vsi_param *vsi_param)
 {
+	enum nbl_fix_cap_type cap_type = NBL_ITR_DYNAMIC;
 	u16 vsi_index = vsi_param->index;
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_serv_ring_mgt *ring_mgt = NBL_SERV_MGT_TO_RING_MGT(serv_mgt);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	u32 num_cpus;
+	struct nbl_vsi_ring_param ring_prm;
 
 	ring_mgt->vsi_info[vsi_index].vsi_index = vsi_index;
 	ring_mgt->vsi_info[vsi_index].vsi_id = vsi_param->vsi_id;
@@ -5346,18 +5759,22 @@ static int nbl_serv_register_vsi_info(void *priv, struct nbl_vsi_param *vsi_para
 							vsi_param->queue_num : (u16)num_cpus;
 
 	if (disp_ops->get_product_fix_cap(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					  NBL_ITR_DYNAMIC))
+					  &cap_type))
 		ring_mgt->vsi_info[vsi_index].itr_dynamic = true;
 
 	/**
-	 * Clear cfgs, in case this function exited abnormaly last time.
+	 * Clear cfg, in case this function exited abnormally last time.
 	 * only for data vsi, vf in vm only support data vsi.
 	 * DPDK user vsi can not leak resource.
 	 */
 	if (vsi_index == NBL_VSI_DATA)
-		disp_ops->clear_queues(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_param->vsi_id);
-	disp_ops->register_vsi_ring(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_index,
-				    vsi_param->queue_offset, vsi_param->queue_num);
+		disp_ops->clear_queues(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+				       &vsi_param->vsi_id);
+
+	ring_prm.vsi_index = vsi_index;
+	ring_prm.ring_num = vsi_param->queue_num;
+	ring_prm.ring_offset = vsi_param->queue_offset;
+	disp_ops->register_vsi_ring(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &ring_prm);
 
 	return disp_ops->register_vsi2q(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_index,
 					vsi_param->vsi_id, vsi_param->queue_offset,
@@ -5392,10 +5809,14 @@ static int nbl_serv_st_release(struct inode *inode, struct file *filp)
 static int nbl_serv_process_passthrough(struct nbl_service_mgt *serv_mgt,
 					unsigned int cmd, unsigned long arg)
 {
+	struct nbl_serv_st_mgt *st_mgt = NBL_SERV_MGT_TO_ST_MGT(serv_mgt);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_passthrough_fw_cmd_param *param = NULL, *result = NULL;
 	int ret = 0;
+
+	if (st_mgt && st_mgt->real_st_name_valid)
+		return -EOPNOTSUPP;
 
 	param = kzalloc(sizeof(*param), GFP_KERNEL);
 	if (!param)
@@ -5431,8 +5852,8 @@ static int nbl_serv_process_st_info(struct nbl_service_mgt *serv_mgt,
 				    unsigned int cmd, unsigned long arg)
 {
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
-	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
+	struct nbl_serv_st_mgt *st_mgt = NBL_SERV_MGT_TO_ST_MGT(serv_mgt);
 	struct nbl_st_info_param *param = NULL;
 	int ret = 0;
 
@@ -5443,19 +5864,26 @@ static int nbl_serv_process_st_info(struct nbl_service_mgt *serv_mgt,
 		return -ENOMEM;
 
 	strscpy(param->driver_name, NBL_DRIVER_NAME, sizeof(param->driver_name));
-	if (net_resource_mgt->netdev)
+	if (net_resource_mgt && net_resource_mgt->netdev)
 		strscpy(param->netdev_name[0], net_resource_mgt->netdev->name,
 			sizeof(param->netdev_name[0]));
 
-	disp_ops->get_driver_version(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), param->driver_ver,
-				     sizeof(param->driver_ver));
+	strscpy(param->driver_ver, NBL_DRIVER_VERSION, sizeof(param->driver_ver));
 
 	param->bus = common->bus;
 	param->devid = common->devid;
 	param->function = common->function;
 	param->domain = pci_domain_nr(NBL_COMMON_TO_PDEV(common)->bus);
-
 	param->version = IOCTL_ST_INFO_VERSION;
+	if (common->product_type == NBL_LEONIS_TYPE)
+		param->nic_type = NBL_NIC_TYPE_SNIC_V1R1;
+	else if (common->product_type == NBL_DRACO_TYPE)
+		param->nic_type = NBL_NIC_TYPE_SNIC_V2R1;
+
+	param->real_chrdev_flag = st_mgt->real_st_name_valid;
+	if (st_mgt && st_mgt->real_st_name_valid)
+		memcpy(param->real_chrdev_name, st_mgt->real_st_name,
+		       sizeof(param->real_chrdev_name));
 
 	ret = copy_to_user((void *)arg, param, _IOC_SIZE(cmd));
 
@@ -5526,13 +5954,22 @@ static void nbl_serv_free_subdev_id(struct nbl_software_tool_table *st_table, in
 	clear_bit(id, st_table->devid);
 }
 
-static int nbl_serv_setup_st(void *priv, void *st_table_param)
+static void nbl_serv_register_real_st_name(void *priv, char *st_name)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_serv_st_mgt *st_mgt = NBL_SERV_MGT_TO_ST_MGT(serv_mgt);
+
+	st_mgt->real_st_name_valid = true;
+	memcpy(st_mgt->real_st_name, st_name, NBL_RESTOOL_NAME_LEN);
+}
+
+static int nbl_serv_setup_st(void *priv, void *st_table_param, char *st_name)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_software_tool_table *st_table = (struct nbl_software_tool_table *)st_table_param;
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_serv_st_mgt *st_mgt = NBL_SERV_MGT_TO_ST_MGT(serv_mgt);
-	struct device *test_device;
+	struct device *char_device;
 	char name[NBL_RESTOOL_NAME_LEN] = {0};
 	dev_t devid;
 	int id, subdev_id, ret = 0;
@@ -5568,12 +6005,14 @@ static int nbl_serv_setup_st(void *priv, void *st_table_param)
 	if (ret)
 		goto cdev_add_fail;
 
-	test_device = device_create(st_table->cls, NULL, st_mgt->devno, NULL, name);
-	if (IS_ERR(test_device)) {
+	char_device = device_create(st_table->cls, NULL, st_mgt->devno, NULL, name);
+	if (IS_ERR(char_device)) {
 		ret = -EBUSY;
 		goto device_create_fail;
 	}
 
+	memcpy(st_name, name, NBL_RESTOOL_NAME_LEN);
+	memcpy(st_mgt->st_name, name, NBL_RESTOOL_NAME_LEN);
 	NBL_SERV_MGT_TO_ST_MGT(serv_mgt) = st_mgt;
 	return 0;
 
@@ -5639,7 +6078,7 @@ static void nbl_serv_form_p4_name(struct nbl_common_info *common, int type, char
 	switch (type) {
 	case NBL_P4_DEFAULT:
 		/* No need to load default p4 file */
-		snprintf(name, len, "nbl/snic_v3r1/m181xx_%s_port_p4_%s", eth_num, ver);
+		snprintf(name, len, "nbl/snic_v3r1/m18xxx_%s_port_p4_%s", eth_num, ver);
 		break;
 	default:
 		nbl_err(common, NBL_DEBUG_CUSTOMIZED_P4, "Unknown P4 type %d", type);
@@ -5807,13 +6246,6 @@ static int nbl_serv_load_p4(struct nbl_service_mgt *serv_mgt,
 	return 0;
 }
 
-static __maybe_unused void nbl_serv_load_default_p4(struct nbl_service_mgt *serv_mgt)
-{
-	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
-
-	disp_ops->load_p4_default(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
-}
-
 static int nbl_serv_init_p4(void *priv)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
@@ -5834,9 +6266,14 @@ static int nbl_serv_init_p4(void *priv)
 	}
 
 	nbl_serv_form_p4_name(common, type, name, sizeof(name), version);
+
 	ret = firmware_request_nowarn(&fw, name, NBL_SERV_MGT_TO_DEV(serv_mgt));
-	if (ret)
+
+	if (ret) {
+		nbl_warn(common, NBL_DEBUG_CUSTOMIZED_P4,
+			 "p4 elf not found, load defalut p4 configuration\n");
 		goto out;
+	}
 
 	ret = nbl_serv_load_p4(serv_mgt, fw, verify_code, type, version);
 
@@ -5847,7 +6284,7 @@ out:
 		type = NBL_FLAG_P4_DEFAULT;
 
 	nbl_info(common, NBL_DEBUG_CUSTOMIZED_P4, "Load P4 %d", type);
-	disp_ops->set_p4_used(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), type);
+	disp_ops->set_p4_used(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &type);
 
 	/* We always return OK, because at the very least we would use default P4 */
 	return 0;
@@ -5858,9 +6295,13 @@ static int nbl_serv_set_spoof_check_addr(void *priv, u8 *mac)
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
+	struct nbl_ch_prm_set_spoof_check_addr spoof_prm;
 
-	return disp_ops->set_spoof_check_addr(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					      NBL_COMMON_TO_VSI_ID(common), mac);
+	memset(&spoof_prm, 0, sizeof(spoof_prm));
+	spoof_prm.vsi_id = NBL_COMMON_TO_VSI_ID(common);
+	ether_addr_copy(spoof_prm.mac, mac);
+
+	return disp_ops->set_spoof_check_addr(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &spoof_prm);
 }
 
 static u16 nbl_serv_get_vf_base_vsi_id(void *priv, u16 func_id)
@@ -5895,14 +6336,19 @@ static int nbl_serv_process_abnormal_event(void *priv)
 		return ret;
 
 	for (i = 0; i < NBL_ABNORMAL_EVENT_MAX; i++) {
+		struct nbl_get_local_queue_id_param prm = {0};
+
 		detail = &abnomal_info.details[i];
 
 		if (!detail->abnormal)
 			continue;
 
+		prm.vsi_id = detail->vsi_id;
+		prm.global_queue_id = detail->qid;
+
 		type = nbl_serv_abnormal_event_to_queue(i);
 		local_queue_id = disp_ops->get_local_queue_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-							      detail->vsi_id, detail->qid);
+							      &prm);
 		if (local_queue_id == U16_MAX)
 			return 0;
 
@@ -5912,22 +6358,21 @@ static int nbl_serv_process_abnormal_event(void *priv)
 	return 0;
 }
 
-static int nbl_serv_cfg_bond_shaping(void *priv, u8 eth_id, bool enable)
+static int nbl_serv_cfg_bond_shaping(void *priv, struct nbl_ch_prm_cfg_bond_shaping *param)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	return disp_ops->cfg_bond_shaping(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), eth_id, enable);
+	return disp_ops->cfg_bond_shaping(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), param);
 }
 
-static void nbl_serv_cfg_bgid_back_pressure(void *priv, u8 main_eth_id,
-					    u8 other_eth_id, bool enable)
+static int nbl_serv_cfg_bgid_back_pressure(void *priv,
+					   struct nbl_ch_prm_cfg_bgid_back_pressure *param)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	disp_ops->cfg_bgid_back_pressure(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), main_eth_id,
-					 other_eth_id, enable);
+	return disp_ops->cfg_bgid_back_pressure(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), param);
 }
 
 static void nbl_serv_cfg_eth_bond_event(void *priv, bool enable)
@@ -5988,7 +6433,8 @@ static ssize_t nbl_serv_vf_trust_store(struct kobject *kobj, struct kobj_attribu
 
 static ssize_t nbl_serv_vf_vlan_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
-	return sprintf(buf, "usage: wr <Vlan:Qos[:Proto]> to set VF Vlan,Qos,and Protocol\n");
+	return sprintf(buf,
+		       "usage: write <Vlan:Qos[:Proto]> to set VF Vlan, Qos, and optionally Vlan Protocol (default 802.1Q)\n");
 }
 
 static ssize_t nbl_serv_vf_vlan_store(struct kobject *kobj, struct kobj_attribute *attr,
@@ -6115,14 +6561,7 @@ static ssize_t nbl_serv_vf_stats_show(struct kobject *kobj, struct kobj_attribut
 	}
 
 	return scnprintf(buf, PAGE_SIZE,
-		"tx_packets      : %llu\n"
-		"tx_bytes        : %llu\n"
-		"tx_dropped      : %llu\n"
-		"rx_packets      : %llu\n"
-		"rx_bytes        : %llu\n"
-		"rx_dropped      : %llu\n"
-		"rx_broadcast    : %llu\n"
-		"rx_multicast    : %llu\n",
+		"tx_packets      : %llu\ntx_bytes        : %llu\ntx_dropped      : %llu\nrx_packets      : %llu\nrx_bytes        : %llu\nrx_dropped      : %llu\nrx_broadcast    : %llu\nrx_multicast    : %llu\n",
 		stats.tx_packets, stats.tx_bytes, stats.tx_dropped,
 		stats.rx_packets, stats.rx_bytes, stats.rx_dropped,
 		stats.broadcast, stats.multicast
@@ -6463,15 +6902,15 @@ err:
 			kobject_put(&vf_info[i].rx_bps_kobj);
 		if (vf_info[i].tx_kobj.state_initialized)
 			kobject_put(&vf_info[i].tx_kobj);
-		if (vf_info[i].tx_kobj.state_initialized)
-			kobject_put(&vf_info[i].tx_kobj);
-		if (vf_info[i].tx_kobj.state_initialized)
-			kobject_put(&vf_info[i].tx_kobj);
-		if (vf_info[i].tx_kobj.state_initialized)
-			kobject_put(&vf_info[i].tx_kobj);
+		if (vf_info[i].rx_kobj.state_initialized)
+			kobject_put(&vf_info[i].rx_kobj);
+		if (vf_info[i].meters_kobj.state_initialized)
+			kobject_put(&vf_info[i].meters_kobj);
+		if (vf_info[i].kobj.state_initialized)
+			kobject_put(&vf_info[i].kobj);
 	}
 
-	return 0;
+	return ret;
 }
 
 static void nbl_serv_remove_vf_sysfs(struct nbl_service_mgt *serv_mgt)
@@ -6490,7 +6929,6 @@ static void nbl_serv_remove_vf_sysfs(struct nbl_service_mgt *serv_mgt)
 	}
 }
 
-
 static int nbl_serv_setup_vf_config(void *priv, int num_vfs, bool is_flush)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
@@ -6498,24 +6936,33 @@ static int nbl_serv_setup_vf_config(void *priv, int num_vfs, bool is_flush)
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_serv_vf_info *vf_info = net_resource_mgt->vf_info;
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
+	struct nbl_ch_prm_init_vf_msix_map msix_map;
 	u16 func_id = U16_MAX;
 	u16 vlan_tci;
 	bool should_notify;
 	int i, ret = 0;
+	struct nbl_ch_prm_set_vf_spoof_check vf_spoof_prm = {0};
 
 	net_resource_mgt->num_vfs = num_vfs;
 
 	for (i = 0; i < net_resource_mgt->num_vfs; i++) {
-		func_id = nbl_serv_get_vf_function_id(serv_mgt, i);
+		func_id = disp_ops->get_vf_function_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+						       NBL_COMMON_TO_VSI_ID(common), i);
+
 		if (func_id == U16_MAX) {
 			nbl_err(common, NBL_DEBUG_MAIN, "vf id %d invalid\n", i);
 			return -EINVAL;
 		}
 
+		msix_map.sfid = func_id;
+		msix_map.enable = !is_flush;
+		disp_ops->init_vf_msix_map(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &msix_map);
+
 		disp_ops->register_func_mac(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
 					    vf_info[i].mac, func_id);
 
-		vlan_tci = vf_info[i].vlan | (u16)(vf_info[i].vlan_qos << VLAN_PRIO_SHIFT);
+		vlan_tci = (vf_info[i].vlan & VLAN_VID_MASK) |
+			   (vf_info[i].vlan_qos << VLAN_PRIO_SHIFT);
 		ret = disp_ops->register_func_vlan(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), func_id,
 						   vlan_tci, vf_info[i].vlan_proto,
 						   &should_notify);
@@ -6544,9 +6991,11 @@ static int nbl_serv_setup_vf_config(void *priv, int num_vfs, bool is_flush)
 		if (ret)
 			break;
 
+		vf_spoof_prm.vsi_id = NBL_COMMON_TO_VSI_ID(common);
+		vf_spoof_prm.vf_id = i;
+		vf_spoof_prm.enable = vf_info[i].spoof_check;
 		ret = disp_ops->set_vf_spoof_check(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-						   NBL_COMMON_TO_VSI_ID(common), i,
-						   vf_info[i].spoof_check);
+						   &vf_spoof_prm);
 		if (ret)
 			break;
 
@@ -6590,16 +7039,23 @@ static void nbl_serv_register_dev_name(void *priv, u16 vsi_id, char *name)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_ch_prm_pf_name param = {0};
 
-	disp_ops->register_dev_name(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id, name);
+	param.vsi_id = vsi_id;
+	strscpy(param.dev_name, name, sizeof(param.dev_name));
+	disp_ops->register_dev_name(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &param);
 }
 
 static void nbl_serv_get_dev_name(void *priv, u16 vsi_id, char *name)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_ch_prm_pf_name param;
+	struct nbl_ch_prm_pf_name output;
 
-	disp_ops->get_dev_name(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), vsi_id, name);
+	param.vsi_id = vsi_id;
+	disp_ops->get_dev_name(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &param, &output);
+	strscpy(name, output.dev_name, sizeof(output.dev_name));
 }
 
 static int nbl_serv_setup_vf_resource(void *priv, int num_vfs)
@@ -6655,13 +7111,47 @@ static void nbl_serv_cfg_fd_update_event(void *priv, bool enable)
 	disp_ops->cfg_fd_update_event(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), enable);
 }
 
+#if IS_ENABLED(CONFIG_MACSEC)
+static int nbl_serv_init_macsec(void *priv)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_macsec_info *macsec = NULL;
+
+	macsec = kzalloc(sizeof(*macsec), GFP_KERNEL);
+	if (!macsec)
+		return -ENOMEM;
+
+	INIT_LIST_HEAD(&macsec->macsec_dev_list);
+	mutex_init(&macsec->lock);
+
+	serv_mgt->macsec = macsec;
+
+	return 0;
+}
+
+static void nbl_serv_uninit_macsec(void *priv)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_macsec_info *macsec = serv_mgt->macsec;
+
+	if (!macsec)
+		return;
+
+	mutex_destroy(&macsec->lock);
+	kfree(macsec);
+	serv_mgt->macsec = NULL;
+}
+#endif
+
 static void nbl_serv_get_xdp_queue_info(void *priv, u16 *queue_num, u16 *queue_size, u16 vsi_id)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_ch_prm_get_queue_info output = {0};
 
-	disp_ops->get_xdp_queue_info(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), queue_num, queue_size,
-				     vsi_id);
+	disp_ops->get_xdp_queue_info(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &vsi_id, &output);
+	*queue_num = output.queue_num;
+	*queue_size = output.queue_size;
 }
 
 static void nbl_serv_assgin_xdp_prog(struct net_device *netdev, struct bpf_prog *prog)
@@ -6684,15 +7174,24 @@ static int nbl_serv_setup_xdp_prog(struct net_device *netdev, struct bpf_prog *p
 {
 	struct nbl_adapter *adapter = NBL_NETDEV_TO_ADAPTER(netdev);
 	struct nbl_service_mgt *serv_mgt = NBL_ADAPTER_TO_SERV_MGT(adapter);
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_serv_ring_mgt *ring_mgt = NBL_SERV_MGT_TO_RING_MGT(serv_mgt);
 	int was_running;
 	int err;
+	int xdp_max_mtu;
 
 	if (prog && test_bit(NBL_USER, adapter->state))
 		return -EIO;
 
 	if (!ring_mgt->vsi_info[NBL_VSI_XDP].ring_num)
 		return -ENOSPC;
+
+	err = disp_ops->check_mtu(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), 1,
+				  netdev->mtu, &xdp_max_mtu);
+	if (err) {
+		netdev_err(netdev, "max MTU for XDP usage is %d\n", xdp_max_mtu);
+		return -EINVAL;
+	}
 
 	was_running = netif_running(netdev);
 	if (was_running) {
@@ -6739,6 +7238,22 @@ static void nbl_serv_set_hw_status(void *priv, enum nbl_hw_status hw_status)
 	disp_ops->set_hw_status(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), hw_status);
 }
 
+static void nbl_serv_check_hw_status(void *priv)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+
+	disp_ops->check_hw_status(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
+}
+
+static enum nbl_hw_status nbl_serv_get_hw_status(void *priv)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+
+	return disp_ops->get_hw_status(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
+}
+
 static void nbl_serv_get_active_func_bitmaps(void *priv, unsigned long *bitmap, int max_func)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
@@ -6747,31 +7262,34 @@ static void nbl_serv_get_active_func_bitmaps(void *priv, unsigned long *bitmap, 
 	disp_ops->get_active_func_bitmaps(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), bitmap, max_func);
 }
 
-static void nbl_serv_get_rdma_rate(void *priv, int *rdma_rate)
+static int nbl_serv_configure_qos(void *priv, u8 eth_id, u8 *pfc, u8 trust, u8 *dscp2prio_map)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
-	struct nbl_serv_qos_info *qos_info = &net_resource_mgt->qos_info;
+	struct nbl_netdev_priv *net_priv = netdev_priv(net_resource_mgt->netdev);
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	int ret;
+	struct nbl_ch_prm_configure_qos qos_param = {0};
 
-	*rdma_rate = qos_info->rdma_rate;
+	qos_param.eth_id = eth_id;
+	qos_param.trust = trust;
+	memcpy(qos_param.pfc, pfc, NBL_MAX_PFC_PRIORITIES);
+	memcpy(qos_param.dscp2prio_map, dscp2prio_map, NBL_DSCP_MAX);
+	ret = disp_ops->configure_qos(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &qos_param);
+
+	net_resource_mgt->qos_info.trust_mode = trust;
+	net_priv->trust_mode = trust;
+	memcpy(net_resource_mgt->qos_info.dscp2prio_map, dscp2prio_map, NBL_DSCP_MAX);
+	memcpy(net_resource_mgt->qos_info.pfc, pfc, NBL_MAX_PFC_PRIORITIES);
+	return ret;
 }
 
-static void nbl_serv_get_net_rate(void *priv, int *net_rate)
+static struct nbl_qos_info *nbl_serv_qos_info(void *priv)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
-	struct nbl_serv_qos_info *qos_info = &net_resource_mgt->qos_info;
 
-	*net_rate = qos_info->net_rate;
-}
-
-static void nbl_serv_get_rdma_bw(void *priv, int *rdma_bw)
-{
-	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
-	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
-	struct nbl_serv_qos_info *qos_info = &net_resource_mgt->qos_info;
-
-	*rdma_bw = qos_info->rdma_bw;
+	return &net_resource_mgt->qos_info;
 }
 
 static int nbl_serv_configure_rdma_bw(void *priv, u8 eth_id, int rdma_bw)
@@ -6779,11 +7297,14 @@ static int nbl_serv_configure_rdma_bw(void *priv, u8 eth_id, int rdma_bw)
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
-	struct nbl_serv_qos_info *qos_info = &net_resource_mgt->qos_info;
+	struct nbl_qos_info *qos_info = &net_resource_mgt->qos_info;
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
+	struct nbl_ch_prm_configure_rdma_bw rdma_param = {0};
 	int ret;
 
-	ret =  disp_ops->configure_rdma_bw(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), eth_id, rdma_bw);
+	rdma_param.eth_id = eth_id;
+	rdma_param.rdma_bw = rdma_bw;
+	ret = disp_ops->configure_rdma_bw(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &rdma_param);
 	if (ret) {
 		nbl_err(common, NBL_DEBUG_MAIN, "configure rdma bw failed ret %d\n", ret);
 		return ret;
@@ -6794,158 +7315,22 @@ static int nbl_serv_configure_rdma_bw(void *priv, u8 eth_id, int rdma_bw)
 	return 0;
 }
 
-static ssize_t nbl_serv_pfc_show(void *priv, u8 eth_id, char *buf)
-{
-	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
-	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
-	struct nbl_serv_qos_info *qos_info = &net_resource_mgt->qos_info;
-
-	return scnprintf(buf, PAGE_SIZE, "%d,%d,%d,%d,%d,%d,%d,%d\n",
-			 qos_info->pfc[0], qos_info->pfc[1],
-			 qos_info->pfc[2], qos_info->pfc[3],
-			 qos_info->pfc[4], qos_info->pfc[5],
-			 qos_info->pfc[6], qos_info->pfc[7]);
-}
-
-static int nbl_serv_configure_pfc(void *priv, u8 eth_id, u8 *pfc)
-{
-	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
-	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
-	struct nbl_serv_qos_info *qos_info = &net_resource_mgt->qos_info;
-	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
-	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
-	bool changed = false;
-	int ret;
-	int i;
-
-	for (i = 0; i < NBL_MAX_PFC_PRIORITIES; i++) {
-		if (pfc[i] != qos_info->pfc[i]) {
-			changed = true;
-			break;
-		}
-	}
-
-	if (!changed)
-		return 0;
-
-	ret = disp_ops->configure_qos(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				      eth_id, pfc, net_resource_mgt->qos_info.trust_mode,
-				      net_resource_mgt->qos_info.dscp2prio_map);
-
-	if (ret) {
-		nbl_err(common, NBL_DEBUG_MAIN, "configure pfc failed ret %d\n", ret);
-		return ret;
-	}
-
-	memcpy(net_resource_mgt->qos_info.pfc, pfc, NBL_MAX_PFC_PRIORITIES);
-
-	return ret;
-}
-
-static ssize_t nbl_serv_trust_mode_show(void *priv, u8 eth_id, char *buf)
-{
-	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
-	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
-	struct nbl_serv_qos_info *qos_info = &net_resource_mgt->qos_info;
-
-	return scnprintf(buf, PAGE_SIZE, "%s\n",
-			 qos_info->trust_mode == NBL_TRUST_MODE_DSCP ? "dscp" : "802.1p");
-}
-
-static int nbl_serv_configure_trust(void *priv, u8 eth_id, u8 trust_mode)
-{
-	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
-	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
-	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
-	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
-	int ret;
-
-	if (net_resource_mgt->qos_info.trust_mode == trust_mode)
-		return 0;
-
-	ret = disp_ops->configure_qos(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				      eth_id, net_resource_mgt->qos_info.pfc, trust_mode,
-				      net_resource_mgt->qos_info.dscp2prio_map);
-
-	if (ret) {
-		nbl_err(common, NBL_DEBUG_MAIN, "configure trust_mode failed ret %d\n", ret);
-		return ret;
-	}
-
-	net_resource_mgt->qos_info.trust_mode = trust_mode;
-
-	return ret;
-}
-
-static ssize_t nbl_serv_dscp2prio_show(void *priv, u8 eth_id, char *buf)
-{
-	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
-	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
-	struct nbl_serv_qos_info *qos_info = &net_resource_mgt->qos_info;
-	int len = 0;
-	int i;
-
-	len += snprintf(buf + len, PAGE_SIZE - len, "dscp2prio mapping:\n");
-	for (i = 0; i < NBL_DSCP_MAX; i++)
-		len += snprintf(buf + len, PAGE_SIZE - len, "\tprio:%d dscp:%d,\n",
-				qos_info->dscp2prio_map[i], i);
-
-	return len;
-}
-
-static int nbl_serv_configure_dscp2prio(void *priv, u8 eth_id,  const char *buf, size_t count)
-{
-	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
-	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
-	struct nbl_serv_qos_info *qos_info = &net_resource_mgt->qos_info;
-	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
-	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
-	char cmd[8];
-	int dscp, prio, ret;
-	int i;
-
-	ret = sscanf(buf, "%7[^,], %d , %d", cmd, &dscp, &prio);
-
-	if (strncmp(cmd, "set", 3) == 0) {
-		if (ret != 3 || dscp < 0 || dscp >= NBL_DSCP_MAX || prio < 0 || prio > 7)
-			return -EINVAL;
-		qos_info->dscp2prio_map[dscp] = prio;
-	} else if (strncmp(cmd, "del", 3) == 0) {
-		if (ret != 3 || dscp < 0 || dscp >= NBL_DSCP_MAX)
-			return -EINVAL;
-		if (qos_info->dscp2prio_map[dscp] == 0)
-			return -EINVAL;
-		qos_info->dscp2prio_map[dscp] = 0;
-	} else if (strncmp(cmd, "flush", 5) == 0) {
-		for (i = 0; i < NBL_DSCP_MAX; i++)
-			qos_info->dscp2prio_map[i] = i / NBL_MAX_PFC_PRIORITIES;
-	} else {
-		return -EINVAL;
-	}
-
-	ret = disp_ops->configure_qos(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				      eth_id, qos_info->pfc,
-				      qos_info->trust_mode, qos_info->dscp2prio_map);
-
-	if (ret) {
-		nbl_err(common, NBL_DEBUG_MAIN, "configure dscp2prio failed ret %d\n", ret);
-		return ret;
-	}
-
-	return count;
-}
-
 static int nbl_serv_set_pfc_buffer_size(void *priv, u8 eth_id, u8 prio, int xoff, int xon)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
-	struct nbl_serv_qos_info *qos_info = &net_resource_mgt->qos_info;
+	struct nbl_qos_info *qos_info = &net_resource_mgt->qos_info;
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
+	struct nbl_ch_prm_set_pfc_buffer_size param = {0};
 	int ret;
 
+	param.eth_id = eth_id;
+	param.prio = prio;
+	param.xoff = xoff;
+	param.xon = xon;
 	ret = disp_ops->set_pfc_buffer_size(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					    eth_id, prio, xoff, xon);
+					    &param);
 
 	if (ret) {
 		nbl_err(common, NBL_DEBUG_MAIN, "configure pfc buffer size failed ret %d\n", ret);
@@ -6958,20 +7343,20 @@ static int nbl_serv_set_pfc_buffer_size(void *priv, u8 eth_id, u8 prio, int xoff
 	return ret;
 }
 
-static ssize_t nbl_serv_pfc_buffer_size_show(void *priv, u8 eth_id, char *buf)
+static int nbl_serv_get_pfc_buffer_size(void *priv, u8 eth_id, u8 prio, int *xoff, int *xon)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
-	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
-	struct nbl_serv_qos_info *qos_info = &net_resource_mgt->qos_info;
-	int prio;
-	ssize_t count = 0;
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_ch_prm_get_pfc_buffer_size param = {0};
+	struct nbl_ch_prm_get_pfc_buffer_size_resp output = {0};
+	int ret;
 
-	for (prio = 0; prio < NBL_MAX_PFC_PRIORITIES; prio++)
-		count += snprintf(buf + count, PAGE_SIZE - count, "prio %d, xoff %d, xon %d\n",
-				  prio, qos_info->buffer_sizes[prio][0],
-				  qos_info->buffer_sizes[prio][1]);
+	ret = disp_ops->get_pfc_buffer_size(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+					    &param, &output);
+	*xoff = output.xoff;
+	*xon = output.xon;
 
-	return count;
+	return ret;
 }
 
 #ifdef CONFIG_DCB
@@ -7043,9 +7428,10 @@ static int nbl_serv_ieee_setets(struct net_device *netdev, struct ieee_ets *ets)
 	struct nbl_service_mgt *serv_mgt = NBL_ADAPTER_TO_SERV_MGT(adapter);
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
-	struct nbl_serv_qos_info *qos_info = &net_resource_mgt->qos_info;
+	struct nbl_qos_info *qos_info = &net_resource_mgt->qos_info;
 	struct nbl_common_info *common = NBL_ADAPTER_TO_COMMON(adapter);
 	struct ieee_ets ets_tmp = {0};
+	struct nbl_ch_prm_set_tc_wgt tc_wgt_param = {0};
 	int bwcfg = 0, bwrec = 0;
 	int ret;
 	int i;
@@ -7065,10 +7451,10 @@ static int nbl_serv_ieee_setets(struct net_device *netdev, struct ieee_ets *ets)
 
 	if (!bwrec)
 		ets_tmp.tc_reco_bw[0] = NBL_TC_MAX_BW;
-
-	ret = disp_ops->set_tc_wgt(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				   NBL_COMMON_TO_VSI_ID(common),
-				   ets_tmp.tc_tx_bw, NBL_MAX_TC_NUM);
+	tc_wgt_param.vsi_id = NBL_COMMON_TO_VSI_ID(common);
+	tc_wgt_param.num_tc = NBL_MAX_TC_NUM;
+	memcpy(tc_wgt_param.weight, ets_tmp.tc_tx_bw, NBL_MAX_TC_NUM);
+	ret = disp_ops->set_tc_wgt(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &tc_wgt_param);
 	if (ret) {
 		nbl_err(common, NBL_DEBUG_MAIN, "set_tc_wgt failed ret %d\n", ret);
 		return ret;
@@ -7083,20 +7469,10 @@ static int nbl_serv_ieee_getets(struct net_device *netdev, struct ieee_ets *ets)
 	struct nbl_adapter *adapter = NBL_NETDEV_TO_ADAPTER(netdev);
 	struct nbl_service_mgt *serv_mgt = NBL_ADAPTER_TO_SERV_MGT(adapter);
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
-	struct nbl_serv_qos_info *qos_info = &net_resource_mgt->qos_info;
+	struct nbl_qos_info *qos_info = &net_resource_mgt->qos_info;
 
 	memcpy(ets, &qos_info->ets, sizeof(struct ieee_ets));
 	ets->ets_cap = NBL_MAX_TC_NUM;
-	return 0;
-}
-
-static int nbl_serv_ieee_setpfc(struct net_device *netdev, struct ieee_pfc *pfc)
-{
-	return 0;
-}
-
-static int nbl_serv_ieee_getpfc(struct net_device *netdev, struct ieee_pfc *pfc)
-{
 	return 0;
 }
 
@@ -7106,8 +7482,9 @@ static int nbl_serv_ieee_delapp(struct net_device *netdev, struct dcb_app *app)
 	struct nbl_service_mgt *serv_mgt = NBL_ADAPTER_TO_SERV_MGT(adapter);
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
-	struct nbl_serv_qos_info *qos_info = &net_resource_mgt->qos_info;
+	struct nbl_qos_info *qos_info = &net_resource_mgt->qos_info;
 	struct nbl_common_info *common = NBL_ADAPTER_TO_COMMON(adapter);
+	struct nbl_ch_prm_configure_qos qos_param = {0};
 	int ret;
 
 	if (app->selector != IEEE_8021QAZ_APP_SEL_DSCP ||
@@ -7118,13 +7495,16 @@ static int nbl_serv_ieee_delapp(struct net_device *netdev, struct dcb_app *app)
 		return -ENOENT;
 
 	ret = dcb_ieee_delapp(netdev, app);
-	if (ret)
+	if (ret != -ENOENT && ret != 0)
 		return ret;
 
 	qos_info->dscp2prio_map[app->protocol] = 0;
-	ret = disp_ops->configure_qos(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				      NBL_COMMON_TO_ETH_ID(common), qos_info->pfc,
-				      qos_info->trust_mode, qos_info->dscp2prio_map);
+
+	qos_param.eth_id = NBL_COMMON_TO_ETH_ID(common);
+	qos_param.trust = qos_info->trust_mode;
+	memcpy(qos_param.pfc, qos_info->pfc, NBL_MAX_PFC_PRIORITIES);
+	memcpy(qos_param.dscp2prio_map, qos_info->dscp2prio_map, NBL_DSCP_MAX);
+	ret = disp_ops->configure_qos(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &qos_param);
 
 	if (ret) {
 		nbl_err(common, NBL_DEBUG_MAIN, "delapp configure dscp2prio failed ret %d\n", ret);
@@ -7136,12 +7516,14 @@ static int nbl_serv_ieee_delapp(struct net_device *netdev, struct dcb_app *app)
 
 static int nbl_serv_ieee_setapp(struct net_device *netdev, struct dcb_app *app)
 {
+	struct nbl_netdev_priv *priv = netdev_priv(netdev);
 	struct nbl_adapter *adapter = NBL_NETDEV_TO_ADAPTER(netdev);
 	struct nbl_service_mgt *serv_mgt = NBL_ADAPTER_TO_SERV_MGT(adapter);
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
-	struct nbl_serv_qos_info *qos_info = &net_resource_mgt->qos_info;
+	struct nbl_qos_info *qos_info = &net_resource_mgt->qos_info;
 	struct nbl_common_info *common = NBL_ADAPTER_TO_COMMON(adapter);
+	struct nbl_ch_prm_configure_qos qos_param = {0};
 	int ret;
 
 	if (app->selector != IEEE_8021QAZ_APP_SEL_DSCP ||
@@ -7156,10 +7538,13 @@ static int nbl_serv_ieee_setapp(struct net_device *netdev, struct dcb_app *app)
 		return ret;
 
 	qos_info->trust_mode = NBL_TRUST_MODE_DSCP;
+	priv->trust_mode = NBL_TRUST_MODE_DSCP;
 	qos_info->dscp2prio_map[app->protocol] = app->priority;
-	ret = disp_ops->configure_qos(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				      NBL_COMMON_TO_ETH_ID(common), qos_info->pfc,
-				      qos_info->trust_mode, qos_info->dscp2prio_map);
+	qos_param.eth_id = NBL_COMMON_TO_ETH_ID(common);
+	qos_param.trust = qos_info->trust_mode;
+	memcpy(qos_param.pfc, qos_info->pfc, NBL_MAX_PFC_PRIORITIES);
+	memcpy(qos_param.dscp2prio_map, qos_info->dscp2prio_map, NBL_DSCP_MAX);
+	ret = disp_ops->configure_qos(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &qos_param);
 
 	if (ret) {
 		nbl_err(common, NBL_DEBUG_MAIN, "setapp configure dscp2prio failed ret %d\n", ret);
@@ -7174,7 +7559,7 @@ static void nbl_serv_dcbnl_getpfccfg(struct net_device *netdev, int prio, u8 *se
 	struct nbl_adapter *adapter = NBL_NETDEV_TO_ADAPTER(netdev);
 	struct nbl_service_mgt *serv_mgt = NBL_ADAPTER_TO_SERV_MGT(adapter);
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
-	struct nbl_serv_qos_info *qos_info = &net_resource_mgt->qos_info;
+	struct nbl_qos_info *qos_info = &net_resource_mgt->qos_info;
 
 	if (prio >= NBL_MAX_PFC_PRIORITIES)
 		return;
@@ -7195,9 +7580,10 @@ static void nbl_serv_dcbnl_setpfccfg(struct net_device *netdev, int prio, u8 set
 	struct nbl_service_mgt *serv_mgt = NBL_ADAPTER_TO_SERV_MGT(adapter);
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
-	struct nbl_serv_qos_info *qos_info = &net_resource_mgt->qos_info;
+	struct nbl_qos_info *qos_info = &net_resource_mgt->qos_info;
 	struct nbl_common_info *common = NBL_ADAPTER_TO_COMMON(adapter);
 	u8 pfc[NBL_MAX_PFC_PRIORITIES] = {0};
+	struct nbl_ch_prm_configure_qos qos_param = {0};
 	int ret;
 
 	if (prio >= NBL_MAX_PFC_PRIORITIES)
@@ -7208,10 +7594,12 @@ static void nbl_serv_dcbnl_setpfccfg(struct net_device *netdev, int prio, u8 set
 
 	memcpy(pfc, qos_info->pfc, NBL_MAX_PFC_PRIORITIES);
 	pfc[prio] = set;
-	ret = disp_ops->configure_qos(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				      NBL_COMMON_TO_ETH_ID(common), pfc,
-				      net_resource_mgt->qos_info.trust_mode,
-				      net_resource_mgt->qos_info.dscp2prio_map);
+
+	qos_param.eth_id = NBL_COMMON_TO_ETH_ID(common);
+	qos_param.trust = net_resource_mgt->qos_info.trust_mode;
+	memcpy(qos_param.pfc, pfc, NBL_MAX_PFC_PRIORITIES);
+	memcpy(qos_param.dscp2prio_map, net_resource_mgt->qos_info.dscp2prio_map, NBL_DSCP_MAX);
+	ret = disp_ops->configure_qos(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &qos_param);
 	if (ret) {
 		nbl_err(common, NBL_DEBUG_MAIN, "configure pfc failed ret %d\n", ret);
 		return;
@@ -7220,12 +7608,40 @@ static void nbl_serv_dcbnl_setpfccfg(struct net_device *netdev, int prio, u8 set
 	memcpy(qos_info->pfc, pfc, NBL_MAX_PFC_PRIORITIES);
 }
 
+static int nbl_serv_ieee_setpfc(struct net_device *netdev, struct ieee_pfc *pfc)
+{
+	u8 i;
+
+	for (i = 0 ; i < NBL_MAX_PFC_PRIORITIES; i++) {
+		if (pfc->pfc_en & BIT(i))
+			nbl_serv_dcbnl_setpfccfg(netdev, i, 1);
+		else
+			nbl_serv_dcbnl_setpfccfg(netdev, i, 0);
+	}
+	return 0;
+}
+
+static int nbl_serv_ieee_getpfc(struct net_device *netdev, struct ieee_pfc *pfc)
+{
+	u8 i;
+	u8 setting;
+
+	for (i = 0; i < NBL_MAX_PFC_PRIORITIES; i++) {
+		nbl_serv_dcbnl_getpfccfg(netdev, i, &setting);
+		if (setting)
+			pfc->pfc_en |= BIT(i);
+		else
+			pfc->pfc_en &= ~(BIT(i));
+	}
+	return 0;
+}
+
 static u8 nbl_serv_dcbnl_getcap(struct net_device *netdev, int capid, u8 *cap)
 {
 	struct nbl_adapter *adapter = NBL_NETDEV_TO_ADAPTER(netdev);
 	struct nbl_service_mgt *serv_mgt = NBL_ADAPTER_TO_SERV_MGT(adapter);
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
-	struct nbl_serv_qos_info *qos_info = &net_resource_mgt->qos_info;
+	struct nbl_qos_info *qos_info = &net_resource_mgt->qos_info;
 
 	*cap = true;
 
@@ -7266,7 +7682,7 @@ static u8 nbl_serv_ieee_getdcbx(struct net_device *netdev)
 	struct nbl_adapter *adapter = NBL_NETDEV_TO_ADAPTER(netdev);
 	struct nbl_service_mgt *serv_mgt = NBL_ADAPTER_TO_SERV_MGT(adapter);
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
-	struct nbl_serv_qos_info *qos_info = &net_resource_mgt->qos_info;
+	struct nbl_qos_info *qos_info = &net_resource_mgt->qos_info;
 
 	return qos_info->dcbx_mode;
 }
@@ -7276,7 +7692,7 @@ static u8 nbl_serv_ieee_setdcbx(struct net_device *netdev, u8 mode)
 	struct nbl_adapter *adapter = NBL_NETDEV_TO_ADAPTER(netdev);
 	struct nbl_service_mgt *serv_mgt = NBL_ADAPTER_TO_SERV_MGT(adapter);
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
-	struct nbl_serv_qos_info *qos_info = &net_resource_mgt->qos_info;
+	struct nbl_qos_info *qos_info = &net_resource_mgt->qos_info;
 
 	qos_info->dcbx_mode = mode;
 
@@ -7288,7 +7704,7 @@ static u8 nbl_serv_dcnbl_setstate(struct net_device *netdev, u8 state)
 	struct nbl_adapter *adapter = NBL_NETDEV_TO_ADAPTER(netdev);
 	struct nbl_service_mgt *serv_mgt = NBL_ADAPTER_TO_SERV_MGT(adapter);
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
-	struct nbl_serv_qos_info *qos_info = &net_resource_mgt->qos_info;
+	struct nbl_qos_info *qos_info = &net_resource_mgt->qos_info;
 
 	if (qos_info->dcbx_state == state)
 		return NBL_DCB_NO_HW_CHG;
@@ -7302,7 +7718,7 @@ static u8 nbl_serv_dcnbl_getstate(struct net_device *netdev)
 	struct nbl_adapter *adapter = NBL_NETDEV_TO_ADAPTER(netdev);
 	struct nbl_service_mgt *serv_mgt = NBL_ADAPTER_TO_SERV_MGT(adapter);
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
-	struct nbl_serv_qos_info *qos_info = &net_resource_mgt->qos_info;
+	struct nbl_qos_info *qos_info = &net_resource_mgt->qos_info;
 
 	return qos_info->dcbx_state;
 }
@@ -7312,7 +7728,7 @@ static u8 nbl_serv_dcnbl_getpfcstate(struct net_device *netdev)
 	struct nbl_adapter *adapter = NBL_NETDEV_TO_ADAPTER(netdev);
 	struct nbl_service_mgt *serv_mgt = NBL_ADAPTER_TO_SERV_MGT(adapter);
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
-	struct nbl_serv_qos_info *qos_info = &net_resource_mgt->qos_info;
+	struct nbl_qos_info *qos_info = &net_resource_mgt->qos_info;
 	int i;
 
 	for (i = 0; i < NBL_MAX_PFC_PRIORITIES; i++)
@@ -7331,16 +7747,20 @@ static void nbl_serv_get_board_info(void *priv, struct nbl_board_port_info *boar
 	disp_ops->get_board_info(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), board_info);
 }
 
-static int nbl_serv_set_rate_limit(void *priv, enum nbl_traffic_type type, u32 rate)
+static int nbl_serv_set_rate_limit(void *priv, u16 func_id, enum nbl_traffic_type type, u32 rate)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
-	struct nbl_serv_qos_info *qos_info = &net_resource_mgt->qos_info;
+	struct nbl_qos_info *qos_info = &net_resource_mgt->qos_info;
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
+	struct nbl_ch_prm_set_rate_limit param = {0};
 	int ret = 0;
 
-	ret = disp_ops->set_rate_limit(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), type, rate);
+	param.sfid = func_id;
+	param.type = type;
+	param.rate = rate;
+	ret = disp_ops->set_rate_limit(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &param);
 	if (ret) {
 		nbl_err(common, NBL_DEBUG_MAIN, "set_rate type %d failed ret %d\n", type, ret);
 		return ret;
@@ -7359,9 +7779,15 @@ static void nbl_serv_get_mirror_table_id(void *priv, u16 vsi_id, int dir, bool m
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_ch_prm_get_mirror_table_id param = {0};
+	struct nbl_ch_prm_get_mirror_table_id output = {0};
 
+	param.vsi_id = vsi_id;
+	param.dir = dir;
+	param.mirror_en = mirror_en;
 	disp_ops->get_mirror_table_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				      vsi_id, dir, mirror_en, mt_id);
+				      &param, &output);
+	*mt_id = output.mt_id;
 }
 
 static int nbl_serv_configure_mirror(void *priv, u16 func_id, bool mirror_en, int dir,
@@ -7370,14 +7796,28 @@ static int nbl_serv_configure_mirror(void *priv, u16 func_id, bool mirror_en, in
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_ch_prm_mirror param = {0};
 	int ret;
 
 	nbl_event_notify(NBL_EVENT_MIRROR_SELECTPORT, &mirror_en,
 			 NBL_COMMON_TO_VSI_ID(common), NBL_COMMON_TO_BOARD_ID(common));
-
+	param.dir = dir;
+	param.mirror_en = mirror_en;
+	param.mt_id = mt_id;
+	param.sfid = func_id;
 	ret = disp_ops->configure_mirror(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					 func_id, mirror_en, dir, mt_id);
+					 &param);
 	return ret;
+}
+
+static int nbl_serv_configure_tx_mirror_to_rdma(void *priv,
+						struct nbl_ch_prm_tx_mirror_to_rdma *param)
+{
+	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+
+	return disp_ops->configure_tx_mirror_to_rdma(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+						     param);
 }
 
 static int nbl_serv_configure_mirror_table(void *priv, bool mirror_en,
@@ -7385,15 +7825,22 @@ static int nbl_serv_configure_mirror_table(void *priv, bool mirror_en,
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_ch_prm_mirror_table param;
 	int ret;
 
-	ret = disp_ops->check_vf_is_active(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), func_id);
-	if (!ret)
-		return -EIO;
-
+	if (mirror_en) {
+		ret = disp_ops->check_vf_is_active(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), func_id);
+		if (!ret)
+			return -EIO;
+	}
+	param.mirror_en = mirror_en;
+	param.func_id = func_id;
+	param.mt_id = mt_id;
 	ret = disp_ops->configure_mirror_table(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					       mirror_en, func_id, mt_id);
-	nbl_serv_chan_notify_mirror_outputport_req(serv_mgt, func_id, mirror_en);
+					       &param);
+
+	if (disp_ops->check_vf_is_active(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), func_id))
+		nbl_serv_chan_notify_mirror_outputport_req(serv_mgt, func_id, mirror_en);
 	return ret;
 }
 
@@ -7401,10 +7848,13 @@ static int nbl_serv_clear_mirror_cfg(void *priv, u16 func_id)
 {
 	struct nbl_service_mgt *serv_mgt = (struct nbl_service_mgt *)priv;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	int ret;
 
+	if (common->is_vf)
+		return 0;
 	ret = disp_ops->clear_mirror_cfg(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					 func_id);
+					 &func_id);
 
 	return ret;
 }
@@ -7431,29 +7881,34 @@ static void nbl_serv_cfg_mirror_outputport_event(void *priv, bool enable)
 
 	disp_ops->cfg_mirror_outputport_event(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), enable);
 }
+
 static struct nbl_service_ops serv_ops = {
 	.init_chip = nbl_serv_init_chip,
 	.destroy_chip = nbl_serv_destroy_chip,
+	.enable_driver = nbl_serv_enable_driver,
 	.init_p4 = nbl_serv_init_p4,
 
 	.configure_msix_map = nbl_serv_configure_msix_map,
 	.destroy_msix_map = nbl_serv_destroy_msix_map,
 	.enable_mailbox_irq = nbl_serv_enable_mailbox_irq,
 	.enable_abnormal_irq = nbl_serv_enable_abnormal_irq,
+	.enable_sfp_plug_irq = nbl_serv_enable_sfp_plug_irq,
 	.enable_adminq_irq = nbl_serv_enable_adminq_irq,
 	.request_net_irq = nbl_serv_request_net_irq,
 	.free_net_irq = nbl_serv_free_net_irq,
 	.get_global_vector = nbl_serv_get_global_vector,
-	.get_msix_entry_id = nbl_serv_get_msix_entry_id,
 	.get_common_irq_num = nbl_serv_get_common_irq_num,
 	.get_ctrl_irq_num = nbl_serv_get_ctrl_irq_num,
 	.get_chip_temperature = nbl_serv_get_chip_temperature,
 	.get_module_temperature = nbl_serv_get_module_temperature,
 	.get_port_attributes = nbl_serv_get_port_attributes,
 	.update_template_config = nbl_serv_update_template_config,
+	.get_part_number = nbl_serv_get_part_number,
+	.get_serial_number = nbl_serv_get_serial_number,
 	.enable_port = nbl_serv_enable_port,
 	.init_port = nbl_serv_init_port,
 	.set_sfp_state = nbl_serv_set_sfp_state,
+	.get_firmware_version = nbl_serv_get_firmware_version,
 
 	.register_net = nbl_serv_register_net,
 	.unregister_net = nbl_serv_unregister_net,
@@ -7468,14 +7923,13 @@ static struct nbl_service_ops serv_ops = {
 	.setup_rss_indir = nbl_serv_setup_rss_indir,
 	.register_vsi_info = nbl_serv_register_vsi_info,
 
-	.alloc_rings = nbl_serv_alloc_rings,
 	.cpu_affinity_init = nbl_serv_cpu_affinity_init,
+	.alloc_rings = nbl_serv_alloc_rings,
 	.free_rings = nbl_serv_free_rings,
-	.enable_napis = nbl_serv_enable_napis,
-	.disable_napis = nbl_serv_disable_napis,
 	.set_mask_en = nbl_serv_set_mask_en,
 	.start_net_flow = nbl_serv_start_net_flow,
 	.stop_net_flow = nbl_serv_stop_net_flow,
+	.unregister_upcall_port = nbl_serv_unregister_upcall_port,
 	.clear_flow = nbl_serv_clear_flow,
 	.set_promisc_mode = nbl_serv_set_promisc_mode,
 	.cfg_multi_mcast = nbl_serv_cfg_multi_mcast,
@@ -7490,8 +7944,10 @@ static struct nbl_service_ops serv_ops = {
 
 	.vsi_open = nbl_serv_vsi_open,
 	.vsi_stop = nbl_serv_vsi_stop,
+	.vsi_hw_stop = nbl_serv_vsi_hw_stop,
 	.switch_traffic_default_dest = nbl_serv_switch_traffic_default_dest,
 	.config_fd_flow_state = nbl_serv_config_fd_flow_state,
+	.set_link_state = nbl_serv_set_link_state,
 
 	/* For netdev ops */
 	.netdev_open = nbl_serv_netdev_open,
@@ -7505,8 +7961,8 @@ static struct nbl_service_ops serv_ops = {
 	.set_rx_mode = nbl_serv_set_rx_mode,
 	.change_rx_flags = nbl_serv_change_rx_flags,
 	.set_features = nbl_serv_set_features,
-	.features_check = nbl_serv_features_check,
 	.setup_tc = nbl_serv_setup_tc,
+	.reset_tc_mqprio = nbl_serv_reset_tc_mqprio,
 	.get_phys_port_name = nbl_serv_get_phys_port_name,
 	.get_port_parent_id = nbl_serv_get_port_parent_id,
 	.tx_timeout = nbl_serv_tx_timeout,
@@ -7521,6 +7977,7 @@ static struct nbl_service_ops serv_ops = {
 	.get_vf_stats = nbl_serv_get_vf_stats,
 	.select_queue = nbl_serv_select_queue,
 	.set_vf_trust = nbl_serv_set_vf_trust,
+	.check_vf_is_active = nbl_serv_check_vf_is_active,
 
 	/* For rep associated */
 	.rep_netdev_open = nbl_serv_rep_netdev_open,
@@ -7564,9 +8021,16 @@ static struct nbl_service_ops serv_ops = {
 	.set_netdev_ops = nbl_serv_set_netdev_ops,
 
 	.get_vsi_id = nbl_serv_get_vsi_id,
+	.get_my_pf = nbl_serv_get_my_pf,
 	.get_eth_id = nbl_serv_get_eth_id,
 	.setup_net_resource_mgt = nbl_serv_setup_net_resource_mgt,
 	.remove_net_resource_mgt = nbl_serv_remove_net_resource_mgt,
+	.start_net_resource_mgt = nbl_serv_start_net_resource_mgt,
+	.stop_net_resource_mgt = nbl_serv_stop_net_resource_mgt,
+	.stop_net_dev_timer = nbl_serv_stop_net_dev_timer,
+	.start_net_dev_timer = nbl_serv_start_net_dev_timer,
+
+	.set_lag_status = nbl_serv_set_lag_status,
 	.init_hw_stats = nbl_serv_init_hw_stats,
 	.remove_hw_stats = nbl_serv_remove_hw_stats,
 	.get_rx_dropped = nbl_serv_get_rx_dropped,
@@ -7579,46 +8043,48 @@ static struct nbl_service_ops serv_ops = {
 	.cfg_bgid_back_pressure = nbl_serv_cfg_bgid_back_pressure,
 	.get_board_info = nbl_serv_get_board_info,
 
+	.enable_up_rdma_bypass = nbl_serv_enable_up_rdma_bypass,
 	.get_rdma_cap_num = nbl_serv_get_rdma_cap_num,
 	.setup_rdma_id = nbl_serv_setup_rdma_id,
 	.remove_rdma_id = nbl_serv_remove_rdma_id,
+	.register_rdma_grc_id = nbl_serv_register_rdma_grc_id,
+	.unregister_rdma_grc_id = nbl_serv_unregister_rdma_grc_id,
 	.register_rdma = nbl_serv_register_rdma,
 	.unregister_rdma = nbl_serv_unregister_rdma,
-	.register_rdma_bond = nbl_serv_register_rdma_bond,
-	.unregister_rdma_bond = nbl_serv_unregister_rdma_bond,
 	.get_hw_addr = nbl_serv_get_hw_addr,
+	.get_rdma_hw_addr = nbl_serv_get_rdma_hw_addr,
 	.get_real_hw_addr = nbl_serv_get_real_hw_addr,
 	.get_function_id = nbl_serv_get_function_id,
 	.get_real_bdf = nbl_serv_get_real_bdf,
 	.set_eth_mac_addr = nbl_serv_set_eth_mac_addr,
 	.process_abnormal_event = nbl_serv_process_abnormal_event,
+	.process_sfp_plug_event = nbl_serv_process_sfp_plug_event,
+	.get_owned_pf_bitmap = nbl_serv_get_owned_pf_bitmap,
 	.adapt_desc_gother = nbl_serv_adapt_desc_gother,
 	.process_flr = nbl_serv_process_flr,
+	.process_qinfo_cfg = nbl_serv_process_qinfo_cfg,
 	.get_board_id = nbl_serv_get_board_id,
 	.covert_vfid_to_vsi_id = nbl_serv_covert_vfid_to_vsi_id,
-	.recovery_abnormal = nbl_serv_recovery_abnormal,
-	.keep_alive = nbl_serv_keep_alive,
 
 	.get_mirror_table_id = nbl_serv_get_mirror_table_id,
 	.configure_mirror = nbl_serv_configure_mirror,
 	.configure_mirror_table = nbl_serv_configure_mirror_table,
 	.clear_mirror_cfg = nbl_serv_clear_mirror_cfg,
-#ifdef CONFIG_NET_DEVLINK
 	.get_devlink_info = nbl_serv_get_devlink_info,
 	.update_devlink_flash = nbl_serv_update_devlink_flash,
-#endif
 	.get_adminq_tx_buf_size = nbl_serv_get_adminq_tx_buf_size,
-	.emp_console_write = nbl_serv_emp_console_write,
 
 	.check_fw_heartbeat = nbl_serv_check_fw_heartbeat,
 	.check_fw_reset = nbl_serv_check_fw_reset,
 	.set_netdev_carrier_state = nbl_serv_set_netdev_carrier_state,
+	.set_port_state_update = nbl_serv_set_port_state_update,
 	.cfg_eth_bond_event = nbl_serv_cfg_eth_bond_event,
 	.cfg_fd_update_event = nbl_serv_cfg_fd_update_event,
 
-	.configure_rdma_msix_off = nbl_serv_configure_rdma_msix_off,
 	.setup_st = nbl_serv_setup_st,
 	.remove_st = nbl_serv_remove_st,
+	.register_real_st_name = nbl_serv_register_real_st_name,
+
 	.get_vf_base_vsi_id = nbl_serv_get_vf_base_vsi_id,
 
 	.setup_vf_config = nbl_serv_setup_vf_config,
@@ -7628,24 +8094,23 @@ static struct nbl_service_ops serv_ops = {
 	.setup_vf_resource = nbl_serv_setup_vf_resource,
 	.remove_vf_resource = nbl_serv_remove_vf_resource,
 
+#if IS_ENABLED(CONFIG_MACSEC)
+	.init_macsec = nbl_serv_init_macsec,
+	.uninit_macsec = nbl_serv_uninit_macsec,
+#endif
 	.get_xdp_queue_info = nbl_serv_get_xdp_queue_info,
 	.set_xdp = nbl_serv_set_xdp,
 	.set_hw_status = nbl_serv_set_hw_status,
+	.check_hw_status = nbl_serv_check_hw_status,
+	.get_hw_status = nbl_serv_get_hw_status,
 	.get_active_func_bitmaps = nbl_serv_get_active_func_bitmaps,
-	.get_net_rate = nbl_serv_get_net_rate,
-	.get_rdma_rate = nbl_serv_get_rdma_rate,
-	.get_rdma_bw = nbl_serv_get_rdma_bw,
-	.configure_rdma_bw = nbl_serv_configure_rdma_bw,
-	.configure_pfc = nbl_serv_configure_pfc,
-	.configure_trust = nbl_serv_configure_trust,
-	.configure_dscp2prio = nbl_serv_configure_dscp2prio,
-	.trust_mode_show = nbl_serv_trust_mode_show,
-	.dscp2prio_show = nbl_serv_dscp2prio_show,
-	.pfc_show = nbl_serv_pfc_show,
-	.pfc_buffer_size_show = nbl_serv_pfc_buffer_size_show,
+	.configure_qos = nbl_serv_configure_qos,
+	.get_qos_info = nbl_serv_qos_info,
 	.set_pfc_buffer_size = nbl_serv_set_pfc_buffer_size,
+	.get_pfc_buffer_size = nbl_serv_get_pfc_buffer_size,
+	.configure_rdma_bw = nbl_serv_configure_rdma_bw,
 	.set_rate_limit = nbl_serv_set_rate_limit,
-	#ifdef CONFIG_DCB
+#ifdef CONFIG_DCB
 	.ieee_setets = nbl_serv_ieee_setets,
 	.ieee_getets = nbl_serv_ieee_getets,
 	.ieee_setpfc = nbl_serv_ieee_setpfc,
@@ -7661,9 +8126,10 @@ static struct nbl_service_ops serv_ops = {
 	.dcbnl_getstate = nbl_serv_dcnbl_getstate,
 	.dcbnl_setstate = nbl_serv_dcnbl_setstate,
 	.dcbnl_getpfcstate = nbl_serv_dcnbl_getpfcstate,
-	#endif
+#endif
 	.get_vf_function_id = nbl_serv_get_vf_function_id,
 	.cfg_mirror_outputport_event = nbl_serv_cfg_mirror_outputport_event,
+	.configure_tx_mirror_to_rdma = nbl_serv_configure_tx_mirror_to_rdma,
 };
 
 /* Structure starts here, adding an op should not modify anything below */
@@ -7712,6 +8178,7 @@ static int nbl_serv_setup_ops(struct device *dev, struct nbl_service_ops_tbl **s
 	nbl_serv_setup_ethtool_ops(&serv_ops);
 	nbl_serv_setup_ktls_ops(&serv_ops);
 	nbl_serv_setup_xfrm_ops(&serv_ops);
+	nbl_serv_setup_macsec_ops(&serv_ops);
 	NBL_SERV_OPS_TBL_TO_PRIV(*serv_ops_tbl) = serv_mgt;
 
 	return 0;
@@ -7747,7 +8214,7 @@ int nbl_serv_init(void *p, struct nbl_init_param *param)
 
 	NBL_SERV_MGT_TO_DISP_OPS_TBL(*serv_mgt) = disp_ops_tbl;
 	NBL_SERV_MGT_TO_CHAN_OPS_TBL(*serv_mgt) = chan_ops_tbl;
-	disp_ops->get_resource_pt_ops(disp_ops_tbl->priv, &(*serv_ops_tbl)->pt_ops);
+	disp_ops->get_res_pt_tbl(disp_ops_tbl->priv, &(*serv_ops_tbl)->pt_tbl);
 
 	return 0;
 

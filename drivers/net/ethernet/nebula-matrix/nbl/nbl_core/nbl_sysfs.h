@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0*/
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (c) 2022 nebula-matrix Limited.
  * Author:
@@ -60,6 +60,16 @@ struct nbl_sysfs_mirror_info {
 struct nbl_net_mirror {
 	struct kobject *mirror_kobj;
 	struct nbl_sysfs_mirror_info mirror_info[NBL_MIRROR_TYPE_MAX];
+};
+
+struct nbl_sysfs_st_info {
+	struct nbl_dev_net *net_dev;
+	struct kobj_attribute kobj_attr;
+};
+
+struct nbl_st_name {
+	struct kobject *st_name_kobj;
+	struct nbl_sysfs_st_info st_info;
 };
 
 #endif

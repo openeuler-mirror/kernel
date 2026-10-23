@@ -1,17 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (c) 2022 nebula-matrix Limited.
- * Author:
- */
-
-#include "nbl_hwmon.h"
-
-#if defined(CONFIG_HWMON) || (defined(MODULE) && defined(CONFIG_HWMON_MODULE))
 #include <linux/pci.h>
 #include <linux/fs.h>
 #include <linux/hwmon.h>
 #include <linux/hwmon-sysfs.h>
+#include "nbl_hwmon.h"
 
+#if IS_REACHABLE(CONFIG_HWMON)
 static const char * const nbl_hwmon_sensor_name[] = {
 	"Sensor0",
 	"Module0",
@@ -35,7 +29,7 @@ static int nbl_hwmon_read(struct device *dev, enum hwmon_sensor_types type,
 	struct nbl_common_info *common = NBL_DEV_MGT_TO_COMMON(dev_mgt);
 	u8 eth_id = NBL_COMMON_TO_ETH_ID(common);
 	enum nbl_hwmon_type hwmon_type;
-	u32 temp;
+	int temp;
 
 	switch (channel) {
 	case NBL_HWMON_CHIP_SENSOR:
@@ -121,11 +115,8 @@ static const struct hwmon_chip_info nbl_hwmon_chip_info = {
 	.info = nbl_hwmon_info,
 };
 
-#endif
-
 int nbl_dev_setup_hwmon(struct nbl_adapter *adapter)
 {
-#if defined(CONFIG_HWMON) || (defined(MODULE) && defined(CONFIG_HWMON_MODULE))
 	struct nbl_dev_mgt *dev_mgt = (struct nbl_dev_mgt *)NBL_ADAPTER_TO_DEV_MGT(adapter);
 	struct nbl_dev_common *common_dev = NBL_DEV_MGT_TO_COMMON_DEV(dev_mgt);
 	struct device *dev = NBL_DEV_MGT_TO_DEV(dev_mgt);
@@ -134,18 +125,24 @@ int nbl_dev_setup_hwmon(struct nbl_adapter *adapter)
 								&nbl_hwmon_chip_info, NULL);
 
 	return PTR_ERR_OR_ZERO(common_dev->hwmon_dev);
-#else
-	return 0;
-#endif
 }
 
 void nbl_dev_remove_hwmon(struct nbl_adapter *adapter)
 {
-#if defined(CONFIG_HWMON) || (defined(MODULE) && defined(CONFIG_HWMON_MODULE))
 	struct nbl_dev_mgt *dev_mgt = (struct nbl_dev_mgt *)NBL_ADAPTER_TO_DEV_MGT(adapter);
 	struct nbl_dev_common *common_dev = NBL_DEV_MGT_TO_COMMON_DEV(dev_mgt);
 
 	if (common_dev->hwmon_dev)
 		hwmon_device_unregister(common_dev->hwmon_dev);
-#endif
 }
+
+#else
+int nbl_dev_setup_hwmon(struct nbl_adapter *adapter)
+{
+	return 0;
+}
+
+void nbl_dev_remove_hwmon(struct nbl_adapter *adapter)
+{
+}
+#endif /* IS_REACHABLE(CONFIG_HWMON) */

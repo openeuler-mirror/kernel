@@ -1,9 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0*/
-/*
- * Copyright (c) 2022 nebula-matrix Limited.
- * Author:
- */
-
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __NBL_TC_PEDIT_H__
 #define __NBL_TC_PEDIT_H__
 
@@ -73,8 +68,9 @@ struct nbl_tc_pedit_entry {
 #define NBL_TC_PEDIT_COPY_NODE(src_node, dst_node) ((dst_node)->hnode = (src_node)->hnode)
 
 u16 nbl_tc_pedit_get_hw_id(struct nbl_tc_pedit_entry *ped_node);
-int nbl_tc_pedit_init(struct nbl_tc_pedit_mgt *pedit_mgt);
-int nbl_tc_pedit_uninit(struct nbl_tc_pedit_mgt *pedit_mgt);
+int nbl_tc_pedit_init(struct nbl_common_info *common,
+		      struct nbl_tc_pedit_res_info *pedit_res, u32 max_cnt);
+int nbl_tc_pedit_uninit(struct nbl_tc_pedit_res_info *pedit_res, u32 max_cnt);
 int nbl_tc_pedit_del_node(struct nbl_tc_pedit_mgt *pedit_mgt,
 			  struct nbl_tc_pedit_node_res *ped_node);
 int nbl_tc_pedit_add_node(struct nbl_tc_pedit_mgt *pedit_mgt,

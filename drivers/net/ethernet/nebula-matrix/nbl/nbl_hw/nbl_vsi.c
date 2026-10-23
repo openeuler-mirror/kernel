@@ -6,47 +6,60 @@
 
 #include "nbl_vsi.h"
 
-static int nbl_res_set_promisc_mode(void *priv, u16 vsi_id, u16 mode)
+static int nbl_res_set_promisc_mode(void *priv, struct nbl_ch_prm_set_promisc_mode *param)
 {
 	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
 	struct nbl_phy_ops *phy_ops = NBL_RES_MGT_TO_PHY_OPS(res_mgt);
-	u16 pf_id = nbl_res_vsi_id_to_pf_id(res_mgt, vsi_id);
-	u16 eth_id = nbl_res_vsi_id_to_eth_id(res_mgt, vsi_id);
+	u16 pf_id = nbl_res_vsi_id_to_pf_id(res_mgt, param->vsi_id);
+	u16 eth_id = nbl_res_vsi_id_to_eth_id(res_mgt, param->vsi_id);
 
 	if (pf_id >= NBL_RES_MGT_TO_PF_NUM(res_mgt))
 		return -EINVAL;
 
-	phy_ops->set_promisc_mode(NBL_RES_MGT_TO_PHY_PRIV(res_mgt), vsi_id, eth_id, mode);
+	phy_ops->set_promisc_mode(NBL_RES_MGT_TO_PHY_PRIV(res_mgt), param->vsi_id, eth_id,
+				  param->mode);
 
 	return 0;
 }
 
-static int nbl_res_set_spoof_check_addr(void *priv, u16 vsi_id, u8 *mac)
+static int nbl_res_set_spoof_check_addr(void *priv,
+					struct nbl_ch_prm_set_spoof_check_addr *param)
 {
 	u16 func_id;
 	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
 	struct nbl_vsi_info *vsi_info = NBL_RES_MGT_TO_VSI_INFO(res_mgt);
 	struct nbl_phy_ops *phy_ops = NBL_RES_MGT_TO_PHY_OPS(res_mgt);
 
-	func_id = nbl_res_vsi_id_to_func_id(res_mgt, vsi_id);
+	func_id = nbl_res_vsi_id_to_func_id(res_mgt, param->vsi_id);
 	/* if pf has cfg vf-mac, and the vf has active. it can change spoof mac. */
 	if (!is_zero_ether_addr(vsi_info->mac_info[func_id].mac) &&
 	    nbl_res_check_func_active_by_queue(res_mgt, func_id)) {
 		return 0;
 	}
 
-	return phy_ops->set_spoof_check_addr(NBL_RES_MGT_TO_PHY_PRIV(res_mgt), vsi_id, mac);
+	return phy_ops->set_spoof_check_addr(NBL_RES_MGT_TO_PHY_PRIV(res_mgt), param->vsi_id,
+					     param->mac);
 }
 
-static int nbl_res_set_vf_spoof_check(void *priv, u16 vsi_id, int vfid, u8 enable)
+static int nbl_res_set_vf_spoof_check(void *priv,
+				      struct nbl_ch_prm_set_vf_spoof_check *param)
 {
 	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
 	struct nbl_phy_ops *phy_ops = NBL_RES_MGT_TO_PHY_OPS(res_mgt);
-	int pfid = nbl_res_vsi_id_to_pf_id(res_mgt, vsi_id);
-	u16 vf_vsi = vfid == -1 ? vsi_id : nbl_res_pfvfid_to_vsi_id(res_mgt, pfid, vfid,
-				NBL_VSI_DATA);
+	u16 func_id = nbl_res_vsi_id_to_func_id(res_mgt, param->vsi_id);
+	u16 pfid = 0;
+	u16 vf_vsi_id = 0;
 
-	return phy_ops->set_spoof_check_enable(NBL_RES_MGT_TO_PHY_PRIV(res_mgt), vf_vsi, enable);
+	/* when ip link set eth0 vf <num> spoofchk */
+	if (func_id < NBL_MAX_PF) {
+		pfid = nbl_res_vsi_id_to_pf_id(res_mgt, param->vsi_id);
+		vf_vsi_id = nbl_res_pfvfid_to_vsi_id(res_mgt, pfid, param->vf_id, NBL_VSI_DATA);
+	} else {
+		vf_vsi_id = param->vsi_id;
+	}
+
+	return phy_ops->set_spoof_check_enable(NBL_RES_MGT_TO_PHY_PRIV(res_mgt), vf_vsi_id,
+					       param->enable);
 }
 
 static u16 nbl_res_get_vf_function_id(void *priv, u16 vsi_id, int vfid)
@@ -70,6 +83,16 @@ static u16 nbl_res_get_vf_vsi_id(void *priv, u16 vsi_id, int vfid)
 	return vf_vsi;
 }
 
+static void nbl_res_vsi_set_driver_status(void *priv, bool active)
+{
+	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
+	struct nbl_phy_ops *phy_ops;
+
+	phy_ops = NBL_RES_MGT_TO_PHY_OPS(res_mgt);
+
+	NBL_OPS_CALL(phy_ops->set_driver_status, (NBL_RES_MGT_TO_PHY_PRIV(res_mgt), active));
+}
+
 static int nbl_res_vsi_init_chip_module(void *priv)
 {
 	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
@@ -90,7 +113,7 @@ static int nbl_res_vsi_init_chip_module(void *priv)
 	return ret;
 }
 
-static int nbl_res_vsi_init(void *priv)
+static int nbl_res_init_vsi(void *priv)
 {
 	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
 	struct nbl_vsi_mgt *vsi_mgt;
@@ -108,12 +131,14 @@ static int nbl_res_vsi_init(void *priv)
 	return ret;
 }
 
-static void nbl_res_get_phy_caps(void *priv, u8 eth_id, struct nbl_phy_caps *phy_caps)
+static int nbl_res_get_phy_caps(void *priv, u8 *eth_id, struct nbl_phy_caps *phy_caps)
 {
 	/*TODO need to get it through adminq*/
 	phy_caps->speed = 0xFF;
 	phy_caps->fec_ability = BIT(ETHTOOL_FEC_RS_BIT) | BIT(ETHTOOL_FEC_BASER_BIT);
 	phy_caps->pause_param = 0x3;
+
+	return 0;
 }
 
 static void nbl_res_register_func_mac(void *priv, u8 *mac, u16 func_id)
@@ -147,9 +172,6 @@ static int nbl_res_get_link_forced(void *priv, u16 vsi_id)
 	struct nbl_resource_mgt *res_mgt = (struct nbl_resource_mgt *)priv;
 	struct nbl_resource_info *resource_info = NBL_RES_MGT_TO_RES_INFO(res_mgt);
 	u16 func_id = nbl_res_vsi_id_to_func_id(res_mgt, vsi_id);
-
-	if (func_id >= NBL_MAX_FUNC)
-		return -EINVAL;
 
 	return resource_info->link_forced_info[func_id];
 }
@@ -207,7 +229,8 @@ static int nbl_res_register_rate(void *priv, u16 func_id, int rate)
 #define NBL_VSI_OPS_TBL								\
 do {										\
 	NBL_VSI_SET_OPS(init_chip_module, nbl_res_vsi_init_chip_module);	\
-	NBL_VSI_SET_OPS(vsi_init, nbl_res_vsi_init);				\
+	NBL_VSI_SET_OPS(set_driver_status, nbl_res_vsi_set_driver_status);	\
+	NBL_VSI_SET_OPS(init_vsi, nbl_res_init_vsi);				\
 	NBL_VSI_SET_OPS(set_promisc_mode, nbl_res_set_promisc_mode);		\
 	NBL_VSI_SET_OPS(set_spoof_check_addr, nbl_res_set_spoof_check_addr);	\
 	NBL_VSI_SET_OPS(set_vf_spoof_check, nbl_res_set_vf_spoof_check);	\

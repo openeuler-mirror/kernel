@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0*/
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (c) 2022 nebula-matrix Limited.
  * Author:
@@ -13,7 +13,7 @@
 #define NBL_SELF_TEST_BUFF_SIZE 128
 #define NBL_SELF_TEST_PADDING_DATA_1 0xFF
 #define NBL_SELF_TEST_PADDING_DATA_2 0xA5
-#define NBL_SELF_TEST_POS_1 3
+#define NBL_SELF_TEST_POS_1 12
 #define NBL_SELF_TEST_POS_2 10
 #define NBL_SELF_TEST_POS_3 12
 #define NBL_SELF_TEST_BYTE_1 0xBE

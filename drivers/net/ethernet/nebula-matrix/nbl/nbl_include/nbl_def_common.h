@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0*/
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (c) 2022 nebula-matrix Limited.
  * Author:
@@ -15,6 +15,34 @@
 #define NBL_CONTINUE 1
 #define NBL_FAIL -1
 
+/* draco ped spec */
+#define NBL_DRACO_HASH_BUCK_RSV64	(64)
+#define NBL_DRACO_HASH_BUCK_RSV128	(128)
+#define NBL_DRACO_HASH_BUCK_RSV256	(256)
+#define NBL_DRACO_HASH_BUCK_RSV1024	(1024)
+#define NBL_DRACO_HASH_BUCK_RSV2048	(2048)
+
+#define NBL_DRACO_MAC_PED_NUM		2048
+#define NBL_DRACO_IP_PED_NUM		512
+#define NBL_DRACO_TNL_ENCAP_NUM		4096
+#define NBL_DRACO_TNL_VTEP_NUM		16
+#define NBL_DRACO_MIRROR_MAX_NUM	112  /* last 16 entries reserved for RDMA DUMP and KERNAL*/
+#define NBL_DRACO_MAX_TBL_ID		(16 * 1024)
+#define NBL_DRACO_MAX_HALF_FLOW_KT_NUM	(128 * 1024)
+#define NBL_DRACO_MAX_FULL_FLOW_KT_NUM	(64 * 1024)
+#define NBL_DRACO_HW_SLICE_NUM		8
+#define NBL_DRACO_MAC_PED_SLICE		NBL_DRACO_HW_SLICE_NUM
+#define NBL_DRACO_IP_PED_SLICE		NBL_DRACO_HW_SLICE_NUM
+#define NBL_DRACO_TNL_ENCAP_SLICE	NBL_DRACO_HW_SLICE_NUM
+#define NBL_DRACO_TNL_VTEP_SLICE	NBL_DRACO_HW_SLICE_NUM
+#define NBL_DRACO_MIRROR_MAX_SLICE	NBL_DRACO_HW_SLICE_NUM
+#define NBL_DRACO_MCC_MAX_SLICE		NBL_DRACO_HW_SLICE_NUM
+#define NBL_DRACO_MCC_NUM		512
+#define NBL_DRACO_MCC_BASE		128
+#define NBL_DRACO_MAC_PED_NUM_HASH	(NBL_DRACO_MAC_PED_NUM + NBL_DRACO_HASH_BUCK_RSV128)
+#define NBL_DRACO_IP_PED_NUM_HASH	(NBL_DRACO_IP_PED_NUM + NBL_DRACO_HASH_BUCK_RSV64)
+#define NBL_DRACO_TNL_ENCAP_NUM_HASH	(NBL_DRACO_TNL_ENCAP_NUM + NBL_DRACO_HASH_BUCK_RSV64)
+
 #define NBL_HASH_CFT_MAX				4
 #define NBL_HASH_CFT_AVL				2
 
@@ -26,6 +54,21 @@
 			nbl_calc_crc16(data, size, 0x1021, 0x0000, 0, 0x0000)
 #define NBL_CRC16_IBM(data, size)		\
 			nbl_calc_crc16(data, size, 0x8005, 0x0000, 1, 0x0000)
+#define NBL_LO_DWORD(x)			((u32)((x) & 0xFFFFFFFF))
+#define NBL_HI_DWORD(x)			((u32)(((x) >> 32) & 0xFFFFFFFF))
+#define NBL_SUCCESS			(0)
+
+static inline void nbl_tcam_truth_value_convert_u32(u32 *data, u32 *mask)
+{
+	u32 tcam_x = 0;
+	u32 tcam_y = 0;
+
+	tcam_x = *data & ~(*mask);
+	tcam_y = ~(*data) & ~(*mask);
+
+	*data = tcam_x;
+	*mask = tcam_y;
+}
 
 static inline void nbl_tcam_truth_value_convert(u64 *data, u64 *mask)
 {
@@ -204,6 +247,8 @@ do {											\
 #define NBL_COMMON_TO_OCP_CAP(common)		((common)->is_ocp)
 #define NBL_COMMON_TO_PCI_USING_DAC(common)	((common)->pci_using_dac)
 #define NBL_COMMON_TO_MGT_PF(common)		((common)->mgt_pf)
+#define NBL_COMMON_TO_MY_PF(common)		((common)->my_pf)
+#define NBL_COMMON_TO_START_FUNC_ID(common)	((common)->start_func_id)
 #define NBL_COMMON_TO_PCI_FUNC_ID(common)	((common)->function)
 #define NBL_COMMON_TO_BOARD_ID(common)		((common)->board_id)
 #define NBL_COMMON_TO_LOGIC_ETH_ID(common)	((common)->logic_eth_id)
@@ -223,14 +268,10 @@ do {											\
 	(_m == NBL_TWO_ETHERNET_PORT ? NBL_TWO_ETHERNET_VSI_ID_GAP : NBL_DEFAULT_VSI_ID_GAP); \
 })
 
-#define NBL_BOOTIS_ECPU_ETH0_FUNCTION		(2)
-#define NBL_BOOTIS_ECPU_ETH1_FUNCTION		(3)
-#define NBL_BOOTIS_ECPU_ETH0_VSI		(2020)
-#define NBL_BOOTIS_ECPU_ETH1_VSI		(2021)
-
 #define NBL_REP_FILL_EXT_HDR			(1)
 #define NBL_PF_FILL_EXT_HDR			(2)
 
+#define NBL_SKB_HAS_VLAN_OFF			(16)
 #define NBL_SKB_FILL_VSI_ID_OFF			(32)
 #define NBL_SKB_FILL_EXT_HDR_OFF		(34)
 #define NBL_INVALID_QUEUE_ID			(0xFFFF)
@@ -246,6 +287,18 @@ do {												\
 	__key->key_size		= key_size_arg;							\
 } while (0)
 
+enum {
+	RX_VLAN_PARSE_OFF = 1,
+	RX_VLAN_PARSE_CVLAN,
+	RX_VLAN_PARSE_SVLAN,
+	RX_VLAN_PARSE_CVLAN_OR_SVLAN,
+};
+
+enum {
+	RX_RSS_HASH_OFF = 1,
+	RX_RSS_HASH_ON,
+};
+
 struct nbl_common_info {
 	struct pci_dev *pdev;
 	struct device *dev;
@@ -258,24 +311,33 @@ struct nbl_common_info {
 	u8 logic_eth_id;
 	u8 eth_mode;
 	u8 is_vf;
+	u8 has_ctrl;
 
 	u8 function;
 	u8 devid;
 	u8 bus;
 	/* only valid for ctrldev */
 	u8 hw_bus;
-
-	u16 mgt_pf;
 	u8 board_id;
+
+	u8 mgt_pf;
+	u8 my_pf;
+	u8 resv[2];
+
+	enum nbl_product_type product_type;
 
 	bool pci_using_dac;
 	u8 tc_inst_id; /* for tc flow and cmdq */
 	u8 is_ocp;
 
-	enum nbl_product_type product_type;
+	u16 start_func_id; /* for df200, nbl core use PF2/PF3 */
 
 	u32 eth_max_speed;
+	u8 port_type; /* 0 fiber or copper 1 RJ45 */
 	bool wol_ena;
+	char st_name[NBL_RESTOOL_NAME_LEN];
+	char firmware_version[ETHTOOL_FWVERS_LEN];
+
 };
 
 struct nbl_netdev_name_attr {
@@ -285,6 +347,7 @@ struct nbl_netdev_name_attr {
 	ssize_t (*store)(struct device *dev,
 			 struct nbl_netdev_name_attr *attr, const char *buf, size_t len);
 	char net_dev_name[IFNAMSIZ];
+	bool attr_inited;
 };
 
 struct nbl_index_tbl_key {
@@ -342,7 +405,7 @@ struct nbl_hash_tbl_key {
 	struct device *dev;
 	u16 key_size;
 	u16 data_size; /* no include key or node member */
-	u16 bucket_size;
+	u32 bucket_size;
 	u8 lock_need;  /* true: support multi thread operation */
 	u8 resv;
 };
@@ -488,16 +551,15 @@ do {												\
 
 void nbl_convert_mac(u8 *mac, u8 *reverse_mac);
 
-void nbl_common_queue_work(struct work_struct *task, bool ctrl_task, bool singlethread);
+void nbl_common_queue_work(struct work_struct *task, bool ctrl_task);
 void nbl_common_queue_work_rdma(struct work_struct *task, bool singlethread);
-void nbl_common_queue_delayed_work(struct delayed_work *task,  u32 msec,
-				   bool ctrl_task, bool singlethread);
-void nbl_common_queue_delayed_work_keepalive(struct delayed_work *task, u32 msec);
+void nbl_common_queue_delayed_work(struct delayed_work *task, u32 msec, bool ctrl_task);
 void nbl_common_release_task(struct work_struct *task);
 void nbl_common_alloc_task(struct work_struct *task, void *func);
 void nbl_common_release_delayed_task(struct delayed_work *task);
 void nbl_common_alloc_delayed_task(struct delayed_work *task, void *func);
 void nbl_common_flush_task(struct work_struct *task);
+void nbl_common_flush_delay_task(struct delayed_work *task);
 
 void nbl_common_destroy_wq(void);
 int nbl_common_create_wq(void);
@@ -526,6 +588,7 @@ enum nbl_event_type {
 	NBL_EVENT_RDMA_BOND_UPDATE = 0,
 	NBL_EVENT_OFFLOAD_STATUS_CHANGED,
 	NBL_EVENT_LINK_STATE_UPDATE,
+	NBL_EVENT_DEV_MODE_SWITCH,
 	NBL_EVENT_ACL_STATE_UPDATE,
 	NBL_EVENT_NETDEV_STATE_CHANGE,
 	NBL_EVENT_RESET_EVENT,
@@ -543,18 +606,16 @@ struct nbl_event_callback {
 };
 
 enum nbl_rdma_subevent_type {
-	NBL_SUBEVENT_CREATE_ADEV = 1,
-	NBL_SUBEVENT_RELEASE_ADEV,
-	NBL_SUBEVENT_CREATE_BOND_ADEV,
-	NBL_SUBEVENT_RELEASE_BOND_ADEV,
-	NBL_SUBEVENT_UPDATE_BOND_MEMBER,
-	NBL_SUBEVENT_UPDATE_MTU,
+	NBL_SUBEVENT_BOND_SHAPING,
 	NBL_SUBEVENT_MAX,
 };
 
 struct nbl_event_param {
 	enum nbl_rdma_subevent_type subevent;
-	struct nbl_lag_member_list_param param;
+	union {
+		struct nbl_lag_member_list_param param;
+		bool bond_shaping_dis;
+	};
 	int mtu;
 };
 
@@ -566,6 +627,13 @@ struct nbl_event_offload_status_data {
 enum nbl_dev_mode_switch_op {
 	NBL_DEV_KERNEL_TO_USER,
 	NBL_DEV_USER_TO_KERNEL,
+	NBL_DEV_SET_USER_PROMISC_MODE,
+};
+
+struct nbl_event_dev_mode_switch_data {
+	int op;
+	int ret;
+	bool promosic;
 };
 
 struct nbl_event_acl_state_update_data {
@@ -579,6 +647,46 @@ struct nbl_event_queue_update_data {
 };
 
 typedef int (*handle_tlv)(u16 type, u16 length, u8 *val, void *data);
+
+enum nbl_devomm_match_flags {
+	NBL_DEVCOMM_MATCH_FLAGS_NS = BIT(0),
+};
+
+#define NBL_DEVCOMM_MATCH_KEY_MAX 32
+union nbl_devcomm_match_key {
+	u64 val;
+	u8 buf[NBL_DEVCOMM_MATCH_KEY_MAX];
+};
+
+struct nbl_devcomm_match_attr {
+	u32 flags;
+	union nbl_devcomm_match_key key;
+	struct net *net;
+};
+
+enum nbl_devcomm_comp_type {
+	NBL_DEVCOMM_RES_TMPL,  /* for nblconfig net_qp_num rdma_pfvf rdma_mem_type */
+	NBL_DEVCOMM_PMDCFG,
+	NBL_DEVCOMM_FDCFG,
+	NBL_DEVCOMM_LAG_DEV,
+	NBL_DEVCOMM_COMP_MAXNUM,
+};
+
+enum nbl_devcomm_event_type {
+	NBL_DEVCOMM_RES_CFG_QP_NUM_EVENT,
+	NBL_DEVCOMM_RES_CFG_VF_NUM_EVENT,
+	NBL_DEVCOMM_PMD_CFG_ADD_EVENT,
+	NBL_DEVCOMM_PMD_CFG_DEL_EVENT,
+	NBL_DEVCOMM_FD_CFG_UPDATE_UDF_EVENT,
+	NBL_DEVCOMM_LAG_MASTER_MASK_EVENT,
+	NBL_DEVCOMM_LAG_MASTER_UNMASK_EVENT,
+};
+
+struct nbl_devcomm_comp_dev {
+	struct list_head list;
+	void *comp;
+	void *data;
+};
 
 void nbl_event_notify(enum nbl_event_type type, void *event_data, u16 src_vsi_id, u16 board_id);
 int nbl_event_register(enum nbl_event_type type, struct nbl_event_callback *callback,
@@ -604,5 +712,33 @@ void nbl_common_free_hash_xy_node(void *priv, void *x_key, void *y_key);
 u16 nbl_common_scan_hash_xy_node(void *priv, struct nbl_hash_xy_tbl_scan_key *key);
 u16 nbl_common_get_hash_xy_node_num(void *priv);
 
-void nbl_flow_direct_parse_tlv_data(u8 *tlv, u32 length, handle_tlv callback, void *data);
+int nbl_flow_direct_parse_tlv_data(u8 *tlv, u32 length, handle_tlv callback, void *data);
+
+/* begin dev communicate between different pf/vf driver */
+struct nbl_devcomm_comp_dev *
+nbl_devcomm_register_component(enum nbl_devcomm_comp_type id,
+			       const struct nbl_devcomm_match_attr *attr,
+			       int (*event_cb)(int event, void *priv_data, void *event_data),
+			       void *data);
+void nbl_devcomm_unregister_component(struct nbl_devcomm_comp_dev *dev);
+
+int nbl_devcomm_send_event(struct nbl_devcomm_comp_dev *dev,
+			   int event, int rollback_event,
+			   void *event_data);
+int nbl_devcomm_comp_get_size(struct nbl_devcomm_comp_dev *dev);
+bool nbl_devcomm_list_each_peer_begin(struct nbl_devcomm_comp_dev *dev);
+void nbl_devcomm_list_each_peer_end(struct nbl_devcomm_comp_dev *dev);
+void *nbl_devcomm_get_next_peer_data(struct nbl_devcomm_comp_dev *dev,
+				     struct nbl_devcomm_comp_dev **pos);
+void nbl_devcomm_comp_lock(struct nbl_devcomm_comp_dev *dev);
+void nbl_devcomm_comp_unlock(struct nbl_devcomm_comp_dev *dev);
+int nbl_devcomm_comp_trylock(struct nbl_devcomm_comp_dev *dev);
+/* end dev communicate */
+
+/* begin dev share idx between defferent pf */
+int nbl_devshr_register_idx_pool(u8 board_id);
+void nbl_devshr_unregister_idx_pool(u8 board_id);
+int nbl_devshr_info_dump(struct seq_file *m, void *v);
+/* end dev share idx between defferent pf */
+
 #endif

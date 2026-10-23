@@ -1,7 +1,7 @@
-/* SPDX-License-Identifier: GPL-2.0*/
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (c) 2023 nebula-matrix Limited.
- * Author:
+ * Author: Rocky Xie <rocky.xie@nebula-matrix.com>
  */
 
 #ifndef _NBL_IPSEC_H
@@ -12,7 +12,7 @@
 #include <linux/types.h>
 #include <linux/if_vlan.h>
 #include "nbl_service.h"
-#ifdef CONFIG_TLS_DEVICE
+#if IS_ENABLED(CONFIG_XFRM_OFFLOAD)
 #include <crypto/aead.h>
 #include <net/xfrm.h>
 #include <net/esp.h>

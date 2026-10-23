@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0*/
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (c) 2022 nebula-matrix Limited.
  * Author:
@@ -29,5 +29,8 @@ void nbl_fc_remove_ops(struct nbl_resource_ops *res_ops);
 int nbl_fc_mgt_start(struct nbl_fc_mgt *mgt);
 void nbl_fc_mgt_stop(struct nbl_resource_mgt *res_mgt);
 int nbl_fc_setup_mgt(struct device *dev, struct nbl_fc_mgt **fc_mgt);
-int nbl_fc_set_stats(struct nbl_fc_mgt *mgt, void *data, unsigned long cookie);
+int nbl_fc_set_stats(struct nbl_fc_mgt *mgt, void *data, unsigned long cookie, bool is_spec_id);
+int nbl_draco_add_stats(void *priv, bool is_spec, u64 cookie,
+			u32 flow_id, u16 bind_car_id);
+int nbl_draco_del_stats(void *priv, bool is_spec, u64 cookie);
 #endif

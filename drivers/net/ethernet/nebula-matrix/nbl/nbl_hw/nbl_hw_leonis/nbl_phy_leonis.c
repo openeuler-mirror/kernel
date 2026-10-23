@@ -10,13 +10,12 @@
 #include "nbl_hw/nbl_hw_leonis/base/nbl_ppe.h"
 #include "nbl_hw/nbl_hw_leonis/base/nbl_intf.h"
 #include "nbl_hw/nbl_hw_leonis/base/nbl_datapath_dped.h"
+#include "nbl_hw_leonis/base/nbl_ppe_pp1.h"
 #include "nbl_phy_leonis_regs.h"
 
 static int dvn_descreq_num_cfg = DEFAULT_DVN_DESCREQ_NUMCFG; /* default 8 and 8 */
 module_param(dvn_descreq_num_cfg, int, 0);
-/* checkpatch:ignore SPLIT_STRING */
-MODULE_PARM_DESC(dvn_descreq_num_cfg,
-		 "bit[31:16]:split ring,support 8/16,bit[15:0]:packed ring, support 4*n,n:2-8");
+MODULE_PARM_DESC(dvn_descreq_num_cfg, "bit[31:16]:split ring,support 8/16, bit[15:0]:packed ring, support 8/12/16/20/24/28/32");
 
 static u32 nbl_phy_dump_registers[] = {
 	NBL_UVN_DIF_DELAY_REQ,
@@ -385,7 +384,8 @@ static void nbl_phy_del_tcam(void *priv, u32 index, u8 key_type, u8 pp_type)
 			  ad_table.hash_key, NBL_FLOW_AD_TOTAL_LEN);
 }
 
-static int nbl_phy_add_mcc(void *priv, u16 mcc_id, u16 prev_mcc_id, u16 next_mcc_id, u16 action)
+static int nbl_phy_add_mcc(void *priv, u16 mcc_id, u16 prev_mcc_id, u16 next_mcc_id,
+			   u16 action, u8 eth_id, u16 vsi_id)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 	struct nbl_mcc_tbl node = {0};
@@ -416,7 +416,8 @@ static int nbl_phy_add_mcc(void *priv, u16 mcc_id, u16 prev_mcc_id, u16 next_mcc
 	return 0;
 }
 
-static void nbl_phy_del_mcc(void *priv, u16 mcc_id, u16 prev_mcc_id, u16 next_mcc_id)
+static void nbl_phy_del_mcc(void *priv, u16 mcc_id, u16 prev_mcc_id, u16 next_mcc_id,
+			    u8 eth_id, u16 vsi_id)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 	struct nbl_mcc_tbl node = {0};
@@ -493,6 +494,66 @@ static void nbl_phy_del_tnl_encap(void *priv, u16 encap_idx)
 			  (u8 *)send_buf, NBL_FLOW_ACTION_ENCAP_TOTAL_LEN);
 }
 
+static void nbl_phy_set_decap_set(void *priv, u8 *mac, u16 vlan_0, u16 vlan_1,
+				  u8 vlan_layer, u8 idx, u8 is_add, u16 vsi_id)
+{
+	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
+	union nbl_action_data set_dport;
+	union ipro_udl_pkt_flt_action_u udl_act;
+	union ipro_udl_pkt_flt_ctrl_u udl_ctrl;
+	union ipro_udl_pkt_flt_vlan_u vlan;
+	union ipro_udl_pkt_flt_dmac_u dmac;
+
+	if (idx >= NBL_IPRO_UDL_PKT_FLT_DMAC_DEPTH) {
+		nbl_debug(phy_mgt->common, NBL_DEBUG_FLOW, "nbl set decap_set idx exceed, idx:%u",
+			  idx);
+		return;
+	}
+
+	memset(&set_dport, 0, sizeof(set_dport));
+	memset(&udl_act, 0, sizeof(udl_act));
+	memset(&udl_ctrl, 0, sizeof(udl_ctrl));
+	memset(&vlan, 0, sizeof(vlan));
+	memset(&dmac, 0, sizeof(dmac));
+
+	vlan.info.vlan_0 = vlan_0;
+	vlan.info.vlan_1 = vlan_1;
+	if (vlan_layer == 1)
+		vlan.info.vlan_layer = 0x2;
+	else if (vlan_layer == 2)
+		vlan.info.vlan_layer = 0x3;
+	memcpy(dmac.data, mac, sizeof(dmac));
+
+	set_dport.dport.up.next_stg_sel = NEXT_STG_SEL_ACL_S0;
+	set_dport.dport.up.upcall_flag = AUX_FWD_TYPE_UPCALL;
+	set_dport.dport.up.port_type = SET_DPORT_TYPE_VSI_HOST;
+	set_dport.dport.up.port_id = vsi_id;
+	udl_act.info.set_dport_en = true;
+	udl_act.info.set_dport = set_dport.data;
+
+	nbl_hw_read_regs(phy_mgt, NBL_IPRO_UDL_PKT_FLT_CTRL_ADDR,
+			 (u8 *)udl_ctrl.data, sizeof(udl_ctrl));
+	if (is_add)
+		udl_ctrl.info.vld |= 1 << idx;
+	else
+		udl_ctrl.info.vld &= ~(1 << idx);
+
+	nbl_hw_write_regs(phy_mgt, NBL_IPRO_UDL_PKT_FLT_ACTION_ADDR,
+			  (u8 *)udl_act.data, sizeof(udl_act));
+
+	nbl_hw_write_regs(phy_mgt, NBL_IPRO_UDL_PKT_FLT_CTRL_ADDR,
+			  (u8 *)udl_ctrl.data, sizeof(udl_ctrl));
+
+	nbl_hw_write_regs(phy_mgt, NBL_IPRO_UDL_PKT_FLT_VLAN_REG(idx),
+			  (u8 *)vlan.data, sizeof(vlan));
+
+	nbl_hw_write_regs(phy_mgt, NBL_IPRO_UDL_PKT_FLT_DMAC_REG(idx),
+			  (u8 *)dmac.data, sizeof(dmac));
+
+	nbl_debug(phy_mgt->common, NBL_DEBUG_FLOW, "set decap set: is_add:%u, idx:%u, vlan0:%u, vlan1:%u, mac:0x%x-%x, vsi_id:%u",
+		  is_add, idx, vlan_0, vlan_1, dmac.data[0], dmac.data[1], vsi_id);
+}
+
 static int nbl_phy_init_fem(void *priv)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
@@ -554,37 +615,29 @@ static int nbl_uped_init(struct nbl_phy_mgt *phy_mgt)
 	return 0;
 }
 
-static void nbl_shaping_eth_init(struct nbl_phy_mgt *phy_mgt, u8 eth_id, u8 speed)
+static void nbl_phy_cfg_eth_shaping(void *priv, u8 eth_id, u32 speed)
 {
+	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 	struct nbl_shaping_dport dport = {0};
 	struct nbl_shaping_dvn_dport dvn_dport = {0};
 	struct nbl_shaping_rdma_dport rdma_dport = {0};
-	u32 rate, half_rate;
 
-	if (speed == NBL_FW_PORT_SPEED_100G) {
-		rate = NBL_SHAPING_DPORT_100G_RATE;
-		half_rate = NBL_SHAPING_DPORT_HALF_100G_RATE;
-	} else {
-		rate = NBL_SHAPING_DPORT_25G_RATE;
-		half_rate = NBL_SHAPING_DPORT_HALF_25G_RATE;
-	}
-
-	dport.cir = rate;
-	dport.pir = rate;
+	dport.cir = speed;
+	dport.pir = speed;
 	dport.depth = max(dport.cir * 2, NBL_LR_LEONIS_NET_BUCKET_DEPTH);
 	dport.cbs = dport.depth;
 	dport.pbs = dport.depth;
 	dport.valid = 1;
 
-	dvn_dport.cir = half_rate;
-	dvn_dport.pir = rate;
+	dvn_dport.cir = speed / 2;
+	dvn_dport.pir = speed;
 	dvn_dport.depth = dport.depth;
 	dvn_dport.cbs = dvn_dport.depth;
 	dvn_dport.pbs = dvn_dport.depth;
 	dvn_dport.valid = 1;
 
-	rdma_dport.cir = half_rate;
-	rdma_dport.pir = rate;
+	rdma_dport.cir = speed / 2;
+	rdma_dport.pir = speed;
 	rdma_dport.depth = dport.depth;
 	rdma_dport.cbs = rdma_dport.depth;
 	rdma_dport.pbs = rdma_dport.depth;
@@ -595,6 +648,30 @@ static void nbl_shaping_eth_init(struct nbl_phy_mgt *phy_mgt, u8 eth_id, u8 spee
 			  (u8 *)&dvn_dport, sizeof(dvn_dport));
 	nbl_hw_write_regs(phy_mgt, NBL_SHAPING_RDMA_DPORT_REG(eth_id),
 			  (u8 *)&rdma_dport, sizeof(rdma_dport));
+}
+
+static void nbl_shaping_eth_init(struct nbl_phy_mgt *phy_mgt, u8 eth_id, u8 speed)
+{
+	u32 rate;
+
+	switch (speed) {
+	case NBL_FW_PORT_SPEED_100G:
+		rate = NBL_SHAPING_DPORT_100G_RATE;
+		break;
+	case NBL_FW_PORT_SPEED_50G:
+		rate = NBL_SHAPING_DPORT_50G_RATE;
+		break;
+	case NBL_FW_PORT_SPEED_25G:
+		rate = NBL_SHAPING_DPORT_25G_RATE;
+		break;
+	case NBL_FW_PORT_SPEED_10G:
+		rate = NBL_SHAPING_DPORT_10G_RATE;
+		break;
+	default:
+		rate = NBL_SHAPING_DPORT_25G_RATE;
+		break;
+	}
+	nbl_phy_cfg_eth_shaping(phy_mgt, eth_id, rate);
 }
 
 static int nbl_shaping_init(struct nbl_phy_mgt *phy_mgt, u8 speed)
@@ -617,6 +694,7 @@ static int nbl_shaping_init(struct nbl_phy_mgt *phy_mgt, u8 speed)
 			nbl_hw_rd32(phy_mgt, NBL_HW_DUMMY_REG);
 	}
 	nbl_hw_rd32(phy_mgt, NBL_HW_DUMMY_REG);
+
 	return 0;
 }
 
@@ -737,6 +815,22 @@ static void nbl_dvn_descreq_num_cfg(void *priv, u32 descreq_num)
 			  (u8 *)&descreq_num_cfg, sizeof(descreq_num_cfg));
 }
 
+static void nbl_dvn_descreq_num_dpdk_cfg(void *priv, u8 eth_speed, bool is_dpdk)
+{
+	u32 dvn_desc_req;
+
+	if (is_dpdk) {
+		dvn_desc_req = DPDK_DVN_25G_DESCREQ_NUMCFG;
+
+		if (eth_speed == NBL_FW_PORT_SPEED_100G)
+			dvn_desc_req = DPDK_DVN_100G_DESCREQ_NUMCFG;
+	} else {
+		dvn_desc_req = DEFAULT_DVN_DESCREQ_NUMCFG;
+	}
+
+	nbl_dvn_descreq_num_cfg(priv, dvn_desc_req);
+}
+
 static u32 nbl_dvn_descreq_num_get(void *priv)
 {
 	u16 split_req;
@@ -773,7 +867,7 @@ static void nbl_phy_cfg_dvn_bp_mask(struct dvn_back_pressure_mask *mask, u8 eth_
 	}
 }
 
-static int nbl_dvn_init(struct nbl_phy_mgt *phy_mgt, u8 speed)
+static int nbl_dvn_init(struct nbl_phy_mgt *phy_mgt)
 {
 	struct nbl_dvn_desc_wr_merge_timeout timeout = {0};
 	struct nbl_dvn_dif_req_rd_ro_flag ro_flag = {0};
@@ -788,10 +882,7 @@ static int nbl_dvn_init(struct nbl_phy_mgt *phy_mgt, u8 speed)
 	nbl_hw_write_regs(phy_mgt, NBL_DVN_DIF_REQ_RD_RO_FLAG,
 			  (u8 *)&ro_flag, sizeof(ro_flag));
 
-	if (speed == NBL_FW_PORT_SPEED_100G)
-		nbl_dvn_descreq_num_cfg(phy_mgt, DEFAULT_DVN_100G_DESCREQ_NUMCFG);
-	else
-		nbl_dvn_descreq_num_cfg(phy_mgt, dvn_descreq_num_cfg);
+	nbl_dvn_descreq_num_cfg(phy_mgt, DEFAULT_DVN_DESCREQ_NUMCFG);
 
 	return 0;
 }
@@ -885,7 +976,7 @@ static int nbl_dp_init(struct nbl_phy_mgt *phy_mgt, u8 speed, u8 eth_num)
 	nbl_ustore_init(phy_mgt, eth_num);
 	nbl_dstore_init(phy_mgt, speed);
 	nbl_ul4s_init(phy_mgt);
-	nbl_dvn_init(phy_mgt, speed);
+	nbl_dvn_init(phy_mgt);
 	nbl_uvn_init(phy_mgt);
 	nbl_uqm_init(phy_mgt);
 
@@ -952,6 +1043,7 @@ static void nbl_epro_action_filter_cfg(struct nbl_phy_mgt *phy_mgt, u32 fwd_type
 
 static int nbl_epro_init(struct nbl_phy_mgt *phy_mgt)
 {
+	union epro_action_priority_u act_pri_def = {.info = {0}};
 	u32 fwd_type = 0;
 
 	nbl_epro_mirror_act_pri_init(phy_mgt, NULL);
@@ -959,6 +1051,10 @@ static int nbl_epro_init(struct nbl_phy_mgt *phy_mgt)
 	for (fwd_type = 0; fwd_type < NBL_FWD_TYPE_MAX; fwd_type++)
 		nbl_epro_action_filter_cfg(phy_mgt, fwd_type,
 					   &epro_action_filter_tbl_def[fwd_type]);
+
+	act_pri_def.info.dport = 0x3;
+	nbl_hw_write_regs(phy_mgt, NBL_EPRO_ACTION_PRIORITY_ADDR,
+			  (u8 *)act_pri_def.data, sizeof(act_pri_def));
 
 	return 0;
 }
@@ -972,9 +1068,19 @@ static int nbl_ppe_init(struct nbl_phy_mgt *phy_mgt)
 
 static int nbl_host_padpt_init(struct nbl_phy_mgt *phy_mgt)
 {
-	/* padpt flow  control register */
+	struct nbl_host_native_tx_p tx_p;
+	u32 pd_th = 0x10080;
+
+	nbl_hw_read_regs(phy_mgt, NBL_HOST_PADPT_HOST_NATIVE_TX_P, (u8 *)&tx_p, sizeof(tx_p));
+	if (tx_p.ava_data_credits > 512)
+		pd_th = 0x10080;
+	else if (tx_p.ava_data_credits > 256)
+		pd_th = 0x10040;
+	else
+		pd_th = 0x10030;
+
 	nbl_hw_wr32(phy_mgt, NBL_HOST_PADPT_HOST_CFG_FC_CPLH_UP, 0x10400);
-	nbl_hw_wr32(phy_mgt, NBL_HOST_PADPT_HOST_CFG_FC_PD_DN, 0x10080);
+	nbl_hw_wr32(phy_mgt, NBL_HOST_PADPT_HOST_CFG_FC_PD_DN, pd_th);
 	nbl_hw_wr32(phy_mgt, NBL_HOST_PADPT_HOST_CFG_FC_PH_DN, 0x10010);
 	nbl_hw_wr32(phy_mgt, NBL_HOST_PADPT_HOST_CFG_FC_NPH_DN, 0x10010);
 
@@ -1037,6 +1143,139 @@ static void nbl_rdma_init(struct nbl_phy_mgt *phy_mgt)
 	data &= ~NBL_TOP_CTRL_RDMA_LB_RST;
 	nbl_hw_wr32(phy_mgt, NBL_TOP_CTRL_LB_RST, data);
 }
+
+static void nbl_phy_set_driver_status(void *priv, bool active)
+{
+	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
+	u32 status = 0;
+
+	status = nbl_hw_rd32(phy_mgt, NBL_DRIVER_STATUS_REG);
+
+	status = (status & ~(1 << NBL_DRIVER_STATUS_BIT)) | (active << NBL_DRIVER_STATUS_BIT);
+
+	nbl_hw_wr32(phy_mgt, NBL_DRIVER_STATUS_REG, status);
+}
+
+static void nbl_phy_cfg_pp1_ecn_profiles(struct nbl_phy_mgt *phy_mgt)
+{
+	union pp1_kgen_key_prf_u kgen_prof;
+	union nbl_pp_kgen_cam_u kgen_cam;
+	union nbl_pp_kgen_flag_ext1_u kgen_flag_ext;
+	union nbl_fem_em1_profile_table_u profile_table;
+	u8 profile_index = NBL_PP1_ECN_STAT_PID;
+
+	memset(&kgen_cam, 0, sizeof(kgen_cam));
+	memset(&kgen_prof, 0, sizeof(kgen_prof));
+	memset(&kgen_flag_ext, 0, sizeof(kgen_flag_ext));
+	memset(&profile_table, 0, sizeof(profile_table));
+
+	/* read and write pp1 kgen flag ext1 */
+	nbl_hw_read_regs(phy_mgt, NBL_PP1_KGEN_FLAG_EXT1_ADDR,
+			 (u8 *)&kgen_flag_ext, sizeof(kgen_flag_ext));
+	kgen_flag_ext.info.flag4_en = 1;
+	kgen_flag_ext.info.flag4_oft = 0xa;
+	nbl_hw_write_regs(phy_mgt, NBL_PP1_KGEN_FLAG_EXT1_ADDR,
+			  (u8 *)&kgen_flag_ext, sizeof(kgen_flag_ext));
+
+	/* write pp1 kgen tcam */
+	kgen_cam.info.mask = 0xe8ff;
+	kgen_cam.info.ptype = 0x0;
+	kgen_cam.info.flag = 0x15;
+	kgen_cam.info.valid = 1;
+	nbl_hw_write_regs(phy_mgt, NBL_PP1_KGEN_CAM_REG(profile_index),
+			  (u8 *)&kgen_cam, sizeof(kgen_cam));
+
+	/* write pp1 kgen profile */
+	kgen_prof.info.sp_4_en = 1;
+	kgen_prof.info.sp_4_src_offset = 0;
+	kgen_prof.info.sp_4_dst_offset = 1;
+	kgen_prof.info.ext4_0_dst = 0;
+	kgen_prof.info.ext4_0_src = 0x27F;
+	kgen_prof.info.bts_en0 = 1;
+	kgen_prof.info.bts_data0 = 0;
+	kgen_prof.info.bts_des_offset0 = 0;
+	kgen_prof.info.bts_en1 = 1;
+	kgen_prof.info.bts_data1 = 0;
+	kgen_prof.info.bts_des_offset1 = 1;
+	nbl_hw_write_regs(phy_mgt, NBL_PP1_KGEN_PROFILE(profile_index),
+			  (u8 *)&kgen_prof, sizeof(kgen_prof));
+
+	/* write fem em1 profile table */
+	profile_table.info.cmd = 0;
+	profile_table.info.key_size = 0;
+	profile_table.info.mask_btm0 = 0x3FFFFFFF;
+	profile_table.info.mask_btm1 = 0xFFFFFFFF;
+	profile_table.info.mask_btm2 = 0x7FF;
+	profile_table.info.hash_sel0 = 0;
+	profile_table.info.hash_sel1 = 3;
+	profile_table.info.act_num = 1;
+	profile_table.info.valid = 1;
+	nbl_hw_write_regs(phy_mgt, NBL_FEM_EM1_PROFILE_TABLE_REG(profile_index),
+			  (u8 *)&profile_table, sizeof(profile_table));
+}
+
+static void nbl_phy_cfg_tnl_offload_profile(void *priv, u8 mode)
+{
+	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
+	union pp1_kgen_key_prf_u kgen_key_prf = {.info = {0}};
+	u8 profile_index = 2;
+
+	/* disable extraction of dmac for tunnel L2 profile */
+	nbl_hw_read_regs(phy_mgt, NBL_PP1_KGEN_PROFILE(profile_index), (u8 *)&kgen_key_prf,
+			 sizeof(kgen_key_prf));
+	if (mode) {
+		kgen_key_prf.info.ext32_1_src = 0;
+		kgen_key_prf.info.ext16_0_src = 0;
+	} else {
+		kgen_key_prf.info.ext32_1_src = 0x48;
+		kgen_key_prf.info.ext16_0_src = 0x92;
+	}
+	nbl_hw_write_regs(phy_mgt, NBL_PP1_KGEN_PROFILE(profile_index), (u8 *)&kgen_key_prf,
+			  sizeof(kgen_key_prf));
+
+	/* disable extraction of dmac for L2 profile */
+	profile_index = 3;
+	nbl_hw_read_regs(phy_mgt, NBL_PP1_KGEN_PROFILE(profile_index), (u8 *)&kgen_key_prf,
+			 sizeof(kgen_key_prf));
+	if (mode) {
+		kgen_key_prf.info.ext32_0_src = 0;
+		kgen_key_prf.info.ext16_0_src = 0;
+	} else {
+		kgen_key_prf.info.ext32_0_src = 0x48;
+		kgen_key_prf.info.ext16_0_src = 0x92;
+	}
+	nbl_hw_write_regs(phy_mgt, NBL_PP1_KGEN_PROFILE(profile_index), (u8 *)&kgen_key_prf,
+			  sizeof(kgen_key_prf));
+
+	/* disable extraction of IPv4 L3 ttl & tos */
+	profile_index = 0;
+	nbl_hw_read_regs(phy_mgt, NBL_PP2_KGEN_PROFILE(profile_index), (u8 *)&kgen_key_prf,
+			 sizeof(kgen_key_prf));
+	if (mode) {
+		kgen_key_prf.info.ext8_0_src = 0;
+		kgen_key_prf.info.ext8_1_src = 0;
+	} else {
+		kgen_key_prf.info.ext8_0_src = 0x140;
+		kgen_key_prf.info.ext8_1_src = 0x13f;
+	}
+	nbl_hw_write_regs(phy_mgt, NBL_PP2_KGEN_PROFILE(profile_index), (u8 *)&kgen_key_prf,
+			  sizeof(kgen_key_prf));
+
+	/* disable extraction of IPv6 L3 ttl & tos */
+	profile_index = 1;
+	nbl_hw_read_regs(phy_mgt, NBL_PP2_KGEN_PROFILE(profile_index), (u8 *)&kgen_key_prf,
+			 sizeof(kgen_key_prf));
+	if (mode) {
+		kgen_key_prf.info.ext8_0_src = 0;
+		kgen_key_prf.info.ext8_1_src = 0;
+	} else {
+		kgen_key_prf.info.ext8_0_src = 0x140;
+		kgen_key_prf.info.ext8_1_src = 0x13f;
+	}
+	nbl_hw_write_regs(phy_mgt, NBL_PP2_KGEN_PROFILE(profile_index), (u8 *)&kgen_key_prf,
+			  sizeof(kgen_key_prf));
+}
+
 static int nbl_phy_init_chip_module(void *priv, u8 eth_speed, u8 eth_num)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
@@ -1048,45 +1287,11 @@ static int nbl_phy_init_chip_module(void *priv, u8 eth_speed, u8 eth_num)
 	nbl_ppe_init(phy_mgt);
 	nbl_intf_init(phy_mgt);
 
+	/* init all p4 registers */
 	nbl_write_all_regs(phy_mgt);
+	nbl_phy_cfg_pp1_ecn_profiles(phy_mgt);
+
 	phy_mgt->version = nbl_hw_rd32(phy_mgt, NBL_HW_DUMMY_REG);
-
-	return 0;
-}
-
-static int nbl_phy_init_qid_map_table(void *priv)
-{
-	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
-	struct nbl_virtio_qid_map_table info = {0}, info2 = {0};
-	struct device *dev = NBL_PHY_MGT_TO_DEV(phy_mgt);
-	u16 i, j, k;
-
-	memset(&info, 0, sizeof(info));
-	info.local_qid = 0x1FF;
-	info.notify_addr_l = 0x7FFFFF;
-	info.notify_addr_h = 0xFFFFFFFF;
-	info.global_qid = 0xFFF;
-	info.ctrlq_flag = 0X1;
-	info.rsv1 = 0;
-	info.rsv2 = 0;
-
-	for (k = 0; k < 2; k++) { /* 0 is primary table , 1 is standby table */
-		for (i = 0; i < NBL_QID_MAP_TABLE_ENTRIES; i++) {
-			j = 0;
-			do {
-				nbl_hw_write_regs(phy_mgt, NBL_PCOMPLETER_QID_MAP_REG_ARR(k, i),
-						  (u8 *)&info, sizeof(info));
-				nbl_hw_read_regs(phy_mgt, NBL_PCOMPLETER_QID_MAP_REG_ARR(k, i),
-						 (u8 *)&info2, sizeof(info2));
-				if (likely(!memcmp(&info, &info2, sizeof(info))))
-					break;
-				j++;
-			} while (j < NBL_REG_WRITE_MAX_TRY_TIMES);
-
-			if (j == NBL_REG_WRITE_MAX_TRY_TIMES)
-				dev_err(dev, "Write to qid map table entry %hu failed\n", i);
-		}
-	}
 
 	return 0;
 }
@@ -1205,12 +1410,10 @@ static int nbl_phy_set_vnet_queue_info(void *priv, struct nbl_vnet_queue_info_pa
 	host_vnet_qinfo.valid = param->valid;
 	host_vnet_qinfo.msix_idx = param->msix_idx;
 	host_vnet_qinfo.msix_idx_valid = param->msix_idx_valid;
-
 	if (phy_mgt_leonis->ro_enable) {
 		host_vnet_qinfo.ido_en = 1;
 		host_vnet_qinfo.rlo_en = 1;
 	}
-
 
 	nbl_hw_write_regs(phy_mgt, NBL_PADPT_HOST_VNET_QINFO_REG_ARR(queue_id),
 			  (u8 *)&host_vnet_qinfo, sizeof(host_vnet_qinfo));
@@ -1316,7 +1519,7 @@ static int nbl_phy_restore_dvn_context(void *priv, u16 queue_id, u16 split, u16 
 	if (split)
 		cxt.dvn_avail_ring_read = last_avail_index;
 	else
-		cxt.dvn_l1_ring_read = last_avail_index & 0x7FFF;
+		cxt.dvn_L1_ring_read = last_avail_index & 0x7FFF;
 
 	nbl_hw_write_regs(phy_mgt, NBL_DVN_QUEUE_CXT_TABLE_ARR(queue_id), (u8 *)&cxt, sizeof(cxt));
 	nbl_info(common, NBL_DEBUG_QUEUE, "config tx ring: %u, last avail idx: %u\n",
@@ -1397,6 +1600,7 @@ static int nbl_phy_cfg_tx_queue(void *priv, void *data, u16 queue_id)
 	info.dvn_queue_type = queue_cfg->split;
 	info.dvn_queue_en = 1;
 	info.dvn_extend_header_en = queue_cfg->extend_header;
+	info.dvn_interleave_seg_disable = queue_cfg->interleave_seg_disable;
 
 	nbl_hw_write_regs(phy_mgt, NBL_DVN_QUEUE_TABLE_ARR(queue_id), (u8 *)&info, sizeof(info));
 
@@ -1711,8 +1915,8 @@ static int nbl_phy_cfg_dsch_net_to_group(void *priv, u16 func_id, u16 group_id, 
 	return 0;
 }
 
-static int nbl_phy_cfg_epro_rss_ret(void *priv, u32 index, u8 size_type, u32 q_num,
-				    u16 *queue_list, const u32 *indir)
+static int nbl_phy_cfg_epro_rss_ret(void *priv, u32 index, u16 size_unit, u8 size_type,
+				    u32 q_num, u16 *queue_list, const u32 *indir)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 	struct nbl_common_info *common = NBL_PHY_MGT_TO_COMMON(phy_mgt);
@@ -1816,7 +2020,7 @@ static struct nbl_epro_rss_key epro_rss_key_def = {
 	.key4		= 0x6d5a6d5a6d5a6d5a,
 };
 
-static int nbl_phy_init_epro_rss_key(void *priv)
+static int nbl_phy_init_epro_rss_key(void *priv, u16 table_id)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 
@@ -1826,10 +2030,18 @@ static int nbl_phy_init_epro_rss_key(void *priv)
 	return 0;
 }
 
-static void nbl_phy_read_epro_rss_key(void *priv, u8 *rss_key)
+static void nbl_phy_get_epro_rss_key(void *priv, u16 vsi_id, u8 *rss_key)
 {
 	nbl_hw_read_regs(priv, NBL_EPRO_RSS_KEY_REG,
 			 rss_key, sizeof(struct nbl_epro_rss_key));
+}
+
+static int nbl_phy_set_epro_rss_key(void *priv, const u8 *rss_key, u16 table_id)
+{
+	nbl_hw_write_regs(priv, NBL_EPRO_RSS_KEY_REG,
+			  rss_key, sizeof(struct nbl_epro_rss_key));
+
+	return 0;
 }
 
 static void nbl_phy_read_rss_indir(void *priv, u16 vsi_id, u32 *rss_indir,
@@ -1864,7 +2076,7 @@ static void nbl_phy_read_rss_indir(void *priv, u16 vsi_id, u32 *rss_indir,
 	}
 }
 
-static void nbl_phy_get_rss_alg_sel(void *priv, u16 vsi_id, u8 *alg_sel)
+static void nbl_phy_get_rss_alg_sel(void *priv, u16 vsi_id, u8 eth_id, u8 *alg_sel)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 	struct nbl_epro_vpt_tbl epro_vpt_tbl = {0};
@@ -1899,25 +2111,28 @@ static int nbl_phy_set_rss_alg_sel(void *priv, u16 vsi_id, u8 alg_sel)
 	return 0;
 }
 
-static int nbl_phy_init_epro_vpt_tbl(void *priv, u16 vsi_id)
+static int nbl_phy_init_epro_vpt_tbl(void *priv, u16 vsi_id, u16 bmode, bool binit,
+				     u16 rss_key_range_oft)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 	struct nbl_epro_vpt_tbl epro_vpt_tbl = {0};
 
-	epro_vpt_tbl.vld = 1;
-	epro_vpt_tbl.fwd = NBL_EPRO_FWD_TYPE_DROP;
-	epro_vpt_tbl.rss_alg_sel = NBL_EPRO_RSS_ALG_TOEPLITZ_HASH;
-	epro_vpt_tbl.rss_key_type_ipv4	= NBL_EPRO_RSS_KEY_TYPE_IPV4_L4;
-	epro_vpt_tbl.rss_key_type_ipv6	= NBL_EPRO_RSS_KEY_TYPE_IPV6_L4;
+	if (binit) {
+		epro_vpt_tbl.vld = 1;
+		epro_vpt_tbl.fwd = NBL_EPRO_FWD_TYPE_DROP;
+		epro_vpt_tbl.rss_alg_sel = NBL_EPRO_RSS_ALG_TOEPLITZ_HASH;
+		epro_vpt_tbl.rss_key_type_ipv4	= NBL_EPRO_RSS_KEY_TYPE_IPV4_L4;
+		epro_vpt_tbl.rss_key_type_ipv6	= NBL_EPRO_RSS_KEY_TYPE_IPV6_L4;
 
-	nbl_hw_write_regs(phy_mgt, NBL_EPRO_VPT_TABLE(vsi_id),
-			  (u8 *)&epro_vpt_tbl,
-			  sizeof(struct nbl_epro_vpt_tbl));
+		nbl_hw_write_regs(phy_mgt, NBL_EPRO_VPT_TABLE(vsi_id),
+				  (u8 *)&epro_vpt_tbl,
+				  sizeof(struct nbl_epro_vpt_tbl));
+	}
 
 	return 0;
 }
 
-static int nbl_phy_set_epro_rss_default(void *priv, u16 vsi_id)
+static int nbl_phy_set_epro_rss_default(void *priv, u16 vsi_id, u16 rss_key_range_oft)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 	struct nbl_epro_vpt_tbl epro_vpt_tbl = {0};
@@ -2013,7 +2228,6 @@ static int nbl_phy_disable_uvn(void *priv, u16 queue_id)
 static bool nbl_phy_is_txq_drain_out(struct nbl_phy_mgt *phy_mgt, u16 queue_id,
 				     struct dsch_vn_tc_q_list_tbl *tc_q_list)
 {
-
 	nbl_hw_read_regs(phy_mgt, NBL_DSCH_VN_TC_Q_LIST_TABLE_REG_ARR(queue_id),
 			 (u8 *)tc_q_list, sizeof(*tc_q_list));
 	if (!tc_q_list->regi && !tc_q_list->fly)
@@ -2034,6 +2248,120 @@ static bool nbl_phy_is_rxq_drain_out(struct nbl_phy_mgt *phy_mgt, u16 queue_id)
 	return false;
 }
 
+static void nbl_phy_lso_drain_time_out_debug(struct nbl_phy_mgt *phy_mgt, u16 queue_id)
+{
+	u32 addr, data;
+	struct dsch_vn_q2tc_cfg_tbl info1 = {0};
+	struct dsch_vn_n2g_cfg_tbl info2 = {0};
+	struct dsch_vn_g2p_cfg_tbl info3 = {0};
+	struct dsch_vn_tc_q_list_tbl tc_q_list = {0};
+	struct nbl_dsch_vn_tc_q_list_attr_tbl tc_qlist_attr = {0};
+	struct dvn_queue_context dvn_ctx = {0};
+	struct nbl_dvn_lso_context lso_ctx = {0};
+	struct nbl_dvn_stat_cnt dvn_stat_cnt = {0};
+
+	nbl_hw_read_regs(phy_mgt, NBL_DSCH_VN_TC_Q_LIST_TABLE_REG_ARR(queue_id),
+			 (u8 *)&tc_q_list, sizeof(tc_q_list));
+	pr_err("queue_id %d tc_q_list regi %d fly %d vld %d",
+	       queue_id, tc_q_list.regi, tc_q_list.fly, tc_q_list.vld);
+	pr_err("nbl queue %u lso dsch drain\n", queue_id);
+	pr_err("dsch debug register:\n");
+	for (addr = 0x404900; addr < 0x404a00; addr += 4) {
+		data = nbl_hw_rd32(phy_mgt, addr);
+		pr_err("addr 0x%x: 0x%x\n", addr, data);
+	}
+	/*q2tc*/
+	nbl_hw_read_regs(phy_mgt, NBL_DSCH_VN_Q2TC_CFG_TABLE_REG_ARR(queue_id),
+			 (u8 *)&info1, sizeof(info1));
+	nbl_hw_read_regs(phy_mgt, NBL_DSCH_VN_N2G_CFG_TABLE_REG_ARR((info1.tcid / 8)),
+			 (u8 *)&info2, sizeof(info2));
+	nbl_hw_read_regs(phy_mgt, NBL_DSCH_VN_N2G_CFG_TABLE_REG_ARR((info2.grpid)),
+			 (u8 *)&info3, sizeof(info3));
+	pr_err("tcid %d grp id %d port %d\n", info1.tcid, info2.grpid, info3.port);
+
+	nbl_hw_read_regs(phy_mgt, NBL_DSCH_VN_TC_Q_LIST_ATTR_TABLE_REG_ARR((info1.tcid)),
+			 (u8 *)&tc_qlist_attr, sizeof(tc_qlist_attr));
+	pr_err("tcid %d tc_qlist head 0x%x tail 0x%x len %x\n",
+	       info1.tcid, tc_qlist_attr.head, tc_qlist_attr.tail, tc_qlist_attr.len);
+
+	for (addr = 0x514000; addr <= 0x514100; addr += 4) {
+		data = nbl_hw_rd32(phy_mgt, addr);
+		pr_err("addr 0x%x: 0x%x\n", addr, data);
+	}
+	data = nbl_hw_rd32(phy_mgt, 0x514034);
+	pr_err("dvn pkt dif err cnt 0x%x\n", data);
+	data = nbl_hw_rd32(phy_mgt, 0x51403C);
+	pr_err("dvn desc dif err cnt 0x%x\n", data);
+	for (addr = 0x514a00; addr <= 0x514a08; addr += 4) {
+		data = nbl_hw_rd32(phy_mgt, addr);
+		pr_err("addr 0x%x: 0x%x\n", addr, data);
+	}
+	data = nbl_hw_rd32(phy_mgt, 0x514a08);
+	pr_err("dvn descrd_l1_rerr_cnt 0x%x\n", data);
+	data = nbl_hw_rd32(phy_mgt, 0x514a14);
+	pr_err("dvn descrd_l2_rerr_cnt 0x%x\n", data);
+	data = nbl_hw_rd32(phy_mgt, 0x514a60);
+	pr_err("dvn qcrd_schedul_cnt 0x%x\n", data);
+	data = nbl_hw_rd32(phy_mgt, 0x514af0);
+	pr_err("dvn seg_setdb_cnt 0x%x\n", data);
+
+	nbl_hw_read_regs(phy_mgt, NBL_DVN_QUEUE_CXT_TABLE_ARR(queue_id),
+			 (u8 *)&dvn_ctx, sizeof(dvn_ctx));
+	pr_err("dvn queue ctx:\n");
+	pr_err("dvn_DESCRD_NUM 0x%x dvn_Firstdescid 0x%x, dvn_Firstdesc 0x%x\n",
+	       dvn_ctx.dvn_DESCRD_NUM, dvn_ctx.dvn_firstdescid, dvn_ctx.dvn_firstdesc);
+	pr_err("dvn_indirect_len 0x%x dvn_indirect_addr 0x%llx, dvn_indirect_next 0x%x\n",
+	       dvn_ctx.dvn_indirect_len, dvn_ctx.dvn_indirect_addr, dvn_ctx.dvn_indirect_next);
+
+	pr_err("dvn_L1_ring_read 0x%x dvn_Avail_ring_read 0x%x, dvn_ring_wrap_counter 0x%x\n",
+	       dvn_ctx.dvn_L1_ring_read,
+	       dvn_ctx.dvn_avail_ring_read,
+	       dvn_ctx.dvn_ring_wrap_counter);
+	pr_err("dvn_LSO_ID 0x%x dvn_avail_ring_idx 0x%x, dvn_used_ring_idx 0x%x\n",
+	       dvn_ctx.dvn_LSO_ID, dvn_ctx.dvn_avail_ring_idx, dvn_ctx.dvn_used_ring_idx);
+	pr_err("dvn_indirect_left 0x%x dvn_Desc_left 0x%x, dvn_LSO_FLAG 0x%x\n",
+	       dvn_ctx.dvn_indirect_left, dvn_ctx.dvn_desc_left, dvn_ctx.dvn_LSO_FLAG);
+	pr_err("dvn_DESCRD_DISABLE 0x%x dvn_Queue_err 0x%x,dvn_LSO_Drop 0x%x,dvn_Protected_bit 0x%x\n",
+	       dvn_ctx.dvn_DESCRD_DISABLE, dvn_ctx.dvn_queue_err,
+	       dvn_ctx.dvn_lso_drop, dvn_ctx.dvn_protected_bit);
+	nbl_hw_read_regs(phy_mgt, NBL_DVN_LSO_CONTEXT_TABLE_ARR(dvn_ctx.dvn_LSO_ID),
+			 (u8 *)&lso_ctx, sizeof(lso_ctx));
+
+	pr_err("dvn lso ctx:\n");
+	pr_err("dvn_fwd 0x%x dvn_dport 0x%x, dvn_dport_id 0x%x dvn_dport_info 0x%x\n",
+	       lso_ctx.dvn_fwd, lso_ctx.dvn_dport, lso_ctx.dvn_dport_id, lso_ctx.dvn_dport_info);
+	pr_err("dvn_l4s_handle_ind 0x%x dvn_l4s_redun_head_ind 0x%x, dvn_l4s_redun_ind 0x%x\n",
+	       lso_ctx.dvn_l4s_handle_ind,
+	       lso_ctx.dvn_l4s_redun_head_ind, lso_ctx.dvn_l4s_redun_ind);
+	pr_err("dvn_l4s_sync_ind 0x%x dvn_prbac 0x%x, dvn_l4s_SID_dvn_prbac_SA_Idx 0x%x\n",
+	       lso_ctx.dvn_l4s_sync_ind, lso_ctx.dvn_prbac, lso_ctx.dvn_l4s_sid_dvn_prbac_sa_idx);
+	pr_err("dvn_L4TUNLEN 0x%x dvn_L4TUNT 0x%x, dvn_EIPLEN 0x%x\n",
+	       lso_ctx.dvn_L4TUNLEN, lso_ctx.dvn_L4TUNT, lso_ctx.dvn_EIPLEN);
+	pr_err("dvn_EIPT 0x%x dvn_IIPT 0x%x, dvn_L4T 0x%x\n",
+	       lso_ctx.dvn_EIPT, lso_ctx.dvn_IIPT, lso_ctx.dvn_L4T);
+	pr_err("dvn_L4LEN 0x%x dvn_IPLEN 0x%x, dvn_MACLEN 0x%x\n",
+	       lso_ctx.dvn_L4LEN, lso_ctx.dvn_IPLEN, lso_ctx.dvn_MACLEN);
+	pr_err("dvn_Headerlen 0x%x dvn_Csum_start 0x%x, dvn_Tcp_sn_bias 0x%x\n",
+	       lso_ctx.dvn_headerlen, lso_ctx.dvn_csum_start, lso_ctx.dvn_tcp_sn_bias);
+	pr_err("dvn_MSS 0x%x dvn_L3_CS 0x%x, dvn_L4_CS 0x%x\n",
+	       lso_ctx.dvn_MSS, lso_ctx.dvn_L3_CS, lso_ctx.dvn_L4_CS);
+	pr_err("dvn_rss_lag 0x%x dvn_Lastdesc_flag 0x%x, dvn_Payaddr_left 0x%x\n",
+	       lso_ctx.dvn_rss_lag, lso_ctx.dvn_lastdesc_flag, lso_ctx.dvn_payaddr_left);
+	pr_err("dvn_Buflen_left_l 0x%x dvn_Buflen_left 0x%x, dvn_Buflen_left_h 0x%x\n",
+	       lso_ctx.dvn_buflen_left_l, lso_ctx.dvn_buflen_left, lso_ctx.dvn_buflen_left_h);
+	nbl_hw_read_regs(phy_mgt, NBL_DVN_STAT_CNT(queue_id),
+			 (u8 *)&dvn_stat_cnt, sizeof(dvn_stat_cnt));
+
+	pr_err("dvn stat_cnt:\n");
+	pr_err("dvn_desc_fwd_cnt 0x%x dvn_desc_drop_cnt 0x%x\n",
+	       dvn_stat_cnt.dvn_desc_fwd_cnt, dvn_stat_cnt.dvn_desc_drop_cnt);
+	pr_err("dvn_pkt_fwd_cnt 0x%x dvn_pkt_drop_cnt 0x%x\n",
+	       dvn_stat_cnt.dvn_pkt_fwd_cnt, dvn_stat_cnt.dvn_pkt_drop_cnt);
+
+	data = nbl_hw_rd32(phy_mgt, 0x400110);
+	pr_err("lb_ddp_dist_rd_dif_err 0x%x\n", data);
+}
+
 static int nbl_phy_lso_dsch_drain(void *priv, u16 queue_id)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
@@ -2041,6 +2369,9 @@ static int nbl_phy_lso_dsch_drain(void *priv, u16 queue_id)
 	struct dsch_vn_tc_q_list_tbl tc_q_list = {0};
 	struct dsch_vn_q2tc_cfg_tbl info;
 	int i = 0;
+
+	if (phy_mgt->hw_status)
+		return 0;
 
 	nbl_hw_read_regs(phy_mgt, NBL_DSCH_VN_Q2TC_CFG_TABLE_REG_ARR(queue_id),
 			 (u8 *)&info, sizeof(info));
@@ -2055,6 +2386,7 @@ static int nbl_phy_lso_dsch_drain(void *priv, u16 queue_id)
 	} while (++i < NBL_DRAIN_WAIT_TIMES);
 
 	if (i >= NBL_DRAIN_WAIT_TIMES) {
+		nbl_phy_lso_drain_time_out_debug(phy_mgt, queue_id);
 		nbl_err(common, NBL_DEBUG_QUEUE, "nbl queue %u lso dsch drain, regi %u, fly %u, vld %u\n",
 			queue_id, tc_q_list.regi, tc_q_list.fly, tc_q_list.vld);
 		return -1;
@@ -2068,6 +2400,9 @@ static int nbl_phy_rsc_cache_drain(void *priv, u16 queue_id)
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 	struct nbl_common_info *common = NBL_PHY_MGT_TO_COMMON(phy_mgt);
 	int i = 0;
+
+	if (phy_mgt->hw_status)
+		return 0;
 
 	do {
 		if (nbl_phy_is_rxq_drain_out(phy_mgt, queue_id))
@@ -2085,7 +2420,7 @@ static int nbl_phy_rsc_cache_drain(void *priv, u16 queue_id)
 	return 0;
 }
 
-static u16 nbl_phy_save_dvn_ctx(void *priv, u16 queue_id, u16 split)
+static u64 nbl_phy_save_dvn_ctx(void *priv, u16 queue_id, u16 split)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 	struct nbl_common_info *common = NBL_PHY_MGT_TO_COMMON(phy_mgt);
@@ -2095,16 +2430,16 @@ static u16 nbl_phy_save_dvn_ctx(void *priv, u16 queue_id, u16 split)
 			 (u8 *)&dvn_ctx, sizeof(dvn_ctx));
 
 	nbl_debug(common, NBL_DEBUG_QUEUE, "DVNQ save ctx: %d packed: %08x %08x split: %08x\n",
-		  queue_id, dvn_ctx.dvn_ring_wrap_counter, dvn_ctx.dvn_l1_ring_read,
+		  queue_id, dvn_ctx.dvn_ring_wrap_counter, dvn_ctx.dvn_L1_ring_read,
 		  dvn_ctx.dvn_avail_ring_idx);
 
 	if (split)
 		return (dvn_ctx.dvn_avail_ring_idx);
 	else
-		return (dvn_ctx.dvn_l1_ring_read & 0x7FFF) | (dvn_ctx.dvn_ring_wrap_counter << 15);
+		return (dvn_ctx.dvn_L1_ring_read & 0x7FFF) | (dvn_ctx.dvn_ring_wrap_counter << 15);
 }
 
-static u16 nbl_phy_save_uvn_ctx(void *priv, u16 queue_id, u16 split, u16 queue_size)
+static u64 nbl_phy_save_uvn_ctx(void *priv, u16 queue_id, u16 split, u16 queue_size)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 	struct nbl_common_info *common = NBL_PHY_MGT_TO_COMMON(phy_mgt);
@@ -2186,7 +2521,8 @@ static void nbl_phy_setup_queue_switch(void *priv, u16 eth_id)
 			  (u8 *)&info, sizeof(info));
 }
 
-static int nbl_phy_cfg_phy_flow(void *priv, u16 vsi_id, u16 count, u8 eth_id, bool status)
+static int nbl_phy_cfg_phy_flow(void *priv, u16 vsi_id, u16 count, u8 eth_id,
+				bool status, u16 rss_key_range_oft)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 	struct nbl_ipro_upsport_tbl upsport = {0};
@@ -2254,7 +2590,7 @@ static int nbl_phy_cfg_eth_port_priority_replace(void *priv, u8 eth_id, bool sta
 	return 0;
 }
 
-static void nbl_phy_init_pfc(void *priv, u8 ether_ports)
+static void nbl_phy_init_pfc(void *priv, u8 eth_id, u8 ether_ports, u8 pfc_mode, u8 bp_mode)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 	struct nbl_epro_cos_map cos_map = {0};
@@ -2271,7 +2607,7 @@ static void nbl_phy_init_pfc(void *priv, u8 ether_ports)
 
 	/* DQM */
 	/* set default bp_mode: port */
-	/* TX bp: dqm send received ETH RX Pause to DSCH */
+	/* TX bp: dqm send received ETH RX pause to DSCH */
 	/* dqm rxmac_tx_port_bp_en */
 	dqm_port_bp_en.eth0 = 1;
 	dqm_port_bp_en.eth1 = 1;
@@ -2634,10 +2970,10 @@ static void nbl_phy_enable_mailbox_irq(void *priv, u16 func_id, bool enable_msix
 
 	if (enable_msix) {
 		mb_qinfo_map.msix_idx = global_vector_id;
-		mb_qinfo_map.msix_idx_valid = 1;
+		mb_qinfo_map.msix_idx_vaild = 1;
 	} else {
 		mb_qinfo_map.msix_idx = 0;
-		mb_qinfo_map.msix_idx_valid = 0;
+		mb_qinfo_map.msix_idx_vaild = 0;
 	}
 
 	nbl_hw_write_regs(priv, NBL_MAILBOX_QINFO_MAP_REG_ARR(func_id),
@@ -2718,13 +3054,16 @@ static void nbl_phy_enable_msix_irq(void *priv, u16 global_vector_id)
 			  (u8 *)&msix_notify, sizeof(msix_notify));
 }
 
-static u8 *nbl_phy_get_msix_irq_enable_info(void *priv, u16 global_vector_id, u32 *irq_data)
+static u8 *nbl_phy_get_msix_irq_enable_info(void *priv, u16 global_vector_id,
+					    u32 *irq_data, u32 *irq_mask_data)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 	struct nbl_msix_notify msix_notify = { 0 };
 
 	msix_notify.glb_msix_idx = global_vector_id;
 	memcpy(irq_data, &msix_notify, sizeof(msix_notify));
+
+	*irq_mask_data = 0;
 
 	return (phy_mgt->hw_addr + NBL_PCOMPLETER_MSIX_NOTIRY_OFFSET);
 }
@@ -2779,7 +3118,7 @@ static void nbl_phy_update_mailbox_queue_tail_ptr(void *priv, u16 tail_ptr, u8 t
 	u32 local_qid = txrx;
 	u32 value = ((u32)tail_ptr << 16) | local_qid;
 
-	/* wmb for doorbell */
+	/* write barrier to ensure queue writes are visible before notifying the emp */
 	wmb();
 	nbl_mbx_wr32(priv, NBL_MAILBOX_NOTIFY_ADDR, value);
 }
@@ -2793,7 +3132,7 @@ static void nbl_phy_config_mailbox_rxq(void *priv, dma_addr_t dma_addr, int size
 			      (u8 *)&qinfo_cfg_rx_table, sizeof(qinfo_cfg_rx_table));
 
 	qinfo_cfg_rx_table.queue_base_addr_l = (u32)(dma_addr & 0xFFFFFFFF);
-	qinfo_cfg_rx_table.queue_base_addr_h = (u32)(dma_addr >> 32);
+	qinfo_cfg_rx_table.queue_base_addr_h = upper_32_bits(dma_addr);
 	qinfo_cfg_rx_table.queue_size_bwind = (u32)size_bwid;
 	qinfo_cfg_rx_table.queue_rst = 0;
 	qinfo_cfg_rx_table.queue_en = 1;
@@ -2805,12 +3144,25 @@ static void nbl_phy_config_mailbox_txq(void *priv, dma_addr_t dma_addr, int size
 {
 	struct nbl_mailbox_qinfo_cfg_table qinfo_cfg_tx_table = { 0 };
 
+	qinfo_cfg_tx_table.queue_base_addr_l = (u32)(dma_addr & 0xFFFFFFFF);
+	qinfo_cfg_tx_table.queue_base_addr_h = upper_32_bits(dma_addr);
+	qinfo_cfg_tx_table.queue_size_bwind = (u32)size_bwid;
+	qinfo_cfg_tx_table.queue_rst = 0;
+	qinfo_cfg_tx_table.queue_en = 1;
+	nbl_hw_write_mbx_regs(priv, NBL_MAILBOX_QINFO_CFG_TX_TABLE_ADDR,
+			      (u8 *)&qinfo_cfg_tx_table, sizeof(qinfo_cfg_tx_table));
+}
+
+static void nbl_phy_config_mailbox_txq_rst(void *priv, dma_addr_t dma_addr, int size_bwid)
+{
+	struct nbl_mailbox_qinfo_cfg_table qinfo_cfg_tx_table = { 0 };
+
 	qinfo_cfg_tx_table.queue_rst = 1;
 	nbl_hw_write_mbx_regs(priv, NBL_MAILBOX_QINFO_CFG_TX_TABLE_ADDR,
 			      (u8 *)&qinfo_cfg_tx_table, sizeof(qinfo_cfg_tx_table));
 
 	qinfo_cfg_tx_table.queue_base_addr_l = (u32)(dma_addr & 0xFFFFFFFF);
-	qinfo_cfg_tx_table.queue_base_addr_h = (u32)(dma_addr >> 32);
+	qinfo_cfg_tx_table.queue_base_addr_h = upper_32_bits(dma_addr);
 	qinfo_cfg_tx_table.queue_size_bwind = (u32)size_bwid;
 	qinfo_cfg_tx_table.queue_rst = 0;
 	qinfo_cfg_tx_table.queue_en = 1;
@@ -2854,10 +3206,16 @@ static bool nbl_phy_check_mailbox_dma_err(void *priv, bool tx)
 		addr = NBL_MAILBOX_QINFO_CFG_RX_TABLE_ADDR;
 
 	nbl_hw_read_mbx_regs(priv, addr, (u8 *)&qinfo_cfg_tbl, sizeof(qinfo_cfg_tbl));
-	return !!qinfo_cfg_tbl.dif_err;
+
+	if (qinfo_cfg_tbl.queue_base_addr_h != 0xFFFFFFFF &&
+	    qinfo_cfg_tbl.queue_base_addr_l != 0xFFFFFFFF &&
+	    qinfo_cfg_tbl.dif_err)
+		return true;
+
+	return false;
 }
 
-static u32 nbl_phy_get_host_pf_mask(void *priv)
+static u32 nbl_phy_get_host_pf_mask(void *priv, u8 func_id)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 	u32 data;
@@ -2866,7 +3224,7 @@ static u32 nbl_phy_get_host_pf_mask(void *priv)
 	return data;
 }
 
-static u32 nbl_phy_get_host_pf_fid(void *priv, u16 func_id)
+static u32 nbl_phy_get_host_pf_fid(void *priv, u8 func_id)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 	u32 data;
@@ -2884,16 +3242,27 @@ static u32 nbl_phy_get_real_bus(void *priv)
 	return data >> 5;
 }
 
+#define PF_CONFIGSPACE_SELECT_RETRY_CNT	3
 static u64 nbl_phy_get_pf_bar_addr(void *priv, u16 func_id)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
+	struct nbl_common_info *common = NBL_PHY_MGT_TO_COMMON(phy_mgt);
+	struct pci_dev *pdev = NBL_COMMON_TO_PDEV(common);
 	u64 addr;
-	u32 val;
-	u32 selector;
+	u32 val, selector, i;
 
 	selector = NBL_LB_PF_CONFIGSPACE_SELECT_OFFSET +
 		   func_id * NBL_LB_PF_CONFIGSPACE_SELECT_STRIDE;
-	nbl_hw_wr32(phy_mgt, NBL_LB_PCIEX16_TOP_AHB, selector);
+	for (i = 0; i < PF_CONFIGSPACE_SELECT_RETRY_CNT; i++) {
+		nbl_hw_wr32(phy_mgt, NBL_LB_PCIEX16_TOP_AHB, selector);
+		val = nbl_hw_rd32(phy_mgt, NBL_LB_PCIEX16_TOP_AHB);
+		if (val == selector)
+			break;
+	}
+
+	if (i == PF_CONFIGSPACE_SELECT_RETRY_CNT)
+		dev_err(&pdev->dev, "get pf bar addr failed, funcid %u, select 0x%x, val 0x%x\n",
+			func_id, selector, val);
 
 	val = nbl_hw_rd32(phy_mgt, NBL_LB_PF_CONFIGSPACE_BASE_ADDR + PCI_BASE_ADDRESS_0);
 	addr = (u64)(val & PCI_BASE_ADDRESS_MEM_MASK);
@@ -2907,16 +3276,26 @@ static u64 nbl_phy_get_pf_bar_addr(void *priv, u16 func_id)
 static u64 nbl_phy_get_vf_bar_addr(void *priv, u16 func_id)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
+	struct nbl_common_info *common = NBL_PHY_MGT_TO_COMMON(phy_mgt);
+	struct pci_dev *pdev = NBL_COMMON_TO_PDEV(common);
 	u64 addr;
-	u32 val;
-	u32 selector;
+	u32 val, selector, i;
 
 	selector = NBL_LB_PF_CONFIGSPACE_SELECT_OFFSET +
 		   func_id * NBL_LB_PF_CONFIGSPACE_SELECT_STRIDE;
-	nbl_hw_wr32(phy_mgt, NBL_LB_PCIEX16_TOP_AHB, selector);
+	for (i = 0; i < PF_CONFIGSPACE_SELECT_RETRY_CNT; i++) {
+		nbl_hw_wr32(phy_mgt, NBL_LB_PCIEX16_TOP_AHB, selector);
+		val = nbl_hw_rd32(phy_mgt, NBL_LB_PCIEX16_TOP_AHB);
+		if (val == selector)
+			break;
+	}
+
+	if (i == PF_CONFIGSPACE_SELECT_RETRY_CNT)
+		dev_err(&pdev->dev, "get vf bar addr failed, funcid %u, select 0x%x, val 0x%x\n",
+			func_id, selector, val);
 
 	val = nbl_hw_rd32(phy_mgt, NBL_LB_PF_CONFIGSPACE_BASE_ADDR +
-				   NBL_SRIOV_CAPS_OFFSET + PCI_SRIOV_BAR);
+			  NBL_SRIOV_CAPS_OFFSET + PCI_SRIOV_BAR);
 	addr = (u64)(val & PCI_BASE_ADDRESS_MEM_MASK);
 
 	val = nbl_hw_rd32(phy_mgt, NBL_LB_PF_CONFIGSPACE_BASE_ADDR +
@@ -2935,7 +3314,7 @@ static void nbl_phy_cfg_mailbox_qinfo(void *priv, u16 func_id, u16 bus, u16 devi
 	mb_qinfo_map.function = function;
 	mb_qinfo_map.devid = devid;
 	mb_qinfo_map.bus = bus;
-	mb_qinfo_map.msix_idx_valid = 0;
+	mb_qinfo_map.msix_idx_vaild = 0;
 	nbl_hw_write_regs(phy_mgt, NBL_MAILBOX_QINFO_MAP_REG_ARR(func_id),
 			  (u8 *)&mb_qinfo_map, sizeof(mb_qinfo_map));
 }
@@ -2964,7 +3343,7 @@ static void nbl_phy_set_promisc_mode(void *priv, u16 vsi_id, u16 eth_id, u16 mod
 	nbl_hw_read_regs(priv, NBL_IPRO_UP_SPORT_TABLE(eth_id),
 			 (u8 *)&upsport, sizeof(upsport));
 	if (mode) {
-		upsport.set_dport.dport.up.upcall_flag = AUX_FWD_TYPE_NML_FWD;
+		upsport.set_dport.dport.up.upcall_flag = AUX_FWD_TYPE_UPCALL;
 		upsport.set_dport.dport.up.port_type = SET_DPORT_TYPE_VSI_HOST;
 		upsport.set_dport.dport.up.port_id = vsi_id;
 		upsport.set_dport.dport.up.next_stg_sel = NEXT_STG_SEL_NONE;
@@ -3057,7 +3436,7 @@ static void nbl_phy_config_adminq_rxq(void *priv, dma_addr_t dma_addr, int size_
 			      (u8 *)&qinfo_cfg_rx_table, sizeof(qinfo_cfg_rx_table));
 
 	qinfo_cfg_rx_table.queue_base_addr_l = (u32)(dma_addr & 0xFFFFFFFF);
-	qinfo_cfg_rx_table.queue_base_addr_h = (u32)(dma_addr >> 32);
+	qinfo_cfg_rx_table.queue_base_addr_h = upper_32_bits(dma_addr);
 	qinfo_cfg_rx_table.queue_size_bwind = (u32)size_bwid;
 	qinfo_cfg_rx_table.queue_rst = 0;
 	qinfo_cfg_rx_table.queue_en = 1;
@@ -3074,7 +3453,7 @@ static void nbl_phy_config_adminq_txq(void *priv, dma_addr_t dma_addr, int size_
 			      (u8 *)&qinfo_cfg_tx_table, sizeof(qinfo_cfg_tx_table));
 
 	qinfo_cfg_tx_table.queue_base_addr_l = (u32)(dma_addr & 0xFFFFFFFF);
-	qinfo_cfg_tx_table.queue_base_addr_h = (u32)(dma_addr >> 32);
+	qinfo_cfg_tx_table.queue_base_addr_h = upper_32_bits(dma_addr);
 	qinfo_cfg_tx_table.queue_size_bwind = (u32)size_bwid;
 	qinfo_cfg_tx_table.queue_rst = 0;
 	qinfo_cfg_tx_table.queue_en = 1;
@@ -3124,10 +3503,10 @@ static void nbl_phy_enable_adminq_irq(void *priv, bool enable_msix, u16 global_v
 
 	if (enable_msix) {
 		adminq_qinfo_map.msix_idx = global_vector_id;
-		adminq_qinfo_map.msix_idx_valid = 1;
+		adminq_qinfo_map.msix_idx_vaild = 1;
 	} else {
 		adminq_qinfo_map.msix_idx = 0;
-		adminq_qinfo_map.msix_idx_valid = 0;
+		adminq_qinfo_map.msix_idx_vaild = 0;
 	}
 
 	nbl_hw_write_mbx_regs(priv, NBL_ADMINQ_MSIX_MAP_TABLE_ADDR,
@@ -3140,7 +3519,7 @@ static void nbl_phy_update_adminq_queue_tail_ptr(void *priv, u16 tail_ptr, u8 tx
 	u32 local_qid = txrx;
 	u32 value = ((u32)tail_ptr << 16) | local_qid;
 
-	/* wmb for doorbell */
+	/* write barrier to ensure queue writes are visible before notifying the emp */
 	wmb();
 	nbl_mbx_wr32(priv, NBL_ADMINQ_NOTIFY_ADDR, value);
 }
@@ -3385,6 +3764,7 @@ static void nbl_phy_init_dprbac(void *priv)
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 	union nbl_dprbac_enable dprbac_enable = {.data = 0};
 	union nbl_dprbac_dbg_cnt_en dbg_cnt_en = {.data = 0};
+	union nbl_dprbac_drop drop;
 
 	dprbac_enable.prbac = 1;
 	dprbac_enable.mf_fwd = 1;
@@ -3397,6 +3777,10 @@ static void nbl_phy_init_dprbac(void *priv)
 	dbg_cnt_en.out_drop_prbac = 1;
 	dbg_cnt_en.out_right_prbac = 1;
 	nbl_hw_wr32(phy_mgt, NBL_DPRBAC_DBG_CNT_EN, dbg_cnt_en.data);
+
+	nbl_hw_read_regs(phy_mgt, NBL_DPRBAC_DROP, (u8 *)&drop, sizeof(drop));
+	drop.prbac_bp = 0;
+	nbl_hw_write_regs(phy_mgt, NBL_DPRBAC_DROP, (u8 *)&drop, sizeof(drop));
 }
 
 static void nbl_phy_cfg_uipsec_nat(void *priv, u8 nat_flag, u16 dport)
@@ -3667,7 +4051,7 @@ static void nbl_phy_init_uprbac(void *priv)
 static u32 nbl_phy_get_fw_ping(void *priv)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
-	unsigned long ping;
+	u32 ping;
 
 	nbl_hw_read_mbx_regs(phy_mgt, NBL_FW_HEARTBEAT_PING, (u8 *)&ping, sizeof(ping));
 
@@ -3758,7 +4142,7 @@ static int nbl_phy_cmdq_init(void *priv, void *param, u16 func_id)
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 	struct nbl_chan_cmdq_init_info *cmdq_param =
 		(struct nbl_chan_cmdq_init_info *)param;
-	union pcompleter_host_cfg_function_id_cmdq_u cfg_func_id = {
+	union pcompleter_host_cfg_funtion_id_cmdq_u cfg_func_id = {
 		.info.dbg = func_id,
 		.info.vld = 1,
 	};
@@ -3780,7 +4164,7 @@ static int nbl_phy_cmdq_init(void *priv, void *param, u16 func_id)
 	value = NBL_CMDQ_LO_DWORD(cmdq_param->pa);
 	nbl_hw_wr32(phy_mgt, NBL_CMDQ_HOST_CMDQ_BADDR_L_ADDR, value);
 
-	nbl_hw_wr32(phy_mgt, NBL_PCOMPLETER_HOST_CFG_FUNCTION_ID_CMDQ_ADDR,
+	nbl_hw_wr32(phy_mgt, NBL_PCOMPLETER_HOST_CFG_FUNTION_ID_CMDQ_ADDR,
 		    *(u32 *)&cfg_func_id);
 
 	/* enable the queue */
@@ -3801,7 +4185,7 @@ static int nbl_phy_cmdq_destroy(void *priv)
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 	u32 value = 0;
 
-	nbl_hw_wr32(phy_mgt, NBL_PCOMPLETER_HOST_CFG_FUNCTION_ID_CMDQ_ADDR,
+	nbl_hw_wr32(phy_mgt, NBL_PCOMPLETER_HOST_CFG_FUNTION_ID_CMDQ_ADDR,
 		    value);
 	nbl_hw_wr32(phy_mgt, NBL_CMDQ_HOST_CMDQ_EN_ADDR, value);
 	nbl_hw_wr32(phy_mgt, NBL_CMDQ_HOST_CMDQ_SIZE_ADDR, value);
@@ -3812,7 +4196,7 @@ static int nbl_phy_cmdq_destroy(void *priv)
 	return NBL_OK;
 }
 
-static int nbl_phy_cmdq_reset(void *priv)
+static int nbl_phy_cmdq_reset(void *priv, void *param)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 	u32 value = 0;
@@ -4011,13 +4395,13 @@ static int nbl_acl_flow_tcam_clear(struct nbl_phy_mgt *phy_mgt, u16 tcam_btm,
 		indirect_ack.info.done = 0;
 		try_time = NBL_ACL_RD_RETRY;
 	}
-	nbl_debug(common, NBL_DEBUG_FLOW, "-----clear acl flow:idx(depth):%d(%d)-----\n",
+	nbl_debug(common, NBL_DEBUG_FLOW, "clear acl flow:idx(depth):%d(%d)\n",
 		  tcam_start_idx, tcam_end_idx);
 	return NBL_OK;
 }
 
 static int nbl_acl_init_regs(struct nbl_phy_mgt *phy_mgt,
-			     struct nbl_chan_flow_init_info *param)
+			     struct nbl_chan_flow_init_info_leonis *param)
 {
 	/* set act priority */
 	nbl_acl_set_act_pri(phy_mgt);
@@ -4103,7 +4487,7 @@ static int nbl_phy_acl_set_upcall_rule(void *priv, u8 idx, u16 vsi_id)
 
 	memset(&action_ram, 0, sizeof(action_ram));
 	memset(&indirect_ack, 0, sizeof(indirect_ack));
-	nbl_info(common, NBL_DEBUG_FLOW, "-----set acl tcam_cfg and act_cfg:%d-----\n", idx);
+	nbl_info(common, NBL_DEBUG_FLOW, "set acl tcam_cfg and act_cfg:%d\n", idx);
 	/* mask all fields default */
 	memset(&eth_mask, 0xff, sizeof(eth_mask));
 	eth_mask.eth_pt_id = 0;
@@ -4116,13 +4500,13 @@ static int nbl_phy_acl_set_upcall_rule(void *priv, u8 idx, u16 vsi_id)
 	nbl_phy_acl_set_dport(&fwd_act, NBL_GET_PF_VSI_ID(idx));
 	NBL_ACL_GET_ACTION_DATA(fwd_act, action_ram.info.action0);
 	indirect_ctrl.info.tcam_addr = tcam_entry;
-	nbl_info(common, NBL_DEBUG_FLOW, "---addr:%d, size:%lu---\n",
+	nbl_info(common, NBL_DEBUG_FLOW, "acl action addr:%d, size:%zu\n",
 		 tcam_entry, sizeof(action_ram));
 	nbl_hw_write_regs(phy_mgt, NBL_ACL_ACTION_RAM_TBL(NBL_ACL_TCAM_UPCALL_IDX, tcam_entry),
 			  (u8 *)action_ram.data, sizeof(action_ram));
 
 	eth_data.eth_id = NBL_GET_PF_ETH_ID(idx);
-	nbl_info(common, NBL_DEBUG_FLOW, "-----key(mask): %d(%d), %d(%d)\n",
+	nbl_info(common, NBL_DEBUG_FLOW, "acl entry key(mask): %d(%d), %d(%d)\n",
 		 eth_data.eth_pt_id, eth_mask.eth_pt_id, eth_data.eth_id, eth_mask.eth_id);
 	nbl_tcam_truth_value_convert(&eth_data.tcam_data, &eth_mask.tcam_data);
 	nbl_hw_write_regs(phy_mgt, NBL_ACL_TCAM_DATA_X(NBL_ACL_TCAM_UPCALL_IDX),
@@ -4158,7 +4542,7 @@ static int nbl_phy_acl_set_upcall_rule(void *priv, u8 idx, u16 vsi_id)
 			  (u8 *)&action_ram, sizeof(action_ram));
 
 	vsi_data.sw_id = idx;
-	nbl_info(common, NBL_DEBUG_FLOW,  "-----key(mask):%d(%d), %d(%d)\n",
+	nbl_info(common, NBL_DEBUG_FLOW,  "acl entry key(mask):%d(%d), %d(%d)\n",
 		 vsi_data.vsi_pt_id, vsi_mask.vsi_pt_id, vsi_data.sw_id, vsi_mask.sw_id);
 	nbl_tcam_truth_value_convert(&vsi_data.tcam_data, &vsi_mask.tcam_data);
 	nbl_hw_write_regs(phy_mgt, NBL_ACL_TCAM_DATA_X(NBL_ACL_TCAM_UPCALL_IDX),
@@ -4367,7 +4751,7 @@ static void nbl_fem_profile_table_action_set(struct nbl_phy_mgt *phy_mgt, u32 pp
 }
 
 static int nbl_fem_init_regs(struct nbl_phy_mgt *phy_mgt,
-			     struct nbl_chan_flow_init_info *param)
+			     struct nbl_chan_flow_init_info_leonis *param)
 {
 	u8 i = 0;
 	u32 bank_sel = 0;
@@ -4536,16 +4920,23 @@ static void nbl_flow_clear_tcam_ad(struct nbl_phy_mgt *phy_mgt)
 				  NBL_FEM_EM0_AD_TABLE_REG(i),
 				  ad_ptr, sizeof(ad_table));
 		nbl_hw_write_regs(phy_mgt,
-				  NBL_FEM_EM1_TCAM_TABLE_REG(i),
-				  tcam_ptr, sizeof(tcam_table));
-		nbl_hw_write_regs(phy_mgt,
-				  NBL_FEM_EM1_AD_TABLE_REG(i),
-				  ad_ptr, sizeof(ad_table));
-		nbl_hw_write_regs(phy_mgt,
 				  NBL_FEM_EM2_TCAM_TABLE_REG(i),
 				  tcam_ptr, sizeof(tcam_table));
 		nbl_hw_write_regs(phy_mgt,
 				  NBL_FEM_EM2_AD_TABLE_REG(i),
+				  ad_ptr, sizeof(ad_table));
+
+		/* PP1 tcam last four entries reserved for ECN stats, skip clear */
+		if (i > NBL_FEM_TCAM_MAX_NUM - 4) {
+			nbl_hw_rd32(phy_mgt, NBL_FEM_EM2_AD_TABLE_REG(i));
+			continue;
+		}
+
+		nbl_hw_write_regs(phy_mgt,
+				  NBL_FEM_EM1_TCAM_TABLE_REG(i),
+				  tcam_ptr, sizeof(tcam_table));
+		nbl_hw_write_regs(phy_mgt,
+				  NBL_FEM_EM1_AD_TABLE_REG(i),
 				  ad_ptr, sizeof(ad_table));
 		nbl_hw_rd32(phy_mgt, NBL_FEM_EM2_AD_TABLE_REG(i));
 	}
@@ -4561,20 +4952,20 @@ static union __maybe_unused epro_aft_u aft_def[NBL_FWD_TYPE_MAX] = {
 		BIT(NBL_ACT_SET_MIRROR),
 	},
 	[NBL_FWD_TYPE_UPCALL]		= {
-		.data = BIT(NBL_ACT_SET_MCC) | BIT(NBL_ACT_SET_TAB_INDEX) |
-		BIT(NBL_ACT_SET_MIRROR) | BIT(NBL_ACT_SET_VNI0) |
-		BIT(NBL_ACT_SET_VNI1) | BIT(NBL_ACT_REP_IPV4_SIP) |
-		BIT(NBL_ACT_REP_IPV4_DIP) | BIT(NBL_ACT_REP_IPV6_SIP) |
-		BIT(NBL_ACT_REP_IPV6_DIP) | BIT(NBL_ACT_REP_DPORT) |
-		BIT(NBL_ACT_REP_SPORT) | BIT(NBL_ACT_REP_DMAC) |
-		BIT(NBL_ACT_REP_SMAC) | BIT(NBL_ACT_REP_IPV4_DSCP) |
-		BIT(NBL_ACT_REP_IPV6_DSCP) | BIT(NBL_ACT_REP_IPV4_TTL) |
-		BIT(NBL_ACT_REP_IPV6_TTL) | BIT(NBL_ACT_DEL_SVLAN) |
-		BIT(NBL_ACT_DEL_CVLAN) | BIT(NBL_ACT_REP_SVLAN) |
-		BIT(NBL_ACT_REP_CVLAN) | BIT(NBL_ACT_ADD_CVLAN) |
-		BIT(NBL_ACT_ADD_SVLAN) | BIT(NBL_ACT_TNL_ENCAP) |
-		BIT(NBL_ACT_TNL_DECAP) | BIT(NBL_ACT_REP_OUTER_SPORT) |
-		BIT(NBL_ACT_SET_PRI_MDF0),
+		.data = BIT_ULL(NBL_ACT_SET_MCC) | BIT_ULL(NBL_ACT_SET_TAB_INDEX) |
+		BIT_ULL(NBL_ACT_SET_MIRROR) | BIT_ULL(NBL_ACT_SET_VNI0) |
+		BIT_ULL(NBL_ACT_SET_VNI1) | BIT_ULL(NBL_ACT_REP_IPV4_SIP) |
+		BIT_ULL(NBL_ACT_REP_IPV4_DIP) | BIT_ULL(NBL_ACT_REP_IPV6_SIP) |
+		BIT_ULL(NBL_ACT_REP_IPV6_DIP) | BIT_ULL(NBL_ACT_REP_DPORT) |
+		BIT_ULL(NBL_ACT_REP_SPORT) | BIT_ULL(NBL_ACT_REP_DMAC) |
+		BIT_ULL(NBL_ACT_REP_SMAC) | BIT_ULL(NBL_ACT_REP_IPV4_DSCP) |
+		BIT_ULL(NBL_ACT_REP_IPV6_DSCP) | BIT_ULL(NBL_ACT_REP_IPV4_TTL) |
+		BIT_ULL(NBL_ACT_REP_IPV6_TTL) | BIT_ULL(NBL_ACT_DEL_SVLAN) |
+		BIT_ULL(NBL_ACT_DEL_CVLAN) | BIT_ULL(NBL_ACT_REP_SVLAN) |
+		BIT_ULL(NBL_ACT_REP_CVLAN) | BIT_ULL(NBL_ACT_ADD_CVLAN) |
+		BIT_ULL(NBL_ACT_ADD_SVLAN) | BIT_ULL(NBL_ACT_TNL_ENCAP) |
+		BIT_ULL(NBL_ACT_TNL_DECAP) | BIT_ULL(NBL_ACT_REP_OUTER_SPORT) |
+		BIT_ULL(NBL_ACT_SET_PRI_MDF0),
 	},
 	[NBL_FWD_TYPE_SRC_MIRROR]	= {
 		.data = BIT(NBL_ACT_SET_FLOW_STAT0) | BIT(NBL_ACT_SET_FLOW_STAT1) |
@@ -4727,8 +5118,8 @@ static int nbl_epro_init_regs(struct nbl_phy_mgt *phy_mgt)
 static int nbl_phy_flow_init(void *priv, void *param)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
-	struct nbl_chan_flow_init_info *info =
-		(struct nbl_chan_flow_init_info *)param;
+	struct nbl_chan_flow_init_info_leonis *info =
+		(struct nbl_chan_flow_init_info_leonis *)param;
 
 	nbl_debug(NBL_PHY_MGT_TO_COMMON(phy_mgt), NBL_DEBUG_FLOW,
 		  "flow init: start");
@@ -5111,7 +5502,7 @@ static int nbl_phy_offload_flow_rule(void *priv, void *param)
 	u8 i;
 
 	nbl_debug(NBL_PHY_MGT_TO_COMMON(phy_mgt), NBL_DEBUG_FLOW,
-		  "count %u, total size %u, 1st reg: tab %u, mode %u, size %u, depth %u, data %u",
+		  "send regs: flow regs received: to parse and read/write: regs info: count %u, total size %u, 1st reg: table %u, mode %u, size %u, depth %u, data %u",
 		  hdr_info->item_cnt, hdr_info->data_len,
 		  reg_info->tbl_name, reg_info->mode, reg_info->data_len,
 		  reg_info->depth, reg_info->data[0]);
@@ -5134,7 +5525,7 @@ static int nbl_phy_offload_flow_rule(void *priv, void *param)
 			nbl_write_parsed_reg(phy_mgt, reg_info, value);
 		} else {
 			nbl_err(NBL_PHY_MGT_TO_COMMON(phy_mgt), NBL_DEBUG_FLOW,
-				"failed: unrecognized mode: tab %u, mode %u, size %u, ",
+				"failed parsing reg info: unrecognized mode: tab %u, mode %u, size %u, ",
 				reg_info->tbl_name, reg_info->mode, reg_info->data_len);
 		}
 
@@ -5221,7 +5612,7 @@ nbl_ped_port_vlan_type_cfg(struct nbl_phy_mgt *phy_mgt, u32 port_id,
 }
 
 static int nbl_phy_init_rep(void *priv, u16 vsi_id, u8 inner_type,
-			    u8 outer_type, u8 rep_type)
+			    u8 outer_type, u8 rep_type, u16 rss_key_range_oft)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 	union epro_vpt_u vpt = {.info = {0}};
@@ -5266,7 +5657,7 @@ static int nbl_phy_init_rep(void *priv, u16 vsi_id, u8 inner_type,
 static int nbl_phy_init_vdpaq(void *priv, u16 func_id, u16 bdf, u64 pa, u32 size)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
-	union pcompleter_host_cfg_function_id_vdpa_net_u cfg_func_id = {
+	union pcompleter_host_cfg_funtion_id_vdpa_net_u cfg_func_id = {
 		.info.dbg = func_id,
 		.info.vld = 1,
 	};
@@ -5288,7 +5679,7 @@ static int nbl_phy_init_vdpaq(void *priv, u16 func_id, u16 bdf, u64 pa, u32 size
 	/* cfg vdpa queue bdf */
 	nbl_hw_wr32(phy_mgt, NBL_VDPA_DIF_BDF_ADDR, bdf);
 
-	nbl_hw_write_regs(phy_mgt, NBL_PCOMPLETER_HOST_CFG_FUNCTION_ID_VDPA_NET_ADDR,
+	nbl_hw_write_regs(phy_mgt, NBL_PCOMPLETER_HOST_CFG_FUNTION_ID_VDPA_NET_ADDR,
 			  (u8 *)&cfg_func_id, sizeof(cfg_func_id));
 
 	/* all registers set, enable vdpa queue again */
@@ -5297,7 +5688,7 @@ static int nbl_phy_init_vdpaq(void *priv, u16 func_id, u16 bdf, u64 pa, u32 size
 	return 0;
 }
 
-static void nbl_phy_destroy_vdpaq(void *priv)
+static void nbl_phy_destroy_vdpaq(void *priv, u16 func_id)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 
@@ -5331,7 +5722,7 @@ static int nbl_phy_get_reg_dump_len(void *priv)
 }
 
 /* return value need to convert to Mil degree Celsius(1/1000) */
-static u32 nbl_phy_get_chip_temperature(void *priv, enum nbl_hwmon_type type, u32 senser_id)
+static int nbl_phy_get_chip_temperature(void *priv, enum nbl_hwmon_type type, u32 senser_id)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 	u32 temp = 0;
@@ -5372,7 +5763,7 @@ static struct nbl_phy_ped_tbl ped_tbl[NBL_FLOW_PED_RECORD_MAX] = {
 				    .addr_len = NBL_DPED_TAB_REPLACE_DWLEN,},
 };
 
-static void nbl_phy_write_ped_tbl(void *priv, u8 *data, u16 idx, enum nbl_flow_ped_type ped_type)
+static void nbl_phy_write_ped_tbl(void *priv, u8 *data, u16 idx, u32 ped_type)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 	u64 reg;
@@ -5420,6 +5811,50 @@ static u16 nbl_phy_get_mtu_index(void *priv, u16 vsi_id)
 	nbl_hw_read_regs(phy_mgt, NBL_IPRO_DN_SRC_PORT_TBL_REG(vsi_id),
 			 (u8 *)&ipro_dn_src_port_tbl, sizeof(ipro_dn_src_port_tbl));
 	return ipro_dn_src_port_tbl.mtu_sel;
+}
+
+static void nbl_phy_cfg_vlan_filtering(void *priv, bool filter)
+{
+	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
+	union pp1_kgen_key_prf_u kgen_key_prf = {.info = {0}};
+
+	if (!filter) {
+		nbl_hw_read_regs(phy_mgt, NBL_PP0_KGEN_KEY_PRF_REG(0), (u8 *)&kgen_key_prf,
+				 sizeof(kgen_key_prf));
+		kgen_key_prf.info.ext16_1_src = 0;
+		nbl_hw_write_regs(phy_mgt, NBL_PP0_KGEN_KEY_PRF_REG(0), (u8 *)&kgen_key_prf,
+				  sizeof(kgen_key_prf));
+
+		nbl_hw_read_regs(phy_mgt, NBL_PP0_KGEN_KEY_PRF_REG(1), (u8 *)&kgen_key_prf,
+				 sizeof(kgen_key_prf));
+		kgen_key_prf.info.ext16_1_src = 0;
+		nbl_hw_write_regs(phy_mgt, NBL_PP0_KGEN_KEY_PRF_REG(1), (u8 *)&kgen_key_prf,
+				  sizeof(kgen_key_prf));
+
+		nbl_hw_read_regs(phy_mgt, NBL_PP0_KGEN_KEY_PRF_REG(2), (u8 *)&kgen_key_prf,
+				 sizeof(kgen_key_prf));
+		kgen_key_prf.info.ext16_1_src = 0;
+		nbl_hw_write_regs(phy_mgt, NBL_PP0_KGEN_KEY_PRF_REG(2), (u8 *)&kgen_key_prf,
+				  sizeof(kgen_key_prf));
+	} else {
+		nbl_hw_read_regs(phy_mgt, NBL_PP0_KGEN_KEY_PRF_REG(0), (u8 *)&kgen_key_prf,
+				 sizeof(kgen_key_prf));
+		kgen_key_prf.info.ext16_1_src = 0xbe;
+		nbl_hw_write_regs(phy_mgt, NBL_PP0_KGEN_KEY_PRF_REG(0), (u8 *)&kgen_key_prf,
+				  sizeof(kgen_key_prf));
+
+		nbl_hw_read_regs(phy_mgt, NBL_PP0_KGEN_KEY_PRF_REG(1), (u8 *)&kgen_key_prf,
+				 sizeof(kgen_key_prf));
+		kgen_key_prf.info.ext16_1_src = 0x98;
+		nbl_hw_write_regs(phy_mgt, NBL_PP0_KGEN_KEY_PRF_REG(1), (u8 *)&kgen_key_prf,
+				  sizeof(kgen_key_prf));
+
+		nbl_hw_read_regs(phy_mgt, NBL_PP0_KGEN_KEY_PRF_REG(2), (u8 *)&kgen_key_prf,
+				 sizeof(kgen_key_prf));
+		kgen_key_prf.info.ext16_1_src = 0x98;
+		nbl_hw_write_regs(phy_mgt, NBL_PP0_KGEN_KEY_PRF_REG(2), (u8 *)&kgen_key_prf,
+				  sizeof(kgen_key_prf));
+	}
 }
 
 static int nbl_phy_process_abnormal_queue(struct nbl_phy_mgt *phy_mgt, u16 queue_id, int type,
@@ -5575,8 +6010,8 @@ static void nbl_phy_set_uvn_desc_wr_timeout(void *priv, u16 timeout)
 	nbl_hw_write_regs(priv, NBL_UVN_DESC_WR_TIMEOUT, (u8 *)&wr_timeout, sizeof(wr_timeout));
 }
 
-static int nbl_phy_cfg_lag_algorithm(void *priv, u16 eth_id, u16 lag_id,
-				     enum netdev_lag_hash hash_type)
+static int nbl_phy_cfg_lag_hash_algorithm(void *priv, u16 eth_id, u16 lag_id,
+					  enum netdev_lag_hash hash_type)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 	struct nbl_epro_ept_tbl ept_tbl = {0};
@@ -5622,11 +6057,6 @@ static int nbl_phy_cfg_lag_member_list(void *priv, struct nbl_lag_member_list_pa
 	}
 	nbl_hw_write_regs(phy_mgt, NBL_EPRO_EPT_TABLE(param->lag_id + NBL_EPRO_EPT_LAG_OFFSET),
 			  (u8 *)&ept_tbl, sizeof(struct nbl_epro_ept_tbl));
-
-	nbl_info(NBL_PHY_MGT_TO_COMMON(phy_mgt), NBL_DEBUG_PHY,
-		 "Nbl phy set port lag member list done, lag_id:%d, port0:%d, port1:%d\n",
-		 param->lag_id, param->port_list[0], param->port_list[1]);
-
 	return 0;
 }
 
@@ -5682,6 +6112,7 @@ static void nbl_phy_get_board_info(void *priv, struct nbl_board_port_info *board
 	board_info->eth_num = dw3.info.port_num;
 	board_info->eth_speed = dw3.info.port_speed;
 	board_info->p4_version = dw3.info.p4_version;
+	board_info->port_type = dw3.info.port_type;
 }
 
 static u32 nbl_phy_get_fw_eth_num(void *priv)
@@ -5818,7 +6249,6 @@ static void nbl_phy_cfg_bgid_back_pressure(void *priv, u8 main_eth_id, u8 other_
 					   bool enable, u8 speed)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
-
 	struct dvn_back_pressure_mask mask = {0};
 
 	nbl_hw_read_regs(phy_mgt, NBL_DVN_BACK_PRESSURE_MASK, (u8 *)&mask, sizeof(mask));
@@ -5883,7 +6313,7 @@ static void nbl_phy_set_ped_tab_vsi_type(void *priv, u32 port_id, u16 eth_proto)
 			  sizeof(uped_vsi_type));
 }
 
-static void nbl_phy_clear_acl(void *priv)
+static void nbl_phy_clear_acl(void *priv, u16 tcam_start_idx, u16 tcam_end_idx)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 
@@ -6711,72 +7141,72 @@ static int nbl_phy_set_fd_tcam_cfg_default(void *priv)
 
 	acl_key_cfg.info.startcompare0 = 1;
 	acl_key_cfg.info.startset0 = 1;
-	acl_key_cfg.info.key_id0 = 11;
+	acl_key_cfg.info.key_id0 = 12;
 	acl_key_cfg.info.tcam0_enable = 1;
 
 	acl_key_cfg.info.startcompare1 = 0;
 	acl_key_cfg.info.startset1 = 0;
-	acl_key_cfg.info.key_id1 = 10;
+	acl_key_cfg.info.key_id1 = 11;
 	acl_key_cfg.info.tcam1_enable = 1;
 
 	acl_key_cfg.info.startcompare2 = 0;
 	acl_key_cfg.info.startset2 = 0;
-	acl_key_cfg.info.key_id2 = 9;
+	acl_key_cfg.info.key_id2 = 10;
 	acl_key_cfg.info.tcam2_enable = 1;
 
 	acl_key_cfg.info.startcompare3 = 0;
 	acl_key_cfg.info.startset3 = 0;
-	acl_key_cfg.info.key_id3 = 8;
+	acl_key_cfg.info.key_id3 = 9;
 	acl_key_cfg.info.tcam3_enable = 1;
 
 	acl_key_cfg.info.startcompare4 = 0;
 	acl_key_cfg.info.startset4 = 0;
-	acl_key_cfg.info.key_id4 = 7;
+	acl_key_cfg.info.key_id4 = 8;
 	acl_key_cfg.info.tcam4_enable = 1;
 
 	acl_key_cfg.info.startcompare5 = 0;
 	acl_key_cfg.info.startset5 = 0;
-	acl_key_cfg.info.key_id5 = 6;
+	acl_key_cfg.info.key_id5 = 7;
 	acl_key_cfg.info.tcam5_enable = 1;
 
 	acl_key_cfg.info.startcompare6 = 0;
 	acl_key_cfg.info.startset6 = 0;
-	acl_key_cfg.info.key_id6 = 5;
+	acl_key_cfg.info.key_id6 = 6;
 	acl_key_cfg.info.tcam6_enable = 1;
 
 	acl_key_cfg.info.startcompare7 = 0;
 	acl_key_cfg.info.startset0 = 0;
-	acl_key_cfg.info.key_id7 = 4;
+	acl_key_cfg.info.key_id7 = 5;
 	acl_key_cfg.info.tcam7_enable = 1;
 
 	acl_key_cfg.info.startcompare8 = 0;
 	acl_key_cfg.info.startset8 = 0;
-	acl_key_cfg.info.key_id8 = 3;
+	acl_key_cfg.info.key_id8 = 4;
 	acl_key_cfg.info.tcam8_enable = 1;
 
 	acl_key_cfg.info.startcompare9 = 0;
 	acl_key_cfg.info.startset9 = 0;
-	acl_key_cfg.info.key_id9 = 2;
+	acl_key_cfg.info.key_id9 = 3;
 	acl_key_cfg.info.tcam9_enable = 1;
 
 	acl_key_cfg.info.startcompare10 = 0;
 	acl_key_cfg.info.startset10 = 0;
-	acl_key_cfg.info.key_id10 = 1;
+	acl_key_cfg.info.key_id10 = 2;
 	acl_key_cfg.info.tcam10_enable = 1;
 
 	acl_key_cfg.info.startcompare11 = 0;
 	acl_key_cfg.info.startset11 = 0;
-	acl_key_cfg.info.key_id11 = 0;
+	acl_key_cfg.info.key_id11 = 1;
 	acl_key_cfg.info.tcam11_enable = 1;
 
-	/* Although we don't use it, startcompare and startset must be 1, to identify the end. */
-	acl_key_cfg.info.startcompare12 = 1;
-	acl_key_cfg.info.startset12 = 1;
+	acl_key_cfg.info.startcompare12 = 0;
+	acl_key_cfg.info.startset12 = 0;
 	acl_key_cfg.info.key_id12 = 0;
-	acl_key_cfg.info.tcam12_enable = 0;
+	acl_key_cfg.info.tcam12_enable = 1;
 
-	acl_key_cfg.info.startcompare13 = 0;
-	acl_key_cfg.info.startset13 = 0;
+	/* Although we don't use it, startcompare and startset must be 1, to indicate the end. */
+	acl_key_cfg.info.startcompare13 = 1;
+	acl_key_cfg.info.startset13 = 1;
 	acl_key_cfg.info.key_id13 = 0;
 	acl_key_cfg.info.tcam13_enable = 0;
 
@@ -6785,14 +7215,13 @@ static int nbl_phy_set_fd_tcam_cfg_default(void *priv)
 	acl_key_cfg.info.key_id14 = 0;
 	acl_key_cfg.info.tcam14_enable = 0;
 
-	/* For ovs-tc upcall */
-	acl_key_cfg.info.startcompare15 = 1;
-	acl_key_cfg.info.startset15 = 1;
+	acl_key_cfg.info.startcompare15 = 0;
+	acl_key_cfg.info.startset15 = 0;
 	acl_key_cfg.info.key_id15 = 0;
-	acl_key_cfg.info.tcam15_enable = 1;
+	acl_key_cfg.info.tcam15_enable = 0;
 
 	acl_action_cfg.info.action_ram0_enable = 1;
-	acl_action_cfg.info.action_ram0_alloc_id = 11;
+	acl_action_cfg.info.action_ram0_alloc_id = 12;
 
 	nbl_hw_write_regs(phy_mgt, NBL_ACL_ACTION_RAM_CFG_REG(NBL_FD_PROFILE_DEFAULT),
 			  (u8 *)&acl_action_cfg, sizeof(acl_action_cfg));
@@ -6894,12 +7323,12 @@ static int nbl_phy_set_fd_tcam_ram(void *priv, struct nbl_acl_tcam_param *data,
 	return 0;
 }
 
-static int nbl_phy_set_fd_action_ram(void *priv, u32 action, u16 ram_index, u32 depth_index)
+static int nbl_phy_set_fd_action_ram(void *priv, u32 *action, u16 ram_index, u32 depth_index)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 	union acl_action_ram15_u acl_action_ram = {{0}};
 
-	acl_action_ram.info.action0 = action;
+	acl_action_ram.info.action0 = *action;
 
 	nbl_hw_write_regs(phy_mgt, NBL_ACL_ACTION_RAM_TBL(ram_index, depth_index),
 			  (u8 *)&acl_action_ram, sizeof(acl_action_ram));
@@ -6912,19 +7341,29 @@ static void nbl_phy_set_hw_status(void *priv, enum nbl_hw_status hw_status)
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 
 	phy_mgt->hw_status = hw_status;
-};
+}
+
+static void nbl_phy_check_hw_status(void *priv)
+{
+	u32 val = U32_MAX;
+	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
+
+	nbl_hw_read_mbx_regs(priv, NBL_MAILBOX_QINFO_CFG_RX_TABLE_ADDR, (u8 *)&val, sizeof(val));
+	if (val == U32_MAX)
+		phy_mgt->hw_status = NBL_HW_PCIE_RESET_ERR;
+}
 
 static enum nbl_hw_status nbl_phy_get_hw_status(void *priv)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 
 	return phy_mgt->hw_status;
-};
+}
 
 static u32 nbl_phy_get_perf_dump_length(void *priv)
 {
 	return sizeof(nbl_phy_dump_registers);
-};
+}
 
 static u32 nbl_phy_get_perf_dump_data(void *priv, u8 *buffer, u32 length)
 {
@@ -6938,7 +7377,7 @@ static u32 nbl_phy_get_perf_dump_data(void *priv, u8 *buffer, u32 length)
 	}
 
 	return copy_len;
-};
+}
 
 static int nbl_phy_get_mirror_table_id(void *priv, u16 vsi_id, int dir,
 				       bool mirror_en, u8 *mt_id)
@@ -6954,7 +7393,7 @@ static int nbl_phy_get_mirror_table_id(void *priv, u16 vsi_id, int dir,
 				 (u8 *)&ipro_dn_src_port_tbl,
 				 sizeof(ipro_dn_src_port_tbl));
 		if (!mirror_en && !ipro_dn_src_port_tbl.info.mirror_en) {
-			*mt_id = NBL_EPRO_MT_MAX;
+			*mt_id = U8_MAX;
 		} else if (!mirror_en && ipro_dn_src_port_tbl.info.mirror_en) {
 			*mt_id = ipro_dn_src_port_tbl.info.mirror_id;
 		} else if (mirror_en && ipro_dn_src_port_tbl.info.mirror_en) {
@@ -6968,13 +7407,13 @@ static int nbl_phy_get_mirror_table_id(void *priv, u16 vsi_id, int dir,
 					return 0;
 				}
 			}
-			*mt_id = NBL_EPRO_MT_MAX;
+			*mt_id = U8_MAX;
 		}
 	} else {
 		nbl_hw_read_regs(phy_mgt, NBL_EPRO_VPT_REG(vsi_id),
 				 (u8 *)&epro_vpt, sizeof(epro_vpt));
 		if (!mirror_en && !epro_vpt.info.mirror_en) {
-			*mt_id = NBL_EPRO_MT_MAX;
+			*mt_id = U8_MAX;
 		} else if (!mirror_en && epro_vpt.info.mirror_en) {
 			*mt_id = epro_vpt.info.mirror_id;
 		} else if (mirror_en && epro_vpt.info.mirror_en) {
@@ -6988,7 +7427,7 @@ static int nbl_phy_get_mirror_table_id(void *priv, u16 vsi_id, int dir,
 					return 0;
 				}
 			}
-			*mt_id = NBL_EPRO_MT_MAX;
+			*mt_id = U8_MAX;
 		}
 	}
 
@@ -7142,20 +7581,136 @@ static int nbl_phy_get_uvn_pkt_drop_stats(void *priv, u16 global_queue_id, u32 *
 	return 0;
 }
 
+static int nbl_phy_get_uvn_drop_queue_disable(void *priv, u32 *uvn_drop_queue_disable)
+{
+	*uvn_drop_queue_disable = nbl_hw_rd32(priv, NBL_UVN_DESC_RD_DROP_QUEUE_DISABLE);
+	return 0;
+}
+
 static int nbl_phy_get_ustore_pkt_drop_stats(void *priv, u8 eth_id,
-					     struct nbl_ustore_stats *ustore_stats)
+					     struct nbl_chan_param_drop_stats_resp *drop_stats)
 {
 	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
 
-	ustore_stats->rx_drop_packets = nbl_hw_rd32(phy_mgt, NBL_USTORE_BUF_PORT_DROP_PKT(eth_id));
-	ustore_stats->rx_trun_packets = nbl_hw_rd32(phy_mgt, NBL_USTORE_BUF_PORT_TRUN_PKT(eth_id));
+	drop_stats->rx_drop_packets = nbl_hw_rd32(phy_mgt, NBL_USTORE_BUF_PORT_DROP_PKT(eth_id));
+	drop_stats->rx_trun_packets = nbl_hw_rd32(phy_mgt, NBL_USTORE_BUF_PORT_TRUN_PKT(eth_id));
 
 	return 0;
 }
 
+static u32 nbl_phy_get_fake_drop_stats(void *priv)
+{
+	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
+	union ipro_antifake_drop_u fake_drop;
+
+	nbl_hw_read_regs(phy_mgt, NBL_IPRO_ANTIFAKE_DROP_ADDR,
+			 (u8 *)&fake_drop, sizeof(fake_drop));
+	return (u32)fake_drop.info.cnt;
+}
+
+static void nbl_phy_set_dpa_chksum_errcode(void *priv, bool flag)
+{
+	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
+	struct nbl_dpa_err_code errcode;
+
+	nbl_hw_read_regs(phy_mgt, NBL_DPA_ERROR_CODE_ADDR,
+			 (u8 *)&errcode, sizeof(errcode));
+	/**
+	 *  only drop rx csum err. Need disable dpa errcode, because ipro will drop tx && rx
+	 * errcode packet at the same time.
+	 */
+	if (flag) {
+		errcode.l4_csum_err = 0;
+		errcode.l3_csum_err = 0;
+	} else {
+		errcode.l4_csum_err = NBL_ERROR_CODE_L4_CHKSUM;
+		errcode.l3_csum_err = NBL_ERROR_CODE_L3_CHKSUM;
+	}
+
+	nbl_hw_write_regs(phy_mgt, NBL_DPA_ERROR_CODE_ADDR,
+			  (u8 *)&errcode, sizeof(errcode));
+}
+
+static void nbl_phy_dump_abnormal_intr(void *priv, struct seq_file *m)
+{
+	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
+	struct dvn_desc_dif_err_info desc_dif_err_info = {0};
+	struct dvn_pkt_dif_err_info pkt_dif_err_info = {0};
+	struct uvn_queue_err_info queue_err_info = {0};
+	u32 int_status = 0, rdma_other_abn = 0, tlp_out_drop_cnt = 0;
+	u32 desc_dif_err_cnt = 0, pkt_dif_err_cnt = 0;
+	u32 queue_err_cnt;
+	/* dvn int info */
+	nbl_hw_read_regs(phy_mgt, NBL_DVN_DESC_DIF_ERR_CNT,
+			 (u8 *)&desc_dif_err_cnt, sizeof(u32));
+	nbl_hw_read_regs(phy_mgt, NBL_DVN_DESC_DIF_ERR_INFO,
+			 (u8 *)&desc_dif_err_info,
+			 sizeof(struct dvn_desc_dif_err_info));
+	seq_printf(m, "dvn_desc_dif_mf_cnt:%d, queue_id:%d\n",
+		   desc_dif_err_cnt, desc_dif_err_info.queue_id);
+	nbl_hw_read_regs(phy_mgt, NBL_DVN_PKT_DIF_ERR_CNT,
+			 (u8 *)&pkt_dif_err_cnt, sizeof(u32));
+	nbl_hw_read_regs(phy_mgt, NBL_DVN_PKT_DIF_ERR_INFO,
+			 (u8 *)&pkt_dif_err_info,
+			 sizeof(struct dvn_pkt_dif_err_info));
+	seq_printf(m, "dvn_pkt_dif_mf_cnt:%d, queue_id:%d\n",
+		   pkt_dif_err_cnt, pkt_dif_err_info.queue_id);
+
+	nbl_hw_read_regs(phy_mgt, NBL_UVN_QUEUE_ERR_CNT,
+			 (u8 *)&queue_err_cnt, sizeof(u32));
+	nbl_hw_read_regs(phy_mgt, NBL_UVN_QUEUE_ERR_INFO,
+			 (u8 *)&queue_err_info, sizeof(struct uvn_queue_err_info));
+	seq_printf(m, "uvn_queue_err_cnt: 0x%x, qid:0x%x\n",
+		   queue_err_cnt, queue_err_info.queue_id);
+
+	nbl_hw_read_regs(phy_mgt, NBL_DSCH_RDMA_OTHER_ABN, (u8 *)&rdma_other_abn, sizeof(u32));
+	nbl_hw_read_regs(phy_mgt, NBL_PCOMPLETER_TLP_OUT_DROP_CNT,
+			 (u8 *)&tlp_out_drop_cnt, sizeof(u32));
+	seq_printf(m, "dsch_rdma_other_abn:0x%x\n", rdma_other_abn);
+	seq_printf(m, "pcompleter_tlp_out_drop_cnt:0x%x\n", tlp_out_drop_cnt);
+
+	nbl_hw_read_regs(phy_mgt, NBL_HOST_PADPT_INT_STATUS, (u8 *)&int_status, sizeof(u32));
+	seq_printf(m, "host_padpt_int_status:0x%x\n", int_status);
+	nbl_hw_write_regs(phy_mgt, NBL_HOST_PADPT_INT_STATUS, (u8 *)&int_status,
+			  sizeof(int_status));
+
+	nbl_hw_read_regs(phy_mgt, NBL_MBX_INT_STATUS, (u8 *)&int_status, sizeof(u32));
+	seq_printf(m, "mbx_int_status:0x%x\n", int_status);
+	nbl_hw_write_regs(phy_mgt, NBL_MBX_INT_STATUS, (u8 *)&int_status, sizeof(int_status));
+}
+
+static void nbl_phy_get_qinfo_tx(void *priv, u16 func_id, dma_addr_t *dma_addr, u32 *size_bwind)
+{
+	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
+	struct nbl_mailbox_qinfo_cfg_table tx = {0};
+
+	nbl_hw_read_regs(phy_mgt, NBL_MAILBOX_QINFO_CFG_TX_TABLE_REG(func_id),
+			 (u8 *)&tx, sizeof(tx));
+
+	*dma_addr = ((u64)tx.queue_base_addr_h << 32) | tx.queue_base_addr_l;
+	*size_bwind = tx.queue_size_bwind;
+}
+
+static void nbl_phy_set_qinfo_tx(void *priv, u16 func_id, dma_addr_t dma_addr, u32 size_bwid)
+{
+	struct nbl_phy_mgt *phy_mgt = (struct nbl_phy_mgt *)priv;
+	struct nbl_mailbox_qinfo_cfg_table tx = {0};
+
+	if (dma_addr && size_bwid) {
+		tx.queue_base_addr_l = (u32)(dma_addr & 0xFFFFFFFF);
+		tx.queue_base_addr_h = upper_32_bits(dma_addr);
+		tx.queue_size_bwind = (u32)size_bwid;
+		tx.queue_rst = 0;
+		tx.queue_en = 1;
+
+		nbl_hw_write_regs(phy_mgt, NBL_MAILBOX_QINFO_CFG_TX_TABLE_REG(func_id),
+				  (u8 *)&tx, sizeof(tx));
+	}
+}
+
 static struct nbl_phy_ops phy_ops = {
 	.init_chip_module		= nbl_phy_init_chip_module,
-	.init_qid_map_table		= nbl_phy_init_qid_map_table,
+	.set_driver_status		= nbl_phy_set_driver_status,
 	.set_qid_map_table		= nbl_phy_set_qid_map_table,
 	.set_qid_map_ready		= nbl_phy_set_qid_map_ready,
 	.cfg_ipro_queue_tbl		= nbl_phy_cfg_ipro_queue_tbl,
@@ -7181,7 +7736,8 @@ static struct nbl_phy_ops phy_ops = {
 	.set_ucar			= nbl_phy_set_ucar,
 	.cfg_dsch_net_to_group		= nbl_phy_cfg_dsch_net_to_group,
 	.init_epro_rss_key		= nbl_phy_init_epro_rss_key,
-	.read_rss_key			= nbl_phy_read_epro_rss_key,
+	.get_vsi_rss_key		= nbl_phy_get_epro_rss_key,
+	.set_rss_key			= nbl_phy_set_epro_rss_key,
 	.read_rss_indir			= nbl_phy_read_rss_indir,
 	.get_rss_alg_sel		= nbl_phy_get_rss_alg_sel,
 	.set_rss_alg_sel		= nbl_phy_set_rss_alg_sel,
@@ -7208,6 +7764,7 @@ static struct nbl_phy_ops phy_ops = {
 	.set_vsi_mtu			= nbl_phy_set_vsi_mtu,
 	.set_mtu			= nbl_phy_set_mtu,
 	.get_mtu_index			= nbl_phy_get_mtu_index,
+	.cfg_vlan_filtering		= nbl_phy_cfg_vlan_filtering,
 
 	.configure_msix_map		= nbl_phy_configure_msix_map,
 	.configure_msix_info		= nbl_phy_configure_msix_info,
@@ -7224,6 +7781,7 @@ static struct nbl_phy_ops phy_ops = {
 	.update_mcc_next_node		= nbl_phy_update_mcc_next_node,
 	.add_tnl_encap			= nbl_phy_add_tnl_encap,
 	.del_tnl_encap			= nbl_phy_del_tnl_encap,
+	.set_decap_set			= nbl_phy_set_decap_set,
 	.init_fem			= nbl_phy_init_fem,
 	.init_acl			= nbl_phy_init_acl,
 	.uninit_acl			= nbl_phy_uninit_acl,
@@ -7236,6 +7794,7 @@ static struct nbl_phy_ops phy_ops = {
 	.update_mailbox_queue_tail_ptr	= nbl_phy_update_mailbox_queue_tail_ptr,
 	.config_mailbox_rxq		= nbl_phy_config_mailbox_rxq,
 	.config_mailbox_txq		= nbl_phy_config_mailbox_txq,
+	.config_mailbox_txq_rst		= nbl_phy_config_mailbox_txq_rst,
 	.stop_mailbox_rxq		= nbl_phy_stop_mailbox_rxq,
 	.stop_mailbox_txq		= nbl_phy_stop_mailbox_txq,
 	.get_mailbox_rx_tail_ptr	= nbl_phy_get_mailbox_rx_tail_ptr,
@@ -7326,6 +7885,8 @@ static struct nbl_phy_ops phy_ops = {
 	.init_rep			= nbl_phy_init_rep,
 	.clear_profile_table_action	= nbl_phy_clear_profile_table_action,
 	.ipro_chksum_err_ctrl		= nbl_phy_ipro_chksum_err_ctrl,
+	.set_dpa_chksum_errcode		= nbl_phy_set_dpa_chksum_errcode,
+	.cfg_tnl_offload_profile	= nbl_phy_cfg_tnl_offload_profile,
 
 	.init_vdpaq			= nbl_phy_init_vdpaq,
 	.destroy_vdpaq			= nbl_phy_destroy_vdpaq,
@@ -7336,7 +7897,7 @@ static struct nbl_phy_ops phy_ops = {
 	.get_uvn_desc_entry_stats	= nbl_phy_get_uvn_desc_entry_stats,
 	.set_uvn_desc_wr_timeout	= nbl_phy_set_uvn_desc_wr_timeout,
 
-	.cfg_lag_hash_algorithm		= nbl_phy_cfg_lag_algorithm,
+	.cfg_lag_hash_algorithm		= nbl_phy_cfg_lag_hash_algorithm,
 	.cfg_lag_member_fwd		= nbl_phy_cfg_lag_member_fwd,
 	.cfg_lag_member_list		= nbl_phy_cfg_lag_member_list,
 	.cfg_lag_member_up_attr		= nbl_phy_cfg_lag_member_up_attr,
@@ -7361,6 +7922,7 @@ static struct nbl_phy_ops phy_ops = {
 	.set_fd_tcam_ram		= nbl_phy_set_fd_tcam_ram,
 	.set_fd_action_ram		= nbl_phy_set_fd_action_ram,
 	.set_hw_status			= nbl_phy_set_hw_status,
+	.check_hw_status		= nbl_phy_check_hw_status,
 	.get_hw_status			= nbl_phy_get_hw_status,
 
 	.get_perf_dump_length		= nbl_phy_get_perf_dump_length,
@@ -7371,11 +7933,18 @@ static struct nbl_phy_ops phy_ops = {
 	.configure_mirror_table		= nbl_phy_configure_mirror_table,
 	.clear_mirror_cfg		= nbl_phy_clear_mirror_cfg,
 	.set_dvn_desc_req		= nbl_dvn_descreq_num_cfg,
+	.set_dvn_desc_req_dpdk		= nbl_dvn_descreq_num_dpdk_cfg,
 	.get_dvn_desc_req		= nbl_dvn_descreq_num_get,
 	.get_dstat_vsi_stat		= nbl_phy_get_dstat_vsi_stat,
 	.get_ustat_vsi_stat		= nbl_phy_get_ustat_vsi_stat,
 	.get_uvn_pkt_drop_stats		= nbl_phy_get_uvn_pkt_drop_stats,
 	.get_ustore_pkt_drop_stats	= nbl_phy_get_ustore_pkt_drop_stats,
+	.dump_abnormal_intr		= nbl_phy_dump_abnormal_intr,
+	.get_fake_drop_stats		= nbl_phy_get_fake_drop_stats,
+	.get_uvn_drop_queue_disable	= nbl_phy_get_uvn_drop_queue_disable,
+	.set_qinfo_tx			= nbl_phy_set_qinfo_tx,
+	.get_qinfo_tx			= nbl_phy_get_qinfo_tx,
+	.cfg_eth_shaping		= nbl_phy_cfg_eth_shaping,
 };
 
 /* Structure starts here, adding an op should not modify anything below */
@@ -7474,7 +8043,7 @@ int nbl_phy_init_leonis(void *p, struct nbl_init_param *param)
 		goto request_bar_region_fail;
 	}
 
-	if (param->caps.has_ctrl || param->caps.has_factory_ctrl) {
+	if (param->caps.has_ctrl) {
 		phy_mgt->hw_addr = ioremap(pci_resource_start(pdev, NBL_MEMORY_BAR),
 					   pci_resource_len(pdev, NBL_MEMORY_BAR) -
 					   NBL_RDMA_NOTIFY_OFF);

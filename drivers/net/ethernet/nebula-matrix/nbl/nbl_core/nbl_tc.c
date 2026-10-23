@@ -1,9 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (c) 2022 nebula-matrix Limited.
- * Author:
- */
-
 #include <net/vxlan.h>
 #include <linux/inet.h>
 #include "nbl_tc.h"
@@ -21,7 +16,8 @@ static int nbl_tc_pedit_header_offsets[] = {
 
 static int nbl_tc_parse_proto(const struct flow_rule *rule,
 			      struct nbl_flow_pattern_conf *filter,
-			      const struct nbl_common_info *common)
+			      const struct nbl_common_info *common,
+			      u16 flag)
 {
 	struct flow_match_basic match;
 	u16 type = 0;
@@ -49,35 +45,55 @@ static int nbl_tc_parse_proto(const struct flow_rule *rule,
 	}
 
 	nbl_debug(common, NBL_DEBUG_FLOW,
-		  "tc flow parse proto (%u) l2_data.ether_type=0x%04x, l2_mask.ether_type=0x%04x",
-		  match.key->ip_proto, filter->input.l2_data.ether_type,
-		  filter->input.l2_mask.ether_type);
+		  "tc flow parse proto l2_data, wildcard_flow:%u, ether_type=0x%04x, l2_mask.ether_type=0x%04x, proto=0x%x, proto_mask=0x%x",
+		  filter->wildcard_flow, filter->input.l2_data.ether_type,
+		  filter->input.l2_mask.ether_type,
+		  filter->input.ip.proto, filter->input.ip_mask.proto);
 	return 0;
 }
 
 static int nbl_tc_parse_eth(const struct flow_rule *rule,
 			    struct nbl_flow_pattern_conf *filter,
-			    const struct nbl_common_info *common)
+			    const struct nbl_common_info *common,
+			    u16 flag)
 {
 	struct flow_match_eth_addrs match;
 	int idx = 0;
+	u8 mac_f[6];
+	u8 mac_z[6];
+
+	memset(mac_f, 0xff, sizeof(mac_f));
+	memset(mac_z, 0, sizeof(mac_z));
 
 	flow_rule_match_eth_addrs(rule, &match);
 
 	if (match.key && match.mask) {
 		if (is_broadcast_ether_addr(match.key->dst) ||
 		    is_multicast_ether_addr(match.key->dst) ||
-		    is_zero_ether_addr(match.key->dst) ||
-		    !is_broadcast_ether_addr(match.mask->dst)) {
+		    is_zero_ether_addr(match.key->dst)) {
 			/* ignore src mac check for normal flow offload */
 			nbl_debug(common, NBL_DEBUG_FLOW,
-				  "tc flow dmac broadcast, multicast or fuzzy match is not supported\n");
+				  "tc flow dmac broadcast, multicast and zero is not supported\n");
 			return -EOPNOTSUPP;
 		}
 
-		ether_addr_copy(filter->input.l2_mask.dst_mac, match.mask->dst);
-		for (idx = 0; idx < ETH_ALEN; idx++)
+		if (flag & BIT(NBL_FLOW_ITEM_DKEY_MASK) || flag & BIT(NBL_FLOW_ITEM_SKEY_MASK)) {
+			if (flag & BIT(NBL_FLOW_ITEM_DKEY_MASK) &&
+			    memcmp(&match.mask->dst, mac_f, ETH_ALEN) &&
+			    memcmp(&match.mask->dst, mac_z, ETH_ALEN))
+				filter->wildcard_flow = true;
+		} else {
+			if (!is_broadcast_ether_addr(match.mask->dst)) {
+				nbl_debug(common, NBL_DEBUG_FLOW, "tc flow dmac need exact\n");
+				return -EOPNOTSUPP;
+			}
+		}
+
+		/* ether_addr_copy(filter->input.l2_mask.dst_mac, match.mask->dst); */
+		for (idx = 0; idx < ETH_ALEN; idx++) {
 			filter->input.l2_data.dst_mac[idx] = match.key->dst[ETH_ALEN - 1 - idx];
+			filter->input.l2_mask.dst_mac[idx] = match.mask->dst[ETH_ALEN - 1 - idx];
+		}
 
 		filter->key_flag |= NBL_FLOW_KEY_DSTMAC_FLAG;
 		/* set vlan flag to match table profile graph even there is no vlan match */
@@ -85,18 +101,22 @@ static int nbl_tc_parse_eth(const struct flow_rule *rule,
 		filter->key_flag |= NBL_FLOW_KEY_CVLAN_FLAG;
 	}
 
-	nbl_debug(common, NBL_DEBUG_FLOW,
-		  "tc flow l2_data.dst_mac=0x%02x:%02x:%02x:%02x:%02x:%02x",
+	nbl_debug(common, NBL_DEBUG_FLOW, "tc flow l2_data, wildcard_flow:%u, dst_mac=0x%02x:%02x:%02x:%02x:%02x:%02x/0x%02x:%02x:%02x:%02x:%02x:%02x",
+		  filter->wildcard_flow,
 		  filter->input.l2_data.dst_mac[5], filter->input.l2_data.dst_mac[4],
 		  filter->input.l2_data.dst_mac[3], filter->input.l2_data.dst_mac[2],
-		  filter->input.l2_data.dst_mac[1], filter->input.l2_data.dst_mac[0]);
+		  filter->input.l2_data.dst_mac[1], filter->input.l2_data.dst_mac[0],
+		  filter->input.l2_mask.dst_mac[5], filter->input.l2_mask.dst_mac[4],
+		  filter->input.l2_mask.dst_mac[3], filter->input.l2_mask.dst_mac[2],
+		  filter->input.l2_mask.dst_mac[1], filter->input.l2_mask.dst_mac[0]);
 
 	return 0;
 }
 
 static int nbl_tc_parse_control(const struct flow_rule *rule,
 				struct nbl_flow_pattern_conf *filter,
-				const struct nbl_common_info *common)
+				const struct nbl_common_info *common,
+				u16 flag)
 {
 	struct flow_match_control match;
 
@@ -110,31 +130,39 @@ static int nbl_tc_parse_control(const struct flow_rule *rule,
 	}
 
 	nbl_debug(common, NBL_DEBUG_FLOW,
-		  "tc flow parse conrtol.ether_type=0x%04x, flag:%x",
-		  filter->input.l2_data.ether_type, match.key->flags);
+		  "tc flow parse control, wildcard_flow:%u, ether_type=0x%04x, flag:%x",
+		  filter->wildcard_flow, filter->input.l2_data.ether_type, match.key->flags);
 	return 0;
 }
 
 static int nbl_tc_parse_vlan(const struct flow_rule *rule,
 			     struct nbl_flow_pattern_conf *filter,
-			     const struct nbl_common_info *common)
+			     const struct nbl_common_info *common,
+			     u16 flag)
 {
 	struct flow_match_vlan match;
 
 	flow_rule_match_vlan(rule, &match);
 	if (match.key && match.mask) {
-		if (match.mask->vlan_id == VLAN_VID_MASK) {
-			filter->input.svlan_tag = match.key->vlan_id & 0xFFF;
-			filter->input.svlan_mask = match.mask->vlan_id;
-			filter->input.svlan_type = filter->input.l2_data.ether_type;
-			filter->input.vlan_cnt++;
-			nbl_debug(common, NBL_DEBUG_FLOW, "tc flow l2data.vlan_id=%d,vlan_type=0x%04x",
-				  filter->input.svlan_tag, filter->input.svlan_type);
+		if (flag & BIT(NBL_FLOW_ITEM_KEY_MASK)) {
+			if (match.mask->vlan_id != NBL_FLOW_TABLE_VLAN_MASK_AS_U12 &&
+			    match.mask->vlan_id != 0)
+				filter->wildcard_flow = 1;
 		} else {
-			nbl_info(common, NBL_DEBUG_FLOW, "tc flow fuzzy vlan mask 0x%04x is not supported\n",
-				 match.mask->vlan_id);
-			return -EINVAL;
+			if (match.mask->vlan_id != VLAN_VID_MASK) {
+				nbl_info(common, NBL_DEBUG_FLOW, "tc flow fuzzy vlan mask 0x%04x is not supported\n",
+					 match.mask->vlan_id);
+				return -EOPNOTSUPP;
+			}
 		}
+
+		filter->input.svlan_tag = match.key->vlan_id & 0xFFF;
+		filter->input.svlan_mask = match.mask->vlan_id;
+		filter->input.svlan_type = filter->input.l2_data.ether_type;
+		filter->input.vlan_cnt++;
+		nbl_debug(common, NBL_DEBUG_FLOW, "parse vlan, wildcard_flow:%u, svlan_id=%d/0x%x, vlan_type=0x%04x",
+			  filter->wildcard_flow, filter->input.svlan_tag, filter->input.svlan_mask,
+			  filter->input.svlan_type);
 	}
 
 	return 0;
@@ -142,7 +170,8 @@ static int nbl_tc_parse_vlan(const struct flow_rule *rule,
 
 static int nbl_tc_parse_cvlan(const struct flow_rule *rule,
 			      struct nbl_flow_pattern_conf *filter,
-			      const struct nbl_common_info *common)
+			      const struct nbl_common_info *common,
+			      u16 flag)
 {
 	filter->input.is_cvlan = true;
 
@@ -151,22 +180,23 @@ static int nbl_tc_parse_cvlan(const struct flow_rule *rule,
 
 static int nbl_tc_parse_tunnel_ip(const struct flow_rule *rule,
 				  struct nbl_flow_pattern_conf *filter,
-				  const struct nbl_common_info *common)
+				  const struct nbl_common_info *common,
+				  u16 flag)
 {
 	return 0;
 }
 
 static int nbl_tc_parse_tunnel_ports(const struct flow_rule *rule,
 				     struct nbl_flow_pattern_conf *filter,
-				     const struct nbl_common_info *common)
+				     const struct nbl_common_info *common,
+				     u16 flag)
 {
 	struct flow_match_ports enc_ports;
 
 	flow_rule_match_enc_ports(rule, &enc_ports);
 
 	if (memchr_inv(&enc_ports.mask->dst, 0xff, sizeof(enc_ports.mask->dst))) {
-		nbl_err(common, NBL_DEBUG_FLOW, "nbl tc parse tunnel err: ");
-		nbl_err(common, NBL_DEBUG_FLOW, "udp tunnel decap must match dst_port fully.\n");
+		nbl_err(common, NBL_DEBUG_FLOW, "nbl tc parse tunnel err: udp tunnel decap filter must match dst_port fully.\n");
 		return -EOPNOTSUPP;
 	}
 
@@ -183,24 +213,28 @@ static int nbl_tc_parse_tunnel_ports(const struct flow_rule *rule,
 
 static int nbl_tc_parse_tunnel_keyid(const struct flow_rule *rule,
 				     struct nbl_flow_pattern_conf *filter,
-				     const struct nbl_common_info *common)
+				     const struct nbl_common_info *common,
+				     u16 flag)
 {
 	struct flow_match_enc_keyid enc_keyid;
 #define NBL_TC_VNI_FLAG_BIT 8
 
-	if (!flow_rule_match_key(rule, FLOW_DISSECTOR_KEY_ENC_KEYID))
-		return 0;
-
 	flow_rule_match_enc_keyid(rule, &enc_keyid);
-	if (!enc_keyid.mask->keyid)
+
+	if (flag & BIT(NBL_FLOW_ITEM_KEY_MASK)) {
+		if (enc_keyid.mask->keyid != 0xffffffff &&
+		    enc_keyid.mask->keyid != 0)
+			filter->wildcard_flow = 1;
+	} else if (!enc_keyid.mask->keyid) {
 		return 0;
+	}
 
 	filter->input.tnl.vni = be32_to_cpu(enc_keyid.key->keyid) << NBL_TC_VNI_FLAG_BIT;
 	filter->input.tnl_mask.vni = enc_keyid.mask->keyid;
 
 	filter->key_flag |= NBL_FLOW_KEY_T_VNI_FLAG;
-	nbl_debug(common, NBL_DEBUG_FLOW, "parse outer tnl keyid:0x%x/0x%x.\n",
-		  filter->input.tnl.vni, filter->input.tnl_mask.vni);
+	nbl_debug(common, NBL_DEBUG_FLOW, "parse outer tnl keyid:0x%x/0x%x, wildcard_flow:%u.\n",
+		  filter->input.tnl.vni, filter->input.tnl_mask.vni, filter->wildcard_flow);
 
 	return 0;
 }
@@ -230,7 +264,7 @@ end:
 }
 
 static bool
-nbl_tc_find_vlan_dev_ipv4_address(const struct net_device *dev, __be32 ipv4_addr)
+nbl_tc_find_vlan_v4_address(const struct net_device *dev, __be32 ipv4_addr)
 {
 	struct net_device *child;
 	const struct net_device *real_dev;
@@ -280,7 +314,7 @@ end:
 }
 
 static bool
-nbl_tc_find_vlan_dev_ipv6_address(const struct net_device *dev, struct in6_addr ipv6_addr)
+nbl_tc_find_vlan_v6_address(const struct net_device *dev, struct in6_addr ipv6_addr)
 {
 	struct net_device *child;
 	const struct net_device *real_dev;
@@ -302,84 +336,135 @@ nbl_tc_find_vlan_dev_ipv6_address(const struct net_device *dev, struct in6_addr 
 
 static int nbl_tc_parse_tunnel_control(const struct flow_rule *rule,
 				       struct nbl_flow_pattern_conf *filter,
-				       const struct nbl_common_info *common)
+				       const struct nbl_common_info *common,
+				       u16 flag)
 {
 	struct flow_match_control match;
 	u16 addr_type;
 	int max_idx = NBL_IPV6_ADDR_LEN_AS_U8 - 1;
 	int idx = 0;
 	bool dev_ok = false;
+	struct net_device *upper_dev = NULL;
+	bool is_lag_port;
 
 	flow_rule_match_enc_control(rule, &match);
 	addr_type = match.key->addr_type;
 
-	if (addr_type == FLOW_DISSECTOR_KEY_IPV4_ADDRS) {
-		struct flow_match_ipv4_addrs ip_addrs;
+	is_lag_port = !!(filter->input.port & NBL_FLOW_IN_PORT_TYPE_LAG);
 
-		flow_rule_match_enc_ipv4_addrs(rule, &ip_addrs);
-		filter->input.ip_outer.src_ip.addr = be32_to_cpu(ip_addrs.key->src);
-		filter->input.ip_mask_outer.src_ip.addr = ip_addrs.mask->src;
-		filter->input.ip_outer.dst_ip.addr = be32_to_cpu(ip_addrs.key->dst);
-		filter->input.ip_mask_outer.dst_ip.addr = ip_addrs.mask->dst;
+	if (addr_type == FLOW_DISSECTOR_KEY_IPV4_ADDRS) {
+		struct flow_match_ipv4_addrs ip4;
+
+		flow_rule_match_enc_ipv4_addrs(rule, &ip4);
+
+		if (flag & BIT(NBL_FLOW_ITEM_DKEY_MASK) || flag & BIT(NBL_FLOW_ITEM_SKEY_MASK)) {
+			if (flag & BIT(NBL_FLOW_ITEM_SKEY_MASK) &&
+			    ip4.mask->src != NBL_FLOW_TABLE_IPV4_DEFAULT_MASK && ip4.mask->src != 0)
+				filter->wildcard_flow = 1;
+
+			if (flag & BIT(NBL_FLOW_ITEM_DKEY_MASK) &&
+			    ip4.mask->dst != NBL_FLOW_TABLE_IPV4_DEFAULT_MASK && ip4.mask->dst != 0)
+				filter->wildcard_flow = 1;
+		} else {
+			if (ip4.mask->src != NBL_FLOW_TABLE_IPV4_DEFAULT_MASK ||
+			    ip4.mask->dst != NBL_FLOW_TABLE_IPV4_DEFAULT_MASK) {
+				nbl_info(common, NBL_DEBUG_FLOW, "sip/dip must exact, sip:0x%x/0x%x, dip:0x%x/0x%x",
+					 ip4.key->src, ip4.mask->src, ip4.key->dst, ip4.mask->dst);
+				return -EOPNOTSUPP;
+			}
+		}
+		filter->input.ip_outer.src_ip.addr = be32_to_cpu(ip4.key->src);
+		filter->input.ip_mask_outer.src_ip.addr = ip4.mask->src;
+		filter->input.ip_outer.dst_ip.addr = be32_to_cpu(ip4.key->dst);
+		filter->input.ip_mask_outer.dst_ip.addr = ip4.mask->dst;
 
 		filter->input.ip_outer.ip_ver = NBL_IP_VERSION_V4;
 		filter->key_flag |= NBL_FLOW_KEY_T_DIPV4_FLAG;
 		filter->key_flag |= NBL_FLOW_KEY_T_OPT_DATA_FLAG;
 		filter->key_flag |= NBL_FLOW_KEY_T_OPT_CLASS_FLAG;
-		nbl_debug(common, NBL_DEBUG_FLOW, "outer tnl ip: sip:0x%x/0x%x, dip:0x%x/0x%x.\n",
+
+		nbl_debug(common, NBL_DEBUG_FLOW, "parse outer tnl ctl ip: sip:0x%x/0x%x, dip:0x%x/0x%x, wildcard_flow:%u.\n",
 			  filter->input.ip_outer.src_ip.addr,
-			  filter->input.ip_mask_outer.src_ip.addr,
-			  filter->input.ip_outer.dst_ip.addr,
-			  filter->input.ip_mask_outer.dst_ip.addr);
-		if (filter->input.port & NBL_FLOW_IN_PORT_TYPE_LAG) {
+			filter->input.ip_mask_outer.src_ip.addr,
+			filter->input.ip_outer.dst_ip.addr,
+			filter->input.ip_mask_outer.dst_ip.addr,
+			filter->wildcard_flow);
+		if (is_lag_port || filter->in_same_bond) {
 			dev_ok = true;
 		} else {
-			dev_ok = nbl_tc_find_ipv4_address(filter->input_dev, ip_addrs.key->dst);
+			dev_ok = nbl_tc_find_ipv4_address(filter->input_dev, ip4.key->dst);
 			if (!dev_ok)
-				dev_ok = nbl_tc_find_vlan_dev_ipv4_address(filter->input_dev,
-									   ip_addrs.key->dst);
+				dev_ok = nbl_tc_find_vlan_v4_address(filter->input_dev,
+								     ip4.key->dst);
+			if (!dev_ok) {
+				rcu_read_lock();
+				upper_dev = netdev_master_upper_dev_get_rcu(filter->input_dev);
+				if (upper_dev && netif_is_lag_master(upper_dev)) {
+					dev_ok = nbl_tc_find_ipv4_address(upper_dev, ip4.key->dst);
+					if (!dev_ok)
+						dev_ok = nbl_tc_find_vlan_v4_address(upper_dev,
+										     ip4.key->dst);
+				}
+				rcu_read_unlock();
+			}
 		}
+
+		nbl_debug(common, NBL_DEBUG_FLOW, "parse outer tnl ctl ip: is lag:%u, in and out in same bond:%u, dev_ok:%u",
+			  is_lag_port, filter->in_same_bond, dev_ok);
 	} else if (addr_type == FLOW_DISSECTOR_KEY_IPV6_ADDRS) {
-		struct flow_match_ipv6_addrs ip6_addrs;
+		struct flow_match_ipv6_addrs ip6;
 		char sipv6[INET6_ADDRSTRLEN];
 		char dipv6[INET6_ADDRSTRLEN];
 		char sipv6_msk[INET6_ADDRSTRLEN];
 		char dipv6_msk[INET6_ADDRSTRLEN];
 
-		flow_rule_match_enc_ipv6_addrs(rule, &ip6_addrs);
+		flow_rule_match_enc_ipv6_addrs(rule, &ip6);
 
 		for (idx = 0; idx < NBL_IPV6_ADDR_LEN_AS_U8; idx++) {
 			filter->input.ip_outer.src_ip.v6_addr[idx] =
-				ip6_addrs.key->src.in6_u.u6_addr8[max_idx - idx];
+				ip6.key->src.in6_u.u6_addr8[max_idx - idx];
 			filter->input.ip_mask_outer.src_ip.v6_addr[idx] =
-				ip6_addrs.mask->src.in6_u.u6_addr8[max_idx - idx];
+				ip6.mask->src.in6_u.u6_addr8[max_idx - idx];
 			filter->input.ip_outer.dst_ip.v6_addr[idx] =
-				ip6_addrs.key->dst.in6_u.u6_addr8[max_idx - idx];
+				ip6.key->dst.in6_u.u6_addr8[max_idx - idx];
 			filter->input.ip_mask_outer.dst_ip.v6_addr[idx] =
-				ip6_addrs.mask->dst.in6_u.u6_addr8[max_idx - idx];
+				ip6.mask->dst.in6_u.u6_addr8[max_idx - idx];
 		}
 		filter->input.ip_outer.ip_ver = NBL_IP_VERSION_V6;
 		filter->key_flag |= NBL_FLOW_KEY_T_DIPV6_FLAG;
 		filter->key_flag |= NBL_FLOW_KEY_T_OPT_DATA_FLAG;
 		filter->key_flag |= NBL_FLOW_KEY_T_OPT_CLASS_FLAG;
 
-		snprintf(sipv6, sizeof(sipv6), "%pI6", &ip6_addrs.key->src);
-		snprintf(dipv6, sizeof(dipv6), "%pI6", &ip6_addrs.key->dst);
-		snprintf(sipv6_msk, sizeof(sipv6_msk), "%pI6", &ip6_addrs.mask->src);
-		snprintf(dipv6_msk, sizeof(dipv6_msk), "%pI6", &ip6_addrs.mask->src);
+		snprintf(sipv6, sizeof(sipv6), "%pI6", &ip6.key->src);
+		snprintf(dipv6, sizeof(dipv6), "%pI6", &ip6.key->dst);
+		snprintf(sipv6_msk, sizeof(sipv6_msk), "%pI6", &ip6.mask->src);
+		snprintf(dipv6_msk, sizeof(dipv6_msk), "%pI6", &ip6.mask->src);
 
-		nbl_debug(common, NBL_DEBUG_FLOW, "parse outer tnl ctl ipv6, sip:%s/%s, dip:%s/%s\n",
-			  sipv6, sipv6_msk, dipv6, dipv6_msk);
-
-		if (filter->input.port & NBL_FLOW_IN_PORT_TYPE_LAG) {
+		if (is_lag_port || filter->in_same_bond) {
 			dev_ok = true;
 		} else {
-			dev_ok = nbl_tc_find_ipv6_address(filter->input_dev, ip6_addrs.key->dst);
+			dev_ok = nbl_tc_find_ipv6_address(filter->input_dev, ip6.key->dst);
 			if (!dev_ok)
-				dev_ok = nbl_tc_find_vlan_dev_ipv6_address(filter->input_dev,
-									   ip6_addrs.key->dst);
+				dev_ok = nbl_tc_find_vlan_v6_address(filter->input_dev,
+								     ip6.key->dst);
+			if (!dev_ok) {
+				rcu_read_lock();
+				upper_dev = netdev_master_upper_dev_get_rcu(filter->input_dev);
+				if (upper_dev && netif_is_lag_master(upper_dev)) {
+					dev_ok = nbl_tc_find_ipv6_address(upper_dev, ip6.key->dst);
+					if (!dev_ok)
+						dev_ok = nbl_tc_find_vlan_v6_address(upper_dev,
+										     ip6.key->dst);
+				}
+				rcu_read_unlock();
+			}
 		}
+
+		nbl_debug(common, NBL_DEBUG_FLOW, "parse outer tnl ipv6, sip:%s/%s, dip:%s/%s,\nis lag:%u, in and out in same bond:%u, dev_ok:%u",
+			  sipv6, sipv6_msk, dipv6, dipv6_msk,
+			  is_lag_port, filter->in_same_bond, dev_ok);
 	}
+
 	if (dev_ok)
 		return 0;
 	else
@@ -388,7 +473,8 @@ static int nbl_tc_parse_tunnel_control(const struct flow_rule *rule,
 
 static int nbl_tc_parse_ip(const struct flow_rule *rule,
 			   struct nbl_flow_pattern_conf *filter,
-			   const struct nbl_common_info *common)
+			   const struct nbl_common_info *common,
+			   u16 flag)
 {
 	struct flow_match_ip ip;
 
@@ -407,75 +493,114 @@ static int nbl_tc_parse_ip(const struct flow_rule *rule,
 
 static int nbl_tc_parse_ip4(const struct flow_rule *rule,
 			    struct nbl_flow_pattern_conf *filter,
-			    const struct nbl_common_info *common)
+			    const struct nbl_common_info *common,
+			    u16 flag)
 {
 	struct flow_match_ipv4_addrs ip_addrs;
 
 	flow_rule_match_ipv4_addrs(rule, &ip_addrs);
+
+	if (flag & BIT(NBL_FLOW_ITEM_DKEY_MASK) || flag & BIT(NBL_FLOW_ITEM_SKEY_MASK)) {
+		if (flag & BIT(NBL_FLOW_ITEM_DKEY_MASK) &&
+		    ip_addrs.mask->dst != NBL_FLOW_TABLE_IPV4_DEFAULT_MASK &&
+		    ip_addrs.mask->dst != 0)
+			filter->wildcard_flow = 1;
+
+		if (flag & BIT(NBL_FLOW_ITEM_SKEY_MASK) &&
+		    ip_addrs.mask->src != NBL_FLOW_TABLE_IPV4_DEFAULT_MASK &&
+		    ip_addrs.mask->src != 0)
+			filter->wildcard_flow = 1;
+	} else {
+		if (ip_addrs.mask->dst != NBL_FLOW_TABLE_IPV4_DEFAULT_MASK) {
+			nbl_info(common, NBL_DEBUG_FLOW, "dip must exact, dip:0x%x-0x%x",
+				 ip_addrs.key->dst, ip_addrs.mask->dst);
+			return -EOPNOTSUPP;
+		}
+	}
+
 	if (ip_addrs.mask->dst == 0 || ip_addrs.key->dst == 0) {
 		nbl_debug(common, NBL_DEBUG_FLOW, "dst ipv4:key 0x%x masked 0x%x",
 			  ip_addrs.key->dst, ip_addrs.mask->dst);
 		return 0;
-	} else if (ip_addrs.mask->dst != NBL_FLOW_TABLE_IPV4_DEFAULT_MASK) {
-		nbl_info(common, NBL_DEBUG_FLOW, "dst ipv4:0x%x mask:0x%x not support",
-			 ip_addrs.key->dst, ip_addrs.mask->dst);
-		return -EINVAL;
 	}
 
 	filter->input.ip.ip_ver = NBL_IP_VERSION_V4;
 	filter->key_flag |= NBL_FLOW_KEY_DIPV4_FLAG;
 	filter->key_flag |= NBL_FLOW_KEY_SIPV4_FLAG;
-	nbl_debug(common, NBL_DEBUG_FLOW, "nbl parse dst ipv4:0x%x mask:0x%x",
-		  ip_addrs.key->dst, ip_addrs.mask->dst);
 	filter->input.ip.src_ip.addr = be32_to_cpu(ip_addrs.key->src);
 	filter->input.ip_mask.src_ip.addr = ip_addrs.mask->src;
 	filter->input.ip.dst_ip.addr = be32_to_cpu(ip_addrs.key->dst);
 	filter->input.ip_mask.dst_ip.addr = ip_addrs.mask->dst;
+
+	nbl_debug(common, NBL_DEBUG_FLOW, "nbl parse ipv4, sip:0x%x mask:0x%x, dip:0x%x mask:0x%x wildcard_flow:%u",
+		  filter->input.ip.src_ip.addr, filter->input.ip_mask.src_ip.addr,
+		  filter->input.ip.dst_ip.addr, filter->input.ip_mask.dst_ip.addr,
+		  filter->wildcard_flow);
+
 	return 0;
 }
 
 static int nbl_tc_parse_ip6(const struct flow_rule *rule,
 			    struct nbl_flow_pattern_conf *filter,
-			    const struct nbl_common_info *common)
+			    const struct nbl_common_info *common,
+			    u16 flag)
 {
 	struct flow_match_ipv6_addrs ip6_addrs;
 	int idx = 0;
 	int max_idx = NBL_IPV6_ADDR_LEN_AS_U8 - 1;
-	u8 mask_ip6[NBL_IPV6_ADDR_LEN_AS_U8] = {0};
-	u8 exact_ip6[NBL_IPV6_ADDR_LEN_AS_U8];
+	u8 ipv6_z[NBL_IPV6_ADDR_LEN_AS_U8];
+	u8 ipv6_f[NBL_IPV6_ADDR_LEN_AS_U8];
 
-	memset(exact_ip6, 0xff, sizeof(exact_ip6));
+	memset(ipv6_f, 0xff, sizeof(ipv6_f));
+	memset(ipv6_z, 0, sizeof(ipv6_z));
+
 	flow_rule_match_ipv6_addrs(rule, &ip6_addrs);
-	if (!memcmp(mask_ip6, ip6_addrs.mask->dst.in6_u.u6_addr8, NBL_IPV6_ADDR_LEN_AS_U8) ||
-	    !memcmp(mask_ip6, ip6_addrs.key->dst.in6_u.u6_addr8, NBL_IPV6_ADDR_LEN_AS_U8)) {
+
+	if (!memcmp(ipv6_z, ip6_addrs.mask->dst.in6_u.u6_addr8, NBL_IPV6_ADDR_LEN_AS_U8) ||
+	    !memcmp(ipv6_z, ip6_addrs.key->dst.in6_u.u6_addr8, NBL_IPV6_ADDR_LEN_AS_U8)) {
 		nbl_debug(common, NBL_DEBUG_FLOW, "dst ipv6:0x%x-0x%x-0x%x-0x%x masked",
 			  ip6_addrs.key->dst.in6_u.u6_addr32[0],
 			  ip6_addrs.key->dst.in6_u.u6_addr32[1],
 			  ip6_addrs.key->dst.in6_u.u6_addr32[2],
 			  ip6_addrs.key->dst.in6_u.u6_addr32[3]);
 		return 0;
-	} else if (memcmp(exact_ip6, ip6_addrs.mask->dst.in6_u.u6_addr8, sizeof(exact_ip6))) {
-		nbl_info(common, NBL_DEBUG_FLOW, "dst ipv6:0x%x-0x%x-0x%x-0x%x mask:0x%x-0x%x-0x%x-0x%x not support",
-			 ip6_addrs.key->dst.in6_u.u6_addr32[0],
-			 ip6_addrs.key->dst.in6_u.u6_addr32[1],
-			 ip6_addrs.key->dst.in6_u.u6_addr32[2],
-			 ip6_addrs.key->dst.in6_u.u6_addr32[3],
-			 ip6_addrs.mask->dst.in6_u.u6_addr32[1],
-			 ip6_addrs.mask->dst.in6_u.u6_addr32[1],
-			 ip6_addrs.mask->dst.in6_u.u6_addr32[2],
-			 ip6_addrs.mask->dst.in6_u.u6_addr32[3]);
-		return -EINVAL;
+	}
+
+	if (flag & BIT(NBL_FLOW_ITEM_DKEY_MASK) || flag & BIT(NBL_FLOW_ITEM_SKEY_MASK)) {
+		if (flag & BIT(NBL_FLOW_ITEM_DKEY_MASK) &&
+		    memcmp(ipv6_z, ip6_addrs.mask->dst.in6_u.u6_addr8, NBL_IPV6_ADDR_LEN_AS_U8) &&
+		    memcmp(ipv6_f, ip6_addrs.mask->dst.in6_u.u6_addr8, sizeof(ipv6_f)))
+			filter->wildcard_flow = 1;
+
+		if (flag & BIT(NBL_FLOW_ITEM_SKEY_MASK) &&
+		    memcmp(ipv6_z, ip6_addrs.mask->src.in6_u.u6_addr8, NBL_IPV6_ADDR_LEN_AS_U8) &&
+		    memcmp(ipv6_f, ip6_addrs.mask->src.in6_u.u6_addr8, sizeof(ipv6_f)))
+			filter->wildcard_flow = 1;
+	} else {
+		if (memcmp(ipv6_f, ip6_addrs.mask->dst.in6_u.u6_addr8, sizeof(ipv6_f))) {
+			nbl_info(common, NBL_DEBUG_FLOW, "dst ipv6:0x%x-0x%x-0x%x-0x%x mask:0x%x-0x%x-0x%x-0x%x not support",
+				 ip6_addrs.key->dst.in6_u.u6_addr32[0],
+				 ip6_addrs.key->dst.in6_u.u6_addr32[1],
+				 ip6_addrs.key->dst.in6_u.u6_addr32[2],
+				 ip6_addrs.key->dst.in6_u.u6_addr32[3],
+				 ip6_addrs.mask->dst.in6_u.u6_addr32[1],
+				 ip6_addrs.mask->dst.in6_u.u6_addr32[1],
+				 ip6_addrs.mask->dst.in6_u.u6_addr32[2],
+				 ip6_addrs.mask->dst.in6_u.u6_addr32[3]);
+			return -EOPNOTSUPP;
+		}
 	}
 
 	filter->input.ip.ip_ver = NBL_IP_VERSION_V6;
 	filter->key_flag |= NBL_FLOW_KEY_DIPV6_FLAG;
 	filter->key_flag |= NBL_FLOW_KEY_SIPV6_FLAG;
 	filter->key_flag |= NBL_FLOW_KEY_HOPLIMIT_FLAG;
-	nbl_debug(common, NBL_DEBUG_FLOW, "nbl pasre dst ipv6:0x%x-0x%x-0x%x-0x%x mask:0x%x-0x%x-0x%x-0x%x",
+	nbl_debug(common, NBL_DEBUG_FLOW, "nbl pasre dst ipv6:0x%x-0x%x-0x%x-0x%x mask:0x%x-0x%x-0x%x-0x%x, wildcard_flow:%u",
 		  ip6_addrs.key->dst.in6_u.u6_addr32[0], ip6_addrs.key->dst.in6_u.u6_addr32[1],
 		  ip6_addrs.key->dst.in6_u.u6_addr32[2], ip6_addrs.key->dst.in6_u.u6_addr32[3],
 		  ip6_addrs.mask->dst.in6_u.u6_addr32[1], ip6_addrs.mask->dst.in6_u.u6_addr32[1],
-		  ip6_addrs.mask->dst.in6_u.u6_addr32[2], ip6_addrs.mask->dst.in6_u.u6_addr32[3]);
+		  ip6_addrs.mask->dst.in6_u.u6_addr32[2], ip6_addrs.mask->dst.in6_u.u6_addr32[3],
+		  filter->wildcard_flow);
 	for (idx = 0; idx < NBL_IPV6_ADDR_LEN_AS_U8; idx++) {
 		filter->input.ip.src_ip.v6_addr[idx] =
 			ip6_addrs.key->src.in6_u.u6_addr8[max_idx - idx];
@@ -492,12 +617,22 @@ static int nbl_tc_parse_ip6(const struct flow_rule *rule,
 
 static int nbl_tc_parse_ports(const struct flow_rule *rule,
 			      struct nbl_flow_pattern_conf *filter,
-			      const struct nbl_common_info *common)
+			      const struct nbl_common_info *common,
+			      u16 flag)
 {
 	struct flow_match_ports port;
 
 	flow_rule_match_ports(rule, &port);
-	if (!port.mask->dst && !port.mask->src) {
+
+	if (flag & BIT(NBL_FLOW_ITEM_DKEY_MASK) || flag & BIT(NBL_FLOW_ITEM_SKEY_MASK)) {
+		if (flag & BIT(NBL_FLOW_ITEM_DKEY_MASK) &&
+		    port.mask->dst != NBL_FLOW_TABLE_L4_PORT_DEFAULT_MASK && port.mask->dst != 0)
+			filter->wildcard_flow = true;
+
+		if (flag & BIT(NBL_FLOW_ITEM_SKEY_MASK) &&
+		    port.mask->src != NBL_FLOW_TABLE_L4_PORT_DEFAULT_MASK && port.mask->src != 0)
+			filter->wildcard_flow = true;
+	} else if (!port.mask->dst && !port.mask->src) {
 		nbl_debug(common, NBL_DEBUG_FLOW, "src and dst port:%d-%d masked",
 			  port.key->src, port.key->dst);
 		return 0;
@@ -505,17 +640,26 @@ static int nbl_tc_parse_ports(const struct flow_rule *rule,
 		   port.mask->src != NBL_FLOW_TABLE_L4_PORT_DEFAULT_MASK) {
 		nbl_info(common, NBL_DEBUG_FLOW, "src and dst port mask:%d-%d not support",
 			 port.mask->src, port.mask->dst);
-		return -EINVAL;
+		return -EOPNOTSUPP;
 	}
 
 	filter->key_flag |= NBL_FLOW_KEY_DSTPORT_FLAG;
 	filter->key_flag |= NBL_FLOW_KEY_SRCPORT_FLAG;
-	nbl_debug(common, NBL_DEBUG_FLOW, "nbl parse src and dst port key:%d-%d, mask:%d-%d",
-		  port.key->src, port.key->dst, port.mask->src, port.mask->dst);
+	nbl_debug(common, NBL_DEBUG_FLOW, "nbl parse src and dst port key:%d-%d, mask:%d-%d, wildcard_flow:%u",
+		  port.key->src, port.key->dst, port.mask->src, port.mask->dst,
+		  filter->wildcard_flow);
 	filter->input.l4.dst_port = be16_to_cpu(port.key->dst);
 	filter->input.l4_mask.dst_port = be16_to_cpu(port.mask->dst);
 	filter->input.l4.src_port = be16_to_cpu(port.key->src);
 	filter->input.l4_mask.src_port = be16_to_cpu(port.mask->src);
+	return 0;
+}
+
+static int nbl_tc_parse_icmp(const struct flow_rule *rule,
+			     struct nbl_flow_pattern_conf *filter,
+			     const struct nbl_common_info *common,
+			     u16 flag)
+{
 	return 0;
 }
 
@@ -533,63 +677,161 @@ static struct nbl_tc_flow_parse_pattern parse_pattern_list[] = {
 	{ FLOW_DISSECTOR_KEY_IPV6_ADDRS, nbl_tc_parse_ip6 },
 	{ FLOW_DISSECTOR_KEY_IP, nbl_tc_parse_ip },
 	{ FLOW_DISSECTOR_KEY_PORTS, nbl_tc_parse_ports },
+	{ FLOW_DISSECTOR_KEY_ICMP, nbl_tc_parse_icmp },
 };
 
-static int nbl_tc_flow_set_out_param(struct net_device *out_dev,
-				     struct nbl_serv_lag_info *lag_info,
-				     struct nbl_tc_port *out,
-				     struct nbl_common_info *common)
+static int nbl_tc_outdev_and_indev_in_same_sw_id(struct nbl_netdev_priv *out_priv,
+						 struct nbl_netdev_priv *in_priv,
+						 struct nbl_tc_flow_param *param)
 {
-	struct nbl_netdev_priv *dev_priv = NULL;
+	struct net_device *out_upper_dev = NULL;
+	struct net_device *in_upper_dev = NULL;
+	u32 in_board_key, out_board_key;
+	struct nbl_common_info *common = param->common;
+	struct nbl_service_mgt *serv_mgt = NBL_ADAPTER_TO_SERV_MGT(out_priv->adapter);
+	int ret = -EOPNOTSUPP;
+	char out_name[IFNAMSIZ];
+	char in_name[IFNAMSIZ];
+
+	if (!serv_mgt || !serv_mgt->net_resource_mgt || !serv_mgt->net_resource_mgt->netdev)
+		return -EOPNOTSUPP;
+
+	rcu_read_lock();
+
+	if (in_priv && in_priv->adapter) {
+		struct nbl_service_mgt *in_serv_mgt = NBL_ADAPTER_TO_SERV_MGT(in_priv->adapter);
+		struct net_device *in_netdev = NULL;
+
+		if (in_serv_mgt && in_serv_mgt->net_resource_mgt &&
+		    in_serv_mgt->net_resource_mgt->netdev)
+			in_netdev = in_serv_mgt->net_resource_mgt->netdev;
+
+		if (in_netdev)
+			in_upper_dev = netdev_master_upper_dev_get_rcu(in_netdev);
+	}
+
+	out_upper_dev = netdev_master_upper_dev_get_rcu(serv_mgt->net_resource_mgt->netdev);
+
+	if (out_upper_dev && in_upper_dev && netif_is_lag_master(out_upper_dev) &&
+	    out_upper_dev == in_upper_dev) {
+		in_board_key = pci_domain_nr(common->pdev->bus) << 16 | common->pdev->bus->number;
+		out_board_key = pci_domain_nr(out_priv->adapter->common.pdev->bus) << 16 |
+						out_priv->adapter->common.pdev->bus->number;
+		strscpy(out_name, out_upper_dev->name, IFNAMSIZ);
+		if (in_board_key != out_board_key) {
+			nbl_debug(common, NBL_DEBUG_FLOW, "tc flow in and out pf are in same bond %s but on different cards, not supported\n",
+				  out_name);
+			goto out;
+		}
+		nbl_debug(common, NBL_DEBUG_FLOW,
+			  "tc flow in and out pf are in same bond %s, skip tc_inst_id check\n",
+			  out_name);
+		param->filter.in_same_bond = true;
+		ret = 0;
+	} else {
+		strscpy(in_name, in_upper_dev ? in_upper_dev->name : "null", IFNAMSIZ);
+		strscpy(out_name, out_upper_dev ? out_upper_dev->name : "null", IFNAMSIZ);
+		nbl_debug(common, NBL_DEBUG_FLOW,
+			  "tc flow rule in different nic is not supported, in:%s out:%s\n",
+			  in_name, out_name);
+	}
+
+out:
+	rcu_read_unlock();
+	return ret;
+}
+
+static bool nbl_tc_check_is_my_bond(struct nbl_serv_net_resource_mgt *net_resource_mgt,
+				    struct net_device *out_dev)
+{
+	if (net_resource_mgt->lag_info &&
+	    netdev_master_upper_dev_get_rcu(net_resource_mgt->netdev) == out_dev)
+		return true;
+
+	return false;
+}
+
+static int nbl_tc_flow_set_out_param(struct net_device *out_dev,
+				     struct nbl_netdev_priv *in_priv,
+				     struct nbl_serv_net_resource_mgt *net_resource_mgt,
+				     struct nbl_tc_port *out,
+				     struct nbl_tc_flow_param *param)
+{
+	int ret = 0;
+	struct nbl_netdev_priv *out_priv = NULL;
 	struct nbl_service_mgt *serv_mgt;
 	struct nbl_dispatch_ops *disp_ops;
 	u16 eswitch_mode = NBL_ESWITCH_NONE;
+	struct nbl_common_info *common = param->common;
+
+	if (!out_dev)
+		return -EINVAL;
 
 	if (netif_is_lag_master(out_dev)) {
-		if (lag_info && lag_info->bond_netdev && lag_info->bond_netdev == out_dev) {
+		if (nbl_tc_check_is_my_bond(net_resource_mgt, out_dev)) {
 			out->type = NBL_TC_PORT_TYPE_BOND;
-			out->id = lag_info->lag_id;
+			out->id = net_resource_mgt->lag_info->lag_id;
 			goto set_param_end;
 		} else {
+			nbl_debug(common, NBL_DEBUG_FLOW, "tc flow rule not support other nic bond out_dev:%s\n",
+				  out_dev->name);
 			return -EINVAL;
 		}
 	}
 
-	dev_priv = netdev_priv(out_dev);
-	if (!dev_priv->adapter)
+	out_priv = netdev_priv(out_dev);
+	if (!out_priv->adapter) {
+		nbl_debug(common, NBL_DEBUG_FLOW,
+			  "tc flow rule out_dev is not self nic, adapter is null, out_dev:%s\n",
+			  out_dev->name);
 		return -EINVAL;
-
-	if (common->tc_inst_id != dev_priv->adapter->common.tc_inst_id) {
-		nbl_debug(common, NBL_DEBUG_FLOW, "tc flow rule in different nic is not supported\n");
-		return -EOPNOTSUPP;
 	}
 
-	serv_mgt = NBL_ADAPTER_TO_SERV_MGT(dev_priv->adapter);
+	if (common->tc_inst_id != out_priv->adapter->common.tc_inst_id) {
+		if (common->product_type == NBL_LEONIS_TYPE) {
+			nbl_debug(common, NBL_DEBUG_FLOW, "tc flow rule in different nic is not supported, out_dev:%s\n",
+				  out_dev->name);
+			ret = -EOPNOTSUPP;
+			goto end;
+		} else {
+			ret = nbl_tc_outdev_and_indev_in_same_sw_id(out_priv, in_priv, param);
+			if (ret)
+				return ret;
+		}
+	}
+
+	serv_mgt = NBL_ADAPTER_TO_SERV_MGT(out_priv->adapter);
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	eswitch_mode =
-		disp_ops->get_eswitch_mode(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
-	if (eswitch_mode != NBL_ESWITCH_OFFLOADS)
+	eswitch_mode = disp_ops->get_eswitch_mode(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
+	if (eswitch_mode != NBL_ESWITCH_OFFLOADS) {
+		nbl_debug(common, NBL_DEBUG_FLOW, "tc flow is not in offload mode, out_dev:%s\n",
+			  out_dev->name);
 		return -EINVAL;
+	}
 
-	if (dev_priv->rep) {
+	if (out_priv->rep) {
 		out->type = NBL_TC_PORT_TYPE_VSI;
-		out->id = dev_priv->rep->rep_vsi_id;
+		out->id = out_priv->rep->rep_vsi_id;
 	} else {
 		out->type = NBL_TC_PORT_TYPE_ETH;
-		out->id = dev_priv->adapter->common.eth_id;
+		out->id = out_priv->adapter->common.eth_id;
 	}
 
 set_param_end:
-	nbl_debug(common, NBL_DEBUG_FLOW, "tc flow set out.type=%s, out.id=%d\n",
-		  out->type == NBL_TC_PORT_TYPE_VSI ? "vsi" : "uplink", out->id);
+	nbl_debug(common, NBL_DEBUG_FLOW, "tc flow set out.type=%s, out.id=%d, out_dev:%s\n",
+		  out->type == NBL_TC_PORT_TYPE_VSI ? "vsi" : "uplink", out->id, out_dev->name);
 
-	return 0;
+end:
+	return ret;
 }
 
-static bool
-nbl_tc_is_valid_netdev(struct net_device *netdev, struct nbl_serv_netdev_ops *netdev_ops)
+static bool nbl_tc_is_valid_netdev(struct net_device *netdev,
+				   struct nbl_serv_netdev_ops *netdev_ops)
 {
+	if (!netdev || !netdev_ops)
+		return false;
+
 	if (netif_is_lag_master(netdev))
 		return true;
 
@@ -607,12 +849,11 @@ static int nbl_tc_flow_init_param(struct nbl_netdev_priv *priv, struct flow_cls_
 	const struct flow_action_entry *act_entry;
 	struct nbl_service_mgt *serv_mgt = NBL_ADAPTER_TO_SERV_MGT(priv->adapter);
 	struct nbl_serv_netdev_ops *netdev_ops = &serv_mgt->net_resource_mgt->netdev_ops;
-	struct nbl_serv_lag_info *lag_info = NULL;
 	int i = 0;
 	int ret = 0;
 	int redirect_cnt = 0;
 	int mirred_cnt = 0;
-	const struct rtnl_link_ops *tnl_ops;
+	const struct rtnl_link_ops *tnl_ops = NULL;
 
 	if (priv->rep) {
 		param->in.type = NBL_TC_PORT_TYPE_VSI;
@@ -648,15 +889,15 @@ static int nbl_tc_flow_init_param(struct nbl_netdev_priv *priv, struct flow_cls_
 							    netdev_ops))
 					return -ENODEV;
 
-				if (netif_is_lag_master(act_entry->dev))
-					lag_info = serv_mgt->net_resource_mgt->lag_info;
-
-				ret = nbl_tc_flow_set_out_param(act_entry->dev, lag_info,
-								&param->out, common);
+				ret = nbl_tc_flow_set_out_param(act_entry->dev, priv,
+								serv_mgt->net_resource_mgt,
+								&param->out, param);
 				if (ret)
 					return ret;
 			}
-			nbl_debug(common, NBL_DEBUG_FLOW, "tc flow init redirect outport");
+			nbl_debug(common, NBL_DEBUG_FLOW, "tc flow init redirect act, tnl_ops:%p, tnl_ops->kind:%s, out.type=%d, out.id=%d, out_dev:%s",
+				  tnl_ops, tnl_ops ? tnl_ops->kind : "NULL", param->out.type,
+				  param->out.id, act_entry->dev->name);
 
 			redirect_cnt++;
 		} else if (act_entry->id == FLOW_ACTION_MIRRED) {
@@ -672,12 +913,11 @@ static int nbl_tc_flow_init_param(struct nbl_netdev_priv *priv, struct flow_cls_
 				return -ENODEV;
 			nbl_debug(common, NBL_DEBUG_FLOW, "tc flow init mirror outport");
 
-			lag_info = NULL;
-			if (netif_is_lag_master(act_entry->dev))
-				lag_info = serv_mgt->net_resource_mgt->lag_info;
-
-			ret = nbl_tc_flow_set_out_param(act_entry->dev, lag_info,
-							&param->mirror_out, common);
+			ret = nbl_tc_flow_set_out_param(act_entry->dev, priv,
+							serv_mgt->net_resource_mgt,
+							&param->mirror_out, param);
+			nbl_debug(common, NBL_DEBUG_FLOW, "tc flow init mirror outport, tnl_ops:%p, mirror_out.type=%d, mirror_out.id=%d, ret:%d",
+				  tnl_ops, param->mirror_out.type, param->mirror_out.id, ret);
 			if (ret)
 				return ret;
 			mirred_cnt++;
@@ -699,26 +939,23 @@ static int nbl_tc_parse_pattern(struct nbl_service_mgt *serv_mgt,
 	struct flow_rule *rule = flow_cls_offload_flow_rule(f);
 	struct flow_dissector *dissector = rule->match.dissector;
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
+	struct nbl_tc_parse_key_info *parse_info = NULL;
+	u32 pattern_type;
+	u16 flag = 0;
 	u32 i = 0;
 	int ret = 0;
 
-	switch (param->in.type) {
-	case NBL_TC_PORT_TYPE_VSI:
-		filter->input.port = param->in.id | NBL_FLOW_IN_PORT_TYPE_VSI;
-		break;
-	case NBL_TC_PORT_TYPE_ETH:
-		filter->input.port = param->in.id;
-		break;
-	case NBL_TC_PORT_TYPE_BOND:
-		filter->input.port = param->in.id | NBL_FLOW_IN_PORT_TYPE_LAG;
-		break;
-	default:
-		nbl_err(common, NBL_DEBUG_FLOW, "tc flow invalid in_port type:%d\n",
-			param->in.type);
-		return -EINVAL;
+	if (param->parse_info)
+		parse_info = param->parse_info->key_parse_info;
+
+	if (param->parse_info && param->parse_info->set_in_port_info) {
+		ret = param->parse_info->set_in_port_info(param, filter);
+		if (ret)
+			return ret;
 	}
 	filter->key_flag |= NBL_FLOW_KEY_INPORT8_FLAG;
 	filter->key_flag |= NBL_FLOW_KEY_INPORT4_FLAG;
+	filter->in_same_bond = param->filter.in_same_bond;
 
 	nbl_debug(common, NBL_DEBUG_FLOW, "tc flow dissector->used_keys=%llx\n",
 		  dissector->used_keys);
@@ -733,6 +970,7 @@ static int nbl_tc_parse_pattern(struct nbl_service_mgt *serv_mgt,
 	      BIT_ULL(FLOW_DISSECTOR_KEY_ENC_IP) |
 	      BIT_ULL(FLOW_DISSECTOR_KEY_ENC_IPV4_ADDRS) |
 	      BIT_ULL(FLOW_DISSECTOR_KEY_ENC_IPV6_ADDRS) |
+	      BIT_ULL(FLOW_DISSECTOR_KEY_ICMP) |
 	      BIT_ULL(FLOW_DISSECTOR_KEY_ENC_PORTS) |
 	      BIT_ULL(FLOW_DISSECTOR_KEY_IPV4_ADDRS) |
 	      BIT_ULL(FLOW_DISSECTOR_KEY_IPV6_ADDRS) |
@@ -745,16 +983,105 @@ static int nbl_tc_parse_pattern(struct nbl_service_mgt *serv_mgt,
 	}
 
 	for (i = 0; i < ARRAY_SIZE(parse_pattern_list); i++) {
-		if (flow_rule_match_key(rule, parse_pattern_list[i].pattern_type)) {
-			nbl_debug(common, NBL_DEBUG_FLOW, "tc flow key %d\n",
-				  parse_pattern_list[i].pattern_type);
-			ret = parse_pattern_list[i].parse_func(rule, filter, common);
+		pattern_type = parse_pattern_list[i].pattern_type;
+		if (parse_info)
+			flag = parse_info[pattern_type].mask_type;
 
+		if (flow_rule_match_key(rule, pattern_type)) {
+			nbl_debug(common, NBL_DEBUG_FLOW, "tc flow key %d\n", pattern_type);
+			ret = parse_pattern_list[i].parse_func(rule, filter, common, flag);
 			if (ret != 0)
 				return ret;
+
+			if (parse_info && parse_info[pattern_type].parse_func_after) {
+				ret = parse_info[pattern_type].parse_func_after(rule, filter, flag);
+				if (ret)
+					return ret;
+			}
 		}
 	}
 
+	return 0;
+}
+
+static int nbl_tc_fill_encap_out_info_draco(struct nbl_tc_flow_param *param,
+					    struct nbl_rule_action *rule_act)
+{
+	int ret = 0;
+	const struct nbl_serv_lag_info *lag_info =
+			param->serv_mgt->net_resource_mgt->lag_info;
+	struct nbl_netdev_priv *out_priv = NULL;
+	struct nbl_netdev_priv *in_priv = NULL;
+	struct nbl_service_mgt *serv_mgt;
+	struct nbl_dispatch_ops *disp_ops;
+	u16 eswitch_mode = NBL_ESWITCH_NONE;
+
+	if (netif_is_lag_master(rule_act->tc_tun_encap_out_dev)) {
+		if (nbl_tc_check_is_my_bond(param->serv_mgt->net_resource_mgt,
+					    rule_act->tc_tun_encap_out_dev)) {
+			rule_act->port_type = NBL_TC_PORT_TYPE_BOND;
+			rule_act->port_id = lag_info->lag_id;
+			rule_act->vlan.port_id = lag_info->lag_id;
+			rule_act->vlan.port_type = NBL_TC_PORT_TYPE_BOND;
+			param->out.type = NBL_TC_PORT_TYPE_BOND;
+			param->out.id = lag_info->lag_id;
+			goto end;
+		} else {
+			nbl_err(param->common, NBL_DEBUG_FLOW, "fill encap out info err.\n");
+			return -EINVAL;
+		}
+	}
+
+	in_priv = netdev_priv(rule_act->in_port);
+	if (!in_priv || !in_priv->adapter) {
+		nbl_err(param->common, NBL_DEBUG_FLOW, "encap in dev priv or adapter is NULL, out_dev:%s.\n",
+			rule_act->tc_tun_encap_out_dev->name);
+		return -EINVAL;
+	}
+
+	out_priv = netdev_priv(rule_act->tc_tun_encap_out_dev);
+	if (!out_priv || !out_priv->adapter) {
+		nbl_err(param->common, NBL_DEBUG_FLOW, "encap out dev priv adapter is NULL, out_dev:%s.\n",
+			rule_act->tc_tun_encap_out_dev->name);
+		return -EINVAL;
+	}
+
+	if (param->common->tc_inst_id != out_priv->adapter->common.tc_inst_id) {
+		ret = nbl_tc_outdev_and_indev_in_same_sw_id(out_priv, in_priv, param);
+		if (ret)
+			return ret;
+	}
+
+	serv_mgt = NBL_ADAPTER_TO_SERV_MGT(out_priv->adapter);
+	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+
+	eswitch_mode = disp_ops->get_eswitch_mode(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
+	if (eswitch_mode != NBL_ESWITCH_OFFLOADS) {
+		nbl_err(param->common, NBL_DEBUG_FLOW, "eswitch mode is not in offload.\n");
+		return -EINVAL;
+	}
+
+	if (out_priv->rep) {
+		rule_act->port_type = NBL_TC_PORT_TYPE_VSI;
+		rule_act->port_id = out_priv->rep->rep_vsi_id;
+		rule_act->vlan.port_id = out_priv->rep->rep_vsi_id;
+		rule_act->vlan.port_type = NBL_TC_PORT_TYPE_VSI;
+		param->out.type = NBL_TC_PORT_TYPE_VSI;
+		param->out.id = out_priv->rep->rep_vsi_id;
+	} else {
+		rule_act->port_type = NBL_TC_PORT_TYPE_ETH;
+		rule_act->port_id = out_priv->adapter->common.eth_id;
+		rule_act->vlan.port_id = out_priv->adapter->common.eth_id;
+		rule_act->vlan.port_type = NBL_TC_PORT_TYPE_ETH;
+		param->out.type = NBL_TC_PORT_TYPE_ETH;
+		param->out.id = out_priv->adapter->common.eth_id;
+	}
+
+	nbl_debug(param->common, NBL_DEBUG_FLOW, "draco tun encap out dev:%s, out_priv->rep:%p, rule_act->port_type:%u, rule_act->port_id:%u, rule_act->vlan.port_id:%u, rule_act->vlan.port_type:%u, param->out.id:%u, param->out.type:%u",
+		  rule_act->tc_tun_encap_out_dev->name, out_priv->rep, rule_act->port_type,
+		  rule_act->port_id, rule_act->vlan.port_id, rule_act->vlan.port_type,
+		  param->out.id, param->out.type);
+end:
 	return 0;
 }
 
@@ -769,8 +1096,8 @@ static int nbl_tc_fill_encap_out_info(struct nbl_tc_flow_param *param,
 	u16 eswitch_mode = NBL_ESWITCH_NONE;
 
 	if (netif_is_lag_master(rule_act->tc_tun_encap_out_dev)) {
-		if (lag_info && lag_info->bond_netdev &&
-		    lag_info->bond_netdev == rule_act->tc_tun_encap_out_dev) {
+		if (nbl_tc_check_is_my_bond(param->serv_mgt->net_resource_mgt,
+					    rule_act->tc_tun_encap_out_dev)) {
 			rule_act->port_type = SET_DPORT_TYPE_ETH_LAG;
 			rule_act->port_id = (lag_info->lag_id << 2) | NBL_FLOW_OUT_PORT_TYPE_LAG;
 			rule_act->vlan.port_id = lag_info->lag_id;
@@ -815,6 +1142,9 @@ static int nbl_tc_fill_encap_out_info(struct nbl_tc_flow_param *param,
 		rule_act->vlan.port_type = NBL_TC_PORT_TYPE_ETH;
 	}
 
+	nbl_debug(param->common, NBL_DEBUG_FLOW, "tc tun encap out_dev:%s, dev_priv->rep:%p, rule_act->port_type:%u, rule_act->port_id:%u, rule_act->vlan.port_id:%u, rule_act->vlan.port_type:%u",
+		  rule_act->tc_tun_encap_out_dev->name, dev_priv->rep, rule_act->port_type,
+		  rule_act->port_id, rule_act->vlan.port_id, rule_act->vlan.port_type);
 end:
 	return 0;
 }
@@ -1076,7 +1406,10 @@ nbl_tc_handle_action_port_id(struct nbl_rule_action *rule_act,
 		}
 
 		/* fill encap out port info */
-		ret = nbl_tc_fill_encap_out_info(param, rule_act);
+		if (param->common->product_type == NBL_LEONIS_TYPE)
+			ret = nbl_tc_fill_encap_out_info(param, rule_act);
+		else
+			ret = nbl_tc_fill_encap_out_info_draco(param, rule_act);
 		if (ret)
 			return ret;
 	} else {
@@ -1089,18 +1422,26 @@ nbl_tc_handle_action_port_id(struct nbl_rule_action *rule_act,
 			break;
 		case NBL_TC_PORT_TYPE_ETH:
 			rule_act->port_type = SET_DPORT_TYPE_ETH_LAG;
-			rule_act->port_id = param->out.id | NBL_FLOW_OUT_PORT_TYPE_ETH;
-			rule_act->vlan.port_id = param->out.id + NBL_VLAN_TYPE_ETH_BASE;
+			//rule_act->port_id = param->out.id | NBL_FLOW_OUT_PORT_TYPE_ETH;
+			//rule_act->vlan.port_id = param->out.id + NBL_VLAN_TYPE_ETH_BASE;
 			rule_act->vlan.port_type = NBL_TC_PORT_TYPE_ETH;
 			break;
 		case NBL_TC_PORT_TYPE_BOND:
 			rule_act->port_type = SET_DPORT_TYPE_ETH_LAG;
-			rule_act->port_id = (param->out.id << 2) | NBL_FLOW_OUT_PORT_TYPE_LAG;
-			rule_act->vlan.port_id = param->out.id;
+			//rule_act->port_id = (param->out.id << 2) | NBL_FLOW_OUT_PORT_TYPE_LAG;
+			//rule_act->vlan.port_id = param->out.id;
 			rule_act->vlan.port_type = NBL_TC_PORT_TYPE_BOND;
 			break;
 		default:
+			nbl_info(param->common, NBL_DEBUG_FLOW, "out type invalid, out type:%d.\n",
+				 param->out.type);
 			return -EINVAL;
+		}
+
+		if (param->parse_info && param->parse_info->set_out_port_info) {
+			ret = param->parse_info->set_out_port_info(param, rule_act);
+			if (ret)
+				return ret;
 		}
 	}
 	rule_act->flag |= NBL_FLOW_ACTION_PORT_ID;
@@ -1276,14 +1617,28 @@ static int nbl_tc_parse_action_by_type(struct nbl_rule_action *rule_act,
 				       struct nbl_flow_pattern_conf *filter,
 				       struct nbl_tc_flow_param *param)
 {
+	int ret = 0;
 	const struct nbl_tc_flow_action_driver_ops *fops;
+	struct nbl_tc_parse_act_info *parse_info = NULL;
+
+	if (param->parse_info)
+		parse_info = param->parse_info->act_parse_info;
 
 	fops = nbl_act_ops[type];
 
 	if (!fops)
 		return 0;
 
-	return fops->act_update(rule_act, act_entry, type, filter, param);
+	if (!parse_info || !parse_info[type].ignore_parse_action) {
+		ret = fops->act_update(rule_act, act_entry, type, filter, param);
+		if (ret)
+			return ret;
+	}
+
+	if (parse_info && parse_info[type].parse_func_after)
+		ret = parse_info[type].parse_func_after(rule_act, act_entry, filter);
+
+	return ret;
 }
 
 /**
@@ -1347,6 +1702,9 @@ static int nbl_serv_add_cls_flower(struct nbl_netdev_priv *priv, struct flow_cls
 	int ret = 0;
 	int ret_act = 0;
 
+	if (!priv->netdev || !priv->adapter)
+		return -EOPNOTSUPP;
+
 	if (!tc_can_offload(priv->netdev))
 		return -EOPNOTSUPP;
 
@@ -1356,13 +1714,22 @@ static int nbl_serv_add_cls_flower(struct nbl_netdev_priv *priv, struct flow_cls
 	param = kzalloc(sizeof(*param), GFP_KERNEL);
 	if (!param)
 		return -ENOMEM;
+
 	param->key.cookie = f->cookie;
+	param->common = common;
+	param->serv_mgt = serv_mgt;
+
 	ret = disp_ops->flow_index_lookup(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), param->key);
 	if (!ret) {
 		nbl_debug(common, NBL_DEBUG_FLOW,
 			  "tc flow cookie %llx has already add, do not add again, dev %s.\n",
 			  param->key.cookie, netdev_name(priv->netdev));
 		ret = -EEXIST;
+		goto ret_param_fail;
+	} else if (ret != -ENOKEY) {
+		nbl_debug(common, NBL_DEBUG_FLOW,
+			  "tc flow lookup failed, ret %d, dev %s.\n",
+			  ret, netdev_name(priv->netdev));
 		goto ret_param_fail;
 	}
 
@@ -1382,13 +1749,21 @@ static int nbl_serv_add_cls_flower(struct nbl_netdev_priv *priv, struct flow_cls
 		goto ret_param_fail;
 	}
 
-	param->common = common;
-	param->serv_mgt = serv_mgt;
-
+	/* get parse info */
+	disp_ops->get_tc_flow_parse_info(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &param->parse_info);
+	if (!param->parse_info) {
+		nbl_debug(common, NBL_DEBUG_FLOW,
+			  "tc flow parse info is NULL, dev %s.\n",
+			  netdev_name(priv->netdev));
+		ret = -EPERM;
+		goto ret_filter_fail;
+	}
 	filter->input_dev = priv->netdev;
+	filter->common = common;
+
 	ret = nbl_tc_parse_pattern(serv_mgt, f, filter, param);
 	if (ret) {
-		nbl_debug(common, NBL_DEBUG_FLOW, "tc flow failed pattern, dev %s, ret %d.\n",
+		nbl_debug(common, NBL_DEBUG_FLOW, "tc flow failed to parse pattern, dev %s, ret %d.\n",
 			  netdev_name(priv->netdev), ret);
 		ret = -EINVAL;
 		goto ret_filter_fail;
@@ -1403,7 +1778,7 @@ static int nbl_serv_add_cls_flower(struct nbl_netdev_priv *priv, struct flow_cls
 	act->in_port = priv->netdev;
 	ret = nbl_tc_parse_action(serv_mgt, f, filter, act, param);
 	if (ret) {
-		nbl_debug(common, NBL_DEBUG_FLOW, "tc flow failed action dev %s, ret %d.\n",
+		nbl_debug(common, NBL_DEBUG_FLOW, "tc flow failed to parse action, dev %s, ret %d.\n",
 			  netdev_name(priv->netdev), ret);
 		ret = -EINVAL;
 		goto ret_act_fail;
@@ -1420,10 +1795,9 @@ ret_act_fail:
 	    act->encap_parse_ok) {
 		ret_act = disp_ops->tc_tun_encap_del(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
 						     &act->encap_key);
-		if (ret_act) {
-			nbl_debug(common, NBL_DEBUG_FLOW, "add ret %d, idx:%d, encap del ret:%d",
+		if (ret_act)
+			nbl_debug(common, NBL_DEBUG_FLOW, "in add tc flow err, encap del err, tc flow add ret %d, encap_idx:%d, encap del ret:%d",
 				  ret, act->encap_idx, ret_act);
-		}
 	}
 
 	kfree(act);
@@ -1441,6 +1815,9 @@ static int nbl_serv_del_cls_flower(struct nbl_netdev_priv *priv, struct flow_cls
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_tc_flow_param *param = NULL;
 	int ret = 0;
+
+	if (!priv->netdev || !priv->adapter)
+		return -EOPNOTSUPP;
 
 	if (!nbl_tc_is_valid_netdev(priv->netdev, &serv_mgt->net_resource_mgt->netdev_ops))
 		return -EOPNOTSUPP;
@@ -1463,6 +1840,9 @@ static int nbl_serv_stats_cls_flower(struct nbl_netdev_priv *priv, struct flow_c
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_stats_param param = {0};
 	int ret = 0;
+
+	if (!priv->netdev || !priv->adapter)
+		return -EOPNOTSUPP;
 
 	if (!tc_can_offload(priv->netdev))
 		return -EOPNOTSUPP;

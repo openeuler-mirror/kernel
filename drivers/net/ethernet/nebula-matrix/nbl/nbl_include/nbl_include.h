@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0*/
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (c) 2022 nebula-matrix Limited.
  * Author:
@@ -13,6 +13,7 @@
 #include <linux/etherdevice.h>
 #include <linux/if_ether.h>
 #include <linux/if_vlan.h>
+#include <linux/iopoll.h>
 #include <linux/ip.h>
 #include <linux/ipv6.h>
 #include <linux/sctp.h>
@@ -21,17 +22,11 @@
 #include <linux/firmware.h>
 #include <linux/list.h>
 #include <net/ip_tunnels.h>
-#include <linux/auxiliary_bus.h>
 #include <linux/pldmfw.h>
 #include <linux/types.h>
 #include <linux/errno.h>
 #include <linux/cdev.h>
 #include <linux/kfifo.h>
-#include <linux/termios_internal.h>
-#include <linux/termios.h>
-#ifdef CONFIG_TLS_DEVICE
-#include <net/tls.h>
-#endif
 #include <net/inet6_hashtables.h>
 #include <linux/compiler.h>
 #include <linux/netdevice.h>
@@ -43,15 +38,39 @@
 #include <linux/rtnetlink.h>
 #include <linux/pci.h>
 #include <linux/delay.h>
-#include <linux/dma-map-ops.h>
-#include <linux/dma-mapping.h>
 #include <linux/iommu.h>
 #include <linux/mdev.h>
 #include <linux/vfio.h>
 #include <uapi/linux/elf.h>
 #include <linux/crc32.h>
+#include <net/vxlan.h>
+#include <net/gre.h>
+#include <net/geneve.h>
+#include "nbl_compat.h"
+#include <linux/nbl/nbl_core_common.h>
+
+/* When the kernel lacks the auxiliary bus (NEED_AUX_BUS=1), this resolves to
+ * the vendored backport via -I $(src)/../../../base added by the Makefile.
+ */
+#include <linux/auxiliary_bus.h>
+
+#include <linux/termios_internal.h>
+#if IS_ENABLED(CONFIG_TLS_DEVICE)
+#include <net/tls.h>
+#endif
+#if IS_ENABLED(CONFIG_MACSEC)
+#include <net/macsec.h>
+#endif
+
+#include <linux/dma-map-ops.h>
+#include <linux/dma-mapping.h>
+
 #include <net/xdp.h>
 #include <linux/bpf.h>
+
+#ifndef GIT_COMMIT
+#define GIT_COMMIT "unknown"
+#endif
 
 /*  ------  Basic definitions  -------  */
 #define NBL_DRIVER_NAME					"nbl_core"
@@ -63,8 +82,6 @@
  * 3 ASIC snic
  * 4 x4
  */
-#define NBL_DRIVER_VERSION				"1-1.1.100.0"
-
 #define NBL_DRIVER_DEV_MAX				24
 
 #define NBL_PAIR_ID_GET_TX(id)				((id) * 2 + 1)
@@ -76,6 +93,8 @@
 
 #define NBL_P4_NAME_LEN					64
 
+#define NBL_MAC_ADDR_LEN_AS_U8				6
+#define NBL_IPV6_ADDR_LEN_AS_U8				16
 #define NBL_FLOW_INDEX_BYTE_LEN				8
 
 #define NBL_RATE_MBPS_100G				(100000)
@@ -84,7 +103,6 @@
 
 #define NBL_NEXT_ID(id, max)	({ typeof(id) _id = (id); ((_id) == (max) ? 0 : (_id) + 1); })
 #define NBL_IPV6_U32LEN					4
-
 /* macro for counter */
 #define NBL_FLOW_COUNT_NUM				8
 #define NBL_COUNTER_MAX_STAT_ID				2048
@@ -98,6 +116,35 @@
 #define NBL_MAX_FUNC					(520)
 #define NBL_MAX_MTU					15
 
+#define NBL_FRIMWARE_VERSION_LEN			32
+
+#define NBL_MAX_ETHPORTS				516
+#define NBL_FLOW_ETH_REP_0				2048
+#define NBL_FLOW_ETH_REP_1				2049
+#define NBL_FLOW_ETH_REP_2				2050
+#define NBL_FLOW_ETH_REP_3				2051
+#define NBL_FLOW_BOND_REP_PORT_ID			2052
+#define NBL_ETHER_TYPE_IPV4				4
+#define NBL_ETHER_TYPE_IPV6				6
+#define NBL_FLOW_MAX_REP_ID				0xFFFF
+
+#define NBL_BITS_IN_NIBBLE				(4)
+#define NBL_BITS_IN_U8					(8)
+#define NBL_BITS_IN_U16					(16)
+#define NBL_BITS_IN_U24					(24)
+#define NBL_BITS_IN_U32					(32)
+#define NBL_BITS_IN_U64					(64)
+
+#define NBL_FLOW_TABLE_IPV4_DEFAULT_MASK		0xFFFFFFFF
+#define NBL_FLOW_TABLE_L4_PORT_DEFAULT_MASK		0xFFFF
+#define NBL_FLOW_TABLE_FULL_MASK_AS_U32			0xFFFFFFFF
+#define NBL_FLOW_TABLE_FULL_MASK_AS_U16			0xFFFF
+#define NBL_FLOW_TABLE_FULL_MASK_AS_U8			0xFF
+#define NBL_TC_MAX_PED_H_IDX				512
+
+#define NBL_FEM_KT_LEN					320
+#define NBL_FEM_KT_HALF_LEN				160
+
 #define NBL_FLOW_TABLE_IPV4_DEFAULT_MASK		0xFFFFFFFF
 #define NBL_FLOW_TABLE_L4_PORT_DEFAULT_MASK		0xFFFF
 #define NBL_TC_MAX_PED_H_IDX 512
@@ -107,6 +154,20 @@
 
 #define NBL_TC_PEDIT_INC_NODE_RES_EDITS(node) ((node).pedits++)
 #define NBL_TC_PEDIT_DEC_NODE_RES_EDITS(node, dec) ((node).pedits -= dec)
+
+#define NBL_FLOW_TAB_ONE_TIME				1
+#define NBL_FLOW_TAB_TWO_TIME				2
+#define NBL_INVALID_U32					0xFFFFFFFF
+
+#define NBL_IPV6_ICMPV6_IPPROTO		58
+#define NBL_IPV46_SCTP_IPPROTO		132
+#define NBL_IPV6_ICMPV6_CODE_PING	0
+#define NBL_IPV6_ICMPV6_TYPE_PING_REQ	128
+#define NBL_IPV6_ICMPV6_TYPE_PING_REP	129
+#define NBL_IPV6_ICMPV6_TYPE_NS		135
+#define NBL_IPV6_ICMPV6_TYPE_NA		136
+
+#define NBL_VLAN_PCP_SHIFT		13
 
 /* key element: key flag bitmap */
 #define NBL_FLOW_KEY_TABLE_IDX_FLAG			(BIT_ULL(0))
@@ -118,7 +179,7 @@
 #define NBL_FLOW_KEY_T_DIPV6_FLAG			(BIT_ULL(3))
 #define NBL_FLOW_KEY_T_OPT_DATA_FLAG			(BIT_ULL(4))
 #define NBL_FLOW_KEY_T_VNI_FLAG				(BIT_ULL(5))
-#define NBL_FLOW_KEY_T_DSTMAC_FLAG			(BIT_ULL(6))	// error
+#define NBL_FLOW_KEY_T_DSTMAC_FLAG			(BIT_ULL(6))// error
 #define NBL_FLOW_KEY_T_SRCMAC_FLAG			(BIT_ULL(7))	// error
 #define NBL_FLOW_KEY_T_SVLAN_FLAG			(BIT_ULL(8))	// error
 #define NBL_FLOW_KEY_T_CVLAN_FLAG			(BIT_ULL(9))	// error
@@ -128,7 +189,7 @@
 #define NBL_FLOW_KEY_T_NPROTO_FLAG			(BIT_ULL(13))	// delete
 #define NBL_FLOW_KEY_T_OPT_CLASS_FLAG			(BIT_ULL(14))
 #define NBL_FLOW_KEY_T_PROTOCOL_FLAG			(BIT_ULL(15))
-#define NBL_FLOW_KEY_T_TCPSTAT_FLAG			(BIT_ULL(16))	// delete
+#define NBL_FLOW_KEY_T_TCPSTAT_FLAG			(BIT_ULL(16))   // delete
 #define NBL_FLOW_KEY_T_TOS_FLAG				(BIT_ULL(17))
 #define NBL_FLOW_KEY_T_TTL_FLAG				(BIT_ULL(18))
 #define NBL_FLOW_KEY_SIPV4_FLAG				(BIT_ULL(19))
@@ -155,8 +216,16 @@
 #define NBL_FLOW_KEY_RDMA_ACK_SEQ_FLAG			(BIT_ULL(36))	// error
 #define NBL_FLOW_KEY_RDMA_QPN_FLAG			(BIT_ULL(37))	// error
 #define NBL_FLOW_KEY_RDMA_OP_FLAG			(BIT_ULL(38))	// error
+#define NBL_FLOW_KEY_INPORT4_FLAG			(BIT_ULL(39))
+#define NBL_FLOW_KEY_INPORT2_FLAG			(BIT_ULL(40))
+#define NBL_FLOW_KEY_INPORT2L_FLAG			(BIT_ULL(41))
+#define NBL_FLOW_KEY_INPORT16_FLAG			(BIT_ULL(42))
 #define NBL_FLOW_KEY_EXEHASH_FLAG			(BIT_ULL(43))
+#define NBL_FLOW_KEY_MARK_IS_TNL			(BIT_ULL(43))
+#define NBL_FLOW_KEY_NEED_ACL_FLAG			(BIT_ULL(44))
 #define NBL_FLOW_KEY_DPHASH_FLAG			(BIT_ULL(44))
+#define NBL_FLOW_KEY_MARK_IS_TCP_UDP			(BIT_ULL(45))
+#define NBL_FLOW_KEY_MARK_IS_ICMP_SCTP			(BIT_ULL(46))
 #define NBL_FLOW_KEY_RECIRC_FLAG			(BIT_ULL(63))
 
 /* action flag */
@@ -200,8 +269,14 @@
 #define NBL_FLOW_ACTION_META_RECIRC			(BIT_ULL(38))
 #define NBL_FLOW_ACTION_STAT				(BIT_ULL(39))
 #define NBL_ACTION_FLAG_OFFSET_MAX			(BIT_ULL(40))
-extern struct list_head lag_resource_head;
-extern struct mutex nbl_lag_mutex;
+
+#define NBL_FLOW_TABLE_IPV4_DEFAULT_MASK		0xFFFFFFFF
+#define NBL_FLOW_TABLE_VLAN_MASK_AS_U16			0xFFFF
+#define NBL_FLOW_TABLE_VLAN_MASK_AS_U12			0xFFF
+#define NBL_FLOW_TABLE_FULL_MASK_AS_U8			0xFF
+#define NBL_BITS_IN_U8					(8)
+#define NBL_U16_MASK					(0xffff)
+
 #define SET_DEV_MIN_MTU(netdev, mtu) ((netdev)->min_mtu = (mtu))
 #define SET_DEV_MAX_MTU(netdev, mtu) ((netdev)->max_mtu = (mtu))
 
@@ -222,13 +297,17 @@ do {		\
 
 enum nbl_product_type {
 	NBL_LEONIS_TYPE,
+	NBL_DRACO_TYPE,
 	NBL_PRODUCT_MAX,
 };
 
 enum nbl_flex_cap_type {
 	NBL_DUMP_FLOW_CAP,
 	NBL_DUMP_FD_CAP,
-	NBL_SECURITY_ACCEL_CAP,
+	NBL_SECURITY_TLS_CAP,
+	NBL_SECURITY_IPSEC_CAP,
+	NBL_SECURITY_MACSEC_CAP,
+	NBL_DUMP_FUNC_INFO_CAP,
 	NBL_FLEX_CAP_NBITS
 };
 
@@ -239,16 +318,19 @@ enum nbl_fix_cap_type {
 	NBL_TASK_CLEAN_ADMINDQ_CAP,
 	NBL_TASK_CLEAN_MAILBOX_CAP,
 	NBL_TASK_IPSEC_AGE_CAP,
+	NBL_TASK_CHECK_PORT_LINK_CAP,
 	NBL_ETH_SUPPORT_NRZ_RS_FEC_544,
 	NBL_RESTOOL_CAP,
+	NBL_TASK_SFP_PLUG_CAP,
 	NBL_HWMON_TEMP_CAP,
 	NBL_ITR_DYNAMIC,
 	NBL_TASK_ADAPT_DESC_GOTHER,
+	NBL_MSIX_AUTO_MASK_CAP,
 	NBL_P4_CAP,
 	NBL_PROCESS_FLR_CAP,
-	NBL_RECOVERY_ABNORMAL_STATUS,
-	NBL_TASK_KEEP_ALIVE,
 	NBL_PMD_DEBUG,
+	NBL_PRIO_STATS_CAP,
+	NBL_MSIX_FAST_RESTRAIN_CAP,
 	NBL_XDP_CAP,
 	NBL_TASK_RESET_CAP,
 	NBL_TASK_RESET_CTRL_CAP,
@@ -258,6 +340,22 @@ enum nbl_fix_cap_type {
 	NBL_TASK_HEALTH_REPORT_TEMP_CAP,
 	NBL_TASK_HEALTH_REPORT_REBOOT_CAP,
 	NBL_DVN_DESC_REQ_SYSFS_CAP,
+	NBL_UDF_EXTRACT_CAP, /* when vlan offload and transparent vlan, ext header VLAN via UDF */
+	NBL_MSIX_UNMASK_USE_GLOBAL_CAP,
+	NBL_QUEUE_NOTIFY_USE_LOCAL_CAP,
+	NBL_RXFH_KEY_SET_CAP,
+	NBL_PROMISC_NOT_SUPPORT,
+	NBL_NEED_DESTROY_CHIP,
+	NBL_INTERLEAVE_SEG_DISABLE,
+	NBL_TX_FC_SEGREGATGE_ENABLE,
+	NBL_RX_CSUM_ERR_DROP_CAP,
+	NBL_XDP_ENHANCE,
+	NBL_ABNORMAL_INTR_SYSFS_CAP,
+	NBL_DEVSHR_IDX_CAP,
+	NBL_RXQ_LARGE_BUF,
+	NBL_LINK_DOWN_ON_CLOSE,
+	NBL_RESUME_CAP,
+	NBL_VLAN_FILTERING_DISABLE_CAP,
 	NBL_FIX_CAP_NBITS
 };
 
@@ -266,7 +364,7 @@ enum nbl_sfp_module_state {
 	NBL_SFP_MODULE_ON,
 };
 
-enum {
+enum nbl_vsi_type {
 	NBL_VSI_DATA = 0,/* default vsi in kernel or independent dpdk */
 	NBL_VSI_CTRL,
 	NBL_VSI_USER, /* dpdk used vsi in coexist dpdk */
@@ -287,6 +385,7 @@ enum {
 enum nbl_hw_status {
 	NBL_HW_NOMAL,
 	NBL_HW_FATAL_ERR, /* Most hw module is not work nomal exclude pcie/emp */
+	NBL_HW_PCIE_RESET_ERR, /* pcie link retrainning */
 	NBL_HW_STATUS_MAX,
 };
 
@@ -322,6 +421,21 @@ struct nbl_init_param {
 	bool pci_using_dac;
 };
 
+struct nbl_abnormal_ring_param {
+	int ring_index;
+	int type;
+};
+
+struct nbl_stop_abnormal_sw_queue_param {
+	u16 local_queue_id;
+	int type;
+};
+
+struct nbl_get_local_queue_id_param {
+	u16 vsi_id;
+	u16 global_queue_id;
+};
+
 struct nbl_txrx_queue_param {
 	u16 vsi_id;
 	u64 dma;
@@ -339,12 +453,25 @@ struct nbl_txrx_queue_param {
 	u16 rxcsum;
 };
 
+struct nbl_cfg_rx_half_offload_param {
+	u16 vsi_index;
+	u16 half_offload_en;
+};
+
+struct nbl_cfg_txrx_vlan_param {
+	u16 vlan_tci;
+	u16 vlan_proto;
+	u8 vsi_index;
+};
+
 struct nbl_tc_qidsc_info {
 	u16 count;
 	u16 offset;
 	u32 pad;
 	u64 max_tx_rate;
 };
+
+#define NBL_EPRO_RSS_SK_SIZE 40
 
 #define NBL_MAX_TC_NUM		(8)
 struct nbl_tc_qidsc_param {
@@ -416,6 +543,8 @@ struct nbl_queue_cfg_param {
 
 	/* dvn args */
 	u16 tx;
+	u16 vsi_id;
+	bool interleave_seg_disable;
 
 	/* uvn args*/
 	u16 rxcsum;
@@ -427,10 +556,31 @@ struct nbl_msix_info_param {
 	struct msix_entry *msix_entries;
 };
 
+struct nbl_set_msix_fast_restrain_param {
+	u16 global_vector_id;
+	u16 pnum;
+	u16 rate;
+};
+
+struct nbl_set_intr_suppress_level_fast_param {
+	u16 global_vector_id;
+	u16 level;
+};
+
+struct nbl_get_intr_suppress_level_param {
+	u64 rate;
+	u16 last_level;
+};
+
 struct nbl_queue_stats {
 	u64 packets;
 	u64 bytes;
 	u64 descs;
+};
+
+struct nbl_get_queue_stats_param {
+	u8 queue_id;
+	bool is_tx;
 };
 
 struct nbl_rep_stats {
@@ -439,10 +589,23 @@ struct nbl_rep_stats {
 	u64 dropped;
 };
 
+struct nbl_alloc_rep_data_param {
+	int num_vfs;
+	u16 vf_base_vsi_id;
+};
+
+struct nbl_get_rep_stats_param {
+	u16 rep_vsi_id;
+	bool is_tx;
+};
+
 struct nbl_tx_queue_stats {
 	u64 tso_packets;
 	u64 tso_bytes;
+	u64 tso_inner_packets;
+	u64 tso_inner_bytes;
 	u64 tx_csum_packets;
+	u64 tx_csum_inner_packets;
 	u64 tx_busy;
 	u64 tx_dma_busy;
 	u64 tx_multicast_packets;
@@ -450,15 +613,17 @@ struct nbl_tx_queue_stats {
 	u64 tx_skb_free;
 	u64 tx_desc_addr_err_cnt;
 	u64 tx_desc_len_err_cnt;
-#ifdef CONFIG_TLS_DEVICE
+#if IS_ENABLED(CONFIG_TLS_DEVICE)
 	u64 tls_encrypted_packets;
 	u64 tls_encrypted_bytes;
 	u64 tls_ooo_packets;
 #endif
+	u64 tx_added_vlan_packets;
 };
 
 struct nbl_rx_queue_stats {
 	u64 rx_csum_packets;
+	u64 rx_csum_inner_packets;
 	u64 rx_csum_errors;
 	u64 rx_multicast_packets;
 	u64 rx_unicast_packets;
@@ -469,22 +634,28 @@ struct nbl_rx_queue_stats {
 	u64 rx_cache_empty;
 	u64 rx_cache_busy;
 	u64 rx_cache_waive;
-#ifdef CONFIG_TLS_DEVICE
+#if IS_ENABLED(CONFIG_TLS_DEVICE)
 	u64 tls_decrypted_packets;
 	u64 tls_resync_req_num;
 #endif
+	u64 rx_removed_vlan_packets;
+	u64 rx_rss_hash_packets;
 	u64 xdp_tx_packets;
 	u64 xdp_redirect_packets;
-	u64 xdp_oversize_packets;
 	u64 xdp_drop_packets;
+	u64 rx_oversize_pkts_sw_drop;
 };
 
 struct nbl_stats {
 	/* for toe stats */
 	u64 tso_packets;
 	u64 tso_bytes;
+	u64 tso_inner_packets;
+	u64 tso_inner_bytes;
 	u64 tx_csum_packets;
+	u64 tx_csum_inner_packets;
 	u64 rx_csum_packets;
+	u64 rx_csum_inner_packets;
 	u64 rx_csum_errors;
 	u64 tx_busy;
 	u64 tx_dma_busy;
@@ -492,9 +663,8 @@ struct nbl_stats {
 	u64 tx_unicast_packets;
 	u64 xdp_tx_packets;
 	u64 xdp_redirect_packets;
-	u64 xdp_oversize_packets;
 	u64 xdp_drop_packets;
-#ifdef CONFIG_TLS_DEVICE
+#if IS_ENABLED(CONFIG_TLS_DEVICE)
 	u64 tls_encrypted_packets;
 	u64 tls_encrypted_bytes;
 	u64 tls_ooo_packets;
@@ -517,11 +687,22 @@ struct nbl_stats {
 	u64 tx_bytes;
 	u64 rx_packets;
 	u64 rx_bytes;
+	u64 tx_added_vlan_packets;
+	u64 rx_removed_vlan_packets;
+	u64 rx_rss_hash_packets;
+	u64 rx_oversize_pkts_sw_drop;
+	u64 total_fake_packets;
 };
 
 struct nbl_priv_stats {
 	u64 total_dvn_pkt_drop_cnt;
 	u64 total_uvn_stat_pkt_drop;
+};
+
+struct nbl_prio_stats {
+	u64 packets;
+	u64 bytes;
+	u64 drop_packets;
 };
 
 struct nbl_vf_stats {
@@ -533,16 +714,6 @@ struct nbl_vf_stats {
 	u64 multicast;
 	u64 rx_dropped;
 	u64 tx_dropped;
-};
-
-struct nbl_ustore_stats {
-	u64 rx_drop_packets;
-	u64 rx_trun_packets;
-};
-
-struct nbl_hw_stats {
-	u64 *total_uvn_stat_pkt_drop;
-	struct nbl_ustore_stats start_ustore_stats;
 };
 
 struct nbl_eth_abnormal_stats {
@@ -567,30 +738,34 @@ struct nbl_notify_param {
 	u16 tail_ptr;
 };
 
-#define NBL_LAG_MAX_PORTS		2
-#define NBL_LAG_VALID_PORTS		2
+#define NBL_LAG_MAX_PORTS		8
 #define NBL_LAG_MAX_NUM			2
 #define NBL_LAG_MAX_RESOURCE_NUM	NBL_DRIVER_DEV_MAX
-
-struct nbl_lag_member {
-	struct netdev_lag_lower_state_info lower_state;
-	struct notifier_block notify_block;
-	struct netdev_net_notifier netdevice_nn;
-	struct list_head mem_list_node;
-	struct net_device *netdev;
-	bool is_bond_adev;
-	u16 vsi_id;
-	u8 lag_id;
-	u8 eth_id;
-	u8 logic_eth_id;
-	u8 bonded;
-};
 
 struct nbl_enable_lag_param {
 	bool enable;
 	u16 pa_ext_type_tbl_id;
 	u16 flow_tbl_id;
+	u16 upcall_vsi;
 	u16 upcall_queue;
+};
+
+struct nbl_enable_up_rdma_bypass_param {
+	u8 mac[ETH_ALEN];
+	u16 vsi_id;
+	bool enable;
+};
+
+struct nbl_flash_image_param {
+	u32 module;
+	const u8 *data;
+	size_t len;
+};
+
+enum nbl_stat_type {
+	STAT_TYPE_USTORE,
+	STAT_TYPE_FAKE,
+	STAT_TYPE_RX_DROPPED_QUEUE_DISABLE,
 };
 
 enum nbl_eth_speed {
@@ -604,15 +779,110 @@ enum nbl_eth_speed {
 	LINK_SPEED_200G = 7
 };
 
+struct nbl_macsec_pn {
+	u32 pn;
+	u32 epn;
+};
+
+#define NBL_MACSEC_KEY_LEN		32
+#define NBL_MACSEC_SALT_LEN		12
+
+struct nbl_macsec_sa {
+	u8 sec_key[NBL_MACSEC_KEY_LEN];
+	u8 salt[NBL_MACSEC_SALT_LEN];
+	u32 ssci;
+	u32 active : 1;
+	u32 rsv1 : 31;
+	u32 rsv2[3];
+	struct nbl_macsec_pn sa_pn;
+};
+
+struct nbl_macsec_tx_sc {
+	u32 offset : 7;
+	u32 icv_len : 4;
+	u32 an : 2;
+	u32 svlan_clear : 1;
+	u32 cvlan_clear : 1;
+	u32 key_type : 1;
+	u32 key_len : 1;
+	u32 xpn : 1;
+	u32 scb : 1;
+	u32 end_station : 1;
+	u32 send_sci : 1;
+	u32 encrypt : 1;
+	u32 protect : 1;
+	u32 active : 1;
+	u32 rsv : 8;
+	u32 index;
+	struct nbl_macsec_sa *tx_sa[4];
+};
+
+struct nbl_macsec_rx_sc {
+	u32 active : 1;
+	u32 win_size : 2;
+	u32 offset : 7;
+	u32 icv_len : 4;
+	u32 validate_frame : 2;
+	u32 key_type : 1;
+	u32 key_len : 1;
+	u32 xpn : 1;
+	u32 replay : 1;
+	u32 sci_l : 12;
+	u32 sci_m;
+	u32 sci_h : 20;
+	u32 sport_id : 2;
+	u32 rsv1 : 10;
+	u32 rsv2;
+	u32 index;
+	struct nbl_macsec_sa *rx_sa[4];
+	struct list_head rx_sc_node;
+	struct metadata_dst *md_dst;
+};
+
+struct nbl_macsec_fs {
+	u64 sci;
+	u8 dmac[6];
+	u8 smac[6];
+	u32 svlan;
+	u32 cvlan;
+	u8 port_id : 2;
+	u8 mask : 5;
+	u8 vld : 1;
+};
+
+struct nbl_macsec_dev {
+	const struct net_device *netdev;
+	struct list_head macsec_rx_sc_list;
+	struct nbl_macsec_fs macsec_fs;
+	struct nbl_macsec_tx_sc tx_sc;
+	struct list_head macsec_dev_node;
+};
+
+struct nbl_macsec_info {
+	struct list_head macsec_dev_list;
+	int dev_num;
+	struct mutex lock; /* for macsec operation*/
+};
+
 #define NBL_KTLS_IV_LEN				8
 #define NBL_KTLS_REC_LEN			8
+#define NBL_KTLS_SALT_LEN			4
+#define NBL_KTLS_KEY_HALF			16
+#define NBL_KTLS_KEY_LEN			32
+#define NBL_KTLS_PAD_LEN			4
 
 struct nbl_ktls_offload_context_tx {
 	u32 index;
 	u32 expected_tcp;
 	u8 iv[NBL_KTLS_IV_LEN];
 	u8 rec_num[NBL_KTLS_REC_LEN];
+	u8 salt[NBL_KTLS_SALT_LEN];
+	u8 key[NBL_KTLS_KEY_LEN];
 	bool ctx_post_pending;
+	u8 crypto_type;
+	__be16 sync_redlen;
+	__be64 sync_rec_num;
+	__be64 sync_iv;
 	struct tls_offload_context_tx	*tx_ctx;
 };
 
@@ -704,6 +974,7 @@ struct nbl_common_irq_num {
 struct nbl_ctrl_irq_num {
 	int adminq_irq_num;
 	int abnormal_irq_num;
+	int sfp_plug_irq_num;
 };
 
 enum nbl_flow_ctrl {
@@ -728,6 +999,7 @@ enum nbl_port_type {
 	NBL_PORT_TYPE_UNKNOWN = 0,
 	NBL_PORT_TYPE_FIBRE,
 	NBL_PORT_TYPE_COPPER,
+	NBL_PORT_TYPE_TP,
 };
 
 enum nbl_port_max_rate {
@@ -737,10 +1009,12 @@ enum nbl_port_max_rate {
 	NBL_PORT_MAX_RATE_25G,
 	NBL_PORT_MAX_RATE_100G,
 	NBL_PORT_MAX_RATE_100G_PAM4,
+	NBL_PORT_MAX_RATE_200G,
+	NBL_PORT_MAX_RATE_400G,
 };
 
 enum nbl_port_mode {
-	NBL_PORT_NRZ_NORSFEC,
+	NBL_PORT_NRZ_NORSFEC = 1,
 	NBL_PORT_NRZ_544,
 	NBL_PORT_NRZ_528,
 	NBL_PORT_PAM4_544,
@@ -760,6 +1034,8 @@ enum nbl_led_reg_ctrl {
 #define NBL_PORT_CAP_PAUSE_MASK (BIT(NBL_PORT_CAP_TX_PAUSE) | BIT(NBL_PORT_CAP_RX_PAUSE))
 #define NBL_PORT_CAP_SPEED_1G_MASK\
 	(BIT(NBL_PORT_CAP_1000BASE_T) | BIT(NBL_PORT_CAP_1000BASE_X))
+#define NBL_PORT_CAP_SPEED_2_5G_MASK BIT_ULL(NBL_PORT_CAP_2500BASE_T)
+#define NBL_PORT_CAP_SPEED_5G_MASK BIT_ULL(NBL_PORT_CAP_5GBASE_T)
 #define NBL_PORT_CAP_SPEED_10G_MASK\
 	(BIT(NBL_PORT_CAP_10GBASE_T) | BIT(NBL_PORT_CAP_10GBASE_KR) | BIT(NBL_PORT_CAP_10GBASE_SR))
 #define NBL_PORT_CAP_SPEED_25G_MASK \
@@ -776,19 +1052,29 @@ enum nbl_led_reg_ctrl {
 	 BIT(NBL_PORT_CAP_100G_CAUI4) | BIT(NBL_PORT_CAP_100GBASE_KR2_PAM4) |\
 	 BIT(NBL_PORT_CAP_100GBASE_SR2_PAM4) | BIT(NBL_PORT_CAP_100GBASE_CR2_PAM4) |\
 	 BIT(NBL_PORT_CAP_100G_AUI2_PAM4))
+#define NBL_PORT_CAP_SPEED_200G_MASK \
+	(BIT_ULL(NBL_PORT_CAP_200GBASE_KR4) | BIT_ULL(NBL_PORT_CAP_200GBASE_CR4) |\
+	 BIT_ULL(NBL_PORT_CAP_200G_AUI4))
+#define NBL_PORT_CAP_SPEED_400G_MASK \
+	(BIT_ULL(NBL_PORT_CAP_400GBASE_KR4) | BIT_ULL(NBL_PORT_CAP_400GBASE_CR4) |\
+	 BIT_ULL(NBL_PORT_CAP_400G_AUI4))
 #define NBL_PORT_CAP_SPEED_MASK \
-	(NBL_PORT_CAP_SPEED_1G_MASK | NBL_PORT_CAP_SPEED_10G_MASK |\
+	(NBL_PORT_CAP_SPEED_1G_MASK | NBL_PORT_CAP_SPEED_2_5G_MASK |\
+	 NBL_PORT_CAP_SPEED_5G_MASK | NBL_PORT_CAP_SPEED_10G_MASK |\
 	 NBL_PORT_CAP_SPEED_25G_MASK | NBL_PORT_CAP_SPEED_50G_MASK |\
-	 NBL_PORT_CAP_SPEED_100G_MASK)
+	 NBL_PORT_CAP_SPEED_100G_MASK | NBL_PORT_CAP_SPEED_200G_MASK |\
+	 NBL_PORT_CAP_SPEED_400G_MASK)
 #define NBL_PORT_CAP_PAM4_MASK\
 	(BIT(NBL_PORT_CAP_50GBASE_KR_PAM4) | BIT(NBL_PORT_CAP_50GBASE_SR_PAM4) |\
 	 BIT(NBL_PORT_CAP_50GBASE_CR_PAM4) | BIT(NBL_PORT_CAP_50G_AUI_PAM4) |\
 	 BIT(NBL_PORT_CAP_100GBASE_KR2_PAM4) | BIT(NBL_PORT_CAP_100GBASE_SR2_PAM4) |\
 	 BIT(NBL_PORT_CAP_100GBASE_CR2_PAM4) | BIT(NBL_PORT_CAP_100G_AUI2_PAM4))
-#define NBL_ETH_1G_DEFAULT_FEC_MODE NBL_PORT_FEC_OFF
-#define NBL_ETH_10G_DEFAULT_FEC_MODE NBL_PORT_FEC_OFF
-#define NBL_ETH_25G_DEFAULT_FEC_MODE NBL_PORT_FEC_RS
-#define NBL_ETH_100G_DEFAULT_FEC_MODE NBL_PORT_FEC_RS
+#define NBL_ETH_1G_DEFAULT_FEC_MODE	NBL_PORT_FEC_OFF
+#define NBL_ETH_2_5G_DEFAULT_FEC_MODE	NBL_PORT_FEC_OFF
+#define NBL_ETH_5G_DEFAULT_FEC_MODE	NBL_PORT_FEC_OFF
+#define NBL_ETH_10G_DEFAULT_FEC_MODE	NBL_PORT_FEC_OFF
+#define NBL_ETH_25G_DEFAULT_FEC_MODE	NBL_PORT_FEC_RS
+#define NBL_ETH_100G_DEFAULT_FEC_MODE	NBL_PORT_FEC_RS
 
 enum nbl_port_cap {
 	NBL_PORT_CAP_TX_PAUSE,
@@ -825,6 +1111,14 @@ enum nbl_port_cap {
 	NBL_PORT_CAP_100GBASE_CR2_PAM4,
 	NBL_PORT_CAP_100G_AUI2_PAM4,
 	NBL_PORT_CAP_FEC_AUTONEG,
+	NBL_PORT_CAP_200GBASE_KR4,
+	NBL_PORT_CAP_200GBASE_CR4,
+	NBL_PORT_CAP_200G_AUI4,
+	NBL_PORT_CAP_400GBASE_KR4,
+	NBL_PORT_CAP_400GBASE_CR4,
+	NBL_PORT_CAP_400G_AUI4,
+	NBL_PORT_CAP_2500BASE_T,
+	NBL_PORT_CAP_5GBASE_T,
 	NBL_PORT_CAP_MAX
 };
 
@@ -833,6 +1127,11 @@ enum nbl_fw_port_speed {
 	NBL_FW_PORT_SPEED_25G,
 	NBL_FW_PORT_SPEED_50G,
 	NBL_FW_PORT_SPEED_100G,
+};
+
+enum nbl_fw_port_type {
+	NBL_FW_PORT_FIBER_OR_COPPER,
+	NBL_FW_PORT_RJ45,
 };
 
 static inline u32 nbl_port_speed_to_speed(enum nbl_fw_port_speed port_speed)
@@ -851,6 +1150,22 @@ static inline u32 nbl_port_speed_to_speed(enum nbl_fw_port_speed port_speed)
 	}
 
 	return SPEED_25000;
+}
+
+static inline u8 nbl_fw_speed_to_port_speed(enum nbl_fw_port_speed port_speed)
+{
+	switch (port_speed) {
+	case NBL_FW_PORT_SPEED_10G:
+		return NBL_PORT_MAX_RATE_10G;
+	case NBL_FW_PORT_SPEED_25G:
+		return NBL_PORT_MAX_RATE_25G;
+	case NBL_FW_PORT_SPEED_100G:
+		return NBL_PORT_MAX_RATE_100G;
+	default:
+		return NBL_PORT_MAX_RATE_100G;
+	}
+
+	return NBL_PORT_MAX_RATE_100G;
 }
 
 #define PASSTHROUGH_FW_CMD_DATA_LEN			(3072)
@@ -887,26 +1202,58 @@ struct nbl_fw_cmd_vf_num_param {
 	u16 vf_max_num[NBL_VF_NUM_CMD_LEN];
 };
 
+#define NBL_RESTOOL_NAME_LEN	32
 #define NBL_ST_INFO_NAME_LEN				(64)
 #define NBL_ST_INFO_NETDEV_MAX				(8)
-#define NBL_ST_INFO_RESERVED_LEN			(376)
+#define NBL_ST_INFO_RESERVED_LEN			(344)
 struct nbl_st_info_param {
 	u8 version;
 	u8 bus;
 	u8 devid;
 	u8 function;
 	u16 domain;
-	u16 rsv0;
+#define NBL_NIC_TYPE_SNIC_V1R1		0
+#define NBL_NIC_TYPE_SNIC_V2R1		1
+#define NBL_NIC_TYPE_RNIC		2
+	u16 nic_type;
 	char driver_name[NBL_ST_INFO_NAME_LEN];
 	char driver_ver[NBL_ST_INFO_NAME_LEN];
 	char netdev_name[NBL_ST_INFO_NETDEV_MAX][NBL_ST_INFO_NAME_LEN];
+	char real_chrdev_flag;
+	char real_chrdev_name[31];
 	u8 rsv[NBL_ST_INFO_RESERVED_LEN];
 } __packed;
 
-static inline u64 nbl_speed_to_link_mode(unsigned int speed, u8 autoneg)
+static inline u64 nbl_speed_to_link_mode(unsigned int speed, u8 autoneg, u8 port_type)
 {
 	u64 link_mode = 0;
 	int speed_support = 0;
+
+	if (port_type == NBL_PORT_TYPE_TP) {
+		switch (speed) {
+		case SPEED_10000:
+			link_mode |= BIT(NBL_PORT_CAP_10GBASE_T);
+			speed_support = 1;
+			break;
+		case SPEED_5000:
+			link_mode |= BIT_ULL(NBL_PORT_CAP_5GBASE_T);
+			speed_support = 1;
+			break;
+		case SPEED_2500:
+			link_mode |= BIT_ULL(NBL_PORT_CAP_2500BASE_T);
+			speed_support = 1;
+			break;
+		case SPEED_1000:
+			link_mode |= BIT(NBL_PORT_CAP_1000BASE_T);
+			speed_support = 1;
+			break;
+		default:
+			break;
+		}
+		if (autoneg && speed_support)
+			link_mode |= BIT(NBL_PORT_CAP_AUTONEG);
+		return link_mode;
+	}
 
 	switch (speed) {
 	case SPEED_100000:
@@ -927,11 +1274,10 @@ static inline u64 nbl_speed_to_link_mode(unsigned int speed, u8 autoneg)
 			BIT(NBL_PORT_CAP_25GBASE_CR) | BIT(NBL_PORT_CAP_25G_AUI);
 		fallthrough;
 	case SPEED_10000:
-		link_mode |= BIT(NBL_PORT_CAP_10GBASE_T) | BIT(NBL_PORT_CAP_10GBASE_KR) |
-			BIT(NBL_PORT_CAP_10GBASE_SR);
+		link_mode |= BIT(NBL_PORT_CAP_10GBASE_KR) | BIT(NBL_PORT_CAP_10GBASE_SR);
 		fallthrough;
 	case SPEED_1000:
-		link_mode |= BIT(NBL_PORT_CAP_1000BASE_T) | BIT(NBL_PORT_CAP_1000BASE_X);
+		link_mode |= BIT(NBL_PORT_CAP_1000BASE_X);
 		speed_support = 1;
 	}
 
@@ -941,6 +1287,76 @@ static inline u64 nbl_speed_to_link_mode(unsigned int speed, u8 autoneg)
 	return link_mode;
 }
 
+enum nbl_flow_key_mask_tag {
+	/* flag used by inner init, and cannot modified when app start */
+	NBL_FLOW_ITEM_SKEY_MASK = 0,
+	NBL_FLOW_ITEM_SKEY_EXACT,
+	NBL_FLOW_ITEM_SKEY_IGN,
+
+	NBL_FLOW_ITEM_DKEY_MASK,
+	NBL_FLOW_ITEM_DKEY_EXACT,
+	NBL_FLOW_ITEM_DKEY_IGN,
+
+	NBL_FLOW_ITEM_KEY_MASK,
+	NBL_FLOW_ITEM_KEY_EXACT,
+	NBL_FLOW_ITEM_KEY_IGN,
+
+	/* flag used by inner process, could be modified when app process */
+	NBL_FLOW_ITEM_KEY_OUTER,
+	NBL_FLOW_ITEM_KEY_VLAN1,
+	NBL_FLOW_ITEM_KEY_VLAN2,
+};
+
+enum {
+	NBL_FLOW_TYPE_IPV4,
+	NBL_FLOW_TYPE_TCPV4,
+	NBL_FLOW_TYPE_UDPV4,
+	NBL_FLOW_TYPE_SCTPV4,
+	NBL_FLOW_TYPE_IPV6,
+	NBL_FLOW_TYPE_TCPV6,
+	NBL_FLOW_TYPE_UDPV6,
+	NBL_FLOW_TYPE_SCTPV6,
+	NBL_FLOW_TYPE_OFFLOAD,
+};
+
+enum {
+	NBL_HASH_FILED_SRC_IP		= 1 << 0,
+	NBL_HASH_FILED_DST_IP		= 1 << 1,
+	NBL_HASH_FILED_L4_SPORT		= 1 << 2,
+	NBL_HASH_FILED_L4_DPORT		= 1 << 3,
+};
+
+enum {
+	TMPT_SEL_SCTPV6_DP		= 1 << 0,
+	TMPT_SEL_SCTPV6_SP		= 1 << 1,
+	TMPT_SEL_SCTPV6_DIP		= 1 << 2,
+	TMPT_SEL_SCTPV6_SIP		= 1 << 3,
+	TMPT_SEL_UDPV6_DP		= 1 << 4,
+	TMPT_SEL_UDPV6_SP		= 1 << 5,
+	TMPT_SEL_UDPV6_DIP		= 1 << 6,
+	TMPT_SEL_UDPV6_SIP		= 1 << 7,
+	TMPT_SEL_TCPV6_DP		= 1 << 8,
+	TMPT_SEL_TCPV6_SP		= 1 << 9,
+	TMPT_SEL_TCPV6_DIP		= 1 << 10,
+	TMPT_SEL_TCPV6_SIP		= 1 << 11,
+	TMPT_SEL_IPV6_DIP		= 1 << 12,
+	TMPT_SEL_IPV6_SIP		= 1 << 13,
+	TMPT_SEL_SCTPV4_DP		= 1 << 14,
+	TMPT_SEL_SCTPV4_SP		= 1 << 15,
+	TMPT_SEL_SCTPV4_DIP		= 1 << 16,
+	TMPT_SEL_SCTPV4_SIP		= 1 << 17,
+	TMPT_SEL_UDPV4_DP		= 1 << 18,
+	TMPT_SEL_UDPV4_SP		= 1 << 19,
+	TMPT_SEL_UDPV4_DIP		= 1 << 20,
+	TMPT_SEL_UDPV4_SIP		= 1 << 21,
+	TMPT_SEL_TCPV4_DP		= 1 << 22,
+	TMPT_SEL_TCPV4_SP		= 1 << 23,
+	TMPT_SEL_TCPV4_DIP		= 1 << 24,
+	TMPT_SEL_TCPV4_SIP		= 1 << 25,
+	TMPT_SEL_IPV4_DIP		= 1 << 26,
+	TMPT_SEL_IPV4_SIP		= 1 << 27,
+};
+
 #define NBL_DEFINE_NAME_WITH_WIDTH_CHECK(_struct, _size) \
 _struct; \
 static inline int nbl_##_struct##_size_is_not_equal_to_define(void) \
@@ -948,6 +1364,9 @@ static inline int nbl_##_struct##_size_is_not_equal_to_define(void) \
 	int check[((sizeof(_struct) * 8) == (_size)) ? 1 :  -1]; \
 	return check[0]; \
 }
+
+#define nbl_list_entry_is_head(pos, head, member)	\
+	list_entry_is_head(pos, head, member)
 
 /**
  * list_is_first -- tests whether @ list is the first entry in list @head
@@ -980,9 +1399,15 @@ static inline int nbl_list_empty(const struct list_head *head)
 	return READ_ONCE(head->next) == head;
 }
 
+#define nbl_read_poll_timeout(op, val, cond, sleep_us, timeout_us, \
+			      sleep_before_read, args...) \
+	read_poll_timeout(op, val, cond, sleep_us, timeout_us, sleep_before_read, args)
+
 #define NBL_OPS_CALL(func, para)								\
-	({ typeof(func) _func = (func);								\
-	 (!_func) ? 0 : _func para; })
+	({											\
+		typeof(func) _func = (func);							\
+		(!_func) ? 0 : _func para;							\
+	})
 
 enum {
 	NBL_TC_PORT_TYPE_INVALID = 0,
@@ -1019,6 +1444,7 @@ enum nbl_cmd_status {
 	NBL_CMDQ_RESET_FAIL	= -205,
 	NBL_CMDQ_NEED_RESEND	= -206,
 	NBL_CMDQ_NEED_RESET	= -207,
+	NBL_CMDQ_EXCEED_RANGE	= -208,
 };
 
 struct nbl_fdir_l2 {
@@ -1070,10 +1496,37 @@ struct nbl_vlan {
 #define NBL_FLOW_ACTION_ENCAP_OFFSET_LEN		9
 #define NBL_FLOW_ACTION_ENCAP_HALF_LEN			45
 #define NBL_FLOW_ACTION_ENCAP_MAX_LEN			90
+#define NBL_FLOW_DRACO_ACTION_ENCAP_MAX_LEN		96
 
 struct nbl_encap_key {
 	struct ip_tunnel_key ip_tun_key;
 	void *tc_tunnel;
+};
+
+struct nbl_tc_tunnel_route_info {
+	struct net_device *out_dev;
+	struct net_device *out_dev_parent;
+	struct net_device *real_out_dev;
+	union {
+		struct flowi4 fl4;
+		struct flowi6 fl6;
+	} fl;
+	struct neighbour *n;
+	u8 ttl;
+	u8 vlan_num;
+	u16 ivlan_pcp;
+	u16 ivlan_id;
+	u16 ovlan_pcp;
+	u16 ovlan_id;
+	bool is_ip6;
+	struct nbl_common_info *common;
+};
+
+struct nbl_tc_tun_create_header_param {
+	struct nbl_rule_action *rule_act;
+	unsigned char *hw_dst;
+	struct nbl_tc_tunnel_route_info *tun_route;
+	struct nbl_encap_key *key;
 };
 
 struct nbl_encap_entry {
@@ -1137,6 +1590,30 @@ enum nbl_flow_ped_type {
 	NBL_FLOW_PED_RECORD_MAX,
 };
 
+enum nbl_draco_ped_type {
+	NBL_DRACO_PED_UMAC_TYPE = 0,
+	NBL_DRACO_PED_DMAC_TYPE,
+	NBL_DRACO_PED_UIP_TYPE,
+	NBL_DRACO_PED_DIP_TYPE,
+	NBL_DRACO_PED_TNL_TYPE,
+	NBL_DRACO_PED_TNL_VTEP_TYPE,
+	NBL_DRACO_PED_TNL_DECAP_TCAM_TYPE,
+	NBL_DRACO_PED_MIRROR_TYPE,
+
+	NBL_DRACO_PED_MIRROR_TNL_TYPE,
+	NBL_DRACO_PED_MIRROR_VTEP_TYPE,
+	/* the following no need init resource */
+	NBL_DRACO_NEED_RESOURCE_TYPE_END,
+	/* the following no need init resource but need a ped idx record */
+	NBL_DRACO_PED_MCC_TYPE,
+	/* the following no need record ped idx */
+	NBL_DRACO_NEED_PED_RECORD_TYPE_END,
+	NBL_DRACO_PED_VLAN_TYPE,
+	NBL_DRACO_PED_TNL_DECAP_ASSD_TYPE,
+	NBL_DRACO_EPRO_MIRROR_TYPE,
+	NBL_DRACO_PED_MAX,
+};
+
 struct nbl_tc_pedit_node_res {
 	void *pedit_node[NBL_FLOW_PED_RES_MAX];
 	u32 pedits:30;
@@ -1151,6 +1628,72 @@ struct nbl_tc_pedit_info {
 	struct nbl_tc_pedit_node_res pedit_node;
 };
 
+#pragma pack(1)
+struct nbl_flow_tnl_decap_tcam_node {
+	u8 dip[NBL_IPV6_ADDR_LEN_AS_U8];
+	u8 dmac[NBL_MAC_ADDR_LEN_AS_U8];
+	u64 cvlan_id:12;
+	u64 svlan_id:12;
+	u64 cvlan_tpid:2;
+	u64 svlan_tpid:2;
+	u64 tnl_type:2;
+	u64 tnl_base:1;
+
+	u64 dip_mask:1;
+	u64 dmac_mask:1;
+	u64 cvlan_mask:1;
+	u64 svlan_mask:1;
+	u64 cvlan_tpid_mask:1;
+	u64 svlan_tpid_mask:1;
+	u64 tnl_type_mask:1;
+	u64 tnl_base_mask:1;
+
+	u64 valid_bit:1;
+
+	u64 rsv0:24;
+	u64 rsv1:16;
+};
+
+#pragma pack()
+
+struct nbl_flow_item_vlan {
+	u16 push_vlan_cnt:3;
+	u16 pop_vlan_cnt:3;
+	u16 cur_push_num:3;
+	u16 cur_pop_num:3;
+	u16 vlan_op:4;
+	u16 ivlan_tag;
+	u16 ovlan_tag;
+	u16 ieth_proto;
+	u16 oeth_proto;
+	u16 itpid_sel:8;
+	u16 otpid_sel:8;
+	u16 last_vlan:7;
+	u16 has_vlan:1;
+	u16 ivlan_idx:3;
+	u16 ovlan_idx:3;
+	u16 need_set_ped_vsi_type:2;
+};
+
+struct nbl_draco_vtep_info {
+	u8 vtep_id:6;
+	u8 vtep_is_ref:1;
+	u8 vtep_vld:1;
+	struct nbl_flow_tnl_decap_tcam_node decap_key;
+};
+
+struct nbl_flow_ped_tag_info {
+	u32 ped_valid:1;
+	u32 ped_idx:31;
+	void *data;
+};
+
+struct nbl_draco_ped_info {
+	struct nbl_flow_ped_tag_info ped_info[NBL_DRACO_NEED_PED_RECORD_TYPE_END];
+	struct nbl_flow_ped_tag_info mirror_vtep;
+	struct nbl_flow_ped_tag_info mirror_encap;
+};
+
 struct nbl_rule_action {
 	u64 flag; /* action flag, eg:set ipv4 src/redirect */
 	u32 drop_flag:1; /* drop or forward */
@@ -1162,7 +1705,8 @@ struct nbl_rule_action {
 	u32 next_stg_sel:4;
 
 	u32 vni;
-	u16 encap_size;
+	u16 tnl_type:4;
+	u16 encap_size:12;
 	u16 encap_idx:15;
 	u16 encap_parse_ok:1;
 
@@ -1172,15 +1716,25 @@ struct nbl_rule_action {
 	u32 lag_id:4;
 	u32 mcc_cnt:5;
 
+	u16 car_id;	/* set car_id */
+	u16 counter_oft:12;
+	u16 outer_type:4;
+
 	struct nbl_port_mcc port_mcc[NBL_TC_MCC_MEMBER_MAX];
 	struct nbl_vlan vlan;
 	struct ip_tunnel_info *tunnel;
 	struct nbl_encap_key encap_key;
 	union nbl_flow_encap_offset_tbl_u encap_idx_info;
 	u8 encap_buf[NBL_FLOW_ACTION_ENCAP_TOTAL_LEN];
+	u8 draco_encap_buf[NBL_FLOW_DRACO_ACTION_ENCAP_MAX_LEN];
 	struct net_device *in_port;
 	struct net_device *tc_tun_encap_out_dev;
 	struct nbl_tc_pedit_info tc_pedit_info;
+
+	/* for draco */
+	struct nbl_flow_item_vlan vlan_info;
+	struct nbl_draco_vtep_info vtep_info;
+	struct nbl_draco_ped_info ped_info;
 };
 
 struct nbl_fdir_fltr {
@@ -1219,6 +1773,8 @@ struct nbl_fdir_fltr {
 	u8 lag_id;
 	u16 port;
 	bool is_cvlan;
+	u16 encoded_port;
+	u16 encoded_port_mask;
 };
 
 /**
@@ -1229,10 +1785,15 @@ struct nbl_fdir_fltr {
 struct nbl_flow_pattern_conf {
 	struct nbl_fdir_fltr input;
 	struct net_device *input_dev;
+	struct nbl_common_info *common;
 	u8  flow_send;
 	u8  graph_idx;
+	u8 acl_graph_idx;
 	u16 pp_flag;
+	u64 input_set;
 	u64 key_flag;
+	bool wildcard_flow;
+	bool in_same_bond;
 };
 
 struct nbl_flow_index_key {
@@ -1242,6 +1803,24 @@ struct nbl_flow_index_key {
 	};
 };
 
+#define NBL_ASSOC_PROFILE_STAGE_NUM			(8)
+
+struct nbl_tc_flow {
+	u8 acl_flag:1;
+	u8 is_spec:7;
+	int flow_stat_id;
+	u64 act_flags;
+	struct nbl_flow_index_key key;
+	u8 profile_id[NBL_ASSOC_PROFILE_STAGE_NUM];
+
+	struct {
+		void *profile_rule[NBL_ASSOC_PROFILE_STAGE_NUM];
+	};
+	struct nbl_encap_key *encap_key;
+	struct nbl_tc_pedit_node_res pedit_node;
+	struct nbl_flow_index_key index_key;
+};
+
 struct nbl_tc_flow_param {
 	struct nbl_tc_port in;
 	struct nbl_tc_port out;
@@ -1249,6 +1828,7 @@ struct nbl_tc_flow_param {
 	struct nbl_flow_pattern_conf filter;
 	struct nbl_rule_action act;
 	struct nbl_flow_index_key key;
+	struct nbl_tc_parse_info *parse_info;
 	struct ip_tunnel_info *tunnel;
 	bool encap;
 	struct nbl_common_info *common;
@@ -1267,6 +1847,15 @@ enum nbl_hwmon_type {
 	NBL_HWMON_TEMP_TYPE_MAX,
 };
 
+struct nbl_ethtool_module_eeprom {
+	u32	offset;
+	u32	length;
+	u8	page;
+	u8	bank;
+	u8	i2c_address;
+	u8	*data;
+};
+
 struct nbl_load_p4_param {
 #define NBL_P4_SECTION_NAME_LEN		32
 	u8 name[NBL_P4_SECTION_NAME_LEN];
@@ -1277,6 +1866,33 @@ struct nbl_load_p4_param {
 	u8 *data;
 	bool start;
 	bool end;
+};
+
+struct nbl_tc_parse_key_info {
+	u16 mask_type;
+	u16 ignore_parse_pattern;
+	int (*parse_func_after)(const void *rule,
+				struct nbl_flow_pattern_conf *filter,
+				u16 flag);
+};
+
+struct nbl_tc_parse_act_info {
+	u16 ignore_parse_action;
+	int (*parse_func_after)(struct nbl_rule_action *rule_act,
+				const void *act_entry,
+				struct nbl_flow_pattern_conf *filter);
+};
+
+#define TC_FLOWER_KEY_MAX 40
+#define TC_FLOWER_ACT_MAX 40
+
+struct nbl_tc_parse_info {
+	struct nbl_tc_parse_key_info key_parse_info[TC_FLOWER_KEY_MAX];
+	struct nbl_tc_parse_act_info act_parse_info[TC_FLOWER_ACT_MAX];
+	int (*set_in_port_info)(struct nbl_tc_flow_param *param,
+				struct nbl_flow_pattern_conf *filter);
+	int (*set_out_port_info)(struct nbl_tc_flow_param *param,
+				 struct nbl_rule_action *rule_act);
 };
 
 #define NBL_ACL_TCAM_KEY_LEN				5
@@ -1323,6 +1939,8 @@ enum {
 	NBL_NETIF_F_HW_VLAN_STAG_RX_BIT,	/* Receive VLAN STAG HW acceleration */
 	NBL_NETIF_F_HW_VLAN_STAG_FILTER_BIT,	/* Receive filtering on VLAN STAGs */
 	NBL_NETIF_F_HW_TC_BIT,			/* Offload TC infrastructure */
+	NBL_NETIF_F_GSO_IPXIP4_BIT,		/* ... IP4 or IP6 over IP4 with TSO */
+	NBL_NETIF_F_GSO_IPXIP6_BIT,		/* ... IP4 or IP6 over IP6 with TSO */
 	NBL_FEATURES_COUNT
 };
 
@@ -1351,6 +1969,8 @@ static const netdev_features_t nbl_netdev_features[] = {
 	[NBL_NETIF_F_HW_VLAN_STAG_RX_BIT] = NETIF_F_HW_VLAN_STAG_RX,
 	[NBL_NETIF_F_HW_VLAN_STAG_FILTER_BIT] = NETIF_F_HW_VLAN_STAG_FILTER,
 	[NBL_NETIF_F_HW_TC_BIT] = NETIF_F_HW_TC,
+	[NBL_NETIF_F_GSO_IPXIP4_BIT] = NETIF_F_GSO_IPXIP4,
+	[NBL_NETIF_F_GSO_IPXIP6_BIT] = NETIF_F_GSO_IPXIP6,
 };
 
 #define NBL_FEATURE(name)			(1 << (NBL_##name##_BIT))
@@ -1392,7 +2012,6 @@ enum nbl_performance_mode {
 };
 
 extern int performance_mode;
-extern int adaptive_rxbuf_len_disable;
 
 struct nbl_vsi_param {
 	u16 vsi_id;
@@ -1406,6 +2025,44 @@ struct nbl_ring_param {
 	u16 rx_ring_num;
 	u16 xdp_ring_offset; /* xdp-vsi queue'vertor share data-vsi queue */
 	u16 queue_size;
+	struct net_device *netdev;
+};
+
+struct nbl_tx_ring_start_param {
+	u8 ring_index;
+	bool interleave_seg_disable;
+	u16 queue_size;
+};
+
+struct nbl_rx_ring_start_param {
+	u8 ring_index;
+	bool use_napi;
+	u16 queue_size;
+	bool rxq_large_buf;
+};
+
+struct nbl_net_features_param {
+	struct net_device *netdev;
+	netdev_features_t features;
+};
+
+struct nbl_dump_ring_param {
+	struct seq_file *m;
+	bool is_tx;
+	int index;
+};
+
+struct nbl_vec_info_param {
+	u8 *irq_enable_base;
+	u32 irq_data;
+	u16 index;
+	bool mask_en;
+};
+
+struct nbl_vsi_ring_param {
+	u16 vsi_index;
+	u16 ring_offset;
+	u16 ring_num;
 };
 
 enum nbl_trust_mode {
@@ -1414,6 +2071,8 @@ enum nbl_trust_mode {
 };
 
 #define NBL_VSI_MAX_ID 1024
+#define NBL_DRACO_VSI_MAX_ID 278
+#define RDMA_RX_VLAN_VSI_ID(vsi)	(16 + (vsi) / 3)
 
 struct nbl_mtu_entry {
 	u32 ref_count;
@@ -1426,6 +2085,22 @@ struct nbl_mtu_entry {
 #define NBL_MAX_TC_NUM (8)
 #define NBL_MAX_BW (100)
 
+struct nbl_qos_info {
+	u8 dcbx_mode;
+	u8 dcbx_state;
+	u8 trust_mode;		/* Trust Mode value 0:802.1p 1: dscp */
+	u8 pfc[NBL_MAX_PFC_PRIORITIES];
+	u8 dscp2prio_map[NBL_DSCP_MAX]; /* DSCP -> Priority map */
+	int rdma_bw;
+	u32 rdma_rate;
+	u32 net_rate;
+	DECLARE_BITMAP(dscp_mapped, NBL_DSCP_MAX);
+#ifdef CONFIG_DCB
+	struct ieee_ets ets;
+#endif
+	int buffer_sizes[NBL_MAX_PFC_PRIORITIES][2];
+};
+
 enum nbl_traffic_type {
 	NBL_TRAFFIC_RDMA_TYPE,
 	NBL_TRAFFIC_NET_TYPE,
@@ -1434,6 +2109,10 @@ enum nbl_traffic_type {
 struct nbl_napi_struct {
 	struct napi_struct napi;
 	atomic_t is_irq;
+	u32 irq_cnt;
+	u32 mask_cnt;
+	u32 unmask_cnt;
+	u32 complete_cnt;
 };
 
 #endif

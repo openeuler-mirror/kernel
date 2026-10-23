@@ -1,11 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (c) 2022 nebula-matrix Limited.
- * Author:
- */
-
 #include "nbl_ipsec.h"
-#ifdef CONFIG_TLS_DEVICE
+#if IS_ENABLED(CONFIG_XFRM_OFFLOAD)
 static int nbl_validate_xfrm_state(struct net_device *netdev, struct xfrm_state *x)
 {
 	if (x->id.proto != IPPROTO_ESP) {
@@ -109,7 +104,6 @@ static void nbl_ipsec_update_esn_state(struct xfrm_state *x, struct nbl_ipsec_es
 {
 	bool esn = !!(x->props.flags & XFRM_STATE_ESN);
 	bool inbound = (x->xso.dir == XFRM_DEV_OFFLOAD_IN);
-
 	u32 bottom = 0;
 
 	if (!esn) {
@@ -254,24 +248,28 @@ static void nbl_ipsec_free_tx_index(struct net_device *netdev, u32 index)
 {
 	struct nbl_service_mgt *serv_mgt;
 	struct nbl_dispatch_ops *disp_ops;
+	struct nbl_ch_prm_ipsec_index prm = {0};
 
 	serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
+	prm.index = index;
 	netdev_info(netdev, "nbl ipsec egress free index %u\n", index);
-	disp_ops->free_ipsec_tx_index(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), index);
+	disp_ops->free_ipsec_tx_index(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &prm);
 }
 
 static void nbl_ipsec_free_rx_index(struct net_device *netdev, u32 index)
 {
 	struct nbl_service_mgt *serv_mgt;
 	struct nbl_dispatch_ops *disp_ops;
+	struct nbl_ch_prm_ipsec_index prm = {0};
 
 	serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
+	prm.index = index;
 	netdev_info(netdev, "nbl ipsec ingress free index %u\n", index);
-	disp_ops->free_ipsec_rx_index(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), index);
+	disp_ops->free_ipsec_rx_index(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &prm);
 }
 
 static int nbl_ipsec_alloc_tx_index(struct net_device *netdev, struct nbl_ipsec_cfg_info *cfg_info)
@@ -279,13 +277,15 @@ static int nbl_ipsec_alloc_tx_index(struct net_device *netdev, struct nbl_ipsec_
 	struct nbl_service_mgt *serv_mgt;
 	struct nbl_common_info *common;
 	struct nbl_dispatch_ops *disp_ops;
+	struct nbl_ch_prm_ipsec_index prm = {0};
 
 	serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	cfg_info->vsi = NBL_COMMON_TO_VSI_ID(common);
 
-	return disp_ops->alloc_ipsec_tx_index(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), cfg_info);
+	memcpy(&prm.cfg_info, cfg_info, sizeof(prm.cfg_info));
+	return disp_ops->alloc_ipsec_tx_index(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &prm);
 }
 
 static int nbl_ipsec_alloc_rx_index(struct net_device *netdev, struct nbl_ipsec_cfg_info *cfg_info)
@@ -293,13 +293,15 @@ static int nbl_ipsec_alloc_rx_index(struct net_device *netdev, struct nbl_ipsec_
 	struct nbl_service_mgt *serv_mgt;
 	struct nbl_common_info *common;
 	struct nbl_dispatch_ops *disp_ops;
+	struct nbl_ch_prm_ipsec_index prm = {0};
 
 	serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	cfg_info->vsi = NBL_COMMON_TO_VSI_ID(common);
 
-	return disp_ops->alloc_ipsec_rx_index(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), cfg_info);
+	memcpy(&prm.cfg_info, cfg_info, sizeof(prm.cfg_info));
+	return disp_ops->alloc_ipsec_rx_index(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &prm);
 }
 
 static void nbl_ipsec_cfg_tx_sad(struct net_device *netdev, u32 index,
@@ -307,11 +309,16 @@ static void nbl_ipsec_cfg_tx_sad(struct net_device *netdev, u32 index,
 {
 	struct nbl_service_mgt *serv_mgt;
 	struct nbl_dispatch_ops *disp_ops;
+	struct nbl_ch_prm_cfg_ipsec_sad prm = {0};
 
 	serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	disp_ops->cfg_ipsec_tx_sad(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), index, sa_entry);
+	prm.index = index;
+	memcpy(&prm.sa_entry, sa_entry, sizeof(prm.sa_entry));
+	netdev_info(netdev, "nbl ipsec cfg tx sad index %u\n", index);
+
+	disp_ops->cfg_ipsec_tx_sad(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &prm);
 }
 
 static void nbl_ipsec_cfg_rx_sad(struct net_device *netdev, u32 index,
@@ -319,11 +326,16 @@ static void nbl_ipsec_cfg_rx_sad(struct net_device *netdev, u32 index,
 {
 	struct nbl_service_mgt *serv_mgt;
 	struct nbl_dispatch_ops *disp_ops;
+	struct nbl_ch_prm_cfg_ipsec_sad prm = {0};
 
 	serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	disp_ops->cfg_ipsec_rx_sad(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), index, sa_entry);
+	prm.index = index;
+	memcpy(&prm.sa_entry, sa_entry, sizeof(prm.sa_entry));
+	netdev_info(netdev, "nbl ipsec cfg rx sad index %u\n", index);
+
+	disp_ops->cfg_ipsec_rx_sad(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &prm);
 }
 
 static int nbl_ipsec_add_rx_flow(struct net_device *netdev, u32 index,
@@ -335,6 +347,7 @@ static int nbl_ipsec_add_rx_flow(struct net_device *netdev, u32 index,
 	u32 data[NBL_IPSEC_SPI_DIP__LEN] = {0};
 	u32 dip[NBL_IPSEC_FLOW_IP_LEN] = {0};
 	int i;
+	struct nbl_ch_prm_cfg_ipsec_flow prm = {0};
 
 	serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
@@ -349,8 +362,10 @@ static int nbl_ipsec_add_rx_flow(struct net_device *netdev, u32 index,
 	}
 	memcpy(data + 1, dip, sizeof(dip));
 
-	return disp_ops->add_ipsec_rx_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), index, data,
-					   NBL_COMMON_TO_VSI_ID(common));
+	prm.index = index;
+	prm.vsi = NBL_COMMON_TO_VSI_ID(common);
+	memcpy(prm.data, data, sizeof(data));
+	return disp_ops->add_ipsec_rx_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &prm);
 }
 
 static int nbl_ipsec_add_tx_flow(struct net_device *netdev, u32 index, struct xfrm_selector *sel)
@@ -361,6 +376,7 @@ static int nbl_ipsec_add_tx_flow(struct net_device *netdev, u32 index, struct xf
 	u32 data[NBL_IPSEC_FLOW_TOTAL_LEN] = {0};
 	u32 sip[NBL_IPSEC_FLOW_IP_LEN] = {0};
 	u32 dip[NBL_IPSEC_FLOW_IP_LEN] = {0};
+	struct nbl_ch_prm_cfg_ipsec_flow prm = {0};
 
 	serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
@@ -383,8 +399,10 @@ static int nbl_ipsec_add_tx_flow(struct net_device *netdev, u32 index, struct xf
 		return -EINVAL;
 	}
 
-	return disp_ops->add_ipsec_tx_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), index, data,
-					   NBL_COMMON_TO_VSI_ID(common));
+	prm.index = index;
+	prm.vsi = NBL_COMMON_TO_VSI_ID(common);
+	memcpy(prm.data, data, sizeof(prm.data));
+	return disp_ops->add_ipsec_tx_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &prm);
 }
 
 static int nbl_xfrm_add_state(struct xfrm_state *x, struct netlink_ext_ack *extack)
@@ -451,33 +469,30 @@ static void nbl_ipsec_del_tx_flow(struct net_device *netdev, u32 index)
 {
 	struct nbl_service_mgt *serv_mgt;
 	struct nbl_dispatch_ops *disp_ops;
+	struct nbl_ch_prm_cfg_ipsec_flow prm = {0};
 
 	serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	disp_ops->del_ipsec_tx_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), index);
+	prm.index = index;
+	disp_ops->del_ipsec_tx_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &prm);
 }
 
 static void nbl_ipsec_del_rx_flow(struct net_device *netdev, u32 index)
 {
 	struct nbl_service_mgt *serv_mgt;
 	struct nbl_dispatch_ops *disp_ops;
+	struct nbl_ch_prm_cfg_ipsec_flow prm = {0};
 
 	serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	disp_ops->del_ipsec_rx_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), index);
+	prm.index = index;
+	disp_ops->del_ipsec_rx_flow(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &prm);
 }
 
 static void nbl_xfrm_del_state(struct xfrm_state *x)
 {
-	struct nbl_ipsec_sa_entry *sa_entry = (struct nbl_ipsec_sa_entry *)x->xso.offload_handle;
-	struct net_device *netdev = x->xso.dev;
-
-	if (x->xso.dir == XFRM_DEV_OFFLOAD_IN)
-		nbl_ipsec_del_rx_flow(netdev, sa_entry->index);
-	else
-		nbl_ipsec_del_tx_flow(netdev, sa_entry->index);
 }
 
 static void nbl_xfrm_free_state(struct xfrm_state *x)
@@ -485,10 +500,13 @@ static void nbl_xfrm_free_state(struct xfrm_state *x)
 	struct nbl_ipsec_sa_entry *sa_entry = (struct nbl_ipsec_sa_entry *)x->xso.offload_handle;
 	struct net_device *netdev = x->xso.dev;
 
-	if (x->xso.dir == XFRM_DEV_OFFLOAD_IN)
+	if (x->xso.dir == XFRM_DEV_OFFLOAD_IN) {
+		nbl_ipsec_del_rx_flow(netdev, sa_entry->index);
 		nbl_ipsec_free_rx_index(netdev, sa_entry->index);
-	else
+	} else {
+		nbl_ipsec_del_tx_flow(netdev, sa_entry->index);
 		nbl_ipsec_free_tx_index(netdev, sa_entry->index);
+	}
 
 	kfree(sa_entry);
 }
@@ -525,30 +543,36 @@ static void nbl_handle_dipsec_lft_event(struct nbl_service_mgt *serv_mgt)
 {
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	union nbl_ipsec_lft_info lft_info = {0};
+	u32 index;
 
 	lft_info.data = disp_ops->get_dipsec_lft_info(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
+	index = lft_info.soft_sad_index;
 	if (lft_info.soft_vld)
 		disp_ops->handle_dipsec_soft_expire(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-						    lft_info.soft_sad_index);
+						    &index);
 
+	index = lft_info.hard_sad_index;
 	if (lft_info.hard_vld)
 		disp_ops->handle_dipsec_hard_expire(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-						    lft_info.hard_sad_index);
+						    &index);
 }
 
 static void nbl_handle_uipsec_lft_event(struct nbl_service_mgt *serv_mgt)
 {
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	union nbl_ipsec_lft_info lft_info = {0};
+	u32 index;
 
 	lft_info.data = disp_ops->get_uipsec_lft_info(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
+	index = lft_info.soft_sad_index;
 	if (lft_info.soft_vld)
 		disp_ops->handle_uipsec_soft_expire(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-						    lft_info.soft_sad_index);
+						    &index);
 
+	index = lft_info.hard_sad_index;
 	if (lft_info.hard_vld)
 		disp_ops->handle_uipsec_hard_expire(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-						    lft_info.hard_sad_index);
+						    &index);
 }
 
 static void nbl_handle_ipsec_event(void *priv)

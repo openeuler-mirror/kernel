@@ -1,9 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (c) 2022 nebula-matrix Limited.
- * Author:
- */
-
 #include "nbl_tc_pedit.h"
 #include "nbl_p4_actions.h"
 
@@ -186,8 +181,11 @@ int nbl_tc_pedit_del_node(struct nbl_tc_pedit_mgt *pedit_mgt,
 	void *pedit_tbl;
 	enum nbl_flow_ped_type ped_type;
 
-	if (!NBL_TC_PEDIT_GET_NODE_RES_VAL(*pedit_node))
+	if (!NBL_TC_PEDIT_GET_NODE_RES_VAL(*pedit_node)) {
+		nbl_err(common, NBL_DEBUG_FLOW, "nbl_tc_pedit:node is not valid");
 		return -EINVAL;
+	}
+
 	mutex_lock(&pedit_mgt->pedit_lock);
 	for (idx = 0; idx < NBL_FLOW_PED_RES_MAX; ++idx) {
 		l_e = NBL_TC_PEDIT_GET_NODE_RES_ENTRY(*pedit_node, idx);
@@ -279,22 +277,21 @@ pedit_add_fin:
 	return ret;
 }
 
-int nbl_tc_pedit_init(struct nbl_tc_pedit_mgt *pedit_mgt)
+int nbl_tc_pedit_init(struct nbl_common_info *common,
+		      struct nbl_tc_pedit_res_info *pedit_res, u32 max_cnt)
 {
 	int ret = 0;
 	int idx = 0;
-	struct nbl_common_info *common = pedit_mgt->common;
-	struct nbl_tc_pedit_res_info *pedit_res = pedit_mgt->pedit_res;
 	struct nbl_hash_tbl_key tbl_key = {0};
 
-	for (idx = 0; idx < NBL_FLOW_PED_RES_MAX; ++idx) {
+	for (idx = 0; idx < max_cnt; ++idx) {
 		if (!pedit_res[idx].pedit_num) {
-			nbl_info(common, NBL_DEBUG_FLOW, "nbl_tc_pedit:pedit(%d) skip init",
-				 idx);
+			nbl_info(common, NBL_DEBUG_FLOW, "nbl_tc_pedit:pedit(%d) skip init", idx);
 			continue;
 		}
-		NBL_HASH_TBL_KEY_INIT(&tbl_key, NBL_COMMON_TO_DEV(common), NBL_TC_PEDIT_KEY_LEN,
-				      sizeof(struct nbl_tc_pedit_entry),
+		NBL_HASH_TBL_KEY_INIT(&tbl_key, NBL_COMMON_TO_DEV(common),
+				      pedit_res[idx].pedit_key_len,
+				      pedit_res[idx].pedit_data_len,
 				      pedit_res[idx].pedit_num, false);
 		pedit_res[idx].pedit_tbl = nbl_common_init_hash_table(&tbl_key);
 		if (!pedit_res[idx].pedit_tbl) {
@@ -306,13 +303,12 @@ int nbl_tc_pedit_init(struct nbl_tc_pedit_mgt *pedit_mgt)
 		/* init pedit_h if needed */
 		if (pedit_res[idx].pedit_num_h) {
 			NBL_HASH_TBL_KEY_INIT(&tbl_key, NBL_COMMON_TO_DEV(common),
-					      NBL_TC_PEDIT_KEY_LEN,
-					      sizeof(struct nbl_tc_pedit_entry),
+					      pedit_res[idx].pedit_key_len,
+					      pedit_res[idx].pedit_data_len,
 					      pedit_res[idx].pedit_num_h, false);
 			pedit_res[idx].pedit_tbl_h = nbl_common_init_hash_table(&tbl_key);
 			if (!pedit_res[idx].pedit_tbl_h) {
-				nbl_info(common, NBL_DEBUG_FLOW, "nbl_tc_pedit:pedit(%d) init failed",
-					 idx);
+				nbl_info(common, NBL_DEBUG_FLOW, "tc edit idx %d init failed", idx);
 				return -ENOMEM;
 			}
 		}
@@ -321,15 +317,14 @@ int nbl_tc_pedit_init(struct nbl_tc_pedit_mgt *pedit_mgt)
 	return ret;
 }
 
-int nbl_tc_pedit_uninit(struct nbl_tc_pedit_mgt *pedit_mgt)
+int nbl_tc_pedit_uninit(struct nbl_tc_pedit_res_info *pedit_res, u32 max_cnt)
 {
 	int idx = 0;
-	struct nbl_tc_pedit_res_info *pedit_res = pedit_mgt->pedit_res;
 
-	if (!pedit_mgt)
+	if (!pedit_res)
 		return -EINVAL;
 
-	for (idx = 0; idx < NBL_FLOW_PED_RES_MAX; ++idx) {
+	for (idx = 0; idx < max_cnt; ++idx) {
 		nbl_common_remove_hash_table(pedit_res[idx].pedit_tbl, NULL);
 		nbl_common_remove_hash_table(pedit_res[idx].pedit_tbl_h, NULL);
 	}

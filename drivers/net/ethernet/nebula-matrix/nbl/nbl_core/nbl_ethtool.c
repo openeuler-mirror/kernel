@@ -107,7 +107,9 @@ static const struct nbl_ethtool_stats nbl_gstrings_stats[] = {
 	NBL_NETDEV_STAT("tx_errors", tx_errors, tx_errors),
 	NBL_NETDEV_STAT("rx_dropped", rx_dropped, rx_dropped),
 	NBL_NETDEV_STAT("tx_dropped", tx_dropped, tx_dropped),
+	NBL_NETDEV_STAT("eth_multicast", multicast, multicast),
 	NBL_NETDEV_STAT("collisions", collisions, collisions),
+	NBL_NETDEV_STAT("rx_length_errors", rx_length_errors, rx_length_errors),
 	NBL_NETDEV_STAT("rx_over_errors", rx_over_errors, rx_over_errors),
 	NBL_NETDEV_STAT("rx_crc_errors", rx_crc_errors, rx_crc_errors),
 	NBL_NETDEV_STAT("rx_frame_errors", rx_frame_errors, rx_frame_errors),
@@ -120,8 +122,12 @@ static const struct nbl_ethtool_stats nbl_gstrings_stats[] = {
 
 	NBL_STAT("tso_packets", tso_packets, tso_packets),
 	NBL_STAT("tso_bytes", tso_bytes, tso_bytes),
+	NBL_STAT("tso_inner_packets", tso_inner_packets, tso_inner_packets),
+	NBL_STAT("tso_inner_bytes", tso_inner_bytes, tso_inner_bytes),
 	NBL_STAT("tx_csum_packets", tx_csum_packets, tx_csum_packets),
+	NBL_STAT("tx_csum_inner_packets", tx_csum_inner_packets, tx_csum_inner_packets),
 	NBL_STAT("rx_csum_packets", rx_csum_packets, rx_csum_packets),
+	NBL_STAT("rx_csum_inner_packets", rx_csum_inner_packets, rx_csum_inner_packets),
 	NBL_STAT("rx_csum_errors", rx_csum_errors, rx_csum_errors),
 	NBL_STAT("tx_busy", tx_busy, tx_busy),
 	NBL_STAT("tx_dma_busy", tx_dma_busy, tx_dma_busy),
@@ -135,18 +141,22 @@ static const struct nbl_ethtool_stats nbl_gstrings_stats[] = {
 	NBL_STAT("rx_cache_empty", rx_cache_empty, rx_cache_empty),
 	NBL_STAT("rx_cache_busy", rx_cache_busy, rx_cache_busy),
 	NBL_STAT("rx_cache_waive", rx_cache_waive, rx_cache_waive),
-
 	NBL_STAT("xdp_tx_packets", xdp_tx_packets, xdp_tx_packets),
 	NBL_STAT("xdp_redirect_packets", xdp_redirect_packets, xdp_redirect_packets),
 	NBL_STAT("xdp_drop_packets", xdp_drop_packets, xdp_drop_packets),
-	NBL_STAT("xdp_oversize_packets", xdp_oversize_packets, xdp_oversize_packets),
-#ifdef CONFIG_TLS_DEVICE
+#if IS_ENABLED(CONFIG_TLS_DEVICE)
 	NBL_STAT("tls_encrypted_packets", tls_encrypted_packets, tls_encrypted_packets),
 	NBL_STAT("tls_encrypted_bytes", tls_encrypted_bytes, tls_encrypted_bytes),
 	NBL_STAT("tls_ooo_packets", tls_ooo_packets, tls_ooo_packets),
 	NBL_STAT("tls_decrypted_packets", tls_decrypted_packets, tls_decrypted_packets),
 	NBL_STAT("tls_resync_req_num", tls_resync_req_num, tls_resync_req_num),
 #endif
+
+	NBL_STAT("tx_added_vlan_packets", tx_added_vlan_packets, tx_added_vlan_packets),
+	NBL_STAT("rx_removed_vlan_packets", rx_removed_vlan_packets, rx_removed_vlan_packets),
+	NBL_STAT("rx_rss_hash_packets", rx_rss_hash_packets, rx_rss_hash_packets),
+	NBL_STAT("rx_oversize_pkts_sw_drop", rx_oversize_pkts_sw_drop, rx_oversize_pkts_sw_drop),
+	NBL_STAT("total_fake_packets", total_fake_packets, total_fake_packets),
 };
 
 #define NBL_GLOBAL_STATS_LEN ARRAY_SIZE(nbl_gstrings_stats)
@@ -156,13 +166,115 @@ struct nbl_priv_flags_info {
 	u8 supported_modify;
 	enum nbl_fix_cap_type capability_type;
 	char flag_name[ETH_GSTRING_LEN];
+	int (*post_func)(struct net_device *netdev, bool flag);
 };
 
+static int nbl_set_priv_flag_tx_port_fc_segregate_post(struct net_device *netdev, bool flag)
+{
+	struct nbl_service_mgt *serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
+	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
+	struct nbl_event_param event_data;
+
+	event_data.subevent = NBL_SUBEVENT_BOND_SHAPING;
+	event_data.bond_shaping_dis = flag;
+	nbl_event_notify(NBL_EVENT_RDMA_BOND_UPDATE, &event_data,
+			 NBL_COMMON_TO_VSI_ID(common), NBL_COMMON_TO_BOARD_ID(common));
+
+	return 0;
+}
+
+static int nbl_set_vlan_filtering_disable_post(struct net_device *netdev, bool flag)
+{
+	struct nbl_service_mgt *serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+
+	disp_ops->cfg_vlan_filtering(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), !flag);
+
+	return 0;
+}
+
+static int nbl_set_priv_flag_reset_post(struct net_device *netdev, bool flag)
+{
+	int was_running;
+	int ret;
+
+	was_running = netif_running(netdev);
+	if (!was_running)
+		return 0;
+
+	ret = nbl_serv_netdev_stop(netdev);
+	if (ret) {
+		netdev_info(netdev, "Failed to down netdev for set interleave seg disable.\n");
+		return ret;
+	}
+
+	ret = nbl_serv_netdev_open(netdev);
+	if (ret) {
+		netdev_info(netdev, "Failed to open netdev for set interleave seg disable.\n");
+		return ret;
+	}
+
+	return 0;
+}
+
+static int nbl_set_priv_flag_rx_csum_drop_post(struct net_device *netdev, bool flag)
+{
+	struct nbl_adapter *adapter = NBL_NETDEV_TO_ADAPTER(netdev);
+	struct nbl_service_mgt *serv_mgt = NBL_ADAPTER_TO_SERV_MGT(adapter);
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+
+	disp_ops->set_rx_csum_drop(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), flag);
+
+	return 0;
+}
+
+static int nbl_set_priv_flag_xdp_enhance_post(struct net_device *netdev, bool flag)
+{
+	int was_running;
+	int ret;
+	struct nbl_adapter *adapter = NBL_NETDEV_TO_ADAPTER(netdev);
+	struct nbl_service_mgt *serv_mgt = NBL_ADAPTER_TO_SERV_MGT(adapter);
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+
+	/* xdp headrom use 192B when xdp enhance to support one page rcv two pkts for mtu 1500 */
+	disp_ops->set_xdp_enhance(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), flag);
+
+	was_running = netif_running(netdev);
+	if (!was_running)
+		return 0;
+
+	ret = nbl_serv_netdev_stop(netdev);
+	if (ret) {
+		netdev_info(netdev, "Failed to down netdev for set xdp enhance.\n");
+		return ret;
+	}
+
+	ret = nbl_serv_netdev_open(netdev);
+	if (ret) {
+		netdev_info(netdev, "Failed to open netdev for set xdp enhance.\n");
+		return ret;
+	}
+
+	return 0;
+}
+
 static const struct nbl_priv_flags_info nbl_gstrings_priv_flags[NBL_ADAPTER_FLAGS_MAX] = {
-	{1, 0, NBL_P4_CAP,				"P4-default"},
-	{0, 1, 0,					"link-down-on-close"},
-	{1, 1, NBL_ETH_SUPPORT_NRZ_RS_FEC_544,		"nrz-rs-fec-544"},
-	{1, 1, NBL_HIGH_THROUGHPUT_CAP,			"high-throughput"},
+	{1, 0, NBL_P4_CAP,				"P4-default", NULL},
+	{1, 1, NBL_LINK_DOWN_ON_CLOSE,			"link-down-on-close", NULL},
+	{1, 1, NBL_ETH_SUPPORT_NRZ_RS_FEC_544,		"nrz-rs-fec-544", NULL},
+	{1, 1, NBL_HIGH_THROUGHPUT_CAP,			"high-throughput", NULL},
+	{1, 1, NBL_INTERLEAVE_SEG_DISABLE,		"interleave-seg-disable",
+					nbl_set_priv_flag_reset_post},
+	{1, 1, NBL_TX_FC_SEGREGATGE_ENABLE,		"tx-fc-segregate-enable",
+					nbl_set_priv_flag_tx_port_fc_segregate_post},
+	{1, 1, NBL_RX_CSUM_ERR_DROP_CAP,		"rx-csum-err-drop",
+					nbl_set_priv_flag_rx_csum_drop_post},
+	{1, 1, NBL_XDP_ENHANCE,				"xdp-enhance",
+					nbl_set_priv_flag_xdp_enhance_post},
+	{1, 1, NBL_RXQ_LARGE_BUF,			"rxq-large-buf",
+					nbl_set_priv_flag_reset_post},
+	{1, 1, NBL_VLAN_FILTERING_DISABLE_CAP,		"vlan-filtering-disable",
+					nbl_set_vlan_filtering_disable_post},
 };
 
 #define NBL_PRIV_FLAG_ARRAY_SIZE	ARRAY_SIZE(nbl_gstrings_priv_flags)
@@ -174,7 +286,7 @@ static void nbl_get_drvinfo(struct net_device *netdev, struct ethtool_drvinfo *d
 	struct nbl_dispatch_ops *disp_ops;
 	struct nbl_netdev_priv *priv;
 	struct nbl_driver_info driver_info;
-	char firmware_version[ETHTOOL_FWVERS_LEN] = {' '};
+	struct nbl_common_info *common;
 
 	memset(&driver_info, 0, sizeof(driver_info));
 
@@ -182,13 +294,10 @@ static void nbl_get_drvinfo(struct net_device *netdev, struct ethtool_drvinfo *d
 	adapter = NBL_NETDEV_TO_ADAPTER(netdev);
 	serv_mgt = NBL_ADAPTER_TO_SERV_MGT(adapter);
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
-	disp_ops->get_firmware_version(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				       firmware_version, ETHTOOL_FWVERS_LEN);
-	if (disp_ops->get_driver_info(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &driver_info))
-		strscpy(drvinfo->version, driver_info.driver_version, sizeof(drvinfo->version));
-	else
-		strscpy(drvinfo->version, NBL_DRIVER_VERSION, sizeof(drvinfo->version));
-	strscpy(drvinfo->fw_version, firmware_version, sizeof(drvinfo->fw_version));
+	common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
+
+	strscpy(drvinfo->version, NBL_DRIVER_VERSION, sizeof(drvinfo->version));
+	strscpy(drvinfo->fw_version, common->firmware_version, sizeof(drvinfo->fw_version));
 	if (!priv->rep) {
 		strscpy(drvinfo->driver, NBL_DRIVER_NAME, sizeof(drvinfo->driver));
 		strscpy(drvinfo->bus_info, pci_name(adapter->pdev), sizeof(drvinfo->bus_info));
@@ -207,7 +316,7 @@ static void nbl_stats_fill_strings(struct net_device *netdev, u8 *data)
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_serv_ring_vsi_info *vsi_info, *xdp_vsi_info;
-	u8 *p = (char *)data;
+	char *p = (char *)data;
 	unsigned int i;
 	u32 xdp_ring_num = 0;
 
@@ -218,7 +327,6 @@ static void nbl_stats_fill_strings(struct net_device *netdev, u8 *data)
 		snprintf(p, ETH_GSTRING_LEN, "%s", nbl_gstrings_stats[i].stat_string);
 		p += ETH_GSTRING_LEN;
 	}
-
 	for (i = 0; i < vsi_info->active_ring_num; i++) {
 		snprintf(p, ETH_GSTRING_LEN, "tx_queue_%u_packets", i);
 		p += ETH_GSTRING_LEN;
@@ -261,7 +369,7 @@ static void nbl_priv_flags_fill_strings(struct net_device *netdev, u8 *data)
 	struct nbl_service_mgt *serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
-	u8 *p = (char *)data;
+	char *p = (char *)data;
 	unsigned int i;
 
 	for (i = 0; i < NBL_PRIV_FLAG_ARRAY_SIZE; i++) {
@@ -269,7 +377,7 @@ static void nbl_priv_flags_fill_strings(struct net_device *netdev, u8 *data)
 
 		if (nbl_gstrings_priv_flags[i].supported_by_capability) {
 			if (!disp_ops->get_product_fix_cap(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-							   capability_type))
+							   &capability_type))
 				continue;
 		}
 		snprintf(p, ETH_GSTRING_LEN, "%s", nbl_gstrings_priv_flags[i].flag_name);
@@ -338,7 +446,7 @@ static int nbl_sset_fill_priv_flags_count(struct net_device *netdev)
 
 		if (nbl_gstrings_priv_flags[i].supported_by_capability) {
 			if (!disp_ops->get_product_fix_cap(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-							   capability_type))
+							   &capability_type))
 				continue;
 		}
 		count++;
@@ -362,23 +470,41 @@ static int nbl_get_sset_count(struct net_device *netdev, int sset)
 	case ETH_SS_STATS:
 		return nbl_sset_fill_count(netdev);
 	case ETH_SS_PRIV_FLAGS:
-		if (NBL_COMMON_TO_VF_CAP(common))
-			return -EOPNOTSUPP;
-		else
-			return nbl_sset_fill_priv_flags_count(netdev);
+		return nbl_sset_fill_priv_flags_count(netdev);
 	default:
 		return -EOPNOTSUPP;
 	}
 }
 
+static void nbl_intr_set_suppress_level(struct nbl_service_mgt *serv_mgt,
+					struct nbl_serv_ring_vsi_info *vsi_info,
+					u16 intr_suppress_level)
+{
+	struct nbl_serv_ring_mgt *ring_mgt = NBL_SERV_MGT_TO_RING_MGT(serv_mgt);
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_set_intr_suppress_level_fast_param prm = {0};
+	u16 qnum;
+	u16 global_vector_id;
+
+	prm.level = intr_suppress_level;
+	for (qnum = 0; qnum < vsi_info->ring_num; qnum++) {
+		global_vector_id = ring_mgt->vectors[vsi_info->ring_offset + qnum].global_vector_id;
+
+		prm.global_vector_id = global_vector_id;
+		disp_ops->set_intr_suppress_level_fast(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &prm);
+	}
+}
+
 static void nbl_serv_adjust_interrpt_param(struct nbl_service_mgt *serv_mgt, bool ethtool)
 {
+	enum nbl_fix_cap_type cap_type = NBL_MSIX_FAST_RESTRAIN_CAP;
 	struct nbl_serv_net_resource_mgt *net_resource_mgt;
 	struct nbl_serv_ring_mgt *ring_mgt;
 	struct nbl_dispatch_ops *disp_ops;
 	struct net_device *netdev;
 	struct nbl_netdev_priv *net_priv;
 	struct nbl_serv_ring_vsi_info *vsi_info;
+	struct nbl_common_info *common;
 	u64 last_tx_packets;
 	u64 last_rx_packets;
 	u64 last_get_stats_jiffies, time_diff;
@@ -386,12 +512,15 @@ static void nbl_serv_adjust_interrpt_param(struct nbl_service_mgt *serv_mgt, boo
 	u64 tx_rates, rx_rates, pkt_rates, normalized_pkt_rates;
 	u16 local_vector_id, vector_num;
 	u16 intr_suppress_level;
+	bool support_msix_fast_restrain;
+	struct nbl_get_intr_suppress_level_param suppress_prm = {0};
 
 	net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
 	netdev = net_resource_mgt->netdev;
 	net_priv = netdev_priv(netdev);
 	ring_mgt = NBL_SERV_MGT_TO_RING_MGT(serv_mgt);
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	vsi_info = &ring_mgt->vsi_info[NBL_VSI_DATA];
 
 	last_tx_packets = net_resource_mgt->stats.tx_packets;
@@ -407,37 +536,48 @@ static void nbl_serv_adjust_interrpt_param(struct nbl_service_mgt *serv_mgt, boo
 	rx_packets = net_resource_mgt->stats.rx_packets;
 
 	net_resource_mgt->get_stats_jiffies = jiffies;
-	tx_rates = (tx_packets - last_tx_packets) / time_diff * HZ;
-	rx_rates = (rx_packets - last_rx_packets) / time_diff * HZ;
+	tx_rates = div64_u64(tx_packets - last_tx_packets, time_diff) * HZ;
+	rx_rates = div64_u64(rx_packets - last_rx_packets, time_diff) * HZ;
 	pkt_rates = max_t(u64, tx_rates, rx_rates);
-	if (netdev->mtu < ETH_DATA_LEN)
+	if (netdev->mtu <= ETH_DATA_LEN || !ring_mgt->vectors->intr_suppress_level)
 		normalized_pkt_rates = pkt_rates;
 	else
 		normalized_pkt_rates = (netdev->mtu / ETH_DATA_LEN) * pkt_rates;
 
+	suppress_prm.rate = normalized_pkt_rates;
+	suppress_prm.last_level = ring_mgt->vectors->intr_suppress_level;
 	intr_suppress_level =
 		disp_ops->get_intr_suppress_level(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-						  normalized_pkt_rates,
-						  ring_mgt->vectors->intr_suppress_level);
+						  &suppress_prm);
+	support_msix_fast_restrain =
+				disp_ops->get_product_fix_cap(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+							      &cap_type);
 	if (intr_suppress_level != ring_mgt->vectors->intr_suppress_level) {
 		local_vector_id = ring_mgt->vectors[vsi_info->ring_offset].local_vector_id;
 		vector_num = vsi_info->ring_num;
-		disp_ops->set_intr_suppress_level(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-						  local_vector_id, vector_num,
-						  intr_suppress_level);
+		if (!support_msix_fast_restrain) {
+			struct nbl_ch_prm_set_intr_suppress_level suppress_prm = {0};
+
+			suppress_prm.sfid = NBL_COMMON_TO_MGT_PF(common);
+			suppress_prm.local_vector_id = local_vector_id;
+			suppress_prm.vector_num = vector_num;
+			suppress_prm.level = intr_suppress_level;
+			disp_ops->set_intr_suppress_level(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+						  &suppress_prm);
+		} else {
+			nbl_intr_set_suppress_level(serv_mgt, vsi_info, intr_suppress_level);
+		}
 		ring_mgt->vectors->intr_suppress_level = intr_suppress_level;
 	}
 }
 
-static int nbl_serv_update_hw_stats(struct nbl_service_mgt *serv_mgt,
-				    u64 last_rx_packets, u64 rx_packets)
+static int nbl_serv_update_uvn_stats(struct nbl_service_mgt *serv_mgt,
+				     u64 last_rx_packets, u64 rx_packets)
 {
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
 	struct nbl_serv_ring_mgt *ring_mgt = NBL_SERV_MGT_TO_RING_MGT(serv_mgt);
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
-	struct net_device *netdev = net_resource_mgt->netdev;
-	struct nbl_adapter *adapter = NBL_NETDEV_TO_ADAPTER(netdev);
 	struct device *dev = NBL_SERV_MGT_TO_DEV(serv_mgt);
 	u16 vsi_id = NBL_COMMON_TO_VSI_ID(common);
 	struct nbl_serv_ring_vsi_info *vsi_info = &ring_mgt->vsi_info[NBL_VSI_DATA];
@@ -450,7 +590,7 @@ static int nbl_serv_update_hw_stats(struct nbl_service_mgt *serv_mgt,
 	if (time_after(jiffies,
 		       net_resource_mgt->hw_stats_jiffies + net_resource_mgt->hw_stats_period)) {
 		time_diff = jiffies - net_resource_mgt->hw_stats_jiffies;
-		rx_rates = (rx_packets - last_rx_packets) / time_diff * HZ;
+		rx_rates = div64_u64(rx_packets - last_rx_packets, time_diff) * HZ;
 		net_resource_mgt->hw_stats_jiffies = jiffies;
 		if (!common->is_vf || rx_rates > NBL_HW_STATS_RX_RATE_THRESHOLD) {
 			uvn_stat_pkt_drop = devm_kcalloc(dev, vsi_info->ring_num,
@@ -470,18 +610,12 @@ static int nbl_serv_update_hw_stats(struct nbl_service_mgt *serv_mgt,
 		}
 	}
 
-	if (!common->is_vf && adapter->init_param.caps.has_ctrl) {
-		ret = disp_ops->get_ustore_pkt_drop_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt));
-		if (ret)
-			goto get_ustore_pkt_drop_stats_fail;
-	}
 	if (uvn_stat_pkt_drop) {
 		devm_kfree(dev, uvn_stat_pkt_drop);
 		uvn_stat_pkt_drop = NULL;
 	}
 	return 0;
 
-get_ustore_pkt_drop_stats_fail:
 get_uvn_pkt_drop_stats_fail:
 	if (uvn_stat_pkt_drop) {
 		devm_kfree(dev, uvn_stat_pkt_drop);
@@ -500,7 +634,7 @@ void nbl_serv_update_stats(struct nbl_service_mgt *serv_mgt, bool ethtool)
 	struct net_device *netdev = net_resource_mgt->netdev;
 	struct nbl_adapter *adapter = NBL_NETDEV_TO_ADAPTER(netdev);
 	u64 last_rx_packets = 0;
-	int ret = 0;
+	u8 eth_id = NBL_COMMON_TO_ETH_ID(common);
 
 	if (!test_bit(NBL_RUNNING, adapter->state) ||
 	    test_bit(NBL_RESETTING, adapter->state))
@@ -515,11 +649,10 @@ void nbl_serv_update_stats(struct nbl_service_mgt *serv_mgt, bool ethtool)
 
 	if (!common->is_vf)
 		disp_ops->get_eth_abnormal_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-						 NBL_COMMON_TO_ETH_ID(common), &eth_abnormal_stats);
+						 &eth_id, &eth_abnormal_stats);
 
-	ret = nbl_serv_update_hw_stats(serv_mgt, last_rx_packets,
-				       net_resource_mgt->stats.rx_packets);
-
+	nbl_serv_update_uvn_stats(serv_mgt, last_rx_packets,
+				  net_resource_mgt->stats.rx_packets);
 	/* net_device_stats */
 	netdev->stats.multicast = 0;
 	netdev->stats.rx_errors = 0;
@@ -539,16 +672,20 @@ nbl_get_ethtool_stats(struct net_device *netdev, struct ethtool_stats *stats, u6
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	void *priv = NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt);
 	struct rtnl_link_stats64 temp_stats;
 	struct rtnl_link_stats64 *net_stats;
 	struct nbl_stats *nbl_stats;
 	struct nbl_queue_stats queue_stats = { 0 };
 	struct nbl_queue_err_stats queue_err_stats = { 0 };
+	struct nbl_get_queue_stats_param q_stats_prm = {0};
+	struct nbl_ch_prm_get_queue_err_stats q_err_prm = {0};
 	struct nbl_serv_ring_vsi_info *vsi_info, *xdp_vsi_info;
 	u32 private_len = 0;
 	u32 xdp_ring_num = 0;
 	char *p = NULL;
 	int i, j, k;
+	struct nbl_chan_param_drop_stats_resp drop_stats = {0};
 
 	vsi_info = &ring_mgt->vsi_info[NBL_VSI_DATA];
 	xdp_vsi_info = &ring_mgt->vsi_info[NBL_VSI_XDP];
@@ -557,13 +694,24 @@ nbl_get_ethtool_stats(struct net_device *netdev, struct ethtool_stats *stats, u6
 	net_stats = dev_get_stats(netdev, &temp_stats);
 	nbl_stats = (struct nbl_stats *)((char *)net_resource_mgt +
 				offsetof(struct nbl_serv_net_resource_mgt, stats));
-
 	i = NBL_GLOBAL_STATS_LEN;
+
+	if (!common->is_vf) {
+		disp_ops->get_total_pkt_drop_stats(priv, 0, STAT_TYPE_FAKE, &drop_stats);
+		nbl_stats->total_fake_packets =
+			drop_stats.rx_drop_packets - net_resource_mgt->hw_stats.start_fake_drop;
+	}
+
+	q_stats_prm.is_tx = true;
+	q_err_prm.is_tx = true;
+	q_err_prm.sfid = NBL_COMMON_TO_MGT_PF(common);
 	for (j = 0; j < vsi_info->active_ring_num; j++) {
+		q_stats_prm.queue_id = j;
+		q_err_prm.queue_id = j;
 		disp_ops->get_queue_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					  j, &queue_stats, true);
+					  &q_stats_prm, &queue_stats);
 		disp_ops->get_queue_err_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					      j, &queue_err_stats, true);
+					      &q_err_prm, &queue_err_stats);
 		data[i] = queue_stats.packets;
 		data[i + 1] = queue_stats.bytes;
 		data[i + 2] = queue_stats.descs;
@@ -571,11 +719,15 @@ nbl_get_ethtool_stats(struct net_device *netdev, struct ethtool_stats *stats, u6
 		i += 4;
 	}
 
+	q_stats_prm.is_tx = false;
+	q_err_prm.is_tx = false;
 	for (j = 0; j < vsi_info->active_ring_num; j++) {
+		q_stats_prm.queue_id = j;
+		q_err_prm.queue_id = j;
 		disp_ops->get_queue_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					  j, &queue_stats, false);
+					  &q_stats_prm, &queue_stats);
 		disp_ops->get_queue_err_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					      j, &queue_err_stats, false);
+					      &q_err_prm, &queue_err_stats);
 		data[i] = queue_stats.packets;
 		data[i + 1] = queue_stats.bytes;
 		data[i + 2] = queue_stats.descs;
@@ -586,9 +738,11 @@ nbl_get_ethtool_stats(struct net_device *netdev, struct ethtool_stats *stats, u6
 		xdp_ring_num = xdp_vsi_info->ring_num < num_online_cpus() ?
 				xdp_vsi_info->ring_num : num_online_cpus();
 
+	q_stats_prm.is_tx = true;
 	for (j = 0; j < xdp_ring_num; j++) {
+		q_stats_prm.queue_id = ring_mgt->xdp_ring_offset + j;
 		disp_ops->get_queue_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					  ring_mgt->xdp_ring_offset + j, &queue_stats, true);
+					  &q_stats_prm, &queue_stats);
 		data[i] = queue_stats.packets;
 		data[i + 1] = queue_stats.bytes;
 		data[i + 2] = queue_stats.descs;
@@ -618,6 +772,31 @@ nbl_get_ethtool_stats(struct net_device *netdev, struct ethtool_stats *stats, u6
 						common->eth_id, &data[i],
 						private_len * sizeof(u64));
 	}
+}
+
+static int nbl_get_module_eeprom_by_page(struct net_device *netdev,
+					 const struct ethtool_module_eeprom *page_data,
+					 struct netlink_ext_ack *extack)
+{
+	struct nbl_service_mgt *serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_ethtool_module_eeprom eeprom = {0};
+	u8 *data = page_data->data;
+	int ret;
+
+	if (!page_data->length)
+		return -EINVAL;
+
+	eeprom.offset = page_data->offset;
+	eeprom.length = page_data->length;
+	eeprom.i2c_address = page_data->i2c_address;
+	eeprom.bank = page_data->bank;
+	eeprom.page = page_data->page;
+	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	ret = disp_ops->get_module_eeprom_by_page(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+					  NBL_COMMON_TO_ETH_ID(serv_mgt->common), &eeprom, data);
+
+	return ret;
 }
 
 static int nbl_get_module_eeprom(struct net_device *netdev,
@@ -773,7 +952,6 @@ static const struct nbl_ethtool_link_ext_state_opcode_mapping nbl_link_ext_state
 		ETHTOOL_LINK_EXT_SUBSTATE_BSI_LARGE_NUMBER_OF_PHYSICAL_ERRORS},
 	{42, ETHTOOL_LINK_EXT_STATE_BAD_SIGNAL_INTEGRITY,
 		ETHTOOL_LINK_EXT_SUBSTATE_BSI_UNSUPPORTED_RATE},
-
 	{43, ETHTOOL_LINK_EXT_STATE_BAD_SIGNAL_INTEGRITY,
 		ETHTOOL_LINK_EXT_SUBSTATE_BSI_SERDES_REFERENCE_CLOCK_LOST},
 	{44, ETHTOOL_LINK_EXT_STATE_BAD_SIGNAL_INTEGRITY,
@@ -885,77 +1063,93 @@ static void nbl_get_link_ext_stats(struct net_device *netdev, struct ethtool_lin
 
 static void nbl_link_modes_to_ethtool(u64 modes, unsigned long *ethtool_modes_map)
 {
+#define ADD_LINK_MODE(bit) \
+	__set_bit(bit, ethtool_modes_map)
+
 	if (modes & BIT(NBL_PORT_CAP_AUTONEG))
-		__set_bit(ETHTOOL_LINK_MODE_Autoneg_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_Autoneg_BIT);
 
 	if (modes & BIT(NBL_PORT_CAP_FEC_NONE))
-		__set_bit(ETHTOOL_LINK_MODE_FEC_NONE_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_FEC_NONE_BIT);
 	if (modes & BIT(NBL_PORT_CAP_FEC_RS))
-		__set_bit(ETHTOOL_LINK_MODE_FEC_RS_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_FEC_RS_BIT);
 	if (modes & BIT(NBL_PORT_CAP_FEC_BASER))
-		__set_bit(ETHTOOL_LINK_MODE_FEC_BASER_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_FEC_BASER_BIT);
 
 	if ((modes & BIT(NBL_PORT_CAP_RX_PAUSE)) && (modes & BIT(NBL_PORT_CAP_TX_PAUSE))) {
-		__set_bit(ETHTOOL_LINK_MODE_Pause_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_Pause_BIT);
 	} else if ((modes & BIT(NBL_PORT_CAP_RX_PAUSE)) && !(modes & BIT(NBL_PORT_CAP_TX_PAUSE))) {
-		__set_bit(ETHTOOL_LINK_MODE_Pause_BIT, ethtool_modes_map);
-		__set_bit(ETHTOOL_LINK_MODE_Asym_Pause_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_Pause_BIT);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_Asym_Pause_BIT);
 	} else if (!(modes & BIT(NBL_PORT_CAP_RX_PAUSE)) && (modes & BIT(NBL_PORT_CAP_TX_PAUSE))) {
-		__set_bit(ETHTOOL_LINK_MODE_Asym_Pause_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_Asym_Pause_BIT);
 	}
 
 	if (modes & BIT(NBL_PORT_CAP_1000BASE_T)) {
-		__set_bit(ETHTOOL_LINK_MODE_1000baseT_Full_BIT, ethtool_modes_map);
-		__set_bit(ETHTOOL_LINK_MODE_1000baseT_Half_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_1000baseT_Full_BIT);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_1000baseT_Half_BIT);
 	}
 	if (modes & BIT(NBL_PORT_CAP_1000BASE_X))
-		__set_bit(ETHTOOL_LINK_MODE_1000baseX_Full_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_1000baseX_Full_BIT);
+	if (modes & BIT_ULL(NBL_PORT_CAP_2500BASE_T))
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_2500baseT_Full_BIT);
+	if (modes & BIT_ULL(NBL_PORT_CAP_5GBASE_T))
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_5000baseT_Full_BIT);
 	if (modes & BIT(NBL_PORT_CAP_10GBASE_T))
-		__set_bit(ETHTOOL_LINK_MODE_1000baseT_Full_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_10000baseT_Full_BIT);
 	if (modes & BIT(NBL_PORT_CAP_10GBASE_KR))
-		__set_bit(ETHTOOL_LINK_MODE_10000baseKR_Full_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_10000baseKR_Full_BIT);
 	if (modes & BIT(NBL_PORT_CAP_10GBASE_SR))
-		__set_bit(ETHTOOL_LINK_MODE_10000baseSR_Full_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_10000baseSR_Full_BIT);
 	if (modes & BIT(NBL_PORT_CAP_25GBASE_KR))
-		__set_bit(ETHTOOL_LINK_MODE_25000baseKR_Full_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_25000baseKR_Full_BIT);
 	if (modes & BIT(NBL_PORT_CAP_25GBASE_SR))
-		__set_bit(ETHTOOL_LINK_MODE_25000baseSR_Full_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_25000baseSR_Full_BIT);
 	if (modes & BIT(NBL_PORT_CAP_25GBASE_CR))
-		__set_bit(ETHTOOL_LINK_MODE_25000baseCR_Full_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_25000baseCR_Full_BIT);
 	if (modes & BIT(NBL_PORT_CAP_50GBASE_KR2))
-		__set_bit(ETHTOOL_LINK_MODE_50000baseKR2_Full_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_50000baseKR2_Full_BIT);
 	if (modes & BIT(NBL_PORT_CAP_50GBASE_SR2))
-		__set_bit(ETHTOOL_LINK_MODE_50000baseSR2_Full_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_50000baseSR2_Full_BIT);
 	if (modes & BIT(NBL_PORT_CAP_50GBASE_CR2))
-		__set_bit(ETHTOOL_LINK_MODE_50000baseCR2_Full_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_50000baseCR2_Full_BIT);
 	if (modes & BIT(NBL_PORT_CAP_50G_AUI2))
-		__set_bit(ETHTOOL_LINK_MODE_50000baseLR_ER_FR_Full_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_50000baseLR_ER_FR_Full_BIT);
 	if (modes & BIT(NBL_PORT_CAP_50GBASE_KR_PAM4))
-		__set_bit(ETHTOOL_LINK_MODE_50000baseKR_Full_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_50000baseKR_Full_BIT);
 	if (modes & BIT(NBL_PORT_CAP_50GBASE_SR_PAM4))
-		__set_bit(ETHTOOL_LINK_MODE_50000baseSR_Full_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_50000baseSR_Full_BIT);
 	if (modes & BIT(NBL_PORT_CAP_50G_AUI_PAM4))
-		__set_bit(ETHTOOL_LINK_MODE_50000baseDR_Full_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_50000baseDR_Full_BIT);
 	if (modes & BIT(NBL_PORT_CAP_50GBASE_CR_PAM4))
-		__set_bit(ETHTOOL_LINK_MODE_50000baseCR_Full_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_50000baseCR_Full_BIT);
 	if (modes & BIT(NBL_PORT_CAP_100GBASE_KR4))
-		__set_bit(ETHTOOL_LINK_MODE_100000baseKR4_Full_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_100000baseKR4_Full_BIT);
 	if (modes & BIT(NBL_PORT_CAP_100GBASE_SR4))
-		__set_bit(ETHTOOL_LINK_MODE_100000baseSR4_Full_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_100000baseSR4_Full_BIT);
 	if (modes & BIT(NBL_PORT_CAP_100GBASE_CR4))
-		__set_bit(ETHTOOL_LINK_MODE_100000baseCR4_Full_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_100000baseCR4_Full_BIT);
 	if (modes & BIT(NBL_PORT_CAP_100G_AUI4))
-		__set_bit(ETHTOOL_LINK_MODE_100000baseLR4_ER4_Full_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_100000baseLR4_ER4_Full_BIT);
 	if (modes & BIT(NBL_PORT_CAP_100G_CAUI4))
-		__set_bit(ETHTOOL_LINK_MODE_100000baseLR2_ER2_FR2_Full_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_100000baseLR2_ER2_FR2_Full_BIT);
 	if (modes & BIT(NBL_PORT_CAP_100GBASE_KR2_PAM4))
-		__set_bit(ETHTOOL_LINK_MODE_100000baseKR2_Full_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_100000baseKR2_Full_BIT);
 	if (modes & BIT(NBL_PORT_CAP_100GBASE_SR2_PAM4))
-		__set_bit(ETHTOOL_LINK_MODE_100000baseSR2_Full_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_100000baseSR2_Full_BIT);
 	if (modes & BIT(NBL_PORT_CAP_100GBASE_CR2_PAM4))
-		__set_bit(ETHTOOL_LINK_MODE_100000baseCR2_Full_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_100000baseCR2_Full_BIT);
 	if (modes & BIT(NBL_PORT_CAP_100G_AUI2_PAM4))
-		__set_bit(ETHTOOL_LINK_MODE_100000baseDR2_Full_BIT, ethtool_modes_map);
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_100000baseDR2_Full_BIT);
+	if (modes & BIT_ULL(NBL_PORT_CAP_200GBASE_KR4))
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_200000baseKR4_Full_BIT);
+	if (modes & BIT_ULL(NBL_PORT_CAP_200GBASE_CR4))
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_200000baseCR4_Full_BIT);
+	if (modes & BIT_ULL(NBL_PORT_CAP_400GBASE_KR4))
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_400000baseKR4_Full_BIT);
+	if (modes & BIT_ULL(NBL_PORT_CAP_400GBASE_CR4))
+		ADD_LINK_MODE(ETHTOOL_LINK_MODE_400000baseCR4_Full_BIT);
+#undef ADD_LINK_MODE
 }
 
 static int nbl_serv_get_port_state(struct nbl_service_mgt *serv_mgt,
@@ -963,10 +1157,18 @@ static int nbl_serv_get_port_state(struct nbl_service_mgt *serv_mgt,
 {
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
-	int ret;
+	int ret = 0;
 
-	ret = disp_ops->get_port_state(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				       NBL_COMMON_TO_ETH_ID(serv_mgt->common), port_state);
+	if (net_resource_mgt->port_state_update || !serv_mgt->common->is_vf) {
+		net_resource_mgt->port_state_update = false;
+		/* wmb */
+		wmb();
+		ret = disp_ops->get_port_state(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+					NBL_COMMON_TO_ETH_ID(serv_mgt->common), port_state);
+		memcpy(&net_resource_mgt->port_state, port_state, sizeof(*port_state));
+	} else {
+		memcpy(port_state, &net_resource_mgt->port_state, sizeof(*port_state));
+	}
 
 	if (port_state->module_repluged)
 		net_resource_mgt->configured_fec = 0;
@@ -983,7 +1185,8 @@ static int nbl_get_ksettings(struct net_device *netdev, struct ethtool_link_kset
 	u32 advertising_speed = 0;
 	int ret = 0;
 
-	if (test_bit(NBL_FATAL_ERR, adapter->state))
+	if (test_bit(NBL_FATAL_ERR, adapter->state) ||
+	    test_bit(NBL_PCI_ERR_RECOVERING, adapter->state))
 		return -EIO;
 
 	ret = nbl_serv_get_port_state(serv_mgt, &port_state);
@@ -1024,6 +1227,10 @@ static int nbl_get_ksettings(struct net_device *netdev, struct ethtool_link_kset
 			__set_bit(ETHTOOL_LINK_MODE_Backplane_BIT, cmd->link_modes.advertising);
 			cmd->base.port = PORT_DA;
 			break;
+		case NBL_PORT_TYPE_TP:
+			__set_bit(ETHTOOL_LINK_MODE_TP_BIT, cmd->link_modes.advertising);
+			cmd->base.port = PORT_TP;
+			break;
 		default:
 			cmd->base.port = PORT_OTHER;
 		}
@@ -1034,6 +1241,12 @@ static int nbl_get_ksettings(struct net_device *netdev, struct ethtool_link_kset
 		switch (advertising_speed) {
 		case SPEED_1000:
 			port_state.port_advertising |= NBL_PORT_CAP_SPEED_1G_MASK;
+			break;
+		case SPEED_2500:
+			port_state.port_advertising |= NBL_PORT_CAP_SPEED_2_5G_MASK;
+			break;
+		case SPEED_5000:
+			port_state.port_advertising |= NBL_PORT_CAP_SPEED_5G_MASK;
 			break;
 		case SPEED_10000:
 			port_state.port_advertising |= NBL_PORT_CAP_SPEED_10G_MASK;
@@ -1047,6 +1260,12 @@ static int nbl_get_ksettings(struct net_device *netdev, struct ethtool_link_kset
 		case SPEED_100000:
 			port_state.port_advertising |= NBL_PORT_CAP_SPEED_100G_MASK;
 			break;
+		case SPEED_200000:
+			port_state.port_advertising |= NBL_PORT_CAP_SPEED_200G_MASK;
+			break;
+		case SPEED_400000:
+			port_state.port_advertising |= NBL_PORT_CAP_SPEED_400G_MASK;
+			break;
 		default:
 			break;
 		}
@@ -1056,8 +1275,19 @@ static int nbl_get_ksettings(struct net_device *netdev, struct ethtool_link_kset
 	nbl_link_modes_to_ethtool(port_state.port_advertising, cmd->link_modes.advertising);
 	nbl_link_modes_to_ethtool(port_state.port_lp_advertising, cmd->link_modes.lp_advertising);
 
-	__set_bit(ETHTOOL_LINK_MODE_FIBRE_BIT, cmd->link_modes.supported);
-	__set_bit(ETHTOOL_LINK_MODE_Backplane_BIT, cmd->link_modes.supported);
+	switch (port_state.port_type) {
+	case NBL_PORT_TYPE_FIBRE:
+		__set_bit(ETHTOOL_LINK_MODE_FIBRE_BIT, cmd->link_modes.supported);
+		break;
+	case NBL_PORT_TYPE_COPPER:
+		__set_bit(ETHTOOL_LINK_MODE_Backplane_BIT, cmd->link_modes.supported);
+		break;
+	case NBL_PORT_TYPE_TP:
+		__set_bit(ETHTOOL_LINK_MODE_TP_BIT, cmd->link_modes.supported);
+		break;
+	default:
+		break;
+	}
 	return 0;
 }
 
@@ -1073,6 +1303,10 @@ static u32 nbl_conver_portrate_to_speed(u8 port_rate)
 	case NBL_PORT_MAX_RATE_100G:
 	case NBL_PORT_MAX_RATE_100G_PAM4:
 		return SPEED_100000;
+	case NBL_PORT_MAX_RATE_200G:
+		return SPEED_200000;
+	case NBL_PORT_MAX_RATE_400G:
+		return SPEED_400000;
 	default:
 		return SPEED_25000;
 	}
@@ -1168,14 +1402,17 @@ static int nbl_set_ksettings(struct net_device *netdev, const struct ethtool_lin
 		return -EINVAL;
 	}
 
-	speed_advert = nbl_speed_to_link_mode(speed, cmd->base.autoneg);
+	speed_advert = nbl_speed_to_link_mode(speed, cmd->base.autoneg, port_state.port_type);
 	speed_advert &= port_state.port_caps;
 	if (!speed_advert) {
 		netdev_err(netdev, "speed %d is not support, exit\n", cmd->base.speed);
 		return -EINVAL;
 	}
 
-	if (cmd->base.autoneg || port_state.port_caps & BIT(NBL_PORT_CAP_FEC_AUTONEG)) {
+	if (cmd->base.autoneg) {
+		/* when enable autoneg, set fec will not take effect,
+		 * fec mode will be automatically negotiated.
+		 */
 		switch (net_resource_mgt->configured_fec) {
 		case ETHTOOL_FEC_OFF:
 			active_fec = NBL_PORT_FEC_OFF;
@@ -1194,6 +1431,14 @@ static int nbl_set_ksettings(struct net_device *netdev, const struct ethtool_lin
 		switch (speed) {
 		case SPEED_1000:
 			active_fec = NBL_ETH_1G_DEFAULT_FEC_MODE;
+			net_resource_mgt->configured_fec = ETHTOOL_FEC_OFF;
+			break;
+		case SPEED_2500:
+			active_fec = NBL_ETH_2_5G_DEFAULT_FEC_MODE;
+			net_resource_mgt->configured_fec = ETHTOOL_FEC_OFF;
+			break;
+		case SPEED_5000:
+			active_fec = NBL_ETH_5G_DEFAULT_FEC_MODE;
 			net_resource_mgt->configured_fec = ETHTOOL_FEC_OFF;
 			break;
 		case SPEED_10000:
@@ -1224,6 +1469,7 @@ static int nbl_set_ksettings(struct net_device *netdev, const struct ethtool_lin
 	ret = disp_ops->set_port_advertising(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
 					  &port_advertising);
 	if (ret) {
+		net_resource_mgt->configured_fec = 0;
 		netdev_err(netdev, "set autoneg %d speed %d failed %d\n",
 			   cmd->base.autoneg, cmd->base.speed, ret);
 		return -EIO;
@@ -1240,6 +1486,8 @@ static void nbl_get_ringparam(struct net_device *netdev, struct ethtool_ringpara
 {
 	struct nbl_netdev_priv *priv = netdev_priv(netdev);
 	struct nbl_adapter *adapter = NBL_NETDEV_TO_ADAPTER(netdev);
+	struct nbl_service_mgt *serv_mgt = NBL_ADAPTER_TO_SERV_MGT(adapter);
+	struct nbl_serv_ring_mgt *ring_mgt = NBL_SERV_MGT_TO_RING_MGT(serv_mgt);
 	struct nbl_dispatch_mgt *disp_mgt = NBL_ADAPTER_TO_DISP_MGT(adapter);
 	struct nbl_dispatch_ops *disp_ops = NBL_ADAPTER_TO_DISP_OPS_TBL(adapter)->ops;
 	u16 max_desc_num;
@@ -1248,8 +1496,8 @@ static void nbl_get_ringparam(struct net_device *netdev, struct ethtool_ringpara
 		max_desc_num = disp_ops->get_max_desc_num(disp_mgt);
 		ringparam->tx_max_pending = max_desc_num;
 		ringparam->rx_max_pending = max_desc_num;
-		ringparam->tx_pending = disp_ops->get_tx_desc_num(disp_mgt, 0);
-		ringparam->rx_pending = disp_ops->get_rx_desc_num(disp_mgt, 0);
+		ringparam->tx_pending = ring_mgt->tx_desc_num;
+		ringparam->rx_pending = ring_mgt->rx_desc_num;
 	} else {
 		ringparam->tx_max_pending = NBL_REP_QUEUE_MGT_DESC_MAX;
 		ringparam->rx_max_pending = NBL_REP_QUEUE_MGT_DESC_MAX;
@@ -1299,12 +1547,12 @@ static int nbl_check_set_ringparam(struct net_device *netdev,
 static int nbl_pre_set_ringparam(struct net_device *netdev, struct ethtool_ringparam *ringparam)
 {
 	struct nbl_adapter *adapter = NBL_NETDEV_TO_ADAPTER(netdev);
-	struct nbl_dispatch_mgt *disp_mgt = NBL_ADAPTER_TO_DISP_MGT(adapter);
-	struct nbl_dispatch_ops *disp_ops = NBL_ADAPTER_TO_DISP_OPS_TBL(adapter)->ops;
+	struct nbl_service_mgt *serv_mgt = NBL_ADAPTER_TO_SERV_MGT(adapter);
+	struct nbl_serv_ring_mgt *ring_mgt = NBL_SERV_MGT_TO_RING_MGT(serv_mgt);
 	int timeout = 50;
 
-	if (ringparam->rx_pending == disp_ops->get_rx_desc_num(disp_mgt, 0) &&
-	    ringparam->tx_pending == disp_ops->get_tx_desc_num(disp_mgt, 0)) {
+	if (ringparam->rx_pending == ring_mgt->rx_desc_num &&
+	    ringparam->tx_pending == ring_mgt->tx_desc_num) {
 		netdev_dbg(netdev, "Nothing to change, descriptor count is same as requested\n");
 		return 0;
 	}
@@ -1336,7 +1584,6 @@ static int nbl_set_ringparam(struct net_device *netdev, struct ethtool_ringparam
 	u16 new_tx_count, new_rx_count;
 	u16 old_tx_count, old_rx_count;
 	int was_running;
-	int i;
 	int err;
 
 	vsi_info = &ring_mgt->vsi_info[NBL_VSI_DATA];
@@ -1371,12 +1618,6 @@ static int nbl_set_ringparam(struct net_device *netdev, struct ethtool_ringparam
 
 	ring_mgt->tx_desc_num = new_tx_count;
 	ring_mgt->rx_desc_num = new_rx_count;
-
-	for (i = vsi_info->ring_offset; i < vsi_info->ring_offset + vsi_info->ring_num; i++)
-		disp_ops->set_tx_desc_num(disp_mgt, i, new_tx_count);
-
-	for (i = vsi_info->ring_offset; i < vsi_info->ring_offset + vsi_info->ring_num; i++)
-		disp_ops->set_rx_desc_num(disp_mgt, i, new_rx_count);
 
 	if (was_running) {
 		err = nbl_serv_netdev_open(netdev);
@@ -1502,6 +1743,11 @@ static int nbl_fd_translate_cls_rule(u16 type, u16 length, u8 *val, void *data)
 		memcpy(fs->m_ext.data, &udf_mask, sizeof(udf_mask));
 		fs->flow_type |= FLOW_EXT;
 		break;
+	case NBL_CHAN_FDIR_KEY_SVLAN:
+		fs->h_ext.vlan_tci = *(u16 *)val;
+		fs->m_ext.vlan_tci = *(u16 *)(val + 2);
+		fs->flow_type |= FLOW_EXT;
+		break;
 	case NBL_CHAN_FDIR_ACTION_QUEUE:
 		ring = *(u16 *)val;
 		vf = *(u16 *)(val + 2);
@@ -1552,40 +1798,90 @@ static void nbl_fd_flow_type_translate(enum nbl_chan_fdir_flow_type flow_type,
 	}
 }
 
+static int nbl_parse_flow_type(u32 flow_type)
+{
+	switch (flow_type) {
+	case TCP_V4_FLOW:
+		return NBL_FLOW_TYPE_TCPV4;
+	case TCP_V6_FLOW:
+		return NBL_FLOW_TYPE_TCPV6;
+	case UDP_V4_FLOW:
+		return NBL_FLOW_TYPE_UDPV4;
+	case UDP_V6_FLOW:
+		return NBL_FLOW_TYPE_UDPV6;
+	case SCTP_V4_FLOW:
+		return NBL_FLOW_TYPE_SCTPV4;
+	case SCTP_V6_FLOW:
+		return NBL_FLOW_TYPE_SCTPV6;
+	default:
+		return -EINVAL;
+	}
+}
+
 static int nbl_get_rss_hash_opt(struct net_device *netdev, struct ethtool_rxnfc *nfc)
 {
-	switch (nfc->flow_type) {
-	case TCP_V4_FLOW:
-	case TCP_V6_FLOW:
-	case UDP_V4_FLOW:
-	case UDP_V6_FLOW:
-		break;
-	default:
+	struct nbl_service_mgt *serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
+	u16 vsi_id = NBL_COMMON_TO_VSI_ID(common);
+	int flow_type;
+	u64 hash_fields = 0;
+	int ret = 0;
+
+	flow_type = nbl_parse_flow_type(nfc->flow_type);
+	if (flow_type < 0)
 		return -EOPNOTSUPP;
-	}
+
+	ret = disp_ops->get_hash_fields(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+					vsi_id, flow_type, &hash_fields);
+	if (ret < 0)
+		return ret;
 
 	nfc->data = 0;
-	nfc->data = RXH_IP_SRC | RXH_IP_DST | RXH_L4_B_0_1 | RXH_L4_B_2_3;
+	if (hash_fields & NBL_HASH_FILED_SRC_IP)
+		nfc->data |= RXH_IP_SRC;
+	if (hash_fields & NBL_HASH_FILED_DST_IP)
+		nfc->data |= RXH_IP_DST;
+	if (hash_fields & NBL_HASH_FILED_L4_SPORT)
+		nfc->data |= RXH_L4_B_0_1;
+	if (hash_fields & NBL_HASH_FILED_L4_DPORT)
+		nfc->data |= RXH_L4_B_2_3;
 
 	return 0;
 }
 
 static int nbl_set_rss_hash_opt(struct net_device *netdev, struct ethtool_rxnfc *nfc)
 {
-	switch (nfc->flow_type) {
-	case TCP_V4_FLOW:
-	case TCP_V6_FLOW:
-	case UDP_V4_FLOW:
-	case UDP_V6_FLOW:
-		break;
-	default:
-		return -EOPNOTSUPP;
-	}
+	struct nbl_service_mgt *serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
+	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
+	u16 vsi_id = NBL_COMMON_TO_VSI_ID(common);
+	int flow_type;
+	u64 hash_fields = 0;
+	int ret = 0;
 
-	if (nfc->data == (RXH_IP_SRC | RXH_IP_DST | RXH_L4_B_0_1 | RXH_L4_B_2_3))
-		return 0;
-	else
+	flow_type = nbl_parse_flow_type(nfc->flow_type);
+	if (flow_type < 0)
 		return -EOPNOTSUPP;
+
+	if (nfc->data & ~(RXH_IP_SRC | RXH_IP_DST | RXH_L4_B_0_1 | RXH_L4_B_2_3))
+		return -EOPNOTSUPP;
+
+	if (nfc->data & RXH_IP_SRC)
+		hash_fields |= NBL_HASH_FILED_SRC_IP;
+	if (nfc->data & RXH_IP_DST)
+		hash_fields |= NBL_HASH_FILED_DST_IP;
+	if (nfc->data & RXH_L4_B_0_1)
+		hash_fields |= NBL_HASH_FILED_L4_SPORT;
+	if (nfc->data & RXH_L4_B_2_3)
+		hash_fields |= NBL_HASH_FILED_L4_DPORT;
+
+	ret = disp_ops->set_hash_fields(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+					vsi_id, flow_type, hash_fields);
+	if (ret < 0)
+		return ret;
+
+	return 0;
 }
 
 static int nbl_get_rxnfc(struct net_device *netdev, struct ethtool_rxnfc *cmd, u32 *rule_locs)
@@ -1683,9 +1979,27 @@ static int nbl_format_flow_ext_rule(struct ethtool_rx_flow_spec *fs,
 	u8 *tlv_start = info->tlv + *offset;
 	u16 tlv_length = NBL_CHAN_FDIR_TLV_HEADER_LEN + 16;
 
-	if (fs->m_ext.vlan_etype || fs->m_ext.vlan_tci)
+	if (fs->m_ext.vlan_etype)
 		return -EINVAL;
 
+	if (fs->m_ext.vlan_tci) {
+		tlv_length = NBL_CHAN_FDIR_TLV_HEADER_LEN + 4;
+		if (*offset > (NBL_CHAN_FDIR_FLOW_TLV_SIZE - tlv_length))
+			return -EINVAL;
+
+		*(u16 *)(tlv_start) = NBL_CHAN_FDIR_KEY_SVLAN;
+		*(u16 *)(tlv_start + 2) = 4;
+		*(u16 *)(tlv_start + 4) = fs->h_ext.vlan_tci;
+		*(u16 *)(tlv_start + 6) = fs->m_ext.vlan_tci;
+		*offset += tlv_length;
+
+		/* FLOW_EXT may carry VLAN and UDF matching at the same time. */
+		if (!udf_mask)
+			return 0;
+	}
+
+	tlv_start = info->tlv + *offset;
+	tlv_length = NBL_CHAN_FDIR_TLV_HEADER_LEN + 16;
 	if (*offset > (NBL_CHAN_FDIR_FLOW_TLV_SIZE - tlv_length))
 		return -EINVAL;
 
@@ -1725,7 +2039,6 @@ static int nbl_format_ether_flow_rule(struct ethtool_rx_flow_spec *fs,
 	struct ethhdr *ether_mask = &fs->m_u.ether_spec;
 	u8 *tlv_start;
 	u16 tlv_length;
-	bool valid = 0;
 
 	if (!is_zero_ether_addr(ether_mask->h_dest)) {
 		tlv_start = info->tlv + *offset;
@@ -1738,7 +2051,6 @@ static int nbl_format_ether_flow_rule(struct ethtool_rx_flow_spec *fs,
 		ether_addr_copy(tlv_start + 4, ether_spec->h_dest);
 		ether_addr_copy(tlv_start + 10, ether_mask->h_dest);
 		*offset += tlv_length;
-		valid = 1;
 	}
 
 	if (!is_zero_ether_addr(ether_mask->h_source)) {
@@ -1752,7 +2064,6 @@ static int nbl_format_ether_flow_rule(struct ethtool_rx_flow_spec *fs,
 		ether_addr_copy(tlv_start + 4, ether_spec->h_source);
 		ether_addr_copy(tlv_start + 10, ether_mask->h_source);
 		*offset += tlv_length;
-		valid = 1;
 	}
 
 	if (ether_mask->h_proto) {
@@ -1766,11 +2077,7 @@ static int nbl_format_ether_flow_rule(struct ethtool_rx_flow_spec *fs,
 		*(u16 *)(tlv_start + 4) = ether_spec->h_proto;
 		*(u16 *)(tlv_start + 6) = ether_mask->h_proto;
 		*offset += tlv_length;
-		valid = 1;
 	}
-
-	if (!valid)
-		return -EINVAL;
 
 	return 0;
 }
@@ -1783,6 +2090,10 @@ static int nbl_format_ipv4_flow_rule(struct ethtool_rx_flow_spec *fs,
 	struct ethtool_usrip4_spec *usr_ip4_mask = &fs->m_u.usr_ip4_spec;
 	u8 *tlv_start;
 	u16 tlv_length;
+
+	if (usr_ip4_mask->l4_4_bytes || usr_ip4_mask->tos ||
+	    usr_ip4_spec->ip_ver != ETH_RX_NFC_IP4)
+		return -EINVAL;
 
 	if (usr_ip4_mask->ip4src) {
 		tlv_start = info->tlv + *offset;
@@ -1845,6 +2156,9 @@ static int nbl_format_ipv6_flow_rule(struct ethtool_rx_flow_spec *fs,
 	u8 *tlv_start;
 	u16 tlv_length;
 
+	if (usr_ip6_mask->l4_4_bytes || usr_ip6_mask->tclass)
+		return -EINVAL;
+
 	if (!ipv6_addr_any((struct in6_addr *)usr_ip6_mask->ip6src)) {
 		tlv_start = info->tlv + *offset;
 		tlv_length = NBL_CHAN_FDIR_TLV_HEADER_LEN + 32;
@@ -1905,6 +2219,9 @@ static int nbl_format_tcpv4_flow_rule(struct ethtool_rx_flow_spec *fs,
 	struct ethtool_tcpip4_spec *tcp_ip4_mask = &fs->m_u.tcp_ip4_spec;
 	u8 *tlv_start;
 	u16 tlv_length;
+
+	if (tcp_ip4_mask->tos)
+		return -EINVAL;
 
 	if (tcp_ip4_mask->ip4src) {
 		tlv_start = info->tlv + *offset;
@@ -1992,6 +2309,9 @@ static int nbl_format_tcpv6_flow_rule(struct ethtool_rx_flow_spec *fs,
 	u8 *tlv_start;
 	u16 tlv_length;
 
+	if (tcp_ip6_mask->tclass)
+		return -EINVAL;
+
 	if (!ipv6_addr_any((struct in6_addr *)tcp_ip6_mask->ip6src)) {
 		tlv_start = info->tlv + *offset;
 		tlv_length = NBL_CHAN_FDIR_TLV_HEADER_LEN + 32;
@@ -2078,6 +2398,9 @@ static int nbl_format_udpv4_flow_rule(struct ethtool_rx_flow_spec *fs,
 	u8 *tlv_start;
 	u16 tlv_length;
 
+	if (udp_ip4_mask->tos)
+		return -EINVAL;
+
 	if (udp_ip4_mask->ip4src) {
 		tlv_start = info->tlv + *offset;
 		tlv_length = NBL_CHAN_FDIR_TLV_HEADER_LEN + 8;
@@ -2163,6 +2486,9 @@ static int nbl_format_udpv6_flow_rule(struct ethtool_rx_flow_spec *fs,
 	struct ethtool_tcpip6_spec *udp_ip6_mask = &fs->m_u.udp_ip6_spec;
 	u8 *tlv_start;
 	u16 tlv_length;
+
+	if (udp_ip6_mask->tclass)
+		return -EINVAL;
 
 	if (!ipv6_addr_any((struct in6_addr *)udp_ip6_mask->ip6src)) {
 		tlv_start = info->tlv + *offset;
@@ -2378,6 +2704,8 @@ static int nbl_set_rxnfc(struct net_device *netdev, struct ethtool_rxnfc *cmd)
 			return -EINVAL;
 
 		if (ring_cookie != RX_CLS_FLOW_DISC) {
+			struct nbl_ch_prm_get_vsi_global_qid prm = {0};
+
 			dport = vsi_id;
 			ring = ethtool_get_flow_spec_ring(cmd->fs.ring_cookie);
 			vf = ethtool_get_flow_spec_ring_vf(cmd->fs.ring_cookie);
@@ -2393,8 +2721,11 @@ static int nbl_set_rxnfc(struct net_device *netdev, struct ethtool_rxnfc *cmd)
 			if (vf)
 				dport = disp_ops->get_vf_vsi_id(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
 								vsi_id, vf - 1);
-			global_queue_id = disp_ops->get_vsi_global_queue_id
-					(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), dport, ring);
+			prm.vsi_id = dport;
+			prm.local_qid = ring;
+
+			global_queue_id = disp_ops->get_vsi_global_qid
+					(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &prm);
 		}
 
 		info = nbl_format_fdir_rule(&cmd->fs);
@@ -2439,7 +2770,7 @@ static u32 nbl_get_rxfh_indir_size(struct net_device *netdev)
 	common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 
 	disp_ops->get_rxfh_indir_size(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				      NBL_COMMON_TO_VSI_ID(common), &rxfh_indir_size);
+				      &NBL_COMMON_TO_VSI_ID(common), &rxfh_indir_size);
 
 	return rxfh_indir_size;
 }
@@ -2463,42 +2794,54 @@ static int nbl_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key, u8 *hfun
 	struct nbl_service_mgt *serv_mgt;
 	struct nbl_dispatch_ops *disp_ops;
 	struct nbl_common_info *common;
+	struct nbl_ch_prm_get_rxfh_rss_key key_prm = {0};
+	struct nbl_ch_prm_get_rxfh_key rss_key;
 	u32 rxfh_key_size = 0;
 	u32 rxfh_indir_size = 0;
 
+	memset(&rss_key, 0, sizeof(rss_key));
 	serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 
 	disp_ops->get_rxfh_rss_key_size(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &rxfh_key_size);
 	disp_ops->get_rxfh_indir_size(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				      NBL_COMMON_TO_VSI_ID(common), &rxfh_indir_size);
+				      &NBL_COMMON_TO_VSI_ID(common), &rxfh_indir_size);
+	key_prm.vsi_id = NBL_COMMON_TO_VSI_ID(common);
+	key_prm.rss_key_size = rxfh_key_size;
 
 	if (indir)
 		disp_ops->get_rxfh_indir(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
 					 NBL_COMMON_TO_VSI_ID(common), indir, rxfh_indir_size);
-	if (key)
-		disp_ops->get_rxfh_rss_key(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), key, rxfh_key_size);
+	if (key) {
+		disp_ops->get_rxfh_rss_key(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+					   &key_prm, &rss_key);
+		memcpy(key, rss_key.rss_key, rxfh_key_size);
+	}
 	if (hfunc)
 		disp_ops->get_rxfh_rss_alg_sel(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					       NBL_COMMON_TO_VSI_ID(common), hfunc);
+					       &NBL_COMMON_TO_VSI_ID(common), hfunc);
 
 	return 0;
 }
 
 static int nbl_set_rxfh(struct net_device *netdev, const u32 *indir, const u8 *key, const u8 hfunc)
 {
+	enum nbl_fix_cap_type cap_type = NBL_RXFH_KEY_SET_CAP;
 	struct nbl_service_mgt *serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_serv_ring_mgt *ring_mgt = NBL_SERV_MGT_TO_RING_MGT(serv_mgt);
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct device *dev = NBL_SERV_MGT_TO_DEV(serv_mgt);
+	struct nbl_ch_prm_set_rxfh_rss_key key_prm;
+	struct nbl_ch_prm_set_rxfh_rss_alg_sel alg_prm = {0};
 	u32 rxfh_indir_size = 0;
 	int ret = 0;
 
-	if (indir) {
+	memset(&key_prm, 0, sizeof(key_prm));
+	if (indir && (netdev->features & NETIF_F_RXHASH)) {
 		disp_ops->get_rxfh_indir_size(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					NBL_COMMON_TO_VSI_ID(common), &rxfh_indir_size);
+					&NBL_COMMON_TO_VSI_ID(common), &rxfh_indir_size);
 		ret = disp_ops->set_rxfh_indir(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
 					       NBL_COMMON_TO_VSI_ID(common),
 					       indir, rxfh_indir_size);
@@ -2515,12 +2858,25 @@ static int nbl_set_rxfh(struct net_device *netdev, const u32 *indir, const u8 *k
 		memcpy(ring_mgt->rss_indir_user, indir, rxfh_indir_size * sizeof(u32));
 	}
 	if (key) {
-		netdev_err(netdev, "rss key donot support modify\n");
-		return -EOPNOTSUPP;
+		if (disp_ops->get_product_fix_cap(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+						  &cap_type)) {
+			key_prm.vsi_id = NBL_COMMON_TO_VSI_ID(common);
+			memcpy(key_prm.rss_key, key, NBL_EPRO_RSS_SK_SIZE);
+			ret = disp_ops->set_rxfh_rss_key(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+							 &key_prm);
+			if (ret) {
+				netdev_err(netdev, "set RSS hash key failed %d\n", ret);
+				return ret;
+			}
+		} else {
+			netdev_err(netdev, "rss key donot support modify\n");
+			return -EOPNOTSUPP;
+		}
 	}
 	if (hfunc) {
-		ret = disp_ops->set_rxfh_rss_alg_sel(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-						     NBL_COMMON_TO_VSI_ID(common), hfunc);
+		alg_prm.vsi_id = NBL_COMMON_TO_VSI_ID(common);
+		alg_prm.rss_alg_sel = hfunc;
+		ret = disp_ops->set_rxfh_rss_alg_sel(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &alg_prm);
 		if (ret) {
 			netdev_err(netdev, "set RSS hash function failed %d\n", ret);
 			return ret;
@@ -2574,9 +2930,11 @@ static int nbl_get_per_queue_coalesce(struct net_device *netdev,
 	struct nbl_service_mgt *serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
 	struct nbl_serv_ring_mgt *ring_mgt = NBL_SERV_MGT_TO_RING_MGT(serv_mgt);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_serv_ring_vsi_info *vsi_info;
 	u16 local_vector_id, configured_usecs;
-	struct nbl_chan_param_get_coalesce coalesce_param = {0};
+	struct nbl_ch_prm_get_coalesce coalesce_param = {0};
+	struct nbl_ch_prm_get_coalesce_req coalesce_req = {0};
 
 	vsi_info = &ring_mgt->vsi_info[NBL_VSI_DATA];
 
@@ -2587,8 +2945,10 @@ static int nbl_get_per_queue_coalesce(struct net_device *netdev,
 
 	local_vector_id = ring_mgt->vectors[q_num + vsi_info->ring_offset].local_vector_id;
 	configured_usecs = ring_mgt->vectors[q_num + vsi_info->ring_offset].intr_rate_usecs;
+	coalesce_req.vector_id = local_vector_id;
+	coalesce_req.sfid = NBL_COMMON_TO_MGT_PF(common);
 	disp_ops->get_coalesce(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-			       local_vector_id, &coalesce_param);
+			       &coalesce_req, &coalesce_param);
 
 	NBL_SET_INTR_COALESCE(ec, coalesce_param.tx_coalesce_usecs,
 			      coalesce_param.tx_max_coalesced_frames,
@@ -2610,11 +2970,15 @@ static int nbl_get_per_queue_coalesce(struct net_device *netdev,
 static int __nbl_set_per_queue_coalesce(struct net_device *netdev,
 					u32 q_num, struct ethtool_coalesce *ec)
 {
+	enum nbl_fix_cap_type cap_type = NBL_MSIX_FAST_RESTRAIN_CAP;
 	struct nbl_service_mgt *serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
 	struct nbl_serv_ring_mgt *ring_mgt = NBL_SERV_MGT_TO_RING_MGT(serv_mgt);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_serv_ring_vsi_info *vsi_info;
+	struct nbl_serv_vector *vector;
 	struct ethtool_coalesce ec_local = {0};
+	bool support_msix_fast_restrain;
 	u16 local_vector_id, pnum, rate;
 
 	vsi_info = &ring_mgt->vsi_info[NBL_VSI_DATA];
@@ -2638,7 +3002,7 @@ static int __nbl_set_per_queue_coalesce(struct net_device *netdev,
 
 	if (ec->tx_max_coalesced_frames != ec->rx_max_coalesced_frames ||
 	    ec->tx_coalesce_usecs != ec->rx_coalesce_usecs) {
-		netdev_err(netdev, "rx params should equal to tx params\n");
+		netdev_err(netdev, "tx and rx using the same interrupt, rx params should equal to tx params\n");
 		return -EINVAL;
 	}
 
@@ -2662,9 +3026,28 @@ static int __nbl_set_per_queue_coalesce(struct net_device *netdev,
 	pnum = (u16)ec->tx_max_coalesced_frames;
 	rate = (u16)ec->tx_coalesce_usecs;
 	ring_mgt->vectors[q_num + vsi_info->ring_offset].intr_rate_usecs = rate;
+	support_msix_fast_restrain =
+				disp_ops->get_product_fix_cap(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+							      &cap_type);
+	if (support_msix_fast_restrain) {
+		struct nbl_set_msix_fast_restrain_param restrain_prm = {0};
 
-	disp_ops->set_coalesce(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), local_vector_id,
-			       1, pnum, rate);
+		vector = &ring_mgt->vectors[q_num];
+		restrain_prm.global_vector_id = vector->global_vector_id;
+		restrain_prm.pnum = pnum;
+		restrain_prm.rate = rate;
+		disp_ops->set_msix_fast_restrain(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+						 &restrain_prm);
+	} else {
+		struct nbl_ch_prm_set_coalesce coalesce_prm = {0};
+
+		coalesce_prm.sfid = NBL_COMMON_TO_MGT_PF(common);
+		coalesce_prm.local_vector_id = local_vector_id;
+		coalesce_prm.vector_num = 1;
+		coalesce_prm.rx_max_coalesced_frames = pnum;
+		coalesce_prm.rx_coalesce_usecs = rate;
+		disp_ops->set_coalesce(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &coalesce_prm);
+	}
 	return 0;
 }
 
@@ -2698,11 +3081,14 @@ static int nbl_set_coalesce(struct net_device *netdev, struct ethtool_coalesce *
 			    struct kernel_ethtool_coalesce *kernel_ec,
 			    struct netlink_ext_ack *extack)
 {
+	enum nbl_fix_cap_type cap_type = NBL_MSIX_FAST_RESTRAIN_CAP;
 	struct nbl_service_mgt *serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
 	struct nbl_serv_ring_mgt *ring_mgt = NBL_SERV_MGT_TO_RING_MGT(serv_mgt);
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
+	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_serv_ring_vsi_info *vsi_info;
 	struct ethtool_coalesce ec_local = {0};
+	bool support_msix_fast_restrain;
 	u16 local_vector_id;
 	u16 intr_suppress_level;
 	u16 q_num;
@@ -2746,13 +3132,25 @@ static int nbl_set_coalesce(struct net_device *netdev, struct ethtool_coalesce *
 		}
 	}
 
+	support_msix_fast_restrain =
+				disp_ops->get_product_fix_cap(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+							      &cap_type);
 	if (ec->use_adaptive_rx_coalesce) {
 		vsi_info->itr_dynamic = true;
 		local_vector_id = ring_mgt->vectors[vsi_info->ring_offset].local_vector_id;
 		intr_suppress_level = ring_mgt->vectors->intr_suppress_level;
-		disp_ops->set_intr_suppress_level(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-						  local_vector_id, vsi_info->ring_num,
-						  intr_suppress_level);
+		if (!support_msix_fast_restrain) {
+			struct nbl_ch_prm_set_intr_suppress_level suppress_prm = {0};
+
+			suppress_prm.sfid = NBL_COMMON_TO_MGT_PF(common);
+			suppress_prm.local_vector_id = local_vector_id;
+			suppress_prm.vector_num = vsi_info->ring_num;
+			suppress_prm.level = intr_suppress_level;
+			disp_ops->set_intr_suppress_level(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
+							  &suppress_prm);
+		} else {
+			nbl_intr_set_suppress_level(serv_mgt, vsi_info, intr_suppress_level);
+		}
 	} else {
 		vsi_info->itr_dynamic = false;
 		for (q_num = 0; q_num < vsi_info->ring_num; q_num++)
@@ -2788,28 +3186,53 @@ static void nbl_loopback_free_rings(struct nbl_adapter *adapter, struct net_devi
 	nbl_serv_vsi_stop(serv_mgt, NBL_VSI_DATA);
 }
 
-static void nbl_loopback_create_skb(struct sk_buff *skb, u32 size)
+static void nbl_loopback_create_skb(struct net_device *netdev, struct sk_buff *skb, u32 size)
 {
+	struct ethhdr *eth_hdr;
+
 	if (!skb)
 		return;
 
-	memset(skb->data, NBL_SELF_TEST_PADDING_DATA_1, size);
+	get_random_bytes(skb->data, size);
+	ether_addr_copy(skb->data, netdev->dev_addr);
+	eth_hdr = (struct ethhdr *)skb->data;
+	eth_hdr->h_proto = cpu_to_be16(ETH_P_ARP);
 	size >>= 1;
 	memset(&skb->data[size], NBL_SELF_TEST_PADDING_DATA_2, size);
 	skb->data[size + NBL_SELF_TEST_POS_2] = NBL_SELF_TEST_BYTE_1;
 	skb->data[size + NBL_SELF_TEST_POS_3] = NBL_SELF_TEST_BYTE_2;
 }
 
-static s32 nbl_loopback_check_skb(struct sk_buff *skb, u32 size)
+static s32 nbl_loopback_check_skb(struct net_device *netdev, struct sk_buff *skb_tx,
+				  struct sk_buff *skb_rx, u32 size)
 {
-	size >>= 1;
-
-	if (skb->data[NBL_SELF_TEST_POS_1] != NBL_SELF_TEST_PADDING_DATA_1 ||
-	    skb->data[size + NBL_SELF_TEST_POS_2] != NBL_SELF_TEST_BYTE_1 ||
-	    skb->data[size + NBL_SELF_TEST_POS_3] != NBL_SELF_TEST_BYTE_2)
-		return -1;
+	if (!skb_tx || !skb_rx) {
+		netdev_err(netdev, "Skb is NULL.");
+		goto err_return;
+	}
+	if (skb_tx->len != skb_rx->len || skb_tx->len != size) {
+		netdev_err(netdev, "Skb len mismatch, tx len %u, rx len %u, size %u.",
+			   skb_tx->len, skb_rx->len, size);
+		goto err_return;
+	}
+	if (skb_is_nonlinear(skb_tx) || skb_is_nonlinear(skb_rx)) {
+		netdev_err(netdev, "Skb is error, tx len %u, tx data len %u, rx len %u, rx data len %u.",
+			   skb_tx->len, skb_tx->data_len, skb_rx->len, skb_rx->data_len);
+		goto err_return;
+	}
+	if (memcmp(skb_tx->data, skb_rx->data, size)) {
+		netdev_err(netdev, "Skb data mismatch.");
+		goto err_return;
+	}
 
 	return 0;
+
+err_return:
+	if (skb_tx)
+		skb_dump("loop-test-tx:", skb_tx, true);
+	if (skb_rx)
+		skb_dump("loop-test-rx:", skb_rx, true);
+	return -1;
 }
 
 static s32 nbl_loopback_run_test(struct net_device *netdev)
@@ -2823,6 +3246,7 @@ static s32 nbl_loopback_run_test(struct net_device *netdev)
 	u32 size = NBL_SELF_TEST_BUFF_SIZE;
 	u32 count;
 	u32 tx_count = 0;
+	u32 ring_index = 0;
 	s32 result = 0;
 	int i;
 
@@ -2831,7 +3255,7 @@ static s32 nbl_loopback_run_test(struct net_device *netdev)
 		if (!skb_tx[i])
 			goto alloc_skb_faied;
 
-		nbl_loopback_create_skb(skb_tx[i], size);
+		nbl_loopback_create_skb(netdev, skb_tx[i], size);
 		skb_put(skb_tx[i], size);
 		skb_tx[i]->queue_mapping = 0;
 	}
@@ -2854,18 +3278,18 @@ static s32 nbl_loopback_run_test(struct net_device *netdev)
 		return result;
 	}
 
-	/* Wait for rx packets loopback */
 	msleep(1000);
 
 	for (i = 0; i < tx_count; i++) {
 		skb_rx = NULL;
-		skb_rx = disp_ops->clean_rx_lb_test(NBL_ADAPTER_TO_DISP_MGT(adapter), 0);
+		skb_rx = disp_ops->clean_rx_lb_test(NBL_ADAPTER_TO_DISP_MGT(adapter),
+						    &ring_index);
 		if (!skb_rx) {
 			netdev_err(netdev, "Fail to rx lb skb, should rx %d but fail on %d",
 				   tx_count, i);
 			break;
 		}
-		if (nbl_loopback_check_skb(skb_rx, size)) {
+		if (nbl_loopback_check_skb(netdev, skb_tx[i], skb_rx, size)) {
 			netdev_err(netdev, "Fail to check lb skb %d(%p)", i, skb_rx);
 			kfree(skb_rx);
 			break;
@@ -2900,7 +3324,8 @@ static u64 nbl_loopback_test(struct net_device *netdev)
 	struct nbl_serv_ring_mgt *ring_mgt = &serv_mgt->ring_mgt;
 	struct nbl_dispatch_ops *disp_ops = NBL_ADAPTER_TO_DISP_OPS_TBL(adapter)->ops;
 	struct nbl_serv_ring_vsi_info *vsi_info = &ring_mgt->vsi_info[NBL_VSI_DATA];
-	u8 origin_num_txq, origin_num_rxq, origin_active_q;
+	struct nbl_ch_prm_set_eth_loopback lb_prm = {0};
+	u16 origin_num_txq, origin_num_rxq, origin_active_q;
 	u64 result = 0;
 	u32 rxfh_indir_size = 0;
 	u32 *indir = NULL;
@@ -2914,7 +3339,7 @@ static u64 nbl_loopback_test(struct net_device *netdev)
 	ring_mgt->rx_ring_num = NBL_SELF_TEST_Q_NUM;
 
 	disp_ops->get_rxfh_indir_size(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					NBL_COMMON_TO_VSI_ID(common), &rxfh_indir_size);
+					&NBL_COMMON_TO_VSI_ID(common), &rxfh_indir_size);
 	indir = devm_kcalloc(dev, rxfh_indir_size, sizeof(u32), GFP_KERNEL);
 	if (!indir)
 		return -ENOMEM;
@@ -2929,7 +3354,9 @@ static u64 nbl_loopback_test(struct net_device *netdev)
 		goto lb_setup_rings_failed;
 	}
 
-	if (disp_ops->set_eth_loopback(NBL_ADAPTER_TO_DISP_MGT(adapter), NBL_ETH_LB_ON)) {
+	lb_prm.eth_port_id = common->eth_id;
+	lb_prm.enable = NBL_ETH_LB_ON;
+	if (disp_ops->set_eth_loopback(NBL_ADAPTER_TO_DISP_MGT(adapter), &lb_prm)) {
 		netdev_err(netdev, "Fail to setup lb on");
 		result |= BIT(NBL_LB_ERR_LB_MODE_SETUP);
 		goto set_eth_lb_failed;
@@ -2937,7 +3364,8 @@ static u64 nbl_loopback_test(struct net_device *netdev)
 
 	result |= nbl_loopback_run_test(netdev);
 
-	if (disp_ops->set_eth_loopback(NBL_ADAPTER_TO_DISP_MGT(adapter), NBL_ETH_LB_OFF)) {
+	lb_prm.enable = NBL_ETH_LB_OFF;
+	if (disp_ops->set_eth_loopback(NBL_ADAPTER_TO_DISP_MGT(adapter), &lb_prm)) {
 		netdev_err(netdev, "Fail to setup lb off");
 		result |= BIT(NBL_LB_ERR_LB_MODE_SETUP);
 		goto set_eth_lb_failed;
@@ -2966,14 +3394,18 @@ lb_setup_rings_failed:
 static u32 nbl_mailbox_check_active_vf(struct nbl_adapter *adapter)
 {
 	struct nbl_dispatch_ops_tbl *disp_ops_tbl = NBL_ADAPTER_TO_DISP_OPS_TBL(adapter);
+	struct nbl_common_info *common = NBL_ADAPTER_TO_COMMON(adapter);
+	u16 pf_id = NBL_COMMON_TO_MGT_PF(common);
 
-	return disp_ops_tbl->ops->check_active_vf(NBL_ADAPTER_TO_DISP_MGT(adapter));
+	return disp_ops_tbl->ops->check_active_vf(NBL_ADAPTER_TO_DISP_MGT(adapter), &pf_id);
 }
 
 static void nbl_self_test(struct net_device *netdev, struct ethtool_test *eth_test, u64 *data)
 {
 	struct nbl_netdev_priv *priv = netdev_priv(netdev);
 	struct nbl_adapter *adapter = NBL_NETDEV_PRIV_TO_ADAPTER(priv);
+	struct nbl_service_mgt *serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
+	struct nbl_serv_net_resource_mgt *net_resource_mgt = NBL_SERV_MGT_TO_NET_RES_MGT(serv_mgt);
 	bool if_running = netif_running(netdev);
 	u32 active_vf;
 	s64 cur_time = 0;
@@ -2982,7 +3414,7 @@ static void nbl_self_test(struct net_device *netdev, struct ethtool_test *eth_te
 	cur_time = ktime_get_real_seconds();
 
 	/* test too frequently will cause to fail */
-	if (cur_time - priv->last_st_time < NBL_SELF_TEST_TIME_GAP) {
+	if (cur_time - net_resource_mgt->last_st_time < NBL_SELF_TEST_TIME_GAP) {
 		/* pass by defalut */
 		netdev_info(netdev, "Self test too fast, pass by default!");
 		data[NBL_ETH_TEST_REG] = 0;
@@ -3054,7 +3486,7 @@ static void nbl_self_test(struct net_device *netdev, struct ethtool_test *eth_te
 	}
 
 netdev_stop_failed:
-	priv->last_st_time = ktime_get_real_seconds();
+	net_resource_mgt->last_st_time = ktime_get_real_seconds();
 }
 
 static u32 nbl_get_priv_flags(struct net_device *netdev)
@@ -3070,17 +3502,17 @@ static u32 nbl_get_priv_flags(struct net_device *netdev)
 
 		if (nbl_gstrings_priv_flags[i].supported_by_capability) {
 			if (!disp_ops->get_product_fix_cap(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-							   capability_type))
+							   &capability_type))
 				continue;
 		}
 
-		if (test_bit(i, serv_mgt->flags))
+		if (test_bit(i, &serv_mgt->flags))
 			ret_flags |= BIT(count);
 		count++;
 	}
 
-	netdev_dbg(netdev, "get priv flag: 0x%08x, mgt flags: 0x%08x.\n",
-		   ret_flags, *(u32 *)serv_mgt->flags);
+	netdev_dbg(netdev, "get priv flag: 0x%08x, mgt flags: 0x%08lx.\n",
+		   ret_flags, serv_mgt->flags);
 
 	return ret_flags;
 }
@@ -3091,33 +3523,42 @@ static int nbl_set_priv_flags(struct net_device *netdev, u32 priv_flags)
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	unsigned int i;
 	int count = 0;
-	u32 new_flags = 0;
+	unsigned long new_flags = 0;
+	bool flag_set;
 
 	for (i = 0; i < NBL_PRIV_FLAG_ARRAY_SIZE; i++) {
 		enum nbl_fix_cap_type capability_type = nbl_gstrings_priv_flags[i].capability_type;
 
 		if (nbl_gstrings_priv_flags[i].supported_by_capability) {
 			if (!disp_ops->get_product_fix_cap(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-							   capability_type))
+							   &capability_type))
 				continue;
 		}
 
 		if (!nbl_gstrings_priv_flags[i].supported_modify &&
-		    (!((priv_flags & BIT(count))) != !test_bit(i, serv_mgt->flags))) {
+		    (!((priv_flags & BIT(count))) != !test_bit(i, &serv_mgt->flags))) {
 			netdev_err(netdev, "set priv flag: 0x%08x, flag %s not support modify\n",
 				   priv_flags, nbl_gstrings_priv_flags[i].flag_name);
 			return -EOPNOTSUPP;
 		}
 
-		if (priv_flags & BIT(count))
+		flag_set = false;
+		if (priv_flags & BIT(count)) {
+			flag_set = true;
 			new_flags |= BIT(i);
+		}
+
+		if ((serv_mgt->flags & BIT(i)) ^ (new_flags & BIT(i))) {
+			serv_mgt->flags = (serv_mgt->flags & ~BIT(i)) | (new_flags & BIT(i));
+			if (nbl_gstrings_priv_flags[i].post_func)
+				nbl_gstrings_priv_flags[i].post_func(netdev, flag_set);
+		}
+
 		count++;
 	}
-	*serv_mgt->flags = new_flags;
 
-	netdev_dbg(netdev, "set priv flag: 0x%08x, mgt flags: 0x%08x.\n",
-		   priv_flags, *(u32 *)serv_mgt->flags);
-
+	netdev_dbg(netdev, "set priv flag: 0x%08x, mgt flags: 0x%08lx.\n",
+		   priv_flags, serv_mgt->flags);
 	return 0;
 }
 
@@ -3210,13 +3651,13 @@ static void nbl_get_eth_ctrl_stats(struct net_device *netdev,
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_eth_ctrl_stats eth_ctrl_stats_info = {0};
 	struct nbl_dispatch_ops *disp_ops;
+	u32 eth_id = common->eth_id;
 	int ret = 0;
 
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
 	ret = disp_ops->get_eth_ctrl_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					   common->eth_id, &eth_ctrl_stats_info,
-					   sizeof(struct nbl_eth_ctrl_stats));
+					   &eth_id, &eth_ctrl_stats_info);
 	if (ret) {
 		netdev_err(netdev, "Get eth_ctrl_stats failed %d\n", ret);
 		return;
@@ -3235,13 +3676,13 @@ static void nbl_get_pause_stats(struct net_device *netdev, struct ethtool_pause_
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_pause_stats pause_stats_info = {0};
 	struct nbl_dispatch_ops *disp_ops;
+	u32 eth_id = common->eth_id;
 	int ret = 0;
 
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
 	ret = disp_ops->get_pause_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					common->eth_id, &pause_stats_info,
-					sizeof(struct nbl_pause_stats));
+					&eth_id, &pause_stats_info);
 	if (ret) {
 		netdev_err(netdev, "Get pause_stats failed %d\n", ret);
 		return;
@@ -3256,41 +3697,32 @@ static void nbl_get_eth_mac_stats(struct net_device *netdev,
 {
 	struct nbl_service_mgt *serv_mgt = NBL_NETDEV_TO_SERV_MGT(netdev);
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
-	struct nbl_dispatch_ops *disp_ops;
 	struct nbl_eth_mac_stats eth_mac_stats_info = {0};
+	struct nbl_dispatch_ops *disp_ops;
+	u32 eth_id = common->eth_id;
 	int ret = 0;
 
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
 	ret = disp_ops->get_eth_mac_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					  common->eth_id, &eth_mac_stats_info,
-					  sizeof(struct nbl_eth_mac_stats));
+					  &eth_id, &eth_mac_stats_info);
 	if (ret) {
 		netdev_err(netdev, "Get eth_mac_stats failed %d\n", ret);
 		return;
 	}
 
 	eth_mac_stats->FramesTransmittedOK = eth_mac_stats_info.frames_txd_ok;
-	eth_mac_stats->FramesReceivedOK = eth_mac_stats_info.frames_rxd_ok;
-	eth_mac_stats->OctetsTransmittedOK = eth_mac_stats_info.octets_txd_ok;
-	eth_mac_stats->OctetsReceivedOK = eth_mac_stats_info.octets_rxd_ok;
+	if (eth_mac_stats_info.frames_rxd_ok_is_valid)
+		eth_mac_stats->FramesReceivedOK = eth_mac_stats_info.frames_rxd_ok;
+	if (eth_mac_stats_info.octets_txd_ok_is_valid)
+		eth_mac_stats->OctetsTransmittedOK = eth_mac_stats_info.octets_txd_ok;
+	if (eth_mac_stats_info.octets_rxd_ok_is_valid)
+		eth_mac_stats->OctetsReceivedOK = eth_mac_stats_info.octets_rxd_ok;
 	eth_mac_stats->MulticastFramesXmittedOK = eth_mac_stats_info.multicast_frames_txd_ok;
 	eth_mac_stats->BroadcastFramesXmittedOK = eth_mac_stats_info.broadcast_frames_txd_ok;
 	eth_mac_stats->MulticastFramesReceivedOK = eth_mac_stats_info.multicast_frames_rxd_ok;
 	eth_mac_stats->BroadcastFramesReceivedOK = eth_mac_stats_info.broadcast_frames_rxd_ok;
 }
-
-static const struct ethtool_rmon_hist_range rmon_ranges[] = {
-	{    0,    64},
-	{   65,   127},
-	{  128,   255},
-	{  256,   511},
-	{  512,  1023},
-	{ 1024,  1518},
-	{ 1519,  2047},
-	{ 2048, 65535},
-	{},
-};
 
 static void nbl_get_rmon_stats(struct net_device *netdev,
 			       struct ethtool_rmon_stats *rmon_stats,
@@ -3300,41 +3732,39 @@ static void nbl_get_rmon_stats(struct net_device *netdev,
 	struct nbl_common_info *common = NBL_SERV_MGT_TO_COMMON(serv_mgt);
 	struct nbl_rmon_stats rmon_stats_info = {0};
 	struct nbl_dispatch_ops *disp_ops;
+	const struct ethtool_rmon_hist_range *rmon_ranges = NULL;
 	u64 *rx = rmon_stats_info.rmon_rx_range;
 	u64 *tx = rmon_stats_info.rmon_tx_range;
+	u32 eth_id = common->eth_id;
+	u8 i = 0;
+	u8 eth_stats_pkts_max = 0;
 	int ret = 0;
 
 	disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 
 	ret = disp_ops->get_rmon_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					  common->eth_id, &rmon_stats_info,
-					  sizeof(struct nbl_rmon_stats));
+					  &eth_id, &rmon_stats_info);
 	if (ret) {
 		netdev_err(netdev, "Get eth_mac_stats failed %d\n", ret);
 		return;
 	}
+
 	rmon_stats->undersize_pkts = rmon_stats_info.undersize_frames_rxd_goodfcs;
 	rmon_stats->oversize_pkts = rmon_stats_info.oversize_frames_rxd_goodfcs;
 	rmon_stats->fragments = rmon_stats_info.undersize_frames_rxd_badfcs;
 	rmon_stats->jabbers = rmon_stats_info.oversize_frames_rxd_badfcs;
 
-	rmon_stats->hist[0] = rx[ETHER_STATS_PKTS_64_OCTETS];
-	rmon_stats->hist[1] = rx[ETHER_STATS_PKTS_65_TO_127_OCTETS];
-	rmon_stats->hist[2] = rx[ETHER_STATS_PKTS_128_TO_255_OCTETS];
-	rmon_stats->hist[3] = rx[ETHER_STATS_PKTS_256_TO_511_OCTETS];
-	rmon_stats->hist[4] = rx[ETHER_STATS_PKTS_512_TO_1023_OCTETS];
-	rmon_stats->hist[5] = rx[ETHER_STATS_PKTS_1024_TO_1518_OCTETS];
-	rmon_stats->hist[6] = rx[ETHER_STATS_PKTS_1519_TO_2047_OCTETS];
-	rmon_stats->hist[7] = rx[ETHER_STATS_PKTS_2048_TO_MAX_OCTETS];
+	if (rmon_stats_info.rmon_rx_range2048_is_valid)
+		eth_stats_pkts_max = ETHER_STATS_PKTS_2048_TO_MAX_OCTETS;
+	else
+		eth_stats_pkts_max = ETHER_STATS_PKTS_1024_TO_MAX_OCTETS;
 
-	rmon_stats->hist_tx[0] = tx[ETHER_STATS_PKTS_64_OCTETS];
-	rmon_stats->hist_tx[1] = tx[ETHER_STATS_PKTS_65_TO_127_OCTETS];
-	rmon_stats->hist_tx[2] = tx[ETHER_STATS_PKTS_128_TO_255_OCTETS];
-	rmon_stats->hist_tx[3] = tx[ETHER_STATS_PKTS_256_TO_511_OCTETS];
-	rmon_stats->hist_tx[4] = tx[ETHER_STATS_PKTS_512_TO_1023_OCTETS];
-	rmon_stats->hist_tx[5] = tx[ETHER_STATS_PKTS_1024_TO_1518_OCTETS];
-	rmon_stats->hist_tx[6] = tx[ETHER_STATS_PKTS_1519_TO_2047_OCTETS];
-	rmon_stats->hist_tx[7] = tx[ETHER_STATS_PKTS_2048_TO_MAX_OCTETS];
+	for (i = ETHER_STATS_PKTS_64_OCTETS; i <= eth_stats_pkts_max; i++) {
+		rmon_stats->hist[i] = rx[i];
+		rmon_stats->hist_tx[i] = tx[i];
+	}
+
+	disp_ops->get_rmon_hist_range(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &rmon_ranges);
 	*range = rmon_ranges;
 }
 
@@ -3371,7 +3801,7 @@ static int nbl_set_fec_param(struct net_device *netdev, struct ethtool_fecparam 
 	}
 
 	autoneg = ((port_state.port_advertising & BIT(NBL_PORT_CAP_AUTONEG)) ||
-		   (port_state.port_caps & BIT(NBL_PORT_CAP_FEC_AUTONEG))) ?
+		   (port_state.port_caps & BIT_ULL(NBL_PORT_CAP_FEC_AUTONEG))) ?
 		   AUTONEG_ENABLE : AUTONEG_DISABLE;
 
 	/* check if the fec mode is supported */
@@ -3404,7 +3834,8 @@ static int nbl_set_fec_param(struct net_device *netdev, struct ethtool_fecparam 
 		}
 	}
 
-	if (fec_mode == net_resource_mgt->configured_fec) {
+	if (net_resource_mgt->configured_fec == fec_mode) {
+		net_resource_mgt->user_configured_fec = fec_mode;
 		netdev_err(netdev, "fec mode is not changed\n");
 		return 0;
 	}
@@ -3417,6 +3848,9 @@ static int nbl_set_fec_param(struct net_device *netdev, struct ethtool_fecparam 
 		}
 	}
 
+	if (test_bit(NBL_FLAG_NRZ_RS_FEC_544_SUPPORT, &serv_mgt->flags))
+		port_advertising.fec_sub_mode = NBL_PORT_NRZ_544;
+
 	port_advertising.eth_id = NBL_COMMON_TO_ETH_ID(serv_mgt->common);
 	port_advertising.active_fec = active_fec;
 	port_advertising.autoneg = (port_state.port_advertising & BIT(NBL_PORT_CAP_AUTONEG)) ?
@@ -3424,13 +3858,14 @@ static int nbl_set_fec_param(struct net_device *netdev, struct ethtool_fecparam 
 
 	/* update fec mode */
 	ret = disp_ops->set_port_advertising(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-					  &port_advertising);
+					     &port_advertising);
 	if (ret) {
 		netdev_err(netdev, "fec mode set failed %d\n", ret);
 		return ret;
 	}
 
 	net_resource_mgt->configured_fec = fec_mode;
+	net_resource_mgt->user_configured_fec = fec_mode;
 
 	return 0;
 }
@@ -3442,7 +3877,7 @@ static int nbl_get_fec_param(struct net_device *netdev, struct ethtool_fecparam 
 	struct nbl_port_state port_state = {0};
 	u32 fec = 0;
 	u32 active_fec = 0;
-	u8 autoneg = 0;
+	u8 fec_autoneg = 0;
 	int ret = 0;
 
 	ret = nbl_serv_get_port_state(serv_mgt, &port_state);
@@ -3452,13 +3887,12 @@ static int nbl_get_fec_param(struct net_device *netdev, struct ethtool_fecparam 
 	}
 
 	if (!port_state.module_inplace) {
-		netdev_err(netdev, " Optical module is not inplace\n");
+		netdev_err(netdev, "Optical module is not inplace\n");
 		return -EINVAL;
 	}
 
-	autoneg = ((port_state.port_advertising & BIT(NBL_PORT_CAP_AUTONEG)) ||
-		   (port_state.port_caps & BIT(NBL_PORT_CAP_FEC_AUTONEG))) ?
-		   AUTONEG_ENABLE : AUTONEG_DISABLE;
+	fec_autoneg = (port_state.port_advertising & BIT_ULL(NBL_PORT_CAP_FEC_AUTONEG)) &&
+		       (port_state.port_caps & BIT_ULL(NBL_PORT_CAP_FEC_AUTONEG));
 
 	if (port_state.active_fec == NBL_PORT_FEC_OFF)
 		active_fec = ETHTOOL_FEC_OFF;
@@ -3467,15 +3901,12 @@ static int nbl_get_fec_param(struct net_device *netdev, struct ethtool_fecparam 
 	if (port_state.active_fec ==  NBL_PORT_FEC_BASER)
 		active_fec = ETHTOOL_FEC_BASER;
 
-	if (net_resource_mgt->configured_fec)
-		fec = net_resource_mgt->configured_fec;
-	else if (autoneg)
+	if (net_resource_mgt->user_configured_fec)
+		fec = net_resource_mgt->user_configured_fec;
+	else if (fec_autoneg)
 		fec = ETHTOOL_FEC_AUTO;
 	else
 		fec = active_fec;
-
-	if (port_state.port_advertising & BIT(NBL_PORT_CAP_AUTONEG))
-		fec = ETHTOOL_FEC_AUTO;
 
 	fecparam->fec = fec;
 	fecparam->active_fec = active_fec;
@@ -3615,14 +4046,16 @@ nbl_rep_get_ethtool_stats(struct net_device *netdev, struct ethtool_stats *stats
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_netdev_priv *priv = netdev_priv(netdev);
 	struct nbl_rep_stats rep_stats = {0};
+	struct nbl_get_rep_stats_param rep_stats_prm = {0};
 	int i = 0;
 
-	disp_ops->get_rep_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				priv->rep->rep_vsi_id, &rep_stats, true);
+	rep_stats_prm.rep_vsi_id = priv->rep->rep_vsi_id;
+	rep_stats_prm.is_tx = true;
+	disp_ops->get_rep_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &rep_stats_prm, &rep_stats);
 	data[i++] = rep_stats.packets;
 	data[i++] = rep_stats.bytes;
-	disp_ops->get_rep_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-				priv->rep->rep_vsi_id, &rep_stats, false);
+	rep_stats_prm.is_tx = false;
+	disp_ops->get_rep_stats(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), &rep_stats_prm, &rep_stats);
 	data[i++] = rep_stats.packets;
 	data[i++] = rep_stats.bytes;
 	nbl_serv_get_rep_drop_stats(serv_mgt, priv->rep->rep_vsi_id, &rep_stats);
@@ -3702,6 +4135,7 @@ static int nbl_get_dump_data(struct net_device *netdev, struct ethtool_dump *dum
 	struct nbl_serv_net_resource_mgt *net_resource_mgt = serv_mgt->net_resource_mgt;
 	struct nbl_dispatch_ops *disp_ops = NBL_SERV_MGT_TO_DISP_OPS(serv_mgt);
 	struct nbl_diag_dump *dump_hdr = buffer;
+	struct nbl_ch_prm_get_perf_dump_data param;
 	struct nbl_diag_blk *dump_blk;
 
 	if (!adapter->init_param.caps.has_ctrl)
@@ -3716,8 +4150,7 @@ static int nbl_get_dump_data(struct net_device *netdev, struct ethtool_dump *dum
 	/* Dump driver version */
 	dump_blk = DIAG_GET_NEXT_BLK(dump_hdr);
 	dump_blk->type = NBL_DIAG_DRV_VERSION;
-	disp_ops->get_driver_version(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt), dump_blk->data,
-				     NBL_DRV_VER_SZ);
+	snprintf(dump_blk->data, NBL_DRV_VER_SZ, "%s", NBL_DRIVER_VERSION);
 	dump_blk->length = NBL_DRV_VER_SZ;
 	dump_hdr->total_length += DIAG_BLK_SZ(dump_blk->length);
 	dump_hdr->num_blocks++;
@@ -3733,9 +4166,10 @@ static int nbl_get_dump_data(struct net_device *netdev, struct ethtool_dump *dum
 	if (net_resource_mgt->dump_flag & NBL_DIAG_FLAG_PERFORMANCE) {
 		dump_blk = DIAG_GET_NEXT_BLK(dump_hdr);
 		dump_blk->type = NBL_DIAG_PERFORMANCE;
+		param.buffer = dump_blk->data;
+		param.size = net_resource_mgt->dump_perf_len;
 		dump_blk->length = disp_ops->get_perf_dump_data(NBL_SERV_MGT_TO_DISP_PRIV(serv_mgt),
-								dump_blk->data,
-								net_resource_mgt->dump_perf_len);
+								&param);
 		dump_hdr->total_length += DIAG_BLK_SZ(dump_blk->length);
 		dump_hdr->num_blocks++;
 		dump_hdr->flag |= NBL_DIAG_FLAG_PERFORMANCE;
@@ -3804,6 +4238,7 @@ do {												\
 	NBL_SERV_SET_ETHTOOL_OPS(get_sset_count, nbl_get_sset_count);				\
 	NBL_SERV_SET_ETHTOOL_OPS(get_ethtool_stats, nbl_get_ethtool_stats);			\
 	NBL_SERV_SET_ETHTOOL_OPS(get_module_eeprom, nbl_get_module_eeprom);			\
+	NBL_SERV_SET_ETHTOOL_OPS(get_module_eeprom_by_page, nbl_get_module_eeprom_by_page);	\
 	NBL_SERV_SET_ETHTOOL_OPS(get_module_info, nbl_get_module_info);				\
 	NBL_SERV_SET_ETHTOOL_OPS(get_eeprom_length, nbl_get_eeprom_length);			\
 	NBL_SERV_SET_ETHTOOL_OPS(get_eeprom, nbl_get_eeprom);					\
@@ -3854,6 +4289,7 @@ void nbl_serv_setup_ethtool_ops(struct nbl_service_ops *serv_ops)
 #define NBL_SERV_SET_ETHTOOL_OPS(name, func) do {serv_ops->NBL_NAME(name) = func; ; } while (0)
 	NBL_SERV_ETHTOOL_OPS_TBL;
 #undef  NBL_SERV_SET_ETHTOOL_OPS
+
 	serv_ops->get_eth_ctrl_stats = nbl_get_eth_ctrl_stats;
 	serv_ops->get_pause_stats = nbl_get_pause_stats;
 	serv_ops->get_eth_mac_stats = nbl_get_eth_mac_stats;

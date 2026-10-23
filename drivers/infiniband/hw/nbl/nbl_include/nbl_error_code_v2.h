@@ -1,0 +1,124 @@
+/* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
+/* Copyright (c) 2021, NEBULARMATRIX */
+
+#ifndef NBL_ERROR_CODE_V2_H
+#define NBL_ERROR_CODE_V2_H
+
+/* HW Error Code Begin */
+#define NBL_ERR_DEST_QPN 0x2
+#define NBL_ERR_CACHE_FLAG 0x3
+#define NBL_ERR_INV_QPC 0x4
+#define NBL_ERR_PDPA 0x5
+#define NBL_ERR_TVER 0x8
+#define NBL_ERR_SERVICE_TYPE 0x9
+#define NBL_ERR_QPC_STATE 0xA
+#define NBL_ERR_RX_PKT_QPC_MR_ERR 0xB
+#define NBL_ERR_RX_PKT_ERR_RC_OPCODE 0xC /* RXP packet*/
+#define NBL_ERR_RX_PKT_ERR_UD_OPCODE 0xD /* RXP packet*/
+#define NBL_ERR_RX_PKT_ERR_ATOMIC_BYTE_ALIGN 0xE /* RXP packet*/
+#define NBL_ERR_RX_PKT_ERR_OAQ_PI_CI 0xF /* RXP packet*/
+#define NBL_ERR_RX_PKT_ERR_RESPONER_SEND_REQ_OPCODE 0x10 /* RXP packet*/
+#define NBL_ERR_RX_PKT_ERR_WRITE_OPCODE 0x11 /* RXP packet*/
+#define NBL_ERR_RX_PKT_ERR_SEND_REQ_OPCODE 0x12 /* RXP packet*/
+#define NBL_ERR_RX_PKT_ERR_WRITE_REQ_OPCODE 0x13 /* RXP packet*/
+#define NBL_ERR_RX_PKT_ERR_WRITE_PKT_LEN 0x14 /* RXP packet*/
+#define NBL_ERR_RX_PKT_ERR_PKT_LEN 0x15 /* RXP packet*/
+#define NBL_ERR_RX_PKT_ERR_HW_FLAG 0x16 /* RXP packet*/
+#define NBL_ERR_RX_PKT_RECV_OPCODE_IN_RNR 0x17 /* RXP packet*/
+#define NBL_ERR_RX_PKT_REQ_PKT_LEN_ERR 0x1A /* RXP packet */
+#define NBL_ERR_RX_UD_RQE_ERR 0x1B /* RXP packet */
+#define NBL_ERR_RX_PKT_READ_RESP_PKT_LEN_OVERFLOW 0x1C /* RXP packet */
+#define NBL_ERR_RX_PKT_READ_RESP_PKT_LEN_ILLEGAL 0x1D /* RXP packet */
+#define NBL_ERR_RX_PKT_READ_RESP_PKT_LEN_TOOLONG 0x1E /* RXP packet */
+#define NBL_ERR_RX_PKT_READ_RESP_OPCODE_OUT_ORDER 0x1F /* RXP packet */
+#define NBL_ERR_RX_PKT_SEND_WRITE_REPEAT 0x20 /* RXP packet */
+#define NBL_ERR_RX_PKT_READ_ATOMIC_REPEAT_WITH_ACK 0x21 /* RXP packet */
+#define NBL_ERR_RX_PKT_READ_ATOMIC_REPEAT_NO_ACK 0x22 /* RXP packet */
+#define NBL_ERR_RX_PKT_LOST_REQ 0x23 /* RXP packet */
+#define NBL_ERR_RX_PKT_ERR_GOST_ACK 0x28 /* RXP packet */
+#define NBL_ERR_RX_PKT_REPEAT_RESP 0x29 /* RXP packet */
+#define NBL_ERR_RX_PKT_RECV_ACK_NEED_RAQ 0x2A /* RXP packet */
+#define NBL_ERR_RX_PKT_LOST_RSP_NEED_RAQ 0x2B /* RXP packet */
+#define NBL_ERR_RX_PKT_RECV_NACK_PSN_ERR_NEED_RAQ 0x2D /* RXP packet */
+#define NBL_ERR_RX_PKT_RECV_NACK_RNR_NAK_NEED_RAQ 0x2E /* RXP packet */
+#define NBL_ERR_RX_PKT_OUT_OF_ORDER 0x2F /* RXP packet */
+#define NBL_ERR_RX_RESP_RECV_NOT_PSN_SEQ_ERR_NAK 0x30 /* RXP packet */
+#define NBL_ERR_RNR_RETRY 0x31
+#define NBL_ERR_NAK_NOT_PSN_ERR1 0x33
+#define NBL_ERR_NAK_NOT_PSN_ERR2 0x34
+#define NBL_ERR_NAK_NOT_PSN_ERR3 0x35
+#define NBL_ERR_NAK_NOT_PSN_ERR4 0x36
+#define NBL_ERR_RX_MR_INDEX_ILLEGAL 0x38 /* RXMR */
+#define NBL_ERR_RX_MR_INVALID 0x39 /* RXMR */
+#define NBL_ERR_RX_MR_KEY_ILLEGAL 0x3A /* RXMR */
+#define NBL_ERR_RX_PD_MISS_MATCH 0x3B /* RXMR */
+#define NBL_ERR_RX_ACCESS_RIGHT_CHECK_ERR 0x3C /* RXMR */
+#define NBL_ERR_RX_BOUNDARY_CHECK_ERR 0x3D /* RXMR */
+#define NBL_ERR_RX_REMOTE_INV_PERMISSION_CHK_ERR 0x3E /* RXMR */
+#define NBL_ERR_RX_REMOTE_INV_WITH_MW_STILL_BIND 0x3F /* RXMR */
+#define NBL_ERR_RX_REMOTE_INV_TO_TYPE1_MW 0x40 /* RXMR */
+#define NBL_ERR_RX_MR_REQ_ERR 0x41 /* RXMR */
+#define NBL_ERR_RX_MR_RESP_ERR 0x42 /* RXMR */
+#define NBL_ERR_RX_MR_MRTC_ERR 0x43 /* RXMR */
+#define NBL_ERR_RX_MR_PBLC_INV 0x44 /* RXMR */
+#define NBL_ERR_RAQ_OVERFLOW 0x48
+#define NBL_ERR_RAQP_DROP_PKT 0x49
+#define NBL_ERR_SQ_FLUSH_COMPLETE	0x4A
+#define NBL_ERR_RQ_FLUSH_COMPLETE	0x4B
+#define NBL_ERR_SQ_RQ_LOAD_DIFF		0x4C
+#define NBL_ERR_SQ_RQ_LOAD_CNT		0x4D
+#define NBL_ERR_ARM_CQ_OVERFLOW		0x4E
+#define NBL_ERR_CQ_OVERFLOW			0x4F
+#define NBL_ERR_SQ_INVALID_OPCODE	0x55 /* txp err */
+#define NBL_ERR_SQ_PSN_ERR_RETRY	0x57 /* txp err */
+#define NBL_ERR_SQ_RTO_RETRY		0x5B /* txp err */
+#define NBL_ERR_TXMR_INDEX_ERR		0x60 /* txmr err */
+#define NBL_ERR_TX_MR_INVALID 0x61
+#define NBL_ERR_TX_MR_KEY_ILLEGAL 0x62
+#define NBL_ERR_TX_PD_MISS_MATCH 0x63
+#define NBL_ERR_TX_ACCESS_RIGHT_CHECK_ERR 0x64
+#define NBL_ERR_TX_BOUNDARY_CHECK_ERR 0x65
+#define NBL_ERR_TX_LOCAL_INV_TO_TYPE1_MW 0x66
+#define NBL_ERR_TX_REMOTE_INV_WITH_MW_STILL_BIND 0x67
+#define NBL_ERR_TX_MR_BIND_INV_MR 0x68
+#define NBL_ERR_TX_MR_BIND_INV_MW 0x69
+#define NBL_ERR_TX_MR_BIND_KEY_BUT_FIND_MW 0x6A
+#define NBL_ERR_TX_MR_BIND_KEY_BUT_FIND_MR 0x6B
+#define NBL_ERR_TX_MR_BIND_INV_MR_TYPE 0x6C
+#define NBL_ERR_TX_MR_BIND_INV_MW_TYPE 0x6D
+#define NBL_ERR_TX_MR_BIND_MR_ZERO_BASE 0x6E
+#define NBL_ERR_TX_MR_BIND_PD_INV 0x6F
+#define NBL_ERR_TX_MR_BIND_RIGHT_INV 0x70
+#define NBL_ERR_TXMR_BIND_BDY_ERR	0x71 /* txmr err */
+#define NBL_ERR_TX_MR_REQ_ERR 0x72
+#define NBL_ERR_TX_MR_RESP_ERR 0x73
+#define NBL_ERR_TX_MR_MRTC_ERR 0x74
+#define NBL_ERR_TX_MR_PBLC_INV 0x75
+#define NBL_ERR_TXMR_FMR_DISABLE	0x76 /* txmr err */
+#define NBL_ERR_QP_FLUSH_ERR		0x7E /* for SQ and RQ flush */
+#define NBL_ERR_CQ_LOAD_DIFF		0x7F
+/* Error Code V2, > 0x7F is V2 extend */
+#define NBL_ERR_V2_CQRESIZE_FIGURE	0x80 /* cq resize finish figure */
+#define NBL_ERR_V2_SRQ_LIMIT_REACH	0x81
+#define NBL_ERR_V2_SRQ_ABORTED_ERR	0x82
+#define NBL_ERR_V2_SRQ_INV_ERR		0x83 /* SRQN err OR SRQC st err */
+#define NBL_ERR_V2_SRQ_FATAL_ERR	0x84
+#define NBL_ERR_V2_INV_XRCETH		0x85 /* SRQN err, another way judgement */
+#define NBL_ERR_V2_XRC_DOMAIN_ERR	0x86 /* XRC Domain Error */
+#define NBL_ERR_V2_XRC_INV_PKT		0x87
+#define NBL_ERR_REM_INV_STAT_ERR 0x90
+#define NBL_ERR_REM_INV_PD_ERR 0x91
+#define NBL_ERR_REM_INV_KEY_ERR 0x92
+#define NBL_ERR_V2_CQP_EXEC_RESP 0xE0
+#define NBL_ERR_V2_CQP_FATAL 0xE1
+#define NBL_ERR_V2_CEQ_OVERFLOW 0xE2
+#define NBL_ERR_V2_CEQ_LOAD_PAGE 0xE3
+#define NBL_ERR_V2_AEQ_OVERFLOW 0xE4
+#define NBL_ERR_V2_AEQ_LOAD_PAGE 0xE5
+#define NBL_ERR_MAX_AEID			0x100 /* 256, 8bit error code */
+/* HW Error Code END */
+/* SW emulate error code BEGIN */
+#define NBL_ERR_SOFT_AEQ_LAST_WQE 0x101 /* hw has no last wqe soft chang id */
+/* SW emulate error code END */
+
+#endif /* NBL_ERROR_CODE_V2_H */
