@@ -9,6 +9,7 @@
 #include <linux/sched.h>
 #include <linux/kvm_host.h>
 #include <asm/fpsimd.h>
+#include <asm/virt.h>
 #include <asm/kvm_asm.h>
 #include <asm/kvm_hyp.h>
 #include <asm/kvm_mmu.h>
@@ -109,8 +110,17 @@ void kvm_arch_vcpu_load_fp(struct kvm_vcpu *vcpu)
  */
 void kvm_arch_vcpu_ctxflush_fp(struct kvm_vcpu *vcpu)
 {
-	if (test_thread_flag(TIF_FOREIGN_FPSTATE))
+	if (test_thread_flag(TIF_FOREIGN_FPSTATE)) {
 		*host_data_ptr(fp_owner) = FP_STATE_FREE;
+		if (is_pvm_mode()) {
+			__fpsimd_restore_state(&vcpu->arch.ctxt.fp_regs);
+#ifdef CONFIG_ENABLE_KVM_FPMR
+			if (kvm_has_fpmr(vcpu->kvm))
+				write_sysreg_s(__vcpu_sys_reg(vcpu, FPMR), SYS_FPMR);
+#endif
+			*host_data_ptr(fp_owner) = FP_STATE_GUEST_OWNED;
+		}
+	}
 }
 
 /*

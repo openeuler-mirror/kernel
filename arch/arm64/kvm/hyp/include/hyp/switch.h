@@ -337,7 +337,7 @@ static inline bool kvm_hyp_handle_fpsimd(struct kvm_vcpu *vcpu, u64 *exit_code)
 	u8 esr_ec;
 	u64 reg;
 
-	if (!system_supports_fpsimd())
+	if (!system_supports_fpsimd() || is_pvm_mode())
 		return false;
 
 	sve_guest = vcpu_has_sve(vcpu);
@@ -677,6 +677,8 @@ static inline bool kvm_hyp_handle_exit(struct kvm_vcpu *vcpu, u64 *exit_code,
 
 static inline void synchronize_vcpu_pstate(struct kvm_vcpu *vcpu, u64 *exit_code)
 {
+	u64 pstate;
+
 	/*
 	 * Check for the conditions of Cortex-A510's #2077057. When these occur
 	 * SPSR_EL2 can't be trusted, but isn't needed either as it is
@@ -688,9 +690,16 @@ static inline void synchronize_vcpu_pstate(struct kvm_vcpu *vcpu, u64 *exit_code
 	    vcpu->guest_debug & KVM_GUESTDBG_SINGLESTEP			&&
 	    *vcpu_cpsr(vcpu) & DBG_SPSR_SS				&&
 	    ESR_ELx_EC(read_sysreg_el2(SYS_ESR)) == ESR_ELx_EC_PAC)
-		write_sysreg_el2(*vcpu_cpsr(vcpu), SYS_SPSR);
+		write_sysreg_el2(is_pvm_mode() ?
+				 pvm_to_phys_pstate(*vcpu_cpsr(vcpu)) :
+				 *vcpu_cpsr(vcpu), SYS_SPSR);
 
-	vcpu->arch.ctxt.regs.pstate = read_sysreg_el2(SYS_SPSR);
+	pstate = read_sysreg_el2(SYS_SPSR);
+	if (is_pvm_mode()) {
+		/* The memory context owns the virtual mode and interrupt masks. */
+		pstate = pvm_restore_virtual_pstate(pstate, *vcpu_cpsr(vcpu));
+	}
+	vcpu->arch.ctxt.regs.pstate = pstate;
 }
 
 /*
@@ -745,9 +754,12 @@ guest:
 static inline void __kvm_unexpected_el2_exception(void)
 {
 	extern char __guest_exit_panic[];
+#ifdef __KVM_VHE_HYPERVISOR__
+	extern char __pvm_guest_exit_panic[];
+#endif
 	unsigned long addr, fixup;
 	struct kvm_exception_table_entry *entry, *end;
-	unsigned long elr_el2 = read_sysreg(elr_el2);
+	unsigned long elr = read_sysreg_el2(SYS_ELR);
 
 	entry = &__start___kvm_ex_table;
 	end = &__stop___kvm_ex_table;
@@ -756,17 +768,22 @@ static inline void __kvm_unexpected_el2_exception(void)
 		addr = (unsigned long)&entry->insn + entry->insn;
 		fixup = (unsigned long)&entry->fixup + entry->fixup;
 
-		if (addr != elr_el2) {
+		if (addr != elr) {
 			entry++;
 			continue;
 		}
 
-		write_sysreg(fixup, elr_el2);
+		write_sysreg_el2(fixup, SYS_ELR);
 		return;
 	}
 
 	/* Trigger a panic after restoring the hyp context. */
-	write_sysreg(__guest_exit_panic, elr_el2);
+	fixup = (unsigned long)__guest_exit_panic;
+#ifdef __KVM_VHE_HYPERVISOR__
+	if (is_pvm_mode())
+		fixup = (unsigned long)__pvm_guest_exit_panic;
+#endif
+	write_sysreg_el2(fixup, SYS_ELR);
 }
 
 #endif /* __ARM64_KVM_HYP_SWITCH_H__ */

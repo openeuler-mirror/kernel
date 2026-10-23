@@ -217,6 +217,8 @@ struct kvm_s2_mmu;
 
 DECLARE_KVM_NVHE_SYM(__kvm_hyp_init);
 DECLARE_KVM_HYP_SYM(__kvm_hyp_vector);
+DECLARE_KVM_VHE_SYM(__pvm_hyp_vector);
+DECLARE_KVM_VHE_SYM(__bp_harden_pvm_vecs);
 #define __kvm_hyp_init		CHOOSE_NVHE_SYM(__kvm_hyp_init)
 #define __kvm_hyp_vector	CHOOSE_HYP_SYM(__kvm_hyp_vector)
 
@@ -372,6 +374,17 @@ void __noreturn __cold nvhe_hyp_panic_handler(u64 esr, u64 spsr, u64 elr_virt,
 .macro restore_sp_el0 ctxt, tmp
 	ldr	\tmp,	  [\ctxt, #CPU_SP_EL0_OFFSET]
 	msr	sp_el0, \tmp
+.endm
+
+/* PVM mode: the L2 kernel's virtual SP_EL1 physically lives in sp_el0 */
+.macro save_sp_el1 ctxt, tmp
+	mrs	\tmp,	sp_el0
+	str	\tmp,	[\ctxt, #CPU_SP_EL1]
+.endm
+
+.macro restore_sp_el1 ctxt, tmp
+	ldr	\tmp,	[\ctxt, #CPU_SP_EL1]
+	msr	sp_el0,	\tmp
 .endm
 
 #endif

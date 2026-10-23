@@ -45,6 +45,9 @@ static inline u64 ctxt_midr_el1(struct kvm_cpu_context *ctxt)
 
 static inline void __sysreg_save_common_state(struct kvm_cpu_context *ctxt)
 {
+	if (is_pvm_mode())
+		return;
+
 	ctxt_sys_reg(ctxt, MDSCR_EL1)	= read_sysreg(mdscr_el1);
 #ifdef CONFIG_ACTLR_XCALL_XINT
 	ctxt_sys_reg(ctxt, ACTLR_EL1)   = read_sysreg(actlr_el1);
@@ -109,15 +112,18 @@ static inline void __sysreg_save_el2_return_state(struct kvm_cpu_context *ctxt)
 	 * Guest PSTATE gets saved at guest fixup time in all
 	 * cases. We still need to handle the nVHE host side here.
 	 */
-	if (!has_vhe() && ctxt->__hyp_running_vcpu)
+	if (!has_vhe() && !is_pvm_mode() && ctxt->__hyp_running_vcpu)
 		ctxt->regs.pstate	= read_sysreg_el2(SYS_SPSR);
 
-	if (cpus_have_final_cap(ARM64_HAS_RAS_EXTN))
+	if (cpus_have_final_cap(ARM64_HAS_RAS_EXTN) && !is_pvm_mode())
 		ctxt_sys_reg(ctxt, DISR_EL1) = read_sysreg_s(SYS_VDISR_EL2);
 }
 
 static inline void __sysreg_restore_common_state(struct kvm_cpu_context *ctxt)
 {
+	if (is_pvm_mode())
+		return;
+
 	write_sysreg(ctxt_sys_reg(ctxt, MDSCR_EL1),  mdscr_el1);
 #ifdef CONFIG_ACTLR_XCALL_XINT
 	write_sysreg(ctxt_sys_reg(ctxt, ACTLR_EL1),  actlr_el1);
@@ -237,10 +243,15 @@ static inline void __sysreg_restore_el2_return_state(struct kvm_cpu_context *ctx
 	if (!(mode & PSR_MODE32_BIT) && mode >= PSR_MODE_EL2t)
 		pstate = PSR_MODE_EL2h | PSR_IL_BIT;
 
+	if (is_pvm_mode()) {
+		/* Translate the virtual EL1 mode to EL0 */
+		pstate = pvm_to_phys_pstate(pstate);
+	}
+
 	write_sysreg_el2(ctxt->regs.pc,			SYS_ELR);
 	write_sysreg_el2(pstate,			SYS_SPSR);
 
-	if (cpus_have_final_cap(ARM64_HAS_RAS_EXTN))
+	if (cpus_have_final_cap(ARM64_HAS_RAS_EXTN) && !is_pvm_mode())
 		write_sysreg_s(ctxt_sys_reg(ctxt, DISR_EL1), SYS_VDISR_EL2);
 }
 

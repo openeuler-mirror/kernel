@@ -1627,6 +1627,15 @@ static u64 read_sanitised_id_aa64pfr0_el1(struct kvm_vcpu *vcpu,
 {
 	u64 val = read_sanitised_ftr_reg(SYS_ID_AA64PFR0_EL1);
 
+	/* PVM supports only AArch64, at both virtual EL0 and EL1. */
+	if (is_pvm_mode()) {
+		val &= ~(ID_AA64PFR0_EL1_EL0_MASK | ID_AA64PFR0_EL1_EL1_MASK);
+		val |= SYS_FIELD_PREP(ID_AA64PFR0_EL1, EL0,
+				      ID_AA64PFR0_EL1_ELx_64BIT_ONLY);
+		val |= SYS_FIELD_PREP(ID_AA64PFR0_EL1, EL1,
+				      ID_AA64PFR0_EL1_ELx_64BIT_ONLY);
+	}
+
 	if (!vcpu_has_sve(vcpu))
 		val &= ~ID_AA64PFR0_EL1_SVE_MASK;
 

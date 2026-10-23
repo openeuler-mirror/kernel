@@ -1060,6 +1060,9 @@ void kvm_vgic_flush_hwstate(struct kvm_vcpu *vcpu)
 
 void kvm_vgic_load(struct kvm_vcpu *vcpu)
 {
+	if (is_pvm_mode())
+		return;
+
 	if (unlikely(!irqchip_in_kernel(vcpu->kvm) ||
 		     !vgic_initialized(vcpu->kvm) ||
 		     vcpu_is_rec(vcpu))) {
@@ -1076,6 +1079,9 @@ void kvm_vgic_load(struct kvm_vcpu *vcpu)
 
 void kvm_vgic_put(struct kvm_vcpu *vcpu)
 {
+	if (is_pvm_mode())
+		return;
+
 	if (unlikely(!irqchip_in_kernel(vcpu->kvm) ||
 		     !vgic_initialized(vcpu->kvm) ||
 		     vcpu_is_rec(vcpu))) {

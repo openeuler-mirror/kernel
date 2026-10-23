@@ -33,9 +33,118 @@ DEFINE_PER_CPU(struct kvm_host_data, kvm_host_data);
 DEFINE_PER_CPU(struct kvm_cpu_context, kvm_hyp_ctxt);
 DEFINE_PER_CPU(unsigned long, kvm_hyp_vector);
 
+/* PVM mode: the SCTLR_EL1 value the guest runs with on this CPU */
+DEFINE_PER_CPU(u64, kvm_pvm_run_sctlr);
+
+/*
+ * SCTLR_EL1 bits taken from the guest: those that only control EL0, where the
+ * guest runs.  All other bits also control the host, which handles guest exits
+ * at EL1 under the guest-run value until __pvm_guest_exit() restores its own, so
+ * they keep the host value.  EE, for instance, sets the endianness of the
+ * host's data accesses and translation table walks.
+ */
+#define PVM_SCTLR_GUEST		(SCTLR_EL1_SA0 | SCTLR_EL1_CP15BEN | \
+				 SCTLR_EL1_ITD | SCTLR_EL1_SED | \
+				 SCTLR_EL1_EnRCTX | SCTLR_EL1_E0E | \
+				 SCTLR_EL1_nTLSMD | SCTLR_EL1_LSMAOE | \
+				 SCTLR_EL1_BT0 | SCTLR_EL1_TCF0_MASK | \
+				 SCTLR_EL1_ATA0 | SCTLR_EL1_TWEDEn | \
+				 SCTLR_EL1_TWEDEL_MASK | SCTLR_EL1_MSCEn | \
+				 SCTLR_EL1_EnASR | SCTLR_EL1_EnAS0 | \
+				 SCTLR_EL1_EnALS)
+
+/*
+ * SCTLR_EL1 bits forced on for the guest run, whatever the guest configured:
+ *  M:           PVM has no stage 2, so stage 1 is the only translation
+ *               between the guest and host memory.
+ *  C, I:        the host maps guest memory cacheable; keep the guest's
+ *               accesses cacheable as well, so the attributes never mismatch.
+ *  UCI:         the guest kernel runs at EL0 but maintains the caches by VA
+ *               as an EL1 kernel would; allow it instead of trapping each one.
+ *  DZE:         likewise for DC ZVA.
+ */
+#define PVM_SCTLR_FLAGS1	(SCTLR_EL1_M | SCTLR_EL1_C | \
+				 SCTLR_EL1_I | SCTLR_EL1_UCI | \
+				 SCTLR_EL1_DZE)
+
+/*
+ * SCTLR_EL1 bits forced off for the guest run:
+ *  UCT:         trap EL0 reads of CTR_EL0, so the guest sees the VM's value.
+ *  nTWI, nTWE:  trap WFI and WFE, so an idle vCPU blocks in KVM instead of
+ *               stalling the physical CPU.
+ *  SPAN:        set PSTATE.PAN on exception entry to EL1, where the host
+ *               handles guest exits, so the host does not reach
+ *               EL0-accessible guest memory by accident.
+ *  ITFSB, EPAN: these only affect EL1 behaviour, that is, the host while it
+ *               handles guest exits.
+ *  UMA:         trap EL0 DAIF accesses, so that they are emulated against
+ *               the virtual PSTATE.
+ *  EnIA, EnIB, EnDA, EnDB:
+ *               PVM does not switch the pointer authentication keys, so the
+ *               guest would sign and authenticate with the host's keys.
+ */
+#define PVM_SCTLR_FLAGS2	(SCTLR_EL1_UCT | SCTLR_EL1_nTWI | \
+				 SCTLR_EL1_nTWE | SCTLR_EL1_SPAN | \
+				 SCTLR_EL1_ITFSB | SCTLR_EL1_EPAN | \
+				 SCTLR_EL1_UMA | SCTLR_EL1_EnIA | \
+				 SCTLR_EL1_EnIB | SCTLR_EL1_EnDA | \
+				 SCTLR_EL1_EnDB)
+
+/*
+ * The guest-run TCR_EL1 describes the page tables installed for the run,
+ * which the host side builds, not the guest's own: it is the host's value,
+ * with these bits forced off:
+ *  E0PD1:       the guest kernel runs at EL0 in the TTBR1 range, where E0PD1
+ *               would fault every one of its accesses.
+ * TCR2_EL1, PIR_EL1 and PIRE0_EL1 also describe the installed page tables, so
+ * they are not switched at all and keep the host's value.
+ */
+#define PVM_TCR_FLAGS		TCR_E0PD1
+
+/*
+ * The guest-run CPACR_EL1 keeps the host's EL1 controls, as the host handles
+ * guest exits at EL1.  Physical EL0 FP/SIMD access follows the guest's
+ * virtual EL and FPEN.  These EL0 enables are forced off:
+ *  ZEN, SMEN:   SVE and SME state is not preserved for the guest.
+ */
+#define PVM_CPACR_FLAGS		(CPACR_EL1_ZEN_EL0EN | \
+				 CPACR_EL1_SMEN_EL0EN)
+
 static void __activate_traps(struct kvm_vcpu *vcpu)
 {
 	u64 val;
+
+	if (is_pvm_mode()) {
+		struct kvm_cpu_context *ctxt = &vcpu->arch.ctxt;
+		u64 sctlr, tcr, cpacr, fpen;
+
+		sctlr = ctxt_sys_reg(ctxt, SCTLR_EL1) & PVM_SCTLR_GUEST;
+		sctlr |= read_sysreg_el2(SYS_SCTLR) & ~PVM_SCTLR_GUEST;
+		sctlr |= PVM_SCTLR_FLAGS1;
+		sctlr &= ~PVM_SCTLR_FLAGS2;
+		/*
+		 * __pvm_guest_enter() installs it right before the ERET: compiled
+		 * code, with its pointer authentication, never runs under it.
+		 */
+		__this_cpu_write(kvm_pvm_run_sctlr, sctlr);
+
+		tcr = read_sysreg_el2(SYS_TCR) & ~PVM_TCR_FLAGS;
+		write_sysreg_el2(tcr, SYS_TCR);
+
+		cpacr = read_sysreg_el2(SYS_CPACR) & ~CPACR_EL1_FPEN_EL0EN;
+		fpen = ctxt_sys_reg(ctxt, CPACR_EL1) & CPACR_ELx_FPEN;
+		/* Guest EL1 permission must also be enabled at physical EL0. */
+		if (fpen == CPACR_ELx_FPEN ||
+		    (fpen == CPACR_EL1_FPEN_EL1EN && vcpu_mode_priv(vcpu)))
+			cpacr |= CPACR_EL1_FPEN_EL0EN;
+		/* PVM does not virtualize trace; trap trace register accesses. */
+		cpacr |= CPACR_ELx_TTA;
+		cpacr &= ~PVM_CPACR_FLAGS;
+		write_sysreg(cpacr, cpacr_el1);
+
+		write_sysreg(__this_cpu_read(kvm_hyp_vector), vbar_el1);
+		return;
+	}
 
 	___activate_traps(vcpu);
 
@@ -92,6 +201,13 @@ NOKPROBE_SYMBOL(__activate_traps);
 static void __deactivate_traps(struct kvm_vcpu *vcpu)
 {
 	const char *host_vectors = vectors;
+
+	if (is_pvm_mode()) {
+		if (!arm64_kernel_unmapped_at_el0())
+			host_vectors = __this_cpu_read(this_cpu_vector);
+		write_sysreg(host_vectors, vbar_el1);
+		return;
+	}
 
 	___deactivate_traps(vcpu);
 
@@ -199,7 +315,25 @@ static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, u64 *exit_code)
 	return __fixup_guest_exit(vcpu, exit_code, hyp_exit_handlers);
 }
 
-/* Switch to the guest for VHE systems running in EL2 */
+static void __sysreg_save_host_state_pvm(struct kvm_cpu_context *ctxt)
+{
+	if (!is_pvm_mode())
+		return;
+
+	ctxt_sys_reg(ctxt, TCR_EL1) = read_sysreg_el2(SYS_TCR);
+	ctxt_sys_reg(ctxt, CPACR_EL1) = read_sysreg_el2(SYS_CPACR);
+}
+
+static void __sysreg_restore_host_state_pvm(struct kvm_cpu_context *ctxt)
+{
+	if (!is_pvm_mode())
+		return;
+
+	write_sysreg_el2(ctxt_sys_reg(ctxt, TCR_EL1), SYS_TCR);
+	write_sysreg_el2(ctxt_sys_reg(ctxt, CPACR_EL1), SYS_CPACR);
+}
+
+/* Run a guest using the VHE or PVM context switch. */
 static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
 {
 	struct kvm_cpu_context *host_ctxt;
@@ -211,6 +345,8 @@ static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
 	guest_ctxt = &vcpu->arch.ctxt;
 
 	sysreg_save_host_state_vhe(host_ctxt);
+
+	__sysreg_save_host_state_pvm(host_ctxt);
 
 	/*
 	 * ARM erratum 1165522 requires us to configure both stage 1 and
@@ -236,7 +372,10 @@ static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
 
 	do {
 		/* Jump in the fire! */
-		exit_code = __guest_enter(vcpu);
+		if (is_pvm_mode())
+			exit_code = __pvm_guest_enter(vcpu);
+		else
+			exit_code = __guest_enter(vcpu);
 
 		/* And we're baaack! */
 	} while (fixup_guest_exit(vcpu, &exit_code));
@@ -244,6 +383,8 @@ static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
 	sysreg_save_guest_state_vhe(guest_ctxt);
 
 	__deactivate_traps(vcpu);
+
+	__sysreg_restore_host_state_pvm(host_ctxt);
 
 	sysreg_restore_host_state_vhe(host_ctxt);
 
@@ -299,7 +440,13 @@ static void __hyp_call_panic(u64 spsr, u64 elr, u64 par)
 	vcpu = host_ctxt->__hyp_running_vcpu;
 
 	__deactivate_traps(vcpu);
+	__sysreg_restore_host_state_pvm(host_ctxt);
 	sysreg_restore_host_state_vhe(host_ctxt);
+
+	if (is_pvm_mode())
+		panic("PVM panic at EL1:\n"
+		      "PS:%08llx PC:%016llx ESR_EL1:%08llx\nFAR_EL1:%016llx PAR_EL1:%016llx\nVCPU:%p\n",
+		      spsr, elr, read_sysreg_el2(SYS_ESR), read_sysreg_el2(SYS_FAR), par, vcpu);
 
 	panic("HYP panic:\nPS:%08llx PC:%016llx ESR:%08llx\nFAR:%016llx HPFAR:%016llx PAR:%016llx\nVCPU:%p\n",
 	      spsr, elr,

@@ -158,8 +158,15 @@ static inline bool is_hyp_nvhe(void)
 	return is_hyp_mode_available() && !is_kernel_in_hyp_mode();
 }
 
-static inline bool is_pvm_mode(void)
+static __always_inline bool is_pvm_mode(void)
 {
+	/*
+	 * PVM never runs the nVHE hyp code, which must not reference the
+	 * host-only PVM static key either.
+	 */
+	if (is_nvhe_hyp_code())
+		return false;
+
 	return static_branch_likely(&kvm_pvm_is_available);
 }
 

@@ -183,6 +183,42 @@ static __always_inline unsigned long *vcpu_cpsr(const struct kvm_vcpu *vcpu)
 	return (unsigned long *)&vcpu_gp_regs(vcpu)->pstate;
 }
 
+/*
+ * PVM DAIF virtualization: the L2 guest's DAIF mask bits live only in
+ * ctxt (regs.pstate); the physical eret target always runs EL0 with DAIF
+ * forced open, so EL1-targeted physical/virtual interrupts are never
+ * masked while L2 executes (DDI0487M.c D1.4.6.4.1 RXBYXL / D1.4.6.4.2
+ * RSNLJH: target-EL1 interrupts are maskable by PSTATE.{A,I} at EL0).
+ * Clear the DAIF field on every physical SPSR_EL2 write; set it back
+ * from ctxt on every read.
+ */
+static __always_inline unsigned long pvm_clear_daif(unsigned long pstate)
+{
+	return pstate & ~(PSR_D_BIT | PSR_A_BIT | PSR_I_BIT | PSR_F_BIT);
+}
+
+static __always_inline unsigned long pvm_set_daif(unsigned long phys,
+						  unsigned long virt)
+{
+	return (phys & ~(PSR_D_BIT | PSR_A_BIT | PSR_I_BIT | PSR_F_BIT)) |
+		(virt & (PSR_D_BIT | PSR_A_BIT | PSR_I_BIT | PSR_F_BIT));
+}
+
+/* Keep virtual mode and interrupt masks in memory, never in the EL0 target. */
+static __always_inline unsigned long pvm_restore_virtual_pstate(unsigned long phys,
+								unsigned long virt)
+{
+	unsigned long mask = PSR_MODE_MASK | PSR_MODE32_BIT |
+			     PSR_D_BIT | PSR_A_BIT | PSR_I_BIT | PSR_F_BIT;
+
+	return (phys & ~mask) | (virt & mask);
+}
+
+static __always_inline unsigned long pvm_to_phys_pstate(unsigned long virt)
+{
+	return pvm_clear_daif((virt & ~PSR_MODE_MASK) | PSR_MODE_EL0t);
+}
+
 static __always_inline bool vcpu_mode_is_32bit(const struct kvm_vcpu *vcpu)
 {
 	return !!(*vcpu_cpsr(vcpu) & PSR_MODE32_BIT);

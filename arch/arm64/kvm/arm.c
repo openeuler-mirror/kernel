@@ -256,7 +256,8 @@ int kvm_vm_ioctl_enable_cap(struct kvm *kvm,
 		break;
 	case KVM_CAP_ARM_MTE:
 		mutex_lock(&kvm->lock);
-		if (!system_supports_mte() || kvm->created_vcpus) {
+		if (!system_supports_mte() || is_pvm_mode() ||
+		    kvm->created_vcpus) {
 			r = -EINVAL;
 		} else {
 			r = 0;
@@ -625,7 +626,7 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 		r = 1;
 		break;
 	case KVM_CAP_ARM_MTE:
-		r = system_supports_mte();
+		r = system_supports_mte() && !is_pvm_mode();
 		break;
 	case KVM_CAP_STEAL_TIME:
 		if (kvm_is_realm(kvm))
@@ -634,7 +635,7 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 			r = kvm_arm_pvtime_supported();
 		break;
 	case KVM_CAP_ARM_EL1_32BIT:
-		r = cpus_have_const_cap(ARM64_HAS_32BIT_EL1);
+		r = cpus_have_const_cap(ARM64_HAS_32BIT_EL1) && !is_pvm_mode();
 		break;
 	case KVM_CAP_GUEST_DEBUG_HW_BPS:
 		r = kvm_is_realm(kvm) ? 0 : get_num_brps();
@@ -654,12 +655,14 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 	case KVM_CAP_ARM_SVE:
 		if (kvm_is_realm(kvm))
 			r = kvm_rme_supports_sve();
+		else if (is_pvm_mode())
+			r = 0;
 		else
 			r = system_supports_sve();
 		break;
 	case KVM_CAP_ARM_PTRAUTH_ADDRESS:
 	case KVM_CAP_ARM_PTRAUTH_GENERIC:
-		r = system_has_full_ptr_auth();
+		r = system_has_full_ptr_auth() && !is_pvm_mode();
 		break;
 	case KVM_CAP_ARM_EAGER_SPLIT_CHUNK_SIZE:
 		if (kvm)
@@ -725,7 +728,7 @@ struct kvm *kvm_arch_alloc_vm(void)
 {
 	size_t sz = sizeof(struct kvm);
 
-	if (!has_vhe())
+	if (!has_vhe() && !is_pvm_mode())
 		return kzalloc(sz, GFP_KERNEL_ACCOUNT);
 
 	return __vmalloc(sz, GFP_KERNEL_ACCOUNT | __GFP_HIGHMEM | __GFP_ZERO);
@@ -1174,7 +1177,7 @@ void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 	if (vcpu_is_rec(vcpu))
 		return;
 
-	if (has_vhe())
+	if (has_vhe() || is_pvm_mode())
 		kvm_vcpu_load_sysregs_vhe(vcpu);
 	kvm_arch_vcpu_load_fp(vcpu);
 	kvm_vcpu_pmu_restore_guest(vcpu);
@@ -1214,7 +1217,7 @@ void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
 
 	kvm_arch_vcpu_put_debug_state_flags(vcpu);
 	kvm_arch_vcpu_put_fp(vcpu);
-	if (has_vhe())
+	if (has_vhe() || is_pvm_mode())
 		kvm_vcpu_put_sysregs_vhe(vcpu);
 
 	kvm_vcpu_pmu_restore_host(vcpu);
@@ -2022,8 +2025,19 @@ static unsigned long system_supported_vcpu_features(struct kvm *kvm)
 {
 	unsigned long features = KVM_VCPU_VALID_FEATURES;
 
-	if (!cpus_have_final_cap(ARM64_HAS_32BIT_EL1))
+	/* PVM runs the guest EL1 at EL0 and can only project AArch64 modes */
+	if (!cpus_have_final_cap(ARM64_HAS_32BIT_EL1) || is_pvm_mode())
 		clear_bit(KVM_ARM_VCPU_EL1_32BIT, &features);
+
+	/* PVM does not switch the pointer authentication keys */
+	if (is_pvm_mode()) {
+		clear_bit(KVM_ARM_VCPU_PTRAUTH_ADDRESS, &features);
+		clear_bit(KVM_ARM_VCPU_PTRAUTH_GENERIC, &features);
+	}
+
+	/* PVM preserves only the FPSIMD state */
+	if (is_pvm_mode())
+		clear_bit(KVM_ARM_VCPU_SVE, &features);
 
 	if (!kvm_is_realm(kvm))
 		clear_bit(KVM_ARM_VCPU_REC, &features);
@@ -2820,10 +2834,16 @@ static int kvm_init_vector_slots(void)
 	int err;
 	void *base;
 
-	base = kern_hyp_va(kvm_ksym_ref(__kvm_hyp_vector));
+	if (is_pvm_mode())
+		base = __pvm_hyp_vector;
+	else
+		base = kern_hyp_va(kvm_ksym_ref(__kvm_hyp_vector));
 	kvm_init_vector_slot(base, HYP_VECTOR_DIRECT);
 
-	base = kern_hyp_va(kvm_ksym_ref(__bp_harden_hyp_vecs));
+	if (is_pvm_mode())
+		base = __bp_harden_pvm_vecs;
+	else
+		base = kern_hyp_va(kvm_ksym_ref(__bp_harden_hyp_vecs));
 	kvm_init_vector_slot(base, HYP_VECTOR_SPECTRE_DIRECT);
 
 	/* PVM uses the kernel mappings, not an EL2 idmapped trampoline. */
