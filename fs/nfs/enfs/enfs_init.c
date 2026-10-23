@@ -3,8 +3,15 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2025-2025. All rights reserved.
  */
 #include <linux/module.h>
+#include <linux/dcache.h>
+#include <linux/err.h>
+#include <linux/limits.h>
+#include <linux/ratelimit.h>
+#include <linux/slab.h>
+#include <linux/sunrpc/svc_xprt.h>
 #include <linux/sunrpc/sched.h>
 #include <linux/sunrpc/clnt.h>
+#include <linux/tracepoint.h>
 #include <linux/nfs.h>
 #include <linux/nfs4.h>
 #include <linux/nfs3.h>
@@ -22,6 +29,199 @@
 #include "dns_internal.h"
 #include "shard.h"
 #include "enfs_config.h"
+
+#if IS_ENABLED(CONFIG_NFSD) && defined(CONFIG_TRACEPOINTS)
+#include "../../nfsd/export.h"
+#include "../../nfsd/nfsfh.h"
+#endif
+
+#ifdef CONFIG_TRACEPOINTS
+static bool nfsd_link_debug = true;
+module_param(nfsd_link_debug, bool, 0644);
+MODULE_PARM_DESC(nfsd_link_debug,
+		 "Log NFSD TCP/RDMA connection events (default: on)");
+
+static struct tracepoint *enfs_nfsd_accept_tp;
+static struct tracepoint *enfs_nfsd_detach_tp;
+#if IS_ENABLED(CONFIG_NFSD)
+static bool nfsd_export_debug;
+module_param(nfsd_export_debug, bool, 0644);
+MODULE_PARM_DESC(nfsd_export_debug,
+		 "Log observed NFSD client/export requests (default: off)");
+
+static struct tracepoint *enfs_nfsd_fh_verify_tp;
+static DEFINE_RATELIMIT_STATE(enfs_nfsd_export_rs, 5 * HZ, 10);
+#endif
+
+static bool enfs_nfsd_addr_valid(const struct sockaddr_storage *addr,
+				 size_t len)
+{
+	if (addr->ss_family == AF_INET)
+		return len >= sizeof(struct sockaddr_in);
+	if (addr->ss_family == AF_INET6)
+		return len >= sizeof(struct sockaddr_in6);
+	return false;
+}
+
+static void enfs_nfsd_link_log(const struct svc_xprt *xprt,
+			       const char *state)
+{
+	const char *proto = xprt->xpt_class->xcl_name;
+
+	if (!READ_ONCE(nfsd_link_debug) || !xprt->xpt_server ||
+	    strcmp(xprt->xpt_server->sv_name, "nfsd"))
+		return;
+	if (strcmp(proto, "tcp") && strcmp(proto, "rdma"))
+		return;
+	if (!enfs_nfsd_addr_valid(&xprt->xpt_remote, xprt->xpt_remotelen) ||
+	    !enfs_nfsd_addr_valid(&xprt->xpt_local, xprt->xpt_locallen))
+		return;
+
+	enfs_log_info("nfsd %pISpc -> %pISpc %s %s\n",
+		      (struct sockaddr *)&xprt->xpt_remote,
+		      (struct sockaddr *)&xprt->xpt_local,
+		      !strcmp(proto, "tcp") ? "TCP" : "RDMA", state);
+}
+
+static void enfs_nfsd_link_accept(void *data, const struct svc_xprt *xprt,
+				  const char *service)
+{
+	if (!strcmp(service, "nfsd"))
+		enfs_nfsd_link_log(xprt, "CONNECTED");
+}
+
+static void enfs_nfsd_link_detach(void *data, const struct svc_xprt *xprt)
+{
+	enfs_nfsd_link_log(xprt, "CLOSED");
+}
+
+#if IS_ENABLED(CONFIG_NFSD)
+static void enfs_nfsd_export_access(void *data, const struct svc_rqst *rqstp,
+				    const struct svc_fh *fhp, umode_t type,
+				    int access)
+{
+	const struct svc_xprt *xprt = rqstp->rq_xprt;
+	char *buf, *path;
+
+	if (!READ_ONCE(nfsd_export_debug) || !xprt || !fhp->fh_export ||
+	    !enfs_nfsd_addr_valid(&xprt->xpt_remote, xprt->xpt_remotelen) ||
+	    !enfs_nfsd_addr_valid(&xprt->xpt_local, xprt->xpt_locallen) ||
+	    !__ratelimit(&enfs_nfsd_export_rs))
+		return;
+
+	buf = kmalloc(PATH_MAX, GFP_ATOMIC);
+	if (!buf)
+		return;
+	path = d_path(&fhp->fh_export->ex_path, buf, PATH_MAX);
+	if (!IS_ERR(path))
+		enfs_log_info("nfsd client=%pISpc server=%pISpc export=%s\n",
+			      (struct sockaddr *)&xprt->xpt_remote,
+			      (struct sockaddr *)&xprt->xpt_local, path);
+	kfree(buf);
+}
+
+static void enfs_nfsd_export_unbind(void)
+{
+	if (enfs_nfsd_fh_verify_tp) {
+		tracepoint_probe_unregister(enfs_nfsd_fh_verify_tp,
+					    enfs_nfsd_export_access, NULL);
+		enfs_nfsd_fh_verify_tp = NULL;
+	}
+}
+#else
+static inline void enfs_nfsd_export_unbind(void) { }
+#endif
+
+static void enfs_nfsd_link_unbind(void)
+{
+	if (enfs_nfsd_accept_tp) {
+		tracepoint_probe_unregister(enfs_nfsd_accept_tp,
+					    enfs_nfsd_link_accept, NULL);
+		enfs_nfsd_accept_tp = NULL;
+	}
+	if (enfs_nfsd_detach_tp) {
+		tracepoint_probe_unregister(enfs_nfsd_detach_tp,
+					    enfs_nfsd_link_detach, NULL);
+		enfs_nfsd_detach_tp = NULL;
+	}
+}
+
+static void enfs_nfsd_link_bind(struct tracepoint *tp, void *data)
+{
+	if (!enfs_nfsd_accept_tp && !strcmp(tp->name, "svc_xprt_accept")) {
+		if (!tracepoint_probe_register(tp, enfs_nfsd_link_accept, NULL))
+			enfs_nfsd_accept_tp = tp;
+	} else if (!enfs_nfsd_detach_tp &&
+		   !strcmp(tp->name, "svc_xprt_detach")) {
+		if (!tracepoint_probe_register(tp, enfs_nfsd_link_detach, NULL))
+			enfs_nfsd_detach_tp = tp;
+	}
+#if IS_ENABLED(CONFIG_NFSD)
+	if (!enfs_nfsd_fh_verify_tp &&
+	    !strcmp(tp->name, "nfsd_fh_verify")) {
+		if (!tracepoint_probe_register(tp, enfs_nfsd_export_access,
+					       NULL))
+			enfs_nfsd_fh_verify_tp = tp;
+	}
+#endif
+}
+
+#ifdef CONFIG_MODULES
+static bool enfs_nfsd_notifier_registered;
+
+static int enfs_nfsd_tracepoint_notify(struct notifier_block *nb,
+				       unsigned long action, void *data)
+{
+	struct module *mod = ((struct tp_module *)data)->mod;
+	unsigned int i;
+
+	if (strcmp(mod->name, "sunrpc") && strcmp(mod->name, "nfsd"))
+		return NOTIFY_DONE;
+	if (action == MODULE_STATE_COMING) {
+		for (i = 0; i < mod->num_tracepoints; i++)
+			enfs_nfsd_link_bind(
+				tracepoint_ptr_deref(&mod->tracepoints_ptrs[i]), NULL);
+	} else if (action == MODULE_STATE_GOING) {
+		if (!strcmp(mod->name, "sunrpc"))
+			enfs_nfsd_link_unbind();
+		else
+			enfs_nfsd_export_unbind();
+	}
+	return NOTIFY_OK;
+}
+
+static struct notifier_block enfs_nfsd_tracepoint_notifier = {
+	.notifier_call = enfs_nfsd_tracepoint_notify,
+};
+#endif
+
+static void enfs_nfsd_link_debug_init(void)
+{
+	for_each_kernel_tracepoint(enfs_nfsd_link_bind, NULL);
+#ifdef CONFIG_MODULES
+	if (!register_tracepoint_module_notifier(
+			&enfs_nfsd_tracepoint_notifier))
+		enfs_nfsd_notifier_registered = true;
+#endif
+	if (!enfs_nfsd_accept_tp || !enfs_nfsd_detach_tp)
+		enfs_log_error("NFSD link tracepoints unavailable\n");
+}
+
+static void enfs_nfsd_link_debug_exit(void)
+{
+#ifdef CONFIG_MODULES
+	if (enfs_nfsd_notifier_registered)
+		unregister_tracepoint_module_notifier(
+			&enfs_nfsd_tracepoint_notifier);
+#endif
+	enfs_nfsd_link_unbind();
+	enfs_nfsd_export_unbind();
+	tracepoint_synchronize_unregister();
+}
+#else
+static inline void enfs_nfsd_link_debug_init(void) { }
+static inline void enfs_nfsd_link_debug_exit(void) { }
+#endif
 
 static struct enfs_adapter_ops enfs_adapter = {
 	.name = "enfs",
@@ -112,11 +312,13 @@ static int __init init_enfs(void)
 		return -1;
 	}
 
+	enfs_nfsd_link_debug_init();
 	return 0;
 }
 
 static void __exit exit_enfs(void)
 {
+	enfs_nfsd_link_debug_exit();
 	enfs_lookupcache_fini();
 	init_helper_finalize(init_entry, ARRAY_SIZE(init_entry));
 	enfs_adapter_unregister(&enfs_adapter);
