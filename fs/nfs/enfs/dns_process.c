@@ -823,9 +823,11 @@ static int dns_update_work(struct nfs_client *clp, void *data)
 	*wk->clp_info->pRemoteDnsInfo = *clp_info->pRemoteDnsInfo;
 
 	if (!refcount_inc_not_zero(&clp->cl_rpcclient->cl_count)) {
+		clp_info->updating_domain = 0;
 		enfs_free_nfsclient_info(wk->clp_info);
 		kfree(wk);
 		kfree(item);
+		return -EINVAL;
 	}
 	nfsclient_refinc(&clp->cl_count);
 	wk->clp = clp;
