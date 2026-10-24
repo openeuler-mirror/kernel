@@ -63,7 +63,7 @@ struct ip_sf_list {
 	unsigned char		sf_gsresp;	/* include in g & s response? */
 	unsigned char		sf_oldin;	/* change state */
 	unsigned char		sf_crcount;	/* retrans. left to send */
-	struct rcu_head		rcu;
+	KABI_EXTEND(struct rcu_head rcu)
 };
 
 struct ip_mc_list {
