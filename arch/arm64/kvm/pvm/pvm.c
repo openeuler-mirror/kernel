@@ -14,6 +14,8 @@
 #include <asm/sysreg.h>
 #include <asm/virt.h>
 
+#include "mmu.h"
+
 DEFINE_STATIC_KEY_FALSE(kvm_pvm_is_available);
 
 void __init kvm_arm_init_pvm(void)
@@ -86,5 +88,6 @@ void __init kvm_arm_init_pvm(void)
 
 void kvm_arm_destroy_pvm(void)
 {
+	kvm_pvm_sysfs_exit();
 	static_branch_disable(&kvm_pvm_is_available);
 }

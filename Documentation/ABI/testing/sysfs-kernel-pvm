@@ -1,0 +1,18 @@
+What:		/sys/module/kvm/pvm/mmus_per_vcpu
+Date:		October 2026
+Contact:	Kunkun Jiang <jiangkunkun@huawei.com>
+Description:
+		Read or set the default number of user translation contexts per
+		vCPU in a PVM VM's user shadow context pool. The kernel side
+		uses one pool shared by all vCPUs, sized for two contexts per
+		vCPU, and is not affected by this value.
+		The code default is 8. Accepted values are 2, 4, 8 and 16.
+		Invalid writes return an error and leave the default unchanged.
+
+		Each VM snapshots this default at creation and uses that value
+		when growing its user pool. Writes affect only subsequently
+		created VMs; existing VMs are not resized or reconfigured.
+
+		The file is readable by everyone and writable by root. It is
+		present when PVM is initialized and sysfs is enabled. There is
+		no corresponding boot command-line or module parameter.

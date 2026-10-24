@@ -18,6 +18,7 @@ struct kvm_pvm {
 	struct kvm_pvm_mmu **suser_mmus;
 	size_t suser_mmus_size;
 	size_t suser_mmus_next;
+	unsigned int mmus_per_vcpu;
 	/*
 	 * Kernel contexts form a VM-wide pool. vCPUs with matching translation
 	 * regimes share a context; different regimes use independent roots.

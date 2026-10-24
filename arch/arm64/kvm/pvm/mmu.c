@@ -5,7 +5,10 @@
  */
 
 #include <linux/kvm_host.h>
+#include <linux/kobject.h>
 #include <linux/mm.h>
+#include <linux/module.h>
+#include <linux/sysfs.h>
 
 #include <asm/kvm_mmu.h>
 #include <asm/kvm_emulate.h>
@@ -21,7 +24,64 @@
  */
 #define PVM_SKERN_MMUS_PER_VCPU 2
 
-#define PVM_SUSER_MMUS_PER_VCPU 8
+static unsigned int pvm_mmus_per_vcpu = 8;
+static struct kobject *pvm_kobj;
+
+static ssize_t mmus_per_vcpu_show(struct kobject *kobj,
+				  struct kobj_attribute *attr, char *buf)
+{
+	return sysfs_emit(buf, "%u\n", READ_ONCE(pvm_mmus_per_vcpu));
+}
+
+static ssize_t mmus_per_vcpu_store(struct kobject *kobj,
+				   struct kobj_attribute *attr,
+				   const char *buf, size_t count)
+{
+	unsigned int factor;
+	int ret;
+
+	ret = kstrtouint(buf, 0, &factor);
+	if (ret)
+		return ret;
+	if (factor != 2 && factor != 4 && factor != 8 && factor != 16)
+		return -EINVAL;
+	WRITE_ONCE(pvm_mmus_per_vcpu, factor);
+	return count;
+}
+
+static struct kobj_attribute mmus_per_vcpu_attr = __ATTR_RW(mmus_per_vcpu);
+
+int __init kvm_pvm_sysfs_init(void)
+{
+	struct module_kobject *mk;
+	int ret;
+
+	if (!IS_ENABLED(CONFIG_SYSFS))
+		return 0;
+	/* Built-in module attributes may not have created the KVM node yet. */
+	mk = lookup_or_create_module_kobject(KBUILD_MODNAME);
+	if (!mk)
+		return -ENOMEM;
+	pvm_kobj = kobject_create_and_add("pvm", &mk->kobj);
+	kobject_put(&mk->kobj);
+	if (!pvm_kobj)
+		return -ENOMEM;
+	ret = sysfs_create_file(pvm_kobj, &mmus_per_vcpu_attr.attr);
+	if (ret) {
+		kobject_put(pvm_kobj);
+		pvm_kobj = NULL;
+	}
+	return ret;
+}
+
+void kvm_pvm_sysfs_exit(void)
+{
+	if (!pvm_kobj)
+		return;
+	sysfs_remove_file(pvm_kobj, &mmus_per_vcpu_attr.attr);
+	kobject_put(pvm_kobj);
+	pvm_kobj = NULL;
+}
 
 /* Keep host mappings usable by EL1 but inaccessible to the EL0 guest. */
 static int pvm_copy_host_pgd(pgd_t *pgd)
@@ -65,6 +125,7 @@ int kvm_pvm_init_mmu(struct kvm *kvm)
 	}
 	pvm->kern_pgd_phys = page_to_phys(page);
 	pvm->kern_pgd_page = page;
+	pvm->mmus_per_vcpu = READ_ONCE(pvm_mmus_per_vcpu);
 	return 0;
 }
 
@@ -176,7 +237,7 @@ int kvm_pvm_init_vcpu_mmu(struct kvm_vcpu *vcpu)
 	struct kvm *kvm = vcpu->kvm;
 	struct kvm_pvm *pvm = kvm_to_pvm(kvm);
 	size_t vcpus = atomic_read(&kvm->online_vcpus);
-	size_t user_size = vcpus * PVM_SUSER_MMUS_PER_VCPU;
+	size_t user_size = vcpus * pvm->mmus_per_vcpu;
 	size_t kern_size;
 	int ret;
 

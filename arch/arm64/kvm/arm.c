@@ -3667,6 +3667,14 @@ static __init int kvm_arm_init(void)
 	 * FIXME: Do something reasonable if kvm_init() fails after pKVM
 	 * hypervisor protection is finalized.
 	 */
+	if (is_pvm_mode()) {
+		err = kvm_pvm_sysfs_init();
+		if (err) {
+			kvm_err("Failed to initialize PVM sysfs: %d\n", err);
+			goto out_subs;
+		}
+	}
+
 	err = kvm_init(is_pvm_mode() ? sizeof(struct kvm_pvm_vcpu) :
 				      sizeof(struct kvm_vcpu), 0, THIS_MODULE);
 	if (err)

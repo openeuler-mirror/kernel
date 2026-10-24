@@ -98,6 +98,8 @@ struct kvm_pvm_mmu {
 };
 
 int kvm_pvm_init_mmu(struct kvm *kvm);
+int kvm_pvm_sysfs_init(void);
+void kvm_pvm_sysfs_exit(void);
 int kvm_pvm_init_vcpu_mmu(struct kvm_vcpu *vcpu);
 void kvm_pvm_destroy_mmu(struct kvm *kvm);
 void kvm_pvm_unmap_all(struct kvm *kvm, bool may_block);
