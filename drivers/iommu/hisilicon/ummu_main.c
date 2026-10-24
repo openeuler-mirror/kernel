@@ -152,6 +152,7 @@ static int ummu_init_structures(struct ummu_device *ummu)
 	return 0;
 
 resource_release:
+	ummu_free_tect_tct(ummu);
 	ummu_iopf_queue_free(ummu);
 	return ret;
 }
@@ -183,6 +184,7 @@ static void ummu_device_hw_probe_iidr(struct ummu_device *ummu)
 		ummu->cap.features &= ~UMMU_FEAT_BTM;
 		ummu->cap.features &= ~UMMU_FEAT_STALLS;
 	}
+
 	dev_notice(ummu->dev, "features 0x%08x, options 0x%08x.\n",
 		   ummu->cap.features, ummu->cap.options);
 }
@@ -647,6 +649,8 @@ static int ummu_device_reset(struct ummu_device *ummu)
 static void release_ummu_dev_res(void *data)
 {
 	struct ummu_device *ummu = (struct ummu_device *)data;
+
+	ummu_free_tect_tct(ummu);
 	ummu_device_free_mcmdq(ummu);
 	ummu_device_free_evtq(ummu);
 	ummu_iopf_queue_free(ummu);
@@ -766,9 +770,6 @@ static int ummu_device_probe(struct platform_device *pdev)
 		}
 	}
 
-	if (!hw_bypass)
-		(void)ummu_global_identity_pgtbl_init(ummu);
-
 	return 0;
 
 probe_res_release:
@@ -789,8 +790,6 @@ static int ummu_device_remove(struct platform_device *pdev)
 	ummu_device_disable(ummu);
 	ummu_device_unregister(ummu);
 
-	ummu_put_tct_table(ummu->local_tct_cfg);
-	ummu_put_tect_table(ummu->tect_cfg);
 	dev_dbg(&pdev->dev, "Remove ummu successful!\n");
 	return 0;
 }
@@ -840,11 +839,20 @@ static int __init ummu_driver_register(struct platform_driver *drv)
 	}
 	ret = ummu_init_global_meta();
 	if (ret) {
-		pr_err("global meta resource init failed, ret = %d\n", ret);
-		ummu_free_global_meta();
-		return ret;
+		pr_err("global tag pool init failed, ret = %d\n", ret);
+		goto err_meta;
 	}
-	return platform_driver_register(drv);
+	ret = platform_driver_register(drv);
+	if (ret)
+		goto err_plat_reg;
+
+	return 0;
+
+err_plat_reg:
+	ummu_free_global_meta();
+err_meta:
+	logic_ummu_device_exit();
+	return ret;
 }
 
 static void __exit ummu_driver_unregister(struct platform_driver *drv)
@@ -853,8 +861,6 @@ static void __exit ummu_driver_unregister(struct platform_driver *drv)
 	platform_driver_unregister(drv);
 	ummu_release_partid_map();
 	ummu_free_global_meta();
-	if (!hw_bypass)
-		ummu_global_identity_pgtbl_free();
 
 	logic_ummu_device_exit();
 }

@@ -20,12 +20,10 @@
 static DEFINE_MUTEX(ummu_dev_tct_lock);
 
 struct os_meta {
-	u32 tecte_tag;
+	u32 tect_tag;
 	guid_t guid;
-	struct ummu_tct_desc_cfg tct_tbl;
 	struct list_head eids;
 	struct kref ref;
-	bool valid;
 };
 
 struct eid_info {
@@ -36,19 +34,21 @@ struct eid_info {
 	int ref_cnt;
 };
 
+/*
+ * Global resources: os_meta table (tect_tag -> eid list) and capability.
+ * Shared across all ummu instances to keep EID routing consistent.
+ * TECT/TCT tables are per-ummu.
+ */
 static struct {
-	struct xarray per_os_meta;
-	struct ummu_tect_cfg ummu_tect;
-	bool tect_valid;
+	struct xarray per_os_meta; /* tect_tag -> struct os_meta */
 	struct ummu_capability cap;
 	bool cap_valid;
 } ummu_global_info;
 
-/* protect ummu_global_info */
+/* protect ummu_global_info (os_meta + cap) */
 static DEFINE_SPINLOCK(ummu_global);
 
 static struct ummu_tecte_data ummu_clear_tecte = {0};
-
 static int ummu_init_tect(struct ummu_device *ummu,
 			  const struct ummu_capability *cap,
 			  struct ummu_tect_cfg *tect);
@@ -216,10 +216,10 @@ static void ummu_device_create_kvtable(struct ummu_device *ummu, u32 tag,
 
 	cmd_create_kvtbl.opcode = CMD_CREATE_KVTBL;
 	cmd_create_kvtbl.create_kvtbl.evt_en = false;
-	cmd_create_kvtbl.create_kvtbl.tecte_tag = tag;
+	cmd_create_kvtbl.create_kvtbl.tect_tag = tag;
 	cmd_create_kvtbl.create_kvtbl.kv_index = kv_index;
 	cmd_create_kvtbl.create_kvtbl.tect_base_addr =
-		ummu->tect_cfg->tect_reg_addr;
+		ummu->tect_cfg.tect_reg_addr;
 	cmd_create_kvtbl.create_kvtbl.eid_low = (u64)eid;
 	cmd_create_kvtbl.create_kvtbl.eid_high =
 		(u64)(eid >> EID_HIGH_SZ_SHIFT);
@@ -236,7 +236,7 @@ static void ummu_device_delete_kvtbl(struct ummu_device *ummu, u32 tag,
 		.opcode = CMD_DELETE_KVTBL,
 		.delete_kvtbl = {
 			.evt_en = false,
-			.tecte_tag = tag,
+			.tect_tag = tag,
 			.kv_index = kv_index,
 			.eid_low = (u64)eid,
 			.eid_high = (u64)(eid >> EID_HIGH_SZ_SHIFT),
@@ -253,26 +253,17 @@ static void ummu_device_delete_kvtbl(struct ummu_device *ummu, u32 tag,
 			ret);
 }
 
-static void ummu_free_tct_table(struct kref *kref)
+static void ummu_free_tct_table(struct ummu_tct_desc_cfg *cfg)
 {
-	struct ummu_tct_desc_cfg *cfg =
-		container_of(kref, struct ummu_tct_desc_cfg, ref);
-
 	if (cfg->tct_ptr)
 		ummu_free_tct(cfg);
-}
-
-void ummu_put_tct_table(struct ummu_tct_desc_cfg *cfg)
-{
-	kref_put(&cfg->ref, ummu_free_tct_table);
 }
 
 static void free_os_meta(struct kref *ref)
 {
 	struct os_meta *meta = container_of(ref, struct os_meta, ref);
 
-	ummu_put_tct_table(&meta->tct_tbl);
-	xa_erase(&ummu_global_info.per_os_meta, meta->tecte_tag);
+	xa_erase(&ummu_global_info.per_os_meta, meta->tect_tag);
 	kfree(meta);
 }
 
@@ -281,7 +272,6 @@ static int os_meta_get_kv_index(struct os_meta *meta, eid_t eid, u32 *kv_index)
 	struct eid_info *info;
 	int ret = -ENOENT;
 
-	guard(spinlock)(&ummu_global);
 	list_for_each_entry(info, &meta->eids, node)
 		if (info->eid == eid) {
 			*kv_index = info->kv_index;
@@ -296,7 +286,6 @@ static void os_meta_del_eid(struct os_meta *meta, eid_t eid)
 {
 	struct eid_info *info, *tmp;
 
-	guard(spinlock)(&ummu_global);
 	list_for_each_entry_safe(info, tmp, &meta->eids, node)
 		if (info->eid == eid) {
 			info->ref_cnt--;
@@ -313,7 +302,6 @@ static int os_meta_add_eid(struct os_meta *meta, eid_t eid, u32 kv_index, int ty
 {
 	struct eid_info *info;
 
-	guard(spinlock)(&ummu_global);
 	list_for_each_entry(info, &meta->eids, node)
 		if (info->eid == eid) {
 			info->ref_cnt++;
@@ -342,52 +330,26 @@ const struct ummu_capability *ummu_get_cap(void)
 	return &ummu_global_info.cap;
 }
 
-static struct ummu_tct_desc_cfg *ummu_get_local_tct_table(struct ummu_device *ummu)
+static int ummu_alloc_local_tct_table(struct ummu_device *ummu)
 {
-	struct ummu_tct_desc_cfg *cfg = NULL;
-	struct os_meta *meta;
-	int ret;
+	if (ummu->local_tct_cfg.tct_ptr)
+		return 0;
 
-	guard(spinlock)(&ummu_global);
-	if (!ummu_global_info.tect_valid)
-		return NULL;
+	if (!ummu_global_info.cap_valid)
+		return -EINVAL;
 
-	meta = xa_load(&ummu_global_info.per_os_meta, 0);
-	if (!meta)
-		return NULL;
-
-	cfg = &meta->tct_tbl;
-	if (!cfg->tct_ptr) {
-		if (!ummu_global_info.cap_valid)
-			return NULL;
-
-		ret = ummu_alloc_tct(ummu, &ummu_global_info.cap, cfg);
-		if (ret)
-			return NULL;
-	}
-	kref_get(&meta->tct_tbl.ref);
-
-	return cfg;
+	return ummu_alloc_tct(ummu, &ummu_global_info.cap, &ummu->local_tct_cfg);
 }
 
-static struct ummu_tect_cfg *ummu_get_tect_table(struct ummu_device *ummu)
+static int ummu_alloc_tect_table(struct ummu_device *ummu)
 {
-	struct ummu_tect_cfg *tect;
-	int ret;
+	if (ummu->tect_cfg.tbl_vaddr)
+		return 0;
 
-	guard(spinlock)(&ummu_global);
-	tect = &ummu_global_info.ummu_tect;
-	if (!tect->tbl_vaddr) {
-		if (!ummu_global_info.cap_valid)
-			return NULL;
-		ret = ummu_init_tect(ummu, &ummu_global_info.cap, tect);
-		if (ret)
-			return NULL;
-	}
+	if (!ummu_global_info.cap_valid)
+		return -EINVAL;
 
-	kref_get(&tect->ref);
-
-	return tect;
+	return ummu_init_tect(ummu, &ummu_global_info.cap, &ummu->tect_cfg);
 }
 
 static void ummu_free_tect(struct ummu_tect_cfg *tect)
@@ -417,17 +379,10 @@ static void ummu_free_tect(struct ummu_tect_cfg *tect)
 	tect->phys = 0;
 }
 
-static void ummu_free_tect_table(struct kref *kref)
+static void ummu_free_tect_table(struct ummu_tect_cfg *tect)
 {
-	struct ummu_tect_cfg *tect = container_of(kref, struct ummu_tect_cfg, ref);
-
 	if (tect->tbl_vaddr)
 		ummu_free_tect(tect);
-}
-
-void ummu_put_tect_table(struct ummu_tect_cfg *tect)
-{
-	kref_put(&tect->ref, ummu_free_tect_table);
 }
 
 static inline void ummu_build_tecte_abort(struct ummu_tecte_data *tecte)
@@ -599,11 +554,7 @@ void ummu_free_global_meta(void)
 	guard(spinlock)(&ummu_global);
 	xa_for_each(&ummu_global_info.per_os_meta, idx, meta)
 		kref_put(&meta->ref, free_os_meta);
-
 	xa_destroy(&ummu_global_info.per_os_meta);
-
-	ummu_put_tect_table(&ummu_global_info.ummu_tect);
-	ummu_global_info.tect_valid = false;
 	ummu_global_info.cap_valid = false;
 }
 
@@ -613,27 +564,23 @@ int ummu_init_global_meta(void)
 	int ret;
 
 	spin_lock_init(&ummu_global);
-	if (ummu_global_info.tect_valid)
-		return -EEXIST;
 
 	meta = kzalloc(sizeof(*meta), GFP_KERNEL);
 	if (!meta)
 		return -ENOMEM;
 
-	meta->tecte_tag = 0;
-	memset(&meta->guid, 0, sizeof(meta->guid));
+	/* tect_tag 0 is reserved for local host (guid_null) */
+	meta->tect_tag = LOCAL_TECT_TAG;
+	guid_copy(&meta->guid, &guid_null);
 	INIT_LIST_HEAD(&meta->eids);
-	/* 0 for local host tecte */
+	kref_init(&meta->ref);
+
 	xa_init_flags(&ummu_global_info.per_os_meta, XA_FLAGS_ALLOC1);
 	ret = xa_err(xa_store(&ummu_global_info.per_os_meta,
-			      0, meta, GFP_KERNEL));
+		     LOCAL_TECT_TAG, meta, GFP_KERNEL));
 	if (ret)
 		goto free_meta;
 
-	kref_init(&meta->tct_tbl.ref);
-	kref_init(&ummu_global_info.ummu_tect.ref);
-	kref_init(&meta->ref);
-	ummu_global_info.tect_valid = true;
 	return 0;
 
 free_meta:
@@ -642,32 +589,30 @@ free_meta:
 	return ret;
 }
 
+void ummu_free_tect_tct(struct ummu_device *ummu)
+{
+	if (ummu->local_tct_cfg.tct_ptr)
+		ummu_free_tct_table(&ummu->local_tct_cfg);
+
+	if (ummu->tect_cfg.tbl_vaddr)
+		ummu_free_tect_table(&ummu->tect_cfg);
+}
+
 int ummu_prepare_tect_tct(struct ummu_device *ummu)
 {
-	struct ummu_tct_desc_cfg *local;
-	struct ummu_tect_cfg *tect;
 	int ret;
 
-	tect = ummu_get_tect_table(ummu);
-	if (!tect)
-		return -EINVAL;
+	ret = ummu_alloc_tect_table(ummu);
+	if (ret)
+		return ret;
 
-	local = ummu_get_local_tct_table(ummu);
-	if (!local) {
-		ret = -EINVAL;
-		goto put_tect;
+	ret = ummu_alloc_local_tct_table(ummu);
+	if (ret) {
+		ummu_free_tect_table(&ummu->tect_cfg);
+		return ret;
 	}
 
-	/* prepare tect */
-	ummu->tect_cfg = tect;
-
-	/* prepare tct */
-	ummu->local_tct_cfg = local;
 	return 0;
-
-put_tect:
-	ummu_put_tect_table(tect);
-	return ret;
 }
 
 int ummu_check_cap(struct ummu_device *ummu)
@@ -789,7 +734,7 @@ static void ummu_free_tct(struct ummu_tct_desc_cfg *tct_cfg)
 				continue;
 
 			free_pages((unsigned long)tct_cfg->l1_tct_desc[i].l2ptr,
-					   get_order(l2_size));
+				   get_order(l2_size));
 			tct_cfg->l1_tct_desc[i].l2ptr = NULL;
 		}
 
@@ -842,18 +787,23 @@ __le64 *ummu_get_tcte_ptr(struct ummu_tct_desc_cfg *tct_cfg, u32 tid)
 	return l1_desc->l2ptr + l2_idx * TCT_ENTRY_SIZE_DWORDS;
 }
 
-static __le64 *ummu_alloc_tcte(struct ummu_device *ummu,
-			       struct ummu_tct_desc_cfg *tct_cfg, u32 tid)
+static __le64 *ummu_alloc_tcte(struct ummu_device *ummu, u32 tid)
 {
+	struct ummu_tct_desc_cfg *tct_cfg;
 	struct ummu_l1_tct_desc *l1_desc;
 	__le64 *tcte_ptr;
 	int l1_idx, l2_idx;
 
+	tct_cfg = &ummu->local_tct_cfg;
+
+	if (tid >= (1UL << tct_cfg->tcte_max_bits))
+		return NULL;
 	/* linear tct */
 	if (tct_cfg->tct_fmt == TCT_FMT_LINEAR)
 		return tct_cfg->tct_ptr + tid * TCT_ENTRY_SIZE_DWORDS;
 
 	l1_idx = tid >> TCT_SPLIT_64K;
+	guard(mutex)(&ummu_dev_tct_lock);
 	l1_desc = &tct_cfg->l1_tct_desc[l1_idx];
 	if (!l1_desc->l2ptr) {
 		if (ummu_alloc_tct_second_lvl(ummu, l1_desc)) {
@@ -870,89 +820,46 @@ static __le64 *ummu_alloc_tcte(struct ummu_device *ummu,
 	return l1_desc->l2ptr + l2_idx * TCT_ENTRY_SIZE_DWORDS;
 }
 
-int ummu_write_tct_desc(struct ummu_device *ummu, struct ummu_domain_cfgs *cfgs,
-			bool is_clear)
+void ummu_device_clear_tct_desc(struct ummu_device *ummu, u32 tect_tag, u32 tid)
 {
-	struct ummu_domain *u_domain = container_of(cfgs, struct ummu_domain, cfgs);
-	struct ummu_tct_desc_cfg *tct_cfg = cfgs->s1_cfg.tct_cfg;
-	struct ummu_tct_desc *tct_desc = &cfgs->s1_cfg.tct;
-	u32 tid = u_domain->base_domain.tid;
-	u32 tag = cfgs->tecte_tag;
-	bool is_valid;
+	struct ummu_tcte_data tcte_data = {};
 	__le64 *tcte;
-	u64 val;
 	u8 i;
 
-	if (tid >= (1UL << tct_cfg->tcte_max_bits))
-		return -ERANGE;
+	tcte = ummu_alloc_tcte(ummu, tid);
+	if (!tcte) {
+		dev_err(ummu->dev, "can not find tct entry to write!");
+		return;
+	}
 
-	mutex_lock(&ummu_dev_tct_lock);
-	tcte = ummu_alloc_tcte(ummu, tct_cfg, tid);
-	mutex_unlock(&ummu_dev_tct_lock);
+	for (i = 0; i < TCT_ENTRY_SIZE_DWORDS; i++)
+		WRITE_ONCE(tcte[i], tcte_data.data[i]);
+
+	ummu_sync_tct(ummu, tect_tag, tid, true);
+}
+
+int ummu_write_tct_desc(struct ummu_device *ummu, u32 tect_tag, u32 tid,
+			struct ummu_tcte_data *tcte_data)
+{
+	__le64 *tcte;
+	u8 i;
+
+	tcte = ummu_alloc_tcte(ummu, tid);
 	if (!tcte) {
 		dev_err(ummu->dev, "can not find tct entry to write!");
 		return -ENOMEM;
 	}
 
-	is_valid = !!(le64_to_cpu(tcte[0]) & TCT_ENT0_V);
+	for (i = 0; i < TCT_ENTRY_SIZE_DWORDS; i++)
+		WRITE_ONCE(tcte[i], tcte_data->data[i]);
 
-	if (is_clear) {
-		for (i = 0; i < TCT_ENTRY_SIZE_DWORDS; i++)
-			WRITE_ONCE(tcte[i], 0);
-	} else {
-		if (is_valid) {
-			WRITE_ONCE(tcte[0], 0);
-			ummu_sync_tct(ummu, tag, tid, true);
-		}
-		tcte[1] = cpu_to_le64(tct_desc->tcr1);
-		tcte[2] = cpu_to_le64(tct_desc->ttbr & TCT_ENT2_TTBA);
-		if (tct_desc->mapt_en) {
-			val = cpu_to_le64(TCT_ENT3_MAPT_BBA & tct_desc->mapt_blk_phys) |
-			      FIELD_PREP(TCT_ENT3_MAPT_BBA_SZ, tct_desc->blk_size_order) |
-			      FIELD_PREP(TCT_ENT3_MAPT_BBA_MA, TCT_TCR_RGN_WBWA) |
-			      FIELD_PREP(TCT_ENT3_MAPT_BBA_SH, TCT_MSD_IS);
-			tcte[3] = cpu_to_le64(val);
-
-			val = cpu_to_le64(TCT_ENT4_MAPT_BTA & tct_desc->mapt_blk_tbl_phys) |
-			      FIELD_PREP(TCT_ENT4_MAPT_BTA_SZ, tct_desc->blk_tbl_size_order) |
-			      FIELD_PREP(TCT_ENT4_MAPT_BTA_MA, TCT_TCR_RGN_WBWA) |
-			      FIELD_PREP(TCT_ENT4_MAPT_BTA_SH, TCT_MSD_IS);
-			tcte[4] = cpu_to_le64(val);
-		}
-		tcte[5] = cpu_to_le64(tct_desc->mair);
-		val = tct_desc->tcr0 |
-		      (tct_desc->matt_bypass ? TCT_ENT0_MATT_BYPASS : 0) |
-#ifdef __BIG_ENDIAN
-		      TCT_ENT0_ENDI |
-#endif
-		      (tct_desc->mapt_en ? TCT_ENT0_MAPT_EN : 0) |
-		      (tct_desc->mapt_mode == MAPT_MODE_TABLE ? TCT_ENT0_MAPT_MOD : 0) |
-		      FIELD_PREP(TCT_ENT0_RTES, (tct_desc->mapt_mode == MAPT_MODE_TABLE ?
-				 RTE_GRANULE_4K : 0)) |
-		      (cfgs->btm_enabled ? 0 : TCT_ENT0_ASH) |
-		      FIELD_PREP(TCT_ENT0_ASID, tct_desc->asid) | TCT_ENT0_V;
-
-		if (cfgs->sva_mode == UMMU_MODE_DMA ||
-		    cfgs->sva_mode == UMMU_MODE_SVA_DISABLE_PTB)
-			val |= TCT_ENT0_EBIT_EN;
-		else
-			val &= ~TCT_ENT0_EBIT_EN;
-
-		if (ummu->cap.features & UMMU_FEAT_HA)
-			val |= TCT_ENT0_HAF;
-		if (ummu->cap.features & UMMU_FEAT_HD)
-			val |= TCT_ENT0_HDF;
-
-		WRITE_ONCE(tcte[0], cpu_to_le64(val));
-	}
-
-	ummu_sync_tct(ummu, tag, tid, true);
+	ummu_sync_tct(ummu, tect_tag, tid, true);
 	return 0;
 }
 
 static bool ummu_tect_tag_in_range(struct ummu_device *ummu, u32 tect_tag)
 {
-	u32 range = ummu->tect_cfg->num_ents;
+	u32 range = ummu->tect_cfg.num_ents;
 
 	if (ummu->cap.features & UMMU_FEAT_2_LVL_TECT)
 		range *= 1UL << TECT_SPLIT;
@@ -962,7 +869,7 @@ static bool ummu_tect_tag_in_range(struct ummu_device *ummu, u32 tect_tag)
 
 __le64 *ummu_get_tecte_ptr(struct ummu_device *ummu, u32 tect_tag)
 {
-	struct ummu_tect_cfg *tect = ummu->tect_cfg;
+	struct ummu_tect_cfg *tect = &ummu->tect_cfg;
 	struct ummu_tect_l1_desc *l1_desc;
 	u32 l1_index, tect_index;
 
@@ -987,7 +894,7 @@ __le64 *ummu_get_tecte_ptr(struct ummu_device *ummu, u32 tect_tag)
 
 static struct ummu_tecte_data *ummu_alloc_tecte(struct ummu_device *ummu, u32 tect_tag)
 {
-	struct ummu_tect_cfg *tect = ummu->tect_cfg;
+	struct ummu_tect_cfg *tect = &ummu->tect_cfg;
 	struct ummu_tect_l1_desc *l1_desc;
 	u32 l1_index, tect_index;
 	int ret;
@@ -1014,8 +921,7 @@ static struct ummu_tecte_data *ummu_alloc_tecte(struct ummu_device *ummu, u32 te
 		tect_index * TECT_ENTRY_SIZE_DWORDS);
 }
 
-static int ummu_alloc_os_meta(struct ummu_device *ummu,
-			      const struct ummu_capability *cap,
+static int ummu_alloc_os_meta(const struct ummu_capability *cap,
 			      guid_t *guid, struct os_meta **os_data)
 {
 	struct os_meta *meta;
@@ -1025,36 +931,30 @@ static int ummu_alloc_os_meta(struct ummu_device *ummu,
 	meta = kzalloc(sizeof(*meta), GFP_ATOMIC);
 	if (!meta)
 		return -ENOMEM;
-	ret = ummu_alloc_tct(ummu, cap, &meta->tct_tbl);
-	if (ret)
-		goto out_free_meta;
-
-	scoped_guard(spinlock, &ummu_global) {
-		ret = xa_alloc(&ummu_global_info.per_os_meta, &deid, meta,
-		       XA_LIMIT(1, (1UL << cap->deid_bits) - 1), GFP_ATOMIC);
-		if (ret) {
-			pr_err("alloc tecte tag failed, ret = %d\n", ret);
-			goto out_free_tct;
-		}
-	}
 
 	guid_copy(&meta->guid, guid);
 	INIT_LIST_HEAD(&meta->eids);
-	kref_init(&meta->tct_tbl.ref);
 	kref_init(&meta->ref);
-	meta->tecte_tag = deid;
 	*os_data = meta;
-	kref_get(&meta->tct_tbl.ref);
+
+	scoped_guard(spinlock, &ummu_global) {
+		ret = xa_alloc(&ummu_global_info.per_os_meta, &deid, meta,
+			       XA_LIMIT(1, (1UL << cap->deid_bits) - 1), GFP_ATOMIC);
+		if (ret) {
+			pr_err("alloc tect_tag failed, ret = %d\n", ret);
+			goto out_free_meta;
+		}
+	}
+
+	meta->tect_tag = deid;
 	return 0;
 
-out_free_tct:
-	ummu_free_tct(&meta->tct_tbl);
 out_free_meta:
 	kfree(meta);
 	return ret;
 }
 
-int ummu_get_tecte_tag_by_eid(eid_t eid, u32 *tecte_tag)
+int ummu_get_tect_tag_by_eid(eid_t eid, u32 *tect_tag)
 {
 	struct eid_info *info;
 	struct os_meta *meta;
@@ -1064,7 +964,7 @@ int ummu_get_tecte_tag_by_eid(eid_t eid, u32 *tecte_tag)
 	xa_for_each(&ummu_global_info.per_os_meta, idx, meta) {
 		list_for_each_entry(info, &meta->eids, node) {
 			if (info->eid == eid) {
-				*tecte_tag = meta->tecte_tag;
+				*tect_tag = meta->tect_tag;
 				return 0;
 			}
 		}
@@ -1092,9 +992,6 @@ int ummu_set_domain_cfgs_tag(struct ummu_domain_cfgs *cfgs,
 	struct os_meta *meta = NULL;
 	struct ub_entity *uent;
 
-	if (cfgs->s1_cfg.tct_cfg)
-		return 0;
-
 	if (dev_is_ub(master->dev)) {
 		uent = to_ub_entity(master->dev);
 		if (ub_bi_is_dynamic(uent->bi))
@@ -1104,11 +1001,9 @@ int ummu_set_domain_cfgs_tag(struct ummu_domain_cfgs *cfgs,
 			pr_err("get os meta by guid failed.\n");
 			return -ENODEV;
 		}
-		cfgs->tecte_tag = meta->tecte_tag;
-		cfgs->s1_cfg.tct_cfg = &meta->tct_tbl;
+		cfgs->tect_tag = meta->tect_tag;
 	} else {
-		cfgs->tecte_tag = 0;
-		cfgs->s1_cfg.tct_cfg = master->ummu->local_tct_cfg;
+		cfgs->tect_tag = LOCAL_TECT_TAG;
 	}
 
 	return 0;
@@ -1149,6 +1044,57 @@ static void ummu_device_make_default_tecte(struct ummu_device *ummu,
 		FIELD_PREP(TECT_ENT1_TCT_PTR_MD0, TECT_ENT1_MD_CACHE_WBRA) |
 		FIELD_PREP(TECT_ENT1_TCT_PTR_MD1, TECT_ENT1_MD_CACHE_WBRA) |
 		FIELD_PREP(TECT_ENT1_TCT_PTR_MSD, TECT_ENT1_MD_CACHE_WB));
+}
+
+void ummu_build_s1_domain_tcte(struct ummu_domain *u_domain,
+				struct ummu_tcte_data *target)
+{
+	struct ummu_tct_desc *tct_desc = &u_domain->cfgs.s1_cfg.tct;
+	const struct ummu_capability *cap = ummu_get_cap();
+	u64 entry;
+
+	memset(target, 0, sizeof(*target));
+	entry = tct_desc->tcr0 |
+		(tct_desc->matt_bypass ? TCT_ENT0_MATT_BYPASS : 0) |
+#ifdef __BIG_ENDIAN
+		TCT_ENT0_ENDI |
+#endif
+		(tct_desc->mapt_en ? TCT_ENT0_MAPT_EN : 0) |
+		(tct_desc->mapt_mode == MAPT_MODE_TABLE ? TCT_ENT0_MAPT_MOD : 0) |
+		FIELD_PREP(TCT_ENT0_RTES, (tct_desc->mapt_mode == MAPT_MODE_TABLE ?
+			   RTE_GRANULE_4K : 0)) |
+		(u_domain->cfgs.btm_enabled ? 0 : TCT_ENT0_ASH) |
+		      FIELD_PREP(TCT_ENT0_ASID, tct_desc->asid) | TCT_ENT0_V;
+
+		if (u_domain->cfgs.sva_mode == UMMU_MODE_DMA ||
+		    u_domain->cfgs.sva_mode == UMMU_MODE_SVA_DISABLE_PTB)
+			entry |= TCT_ENT0_EBIT_EN;
+		else
+			entry &= ~TCT_ENT0_EBIT_EN;
+
+		if (cap->features & UMMU_FEAT_HA)
+			entry |= TCT_ENT0_HAF;
+		if (cap->features & UMMU_FEAT_HD)
+			entry |= TCT_ENT0_HDF;
+
+	target->data[0] = cpu_to_le64(entry);
+	target->data[1] = cpu_to_le64(tct_desc->tcr1);
+	target->data[2] = cpu_to_le64(tct_desc->ttbr & TCT_ENT2_TTBA);
+	if (tct_desc->mapt_en) {
+		entry = (TCT_ENT3_MAPT_BBA & tct_desc->mapt_blk_phys) |
+			FIELD_PREP(TCT_ENT3_MAPT_BBA_SZ, tct_desc->blk_size_order) |
+			FIELD_PREP(TCT_ENT3_MAPT_BBA_MA, TCT_TCR_RGN_WBWA) |
+			FIELD_PREP(TCT_ENT3_MAPT_BBA_SH, TCT_MSD_IS);
+		target->data[3] = cpu_to_le64(entry);
+
+		entry = (TCT_ENT4_MAPT_BTA & tct_desc->mapt_blk_tbl_phys) |
+			FIELD_PREP(TCT_ENT4_MAPT_BTA_SZ, tct_desc->blk_tbl_size_order) |
+			FIELD_PREP(TCT_ENT4_MAPT_BTA_MA, TCT_TCR_RGN_WBWA) |
+			FIELD_PREP(TCT_ENT4_MAPT_BTA_SH, TCT_MSD_IS);
+		target->data[4] = cpu_to_le64(entry);
+	}
+
+	target->data[5] = cpu_to_le64(tct_desc->mair);
 }
 
 void ummu_build_s2_domain_tecte(struct ummu_domain *u_domain,
@@ -1214,6 +1160,7 @@ static void ummu_device_fill_tecte(struct ummu_device *ummu, u32 deid,
 				  const struct ummu_tecte_data *src)
 {
 	struct ummu_tecte_data *tecte;
+	u8 i;
 
 	if (!src)
 		return;
@@ -1222,8 +1169,10 @@ static void ummu_device_fill_tecte(struct ummu_device *ummu, u32 deid,
 	if (!tecte)
 		return;
 
-	if (check_tecte_can_set(tecte, src))
-		memcpy(tecte, src->data, sizeof(*src));
+	if (check_tecte_can_set(tecte, src)) {
+		for (i = 0; i < TECT_ENTRY_SIZE_DWORDS; i++)
+			WRITE_ONCE(tecte->data[i], src->data[i]);
+	}
 }
 
 void ummu_device_write_tecte(struct ummu_device *ummu, u32 deid,
@@ -1232,18 +1181,6 @@ void ummu_device_write_tecte(struct ummu_device *ummu, u32 deid,
 	ummu_device_fill_tecte(ummu, deid, src);
 	ummu_device_sync_tect(ummu, deid);
 	ummu_device_prefetch_cfg(ummu, deid, UMMU_INVALID_TID);
-}
-
-bool dev_work_on_local(struct ummu_master *master)
-{
-	struct ub_entity *uent;
-
-	if (dev_is_ub(master->dev)) {
-		uent = to_ub_entity(master->dev);
-		if (ub_bi_is_dynamic(uent->bi))
-			return false;
-	}
-	return true;
 }
 
 int ummu_add_eid(struct ummu_core_device *core_dev, guid_t *guid, eid_t eid, enum eid_type type)
@@ -1265,10 +1202,10 @@ int ummu_add_eid(struct ummu_core_device *core_dev, guid_t *guid, eid_t eid, enu
 		if (!cap)
 			return -EINVAL;
 		/*
-		 * os_meta is a singleton, and its release time is
-		 * when no EID is attached to it.
+		 * os_meta is shared across all ummu instances, and its
+		 * release time is when no EID is attached to it.
 		 */
-		ret = ummu_alloc_os_meta(ummu, cap, guid, &meta);
+		ret = ummu_alloc_os_meta(cap, guid, &meta);
 		if (ret)
 			return ret;
 	}
@@ -1284,18 +1221,13 @@ int ummu_add_eid(struct ummu_core_device *core_dev, guid_t *guid, eid_t eid, enu
 		return ret;
 	}
 
-	if (!meta->valid) {
-		meta->valid = true;
-		if (type == EID_BYPASS)
-			ummu_device_make_bypass_tecte(&target);
-		else
-			ummu_device_make_default_tecte(ummu, &meta->tct_tbl, &target);
-		ummu_device_write_tecte(ummu, meta->tecte_tag, &target);
-	} else {
-		ummu_device_sync_tect(ummu, meta->tecte_tag);
-		ummu_device_prefetch_cfg(ummu, meta->tecte_tag, UMMU_INVALID_TID);
-	}
-	ummu_device_create_kvtable(ummu, meta->tecte_tag, eid, kv_index);
+	if (type == EID_BYPASS)
+		ummu_device_make_bypass_tecte(&target);
+	else
+		ummu_device_make_default_tecte(ummu, &ummu->local_tct_cfg, &target);
+
+	ummu_device_write_tecte(ummu, meta->tect_tag, &target);
+	ummu_device_create_kvtable(ummu, meta->tect_tag, eid, kv_index);
 	return 0;
 }
 
@@ -1319,14 +1251,13 @@ void ummu_del_eid(struct ummu_core_device *core_dev, guid_t *guid, eid_t eid, en
 		return;
 	}
 
-	ummu_device_delete_kvtbl(ummu, meta->tecte_tag, eid, kv_index);
+	ummu_device_delete_kvtbl(ummu, meta->tect_tag, eid, kv_index);
 	/* 2 indicates that only the last EID remains. */
 	if (kref_read(&meta->ref) == 2) {
-		ummu_device_write_tecte(ummu, meta->tecte_tag, &ummu_clear_tecte);
-		meta->valid = false;
+		ummu_device_write_tecte(ummu, meta->tect_tag, &ummu_clear_tecte);
 	} else {
-		ummu_device_sync_tect(ummu, meta->tecte_tag);
-		ummu_device_prefetch_cfg(ummu, meta->tecte_tag, UMMU_INVALID_TID);
+		ummu_device_sync_tect(ummu, meta->tect_tag);
+		ummu_device_prefetch_cfg(ummu, meta->tect_tag, UMMU_INVALID_TID);
 	}
 
 	os_meta_del_eid(meta, eid);
@@ -1334,9 +1265,9 @@ void ummu_del_eid(struct ummu_core_device *core_dev, guid_t *guid, eid_t eid, en
 
 void ummu_device_set_tect(struct ummu_device *ummu)
 {
-	writeq_relaxed(ummu->tect_cfg->tect_reg_addr,
+	writeq_relaxed(ummu->tect_cfg.tect_reg_addr,
 		ummu->base + UMMU_TECT_BASE);
-	writel_relaxed(ummu->tect_cfg->tect_reg_cfg,
+	writel_relaxed(ummu->tect_cfg.tect_reg_cfg,
 		ummu->base + UMMU_TECT_BASE_CFG);
 }
 
