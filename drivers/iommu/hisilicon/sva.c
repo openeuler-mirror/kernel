@@ -304,7 +304,6 @@ static int ummu_sva_collect_domain_cfg(struct ummu_domain *domain, ioasid_t id)
 		domain->cfgs.btm_enabled = true;
 
 	domain->base_domain.tid = id;
-	domain->cfgs.s1_cfg.tct_cfg = ummu->local_tct_cfg;
 	domain->cfgs.s1_cfg.io_pt_cfg.mode = MAPT_MODE_END;
 
 	mode = ummu_core_get_mapt_mode(&ummu->core_dev, id);
@@ -371,6 +370,7 @@ static int ummu_sva_set_dev_pasid(struct iommu_domain *domain,
 	struct ummu_device *ummu = core_to_ummu_device(
 					u_domain->base_domain.core_dev);
 	bool is_ksva = iommu_is_ksva_domain(domain);
+	struct ummu_tcte_data target;
 	struct ummu_master *master;
 	u32 asid;
 	int ret;
@@ -389,8 +389,10 @@ static int ummu_sva_set_dev_pasid(struct iommu_domain *domain,
 	ret = ummu_sva_collect_domain_cfg(u_domain, id);
 	if (ret)
 		goto out_master_put;
+	ummu_build_s1_domain_tcte(u_domain, &target);
 
-	ret = ummu_write_tct_desc(ummu, &u_domain->cfgs, false);
+	ret = ummu_write_tct_desc(ummu, u_domain->cfgs.tect_tag, id,
+				  &target);
 	if (ret)
 		goto out_master_put;
 
@@ -408,12 +410,10 @@ static void ummu_sva_domain_free(struct iommu_domain *domain)
 	struct ummu_domain *u_domain = to_ummu_domain(domain);
 
 	if (u_domain->qid != UMMU_INVALID_QID) {
-		pr_warn("qid %u still valid when free sva domain 0x%pK, forgot put resource?\n",
-			u_domain->qid, domain);
+		pr_warn("qid %u still valid.\n", u_domain->qid);
 		ummu_release_permq_resource(u_domain);
 	}
 
-	ummu_release_domain_mapt_mem(u_domain);
 	kfree(u_domain);
 }
 
@@ -457,23 +457,24 @@ struct iommu_domain *ummu_domain_alloc_sva(struct device *dev,
 	return &u_domain->base_domain.domain;
 }
 
-void ummu_sva_domain_remove_tid(struct ummu_domain *domain,
+void ummu_sva_domain_remove_tid(struct ummu_domain *u_domain,
 				struct ummu_master *master, u32 tid)
 {
-	bool is_ksva = iommu_is_ksva_domain(&domain->base_domain.domain);
+	struct ummu_device *ummu = core_to_ummu_device(
+					u_domain->base_domain.core_dev);
+	bool ksva = iommu_is_ksva_domain(&u_domain->base_domain.domain);
 
 	guard(mutex)(&ummu_sva_mutex);
-	ummu_sva_master_put(master, is_ksva);
-	ummu_sva_asid_put(&domain->base_domain.domain, is_ksva);
+	ummu_sva_master_put(master, ksva);
+	ummu_sva_asid_put(&u_domain->base_domain.domain, ksva);
 
-	if (is_ksva) {
-		ummu_release_ksva_mapt(domain);
-	} else {
-		if (domain->cfgs.sva_mode == UMMU_MODE_SVA_DISABLE_PTB)
-			ummu_write_tct_desc(master->ummu, &domain->cfgs, true);
-		else
-			ummu_release_domain_mapt_mem(domain);
-	}
+	if (!ksva)
+		ummu_release_domain_mapt_mem(u_domain);
+	else
+		ummu_release_ksva_mapt(u_domain);
+
+	ummu_device_clear_tct_desc(ummu, u_domain->cfgs.tect_tag,
+				   u_domain->base_domain.tid);
 }
 
 int ummu_iopf_queue_alloc(struct ummu_device *ummu)
@@ -495,10 +496,13 @@ void ummu_sva_tcte_invalidate(struct ummu_domain *u_domain)
 	struct ummu_device *ummu =
 		core_to_ummu_device(u_domain->base_domain.core_dev);
 	struct ummu_tct_desc *tct_desc = &u_domain->cfgs.s1_cfg.tct;
+	struct ummu_tcte_data target;
 
 	guard(mutex)(&ummu_sva_mutex);
 	tct_desc->tcr0 &= ~(TCT_ENT0_FBR | TCT_ENT0_FBS);
 	tct_desc->tcr1 |= TCT_ENT1_TTWD;
-	ummu_write_tct_desc(ummu, &u_domain->cfgs, false);
+	ummu_build_s1_domain_tcte(u_domain, &target);
+	ummu_write_tct_desc(ummu, u_domain->cfgs.tect_tag,
+			    u_domain->base_domain.tid, &target);
 	ummu_flush_iotlb_all(&u_domain->base_domain.domain);
 }

@@ -665,17 +665,17 @@ int ummu_mcmdq_build_cmd(struct ummu_device *ummu, u64 *cmd,
 		cmd[3] |= FIELD_PREP(CMD_CFGI_3_DEID_1, ent->cfgi.deid_3);
 		break;
 	case CMD_PLBI_OS_EID:
-		cmd[2] |= FIELD_PREP(CMD_PLBI_2_TECTE_TAG, ent->plbi.tecte_tag);
+		cmd[2] |= FIELD_PREP(CMD_PLBI_2_TECTE_TAG, ent->plbi.tect_tag);
 		break;
 	case CMD_PLBI_OS_EIDTID:
 		cmd[0] |= FIELD_PREP(CMD_PLBI_0_TID, ent->plbi.tid);
-		cmd[2] |= FIELD_PREP(CMD_PLBI_2_TECTE_TAG, ent->plbi.tecte_tag);
+		cmd[2] |= FIELD_PREP(CMD_PLBI_2_TECTE_TAG, ent->plbi.tect_tag);
 		break;
 	case CMD_PLBI_OS_VA:
 		cmd[0] |= FIELD_PREP(CMD_PLBI_0_TID, ent->plbi.tid);
 		cmd[0] |= FIELD_PREP(CMD_PLBI_0_RANGE, ent->plbi.range);
 		cmd[1] |= ent->plbi.addr & CMD_PLBI_1_ADDR_MASK;
-		cmd[2] |= FIELD_PREP(CMD_PLBI_2_TECTE_TAG, ent->plbi.tecte_tag);
+		cmd[2] |= FIELD_PREP(CMD_PLBI_2_TECTE_TAG, ent->plbi.tect_tag);
 		break;
 	case CMD_TLBI_OS_ALL:
 		cmd[2] |= FIELD_PREP(CMD_TLBI_2_TECTE_TAG, ent->tlbi.tect_tag);
@@ -729,7 +729,7 @@ int ummu_mcmdq_build_cmd(struct ummu_device *ummu, u64 *cmd,
 		cmd[0] |= ent->create_kvtbl.evt_en ?
 			   CMD_CREATE_KVTBL0_EVT_EN : 0;
 		cmd[0] |= FIELD_PREP(CMD_CREATE_KVTBL0_TAG_MASK,
-				     ent->create_kvtbl.tecte_tag);
+				     ent->create_kvtbl.tect_tag);
 		cmd[0] |= FIELD_PREP(CMD_CREATE_KVTBL0_KV_INDEX_MASK,
 				     ent->create_kvtbl.kv_index);
 		cmd[1] |= ent->create_kvtbl.tect_base_addr &
@@ -743,7 +743,7 @@ int ummu_mcmdq_build_cmd(struct ummu_device *ummu, u64 *cmd,
 		cmd[0] |= ent->delete_kvtbl.evt_en ?
 			   CMD_DELETE_KVTBL0_EVT_EN : 0;
 		cmd[0] |= FIELD_PREP(CMD_DELETE_KVTBL0_TAG_MASK,
-				     ent->delete_kvtbl.tecte_tag);
+				     ent->delete_kvtbl.tect_tag);
 		cmd[0] |= FIELD_PREP(CMD_DELETE_KVTBL0_KV_INDEX_MASK,
 				     ent->delete_kvtbl.kv_index);
 		cmd[2] |= FIELD_PREP(CMD_DELETE_KVTBL2_EID_LOW,
@@ -802,7 +802,7 @@ int ummu_mcmdq_build_cmd(struct ummu_device *ummu, u64 *cmd,
 				     ent->plbi_free_bit.next_lvl_idx);
 		cmd[1] |= FIELD_PREP(CMD_PLBI_1_NEXT_LEVEL_OFFSET_MASK,
 				     ent->plbi_free_bit.next_lvl_offset);
-		cmd[2] |= FIELD_PREP(CMD_TLBI_2_TECTE_TAG, ent->plbi_free_bit.tecte_tag);
+		cmd[2] |= FIELD_PREP(CMD_TLBI_2_TECTE_TAG, ent->plbi_free_bit.tect_tag);
 		break;
 	default:
 		return -EINVAL;

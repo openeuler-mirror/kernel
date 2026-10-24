@@ -135,10 +135,10 @@ static void ummu_write_block_desc(__le64 *dst, struct block_args *blk_para)
 	WRITE_ONCE(*dst, cpu_to_le64(val));
 }
 
-static int ummu_get_mapt_mem(struct ummu_domain *ummu_domain,
-			     struct block_args *blk_para)
+static int ummu_get_base_mapt_block(struct ummu_domain *u_domain,
+				    struct block_args *blk_para)
 {
-	struct ummu_tct_desc *tct_desc = &ummu_domain->cfgs.s1_cfg.tct;
+	struct ummu_tct_desc *tct_desc = &u_domain->cfgs.s1_cfg.tct;
 	u8 order;
 
 	order = (u8)PAGE_ORDER_TO_MAPT_ORDER(blk_para->block_size_order);
@@ -150,17 +150,16 @@ static int ummu_get_mapt_mem(struct ummu_domain *ummu_domain,
 	return -ENOMEM;
 }
 
-static int ummu_alloc_mapt_mem_for_entry(struct ummu_domain *ummu_domain,
+static int ummu_alloc_mapt_mem_for_entry(struct ummu_domain *u_domain,
 					 struct block_args *blk_para)
 {
-	struct ummu_tct_desc *tct_desc = &ummu_domain->cfgs.s1_cfg.tct;
+	struct ummu_tct_desc *tct_desc = &u_domain->cfgs.s1_cfg.tct;
 	struct page *page;
 	void *alloc_ptr;
 
 	if (tct_desc->mapt_en)
-		return ummu_get_mapt_mem(ummu_domain, blk_para);
+		return ummu_get_base_mapt_block(u_domain, blk_para);
 
-	/* allocate new mapt blk */
 	page = alloc_pages(UMMU_GFP(GFP_KERNEL) | __GFP_ZERO | __GFP_COMP,
 			   blk_para->block_size_order);
 	if (!page) {
@@ -176,16 +175,15 @@ static int ummu_alloc_mapt_mem_for_entry(struct ummu_domain *ummu_domain,
 	tct_desc->mapt_blk_phys = blk_para->out_addr;
 	tct_desc->blk_size_order =
 		PAGE_ORDER_TO_MAPT_ORDER(blk_para->block_size_order);
-
 	return 0;
 }
 
-static int ummu_alloc_mapt_mem_for_table(struct ummu_domain *ummu_domain,
+static int ummu_alloc_mapt_mem_for_table(struct ummu_domain *u_domain,
 					 struct block_args *blk_para)
 {
-	struct ummu_device *ummu = core_to_ummu_device(ummu_domain->base_domain.core_dev);
-	struct ummu_mapt_info *io_pt_cfg = &ummu_domain->cfgs.s1_cfg.io_pt_cfg;
-	struct ummu_tct_desc *tct_desc = &ummu_domain->cfgs.s1_cfg.tct;
+	struct ummu_device *ummu = core_to_ummu_device(u_domain->base_domain.core_dev);
+	struct ummu_mapt_info *io_pt_cfg = &u_domain->cfgs.s1_cfg.io_pt_cfg;
+	struct ummu_tct_desc *tct_desc = &u_domain->cfgs.s1_cfg.tct;
 	size_t blk_size = (1U << blk_para->block_size_order) * PAGE_SIZE;
 	struct io_pt_blk_table blk_table;
 	struct page *page;
@@ -204,10 +202,10 @@ static int ummu_alloc_mapt_mem_for_table(struct ummu_domain *ummu_domain,
 		return -EINVAL;
 	}
 
-	if (tct_desc->mapt_en && blk_para->index == 0)
-		return ummu_get_mapt_mem(ummu_domain, blk_para);
+	if (tct_desc->mapt_en && !blk_para->index)
+		return ummu_get_base_mapt_block(u_domain, blk_para);
 
-	if (blk_para->index == 0) {
+	if (!blk_para->index) {
 		ret = ummu_alloc_mapt_block_tbl(&blk_table);
 		if (ret)
 			return -ENOMEM;
@@ -223,7 +221,6 @@ static int ummu_alloc_mapt_mem_for_table(struct ummu_domain *ummu_domain,
 		ret = -ENOMEM;
 		goto err_out;
 	}
-
 	alloc_ptr = page_address(page);
 	if (ummu->cap.options & UMMU_OPT_CHK_MAPT_CONTINUITY) {
 		ret = ummu_device_check_pa_continuity(ummu,
@@ -239,7 +236,7 @@ static int ummu_alloc_mapt_mem_for_table(struct ummu_domain *ummu_domain,
 
 	blk_para->out_addr = virt_to_phys(alloc_ptr);
 
-	if (blk_para->index == 0) {
+	if (!blk_para->index) {
 		tct_desc->mapt_mode = MAPT_MODE_TABLE;
 		tct_desc->mapt_en = 1;
 		tct_desc->token_en = 0;
@@ -258,27 +255,27 @@ static int ummu_alloc_mapt_mem_for_table(struct ummu_domain *ummu_domain,
 	ummu_write_block_desc(cfg_ptr, blk_para);
 	return 0;
 err_out:
-	if (blk_para->index == 0)
+	if (!blk_para->index)
 		ummu_release_mapt_block_tbl(&blk_table);
 
 	return ret;
 }
 
-int ummu_alloc_mapt_blk_mem(struct ummu_domain *ummu_domain,
+int ummu_alloc_mapt_blk_mem(struct ummu_domain *u_domain,
 			    struct block_args *blk_para)
 {
 	int mode;
 
-	mode = ummu_domain->cfgs.s1_cfg.io_pt_cfg.mode;
+	mode = u_domain->cfgs.s1_cfg.io_pt_cfg.mode;
 	if (mode == MAPT_MODE_TABLE)
-		return ummu_alloc_mapt_mem_for_table(ummu_domain, blk_para);
+		return ummu_alloc_mapt_mem_for_table(u_domain, blk_para);
 	else if (mode == MAPT_MODE_ENTRY)
-		return ummu_alloc_mapt_mem_for_entry(ummu_domain, blk_para);
+		return ummu_alloc_mapt_mem_for_entry(u_domain, blk_para);
 	else
 		return -EINVAL;
 }
 
-int ummu_init_sva_mapt_context(struct ummu_domain *ummu_domain,
+int ummu_init_sva_mapt_context(struct ummu_domain *u_domain,
 			       enum ummu_mapt_mode mode)
 {
 	struct block_args blk_para;
@@ -291,10 +288,10 @@ int ummu_init_sva_mapt_context(struct ummu_domain *ummu_domain,
 		blk_para.block_size_order = get_order(PAGE_SIZE);
 	}
 
-	ret = ummu_alloc_mapt_blk_mem(ummu_domain, &blk_para);
+	ret = ummu_alloc_mapt_blk_mem(u_domain, &blk_para);
 	if (ret)
 		pr_err("tid %u withe mode %u init sva mapt ctx failed, ret = %d.\n",
-			ummu_domain->base_domain.tid, mode, ret);
+			u_domain->base_domain.tid, mode, ret);
 	return ret;
 }
 
@@ -321,28 +318,28 @@ static void ummu_free_blk_tbl_ent(__le64 *dst,
 	atomic_dec(&io_pt_cfg->mapt_blk_cnt);
 }
 
-static void ummu_release_mapt_for_entry(struct ummu_domain *ummu_domain)
+static void ummu_release_mapt_for_entry(struct ummu_domain *u_domain)
 {
-	struct ummu_tct_desc *tct_desc = &ummu_domain->cfgs.s1_cfg.tct;
+	struct ummu_tct_desc *tct_desc = &u_domain->cfgs.s1_cfg.tct;
 	phys_addr_t phys_addr = tct_desc->mapt_blk_phys;
 	struct page *page;
 	u32 size_order;
 
 	tct_desc->mapt_en = 0;
 	tct_desc->mapt_blk_phys = 0;
-	ummu_write_tct_desc(core_to_ummu_device(ummu_domain->base_domain.core_dev),
-			    &ummu_domain->cfgs, true);
+	ummu_device_clear_tct_desc(core_to_ummu_device(u_domain->base_domain.core_dev),
+		u_domain->cfgs.tect_tag, u_domain->base_domain.tid);
 
 	size_order = MAPT_ORDER_TO_PAGE_ORDER(tct_desc->blk_size_order);
 	page = virt_to_page(phys_to_virt(phys_addr));
 	__free_pages(page, size_order);
 }
 
-static void ummu_release_mapt_for_table(struct ummu_domain *ummu_domain,
+static void ummu_release_mapt_for_table(struct ummu_domain *u_domain,
 					u32 blk_index)
 {
-	struct ummu_mapt_info *io_pt_cfg = &ummu_domain->cfgs.s1_cfg.io_pt_cfg;
-	struct ummu_tct_desc *tct_desc = &ummu_domain->cfgs.s1_cfg.tct;
+	struct ummu_mapt_info *io_pt_cfg = &u_domain->cfgs.s1_cfg.io_pt_cfg;
+	struct ummu_tct_desc *tct_desc = &u_domain->cfgs.s1_cfg.tct;
 	struct io_pt_blk_table blk_table;
 	__le64 *tbl_ptr, *release_ptr;
 	phys_addr_t phys_addr;
@@ -356,8 +353,9 @@ static void ummu_release_mapt_for_table(struct ummu_domain *ummu_domain,
 
 	if (!blk_index) {
 		tct_desc->mapt_blk_phys = 0;
-		ummu_write_tct_desc(core_to_ummu_device(ummu_domain->base_domain.core_dev),
-				    &ummu_domain->cfgs, true);
+		ummu_device_clear_tct_desc(
+			core_to_ummu_device(u_domain->base_domain.core_dev),
+			u_domain->cfgs.tect_tag, u_domain->base_domain.tid);
 	}
 
 	if (!atomic_read(&io_pt_cfg->mapt_blk_cnt)) {
@@ -385,17 +383,17 @@ static void ummu_release_mapt_info_by_index(struct ummu_domain *ummu_domain,
 		       ummu_domain->base_domain.tid, mode);
 }
 
-void ummu_release_domain_mapt_mem(struct ummu_domain *ummu_domain)
+void ummu_release_domain_mapt_mem(struct ummu_domain *u_domain)
 {
-	struct ummu_mapt_info *io_pt_cfg = &ummu_domain->cfgs.s1_cfg.io_pt_cfg;
-	struct ummu_tct_desc *tct_desc = &ummu_domain->cfgs.s1_cfg.tct;
+	struct ummu_mapt_info *io_pt_cfg = &u_domain->cfgs.s1_cfg.io_pt_cfg;
+	struct ummu_tct_desc *tct_desc = &u_domain->cfgs.s1_cfg.tct;
 	struct io_pt_blk_table blk_tbl;
 	__le64 *blk_tbl_ptr, *ent_ptr;
 	unsigned long addr;
 	u32 size_order;
 	int i, mode;
 
-	guard(mutex)(&ummu_domain->init_mutex);
+	guard(mutex)(&u_domain->init_mutex);
 
 	if (!tct_desc->mapt_en)
 		return;
@@ -416,8 +414,9 @@ void ummu_release_domain_mapt_mem(struct ummu_domain *ummu_domain)
 	tct_desc->mapt_en = 0;
 	tct_desc->mapt_blk_phys = 0;
 	tct_desc->mapt_blk_tbl_phys = 0;
-	ummu_write_tct_desc(core_to_ummu_device(ummu_domain->base_domain.core_dev),
-			    &ummu_domain->cfgs, true);
+	ummu_device_clear_tct_desc(
+		core_to_ummu_device(u_domain->base_domain.core_dev),
+		u_domain->cfgs.tect_tag, u_domain->base_domain.tid);
 
 	/* release mapt memory */
 	if (mode == MAPT_MODE_TABLE) {
