@@ -5964,7 +5964,7 @@ static int mem_cgroup_slab_show(struct seq_file *m, void *p)
 #endif
 
 #ifdef CONFIG_KSM
-static int memcg_set_ksm_for_tasks(struct mem_cgroup *memcg, bool enable)
+static int __memcg_set_ksm_for_tasks(struct mem_cgroup *memcg, bool enable)
 {
 	struct task_struct *task;
 	struct mm_struct *mm;
@@ -5998,6 +5998,27 @@ static int memcg_set_ksm_for_tasks(struct mem_cgroup *memcg, bool enable)
 	return ret;
 }
 
+static int memcg_set_ksm_for_tasks(struct mem_cgroup *memcg, bool enable)
+{
+	struct mem_cgroup *iter;
+	int ret = 0;
+
+	for_each_mem_cgroup_tree(iter, memcg) {
+		if (READ_ONCE(iter->auto_ksm_enabled) == enable)
+			continue;
+
+		ret = __memcg_set_ksm_for_tasks(iter, enable);
+		if (ret) {
+			mem_cgroup_iter_break(memcg, iter);
+			break;
+		}
+
+		WRITE_ONCE(iter->auto_ksm_enabled, enable);
+	}
+
+	return ret;
+}
+
 static int memory_ksm_show(struct seq_file *m, void *v)
 {
 	unsigned long ksm_merging_pages = 0;
@@ -6025,6 +6046,7 @@ static int memory_ksm_show(struct seq_file *m, void *v)
 	}
 	css_task_iter_end(&it);
 
+	seq_printf(m, "auto ksm enabled: %d\n", READ_ONCE(memcg->auto_ksm_enabled));
 	seq_printf(m, "merge any tasks: %u\n", tasks);
 	seq_printf(m, "ksm_rmap_items %lu\n", ksm_rmap_items);
 	seq_printf(m, "ksm_merging_pages %lu\n", ksm_merging_pages);
@@ -6046,6 +6068,9 @@ static ssize_t memory_ksm_write(struct kernfs_open_file *of, char *buf,
 	err = kstrtobool(buf, &enable);
 	if (err)
 		return err;
+
+	if (READ_ONCE(memcg->auto_ksm_enabled) == enable)
+		return nbytes;
 
 	err = memcg_set_ksm_for_tasks(memcg, enable);
 	if (err)
@@ -6777,6 +6802,9 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 		page_counter_init(&memcg->kmem, &parent->kmem);
 		page_counter_init(&memcg->tcpmem, &parent->tcpmem);
 		memcg_swap_device_init(memcg, parent);
+#ifdef CONFIG_KSM
+		memcg->auto_ksm_enabled = READ_ONCE(parent->auto_ksm_enabled);
+#endif
 	} else {
 		init_memcg_events();
 		page_counter_init(&memcg->memory, NULL);
