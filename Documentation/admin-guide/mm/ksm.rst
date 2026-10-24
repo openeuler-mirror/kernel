@@ -129,6 +129,23 @@ use_zero_pages
 
         Default: 0 (normal KSM behaviour as in earlier releases)
 
+only_merge_zero_pages
+        specifies whether ksmd should only try to merge empty pages.
+        When set to 1, ksmd skips non-empty pages early during the
+        page table scan and does not keep rmap_item metadata for them,
+        which reduces the memory overhead of KSM and speeds up scanning
+        when most mergeable pages are not empty. Pages that are already
+        merged are still tracked and remain merged. When
+        ``use_zero_pages`` is enabled as well, empty pages are merged
+        with the kernel zero page(s) instead of with each other. The
+        kernel zero page(s) need no reverse mapping, so no rmap_items
+        or stable nodes are needed for them. This setting can be
+        changed at any time, it is only effective for pages scanned
+        after the change.
+
+        Default: 0 (all mergeable pages are candidates for merging,
+        as in earlier releases)
+
 max_page_sharing
         Maximum sharing allowed for each KSM page. This enforces a
         deduplication limit to avoid high latency for virtual memory

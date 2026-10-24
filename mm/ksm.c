@@ -281,6 +281,8 @@ static unsigned int zero_checksum __read_mostly;
 /* Whether to merge empty (zeroed) pages with actual zero pages */
 static bool ksm_use_zero_pages __read_mostly;
 
+static bool ksm_only_merge_zero_pages __read_mostly;
+
 /* The number of zero pages which is placed by KSM */
 atomic_long_t ksm_zero_pages = ATOMIC_LONG_INIT(0);
 
@@ -2324,7 +2326,41 @@ struct ksm_next_page_arg {
 	struct folio *folio;
 	struct page *page;
 	unsigned long addr;
+	unsigned int nr_to_skip;
 };
+
+static inline bool page_maybe_zero(struct page *page)
+{
+	unsigned long *p;
+	bool ret = true;
+	unsigned int last_pos = PAGE_SIZE / sizeof(*p) - 1;
+
+	p = kmap_atomic(page);
+	if (p[0] || p[last_pos])
+		ret = false;
+	kunmap_atomic(p);
+	return ret;
+}
+
+static struct page *ksm_skip_nonzero_pages(struct page *page,
+					   unsigned long *addr,
+					   unsigned long nr,
+					   unsigned int *nr_to_skip)
+{
+	unsigned long i;
+
+	for (i = 0; i < nr; i++) {
+		if (!*nr_to_skip)
+			break;
+		(*nr_to_skip)--;
+		if (page_maybe_zero(page + i))
+			break;
+	}
+	if (i == nr)
+		return NULL;
+	*addr += i << PAGE_SHIFT;
+	return page + i;
+}
 
 static int ksm_next_page_pmd_entry(pmd_t *pmdp, unsigned long addr, unsigned long end,
 		struct mm_walk *walk)
@@ -2363,6 +2399,13 @@ static int ksm_next_page_pmd_entry(pmd_t *pmdp, unsigned long addr, unsigned lon
 				goto not_found_unlock;
 
 			page += ((addr & (PMD_SIZE - 1)) >> PAGE_SHIFT);
+			if (ksm_only_merge_zero_pages) {
+				page = ksm_skip_nonzero_pages(page, &addr,
+					(end - addr) >> PAGE_SHIFT,
+					&private->nr_to_skip);
+				if (!page)
+					goto not_found_unlock;
+			}
 			goto found_unlock;
 		}
 		spin_unlock(ptl);
@@ -2385,6 +2428,14 @@ static int ksm_next_page_pmd_entry(pmd_t *pmdp, unsigned long addr, unsigned lon
 
 		if (folio_is_zone_device(folio) || !folio_test_anon(folio))
 			continue;
+
+		if (ksm_only_merge_zero_pages && !folio_test_ksm(folio)) {
+			page = ksm_skip_nonzero_pages(page, &addr, 1,
+						      &private->nr_to_skip);
+			if (!page)
+				continue;
+		}
+
 		goto found_unlock;
 	}
 
@@ -2408,6 +2459,40 @@ static struct mm_walk_ops ksm_next_page_ops = {
 	.pmd_entry = ksm_next_page_pmd_entry,
 	.walk_lock = PGWALK_RDLOCK,
 };
+
+static bool should_skip_page(struct ksm_rmap_item **rmap_list,
+					    unsigned long addr, struct page *page)
+{
+	struct ksm_rmap_item *rmap_item;
+	unsigned long *p;
+	int i;
+
+	if (!ksm_only_merge_zero_pages)
+		return false;
+
+	if (PageKsm(page))
+		return false;
+
+	p = kmap_atomic(page);
+	for (i = 0; i < PAGE_SIZE / sizeof(unsigned long); ++i) {
+		if (p[i] != 0) {
+			kunmap_atomic(p);
+			while (*rmap_list) {
+				rmap_item = *rmap_list;
+				if ((rmap_item->address & PAGE_MASK) > addr)
+					break;
+				*rmap_list = rmap_item->rmap_list;
+				remove_rmap_item_from_tree(rmap_item);
+				free_rmap_item(rmap_item);
+			}
+			return true;
+		}
+	}
+	kunmap_atomic(p);
+
+	return false;
+}
+
 
 static struct ksm_rmap_item *scan_get_next_rmap_item(struct page **page)
 {
@@ -2504,6 +2589,7 @@ next_mm:
 
 			int found;
 
+			ksm_next_page_arg.nr_to_skip = 1024;
 			found = walk_page_range_vma(vma, ksm_scan.address,
 						    vma->vm_end,
 						    &ksm_next_page_ops,
@@ -2520,6 +2606,14 @@ next_mm:
 			if (tmp_page) {
 				flush_anon_page(vma, tmp_page, ksm_scan.address);
 				flush_dcache_page(tmp_page);
+
+				if (should_skip_page(ksm_scan.rmap_list, ksm_scan.address, tmp_page)) {
+					folio_put(folio);
+					ksm_scan.address += PAGE_SIZE;
+					mmap_read_unlock(mm);
+					return ERR_PTR(-EAGAIN);
+				}
+
 				rmap_item = get_next_rmap_item(mm_slot,
 					ksm_scan.rmap_list, ksm_scan.address);
 				if (rmap_item) {
@@ -2613,6 +2707,10 @@ static void ksm_do_scan(unsigned int scan_npages)
 		rmap_item = scan_get_next_rmap_item(&page);
 		if (!rmap_item)
 			return;
+		if (rmap_item == ERR_PTR(-EAGAIN)) {
+			ksm_pages_scanned++;
+			continue;
+		}
 		cmp_and_merge_page(page, rmap_item);
 		put_page(page);
 		ksm_pages_scanned++;
@@ -3495,6 +3593,28 @@ static ssize_t use_zero_pages_store(struct kobject *kobj,
 }
 KSM_ATTR(use_zero_pages);
 
+static ssize_t only_merge_zero_pages_show(struct kobject *kobj,
+				struct kobj_attribute *attr, char *buf)
+{
+	return sysfs_emit(buf, "%u\n", ksm_only_merge_zero_pages);
+}
+static ssize_t only_merge_zero_pages_store(struct kobject *kobj,
+				   struct kobj_attribute *attr,
+				   const char *buf, size_t count)
+{
+	int err;
+	bool value;
+
+	err = kstrtobool(buf, &value);
+	if (err)
+		return -EINVAL;
+
+	ksm_only_merge_zero_pages = value;
+
+	return count;
+}
+KSM_ATTR(only_merge_zero_pages);
+
 static ssize_t max_page_sharing_show(struct kobject *kobj,
 				     struct kobj_attribute *attr, char *buf)
 {
@@ -3666,6 +3786,7 @@ static struct attribute *ksm_attrs[] = {
 	&stable_node_dups_attr.attr,
 	&stable_node_chains_prune_millisecs_attr.attr,
 	&use_zero_pages_attr.attr,
+	&only_merge_zero_pages_attr.attr,
 	&general_profit_attr.attr,
 	NULL,
 };
