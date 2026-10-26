@@ -591,6 +591,7 @@ static int __bpf_trampoline_link_prog(struct bpf_tramp_link *link,
 	}
 
 	hlist_add_head(&link->tramp_hlist, &tr->progs_hlist[kind]);
+	link->link.prog->aux->tramp_linked = true;
 	tr->progs_cnt[kind]++;
 	err = bpf_trampoline_update(tr, true /* lock_direct_mutex */);
 	if (err) {
