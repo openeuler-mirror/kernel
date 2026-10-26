@@ -4,6 +4,8 @@
  * Copyright (c) 2016, Intel Corporation.
  */
 
+#include <linux/bitfield.h>
+
 #include <acpi/cppc_acpi.h>
 #include <asm/msr.h>
 #include <asm/processor.h>
@@ -115,7 +117,7 @@ static void amd_set_max_freq_ratio(void)
 
 static DEFINE_MUTEX(freq_invariance_lock);
 
-void init_freq_invariance_cppc(void)
+static inline void init_freq_invariance_cppc(void)
 {
 	static bool init_done;
 
@@ -130,6 +132,11 @@ void init_freq_invariance_cppc(void)
 		amd_set_max_freq_ratio();
 	init_done = true;
 	mutex_unlock(&freq_invariance_lock);
+}
+
+void acpi_processor_init_invariance_cppc(void)
+{
+	init_freq_invariance_cppc();
 }
 
 /*
@@ -149,7 +156,7 @@ int amd_get_highest_perf(unsigned int cpu, u32 *highest_perf)
 		if (ret)
 			goto out;
 
-		val = AMD_CPPC_HIGHEST_PERF(val);
+		val = FIELD_GET(AMD_CPPC_HIGHEST_PERF_MASK, val);
 	} else {
 		ret = cppc_get_highest_perf(cpu, &val);
 		if (ret)

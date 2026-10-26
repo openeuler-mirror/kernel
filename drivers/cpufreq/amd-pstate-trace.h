@@ -90,7 +90,8 @@ TRACE_EVENT(amd_pstate_epp_perf,
 		 u8 epp,
 		 u8 min_perf,
 		 u8 max_perf,
-		 bool boost
+		 bool boost,
+		 bool changed
 		 ),
 
 	TP_ARGS(cpu_id,
@@ -98,7 +99,8 @@ TRACE_EVENT(amd_pstate_epp_perf,
 		epp,
 		min_perf,
 		max_perf,
-		boost),
+		boost,
+		changed),
 
 	TP_STRUCT__entry(
 		__field(unsigned int, cpu_id)
@@ -107,6 +109,7 @@ TRACE_EVENT(amd_pstate_epp_perf,
 		__field(u8, min_perf)
 		__field(u8, max_perf)
 		__field(bool, boost)
+		__field(bool, changed)
 		),
 
 	TP_fast_assign(
@@ -116,15 +119,52 @@ TRACE_EVENT(amd_pstate_epp_perf,
 		__entry->min_perf = min_perf;
 		__entry->max_perf = max_perf;
 		__entry->boost = boost;
+		__entry->changed = changed;
 		),
 
-	TP_printk("cpu%u: [%hhu<->%hhu]/%hhu, epp=%hhu, boost=%u",
+	TP_printk("cpu%u: [%hhu<->%hhu]/%hhu, epp=%hhu, boost=%u, changed=%u",
 		  (unsigned int)__entry->cpu_id,
 		  (u8)__entry->min_perf,
 		  (u8)__entry->max_perf,
 		  (u8)__entry->highest_perf,
 		  (u8)__entry->epp,
-		  (bool)__entry->boost
+		  (bool)__entry->boost,
+		  (bool)__entry->changed
+		 )
+);
+
+TRACE_EVENT(amd_pstate_cppc_req2,
+
+	TP_PROTO(unsigned int cpu_id,
+		 u8 floor_perf,
+		 bool changed,
+		 int err_code
+		 ),
+
+	TP_ARGS(cpu_id,
+		floor_perf,
+		changed,
+		err_code),
+
+	TP_STRUCT__entry(
+		__field(unsigned int, cpu_id)
+		__field(u8, floor_perf)
+		__field(bool, changed)
+		__field(int, err_code)
+		),
+
+	TP_fast_assign(
+		__entry->cpu_id = cpu_id;
+		__entry->floor_perf = floor_perf;
+		__entry->changed = changed;
+		__entry->err_code = err_code;
+		),
+
+	TP_printk("cpu%u: floor_perf=%u, changed=%u (error = %d)",
+		  __entry->cpu_id,
+		  __entry->floor_perf,
+		  __entry->changed,
+		  __entry->err_code
 		 )
 );
 

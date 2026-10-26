@@ -442,4 +442,6 @@ static inline void acpi_thermal_cpufreq_exit(struct cpufreq_policy *policy)
 	return;
 }
 #endif	/* CONFIG_CPU_FREQ */
+void acpi_processor_init_invariance_cppc(void);
+
 #endif
