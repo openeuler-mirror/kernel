@@ -13,6 +13,8 @@
 #include <linux/kernel.h>
 #include <linux/inet.h>
 #include <linux/netdevice.h>
+#include <linux/mutex.h>
+#include <linux/rtnetlink.h>
 #include <linux/string.h>
 #include "ipourma_netdev.h"
 #include "ipourma_res.h"
@@ -182,7 +184,10 @@ static int ipourma_netdev_event(struct notifier_block *nb, unsigned long event, 
 	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	struct ipourma_dev_priv *priv = NULL;
 
-	if (!strstr(dev->name, "ipourma"))
+	/* Only react to netdevs created by the ipourma rtnl_link_ops; matching on
+	 * the name alone could dereference a foreign netdev_priv.
+	 */
+	if (dev->rtnl_link_ops != ipourma_get_rtnl_link_ops())
 		return NOTIFY_DONE;
 	priv = (struct ipourma_dev_priv *)netdev_priv(dev);
 
@@ -236,7 +241,13 @@ static int ipourma_priv_eid_init(struct net_device *dev)
 	}
 
 	priv->eid_change_handler.event_callback = ipourma_do_eid_change_handler;
-	ubcore_register_event_handler(priv->urma_dev, &priv->eid_change_handler);
+	/* Register + flag must be atomic vs. ndo_uninit; skip if teardown began. */
+	mutex_lock(&priv->evt_lock);
+	if (!priv->eid_dying) {
+		ubcore_register_event_handler(priv->urma_dev, &priv->eid_change_handler);
+		priv->eid_handler_registered = true;
+	}
+	mutex_unlock(&priv->evt_lock);
 
 	spin_lock(&urma_dev->eid_table.lock);
 	if (IS_ERR_OR_NULL(urma_dev->eid_table.eid_entries))
@@ -336,15 +347,20 @@ static inline void ipourma_flush_register_wq(struct ipourma_dev_priv *priv)
 	if (!IS_ERR_OR_NULL(priv->register_wq)) {
 		flush_workqueue(priv->register_wq);
 		destroy_workqueue(priv->register_wq);
+		priv->register_wq = NULL;
 	}
 }
 
 static void ipourma_unregister_netdev(struct ipourma_dev_priv *priv)
 {
-	ubcore_unregister_event_handler(priv->urma_dev, &priv->eid_change_handler);
+	/* ubcore detach (eid handler, sysfs) and set_ip stop run in ndo_uninit
+	 * during unregister_netdev. Skip unregister if `ip link del` already did
+	 * it, to avoid a double unregister; heavy teardown and free need no rtnl. */
 	ipourma_flush_register_wq(priv);
-	ipourma_unregister_sysfs(priv);
-	unregister_netdev(priv->dev);
+	rtnl_lock();
+	if (priv->dev->reg_state == NETREG_REGISTERED)
+		unregister_netdevice(priv->dev);
+	rtnl_unlock();
 	ipourma_cleanup_res(priv->dev);
 	ipourma_unalloc_netdev(priv->dev);
 }

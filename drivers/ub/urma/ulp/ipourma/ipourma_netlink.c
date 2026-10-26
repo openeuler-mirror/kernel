@@ -101,6 +101,12 @@ static int ipourma_changelink(struct net_device *dev, struct nlattr *tb[],
 	return 0;
 }
 
+/* ipourma teardown runs in ndo_uninit during unregister. */
+static void ipourma_dellink(struct net_device *dev, struct list_head *head)
+{
+	unregister_netdevice_queue(dev, head);
+}
+
 struct rtnl_link_ops ipourma_link_ops __read_mostly = {
 	.kind       = "ipourma",
 	.maxtype    = IFLA_IPOURMA_MAX,
@@ -109,9 +115,15 @@ struct rtnl_link_ops ipourma_link_ops __read_mostly = {
 	.setup      = ipourma_setup_common,
 	.newlink    = ipourma_newlink,
 	.changelink = ipourma_changelink,
+	.dellink    = ipourma_dellink,
 	.get_size   = ipourma_get_size,
 	.fill_info  = ipourma_fill_info,
 };
+
+struct rtnl_link_ops *ipourma_get_rtnl_link_ops(void)
+{
+	return &ipourma_link_ops;
+}
 
 int ipourma_netlink_init(void)
 {
