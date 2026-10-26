@@ -1551,6 +1551,7 @@ struct bpf_prog_aux {
 	u32 max_rdwr_access;
 	KABI_FILL_HOLE(bool is_extended) /* true if extended by freplace program */
 	KABI_FILL_HOLE(bool changes_pkt_data)
+	KABI_FILL_HOLE(bool tramp_linked) /* true if it was ever linked to a trampoline */
 	struct btf *attach_btf;
 	const struct bpf_ctx_arg_aux *ctx_arg_info;
 	struct mutex dst_mutex; /* protects dst_* pointers below, *after* prog becomes visible */
@@ -1562,7 +1563,6 @@ struct bpf_prog_aux {
 	bool dev_bound; /* Program is bound to the netdev. */
 	bool offload_requested; /* Program is bound and offloaded to the netdev. */
 	bool attach_btf_trace; /* true if attaching to BTF-enabled raw tp */
-	bool tramp_linked; /* true if it was ever linked to a trampoline */
 	bool func_proto_unreliable;
 	KABI_DEPRECATE(bool, sleepable)
 	bool tail_call_reachable;
