@@ -114,6 +114,8 @@ static struct xsched_entity *__raw_pick_next_ctx(struct xsched_cu *xcu)
 				return NULL;
 			}
 
+			XSCHED_DEBUG("Pick next xse %d @ %s\n", next->tgid, __func__);
+
 			break;
 		}
 	}
