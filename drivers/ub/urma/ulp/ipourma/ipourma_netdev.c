@@ -11,6 +11,7 @@
 #include <net/route.h>
 #include <linux/version.h>
 #include <linux/netdevice.h>
+#include <linux/mutex.h>
 #include <linux/ipv6.h>
 #include <linux/in6.h>
 #include <linux/if_ether.h>
@@ -29,6 +30,7 @@
 #include "ipourma_addr_res.h"
 #include "ipourma_ethtool.h"
 #include "ipourma_netlink.h"
+#include "ipourma_sysfs.h"
 #include "ub/urma/ubcore_uapi.h"
 #include "ipourma_netdev.h"
 
@@ -275,7 +277,23 @@ static int ipourma_ndo_init(struct net_device *dev)
 
 static void ipourma_ndo_uninit(struct net_device *dev)
 {
-	// do uninit in ipourma_stop
+	struct ipourma_dev_priv *priv = netdev_priv(dev);
+
+	/* Detach from ubcore on every destruction path (also `ip link del`).
+	 * Mark dying and clear the handler under evt_lock vs. a concurrent
+	 * ipourma_priv_eid_init. Runs under rtnl_lock. */
+	mutex_lock(&priv->evt_lock);
+	priv->eid_dying = true;
+	if (priv->eid_handler_registered) {
+		ubcore_unregister_event_handler(priv->urma_dev, &priv->eid_change_handler);
+		priv->eid_handler_registered = false;
+	}
+	mutex_unlock(&priv->evt_lock);
+	atomic_set(&priv->need_set_ip, 0);
+	if (priv->sysfs_registered) {
+		ipourma_unregister_sysfs(priv);
+		priv->sysfs_registered = false;
+	}
 }
 
 static inline void ipourma_napi_enable(struct net_device *dev)
@@ -581,7 +599,7 @@ static int ipourma_priv_base_init(struct net_device *dev,
 {
 	struct ipourma_dev_priv *priv = netdev_priv(dev);
 
-	spin_lock_init(&priv->lock);
+	mutex_init(&priv->evt_lock);
 	priv->urma_dev = urma_dev;
 	priv->dev = dev;
 	priv->urma_mtu = ipourma_mtu_to_bytes(urma_dev->attr.port_attr[0].max_mtu);
@@ -671,6 +689,7 @@ int ipourma_unalloc_netdev(struct net_device *dev)
 
 	if (priv->eid_info)
 		ipourma_priv_eid_uninit(priv);
+	mutex_destroy(&priv->evt_lock);
 	free_netdev(dev);
 	return 0;
 }
