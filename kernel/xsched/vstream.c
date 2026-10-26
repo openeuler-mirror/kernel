@@ -675,7 +675,7 @@ static int vstream_hbm_free(struct vstream_args *arg)
 {
 	struct xsched_cu *xcu_found;
 	struct xsched_context *ctx;
-	int ret;
+	int ret = 0;
 
 	if (!dmem_cgroup_enabled())
 		return -EPERM;
@@ -690,13 +690,10 @@ static int vstream_hbm_free(struct vstream_args *arg)
 		kref_get(&ctx->kref);
 	mutex_unlock(&xcu_found->ctx_list_lock);
 
-	if (!ctx) {
-		XSCHED_ERR("Failed to find a context for HBM free");
-		return -ENOENT;
+	if (ctx) {
+		ret = xsched_dmem_free(ctx, arg);
+		kref_put(&ctx->kref, xsched_task_free);
 	}
-
-	ret = xsched_dmem_free(ctx, arg);
-	kref_put(&ctx->kref, xsched_task_free);
 
 	return ret;
 }
