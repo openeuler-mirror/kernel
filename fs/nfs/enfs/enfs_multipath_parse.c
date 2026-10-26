@@ -413,6 +413,7 @@ int nfs_multipath_parse_dns_list(char *buffer, struct net *net_ns,
 		kfree(dns);
 		return -EINVAL;
 	}
+	kfree(options->pRemoteDnsInfo);
 	options->pRemoteDnsInfo = dns;
 	return 0;
 out:

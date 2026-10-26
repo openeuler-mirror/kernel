@@ -531,6 +531,8 @@ int multipath_query_dns(struct multipath_mount_options *opt,
 		return -ENOMEM;
 	ip_list->count = 0;
 	dns_info = opt->pRemoteDnsInfo;
+	slot = enfs_get_config_link_count_per_mount() /
+	       dns_info->dnsNameCount;
 	dns_name = kmalloc(dns_info->dnsNameCount * EXTEND_MAX_DNS_NAME_LEN, GFP_KERNEL);
 	if (!dns_name) {
 		kfree(ip_list);
@@ -545,8 +547,6 @@ int multipath_query_dns(struct multipath_mount_options *opt,
 				dns_info->routeRemoteDnsList[i].dnsname);
 		}
 
-		slot = enfs_get_config_link_count_per_mount() /
-		       dns_info->dnsNameCount;
 		ret = enfs_server_query_dns(clnt, dns_info, ip_list,
 					    enfs_get_config_link_count_per_mount(), ip_type,
 					    dns_info->dnsNameCount, dns_name);
@@ -784,8 +784,8 @@ static void do_dns_update(struct work_struct *work)
 	find_and_remount(wk->clp, wk);
 
 	enfs_free_nfsclient_info(wk->clp_info);
+	rpc_release_client(wk->clRpcclient);
 	nfs_put_client(wk->clp);
-	//rpc_release_client(wk->clRpcclient);
 	kfree(wk);
 	wk = NULL;
 }
@@ -823,9 +823,11 @@ static int dns_update_work(struct nfs_client *clp, void *data)
 	*wk->clp_info->pRemoteDnsInfo = *clp_info->pRemoteDnsInfo;
 
 	if (!refcount_inc_not_zero(&clp->cl_rpcclient->cl_count)) {
+		clp_info->updating_domain = 0;
 		enfs_free_nfsclient_info(wk->clp_info);
 		kfree(wk);
 		kfree(item);
+		return -EINVAL;
 	}
 	nfsclient_refinc(&clp->cl_count);
 	wk->clp = clp;

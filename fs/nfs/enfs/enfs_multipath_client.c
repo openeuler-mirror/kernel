@@ -60,12 +60,9 @@ void enfs_free_nfsclient_info(struct multipath_client_info *client_info)
 	if (!client_info)
 		return;
 
-	if (!client_info->local_ip_list)
-		kfree(client_info->local_ip_list);
-	if (!client_info->remote_ip_list)
-		kfree(client_info->remote_ip_list);
-	if (!client_info->pRemoteDnsInfo)
-		kfree(client_info->pRemoteDnsInfo);
+	kfree(client_info->local_ip_list);
+	kfree(client_info->remote_ip_list);
+	kfree(client_info->pRemoteDnsInfo);
 	kfree(client_info);
 }
 
