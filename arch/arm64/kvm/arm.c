@@ -2281,7 +2281,7 @@ static int kvm_arch_vcpu_ioctl_vcpu_init(struct kvm_vcpu *vcpu,
 	 * imply CTR_EL0.DIC.
 	 */
 	if (vcpu_has_run_once(vcpu)) {
-		if (!cpus_have_final_cap(ARM64_HAS_STAGE2_FWB))
+		if (!cpus_have_final_cap(ARM64_HAS_STAGE2_FWB) || is_pvm_mode())
 			stage2_unmap_vm(vcpu->kvm);
 		else
 			icache_inval_all_pou();

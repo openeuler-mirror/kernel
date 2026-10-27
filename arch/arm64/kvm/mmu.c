@@ -375,9 +375,14 @@ static void stage2_flush_vm(struct kvm *kvm)
 	idx = srcu_read_lock(&kvm->srcu);
 	write_lock(&kvm->mmu_lock);
 
-	slots = kvm_memslots(kvm);
-	kvm_for_each_memslot(memslot, bkt, slots)
-		stage2_flush_memslot(kvm, memslot);
+	if (is_pvm_mode()) {
+		/* Unmapping also covers every GVA alias and its cache maintenance. */
+		kvm_pvm_unmap_all(kvm, true);
+	} else {
+		slots = kvm_memslots(kvm);
+		kvm_for_each_memslot(memslot, bkt, slots)
+			stage2_flush_memslot(kvm, memslot);
+	}
 
 	write_unlock(&kvm->mmu_lock);
 	srcu_read_unlock(&kvm->srcu, idx);
