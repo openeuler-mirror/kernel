@@ -281,6 +281,8 @@ static void clean_dcache_guest_page(void *va, size_t size)
 
 static void invalidate_icache_guest_page(void *va, size_t size)
 {
+	if (is_pvm_mode() && !cpus_have_const_cap(ARM64_HAS_CACHE_IDC))
+		dcache_clean_pou((unsigned long)va, (unsigned long)va + size);
 	__invalidate_icache_guest_page(va, size);
 }
 
