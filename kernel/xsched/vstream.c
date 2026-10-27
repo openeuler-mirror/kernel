@@ -365,7 +365,7 @@ static vstream_info_t *
 vstream_get_by_user_stream_id(struct xsched_cu *xcu, uint32_t user_stream_id)
 {
 	int id;
-	static vstream_info_t *ret;
+	vstream_info_t *ret = NULL;
 
 	mutex_lock(&xcu->vs_array_lock);
 	for (id = 0; id < MAX_VSTREAM_NUM; id++) {
@@ -376,6 +376,7 @@ vstream_get_by_user_stream_id(struct xsched_cu *xcu, uint32_t user_stream_id)
 		}
 	}
 	mutex_unlock(&xcu->vs_array_lock);
+
 	return ret;
 }
 
@@ -507,8 +508,13 @@ static int logic_cq_alloc(struct vstream_args *arg)
 
 	vstream = vstream_get_by_user_stream_id(xcu_found,
 		logic_cq_alloc_para->user_stream_id);
-	if (vstream)
-		xcu_found = vstream->xcu;
+
+	if (!vstream) {
+		XSCHED_ERR("Invalid stream id.\n");
+		return -EINVAL;
+	}
+
+	xcu_found = vstream->xcu;
 	params.group = xcu_found->group;
 	params.fd = arg->fd;
 	params.payload = arg->payload;
@@ -518,8 +524,7 @@ static int logic_cq_alloc(struct vstream_args *arg)
 		XSCHED_ERR("Fail to alloc logic CQ memory to a vstream.\n");
 		return err;
 	}
-	if (vstream)
-		vstream->logic_vcq_id = logic_cq_id;
+	vstream->logic_vcq_id = logic_cq_id;
 
 	return 0;
 }
@@ -670,7 +675,7 @@ static int vstream_hbm_free(struct vstream_args *arg)
 {
 	struct xsched_cu *xcu_found;
 	struct xsched_context *ctx;
-	int ret;
+	int ret = 0;
 
 	if (!dmem_cgroup_enabled())
 		return -EPERM;
@@ -685,13 +690,10 @@ static int vstream_hbm_free(struct vstream_args *arg)
 		kref_get(&ctx->kref);
 	mutex_unlock(&xcu_found->ctx_list_lock);
 
-	if (!ctx) {
-		XSCHED_ERR("Failed to find a context for HBM free");
-		return -ENOENT;
+	if (ctx) {
+		ret = xsched_dmem_free(ctx, arg);
+		kref_put(&ctx->kref, xsched_task_free);
 	}
-
-	ret = xsched_dmem_free(ctx, arg);
-	kref_put(&ctx->kref, xsched_task_free);
 
 	return ret;
 }
