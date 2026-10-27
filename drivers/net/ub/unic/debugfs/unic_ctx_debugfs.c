@@ -84,14 +84,14 @@ static void unic_dump_jfc_ctx_info_sw(struct unic_cq *cq, struct seq_file *s,
 
 static inline void unic_jfs_sq_info_print(struct seq_file *s)
 {
-	seq_puts(s, "SQ_ID  PI  CI  LAST_PI  START_CI  ");
+	seq_puts(s, "SQ_ID  PI    CI    LAST_PI  START_CI  ");
 	seq_puts(s, "CHECK_CI_LATE  QUEUE_INDEX  QUEUE_STATE  ");
 	seq_puts(s, "TX_BUFF_NUM  TX_BUFF_PI  TX_BUFF_CI\n");
 }
 
 static inline void unic_jfr_rq_info_print(struct seq_file *s)
 {
-	seq_puts(s, "RQ_ID  PI  CI  QUEUE_INDEX  PENDING_BUF\n");
+	seq_puts(s, "RQ_ID  PI    CI    QUEUE_INDEX  PENDING_BUF\n");
 }
 
 static inline void unic_jfc_sq_cq_info_print(struct seq_file *s)
@@ -114,8 +114,8 @@ static void unic_get_jfs_sq_info(struct unic_dev *unic_dev,
 	queue = netdev_get_tx_queue(netdev, sq->queue_index);
 
 	seq_printf(s, "%-7u", index);
-	seq_printf(s, "%-4u", sq->pi);
-	seq_printf(s, "%-4u", sq->ci);
+	seq_printf(s, "%-6u", sq->pi);
+	seq_printf(s, "%-6u", sq->ci);
 	seq_printf(s, "%-9u", sq->last_pi);
 	seq_printf(s, "%-10u", sq->start_pi);
 	seq_printf(s, "%-15d", sq->check_ci_late);
@@ -132,8 +132,8 @@ static void unic_get_jfr_rq_info(struct unic_dev *unic_dev,
 	struct unic_rq *rq = unic_dev->channels.c[index].rq;
 
 	seq_printf(s, "%-7u", index);
-	seq_printf(s, "%-4u", rq->pi);
-	seq_printf(s, "%-4u", rq->ci);
+	seq_printf(s, "%-6u", rq->pi);
+	seq_printf(s, "%-6u", rq->ci);
 	seq_printf(s, "%-13u", rq->queue_index);
 	seq_printf(s, "%-11u\n", rq->pending_buf);
 }

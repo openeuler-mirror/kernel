@@ -758,7 +758,8 @@ err_alloc_pages:
 
 static int unic_sq_alloc_resource(struct unic_dev *unic_dev, struct unic_sq *sq)
 {
-	u16 page_num = UNIC_TX_PAGES_NUM / unic_dev->channels.num;
+	u16 page_num = min(UNIC_TX_PAGES_NUM / unic_dev->channels.num,
+			   unic_dev->channels.sqebb_depth);
 	struct auxiliary_device *adev = unic_dev->comdev.adev;
 	u16 sqebb_depth = unic_dev->channels.sqebb_depth;
 	u32 size = sqebb_depth * sizeof(struct unic_sqebb);
