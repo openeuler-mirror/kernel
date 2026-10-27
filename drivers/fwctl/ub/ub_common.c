@@ -154,15 +154,16 @@ static int ubctl_cmd_send_deal(struct ubctl_dev *ucdev,
 	}
 
 	if (*retval) {
-		ubctl_err(ucdev, "failed to execute ubctl ubase cmd send, retval = %d.\n",
-			  *retval);
+		ubctl_err(ucdev, "failed to execute ubctl ubase cmd send, retval = %d, opcode = %#x.\n",
+			  *retval, cmd.op_code);
 		return -EINVAL;
 	}
 
 	ret = cmd_data->query_func->data_deal(ucdev, query_cmd_param, &cmd,
 					      query_dp->out_len, offset);
 	if (ret)
-		ubctl_err(ucdev, "failed to execute ubctl data deal, ret = %d.\n", ret);
+		ubctl_err(ucdev, "failed to execute ubctl data deal, ret = %d, opcode = %#x.\n",
+			  ret, cmd.op_code);
 
 	return ret;
 }

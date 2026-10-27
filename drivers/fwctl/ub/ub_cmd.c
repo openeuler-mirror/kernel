@@ -3,143 +3,13 @@
  * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
  */
 
-#include <linux/io.h>
-#include <linux/sort.h>
-
 #include "ub_cmdq.h"
+#include "ub_cmd_ummu.h"
 #include "ub_cmd.h"
 
 #define UBCTL_CQE_SIZE 16
 #define UBCTL_SCC_SZ_1M 0x100000
 #define UBCTL_LINK_SIZE_MAX 10
-#define UBCTL_MAX_PORT_NUM 64U
-
-static u32 g_ubctl_ummu_reg_addr[] = {
-	// KCMD
-	UBCTL_UMMU_SWIF_KCMDQ_DFX_KCMD_STATUS,
-	UBCTL_UMMU_SWIF_KCMDQ_DFX_KCMD_ERR_STATUS,
-	// CMD_CTRL
-	UBCTL_UMMU_SWIF_KCMDQ_DFX_SNP_ERR_CNT,
-	UBCTL_UMMU_SWIF_KCMDQ_DFX_CMD_ENTRY_STATUS_0,
-	UBCTL_UMMU_SWIF_KCMDQ_DFX_CMD_ENTRY_STATUS_1,
-	UBCTL_UMMU_SWIF_KCMDQ_DFX_CMD_ENTRY_STATUS_2,
-	UBCTL_UMMU_SWIF_KCMDQ_DFX_CMD_ENTRY_STATUS_3,
-	UBCTL_UMMU_SWIF_KCMDQ_DFX_CMD_ENTRY_STATUS_4,
-	UBCTL_UMMU_SWIF_KCMDQ_DFX_CMD_ENTRY_STATUS_5,
-	UBCTL_UMMU_SWIF_KCMDQ_DFX_CMD_ENTRY_STATUS_6,
-	UBCTL_UMMU_SWIF_KCMDQ_DFX_CMD_ENTRY_STATUS_7,
-	UBCTL_UMMU_SWIF_KCMDQ_DFX_CMD_ENTRY_STATUS_8,
-	UBCTL_UMMU_SWIF_KCMDQ_DFX_CMD_ENTRY_STATUS_9,
-	UBCTL_UMMU_SWIF_KCMDQ_DFX_CMD_ENTRY_STATUS_10,
-	UBCTL_UMMU_SWIF_KCMDQ_DFX_CMD_ENTRY_STATUS_11,
-	UBCTL_UMMU_SWIF_KCMDQ_DFX_CMD_ENTRY_STATUS_12,
-	UBCTL_UMMU_SWIF_KCMDQ_DFX_CMD_ENTRY_STATUS_13,
-	UBCTL_UMMU_SWIF_KCMDQ_DFX_CMD_ENTRY_STATUS_14,
-	UBCTL_UMMU_SWIF_KCMDQ_DFX_CMD_ENTRY_STATUS_15,
-	UBCTL_UMMU_SWIF_KCMDQ_DFX_SNP_STATUS,
-	UBCTL_UMMU_SWIF_KCMDQ_DFX_CMD_CTRL_STATUS1,
-	UBCTL_UMMU_SWIF_KCMDQ_DFX_CMD_CTRL_STATUS2,
-	UBCTL_UMMU_SYNC_TIMEOUT_INFO,
-	UBCTL_UMMU_DVM_RECEIVE_REQ_CNT,
-	UBCTL_UMMU_DVM_SEND_REQ_CNT,
-	UBCTL_UMMU_DVM_REQ_INFO0,
-	UBCTL_UMMU_DVM_REQ_INFO1,
-	// UCMD
-	UBCTL_UMMU_SWIF_UMCMD_DFX0,
-	UBCTL_UMMU_SWIF_UMCMD_DFX1,
-	UBCTL_UMMU_SWIF_UMCMD_DFX2,
-	UBCTL_UMMU_SWIF_UMCMD_DFX3,
-	UBCTL_UMMU_SWIF_UMCMD_RR_WIN_DFX0_0,
-	UBCTL_UMMU_SWIF_UMCMD_RR_WIN_DFX0_1,
-	UBCTL_UMMU_SWIF_UMCMD_RR_WIN_DFX0_2,
-	UBCTL_UMMU_SWIF_UMCMD_RR_WIN_DFX0_3,
-	UBCTL_UMMU_SWIF_UMCMD_RR_WIN_DFX0_4,
-	UBCTL_UMMU_SWIF_UMCMD_RR_WIN_DFX0_5,
-	UBCTL_UMMU_SWIF_UMCMD_RR_WIN_DFX0_6,
-	UBCTL_UMMU_SWIF_UMCMD_RR_WIN_DFX1,
-	UBCTL_UMMU_SWIF_UMCMD_RR_WIN_DFX2,
-	UBCTL_UMMU_SWIF_UMCMD_CACHE_DFX1,
-	UBCTL_UMMU_SWIF_UMCMD_CACHE_DFX2,
-	UBCTL_UMMU_SWIF_UMCMD_CACHE_DFX3,
-	UBCTL_UMMU_SWIF_UMCMD_CACHE_DFX4,
-	UBCTL_UMMU_SWIF_UMCMD_CACHE_DFX5,
-	UBCTL_UMMU_SWIF_UMCMD_CACHE_DFX6,
-	// EVENT
-	UBCTL_UMMU_SWIF_EVENTQ_DFX_DROP_CNT,
-	UBCTL_UMMU_GLB_INT_EN,
-	UBCTL_UMMU_PMCG_INT_EN,
-	UBCTL_UMMU_INT_MASK,
-	UBCTL_UMMU_CTRL1,
-	UBCTL_UMMU_SPEC_DEF_DFX,
-	UBCTL_UMMU_TECT_BASE_CFG,
-	UBCTL_UMMU_ERR_STATUS_0,
-	UBCTL_UMMU_ROOT_GPF_FAR_L,
-	UBCTL_UMMU_ROOT_GPF_FAR_H,
-	UBCTL_UMMU_EVENT_QUE_PI,
-	UBCTL_UMMU_EVENT_QUE_CI,
-	// UBIF
-	UBCTL_UMMU_UBIF_DFX0,
-	UBCTL_UMMU_UBIF_DFX1,
-	UBCTL_UMMU_UBIF_DSTEID_DFX,
-	UBCTL_UMMU_UBIF_SYNC_DFX,
-	UBCTL_UMMU_UBIF_KV_CACHE_NS_NSE_MISMATCH_DFX0,
-	UBCTL_UMMU_UBIF_KV_CACHE_NS_NSE_MISMATCH_DFX1,
-	UBCTL_UMMU_UBIF_KV_CACHE_NS_NSE_MISMATCH_DFX2,
-	UBCTL_UMMU_UBIF_KV_CACHE_NS_NSE_MISMATCH_DFX3,
-	UBCTL_UMMU_UBIF_KV_CACHE_NS_NSE_MISMATCH_DFX4,
-	// TBU
-	UBCTL_UMMU_TBU_TLB_LKUP_PROC,
-	UBCTL_UMMU_TBU_TLB_STAT,
-	UBCTL_UMMU_TBU_TLB_FAULT_CNT,
-	UBCTL_UMMU_TBU_PLB_LKUP_PROC,
-	UBCTL_UMMU_TBU_PLB_STAT,
-	UBCTL_UMMU_TBU_PLB_FAULT_CNT,
-	UBCTL_UMMU_TBU_INVLD_MG_INFO,
-	UBCTL_UMMU_TBU_RAB_STAT,
-	UBCTL_UMMU_TBU_CNT,
-	UBCTL_UMMU_DFX_TBU_PERM_ERR_CNT,
-	UBCTL_UMMU_TBU_DFX0,
-	UBCTL_UMMU_TBU_DFX1,
-	UBCTL_UMMU_TBU_RAB_ENTRY_INFO_0_7_15,
-	// TCU
-	UBCTL_UMMU_TCU_PTW_QUEUE_STAT_0_47,
-	UBCTL_UMMU_TCU_PPTW_QUEUE_STAT_0_39,
-	// CFG
-	UBCTL_UMMU_DFX_ECC_MONITOR_0,
-	UBCTL_UMMU_DFX_ECC_MONITOR_1,
-	UBCTL_UMMU_CFG_DFX_CFGBUS_STATUS,
-	// GPC
-	UBCTL_UMMU_GPC_QUEUE_STAT_0_15,
-	// SKY
-	UBCTL_UMMU_SKY_QUEUE_STAT3_SP_0_63,
-	// MCMD
-	UBCTL_UMMU_MCMD_QUE_PI_0,
-	UBCTL_UMMU_MCMD_QUE_PI_1,
-	UBCTL_UMMU_MCMD_QUE_PI_2,
-	UBCTL_UMMU_MCMD_QUE_PI_3,
-	UBCTL_UMMU_MCMD_QUE_PI_4,
-	UBCTL_UMMU_MCMD_QUE_PI_5,
-	UBCTL_UMMU_MCMD_QUE_PI_6,
-	UBCTL_UMMU_MCMD_QUE_PI_7,
-	UBCTL_UMMU_MCMD_QUE_CI_0,
-	UBCTL_UMMU_MCMD_QUE_CI_1,
-	UBCTL_UMMU_MCMD_QUE_CI_2,
-	UBCTL_UMMU_MCMD_QUE_CI_3,
-	UBCTL_UMMU_MCMD_QUE_CI_4,
-	UBCTL_UMMU_MCMD_QUE_CI_5,
-	UBCTL_UMMU_MCMD_QUE_CI_6,
-	UBCTL_UMMU_MCMD_QUE_CI_7,
-	// UMMU_EN
-	UBCTL_UMMU_CTRL0,
-	// OTHER
-	UBCTL_UMMU_SYNC_TIMEOUT_OPEN,
-};
-
-struct ubctl_ummu_relation {
-	u32 reg_addr;
-	u32 reg_config_addr;
-	u32 reg_count;
-};
 
 struct ubctl_query_trace {
 	u32 port_id;
@@ -1051,307 +921,6 @@ static int ubctl_query_msgq_que_stats_data(struct ubctl_dev *ucdev,
 				query_dp, ARRAY_SIZE(query_dp));
 }
 
-static int compare_resources(const void *a, const void *b)
-{
-	const struct resource *ra = *(const struct resource **)a;
-	const struct resource *rb = *(const struct resource **)b;
-
-	if (ra->start < rb->start)
-		return -1;
-	if (ra->start > rb->start)
-		return 1;
-	return 0;
-}
-
-static struct resource *ubctl_find_and_sort_resources(struct ubctl_dev *ucdev,
-						      struct resource *root,
-						      const char *name_substr,
-						      u32 ummu_id)
-{
-#define UBCL_MAX_UMMU_NUM 32U
-
-	struct resource *entry_arr[UBCL_MAX_UMMU_NUM] = {};
-	struct resource *p;
-	u32 count = 0;
-
-	/*
-	 * To traverse the UMMU memory subtree, only need to traverse the child
-	 * subtree of the root node.
-	 */
-	for (p = root->child; p; p = p->sibling) {
-		if (!p->name || !strstr(p->name, name_substr))
-			continue;
-		if (count >= UBCL_MAX_UMMU_NUM) {
-			ubctl_err(ucdev, "ummu resources = %u must be in (0, %u).\n",
-				  count, UBCL_MAX_UMMU_NUM);
-			return NULL;
-		}
-		entry_arr[count] = p;
-		count++;
-	}
-
-	if (ummu_id >= count) {
-		ubctl_err(ucdev, "ummuid = %u is out of range, current count = %u\n",
-			  ummu_id, count);
-		return NULL;
-	}
-
-	sort(entry_arr, count, sizeof(struct resource *), compare_resources, NULL);
-
-	return entry_arr[ummu_id];
-}
-
-static inline u32 ubctl_ummu_get_register_offset(u32 index)
-{
-	return g_ubctl_ummu_reg_addr[index] - UBCTL_UMMU_REGISTER_BASE;
-}
-
-static inline u32 ubctl_ummu_get_reg_count(void)
-{
-#define UBCTL_UMMU_REPEAT_REG_TYPE_COUNT 5U
-
-	return ARRAY_SIZE(g_ubctl_ummu_reg_addr) + UBCTL_UMMU_GPC_QUEUE_COUNT +
-	       UBCTL_UMMU_SKY_QUEUE_COUNT + UBCTL_UMMU_TCU_PTW_QUEUE_COUNT +
-	       UBCTL_UMMU_TCU_PPTW_QUEUE_COUNT + UBCTL_UMMU_ENTRY_NUM *
-	       UBCTL_UMMU_BANK_NUM - UBCTL_UMMU_REPEAT_REG_TYPE_COUNT;
-}
-
-struct ubctl_reg_pro_cmd {
-	struct ubctl_dev *ucdev;
-	u32 reg_index;
-	void __iomem *map_addr;
-	u32 *ummu_data;
-	u32 map_length;
-	u32 *index_offset;
-};
-
-static int ubctl_ummu_normal_read(struct ubctl_reg_pro_cmd *cmd)
-{
-	u32 ummu_reg_cnt = ubctl_ummu_get_reg_count();
-	u32 reg_addr_offset;
-
-	reg_addr_offset = ubctl_ummu_get_register_offset(cmd->reg_index);
-	if ((reg_addr_offset >= cmd->map_length) || (*cmd->index_offset >= ummu_reg_cnt)) {
-		ubctl_err(cmd->ucdev, "ummu reg offset is bigger than map length, index=%u, reg offset=%u, map length=%u.\n",
-			  *cmd->index_offset, reg_addr_offset, cmd->map_length);
-		return -EFAULT;
-	}
-	cmd->ummu_data[*cmd->index_offset] = readl(cmd->map_addr + reg_addr_offset);
-	(*cmd->index_offset)++;
-
-	return 0;
-}
-
-static int ubctl_ummu_process_repeat_reg(struct ubctl_reg_pro_cmd *cmd)
-{
-	static struct ubctl_ummu_relation ummu_relation[] = {
-		{ UBCTL_UMMU_GPC_QUEUE_STAT_0_15, UBCTL_UMMU_GPC_QUEUE_POINTER,
-		  UBCTL_UMMU_GPC_QUEUE_COUNT },
-		{ UBCTL_UMMU_SKY_QUEUE_STAT3_SP_0_63, UBCTL_UMMU_SKY_QUEUE_POINTER_SP,
-		  UBCTL_UMMU_SKY_QUEUE_COUNT },
-		{ UBCTL_UMMU_TCU_PTW_QUEUE_STAT_0_47, UBCTL_UMMU_TCU_PTW_QUEUE_POINTER,
-		  UBCTL_UMMU_TCU_PTW_QUEUE_COUNT },
-		{ UBCTL_UMMU_TCU_PPTW_QUEUE_STAT_0_39, UBCTL_UMMU_TCU_PPTW_QUEUE_POINTER,
-		  UBCTL_UMMU_TCU_PPTW_QUEUE_COUNT }
-	};
-
-	u32 read_reg_offset, set_reg_offset, write_count, i, j;
-	u32 ummu_reg_cnt = ubctl_ummu_get_reg_count();
-
-	for (i = 0; i < ARRAY_SIZE(ummu_relation); i++) {
-		if (ummu_relation[i].reg_addr != g_ubctl_ummu_reg_addr[cmd->reg_index])
-			continue;
-		write_count = ummu_relation[i].reg_count;
-		set_reg_offset = ummu_relation[i].reg_config_addr -
-				 UBCTL_UMMU_REGISTER_BASE;
-		read_reg_offset = ummu_relation[i].reg_addr -
-				  UBCTL_UMMU_REGISTER_BASE;
-		if ((set_reg_offset >= cmd->map_length) ||
-		    (read_reg_offset >= cmd->map_length)) {
-			ubctl_err(cmd->ucdev, "ummu set or read reg offset is bigger than map length, set offset=%u, read offset=%u, map length=%u.\n",
-				  set_reg_offset, read_reg_offset, cmd->map_length);
-			return -EFAULT;
-		}
-
-		for (j = 0; j < write_count; j++, (*cmd->index_offset)++) {
-			writel(j, cmd->map_addr + set_reg_offset);
-			if (*cmd->index_offset >= ummu_reg_cnt) {
-				ubctl_err(cmd->ucdev, "index offset is bigger than ummu reg count, index offset=%u, ummu reg count=%u.\n",
-					  *cmd->index_offset, ummu_reg_cnt);
-				return -EFAULT;
-			}
-			cmd->ummu_data[*cmd->index_offset] = readl(cmd->map_addr +
-								   read_reg_offset);
-		}
-		return 0;
-	}
-
-	return ubctl_ummu_normal_read(cmd);
-}
-
-static int ubctl_ummu_process_reg(struct ubctl_reg_pro_cmd *cmd)
-{
-#define UBCTL_TBU_MASK 0xFFFFFC00U
-#define UBCTL_BANK_OFFSET 6
-
-	u32 read_reg_offset, set_reg_offset, origin_value, value, i, j;
-	u32 ummu_reg_cnt = ubctl_ummu_get_reg_count();
-
-	if (g_ubctl_ummu_reg_addr[cmd->reg_index] != UBCTL_UMMU_TBU_RAB_ENTRY_INFO_0_7_15)
-		return ubctl_ummu_process_repeat_reg(cmd);
-
-	set_reg_offset = UBCTL_UMMU_TBU_RAB_FUNC_EN - UBCTL_UMMU_REGISTER_BASE;
-	read_reg_offset = UBCTL_UMMU_TBU_RAB_ENTRY_INFO_0_7_15 -
-			  UBCTL_UMMU_REGISTER_BASE;
-	if ((set_reg_offset >= cmd->map_length) ||
-	    (read_reg_offset >= cmd->map_length)) {
-		ubctl_err(cmd->ucdev, "ummu set or read reg offset is bigger than map length, set offset=%u, read offset=%u, map length=%u.\n",
-			  set_reg_offset, read_reg_offset, cmd->map_length);
-		return -EFAULT;
-	}
-
-	origin_value = readl(cmd->map_addr + set_reg_offset);
-	origin_value &= UBCTL_TBU_MASK;
-	for (i = 0; i < UBCTL_UMMU_BANK_NUM; i++) {
-		for (j = 0; j < UBCTL_UMMU_ENTRY_NUM; j++, (*cmd->index_offset)++) {
-			value = (i << UBCTL_BANK_OFFSET) | j | origin_value;
-			writel(value, cmd->map_addr + set_reg_offset);
-			if (*cmd->index_offset >= ummu_reg_cnt) {
-				ubctl_err(cmd->ucdev, "index offset is bigger than ummu reg count, index offset=%u, ummu reg count=%u.\n",
-					  *cmd->index_offset, ummu_reg_cnt);
-				return -EFAULT;
-			}
-			cmd->ummu_data[*cmd->index_offset] = readl(cmd->map_addr +
-								   read_reg_offset);
-		}
-	}
-	return 0;
-}
-
-static int ubctl_ummu_copy_data(struct ubctl_dev *ucdev,
-				struct ubctl_query_cmd_param *query_cmd_param,
-				void __iomem *map_addr, u32 map_length)
-{
-	u32 ummu_array_cnt = ARRAY_SIZE(g_ubctl_ummu_reg_addr);
-	u32 ummu_reg_cnt = ubctl_ummu_get_reg_count();
-	u32 *ummu_data = query_cmd_param->out->data;
-	u32 index_offset = 0;
-	int ret;
-	u32 i;
-
-	struct ubctl_reg_pro_cmd reg_pro_cmd = {
-		.ucdev = ucdev,
-		.reg_index = 0,
-		.map_addr = map_addr,
-		.ummu_data = ummu_data,
-		.map_length = map_length,
-		.index_offset = &index_offset,
-	};
-
-	if (ummu_reg_cnt * sizeof(u32) > query_cmd_param->out_len) {
-		ubctl_err(ucdev, "ummu reg size is big than out len, reg sie=%lu, out len=%lu.\n",
-			  ummu_reg_cnt * sizeof(u32), query_cmd_param->out_len);
-		return -EINVAL;
-	}
-
-	for (i = 0; i < ummu_array_cnt; i++) {
-		reg_pro_cmd.reg_index = i;
-		ret = ubctl_ummu_process_reg(&reg_pro_cmd);
-		if (ret) {
-			ubctl_err(ucdev, "failed to execute ummu process reg, ret=%d.\n", ret);
-			return ret;
-		}
-	}
-	query_cmd_param->out->data_size = ummu_reg_cnt * sizeof(u32);
-
-	return 0;
-}
-
-static int ubctl_ummu_proc_all_data(struct ubctl_dev *ucdev, struct resource *res,
-				    struct ubctl_query_cmd_param *query_cmd_param)
-{
-	u32 map_length = UBCTL_UMMU_REGISTER_MAX_ADDR - UBCTL_UMMU_REGISTER_BASE;
-	void __iomem *vaddr;
-	int ret;
-
-	vaddr = ioremap(res->start + UBCTL_UMMU_REGISTER_BASE, map_length);
-	if (!vaddr) {
-		ubctl_err(ucdev, "failed to execute ioremap ummu reg base, map length = %u.\n",
-			  map_length);
-		return -ENOMEM;
-	}
-	ret = ubctl_ummu_copy_data(ucdev, query_cmd_param, vaddr, map_length);
-	iounmap(vaddr);
-
-	return ret;
-}
-
-static int ubctl_ummu_proc_sync_data(struct resource *res,
-				     struct ubctl_query_cmd_param *query_cmd_param,
-				     struct fwctl_pkt_in_ummuid_value *ummu_data,
-				     bool is_query)
-{
-	u32 *out_data = query_cmd_param->out->data;
-	u32 map_length = sizeof(u32);
-	void __iomem *vaddr;
-
-	if (sizeof(u32) > query_cmd_param->out_len)
-		return -EINVAL;
-
-	vaddr = ioremap(res->start + UBCTL_UMMU_SYNC_TIMEOUT_OPEN, map_length);
-	if (!vaddr)
-		return -ENOMEM;
-
-	if (is_query) {
-		*out_data = readl(vaddr);
-	} else {
-		if (!capable(CAP_SYS_ADMIN)) {
-			query_cmd_param->out->retval = -EACCES;
-			iounmap(vaddr);
-			return -EACCES;
-		}
-		*out_data = ummu_data->value;
-		writel(*out_data, vaddr);
-	}
-
-	query_cmd_param->out->data_size = sizeof(u32);
-	iounmap(vaddr);
-
-	return 0;
-}
-
-static int ubctl_ummu_process_data(struct ubctl_dev *ucdev,
-				   struct ubctl_query_cmd_param *query_cmd_param,
-				   struct ubctl_func_dispatch *query_func)
-{
-#define UMMU_NAME_STR "ummu."
-
-	struct fwctl_pkt_in_ummuid_value *ummu_data;
-	struct resource *root = &iomem_resource;
-	struct resource *res;
-
-	if (query_cmd_param->in->data_size != sizeof(*ummu_data)) {
-		ubctl_err(ucdev, "ummuid value size = %ubytes, it must be %zubytes.\n",
-			  query_cmd_param->in->data_size, sizeof(*ummu_data));
-		return -EINVAL;
-	}
-
-	ummu_data = (struct fwctl_pkt_in_ummuid_value *)(query_cmd_param->in->data);
-	res = ubctl_find_and_sort_resources(ucdev, root, UMMU_NAME_STR,
-					    ummu_data->ummu_id);
-	if (!res)
-		return -EINVAL;
-
-	if (query_func->rpc_cmd == UTOOL_CMD_QUERY_UMMU_ALL)
-		return ubctl_ummu_proc_all_data(ucdev, res, query_cmd_param);
-	if (query_func->rpc_cmd == UTOOL_CMD_QUERY_UMMU_SYNC)
-		return ubctl_ummu_proc_sync_data(res, query_cmd_param, ummu_data, true);
-	if (query_func->rpc_cmd == UTOOL_CMD_CONFIG_UMMU_SYNC)
-		return ubctl_ummu_proc_sync_data(res, query_cmd_param, ummu_data, false);
-
-	return -EINVAL;
-}
-
 static struct ucdev_list_node *ubctl_find_ucdev_list_node(u32 die_id, u32 chip_id)
 {
 	struct ucdev_list_node *dev_node;
@@ -1643,11 +1212,25 @@ void ubctl_port_link_status_uninit(struct auxiliary_device *adev)
 	mutex_unlock(&g_ubctl_port_link_mutex);
 }
 
+static const char *ubctl_link_status_to_str(u32 status)
+{
+#define UBCTL_LINK_STATUS_UP 0U
+#define UBCTL_LINK_STATUS_DOWN 1U
+
+	switch (status) {
+	case UBCTL_LINK_STATUS_UP:
+		return "UP";
+	case UBCTL_LINK_STATUS_DOWN:
+		return "DOWN";
+	default:
+		return "UNKNOWN";
+	}
+}
+
 int ubctl_handle_link_status_event(void *dev, void *data, u32 len)
 {
+	struct ubctl_port_link_list *new_port_node = NULL, *current_node;
 	struct auxiliary_device *adev = (struct auxiliary_device *)dev;
-	struct ubctl_port_link_list *new_port_node = NULL;
-	struct ubctl_port_link_list *current_node;
 	struct ubctl_port_link_info link_info;
 	struct ucdev_list_node *dev_node;
 	struct ubase_caps *ucaps;
@@ -1672,8 +1255,9 @@ int ubctl_handle_link_status_event(void *dev, void *data, u32 len)
 	link_info.link_status = ((struct ubctl_port_link_out_info *)data)->link_status;
 	port = ((struct ubctl_port_link_out_info *)data)->port;
 
-	dev_info(&adev->dev, "the link status has changed, chip = %u, die = %u, port = %u, link_status = %u\n",
-		 ucaps->chip_id, ucaps->die_id, port, link_info.link_status);
+	dev_info(&adev->dev, "the link status has changed, chip = %u, die = %u, port = %u, link_status = %u(%s).\n",
+		 ucaps->chip_id, ucaps->die_id, port, link_info.link_status,
+		 ubctl_link_status_to_str(link_info.link_status));
 
 	list_for_each_entry(current_node, &dev_node->dev_list, port_link_list) {
 		if (current_node->port != port)
