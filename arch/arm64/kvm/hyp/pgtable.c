@@ -8,9 +8,11 @@
  */
 
 #include <linux/bitfield.h>
+#include <asm/cacheflush.h>
 #include <asm/cpufeature.h>
 #include <asm/kvm_pgtable.h>
 #include <asm/kvm_pvm.h>
+#include <asm/memory.h>
 #include <asm/stage2_pgtable.h>
 
 
@@ -931,6 +933,10 @@ static void stage2_make_pte(const struct kvm_pgtable_visit_ctx *ctx, kvm_pte_t n
 
 static bool stage2_unmap_defer_tlb_flush(struct kvm_pgtable *pgt)
 {
+	/* PVM must complete TLBI before cleaning the backing memory. */
+	if (is_pvm_mode())
+		return false;
+
 	/*
 	 * If FEAT_TLBIRANGE is implemented, defer the individual
 	 * TLB invalidations until the entire walk is finished, and
@@ -972,6 +978,29 @@ static bool stage2_pte_cacheable(struct kvm_pgtable *pgt, kvm_pte_t pte)
 {
 	u64 memattr = pte & KVM_PTE_LEAF_ATTR_LO_S2_MEMATTR;
 	return memattr == KVM_S2_MEMATTR(pgt, NORMAL);
+}
+
+/*
+ * PVM leaves use stage-1 attributes. Even NC or Device aliases of RAM
+ * need cleaning because the host may hold dirty cache lines. MMIO has
+ * no cacheable host alias.
+ */
+static bool pvm_pte_needs_clean(kvm_pte_t pte)
+{
+	return kvm_pte_valid(pte) && pfn_is_map_memory(kvm_pte_to_pfn(pte));
+}
+
+static void pvm_clean_dcache(kvm_pte_t pte,
+			     struct kvm_pgtable_mm_ops *mm_ops, u64 size)
+{
+	unsigned long addr;
+
+	if (!pvm_pte_needs_clean(pte))
+		return;
+
+	/* Do not use stage-2 callbacks that can skip maintenance. */
+	addr = (unsigned long)kvm_pte_follow(pte, mm_ops);
+	dcache_clean_inval_poc(addr, addr + size);
 }
 
 static bool stage2_pte_executable(kvm_pte_t pte)
@@ -1040,8 +1069,10 @@ static int stage2_map_walker_try_leaf(const struct kvm_pgtable_visit_ctx *ctx,
 		return -EAGAIN;
 
 	/* Perform CMOs before installation of the guest stage-2 PTE */
-	if (!kvm_pgtable_walk_skip_cmo(ctx) && mm_ops->dcache_clean_inval_poc &&
-	    stage2_pte_cacheable(pgt, new))
+	if (is_pvm_mode())
+		pvm_clean_dcache(new, mm_ops, granule);
+	else if (!kvm_pgtable_walk_skip_cmo(ctx) && mm_ops->dcache_clean_inval_poc &&
+		 stage2_pte_cacheable(pgt, new))
 		mm_ops->dcache_clean_inval_poc(kvm_pte_follow(new, mm_ops),
 					       granule);
 
@@ -1225,9 +1256,14 @@ static int stage2_unmap_walker(const struct kvm_pgtable_visit_ctx *ctx,
 	 */
 	stage2_unmap_put_pte(ctx, mmu, mm_ops);
 
-	if (need_flush && mm_ops->dcache_clean_inval_poc)
+	if (is_pvm_mode()) {
+		if (!childp)
+			pvm_clean_dcache(ctx->old, mm_ops,
+					 kvm_granule_size(ctx->level));
+	} else if (need_flush && mm_ops->dcache_clean_inval_poc) {
 		mm_ops->dcache_clean_inval_poc(kvm_pte_follow(ctx->old, mm_ops),
 					       kvm_granule_size(ctx->level));
+	}
 
 	if (childp)
 		mm_ops->put_page(childp);
@@ -1453,12 +1489,16 @@ static int stage2_flush_walker(const struct kvm_pgtable_visit_ctx *ctx,
 	struct kvm_pgtable *pgt = ctx->arg;
 	struct kvm_pgtable_mm_ops *mm_ops = pgt->mm_ops;
 
-	if (!kvm_pte_valid(ctx->old) || !stage2_pte_cacheable(pgt, ctx->old))
-		return 0;
+	if (is_pvm_mode()) {
+		pvm_clean_dcache(ctx->old, mm_ops, kvm_granule_size(ctx->level));
+	} else {
+		if (!kvm_pte_valid(ctx->old) || !stage2_pte_cacheable(pgt, ctx->old))
+			return 0;
 
-	if (mm_ops->dcache_clean_inval_poc)
-		mm_ops->dcache_clean_inval_poc(kvm_pte_follow(ctx->old, mm_ops),
-					       kvm_granule_size(ctx->level));
+		if (mm_ops->dcache_clean_inval_poc)
+			mm_ops->dcache_clean_inval_poc(kvm_pte_follow(ctx->old, mm_ops),
+						       kvm_granule_size(ctx->level));
+	}
 	return 0;
 }
 
@@ -1470,7 +1510,8 @@ int kvm_pgtable_stage2_flush(struct kvm_pgtable *pgt, u64 addr, u64 size)
 		.arg	= pgt,
 	};
 
-	if (kvm_ncsnp_support || stage2_has_fwb(pgt))
+	if (!is_pvm_mode() &&
+	    (kvm_ncsnp_support || stage2_has_fwb(pgt)))
 		return 0;
 
 	return kvm_pgtable_walk(pgt, addr, size, &walker);
