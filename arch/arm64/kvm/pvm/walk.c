@@ -178,12 +178,13 @@ static int pvm_s1_setup_walk(struct kvm_vcpu *vcpu, u64 va,
 						   TCR_EPD0_MASK);
 
 	/*
-	 * E0PD0 denies the whole user half to virtual EL0, so a walk
-	 * for the L2 user reports a translation fault instead of reading
-	 * the guest tables.  The L2 kernel also runs at EL0 but is
-	 * exempt, like hardware exempts EL1.
+	 * E0PD0 and E0PD1 deny their respective address ranges to virtual
+	 * EL0. Report the translation fault before reading guest tables.
+	 * The L2 kernel also runs at physical EL0 but remains exempt,
+	 * as hardware exempts EL1.
 	 */
-	if (!wi->ttbr1 && (tcr & TCR_E0PD0) && !vcpu_mode_priv(vcpu))
+	if (!vcpu_mode_priv(vcpu) &&
+	    (tcr & (wi->ttbr1 ? TCR_E0PD1 : TCR_E0PD0)))
 		wi->walk_disabled = true;
 
 	ret = pvm_s1_setup_geometry(tcr, wi);
@@ -446,7 +447,19 @@ int kvm_pvm_walk_shadow_s1(struct kvm_vcpu *vcpu, u64 va,
 bool kvm_pvm_s1_access_denied(struct kvm_vcpu *vcpu,
 			      struct kvm_s1_trans *result)
 {
+	bool privileged = vcpu_mode_priv(vcpu);
 	bool denied;
+
+	/*
+	 * Virtual EL0 must never reach the reserved kernel window, even
+	 * when the guest leaves E0PD1 clear. Report this PVM restriction
+	 * as a level-0 translation fault.
+	 */
+	if (!privileged && kvm_pvm_is_kernel_va(kvm_vcpu_get_hfar(vcpu))) {
+		result->esr = pvm_s1_fault_esr(vcpu,
+					       pvm_s1_fsc(0, ESR_ELx_FSC_FAULT));
+		return true;
+	}
 
 	if (kvm_vcpu_trap_is_iabt(vcpu))
 		denied = !(result->px || result->ux);

@@ -444,6 +444,38 @@ static struct kvm_pvm_mmu *pvm_get_mmu(struct kvm_vcpu *vcpu,
 	return mmu;
 }
 
+/*
+ * The run TCR keeps the host's TBI1 because host code executes under it
+ * between the guest entry and exit boundaries.  Hardware would then also
+ * ignore the top byte of guest kernel addresses, so a non-canonical
+ * address could hit an existing shadow mapping instead of taking the
+ * address-size fault the guest expects.  Refuse a guest that requires
+ * TBI1=0 on such a host rather than translate it with different
+ * semantics.
+ */
+static int pvm_check_tbi1(u64 guest_tcr)
+{
+	if ((guest_tcr & TCR_TBI1) ||
+	    !(read_sysreg(tcr_el1) & TCR_TBI1))
+		return 0;
+
+	return -EOPNOTSUPP;
+}
+
+/*
+ * The shadow walker decodes guest stage-1 descriptors as little-endian.
+ * A guest that sets SCTLR_EL1.EE keeps byte-swapped tables, which the
+ * walker would misread, so refuse that configuration once the guest
+ * enables its MMU instead of translating with the wrong layout.
+ */
+static int pvm_check_sctlr(u64 guest_sctlr)
+{
+	if (guest_sctlr & SCTLR_ELx_EE)
+		return -EOPNOTSUPP;
+
+	return 0;
+}
+
 static bool pvm_user_va_bits_valid(u64 tcr)
 {
 	unsigned int va_bits = 64 - FIELD_GET(TCR_T0SZ_MASK, tcr);
@@ -508,6 +540,12 @@ int kvm_pvm_vcpu_select_mmu(struct kvm_vcpu *vcpu, bool may_block)
 		goto out;
 	}
 	if (kvm_pvm_vcpu_mmu_enabled(vcpu)) {
+		ret = pvm_check_tbi1(tcr);
+		if (ret)
+			goto out;
+		ret = pvm_check_sctlr(ctxt_sys_reg(&vcpu->arch.ctxt, SCTLR_EL1));
+		if (ret)
+			goto out;
 		kernel = pvm_get_mmu(vcpu, true, may_block);
 		if (IS_ERR(kernel)) {
 			ret = PTR_ERR(kernel);
