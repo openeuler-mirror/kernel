@@ -241,6 +241,12 @@ static int kvm_handle_unknown(struct kvm_vcpu *vcpu)
 		return 1;
 	}
 
+	if (aarch64_insn_is_dc_ivac(insn)) {
+		ret = kvm_pvm_emulate_dc_by_va(vcpu, insn);
+		if (ret)
+			return ret;
+	}
+
 	if (aarch64_insn_is_at_s1e1r(insn))
 		return kvm_pvm_emulate_at(vcpu, insn);
 
