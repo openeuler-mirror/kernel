@@ -628,9 +628,10 @@ void __init mem_init(void)
 	swiotlb_cvm_update_mem_attributes();
 
 #ifdef CONFIG_PSWIOTLB
-	/* enable pswiotlb default */
+	/* enable pswiotlb default, but skip in kdump kernel to save memory*/
 	if ((pswiotlb_force_disable != true) &&
-		is_phytium_ps_socs())
+		is_phytium_ps_socs() &&
+		!is_kdump_kernel())
 		pswiotlb_init(1, PSWIOTLB_VERBOSE);
 #endif
 
