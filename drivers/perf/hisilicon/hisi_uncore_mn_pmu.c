@@ -192,7 +192,7 @@ static const struct attribute_group hisi_mn_pmu_format_group = {
 	.attrs = hisi_mn_pmu_format_attr,
 };
 
-static struct attribute *hisi_mn_pmu_events_attr_v1[] = {
+static struct attribute *hisi_mn_pmu_events_attr[] = {
 	HISI_PMU_EVENT_ATTR(req_eobarrier_num,		0x00),
 	HISI_PMU_EVENT_ATTR(req_ecbarrier_num,		0x01),
 	HISI_PMU_EVENT_ATTR(req_dvmop_num,		0x02),
@@ -219,55 +219,14 @@ static struct attribute *hisi_mn_pmu_events_attr_v1[] = {
 	NULL
 };
 
-static const struct attribute_group hisi_mn_pmu_events_group_v1 = {
+static const struct attribute_group hisi_mn_pmu_events_group = {
 	.name = "events",
-	.attrs = hisi_mn_pmu_events_attr_v1,
+	.attrs = hisi_mn_pmu_events_attr,
 };
 
-static const struct attribute_group *hisi_mn_pmu_attr_groups_v1[] = {
+static const struct attribute_group *hisi_mn_pmu_attr_groups[] = {
 	&hisi_mn_pmu_format_group,
-	&hisi_mn_pmu_events_group_v1,
-	&hisi_pmu_cpumask_attr_group,
-	&hisi_pmu_identifier_group,
-	NULL
-};
-
-static struct attribute *hisi_mn_pmu_events_attr_v2[] = {
-	HISI_PMU_EVENT_ATTR(req_eobarrier_num,		0x00),
-	HISI_PMU_EVENT_ATTR(req_ecbarrier_num,		0x01),
-	HISI_PMU_EVENT_ATTR(req_dvmop_num,		0x02),
-	HISI_PMU_EVENT_ATTR(req_dvmsync_num,		0x03),
-	HISI_PMU_EVENT_ATTR(req_retry_num,		0x04),
-	HISI_PMU_EVENT_ATTR(req_writenosnp_num,		0x05),
-	HISI_PMU_EVENT_ATTR(req_readnosnp_num,		0x06),
-	HISI_PMU_EVENT_ATTR(snp_dvm_num,		0x07),
-	HISI_PMU_EVENT_ATTR(snp_dvmsync_num,		0x08),
-	HISI_PMU_EVENT_ATTR(l3t_req_dvm_num,		0x09),
-	HISI_PMU_EVENT_ATTR(l3t_req_dvmsync_num,	0x0A),
-	HISI_PMU_EVENT_ATTR(mn_req_dvm_num,		0x0B),
-	HISI_PMU_EVENT_ATTR(mn_req_dvmsync_num,		0x0C),
-	HISI_PMU_EVENT_ATTR(pa_req_dvm_num,		0x0D),
-	HISI_PMU_EVENT_ATTR(pa_req_dvmsync_num,		0x0E),
-	HISI_PMU_EVENT_ATTR(cycles,					0x0F),
-	HISI_PMU_EVENT_ATTR(snp_dvm_latency,		0x80),
-	HISI_PMU_EVENT_ATTR(snp_dvmsync_latency,	0x81),
-	HISI_PMU_EVENT_ATTR(l3t_req_dvm_latency,	0x82),
-	HISI_PMU_EVENT_ATTR(l3t_req_dvmsync_latency,	0x83),
-	HISI_PMU_EVENT_ATTR(mn_req_dvm_latency,		0x84),
-	HISI_PMU_EVENT_ATTR(mn_req_dvmsync_latency,	0x85),
-	HISI_PMU_EVENT_ATTR(pa_req_dvm_latency,		0x86),
-	HISI_PMU_EVENT_ATTR(pa_req_dvmsync_latency,	0x87),
-	NULL
-};
-
-static const struct attribute_group hisi_mn_pmu_events_group_v2 = {
-	.name = "events",
-	.attrs = hisi_mn_pmu_events_attr_v2,
-};
-
-static const struct attribute_group *hisi_mn_pmu_attr_groups_v2[] = {
-	&hisi_mn_pmu_format_group,
-	&hisi_mn_pmu_events_group_v2,
+	&hisi_mn_pmu_events_group,
 	&hisi_pmu_cpumask_attr_group,
 	&hisi_pmu_identifier_group,
 	NULL
@@ -392,14 +351,7 @@ static struct hisi_mn_pmu_regs hisi_mn_v1_pmu_regs = {
 };
 
 static const struct hisi_pmu_dev_info hisi_mn_v1 = {
-	.attr_groups = hisi_mn_pmu_attr_groups_v1,
-	.counter_bits = 48,
-	.check_event = HISI_MN_EVTYPE_MASK,
-	.private = &hisi_mn_v1_pmu_regs,
-};
-
-static const struct hisi_pmu_dev_info hisi_mn_v2 = {
-	.attr_groups = hisi_mn_pmu_attr_groups_v2,
+	.attr_groups = hisi_mn_pmu_attr_groups,
 	.counter_bits = 48,
 	.check_event = HISI_MN_EVTYPE_MASK,
 	.private = &hisi_mn_v1_pmu_regs,
@@ -407,7 +359,6 @@ static const struct hisi_pmu_dev_info hisi_mn_v2 = {
 
 static const struct acpi_device_id hisi_mn_pmu_acpi_match[] = {
 	{ "HISI0222", (kernel_ulong_t) &hisi_mn_v1 },
-	{ "HISI0224", (kernel_ulong_t) &hisi_mn_v2 },
 	{ }
 };
 MODULE_DEVICE_TABLE(acpi, hisi_mn_pmu_acpi_match);
