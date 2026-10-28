@@ -6,4 +6,4 @@
 obj-$(CONFIG_LIBWX) += libwx/
 obj-$(CONFIG_NGBE) += ngbe/
 obj-$(CONFIG_TXGBE) += txgbe/
-
+obj-$(CONFIG_NSE) += nse/
