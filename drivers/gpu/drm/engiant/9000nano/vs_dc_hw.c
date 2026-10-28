@@ -26,6 +26,8 @@
 #include "preprocess/vs_dc_plane_blender.h"
 #include "preprocess/vs_dc_preprocess.h"
 #include "vs_dc_reg.h"
+#include "egt_dp.h"
+#include "egt_dp_phy.h"
 
 #ifdef CONFIG_ENGIANT_VS_QSPI
 #include "vs_dc_qspi.h"
@@ -314,7 +316,8 @@ void egt_dc_hw_enable_gamma(struct dc_hw *hw, u8 id, bool enable)
 	hw->display[id].gamma.dirty = true;
 }
 
-void egt_dc_hw_setup_display_mode(struct dc_hw *hw, u8 id, struct dc_hw_display_mode *mode)
+void egt_dc_hw_setup_display_mode(struct dc_hw *hw, u8 id, struct dc_hw_display_mode *mode,
+				struct egt_displayport *dp)
 {
 	struct dc_hw_display *display = &hw->display[id];
 	u8 output_id = 0;
@@ -326,7 +329,7 @@ void egt_dc_hw_setup_display_mode(struct dc_hw *hw, u8 id, struct dc_hw_display_
 			memcpy(&display->mode, mode, sizeof(*mode));
 
 		output_id = display->output_id;
-		hw->func->set_mode(hw, output_id, display, &display->mode);
+		hw->func->set_mode(hw, output_id, display, &display->mode, dp);
 	}
 }
 
@@ -939,7 +942,8 @@ static void plane_set_std_bld(struct dc_hw *hw, struct dc_hw_std_bld *std_bld)
 }
 
 static void display_set_mode(struct dc_hw *hw, u8 output_id,
-				 struct dc_hw_display *display, struct dc_hw_display_mode *mode)
+				 struct dc_hw_display *display, struct dc_hw_display_mode *mode,
+				 struct egt_displayport *dp)
 {
 	u32 config = 0;
 	u32 i = 0;
@@ -953,6 +957,11 @@ static void display_set_mode(struct dc_hw *hw, u8 output_id,
 		hw->display[i].running = 0;
 
 	egt_dc_hw_do_reset(hw);
+
+	pr_debug("mode clk = %d, dp->bw_code = %d.\n", dp->mode_clk, dp->bw_code);
+	egt_dp_pixel_pll_calculate(dp, dp->mode_clk);
+	egt_dp_set_phy(dp, dp->bw_code);
+	egt_dptx_hpd(dp);
 
 	mode->is_yuv = false;
 	hw->coef_change = false;

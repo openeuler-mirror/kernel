@@ -252,7 +252,9 @@ int egt_dp_get_modes(struct drm_connector *connector)
 	pr_debug("edid_cnt = %d\n", edid_cnt);
 
 	if (edid_cnt > 0) {
-		drm_mode_sort(&connector->probed_modes);
+		list_for_each_entry(mode, &connector->probed_modes, head) {
+			mode->type &= ~DRM_MODE_TYPE_PREFERRED;
+		}
 		drm_set_preferred_mode(connector, 1024, 768);
 
 	} else {
@@ -267,6 +269,7 @@ int egt_dp_mode_valid(__maybe_unused struct drm_connector *connector,
 {
 	int i = 0;
 	u32 dp_clock_flag = 0;
+	u64 rate = 0;
 	struct egt_displayport *dp =
 			container_of(connector, struct egt_displayport, connector);
 	struct egt_dp_supported_mode supported_modes[] = {
@@ -289,6 +292,9 @@ int egt_dp_mode_valid(__maybe_unused struct drm_connector *connector,
 		if (mode->hdisplay == supported_modes[i].width &&
 			mode->vdisplay == supported_modes[i].height &&
 			mode->clock <= EGT_TX_MAX_CLOCK) {
+			rate = (mode->clock * 24 * 125) / 100;
+			if (rate > (dp->bw_code * EGT_DP_BASE_MULTIPLIER))
+				continue;
 			if (((dp_clock_flag & EGT_TX_CLK_FLAG_MASK) ==
 				CLOCK_90_LIMIT) && (mode->clock > 90000))
 				continue;
@@ -469,9 +475,8 @@ void egt_dp_atomic_mode_set(struct drm_encoder *encoder,
 		break;
 	}
 
-	/* Set pixel pll and phy */
-	egt_dp_pixel_pll_calculate(dp, mode->clock);
-	egt_dp_set_phy(dp, bw_code);
+	dp->bw_code = bw_code;
+	dp->mode_clk = mode->clock;
 
 	/* Get current plane format info */
 	drm_for_each_plane_mask(plane, crtc_state->crtc->dev, crtc_state->plane_mask) {

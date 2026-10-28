@@ -73,6 +73,8 @@
 
 #define EGT_TX_MAX_CLOCK					154000
 
+#define EGT_DP_BASE_MULTIPLIER				270000
+
 /* AUX */
 #define EGT_DP_AUX_RD_BIT					0x1
 #define EGT_DP_AUX_STD_TOUT					(800)
@@ -111,6 +113,7 @@
 #define DP_SOURCE_AUX_BYTE3					(0x105 * 4)
 #define DP_SOURCE_AUX_PAYLOAD				(0x105 * 4)
 #define DP_SOURCE_AUX_RESET					(0x117 * 4)
+
 
 /* For kernel version below 6.2 compatibility */
 #ifndef abs_diff
@@ -224,6 +227,7 @@ struct egt_displayport {
 	struct egt_displayport_link_config train_cfg;
 	struct delayed_work hot_plug_detect;
 	struct mutex lock;
+	int mode_clk;
 };
 
 
@@ -239,6 +243,7 @@ u32 egt_dp_read(u32 reg, struct egt_displayport *dp);
 void egt_dp_ticks_wait_us(unsigned int delay_us, struct egt_displayport *dp);
 void egt_dp_set_hpd_irq(struct egt_displayport *dp, bool enable);
 void egt_dptx_hpd_work(struct work_struct *work);
+void egt_dptx_hpd(struct egt_displayport *dp);
 
 int egt_dp_get_modes(struct drm_connector *connector);
 struct drm_encoder *egt_dp_best_encoder(struct drm_connector *connector);

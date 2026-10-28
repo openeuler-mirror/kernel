@@ -381,7 +381,7 @@ static int vs_fbdev_probe(struct drm_fb_helper *helper,
 
 	/* 1. Create a framebuffer */
 	info = vs_fbdev_helper_alloc(helper);
-	if (!info) {
+	if (IS_ERR(info)) {
 		err = -ENOMEM;
 		pr_err("fb_dev create failed\n");
 		goto err_unlock_dev;

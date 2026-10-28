@@ -462,8 +462,8 @@ err_mode:
 err_put:
 	pci_disable_device(pdev);
 err_out:
-	drm_dev_put(drm_dev);
 	drm_dev->dev_private = NULL;
+	drm_dev_put(drm_dev);
 	pci_set_drvdata(pdev, NULL);
 
 	return ret;

@@ -866,25 +866,12 @@ static void egt_update_config(struct egt_displayport *dp)
 	pr_debug("tx&rx max link_config lanes = %d\n", link_config->max_lanes);
 }
 
-void egt_dptx_hpd_work(struct work_struct *work)
+static int egt_dptx_hpd_core(struct egt_displayport *dp)
 {
-	struct egt_displayport *dp = container_of(work, struct egt_displayport,
-						hot_plug_detect.work);
-	struct drm_connector *connector = NULL;
-	enum drm_connector_status old_status = connector_status_disconnected;
 	u8 max_link_rate = 0;
 	u32 sts = 0;
 	int ret = 0;
 	int try = 0;
-
-	if (!dp) {
-		pr_err("dp is NULL\n");
-		goto adjust_sts;
-	}
-
-	connector = &dp->connector;
-
-	mutex_lock(&dp->lock);
 
 	dp->connected = false;
 
@@ -898,19 +885,19 @@ void egt_dptx_hpd_work(struct work_struct *work)
 
 	if (try > 5) {
 		dev_err(dp->dev, "dp is disconnected");
-		goto exit;
+		return -EIO;
 	}
 
 	if (egt_dpcd_read(dp) < 0) {
 		dev_err(dp->dev, "read dpcd failed");
-		goto exit;
+		return -EIO;
 	}
 
 	if (dp->dpcd[DP_TRAINING_AUX_RD_INTERVAL] & DP_EXTENDED_RECEIVER_CAP_FIELD_PRESENT) {
 		ret = drm_dp_dpcd_read(&dp->aux, DP_DP13_DPCD_REV + 1, &max_link_rate, 1);
 		if (ret < 0) {
 			dev_err(dp->dev, "read dpcd failed");
-			goto exit;
+			return -EIO;
 		}
 
 		if (max_link_rate == DP_LINK_BW_8_1)
@@ -921,17 +908,45 @@ void egt_dptx_hpd_work(struct work_struct *work)
 
 	dev_dbg(dp->dev, "connected dp rx. training\n");
 	if (egt_dp_training_begin(dp) != 0)
-		goto exit;
+		return -EIO;
 
 	dp->connected = true;
 
+	return 0;
+}
+
+void egt_dptx_hpd_work(struct work_struct *work)
+{
+	struct egt_displayport *dp = container_of(work, struct egt_displayport,
+						hot_plug_detect.work);
+
+	if (!dp) {
+		pr_err("dp is NULL\n");
+		return;
+	}
+
+	mutex_lock(&dp->lock);
+
+	if (egt_dptx_hpd_core(dp) != 0)
+		goto exit;
+
 exit:
 	mutex_unlock(&dp->lock);
-adjust_sts:
-	old_status = connector->status;
-	connector->status = connector->funcs->detect(connector, false);
-	if (old_status != connector->status)
-		drm_kms_helper_hotplug_event(dp->drm);
+
+	drm_kms_helper_hotplug_event(dp->drm);
+}
+
+void egt_dptx_hpd(struct egt_displayport *dp)
+{
+	mutex_lock(&dp->lock);
+
+	pr_debug("[%s - %d]set mode training\n", __func__, __LINE__);
+
+	if (egt_dptx_hpd_core(dp) != 0)
+		goto exit;
+
+exit:
+	mutex_unlock(&dp->lock);
 }
 
 MODULE_DESCRIPTION("Engiant DP Training Driver");
