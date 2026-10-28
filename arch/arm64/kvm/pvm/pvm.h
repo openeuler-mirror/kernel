@@ -63,6 +63,7 @@ static inline struct kvm_pvm_vcpu *vcpu_to_pvm(struct kvm_vcpu *vcpu)
 #define rv_timer_irq(ctx)	(rv_timer_vm_data(ctx)->ppi[rv_timer_ctx_index(ctx)])
 
 int kvm_pvm_emulate_sysreg(struct kvm_vcpu *vcpu, u32 insn);
+int kvm_pvm_emulate_at(struct kvm_vcpu *vcpu, u32 insn);
 int kvm_pvm_read_guest_insn(struct kvm_vcpu *vcpu, u32 *insn);
 
 void kvm_pvm_emulate_eret(struct kvm_vcpu *vcpu);

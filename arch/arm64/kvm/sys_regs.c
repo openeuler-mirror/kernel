@@ -2923,7 +2923,8 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 
 	{ SYS_DESC(SYS_FAR_EL1), access_vm_reg, reset_unknown, FAR_EL1,
 	  .pvm_access = access_rw },
-	{ SYS_DESC(SYS_PAR_EL1), NULL, reset_unknown, PAR_EL1 },
+	{ SYS_DESC(SYS_PAR_EL1), NULL, reset_unknown, PAR_EL1,
+	  .pvm_access = access_rw },
 
 	{ SYS_DESC(SYS_PMSCR_EL1), undef_access },
 	{ SYS_DESC(SYS_PMSNEVFR_EL1), undef_access },

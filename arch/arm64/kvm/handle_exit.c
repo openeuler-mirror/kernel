@@ -241,6 +241,9 @@ static int kvm_handle_unknown(struct kvm_vcpu *vcpu)
 		return 1;
 	}
 
+	if (aarch64_insn_is_at_s1e1r(insn))
+		return kvm_pvm_emulate_at(vcpu, insn);
+
 	if (aarch64_insn_is_tlbi(insn)) {
 		ret = kvm_pvm_emulate_tlbi(vcpu, insn);
 		if (ret)
