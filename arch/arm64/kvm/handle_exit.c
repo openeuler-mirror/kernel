@@ -12,6 +12,7 @@
 #include <linux/kvm_host.h>
 
 #include <asm/esr.h>
+#include <asm/insn.h>
 #include <asm/exception.h>
 #include <asm/kvm_asm.h>
 #include <asm/kvm_emulate.h>
@@ -22,6 +23,7 @@
 #include <asm/traps.h>
 
 #include <kvm/arm_hypercalls.h>
+#include <pvm/mmu.h>
 #include <pvm/pvm.h>
 
 #define CREATE_TRACE_POINTS
@@ -202,14 +204,45 @@ static int kvm_handle_unknown_ec(struct kvm_vcpu *vcpu)
 
 static int kvm_handle_unknown(struct kvm_vcpu *vcpu)
 {
-	/*
-	 * An EC=UNKNOWN trap from a PVM guest's userspace is UNDEFINED at EL0
-	 * on real hardware as well, so deliver it as such.
-	 */
+	struct kvm_pvm_vcpu *pv;
+	u32 insn;
+	int ret;
+
+	if (!is_pvm_mode())
+		return kvm_handle_unknown_ec(vcpu);
+	pv = vcpu_to_pvm(vcpu);
 	if (pvm_vcpu_in_user_ctxt(vcpu)) {
+		pv->trapped_insn_valid = false;
 		kvm_inject_undefined(vcpu);
 		return 1;
 	}
+
+	if (pv->trapped_insn_valid) {
+		insn = pv->trapped_insn;
+		pv->trapped_insn_valid = false;
+	} else {
+		ret = kvm_pvm_read_guest_insn(vcpu, &insn);
+		if (ret)
+			return ret;
+	}
+
+	if (aarch64_insn_is_hvc(insn)) {
+		vcpu->arch.fault.esr_el2 = ESR_ELx_IL |
+			(ESR_ELx_EC_HVC64 << ESR_ELx_EC_SHIFT) |
+			aarch64_insn_decode_immediate(AARCH64_INSN_IMM_16, insn);
+		/* Unlike a hardware HVC trap, UNKNOWN leaves PC on the HVC. */
+		kvm_incr_pc(vcpu);
+		return handle_hvc(vcpu);
+	}
+
+	if (aarch64_insn_is_eret(insn)) {
+		kvm_pvm_emulate_eret(vcpu);
+		return 1;
+	}
+
+	if (aarch64_insn_is_mrs(insn) || aarch64_insn_is_msr_reg(insn) ||
+	    aarch64_insn_is_msr_imm(insn) || aarch64_insn_is_sys(insn))
+		return kvm_pvm_emulate_sysreg(vcpu, insn);
 
 	return kvm_handle_unknown_ec(vcpu);
 }
@@ -238,7 +271,7 @@ static int kvm_handle_ptrauth(struct kvm_vcpu *vcpu)
 
 static int kvm_handle_eret(struct kvm_vcpu *vcpu)
 {
-	/* A PVM guest kernel ERET, see kvm_pvm_insn_to_esr(). */
+	/* PVM guest ERET instructions are handled from the UNKNOWN path. */
 	if (is_pvm_mode()) {
 		kvm_pvm_emulate_eret(vcpu);
 		return 1;

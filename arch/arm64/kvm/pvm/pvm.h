@@ -38,6 +38,9 @@ struct kvm_pvm_vcpu {
 	struct kvm_pvm_mmu *suser_mmu;
 	struct rv_timer_cpu timer_cpu;
 	struct kvm_pvm_mmu *skern_mmu;
+	/* Opcode handed from hyp to host for the current UNKNOWN exit. */
+	u32 trapped_insn;
+	bool trapped_insn_valid;
 };
 
 static inline struct kvm_pvm *kvm_to_pvm(struct kvm *kvm)
@@ -58,6 +61,9 @@ static inline struct kvm_pvm_vcpu *vcpu_to_pvm(struct kvm_vcpu *vcpu)
 
 #define rv_timer_ctx_index(ctx)	((ctx) - vcpu_rv_timer((ctx)->vcpu)->timers)
 #define rv_timer_irq(ctx)	(rv_timer_vm_data(ctx)->ppi[rv_timer_ctx_index(ctx)])
+
+int kvm_pvm_emulate_sysreg(struct kvm_vcpu *vcpu, u32 insn);
+int kvm_pvm_read_guest_insn(struct kvm_vcpu *vcpu, u32 *insn);
 
 void kvm_pvm_emulate_eret(struct kvm_vcpu *vcpu);
 int kvm_pvm_inject_sync(struct kvm_vcpu *vcpu, u64 esr_el1);

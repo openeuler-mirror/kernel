@@ -35,6 +35,8 @@
 #include <asm/debug-monitors.h>
 #include <asm/processor.h>
 
+#include "../../../pvm/mmu.h"
+
 struct kvm_exception_table_entry {
 	int insn, fixup;
 };
@@ -984,7 +986,7 @@ static bool kvm_pvm_try_fast_sysreg(struct kvm_vcpu *vcpu, u32 insn)
 	if (!is_read && !aarch64_insn_is_msr_reg(insn))
 		return false;
 
-	/* Assemble the accessed sysreg as kvm_pvm_insn_to_esr() does. */
+	/* Decode the accessed system register from the instruction. */
 	sysreg = (u32)aarch64_insn_decode_immediate(AARCH64_INSN_IMM_16,
 						    insn) << 5;
 	rt = aarch64_insn_decode_register(AARCH64_INSN_REGTYPE_RT, insn);
@@ -1067,46 +1069,17 @@ static inline void kvm_pvm_hyp_set_pc_pstate(struct kvm_vcpu *vcpu,
 	kvm_pvm_sync_fpen(vcpu);
 }
 
-/*
- * A PVM guest kernel runs at physical EL0, so its privileged instructions trap
- * with EC=UNKNOWN.  Return the syndrome they would trap with from EL1, for the
- * host to emulate them through its regular exit handlers, or @esr to keep
- * EC=UNKNOWN.  The host's system register table decides which MRS, MSR and SYS
- * are emulated.
- */
-static inline u64 kvm_pvm_insn_to_esr(u32 insn, u64 esr)
-{
-	u32 sysreg, rt;
-
-	if (aarch64_insn_is_mrs(insn) || aarch64_insn_is_msr_reg(insn) ||
-	    aarch64_insn_is_msr_imm(insn) || aarch64_insn_is_sys(insn)) {
-		sysreg = (u32)aarch64_insn_decode_immediate(AARCH64_INSN_IMM_16,
-							    insn) << 5;
-		rt = aarch64_insn_decode_register(AARCH64_INSN_REGTYPE_RT, insn);
-		return ESR_ELx_IL | ESR_ELx_EC_SYS64 << ESR_ELx_EC_SHIFT |
-		       sysreg_to_esr_sys64_iss(sysreg) |
-		       rt << ESR_ELx_SYS64_ISS_RT_SHIFT |
-		       (aarch64_insn_is_mrs(insn) ? ESR_ELx_SYS64_ISS_DIR_READ :
-						    ESR_ELx_SYS64_ISS_DIR_WRITE);
-	}
-
-	if (aarch64_insn_is_hvc(insn))
-		return ESR_ELx_IL | ESR_ELx_EC_HVC64 << ESR_ELx_EC_SHIFT |
-		       aarch64_insn_decode_immediate(AARCH64_INSN_IMM_16, insn);
-
-	if (aarch64_insn_is_eret(insn))
-		return ESR_ELx_IL | ESR_ELx_EC_ERET << ESR_ELx_EC_SHIFT;
-
-	return esr;
-}
-
 static inline bool kvm_hyp_handle_unknown(struct kvm_vcpu *vcpu,
 					  u64 *exit_code)
 {
+	struct kvm_pvm_vcpu *pv;
 	u32 insn;
 
 	if (!is_pvm_mode())
 		return false;
+
+	pv = vcpu_to_pvm(vcpu);
+	pv->trapped_insn_valid = false;
 
 	/*
 	 * Only the guest kernel's privileged instructions are emulated here;
@@ -1144,12 +1117,9 @@ static inline bool kvm_hyp_handle_unknown(struct kvm_vcpu *vcpu,
 		return true;
 	}
 
-	vcpu->arch.fault.esr_el2 = kvm_pvm_insn_to_esr(insn,
-						       vcpu->arch.fault.esr_el2);
-
-	/* A trapped HVC returns past the instruction. */
-	if (kvm_vcpu_trap_get_class(vcpu) == ESR_ELx_EC_HVC64)
-		__kvm_skip_instr(vcpu);
+	/* Hand the opcode to the host without reading guest memory again. */
+	pv->trapped_insn = insn;
+	pv->trapped_insn_valid = true;
 
 	return false;
 }
