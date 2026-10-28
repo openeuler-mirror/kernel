@@ -167,11 +167,16 @@
  * System registers, organised loosely by encoding but grouped together
  * where the architected name contains an index. e.g. ID_MMFR<n>_EL1.
  */
+#define SYS_SPSel_EL0			sys_reg(0, 0, 4, 0, 5)
+#define SYS_SPSel_EL1			sys_reg(0, 0, 4, 1, 5)
 #define SYS_ALLINT_CLR			sys_reg(0, 1, 4, 0, 0)
 #define SYS_ALLINT_SET			sys_reg(0, 1, 4, 1, 0)
 #define SYS_SVCR_SMSTOP_SM_EL0		sys_reg(0, 3, 4, 2, 3)
 #define SYS_SVCR_SMSTART_SM_EL0		sys_reg(0, 3, 4, 3, 3)
 #define SYS_SVCR_SMSTOP_SMZA_EL0	sys_reg(0, 3, 4, 6, 3)
+#define SYS_DAIFSET(imm)		sys_reg(0, 3, 4, (imm), 6)
+#define SYS_DAIFCLR(imm)		sys_reg(0, 3, 4, (imm), 7)
+#define SYS_DAIF			sys_reg(3, 3, 4, 2, 1)
 
 #define SYS_DBGBVRn_EL1(n)		sys_reg(2, 0, 0, n, 4)
 #define SYS_DBGBCRn_EL1(n)		sys_reg(2, 0, 0, n, 5)
@@ -291,6 +296,11 @@
 
 #define SYS_SPSR_EL1			sys_reg(3, 0, 4, 0, 0)
 #define SYS_ELR_EL1			sys_reg(3, 0, 4, 0, 1)
+
+#define SYS_SP_EL0			sys_reg(3, 0, 4, 1, 0)
+
+#define SYS_SPSel			sys_reg(3, 0, 4, 2, 0)
+#define SYS_CurrentEL			sys_reg(3, 0, 4, 2, 2)
 
 #define SYS_ALLINT			sys_reg(3, 0, 4, 3, 0)
 

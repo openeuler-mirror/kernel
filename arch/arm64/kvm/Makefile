@@ -23,7 +23,7 @@ kvm-y += arm.o mmu.o mmio.o psci.o hypercalls.o \
 	 vgic/vgic-mmio-v3.o vgic/vgic-kvm-device.o \
 	 vgic/vgic-its.o vgic/vgic-debug.o \
 	 rme.o rme-exit.o cca_base.o \
-	 pvm/pvm.o
+	 pvm/pvm.o pvm/exception.o pvm/id_regs.o
 
 kvm-$(CONFIG_VIRT_PLAT_DEV)  += vgic/shadow_dev.o
 kvm-$(CONFIG_HW_PERF_EVENTS)  += pmu-emul.o pmu.o

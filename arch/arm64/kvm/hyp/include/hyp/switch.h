@@ -14,6 +14,7 @@
 #include <linux/kvm_host.h>
 #include <linux/types.h>
 #include <linux/jump_label.h>
+#include <linux/uaccess.h>
 #include <uapi/linux/psci.h>
 
 #include <kvm/arm_psci.h>
@@ -22,6 +23,7 @@
 #include <asm/cpufeature.h>
 #include <asm/extable.h>
 #include <asm/kprobes.h>
+#include <asm/insn.h>
 #include <asm/kvm_asm.h>
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_hyp.h>
@@ -586,6 +588,69 @@ static bool handle_ampere1_tcr(struct kvm_vcpu *vcpu)
 	return true;
 }
 
+/*
+ * PVM DAIF virtualization: with SCTLR_EL1.UMA clear, EL0 accesses to DAIF
+ * trap as EC=0x18 SYS64 (DDI0487M.c C5.2.3: UMA=0 gives
+ * AArch64_SystemAccessTrap(0x18)).  They are MRS and MSR DAIF, and the
+ * immediate forms MSR DAIFSet and DAIFClr, which carry their 4-bit immediate
+ * in CRm.  Update only the virtual DAIF held in regs.pstate; the physical
+ * re-entry written by __kvm_skip_instr() always keeps DAIF open, so
+ * EL1-targeted interrupts are never masked in hardware while the guest
+ * executes.
+ */
+static bool kvm_hyp_handle_daif(struct kvm_vcpu *vcpu, u64 *exit_code)
+{
+	u64 esr = kvm_vcpu_get_esr(vcpu);
+	u32 sysreg = esr_sys64_to_sysreg(esr);
+	u32 imm = sys_reg_CRm(sysreg);
+	u64 old = *vcpu_cpsr(vcpu);
+	u64 daif;
+
+	/*
+	 * With SCTLR_EL1.UMA clear, EL0 DAIF accesses trap on real hardware
+	 * too.  Leave those of the guest's userspace to the host, which
+	 * refuses them, instead of emulating them with kernel privilege.
+	 */
+	if (pvm_vcpu_in_user_ctxt(vcpu))
+		return false;
+
+	if (sysreg == SYS_DAIF) {
+		int rt = kvm_vcpu_sys_get_rt(vcpu);
+
+		if (esr & ESR_ELx_SYS64_ISS_DIR_READ) {
+			vcpu_set_reg(vcpu, rt, old & DAIF_MASK);
+			__kvm_skip_instr(vcpu);
+			return true;
+		}
+		daif = vcpu_get_reg(vcpu, rt);
+	} else if (sysreg == SYS_DAIFSET(imm)) {
+		daif = old | FIELD_PREP(DAIF_MASK, imm);
+	} else if (sysreg == SYS_DAIFCLR(imm)) {
+		daif = old & ~FIELD_PREP(DAIF_MASK, imm);
+	} else {
+		return false;
+	}
+
+	*vcpu_cpsr(vcpu) = pvm_set_daif(old, daif);
+	__kvm_skip_instr(vcpu);
+
+	if ((old & PSR_I_BIT) && !(daif & PSR_I_BIT) &&
+	    pvm_vcpu_irq_queued(vcpu)) {
+		/*
+		 * Architecturally, clearing PSTATE.I while an interrupt is
+		 * pending takes the vector at the next instruction boundary.
+		 * Injection only runs on the host entry path, which this hyp
+		 * re-entry would bypass, so the guest's unmask window could
+		 * close again before any injection observes I=0.  Exit to the
+		 * host instead, so that its injection path runs.
+		 */
+		*exit_code = ARM_EXCEPTION_IRQ;
+		return false;
+	}
+
+	return true;
+}
+
 static inline bool kvm_hyp_handle_sysreg(struct kvm_vcpu *vcpu, u64 *exit_code)
 {
 	if (cpus_have_final_cap(ARM64_WORKAROUND_CAVIUM_TX2_219_TVM) &&
@@ -604,6 +669,9 @@ static inline bool kvm_hyp_handle_sysreg(struct kvm_vcpu *vcpu, u64 *exit_code)
 		return kvm_hyp_handle_ptrauth(vcpu, exit_code);
 
 	if (kvm_hyp_handle_cntpct(vcpu))
+		return true;
+
+	if (is_pvm_mode() && kvm_hyp_handle_daif(vcpu, exit_code))
 		return true;
 
 	return false;
@@ -628,6 +696,20 @@ static inline bool kvm_hyp_handle_memory_fault(struct kvm_vcpu *vcpu,
 }
 #define kvm_hyp_handle_iabt_low		kvm_hyp_handle_memory_fault
 #define kvm_hyp_handle_watchpt_low	kvm_hyp_handle_memory_fault
+
+/*
+ * A PC alignment fault of a PVM guest reports the faulting PC in FAR, which
+ * the host may overwrite with faults of its own before handle_exit() reflects
+ * the exception, so record it here.
+ */
+static inline bool kvm_hyp_handle_pc_align(struct kvm_vcpu *vcpu,
+					   u64 *exit_code)
+{
+	if (is_pvm_mode())
+		vcpu->arch.fault.far_el2 = read_sysreg_el2(SYS_FAR);
+
+	return false;
+}
 
 static inline bool kvm_hyp_handle_dabt_low(struct kvm_vcpu *vcpu, u64 *exit_code)
 {
@@ -784,6 +866,294 @@ static inline void __kvm_unexpected_el2_exception(void)
 		fixup = (unsigned long)__pvm_guest_exit_panic;
 #endif
 	write_sysreg_el2(fixup, SYS_ELR);
+}
+
+/*
+ * The live shadow S1 can lose the guest PC mapping while PVM handles an
+ * exit.  The normal host exception table does not serve the PVM vector, so
+ * use the KVM exception table for this load and recover through its fixup.
+ */
+#define __pvm_load_insn(op, addr, insn)                          \
+({                                                              \
+	int __err = 0;                                          \
+	asm volatile(                                           \
+	"1: " op " %w[i], [%[a]]\n"                            \
+	"   b 3f\n"                                            \
+	"2: mov %w[e], %[efault]\n"                           \
+	"3:\n"                                                \
+	__KVM_EXTABLE(1b, 2b)                                  \
+	: [e] "+r" (__err), [i] "+r" (insn)                     \
+	: [a] "r" (addr), [efault] "i" (-EFAULT)                \
+	: "memory");                                            \
+	__err;                                                  \
+})
+
+static __always_inline int kvm_pvm_guest_insn_read(struct kvm_vcpu *vcpu,
+						   u64 pc, u32 *insnp)
+{
+	u64 elr, spsr, esr, far;
+	u32 insn = 0;
+	int err;
+
+	/* An intervening data abort overwrites these exit registers. */
+	elr = read_sysreg_el2(SYS_ELR);
+	spsr = read_sysreg_el2(SYS_SPSR);
+	esr = read_sysreg_el2(SYS_ESR);
+	far = read_sysreg_el2(SYS_FAR);
+
+	if (pc & BIT(55)) {
+		__uaccess_disable_hw_pan();
+		err = __pvm_load_insn("ldr", pc, insn);
+		__uaccess_enable_hw_pan();
+	} else {
+		err = __pvm_load_insn("ldtr", pc, insn);
+	}
+
+	if (err) {
+		write_sysreg_el2(elr, SYS_ELR);
+		write_sysreg_el2(spsr, SYS_SPSR);
+		write_sysreg_el2(esr, SYS_ESR);
+		write_sysreg_el2(far, SYS_FAR);
+		*insnp = 0;
+		return err;
+	}
+
+	*insnp = le32_to_cpu((__force __le32)insn);
+	return 0;
+}
+
+/*
+ * A PVM guest kernel runs at physical EL0, so the privileged system-register
+ * accesses it performs on every exception entry and exit trap as EC=UNKNOWN.
+ * They are plain reads and writes with no side effects, yet each one would
+ * otherwise exit to the host for a full system-register table walk.  Under a
+ * timer-tick workload these are the hottest trapped instructions, and the
+ * exits alone can keep a vCPU from making progress, to the point where the
+ * guest never reports a quiescent state and RCU stalls.  Emulate them in the
+ * hypervisor and resume the guest instead.
+ *
+ * The PC is advanced with __kvm_skip_instr(), which writes ELR_EL2 directly.
+ * This runs inside the fixup_guest_exit() loop, where __kvm_adjust_pc() is not
+ * re-invoked, so the flag set by kvm_incr_pc() would never be consumed and the
+ * guest would re-execute the same instruction forever.
+ */
+static bool kvm_pvm_try_fast_sysreg(struct kvm_vcpu *vcpu, u32 insn)
+{
+	bool is_read = aarch64_insn_is_mrs(insn);
+	enum vcpu_sysreg reg;
+	u32 sysreg, rt;
+
+	if (!is_read && !aarch64_insn_is_msr_reg(insn))
+		return false;
+
+	/* Assemble the accessed sysreg as kvm_pvm_insn_to_esr() does. */
+	sysreg = (u32)aarch64_insn_decode_immediate(AARCH64_INSN_IMM_16,
+						    insn) << 5;
+	rt = aarch64_insn_decode_register(AARCH64_INSN_REGTYPE_RT, insn);
+
+	switch (sysreg) {
+	case SYS_CurrentEL:
+		if (!is_read)
+			return false;
+		vcpu_set_reg(vcpu, rt, CurrentEL_EL1);
+		__kvm_skip_instr(vcpu);
+		return true;
+	case SYS_SP_EL0:
+		/* Backed by gp_regs.sp, which the guest exit path has saved. */
+		if (is_read)
+			vcpu_set_reg(vcpu, rt, *vcpu_sp(vcpu));
+		else
+			*vcpu_sp(vcpu) = vcpu_get_reg(vcpu, rt);
+		__kvm_skip_instr(vcpu);
+		return true;
+	case SYS_TPIDRRO_EL0:
+		/*
+		 * Backed by hardware, since guest userspace reads it directly
+		 * at EL0.  Those reads do not trap, so only a guest kernel
+		 * write lands here; leave any other access to the host path.
+		 */
+		if (is_read)
+			return false;
+		write_sysreg_s(vcpu_get_reg(vcpu, rt), SYS_TPIDRRO_EL0);
+		__kvm_skip_instr(vcpu);
+		return true;
+	case SYS_TPIDR_EL1:
+		reg = TPIDR_EL1;
+		break;
+	case SYS_ELR_EL1:
+		reg = ELR_EL1;
+		break;
+	case SYS_SPSR_EL1:
+		reg = SPSR_EL1;
+		break;
+	case SYS_ESR_EL1:
+		reg = ESR_EL1;
+		break;
+	case SYS_FAR_EL1:
+		reg = FAR_EL1;
+		break;
+	default:
+		return false;
+	}
+
+	/*
+	 * These only ever live in the context, as PVM does not restore the EL1
+	 * state to hardware for the guest.
+	 */
+	if (is_read)
+		vcpu_set_reg(vcpu, rt, ctxt_sys_reg(&vcpu->arch.ctxt, reg));
+	else
+		ctxt_sys_reg(&vcpu->arch.ctxt, reg) = vcpu_get_reg(vcpu, rt);
+
+	__kvm_skip_instr(vcpu);
+	return true;
+}
+
+/*
+ * Switch the guest to a new virtual PC and PSTATE from within the
+ * fixup_guest_exit() loop.  ELR_EL2 and SPSR_EL2 are written directly, because
+ * neither __kvm_adjust_pc() nor the guest sysreg restore runs again before the
+ * guest resumes.  The virtual exception level is taken from the unstripped
+ * mode, and the physical PSTATE is then forced to EL0t because a PVM guest
+ * always resumes at physical EL0.  DAIF is virtualized, so the physical target
+ * keeps it open.  The FP/SIMD permission follows the new virtual mode.
+ */
+static inline void kvm_pvm_hyp_set_pc_pstate(struct kvm_vcpu *vcpu,
+					     u64 pc, u64 pstate)
+{
+	*vcpu_pc(vcpu) = pc;
+	*vcpu_cpsr(vcpu) = pstate;
+
+	write_sysreg_el2(pc, SYS_ELR);
+	write_sysreg_el2(pvm_to_phys_pstate(pstate), SYS_SPSR);
+	kvm_pvm_sync_fpen(vcpu);
+}
+
+/*
+ * A PVM guest kernel runs at physical EL0, so its privileged instructions trap
+ * with EC=UNKNOWN.  Return the syndrome they would trap with from EL1, for the
+ * host to emulate them through its regular exit handlers, or @esr to keep
+ * EC=UNKNOWN.  The host's system register table decides which MRS, MSR and SYS
+ * are emulated.
+ */
+static inline u64 kvm_pvm_insn_to_esr(u32 insn, u64 esr)
+{
+	u32 sysreg, rt;
+
+	if (aarch64_insn_is_mrs(insn) || aarch64_insn_is_msr_reg(insn) ||
+	    aarch64_insn_is_msr_imm(insn) || aarch64_insn_is_sys(insn)) {
+		sysreg = (u32)aarch64_insn_decode_immediate(AARCH64_INSN_IMM_16,
+							    insn) << 5;
+		rt = aarch64_insn_decode_register(AARCH64_INSN_REGTYPE_RT, insn);
+		return ESR_ELx_IL | ESR_ELx_EC_SYS64 << ESR_ELx_EC_SHIFT |
+		       sysreg_to_esr_sys64_iss(sysreg) |
+		       rt << ESR_ELx_SYS64_ISS_RT_SHIFT |
+		       (aarch64_insn_is_mrs(insn) ? ESR_ELx_SYS64_ISS_DIR_READ :
+						    ESR_ELx_SYS64_ISS_DIR_WRITE);
+	}
+
+	if (aarch64_insn_is_hvc(insn))
+		return ESR_ELx_IL | ESR_ELx_EC_HVC64 << ESR_ELx_EC_SHIFT |
+		       aarch64_insn_decode_immediate(AARCH64_INSN_IMM_16, insn);
+
+	if (aarch64_insn_is_eret(insn))
+		return ESR_ELx_IL | ESR_ELx_EC_ERET << ESR_ELx_EC_SHIFT;
+
+	return esr;
+}
+
+static inline bool kvm_hyp_handle_unknown(struct kvm_vcpu *vcpu,
+					  u64 *exit_code)
+{
+	u32 insn;
+
+	if (!is_pvm_mode())
+		return false;
+
+	/*
+	 * Only the guest kernel's privileged instructions are emulated here;
+	 * those of its userspace are UNDEFINED at EL0, which the host delivers.
+	 */
+	if (pvm_vcpu_in_user_ctxt(vcpu))
+		return false;
+
+	/* A failed read leaves EC=UNKNOWN. */
+	if (kvm_pvm_guest_insn_read(vcpu, read_sysreg_el2(SYS_ELR), &insn))
+		return false;
+
+	/* Absorb the hot exception entry and exit system registers. */
+	if (kvm_pvm_try_fast_sysreg(vcpu, insn))
+		return true;
+
+	/*
+	 * A PVM guest kernel runs at physical EL0, so its ERET traps here as
+	 * EC=UNKNOWN.  Under load this is a large share of all guest exits, so
+	 * emulate it in the hypervisor rather than exiting to the host.
+	 *
+	 * This mirrors kvm_pvm_emulate_eret().
+	 *
+	 * Exit to the host when an interrupt may be pending, so that its
+	 * injection path runs; this keeps the same boundary as the DAIF unmask
+	 * path.  An ERET to an illegal or unsupported mode exits as well, for
+	 * the host to deliver its exception.
+	 */
+	if (aarch64_insn_is_eret(insn) && !pvm_vcpu_irq_queued(vcpu) &&
+	    pvm_eret_target(ctxt_sys_reg(&vcpu->arch.ctxt, SPSR_EL1)) ==
+	    PVM_ERET_LEGAL) {
+		kvm_pvm_hyp_set_pc_pstate(vcpu,
+					  ctxt_sys_reg(&vcpu->arch.ctxt, ELR_EL1),
+					  ctxt_sys_reg(&vcpu->arch.ctxt, SPSR_EL1));
+		return true;
+	}
+
+	vcpu->arch.fault.esr_el2 = kvm_pvm_insn_to_esr(insn,
+						       vcpu->arch.fault.esr_el2);
+
+	/* A trapped HVC returns past the instruction. */
+	if (kvm_vcpu_trap_get_class(vcpu) == ESR_ELx_EC_HVC64)
+		__kvm_skip_instr(vcpu);
+
+	return false;
+}
+
+/*
+ * An SVC from a PVM guest, typically from its userspace, is the inverse of the
+ * emulated ERET: it moves the guest to virtual EL1 and delivers a synchronous
+ * exception to the guest kernel.  Together with ERET it accounts for most
+ * guest exits under load, so deliver it in the hypervisor as well.
+ *
+ * The exception is constructed here rather than pended: a pended exception is
+ * only consumed by __kvm_adjust_pc() outside the fixup_guest_exit() loop.  The
+ * SVC has already moved ELR_EL2 past it, so the guest would resume without
+ * taking it and take it only on a later exit to the host, from a stale PC.
+ * The vector and PSTATE are computed as in enter_exception64().
+ *
+ * Inside the loop the hardware and the context are not in sync, so the return
+ * address is read from ELR_EL2 rather than from the stale context PC, while the
+ * trapped PSTATE comes from the context, which synchronize_vcpu_pstate() has
+ * just refreshed.
+ */
+static inline bool kvm_hyp_handle_svc(struct kvm_vcpu *vcpu, u64 *exit_code)
+{
+	struct kvm_cpu_context *ctxt = &vcpu->arch.ctxt;
+	u64 old, mode;
+
+	if (!is_pvm_mode())
+		return false;
+
+	old = *vcpu_cpsr(vcpu);
+	mode = old & (PSR_MODE_MASK | PSR_MODE32_BIT);
+
+	ctxt_sys_reg(ctxt, ELR_EL1) = read_sysreg_el2(SYS_ELR);
+	ctxt_sys_reg(ctxt, SPSR_EL1) = old;
+	ctxt_sys_reg(ctxt, ESR_EL1) = kvm_vcpu_get_esr(vcpu);
+
+	kvm_pvm_hyp_set_pc_pstate(vcpu,
+		ctxt_sys_reg(ctxt, VBAR_EL1) + except_type_sync +
+		kvm_exception64_offset(mode, PSR_MODE_EL1h),
+		kvm_exception64_pstate(vcpu, old, ctxt_sys_reg(ctxt, SCTLR_EL1),
+				       PSR_MODE_EL1h));
+	return true;
 }
 
 #endif /* __ARM64_KVM_HYP_SWITCH_H__ */

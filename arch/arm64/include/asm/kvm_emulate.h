@@ -184,6 +184,82 @@ static __always_inline unsigned long *vcpu_cpsr(const struct kvm_vcpu *vcpu)
 }
 
 /*
+ * PVM runs the guest's kernel and its userspace at the same physical EL0, so
+ * a trap alone does not tell which of them executed the instruction;
+ * the virtual mode in the vCPU PSTATE tells them apart.  Outside a guest
+ * run it is the virtual EL1h or EL0t restored by synchronize_vcpu_pstate().
+ */
+static __always_inline bool pvm_vcpu_in_user_ctxt(const struct kvm_vcpu *vcpu)
+{
+	return is_pvm_mode() &&
+	       (*vcpu_cpsr((struct kvm_vcpu *)vcpu) & PSR_MODE_MASK) == PSR_MODE_EL0t;
+}
+
+/*
+ * Whether the guest may have an interrupt to take, for the hypervisor, which
+ * does not query the vGIC itself.  Every pending and enabled interrupt is
+ * queued on the AP list, so an empty list rules one out.  The list may also
+ * hold interrupts the guest cannot take yet, such as active or masked ones;
+ * these only cost an exit to the host, which makes the exact decision.  As in
+ * kvm_vgic_flush_hwstate(), the check is lockless: an interrupt queued after
+ * it kicks the vCPU out of the guest.
+ */
+static __always_inline bool pvm_vcpu_irq_queued(const struct kvm_vcpu *vcpu)
+{
+	return !list_empty(&vcpu->arch.vgic_cpu.ap_list_head);
+}
+
+/*
+ * The guest's CPACR_EL1.FPEN grants FP/SIMD access per virtual EL, but PVM runs
+ * both virtual EL0 and EL1 at physical EL0.  The physical EL0 enable therefore
+ * follows the current virtual mode and must be refreshed whenever it changes.
+ */
+static __always_inline bool pvm_vcpu_fp_enabled(const struct kvm_vcpu *vcpu)
+{
+	u64 fpen = ctxt_sys_reg(&vcpu->arch.ctxt, CPACR_EL1) & CPACR_ELx_FPEN;
+
+	return fpen == CPACR_ELx_FPEN ||
+	       (fpen == CPACR_EL1_FPEN_EL1EN && !pvm_vcpu_in_user_ctxt(vcpu));
+}
+
+/* Project the guest's FP/SIMD permission for its current virtual mode. */
+static __always_inline void kvm_pvm_sync_fpen(struct kvm_vcpu *vcpu)
+{
+	sysreg_clear_set(cpacr_el1, CPACR_EL1_FPEN_EL0EN,
+			 pvm_vcpu_fp_enabled(vcpu) ? CPACR_EL1_FPEN_EL0EN : 0);
+}
+
+/*
+ * The physical ERET into a PVM guest always returns to EL0t, so the hardware
+ * never checks the virtual target mode of a guest kernel ERET: classify it
+ * before it is projected.  EL1t is architecturally legal, but PVM does not
+ * support it, see access_spsel().  EL2, EL3, the reserved encodings and
+ * AArch32, which PVM does not support either, make the return illegal, as
+ * does SPSR.IL.
+ */
+enum pvm_eret_target {
+	PVM_ERET_LEGAL,
+	PVM_ERET_ILLEGAL,
+	PVM_ERET_EL1T,
+};
+
+static __always_inline enum pvm_eret_target pvm_eret_target(u64 spsr)
+{
+	if (spsr & PSR_IL_BIT)
+		return PVM_ERET_ILLEGAL;
+
+	switch (spsr & (PSR_MODE_MASK | PSR_MODE32_BIT)) {
+	case PSR_MODE_EL0t:
+	case PSR_MODE_EL1h:
+		return PVM_ERET_LEGAL;
+	case PSR_MODE_EL1t:
+		return PVM_ERET_EL1T;
+	default:
+		return PVM_ERET_ILLEGAL;
+	}
+}
+
+/*
  * PVM DAIF virtualization: the L2 guest's DAIF mask bits live only in
  * ctxt (regs.pstate); the physical eret target always runs EL0 with DAIF
  * forced open, so EL1-targeted physical/virtual interrupts are never
@@ -217,6 +293,11 @@ static __always_inline unsigned long pvm_restore_virtual_pstate(unsigned long ph
 static __always_inline unsigned long pvm_to_phys_pstate(unsigned long virt)
 {
 	return pvm_clear_daif((virt & ~PSR_MODE_MASK) | PSR_MODE_EL0t);
+}
+
+static __always_inline unsigned long *vcpu_sp(const struct kvm_vcpu *vcpu)
+{
+	return (unsigned long *)&vcpu_gp_regs(vcpu)->sp;
 }
 
 static __always_inline bool vcpu_mode_is_32bit(const struct kvm_vcpu *vcpu)

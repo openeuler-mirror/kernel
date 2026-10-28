@@ -22,6 +22,7 @@
 #include <asm/traps.h>
 
 #include <kvm/arm_hypercalls.h>
+#include <pvm/pvm.h>
 
 #define CREATE_TRACE_POINTS
 #include "trace_handle_exit.h"
@@ -199,6 +200,20 @@ static int kvm_handle_unknown_ec(struct kvm_vcpu *vcpu)
 	return 1;
 }
 
+static int kvm_handle_unknown(struct kvm_vcpu *vcpu)
+{
+	/*
+	 * An EC=UNKNOWN trap from a PVM guest's userspace is UNDEFINED at EL0
+	 * on real hardware as well, so deliver it as such.
+	 */
+	if (pvm_vcpu_in_user_ctxt(vcpu)) {
+		kvm_inject_undefined(vcpu);
+		return 1;
+	}
+
+	return kvm_handle_unknown_ec(vcpu);
+}
+
 /*
  * Guest access to SVE registers should be routed to this handler only
  * when the system doesn't support SVE.
@@ -223,6 +238,12 @@ static int kvm_handle_ptrauth(struct kvm_vcpu *vcpu)
 
 static int kvm_handle_eret(struct kvm_vcpu *vcpu)
 {
+	/* A PVM guest kernel ERET, see kvm_pvm_insn_to_esr(). */
+	if (is_pvm_mode()) {
+		kvm_pvm_emulate_eret(vcpu);
+		return 1;
+	}
+
 	if (kvm_vcpu_get_esr(vcpu) & ESR_ELx_ERET_ISS_ERET)
 		return kvm_handle_ptrauth(vcpu);
 
@@ -247,6 +268,9 @@ static int kvm_handle_eret(struct kvm_vcpu *vcpu)
 
 static int handle_svc(struct kvm_vcpu *vcpu)
 {
+	if (is_pvm_mode())
+		return kvm_pvm_inject_sync(vcpu, kvm_vcpu_get_esr(vcpu));
+
 	/*
 	 * So far, SVC traps only for NV via HFGITR_EL2. A SVC from a
 	 * 32bit guest would be caught by vpcu_mode_is_bad_32bit(), so
@@ -256,8 +280,25 @@ static int handle_svc(struct kvm_vcpu *vcpu)
 	return 1;
 }
 
+/*
+ * A PVM guest runs at physical EL0, so its alignment faults trap to the host
+ * instead of reaching the guest kernel's vector.  Reflect them, along with the
+ * faulting PC that the hypervisor recorded for a PC alignment fault.
+ */
+static int handle_align_fault(struct kvm_vcpu *vcpu)
+{
+	if (!is_pvm_mode())
+		return kvm_handle_unknown_ec(vcpu);
+
+	if (kvm_vcpu_trap_get_class(vcpu) == ESR_ELx_EC_PC_ALIGN)
+		__vcpu_sys_reg(vcpu, FAR_EL1) = kvm_vcpu_get_hfar(vcpu);
+
+	return kvm_pvm_inject_sync(vcpu, kvm_vcpu_get_esr(vcpu));
+}
+
 static exit_handle_fn arm_exit_handlers[] = {
 	[0 ... ESR_ELx_EC_MAX]	= kvm_handle_unknown_ec,
+	[ESR_ELx_EC_UNKNOWN]	= kvm_handle_unknown,
 	[ESR_ELx_EC_WFx]	= kvm_handle_wfx,
 	[ESR_ELx_EC_CP15_32]	= kvm_handle_cp15_32,
 	[ESR_ELx_EC_CP15_64]	= kvm_handle_cp15_64,
@@ -274,7 +315,9 @@ static exit_handle_fn arm_exit_handlers[] = {
 	[ESR_ELx_EC_SVE]	= handle_sve,
 	[ESR_ELx_EC_ERET]	= kvm_handle_eret,
 	[ESR_ELx_EC_IABT_LOW]	= kvm_handle_guest_abort,
+	[ESR_ELx_EC_PC_ALIGN]	= handle_align_fault,
 	[ESR_ELx_EC_DABT_LOW]	= kvm_handle_guest_abort,
+	[ESR_ELx_EC_SP_ALIGN]	= handle_align_fault,
 	[ESR_ELx_EC_SOFTSTP_LOW]= kvm_handle_guest_debug,
 	[ESR_ELx_EC_WATCHPT_LOW]= kvm_handle_guest_debug,
 	[ESR_ELx_EC_BREAKPT_LOW]= kvm_handle_guest_debug,

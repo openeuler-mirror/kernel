@@ -116,7 +116,7 @@ static void __activate_traps(struct kvm_vcpu *vcpu)
 
 	if (is_pvm_mode()) {
 		struct kvm_cpu_context *ctxt = &vcpu->arch.ctxt;
-		u64 sctlr, tcr, cpacr, fpen;
+		u64 sctlr, tcr, cpacr;
 
 		sctlr = ctxt_sys_reg(ctxt, SCTLR_EL1) & PVM_SCTLR_GUEST;
 		sctlr |= read_sysreg_el2(SYS_SCTLR) & ~PVM_SCTLR_GUEST;
@@ -132,10 +132,7 @@ static void __activate_traps(struct kvm_vcpu *vcpu)
 		write_sysreg_el2(tcr, SYS_TCR);
 
 		cpacr = read_sysreg_el2(SYS_CPACR) & ~CPACR_EL1_FPEN_EL0EN;
-		fpen = ctxt_sys_reg(ctxt, CPACR_EL1) & CPACR_ELx_FPEN;
-		/* Guest EL1 permission must also be enabled at physical EL0. */
-		if (fpen == CPACR_ELx_FPEN ||
-		    (fpen == CPACR_EL1_FPEN_EL1EN && vcpu_mode_priv(vcpu)))
+		if (pvm_vcpu_fp_enabled(vcpu))
 			cpacr |= CPACR_EL1_FPEN_EL0EN;
 		/* PVM does not virtualize trace; trap trace register accesses. */
 		cpacr |= CPACR_ELx_TTA;
@@ -278,14 +275,17 @@ void deactivate_traps_vhe_put(struct kvm_vcpu *vcpu)
 
 static const exit_handler_fn hyp_exit_handlers[] = {
 	[0 ... ESR_ELx_EC_MAX]		= NULL,
+	[ESR_ELx_EC_UNKNOWN]		= kvm_hyp_handle_unknown,
 	[ESR_ELx_EC_CP15_32]		= kvm_hyp_handle_cp15_32,
 	[ESR_ELx_EC_SYS64]		= kvm_hyp_handle_sysreg,
 	[ESR_ELx_EC_SVE]		= kvm_hyp_handle_fpsimd,
 	[ESR_ELx_EC_FP_ASIMD]		= kvm_hyp_handle_fpsimd,
 	[ESR_ELx_EC_IABT_LOW]		= kvm_hyp_handle_iabt_low,
+	[ESR_ELx_EC_PC_ALIGN]		= kvm_hyp_handle_pc_align,
 	[ESR_ELx_EC_DABT_LOW]		= kvm_hyp_handle_dabt_low,
 	[ESR_ELx_EC_WATCHPT_LOW]	= kvm_hyp_handle_watchpt_low,
 	[ESR_ELx_EC_PAC]		= kvm_hyp_handle_ptrauth,
+	[ESR_ELx_EC_SVC64]		= kvm_hyp_handle_svc,
 };
 
 static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, u64 *exit_code)
@@ -366,6 +366,10 @@ static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
 	__activate_traps(vcpu);
 
 	__kvm_adjust_pc(vcpu);
+
+	/* A pending exception may have just changed the virtual mode. */
+	if (is_pvm_mode())
+		kvm_pvm_sync_fpen(vcpu);
 
 	sysreg_restore_guest_state_vhe(guest_ctxt);
 	__debug_switch_to_guest(vcpu);

@@ -222,6 +222,15 @@
 					 ((crn) << ESR_ELx_SYS64_ISS_CRN_SHIFT) | \
 					 ((crm) << ESR_ELx_SYS64_ISS_CRM_SHIFT))
 
+#ifndef __ASSEMBLY__
+static inline u64 sysreg_to_esr_sys64_iss(u32 reg)
+{
+	return ESR_ELx_SYS64_ISS_SYS_VAL(sys_reg_Op0(reg), sys_reg_Op1(reg),
+					 sys_reg_Op2(reg), sys_reg_CRn(reg),
+					 sys_reg_CRm(reg));
+}
+#endif
+
 #define ESR_ELx_SYS64_ISS_SYS_OP_MASK	(ESR_ELx_SYS64_ISS_SYS_MASK | \
 					 ESR_ELx_SYS64_ISS_DIR_MASK)
 #define ESR_ELx_SYS64_ISS_RT(esr) \

@@ -301,7 +301,8 @@ static int set_core_reg(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg)
 		u64 mode = (*(u64 *)valp) & PSR_AA32_MODE_MASK;
 		switch (mode) {
 		case PSR_AA32_MODE_USR:
-			if (!kvm_supports_32bit_el0())
+			/* PVM does not support AArch32, not even at EL0 */
+			if (!kvm_supports_32bit_el0() || is_pvm_mode())
 				return -EINVAL;
 			break;
 		case PSR_AA32_MODE_FIQ:

@@ -92,6 +92,11 @@ struct sys_reg_desc {
 	/* Return mask of REG_* runtime visibility overrides */
 	unsigned int (*visibility)(const struct kvm_vcpu *vcpu,
 				   const struct sys_reg_desc *rd);
+
+	/* PVM-specific trapped access, if non-NULL. */
+	bool (*pvm_access)(struct kvm_vcpu *vcpu,
+			   struct sys_reg_params *params,
+			   const struct sys_reg_desc *r);
 };
 
 #define REG_HIDDEN		(1 << 0) /* hidden from userspace and guest */
