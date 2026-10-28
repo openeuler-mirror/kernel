@@ -3291,7 +3291,8 @@ static long smb3_zero_range(struct file *file, struct cifs_tcon *tcon,
 	 * Start at the old EOF when extending so the folio straddling it, which
 	 * may hold data written past EOF through an mmap, is dropped too.
 	 */
-	truncate_pagecache_range(inode, min(offset, i_size), offset + len - 1);
+	truncate_pagecache_range(inode, min_t(unsigned long long, offset,
+				 i_size_read(inode)), offset + len - 1);
 
 	/* if file not oplocked can't be sure whether asking to extend size */
 	rc = -EOPNOTSUPP;
