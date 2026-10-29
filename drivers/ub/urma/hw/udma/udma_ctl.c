@@ -236,7 +236,7 @@ static struct ubcore_jfs *udma_create_jfs_ex(struct ubcore_device *ub_dev,
 	attr.op = UDMA_CMD_CREATE_JFS_CONTEXT;
 	ret = post_mailbox_update_ctx(dev, &ctx, sizeof(ctx), &attr);
 	if (ret) {
-		dev_err(dev->dev, "failed to upgrade JFS context, ret = %d.\n", ret);
+		dev_err_ratelimited(dev->dev, "failed to upgrade JFS context, ret = %d.\n", ret);
 		goto err_update_ctx;
 	}
 

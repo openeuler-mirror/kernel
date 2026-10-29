@@ -249,6 +249,13 @@ int udma_alloc_u_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 		return -EINVAL;
 	}
 
+	if (is_support_ccu_jetty(dev, sq) && (((uint64_t)ucmd->buf_addr >> SQE_VA_L_OFFSET) >=
+	    UDMA_WQE_LOCK_BUFFER_JETTY_IDX)) {
+		dev_err(dev->dev, "buffer index is out of range, buffer index = %llu.\n",
+			((uint64_t)ucmd->buf_addr >> SQE_VA_L_OFFSET));
+		return -EINVAL;
+	}
+
 	sq->sqe_bb_cnt = ucmd->sqe_bb_cnt;
 	sq->buf.entry_cnt = ucmd->buf_len >> WQE_BB_SIZE_SHIFT;
 	sq->buf.addr = ucmd->buf_addr;
@@ -474,7 +481,7 @@ static int udma_create_hw_jfs_ctx(struct udma_dev *dev, struct udma_jfs *jfs,
 	attr.op = UDMA_CMD_CREATE_JFS_CONTEXT;
 	ret = post_mailbox_update_ctx(dev, &ctx, sizeof(ctx), &attr);
 	if (ret) {
-		dev_err(dev->dev, "failed to upgrade JFS context, ret = %d.\n", ret);
+		dev_err_ratelimited(dev->dev, "failed to upgrade JFS context, ret = %d.\n", ret);
 		return ret;
 	}
 
@@ -570,6 +577,7 @@ static int udma_alloc_jfs_sq(struct udma_dev *dev, struct ubcore_jfs_cfg *cfg,
 	ret = udma_get_user_jfs_cmd(dev, jfs, udata, &ucmd);
 	if (ret)
 		goto err_get_user_cmd;
+	udma_set_k_jetty_type(dev, &jfs->sq, jfs->sq.id, udata);
 
 	ret = alloc_jetty_id(dev, &jfs->sq, jfs->sq.id, NULL);
 	if (ret) {
@@ -647,7 +655,6 @@ int udma_active_jfs(struct ubcore_jfs *jfs, struct ubcore_udata *udata)
 		goto err_create_hw_jfs;
 	}
 
-	ujfs->mode = UDMA_NORMAL_JFS_TYPE;
 	ujfs->sq.state = UBCORE_JETTY_STATE_READY;
 	refcount_set(&ujfs->ae_refcount, 1);
 	init_completion(&ujfs->ae_comp);
@@ -736,10 +743,12 @@ static void udma_free_jfs_detail(struct ubcore_jfs *jfs)
 	if (dfx_switch)
 		udma_dfx_delete_id(dev, &dev->dfx_info->jfs, jfs->jfs_id.id);
 
-	if (ujfs->mode == UDMA_NORMAL_JFS_TYPE)
-		udma_free_sq_buf(dev, &ujfs->sq);
-	else
+	if (ujfs->mode == UDMA_KERNEL_STARS_JFS_TYPE) {
 		kfree(ujfs->sq.wrid);
+		ujfs->sq.wrid = NULL;
+	} else {
+		udma_free_sq_buf(dev, &ujfs->sq);
+	}
 
 	free_jfs_id(ujfs, dev);
 }
