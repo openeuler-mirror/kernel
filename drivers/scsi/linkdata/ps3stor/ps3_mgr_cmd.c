@@ -1711,9 +1711,10 @@ static int ps3_no_resp_cmd_dead_proc(struct ps3_instance *instance,
 	LOG_WARN("host_no:%u cmd_dead_proc entry reset due to cmd not resp!\n",
 		 PS3_HOST(instance));
 
+
 	if (!instance->is_probe_finish || !instance->state_machine.is_load) {
 		ps3_need_wait_hard_reset_request(instance);
-		ret = ps3_hard_recovery_request_with_retry(instance);
+		ret = ps3_hard_recovery_request_with_retry(instance, PS3_FALSE);
 		if (ret == PS3_SUCCESS) {
 			ps3_instance_wait_for_dead_or_pre_operational(instance);
 		} else {
@@ -1723,7 +1724,7 @@ static int ps3_no_resp_cmd_dead_proc(struct ps3_instance *instance,
 
 	} else {
 		ps3_need_wait_hard_reset_request(instance);
-		ps3_recovery_request_with_retry(instance);
+		ps3_recovery_request_with_retry(instance, PS3_FALSE);
 	}
 
 	LOG_ERROR("t_id:0x%llx CFID:%d host_no:%u state %u, recovery request\n",
@@ -1764,9 +1765,9 @@ static int ps3_no_resp_cmd_wait_proc(struct ps3_instance *instance,
 	is_probe_finish = instance->is_probe_finish;
 	ps3_need_wait_hard_reset_request(instance);
 	if (!is_probe_finish)
-		ret = ps3_hard_recovery_request_with_retry(instance);
+		ret = ps3_hard_recovery_request_with_retry(instance, PS3_FALSE);
 	else
-		ret = ps3_recovery_request_with_retry(instance);
+		ret = ps3_recovery_request_with_retry(instance, PS3_FALSE);
 
 	if (ret == -PS3_FAILED) {
 		ret = -PS3_CMD_NO_RESP;
@@ -1834,7 +1835,7 @@ static int ps3_no_resp_scsi_task_cmd_wait_proc(struct ps3_instance *instance,
 	LOG_WARN(
 		"host_no:%u scsi_task_cmd_wait_proc entry reset due to cmd not resp, CFID:%d t_id:0x%llx !\n",
 		PS3_HOST(instance), cmd->index, cmd->trace_id);
-	ret = ps3_hard_recovery_request_with_retry(instance);
+	ret = ps3_hard_recovery_request_with_retry(instance, PS3_FALSE);
 	if (ret == -PS3_FAILED) {
 		ret = -PS3_CMD_NO_RESP;
 		LOG_ERROR("host_no:%u hard recovery request NOK\n",

@@ -698,7 +698,7 @@ void ps3_scsih_drv_io_reply_scsi(struct scsi_cmnd *s_cmd, struct ps3_cmd *cmd,
 	}
 
 	PS3_IO_OUTSTAND_DEC(instance, s_cmd);
-	PS3_VD_OUTSTAND_DEC(instance, s_cmd);
+	PS3_VD_OUTSTAND_DEC(instance, cmd);
 
 	PS3_IO_BACK_ERR_INC(instance, s_cmd);
 	PS3_DEV_BUSY_DEC(s_cmd);
@@ -874,6 +874,7 @@ l_out:
 	return -PS3_FAILED;
 }
 
+#ifdef PS3_UT
 void ps3_set_task_manager_busy(struct ps3_instance *instance,
 			       unsigned int channel, unsigned int id,
 			       unsigned int state)
@@ -896,6 +897,7 @@ void ps3_set_task_manager_busy(struct ps3_instance *instance,
 l_out:
 	return;
 }
+#endif
 
 int ps3_err_scsi_task_mgr_reset(struct scsi_cmnd *scmd)
 {
@@ -1108,7 +1110,7 @@ static int ps3_host_reset_pre_check(struct ps3_instance *instance)
 l_out:
 	return ret;
 }
-int ps3_wait_for_outstanding_complete(struct ps3_instance *instance)
+static int ps3_wait_for_outstanding_complete(struct ps3_instance *instance)
 {
 	unsigned int i = 0;
 	unsigned int ioc_state = PS3_FW_STATE_UNDEFINED;
@@ -1148,6 +1150,21 @@ l_out:
 	return ret;
 }
 
+unsigned char ps3_host_reset_state_check(struct ps3_instance *instance,
+	unsigned char is_host_reset)
+{
+	unsigned char ret = PS3_FALSE;
+
+	ps3_mutex_lock(&instance->state_machine.lock);
+	if ((instance->recovery_context->host_reset_state == PS3_HOST_RESET_INIT) ||
+		is_host_reset) {
+		ret = PS3_TRUE;
+	}
+	ps3_mutex_unlock(&instance->state_machine.lock);
+
+	return ret;
+}
+
 int ps3_reset_host(struct ps3_instance *instance)
 {
 	int ret = SUCCESS;
@@ -1169,7 +1186,7 @@ int ps3_reset_host(struct ps3_instance *instance)
 		} else {
 			ps3_mutex_lock(&instance->state_machine.lock);
 			if (instance->recovery_context->host_reset_state ==
-			    PS3_HOST_RESET_INIT) {
+				PS3_HOST_RESET_INIT) {
 				instance->recovery_context->host_reset_state =
 					PS3_HOST_RESET_START;
 				ps3_mutex_unlock(&instance->state_machine.lock);
@@ -1181,38 +1198,32 @@ int ps3_reset_host(struct ps3_instance *instance)
 	} while (1);
 
 
+	while (ps3_atomic_read(&instance->recovery_context->hardreset_ref) > 0)
+		ps3_msleep(100);
+
 	ps3_mutex_lock(&instance->state_machine.lock);
-	if (instance->recovery_context->recovery_state ==
-	    PS3_HARD_RECOVERY_DECIDE) {
+	if (instance->recovery_context->recovery_state == PS3_HARD_RECOVERY_DECIDE) {
 		do {
 			ps3_mutex_unlock(&instance->state_machine.lock);
 			ps3_msleep(100);
 
 			ps3_mutex_lock(&instance->state_machine.lock);
 			if (likely(instance->recovery_context->recovery_state ==
-				   PS3_HARD_RECOVERY_DECIDE)) {
+					PS3_HARD_RECOVERY_DECIDE)) {
 				continue;
 			} else {
 				ps3_mutex_unlock(&instance->state_machine.lock);
-				cancel_work_sync(&instance->recovery_context
-							  ->recovery_work);
+				ps3_cancel_work_sync(&instance->recovery_context->recovery_work);
 				goto wait_hard_reset;
 			}
 		} while (1);
 	} else if (instance->recovery_context->recovery_state ==
-		   PS3_HARD_RECOVERY_SHALLOW) {
+			PS3_HARD_RECOVERY_SHALLOW) {
 		ps3_mutex_unlock(&instance->state_machine.lock);
-		cancel_work_sync(&instance->recovery_context->recovery_work);
+		ps3_cancel_work_sync(&instance->recovery_context->recovery_work);
 	} else {
 		ps3_mutex_unlock(&instance->state_machine.lock);
 	}
-	ps3_mutex_lock(&instance->state_machine.lock);
-	if (unlikely(instance->recovery_context->recovery_state ==
-		     PS3_HARD_RECOVERY_DECIDE)) {
-		instance->recovery_context->recovery_state =
-			PS3_HARD_RECOVERY_FINISH;
-	}
-	ps3_mutex_unlock(&instance->state_machine.lock);
 
 	if (ps3_wait_for_outstanding_complete(instance) == PS3_SUCCESS) {
 		ret = SUCCESS;
@@ -1235,13 +1246,13 @@ int ps3_reset_host(struct ps3_instance *instance)
 
 	ps3_mutex_lock(&instance->state_machine.lock);
 	if (instance->recovery_context->host_reset_state ==
-	    PS3_HOST_RESET_HARD_RESET_DONE) {
+		PS3_HOST_RESET_HARD_RESET_DONE) {
 		instance->recovery_context->host_reset_state =
 			PS3_HOST_RESET_START;
 	}
 	ps3_mutex_unlock(&instance->state_machine.lock);
 
-	ret = ps3_hard_recovery_request_with_retry(instance);
+	ret = ps3_hard_recovery_request_with_retry(instance, PS3_TRUE);
 	if (ret != PS3_SUCCESS) {
 		cur_state = ps3_atomic_read(&instance->state_machine.state);
 		LOG_ERROR("hno:%u recovery request NOK, %s!\n",
@@ -1266,7 +1277,7 @@ wait_hard_reset:
 				PS3_HARD_RECOVERY_FINISH;
 		}
 		ps3_mutex_unlock(&instance->state_machine.lock);
-		ret = ps3_hard_recovery_request_with_retry(instance);
+		ret = ps3_hard_recovery_request_with_retry(instance, PS3_TRUE);
 		if (ret != PS3_SUCCESS) {
 			cur_state =
 				ps3_atomic_read(&instance->state_machine.state);

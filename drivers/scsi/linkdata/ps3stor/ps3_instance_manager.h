@@ -253,14 +253,23 @@ enum {
 	PS3_HOST_VENDOR_COUNT,
 };
 
-#define SYS_INFO_LEN (64)
+enum  {
+	PS3_HOST_CPU_DEFAULT = 0,
+	PS3_HOST_HYGON_CPU_TYPE1,
+	PS3_HOST_HYGON_CPU_TYPE2,
+};
+
+#define SYS_INFO_LEN (65)
+
 struct ps3_host_info {
 	unsigned char machine;
 	unsigned char vendor;
+	unsigned char model;
 	unsigned short cpu_cnt;
 	unsigned short core_cnt;
 	unsigned short processor_cnt;
 	char release[SYS_INFO_LEN + 1];
+	unsigned short cpu_type;
 };
 
 struct ps3_mgmt_info *ps3_mgmt_info_get(void);
@@ -447,6 +456,12 @@ struct ps3_ioc_adp_template {
 	unsigned char (*rw_cmd_is_need_split)(struct ps3_cmd *cmd);
 	unsigned char (*write_direct_enable)(struct ps3_cmd *cmd);
 	unsigned char (*ssd_vd_qmask_calculate)(struct ps3_cmd *cmd);
+	void (*pd_cmd_word_cpu_set)(struct ps3_cmd *cmd);
+#ifdef PS3_NCQ_PRIO_SUPPORT
+	ssize_t (*ncq_prio_enable_stor)(struct device *dev, const char *buf);
+#endif
+	int (*ext_sge_cnt_calc)(struct ps3_instance *instance);
+	void (*max_sge_config)(struct ps3_instance *instance);
 };
 #define PS3_DEVICE_IS_SWITCH(id)                                               \
 	((id == PCI_DEVICE_ID_PS3_SWITCH ||                                    \
@@ -532,6 +547,8 @@ void ps3_host_info_get(void);
 unsigned short ps3_host_vendor_get(void);
 
 char *ps3_host_release_get(void);
+
+unsigned short ps3_host_cpu_type_get(void);
 
 unsigned char ps3_is_last_func(struct ps3_instance *instance);
 #endif

@@ -166,7 +166,8 @@ struct PS3PDInfo {
 			unsigned char supportNCQ : 1;
 			unsigned char protect : 1;
 			unsigned char isDirectDisable : 1;
-			unsigned char reserved : 5;
+			unsigned char supportNcqPrio:1;
+			unsigned char reserved : 4;
 		};
 		unsigned char pdFlags;
 	};
@@ -209,7 +210,9 @@ struct PS3VDEntry {
 	unsigned short diskGrpId;
 	unsigned char accessPolicy;
 
-	unsigned char reserved1;
+	unsigned char isReadNeedSeq:1;
+	unsigned char isWriteNeedSeq:1;
+	unsigned char reserved1:6;
 	unsigned char dmaAddrAlignShift;
 	unsigned char dmaLenAlignShift;
 	unsigned char isDirectEnable : 1;
@@ -240,7 +243,6 @@ struct PS3VDEntry {
 	unsigned short directQuota;
 	unsigned short reserved4[21];
 	struct PS3Span span[PS3_MAX_SPAN_IN_VD];
-
 };
 
 struct PS3VDInfo {

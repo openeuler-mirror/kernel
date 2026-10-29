@@ -80,15 +80,12 @@ static unsigned int ps3_mgmt_chrdev_major_no;
 #endif
 
 static struct pci_device_id ps3_pci_table[] = {
-	{ PCI_DEVICE(PCI_VENDOR_ID_PS3_FPGA, PCI_DEVICE_ID_PS3_RAID_FPGA) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_PS3_FPGA, PCI_DEVICE_ID_PS3_HBA) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_PS3_ASIC, PCI_DEVICE_ID_PS3_RAID_FPGA) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_PS3_ASIC, PCI_DEVICE_ID_PS3_HBA) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_STARS, PCI_DEVICE_ID_STARS_IOC_2020_18i) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_STARS, PCI_DEVICE_ID_STARS_ROC_2020_10i) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_PS3, PCI_DEVICE_ID_STARS_IOC_2020_18i) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_PS3, PCI_DEVICE_ID_STARS_ROC_2020_10i) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_PS3, PCI_DEVICE_ID_STARS_IOC_2213_16i) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_TL, PCI_DEVICE_ID_TL_30A2) },
 	{ 0, 0, 0, 0 }
 };
 
@@ -154,7 +151,11 @@ static MAP_QUEUES_RET_TYPE ps3_map_queues(struct Scsi_Host *shost)
 	(void)qoff;
 	return MAP_QUEUES_RET_VAL(blk_mq_pci_map_queues(map, instance->pdev, offset));
 #else
+#if defined(PS3_MAP_HW_QUEUES)
+	blk_mq_map_hw_queues(map, &instance->pdev->dev, offset);
+#else
 	blk_mq_pci_map_queues(map, instance->pdev, offset);
+#endif
 	qoff += map->nr_queues;
 
 	map = &shost->tag_set.map[HCTX_TYPE_POLL];
@@ -419,12 +420,22 @@ static struct attribute *ps3_host_attrs[] = {
 	NULL,
 };
 
+#if defined(PS3_UT)
+static const struct attribute_group ps3_host_attr_group = {
+	.name = "ps3_host_attr_group",
+	.attrs = ps3_host_attrs,
+	.bin_attrs = NULL
+};
+#else
 static const struct attribute_group ps3_host_attr_group = {
 	.attrs = ps3_host_attrs
 };
+#endif
 
-const struct attribute_group *ps3_host_groups[] = { &ps3_host_attr_group,
-						    NULL };
+const struct attribute_group *ps3_host_groups[] = {
+	&ps3_host_attr_group,
+	NULL
+};
 #else
 static struct device_attribute *ps3_host_attrs[] = {
 	&dev_attr_page_size,
@@ -454,15 +465,79 @@ static struct device_attribute *ps3_host_attrs[] = {
 	NULL,
 };
 #endif
+
+#ifdef PS3_NCQ_PRIO_SUPPORT
+static ssize_t ncq_prio_enable_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct scsi_device *sdev = to_scsi_device(dev);
+	struct ps3_scsi_priv_data *priv_data = (struct ps3_scsi_priv_data *)sdev->hostdata;
+
+	(void)attr;
+	return snprintf(buf, PAGE_SIZE, "%d\n",
+		priv_data->ncq_prio_enable);
+}
+
+static ssize_t ncq_prio_enable_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct scsi_device *sdev = to_scsi_device(dev);
+	struct ps3_instance *instance = (struct ps3_instance *)shost_priv(sdev->host);
+
+	(void)count;
+
+	if (instance == NULL)
+		return -EINVAL;
+
+	if (instance->ioc_adpter->ncq_prio_enable_stor == NULL)
+		return -EINVAL;
+	else
+		return instance->ioc_adpter->ncq_prio_enable_stor(dev, buf);
+}
+
+static DEVICE_ATTR_RW(ncq_prio_enable);
+
+#ifdef PS3_KERNEL_START_WITH_516
+static struct attribute *ps3_dev_attrs[] = {
+	&dev_attr_ncq_prio_enable.attr,
+	NULL,
+};
+
+static const struct attribute_group ps3_dev_attr_group = {
+	.attrs = ps3_dev_attrs
+};
+
+const struct attribute_group *ps3_dev_groups[] = {
+	&ps3_dev_attr_group,
+	NULL
+};
+#else
+struct device_attribute *ps3_dev_attrs[] = {
+	&dev_attr_ncq_prio_enable,
+	NULL,
+};
+#endif
+#endif
+
 static struct scsi_host_template ps3_scsi_host_template = {
 	.module = THIS_MODULE,
 	.name = PS3_SCSI_HOST_NAME,
 	.proc_name = PS3_SCSI_HOST_PROC_NAME,
 	.queuecommand = ps3_scsih_queue_command,
 	.eh_abort_handler = ps3_err_scsi_task_mgr_abort,
+#if defined(PS3_SDEV_CONFIG_SUPPORT)
+	.sdev_init = ps3_scsi_slave_alloc,
+	.sdev_destroy = ps3_scsi_slave_destroy,
+	.sdev_configure = ps3_scsi_slave_configure,
+#else
 	.slave_alloc = ps3_scsi_slave_alloc,
-	.slave_configure = ps3_scsi_slave_configure,
 	.slave_destroy = ps3_scsi_slave_destroy,
+#if defined(PS3_DEVICE_CONFIG_SUPPORT)
+	.device_configure = ps3_scsi_slave_configure,
+#else
+	.slave_configure = ps3_scsi_slave_configure,
+#endif
+#endif
 	.change_queue_depth = ps3_change_queue_depth,
 	.eh_device_reset_handler = ps3_device_reset_handler,
 	.eh_target_reset_handler = ps3_err_reset_target,
@@ -479,8 +554,17 @@ static struct scsi_host_template ps3_scsi_host_template = {
 
 #if defined(PS3_HOST_ATTRS)
 	.shost_groups = ps3_host_groups,
+#ifdef PS3_NCQ_PRIO_SUPPORT
+	.sdev_groups = ps3_dev_groups,
+#endif
 #else
 	.shost_attrs = ps3_host_attrs,
+#ifdef PS3_NCQ_PRIO_SUPPORT
+	.sdev_attrs = ps3_dev_attrs,
+#endif
+#ifdef PS3_UT
+	.sdev_attrs = NULL,
+#endif
 #endif
 };
 
@@ -505,7 +589,7 @@ static struct ps3_instance *ps3_instance_create(struct pci_dev *pdev,
 	}
 
 	host = scsi_host_alloc(&ps3_scsi_host_template,
-			       sizeof(struct ps3_instance));
+		sizeof(struct ps3_instance));
 
 	if (!host) {
 		LOG_ERROR("pci_id[%u] scsi_host_alloc failed!\n", pdev->dev.id);
@@ -1088,10 +1172,6 @@ static int ps3_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	unsigned long flags = 0;
 	int ret;
 
-#ifdef PS3_HARDWARE_ASIC
-	unsigned short real_dev_id = 0;
-	unsigned int check_count = ps3_hba_check_time_query() * 10 + 1;
-#endif
 	LOG_INFO("device[%d] %s\n", pdev->dev.id, __func__);
 
 	if (ps3_available_func_id_query() >= PS3_FUNC_UNLIMITED) {
@@ -1117,20 +1197,6 @@ static int ps3_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (instance == NULL)
 		goto l_ps3_instance_create_failed;
 
-#ifdef PS3_HARDWARE_ASIC
-	while (id->device == PCI_DEVICE_ID_PS3_RAID_FPGA && check_count > 0) {
-		pci_read_config_word(pdev, PCI_DEVICE_ID, &real_dev_id);
-		LOG_INFO("get real device id is[0x%x]\n", real_dev_id);
-		if (real_dev_id == PCI_DEVICE_ID_PS3_HBA ||
-		    real_dev_id == PCI_DEVICE_ID_STARS_IOC_2020_18i ||
-		    real_dev_id == PCI_DEVICE_ID_STARS_ROC_2020_10i) {
-			((struct pci_device_id *)id)->device = real_dev_id;
-			break;
-		}
-		check_count--;
-		ps3_msleep(100);
-	};
-#endif
 	ps3_ioc_adp_init(instance, id);
 	instance->ioc_adpter->ioc_resource_prepare(instance);
 	ps3_debug_context_init(instance);
@@ -1345,7 +1411,8 @@ l_reset_to_ready:
 l_release_res:
 	while (atomic_read(&instance->cmd_statistics.io_outstanding) != 0)
 		ps3_msleep(3000);
-
+	if (instance->is_half_hard_reset)
+		cancel_delayed_work_sync(&instance->event_context.delay_work->event_work);
 	instance->state_machine.can_hostreset = PS3_FALSE;
 	ps3_check_and_wait_host_reset(instance);
 	if (!instance->is_half_hard_reset) {
@@ -1454,7 +1521,8 @@ l_release_res:
 		ps3_msleep(3000);
 	instance->state_machine.can_hostreset = PS3_FALSE;
 	ps3_check_and_wait_host_reset(instance);
-
+	if (instance->is_half_hard_reset)
+		cancel_delayed_work_sync(&instance->event_context.delay_work->event_work);
 	ps3_instance_state_transfer_to_quit(instance);
 	ps3_recovery_destroy(instance);
 
@@ -1518,7 +1586,6 @@ static int ps3_suspend(struct pci_dev *pdev, pm_message_t state)
 
 	if (ps3_cancel_event_wk_in_unload(instance) != PS3_SUCCESS)
 		goto l_reset_to_ready;
-
 	if (ps3_event_unsubscribe(instance) != PS3_SUCCESS) {
 		LOG_ERROR("device[%d] event unsubscribe NOK.\n", pdev->dev.id);
 		goto l_reset_to_ready;
@@ -1549,9 +1616,7 @@ static int ps3_suspend(struct pci_dev *pdev, pm_message_t state)
 
 	if (instance->is_half_hard_reset)
 		goto l_release_res;
-#if defined(PS3_SUPPORT_FLUSH_SCHEDULED)
-	flush_scheduled_work();
-#endif
+
 	scsi_block_requests(instance->host);
 
 	if (state.event == PM_EVENT_FREEZE)
@@ -1579,11 +1644,12 @@ l_reset_to_ready:
 	ps3_watchdog_stop(instance);
 	ps3_recovery_cancel_work_sync(instance);
 	if (instance->is_half_hard_reset)
-		goto l_release_res;
+		goto l_half_reset;
 
 	if (ps3_hard_reset_to_ready_with_doorbell(instance) != PS3_SUCCESS)
 		LOG_ERROR("device[%d] hard reset NOK.\n", PS3_HOST(instance));
 
+l_half_reset:
 	if (instance->event_context.event_cmd != NULL) {
 		cmd = instance->event_context.event_cmd;
 		instance->event_context.event_cmd = NULL;
@@ -1602,9 +1668,7 @@ l_reset_to_ready:
 	    1) {
 		ps3_web_cmd_clear(instance);
 	}
-#if defined(PS3_SUPPORT_FLUSH_SCHEDULED)
-	flush_scheduled_work();
-#endif
+
 	scsi_block_requests(instance->host);
 l_release_res:
 

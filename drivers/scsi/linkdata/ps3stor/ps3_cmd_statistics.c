@@ -83,7 +83,7 @@ void ps3_cmd_statistics_exit(struct ps3_instance *instance)
 	ps3_last_stat_buf_free(instance);
 }
 
-void ps3_cmd_stat_content_clear(struct ps3_instance *instance)
+static void ps3_cmd_stat_content_clear(struct ps3_instance *instance)
 {
 	struct ps3_cmd_statistics_context *ctx = &instance->cmd_statistics;
 
@@ -336,22 +336,19 @@ l_out:
 	return;
 }
 
-void ps3_vd_outstand_dec(struct ps3_instance *instance,
-			 const struct scsi_cmnd *s_cmd)
+void ps3_vd_outstand_dec(struct ps3_cmd *cmd)
 {
-	struct ps3_scsi_priv_data *data = PS3_SDEV_PRI_DATA(s_cmd->device);
-	struct PS3VDEntry *vd_entry = NULL;
+	struct ps3_scsi_priv_data *data = PS3_SDEV_PRI_DATA(cmd->scmd->device);
+	const struct PS3VDEntry *vd_entry = NULL;
 
 	if (data->dev_type == PS3_DEV_TYPE_VD) {
 		vd_entry = ps3_dev_mgr_lookup_vd_info(
-			instance, s_cmd->device->channel, s_cmd->device->id);
-		if (unlikely(vd_entry != NULL)) {
-			if (ps3_is_read_cmd(s_cmd)) {
+			cmd->instance, cmd->scmd->device->channel, cmd->scmd->device->id);
+		if (likely(vd_entry != NULL)) {
+			if (cmd->vd_rd_outstand_flag)
 				atomic_dec(&data->rd_io_outstand);
-			} else if (ps3_is_write_cmd(s_cmd)) {
-				if (!vd_entry->isNvme && !vd_entry->isSsd)
-					atomic_dec(&data->wr_io_outstand);
-			}
+			else if (cmd->vd_wr_outstand_flag)
+				atomic_dec(&data->wr_io_outstand);
 		}
 	}
 }
@@ -367,21 +364,21 @@ void ps3_dev_io_outstand_inc(const struct ps3_cmd *cmd)
 	}
 }
 
-void ps3_vd_outstand_inc(struct ps3_instance *instance,
-			 const struct scsi_cmnd *s_cmd)
+void ps3_vd_outstand_inc(struct ps3_cmd *cmd)
 {
-	struct ps3_scsi_priv_data *data = PS3_SDEV_PRI_DATA(s_cmd->device);
-	struct PS3VDEntry *vd_entry = NULL;
-
+	struct ps3_scsi_priv_data *data = PS3_SDEV_PRI_DATA(cmd->scmd->device);
+	const struct PS3VDEntry *vd_entry = NULL;
 	if (data->dev_type == PS3_DEV_TYPE_VD) {
 		vd_entry = ps3_dev_mgr_lookup_vd_info(
-			instance, s_cmd->device->channel, s_cmd->device->id);
-		if (unlikely(vd_entry != NULL)) {
-			if (ps3_is_read_cmd(s_cmd)) {
+			cmd->instance, cmd->scmd->device->channel, cmd->scmd->device->id);
+		if (likely(vd_entry != NULL)) {
+			if (ps3_is_read_cmd(cmd->scmd) &&
+				(vd_entry->isReadNeedSeq || ps3_is_hdd_vd(vd_entry))) {
 				atomic_inc(&data->rd_io_outstand);
-			} else if (ps3_is_write_cmd(s_cmd)) {
-				if (!vd_entry->isNvme && !vd_entry->isSsd)
-					atomic_inc(&data->wr_io_outstand);
+				cmd->vd_rd_outstand_flag = PS3_TRUE;
+			} else if (ps3_is_write_cmd(cmd->scmd) && ps3_is_hdd_vd(vd_entry)) {
+				atomic_inc(&data->wr_io_outstand);
+				cmd->vd_wr_outstand_flag = PS3_TRUE;
 			}
 		}
 	}
@@ -401,7 +398,7 @@ void ps3_io_outstand_inc(struct ps3_instance *instance,
 	}
 }
 
-void ps3_io_recv_ok_stat_inc(struct ps3_instance *ins,
+static void ps3_io_recv_ok_stat_inc(struct ps3_instance *ins,
 			     const struct ps3_cmd *cmd)
 {
 	if (ins == NULL || cmd == NULL)
