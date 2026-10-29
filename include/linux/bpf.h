@@ -1551,6 +1551,7 @@ struct bpf_prog_aux {
 	u32 max_rdwr_access;
 	KABI_FILL_HOLE(bool is_extended) /* true if extended by freplace program */
 	KABI_FILL_HOLE(bool changes_pkt_data)
+	KABI_FILL_HOLE(bool tramp_linked) /* true if it was ever linked to a trampoline */
 	struct btf *attach_btf;
 	const struct bpf_ctx_arg_aux *ctx_arg_info;
 	struct mutex dst_mutex; /* protects dst_* pointers below, *after* prog becomes visible */
