@@ -6943,11 +6943,18 @@ nodefer:	__kfree_skb(skb);
 	WRITE_ONCE(sd->defer_list, skb);
 	spin_unlock_bh(&sd->defer_lock);
 
+	if (unlikely(!cpu_online(cpu))) {
+		skb_defer_node_flush(sd);
+		return;
+	}
+
 	/* Make sure to trigger NET_RX_SOFTIRQ on the remote CPU
 	 * if we are unlucky enough (this seems very unlikely).
 	 */
-	if (unlikely(kick) && !cmpxchg(&sd->defer_ipi_scheduled, 0, 1))
-		smp_call_function_single_async(cpu, &sd->defer_csd);
+	if (unlikely(kick) && !cmpxchg(&sd->defer_ipi_scheduled, 0, 1)) {
+		if (smp_call_function_single_async(cpu, &sd->defer_csd))
+			WRITE_ONCE(sd->defer_ipi_scheduled, 0);
+	}
 }
 
 static void skb_splice_csum_page(struct sk_buff *skb, struct page *page,

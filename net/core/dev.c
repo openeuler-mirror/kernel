@@ -6927,7 +6927,7 @@ static int napi_thread_wait(struct napi_struct *napi)
 	return -1;
 }
 
-static void skb_defer_free_flush(struct softnet_data *sd)
+static void __skb_defer_free_flush(struct softnet_data *sd, int budget)
 {
 	struct sk_buff *skb, *next;
 
@@ -6943,9 +6943,21 @@ static void skb_defer_free_flush(struct softnet_data *sd)
 
 	while (skb != NULL) {
 		next = skb->next;
-		napi_consume_skb(skb, 1);
+		napi_consume_skb(skb, budget);
 		skb = next;
 	}
+}
+
+void skb_defer_node_flush(struct softnet_data *sd)
+{
+	local_bh_disable();
+	__skb_defer_free_flush(sd, 0);
+	local_bh_enable();
+}
+
+static void skb_defer_free_flush(struct softnet_data *sd)
+{
+	__skb_defer_free_flush(sd, 1);
 }
 
 static int napi_threaded_poll(void *data)
@@ -11633,6 +11645,8 @@ static int dev_cpu_dead(unsigned int oldcpu)
 		netif_rx(skb);
 		input_queue_head_incr(oldsd);
 	}
+
+	skb_defer_node_flush(oldsd);
 
 	return 0;
 }
