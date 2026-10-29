@@ -606,10 +606,11 @@ struct ubcore_target_seg *udma_register_seg(struct ubcore_device *ub_dev,
 			cfg->flag.bs.token_policy, cfg->flag.bs.access, ret);
 		goto err_load_ksva;
 	}
-	mutex_unlock(&udma_dev->ksva_mutex);
 
 	if (dfx_switch)
 		udma_dfx_store_seg(udma_dev, cfg);
+
+	mutex_unlock(&udma_dev->ksva_mutex);
 
 	return &seg->core_tseg;
 

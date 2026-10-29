@@ -58,9 +58,14 @@ static void udma_notify_ue_tp_flush_done(struct udma_dev *udma_dev, uint8_t ue_i
 
 	do {
 		ret = udma_send_msg_to_ue(udma_dev, &ue_buf, ue_idx, UDMA_CMD_NOTIFY_UE_FLUSH_DONE);
+		if (ret == -ENXIO) {
+			dev_err_ratelimited(udma_dev->dev, "cmdq is disable!\n");
+			return;
+		}
 	} while (ret != 0 && retry++ < UDMA_RETRY_TIMES);
 	if (ret != 0)
-		dev_err(udma_dev->dev, "notify UE %u TP flush done failed, ret %d.\n", ue_idx, ret);
+		dev_err_ratelimited(udma_dev->dev, "notify UE %hhu TP flush done failed, ret %d.\n",
+				    ue_idx, ret);
 
 	return;
 }
