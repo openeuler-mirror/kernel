@@ -34,7 +34,7 @@ static void udma_send_ue_msg(struct udma_dev *udev, void *data, uint16_t len,
 	uint8_t *rsp_msg = NULL;
 	uint32_t total_msg_len;
 	uint32_t rsp_msg_len;
-	int result;
+	uint8_t result;
 	int ret;
 
 	rsp_msg_len = udma_get_rsp_msg_len(opcode);
@@ -53,7 +53,7 @@ static void udma_send_ue_msg(struct udma_dev *udev, void *data, uint16_t len,
 
 	if (is_resp) {
 		ubase_ctrlq_parse_ue_msg(udev->comdev.adev, data, len, &msg_info);
-		result = msg_info.ret;
+		result = (uint8_t)abs(msg_info.ret);
 	} else {
 		result = EINVAL;
 	}
@@ -199,7 +199,8 @@ static int udma_handle_ue_get_tp_list_msg(struct udma_dev *udev,
 	rsp_msg_len = min((uint16_t)(len - hdr_len), (uint16_t)sizeof(tpid_list_resp));
 
 	memcpy(&tpid_list_resp, (uint8_t *)data + hdr_len, rsp_msg_len);
-	if (tpid_list_resp.tp_list_cnt == 0) {
+	if (tpid_list_resp.tp_list_cnt == 0 ||
+	    tpid_list_resp.tp_list_cnt > UDMA_MAX_TPID_NUM) {
 		dev_err(udev->dev,
 			"check UE TP list count failed, count = %u.\n",
 			tpid_list_resp.tp_list_cnt);

@@ -30,6 +30,11 @@ static int udma_get_key_id_from_user(struct udma_dev *udma_dev,
 		return -EFAULT;
 	}
 
+	if ((tid >> UDMA_TID_SHIFT) > UDMA_MAX_TID) {
+		dev_err(udma_dev->dev, "user tid is overflow.\n");
+		return -EINVAL;
+	}
+
 	udma_tid->core_key_id.token_id = tid;
 	udma_tid->tid = tid >> UDMA_TID_SHIFT;
 

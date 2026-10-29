@@ -333,9 +333,6 @@ int udma_post_mbox(struct udma_dev *dev, struct ubase_cmd_mailbox *mailbox,
 		   struct ubase_mbx_attr *attr);
 int udma_cmd_query_hw_resource(struct udma_dev *udma_dev, void *out_addr);
 int udma_query_ucp_res(struct udma_dev *udma_dev, void *out_addr);
-int udma_config_ctx_buf_to_hw(struct udma_dev *udma_dev,
-			      struct udma_buf *ctx_buf,
-			      struct ubase_mbx_attr *attr);
 int post_mailbox_update_ctx(struct udma_dev *udma_dev, void *ctx, uint32_t size,
 			    struct ubase_mbx_attr *attr);
 struct ubase_cmd_mailbox *udma_mailbox_query_ctx(struct udma_dev *udma_dev,

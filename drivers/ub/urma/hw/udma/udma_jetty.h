@@ -29,6 +29,9 @@
 #define UDMA_SET_JETTY_OPT_MAX_NUM 4
 #define UDMA_SET_JFS_OPT_MAX_NUM 10
 
+#define UDMA_BATCH_DEL_BACKOFF_STEP 200
+#define UDMA_BATCH_DEL_BACKOFF_MAX 2000
+
 #define CFGID_CHECK(a, b) ((a) >= (b).start_idx && (a) < (b).start_idx + (b).max_cnt)
 
 /* stub UBCORE */
@@ -339,4 +342,6 @@ void udma_get_jfs_cfg_field(struct ubcore_jfs_cfg *jfs_cfg, uint64_t opt, void *
 uint32_t udma_get_type(uint32_t trans_mode, uint32_t order_type);
 void udma_dfx_store_jetty_id(struct udma_dev *udma_dev, struct udma_jetty *udma_jetty);
 int udma_check_tp_type_available(struct udma_dev *dev, struct ubcore_tjetty_cfg *cfg);
+void udma_set_k_jetty_type(struct udma_dev *udma_dev, struct udma_jetty_queue *sq,
+			   uint32_t cfg_id, struct ubcore_udata *udata);
 #endif /* __UDMA_JETTY_H__ */
