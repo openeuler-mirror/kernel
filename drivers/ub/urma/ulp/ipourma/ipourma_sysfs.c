@@ -470,9 +470,10 @@ void ipourma_register_sysfs(struct ipourma_dev_priv *pos)
 			// delete former created attributes
 			while (--i >= 0)
 				device_remove_file(&pos->dev->dev, ipourma_attrs[i]);
-			break;
+			return;
 		}
 	}
+	pos->sysfs_registered = true;
 }
 
 void ipourma_unregister_sysfs(struct ipourma_dev_priv *pos)

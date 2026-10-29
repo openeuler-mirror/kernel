@@ -9,6 +9,7 @@
 #define _IPOURMA_TYPES_H
 
 #include <linux/netdevice.h>
+#include <linux/mutex.h>
 #include <linux/skbuff.h>
 #include <linux/jhash.h>
 #include <linux/list.h>
@@ -311,10 +312,14 @@ struct ipourma_dev_priv {
 	unsigned long flags;
 	struct ipourma_ethtool_st ethtool;
 	u8 route_tbl_idx;
-	spinlock_t lock;
+	struct mutex evt_lock;
+	bool eid_dying;
 	spinlock_t *tx_ring_locks;
 	struct dentry *address_dentry;
 	bool need_restart_ring;
+	/* guard ndo_uninit: only tear down what was actually set up */
+	bool eid_handler_registered;
+	bool sysfs_registered;
 	struct workqueue_struct *net_config_wq;
 	struct work_struct set_dev_up;
 	struct work_struct set_dev_down;
