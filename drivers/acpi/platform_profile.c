@@ -2,16 +2,33 @@
 
 /* Platform profile sysfs interface */
 
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/acpi.h>
 #include <linux/bits.h>
+#include <linux/cleanup.h>
 #include <linux/init.h>
-#include <linux/kdev_t.h>
 #include <linux/mutex.h>
 #include <linux/platform_profile.h>
 #include <linux/sysfs.h>
 
-static struct platform_profile_handler *cur_profile;
+#define to_pprof_handler(d)	(container_of(d, struct platform_profile_handler, dev))
+
 static DEFINE_MUTEX(profile_lock);
+
+struct platform_profile_handler {
+	const char *name;
+	struct device dev;
+	int minor;
+	unsigned long choices[BITS_TO_LONGS(PLATFORM_PROFILE_LAST)];
+	unsigned long hidden_choices[BITS_TO_LONGS(PLATFORM_PROFILE_LAST)];
+	const struct platform_profile_ops *ops;
+};
+
+struct aggregate_choices_data {
+	unsigned long aggregate[BITS_TO_LONGS(PLATFORM_PROFILE_LAST)];
+	int count;
+};
 
 static const char * const profile_names[] = {
 	[PLATFORM_PROFILE_LOW_POWER] = "low-power",
@@ -20,6 +37,7 @@ static const char * const profile_names[] = {
 	[PLATFORM_PROFILE_BALANCED] = "balanced",
 	[PLATFORM_PROFILE_BALANCED_PERFORMANCE] = "balanced-performance",
 	[PLATFORM_PROFILE_PERFORMANCE] = "performance",
+	[PLATFORM_PROFILE_CUSTOM] = "custom",
 };
 static_assert(ARRAY_SIZE(profile_names) == PLATFORM_PROFILE_LAST);
 
@@ -60,11 +78,29 @@ static int _store_class_profile(struct device *dev, void *data)
 	int *bit = (int *)data;
 
 	lockdep_assert_held(&profile_lock);
-	handler = dev_get_drvdata(dev);
-	if (!test_bit(*bit, handler->choices))
+	handler = to_pprof_handler(dev);
+	if (!test_bit(*bit, handler->choices) && !test_bit(*bit, handler->hidden_choices))
 		return -EOPNOTSUPP;
 
-	return handler->profile_set(handler, *bit);
+	return handler->ops->profile_set(dev, *bit);
+}
+
+/**
+ * _notify_class_profile - Notify the class device of a profile change
+ * @dev: The class device
+ * @data: Unused
+ *
+ * Return: 0 on success, -errno on failure
+ */
+static int _notify_class_profile(struct device *dev, void *data)
+{
+	struct platform_profile_handler *handler = to_pprof_handler(dev);
+
+	lockdep_assert_held(&profile_lock);
+	sysfs_notify(&handler->dev.kobj, NULL, "profile");
+	kobject_uevent(&handler->dev.kobj, KOBJ_CHANGE);
+
+	return 0;
 }
 
 /**
@@ -82,8 +118,8 @@ static int get_class_profile(struct device *dev,
 	int err;
 
 	lockdep_assert_held(&profile_lock);
-	handler = dev_get_drvdata(dev);
-	err = handler->profile_get(handler, &val);
+	handler = to_pprof_handler(dev);
+	err = handler->ops->profile_get(dev, &val);
 	if (err) {
 		pr_err("Failed to get profile for handler %s\n", handler->name);
 		return err;
@@ -106,7 +142,7 @@ static int get_class_profile(struct device *dev,
  */
 static ssize_t name_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	struct platform_profile_handler *handler = dev_get_drvdata(dev);
+	struct platform_profile_handler *handler = to_pprof_handler(dev);
 
 	return sysfs_emit(buf, "%s\n", handler->name);
 }
@@ -124,7 +160,7 @@ static ssize_t choices_show(struct device *dev,
 			    struct device_attribute *attr,
 			    char *buf)
 {
-	struct platform_profile_handler *handler = dev_get_drvdata(dev);
+	struct platform_profile_handler *handler = to_pprof_handler(dev);
 
 	return _commmon_choices_show(handler->choices, buf);
 }
@@ -193,48 +229,169 @@ static struct attribute *profile_attrs[] = {
 };
 ATTRIBUTE_GROUPS(profile);
 
+static void pprof_device_release(struct device *dev)
+{
+	struct platform_profile_handler *pprof = to_pprof_handler(dev);
+
+	kfree(pprof);
+}
+
 static const struct class platform_profile_class = {
 	.name = "platform-profile",
 	.dev_groups = profile_groups,
+	.dev_release = pprof_device_release,
 };
 
+/**
+ * _aggregate_choices - Aggregate the available profile choices
+ * @dev: The device
+ * @arg: struct aggregate_choices_data, with it's aggregate member bitmap
+ *	 initially filled with ones
+ *
+ * Return: 0 on success, -errno on failure
+ */
+static int _aggregate_choices(struct device *dev, void *arg)
+{
+	unsigned long tmp[BITS_TO_LONGS(PLATFORM_PROFILE_LAST)];
+	struct aggregate_choices_data *data = arg;
+	struct platform_profile_handler *handler;
+
+	lockdep_assert_held(&profile_lock);
+
+	handler = to_pprof_handler(dev);
+	bitmap_or(tmp, handler->choices, handler->hidden_choices, PLATFORM_PROFILE_LAST);
+	bitmap_and(data->aggregate, tmp, data->aggregate, PLATFORM_PROFILE_LAST);
+	data->count++;
+
+	return 0;
+}
+
+/**
+ * _remove_hidden_choices - Remove hidden choices from aggregate data
+ * @dev: The device
+ * @arg: struct aggregate_choices_data
+ *
+ * Return: 0 on success, -errno on failure
+ */
+static int _remove_hidden_choices(struct device *dev, void *arg)
+{
+	struct aggregate_choices_data *data = arg;
+	struct platform_profile_handler *handler;
+
+	lockdep_assert_held(&profile_lock);
+	handler = to_pprof_handler(dev);
+	bitmap_andnot(data->aggregate, handler->choices,
+		      handler->hidden_choices, PLATFORM_PROFILE_LAST);
+
+	return 0;
+}
+
+/**
+ * platform_profile_choices_show - Show the available profile choices for legacy sysfs interface
+ * @dev: The device
+ * @attr: The attribute
+ * @buf: The buffer to write to
+ *
+ * Return: The number of bytes written
+ */
 static ssize_t platform_profile_choices_show(struct kobject *kobj,
 					struct kobj_attribute *attr,
 					char *buf)
 {
-	int len = 0;
-	int i;
+	struct aggregate_choices_data data = {
+		.aggregate = { [0 ... BITS_TO_LONGS(PLATFORM_PROFILE_LAST) - 1] = ~0UL },
+		.count = 0,
+	};
+	int err;
 
 	scoped_cond_guard(mutex_intr, return -ERESTARTSYS, &profile_lock) {
-		if (!cur_profile)
-			return -ENODEV;
-		for_each_set_bit(i, cur_profile->choices, PLATFORM_PROFILE_LAST)
-			len += sysfs_emit_at(buf, len, len ? " %s": "%s", profile_names[i]);
+		err = class_for_each_device(&platform_profile_class, NULL,
+					    &data, _aggregate_choices);
+		if (err)
+			return err;
+		if (data.count == 1) {
+			err = class_for_each_device(&platform_profile_class, NULL,
+						    &data, _remove_hidden_choices);
+			if (err)
+				return err;
+		}
 	}
-	len += sysfs_emit_at(buf, len, "\n");
 
-	return len;
+	/* no profile handler registered any more */
+	if (bitmap_empty(data.aggregate, PLATFORM_PROFILE_LAST))
+		return -EINVAL;
+
+	return _commmon_choices_show(data.aggregate, buf);
 }
 
+/**
+ * _aggregate_profiles - Aggregate the profiles for legacy sysfs interface
+ * @dev: The device
+ * @data: The profile to return
+ *
+ * Return: 0 on success, -errno on failure
+ */
+static int _aggregate_profiles(struct device *dev, void *data)
+{
+	enum platform_profile_option *profile = data;
+	enum platform_profile_option val;
+	int err;
+
+	err = get_class_profile(dev, &val);
+	if (err)
+		return err;
+
+	if (*profile != PLATFORM_PROFILE_LAST && *profile != val)
+		*profile = PLATFORM_PROFILE_CUSTOM;
+	else
+		*profile = val;
+
+	return 0;
+}
+
+/**
+ * _store_and_notify - Store and notify a class from legacy sysfs interface
+ * @dev: The device
+ * @data: The profile to return
+ *
+ * Return: 0 on success, -errno on failure
+ */
+static int _store_and_notify(struct device *dev, void *data)
+{
+	enum platform_profile_option *profile = data;
+	int err;
+
+	err = _store_class_profile(dev, profile);
+	if (err)
+		return err;
+	return _notify_class_profile(dev, NULL);
+}
+
+/**
+ * platform_profile_show - Show the current profile for legacy sysfs interface
+ * @dev: The device
+ * @attr: The attribute
+ * @buf: The buffer to write to
+ *
+ * Return: The number of bytes written
+ */
 static ssize_t platform_profile_show(struct kobject *kobj,
 					struct kobj_attribute *attr,
 					char *buf)
 {
-	enum platform_profile_option profile = PLATFORM_PROFILE_BALANCED;
+	enum platform_profile_option profile = PLATFORM_PROFILE_LAST;
 	int err;
 
 	scoped_cond_guard(mutex_intr, return -ERESTARTSYS, &profile_lock) {
-		if (!cur_profile)
-			return -ENODEV;
-
-		err = cur_profile->profile_get(cur_profile, &profile);
+		err = class_for_each_device(&platform_profile_class, NULL,
+					    &profile, _aggregate_profiles);
 		if (err)
 			return err;
 	}
 
-	/* Check that profile is valid index */
-	if (WARN_ON((profile < 0) || (profile >= ARRAY_SIZE(profile_names))))
-		return -EIO;
+	/* no profile handler registered any more */
+	if (profile == PLATFORM_PROFILE_LAST)
+		return -EINVAL;
 
 	return sysfs_emit(buf, "%s\n", profile_names[profile]);
 }
@@ -243,24 +400,30 @@ static ssize_t platform_profile_store(struct kobject *kobj,
 			    struct kobj_attribute *attr,
 			    const char *buf, size_t count)
 {
-	int err, i;
+	struct aggregate_choices_data data = {
+		.aggregate = { [0 ... BITS_TO_LONGS(PLATFORM_PROFILE_LAST) - 1] = ~0UL },
+		.count = 0,
+	};
+	int ret;
+	int i;
 
 	/* Scan for a matching profile */
 	i = sysfs_match_string(profile_names, buf);
-	if (i < 0)
+	if (i < 0 || i == PLATFORM_PROFILE_CUSTOM)
 		return -EINVAL;
 
 	scoped_cond_guard(mutex_intr, return -ERESTARTSYS, &profile_lock) {
-		if (!cur_profile)
-			return -ENODEV;
-
-		/* Check that platform supports this profile choice */
-		if (!test_bit(i, cur_profile->choices))
+		ret = class_for_each_device(&platform_profile_class, NULL,
+					    &data, _aggregate_choices);
+		if (ret)
+			return ret;
+		if (!test_bit(i, data.aggregate))
 			return -EOPNOTSUPP;
 
-		err = cur_profile->profile_set(cur_profile, i);
-		if (err)
-			return err;
+		ret = class_for_each_device(&platform_profile_class, NULL, &i,
+					    _store_and_notify);
+		if (ret)
+			return ret;
 	}
 
 	sysfs_notify(acpi_kobj, NULL, "platform_profile");
@@ -284,8 +447,14 @@ static int profile_class_registered(struct device *dev, const void *data)
 
 static umode_t profile_class_is_visible(struct kobject *kobj, struct attribute *attr, int idx)
 {
-	if (!class_find_device(&platform_profile_class, NULL, NULL, profile_class_registered))
+	struct device *dev;
+
+	dev = class_find_device(&platform_profile_class, NULL, NULL, profile_class_registered);
+	if (!dev)
 		return 0;
+
+	put_device(dev);
+
 	return attr->mode;
 }
 
@@ -294,35 +463,59 @@ static const struct attribute_group platform_profile_group = {
 	.is_visible = profile_class_is_visible,
 };
 
-void platform_profile_notify(struct platform_profile_handler *pprof)
+/**
+ * platform_profile_notify - Notify class device and legacy sysfs interface
+ * @dev: The class device
+ */
+void platform_profile_notify(struct device *dev)
 {
-	if (!cur_profile)
-		return;
+	scoped_cond_guard(mutex_intr, return, &profile_lock) {
+		_notify_class_profile(dev, NULL);
+	}
 	sysfs_notify(acpi_kobj, NULL, "platform_profile");
 }
 EXPORT_SYMBOL_GPL(platform_profile_notify);
 
+/**
+ * platform_profile_cycle - Cycles profiles available on all registered class devices
+ *
+ * Return: 0 on success, -errno on failure
+ */
 int platform_profile_cycle(void)
 {
-	enum platform_profile_option profile;
-	enum platform_profile_option next;
+	struct aggregate_choices_data data = {
+		.aggregate = { [0 ... BITS_TO_LONGS(PLATFORM_PROFILE_LAST) - 1] = ~0UL },
+		.count = 0,
+	};
+	enum platform_profile_option next = PLATFORM_PROFILE_LAST;
+	enum platform_profile_option profile = PLATFORM_PROFILE_LAST;
 	int err;
 
 	scoped_cond_guard(mutex_intr, return -ERESTARTSYS, &profile_lock) {
-		if (!cur_profile)
-			return -ENODEV;
-
-		err = cur_profile->profile_get(cur_profile, &profile);
+		err = class_for_each_device(&platform_profile_class, NULL,
+					    &profile, _aggregate_profiles);
 		if (err)
 			return err;
 
-		next = find_next_bit_wrap(cur_profile->choices, PLATFORM_PROFILE_LAST,
-					  profile + 1);
-
-		if (WARN_ON(next == PLATFORM_PROFILE_LAST))
+		if (profile == PLATFORM_PROFILE_CUSTOM ||
+		    profile == PLATFORM_PROFILE_LAST)
 			return -EINVAL;
 
-		err = cur_profile->profile_set(cur_profile, next);
+		err = class_for_each_device(&platform_profile_class, NULL,
+					    &data, _aggregate_choices);
+		if (err)
+			return err;
+
+		/* never iterate into a custom if all drivers supported it */
+		clear_bit(PLATFORM_PROFILE_CUSTOM, data.aggregate);
+
+		next = find_next_bit_wrap(data.aggregate,
+					  PLATFORM_PROFILE_LAST,
+					  profile + 1);
+
+		err = class_for_each_device(&platform_profile_class, NULL, &next,
+					    _store_and_notify);
+
 		if (err)
 			return err;
 	}
@@ -333,77 +526,161 @@ int platform_profile_cycle(void)
 }
 EXPORT_SYMBOL_GPL(platform_profile_cycle);
 
-int platform_profile_register(struct platform_profile_handler *pprof)
+/**
+ * platform_profile_register - Creates and registers a platform profile class device
+ * @dev: Parent device
+ * @name: Name of the class device
+ * @drvdata: Driver data that will be attached to the class device
+ * @ops: Platform profile's mandatory operations
+ *
+ * Return: pointer to the new class device on success, ERR_PTR on failure
+ */
+struct device *platform_profile_register(struct device *dev, const char *name,
+					 void *drvdata,
+					 const struct platform_profile_ops *ops)
 {
+	struct device *ppdev;
+	int minor;
 	int err;
 
-	/* Sanity check the profile handler */
-	if (!pprof || bitmap_empty(pprof->choices, PLATFORM_PROFILE_LAST) ||
-	    !pprof->profile_set || !pprof->profile_get) {
-		pr_err("platform_profile: handler is invalid\n");
-		return -EINVAL;
+	/* Sanity check */
+	if (WARN_ON_ONCE(!dev || !name || !ops || !ops->profile_get ||
+	    !ops->profile_set || !ops->probe))
+		return ERR_PTR(-EINVAL);
+
+	struct platform_profile_handler *pprof __free(kfree) = kzalloc(
+		sizeof(*pprof), GFP_KERNEL);
+	if (!pprof)
+		return ERR_PTR(-ENOMEM);
+
+	err = ops->probe(drvdata, pprof->choices);
+	if (err) {
+		dev_err(dev, "platform_profile probe failed\n");
+		return ERR_PTR(err);
+	}
+
+	if (bitmap_empty(pprof->choices, PLATFORM_PROFILE_LAST)) {
+		dev_err(dev, "Failed to register platform_profile class device with empty choices\n");
+		return ERR_PTR(-EINVAL);
+	}
+
+	if (ops->hidden_choices) {
+		err = ops->hidden_choices(drvdata, pprof->hidden_choices);
+		if (err) {
+			dev_err(dev, "platform_profile hidden_choices failed\n");
+			return ERR_PTR(err);
+		}
 	}
 
 	guard(mutex)(&profile_lock);
-	/* We can only have one active profile */
-	if (cur_profile)
-		return -EEXIST;
 
 	/* create class interface for individual handler */
-	pprof->minor = ida_alloc(&platform_profile_ida, GFP_KERNEL);
-	if (pprof->minor < 0)
-		return pprof->minor;
-	pprof->class_dev = device_create(&platform_profile_class, pprof->dev,
-					 MKDEV(0, 0), pprof, "platform-profile-%d",
-					 pprof->minor);
-	if (IS_ERR(pprof->class_dev)) {
-		err = PTR_ERR(pprof->class_dev);
+	minor = ida_alloc(&platform_profile_ida, GFP_KERNEL);
+	if (minor < 0)
+		return ERR_PTR(minor);
+
+	pprof->name = name;
+	pprof->ops = ops;
+	pprof->minor = minor;
+	pprof->dev.class = &platform_profile_class;
+	pprof->dev.parent = dev;
+	dev_set_drvdata(&pprof->dev, drvdata);
+	dev_set_name(&pprof->dev, "platform-profile-%d", pprof->minor);
+	/* device_register() takes ownership of pprof/ppdev */
+	ppdev = &no_free_ptr(pprof)->dev;
+	err = device_register(ppdev);
+	if (err) {
+		put_device(ppdev);
 		goto cleanup_ida;
 	}
 
 	sysfs_notify(acpi_kobj, NULL, "platform_profile");
 
-	cur_profile = pprof;
-
 	err = sysfs_update_group(acpi_kobj, &platform_profile_group);
 	if (err)
 		goto cleanup_cur;
 
-	return 0;
+	return ppdev;
 
 cleanup_cur:
-	cur_profile = NULL;
-	device_unregister(pprof->class_dev);
+	device_unregister(ppdev);
 
 cleanup_ida:
-	ida_free(&platform_profile_ida, pprof->minor);
+	ida_free(&platform_profile_ida, minor);
 
-	return err;
+	return ERR_PTR(err);
 }
 EXPORT_SYMBOL_GPL(platform_profile_register);
 
-int platform_profile_remove(struct platform_profile_handler *pprof)
+/**
+ * platform_profile_remove - Unregisters a platform profile class device
+ * @dev: Class device
+ */
+void platform_profile_remove(struct device *dev)
 {
-	int id;
+	struct platform_profile_handler *pprof;
+
+	if (IS_ERR_OR_NULL(dev))
+		return;
+
+	pprof = to_pprof_handler(dev);
+
 	guard(mutex)(&profile_lock);
 
-	cur_profile = NULL;
-
-	id = pprof->minor;
-	device_unregister(pprof->class_dev);
-	ida_free(&platform_profile_ida, id);
+	ida_free(&platform_profile_ida, pprof->minor);
+	device_unregister(&pprof->dev);
 
 	sysfs_notify(acpi_kobj, NULL, "platform_profile");
-
 	sysfs_update_group(acpi_kobj, &platform_profile_group);
-
-	return 0;
 }
 EXPORT_SYMBOL_GPL(platform_profile_remove);
+
+static void devm_platform_profile_release(struct device *dev, void *res)
+{
+	struct device **ppdev = res;
+
+	platform_profile_remove(*ppdev);
+}
+
+/**
+ * devm_platform_profile_register - Device managed version of platform_profile_register
+ * @dev: Parent device
+ * @name: Name of the class device
+ * @drvdata: Driver data that will be attached to the class device
+ * @ops: Platform profile's mandatory operations
+ *
+ * Return: pointer to the new class device on success, ERR_PTR on failure
+ */
+struct device *devm_platform_profile_register(struct device *dev, const char *name,
+					      void *drvdata,
+					      const struct platform_profile_ops *ops)
+{
+	struct device *ppdev;
+	struct device **dr;
+
+	dr = devres_alloc(devm_platform_profile_release, sizeof(*dr), GFP_KERNEL);
+	if (!dr)
+		return ERR_PTR(-ENOMEM);
+
+	ppdev = platform_profile_register(dev, name, drvdata, ops);
+	if (IS_ERR(ppdev)) {
+		devres_free(dr);
+		return ppdev;
+	}
+
+	*dr = ppdev;
+	devres_add(dev, dr);
+
+	return ppdev;
+}
+EXPORT_SYMBOL_GPL(devm_platform_profile_register);
 
 static int __init platform_profile_init(void)
 {
 	int err;
+
+	if (acpi_disabled)
+		return -EOPNOTSUPP;
 
 	err = class_register(&platform_profile_class);
 	if (err)

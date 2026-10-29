@@ -28,6 +28,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
+#include <linux/mm.h>
 #include <linux/fs.h>
 #include <linux/cleanup.h>
 
@@ -39,6 +40,7 @@ static char *test_list;
 module_param(test_list, charp, 0444);
 MODULE_PARM_DESC(test_list,
 	"Comma-delimited list of tests to run (empty means run all tests)");
+DEFINE_FREE(cleanup_page, void *, if (_T) free_page((unsigned long)_T))
 
 struct amd_pstate_ut_struct {
 	const char *name;
@@ -52,6 +54,7 @@ static int amd_pstate_ut_acpi_cpc_valid(u32 index);
 static int amd_pstate_ut_check_enabled(u32 index);
 static int amd_pstate_ut_check_perf(u32 index);
 static int amd_pstate_ut_check_freq(u32 index);
+static int amd_pstate_ut_epp(u32 index);
 static int amd_pstate_ut_check_driver(u32 index);
 static int amd_pstate_ut_check_freq_attrs(u32 index);
 
@@ -60,6 +63,7 @@ static struct amd_pstate_ut_struct amd_pstate_ut_cases[] = {
 	{"amd_pstate_ut_check_enabled",     amd_pstate_ut_check_enabled    },
 	{"amd_pstate_ut_check_perf",        amd_pstate_ut_check_perf       },
 	{"amd_pstate_ut_check_freq",        amd_pstate_ut_check_freq       },
+	{"amd_pstate_ut_epp",               amd_pstate_ut_epp              },
 	{"amd_pstate_ut_check_driver",      amd_pstate_ut_check_driver     },
 	{"amd_pstate_ut_check_freq_attrs",  amd_pstate_ut_check_freq_attrs },
 };
@@ -266,6 +270,137 @@ static int amd_pstate_set_mode(enum amd_pstate_mode mode)
 	return amd_pstate_update_status(mode_str, strlen(mode_str));
 }
 
+static int amd_pstate_ut_epp(u32 index)
+{
+	static const char * const epp_strings[] = {
+		"power",
+		"balance_power",
+		"balance_performance",
+		"performance",
+	};
+	char *buf __free(cleanup_page) = NULL;
+	struct cpufreq_policy *policy = NULL;
+	enum amd_pstate_mode orig_mode;
+	struct amd_cpudata *cpudata;
+	unsigned long orig_policy;
+	bool orig_dynamic_epp;
+	int ret, cpu = 0;
+	u16 epp;
+	int i;
+
+	policy = cpufreq_cpu_get(cpu);
+	if (!policy)
+		return -ENODEV;
+
+	cpudata = policy->driver_data;
+	orig_mode = amd_pstate_get_status();
+	orig_dynamic_epp = cpudata->dynamic_epp;
+
+	/* Drop reference before potential driver change. */
+	cpufreq_cpu_put(policy);
+	policy = NULL;
+
+	buf = (char *)__get_free_page(GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	ret = amd_pstate_set_mode(AMD_PSTATE_ACTIVE);
+	if (ret)
+		goto out;
+
+	policy = cpufreq_cpu_get(cpu);
+	if (!policy) {
+		ret = -ENODEV;
+		goto out;
+	}
+
+	down_write(&policy->rwsem);
+	cpudata = policy->driver_data;
+	orig_policy = cpudata->policy;
+	cpudata->policy = CPUFREQ_POLICY_POWERSAVE;
+
+	/*
+	 * Disable dynamic EPP before running test. If "orig_dynamic_epp" is
+	 * true, the  driver will do a redundant switch at the end and there
+	 * is no need for enabling it again at the end of the test.
+	 */
+	if (cpudata->dynamic_epp) {
+		pr_debug("Dynamic EPP is enabled, disabling it\n");
+		amd_pstate_clear_dynamic_epp(policy);
+	}
+
+	for (epp = 0; epp <= U8_MAX; epp++) {
+		u8 val;
+
+		/* write all EPP values */
+		memset(buf, 0, PAGE_SIZE);
+		snprintf(buf, PAGE_SIZE, "%d", epp);
+		ret = store_energy_performance_preference(policy, buf, strlen(buf));
+		if (ret < 0)
+			goto out;
+
+		/* check if the EPP value reads back correctly for raw numbers */
+		memset(buf, 0, PAGE_SIZE);
+		ret = show_energy_performance_preference(policy, buf);
+		if (ret < 0)
+			goto out;
+		strreplace(buf, '\n', '\0');
+		ret = kstrtou8(buf, 0, &val);
+		if (!ret && epp != val) {
+			pr_err("Raw EPP value mismatch: %d != %d\n", epp, val);
+			ret = -EINVAL;
+			goto out;
+		}
+	}
+
+	for (i = 0; i < ARRAY_SIZE(epp_strings); i++) {
+		memset(buf, 0, PAGE_SIZE);
+		snprintf(buf, PAGE_SIZE, "%s", epp_strings[i]);
+		ret = store_energy_performance_preference(policy, buf, strlen(buf));
+		if (ret < 0)
+			goto out;
+
+		memset(buf, 0, PAGE_SIZE);
+		ret = show_energy_performance_preference(policy, buf);
+		if (ret < 0)
+			goto out;
+		strreplace(buf, '\n', '\0');
+
+		if (strcmp(buf, epp_strings[i])) {
+			pr_err("String EPP value mismatch: %s != %s\n", buf, epp_strings[i]);
+			ret = -EINVAL;
+			goto out;
+		}
+	}
+
+	ret = 0;
+
+out:
+	if (policy) {
+		cpudata->policy = orig_policy;
+		up_write(&policy->rwsem);
+		cpufreq_cpu_put(policy);
+	}
+
+	if (orig_dynamic_epp) {
+		int ret2;
+
+		ret2 = amd_pstate_set_mode(AMD_PSTATE_DISABLE);
+		if (!ret && ret2)
+			ret = ret2;
+	}
+
+	if (orig_mode != amd_pstate_get_status()) {
+		int ret2;
+
+		ret2 = amd_pstate_set_mode(orig_mode);
+		if (!ret && ret2)
+			ret = ret2;
+	}
+
+	return ret;
+}
+
 static int amd_pstate_ut_check_driver(u32 index)
 {
 	enum amd_pstate_mode mode1, mode2 = AMD_PSTATE_DISABLE;
@@ -423,6 +558,11 @@ out:
 static int __init amd_pstate_ut_init(void)
 {
 	u32 i = 0, arr_size = ARRAY_SIZE(amd_pstate_ut_cases);
+	enum amd_pstate_mode mode = amd_pstate_get_status();
+
+	/* don't test if no running amd-pstate driver */
+	if (mode == AMD_PSTATE_UNDEFINED || mode == AMD_PSTATE_DISABLE)
+		return -EOPNOTSUPP;
 
 	for (i = 0; i < arr_size; i++) {
 		int ret;
