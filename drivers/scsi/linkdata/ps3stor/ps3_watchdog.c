@@ -18,7 +18,7 @@
 #include "ps3_module_para.h"
 #include "ps3_ioc_manager.h"
 
-#define PS3_WATCHDOG_NAME_MAX_LENGTH (48)
+#define PS3_WATCHDOG_NAME_MAX_LENGTH (32)
 static int ps3_watchdog_fault_detect_and_recovery(struct ps3_instance *instance)
 {
 	unsigned int ioc_recovery_count = 0;
@@ -133,7 +133,7 @@ l_recovery:
 				"hno:%u ps3 watchdog recovery start, heartbeat_triggered:%u ioc_state:0x%x\n",
 				PS3_HOST(instance), heartbeat_triggered,
 				ioc_state);
-			if (ps3_recovery_request(instance) == PS3_SUCCESS) {
+			if (ps3_recovery_request(instance, PS3_FALSE) == PS3_SUCCESS) {
 				LOG_INFO("hno[%u], recovery success!\n",
 					 PS3_HOST(instance));
 				ret = PS3_SUCCESS;
@@ -238,7 +238,7 @@ int ps3_watchdog_start(struct ps3_instance *instance)
 	INIT_DELAYED_WORK(delayed_work, ps3_watchdog_service);
 
 	snprintf(watchdog_queue_name, PS3_WATCHDOG_NAME_MAX_LENGTH,
-		 "ps3_watchdog_service_host%d", instance->host->host_no);
+		 "ps3_wdt_ho%d", instance->host->host_no);
 
 	watchdog_ctx->watchdog_queue =
 		create_singlethread_workqueue(watchdog_queue_name);

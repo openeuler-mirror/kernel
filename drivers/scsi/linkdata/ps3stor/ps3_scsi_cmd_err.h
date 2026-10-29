@@ -84,7 +84,11 @@ void ps3_errcode_to_scsi_status(struct ps3_instance *instance,
 				unsigned int xfer_cnt, struct ps3_cmd *cmd);
 
 int ps3_err_scsi_io_processing(struct ps3_instance *instance, unsigned int id,
-			       unsigned int channel);
+	unsigned int channel);
+
+unsigned char ps3_host_reset_state_check(struct ps3_instance *instance,
+	unsigned char is_host_reset);
+
 int ps3_reset_host(struct ps3_instance *instance);
 
 void ps3_scsih_drv_io_reply_scsi(struct scsi_cmnd *s_cmd, struct ps3_cmd *cmd,

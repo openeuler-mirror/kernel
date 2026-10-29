@@ -628,8 +628,70 @@ l_out:
 	return ret;
 }
 
-static inline void ps3_host_max_sge_count(struct ps3_cmd_context *context)
+int ps3_ext_sge_cnt_calc_hba(struct ps3_instance *instance)
 {
+	int ret = PS3_SUCCESS;
+	int sge_cnt_cfg = ps3_max_sge_cnt_query();
+	unsigned int max_chain_size = 0;
+
+	if (ps3_ioc_mgr_debug10_get(instance, &max_chain_size) &&
+		(max_chain_size >= PS3_CMD_EXT_BUF_DEFAULT_SIZE))
+		goto l_set_sge_cnt;
+
+	if (!ps3_ioc_mgr_max_chain_size_get(instance, &max_chain_size)) {
+		ret = -PS3_FAILED;
+		goto l_out;
+	}
+
+l_set_sge_cnt:
+	instance->cmd_context.ext_sge_frame_count = max_chain_size / sizeof(struct PS3Sge);
+
+	if (sge_cnt_cfg >= PS3_MAX_SGE_CNT)
+		instance->cmd_context.ext_sge_frame_count =
+			PS3_MIN(PS3_MAX_SGE_CNT, instance->cmd_context.ext_sge_frame_count);
+	else
+		instance->cmd_context.ext_sge_frame_count = PS3_DEFAULT_EXT_SGE_CNT;
+
+l_out:
+	return ret;
+}
+
+int ps3_ext_sge_cnt_calc_raid(struct ps3_instance *instance)
+{
+	int ret = PS3_SUCCESS;
+
+	if (!ps3_ioc_mgr_max_chain_size_get(instance,
+			&instance->cmd_context.ext_sge_frame_count)) {
+		ret = -PS3_FAILED;
+	} else
+		instance->cmd_context.ext_sge_frame_count /= sizeof(struct PS3Sge);
+
+	return ret;
+}
+
+void ps3_max_sge_cfg_hba(struct ps3_instance *instance)
+{
+	int sge_cnt_cfg = ps3_max_sge_cnt_query();
+
+	if (sge_cnt_cfg == PS3_DEFAULT_SGE_CNT)
+		goto l_out;
+
+	if (sge_cnt_cfg < PS3_DEFAULT_EXT_SGE_CNT)
+		sge_cnt_cfg = PS3_MIN_SGE_CNT;
+	else if (sge_cnt_cfg < PS3_MAX_SGE_CNT)
+		sge_cnt_cfg = PS3_DEFAULT_EXT_SGE_CNT;
+	else
+		sge_cnt_cfg = PS3_MAX_SGE_CNT;
+
+	if (sge_cnt_cfg < instance->cmd_context.max_host_sge_count)
+		instance->cmd_context.max_host_sge_count = sge_cnt_cfg;
+l_out:
+	return;
+}
+
+static inline void ps3_host_max_sge_count(struct ps3_instance *instance)
+{
+	struct ps3_cmd_context *context = &instance->cmd_context;
 	context->max_host_sge_count = PS3_FRAME_REQ_SGE_NUM_HW;
 	if (context->sgl_mode_support) {
 		if (context->ext_sge_frame_count > PS3_FRAME_REQ_EXT_SGE_MIN) {
@@ -642,6 +704,9 @@ static inline void ps3_host_max_sge_count(struct ps3_cmd_context *context)
 			(unsigned short)(context->ext_sge_frame_count - 1),
 			context->max_host_sge_count);
 	}
+
+	if (instance->ioc_adpter->max_sge_config != NULL)
+		instance->ioc_adpter->max_sge_config(instance);
 }
 
 static inline void ps3_r1x_mode_set(struct ps3_instance *instance)
@@ -684,11 +749,10 @@ int ps3_cmd_context_init(struct ps3_instance *instance)
 	LOG_DEBUG("host_no:%u max_r1x_cmd_final count:%u\n", PS3_HOST(instance),
 		  context->max_r1x_cmd_count);
 
-	if (!ps3_ioc_mgr_max_chain_size_get(instance,
-					    &context->ext_sge_frame_count)) {
-		goto l_failed;
+	if (instance->ioc_adpter->ext_sge_cnt_calc != NULL) {
+		if (instance->ioc_adpter->ext_sge_cnt_calc(instance) != PS3_SUCCESS)
+			goto l_failed;
 	}
-	context->ext_sge_frame_count /= sizeof(struct PS3Sge);
 
 	if (!ps3_ioc_mgr_max_nvme_page_size_get(
 		    instance, &instance->cmd_attr.nvme_page_size)) {
@@ -698,7 +762,7 @@ int ps3_cmd_context_init(struct ps3_instance *instance)
 		PS3_FRAME_REQ_PRP_NUM_FE + (instance->cmd_attr.nvme_page_size /
 					    sizeof(unsigned long long));
 
-	ps3_host_max_sge_count(context);
+	ps3_host_max_sge_count(instance);
 
 	if (context->max_cmd_count <= instance->max_mgr_cmd_total_count) {
 		LOG_ERROR("max_cmd_count %d too few\n", context->max_cmd_count);
@@ -803,6 +867,7 @@ static void ps3_cmd_content_init(struct ps3_cmd *cmd)
 	cmd->r1x_read_pd = 0;
 
 	memset(&cmd->io_attr, 0, sizeof(struct ps3_scsi_io_attr));
+	cmd->io_attr.target_pd_state = 0xff;
 	memset((void *)&cmd->sync_done, 0, sizeof(cmd->sync_done));
 	if (cmd->transient == NULL || cmd->transient->sge_num == 0)
 		memset((void *)cmd->req_frame, 0, sizeof(union PS3ReqFrame));
@@ -854,6 +919,8 @@ static void ps3_scsi_cmd_content_init(struct ps3_cmd *cmd)
 	cmd->is_r1x_scsi_complete = PS3_FALSE;
 	cmd->flighting = PS3_FALSE;
 	cmd->r1x_read_pd = 0;
+	cmd->vd_rd_outstand_flag = PS3_FALSE;
+	cmd->vd_wr_outstand_flag = PS3_FALSE;
 
 	if (cmd->req_frame->hwReq.sgl[PS3_FRAME_REQ_SGE_NUM_HW - 1].length !=
 	    0) {
@@ -874,6 +941,7 @@ static void ps3_scsi_cmd_content_init(struct ps3_cmd *cmd)
 
 	memset((void *)&cmd->sync_done, 0, sizeof(cmd->sync_done));
 	memset(&cmd->io_attr, 0, sizeof(struct ps3_scsi_io_attr));
+	cmd->io_attr.target_pd_state = 0xff;
 	INIT_LIST_HEAD(&cmd->qos_list);
 	memset(&cmd->target_pd, 0,
 	       sizeof(struct ps3_qos_member_pd_info) * PS3_QOS_MAX_PD_IN_VD);
@@ -1064,6 +1132,12 @@ int ps3_async_cmd_send(struct ps3_instance *instance, struct ps3_cmd *cmd)
 	ret = ps3_cmd_send_pre_check(instance);
 	if (ret != PS3_SUCCESS)
 		goto l_out;
+	if (instance->is_suspend) {
+		LOG_FILE_INFO("host_no:%u instance state state is suspending\n",
+			PS3_HOST(instance));
+		ret = -PS3_FAILED;
+		goto l_out;
+	}
 
 	cur_state = ps3_atomic_read(&instance->state_machine.state);
 	if (cur_state != PS3_INSTANCE_STATE_OPERATIONAL) {
@@ -1096,8 +1170,6 @@ static void ps3_r1x_peer_cmd_build(struct ps3_cmd *cmd,
 	memcpy(peer_cmd->req_frame, cmd->req_frame, sizeof(union PS3ReqFrame));
 	memcpy((void *)&peer_cmd->io_attr, (void *)&cmd->io_attr,
 	       sizeof(struct ps3_scsi_io_attr));
-	memcpy(peer_cmd->ext_buf, cmd->ext_buf,
-	       cmd->instance->cmd_context.ext_buf_size);
 
 	peer_cmd->scmd = cmd->scmd;
 	peer_cmd->is_got_r1x = cmd->is_got_r1x;

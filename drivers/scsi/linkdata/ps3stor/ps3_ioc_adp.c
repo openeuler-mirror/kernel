@@ -33,59 +33,7 @@ struct ps3_ioc_adp_temp_entry {
 	struct ps3_ioc_adp_template *adp_template;
 };
 
-void ps3_ioc_resource_prepare_switch(struct ps3_instance *instance)
-{
-	struct PS3MgrEvent *event_req_info = &instance->event_req_info;
-
-	memset(event_req_info, 0, sizeof(struct PS3MgrEvent));
-
-	event_req_info->eventTypeMap = PS3_EVT_PD_COUNT;
-	event_req_info->eventLevel = PS3_EVENT_LEVEL_INFO;
-	event_req_info->eventTypeMapProcResult = PS3_EVT_ILLEGAL_TYPE;
-
-	instance->max_mgr_cmd_total_count = SWITCH_MAX_MGR_CMD_TOTAL_COUNT;
-	instance->max_mgr_cmd_count = SWITCH_MAX_MGR_CMD_COUNT;
-	instance->max_task_cmd_count = SWITCH_MAX_TASK_CMD_COUNT;
-	instance->min_intr_count = SWITCH_MIN_MSI_INT_COUNT;
-	instance->reply_fifo_depth_addition = SWITCH_REPLY_FIFO_DEP_ADDITION;
-	instance->is_support_jbod = PS3_TRUE;
-	instance->use_clusting = PS3_TRUE;
-	instance->is_use_frontend_prp = PS3_FALSE;
-	instance->is_adjust_register_count = PS3_FALSE;
-	instance->is_probe_finish = PS3_FALSE;
-	instance->is_probe_failed = PS3_FALSE;
-	instance->is_suspend = PS3_FALSE;
-	instance->is_resume = PS3_FALSE;
-	instance->is_hard_reset = PS3_FALSE;
-	instance->is_pci_reset = PS3_FALSE;
-	instance->ioc_fw_version = 0;
-	instance->hilMode = HIL_MODEL_SW;
-	instance->unload_timeout = PS3_DEFAULT_MGR_CMD_TIMEOUT;
-	instance->wait_ready_timeout =
-		PS3_FW_STATE_TO_READY_TMO_LOOP_COUNT_SWITCH;
-	instance->is_half_hard_reset = PS3_FALSE;
-	instance->is_need_event = PS3_FALSE;
-	instance->is_raid1_direct_skip_mapblock_check = PS3_FALSE;
-	instance->is_single_disk_raid0_direct_skip_strip_check = PS3_FALSE;
-	instance->is_support_dump_ctrl = PS3_FALSE;
-	instance->is_support_io_limit = PS3_FALSE;
-	instance->is_irq_prk_support = PS3_FALSE;
-	instance->is_support_irq = PS3_FALSE;
-	instance->is_raid = PS3_FALSE;
-	instance->hard_dog_mask = PS3_HARD_DOG_MASK_SWITCH;
-	instance->task_manager_host_busy = PS3_FALSE;
-	instance->is_print_special_log = PS3_FALSE;
-	instance->r1x_mode = PS3_R1X_MODE_NORMAL;
-	instance->smp_affinity_enable = ps3_smp_affinity_query();
-	instance->page_mode_change =
-		ps3_host_vendor_get() == PS3_HOST_VENDOR_INTEL ? PS3_FALSE :
-								 PS3_TRUE;
-	instance->page_mode_addr_mask = PS3_PAGE_MODE_ABOVE_3_ADDR_MASK;
-	ps3_mutex_init(&instance->task_mgr_reset_lock);
-	ps3_mutex_init(&instance->task_abort_lock);
-}
-
-void ps3_ioc_resource_prepare_raid(struct ps3_instance *instance)
+static void ps3_ioc_resource_prepare_raid(struct ps3_instance *instance)
 {
 	struct PS3MgrEvent *event_req_info = &instance->event_req_info;
 
@@ -144,7 +92,7 @@ void ps3_ioc_resource_prepare_raid(struct ps3_instance *instance)
 	ps3_raid_qos_prepare(instance);
 }
 
-void ps3_ioc_resource_prepare_hba(struct ps3_instance *instance)
+static void ps3_ioc_resource_prepare_hba(struct ps3_instance *instance)
 {
 	struct PS3MgrEvent *event_req_info = &instance->event_req_info;
 
@@ -262,59 +210,6 @@ ps3_is_need_direct_to_normal_raid(const struct ps3_cmd *cmd)
 	return PS3_TRUE;
 }
 
-static unsigned char
-ps3_is_need_direct_to_normal_switch(const struct ps3_cmd *cmd)
-{
-	(void)cmd;
-	return PS3_FALSE;
-}
-
-struct ps3_ioc_adp_template g_ps3_template_switch = {
-	.io_cmd_build = ps3_scsih_cmd_build,
-	.mgr_cmd_build = NULL,
-	.init_cmd_send = ps3_switch_init_cmd_send,
-	.cmd_send = ps3_switch_normal_cmd_send,
-	.ioc_state_get = ps3_ioc_state_get,
-	.ioc_init_state_to_ready = ps3_ioc_init_to_ready,
-	.ioc_init_proc = ps3_ioc_init_proc,
-	.ioc_resource_prepare = ps3_ioc_resource_prepare_switch,
-	.ioc_hard_reset = ps3_ioc_state_hard_reset,
-	.ioc_shallow_soft_reset = ps3_ioc_state_shallow_soft_reset,
-	.ioc_deep_soft_reset = ps3_ioc_state_deep_soft_reset,
-	.ioc_force_to_fault = ps3_ioc_state_force_to_fault,
-	.ioc_force_to_halt = ps3_ioc_state_force_to_halt,
-	.irq_init = ps3_irqs_init_switch,
-	.irq_enable = ps3_irqs_enable,
-	.irq_disable = ps3_irqs_disable,
-	.isr = ps3_irqs_service,
-#ifndef _WINDOWS
-	.sas_transport_get = NULL,
-#endif
-	.event_filter_table_get = ps3_event_filter_table_get_switch,
-	.reg_write = ps3_reg_write_u64,
-#ifdef _WINDOWS
-	.reg_read = ps3_reg_read_u64,
-#else
-	.reg_read = ps3_switch_ioc_reg_read,
-#endif
-	.is_need_direct_to_normal = ps3_is_need_direct_to_normal_switch,
-	.max_replyq_count_get = ps3_max_replyq_count_get,
-	.check_vd_member_change = NULL,
-	.scsih_stream_is_detect = NULL,
-	.scsih_stream_is_direct = NULL,
-#ifdef PS3_HARDWARE_ASIC
-	.ioc_heartbeat_detect = ps3_ioc_heartbeat_detect,
-#else
-	.ioc_heartbeat_detect = NULL,
-#endif
-	.reg_set = NULL,
-	.ioc_security_check = NULL,
-	.io_cmd_rebuild = ps3_scsih_direct_to_normal_req_frame_rebuild,
-	.rw_cmd_is_need_split = NULL,
-	.write_direct_enable = NULL,
-	.ssd_vd_qmask_calculate = NULL,
-};
-
 struct ps3_ioc_adp_template g_ps3_template_hba = {
 	.io_cmd_build = ps3_scsih_cmd_build,
 	.mgr_cmd_build = NULL,
@@ -357,6 +252,12 @@ struct ps3_ioc_adp_template g_ps3_template_hba = {
 	.rw_cmd_is_need_split = ps3_scsih_rw_cmd_is_need_split_hba,
 	.write_direct_enable = NULL,
 	.ssd_vd_qmask_calculate = ps3_ssd_vd_qmask_calculate_hba,
+	.pd_cmd_word_cpu_set = ps3_scsih_pd_cmd_word_cpu_set,
+#ifdef PS3_NCQ_PRIO_SUPPORT
+	.ncq_prio_enable_stor = ps3_dev_ncq_prio_enable_stor,
+#endif
+	.ext_sge_cnt_calc = ps3_ext_sge_cnt_calc_hba,
+	.max_sge_config = ps3_max_sge_cfg_hba,
 };
 
 struct ps3_ioc_adp_template g_ps3_template_raid = {
@@ -400,17 +301,19 @@ struct ps3_ioc_adp_template g_ps3_template_raid = {
 	.rw_cmd_is_need_split = ps3_scsih_rw_cmd_is_need_split_raid,
 	.write_direct_enable = ps3_write_direct_enable,
 	.ssd_vd_qmask_calculate = NULL,
+	.pd_cmd_word_cpu_set = NULL,
+#ifdef PS3_NCQ_PRIO_SUPPORT
+	.ncq_prio_enable_stor = NULL,
+#endif
+	.ext_sge_cnt_calc = ps3_ext_sge_cnt_calc_raid,
+	.max_sge_config = NULL,
 };
 
 static struct ps3_ioc_adp_temp_entry ps3_ioc_adp_template_map[] = {
-	{ PCI_DEVICE_ID_PS3_RAID, &g_ps3_template_raid },
-	{ PCI_DEVICE_ID_PS3_HBA, &g_ps3_template_hba },
-	{ PCI_DEVICE_ID_PS3_SWITCH, &g_ps3_template_switch },
-	{ PCI_DEVICE_ID_PS3_SWITCH_FPGA, &g_ps3_template_switch },
 	{ PCI_DEVICE_ID_STARS_IOC_2020_18i, &g_ps3_template_hba },
 	{ PCI_DEVICE_ID_STARS_ROC_2020_10i, &g_ps3_template_raid },
-	{ PCI_DEVICE_ID_PS3_RAID_FPGA, &g_ps3_template_raid },
 	{ PCI_DEVICE_ID_STARS_IOC_2213_16i, &g_ps3_template_hba },
+	{ PCI_DEVICE_ID_TL_30A2, &g_ps3_template_raid },
 };
 
 #ifndef _WINDOWS

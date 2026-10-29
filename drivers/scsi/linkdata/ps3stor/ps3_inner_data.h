@@ -46,6 +46,11 @@
 
 #define PS3_DEVICE_IO_BUSY_THRESHOLD (8)
 
+#define PS3_DEFAULT_EXT_SGE_CNT (256)
+#define PS3_DEFAULT_SGE_CNT (262)
+#define PS3_MIN_SGE_CNT (128)
+#define PS3_MAX_SGE_CNT (512)
+
 #if defined(PS3_MAP_QUEUES)
 #define MAP_QUEUES_RET_TYPE void
 #define MAP_QUEUES_RET_VAL(x)

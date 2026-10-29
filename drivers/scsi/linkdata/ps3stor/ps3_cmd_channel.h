@@ -14,6 +14,7 @@
 #include "ps3_inner_data.h"
 #include "ps3_driver_log.h"
 #include "ps3_htp_ioctl.h"
+#include "ps3_kernel_version.h"
 
 #define PS3_DEFAULT_REQ_FRAME_SIZE (256)
 
@@ -113,10 +114,16 @@ struct ps3_scsi_io_attr {
 	unsigned char span_pd_idx_p;
 	unsigned char span_pd_idx_q;
 	unsigned char is_force_normal : 1;
-	unsigned char reserved : 7;
+#ifdef PS3_NCQ_PRIO_SUPPORT
+	unsigned char is_ncq_prio_enable:1;
+	unsigned char reserved:6;
+#else
+	unsigned char reserved:7;
+#endif
 	union ps3_scsi_cdb_option cdb_opts;
 	unsigned char cdb[PS3_FRAME_CDB_BUFLEN];
 	unsigned int sgl_buf_len;
+	unsigned char target_pd_state;
 	unsigned int reserved1;
 };
 
@@ -205,6 +212,8 @@ struct ps3_cmd {
 	unsigned char qos_waitq_flag;
 	unsigned char cmdq_count;
 	unsigned char flighting;
+	unsigned char vd_rd_outstand_flag;
+	unsigned char vd_wr_outstand_flag;
 };
 
 struct ps3_cmd_context {
@@ -349,5 +358,11 @@ int ps3_mgr_cmd_send_pre_check(struct ps3_instance *instance,
 			       unsigned char no_check);
 
 int ps3_mgr_cmd_send_check(struct ps3_instance *instance, struct ps3_cmd *cmd);
+
+int ps3_ext_sge_cnt_calc_hba(struct ps3_instance *instance);
+
+int ps3_ext_sge_cnt_calc_raid(struct ps3_instance *instance);
+
+void ps3_max_sge_cfg_hba(struct ps3_instance *instance);
 
 #endif

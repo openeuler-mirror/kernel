@@ -222,8 +222,8 @@ int ps3_err_mgr_cmd_proc(struct ps3_instance *instance, int fault_type,
 					if (ps3_recovery_state_wait_for_normal(
 						    instance) != PS3_SUCCESS) {
 						proc_result = -PS3_FAILED;
-					} else if (ps3_hard_recovery_request_with_retry(instance)
-						!= PS3_SUCCESS) {
+					} else if (ps3_hard_recovery_request_with_retry(
+						instance, PS3_FALSE) != PS3_SUCCESS) {
 						LOG_WARN(
 						"host_no:%u hard recovery request NOK\n",
 						PS3_HOST(instance));

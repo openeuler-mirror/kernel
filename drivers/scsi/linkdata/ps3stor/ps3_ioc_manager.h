@@ -374,6 +374,27 @@ l_out:
 }
 
 static inline unsigned char
+ps3_ioc_mgr_debug10_get(struct ps3_instance *instance,
+			unsigned int *max_chain_size)
+{
+	unsigned char ret = PS3_TRUE;
+	unsigned long long value = 0;
+
+	PS3_IOC_REG_READ_SAFE_WITH_RETRY(instance, reg_f.Excl_reg, ps3Debug10,
+				    value);
+	if (value == U64_MAX) {
+		LOG_ERROR("hno:%u  read reg ps3Debug10 NOK!\n",
+			  PS3_HOST(instance));
+		ret = PS3_FALSE;
+		goto l_out;
+	}
+
+	*max_chain_size = (value & 0xFFFF);
+l_out:
+	return ret;
+}
+
+static inline unsigned char
 ps3_ioc_mgr_max_vd_info_size_get(struct ps3_instance *instance,
 				 unsigned int *vd_info_size)
 {

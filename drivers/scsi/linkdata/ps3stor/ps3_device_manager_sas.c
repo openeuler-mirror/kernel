@@ -1629,7 +1629,7 @@ static void ps3_sas_expander_port_clean(struct ps3_instance *instance,
 	}
 }
 
-int ps3_sas_expander_phys_refresh(struct ps3_instance *instance,
+static int ps3_sas_expander_phys_refresh(struct ps3_instance *instance,
 				  struct ps3_sas_node *sas_node)
 {
 	int ret = -PS3_FAILED;
@@ -1942,6 +1942,10 @@ int ps3_sas_update_detail_proc(struct ps3_instance *instance,
 		  event_cnt);
 
 	for (i = 0; i < event_cnt; i++) {
+		if (!instance->state_machine.is_load) {
+			LOG_INFO("hno:%u  instance unload, break\n", PS3_HOST(instance));
+			break;
+		}
 		LOG_INFO(
 			"hno:%u, event detail %d eventCode is [%s], encl_Id[%d]\n",
 			PS3_HOST(instance), i,
