@@ -85,7 +85,7 @@ int ummu_device_init_permqs(struct ummu_device *ummu)
 	return 0;
 }
 
-void ummu_device_init_permq_ctrl_page(struct ummu_device *ummu)
+int ummu_device_init_permq_ctrl_page(struct ummu_device *ummu)
 {
 	u64 ctrl_base_pa;
 
@@ -93,10 +93,12 @@ void ummu_device_init_permq_ctrl_page(struct ummu_device *ummu)
 			UMMU_PERMQ_CTRL_PAGE_BASE);
 	ummu->permq_ctrl_page = devm_ioremap(ummu->dev, ctrl_base_pa,
 					     UMMU_CTRL_PAGE_SIZE * ummu->cap.permq_num);
-	/*
-	 * we don't return error code even if ioremap failed, since some times
-	 * we not use permission table.
-	 */
+	if (!ummu->permq_ctrl_page) {
+		dev_err(ummu->dev, "ioremap permq ctrl page failed\n");
+		return -ENOMEM;
+	}
+
+	return 0;
 }
 
 int ummu_get_permq_resource(struct ummu_device *ummu, u32 qid,
@@ -200,11 +202,6 @@ void ummu_device_set_permq_ctxtbl(struct ummu_device *ummu)
 		FIELD_PREP(MAPT_CMDQ_CTXT_SIZE, ilog2(ummu->cap.permq_num));
 
 	mapt_base_va = ummu->base + UMMU_MAPT_CMDQ_CTXT_BADDR;
-	if (!mapt_base_va) {
-		dev_err(ummu->dev, "ummu remap mapt base failed.\n");
-		return;
-	}
-
 	val = FIELD_PREP(MAPT_CTXT_MEM_ATTR_CFG, UMMU_MEMATTR_DEVICE_nGnRnE) |
 	      FIELD_PREP(MAPT_CTXT_SH_CFG, UMMU_SH_NSH);
 	writeq_relaxed(cpu_to_le64(permq_ctxtbl_reg), mapt_base_va);

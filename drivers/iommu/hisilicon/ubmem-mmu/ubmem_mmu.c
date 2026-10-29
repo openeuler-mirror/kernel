@@ -1041,7 +1041,7 @@ remove_sysfs:
 exit_mmu_init:
 	bitmap_free(mmu->ate_bitmap);
 exit_err:
-	return -ENODEV;
+	return ret;
 }
 
 static void ubmem_mmu_device_remove(struct ummu_device *ummu)

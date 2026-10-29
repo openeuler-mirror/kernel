@@ -306,6 +306,7 @@ static int ummu_mcmdq_init(struct ummu_device *ummu)
 	ummu->mcmdq = devm_alloc_percpu(ummu->dev, struct ummu_mcmdq *);
 	if (!ummu->mcmdq) {
 		dev_err(ummu->dev, "alloc mcmdq ptr failed\n");
+		ret = -ENOMEM;
 		goto err;
 	}
 
@@ -341,7 +342,7 @@ free_q:
 	ummu_device_free_mcmdq(ummu);
 err:
 	ummu->nr_mcmdq = 0;
-	return -ENOMEM;
+	return ret;
 }
 
 static int ummu_write_mcmdq_regs(struct ummu_device *ummu)
@@ -467,17 +468,21 @@ static int ummu_evtq_init(struct ummu_device *ummu)
 
 int ummu_init_queues(struct ummu_device *ummu)
 {
+	int ret;
+
 	if (!(ummu->cap.features & UMMU_FEAT_MCMDQ) ||
 	    !(ummu->cap.features & UMMU_FEAT_EVENTQ))
 		return -EOPNOTSUPP;
 
-	if (ummu_mcmdq_init(ummu))
-		return -ENOMEM;
+	ret = ummu_mcmdq_init(ummu);
+	if (ret)
+		return ret;
 
-	if (ummu_evtq_init(ummu))
-		return -ENOMEM;
+	ret = ummu_evtq_init(ummu);
+	if (ret)
+		ummu_device_free_mcmdq(ummu);
 
-	return 0;
+	return ret;
 }
 
 #define ummu_mcmdq_exclusive_trylock_irqsave(mcmdq, flags)                   \

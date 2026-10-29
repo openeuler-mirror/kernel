@@ -62,7 +62,7 @@ int ummu_delete_seg(u64 left, u64 size, struct maple_tree *seg_tree, range_compa
 	data = ummu_find_seg(left, size, seg_tree, func, &comp_ret);
 	if (comp_ret == RANGE_NOT_EXIST)
 		return -ENXIO;
-	if (comp_ret == RANGE_OVERLAP)
+	else if (comp_ret == RANGE_OVERLAP)
 		return -ERANGE;
 
 	data = mtree_erase(seg_tree, left);
