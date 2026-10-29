@@ -557,11 +557,6 @@ static int rcar_thermal_probe(struct platform_device *pdev)
 						&rcar_thermal_zone_ops, NULL, 0,
 						idle);
 
-			ret = thermal_zone_device_enable(priv->zone);
-			if (ret) {
-				thermal_zone_device_unregister(priv->zone);
-				priv->zone = ERR_PTR(ret);
-			}
 		}
 		if (IS_ERR(priv->zone)) {
 			dev_err(dev, "can't register thermal zone\n");
@@ -577,9 +572,10 @@ static int rcar_thermal_probe(struct platform_device *pdev)
 			 */
 			priv->zone->tzp->no_hwmon = false;
 			ret = thermal_add_hwmon_sysfs(priv->zone);
-			if (ret)
-				goto error_unregister;
-		}
+		} else
+			ret = thermal_zone_device_enable(priv->zone);
+		if (ret)
+			goto error_unregister;
 
 		rcar_thermal_irq_enable(priv);
 
