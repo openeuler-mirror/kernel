@@ -7159,11 +7159,25 @@ int btf_check_type_match(struct bpf_verifier_log *log, const struct bpf_prog *pr
 	return btf_check_func_type_match(log, btf1, t1, btf2, t2);
 }
 
+static bool reg_is_pkt_pointer_any(const struct bpf_reg_state *reg)
+{
+	return base_type(reg->type) == PTR_TO_PACKET ||
+	       base_type(reg->type) == PTR_TO_PACKET_META ||
+	       reg->type == PTR_TO_PACKET_END;
+}
+
+static bool reg_is_dynptr_slice_pkt(const struct bpf_reg_state *reg)
+{
+	return base_type(reg->type) == PTR_TO_MEM &&
+		(reg->type & DYNPTR_TYPE_SKB || reg->type & DYNPTR_TYPE_XDP);
+}
+
 static int btf_check_func_arg_match(struct bpf_verifier_env *env,
 				    const struct btf *btf, u32 func_id,
 				    struct bpf_reg_state *regs,
 				    bool ptr_to_mem_ok,
-				    bool processing_call)
+				    bool processing_call,
+				    int subprog)
 {
 	enum bpf_prog_type prog_type = resolve_prog_type(env->prog);
 	struct bpf_verifier_log *log = &env->log;
@@ -7251,6 +7265,16 @@ static int btf_check_func_arg_match(struct bpf_verifier_env *env,
 
 			if (check_mem_reg(env, reg, regno, type_size))
 				return -EINVAL;
+			/*
+			 * PTR_TO_PACKET get passed as PTR_TO_MEM, preventing
+			 * us from adjusting bounds tracking info.
+			 */
+			if ((reg_is_pkt_pointer_any(reg) || reg_is_dynptr_slice_pkt(reg)) &&
+			    env->subprog_info[subprog].changes_pkt_data) {
+				bpf_log(log, "R%d is a packet pointer, but func#%d may change packet data\n",
+					regno, subprog);
+				return -EINVAL;
+			}
 		} else {
 			bpf_log(log, "reg type unsupported for arg#%d function %s#%d\n", i,
 				func_name, func_id);
@@ -7288,7 +7312,7 @@ int btf_check_subprog_arg_match(struct bpf_verifier_env *env, int subprog,
 		return -EINVAL;
 
 	is_global = prog->aux->func_info_aux[subprog].linkage == BTF_FUNC_GLOBAL;
-	err = btf_check_func_arg_match(env, btf, btf_id, regs, is_global, false);
+	err = btf_check_func_arg_match(env, btf, btf_id, regs, is_global, false, subprog);
 
 	/* Compiler optimizations can remove arguments from static functions
 	 * or mismatched type can be passed into a global function.
@@ -7331,7 +7355,7 @@ int btf_check_subprog_call(struct bpf_verifier_env *env, int subprog,
 		return -EINVAL;
 
 	is_global = prog->aux->func_info_aux[subprog].linkage == BTF_FUNC_GLOBAL;
-	err = btf_check_func_arg_match(env, btf, btf_id, regs, is_global, true);
+	err = btf_check_func_arg_match(env, btf, btf_id, regs, is_global, true, subprog);
 
 	/* Compiler optimizations can remove arguments from static functions
 	 * or mismatched type can be passed into a global function.
