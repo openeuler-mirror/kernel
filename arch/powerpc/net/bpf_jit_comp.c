@@ -75,8 +75,15 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *fp)
 		return org_fp;
 
 	tmp_fp = bpf_jit_blind_constants(org_fp);
-	if (IS_ERR(tmp_fp))
+	/*
+	 * Fall back to the interpreter after blinding failures, except when
+	 * the loader was killed.
+	 */
+	if (IS_ERR(tmp_fp)) {
+		if (PTR_ERR(tmp_fp) == -EINTR)
+			return tmp_fp;
 		return org_fp;
+	}
 
 	if (tmp_fp != org_fp) {
 		bpf_blinded = true;
