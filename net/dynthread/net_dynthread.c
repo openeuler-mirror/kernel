@@ -288,6 +288,30 @@ module_param(dyn_threaded_cpuload_upper_limit, uint, 0644);
 MODULE_PARM_DESC(dyn_threaded_cpuload_upper_limit,
 		 "napi cpu load percent to grow for, default 90");
 
+static bool dyn_threaded_debug;
+module_param(dyn_threaded_debug, bool, 0644);
+MODULE_PARM_DESC(dyn_threaded_debug,
+		 "enable the ftrace based debug instrumentation, default 0");
+
+/* Debug instrumentation of the scheduler. It is controlled by the
+ * dyn_threaded_debug module parameter and recorded in the ftrace buffer,
+ * so that it can be read from tracefs without flooding the console.
+ * Without tracing support it falls back to dynamic debug.
+ */
+#ifdef CONFIG_TRACING
+#define dyn_threaded_dbg(fmt, ...)				\
+	do {							\
+		if (dyn_threaded_debug)				\
+			trace_printk(fmt, ##__VA_ARGS__);	\
+	} while (0)
+#else
+#define dyn_threaded_dbg(fmt, ...)				\
+	do {							\
+		if (dyn_threaded_debug)				\
+			pr_debug(fmt, ##__VA_ARGS__);		\
+	} while (0)
+#endif
+
 static int sched_netdev_num;
 static struct sched_netdev sched_netdev_table[SCHED_MAX_NETDEV_NUM];
 
@@ -391,6 +415,9 @@ static void get_netdev_queue_info(struct sched_netdev *sched_dev)
 		rxq_info = &sched_dev->rxq[sched_dev->rxq_num++];
 		rxq_info->irq = irq;
 		rxq_info->affinity_cpu = cpu;
+		dyn_threaded_dbg("dev %s: irq=%d [%s] rxq_id=%d affinity_cpu=%d\n",
+				 sched_dev->dev_name, irq, name,
+				 sched_dev->rxq_num - 1, cpu);
 	}
 	rcu_read_unlock();
 }
@@ -445,8 +472,10 @@ static int init_dev(const char *if_name, size_t length)
 	strscpy(dev_name, if_name, min_t(size_t, length + 1, IFNAMSIZ));
 	netdev = netdev_get_by_name(&init_net, dev_name, &dev_tracker,
 				    GFP_KERNEL);
-	if (!netdev)
+	if (!netdev) {
+		dyn_threaded_dbg("dev [%s] does not exist\n", dev_name);
 		return -ENODEV;
+	}
 
 	/* Serialize with unregister_netdevice() and take a reference on
 	 * the parent device, so its name stays valid while the IRQ names
@@ -464,17 +493,20 @@ static int init_dev(const char *if_name, size_t length)
 
 	if (!(netdev->flags & IFF_UP)) {
 		ret = -ENETDOWN;
+		dyn_threaded_dbg("dev [%s] is not up, flags=%u\n", dev_name, netdev->flags);
 		goto err_parent_put;
 	}
 
 	if (netdev->flags & IFF_LOOPBACK) {
 		ret = -EOPNOTSUPP;
+		dyn_threaded_dbg("loopback devices are not supported\n");
 		goto err_parent_put;
 	}
 
 	sched_dev = alloc_sched_netdev();
 	if (!sched_dev) {
 		ret = -ENOMEM;
+		dyn_threaded_dbg("too many devices\n");
 		goto err_parent_put;
 	}
 
@@ -581,6 +613,11 @@ static int sched_task_runtime_avg_snapshot(const char *target_comm,
 	cpumask_copy(&target_cpumask, &masks);
 	WRITE_ONCE(target_cpucnt, cpumask_weight(&target_cpumask));
 
+	dyn_threaded_dbg("target tasks '%s': cpumask %*pb (%u cpus), runtime %llu ns, switches %llu, threads %u\n",
+			 infos->comm, cpumask_pr_args(&masks),
+			 READ_ONCE(target_cpucnt), infos->total_runtime_ns,
+			 infos->total_switches, infos->thread_cnt);
+
 	return 0;
 }
 
@@ -679,14 +716,20 @@ static void bind_irq_in_cpumask(int irq, int index, const struct cpumask *bind_m
 	unsigned int len = cpumask_weight(bind_mask);
 	int cpu;
 
-	if (!len)
+	if (!len) {
+		dyn_threaded_dbg("empty bind mask for irq %d\n", irq);
 		return;
+	}
 
 	cpu = cpumask_nth(index % len, bind_mask);
-	if (cpu >= nr_cpu_ids)
+	if (cpu >= nr_cpu_ids) {
+		dyn_threaded_dbg("no cpu for index %u of irq %d\n", index % len, irq);
 		return;
+	}
 
 	irq_set_affinity(irq, cpumask_of(cpu));
+	dyn_threaded_dbg("bind irq %d to cpu %d of %*pb\n",
+			 irq, cpu, cpumask_pr_args(bind_mask));
 }
 
 /* Spread the RX queue IRQs of every monitored device over the CPUs of
@@ -801,6 +844,8 @@ static void set_irq_node_affinity(const struct cpumask *tasks_cpumask)
 	    cpumask_weight(&irq_prefer_mask) < dyn_threaded_irq_cpucore_limit)
 		return;
 
+	dyn_threaded_dbg("irq affinity mask: %*pb\n", cpumask_pr_args(&irq_prefer_mask));
+
 	cpu = cpumask_first(&irq_prefer_mask);
 	for (dev_id = 0; dev_id < sched_netdev_num; dev_id++) {
 		sched_dev = get_sched_netdev(dev_id);
@@ -816,8 +861,15 @@ static void set_irq_node_affinity(const struct cpumask *tasks_cpumask)
 					cpu = cpumask_first(&irq_prefer_mask);
 			}
 			/* set irq affinity to all irq_prefer_mask failed */
-			if (cpu_idx == cpu_cnt)
+			if (cpu_idx == cpu_cnt) {
+				dyn_threaded_dbg("failed to set irq %d affinity to mask %*pb\n",
+						 sched_dev->rxq[rxq_id].irq,
+						 cpumask_pr_args(&irq_prefer_mask));
 				return;
+			}
+
+			dyn_threaded_dbg("set irq %d affinity to cpu %d\n",
+					 sched_dev->rxq[rxq_id].irq, cpu);
 
 			cpu = cpumask_next(cpu, &irq_prefer_mask);
 			if (cpu >= nr_cpu_ids)
@@ -944,6 +996,8 @@ static void bind_napi_threaded(struct sched_netdev *sched_dev)
 		if (cpumask_empty(&check_mask)) {
 			cpumask_or(&napi_cpumask, &napi_cpumask, node_mask);
 			set_cpus_allowed_ptr(napi->thread, node_mask);
+			dyn_threaded_dbg("%s: napi %u, no target cpu in node, use %*pb\n",
+					 dev->name, napi->napi_id, cpumask_pr_args(node_mask));
 			continue;
 		}
 
@@ -952,6 +1006,9 @@ static void bind_napi_threaded(struct sched_netdev *sched_dev)
 		if (!cpumask_empty(&napi_allowed_mask)) {
 			cpumask_or(&napi_cpumask, &napi_cpumask, &napi_allowed_mask);
 			set_cpus_allowed_ptr(napi->thread, &napi_allowed_mask);
+			dyn_threaded_dbg("%s: napi %u, use target-free cpus %*pb\n",
+					 dev->name, napi->napi_id,
+					 cpumask_pr_args(&napi_allowed_mask));
 			continue;
 		}
 
@@ -962,6 +1019,9 @@ static void bind_napi_threaded(struct sched_netdev *sched_dev)
 		if (cpumask_weight(napi->thread->cpus_ptr) == dyn_threaded_corenum &&
 		    cpumask_subset(napi->thread->cpus_ptr, &napi_allowed_mask)) {
 			cpumask_or(&napi_cpumask, &napi_cpumask, napi->thread->cpus_ptr);
+			dyn_threaded_dbg("%s: napi %u, keep mask %*pb\n",
+					 dev->name, napi->napi_id,
+					 cpumask_pr_args(napi->thread->cpus_ptr));
 			continue;
 		}
 
@@ -971,6 +1031,9 @@ static void bind_napi_threaded(struct sched_netdev *sched_dev)
 
 		cpumask_or(&napi_cpumask, &napi_cpumask, &bind_mask);
 		set_cpus_allowed_ptr(napi->thread, &bind_mask);
+		dyn_threaded_dbg("%s: napi %u, use first %u cpus %*pb\n",
+				 dev->name, napi->napi_id, dyn_threaded_corenum,
+				 cpumask_pr_args(&bind_mask));
 		if (dyn_threaded_bindirq && irq >= 0)
 			bind_irq_in_cpumask(irq, idx++, &bind_mask);
 	}
@@ -991,6 +1054,8 @@ static void set_all_napi_threaded(bool threaded)
 			continue;
 
 		dev_set_threaded(sched_dev->netdev, threaded);
+		dyn_threaded_dbg("%s: set threaded napi %d\n",
+				 sched_dev->dev_name, threaded);
 		if (threaded)
 			bind_napi_threaded(sched_dev);
 	}
@@ -1116,6 +1181,11 @@ static void change_dyn_threaded_corenum(void)
 	/* percentual load of the napi cpus */
 	cal_cpustat_per(&napi_cpustat, &snapshot_napi_cpustat, &napi_per);
 
+	dyn_threaded_dbg("napi cpu user %llu system %llu softirq %llu irq %llu idle %llu iowait %llu\n",
+			 napi_per.cpustat[CPUTIME_USER], napi_per.cpustat[CPUTIME_SYSTEM],
+			 napi_per.cpustat[CPUTIME_SOFTIRQ], napi_per.cpustat[CPUTIME_IRQ],
+			 napi_per.cpustat[CPUTIME_IDLE], napi_per.cpustat[CPUTIME_IOWAIT]);
+
 	spin_lock(&dyn_threaded_corenum_lock);
 	corenum = dyn_threaded_corenum;
 	spin_unlock(&dyn_threaded_corenum_lock);
@@ -1168,11 +1238,15 @@ static void change_dyn_threaded_corenum(void)
 			dynamic_corenum_changed = true;
 		}
 		spin_unlock(&dyn_threaded_corenum_lock);
+		dyn_threaded_dbg("resize napi thread cpus %u -> %u\n",
+				 last_threaded_corenum, dyn_threaded_corenum);
 	} else {
 		dynamic_corenum_keep = true;
 	}
 
 out:
+	dyn_threaded_dbg("napi threads use %u cpus of %*pb\n",
+			 dyn_threaded_corenum, cpumask_pr_args(&napi_cpumask));
 	snapshot_napi_cpustat = napi_cpustat;
 }
 
@@ -1211,6 +1285,8 @@ static void dyn_threaded_handler(struct work_struct *work)
 	if (!affinity_to_one_node && cpumask_in_one_numa(&target_cpumask) &&
 	    dyn_threaded_bindirq)
 		set_irq_node_affinity(&target_cpumask);
+
+	dyn_threaded_dbg("target task status %d\n", info.status);
 
 	switch (info.status) {
 	case NO_TASK:
@@ -1261,6 +1337,7 @@ static void dyn_threaded_handler(struct work_struct *work)
 		take_napi_cpustat_snapshot();
 		break;
 	default:
+		dyn_threaded_dbg("unexpected status %d\n", info.status);
 		break;
 	}
 
@@ -1269,6 +1346,14 @@ static void dyn_threaded_handler(struct work_struct *work)
 		info.last_status = snapshot.last_status;
 	else
 		info.last_status = snapshot.status;
+
+	if (info.status != snapshot.status)
+		dyn_threaded_dbg("status %d -> %d\n",
+				 snapshot.status, info.status);
+
+	dyn_threaded_dbg("%s: avg_runtime %llu nvcsw_per %llu cpuload %llu status %d last %d irq_node %d\n",
+			 __func__, info.avg_runtime, info.nvcsw_per, info.cpuload,
+			 info.status, info.last_status, affinity_to_one_node);
 
 	snapshot = info;
 }
@@ -1299,6 +1384,8 @@ static void start_worker(void)
 	hrtimer_init(&dyn_threaded_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	dyn_threaded_timer.function = dyn_threaded_hrtimer_callback;
 	hrtimer_start(&dyn_threaded_timer, interval, HRTIMER_MODE_REL);
+
+	dyn_threaded_dbg("worker started, interval %u ms\n", dyn_threaded_interval);
 }
 
 static void stop_worker(void)
@@ -1309,6 +1396,8 @@ static void stop_worker(void)
 	recover_irq_affinity();
 	cpumask_clear(&napi_cpumask);
 	clear_corenum_napi();
+
+	dyn_threaded_dbg("worker stopped\n");
 }
 
 /* enable/disable the scheduler through the dynthreaded module parameter */
@@ -1427,6 +1516,8 @@ static int __init dynthread_init(void)
 		start_worker();
 	mutex_unlock(&dynthreaded_lock);
 
+	dyn_threaded_dbg("module loaded\n");
+
 	return 0;
 }
 
@@ -1440,6 +1531,8 @@ static void __exit dynthread_exit(void)
 	recover_irq_affinity();
 
 	deinit_netdevinfo();
+
+	dyn_threaded_dbg("module unloaded\n");
 }
 
 module_init(dynthread_init);
