@@ -344,6 +344,8 @@ static bool nsevf_clean_tx_irq_legacy_rs(struct nsevf_vsi *vsi,
 
 		next_rs_desc = NSEVF_TX_DESC(tx_ring, tx_rs);
 
+		smp_rmb();	/* prevent any other reads prior to eop_desc */
+
 		/* if the descriptor isn't done, no work yet to do */
 		if (!(next_rs_desc->cmd_type_offset_bsz &
 		      cpu_to_le64(NSE_TXD_DD_M)))
@@ -635,12 +637,14 @@ static bool nsevf_clean_txcq_irq(struct nsevf_txcq_ring *cq_ring,
  * @q_vector: the vector on which to enable writeback
  *
  **/
-static void nsevf_enable_wb_on_itr(struct nsevf_vsi *vsi,
-				   struct nsevf_q_vector *q_vector)
+static void nsevf_set_wb_on_itr(struct nsevf_vsi *vsi,
+				struct nsevf_q_vector *q_vector)
 {
-	u32 val;
+	bool dyn_itr_refresh = READ_ONCE(q_vector->dyn_itr_refresh);
+	u32 itr = READ_ONCE(q_vector->dyn_itr_val);
+	u32 val = 0;
 
-	if (q_vector->wb_on_itr)
+	if (q_vector->wb_on_itr || !dyn_itr_refresh)
 		return;
 
 	/* INTMSK_VLD=1, INTMSK=1
@@ -648,14 +652,30 @@ static void nsevf_enable_wb_on_itr(struct nsevf_vsi *vsi,
 	 *	when this func is called, INTMSK should be already 1.
 	 *	but we still explicitly set it, for clearness.
 	 **/
-	val = NSEVF_REG_INT_DYN_CTLN_WB_ON_ITR_M |
-	      NSEVF_REG_INT_DYN_CTLN_INTMSK_VLD_M |
-	      NSEVF_REG_INT_DYN_CTLN_INTMSK_M;
+	val = (NSEVF_REG_INT_DYN_CTLN_WB_ON_ITR_M |
+	       NSEVF_REG_INT_DYN_CTLN_INTMSK_VLD_M |
+	       NSEVF_REG_INT_DYN_CTLN_INTMSK_M);
 
-	wr32(&vsi->back->hw, INT_DYN_CTLN(&vsi->back->hw, q_vector->reg_idx),
-	     val);
+	if (dyn_itr_refresh) {
+		if (!itr || itr > NSE_ITR_INTERVAL_MAX_IN_2_USEC)
+			itr = NSE_ITR_INTERVAL_MIN_IN_2_USEC;
+
+		val |= (NSEVF_REG_INT_DYN_CTLN_ITR_VALID_M |
+			(itr << NSEVF_REG_INT_DYN_CTLN_ITR_INTERVAL_S));
+	}
+
+	wr32(&vsi->back->hw,
+	     INT_DYN_CTLN(&vsi->back->hw, q_vector->reg_idx), val);
 
 	q_vector->wb_on_itr = true;
+
+	/* make sure WB_ON_ITR is armed before clearing dyn_itr_refresh */
+	mb();
+
+	if (dyn_itr_refresh) {
+		WRITE_ONCE(q_vector->dyn_itr_refresh, false);
+		WRITE_ONCE(q_vector->dim.state, DIM_START_MEASURE);
+	}
 }
 
 /**
@@ -1076,7 +1096,7 @@ no_buffers:
 
 static void nsevf_rx_ring_sync_tail_after_enable(struct nsevf_ring *rx_ring)
 {
-	writel_relaxed(rx_ring->next_to_use, rx_ring->tail);
+	writel(rx_ring->next_to_use, rx_ring->tail);
 }
 
 void nsevf_sync_tail_all_rx_rings(struct nsevf_adapter *adapter)
@@ -1146,7 +1166,7 @@ static void nsevf_rx_csum(struct nsevf_ring *rx_ring, struct sk_buff *skb,
 	struct nsevf_vsi *vsi = rx_ring->vsi;
 	struct nse_rx_ptype_decoded decoded;
 	u16 rx_status0;
-	bool ipv4, ipv6;
+	bool o_ipv6, i_ipv6;
 
 	rx_status0 = le16_to_cpu(rx_desc->wb.status_error0);
 
@@ -1164,26 +1184,26 @@ static void nsevf_rx_csum(struct nsevf_ring *rx_ring, struct sk_buff *skb,
 	if (!(decoded.known && decoded.outer_ip))
 		return;
 
-	ipv4 = (decoded.outer_ip == NSE_RX_PTYPE_OUTER_IP) &&
-	       (decoded.outer_ip_ver == NSE_RX_PTYPE_OUTER_IPV4);
-	ipv6 = (decoded.outer_ip == NSE_RX_PTYPE_OUTER_IP) &&
-	       (decoded.outer_ip_ver == NSE_RX_PTYPE_OUTER_IPV6);
+	o_ipv6 = (decoded.outer_ip == NSE_RX_PTYPE_OUTER_IP) &&
+		 (decoded.outer_ip_ver == NSE_RX_PTYPE_OUTER_IPV6);
+	i_ipv6 = (decoded.tunnel_end_prot == NSE_RX_PTYPE_TUNNEL_END_IPV6);
 
-	if (ipv4 && (rx_status0 & (BIT(NSE_RXD_STATUS0_XSUM_IPE_S) |
-				   BIT(NSE_RXD_STATUS0_XSUM_EIPE_S))))
+	/* Check IPv4 checksum errors in either the outer or inner header. */
+	if (rx_status0 & (NSE_RXD_STATUS0_XSUM_IPE_M |
+			  NSE_RXD_STATUS0_XSUM_EIPE_M))
 		goto checksum_fail;
 
-	if (ipv6 && (rx_status0 & (BIT(NSE_RXD_STATUS0_IPV6EXADD_S))))
+	if ((o_ipv6 || i_ipv6) && (rx_status0 & NSE_RXD_STATUS0_IPV6EXADD_M))
 		goto checksum_fail;
 
 	/* check for L4 errors and handle packets that were not able to be
 	 * checksummed due to arrival speed
 	 */
-	if (rx_status0 & BIT(NSE_RXD_STATUS0_XSUM_L4E_S))
+	if (rx_status0 & NSE_RXD_STATUS0_XSUM_L4E_M)
 		goto checksum_fail;
 
 	/* check for outer UDP checksum error in tunneled packets */
-	if (rx_status0 & BIT(NSE_RXD_STATUS0_XSUM_EUDPE_S))
+	if (rx_status0 & NSE_RXD_STATUS0_XSUM_EUDPE_M)
 		goto checksum_fail;
 
 	/* If there is an outer header present that might contain a checksum
@@ -1897,16 +1917,18 @@ static u32 nsevf_buildreg_itr(bool update_itr, u16 itr)
 {
 	u32 val;
 
-	val = NSEVF_REG_INT_DYN_CTLN_INTMSK_VLD_M; /* intmask_vld=1, intmsk=0 -- unmask this irq */
+	/* intmask_vld=1, intmsk=0 -- unmask this irq */
+	val = (NSEVF_REG_INT_DYN_CTLN_CLEARPBA_M |
+			NSEVF_REG_INT_DYN_CTLN_INTMSK_VLD_M);
 
 	if (update_itr) {
-		val |= NSEVF_REG_INT_DYN_CTLN_ITR_VALID_M;
 
-		if (!itr || nsevf_lan_min_itr_no_intrl)
-			itr = (NSE_ITR_INTERVAL_MIN_USEC >> 1);
+		if (!itr || nsevf_lan_min_itr_no_intrl ||
+		    itr > NSE_ITR_INTERVAL_MAX_IN_2_USEC)
+			itr = NSE_ITR_INTERVAL_MIN_IN_2_USEC;
 
-		val |= ((itr << NSEVF_REG_INT_DYN_CTLN_ITR_INTERVAL_S) &
-			NSEVF_REG_INT_DYN_CTLN_ITR_INTERVAL_M);
+		val |= (NSEVF_REG_INT_DYN_CTLN_ITR_VALID_M |
+			(itr << NSEVF_REG_INT_DYN_CTLN_ITR_INTERVAL_S));
 	}
 
 	return val;
@@ -1920,38 +1942,36 @@ static u32 nsevf_buildreg_itr(bool update_itr, u16 itr)
  * @q_vector: q_vector for which itr is being updated and interrupt enabled
  *
  **/
-static void nsevf_update_enable_itr(struct nsevf_vsi *vsi,
-				    struct nsevf_q_vector *q_vector)
+static void nsevf_enable_interrupt(struct nsevf_vsi *vsi,
+				   struct nsevf_q_vector *q_vector)
 {
 	struct nsevf_hw *hw = &vsi->back->hw;
 	bool wb_en = q_vector->wb_on_itr;
+	bool dyn_itr_refresh = READ_ONCE(q_vector->dyn_itr_refresh);
+	u32 itr = READ_ONCE(q_vector->dyn_itr_val);
 	u32 reg_val;
 
 	if (test_bit(__NSEVF_VSI_DOWN, vsi->state))
 		return;
 
-	if (!wb_en) {
-		reg_val = nsevf_buildreg_itr(false, 0);
-	} else {
+	reg_val = nsevf_buildreg_itr(dyn_itr_refresh,
+				     dyn_itr_refresh ? itr : 0);
+
+	if (wb_en) {
 		q_vector->wb_on_itr = false;
 
-		/* do two things here with a single write. Set up the third ITR
-		 * index to be used for software interrupt moderation, and then
-		 * trigger a software interrupt with a rate limit of 20K on
-		 * software interrupts, this will help avoid high interrupt
-		 * loads due to frequently polling and exiting polling.
-		 */
-		if (q_vector->dyn_itr_refresh) {
-			reg_val =
-				nsevf_buildreg_itr(true, q_vector->dyn_itr_val);
-			q_vector->dyn_itr_refresh = false;
-		} else {
-			reg_val = nsevf_buildreg_itr(true, (NSE_ITR_INTERVAL_20K >> 1));
-		}
 		reg_val |= NSEVF_REG_INT_DYN_CTLN_SWINT_TRIG_M;
 	}
 
 	wr32(hw, INT_DYN_CTLN(hw, q_vector->reg_idx), reg_val);
+
+	/* make sure the ITR write is visible before clearing dyn_itr_refresh */
+	wmb();
+
+	if (dyn_itr_refresh) {
+		WRITE_ONCE(q_vector->dyn_itr_refresh, false);
+		WRITE_ONCE(q_vector->dim.state, DIM_START_MEASURE);
+	}
 }
 
 int nsevf_polling(struct nsevf_q_vector *q_vector, int budget)
@@ -2032,7 +2052,6 @@ int nsevf_napi_poll(struct napi_struct *napi, int budget)
 	int budget_per_ring;
 	int work_done = 0;
 	bool wd;
-	int cpu_id;
 	u64 poll_ns;
 
 	if (test_bit(__NSEVF_VSI_DOWN, vsi->state) ||
@@ -2083,7 +2102,7 @@ int nsevf_napi_poll(struct napi_struct *napi, int budget)
 			q_vector->dbg_stats.napi_poll_total_cnt;
 		q_vector->dbg_stats.napi_poll_budeget_less_0_last_ns = poll_ns;
 
-		goto tx_only;
+		return budget;
 	}
 
 	/* We attempt to distribute budget to each Rx queue fairly, but don't
@@ -2111,39 +2130,7 @@ int nsevf_napi_poll(struct napi_struct *napi, int budget)
 	if (!clean_complete) {
 		q_vector->dbg_stats.napi_poll_clean_not_done_cnt++;
 
-		cpu_id = smp_processor_id();
-
-		/* It is possible that the interrupt affinity has changed but,
-		 * if the cpu is pegged at 100%, polling will never exit while
-		 * traffic continues and the interrupt will be stuck on this
-		 * cpu.  We check to make sure affinity is correct before we
-		 * continue to poll, otherwise we must stop polling so the
-		 * interrupt can move to the correct cpu.
-		 */
-		if (!cpumask_test_cpu(cpu_id, &q_vector->affinity_mask)) {
-			/* Tell napi that we are done polling */
-			napi_complete_done(napi, work_done);
-
-			/* Force an interrupt */
-			nsevf_force_wb(vsi, q_vector);
-
-			q_vector->dbg_stats.napi_poll_cpu_change_cnt++;
-
-			q_vector->dbg_stats.napi_poll_cpu_change_last_poll_cnt =
-				q_vector->dbg_stats.napi_poll_total_cnt;
-			q_vector->dbg_stats.napi_poll_cpu_change_last_ns =
-				poll_ns;
-
-			q_vector->dbg_stats.napi_poll_last_ret_event =
-				1; /* !clean_complete && cpu_change */
-
-			/* Return budget-1 so that polling stops */
-			return budget - 1;
-		}
-
-tx_only:
-
-		nsevf_enable_wb_on_itr(vsi, q_vector);
+		nsevf_set_wb_on_itr(vsi, q_vector);
 
 		q_vector->dbg_stats.napi_poll_last_ret_event =
 			2; /* !clean_complete && !cpu_change */
@@ -2178,7 +2165,7 @@ tx_only:
 
 		nsevf_net_dim(q_vector);
 
-		nsevf_update_enable_itr(vsi, q_vector);
+		nsevf_enable_interrupt(vsi, q_vector);
 
 	} else {
 		q_vector->dbg_stats.napi_poll_clean_done_keep_wb_on_itr_cnt++;
@@ -2186,7 +2173,7 @@ tx_only:
 		q_vector->dbg_stats.napi_poll_last_ret_event =
 			4; /* clean_complete, set_wb_on_itr() */
 
-		nsevf_enable_wb_on_itr(vsi, q_vector);
+		nsevf_set_wb_on_itr(vsi, q_vector);
 	}
 
 	return min_t(int, work_done, budget - 1);

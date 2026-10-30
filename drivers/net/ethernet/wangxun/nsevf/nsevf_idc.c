@@ -612,6 +612,21 @@ static int nsevf_idc_init_aux_device(struct nsevf_adapter *adapter)
 	else
 		cdev_info->rdma_caps.gen = IIDC_RDMA_GEN_UNKNOWN;
 
+	if (adapter->hw.device_id == NSEVF_DEV_ID_VF_AMBER_FPGA)
+		cdev_info->rdma_caps.protocols = IIDC_RDMA_NIC_PORT_NUM_2;
+	else if (adapter->hw.device_id == NSEVF_DEV_ID_VF_AMBER_FDBTACRX ||
+		 adapter->hw.device_id == NSEVF_DEV_ID_VF_AMBER_FDBTACXX ||
+		 adapter->hw.device_id == NSEVF_DEV_ID_VF_AMBER_FDATACRX ||
+		 adapter->hw.device_id == NSEVF_DEV_ID_VF_AMBER_FDATAIRX)
+		cdev_info->rdma_caps.protocols = IIDC_RDMA_NIC_PORT_NUM_2;
+	else if (adapter->hw.device_id == NSEVF_DEV_ID_VF_AMBER_FQATACRX ||
+		 adapter->hw.device_id == NSEVF_DEV_ID_VF_AMBER_DQATACXX)
+		cdev_info->rdma_caps.protocols = IIDC_RDMA_NIC_PORT_NUM_4;
+	else if (adapter->hw.device_id == NSEVF_DEV_ID_VF_MS)
+		cdev_info->rdma_caps.protocols = IIDC_RDMA_NIC_PORT_NUM_1;
+	else
+		cdev_info->rdma_caps.protocols = IIDC_RDMA_NIC_PORT_NUM_UNKNOWN;
+
 	cdev_info->ftype = IIDC_FUNCTION_TYPE_VF;
 	cdev_info->vsi_abs_id = adapter->vsi_res->vsi_abs_id;
 	cdev_info->netdev = adapter->netdev;

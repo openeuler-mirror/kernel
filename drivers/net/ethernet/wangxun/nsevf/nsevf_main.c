@@ -27,8 +27,8 @@ static const char nsevf_driver_string[] =
 
 #define DRV_VERSION_MAJOR (1)
 #define DRV_VERSION_MINOR (0)
-#define DRV_VERSION_BUILD (1)
-#define DRV_VERSION "1.0.1oe"
+#define DRV_VERSION_BUILD (2)
+#define DRV_VERSION "1.0.2oe"
 const char nsevf_driver_version[] = DRV_VERSION;
 static const char nsevf_copyright[] =
 	"Copyright (c) 2018 -2021 Beijing WangXun Technology Co., Ltd";
@@ -37,11 +37,6 @@ static int debug = -1;
 module_param(debug, int, 0644);
 MODULE_PARM_DESC(debug,
 		 "netif level (0=none,...,16=all), hw debug_mask (0x8XXXXXXX)");
-
-unsigned int nse_aq_cmd_timeout = NSE_CTL_Q_SQ_CMD_TIMEOUT_BASE;
-module_param(nse_aq_cmd_timeout, uint, 0644);
-MODULE_PARM_DESC(nse_aq_cmd_timeout,
-		 "count of timeout_tick of checking aq_cmd timeout");
 
 unsigned int nse_aq_cmd_check_dd = 1;
 module_param(nse_aq_cmd_check_dd, uint, 0644);
@@ -53,10 +48,10 @@ module_param(nse_aq_cmd_wait_method, uint, 0644);
 MODULE_PARM_DESC(nse_aq_cmd_wait_method,
 		 "AQM poll method (default 0 for sleep, 1 for delay)");
 
-unsigned int nse_timeout_scale;
+unsigned int nse_timeout_scale = 1;
 module_param(nse_timeout_scale, uint, 0644);
 MODULE_PARM_DESC(nse_timeout_scale,
-		 "scale for various timeout (including aq, reset, etc)");
+		 "scale for various timeout (including aq, reset, etc) (default: 1)");
 
 static unsigned int nse_aq_verbose;
 module_param(nse_aq_verbose, uint, 0644);
@@ -68,10 +63,10 @@ module_param(nse_conf_verbose, uint, 0644);
 MODULE_PARM_DESC(nse_conf_verbose,
 		 "print more verbose log when doing configuration (default: 0)");
 
-unsigned int nse_lan_tx_no_bql = 1;
+unsigned int nse_lan_tx_no_bql;
 module_param(nse_lan_tx_no_bql, uint, 0644);
 MODULE_PARM_DESC(nse_lan_tx_no_bql,
-		 "Do not call linux CONFIG_BQL related functions (default: 1)");
+		 "Do not call BQL logic (default: 0)");
 
 unsigned int nsevf_lan_tx_rs_optimize = 1;
 module_param(nsevf_lan_tx_rs_optimize, uint, 0644);
@@ -94,10 +89,10 @@ module_param(nsevf_lan_tx_select_q_default, uint, 0644);
 MODULE_PARM_DESC(nsevf_lan_tx_select_q_default,
 		 "Select TXQ default for non-TCP,UDP,ICMP packet (default: 0)");
 
-unsigned int nsevf_fdir_ena;
+unsigned int nsevf_fdir_ena = 1;
 module_param(nsevf_fdir_ena, uint, 0644);
 MODULE_PARM_DESC(nsevf_fdir_ena,
-		 "Enable VF-FDir, including all its logic (default: 0)");
+		 "Enable VF-FDir, including all its logic (default: 1)");
 
 unsigned int nsevf_use_msgbox;
 module_param(nsevf_use_msgbox, uint, 0644);
@@ -611,6 +606,18 @@ static void nsevf_map_vector_to_rxq(struct nsevf_adapter *adapter, int v_idx,
 	q_vector->ring_mask |= BIT(r_idx);
 }
 
+static void nsevf_cfg_xps_tx_ring(struct nsevf_ring *ring)
+{
+	if (!ring->q_vector || !ring->netdev)
+		return;
+
+	if (test_and_set_bit(NSEVF_TX_XPS_INIT_DONE, ring->xps_state))
+		return;
+
+	netif_set_xps_queue(ring->netdev, &ring->q_vector->affinity_mask,
+			    ring->queue_index);
+}
+
 /**
  * nsevf_map_vector_to_txq - associate irqs with tx queues
  * @adapter: board private structure
@@ -629,6 +636,8 @@ static void nsevf_map_vector_to_txq(struct nsevf_adapter *adapter, int v_idx,
 	q_vector->tx.ring = tx_ring;
 	q_vector->tx.count++;
 	q_vector->num_ringpairs++;
+
+	nsevf_cfg_xps_tx_ring(tx_ring);
 }
 
 static void nsevf_map_txcq_rings_to_vectors(struct nsevf_adapter *adapter)
@@ -798,6 +807,9 @@ static int nsevf_request_traffic_irqs(struct nsevf_adapter *adapter,
 		q_vector->affinity_notify.notify = nsevf_irq_affinity_notify;
 		q_vector->affinity_notify.release = nsevf_irq_affinity_release;
 		irq_set_affinity_notifier(irq_num, &q_vector->affinity_notify);
+
+		/* assign the mask for this irq */
+		irq_set_affinity_hint(irq_num, &q_vector->affinity_mask);
 	}
 
 	return 0;
@@ -830,7 +842,7 @@ static int nsevf_request_misc_irq(struct nsevf_adapter *adapter)
 					     NSE_ITR_INTERVAL_MIN_USEC);
 	else
 		(void)nsevf_set_itr_interval(&adapter->hw, 0,
-					     NSE_ITR_INTERVAL_8K);
+					     NSE_ITR_INTERVAL_20K);
 
 	snprintf(adapter->misc_vector_name,
 		 sizeof(adapter->misc_vector_name) - 1, "nsevf-%s:mbx",
@@ -1492,49 +1504,39 @@ static void nsevf_set_rx_mode(struct net_device *netdev)
 	spin_unlock_bh(&adapter->current_netdev_promisc_flags_lock);
 }
 
-struct nse_dim {
-	/* the throttle rate for interrupts, basically worst case delay before
-	 * an initial interrupt fires, value is stored in microseconds.
-	 */
-	u16 itr;
+/* in unit of us --- when set to HW, translate into 2us unit. */
+const struct nse_dim nse_dim_profile[] = {
+	{4},
+	{32},
+	{64},
+	{128},
+	{192}
 };
-
-/* Make a different profile for Rx that doesn't allow quite so aggressive
- * moderation at the high end (it maxes out at 126us or about 8k interrupts a
- * second.
- */
-static const struct nse_dim nse_dim_profile[] = { { 2 }, /* 500,000 ints/s */
-						  { 4 }, /* 250,000 ints/s */
-						  { 16 }, /*  62,500 ints/s */
-						  { 32 },
-						  { 64 } };
-
-#define NSE_DIM_DEFAULT_PROFILE_IX 1
 
 static void nse_dim_work(struct work_struct *work)
 {
-	struct nsevf_q_vector *q_vector;
-	struct dim *dim;
-	u16 itr;
-	u8 profile_ix;
+	struct dim *dim = container_of(work, struct dim, work);
+	struct nsevf_q_vector *q_vector = (struct nsevf_q_vector *)dim->priv;
+	u8 profile_ix = READ_ONCE(dim->profile_ix);
+	u32 itr;
 
-	dim = container_of(work, struct dim, work);
-	q_vector = (struct nsevf_q_vector *)dim->priv;
+	if (!ITR_IS_DYNAMIC(q_vector))
+		return;
 
-	profile_ix = dim->profile_ix;
-
-	WARN_ON(profile_ix >= ARRAY_SIZE(nse_dim_profile));
-	if (profile_ix >= ARRAY_SIZE(nse_dim_profile))
+	if (profile_ix >= ARRAY_SIZE(nse_dim_profile)) {
 		profile_ix = NSE_DIM_DEFAULT_PROFILE_IX;
+		WRITE_ONCE(dim->profile_ix, profile_ix);
+	}
 
 	/* look up the values in our local table */
 	itr = nse_dim_profile[dim->profile_ix].itr;
 
-	q_vector->dyn_itr_val =
-		(itr >> 1); /* translate into 2us ( NSE_ITR_GRAN_FIXED ) unit */
-	q_vector->dyn_itr_refresh = true;
-
-	dim->state = DIM_START_MEASURE;
+	if (ITR_IS_DYNAMIC(q_vector)) {
+		WRITE_ONCE(q_vector->dyn_itr_val, (itr >> NSE_ITR_GRAN_S));
+		WRITE_ONCE(q_vector->dyn_itr_refresh, true);
+	} else {
+		WRITE_ONCE(q_vector->dyn_itr_refresh, false);
+	}
 }
 
 /**
@@ -1553,6 +1555,8 @@ static void nsevf_init_moderation(struct nsevf_q_vector *q_vector)
 	q_vector->dim.mode = DIM_CQ_PERIOD_MODE_START_FROM_EQE;
 	q_vector->dim.profile_ix = NSE_DIM_DEFAULT_PROFILE_IX;
 	q_vector->dim.priv = q_vector;
+
+	q_vector->dyn_itr_refresh = false;
 
 	/* set the initial ITR to match the above */
 	(void)nsevf_write_itr(q_vector,
@@ -2209,6 +2213,8 @@ static int nsevf_alloc_q_vectors(struct nsevf_adapter *adapter)
 {
 	int q_idx = 0, num_q_vectors;
 	struct nsevf_q_vector *q_vector;
+	struct device *dev = nsevf_adapter_to_dev(adapter);
+	int best_local_cpu_id;
 
 	num_q_vectors = adapter->num_msix_vectors - NONQ_VECS;
 	adapter->q_vectors =
@@ -2233,7 +2239,15 @@ static int nsevf_alloc_q_vectors(struct nsevf_adapter *adapter)
 
 		q_vector->intrl = NSE_INTRL_INTERVAL_NO_USEC;
 
-		cpumask_copy(&q_vector->affinity_mask, cpu_possible_mask);
+		best_local_cpu_id = cpumask_local_spread(q_vector->v_idx, dev_to_node(dev));
+		if (cpu_online(best_local_cpu_id)) {
+			cpumask_set_cpu(best_local_cpu_id, &q_vector->affinity_mask);
+			cpumask_set_cpu(best_local_cpu_id, &q_vector->best_affinity_mask);
+			q_vector->best_local_cpu_id = best_local_cpu_id;
+		} else {
+			cpumask_copy(&q_vector->affinity_mask, cpu_possible_mask);
+			q_vector->best_local_cpu_id = -1;
+		}
 		netif_napi_add(adapter->netdev, &q_vector->napi,
 			       nsevf_napi_poll);
 	}
@@ -2800,7 +2814,7 @@ int nsevf_process_config(struct nsevf_adapter *adapter)
 	netdev_features_t hw_enc_features;
 	netdev_features_t hw_features;
 
-	hw_enc_features = NETIF_F_SG | NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM |
+	hw_enc_features = NETIF_F_SG | NETIF_F_HW_CSUM |
 			  NETIF_F_HIGHDMA | NETIF_F_SOFT_FEATURES |
 			  NETIF_F_TSO | NETIF_F_TSO6 | NETIF_F_SCTP_CRC |
 			  NETIF_F_RXHASH | NETIF_F_RXCSUM;
@@ -5746,15 +5760,12 @@ static struct pci_driver nsevf_driver = {
 
 static void nsevf_module_params_fix(void)
 {
-	unsigned int val;
+#ifndef CONFIG_X86
+	nse_lan_tx_no_bql = 1;
+#endif
 
-	if (nse_aq_cmd_timeout < NSE_CTL_Q_SQ_CMD_TIMEOUT_BASE)
-		nse_aq_cmd_timeout = NSE_CTL_Q_SQ_CMD_TIMEOUT_BASE;
-
-	val = (nse_aq_cmd_timeout / NSE_CTL_Q_SQ_CMD_TIMEOUT_BASE);
-
-	if (nse_timeout_scale < val)
-		nse_timeout_scale = val;
+	if (!nse_timeout_scale)
+		nse_timeout_scale = 1;
 }
 
 /**

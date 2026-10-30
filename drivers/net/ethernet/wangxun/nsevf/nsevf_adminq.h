@@ -137,8 +137,8 @@ static inline int nsevf_aq_rc_to_posix(int aq_ret, int aq_rc)
 #define NSEVF_AQ_LARGE_BUF 512
 
 /* Control Queue timeout settings - max delay (20000 x 100) = 2000 000 usec = 2 s */
-#define NSE_CTL_Q_SQ_CMD_TIMEOUT_BASE 20000 /* Count 20000 times */
-#define NSE_CTL_Q_SQ_CMD_USEC 100 /* Check every 100 usec */
+#define NSE_CTL_Q_SQ_CMD_TIMEOUT_BASE 200000 /* Count 200000 times */
+#define NSE_CTL_Q_SQ_CMD_USEC 10 /* Check every 10 usec */
 
 void nsevf_fill_default_direct_cmd_desc(struct nsevf_aq_desc *desc,
 					u8 opc_category, u8 opc_subcode);

@@ -527,6 +527,8 @@ nsevf_set_ringparam(struct net_device *netdev, struct ethtool_ringparam *ring,
 	return 0;
 }
 
+extern const struct nse_dim nse_dim_profile[];
+
 /**
  * __nsevf_get_coalesce - get per-queue coalesce settings
  * @netdev: the netdev to check
@@ -652,7 +654,25 @@ static int nsevf_set_itr_per_queue(struct nsevf_adapter *adapter,
 	}
 
 	if (use_adaptive_coalesce) {
-		q_vector->itr_mode = ITR_DYNAMIC;
+		if (!ITR_IS_DYNAMIC(q_vector)) {
+			cancel_work_sync(&q_vector->dim.work);
+
+			q_vector->dim.profile_ix = NSE_DIM_DEFAULT_PROFILE_IX;
+
+			/* The interrupt handler itself will take care of programming
+			 * ITR values based on the values we have entered
+			 * into the q_vector, no need to write the values now.
+			 */
+			WRITE_ONCE(q_vector->dyn_itr_val,
+				   (nse_dim_profile[NSE_DIM_DEFAULT_PROFILE_IX].itr >>
+				    NSE_ITR_GRAN_S));
+			/* publish dyn_itr_val before setting dyn_itr_refresh */
+			wmb();
+			WRITE_ONCE(q_vector->dyn_itr_refresh, true);
+			WRITE_ONCE(q_vector->dim.state, DIM_APPLY_NEW_PROFILE);
+
+			q_vector->itr_mode = ITR_DYNAMIC;
+		}
 
 	} else {
 		q_vector->itr_mode = ITR_STATIC;
@@ -661,14 +681,19 @@ static int nsevf_set_itr_per_queue(struct nsevf_adapter *adapter,
 
 		if (ec->rx_coalesce_usecs_high != q_vector->intrl)
 			q_vector->intrl = ec->rx_coalesce_usecs_high;
-	}
 
-	/* The interrupt handler itself will take care of programming
-	 * the Tx and Rx ITR values based on the values we have entered
-	 * into the q_vector, no need to write the values now.
-	 */
-	q_vector->dyn_itr_refresh = true;
-	q_vector->dyn_itr_val = (q_vector->itr_setting >> 1);
+		cancel_work_sync(&q_vector->dim.work);
+
+		/* The interrupt handler itself will take care of programming
+		 * ITR values based on the values we have entered
+		 * into the q_vector, no need to write the values now.
+		 */
+		WRITE_ONCE(q_vector->dyn_itr_val,
+			   (ITR_REG_ALIGN(coalesce_usecs) >> NSE_ITR_GRAN_S));
+		/* publish dyn_itr_val before setting dyn_itr_refresh */
+		wmb();
+		WRITE_ONCE(q_vector->dyn_itr_refresh, true);
+	}
 
 	nsevf_set_q_vector_intrl(q_vector);
 

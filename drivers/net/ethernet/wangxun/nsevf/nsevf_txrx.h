@@ -298,6 +298,11 @@ struct nsevf_txcq_ring {
 	struct nse_cq_stats stats;
 } ____cacheline_internodealigned_in_smp;
 
+enum nsevf_ring_tx_xps_state_t {
+	NSEVF_TX_XPS_INIT_DONE,
+	NSEVF_TX_XPS_NBITS,
+};
+
 /* struct that defines a descriptor ring, associated with a VSI */
 struct nsevf_ring {
 	struct nsevf_ring *next; /* pointer to next ring in q_vector */
@@ -361,6 +366,8 @@ struct nsevf_ring {
 	struct nsevf_q_vector *q_vector; /* Backreference to associated vector */
 
 	struct rcu_head rcu; /* to avoid race on free */
+	DECLARE_BITMAP(xps_state, NSEVF_TX_XPS_NBITS);	/* XPS Config State */
+
 	u16 next_to_alloc;
 
 } ____cacheline_internodealigned_in_smp;

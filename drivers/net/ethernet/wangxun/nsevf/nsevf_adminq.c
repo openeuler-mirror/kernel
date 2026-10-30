@@ -1663,6 +1663,9 @@ nsevf_asq_send_command(struct nsevf_hw *hw, struct nsevf_ctl_q_info *aq,
 			}
 
 			total_wait++;
+
+			hw->controlq_stats.sq_total_wait_cnt++;
+
 		} while (total_wait < sq_cmd_timeout);
 	}
 
