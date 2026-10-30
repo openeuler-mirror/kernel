@@ -81,7 +81,7 @@ static void __ib_umem_release(struct ib_device *dev, struct ib_umem *umem, int d
  */
 unsigned long ib_umem_find_best_pgsz(struct ib_umem *umem,
 				     unsigned long pgsz_bitmap,
-				     u64 virt)
+				     unsigned long KABI_ADD_MODIFIER(long) virt)
 {
 	unsigned long curr_len = 0;
 	dma_addr_t curr_base = ~0;
