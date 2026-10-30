@@ -117,6 +117,7 @@ struct udma_caps {
 	bool non_mirror_en;
 	bool st64b_en;
 	bool atomic_add_en;
+	bool multi_wqebb_dwqe;
 };
 
 struct udma_dfx_jetty {

@@ -952,7 +952,9 @@ static int udma_set_hw_caps(struct udma_dev *udma_dev)
 	udma_dev->caps.ctp_en = !(ubase_adev_ip_over_urma_utp_supported(udma_dev->comdev.adev));
 	udma_dev->caps.rc_max_cnt = a_caps->rc_max_cnt;
 	udma_dev->caps.st64b_en = udma_dev->hw_ver != UBASE_HW_VER_A_0;
-
+	/* TODO: get dwqe_multi_bb_en from IMP */
+	udma_dev->caps.multi_wqebb_dwqe = (udma_dev->hw_ver == UBASE_HW_VER_K_1) &&
+					  !!(udma_dev->caps.feature & UDMA_CAP_FEATURE_DIRECT_WQE);
 	ret = udma_construct_qos_param(udma_dev);
 	if (ret)
 		return ret;
