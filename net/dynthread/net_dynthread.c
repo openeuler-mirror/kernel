@@ -146,6 +146,127 @@ module_param(dyn_threaded_irq_cpucore_per, uint, 0644);
 MODULE_PARM_DESC(dyn_threaded_irq_cpucore_per,
 		 "percent of rx queues to keep per NUMA node, default 50");
 
+/* default number of cpus used by the napi threads, computed at init */
+static u32 dyn_threaded_corenum_default;
+
+static u32 dyn_threaded_corenum;
+static u32 dyn_threaded_corenum_lower_limit = 4;
+static u32 dyn_threaded_corenum_upper_limit = 32;
+
+static int dyn_threaded_corenum_set(const char *val,
+				    const struct kernel_param *kp)
+{
+	u32 num;
+	int ret;
+
+	ret = kstrtou32(val, 0, &num);
+	if (ret)
+		return ret;
+	/* a zero count would leave the napi threads without cpu */
+	if (!num)
+		return -EINVAL;
+
+	if (num > dyn_threaded_corenum_upper_limit ||
+		num < dyn_threaded_corenum_lower_limit)
+		return -EINVAL;
+
+	*(u32 *)kp->arg = num;
+	return 0;
+}
+
+static int dyn_threaded_corenum_get(char *buffer,
+				    const struct kernel_param *kp)
+{
+	return scnprintf(buffer, PAGE_SIZE, "%u\n", *(u32 *)kp->arg);
+}
+
+static const struct kernel_param_ops dyn_threaded_corenum_ops = {
+	.set = dyn_threaded_corenum_set,
+	.get = dyn_threaded_corenum_get,
+};
+
+module_param_cb(dyn_threaded_corenum, &dyn_threaded_corenum_ops,
+		&dyn_threaded_corenum, 0644);
+MODULE_PARM_DESC(dyn_threaded_corenum,
+		 "number of cpus used by the napi threads, computed by default");
+
+/* keep dyn_threaded_corenum within the current limits; a zero value is
+ * left alone, it is either not set yet or will be initialized from the
+ * default by dynthread_init()
+ */
+static void clamp_dyn_threaded_corenum(void)
+{
+	u32 num;
+
+	num = dyn_threaded_corenum;
+	if (num) {
+		if (num < dyn_threaded_corenum_lower_limit)
+			num = dyn_threaded_corenum_lower_limit;
+		else if (num > dyn_threaded_corenum_upper_limit)
+			num = dyn_threaded_corenum_upper_limit;
+		WRITE_ONCE(dyn_threaded_corenum, num);
+	}
+}
+
+static int dyn_threaded_corenum_lower_limit_set(const char *val,
+						const struct kernel_param *kp)
+{
+	u32 num;
+	int ret;
+
+	ret = kstrtou32(val, 0, &num);
+	if (ret)
+		return ret;
+	/* a zero limit would make set_default_dyn_threaded_corenum()
+	 * collapse the napi thread cpus to zero
+	 */
+	if (!num || num > READ_ONCE(dyn_threaded_corenum_upper_limit))
+		return -EINVAL;
+
+	WRITE_ONCE(*(u32 *)kp->arg, num);
+	clamp_dyn_threaded_corenum();
+	return 0;
+}
+
+static int dyn_threaded_corenum_upper_limit_set(const char *val,
+						const struct kernel_param *kp)
+{
+	u32 num;
+	int ret;
+
+	ret = kstrtou32(val, 0, &num);
+	if (ret)
+		return ret;
+	if (!num || num < READ_ONCE(dyn_threaded_corenum_lower_limit))
+		return -EINVAL;
+
+	WRITE_ONCE(*(u32 *)kp->arg, num);
+	clamp_dyn_threaded_corenum();
+	return 0;
+}
+
+static const struct kernel_param_ops dyn_threaded_corenum_lower_limit_ops = {
+	.set = dyn_threaded_corenum_lower_limit_set,
+	.get = dyn_threaded_corenum_get,
+};
+
+static const struct kernel_param_ops dyn_threaded_corenum_upper_limit_ops = {
+	.set = dyn_threaded_corenum_upper_limit_set,
+	.get = dyn_threaded_corenum_get,
+};
+
+module_param_cb(dyn_threaded_corenum_lower_limit,
+		&dyn_threaded_corenum_lower_limit_ops,
+		&dyn_threaded_corenum_lower_limit, 0644);
+MODULE_PARM_DESC(dyn_threaded_corenum_lower_limit,
+		 "lower limit of napi thread cpus, default 4");
+
+module_param_cb(dyn_threaded_corenum_upper_limit,
+		&dyn_threaded_corenum_upper_limit_ops,
+		&dyn_threaded_corenum_upper_limit, 0644);
+MODULE_PARM_DESC(dyn_threaded_corenum_upper_limit,
+		 "upper limit of napi thread cpus, default 32");
+
 static int sched_netdev_num;
 static struct sched_netdev sched_netdev_table[SCHED_MAX_NETDEV_NUM];
 
@@ -719,6 +840,142 @@ static void recover_irq_affinity(void)
 	dyn_threaded_bindirq_close = false;
 }
 
+/* CPUs the napi threads of the monitored devices may run on */
+static struct cpumask napi_cpumask;
+
+/* bind_napi_threaded - bind the threaded NAPIs of @dev to CPUs
+ *
+ * The mask of each NAPI thread is derived from the NUMA node of its
+ * queue IRQ:
+ *
+ *  - if none of the target task CPUs is in that node, the whole node
+ *    mask is used
+ *  - otherwise, if the node has CPUs the target tasks are not allowed
+ *    to use, those CPUs are used
+ *  - otherwise the first dyn_threaded_corenum CPUs of the node are
+ *    used; if the thread is already bound to such a subset, its
+ *    current mask is kept
+ *
+ * In the latter case, with dyn_threaded_bindirq set, the queue IRQ is
+ * bound along with its NAPI thread, round-robin over the same mask.
+ * The CPUs used by the threads are recorded in napi_cpumask for the
+ * load evaluation.
+ */
+static void bind_napi_threaded(struct sched_netdev *sched_dev)
+{
+	struct net_device *dev = sched_dev->netdev;
+	struct napi_struct *napi;
+	struct cpumask bind_mask, check_mask, napi_allowed_mask;
+	const struct cpumask *irq_mask, *node_mask;
+	struct irq_desc *desc;
+	struct irq_data *data;
+	unsigned long flags;
+	u32 idx = 0, napi_idx = 0;
+	int irq, cpu;
+
+	/* __netif_napi_add() inserts at the list head, so the forward
+	 * walk visits the NAPIs in the reverse of their registration
+	 * order. Walk backwards to visit them in registration (vector)
+	 * order, which is the order get_netdev_queue_info() records the
+	 * RX queue IRQs in.
+	 */
+	list_for_each_entry_reverse(napi, &dev->napi_list, dev_list) {
+		if (!napi->thread) {
+			napi_idx++;
+			continue;
+		}
+
+		cpumask_clear(&bind_mask);
+
+		irq = napi->irq;
+		/* some drivers (e.g. hns3) do not publish the vector irq
+		 * on the napi; the recorded RX queue IRQs follow the same
+		 * vector order, so pair them with the napi list
+		 */
+		if (irq < 0 && napi_idx < sched_dev->rxq_num)
+			irq = sched_dev->rxq[napi_idx].irq;
+		napi_idx++;
+
+		/* the node of the irq, cpu_online_mask if unknown. The
+		 * descriptor is rcu freed, so keep the lookup and the
+		 * access to it in an RCU read-side section
+		 */
+		cpu = nr_cpu_ids;
+		if (irq >= 0) {
+			rcu_read_lock();
+			data = irq_get_irq_data(irq);
+			if (data) {
+				desc = irq_data_to_desc(data);
+				raw_spin_lock_irqsave(&desc->lock, flags);
+				irq_mask = irq_data_get_effective_affinity_mask(&desc->irq_data);
+				cpu = cpumask_first(irq_mask);
+				raw_spin_unlock_irqrestore(&desc->lock, flags);
+			}
+			rcu_read_unlock();
+		}
+		if (cpu >= nr_cpu_ids)
+			node_mask = cpu_online_mask;
+		else
+			node_mask = cpu_cpu_mask(cpu);
+
+		/* no target task cpu in this node: use the whole node */
+		cpumask_and(&check_mask, node_mask, &target_cpumask);
+		if (cpumask_empty(&check_mask)) {
+			cpumask_or(&napi_cpumask, &napi_cpumask, node_mask);
+			set_cpus_allowed_ptr(napi->thread, node_mask);
+			continue;
+		}
+
+		/* preferred: the node's cpus without the target tasks' ones */
+		cpumask_andnot(&napi_allowed_mask, node_mask, &target_cpumask);
+		if (!cpumask_empty(&napi_allowed_mask)) {
+			cpumask_or(&napi_cpumask, &napi_cpumask, &napi_allowed_mask);
+			set_cpus_allowed_ptr(napi->thread, &napi_allowed_mask);
+			continue;
+		}
+
+		/* no spare cpu in the node: fall back to the whole node, */
+		cpumask_copy(&napi_allowed_mask, node_mask);
+
+		/* already bound to a subset of the right size? keep it */
+		if (cpumask_weight(napi->thread->cpus_ptr) == dyn_threaded_corenum &&
+		    cpumask_subset(napi->thread->cpus_ptr, &napi_allowed_mask)) {
+			cpumask_or(&napi_cpumask, &napi_cpumask, napi->thread->cpus_ptr);
+			continue;
+		}
+
+		select_napi_cpus(dyn_threaded_corenum, &napi_allowed_mask, &bind_mask);
+		if (cpumask_empty(&bind_mask))
+			continue;
+
+		cpumask_or(&napi_cpumask, &napi_cpumask, &bind_mask);
+		set_cpus_allowed_ptr(napi->thread, &bind_mask);
+		if (dyn_threaded_bindirq && irq >= 0)
+			bind_irq_in_cpumask(irq, idx++, &bind_mask);
+	}
+}
+
+static void set_all_napi_threaded(bool threaded)
+{
+	struct sched_netdev *sched_dev;
+	int id;
+
+	/* napi_list, dev_set_threaded() and set_cpus_allowed_ptr()
+	 * are all handled under the sleepable rtnl lock
+	 */
+	rtnl_lock();
+	for (id = 0; id < sched_netdev_num; id++) {
+		sched_dev = get_sched_netdev(id);
+		if (!sched_dev)
+			continue;
+
+		dev_set_threaded(sched_dev->netdev, threaded);
+		if (threaded)
+			bind_napi_threaded(sched_dev);
+	}
+	rtnl_unlock();
+}
+
 static int dynthreaded;
 /* set once dynthread_init() has recorded the net devices */
 static bool dynthreaded_ready;
@@ -747,7 +1004,10 @@ static void dyn_threaded_handler(struct work_struct *work)
 
 	switch (info.status) {
 	case NO_TASK:
-		/* no target tasks: restore the original irq affinity */
+		/* no target tasks: back to softirq mode and restore the
+		 * original irq affinity
+		 */
+		set_all_napi_threaded(false);
 		recover_irq_affinity();
 		break;
 	case DATA_LOSS:
@@ -757,14 +1017,22 @@ static void dyn_threaded_handler(struct work_struct *work)
 		info.avg_runtime = snapshot.avg_runtime;
 		break;
 	case NOT_RUNNING:
-		/* target tasks barely running: restore the original irqs */
+		/* target tasks barely running: softirq mode is fine */
+		set_all_napi_threaded(false);
+		/* and the original irq affinity can be restored */
 		recover_irq_affinity();
 		break;
 	case FRAGMENTATION:
-		/* irqs may consume cpu time again, spread them over
-		 * their NUMA node
-		 */
+		/* softirq mode is fine, irqs spread over their NUMA node */
+		set_all_napi_threaded(false);
 		bind_irq();
+		break;
+	case LONG_RUNNING_WITH_INTERRUPTS:
+		/* switch NAPI processing to threads bound away from
+		 * the target task cpus
+		 */
+		cpumask_clear(&napi_cpumask);
+		set_all_napi_threaded(true);
 		break;
 	default:
 		break;
@@ -811,6 +1079,7 @@ static void stop_worker(void)
 {
 	hrtimer_cancel(&dyn_threaded_timer);
 	cancel_work_sync(&dyn_threaded_work);
+	set_all_napi_threaded(false);
 	recover_irq_affinity();
 }
 
@@ -881,6 +1150,33 @@ static const struct kernel_param_ops dynthreaded_ops = {
 module_param_cb(dynthreaded, &dynthreaded_ops, NULL, 0644);
 MODULE_PARM_DESC(dynthreaded, "enable the scheduler, default 0");
 
+/* set_default_dyn_threaded_corenum - compute the default napi thread cpu count
+ *
+ * The default is the number of RX queues of the busiest monitored device
+ * divided by the number of NUMA nodes, clamped between the core number
+ * lower and upper limits.
+ */
+static void set_default_dyn_threaded_corenum(void)
+{
+	struct sched_netdev *sched_dev;
+	unsigned int max_rxq = 0;
+	u32 num;
+	int id;
+
+	for (id = 0; id < sched_netdev_num; id++) {
+		sched_dev = get_sched_netdev(id);
+		if (sched_dev)
+			max_rxq = max(max_rxq, sched_dev->netdev->real_num_rx_queues);
+	}
+
+	num = max_rxq / num_online_nodes();
+	if (num < dyn_threaded_corenum_lower_limit)
+		num = dyn_threaded_corenum_lower_limit;
+	if (num > dyn_threaded_corenum_upper_limit)
+		num = dyn_threaded_corenum_upper_limit;
+	dyn_threaded_corenum_default = num;
+}
+
 static int __init dynthread_init(void)
 {
 	int ret;
@@ -888,6 +1184,10 @@ static int __init dynthread_init(void)
 	ret = init_netdevinfo(ifname);
 	if (ret)
 		return ret;
+
+	set_default_dyn_threaded_corenum();
+	if (!dyn_threaded_corenum)
+		dyn_threaded_corenum = dyn_threaded_corenum_default;
 
 	/* the module parameters were parsed before this function ran;
 	 * arm the worker only now that the device information is ready
@@ -903,8 +1203,12 @@ static int __init dynthread_init(void)
 
 static void __exit dynthread_exit(void)
 {
-	/* make sure the worker is stopped before releasing the devices */
+	/* make sure the worker is stopped and the devices are back in
+	 * softirq mode before releasing them
+	 */
 	dynthreaded_stop();
+	set_all_napi_threaded(false);
+	recover_irq_affinity();
 
 	deinit_netdevinfo();
 }
