@@ -19,6 +19,7 @@
 #include <linux/cpumask.h>
 #include <linux/ktime.h>
 #include <linux/hrtimer.h>
+#include <linux/interrupt.h>
 #include <linux/workqueue.h>
 #include <linux/sched.h>
 #include <linux/sched/signal.h>
@@ -99,6 +100,51 @@ static uint dyn_threaded_avg_runtime_keep_per = 90;
 module_param(dyn_threaded_avg_runtime_keep_per, uint, 0644);
 MODULE_PARM_DESC(dyn_threaded_avg_runtime_keep_per,
 		 "min percent of avg runtime kept in long running status, default 90");
+
+static uint dyn_threaded_bindirq = 1;
+/* the IRQs are at their original affinity, nothing to restore */
+static bool dyn_threaded_bindirq_close;
+static int dyn_threaded_bindirq_set(const char *val,
+				    const struct kernel_param *kp)
+{
+	uint bindirq;
+	int ret;
+
+	ret = kstrtouint(val, 0, &bindirq);
+	if (ret)
+		return ret;
+
+	if (!bindirq)
+		dyn_threaded_bindirq_close = true;
+	*(uint *)kp->arg = bindirq;
+
+	return 0;
+}
+
+static int dyn_threaded_bindirq_get(char *buffer,
+				     const struct kernel_param *kp)
+{
+	return scnprintf(buffer, PAGE_SIZE, "%u\n", *(uint *)kp->arg);
+}
+
+static const struct kernel_param_ops dyn_threaded_bindirq_ops = {
+	.set = dyn_threaded_bindirq_set,
+	.get = dyn_threaded_bindirq_get,
+};
+
+module_param_cb(dyn_threaded_bindirq, &dyn_threaded_bindirq_ops,
+		&dyn_threaded_bindirq, 0644);
+MODULE_PARM_DESC(dyn_threaded_bindirq, "bind the device irqs to spare cpus too, default 1");
+
+static uint dyn_threaded_irq_cpucore_limit = 8;
+module_param(dyn_threaded_irq_cpucore_limit, uint, 0644);
+MODULE_PARM_DESC(dyn_threaded_irq_cpucore_limit,
+		 "min number of cpus left for the irqs in the target node, default 8");
+
+static uint dyn_threaded_irq_cpucore_per = 50;
+module_param(dyn_threaded_irq_cpucore_per, uint, 0644);
+MODULE_PARM_DESC(dyn_threaded_irq_cpucore_per,
+		 "percent of rx queues to keep per NUMA node, default 50");
 
 static int sched_netdev_num;
 static struct sched_netdev sched_netdev_table[SCHED_MAX_NETDEV_NUM];
@@ -462,6 +508,217 @@ static void judge_target_task_status(struct sched_task_runtime_avg_info *info)
 	}
 }
 
+/* true once the RX queue IRQs have been bound to a single NUMA node */
+static bool affinity_to_one_node;
+
+/* select_napi_cpus - set the first @core_num CPUs of @allowed in @result
+ * @core_num: desired weight of @result
+ * @allowed: allowed CPUs
+ * @result: resulting CPU mask
+ */
+static void select_napi_cpus(u32 core_num, const struct cpumask *allowed,
+			     struct cpumask *result)
+{
+	int cpu;
+	int count = 0;
+
+	cpumask_clear(result);
+	for_each_cpu(cpu, allowed) {
+		if (count >= core_num)
+			break;
+		cpumask_set_cpu(cpu, result);
+		count++;
+	}
+}
+
+/* Bind @irq to the CPU chosen by round-robin position @index in @bind_mask. */
+static void bind_irq_in_cpumask(int irq, int index, const struct cpumask *bind_mask)
+{
+	unsigned int len = cpumask_weight(bind_mask);
+	int cpu;
+
+	if (!len)
+		return;
+
+	cpu = cpumask_nth(index % len, bind_mask);
+	if (cpu >= nr_cpu_ids)
+		return;
+
+	irq_set_affinity(irq, cpumask_of(cpu));
+}
+
+/* Spread the RX queue IRQs of every monitored device over the CPUs of
+ * their NUMA node, round-robin over all queues of all devices. The
+ * number of CPUs used per node comes from the number of RX queues,
+ * reduced to dyn_threaded_irq_cpucore_per percent. Skipped when IRQ
+ * binding is disabled or after the IRQs were bound to a single node.
+ */
+static void bind_irq(void)
+{
+	struct sched_netdev *sched_dev;
+	const struct cpumask *irq_mask;
+	const struct cpumask *node_mask;
+	struct cpumask bind_mask;
+	struct irq_desc *desc;
+	struct irq_data *data;
+	unsigned long flags;
+	int id, rxq_idx, irq, affinity_cpu;
+	u32 cpumask_idx = 0;
+	u32 node_num;
+	u32 num_per_numa;
+
+	if (!dyn_threaded_bindirq || affinity_to_one_node)
+		return;
+
+	for (id = 0; id < sched_netdev_num; id++) {
+		sched_dev = get_sched_netdev(id);
+		if (!sched_dev)
+			continue;
+
+		node_num = sched_dev->node_num ? sched_dev->node_num : 1;
+		num_per_numa = (sched_dev->rxq_num + node_num - 1) /
+			       node_num * dyn_threaded_irq_cpucore_per /
+			       ONE_HUNDRED;
+		for (rxq_idx = 0; rxq_idx < sched_dev->rxq_num; rxq_idx++) {
+			irq = sched_dev->rxq[rxq_idx].irq;
+
+			/* the descriptor is rcu freed, keep the lookup and
+			 * the access to it in an RCU read-side section
+			 */
+			affinity_cpu = nr_cpu_ids;
+			rcu_read_lock();
+			data = irq_get_irq_data(irq);
+			if (data) {
+				desc = irq_data_to_desc(data);
+				/* the effective affinity is protected by
+				 * desc->lock
+				 */
+				raw_spin_lock_irqsave(&desc->lock, flags);
+				irq_mask = irq_data_get_effective_affinity_mask(data);
+				if (irq_mask && !cpumask_empty(irq_mask))
+					affinity_cpu = cpumask_first(irq_mask);
+				raw_spin_unlock_irqrestore(&desc->lock, flags);
+			}
+			rcu_read_unlock();
+
+			if (affinity_cpu >= nr_cpu_ids)
+				node_mask = cpu_online_mask;
+			else
+				node_mask = cpu_cpu_mask(affinity_cpu);
+
+			select_napi_cpus(num_per_numa, node_mask, &bind_mask);
+			bind_irq_in_cpumask(irq, cpumask_idx++, &bind_mask);
+		}
+	}
+}
+
+/* Is the CPU mask, if not empty, contained in a single NUMA node? */
+static inline bool cpumask_in_one_numa(const struct cpumask *mask)
+{
+	const struct cpumask *node_mask;
+	int first_cpu;
+
+	if (cpumask_empty(mask))
+		return false;
+
+	/* the mask is in one node if it is a subset of the node of its
+	 * first CPU
+	 */
+	first_cpu = cpumask_first(mask);
+	node_mask = cpu_cpu_mask(first_cpu);
+
+	return cpumask_subset(mask, node_mask);
+}
+
+/* Move all RX queue IRQs to the CPUs of the NUMA node of the target
+ * tasks that are not allowed to those tasks, spread by round-robin.
+ * Only done if at least dyn_threaded_irq_cpucore_limit CPUs are left
+ * for the IRQs in that node; on a failed binding the CPU is retried
+ * with the next IRQ.
+ */
+static void set_irq_node_affinity(const struct cpumask *tasks_cpumask)
+{
+	struct sched_netdev *sched_dev;
+	const struct cpumask *node_mask;
+	struct cpumask irq_prefer_mask;
+	int cpu;
+	int dev_id, rxq_id;
+	int cpu_idx, cpu_cnt;
+
+	cpumask_clear(&irq_prefer_mask);
+	if (cpumask_empty(tasks_cpumask))
+		return;
+	cpu = cpumask_first(tasks_cpumask);
+	if (cpu >= nr_cpu_ids)
+		return;
+	node_mask = cpu_cpu_mask(cpu);
+
+	/* candidates are the CPUs of the node without the target tasks' ones */
+	cpumask_andnot(&irq_prefer_mask, node_mask, tasks_cpumask);
+	if (cpumask_empty(&irq_prefer_mask) ||
+	    cpumask_weight(&irq_prefer_mask) < dyn_threaded_irq_cpucore_limit)
+		return;
+
+	cpu = cpumask_first(&irq_prefer_mask);
+	for (dev_id = 0; dev_id < sched_netdev_num; dev_id++) {
+		sched_dev = get_sched_netdev(dev_id);
+		for (rxq_id = 0; rxq_id < sched_dev->rxq_num; rxq_id++) {
+			cpu_cnt = cpumask_weight(&irq_prefer_mask);
+			for (cpu_idx = 0; cpu_idx < cpu_cnt; cpu_idx++) {
+				if (!irq_set_affinity(sched_dev->rxq[rxq_id].irq,
+						      cpumask_of(cpu)))
+					break;
+
+				cpu = cpumask_next(cpu, &irq_prefer_mask);
+				if (cpu >= nr_cpu_ids)
+					cpu = cpumask_first(&irq_prefer_mask);
+			}
+			/* set irq affinity to all irq_prefer_mask failed */
+			if (cpu_idx == cpu_cnt)
+				return;
+
+			cpu = cpumask_next(cpu, &irq_prefer_mask);
+			if (cpu >= nr_cpu_ids)
+				cpu = cpumask_first(&irq_prefer_mask);
+		}
+	}
+
+	affinity_to_one_node = true;
+}
+
+/* Restore the affinity the RX queue IRQs had when the module was
+ * loaded, as changed by set_irq_node_affinity() or bind_irq().
+ */
+static void recover_irq_affinity(void)
+{
+	struct sched_netdev *sched_dev;
+	int dev_id, rxq_id;
+
+	/* clear the state even when the binding is disabled now, so
+	 * that re-enabling it does not keep suppressing bind_irq()
+	 */
+	affinity_to_one_node = false;
+
+	/* nothing was moved away and no restore is pending, so there
+	 * is nothing to restore; while the binding is enabled the IRQs
+	 * may have been moved by bind_irq() or set_irq_node_affinity()
+	 */
+	if (!dyn_threaded_bindirq_close && !dyn_threaded_bindirq)
+		return;
+
+	for (dev_id = 0; dev_id < sched_netdev_num; dev_id++) {
+		sched_dev = get_sched_netdev(dev_id);
+		for (rxq_id = 0; rxq_id < sched_dev->rxq_num; rxq_id++) {
+			if (sched_dev->rxq[rxq_id].affinity_cpu >= nr_cpu_ids)
+				continue;
+			irq_set_affinity(sched_dev->rxq[rxq_id].irq,
+					 cpumask_of(sched_dev->rxq[rxq_id].affinity_cpu));
+		}
+	}
+
+	dyn_threaded_bindirq_close = false;
+}
+
 static int dynthreaded;
 /* set once dynthread_init() has recorded the net devices */
 static bool dynthreaded_ready;
@@ -481,12 +738,33 @@ static void dyn_threaded_handler(struct work_struct *work)
 	sched_task_runtime_avg_snapshot(appname, &info);
 	judge_target_task_status(&info);
 
+	/* bind the irqs to one node if the target tasks sit in one node
+	 * and need to be kept free of irq work
+	 */
+	if (!affinity_to_one_node && cpumask_in_one_numa(&target_cpumask) &&
+	    dyn_threaded_bindirq)
+		set_irq_node_affinity(&target_cpumask);
+
 	switch (info.status) {
+	case NO_TASK:
+		/* no target tasks: restore the original irq affinity */
+		recover_irq_affinity();
+		break;
 	case DATA_LOSS:
 		/* invalid sample, reuse the previous status and statistics */
 		info.status = snapshot.status;
 		info.nvcsw_per = snapshot.nvcsw_per;
 		info.avg_runtime = snapshot.avg_runtime;
+		break;
+	case NOT_RUNNING:
+		/* target tasks barely running: restore the original irqs */
+		recover_irq_affinity();
+		break;
+	case FRAGMENTATION:
+		/* irqs may consume cpu time again, spread them over
+		 * their NUMA node
+		 */
+		bind_irq();
 		break;
 	default:
 		break;
@@ -533,6 +811,7 @@ static void stop_worker(void)
 {
 	hrtimer_cancel(&dyn_threaded_timer);
 	cancel_work_sync(&dyn_threaded_work);
+	recover_irq_affinity();
 }
 
 /* enable/disable the scheduler through the dynthreaded module parameter */
