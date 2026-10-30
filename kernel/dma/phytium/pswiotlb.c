@@ -898,7 +898,6 @@ static void pswiotlb_bounce(struct device *dev, int nid, phys_addr_t tlb_addr, s
 	int index = (tlb_addr - mem->start) >> P_IO_TLB_SHIFT;
 	phys_addr_t orig_addr = mem->slots[index].orig_addr;
 	size_t alloc_size = mem->slots[index].alloc_size;
-	unsigned long pfn = PFN_DOWN(orig_addr);
 	unsigned char *vaddr = mem->vaddr + tlb_addr - mem->start;
 	unsigned int tlb_offset, orig_addr_offset;
 
@@ -932,7 +931,8 @@ static void pswiotlb_bounce(struct device *dev, int nid, phys_addr_t tlb_addr, s
 		size = alloc_size;
 	}
 
-	if (PageHighMem(pfn_to_page(pfn))) {
+	if (PageHighMem(pfn_to_page(PFN_DOWN(orig_addr)))) {
+		unsigned long pfn = PFN_DOWN(orig_addr);
 		unsigned int offset = orig_addr & ~PAGE_MASK;
 		char *buffer;
 		unsigned int sz = 0;
