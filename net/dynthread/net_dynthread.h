@@ -9,6 +9,7 @@
 #include <linux/netdevice.h>
 
 #define ONE_HUNDRED			100
+#define IRQ_LIMIT			15
 #define SCHED_MAX_NETDEV_NUM		8
 #define MAX_DEV_RXQ_NUM			256
 #define DYN_THREAD_INTERVAL		(dyn_threaded_interval * NSEC_PER_MSEC)

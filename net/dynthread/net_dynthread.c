@@ -27,6 +27,7 @@
 #include <linux/netdevice.h>
 #include <linux/rtnetlink.h>
 #include <linux/topology.h>
+#include <linux/kernel_stat.h>
 
 #include "net_dynthread.h"
 
@@ -152,6 +153,7 @@ static u32 dyn_threaded_corenum_default;
 static u32 dyn_threaded_corenum;
 static u32 dyn_threaded_corenum_lower_limit = 4;
 static u32 dyn_threaded_corenum_upper_limit = 32;
+static DEFINE_SPINLOCK(dyn_threaded_corenum_lock);
 
 static int dyn_threaded_corenum_set(const char *val,
 				    const struct kernel_param *kp)
@@ -170,7 +172,9 @@ static int dyn_threaded_corenum_set(const char *val,
 		num < dyn_threaded_corenum_lower_limit)
 		return -EINVAL;
 
+	spin_lock(&dyn_threaded_corenum_lock);
 	*(u32 *)kp->arg = num;
+	spin_unlock(&dyn_threaded_corenum_lock);
 	return 0;
 }
 
@@ -198,6 +202,7 @@ static void clamp_dyn_threaded_corenum(void)
 {
 	u32 num;
 
+	spin_lock(&dyn_threaded_corenum_lock);
 	num = dyn_threaded_corenum;
 	if (num) {
 		if (num < dyn_threaded_corenum_lower_limit)
@@ -206,6 +211,7 @@ static void clamp_dyn_threaded_corenum(void)
 			num = dyn_threaded_corenum_upper_limit;
 		WRITE_ONCE(dyn_threaded_corenum, num);
 	}
+	spin_unlock(&dyn_threaded_corenum_lock);
 }
 
 static int dyn_threaded_corenum_lower_limit_set(const char *val,
@@ -266,6 +272,21 @@ module_param_cb(dyn_threaded_corenum_upper_limit,
 		&dyn_threaded_corenum_upper_limit, 0644);
 MODULE_PARM_DESC(dyn_threaded_corenum_upper_limit,
 		 "upper limit of napi thread cpus, default 32");
+
+static u32 dyn_threaded_user_per_limit = 20;
+module_param(dyn_threaded_user_per_limit, uint, 0644);
+MODULE_PARM_DESC(dyn_threaded_user_per_limit,
+		 "user percent of the napi cpus to shrink for, default 20");
+
+static u32 dyn_threaded_cpuload_lower_limit = 70;
+module_param(dyn_threaded_cpuload_lower_limit, uint, 0644);
+MODULE_PARM_DESC(dyn_threaded_cpuload_lower_limit,
+		 "napi cpu load percent to shrink for, default 70");
+
+static u32 dyn_threaded_cpuload_upper_limit = 90;
+module_param(dyn_threaded_cpuload_upper_limit, uint, 0644);
+MODULE_PARM_DESC(dyn_threaded_cpuload_upper_limit,
+		 "napi cpu load percent to grow for, default 90");
 
 static int sched_netdev_num;
 static struct sched_netdev sched_netdev_table[SCHED_MAX_NETDEV_NUM];
@@ -976,6 +997,195 @@ static void set_all_napi_threaded(bool threaded)
 	rtnl_unlock();
 }
 
+/* percentual load of the napi cpus before the last change */
+static struct kernel_cpustat snapshot_napi_per;
+
+/* raw load of the napi cpus of the previous period */
+static struct kernel_cpustat snapshot_napi_cpustat;
+
+/* dyn_threaded_corenum of the last change */
+static u32 last_threaded_corenum;
+
+/* damping state of change_dyn_threaded_corenum: true right after
+ * the count changed, true if the previous period took no action
+ */
+static bool dynamic_corenum_changed = true;
+static bool dynamic_corenum_keep;
+
+/* avg_cpustat - compute the per-CPU average of kernel_cpustat over
+ * the online CPUs of @mask
+ * @mask: desired CPUs
+ * @avg: result, zeroed if @mask contains no online CPU
+ */
+static void avg_cpustat(const struct cpumask *mask, struct kernel_cpustat *avg)
+{
+	struct kernel_cpustat sum = { { 0 } };
+	int cpu, count = 0;
+	int i;
+
+	for_each_cpu_and(cpu, mask, cpu_online_mask) {
+		struct kernel_cpustat *stat = &per_cpu(kernel_cpustat, cpu);
+
+		for (i = 0; i < NR_STATS; i++)
+			sum.cpustat[i] += stat->cpustat[i];
+		count++;
+	}
+
+	if (!count) {
+		memset(avg, 0, sizeof(*avg));
+		return;
+	}
+
+	for (i = 0; i < NR_STATS; i++)
+		avg->cpustat[i] = sum.cpustat[i] / count;
+}
+
+/* cal_cpustat_per - the increase of each kernel_cpustat field between
+ * @start and @end, in percent of the total increase
+ */
+static void cal_cpustat_per(const struct kernel_cpustat *end,
+			    const struct kernel_cpustat *start,
+			    struct kernel_cpustat *per)
+{
+	struct kernel_cpustat delta;
+	u64 total;
+	int i;
+
+	for (i = 0; i < NR_STATS; i++) {
+		if (end->cpustat[i] > start->cpustat[i])
+			delta.cpustat[i] = end->cpustat[i] - start->cpustat[i];
+		else
+			delta.cpustat[i] = 0;
+	}
+
+	total = delta.cpustat[CPUTIME_USER] + delta.cpustat[CPUTIME_NICE] +
+		delta.cpustat[CPUTIME_SYSTEM] + delta.cpustat[CPUTIME_IDLE] +
+		delta.cpustat[CPUTIME_IOWAIT] + delta.cpustat[CPUTIME_IRQ] +
+		delta.cpustat[CPUTIME_SOFTIRQ] + delta.cpustat[CPUTIME_STEAL];
+
+	/* no accounting delta, e.g. no online cpu in the mask: everything
+	 * is zero, avoid the division by zero
+	 */
+	if (!total) {
+		memset(per, 0, sizeof(*per));
+		return;
+	}
+
+	for (i = 0; i < NR_STATS; i++)
+		per->cpustat[i] = 100 * delta.cpustat[i] / total;
+}
+
+/* take the cpustat baseline of the currently bound napi cpus */
+static void take_napi_cpustat_snapshot(void)
+{
+	struct kernel_cpustat napi_cpustat;
+
+	avg_cpustat(&napi_cpumask, &napi_cpustat);
+	snapshot_napi_cpustat = napi_cpustat;
+}
+
+/* change_dyn_threaded_corenum - resize dyn_threaded_corenum
+ *
+ * The load of the napi cpus is evaluated from the deltas of their
+ * kernel_cpustat. The core count grows when the irq and softirq share
+ * of the napi cpus reaches IRQ_LIMIT percent or when their total load
+ * reaches dyn_threaded_cpuload_upper_limit percent; it shrinks when
+ * their user share reaches dyn_threaded_user_per_limit percent or
+ * their total load drops below dyn_threaded_cpuload_lower_limit
+ * percent, but not right over a change grown out of the target count.
+ *
+ * Fluctuations are damped: an action right after a no-action period
+ * is deferred for one period, and after a change the evaluation is
+ * skipped once.
+ */
+static void change_dyn_threaded_corenum(void)
+{
+	struct kernel_cpustat napi_per;
+	struct kernel_cpustat napi_cpustat;
+	u64 irq_softirq, prev_irq_softirq;
+	u32 corenum;
+	int action = 0;
+
+	avg_cpustat(&napi_cpumask, &napi_cpustat);
+
+	if (dynamic_corenum_changed) {
+		dynamic_corenum_changed = false;
+		goto out;
+	}
+
+	/* percentual load of the napi cpus */
+	cal_cpustat_per(&napi_cpustat, &snapshot_napi_cpustat, &napi_per);
+
+	spin_lock(&dyn_threaded_corenum_lock);
+	corenum = dyn_threaded_corenum;
+	spin_unlock(&dyn_threaded_corenum_lock);
+
+	irq_softirq = napi_per.cpustat[CPUTIME_SOFTIRQ] +
+		      napi_per.cpustat[CPUTIME_IRQ];
+	prev_irq_softirq = snapshot_napi_per.cpustat[CPUTIME_SOFTIRQ] +
+			   snapshot_napi_per.cpustat[CPUTIME_IRQ];
+
+	if (irq_softirq >= IRQ_LIMIT &&
+	    (snapshot_napi_per.cpustat[CPUTIME_USER] < dyn_threaded_user_per_limit ||
+	     last_threaded_corenum != corenum + 1)) {
+		action = 1;
+	} else if (napi_per.cpustat[CPUTIME_USER] >= dyn_threaded_user_per_limit &&
+		   (prev_irq_softirq < IRQ_LIMIT ||
+		    last_threaded_corenum != corenum - 1)) {
+		action = -1;
+	} else if (100 - napi_per.cpustat[CPUTIME_IDLE] < dyn_threaded_cpuload_lower_limit &&
+		   (100 - snapshot_napi_per.cpustat[CPUTIME_IDLE] <
+		    dyn_threaded_cpuload_upper_limit ||
+		    last_threaded_corenum != corenum - 1)) {
+		action = -1;
+	} else if (100 - napi_per.cpustat[CPUTIME_IDLE] >= dyn_threaded_cpuload_upper_limit &&
+		   (100 - snapshot_napi_per.cpustat[CPUTIME_IDLE] >=
+		    dyn_threaded_cpuload_lower_limit ||
+		    last_threaded_corenum != corenum + 1)) {
+		action = 1;
+	}
+
+	if (action) {
+		if (dynamic_corenum_keep) {
+			dynamic_corenum_keep = false;
+			goto out;
+		}
+		snapshot_napi_per = napi_per;
+
+		/* re-read under the lock: a concurrent module parameter
+		 * write may have changed the count since the decision
+		 * above, so clamp the result to the limits
+		 */
+		spin_lock(&dyn_threaded_corenum_lock);
+		last_threaded_corenum = dyn_threaded_corenum;
+		if (action > 0 &&
+		    dyn_threaded_corenum < dyn_threaded_corenum_upper_limit) {
+			dyn_threaded_corenum++;
+			dynamic_corenum_changed = true;
+		} else if (action < 0 &&
+			   dyn_threaded_corenum > dyn_threaded_corenum_lower_limit) {
+			dyn_threaded_corenum--;
+			dynamic_corenum_changed = true;
+		}
+		spin_unlock(&dyn_threaded_corenum_lock);
+	} else {
+		dynamic_corenum_keep = true;
+	}
+
+out:
+	snapshot_napi_cpustat = napi_cpustat;
+}
+
+/* reset the state collected while NAPI was threaded */
+static void clear_corenum_napi(void)
+{
+	memset(&snapshot_napi_per, 0, sizeof(snapshot_napi_per));
+	memset(&snapshot_napi_cpustat, 0, sizeof(snapshot_napi_cpustat));
+	last_threaded_corenum = dyn_threaded_corenum_default;
+	dynamic_corenum_changed = true;
+	dynamic_corenum_keep = false;
+}
+
 static int dynthreaded;
 /* set once dynthread_init() has recorded the net devices */
 static bool dynthreaded_ready;
@@ -1009,6 +1219,10 @@ static void dyn_threaded_handler(struct work_struct *work)
 		 */
 		set_all_napi_threaded(false);
 		recover_irq_affinity();
+		spin_lock(&dyn_threaded_corenum_lock);
+		dyn_threaded_corenum = dyn_threaded_corenum_default;
+		spin_unlock(&dyn_threaded_corenum_lock);
+		clear_corenum_napi();
 		break;
 	case DATA_LOSS:
 		/* invalid sample, reuse the previous status and statistics */
@@ -1021,18 +1235,30 @@ static void dyn_threaded_handler(struct work_struct *work)
 		set_all_napi_threaded(false);
 		/* and the original irq affinity can be restored */
 		recover_irq_affinity();
+		/* the napi thread cpu count goes back to the default */
+		spin_lock(&dyn_threaded_corenum_lock);
+		dyn_threaded_corenum = dyn_threaded_corenum_default;
+		spin_unlock(&dyn_threaded_corenum_lock);
+		clear_corenum_napi();
 		break;
 	case FRAGMENTATION:
 		/* softirq mode is fine, irqs spread over their NUMA node */
 		set_all_napi_threaded(false);
 		bind_irq();
+		clear_corenum_napi();
 		break;
 	case LONG_RUNNING_WITH_INTERRUPTS:
+		/* adapt the number of thread cpus to the measured load */
+		change_dyn_threaded_corenum();
 		/* switch NAPI processing to threads bound away from
 		 * the target task cpus
 		 */
 		cpumask_clear(&napi_cpumask);
 		set_all_napi_threaded(true);
+		/* the next delta must be measured over the mask that was
+		 * just bound, not over a previous, different one
+		 */
+		take_napi_cpustat_snapshot();
 		break;
 	default:
 		break;
@@ -1081,6 +1307,8 @@ static void stop_worker(void)
 	cancel_work_sync(&dyn_threaded_work);
 	set_all_napi_threaded(false);
 	recover_irq_affinity();
+	cpumask_clear(&napi_cpumask);
+	clear_corenum_napi();
 }
 
 /* enable/disable the scheduler through the dynthreaded module parameter */
@@ -1188,6 +1416,7 @@ static int __init dynthread_init(void)
 	set_default_dyn_threaded_corenum();
 	if (!dyn_threaded_corenum)
 		dyn_threaded_corenum = dyn_threaded_corenum_default;
+	last_threaded_corenum = dyn_threaded_corenum;
 
 	/* the module parameters were parsed before this function ran;
 	 * arm the worker only now that the device information is ready
