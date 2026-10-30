@@ -2,9 +2,6 @@ EXPORT_SYMBOL := true
 
 KBUILD_EXTRA_SYMBOLS += $(srctree)/drivers/net/ethernet/huawei/hinic3/Module.symvers
 
-SYS_TIME=$(shell date +%Y-%m-%d_%H:%M:%S)
-ccflags-y += -D __TIME_STR__=\"$(SYS_TIME)\"
-
 ccflags-y += -I$(srctree)/include/linux
 ccflags-y += -I$(srctree)/drivers/net/ethernet/huawei/hinic3/include/public
 ccflags-y += -I$(srctree)/drivers/net/ethernet/huawei/hinic3/include/cfg_mgmt
