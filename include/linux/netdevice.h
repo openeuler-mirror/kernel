@@ -661,10 +661,6 @@ struct netdev_queue {
 #ifdef CONFIG_XDP_SOCKETS
 	struct xsk_buff_pool    *pool;
 #endif
-	/* NAPI instance for the queue
-	 * Readers and writers must hold RTNL
-	 */
-	struct napi_struct      *napi;
 /*
  * write-mostly part
  */
@@ -681,7 +677,10 @@ struct netdev_queue {
 	struct dql		dql;
 #endif
 
-	KABI_RESERVE(1)
+	/* NAPI instance for the queue
+	 * Readers and writers must hold RTNL
+	 */
+	KABI_USE(1, struct napi_struct *napi)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
