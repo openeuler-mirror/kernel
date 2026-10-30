@@ -393,9 +393,8 @@ struct napi_struct {
 	/* control-path-only fields follow */
 	struct list_head	dev_list;
 	struct hlist_node	napi_hash_node;
-	int			irq;
 
-	KABI_RESERVE(1)
+	KABI_USE(1, int irq)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
