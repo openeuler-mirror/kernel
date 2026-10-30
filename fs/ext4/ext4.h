@@ -702,19 +702,9 @@ enum {
 	 * finally doing the actual allocation of delayed blocks */
 #define EXT4_GET_BLOCKS_DELALLOC_RESERVE	0x0004
 	/*
-	 * This means that we cannot merge newly allocated extents, and if we
-	 * found an unwritten extent, we need to split it.
+	 * This means that we cannot merge newly allocated extents.
 	 */
 #define EXT4_GET_BLOCKS_SPLIT_NOMERGE		0x0008
-	/*
-	 * Caller is from the dio or dioread_nolock buffered IO, reqest to
-	 * create an unwritten extent if it does not exist or split the
-	 * found unwritten extent. Also do not merge the newly created
-	 * unwritten extent, io end will convert unwritten to written,
-	 * and try to merge the written extent.
-	 */
-#define EXT4_GET_BLOCKS_IO_CREATE_EXT		(EXT4_GET_BLOCKS_SPLIT_NOMERGE|\
-					 EXT4_GET_BLOCKS_CREATE_UNWRIT_EXT)
 	/* Convert unwritten extent to initialized. */
 #define EXT4_GET_BLOCKS_CONVERT			0x0010
 	/* Convert extent to initialized after IO complete */
