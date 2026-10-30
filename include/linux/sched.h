@@ -595,18 +595,8 @@ struct sched_entity {
 	u64				sum_exec_runtime;
 	u64				prev_sum_exec_runtime;
 	u64				vruntime;
-	KABI_BROKEN_REPLACE(
-	s64                     vlag,
-	union {
-		/*
-		 * When !@on_rq this field is vlag.
-		 * When cfs_rq->curr == se (which implies @on_rq)
-		 * this field is vprot. See protect_slice().
-		 */
-		s64                     vlag;
-		u64                     vprot;
-	}
-	)
+	/* Approximated virtual lag: */
+	s64				vlag;
 	u64				slice;
 
 	u64				nr_migrations;
@@ -633,7 +623,8 @@ struct sched_entity {
 #endif
 	KABI_USE(1, u64 min_slice)
 	KABI_USE(2, u64 max_slice)
-	KABI_RESERVE(3)
+	/* 'Protected' deadline, to give out minimum quantums: */
+	KABI_USE(3, u64 vprot)
 	KABI_RESERVE(4)
 };
 
