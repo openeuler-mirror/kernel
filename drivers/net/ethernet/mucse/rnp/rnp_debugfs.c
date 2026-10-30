@@ -246,6 +246,7 @@ static ssize_t rnp_dbg_reg_ops_write(struct file *file,
 {
 	struct rnp_adapter *adapter = file->private_data;
 	struct rnp_hw *hw = &adapter->hw;
+	struct device *dev = &adapter->pdev->dev;
 	int len;
 
 	/* don't allow partial writes */
@@ -270,16 +271,16 @@ static ssize_t rnp_dbg_reg_ops_write(struct file *file,
 		if (cnt == 2) {
 			if (reg >= 0x30000000) {
 				rnp_mbx_reg_write(hw, reg, value);
-				e_dev_info("write: 0x%08x = 0x%08x\n", reg,
-					   value);
+				dev_dbg(dev, "write: 0x%08x = 0x%08x\n",
+					 reg, value);
 			} else {
 				rnp_wr_reg(hw->hw_addr + reg, value);
 				value = rnp_rd_reg(hw->hw_addr + reg);
-				e_dev_info("write: 0x%08x = 0x%08x\n", reg,
-					   value);
+				dev_dbg(dev, "write: 0x%08x = 0x%08x\n",
+					 reg, value);
 			}
 		} else {
-			e_dev_info("write <reg> <value>\n");
+			dev_dbg(dev, "write <reg> <value>\n");
 		}
 	} else if (!strncmp(rnp_dbg_reg_ops_buf, "read", 4)) {
 		u32 reg, value;
@@ -294,15 +295,15 @@ static ssize_t rnp_dbg_reg_ops_write(struct file *file,
 			snprintf(rnp_dbg_reg_ops_buf,
 				 sizeof(rnp_dbg_reg_ops_buf), "0x%08x: 0x%08x",
 				 reg, value);
-			e_dev_info("read 0x%08x = 0x%08x\n", reg, value);
+			dev_dbg(dev, "read 0x%08x = 0x%08x\n", reg, value);
 		} else {
-			e_dev_info("read <reg>\n");
+			dev_dbg(dev, "read <reg>\n");
 		}
 	} else {
-		e_dev_info("Unknown command %s\n", rnp_dbg_reg_ops_buf);
-		e_dev_info("Available commands:\n");
-		e_dev_info("   read <reg>\n");
-		e_dev_info("   write <reg> <value>\n");
+		dev_info(dev, "Unknown command %s\n", rnp_dbg_reg_ops_buf);
+		dev_info(dev, "Available commands:\n");
+		dev_info(dev, "   read <reg>\n");
+		dev_info(dev, "   write <reg> <value>\n");
 	}
 	return count;
 }
@@ -362,6 +363,7 @@ static ssize_t rnp_dbg_netdev_ops_write(struct file *file,
 					loff_t *ppos)
 {
 	struct rnp_adapter *adapter = file->private_data;
+	struct device *dev = &adapter->pdev->dev;
 	int len;
 
 	/* don't allow partial writes */
@@ -379,17 +381,17 @@ static ssize_t rnp_dbg_netdev_ops_write(struct file *file,
 	rnp_dbg_netdev_ops_buf[len] = '\0';
 
 	if (!strncmp(rnp_dbg_netdev_ops_buf, "stat", 4)) {
-		rnp_info("adapter->stat=0x%lx\n", adapter->state);
-		rnp_info("adapter->tx_timeout_count=%d\n",
-			 adapter->tx_timeout_count);
+		dev_dbg(dev, "adapter->stat=0x%lx\n", adapter->state);
+		dev_dbg(dev, "adapter->tx_timeout_count=%d\n",
+			adapter->tx_timeout_count);
 	} else if (!strncmp(rnp_dbg_netdev_ops_buf, "tx_timeout", 10)) {
 		adapter->netdev->netdev_ops->ndo_tx_timeout(adapter->netdev,
 							    UINT_MAX);
-		e_dev_info("tx_timeout called\n");
+		dev_info(dev, "tx_timeout called\n");
 	} else {
-		e_dev_info("Unknown command: %s\n", rnp_dbg_netdev_ops_buf);
-		e_dev_info("Available commands:\n");
-		e_dev_info("    tx_timeout\n");
+		dev_info(dev, "Unknown command: %s\n", rnp_dbg_netdev_ops_buf);
+		dev_info(dev, "Available commands:\n");
+		dev_info(dev, "    tx_timeout\n");
 	}
 	return count;
 }
@@ -401,9 +403,8 @@ static const struct file_operations rnp_dbg_netdev_ops_fops = {
 	.write = rnp_dbg_netdev_ops_write,
 };
 
-static ssize_t rnp_dbg_netdev_temp_read(struct file *file,
-					char __user *buffer, size_t count,
-					loff_t *ppos)
+static ssize_t rnp_dbg_netdev_temp_read(struct file *file, char __user *buffer,
+					size_t count, loff_t *ppos)
 {
 	struct rnp_adapter *adapter = file->private_data;
 	struct rnp_hw *hw = &adapter->hw;
@@ -533,6 +534,7 @@ static const struct file_operations rnp_dbg_command_fops = {
 void rnp_dbg_adapter_init(struct rnp_adapter *adapter)
 {
 	const char *name = pci_name(adapter->pdev);
+	struct device *dev = &adapter->pdev->dev;
 	struct dentry *pfile;
 
 	adapter->rnp_dbg_adapter = debugfs_create_dir(name, rnp_dbg_root);
@@ -542,47 +544,47 @@ void rnp_dbg_adapter_init(struct rnp_adapter *adapter)
 					    adapter,
 					    &rnp_dbg_reg_ops_fops);
 		if (!pfile)
-			e_dev_err("debugfs reg_ops for %s failed\n", name);
+			dev_err(dev, "debugfs reg_ops for %s failed\n", name);
 		pfile = debugfs_create_file("netdev_ops", 0600,
 					    adapter->rnp_dbg_adapter,
 					    adapter,
 					    &rnp_dbg_netdev_ops_fops);
 		if (!pfile)
-			e_dev_err("debugfs netdev_ops for %s failed\n", name);
+			dev_err(dev, "debugfs netdev_ops for %s failed\n", name);
 
 		pfile = debugfs_create_file("temp", 0600,
 					    adapter->rnp_dbg_adapter, adapter,
 					    &rnp_dbg_netdev_temp);
 		if (!pfile)
-			e_dev_err("debugfs temp for %s failed\n", name);
+			dev_err(dev, "debugfs temp for %s failed\n", name);
 		if (!rnp_is_pf1(&adapter->hw)) {
 			pfile = debugfs_create_file_unsafe("csl", 0755,
 				adapter->rnp_dbg_adapter,
 				adapter, &rnp_dbg_csl_fops);
 			if (!pfile)
-				e_dev_err("debugfs csl failed\n");
+				dev_err(dev, "debugfs csl failed\n");
 		}
 		pfile = debugfs_create_file("info", 0600,
 					    adapter->rnp_dbg_adapter,
 					    adapter,
 					    &rnp_dbg_eth_info_fops);
 		if (!pfile)
-			e_dev_err("debugfs info failed\n");
+			dev_err(dev, "debugfs info failed\n");
 		pfile = debugfs_create_file("mbx_cookies_info", 0600,
 					    adapter->rnp_dbg_adapter,
 					    adapter,
 					    &rnp_dbg_mbx_cookies_info_fops);
 		if (!pfile)
-			e_dev_err("debugfs reg_ops for mbx_cookies_info failed\n");
+			dev_err(dev, "debugfs reg_ops for mbx_cookies_info failed\n");
 
 		pfile = debugfs_create_file("command", 0600,
 					    adapter->rnp_dbg_adapter,
 					    adapter,
 					    &rnp_dbg_command_fops);
 		if (!pfile)
-			e_dev_err("debugfs temp for command failed\n");
+			dev_err(dev, "debugfs temp for command failed\n");
 	} else {
-		e_dev_err("debugfs entry for %s failed\n", name);
+		dev_err(dev, "debugfs entry for %s failed\n", name);
 	}
 }
 

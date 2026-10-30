@@ -146,9 +146,10 @@ static bool reg_pattern_test(struct rnp_adapter *adapter, u64 *data, int reg,
 		       (adapter->hw.hw_addr + reg));
 		val = readl(adapter->hw.hw_addr + reg);
 		if (val != (test_pattern[pat] & write & mask)) {
-			e_err(drv,
-			      "pattern test reg %04X failed: got 0x%08X expected 0x%08X\n",
-			      reg, val, (test_pattern[pat] & write & mask));
+			netdev_err(adapter->netdev,
+				   "pattern test reg %04X failed: got 0x%08X expected 0x%08X\n",
+				   reg, val,
+				   (test_pattern[pat] & write & mask));
 			*data = reg;
 			writel(before, adapter->hw.hw_addr + reg);
 			return 1;
@@ -167,9 +168,9 @@ static bool reg_set_and_check(struct rnp_adapter *adapter, u64 *data, int reg,
 	writel((write & mask), (adapter->hw.hw_addr + reg));
 	val = readl(adapter->hw.hw_addr + reg);
 	if ((write & mask) != (val & mask)) {
-		e_err(drv,
-		      "set/check reg %04X test failed: got 0x%08X expected 0x%08X\n",
-		      reg, (val & mask), (write & mask));
+		netdev_err(adapter->netdev,
+			   "set/check reg %04X test failed: got 0x%08X expected 0x%08X\n",
+			   reg, (val & mask), (write & mask));
 		*data = reg;
 		writel(before, (adapter->hw.hw_addr + reg));
 		return 1;
@@ -192,7 +193,8 @@ static bool rnp_reg_test(struct rnp_adapter *adapter, u64 *data)
 	u32 i;
 
 	if (RNP_REMOVED(hw->hw_addr)) {
-		e_err(drv, "Adapter removed - register test blocked\n");
+		netdev_err(adapter->netdev,
+			   "Adapter removed - register test blocked\n");
 		*data = 1;
 		return true;
 	}
@@ -290,7 +292,7 @@ void rnp_diag_test(struct net_device *netdev, struct ethtool_test *eth_test,
 		}
 
 		/* Offline tests */
-		e_info(hw, "offline testing starting\n");
+		netdev_dbg(netdev, "offline testing starting\n");
 
 		/* bringing adapter down disables SFP+ optics */
 		if (hw->ops.enable_tx_laser)
@@ -302,7 +304,7 @@ void rnp_diag_test(struct net_device *netdev, struct ethtool_test *eth_test,
 		if (rnp_link_test(adapter, &data[4]))
 			eth_test->flags |= ETH_TEST_FL_FAILED;
 
-		e_info(hw, "register testing starting\n");
+		netdev_dbg(netdev, "register testing starting\n");
 		if (rnp_reg_test(adapter, &data[0]))
 			eth_test->flags |= ETH_TEST_FL_FAILED;
 
@@ -313,7 +315,8 @@ void rnp_diag_test(struct net_device *netdev, struct ethtool_test *eth_test,
 		 */
 		if (adapter->flags &
 		    (RNP_FLAG_SRIOV_ENABLED | RNP_FLAG_VMDQ_ENABLED)) {
-			e_info(hw, "Skip MAC loopback diagnostic in VT mode\n");
+			netdev_dbg(netdev,
+				   "Skip MAC loopback diagnostic in VT mode\n");
 			data[3] = 0;
 			goto skip_loopback;
 		}
@@ -322,7 +325,7 @@ void rnp_diag_test(struct net_device *netdev, struct ethtool_test *eth_test,
 		/* loopback test is not added now */
 		/*
 		 * rnp_reset(adapter);
-		 * e_info(hw, "loopback testing starting\n");
+		 * netdev_dbg(netdev, "loopback testing starting\n");
 		 * todo Loopback test
 		 * if (rnp_loopback_test(adapter, &data[3]))
 		 * eth_test->flags |= ETH_TEST_FL_FAILED;
@@ -331,7 +334,7 @@ skip_loopback:
 		/* clear testing bit and return adapter to previous state */
 		clear_bit(__RNP_TESTING, &adapter->state);
 	} else {
-		e_info(hw, "online testing starting\n");
+		netdev_dbg(netdev, "online testing starting\n");
 
 		/* if adapter is down, SFP+ optics will be disabled */
 		if (!if_running && hw->ops.enable_tx_laser)
@@ -484,7 +487,6 @@ int rnp_get_ts_info(struct net_device *dev, struct ethtool_ts_info *info)
 	else
 		info->phc_index = -1;
 
-	dbg("phc_index is %d\n", info->phc_index);
 	info->so_timestamping =
 		SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_RX_HARDWARE |
 		SOF_TIMESTAMPING_RX_SOFTWARE | SOF_TIMESTAMPING_TX_SOFTWARE |
@@ -614,7 +616,9 @@ int rnp_get_module_info(struct net_device *netdev,
 
 	rnp_mbx_get_lane_stat(hw);
 
-	if (hw->is_sgmii)
+	if ((hw->is_sgmii)
+		|| (hw->is_backplane)
+		|| (hw->phy_type == PHY_TYPE_10G_TP))
 		return -EIO;
 
 	rc = rnp_mbx_sfp_module_eeprom_info(hw, 0xA0, SFF_MODULE_ID_OFFSET, 1,
@@ -669,7 +673,9 @@ int rnp_get_module_eeprom(struct net_device *dev, struct ethtool_eeprom *eeprom,
 
 	rnp_mbx_get_lane_stat(hw);
 
-	if (hw->is_sgmii)
+	if ((hw->is_sgmii)
+		|| (hw->is_backplane)
+		|| (hw->phy_type == PHY_TYPE_10G_TP))
 		return -EIO;
 
 	memset(data, 0, eeprom->len);
@@ -1362,6 +1368,7 @@ static int rnp_flowspec_to_flow_type(struct rnp_adapter *adapter,
 {
 	int ret = 1;
 	int i;
+	struct net_device *netdev = adapter->netdev;
 
 	/* not support flow_ext */
 	if (fsp->flow_type & FLOW_EXT)
@@ -1419,7 +1426,7 @@ static int rnp_flowspec_to_flow_type(struct rnp_adapter *adapter,
 	/* layer2 flow */
 	if (*flow_type == RNP_ATR_FLOW_TYPE_ETHER) {
 		if (adapter->layer2_count < 0) {
-			e_err(drv, "layer2 count full\n");
+			netdev_err(netdev, "layer2 count full\n");
 			ret = 0;
 		}
 		/* should check dst mac filter */
@@ -1440,72 +1447,72 @@ static int rnp_flowspec_to_flow_type(struct rnp_adapter *adapter,
 	} else if (*flow_type == RNP_ATR_FLOW_TYPE_IPV4) {
 		if (adapter->fdir_mode == fdir_mode_tuple5) {
 			if (adapter->tuple_5_count < 0) {
-				e_err(drv, "tuple 5 count full\n");
+				netdev_err(netdev, "tuple 5 count full\n");
 				ret = 0;
 			}
 			if (fsp->h_u.usr_ip4_spec.ip4src != 0 &&
 			    fsp->m_u.usr_ip4_spec.ip4src != cpu_to_be32(0xffffffff)) {
-				e_err(drv, "ip src mask error\n");
+				netdev_err(netdev, "ip src mask error\n");
 				ret = 0;
 			}
 			if (fsp->h_u.usr_ip4_spec.ip4dst != 0 &&
 			    fsp->m_u.usr_ip4_spec.ip4dst != cpu_to_be32(0xffffffff)) {
-				e_err(drv, "ip dst mask error\n");
+				netdev_err(netdev, "ip dst mask error\n");
 				ret = 0;
 			}
 			if (fsp->h_u.usr_ip4_spec.proto != 0 &&
 			    fsp->m_u.usr_ip4_spec.proto != 0xff) {
-				e_err(drv, "ip l4 proto mask error\n");
+				netdev_err(netdev, "ip l4 proto mask error\n");
 				ret = 0;
 			}
 		} else {
 			if (adapter->tuple_5_count < 0) {
-				e_err(drv, "tcam count full\n");
+				netdev_err(netdev, "tcam count full\n");
 				ret = 0;
 			}
 			/* tcam mode can support mask */
 		}
 		/* not support l4_4_bytes */
 		if (fsp->h_u.usr_ip4_spec.l4_4_bytes != 0) {
-			e_err(drv, "ip l4_4_bytes error\n");
+			netdev_err(netdev, "ip l4_4_bytes error\n");
 			ret = 0;
 		}
 	} else {
 		if (adapter->fdir_mode == fdir_mode_tuple5) {
 			/* should check mask all ff */
 			if (adapter->tuple_5_count < 0) {
-				e_err(drv, "tuple 5 count full\n");
+				netdev_err(netdev, "tuple 5 count full\n");
 				ret = 0;
 			}
 			if (fsp->h_u.tcp_ip4_spec.ip4src != 0 &&
 			    fsp->m_u.tcp_ip4_spec.ip4src != cpu_to_be32(0xffffffff)) {
-				e_err(drv, "src mask error\n");
+				netdev_err(netdev, "src mask error\n");
 				ret = 0;
 			}
 			if (fsp->h_u.tcp_ip4_spec.ip4dst != 0 &&
 			    fsp->m_u.tcp_ip4_spec.ip4dst != cpu_to_be32(0xffffffff)) {
-				e_err(drv, "dst mask error\n");
+				netdev_err(netdev, "dst mask error\n");
 				ret = 0;
 			}
 			if (fsp->h_u.tcp_ip4_spec.psrc != 0 &&
 			    fsp->m_u.tcp_ip4_spec.psrc != cpu_to_be16(0xffff)) {
-				e_err(drv, "src port mask error\n");
+				netdev_err(netdev, "src port mask error\n");
 				ret = 0;
 			}
 			if (fsp->h_u.tcp_ip4_spec.pdst != 0 &&
 			    fsp->m_u.tcp_ip4_spec.pdst != cpu_to_be16(0xffff)) {
-				e_err(drv, "src port mask error\n");
+				netdev_err(netdev, "src port mask error\n");
 				ret = 0;
 			}
 		} else {
 			if (adapter->tuple_5_count < 0) {
-				e_err(drv, "tcam count full\n");
+				netdev_err(netdev, "tcam count full\n");
 				ret = 0;
 			}
 		}
 		/* l4 tos is not supported */
 		if (fsp->h_u.tcp_ip4_spec.tos != 0) {
-			e_err(drv, "tos error\n");
+			netdev_err(netdev, "tos error\n");
 			ret = 0;
 		}
 	}
@@ -1562,7 +1569,6 @@ int rnp_update_ethtool_fdir_entry(struct rnp_adapter *adapter,
 		adapter->fdir_filter_count--;
 		if (rule->filter.formatted.flow_type ==
 		    RNP_ATR_FLOW_TYPE_ETHER)
-			/* used to determine hw reg offset */
 			adapter->layer2_count++;
 		else
 			adapter->tuple_5_count++;
@@ -1655,35 +1661,35 @@ static void print_fsp(struct ethtool_rx_flow_spec *fsp)
 	switch (fsp->flow_type & ~FLOW_EXT) {
 	case ETHER_FLOW:
 		for (i = 0; i < ETH_ALEN; i++)
-			dbg("src 0x%02x\n", fsp->h_u.ether_spec.h_source[i]);
+			pr_debug("src 0x%02x\n", fsp->h_u.ether_spec.h_source[i]);
 		for (i = 0; i < ETH_ALEN; i++)
-			dbg("dst 0x%02x\n", fsp->h_u.ether_spec.h_dest[i]);
+			pr_debug("dst 0x%02x\n", fsp->h_u.ether_spec.h_dest[i]);
 		for (i = 0; i < ETH_ALEN; i++)
-			dbg("src mask 0x%02x\n",
+			pr_debug("src mask 0x%02x\n",
 			    fsp->m_u.ether_spec.h_source[i]);
 		for (i = 0; i < ETH_ALEN; i++)
-			dbg("dst mask 0x%02x\n", fsp->m_u.ether_spec.h_dest[i]);
+			pr_debug("dst mask 0x%02x\n", fsp->m_u.ether_spec.h_dest[i]);
 
-		dbg("proto type is %x\n", fsp->h_u.ether_spec.h_proto);
+		pr_debug("proto type is %x\n", fsp->h_u.ether_spec.h_proto);
 
 		break;
 
 	default:
-		dbg("flow type is %x\n", fsp->flow_type);
+		pr_debug("flow type is %x\n", fsp->flow_type);
 
-		dbg("ip4 src ip is %x\n", fsp->h_u.tcp_ip4_spec.ip4src);
-		dbg("ip4 src ip mask is %x\n", fsp->m_u.tcp_ip4_spec.ip4src);
+		pr_debug("ip4 src ip is %x\n", fsp->h_u.tcp_ip4_spec.ip4src);
+		pr_debug("ip4 src ip mask is %x\n", fsp->m_u.tcp_ip4_spec.ip4src);
 
-		dbg("ip4 dst ip is %x\n", fsp->h_u.tcp_ip4_spec.ip4dst);
-		dbg("ip4 dst ip mask is %x\n", fsp->m_u.tcp_ip4_spec.ip4dst);
+		pr_debug("ip4 dst ip is %x\n", fsp->h_u.tcp_ip4_spec.ip4dst);
+		pr_debug("ip4 dst ip mask is %x\n", fsp->m_u.tcp_ip4_spec.ip4dst);
 
-		dbg("ip4 src port is %x\n", fsp->h_u.tcp_ip4_spec.psrc);
-		dbg("ip4 src port mask is %x\n", fsp->m_u.tcp_ip4_spec.psrc);
+		pr_debug("ip4 src port is %x\n", fsp->h_u.tcp_ip4_spec.psrc);
+		pr_debug("ip4 src port mask is %x\n", fsp->m_u.tcp_ip4_spec.psrc);
 
-		dbg("ip4 dst port is %x\n", fsp->h_u.tcp_ip4_spec.pdst);
-		dbg("ip4 dst port mask is %x\n", fsp->m_u.tcp_ip4_spec.pdst);
+		pr_debug("ip4 dst port is %x\n", fsp->h_u.tcp_ip4_spec.pdst);
+		pr_debug("ip4 dst port mask is %x\n", fsp->m_u.tcp_ip4_spec.pdst);
 
-		dbg("l4 proto type is %x\n", fsp->h_u.usr_ip4_spec.proto);
+		pr_debug("l4 proto type is %x\n", fsp->h_u.usr_ip4_spec.proto);
 		break;
 	}
 }
@@ -1733,7 +1739,7 @@ static int rnp_add_ethtool_fdir_entry(struct rnp_adapter *adapter,
 
 	/* Don't allow indexes to exist outside of available space */
 	if (fsp->location >= adapter->fdir_pballoc) {
-		e_err(drv, "Location out of range\n");
+		netdev_err(adapter->netdev, "Location out of range\n");
 		return -EINVAL;
 	}
 
@@ -1747,7 +1753,7 @@ static int rnp_add_ethtool_fdir_entry(struct rnp_adapter *adapter,
 	/* record flow type */
 	if (!rnp_flowspec_to_flow_type(adapter, fsp,
 				       &input->filter.formatted.flow_type, input)) {
-		e_err(drv, "Unrecognized flow type\n");
+		netdev_err(adapter->netdev, "Unrecognized flow type\n");
 		goto err_out;
 	}
 

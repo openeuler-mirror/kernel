@@ -95,8 +95,9 @@ rnp_download_and_start_rpu(struct rnp_hw *hw, u8 __iomem *rpu_base,
 {
 	int nr = 0;
 
-	rnp_info("MPE: rpu:%d mpe:%d mpe-data:%d. Downloading...\n", rpu_sz,
-		 mpe_bin_sz, mpe_data_sz);
+	dev_dbg(HW_TO_DEV(hw),
+		"MPE: rpu:%d mpe:%d mpe-data:%d. Downloading...\n",
+		rpu_sz, mpe_bin_sz, mpe_data_sz);
 
 	rnp_reset_mpe_and_rpu(hw);
 

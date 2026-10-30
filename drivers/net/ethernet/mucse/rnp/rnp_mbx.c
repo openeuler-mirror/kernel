@@ -365,7 +365,7 @@ static s32 rnp_obtain_mbx_lock_pf(struct rnp_hw *hw, enum MBX_ID mbx_id)
 		udelay(100);
 	}
 
-	rnp_err("%s: failed to get:%d lock\n", __func__, mbx_id);
+	dev_err(HW_TO_DEV(hw), "%s: failed to get:%d lock\n", __func__, mbx_id);
 	return -EPERM;
 }
 
@@ -407,8 +407,7 @@ static s32 rnp_write_mbx_pf(struct rnp_hw *hw, u32 *msg, u16 size,
 	/* copy the caller specified message to the mailbox memory buffer */
 	for (i = 0; i < size; i++) {
 		mbx_wr32(hw, DATA_REG + i * 4, msg[i]);
-		rnp_logd(LOG_MBX_OUT, "  w-mbx:0x%x <= 0x%x\n",
-			 DATA_REG + i * 4, msg[i]);
+		dev_dbg(dev, "w-mbx:0x%x <= 0x%x\n", DATA_REG + i * 4, msg[i]);
 	}
 
 	/* flush msg and acks as we are overwriting the message buffer */
@@ -468,8 +467,8 @@ static s32 rnp_read_mbx_pf(struct rnp_hw *hw, u32 *msg, u16 size,
 	/* copy the message from the mailbox memory buffer */
 	for (i = 0; i < size; i++) {
 		msg[i] = mbx_rd32(hw, BUF_REG + 4 * i);
-		rnp_logd(LOG_MBX_IN, "  r-mbx:0x%x => 0x%x\n", BUF_REG + 4 * i,
-			 msg[i]);
+		dev_dbg(HW_TO_DEV(hw), "r-mbx:0x%x => 0x%x\n",
+			BUF_REG + 4 * i, msg[i]);
 	}
 	mbx_wr32(hw, BUF_REG, 0);
 
@@ -566,7 +565,8 @@ static int rnp_mbx_configure_pf(struct rnp_hw *hw, int nr_vec, bool enable)
 		/* allow CM3CPU to PF MBX IRQ */
 		wr32(hw, CPU_PF_MBOX_MASK(mbx), 0);
 
-		rnp_dbg("[%s] mbx-vector:%d\n", __func__, nr_vec);
+		dev_dbg(HW_TO_DEV(hw), "[%s] mbx-vector:%d\n",
+			__func__, nr_vec);
 
 	} else {
 		if (PF_VF_MBOX_MASK_LO(mbx))
