@@ -18,6 +18,7 @@
 #include <uapi/linux/psci.h>
 
 #include <kvm/arm_psci.h>
+#include <kvm/arm_rv_timer.h>
 
 #include <asm/barrier.h>
 #include <asm/cpufeature.h>
@@ -515,6 +516,37 @@ static bool kvm_hyp_handle_ptrauth(struct kvm_vcpu *vcpu, u64 *exit_code)
 	return true;
 }
 
+static bool kvm_hyp_handle_pvm_counter(struct kvm_vcpu *vcpu)
+{
+	u64 esr = kvm_vcpu_get_esr(vcpu);
+	u64 val, access;
+
+	if (!is_pvm_mode() || !(esr & ESR_ELx_SYS64_ISS_DIR_READ))
+		return false;
+
+	switch (esr_sys64_to_sysreg(esr)) {
+	case SYS_CNTPCT_EL0:
+	case SYS_CNTPCTSS_EL0:
+		access = ARCH_TIMER_USR_PCT_ACCESS_EN;
+		break;
+	case SYS_CNTVCT_EL0:
+	case SYS_CNTVCTSS_EL0:
+		access = ARCH_TIMER_USR_VCT_ACCESS_EN;
+		break;
+	default:
+		return false;
+	}
+
+	if (pvm_vcpu_in_user_ctxt(vcpu) &&
+	    !(__vcpu_sys_reg(vcpu, CNTKCTL_EL1) & access))
+		return false;
+
+	val = kvm_rv_timer_get_reg(vcpu, KVM_REG_ARM_TIMER_CNT);
+	vcpu_set_reg(vcpu, kvm_vcpu_sys_get_rt(vcpu), val);
+	__kvm_skip_instr(vcpu);
+	return true;
+}
+
 static bool kvm_hyp_handle_cntpct(struct kvm_vcpu *vcpu)
 {
 	struct arch_timer_context *ctxt;
@@ -670,6 +702,9 @@ static inline bool kvm_hyp_handle_sysreg(struct kvm_vcpu *vcpu, u64 *exit_code)
 
 	if (esr_is_ptrauth_trap(kvm_vcpu_get_esr(vcpu)))
 		return kvm_hyp_handle_ptrauth(vcpu, exit_code);
+
+	if (kvm_hyp_handle_pvm_counter(vcpu))
+		return true;
 
 	if (kvm_hyp_handle_cntpct(vcpu))
 		return true;
