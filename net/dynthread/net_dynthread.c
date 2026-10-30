@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Dynamic threaded NAPI scheduler
  *
- * Record the RX queue IRQ information of the net devices configured
- * via the ifname module parameter, so that the IRQ placement can be
- * reworked at runtime.
+ * Monitor the scheduling behaviour of a target application and switch
+ * the NAPI processing of the configured net devices between softirq
+ * context and kernel threads, whose CPU affinity is adapted to the
+ * measured load. The RX queue IRQ placement of the devices is
+ * adjusted as well.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -13,6 +15,13 @@
 #include <linux/kernel.h>
 #include <linux/string.h>
 #include <linux/ctype.h>
+#include <linux/rcupdate.h>
+#include <linux/cpumask.h>
+#include <linux/ktime.h>
+#include <linux/hrtimer.h>
+#include <linux/workqueue.h>
+#include <linux/sched.h>
+#include <linux/sched/signal.h>
 #include <linux/irq.h>
 #include <linux/netdevice.h>
 #include <linux/rtnetlink.h>
@@ -30,6 +39,66 @@ MODULE_PARM_DESC(ifname, "net device names to monitor, separated by '#'");
 static char irqname[64] = "comp";
 module_param_string(irqname, irqname, sizeof(irqname), 0444);
 MODULE_PARM_DESC(irqname, "substring of the NIC RX queue IRQ names, default comp");
+
+static char appname[64] = "mysqld";
+module_param_string(appname, appname, sizeof(appname), 0644);
+MODULE_PARM_DESC(appname, "name of the target application threads, default mysqld");
+
+static uint dyn_threaded_nvcsw_per_limit = 95;
+module_param(dyn_threaded_nvcsw_per_limit, uint, 0644);
+MODULE_PARM_DESC(dyn_threaded_nvcsw_per_limit,
+		 "max nvcsw percent for long running status, default 95");
+
+static uint dyn_threaded_avg_runtime_limit = 350000;
+module_param(dyn_threaded_avg_runtime_limit, uint, 0644);
+MODULE_PARM_DESC(dyn_threaded_avg_runtime_limit,
+		 "min avg runtime (ns) for long running status, default 350000");
+
+static uint dyn_threaded_not_running_limit = 30000;
+module_param(dyn_threaded_not_running_limit, uint, 0644);
+MODULE_PARM_DESC(dyn_threaded_not_running_limit,
+		 "max avg runtime (ns) for not running status, default 30000");
+
+static uint dyn_threaded_interval = 1000;
+
+static int dyn_threaded_interval_set(const char *val,
+				     const struct kernel_param *kp)
+{
+	uint interval;
+	int ret;
+
+	ret = kstrtouint(val, 0, &interval);
+	if (ret)
+		return ret;
+
+	/* a zero interval would divide by zero and spin the timer */
+	if (!interval)
+		return -EINVAL;
+
+	*(uint *)kp->arg = interval;
+
+	return 0;
+}
+
+static int dyn_threaded_interval_get(char *buffer,
+				     const struct kernel_param *kp)
+{
+	return scnprintf(buffer, PAGE_SIZE, "%u\n", *(uint *)kp->arg);
+}
+
+static const struct kernel_param_ops dyn_threaded_interval_ops = {
+	.set = dyn_threaded_interval_set,
+	.get = dyn_threaded_interval_get,
+};
+
+module_param_cb(dyn_threaded_interval, &dyn_threaded_interval_ops,
+		&dyn_threaded_interval, 0644);
+MODULE_PARM_DESC(dyn_threaded_interval, "sample interval in ms, default 1000");
+
+static uint dyn_threaded_avg_runtime_keep_per = 90;
+module_param(dyn_threaded_avg_runtime_keep_per, uint, 0644);
+MODULE_PARM_DESC(dyn_threaded_avg_runtime_keep_per,
+		 "min percent of avg runtime kept in long running status, default 90");
 
 static int sched_netdev_num;
 static struct sched_netdev sched_netdev_table[SCHED_MAX_NETDEV_NUM];
@@ -274,6 +343,265 @@ static int init_netdevinfo(const char *netdev_str)
 	return err;
 }
 
+/* status of the last sample of the target tasks */
+static struct sched_task_runtime_avg_info snapshot;
+
+/* union of the CPU masks allowed to the target tasks */
+static struct cpumask target_cpumask;
+static u32 target_cpucnt;
+
+/* Take a sample of the scheduling statistics of all threads whose name
+ * matches @target_comm, and compute the union of their allowed CPU
+ * masks. The info must be zeroed by the caller.
+ */
+static int sched_task_runtime_avg_snapshot(const char *target_comm,
+					   struct sched_task_runtime_avg_info *infos)
+{
+	struct task_struct *g, *p;
+	char comm[TASK_COMM_LEN];
+	u64 nvcsw, nivcsw, switches;
+	struct cpumask masks;
+
+	if (!target_comm || !infos)
+		return -EINVAL;
+
+	cpumask_clear(&masks);
+	strscpy(infos->comm, target_comm, sizeof(infos->comm));
+
+	rcu_read_lock();
+	for_each_process(g) {
+		for_each_thread(g, p) {
+			get_task_comm(comm, p);
+			if (strcmp(comm, infos->comm))
+				continue;
+
+			cpumask_or(&masks, &masks, p->cpus_ptr);
+
+			nvcsw = (u64)READ_ONCE(p->nvcsw);
+			nivcsw = READ_ONCE(p->nivcsw);
+			switches = nvcsw + nivcsw;
+
+			infos->total_runtime_ns += READ_ONCE(p->se.sum_exec_runtime);
+			infos->total_switches += switches;
+			infos->total_nvcsw += nvcsw;
+			infos->total_nivcsw += nivcsw;
+			infos->thread_cnt++;
+		}
+	}
+	rcu_read_unlock();
+
+	cpumask_copy(&target_cpumask, &masks);
+	WRITE_ONCE(target_cpucnt, cpumask_weight(&target_cpumask));
+
+	return 0;
+}
+
+/* load of the target tasks over the CPUs allowed to them, in percent */
+static inline u64 cal_target_task_cpuload(struct sched_task_runtime_avg_info *infos)
+{
+	return 100 * (infos->total_runtime_ns - snapshot.total_runtime_ns) /
+	       DYN_THREAD_INTERVAL / READ_ONCE(target_cpucnt);
+}
+
+/* Compare the current sample with the previous one and judge the
+ * status of the target tasks. A sample whose counters moved backwards
+ * yields DATA_LOSS and is evaluated by the caller only.
+ */
+static void judge_target_task_status(struct sched_task_runtime_avg_info *info)
+{
+	u64 switches;
+
+	if (info->total_switches < snapshot.total_switches ||
+	    info->total_runtime_ns < snapshot.total_runtime_ns ||
+	    info->total_nvcsw < snapshot.total_nvcsw ||
+	    info->total_nivcsw < snapshot.total_nivcsw ||
+	    strcmp(info->comm, snapshot.comm)) {
+		info->status = DATA_LOSS;
+		return;
+	}
+
+	if (info->thread_cnt == 0) {
+		info->status = NO_TASK;
+		return;
+	}
+
+	/* a sample may contain no context switch, in which case the
+	 * runtime delta is the runtime of the whole sample; clamp the
+	 * switch count to avoid a division by zero
+	 */
+	switches = info->total_switches - snapshot.total_switches;
+	switches = max_t(u64, switches, 1);
+
+	info->avg_runtime = (info->total_runtime_ns - snapshot.total_runtime_ns) /
+			    switches;
+	info->nvcsw_per = (info->total_nvcsw - snapshot.total_nvcsw) * 100 /
+			  switches;
+	info->cpuload = cal_target_task_cpuload(info);
+
+	if (info->avg_runtime < dyn_threaded_not_running_limit) {
+		info->status = NOT_RUNNING;
+	} else if (info->avg_runtime >=
+		   snapshot.avg_runtime * dyn_threaded_avg_runtime_keep_per / ONE_HUNDRED &&
+		   snapshot.status == LONG_RUNNING_WITH_INTERRUPTS &&
+		   snapshot.last_status != LONG_RUNNING_WITH_INTERRUPTS &&
+		   snapshot.nvcsw_per <= dyn_threaded_nvcsw_per_limit) {
+		/* the status was reached in the previous sample: keep the
+		 * statistics that triggered it, because starting the
+		 * threaded napi may perturb the target tasks for a sample.
+		 * last_status marks the transition and keeps this hold-off
+		 * active while the status does not change.
+		 */
+		info->status = LONG_RUNNING_WITH_INTERRUPTS;
+		info->nvcsw_per = snapshot.nvcsw_per;
+		info->avg_runtime = snapshot.avg_runtime;
+	} else if (info->avg_runtime > dyn_threaded_avg_runtime_limit &&
+		   info->nvcsw_per <= dyn_threaded_nvcsw_per_limit) {
+		info->status = LONG_RUNNING_WITH_INTERRUPTS;
+	} else {
+		info->status = FRAGMENTATION;
+	}
+}
+
+static int dynthreaded;
+/* set once dynthread_init() has recorded the net devices */
+static bool dynthreaded_ready;
+
+/* serializes dynthreaded_set() and the worker start/stop */
+static DEFINE_MUTEX(dynthreaded_lock);
+
+static struct work_struct dyn_threaded_work;
+static struct hrtimer dyn_threaded_timer;
+
+/* periodic work, judge the load of the target tasks */
+static void dyn_threaded_handler(struct work_struct *work)
+{
+	struct sched_task_runtime_avg_info info = { };
+
+	/* take a sample and judge the current status */
+	sched_task_runtime_avg_snapshot(appname, &info);
+	judge_target_task_status(&info);
+
+	switch (info.status) {
+	case DATA_LOSS:
+		/* invalid sample, reuse the previous status and statistics */
+		info.status = snapshot.status;
+		info.nvcsw_per = snapshot.nvcsw_per;
+		info.avg_runtime = snapshot.avg_runtime;
+		break;
+	default:
+		break;
+	}
+
+	/* remember the status preceding the current one */
+	if (info.status == snapshot.status)
+		info.last_status = snapshot.last_status;
+	else
+		info.last_status = snapshot.status;
+
+	snapshot = info;
+}
+
+static enum hrtimer_restart dyn_threaded_hrtimer_callback(struct hrtimer *timer)
+{
+	if (!dynthreaded)
+		return HRTIMER_NORESTART;
+
+	schedule_work(&dyn_threaded_work);
+	hrtimer_forward_now(timer, ms_to_ktime(dyn_threaded_interval));
+
+	return HRTIMER_RESTART;
+}
+
+static void start_worker(void)
+{
+	ktime_t interval = ms_to_ktime(dyn_threaded_interval);
+
+	/* reset the state left by a previous run and take the first
+	 * sample as the baseline
+	 */
+	memset(&snapshot, 0, sizeof(snapshot));
+	sched_task_runtime_avg_snapshot(appname, &snapshot);
+
+	INIT_WORK(&dyn_threaded_work, dyn_threaded_handler);
+
+	hrtimer_init(&dyn_threaded_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	dyn_threaded_timer.function = dyn_threaded_hrtimer_callback;
+	hrtimer_start(&dyn_threaded_timer, interval, HRTIMER_MODE_REL);
+}
+
+static void stop_worker(void)
+{
+	hrtimer_cancel(&dyn_threaded_timer);
+	cancel_work_sync(&dyn_threaded_work);
+}
+
+/* enable/disable the scheduler through the dynthreaded module parameter */
+static int dynthreaded_set(const char *val, const struct kernel_param *kp)
+{
+	int new_val, ret;
+
+	ret = kstrtoint(val, 10, &new_val);
+	if (ret < 0)
+		return ret;
+
+	new_val = !!new_val;
+
+	/* keep the module alive while the worker is (re)armed; this
+	 * also rejects writes that arrive after mod->exit() has run
+	 */
+	if (!try_module_get(THIS_MODULE))
+		return -ENODEV;
+
+	mutex_lock(&dynthreaded_lock);
+	if (new_val == dynthreaded)
+		goto out;
+
+	dynthreaded = new_val;
+
+	/* module parameters are parsed before dynthread_init(), so the
+	 * worker can only be armed once the net devices are recorded;
+	 * dynthread_init() arms it when the load succeeds
+	 */
+	if (!dynthreaded_ready)
+		goto out;
+
+	if (new_val)
+		start_worker();
+	else
+		stop_worker();
+
+out:
+	mutex_unlock(&dynthreaded_lock);
+	module_put(THIS_MODULE);
+	return 0;
+}
+
+/* stop the worker on module exit, when no new reference can be
+ * taken anymore
+ */
+static void dynthreaded_stop(void)
+{
+	mutex_lock(&dynthreaded_lock);
+	if (dynthreaded) {
+		dynthreaded = 0;
+		stop_worker();
+	}
+	mutex_unlock(&dynthreaded_lock);
+}
+
+static int dynthreaded_get(char *buffer, const struct kernel_param *kp)
+{
+	return scnprintf(buffer, PAGE_SIZE, "%d\n", dynthreaded);
+}
+
+static const struct kernel_param_ops dynthreaded_ops = {
+	.set = dynthreaded_set,
+	.get = dynthreaded_get,
+};
+
+module_param_cb(dynthreaded, &dynthreaded_ops, NULL, 0644);
+MODULE_PARM_DESC(dynthreaded, "enable the scheduler, default 0");
+
 static int __init dynthread_init(void)
 {
 	int ret;
@@ -282,11 +610,23 @@ static int __init dynthread_init(void)
 	if (ret)
 		return ret;
 
+	/* the module parameters were parsed before this function ran;
+	 * arm the worker only now that the device information is ready
+	 */
+	mutex_lock(&dynthreaded_lock);
+	dynthreaded_ready = true;
+	if (dynthreaded)
+		start_worker();
+	mutex_unlock(&dynthreaded_lock);
+
 	return 0;
 }
 
 static void __exit dynthread_exit(void)
 {
+	/* make sure the worker is stopped before releasing the devices */
+	dynthreaded_stop();
+
 	deinit_netdevinfo();
 }
 
