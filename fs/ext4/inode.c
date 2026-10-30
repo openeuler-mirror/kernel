@@ -2321,7 +2321,7 @@ static int mpage_map_one_extent(handle_t *handle, struct mpage_da_data *mpd)
 			   EXT4_GET_BLOCKS_IO_SUBMIT;
 	dioread_nolock = ext4_should_dioread_nolock(inode);
 	if (dioread_nolock)
-		get_blocks_flags |= EXT4_GET_BLOCKS_IO_CREATE_EXT;
+		get_blocks_flags |= EXT4_GET_BLOCKS_UNWRIT_EXT;
 	if (map->m_flags & BIT(BH_Delay))
 		get_blocks_flags |= EXT4_GET_BLOCKS_DELALLOC_RESERVE;
 
@@ -3654,8 +3654,9 @@ retry:
 	/*
 	 * Either we allocate blocks and then don't get an unwritten extent, so
 	 * in that case we have reserved enough credits. Or, the blocks are
-	 * already allocated and unwritten. In that case, the extent conversion
-	 * fits into the credits as well.
+	 * already allocated and unwritten, and the unwritten extent is left
+	 * unsplit here; the split is deferred to I/O completion and handled
+	 * by the end_io callback via a separate handle.
 	 */
 	handle = ext4_journal_start(inode, EXT4_HT_MAP_BLOCKS, dio_credits);
 	if (IS_ERR(handle))
@@ -3677,7 +3678,7 @@ retry:
 	else if (((loff_t)map->m_lblk << blkbits) >= i_size_read(inode))
 		m_flags = EXT4_GET_BLOCKS_CREATE;
 	else if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
-		m_flags = EXT4_GET_BLOCKS_IO_CREATE_EXT;
+		m_flags = EXT4_GET_BLOCKS_CREATE_UNWRIT_EXT;
 
 	if (flags & IOMAP_ATOMIC)
 		ret = ext4_map_blocks_atomic_write(handle, inode, map, m_flags,
