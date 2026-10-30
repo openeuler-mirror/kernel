@@ -32,7 +32,7 @@ char rnpvf_driver_name[] = "rnpvf";
 static const char rnpvf_driver_string[] =
 	"Mucse(R) 10/40G Gigabit PCI Express Virtual Function Network Driver";
 
-#define DRV_VERSION "1.1.10"
+#define DRV_VERSION "1.2.0"
 const char rnpvf_driver_version[] = DRV_VERSION;
 static const char rnpvf_copyright[] =
 	"Copyright (c) 2022 - 2026 Mucse Corporation.";
@@ -114,7 +114,7 @@ static void rnpvf_set_ring_vector(struct rnpvf_adapter *adapter,
 	data = hw->vfnum << 24;
 	data |= (rnpvf_msix_vector << 8);
 	data |= (rnpvf_msix_vector << 0);
-	DPRINTK(IFUP, INFO,
+	dev_dbg(&adapter->pdev->dev,
 		"Set Ring-Vector queue:%d (reg:0x%x) <-- Rx-MSIX:%d, Tx-MSIX:%d\n",
 		rnpvf_queue, RING_VECTOR(rnpvf_queue), rnpvf_msix_vector,
 		rnpvf_msix_vector);
@@ -1293,10 +1293,6 @@ rnpvf_get_rx_buffer(struct rnpvf_ring *rx_ring, union rnp_rx_desc *rx_desc,
 	rx_buffer = &rx_ring->rx_buffer_info[rx_ring->next_to_clean];
 	prefetchw(rx_buffer->page);
 
-	rx_buf_dump("rx buf",
-		    page_address(rx_buffer->page) + rx_buffer->page_offset,
-		    rx_desc->wb.len);
-
 	/* we are reusing so sync this buffer for CPU use */
 	dma_sync_single_range_for_cpu(rx_ring->dev, rx_buffer->dma, 0,
 				      size, DMA_FROM_DEVICE);
@@ -1437,18 +1433,9 @@ static int rnpvf_clean_rx_irq(struct rnpvf_q_vector *q_vector,
 			cleaned_count = 0;
 		}
 		rx_desc = RNPVF_RX_DESC(rx_ring, rx_ring->next_to_clean);
-		rx_buf_dump("rx-desc:", rx_desc, sizeof(*rx_desc));
-		rx_debug_printk("  dd set: %s\n",
-				(rx_desc->wb.cmd & RNP_RXD_STAT_DD) ?
-					"Yes" :
-					"No");
 
 		if (!rnpvf_test_staterr(rx_desc, RNP_RXD_STAT_DD))
 			break;
-
-		rx_debug_printk("queue:%d  rx-desc:%d has-data len:%d next_to_clean %d\n",
-				rx_ring->rnp_queue_idx, rx_ring->next_to_clean,
-				rx_desc->wb.len, rx_ring->next_to_clean);
 
 		/* handle padding */
 		if ((adapter->priv_flags & RNPVF_PRIV_FLAG_FT_PADDING) &&
@@ -1668,10 +1655,6 @@ rnpvf_get_rx_buffer(struct rnpvf_ring *rx_ring, union rnp_rx_desc *rx_desc,
 	prefetchw(rx_buffer->page);
 	*skb = rx_buffer->skb;
 
-	rx_buf_dump("rx buf",
-		    page_address(rx_buffer->page) + rx_buffer->page_offset,
-		    rx_desc->wb.len);
-
 	/* we are reusing so sync this buffer for CPU use */
 	dma_sync_single_range_for_cpu(rx_ring->dev, rx_buffer->dma,
 				      rx_buffer->page_offset, size,
@@ -1786,18 +1769,8 @@ static int rnpvf_clean_rx_irq(struct rnpvf_q_vector *q_vector,
 		}
 		rx_desc = RNPVF_RX_DESC(rx_ring, rx_ring->next_to_clean);
 
-		rx_buf_dump("rx-desc:", rx_desc, sizeof(*rx_desc));
-		rx_debug_printk("  dd set: %s\n",
-				(rx_desc->wb.cmd & RNP_RXD_STAT_DD) ?
-					"Yes" :
-					"No");
-
 		if (!rnpvf_test_staterr(rx_desc, RNP_RXD_STAT_DD))
 			break;
-
-		rx_debug_printk("queue:%d  rx-desc:%d has-data len:%d next_to_clean %d\n",
-				rx_ring->rnpvf_queue_idx, rx_ring->next_to_clean,
-				rx_desc->wb.len, rx_ring->next_to_clean);
 
 		/* handle padding */
 		if ((adapter->priv_flags & RNPVF_PRIV_FLAG_FT_PADDING) &&
@@ -1989,8 +1962,6 @@ static irqreturn_t rnpvf_msix_other(int irq, void *data)
 	struct rnpvf_adapter *adapter = data;
 	struct rnpvf_hw *hw = &adapter->hw;
 
-	dbg("\n\n !!! %s irq-coming !!!\n", __func__);
-
 	/* link is down by pf */
 	if (test_bit(__RNPVF_MBX_POLLING, &adapter->state))
 		goto NO_WORK_DONE;
@@ -2030,8 +2001,6 @@ static irqreturn_t rnpvf_intr(int irq, void *data)
 
 	if (q_vector->rx.ring || q_vector->tx.ring)
 		napi_schedule_irqoff(&q_vector->napi);
-
-	dbg("\n\n !!! %s irq-coming !!!\n", __func__);
 
 	/* link is down by pf */
 	if (test_bit(__RNPVF_MBX_POLLING, &adapter->state))
@@ -2236,7 +2205,7 @@ static int rnpvf_request_msix_irqs(struct rnpvf_adapter *adapter)
 	int i = 0;
 	int m;
 
-	DPRINTK(IFUP, INFO, "num_q_vectors:%d\n", adapter->num_q_vectors);
+	netdev_dbg(netdev, "num_q_vectors:%d\n", adapter->num_q_vectors);
 
 	for (i = 0; i < adapter->num_q_vectors; i++) {
 		struct rnpvf_q_vector *q_vector = adapter->q_vector[i];
@@ -2257,8 +2226,9 @@ static int rnpvf_request_msix_irqs(struct rnpvf_adapter *adapter)
 		err = request_irq(entry->vector, &rnpvf_msix_clean_rings,
 				  0, q_vector->name, q_vector);
 		if (err) {
-			rnpvf_err("%s:request_irq failed for MSIX interrupt:%d Error: %d\n",
-				  netdev->name, entry->vector, err);
+			netdev_err(adapter->netdev,
+				   "request_irq failed for MSIX interrupt:%d Error: %d\n",
+				   entry->vector, err);
 			goto free_queue_irqs;
 		}
 		irq_set_affinity_hint(entry->vector,
@@ -2293,7 +2263,7 @@ static int rnpvf_free_msix_irqs(struct rnpvf_adapter *adapter)
 
 		/* clear the affinity_mask in the IRQ descriptor */
 		irq_set_affinity_hint(entry->vector, NULL);
-		DPRINTK(IFDOWN, INFO, "free irq %s\n", q_vector->name);
+		dev_dbg(&adapter->pdev->dev, "free irq %s\n", q_vector->name);
 		free_irq(entry->vector, q_vector);
 	}
 
@@ -2588,7 +2558,8 @@ static int rnpvf_request_irq(struct rnpvf_adapter *adapter)
 				  adapter);
 	}
 	if (err)
-		rnpvf_err("request_irq failed, Error %d\n", err);
+		dev_err(&adapter->pdev->dev,
+			"request_irq failed, Error %d\n", err);
 
 	return err;
 }
@@ -2671,8 +2642,8 @@ static void rnpvf_configure_tx_ring(struct rnpvf_adapter *adapter,
 			status = ring_rd32(ring, RNP_DMA_TX_READY);
 			usleep_range(100, 200);
 			timeout++;
-			rnpvf_dbg("wait %d tx ready to 1\n",
-				  ring->rnpvf_queue_idx);
+			pr_debug("wait %d tx ready to 1\n",
+				 ring->rnpvf_queue_idx);
 		} while ((status != 1) && (timeout < 100));
 
 		if (timeout >= 100)
@@ -3417,7 +3388,7 @@ static int rnpvf_sw_init(struct rnpvf_adapter *adapter)
 	adapter->rx_ring_item_count = hw->rx_items_count;
 	adapter->dma_channels =
 		min_t(int, hw->mac.max_tx_queues, hw->mac.max_rx_queues);
-	DPRINTK(PROBE, INFO, "tx parameters %d, rx parameters %d\n",
+	dev_dbg(&pdev->dev, "tx parameters %d, rx parameters %d\n",
 		adapter->tx_ring_item_count, adapter->rx_ring_item_count);
 
 	/* set default tx/rx soft count */
@@ -3461,7 +3432,7 @@ static int rnpvf_acquire_msix_vectors(struct rnpvf_adapter *adapter,
 		vectors = err;
 		err = 0;
 	}
-	DPRINTK(PROBE, INFO, "err:%d, vectors:%d\n", err, vectors);
+	dev_dbg(&adapter->pdev->dev, "err:%d, vectors:%d\n", err, vectors);
 	if (err < 0) {
 		dev_err(&adapter->pdev->dev,
 			"Unable to allocate MSI-X interrupts\n");
@@ -3539,7 +3510,7 @@ static int rnpvf_set_interrupt_capability(struct rnpvf_adapter *adapter)
 			adapter->vector_off = NON_Q_VECTORS;
 			adapter->num_q_vectors =
 				adapter->num_msix_vectors - NON_Q_VECTORS;
-			DPRINTK(PROBE, INFO,
+			dev_dbg(&adapter->pdev->dev,
 				"adapter%d alloc vectors: cnt:%d [%d~%d] num_msix_vectors:%d\n",
 				adapter->bd_number, v_budget,
 				adapter->vector_off,
@@ -3672,13 +3643,14 @@ static int rnpvf_alloc_q_vector(struct rnpvf_adapter *adapter,
 	struct rnpvf_q_vector *q_vector;
 	struct rnpvf_ring *ring;
 	struct rnpvf_hw *hw = &adapter->hw;
+	struct device *dev = &adapter->pdev->dev;
 	int node = NUMA_NO_NODE;
 	int cpu = -1;
 	int ring_count, size;
 	int txr_count, rxr_count, idx;
 	int rxr_idx = rnpvf_queue, txr_idx = rnpvf_queue;
 
-	DPRINTK(PROBE, INFO,
+	dev_dbg(dev,
 		"eth_queue_idx:%d rnpvf_vector:%d(off:%d) ring:%d "
 		"ring_cnt:%d, step:%d\n",
 		eth_queue_idx, rnpvf_vector, adapter->vector_off,
@@ -3749,13 +3721,11 @@ static int rnpvf_alloc_q_vector(struct rnpvf_adapter *adapter,
 
 		/* assign ring to adapter */
 		adapter->tx_ring[ring->queue_index] = ring;
-		dbg("adapter->tx_ringp[%d] <= %p\n", ring->queue_index,
-		    ring);
 
 		/* update count and index */
 		txr_idx += step;
 
-		DPRINTK(PROBE, INFO,
+		dev_dbg(dev,
 			"vector[%d] <--RNP TxRing:%d, eth_queue:%d\n",
 			rnpvf_vector, ring->rnpvf_queue_idx,
 			ring->queue_index);
@@ -3793,7 +3763,7 @@ static int rnpvf_alloc_q_vector(struct rnpvf_adapter *adapter,
 
 		/* assign ring to adapter */
 		adapter->rx_ring[ring->queue_index] = ring;
-		DPRINTK(PROBE, INFO,
+		dev_dbg(dev,
 			"vector[%d] <--RNP RxRing:%d, eth_queue:%d\n",
 			rnpvf_vector, ring->rnpvf_queue_idx,
 			ring->queue_index);
@@ -3825,8 +3795,6 @@ static void rnpvf_free_q_vector(struct rnpvf_adapter *adapter, int v_idx)
 {
 	struct rnpvf_q_vector *q_vector;
 	struct rnpvf_ring *ring;
-
-	dbg("v_idx:%d\n", v_idx);
 
 	q_vector = adapter->q_vector[v_idx];
 
@@ -4334,7 +4302,7 @@ static void rnpvf_free_all_tx_resources(struct rnpvf_adapter *adapter)
 /**
  * rnpvf_setup_tx_resources - allocate Tx resources (Descriptors)
  * @adapter: board private structure
- * @tx_ring: tx descriptor ring (for a specific queue) to setup
+ * @tx_ring:    tx descriptor ring (for a specific queue) to setup
  *
  * Return 0 on success, negative on failure
  **/
@@ -4351,7 +4319,8 @@ int rnpvf_setup_tx_resources(struct rnpvf_adapter *adapter,
 	if (tx_ring->q_vector)
 		numa_node = tx_ring->q_vector->numa_node;
 
-	dbg("%s size:%d count:%d\n", __func__, size, tx_ring->count);
+	netdev_dbg(adapter->netdev, "%s size:%d count:%d\n",
+		   __func__, size, tx_ring->count);
 	tx_ring->tx_buffer_info = vzalloc_node(size, numa_node);
 	if (!tx_ring->tx_buffer_info)
 		tx_ring->tx_buffer_info = vzalloc(size);
@@ -4376,18 +4345,18 @@ int rnpvf_setup_tx_resources(struct rnpvf_adapter *adapter,
 	tx_ring->next_to_use = 0;
 	tx_ring->next_to_clean = 0;
 
-	DPRINTK(IFUP, INFO,
-		"%d TxRing:%d, vector:%d ItemCounts:%d desc:%p(0x%pad) node:%d\n",
-		tx_ring->queue_index, tx_ring->rnpvf_queue_idx,
-		tx_ring->q_vector->v_idx, tx_ring->count, tx_ring->desc,
-		&tx_ring->dma, numa_node);
+	netdev_dbg(adapter->netdev,
+		   "%d TxRing:%d, vector:%d ItemCounts:%d desc:%p(0x%pad) node:%d\n",
+		   tx_ring->queue_index, tx_ring->rnpvf_queue_idx,
+		   tx_ring->q_vector->v_idx, tx_ring->count, tx_ring->desc,
+		   &tx_ring->dma, numa_node);
 	return 0;
 
 err:
-	rnpvf_err("%s [SetupTxResources] ERROR: #%d TxRing:%d, vector:%d ItemCounts:%d\n",
-		  tx_ring->netdev->name, tx_ring->queue_index,
-		  tx_ring->rnpvf_queue_idx, tx_ring->q_vector->v_idx,
-		  tx_ring->count);
+	netdev_err(adapter->netdev,
+		   "[SetupTxResources] ERROR: #%d TxRing:%d, vector:%d ItemCounts:%d\n",
+		   tx_ring->queue_index, tx_ring->rnpvf_queue_idx,
+		   tx_ring->q_vector->v_idx, tx_ring->count);
 	vfree(tx_ring->tx_buffer_info);
 err_buffer:
 	tx_ring->tx_buffer_info = NULL;
@@ -4410,8 +4379,9 @@ static int rnpvf_setup_all_tx_resources(struct rnpvf_adapter *adapter)
 {
 	int i, err = 0;
 
-	dbg("adapter->num_tx_queues:%d, adapter->tx_ring[0]:%p\n",
-	    adapter->num_tx_queues, adapter->tx_ring[0]);
+	netdev_dbg(adapter->netdev,
+		   "adapter->num_tx_queues:%d, adapter->tx_ring[0]:%p\n",
+		   adapter->num_tx_queues, adapter->tx_ring[0]);
 
 	for (i = 0; i < adapter->num_tx_queues; i++) {
 		BUG_ON(!adapter->tx_ring[i]);
@@ -4436,7 +4406,7 @@ err_setup_tx:
 /**
  * rnpvf_setup_rx_resources - allocate Rx resources (Descriptors)
  * @adapter: board private structure
- * @rx_ring: rx descriptor ring (for a specific queue) to setup
+ * @rx_ring:    rx descriptor ring (for a specific queue) to setup
  *
  * Returns 0 on success, negative on failure
  **/
@@ -4480,7 +4450,7 @@ int rnpvf_setup_rx_resources(struct rnpvf_adapter *adapter,
 	rx_ring->next_to_clean = 0;
 	rx_ring->next_to_use = 0;
 
-	DPRINTK(IFUP, INFO,
+	dev_dbg(dev,
 		"%d RxRing:%d, vector:%d ItemCounts:%d desc:%p(0x%pad) node:%d\n",
 		rx_ring->queue_index, rx_ring->rnpvf_queue_idx,
 		rx_ring->q_vector->v_idx, rx_ring->count, rx_ring->desc,
@@ -4488,10 +4458,11 @@ int rnpvf_setup_rx_resources(struct rnpvf_adapter *adapter,
 
 	return 0;
 alloc_failed:
-	rnpvf_err("%s [SetupTxResources] ERROR: #%d RxRing:%d, vector:%d ItemCounts:%d\n",
-		  rx_ring->netdev->name, rx_ring->queue_index,
-		  rx_ring->rnpvf_queue_idx, rx_ring->q_vector->v_idx,
-		  rx_ring->count);
+	dev_err(dev,
+		"%s [SetupTxResources] ERROR: #%d RxRing:%d, vector:%d ItemCounts:%d\n",
+		rx_ring->netdev->name, rx_ring->queue_index,
+		rx_ring->rnpvf_queue_idx, rx_ring->q_vector->v_idx,
+		rx_ring->count);
 	vfree(rx_ring->tx_buffer_info);
 alloc_buffer:
 	rx_ring->tx_buffer_info = NULL;
@@ -4625,7 +4596,7 @@ int rnpvf_open(struct net_device *netdev)
 	struct rnpvf_hw *hw = &adapter->hw;
 	int err;
 
-	DPRINTK(IFUP, INFO, "ifup\n");
+	netdev_dbg(netdev, "ifup\n");
 
 	/* A previous failure to open the device because of a lack of
 	 * available MSIX vector resources may have reset the number
@@ -4716,7 +4687,7 @@ int rnpvf_close(struct net_device *netdev)
 {
 	struct rnpvf_adapter *adapter = netdev_priv(netdev);
 
-	DPRINTK(IFDOWN, INFO, "ifdown\n");
+	netdev_dbg(netdev, "ifdown\n");
 
 	rnpvf_down(adapter);
 	rnpvf_free_irq(adapter);
@@ -4763,8 +4734,7 @@ static void rnpvf_tx_ctxtdesc(struct rnpvf_ring *tx_ring,
 	context_desc->inner_vlan_tunnel_len = cpu_to_le32(inner_vlan_tunnel_len);
 	context_desc->resv_cmd = cpu_to_le32(type_tucmd);
 	context_desc->res = 0;
-	buf_dump_line("ctx  ", __LINE__, context_desc,
-		      sizeof(*context_desc));
+
 }
 
 static int rnpvf_tso(struct rnpvf_ring *tx_ring,
@@ -4830,7 +4800,6 @@ static int rnpvf_tso(struct rnpvf_ring *tx_ring,
 		} else {
 			first->cmd_flags |= RNP_TXD_TUNNEL_NVGRE;
 		}
-		dbg("set outer l4.udp to 0\n");
 
 		/* reset pointers to inner headers */
 		ip.hdr = skb_inner_network_header(skb);
@@ -4853,29 +4822,21 @@ static int rnpvf_tso(struct rnpvf_ring *tx_ring,
 	l4_offset = l4.hdr - skb->data;
 
 	paylen = skb->len - l4_offset;
-	dbg("before l4 checksum is %x\n", l4.tcp->check);
 
 	if (skb->csum_offset == offsetof(struct tcphdr, check)) {
-		dbg("tcp before l4 checksum is %x\n", l4.tcp->check);
 		first->cmd_flags |= RNP_TXD_L4_TYPE_TCP;
 		/* compute length of segmentation header */
 		*hdr_len = (l4.tcp->doff * 4) + l4_offset;
 		csum_replace_by_diff(&l4.tcp->check,
 				     (__force __wsum)htonl(paylen));
-		dbg("tcp l4 checksum is %x\n", l4.tcp->check);
 		l4.tcp->psh = 0;
 	} else {
-		dbg("paylen is %x\n", paylen);
 		first->cmd_flags |= RNP_TXD_L4_TYPE_UDP;
 		/* compute length of segmentation header */
-		dbg("udp before l4 checksum is %x\n", l4.udp->check);
 		*hdr_len = sizeof(*l4.udp) + l4_offset;
 		csum_replace_by_diff(&l4.udp->check,
 				     (__force __wsum)htonl(paylen));
-		dbg("udp l4 checksum is %x\n", l4.udp->check);
 	}
-
-	dbg("l4 checksum is %x\n", l4.tcp->check);
 
 	first->mac_ip_len = l4.hdr - ip.hdr;
 	first->mac_ip_len |= (ip.hdr - inner_mac) << 9;
@@ -4984,12 +4945,9 @@ static int rnpvf_tx_csum(struct rnpvf_ring *tx_ring,
 		inner_mac = skb_inner_mac_header(skb);
 		first->tunnel_hdr_len = inner_mac - skb->data;
 		first->ctx_flag = true;
-		dbg("tunnel length is %d\n", first->tunnel_hdr_len);
 	}
 
 	mac_len = (ip.hdr - inner_mac);
-	dbg("inner checksum needed %d", skb_checksum_start_offset(skb));
-	dbg("skb->encapsulation %d\n", skb->encapsulation);
 	ip_len = (l4.hdr - ip.hdr);
 	if (ip.v4->version == 4) {
 		l4_proto = ip.v4->protocol;
@@ -5025,8 +4983,6 @@ static int rnpvf_tx_csum(struct rnpvf_ring *tx_ring,
 		first->ctx_flag = false;
 	}
 
-	dbg("mac length is %d\n", mac_len);
-	dbg("ip length is %d\n", ip_len);
 	first->mac_ip_len = (mac_len << 9) | ip_len;
 
 	return 0;
@@ -5074,8 +5030,6 @@ static void rnpvf_tx_map(struct rnpvf_ring *tx_ring,
 			tx_desc->cmd = cpu_to_le16(cmd);
 			tx_desc->blen =
 				cpu_to_le16(RNPVF_MAX_DATA_PER_TXD);
-			buf_dump_line("tx0  ", __LINE__, tx_desc,
-				      sizeof(*tx_desc));
 			i++;
 			tx_desc++;
 			if (i == tx_ring->count) {
@@ -5089,14 +5043,10 @@ static void rnpvf_tx_map(struct rnpvf_ring *tx_ring,
 			tx_desc->pkt_addr = cpu_to_le64(dma | fun_id);
 		}
 
-		buf_dump_line("tx1  ", __LINE__, tx_desc,
-			      sizeof(*tx_desc));
 		if (likely(!data_len))
 			break;
 		tx_desc->cmd = cpu_to_le16(cmd);
 		tx_desc->blen = cpu_to_le16(size);
-		buf_dump_line("tx2  ", __LINE__, tx_desc,
-			      sizeof(*tx_desc));
 
 		i++;
 		tx_desc++;
@@ -5120,7 +5070,6 @@ static void rnpvf_tx_map(struct rnpvf_ring *tx_ring,
 	/* write last descriptor with RS and EOP bits */
 	tx_desc->cmd = cpu_to_le16(cmd | RNP_TXD_CMD_EOP | RNP_TXD_CMD_RS);
 	tx_desc->blen = cpu_to_le16(size);
-	buf_dump_line("tx3  ", __LINE__, tx_desc, sizeof(*tx_desc));
 	netdev_tx_sent_queue(txring_txq(tx_ring), first->bytecount);
 
 	/* set the timestamp */
@@ -5138,7 +5087,6 @@ static void rnpvf_tx_map(struct rnpvf_ring *tx_ring,
 	/* set next_to_watch value indicating a packet is present */
 	first->next_to_watch = tx_desc;
 
-	buf_dump_line("tx4  ", __LINE__, tx_desc, sizeof(*tx_desc));
 	i++;
 	if (i == tx_ring->count)
 		i = 0;
@@ -5170,7 +5118,6 @@ static int __rnpvf_maybe_stop_tx(struct rnpvf_ring *tx_ring, int size)
 {
 	struct rnpvf_adapter *adapter = netdev_priv(tx_ring->netdev);
 
-	dbg("stop subqueue\n");
 	netif_stop_subqueue(tx_ring->netdev, tx_ring->queue_index);
 	/* Herbert's original patch had:
 	 *  smp_mb__after_netif_stop_queue();
@@ -5277,13 +5224,6 @@ static netdev_tx_t rnpvf_xmit_frame_ring(struct sk_buff *skb,
 	u8 hdr_len = 0;
 	int ignore_vlan = 0;
 
-	dbg("=== begin ====\n");
-
-	rnpvf_skb_dump(skb, true);
-
-	dbg("skb:%p, skb->len:%d headlen:%d, data_len:%d, next_to_use:%d count:%d\n",
-	    skb, skb->len, skb_headlen(skb), skb->data_len,
-	    tx_ring->next_to_use, tx_ring->count);
 	/*
 	 * need: 1 descriptor per page * PAGE_SIZE/RNPVF_MAX_DATA_PER_TXD,
 	 *       + 1 desc for skb_headlen/RNPVF_MAX_DATA_PER_TXD,
@@ -5295,15 +5235,12 @@ static netdev_tx_t rnpvf_xmit_frame_ring(struct sk_buff *skb,
 		skb_frag_t *frag_temp = &skb_shinfo(skb)->frags[f];
 
 		count += TXD_USE_COUNT(skb_frag_size(frag_temp));
-		dbg("#%d frag: size:%d\n", f,
-		    skb_shinfo(skb)->frags[f].size);
 	}
 
 	if (rnpvf_maybe_stop_tx(tx_ring, count + 3)) {
 		tx_ring->tx_stats.tx_busy++;
 		return NETDEV_TX_BUSY;
 	}
-	dbg("xx %p\n", tx_ring->tx_buffer_info);
 
 	/* patch force send src mac to this netdev->mac */
 	if (!(tx_ring->ring_flags & RNPVF_RING_VEB_MULTI_FIX))
@@ -5382,7 +5319,6 @@ static netdev_tx_t rnpvf_xmit_frame_ring(struct sk_buff *skb,
 
 	rnpvf_maybe_stop_tx(tx_ring, DESC_NEEDED);
 
-	dbg("=== end ====\n\n\n\n");
 	return NETDEV_TX_OK;
 
 out_drop:
@@ -5459,7 +5395,6 @@ static int rnpvf_xmit_frame(struct sk_buff *skb, struct net_device *netdev)
 	}
 
 	tx_ring = adapter->tx_ring[skb->queue_mapping];
-	dbg("xmi:queue_mapping:%d ring:%p\n", skb->queue_mapping, tx_ring);
 	return rnpvf_xmit_frame_ring(skb, adapter, tx_ring, tx_padding);
 }
 
@@ -6039,7 +5974,6 @@ static int rnpvf_add_adpater(struct pci_dev *pdev,
 	}
 	err = register_netdev(netdev);
 	if (err) {
-		rnpvf_err("register_netdev failed!\n");
 		dev_err(&pdev->dev,
 			"%s %s: vfnum:0x%x. register_netdev failed!\n",
 			adapter->name, pci_name(pdev), hw->vfnum);
@@ -6070,11 +6004,12 @@ err_ioremap:
 static int rnpvf_rm_adpater(struct rnpvf_adapter *adapter)
 {
 	struct net_device *netdev;
+	struct device *dev = &adapter->pdev->dev;
 
 	if (!adapter)
 		return -EINVAL;
 
-	rnpvf_info("= remove adapter:%s =\n", adapter->name);
+	dev_dbg(dev, "= remove adapter:%s =\n", adapter->name);
 	netdev = adapter->netdev;
 
 	if (netdev) {
@@ -6102,7 +6037,7 @@ static int rnpvf_rm_adpater(struct rnpvf_adapter *adapter)
 
 	free_netdev(netdev);
 
-	rnpvf_info("remove %s  complete\n", adapter->name);
+	dev_dbg(dev, "remove %s  complete\n", adapter->name);
 
 	return 0;
 }
