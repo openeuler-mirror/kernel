@@ -132,6 +132,10 @@ enum nse_hw_platform {
 enum nse_dynamic_itr { ITR_STATIC = 0, ITR_DYNAMIC = 1 };
 
 #define ITR_IS_DYNAMIC(qvec) ((qvec)->itr_mode == ITR_DYNAMIC)
+#define NSE_ITR_GRAN_S		1	/* ITR granularity is always 2us */
+#define NSE_ITR_GRAN_US		BIT(NSE_ITR_GRAN_S)
+#define NSE_ITR_MASK		0x1FFE	/* ITR register value alignment mask */
+#define ITR_REG_ALIGN(setting)	((setting) & NSE_ITR_MASK)
 
 /* MAX_MSIX_Q_VECTORS of these are allocated,
  * but we only use one per queue-specific vector.
@@ -154,6 +158,9 @@ struct nsevf_q_vector {
 	cpumask_t affinity_mask;
 	struct irq_affinity_notify affinity_notify;
 
+	int best_local_cpu_id;
+	cpumask_t best_affinity_mask;	/* affinity_mask would change, define a non-change one */
+
 	u8 wb_on_itr : 1; /* if true, WB on ITR is enabled */
 	/* in usecs, need to use nse_intrl_to_usecs_reg() before writing this
 	 * value to the device
@@ -174,7 +181,7 @@ struct nsevf_q_vector {
 		u16 itr_settings;
 	};
 
-	u16 dyn_itr_val;
+	u32 dyn_itr_val;
 	bool dyn_itr_refresh;
 
 	u16 total_events; /* net_dim(): number of interrupts processed */
@@ -209,25 +216,6 @@ struct nsevf_q_vector {
 		unsigned long napi_poll_last_ret_event;
 	} dbg_stats;
 };
-
-/**
- * nsevf_set_wb_on_itr - trigger force write-back by setting WB_ON_ITR bit
- * @hw: ptr to HW
- * @qv: pointer to vector
- *
- * This function is used to force write-backs by setting WB_ON_ITR bit
- * in DYN_CTLN register. WB_ON_ITR and INTENA are mutually exclusive bits.
- * Seting WB_ON_ITR bits means TX and RX descriptors are written back based
- * on ITR expiration irrespective of INTENA setting
- */
-static inline void nsevf_set_wb_on_itr(struct nsevf_hw *hw,
-				       struct nsevf_q_vector *qv)
-{
-	wr32(hw, INT_DYN_CTLN(hw, qv->reg_idx),
-	     (NSEVF_REG_INT_DYN_CTLN_WB_ON_ITR_M |
-	      NSEVF_REG_INT_DYN_CTLN_INTMSK_VLD_M |
-	      NSEVF_REG_INT_DYN_CTLN_INTMSK_M));
-}
 
 /* Helper macros to switch between ints/sec and what the register uses.
  * And yes, it's the same math going both ways.  The lowest value
@@ -883,7 +871,9 @@ static inline void nsevf_debugfs_exit(void)
 #define NSE_MAX_VF_CNT 256
 
 #define NSE_ITR_INTERVAL_MIN_USEC 2
+#define NSE_ITR_INTERVAL_MIN_IN_2_USEC 1
 #define NSE_ITR_INTERVAL_MAX_USEC 8190
+#define NSE_ITR_INTERVAL_MAX_IN_2_USEC 4095
 #define NSE_ITR_INTERVAL_8K 124
 #define NSE_ITR_INTERVAL_20K 50
 #define NSE_ITR_INTERVAL_DEFAULT NSE_ITR_INTERVAL_20K
@@ -930,7 +920,6 @@ nse_msgbox_v2p_send_msg_to_pf(struct nsevf_hw *hw, enum virtchnl_ops v_opcode,
 void dump_vf_res(struct nsevf_adapter *adapter,
 		 struct virtchnl_vf_resource *vf_res);
 
-extern unsigned int nse_aq_cmd_timeout;
 extern unsigned int nse_aq_cmd_check_dd;
 extern unsigned int nse_aq_cmd_wait_method;
 

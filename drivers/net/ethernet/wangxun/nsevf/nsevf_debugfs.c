@@ -811,6 +811,9 @@ static ssize_t nsevf_debugfs_mq_stats_rfunc(struct file *filp, char __user *to,
 	if (!buf)
 		return -ENOMEM;
 
+	desc += sprintf(buf + desc, "sq_total_wait_cnt: %ld\n",
+			(unsigned long)hw->controlq_stats.sq_total_wait_cnt);
+
 	desc += sprintf(buf + desc, "mq_cmd_shutdown_cnt: %ld\n",
 			(unsigned long)hw->controlq_stats.mq_cmd_shutdown_cnt);
 
@@ -1750,6 +1753,7 @@ static void nsevf_dump_qvec(struct nsevf_q_vector *qvec)
 	dev_info(dev, "itr_settings: 0x%X\n", qvec->itr_settings);
 	dev_info(dev, "\t itr_setting: 0x%X\n", qvec->itr_setting);
 	dev_info(dev, "\t itr_mode: 0x%X\n", qvec->itr_mode);
+	dev_info(dev, "best_local_cpu_id: %d\n", qvec->best_local_cpu_id);
 
 	dev_info(dev, "rx_rings:\n");
 	ring = qvec->rx.ring;

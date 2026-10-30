@@ -229,6 +229,8 @@ struct nsevf_hw {
 		u64 sq_fail_ns;
 		u64 sq_fail_timeout_ns;
 
+		u64 sq_total_wait_cnt;
+
 		u64 mq_cmd_shutdown_time;
 		u64 mq_cmd_shutdown_cnt;
 
@@ -795,6 +797,12 @@ struct nsevf_vsi_sw_stats {
 	u64 rx_page_failed;
 	u64 page_reuse_count;
 };
+
+struct nse_dim {
+	u32 itr;
+};
+
+#define NSE_DIM_DEFAULT_PROFILE_IX 0
 
 #define NSEVF_SR_PBA_FLAGS 0x15
 #define NSEVF_SR_PBA_BLOCK_PTR 0x16

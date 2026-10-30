@@ -49,6 +49,13 @@ enum iidc_rdma_gen { /* map to nse_mac_type */
 		     IIDC_RDMA_GEN_MOONSTONE,
 };
 
+enum iidc_rdma_nic_port_num {
+	IIDC_RDMA_NIC_PORT_NUM_UNKNOWN = 0,
+	IIDC_RDMA_NIC_PORT_NUM_1		= 1,
+	IIDC_RDMA_NIC_PORT_NUM_2		= 2,
+	IIDC_RDMA_NIC_PORT_NUM_4		= 3,
+};
+
 struct iidc_rdma_caps {
 	u8 gen; /* Hardware generation */
 	u8 protocols; /* bitmap of supported protocols */
