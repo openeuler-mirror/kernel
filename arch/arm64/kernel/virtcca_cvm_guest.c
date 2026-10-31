@@ -332,8 +332,6 @@ static int migvm_queue_dev_mmap(struct mig_queue_device *dev, struct vm_area_str
 		size, (unsigned long)ALLOC_SIZE);
 		return -EINVAL;
 	}
-	if (remap_pfn_range(vma, vma->vm_start, pfn, size, vma->vm_page_prot))
-		return -EAGAIN;
 
 	switch (vma->vm_pgoff) {
 	case 0:
