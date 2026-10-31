@@ -1256,21 +1256,24 @@ struct bpf_tramp_image {
 	void *image;
 	struct bpf_ksym ksym;
 	struct percpu_ref pcref;
-	bool call_orig;
+	KABI_REPLACE2(void *ip_after_call,
+				int nr_skips,
+				bool call_orig)
 	/* entry in tr->images, the image holds a reference on tr */
-	struct bpf_trampoline *tr;
-	struct list_head list;
-	int nr_skips;
-	struct bpf_tramp_skip *skips;
+	KABI_REPLACE(void *ip_epilogue, struct bpf_trampoline *tr)
 	union {
 		struct rcu_head rcu;
 		struct work_struct work;
 	};
 
 	KABI_USE(1, int size)
+#ifndef __GENKSYMS__
+	struct list_head list;
+#else
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
-	KABI_RESERVE(4)
+#endif
+	KABI_USE(4, struct bpf_tramp_skip *skips)
 };
 
 static inline void bpf_tramp_image_add_skip(struct bpf_tramp_image *im, struct bpf_prog *prog,
@@ -1312,12 +1315,15 @@ struct bpf_trampoline {
 	int progs_cnt[BPF_TRAMP_MAX];
 	/* Executable image of trampoline */
 	struct bpf_tramp_image *cur_image;
-	/* Images not freed yet, cur_image and older ones still in use */
-	struct list_head images;
 	struct module *mod;
 
+#ifndef __GENKSYMS__
+	/* Images not freed yet, cur_image and older ones still in use */
+	struct list_head images;
+#else
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
+#endif
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 };
