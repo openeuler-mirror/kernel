@@ -94,7 +94,8 @@ static int unic_set_hw_prio_tc(struct unic_dev *unic_dev, u8 *prio_vl)
 			     sizeof(req), &req);
 	ret = ubase_cmd_send_in(adev, &in);
 	if (ret)
-		unic_err(unic_dev, "failed to set prio tc. ret = %d.\n", ret);
+		dev_err(adev->dev.parent,
+			"failed to set prio tc. ret = %d.\n", ret);
 
 	return ret;
 }

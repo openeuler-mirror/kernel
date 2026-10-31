@@ -535,6 +535,7 @@ static u32 unic_get_max_speed(u32 cur_speed, u32 speed_ability)
 static void unic_parse_mac_cfg(struct unic_dev *unic_dev,
 			       const struct unic_res_cmd_resp *resp)
 {
+	struct auxiliary_device *adev = unic_dev->comdev.adev;
 	struct unic_mac *mac = &unic_dev->hw.mac;
 
 	mac->media_type = resp->media_type;
@@ -546,9 +547,10 @@ static void unic_parse_mac_cfg(struct unic_dev *unic_dev,
 
 	mac->max_speed = unic_get_max_speed(mac->speed, mac->speed_ability);
 
-	unic_dbg(unic_dev,
-		 "default speed = %u, lanes = %u, speed_ability = 0x%x\n",
-		 mac->speed, mac->lanes, mac->speed_ability);
+	if (unic_dbg_log())
+		dev_info(adev->dev.parent,
+			 "default speed = %u, lanes = %u, speed_ability = 0x%x\n",
+			 mac->speed, mac->lanes, mac->speed_ability);
 }
 
 static void unic_parse_dev_caps(struct unic_dev *unic_dev,
@@ -556,13 +558,14 @@ static void unic_parse_dev_caps(struct unic_dev *unic_dev,
 {
 #define KB 1024U
 
+	struct auxiliary_device *adev = unic_dev->comdev.adev;
 	struct unic_caps *caps = &unic_dev->caps;
 	int i;
 
 	for (i = 0; i < UNIC_CAP_LEN; i++) {
 		unic_dev->cap_bits[i] = le32_to_cpu(resp->cap_bits[i]);
-		unic_info(unic_dev, "unic_dev cap_bits[%d] = 0x%x\n", i,
-			  unic_dev->cap_bits[i]);
+		dev_info(adev->dev.parent, "unic_dev cap_bits[%d] = 0x%x\n", i,
+			 unic_dev->cap_bits[i]);
 	}
 
 	caps->rx_buff_len = le16_to_cpu(resp->rx_buff_len);

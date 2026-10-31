@@ -70,33 +70,65 @@ static int unic_common_query_addr_list(struct unic_dev *unic_dev, u32 total_size
 	return ret == -EPERM ? -EOPNOTSUPP : ret;
 }
 
+static int unic_common_clone_addr_list(struct list_head *list, spinlock_t *lock,
+				       struct list_head *tmp_list)
+{
+	struct unic_comm_addr_node *addr_node, *tmp;
+	int ret = 0;
+
+	spin_lock_bh(lock);
+	list_for_each_entry(addr_node, list, node) {
+		tmp = kzalloc(sizeof(*tmp), GFP_ATOMIC);
+		if (!tmp) {
+			ret = -ENOMEM;
+			break;
+		}
+
+		*tmp = *addr_node;
+		list_add_tail(&tmp->node, tmp_list);
+	}
+	spin_unlock_bh(lock);
+
+	return ret;
+}
+
 static int unic_dbg_dump_mac_tbl_list(struct seq_file *s, void *data,
 				      bool is_unicast)
 {
 	struct unic_dev *unic_dev = dev_get_drvdata(s->private);
+	struct unic_comm_addr_node *mac_node, *next_node;
 	struct unic_vport *vport = &unic_dev->vport;
-	struct unic_comm_addr_node *mac_node, *tmp;
-	struct list_head *list;
-	int i = 0;
+	struct list_head *list, tmp_list;
+	int ret, i = 0;
 
 	if (!unic_dev_cfg_mac_supported(unic_dev))
 		return -EOPNOTSUPP;
 
-	seq_printf(s, "%s mac_list:\n", is_unicast ? "unicast" : "multicast");
-	seq_printf(s, "No.     %-28sSTATE\n", "MAC_ADDR");
-
 	list = is_unicast ?
 	       &vport->addr_tbl.uc_mac_list : &vport->addr_tbl.mc_mac_list;
 
-	spin_lock_bh(&vport->addr_tbl.mac_list_lock);
-	list_for_each_entry_safe(mac_node, tmp, list, node) {
+	INIT_LIST_HEAD(&tmp_list);
+	ret = unic_common_clone_addr_list(list, &vport->addr_tbl.mac_list_lock,
+					  &tmp_list);
+	if (ret)
+		goto release_list;
+
+	seq_printf(s, "%s mac_list:\n", is_unicast ? "unicast" : "multicast");
+	seq_printf(s, "No.     %-28sSTATE\n", "MAC_ADDR");
+
+	list_for_each_entry(mac_node, &tmp_list, node) {
 		seq_printf(s, "%-8d", i++);
 		seq_printf(s, "%-28pM", mac_node->mac_addr);
 		seq_printf(s, "%s\n", unic_entry_state_str[mac_node->state]);
 	}
 
-	spin_unlock_bh(&vport->addr_tbl.mac_list_lock);
-	return 0;
+release_list:
+	list_for_each_entry_safe(mac_node, next_node, &tmp_list, node) {
+		list_del(&mac_node->node);
+		kfree(mac_node);
+	}
+
+	return ret;
 }
 
 int unic_dbg_dump_uc_mac_tbl_list(struct seq_file *s, void *data)
@@ -131,53 +163,75 @@ int unic_dbg_dump_mac_tbl_spec(struct seq_file *s, void *data)
 int unic_dbg_dump_ip_tbl_list(struct seq_file *s, void *data)
 {
 	struct unic_dev *unic_dev = dev_get_drvdata(s->private);
-	struct unic_comm_addr_node *ip_node;
+	struct unic_comm_addr_node *ip_node, *next_node;
+	struct list_head *list, tmp_list;
 	struct unic_addr_tbl *ip_tbl;
-	struct list_head *list;
 	u16 i = 0;
-
-	seq_printf(s, "No  %-43sSTATE    IP_MASK\n", "IP_ADDR");
+	int ret;
 
 	ip_tbl = &unic_dev->vport.addr_tbl;
 	list = &ip_tbl->ip_list;
-	spin_lock_bh(&ip_tbl->ip_list_lock);
-	list_for_each_entry(ip_node, list, node) {
+
+	INIT_LIST_HEAD(&tmp_list);
+	ret = unic_common_clone_addr_list(list, &ip_tbl->ip_list_lock,
+					  &tmp_list);
+	if (ret)
+		goto release_list;
+
+	seq_printf(s, "No  %-43sSTATE    IP_MASK\n", "IP_ADDR");
+	list_for_each_entry(ip_node, &tmp_list, node) {
 		seq_printf(s, "%-4u", i++);
 		seq_printf(s, "%-43pI6c", &ip_node->ip_addr.s6_addr);
 		seq_printf(s, "%-9s", unic_entry_state_str[ip_node->state]);
 		seq_printf(s, "%-3u", ip_node->node_mask);
 		seq_puts(s, "\n");
 	}
-	spin_unlock_bh(&ip_tbl->ip_list_lock);
 
-	return 0;
+release_list:
+	list_for_each_entry_safe(ip_node, next_node, &tmp_list, node) {
+		list_del(&ip_node->node);
+		kfree(ip_node);
+	}
+
+	return ret;
 }
 
 int unic_dbg_dump_bond_ip_tbl_list(struct seq_file *s, void *data)
 {
 	struct unic_dev *unic_dev = dev_get_drvdata(s->private);
-	struct unic_comm_addr_node *ip_node;
+	struct unic_comm_addr_node *ip_node, *next_node;
+	struct list_head *list, tmp_list;
 	struct unic_addr_tbl *ip_tbl;
-	struct list_head *list;
 	u16 i = 0;
+	int ret;
 
 	if (!unic_bond_ip_sync_supported(unic_dev))
 		return -EOPNOTSUPP;
 
-	seq_printf(s, "No  %-43sSTATE    IP_MASK\n", "IP_ADDR");
-
 	ip_tbl = &unic_dev->vport.addr_tbl;
 	list = &ip_tbl->bond_ip_list;
-	spin_lock_bh(&ip_tbl->bond_ip_list_lock);
-	list_for_each_entry(ip_node, list, node) {
+
+	INIT_LIST_HEAD(&tmp_list);
+	ret = unic_common_clone_addr_list(list, &ip_tbl->bond_ip_list_lock,
+					  &tmp_list);
+	if (ret)
+		goto release_list;
+
+	seq_printf(s, "No  %-43sSTATE    IP_MASK\n", "IP_ADDR");
+	list_for_each_entry(ip_node, &tmp_list, node) {
 		seq_printf(s, "%-4u", i++);
 		seq_printf(s, "%-43pI6c", &ip_node->ip_addr.s6_addr);
 		seq_printf(s, "%-9s", unic_entry_state_str[ip_node->state]);
 		seq_printf(s, "%-3u\n", ip_node->node_mask);
 	}
-	spin_unlock_bh(&ip_tbl->bond_ip_list_lock);
 
-	return 0;
+release_list:
+	list_for_each_entry_safe(ip_node, next_node, &tmp_list, node) {
+		list_del(&ip_node->node);
+		kfree(ip_node);
+	}
+
+	return ret;
 }
 
 static int unic_query_mac_list_hw(struct unic_dev *unic_dev, u32 *mac_idx,

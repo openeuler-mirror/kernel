@@ -301,7 +301,6 @@ static int unic_init_channels_attr(struct unic_dev *unic_dev)
 	if (ret)
 		goto err_alloc_buf;
 
-
 	ret = unic_init_vl_info(unic_dev);
 	if (ret)
 		goto err_init_vl_info;
