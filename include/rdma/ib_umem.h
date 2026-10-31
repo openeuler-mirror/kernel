@@ -125,7 +125,7 @@ int ib_umem_copy_from(void *dst, struct ib_umem *umem, size_t offset,
 		      size_t length);
 unsigned long ib_umem_find_best_pgsz(struct ib_umem *umem,
 				     unsigned long pgsz_bitmap,
-				     unsigned long virt);
+				     unsigned long KABI_ADD_MODIFIER(long) virt);
 
 /**
  * ib_umem_find_best_pgoff - Find best HW page size
@@ -205,7 +205,7 @@ static inline int ib_umem_copy_from(void *dst, struct ib_umem *umem, size_t offs
 }
 static inline unsigned long ib_umem_find_best_pgsz(struct ib_umem *umem,
 						   unsigned long pgsz_bitmap,
-						   unsigned long virt)
+						   unsigned long KABI_ADD_MODIFIER(long) virt)
 {
 	return 0;
 }
