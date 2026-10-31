@@ -5617,7 +5617,7 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	 */
 	if (sched_feat(PLACE_LAG) && cfs_rq->nr_running) {
 		struct sched_entity *curr = cfs_rq->curr;
-		unsigned long load;
+		long load, weight;
 
 		lag = se->vlag;
 
@@ -5684,11 +5684,20 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 		load = cfs_rq->sum_weight;
 		if (curr && curr->on_rq)
 			load += scale_load_down(curr->load.weight);
-
-		lag *= load + scale_load_down(se->load.weight);
 		if (WARN_ON_ONCE(!load))
 			load = 1;
-		lag = div_s64(lag, load);
+
+		weight = scale_load_down(se->load.weight);
+
+		/*
+		 * Rewrite, because the product (W + w_i)*vl'_i might
+		 * overflow s64:
+		 *
+		 *   vl_i = (W + w_i)*vl'_i / W
+		 *        = (W*vl'_i + w_i*vl'_i) / W
+		 *        = vl'_i + w_i*vl'_i/W
+		 */
+		lag += div64_long(lag * weight, load);
 	}
 
 skip_lag_scale:
