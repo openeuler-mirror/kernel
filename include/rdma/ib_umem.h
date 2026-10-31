@@ -92,7 +92,7 @@ int ib_umem_copy_from(void *dst, struct ib_umem *umem, size_t offset,
 		      size_t length);
 unsigned long ib_umem_find_best_pgsz(struct ib_umem *umem,
 				     unsigned long pgsz_bitmap,
-				     unsigned long virt);
+				     unsigned long KABI_ADD_MODIFIER(long) virt);
 #ifdef CONFIG_INFINIBAND_PEER_MEMORY
 struct ib_umem *ib_umem_get_peer(struct ib_device *device, unsigned long addr,
 				 size_t size, int access,
@@ -120,7 +120,7 @@ static inline int ib_umem_copy_from(void *dst, struct ib_umem *umem, size_t offs
 }
 static inline unsigned long ib_umem_find_best_pgsz(struct ib_umem *umem,
 						   unsigned long pgsz_bitmap,
-						   unsigned long virt)
+						   unsigned long KABI_ADD_MODIFIER(long) virt)
 {
 	return 0;
 }
