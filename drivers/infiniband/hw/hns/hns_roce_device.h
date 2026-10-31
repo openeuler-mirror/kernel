@@ -442,6 +442,7 @@ struct hns_roce_wq {
 	u32		tail;
 	void __iomem	*db_reg;
 	u32		ext_sge_cnt;
+	bool is_drained;
 };
 
 struct hns_roce_sge {
