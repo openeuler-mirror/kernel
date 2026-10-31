@@ -1764,10 +1764,11 @@ bool bpf_jit_supports_subprog_tailcalls(void)
 	return true;
 }
 
-static void invoke_bpf_prog(struct jit_ctx *ctx, struct bpf_tramp_link *l,
-			    int args_off, int retval_off, int run_ctx_off,
-			    bool save_ret)
+static void invoke_bpf_prog(struct jit_ctx *ctx, struct bpf_tramp_image *im,
+			    struct bpf_tramp_link *l, int args_off,
+			    int retval_off, int run_ctx_off, bool save_ret)
 {
+	void *skip;
 	__le32 *branch;
 	u64 enter_prog;
 	u64 exit_prog;
@@ -1776,6 +1777,10 @@ static void invoke_bpf_prog(struct jit_ctx *ctx, struct bpf_tramp_link *l,
 
 	enter_prog = (u64)bpf_trampoline_enter(p);
 	exit_prog = (u64)bpf_trampoline_exit(p);
+
+	/* nop, patched to skip this prog when it is detached */
+	skip = ctx->image + ctx->idx;
+	emit(A64_NOP, ctx);
 
 	if (l->cookie == 0) {
 		/* if cookie is zero, one instruction is enough to store it */
@@ -1829,11 +1834,13 @@ static void invoke_bpf_prog(struct jit_ctx *ctx, struct bpf_tramp_link *l,
 	emit(A64_ADD_I(1, A64_R(2), A64_SP, run_ctx_off), ctx);
 
 	emit_call(exit_prog, ctx);
+
+	bpf_tramp_image_add_skip(im, p, skip, ctx->image + ctx->idx);
 }
 
-static void invoke_bpf_mod_ret(struct jit_ctx *ctx, struct bpf_tramp_links *tl,
-			       int args_off, int retval_off, int run_ctx_off,
-			       __le32 **branches)
+static void invoke_bpf_mod_ret(struct jit_ctx *ctx, struct bpf_tramp_image *im,
+			       struct bpf_tramp_links *tl, int args_off,
+			       int retval_off, int run_ctx_off, __le32 **branches)
 {
 	int i;
 
@@ -1842,7 +1849,7 @@ static void invoke_bpf_mod_ret(struct jit_ctx *ctx, struct bpf_tramp_links *tl,
 	 */
 	emit(A64_STR64I(A64_ZR, A64_SP, retval_off), ctx);
 	for (i = 0; i < tl->nr_links; i++) {
-		invoke_bpf_prog(ctx, tl->links[i], args_off, retval_off,
+		invoke_bpf_prog(ctx, im, tl->links[i], args_off, retval_off,
 				run_ctx_off, true);
 		/* if (*(u64 *)(sp + retval_off) !=  0)
 		 *	goto do_fexit;
@@ -2021,7 +2028,7 @@ static int prepare_trampoline(struct jit_ctx *ctx, struct bpf_tramp_image *im,
 	}
 
 	for (i = 0; i < fentry->nr_links; i++)
-		invoke_bpf_prog(ctx, fentry->links[i], args_off,
+		invoke_bpf_prog(ctx, im, fentry->links[i], args_off,
 				retval_off, run_ctx_off,
 				flags & BPF_TRAMP_F_RET_FENTRY_RET);
 
@@ -2031,7 +2038,7 @@ static int prepare_trampoline(struct jit_ctx *ctx, struct bpf_tramp_image *im,
 		if (!branches)
 			return -ENOMEM;
 
-		invoke_bpf_mod_ret(ctx, fmod_ret, args_off, retval_off,
+		invoke_bpf_mod_ret(ctx, im, fmod_ret, args_off, retval_off,
 				   run_ctx_off, branches);
 	}
 
@@ -2043,9 +2050,6 @@ static int prepare_trampoline(struct jit_ctx *ctx, struct bpf_tramp_image *im,
 		emit(A64_RET(A64_R(10)), ctx);
 		/* store return value */
 		emit(A64_STR64I(A64_R(0), A64_SP, retval_off), ctx);
-		/* reserve a nop for bpf_tramp_image_put */
-		im->ip_after_call = ctx->image + ctx->idx;
-		emit(A64_NOP, ctx);
 	}
 
 	/* update the branches saved in invoke_bpf_mod_ret with cbnz */
@@ -2055,11 +2059,10 @@ static int prepare_trampoline(struct jit_ctx *ctx, struct bpf_tramp_image *im,
 	}
 
 	for (i = 0; i < fexit->nr_links; i++)
-		invoke_bpf_prog(ctx, fexit->links[i], args_off, retval_off,
+		invoke_bpf_prog(ctx, im, fexit->links[i], args_off, retval_off,
 				run_ctx_off, false);
 
 	if (flags & BPF_TRAMP_F_CALL_ORIG) {
-		im->ip_epilogue = ctx->image + ctx->idx;
 		/* for the first pass, assume the worst case */
 		if (!ctx->image)
 			ctx->idx += 4;
@@ -2131,7 +2134,7 @@ int arch_bpf_trampoline_size(const struct btf_func_model *m, u32 flags,
 		.image = NULL,
 		.idx = 0,
 	};
-	struct bpf_tramp_image im;
+	struct bpf_tramp_image im = {};
 	int nregs, ret;
 
 	nregs = btf_func_model_nregs(m);
@@ -2381,6 +2384,10 @@ int bpf_arch_text_poke(void *ip, enum bpf_text_poke_type poke_type,
 	 *    longer reachable, since bpf_tramp_image_put() function already
 	 *    uses percpu_ref and task-based rcu to do the sync, no need to call
 	 *    the sync version here, see bpf_tramp_image_put() for details.
+	 *
+	 * 3. when a detached prog is patched out of a trampoline, a CPU that
+	 *    still executes the old nop calls the prog before it went through
+	 *    a quiescent state, and the prog is freed after grace periods.
 	 */
 	ret = aarch64_insn_patch_text_nosync(ip, new_insn);
 out:

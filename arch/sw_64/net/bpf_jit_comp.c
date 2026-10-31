@@ -1854,12 +1854,6 @@ static int __arch_prepare_bpf_trampoline(struct jit_ctx *ctx, struct bpf_tramp_i
 		emit_sw64_call((const u64)orig_call, ctx);
 		/* store return value */
 		emit(SW64_BPF_STL(SW64_BPF_REG_V0, SW64_BPF_REG_FP, -retval_off), ctx);
-		/* reserve a nop for bpf_tramp_image_put */
-		im->ip_after_call = ctx->image + ctx->idx;
-		/* reserved 16 nop for long jmp, that is enough */
-		for (i = 0; i < 16; i++)
-			emit(SW64_BPF_BIS_REG(SW64_BPF_REG_ZR,
-					SW64_BPF_REG_ZR, SW64_BPF_REG_ZR), ctx);
 	}
 
 	for (i = 0; i < fmod_ret->nr_links && ctx->image != NULL; i++) {
@@ -1873,7 +1867,6 @@ static int __arch_prepare_bpf_trampoline(struct jit_ctx *ctx, struct bpf_tramp_i
 				retval_off, run_ctx_off, false);
 
 	if (flags & BPF_TRAMP_F_CALL_ORIG) {
-		im->ip_epilogue = ctx->image + ctx->idx;
 		/* for the first pass, assume the worst case */
 		emit_sw64_ldu64(SW64_BPF_REG_A0, (const u64)im, ctx);
 		emit_sw64_call((const u64)__bpf_tramp_exit, ctx);
