@@ -43,6 +43,19 @@
 #define UDMA_TID_SHIFT 8U
 #define UDMA_MAX_TID 0xFFFFFU
 
+#define UDMA_WQEBB_BASE_OFFSET_WITH_CNT_1 0x000
+#define UDMA_WQEBB_BASE_OFFSET_WITH_CNT_2 0x100
+#define UDMA_WQEBB_BASE_OFFSET_WITH_CNT_3 0x300
+#define UDMA_WQEBB_BASE_OFFSET_WITH_CNT_4 0x600
+
+#define UDMA_WQEBB_CNT_INVALID 0
+#define UDMA_WQEBB_CNT_IS_1 1
+#define UDMA_WQEBB_CNT_IS_2 2
+#define UDMA_WQEBB_CNT_IS_3 3
+#define UDMA_WQEBB_CNT_IS_4 4
+
+#define UDMA_WQEBB_OFFSET 0x100
+
 enum udma_jetty_type {
 	UDMA_CACHE_LOCK_DWQE_JETTY_TYPE,
 	UDMA_CCU_JETTY_TYPE,
@@ -117,7 +130,8 @@ struct udma_create_ctx_resp {
 	__u32 lock_buffer_en : 1;
 	__u32 ccu_jfc_property_en : 1;
 	__u32 lock_buf_bb_shift : 8;
-	__u32 rsv : 5;
+	__u32 multi_wqebb_dwqe : 1;
+	__u32 rsv : 4;
 	__u32 ue_id;
 	__u32 chip_id;
 	__u32 die_id;

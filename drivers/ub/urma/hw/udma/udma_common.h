@@ -72,6 +72,8 @@ struct udma_jetty_queue {
 	bool cstm;
 	bool dtu_en;
 	struct udma_dtu_pg_info dtu_pg_info;
+	uint8_t cur_wqebb_cnt;
+	union urma_tp_type_en bind_tp_type;
 };
 
 enum tp_state {

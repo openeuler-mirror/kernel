@@ -134,6 +134,12 @@ static int udma_get_cmd_from_user(
 	if (ret)
 		return ret;
 
+	if (ucmd->mode != UDMA_NORMAL_JFC_TYPE && ucmd->mode != UDMA_STARS_JFC_TYPE &&
+	    ucmd->mode != UDMA_CCU_JFC_TYPE) {
+		dev_err(dev->dev, "invalid JFC mode = %u.\n", ucmd->mode);
+		return -EINVAL;
+	}
+
 	jfc->mode = ucmd->mode;
 	jfc->ctx = to_udma_context(udata->uctx);
 	if (jfc->mode > UDMA_NORMAL_JFC_TYPE && jfc->mode < UDMA_KERNEL_STARS_JFC_TYPE) {

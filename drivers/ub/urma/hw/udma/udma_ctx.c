@@ -50,6 +50,7 @@ static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udr
 	resp.hugepage_enable = ubase_adev_prealloc_supported(dev->comdev.adev) & hugepage_enable;
 	resp.sva_sep_mode_en = dev->caps.sva_sep_mode_en;
 	resp.st64b_en = dev->caps.st64b_en;
+	resp.multi_wqebb_dwqe = dev->caps.multi_wqebb_dwqe;
 
 	byte = copy_to_user((void *)(uintptr_t)udrv_data->out_addr, &resp,
 			   (uint32_t)sizeof(resp));

@@ -611,8 +611,9 @@ static int udma_modify_jfr_to_reset(struct ubcore_jfr *jfr)
 		mbox_attr.op = UDMA_CMD_DESTROY_JFR_CONTEXT;
 		ret = post_mailbox_update_ctx(udma_dev, NULL, 0, &mbox_attr);
 		if (ret) {
-			dev_err(udma_dev->dev, "failed to post JFR destroy command, id: %u.\n",
-				udma_jfr->rq.id);
+			dev_err_ratelimited(udma_dev->dev,
+					    "failed to post JFR destroy command, id: %u.\n",
+					    udma_jfr->rq.id);
 			return ret;
 		}
 
@@ -990,7 +991,7 @@ static int udma_destroy_hw_jfr_ctx(struct udma_dev *dev, uint32_t jfr_id)
 	attr.op = UDMA_CMD_DESTROY_JFR_CONTEXT;
 	ret = post_mailbox_update_ctx(dev, NULL, 0, &attr);
 	if (ret)
-		dev_err(dev->dev,
+		dev_err_ratelimited(dev->dev,
 			"post mailbox destroy JFR context failed, ret = %d.\n", ret);
 
 	return ret;

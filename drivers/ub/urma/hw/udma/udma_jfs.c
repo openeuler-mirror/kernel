@@ -249,6 +249,13 @@ int udma_alloc_u_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 		return -EINVAL;
 	}
 
+	if (is_support_ccu_jetty(dev, sq) && (((uint64_t)ucmd->buf_addr >> SQE_VA_L_OFFSET) >=
+	    UDMA_WQE_LOCK_BUFFER_JETTY_IDX)) {
+		dev_err(dev->dev, "buffer index is out of range, buffer index = %llu.\n",
+			((uint64_t)ucmd->buf_addr >> SQE_VA_L_OFFSET));
+		return -EINVAL;
+	}
+
 	sq->sqe_bb_cnt = ucmd->sqe_bb_cnt;
 	sq->buf.entry_cnt = ucmd->buf_len >> WQE_BB_SIZE_SHIFT;
 	sq->buf.addr = ucmd->buf_addr;
@@ -293,6 +300,12 @@ int udma_alloc_k_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 	uint32_t size;
 	int ret;
 
+	if (jfs_cfg->priority >= UDMA_MAX_PRIORITY) {
+		dev_err(dev->dev, "JFS priority is out of range, priority is %u.\n",
+			jfs_cfg->priority);
+		return -EINVAL;
+	}
+
 	if (!jfs_cfg->flag.bs.lock_free)
 		spin_lock_init(&sq->lock);
 
@@ -300,6 +313,7 @@ int udma_alloc_k_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 	sq->max_sge_num = jfs_cfg->max_sge;
 	sq->tid = dev->tid;
 	sq->lock_free = jfs_cfg->flag.bs.lock_free;
+	sq->bind_tp_type = dev->priority_info[jfs_cfg->priority].tp_type;
 
 	sqe_bb_cnt = sq_cal_wqebb_num(SQE_WRITE_NOTIFY_CTL_LEN,
 				      get_max_sge_num(jfs_cfg->max_sge, sq->max_inline_size));
@@ -474,7 +488,7 @@ static int udma_create_hw_jfs_ctx(struct udma_dev *dev, struct udma_jfs *jfs,
 	attr.op = UDMA_CMD_CREATE_JFS_CONTEXT;
 	ret = post_mailbox_update_ctx(dev, &ctx, sizeof(ctx), &attr);
 	if (ret) {
-		dev_err(dev->dev, "failed to upgrade JFS context, ret = %d.\n", ret);
+		dev_err_ratelimited(dev->dev, "failed to upgrade JFS context, ret = %d.\n", ret);
 		return ret;
 	}
 
@@ -570,6 +584,7 @@ static int udma_alloc_jfs_sq(struct udma_dev *dev, struct ubcore_jfs_cfg *cfg,
 	ret = udma_get_user_jfs_cmd(dev, jfs, udata, &ucmd);
 	if (ret)
 		goto err_get_user_cmd;
+	udma_set_k_jetty_type(dev, &jfs->sq, jfs->sq.id, udata);
 
 	ret = alloc_jetty_id(dev, &jfs->sq, jfs->sq.id, NULL);
 	if (ret) {
@@ -647,7 +662,6 @@ int udma_active_jfs(struct ubcore_jfs *jfs, struct ubcore_udata *udata)
 		goto err_create_hw_jfs;
 	}
 
-	ujfs->mode = UDMA_NORMAL_JFS_TYPE;
 	ujfs->sq.state = UBCORE_JETTY_STATE_READY;
 	refcount_set(&ujfs->ae_refcount, 1);
 	init_completion(&ujfs->ae_comp);
@@ -736,10 +750,12 @@ static void udma_free_jfs_detail(struct ubcore_jfs *jfs)
 	if (dfx_switch)
 		udma_dfx_delete_id(dev, &dev->dfx_info->jfs, jfs->jfs_id.id);
 
-	if (ujfs->mode == UDMA_NORMAL_JFS_TYPE)
-		udma_free_sq_buf(dev, &ujfs->sq);
-	else
+	if (ujfs->mode == UDMA_KERNEL_STARS_JFS_TYPE) {
 		kfree(ujfs->sq.wrid);
+		ujfs->sq.wrid = NULL;
+	} else {
+		udma_free_sq_buf(dev, &ujfs->sq);
+	}
 
 	free_jfs_id(ujfs, dev);
 }
@@ -1448,6 +1464,12 @@ static int udma_k_set_sqe(struct udma_sqe_ctl *sqe_ctl, struct ubcore_jfs_wr *wr
 	else
 		tjetty = wr->tjetty;
 
+	if (!(sq->bind_tp_type.value & (1U << tjetty->cfg.tp_type))) {
+		dev_err(dev->dev, "tp_type unmatched. tp_type: %u, bind_tp_type: %u.\n",
+			tjetty->cfg.tp_type, sq->bind_tp_type.value);
+		return -EINVAL;
+	}
+
 	udma_tjetty = to_udma_tjetty(tjetty);
 
 	sqe_ctl->tpn = tjetty->vtpn->vtpn;
@@ -1571,6 +1593,7 @@ static int udma_post_one_wr(struct udma_jetty_queue *sq, struct ubcore_jfs_wr *w
 		sq->wrid[(sq->pi + i) & (sq->buf.entry_cnt - 1)] = wr->user_ctx;
 
 	sq->pi += wqebb_cnt;
+	sq->cur_wqebb_cnt = wqebb_cnt;
 
 	return 0;
 }
@@ -1612,12 +1635,38 @@ static void udma_write_dsqe(struct udma_dev *udma_dev, struct udma_jetty_queue *
 	}
 }
 
+static void udma_write_multi_bb_dsqe(struct udma_jetty_queue *sq,
+				     struct udma_sqe_ctl *ctrl)
+{
+	static uint64_t base_offset[] = {
+		[UDMA_WQEBB_CNT_INVALID] = ~0ULL,
+		[UDMA_WQEBB_CNT_IS_1] = UDMA_WQEBB_BASE_OFFSET_WITH_CNT_1,
+		[UDMA_WQEBB_CNT_IS_2] = UDMA_WQEBB_BASE_OFFSET_WITH_CNT_2,
+		[UDMA_WQEBB_CNT_IS_3] = UDMA_WQEBB_BASE_OFFSET_WITH_CNT_3,
+		[UDMA_WQEBB_CNT_IS_4] = UDMA_WQEBB_BASE_OFFSET_WITH_CNT_4,
+	};
+	void *base = sq->dwqe_addr + base_offset[sq->cur_wqebb_cnt];
+	struct udma_sqe_ctl *src = ctrl;
+	uint8_t i;
+
+	ctrl->sqe_bb_idx = sq->pi;
+	st64b((uint64_t *)ctrl, (uint64_t *)base);
+
+	for (i = 1; i < sq->cur_wqebb_cnt; i++) {
+		src = (struct udma_sqe_ctl *)udma_k_inc_ptr_wrap(
+			sq->buf.entry_cnt * sq->buf.entry_size, i * sq->buf.entry_size,
+			(uint8_t *)sq->buf.kva, (uint8_t *)ctrl);
+		base = base + UDMA_WQEBB_OFFSET;
+		st64b((uint64_t *)src, (uint64_t *)base);
+	}
+}
+
 int udma_post_sq_wr(struct udma_dev *udma_dev, struct udma_jetty_queue *sq,
 		    struct ubcore_jfs_wr *wr, struct ubcore_jfs_wr **bad_wr)
 {
 	struct udma_sqe_ctl *wqe_addr;
-	bool dwqe_enable = false;
 	struct ubcore_jfs_wr *it;
+	bool dwqe_enable = false;
 	unsigned long flags;
 	int wr_cnt = 0;
 	int ret = 0;
@@ -1642,6 +1691,8 @@ err_post_wr:
 			wmb(); /* set sqe before doorbell */
 			if (wr_cnt == 1 && dwqe_enable && (sq->pi - sq->ci == 1))
 				udma_write_dsqe(udma_dev, sq, wqe_addr);
+			else if (wr_cnt == 1 && udma_dev->caps.multi_wqebb_dwqe)
+				udma_write_multi_bb_dsqe(sq, wqe_addr);
 			else
 				udma_k_update_sq_db(sq);
 		}

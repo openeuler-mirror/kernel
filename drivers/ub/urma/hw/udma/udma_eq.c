@@ -779,7 +779,7 @@ static int udma_ctrlq_check_tp_status(struct udma_dev *udev, void *data, uint16_
 	}
 	(*rsp_info)->num = tp_num;
 
-	if (debug_switch)
+	if (debug_switch && tp_num > 0)
 		udma_dfx_ctx_print(udev, "udma check tp active", (*rsp_info)->data[0].tp_id,
 				   *rsp_info_len / sizeof(uint32_t), (uint32_t *)(*rsp_info));
 
@@ -1062,19 +1062,19 @@ err_register_one_ctrlq_event:
 
 int udma_register_workqueue(struct udma_dev *udma_dev)
 {
-	udma_dev->act_workq = alloc_workqueue("udma_activate_workq", WQ_UNBOUND, 0);
+	udma_dev->act_workq = alloc_workqueue("udma_activate_workq", WQ_UNBOUND, 1);
 	if (!udma_dev->act_workq) {
 		dev_err(udma_dev->dev, "failed to create activate workqueue.\n");
 		return -ENOMEM;
 	}
 
-	udma_dev->ae_workq = alloc_workqueue("udma_ae_workq", WQ_UNBOUND, 0);
+	udma_dev->ae_workq = alloc_workqueue("udma_ae_workq", WQ_UNBOUND, 1);
 	if (!udma_dev->ae_workq) {
 		dev_err(udma_dev->dev, "failed to create asynchronous event workqueue.\n");
 		goto err_alloc_ae_workq;
 	}
 
-	udma_dev->ue_rx_workq = alloc_workqueue("udma_ue_rx_workq", WQ_UNBOUND, 0);
+	udma_dev->ue_rx_workq = alloc_workqueue("udma_ue_rx_workq", WQ_UNBOUND, 1);
 	if (!udma_dev->ue_rx_workq) {
 		dev_err(udma_dev->dev, "failed to create open UE rx workqueue.\n");
 		goto err_alloc_ue_rx_workq;
