@@ -30,25 +30,34 @@ void cfg80211_rx_assoc_resp(struct net_device *dev, struct cfg80211_bss *bss,
 	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
 	struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *)buf;
 	struct cfg80211_connect_resp_params cr;
-	const u8 *resp_ie = mgmt->u.assoc_resp.variable;
-	size_t resp_ie_len = len - offsetof(struct ieee80211_mgmt,
-					    u.assoc_resp.variable);
-
-	if (bss->channel->band == NL80211_BAND_S1GHZ) {
-		resp_ie = (u8 *)&mgmt->u.s1g_assoc_resp.variable;
-		resp_ie_len = len - offsetof(struct ieee80211_mgmt,
-					     u.s1g_assoc_resp.variable);
-	}
 
 	memset(&cr, 0, sizeof(cr));
-	cr.status = (int)le16_to_cpu(mgmt->u.assoc_resp.status_code);
 	cr.bssid = mgmt->bssid;
 	cr.bss = bss;
 	cr.req_ie = req_ies;
 	cr.req_ie_len = req_ies_len;
-	cr.resp_ie = resp_ie;
-	cr.resp_ie_len = resp_ie_len;
 	cr.timeout_reason = NL80211_TIMEOUT_UNSPECIFIED;
+
+	/*
+	 * S1G and regular association responses have different IE offsets;
+	 * validate the frame is long enough before accessing status and IEs.
+	 */
+	if (bss->channel->band == NL80211_BAND_S1GHZ) {
+		if (len < offsetof(struct ieee80211_mgmt,
+				   u.s1g_assoc_resp.variable))
+			goto free_bss;
+		cr.resp_ie = (u8 *)&mgmt->u.s1g_assoc_resp.variable;
+		cr.resp_ie_len = len - offsetof(struct ieee80211_mgmt,
+						u.s1g_assoc_resp.variable);
+	} else {
+		if (len < offsetof(struct ieee80211_mgmt,
+				   u.assoc_resp.variable))
+			goto free_bss;
+		cr.resp_ie = mgmt->u.assoc_resp.variable;
+		cr.resp_ie_len = len - offsetof(struct ieee80211_mgmt,
+						u.assoc_resp.variable);
+	}
+	cr.status = (int)le16_to_cpu(mgmt->u.assoc_resp.status_code);
 
 	trace_cfg80211_send_rx_assoc(dev, bss);
 
@@ -58,16 +67,18 @@ void cfg80211_rx_assoc_resp(struct net_device *dev, struct cfg80211_bss *bss,
 	 * and got a reject -- we only try again with an assoc
 	 * frame instead of reassoc.
 	 */
-	if (cfg80211_sme_rx_assoc_resp(wdev, cr.status)) {
-		cfg80211_unhold_bss(bss_from_pub(bss));
-		cfg80211_put_bss(wiphy, bss);
-		return;
-	}
+	if (cfg80211_sme_rx_assoc_resp(wdev, cr.status))
+		goto free_bss;
 
 	nl80211_send_rx_assoc(rdev, dev, buf, len, GFP_KERNEL, uapsd_queues,
 			      req_ies, req_ies_len);
 	/* update current_bss etc., consumes the bss reference */
 	__cfg80211_connect_result(dev, &cr, cr.status == WLAN_STATUS_SUCCESS);
+	return;
+
+free_bss:
+	cfg80211_unhold_bss(bss_from_pub(bss));
+	cfg80211_put_bss(wiphy, bss);
 }
 EXPORT_SYMBOL(cfg80211_rx_assoc_resp);
 
