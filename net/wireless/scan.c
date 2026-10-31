@@ -965,6 +965,21 @@ int cfg80211_scan(struct cfg80211_registered_device *rdev)
 	return rdev_scan(rdev, request);
 }
 
+/*
+ * Release the scan request, but free it only if the driver is also done,
+ * e.g. mac80211 may cancel it asynchronously and still use it.
+ */
+static void cfg80211_put_scan_req(struct cfg80211_scan_request *req)
+{
+	if (!req)
+		return;
+
+	if (req->driver_owns)
+		req->stale = true;
+	else
+		kfree(req);
+}
+
 void ___cfg80211_scan_done(struct cfg80211_registered_device *rdev,
 			   bool send_message)
 {
@@ -1025,10 +1040,10 @@ void ___cfg80211_scan_done(struct cfg80211_registered_device *rdev,
 	if (wdev->netdev)
 		dev_put(wdev->netdev);
 
-	kfree(rdev->int_scan_req);
+	cfg80211_put_scan_req(rdev->int_scan_req);
 	rdev->int_scan_req = NULL;
 
-	kfree(rdev->scan_req);
+	cfg80211_put_scan_req(rdev->scan_req);
 	rdev->scan_req = NULL;
 
 	if (!send_message)
@@ -1052,11 +1067,24 @@ void __cfg80211_scan_done(struct work_struct *wk)
 void cfg80211_scan_done(struct cfg80211_scan_request *request,
 			struct cfg80211_scan_info *info)
 {
+	struct cfg80211_registered_device *rdev = wiphy_to_rdev(request->wiphy);
 	struct cfg80211_scan_info old_info = request->info;
 
 	trace_cfg80211_scan_done(request, info);
-	WARN_ON(request != wiphy_to_rdev(request->wiphy)->scan_req &&
-		request != wiphy_to_rdev(request->wiphy)->int_scan_req);
+
+	request->driver_owns = false;
+
+	if (request->stale) {
+		/*
+		 * The scan is already completed as far as we're concerned,
+		 * it was just kept around for the driver - done now, free it.
+		 */
+		kfree(request);
+		return;
+	}
+
+	WARN_ON(request != rdev->scan_req &&
+		request != rdev->int_scan_req);
 
 	request->info = *info;
 
