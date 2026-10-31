@@ -18606,6 +18606,9 @@ static int verifier_remove_insns(struct bpf_verifier_env *env, u32 off, u32 cnt)
 	unsigned int orig_prog_len = env->prog->len;
 	int err;
 
+	if (bpf_rewrite_must_abort())
+		return -EINTR;
+
 	if (bpf_prog_is_offloaded(env->prog->aux))
 		bpf_prog_offload_remove_insns(env, off, cnt);
 
@@ -19160,7 +19163,12 @@ static int jit_subprogs(struct bpf_verifier_env *env)
 		func[i]->aux->num_exentries = num_exentries;
 		func[i]->aux->tail_call_reachable = env->subprog_info[i].tail_call_reachable;
 		func[i]->aux->changes_pkt_data = env->subprog_info[i].changes_pkt_data;
-		func[i] = bpf_int_jit_compile(func[i]);
+		tmp = bpf_int_jit_compile(func[i]);
+		if (IS_ERR(tmp)) {
+			err = PTR_ERR(tmp);
+			goto out_free;
+		}
+		func[i] = tmp;
 		if (!func[i]->jited) {
 			err = -ENOTSUPP;
 			goto out_free;
@@ -19204,6 +19212,10 @@ static int jit_subprogs(struct bpf_verifier_env *env)
 	for (i = 0; i < env->subprog_cnt; i++) {
 		old_bpf_func = func[i]->bpf_func;
 		tmp = bpf_int_jit_compile(func[i]);
+		if (IS_ERR(tmp)) {
+			err = PTR_ERR(tmp);
+			goto out_free;
+		}
 		if (tmp != func[i] || func[i]->bpf_func != old_bpf_func) {
 			verbose(env, "JIT doesn't support bpf-to-bpf calls\n");
 			err = -ENOTSUPP;
@@ -19301,7 +19313,7 @@ static int fixup_call_args(struct bpf_verifier_env *env)
 		err = jit_subprogs(env);
 		if (err == 0)
 			return 0;
-		if (err == -EFAULT)
+		if (err == -EFAULT || err == -EINTR)
 			return err;
 	}
 #ifndef CONFIG_BPF_JIT_ALWAYS_ON

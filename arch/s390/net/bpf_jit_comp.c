@@ -1952,11 +1952,14 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *fp)
 
 	tmp = bpf_jit_blind_constants(fp);
 	/*
-	 * If blinding was requested and we failed during blinding,
-	 * we must fall back to the interpreter.
+	 * Fall back to the interpreter after blinding failures, except when
+	 * the loader was killed.
 	 */
-	if (IS_ERR(tmp))
+	if (IS_ERR(tmp)) {
+		if (PTR_ERR(tmp) == -EINTR)
+			return tmp;
 		return orig_fp;
+	}
 	if (tmp != fp) {
 		tmp_blinded = true;
 		fp = tmp;
