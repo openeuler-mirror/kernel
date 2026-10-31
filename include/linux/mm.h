@@ -2090,6 +2090,17 @@ static inline bool __mm_in_dynamic_pool(struct mm_struct *mm)
 }
 #endif
 
+extern bool movable_pinnable;
+
+/*
+ * Movable zone folios are not pinnable by default.
+ * The "movable_pinnable" command line parameter allows them.
+ */
+static inline bool is_movable_pinnable(void)
+{
+	return movable_pinnable;
+}
+
 /* MIGRATE_CMA and ZONE_MOVABLE do not allow pin folios */
 #ifdef CONFIG_MIGRATION
 static inline bool folio_is_longterm_pinnable(struct folio *folio)
@@ -2124,6 +2135,14 @@ static inline bool folio_is_longterm_pinnable(struct folio *folio)
 	/* Coherent device memory must always allow eviction. */
 	if (folio_is_device_coherent(folio))
 		return false;
+
+	/*
+	 * "movable_pinnable" opts into pinning movable zone
+	 * folios. __gup_longterm_locked() then skips the
+	 * migration attempt.
+	 */
+	if (is_movable_pinnable())
+		return true;
 
 	/* Otherwise, non-movable zone folios can be pinned. */
 	return !folio_is_zone_movable(folio);

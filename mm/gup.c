@@ -2,6 +2,7 @@
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/err.h>
+#include <linux/init.h>
 #include <linux/spinlock.h>
 
 #include <linux/mm.h>
@@ -24,6 +25,8 @@
 #include <asm/tlbflush.h>
 
 #include "internal.h"
+
+bool movable_pinnable __ro_after_init;
 
 struct follow_page_context {
 	struct dev_pagemap *pgmap;
@@ -2129,6 +2132,7 @@ static long __gup_longterm_locked(struct mm_struct *mm,
 	long rc, nr_pinned_pages;
 
 	if (!(gup_flags & FOLL_LONGTERM) ||
+	    is_movable_pinnable() ||
 	    __mm_in_dynamic_pool(mm))
 		return __get_user_pages_locked(mm, start, nr_pages, pages,
 					       locked, gup_flags);
@@ -3444,3 +3448,14 @@ long pin_user_pages_unlocked(unsigned long start, unsigned long nr_pages,
 				     &locked, gup_flags);
 }
 EXPORT_SYMBOL(pin_user_pages_unlocked);
+
+#ifdef CONFIG_MIGRATION
+static int __init setup_movable_pinnable(char *p)
+{
+	movable_pinnable = true;
+	pr_info("allow movable memory pinnable\n");
+
+	return 0;
+}
+early_param("movable_pinnable", setup_movable_pinnable);
+#endif
