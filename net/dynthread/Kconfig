@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-2.0-only
+config NET_DYNTHREAD
+	tristate "Dynamic threaded NAPI scheduler"
+	depends on m && ARM64
+	default m
+	help
+	  Monitor the scheduling behaviour of a target application and,
+	  when it is interrupted too often by network processing, switch
+	  the NAPI processing of the configured net devices from softirq
+	  context to dedicated kernel threads, whose CPU affinity is
+	  adapted dynamically.
+
+	  This module can only be built as a loadable module.

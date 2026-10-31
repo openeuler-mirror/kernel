@@ -113,7 +113,20 @@ static int mlx5e_tx_reporter_err_cqe_recover(void *ctx)
 	mlx5e_reset_txqsq_cc_pc(sq);
 	sq->stats->recover++;
 	clear_bit(MLX5E_SQ_STATE_RECOVERING, &sq->state);
+
+	/* Recovering the SQ means re-enabling NAPI, which needs the RTNL.
+	 * Closing flows hold the RTNL and wait for this work with
+	 * cancel_work_sync(), so do not block here; bail out instead if the
+	 * SQ was disabled while the channel is being torn down.
+	 */
+	while (!rtnl_trylock()) {
+		if (!test_bit(MLX5E_SQ_STATE_ENABLED, &sq->state))
+			return 0;
+		msleep(20);
+	}
 	mlx5e_activate_txqsq(sq);
+	rtnl_unlock();
+
 	if (sq->channel)
 		mlx5e_trigger_napi_icosq(sq->channel);
 	else
@@ -179,6 +192,15 @@ static int mlx5e_tx_reporter_ptpsq_unhealthy_recover(void *ctx)
 
 	priv = ptpsq->txqsq.priv;
 
+	/* Re-enabling NAPI needs the RTNL, but the closing flows hold it
+	 * while waiting for this work with cancel_work_sync(). Try it and
+	 * give up if the SQ was disabled by the teardown meanwhile.
+	 */
+	while (!rtnl_trylock()) {
+		if (!test_bit(MLX5E_SQ_STATE_ENABLED, &ptpsq->txqsq.state))
+			return 0;
+		msleep(20);
+	}
 	mutex_lock(&priv->state_lock);
 	chs = &priv->channels;
 	netdev = priv->netdev;
@@ -198,6 +220,7 @@ static int mlx5e_tx_reporter_ptpsq_unhealthy_recover(void *ctx)
 		netif_carrier_on(netdev);
 
 	mutex_unlock(&priv->state_lock);
+	rtnl_unlock();
 
 	return err;
 }

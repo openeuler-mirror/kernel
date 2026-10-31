@@ -23,7 +23,10 @@ struct netdev_rx_queue {
 #endif
 
 	KABI_USE(1, void *__rcu oecls_ftb)
-	KABI_RESERVE(2)
+	/* NAPI instance for the queue
+	 * Readers and writers must hold RTNL
+	 */
+	KABI_USE(2, struct napi_struct *napi)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 } ____cacheline_aligned_in_smp;

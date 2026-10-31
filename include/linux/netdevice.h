@@ -348,6 +348,11 @@ struct gro_list {
 	int			count;
 };
 
+enum netdev_queue_type {
+	NETDEV_QUEUE_TYPE_RX,
+	NETDEV_QUEUE_TYPE_TX,
+};
+
 /*
  * size of gro hash buckets, must less than bit number of
  * napi_struct::gro_bitmask
@@ -389,7 +394,7 @@ struct napi_struct {
 	struct list_head	dev_list;
 	struct hlist_node	napi_hash_node;
 
-	KABI_RESERVE(1)
+	KABI_USE(1, int irq)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
@@ -672,7 +677,10 @@ struct netdev_queue {
 	struct dql		dql;
 #endif
 
-	KABI_RESERVE(1)
+	/* NAPI instance for the queue
+	 * Readers and writers must hold RTNL
+	 */
+	KABI_USE(1, struct napi_struct *napi)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
@@ -2672,6 +2680,15 @@ static inline void *netdev_priv(const struct net_device *dev)
  * example Ethernet, Wireless LAN, Bluetooth, WiMAX etc.
  */
 #define SET_NETDEV_DEVTYPE(net, devtype)	((net)->dev.type = (devtype))
+
+void netif_queue_set_napi(struct net_device *dev, unsigned int queue_index,
+			  enum netdev_queue_type type,
+			  struct napi_struct *napi);
+
+static inline void netif_napi_set_irq(struct napi_struct *napi, int irq)
+{
+	napi->irq = irq;
+}
 
 /* Default NAPI poll() weight
  * Device drivers are strongly advised to not use bigger value
