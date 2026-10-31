@@ -243,12 +243,10 @@ enum ummu_mapt_mode ummu_core_get_mapt_mode(struct ummu_core_device *ummu_core,
 	}
 	xa_lock(&ummu_core->tid_manager->token_ids);
 	tid_data = xa_load(&ummu_core->tid_manager->token_ids, tid);
-	if (tid_data) {
+	if (tid_data)
 		mode = tid_data->mode;
-	} else {
-		pr_err("cannot get data.\n");
+	else
 		mode = MAPT_MODE_END;
-	}
 	xa_unlock(&ummu_core->tid_manager->token_ids);
 
 	return mode;
