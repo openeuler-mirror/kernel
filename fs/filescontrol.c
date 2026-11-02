@@ -103,32 +103,127 @@ u64 files_cgroup_count_fds(struct files_struct *files)
 }
 
 /*
- * If attaching this cgroup would overcommit the resource then deny
- * the attach. If not, attach the file resource into new cgroup.
+ * A files migration performed by ->can_attach(), recording the migrated
+ * files_struct and the css it is moved from/to so that the move can be
+ * rolled back later.
  */
-static int files_cgroup_can_attach(struct cgroup_taskset *tset)
-{
-	u64 num_files;
-	bool can_attach;
-	struct cgroup_subsys_state *to_css;
-	struct cgroup_subsys_state *from_css;
-	struct page_counter *from_res;
-	struct page_counter *to_res;
-	struct page_counter *fail_res;
+struct files_migrate_entry {
 	struct files_struct *files;
-	struct task_struct *task = cgroup_taskset_first(tset, &to_css);
+	struct cgroup_subsys_state *from_css;
+	struct cgroup_subsys_state *to_css;
+	struct list_head node;
+};
 
-	to_res = css_res_open_handles(to_css);
+static LIST_HEAD(files_migrate_entries);
+
+/* Undo exactly the files_structs ->can_attach() actually migrated. */
+static void files_migrate_rollback(void)
+{
+	struct files_migrate_entry *mig_entry, *next_entry;
+	struct cgroup_subsys_state *from_css, *to_css;
+	struct page_counter *from_res, *to_res;
+	struct files_struct *files;
+	u64 num_files;
+	LIST_HEAD(list);
+
+	list_splice_init(&files_migrate_entries, &list);
+
+	list_for_each_entry_safe(mig_entry, next_entry, &list, node) {
+		from_css = mig_entry->from_css;
+		to_css = mig_entry->to_css;
+		files = mig_entry->files;
+
+		list_del(&mig_entry->node);
+
+		from_res = css_res_open_handles(from_css);
+		to_res = css_res_open_handles(to_css);
+
+		spin_lock(&files->file_lock);
+		num_files = files_cgroup_count_fds(files);
+		page_counter_uncharge(to_res, num_files);
+		page_counter_charge(from_res, num_files);
+		css_put(to_css);
+		files->files_cgroup = css_fcg(from_css);
+		spin_unlock(&files->file_lock);
+
+		/*
+		 * Drop the references taken when the move was recorded:
+		 * the pin on @files (this may free it, which uncharges
+		 * the just-restored css).
+		 */
+		put_files_struct(files);
+		kfree(mig_entry);
+	}
+}
+
+/* Migration committed: the moves are final, just drop the records. */
+static void files_migrate_commit(void)
+{
+	struct files_migrate_entry *mig_entry, *next_entry;
+	LIST_HEAD(list);
+
+	list_splice_init(&files_migrate_entries, &list);
+
+	list_for_each_entry_safe(mig_entry, next_entry, &list, node) {
+		list_del(&mig_entry->node);
+		/*
+		 * The moves are final: the files_struct keeps its
+		 * reference on @to_css, only the pin and the reference
+		 * transferred from the pre-migration state are dropped.
+		 */
+		put_files_struct(mig_entry->files);
+		css_put(mig_entry->from_css);
+		kfree(mig_entry);
+	}
+}
+
+static void files_cgroup_cancel_attach(struct cgroup_taskset *tset __always_unused)
+{
+	files_migrate_rollback();
+}
+
+static void files_cgroup_attach(struct cgroup_taskset *tset __always_unused)
+{
+	files_migrate_commit();
+}
+
+/*
+ * files_cgroup_can_attach_one_task - try to migrate one task's files_struct
+ * @task: task to migrate
+ * @mig_entry: migration record filled in on success
+ * @to_css: target css
+ * @skip: set to true if @task has no chargeable files_struct or its
+ *	   files_struct already points at @to_css
+ */
+static int files_cgroup_can_attach_one_task(struct task_struct *task,
+					    struct files_migrate_entry *mig_entry,
+					    struct cgroup_subsys_state *to_css,
+					    bool *skip)
+{
+	int ret = 0;
+	u64 num_files;
+	struct page_counter *from_res, *to_res, *fail_res;
+	struct files_struct *files;
+	struct cgroup_subsys_state *from_css;
+
+	*skip = false;
 
 	task_lock(task);
 	files = task->files;
-	if (!files || files == &init_files) {
-		task_unlock(task);
-		return 0;
+	if (!files || !files->files_cgroup || files == &init_files) {
+		*skip = true;
+		goto skip;
 	}
 
 	from_css = &files_cgroup_from_files(files)->css;
+	/* Already on the target css, or handled via a shared files_struct. */
+	if (from_css == to_css) {
+		*skip = true;
+		goto skip;
+	}
+
 	from_res = css_res_open_handles(from_css);
+	to_res = css_res_open_handles(to_css);
 
 	spin_lock(&files->file_lock);
 	num_files = files_cgroup_count_fds(files);
@@ -137,16 +232,67 @@ static int files_cgroup_can_attach(struct cgroup_taskset *tset)
 	if (!page_counter_try_charge(to_res, num_files, &fail_res)) {
 		page_counter_charge(from_res, num_files);
 		pr_err("Open files limit overcommited\n");
-		can_attach = false;
-	} else {
-		css_put(from_css);
-		css_get(to_css);
-		task->files->files_cgroup = css_fcg(to_css);
-		can_attach = true;
+		ret = -ENOSPC;
+		goto unlock;
 	}
+
+	/*
+	 * The files_struct's reference on @from_css is transferred to
+	 * the rollback record; @to_css is referenced by the
+	 * files_struct from now on.
+	 */
+	css_get(to_css);
+	files->files_cgroup = css_fcg(to_css);
+
+	atomic_inc(&files->count);
+	mig_entry->files = files;
+	mig_entry->from_css = from_css;
+	mig_entry->to_css = to_css;
+
+unlock:
 	spin_unlock(&files->file_lock);
+skip:
 	task_unlock(task);
-	return can_attach ? 0 : -ENOSPC;
+	return ret;
+}
+
+/*
+ * If attaching this cgroup would overcommit the resource then deny
+ * the attach. If not, attach the file resource into new cgroup.
+ */
+static int files_cgroup_can_attach(struct cgroup_taskset *tset)
+{
+	struct task_struct *task;
+	struct cgroup_subsys_state *to_css;
+	struct files_migrate_entry *mig_entry;
+	int ret = 0;
+	bool skip = false;
+
+	cgroup_taskset_for_each(task, to_css, tset) {
+		mig_entry = kzalloc(sizeof(*mig_entry), GFP_KERNEL);
+		if (!mig_entry) {
+			ret = -ENOMEM;
+			break;
+		}
+
+		ret = files_cgroup_can_attach_one_task(task, mig_entry, to_css, &skip);
+		if (ret) {
+			kfree(mig_entry);
+			break;
+		}
+
+		if (skip) {
+			kfree(mig_entry);
+			continue;
+		}
+
+		list_add_tail(&mig_entry->node, &files_migrate_entries);
+	}
+
+	if (ret)
+		files_migrate_rollback();
+
+	return ret;
 }
 
 int files_cgroup_alloc_fd(struct files_struct *files, u64 n)
@@ -276,6 +422,13 @@ struct cgroup_subsys files_cgrp_subsys = {
 	.css_alloc = files_cgroup_css_alloc,
 	.css_free = files_cgroup_css_free,
 	.can_attach = files_cgroup_can_attach,
+	/*
+	 * Not reachable today because files has the highest ssid among the
+	 * subsystems implementing ->can_attach(); kept for forward
+	 * compatibility.  See the comment above struct files_migrate_entry.
+	 */
+	.cancel_attach = files_cgroup_cancel_attach,
+	.attach = files_cgroup_attach,
 	.legacy_cftypes = files,
 	.dfl_cftypes = files,
 };
