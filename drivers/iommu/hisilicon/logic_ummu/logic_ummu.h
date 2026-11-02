@@ -9,8 +9,6 @@
 #include <linux/ummu_core.h>
 #include "../ummu.h"
 
-typedef bool (*tdev_select_logic_ummu)(struct tdev_attr *attr, bool *select);
-
 #define __GEN_OPS(ops_name, src, dst) \
 	do { \
 		if (!IS_ERR_OR_NULL((const void *)(src)->ops_name)) \
@@ -40,8 +38,6 @@ int logic_add_ummu_device(struct ummu_device *ummu,
 void logic_remove_ummu_device(struct ummu_device *ummu);
 int logic_ummu_device_init(void);
 void logic_ummu_device_exit(void);
-int logic_ummu_register_support_attr(tdev_select_logic_ummu func);
-void logic_ummu_unregister_support_attr(tdev_select_logic_ummu func);
 void logic_ummu_plbi_free_bit(struct iommu_domain *domain, u32 next_lvl_idx,
 			 u32 next_lvl_offset);
 
