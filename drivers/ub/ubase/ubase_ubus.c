@@ -183,28 +183,21 @@ static void ubase_port_event_notify(struct ub_entity *ue, u16 port_id, int event
 
 	switch (event) {
 	case UB_PORT_EVENT_LINK_DOWN:
-		ubase_info(udev, "port %u link down.\n", port_id);
-		udev->reset_stat.port_reset_start_cnt++;
+		ubase_dbg(udev, "port %u link down.\n", port_id);
 		ubase_port_down(udev);
 		break;
 	case UB_PORT_EVENT_LINK_UP:
 		ubase_port_up(udev);
-		ubase_info(udev, "port %u link up.\n", port_id);
-		udev->reset_stat.port_reset_done_cnt++;
+		ubase_dbg(udev, "port %u link up.\n", port_id);
 		break;
 	case UB_PORT_EVENT_RESET_PREPARE:
-		ubase_info(udev, "port %u reset prepare.\n", port_id);
-		udev->reset_stat.port_reset_start_cnt++;
-		ubase_port_down(udev);
+		ubase_dbg(udev, "port %u reset prepare.\n", port_id);
 		break;
 	case UB_PORT_EVENT_RESET_DONE:
-		ubase_port_up(udev);
-		ubase_info(udev, "port %u reset done.\n", port_id);
-		udev->reset_stat.port_reset_done_cnt++;
+		ubase_dbg(udev, "port %u reset done.\n", port_id);
 		break;
 	case UB_PORT_EVENT_RESET_FAILED:
-		ubase_warn(udev, "port %u reset failed.\n", port_id);
-		udev->reset_stat.port_reset_fail_cnt++;
+		ubase_dbg(udev, "port %u reset failed.\n", port_id);
 		break;
 	default:
 		ubase_warn(udev, "port %u unknown event(%d).\n", port_id, event);

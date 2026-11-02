@@ -187,9 +187,6 @@ struct ubase_reset_stat {
 	u32 ras_elr_reset_cnt;
 	u32 reset_fail_cnt;
 	u32 reset_retry_cnt;
-	u32 port_reset_start_cnt;
-	u32 port_reset_done_cnt;
-	u32 port_reset_fail_cnt;
 	u32 himac_reset_cnt;
 	u32 force_reset_cnt;
 	u32 force_reset_fail_cnt;
