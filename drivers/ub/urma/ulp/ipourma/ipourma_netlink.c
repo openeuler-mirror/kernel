@@ -118,6 +118,8 @@ struct rtnl_link_ops ipourma_link_ops __read_mostly = {
 	.dellink    = ipourma_dellink,
 	.get_size   = ipourma_get_size,
 	.fill_info  = ipourma_fill_info,
+	/* Allow netns moves; on netns exit refund the device to init_net. */
+	.netns_refund = true,
 };
 
 struct rtnl_link_ops *ipourma_get_rtnl_link_ops(void)

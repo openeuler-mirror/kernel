@@ -7,6 +7,7 @@
 
 #include <net/addrconf.h>
 #include <net/pkt_sched.h>
+#include <net/net_namespace.h>
 #include <net/ip_fib.h>
 #include <net/route.h>
 #include <linux/version.h>
@@ -107,7 +108,9 @@ static int ipourma_add_route_rule(struct ipourma_dev_priv *priv, union ubcore_ei
 	return ret;
 }
 
-static int ipourma_del_route_rule(struct ipourma_dev_priv *priv, union ubcore_eid *eid)
+/* Delete the fib rule of one eid in the caller-supplied net. */
+static int ipourma_del_route_rule(struct ipourma_dev_priv *priv, union ubcore_eid *eid,
+				  struct net *net)
 {
 	struct in6_addr addr;
 	struct sk_buff *skb;
@@ -129,14 +132,15 @@ static int ipourma_del_route_rule(struct ipourma_dev_priv *priv, union ubcore_ei
 		return -EMSGSIZE;
 	}
 
-	ret = rtnl_unicast(skb, dev_net(priv->dev), 0);
+	ret = rtnl_unicast(skb, net, 0);
 	if (ret)
-		netdev_err(priv->dev, "Failed to new route\n");
+		netdev_err(priv->dev, "Failed to del route rule\n");
 
 	return ret;
 }
 
-static int prepare_route_entry(struct ipourma_dev_priv *priv, struct sk_buff *skb, int type)
+static int prepare_route_entry(struct ipourma_dev_priv *priv, struct sk_buff *skb,
+			       int type, int oif)
 {
 	struct nlmsghdr *nlh;
 	struct rtmsg *rtm;
@@ -159,7 +163,7 @@ static int prepare_route_entry(struct ipourma_dev_priv *priv, struct sk_buff *sk
 	rtm->rtm_type = RTN_UNICAST;
 	rtm->rtm_table = priv->route_tbl_idx;
 
-	if (nla_put_u32(skb, RTA_OIF, priv->dev->ifindex))
+	if (nla_put_u32(skb, RTA_OIF, oif))
 		return -EMSGSIZE;
 
 	nlmsg_end(skb, nlh);
@@ -181,7 +185,7 @@ static void ipourma_add_route_entry(struct work_struct *work)
 		return;
 	}
 
-	if (prepare_route_entry(priv, skb, RTM_NEWROUTE)) {
+	if (prepare_route_entry(priv, skb, RTM_NEWROUTE, priv->dev->ifindex)) {
 		netdev_err(priv->dev, "Failed to prepare route entry\n");
 		nlmsg_free(skb);
 		return;
@@ -192,7 +196,8 @@ static void ipourma_add_route_entry(struct work_struct *work)
 		netdev_err(priv->dev, "Failed to new route\n");
 }
 
-static int ipourma_del_route_entry(struct ipourma_dev_priv *priv)
+/* Delete the route entry against the caller-supplied net/oif. */
+static int ipourma_del_route_entry(struct ipourma_dev_priv *priv, struct net *net, int oif)
 {
 	struct sk_buff *skb;
 	int ret;
@@ -204,14 +209,14 @@ static int ipourma_del_route_entry(struct ipourma_dev_priv *priv)
 	if (IS_ERR_OR_NULL(skb))
 		return -ENOMEM;
 
-	if (prepare_route_entry(priv, skb, RTM_DELROUTE)) {
+	if (prepare_route_entry(priv, skb, RTM_DELROUTE, oif)) {
 		kfree_skb(skb);
 		return -EMSGSIZE;
 	}
 
-	ret = rtnl_unicast(skb, dev_net(priv->dev), 0);
+	ret = rtnl_unicast(skb, net, 0);
 	if (ret)
-		netdev_err(priv->dev, "Failed to new route\n");
+		netdev_err(priv->dev, "Failed to del route entry\n");
 
 	return ret;
 }
@@ -240,21 +245,25 @@ void ipourma_add_route(struct work_struct *work)
 
 ROUTE_ERR:
 	for (i--; i >= 0; i--)
-		ipourma_del_route_rule(priv, &(priv->eid_info[i].eid));
+		ipourma_del_route_rule(priv, &(priv->eid_info[i].eid), dev_net(priv->dev));
 }
 
-static void ipourma_del_route(struct work_struct *work)
+/* Delete the route entry and per-eid rules against the captured old net/oif. */
+static void ipourma_del_route(struct ipourma_dev_priv *priv, struct net *net, int oif)
 {
-	struct ipourma_dev_priv *priv;
+	int ret;
+	int i;
 
-	priv = container_of(work, struct ipourma_dev_priv, unset_route);
-	ipourma_del_route_entry(priv);
+	ipourma_del_route_entry(priv, net, oif);
 	if (!IS_ERR_OR_NULL(priv->eid_info)) {
-		for (int i = 0; i < UBCORE_MAX_SIP; i++) {
+		for (i = 0; i < UBCORE_MAX_SIP; i++) {
 			if (eid_is_empty(&priv->eid_info[i].eid)
 					|| priv->eid_info[i].eid_index != i)
 				continue;
-			ipourma_del_route_rule(priv, &priv->eid_info[i].eid);
+			ret = ipourma_del_route_rule(priv, &priv->eid_info[i].eid, net);
+			if (ret != 0)
+				netdev_err(priv->dev, "Failed to del route rule for eid index %d, ret = %d\n",
+					   i, ret);
 		}
 	}
 }
@@ -359,9 +368,24 @@ static inline void ipourma_napi_disable(struct net_device *dev)
 	napi_disable(&priv->napi_recv);
 }
 
+/* Runs outside rtnl_lock so rtnl_unicast() can take it. */
+static void ipourma_netns_cleanup_work(struct work_struct *work)
+{
+	struct ipourma_netns_cleanup *cleanup =
+		container_of(work, struct ipourma_netns_cleanup, work);
+	struct ipourma_dev_priv *priv = cleanup->priv;
+
+	ipourma_del_route(priv, cleanup->net, cleanup->ifindex);
+	ipourma_unset_ipv6_addr_n(priv, cleanup->net, cleanup->ifindex);
+	put_net(cleanup->net);
+	kfree(cleanup);
+}
+
 static int ipourma_stop(struct net_device *dev)
 {
 	struct ipourma_dev_priv *priv;
+	struct ipourma_netns_cleanup *cleanup;
+	struct net *net;
 
 	if (IS_ERR_OR_NULL(dev))
 		return -EINVAL;
@@ -382,8 +406,27 @@ static int ipourma_stop(struct net_device *dev)
 	mutex_unlock(&priv->evt_lock);
 	netif_carrier_off(dev);
 	dev->flags &= ~IFF_RUNNING;
-	queue_work(priv->net_config_wq, &(priv->unset_route));
-	queue_work(priv->net_config_wq, &(priv->unset_ip));
+
+	/* Defer the deletion (rtnl_unicast() cannot run under rtnl_lock)
+	 * against the pre-move net/ifindex captured here. maybe_get_net()
+	 * skips a dying namespace, whose FIB dies with it. */
+	net = maybe_get_net(dev_net(dev));
+	if (net && !IS_ERR_OR_NULL(priv->eid_info) &&
+			!IS_ERR_OR_NULL(priv->net_config_wq)) {
+		cleanup = kzalloc(sizeof(*cleanup), GFP_KERNEL);
+		if (!IS_ERR_OR_NULL(cleanup)) {
+			INIT_WORK(&cleanup->work, ipourma_netns_cleanup_work);
+			cleanup->priv = priv;
+			cleanup->net = net;
+			cleanup->ifindex = dev->ifindex;
+			queue_work(priv->net_config_wq, &cleanup->work);
+			net = NULL; /* reference transferred to the work */
+		} else {
+			netdev_err(dev, "Failed to alloc netns cleanup work\n");
+		}
+	}
+	if (net)
+		put_net(net);
 
 	netdev_info(dev, "Device closed.\n");
 
@@ -630,15 +673,14 @@ static int ipourma_priv_base_init(struct net_device *dev,
 	priv->tjetty_lru.count = 0;
 	priv->need_restart_ring = false;
 	priv->unregistering = false;
+	priv->netdev_registered = false;
 	priv->tjetty_lru.tjetty_capacity = IPOURMA_DEFAULT_TJETTY_CAP;
 
 	ipourma_init_stats(priv);
 	INIT_WORK(&(priv->set_dev_up), ipourma_open_dev);
 	INIT_WORK(&(priv->set_dev_down), ipourma_close_dev);
 	INIT_WORK(&(priv->set_ip), ipourma_init_ipv6_addr);
-	INIT_WORK(&(priv->unset_ip), ipourma_unset_ipv6_addr);
 	INIT_WORK(&(priv->set_route), ipourma_add_route);
-	INIT_WORK(&(priv->unset_route), ipourma_del_route);
 	INIT_WORK(&(priv->set_route_entry), ipourma_add_route_entry);
 	INIT_WORK(&(priv->rx_cr_event), ipourma_rx_cr_event);
 	INIT_WORK(&(priv->register_netdev), ipourma_register_netdev);
@@ -682,6 +724,10 @@ struct net_device *ipourma_alloc_netdev(struct ubcore_device *urma_dev)
 		free_netdev(dev);
 		return NULL;
 	}
+	/* bind netdev under udma device so
+	 * /sys/class/ubcore/<udmaXX>/device/net/ipourmaX is available */
+	if (urma_dev->dev.parent != NULL)
+		SET_NETDEV_DEV(dev, urma_dev->dev.parent);
 	pr_debug("alloc_netdev completed.\n");
 
 	return dev;
