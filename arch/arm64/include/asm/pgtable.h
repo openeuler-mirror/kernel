@@ -94,7 +94,7 @@ static inline pteval_t __phys_to_pte_val(phys_addr_t phys)
 /*
  * The following only work if pte_present(). Undefined behaviour otherwise.
  */
-#define pte_present(pte)	(!!(pte_val(pte) & (PTE_VALID | PTE_PROT_NONE)))
+#define pte_present(pte)	(!!(pte_val(pte) & (PTE_VALID | PTE_PROT_NONE | PTE_PRESENT_INVALID)))
 #define pte_young(pte)		(!!(pte_val(pte) & PTE_AF))
 #define pte_special(pte)	(!!(pte_val(pte) & PTE_SPECIAL))
 #define pte_write(pte)		(!!(pte_val(pte) & PTE_WRITE))
@@ -488,12 +488,7 @@ static inline int pmd_protnone(pmd_t pmd)
 }
 #endif
 
-#define pmd_present_invalid(pmd)	pte_present_invalid(pmd_pte(pmd))
-
-static inline int pmd_present(pmd_t pmd)
-{
-	return pte_present(pmd_pte(pmd)) || pmd_present_invalid(pmd);
-}
+#define pmd_present(pmd)	pte_present(pmd_pte(pmd))
 
 /*
  * THP definitions.
@@ -937,17 +932,17 @@ static inline int pgd_devmap(pgd_t pgd)
 #ifdef CONFIG_PAGE_TABLE_CHECK
 static inline bool pte_user_accessible_page(pte_t pte)
 {
-	return pte_present(pte) && (pte_user(pte) || pte_user_exec(pte));
+	return pte_valid(pte) && (pte_user(pte) || pte_user_exec(pte));
 }
 
 static inline bool pmd_user_accessible_page(pmd_t pmd)
 {
-	return pmd_leaf(pmd) && !pmd_present_invalid(pmd) && (pmd_user(pmd) || pmd_user_exec(pmd));
+	return pmd_valid(pmd) && !pmd_table(pmd) && (pmd_user(pmd) || pmd_user_exec(pmd));
 }
 
 static inline bool pud_user_accessible_page(pud_t pud)
 {
-	return pud_leaf(pud) && (pud_user(pud) || pud_user_exec(pud));
+	return pud_valid(pud) && !pud_table(pud) && (pud_user(pud) || pud_user_exec(pud));
 }
 #endif
 
