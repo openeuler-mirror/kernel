@@ -4459,7 +4459,7 @@ int rnpvf_setup_rx_resources(struct rnpvf_adapter *adapter,
 	return 0;
 alloc_failed:
 	dev_err(dev,
-		"%s [SetupTxResources] ERROR: #%d RxRing:%d, vector:%d ItemCounts:%d\n",
+		"%s [SetupRxResources] ERROR: #%d RxRing:%d, vector:%d ItemCounts:%d\n",
 		rx_ring->netdev->name, rx_ring->queue_index,
 		rx_ring->rnpvf_queue_idx, rx_ring->q_vector->v_idx,
 		rx_ring->count);
@@ -6001,17 +6001,18 @@ err_ioremap:
 	return err;
 }
 
-static int rnpvf_rm_adpater(struct rnpvf_adapter *adapter)
+static int rnpvf_rm_adapter(struct rnpvf_adapter *adapter)
 {
 	struct net_device *netdev;
-	struct device *dev = &adapter->pdev->dev;
+	struct device *dev;
 
 	if (!adapter)
 		return -EINVAL;
 
+	dev = &adapter->pdev->dev;
 	dev_dbg(dev, "= remove adapter:%s =\n", adapter->name);
-	netdev = adapter->netdev;
 
+	netdev = adapter->netdev;
 	if (netdev) {
 		netif_carrier_off(netdev);
 		rnpvf_sysfs_exit(netdev);
@@ -6035,9 +6036,8 @@ static int rnpvf_rm_adpater(struct rnpvf_adapter *adapter)
 	rnpvf_clear_interrupt_scheme(adapter);
 	rnpvf_reset_interrupt_capability(adapter);
 
-	free_netdev(netdev);
-
 	dev_dbg(dev, "remove %s  complete\n", adapter->name);
+	free_netdev(netdev);
 
 	return 0;
 }
@@ -6119,7 +6119,7 @@ static void rnpvf_remove(struct pci_dev *pdev)
 {
 	struct rnpvf_adapter *adapter = pci_get_drvdata(pdev);
 
-	rnpvf_rm_adpater(adapter);
+	rnpvf_rm_adapter(adapter);
 	pci_release_mem_regions(pdev);
 	pci_disable_device(pdev);
 }
