@@ -1,0 +1,2287 @@
+# SPDX-License-Identifier: GPL-2.0
+#
+# CODEOWNERS for the openEuler kernel source tree.
+#
+# File format and matching rules:
+#   - Each line is a path followed by its owners, all on one line.
+#   - The last matching rule wins.  Rules are ordered parent before child,
+#     so the deepest matching path decides the owner; a path without its
+#     own rule inherits the closest parent rule.
+#   - A trailing slash covers everything inside a directory; without it the
+#     rule matches the exact path only.
+#   - A '*' in a pattern matches any characters except '/', so /dir/prefix*
+#     claims every file named prefix* directly inside /dir; later rules can
+#     still carve out exceptions from a wildcard.
+#   - The leading * rule is the fallback for the whole tree.
+#   - @UNMAINTAINED is a reserved placeholder account: paths assigned to
+#     it have no dedicated maintainer.
+
+* @oekernel
+/CODEOWNERS @hanjunguo @oekernel @sanglipeng @wkfxxx @zeng_zhaorong
+
+/arch/ @UNMAINTAINED
+/arch/arm/ @chriszjh @zouyipeng
+/arch/arm/boot/ @chriszjh @zouyipeng
+/arch/arm/boot/.gitignore @UNMAINTAINED
+/arch/arm/boot/dts/ @UNMAINTAINED
+/arch/arm/boot/dts/aspeed-bmc-amd-ethanolx.dts @kile2009 @sming56_admin
+/arch/arm/boot/dts/aspeed/aspeed-bmc-amd* @kile2009 @sming56_admin
+/arch/arm/boot/dts/intel/ @zeng_zhaorong @juntianlinux
+/arch/arm/configs/ @UNMAINTAINED
+/arch/arm/crypto/ @lujialin2
+/arch/arm/include/ @chriszjh @zouyipeng
+/arch/arm/include/asm/ @chriszjh @zouyipeng
+/arch/arm/include/asm/dma* @wkfxxx @mawupeng @sun_nanyong
+/arch/arm/include/asm/ftrace.h @xukuohai @yeweihua999
+/arch/arm/include/asm/highmem.h @wkfxxx @mawupeng @sun_nanyong
+/arch/arm/include/asm/hugetlb* @wkfxxx @mawupeng @sun_nanyong
+/arch/arm/include/asm/kasan* @wkfxxx @mawupeng @sun_nanyong
+/arch/arm/include/asm/kexec* @xukuohai @yeweihua999
+/arch/arm/include/asm/kprobes.h @xukuohai @yeweihua999
+/arch/arm/include/asm/mem* @wkfxxx @mawupeng @sun_nanyong
+/arch/arm/include/asm/mmu* @wkfxxx @mawupeng @sun_nanyong
+/arch/arm/include/asm/outercache.h @wkfxxx @mawupeng @sun_nanyong
+/arch/arm/include/asm/page* @wkfxxx @mawupeng @sun_nanyong
+/arch/arm/include/asm/perf_event.h @xukuohai @yeweihua999
+/arch/arm/include/asm/pg* @wkfxxx @mawupeng @sun_nanyong
+/arch/arm/include/asm/probes.h @xukuohai @yeweihua999
+/arch/arm/include/asm/tlb* @wkfxxx @mawupeng @sun_nanyong
+/arch/arm/include/asm/uprobes.h @xukuohai @yeweihua999
+/arch/arm/include/asm/vmalloc.h @wkfxxx @mawupeng @sun_nanyong
+/arch/arm/include/asm/xen/ @UNMAINTAINED
+/arch/arm/include/asm/kvm* @kevinzhu1 @yuzenghui
+/arch/arm/include/uapi/asm/kvm* @kevinzhu1 @yuzenghui
+/arch/arm/kernel/ @chriszjh @zouyipeng
+/arch/arm/kernel/dma* @wkfxxx @mawupeng @sun_nanyong
+/arch/arm/kernel/ftrace.c @xukuohai @yeweihua999
+/arch/arm/kernel/livepatch.c @xukuohai @yeweihua999
+/arch/arm/kernel/perf* @xukuohai @yeweihua999
+/arch/arm/kernel/stacktrace.c @xukuohai @yeweihua999
+/arch/arm/kernel/unwind.c @xukuohai @yeweihua999
+/arch/arm/mm/ @wkfxxx @mawupeng @sun_nanyong
+/arch/arm/probes/ @xukuohai @yeweihua999
+/arch/arm/xen/ @UNMAINTAINED
+/arch/arm/kvm/ @kevinzhu1 @yuzenghui
+/arch/arm64/ @chriszjh @zouyipeng
+/arch/arm64/boot/ @UNMAINTAINED
+/arch/arm64/boot/dts/amd/ @kile2009 @sming56_admin
+/arch/arm64/boot/dts/intel/ @zeng_zhaorong @juntianlinux
+/arch/arm64/configs/ @SuperSix173
+/arch/arm64/crypto/ @lujialin2
+/arch/arm64/include/ @chriszjh @zouyipeng
+/arch/arm64/include/asm/ @chriszjh @zouyipeng
+/arch/arm64/include/asm/cache* @wkfxxx @mawupeng @sun_nanyong
+/arch/arm64/include/asm/ftrace.h @xukuohai @yeweihua999
+/arch/arm64/include/asm/hugetlb.h @wkfxxx @mawupeng @sun_nanyong
+/arch/arm64/include/asm/kasan.h @wkfxxx @mawupeng @sun_nanyong
+/arch/arm64/include/asm/kernel-pgtable.h @wkfxxx @mawupeng @sun_nanyong
+/arch/arm64/include/asm/kexec.h @xukuohai @yeweihua999
+/arch/arm64/include/asm/kfence.h @wkfxxx @mawupeng @sun_nanyong
+/arch/arm64/include/asm/kgdb.h @xukuohai @yeweihua999
+/arch/arm64/include/asm/kprobes.h @xukuohai @yeweihua999
+/arch/arm64/include/asm/kvm_a* @kevinzhu1 @yuzenghui
+/arch/arm64/include/asm/kvm_emulate.h @kevinzhu1 @yuzenghui
+/arch/arm64/include/asm/kvm_h* @kevinzhu1 @yuzenghui
+/arch/arm64/include/asm/kvm_m* @kevinzhu1 @yuzenghui
+/arch/arm64/include/asm/kvm_pgtable.h @kevinzhu1 @yuzenghui
+/arch/arm64/include/asm/kvm_pkvm.h @kevinzhu1 @yuzenghui
+/arch/arm64/include/asm/kvm_ptrauth.h @kevinzhu1 @yuzenghui
+/arch/arm64/include/asm/kvm_ras.h @kevinzhu1 @yuzenghui
+/arch/arm64/include/asm/kvm_types.h @kevinzhu1 @yuzenghui
+/arch/arm64/include/asm/livepatch.h @xukuohai @yeweihua999
+/arch/arm64/include/asm/memory.h @wkfxxx @mawupeng @sun_nanyong
+/arch/arm64/include/asm/mm* @wkfxxx @mawupeng @sun_nanyong
+/arch/arm64/include/asm/numa.h @wkfxxx @mawupeng @sun_nanyong
+/arch/arm64/include/asm/page* @wkfxxx @mawupeng @sun_nanyong
+/arch/arm64/include/asm/pci.h @stkid @LiuYongQiang0816
+/arch/arm64/include/asm/perf_event.h @xukuohai @yeweihua999
+/arch/arm64/include/asm/pg* @wkfxxx @mawupeng @sun_nanyong
+/arch/arm64/include/asm/probes.h @xukuohai @yeweihua999
+/arch/arm64/include/asm/spinlock* @stkid @LiuYongQiang0816
+/arch/arm64/include/asm/tlb.h @wkfxxx @mawupeng @sun_nanyong
+/arch/arm64/include/asm/tlbflush.h @wkfxxx @mawupeng @sun_nanyong
+/arch/arm64/include/asm/uprobes.h @xukuohai @yeweihua999
+/arch/arm64/include/asm/vma* @wkfxxx @mawupeng @sun_nanyong
+/arch/arm64/include/asm/xen/ @UNMAINTAINED
+/arch/arm64/include/asm/kvm_nested.h @kevinzhu1 @yuzenghui
+/arch/arm64/include/asm/mpam* @henryze
+/arch/arm64/include/asm/phytium_machine_types.h @mao-hongbo @GoGo_phytium @xuyanaasss
+/arch/arm64/include/asm/resctrl.h @henryze
+/arch/arm64/include/asm/kvm_tm* @hjx_gitff
+/arch/arm64/include/asm/virtcca_cvm* @hjx_gitff
+/arch/arm64/include/asm/kvm_coproc.h @kevinzhu1 @yuzenghui
+/arch/arm64/include/asm/kvm_para.h @kevinzhu1 @yuzenghui
+/arch/arm64/include/asm/kvm_rme* @YiweiZ
+/arch/arm64/include/asm/qspinlock* @LiuYongQiang0816 @stkid
+/arch/arm64/include/asm/cca* @YiweiZ
+/arch/arm64/include/asm/hisi_cca_da.h @YiweiZ
+/arch/arm64/include/asm/mem_encrypt.h @YiweiZ
+/arch/arm64/include/asm/realm_guest.h @YiweiZ
+/arch/arm64/include/asm/rmi* @YiweiZ
+/arch/arm64/include/asm/rsi* @YiweiZ
+/arch/arm64/include/uapi/asm/kvm* @kevinzhu1 @yuzenghui
+/arch/arm64/include/uapi/asm/virtcca_cvm_tsi.h @hjx_gitff
+/arch/arm64/kernel/ @chriszjh @zouyipeng
+/arch/arm64/kernel/cacheinfo.c @wkfxxx @mawupeng @sun_nanyong
+/arch/arm64/kernel/ftrace.c @xukuohai @yeweihua999
+/arch/arm64/kernel/kaslr.c @lujialin2
+/arch/arm64/kernel/livepatch.c @xukuohai @yeweihua999
+/arch/arm64/kernel/mpam/ @henryze
+/arch/arm64/kernel/pci.c @stkid @LiuYongQiang0816
+/arch/arm64/kernel/perf* @xukuohai @yeweihua999
+/arch/arm64/kernel/probes/ @xukuohai @yeweihua999
+/arch/arm64/kernel/stacktrace.c @xukuohai @yeweihua999
+/arch/arm64/kernel/mpam.c @henryze
+/arch/arm64/kernel/virtcca_cvm* @hjx_gitff
+/arch/arm64/kernel/paravirt-spinlocks.c @LiuYongQiang0816 @stkid
+/arch/arm64/kernel/realm_guest.c @YiweiZ
+/arch/arm64/kernel/rsi.c @YiweiZ
+/arch/arm64/kvm/ @kevinzhu1 @yuzenghui
+/arch/arm64/kvm/tmi.c @hjx_gitff
+/arch/arm64/kvm/virtcca_cvm* @hjx_gitff
+/arch/arm64/kvm/cca_base.c @YiweiZ
+/arch/arm64/kvm/hisi-cca-da.c @YiweiZ
+/arch/arm64/kvm/rme* @YiweiZ
+/arch/arm64/mm/ @wkfxxx @mawupeng @sun_nanyong
+/arch/arm64/mm/mem_encrypt.c @YiweiZ
+/arch/arm64/xen/ @UNMAINTAINED
+/arch/arm64/net/bpf_jit* @xukuohai @yeweihua999
+/arch/powerpc/ @chriszjh @zouyipeng
+/arch/powerpc/boot/ @chriszjh @zouyipeng
+/arch/powerpc/boot/dts/ @UNMAINTAINED
+/arch/powerpc/configs/ @UNMAINTAINED
+/arch/powerpc/crypto/ @lujialin2
+/arch/powerpc/include/ @chriszjh @zouyipeng
+/arch/powerpc/include/asm/ @chriszjh @zouyipeng
+/arch/powerpc/include/asm/book3s/ @wkfxxx @mawupeng @sun_nanyong
+/arch/powerpc/include/asm/cache* @wkfxxx @mawupeng @sun_nanyong
+/arch/powerpc/include/asm/dma* @wkfxxx @mawupeng @sun_nanyong
+/arch/powerpc/include/asm/drmem.h @wkfxxx @mawupeng @sun_nanyong
+/arch/powerpc/include/asm/fsl_85xx_cache_sram.h @wkfxxx @mawupeng @sun_nanyong
+/arch/powerpc/include/asm/ftrace.h @xukuohai @yeweihua999
+/arch/powerpc/include/asm/highmem.h @wkfxxx @mawupeng @sun_nanyong
+/arch/powerpc/include/asm/hugetlb.h @wkfxxx @mawupeng @sun_nanyong
+/arch/powerpc/include/asm/iommu.h @chen-jun-hw
+/arch/powerpc/include/asm/kasan.h @wkfxxx @mawupeng @sun_nanyong
+/arch/powerpc/include/asm/kdump.h @xukuohai @yeweihua999
+/arch/powerpc/include/asm/kexec* @xukuohai @yeweihua999
+/arch/powerpc/include/asm/kvm* @UNMAINTAINED
+/arch/powerpc/include/asm/livepatch.h @xukuohai @yeweihua999
+/arch/powerpc/include/asm/membarrier.h @wkfxxx @mawupeng @sun_nanyong
+/arch/powerpc/include/asm/mmu* @wkfxxx @mawupeng @sun_nanyong
+/arch/powerpc/include/asm/mmzone.h @wkfxxx @mawupeng @sun_nanyong
+/arch/powerpc/include/asm/nohash/ @wkfxxx @mawupeng @sun_nanyong
+/arch/powerpc/include/asm/page* @wkfxxx @mawupeng @sun_nanyong
+/arch/powerpc/include/asm/perf_event* @xukuohai @yeweihua999
+/arch/powerpc/include/asm/pg* @wkfxxx @mawupeng @sun_nanyong
+/arch/powerpc/include/asm/ptrace.h @xukuohai @yeweihua999
+/arch/powerpc/include/asm/tlb* @wkfxxx @mawupeng @sun_nanyong
+/arch/powerpc/include/asm/trace* @xukuohai @yeweihua999
+/arch/powerpc/include/asm/uprobes.h @xukuohai @yeweihua999
+/arch/powerpc/include/asm/vmalloc.h @wkfxxx @mawupeng @sun_nanyong
+/arch/powerpc/include/uapi/ @chriszjh @zouyipeng
+/arch/powerpc/include/uapi/asm/ @chriszjh @zouyipeng
+/arch/powerpc/include/uapi/asm/bpf_perf_event.h @xukuohai
+/arch/powerpc/include/uapi/asm/kvm* @UNMAINTAINED
+/arch/powerpc/include/uapi/asm/perf* @xukuohai @yeweihua999
+/arch/powerpc/kernel/ @chriszjh @zouyipeng
+/arch/powerpc/kernel/cacheinfo* @wkfxxx @mawupeng @sun_nanyong
+/arch/powerpc/kernel/livepatch*.c @xukuohai @yeweihua999
+/arch/powerpc/kernel/stacktrace.c @xukuohai @yeweihua999
+/arch/powerpc/kernel/trace/ @xukuohai @yeweihua999
+/arch/powerpc/kernel/kvm* @UNMAINTAINED
+/arch/powerpc/kexec/ @xukuohai @yeweihua999
+/arch/powerpc/kvm/ @UNMAINTAINED
+/arch/powerpc/mm/ @wkfxxx @mawupeng @sun_nanyong
+/arch/powerpc/perf/ @xukuohai @yeweihua999
+/arch/x86/ @stkid @zeng_zhaorong @juntianlinux
+/arch/x86/boot/compressed/kaslr.c @lujialin2
+/arch/x86/boot/compressed/pgtable* @wkfxxx @mawupeng @sun_nanyong
+/arch/x86/boot/memory.c @wkfxxx @mawupeng @sun_nanyong
+/arch/x86/crypto/ @lujialin2
+/arch/x86/crypto/sm*-zhaoxin-gmi.c @leoliu-oc
+/arch/x86/include/asm/iommu* @chen-jun-hw
+/arch/x86/include/asm/kasan.h @wkfxxx @mawupeng @sun_nanyong
+/arch/x86/include/asm/kaslr.h @lujialin2
+/arch/x86/include/asm/kprobes.h @xukuohai @yeweihua999
+/arch/x86/include/asm/livepatch.h @xukuohai @yeweihua999
+/arch/x86/include/asm/mmconfig.h @wkfxxx @mawupeng @sun_nanyong
+/arch/x86/include/asm/mmu* @wkfxxx @mawupeng @sun_nanyong
+/arch/x86/include/asm/mmx.h @wkfxxx @mawupeng @sun_nanyong
+/arch/x86/include/asm/mmzone* @wkfxxx @mawupeng @sun_nanyong
+/arch/x86/include/asm/numa*.h @wkfxxx @mawupeng @sun_nanyong
+/arch/x86/include/asm/page* @wkfxxx @mawupeng @sun_nanyong
+/arch/x86/include/asm/perf_event* @xukuohai @yeweihua999
+/arch/x86/include/asm/trace/ @xukuohai @yeweihua999
+/arch/x86/include/asm/vmalloc.h @wkfxxx @mawupeng @sun_nanyong
+/arch/x86/include/asm/vmware.h @wkfxxx @mawupeng @sun_nanyong
+/arch/x86/include/asm/vmx* @wkfxxx @mawupeng @sun_nanyong
+/arch/x86/include/asm/vsyscall.h @wkfxxx @mawupeng @sun_nanyong
+/arch/x86/include/asm/vvar.h @wkfxxx @mawupeng @sun_nanyong
+/arch/x86/include/asm/word-at-a-time.h @wkfxxx @mawupeng @sun_nanyong
+/arch/x86/include/asm/xen/ @UNMAINTAINED
+/arch/x86/include/asm/amd* @kile2009 @sming56_admin
+/arch/x86/include/asm/microcode_amd.h @kile2009 @sming56_admin
+/arch/x86/include/asm/processor-hygon.h @hanliyang @allen-shi
+/arch/x86/include/asm/microcode_zhaoxin.h @leoliu-oc
+/arch/x86/include/uapi/asm/amd_hsmp.h @kile2009 @sming56_admin
+/arch/x86/kernel/apic/ @chriszjh @zouyipeng
+/arch/x86/kernel/crash* @xukuohai @yeweihua999
+/arch/x86/kernel/dumpstack* @xukuohai @yeweihua999
+/arch/x86/kernel/ftrace* @xukuohai @yeweihua999
+/arch/x86/kernel/kprobes/ @xukuohai @yeweihua999
+/arch/x86/kernel/livepatch.c @xukuohai @yeweihua999
+/arch/x86/kernel/stacktrace.c @xukuohai @yeweihua999
+/arch/x86/kernel/unwind* @xukuohai @yeweihua999
+/arch/x86/kernel/cpu/zhaoxin.c @leoliu-oc
+/arch/x86/kernel/cpu/amd.c @kile2009 @sming56_admin
+/arch/x86/kernel/cpu/hygon.c @hanliyang @allen-shi
+/arch/x86/kernel/cpu/mce/amd.c @kile2009 @sming56_admin
+/arch/x86/kernel/cpu/microcode/amd* @kile2009 @sming56_admin
+/arch/x86/kernel/cpu/microcode/zhaoxin.c @leoliu-oc
+/arch/x86/kernel/cpu/mtrr/amd.c @kile2009 @sming56_admin
+/arch/x86/kernel/cpu/topology_amd.c @kile2009 @sming56_admin
+/arch/x86/kernel/amd* @kile2009 @sming56_admin
+/arch/x86/kernel/zhaoxin_kh40000.c @leoliu-oc
+/arch/x86/kvm/ @yuzenghui @zeng_zhaorong
+/arch/x86/kvm/pmu_amd.c @kile2009 @sming56_admin
+/arch/x86/kvm/svm/ @kile2009 @sming56_admin
+/arch/x86/mm/ @wkfxxx @mawupeng @sun_nanyong
+/arch/x86/mm/pat/enc_dec_user_memory.c @hanliyang @allen-shi
+/arch/x86/mm/amdtopology.c @kile2009 @sming56_admin
+/arch/x86/mm/mem_encrypt_amd.c @kile2009 @sming56_admin
+/arch/x86/mm/mem_encrypt_hygon.c @hanliyang @allen-shi
+/arch/x86/mm/csv_guest_mem.c @hanliyang @allen-shi
+/arch/x86/xen/ @UNMAINTAINED
+/arch/x86/configs/ @SuperSix173
+/arch/x86/events/amd/ @kile2009 @sming56_admin
+/arch/x86/events/zhaoxin/ @leoliu-oc
+/arch/x86/net/ @xukuohai @yeweihua999
+/arch/x86/oprofile/op_model_amd.c @kile2009 @sming56_admin
+/arch/x86/pci/amd_bus.c @kile2009 @sming56_admin
+/arch/loongarch/ @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/arch/risc-v/ @whoisxxx
+/arch/sw_64/ @guzitao
+/arch/riscv/ @xingmz1 @whoisxxx @siyanteng
+/arch/riscv/net/bpf_jit* @xukuohai @yeweihua999
+/arch/ia64/include/uapi/asm/intel_intrin.h @zeng_zhaorong @juntianlinux
+/block/ @zhangyi089
+/block/bio-integrity.c @UNMAINTAINED
+/block/blk-crypto.c @UNMAINTAINED
+/block/blk-crypto-fallback.c @UNMAINTAINED
+/block/blk-crypto-internal.h @UNMAINTAINED
+/block/blk-crypto-profile.c @UNMAINTAINED
+/block/blk-integrity.c @UNMAINTAINED
+/block/blk-iocost.c @UNMAINTAINED
+/block/blk-iolatency.c @UNMAINTAINED
+/block/blk-ioprio* @UNMAINTAINED
+/block/blk-mq-rdma.c @UNMAINTAINED
+/block/blk-mq-virtio.c @UNMAINTAINED
+/block/blk-rq-qos* @UNMAINTAINED
+/block/blk-wbt* @UNMAINTAINED
+/block/bounce.c @UNMAINTAINED
+/block/ioprio.c @UNMAINTAINED
+/block/opal_proto.h @UNMAINTAINED
+/block/partitions/ @zhangyi089
+/block/partitions/acorn.c @UNMAINTAINED
+/block/partitions/atari* @UNMAINTAINED
+/block/partitions/cmdline.c @UNMAINTAINED
+/block/partitions/ibm.c @UNMAINTAINED
+/block/partitions/sysv68.c @UNMAINTAINED
+/block/partitions/ultrix.c @UNMAINTAINED
+/block/sed-opal.c @UNMAINTAINED
+/block/t10-pi.c @UNMAINTAINED
+/certs/ @lujialin2
+/crypto/ @lujialin2
+/Documentation/ @UNMAINTAINED
+/Documentation/vm/ @wkfxxx @mawupeng @sun_nanyong
+/Documentation/ABI/testing/debugfs-hisi* @liulongfang
+/Documentation/ABI/testing/sysfs-devices-platform-kunpeng_hccs @li-huisong
+/Documentation/ABI/testing/sysfs-fs-ext4 @zhangyi089
+/Documentation/ABI/testing/sysfs-fs-xfs @zhangyi089
+/Documentation/ABI/testing/sysfs-class-iommu-ummu*-mpam @henryze
+/Documentation/admin-guide/perf/hisi-p* @young-sun
+/Documentation/admin-guide/bcache.rst @colyli
+/Documentation/admin-guide/ext4.rst @zhangyi089
+/Documentation/admin-guide/xfs.rst @zhangyi089
+/Documentation/admin-guide/mm/userfaultfd.rst @wkfxxx @mawupeng @sun_nanyong
+/Documentation/admin-guide/cifs/ @chenxiaosonggitcode @zhangguodong11
+/Documentation/admin-guide/sysctl/sunrpc.rst @chenxiaosonggitcode @zhangguodong11
+/Documentation/devicetree/bindings/infiniband/hisilicon-hns-roce.txt @hellotcc
+/Documentation/devicetree/bindings/scsi/hisilicon-sas.txt @LiYihang226
+/Documentation/devicetree/bindings/riscv/ @xingmz1 @whoisxxx @siyanteng
+/Documentation/devicetree/bindings/arm/bcm/raspberrypi,bcm2835-firmware.yaml @woqidaideshi
+/Documentation/devicetree/bindings/arm/arm,mpam* @henryze
+/Documentation/devicetree/bindings/display/panel/raspberrypi,7inch-touchscreen.yaml @woqidaideshi
+/Documentation/devicetree/bindings/gpio/raspberrypi,firmware-gpio.txt @woqidaideshi
+/Documentation/devicetree/bindings/gpio/gpio-phytium* @mao-hongbo @GoGo_phytium @xuyanaasss
+/Documentation/devicetree/bindings/gpu/phytium* @mao-hongbo @GoGo_phytium @xuyanaasss
+/Documentation/devicetree/bindings/input/touchscreen/raspberrypi,firmware-ts.txt @woqidaideshi
+/Documentation/devicetree/bindings/input/phytium-keypad.txt @mao-hongbo @GoGo_phytium @xuyanaasss
+/Documentation/devicetree/bindings/net/motorcomm,yt8xxx.yaml @Frank_Sae
+/Documentation/devicetree/bindings/net/can/phytium* @mao-hongbo @GoGo_phytium @xuyanaasss
+/Documentation/devicetree/bindings/net/dwmac-phytium.txt @mao-hongbo @GoGo_phytium @xuyanaasss
+/Documentation/devicetree/bindings/net/phytium,gmac.yaml @mao-hongbo @GoGo_phytium @xuyanaasss
+/Documentation/devicetree/bindings/regulator/raspberrypi,7inch-touchscreen-panel-regulator.yaml @woqidaideshi
+/Documentation/devicetree/bindings/soc/bcm/raspberrypi,bcm2835-power.txt @woqidaideshi
+/Documentation/devicetree/bindings/i2c/i2c-phytium.txt @mao-hongbo @GoGo_phytium @xuyanaasss
+/Documentation/devicetree/bindings/iio/adc/phytium,adc.txt @mao-hongbo @GoGo_phytium @xuyanaasss
+/Documentation/devicetree/bindings/interrupt-controller/phytium,ixic.yaml @mao-hongbo @GoGo_phytium @xuyanaasss
+/Documentation/devicetree/bindings/mailbox/phytium-mailbox.txt @mao-hongbo @GoGo_phytium @xuyanaasss
+/Documentation/devicetree/bindings/mmc/phytium* @mao-hongbo @GoGo_phytium @xuyanaasss
+/Documentation/devicetree/bindings/mtd/phytium,qspi.txt @mao-hongbo @GoGo_phytium @xuyanaasss
+/Documentation/devicetree/bindings/rtc/phytium,rtc.txt @mao-hongbo @GoGo_phytium @xuyanaasss
+/Documentation/devicetree/bindings/sound/phytium-hda.txt @mao-hongbo @GoGo_phytium @xuyanaasss
+/Documentation/devicetree/bindings/spi/spi-phytium.txt @mao-hongbo @GoGo_phytium @xuyanaasss
+/Documentation/devicetree/bindings/w1/phytium,w1.txt @mao-hongbo @GoGo_phytium @xuyanaasss
+/Documentation/virt/kvm/ @kevinzhu1 @yuzenghui
+/Documentation/virt/kvm/amd-memory-encryption.rst @kile2009 @sming56_admin
+/Documentation/virt/kvm/loongarch/ @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/Documentation/virt/kvm/x86/ @zeng_zhaorong @juntianlinux
+/Documentation/virt/kvm/x86/amd-memory-encryption.rst @kile2009 @sming56_admin
+/Documentation/filesystems/btrfs.rst @jiaoff
+/Documentation/filesystems/ext4/ @zhangyi089
+/Documentation/filesystems/xfs* @zhangyi089
+/Documentation/filesystems/mfs.rst @yubo-liu1 @gang_he
+/Documentation/filesystems/cifs/ @chenxiaosonggitcode @zhangguodong11
+/Documentation/filesystems/smb/ @chenxiaosonggitcode @zhangguodong11
+/Documentation/loongarch/ @Hongchen_Zhang @lixuefeng-loongson @maobibo @gaojuxin09
+/Documentation/translations/zh_CN/loongarch/ @Hongchen_Zhang @lixuefeng-loongson @maobibo @gaojuxin09
+/Documentation/translations/zh_CN/arch/loongarch/ @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/Documentation/x86/ @zeng_zhaorong @juntianlinux
+/Documentation/x86/amd-memory-encryption.rst @kile2009 @sming56_admin
+/Documentation/arch/loongarch/ @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/Documentation/arch/x86/hygon-secure-virtualization.rst @hanliyang @allen-shi
+/Documentation/arch/arm64/mpam.md @henryze
+/Documentation/hwmon/raspberrypi-hwmon.rst @woqidaideshi
+/Documentation/nvme/ @htforge
+/Documentation/gpu/amdgpu/ @kile2009 @sming56_admin
+/Documentation/misc-devices/zcopy.rst @mingrui-liu @yubo-liu1
+/Documentation/process/maintainer-kvm-x86.rst @kevinzhu1 @yuzenghui
+/Documentation/virtual/kvm/ @kevinzhu1 @yuzenghui
+/Documentation/ub/urma/ @eingesch @wanghang73
+/Documentation/sysctl/sunrpc.txt @chenxiaosonggitcode @zhangguodong11
+/Documentation/networking/device_drivers/ethernet/wangxun/ @duanqiangwen @linyuexie1
+/drivers/ @UNMAINTAINED
+/drivers/acpi/ @stkid @hanjunguo @chriszjh @zouyipeng
+/drivers/acpi/acpi_memhotplug.c @wkfxxx @mawupeng @sun_nanyong
+/drivers/acpi/numa/ @wkfxxx @mawupeng @sun_nanyong
+/drivers/acpi/pci* @LiuYongQiang0816
+/drivers/acpi/apei/ @hunan4222
+/drivers/acpi/arm64/mpam* @henryze
+/drivers/acpi/pmic/intel_pmic* @zeng_zhaorong @juntianlinux
+/drivers/acpi/nfit/intel* @zeng_zhaorong @juntianlinux
+/drivers/acpi/prmt.c @chriszjh @zouyipeng
+/drivers/ata/ @zhangyi089
+/drivers/ata/ahci.c @LiYihang226
+/drivers/ata/ahci_zhaoxin_sgpio* @leoliu-oc
+/drivers/ata/pata_amd.c @kile2009 @sming56_admin
+/drivers/ata/sata_zhaoxin.c @leoliu-oc
+/drivers/base/ @chen-jun-hw
+/drivers/base/arch_numa.c @wkfxxx @mawupeng @sun_nanyong
+/drivers/base/cacheinfo.c @wkfxxx @mawupeng @sun_nanyong
+/drivers/base/firmware_loader/ @UNMAINTAINED
+/drivers/base/regmap/ @chen-jun-hw
+/drivers/base/regmap/regmap-ac97.c @UNMAINTAINED
+/drivers/base/regmap/regmap-sccb.c @UNMAINTAINED
+/drivers/base/regmap/regmap-sdw* @UNMAINTAINED
+/drivers/base/regmap/regmap-slimbus.c @UNMAINTAINED
+/drivers/base/regmap/regmap-spi-avmm.c @UNMAINTAINED
+/drivers/base/regmap/regmap-spmi.c @UNMAINTAINED
+/drivers/base/regmap/regmap-w1.c @UNMAINTAINED
+/drivers/block/ @UNMAINTAINED
+/drivers/block/brd.c @zhangyi089
+/drivers/block/Kconfig @zhangyi089
+/drivers/block/loop* @zhangyi089
+/drivers/block/Makefile @zhangyi089
+/drivers/block/nbd.c @zhangyi089
+/drivers/block/zram/ @wkfxxx @mawupeng @sun_nanyong
+/drivers/bus/ @UNMAINTAINED
+/drivers/bus/arm* @chen-jun-hw
+/drivers/bus/b* @chen-jun-hw
+/drivers/bus/da8xx-mstpri.c @chen-jun-hw
+/drivers/bus/hisi_lpc.c @chen-jun-hw
+/drivers/bus/imx-weim.c @chen-jun-hw
+/drivers/bus/intel-ixp4xx-eb.c @zeng_zhaorong @juntianlinux
+/drivers/bus/Kconfig @chen-jun-hw
+/drivers/bus/Makefile @chen-jun-hw
+/drivers/bus/mhi/ @chen-jun-hw
+/drivers/bus/mips_cdmm.c @chen-jun-hw
+/drivers/bus/moxtet.c @chen-jun-hw
+/drivers/cdrom/ @chen-jun-hw
+/drivers/char/ @UNMAINTAINED
+/drivers/char/hpet.c @chriszjh @zouyipeng
+/drivers/char/ipmi/ @lujialin2
+/drivers/char/ipmi/btlock.h @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/drivers/char/ipmi/ipmi_si.h @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/drivers/char/ipmi/ipmi_si_intf.c @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/drivers/char/ipmi/ipmi_si_ls2k500.c @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/drivers/char/ipmi/kcs_bmc_ls2k500.h @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/drivers/char/ipmi/hisi_ipmi_pso.c @hewanhan
+/drivers/char/Kconfig @chen-jun-hw
+/drivers/char/Makefile @chen-jun-hw
+/drivers/char/mem.c @wkfxxx @mawupeng @sun_nanyong
+/drivers/char/random.c @chen-jun-hw
+/drivers/char/ttyprintk.c @lujialin2
+/drivers/char/virtio_console.c @chen-jun-hw
+/drivers/char/gmem_dev.c @SuperSix173
+/drivers/char/hw_random/zhaoxin-rng.c @leoliu-oc
+/drivers/char/hw_random/phytium-rng.c @mao-hongbo @GoGo_phytium @xuyanaasss
+/drivers/char/hw_random/amd-rng.c @kile2009 @sming56_admin
+/drivers/char/hw_random/intel-rng.c @zeng_zhaorong @juntianlinux
+/drivers/char/tpm/t*m_hygon.c @hanliyang @allen-shi
+/drivers/char/agp/amd* @kile2009 @sming56_admin
+/drivers/char/agp/intel* @zeng_zhaorong @juntianlinux
+/drivers/char/loongson_se.c @lixuefeng-loongson @maobibo @gaojuxin09 @robinorg
+/drivers/cpufreq/ @chriszjh @zouyipeng
+/drivers/cpufreq/loongson3-acpi-cpufreq.c @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/drivers/cpufreq/intel_pstate.c @zeng_zhaorong @juntianlinux
+/drivers/cpufreq/sunway-cpufreq.c @guzitao
+/drivers/cpufreq/amd_freq_sensitivity.c @kile2009 @sming56_admin
+/drivers/cpufreq/amd-pstate.c @kile2009 @sming56_admin
+/drivers/cpufreq/amd-pstate-* @kile2009 @sming56_admin
+/drivers/cpufreq/raspberrypi-cpufreq.c @woqidaideshi
+/drivers/cpufreq/loongson1-cpufreq.c @lixuefeng-loongson @maobibo @gaojuxin09 @robinorg
+/drivers/cpufreq/loongson2_cpufreq.c @lixuefeng-loongson @maobibo @gaojuxin09 @robinorg
+/drivers/cpuidle/ @zqiao216
+/drivers/cpuidle/cpuidle-a* @UNMAINTAINED
+/drivers/cpuidle/cpuidle-big_little.c @UNMAINTAINED
+/drivers/cpuidle/cpuidle-c* @UNMAINTAINED
+/drivers/cpuidle/cpuidle-exynos.c @UNMAINTAINED
+/drivers/cpuidle/cpuidle-haltpoll.c @UNMAINTAINED
+/drivers/cpuidle/cpuidle-kirkwood.c @UNMAINTAINED
+/drivers/cpuidle/cpuidle-mvebu-v7.c @UNMAINTAINED
+/drivers/cpuidle/cpuidle-qcom-spm.c @UNMAINTAINED
+/drivers/cpuidle/cpuidle-tegra.c @UNMAINTAINED
+/drivers/cpuidle/cpuidle-ux500.c @UNMAINTAINED
+/drivers/cpuidle/cpuidle-zynq.c @UNMAINTAINED
+/drivers/cpuidle/cpuidle-riscv-sbi.c @xingmz1 @whoisxxx @siyanteng
+/drivers/cpuidle/cpuidle-sw64.c @guzitao
+/drivers/cpuidle/Kconfig.sw64 @guzitao
+/drivers/infiniband/ @yuehaibing_planb
+/drivers/infiniband/hw/hns/ @hellotcc
+/drivers/infiniband/hw/nebula-matrix/ @nebulamatrix_rdma @peterpangogogo @howard_lu
+/drivers/iommu/ @chen-jun-hw
+/drivers/iommu/hisilicon/ @fangfeng123 @Tankll2021 @gongleihuawei
+/drivers/iommu/intel/ @zeng_zhaorong @juntianlinux
+/drivers/iommu/arm/arm-smmu-v3/arm-s-smmu-v3* @hjx_gitff
+/drivers/iommu/arm/arm-smmu-v3/arm-r-smmu-v3* @hjx_gitff @YiweiZ
+/drivers/iommu/sw64/ @guzitao
+/drivers/iommu/sw64/sunway_iommu.h @guzitao
+/drivers/iommu/amd/ @kile2009 @sming56_admin
+/drivers/iommu/loongarch_iommu.* @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/drivers/iommu/amd_iommu* @kile2009 @sming56_admin
+/drivers/iommu/intel-* @zeng_zhaorong @juntianlinux
+/drivers/iommu/intel_irq_remapping.c @zeng_zhaorong @juntianlinux
+/drivers/iommu/loongarch_iommu_mem* @lixuefeng-loongson @maobibo @gaojuxin09 @robinorg
+/drivers/iommu/io-pgtable-realm.c @YiweiZ
+/drivers/irqchip/ @chriszjh @zouyipeng
+/drivers/irqchip/irq-loong* @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/drivers/irqchip/irq-gic-phytium-2500* @mao-hongbo @GoGo_phytium @xuyanaasss
+/drivers/irqchip/irq-sunway* @guzitao
+/drivers/irqchip/irq-phytium-ixic.c @mao-hongbo @GoGo_phytium @xuyanaasss
+/drivers/Kconfig @chen-jun-hw
+/drivers/Makefile @chen-jun-hw
+/drivers/md/ @UNMAINTAINED
+/drivers/md/dm.* @zhangyi089
+/drivers/md/dm-bio-prison-v1* @zhangyi089
+/drivers/md/dm-bio-record.h @zhangyi089
+/drivers/md/dm-bu* @zhangyi089
+/drivers/md/dm-core.h @zhangyi089
+/drivers/md/dm-crypt.c @zhangyi089
+/drivers/md/dm-exception-store* @zhangyi089
+/drivers/md/dm-init.c @zhangyi089
+/drivers/md/dm-io.c @zhangyi089
+/drivers/md/dm-ioctl.c @zhangyi089
+/drivers/md/dm-kcopyd.c @zhangyi089
+/drivers/md/dm-linear.c @zhangyi089
+/drivers/md/dm-mpath* @zhangyi089
+/drivers/md/dm-p* @zhangyi089
+/drivers/md/dm-rq* @zhangyi089
+/drivers/md/dm-snap* @zhangyi089
+/drivers/md/dm-stats* @zhangyi089
+/drivers/md/dm-sysfs.c @zhangyi089
+/drivers/md/dm-t* @zhangyi089
+/drivers/md/dm-uevent* @zhangyi089
+/drivers/md/dm-verity.h @zhangyi089
+/drivers/md/dm-verity-target.c @zhangyi089
+/drivers/md/dm-verity-verify-sig* @zhangyi089
+/drivers/md/Kconfig @zhangyi089
+/drivers/md/Makefile @zhangyi089
+/drivers/md/md.* @zhangyi089
+/drivers/md/persistent-data/ @zhangyi089
+/drivers/md/raid1.* @zhangyi089
+/drivers/md/bcache/ @colyli
+/drivers/mtd/ @lujialin2
+/drivers/mtd/ubi/ @zhangyi089
+/drivers/mtd/spi-nor/phytium-quadspi.c @mao-hongbo @GoGo_phytium @xuyanaasss
+/drivers/mtd/spi-nor/controllers/intel-spi* @zeng_zhaorong @juntianlinux
+/drivers/mtd/spi-nor/intel* @zeng_zhaorong @juntianlinux
+/drivers/mtd/maps/amd76xrom.c @kile2009 @sming56_admin
+/drivers/mtd/maps/intel_vr_nor.c @zeng_zhaorong @juntianlinux
+/drivers/mtd/nand/raw/intel-nand-controller.c @zeng_zhaorong @juntianlinux
+/drivers/mtd/nand/raw/nand_amd.c @kile2009 @sming56_admin
+/drivers/mux/ @chen-jun-hw
+/drivers/net/ @yuehaibing_planb
+/drivers/net/ethernet/hisilicon/hns3/ @WangBoe2022 @linyunsheng
+/drivers/net/ethernet/hisilicon/hns/ @WangBoe2022 @linyunsheng
+/drivers/net/ethernet/stmicro/stmmac/dwmac-loongson.c @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/drivers/net/ethernet/stmicro/stmmac/dwmac-phytium.c @mao-hongbo @GoGo_phytium @xuyanaasss
+/drivers/net/ethernet/stmicro/stmmac/dwmac-intel* @zeng_zhaorong @juntianlinux
+/drivers/net/ethernet/ub/ @hu-chunzhi @wsoydl @jerry_lilijun
+/drivers/net/ethernet/netswift/ @duanqiangwen @linyuexie1
+/drivers/net/ethernet/huawei/bma/ @chenjiesong
+/drivers/net/ethernet/huawei/hinic/ @chiqijun
+/drivers/net/ethernet/intel/ @zeng_zhaorong @juntianlinux
+/drivers/net/ethernet/amd/ @kile2009 @sming56_admin
+/drivers/net/ethernet/motorcomm/ @Frank_Sae
+/drivers/net/ethernet/mucse/ @sinat_17738335
+/drivers/net/ethernet/wangxun/ @duanqiangwen @linyuexie1
+/drivers/net/phy/motorcomm.c @Frank_Sae
+/drivers/net/phy/amd.c @kile2009 @sming56_admin
+/drivers/net/phy/intel-xway.c @zeng_zhaorong @juntianlinux
+/drivers/net/can/phytium/ @mao-hongbo @GoGo_phytium @xuyanaasss
+/drivers/net/ub/ @chenjunxin1992 @fanghaiqinghw
+/drivers/net/wireless/intel/ @zeng_zhaorong @juntianlinux
+/drivers/nvme/ @htforge
+/drivers/nvme/host/ @htforge
+/drivers/nvme/host/fabrics* @UNMAINTAINED
+/drivers/nvme/host/fc* @UNMAINTAINED
+/drivers/nvme/host/hwmon.c @UNMAINTAINED
+/drivers/nvme/host/multipath.c @UNMAINTAINED
+/drivers/nvme/host/rdma.c @UNMAINTAINED
+/drivers/nvme/host/tcp.c @UNMAINTAINED
+/drivers/nvme/host/zns.c @UNMAINTAINED
+/drivers/nvme/target/ @UNMAINTAINED
+/drivers/of/ @chen-jun-hw
+/drivers/of/of*.c @wkfxxx @mawupeng @sun_nanyong
+/drivers/of/unittest-data/ @UNMAINTAINED
+/drivers/pci/ @stkid @LiuYongQiang0816
+/drivers/pci/controller/pci-loongson.c @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/drivers/pci/controller/pci-sunway.c @guzitao
+/drivers/pci/controller/dwc/pcie-intel-gw.c @zeng_zhaorong @juntianlinux
+/drivers/pci/hotplug/sunway_pciehp* @guzitao
+/drivers/perf/ @xukuohai @yeweihua999
+/drivers/perf/hisilicon/ @young-sun
+/drivers/perf/hisilicon/hns3_pmu.c @WangBoe2022 @linyunsheng
+/drivers/perf/hisilicon/ummu_pmu.c @fangfeng123 @Tankll2021 @gongleihuawei
+/drivers/perf/riscv_pmu* @xingmz1 @whoisxxx @siyanteng
+/drivers/phy/ @yuehaibing_planb
+/drivers/phy/intel/ @zeng_zhaorong @juntianlinux
+/drivers/pinctrl/ @UNMAINTAINED
+/drivers/pinctrl/core* @chen-jun-hw
+/drivers/pinctrl/devicetree* @chen-jun-hw
+/drivers/pinctrl/Kconfig @chen-jun-hw
+/drivers/pinctrl/Makefile @chen-jun-hw
+/drivers/pinctrl/pinconf* @chen-jun-hw
+/drivers/pinctrl/pinmux* @chen-jun-hw
+/drivers/pinctrl/intel/ @zeng_zhaorong @juntianlinux
+/drivers/pinctrl/pinctrl-amd* @kile2009 @sming56_admin
+/drivers/pinctrl/zhaoxin/ @leoliu-oc
+/drivers/pinctrl/pinctrl-loongson2.c @lixuefeng-loongson @maobibo @gaojuxin09 @robinorg
+/drivers/rtc/ @UNMAINTAINED
+/drivers/rtc/class.c @chriszjh @zouyipeng
+/drivers/rtc/dev.c @chriszjh @zouyipeng
+/drivers/rtc/interface.c @chriszjh @zouyipeng
+/drivers/rtc/Kconfig @chriszjh @zouyipeng
+/drivers/rtc/lib.c @chriszjh @zouyipeng
+/drivers/rtc/Makefile @chriszjh @zouyipeng
+/drivers/rtc/nvmem.c @chriszjh @zouyipeng
+/drivers/rtc/proc.c @chriszjh @zouyipeng
+/drivers/rtc/rtc-efi.c @chriszjh @zouyipeng
+/drivers/rtc/rtc-generic.c @chriszjh @zouyipeng
+/drivers/rtc/sysfs.c @chriszjh @zouyipeng
+/drivers/rtc/rtc-sw64* @guzitao
+/drivers/rtc/rtc-phytium.c @mao-hongbo @GoGo_phytium @xuyanaasss
+/drivers/rtc/rtc-loongson.c @lixuefeng-loongson @maobibo @gaojuxin09 @robinorg
+/drivers/scsi/ @UNMAINTAINED
+/drivers/scsi/c*.c @zhangyi089
+/drivers/scsi/hosts.c @zhangyi089
+/drivers/scsi/isci/ @zhangyi089
+/drivers/scsi/iscsi* @zhangyi089
+/drivers/scsi/Kconfig @zhangyi089
+/drivers/scsi/libiscsi* @zhangyi089
+/drivers/scsi/libsas/ @zhangyi089
+/drivers/scsi/Makefile @zhangyi089
+/drivers/scsi/qedi/ @UNMAINTAINED
+/drivers/scsi/qedi/qedi_iscsi.c @zhangyi089
+/drivers/scsi/raid_class.c @zhangyi089
+/drivers/scsi/scsi.* @zhangyi089
+/drivers/scsi/scsi_bsg.c @zhangyi089
+/drivers/scsi/scsi_common.c @zhangyi089
+/drivers/scsi/scsi_d* @zhangyi089
+/drivers/scsi/scsi_error.c @zhangyi089
+/drivers/scsi/scsi_ioctl.c @zhangyi089
+/drivers/scsi/scsi_l* @zhangyi089
+/drivers/scsi/scsi_netlink.c @zhangyi089
+/drivers/scsi/scsi_p* @zhangyi089
+/drivers/scsi/scsi_s* @zhangyi089
+/drivers/scsi/scsi_trace.c @zhangyi089
+/drivers/scsi/scsi_transport_api.h @zhangyi089
+/drivers/scsi/scsi_transport_iscsi.c @zhangyi089
+/drivers/scsi/scsi_transport_sas.c @zhangyi089
+/drivers/scsi/scsicam.c @zhangyi089
+/drivers/scsi/sd.* @zhangyi089
+/drivers/scsi/sd_zbc.c @zhangyi089
+/drivers/scsi/se* @zhangyi089
+/drivers/scsi/sg.c @zhangyi089
+/drivers/scsi/sr* @zhangyi089
+/drivers/scsi/st.* @zhangyi089
+/drivers/scsi/st_options.h @zhangyi089
+/drivers/scsi/hisi_sas/ @LiYihang226
+/drivers/scsi/lpfc/ @yonghu_4dc5
+/drivers/scsi/qla2xxx/ @yonghu_4dc5
+/drivers/scsi/mpt3sas/ @yonghu_4dc5
+/drivers/scsi/huawei/hifc/ @chenguangli
+/drivers/scsi/hst2dr/ @sageDriver
+/drivers/scsi/leapioraid/ @leap-io @leap-zjke
+/drivers/scsi/leapraid/ @leap-io @leap-zjke
+/drivers/thermal/ @UNMAINTAINED
+/drivers/thermal/cpuidle_cooling.c @zqiao216
+/drivers/thermal/intel/ @zeng_zhaorong @juntianlinux
+/drivers/thermal/loongson2_thermal.c @lixuefeng-loongson @maobibo @gaojuxin09 @robinorg
+/drivers/tty/ @lujialin2
+/drivers/tty/serial/8250/8250_sunway.c @guzitao
+/drivers/uio/ @UNMAINTAINED
+/drivers/uio/Kconfig @chen-jun-hw
+/drivers/uio/Makefile @chen-jun-hw
+/drivers/uio/uio.c @chen-jun-hw
+/drivers/watchdog/ @UNMAINTAINED
+/drivers/watchdog/sbsa_gwdt.c @chriszjh @zouyipeng
+/drivers/watchdog/intel* @zeng_zhaorong @juntianlinux
+/drivers/watchdog/loongson1_wdt.c @lixuefeng-loongson @maobibo @gaojuxin09 @robinorg
+/drivers/watchdog/sp5100_tco* @kile2009 @hanliyang
+/drivers/crypto/hisilicon/ @liulongfang
+/drivers/crypto/ccp/ccp-crypto-sm* @hanliyang @allen-shi
+/drivers/crypto/ccp/hygon/ @hanliyang @allen-shi
+/drivers/crypto/zhaoxin* @leoliu-oc
+/drivers/crypto/intel/ @zeng_zhaorong @juntianlinux
+/drivers/roh/core/ @chenke2026
+/drivers/roh/hw/hns3/ @chenke2026 @linyunsheng
+/drivers/hwtracing/intel_th/ @zeng_zhaorong @juntianlinux
+/drivers/i2c/busses/i2c-loongson.c @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/drivers/i2c/busses/i2c-sunway.c @guzitao
+/drivers/i2c/busses/i2c-amd* @kile2009 @sming56_admin
+/drivers/i2c/busses/i2c-designware-amdpsp.c @kile2009 @sming56_admin
+/drivers/i2c/busses/i2c-zhaoxin* @leoliu-oc
+/drivers/i2c/busses/i2c-phytium* @mao-hongbo @GoGo_phytium @xuyanaasss
+/drivers/spi/spi-loongson.c @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/drivers/spi/spi-sunway* @guzitao
+/drivers/spi/spi-amd.c @kile2009 @sming56_admin
+/drivers/spi/spi-phytium* @mao-hongbo @GoGo_phytium @xuyanaasss
+/drivers/spi/spi-intel* @zeng_zhaorong @juntianlinux
+/drivers/spi/spi-loongson.h @lixuefeng-loongson @maobibo @gaojuxin09 @robinorg
+/drivers/gpio/gpio-loongson.c @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/drivers/gpio/gpio-intel-mid.c @zeng_zhaorong @juntianlinux
+/drivers/gpio/gpio-sunway.c @guzitao
+/drivers/gpio/gpio-amd* @kile2009 @sming56_admin
+/drivers/gpio/gpio-raspberrypi-exp.c @woqidaideshi
+/drivers/gpio/gpio-phytium* @mao-hongbo @GoGo_phytium @xuyanaasss
+/drivers/gpio/gpio-loongson-64bit.c @lixuefeng-loongson @maobibo @gaojuxin09 @robinorg
+/drivers/gpio/gpio-loongson1.c @lixuefeng-loongson @maobibo @gaojuxin09 @robinorg
+/drivers/gpu/drm/loongson/ @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/drivers/gpu/drm/amd/ @kile2009 @sming56_admin
+/drivers/gpu/drm/panel/panel-raspberrypi-touchscreen.c @woqidaideshi
+/drivers/gpu/drm/phytium/ @mao-hongbo @GoGo_phytium @xuyanaasss
+/drivers/gpu/drm/hisilicon/hibmc/ @baratta
+/drivers/gpu/drm/ci/xfails/amdgpu-stoney* @kile2009 @sming56_admin
+/drivers/gpu/drm/gma500/cdv_intel* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/gma500/intel* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/gma500/mdfld_intel_display.c @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/gma500/psb_intel* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_a* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_b* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_c* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_ddi* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_de.h @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_display* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_dkl_phy* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_dmc* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_dp.* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_dp_* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_dpio_phy* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_dpll* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_dpt* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_drrs* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_ds* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_dvo* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_f* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_g* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_h* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_l* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_m* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_o* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_p* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_q* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_s* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_t* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_v* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/display/intel_wm* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/gt/intel* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/gt/uc/intel* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/intel* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/pxp/intel_pxp* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/selftests/intel* @zeng_zhaorong @juntianlinux
+/drivers/gpu/drm/i915/soc/intel* @zeng_zhaorong @juntianlinux
+/drivers/input/serio/i8042-loongsonio.h @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/drivers/input/touchscreen/raspberrypi-ts.c @woqidaideshi
+/drivers/input/keyboard/phytium-keypad.c @mao-hongbo @GoGo_phytium @xuyanaasss
+/drivers/firmware/efi/libstub/loongarch* @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/drivers/firmware/efi/cper.c @hunan4222
+/drivers/firmware/efi/sunway* @guzitao
+/drivers/firmware/arm_sdei.c @chriszjh @zouyipeng
+/drivers/firmware/raspberrypi.c @woqidaideshi
+/drivers/firmware/ubios_uvb/ @klmengkd
+/drivers/firmware/uvb/ @klmengkd
+/drivers/platform/loongarch/ @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/drivers/platform/loongarch/loongson_generic_laptop.c @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/drivers/platform/x86/ @zeng_zhaorong @juntianlinux
+/drivers/platform/x86/amd/ @kile2009 @sming56_admin
+/drivers/platform/mpam/ @henryze
+/drivers/platform/sw64/ @guzitao
+/drivers/ras/ @hunan4222
+/drivers/ras/amd/ @kile2009 @sming56_admin
+/drivers/ub/ @mufengyan @linyunsheng
+/drivers/ub/cdma/ @rock_hw @hongwu-wang
+/drivers/ub/ubase/ @chenjunxin1992 @fanghaiqinghw
+/drivers/ub/ubfi/ @junlong-zheng @rock_hw
+/drivers/ub/ubus/ @junlong-zheng @rock_hw
+/drivers/ub/urma/ @eingesch @wanghang73
+/drivers/ub/urma/hw/udma/ @hu-chunzhi @shu-shengming
+/drivers/ub/obmm/ @TrueAI @kazero00
+/drivers/ub/sentry/ @jiayi0118
+/drivers/ub/ubdevshm/ @Tankll2021
+/drivers/ub/ubmempfd/ @Tankll2021
+/drivers/ubus/ @hu-chunzhi @wsoydl @jerry_lilijun
+/drivers/vfio/ubus/ @junlong-zheng @rock_hw
+/drivers/vfio/pci/hisilicon/ @liulongfang
+/drivers/vfio/platform/reset/vfio_platform_amdxgbe.c @kile2009 @sming56_admin
+/drivers/hid/intel-ish-hid/ @zeng_zhaorong @juntianlinux
+/drivers/hid/amd-sfh-hid/ @kile2009 @sming56_admin
+/drivers/idle/intel_idle.c @zeng_zhaorong @juntianlinux
+/drivers/media/pci/intel/ @zeng_zhaorong @juntianlinux
+/drivers/media/platform/intel/ @zeng_zhaorong @juntianlinux
+/drivers/media/platform/phytium-jpeg/ @mao-hongbo @GoGo_phytium @xuyanaasss
+/drivers/mfd/intel* @zeng_zhaorong @juntianlinux
+/drivers/mfd/intel_pmt.c @zeng_zhaorong @allen-shi
+/drivers/mfd/lpc_sunway.c @guzitao
+/drivers/mfd/sunway_ast2400.c @guzitao
+/drivers/ntb/hw/intel/ @zeng_zhaorong @juntianlinux
+/drivers/ntb/hw/amd/ @kile2009 @sming56_admin
+/drivers/usb/roles/intel-xhci-usb-role-switch.c @zeng_zhaorong @juntianlinux
+/drivers/usb/typec/mux/intel_pmc_mux.c @zeng_zhaorong @juntianlinux
+/drivers/usb/gadget/udc/amd5536udc* @kile2009 @sming56_admin
+/drivers/usb/core/ @raoxu-deepin
+/drivers/usb/host/ @raoxu-deepin
+/drivers/usb/storage/ @raoxu-deepin
+/drivers/video/fbdev/intelfb/ @zeng_zhaorong @juntianlinux
+/drivers/remote_pager/ @SuperSix173
+/drivers/clocksource/arm_arch_timer.c @chriszjh @zouyipeng
+/drivers/clocksource/timer-sw64.c @guzitao
+/drivers/clocksource/timer-loongson1-pwm.c @lixuefeng-loongson @maobibo @gaojuxin09 @robinorg
+/drivers/coda/ @hjx_gitff
+/drivers/hwmon/sw64_pvt.c @guzitao
+/drivers/hwmon/amd_energy.c @kile2009 @sming56_admin
+/drivers/hwmon/raspberrypi-hwmon.c @woqidaideshi
+/drivers/hwmon/zhaoxin-cputemp.c @leoliu-oc
+/drivers/hwmon/intel-m10-bmc-hwmon.c @zeng_zhaorong @juntianlinux
+/drivers/misc/sunway-ged.c @guzitao
+/drivers/misc/uacce/ @liulongfang
+/drivers/misc/zcopy/ @mingrui-liu @yubo-liu1
+/drivers/clk/bcm/clk-raspberrypi.c @woqidaideshi
+/drivers/clk/clk-loongson* @lixuefeng-loongson @maobibo @gaojuxin09 @robinorg
+/drivers/clk/loongson1/ @lixuefeng-loongson @maobibo @gaojuxin09 @robinorg
+/drivers/clk/loongson1/Makefile @lixuefeng-loongson @maobibo @gaojuxin09 @robinorg
+/drivers/clk/loongson1/clk* @lixuefeng-loongson @maobibo @gaojuxin09 @robinorg
+/drivers/counter/intel-qep.c @zeng_zhaorong @juntianlinux
+/drivers/edac/amd* @kile2009 @sming56_admin
+/drivers/edac/mce_amd* @kile2009 @sming56_admin
+/drivers/ide/amd74xx.c @kile2009 @sming56_admin
+/drivers/pmdomain/bcm/raspberrypi-power.c @woqidaideshi
+/drivers/pwm/pwm-raspberrypi-poe.c @woqidaideshi
+/drivers/pwm/pwm-intel-lgm.c @zeng_zhaorong @juntianlinux
+/drivers/pwm/pwm-loongson.c @lixuefeng-loongson @maobibo @gaojuxin09 @robinorg
+/drivers/reset/reset-raspberrypi.c @woqidaideshi
+/drivers/reset/reset-intel-gw.c @zeng_zhaorong @juntianlinux
+/drivers/soc/bcm/raspberrypi-power.c @woqidaideshi
+/drivers/soc/hisilicon/ @li-huisong
+/drivers/soc/loongson/ @lixuefeng-loongson @maobibo @gaojuxin09 @robinorg
+/drivers/soundwire/amd_manager* @kile2009 @sming56_admin
+/drivers/soundwire/intel* @zeng_zhaorong @juntianlinux
+/drivers/staging/vc04_services/include/linux/raspberrypi/ @woqidaideshi
+/drivers/staging/media/ipu3/include/intel-ipu3.h @zeng_zhaorong @juntianlinux
+/drivers/staging/media/ipu3/include/uapi/intel-ipu3.h @zeng_zhaorong @juntianlinux
+/drivers/tee/amdtee/ @kile2009 @sming56_admin
+/drivers/fwctl/ub/ @hu-chunzhi @caixu-blue
+/drivers/iio/adc/phytium-adc.c @mao-hongbo @GoGo_phytium @xuyanaasss
+/drivers/iio/adc/intel_mrfld_adc.c @zeng_zhaorong @juntianlinux
+/drivers/iio/position/hid-sensor-custom-intel-hinge.c @zeng_zhaorong @juntianlinux
+/drivers/mailbox/phytium_mailbox.c @mao-hongbo @GoGo_phytium @xuyanaasss
+/drivers/mmc/host/phytium* @mao-hongbo @GoGo_phytium @xuyanaasss
+/drivers/w1/masters/phytium_w1.c @mao-hongbo @GoGo_phytium @xuyanaasss
+/drivers/extcon/extcon-intel* @zeng_zhaorong @juntianlinux
+/drivers/fpga/intel-m10-bmc-sec-update.c @zeng_zhaorong @juntianlinux
+/drivers/isdn/hisax/amd7930_fn* @kile2009 @sming56_admin
+/drivers/powercap/intel_rapl* @zeng_zhaorong @juntianlinux
+/drivers/virt/coco/arm-cca-guest/arm-cca-guest.c @YiweiZ
+/fs/ @zhangyi089
+/fs/9p/ @UNMAINTAINED
+/fs/adfs/ @UNMAINTAINED
+/fs/affs/ @UNMAINTAINED
+/fs/afs/ @UNMAINTAINED
+/fs/befs/ @UNMAINTAINED
+/fs/bfs/ @UNMAINTAINED
+/fs/binfmt_aout.c @xukuohai @yeweihua999
+/fs/binfmt_elf_fdpic.c @xukuohai @yeweihua999
+/fs/binfmt_flat.c @xukuohai @yeweihua999
+/fs/binfmt_misc.c @xukuohai @yeweihua999
+/fs/binfmt_script.c @xukuohai @yeweihua999
+/fs/btrfs/ @jiaoff
+/fs/cachefiles/ @UNMAINTAINED
+/fs/ceph/ @UNMAINTAINED
+/fs/coda/ @UNMAINTAINED
+/fs/compat_binfmt_elf.c @xukuohai @yeweihua999
+/fs/cramfs/ @UNMAINTAINED
+/fs/crypto/ @UNMAINTAINED
+/fs/dlm/ @UNMAINTAINED
+/fs/ecryptfs/ @UNMAINTAINED
+/fs/efivarfs/ @UNMAINTAINED
+/fs/efs/ @UNMAINTAINED
+/fs/erofs/ @UNMAINTAINED
+/fs/exfat/ @chizl
+/fs/ext4/ @zhangyi089
+/fs/f2fs/ @UNMAINTAINED
+/fs/freevxfs/ @UNMAINTAINED
+/fs/fscache/ @UNMAINTAINED
+/fs/fscache/netfs.c @chenxiaosonggitcode @zhangguodong11
+/fs/gfs2/ @UNMAINTAINED
+/fs/hfs/ @UNMAINTAINED
+/fs/hfsplus/ @UNMAINTAINED
+/fs/hostfs/ @UNMAINTAINED
+/fs/hpfs/ @UNMAINTAINED
+/fs/io-wq.h @UNMAINTAINED
+/fs/isofs/ @UNMAINTAINED
+/fs/jfs/ @UNMAINTAINED
+/fs/Kconfig.binfmt @xukuohai @yeweihua999
+/fs/ksmbd/ @UNMAINTAINED
+/fs/minix/ @UNMAINTAINED
+/fs/netfs/ @chenxiaosonggitcode @zhangguodong11
+/fs/nfs/ @chenxiaosonggitcode @zhangguodong11
+/fs/nfs/enfs/ @mingqian218472 @chenxiaosonggitcode @zhangguodong11
+/fs/nfs/enfs_adapter* @mingqian218472 @chenxiaosonggitcode @zhangguodong11
+/fs/nfsd/ @chenxiaosonggitcode @zhangguodong11
+/fs/nilfs2/ @UNMAINTAINED
+/fs/nls/ @UNMAINTAINED
+/fs/ntfs/ @UNMAINTAINED
+/fs/ntfs3/ @UNMAINTAINED
+/fs/ocfs2/ @UNMAINTAINED
+/fs/omfs/ @UNMAINTAINED
+/fs/openpromfs/ @UNMAINTAINED
+/fs/orangefs/ @UNMAINTAINED
+/fs/overlayfs/ @zhangyi089
+/fs/overlayfs/export.c @UNMAINTAINED
+/fs/proc/ @xukuohai @yeweihua999
+/fs/proc/array.c @zqiao216
+/fs/proc/base.c @chen-jun-hw
+/fs/proc/cpuinfo.c @chriszjh @zouyipeng
+/fs/proc/devices.c @chen-jun-hw
+/fs/proc/fd* @zhangyi089
+/fs/proc/generic.c @zhangyi089
+/fs/proc/inode.c @zhangyi089
+/fs/proc/internal.h @zhangyi089
+/fs/proc/interrupts.c @chriszjh @zouyipeng
+/fs/proc/Kconfig @zhangyi089
+/fs/proc/Makefile @zhangyi089
+/fs/proc/meminfo.c @wkfxxx @mawupeng @sun_nanyong
+/fs/proc/namespaces.c @lujialin2
+/fs/proc/nommu.c @wkfxxx @mawupeng @sun_nanyong
+/fs/proc/page.c @wkfxxx @mawupeng @sun_nanyong
+/fs/proc/proc_net.c @yuehaibing_planb
+/fs/proc/proc_sysctl.c @zhangyi089
+/fs/proc/proc_tty.c @lujialin2
+/fs/proc/root.c @zhangyi089
+/fs/proc/softirqs.c @chriszjh @zouyipeng
+/fs/proc/task* @wkfxxx @mawupeng @sun_nanyong
+/fs/proc/thread_self.c @zqiao216
+/fs/proc/util.c @chen-jun-hw
+/fs/proc/etmem_s* @SuperSix173
+/fs/pstore/ @yeweihua999 @xukuohai
+/fs/qnx4/ @UNMAINTAINED
+/fs/qnx6/ @UNMAINTAINED
+/fs/reiserfs/ @UNMAINTAINED
+/fs/romfs/ @UNMAINTAINED
+/fs/smbfs_common/ @UNMAINTAINED
+/fs/sysv/ @UNMAINTAINED
+/fs/ubifs/ @zhangyi089
+/fs/ubifs/auth.c @UNMAINTAINED
+/fs/ubifs/crypto.c @UNMAINTAINED
+/fs/udf/ @UNMAINTAINED
+/fs/ufs/ @UNMAINTAINED
+/fs/unicode/ @UNMAINTAINED
+/fs/userfaultfd.c @wkfxxx @mawupeng @sun_nanyong
+/fs/vboxsf/ @UNMAINTAINED
+/fs/verity/ @UNMAINTAINED
+/fs/zonefs/ @UNMAINTAINED
+/fs/resctrl/ @henryze
+/fs/eulerfs/ @htforge
+/fs/resctrlfs.c @henryze
+/fs/xfs/ @zhangyi089
+/fs/resctrl_x86/ @zeng_zhaorong @juntianlinux
+/fs/mfs/ @yubo-liu1 @gang_he
+/fs/exportfs/ @chenxiaosonggitcode @zhangguodong11
+/fs/lockd/ @chenxiaosonggitcode @zhangguodong11
+/fs/smb/ @chenxiaosonggitcode @zhangguodong11
+/include/ @UNMAINTAINED
+/include/acpi/ @stkid @hanjunguo @chriszjh @zouyipeng
+/include/acpi/pdc_sw64.h @guzitao
+/include/acpi/p*_intel.h @zeng_zhaorong @juntianlinux
+/include/acpi/platform/acintel.h @zeng_zhaorong @juntianlinux
+/include/asm-generic/ @zqiao216
+/include/asm-generic/audit* @lujialin2
+/include/asm-generic/barrier.h @wkfxxx @mawupeng @sun_nanyong
+/include/asm-generic/delay.h @chriszjh @zouyipeng
+/include/asm-generic/dma* @wkfxxx @mawupeng @sun_nanyong
+/include/asm-generic/early_ioremap.h @wkfxxx @mawupeng @sun_nanyong
+/include/asm-generic/emergency-restart.h @chriszjh @zouyipeng
+/include/asm-generic/ftrace.h @xukuohai @yeweihua999
+/include/asm-generic/futex.h @stkid @LiuYongQiang0816
+/include/asm-generic/h*irq.h @chriszjh @zouyipeng
+/include/asm-generic/hugetlb.h @wkfxxx @mawupeng @sun_nanyong
+/include/asm-generic/irq* @chriszjh @zouyipeng
+/include/asm-generic/kprobes.h @xukuohai @yeweihua999
+/include/asm-generic/kvm* @kevinzhu1 @yuzenghui
+/include/asm-generic/memory_model.h @wkfxxx @mawupeng @sun_nanyong
+/include/asm-generic/mm* @wkfxxx @mawupeng @sun_nanyong
+/include/asm-generic/numa.h @wkfxxx @mawupeng @sun_nanyong
+/include/asm-generic/page.h @wkfxxx @mawupeng @sun_nanyong
+/include/asm-generic/pci* @stkid @LiuYongQiang0816
+/include/asm-generic/pg* @wkfxxx @mawupeng @sun_nanyong
+/include/asm-generic/q* @stkid @LiuYongQiang0816
+/include/asm-generic/softirq_stack.h @chriszjh @zouyipeng
+/include/asm-generic/spinlock.h @stkid @LiuYongQiang0816
+/include/asm-generic/statfs.h @zhangyi089
+/include/asm-generic/timex.h @stkid @LiuYongQiang0816
+/include/asm-generic/tlb* @wkfxxx @mawupeng @sun_nanyong
+/include/asm-generic/uaccess.h @wkfxxx @mawupeng @sun_nanyong
+/include/asm-generic/vdso/ @chriszjh @zouyipeng
+/include/asm-generic/mcs_spinlock.h @stkid @LiuYongQiang0816
+/include/asm-generic/spinlock_types.h @LiuYongQiang0816 @stkid
+/include/clocksource/ @UNMAINTAINED
+/include/clocksource/arm_arch_timer.h @chriszjh @zouyipeng
+/include/crypto/ @lujialin2
+/include/keys/ @lujialin2
+/include/keys/ceph-type.h @UNMAINTAINED
+/include/linux/ @zqiao216
+/include/linux/8250_pci.h @UNMAINTAINED
+/include/linux/a.out.h @UNMAINTAINED
+/include/linux/acct.h @UNMAINTAINED
+/include/linux/acpi.h @stkid @hanjunguo @chriszjh @zouyipeng
+/include/linux/acpi_dma.h @stkid @hanjunguo @chriszjh @zouyipeng
+/include/linux/acpi_iort.h @stkid @hanjunguo @chriszjh @zouyipeng
+/include/linux/acpi_mdio.h @stkid @hanjunguo @chriszjh @zouyipeng
+/include/linux/acpi_pmtmr.h @stkid @hanjunguo @chriszjh @zouyipeng
+/include/linux/acpi_viot.h @stkid @hanjunguo @chriszjh @zouyipeng
+/include/linux/ad* @UNMAINTAINED
+/include/linux/aer.h @stkid
+/include/linux/agp* @UNMAINTAINED
+/include/linux/ahci* @UNMAINTAINED
+/include/linux/aio.h @zhangyi089
+/include/linux/alarmtimer.h @UNMAINTAINED
+/include/linux/alcor_pci.h @UNMAINTAINED
+/include/linux/altera* @UNMAINTAINED
+/include/linux/amba/ @chriszjh @zouyipeng
+/include/linux/amd* @kile2009 @sming56_admin
+/include/linux/anon_inodes.h @UNMAINTAINED
+/include/linux/apm* @UNMAINTAINED
+/include/linux/apple* @UNMAINTAINED
+/include/linux/arch_topology.h @UNMAINTAINED
+/include/linux/arm_ffa.h @UNMAINTAINED
+/include/linux/arm_sdei.h @chriszjh @zouyipeng
+/include/linux/armada-37xx-rwtm-mailbox.h @UNMAINTAINED
+/include/linux/arm-* @UNMAINTAINED
+/include/linux/as* @UNMAINTAINED
+/include/linux/ata.h @chen-jun-hw
+/include/linux/ata_platform.h @UNMAINTAINED
+/include/linux/atalk.h @UNMAINTAINED
+/include/linux/ath9k_platform.h @UNMAINTAINED
+/include/linux/atm* @UNMAINTAINED
+/include/linux/audit* @lujialin2
+/include/linux/auto* @zhangyi089
+/include/linux/auxiliary_bus.h @UNMAINTAINED
+/include/linux/auxvec.h @yuehaibing_planb
+/include/linux/average.h @yuehaibing_planb
+/include/linux/avf/ @UNMAINTAINED
+/include/linux/backing-dev* @zhangyi089
+/include/linux/backlight.h @UNMAINTAINED
+/include/linux/badblocks.h @zhangyi089
+/include/linux/balloon_compaction.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/bcm*.h @UNMAINTAINED
+/include/linux/bcma/ @UNMAINTAINED
+/include/linux/binfmts.h @zhangyi089
+/include/linux/bio.h @zhangyi089
+/include/linux/bit_spinlock.h @LiuYongQiang0816 @stkid
+/include/linux/blk_types.h @zhangyi089
+/include/linux/blk-cgroup.h @zhangyi089
+/include/linux/blk-crypto* @UNMAINTAINED
+/include/linux/blkdev.h @zhangyi089
+/include/linux/blk-integrity.h @UNMAINTAINED
+/include/linux/blk-mq.h @zhangyi089
+/include/linux/blk-mq-pci.h @zhangyi089
+/include/linux/blk-mq-rdma.h @UNMAINTAINED
+/include/linux/blk-mq-virtio.h @UNMAINTAINED
+/include/linux/blkpg.h @zhangyi089
+/include/linux/blk-pm.h @zhangyi089
+/include/linux/blktrace_api.h @zhangyi089
+/include/linux/blockgroup_lock.h @zhangyi089
+/include/linux/bpf.h @xukuohai @yeweihua999
+/include/linux/bpf_l* @xukuohai @yeweihua999
+/include/linux/bpf_t* @xukuohai @yeweihua999
+/include/linux/bpf_verifier.h @xukuohai @yeweihua999
+/include/linux/bpf-* @xukuohai @yeweihua999
+/include/linux/bpfilter.h @xukuohai @yeweihua999
+/include/linux/bpfptr.h @xukuohai @yeweihua999
+/include/linux/bsg* @zhangyi089
+/include/linux/btf_ids.h @zhangyi089
+/include/linux/btree* @zhangyi089
+/include/linux/btrfs.h @jiaoff
+/include/linux/bu* @zhangyi089
+/include/linux/bvec.h @zhangyi089
+/include/linux/c2port.h @UNMAINTAINED
+/include/linux/cache* @wkfxxx @mawupeng @sun_nanyong
+/include/linux/can/ @yuehaibing_planb
+/include/linux/capability.h @lujialin2
+/include/linux/cb710.h @UNMAINTAINED
+/include/linux/cc_platform.h @stkid
+/include/linux/cciss_ioctl.h @zhangyi089
+/include/linux/ccp.h @lujialin2
+/include/linux/cdev.h @chen-jun-hw
+/include/linux/cdrom.h @zhangyi089
+/include/linux/ceph/ @UNMAINTAINED
+/include/linux/cfag12864b.h @UNMAINTAINED
+/include/linux/cfi.h @lujialin2
+/include/linux/cgroup.h @lujialin2
+/include/linux/cgroup_rdma.h @lujialin2
+/include/linux/cgroup_subsys.h @lujialin2
+/include/linux/cgroup-defs.h @lujialin2
+/include/linux/circ_buf.h @chen-jun-hw
+/include/linux/clk*.h @chen-jun-hw
+/include/linux/clk/ @UNMAINTAINED
+/include/linux/clock* @chen-jun-hw
+/include/linux/cm4000_cs.h @qinirao
+/include/linux/cma.h @chen-jun-hw
+/include/linux/cn* @chen-jun-hw
+/include/linux/coda.h @chen-jun-hw
+/include/linux/comedi/ @UNMAINTAINED
+/include/linux/compaction.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/compat.h @chriszjh @zouyipeng
+/include/linux/compiler* @chriszjh @zouyipeng
+/include/linux/compiler-intel.h @zeng_zhaorong @juntianlinux
+/include/linux/completion.h @chriszjh @zouyipeng
+/include/linux/component.h @chriszjh @zouyipeng
+/include/linux/configfs.h @chen-jun-hw
+/include/linux/connector.h @chen-jun-hw
+/include/linux/cons* @chen-jun-hw
+/include/linux/container* @chen-jun-hw
+/include/linux/context_tracking.h @chen-jun-hw
+/include/linux/context_tracking_state.h @chen-jun-hw
+/include/linux/cookie.h @chen-jun-hw
+/include/linux/cor* @chen-jun-hw
+/include/linux/count* @chen-jun-hw
+/include/linux/cper.h @chen-jun-hw
+/include/linux/cpu.h @chriszjh @zouyipeng
+/include/linux/cpu_cooling.h @chriszjh @zouyipeng
+/include/linux/cpu_pm.h @chriszjh @zouyipeng
+/include/linux/cpu_rmap.h @chriszjh @zouyipeng
+/include/linux/cpuf* @chriszjh @zouyipeng
+/include/linux/cpuhotplug.h @chriszjh @zouyipeng
+/include/linux/cpumask.h @chriszjh @zouyipeng
+/include/linux/cpuset.h @chriszjh @zouyipeng
+/include/linux/crash* @chen-jun-hw
+/include/linux/cred.h @lujialin2
+/include/linux/crush/ @UNMAINTAINED
+/include/linux/crypto.h @lujialin2
+/include/linux/cs5535.h @chen-jun-hw
+/include/linux/ctype.h @chen-jun-hw
+/include/linux/cuda.h @chen-jun-hw
+/include/linux/da* @chen-jun-hw
+/include/linux/dca.h @chen-jun-hw
+/include/linux/dcache.h @UNMAINTAINED
+/include/linux/dccp.h @chen-jun-hw
+/include/linux/debug_locks.h @chen-jun-hw
+/include/linux/debugfs.h @zhangyi089
+/include/linux/debugobjects.h @chen-jun-hw
+/include/linux/delay.h @chriszjh @zouyipeng
+/include/linux/delayacct.h @chen-jun-hw
+/include/linux/delayed_call.h @chen-jun-hw
+/include/linux/dev_printk.h @chen-jun-hw
+/include/linux/devcoredump.h @chen-jun-hw
+/include/linux/devfreq* @chen-jun-hw
+/include/linux/device.h @chen-jun-hw
+/include/linux/device_cgroup.h @chen-jun-hw
+/include/linux/device-mapper.h @zhangyi089
+/include/linux/devm-helpers.h @chen-jun-hw
+/include/linux/devpts_fs.h @chen-jun-hw
+/include/linux/dfl.h @chen-jun-hw
+/include/linux/di*.h @chen-jun-hw
+/include/linux/dlm* @chen-jun-hw
+/include/linux/dm9000.h @chen-jun-hw
+/include/linux/dma/ @UNMAINTAINED
+/include/linux/dma/amd_xdma.h @kile2009 @sming56_admin
+/include/linux/dma-buf.h @chriszjh @zouyipeng
+/include/linux/dma-buf-map.h @chriszjh
+/include/linux/dma-direct* @chriszjh @zouyipeng
+/include/linux/dmaengine.h @chriszjh @zouyipeng
+/include/linux/dma-fence.h @chriszjh @zouyipeng
+/include/linux/dma-fence-array.h @chriszjh @zouyipeng
+/include/linux/dma-fence-chain.h @chriszjh @zouyipeng
+/include/linux/dma-heap.h @chriszjh @zouyipeng
+/include/linux/dma-iommu.h @chriszjh @zouyipeng
+/include/linux/dma-map-ops.h @chriszjh @zouyipeng
+/include/linux/dma-mapping.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/dmapool.h @chriszjh @zouyipeng
+/include/linux/dmar.h @chen-jun-hw
+/include/linux/dma-resv.h @chriszjh @zouyipeng
+/include/linux/dm-bufio.h @zhangyi089
+/include/linux/dm-dirty-log.h @UNMAINTAINED
+/include/linux/dmi.h @chen-jun-hw
+/include/linux/dm-io.h @zhangyi089
+/include/linux/dm-kcopyd.h @zhangyi089
+/include/linux/dm-region-hash.h @UNMAINTAINED
+/include/linux/dnotify.h @zhangyi089
+/include/linux/dsa/ @UNMAINTAINED
+/include/linux/dsa/8021q.h @yuehaibing_planb
+/include/linux/dsa/loop.h @yuehaibing_planb
+/include/linux/errseq.h @zhangyi089
+/include/linux/eth* @yuehaibing_planb
+/include/linux/event* @zhangyi089
+/include/linux/exportfs.h @chenxiaosonggitcode @zhangguodong11
+/include/linux/ext2_fs.h @zhangyi089
+/include/linux/extcon/ @UNMAINTAINED
+/include/linux/f2fs_fs.h @UNMAINTAINED
+/include/linux/falloc.h @zhangyi089
+/include/linux/fanotify.h @zhangyi089
+/include/linux/fault-inject* @xukuohai @yeweihua999
+/include/linux/fb.h @UNMAINTAINED
+/include/linux/fcntl.h @zhangyi089
+/include/linux/fd.h @zhangyi089
+/include/linux/fdtable.h @zhangyi089
+/include/linux/fiemap.h @zhangyi089
+/include/linux/file.h @zhangyi089
+/include/linux/fileattr.h @zhangyi089
+/include/linux/firmware/ @UNMAINTAINED
+/include/linux/firmware/intel/ @zeng_zhaorong @juntianlinux
+/include/linux/firmware/uvb/ @klmengkd
+/include/linux/flat.h @zhangyi089
+/include/linux/flex_proportions.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/fpga/ @UNMAINTAINED
+/include/linux/freelist.h @xukuohai @yeweihua999
+/include/linux/fs.h @zhangyi089
+/include/linux/fs_context.h @zhangyi089
+/include/linux/fs_p* @zhangyi089
+/include/linux/fs_st* @zhangyi089
+/include/linux/fs_types.h @zhangyi089
+/include/linux/fsc* @UNMAINTAINED
+/include/linux/fsl/ @UNMAINTAINED
+/include/linux/fsnotify* @zhangyi089
+/include/linux/fsverity.h @UNMAINTAINED
+/include/linux/ftrace* @xukuohai @yeweihua999
+/include/linux/futex.h @stkid @LiuYongQiang0816
+/include/linux/genhd.h @zhangyi089
+/include/linux/gfp.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/gpio/ @zqiao216
+/include/linux/gpio/aspeed.h @UNMAINTAINED
+/include/linux/greybus/ @UNMAINTAINED
+/include/linux/hrtimer.h @chriszjh @zouyipeng
+/include/linux/hrtimer_defs.h @chriszjh @zouyipeng
+/include/linux/hsi/ @UNMAINTAINED
+/include/linux/huge* @wkfxxx @mawupeng @sun_nanyong
+/include/linux/hwspinlock.h @stkid @LiuYongQiang0816
+/include/linux/hyperv.h @UNMAINTAINED
+/include/linux/i3c/ @UNMAINTAINED
+/include/linux/icmp* @yuehaibing_planb
+/include/linux/ieee8021* @yuehaibing_planb
+/include/linux/if_arp.h @yuehaibing_planb
+/include/linux/if_bridge.h @yuehaibing_planb
+/include/linux/if_e* @yuehaibing_planb
+/include/linux/if_fddi.h @yuehaibing_planb
+/include/linux/if_hsr.h @yuehaibing_planb
+/include/linux/if_l* @yuehaibing_planb
+/include/linux/if_macvlan.h @yuehaibing_planb
+/include/linux/if_p* @yuehaibing_planb
+/include/linux/if_rmnet.h @yuehaibing_planb
+/include/linux/if_t* @yuehaibing_planb
+/include/linux/if_vlan.h @yuehaibing_planb
+/include/linux/iio/ @zqiao216
+/include/linux/iio/accel/ @UNMAINTAINED
+/include/linux/iio/adc/ @UNMAINTAINED
+/include/linux/iio/common/ @UNMAINTAINED
+/include/linux/iio/dac/ @UNMAINTAINED
+/include/linux/iio/frequency/ @UNMAINTAINED
+/include/linux/iio/gyro/ @UNMAINTAINED
+/include/linux/iio/imu/ @UNMAINTAINED
+/include/linux/iio/timer/ @UNMAINTAINED
+/include/linux/inet* @yuehaibing_planb
+/include/linux/inotify.h @zhangyi089
+/include/linux/input/ @UNMAINTAINED
+/include/linux/interrupt.h @chriszjh @zouyipeng
+/include/linux/io_uring*.h @zhangyi089
+/include/linux/iomap.h @zhangyi089
+/include/linux/ip.h @yuehaibing_planb
+/include/linux/ipc_namespace.h @lujialin2
+/include/linux/ipmi* @lujialin2
+/include/linux/ipv6* @yuehaibing_planb
+/include/linux/irq.h @chriszjh @zouyipeng
+/include/linux/irq_poll.h @chriszjh @zouyipeng
+/include/linux/irq_sim.h @chriszjh @zouyipeng
+/include/linux/irq_work.h @chriszjh @zouyipeng
+/include/linux/irqbypass.h @chriszjh @zouyipeng
+/include/linux/irqchip.h @chriszjh @zouyipeng
+/include/linux/irqchip/ @UNMAINTAINED
+/include/linux/irqchip/arm-gic.h @chriszjh @zouyipeng
+/include/linux/irqchip/arm-gic-common.h @chriszjh @zouyipeng
+/include/linux/irqchip/arm-gic-v* @chriszjh @zouyipeng
+/include/linux/irqchip/arm-v* @chriszjh @zouyipeng
+/include/linux/irqchip/chained_irq.h @chriszjh @zouyipeng
+/include/linux/irqchip/arm-gic-phytium-2500.h @mao-hongbo @GoGo_phytium @xuyanaasss
+/include/linux/irqdesc.h @chriszjh @zouyipeng
+/include/linux/irqdomain.h @chriszjh @zouyipeng
+/include/linux/irqflags.h @chriszjh @zouyipeng
+/include/linux/irqhandler.h @chriszjh @zouyipeng
+/include/linux/irqnr.h @chriszjh @zouyipeng
+/include/linux/irqreturn.h @chriszjh @zouyipeng
+/include/linux/iscsi* @zhangyi089
+/include/linux/isdn/ @UNMAINTAINED
+/include/linux/jbd2.h @zhangyi089
+/include/linux/jiffies.h @chriszjh @zouyipeng
+/include/linux/jz47* @UNMAINTAINED
+/include/linux/kasan.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/kasan*s.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/kcsan* @wkfxxx @mawupeng @sun_nanyong
+/include/linux/kernel-page-flags.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/kernfs.h @zhangyi089
+/include/linux/kexec.h @xukuohai @yeweihua999
+/include/linux/kfence.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/khugepaged.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/kmemleak.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/kprobes.h @xukuohai @yeweihua999
+/include/linux/ks0108.h @UNMAINTAINED
+/include/linux/ks88* @UNMAINTAINED
+/include/linux/ksm.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/kvm* @kevinzhu1 @yuzenghui
+/include/linux/led* @UNMAINTAINED
+/include/linux/libata.h @UNMAINTAINED
+/include/linux/linear_range.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/livepatch.h @xukuohai @yeweihua999
+/include/linux/local_lock* @stkid @LiuYongQiang0816
+/include/linux/lockd/ @chenxiaosonggitcode @zhangguodong11
+/include/linux/lockdep.h @stkid @LiuYongQiang0816
+/include/linux/lockdep_types.h @stkid @LiuYongQiang0816
+/include/linux/lockref.h @stkid @LiuYongQiang0816
+/include/linux/lsm_hook_defs.h @lujialin2
+/include/linux/mailbox/ @UNMAINTAINED
+/include/linux/maple.h @UNMAINTAINED
+/include/linux/mdio/ @UNMAINTAINED
+/include/linux/mdio/mdio-i2c.h @yuehaibing_planb
+/include/linux/memblock.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/memcontrol.h @lujialin2
+/include/linux/memfd.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/memory.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/memory_hotplug.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/mempo* @wkfxxx @mawupeng @sun_nanyong
+/include/linux/memre* @wkfxxx @mawupeng @sun_nanyong
+/include/linux/memstick.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/mfd/ @UNMAINTAINED
+/include/linux/mfd/intel* @zeng_zhaorong @juntianlinux
+/include/linux/migrate* @wkfxxx @mawupeng @sun_nanyong
+/include/linux/mlx4/ @UNMAINTAINED
+/include/linux/mlx5/ @UNMAINTAINED
+/include/linux/mm.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/mm_inline.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/mm_types* @wkfxxx @mawupeng @sun_nanyong
+/include/linux/mma* @wkfxxx @mawupeng @sun_nanyong
+/include/linux/mmc/ @UNMAINTAINED
+/include/linux/mmdebug.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/mmu* @wkfxxx @mawupeng @sun_nanyong
+/include/linux/mmzone.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/mnt_namespace.h @lujialin2
+/include/linux/mount.h @zhangyi089
+/include/linux/mpage.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/mtd/ @lujialin2
+/include/linux/mtd/ubi.h @zhangyi089
+/include/linux/mutex.h @stkid @LiuYongQiang0816
+/include/linux/mux/ @UNMAINTAINED
+/include/linux/namei.h @zhangyi089
+/include/linux/nd* @UNMAINTAINED
+/include/linux/net.h @yuehaibing_planb
+/include/linux/net/ @UNMAINTAINED
+/include/linux/net/intel/ @zeng_zhaorong @juntianlinux
+/include/linux/netdev* @yuehaibing_planb
+/include/linux/netfilter*.h @yuehaibing_planb
+/include/linux/netfilter/ @yuehaibing_planb
+/include/linux/netfilter_arp/ @yuehaibing_planb
+/include/linux/netfilter_bridge/ @yuehaibing_planb
+/include/linux/netfilter_ipv4/ @yuehaibing_planb
+/include/linux/netfilter_ipv6/ @yuehaibing_planb
+/include/linux/netfs.h @chenxiaosonggitcode @zhangguodong11
+/include/linux/netlink.h @yuehaibing_planb
+/include/linux/netpoll.h @yuehaibing_planb
+/include/linux/nfs* @chenxiaosonggitcode @zhangguodong11
+/include/linux/nmi.h @chriszjh @zouyipeng
+/include/linux/ns_common.h @lujialin2
+/include/linux/nsproxy.h @lujialin2
+/include/linux/numa.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/nvme.h @htforge
+/include/linux/nvme-* @htforge
+/include/linux/nvmem* @UNMAINTAINED
+/include/linux/of.h @chen-jun-hw
+/include/linux/of_address.h @chen-jun-hw
+/include/linux/of_clk.h @chen-jun-hw
+/include/linux/of_d* @chen-jun-hw
+/include/linux/of_fdt.h @chen-jun-hw
+/include/linux/of_g* @chen-jun-hw
+/include/linux/of_i* @chen-jun-hw
+/include/linux/of_mdio.h @chen-jun-hw
+/include/linux/of_net.h @chen-jun-hw
+/include/linux/of_pci.h @LiuYongQiang0816 @stkid
+/include/linux/of_pdt.h @chen-jun-hw
+/include/linux/of_platform.h @chen-jun-hw
+/include/linux/of_reserved_mem.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/oid_registry.h @UNMAINTAINED
+/include/linux/olpc-ec.h @UNMAINTAINED
+/include/linux/omap* @UNMAINTAINED
+/include/linux/oom.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/padata.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/page* @wkfxxx @mawupeng @sun_nanyong
+/include/linux/panic.h @xukuohai @yeweihua999
+/include/linux/path.h @zhangyi089
+/include/linux/pci.h @stkid @LiuYongQiang0816
+/include/linux/pci_* @stkid @LiuYongQiang0816
+/include/linux/pci-acpi.h @stkid @hanjunguo @LiuYongQiang0816
+/include/linux/pci-ats.h @stkid @LiuYongQiang0816
+/include/linux/pci-dma-compat.h @stkid @LiuYongQiang0816
+/include/linux/pci-e* @stkid @LiuYongQiang0816
+/include/linux/pci-p2pdma.h @stkid @LiuYongQiang0816
+/include/linux/pcs/ @UNMAINTAINED
+/include/linux/percpu.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/perf/ @xukuohai @yeweihua999
+/include/linux/perf_event.h @xukuohai @yeweihua999
+/include/linux/perf_regs.h @xukuohai @yeweihua999
+/include/linux/pfn* @wkfxxx @mawupeng @sun_nanyong
+/include/linux/pgtable.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/phy/ @yuehaibing_planb
+/include/linux/pid_namespace.h @lujialin2
+/include/linux/pinctrl/ @UNMAINTAINED
+/include/linux/platform_data/ @UNMAINTAINED
+/include/linux/platform_data/cpuidle-exynos.h @zqiao216
+/include/linux/platform_data/gpio-sunway.h @guzitao
+/include/linux/platform_data/amd_xdma.h @kile2009 @sming56_admin
+/include/linux/platform_data/gpio/gpio-amd-fch.h @kile2009 @sming56_admin
+/include/linux/platform_data/intel* @zeng_zhaorong @juntianlinux
+/include/linux/platform_data/x86/spi-intel.h @zeng_zhaorong @juntianlinux
+/include/linux/poll.h @zhangyi089
+/include/linux/posix_acl* @zhangyi089
+/include/linux/posix-* @stkid
+/include/linux/power/ @UNMAINTAINED
+/include/linux/printk.h @xukuohai @yeweihua999
+/include/linux/proc_fs.h @zhangyi089
+/include/linux/pseudo_fs.h @zhangyi089
+/include/linux/pstore* @xukuohai @yeweihua999
+/include/linux/ptdump.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/ptp_clock_kernel.h @stkid
+/include/linux/pxa* @UNMAINTAINED
+/include/linux/qcom* @UNMAINTAINED
+/include/linux/qed/ @UNMAINTAINED
+/include/linux/qnx6_fs.h @UNMAINTAINED
+/include/linux/quota* @zhangyi089
+/include/linux/raid/ @UNMAINTAINED
+/include/linux/ramfs.h @zhangyi089
+/include/linux/random* @lujialin2
+/include/linux/rcu_* @stkid @LiuYongQiang0816
+/include/linux/rculist* @stkid @LiuYongQiang0816
+/include/linux/rcupdate* @stkid @LiuYongQiang0816
+/include/linux/rcut* @stkid @LiuYongQiang0816
+/include/linux/rcuwait.h @stkid @LiuYongQiang0816
+/include/linux/regulator/ @UNMAINTAINED
+/include/linux/remoteproc/ @UNMAINTAINED
+/include/linux/reset/ @UNMAINTAINED
+/include/linux/rfkill.h @yuehaibing_planb
+/include/linux/rm* @chen-jun-hw
+/include/linux/rndis.h @chen-jun-hw
+/include/linux/ro* @chen-jun-hw
+/include/linux/rpmsg.h @chen-jun-hw
+/include/linux/rpmsg/ @UNMAINTAINED
+/include/linux/rslib.h @chen-jun-hw
+/include/linux/rtc.h @stkid
+/include/linux/rtc/ @UNMAINTAINED
+/include/linux/rtmutex.h @LiuYongQiang0816 @stkid
+/include/linux/rtnetlink.h @chen-jun-hw
+/include/linux/rtsx_common.h @chen-jun-hw
+/include/linux/rtsx_pci.h @UNMAINTAINED
+/include/linux/rtsx_usb.h @chen-jun-hw
+/include/linux/rwbase_rt.h @chen-jun-hw
+/include/linux/rwlock* @stkid @LiuYongQiang0816
+/include/linux/rwsem.h @stkid @LiuYongQiang0816
+/include/linux/s3c_adc_battery.h @chen-jun-hw
+/include/linux/sbitmap.h @chen-jun-hw
+/include/linux/scatterlist.h @chen-jun-hw
+/include/linux/scc.h @chen-jun-hw
+/include/linux/sched/ @zqiao216
+/include/linux/sched/numa_balancing.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/sched/ext.h @zichengqu @jackknight
+/include/linux/scmi_protocol.h @chen-jun-hw
+/include/linux/scpi_protocol.h @chen-jun-hw
+/include/linux/screen_info.h @chen-jun-hw
+/include/linux/scs.h @chen-jun-hw
+/include/linux/sctp.h @chen-jun-hw
+/include/linux/scx200* @chen-jun-hw
+/include/linux/seccomp.h @chen-jun-hw
+/include/linux/secretmem.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/securebits.h @chen-jun-hw
+/include/linux/security.h @lujialin2
+/include/linux/sed-opal.h @chen-jun-hw
+/include/linux/seg6* @yuehaibing_planb
+/include/linux/selection.h @chen-jun-hw
+/include/linux/sem* @LiuYongQiang0816 @stkid
+/include/linux/seq_buf.h @chen-jun-hw
+/include/linux/seq_file.h @zhangyi089
+/include/linux/seq_file_net.h @chen-jun-hw
+/include/linux/seqlock.h @stkid @LiuYongQiang0816
+/include/linux/serdev.h @chen-jun-hw
+/include/linux/serial.h @chen-jun-hw
+/include/linux/serial_8250.h @chen-jun-hw
+/include/linux/serial_bcm63xx.h @UNMAINTAINED
+/include/linux/serial_core.h @chen-jun-hw
+/include/linux/serial_max3100.h @UNMAINTAINED
+/include/linux/serial_s* @UNMAINTAINED
+/include/linux/serio.h @chen-jun-hw
+/include/linux/set_memory.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/sfp.h @chen-jun-hw
+/include/linux/sh_* @chen-jun-hw
+/include/linux/shdma-base.h @chen-jun-hw
+/include/linux/shmem_fs.h @zhangyi089
+/include/linux/shrinker.h @zhangyi089
+/include/linux/siox.h @chen-jun-hw
+/include/linux/siphash.h @chen-jun-hw
+/include/linux/sizes.h @chen-jun-hw
+/include/linux/sk* @yuehaibing_planb
+/include/linux/slab* @wkfxxx @mawupeng @sun_nanyong
+/include/linux/slimbus.h @chen-jun-hw
+/include/linux/slub_def.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/sm501* @UNMAINTAINED
+/include/linux/smc91* @UNMAINTAINED
+/include/linux/smp* @chen-jun-hw
+/include/linux/smsc911x.h @UNMAINTAINED
+/include/linux/smscphy.h @chen-jun-hw
+/include/linux/soc/ @UNMAINTAINED
+/include/linux/sock* @yuehaibing_planb
+/include/linux/son* @UNMAINTAINED
+/include/linux/sort.h @chen-jun-hw
+/include/linux/sound.h @chen-jun-hw
+/include/linux/soundcard.h @UNMAINTAINED
+/include/linux/soundwire/ @UNMAINTAINED
+/include/linux/soundwire/sdw_amd.h @kile2009 @sming56_admin
+/include/linux/soundwire/sdw_intel.h @zeng_zhaorong @juntianlinux
+/include/linux/spi/ @UNMAINTAINED
+/include/linux/spinlock.h @stkid @LiuYongQiang0816
+/include/linux/spinlock_api_* @stkid @LiuYongQiang0816
+/include/linux/spinlock_rt.h @stkid @LiuYongQiang0816
+/include/linux/spinlock_types* @stkid @LiuYongQiang0816
+/include/linux/spinlock_up.h @stkid @LiuYongQiang0816
+/include/linux/splice.h @zhangyi089
+/include/linux/spmi.h @chen-jun-hw
+/include/linux/sram.h @chen-jun-hw
+/include/linux/srcu* @LiuYongQiang0816 @stkid
+/include/linux/ssb/ @UNMAINTAINED
+/include/linux/ssbi.h @chen-jun-hw
+/include/linux/stack* @chen-jun-hw
+/include/linux/start_kernel.h @chen-jun-hw
+/include/linux/stat.h @zhangyi089
+/include/linux/statfs.h @zhangyi089
+/include/linux/static* @chen-jun-hw
+/include/linux/std* @chen-jun-hw
+/include/linux/stm.h @chen-jun-hw
+/include/linux/stmmac.h @chen-jun-hw
+/include/linux/stmp_device.h @chen-jun-hw
+/include/linux/stmp3xxx_rtc_wdt.h @UNMAINTAINED
+/include/linux/stop_machine.h @chen-jun-hw
+/include/linux/string.h @chen-jun-hw
+/include/linux/string_helpers.h @chen-jun-hw
+/include/linux/stringhash.h @chen-jun-hw
+/include/linux/stringify.h @chen-jun-hw
+/include/linux/sun*.h @chen-jun-hw
+/include/linux/sunrpc/ @chenxiaosonggitcode @zhangguodong11
+/include/linux/superhyway.h @chen-jun-hw
+/include/linux/surface_acpi_notify.h @chen-jun-hw
+/include/linux/surface_aggregator/ @UNMAINTAINED
+/include/linux/svga.h @chen-jun-hw
+/include/linux/sw842.h @chen-jun-hw
+/include/linux/swab.h @chen-jun-hw
+/include/linux/swait.h @chen-jun-hw
+/include/linux/swap* @wkfxxx @mawupeng @sun_nanyong
+/include/linux/swiotlb.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/switchtec.h @chen-jun-hw
+/include/linux/sxgbe_platform.h @chen-jun-hw
+/include/linux/sync* @chen-jun-hw
+/include/linux/sys.h @chen-jun-hw
+/include/linux/sys_soc.h @chen-jun-hw
+/include/linux/syscall_user_dispatch.h @chen-jun-hw
+/include/linux/syscalls.h @chen-jun-hw
+/include/linux/syscore_ops.h @chen-jun-hw
+/include/linux/sysctl.h @chen-jun-hw
+/include/linux/sysfb.h @chen-jun-hw
+/include/linux/sysfs.h @zhangyi089
+/include/linux/syslog.h @chen-jun-hw
+/include/linux/sysrq.h @chen-jun-hw
+/include/linux/sysv_fs.h @chen-jun-hw
+/include/linux/t10-pi.h @UNMAINTAINED
+/include/linux/task* @chen-jun-hw
+/include/linux/tboot.h @chen-jun-hw
+/include/linux/tc.h @chen-jun-hw
+/include/linux/tca6416_keypad.h @UNMAINTAINED
+/include/linux/tcp.h @yuehaibing_planb
+/include/linux/tee_drv.h @chen-jun-hw
+/include/linux/textsearch* @chen-jun-hw
+/include/linux/tfrc.h @chen-jun-hw
+/include/linux/thermal.h @chen-jun-hw
+/include/linux/thunderbolt.h @UNMAINTAINED
+/include/linux/ti_wilink_st.h @UNMAINTAINED
+/include/linux/tick.h @chen-jun-hw
+/include/linux/ti-emif-sram.h @UNMAINTAINED
+/include/linux/tifm.h @chen-jun-hw
+/include/linux/timb* @chen-jun-hw
+/include/linux/tnum.h @chen-jun-hw
+/include/linux/to* @chen-jun-hw
+/include/linux/tpm.h @chen-jun-hw
+/include/linux/tpm_command.h @chen-jun-hw
+/include/linux/tpm_eventlog.h @UNMAINTAINED
+/include/linux/trace* @xukuohai @yeweihua999
+/include/linux/transport_class.h @chen-jun-hw
+/include/linux/tsacct_kern.h @chen-jun-hw
+/include/linux/ts-nbus.h @chen-jun-hw
+/include/linux/tty* @lujialin2
+/include/linux/type* @chen-jun-hw
+/include/linux/u64_stats_sync.h @chen-jun-hw
+/include/linux/uacce.h @UNMAINTAINED
+/include/linux/uaccess.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/uc* @chen-jun-hw
+/include/linux/udp.h @yuehaibing_planb
+/include/linux/ui* @chen-jun-hw
+/include/linux/ulpi/ @UNMAINTAINED
+/include/linux/umh.h @chen-jun-hw
+/include/linux/unaligned/ @UNMAINTAINED
+/include/linux/uni* @chen-jun-hw
+/include/linux/uprobes.h @chen-jun-hw
+/include/linux/usb*.h @chen-jun-hw
+/include/linux/usb/ @UNMAINTAINED
+/include/linux/user.h @chen-jun-hw
+/include/linux/user_namespace.h @lujialin2
+/include/linux/userfaultfd_k* @wkfxxx @mawupeng @sun_nanyong
+/include/linux/usermode_driver.h @chen-jun-hw
+/include/linux/user-return-notifier.h @chen-jun-hw
+/include/linux/ut* @chen-jun-hw
+/include/linux/uuid.h @chen-jun-hw
+/include/linux/vbox_utils.h @chen-jun-hw
+/include/linux/vdpa.h @UNMAINTAINED
+/include/linux/ver* @chen-jun-hw
+/include/linux/vexpress.h @UNMAINTAINED
+/include/linux/vfio* @UNMAINTAINED
+/include/linux/vfs.h @zhangyi089
+/include/linux/vga* @chen-jun-hw
+/include/linux/vhost_iotlb.h @chen-jun-hw
+/include/linux/via* @chen-jun-hw
+/include/linux/videodev2.h @UNMAINTAINED
+/include/linux/virtio.h @UNMAINTAINED
+/include/linux/virtio_byteorder.h @UNMAINTAINED
+/include/linux/virtio_c* @UNMAINTAINED
+/include/linux/virtio_dma_buf.h @UNMAINTAINED
+/include/linux/virtio_net.h @UNMAINTAINED
+/include/linux/virtio_pci* @UNMAINTAINED
+/include/linux/virtio_ring.h @UNMAINTAINED
+/include/linux/virtio_vsock.h @UNMAINTAINED
+/include/linux/visorbus.h @chen-jun-hw
+/include/linux/vlynq.h @chen-jun-hw
+/include/linux/vm_event_item.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/vma* @wkfxxx @mawupeng @sun_nanyong
+/include/linux/vme.h @chen-jun-hw
+/include/linux/vmpressure.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/vmstat.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/vmw_vmci* @chen-jun-hw
+/include/linux/vringh.h @chen-jun-hw
+/include/linux/vt* @chen-jun-hw
+/include/linux/w1* @chen-jun-hw
+/include/linux/wait_bit.h @chen-jun-hw
+/include/linux/watch* @chen-jun-hw
+/include/linux/win_minmax.h @chen-jun-hw
+/include/linux/wireless.h @UNMAINTAINED
+/include/linux/wkup_m3_ipc.h @UNMAINTAINED
+/include/linux/wl12xx.h @UNMAINTAINED
+/include/linux/wm* @chen-jun-hw
+/include/linux/workqueue.h @LiuYongQiang0816
+/include/linux/writeback.h @zhangyi089
+/include/linux/ww_mutex.h @LiuYongQiang0816 @stkid
+/include/linux/wwan.h @chen-jun-hw
+/include/linux/xa* @chen-jun-hw
+/include/linux/xxhash.h @chen-jun-hw
+/include/linux/xz.h @chen-jun-hw
+/include/linux/yam.h @chen-jun-hw
+/include/linux/z2_battery.h @chen-jun-hw
+/include/linux/zconf.h @chen-jun-hw
+/include/linux/zlib.h @chen-jun-hw
+/include/linux/zorro.h @chen-jun-hw
+/include/linux/zpool.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/zsmalloc.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/zstd* @chen-jun-hw
+/include/linux/zutil.h @chen-jun-hw
+/include/linux/hisi_acc_qm.h @liulongfang
+/include/linux/arm_mpam.h @henryze
+/include/linux/intel* @zeng_zhaorong @juntianlinux
+/include/linux/remote_pager/ @SuperSix173
+/include/linux/gmem* @SuperSix173
+/include/linux/kabi.h @stkid
+/include/linux/share_pool.h @chen-jun-hw
+/include/linux/resctrl.h @henryze
+/include/linux/resctrl_types.h @henryze
+/include/linux/entry-kvm.h @kevinzhu1 @yuzenghui
+/include/linux/psp-hygon.h @hanliyang @allen-shi
+/include/linux/ptp_kvm.h @kevinzhu1 @yuzenghui
+/include/linux/oenetcls.h @yuehaibing_planb
+/include/linux/ummu_core.h @fangfeng123 @Tankll2021 @gongleihuawei
+/include/linux/acpi_amd_wbrf.h @kile2009 @sming56_admin
+/include/linux/resctrl*_x86.h @zeng_zhaorong @juntianlinux
+/include/linux/resctrlfs.h @henryze
+/include/linux/sfi_acpi.h @stkid @hanjunguo @chriszjh @zouyipeng
+/include/linux/lockdep_api.h @LiuYongQiang0816 @stkid
+/include/linux/mutex_api.h @LiuYongQiang0816 @stkid
+/include/linux/osq_lock.h @LiuYongQiang0816 @stkid
+/include/linux/pci-aspm.h @LiuYongQiang0816 @stkid
+/include/linux/pci-d* @LiuYongQiang0816 @stkid
+/include/linux/percpu-rwsem.h @LiuYongQiang0816 @stkid
+/include/linux/rcuref.h @LiuYongQiang0816 @stkid
+/include/linux/rcuwait_api.h @LiuYongQiang0816 @stkid
+/include/linux/rwsem-spinlock.h @LiuYongQiang0816 @stkid
+/include/linux/seqlock_api.h @LiuYongQiang0816 @stkid
+/include/linux/spinlock_api.h @LiuYongQiang0816 @stkid
+/include/linux/io_uring/ @zhangyi089
+/include/linux/dynamic_pool.h @wkfxxx @mawupeng @sun_nanyong
+/include/linux/prmt.h @chriszjh @zouyipeng
+/include/math-emu/ @chen-jun-hw
+/include/net/ @yuehaibing_planb
+/include/net/smc.h @giree2
+/include/net/ub/ @chenjunxin1992 @fanghaiqinghw
+/include/ras/ @wkfxxx @mawupeng @sun_nanyong
+/include/rdma/ @yuehaibing_planb
+/include/scsi/ @zhangyi089
+/include/scsi/fc/ @UNMAINTAINED
+/include/scsi/fc*.h @UNMAINTAINED
+/include/scsi/iser.h @UNMAINTAINED
+/include/scsi/libfc* @UNMAINTAINED
+/include/scsi/scsi_transport_fc.h @UNMAINTAINED
+/include/scsi/scsi_transport_spi.h @UNMAINTAINED
+/include/scsi/scsi_transport_srp.h @UNMAINTAINED
+/include/scsi/srp.h @UNMAINTAINED
+/include/scsi/viosrp.h @UNMAINTAINED
+/include/trace/ @xukuohai @yeweihua999
+/include/trace/events/ @xukuohai @yeweihua999
+/include/trace/events/9p.h @UNMAINTAINED
+/include/trace/events/afs.h @UNMAINTAINED
+/include/trace/events/block.h @zhangyi089
+/include/trace/events/erofs.h @UNMAINTAINED
+/include/trace/events/ext4.h @zhangyi089
+/include/trace/events/f2fs.h @UNMAINTAINED
+/include/trace/events/filelock.h @zhangyi089
+/include/trace/events/fs.h @zhangyi089
+/include/trace/events/fs_dax.h @zhangyi089
+/include/trace/events/fscache.h @UNMAINTAINED
+/include/trace/events/io_uring.h @zhangyi089
+/include/trace/events/iscsi.h @zhangyi089
+/include/trace/events/jbd2.h @zhangyi089
+/include/trace/events/nbd.h @zhangyi089
+/include/trace/events/sched.h @zqiao216
+/include/trace/events/scsi.h @zhangyi089
+/include/trace/events/signal.h @zqiao216
+/include/trace/events/kvm.h @kevinzhu1 @yuzenghui
+/include/trace/events/btrfs.h @jiaoff
+/include/trace/events/intel* @zeng_zhaorong @juntianlinux
+/include/trace/events/sof_intel.h @zeng_zhaorong @juntianlinux
+/include/trace/events/mfs.h @yubo-liu1 @gang_he
+/include/trace/events/rcu.h @LiuYongQiang0816 @stkid
+/include/trace/events/rpc* @chenxiaosonggitcode @zhangguodong11
+/include/trace/events/sunrpc.h @chenxiaosonggitcode @zhangguodong11
+/include/trace/misc/fs.h @chenxiaosonggitcode @zhangguodong11
+/include/trace/misc/sunrpc.h @chenxiaosonggitcode @zhangguodong11
+/include/uapi/ @UNMAINTAINED
+/include/uapi/asm-generic/ @chen-jun-hw
+/include/uapi/asm-generic/fcntl.h @zhangyi089
+/include/uapi/asm-generic/hugetlb_encode.h @wkfxxx @mawupeng @sun_nanyong
+/include/uapi/asm-generic/mman.h @wkfxxx @mawupeng @sun_nanyong
+/include/uapi/asm-generic/shmbuf.h @wkfxxx @mawupeng @sun_nanyong
+/include/uapi/asm-generic/signal* @zqiao216
+/include/uapi/asm-generic/stat* @zhangyi089
+/include/uapi/asm-generic/kvm_para.h @kevinzhu1 @yuzenghui
+/include/uapi/asm-generic/sembuf.h @LiuYongQiang0816 @stkid
+/include/uapi/linux/ @UNMAINTAINED
+/include/uapi/linux/audit.h @lujialin2
+/include/uapi/linux/auto_fs* @zhangyi089
+/include/uapi/linux/binfmts.h @zhangyi089
+/include/uapi/linux/blk* @zhangyi089
+/include/uapi/linux/bpf* @xukuohai @yeweihua999
+/include/uapi/linux/bpqether.h @yuehaibing_planb
+/include/uapi/linux/bsg.h @zhangyi089
+/include/uapi/linux/bt-bmc.h @lujialin2
+/include/uapi/linux/btf.h @xukuohai @yeweihua999
+/include/uapi/linux/byteorder/ @wkfxxx @mawupeng @sun_nanyong
+/include/uapi/linux/caif/ @yuehaibing_planb
+/include/uapi/linux/can.h @yuehaibing_planb
+/include/uapi/linux/can/ @yuehaibing_planb
+/include/uapi/linux/capability.h @lujialin2
+/include/uapi/linux/cciss* @zhangyi089
+/include/uapi/linux/cfm_bridge.h @yuehaibing_planb
+/include/uapi/linux/cgroupstats.h @lujialin2
+/include/uapi/linux/chio.h @zhangyi089
+/include/uapi/linux/cifs/ @zhangyi089
+/include/uapi/linux/connector.h @yuehaibing_planb
+/include/uapi/linux/const.h @chen-jun-hw
+/include/uapi/linux/cryptouser.h @lujialin2
+/include/uapi/linux/cyc* @chen-jun-hw
+/include/uapi/linux/dc* @yuehaibing_planb
+/include/uapi/linux/devlink.h @yuehaibing_planb
+/include/uapi/linux/dm-ioctl.h @zhangyi089
+/include/uapi/linux/dn.h @yuehaibing_planb
+/include/uapi/linux/dns_resolver.h @zhangyi089
+/include/uapi/linux/dqblk_xfs.h @zhangyi089
+/include/uapi/linux/errno.h @chen-jun-hw
+/include/uapi/linux/errqueue.h @yuehaibing_planb
+/include/uapi/linux/ethtool* @yuehaibing_planb
+/include/uapi/linux/eventpoll.h @zhangyi089
+/include/uapi/linux/fadvise.h @wkfxxx @mawupeng @sun_nanyong
+/include/uapi/linux/falloc.h @zhangyi089
+/include/uapi/linux/fanotify.h @zhangyi089
+/include/uapi/linux/fcntl.h @zhangyi089
+/include/uapi/linux/fd.h @zhangyi089
+/include/uapi/linux/fib_rules.h @yuehaibing_planb
+/include/uapi/linux/fiemap.h @zhangyi089
+/include/uapi/linux/fou.h @yuehaibing_planb
+/include/uapi/linux/fs.h @zhangyi089
+/include/uapi/linux/fuse.h @zhangyi089
+/include/uapi/linux/futex.h @stkid @LiuYongQiang0816
+/include/uapi/linux/gen*.h @yuehaibing_planb
+/include/uapi/linux/gsmmux.h @lujialin2
+/include/uapi/linux/gtp.h @yuehaibing_planb
+/include/uapi/linux/hash_info.h @lujialin2
+/include/uapi/linux/hdlc*.h @yuehaibing_planb
+/include/uapi/linux/hpet.h @chriszjh @zouyipeng
+/include/uapi/linux/hsr_netlink.h @yuehaibing_planb
+/include/uapi/linux/i2o-dev.h @chen-jun-hw
+/include/uapi/linux/icmp* @yuehaibing_planb
+/include/uapi/linux/if* @yuehaibing_planb
+/include/uapi/linux/igmp.h @yuehaibing_planb
+/include/uapi/linux/ila.h @yuehaibing_planb
+/include/uapi/linux/in.h @yuehaibing_planb
+/include/uapi/linux/in_route.h @yuehaibing_planb
+/include/uapi/linux/in6.h @yuehaibing_planb
+/include/uapi/linux/inet_diag.h @yuehaibing_planb
+/include/uapi/linux/inotify.h @zhangyi089
+/include/uapi/linux/io_uring.h @zhangyi089
+/include/uapi/linux/ioam6* @yuehaibing_planb
+/include/uapi/linux/ioctl.h @chen-jun-hw
+/include/uapi/linux/iommu.h @chen-jun-hw
+/include/uapi/linux/ip.h @yuehaibing_planb
+/include/uapi/linux/ip_vs.h @yuehaibing_planb
+/include/uapi/linux/ip6_tunnel.h @yuehaibing_planb
+/include/uapi/linux/ipc.h @zqiao216
+/include/uapi/linux/ipmi.h @lujialin2
+/include/uapi/linux/ipmi_bmc.h @lujialin2
+/include/uapi/linux/ipmi_msgdefs.h @lujialin2
+/include/uapi/linux/ipsec.h @yuehaibing_planb
+/include/uapi/linux/ipv6* @yuehaibing_planb
+/include/uapi/linux/irqnr.h @chriszjh @zouyipeng
+/include/uapi/linux/iso_fs.h @zhangyi089
+/include/uapi/linux/jffs2.h @zhangyi089
+/include/uapi/linux/kcm.h @yuehaibing_planb
+/include/uapi/linux/kcmp.h @zqiao216
+/include/uapi/linux/kcov.h @xukuohai @yeweihua999
+/include/uapi/linux/kd.h @lujialin2
+/include/uapi/linux/kdev_t.h @zhangyi089
+/include/uapi/linux/kernel.h @chen-jun-hw
+/include/uapi/linux/kernel-page-flags.h @wkfxxx @mawupeng @sun_nanyong
+/include/uapi/linux/kexec.h @xukuohai @yeweihua999
+/include/uapi/linux/l2tp.h @yuehaibing_planb
+/include/uapi/linux/landlock.h @lujialin2
+/include/uapi/linux/libc-compat.h @chen-jun-hw
+/include/uapi/linux/limits.h @chen-jun-hw
+/include/uapi/linux/llc.h @yuehaibing_planb
+/include/uapi/linux/loop.h @zhangyi089
+/include/uapi/linux/lwtunnel.h @yuehaibing_planb
+/include/uapi/linux/magic.h @chen-jun-hw
+/include/uapi/linux/major.h @chen-jun-hw
+/include/uapi/linux/mctp.h @yuehaibing_planb
+/include/uapi/linux/mdio.h @yuehaibing_planb
+/include/uapi/linux/mem* @wkfxxx @mawupeng @sun_nanyong
+/include/uapi/linux/mii.h @chen-jun-hw
+/include/uapi/linux/mman.h @wkfxxx @mawupeng @sun_nanyong
+/include/uapi/linux/mo* @chen-jun-hw
+/include/uapi/linux/mpls* @yuehaibing_planb
+/include/uapi/linux/mptcp.h @yuehaibing_planb
+/include/uapi/linux/mqueue.h @zqiao216
+/include/uapi/linux/mrp_bridge.h @yuehaibing_planb
+/include/uapi/linux/msdos_fs.h @zhangyi089
+/include/uapi/linux/msg.h @zqiao216
+/include/uapi/linux/nbd* @zhangyi089
+/include/uapi/linux/ncsi.h @yuehaibing_planb
+/include/uapi/linux/ndctl.h @chen-jun-hw
+/include/uapi/linux/neighbour.h @yuehaibing_planb
+/include/uapi/linux/net.h @yuehaibing_planb
+/include/uapi/linux/net_* @yuehaibing_planb
+/include/uapi/linux/netconf.h @yuehaibing_planb
+/include/uapi/linux/netdevice.h @yuehaibing_planb
+/include/uapi/linux/netfilter*.h @yuehaibing_planb
+/include/uapi/linux/netfilter/ @yuehaibing_planb
+/include/uapi/linux/netfilter_arp/ @yuehaibing_planb
+/include/uapi/linux/netfilter_bridge/ @yuehaibing_planb
+/include/uapi/linux/netfilter_ipv4/ @yuehaibing_planb
+/include/uapi/linux/netfilter_ipv6/ @yuehaibing_planb
+/include/uapi/linux/netlink* @yuehaibing_planb
+/include/uapi/linux/netrom.h @yuehaibing_planb
+/include/uapi/linux/nexthop.h @yuehaibing_planb
+/include/uapi/linux/nfc.h @yuehaibing_planb
+/include/uapi/linux/nfs*.h @chenxiaosonggitcode @zhangguodong11
+/include/uapi/linux/nl80211.h @yuehaibing_planb
+/include/uapi/linux/nl80211-vnd-intel.h @zeng_zhaorong @juntianlinux
+/include/uapi/linux/nsfs.h @lujialin2
+/include/uapi/linux/nvme_ioctl.h @htforge
+/include/uapi/linux/oom.h @wkfxxx @mawupeng @sun_nanyong
+/include/uapi/linux/openat2.h @zhangyi089
+/include/uapi/linux/openvswitch.h @yuehaibing_planb
+/include/uapi/linux/packet_diag.h @yuehaibing_planb
+/include/uapi/linux/param.h @chen-jun-hw
+/include/uapi/linux/pci* @stkid @LiuYongQiang0816
+/include/uapi/linux/perf_event.h @xukuohai @yeweihua999
+/include/uapi/linux/personality.h @chen-jun-hw
+/include/uapi/linux/pfkeyv2.h @yuehaibing_planb
+/include/uapi/linux/pfrut.h @stkid
+/include/uapi/linux/phonet.h @yuehaibing_planb
+/include/uapi/linux/pidfd.h @zqiao216
+/include/uapi/linux/pkt_* @yuehaibing_planb
+/include/uapi/linux/po* @zhangyi089
+/include/uapi/linux/ppp* @yuehaibing_planb
+/include/uapi/linux/pr.h @chen-jun-hw
+/include/uapi/linux/psample.h @yuehaibing_planb
+/include/uapi/linux/qrtr.h @yuehaibing_planb
+/include/uapi/linux/quota.h @zhangyi089
+/include/uapi/linux/random.h @lujialin2
+/include/uapi/linux/rds.h @yuehaibing_planb
+/include/uapi/linux/reboot.h @chriszjh @zouyipeng
+/include/uapi/linux/resource.h @chen-jun-hw
+/include/uapi/linux/rfkill.h @yuehaibing_planb
+/include/uapi/linux/romfs_fs.h @zhangyi089
+/include/uapi/linux/ro*e.h @yuehaibing_planb
+/include/uapi/linux/rpl* @yuehaibing_planb
+/include/uapi/linux/rseq.h @zqiao216
+/include/uapi/linux/rtc.h @chriszjh @zouyipeng
+/include/uapi/linux/rtnetlink.h @yuehaibing_planb
+/include/uapi/linux/scc.h @yuehaibing_planb
+/include/uapi/linux/sched.h @zqiao216
+/include/uapi/linux/sched/ @zqiao216
+/include/uapi/linux/scif_ioctl.h @chen-jun-hw
+/include/uapi/linux/sctp.h @yuehaibing_planb
+/include/uapi/linux/sec* @lujialin2
+/include/uapi/linux/seg6* @yuehaibing_planb
+/include/uapi/linux/selinux_netlink.h @lujialin2
+/include/uapi/linux/sem.h @LiuYongQiang0816 @stkid
+/include/uapi/linux/serial* @lujialin2
+/include/uapi/linux/shm.h @zqiao216
+/include/uapi/linux/signal* @zqiao216
+/include/uapi/linux/smc* @yuehaibing_planb
+/include/uapi/linux/snmp.h @yuehaibing_planb
+/include/uapi/linux/sock* @yuehaibing_planb
+/include/uapi/linux/stat.h @zhangyi089
+/include/uapi/linux/stddef.h @chen-jun-hw
+/include/uapi/linux/sunrpc/ @chenxiaosonggitcode @zhangguodong11
+/include/uapi/linux/suspend_ioctls.h @stkid
+/include/uapi/linux/swab.h @chen-jun-hw
+/include/uapi/linux/switchtec_ioctl.h @stkid
+/include/uapi/linux/synclink.h @lujialin2
+/include/uapi/linux/sys* @chen-jun-hw
+/include/uapi/linux/tcp* @yuehaibing_planb
+/include/uapi/linux/time* @zqiao216
+/include/uapi/linux/tiocl.h @lujialin2
+/include/uapi/linux/tipc* @yuehaibing_planb
+/include/uapi/linux/tls.h @yuehaibing_planb
+/include/uapi/linux/tty* @lujialin2
+/include/uapi/linux/types.h @chen-jun-hw
+/include/uapi/linux/udp.h @yuehaibing_planb
+/include/uapi/linux/uio.h @chen-jun-hw
+/include/uapi/linux/unistd.h @chen-jun-hw
+/include/uapi/linux/unix_diag.h @yuehaibing_planb
+/include/uapi/linux/userfaultfd.h @wkfxxx @mawupeng @sun_nanyong
+/include/uapi/linux/utime.h @zhangyi089
+/include/uapi/linux/utsname.h @lujialin2
+/include/uapi/linux/uuid.h @xukuohai @yeweihua999
+/include/uapi/linux/veth.h @yuehaibing_planb
+/include/uapi/linux/virtio_9p.h @yuehaibing_planb
+/include/uapi/linux/virtio_crypto.h @lujialin2
+/include/uapi/linux/virtio_fs.h @zhangyi089
+/include/uapi/linux/virtio_iommu.h @chen-jun-hw
+/include/uapi/linux/vm_sockets* @yuehaibing_planb
+/include/uapi/linux/vmcore.h @xukuohai @yeweihua999
+/include/uapi/linux/vsockmon.h @yuehaibing_planb
+/include/uapi/linux/vt.h @lujialin2
+/include/uapi/linux/wait.h @zqiao216
+/include/uapi/linux/watch_queue.h @zhangyi089
+/include/uapi/linux/wire* @yuehaibing_planb
+/include/uapi/linux/wwan.h @yuehaibing_planb
+/include/uapi/linux/x25.h @yuehaibing_planb
+/include/uapi/linux/xattr.h @zhangyi089
+/include/uapi/linux/xdp_diag.h @yuehaibing_planb
+/include/uapi/linux/xfrm.h @yuehaibing_planb
+/include/uapi/linux/kvm* @kevinzhu1 @yuzenghui
+/include/uapi/linux/btrfs* @jiaoff
+/include/uapi/linux/gmem_dev.h @SuperSix173
+/include/uapi/linux/ext4.h @zhangyi089
+/include/uapi/linux/psp-hygon.h @hanliyang @allen-shi
+/include/uapi/linux/watchdog.h @chen-jun-hw
+/include/uapi/linux/ummu_core.h @fangfeng123 @Tankll2021 @gongleihuawei
+/include/uapi/linux/mfs.h @yubo-liu1 @gang_he
+/include/uapi/linux/nfsd/ @chenxiaosonggitcode @zhangguodong11
+/include/uapi/linux/nfsd/nfsfh.h @chenxiaosonggitcode @zhangguodong11
+/include/uapi/misc/ @chen-jun-hw
+/include/uapi/misc/xilinx_sdfec.h @xukuohai @yeweihua999
+/include/uapi/mtd/ @lujialin2
+/include/uapi/rdma/ @yuehaibing_planb
+/include/uapi/rdma/hns-abi.h @hellotcc
+/include/uapi/scsi/ @UNMAINTAINED
+/include/uapi/scsi/scsi_netlink.h @zhangyi089
+/include/uapi/drm/amdgpu_drm.h @kile2009 @sming56_admin
+/include/uapi/ub/cdma/ @rock_hw @hongwu-wang
+/include/uapi/ub/ubus/ @junlong-zheng @rock_hw
+/include/uapi/ub/urma/ @eingesch @wanghang73
+/include/uapi/ub/urma/udma/ @hu-chunzhi @shu-shengming
+/include/uapi/ub/obmm.h @TrueAI @kazero00
+/include/uapi/ub/ubmempfd/ @Tankll2021
+/include/uapi/ub/sentry/ @jiayi0118
+/include/uapi/sound/intel/ @zeng_zhaorong @juntianlinux
+/include/vdso/ @chriszjh @zouyipeng
+/include/kvm/ @kevinzhu1 @yuzenghui
+/include/drm/amd_asic_type.h @kile2009 @sming56_admin
+/include/drm/intel* @zeng_zhaorong @juntianlinux
+/include/dt-bindings/power/raspberrypi-power.h @woqidaideshi
+/include/dt-bindings/pwm/raspberrypi,firmware-poe-pwm.h @woqidaideshi
+/include/dt-bindings/reset/raspberrypi,firmware-reset.h @woqidaideshi
+/include/dt-bindings/clock/intel,* @zeng_zhaorong @juntianlinux
+/include/dt-bindings/clock/loongson,ls* @lixuefeng-loongson @maobibo @gaojuxin09 @robinorg
+/include/soc/bcm2835/raspberrypi-firmware.h @woqidaideshi
+/include/soc/loongson/ @lixuefeng-loongson @maobibo @gaojuxin09 @robinorg
+/include/sound/sof/dai-amd.h @kile2009 @sming56_admin
+/include/sound/sof/dai-intel.h @zeng_zhaorong @juntianlinux
+/include/sound/intel* @zeng_zhaorong @juntianlinux
+/include/sound/soc-acpi-intel-match.h @zeng_zhaorong @juntianlinux
+/include/ub/cdma/ @rock_hw @hongwu-wang
+/include/ub/ubase/ @chenjunxin1992 @fanghaiqinghw
+/include/ub/ubfi/ @junlong-zheng @rock_hw
+/include/ub/ubus/ @junlong-zheng @rock_hw
+/include/ub/urma/ @eingesch @wanghang73
+/include/ub/urma/udma/ @hu-chunzhi @shu-shengming
+/include/ub/ubdevshm/ @Tankll2021
+/include/urma/ @eingesch @wanghang73
+/init/ @chriszjh @zouyipeng
+/ipc/ @zqiao216
+/ipc/sem.c @LiuYongQiang0816 @stkid
+/K* @xukuohai @yeweihua999
+/kernel/ @zqiao216
+/kernel/.gitignore @UNMAINTAINED
+/kernel/audit* @lujialin2
+/kernel/b*.c @UNMAINTAINED
+/kernel/bpf/ @xukuohai @yeweihua999
+/kernel/capability.c @lujialin2
+/kernel/cfi.c @lujialin2
+/kernel/cgroup/ @lujialin2
+/kernel/compat.c @chriszjh @zouyipeng
+/kernel/configs.c @UNMAINTAINED
+/kernel/configs/ @UNMAINTAINED
+/kernel/configs/kvm_guest.config @kevinzhu1 @yuzenghui
+/kernel/cpu* @chriszjh @zouyipeng
+/kernel/crash* @xukuohai @yeweihua999
+/kernel/cred.c @lujialin2
+/kernel/debug/ @xukuohai @yeweihua999
+/kernel/dma.c @wkfxxx @mawupeng @sun_nanyong
+/kernel/dma/ @wkfxxx @mawupeng @sun_nanyong
+/kernel/dma/phytium/ @mao-hongbo @GoGo_phytium @xuyanaasss
+/kernel/entry/ @chriszjh @zouyipeng
+/kernel/entry/kvm.c @kevinzhu1 @yuzenghui
+/kernel/events/ @xukuohai @yeweihua999
+/kernel/fail_function.c @UNMAINTAINED
+/kernel/futex/ @stkid @LiuYongQiang0816
+/kernel/gcov/ @xukuohai @yeweihua999
+/kernel/gcov/gcc* @li-yancheng @eastb233
+/kernel/gen_kheaders.sh @UNMAINTAINED
+/kernel/hung_task.c @xukuohai @yeweihua999
+/kernel/iomem.c @yuehaibing_planb
+/kernel/irq/ @chriszjh @zouyipeng
+/kernel/irq_work.c @chriszjh @zouyipeng
+/kernel/jump_label.c @chriszjh @zouyipeng
+/kernel/kallsyms.c @xukuohai @yeweihua999
+/kernel/Kconfig.locks @stkid
+/kernel/kcov.c @UNMAINTAINED
+/kernel/kcsan/ @wkfxxx @mawupeng @sun_nanyong
+/kernel/kexec* @xukuohai @yeweihua999
+/kernel/kheaders.c @UNMAINTAINED
+/kernel/kmod.c @stkid
+/kernel/kprobes.c @xukuohai @yeweihua999
+/kernel/ksysfs.c @xukuohai @yeweihua999
+/kernel/latencytop.c @UNMAINTAINED
+/kernel/livepatch/ @xukuohai @yeweihua999
+/kernel/locking/ @stkid @LiuYongQiang0816
+/kernel/module.c @stkid
+/kernel/module_* @stkid
+/kernel/module-internal.h @stkid
+/kernel/nsproxy.c @lujialin2
+/kernel/panic.c @xukuohai @yeweihua999
+/kernel/params.c @xukuohai @yeweihua999
+/kernel/pid_namespace.c @lujialin2
+/kernel/power/ @chriszjh @zouyipeng
+/kernel/printk/ @xukuohai @yeweihua999
+/kernel/profile.c @xukuohai @yeweihua999
+/kernel/ptrace.c @xukuohai @yeweihua999
+/kernel/range.c @chriszjh @zouyipeng
+/kernel/rcu/ @stkid @LiuYongQiang0816
+/kernel/reboot.c @chriszjh @zouyipeng
+/kernel/regset.c @chriszjh @zouyipeng
+/kernel/relay.c @UNMAINTAINED
+/kernel/resource.c @chen-jun-hw
+/kernel/resource_kunit.c @UNMAINTAINED
+/kernel/sc*.c @UNMAINTAINED
+/kernel/seccomp.c @lujialin2
+/kernel/smp* @chriszjh @zouyipeng
+/kernel/softirq.c @chriszjh @zouyipeng
+/kernel/stackleak.c @lujialin2
+/kernel/stacktrace.c @xukuohai @yeweihua999
+/kernel/static_call.c @yeweihua999 @xukuohai
+/kernel/stop_machine.c @chriszjh @zouyipeng
+/kernel/sys_ni.c @chriszjh @zouyipeng
+/kernel/sysctl.c @zhangyi089
+/kernel/sysctl-test.c @UNMAINTAINED
+/kernel/time/alarmtimer.c @chriszjh @zouyipeng
+/kernel/time/clock* @chriszjh @zouyipeng
+/kernel/time/hrtimer.c @chriszjh @zouyipeng
+/kernel/time/jiffies.c @chriszjh @zouyipeng
+/kernel/time/posix* @chriszjh @zouyipeng
+/kernel/time/sched_clock.c @chriszjh @zouyipeng
+/kernel/time/test_udelay.c @chriszjh @zouyipeng
+/kernel/time/tick* @chriszjh @zouyipeng
+/kernel/time/timer* @chriszjh @zouyipeng
+/kernel/torture.c @UNMAINTAINED
+/kernel/trace/ @xukuohai @yeweihua999
+/kernel/trace/trace_sched* @zqiao216
+/kernel/tracepoint.c @xukuohai @yeweihua999
+/kernel/user.c @lujialin2
+/kernel/user_namespace.c @lujialin2
+/kernel/usermode_driver.c @xukuohai @yeweihua999
+/kernel/utsname* @lujialin2
+/kernel/watch_queue.c @UNMAINTAINED
+/kernel/watchdog* @xukuohai @yeweihua999
+/kernel/workqueue.c @LiuYongQiang0816
+/kernel/sched/ @zqiao216
+/kernel/sched/ext* @zichengqu @jackknight
+/lib/ @xukuohai @yeweihua999
+/lib/.gitignore @UNMAINTAINED
+/lib/842/ @UNMAINTAINED
+/lib/argv_split.c @chen-jun-hw
+/lib/ash* @chen-jun-hw
+/lib/assoc_array.c @chen-jun-hw
+/lib/audit.c @lujialin2
+/lib/bc* @chen-jun-hw
+/lib/bit* @chen-jun-hw
+/lib/bootconfig.c @chen-jun-hw
+/lib/bucket_locks.c @chen-jun-hw
+/lib/build* @chen-jun-hw
+/lib/bust_spinlocks.c @chen-jun-hw
+/lib/check_signature.c @chen-jun-hw
+/lib/checksum.c @chen-jun-hw
+/lib/clz* @chen-jun-hw
+/lib/cm* @chen-jun-hw
+/lib/compat_audit.c @chen-jun-hw
+/lib/cpu_rmap.c @chen-jun-hw
+/lib/cpumask.c @chen-jun-hw
+/lib/crc16.c @lujialin2
+/lib/crc32* @lujialin2
+/lib/crc4.c @lujialin2
+/lib/crc64.c @lujialin2
+/lib/crc7.c @lujialin2
+/lib/crc8.c @lujialin2
+/lib/crc-* @lujialin2
+/lib/crypto/ @lujialin2
+/lib/dec_and_lock.c @chen-jun-hw
+/lib/devmem_is_allowed.c @wkfxxx @mawupeng @sun_nanyong
+/lib/devres.c @chen-jun-hw
+/lib/digsig.c @chen-jun-hw
+/lib/dim/ @UNMAINTAINED
+/lib/dump_stack.c @chen-jun-hw
+/lib/dynamic* @chen-jun-hw
+/lib/earlycpio.c @chen-jun-hw
+/lib/errseq.c @zhangyi089
+/lib/extable.c @chen-jun-hw
+/lib/fdt* @chen-jun-hw
+/lib/find_bit_benchmark.c @chen-jun-hw
+/lib/flex_proportions.c @chen-jun-hw
+/lib/fonts/ @UNMAINTAINED
+/lib/gen* @chen-jun-hw
+/lib/glob* @zqiao216
+/lib/hweight.c @zqiao216
+/lib/idr.c @zqiao216
+/lib/in* @zqiao216
+/lib/iomap* @wkfxxx @mawupeng @sun_nanyong
+/lib/iommu-helper.c @chen-jun-hw
+/lib/iov_iter.c @zqiao216
+/lib/irq* @zqiao216
+/lib/is_single_threaded.c @zqiao216
+/lib/Kconfig.kasan @wkfxxx @mawupeng @sun_nanyong
+/lib/Kconfig.kcsan @wkfxxx @mawupeng @sun_nanyong
+/lib/Kconfig.kfence @wkfxxx @mawupeng @sun_nanyong
+/lib/kfifo.c @zqiao216
+/lib/klist.c @zqiao216
+/lib/kobject* @zqiao216
+/lib/kunit/ @UNMAINTAINED
+/lib/linear_ranges.c @zqiao216
+/lib/locking-selftest* @UNMAINTAINED
+/lib/lockref.c @stkid @LiuYongQiang0816
+/lib/logic* @zqiao216
+/lib/lru_cache.c @zqiao216
+/lib/lshrdi3.c @zqiao216
+/lib/mem* @wkfxxx @mawupeng @sun_nanyong
+/lib/muldi3.c @zqiao216
+/lib/net_utils.c @yuehaibing_planb
+/lib/netdev-notifier-error-inject.c @zqiao216
+/lib/nlattr.c @zqiao216
+/lib/nmi_backtrace.c @chriszjh @zouyipeng
+/lib/no* @zqiao216
+/lib/objagg.c @zqiao216
+/lib/of-reconfig-notifier-error-inject.c @zqiao216
+/lib/oid_registry.c @zqiao216
+/lib/once.c @zqiao216
+/lib/par* @zqiao216
+/lib/pci_iomap.c @stkid @LiuYongQiang0816
+/lib/pldmfw/ @UNMAINTAINED
+/lib/pm-notifier-error-inject.c @zqiao216
+/lib/raid6/ @UNMAINTAINED
+/lib/raid6/loongarch* @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/lib/raid6/recov_loongarch_simd.c @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/lib/random32.c @lujialin2
+/lib/ratelimit.c @zqiao216
+/lib/reed_solomon/ @UNMAINTAINED
+/lib/ref_tracker.c @zqiao216
+/lib/rhashtable.c @lujialin2
+/lib/seq_buf.c @zhangyi089
+/lib/show_mem.c @wkfxxx @mawupeng @sun_nanyong
+/lib/siphash.c @lujialin2
+/lib/smp_processor_id.c @zqiao216
+/lib/test_fortify @UNMAINTAINED
+/lib/test_free_pages.c @wkfxxx @mawupeng @sun_nanyong
+/lib/test_kasan.c @wkfxxx @mawupeng @sun_nanyong
+/lib/test_linear_ranges.c @wkfxxx @mawupeng @sun_nanyong
+/lib/test_meminit.c @wkfxxx @mawupeng @sun_nanyong
+/lib/test_user_copy.c @wkfxxx @mawupeng @sun_nanyong
+/lib/test_vmalloc.c @wkfxxx @mawupeng @sun_nanyong
+/lib/ts* @zqiao216
+/lib/uc* @zqiao216
+/lib/usercopy.c @wkfxxx @mawupeng @sun_nanyong
+/lib/vdso/ @chriszjh @zouyipeng
+/lib/win_minmax.c @zqiao216
+/lib/rcuref.c @LiuYongQiang0816 @stkid
+/Makefile @xukuohai @yeweihua999
+/mm/ @wkfxxx @mawupeng @sun_nanyong
+/mm/memcontrol.c @lujialin2
+/mm/gmem.c @SuperSix173
+/mm/share_pool.c @chen-jun-hw
+/net/ @yuehaibing_planb
+/net/ubl/ @hu-chunzhi @wsoydl @jerry_lilijun
+/net/smc/ @giree2
+/net/bpf/ @xukuohai @yeweihua999
+/net/bpf/modules.builtin @xukuohai @yeweihua
+/net/sunrpc/ @chenxiaosonggitcode @zhangguodong11
+/security/ @lujialin2
+/security/smack/ @lujialin2
+/security/smack/Kconfig @UNMAINTAINED
+/security/integrity/ @zhujianwei001
+/tools/ @UNMAINTAINED
+/tools/arch/ @UNMAINTAINED
+/tools/arch/arm64/ @chriszjh @zouyipeng
+/tools/arch/powerpc/ @chriszjh @zouyipeng
+/tools/arch/x86/ @zeng_zhaorong @juntianlinux
+/tools/arch/x86/include/asm/amd-ibs.h @kile2009 @sming56_admin
+/tools/arch/loongarch/ @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/tools/arch/sw_64/ @guzitao
+/tools/lib/ @UNMAINTAINED
+/tools/lib/bpf/ @xukuohai @yeweihua999
+/tools/lib/perf/ @xukuohai @SuperSix173 @stavewu
+/tools/lib/traceevent/ @xukuohai @yeweihua999
+/tools/perf/ @xukuohai @SuperSix173 @stavewu
+/tools/perf/arch/loongarch/ @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/tools/perf/arch/sw_64/ @guzitao
+/tools/perf/arch/x86/tests/amd-ibs-via-core-pmu.c @kile2009 @sming56_admin
+/tools/perf/arch/x86/tests/intel* @zeng_zhaorong @juntianlinux
+/tools/perf/arch/x86/util/intel* @zeng_zhaorong @juntianlinux
+/tools/perf/util/libunwind/sw64.c @guzitao
+/tools/perf/util/perf-regs-arch/perf_regs_sw64.c @guzitao
+/tools/perf/util/perf-regs-arch/perf_regs_loongarch.c @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/tools/perf/util/amd-sample-raw.c @kile2009 @sming56_admin
+/tools/perf/util/intel-bts* @zeng_zhaorong @juntianlinux
+/tools/perf/util/intel-pt-decoder/ @zeng_zhaorong @juntianlinux
+/tools/perf/util/intel-pt-decoder/gen-insn-attr-x86.awk @zeng_zhaorong @juntianlinux
+/tools/perf/util/intel-pt-decoder/in* @zeng_zhaorong @juntianlinux
+/tools/perf/util/intel-pt-decoder/x86-opcode-map.txt @zeng_zhaorong @juntianlinux
+/tools/perf/util/intel-pt.* @zeng_zhaorong @juntianlinux
+/tools/perf/pmu-events/arch/x86/amdzen1/ @kile2009 @sming56_admin
+/tools/perf/pmu-events/arch/x86/amdzen2/ @kile2009 @sming56_admin
+/tools/perf/pmu-events/arch/x86/amdzen3/ @kile2009 @sming56_admin
+/tools/perf/pmu-events/arch/x86/amdzen4/ @kile2009 @sming56_admin
+/tools/perf/pmu-events/arch/x86/amdzen5/ @kile2009 @sming56_admin
+/tools/perf/pmu-events/arch/x86/amdzen6/ @kile2009 @sming56_admin
+/tools/perf/Documentation/intel* @zeng_zhaorong @juntianlinux
+/tools/perf/Documentation/perf-intel-pt.txt @zeng_zhaorong @juntianlinux
+/tools/perf/scripts/python/bin/intel-pt-events-re* @zeng_zhaorong @juntianlinux
+/tools/perf/scripts/python/intel-pt-events.py @zeng_zhaorong @juntianlinux
+/tools/perf/tests/shell/test_intel_pt.sh @zeng_zhaorong @juntianlinux
+/tools/testing/ @UNMAINTAINED
+/tools/testing/selftests/ @UNMAINTAINED
+/tools/testing/selftests/arm64/ @UNMAINTAINED
+/tools/testing/selftests/arm64/mte/ @UNMAINTAINED
+/tools/testing/selftests/arm64/mte/check_child_memory.c @wkfxxx @mawupeng @sun_nanyong
+/tools/testing/selftests/bpf/ @xukuohai @yeweihua999
+/tools/testing/selftests/memory-hotplug/ @wkfxxx @mawupeng @sun_nanyong
+/tools/testing/selftests/vm/ @wkfxxx @mawupeng @sun_nanyong
+/tools/testing/selftests/zram/ @wkfxxx @mawupeng @sun_nanyong
+/tools/testing/selftests/kvm/ @kevinzhu1 @yuzenghui
+/tools/testing/selftests/amd-pstate/ @kile2009 @sming56_admin
+/tools/testing/selftests/watchdog/ @xukuohai @yeweihua999
+/tools/testing/selftests/sched_ext/ @zichengqu @jackknight
+/tools/testing/selftests/drivers/platform/x86/intel/ @zeng_zhaorong @juntianlinux
+/tools/testing/selftests/intel_pstate/ @zeng_zhaorong @juntianlinux
+/tools/testing/selftests/resctrl/ @henryze
+/tools/vm/ @wkfxxx @mawupeng @sun_nanyong
+/tools/kvm/ @kevinzhu1 @yuzenghui
+/tools/power/x86/ @zeng_zhaorong @juntianlinux
+/tools/power/x86/amd_pstate_tracer/ @kile2009 @sming56_admin
+/tools/power/x86/intel-speed-select/.gitignore @zeng_zhaorong
+/tools/power/cpupower/utils/helpers/amd.c @kile2009 @sming56_admin
+/tools/power/cpupower/utils/idle_monitor/amd_fam14h_idle.c @kile2009 @sming56_admin
+/tools/power/cpupower/debug/i386/intel_gsic.c @zeng_zhaorong @juntianlinux
+/tools/build/feature/test-libunwind-sw_64* @guzitao
+/tools/include/nolibc/arch-loongarch.h @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/tools/objtool/arch/loongarch/ @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
+/tools/sched_ext/ @zichengqu @jackknight
+/tools/mpam/ @henryze
+/tools/mfs/ @yubo-liu1 @gang_he
+/virt/kvm/ @kevinzhu1 @yuzenghui
+/sound/soc/intel/ @zeng_zhaorong @juntianlinux
+/sound/soc/amd/ @kile2009 @sming56_admin
+/sound/soc/sof/amd/ @kile2009 @sming56_admin
+/sound/soc/sof/intel/ @zeng_zhaorong @juntianlinux
+/sound/soc/loongson/ @lixuefeng-loongson @maobibo @gaojuxin09 @robinorg
+/sound/sparc/amd7930.c @kile2009 @sming56_admin
+/sound/pci/hda/hda_phytium* @mao-hongbo @GoGo_phytium @xuyanaasss
+/sound/pci/hda/hda_intel* @zeng_zhaorong @juntianlinux
+/sound/pci/intel8x0* @zeng_zhaorong @juntianlinux
+/sound/hda/intel* @zeng_zhaorong @juntianlinux
+/sound/x86/intel_hdmi* @zeng_zhaorong @juntianlinux
+/samples/watchdog/ @xukuohai @yeweihua999
+/io_uring/ @zhangyi089
