@@ -312,11 +312,15 @@ struct ipourma_dev_priv {
 	unsigned long flags;
 	struct ipourma_ethtool_st ethtool;
 	u8 route_tbl_idx;
+	/* Guards eid/ring state vs. the eid handler, the register work and
+	 * the ndo callbacks. Never take rtnl_lock under it. */
 	struct mutex evt_lock;
 	bool eid_dying;
 	spinlock_t *tx_ring_locks;
 	struct dentry *address_dentry;
 	bool need_restart_ring;
+	/* Set while unregistering, so a late set_dev_up will not re-open the device. */
+	bool unregistering;
 	/* guard ndo_uninit: only tear down what was actually set up */
 	bool eid_handler_registered;
 	bool sysfs_registered;
