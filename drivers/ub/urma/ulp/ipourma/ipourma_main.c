@@ -194,6 +194,18 @@ static int ipourma_netdev_event(struct notifier_block *nb, unsigned long event, 
 	switch (event) {
 	case NETDEV_REGISTER:
 		ipourma_create_debug_files(priv);
+		if (!priv->netdev_registered) {
+			/* First register; initial bringup is driven by the
+			 * register_netdev work's set_dev_up. */
+			priv->netdev_registered = true;
+		} else if (net_eq(dev_net(dev), &init_net)) {
+			/* Move-in: auto-up only when returning to init_net
+			 * (netns del refund); other namespaces stay down. */
+			if (!priv->unregistering &&
+					!IS_ERR_OR_NULL(priv->net_config_wq))
+				queue_work(priv->net_config_wq,
+					   &(priv->set_dev_up));
+		}
 		break;
 	case NETDEV_UNREGISTER:
 		ipourma_delete_debug_files(priv);

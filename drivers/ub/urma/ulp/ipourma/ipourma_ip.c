@@ -14,8 +14,9 @@
 
 #define IPV6_PREFIX_LEN 64
 
-/* send ipv6 address by netlink */
-int ipourma_send_ipv6_netlink(struct net_device *dev, union ubcore_eid *eid, int msg_type)
+/* Same as ipourma_send_ipv6_netlink(), but targets the given net/ifindex. */
+static int ipourma_send_ipv6_netlink_n(struct net_device *dev, union ubcore_eid *eid, int msg_type,
+				struct net *net, int ifindex)
 {
 	struct sk_buff *skb;
 	struct nlmsghdr *nlh;
@@ -50,7 +51,7 @@ int ipourma_send_ipv6_netlink(struct net_device *dev, union ubcore_eid *eid, int
 	ifa = nlmsg_data(nlh);
 	ifa->ifa_family = AF_INET6;
 	ifa->ifa_prefixlen = IPV6_PREFIX_LEN;
-	ifa->ifa_index = (uint32_t)dev->ifindex;
+	ifa->ifa_index = (uint32_t)ifindex;
 	ifa->ifa_scope = RT_SCOPE_UNIVERSE;
 	ifa->ifa_flags = IFA_F_PERMANENT;
 
@@ -67,7 +68,7 @@ int ipourma_send_ipv6_netlink(struct net_device *dev, union ubcore_eid *eid, int
 	 * in the user space and trigger the
 	 * kernel to invoke the private function ipv6_add_addr.
 	 */
-	ret = rtnl_unicast(skb, dev_net(dev), 0);
+	ret = rtnl_unicast(skb, net, 0);
 	if (ret != 0) {
 		kfree_skb(skb);
 		pr_err("send_ipv6_netlink:send netlink msg failed: %d\n", ret);
@@ -75,6 +76,12 @@ int ipourma_send_ipv6_netlink(struct net_device *dev, union ubcore_eid *eid, int
 	}
 	pr_debug("send_ipv6_netlink success\n");
 	return 0;
+}
+
+/* send ipv6 address by netlink */
+int ipourma_send_ipv6_netlink(struct net_device *dev, union ubcore_eid *eid, int msg_type)
+{
+	return ipourma_send_ipv6_netlink_n(dev, eid, msg_type, dev_net(dev), dev->ifindex);
 }
 
 void ipourma_init_ipv6_addr(struct work_struct *work)
@@ -106,19 +113,16 @@ ipv6_uninit:
 	pr_err("init_ipv6_addr failed\n");
 }
 
-void ipourma_unset_ipv6_addr(struct work_struct *work)
+/* Delete per-EID ipv6 addrs against the captured old net/ifindex. */
+void ipourma_unset_ipv6_addr_n(struct ipourma_dev_priv *priv, struct net *net, int ifindex)
 {
-	struct ipourma_dev_priv *priv;
-	struct net_device *dev;
 	int i;
-
-	priv = container_of(work, struct ipourma_dev_priv, unset_ip);
-	dev = priv->dev;
 
 	for (i = 0; i < UBCORE_MAX_SIP; i++) {
 		if (eid_is_empty(&priv->eid_info[i].eid)
 				|| priv->eid_info[i].eid_index != i)
 			continue;
-		ipourma_send_ipv6_netlink(dev, &(priv->eid_info[i].eid), RTM_DELADDR);
+		ipourma_send_ipv6_netlink_n(priv->dev, &(priv->eid_info[i].eid),
+					    RTM_DELADDR, net, ifindex);
 	}
 }
