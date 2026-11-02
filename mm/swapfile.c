@@ -3227,6 +3227,11 @@ static int setup_swap_map_and_extents(struct swap_info_struct *p,
 		if (page_nr == 0 || page_nr > swap_header->info.last_page)
 			return -EINVAL;
 		if (page_nr < maxpages) {
+			if (swap_map[page_nr] == SWAP_MAP_BAD) {
+				pr_warn("Duplicated bad slot offset %u\n",
+					page_nr);
+				return -EINVAL;
+			}
 			swap_map[page_nr] = SWAP_MAP_BAD;
 			nr_good_pages--;
 			/*
