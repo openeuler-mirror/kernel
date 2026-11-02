@@ -98,7 +98,7 @@ static inline void hw_queue_strip_rx_vlan(struct rnp_hw *hw, u8 ring_num,
 		u32 reg = reg_def;                      \
 		u32 value = rd32(hw, reg);              \
 		pr_debug("before set  %x %x\n", reg, value); \
-		value |= (0x01 << bit);                 \
+		value |= BIT((bit));                 \
 		pr_debug("after set %x %x\n", reg, value);   \
 		wr32(hw, reg, value);                   \
 	} while (0)
@@ -108,7 +108,7 @@ static inline void hw_queue_strip_rx_vlan(struct rnp_hw *hw, u8 ring_num,
 		u32 reg = reg_def;                     \
 		u32 value = rd32(hw, reg);             \
 		pr_debug("before clr %x %x\n", reg, value); \
-		value &= (~(0x01 << bit));             \
+		value &= (~BIT((bit)));             \
 		pr_debug("after clr %x %x\n", reg, value);  \
 		wr32(hw, reg, value);                  \
 	} while (0)

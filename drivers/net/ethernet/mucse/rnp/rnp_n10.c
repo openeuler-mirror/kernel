@@ -123,7 +123,7 @@ static s32 rnp_eth_set_rar_n10(struct rnp_eth_info *eth, u32 index, u8 *addr,
 	/* Make sure we are using a valid rar index range */
 	if (index >= (rar_entries + hw->ncsi_rar_entries)) {
 		dev_err(HW_TO_DEV(hw),
-			"RAR index %d is out of range.\n", index);
+			"RAR index %u is out of range.\n", index);
 		return RNP_ERR_INVALID_ARGUMENT;
 	}
 
@@ -4430,7 +4430,7 @@ static void rnp_dump_rx_regs(struct rnp_hw *hw)
 		value = dma_rd32(dma, rx_debug_reg_dma[i].offset);
 		dev_info(dev, "\t%s \t:0x%08x(%4u)",
 			 rx_debug_reg_dma[i].name,
-			 rx_debug_reg_dma[i].offset + RNP10_ETH_BASE,
+			 rx_debug_reg_dma[i].offset,
 			 value);
 	}
 }
@@ -4474,7 +4474,10 @@ static void rnp_dump_dma_regs(struct rnp_hw *hw)
 
 	for (i = 0; i < sizeof(tx_dmadebug_reg) / sizeof(struct rnp_debug_reg); i++) {
 		value = dma_rd32(dma, tx_dmadebug_reg[i].offset);
-		dev_info(dev, "\t%s \t:0x%08x(%4u)", tx_dmadebug_reg[i].name, value, value);
+		dev_info(dev, "\t%s \t:0x%08x(%4u)",
+			 tx_dmadebug_reg[i].name,
+			 tx_dmadebug_reg[i].offset,
+			 value);
 	}
 	dev_info(dev, "dma rx:\n");
 	/* 0x110 */

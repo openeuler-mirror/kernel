@@ -138,7 +138,7 @@ MODULE_PARM_DESC(min_rx_pkt_len, "Minimum RX packet length");
 
 /* NUMA CPU offset: start from the Nth CPU on the NIC's NUMA node */
 unsigned int cpu_offset = 1;
-module_param(cpu_offset, uint, 0644);
+module_param(cpu_offset, uint, 0444);
 MODULE_PARM_DESC(cpu_offset, "CPU offset on NIC's NUMA node (default=1)");
 
 unsigned int mpe_pkt_version;
@@ -7488,11 +7488,9 @@ static int rnp_add_adpater(struct pci_dev *pdev, struct rnp_info *ii,
 #endif
 	}
 
-	adapter->priv_flags |= RNP_PRIV_FLAG_RX_ALL; //enable-rx-all as default
-	if (adapter->priv_flags & RNP_PRIV_FLAG_RX_ALL)
-		netdev->features |= NETIF_F_RXALL;
-	else
-		netdev->features &= ~NETIF_F_RXALL;
+	/* enable-rx-all as default */
+	adapter->priv_flags |= RNP_PRIV_FLAG_RX_ALL;
+	netdev->features |= NETIF_F_RXALL;
 
 	/* assign to adapter */
 	adapter->io_addr = hw_addr;
