@@ -9,6 +9,8 @@
 #include <linux/memory.h>
 #include <linux/io.h>
 #include <linux/sizes.h>
+#include <linux/huge_mm.h>
+#include <linux/pfn_t.h>
 
 #include <ub/ubus/ub-mem-decoder.h>
 #include <linux/numa_remote.h>
@@ -325,38 +327,31 @@ static unsigned long import_base_pfn(const struct obmm_import_backend *imp,
 	return __phys_to_pfn(imp->pa) + vma->vm_pgoff;
 }
 
-static int import_install_mappings(struct obmm_import_backend *imp,
-				   struct vm_area_struct *vma,
-				   enum obmm_mmap_granu mmap_granu)
-{
-	unsigned long pfn, size;
-
-	size = vma->vm_end - vma->vm_start;
-	pfn = import_base_pfn(imp, vma);
-	if (mmap_granu == OBMM_MMAP_GRANU_PAGE)
-		return remap_pfn_range(vma, vma->vm_start, pfn, size, vma->vm_page_prot);
-	else if (mmap_granu == OBMM_MMAP_GRANU_PMD)
-		return remap_pfn_range_try_pmd(vma, vma->vm_start, pfn, size, vma->vm_page_prot);
-	pr_err("invalid mmap granu %d\n", mmap_granu);
-
-	return -EINVAL;
-}
-
-static int import_map_range(struct obmm_backend *be, struct vm_area_struct *vma)
-{
-	if (!be->shell)
-		return -EINVAL;
-	/* eager install runs under the shell's state_mutex with the granu
-	 * established by the mmap entry path
-	 */
-	return import_install_mappings(obmm_backend_to_import(be), vma,
-				       be->shell->mmap_granu);
-}
-
+/* ops->fault; PFN_DEV is safe because VM_IO|VM_PFNMAP excludes GUP and
+ * update_range normalizes the entry. A PMD leaf needs a PMD_SIZE-aligned
+ * base, but the import PA is only OBMM_BASIC_GRANU-aligned (weaker than
+ * PMD_SIZE on 64K pages), so an unaligned base degrades this page to a PTE.
+ */
 static vm_fault_t import_fault(struct obmm_backend *be, struct vm_fault *vmf,
 			       bool is_pmd)
 {
-	return VM_FAULT_SIGBUS;
+	struct obmm_import_backend *imp = obmm_backend_to_import(be);
+	struct vm_area_struct *vma = vmf->vma;
+	unsigned long addr, pfn, base_pfn;
+
+	base_pfn = import_base_pfn(imp, vma);
+	if (is_pmd) {
+		addr = vmf->address & PMD_MASK;
+		pfn = base_pfn + ((addr - vma->vm_start) >> PAGE_SHIFT);
+		if (IS_ALIGNED(pfn, HPAGE_PMD_NR))
+			return vmf_insert_pfn_pmd(vmf, __pfn_to_pfn_t(pfn, PFN_DEV),
+						  vmf->flags & FAULT_FLAG_WRITE);
+	}
+
+	addr = vmf->address;
+	pfn = base_pfn + ((addr - vma->vm_start) >> PAGE_SHIFT);
+
+	return vmf_insert_pfn_prot(vma, vmf->address, pfn, vma->vm_page_prot);
 }
 
 static int import_flush_range(struct obmm_backend *be, u64 off, u64 len, u8 cache_ops)
@@ -473,7 +468,6 @@ err_teardown_numa:
 }
 
 static const struct obmm_backend_ops obmm_import_backend_ops = {
-	.map_range	= import_map_range,
 	.fault		= import_fault,
 	.flush_range	= import_flush_range,
 	.query		= import_query,
