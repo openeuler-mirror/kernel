@@ -474,6 +474,13 @@ int ubase_ubus_irq_vector(struct device *dev, u32 idx)
 	return ub_irq_vector(ue, idx);
 }
 
+const struct cpumask *ubase_ubus_irq_get_affinity(struct device *dev)
+{
+	struct ub_entity *ue = container_of(dev, struct ub_entity, dev);
+
+	return ub_get_ubc_irq_affinity(ue);
+}
+
 static int ubase_ubus_suspend(struct device *dev)
 {
 	struct ubase_dev *udev = dev_get_drvdata(dev);
