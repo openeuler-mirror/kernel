@@ -397,6 +397,15 @@ void tick_handover_do_timer(void)
 }
 
 /*
+ * Return the CPU which currently owns the do_timer duty. The value
+ * is either an online CPU or one of the TICK_DO_TIMER_* sentinels.
+ */
+int tick_get_do_timer_cpu(void)
+{
+	return READ_ONCE(tick_do_timer_cpu);
+}
+
+/*
  * Shutdown an event device on a given cpu:
  *
  * This is called on a life CPU, when a CPU is dead. So we cannot

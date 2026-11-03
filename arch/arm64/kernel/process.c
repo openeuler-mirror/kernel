@@ -87,7 +87,36 @@ void __noreturn arch_cpu_idle_dead(void)
  */
 void machine_shutdown(void)
 {
-	smp_shutdown_nonboot_cpus(reboot_cpu);
+	unsigned int primary_cpu = reboot_cpu;
+
+	if (support_cpu0_nohz_full && tick_nohz_full_cpu(0)) {
+		int tick_cpu = tick_get_do_timer_cpu();
+
+		primary_cpu = -1;
+
+		/*
+		 * The reboot task was pinned to reboot_cpu (CPU0) by
+		 * migrate_to_reboot_cpu(), but CPU0 will be offlined by
+		 * smp_shutdown_nonboot_cpus() below. Move it to the CPU
+		 * which owns the do_timer duty (that CPU survives the
+		 * offline loop), so the task which executes
+		 * machine_kexec() stays on the reboot CPU, as it did
+		 * before.
+		 *
+		 * No TICK_DO_TIMER_* sentinel can be returned here:
+		 * nohz_full is running (checked above), which freezes
+		 * tick_do_timer_cpu on a housekeeping CPU. The upper
+		 * bound check has no reachable scenario either; it is
+		 * kept only to validate the full value range of
+		 * tick_do_timer_cpu.
+		 */
+		if (WARN_ON_ONCE(tick_cpu < 0 || tick_cpu >= nr_cpu_ids))
+			tick_cpu = smp_processor_id();
+
+		set_cpus_allowed_ptr(current, cpumask_of(tick_cpu));
+	}
+
+	smp_shutdown_nonboot_cpus(primary_cpu);
 }
 
 /*

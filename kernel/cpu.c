@@ -1530,6 +1530,20 @@ void smp_shutdown_nonboot_cpus(unsigned int primary_cpu)
 
 	cpu_maps_update_begin();
 
+	if (primary_cpu == -1) {
+		int cpu = tick_get_do_timer_cpu();
+
+		/*
+		 * Prefer the CPU which owns the do_timer duty: the offline
+		 * of that CPU is rejected by tick_nohz_cpu_down() when
+		 * nohz_full is running, so picking it as the reboot CPU
+		 * keeps the offline loop below away from that rejection.
+		 */
+		if (cpu < 0 || !cpu_online(cpu))
+			cpu = cpumask_first(cpu_online_mask);
+		primary_cpu = cpu;
+	}
+
 	/*
 	 * Make certain the cpu I'm about to reboot on is online.
 	 *

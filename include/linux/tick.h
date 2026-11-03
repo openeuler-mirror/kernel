@@ -21,12 +21,14 @@ extern void tick_suspend_local(void);
 extern void tick_resume_local(void);
 extern void tick_handover_do_timer(void);
 extern void tick_cleanup_dead_cpu(int cpu);
+extern int tick_get_do_timer_cpu(void);
 #else /* CONFIG_GENERIC_CLOCKEVENTS */
 static inline void tick_init(void) { }
 static inline void tick_suspend_local(void) { }
 static inline void tick_resume_local(void) { }
 static inline void tick_handover_do_timer(void) { }
 static inline void tick_cleanup_dead_cpu(int cpu) { }
+static inline int tick_get_do_timer_cpu(void) { return -1; }
 #endif /* !CONFIG_GENERIC_CLOCKEVENTS */
 
 #if defined(CONFIG_GENERIC_CLOCKEVENTS) && defined(CONFIG_SUSPEND)
