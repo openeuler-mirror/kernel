@@ -39,9 +39,9 @@ struct obmm_export_pool_spec {
 /* uapi obmm_cmd_export_pid inputs; no flags, memory never mmapable. */
 struct obmm_export_user_spec {
 	int pid;
+	int pxm_numa;
 	void __user *user_va;
 	u64 length;
-	int pxm_numa;
 	u8 deid[16];
 	void *vendor_info;
 	u32 vendor_len;
@@ -124,14 +124,14 @@ struct obmm_export_common {
 	/* pool: memsegs merged; user: pinned pages */
 	struct sg_table sgt;
 	struct device *ummu_dev;	/* ummu_core_alloc_tdev return type */
+	int affinity;			/* pxm_numa as passed in */
 	u32 tokenid;
 	u64 uba;
 	void *vendor_info;
 	u32 vendor_len;
 	u8 deid[16];
-	int affinity;			/* pxm_numa as passed in */
-	u64 node_mem_size[OBMM_MAX_LOCAL_NUMA_NODES];
 	int node_count;
+	u64 node_mem_size[OBMM_MAX_LOCAL_NUMA_NODES];
 };
 
 struct obmm_export_pool_backend {	/* EXPORT_POOLED */
@@ -148,8 +148,8 @@ struct obmm_export_user_backend {	/* EXPORT_USER */
 	struct obmm_export_common exp;
 	/* pid-path description; pages live in exp.sgt, no length field */
 	int pid;
-	void __user *user_va;
 	int pinned;
+	void __user *user_va;
 	u64 start_time;
 };
 
