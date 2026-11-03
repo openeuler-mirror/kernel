@@ -38,18 +38,30 @@ void ubmad_init_msn_mgr(struct ubmad_msn_mgr *msn_mgr)
 void ubmad_uninit_msn_mgr(struct ubmad_msn_mgr *msn_mgr)
 {
 	struct ubmad_msn_node *msn_node;
-	struct hlist_node *next;
+	struct ubmad_rt_work *rt_work;
 	unsigned long flag;
 	uint32_t idx;
 
 	spin_lock_irqsave(&msn_mgr->msn_hlist_lock, flag);
 	for (idx = 0; idx < UBMAD_MSN_HLIST_SIZE; idx++) {
-		hlist_for_each_entry_safe(msn_node, next,
-					  &msn_mgr->msn_hlist[idx], node) {
+		while (!hlist_empty(&msn_mgr->msn_hlist[idx])) {
+			msn_node = hlist_entry(msn_mgr->msn_hlist[idx].first,
+					       struct ubmad_msn_node, node);
+			rt_work = msn_node->rt_work;
+			msn_node->rt_work = NULL;
 			hlist_del(&msn_node->node);
 			if (!list_empty(&msn_node->lru_node))
 				list_del(&msn_node->lru_node);
+			spin_unlock_irqrestore(&msn_mgr->msn_hlist_lock, flag);
+
+			/* cancel_delayed_work_sync() may sleep, no spinlock held */
+			if (rt_work != NULL) {
+				cancel_delayed_work_sync(&rt_work->delay_work);
+				kfree(rt_work);
+			}
 			kfree(msn_node);
+
+			spin_lock_irqsave(&msn_mgr->msn_hlist_lock, flag);
 		}
 	}
 	atomic_set(&msn_mgr->cnt, 0);
@@ -347,6 +359,13 @@ static int ubmad_repost_send_conn_data(struct ubmad_rt_work *rt_work)
 	if (IS_ERR_OR_NULL(tjetty))
 		return -1;
 
+	/* rsrc may be partially destroyed while rt_work is pending */
+	if (IS_ERR_OR_NULL(rsrc->jetty) || IS_ERR_OR_NULL(rsrc->send_seg) ||
+	    IS_ERR_OR_NULL(rsrc->send_seg_bitmap)) {
+		ubmad_put_tjetty(tjetty);
+		return -1;
+	}
+
 	uint32_t sge_idx;
 	uint64_t sge_addr;
 	struct ubcore_jetty *jetty = rsrc->jetty;
@@ -361,7 +380,9 @@ static int ubmad_repost_send_conn_data(struct ubmad_rt_work *rt_work)
 		ubmad_put_tjetty(tjetty);
 		return -1;
 	}
-	sge_addr = rsrc->send_seg->seg.ubva.va + UBMAD_SGE_MAX_LEN * sge_idx;
+
+	sge_addr = rsrc->send_seg->seg.ubva.va +
+				(uint64_t)rsrc->cfg.sge_size * sge_idx;
 
 	/* make message - copy under lock to avoid UAF race with release_ini_rtbuffer */
 	uint32_t payload_len = ubmad_copy_ini_rtbuffer(tjetty, msn,
@@ -384,7 +405,8 @@ static int ubmad_repost_send_conn_data(struct ubmad_rt_work *rt_work)
 	jfs_wr.user_ctx = sge_addr;
 	jfs_wr.flag.bs.complete_enable = 1;
 
-	if (atomic_fetch_add(1, &rsrc->tx_in_queue) >= UBMAD_TX_THREDSHOLD) {
+	if (atomic_fetch_add(1, &rsrc->tx_in_queue) >=
+		UBMAD_TX_THREDSHOLD(rsrc->cfg.send_sge_num)) {
 		atomic_fetch_sub(1, &rsrc->tx_in_queue);
 		ubcore_log_err("Invalid threshold, tx_in_queue: %u.\n",
 			     (uint32_t)atomic_read(&rsrc->tx_in_queue));
@@ -425,8 +447,10 @@ static int ubmad_try_repost_all_response(
 	struct ubmad_tgt_hash_node *hash_node = ubmad_find_and_create_tgt_hash_node(
 		tjetty, msn, resp_msg_type, &hash_flag);
 
-	if (IS_ERR_OR_NULL(hash_node))
+	if (IS_ERR_OR_NULL(hash_node)) {
+		ubmad_put_tjetty(tjetty);
 		return -1;
+	}
 	if (hash_flag == 1) {
 		ubmad_put_tjetty(tjetty);
 		return -2;
@@ -455,7 +479,8 @@ static int ubmad_try_repost_all_response(
 		ubmad_put_tjetty(tjetty);
 		return -1;
 	}
-	sge_addr = rsrc->send_seg->seg.ubva.va + UBMAD_SGE_MAX_LEN * sge_idx;
+	sge_addr = rsrc->send_seg->seg.ubva.va +
+				(uint64_t)rsrc->cfg.sge_size * sge_idx;
 
 	/* make message */
 	memcpy((void *)sge_addr, tjetty->tgt_rt_buffer[idx].data,
@@ -472,7 +497,8 @@ static int ubmad_try_repost_all_response(
 	jfs_wr.user_ctx = sge_addr;
 	jfs_wr.flag.bs.complete_enable = 1;
 
-	if (atomic_fetch_add(1, &rsrc->tx_in_queue) >= UBMAD_TX_THREDSHOLD) {
+	if (atomic_fetch_add(1, &rsrc->tx_in_queue) >=
+		UBMAD_TX_THREDSHOLD(rsrc->cfg.send_sge_num)) {
 		atomic_fetch_sub(1, &rsrc->tx_in_queue);
 		ubcore_log_err("Invalid threshold, tx_in_queue: %u.\n",
 			     (uint32_t)atomic_read(&rsrc->tx_in_queue));
@@ -619,17 +645,15 @@ struct ubmad_rt_work *ubmad_create_rt_work(struct workqueue_struct *rt_wq,
 /** post **/
 // prepare msg to send
 static int ubmad_prepare_msg(uint64_t sge_addr, struct ubmad_send_buf *send_buf,
-			     uint32_t msn, struct ubcore_jetty *jetty,
-			     struct ubmad_tjetty *tjetty)
+			     uint32_t msn, uint32_t sge_size)
 {
 	struct ubmad_msg *msg = (struct ubmad_msg *)sge_addr;
 
-	if (sizeof(struct ubmad_msg) + send_buf->payload_len >
-	    UBMAD_SGE_MAX_LEN) {
+	if (sizeof(struct ubmad_msg) + send_buf->payload_len > sge_size) {
 		ubcore_log_err(
 			"msg header %lu + payload_len %u exceeds sge max length %u\n",
 			sizeof(struct ubmad_msg), send_buf->payload_len,
-			UBMAD_SGE_MAX_LEN);
+			sge_size);
 		return -EINVAL;
 	}
 
@@ -653,13 +677,13 @@ static int ubmad_do_post_send_reliable_data(struct ubcore_jetty *jetty,
 					 struct ubmad_tjetty *tjetty,
 					 struct ubcore_jfs_wr *jfs_wr,
 					 struct workqueue_struct *rt_wq,
-					 struct ubmad_jetty_resource *rsrc,
-					 uint32_t msg_type)
+					 struct ubmad_jetty_resource *rsrc)
 {
 	uint64_t sge_addr = jfs_wr->send.src.sge->addr;
 	uint32_t pld_len = jfs_wr->send.src.sge->len;
 	struct ubmad_msg *msg = (struct ubmad_msg *)sge_addr;
 	uint64_t msn = msg->msn;
+	uint32_t msg_type = msg->msg_type;
 	union ubcore_eid *dst_eid = &tjetty->tjetty->cfg.id.eid;
 
 	struct ubmad_msn_node *msn_node;
@@ -719,7 +743,8 @@ static int ubmad_do_post_send_reliable_data(struct ubcore_jetty *jetty,
 	msn_node->rt_work = rt_work;
 	spin_unlock_irqrestore(&tjetty->msn_mgr.msn_hlist_lock, flag);
 
-	if (atomic_fetch_add(1, &rsrc->tx_in_queue) >= UBMAD_TX_THREDSHOLD) {
+	if (atomic_fetch_add(1, &rsrc->tx_in_queue) >=
+		UBMAD_TX_THREDSHOLD(rsrc->cfg.send_sge_num)) {
 		atomic_fetch_sub(1, &rsrc->tx_in_queue);
 		ubcore_log_err_rl("Invalid threshold, tx_in_queue: %u.\n",
 			     (uint32_t)atomic_read(&rsrc->tx_in_queue));
@@ -787,7 +812,6 @@ release_rtbuffer:
 static int ubmad_do_post_send_wk0_resp_data(struct ubcore_jetty *jetty,
 					struct ubmad_tjetty *tjetty,
 					struct ubcore_jfs_wr *jfs_wr,
-					struct workqueue_struct *rt_wq,
 					struct ubmad_jetty_resource *rsrc)
 {
 	uint64_t sge_addr = jfs_wr->send.src.sge->addr;
@@ -798,7 +822,8 @@ static int ubmad_do_post_send_wk0_resp_data(struct ubcore_jetty *jetty,
 	struct ubcore_jfs_wr *jfs_bad_wr = NULL;
 	int ret;
 
-	if (atomic_fetch_add(1, &rsrc->tx_in_queue) >= UBMAD_TX_THREDSHOLD) {
+	if (atomic_fetch_add(1, &rsrc->tx_in_queue) >=
+		UBMAD_TX_THREDSHOLD(rsrc->cfg.send_sge_num)) {
 		atomic_fetch_sub(1, &rsrc->tx_in_queue);
 		ubcore_log_err("Invalid threshold, tx_in_queue: %u.\n",
 			     (uint32_t)atomic_read(&rsrc->tx_in_queue));
@@ -840,10 +865,9 @@ static int ubmad_do_post_send_wk0_resp_data(struct ubcore_jetty *jetty,
 	return 0;
 }
 
-static int ubmad_do_post_send_conn_single(struct ubcore_jetty *jetty,
+static int ubmad_do_post_send_unreliable_data(struct ubcore_jetty *jetty,
 					struct ubmad_tjetty *tjetty,
 					struct ubcore_jfs_wr *jfs_wr,
-					struct workqueue_struct *rt_wq,
 					struct ubmad_jetty_resource *rsrc)
 {
 	uint64_t sge_addr = jfs_wr->send.src.sge->addr;
@@ -853,7 +877,8 @@ static int ubmad_do_post_send_conn_single(struct ubcore_jetty *jetty,
 	struct ubcore_jfs_wr *jfs_bad_wr = NULL;
 	int ret;
 
-	if (atomic_fetch_add(1, &rsrc->tx_in_queue) >= UBMAD_TX_THREDSHOLD) {
+	if (atomic_fetch_add(1, &rsrc->tx_in_queue) >=
+		UBMAD_TX_THREDSHOLD(rsrc->cfg.send_sge_num)) {
 		atomic_fetch_sub(1, &rsrc->tx_in_queue);
 		ubcore_log_err("Invalid threshold, tx_in_queue: %u.\n",
 			     (uint32_t)atomic_read(&rsrc->tx_in_queue));
@@ -898,10 +923,11 @@ static int ubmad_do_post_send(struct ubmad_jetty_resource *rsrc,
 		ubcore_log_err("get sge_idx failed\n");
 		return -1;
 	}
-	sge_addr = rsrc->send_seg->seg.ubva.va + UBMAD_SGE_MAX_LEN * sge_idx;
+	sge_addr = rsrc->send_seg->seg.ubva.va +
+				(uint64_t)rsrc->cfg.sge_size * sge_idx;
 
 	// prepare msg, msg stored in sge
-	ret = ubmad_prepare_msg(sge_addr, send_buf, msn, jetty, tjetty);
+	ret = ubmad_prepare_msg(sge_addr, send_buf, msn, rsrc->cfg.sge_size);
 	if (ret != 0) {
 		ubcore_log_err("prepare msg failed. ret %d payload_len %u\n", ret,
 			     send_buf->payload_len);
@@ -925,23 +951,25 @@ static int ubmad_do_post_send(struct ubmad_jetty_resource *rsrc,
 	switch (msg->msg_type) {
 	case UBMAD_UBC_CONN_REQ:
 		ret = ubmad_do_post_send_reliable_data(jetty, tjetty, &jfs_wr,
-						      rt_wq, rsrc, UBMAD_UBC_CONN_REQ);
+						      rt_wq, rsrc);
 		break;
 	case UBMAD_UBC_CONN_RESP:
-		ret = ubmad_do_post_send_wk0_resp_data(jetty, tjetty, &jfs_wr,
-						   rt_wq, rsrc);
+		/* resp data is unreliable, do not need rt_wq */
+		ret = ubmad_do_post_send_wk0_resp_data(jetty, tjetty, &jfs_wr, rsrc);
 		break;
 	case UBMAD_UBC_SINGLE_REQ:
-		ret = ubmad_do_post_send_conn_single(jetty, tjetty, &jfs_wr,
-						   rt_wq, rsrc);
+		ret = ubmad_do_post_send_unreliable_data(jetty, tjetty, &jfs_wr, rsrc);
 		break;
 	case UBMAD_GEN_DATA:
-		ret = ubmad_do_post_send_reliable_data(jetty, tjetty, &jfs_wr,
-						      rt_wq, rsrc, UBMAD_GEN_DATA);
-		break;
 	case UBMAD_GEN_RESP:
-		ret = ubmad_do_post_send_reliable_data(jetty, tjetty, &jfs_wr,
-						      rt_wq, rsrc, UBMAD_GEN_RESP);
+		/*	this type maybe belong to CM agent or H2D agent,
+			use reliable to divide it, H2D agent is unreliable */
+		if (rsrc->cfg.reliable)
+			ret = ubmad_do_post_send_reliable_data(jetty, tjetty,
+						    &jfs_wr, rt_wq, rsrc);
+		else
+			ret = ubmad_do_post_send_unreliable_data(jetty, tjetty,
+							&jfs_wr, rsrc);
 		break;
 
 	default:
@@ -965,6 +993,7 @@ put_id:
 static void ubmad_jetty_work_handler(struct work_struct *work)
 {
 	struct ubmad_jetty_work *jetty_work = container_of(work, struct ubmad_jetty_work, work);
+	struct ubmad_agent_priv *agent_priv = jetty_work->agent_priv;
 	struct ubmad_tjetty *wk_tjetty;
 	uint64_t duration;
 	int ret;
@@ -973,34 +1002,113 @@ static void ubmad_jetty_work_handler(struct work_struct *work)
 	if (duration > UBCORE_WQ_THRESHOLD_MS)
 		ubcore_log_info_rl("[WQ_INFO]post_wq consumes: %llu.\n", duration);
 
-	wk_tjetty = ubmad_import_jetty(jetty_work->dev_priv->device, jetty_work->rsrc,
-		&jetty_work->dst_primary_eid);
+	/* rsrc may be destroyed after queue, check again */
+	if (!agent_priv->valid || IS_ERR_OR_NULL(jetty_work->rsrc->jetty)) {
+		ubcore_log_err("agent rsrc not inited. jetty_id: %u.\n",
+			     jetty_work->rsrc->cfg.jetty_id);
+		goto put_agent_priv;
+	}
+
+	wk_tjetty = ubmad_import_jetty(agent_priv->agent.device, jetty_work->rsrc,
+								&jetty_work->dst_primary_eid);
 	if (IS_ERR_OR_NULL(wk_tjetty)) {
 		ubcore_log_err("import jetty failed. eid " EID_FMT "\n",
 			     EID_ARGS(jetty_work->dst_primary_eid));
-		goto put_device_priv;
+		goto put_agent_priv;
 	}
 	/* post send */
 	ret = ubmad_do_post_send(
 		jetty_work->rsrc, wk_tjetty, jetty_work->send_buf,
 		jetty_work->send_buf->session_id,
-		jetty_work->dev_priv->rt_wq);
+		agent_priv->rt_wq);
 	if (ret != 0)
 		ubcore_log_err("do post send failed, ret: %d\n", ret);
 
 	ubmad_put_tjetty(wk_tjetty);
 
-put_device_priv:
-	ubmad_put_device_priv(jetty_work->dev_priv);
+put_agent_priv:
+	ubmad_put_agent_priv(agent_priv); // get in ubmad_post_send()
 	kfree(jetty_work->send_buf);
 	kfree(jetty_work);
 }
 
-int ubmad_post_send(struct ubcore_device *device,
+/* find rsrc by jfc is same */
+static struct ubmad_jetty_resource *
+ubmad_agent_get_rsrc_by_jfc(struct ubmad_agent_priv *agent_priv,
+			    struct ubcore_jfc *jfc,
+			    enum ubmad_jfce_work_type type)
+{
+	int i;
+
+	for (i = 0; i < agent_priv->rsrc_num; i++) {
+		if (type == UBMAD_SEND_WORK ?
+			    (agent_priv->rsrc[i].jfc_s == jfc) :
+			    (agent_priv->rsrc[i].jfc_r == jfc))
+			return &agent_priv->rsrc[i];
+	}
+	return NULL;
+}
+
+static struct ubmad_agent_priv *
+ubmad_get_agent_by_jfc(struct ubmad_device_priv *dev_priv,
+		       struct ubcore_jfc *jfc, enum ubmad_jfce_work_type type)
+{
+	struct ubmad_agent_priv *agent_priv;
+	unsigned long flag;
+
+	spin_lock_irqsave(&dev_priv->agent_list_lock, flag);
+	list_for_each_entry(agent_priv, &dev_priv->agent_list, node) {
+		if (ubmad_agent_get_rsrc_by_jfc(agent_priv, jfc, type) != NULL) {
+			ubmad_get_agent_priv(agent_priv); // put in ubmad_jfce_work_handler()
+			spin_unlock_irqrestore(&dev_priv->agent_list_lock, flag);
+			return agent_priv;
+		}
+	}
+	spin_unlock_irqrestore(&dev_priv->agent_list_lock, flag);
+
+	return NULL;
+}
+
+/* find rsrc by jetty_id is same */
+static struct ubmad_jetty_resource *
+ubmad_agent_get_rsrc_by_jetty_id(struct ubmad_agent_priv *agent_priv,
+				 uint32_t jetty_id)
+{
+	uint32_t i;
+
+	for (i = 0; i < agent_priv->rsrc_num; i++) {
+		if (agent_priv->rsrc[i].cfg.jetty_id == jetty_id)
+			return &agent_priv->rsrc[i];
+	}
+	return NULL;
+}
+
+static struct ubmad_agent_priv *
+ubmad_get_agent_by_jetty_id(struct ubmad_device_priv *dev_priv,
+			    uint32_t jetty_id)
+{
+	struct ubmad_agent_priv *agent_priv;
+	unsigned long flag;
+
+	spin_lock_irqsave(&dev_priv->agent_list_lock, flag);
+	list_for_each_entry(agent_priv, &dev_priv->agent_list, node) {
+		if (ubmad_agent_get_rsrc_by_jetty_id(agent_priv, jetty_id) != NULL) {
+			ubmad_get_agent_priv(agent_priv); // put by caller
+			spin_unlock_irqrestore(&dev_priv->agent_list_lock, flag);
+			return agent_priv;
+		}
+	}
+	spin_unlock_irqrestore(&dev_priv->agent_list_lock, flag);
+
+	return NULL;
+}
+
+int ubmad_post_send(struct ubmad_agent *agent,
+			uint32_t jetty_id,
 		    struct ubmad_send_buf *send_buf,
 		    struct ubmad_send_buf **bad_send_buf)
 {
-	struct ubmad_device_priv *dev_priv = NULL;
+	struct ubmad_agent_priv *agent_priv;
 	struct ubmad_jetty_resource *rsrc;
 	union ubcore_eid dst_primary_eid = { 0 };
 	struct ubmad_jetty_work *jetty_work;
@@ -1010,51 +1118,43 @@ int ubmad_post_send(struct ubcore_device *device,
 	struct ubmad_tjetty *tjetty = NULL;
 	int ret;
 
-	dev_priv = ubmad_get_device_priv(device); // put in ubmad_jetty_work_handler()
-	if (IS_ERR_OR_NULL(dev_priv)) {
-		ubcore_log_err_rl("Failed to get dev_priv, dev_name: %s.\n",
-			     device->dev_name);
-		return -1;
-	}
-	if (!dev_priv->valid) {
-		ubcore_log_err_rl("dev_priv rsrc not inited. dev_name: %s.\n",
-			     device->dev_name);
-		ret = -1;
-		goto put_device_priv;
+	if (IS_ERR_OR_NULL(agent) || IS_ERR_OR_NULL(send_buf)) {
+		ubcore_log_err("Invalid parameter, agent or send buf is null.\n");
+		return -EINVAL;
 	}
 
-	switch (send_buf->msg_type) {
-	case UBMAD_UBC_CONN_REQ:
-		rsrc = &dev_priv->jetty_rsrc[0];
-		break;
-	case UBMAD_UBC_CONN_RESP:
-		rsrc = &dev_priv->jetty_rsrc[0];
-		break;
-	case UBMAD_UBC_SINGLE_REQ:
-		rsrc = &dev_priv->jetty_rsrc[0];
-		break;
-	case UBMAD_GEN_DATA:
-		rsrc = &dev_priv->jetty_rsrc[1];
-		break;
-	case UBMAD_GEN_ACK:
-		rsrc = &dev_priv->jetty_rsrc[1];
-		break;
-	case UBMAD_GEN_RESP:
-		rsrc = &dev_priv->jetty_rsrc[1];
-		break;
-	default:
-		ubcore_log_err_rl("Invalid msg_type: %d.\n",
-			     (int)send_buf->msg_type);
+	/* get agent priv and hold a kref*/
+	agent_priv = container_of(agent, struct ubmad_agent_priv, agent);
+	ubmad_get_agent_priv(agent_priv);
+
+	/* check agent rsrc is inited */
+	if (!agent_priv->valid) {
+		ubcore_log_err_rl("agent rsrc not inited, jetty_id: %u.\n",
+			     jetty_id);
+		ret = -1;
+		goto put_agent_priv;
+	}
+
+	/* get rsrc of agent_priv by jetty_id */
+	rsrc = ubmad_agent_get_rsrc_by_jetty_id(agent_priv, jetty_id);
+	if (IS_ERR_OR_NULL(rsrc)) {
+		ubcore_log_err_rl("no rsrc found for jetty_id: %u.\n", jetty_id);
 		ret = -EINVAL;
-		goto put_device_priv;
+		goto put_agent_priv;
+	}
+
+	/* check jetty is inited */
+	if (IS_ERR_OR_NULL(rsrc->jetty)) {
+		ubcore_log_err_rl("rsrc jetty not inited, jetty_id: %u.\n", jetty_id);
+		ret = -EINVAL;
+		goto put_agent_priv;
 	}
 
 	/* import well-known jetty */
-	// unimport in ubmad_uninit_jetty_rsrc()
 	ret = ubcore_lookup_main_ue_eid(&send_buf->dst_eid, &dst_primary_eid);
 	if (ret != 0) {
 		ubcore_log_err_rl("get primary eid failed, ret = %d\n", ret);
-		goto put_device_priv;
+		goto put_agent_priv;
 	}
 	hash = jhash(&dst_primary_eid, sizeof(union ubcore_eid), 0) %
 		UBMAD_MAX_TJETTY_NUM;
@@ -1070,48 +1170,51 @@ int ubmad_post_send(struct ubcore_device *device,
 		ret = ubmad_do_post_send(
 			rsrc, tjetty, send_buf,
 			send_buf->session_id,
-			dev_priv->rt_wq);
+			agent_priv->rt_wq);
 		if (ret != 0)
 			ubcore_log_err_rl("do post send failed, ret: %d\n", ret);
 
 		ubmad_put_tjetty(tjetty);
-		ubmad_put_device_priv(dev_priv);
+		ubmad_put_agent_priv(agent_priv);
 		return ret;
 	}
 
 	jetty_work = kcalloc(1, sizeof(struct ubmad_jetty_work), GFP_KERNEL);
 	if (IS_ERR_OR_NULL(jetty_work)) {
 		ret = -ENOMEM;
-		goto put_device_priv;
+		goto put_agent_priv;
 	}
 	jetty_send_buf = kcalloc(1, sizeof(struct ubmad_send_buf) + send_buf->payload_len,
 		GFP_KERNEL);
 	if (IS_ERR_OR_NULL(jetty_send_buf)) {
 		ret = -ENOMEM;
 		kfree(jetty_work);
-		goto put_device_priv;
+		goto put_agent_priv;
 	}
 	(void)memcpy(jetty_send_buf, send_buf,
 		sizeof(struct ubmad_send_buf) + send_buf->payload_len);
 
-	jetty_work->dev_priv = dev_priv;
+	jetty_work->agent_priv = agent_priv;
 	jetty_work->rsrc = rsrc;
 	jetty_work->dst_primary_eid = dst_primary_eid;
 	jetty_work->send_buf = jetty_send_buf;
 	jetty_work->start = ktime_get_ns();
 
 	INIT_WORK(&jetty_work->work, ubmad_jetty_work_handler);
-	ret = queue_work(dev_priv->conn_wq, &jetty_work->work);
+	ret = queue_work(agent_priv->conn_wq, &jetty_work->work);
 	if (!ret) {
 		ubcore_log_err("queue work failed. ret %d\n", ret);
 		kfree(jetty_send_buf);
 		kfree(jetty_work);
-		goto put_device_priv;
+		ret = -1;
+		goto put_agent_priv;
 	}
+
+	/* jettty_work still hold a kref of agent_priv*/
 	return 0;
 
-put_device_priv:
-	ubmad_put_device_priv(dev_priv);
+put_agent_priv:
+	ubmad_put_agent_priv(agent_priv);
 	return ret;
 }
 
@@ -1127,10 +1230,11 @@ static int ubmad_post_send_gen_ack(struct ubmad_jetty_resource *rsrc,
 	uint32_t sge_idx;
 	int ret;
 
-	ubcore_log_info_rl("Post send authn ack, acked msg_type %u, msn %llu.\n",
+	ubcore_log_info_rl("Post send gen ack, acked msg_type %u, msn %llu.\n",
 		      acked_msg_type, msn);
 
-	if (atomic_fetch_add(1, &rsrc->tx_in_queue) >= UBMAD_TX_THREDSHOLD) {
+	if (atomic_fetch_add(1, &rsrc->tx_in_queue) >=
+		UBMAD_TX_THREDSHOLD(rsrc->cfg.send_sge_num)) {
 		atomic_fetch_sub(1, &rsrc->tx_in_queue);
 		ubcore_log_err_rl("Invalid threshold, tx_in_queue: %u.\n",
 			     (uint32_t)atomic_read(&rsrc->tx_in_queue));
@@ -1140,11 +1244,12 @@ static int ubmad_post_send_gen_ack(struct ubmad_jetty_resource *rsrc,
 	sge_idx = ubmad_bitmap_get_id(rsrc->send_seg_bitmap);
 	if (sge_idx >= rsrc->send_seg_bitmap->size) {
 		atomic_fetch_sub(1, &rsrc->tx_in_queue);
-		ubcore_log_err("Failed to get sge_idx for authn ack: %u.\n", sge_idx);
+		ubcore_log_err("Failed to get sge_idx for gen ack: %u.\n", sge_idx);
 		return -1;
 	}
 
-	sge_addr = rsrc->send_seg->seg.ubva.va + UBMAD_SGE_MAX_LEN * sge_idx;
+	sge_addr = rsrc->send_seg->seg.ubva.va +
+				(uint64_t)rsrc->cfg.sge_size * sge_idx;
 	msg = (struct ubmad_msg *)sge_addr;
 	msg->version = UBMAD_MSG_CUR_VERSION;
 	msg->msg_type = UBMAD_GEN_ACK;
@@ -1165,12 +1270,12 @@ static int ubmad_post_send_gen_ack(struct ubmad_jetty_resource *rsrc,
 	ret = ubcore_post_jetty_send_wr(rsrc->jetty, &jfs_wr, &jfs_bad_wr);
 	if (ret != 0) {
 		atomic_fetch_sub(1, &rsrc->tx_in_queue);
-		ubcore_log_err("Failed to send authn ack, ret: %d, msn: %llu.\n", ret, msn);
+		ubcore_log_err("Failed to send gen ack, ret: %d, msn: %llu.\n", ret, msn);
 		ubmad_bitmap_put_id(rsrc->send_seg_bitmap, sge_idx);
 		return ret;
 	}
 
-	ubcore_log_info_rl("Send authn ack successfully. acked msg_type %u msn %llu.\n",
+	ubcore_log_info_rl("Send gen ack successfully. acked msg_type %u msn %llu.\n",
 		      acked_msg_type, msn);
 	return 0;
 }
@@ -1186,7 +1291,8 @@ void ubmad_post_send_close_req(struct ubmad_jetty_resource *rsrc,
 	uint32_t sge_idx;
 	int ret;
 
-	if (atomic_fetch_add(1, &rsrc->tx_in_queue) >= UBMAD_TX_THREDSHOLD) {
+	if (atomic_fetch_add(1, &rsrc->tx_in_queue) >=
+		UBMAD_TX_THREDSHOLD(rsrc->cfg.send_sge_num)) {
 		atomic_fetch_sub(1, &rsrc->tx_in_queue);
 		ubcore_log_err("Invalid threshold, tx_in_queue: %u.\n",
 			     (uint32_t)atomic_read(&rsrc->tx_in_queue));
@@ -1200,7 +1306,8 @@ void ubmad_post_send_close_req(struct ubmad_jetty_resource *rsrc,
 		return;
 	}
 
-	sge_addr = rsrc->send_seg->seg.ubva.va + UBMAD_SGE_MAX_LEN * sge_idx;
+	sge_addr = rsrc->send_seg->seg.ubva.va +
+				(uint64_t)rsrc->cfg.sge_size * sge_idx;
 	msg = (struct ubmad_msg *)sge_addr;
 	msg->version = UBMAD_MSG_CUR_VERSION;
 	msg->msg_type = UBMAD_CLOSE_REQ;
@@ -1214,6 +1321,8 @@ void ubmad_post_send_close_req(struct ubmad_jetty_resource *rsrc,
 	jfs_wr.tjetty = tjetty;
 	jfs_wr.send.src.sge = &sge;
 	jfs_wr.send.src.num_sge = 1;
+	jfs_wr.user_ctx = sge_addr;
+	jfs_wr.flag.bs.complete_enable = 1;
 
 	ret = ubcore_post_jetty_send_wr(rsrc->jetty, &jfs_wr, &jfs_bad_wr);
 	if (ret != 0) {
@@ -1221,6 +1330,7 @@ void ubmad_post_send_close_req(struct ubmad_jetty_resource *rsrc,
 		ubcore_log_warn(
 			"Failed to send close request, ret: %d, jetty_id: %u.\n",
 			ret, rsrc->jetty->jetty_id.id);
+		ubmad_bitmap_put_id(rsrc->send_seg_bitmap, sge_idx);
 	}
 }
 
@@ -1244,10 +1354,11 @@ int ubmad_post_recv(struct ubmad_jetty_resource *rsrc)
 		ubcore_log_err("get sge_idx failed\n");
 		return -1;
 	}
-	sge_addr = rsrc->recv_seg->seg.ubva.va + UBMAD_SGE_MAX_LEN * sge_idx;
+	sge_addr = rsrc->recv_seg->seg.ubva.va +
+				(uint64_t)rsrc->cfg.sge_size * sge_idx;
 
 	sge.addr = sge_addr;
-	sge.len = UBMAD_SGE_MAX_LEN;
+	sge.len = rsrc->cfg.sge_size;
 	sge.tseg = rsrc->recv_seg;
 	jfr_wr.src.sge = &sge;
 	jfr_wr.src.num_sge = 1;
@@ -1255,6 +1366,7 @@ int ubmad_post_recv(struct ubmad_jetty_resource *rsrc)
 	ret = ubcore_post_jetty_recv_wr(rsrc->jetty, &jfr_wr, &jfr_bad_wr);
 	if (ret != 0) {
 		ubcore_log_err("ubcore post recv failed. ret %d\n", ret);
+		ubmad_bitmap_put_id(rsrc->recv_seg_bitmap, sge_idx);
 		return ret;
 	}
 
@@ -1272,8 +1384,7 @@ static int ubmad_cm_process_msg(struct ubcore_cr *cr,
 
 	recv_cr.cr = cr;
 	recv_cr.local_eid = *local_eid;
-	/* only UBMAD_UBC_CONN_REQ valid for recv_handler */
-	recv_cr.msg_type = UBMAD_UBC_CONN_REQ;
+	recv_cr.msg_type = msg->msg_type;
 	recv_cr.payload = (uint64_t)msg->payload;
 	recv_cr.payload_len = msg->payload_len;
 
@@ -1297,15 +1408,21 @@ static int ubmad_process_gen_data(struct ubcore_cr *cr,
 	int ret = 0;
 
 	ubcore_log_info_rl(
-		"Recv authn data. msn %llu, seid " EID_FMT
+		"Recv gen data. msn %llu, seid " EID_FMT
 		"\n", msg->msn, EID_ARGS(*seid));
+
+	/* unreliable: no need ack reply */
+	if (!rsrc->cfg.reliable)
+		return ubmad_cm_process_msg(cr, &rsrc->jetty->jetty_id.eid,
+					    msg, agent_priv);
 
 	tjetty = ubmad_get_tjetty(seid, rsrc);
 	if (IS_ERR_OR_NULL(tjetty)) {
 		tjetty = ubmad_import_jetty(dev_priv->device, rsrc, seid);
 		if (IS_ERR_OR_NULL(tjetty)) {
-			ubcore_log_err("get tjetty failed for authn. msn %llu seid " EID_FMT "\n",
-				     msg->msn, EID_ARGS(*seid));
+			ubcore_log_err(
+				"get tjetty failed for gen data. msn %llu seid " EID_FMT "\n",
+				msg->msn, EID_ARGS(*seid));
 			return -1;
 		}
 	}
@@ -1313,7 +1430,7 @@ static int ubmad_process_gen_data(struct ubcore_cr *cr,
 	ret = ubmad_post_send_gen_ack(rsrc, tjetty->tjetty, msg->msn,
 					   msg->msg_type);
 	if (ret != 0)
-		ubcore_log_err("Failed to send authn ack. msn %llu seid " EID_FMT "\n",
+		ubcore_log_err("Failed to send gen ack. msn %llu seid " EID_FMT "\n",
 			     msg->msn, EID_ARGS(*seid));
 
 	if (ubmad_check_recv_msn_duplicate(&tjetty->recv_msn_mgr, msg->msn,
@@ -1327,7 +1444,7 @@ static int ubmad_process_gen_data(struct ubcore_cr *cr,
 	ret = ubmad_cm_process_msg(cr, &rsrc->jetty->jetty_id.eid, msg,
 				   agent_priv);
 	if (ret != 0)
-		ubcore_log_err("cm process authn msg failed. msn %llu, seid " EID_FMT
+		ubcore_log_err("cm process gen data msg failed. msn %llu, seid " EID_FMT
 			     "\n", msg->msn, EID_ARGS(*seid));
 	return ret;
 }
@@ -1583,6 +1700,22 @@ static int ubmad_process_msg(struct ubcore_cr *cr,
 	return ret;
 }
 
+uint32_t ubmad_get_jetty_id_by_msg_type(uint32_t msg_type)
+{
+	switch (msg_type) {
+	case UBMAD_UBC_CONN_REQ:
+	case UBMAD_UBC_CONN_RESP:
+	case UBMAD_UBC_SINGLE_REQ:
+		return UBMAD_CM_JETTY_ID_0;
+	case UBMAD_GEN_DATA:
+	case UBMAD_GEN_ACK:
+	case UBMAD_GEN_RESP:
+		return UBMAD_CM_JETTY_ID_1;
+	default:
+		return 0U;
+	}
+}
+
 /* send_ops for ubcore connection manager */
 // for UBMAD_UBC_CONN_DATA
 int ubmad_ubc_send(struct ubcore_device *device,
@@ -1590,6 +1723,8 @@ int ubmad_ubc_send(struct ubcore_device *device,
 {
 	struct ubmad_send_buf *bad_send_buf = NULL;
 	struct ubmad_device_priv *dev_priv;
+	struct ubmad_agent_priv *agent_priv;
+	uint32_t jetty_id;
 	int ret;
 
 	if (device == NULL || send_buf == NULL) {
@@ -1599,7 +1734,6 @@ int ubmad_ubc_send(struct ubcore_device *device,
 	if (send_buf->msg_type != UBMAD_UBC_CONN_REQ &&
 		send_buf->msg_type != UBMAD_UBC_CONN_RESP &&
 		send_buf->msg_type != UBMAD_UBC_SINGLE_REQ &&
-		send_buf->msg_type != UBMAD_CLOSE_REQ &&
 		send_buf->msg_type != UBMAD_GEN_DATA &&
 		send_buf->msg_type != UBMAD_GEN_ACK &&
 		send_buf->msg_type != UBMAD_GEN_RESP) {
@@ -1614,25 +1748,41 @@ int ubmad_ubc_send(struct ubcore_device *device,
 		return -1;
 	}
 
-	send_buf->src_eid = dev_priv->eid_info.eid;
+	jetty_id = ubmad_get_jetty_id_by_msg_type(send_buf->msg_type);
+	if (jetty_id == 0U) {
+		ubcore_log_err("Invalid jetty_id %u by send buf msg type: %u.\n",
+						jetty_id, send_buf->msg_type);
+		ubmad_put_device_priv(dev_priv);
+		return -EINVAL;
+	}
+
+	agent_priv = ubmad_get_agent_by_jetty_id(dev_priv, jetty_id);
 	ubmad_put_device_priv(dev_priv);
+	if (IS_ERR_OR_NULL(agent_priv)) {
+		ubcore_log_err("Failed to get agent, dev_name: %s\n",
+					     device->dev_name);
+		return -1;
+	}
+	send_buf->src_eid = agent_priv->eid_info.eid;
 
 	ubcore_log_info_rl("ubc dev: %s, s_eid: " EID_FMT ", d_eid: " EID_FMT " ",
 		      device->dev_name, EID_ARGS(send_buf->src_eid),
 		      EID_ARGS(send_buf->dst_eid));
 
-	ret = ubmad_post_send(device, (struct ubmad_send_buf *)send_buf,
-			      &bad_send_buf);
+	ret = ubmad_post_send(&agent_priv->agent, jetty_id,
+				(struct ubmad_send_buf *)send_buf,
+			    &bad_send_buf);
 	if (ret != 0)
 		ubcore_log_err_rl("Failed to send message, ret: %d, length: %u.\n",
 			     ret, send_buf->payload_len);
 
+	ubmad_put_agent_priv(agent_priv);
 	return ret;
 }
 
 /* jfce work handler */
 // polling here only indicates if send successfully
-static void ubmad_send_work_handler(struct ubmad_device_priv *dev_priv,
+static void ubmad_send_work_handler(struct ubmad_agent_priv *agent_priv,
 				    struct ubmad_jfce_work *jfce_work)
 {
 	struct ubmad_jetty_resource *rsrc;
@@ -1641,13 +1791,12 @@ static void ubmad_send_work_handler(struct ubmad_device_priv *dev_priv,
 	int ret;
 	int cr_cnt;
 	struct ubcore_cr cr = {0};
-	struct ubmad_agent_priv *agent_priv = jfce_work->agent_priv;
 	struct ubcore_jfc *jfc = jfce_work->jfc;
 	struct ubmad_send_cr send_cr = {0};
 
 	cr_cnt = 0;
 
-	rsrc = ubmad_get_jetty_rsrc_by_jfc_s(dev_priv, jfc);
+	rsrc = ubmad_agent_get_rsrc_by_jfc(agent_priv, jfc, UBMAD_SEND_WORK);
 	if (IS_ERR_OR_NULL(rsrc)) {
 		ubcore_log_err("Failed to match jfc for send.\n");
 		return;
@@ -1680,7 +1829,7 @@ static void ubmad_send_work_handler(struct ubmad_device_priv *dev_priv,
 		} else {
 			msg = (struct ubmad_msg *)cr.user_ctx;
 			sge_idx = (cr.user_ctx - rsrc->send_seg->seg.ubva.va) /
-				  UBMAD_SGE_MAX_LEN;
+				  rsrc->cfg.sge_size;
 			ubmad_bitmap_put_id(
 				rsrc->send_seg_bitmap,
 				sge_idx); // get in ubmad_do_post_send()
@@ -1698,7 +1847,7 @@ static void ubmad_send_work_handler(struct ubmad_device_priv *dev_priv,
 }
 
 // polling here indicates if recv msg
-static void ubmad_recv_work_handler(struct ubmad_device_priv *dev_priv,
+static void ubmad_recv_work_handler(struct ubmad_agent_priv *agent_priv,
 				    struct ubmad_jfce_work *jfce_work)
 {
 	struct ubcore_jfc *jfc = jfce_work->jfc;
@@ -1710,11 +1859,11 @@ static void ubmad_recv_work_handler(struct ubmad_device_priv *dev_priv,
 
 	cr_cnt = 0;
 
-	rsrc = ubmad_get_jetty_rsrc_by_jfc_r(dev_priv, jfc);
+	rsrc = ubmad_agent_get_rsrc_by_jfc(agent_priv, jfc, UBMAD_RECV_WORK);
 	if (IS_ERR_OR_NULL(rsrc)) {
 		ubcore_log_err("Failed to match jfc for recv.\n");
 		return;
-	};
+	}
 
 	do {
 		cr_cnt = ubcore_poll_jfc(jfc, 1, &cr);
@@ -1727,8 +1876,7 @@ static void ubmad_recv_work_handler(struct ubmad_device_priv *dev_priv,
 
 		/* cr_cnt == 1 */
 		if (cr.status == UBCORE_CR_SUCCESS) {
-			if (ubmad_process_msg(&cr, rsrc, dev_priv,
-					      jfce_work->agent_priv) != 0)
+			if (ubmad_process_msg(&cr, rsrc, agent_priv->dev_priv, agent_priv) != 0)
 				ubcore_log_err_rl("process msg failed\n");
 		}
 
@@ -1738,7 +1886,7 @@ static void ubmad_recv_work_handler(struct ubmad_device_priv *dev_priv,
 				"invalid cr.user_ctx. sge addr should not < seg addr\n");
 		} else {
 			sge_idx = (cr.user_ctx - rsrc->recv_seg->seg.ubva.va) /
-				  UBMAD_SGE_MAX_LEN;
+					rsrc->cfg.sge_size;
 			// get in ubmad_post_recv()
 			ubmad_bitmap_put_id(rsrc->recv_seg_bitmap, sge_idx);
 		}
@@ -1763,8 +1911,6 @@ static void ubmad_jfce_work_handler(struct work_struct *work)
 {
 	struct ubmad_jfce_work *jfce_work =
 		container_of(work, struct ubmad_jfce_work, work);
-	struct ubcore_device *dev = jfce_work->jfc->ub_dev;
-	struct ubmad_device_priv *dev_priv = NULL;
 	uint64_t duration;
 
 	duration = (ktime_get_ns() - jfce_work->start) / UBCORE_NS_TO_MS;
@@ -1772,34 +1918,18 @@ static void ubmad_jfce_work_handler(struct work_struct *work)
 		ubcore_log_info_rl("[WQ_INFO]poll_wq consumes: %llu, type: %u.\n",
 			duration, jfce_work->type);
 
-	dev_priv = ubmad_get_device_priv(dev); // put below
-	if (IS_ERR_OR_NULL(dev_priv)) {
-		ubcore_log_err("fail to get dev_priv, dev_name: %s.\n",
-			     dev->dev_name);
-		goto put_agent_priv;
-	}
-	if (!dev_priv->valid) {
-		ubcore_log_err_rl("dev_priv rsrc not inited. dev_name: %s.\n",
-				dev->dev_name);
-		goto put_device_priv;
-	}
-
 	switch (jfce_work->type) {
 	case UBMAD_SEND_WORK:
-		ubmad_send_work_handler(dev_priv, jfce_work);
+		ubmad_send_work_handler(jfce_work->agent_priv, jfce_work);
 		break;
 	case UBMAD_RECV_WORK:
-		ubmad_recv_work_handler(dev_priv, jfce_work);
+		ubmad_recv_work_handler(jfce_work->agent_priv, jfce_work);
 		break;
 	default:
 		ubcore_log_err("unknown work type %d\n", jfce_work->type);
 	}
 
-put_device_priv:
-	ubmad_put_device_priv(dev_priv); // get above
-put_agent_priv:
-	ubmad_put_agent_priv(
-		jfce_work->agent_priv); // get in ubmad_jfce_handler()
+	ubmad_put_agent_priv(jfce_work->agent_priv); // get in ubmad_jfce_handler()
 	kfree(jfce_work); // alloc in ubmad_jfce_handler()
 }
 
@@ -1808,12 +1938,23 @@ put_agent_priv:
 static void ubmad_jfce_handler(struct ubcore_jfc *jfc,
 			       enum ubmad_jfce_work_type type)
 {
+	struct ubmad_device_priv *dev_priv = NULL;
 	struct ubmad_agent_priv *agent_priv = NULL;
 	struct ubmad_jfce_work *jfce_work;
 	int ret;
 
-	agent_priv = ubmad_get_agent_priv(
-		jfc->ub_dev); // put in ubmad_jfce_work_handler()
+	dev_priv = ubmad_get_device_priv(jfc->ub_dev);
+	if (IS_ERR_OR_NULL(dev_priv)) {
+		ubcore_log_err("fail to get dev_priv, dev_name: %s.\n",
+				     jfc->ub_dev->dev_name);
+		return;
+	}
+
+	// put in ubmad_jfce_work_handler()
+	agent_priv = ubmad_get_agent_by_jfc(dev_priv, jfc, type);
+
+	ubmad_put_device_priv(dev_priv);
+
 	if (IS_ERR_OR_NULL(agent_priv)) {
 		ubcore_log_err("Failed to get agent_priv, dev_name: %s.\n",
 			     jfc->ub_dev->dev_name);

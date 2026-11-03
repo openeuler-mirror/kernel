@@ -15,21 +15,10 @@
 #include <linux/bitmap.h>
 #include "ub_mad.h"
 
-/* well-known jetty (wk jetty) parameters */
-#define UBMAD_WK_JETTY_NUM 2 /* well-known jetty 0 and 1 only used in ubcm */
-#define UBMAD_WK_JETTY_ID_0 1U
-#define UBMAD_WK_JETTY_ID_1 2U
-
 // jetty
-#define UBMAD_JFS_DEPTH 1024U
-#define UBMAD_JFR_DEPTH 2048U
 #define UBMAD_JFS_MAX_SGE_NUM 1
 #define UBMAD_JFR_MAX_SGE_NUM 1
 #define UBMAD_JETTY_ERR_TIMEOUT 17
-
-// seg
-#define UBMAD_SEND_SGE_NUM (UBMAD_JFS_DEPTH)
-#define UBMAD_RECV_SGE_NUM (UBMAD_JFR_DEPTH)
 
 // tjetty
 #define UBMAD_MAX_TJETTY_NUM 10240
@@ -46,7 +35,7 @@
 
 #define UBMAD_RX_BITMAP_SIZE 1024
 
-#define UBMAD_TX_THREDSHOLD (UBMAD_JFS_DEPTH - 8)
+#define UBMAD_TX_THREDSHOLD(sge_num) ((sge_num) - 8U)
 
 #define UBMAD_INI_RTBUFFER_SIZE 1024
 #define UBMAD_TGT_RTBUFFER_SIZE 1024
@@ -75,8 +64,10 @@ struct ubmad_msn_mgr {
 
 /* jetty */
 struct ubmad_jetty_resource {
-	/* jetty */
-	uint32_t jetty_id;
+	/* jetty cfg*/
+	struct ubmad_jetty_cfg cfg;
+
+	/* jetty rsrc */
 	struct ubcore_jfc *jfc_s; // send
 	struct ubcore_jfc *jfc_r; // recv
 	struct ubcore_jfr *jfr;
@@ -125,6 +116,9 @@ struct ubmad_tjetty {
 	struct kref kref;
 	struct hlist_node node; // ubmad_device_priv.tjetty_hlist
 
+	struct work_struct release_work;
+	struct ubcore_device *ub_dev; // device ref held until the release work ends
+
 	/* reliable communication */
 	struct ubmad_msn_mgr msn_mgr; // for retransmit, only for initiator
 	struct ubmad_msn_mgr recv_msn_mgr; // for target side to track received msns
@@ -147,28 +141,36 @@ struct ubmad_device_priv {
 	struct list_head node; // g_ubmad_device_list
 	struct ubcore_event_handler handler;
 
-	/** resources **/
-	bool valid; // following resources inited or not
-	struct ubmad_jetty_resource
-		jetty_rsrc[UBMAD_WK_JETTY_NUM]; // well-known jetty resource
-	/** end of resources **/
-
-	/* reliable communication */
-	struct workqueue_struct
-		 *rt_wq; // retransmit work queue, only for initiator
-	struct ubcore_eid_info eid_info;
-	bool has_create_jetty_rsrc;
-	struct workqueue_struct *conn_wq;
+	struct list_head agent_list;
+	spinlock_t agent_list_lock;
 };
 
 /* agent */
 // agent contains resources used between ubmad and ubcm.
 struct ubmad_agent_priv {
 	struct ubmad_agent agent;
+	struct ubmad_device_priv *dev_priv; // ref held until agent released
+
 	struct kref kref;
-	struct list_head node; // g_ubmad_agent_list
+	struct list_head node; // ubmad_device_priv->agent_list
+
+	/** resources **/
+	bool valid; // following resources inited or not
+	struct ubcore_eid_info eid_info;
+	uint32_t rsrc_num;
+	struct ubmad_jetty_resource *rsrc;
+	/** end of resources **/
+
+	/* work queue */
+	struct workqueue_struct *rt_wq; // retransmit work queue for reliable
 	struct workqueue_struct *jfce_wq_s; // ubmad_jfce_work for Tx
 	struct workqueue_struct *jfce_wq_r; // ubmad_jfce_work for Rx
+	struct workqueue_struct *conn_wq; // connection work queue
+
+	/* release agent is a workqueue task on g_ubmad_release_wq.
+		to prevent jfce_work_handler which trigger put_agent_priv,
+		from wq wait wq_task deadlock */
+	struct work_struct release_work;
 };
 
 /** datapath **/
@@ -209,7 +211,7 @@ struct ubmad_jfce_work {
 
 struct ubmad_jetty_work {
 	struct work_struct work;
-	struct ubmad_device_priv *dev_priv;
+	struct ubmad_agent_priv *agent_priv; // agent is owner of rsrc
 	struct ubmad_jetty_resource *rsrc;
 	union ubcore_eid dst_primary_eid;
 	struct ubmad_send_buf *send_buf;
@@ -259,13 +261,6 @@ struct ubmad_tjetty *ubmad_import_jetty(struct ubcore_device *device,
 					struct ubmad_jetty_resource *rsrc,
 					union ubcore_eid *dst_eid);
 
-struct ubmad_jetty_resource *
-ubmad_get_jetty_rsrc_by_jfc_s(struct ubmad_device_priv *dev_priv,
-			      struct ubcore_jfc *jfc_s);
-struct ubmad_jetty_resource *
-ubmad_get_jetty_rsrc_by_jfc_r(struct ubmad_device_priv *dev_priv,
-			      struct ubcore_jfc *jfc_r);
-
 void ubmad_remove_tjetty(union ubcore_eid *seid,
 			 struct ubmad_jetty_resource *rsrc);
 
@@ -274,7 +269,7 @@ struct ubmad_device_priv *ubmad_get_device_priv(struct ubcore_device *device);
 void ubmad_put_device_priv(struct ubmad_device_priv *dev_priv);
 
 /* agent */
-struct ubmad_agent_priv *ubmad_get_agent_priv(struct ubcore_device *device);
+void ubmad_get_agent_priv(struct ubmad_agent_priv *agent_priv);
 void ubmad_put_agent_priv(struct ubmad_agent_priv *agent_priv);
 
 /** datapath **/

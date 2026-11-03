@@ -22,12 +22,37 @@
 #define UBCM_LOG_FILE_PERMISSION (0644)
 #define UBCM_MODULE_NAME "ubcm"
 
+#define UBCM_JFS_DEPTH 1024U
+#define UBCM_JFR_DEPTH 2048U
+
 struct ubcm_device {
 	struct kref kref;
 	struct list_head list_node;
 	struct ubcore_device *device;
 	struct ubmad_agent *agent;
 	spinlock_t agent_lock;
+};
+
+/* CM agent jetty cfg: well-known jetty 1 and 2, both reliable */
+static const struct ubmad_jetty_cfg g_ubcm_jetty_cfg[] = {
+	{
+		.jetty_id = UBMAD_CM_JETTY_ID_0,
+		.sge_size = UBMAD_SGE_MAX_LEN,
+		.send_sge_num = UBCM_JFS_DEPTH,
+		.recv_sge_num = UBCM_JFR_DEPTH,
+		.write_sge_num = 0,
+		.max_write_len = 0,
+		.reliable = true,
+	},
+	{
+		.jetty_id = UBMAD_CM_JETTY_ID_1,
+		.sge_size = UBMAD_SGE_MAX_LEN,
+		.send_sge_num = UBCM_JFS_DEPTH,
+		.recv_sge_num = UBCM_JFR_DEPTH,
+		.write_sge_num = 0,
+		.max_write_len = 0,
+		.reliable = true,
+	},
 };
 
 static struct ubcm_context g_ubcm_ctx = { 0 };
@@ -121,10 +146,6 @@ static void ubcm_kref_release(struct kref *kref)
 
 static void ubcm_put_device(struct ubcm_device *cm_dev)
 {
-	uint32_t refcnt;
-
-	refcnt = kref_read(&cm_dev->kref);
-
 	kref_put(&cm_dev->kref, ubcm_kref_release);
 }
 
@@ -153,6 +174,10 @@ static int ubcm_recv_handler(struct ubmad_agent *agent,
 
 	switch (recv_cr->msg_type) {
 	case UBMAD_UBC_CONN_REQ:
+	case UBMAD_UBC_CONN_RESP:
+	case UBMAD_UBC_SINGLE_REQ:
+	case UBMAD_GEN_DATA:
+	case UBMAD_GEN_RESP:
 		ret = ubcore_cm_recv(agent->device,
 				     (struct ubcore_cm_recv_cr *)recv_cr);
 		if (ret != 0)
@@ -172,6 +197,10 @@ static int ubcm_add_device(struct ubcore_device *device)
 {
 	struct ubcm_context *cm_ctx = get_ubcm_ctx();
 	struct ubcm_device *cm_dev;
+	struct ubmad_agent_cfg agent_cfg = {
+		.jetty_cfg = g_ubcm_jetty_cfg,
+		.jetty_num = ARRAY_SIZE(g_ubcm_jetty_cfg),
+	};
 	int ret;
 
 	cm_dev = kzalloc(sizeof(struct ubcm_device), GFP_KERNEL);
@@ -185,8 +214,9 @@ static int ubcm_add_device(struct ubcore_device *device)
 		goto put_dev;
 	cm_dev->device = device;
 
-	cm_dev->agent = ubmad_register_agent(device, ubcm_send_handler,
-					     ubcm_recv_handler, (void *)cm_dev);
+	cm_dev->agent = ubmad_register_agent(device, &agent_cfg,
+					ubcm_send_handler, ubcm_recv_handler,
+					(void *)cm_dev);
 	if (IS_ERR_OR_NULL(cm_dev->agent)) {
 		ubcore_log_err("Failed to register mad agent.\n");
 		ret = PTR_ERR(cm_dev->agent);
@@ -229,6 +259,8 @@ void ubcm_work_handler(struct work_struct *work)
 	struct ubmad_send_buf *send_buf = cm_work->send_buf;
 	struct ubmad_send_buf *bad_send_buf;
 	struct ubcm_device *cm_dev;
+	struct ubmad_agent *agent;
+	uint32_t jetty_id;
 	int ret;
 
 	if (IS_ERR_OR_NULL(send_buf)) {
@@ -245,11 +277,28 @@ void ubcm_work_handler(struct work_struct *work)
 	/* Source eid should be default eid0 for wk_jetty */
 	send_buf->src_eid = cm_dev->device->eid_table.eid_entries[0].eid;
 
-	ret = ubmad_post_send(cm_dev->device, send_buf, &bad_send_buf);
+	/* Get agent */
+	spin_lock(&cm_dev->agent_lock);
+	agent = cm_dev->agent;
+	spin_unlock(&cm_dev->agent_lock);
+	if (IS_ERR_OR_NULL(agent)) {
+		ubcore_log_err("Failed to get cm agent.\n");
+		goto put_device;
+	}
+
+	jetty_id = ubmad_get_jetty_id_by_msg_type(send_buf->msg_type);
+	if (jetty_id == 0U) {
+		ubcore_log_err("Invalid msg_type: %u, jetty id is 0.\n", send_buf->msg_type);
+		goto put_device;
+	}
+
+	ret = ubmad_post_send(agent, jetty_id,
+						(struct ubmad_send_buf *)send_buf, &bad_send_buf);
 	if (ret != 0)
 		ubcore_log_err("Failed to post send mad, ret: %d.\n", ret);
-	ubcm_put_device(cm_dev);
 
+put_device:
+	ubcm_put_device(cm_dev);
 free_send_buf:
 	kfree(send_buf);
 free_work:
