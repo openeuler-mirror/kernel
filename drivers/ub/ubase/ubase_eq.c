@@ -652,7 +652,32 @@ static int ubase_destroy_eq(struct ubase_dev *udev, struct ubase_eq *eq,
 	return ret;
 }
 
-static int ubase_request_misc_irq(struct ubase_dev *udev)
+static void ubase_irq_set_affinity(struct ubase_dev *udev, int irqn,
+				   const struct cpumask *affinity)
+{
+	int ret;
+
+	if (!affinity)
+		return;
+
+	ret = irq_set_affinity(irqn, affinity);
+	if (ret) {
+		ubase_warn(udev,
+			   "failed to set irq %d affinity to %*pbl, ret = %d.\n",
+			   irqn, cpumask_pr_args(affinity), ret);
+		return;
+	}
+
+	irq_update_affinity_hint(irqn, affinity);
+}
+
+static inline void ubase_irq_clean_affinity(int irqn)
+{
+	irq_update_affinity_hint(irqn, NULL);
+}
+
+static int ubase_request_misc_irq(struct ubase_dev *udev,
+				  const struct cpumask *affinity)
 {
 	struct ubase_irq_table *irq_table = &udev->irq_table;
 	struct ubase_irq *irq;
@@ -670,6 +695,8 @@ static int ubase_request_misc_irq(struct ubase_dev *udev)
 			  "failed to request misc irq, ret = %d.\n", ret);
 		return ret;
 	}
+
+	ubase_irq_set_affinity(udev, irq->irqn, affinity);
 
 	ubase_enable_misc_vector(udev, true);
 
@@ -722,7 +749,8 @@ static int ubase_ae_task_handle(void *data)
 	return 0;
 }
 
-static int ubase_request_aeq_irq(struct ubase_dev *udev)
+static int ubase_request_aeq_irq(struct ubase_dev *udev,
+				 const struct cpumask *affinity)
 {
 	struct ubase_irq_table *irq_table = &udev->irq_table;
 	char task_name[UBASE_INT_NAME_LEN] = {0};
@@ -772,6 +800,8 @@ static int ubase_request_aeq_irq(struct ubase_dev *udev)
 		return ret;
 	}
 
+	ubase_irq_set_affinity(udev, irq->irqn, affinity);
+
 	return 0;
 }
 
@@ -786,8 +816,10 @@ static void ubase_free_misc_irq(struct ubase_dev *udev)
 	ubase_enable_misc_vector(udev, false);
 
 	irq = irq_table->irqs[UBASE_MISC_IRQ_INDEX];
-	if (ubase_ubus_irq_vector(udev->dev, 0) != -EOPNOTSUPP)
+	if (ubase_ubus_irq_vector(udev->dev, 0) != -EOPNOTSUPP) {
+		ubase_irq_clean_affinity(irq->irqn);
 		free_irq(irq->irqn, udev);
+	}
 }
 
 static void ubase_free_ceq_irqs(struct ubase_dev *udev)
@@ -799,8 +831,10 @@ static void ubase_free_ceq_irqs(struct ubase_dev *udev)
 		return;
 
 	for (i = 0; i < ceqs->num; i++) {
-		if (ubase_ubus_irq_vector(udev->dev, 0) != -EOPNOTSUPP)
+		if (ubase_ubus_irq_vector(udev->dev, 0) != -EOPNOTSUPP) {
+			ubase_irq_clean_affinity(ceqs->ceq[i].eq.irqn);
 			free_irq(ceqs->ceq[i].eq.irqn, &ceqs->ceq[i]);
+		}
 	}
 }
 
@@ -825,8 +859,10 @@ static void ubase_free_aeq_irq(struct ubase_dev *udev)
 
 	aeq->ae_task = NULL;
 
-	if (ubase_ubus_irq_vector(udev->dev, 0) != -EOPNOTSUPP)
+	if (ubase_ubus_irq_vector(udev->dev, 0) != -EOPNOTSUPP) {
+		ubase_irq_clean_affinity(aeq->eq.irqn);
 		free_irq(aeq->eq.irqn, udev);
+	}
 }
 
 static void ubase_destroy_ceqs(struct ubase_dev *udev)
@@ -873,7 +909,7 @@ static void ubase_destroy_aeq(struct ubase_dev *udev)
 }
 
 static int ubase_request_ceq_irq(struct ubase_dev *udev, struct ubase_ceq *ceq,
-				 u32 index)
+				 u32 index, const struct cpumask *affinity)
 {
 	struct ubase_irq_table *irq_table = &udev->irq_table;
 	struct ubase_irq *irq;
@@ -899,12 +935,16 @@ static int ubase_request_ceq_irq(struct ubase_dev *udev, struct ubase_ceq *ceq,
 			  index, ret);
 		if (ubase_destroy_eq(udev, &ceq->eq, UBASE_EQ_TYPE_CEQ))
 			ubase_err(udev, "failed to destroy ceq.\n");
+		return ret;
 	}
+
+	ubase_irq_set_affinity(udev, irq->irqn, affinity);
 
 	return ret;
 }
 
-static int ubase_request_ceq_irqs(struct ubase_dev *udev)
+static int ubase_request_ceq_irqs(struct ubase_dev *udev,
+				  const struct cpumask *affinity)
 {
 	struct ubase_irq_table *irq_table = &udev->irq_table;
 	struct ubase_ceqs *ceqs = &irq_table->ceqs;
@@ -927,7 +967,7 @@ static int ubase_request_ceq_irqs(struct ubase_dev *udev)
 	ceqs->num = ceq_irq_num;
 
 	for (i = 0; i < ceq_irq_num; i++) {
-		ret = ubase_request_ceq_irq(udev, &ceqs->ceq[i], i);
+		ret = ubase_request_ceq_irq(udev, &ceqs->ceq[i], i, affinity);
 		if (ret) {
 			ubase_err(udev,
 				  "failed to request ceq[%u] irq, ret = %d.\n",
@@ -1010,23 +1050,26 @@ static void ubase_irq_uninit(struct ubase_dev *udev)
 
 static int ubase_request_irq(struct ubase_dev *udev)
 {
+	const struct cpumask *affinity;
 	int ret;
 
-	ret = ubase_request_misc_irq(udev);
+	affinity = ubase_ubus_irq_get_affinity(udev->dev);
+
+	ret = ubase_request_misc_irq(udev, affinity);
 	if (ret) {
 		ubase_err(udev,
 			  "failed to request ubase misc irq, ret = %d.\n", ret);
 		goto err_misc_init;
 	}
 
-	ret = ubase_request_aeq_irq(udev);
+	ret = ubase_request_aeq_irq(udev, affinity);
 	if (ret) {
 		ubase_err(udev,
 			  "failed to request ubase aeq irq, ret = %d.\n", ret);
 		goto err_aeq_init;
 	}
 
-	ret = ubase_request_ceq_irqs(udev);
+	ret = ubase_request_ceq_irqs(udev, affinity);
 	if (ret) {
 		ubase_err(udev,
 			  "failed to request ubase ceq irqs, ret = %d.\n", ret);
