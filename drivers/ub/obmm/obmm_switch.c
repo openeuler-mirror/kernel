@@ -204,19 +204,13 @@ static int quiesce_old_switch_work(struct obmm_region *reg)
 	return 0;
 }
 
-/*
- * Fill the kernel-side pool spec from the begin command and validate the
- * UAPI shape the backend creator no longer sees (pads, node_count bounds,
- * trailing size entries) plus the shell-relative sum rule, the per-node
- * MEMSEG_SIZE multiple, the online-node and the same-package checks; the
- * pool max_total -ENOMEM and the UMMU -EPERM surface from the creator
- * itself.
+/* Fill the pool spec and validate what the shared validator cannot express
+ * (pads, node_count bounds as -EINVAL, trailing sizes) plus the switch-only
+ * FAST mask; shell-relative checks stay in the shared validator.
  */
 static int exp_spec_from_cmd(const struct obmm_cmd_switch_begin *param,
 			     struct obmm_export_pool_spec *spec, u64 mem_size)
 {
-	nodemask_t nodes = NODE_MASK_NONE;
-	u64 total = 0;
 	unsigned int i;
 
 	if (memchr_inv(param->exp.pad, 0, sizeof(param->exp.pad))) {
@@ -238,12 +232,6 @@ static int exp_spec_from_cmd(const struct obmm_cmd_switch_begin *param,
 		       param->exp.export_flags);
 		return -EINVAL;
 	}
-	if (param->exp.pxm_numa < 0 ||
-	    param->exp.pxm_numa >= OBMM_MAX_LOCAL_NUMA_NODES) {
-		pr_err("switch: exp target pxm_numa=%d out of range\n",
-		       param->exp.pxm_numa);
-		return -EINVAL;
-	}
 
 	memset(spec, 0, sizeof(*spec));
 	memcpy(spec->size, param->exp.size, sizeof(spec->size));
@@ -258,37 +246,8 @@ static int exp_spec_from_cmd(const struct obmm_cmd_switch_begin *param,
 			return -EINVAL;
 		}
 	}
-	for (i = 0; i < spec->node_count; i++) {
-		if (!IS_ALIGNED(spec->size[i], OBMM_MEMSEG_SIZE)) {
-			pr_err("switch: exp target size[%u]=%#llx not aligned to memseg=%#lx\n",
-			       i, spec->size[i], (unsigned long)OBMM_MEMSEG_SIZE);
-			return -EINVAL;
-		}
-		if (spec->size[i] && !is_online_local_node((int)i)) {
-			pr_err("switch: exp target uses offlined or non-local node %u\n", i);
-			return -ENODEV;
-		}
-		if (spec->size[i] > U64_MAX - total) {
-			pr_err("switch: exp target size sum overflow\n");
-			return -EINVAL;
-		}
-		if (spec->size[i]) {
-			total += spec->size[i];
-			node_set(i, nodes);
-		}
-	}
-	if (total != mem_size) {
-		pr_err("switch: exp target size sum=%#llx != shell mem_size=%#llx\n",
-		       total, mem_size);
-		return -EINVAL;
-	}
-	node_set(spec->pxm_numa, nodes);
-	if (!nodes_on_same_package(&nodes)) {
-		pr_err("switch: exp target nodes and controller not on one package\n");
-		return -EINVAL;
-	}
 
-	return 0;
+	return obmm_export_pool_validate_spec(spec, mem_size, true, NULL);
 }
 
 static void obmm_switch_stage_outputs(struct obmm_cmd_switch_begin *param,
@@ -629,6 +588,7 @@ out_put:
 int obmm_switch_end(const struct obmm_cmd_switch_end *param)
 {
 	struct obmm_region *reg;
+	enum obmm_switch_state state;
 	int ret;
 
 	if (!capable(CAP_SYS_ADMIN)) {
@@ -642,11 +602,9 @@ int obmm_switch_end(const struct obmm_cmd_switch_end *param)
 		return -EINVAL;
 	}
 
-	reg = search_get_obmm_region(param->mem_id);
-	if (!reg) {
-		pr_err("switch: mem_id=%llu not found\n", param->mem_id);
-		return -ENOENT;
-	}
+	reg = switch_lookup_region(param->mem_id);
+	if (IS_ERR(reg))
+		return PTR_ERR(reg);
 
 	if (!mutex_trylock(&reg->state_mutex)) {
 		pr_debug_ratelimited("switch: mem_id=%llu finisher busy,\n"
@@ -657,9 +615,10 @@ int obmm_switch_end(const struct obmm_cmd_switch_end *param)
 	}
 	down_write(&reg->switch_lock);
 
-	if (READ_ONCE(reg->switch_state) != OBMM_SWITCH_AWAIT_READY) {
-		pr_err("switch: mem_id=%llu not in AWAIT_READY (state=%d), ret=%pe\n",
-		       param->mem_id, READ_ONCE(reg->switch_state), ERR_PTR(-ESTALE));
+	state = READ_ONCE(reg->switch_state);
+	if (state != OBMM_SWITCH_AWAIT_READY) {
+		pr_err_ratelimited("switch: mem_id=%llu not in AWAIT_READY (state=%d), ret=%pe\n",
+				   param->mem_id, state, ERR_PTR(-ESTALE));
 		up_write(&reg->switch_lock);
 		mutex_unlock(&reg->state_mutex);
 		ret = -ESTALE;

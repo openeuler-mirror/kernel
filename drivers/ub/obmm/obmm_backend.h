@@ -180,6 +180,17 @@ obmm_backend_to_export_common(struct obmm_backend *be)
 	return NULL;
 }
 
+/* Shared pool-spec validation, the single authority for pool-creator callers.
+ * Errnos in check order: -E2BIG (node_count bound), -EINVAL (pxm_numa range,
+ * MEMSEG_SIZE multiple, total shape, same-package affinity), -ENODEV
+ * (offlined/non-local node), -EOVERFLOW (sum). @check_total false accepts a
+ * non-zero sum via nullable @total_size; true requires it to match @mem_size;
+ * UAPI-only checks stay at the ioctl copy sites.
+ */
+int obmm_export_pool_validate_spec(const struct obmm_export_pool_spec *spec,
+				   u64 mem_size, bool check_total,
+				   u64 *total_size);
+
 /* Creation: each creator returns an object with refcnt == 1 (the existence
  * reference) or an ERR_PTR. @remote/@preimport are pre-validated in
  * obmm_import.c, so the creator switches only on booleans; the restricted
