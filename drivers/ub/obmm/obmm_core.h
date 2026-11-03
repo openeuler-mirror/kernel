@@ -103,6 +103,10 @@ struct obmm_region {
 	const struct attribute_group *sysfs_identity_group;
 
 	refcount_t refcnt;
+	/* OR of attached backends' mem_cap while entitled fds could exist:
+	 * the open-time entitlement gate, deflated at the shrink points.
+	 */
+	u32 promised_cap;
 
 	/* the total size of all memory segments included in meminfo */
 	u64 mem_size;
@@ -123,10 +127,6 @@ struct obmm_region {
 	atomic_t mmap_count;
 	/* open fds holding cacheability entitlements */
 	atomic_t fd_count;
-	/* OR of attached backends' mem_cap while entitled fds could exist:
-	 * the open-time entitlement gate, deflated at the shrink points.
-	 */
-	u32 promised_cap;
 
 	/* MEMID_{regionid} iomem leaf of the CURRENT import backend;
 	 * attach/detach-managed (obmm_backend.c); NULL for export backends.
@@ -147,6 +147,15 @@ struct obmm_region {
 	 */
 	struct obmm_backend *switch_old;
 
+	/* Cross-process zap channel: the first open caches the device node's
+	 * address_space and igrabs its inode so unmap_mapping_range() outlives
+	 * unlink; iput in uninit_obmm_region(). Kept ahead of switch_lock so
+	 * the rwsem's count and owner share a cacheline with each other and
+	 * not with the hot refcount/mmap counters.
+	 */
+	struct address_space *i_mapping;
+	struct inode *i_inode;
+
 	/* switch machinery: switch_state is written under switch_lock(write)
 	 * except the teardown force-strand's lock-free STRANDED publish, and is
 	 * read with READ_ONCE; the rwsem serializes the fault gate against
@@ -155,6 +164,11 @@ struct obmm_region {
 	 */
 	struct rw_semaphore switch_lock;
 	enum obmm_switch_state switch_state;
+	/* gap generation, bumped by every begin under state_mutex +
+	 * switch_lock(write): a gap-scoped VMA is served only in the
+	 * generation its mmap tagged it with (vm_private_data).
+	 */
+	u32 switch_generation;
 	wait_queue_head_t switch_wqh;
 	struct work_struct switch_work;
 	bool switch_finish_success;
@@ -162,22 +176,6 @@ struct obmm_region {
 	bool switch_old_mapped;
 	bool switch_new_mapped;
 	int switch_flush_result;
-	/* gap generation, bumped by every begin under state_mutex +
-	 * switch_lock(write): a gap-scoped VMA is served only in the
-	 * generation its mmap tagged it with (vm_private_data).
-	 */
-	u32 switch_generation;
-
-	/* Cross-process zap channel: the first open caches the device node's
-	 * address_space and igrabs its inode so unmap_mapping_range() outlives
-	 * unlink; iput in uninit_obmm_region().
-	 */
-	struct address_space *i_mapping;
-	struct inode *i_inode;
-
-	/* staged priv: committed by the finisher's success branch, else lost */
-	unsigned int switch_pending_priv_len;
-	unsigned char switch_pending_priv[OBMM_MAX_PRIV_LEN];
 
 	struct obmm_ownership_info *ownership_info;
 	/* protect ownership_info and serialize concurrent page table change requests */
@@ -185,6 +183,10 @@ struct obmm_region {
 
 	/* regions are chained into a list for management */
 	struct list_head node;
+
+	/* staged priv: committed by the finisher's success branch, else lost */
+	unsigned int switch_pending_priv_len;
+	unsigned char switch_pending_priv[OBMM_MAX_PRIV_LEN];
 
 	unsigned int priv_len;
 	/* sequences priv against the finisher's commit for the lockless sysfs
