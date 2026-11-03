@@ -2112,7 +2112,6 @@ ubcore_import_jfr_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 	struct ubcore_vtpn *vtpn = NULL;
 	struct ubcore_tpid_reuse *tpid_reuse;
 	int ret;
-	tpid_reuse = (struct ubcore_tpid_reuse *)active_tp_cfg->tpid_reuse;
 
 	ubcore_log_info_rl("Enter import jfr ex.\n");
 
@@ -2120,6 +2119,8 @@ ubcore_import_jfr_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 		!dev->ops->unimport_jfr || !cfg || !active_tp_cfg ||
 		dev->attr.dev_cap.max_eid_cnt <= cfg->eid_index)
 		return ERR_PTR(-EINVAL);
+
+	tpid_reuse = (struct ubcore_tpid_reuse *)active_tp_cfg->tpid_reuse;
 
 	if (!active_tp_cfg->tpid_reuse) {
 		ubcore_log_info_rl(
@@ -3421,12 +3422,13 @@ ubcore_import_jetty_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 	struct ubcore_vtpn *vtpn = NULL;
 	struct ubcore_tpid_reuse *tpid_reuse;
 	int ret;
-	tpid_reuse = (struct ubcore_tpid_reuse *)active_tp_cfg->tpid_reuse;
 
 	if (!dev || !dev->ops || !dev->ops->import_jetty_ex ||
 	    !dev->ops->unimport_jetty || !cfg || !active_tp_cfg ||
 	    dev->attr.dev_cap.max_eid_cnt <= cfg->eid_index)
 		return ERR_PTR(-EINVAL);
+
+	tpid_reuse = (struct ubcore_tpid_reuse *)active_tp_cfg->tpid_reuse;
 
 	if (!active_tp_cfg->tpid_reuse) {
 		ubcore_log_info_rl(
