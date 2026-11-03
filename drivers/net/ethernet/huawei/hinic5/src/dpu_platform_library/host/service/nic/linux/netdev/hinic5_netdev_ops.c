@@ -2126,7 +2126,7 @@ static int hinic5_xdp_setup(struct hinic5_nic_dev *nic_dev,
 	struct bpf_prog *old_prog = NULL;
 	int max_mtu = hinic5_xdp_max_mtu(nic_dev);
 	int q_id, err = 0;
-
+ 
 	if ((XDP_QPS_NUM_EXPANSION * nic_dev->q_params.num_qps) > nic_dev->max_qps) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
 			  "Failed to setup xdp program, max qps %u is less than double of current qps %u, please reduce current num qps\n",
@@ -2135,7 +2135,7 @@ static int hinic5_xdp_setup(struct hinic5_nic_dev *nic_dev,
 				   "Failed to setup xdp program, max qps is less than double of current qps");
 		return -EINVAL;
 	}
-
+ 
 	if (nic_dev->netdev->mtu > (u32)max_mtu) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
 			  "Failed to setup xdp program, the current MTU %u is larger than max allowed MTU %d\n",
@@ -2144,7 +2144,7 @@ static int hinic5_xdp_setup(struct hinic5_nic_dev *nic_dev,
 				   "MTU too large for loading xdp program");
 		return -EINVAL;
 	}
-
+ 
 	if ((nic_dev->netdev->features & NETIF_F_LRO) != 0) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
 			  "Failed to setup xdp program while LRO is on\n");
@@ -2152,28 +2152,23 @@ static int hinic5_xdp_setup(struct hinic5_nic_dev *nic_dev,
 				   "Failed to setup xdp program while LRO is on");
 		return -EINVAL;
 	}
-
+ 
 	old_prog = xchg(&nic_dev->xdp_prog, prog);
+	if (old_prog)
+		bpf_prog_put(old_prog);
+ 
 	if (!nic_dev->remove_flag && netif_running(nic_dev->netdev)) {
 		err = hinic5_safe_switch_channels(nic_dev);
 		if (err) {
-			goto err_switch_channels;
+			return err;
 		}
 	}
-	for (q_id = 0; q_id < nic_dev->max_qps; q_id++)
-		xchg(&nic_dev->rxqs[q_id].xdp_prog, nic_dev->xdp_prog);
-	if (old_prog)
-		bpf_prog_put(old_prog);
-
-	return 0;
-
-err_switch_channels:
-	xchg(&nic_dev->xdp_prog, old_prog);
+ 
 	for (q_id = 0; q_id < nic_dev->max_qps; q_id++) {
-		xchg(&nic_dev->rxqs[q_id].xdp_prog, old_prog);
-		nic_dev->rxqs[q_id].xdp_headroom_flag = old_prog ? 1 : 0;
+		xchg(&nic_dev->rxqs[q_id].xdp_prog, nic_dev->xdp_prog);
 	}
-	return err;
+ 
+	return 0;
 }
 
 #if defined(HAVE_NDO_BPF)
