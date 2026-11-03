@@ -18,14 +18,25 @@ struct kvm_pvm {
 	struct kvm_pvm_mmu **suser_mmus;
 	size_t suser_mmus_size;
 	size_t suser_mmus_next;
+	/*
+	 * Kernel contexts form a VM-wide pool. vCPUs with matching translation
+	 * regimes share a context; different regimes use independent roots.
+	 * Each vCPU pins the context matching its current guest controls.
+	 */
+	struct kvm_pvm_mmu **skern_mmus;
+	size_t skern_mmus_size;
+	size_t skern_mmus_next;
 	unsigned long invalidate_seq;
 	unsigned int invalidating;
+	phys_addr_t kern_pgd_phys;
+	struct page *kern_pgd_page;
 };
 
 struct kvm_pvm_vcpu {
 	struct kvm_vcpu vcpu;
 	struct kvm_pvm_mmu *suser_mmu;
 	struct rv_timer_cpu timer_cpu;
+	struct kvm_pvm_mmu *skern_mmu;
 };
 
 static inline struct kvm_pvm *kvm_to_pvm(struct kvm *kvm)

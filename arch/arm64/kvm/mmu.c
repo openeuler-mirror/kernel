@@ -1548,7 +1548,8 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	bool tlb_flushed = false;
 	unsigned long mmu_seq;
 	phys_addr_t ipa = result ? result->output : fault_ipa;
-	phys_addr_t map_addr = fault_ipa;
+	phys_addr_t map_addr = result ? kvm_pvm_shadow_s1_addr(fault_ipa) :
+				       fault_ipa;
 	struct kvm *kvm = vcpu->kvm;
 	struct kvm_mmu_memory_cache *memcache = &vcpu->arch.mmu_page_cache;
 	struct vm_area_struct *vma;
@@ -1560,6 +1561,7 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	long vma_pagesize, fault_granule;
 	enum kvm_pgtable_prot prot = KVM_PGTABLE_PROT_R;
 	struct kvm_pgtable *pgt;
+	bool kernel_shadow = result && kvm_pvm_is_kernel_va(fault_ipa);
 	int cache_min_pages = kvm_mmu_cache_min_pages(kvm);
 
 	fault_granule = result ? PAGE_SIZE :
@@ -1727,8 +1729,9 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 #endif
 
 	read_lock(&kvm->mmu_lock);
-	pgt = result ? vcpu_to_pvm(vcpu)->suser_mmu->mmu.pgt :
-		       vcpu->arch.hw_mmu->pgt;
+	pgt = result ? (kernel_shadow ?
+		vcpu_to_pvm(vcpu)->skern_mmu->mmu.pgt :
+		vcpu_to_pvm(vcpu)->suser_mmu->mmu.pgt) : vcpu->arch.hw_mmu->pgt;
 	if (mmu_invalidate_retry(kvm, mmu_seq))
 		goto out_unlock;
 	if (result && mmu_invalidate_retry(kvm, walk_seq))
@@ -1817,8 +1820,12 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	ret = kvm_cvm_map_ipa(kvm, ipa, pfn, vma_pagesize, prot, ret);
 #endif
 
-	/* Successful permission relaxation already completed its local TLBI. */
-	if (is_pvm_mode() && !tlb_flushed && (ret == 0 || ret == -EAGAIN))
+	if (kernel_shadow && !ret)
+		kvm_pvm_set_kern_pgd(vcpu_to_pvm(vcpu)->skern_mmu,
+				     READ_ONCE(pgt->pgd[PTRS_PER_PGD - 1]));
+	/* Kernel root publication still needs context-wide maintenance. */
+	if (is_pvm_mode() && (!tlb_flushed || kernel_shadow) &&
+	    (ret == 0 || ret == -EAGAIN))
 		kvm_call_hyp(__kvm_tlb_flush_vmid, pgt->mmu);
 
 	/* Mark the page dirty only if the fault is handled successfully */
@@ -1839,13 +1846,16 @@ static void handle_access_fault(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 {
 	struct kvm_s2_mmu *mmu;
 	kvm_pte_t pte;
+	u64 va;
 
 	trace_kvm_access_fault(fault_ipa);
 
 	read_lock(&vcpu->kvm->mmu_lock);
-	mmu = result ? &vcpu_to_pvm(vcpu)->suser_mmu->mmu :
-		       vcpu->arch.hw_mmu;
-	pte = kvm_pgtable_stage2_mkyoung(mmu->pgt, fault_ipa);
+	mmu = result ? (kvm_pvm_is_kernel_va(fault_ipa) ?
+		&vcpu_to_pvm(vcpu)->skern_mmu->mmu :
+		&vcpu_to_pvm(vcpu)->suser_mmu->mmu) : vcpu->arch.hw_mmu;
+	va = result ? kvm_pvm_shadow_s1_addr(fault_ipa) : fault_ipa;
+	pte = kvm_pgtable_stage2_mkyoung(mmu->pgt, va);
 	read_unlock(&vcpu->kvm->mmu_lock);
 
 	if (kvm_pte_valid(pte))
@@ -2331,6 +2341,10 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 	 * space addressable by the KVM guest IPA space.
 	 */
 	if ((new->base_gfn + new->npages) > (kvm_phys_size(kvm) >> PAGE_SHIFT))
+		return -EFAULT;
+
+	if (is_pvm_mode() && new->base_gfn + new->npages >
+			    (PVM_SHADOW_S1_KERNEL_BASE >> PAGE_SHIFT))
 		return -EFAULT;
 
 	hva = new->userspace_addr;

@@ -23,6 +23,9 @@ void __init kvm_arm_init_pvm(void);
 #define PVM_GKERNEL_VA_BITS 39
 #define PVM_SHADOW_S1_T0SZ (64 - PVM_GKERNEL_VA_BITS)
 #define PVM_PGTABLE_LEVELS(va) ARM64_HW_PGTABLE_LEVELS(va)
+#define PVM_SHADOW_S1_ADDR_MASK (BIT_ULL(PVM_SHADOW_S1_VA_BITS) - 1)
+#define PVM_SHADOW_S1_KERNEL_BASE \
+	(BIT_ULL(PVM_SHADOW_S1_VA_BITS) - BIT_ULL(PVM_GKERNEL_VA_BITS))
 
 void kvm_arm_destroy_pvm(void);
 

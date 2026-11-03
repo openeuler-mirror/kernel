@@ -70,15 +70,34 @@ struct kvm_s1_trans {
 /* Private wrappers keep PVM metadata out of the public KVM structures. */
 struct kvm_pvm_mmu {
 	struct kvm_s2_mmu mmu;
+	/*
+	 * A keyed context is published for selection when used is set.
+	 * Clearing it starts withdrawal; unmapping may still be in progress
+	 * and holds an active pin until it completes.
+	 * Protected by kvm->mmu_lock, along with active and the context key.
+	 */
 	bool used;
 	unsigned int active;
 	u64 ttbr0;
+	u64 ttbr1;
 	u64 tcr;
 	u64 sctlr;
 	u64 mair;
 	u16 asid;
+	/*
+	 * mmu.pgt owns the guest shadow tables and frees their descendants.
+	 * For a kernel context, kern_pgd is a separate run root containing
+	 * restricted host mappings. Its final slot borrows the guest subtree
+	 * from mmu.pgt->pgd; it does not own that subtree or the host tables.
+	 * Withdraw the borrowed slot and complete TLB invalidation before
+	 * freeing the guest subtree. Free kern_pgd_page only as a root page.
+	 */
+	pgd_t *kern_pgd;
+	phys_addr_t kern_pgd_phys;
+	struct page *kern_pgd_page;
 };
 
+int kvm_pvm_init_mmu(struct kvm *kvm);
 int kvm_pvm_init_vcpu_mmu(struct kvm_vcpu *vcpu);
 void kvm_pvm_destroy_mmu(struct kvm *kvm);
 void kvm_pvm_unmap_all(struct kvm *kvm, bool may_block);
@@ -90,5 +109,8 @@ int kvm_pvm_walk_shadow_s1(struct kvm_vcpu *vcpu, u64 va,
 bool kvm_pvm_s1_access_denied(struct kvm_vcpu *vcpu,
 			      struct kvm_s1_trans *result);
 int kvm_pvm_inject_s1_fault(struct kvm_vcpu *vcpu, u32 fsc);
+u64 kvm_pvm_shadow_s1_addr(u64 va);
+bool kvm_pvm_is_kernel_va(u64 va);
+void kvm_pvm_set_kern_pgd(struct kvm_pvm_mmu *mmu, u64 pte);
 
 #endif /* __ARM64_KVM_PVM_MMU_H__ */
