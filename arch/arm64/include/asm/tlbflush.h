@@ -188,20 +188,17 @@ enum tlb_flush_scope {
 static inline enum tlb_flush_scope flush_tlb_begin(struct mm_struct *mm,
 						   unsigned long *flags)
 {
-	if (!system_supports_tlbid()) {
-		dsb(ishst);
-		return TLB_FLUSH_SCOPE_BROADCAST;
-	}
-
 	local_irq_save(*flags);
+	dsb(ishst);
 
-	if (cpumask_any_but(mm_cpumask(mm), smp_processor_id()) >= nr_cpu_ids) {
-		dsb(nshst);
+	if (cpumask_any_but(mm_cpumask(mm), smp_processor_id()) >= nr_cpu_ids)
 		return TLB_FLUSH_SCOPE_LOCAL;
-	} else {
-		dsb(ishst);
+
+	if (system_supports_tlbid())
 		return TLB_FLUSH_SCOPE_DOMAIN;
-	}
+
+	local_irq_restore(*flags);
+	return TLB_FLUSH_SCOPE_BROADCAST;
 }
 
 static inline void flush_tlb_end(enum tlb_flush_scope scope, unsigned long flags)
@@ -632,7 +629,8 @@ static inline void __flush_tlb_range_nosync(struct mm_struct *mm,
 	asid = ASID(mm);
 
 	scope = flush_tlb_begin(mm, &flags);
-	if (scope == TLB_FLUSH_SCOPE_DOMAIN) {
+	if (IS_ENABLED(CONFIG_ARM64_TLBID) &&
+	    scope == TLB_FLUSH_SCOPE_DOMAIN) {
 		domain = pick_best_domain(mm_cpumask(mm));
 
 		if (last_level)
@@ -694,7 +692,8 @@ static inline void __flush_tlb_page_nosync(struct mm_struct *mm,
 	dsb(ishst);
 
 	scope = flush_tlb_begin(mm, &flags);
-	if (scope == TLB_FLUSH_SCOPE_DOMAIN) {
+	if (IS_ENABLED(CONFIG_ARM64_TLBID) &&
+	    scope == TLB_FLUSH_SCOPE_DOMAIN) {
 		domain = pick_best_domain(mm_cpumask(mm));
 
 		lo = __tlbip_va_lo(asid, domain, 0);
