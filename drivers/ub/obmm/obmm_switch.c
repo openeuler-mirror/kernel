@@ -476,6 +476,7 @@ int obmm_switch_begin(struct obmm_cmd_switch_begin *param,
 	reg->switch_keep_old_alive = (param->flags & OBMM_SWITCH_FLAG_KEEP_OLD_ALIVE) != 0;
 	reg->switch_old_mapped = false;
 	reg->switch_new_mapped = false;
+	reg->switch_generation++;	/* scopes this gap's OLD/NEW VMAs */
 
 	obmm_zap_region_mappings(reg);	/* zap #1 */
 
@@ -692,9 +693,8 @@ void obmm_switch_finish_fn(struct work_struct *work)
 	cur = reg->backend;			/* == the new backend */
 	old = reg->switch_old;
 
-	/*
-	 * Terminal zap: unconditional (PTEs against the old backend must
-	 * not survive the terminal flip).
+	/* Terminal zap: unconditional; gap-scoped mappings carry PTEs that
+	 * must not survive the terminal flip.
 	 */
 	obmm_zap_region_mappings(reg);
 
