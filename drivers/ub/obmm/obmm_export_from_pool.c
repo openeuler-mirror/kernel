@@ -205,7 +205,7 @@ static int calculate_export_region_size(unsigned long *total_size,
 		       OBMM_MAX_LOCAL_NUMA_NODES, spec->node_count);
 		return -E2BIG;
 	}
-	if (spec->pxm_numa > OBMM_MAX_LOCAL_NUMA_NODES ||
+	if (spec->pxm_numa >= OBMM_MAX_LOCAL_NUMA_NODES ||
 	    spec->pxm_numa < 0) {
 		pr_err("Invalid pxm_numa %d\n", spec->pxm_numa);
 		return -EINVAL;
@@ -405,11 +405,11 @@ int obmm_export_from_pool(struct obmm_cmd_export *cmd_export)
 
 	print_export_param(cmd_export);
 
-	/* baseline width guard: the uapi length is __u64 and must be checked
-	 * before pool_spec_from_cmd narrows it to the spec's u32 node_count
+	/* Check the u64 length before pool_spec_from_cmd truncates it to u32;
+	 * the -E2BIG guard would otherwise miss 2^32 + n and accept n nodes.
 	 */
 	if (cmd_export->length > OBMM_MAX_LOCAL_NUMA_NODES) {
-		pr_err("Size list is too long: max=%d, actual_length=%lld\n",
+		pr_err("Size list is too long: max=%d, actual_length=%llu\n",
 		       OBMM_MAX_LOCAL_NUMA_NODES, cmd_export->length);
 		return -E2BIG;
 	}
@@ -433,18 +433,6 @@ int obmm_export_from_pool(struct obmm_cmd_export *cmd_export)
 	if (ret)
 		goto out_free_reg;
 
-	/* baseline order: the vendor blob is validated and copied before the
-	 * region id and device exist, then handed off to the creator below
-	 * (obmm_backend.h contract)
-	 */
-	vendor = dup_export_vendor(cmd_export->vendor_info, cmd_export->vendor_len);
-	if (IS_ERR(vendor)) {
-		ret = PTR_ERR(vendor);
-		goto out_free_reg;
-	}
-	spec.vendor_info = vendor;
-	spec.vendor_len = cmd_export->vendor_len;
-
 	ret = init_obmm_region(reg);
 	if (ret)
 		goto out_free_reg;
@@ -453,6 +441,15 @@ int obmm_export_from_pool(struct obmm_cmd_export *cmd_export)
 	ret = obmm_shm_dev_init_device(reg);
 	if (ret)
 		goto out_unit_reg;
+
+	/* hand-off to the creator below, which consumes it on every path (obmm_backend.h) */
+	vendor = dup_export_vendor(cmd_export->vendor_info, cmd_export->vendor_len);
+	if (IS_ERR(vendor)) {
+		ret = PTR_ERR(vendor);
+		goto out_dev_put;
+	}
+	spec.vendor_info = vendor;
+	spec.vendor_len = cmd_export->vendor_len;
 
 	be = obmm_export_pool_backend_create(&spec, reg->mem_size);
 	if (IS_ERR(be)) {
@@ -484,7 +481,6 @@ out_dev_put:
 out_unit_reg:
 	uninit_obmm_region(reg);
 out_free_reg:
-	kfree(spec.vendor_info);
 	kfree(reg);
 	return ret;
 }

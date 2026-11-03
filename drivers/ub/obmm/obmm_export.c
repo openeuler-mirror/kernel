@@ -58,8 +58,10 @@ int setup_ummu(struct obmm_export_common *exp)
 	int retval;
 
 	retval = fill_ummu_info(&attr, exp);
-	if (retval)
+	if (retval) {
+		pr_err("Failed to fill UMMU info, ret=%pe\n", ERR_PTR(retval));
 		return retval;
+	}
 
 	/* register the memory region through UMMU */
 	pr_debug("call ummu_core_alloc_tdev(), priv_len=%u, tid=%u\n", attr.priv_len, tokenid);
@@ -175,20 +177,16 @@ int obmm_unexport(const struct obmm_cmd_unexport *cmd_unexport)
 		goto err_unexport;
 	}
 
-	/*
-	 * Baseline failure policy: a release failure aborts the teardown
-	 * with that errno verbatim and re-activates the region, so the
-	 * unexport stays retryable.
-	 */
-	ret = obmm_region_release_backend(reg, true);
+	ret = obmm_region_teardown(reg);
 	if (ret)
-		goto err_unexport;
-
-	obmm_region_teardown(reg);
+		goto err_teardown_aborted;
 
 	pr_debug("%s: mem_id=%llu completed.\n", __func__, cmd_unexport->mem_id);
 	return 0;
 
+err_teardown_aborted:
+	pr_err("%s: mem_id=%llu failed, %pe.\n", __func__, cmd_unexport->mem_id, ERR_PTR(ret));
+	return ret;
 err_unexport:
 	activate_obmm_region(reg);
 	pr_err("%s: mem_id=%llu failed, %pe.\n", __func__, cmd_unexport->mem_id, ERR_PTR(ret));

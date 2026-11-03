@@ -202,10 +202,11 @@ out_unwind:
  * Error policy matrix (encoded ONCE here; the call sites pick a row):
  *
  *                       detach failed                put/destroy failed
- * unimport/unexport      abort: detach errno          abort: destroy errno
- * (propagate == true)    verbatim, backend           verbatim; the backend
- *                        leaked alive                object is freed, its
- *                                                    resources leak loudly
+ * unimport/unexport      detach errno verbatim,       destroy errno
+ * (propagate == true)    backend leaked alive;        verbatim; the backend
+ *                        shell teardown completes    object is freed, its
+ *                        (deregister + uninit +      resources leak loudly;
+ *                        device put)                 shell teardown completes
  * register-failure       leak + pr_err, return 0:    put, pr_warn, return 0:
  * unwinds                the register errno stays    the register errno stays
  * (propagate == false)   the ioctl error             the ioctl error
