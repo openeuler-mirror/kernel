@@ -29,7 +29,7 @@ int obmm_backend_attach(struct obmm_region *reg, struct obmm_backend *be)
 	 */
 	lockdep_assert_held(&reg->state_mutex);
 
-	if (WARN_ON_ONCE(reg->backend || be->shell))
+	if (WARN_ON_ONCE(rcu_access_pointer(reg->backend) || be->shell))
 		return -EINVAL;
 
 	if (WARN_ON_ONCE(be->mem_size != reg->mem_size))
@@ -52,7 +52,7 @@ int obmm_backend_attach(struct obmm_region *reg, struct obmm_backend *be)
 	refcount_inc(&be->refcnt);
 	/* only after the fallible step: a failed attach must not inflate it */
 	reg->promised_cap |= be->mem_cap;
-	reg->backend = be;
+	rcu_assign_pointer(reg->backend, be);
 	reg->memdev_res = memdev_res;
 
 	return 0;
@@ -67,7 +67,8 @@ int obmm_backend_attach(struct obmm_region *reg, struct obmm_backend *be)
  */
 struct obmm_backend *obmm_backend_detach(struct obmm_region *reg, int *errp)
 {
-	struct obmm_backend *be = reg->backend;
+	struct obmm_backend *be = rcu_dereference_protected(reg->backend,
+							   lockdep_is_held(&reg->state_mutex));
 
 	lockdep_assert_held(&reg->state_mutex);
 
@@ -94,7 +95,7 @@ struct obmm_backend *obmm_backend_detach(struct obmm_region *reg, int *errp)
 	}
 
 	be->shell = NULL;
-	reg->backend = NULL;
+	rcu_assign_pointer(reg->backend, NULL);
 	/*
 	 * Drop only the attachment reference; the caller's existence reference
 	 * keeps @be alive, so refcount_dec() must never reach zero here.
@@ -112,6 +113,12 @@ static int obmm_backend_destroy(struct obmm_backend *be)
 	int ret;
 
 	WARN_ON_ONCE(be->shell);
+
+	/*
+	 * Lockless covers_pa/sysfs readers may hold @be; drain them so both the
+	 * resources ops->destroy releases and the plain free below are safe.
+	 */
+	synchronize_rcu();
 
 	ret = be->ops->destroy(be);
 	if (ret)

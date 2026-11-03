@@ -32,6 +32,16 @@
 #include "obmm_export.h"
 #include "obmm_switch.h"
 #include "obmm_switch_logic.h"
+#include "obmm_sysfs.h"
+
+/* The sysfs attribute prints the private enum; the uapi defines above must
+ * not drift from it.
+ */
+static_assert((int)OBMM_SWITCH_IDLE == OBMM_SWITCH_STATE_IDLE);
+static_assert((int)OBMM_SWITCH_SWAPPING == OBMM_SWITCH_STATE_SWAPPING);
+static_assert((int)OBMM_SWITCH_AWAIT_READY == OBMM_SWITCH_STATE_AWAIT_READY);
+static_assert((int)OBMM_SWITCH_FINISHING == OBMM_SWITCH_STATE_FINISHING);
+static_assert((int)OBMM_SWITCH_STRANDED == OBMM_SWITCH_STATE_STRANDED);
 
 static int obmm_copy_priv_from_user(unsigned char *dst, const void __user *src,
 				    unsigned int priv_len)
@@ -53,9 +63,14 @@ static void stage_switch_priv(struct obmm_region *reg, const unsigned char *priv
 /* Sole commit point: priv goes live before the IDLE publish, never mid-gap. */
 static void commit_switch_priv(struct obmm_region *reg)
 {
+	/* non-preemptible: a preempted writer stalls the lockless readers */
+	preempt_disable();
+	write_seqcount_begin(&reg->priv_seq);
 	memcpy(reg->priv, reg->switch_pending_priv, reg->switch_pending_priv_len);
 	reg->priv_len = reg->switch_pending_priv_len;
 	reg->switch_pending_priv_len = 0;
+	write_seqcount_end(&reg->priv_seq);
+	preempt_enable();
 }
 
 static void discard_switch_priv(struct obmm_region *reg)
@@ -134,7 +149,7 @@ static void obmm_switch_strand_locked(struct obmm_region *reg)
 	lockdep_assert_held(&reg->state_mutex);
 	lockdep_assert_held_write(&reg->switch_lock);
 
-	reg->backend = NULL;
+	rcu_assign_pointer(reg->backend, NULL);
 	reg->switch_old = NULL;
 	reg->switch_keep_old_alive = false;
 	reg->switch_old_mapped = false;
@@ -145,9 +160,14 @@ static void obmm_switch_strand_locked(struct obmm_region *reg)
 
 void obmm_promised_cap_shrink_maybe(struct obmm_region *reg)
 {
-	if (!atomic_read(&reg->fd_count) && !atomic_read(&reg->mmap_count) &&
-	    reg->backend)
-		reg->promised_cap = reg->backend->mem_cap;
+	if (!atomic_read(&reg->fd_count) && !atomic_read(&reg->mmap_count)) {
+		struct obmm_backend *be =
+			rcu_dereference_protected(reg->backend,
+						  lockdep_is_held(&reg->state_mutex));
+
+		if (be)
+			reg->promised_cap = be->mem_cap;
+	}
 }
 
 /* Defensive, publish-only strand for teardown: drain a pending or running
@@ -324,10 +344,10 @@ int obmm_switch_begin(struct obmm_cmd_switch_begin *param,
 	unsigned char priv_tmp[OBMM_MAX_PRIV_LEN];
 	unsigned int priv_len;
 	void *vendor;
-	enum obmm_switch_state state;
 	u32 saved_promised;
 	bool old_flush_wb;	/* window-2 flush strength, captured below */
 	bool rollback_wb;	/* rollback strength, same capture point */
+	enum obmm_switch_state state;
 	int ret, fret_local = 0;
 
 	if (!capable(CAP_SYS_ADMIN)) {
@@ -438,7 +458,7 @@ int obmm_switch_begin(struct obmm_cmd_switch_begin *param,
 	/* generation boundary: a rollback below must not keep a previous
 	 * generation's errno (first-errno guard)
 	 */
-	reg->switch_flush_result = 0;
+	WRITE_ONCE(reg->switch_flush_result, 0);
 
 	saved_promised = reg->promised_cap;		/* rollback restore point */
 	/* Authoritative attach validation: the backend must serve every
@@ -530,8 +550,8 @@ int obmm_switch_begin(struct obmm_cmd_switch_begin *param,
 	mutex_lock(&reg->state_mutex);
 	down_write(&reg->switch_lock);
 	WARN_ON_ONCE(READ_ONCE(reg->switch_state) != OBMM_SWITCH_SWAPPING);
-	if (fret_local)				/* staged store, under locks (KCSAN) */
-		reg->switch_flush_result = fret_local;
+	/* staged store + log, under locks (KCSAN) */
+	switch_record_flush_err(reg, fret_local, "old-backend gap flush failed");
 	/* No cap re-validation: vacuous after the attach check above. */
 
 	obmm_switch_stage_outputs(param, new_be);	/* tokenid/uba into kernel copy */
@@ -602,7 +622,6 @@ int obmm_switch_end(const struct obmm_cmd_switch_end *param)
 		       param->success, param->reserved);
 		return -EINVAL;
 	}
-
 	reg = switch_lookup_region(param->mem_id);
 	if (IS_ERR(reg))
 		return PTR_ERR(reg);
@@ -661,7 +680,9 @@ out_put:
  * switch_end gets -ESTALE; the flushes chunk under a global cache semaphore
  * with msleep retries and must not hold the region locks, which would stall
  * faults, mmap/ioctl and switch_end; the second section records the flush
- * errnos and publishes the terminal state. Across the unlocked window the
+ * errnos and publishes the terminal state. The window also re-keys the
+ * sysfs identity group, whose typed readers are still -EAGAIN-gated by
+ * FINISHING. Across the unlocked window the
  * transitional state blocks every PTE installer and the gap reference blocks
  * unimport, so nothing observes a half-finished transition.
  */
@@ -670,7 +691,7 @@ void obmm_switch_finish_fn(struct work_struct *work)
 	struct obmm_region *reg = container_of(work, struct obmm_region, switch_work);
 	struct obmm_backend *cur, *old, *put_after[2] = { NULL };
 	struct switch_flush_stage flushes[2] = { };
-	bool success, stranded = false;
+	bool success, stranded = false, restored = false;
 	enum obmm_switch_state state;
 	int nput = 0, nflush = 0, i, ret;
 
@@ -690,7 +711,8 @@ void obmm_switch_finish_fn(struct work_struct *work)
 		WRITE_ONCE(reg->switch_state, OBMM_SWITCH_FINISHING);
 
 	success = reg->switch_finish_success;	/* mutex-ordered read */
-	cur = reg->backend;			/* == the new backend */
+	cur = rcu_dereference_protected(reg->backend,
+					  lockdep_is_held(&reg->state_mutex));
 	old = reg->switch_old;
 
 	/* Terminal zap: unconditional; gap-scoped mappings carry PTEs that
@@ -724,8 +746,11 @@ void obmm_switch_finish_fn(struct work_struct *work)
 				.what = "new-backend INVAL failed on abort" };
 		obmm_backend_detach(reg, NULL);
 		put_after[nput++] = cur;
-		if (reg->switch_keep_old_alive &&
-		    obmm_backend_attach(reg, old) == 0) {
+		if (reg->switch_keep_old_alive) {
+			ret = obmm_backend_attach(reg, old);
+			restored = !ret;
+		}
+		if (restored) {
 			/* Restore the OLD OBJECT; a failed re-attach strands the region. */
 			if (reg->switch_old_mapped) {	/* symmetric WB_INVAL */
 				flushes[nflush++] = (struct switch_flush_stage){
@@ -741,6 +766,10 @@ void obmm_switch_finish_fn(struct work_struct *work)
 			/* Keep-old-alive off or re-attach failed: strand_locked
 			 * NULLs switch_old; the staged pointer is the sole ref put.
 			 */
+			if (reg->switch_keep_old_alive)
+				pr_err("switch: mem_id=%d abort could not\n"
+				       "restore old backend, ret=%pe\n",
+				       reg->regionid, ERR_PTR(ret));
 			if (reg->switch_old) {
 				/* Dirty NORMAL-mode lines must not die with the
 				 * put below: stage the same WB_INVAL the commit
@@ -767,6 +796,13 @@ void obmm_switch_finish_fn(struct work_struct *work)
 		flushes[i].ret = flushes[i].be->ops->flush_range(
 			flushes[i].be, 0, flushes[i].be->mem_size,
 			flushes[i].cache_ops);
+
+	/* Re-key the identity group before the terminal publish: typed readers
+	 * still see -EAGAIN in FINISHING, so IDLE never exposes the new
+	 * backend's type next to the old identity directory. No-op on abort
+	 * (restore keeps the group) and on strand (no backend).
+	 */
+	obmm_region_sysfs_update_identity(reg);
 
 	mutex_lock(&reg->state_mutex);
 	down_write(&reg->switch_lock);

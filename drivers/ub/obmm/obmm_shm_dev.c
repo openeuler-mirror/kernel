@@ -64,7 +64,7 @@ static void obmm_vma_close(struct vm_area_struct *vma)
 	}
 
 	if (atomic_dec_and_test(&reg->mmap_count)) {
-		reg->mmap_mode = OBMM_MMAP_INIT;
+		WRITE_ONCE(reg->mmap_mode, OBMM_MMAP_INIT);
 		/* promised-cap shrink evaluation point (paired with fops_release) */
 		obmm_promised_cap_shrink_maybe(reg);
 	}
@@ -217,8 +217,7 @@ static vm_fault_t obmm_vma_fault_target(struct vm_fault *vmf,
 			up_read(&reg->switch_lock);
 			mmap_read_unlock(vmf->vma->vm_mm);
 			(void)wait_event_killable(reg->switch_wqh,
-					!obmm_switch_state_transitional(
-						READ_ONCE(reg->switch_state)));
+					!region_switch_in_flight(reg));
 			put_obmm_region(reg);
 			/* Normal wake and SIGKILL both return RETRY after the
 			 * unlock above; SIGBUS would make the arch fault path
@@ -235,8 +234,7 @@ static vm_fault_t obmm_vma_fault_target(struct vm_fault *vmf,
 		 */
 		up_read(&reg->switch_lock);
 		(void)wait_event_killable(reg->switch_wqh,
-				!obmm_switch_state_transitional(
-					READ_ONCE(reg->switch_state)));
+				!region_switch_in_flight(reg));
 		lock_ret = down_read_killable(&reg->switch_lock);
 		if (lock_ret) {	/* fatal signal: no PTE installed */
 			put_obmm_region(reg);
@@ -261,7 +259,8 @@ static vm_fault_t obmm_vma_fault_target(struct vm_fault *vmf,
 	else if (scoped && target == OBMM_SWITCH_MAP_OLD)
 		be = reg->switch_old;	/* the detached side of the gap */
 	else
-		be = reg->backend;
+		be = rcu_dereference_protected(reg->backend,
+					       lockdep_is_held(&reg->switch_lock));
 
 	if (!be || !be->ops->fault) {	/* STRANDED or a non-mmappable backend */
 		pr_debug_ratelimited("fault: mem_id=%d has no usable backend (state=%d), SIGBUS\n",
@@ -319,6 +318,7 @@ static int obmm_vma_access(struct vm_area_struct *vma, unsigned long addr,
 	void *kaddr;
 	bool is_vmap;
 	int offset = offset_in_page(addr);
+	enum obmm_switch_state state;
 	int ret;
 
 	if (!(vma->vm_flags & (VM_IO | VM_PFNMAP)))
@@ -331,12 +331,19 @@ static int obmm_vma_access(struct vm_area_struct *vma, unsigned long addr,
 
 	mutex_lock(&reg->state_mutex);
 
-	ret = obmm_switch_state_gate_err(READ_ONCE(reg->switch_state));
-	if (ret)
+	state = READ_ONCE(reg->switch_state);
+	ret = obmm_switch_state_gate_err(state);
+	if (ret) {
+		pr_debug_ratelimited("access: mem_id=%d blocked by switch (state=%d), ret=%pe\n",
+				     reg->regionid, state, ERR_PTR(ret));
 		goto out_unlock;
+	}
 
-	be = reg->backend;
+	be = rcu_dereference_protected(reg->backend,
+			       lockdep_is_held(&reg->state_mutex));
 	if (!be) {
+		pr_debug_ratelimited("access: mem_id=%d has no backend, ret=%pe\n",
+				     reg->regionid, ERR_PTR(-EINVAL));
 		ret = -EINVAL;
 		goto out_unlock;
 	}
@@ -346,14 +353,20 @@ static int obmm_vma_access(struct vm_area_struct *vma, unsigned long addr,
 
 	/* the page may not be populated yet: ask the backend for the PA */
 	ext.offset = (vma->vm_pgoff << PAGE_SHIFT) + (addr - vma->vm_start);
-	if (be->ops->query(be, &ext)) {
-		ret = -EINVAL;
+	ret = be->ops->query(be, &ext);
+	if (ret) {
+		pr_debug_ratelimited("access: mem_id=%d offset=%#llx query failed, ret=%pe\n",
+				     reg->regionid, ext.offset, ERR_PTR(ret));
+		ret = -EINVAL;		/* keep the ptrace ABI; the cause is logged */
 		goto out_unlock;
 	}
 	pfn = ext.pa >> PAGE_SHIFT;
 
 	/* covers_pa's @out is nullable; range match precedes the channel */
 	if (!be->ops->covers_pa(be, pfn << PAGE_SHIFT, PAGE_SIZE, NULL)) {
+		pr_debug_ratelimited("access: mem_id=%d pa=%#lx not covered by the backend, ret=%pe\n",
+				     reg->regionid, pfn << PAGE_SHIFT,
+				     ERR_PTR(-EINVAL));
 		ret = -EINVAL;
 		goto out_unlock;
 	}
@@ -678,6 +691,7 @@ static int obmm_mmap_parse_offset(struct obmm_region *reg,
 static int obmm_shm_fops_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	struct obmm_region *reg = (struct obmm_region *)file->private_data;
+	struct obmm_backend *be;
 	unsigned long size, offset;
 	vm_flags_t set_flags;
 	uint8_t mem_state;
@@ -764,8 +778,10 @@ static int obmm_shm_fops_mmap(struct file *file, struct vm_area_struct *vma)
 	/* Mode-select capability check at every INIT->mode selection, including
 	 * after a keep-old-alive abort restored a weaker backend (STRANDED: none).
 	 */
-	if (old_mmap_mode == OBMM_MMAP_INIT && reg->backend &&
-	    !obmm_mmap_cap_check(reg->backend->mem_cap,
+	be = rcu_dereference_protected(reg->backend,
+			       lockdep_is_held(&reg->state_mutex));
+	if (old_mmap_mode == OBMM_MMAP_INIT && be &&
+	    !obmm_mmap_cap_check(be->mem_cap,
 				 reg->switch_old ? reg->switch_old->mem_cap : 0,
 				 reg->switch_old != NULL, o_sync)) {
 		pr_err("mmap region %d: backend capability cannot serve the selected mode\n",
@@ -774,7 +790,8 @@ static int obmm_shm_fops_mmap(struct file *file, struct vm_area_struct *vma)
 		goto err_mutex_unlock;
 	}
 	if (reg->mmap_mode == OBMM_MMAP_INIT)
-		reg->mmap_mode = o_sync ? OBMM_MMAP_OSYNC : OBMM_MMAP_NORMAL;
+		WRITE_ONCE(reg->mmap_mode,
+			   o_sync ? OBMM_MMAP_OSYNC : OBMM_MMAP_NORMAL);
 
 	if (switch_map != OBMM_SWITCH_MAP_NONE) {
 		ret = obmm_validate_switch_gap_mmap(reg, switch_map,
@@ -819,7 +836,7 @@ static int obmm_shm_fops_mmap(struct file *file, struct vm_area_struct *vma)
 	return 0;
 
 reset_cur_osync:
-	reg->mmap_mode = old_mmap_mode;
+	WRITE_ONCE(reg->mmap_mode, old_mmap_mode);
 err_mutex_unlock:
 	/* Unfreeze while state_mutex is still held: past the unlock a
 	 * concurrent mmap can adopt the frozen value, and this late reset
@@ -1230,16 +1247,16 @@ const struct file_operations obmm_shm_fops = { .owner = THIS_MODULE,
 static void obmm_shm_dev_release(struct device *dev)
 {
 	struct obmm_region *reg = container_of(dev, struct obmm_region, device);
+	struct obmm_backend *be;
 
-	/*
-	 * Defensive: the backend must have been detached before
-	 * the shell's last reference dropped. Warn and drop the attachment
-	 * reference if it was not - the backend may then leak, but the
-	 * violation is surfaced instead of silently freeing live state.
+	/* Defensive: the backend must already be detached; drop the attachment
+	 * reference if not -- it may leak rather than free live state.
 	 */
-	if (WARN_ON_ONCE(reg->backend)) {
+	/* region is being freed: exclusive access, no lock needed */
+	be = rcu_dereference_protected(reg->backend, true);
+	if (WARN_ON_ONCE(be)) {
 		pr_err("memid=%d: backend still attached at region free\n", reg->regionid);
-		obmm_backend_put(reg->backend);
+		obmm_backend_put(be);
 	}
 	kfree(reg);
 
@@ -1268,6 +1285,7 @@ int obmm_shm_dev_init_device(struct obmm_region *reg)
 	reg->device.devt = MKDEV(MAJOR(obmm_devt), reg->regionid);
 	reg->device.release = obmm_shm_dev_release;
 	reg->device.groups = obmm_region_get_attr_groups(reg);
+	reg->sysfs_identity_group = obmm_region_identity_group(reg);
 	reg->device.parent = obmm_shm_rootdev;
 	device_initialize(&reg->device);
 

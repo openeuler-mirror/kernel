@@ -18,6 +18,8 @@
 #include <linux/refcount.h>
 #include <linux/numa_remote.h>
 #include <linux/rwsem.h>
+#include <linux/seqlock.h>
+#include <linux/rcupdate.h>
 #include <linux/scatterlist.h>
 #include <linux/wait.h>
 #include <linux/workqueue.h>
@@ -48,6 +50,7 @@ extern size_t __obmm_memseg_size;
 struct ubmem_resource;
 struct resource;
 struct obmm_backend;
+struct attribute_group;
 
 enum obmm_region_type {
 	OBMM_EXPORT_REGION,
@@ -96,6 +99,8 @@ struct obmm_region {
 
 	struct cdev cdevice;
 	struct device device;
+	/* identity sysfs group (import_info/ or export_info/) tracks backend */
+	const struct attribute_group *sysfs_identity_group;
 
 	refcount_t refcnt;
 
@@ -128,11 +133,13 @@ struct obmm_region {
 	 */
 	struct resource *memdev_res;
 
-	/* current backend; written under state_mutex (attach/detach), read
-	 * under state_mutex (mmap/close/query/sysfs). NULL while detached;
-	 * every dispatch site NULL-guards it.
+	/* current backend: written under state_mutex; read under state_mutex,
+	 * the fault gate's switch_lock(read) or rcu_read_lock (lockless sysfs
+	 * views), and unlocked at region free; RCU-published on swap and freed
+	 * only after a grace period; NULL while detached, dispatch sites
+	 * NULL-guard it.
 	 */
-	struct obmm_backend *backend;
+	struct obmm_backend __rcu *backend;
 
 	/* old backend held across a switch gap: detach keeps its existence
 	 * reference so a keep-old-alive abort can restore it. state_mutex +
@@ -180,6 +187,10 @@ struct obmm_region {
 	struct list_head node;
 
 	unsigned int priv_len;
+	/* sequences priv against the finisher's commit for the lockless sysfs
+	 * views; writers hold state_mutex
+	 */
+	seqcount_t priv_seq;
 	unsigned char priv[OBMM_MAX_PRIV_LEN];
 };
 
@@ -198,6 +209,11 @@ static inline bool region_memory_from_user(const struct obmm_region *reg)
 static inline bool region_preimport(const struct obmm_region *reg)
 {
 	return reg->flags & OBMM_REGION_FLAG_PREIMPORT;
+}
+/* A switch in flight: identity/typed views and query ioctls answer -EAGAIN. */
+static inline bool region_switch_in_flight(const struct obmm_region *reg)
+{
+	return obmm_switch_state_transitional(READ_ONCE(reg->switch_state));
 }
 
 /* per-node memseg lists of an export-pool backend (obmm_backend.h) */
@@ -230,8 +246,6 @@ void put_obmm_region(struct obmm_region *region);
  * promise deflates to the attached backend's own capability.
  */
 void obmm_promised_cap_shrink_maybe(struct obmm_region *region);
-
-void obmm_region_flush(struct obmm_region *reg, unsigned long cache_ops);
 
 /* Extended information of a byte address */
 struct obmm_ext_addr {
