@@ -17,6 +17,7 @@
 #include "obmm_core.h"
 #include "obmm_backend.h"
 #include "obmm_export.h"
+#include "obmm_switch.h"
 #include "obmm_shm_dev.h"
 
 int export_flags_to_region_flags(unsigned long *region_flags, unsigned long user_flags)
@@ -155,7 +156,7 @@ void *dup_export_vendor(const void __user *vendor_info, unsigned int vendor_len)
  */
 int obmm_unexport(const struct obmm_cmd_unexport *cmd_unexport)
 {
-	int ret;
+	int ret = 0;
 	struct obmm_region *reg;
 
 	pr_debug("%s: mem_id=%llu, flags=%#llx.\n", __func__, cmd_unexport->mem_id,
@@ -171,8 +172,8 @@ int obmm_unexport(const struct obmm_cmd_unexport *cmd_unexport)
 	if (IS_ERR(reg))
 		return PTR_ERR(reg);
 
-	if (reg->created_as != OBMM_EXPORT_REGION) {
-		pr_err("%s: mem_id=%llu region type mismatched.\n", __func__, cmd_unexport->mem_id);
+	if (!obmm_region_teardown_matches(reg, OBMM_EXPORT_REGION)) {
+		pr_err("%s: mem_id=%llu not an export region.\n", __func__, cmd_unexport->mem_id);
 		ret = -EINVAL;
 		goto err_unexport;
 	}

@@ -17,7 +17,10 @@
 #include <linux/nodemask.h>
 #include <linux/refcount.h>
 #include <linux/numa_remote.h>
+#include <linux/rwsem.h>
 #include <linux/scatterlist.h>
+#include <linux/wait.h>
+#include <linux/workqueue.h>
 
 #define OBMM_DEV_NAME "obmm"
 
@@ -73,8 +76,7 @@ enum obmm_mmap_granu {
 #define OBMM_MAX_VALID_REGIONID MINORMASK
 #define OBMM_REGIONID_MAX_COUNT (OBMM_MAX_VALID_REGIONID - OBMM_MIN_VALID_REGIONID + 1)
 
-#define OBMM_MEM_ALLOW_CACHEABLE_MMAP 0x1
-#define OBMM_MEM_ALLOW_NONCACHEABLE_MMAP 0x2
+#include "obmm_switch_logic.h"
 
 /*
  * region models a set of memory to share across hosts: a unit of sharing.
@@ -85,7 +87,8 @@ struct obmm_region {
 	int regionid;
 
 	/* how it was created (import or export ioctl); reg->backend->type is
-	 * authoritative, a switch may attach a backend of the other kind.
+	 * authoritative, a switch may attach a backend of the other kind;
+	 * teardown accepts either identity (obmm_region_teardown_matches()).
 	 */
 	enum obmm_region_type created_as;
 
@@ -115,9 +118,8 @@ struct obmm_region {
 	atomic_t mmap_count;
 	/* open fds holding cacheability entitlements */
 	atomic_t fd_count;
-	/*
-	 * OR of the mem_cap of every backend attached while entitled fds
-	 * could exist; the open-time entitlement gate.
+	/* OR of attached backends' mem_cap while entitled fds could exist:
+	 * the open-time entitlement gate, deflated at the shrink points.
 	 */
 	u32 promised_cap;
 
@@ -132,10 +134,38 @@ struct obmm_region {
 	 */
 	struct obmm_backend *backend;
 
-	/*
-	 * old backend kept alive during a switch gap.
+	/* old backend held across a switch gap: detach keeps its existence
+	 * reference so a keep-old-alive abort can restore it. state_mutex +
+	 * switch_lock(write).
 	 */
 	struct obmm_backend *switch_old;
+
+	/* switch machinery: switch_state is written under switch_lock(write)
+	 * except the teardown force-strand's lock-free STRANDED publish, and is
+	 * read with READ_ONCE; the rwsem serializes the fault gate against
+	 * begin/finisher swaps, switch_wqh is its wait channel, switch_work is
+	 * the finisher armed by switch_end. No timeout.
+	 */
+	struct rw_semaphore switch_lock;
+	enum obmm_switch_state switch_state;
+	wait_queue_head_t switch_wqh;
+	struct work_struct switch_work;
+	bool switch_finish_success;
+	bool switch_keep_old_alive;
+	bool switch_old_mapped;
+	bool switch_new_mapped;
+	int switch_flush_result;
+
+	/* Cross-process zap channel: the first open caches the device node's
+	 * address_space and igrabs its inode so unmap_mapping_range() outlives
+	 * unlink; iput in uninit_obmm_region().
+	 */
+	struct address_space *i_mapping;
+	struct inode *i_inode;
+
+	/* staged priv: committed by the finisher's success branch, else lost */
+	unsigned int switch_pending_priv_len;
+	unsigned char switch_pending_priv[OBMM_MAX_PRIV_LEN];
 
 	struct obmm_ownership_info *ownership_info;
 	/* protect ownership_info and serialize concurrent page table change requests */
@@ -190,6 +220,11 @@ struct obmm_region *search_get_obmm_region(int regionid);
 /* Return a valid pointer or an error pointer, which will never be null. */
 struct obmm_region *search_deactivate_obmm_region(int regionid);
 void put_obmm_region(struct obmm_region *region);
+
+/* Called under state_mutex: with no entitled fds and no mappings the
+ * promise deflates to the attached backend's own capability.
+ */
+void obmm_promised_cap_shrink_maybe(struct obmm_region *region);
 
 void obmm_region_flush(struct obmm_region *reg, unsigned long cache_ops);
 
@@ -279,5 +314,9 @@ void deregister_obmm_region(struct obmm_region *region);
 
 /* shared shell teardown for unimport/unexport: deregister, uninit, free */
 int obmm_region_teardown(struct obmm_region *region);
+
+/* creation identity or live-backend kind, either accepts the teardown */
+bool obmm_region_teardown_matches(struct obmm_region *region,
+				  enum obmm_region_type kind);
 
 #endif

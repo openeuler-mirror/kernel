@@ -19,6 +19,7 @@
 #include "obmm_backend.h"
 #include "obmm_cache.h"
 #include "obmm_import.h"
+#include "obmm_switch.h"
 #include "obmm_preimport.h"
 #include "obmm_resource.h"
 #include "obmm_addr_check.h"
@@ -503,7 +504,7 @@ obmm_import_backend_create(const struct obmm_import_spec *spec, u64 mem_size, bo
 	imp->base.type = OBMM_BACKEND_IMPORT;
 	imp->base.mem_size = mem_size;
 	imp->base.ops = &obmm_import_backend_ops;
-	refcount_set(&imp->base.refcnt, 1); /* the existence reference (design 2.3) */
+	refcount_set(&imp->base.refcnt, 1); /* the existence reference */
 
 	imp->pa = spec->addr;
 	imp->scna = spec->scna;
@@ -616,7 +617,7 @@ out_free_reg:
  */
 int obmm_unimport(const struct obmm_cmd_unimport *cmd_unimport)
 {
-	int ret;
+	int ret = 0;
 	struct obmm_region *reg;
 
 	pr_debug("%s: mem_id=%llu, flags=%#llx.\n", __func__, cmd_unimport->mem_id,
@@ -632,8 +633,8 @@ int obmm_unimport(const struct obmm_cmd_unimport *cmd_unimport)
 	if (IS_ERR(reg))
 		return PTR_ERR(reg);
 
-	if (reg->created_as != OBMM_IMPORT_REGION) {
-		pr_err("%s: mem_id=%llu region type mismatched.\n", __func__, cmd_unimport->mem_id);
+	if (!obmm_region_teardown_matches(reg, OBMM_IMPORT_REGION)) {
+		pr_err("%s: mem_id=%llu not an import region.\n", __func__, cmd_unimport->mem_id);
 		ret = -EINVAL;
 		goto err_unimport;
 	}

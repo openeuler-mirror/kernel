@@ -65,11 +65,10 @@ struct obmm_backend;
  * NULL only for a non-mmappable backend (mem_cap == 0), which the mmap
  * capability check rejects before a VMA can exist.
  *
- * Locks: query under the region's state_mutex, fault under the fault path's
- * mmap lock, covers_pa under the global regions spinlock, reading only
- * backend-resident state (@regionid is cached at attach, so it never
- * dereferences the shell); flush_range runs under state_mutex except in the
- * backend destroy after the last put, which runs it unlocked.
+ * Locks: query under the region's state_mutex, fault under the fault-gate
+ * read lock, covers_pa under each pinned shell's state_mutex; flush_range
+ * runs under state_mutex except in the switch windows and the backend
+ * destroy after the last put, which run it unlocked.
  */
 struct obmm_backend_ops {
 	vm_fault_t (*fault)(struct obmm_backend *be, struct vm_fault *vmf,
@@ -206,7 +205,7 @@ obmm_export_user_backend_create(const struct obmm_export_user_spec *spec);
  * obmm_backend_put it on success. A failed MEMID release sets *errp and must
  * never be followed by the put - destroy would free the parent resource under
  * the unreleased leaf, so the backend leaks loudly instead. errp non-NULL
- * propagates that errno, NULL logs.
+ * propagates that errno, NULL logs; switch paths pass NULL deliberately.
  *
  * put drops one reference; at the last put it runs ops->destroy and returns
  * its result (the object is freed regardless).
