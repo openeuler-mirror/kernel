@@ -18,7 +18,7 @@ struct cma {
 	char name[CMA_MAX_NAME];
 };
 
-extern struct cma cma_areas[MAX_CMA_AREAS];
+extern struct cma *cma_areas;
 extern unsigned cma_area_count;
 
 static inline unsigned long cma_bitmap_maxno(struct cma *cma)
