@@ -135,7 +135,8 @@ int obmm_region_flush_range(struct obmm_region *reg, unsigned long offset, unsig
 	pr_debug("flush cache: region=%d, offset=0x%lx, length=0x%lx, cache_ops=%u\n",
 		 reg->regionid, offset, length, cache_ops);
 	/* clear cache and ubus queue */
-	be = reg->backend;
+	be = rcu_dereference_protected(reg->backend,
+			       lockdep_is_held(&reg->state_mutex));
 	if (!be || !be->ops->flush_range)
 		return 0;
 	ret = be->ops->flush_range(be, offset, length, cache_ops);

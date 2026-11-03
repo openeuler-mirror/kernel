@@ -66,9 +66,11 @@ struct obmm_backend;
  * capability check rejects before a VMA can exist.
  *
  * Locks: query under the region's state_mutex, fault under the fault-gate
- * read lock, covers_pa under each pinned shell's state_mutex; flush_range
- * runs under state_mutex except in the switch windows and the backend
- * destroy after the last put, which run it unlocked.
+ * read lock, covers_pa under the global regions spinlock (by-PA walk) or
+ * the region's state_mutex (vma_access), reading only backend-resident
+ * state (@regionid is cached at attach, so it never dereferences the
+ * shell); flush_range runs under state_mutex except in the switch windows
+ * and the backend destroy after the last put, which run it unlocked.
  */
 struct obmm_backend_ops {
 	vm_fault_t (*fault)(struct obmm_backend *be, struct vm_fault *vmf,
@@ -218,8 +220,9 @@ obmm_export_user_backend_create(const struct obmm_export_user_spec *spec);
  * the unreleased leaf, so the backend leaks loudly instead. errp non-NULL
  * propagates that errno, NULL logs; switch paths pass NULL deliberately.
  *
- * put drops one reference; at the last put it runs ops->destroy and returns
- * its result (the object is freed regardless).
+ * put drops one reference; the last waits out an RCU grace period (lockless
+ * readers may still hold the backend), then runs ops->destroy and returns its
+ * result (the object is freed regardless).
  */
 int obmm_backend_attach(struct obmm_region *reg, struct obmm_backend *be);
 struct obmm_backend *obmm_backend_detach(struct obmm_region *reg, int *errp);

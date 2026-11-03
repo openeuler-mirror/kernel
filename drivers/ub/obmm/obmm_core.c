@@ -167,7 +167,12 @@ int obmm_query_by_offset(struct obmm_region *reg, unsigned long offset,
 	int ret;
 
 	mutex_lock(&reg->state_mutex);
-	be = reg->backend;
+	if (region_switch_in_flight(reg)) {
+		mutex_unlock(&reg->state_mutex);
+		return -EAGAIN;
+	}
+	be = rcu_dereference_protected(reg->backend,
+			       lockdep_is_held(&reg->state_mutex));
 	if (!be || !be->ops->query) {
 		mutex_unlock(&reg->state_mutex);
 		return -EINVAL;
@@ -180,66 +185,37 @@ int obmm_query_by_offset(struct obmm_region *reg, unsigned long offset,
 }
 
 /*
- * Snapshot the region list with try_get pins under g_obmm_ctx_info.lock,
- * then consult each pinned backend under its state_mutex: that mutex
- * cannot nest under the ctx spinlock, and holding it excludes a deferred
- * destroy. Only the current backend is consulted, so after a committed
- * switch the old PA no longer resolves (a mid-gap query answers -EAGAIN).
+ * Lockless by-PA walk: the RCU read section keeps a concurrently detached
+ * backend alive through covers_pa (its destroy waits out a grace period
+ * before releasing resources), and the ctx spinlock keeps the region list
+ * stable. A transitional shell is recorded as -EAGAIN and a later match
+ * still wins. Only the current backend is consulted, so after a committed
+ * switch the old PA no longer resolves.
  */
 int obmm_query_by_pa(unsigned long pa, struct obmm_ext_addr *ext_addr)
 {
-	struct obmm_region **pins;
+	struct obmm_region *region;
+	struct obmm_backend *be;
+	unsigned long flags;
 	int ret = -ENOENT;
-	int capacity = 16, n, i;
 
-	pins = kmalloc_array(capacity, sizeof(*pins), GFP_KERNEL);
-	if (!pins)
-		return -ENOMEM;
-
-	for (;;) {
-		struct obmm_region *region;
-		unsigned long flags;
-		bool complete = true;
-
-		n = 0;
-		spin_lock_irqsave(&g_obmm_ctx_info.lock, flags);
-		list_for_each_entry(region, &g_obmm_ctx_info.regions, node) {
-			if (n == capacity) {
-				complete = false;
-				break;
-			}
-			if (try_get_obmm_region(region))
-				pins[n++] = region;
+	rcu_read_lock();
+	spin_lock_irqsave(&g_obmm_ctx_info.lock, flags);
+	list_for_each_entry(region, &g_obmm_ctx_info.regions, node) {
+		if (region_switch_in_flight(region)) {
+			ret = -EAGAIN;
+			continue;
 		}
-		spin_unlock_irqrestore(&g_obmm_ctx_info.lock, flags);
-
-		if (complete)
+		be = rcu_dereference(region->backend);
+		if (be && be->ops->covers_pa &&
+		    be->ops->covers_pa(be, pa, 1, ext_addr)) {
+			ret = 0;
 			break;
-		for (i = 0; i < n; i++)
-			put_obmm_region(pins[i]);
-		kfree(pins);
-		capacity *= 2;
-		pins = kmalloc_array(capacity, sizeof(*pins), GFP_KERNEL);
-		if (!pins)
-			return -ENOMEM;
-	}
-
-	for (i = 0; i < n; i++) {
-		struct obmm_region *region = pins[i];
-		struct obmm_backend *be;
-
-		if (ret) {	/* no match yet: consult this shell's backend */
-			mutex_lock(&region->state_mutex);
-			be = region->backend;
-			if (be && be->ops->covers_pa &&
-			    be->ops->covers_pa(be, pa, 1, ext_addr))
-				ret = 0;
-			mutex_unlock(&region->state_mutex);
 		}
-		put_obmm_region(region);
 	}
+	spin_unlock_irqrestore(&g_obmm_ctx_info.lock, flags);
+	rcu_read_unlock();
 
-	kfree(pins);
 	return ret;
 }
 
@@ -372,6 +348,7 @@ int init_obmm_region(struct obmm_region *region)
 	init_waitqueue_head(&region->switch_wqh);
 	INIT_WORK(&region->switch_work, obmm_switch_finish_fn);
 	WRITE_ONCE(region->switch_state, OBMM_SWITCH_IDLE);
+	seqcount_init(&region->priv_seq);
 
 	retval = ida_alloc_range(&g_obmm_region_ida, OBMM_MIN_VALID_REGIONID,
 				 OBMM_MAX_VALID_REGIONID, GFP_KERNEL);
@@ -432,7 +409,8 @@ bool obmm_region_teardown_matches(struct obmm_region *region,
 	bool live;
 
 	mutex_lock(&region->state_mutex);
-	be = region->backend;
+	be = rcu_dereference_protected(region->backend,
+				       lockdep_is_held(&region->state_mutex));
 	mutex_unlock(&region->state_mutex);
 
 	live = be && ((be->type == OBMM_BACKEND_IMPORT) ==
@@ -441,13 +419,12 @@ bool obmm_region_teardown_matches(struct obmm_region *region,
 }
 
 /*
- * Shared shell teardown for the unimport/unexport ioctl paths: drain the
- * switch, release any attached backend under the abort policy in
- * obmm_region_release_backend, then deregister, uninit and hand the region
- * to the device core for freeing, regardless of a release failure. A
- * failure leaks only backend resources (already reported) and must not
- * leave a zombie on the global list or block rmmod. Returns the release
- * errno; the region is freed regardless.
+ * Shared shell teardown for unimport/unexport: drain the switch, release
+ * any attached backend under the abort policy in
+ * obmm_region_release_backend, then deregister and uninit regardless of
+ * release failure. A failure leaks only backend resources (already
+ * reported) and must not leave a zombie on the global list or block
+ * rmmod. Returns the release errno; the region is freed regardless.
  */
 int obmm_region_teardown(struct obmm_region *region)
 {
@@ -459,7 +436,7 @@ int obmm_region_teardown(struct obmm_region *region)
 	 */
 	obmm_switch_force_strand(region);
 
-	if (region->backend)
+	if (rcu_access_pointer(region->backend))
 		ret = obmm_region_release_backend(region, true);
 
 	deregister_obmm_region(region);
@@ -469,6 +446,9 @@ int obmm_region_teardown(struct obmm_region *region)
 	return ret;
 }
 
+/* creation-time only; runtime priv is committed via
+ * commit_switch_priv() (priv_seq)
+ */
 int set_obmm_region_priv(struct obmm_region *region, unsigned int priv_len, const void __user *priv)
 {
 	region->priv_len = 0;

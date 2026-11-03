@@ -617,7 +617,7 @@ out_free_reg:
  */
 int obmm_unimport(const struct obmm_cmd_unimport *cmd_unimport)
 {
-	int ret = 0;
+	int ret;
 	struct obmm_region *reg;
 
 	pr_debug("%s: mem_id=%llu, flags=%#llx.\n", __func__, cmd_unimport->mem_id,

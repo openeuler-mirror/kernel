@@ -198,34 +198,34 @@ struct obmm_cmd_preimport {
 #define OBMM_MMAP_FLAG_SWITCH_NEW   (1UL << 60)	/* current backend, gap only */
 
 /*
- * Unified backend switch commands ('x', 8 and 9).
+ * Unified backend switch commands ('x', 8 and 9). One serialized userspace
+ * controller owns each begin/end sequence: no generation cookie, so a stale
+ * end after a later begin is undetectable. The gap has no kernel-side timeout
+ * and stays open until switch_end; while open, faults block (killable), open
+ * and plain mmap still succeed with the mapping populated on fault, and the
+ * backend-touching ioctls return -EAGAIN (-EBUSY for unimport/unexport), so
+ * an exiting controller parks the region in AWAIT_READY. Any privileged caller
+ * may then close the gap with switch_end(success = 0), restoring the old
+ * backend when kept alive -- best effort: a failed re-attach strands the
+ * region, so poll switch_state afterwards; a restarted controller can then
+ * choose between committing and aborting.
  *
- * One serialized userspace controller must own each region's begin/end
- * sequence: the ABI deliberately carries no generation cookie, so a stale
- * end ioctl issued after a later begin is not detectable by the kernel.
+ * Outside the gap, unimport/unexport accept either identity - the
+ * creation ioctl or the live backend kind - since a switch changes the
+ * backend but not created_as; a STRANDED region falls back to its
+ * creation ioctl. A STRANDED region still accepts plain mmap (the
+ * capability checks see no backend); the first touch then raises SIGBUS.
  *
- * The gap carries no kernel-side timeout: it stays open until switch_end
- * runs. While it is open, faults on the region block (killable) and the
- * other region interfaces refuse with -EAGAIN, so a controller that exits
- * without ending the switch leaves the region parked in AWAIT_READY
- * rather than silently committed or rolled back behind its back. Any
- * later privileged caller can close such a gap with switch_end(success
- * = 0), which restores the old backend when it was kept alive; the
- * region's switch_state sysfs attribute makes the gap observable, so a
- * restarted controller can decide between committing and aborting
- * before it touches the data.
- *
- * errno summary - switch_begin: -EPERM, -EFAULT, -EINVAL, -ENOENT,
- * -ENODEV, -ENOMEM, -EEXIST, -EOPNOTSUPP, -EBUSY, -EIO, -EOVERFLOW
- * (a per-node size sum overflows), -ENOTRECOVERABLE (the import
- * backend's creation failed and its internal unwind could not
- * complete; returned before any switch state was entered, the region
- * is left unchanged); switch_end:
- * -EPERM, -EINVAL, -EFAULT, -ENOENT, -EAGAIN (retry; converges to
- * -ESTALE), -ESTALE.
- *
- * Native-pointer ABI, as the rest of this header: no 32-bit compat ioctls
- * and no compat_ptr_ioctl handler, by design.
+ * errno - switch_begin: -EPERM, -EFAULT, -EINVAL, -ENOENT, -ENODEV, -ENOMEM,
+ * -EEXIST, -EOPNOTSUPP, -EBUSY, -EIO, -EOVERFLOW, -ENOTRECOVERABLE (backend
+ * creation failed -- import with an incomplete unwind, or export-pool
+ * internal allocation; region unchanged). switch_end: -EPERM, -EINVAL,
+ * -EFAULT, -ENOENT, -EAGAIN (transient state_mutex contention: a retry
+ * re-evaluates the current state and may succeed in the same or a newer
+ * gap), -ESTALE.
+ * The same gating applies in flight to UPDATE_RANGE and ptrace (-EAGAIN
+ * transitional, -EIO STRANDED); identity sysfs attributes return -EAGAIN
+ * (shell scalars stay readable). Native-pointer ABI: no compat ioctls.
  */
 enum obmm_switch_target_type {
 	OBMM_SWITCH_TARGET_IMPORT        = 0,
@@ -313,7 +313,9 @@ struct obmm_cmd_switch_begin {
 /*
  * OBMM_CMD_SWITCH_END closes the gap opened by switch_begin. @success = 1
  * finalizes the swap and destroys the old backend; 0 aborts, restoring the
- * old backend when kept alive, else leaving the region without a backend.
+ * old backend when kept alive -- best effort: a failed re-attach strands
+ * the region (poll switch_state) -- else leaving the region without a
+ * backend.
  * The fixed 16-byte shape keeps the _IOW size stable.
  */
 struct obmm_cmd_switch_end {

@@ -156,7 +156,7 @@ void *dup_export_vendor(const void __user *vendor_info, unsigned int vendor_len)
  */
 int obmm_unexport(const struct obmm_cmd_unexport *cmd_unexport)
 {
-	int ret = 0;
+	int ret;
 	struct obmm_region *reg;
 
 	pr_debug("%s: mem_id=%llu, flags=%#llx.\n", __func__, cmd_unexport->mem_id,
