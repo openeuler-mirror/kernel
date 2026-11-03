@@ -3280,7 +3280,7 @@ static inline void decode_bus_error(int node_id, struct mce *m)
  * the instance_id. For example, instance_id=0xYXXXXX where Y is the channel
  * number.
  *
- * For DRAM ECC errors, the Chip Select number is given in bits [2:0] of
+ * For DRAM ECC errors, the Chip Select number is given in bits [1:0] of
  * the MCA_SYND[ErrorInformation] field.
  */
 static void umc_get_err_info(struct mce *m, struct err_info *err)
@@ -3290,7 +3290,7 @@ static void umc_get_err_info(struct mce *m, struct err_info *err)
 		err->channel = (m->ipid & GENMASK(23, 0)) >> 20;
 	else
 		err->channel = (m->ipid & GENMASK(31, 0)) >> 20;
-	err->csrow = m->synd & 0x7;
+	err->csrow = m->synd & 0x3;
 }
 
 static void decode_umc_error(int node_id, struct mce *m)
@@ -4273,6 +4273,7 @@ static void hw_info_put(struct amd64_pvt *pvt)
 	pci_dev_put(pvt->F1);
 	pci_dev_put(pvt->F2);
 	kfree(pvt->umc);
+	kfree(pvt->csels);
 }
 
 static struct low_ops umc_ops = {
@@ -4510,6 +4511,10 @@ static int per_family_init(struct amd64_pvt *pvt)
 		amd64_err("Unsupported family!\n");
 		return -ENODEV;
 	}
+
+	pvt->csels = kcalloc(pvt->max_mcs, sizeof(*pvt->csels), GFP_KERNEL);
+	if (!pvt->csels)
+		return -ENOMEM;
 
 	return 0;
 }
@@ -4765,6 +4770,8 @@ static int __init amd64_edac_init(void)
 		err = -ENODEV;
 		goto err_pci;
 	}
+
+	request_module_nowait("amd_atl");
 
 	/* register stuff with EDAC MCE */
 	if (boot_cpu_data.x86 >= 0x17) {
