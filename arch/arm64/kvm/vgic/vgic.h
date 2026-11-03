@@ -190,6 +190,8 @@ int vgic_v2_parse_attr(struct kvm_device *dev, struct kvm_device_attr *attr,
 const struct vgic_register_region *
 vgic_get_mmio_region(struct kvm_vcpu *vcpu, struct vgic_io_device *iodev,
 		     gpa_t addr, int len);
+struct kvm_vcpu *vgic_target_oracle(struct vgic_irq *irq);
+
 struct vgic_irq *vgic_get_irq(struct kvm *kvm, struct kvm_vcpu *vcpu,
 			      u32 intid);
 void __vgic_put_lpi_locked(struct kvm *kvm, struct vgic_irq *irq);

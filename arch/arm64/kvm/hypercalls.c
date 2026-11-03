@@ -9,6 +9,7 @@
 #include <kvm/arm_hypercalls.h>
 #include <kvm/arm_psci.h>
 
+#include "pvm/pvm.h"
 #include "trace.h"
 
 #ifdef CONFIG_ARM64_HISI_IPIV
@@ -27,7 +28,7 @@
 static void kvm_ptp_get_time(struct kvm_vcpu *vcpu, u64 *val)
 {
 	struct system_time_snapshot systime_snapshot;
-	u64 cycles = ~0UL;
+	u64 cycles, *offset;
 	u32 feature;
 
 	/*
@@ -52,14 +53,19 @@ static void kvm_ptp_get_time(struct kvm_vcpu *vcpu, u64 *val)
 	feature = smccc_get_arg1(vcpu);
 	switch (feature) {
 	case KVM_PTP_VIRT_COUNTER:
-		cycles = systime_snapshot.cycles - vcpu->kvm->arch.timer_data.voffset;
+		offset = &vcpu->kvm->arch.timer_data.voffset;
 		break;
 	case KVM_PTP_PHYS_COUNTER:
-		cycles = systime_snapshot.cycles - vcpu->kvm->arch.timer_data.poffset;
+		offset = &vcpu->kvm->arch.timer_data.poffset;
 		break;
 	default:
 		return;
 	}
+
+	/* Both PVM counter views use the same private VM offset. */
+	if (is_pvm_mode())
+		offset = &kvm_to_pvm(vcpu->kvm)->timer_data.offset;
+	cycles = systime_snapshot.cycles - READ_ONCE(*offset);
 
 	/*
 	 * This relies on the top bit of val[0] never being set for
