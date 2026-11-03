@@ -135,17 +135,42 @@ static bool obmm_vma_pmd_host(const struct vm_area_struct *vma)
 	       IS_ALIGNED(vma->vm_end, PMD_SIZE);
 }
 
-/* Fault gate of a plain mapping: switch_lock(read) is held across the pfn
- * derivation and the install, so a swap cannot move the backend being
- * served.
+/* Which backend a gap-scoped mmap (OBMM_MMAP_FLAG_SWITCH_OLD/NEW) targets. */
+enum obmm_switch_map_target {
+	OBMM_SWITCH_MAP_NONE = 0,
+	OBMM_SWITCH_MAP_OLD,	/* the detached switch_old backend */
+	OBMM_SWITCH_MAP_NEW,	/* the attached incoming backend */
+};
+
+/* vm_private_data packs the gap generation that scoped the VMA (upper 32
+ * bits) with the vm_flags snapshot update_range stashes for rollback (lower
+ * 32 -- every vm_flags bit an OBMM VMA can carry sits below bit 32, and a
+ * stray high bit would only cost the tag: the masked restore ignores it).
  */
-static vm_fault_t obmm_vma_fault(struct vm_fault *vmf)
+#define OBMM_VMA_STASH_MASK	((uintptr_t)U32_MAX)
+
+static void *obmm_vma_gap_tag(u32 gen)
+{
+	return (void *)((uintptr_t)gen << 32);
+}
+
+static u32 obmm_vma_gap_gen(const struct vm_area_struct *vma)
+{
+	return (u32)((uintptr_t)vma->vm_private_data >> 32);
+}
+
+/* Fault gate of the three mapping kinds; @target names the gap-scoped ones.
+ * switch_lock(read) is held across the pfn derivation and the install, so a
+ * swap cannot move the backend being served.
+ */
+static vm_fault_t obmm_vma_fault_target(struct vm_fault *vmf,
+					enum obmm_switch_map_target target)
 {
 	struct obmm_region *reg = vmf->vma->vm_file->private_data;
 	struct obmm_backend *be;
 	enum obmm_switch_state state;
 	vm_fault_t fret;
-	bool is_pmd, nc;
+	bool is_pmd, scoped, nc;
 	int lock_ret;	/* int, never vm_fault_t */
 
 	if (!try_get_obmm_region(reg))		/* fault-gate UAF pin */
@@ -170,6 +195,55 @@ static vm_fault_t obmm_vma_fault(struct vm_fault *vmf)
 		return VM_FAULT_SIGBUS;
 	}
 
+	for (;;) {
+		state = READ_ONCE(reg->switch_state);
+		/* Scoped serve only in the gap that authorized this VMA: a
+		 * retained OLD/NEW VMA from an earlier gap sleeps the gap out
+		 * like a plain mapping and refaults onto the surviving backend
+		 * once it closes.
+		 */
+		scoped = target != OBMM_SWITCH_MAP_NONE &&
+			 state == OBMM_SWITCH_AWAIT_READY &&
+			 obmm_vma_gap_gen(vmf->vma) == reg->switch_generation;
+		if (!obmm_switch_state_transitional(state) || scoped)
+			break;
+
+		if (vmf->flags & FAULT_FLAG_ALLOW_RETRY) {
+			/* Not scoped to the gap: sleep it out (no kernel-side
+			 * timeout, so an abandoned gap blocks faults killably).
+			 * Drop switch_lock and mmap_read_lock so mmap_write_lock
+			 * acquirers do not stall.
+			 */
+			up_read(&reg->switch_lock);
+			mmap_read_unlock(vmf->vma->vm_mm);
+			(void)wait_event_killable(reg->switch_wqh,
+					!obmm_switch_state_transitional(
+						READ_ONCE(reg->switch_state)));
+			put_obmm_region(reg);
+			/* Normal wake and SIGKILL both return RETRY after the
+			 * unlock above; SIGBUS would make the arch fault path
+			 * unlock twice.
+			 */
+			return VM_FAULT_RETRY;
+		}
+
+		/* In-kernel fault callers that pass no FAULT_FLAG_ALLOW_RETRY
+		 * (fixup_user_fault with unlocked == NULL, e.g. futex PI)
+		 * neither tolerate a dropped mmap lock nor VM_FAULT_RETRY:
+		 * sleep the gap out under their lock and serve the fault
+		 * once a terminal state lands.
+		 */
+		up_read(&reg->switch_lock);
+		(void)wait_event_killable(reg->switch_wqh,
+				!obmm_switch_state_transitional(
+					READ_ONCE(reg->switch_state)));
+		lock_ret = down_read_killable(&reg->switch_lock);
+		if (lock_ret) {	/* fatal signal: no PTE installed */
+			put_obmm_region(reg);
+			return VM_FAULT_SIGBUS;
+		}
+	}
+
 	/* Cacheable mappings freeze mmap_granu as the ownership layout and
 	 * UPDATE_RANGE contract; a PMD leaf additionally needs a PMD-congruent
 	 * VMA, so the value can only be observed by a VMA that can hold the
@@ -182,38 +256,52 @@ static vm_fault_t obmm_vma_fault(struct vm_fault *vmf)
 		 obmm_vma_pmd_host(vmf->vma) &&
 		 pmd_none(pmdp_get_lockless(vmf->pmd));
 
-	state = READ_ONCE(reg->switch_state);
-	if (obmm_switch_state_transitional(state)) {
-		/* Sleep the gap out: there is no kernel-side timeout, so an
-		 * abandoned gap blocks faults killably. Drop switch_lock and
-		 * mmap_read_lock so mmap_write_lock acquirers do not stall.
-		 */
-		up_read(&reg->switch_lock);
-		mmap_read_unlock(vmf->vma->vm_mm);
-		(void)wait_event_killable(reg->switch_wqh,
-				!obmm_switch_state_transitional(READ_ONCE(reg->switch_state)));
-		put_obmm_region(reg);
-		/* Normal wake and SIGKILL both return RETRY after the unlock
-		 * above; SIGBUS would make the arch fault path unlock twice.
-		 */
-		return VM_FAULT_RETRY;
-	}
-
 	if (state == OBMM_SWITCH_STRANDED)
 		be = NULL;	/* terminal dead: never install */
+	else if (scoped && target == OBMM_SWITCH_MAP_OLD)
+		be = reg->switch_old;	/* the detached side of the gap */
 	else
 		be = reg->backend;
 
 	if (!be || !be->ops->fault) {	/* STRANDED or a non-mmappable backend */
+		pr_debug_ratelimited("fault: mem_id=%d has no usable backend (state=%d), SIGBUS\n",
+				     reg->regionid, state);
 		up_read(&reg->switch_lock);
 		put_obmm_region(reg);
 		return VM_FAULT_SIGBUS;
+	}
+
+	if (scoped) {
+		/* Sticky until the finisher's terminal transition: every serve of
+		 * a gap mapping can leave dirty lines only that gap's terminal
+		 * flush will carry, so mark here, not at mmap -- a mapping that
+		 * never faults cannot own any.
+		 */
+		if (target == OBMM_SWITCH_MAP_OLD)
+			reg->switch_old_mapped = true;
+		else
+			reg->switch_new_mapped = true;
 	}
 
 	fret = be->ops->fault(be, vmf, is_pmd);
 	up_read(&reg->switch_lock);
 	put_obmm_region(reg);
 	return fret;
+}
+
+static vm_fault_t obmm_vma_fault(struct vm_fault *vmf)
+{
+	return obmm_vma_fault_target(vmf, OBMM_SWITCH_MAP_NONE);
+}
+
+static vm_fault_t obmm_vma_fault_old(struct vm_fault *vmf)
+{
+	return obmm_vma_fault_target(vmf, OBMM_SWITCH_MAP_OLD);
+}
+
+static vm_fault_t obmm_vma_fault_new(struct vm_fault *vmf)
+{
+	return obmm_vma_fault_target(vmf, OBMM_SWITCH_MAP_NEW);
 }
 
 /* Custom access handler for ptrace/GDB on PFNMAP VMAs, under state_mutex:
@@ -334,17 +422,32 @@ static unsigned long obmm_pagesize(struct vm_area_struct *vma)
 		return PAGE_SIZE;
 }
 
-static const struct vm_operations_struct obmm_vm_ops = {
-	.open = obmm_vma_open,
-	.close = obmm_vma_close,
-	.may_split = obmm_vma_may_split,
-	.mremap = obmm_vma_mremap,
-	.mprotect = obmm_vma_mprotect,
-	.fault = obmm_vma_fault,
-	.access = obmm_vma_access,
-	.name = obmm_vma_name,
-	.pagesize = obmm_pagesize,
-};
+/* The fault kind is the mapping's gap target, carried by the vm_ops identity:
+ * a plain VMA sleeps out a gap, SWITCH_OLD/NEW serve the named backend.
+ */
+#define OBMM_VM_OPS(fault_fn)						\
+	{								\
+		.open		= obmm_vma_open,			\
+		.close		= obmm_vma_close,			\
+		.may_split	= obmm_vma_may_split,			\
+		.mremap		= obmm_vma_mremap,			\
+		.mprotect	= obmm_vma_mprotect,			\
+		.fault		= fault_fn,				\
+		.access		= obmm_vma_access,			\
+		.name		= obmm_vma_name,			\
+		.pagesize	= obmm_pagesize,			\
+	}
+
+static const struct vm_operations_struct obmm_vm_ops = OBMM_VM_OPS(obmm_vma_fault);
+static const struct vm_operations_struct obmm_vm_ops_old = OBMM_VM_OPS(obmm_vma_fault_old);
+static const struct vm_operations_struct obmm_vm_ops_new = OBMM_VM_OPS(obmm_vma_fault_new);
+
+static bool obmm_vma_is_region(const struct vm_area_struct *vma)
+{
+	return vma->vm_ops == &obmm_vm_ops ||
+	       vma->vm_ops == &obmm_vm_ops_old ||
+	       vma->vm_ops == &obmm_vm_ops_new;
+}
 
 static int obmm_shm_fops_open(struct inode *inode, struct file *file)
 {
@@ -502,6 +605,76 @@ static bool validate_perm(struct file *file, vm_flags_t vm_flags)
 	return true;
 }
 
+/* Validate a gap-scoped mmap. Caller holds state_mutex and passes
+ * switch_state: AWAIT_READY only; SWITCH_OLD needs keep-old-alive.
+ */
+static int obmm_validate_switch_gap_mmap(struct obmm_region *reg,
+					 enum obmm_switch_map_target target,
+					 enum obmm_switch_state sw_state)
+{
+	if (sw_state != OBMM_SWITCH_AWAIT_READY) {
+		pr_err("mmap region %d: SWITCH_OLD/NEW is only valid during a switch gap (state=%d)\n",
+		       reg->regionid, sw_state);
+		return -EINVAL;
+	}
+	if (target == OBMM_SWITCH_MAP_OLD && !reg->switch_keep_old_alive) {
+		pr_err("mmap region %d: SWITCH_OLD requires a keep-old-alive switch gap\n",
+		       reg->regionid);
+		return -EINVAL;
+	}
+	return 0;
+}
+
+/* Decode the mmap-offset flag grammar; @offset receives the data offset
+ * with all flag bits cleared. Gap rules: obmm_validate_switch_gap_mmap().
+ */
+static int obmm_mmap_parse_offset(struct obmm_region *reg,
+				  struct vm_area_struct *vma,
+				  unsigned long *offset,
+				  enum obmm_mmap_granu *mmap_granu,
+				  enum obmm_switch_map_target *switch_map)
+{
+	if (*offset & OBMM_MMAP_FLAG_HUGETLB_PMD) {
+		pr_debug("trying hugepage mmap\n");
+		*offset &= ~OBMM_MMAP_FLAG_HUGETLB_PMD;
+
+		if (!IS_ALIGNED(vma->vm_start, PMD_SIZE) ||
+		    !IS_ALIGNED(vma->vm_end, PMD_SIZE)) {
+			pr_err("PMD mmap vma not PMD-aligned: start=%#lx end=%#lx\n",
+			       vma->vm_start, vma->vm_end);
+			return -EINVAL;
+		}
+
+		if (!IS_ALIGNED(*offset, PMD_SIZE)) {
+			pr_err("PMD mmap offset not PMD-aligned: offset=%#lx\n", *offset);
+			return -EINVAL;
+		}
+
+		*mmap_granu = OBMM_MMAP_GRANU_PMD;
+	} else {
+		*mmap_granu = OBMM_MMAP_GRANU_PAGE;
+	}
+
+	if (*offset & OBMM_MMAP_FLAG_HUGETLB_PUD) {
+		pr_err("mmap region %d: PUD-granularity mapping is reserved, not supported yet\n",
+		       reg->regionid);
+		return -EOPNOTSUPP;
+	}
+	if (*offset & OBMM_MMAP_FLAG_SWITCH_OLD)
+		*switch_map = OBMM_SWITCH_MAP_OLD;
+	if (*offset & OBMM_MMAP_FLAG_SWITCH_NEW) {
+		if (*switch_map != OBMM_SWITCH_MAP_NONE) {
+			pr_err("mmap region %d: SWITCH_OLD and SWITCH_NEW are mutually exclusive\n",
+			       reg->regionid);
+			return -EINVAL;
+		}
+		*switch_map = OBMM_SWITCH_MAP_NEW;
+	}
+	*offset &= ~(OBMM_MMAP_FLAG_SWITCH_OLD | OBMM_MMAP_FLAG_SWITCH_NEW);
+
+	return 0;
+}
+
 static int obmm_shm_fops_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	struct obmm_region *reg = (struct obmm_region *)file->private_data;
@@ -510,6 +683,7 @@ static int obmm_shm_fops_mmap(struct file *file, struct vm_area_struct *vma)
 	uint8_t mem_state;
 	enum obmm_mmap_mode old_mmap_mode;
 	enum obmm_mmap_granu mmap_granu, init_mmap_granu;
+	enum obmm_switch_map_target switch_map = OBMM_SWITCH_MAP_NONE;
 	unsigned long done_npages;
 	uint8_t access;
 	int ret;
@@ -537,41 +711,9 @@ static int obmm_shm_fops_mmap(struct file *file, struct vm_area_struct *vma)
 	size = vma->vm_end - vma->vm_start;
 	offset = vma->vm_pgoff << PAGE_SHIFT;
 
-	if (offset & OBMM_MMAP_FLAG_HUGETLB_PMD) {
-		pr_debug("trying hugepage mmap\n");
-		offset &= ~OBMM_MMAP_FLAG_HUGETLB_PMD;
-
-		if (!IS_ALIGNED(vma->vm_start, PMD_SIZE) ||
-		    !IS_ALIGNED(vma->vm_end, PMD_SIZE)) {
-			pr_err("PMD mmap vma not PMD-aligned: start=%#lx end=%#lx\n",
-			       vma->vm_start, vma->vm_end);
-			return -EINVAL;
-		}
-
-		if (!IS_ALIGNED(offset, PMD_SIZE)) {
-			pr_err("PMD mmap offset not PMD-aligned: offset=%#lx\n", offset);
-			return -EINVAL;
-		}
-
-		mmap_granu = OBMM_MMAP_GRANU_PMD;
-	} else {
-		mmap_granu = OBMM_MMAP_GRANU_PAGE;
-	}
-
-	if (offset & OBMM_MMAP_FLAG_HUGETLB_PUD) {
-		pr_err("mmap region %d: PUD-granularity mapping is reserved, not supported yet\n",
-		       reg->regionid);
-		return -EOPNOTSUPP;
-	}
-	/*
-	 * SWITCH_OLD/NEW select a gap-scoped dual-backend mapping and are
-	 * not supported yet.
-	 */
-	if (offset & (OBMM_MMAP_FLAG_SWITCH_OLD | OBMM_MMAP_FLAG_SWITCH_NEW)) {
-		pr_err("mmap region %d: SWITCH_OLD/NEW mappings are not supported yet\n",
-		       reg->regionid);
-		return -EINVAL;
-	}
+	ret = obmm_mmap_parse_offset(reg, vma, &offset, &mmap_granu, &switch_map);
+	if (ret)
+		return ret;
 
 	vma->vm_pgoff = offset >> PAGE_SHIFT;
 
@@ -634,6 +776,13 @@ static int obmm_shm_fops_mmap(struct file *file, struct vm_area_struct *vma)
 	if (reg->mmap_mode == OBMM_MMAP_INIT)
 		reg->mmap_mode = o_sync ? OBMM_MMAP_OSYNC : OBMM_MMAP_NORMAL;
 
+	if (switch_map != OBMM_SWITCH_MAP_NONE) {
+		ret = obmm_validate_switch_gap_mmap(reg, switch_map,
+						    READ_ONCE(reg->switch_state));
+		if (ret)
+			goto reset_cur_osync;
+	}
+
 	if (reg->mmap_mode == OBMM_MMAP_NORMAL) {
 		ret = init_ownership_info(reg);
 		if (ret)
@@ -652,10 +801,17 @@ static int obmm_shm_fops_mmap(struct file *file, struct vm_area_struct *vma)
 			goto reset_cur_osync;
 		}
 	}
+
 	atomic_inc(&reg->mmap_count);
+	/* Tag the VMA with the authorizing gap generation; the fault gate
+	 * serves a gap-scoped VMA only while that generation is current.
+	 */
+	vma->vm_private_data = obmm_vma_gap_tag(reg->switch_generation);
 	mutex_unlock(&reg->state_mutex);
 
-	vma->vm_ops = &obmm_vm_ops;
+	vma->vm_ops = switch_map == OBMM_SWITCH_MAP_OLD ? &obmm_vm_ops_old :
+		      switch_map == OBMM_SWITCH_MAP_NEW ? &obmm_vm_ops_new :
+		      &obmm_vm_ops;
 
 	pr_debug("obmm_shmdev mmap: mem_id=%d pid=%d vma=[%#lx, %#lx] mapped: mem_state=%#x, PTEs on fault.\n",
 		 reg->regionid, current->pid, vma->vm_start, vma->vm_end, mem_state);
@@ -663,8 +819,7 @@ static int obmm_shm_fops_mmap(struct file *file, struct vm_area_struct *vma)
 	return 0;
 
 reset_cur_osync:
-	if (old_mmap_mode == OBMM_MMAP_INIT)
-		reg->mmap_mode = OBMM_MMAP_INIT;
+	reg->mmap_mode = old_mmap_mode;
 err_mutex_unlock:
 	/* Unfreeze while state_mutex is still held: past the unlock a
 	 * concurrent mmap can adopt the frozen value, and this late reset
@@ -875,7 +1030,7 @@ static long obmm_shm_update_range(struct file *file,
 			goto rollback;
 		}
 		/* Check VMA belongs to this region */
-		if (vma->vm_ops != &obmm_vm_ops ||
+		if (!obmm_vma_is_region(vma) ||
 		    !vma->vm_file ||
 		    vma->vm_file->private_data != reg) {
 			pr_err("VMA does not belong to this region: vma=[%#lx, %#lx)\n",
@@ -917,10 +1072,14 @@ static long obmm_shm_update_range(struct file *file,
 		length = npages << PAGE_SHIFT;
 
 		/*
-		 * Temporarily stash vm_flags in vm_private_data for rollback.
-		 * This is safe because OBMM VMAs don't use vm_private_data.
+		 * Stash vm_flags in vm_private_data's low bits for rollback;
+		 * the upper bits keep the gap-generation tag the fault gate
+		 * checks (switch_generation cannot move here: transitional gaps
+		 * are rejected above).
 		 */
-		vma->vm_private_data = (void *)(uintptr_t)vma->vm_flags;
+		vma->vm_private_data =
+			(void *)((uintptr_t)obmm_vma_gap_tag(reg->switch_generation) |
+				 (vma->vm_flags & OBMM_VMA_STASH_MASK));
 
 		ret = update_vma_perm_count(reg, region_pgoff, npages,
 					    old_access, new_access, &cache_ops,
@@ -1001,7 +1160,8 @@ rollback:
 		vma = find_vma(mm, cursor);
 		if (WARN_ON(!vma || vma->vm_start > cursor))
 			break;
-		old_vm_flags = (vm_flags_t)(uintptr_t)vma->vm_private_data;
+		old_vm_flags = (vm_flags_t)((uintptr_t)vma->vm_private_data &
+					    OBMM_VMA_STASH_MASK);
 		old_access = vm_flags_to_access(old_vm_flags);
 		region_pgoff = vma->vm_pgoff;
 		npages = (vma->vm_end - vma->vm_start) >> PAGE_SHIFT;

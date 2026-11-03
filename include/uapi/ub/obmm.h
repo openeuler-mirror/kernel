@@ -177,6 +177,21 @@ struct obmm_cmd_preimport {
 #define OBMM_PREIMPORT_FLAG_MASK	(0UL)
 #define OBMM_UNPREIMPORT_FLAG_MASK	(0UL)
 
+/*
+ * mmap offset flag bits, in the high nibble of the byte offset. mmap() only
+ * builds the VMA: the first access faults the page in, and faults on a plain
+ * mapping block (killable) while a switch gap is open. SWITCH_OLD/NEW are
+ * gap-scoped dual-backend mappings, valid only in AWAIT_READY: they serve the
+ * named backend instead of blocking, so userspace can migrate data before
+ * switch_end; they are mutually exclusive and SWITCH_OLD also requires
+ * KEEP_OLD_ALIVE. The scope lasts exactly one gap: once it closes - and in
+ * any later gap - the VMA faults like a plain mapping, blocking while that
+ * gap is open and then faulting through to the surviving backend, not
+ * necessarily the one it was mapped for. HUGETLB_PMD freezes
+ * the region at PMD granularity, installed as a PMD leaf where the physical
+ * base is PMD_SIZE-aligned and as a PTE otherwise (the import PA is only
+ * OBMM_BASIC_GRANU-aligned).
+ */
 #define OBMM_MMAP_FLAG_HUGETLB_PMD (1UL << 63)
 #define OBMM_MMAP_FLAG_HUGETLB_PUD  (1UL << 62)	/* reserved: -EOPNOTSUPP */
 #define OBMM_MMAP_FLAG_SWITCH_OLD   (1UL << 61)	/* switch_old backend, gap only */

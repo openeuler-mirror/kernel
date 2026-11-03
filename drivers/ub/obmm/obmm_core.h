@@ -155,6 +155,11 @@ struct obmm_region {
 	bool switch_old_mapped;
 	bool switch_new_mapped;
 	int switch_flush_result;
+	/* gap generation, bumped by every begin under state_mutex +
+	 * switch_lock(write): a gap-scoped VMA is served only in the
+	 * generation its mmap tagged it with (vm_private_data).
+	 */
+	u32 switch_generation;
 
 	/* Cross-process zap channel: the first open caches the device node's
 	 * address_space and igrabs its inode so unmap_mapping_range() outlives
