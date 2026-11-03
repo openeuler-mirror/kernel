@@ -46,7 +46,16 @@ int housekeeping_any_cpu(enum hk_type type)
 			if (cpu < nr_cpu_ids)
 				return cpu;
 
-			return cpumask_any_and(housekeeping.cpumasks[type], cpu_online_mask);
+			cpu = cpumask_any_and(housekeeping.cpumasks[type], cpu_online_mask);
+			if (likely(cpu < nr_cpu_ids))
+				return cpu;
+			/*
+			 * Unless we have another problem this can only happen
+			 * at boot time before start_secondary() brings the 1st
+			 * housekeeping CPU up.
+			 */
+			WARN_ON_ONCE(system_state == SYSTEM_RUNNING ||
+				     type != HK_TYPE_TIMER);
 		}
 	}
 	return smp_processor_id();
@@ -130,13 +139,25 @@ static int __init housekeeping_setup(char *str, unsigned long flags)
 	cpumask_andnot(housekeeping_staging,
 		       cpu_possible_mask, non_housekeeping_mask);
 
-	first_cpu = cpumask_first_and(cpu_present_mask, housekeeping_staging);
-	if (first_cpu >= nr_cpu_ids || first_cpu >= setup_max_cpus) {
-		__cpumask_set_cpu(smp_processor_id(), housekeeping_staging);
-		__cpumask_clear_cpu(smp_processor_id(), non_housekeeping_mask);
-		if (!housekeeping.flags) {
-			pr_warn("Housekeeping: must include one present CPU, "
-				"using boot CPU:%d\n", smp_processor_id());
+	if (support_cpu0_nohz_full) {
+		if (cpumask_empty(housekeeping_staging)) {
+			pr_warn("Housekeeping cpumask is NULL, using boot CPU\n");
+			__cpumask_set_cpu(smp_processor_id(), housekeeping_staging);
+			/* Update non_housekeeping_mask to reflect this change */
+			cpumask_andnot(non_housekeeping_mask,
+				       cpu_possible_mask, housekeeping_staging);
+		}
+		/* No need to check against cpu_present_mask here */
+		first_cpu = smp_processor_id();
+	} else {
+		first_cpu = cpumask_first_and(cpu_present_mask, housekeeping_staging);
+		if (first_cpu >= nr_cpu_ids || first_cpu >= setup_max_cpus) {
+			__cpumask_set_cpu(smp_processor_id(), housekeeping_staging);
+			__cpumask_clear_cpu(smp_processor_id(), non_housekeeping_mask);
+			if (!housekeeping.flags) {
+				pr_warn("Housekeeping: must include one present CPU, "
+					"using boot CPU:%d\n", smp_processor_id());
+			}
 		}
 	}
 
