@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2023-2025. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2023-2026. All rights reserved.
  * Description：OBMM Framework's implementations.
  */
 
@@ -15,8 +15,7 @@
 
 #include "obmm_cache.h"
 #include "obmm_sysfs.h"
-#include "obmm_export_region_ops.h"
-#include "obmm_import.h"
+#include "obmm_backend.h"
 #include "obmm_ownership.h"
 #include "obmm_shm_dev.h"
 
@@ -181,19 +180,24 @@ static int obmm_vma_access(struct vm_area_struct *vma, unsigned long addr,
 			   void *buf, int len, int write)
 {
 	struct obmm_region *reg = vma->vm_file->private_data;
+	struct obmm_backend *be = reg->backend;
 	unsigned long pfn, prot;
 	void *kaddr;
 	bool is_vmap;
 	int offset = offset_in_page(addr);
 	int ret = -EINVAL;
 
-	pr_debug("addr=%#lx len=%d write=%d region=%d type=%s\n",
-		 addr, len, write, reg->regionid,
-		 reg->type == OBMM_EXPORT_REGION ? "export" : "import");
+	/* one lockless read; everything below NULL-checks/dispatches off
+	 * this snapshot instead of re-reading reg->backend
+	 */
+	pr_debug("addr=%#lx len=%d write=%d region=%d backend_type=%d\n",
+		 addr, len, write, reg->regionid, be ? be->type : -1);
+
+	if (!be)
+		return -EINVAL;
 
 	if (!(vma->vm_flags & (VM_IO | VM_PFNMAP)))
 		return -EINVAL;
-
 	/* Check permission from vm_flags */
 	if (!(vma->vm_flags & (VM_READ | VM_WRITE)))
 		return -EINVAL;
@@ -212,7 +216,13 @@ static int obmm_vma_access(struct vm_area_struct *vma, unsigned long addr,
 	/* Map one page */
 	len = min(len, (int)(PAGE_SIZE - offset));
 
-	if (reg->type == OBMM_EXPORT_REGION) {
+	/* import backends carry remote PAs; export ones carry struct pages */
+	if (be->type == OBMM_BACKEND_IMPORT) {
+		resource_size_t phys_addr = (resource_size_t)pfn << PAGE_SHIFT;
+
+		kaddr = (__force void *)ioremap_prot(phys_addr, PAGE_SIZE, prot);
+		is_vmap = false;
+	} else {
 		struct page *page;
 
 		if (!pfn_valid(pfn))
@@ -220,11 +230,6 @@ static int obmm_vma_access(struct vm_area_struct *vma, unsigned long addr,
 		page = pfn_to_page(pfn);
 		kaddr = vmap(&page, 1, VM_MAP, __pgprot(prot));
 		is_vmap = true;
-	} else {
-		resource_size_t phys_addr = (resource_size_t)pfn << PAGE_SHIFT;
-
-		kaddr = (__force void *)ioremap_prot(phys_addr, PAGE_SIZE, prot);
-		is_vmap = false;
 	}
 	if (!kaddr)
 		return -ENOMEM;
@@ -281,12 +286,12 @@ static int obmm_shm_fops_open(struct inode *inode, struct file *file)
 		 current->pid, file->f_mode, file->f_flags);
 
 	cacheable = !(file->f_flags & O_SYNC);
-	if (cacheable && !(reg->mem_cap & OBMM_MEM_ALLOW_CACHEABLE_MMAP)) {
+	if (cacheable && !(reg->promised_cap & OBMM_MEM_ALLOW_CACHEABLE_MMAP)) {
 		pr_err("Noncacheable region %d cannot be mmaped with cachable mode.\n",
 		       reg->regionid);
 		return -EPERM;
 	}
-	if (!cacheable && !(reg->mem_cap & OBMM_MEM_ALLOW_NONCACHEABLE_MMAP)) {
+	if (!cacheable && !(reg->promised_cap & OBMM_MEM_ALLOW_NONCACHEABLE_MMAP)) {
 		pr_err("Cacheable region %d cannot be mmaped with noncachable mode.\n",
 		       reg->regionid);
 		return -EPERM;
@@ -295,6 +300,9 @@ static int obmm_shm_fops_open(struct inode *inode, struct file *file)
 		pr_err("obmm_shmdev open: The device is in creation or destruction process. Open failed.\n");
 		return -EAGAIN;
 	}
+
+	/* advisory fd accounting, consumed by the shrink rule in fops_release */
+	atomic_inc(&reg->fd_count);
 
 	pr_debug("obmm_shmdev open: mem_id=%d pid=%d completed.\n", reg->regionid, current->pid);
 
@@ -311,25 +319,31 @@ static int obmm_shm_fops_release(struct inode *inode __always_unused, struct fil
 	struct obmm_region *reg = (struct obmm_region *)file->private_data;
 
 	pr_debug("obmm_shmdev release: mem_id=%d pid=%d\n", reg->regionid, current->pid);
+
+	mutex_lock(&reg->state_mutex);
+	atomic_dec(&reg->fd_count);
+	/*
+	 * Shrink rule: with no open fds and no mappings left, the
+	 * entitlement promise may shrink back to the attached backend's
+	 * own capability.
+	 */
+	if (!atomic_read(&reg->fd_count) && !atomic_read(&reg->mmap_count) && reg->backend)
+		reg->promised_cap = reg->backend->mem_cap;
+	mutex_unlock(&reg->state_mutex);
+
 	put_obmm_region(reg);
 
 	return 0;
 }
 
-static int map_obmm_region(struct vm_area_struct *vma, struct obmm_region *reg,
-			   enum obmm_mmap_granu mmap_granu)
+static int map_obmm_region(struct vm_area_struct *vma, struct obmm_region *reg)
 {
-	struct obmm_export_region *e_reg;
-	struct obmm_import_region *i_reg;
-
 	pr_debug("mmap region %d: size=%#llx\n", reg->regionid, reg->mem_size);
-	if (reg->type == OBMM_IMPORT_REGION) {
-		i_reg = container_of(reg, struct obmm_import_region, region);
-		return map_import_region(vma, i_reg, mmap_granu);
-	}
+	if (!reg->backend || !reg->backend->ops->map_range)
+		return -EINVAL;
 
-	e_reg = container_of(reg, struct obmm_export_region, region);
-	return map_export_region(vma, e_reg, mmap_granu);
+	/* the op reads the shell's mmap_granu, established by the entry path */
+	return reg->backend->ops->map_range(reg->backend, vma);
 }
 
 /* Return page table protection bits.
@@ -497,7 +511,7 @@ static int obmm_shm_fops_mmap(struct file *file, struct vm_area_struct *vma)
 		if (ret)
 			goto reset_cur_osync;
 
-		ret = map_obmm_region(vma, reg, mmap_granu);
+		ret = map_obmm_region(vma, reg);
 		if (ret) {
 			pr_err("Failed to mmap region %d. ret=%pe\n", reg->regionid, ERR_PTR(ret));
 			goto reset_cur_osync;
@@ -517,7 +531,7 @@ static int obmm_shm_fops_mmap(struct file *file, struct vm_area_struct *vma)
 		}
 	} else {
 		/* cc-region with nc-mmap(o-sync) */
-		ret = map_obmm_region(vma, reg, mmap_granu);
+		ret = map_obmm_region(vma, reg);
 		if (ret) {
 			pr_err("Failed to mmap region %d. ret=%pe\n", reg->regionid, ERR_PTR(ret));
 			goto reset_cur_osync;
@@ -926,9 +940,16 @@ static void obmm_shm_dev_release(struct device *dev)
 {
 	struct obmm_region *reg = container_of(dev, struct obmm_region, device);
 
-	/* region is the first member of both enclosing structs: kfree(reg) frees all */
-	if (reg->type == OBMM_EXPORT_REGION)
-		kfree(container_of(reg, struct obmm_export_region, region)->vendor_info);
+	/*
+	 * Defensive: the backend must have been detached before
+	 * the shell's last reference dropped. Warn and drop the attachment
+	 * reference if it was not - the backend may then leak, but the
+	 * violation is surfaced instead of silently freeing live state.
+	 */
+	if (WARN_ON_ONCE(reg->backend)) {
+		pr_err("memid=%d: backend still attached at region free\n", reg->regionid);
+		obmm_backend_put(reg->backend);
+	}
 	kfree(reg);
 
 	/* pairs with try_module_get() in obmm_shm_dev_init_device(); must be last */
@@ -950,10 +971,6 @@ int obmm_shm_dev_init_device(struct obmm_region *reg)
 
 	atomic_set(&reg->mmap_count, 0);
 	reg->mmap_mode = OBMM_MMAP_INIT;
-
-	/* obmm_shm_dev_release() frees the region via a plain kfree(reg) */
-	BUILD_BUG_ON(offsetof(struct obmm_export_region, region) != 0);
-	BUILD_BUG_ON(offsetof(struct obmm_import_region, region) != 0);
 
 	cdev_init(&reg->cdevice, &obmm_shm_fops);
 	reg->cdevice.owner = THIS_MODULE;

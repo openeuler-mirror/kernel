@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2023-2025. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2023-2026. All rights reserved.
  * Description：OBMM Framework's implementations.
  */
 
 #include <linux/pgtable.h>
 #include <linux/elf.h>
+#include <linux/mutex.h>
 
 #include "obmm_sysfs.h"
+#include "obmm_backend.h"
 #include "obmm_preimport.h"
-#include "obmm_import.h"
 
 static ssize_t size_show(struct device *dev, struct device_attribute *attr __always_unused,
 			 char *buf)
@@ -23,7 +24,7 @@ static DEVICE_ATTR_ADMIN_RO(size);
 
 static const char *get_type_str(const struct obmm_region *region)
 {
-	return region->type == OBMM_EXPORT_REGION ? "export" : "import";
+	return region->created_as == OBMM_EXPORT_REGION ? "export" : "import";
 }
 
 /* show some attribute of a region as string */
@@ -91,6 +92,75 @@ REGION_FLAG_SHOW(allow_mmap);
 REGION_FLAG_SHOW(memory_from_user);
 REGION_FLAG_SHOW(preimport);
 
+/*
+ * Backend-typed views of a region: every show() below reads
+ * the memory state through reg->backend, dispatching on the backend type;
+ * "-" is shown for a NULL backend (detached corner) or a field the current
+ * backend does not carry.
+ */
+static struct obmm_import_backend *reg_import_backend(const struct obmm_region *reg)
+{
+	struct obmm_backend *be = reg->backend;
+
+	if (be && be->type == OBMM_BACKEND_IMPORT)
+		return obmm_backend_to_import(be);
+	return NULL;
+}
+
+static struct obmm_export_common *reg_export_common(const struct obmm_region *reg)
+{
+	struct obmm_backend *be = reg->backend;
+
+	if (!be)
+		return NULL;
+	return obmm_backend_to_export_common(be);
+}
+
+/*
+ * Scalar-field show() generators: state_mutex -> typed accessor ->
+ * sysfs_emit (or "-" when the current backend does not carry the field or
+ * no backend is attached) -> unlock.
+ */
+#define IMPORT_FIELD_SHOW(field, fmt)						\
+	static ssize_t field##_show(struct device *dev,				\
+				    struct device_attribute *attr __always_unused, char *buf) \
+	{									\
+		struct obmm_region *reg;					\
+		struct obmm_import_backend *imp;				\
+		ssize_t count;							\
+										\
+		reg = container_of(dev, struct obmm_region, device);		\
+		mutex_lock(&reg->state_mutex);					\
+		imp = reg_import_backend(reg);					\
+		if (imp)							\
+			count = sysfs_emit(buf, fmt "\n", imp->field);		\
+		else								\
+			count = sysfs_emit(buf, "-\n");				\
+		mutex_unlock(&reg->state_mutex);					\
+		return count;							\
+	}									\
+	static DEVICE_ATTR_ADMIN_RO(field)
+
+#define EXPORT_FIELD_SHOW(field, fmt)						\
+	static ssize_t field##_show(struct device *dev,				\
+				    struct device_attribute *attr __always_unused, char *buf) \
+	{									\
+		struct obmm_region *reg;					\
+		struct obmm_export_common *exp;				\
+		ssize_t count;							\
+										\
+		reg = container_of(dev, struct obmm_region, device);		\
+		mutex_lock(&reg->state_mutex);					\
+		exp = reg_export_common(reg);					\
+		if (exp)							\
+			count = sysfs_emit(buf, fmt "\n", exp->field);		\
+		else								\
+			count = sysfs_emit(buf, "-\n");				\
+		mutex_unlock(&reg->state_mutex);					\
+		return count;							\
+	}									\
+	static DEVICE_ATTR_ADMIN_RO(field)
+
 /* for export region only */
 static ssize_t node_mem_size_show(struct device *dev, struct device_attribute *attr __always_unused,
 				  char *buf)
@@ -98,15 +168,22 @@ static ssize_t node_mem_size_show(struct device *dev, struct device_attribute *a
 	unsigned int i;
 	ssize_t count;
 	struct obmm_region *reg;
-	struct obmm_export_region *e_reg;
+	struct obmm_export_common *exp;
 
 	reg = container_of(dev, struct obmm_region, device);
-	e_reg = container_of(reg, struct obmm_export_region, region);
+	mutex_lock(&reg->state_mutex);
+	exp = reg_export_common(reg);
+	if (!exp) {
+		count = sysfs_emit(buf, "-\n");
+		goto out_unlock;
+	}
 
-	count = sysfs_emit(buf, "%#llx", e_reg->node_mem_size[0]);
-	for (i = 1; i < e_reg->node_count; i++)
-		count += sysfs_emit_at(buf, count, ",%#llx", e_reg->node_mem_size[i]);
+	count = sysfs_emit(buf, "%#llx", exp->node_mem_size[0]);
+	for (i = 1; i < exp->node_count; i++)
+		count += sysfs_emit_at(buf, count, ",%#llx", exp->node_mem_size[i]);
 	count += sysfs_emit_at(buf, count, "\n");
+out_unlock:
+	mutex_unlock(&reg->state_mutex);
 	return count;
 }
 static DEVICE_ATTR_ADMIN_RO(node_mem_size);
@@ -114,67 +191,55 @@ static DEVICE_ATTR_ADMIN_RO(node_mem_size);
 static ssize_t deid_show(struct device *dev, struct device_attribute *attr __always_unused,
 			 char *buf)
 {
-	struct obmm_import_region *i_reg;
-	struct obmm_export_region *e_reg;
+	struct obmm_import_backend *imp;
+	struct obmm_export_common *exp;
 	struct obmm_region *reg;
+	ssize_t count;
 
 	reg = container_of(dev, struct obmm_region, device);
-	if (reg->type == OBMM_EXPORT_REGION) {
-		e_reg = container_of(reg, struct obmm_export_region, region);
-		return sysfs_emit(buf, EID_FMT64 "\n", EID_ARGS64_H(e_reg->deid),
-				  EID_ARGS64_L(e_reg->deid));
-	}
-	i_reg = container_of(reg, struct obmm_import_region, region);
-	return sysfs_emit(buf, EID_FMT64 "\n", EID_ARGS64_H(i_reg->deid),
-			  EID_ARGS64_L(i_reg->deid));
+	mutex_lock(&reg->state_mutex);
+	imp = reg_import_backend(reg);
+	exp = reg_export_common(reg);
+	if (imp)
+		count = sysfs_emit(buf, EID_FMT64 "\n", EID_ARGS64_H(imp->deid),
+				   EID_ARGS64_L(imp->deid));
+	else if (exp)
+		count = sysfs_emit(buf, EID_FMT64 "\n", EID_ARGS64_H(exp->deid),
+				   EID_ARGS64_L(exp->deid));
+	else
+		count = sysfs_emit(buf, "-\n");
+	mutex_unlock(&reg->state_mutex);
+	return count;
 }
 static DEVICE_ATTR_ADMIN_RO(deid);
 
 static ssize_t seid_show(struct device *dev, struct device_attribute *attr __always_unused,
 			 char *buf)
 {
-	struct obmm_import_region *i_reg;
+	struct obmm_import_backend *imp;
 	struct obmm_region *reg;
+	ssize_t count;
 
 	reg = container_of(dev, struct obmm_region, device);
-	i_reg = container_of(reg, struct obmm_import_region, region);
-
-	return sysfs_emit(buf, EID_FMT64 "\n", EID_ARGS64_H(i_reg->seid),
-			  EID_ARGS64_L(i_reg->seid));
+	mutex_lock(&reg->state_mutex);
+	imp = reg_import_backend(reg);
+	if (imp)
+		count = sysfs_emit(buf, EID_FMT64 "\n", EID_ARGS64_H(imp->seid),
+				   EID_ARGS64_L(imp->seid));
+	else
+		count = sysfs_emit(buf, "-\n");
+	mutex_unlock(&reg->state_mutex);
+	return count;
 }
 static DEVICE_ATTR_ADMIN_RO(seid);
 
-#define COMMON_FIELD_SHOW(field, fmt)                                                         \
-	static ssize_t field##_show(struct device *dev,                                       \
-				    struct device_attribute *attr __always_unused, char *buf) \
-	{                                                                                     \
-		struct obmm_region *reg;                                                      \
-		struct obmm_export_region *e_reg;                                             \
-		reg = container_of(dev, struct obmm_region, device);                          \
-		e_reg = container_of(reg, struct obmm_export_region, region);                 \
-		return sysfs_emit(buf, fmt, e_reg->field);                                    \
-	}                                                                                     \
-	static DEVICE_ATTR_ADMIN_RO(field)
+EXPORT_FIELD_SHOW(tokenid, "0x%x");
+EXPORT_FIELD_SHOW(uba, "0x%llx");
 
-COMMON_FIELD_SHOW(tokenid, "0x%x\n");
-COMMON_FIELD_SHOW(uba, "0x%llx\n");
-
-#define IREG_FIELD_SHOW(field, fmt)                                                           \
-	static ssize_t field##_show(struct device *dev,                                       \
-				    struct device_attribute *attr __always_unused, char *buf) \
-	{                                                                                     \
-		struct obmm_region *reg;                                                      \
-		struct obmm_import_region *i_reg;                                             \
-		reg = container_of(dev, struct obmm_region, device);                          \
-		i_reg = container_of(reg, struct obmm_import_region, region);                 \
-		return sysfs_emit(buf, fmt, i_reg->field);                                    \
-	}                                                                                     \
-	static DEVICE_ATTR_ADMIN_RO(field)
-
-IREG_FIELD_SHOW(pa, "0x%llx\n");
-IREG_FIELD_SHOW(numa_id, "%d\n");
-IREG_FIELD_SHOW(dcna, "0x%x\n");
-IREG_FIELD_SHOW(scna, "0x%x\n");
+IMPORT_FIELD_SHOW(pa, "0x%llx");
+IMPORT_FIELD_SHOW(numa_id, "%d");
+IMPORT_FIELD_SHOW(dcna, "0x%x");
+IMPORT_FIELD_SHOW(scna, "0x%x");
 
 static struct attribute *root_attrs[] __ro_after_init = {
 	&dev_attr_size.attr,
@@ -266,7 +331,7 @@ const struct attribute_group **obmm_region_get_attr_groups(const struct obmm_reg
 {
 	unsigned int index;
 
-	if (region->type == OBMM_EXPORT_REGION)
+	if (region->created_as == OBMM_EXPORT_REGION)
 		return obmm_export_attrs_groups;
 	index = get_import_region_sysfs_index(region);
 	return obmm_import_attrs_groups_list[index];
