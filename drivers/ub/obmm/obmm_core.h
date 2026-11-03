@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2023-2025. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2023-2026. All rights reserved.
  * Description：OBMM Framework's implementations.
  * Author:
  */
@@ -43,6 +43,8 @@ extern size_t __obmm_memseg_size;
 #define MAX_MEMINFO_COUNT MAX_IMPORT_COUNT
 
 struct ubmem_resource;
+struct resource;
+struct obmm_backend;
 
 enum obmm_region_type {
 	OBMM_EXPORT_REGION,
@@ -64,7 +66,6 @@ enum obmm_mmap_granu {
 #define OBMM_REGION_FLAG_NUMA_REMOTE		0x1
 #define OBMM_REGION_FLAG_ALLOW_MMAP		0x2
 #define OBMM_REGION_FLAG_MEMORY_FROM_USER	0x4
-#define OBMM_REGION_FLAG_FAST_ALLOC		0x8
 #define OBMM_REGION_FLAG_PREIMPORT		0x10
 
 #define OBMM_INVALID_REGIONID	0
@@ -75,14 +76,18 @@ enum obmm_mmap_granu {
 #define OBMM_MEM_ALLOW_CACHEABLE_MMAP 0x1
 #define OBMM_MEM_ALLOW_NONCACHEABLE_MMAP 0x2
 
-/* invalidate cache **on start-up** */
-/* region models a set of memory to share across hosts: a unit of sharing. */
+/*
+ * region models a set of memory to share across hosts: a unit of sharing.
+ * Backend-independent shell over the attached struct obmm_backend.
+ */
 struct obmm_region {
 	/* unique within host -- can be used as an access handle */
 	int regionid;
 
-	/* import or export */
-	enum obmm_region_type type;
+	/* how it was created (import or export ioctl); reg->backend->type is
+	 * authoritative, a switch may attach a backend of the other kind.
+	 */
+	enum obmm_region_type created_as;
 
 	unsigned long flags;
 
@@ -106,14 +111,31 @@ struct obmm_region {
 	 * the mmap flags and OBMM_REGION_FLAG_ALLOW_MMAP.
 	 */
 	enum obmm_mmap_granu mmap_granu;
-	/*
-	 * Determines what mode the memory can be mapped with.
-	 * OBMM_MEM_ALLOW_CACHEABLE_MMAP: Supports cacheable mapping
-	 * OBMM_MEM_ALLOW_NONCACHEABLE_MMAP: Supports non-cacheable mapping
-	 */
-	unsigned long mem_cap;
 	/* number of mmap (atomic to avoid deadlock in vma_open during split) */
 	atomic_t mmap_count;
+	/* open fds holding cacheability entitlements */
+	atomic_t fd_count;
+	/*
+	 * OR of the mem_cap of every backend attached while entitled fds
+	 * could exist; the open-time entitlement gate.
+	 */
+	u32 promised_cap;
+
+	/* MEMID_{regionid} iomem leaf of the CURRENT import backend;
+	 * attach/detach-managed (obmm_backend.c); NULL for export backends.
+	 */
+	struct resource *memdev_res;
+
+	/* current backend; written under state_mutex (attach/detach), read
+	 * under state_mutex (mmap/close/query/sysfs). NULL while detached;
+	 * every dispatch site NULL-guards it.
+	 */
+	struct obmm_backend *backend;
+
+	/*
+	 * old backend kept alive during a switch gap.
+	 */
+	struct obmm_backend *switch_old;
 
 	struct obmm_ownership_info *ownership_info;
 	/* protect ownership_info and serialize concurrent page table change requests */
@@ -142,73 +164,10 @@ static inline bool region_preimport(const struct obmm_region *reg)
 {
 	return reg->flags & OBMM_REGION_FLAG_PREIMPORT;
 }
-static inline bool region_fast_alloc(const struct obmm_region *reg)
-{
-	return reg->flags & OBMM_REGION_FLAG_FAST_ALLOC;
-}
 
-struct obmm_import_region {
-	struct obmm_region region;
-
-	u32 dcna;
-	u32 scna;
-
-	/* resource of the PA range */
-	struct ubmem_resource *ubmem_res;
-	/* the resource for this region */
-	struct resource *memdev_res;
-	u64 pa;
-
-	/* imported NUMA node */
-	int numa_id;
-	/* the base_dist passed in import, which in some scenario might be an ignored value. It is
-	 * stored here make error rollback feasible.
-	 */
-	u8 base_dist;
-
-	/* handle to manage associated preimport range */
-	void *preimport_handle;
-	u8 deid[16];
-	u8 seid[16];
-};
-
-struct mem_description_pid {
-	int pid;
-	void __user *user_va;
-	int pinned;
-	u64 start_time;
-};
+/* per-node memseg lists of an export-pool backend (obmm_backend.h) */
 struct mem_description_pool {
 	struct list_head head[OBMM_MAX_LOCAL_NUMA_NODES];
-};
-
-struct obmm_export_region {
-	struct obmm_region region;
-
-	/* export region may use physical memory from NUMA node[0] to node[node_count-1] */
-	unsigned int node_count;
-	uint64_t node_mem_size[OBMM_MAX_LOCAL_NUMA_NODES];
-
-	/* physical pages */
-	union {
-		struct mem_description_pid mem_desc_pid;
-		struct mem_description_pool mem_desc;
-	};
-
-	/* DMA mapping */
-	struct sg_table sgt;
-
-	/* UMMU device for the tokenid */
-	struct device *ummu_dev;
-	/* UMMU RAS event notifier */
-	struct ummu_event_block *ummu_event_block;
-
-	unsigned int tokenid;
-	u64 uba;
-	unsigned int vendor_len;
-	void *vendor_info;
-	int affinity;
-	u8 deid[16];
 };
 
 struct obmm_datapath {
@@ -317,5 +276,8 @@ void uninit_obmm_region(struct obmm_region *region);
 
 int register_obmm_region(struct obmm_region *region);
 void deregister_obmm_region(struct obmm_region *region);
+
+/* shared shell teardown for unimport/unexport: deregister, uninit, free */
+void obmm_region_teardown(struct obmm_region *region);
 
 #endif

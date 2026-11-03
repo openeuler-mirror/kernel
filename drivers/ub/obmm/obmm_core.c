@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2023-2025. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2023-2026. All rights reserved.
  * Description：OBMM Framework's implementations.
  */
 
@@ -23,7 +23,7 @@
 
 #include "obmm_shm_dev.h"
 #include "obmm_cache.h"
-#include "obmm_export_region_ops.h"
+#include "obmm_backend.h"
 #include "ubmempool_allocator.h"
 #include "obmm_import.h"
 #include "obmm_ownership.h"
@@ -159,17 +159,19 @@ struct obmm_region *search_deactivate_obmm_region(int regionid)
 int obmm_query_by_offset(struct obmm_region *reg, unsigned long offset,
 			 struct obmm_ext_addr *ext_addr)
 {
+	struct obmm_backend *be;
 	int ret;
-	struct obmm_export_region *e_reg;
-	struct obmm_import_region *i_reg;
 
-	if (reg->type == OBMM_EXPORT_REGION) {
-		e_reg = container_of(reg, struct obmm_export_region, region);
-		ret = get_offset_detail_export_region(e_reg, offset, ext_addr);
-	} else {
-		i_reg = container_of(reg, struct obmm_import_region, region);
-		ret = get_offset_detail_import(i_reg, offset, ext_addr);
+	mutex_lock(&reg->state_mutex);
+	be = reg->backend;
+	if (!be || !be->ops->query) {
+		mutex_unlock(&reg->state_mutex);
+		return -EINVAL;
 	}
+	ext_addr->offset = offset;
+	ret = be->ops->query(be, ext_addr);
+	mutex_unlock(&reg->state_mutex);
+
 	return ret;
 }
 
@@ -184,23 +186,17 @@ int obmm_query_by_pa(unsigned long pa, struct obmm_ext_addr *ext_addr)
 
 	spin_lock_irqsave(lock, flags);
 	list_for_each_entry(region, &g_obmm_ctx_info.regions, node) {
+		struct obmm_backend *be;
+
 		if (!try_get_obmm_region(region))
 			continue;
-		if (region->type == OBMM_IMPORT_REGION) {
-			struct obmm_import_region *i_reg;
-
-			i_reg = container_of(region, struct obmm_import_region, region);
-			ret = get_pa_detail_import(i_reg, pa, ext_addr);
-		}
-		if (region->type == OBMM_EXPORT_REGION) {
-			struct obmm_export_region *e_reg;
-
-			e_reg = container_of(region, struct obmm_export_region, region);
-			ret = get_pa_detail_export_region(e_reg, pa, ext_addr);
+		be = region->backend;
+		if (be && be->ops->covers_pa && be->ops->covers_pa(be, pa, 1, ext_addr)) {
+			ret = 0;
+			put_obmm_region(region);
+			break;
 		}
 		put_obmm_region(region);
-		if (ret == 0)
-			break;
 	}
 	spin_unlock_irqrestore(lock, flags);
 
@@ -318,6 +314,10 @@ int init_obmm_region(struct obmm_region *region)
 {
 	int retval;
 
+	/*
+	 * Shells come from kzalloc; only the fields zeroing cannot set --
+	 * refcount, locks and list heads -- are set here.
+	 */
 	refcount_set(&region->refcnt, 0);
 	mutex_init(&region->state_mutex);
 	INIT_LIST_HEAD(&region->node);
@@ -364,6 +364,18 @@ void deregister_obmm_region(struct obmm_region *region)
 {
 	remove_obmm_region(region);
 	obmm_shm_dev_unpublish(region);
+}
+
+/*
+ * Shared shell teardown for the unimport/unexport ioctl paths: deregister,
+ * uninit, then hand the region to the device core for freeing.
+ */
+void obmm_region_teardown(struct obmm_region *region)
+{
+	deregister_obmm_region(region);
+	uninit_obmm_region(region);
+	/* the region is freed by the device release callback */
+	obmm_shm_dev_put(region);
 }
 
 int set_obmm_region_priv(struct obmm_region *region, unsigned int priv_len, const void __user *priv)

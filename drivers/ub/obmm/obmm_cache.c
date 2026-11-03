@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2024-2025. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2024-2026. All rights reserved.
  */
 
 #include <linux/pgtable.h>
@@ -13,8 +13,7 @@
 #include <ub/ubus/ub-mem-decoder.h>
 
 #include "obmm_core.h"
-#include "obmm_export_region_ops.h"
-#include "obmm_import.h"
+#include "obmm_backend.h"
 #include "obmm_cache.h"
 
 static bool skip_cache_maintain;
@@ -110,12 +109,16 @@ int flush_cache_by_pa(phys_addr_t addr, size_t size, unsigned long cache_ops)
 	return ret;
 }
 
+/*
+ * Validate the range and flush through the attached backend; a detached
+ * shell or a missing op (EXPORT_USER) is a no-op success. Caller holds
+ * state_mutex.
+ */
 int obmm_region_flush_range(struct obmm_region *reg, unsigned long offset, unsigned long length,
 			    uint8_t cache_ops)
 {
+	struct obmm_backend *be;
 	int ret;
-	struct obmm_import_region *i_reg;
-	struct obmm_export_region *e_reg;
 
 	/* validation */
 	if (!obmm_is_valid_cache_ops(cache_ops))
@@ -132,13 +135,10 @@ int obmm_region_flush_range(struct obmm_region *reg, unsigned long offset, unsig
 	pr_debug("flush cache: region=%d, offset=0x%lx, length=0x%lx, cache_ops=%u\n",
 		 reg->regionid, offset, length, cache_ops);
 	/* clear cache and ubus queue */
-	if (reg->type == OBMM_IMPORT_REGION) {
-		i_reg = container_of(reg, struct obmm_import_region, region);
-		ret = flush_import_region(i_reg, offset, length, cache_ops);
-	} else {
-		e_reg = container_of(reg, struct obmm_export_region, region);
-		ret = flush_export_region(e_reg, offset, length, cache_ops);
-	}
+	be = reg->backend;
+	if (!be || !be->ops->flush_range)
+		return 0;
+	ret = be->ops->flush_range(be, offset, length, cache_ops);
 
 	if (ret)
 		pr_err("flush failed: region=%d, offset=0x%lx, length=0x%lx, cache_ops=%u\n",
