@@ -19,6 +19,8 @@
 
 #define LOCAL_TECT_TAG 0
 
+#define UMMU_VENDOR_INFO_RESERVED	46
+
 extern bool hw_bypass;
 extern struct platform_driver ummu_driver;
 extern const struct ummu_core_ops ummu_ops;
@@ -26,6 +28,17 @@ extern const struct ummu_device_helper ummu_helper;
 
 #define MSI_IOVA_BASE 0x8000000
 #define MSI_IOVA_LENGTH 0x100000
+
+struct ummu_vendor_info {
+	u64		valid;
+	u32		cap0;
+	u32		cap1;
+	u64		reg_base;
+	u64		reg_size;
+	u8		reserved[UMMU_VENDOR_INFO_RESERVED];
+	u8		version;
+	u8		type;
+};
 
 #define EID_HIGH_SZ_SHIFT 64
 #define UMMU_CTRL_PAGE_SIZE ((PAGE_SIZE == SZ_4K) ? SZ_4K : SZ_64K)

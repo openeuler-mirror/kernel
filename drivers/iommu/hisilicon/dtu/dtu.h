@@ -46,7 +46,6 @@ struct ub_dtu_master {
 /* Global logic DTU singleton — aggregates N physical dies */
 struct ub_dtu_logic_dev {
 	struct ummu_core_device	core_dev;
-	struct ub_dtu_device	*agent_device;
 	struct list_head	dev_list;
 	struct mutex		dev_mutex;
 	u32			dtu_cnt;
@@ -57,7 +56,6 @@ struct ub_dtu_logic_dev {
 struct ub_dtu_logic_domain {
 	struct ummu_base_domain		base_domain;
 	struct ub_dtu_logic_dev		*logic_dtu;
-	struct mutex			domain_lock;
 	struct list_head		win_list;
 };
 

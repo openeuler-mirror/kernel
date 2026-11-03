@@ -28,7 +28,11 @@ ummu-y := ummu_main.o \
 
 ummu-$(CONFIG_UB_UMMU_SVA) += sva.o
 ummu-$(CONFIG_UB_UBMEM_UMMU) += ubmem-mmu/ubmem_mmu.o
-ummu-$(CONFIG_UB_DTU) += dtu/dtu_cmd.o
+ummu-$(CONFIG_UB_DTU) += dtu/dtu_logic.o \
+			 dtu/dtu_probe.o \
+			 dtu/dtu_domain.o \
+			 dtu/dtu_cmd.o \
+			 dtu/dtu_addr_window.o
 
 obj-$(CONFIG_UB_UBMEM_VMMU) += ubmem-mmu/
 

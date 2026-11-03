@@ -16,6 +16,7 @@
 
 #include "logic_ummu/logic_ummu.h"
 #include "ummu_impl.h"
+#include "dtu/dtu.h"
 #include "interrupt.h"
 #include "perm_queue.h"
 #include "page_table.h"
@@ -691,6 +692,25 @@ static int ummu_device_ubrt_probe(struct ummu_device *ummu)
 	return 0;
 }
 
+static void ummu_subdev_probe(struct device *dev)
+{
+#if IS_ENABLED(CONFIG_UB_DTU)
+	int ret = ub_dtu_probe(dev);
+
+	if (ret) {
+		dev_err(dev, "ub-dtu probe failed, ret = %d.\n", ret);
+		return;
+	}
+#endif
+}
+
+static void ummu_subdev_remove(struct device *dev)
+{
+#if IS_ENABLED(CONFIG_UB_DTU)
+	ub_dtu_remove(dev);
+#endif
+}
+
 static int ummu_device_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -770,6 +790,8 @@ static int ummu_device_probe(struct platform_device *pdev)
 		}
 	}
 
+	ummu_subdev_probe(dev);
+
 	return 0;
 
 probe_res_release:
@@ -783,6 +805,8 @@ err_disable_ummu:
 static int ummu_device_remove(struct platform_device *pdev)
 {
 	struct ummu_device *ummu = platform_get_drvdata(pdev);
+
+	ummu_subdev_remove(&pdev->dev);
 
 	if (ummu->impl_ops && ummu->impl_ops->dev_remove)
 		ummu->impl_ops->dev_remove(ummu);
