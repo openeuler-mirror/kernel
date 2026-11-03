@@ -51,15 +51,23 @@ static void obmm_vma_close(struct vm_area_struct *vma)
 	(void)update_vma_perm_count(reg, region_pgoff, npages, access, OBMM_SHM_MEM_NO_ACCESS,
 				    &cache_ops, NULL);
 
-	if (cache_ops != OBMM_SHM_CACHE_NONE && reg->mmap_mode == OBMM_MMAP_NORMAL) {
+	/* Skip the flush while a switch is transitional: the backend is
+	 * mid-swap and gap-scoped mappings may own the dirty lines (the
+	 * decrement above still runs; STRANDED has no backend).
+	 */
+	if (cache_ops != OBMM_SHM_CACHE_NONE && reg->mmap_mode == OBMM_MMAP_NORMAL &&
+	    !obmm_switch_state_transitional(READ_ONCE(reg->switch_state))) {
 		ret = obmm_region_flush_range(reg, region_pgoff << PAGE_SHIFT,
 					      npages << PAGE_SHIFT, cache_ops);
 		if (ret)
 			pr_err("vma close: cache flush failed: %d\n", ret);
 	}
 
-	if (atomic_dec_and_test(&reg->mmap_count))
+	if (atomic_dec_and_test(&reg->mmap_count)) {
 		reg->mmap_mode = OBMM_MMAP_INIT;
+		/* promised-cap shrink evaluation point (paired with fops_release) */
+		obmm_promised_cap_shrink_maybe(reg);
+	}
 
 	mutex_unlock(&reg->state_mutex);
 }
@@ -127,18 +135,40 @@ static bool obmm_vma_pmd_host(const struct vm_area_struct *vma)
 	       IS_ALIGNED(vma->vm_end, PMD_SIZE);
 }
 
-/* mmap() only builds the VMA: every page arrives here. The VMA holds the
- * file and the file holds the region, so the backend stays attached and the
- * lockless read needs no further serialization.
+/* Fault gate of a plain mapping: switch_lock(read) is held across the pfn
+ * derivation and the install, so a swap cannot move the backend being
+ * served.
  */
 static vm_fault_t obmm_vma_fault(struct vm_fault *vmf)
 {
 	struct obmm_region *reg = vmf->vma->vm_file->private_data;
-	struct obmm_backend *be = reg->backend;
+	struct obmm_backend *be;
+	enum obmm_switch_state state;
+	vm_fault_t fret;
 	bool is_pmd, nc;
+	int lock_ret;	/* int, never vm_fault_t */
 
-	if (!be || !be->ops->fault)	/* non-mmappable backend: capability is checked at mmap */
+	if (!try_get_obmm_region(reg))		/* fault-gate UAF pin */
 		return VM_FAULT_SIGBUS;
+
+	/* A user fault may arrive under the per-VMA lock, where the gap wait
+	 * would double-unlock an unheld rwsem. Drop it and let the arch path
+	 * re-dispatch under the mmap lock.
+	 */
+	if (vmf->flags & FAULT_FLAG_VMA_LOCK) {
+		vma_end_read(vmf->vma);
+		put_obmm_region(reg);
+		return VM_FAULT_RETRY;
+	}
+
+	/* switch_lock is write-held during a swap: SIGKILL then makes
+	 * down_read_killable return nonzero -> SIGBUS, no PTE installed.
+	 */
+	lock_ret = down_read_killable(&reg->switch_lock);
+	if (lock_ret) {
+		put_obmm_region(reg);
+		return VM_FAULT_SIGBUS;
+	}
 
 	/* Cacheable mappings freeze mmap_granu as the ownership layout and
 	 * UPDATE_RANGE contract; a PMD leaf additionally needs a PMD-congruent
@@ -152,30 +182,62 @@ static vm_fault_t obmm_vma_fault(struct vm_fault *vmf)
 		 obmm_vma_pmd_host(vmf->vma) &&
 		 pmd_none(pmdp_get_lockless(vmf->pmd));
 
-	return be->ops->fault(be, vmf, is_pmd);
+	state = READ_ONCE(reg->switch_state);
+	if (obmm_switch_state_transitional(state)) {
+		/* Sleep the gap out: there is no kernel-side timeout, so an
+		 * abandoned gap blocks faults killably. Drop switch_lock and
+		 * mmap_read_lock so mmap_write_lock acquirers do not stall.
+		 */
+		up_read(&reg->switch_lock);
+		mmap_read_unlock(vmf->vma->vm_mm);
+		(void)wait_event_killable(reg->switch_wqh,
+				!obmm_switch_state_transitional(READ_ONCE(reg->switch_state)));
+		put_obmm_region(reg);
+		/* Normal wake and SIGKILL both return RETRY after the unlock
+		 * above; SIGBUS would make the arch fault path unlock twice.
+		 */
+		return VM_FAULT_RETRY;
+	}
+
+	if (state == OBMM_SWITCH_STRANDED)
+		be = NULL;	/* terminal dead: never install */
+	else
+		be = reg->backend;
+
+	if (!be || !be->ops->fault) {	/* STRANDED or a non-mmappable backend */
+		up_read(&reg->switch_lock);
+		put_obmm_region(reg);
+		return VM_FAULT_SIGBUS;
+	}
+
+	fret = be->ops->fault(be, vmf, is_pmd);
+	up_read(&reg->switch_lock);
+	put_obmm_region(reg);
+	return fret;
 }
 
-/* Custom access handler for ptrace/GDB on PFNMAP VMAs */
+/*
+ * Custom access handler for ptrace/GDB on PFNMAP VMAs. Runs under the
+ * region's state_mutex: this path must not be a lockless reader of the
+ * mutable backend pointer, and the mmap_read_lock -> state_mutex
+ * ordering matches update_range, so there is no inversion. Transitional
+ * switch states return -EAGAIN (documented ptrace unavailability mid-gap),
+ * STRANDED returns -EIO. Outside transitional states every live PTE
+ * belongs to reg->backend (the terminal zaps force refaults onto the
+ * serving-or-restored backend), so the channel is chosen by the backend
+ * type alone.
+ */
 static int obmm_vma_access(struct vm_area_struct *vma, unsigned long addr,
 			   void *buf, int len, int write)
 {
 	struct obmm_region *reg = vma->vm_file->private_data;
-	struct obmm_backend *be = reg->backend;
+	struct obmm_backend *be;
 	struct obmm_ext_addr ext = { };
 	unsigned long pfn, prot;
 	void *kaddr;
 	bool is_vmap;
 	int offset = offset_in_page(addr);
-	int ret = -EINVAL;
-
-	/* one lockless read; everything below NULL-checks/dispatches off
-	 * this snapshot instead of re-reading reg->backend
-	 */
-	pr_debug("addr=%#lx len=%d write=%d region=%d backend_type=%d\n",
-		 addr, len, write, reg->regionid, be ? be->type : -1);
-
-	if (!be)
-		return -EINVAL;
+	int ret;
 
 	if (!(vma->vm_flags & (VM_IO | VM_PFNMAP)))
 		return -EINVAL;
@@ -185,10 +247,27 @@ static int obmm_vma_access(struct vm_area_struct *vma, unsigned long addr,
 	if (write && !(vma->vm_flags & VM_WRITE))
 		return -EINVAL;
 
+	mutex_lock(&reg->state_mutex);
+
+	ret = obmm_switch_state_gate_err(READ_ONCE(reg->switch_state));
+	if (ret)
+		goto out_unlock;
+
+	be = reg->backend;
+	if (!be) {
+		ret = -EINVAL;
+		goto out_unlock;
+	}
+
+	pr_debug("addr=%#lx len=%d write=%d region=%d backend_type=%d\n",
+		 addr, len, write, reg->regionid, be->type);
+
 	/* the page may not be populated yet: ask the backend for the PA */
 	ext.offset = (vma->vm_pgoff << PAGE_SHIFT) + (addr - vma->vm_start);
-	if (be->ops->query(be, &ext))
-		return -EINVAL;
+	if (be->ops->query(be, &ext)) {
+		ret = -EINVAL;
+		goto out_unlock;
+	}
 	pfn = ext.pa >> PAGE_SHIFT;
 
 	/* Derive prot from vma->vm_page_prot, adjust for kernel access */
@@ -208,24 +287,34 @@ static int obmm_vma_access(struct vm_area_struct *vma, unsigned long addr,
 	} else {
 		struct page *page;
 
-		if (!pfn_valid(pfn))
-			return -EINVAL;
+		if (!pfn_valid(pfn)) {
+			ret = -EINVAL;
+			goto out_unlock;
+		}
 		page = pfn_to_page(pfn);
 		kaddr = vmap(&page, 1, VM_MAP, __pgprot(prot));
 		is_vmap = true;
 	}
-	if (!kaddr)
-		return -ENOMEM;
+	if (!kaddr) {
+		ret = -ENOMEM;
+		goto out_unlock;
+	}
 
 	if (write)
 		ret = copy_mc_to_kernel(kaddr + offset, buf, len) ? -EFAULT : len;
 	else
 		ret = copy_mc_to_kernel(buf, kaddr + offset, len) ? -EFAULT : len;
 
+	mutex_unlock(&reg->state_mutex);
+
 	if (is_vmap)
 		vunmap(kaddr);
 	else
 		iounmap((__force void __iomem *)kaddr);
+	return ret;
+
+out_unlock:
+	mutex_unlock(&reg->state_mutex);
 	return ret;
 }
 
@@ -239,7 +328,7 @@ static unsigned long obmm_pagesize(struct vm_area_struct *vma)
 	struct file *filp = vma->vm_file;
 	struct obmm_region *reg = (struct obmm_region *)filp->private_data;
 
-	if (reg->mmap_granu == OBMM_MMAP_GRANU_PMD)
+	if (READ_ONCE(reg->mmap_granu) == OBMM_MMAP_GRANU_PMD)
 		return PMD_SIZE;
 	else
 		return PAGE_SIZE;
@@ -291,7 +380,26 @@ static int obmm_shm_fops_open(struct inode *inode, struct file *file)
 		ret = -EPERM;
 		goto err_mutex_unlock;
 	}
+	/* Cache the file's address_space and pin its inode so a switch can
+	 * unmap_mapping_range() it (the zap walks i_mmap); the ref keeps it
+	 * live until uninit_obmm_region. state_mutex serializes the first
+	 * cache against racing opens; after try_get, before fd_count.
+	 */
+	if (!reg->i_mapping) {
+		reg->i_inode = igrab(inode);
+		if (reg->i_inode)
+			reg->i_mapping = inode->i_mapping;
+	} else if (reg->i_mapping != inode->i_mapping) {
+		/* A second inode means an alias device node whose i_mapping the
+		 * switch zaps never walk: refuse the open.
+		 */
+		pr_err("obmm_shmdev open: region %d already cached a different inode's mapping; switch zap will not cover this node\n",
+		       reg->regionid);
+		ret = -EPERM;
+		goto err_mutex_unlock;
+	}
 	atomic_inc(&reg->fd_count);
+
 	mutex_unlock(&reg->state_mutex);
 
 	pr_debug("obmm_shmdev open: mem_id=%d pid=%d completed.\n", reg->regionid, current->pid);
@@ -317,13 +425,10 @@ static int obmm_shm_fops_release(struct inode *inode __always_unused, struct fil
 
 	mutex_lock(&reg->state_mutex);
 	atomic_dec(&reg->fd_count);
-	/*
-	 * Shrink rule: with no open fds and no mappings left, the
-	 * entitlement promise may shrink back to the attached backend's
-	 * own capability.
+	/* Shrink rule: with no fds or mappings left, the promise may shrink to
+	 * the attached backend's capability (see vma_close).
 	 */
-	if (!atomic_read(&reg->fd_count) && !atomic_read(&reg->mmap_count) && reg->backend)
-		reg->promised_cap = reg->backend->mem_cap;
+	obmm_promised_cap_shrink_maybe(reg);
 	mutex_unlock(&reg->state_mutex);
 
 	put_obmm_region(reg);
@@ -452,6 +557,22 @@ static int obmm_shm_fops_mmap(struct file *file, struct vm_area_struct *vma)
 	} else {
 		mmap_granu = OBMM_MMAP_GRANU_PAGE;
 	}
+
+	if (offset & OBMM_MMAP_FLAG_HUGETLB_PUD) {
+		pr_err("mmap region %d: PUD-granularity mapping is reserved, not supported yet\n",
+		       reg->regionid);
+		return -EOPNOTSUPP;
+	}
+	/*
+	 * SWITCH_OLD/NEW select a gap-scoped dual-backend mapping and are
+	 * not supported yet.
+	 */
+	if (offset & (OBMM_MMAP_FLAG_SWITCH_OLD | OBMM_MMAP_FLAG_SWITCH_NEW)) {
+		pr_err("mmap region %d: SWITCH_OLD/NEW mappings are not supported yet\n",
+		       reg->regionid);
+		return -EINVAL;
+	}
+
 	vma->vm_pgoff = offset >> PAGE_SHIFT;
 
 	if (offset >= reg->mem_size || size > reg->mem_size - offset) {
@@ -494,6 +615,19 @@ static int obmm_shm_fops_mmap(struct file *file, struct vm_area_struct *vma)
 	if ((o_sync && reg->mmap_mode == OBMM_MMAP_NORMAL) ||
 	    (!o_sync && reg->mmap_mode == OBMM_MMAP_OSYNC)) {
 		pr_err("region cannot be mapped to cc and nc at the same time");
+		ret = -EPERM;
+		goto err_mutex_unlock;
+	}
+
+	/* Mode-select capability check at every INIT->mode selection, including
+	 * after a keep-old-alive abort restored a weaker backend (STRANDED: none).
+	 */
+	if (old_mmap_mode == OBMM_MMAP_INIT && reg->backend &&
+	    !obmm_mmap_cap_check(reg->backend->mem_cap,
+				 reg->switch_old ? reg->switch_old->mem_cap : 0,
+				 reg->switch_old != NULL, o_sync)) {
+		pr_err("mmap region %d: backend capability cannot serve the selected mode\n",
+		       reg->regionid);
 		ret = -EPERM;
 		goto err_mutex_unlock;
 	}
@@ -711,6 +845,13 @@ static long obmm_shm_update_range(struct file *file,
 	mmap_write_lock(mm);
 	mutex_lock(&reg->state_mutex);
 
+	/* A swap in progress makes the backend unstable for the split, flush
+	 * and PTE rewrite below; retry once the gap closes (STRANDED: none).
+	 */
+	ret = obmm_switch_state_gate_err(READ_ONCE(reg->switch_state));
+	if (ret)
+		goto err_state_gate;
+
 	/*
 	 * Phase 1: Single traversal - split, update, and flush per VMA
 	 *
@@ -845,6 +986,11 @@ static long obmm_shm_update_range(struct file *file,
 	mutex_unlock(&reg->state_mutex);
 	mmap_write_unlock(mm);
 	return 0;
+
+err_state_gate:
+	mutex_unlock(&reg->state_mutex);
+	mmap_write_unlock(mm);
+	return ret;
 
 rollback:
 	pr_debug("Rolling back ownership update: region=%d range=[%#llx, %#llx) modified_end=%#lx\n",

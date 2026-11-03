@@ -15,17 +15,18 @@
 #include "obmm_resource.h"
 #include "obmm_shm_dev.h"	/* obmm_shm_dev_put for obmm_region_publish */
 
-/*
- * Attach a created backend to its shell region. The only fallible step is the
- * MEMID_{regionid} iomem leaf insertion for import backends (request_resource
- * conflict or kasprintf ENOMEM); it runs BEFORE any state change so that a
- * failed attach is reference-neutral and side-effect-free: no refcount_inc,
- * no promised_cap change, no shell pointer, reg->backend unchanged, no leaf.
+/* Attach @be to its shell: the fallible MEMID leaf insertion for import
+ * backends runs first, so a failed attach changes no reference or state.
  */
 int obmm_backend_attach(struct obmm_region *reg, struct obmm_backend *be)
 {
 	struct resource *memdev_res = NULL;
 
+	/*
+	 * state_mutex only: the unimport/unexport release path calls
+	 * attach/detach with just state_mutex held, and the switch paths hold
+	 * both locks by protocol, so a switch_lock assertion would misfire.
+	 */
 	lockdep_assert_held(&reg->state_mutex);
 
 	if (WARN_ON_ONCE(reg->backend || be->shell))
@@ -58,13 +59,11 @@ int obmm_backend_attach(struct obmm_region *reg, struct obmm_backend *be)
 }
 
 /*
- * Detach the region's backend. ALWAYS returns the detached backend, still
- * alive through its existence reference (the caller must eventually
- * obmm_backend_put it) even when *errp is set; only the attachment reference
- * is dropped here. Never treat a NULL return or *errp as "object consumed".
- *
- * @errp: nullable. Non-NULL receives the MEMID release errno verbatim;
- * NULL means log-and-continue (switch paths).
+ * Detach @reg's backend and return it alive through its existence reference;
+ * only the attachment reference is dropped. On success the caller owns that
+ * reference and must eventually obmm_backend_put() it; a MEMID release
+ * failure sets *errp and the put must not follow (leak policy in
+ * obmm_region_release_backend). *errp NULL means log-and-continue (switch).
  */
 struct obmm_backend *obmm_backend_detach(struct obmm_region *reg, int *errp)
 {
@@ -192,34 +191,25 @@ out_unwind:
 }
 
 /*
- * Unified release of a region's backend: detach under state_mutex, then drop
- * the existence reference. The detach NULLs reg->backend inside that same
- * critical section, so every state_mutex-held reader (vma close flush, query,
- * sysfs) observes the NULL backend from here on and its dispatch NULL-guard
- * takes over - even on the destroy-failure corner, where put() frees the
- * backend object, no reader can reach it through the shell.
+ * Detach under state_mutex, then drop the existence reference; detach clears
+ * reg->backend in the same critical section, so readers observe NULL after.
  *
- * Error policy matrix (encoded ONCE here; the call sites pick a row):
+ * @propagate_detach_err picks a row of this policy table (canonical here):
  *
- *                       detach failed                put/destroy failed
- * unimport/unexport      detach errno verbatim,       destroy errno
- * (propagate == true)    backend leaked alive;        verbatim; the backend
- *                        shell teardown completes    object is freed, its
- *                        (deregister + uninit +      resources leak loudly;
- *                        device put)                 shell teardown completes
- * register-failure       leak + pr_err, return 0:    put, pr_warn, return 0:
- * unwinds                the register errno stays    the register errno stays
- * (propagate == false)   the ioctl error             the ioctl error
+ *                    detach failed              put/destroy failed
+ * unimport/unexport  detach errno verbatim,     destroy errno verbatim;
+ * (true)             backend leaks alive        object freed, resources
+ *                                               leak loudly
+ * register unwind    leak + pr_err, return 0    put, pr_warn, return 0
+ * (false)
  *
- * Why a failed detach must never proceed to the put: destroy would run
- * teardown_pa -> release_ubmem_resource (remove_resource + kfree of the
- * PARENT ubmem resource) while the un-released MEMID leaf still hangs off
- * it and reg->memdev_res still points at it, corrupting the resource tree.
- * The existence reference leaks loudly instead.
- *
- * A NULL detached backend (detach already warned; unreachable while attach
- * precedes a successful creation composition) maps to the propagate row's
- * -EINVAL / the unwind row's 0.
+ * The shell teardown completes in every row. A failed detach is never
+ * followed by the put, because destroy would free the parent ubmem resource
+ * under the un-released MEMID leaf; the backend leaks loudly instead. The
+ * switch paths pass errp == NULL and do stage that put anyway: a deliberate
+ * deviation, accepted because release_resource() on a well-formed DIRECT
+ * leaf essentially never fails. A NULL detached backend maps to -EINVAL
+ * (true) or 0 (false).
  */
 int obmm_region_release_backend(struct obmm_region *reg, bool propagate_detach_err)
 {

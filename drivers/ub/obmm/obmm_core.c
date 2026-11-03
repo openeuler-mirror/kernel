@@ -26,6 +26,7 @@
 #include "obmm_backend.h"
 #include "ubmempool_allocator.h"
 #include "obmm_import.h"
+#include "obmm_switch.h"
 #include "obmm_ownership.h"
 #include "obmm_lowmem.h"
 #include "obmm_preimport.h"
@@ -35,6 +36,9 @@
 #include "obmm_core.h"
 
 size_t __obmm_memseg_size;
+
+/* dedicated wq: a blocked switch finisher must not starve unrelated work */
+struct workqueue_struct *obmm_switch_wq;
 
 #define UB_MEM_FEATURE_MASK (UB_MEM_BORROW_NC | UB_MEM_BORROW_CC | \
 			     UB_MEM_SHARE_NC | UB_MEM_SHARE_CC)
@@ -175,34 +179,68 @@ int obmm_query_by_offset(struct obmm_region *reg, unsigned long offset,
 	return ret;
 }
 
+/*
+ * Snapshot the region list with try_get pins under g_obmm_ctx_info.lock,
+ * then consult each pinned backend under its state_mutex: that mutex
+ * cannot nest under the ctx spinlock, and holding it excludes a deferred
+ * destroy. Only the current backend is consulted, so after a committed
+ * switch the old PA no longer resolves (a mid-gap query answers -EAGAIN).
+ */
 int obmm_query_by_pa(unsigned long pa, struct obmm_ext_addr *ext_addr)
 {
+	struct obmm_region **pins;
 	int ret = -ENOENT;
-	struct obmm_region *region;
-	unsigned long flags;
-	spinlock_t *lock;
+	int capacity = 16, n, i;
 
-	lock = &g_obmm_ctx_info.lock;
+	pins = kmalloc_array(capacity, sizeof(*pins), GFP_KERNEL);
+	if (!pins)
+		return -ENOMEM;
 
-	spin_lock_irqsave(lock, flags);
-	list_for_each_entry(region, &g_obmm_ctx_info.regions, node) {
+	for (;;) {
+		struct obmm_region *region;
+		unsigned long flags;
+		bool complete = true;
+
+		n = 0;
+		spin_lock_irqsave(&g_obmm_ctx_info.lock, flags);
+		list_for_each_entry(region, &g_obmm_ctx_info.regions, node) {
+			if (n == capacity) {
+				complete = false;
+				break;
+			}
+			if (try_get_obmm_region(region))
+				pins[n++] = region;
+		}
+		spin_unlock_irqrestore(&g_obmm_ctx_info.lock, flags);
+
+		if (complete)
+			break;
+		for (i = 0; i < n; i++)
+			put_obmm_region(pins[i]);
+		kfree(pins);
+		capacity *= 2;
+		pins = kmalloc_array(capacity, sizeof(*pins), GFP_KERNEL);
+		if (!pins)
+			return -ENOMEM;
+	}
+
+	for (i = 0; i < n; i++) {
+		struct obmm_region *region = pins[i];
 		struct obmm_backend *be;
 
-		if (!try_get_obmm_region(region))
-			continue;
-		be = region->backend;
-		if (be && be->ops->covers_pa && be->ops->covers_pa(be, pa, 1, ext_addr)) {
-			ret = 0;
-			put_obmm_region(region);
-			break;
+		if (ret) {	/* no match yet: consult this shell's backend */
+			mutex_lock(&region->state_mutex);
+			be = region->backend;
+			if (be && be->ops->covers_pa &&
+			    be->ops->covers_pa(be, pa, 1, ext_addr))
+				ret = 0;
+			mutex_unlock(&region->state_mutex);
 		}
 		put_obmm_region(region);
 	}
-	spin_unlock_irqrestore(lock, flags);
 
-	if (ret)
-		return -ENOENT;
-	return 0;
+	kfree(pins);
+	return ret;
 }
 
 static int nid_to_package_id(int nid)
@@ -304,6 +342,14 @@ static void remove_obmm_region(struct obmm_region *reg)
 
 void uninit_obmm_region(struct obmm_region *region)
 {
+	/* drain a pending switch finisher before the machinery goes away */
+	cancel_work_sync(&region->switch_work);
+	/* live mappings keep the file -- hence the region -- referenced */
+	if (region->i_inode) {
+		iput(region->i_inode);
+		region->i_inode = NULL;
+		region->i_mapping = NULL;
+	}
 	if (region->ownership_info)
 		release_ownership_info(region);
 	ida_free(&g_obmm_region_ida, region->regionid);
@@ -316,11 +362,16 @@ int init_obmm_region(struct obmm_region *region)
 
 	/*
 	 * Shells come from kzalloc; only the fields zeroing cannot set --
-	 * refcount, locks and list heads -- are set here.
+	 * refcount, locks, work, list heads and switch state -- are set here.
 	 */
 	refcount_set(&region->refcnt, 0);
 	mutex_init(&region->state_mutex);
 	INIT_LIST_HEAD(&region->node);
+
+	init_rwsem(&region->switch_lock);
+	init_waitqueue_head(&region->switch_wqh);
+	INIT_WORK(&region->switch_work, obmm_switch_finish_fn);
+	WRITE_ONCE(region->switch_state, OBMM_SWITCH_IDLE);
 
 	retval = ida_alloc_range(&g_obmm_region_ida, OBMM_MIN_VALID_REGIONID,
 				 OBMM_MAX_VALID_REGIONID, GFP_KERNEL);
@@ -367,17 +418,46 @@ void deregister_obmm_region(struct obmm_region *region)
 }
 
 /*
- * Shared shell teardown for the unimport/unexport ioctl paths: release any
- * attached backend under the abort policy in obmm_region_release_backend,
- * then deregister, uninit and hand the region to the device core for
- * freeing, regardless of a release failure. A failure leaks only backend
- * resources (already reported) and must not leave a zombie on the global
- * list or block rmmod. Returns the release errno; the region is freed
- * regardless.
+ * Teardown identity: created_as never changes across a switch, but the
+ * live backend may be of the other kind; either identity accepts the
+ * teardown (a STRANDED region has no backend and falls back to its
+ * creation identity). The caller has deactivated the region, so no
+ * switch can be in flight: the gap reference would have kept the
+ * deactivate itself failing -EBUSY.
+ */
+bool obmm_region_teardown_matches(struct obmm_region *region,
+				  enum obmm_region_type kind)
+{
+	struct obmm_backend *be;
+	bool live;
+
+	mutex_lock(&region->state_mutex);
+	be = region->backend;
+	mutex_unlock(&region->state_mutex);
+
+	live = be && ((be->type == OBMM_BACKEND_IMPORT) ==
+		      (kind == OBMM_IMPORT_REGION));
+	return live || region->created_as == kind;
+}
+
+/*
+ * Shared shell teardown for the unimport/unexport ioctl paths: drain the
+ * switch, release any attached backend under the abort policy in
+ * obmm_region_release_backend, then deregister, uninit and hand the region
+ * to the device core for freeing, regardless of a release failure. A
+ * failure leaks only backend resources (already reported) and must not
+ * leave a zombie on the global list or block rmmod. Returns the release
+ * errno; the region is freed regardless.
  */
 int obmm_region_teardown(struct obmm_region *region)
 {
 	int ret = 0;
+
+	/* a switch gap blocks deactivate itself (-EBUSY via the gap
+	 * reference); once it succeeds only a pending finisher remains. A
+	 * STRANDED region has no backend, so the release is skipped.
+	 */
+	obmm_switch_force_strand(region);
 
 	if (region->backend)
 		ret = obmm_region_release_backend(region, true);
@@ -460,6 +540,8 @@ static long obmm_dev_ioctl(struct file *file __always_unused, unsigned int cmd, 
 		struct obmm_cmd_addr_query query;
 		struct obmm_cmd_export_pid export_pid;
 		struct obmm_cmd_preimport preimport;
+		struct obmm_cmd_switch_begin switch_begin;
+		struct obmm_cmd_switch_end switch_end;
 	} cmd_param;
 
 	if (!static_branch_likely(&obmm_enabled)) {
@@ -593,6 +675,39 @@ static long obmm_dev_ioctl(struct file *file __always_unused, unsigned int cmd, 
 
 		ret = obmm_unpreimport(&cmd_param.preimport);
 	} break;
+	case OBMM_CMD_SWITCH_BEGIN: {
+		/* pre-check CAP_SYS_ADMIN so non-root never reaches copy_from_user */
+		if (!capable(CAP_SYS_ADMIN)) {
+			pr_err_ratelimited("switch_begin: no CAP_SYS_ADMIN\n");
+			return -EPERM;
+		}
+		ret = (int)copy_from_user(&cmd_param.switch_begin, (void __user *)arg,
+					  sizeof(struct obmm_cmd_switch_begin));
+		if (ret) {
+			pr_err("failed to load switch_begin argument\n");
+			return -EFAULT;
+		}
+
+		/* obmm_switch_begin copies outputs after releasing the locks, so a
+		 * faulting user destination cannot wedge the gap.
+		 */
+		ret = obmm_switch_begin(&cmd_param.switch_begin,
+					(void __user *)arg);
+	} break;
+	case OBMM_CMD_SWITCH_END: {
+		if (!capable(CAP_SYS_ADMIN)) {
+			pr_err_ratelimited("switch_end: no CAP_SYS_ADMIN\n");
+			return -EPERM;
+		}
+		ret = (int)copy_from_user(&cmd_param.switch_end, (void __user *)arg,
+					  sizeof(struct obmm_cmd_switch_end));
+		if (ret) {
+			pr_err("failed to load switch_end argument\n");
+			return -EFAULT;
+		}
+
+		ret = obmm_switch_end(&cmd_param.switch_end);
+	} break;
 	default:
 		ret = -ENOTTY;
 	}
@@ -657,16 +772,25 @@ static int __init obmm_init(void)
 		goto out_module_import_exit;
 	}
 
+	obmm_switch_wq = alloc_workqueue("obmm_switch", 0, 0);
+	if (!obmm_switch_wq) {
+		pr_err("failed to allocate obmm_switch workqueue\n");
+		ret = -ENOMEM;
+		goto out_lowmem_exit;
+	}
+
 	/* Register last: no ioctl may arrive before init is complete. */
 	ret = misc_register(&obmm_dev_handle);
 	if (ret) {
 		pr_err("Failed to register root device. ret=%pe\n", ERR_PTR(ret));
-		goto out_lowmem_exit;
+		goto out_switch_wq_exit;
 	}
 
 	pr_info("obmm_module: init completed\n");
 	return ret;
 
+out_switch_wq_exit:
+	destroy_workqueue(obmm_switch_wq);
 out_lowmem_exit:
 	lowmem_notify_exit();
 out_module_import_exit:
@@ -684,6 +808,8 @@ static void __exit obmm_exit(void)
 	pr_info("obmm_module: exit started\n");
 
 	misc_deregister(&obmm_dev_handle);
+	/* no new switch can begin after misc_deregister: drain pending finishers */
+	destroy_workqueue(obmm_switch_wq);
 	lowmem_notify_exit();
 	module_preimport_exit();
 	module_addr_check_exit();
