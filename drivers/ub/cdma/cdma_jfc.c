@@ -413,9 +413,9 @@ static enum jfc_poll_state cdma_parse_cqe_for_jfc(struct cdma_dev *cdev,
 	cr->remote_id = cqe->rmt_idx;
 
 	if (cqe->status)
-		dev_warn(cdev->dev,
-			 "get sq %u cqe status abnormal, ci = %u, pi = %u, status = %u, substatus = %u\n",
-			 queue->id, queue->ci, queue->pi, cqe->status, cqe->substatus);
+		dev_warn_ratelimited(cdev->dev,
+				     "get sq %u cqe status abnormal, ci = %u, pi = %u, status = %u, substatus = %u\n",
+				     queue->id, queue->ci, queue->pi, cqe->status, cqe->substatus);
 
 	if (cdma_update_flush_cr(queue, cqe, cr)) {
 		dev_err(cdev->dev,
