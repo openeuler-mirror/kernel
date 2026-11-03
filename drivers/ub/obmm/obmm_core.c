@@ -367,15 +367,26 @@ void deregister_obmm_region(struct obmm_region *region)
 }
 
 /*
- * Shared shell teardown for the unimport/unexport ioctl paths: deregister,
- * uninit, then hand the region to the device core for freeing.
+ * Shared shell teardown for the unimport/unexport ioctl paths: release any
+ * attached backend under the abort policy in obmm_region_release_backend,
+ * then deregister, uninit and hand the region to the device core for
+ * freeing, regardless of a release failure. A failure leaks only backend
+ * resources (already reported) and must not leave a zombie on the global
+ * list or block rmmod. Returns the release errno; the region is freed
+ * regardless.
  */
-void obmm_region_teardown(struct obmm_region *region)
+int obmm_region_teardown(struct obmm_region *region)
 {
+	int ret = 0;
+
+	if (region->backend)
+		ret = obmm_region_release_backend(region, true);
+
 	deregister_obmm_region(region);
 	uninit_obmm_region(region);
 	/* the region is freed by the device release callback */
 	obmm_shm_dev_put(region);
+	return ret;
 }
 
 int set_obmm_region_priv(struct obmm_region *region, unsigned int priv_len, const void __user *priv)

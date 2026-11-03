@@ -278,6 +278,6 @@ int register_obmm_region(struct obmm_region *region);
 void deregister_obmm_region(struct obmm_region *region);
 
 /* shared shell teardown for unimport/unexport: deregister, uninit, free */
-void obmm_region_teardown(struct obmm_region *region);
+int obmm_region_teardown(struct obmm_region *region);
 
 #endif

@@ -278,6 +278,7 @@ static int obmm_shm_fops_open(struct inode *inode, struct file *file)
 {
 	struct obmm_region *reg;
 	bool cacheable;
+	int ret = 0;
 
 	reg = container_of(inode->i_cdev, struct obmm_region, cdevice);
 	file->private_data = reg;
@@ -285,28 +286,39 @@ static int obmm_shm_fops_open(struct inode *inode, struct file *file)
 	pr_debug("obmm_shmdev open: mem_id=%d pid=%d f_mode=%#x f_flags=%#x\n", reg->regionid,
 		 current->pid, file->f_mode, file->f_flags);
 
-	cacheable = !(file->f_flags & O_SYNC);
-	if (cacheable && !(reg->promised_cap & OBMM_MEM_ALLOW_CACHEABLE_MMAP)) {
-		pr_err("Noncacheable region %d cannot be mmaped with cachable mode.\n",
-		       reg->regionid);
-		return -EPERM;
-	}
-	if (!cacheable && !(reg->promised_cap & OBMM_MEM_ALLOW_NONCACHEABLE_MMAP)) {
-		pr_err("Cacheable region %d cannot be mmaped with noncachable mode.\n",
-		       reg->regionid);
-		return -EPERM;
-	}
 	if (try_get_obmm_region(reg) == NULL) {
 		pr_err("obmm_shmdev open: The device is in creation or destruction process. Open failed.\n");
 		return -EAGAIN;
 	}
 
-	/* advisory fd accounting, consumed by the shrink rule in fops_release */
+	/* Cacheability check against promised_cap; fd_count is taken under the
+	 * same state_mutex, closing the shrink-vs-open TOCTOU.
+	 */
+	cacheable = !(file->f_flags & O_SYNC);
+	mutex_lock(&reg->state_mutex);
+	if (cacheable && !(reg->promised_cap & OBMM_MEM_ALLOW_CACHEABLE_MMAP)) {
+		pr_err("Noncacheable region %d cannot be mmaped with cachable mode.\n",
+		       reg->regionid);
+		ret = -EPERM;
+		goto err_mutex_unlock;
+	}
+	if (!cacheable && !(reg->promised_cap & OBMM_MEM_ALLOW_NONCACHEABLE_MMAP)) {
+		pr_err("Cacheable region %d cannot be mmaped with noncachable mode.\n",
+		       reg->regionid);
+		ret = -EPERM;
+		goto err_mutex_unlock;
+	}
 	atomic_inc(&reg->fd_count);
+	mutex_unlock(&reg->state_mutex);
 
 	pr_debug("obmm_shmdev open: mem_id=%d pid=%d completed.\n", reg->regionid, current->pid);
 
 	return 0;
+
+err_mutex_unlock:
+	mutex_unlock(&reg->state_mutex);
+	put_obmm_region(reg);
+	return ret;
 }
 
 static int obmm_shm_fops_flush(struct file *file __always_unused, fl_owner_t owner __always_unused)

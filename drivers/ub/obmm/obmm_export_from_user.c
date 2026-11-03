@@ -115,7 +115,7 @@ static bool hisi_workarounds_check_page_list(struct obmm_export_user_backend *ub
 		pr_debug("Page resides in node %u\n", node);
 		ub->exp.node_count = node + 1;
 	}
-	if (ub->exp.affinity > OBMM_MAX_LOCAL_NUMA_NODES ||
+	if (ub->exp.affinity >= OBMM_MAX_LOCAL_NUMA_NODES ||
 	    ub->exp.affinity < 0) {
 		pr_err("Invalid pxm_numa %d\n", ub->exp.affinity);
 		return false;
@@ -409,18 +409,6 @@ int obmm_export_pid(struct obmm_cmd_export_pid *export_pid)
 	if (ret)
 		goto out_free_reg;
 
-	/* baseline order: the vendor blob is validated and copied before the
-	 * region id and device exist, then handed off to the creator below
-	 * (obmm_backend.h contract)
-	 */
-	vendor = dup_export_vendor(export_pid->vendor_info, export_pid->vendor_len);
-	if (IS_ERR(vendor)) {
-		ret = PTR_ERR(vendor);
-		goto out_free_reg;
-	}
-	spec.vendor_info = vendor;
-	spec.vendor_len = export_pid->vendor_len;
-
 	ret = init_obmm_region(reg);
 	if (ret)
 		goto out_free_reg;
@@ -429,6 +417,15 @@ int obmm_export_pid(struct obmm_cmd_export_pid *export_pid)
 	ret = obmm_shm_dev_init_device(reg);
 	if (ret)
 		goto out_unit_reg;
+
+	/* vendor_info ownership passes to the creator below (obmm_backend.h) */
+	vendor = dup_export_vendor(export_pid->vendor_info, export_pid->vendor_len);
+	if (IS_ERR(vendor)) {
+		ret = PTR_ERR(vendor);
+		goto out_dev_put;
+	}
+	spec.vendor_info = vendor;
+	spec.vendor_len = export_pid->vendor_len;
 
 	be = obmm_export_user_backend_create(&spec);
 	if (IS_ERR(be)) {
@@ -460,7 +457,6 @@ out_dev_put:
 out_unit_reg:
 	uninit_obmm_region(reg);
 out_free_reg:
-	kfree(spec.vendor_info);
 	kfree(reg);
 	return ret;
 }

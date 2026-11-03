@@ -55,8 +55,11 @@ static int setup_pa(struct obmm_import_backend *imp)
 	struct obmm_datapath datapath;
 
 	imp->base.mem_cap = get_pa_range_mem_cap(imp->scna, imp->pa, imp->base.mem_size);
-	if (imp->base.mem_cap == 0)
+	if (imp->base.mem_cap == 0) {
+		pr_err("import: PA=%#llx size=%#llx not mappable, ret=%pe\n",
+		       imp->pa, imp->base.mem_size, ERR_PTR(-EINVAL));
 		return -EINVAL;
+	}
 
 	if (!imp->preimport) {
 		struct ubmem_resource *ubmem_res;
@@ -290,12 +293,13 @@ static int init_import_region_from_cmd(const struct obmm_cmd_import *param,
 	if (ret)
 		return ret;
 
+	/* PA alignment/overflow is checked in obmm_import_backend_create();
+	 * only the zero-length rule lives here.
+	 */
 	if (region->mem_size == 0) {
 		pr_err("Zero memory segment size is invalid\n");
 		return -EINVAL;
 	}
-	if (!validate_pa_range(param->addr, param->length))
-		return -EINVAL;
 
 	config_numa_dist = region_numa_remote(region) && !region_preimport(region);
 	if (config_numa_dist && !is_numa_base_dist_valid(param->base_dist))
@@ -555,7 +559,7 @@ out_free_backend:
 
 int obmm_import(struct obmm_cmd_import *cmd_import)
 {
-	int retval, rollback_ret, numa_id;
+	int retval, numa_id;
 	struct obmm_region *reg;
 	struct obmm_import_spec spec;
 	struct obmm_backend *be;
@@ -587,51 +591,12 @@ int obmm_import(struct obmm_cmd_import *cmd_import)
 		goto out_dev_put;
 	}
 
-	mutex_lock(&reg->state_mutex);
-	retval = obmm_backend_attach(reg, be);
-	mutex_unlock(&reg->state_mutex);
-	if (retval) {
-		struct obmm_import_backend *imp = obmm_backend_to_import(be);
-
-		pr_err("Failed to attach import backend: ret=%pe\n", ERR_PTR(retval));
-		/* baseline creation unwind: force-rollback without the INVAL
-		 * flush, mirroring the pre-split leaf-failure ladder; the
-		 * attach errno stays the ioctl errno and a failing rollback
-		 * step escalates to -ENOTRECOVERABLE
-		 */
-		if (imp->numa_remote) {
-			rollback_ret = teardown_remote_numa(imp, true);
-			if (rollback_ret) {
-				pr_err("failed to teardown remote numa on rollback, ret=%pe.\n",
-				       ERR_PTR(rollback_ret));
-				retval = -ENOTRECOVERABLE;
-			}
-		}
-		rollback_ret = teardown_pa(imp);
-		if (rollback_ret) {
-			pr_err("failed to teardown PA level mapping on rollback, ret=%pe.\n",
-			       ERR_PTR(rollback_ret));
-			retval = -ENOTRECOVERABLE;
-		}
-		rollback_ret = free_addr_range(imp);
-		if (rollback_ret) {
-			pr_err("failed to free address range on rollback, ret=%pe.\n",
-			       ERR_PTR(rollback_ret));
-			retval = -ENOTRECOVERABLE;
-		}
-		kfree(imp);
-		goto out_dev_put;
-	}
-
 	numa_id = obmm_backend_to_import(be)->numa_id;
 	mem_id = (uint64_t)reg->regionid;
 
-	retval = register_obmm_region(reg);
-	if (retval) {
-		pr_err("Failed to create import device. ret=%pe\n", ERR_PTR(retval));
-		goto out_release_memory;
-	}
-	activate_obmm_region(reg);
+	retval = obmm_region_publish(reg, be, "import");
+	if (retval)
+		return retval;
 
 	/* pass back output value */
 	cmd_import->numa_id = numa_id;
@@ -640,13 +605,6 @@ int obmm_import(struct obmm_cmd_import *cmd_import)
 	pr_debug("%s: mem_id=%llu online\n", __func__, cmd_import->mem_id);
 	return 0;
 
-out_release_memory:
-	/* propagate == false: the register error stays the ioctl error and
-	 * unwind failures are warn-only - a failed detach leaks the backend
-	 * instead of corrupting the resource tree (full policy matrix and
-	 * rationale in obmm_region_release_backend)
-	 */
-	obmm_region_release_backend(reg, false);
 out_dev_put:
 	uninit_obmm_region(reg);
 	/* frees the region via the device release callback */
@@ -686,20 +644,16 @@ int obmm_unimport(const struct obmm_cmd_unimport *cmd_unimport)
 		goto err_unimport;
 	}
 
-	/*
-	 * Baseline failure policy: a release failure aborts the teardown
-	 * with that errno verbatim and re-activates the region, so the
-	 * unimport stays retryable.
-	 */
-	ret = obmm_region_release_backend(reg, true);
+	ret = obmm_region_teardown(reg);
 	if (ret)
-		goto err_unimport;
-
-	obmm_region_teardown(reg);
+		goto err_teardown_aborted;
 
 	pr_debug("%s: mem_id=%llu completed.\n", __func__, cmd_unimport->mem_id);
 	return 0;
 
+err_teardown_aborted:
+	pr_err("%s: mem_id=%llu failed, %pe.\n", __func__, cmd_unimport->mem_id, ERR_PTR(ret));
+	return ret;
 err_unimport:
 	activate_obmm_region(reg);
 	pr_err("%s: mem_id=%llu failed, %pe.\n", __func__, cmd_unimport->mem_id, ERR_PTR(ret));
