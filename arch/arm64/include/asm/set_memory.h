@@ -10,6 +10,9 @@
 bool can_set_direct_map(void);
 #define can_set_direct_map can_set_direct_map
 
+int update_range_prot(unsigned long start, unsigned long size,
+			     pgprot_t set_mask, pgprot_t clear_mask);
+
 int set_memory_valid(unsigned long addr, int numpages, int enable);
 
 int set_direct_map_invalid_noflush(struct page *page);
