@@ -6,6 +6,9 @@
 
 #include <linux/err.h>
 #include <linux/list.h>
+#include <linux/mm.h>
+#include <linux/huge_mm.h>	/* after mm.h: needs its pgtable/vma context */
+#include <linux/pfn_t.h>
 #include <linux/scatterlist.h>
 #include <linux/slab.h>
 #include <linux/printk.h>
@@ -271,22 +274,45 @@ out_free_vendor:
 	return ret;
 }
 
-static int export_pool_map_range(struct obmm_backend *be, struct vm_area_struct *vma)
+static vm_fault_t export_pool_pte_fault(struct obmm_export_pool_backend *pb,
+					struct vm_fault *vmf)
 {
-	if (!be->shell)
-		return -EINVAL;
-	/* eager install runs under the shell's state_mutex with the granu
-	 * established by the mmap entry path
-	 */
-	return export_map_range(vma, &obmm_backend_to_export_pool(be)->exp.sgt,
-				be->shell->regionid, be->shell->mmap_granu);
+	struct vm_area_struct *vma = vmf->vma;
+	u64 off, phys;
+
+	off = (vma->vm_pgoff << PAGE_SHIFT) + (vmf->address - vma->vm_start);
+	if (obmm_export_phys_at(&pb->exp.sgt, off, &phys))
+		return VM_FAULT_SIGBUS;
+
+	return vmf_insert_pfn_prot(vma, vmf->address, phys >> PAGE_SHIFT,
+				   vma->vm_page_prot);
 }
 
-static vm_fault_t export_pool_fault(struct obmm_backend *be __always_unused,
-				    struct vm_fault *vmf __always_unused,
-				    bool is_pmd __always_unused)
+/* ops->fault; the sg table is the only source of truth for the PA. A PMD leaf
+ * needs a PMD_SIZE-aligned base and a linear PA proof of the whole
+ * [addr, addr + PMD_SIZE) window -- every sg seam inside it must continue the
+ * line, since the table follows allocation order, not PA order; a miss on
+ * either degrades this page to a PTE.
+ */
+static vm_fault_t export_pool_fault(struct obmm_backend *be, struct vm_fault *vmf,
+				    bool is_pmd)
 {
-	return VM_FAULT_SIGBUS;
+	struct obmm_export_pool_backend *pb = obmm_backend_to_export_pool(be);
+	struct vm_area_struct *vma = vmf->vma;
+	unsigned long addr, off;
+	u64 phys;
+
+	if (!is_pmd)
+		return export_pool_pte_fault(pb, vmf);
+
+	addr = vmf->address & PMD_MASK;
+	off = (vma->vm_pgoff << PAGE_SHIFT) + (addr - vma->vm_start);
+	if (obmm_export_phys_linear_at(&pb->exp.sgt, off, PMD_SIZE, &phys) ||
+	    !IS_ALIGNED(phys, PMD_SIZE))
+		return export_pool_pte_fault(pb, vmf);
+
+	return vmf_insert_pfn_pmd(vmf, pfn_to_pfn_t(phys >> PAGE_SHIFT),
+				  vmf->flags & FAULT_FLAG_WRITE);
 }
 
 static int export_pool_flush_range(struct obmm_backend *be, u64 off, u64 len, u8 cache_ops)
@@ -295,7 +321,6 @@ static int export_pool_flush_range(struct obmm_backend *be, u64 off, u64 len, u8
 }
 
 static const struct obmm_backend_ops obmm_export_pool_backend_ops = {
-	.map_range	= export_pool_map_range,
 	.fault		= export_pool_fault,
 	.flush_range	= export_pool_flush_range,
 	/* query/covers_pa: shared export ops (obmm_export_region_ops.c) */

@@ -66,8 +66,7 @@ static void walk_export_memory(const struct sg_table *sgt, unsigned long offset,
 }
 
 /* Walk the sg_table: the sg chunk count is unbounded, so no segment array. */
-int obmm_export_phys_at(const struct sg_table *sgt, u64 off, u64 *phys,
-			u64 *seg_end)
+int obmm_export_phys_at(const struct sg_table *sgt, u64 off, u64 *phys)
 {
 	struct scatterlist *sg;
 	u64 seg_off = 0;
@@ -78,14 +77,49 @@ int obmm_export_phys_at(const struct sg_table *sgt, u64 off, u64 *phys,
 
 		if (delta < sg->length) {
 			*phys = page_to_phys(sg_page(sg)) + delta;
-			if (seg_end)
-				*seg_end = seg_off + sg->length;
 			return 0;
 		}
 		seg_off += sg->length;
 	}
 
 	return -ERANGE;
+}
+
+int obmm_export_phys_linear_at(const struct sg_table *sgt, u64 off, u64 len,
+			       u64 *phys)
+{
+	struct scatterlist *sg;
+	u64 seg_off = 0, base = 0, line_end = 0, window_end = off + len;
+	unsigned int i;
+
+	for_each_sgtable_sg(sgt, sg, i) {
+		u64 seg_start = seg_off, seg_end = seg_off + sg->length;
+		u64 chunk_start, chunk_end, chunk_pa;
+
+		if (seg_end <= off) {		/* segment ends before the window */
+			seg_off = seg_end;
+			continue;
+		}
+
+		chunk_start = max(off, seg_start);
+		chunk_end = min(window_end, seg_end);
+		chunk_pa = page_to_phys(sg_page(sg)) + chunk_start - seg_start;
+
+		if (chunk_start == off)		/* first chunk opens the line */
+			base = chunk_pa;
+		else if (chunk_pa != line_end)
+			return -ERANGE;
+		line_end = chunk_pa + chunk_end - chunk_start;
+
+		if (chunk_end == window_end)
+			break;
+		seg_off = seg_end;
+	}
+
+	if (line_end - base != len)		/* window not fully covered */
+		return -ERANGE;
+	*phys = base;
+	return 0;
 }
 
 struct flush_cache_info {
@@ -172,60 +206,6 @@ int kernel_pgtable_set_export_invalid(const struct sg_table *sgt, unsigned long 
 	return info.ret;
 }
 
-struct map_range_info {
-	struct vm_area_struct *vma;
-	enum obmm_mmap_granu mmap_granu;
-	int regionid;
-	int ret;
-};
-
-static int map_range_call(phys_addr_t start, phys_addr_t end, unsigned long offset, void *arg)
-{
-	struct map_range_info *info = (struct map_range_info *)arg;
-	unsigned long length = end - start + 1;
-	unsigned long vm_offset;
-
-	vm_offset = offset - (info->vma->vm_pgoff << PAGE_SHIFT);
-	if (info->mmap_granu == OBMM_MMAP_GRANU_PAGE) {
-		info->ret = remap_pfn_range(info->vma, info->vma->vm_start + vm_offset,
-					    start >> PAGE_SHIFT, length, info->vma->vm_page_prot);
-	} else if (info->mmap_granu == OBMM_MMAP_GRANU_PMD) {
-		info->ret = remap_pfn_range_try_pmd(info->vma, info->vma->vm_start + vm_offset,
-						    start >> PAGE_SHIFT, length,
-						    info->vma->vm_page_prot);
-	} else {
-		pr_err("invalid mmap granu: %d\n", info->mmap_granu);
-		info->ret = -EINVAL;
-	}
-	if (info->ret) {
-		pr_err("%s: failed to call remap_pfn_range on region %d: offset=%#lx, length=%#lx, ret=%pe\n",
-		       __func__, info->regionid, offset, length, ERR_PTR(info->ret));
-		return -1;
-	}
-
-	return 0;
-}
-
-/* Eager core of the pool map_range op: map [vma pgoff, +size) per chunk. */
-int export_map_range(struct vm_area_struct *vma, const struct sg_table *sgt, int regionid,
-		     enum obmm_mmap_granu mmap_granu)
-{
-	struct map_range_info info;
-	unsigned long size, offset;
-
-	info.vma = vma;
-	info.ret = 0;
-	info.regionid = regionid;
-	info.mmap_granu = mmap_granu;
-
-	size = vma->vm_end - vma->vm_start;
-	offset = vma->vm_pgoff << PAGE_SHIFT;
-
-	walk_export_memory(sgt, offset, size, map_range_call, (void *)(&info));
-
-	return info.ret;
-}
-
 static void export_fill_ext_addr(const struct obmm_export_common *exp, u32 regionid,
 				 u64 offset, u64 pa, struct obmm_ext_addr *ext_addr)
 {
@@ -251,7 +231,7 @@ int export_query(struct obmm_backend *be, struct obmm_ext_addr *out)
 		return -EINVAL;
 	}
 
-	if (obmm_export_phys_at(&exp->sgt, out->offset, &pa, NULL)) {
+	if (obmm_export_phys_at(&exp->sgt, out->offset, &pa)) {
 		pr_err("%s: internal bug encountered\n", __func__);
 		return -ENODATA;
 	}

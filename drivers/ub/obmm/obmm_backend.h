@@ -61,21 +61,17 @@ enum obmm_backend_type {
 struct obmm_backend;
 
 /*
- * PTE installation + cache maintenance + identity, per backend type.
- * mmap eager install and fault rebuild MUST share the same pfn derivation.
+ * PTE install + cache maintenance + identity, per backend type. fault is
+ * NULL only for a non-mmappable backend (mem_cap == 0), which the mmap
+ * capability check rejects before a VMA can exist.
  *
- * Lock contexts: map_range runs under the region's state_mutex;
- * flush_range may be called with no region locks held; query by offset
- * runs under the querying shell's state_mutex, and the by-PA walk runs
- * under the global regions spinlock, reading only backend-resident state
- * (@regionid is cached at attach, so it never dereferences the shell).
- *
- * state_mutex-held dispatch sites guarantee the backend is attached
- * (be->shell non-NULL) and pre-validate offsets; per-op defensive guards
- * are belt-and-suspenders.
+ * Locks: query under the region's state_mutex, fault under the fault path's
+ * mmap lock, covers_pa under the global regions spinlock, reading only
+ * backend-resident state (@regionid is cached at attach, so it never
+ * dereferences the shell); flush_range runs under state_mutex except in the
+ * backend destroy after the last put, which runs it unlocked.
  */
 struct obmm_backend_ops {
-	int (*map_range)(struct obmm_backend *be, struct vm_area_struct *vma);
 	vm_fault_t (*fault)(struct obmm_backend *be, struct vm_fault *vmf,
 			    bool is_pmd);
 	/* validated ops only - never INFER (flush_cache_by_pa OOB hazard) */
