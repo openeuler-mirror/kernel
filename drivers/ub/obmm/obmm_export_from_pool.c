@@ -197,10 +197,15 @@ static int export_pool_alloc_memory(struct obmm_export_pool_backend *pb, u64 exp
 	return 0;
 }
 
-static int calculate_export_region_size(unsigned long *total_size,
-					const struct obmm_export_pool_spec *spec)
+/* Shared spec validation for the EXPORT ioctl and switch_begin's exp
+ * target: @check_total requires sum == @mem_size, else only zero is invalid.
+ */
+int obmm_export_pool_validate_spec(const struct obmm_export_pool_spec *spec,
+				   u64 mem_size, bool check_total,
+				   u64 *total_size)
 {
 	nodemask_t nodes = NODE_MASK_NONE;
+	u64 sum = 0;
 	int i, min_numa_id = NUMA_NO_NODE, max_numa_id = 0;
 
 	if (spec->node_count > OBMM_MAX_LOCAL_NUMA_NODES) {
@@ -214,20 +219,19 @@ static int calculate_export_region_size(unsigned long *total_size,
 		return -EINVAL;
 	}
 
-	*total_size = 0;
 	for (i = 0; i < spec->node_count; i++) {
 		if (!IS_ALIGNED(spec->size[i], OBMM_MEMSEG_SIZE)) {
 			pr_err("The size of new OBMM region 0x%llx on node %d is not aligned to OBMM memseg size %#lx.\n",
-			       spec->size[i], (int)i, OBMM_MEMSEG_SIZE);
+			       spec->size[i], i, OBMM_MEMSEG_SIZE);
 			return -EINVAL;
 		}
 		if (spec->size[i] != 0 && !is_online_local_node(i)) {
 			pr_err("Cannot export memory from offlined or remote numa node %d\n",
-			       (int)i);
+			       i);
 			return -ENODEV;
 		}
 		if (spec->size[i] != 0) {
-			if (*total_size > ULONG_MAX - spec->size[i]) {
+			if (check_add_overflow(sum, spec->size[i], &sum)) {
 				pr_err("Memory size overflowed!\n");
 				return -EOVERFLOW;
 			}
@@ -235,11 +239,16 @@ static int calculate_export_region_size(unsigned long *total_size,
 				min_numa_id = i;
 
 			max_numa_id = i;
-			*total_size += spec->size[i];
 			node_set(i, nodes);
 		}
 	}
-	if (*total_size == 0) {
+	if (check_total) {
+		if (sum != mem_size) {
+			pr_err("Size sum %#llx != target mem_size %#llx\n",
+			       sum, mem_size);
+			return -EINVAL;
+		}
+	} else if (sum == 0) {
 		pr_err("The size of new OBMM region is 0. Non-zero value expected\n");
 		return -EINVAL;
 	}
@@ -251,6 +260,8 @@ static int calculate_export_region_size(unsigned long *total_size,
 		return -EINVAL;
 	}
 
+	if (total_size)
+		*total_size = sum;
 	return 0;
 }
 
@@ -329,18 +340,8 @@ static const struct obmm_backend_ops obmm_export_pool_backend_ops = {
 	.destroy	= export_pool_destroy,
 };
 
-/*
- * Create an export-pool backend: allocate_memory_contiguous, sg_table
- * build, setup_ummu. The size-list
- * validation runs ONCE, in the ioctl (calculate_export_region_size);
- * @mem_size is that validated sum - a mismatch with the spec would be a
- * caller bug, owned by obmm_backend_attach's WARN_ON_ONCE invariant.
- *
- * spec->vendor_info ownership transfers here (contract in obmm_backend.h):
- * the only pre-ownership failure is the kzalloc below.
- *
- * Returns a backend holding its existence reference (refcnt == 1) or an
- * ERR_PTR.
+/* @mem_size is the sum validated by obmm_export_pool_validate_spec; vendor
+ * ownership transfers here. Returns a backend with refcnt == 1 or ERR_PTR.
  */
 struct obmm_backend *
 obmm_export_pool_backend_create(const struct obmm_export_pool_spec *spec, u64 mem_size)
@@ -398,10 +399,8 @@ static void print_export_param(const struct obmm_cmd_export *cmd_export)
 		 EID_ARGS64_L(cmd_export->deid), cmd_export->priv_len);
 }
 
-/* Fill the kernel-side pool spec from the uapi command (infallible: the
- * size-list length is validated by calculate_export_region_size's own
- * -E2BIG guard, which runs immediately after this fill and before any
- * state is created; vendor data is copied in later by the caller).
+/* Fill the kernel-side pool spec from the uapi command; infallible, the u64
+ * size-list length is checked by the caller before the u32 cast.
  */
 static void pool_spec_from_cmd(const struct obmm_cmd_export *cmd_export,
 			       struct obmm_export_pool_spec *spec)
@@ -422,8 +421,8 @@ int obmm_export_from_pool(struct obmm_cmd_export *cmd_export)
 	struct obmm_export_pool_spec spec = { 0 };
 	struct obmm_region *reg;
 	struct obmm_backend *be;
-	unsigned long total_size;
 	void *vendor;
+	u64 total_size;
 	uint64_t uba, mem_id;
 	uint32_t token_id;
 	int ret;
@@ -441,7 +440,7 @@ int obmm_export_from_pool(struct obmm_cmd_export *cmd_export)
 
 	/* arguments to region (logs produced by callee) */
 	pool_spec_from_cmd(cmd_export, &spec);
-	ret = calculate_export_region_size(&total_size, &spec);
+	ret = obmm_export_pool_validate_spec(&spec, 0, false, &total_size);
 	if (ret)
 		return ret;
 

@@ -201,10 +201,11 @@ struct obmm_cmd_preimport {
  * before it touches the data.
  *
  * errno summary - switch_begin: -EPERM, -EFAULT, -EINVAL, -ENOENT,
- * -ENODEV, -ENOMEM, -EEXIST, -EOPNOTSUPP, -EBUSY, -EIO,
- * -ENOTRECOVERABLE (the import backend's creation failed and its
- * internal unwind could not complete; returned before any switch state
- * was entered, the region is left unchanged); switch_end:
+ * -ENODEV, -ENOMEM, -EEXIST, -EOPNOTSUPP, -EBUSY, -EIO, -EOVERFLOW
+ * (a per-node size sum overflows), -ENOTRECOVERABLE (the import
+ * backend's creation failed and its internal unwind could not
+ * complete; returned before any switch state was entered, the region
+ * is left unchanged); switch_end:
  * -EPERM, -EINVAL, -EFAULT, -ENOENT, -EAGAIN (retry; converges to
  * -ESTALE), -ESTALE.
  *

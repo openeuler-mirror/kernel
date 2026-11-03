@@ -216,16 +216,10 @@ static vm_fault_t obmm_vma_fault(struct vm_fault *vmf)
 	return fret;
 }
 
-/*
- * Custom access handler for ptrace/GDB on PFNMAP VMAs. Runs under the
- * region's state_mutex: this path must not be a lockless reader of the
- * mutable backend pointer, and the mmap_read_lock -> state_mutex
- * ordering matches update_range, so there is no inversion. Transitional
- * switch states return -EAGAIN (documented ptrace unavailability mid-gap),
- * STRANDED returns -EIO. Outside transitional states every live PTE
- * belongs to reg->backend (the terminal zaps force refaults onto the
- * serving-or-restored backend), so the channel is chosen by the backend
- * type alone.
+/* Custom access handler for ptrace/GDB on PFNMAP VMAs, under state_mutex:
+ * the mmap_read_lock -> state_mutex order matches update_range, so there is
+ * no inversion. Transitional -EAGAIN, STRANDED -EIO, a PA outside the
+ * backend's ranges -EINVAL.
  */
 static int obmm_vma_access(struct vm_area_struct *vma, unsigned long addr,
 			   void *buf, int len, int write)
@@ -269,6 +263,12 @@ static int obmm_vma_access(struct vm_area_struct *vma, unsigned long addr,
 		goto out_unlock;
 	}
 	pfn = ext.pa >> PAGE_SHIFT;
+
+	/* covers_pa's @out is nullable; range match precedes the channel */
+	if (!be->ops->covers_pa(be, pfn << PAGE_SHIFT, PAGE_SIZE, NULL)) {
+		ret = -EINVAL;
+		goto out_unlock;
+	}
 
 	/* Derive prot from vma->vm_page_prot, adjust for kernel access */
 	prot = pgprot_val(vma->vm_page_prot);
