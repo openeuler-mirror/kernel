@@ -24,6 +24,7 @@
 #include <linux/mutex.h>
 #include <linux/once.h>
 #include <linux/pci.h>
+#include <linux/scatterlist.h>
 #include <linux/suspend.h>
 #include <linux/t10-pi.h>
 #include <linux/types.h>
@@ -525,6 +526,17 @@ static inline bool nvme_pci_use_sgls(struct nvme_dev *dev, struct request *req,
 	return true;
 }
 
+static bool nvme_sg_has_p2pdma(struct sg_table *sgt)
+{
+	struct scatterlist *sg;
+	int i;
+
+	for_each_sg(sgt->sgl, sg, sgt->orig_nents, i)
+		if (is_pci_p2pdma_page(sg_page(sg)))
+			return true;
+	return false;
+}
+
 static void nvme_free_prps(struct nvme_dev *dev, struct request *req)
 {
 	const int last_prp = NVME_CTRL_PAGE_SIZE / sizeof(__le64) - 1;
@@ -811,7 +823,9 @@ static blk_status_t nvme_map_data(struct nvme_dev *dev, struct request *req,
 		goto out_free_sg;
 	}
 
-	if (nvme_pci_use_sgls(dev, req, iod->sgt.nents))
+	/* A multi-entry SGL has a host-memory list; do not mix it with CMB data. */
+	if (nvme_pci_use_sgls(dev, req, iod->sgt.nents) &&
+	    (iod->sgt.nents == 1 || !nvme_sg_has_p2pdma(&iod->sgt)))
 		ret = nvme_pci_setup_sgls(dev, req, &cmnd->rw);
 	else
 		ret = nvme_pci_setup_prps(dev, req, &cmnd->rw);
