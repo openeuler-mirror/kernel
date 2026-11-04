@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <linux/acpi.h>
 #include <linux/delay.h>
-#include <linux/dma-iommu.h>
+#include <linux/iommu.h>
 #include <linux/list.h>
 #include <linux/platform_device.h>
 #include <linux/sort.h>
@@ -540,7 +540,7 @@ static int __do_sdma_open(struct hisi_sdma_device *psdma_dev, struct file *file)
 	if (ret != 0)
 		goto free_privt_data;
 
-	handle = iommu_sva_bind_device(&psdma_dev->pdev->dev, current->mm, NULL);
+	handle = iommu_sva_bind_device(&psdma_dev->pdev->dev, current->mm);
 	if (IS_ERR(handle)) {
 		dev_err(&psdma_dev->pdev->dev, "Failed to bind sva, %ld\n", PTR_ERR(handle));
 		ret = (int)PTR_ERR(handle);
@@ -600,7 +600,7 @@ int get_user_phys_addr(unsigned long uaddr, phys_addr_t *paddr)
 	offset = uaddr & ~PAGE_MASK;
 	down_read(&mm->mmap_lock);
 	ret = get_user_pages(uaddr, 1, FOLL_WRITE | FOLL_FORCE,
-		&page, NULL);
+		&page);
 	up_read(&mm->mmap_lock);
 	if (ret <= 0)
 		return -EFAULT;
@@ -1615,25 +1615,30 @@ static int remap_addr_range(u32 chn_num, u64 offset, u64 size, struct hisi_sdma_
 			return -EINVAL;
 		}
 		return HISI_SDMA_MMAP_SQE;
-	} else if (offset < chn_num * HISI_SDMA_MMAP_IO) {
+	}
+
+	if (offset < chn_num * HISI_SDMA_MMAP_IO) {
 		if (size > cq_max_size) {
 			pr_err("SDMA mmap size exceed cqe range\n");
 			return -EINVAL;
 		}
 		return HISI_SDMA_MMAP_CQE;
-	} else if (offset < chn_num * HISI_SDMA_MMAP_SHMEM) {
+	}
+
+	if (offset < chn_num * HISI_SDMA_MMAP_SHMEM) {
 		if (mode == HISI_SDMA_SAFE_MODE || size > reg_max_size) {
 			pr_err("SDMA not support io reg mmap\n");
 			return -EINVAL;
 		}
 		return HISI_SDMA_MMAP_IO;
-	} else {
-		if (size > sync_size) {
-			pr_err("SDMA mmap size exceed share mem range\n");
-			return -EINVAL;
-		}
-		return HISI_SDMA_MMAP_SHMEM;
 	}
+
+	if (size > sync_size) {
+		pr_err("SDMA mmap size exceed share mem range\n");
+		return -EINVAL;
+	}
+
+	return HISI_SDMA_MMAP_SHMEM;
 }
 
 static int sdma_vma_remap(struct vm_area_struct *vma)
@@ -1662,7 +1667,7 @@ static int sdma_dev_mmap(struct file *file, struct vm_area_struct *vma)
 	size = vma->vm_end - vma->vm_start;
 	offset = vma->vm_pgoff;
 	vma->vm_ops = &sdma_vm_ops;
-	vma->vm_flags |= VM_DONTEXPAND | VM_WIPEONFORK | VM_DONTCOPY | VM_IO;
+	vm_flags_set(vma, VM_DONTEXPAND | VM_WIPEONFORK | VM_DONTCOPY | VM_IO);
 
 	dev_dbg(dev, "SDMA total channel num = %u, user mmap offset = 0x%llx", chn_num, offset);
 	switch (remap_addr_range(chn_num, offset, size, chn_base, data->ida)) {

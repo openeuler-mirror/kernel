@@ -339,14 +339,15 @@ static int parse_sdma(struct hisi_sdma_device *psdma_dev, struct platform_device
 	if (device_property_read_u32(&pdev->dev, "sdma-chn-num", &nr_channel)) {
 		pr_err("ACPI sdma-chn-num get failed!\n");
 		return -EINVAL;
-	} else {
-		if (nr_channel <= HISI_STARS_CHN_NUM || nr_channel >
-		    HISI_SDMA_DEFAULT_CHANNEL_NUM + HISI_STARS_CHN_NUM) {
-			pr_err("ACPI sdma-chn-num = %u not as required\n", nr_channel);
-			return -EINVAL;
-		}
-		psdma_dev->nr_channel = (u16)(nr_channel - HISI_STARS_CHN_NUM);
 	}
+
+	if (nr_channel <= HISI_STARS_CHN_NUM || nr_channel >
+	    HISI_SDMA_DEFAULT_CHANNEL_NUM + HISI_STARS_CHN_NUM) {
+		pr_err("ACPI sdma-chn-num = %u not as required\n", nr_channel);
+		return -EINVAL;
+	}
+
+	psdma_dev->nr_channel = (u16)(nr_channel - HISI_STARS_CHN_NUM);
 
 	return 0;
 }
@@ -554,7 +555,7 @@ static int __init sdma_driver_init(void)
 			    &g_mutex_lock);
 	sdma_info_sync_dbg(&hisi_sdma_core_device, &share_chns);
 
-	sdma_class = class_create(THIS_MODULE, "sdma");
+	sdma_class = class_create("sdma");
 	if (IS_ERR(sdma_class)) {
 		pr_err("Class_create() failed for sdma_class: %ld\n", PTR_ERR(sdma_class));
 		goto destroy_ida;
