@@ -6,6 +6,7 @@
  *
  * Author: Pu Wen <puwen@hygon.cn>
  */
+#include <linux/bitops.h>
 #include <linux/io.h>
 #include <linux/cpu_smt.h>
 
@@ -22,6 +23,10 @@
 #include <linux/init.h>
 
 #include "cpu.h"
+
+#define HYGON_FCH_PM_BASE		0xFED80300
+#define HYGON_FCH_PM_S5_RESET_STATUS	0xC0
+#define HYGON_S5_RESET_STATUS_MASK	0x176F03FF
 
 #define MSR_HYGON_BP_CFG_IBRS_RAS_FLUSH_LEGACY_BIT 56
 #define MSR_HYGON_BP_CFG_IBRS_RAS_FLUSH_BIT 60
@@ -397,6 +402,76 @@ static void cpu_detect_tlb_hygon(struct cpuinfo_x86 *c)
 
 	tlb_lli_4m[ENTRIES] = tlb_lli_2m[ENTRIES] >> 1;
 }
+
+static const char * const hygon_s5_reset_reason_txt[] __initconst = {
+	[0]  = "ThermalTrip event occurred",
+	[1]  = "power button was pressed for 4 seconds",
+	[2]  = "shutdown event occurred",
+	[3]  = "ThermalTripFromTemp event occurred",
+	[4]  = "remote ASF power off command was received",
+	[5]  = "ShutDownFan0 event occurred",
+	[6]  = "ShutDownFan1 event occurred",
+	[7]  = "ShutDownFan2 event occurred",
+	[8]  = "ShutDownFan3 event occurred",
+	[9]  = "internal ThermalTrip event occurred",
+	[16] = "user reset event occurred",
+	[17] = "software issued PCI reset",
+	[18] = "INIT event from reset control register 0xCF9",
+	[19] = "PCI reset from reset control register 0xCF9",
+	[21] = "ACPI power state transition occurred",
+	[22] = "keyboard reset pin KB_RST_L was tripped",
+	[24] = "system failed to boot before failed boot timer expired",
+	[25] = "hardware watchdog timer expired",
+	[26] = "remote ASF reset command was received",
+	[28] = "HangReset event occurred",
+};
+
+static int __init hygon_print_s5_reset_status_mmio(void)
+{
+	void __iomem *addr;
+	u32 value, status;
+	int i;
+
+	if (boot_cpu_data.x86_vendor != X86_VENDOR_HYGON)
+		return 0;
+
+	addr = ioremap(HYGON_FCH_PM_BASE + HYGON_FCH_PM_S5_RESET_STATUS,
+		       sizeof(value));
+	if (!addr)
+		return 0;
+
+	value = ioread32(addr);
+
+	/* All bits set indicates an error response, not a valid status. */
+	if (value == U32_MAX) {
+		iounmap(addr);
+		return 0;
+	}
+
+	status = value & HYGON_S5_RESET_STATUS_MASK;
+	/*
+	 * Writing the value back to clear all reason.
+	 */
+	iowrite32(value, addr);
+	iounmap(addr);
+
+	pr_info("x86/hygon: PMx0C0 [S5/Reset Status] (S5ResetStat): 0x%08x\n",
+		value);
+
+	if (!status)
+		return 0;
+
+	for (i = 0; i < ARRAY_SIZE(hygon_s5_reset_reason_txt); i++) {
+		if (!(status & BIT(i)))
+			continue;
+
+		pr_info("x86/hygon: Previous system reset reason [0x%08x]: %s\n",
+			value, hygon_s5_reset_reason_txt[i]);
+	}
+
+	return 0;
+}
+late_initcall(hygon_print_s5_reset_status_mmio);
 
 static const struct cpu_dev hygon_cpu_dev = {
 	.c_vendor	= "Hygon",
