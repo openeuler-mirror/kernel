@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-2.0+
+#
+# Hisilicon UB DTU support
+#
+
+config UB_DTU
+	bool "Support UB DTU (Device Translation Unit)"
+	depends on UB_UMMU
+	help
+	  Support the UB DTU, a per-die device attached to the UMMU that
+	  translates device addresses through address windows instead of
+	  page tables.
+	  When enabled, the UMMU driver registers a DTU iommu instance that
+	  configures per-die address windows.
+	  Say Y here if your SoC integrates a UB DTU. If unsure, say N.
