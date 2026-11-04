@@ -879,7 +879,7 @@ static int uburma_cmd_set_jfs_opt(struct ubcore_device *ubc_dev,
 	len = arg.in.len;
 	ubuf = (void __user *)(uintptr_t)arg.in.buf;
 
-	if (len == 0 || !access_ok(ubuf, len))
+	if (len == 0 || len > UBURMA_CMD_MAX_OPT_LEN || !access_ok(ubuf, len))
 		return -EINVAL;
 
 	kbuf = kzalloc(len, GFP_KERNEL);
@@ -959,7 +959,7 @@ static int uburma_cmd_get_jfs_opt(struct ubcore_device *ubc_dev,
 	opt = arg.in.opt;
 	len = arg.in.len;
 	ubuf = (void __user *)(uintptr_t)arg.in.buf;
-	if (len == 0 || !access_ok(ubuf, len))
+	if (len == 0 || len > UBURMA_CMD_MAX_OPT_LEN || !access_ok(ubuf, len))
 		return -EINVAL;
 
 	fill_udata(&udata, file->ucontext, &arg.udata);
@@ -1658,7 +1658,7 @@ static int uburma_cmd_set_jfr_opt(struct ubcore_device *ubc_dev,
 	len = arg.in.len;
 	ubuf = (void __user *)(uintptr_t)arg.in.buf;
 
-	if (len == 0 || !access_ok(ubuf, len))
+	if (len == 0 || len > UBURMA_CMD_MAX_OPT_LEN || !access_ok(ubuf, len))
 		return -EINVAL;
 
 	kbuf = kzalloc(len, GFP_KERNEL);
@@ -1738,7 +1738,7 @@ static int uburma_cmd_get_jfr_opt(struct ubcore_device *ubc_dev,
 	opt = arg.in.opt;
 	len = arg.in.len;
 	ubuf = (void __user *)(uintptr_t)arg.in.buf;
-	if (len == 0 || !access_ok(ubuf, len))
+	if (len == 0 || len > UBURMA_CMD_MAX_OPT_LEN || !access_ok(ubuf, len))
 		return -EINVAL;
 
 	fill_udata(&udata, file->ucontext, &arg.udata);
@@ -2415,7 +2415,7 @@ static int uburma_cmd_set_jfc_opt(struct ubcore_device *ubc_dev,
 	opt = arg.in.opt;
 	len = arg.in.len;
 	ubuf = (void __user *)(uintptr_t)arg.in.buf;
-	if (len == 0 || !access_ok(ubuf, len))
+	if (len == 0 || len > UBURMA_CMD_MAX_OPT_LEN || !access_ok(ubuf, len))
 		return -EINVAL;
 	kbuf = kzalloc(len, GFP_KERNEL);
 	if (!kbuf)
@@ -2470,7 +2470,7 @@ static int uburma_cmd_get_jfc_opt(struct ubcore_device *ubc_dev,
 	opt = arg.in.opt;
 	len = arg.in.len;
 	ubuf = (void __user *)(uintptr_t)arg.in.buf;
-	if (len == 0 || !access_ok(ubuf, len))
+	if (len == 0 || len > UBURMA_CMD_MAX_OPT_LEN || !access_ok(ubuf, len))
 		return -EINVAL;
 
 	fill_udata(&udata, file->ucontext, &arg.udata);
@@ -3085,7 +3085,7 @@ static int uburma_cmd_set_jetty_opt(struct ubcore_device *ubc_dev,
 	len = arg.in.len;
 	ubuf = (void __user *)(uintptr_t)arg.in.buf;
 
-	if (len == 0 || !access_ok(ubuf, len))
+	if (len == 0 || len > UBURMA_CMD_MAX_OPT_LEN || !access_ok(ubuf, len))
 		return -EINVAL;
 
 	kbuf = kzalloc(len, GFP_KERNEL);
@@ -3215,7 +3215,7 @@ static int uburma_cmd_get_jetty_opt(struct ubcore_device *ubc_dev,
 	opt = arg.in.opt;
 	len = arg.in.len;
 	ubuf = (void __user *)(uintptr_t)arg.in.buf;
-	if (len == 0 || !access_ok(ubuf, len))
+	if (len == 0 || len > UBURMA_CMD_MAX_OPT_LEN || !access_ok(ubuf, len))
 		return -EINVAL;
 
 	fill_udata(&udata, file->ucontext, &arg.udata);
