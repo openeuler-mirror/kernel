@@ -24,7 +24,6 @@
 #include <linux/ummu_core.h>
 #include <linux/wait.h>
 #include <linux/delay.h>
-#include <uapi/linux/hisi_ummu.h>
 #include <uapi/ub/ubmempfd/ubmempfd.h>
 
 #define UBMEMPFD_MISC_NAME "ubmempfd"
@@ -228,19 +227,16 @@ static int ubmempfd_do_unmap(struct ubmempfd_ctx *ctx, struct ubm_request *req)
 
 static int ubmempfd_alloc_tdev(struct ubmempfd_ctx *ctx, u32 tid)
 {
-	struct hisi_ummu_tdev_info info;
 	struct iommu_domain *domain;
 	struct tdev_attr attr;
 	struct device *dev;
 
 	attr.name = NULL;
 	attr.dma_attr = DEV_DMA_COHERENT;
-	attr.priv = (u8 *)&info;
-	attr.priv_len = sizeof(info);
+	attr.priv = NULL;
+	attr.priv_len = 0;
 	attr.mode = MAPT_MODE_END;
 	attr.usva = false;
-	info.v2.on_chip = false;
-	info.v2.tid = tid;
 
 	if (ctx->dev) {
 		pr_warn("ummu dev exists, tid %u\n", tid);

@@ -65,13 +65,6 @@ struct logic_ummu_identity_device {
 	refcount_t refcount;
 };
 
-struct support_cb {
-	tdev_select_logic_ummu func;
-	struct list_head node;
-};
-
-static DEFINE_SPINLOCK(support_cb_list_lock);
-static LIST_HEAD(support_cb_list_head);
 static DEFINE_SPINLOCK(eid_list_lock);
 static LIST_HEAD(cached_eid_list);
 static DEFINE_XARRAY(logic_ummu_ops_info);
@@ -1693,49 +1686,10 @@ static int logic_ummu_invalidate_cfg(struct ummu_base_domain *domain)
 	return 0;
 }
 
-int logic_ummu_register_support_attr(tdev_select_logic_ummu func)
-{
-	struct support_cb *scb_entry;
-
-	guard(spinlock)(&support_cb_list_lock);
-	list_for_each_entry(scb_entry, &support_cb_list_head, node) {
-		if (scb_entry->func == func) {
-			pr_err("target func exist\n");
-			return -EEXIST;
-		}
-	}
-
-	scb_entry = kzalloc(sizeof(*scb_entry), GFP_ATOMIC);
-	if (!scb_entry)
-		return -ENOMEM;
-
-	scb_entry->func = func;
-	list_add_tail(&scb_entry->node, &support_cb_list_head);
-
-	return 0;
-}
-EXPORT_SYMBOL_NS_GPL(logic_ummu_register_support_attr, UMMU_INTERNAL);
-
-void logic_ummu_unregister_support_attr(tdev_select_logic_ummu func)
-{
-	struct support_cb *scb_entry, *next;
-
-	guard(spinlock)(&support_cb_list_lock);
-	list_for_each_entry_safe(scb_entry, next, &support_cb_list_head, node) {
-		if (scb_entry->func == func) {
-			list_del(&scb_entry->node);
-			kfree(scb_entry);
-		}
-	}
-}
-EXPORT_SYMBOL_NS_GPL(logic_ummu_unregister_support_attr, UMMU_INTERNAL);
-
 static bool logic_ummu_device_support_attr(struct ummu_core_device *core_device,
 					   struct tdev_attr *attr)
 {
 	struct hisi_ummu_tdev_info *info;
-	struct support_cb *scb_entry;
-	bool select_logic_ummu;
 
 	if (!attr->priv || !attr->priv_len)
 		return true;
@@ -1743,12 +1697,6 @@ static bool logic_ummu_device_support_attr(struct ummu_core_device *core_device,
 	if (attr->priv_len < sizeof(struct hisi_ummu_tdev_info)) {
 		pr_err("para is invalid.\n");
 		return false;
-	}
-
-	guard(spinlock)(&support_cb_list_lock);
-	list_for_each_entry(scb_entry, &support_cb_list_head, node) {
-		if (scb_entry->func(attr, &select_logic_ummu))
-			return select_logic_ummu;
 	}
 
 	info = (struct hisi_ummu_tdev_info *)attr->priv;

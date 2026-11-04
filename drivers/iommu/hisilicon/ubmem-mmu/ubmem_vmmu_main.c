@@ -14,7 +14,6 @@
 #include <ub/ubfi/ubfi.h>
 #include <linux/hash.h>
 #include <uapi/linux/hisi_ummu.h>
-#include "../logic_ummu/logic_ummu.h"
 
 /* ubmem_vmmu driver version release no. */
 #define UBMEM_VMMU_DRV_VER_NO "01"
@@ -110,13 +109,6 @@ static inline struct ubmem_vmmu_domain *to_ubmem_vmmu_domain(struct iommu_domain
 	struct ummu_base_domain *base_domain =
 		container_of(dom, struct ummu_base_domain, domain);
 	return container_of(base_domain, struct ubmem_vmmu_domain, base_domain);
-}
-
-static bool ubmem_vmmu_support_call_back(struct tdev_attr *attr, bool *select)
-{
-	*select = false;
-
-	return true;
 }
 
 static bool ubmem_vmmu_tdev_support_attr(struct ummu_core_device *core_device,
@@ -678,17 +670,9 @@ static int ubmem_vmmu_device_probe(struct platform_device *pdev)
 		goto remove_sysfs;
 	}
 
-	ret = logic_ummu_register_support_attr(ubmem_vmmu_support_call_back);
-	if (ret) {
-		dev_err(dev, "register support attr to logic ummu failed, ret=%d\n", ret);
-		goto register_scb_err;
-	}
-
 	dev_dbg(dev, "register ubmem_vmmu to ummu core success\n");
 	return 0;
 
-register_scb_err:
-	ummu_core_device_unregister(&ubmem_vmmu->core_dev);
 remove_sysfs:
 	iommu_device_sysfs_remove(&ubmem_vmmu->core_dev.iommu);
 deinit_ummu_core:
@@ -708,7 +692,6 @@ static int ubmem_vmmu_device_remove(struct platform_device *pdev)
 		pr_err("device remove get invalid platform device!\n");
 		return -ENODEV;
 	}
-	logic_ummu_unregister_support_attr(ubmem_vmmu_support_call_back);
 	ummu_core_device_unregister(&ubmem_vmmu->core_dev);
 	iommu_device_sysfs_remove(&ubmem_vmmu->core_dev.iommu);
 	ummu_core_device_deinit(&ubmem_vmmu->core_dev);
@@ -755,7 +738,6 @@ static void __exit ubmem_vmmu_driver_unregister(struct platform_driver *drv)
 module_driver(ubmem_vmmu_driver, ubmem_vmmu_driver_register, ubmem_vmmu_driver_unregister);
 
 MODULE_IMPORT_NS(UMMU_CORE_DRIVER);
-MODULE_IMPORT_NS(UMMU_INTERNAL);
 MODULE_DESCRIPTION("Hisilicon ubmem vmmu driver");
 MODULE_AUTHOR("HiSilicon Tech. Co., Ltd.");
 MODULE_LICENSE("GPL");
