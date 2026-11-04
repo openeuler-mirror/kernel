@@ -21,12 +21,14 @@ extern void tick_suspend_local(void);
 extern void tick_resume_local(void);
 extern void tick_handover_do_timer(void);
 extern void tick_cleanup_dead_cpu(int cpu);
+extern int tick_get_do_timer_cpu(void);
 #else /* CONFIG_GENERIC_CLOCKEVENTS */
 static inline void tick_init(void) { }
 static inline void tick_suspend_local(void) { }
 static inline void tick_resume_local(void) { }
 static inline void tick_handover_do_timer(void) { }
 static inline void tick_cleanup_dead_cpu(int cpu) { }
+static inline int tick_get_do_timer_cpu(void) { return -1; }
 #endif /* !CONFIG_GENERIC_CLOCKEVENTS */
 
 #if defined(CONFIG_GENERIC_CLOCKEVENTS) && defined(CONFIG_SUSPEND)
@@ -42,8 +44,10 @@ extern void tick_irq_enter(void);
 #  ifndef arch_needs_cpu
 #   define arch_needs_cpu() (0)
 #  endif
+extern bool support_cpu0_nohz_full;
 # else
 static inline void tick_irq_enter(void) { }
+#define support_cpu0_nohz_full 0
 #endif
 
 #if defined(CONFIG_GENERIC_CLOCKEVENTS_BROADCAST) && defined(CONFIG_TICK_ONESHOT)
