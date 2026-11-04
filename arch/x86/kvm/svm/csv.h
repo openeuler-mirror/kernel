@@ -59,16 +59,16 @@ extern struct hygon_kvm_hooks_table {
 void __init csv_init(struct kvm_x86_ops *ops);
 void csv_exit(void);
 
-int csv_alloc_trans_mempool(void);
-void csv_free_trans_mempool(void);
+void __init csv_hardware_setup(unsigned int max_csv_asid);
+void csv_hardware_unsetup(void);
 
 #else	/* !CONFIG_HYGON_CSV */
 
 static inline void __init csv_init(struct kvm_x86_ops *ops) { }
 static inline void csv_exit(void) { }
 
-static inline int csv_alloc_trans_mempool(void) { return 0; }
-static inline void csv_free_trans_mempool(void) { }
+static inline void __init csv_hardware_setup(unsigned int max_csv_asid) { }
+static inline void csv_hardware_unsetup(void) { }
 
 #endif	/* CONFIG_HYGON_CSV */
 
