@@ -19,9 +19,10 @@
 #include <asm/setup.h>
 #include <linux/processor.h>
 
-#define MOC_MODE_CACHE	1
+__ro_after_init DEFINE_STATIC_KEY_FALSE(pbha_bit0_enabled);
+__ro_after_init DEFINE_STATIC_KEY_FALSE(pbha_bit0_kernel_enabled);
 
-bool __ro_after_init pbha_bit0_enabled;
+static bool pbha_enabled_phase_1;
 
 void __init early_pbha_bit0_init(void)
 {
@@ -45,7 +46,7 @@ void __init early_pbha_bit0_init(void)
 	if (!prop)
 		return;
 	if (*prop == MOC_MODE_CACHE)
-		pbha_bit0_enabled = true;
+		pbha_enabled_phase_1 = true;
 }
 
 #define pte_pbha_bit0(pte)                                                     \
@@ -237,3 +238,28 @@ int pbha_bit0_update_vma(struct mm_struct *mm, int val)
 	mmap_write_unlock(mm);
 	return 0;
 }
+
+static int __init setup_pbha(char *str)
+{
+	if (!pbha_enabled_phase_1)
+		return 0;
+
+	if (!str)
+		return -EINVAL;
+
+	if (strcmp(str, "enable") == 0) {
+		static_branch_enable(&pbha_bit0_enabled);
+		static_branch_enable(&pbha_bit0_kernel_enabled);
+	} else if (strcmp(str, "user") == 0) {
+		static_branch_enable(&pbha_bit0_enabled);
+	} else {
+		return -EINVAL;
+	}
+
+	if (static_branch_likely(&pbha_bit0_enabled))
+		pr_info("pbha bit_0 enabled, kernel: %ld\n",
+			static_branch_likely(&pbha_bit0_kernel_enabled));
+
+	return 0;
+}
+early_param("pbha", setup_pbha);

@@ -30,6 +30,8 @@ static void fdt_update_cell_size(void *fdt)
 }
 
 #ifdef CONFIG_ARM64_PBHA
+extern bool efi_pbha;
+
 static efi_status_t fdt_init_moc_mode(void *fdt, int node)
 {
 	efi_guid_t oem_config_guid = EFI_OEMCONFIG_VARIABLE_GUID;
@@ -40,6 +42,10 @@ static efi_status_t fdt_init_moc_mode(void *fdt, int node)
 	u8 fdt_val32;
 	u8 arr[16] = { 0x1 };
 
+	if (!efi_pbha)
+		goto out;
+
+	size = sizeof(moc_mode);
 	efi_status = get_efi_var(L"MemoryOnChipMode", &oem_config_guid, NULL, &size,
 				 &moc_mode);
 	if (efi_status != EFI_SUCCESS)
