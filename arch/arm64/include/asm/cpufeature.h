@@ -967,6 +967,20 @@ static inline bool system_supports_bbml3(void)
 int do_emulate_mrs(struct pt_regs *regs, u32 sys_reg, u32 rt);
 bool try_emulate_mrs(struct pt_regs *regs, u32 isn);
 
+#ifdef CONFIG_ARM64_PBHA
+extern bool pbha_enabled;
+
+static inline bool system_supports_pbha(void)
+{
+	return pbha_enabled;
+}
+#else
+static inline bool system_supports_pbha(void)
+{
+	return false;
+}
+#endif
+
 static inline u32 id_aa64mmfr0_parange_to_phys_shift(int parange)
 {
 	switch (parange) {
