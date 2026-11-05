@@ -92,7 +92,7 @@ properties:
           cpus:
             description:
               Should be a list of phandles to CPU nodes (as described in
-              Documentation/devicetree/bindings/arm/cpus.yaml).
+              Documentation/devicetree/bindings/arm/cpu.yaml).
 
         required:
           - apple,fiq-index

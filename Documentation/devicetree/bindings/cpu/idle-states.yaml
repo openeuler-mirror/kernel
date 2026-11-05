@@ -247,7 +247,7 @@ description: |+
   ===========================================
 
   [1] ARM Linux Kernel documentation - CPUs bindings
-      Documentation/devicetree/bindings/arm/cpus.yaml
+      Documentation/devicetree/bindings/arm/cpu.yaml
 
   [2] ARM Linux Kernel documentation - PSCI bindings
       Documentation/devicetree/bindings/arm/psci.yaml
