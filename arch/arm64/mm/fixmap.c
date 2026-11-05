@@ -10,6 +10,7 @@
 #include <linux/memory.h>
 #include <linux/mm.h>
 #include <linux/sizes.h>
+#include <linux/pbha.h>
 
 #include <asm/fixmap.h>
 #include <asm/kernel-pgtable.h>
@@ -124,6 +125,7 @@ void __set_fixmap(enum fixed_addresses idx,
 	ptep = fixmap_pte(addr);
 
 	if (pgprot_val(flags)) {
+		flags = pgprot_pbha_bit0(flags);
 		__set_pte(ptep, pfn_pte(phys >> PAGE_SHIFT, flags));
 	} else {
 		__pte_clear(&init_mm, addr, ptep);
