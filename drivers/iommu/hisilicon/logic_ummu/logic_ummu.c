@@ -261,7 +261,9 @@ static int logic_ummu_attach_dev(struct iommu_domain *domain,
 	}
 	/* the domain attributes might be changed, sync to logic domain */
 	logic_domain_update_attr(logic_domain);
-	logic_domain_set_ops(logic_domain);
+	ret = logic_domain_set_ops(logic_domain);
+	if (ret)
+		return ret;
 
 	if (domain->type != IOMMU_DOMAIN_NESTED)
 		sync_type = SYNC_DOMAIN_MAPT_CFG;

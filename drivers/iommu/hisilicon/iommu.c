@@ -318,11 +318,13 @@ static int ummu_domain_context_set(struct ummu_domain *u_domain,
 
 	if (u_domain->cfgs.stage == UMMU_DOMAIN_S1) {
 		ummu_build_s1_domain_tcte(u_domain, &tct_data);
-		ummu_write_tct_desc(core_to_ummu_device(
+		ret = ummu_write_tct_desc(core_to_ummu_device(
 				    u_domain->base_domain.core_dev),
 				    u_domain->cfgs.tect_tag,
 				    u_domain->base_domain.tid,
 				    &tct_data);
+		if (ret)
+			return ret;
 		set_dev_tid(master->dev, u_domain->base_domain.tid);
 	} else {
 		ummu_build_s2_domain_tecte(u_domain, &tect_data);

@@ -837,7 +837,7 @@ static struct iommu_device *ubmem_mmu_probe_device(struct device *dev)
 
 free:
 	kfree(master);
-	return NULL;
+	return ERR_PTR(-EOPNOTSUPP);
 }
 
 static void ubmem_mmu_release_device(struct device *dev)

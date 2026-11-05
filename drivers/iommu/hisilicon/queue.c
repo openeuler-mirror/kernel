@@ -1098,9 +1098,9 @@ static int ummu_mcmdq_exclusive_issue_cmdlist(struct ummu_device *ummu,
 				llq.prod,
 				readl_relaxed(mcmdq->q.prod_reg),
 				readl_relaxed(mcmdq->q.cons_reg));
+		} else {
+			ret = check_pa_continuity_nop_exec(&mcmdq->q, sprod);
 		}
-
-		ret = check_pa_continuity_nop_exec(&mcmdq->q, sprod);
 		/*
 		 * Update mcmdq->q.llq.cons, to improve the success rate of
 		 * ummu_queue_has_space() when some new commands are inserted next
@@ -1236,8 +1236,8 @@ int ummu_mcmdq_issue_cmdlist(struct ummu_device *ummu, u64 *cmds,
 				"CMD_SYNC timeout at 0x%08x [hwprod 0x%08x, hwcons 0x%08x]\n",
 				llq.prod, readl_relaxed(mcmdq->q.prod_reg),
 				readl_relaxed(mcmdq->q.cons_reg));
-
-		ret = check_pa_continuity_nop_exec(&mcmdq->q, sprod);
+		else
+			ret = check_pa_continuity_nop_exec(&mcmdq->q, sprod);
 		/*
 		 * Try to unlock the mcmdq lock. This will fail if we're the last
 		 * reader, in which case we can safely update mcmdq->q.llq.cons
