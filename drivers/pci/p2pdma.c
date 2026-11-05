@@ -21,6 +21,10 @@
 #include <linux/random.h>
 #include <linux/seq_buf.h>
 #include <linux/xarray.h>
+#ifdef CONFIG_PCI_P2PDMA_DEDUP_TEST
+#include <linux/sort.h>
+#include <linux/vmalloc.h>
+#endif
 
 struct pci_p2pdma {
 	struct gen_pool *pool;
@@ -316,6 +320,152 @@ size_t pci_p2pdma_max_pagemap_align(struct pci_dev *pdev, int bar,
 	return PAGE_SIZE;
 }
 EXPORT_SYMBOL_GPL(pci_p2pdma_max_pagemap_align);
+
+/*
+ * Test-only helper.  It is built in because the vmemmap walk uses init_mm
+ * and the kernel page-table helpers, which are not exported to modules.
+ * CONFIG_PCI_P2PDMA_DEDUP_TEST gates both this helper and the test module
+ * that calls it.
+ */
+#ifdef CONFIG_PCI_P2PDMA_DEDUP_TEST
+/*
+ * Sort comparator for the physical PFNs collected by
+ * pci_p2pdma_measure_vmemmap().  The array holds unsigned long values; the
+ * order is only used to count duplicate PFNs.
+ */
+static int pci_p2pdma_compare_ul(const void *a, const void *b)
+{
+	unsigned long left = *(const unsigned long *)a;
+	unsigned long right = *(const unsigned long *)b;
+
+	if (left < right)
+		return -1;
+	return left > right;
+}
+
+/**
+ * pci_p2pdma_measure_vmemmap - count physical pages backing a P2PDMA vmemmap
+ * @pdev: provider PCI device
+ * @bar: BAR that holds the provider memory
+ * @stats: output geometry and page counts
+ *
+ * The BAR must be covered by one MEMORY_DEVICE_PCI_P2PDMA pagemap with a
+ * nonzero vmemmap_shift.  The helper walks the vmemmap virtual range in
+ * 4 KiB steps and records the physical page behind each step.  With vmemmap
+ * deduplication active, many virtual vmemmap pages map to the same physical
+ * page, so stats->unique_pages is smaller than stats->base_pages.
+ *
+ * The walk uses the kernel page tables (init_mm).  It assumes the vmemmap is
+ * mapped at PTE level; a huge PMD leaf is not handled.
+ *
+ * This is a test helper, not a normal I/O path.  It does not read or write
+ * the provider memory.
+ *
+ * Return: 0 on success, negative errno on failure.
+ */
+int pci_p2pdma_measure_vmemmap(struct pci_dev *pdev, int bar,
+			       struct pci_p2pdma_vmemmap_stats *stats)
+{
+	unsigned long *backing_pfns = NULL;
+	struct dev_pagemap *pgmap;
+	unsigned long start_pfn;
+	u64 nr_pages, i, unique = 1;
+	int err = 0;
+
+	if (!stats)
+		return -EINVAL;
+	memset(stats, 0, sizeof(*stats));
+
+	/*
+	 * The provider pagemap must cover exactly this BAR.  A pagemap for a
+	 * sub-range has a different vmemmap layout and is not measurable here.
+	 */
+	pgmap = get_dev_pagemap(PHYS_PFN(pci_resource_start(pdev, bar)), NULL);
+	if (!pgmap)
+		return -ENODEV;
+
+	/*
+	 * Base-page registration has neither vmemmap_shift nor deduplication.
+	 * There is nothing to measure in that case.
+	 */
+	if (pgmap->type != MEMORY_DEVICE_PCI_P2PDMA ||
+	    pgmap->range.start != pci_resource_start(pdev, bar) ||
+	    pgmap->range.end != pci_resource_end(pdev, bar) ||
+	    !pgmap->vmemmap_shift) {
+		err = -EOPNOTSUPP;
+		goto out_put_pgmap;
+	}
+
+	start_pfn = PHYS_PFN(pgmap->range.start);
+	nr_pages = pci_resource_len(pdev, bar) >> PAGE_SHIFT;
+
+	/*
+	 * vmemmap_shift is the compound page order: PAGE_SIZE << 18 = 1 GiB
+	 * for PUD, PAGE_SIZE << 9 = 2 MiB for PMD.  base_pages is the number
+	 * of 4 KiB virtual pages in the vmemmap for the whole BAR before
+	 * deduplication.
+	 */
+	stats->align = (u64)PAGE_SIZE << pgmap->vmemmap_shift;
+	stats->base_pages = DIV_ROUND_UP_ULL((u64)nr_pages * sizeof(struct page), PAGE_SIZE);
+	if (stats->base_pages > SIZE_MAX) {
+		/*
+		 * kvmalloc_array() takes a size_t; reject an impossible count.
+		 */
+		err = -EOVERFLOW;
+		goto out_put_pgmap;
+	}
+
+	/*
+	 * One entry per 4 KiB vmemmap virtual page.  The value is the PFN of
+	 * the page that backs the vmemmap virtual page, not the PFN of the HBM
+	 * page represented by the struct page.
+	 */
+	backing_pfns = kvmalloc_array(stats->base_pages, sizeof(*backing_pfns), GFP_KERNEL);
+	if (!backing_pfns) {
+		err = -ENOMEM;
+		goto out_put_pgmap;
+	}
+
+	for (i = 0; i < stats->base_pages; i++) {
+		/*
+		 * pfn_to_page() returns the vmemmap address of the first HBM
+		 * page.  i * PAGE_SIZE walks the vmemmap array.  pmd_off_k()
+		 * and pte_offset_kernel() resolve the kernel PTE; pte_page()
+		 * is the physical page that stores the vmemmap struct page.
+		 */
+		unsigned long addr = (unsigned long)pfn_to_page(start_pfn) + i * PAGE_SIZE;
+		pte_t *ptep = pte_offset_kernel(pmd_off_k(addr), addr);
+		pte_t pte = ptep_get(ptep);
+
+		if (pte_none(pte)) {
+			/* The vmemmap must be fully populated. */
+			err = -EFAULT;
+			goto out_free;
+		}
+		backing_pfns[i] = page_to_pfn(pte_page(pte));
+	}
+
+	/*
+	 * Sort and compact the PFNs.  The unique count is the number of
+	 * physical pages used for the vmemmap.  The caller compares it with
+	 * the expected compound-page geometry.
+	 */
+	sort(backing_pfns, stats->base_pages, sizeof(*backing_pfns), pci_p2pdma_compare_ul, NULL);
+	for (i = 1; i < stats->base_pages; i++) {
+		if (backing_pfns[i] != backing_pfns[unique - 1])
+			backing_pfns[unique++] = backing_pfns[i];
+	}
+	stats->unique_pages = unique;
+
+out_free:
+	kvfree(backing_pfns);
+out_put_pgmap:
+	put_dev_pagemap(pgmap);
+	return err;
+}
+/* Used by the vmemmap dedup test module. */
+EXPORT_SYMBOL_GPL(pci_p2pdma_measure_vmemmap);
+#endif /* CONFIG_PCI_P2PDMA_DEDUP_TEST */
 
 static int pci_p2pdma_check_pagemap_align(struct pci_dev *pdev, int bar,
 					  size_t size, size_t align, u64 offset)
