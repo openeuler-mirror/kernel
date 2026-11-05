@@ -192,7 +192,7 @@ void __init pmd_mapping_reserve_and_remap(void)
 		goto out;
 
 	if (can_set_direct_map()) {
-		pr_info("linear mapping is mapped at PTE level, all memory can be borrowed\n");
+		pr_info("linear mapping supports page-granularity changes, all memory can be borrowed\n");
 		goto out;
 	}
 
@@ -436,70 +436,10 @@ static inline int check_update_lm_arg(unsigned long start_pfn, unsigned long end
 	return 0;
 }
 
-static int invalid_pud_entry(pud_t *pudp, unsigned long addr,
-				unsigned long next, struct mm_walk *walk)
-{
-	bool set_invalid = (bool)walk->private;
-	pud_t pud;
-
-	pud = pudp_get(pudp);
-	if (pud_table(pud))
-		return 0;
-
-	if (set_invalid)
-		pud_val(pud) &= ~PTE_VALID;
-	else
-		pud_val(pud) |= PTE_VALID;
-	set_pud(pudp, pud);
-
-	return 0;
-}
-
-static int invalid_pmd_entry(pmd_t *pmdp, unsigned long addr,
-				unsigned long next, struct mm_walk *walk)
-{
-	bool set_invalid = (bool)walk->private;
-	pmd_t pmd;
-
-	pmd = pmdp_get(pmdp);
-	if (pmd_table(pmd))
-		return 0;
-
-	if (set_invalid)
-		pmd_val(pmd) &= ~PTE_VALID;
-	else
-		pmd_val(pmd) |= PTE_VALID;
-	set_pmd(pmdp, pmd);
-
-	return 0;
-}
-
-static int invalid_pte_entry(pte_t *ptep, unsigned long addr,
-				unsigned long next, struct mm_walk *walk)
-{
-	bool set_invalid = (bool)walk->private;
-	pte_t pte;
-
-	pte = ptep_get(ptep);
-
-	if (set_invalid)
-		pte_val(pte) &= ~PTE_VALID;
-	else
-		pte_val(pte) |= PTE_VALID;
-	set_pte(ptep, pte);
-
-	return 0;
-}
-
-static const struct mm_walk_ops invalid_ops = {
-	.pud_entry = invalid_pud_entry,
-	.pmd_entry = invalid_pmd_entry,
-	.pte_entry = invalid_pte_entry,
-};
-
 int set_linear_mapping_invalid(unsigned long start_pfn, unsigned long end_pfn,
 										bool set_invalid)
 {
+	pgprot_t set_mask, clear_mask;
 	unsigned long start, end;
 	int ret;
 
@@ -507,12 +447,22 @@ int set_linear_mapping_invalid(unsigned long start_pfn, unsigned long end_pfn,
 	if (ret)
 		return ret;
 
+	if (set_invalid) {
+		clear_mask = __pgprot(PTE_PRESENT_VALID_KERNEL);
+		set_mask = __pgprot(PTE_PRESENT_INVALID);
+	} else {
+		set_mask = __pgprot(PTE_PRESENT_VALID_KERNEL);
+		clear_mask = __pgprot(PTE_PRESENT_INVALID);
+	}
+
 	start = (unsigned long)page_to_virt(pfn_to_page(start_pfn));
 	end = start + (end_pfn - start_pfn) * PAGE_SIZE;
 	mmap_write_lock(&init_mm);
-	walk_kernel_page_table_range(start, end,
-				&invalid_ops, NULL, (void *)set_invalid);
+	ret = update_range_prot(start, end - start, set_mask, clear_mask);
 	mmap_write_unlock(&init_mm);
+	if (ret)
+		return ret;
+
 	if (set_invalid)
 		flush_tlb_kernel_range(start, end);
 
@@ -520,87 +470,37 @@ int set_linear_mapping_invalid(unsigned long start_pfn, unsigned long end_pfn,
 }
 EXPORT_SYMBOL_GPL(set_linear_mapping_invalid);
 
-static inline void update_entry_nc(unsigned long long *val, bool set_nc)
-{
-	*val &= ~PTE_ATTRINDX_MASK;
-	if (set_nc)
-		*val |= PTE_ATTRINDX(MT_NORMAL_NC);
-	else
-		*val |= PTE_ATTRINDX(MT_NORMAL_TAGGED);
-	*val |= PTE_VALID;
-}
-
-static int nc_pud_entry(pud_t *pudp, unsigned long addr,
-				unsigned long next, struct mm_walk *walk)
-{
-	bool set_nc = (bool)walk->private;
-	pud_t pud;
-
-	if (pud_table(*pudp))
-		return 0;
-
-	pud = pudp_huge_get_and_clear(walk->mm, addr, pudp);
-	update_entry_nc(&pud_val(pud), set_nc);
-	set_pud(pudp, pud);
-
-	return 0;
-}
-
-static int nc_pmd_entry(pmd_t *pmdp, unsigned long addr,
-				unsigned long next, struct mm_walk *walk)
-{
-	bool set_nc = (bool)walk->private;
-	pmd_t pmd;
-
-	if (pmd_table(*pmdp))
-		return 0;
-
-	pmd = pmdp_huge_get_and_clear(walk->mm, addr, pmdp);
-	update_entry_nc(&pmd_val(pmd), set_nc);
-	set_pmd(pmdp, pmd);
-
-	return 0;
-}
-
-static int nc_pte_entry(pte_t *ptep, unsigned long addr,
-				unsigned long next, struct mm_walk *walk)
-{
-	bool set_nc = (bool)walk->private;
-	pte_t pte;
-
-	pte = ptep_get_and_clear(walk->mm, addr, ptep);
-	update_entry_nc(&pte_val(pte), set_nc);
-	set_pte(ptep, pte);
-
-	return 0;
-}
-
-static const struct mm_walk_ops nc_ops = {
-	.pud_entry = nc_pud_entry,
-	.pmd_entry = nc_pmd_entry,
-	.pte_entry = nc_pte_entry,
-};
-
 int set_linear_mapping_nc(unsigned long start_pfn, unsigned long end_pfn, bool set_nc)
 {
+	pgprot_t set_mask, clear_mask;
 	unsigned long start, end;
 	int ret;
 
-	start = (unsigned long)page_to_virt(pfn_to_page(start_pfn));
-	end = start + (end_pfn - start_pfn) * PAGE_SIZE;
 	ret = check_update_lm_arg(start_pfn, end_pfn);
 	if (ret)
 		return ret;
 
+	start = (unsigned long)page_to_virt(pfn_to_page(start_pfn));
+	end = start + (end_pfn - start_pfn) * PAGE_SIZE;
+
+	if (set_nc)
+		set_mask = __pgprot(PTE_ATTRINDX(MT_NORMAL_NC) |
+				    PTE_PRESENT_VALID_KERNEL);
+	else
+		set_mask = __pgprot(PTE_ATTRINDX(MT_NORMAL_TAGGED) |
+				    PTE_PRESENT_VALID_KERNEL);
+	clear_mask = __pgprot(PTE_ATTRINDX_MASK | PTE_PRESENT_INVALID);
+
 	mmap_write_lock(&init_mm);
-	walk_kernel_page_table_range(start, end,
-				&invalid_ops, NULL, (void *)true);
+	ret = update_range_prot(start, end - start,
+				__pgprot(PTE_PRESENT_INVALID),
+				__pgprot(PTE_PRESENT_VALID_KERNEL));
 	flush_tlb_kernel_range(start, end);
-	walk_kernel_page_table_range(start, end,
-				&nc_ops, NULL, (void *)set_nc);
+	if (!ret)
+		ret = update_range_prot(start, end - start, set_mask, clear_mask);
 	mmap_write_unlock(&init_mm);
 
-	return 0;
+	return ret;
 }
 EXPORT_SYMBOL_GPL(set_linear_mapping_nc);
 
