@@ -450,7 +450,7 @@ int unic_sync_promisc_mode(struct unic_dev *unic_dev)
 
 	adev = unic_dev->comdev.adev;
 
-	if (!mutex_trylock(&act_info->mutex))
+	if (!mutex_trylock(&act_info->period_mutex))
 		return 0;
 
 	if (act_info->deactivate)
@@ -472,7 +472,7 @@ int unic_sync_promisc_mode(struct unic_dev *unic_dev)
 		set_bit(UNIC_VPORT_STATE_PROMISC_CHANGE, &vport->state);
 
 out:
-	mutex_unlock(&act_info->mutex);
+	mutex_unlock(&act_info->period_mutex);
 
 	return ret;
 }

@@ -31,7 +31,9 @@ static int ubase_dbg_dump_rst_info(struct seq_file *s, void *data)
 
 	seq_printf(s, "ELR reset count: %u\n", udev->reset_stat.elr_reset_cnt);
 	seq_printf(s, "RAS ELR reset count: %u\n", udev->reset_stat.ras_elr_reset_cnt);
-	seq_printf(s, "port reset count: %u\n", udev->reset_stat.port_reset_cnt);
+	seq_printf(s, "port reset start count: %u\n", udev->reset_stat.port_reset_start_cnt);
+	seq_printf(s, "port reset done count: %u\n", udev->reset_stat.port_reset_done_cnt);
+	seq_printf(s, "port reset fail count: %u\n", udev->reset_stat.port_reset_fail_cnt);
 	seq_printf(s, "himac reset count: %u\n", udev->reset_stat.himac_reset_cnt);
 	seq_printf(s, "reset done count: %u\n", udev->reset_stat.reset_done_cnt);
 	seq_printf(s, "HW reset done count: %u\n", udev->reset_stat.hw_reset_done_cnt);
@@ -729,6 +731,18 @@ static bool __ubase_dbg_dentry_support(struct device *dev, u32 property)
 	return false;
 }
 
+static bool ubase_dbg_ub_perf_stats_supported(struct device *dev, u32 property)
+{
+	struct ubase_dev *udev = dev_get_drvdata(dev);
+
+	if (udev->caps.hw_ver != UBASE_HW_VER_A_0 &&
+	    udev->caps.hw_ver != UBASE_HW_VER_K_0 &&
+	    ubase_dev_ubl_supported(udev))
+		return false;
+
+	return __ubase_dbg_dentry_support(dev, property);
+}
+
 static bool ubase_dbg_udma_mac_tbl_list_support(struct device *dev, u32 property)
 {
 	struct ubase_dev *udev = dev_get_drvdata(dev);
@@ -958,7 +972,7 @@ static struct ubase_dbg_cmd_info ubase_dbg_cmd[] = {
 		.name = "perf_stats",
 		.dentry_index = UBASE_DBG_DENTRY_ROOT,
 		.property = UBASE_SUP_URMA | UBASE_SUP_CDMA | UBASE_SUP_UBL_ETH,
-		.support = __ubase_dbg_dentry_support,
+		.support = ubase_dbg_ub_perf_stats_supported,
 		.init = __ubase_dbg_seq_file_init,
 		.read_func = ubase_dbg_dump_perf_stats,
 	},

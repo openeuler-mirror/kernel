@@ -55,33 +55,33 @@ static void unic_activate_event_process(struct unic_dev *unic_dev)
 		return;
 
 	if (test_bit(UNIC_STATE_DISABLED, &unic_dev->state)) {
-		unic_err(unic_dev,
-			 "failed to process activate event, device is not ready.\n");
+		unic_info(unic_dev,
+			  "skip net open for activate event, device is not ready.\n");
+		rtnl_lock();
 		goto out;
 	}
 
-	/* if network interface has already been stopped,
-	 * no need to open by activate event
-	 */
-	if (test_bit(UNIC_STATE_DOWN, &unic_dev->state))
-		goto out;
-
+	rtnl_lock();
 	ret = unic_net_open_no_link_change(netdev);
 	if (ret)
 		unic_warn(unic_dev, "failed to open net, ret = %d.\n", ret);
 
-	ret = unic_activate_promisc_mode(unic_dev, true);
-	if (!ret)
-		clear_bit(UNIC_VPORT_STATE_PROMISC_CHANGE, &unic_dev->vport.state);
-
-	if (unic_dev_eth_mac_supported(unic_dev))
-		unic_activate_mac_table(unic_dev);
-
 out:
-	mutex_lock(&act_info->mutex);
-	act_info->deactivate = false;
-	mutex_unlock(&act_info->mutex);
 	clear_bit(UNIC_STATE_DEACTIVATE, &unic_dev->state);
+	rtnl_unlock();
+
+	if (!test_bit(UNIC_STATE_DISABLED, &unic_dev->state)) {
+		ret = unic_activate_promisc_mode(unic_dev, true);
+		if (!ret)
+			clear_bit(UNIC_VPORT_STATE_PROMISC_CHANGE, &unic_dev->vport.state);
+
+		if (unic_dev_eth_mac_supported(unic_dev))
+			unic_activate_mac_table(unic_dev);
+	}
+
+	mutex_lock(&act_info->period_mutex);
+	act_info->deactivate = false;
+	mutex_unlock(&act_info->period_mutex);
 }
 
 static void unic_deactivate_event_process(struct unic_dev *unic_dev)
@@ -96,33 +96,32 @@ static void unic_deactivate_event_process(struct unic_dev *unic_dev)
 	/* when deactivate event occurs, set flag to true to prevent
 	 * periodic tasks changing promisc
 	 */
-	mutex_lock(&act_info->mutex);
+	mutex_lock(&act_info->period_mutex);
 	act_info->deactivate = true;
-	mutex_unlock(&act_info->mutex);
+	mutex_unlock(&act_info->period_mutex);
+
+	if (!test_bit(UNIC_STATE_DISABLED, &unic_dev->state)) {
+		if (unic_dev_eth_mac_supported(unic_dev))
+			unic_deactivate_mac_table(unic_dev);
+
+		ret = unic_activate_promisc_mode(unic_dev, false);
+		if (!ret)
+			set_bit(UNIC_VPORT_STATE_PROMISC_CHANGE, &unic_dev->vport.state);
+	}
 
 	if (test_bit(UNIC_STATE_DISABLED, &unic_dev->state)) {
-		unic_err(unic_dev,
-			 "failed to process deactivate event, device is not ready.\n");
+		unic_info(unic_dev,
+			  "skip net stop for deactivate event, device is not ready.\n");
+		rtnl_lock();
 		goto out;
 	}
 
-	if (unic_dev_eth_mac_supported(unic_dev))
-		unic_deactivate_mac_table(unic_dev);
-
-	ret = unic_activate_promisc_mode(unic_dev, false);
-	if (!ret)
-		set_bit(UNIC_VPORT_STATE_PROMISC_CHANGE, &unic_dev->vport.state);
-
-	/* if network interface has already been stopped,
-	 * no need to stop again by deactivate event
-	 */
-	if (test_bit(UNIC_STATE_DOWN, &unic_dev->state))
-		goto out;
-
+	rtnl_lock();
 	unic_net_stop_no_link_change(netdev);
 
 out:
 	set_bit(UNIC_STATE_DEACTIVATE, &unic_dev->state);
+	rtnl_unlock();
 }
 
 static void unic_activate_handler(struct auxiliary_device *adev, bool activate)
@@ -132,12 +131,12 @@ static void unic_activate_handler(struct auxiliary_device *adev, bool activate)
 	unic_info(unic_dev, "receive %s event callback.\n",
 		  activate ? "activate" : "deactivate");
 
-	rtnl_lock();
+	mutex_lock(&unic_dev->act_info.event_mutex);
 	if (activate)
 		unic_activate_event_process(unic_dev);
 	else
 		unic_deactivate_event_process(unic_dev);
-	rtnl_unlock();
+	mutex_unlock(&unic_dev->act_info.event_mutex);
 }
 
 static void unic_ub_port_reset(struct unic_dev *unic_dev, bool link_up)
