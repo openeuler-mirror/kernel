@@ -6,6 +6,8 @@
 
 #define pr_fmt(fmt) "UMMU: " fmt
 #include <linux/interrupt.h>
+#include <linux/cpumask.h>
+#include <linux/of.h>
 
 #include "trace.h"
 #include "ummu.h"
@@ -512,6 +514,62 @@ static inline void ummu_init_gerr_irq(struct ummu_device *ummu, int irq)
 		dev_warn(ummu->dev, "failed to enable gerror irq\n");
 }
 
+static void ummu_setup_irq_affinity(struct ummu_device *ummu, u32 evtq_irq,
+				    u32 gerr_irq, const char *affinity_prop)
+{
+	struct device_node *np = ummu->dev->of_node;
+	struct cpumask affinity_mask;
+	int phandle_num, cpu, i;
+	struct device_node *dn;
+	int ret;
+
+	if (!np || (!evtq_irq && !gerr_irq))
+		return;
+
+	phandle_num = of_count_phandle_with_args(np, affinity_prop, NULL);
+	if (phandle_num <= 0)
+		return;
+
+	cpumask_clear(&affinity_mask);
+	for (i = 0; i < phandle_num; i++) {
+		dn = of_parse_phandle(np, affinity_prop, i);
+		if (!dn) {
+			dev_warn(ummu->dev,
+				 "failed to parse %s[%d]\n", affinity_prop, i);
+			continue;
+		}
+
+		cpu = of_cpu_node_to_id(dn);
+		of_node_put(dn);
+		if (cpu < 0) {
+			dev_warn(ummu->dev,
+				 "failed to find logical CPU for phandle[%d]\n", i);
+			continue;
+		}
+
+		cpumask_set_cpu(cpu, &affinity_mask);
+	}
+
+	if (cpumask_empty(&affinity_mask))
+		return;
+
+	if (evtq_irq) {
+		ret = irq_set_affinity(evtq_irq, &affinity_mask);
+		if (ret)
+			dev_warn(ummu->dev,
+				 "failed to set irq%d affinity=%*pb, ret=%d\n",
+				 evtq_irq, cpumask_pr_args(&affinity_mask), ret);
+	}
+
+	if (gerr_irq) {
+		ret = irq_set_affinity(gerr_irq, &affinity_mask);
+		if (ret)
+			dev_warn(ummu->dev,
+				 "failed to set irq%d affinity=%*pb, ret=%d\n",
+				 gerr_irq, cpumask_pr_args(&affinity_mask), ret);
+	}
+}
+
 void ummu_setup_irqs(struct ummu_device *ummu)
 {
 	u32 evtq_irq, gerr_irq;
@@ -538,6 +596,8 @@ void ummu_setup_irqs(struct ummu_device *ummu)
 	else
 		dev_warn(ummu->dev,
 			 "no gerr irq - errors will not be reported!\n");
+
+	ummu_setup_irq_affinity(ummu, evtq_irq, gerr_irq, "interrupt-affinity");
 
 	if (ummu->impl_ops && ummu->impl_ops->setup_irqs)
 		ummu->impl_ops->setup_irqs(ummu);
