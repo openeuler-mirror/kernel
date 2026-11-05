@@ -321,7 +321,7 @@ static int unic_update_mac_list(struct net_device *netdev,
 
 	ether_addr_copy(unic_addr, mac_addr);
 	ret = unic_comm_update_addr_list(list, &vport->addr_tbl.mac_list_lock,
-					 state, unic_addr);
+					 state, unic_addr, UNIC_COMM_ADDR_NO_MASK);
 	if (ret) {
 		unic_err(unic_dev,
 			 "failed to update mac addr(%s). mac_type = %s.\n",
@@ -579,12 +579,11 @@ static void unic_deactivate_sync_mac_table(struct unic_vport *vport,
 			list_move_tail(&mac_node->node, &tmp_list);
 			break;
 		case UNIC_COMM_ADDR_ACTIVE:
-			new_node = kzalloc(sizeof(*new_node), GFP_ATOMIC);
+			new_node = unic_comm_alloc_addr_node(mac_node->state,
+							     mac_node->unic_addr,
+							     mac_node->node_mask);
 			if (!new_node)
 				goto stop_traverse;
-			memcpy(new_node->unic_addr, mac_node->unic_addr,
-			       UNIC_ADDR_LEN);
-			new_node->state = mac_node->state;
 			new_node->is_pfc = mac_node->is_pfc;
 			list_add_tail(&new_node->node, &tmp_list);
 			break;
