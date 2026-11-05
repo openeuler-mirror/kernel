@@ -293,8 +293,12 @@ static int set_clr_page_flags(struct x86_mapping_info *info,
 	 * Changing encryption attributes of a page requires to flush it from
 	 * the caches.
 	 */
-	if ((set | clr) & _PAGE_ENC)
+	if ((set | clr) & _PAGE_ENC) {
 		clflush_page(address);
+
+		/* On CSV3, notify secure processor to manage page attr changes */
+		csv_update_page_attr(address, set, clr);
+	}
 
 	/* Update PTE */
 	pte = *ptep;
