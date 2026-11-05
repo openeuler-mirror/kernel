@@ -72,10 +72,12 @@ static inline u32 nse_round_to_num(u32 N, u32 R)
 #define NSE_DBG_LMAC_PHY_DETAIL	BIT_ULL(15)
 #define NSE_DBG_MISC_DETAIL		BIT_ULL(16)
 
+#define NSE_DBG_AQM_ERR			BIT_ULL(26)
 #define NSE_DBG_AQM_MSG			BIT_ULL(27)
 #define NSE_DBG_AQM_DESC		BIT_ULL(28)
 #define NSE_DBG_AQM_BUF			BIT_ULL(29)
-#define NSE_DBG_AQM_ALL		(NSE_DBG_AQM_MSG		| \
+#define NSE_DBG_AQM_ALL		(NSE_DBG_AQM_ERR | \
+				 NSE_DBG_AQM_MSG		| \
 				 NSE_DBG_AQM_DESC	| \
 				 NSE_DBG_AQM_BUF)
 
@@ -242,7 +244,7 @@ struct cmis_int_status {
 									 */
 };
 
-struct xsfp_cmis_info {
+struct xsfp_cmis_raw_bytes {
 	/* CMIS memory
 	 *
 	 *		8.1.2 Map of Supported Pages and Banks
@@ -265,6 +267,11 @@ struct xsfp_cmis_info {
 	u8 mem_up1[128];
 	u8 mem_up10[4][128];
 	u8 mem_up11[4][128];
+
+	u8 mem_model;
+};
+
+struct xsfp_cmis_info {
 
 	struct cmis_int_status int_status;
 	struct cmis_int_status int_status_old;
@@ -309,9 +316,15 @@ struct sfp_pin_status {
 	u32 rx_los;
 };
 
-struct sfp_sff8472_info {
+struct sfp_sff8472_raw_bytes {
 	u8 mem_a0[128];	/* <<SFF-8472>> / 4. Memory Organization / 2 wire address (A0h) */
+	u8 mem_a2[128];	/* <<SFF-8472>> / 4. Memory Organization / 2 wire address (A2h) */
 
+	bool need_addr_change;
+	bool impl_mem_a2;
+};
+
+struct sfp_sff8472_info {
 	/*  the following fields are parsing result of mem_a0, according to <<SFF-8472>>/4 Memory
 	 * Organization
 	 */
@@ -320,6 +333,7 @@ struct sfp_sff8472_info {
 	bool impl_tx_fault;
 	bool impl_rx_los;
 
+	bool impl_mem_a2;
 	bool need_addr_change;	/* <<SFF-8472>> / 8.9 Addressing Modes */
 
 	u32 cable_tech;		/* byte 8 */
@@ -369,9 +383,14 @@ struct qsfp_sff8636_int_status {
 	u8 interrupt_flags[19];
 };
 
-struct qsfp_sff8636_info {
+struct qsfp_sff8636_raw_bytes {
 	/* <<SFF-8636>> /6.2 Lower Page 00h, /6.3 Upper Page 00h */
 	u8 mem_lp_up0[256];
+
+	u8 mem_model;
+};
+
+struct qsfp_sff8636_info {
 
 #define SFF8636_STATUS_INDICATORS_INTL				BIT(1)
 #define SFF8636_STATUS_INDICATORS_DATA_NOT_READY	BIT(0)
@@ -430,6 +449,21 @@ struct nse_ephy_ftype_info {
 	struct ephy_ftype_status status_old;
 };
 
+struct xsfp_raw_bytes_info {
+	bool valid;	/* at least basic part are valid */
+
+	enum xsfp_mng_if_type mng_if_type;
+
+	union {
+		struct sfp_sff8472_raw_bytes sff8472_bytes;
+		struct qsfp_sff8636_raw_bytes sff8636_bytes;
+		struct xsfp_cmis_raw_bytes cmis_bytes;
+	};
+
+	u32 ethtool_modinfo_type;
+	u32 ethtool_modinfo_eeprom_len;
+};
+
 struct nse_ephy_info {
 	u32 ephy_type;	/* NSE_AQC_EPHY_TYPE_XXX */
 
@@ -457,6 +491,9 @@ struct nse_ephy_info {
 
 		struct nse_ephy_ftype_info ftype_info;
 	};
+
+
+	struct xsfp_raw_bytes_info raw_bytes_info;
 };
 
 struct nse_an_info {
@@ -1356,6 +1393,8 @@ struct nse_hw {
 		u64 sq_fail_ns;
 		u64 sq_fail_timeout_ns;
 
+		u64 sq_total_wait_cnt;
+
 		u64 aq_cmd_shutdown_time;
 		u64 aq_cmd_shutdown_cnt;
 
@@ -1603,6 +1642,13 @@ enum nse_sw_du_act_type {
 	NSE_DU_ACT_SET_GENERIC_MD,
 	NSE_DU_ACT_INVAL_ACT
 };
+
+
+struct nse_dim {
+	u32 itr;
+};
+
+#define NSE_DIM_DEFAULT_PROFILE_IX 0
 
 #endif /* _NSE_TYPE_H_ */
 

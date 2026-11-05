@@ -14,9 +14,13 @@
 #define NSE_FW_DCBX_STATUS_MULTIPLE_PEERS	3
 #define NSE_FW_DCBX_STATUS_DIS				7
 
+#define NSE_IEEE_TSA_ETS		2
+
 enum nse_status nse_get_dcb_cfg(struct nse_port_info *pi);
 enum nse_status nse_set_dcb_cfg(struct nse_port_info *pi, bool set_all_or_this_lan);
 enum nse_status nse_set_dcb_cfg_lw(struct nse_port_info *pi, u32 cfg_chg_type);
+enum nse_status nse_set_dcb_dscp_map(struct nse_port_info *pi);
+enum nse_status nse_ena_dcb_dscp_mode(struct nse_port_info *pi, bool ena_or_dis);
 
 void nse_save_dcbx_cfg_from_aqc(struct nse_hw *hw, struct nse_dcbx_cfg *dst,
 				struct nse_aqc_qos_db_cfg *db_cfg,

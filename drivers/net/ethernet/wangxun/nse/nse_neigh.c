@@ -182,7 +182,7 @@ nse_update_encap_entry_down(struct nse_hw *hw,
 
 	mutex_lock(&encap_entry->fltr_list_lock);
 	list_for_each_entry(encap_item, &encap_entry->fltr_list, list_entry) {
-		dev_info(nse_hw_to_dev(hw), "\t cur encap item: addr = %p, idx = %d, e = %p\n",
+		nse_debug(hw, NSE_DBG_SW, "\t cur encap item: addr = %p, idx = %d, e = %p\n",
 			encap_item, encap_item->index, encap_item->e);
 		if (encap_entry != encap_item->e) {
 			dev_warn(nse_hw_to_dev(hw), "\t encap item is not point to encap entry!\n");
@@ -194,7 +194,7 @@ nse_update_encap_entry_down(struct nse_hw *hw,
 
 		nse_get_tc_fltr(fltr);
 
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"\t fltr: cookie = %lx, is_slowpath = %d, lut_id = %d, node_id = 0x%x, node_state_id = 0x%x, ref_cnt = %d, encap_cnt = %d, cur encap idx = %d\n",
 			fltr->cookie, fltr->action.node_state.is_slowpath,
 			fltr->lut_id, fltr->node_id,
@@ -239,7 +239,7 @@ nse_update_encap_entry_up(struct nse_hw *hw,
 
 	mutex_lock(&encap_entry->fltr_list_lock);
 	list_for_each_entry(encap_item, &encap_entry->fltr_list, list_entry) {
-		dev_info(nse_hw_to_dev(hw), "\t cur encap item: addr = %p, idx = %d, e = %p\n",
+		nse_debug(hw, NSE_DBG_SW, "\t cur encap item: addr = %p, idx = %d, e = %p\n",
 			encap_item, encap_item->index, encap_item->e);
 
 		if (encap_entry != encap_item->e) {
@@ -252,7 +252,7 @@ nse_update_encap_entry_up(struct nse_hw *hw,
 
 		nse_get_tc_fltr(fltr);
 
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"\t fltr: cookie = %lx, is_slowpath = %d, lut_id = %d, node_id = 0x%x, node_state_id = 0x%x, ref_cnt = %d, encap_cnt = %d, cur encap idx = %d\n",
 			fltr->cookie, fltr->action.node_state.is_slowpath,
 			fltr->lut_id, fltr->node_id,
@@ -302,8 +302,8 @@ nse_update_encap_entry(struct nse_hw *hw,
 
 	switch (update_type) {
 	case NSE_NEIGH_MAC:
-		dev_info(nse_hw_to_dev(hw),	"Encap(%p) start to mac update\n", encap_entry);
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,	"Encap(%p) start to mac update\n", encap_entry);
+		nse_debug(hw, NSE_DBG_SW,
 			"\t ref_cnt = %d, new_status = %d, new_mac = %pM, old_status = %d, old_mac = %pM\n",
 			refcount_read(&encap_entry->ref_cnt), new_connected, ha,
 			old_connected, encap_entry->dmac);
@@ -311,8 +311,8 @@ nse_update_encap_entry(struct nse_hw *hw,
 		break;
 
 	case NSE_NEIGH_DOWN:
-		dev_info(nse_hw_to_dev(hw), "Encap(%p) start to down update\n", encap_entry);
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW, "Encap(%p) start to down update\n", encap_entry);
+		nse_debug(hw, NSE_DBG_SW,
 			"\t ref_cnt = %d, new_status = %d, new_mac = %pM, old_status = %d, old_mac = %pM\n",
 			refcount_read(&encap_entry->ref_cnt), new_connected, ha,
 			old_connected, encap_entry->dmac);
@@ -320,8 +320,8 @@ nse_update_encap_entry(struct nse_hw *hw,
 		break;
 
 	case NSE_NEIGH_UP:
-		dev_info(nse_hw_to_dev(hw), "Encap(%p) start to up update\n", encap_entry);
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW, "Encap(%p) start to up update\n", encap_entry);
+		nse_debug(hw, NSE_DBG_SW,
 			"\t ref_cnt = %d, new_status = %d, new_mac = %pM, old_status = %d, old_mac = %pM\n",
 			refcount_read(&encap_entry->ref_cnt), new_connected, ha,
 			old_connected, encap_entry->dmac);
@@ -496,7 +496,7 @@ nse_encap_entry_attach_neigh(struct nse_hw *hw,
 			"Failed to create neigh entry\n");
 		return err;
 	}
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 		"Success to create new neigh entry\n");
 
 encap_attach_to_neigh:
@@ -505,7 +505,7 @@ encap_attach_to_neigh:
 	list_add_tail(&encap_entry->encap_list, &neigh_entry->encap_list);
 	mutex_unlock(&neigh_entry->encap_list_lock);
 
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 		"Success to attach encap(%p) to neigh(%p)\n",
 		encap_entry, neigh_entry);
 

@@ -13,7 +13,9 @@ int nse_set_itr_interval(struct nse_hw *hw, u16 irq, u32 interval_in_us);
 int nse_set_intrl_interval(struct nse_hw *hw, u16 irq, u32 interval_in_us);
 
 #define NSE_ITR_INTERVAL_MIN_USEC	2
+#define NSE_ITR_INTERVAL_MIN_IN_2_USEC	1
 #define NSE_ITR_INTERVAL_MAX_USEC	8190
+#define NSE_ITR_INTERVAL_MAX_IN_2_USEC	4095
 #define NSE_ITR_INTERVAL_8K			124
 #define NSE_ITR_INTERVAL_20K		50
 #define NSE_ITR_INTERVAL_DEFAULT	NSE_ITR_INTERVAL_20K

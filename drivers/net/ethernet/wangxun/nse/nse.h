@@ -102,7 +102,7 @@
 #define DRV_VERSION_PATCH	0
 #define DRV_VERSION_BUILD	0
 
-#define DRV_VERSION	"1.0.2.1oe"
+#define DRV_VERSION	"1.0.3oe"
 #define DRV_SUMMARY	"WangXun(R) Ethernet Connection AM Series Linux Driver"
 #ifdef NSE_ADD_PROBES
 #define DRV_VERSION_EXTRA "_probes"
@@ -155,6 +155,12 @@ extern const char nse_drv_ver[];
 #define NSE_MAX_MEDIUM_RSS_QS	64
 #define NSE_MAX_SMALL_RSS_QS	16
 #define NSE_RES_VALID_BIT	0x8000
+
+#ifndef MAX_DEFAULT_VECTORS
+#define MAX_DEFAULT_VECTORS 64
+#endif /* MAX_DEFAULT_VECTORS */
+#define MIN_DEFAULT_VECTORS 8
+
 
 enum nse_res_irq_id {
 	NSE_RES_IRQ_ID_MISC				= 0x0,
@@ -608,10 +614,11 @@ struct nse_q_vector {
 		u16 itr_settings;
 	};
 
-	u16 dyn_itr_val;
+	u32 dyn_itr_val;
 	bool dyn_itr_refresh;
 
 	struct napi_struct napi;
+	bool napi_enabled;
 
 	struct nse_ring_container rx;
 	struct nse_ring_container tx;
@@ -619,6 +626,10 @@ struct nse_q_vector {
 
 	cpumask_t affinity_mask;
 	struct irq_affinity_notify affinity_notify;
+
+	int best_local_cpu_id;
+	cpumask_t best_affinity_mask;	/* affinity_mask would change, define a non-change one */
+
 
 	char name[NSE_INT_NAME_STR_LEN];
 
@@ -809,7 +820,9 @@ struct nse_pf {
 	struct work_struct serv_task;
 	struct tasklet_struct serv_bh;	/* Only used if nse_aq_rq_rx_method = 1 */
 
+#if defined(NSE_DEBUG_EXT)
 	struct timer_list polling_tmr;
+#endif
 
 	unsigned int wd_subtask_flags;
 #define WD_SUBTASK_FLAG_UPDATE_PF_STATS_NOW			BIT(0)
@@ -1249,6 +1262,10 @@ const char *nse_pf_state_str(unsigned int s);
 
 bool nse_is_wol_supported(struct nse_hw *hw);
 
+int nse_get_num_local_cpus(struct device *dev);
+int nse_normalize_cpu_count(int num_cpus);
+const struct cpumask *nse_get_local_cpus_mask(struct device *dev);
+
 int nse_open(struct net_device *netdev);
 int nse_open_internal(struct net_device *netdev);
 int nse_stop(struct net_device *netdev);
@@ -1259,11 +1276,10 @@ void nse_lan_deinit_tso_hsb(struct nse_pf *pf);
 void nse_lan_reinstall_tso_hsb(struct nse_pf *pf);
 
 void nse_udp_tunnels_rebuild(struct nse_pf *pf);
+void nse_udp_tunnels_init(struct nse_pf *pf);
 
 #define nse_printk(fmt, args...) pr_alert("[%s, %d] " fmt, __func__, __LINE__, ##args)
 
-extern unsigned int nse_aq_cmd_timeout_tick;
-extern unsigned int nse_aq_cmd_timeout;
 extern unsigned int nse_aq_cmd_check_dd;
 extern unsigned int nse_aq_cmd_wait_method;
 extern unsigned int nse_aq_rq_rx_method;
@@ -1275,16 +1291,10 @@ extern unsigned int nse_vf_vsi_max_lanirq_num;
 
 extern unsigned int nse_sriov_vf_res_alloc_from_tail;
 
-extern unsigned int nse_lan_tx_select_q_dport;
-extern unsigned int nse_lan_tx_select_q_default;
-
 extern unsigned int nse_bypass_sched;
 extern unsigned int nse_bypass_switch;
 extern unsigned int nse_tcam_less;
-extern unsigned int nse_palladium_debug;
-extern unsigned int nse_no_reset;
-extern unsigned int nse_no_irq;
-extern unsigned int nse_polling_mod;
+extern unsigned int nse_recipe_serial;
 
 extern unsigned int nse_timeout_scale;
 
@@ -1308,13 +1318,7 @@ extern unsigned int nse_bypass_qos_db_flush_disable;
 #define NSE_LOOPBACK_MODE_HW_JTAG	4
 extern unsigned int nse_loopback_mode;
 
-extern unsigned int nse_lan_tx_no_bql;
-
-extern unsigned int nse_lan_tx_not_use_ctx_desc;
-
 extern unsigned int nse_lan_txcq_initial_hw_gen;
-extern unsigned int nse_lan_tcsum_force_l3;
-extern unsigned int nse_lan_tdm_check_desc_err;
 
 #define NSE_LAN_DESC_CACHE_TX	0x1
 #define NSE_LAN_DESC_CACHE_RX	0x2
@@ -1322,10 +1326,7 @@ extern unsigned int nse_lan_desc_cache;
 
 extern unsigned int nse_lan_tx_rs_optimize;
 
-extern unsigned int nse_lan_no_xmit;
 extern unsigned int nse_lan_disable_q_before_cfg;
-
-extern unsigned int nse_lan_vlan_pvid_inner_strip;
 
 extern unsigned int nse_lan_bulk_ena_dis;
 
@@ -1337,40 +1338,15 @@ extern unsigned int nse_ptp_fine_mode;
 
 extern unsigned int nse_qos_db_use_share;
 
-#if defined(NSE_DEBUG_EXT)
-extern unsigned int nse_qos_db_test_fc_tx;
-
-/*	high thres: 1280 B (0x500 - 0101 0000 0000)
- *	low thres:	1024 B (0x400 - 0100 0000 0000)
- */
-#define NSE_QOS_DB_RPB_SMALL_HTHRES		0x500
-#define NSE_QOS_DB_RPB_SMALL_LTHRES		0x400
-
-extern unsigned int nse_lan_vlan_force_up;
-
-#endif
-
 extern unsigned int nse_fw_lldp;
 
-#if defined(NSE_DEBUG_EXT)
-extern unsigned int nse_lan_rx_force_rxdid;
-#endif
-
-#if defined(NSE_DEBUG_EXT)
-#define NSE_LAN_DEBUG_HW_QSTAT_TDM_CNT 16
-
-extern unsigned int nse_lan_debug_hw_qstat;
-#endif
-
 extern unsigned int nse_rdma_ena;
-
-extern unsigned int nse_chip_dbg_mode;
-
-extern unsigned int nse_dbg_force_mac_ss;
 
 extern unsigned int nse_misc_check_temp;
 
 extern unsigned int nse_lmac_phy_ephy_ftype;
+
+extern unsigned int nse_lan_tx_no_bql;
 
 #define be16_to_le(x)	cpu_to_le16(be16_to_cpu(x))
 #define be32_to_le(x)	cpu_to_le32(be32_to_cpu(x))
@@ -1386,6 +1362,55 @@ static inline bool nse_is_regval_reset_magic(u32 regval)
 
 #define BAR0_RNOC_BASE		0x200000
 #define FW_RNOC_BASE		0x70000000
+
+
+#if defined(NSE_DEBUG_EXT)
+
+extern unsigned int nse_lan_tx_select_q_dport;
+extern unsigned int nse_lan_tx_select_q_default;
+
+extern unsigned int nse_palladium_debug;
+
+extern unsigned int nse_no_reset;
+
+extern unsigned int nse_no_irq;
+
+extern unsigned int nse_polling_mod;
+
+extern unsigned int nse_lan_tx_not_use_ctx_desc;
+
+extern unsigned int nse_lan_tcsum_force_l3;
+extern unsigned int nse_lan_tdm_check_desc_err;
+
+extern unsigned int nse_lan_no_xmit;
+
+extern unsigned int nse_lan_vlan_pvid_inner_strip;
+
+
+extern unsigned int nse_qos_db_test_fc_tx;
+/*	high thres: 1280 B (0x500 - 0101 0000 0000)
+ *	low thres:	1024 B (0x400 - 0100 0000 0000)
+ */
+#define NSE_QOS_DB_RPB_SMALL_HTHRES		0x500
+#define NSE_QOS_DB_RPB_SMALL_LTHRES		0x400
+
+
+extern unsigned int nse_lan_vlan_force_up;
+
+
+extern unsigned int nse_lan_rx_force_rxdid;
+
+
+extern unsigned int nse_lan_debug_hw_qstat;
+
+#define NSE_LAN_DEBUG_HW_QSTAT_TDM_CNT 16
+
+
+extern unsigned int nse_chip_dbg_mode;
+
+extern unsigned int nse_dbg_force_mac_ss;
+
+#endif	/* #if defined(NSE_DEBUG_EXT) */
 
 #endif /* _NSE_H_ */
 

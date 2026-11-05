@@ -19,7 +19,7 @@ static void nse_init_fw_conf_amber(struct nse_hw *hw)
 
 	set_bit(NSE_FW_FEA_SUPPORT_DDP, conf->fw_fea);
 
-	if (hw->hw_conf.hw_platform == NSE_HW_PLATFORM_ASIC && !nse_palladium_debug) {
+	if (hw->hw_conf.hw_platform == NSE_HW_PLATFORM_ASIC) {
 		/* all current NSE_DEV_ID_AMBER_XXX support FW-LLDP */
 		set_bit(NSE_FW_FEA_SUPPORT_LLDP, conf->fw_fea);
 	}

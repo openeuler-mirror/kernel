@@ -268,12 +268,231 @@ pfc_out:
 	return err;
 }
 
+#define NSE_BYTES_PER_DSCP_VAL		8
+
+/**
+ * nse_dcbnl_setapp - set local IEEE App config
+ * @netdev: relevant netdev struct
+ * @app: struct to hold app config info
+ */
+static int nse_dcbnl_setapp(struct net_device *netdev, struct dcb_app *app)
+{
+	struct nse_pf *pf = nse_netdev_to_pf(netdev);
+	struct device *dev = nse_pf_to_dev(pf);
+	struct nse_hw *hw = &pf->hw;
+	struct nse_dcb_app_priority_table new_app;
+	struct nse_dcbx_cfg *old_cfg, *new_cfg;
+	unsigned int max_tc;
+	int ret, i, j;
+	u32 cfg_chg_type = 0;
+
+	/* ONLY DSCP APP TLVs have operational significance */
+	if (app->selector != IEEE_8021QAZ_APP_SEL_DSCP)
+		return -EINVAL;
+
+	if ((pf->dcbx_cap & DCB_CAP_DCBX_LLD_MANAGED) ||
+		hw->port_info->qos_cfg.dcbx_mode == NSE_QOS_DCBX_MODE_FW ||
+		test_bit(NSE_FLAG_FW_LLDP_DCBX_SUBAGENT_ENA, pf->flags)) {
+		dev_err(dev, "fw-lldp-dcbx-agent is active, refuse host change conf\n");
+		return -EINVAL;
+	}
+
+	if (app->protocol >= NSE_DSCP_NUM_VAL) {
+		dev_err(dev, "DSCP value 0x%04X out of range\n",
+			app->protocol);
+		return -EINVAL;
+	}
+
+	max_tc = hw->hw_conf.max_tc_allowed;
+	if (app->priority >= max_tc) {
+		dev_err(dev, "TC %d out of range, max TC %d\n",
+			app->priority, max_tc);
+		return -EINVAL;
+	}
+
+	/* grab TC mutex */
+	mutex_lock(&pf->tc_mutex);
+
+	new_cfg = &pf->hw.port_info->qos_cfg.desired_dcbx_cfg;
+	old_cfg = &pf->hw.port_info->qos_cfg.local_dcbx_cfg;
+
+	ret = dcb_ieee_setapp(netdev, app);
+	if (ret)
+		goto setapp_out;
+
+	if (test_and_set_bit(app->protocol, new_cfg->dscp_mapped)) {
+		dev_err(dev, "DSCP value 0x%04X already user mapped\n",
+			app->protocol);
+		ret = dcb_ieee_delapp(netdev, app);
+		if (ret)
+			dev_err(dev, "Failed to delete re-mapping TLV\n");
+		ret = -EINVAL;
+		goto setapp_out;
+	}
+
+	new_app.selector = app->selector;
+	new_app.prot_id = app->protocol;
+	new_app.priority = app->priority;
+
+	/* If port is not in DSCP mode, need to set */
+	if (old_cfg->pfc_mode == NSE_QOS_MODE_VLAN) {
+		new_cfg->pfc_mode = NSE_QOS_MODE_DSCP;
+		/* set default DSCP QoS values */
+		new_cfg->etscfg.willing = 0;
+		new_cfg->pfc.pfccap = max_tc;
+		new_cfg->pfc.willing = 0;
+
+		for (i = 0; i < max_tc; i++)
+			for (j = 0; j < NSE_BYTES_PER_DSCP_VAL; j++) {
+				int dscp, offset;
+
+				dscp = (i * max_tc) + j;
+				offset = max_tc * NSE_BYTES_PER_DSCP_VAL;
+
+				new_cfg->dscp_map[dscp] = i;
+				/* if less that 8 TCs supported */
+				if (max_tc < NSE_MAX_TRAFFIC_CLASS)
+					new_cfg->dscp_map[dscp + offset] = i;
+			}
+
+		new_cfg->etscfg.tcbwtable[0] = 100;
+		new_cfg->etscfg.tsatable[0] = NSE_IEEE_TSA_ETS;
+		new_cfg->etscfg.prio_table[0] = 0;
+
+		for (i = 1; i < max_tc; i++) {
+			new_cfg->etscfg.tcbwtable[i] = 0;
+			new_cfg->etscfg.tsatable[i] = NSE_IEEE_TSA_ETS;
+			new_cfg->etscfg.prio_table[i] = i;
+		}
+	}
+	/* apply new mapping for this DSCP value */
+	new_cfg->dscp_map[app->protocol] = app->priority;
+	new_cfg->app[new_cfg->numapps++] = new_app;
+
+	cfg_chg_type = nse_dcb_need_recfg(pf,
+					  &pf->hw.port_info->qos_cfg.local_dcbx_cfg,
+					  new_cfg);
+	if (!(cfg_chg_type & NSE_DCB_CFG_CHG_TYPE_DSCP)) {
+		dev_info(dev, "[%s] APP setting no change\n", __func__);
+		ret = NSE_DCB_NO_HW_CHG;
+		goto setapp_out;
+	}
+
+	ret = nse_pf_dcb_dscp_cfg(pf, new_cfg, NSE_DCB_CFG_CHG_TYPE_DSCP, true);
+	/* other err are negative error code, return back to stack and uapp */
+	if (ret >= 0)
+		ret = 0;
+
+setapp_out:
+	mutex_unlock(&pf->tc_mutex);
+	return ret;
+}
+
+/**
+ * nse_dcbnl_delapp - Delete local IEEE App config
+ * @netdev: relevant netdev
+ * @app: struct to hold app too delete
+ *
+ * Will not delete first application required by the FW
+ */
+static int nse_dcbnl_delapp(struct net_device *netdev, struct dcb_app *app)
+{
+	struct nse_pf *pf = nse_netdev_to_pf(netdev);
+	struct device *dev = nse_pf_to_dev(pf);
+	struct nse_hw *hw = &pf->hw;
+	struct nse_dcbx_cfg *old_cfg, *new_cfg;
+	int ret, i, j;
+
+	if ((pf->dcbx_cap & DCB_CAP_DCBX_LLD_MANAGED) ||
+		hw->port_info->qos_cfg.dcbx_mode == NSE_QOS_DCBX_MODE_FW ||
+		test_bit(NSE_FLAG_FW_LLDP_DCBX_SUBAGENT_ENA, pf->flags)) {
+		dev_err(dev, "fw-lldp-dcbx-agent is active, refuse host change conf\n");
+		return -EINVAL;
+	}
+
+	mutex_lock(&pf->tc_mutex);
+	old_cfg = &pf->hw.port_info->qos_cfg.local_dcbx_cfg;
+
+	ret = dcb_ieee_delapp(netdev, app);
+	if (ret)
+		goto delapp_out;
+
+	new_cfg = &pf->hw.port_info->qos_cfg.desired_dcbx_cfg;
+
+	for (i = 0; i < new_cfg->numapps; i++) {
+		if (app->selector == new_cfg->app[i].selector &&
+		    app->protocol == new_cfg->app[i].prot_id &&
+		    app->priority == new_cfg->app[i].priority) {
+			new_cfg->app[i].selector = 0;
+			new_cfg->app[i].prot_id = 0;
+			new_cfg->app[i].priority = 0;
+			break;
+		}
+	}
+
+	/* Did not find DCB App */
+	if (i == new_cfg->numapps) {
+		ret = -EINVAL;
+		goto delapp_out;
+	}
+
+	new_cfg->numapps--;
+
+	for (j = i; j < new_cfg->numapps; j++) {
+		new_cfg->app[j].selector = old_cfg->app[j + 1].selector;
+		new_cfg->app[j].prot_id = old_cfg->app[j + 1].prot_id;
+		new_cfg->app[j].priority = old_cfg->app[j + 1].priority;
+	}
+
+	/* if not a DSCP APP TLV or DSCP is not supported, we are done */
+	if (app->selector != IEEE_8021QAZ_APP_SEL_DSCP) {
+		ret = NSE_DCB_HW_CHG;
+		goto delapp_out;
+	}
+
+	/* if DSCP TLV, then need to address change in mapping */
+	clear_bit(app->protocol, new_cfg->dscp_mapped);
+	/* remap this DSCP value to default value */
+	new_cfg->dscp_map[app->protocol] = app->protocol %
+					   NSE_BYTES_PER_DSCP_VAL;
+
+	/* if the last DSCP mapping just got deleted, need to switch
+	 * to L2 VLAN QoS mode
+	 */
+	if (bitmap_empty(new_cfg->dscp_mapped, NSE_DSCP_NUM_VAL) &&
+	    new_cfg->pfc_mode == NSE_QOS_MODE_DSCP) {
+		ret = nse_ena_dcb_dscp_mode(pf->hw.port_info, false);
+		if (ret) {
+			dev_err(dev, "[%s, %d] FAIL: ena_dscp_mode(): %d\n",
+				__func__, __LINE__, ret);
+
+			goto delapp_out;
+		}
+
+		new_cfg->pfc_mode = NSE_QOS_MODE_VLAN;
+
+		ret = nse_dcb_sw_dflt_cfg(pf, false, false, true);
+	} else {
+		ret = nse_pf_dcb_dscp_cfg(pf, new_cfg,
+					  NSE_DCB_CFG_CHG_TYPE_DSCP, true);
+	}
+
+	if (ret > 0)
+		ret = 0;
+
+delapp_out:
+	mutex_unlock(&pf->tc_mutex);
+	return ret;
+}
+
 static const struct dcbnl_rtnl_ops dcbnl_ops = {
 	/* IEEE 802.1Qaz std */
 	.ieee_getets = nse_dcbnl_getets,
 	.ieee_setets = nse_dcbnl_setets,
 	.ieee_getpfc = nse_dcbnl_getpfc,
 	.ieee_setpfc = nse_dcbnl_setpfc,
+	.ieee_setapp = nse_dcbnl_setapp,
+	.ieee_delapp = nse_dcbnl_delapp,
 
 	/* DCBX configuration */
 	.getdcbx = nse_dcbnl_getdcbx,

@@ -64,6 +64,10 @@ unsigned int nse_tcam_less = 1;
 module_param(nse_tcam_less, uint, 0644);
 MODULE_PARM_DESC(nse_tcam_less, "tcam less (0: has tcam, non-0: has no tcam (default)");
 
+unsigned int nse_recipe_serial = 1;
+module_param(nse_recipe_serial, uint, 0644);
+MODULE_PARM_DESC(nse_recipe_serial, "recipe serial (0: parallel always, non-0: serial if necessary (default)");
+
 unsigned int nse_bypass_qos_db_flush_disable = 1;
 module_param(nse_bypass_qos_db_flush_disable, uint, 0644);
 MODULE_PARM_DESC(nse_bypass_qos_db_flush_disable, "bypass RDB/RPB/TDB/TRT reset and disable logic during driver load (0:not bypass, 1: bypass (default for 1st FGPA test)");
@@ -71,6 +75,8 @@ MODULE_PARM_DESC(nse_bypass_qos_db_flush_disable, "bypass RDB/RPB/TDB/TRT reset 
 unsigned int nse_loopback_mode;
 module_param(nse_loopback_mode, uint, 0644);
 MODULE_PARM_DESC(nse_loopback_mode, "loopback mode (0(default): no loopback, 1: loopback in switch, 2: loopback in lmac, 3: loopback in PHY");
+
+#if defined(NSE_DEBUG_EXT)
 
 unsigned int nse_palladium_debug;
 module_param(nse_palladium_debug, uint, 0644);
@@ -88,6 +94,8 @@ unsigned int nse_polling_mod;
 module_param(nse_polling_mod, uint, 0644);
 MODULE_PARM_DESC(nse_polling_mod, "pmd (0:napi, non-0: pmd (default napi)");
 
+#endif	/* #if defined(NSE_DEBUG_EXT) */
+
 unsigned int nse_rdma_ena = 1;
 module_param(nse_rdma_ena, uint, 0644);
 MODULE_PARM_DESC(nse_rdma_ena, "enable RDMA (default: 1)");
@@ -102,7 +110,7 @@ MODULE_PARM_DESC(nse_main_vsi_max_lanirq_num, "limit max lan-irq-vectors of PF-m
 
 unsigned int nse_vf_vsi_max_lanq_num;
 module_param(nse_vf_vsi_max_lanq_num, uint, 0644);
-MODULE_PARM_DESC(nse_vf_vsi_max_lanq_num, "limit LAN RXQ/TXQ pairs number used by VF-VSI (default: 1, and 0 for default setting)");
+MODULE_PARM_DESC(nse_vf_vsi_max_lanq_num, "limit LAN RXQ/TXQ pairs number used by VF-VSI (default: 0)");
 
 unsigned int nse_vf_vsi_max_lanirq_num;
 module_param(nse_vf_vsi_max_lanirq_num, uint, 0644);
@@ -112,6 +120,7 @@ unsigned int nse_sriov_vf_res_alloc_from_tail = 1;
 module_param(nse_sriov_vf_res_alloc_from_tail, uint, 0644);
 MODULE_PARM_DESC(nse_sriov_vf_res_alloc_from_tail, "Alloc VF resource (VSI/RXQ/TXQ/IRQ) from PF space tail (default: 1)");
 
+#if defined(NSE_DEBUG_EXT)
 unsigned int nse_lan_tx_select_q_dport;
 module_param(nse_lan_tx_select_q_dport, uint, 0644);
 MODULE_PARM_DESC(nse_lan_tx_select_q_dport, "Select TXQ based on TCP/UDP dport (default: 0)");
@@ -120,13 +129,10 @@ unsigned int nse_lan_tx_select_q_default;
 module_param(nse_lan_tx_select_q_default, uint, 0644);
 MODULE_PARM_DESC(nse_lan_tx_select_q_default, "Select TXQ default for non-TCP,UDP,ICMP packet (default: 0)");
 
-unsigned int nse_lan_tx_no_bql = 1;
-module_param(nse_lan_tx_no_bql, uint, 0644);
-MODULE_PARM_DESC(nse_lan_tx_no_bql, "Do not call linux CONFIG_BQL related functions (default: 1)");
-
 unsigned int nse_lan_tx_not_use_ctx_desc;
 module_param(nse_lan_tx_not_use_ctx_desc, uint, 0644);
 MODULE_PARM_DESC(nse_lan_tx_not_use_ctx_desc, "only for early debug, not use tx-context-desc (default: 0)");
+#endif	/* #if defined(NSE_DEBUG_EXT) */
 
 static unsigned int nse_lan_tx_use_cq;
 module_param(nse_lan_tx_use_cq, uint, 0644);
@@ -165,6 +171,7 @@ module_param(nse_lan_vlan_pvid_inner_strip, uint, 0644);
 MODULE_PARM_DESC(nse_lan_vlan_pvid_inner_strip, "if configure port-based VLAN, then inner tag strip to RX-desc L2TAG1, otherwise, not strip (default: 0)");
 #endif
 
+#if defined(NSE_DEBUG_EXT)
 /* Linux TX checksum offload logic only offload L4 checksum computation.
  * But compute L3 checksum (outer or inner ) itself in SW-level.
  *
@@ -178,6 +185,7 @@ unsigned int nse_lan_tcsum_force_l3;
 unsigned int nse_lan_no_xmit;
 module_param(nse_lan_no_xmit, uint, 0644);
 MODULE_PARM_DESC(nse_lan_no_xmit, "for LAN test, don't TX (default: 0)");
+#endif	/* #if defined(NSE_DEBUG_EXT) */
 
 /* should become default 1 after full test */
 unsigned int nse_lan_disable_q_before_cfg;
@@ -193,10 +201,6 @@ MODULE_PARM_DESC(nse_lan_bulk_ena_dis, "try to enable or disable LAN-RXQ/TXQ in 
 unsigned int nse_lan_no_irqll;
 module_param(nse_lan_no_irqll, uint, 0644);
 MODULE_PARM_DESC(nse_lan_no_irqll, "disable IRQ linked logic(default: 0)");
-
-unsigned int nse_aq_cmd_timeout = NSE_CTL_Q_SQ_CMD_TIMEOUT_BASE;
-module_param(nse_aq_cmd_timeout, uint, 0644);
-MODULE_PARM_DESC(nse_aq_cmd_timeout, "count of timeout_tick of checking aq_cmd timeout");
 
 unsigned int nse_aq_cmd_check_dd = 1;
 module_param(nse_aq_cmd_check_dd, uint, 0644);
@@ -215,9 +219,9 @@ unsigned int nse_aq_rq_rx_method = 1;
 module_param(nse_aq_rq_rx_method, uint, 0444);
 MODULE_PARM_DESC(nse_aq_rq_rx_method, "AQM RQ rx method, fixed at load time");
 
-unsigned int nse_timeout_scale;
+unsigned int nse_timeout_scale = 1;
 module_param(nse_timeout_scale, uint, 0644);
-MODULE_PARM_DESC(nse_timeout_scale, "scale for various timeout (including aq, reset, etc)");
+MODULE_PARM_DESC(nse_timeout_scale, "scale for various timeout (including aq, reset, etc) (default: 1)");
 
 static unsigned int nse_aq_verbose;
 module_param(nse_aq_verbose, uint, 0644);
@@ -231,9 +235,11 @@ static unsigned int download_ddp;
 module_param(download_ddp, uint, 0644);
 MODULE_PARM_DESC(download_ddp, "download DDP when PF-0 starts (default: 0)");
 
+#if defined(NSE_DEBUG_EXT)
 unsigned int nse_lan_tdm_check_desc_err;
 module_param(nse_lan_tdm_check_desc_err, uint, 0644);
 MODULE_PARM_DESC(nse_lan_tdm_check_desc_err, "some debug logic to check TDM descriptor error in both HW and SW-level (default: 1)");
+#endif	/* #if defined(NSE_DEBUG_EXT) */
 
 unsigned int nse_lan_desc_cache = NSE_LAN_DESC_CACHE_RX;
 module_param(nse_lan_desc_cache, uint, 0644);
@@ -257,11 +263,11 @@ MODULE_PARM_DESC(nse_fdir_ena, "Enable FDir, including all its logic (default: 1
 
 unsigned int nse_fdir_use_utilq = 1;
 module_param(nse_fdir_use_utilq, uint, 0644);
-MODULE_PARM_DESC(nse_fdir_use_utilq, "Program FDir filter using utilQ (default: 0)");
+MODULE_PARM_DESC(nse_fdir_use_utilq, "Program FDir filter using utilQ (default: 1)");
 
 unsigned int nse_fdir_ena_for_vf = 1;
 module_param(nse_fdir_ena_for_vf, uint, 0644);
-MODULE_PARM_DESC(nse_fdir_ena_for_vf, "Enable FDir for VF (default: 0)");
+MODULE_PARM_DESC(nse_fdir_ena_for_vf, "Enable FDir for VF (default: 1)");
 
 unsigned int nse_ptp_fine_mode = 1;
 module_param(nse_ptp_fine_mode, uint, 0644);
@@ -296,6 +302,7 @@ unsigned int nse_fw_lldp;
 module_param(nse_fw_lldp, uint, 0644);
 MODULE_PARM_DESC(nse_fw_lldp, "try enable FW-LLDP logic (default: 0)");
 
+#if defined(NSE_DEBUG_EXT)
 unsigned int nse_chip_dbg_mode = 1;
 module_param(nse_chip_dbg_mode, uint, 0644);
 MODULE_PARM_DESC(nse_chip_dbg_mode, "Chip debug mode on (default: 1 on Amber FPGA and PST, 0 for rest case)");
@@ -304,6 +311,7 @@ MODULE_PARM_DESC(nse_chip_dbg_mode, "Chip debug mode on (default: 1 on Amber FPG
 unsigned int nse_dbg_force_mac_ss;
 module_param(nse_dbg_force_mac_ss, uint, 0644);
 MODULE_PARM_DESC(nse_dbg_force_mac_ss, "force set XLGMAC TX_Configuration -> SS");
+#endif	/* #if defined(NSE_DEBUG_EXT) */
 
 unsigned int nse_misc_check_temp;
 module_param(nse_misc_check_temp, uint, 0644);
@@ -312,6 +320,10 @@ MODULE_PARM_DESC(nse_misc_check_temp, "check chip and external module temperatur
 unsigned int nse_lmac_phy_ephy_ftype;
 module_param(nse_lmac_phy_ephy_ftype, uint, 0644);
 MODULE_PARM_DESC(nse_lmac_phy_ephy_ftype, "force use ephy_ftype (default: 0)\n");
+
+unsigned int nse_lan_tx_no_bql;
+module_param(nse_lan_tx_no_bql, uint, 0644);
+MODULE_PARM_DESC(nse_lan_tx_no_bql, "Do not call BQL logic (default: 0)");
 
 /**
  * nse_hw_to_dev - Get device pointer from the hardware structure
@@ -863,7 +875,7 @@ static bool nse_vsi_fltr_changed(struct nse_vsi *vsi)
  */
 static int nse_set_promisc(struct nse_vsi *vsi, u8 promisc_m)
 {
-	int status;
+	enum nse_status status = NSE_SUCCESS;
 
 	if (vsi->type != NSE_VSI_PF)
 		return 0;
@@ -877,7 +889,7 @@ static int nse_set_promisc(struct nse_vsi *vsi, u8 promisc_m)
 						  promisc_m, 0);
 	}
 
-	if (status && status != -EEXIST)
+	if (status && status != NSE_ERR_ALREADY_EXISTS)
 		return -EIO;
 
 	return 0;
@@ -2083,7 +2095,6 @@ static void nse_udp_tunnel_sync_ports(struct nse_pf *pf)
 	__be16 vxlan_port;
 	__be16 vxlan_gpe_port;
 	__be16 geneve_port;
-	__le16 port_le;
 	enum nse_status status;
 
 	spin_lock_bh(&pf->udp_tnl_lock);
@@ -2106,18 +2117,17 @@ static void nse_udp_tunnel_sync_ports(struct nse_pf *pf)
 					NSE_AQC_PSR_SET_CTRL_FLAG_TPSR);
 
 	if (flags & UDP_TNL_FLAG_SYNC_VXLAN_PORT) {
-		port_le = cpu_to_le16(be16_to_cpu(vxlan_port));
-
-		psr_cmd_buf.port_or_etype = port_le;
-
-		if (port_le)
-			psr_cmd_buf.dis_or_en = 0;		/* dis = 0 */
-		else
-			psr_cmd_buf.dis_or_en = 1;		/* dis = 1 */
-
 		psr_cmd_buf.ctrl_type = NSE_AQC_PSR_CTRL_TYPE_VXLAN_UDP;
 
-		nse_debug(hw, NSE_DBG_LAN, "[%s] sync_vxlan_port, port_le=%d\n", __func__, port_le);
+		psr_cmd_buf.dis_or_en = 0;		/* dis = 0 */
+
+		if (vxlan_port)
+			psr_cmd_buf.port_or_etype = cpu_to_le16(be16_to_cpu(vxlan_port));
+		else
+			psr_cmd_buf.port_or_etype = cpu_to_le16(4789);
+
+		nse_debug(hw, NSE_DBG_LAN, "[%s] sync_vxlan_port, port_le=%d\n",
+			  __func__, psr_cmd_buf.port_or_etype);
 
 		status = nse_aq_psr_set_ctrl(hw, &psr_cmd_buf);
 		if (status)
@@ -2127,19 +2137,17 @@ static void nse_udp_tunnel_sync_ports(struct nse_pf *pf)
 	}
 
 	if (flags & UDP_TNL_FLAG_SYNC_VXLAN_GPE_PORT) {
-		port_le = cpu_to_le16(be16_to_cpu(vxlan_gpe_port));
-
-		psr_cmd_buf.port_or_etype = port_le;
-
-		if (port_le)
-			psr_cmd_buf.dis_or_en = 0;		/* dis = 0 */
-		else
-			psr_cmd_buf.dis_or_en = 1;		/* dis = 1 */
-
 		psr_cmd_buf.ctrl_type = NSE_AQC_PSR_CTRL_TYPE_VXLAN_GPE_UDP;
 
+		psr_cmd_buf.dis_or_en = 0;		/* dis = 0 */
+
+		if (vxlan_gpe_port)
+			psr_cmd_buf.port_or_etype = cpu_to_le16(vxlan_gpe_port);
+		else
+			psr_cmd_buf.port_or_etype = cpu_to_le16(4790);
+
 		nse_debug(hw, NSE_DBG_LAN, "[%s] sync_vxlan_gpe_port, port_le=%d\n",
-			  __func__, port_le);
+			  __func__, psr_cmd_buf.port_or_etype);
 
 		status = nse_aq_psr_set_ctrl(hw, &psr_cmd_buf);
 		if (status)
@@ -2150,23 +2158,21 @@ static void nse_udp_tunnel_sync_ports(struct nse_pf *pf)
 	}
 
 	if (flags & UDP_TNL_FLAG_SYNC_GENEVE_PORT) {
-		port_le = cpu_to_le16(be16_to_cpu(geneve_port));
-
-		psr_cmd_buf.port_or_etype = port_le;
-
-		if (port_le)
-			psr_cmd_buf.dis_or_en = 0;		/* dis = 0 */
-		else
-			psr_cmd_buf.dis_or_en = 1;		/* dis = 1 */
-
 		psr_cmd_buf.ctrl_type = NSE_AQC_PSR_CTRL_TYPE_GENEVE_UDP;
 
-		nse_debug(hw, NSE_DBG_LAN, "[%s] sync_vxlan_gpe_port, port_le=%d\n",
-			  __func__, port_le);
+		psr_cmd_buf.dis_or_en = 0;		/* dis = 0 */
+
+		if (geneve_port)
+			psr_cmd_buf.port_or_etype = cpu_to_le16(geneve_port);
+		else
+			psr_cmd_buf.port_or_etype = cpu_to_le16(6081);
+
+		nse_debug(hw, NSE_DBG_LAN, "[%s] sync_geneve_port, port_le=%d\n",
+			  __func__, psr_cmd_buf.port_or_etype);
 
 		status = nse_aq_psr_set_ctrl(hw, &psr_cmd_buf);
 		if (status)
-			dev_info(dev, "FAIL: sync_vxlan_gpe_port, status=%d, try next round\n",
+			dev_info(dev, "FAIL: sync_geneve_port, status=%d, try next round\n",
 				 status);
 		else
 			flags &= ~UDP_TNL_FLAG_SYNC_VXLAN_GPE_PORT;
@@ -2520,6 +2526,8 @@ u16 nse_aqc_opc_set_bmc_mac_event = MAKE_AQC_OPCODE(NSE_AQ_OPC_CATEGORY_SWITCH,
 u16 nse_aqc_opc_vflr_event = MAKE_AQC_OPCODE(NSE_AQ_OPC_CATEGORY_BASIC, NSE_AQ_OPC_VFLR_EVENT);
 u16 nse_aqc_opc_vflr_event_mini = MAKE_AQC_OPCODE(NSE_AQ_OPC_CATEGORY_BASIC,
 						  NSE_AQ_OPC_VFLR_EVENT_MINI);
+u16 nse_aqc_opc_fw_event = MAKE_AQC_OPCODE(NSE_AQ_OPC_CATEGORY_BASIC,
+					   NSE_AQ_OPC_FW_EVENT);
 u16 nse_aqc_opc_lmac_phy_event = MAKE_AQC_OPCODE(NSE_AQ_OPC_CATEGORY_LMAC_PHY,
 						 NSE_AQ_OPC_LMAC_PHY_EVENT);
 
@@ -2560,6 +2568,8 @@ __nse_ctrlq_rq_handle_one_event(struct nse_pf *pf, struct nse_rq_event_info *eve
 		nse_process_vflr_event(pf, event);
 	else if (opcode == nse_aqc_opc_vflr_event_mini)
 		nse_process_vflr_event_mini(pf, event);
+	else if (opcode == nse_aqc_opc_fw_event)
+		nse_aq_handle_fw_event(&pf->hw, event);
 	else
 		dev_info(dev, "Receive Queue unknown event 0x%04x ignored\n", opcode);
 }
@@ -3018,6 +3028,8 @@ static void nse_service_timer(struct timer_list *t)
 	nse_service_task_schedule(pf);
 }
 
+#if defined(NSE_DEBUG_EXT)
+
 static void nse_polling_timer(struct timer_list *t)
 {
 	struct nse_pf *pf = from_timer(pf, t, polling_tmr);
@@ -3073,6 +3085,8 @@ static void nse_polling_timer(struct timer_list *t)
 		} while ((budget == 64) && (poll_cnt < 100));
 	}
 }
+
+#endif	/* NSE_DEBUG_EXT */
 
 /**
  * nse_service_task - manage and run subtasks
@@ -3257,6 +3271,10 @@ static int nse_vsi_ena_irq(struct nse_vsi *vsi)
 	struct nse_hw *hw = &vsi->back->hw;
 	int i;
 
+	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi (idx=%d, rel_id=%d, abs_id=%d)\n",
+							__func__, vsi->idx, vsi->vsi_rel_num,
+								vsi->vsi_abs_num);
+
 	nse_for_each_q_vector(vsi, i)
 		nse_irq_dynamic_ena(hw, vsi, vsi->q_vectors[i]);
 
@@ -3279,10 +3297,15 @@ static int nse_vsi_req_irq_msix(struct nse_vsi *vsi, char *basename)
 	int tx_int_idx = 0;
 	int vector, err;
 	int irq_num;
-	int cpu;
 
+#if defined(NSE_DEBUG_EXT)
 	if (nse_no_irq)
 		return 0;
+#endif
+
+	nse_debug(&pf->hw, NSE_DBG_LAN, "[%s] vsi (idx=%d, rel_id=%d, abs_id=%d, type=%d)\n",
+							__func__, vsi->idx, vsi->vsi_rel_num,
+								vsi->vsi_abs_num, vsi->type);
 
 	for (vector = 0; vector < q_vectors; vector++) {
 		struct nse_q_vector *q_vector = vsi->q_vectors[vector];
@@ -3326,13 +3349,18 @@ static int nse_vsi_req_irq_msix(struct nse_vsi *vsi, char *basename)
 		}
 
 		/* register for affinity change notifications */
-		q_vector->affinity_notify.notify = nse_irq_affinity_notify;
-		q_vector->affinity_notify.release = nse_irq_affinity_release;
-		irq_set_affinity_notifier(irq_num, &q_vector->affinity_notify);
+		if (!IS_ENABLED(CONFIG_RFS_ACCEL)) {
+			struct irq_affinity_notify *affinity_notify;
+
+			affinity_notify = &q_vector->affinity_notify;
+			affinity_notify->notify = nse_irq_affinity_notify;
+			affinity_notify->release = nse_irq_affinity_release;
+			irq_set_affinity_notifier(irq_num, affinity_notify);
+		}
 
 		/* assign the mask for this irq */
-		cpu = cpumask_local_spread(q_vector->v_idx, -1);
-		irq_set_affinity_hint(irq_num, get_cpu_mask(cpu));
+		/* no need to check: if (ring->q_vector->best_local_cpu_id != -1) */
+		irq_set_affinity_hint(irq_num, &q_vector->affinity_mask);
 	}
 
 	vsi->irqs_ready = true;
@@ -3343,7 +3371,8 @@ free_q_irqs:
 		vector--;
 		irq_num = nse_get_irq_num(pf, base + vector);
 
-		irq_set_affinity_notifier(irq_num, NULL);
+		if (!IS_ENABLED(CONFIG_RFS_ACCEL))
+			irq_set_affinity_notifier(irq_num, NULL);
 		irq_set_affinity_hint(irq_num, NULL);
 
 		devm_free_irq(dev, irq_num, &vsi->q_vectors[vector]);
@@ -3790,7 +3819,9 @@ static void nse_ena_misc_vector(struct nse_pf *pf)
 	wmb();
 	nse_flush(hw);
 
-	val = (NSE_REG_INT_DYN_CTLN_INTMSK_VLD_M | NSE_REG_INT_DYN_CTLN_INTMSK_M);
+	val = (NSE_REG_INT_DYN_CTLN_INTMSK_VLD_M | NSE_REG_INT_DYN_CTLN_INTMSK_M |
+			NSE_REG_INT_DYN_CTLN_ITR_VALID_M |
+			(NSE_ITR_INTERVAL_20K << NSE_REG_INT_DYN_CTLN_ITR_INTERVAL_S));
 
 	wr32(hw, NSE_REG_INT_DYN_CTLN(pf->misc_irq_idx), val);
 
@@ -3944,11 +3975,15 @@ static void nse_free_irq_msix_misc(struct nse_pf *pf)
 	wr32(hw, NSE_REG_OICR_ENA, 0);
 	nse_flush(hw);
 
+#if defined(NSE_DEBUG_EXT)
 	if (!nse_no_irq) {
+#endif
 		irq_num = nse_get_irq_num(pf, pf->misc_irq_idx);
 		synchronize_irq(irq_num);
 		devm_free_irq(nse_pf_to_dev(pf), irq_num, pf);
+#if defined(NSE_DEBUG_EXT)
 	}
+#endif
 
 	pf->num_avail_sw_msix += 1;
 	(void)nse_free_res(pf->irq_tracker_self_region, pf->misc_irq_idx, NSE_RES_IRQ_ID_MISC);
@@ -4013,7 +4048,9 @@ static int nse_req_irq_msix_misc(struct nse_pf *pf)
 
 	(void)nse_set_intrl_interval(hw, pf->misc_irq_idx, 0);
 
+#if defined(NSE_DEBUG_EXT)
 	if (!nse_no_irq)
+#endif
 		err = devm_request_irq(dev, nse_get_irq_num(pf, pf->misc_irq_idx),
 								nse_misc_intr, 0, pf->int_name, pf);
 	if (err) {
@@ -4158,9 +4195,7 @@ static void nse_set_netdev_features(struct net_device *netdev)
 	if (main_vsi->sw_conf.fdir_ena)
 		dflt_features |= NETIF_F_NTUPLE;
 
-	csumo_features = NETIF_F_RXCSUM |
-			 NETIF_F_IP_CSUM |
-			 NETIF_F_IPV6_CSUM;
+	csumo_features = NETIF_F_RXCSUM | NETIF_F_HW_CSUM;
 
 	if (nse_is_hw_static_fea_set(hw, NSE_HW_STATIC_FEA_MISC_SUPPORT_SCTP_CRC))
 		csumo_features |= NETIF_F_SCTP_CRC;
@@ -4192,15 +4227,21 @@ static void nse_set_netdev_features(struct net_device *netdev)
 						NETIF_F_GSO_GRE_CSUM;
 	}
 
-	if (!pf->tso_hsb_usable || nse_lan_tx_not_use_ctx_desc) {
+	if (!pf->tso_hsb_usable
+#if defined(NSE_DEBUG_EXT)
+		|| nse_lan_tx_not_use_ctx_desc
+#endif
+	) {
 		tso_features = 0;
 		netdev->gso_partial_features = 0;
 	}
 
+#if defined(NSE_DEBUG_EXT)
 	if (nse_lan_tx_not_use_ctx_desc) {
-		csumo_features &= ~(NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM | NETIF_F_SCTP_CRC);
+		csumo_features &= ~(NETIF_F_HW_CSUM | NETIF_F_SCTP_CRC);
 		vlano_features &= ~(NETIF_F_HW_VLAN_STAG_TX | NETIF_F_HW_VLAN_CTAG_TX);
 	}
+#endif
 
 	/* set features that user can change */
 	netdev->hw_features = dflt_features | csumo_features |
@@ -4460,9 +4501,9 @@ int nse_vsi_cfg(struct nse_vsi *vsi)
 	struct device *dev = nse_pf_to_dev(pf);
 	int err;
 
-	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi=(rel_id:%d, abs_id=%d)\n",
-								__func__, vsi->vsi_rel_num,
-									vsi->vsi_abs_num);
+	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi (idx=%d, rel_id=%d, abs_id=%d)\n",
+							__func__, vsi->idx, vsi->vsi_rel_num,
+								vsi->vsi_abs_num);
 
 	if (vsi->netdev && vsi->type == NSE_VSI_PF) {
 		nse_set_rx_mode(vsi->netdev);
@@ -4511,62 +4552,43 @@ int nse_vsi_cfg(struct nse_vsi *vsi)
 	return 0;
 }
 
-/* THEORY OF MODERATION:
- * The nse driver hardware works differently than the hardware that DIMLIB was
- * originally made for. nse hardware doesn't have packet count limits that
- * can trigger an interrupt, but it *does* have interrupt rate limit support,
- * which is hard-coded to a limit of 250,000 ints/second.
- * If not using dynamic moderation, the INTRL value can be modified
- * by ethtool rx-usecs-high.
- */
-struct nse_dim {
-	/* the throttle rate for interrupts, basically worst case delay before
-	 * an initial interrupt fires, value is stored in microseconds.
-	 */
-	u16 itr;
-};
 
-/* Make a different profile for Rx that doesn't allow quite so aggressive
- * moderation at the high end (it maxes out at 126us or about 8k interrupts a
- * second.
- *
- * in unit of us --- when set to HW, translate to 2us unit.
- */
-static const struct nse_dim nse_dim_profile[] = {
-	{2},		/* 500,000 ints/s */
-	{4},		/* 250,000 ints/s */
-	{16},		/*  62,500 ints/s */
+/* in unit of us --- when set to HW, translate into 2us unit. */
+const struct nse_dim nse_dim_profile[] = {
+	{4},
 	{32},
-	{64}
+	{64},
+	{128},
+	{192}
 };
-
-#define NSE_DIM_DEFAULT_PROFILE_IX 1
 
 static void nse_dim_work(struct work_struct *work)
 {
-	struct nse_q_vector *q_vector;
-	struct dim *dim;
-	u16 itr;
-	u8 profile_ix;
+	struct dim *dim = container_of(work, struct dim, work);
+	struct nse_q_vector *q_vector = (struct nse_q_vector *)dim->priv;
+	u8 profile_ix = READ_ONCE(dim->profile_ix);
+	u32 itr;
 
-	dim = container_of(work, struct dim, work);
-	q_vector = (struct nse_q_vector *)dim->priv;
+	if (!ITR_IS_DYNAMIC(q_vector))
+		return;
 
-	profile_ix = dim->profile_ix;
-
-	WARN_ON(profile_ix >= ARRAY_SIZE(nse_dim_profile));
-	if (profile_ix >= ARRAY_SIZE(nse_dim_profile))
+	if (profile_ix >= ARRAY_SIZE(nse_dim_profile)) {
 		profile_ix = NSE_DIM_DEFAULT_PROFILE_IX;
+		WRITE_ONCE(dim->profile_ix, profile_ix);
+	}
 
 	/* look up the values in our local table */
 	itr = nse_dim_profile[dim->profile_ix].itr;
 
 	nse_trace(dim_work, q_vector, dim);
 
-	q_vector->dyn_itr_val = (itr >> 1);	/* translate into 2us ( NSE_ITR_GRAN_FIXED ) unit */
-	q_vector->dyn_itr_refresh = true;
-
-	dim->state = DIM_START_MEASURE;
+	if (ITR_IS_DYNAMIC(q_vector) && !test_bit(NSE_VSI_DOWN, q_vector->vsi->state)) {
+		/* translate into 2us ( NSE_ITR_GRAN_FIXED ) unit */
+		WRITE_ONCE(q_vector->dyn_itr_val, (itr >> NSE_ITR_GRAN_S));
+		WRITE_ONCE(q_vector->dyn_itr_refresh, true);
+	} else {
+		WRITE_ONCE(q_vector->dyn_itr_refresh, false);
+	}
 }
 
 /**
@@ -4586,6 +4608,8 @@ static void nse_init_moderation(struct nse_q_vector *q_vector)
 	q_vector->dim.profile_ix = NSE_DIM_DEFAULT_PROFILE_IX;
 	q_vector->dim.priv = q_vector;
 
+	q_vector->dyn_itr_refresh = false;
+
 	/* set the initial ITR to match the above */
 	nse_write_itr(q_vector, ITR_IS_DYNAMIC(q_vector) ?
 		      nse_dim_profile[q_vector->dim.profile_ix].itr : q_vector->itr_setting);
@@ -4604,13 +4628,19 @@ static void nse_napi_enable_all(struct nse_vsi *vsi)
 	if (!vsi->netdev)
 		return;
 
+	nse_debug(&vsi->back->hw,  NSE_DBG_LAN, "[%s] vsi (idx=%d, rel_id=%d, abs_id=%d)\n",
+							__func__, vsi->idx, vsi->vsi_rel_num,
+								vsi->vsi_abs_num);
+
 	nse_for_each_q_vector(vsi, q_idx) {
 		struct nse_q_vector *q_vector = vsi->q_vectors[q_idx];
 
 		nse_init_moderation(q_vector);
 
-		if (q_vector->rx.ring || q_vector->tx.ring)
+		if (q_vector->rx.ring || q_vector->tx.ring) {
 			napi_enable(&q_vector->napi);
+			q_vector->napi_enabled = true;
+		}
 	}
 }
 
@@ -4627,9 +4657,10 @@ static int nse_up_complete(struct nse_vsi *vsi)
 	struct device *dev = nse_pf_to_dev(pf);
 	int err;
 
-	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi=(rel_id:%d, abs_id=%d)\n",
-								__func__, vsi->vsi_rel_num,
-									vsi->vsi_abs_num);
+	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi (idx=%d, rel_id=%d, abs_id=%d)\n",
+							__func__, vsi->idx, vsi->vsi_rel_num,
+								vsi->vsi_abs_num);
+
 
 	nse_vsi_cfg_msix(vsi);
 
@@ -4662,12 +4693,20 @@ static int nse_up_complete(struct nse_vsi *vsi)
 	}
 
 	clear_bit(NSE_VSI_DOWN, vsi->state);
+
+	/* Make sure the DOWN bit is cleared before the queues are enabled. */
+	mb();
+
+#if defined(NSE_DEBUG_EXT)
 	if (!nse_polling_mod) {
+#endif
 		nse_napi_enable_all(vsi);
 		/* Make sure NAPI is enabled before the interrupts are enabled. */
 		mb();
 		nse_vsi_ena_irq(vsi);
+#if defined(NSE_DEBUG_EXT)
 	}
+#endif
 
 	/*  before sync_tail() (after Q enable), to avoid host CPU to reorder sync_tail() and
 	 * ena_irq()
@@ -4684,8 +4723,10 @@ static int nse_up_complete(struct nse_vsi *vsi)
 	if (vsi->type == NSE_VSI_PF)
 		nse_service_task_schedule(pf);
 
+#if defined(NSE_DEBUG_EXT)
 	if (nse_polling_mod)
 		mod_timer(&pf->polling_tmr, round_jiffies(jiffies + pf->serv_tmr_period));
+#endif
 
 	return 0;
 }
@@ -4698,11 +4739,26 @@ int nse_up(struct nse_vsi *vsi)
 {
 	struct nse_pf *pf = vsi->back;
 	struct nse_hw *hw = &pf->hw;
+	struct device *dev = nse_pf_to_dev(pf);
 	int err;
 
+	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi (idx=%d, rel_id=%d, abs_id=%d)\n",
+							__func__, vsi->idx, vsi->vsi_rel_num,
+								vsi->vsi_abs_num);
+
 	err = nse_vsi_cfg(vsi);
-	if (!err)
+	if (err) {
+		dev_err(dev, "[%s] FAIL: vsi_cfg(idx=%d, rel_id=%d, abs_id=%d), err=%d\n",
+					__func__, vsi->idx, vsi->vsi_rel_num,
+						vsi->vsi_abs_num, err);
+	} else {
 		err = nse_up_complete(vsi);
+
+		if (err)
+			dev_err(dev, "[%s] FAIL: up_complete(idx=%d, rel_id=%d, abs_id=%d), err=%d\n",
+						__func__, vsi->idx, vsi->vsi_rel_num,
+							vsi->vsi_abs_num, err);
+	}
 
 	if (!err && vsi->type == NSE_VSI_PF)
 		hw->port_info->lmac_phy_info.dyn_flags |= LMAC_PHY_DYN_FLAG_NEED_UPDATE_LINK_INFO;
@@ -4718,14 +4774,22 @@ static void nse_napi_disable_all(struct nse_vsi *vsi)
 {
 	int q_idx;
 
+	nse_debug(&vsi->back->hw, NSE_DBG_LAN, "[%s] vsi(idx=%d, type=%d), netdev=%s\n",
+				__func__, vsi->idx, vsi->type,
+				vsi->netdev ? vsi->netdev->name : "NULL");
+
 	if (!vsi->netdev)
 		return;
 
 	nse_for_each_q_vector(vsi, q_idx) {
 		struct nse_q_vector *q_vector = vsi->q_vectors[q_idx];
 
-		if (q_vector->rx.ring || q_vector->tx.ring)
-			napi_disable(&q_vector->napi);
+		if (q_vector->rx.ring || q_vector->tx.ring) {
+			if (q_vector->napi_enabled)
+				napi_disable(&q_vector->napi);
+
+			q_vector->napi_enabled = false;
+		}
 
 		cancel_work_sync(&q_vector->dim.work);
 	}
@@ -4744,16 +4808,18 @@ int nse_down(struct nse_vsi *vsi)
 	int link_err = 0, vlan_err = 0;
 	int i, tx_err = 0, rx_err = 0, txcq_err = 0;
 
-	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi=(rel_id:%d, abs_id=%d)\n",
-								__func__, vsi->vsi_rel_num,
-									vsi->vsi_abs_num);
+	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi (idx=%d, rel_id=%d, abs_id=%d)\n",
+							__func__, vsi->idx, vsi->vsi_rel_num,
+								vsi->vsi_abs_num);
 
 	WARN_ON(!test_bit(NSE_VSI_DOWN, vsi->state));
 
+#if defined(NSE_DEBUG_EXT)
 	if (nse_polling_mod) {
 		del_timer_sync(&pf->polling_tmr);
 		msleep(100);
 	}
+#endif
 
 	if (vsi->netdev && vsi->type == NSE_VSI_PF) {
 		vlan_err = nse_vsi_del_vlan_zero(vsi);
@@ -4787,7 +4853,12 @@ int nse_down(struct nse_vsi *vsi)
 		netdev_err(vsi->netdev, "Failed stop LAN-TX-CQ rings, VSI(abs_id=%d, rel_id=%d) error %d\n",
 			   vsi->vsi_abs_num, vsi->vsi_rel_num, txcq_err);
 
+	/* Make sure the queues are stopped before NAPI is disabled. */
+	mb();
+
+#if defined(NSE_DEBUG_EXT)
 	if (!nse_polling_mod)
+#endif
 		nse_napi_disable_all(vsi);
 
 	if (tx_err || rx_err || txcq_err || link_err || vlan_err) {
@@ -4916,9 +4987,9 @@ int nse_vsi_open(struct nse_vsi *vsi)
 	struct device *dev = nse_pf_to_dev(pf);
 	int err;
 
-	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi=(rel_id:%d, abs_id=%d)\n",
-								__func__, vsi->vsi_rel_num,
-									vsi->vsi_abs_num);
+	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi (idx=%d, rel_id=%d, abs_id=%d)\n",
+							__func__, vsi->idx, vsi->vsi_rel_num,
+								vsi->vsi_abs_num);
 
 	/* allocate descriptors */
 	err = nse_vsi_setup_tx_rings(vsi);
@@ -4942,7 +5013,7 @@ int nse_vsi_open(struct nse_vsi *vsi)
 	err = nse_vsi_cfg(vsi);
 	if (err) {
 		dev_err(dev, "FAIL: vsi_cfg, ret=%d\n", err);
-		goto err_setup_rx;
+		goto err_setup_lan_txcq;
 	}
 
 	if (vsi->netdev) {
@@ -4958,7 +5029,7 @@ int nse_vsi_open(struct nse_vsi *vsi)
 
 	err = nse_vsi_req_irq_msix(vsi, int_name);
 	if (err)
-		goto err_setup_rx;
+		goto err_setup_lan_txcq;
 
 	if (vsi->type == NSE_VSI_PF) {
 		unsigned int total_qs = vsi->num_txq;
@@ -4978,22 +5049,31 @@ int nse_vsi_open(struct nse_vsi *vsi)
 
 	err = nse_up_complete(vsi);
 	if (err) {
-		dev_err(dev, "FAIL: up_complete(vsi, rel_id=%d, abs_id=%d), err=%d\n",
-					vsi->vsi_rel_num, vsi->vsi_abs_num, err);
+		dev_err(dev, "FAIL: up_complete(vsi, idx=%d, rel_id=%d, abs_id=%d), err=%d\n",
+						vsi->idx, vsi->vsi_rel_num, vsi->vsi_abs_num, err);
 		goto err_up_complete;
 	}
 
 	return 0;
 
 err_up_complete:
+	dev_info(dev, "[%s, %d] label: err_up_complete\n", __func__, __LINE__);
 	nse_down(vsi);
+
 err_set_qs:
+	dev_info(dev, "[%s, %d] label: err_set_qs\n", __func__, __LINE__);
 	nse_vsi_free_irq(vsi);
+
 err_setup_lan_txcq:
+	dev_info(dev, "[%s, %d] label: err_setup_lan_txcq\n", __func__, __LINE__);
 	nse_vsi_free_lan_txcq_rings(vsi);
+
 err_setup_rx:
+	dev_info(dev, "[%s, %d] label: err_setup_rx\n", __func__, __LINE__);
 	nse_vsi_free_rx_rings(vsi);
+
 err_setup_tx:
+	dev_info(dev, "[%s, %d] label: err_setup_tx\n", __func__, __LINE__);
 	nse_vsi_free_tx_rings(vsi);
 
 	return err;
@@ -5572,7 +5652,7 @@ static int nse_tc_indir_block_register(struct nse_vsi *vsi)
 {
 	struct nse_netdev_priv *np;
 	struct nse_pf *pf = (struct nse_pf *)vsi->back;
-	struct device *dev = nse_pf_to_dev(pf);
+	struct nse_hw *hw = &pf->hw;
 
 	if (!vsi || !vsi->netdev)
 		return -EINVAL;
@@ -5580,7 +5660,8 @@ static int nse_tc_indir_block_register(struct nse_vsi *vsi)
 	np = netdev_priv(vsi->netdev);
 
 	INIT_LIST_HEAD(&np->tc_indr_block_priv_list);
-	dev_info(dev, "Start to register indrect netdev tc\n");
+	nse_debug(hw, NSE_DBG_SW, "Start to register indrect netdev tc for vsi(idx=%d, type=%d)\n",
+		  vsi->idx, vsi->type);
 	return flow_indr_dev_register(nse_indr_setup_tc_cb, np);
 }
 
@@ -6067,8 +6148,10 @@ static int nse_init_pf_sw_conf(struct nse_pf *pf)
 			pf_sw_conf->max_macvlans = NSE_MAX_MACVLANS;
 	}
 
+#if defined(NSE_DEBUG_EXT)
 	if (nse_palladium_debug)
 		pf_sw_conf->min_itr_no_intrl = 1;
+#endif
 
 	/************************
 	 * sanity check
@@ -6137,13 +6220,17 @@ static int nse_init_pf(struct nse_pf *pf)
 
 	clear_bit(NSE_SERVICE_SCHED, pf->state);
 
+#if defined(NSE_DEBUG_EXT)
 	if (nse_polling_mod)
 		timer_setup(&pf->polling_tmr, nse_polling_timer, 0);
+#endif
 
 	mutex_init(&pf->vfs.table_lock);
 	hash_init(pf->vfs.table);
 
 	(void)nse_lan_init_tso_hsb(pf);
+
+	nse_udp_tunnels_init(pf);
 
 	ret = nse_fdir_init_pre(pf);
 	if (ret) {
@@ -7325,10 +7412,14 @@ static struct pci_driver nse_driver = {
 
 static void nse_module_params_fix(void)
 {
-	unsigned int val;
-
+#if defined(NSE_DEBUG_EXT)
 	if (nse_no_irq)
 		nse_polling_mod = 1;
+#endif
+
+#ifndef CONFIG_X86
+	nse_lan_tx_no_bql = 1;
+#endif
 
 	if (nse_lan_no_irqll) {
 		pr_info("[%s]: no_irqll=1 (IRQLL logic disabled), should disable RSC\n",
@@ -7346,13 +7437,8 @@ static void nse_module_params_fix(void)
 	if (nse_fdir_ena_for_vf && !nse_fdir_ena)
 		nse_fdir_ena_for_vf = 0;
 
-	if (nse_aq_cmd_timeout < NSE_CTL_Q_SQ_CMD_TIMEOUT_BASE)
-		nse_aq_cmd_timeout = NSE_CTL_Q_SQ_CMD_TIMEOUT_BASE;
-
-	val = (nse_aq_cmd_timeout / NSE_CTL_Q_SQ_CMD_TIMEOUT_BASE);
-
-	if (nse_timeout_scale < val)
-		nse_timeout_scale = val;
+	if (!nse_timeout_scale)
+		nse_timeout_scale = 1;
 }
 
 /**
@@ -7367,12 +7453,6 @@ static int __init nse_module_init(void)
 
 	pr_info("%s - version %s\n", nse_driver_string, nse_drv_ver);
 	pr_info("%s\n", nse_copyright);
-
-	pr_info("sizeof(struct nse_aqc_vsi_props)=%zu\n", sizeof(struct nse_aqc_vsi_props));
-	pr_info("offsetof(struct nse_aqc_vsi_props, rpp_per_vsi_ctxt)=%zu\n",
-		offsetof(struct nse_aqc_vsi_props, rpp_per_vsi_ctxt));
-	pr_info("offsetof(struct nse_aqc_vsi_props, tpp_per_vsi_ctxt)=%zu\n",
-		offsetof(struct nse_aqc_vsi_props, tpp_per_vsi_ctxt));
 
 	nse_module_params_fix();
 
@@ -7408,7 +7488,7 @@ static void __exit nse_module_exit(void)
 	destroy_workqueue(nse_wq);
 	nse_debugfs_exit();
 
-	pr_info("module unloaded\n");
+	pr_info("%s-%s: module unloaded\n", KBUILD_MODNAME, DRV_VERSION);
 }
 module_exit(nse_module_exit);
 
@@ -7454,13 +7534,18 @@ int nse_open(struct net_device *netdev)
 {
 	struct nse_netdev_priv *np = netdev_priv(netdev);
 	struct nse_pf *pf = np->vsi->back;
+	int ret;
 
 	if (nse_is_reset_in_progress(pf->state)) {
 		netdev_err(netdev, "can't open net device while reset is in progress");
 		return -EBUSY;
 	}
 
-	return nse_open_internal(netdev);
+	ret = nse_open_internal(netdev);
+	if (ret)
+		netdev_err(netdev, "[%s] FAIL: open_internal(), ret=%d\n", __func__, ret);
+
+	return ret;
 }
 
 /**
@@ -7480,8 +7565,11 @@ int nse_open_internal(struct net_device *netdev)
 	struct nse_hw *hw = &pf->hw;
 	int err;
 
+	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi (idx=%d, rel_id=%d, abs_id=%d, type=%d)\n",
+				__func__, vsi->idx, vsi->vsi_rel_num, vsi->vsi_abs_num, vsi->type);
+
 	if (test_bit(NSE_NEEDS_RESTART, pf->state)) {
-		netdev_err(netdev, "driver needs to be unloaded and reloaded\n");
+		netdev_err(netdev, "[%s] driver needs to be unloaded and reloaded\n", __func__);
 		return -EIO;
 	}
 
@@ -7489,8 +7577,9 @@ int nse_open_internal(struct net_device *netdev)
 
 	err = nse_vsi_open(vsi);
 	if (err)
-		netdev_err(netdev, "Failed to open VSI(abs_id=%d, rel_id=%d) on switch 0x%04X\n",
-			   vsi->vsi_abs_num, vsi->vsi_rel_num, vsi->vsw->sw_id);
+		netdev_err(netdev, "[%s] FAIL: vsi_open(idx=%d, rel_id=%d, abs_id=%d) on switch 0x%04X, err=%d\n",
+				__func__, vsi->idx, vsi->vsi_rel_num,
+				vsi->vsi_abs_num, vsi->vsw->sw_id, err);
 
 	/* Update existing tunnels information */
 	udp_tunnel_get_rx_info(netdev);
@@ -7536,16 +7625,43 @@ extern void locate_final_l3_l4_hdr(struct sk_buff *skb,
 		u8 *l4_proto);
 #endif
 
+/**
+ * nse_get_dscp_up - return the UP/TC value for a SKB
+ * @dcbcfg: DCB config that contains DSCP to UP/TC mapping
+ * @skb: SKB to query for info to determine UP/TC
+ *
+ * This function is to only be called when the PF is in L3 DSCP PFC mode
+ */
+static u8 nse_get_dscp_up(struct nse_dcbx_cfg *dcbcfg, struct sk_buff *skb)
+{
+	u8 dscp = 0;
+
+	if (skb->protocol == htons(ETH_P_IP))
+		dscp = ipv4_get_dsfield(ip_hdr(skb)) >> 2;
+	else if (skb->protocol == htons(ETH_P_IPV6))
+		dscp = ipv6_get_dsfield(ipv6_hdr(skb)) >> 2;
+
+	return dcbcfg->dscp_map[dscp];
+}
+
 u16
 nse_select_queue(struct net_device *netdev, struct sk_buff *skb,
 		 struct net_device *sb_dev)
 {
+	struct nse_pf *pf = nse_netdev_to_pf(netdev);
+	struct nse_dcbx_cfg *dcbcfg;
 #if defined(NSE_DEBUG_EXT)
 	struct nse_netdev_priv *np = netdev_priv(netdev);
 	struct nse_vsi *vsi = np->vsi;
 	u16 dport;
 	u16 ret = 0;
+#endif
 
+	dcbcfg = &pf->hw.port_info->qos_cfg.local_dcbx_cfg;
+	if (dcbcfg->pfc_mode == NSE_QOS_MODE_DSCP)
+		skb->priority = nse_get_dscp_up(dcbcfg, skb);
+
+#if defined(NSE_DEBUG_EXT)
 	if (nse_lan_tx_select_q_dport &&
 		!sb_dev &&
 		vsi->num_txq > 1) {
@@ -8965,7 +9081,6 @@ nse_setup_tc(struct net_device *netdev, enum tc_setup_type type,
 
 	switch (type) {
 	case TC_SETUP_BLOCK:
-		netdev_info(netdev, "netdev(%s) tc setup block callback\n", netdev->name);
 		return flow_block_cb_setup_simple(type_data,
 						  &nse_block_cb_list,
 						  nse_setup_tc_block_cb,
@@ -9039,6 +9154,10 @@ nse_indr_setup_tc_block(struct net_device *netdev, struct Qdisc *sch,
 {
 	struct nse_indr_block_priv *indr_priv;
 	struct flow_block_cb *block_cb;
+	int tunnel_type;
+
+	if (!netdev || netdev->reg_state != NETREG_REGISTERED)
+		return -EOPNOTSUPP;
 
 	/* 1. here netdev para is virtual, but np is pf private data.
 	 * 2. both pf driver instances can receive one same virtual netdev,
@@ -9046,7 +9165,7 @@ nse_indr_setup_tc_block(struct net_device *netdev, struct Qdisc *sch,
 	 * for vlan, it has real physical netdev, real netdev should be same as pf netdev.
 	 * for vxlan, maybe handled by both pf driver instances.
 	 */
-	int tunnel_type = nse_tc_tun_get_type(netdev, NULL);
+	tunnel_type = nse_tc_tun_get_type(netdev, NULL);
 
 	if (tunnel_type != TNL_VXLAN &&
 		!(is_vlan_dev(netdev) && vlan_dev_real_dev(netdev) == np->vsi->netdev)) {
@@ -9656,19 +9775,61 @@ void nse_udp_tunnels_rebuild(struct nse_pf *pf)
 					NSE_AQC_PSR_SET_CTRL_FLAG_TPSR);
 	psr_cmd_buf.dis_or_en = 0;		/* dis = 0 */
 
-	if (pf->vxlan_port) {
-		psr_cmd_buf.ctrl_type = NSE_AQC_PSR_CTRL_TYPE_VXLAN_UDP;
+	psr_cmd_buf.ctrl_type = NSE_AQC_PSR_CTRL_TYPE_VXLAN_UDP;
+
+	if (pf->vxlan_port)
 		psr_cmd_buf.port_or_etype = cpu_to_le16(be16_to_cpu(pf->vxlan_port));
+	else
+		psr_cmd_buf.port_or_etype = cpu_to_le16(4789);
 
-		(void)nse_aq_psr_set_ctrl(hw, &psr_cmd_buf);
-	}
+	(void)nse_aq_psr_set_ctrl(hw, &psr_cmd_buf);
 
-	if (pf->geneve_port) {
-		psr_cmd_buf.ctrl_type = NSE_AQC_PSR_CTRL_TYPE_GENEVE_UDP;
+	psr_cmd_buf.ctrl_type = NSE_AQC_PSR_CTRL_TYPE_VXLAN_GPE_UDP;
+
+	if (pf->vxlan_gpe_port)
+		psr_cmd_buf.port_or_etype = cpu_to_le16(be16_to_cpu(pf->vxlan_gpe_port));
+	else
+		psr_cmd_buf.port_or_etype = cpu_to_le16(4790);
+
+	(void)nse_aq_psr_set_ctrl(hw, &psr_cmd_buf);
+
+	psr_cmd_buf.ctrl_type = NSE_AQC_PSR_CTRL_TYPE_GENEVE_UDP;
+
+	if (pf->geneve_port)
 		psr_cmd_buf.port_or_etype = cpu_to_le16(be16_to_cpu(pf->geneve_port));
+	else
+		psr_cmd_buf.port_or_etype = cpu_to_le16(6081);
 
-		(void)nse_aq_psr_set_ctrl(hw, &psr_cmd_buf);
-	}
+	(void)nse_aq_psr_set_ctrl(hw, &psr_cmd_buf);
+}
+
+void nse_udp_tunnels_init(struct nse_pf *pf)
+{
+	struct nse_hw *hw = &pf->hw;
+	struct nse_aqc_psr_set_ctrl psr_cmd_buf;
+
+	if (!nse_is_hw_static_fea_set(hw, NSE_HW_STATIC_FEA_PSR_SUPPORT_TNL) ||
+	    hw->is_mh_dpu_secondary_pf)
+		return;
+
+	memset(&psr_cmd_buf, 0, sizeof(psr_cmd_buf));
+
+	psr_cmd_buf.flags = cpu_to_le32(NSE_AQC_PSR_SET_CTRL_FLAG_RPSR |
+					NSE_AQC_PSR_SET_CTRL_FLAG_TPSR);
+	psr_cmd_buf.dis_or_en = 0;		/* dis = 0 */
+
+	psr_cmd_buf.ctrl_type = NSE_AQC_PSR_CTRL_TYPE_VXLAN_UDP;
+	/* IANA_VXLAN_UDP_PORT, not vxlan.c - vxlan_port = 8472 */
+	psr_cmd_buf.port_or_etype = cpu_to_le16(4789);
+	(void)nse_aq_psr_set_ctrl(hw, &psr_cmd_buf);
+
+	psr_cmd_buf.ctrl_type = NSE_AQC_PSR_CTRL_TYPE_VXLAN_GPE_UDP;
+	psr_cmd_buf.port_or_etype = cpu_to_le16(4790);		/* IANA_VXLAN_GPE_UDP_PORT */
+	(void)nse_aq_psr_set_ctrl(hw, &psr_cmd_buf);
+
+	psr_cmd_buf.ctrl_type = NSE_AQC_PSR_CTRL_TYPE_GENEVE_UDP;
+	psr_cmd_buf.port_or_etype = cpu_to_le16(6081);		/* GENEVE_UDP_PORT */
+	(void)nse_aq_psr_set_ctrl(hw, &psr_cmd_buf);
 }
 
 static const struct net_device_ops nse_netdev_ops = {

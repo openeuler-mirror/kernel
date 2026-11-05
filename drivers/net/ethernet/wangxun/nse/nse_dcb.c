@@ -1816,6 +1816,66 @@ out:
 	return ret;
 }
 
+enum nse_status nse_set_dcb_dscp_map(struct nse_port_info *pi)
+{
+	struct nse_aqc_qos_db_dscp_map *map;
+	struct nse_dcbx_cfg *dcbcfg;
+	struct nse_hw *hw;
+	enum nse_status ret;
+
+	if (!pi)
+		return NSE_ERR_PARAM;
+
+	hw = pi->hw;
+
+	/* update the HW's local_dcbx_cfg */
+	dcbcfg = &pi->qos_cfg.local_dcbx_cfg;
+
+	map = devm_kzalloc(nse_hw_to_dev(hw), sizeof(*map), GFP_KERNEL);
+	if (!map)
+		return NSE_ERR_NO_MEMORY;
+
+	memcpy(map->dscp_map, dcbcfg->dscp_map, NSE_DSCP_NUM_VAL * sizeof(u8));
+
+	ret = nse_aq_qos_db_set_dscp_map(hw, map);
+	if (ret)
+		dev_err(nse_hw_to_dev(hw),
+			"[%s, %d] FAIL: %s: ret=%d (%s)\n",
+			__func__, __LINE__, __func__, ret, nse_stat_str(ret));
+
+	devm_kfree(nse_hw_to_dev(hw), map);
+
+	return ret;
+}
+
+enum nse_status nse_ena_dcb_dscp_mode(struct nse_port_info *pi, bool ena_or_dis)
+{
+	struct nse_aqc_qos_db_dscp_mode *cfg;
+	struct nse_hw *hw;
+	enum nse_status ret;
+
+	if (!pi)
+		return NSE_ERR_PARAM;
+
+	hw = pi->hw;
+
+	cfg = devm_kzalloc(nse_hw_to_dev(hw), sizeof(*cfg), GFP_KERNEL);
+	if (!cfg)
+		return NSE_ERR_NO_MEMORY;
+
+	cfg->ena_or_dis = ena_or_dis ? 1 : 0;
+
+	ret = nse_aq_qos_db_set_dscp_mode(hw, cfg);
+	if (ret)
+		dev_err(nse_hw_to_dev(hw),
+			"[%s, %d] FAIL: %s: ret=%d (%s)\n",
+			__func__, __LINE__, __func__, ret, nse_stat_str(ret));
+
+	devm_kfree(nse_hw_to_dev(hw), cfg);
+
+	return ret;
+}
+
 void
 nse_dump_up_enforcement(struct nse_hw *hw,
 						struct nse_aqc_qos_db_conf_up_enforcement *upe)

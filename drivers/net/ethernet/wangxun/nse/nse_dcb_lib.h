@@ -31,6 +31,9 @@ int nse_pf_dcb_cfg(struct nse_pf *pf, struct nse_dcbx_cfg *new_cfg, bool set_all
 int nse_pf_dcb_cfg_lw(struct nse_pf *pf, struct nse_dcbx_cfg *new_cfg,
 		      u32 cfg_chg_type, bool locked);
 
+int nse_pf_dcb_dscp_cfg(struct nse_pf *pf, struct nse_dcbx_cfg *new_cfg,
+			u32 cfg_chg_type, bool locked);
+
 int nse_dcb_bwchk(struct nse_pf *pf, struct nse_dcbx_cfg *dcbcfg);
 void nse_pf_dcb_recfg(struct nse_pf *pf);
 void nse_vsi_cfg_dcb_rings(struct nse_vsi *vsi);
@@ -99,6 +102,15 @@ nse_pf_dcb_cfg(struct nse_pf __always_unused *pf,
 }
 
 static inline int
+nse_pf_dcb_dscp_cfg(struct nse_pf __always_unused *pf,
+		    struct nse_dcbx_cfg __always_unused *new_cfg,
+		    u32 __always_unused cfg_chg_type,
+		    bool __always_unused locked)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int
 nse_tx_prepare_vlan_flags_dcb(struct nse_ring __always_unused *tx_ring,
 			      struct nse_tx_buf __always_unused *first)
 {
@@ -132,6 +144,7 @@ nse_dcb_process_dcbx_cfg_chg_event(struct nse_pf *pf,
 #define NSE_DCB_CFG_CHG_TYPE_UP2TC			BIT(1)
 #define NSE_DCB_CFG_CHG_TYPE_TC_TSA_BW		BIT(2)	/* TC's TSA or ets bandwidth change */
 #define NSE_DCB_CFG_CHG_TYPE_PFC			BIT(3)	/* PFC change */
+#define NSE_DCB_CFG_CHG_TYPE_DSCP			BIT(4)	/* DSCP change */
 
 /* lightweight changes --- no need to close / re-open VSI to renew Q/TX mapping
  *

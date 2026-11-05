@@ -532,10 +532,15 @@ static void nse_eswitch_napi_enable(struct nse_pf *pf)
 	struct nse_vf *vf;
 	unsigned int bkt;
 
+	nse_debug(&pf->hw, NSE_DBG_LAN, "[%s] enable NAPI for all port representors\n",
+				__func__);
+
 	lockdep_assert_held(&pf->vfs.table_lock);
 
-	nse_for_each_vf(pf, bkt, vf)
+	nse_for_each_vf(pf, bkt, vf) {
 		napi_enable(&vf->repr->q_vector->napi);
+		vf->repr->q_vector->napi_enabled = true;
+	}
 }
 
 /**
@@ -547,10 +552,17 @@ static void nse_eswitch_napi_disable(struct nse_pf *pf)
 	struct nse_vf *vf;
 	unsigned int bkt;
 
+	nse_debug(&pf->hw, NSE_DBG_LAN, "[%s] disable NAPI for all port representors\n",
+				__func__);
+
 	lockdep_assert_held(&pf->vfs.table_lock);
 
-	nse_for_each_vf(pf, bkt, vf)
-		napi_disable(&vf->repr->q_vector->napi);
+	nse_for_each_vf(pf, bkt, vf) {
+		if (vf->repr->q_vector->napi_enabled)
+			napi_disable(&vf->repr->q_vector->napi);
+
+		vf->repr->q_vector->napi_enabled = false;
+	}
 }
 
 /**
@@ -640,9 +652,6 @@ static void nse_eswitch_disable_switchdev(struct nse_pf *pf)
 				0, sizeof(pf->switchdev.uplink_meter));
 	nse_cleanup_uplink_sysfs(pf);
 	nse_eswitch_napi_disable(pf);
-#ifdef NSE_ESWITH_SET_MODE
-	nse_eswitch_set_mode(pf, DEVLINK_ESWITCH_MODE_LEGACY);
-#endif
 	nse_neigh_cleanup(hw, &pf->switchdev);
 	nse_eswitch_release_env(pf);
 	nse_eswitch_release_reprs(pf, ctrl_vsi);
@@ -653,6 +662,13 @@ static void nse_eswitch_disable_switchdev(struct nse_pf *pf)
 	nse_del_all_adv_luts(hw);
 	/*conntrack cleanup should be after tc flter cleanup*/
 	nse_tc_ct_cleanup(pf);
+#ifdef NSE_ESWITH_SET_MODE
+	/* set sw mode should be after recipe release, because setting mode
+	 * changes fe number in profile; packets still using the previous fe
+	 * would make the hardware stuck.
+	 */
+	nse_eswitch_set_mode(pf, DEVLINK_ESWITCH_MODE_LEGACY);
+#endif
 }
 
 /**

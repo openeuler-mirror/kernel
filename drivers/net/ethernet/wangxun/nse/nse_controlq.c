@@ -785,7 +785,8 @@ skip_wait_fw_shutdown:
 						(unsigned long)hw->controlq_stats.mq_sq_wait_for_fw_pause_disable_fail_time);
 		}
 
-		dev_info(dev, "\t SW try pause + disable itself --- sq_len=0x%X\n", len);
+		nse_debug(hw, NSE_DBG_SYS, "\t SW try pause + disable itself --- sq_len=0x%X\n",
+			  len);
 
 		/* Keep the SW pause sequence below from being reordered ahead
 		 * of the operations above.
@@ -2054,6 +2055,9 @@ nse_sq_send_cmd_nolock(struct nse_hw *hw, struct nse_ctl_q_info *cq,
 		}
 
 		total_delay++;
+
+		hw->controlq_stats.sq_total_wait_cnt++;
+
 	} while (total_delay < sq_cmd_timeout);
 
 skip_wait:
@@ -2066,8 +2070,9 @@ skip_wait:
 			u16 copy_size = le16_to_cpu(desc->datalen);
 
 			if (copy_size > buf_size) {
-				dev_err(dev, "Return len %d > than buf len %d\n",
-					  copy_size, buf_size);
+				nse_debug(hw, NSE_DBG_AQM_ERR, "[%s, %d] opcode=0x%04X, return len %d > than buf len %d\n",
+						__func__, __LINE__,
+						le16_to_cpu(desc->opcode), copy_size, buf_size);
 				status = NSE_ERR_AQ_ERROR;
 			} else {
 				memcpy(buf, dma_buf->va, copy_size);
@@ -2075,14 +2080,16 @@ skip_wait:
 		}
 		retval = (le16_to_cpu(desc->flags) & NSE_AQ_FLAG_RETVAL_M) >> NSE_AQ_FLAG_RETVAL_S;
 		if (retval) {
-			dev_err(dev, "[%s, %d] Control Send Queue command: 0x%04X, completed write-back with desc->RETVAL=0x%X (%s)\n",
+			nse_debug(hw, NSE_DBG_AQM_ERR, "[%s, %d] opcode=0x%04X, completed write-back with desc->RETVAL=0x%X (%s)\n",
 						__func__, __LINE__,
 						le16_to_cpu(desc->opcode), retval,
 							nse_aq_str((enum nse_aq_err)retval));
 		}
 		cmd_completed = true;
+
 		if (!status && retval != NSE_AQ_RC_OK)
-			status = NSE_ERR_AQ_ERROR;
+			status = nse_aq_err_to_status(retval);
+
 		cq->sq_last_status = (enum nse_aq_err)retval;
 	}
 
@@ -2163,6 +2170,10 @@ nse_sq_send_cmd(struct nse_hw *hw, struct nse_ctl_q_info *cq,
 	status = nse_sq_send_cmd_nolock(hw, cq, desc, buf, buf_size, cd, 0);
 	nse_aq_sq_unlock(cq);
 
+	if (status)
+		nse_debug(hw, NSE_DBG_AQM_ERR, "[%s, %d] fail: opcode=0x%04X, status=%d, sq_last_status=%d\n",
+					__func__, __LINE__,
+					le16_to_cpu(desc->opcode), status, cq->sq_last_status);
 	return status;
 }
 
@@ -2180,6 +2191,10 @@ nse_sq_send_cmd_with_flags(struct nse_hw *hw, struct nse_ctl_q_info *cq,
 	status = nse_sq_send_cmd_nolock(hw, cq, desc, buf, buf_size, cd, sq_send_cmd_flags);
 	nse_aq_sq_unlock(cq);
 
+	if (status)
+		nse_debug(hw, NSE_DBG_AQM_ERR, "[%s, %d] fail: opcode=0x%04X, status=%d, sq_last_status=%d\n",
+					__func__, __LINE__,
+					le16_to_cpu(desc->opcode), status, cq->sq_last_status);
 	return status;
 }
 
@@ -2203,21 +2218,23 @@ nse_sq_send_cmd_retry(struct nse_hw *hw, struct nse_ctl_q_info *cq,
 	struct nse_aq_desc desc_cpy;
 	enum nse_status status;
 	bool is_cmd_need_retry = false;
-	u32 retry_times, retry_interval_us;
+	u32 retry_times = 0, retry_interval_us = 0;
 	u8 *buf_cpy = NULL;
 	u32 idx = 0;
 
 	is_cmd_need_retry = nse_sq_cmd_is_need_retry(desc->opc_category,
-						     desc->opc_subcode, &retry_times);
+						     desc->opc_subcode,
+						     &retry_times,
+						     &retry_interval_us);
 
-	retry_times = nse_aq_cmd_timeout / NSE_CTL_Q_SQ_CMD_TIMEOUT_BASE;
-	if (retry_times < NSE_SQ_SEND_MAX_EXECUTE)
-		retry_times = NSE_SQ_SEND_MAX_EXECUTE;
+	retry_times *= nse_timeout_scale;
+	if (retry_times < NSE_SQ_CMD_RETRY_TIMES_MIN)
+		retry_times = NSE_SQ_CMD_RETRY_TIMES_MIN;
 
 	/* the more retry times, the more retry interval ...... */
-	retry_interval_us = (retry_times / NSE_SQ_SEND_MAX_EXECUTE) * NSE_SQ_SEND_DELAY_TIME_US;
-	if (retry_interval_us < NSE_SQ_SEND_DELAY_TIME_US)
-		retry_interval_us = NSE_SQ_SEND_DELAY_TIME_US;
+	retry_interval_us *= nse_timeout_scale;
+	if (retry_interval_us < NSE_SQ_CMD_RETRY_INTERVAL_US_MIN)
+		retry_interval_us = NSE_SQ_CMD_RETRY_INTERVAL_US_MIN;
 
 	memset(&desc_cpy, 0, sizeof(desc_cpy));
 
@@ -2262,6 +2279,10 @@ nse_sq_send_cmd_retry(struct nse_hw *hw, struct nse_ctl_q_info *cq,
 	if (buf_cpy)
 		devm_kfree(nse_hw_to_dev(hw), buf_cpy);
 
+	if (status)
+		nse_debug(hw, NSE_DBG_AQM_ERR, "[%s, %d] fail: opcode=0x%04X, status=%d, sq_last_status=%d\n",
+					__func__, __LINE__,
+					le16_to_cpu(desc->opcode), status, cq->sq_last_status);
 	return status;
 }
 

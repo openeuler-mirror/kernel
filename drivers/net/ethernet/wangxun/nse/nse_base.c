@@ -1900,8 +1900,6 @@ static u16 nse_eswitch_calc_q_handle(struct nse_ring *ring)
  */
 static void nse_cfg_xps_tx_ring(struct nse_ring *ring)
 {
-	int cpu;
-
 	if (!ring->q_vector || !ring->netdev)
 		return;
 
@@ -1909,8 +1907,9 @@ static void nse_cfg_xps_tx_ring(struct nse_ring *ring)
 	if (test_and_set_bit(NSE_TX_XPS_INIT_DONE, ring->xps_state))
 		return;
 
-	cpu = cpumask_local_spread(ring->q_vector->v_idx, -1);
-	netif_set_xps_queue(ring->netdev, get_cpu_mask(cpu), ring->q_index);
+	/* no need to check: if (ring->q_vector->best_local_cpu_id != -1) */
+	netif_set_xps_queue(ring->netdev, &ring->q_vector->affinity_mask,
+			    ring->q_index);
 }
 
 /**
@@ -2298,6 +2297,8 @@ static int nse_vsi_alloc_q_vector(struct nse_vsi *vsi, u16 v_idx)
 {
 	struct nse_pf *pf = vsi->back;
 	struct nse_q_vector *q_vector;
+	struct device *dev = nse_pf_to_dev(pf);
+	int best_local_cpu_id;
 
 	/* allocate q_vector */
 	q_vector = devm_kzalloc(nse_pf_to_dev(pf), sizeof(*q_vector),
@@ -2321,7 +2322,16 @@ static int nse_vsi_alloc_q_vector(struct nse_vsi *vsi, u16 v_idx)
 	if (vsi->type == NSE_VSI_VF)
 		goto out;
 
-	cpumask_copy(&q_vector->affinity_mask, cpu_possible_mask);
+	best_local_cpu_id = cpumask_local_spread(v_idx, dev_to_node(dev));
+
+	/* only set affinity_mask if the CPU is online */
+	if (cpu_online(best_local_cpu_id)) {
+		cpumask_set_cpu(best_local_cpu_id, &q_vector->affinity_mask);
+		cpumask_set_cpu(best_local_cpu_id, &q_vector->best_affinity_mask);
+		q_vector->best_local_cpu_id = best_local_cpu_id;
+	} else {
+		q_vector->best_local_cpu_id = -1;
+	}
 
 	/* This will not be called in the driver load path because the netdev
 	 * will not be created yet. All other cases with register the NAPI
@@ -2722,6 +2732,10 @@ nse_vsi_stop_tx_ring(struct nse_vsi *vsi,
 	struct nse_q_vector *q_vector;
 	struct nse_hw *hw = &pf->hw;
 	enum nse_status status = 0;
+
+	nse_debug(hw, NSE_DBG_LAN, "[%s] idx=%d, abs_id=%d, tdm_stopped=%d, need_irqll=%d, already_in_irqll=%d, irqll_msix=%d\n",
+					__func__, ring->q_index, ring->abs_id, tdm_stopped,
+					ring->need_irqll, ring->already_in_irqll, ring->irqll_msix);
 
 	if (!tdm_stopped) {
 		(void)nse_aq_lan_disable_txq(hw, txq_meta->q_abs_id,

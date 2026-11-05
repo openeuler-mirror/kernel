@@ -115,23 +115,23 @@ nse_acl_fill_lut_node(struct nse_hw *hw, struct nse_acl_fltr_info *f_info,
 	lut_node->action = cpu_to_le16(act);
 	lut_node->left_ptr = cpu_to_le16(lg_act);
 
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] lut id is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] lut id is 0x%x\n",
 		 __func__, __LINE__, le16_to_cpu(lut_node->lut_id));
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] original node_id is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] original node_id is 0x%x\n",
 		 __func__, __LINE__, cpu_to_le16(lut_node->node_id));
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] key0 is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] key0 is 0x%x\n",
 		 __func__, __LINE__, le16_to_cpu(lut_node->key[0]));
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] key1 is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] key1 is 0x%x\n",
 		 __func__, __LINE__, le16_to_cpu(lut_node->key[1]));
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] key2 is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] key2 is 0x%x\n",
 		 __func__, __LINE__, le16_to_cpu(lut_node->key[2]));
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] key3 is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] key3 is 0x%x\n",
 		 __func__, __LINE__, le16_to_cpu(lut_node->key[3]));
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] key4 is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] key4 is 0x%x\n",
 		 __func__, __LINE__, le16_to_cpu(lut_node->key[4]));
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] is large action %d\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] is large action %d\n",
 		 __func__, __LINE__, !!lg_act);
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] action/node_state_id is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] action/node_state_id is 0x%x\n",
 		 __func__, __LINE__, le16_to_cpu(lut_node->action));
 }
 
@@ -170,7 +170,7 @@ nse_acl_add_lut_node(struct nse_hw *hw,
 	}
 
 	fltr_info->node_id = le16_to_cpu(lut_node->node_id);
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] returned acl node_id is %d\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] returned acl node_id is %d\n",
 			__func__, __LINE__,	fltr_info->node_id);
 
 nse_acl_add_fltr_exit:
@@ -278,11 +278,11 @@ nse_aq_acl_alloc_free_meter_id(struct nse_hw *hw,
 
 	if (opc == NSE_AQ_ACL_OPC_ALLOC_RESOURCE) {
 		*meter_id = le16_to_cpu(buf->res_id[0]);
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] alloced acl meter id = %d\n",
 			__func__, __LINE__, *meter_id);
 	} else if (opc == NSE_AQ_ACL_OPC_FREE_RESOURCE) {
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] Success to acl free meter id = %d\n",
 			__func__, __LINE__, *meter_id);
 	}
@@ -381,7 +381,7 @@ nse_acl_create_meter(struct nse_hw *hw,
 	elem->cfg.cbs = cpu_to_le32(cbs);
 	elem->cfg.cir = cpu_to_le32(cir);
 
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 		"Start to add acl meter: pol_type = 0x%x, cir = 0x%x, cbs = 0x%x, pir = 0x%x, pbs = 0x%x\n",
 		policy_type, cir, cbs, le32_to_cpu(elem->cfg.pir), le32_to_cpu(elem->cfg.pbs));
 
@@ -1010,10 +1010,10 @@ nse_acl_remove_lut_node(struct nse_hw *hw, struct nse_acl_fltr_info *fltr_info)
 	nse_acl_fill_lut_node(hw, fltr_info, lut_node,
 			 NSE_AQ_ACL_OPC_REMOVE_LUT_NODE);
 
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] start to remove acl node\n", __func__, __LINE__);
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] lut id is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] start to remove acl node\n", __func__, __LINE__);
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] lut id is 0x%x\n",
 		 __func__, __LINE__, le16_to_cpu(lut_node->lut_id));
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] node_id is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] node_id is 0x%x\n",
 		 __func__, __LINE__, le16_to_cpu(lut_node->node_id));
 
 	status = nse_aq_acl_lut_nodes(hw, buf, buf_size,

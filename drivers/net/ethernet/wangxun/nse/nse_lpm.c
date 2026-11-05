@@ -129,21 +129,21 @@ nse_fill_lpm_node(struct nse_hw *hw, struct nse_lpm_info *f_info,
 	lut_node->lut_id = cpu_to_le16(f_info->lkup_type);
 	lut_node->action = cpu_to_le16(act);
 
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] lut id is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] lut id is 0x%x\n",
 		 __func__, __LINE__, le16_to_cpu(lut_node->lut_id));
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] original node_id is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] original node_id is 0x%x\n",
 		 __func__, __LINE__, cpu_to_le16(lut_node->node_id));
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] key4 is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] key4 is 0x%x\n",
 		 __func__, __LINE__, le16_to_cpu(lut_node->key[4]));
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] key3 is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] key3 is 0x%x\n",
 		 __func__, __LINE__, le16_to_cpu(lut_node->key[3]));
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] key2 is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] key2 is 0x%x\n",
 		 __func__, __LINE__, le16_to_cpu(lut_node->key[2]));
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] key1 is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] key1 is 0x%x\n",
 		 __func__, __LINE__, le16_to_cpu(lut_node->key[1]));
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] key0 is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] key0 is 0x%x\n",
 		 __func__, __LINE__, le16_to_cpu(lut_node->key[0]));
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] action is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] action is 0x%x\n",
 		 __func__, __LINE__, le16_to_cpu(lut_node->action));
 }
 
@@ -192,7 +192,7 @@ nse_lpm_create_pkt_node(struct nse_hw *hw,
 	fm_entry->info.fltr_node_id = le16_to_cpu(lpm_node->node_id);
 	list_add_tail(&fm_entry->list_entry, &lut->filt_rules);
 
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] returned lpm node_id is %d\n", __func__, __LINE__,
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] returned lpm node_id is %d\n", __func__, __LINE__,
 				fm_entry->info.fltr_node_id);
 
 nse_lpm_create_pkt_node_exit:
@@ -226,10 +226,10 @@ nse_lpm_remove_pkt_node(struct nse_hw *hw,
 	nse_fill_lpm_node(hw, &lpm_entry->info, lpm_node,
 			 NSE_AQ_OPC_REMOVE_LUT_NODE);
 
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] start to remove node\n", __func__, __LINE__);
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] lut id is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] start to remove node\n", __func__, __LINE__);
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] lut id is 0x%x\n",
 		 __func__, __LINE__, le16_to_cpu(lpm_node->lut_id));
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] node_id is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] node_id is 0x%x\n",
 		 __func__, __LINE__, le16_to_cpu(lpm_node->node_id));
 
 	status = nse_aq_lut_nodes(hw, buf, buf_size,
@@ -296,7 +296,7 @@ nse_lpm_del_node(struct nse_hw *hw, struct nse_lpm_info *new_entry,
 	mutex_lock(rule_lock);
 	m_entry = nse_lpm_find_rule_entry(&lut->filt_rules, new_entry);
 	if (!m_entry) {
-		dev_info(nse_hw_to_dev(hw), "ipv4 lpm node is not existed\n");
+		nse_debug(hw, NSE_DBG_SW, "ipv4 lpm node is not existed\n");
 		err = -ENOENT;
 		goto err_nse_add_lpm_node;
 	}
@@ -344,11 +344,11 @@ nse_lpm_add_ipv4_addr(struct nse_hw *hw, struct nse_lpm_info *lpm_entry)
 	dip = (dip >> shift_len) << shift_len;
 	lpm_entry->ip_addr.dst_ip.v4 = htonl(dip);
 
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 		"route's family is AF_INET, prefix_len is %d\n",
 		lpm_entry->ip_addr.prefix_len);
 
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 		"IPV4 subnet = %pI4\n",
 		&lpm_entry->ip_addr.dst_ip.v4);
 
@@ -395,11 +395,11 @@ nse_lpm_del_ipv4_addr(struct nse_hw *hw, struct nse_lpm_info *lpm_entry)
 	dip = (dip >> shift_len) << shift_len;
 	lpm_entry->ip_addr.dst_ip.v4 = ntohl(dip);
 
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 		"route's family is AF_INET, prefix_len is %d\n",
 		lpm_entry->ip_addr.prefix_len);
 
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 		"IPV4 subnet = %pI4\n",
 		&lpm_entry->ip_addr.dst_ip.v4);
 
@@ -856,8 +856,7 @@ nse_add_lpm_lut_internal(struct nse_hw *hw, struct nse_lut_info *lut_info)
 	bitmap_zero(result_idx_bm, NSE_MAX_FV_WORDS);
 	free_idx_count = nse_find_free_recp_res_idx(hw, profiles_bm,
 						result_idx_bm);
-	dev_info(nse_hw_to_dev(hw), "Free result idx count: %d, need %d\n",
-		free_idx_count,	(lut_info->n_grp_count == 1) ? 0 : lut_info->n_grp_count - 1);
+
 	nse_debug(hw, NSE_DBG_SW, "Free result idx count: %d, need %d\n",
 		  free_idx_count, (lut_info->n_grp_count == 1) ? 0 : lut_info->n_grp_count - 1);
 
@@ -985,7 +984,7 @@ nse_add_lpm_lut_internal(struct nse_hw *hw, struct nse_lut_info *lut_info)
 			status = -EIO;
 			goto err_prfl_fail;
 		}
-		dev_info(nse_hw_to_dev(hw), "Start to add %d recps to Profile[%d]\n",
+		nse_debug(hw, NSE_DBG_SW, "Start to add %d recps to Profile[%d]\n",
 			 recps, profile->profile_id);
 		for (i = 0; i < recps; i++) {
 			buf->elem[i].profile_id = cpu_to_le16(profile->profile_id);
@@ -994,26 +993,26 @@ nse_add_lpm_lut_internal(struct nse_hw *hw, struct nse_lut_info *lut_info)
 			 * 1 has higher priority than 2
 			 */
 			buf->elem[i].content.priority = buf->elem[i].recipe_id;
-			dev_info(nse_hw_to_dev(hw), "\t Profile[%d] start to add recipe[%d]: lut id = %d, priority = %d\n",
+			nse_debug(hw, NSE_DBG_SW, "\t Profile[%d] start to add recipe[%d]: lut id = %d, priority = %d\n",
 				profile->profile_id, buf->elem[i].recipe_id,
 				le16_to_cpu(buf->elem[i].content.lut_id),
 					buf->elem[i].content.priority);
 
-			dev_info(nse_hw_to_dev(hw), "\t\t mask[0~4] = [0x%x, 0x%x, 0x%x, 0x%x, 0x%x]\n",
+			nse_debug(hw, NSE_DBG_SW, "\t\t mask[0~4] = [0x%x, 0x%x, 0x%x, 0x%x, 0x%x]\n",
 				le16_to_cpu(buf->elem[i].content.mask[0]),
 				le16_to_cpu(buf->elem[i].content.mask[1]),
 				le16_to_cpu(buf->elem[i].content.mask[2]),
 				le16_to_cpu(buf->elem[i].content.mask[3]),
 				le16_to_cpu(buf->elem[i].content.mask[4]));
 
-			dev_info(nse_hw_to_dev(hw), "\t\t lkup_Index[0~4] = [0x%x, 0x%x, 0x%x, 0x%x, 0x%x]\n",
+			nse_debug(hw, NSE_DBG_SW, "\t\t lkup_Index[0~4] = [0x%x, 0x%x, 0x%x, 0x%x, 0x%x]\n",
 				(buf->elem[i].content.lkup_indx[0]),
 				(buf->elem[i].content.lkup_indx[1]),
 				(buf->elem[i].content.lkup_indx[2]),
 				(buf->elem[i].content.lkup_indx[3]),
 				(buf->elem[i].content.lkup_indx[4]));
 
-			dev_info(nse_hw_to_dev(hw), "\t\t ctrl_flag = 0x%x, ignore_vld = 0x%x, rslt_idx = 0x%x\n",
+			nse_debug(hw, NSE_DBG_SW, "\t\t ctrl_flag = 0x%x, ignore_vld = 0x%x, rslt_idx = 0x%x\n",
 				(buf->elem[i].content.ctrl_flg),
 				(buf->elem[i].content.ignore_vld),
 				(buf->elem[i].content.result_indx >> NSE_AQ_RECIPE_RSLT_INDX_S));
@@ -1027,7 +1026,7 @@ nse_add_lpm_lut_internal(struct nse_hw *hw, struct nse_lut_info *lut_info)
 			goto err_prfl_fail;
 		}
 		for (i = 0; i < recps; i++)
-			dev_info(nse_hw_to_dev(hw), "\t Profile[%d] finish to add recipe[%d]: lut id = %d\n",
+			nse_debug(hw, NSE_DBG_SW, "\t Profile[%d] finish to add recipe[%d]: lut id = %d\n",
 				profile->profile_id, buf->elem[i].recipe_id,
 				le16_to_cpu(buf->elem[i].content.lut_id));
 	}
@@ -1090,7 +1089,7 @@ nse_add_lpm_lut_internal(struct nse_hw *hw, struct nse_lut_info *lut_info)
 			set_bit(lut_entry->lut_id, profile->lut_bitmap);
 			rcp_id = profile->used_recipe_num + lut_index;
 			profile->lut_id[rcp_id] = lut_entry->lut_id;
-			dev_info(nse_hw_to_dev(hw), "Lut_id of Profile[%d]_Recipe[%d] = %d\n",
+			nse_debug(hw, NSE_DBG_SW, "Lut_id of Profile[%d]_Recipe[%d] = %d\n",
 					profile->profile_id, rcp_id, profile->lut_id[rcp_id]);
 		}
 		lut_index++;
@@ -1218,7 +1217,7 @@ nse_lpm_add_adv_lut(struct nse_hw *hw, struct nse_adv_lkup_elem *lkups,
 	/* Look for a lut which can matches our requested lkups */
 	*lut_id = nse_find_lut(hw, lkup_exts, rinfo, true);
 	if (*lut_id < NSE_MAX_NUM_LUTS) {
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] Lpm LUT is existed, lut id = %d\n",
 			__func__, __LINE__, *lut_id);
 		goto err_unroll;
@@ -1311,7 +1310,7 @@ nse_lpm_add_adv_node(struct nse_hw *hw, struct nse_adv_lkup_elem *lkups,
 	u16 act = 0;
 	u16 lg_act = 0;
 	int status;
-	u16 node_id, sub_node_id[NSE_MAX_SUB_NODE_NUM] = { 0 };
+	u16 node_id, sub_node_id[NSE_MAX_CHAIN_RECIPE] = { 0 };
 
 	/* Initialize profiles' result index bitmap */
 	if (!hw->switch_info->prof_res_bm_init) {
@@ -1455,7 +1454,7 @@ nse_lpm_add_adv_node(struct nse_hw *hw, struct nse_adv_lkup_elem *lkups,
 
 		lut_node->key[0] = cpu_to_le16(prefix_cur & NSE_LPM_PREFIX_M);
 
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] current lut[%d]'s prefix len = %d, min_prefix = %d, max_prefix = %d, lkup_words = %d\n",
 			__func__, __LINE__, i, prefix_cur, min_prefix, max_prefix, lkup_words);
 
@@ -1468,12 +1467,12 @@ nse_lpm_add_adv_node(struct nse_hw *hw, struct nse_adv_lkup_elem *lkups,
 		/*2.3 request "add lut node" adminq cmd per lut group*/
 		lut_node->lut_id = cpu_to_le16(lut_entry->lut_id);
 
-		dev_info(nse_hw_to_dev(hw), "Start add lpm advanced node to lut[%d], is_last = %d, is_first = %d\n",
+		nse_debug(hw, NSE_DBG_SW, "Start add lpm advanced node to lut[%d], is_last = %d, is_first = %d\n",
 			lut_entry->lut_id, !!is_last, !!is_first);
-		dev_info(nse_hw_to_dev(hw), "\t is_lg_act = %d, action/lg_id = 0x%x\n",
+		nse_debug(hw, NSE_DBG_SW, "\t is_lg_act = %d, action/lg_id = 0x%x\n",
 			!!(le16_to_cpu(lut_node->left_ptr) & NSE_LUT_NODE_LARGE_ACTION_EN),
 			le16_to_cpu(lut_node->action));
-		dev_info(nse_hw_to_dev(hw), "\t key_value[0~4]: [0x%x, 0x%x, 0x%x, 0x%x, 0x%x,]\n",
+		nse_debug(hw, NSE_DBG_SW, "\t key_value[0~4]: [0x%x, 0x%x, 0x%x, 0x%x, 0x%x,]\n",
 			le16_to_cpu(lut_node->key[0]), le16_to_cpu(lut_node->key[1]),
 			le16_to_cpu(lut_node->key[2]), le16_to_cpu(lut_node->key[3]),
 			le16_to_cpu(lut_node->key[4]));
@@ -1486,7 +1485,7 @@ nse_lpm_add_adv_node(struct nse_hw *hw, struct nse_adv_lkup_elem *lkups,
 			status = -EIO;
 			goto err_nse_add_adv_node;
 		}
-		dev_info(nse_hw_to_dev(hw), "\t return lpm node_id = 0x%x\n",
+		nse_debug(hw, NSE_DBG_SW, "\t return lpm node_id = 0x%x\n",
 			le16_to_cpu(lut_node->node_id));
 		sub_node_id[i] = le16_to_cpu(lut_node->node_id);
 		i++;
@@ -1843,7 +1842,7 @@ nse_lpm_add_large_action(struct nse_hw *hw,
 	}
 
 	if (du_act_cnt == 1 && !au_task_cnt) {
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] It is single action! act type = %d\n",
 			__func__, __LINE__, node_state->du_action[0].du_act);
 		ret = 0;
@@ -1968,11 +1967,11 @@ nse_erouter_add_lpm_fltr(struct nse_hw *hw,
 		goto exit;
 	}
 
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] prot_header num = %d\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] prot_header num = %d\n",
 		__func__, __LINE__, lkups_cnt);
 
 	for (i = 0; i < lkups_cnt; i++)
-		dev_info(nse_hw_to_dev(hw), "[%s, %d] prot_header[%d]_type = %d\n",
+		nse_debug(hw, NSE_DBG_SW, "[%s, %d] prot_header[%d]_type = %d\n",
 			__func__, __LINE__, i, lkups[i].type);
 
 	ret = nse_lpm_add_adv_node(hw, lkups, lkups_cnt, &node_info, &rule_added);
@@ -2030,7 +2029,7 @@ nse_rem_lpm_adv_node(struct nse_hw *hw, struct nse_adv_lkup_elem *lkups,
 	mutex_lock(rule_lock);
 	list_elem = nse_lpm_find_adv_rule_entry(hw, lkups, lkups_cnt, lut_id, rinfo);
 	if (!list_elem) {
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] lpm advanced node is not existed\n",
 			__func__, __LINE__);
 		ret = -ENOENT;
@@ -2068,7 +2067,7 @@ nse_rem_lpm_adv_node(struct nse_hw *hw, struct nse_adv_lkup_elem *lkups,
 			ret = -EIO;
 			goto err_nse_rem_adv_rule;
 		}
-		dev_info(nse_hw_to_dev(hw), "Success to remove lpm lut[%d] node_id[%d]\n",
+		nse_debug(hw, NSE_DBG_SW, "Success to remove lpm lut[%d] node_id[%d]\n",
 			lut_entry->lut_id, node_info->sub_fltr_node_id[i]);
 		i++;
 
@@ -2141,7 +2140,7 @@ nse_erouter_del_lpm_fltr(struct nse_hw *hw,
 	ret = nse_rem_lpm_adv_node(hw, lkups, lkups_cnt, fltr->lut_id, &node_info);
 	if (ret) {
 		if (ret == -ENOENT)
-			dev_info(nse_hw_to_dev(hw), "lpm filter does not exist, err = %d\n", ret);
+			nse_debug(hw, NSE_DBG_SW, "lpm filter does not exist, err = %d\n", ret);
 		else
 			dev_err(nse_hw_to_dev(hw), "Fail to delete lpm lut node, err = %d\n", ret);
 	}
@@ -2217,7 +2216,7 @@ nse_enable_erouter_mode(struct nse_hw *hw)
 	int ret;
 
 	if (nse_bypass_switch) {
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"Failed to enable lpm mode because nse_bypass_switch is 1\n");
 		return;
 	}
@@ -2249,7 +2248,7 @@ nse_enable_erouter_mode(struct nse_hw *hw)
 
 	sw->lpm_en = true;
 
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 		"Success to enable lpm mode: lpm_en = %d\n", sw->lpm_en);
 }
 
@@ -2292,7 +2291,7 @@ void nse_del_all_adv_lpm_luts(struct nse_hw *hw)
 		if (!lut[i].lut_created || !lut[i].is_lpm)
 			continue;
 
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"start to free lut id[%d]'s nodes\n", lut[i].lut_id);
 
 		status = nse_aq_alloc_free_lpm_lut_id(hw,
@@ -2325,7 +2324,7 @@ nse_disable_erouter_mode(struct nse_hw *hw)
 	int ret;
 
 	if (nse_bypass_switch) {
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"Failed to disable lpm mode because nse_bypass_switch is 1\n");
 		return;
 	}
@@ -2340,7 +2339,7 @@ nse_disable_erouter_mode(struct nse_hw *hw)
 		nse_del_all_adv_rcp_per_profile(hw);
 		nse_del_all_adv_lpm_luts(hw);
 		sw->lpm_en = false;
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"Success to disable lpm mode: lpm_en = %d\n", sw->lpm_en);
 
 		sw_mode = NSE_SW_MODE_LEGACY;
@@ -2351,7 +2350,7 @@ nse_disable_erouter_mode(struct nse_hw *hw)
 				__func__, __LINE__, ret, sw_mode);
 		}
 	} else
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"lpm is already disabled: lpm_en = %d\n", sw->lpm_en);
 }
 
