@@ -439,10 +439,6 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 {
 	int ret;
 
-	/* PVM guest execution requires the separate vCPU run-path support. */
-	if (is_pvm_mode())
-		return -EOPNOTSUPP;
-
 	ret = kvm_sched_affinity_vm_init(kvm);
 	if (ret)
 		return ret;
