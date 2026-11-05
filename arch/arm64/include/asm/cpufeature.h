@@ -106,6 +106,7 @@ struct arm64_ftr_reg {
 };
 
 extern struct arm64_ftr_reg arm64_ftr_reg_ctrel0;
+extern unsigned long arm64_pbha_stage2_safe_bits;
 
 /*
  * CPU capabilities:
