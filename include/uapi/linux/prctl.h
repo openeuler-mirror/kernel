@@ -306,4 +306,5 @@ struct prctl_mm_map {
 # define PR_RISCV_V_VSTATE_CTRL_NEXT_MASK	0xc
 # define PR_RISCV_V_VSTATE_CTRL_MASK		0x1f
 
+#define PR_UPDATE_PBHA_BIT0		0x82312f0
 #endif /* _LINUX_PRCTL_H */
