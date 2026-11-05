@@ -109,15 +109,12 @@ static int unic_update_bond_addr_list(struct list_head *list,
 		goto out;
 	}
 
-	addr_node = kzalloc(sizeof(*addr_node), GFP_ATOMIC);
+	addr_node = unic_comm_alloc_addr_node(state, addr, ip_mask);
 	if (!addr_node) {
 		ret = -ENOMEM;
 		goto out;
 	}
 
-	addr_node->state = state;
-	addr_node->node_mask = ip_mask;
-	memcpy(addr_node->unic_addr, addr, UNIC_ADDR_LEN);
 	list_add_tail(&addr_node->node, list);
 
 out:
@@ -214,12 +211,12 @@ static void unic_sync_bond_addr_table(struct unic_vport *vport,
 			list_move_tail(&addr_node->node, &tmp_del_list);
 			break;
 		case UNIC_COMM_ADDR_TO_ADD:
-			new_node = kzalloc(sizeof(*new_node), GFP_ATOMIC);
+			new_node = unic_comm_alloc_addr_node(addr_node->state,
+							     addr_node->unic_addr,
+							     addr_node->node_mask);
 			if (!new_node)
 				goto stop_traverse;
-			memcpy(new_node->unic_addr, addr_node->unic_addr, UNIC_ADDR_LEN);
-			new_node->state = addr_node->state;
-			new_node->node_mask = addr_node->node_mask;
+
 			list_add_tail(&new_node->node, &tmp_add_list);
 			break;
 		default:
