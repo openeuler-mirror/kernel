@@ -5,11 +5,13 @@
 #ifndef __LINUX_PBHA_H
 #define __LINUX_PBHA_H
 
+#include <linux/fs.h>
 #include <linux/mm.h>
 #include <linux/libfdt.h>
 #include <linux/pgtable.h>
 
 #define PBHA_VAL_BIT0 1UL
+#define PBHA_BITS_SHIFT 59
 
 #define EFI_OEMCONFIG_VARIABLE_GUID                                            \
 	EFI_GUID(0x21f3b3c5, 0x946d, 0x41c1, 0x83, 0x8c, 0x19, 0x4e, 0x48,     \
@@ -20,7 +22,11 @@
 
 #ifdef CONFIG_ARM64_PBHA
 extern bool __ro_after_init pbha_bit0_enabled;
+extern struct mm_walk_ops pbha_bit0_walk_ops;
 extern void __init early_pbha_bit0_init(void);
+extern int pbha_bit0_update_vma(struct mm_struct *mm, int val);
+extern const struct file_operations proc_pbha_bit0_ops;
+bool pbha_bit0_hide_file(const char *name);
 
 static inline bool system_support_pbha_bit0(void)
 {
@@ -45,12 +51,37 @@ static inline pte_t maybe_mk_pbha_bit0(pte_t pte, struct vm_area_struct *vma)
 
 	return pte;
 }
+
+static inline bool pte_pbha(pte_t pte)
+{
+	if (!system_support_pbha_bit0())
+		return false;
+
+	return !!(pte_val(pte) & (PBHA_VAL_BIT0 << PBHA_BITS_SHIFT));
+}
+
+static inline bool pmd_pbha(pmd_t pmd)
+{
+	if (!system_support_pbha_bit0())
+		return false;
+
+	return !!(pmd_val(pmd) & (PBHA_VAL_BIT0 << PBHA_BITS_SHIFT));
+}
 #else
 static inline bool system_support_pbha_bit0(void) { return false; }
+static inline bool pbha_bit0_hide_file(const char *name) { return false; }
 static inline pgprot_t pgprot_pbha_bit0(pgprot_t prot) { return prot; }
 static inline pte_t maybe_mk_pbha_bit0(pte_t pte, struct vm_area_struct *vma)
 {
 	return pte;
+}
+static inline bool pte_pbha(pte_t pte)
+{
+	return false;
+}
+static inline bool pmd_pbha(pmd_t pte)
+{
+	return false;
 }
 #endif
 

@@ -654,6 +654,15 @@ static inline pte_t pte_mkpbha(pte_t pte, unsigned long pbha_val)
 	return set_pte_bit(pte, __pgprot(__pbha_check_perf_only(pbha_val)));
 }
 
+#define pmd_mkpbha(pmd, pbha_val)	pte_pmd(pte_mkpbha(pmd_pte(pmd), pbha_val))
+
+static inline pte_t pte_rmpbha(pte_t pte, unsigned long pbha_val)
+{
+	return clear_pte_bit(pte, __pgprot(__pbha_check_perf_only(pbha_val)));
+}
+
+#define pmd_rmpbha(pmd, pbha_val)	pte_pmd(pte_rmpbha(pmd_pte(pmd), pbha_val))
+
 /*
  * DMA allocations for non-coherent devices use what the Arm architecture calls
  * "Normal non-cacheable" memory, which permits speculation, unaligned accesses

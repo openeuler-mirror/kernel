@@ -102,6 +102,7 @@
 #include <linux/resctrl.h>
 #include <linux/cn_proc.h>
 #include <linux/ksm.h>
+#include <linux/pbha.h>
 #include <trace/events/oom.h>
 #include "internal.h"
 #include "fd.h"
@@ -2701,6 +2702,9 @@ static struct dentry *proc_pident_instantiate(struct dentry *dentry,
 
 static bool proc_hide_pidents(const struct pid_entry *p)
 {
+	if (pbha_bit0_hide_file(p->name))
+		return true;
+
 	if (mem_reliable_hide_file(p->name))
 		return true;
 
@@ -3594,6 +3598,9 @@ static const struct pid_entry tgid_base_stuff[] = {
 #ifdef CONFIG_MEMORY_RELIABLE
 	REG("reliable", S_IRUGO|S_IWUSR, proc_reliable_operations),
 #endif
+#ifdef CONFIG_ARM64_PBHA
+	REG("pbha_bit0", 0644, proc_pbha_bit0_ops),
+#endif
 #ifdef CONFIG_AUDIT
 	REG("loginuid",   S_IWUSR|S_IRUGO, proc_loginuid_operations),
 	REG("sessionid",  S_IRUGO, proc_sessionid_operations),
@@ -4016,6 +4023,9 @@ static const struct pid_entry tid_base_stuff[] = {
 	REG("oom_score_adj", S_IRUGO|S_IWUSR, proc_oom_score_adj_operations),
 #ifdef CONFIG_MEMORY_RELIABLE
 	REG("reliable", S_IRUGO|S_IWUSR, proc_reliable_operations),
+#endif
+#ifdef CONFIG_ARM64_PBHA
+	REG("pbha_bit0", 0644, proc_pbha_bit0_ops),
 #endif
 #ifdef CONFIG_AUDIT
 	REG("loginuid",  S_IWUSR|S_IRUGO, proc_loginuid_operations),

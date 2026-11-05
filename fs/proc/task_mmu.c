@@ -20,6 +20,7 @@
 #include <linux/shmem_fs.h>
 #include <linux/uaccess.h>
 #include <linux/pkeys.h>
+#include <linux/pbha.h>
 
 #include <asm/elf.h>
 #include <asm/tlb.h>
@@ -1362,6 +1363,11 @@ struct pagemapread {
 #define PM_SOFT_DIRTY		BIT_ULL(55)
 #define PM_MMAP_EXCLUSIVE	BIT_ULL(56)
 #define PM_UFFD_WP		BIT_ULL(57)
+#ifdef CONFIG_ARM64_PBHA
+#define PM_PBHA_BIT0		BIT_ULL(59)
+#else
+#define PM_PBHA_BIT0		0
+#endif
 #define PM_FILE			BIT_ULL(61)
 #define PM_SWAP			BIT_ULL(62)
 #define PM_PRESENT		BIT_ULL(63)
@@ -1463,6 +1469,9 @@ static pagemap_entry_t pte_to_pagemap_entry(struct pagemapread *pm,
 			flags |= PM_UFFD_WP;
 	}
 
+	if (pte_pbha(pte))
+		flags |= PM_PBHA_BIT0;
+
 	if (page && !PageAnon(page))
 		flags |= PM_FILE;
 	if (page && (flags & PM_PRESENT) && page_mapcount(page) == 1)
@@ -1526,6 +1535,9 @@ static int pagemap_pmd_range(pmd_t *pmdp, unsigned long addr, unsigned long end,
 			page = pfn_swap_entry_to_page(entry);
 		}
 #endif
+
+		if (pmd_pbha(pmd))
+			flags |= PM_PBHA_BIT0;
 
 		if (page && !PageAnon(page))
 			flags |= PM_FILE;
@@ -1605,6 +1617,9 @@ static int pagemap_hugetlb_range(pte_t *ptep, unsigned long hmask,
 
 		if (huge_pte_uffd_wp(pte))
 			flags |= PM_UFFD_WP;
+
+		if (pte_pbha(pte))
+			flags |= PM_PBHA_BIT0;
 
 		flags |= PM_PRESENT;
 		if (pm->show_pfn)
