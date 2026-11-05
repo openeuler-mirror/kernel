@@ -602,14 +602,16 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 	case KVM_CAP_ARM_TIMER_EARLY_INJECT:
 #endif
 	case KVM_CAP_READONLY_MEM:
-	case KVM_CAP_SET_GUEST_DEBUG:
 		r = !kvm_is_realm(kvm);
+		break;
+	case KVM_CAP_SET_GUEST_DEBUG:
+		r = !kvm_is_realm(kvm) && !is_pvm_mode();
 		break;
 	case KVM_CAP_COUNTER_OFFSET:
 		r = !kvm_is_realm(kvm) && !is_pvm_mode();
 		break;
 	case KVM_CAP_SET_GUEST_DEBUG2:
-		return KVM_GUESTDBG_VALID_MASK;
+		return is_pvm_mode() ? 0 : KVM_GUESTDBG_VALID_MASK;
 	case KVM_CAP_ARM_SET_DEVICE_ADDR:
 		r = 1;
 		break;
@@ -656,10 +658,10 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 		r = cpus_have_const_cap(ARM64_HAS_32BIT_EL1) && !is_pvm_mode();
 		break;
 	case KVM_CAP_GUEST_DEBUG_HW_BPS:
-		r = kvm_is_realm(kvm) ? 0 : get_num_brps();
+		r = kvm_is_realm(kvm) || is_pvm_mode() ? 0 : get_num_brps();
 		break;
 	case KVM_CAP_GUEST_DEBUG_HW_WPS:
-		r = kvm_is_realm(kvm) ? 0 : get_num_wrps();
+		r = kvm_is_realm(kvm) || is_pvm_mode() ? 0 : get_num_wrps();
 		break;
 	case KVM_CAP_ARM_PMU_V3:
 		r = !is_pvm_mode() && kvm_arm_support_pmu_v3();
