@@ -147,6 +147,7 @@ static s32 rnpvf_reset_hw_vf(struct rnpvf_hw *hw)
 {
 	struct rnp_mbx_info *mbx = &hw->mbx;
 	struct rnpvf_adapter *adapter = hw->back;
+	struct device *dev = &hw->pdev->dev;
 	// u32 timeout = RNP_VF_INIT_TIMEOUT;
 	s32 ret_val = RNP_ERR_INVALID_MAC_ADDR;
 	u32 msgbuf[RNP_VF_PERMADDR_MSG_LEN];
@@ -228,13 +229,12 @@ static s32 rnpvf_reset_hw_vf(struct rnpvf_hw *hw)
 
 	hw->usecstocount = msgbuf[RNP_VF_AXI_MHZ];
 
-	DPRINTK(PROBE, INFO, "dma_versioin:%x vlan %d\n",
+	dev_dbg(dev, "dma_versioin:%x vlan %d\n",
 		hw->mac.dma_version, adapter->vf_vlan);
-	DPRINTK(PROBE, INFO, "axi:%x\n", hw->usecstocount);
-	DPRINTK(PROBE, INFO, "firmware :%x\n", hw->fw_version);
-	DPRINTK(PROBE, INFO, "link speed :%x\n", hw->speed);
-	DPRINTK(PROBE, INFO, "link status :%s\n",
-		hw->link ? "up" : "down");
+	dev_dbg(dev, "axi:%x\n", hw->usecstocount);
+	dev_dbg(dev, "firmware :%x\n", hw->fw_version);
+	dev_dbg(dev, "link speed :%x\n", hw->speed);
+	dev_dbg(dev, "link status :%s\n", hw->link ? "up" : "down");
 	hw->pf_feature = msgbuf[RNP_VF_FEATURE];
 
 	return 0;

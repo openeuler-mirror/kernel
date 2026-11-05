@@ -178,48 +178,6 @@ union rnp_rx_desc {
 #define RNP_ERR_RESET_FAILED -2
 #define RNP_ERR_INVALID_ARGUMENT -3
 
-#define dbg(fmt, args...)
-
-#define rnpvf_dbg(fmt, args...) pr_debug(fmt, ##args)
-#define rnpvf_info(fmt, args...) pr_debug("rnpvf-info: " fmt, ##args)
-#define rnpvf_warn(fmt, args...) pr_debug("rnpvf-warn: " fmt, ##args)
-#define rnpvf_err(fmt, args...) pr_err("rnpvf-err : " fmt, ##args)
-
-#define DPRINTK(nlevel, klevel, fmt, args...)                              \
-	((NETIF_MSG_##nlevel & adapter->msg_enable) ?                      \
-		 (void)(netdev_printk(KERN_##klevel, adapter->netdev, fmt, \
-				      ##args)) :                           \
-		 NULL)
-
-#define buf_dump_line(msg, line, buf, len)
-
-static inline void buf_dump(const char *msg, void *buf, int len)
-{
-	int i, offset = 0;
-	int msg_len = 1024;
-	u8 msg_buf[1024];
-	u8 *ptr = (u8 *)buf;
-
-	offset += snprintf(msg_buf + offset, msg_len,
-			   "=== %s #%d ==\n000: ", msg, len);
-
-	for (i = 0; i < len; ++i) {
-		if (i != 0 && (i % 16) == 0 && (offset >= (1024 - 10 * 16))) {
-			pr_debug("%s\n", msg_buf);
-			offset = 0;
-		}
-
-		if (i != 0 && (i % 16) == 0) {
-			offset += snprintf(msg_buf + offset, msg_len,
-					   "\n%03x: ", i);
-		}
-		offset += snprintf(msg_buf + offset, msg_len, "%02x ", ptr[i]);
-	}
-
-	offset += snprintf(msg_buf + offset, msg_len, "\n=== done ==\n");
-	pr_debug("%s\n", msg_buf);
-}
-
 static inline void _rnp_skb_dump(const struct sk_buff *skb, bool full_pkt)
 {
 	static atomic_t can_dump_full = ATOMIC_INIT(5);
@@ -228,7 +186,6 @@ static inline void _rnp_skb_dump(const struct sk_buff *skb, bool full_pkt)
 	bool has_mac, has_trans;
 	int headroom, tailroom;
 	int i, len, seg_len;
-	const char *level = KERN_WARNING;
 
 	if (full_pkt)
 		full_pkt = atomic_dec_if_positive(&can_dump_full) >= 0;
@@ -245,13 +202,13 @@ static inline void _rnp_skb_dump(const struct sk_buff *skb, bool full_pkt)
 	has_trans = skb_transport_header_was_set(skb);
 
 	if (dev)
-		pr_debug("%sdev name=%s feat=0x%pNF\n", level,
+		pr_debug("dev name=%s feat=0x%pNF\n",
 			 dev->name, &dev->features);
 
 	seg_len = min_t(int, skb_headlen(skb), len);
 	if (seg_len)
-		print_hex_dump(level, "skb linear:   ", DUMP_PREFIX_OFFSET, 16,
-			       1, skb->data, seg_len, false);
+		print_hex_dump_debug("skb linear:   ", DUMP_PREFIX_OFFSET, 16, 1,
+				     skb->data, seg_len, false);
 	len -= seg_len;
 
 	for (i = 0; len && i < skb_shinfo(skb)->nr_frags; i++) {
@@ -264,8 +221,8 @@ static inline void _rnp_skb_dump(const struct sk_buff *skb, bool full_pkt)
 		p_len = skb_frag_size(frag);
 		seg_len = min_t(int, p_len, len);
 		vaddr = kmap_atomic(p);
-		print_hex_dump(level, "skb frag:     ", DUMP_PREFIX_OFFSET, 16,
-			       1, vaddr, seg_len, false);
+		print_hex_dump_debug("skb frag:     ", DUMP_PREFIX_OFFSET, 16, 1,
+				     vaddr, seg_len, false);
 		kunmap_atomic(vaddr);
 		len -= seg_len;
 		if (!len)
@@ -280,10 +237,6 @@ static inline void _rnp_skb_dump(const struct sk_buff *skb, bool full_pkt)
 
 #define TRACE() pr_debug("=[%s] %d ==\n", __func__, __LINE__)
 
-#define desc_hex_dump(msg, buf, len)
 #define rnpvf_skb_dump(skb, full_pkt)
-
-#define rx_debug_printk(fmt, args...)
-#define rx_buf_dump(a, b, c)
 
 #endif /* _RNPVF_DEFINES_H_ */
