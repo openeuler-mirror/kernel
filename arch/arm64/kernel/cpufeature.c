@@ -78,6 +78,7 @@
 #include <linux/percpu.h>
 #include <linux/init.h>
 #include <linux/libfdt.h>
+#include <linux/pbha.h>
 
 #include <asm/actlr.h>
 #include <asm/cpu.h>
@@ -2254,6 +2255,8 @@ found:
 	enable_pbha_inner();
 
 	pbha_enabled = true;
+
+	early_pbha_bit0_init();
 }
 
 /*
