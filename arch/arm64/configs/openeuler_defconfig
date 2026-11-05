@@ -6797,8 +6797,8 @@ CONFIG_SMMU_BYPASS_DEV=y
 #
 # Hisilicon SoC drivers
 #
-# CONFIG_HISI_HBMDEV is not set
-# CONFIG_HISI_HBMCACHE is not set
+CONFIG_HISI_HBMDEV=y
+CONFIG_HISI_HBMCACHE=m
 CONFIG_KUNPENG_HCCS=m
 CONFIG_HISI_SOC_CACHE=y
 CONFIG_HISI_SOC_HHA=m
@@ -6844,14 +6844,6 @@ CONFIG_QCOM_KRYO_L2_ACCESSORS=y
 # Xilinx SoC drivers
 #
 # end of Xilinx SoC drivers
-
-#
-# Hisilicon SoC drivers
-#
-CONFIG_KUNPENG_HCCS=m
-CONFIG_HISI_HBMDEV=y
-CONFIG_HISI_HBMCACHE=m
-# end of Hisilicon SoC drivers
 # end of SOC (System On Chip) specific Drivers
 
 CONFIG_PM_DEVFREQ=y
