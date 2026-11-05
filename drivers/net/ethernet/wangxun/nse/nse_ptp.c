@@ -1535,7 +1535,8 @@ void nse_ptp_init(struct nse_pf *pf)
 	ptp->debug_rx_ts = alloc_percpu(struct debug_rx_ts_s);
 #endif
 
-	dev_info(nse_pf_to_dev(pf), "PTP init successful\n");
+	nse_debug(hw, NSE_DBG_PTP, "PTP init successful\n");
+
 	return;
 
 err_exit:
@@ -1558,10 +1559,13 @@ err_exit:
 void nse_ptp_release(struct nse_pf *pf)
 {
 	struct nse_vsi *vsi;
+	struct nse_hw *hw;
 	char *dev_name;
 
 	if (!pf)
 		return;
+
+	hw = &pf->hw;
 
 	vsi = nse_get_main_vsi(pf);
 	if (!vsi || !test_bit(NSE_FLAG_PTP, pf->flags))
@@ -1605,6 +1609,6 @@ void nse_ptp_release(struct nse_pf *pf)
 		pf->ptp.info.pin_config = NULL;
 	}
 
-	dev_info(nse_pf_to_dev(pf), "removed Clock from %s\n", dev_name);
+	nse_debug(hw, NSE_DBG_PTP, "removed Clock from %s\n", dev_name);
 }
 

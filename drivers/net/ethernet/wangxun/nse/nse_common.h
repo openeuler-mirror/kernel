@@ -11,8 +11,6 @@
 
 #include "virtchnl.h"
 
-#define NSE_SQ_SEND_DELAY_TIME_US	100000		/* 100 ms */
-#define NSE_SQ_SEND_MAX_EXECUTE		3
 #define NSE_MAX_LAN_PORT_NUM		4
 
 void nse_set_umac_shared(struct nse_hw *hw);
@@ -280,6 +278,12 @@ nse_qos_db_flush_disable(struct nse_hw *hw);
 enum nse_status
 nse_aq_qos_db_get_stat_cnt(struct nse_hw *hw, struct nse_aqc_qos_db_stat_cnt *db_stat_cnt);
 
+enum nse_status
+nse_aq_qos_db_set_dscp_map(struct nse_hw *hw, struct nse_aqc_qos_db_dscp_map *map);
+
+enum nse_status
+nse_aq_qos_db_set_dscp_mode(struct nse_hw *hw, struct nse_aqc_qos_db_dscp_mode *cfg);
+
 void
 nse_qos_db_dump_stat_cnt(struct nse_hw *hw, struct nse_aqc_qos_db_stat_cnt *db_stat_cnt);
 
@@ -468,6 +472,10 @@ nse_lmac_phy_ephy_read_temperature(struct nse_hw *hw, int *temperature);
 
 void nse_lmac_phy_ephy_dump_info(struct nse_hw *hw);
 
+int nse_ethtool_get_module_info(struct net_device *netdev, struct ethtool_modinfo *modinfo);
+int nse_ethtool_get_module_eeprom(struct net_device *netdev, struct ethtool_eeprom *ee,
+				  u8 *data);
+
 void nse_dump_caps(struct nse_hw *hw);
 
 struct nse_q_ctx *
@@ -526,6 +534,9 @@ nse_aq_dbg_req_dummy_event(struct nse_hw *hw, u32 times, u32 interval);
 
 void
 nse_aq_handle_dbg_dummy_event(struct nse_hw *hw, struct nse_rq_event_info *event);
+
+void
+nse_aq_handle_fw_event(struct nse_hw *hw, struct nse_rq_event_info *event);
 
 enum nse_status
 nse_aq_dbg_rw_registers(struct nse_hw *hw, u32 reg_base_addr, u16 reg_cnt,

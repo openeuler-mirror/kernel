@@ -1208,6 +1208,12 @@ nse_fltr_set_vsi_promisc_flex(struct nse_hw *hw, u16 vsi_handle, u8 promisc_mask
 		dev_err(nse_pf_to_dev(pf),
 			"Error setting promisc mode on VSI %i for VID %u (rc=%d)\n",
 			nse_get_hw_vsi_num(hw, vsi_handle), vid, result);
+
+	if (result == NSE_ERR_ALREADY_EXISTS) {
+		dev_info(nse_pf_to_dev(pf), "[%s] already exist, consider OK\n", __func__);
+		result = NSE_SUCCESS;
+	}
+
 	return result;
 }
 
@@ -1299,6 +1305,12 @@ nse_fltr_set_vlan_vsi_promisc_flex(struct nse_hw *hw, struct nse_vsi *vsi, u8 pr
 		dev_err(nse_pf_to_dev(pf),
 			"Error setting promisc mode on VSI %i (rc=%d\n",
 			vsi->vsi_abs_num, result);
+
+	if (result == NSE_ERR_ALREADY_EXISTS) {
+		dev_info(nse_pf_to_dev(pf), "[%s] already exist, consider OK\n", __func__);
+		result = NSE_SUCCESS;
+	}
+
 	return result;
 }
 
@@ -1337,10 +1349,16 @@ nse_fltr_clear_vsi_promisc_flex(struct nse_hw *hw, u16 vsi_handle, u8 promisc_ma
 	enum nse_status result;
 
 	result = nse_clear_vsi_promisc(hw, vsi_handle, promisc_mask, vid);
-	if (result && result != NSE_ERR_ALREADY_EXISTS)
+	if (result && result != NSE_ERR_DOES_NOT_EXIST)
 		dev_err(nse_pf_to_dev(pf),
 			"Error clearing promisc mode on VSI %i for VID %u (rc=%d)\n",
 			nse_get_hw_vsi_num(hw, vsi_handle), vid, result);
+
+	if (result == NSE_ERR_DOES_NOT_EXIST) {
+		dev_info(nse_pf_to_dev(pf), "[%s] does not exist, consider OK\n", __func__);
+		result = NSE_SUCCESS;
+	}
+
 	return result;
 }
 
@@ -1422,10 +1440,16 @@ nse_fltr_clear_vlan_vsi_promisc_flex(struct nse_hw *hw, struct nse_vsi *vsi, u8 
 	enum nse_status result;
 
 	result = nse_set_vlan_vsi_promisc(hw, vsi->idx, promisc_mask, true);
-	if (result && result != NSE_ERR_ALREADY_EXISTS)
+	if (result && result != NSE_ERR_DOES_NOT_EXIST)
 		dev_err(nse_pf_to_dev(pf),
 			"Error setting promisc mode on VSI %i (rc=%d\n",
 			vsi->vsi_abs_num, result);
+
+	if (result == NSE_ERR_DOES_NOT_EXIST) {
+		dev_info(nse_pf_to_dev(pf), "[%s] does not exist, consider OK\n", __func__);
+		result = NSE_SUCCESS;
+	}
+
 	return result;
 }
 
@@ -1483,7 +1507,7 @@ nse_fltr_set_bmc_mac_event(struct nse_hw *hw,
 		return;
 	}
 
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 		"Receive a bmc mac event, total mac num is %d\n", mac_cnt);
 
 	for (i = 0; i < mac_cnt; i++) {
@@ -1492,7 +1516,7 @@ nse_fltr_set_bmc_mac_event(struct nse_hw *hw,
 
 		opcode = le16_to_cpu(elem->op);
 
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"\t Mac entry[%d]'s opcode is %d, address is %pM\n",
 				i, opcode, elem->mac);
 

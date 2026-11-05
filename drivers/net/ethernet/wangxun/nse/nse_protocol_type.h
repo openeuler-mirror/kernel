@@ -13,15 +13,25 @@
  */
 #define NSE_NUM_WORDS_RECIPE 5
 
-/* root recipe is not included, up to 5 sub recipes can be chained */
+/*word[4] is reserved for result index when serial recipe, except first recipe*/
+/*However, word[4] is unnecessary reserved in first serial recipe*/
+#define NSE_NUM_WORDS_SERIAL_RECIPE 4
+#define NSE_NUM_WORDS_SERIAL_FIRST_RECIPE 5
+#define NSE_MAX_CHAIN_SERIAL_RECIPE 10
+#define NSE_TWO_SERIAL_RECIPE_LKUP_WORDS \
+	(NSE_NUM_WORDS_SERIAL_FIRST_RECIPE + NSE_NUM_WORDS_SERIAL_RECIPE)
+#define NSE_MAX_SERIAL_CHAIN_LKUP_WORDS \
+	(NSE_NUM_WORDS_SERIAL_FIRST_RECIPE + \
+	 NSE_NUM_WORDS_SERIAL_RECIPE * (NSE_MAX_CHAIN_SERIAL_RECIPE - 1))
+
+#define NSE_MAX_CHAIN_SUB_NODES (NSE_MAX_CHAIN_SERIAL_RECIPE)
+#define NSE_MAX_CHAIN_WORDS (NSE_NUM_WORDS_RECIPE * NSE_MAX_CHAIN_SERIAL_RECIPE)
+
+/* root recipe is not included, up to 5 sub recipes can be chained, used for parallel recipes */
 #define NSE_MAX_CHAIN_SUB_RECIPE 5
-
-/* " + 1" means root recipe is included */
+/* " + 1" means root recipe is included, used for parallel recipes */
 #define NSE_MAX_CHAIN_RECIPE (NSE_MAX_CHAIN_SUB_RECIPE + 1)
-
-#define NSE_MAX_CHAIN_WORDS (NSE_NUM_WORDS_RECIPE * NSE_MAX_CHAIN_RECIPE)
-
-/* max match lkup word from user = 25 words (50 bytes)*/
+/* max match lkup word from user = 25 words (50 bytes), used for parallel recipes*/
 #define NSE_MAX_CHAIN_LKUP_WORDS (NSE_NUM_WORDS_RECIPE * NSE_MAX_CHAIN_SUB_RECIPE)
 
 /* Field vector index corresponding to chaining */

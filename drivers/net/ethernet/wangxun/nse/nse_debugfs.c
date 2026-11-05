@@ -226,9 +226,13 @@ nse_debugfs_pf_params_wfunc(struct file *filp, const char __user *buf,
 				txq->test_tcsum_pktcnt_cntdown = pf->test_tcsum_pktcnt_interval;
 			}
 		}
-	} else if (!strcmp(argv[0], "test_tcsum_force_l3")) {
+	}
+#if defined(NSE_DEBUG_EXT)
+	else if (!strcmp(argv[0], "test_tcsum_force_l3")) {
 		nse_lan_tcsum_force_l3 = new_val;
-	} else if (!strcmp(argv[0], "test_tso")) {
+	}
+#endif
+	else if (!strcmp(argv[0], "test_tso")) {
 		if (new_val && argc < 3) {	//need specify dport in argv[2]
 			goto bad_usage;
 		}
@@ -1555,6 +1559,9 @@ static ssize_t nse_debugfs_ctlq_stats_rfunc(struct file *filp,
 	desc += sprintf(buf + desc, "sq_fail_timeout_ns: %lld\n",
 		(unsigned long long)hw->controlq_stats.sq_fail_timeout_ns);
 
+	desc += sprintf(buf + desc, "sq_total_wait_cnt: %lld\n",
+		(unsigned long long)hw->controlq_stats.sq_total_wait_cnt);
+
 	desc += sprintf(buf + desc, "\nAverage (in ns):\n");
 
 	if (hw->controlq_stats.sq_total_ns && hw->controlq_stats.sq_total_cnt) {
@@ -1588,6 +1595,14 @@ static ssize_t nse_debugfs_ctlq_stats_rfunc(struct file *filp,
 		average_ns = 0;
 	}
 	desc += sprintf(buf + desc, "\t sq_fail_timeout_average: %ld\n", average_ns);
+
+	if (hw->controlq_stats.sq_total_wait_cnt && hw->controlq_stats.sq_total_cnt) {
+		average_ns = div64_ul(hw->controlq_stats.sq_total_wait_cnt,
+				      hw->controlq_stats.sq_total_cnt);
+	} else {
+		average_ns = 0;
+	}
+	desc += sprintf(buf + desc, "\t sq_wait_cnt_average: %ld\n", average_ns);
 
 	desc += sprintf(buf + desc, "aq_cmd_shutdown_cnt: %ld\n",
 		(unsigned long)hw->controlq_stats.aq_cmd_shutdown_cnt);
@@ -2194,6 +2209,7 @@ static const struct file_operations nse_debugfs_info_resource_fops = {
 	.llseek = default_llseek,
 };
 
+#if defined(NSE_DEBUG_EXT)
 static ssize_t
 nse_debugfs_ptp_cur_time_wfunc(struct file *filp, const char __user *buf,
 			  size_t count, loff_t *ppos)
@@ -2300,6 +2316,7 @@ static const struct file_operations nse_debugfs_ptp_cur_time_fops = {
 	.write = nse_debugfs_ptp_cur_time_wfunc,
 	.llseek = default_llseek,
 };
+#endif	/* #if defined(NSE_DEBUG_EXT) */
 
 static ssize_t
 nse_debugfs_ptp_info_wfunc(struct file *filp, const char __user *buf,
@@ -2512,7 +2529,6 @@ static void ptp_rx_dump_rx_ts(struct nse_pf *pf)
 		}
 	}
 }
-#endif
 
 static ssize_t
 nse_debugfs_ptp_rx_wfunc(struct file *filp, const char __user *buf,
@@ -2664,6 +2680,8 @@ static const struct file_operations nse_debugfs_ptp_tx_fops = {
 	.write = nse_debugfs_ptp_tx_wfunc,
 	.llseek = default_llseek,
 };
+
+#endif	/* NSE_DEBUG_EXT*/
 
 static ssize_t
 nse_debugfs_test_phy_startup_wfunc(struct file *filp, const char __user *buf,
@@ -7047,6 +7065,283 @@ void nse_debugfs_sw_fltr_antispoof_dis(struct nse_hw *hw)
 		dev_err(dev, "Fail to fltr_clear_antispoof\n");
 }
 
+void nse_debugfs_sw_fltr_mirror_rx_en_pf(struct nse_pf *pf)
+{
+	struct nse_vsi *vsi = NULL;
+	struct device *dev = nse_pf_to_dev(pf);
+	int err;
+
+	vsi = nse_get_main_vsi(pf);
+	if (!vsi) {
+		dev_err(dev, "[%s, %d] get main vsi err!\n", __func__, __LINE__);
+		return;
+	}
+
+	dev_info(dev, "Start to enable rx mirror on pf\n");
+
+	vsi->info.rpp_per_vsi_ctxt |= cpu_to_le32(((u32)vsi->vsi_abs_num <<
+						NSE_AQ_VSI_SW_FLAG_RPP_MIRR_VSI_S) &
+							NSE_AQ_VSI_SW_FLAG_RPP_MIRR_VSI_M);
+	err = nse_vsi_update_switch(vsi, nse_vsi_ctx_set_rx_mirror);
+	if (err)
+		dev_err(dev, "Failed to enable rx mirror on pf, abs vsi id = %d, rpp_per_vsi_ctxt = 0x%x\n",
+				vsi->vsi_abs_num, le32_to_cpu(vsi->info.rpp_per_vsi_ctxt));
+	else
+		dev_info(dev, "Success to enable rx mirror on pf, abs vsi id = %d, rpp_per_vsi_ctxt = 0x%x\n",
+				vsi->vsi_abs_num, le32_to_cpu(vsi->info.rpp_per_vsi_ctxt));
+}
+
+
+void nse_debugfs_sw_fltr_mirror_rx_dis_pf(struct nse_pf *pf)
+{
+	struct nse_vsi *vsi = NULL;
+	struct device *dev = nse_pf_to_dev(pf);
+	int err;
+
+	vsi = nse_get_main_vsi(pf);
+	if (!vsi) {
+		dev_err(dev, "[%s, %d] get main vsi err!\n", __func__, __LINE__);
+		return;
+	}
+
+	dev_info(dev, "Start to disable rx mirror on pf\n");
+
+	vsi->info.rpp_per_vsi_ctxt &= cpu_to_le32((u32)(~NSE_AQ_VSI_SW_FLAG_RPP_MIRR_VSI_M));
+	err = nse_vsi_update_switch(vsi, nse_vsi_ctx_clear_rx_mirror);
+	if (err)
+		dev_err(dev, "Failed to disable rx mirror on pf, abs vsi id = %d, rpp_per_vsi_ctxt = 0x%x\n",
+				vsi->vsi_abs_num, le32_to_cpu(vsi->info.rpp_per_vsi_ctxt));
+	else
+		dev_info(dev, "Success to disable rx mirror on pf, abs vsi id = %d, rpp_per_vsi_ctxt = 0x%x\n",
+				vsi->vsi_abs_num, le32_to_cpu(vsi->info.rpp_per_vsi_ctxt));
+}
+
+void nse_debugfs_sw_fltr_mirror_tx_en_pf(struct nse_pf *pf)
+{
+	struct nse_vsi *vsi = NULL;
+	struct device *dev = nse_pf_to_dev(pf);
+	int err;
+
+	vsi = nse_get_main_vsi(pf);
+	if (!vsi) {
+		dev_err(dev, "[%s, %d] get main vsi err!\n", __func__, __LINE__);
+		return;
+	}
+
+	err = nse_vsi_update_switch(vsi, nse_vsi_ctx_clear_src_prune_rxtx);
+	if (err) {
+		dev_err(dev, "[%s, %d] Failed to clear rxtx src prune before enable tx mirror\n",
+			__func__, __LINE__);
+		return;
+	}
+
+	dev_info(dev, "Start to enable tx mirror on pf\n");
+
+	vsi->info.tpp_per_vsi_ctxt |= cpu_to_le32(((u32)vsi->vsi_abs_num <<
+						NSE_AQ_VSI_SW_FLAG_TPP_MIRR_VSI_S) &
+							NSE_AQ_VSI_SW_FLAG_TPP_MIRR_VSI_M);
+	err = nse_vsi_update_switch(vsi, nse_vsi_ctx_set_tx_mirror);
+	if (err)
+		dev_err(dev, "Failed to enable tx mirror on pf, abs vsi id = %d, tpp_per_vsi_ctxt = 0x%x\n",
+				vsi->vsi_abs_num, le32_to_cpu(vsi->info.tpp_per_vsi_ctxt));
+	else
+		dev_info(dev, "Success to enable tx mirror on pf, abs vsi id = %d, tpp_per_vsi_ctxt = 0x%x\n",
+				vsi->vsi_abs_num, le32_to_cpu(vsi->info.tpp_per_vsi_ctxt));
+}
+
+void nse_debugfs_sw_fltr_mirror_tx_dis_pf(struct nse_pf *pf)
+{
+	struct nse_vsi *vsi = NULL;
+	struct device *dev = nse_pf_to_dev(pf);
+	int err;
+
+	vsi = nse_get_main_vsi(pf);
+	if (!vsi) {
+		dev_err(dev, "[%s, %d] get main vsi err!\n", __func__, __LINE__);
+		return;
+	}
+
+	err = nse_vsi_update_switch(vsi, nse_vsi_ctx_set_src_prune_rxtx);
+	if (err) {
+		dev_err(dev, "[%s, %d] Failed to set rxtx src prune before disable tx mirror\n",
+					__func__, __LINE__);
+		return;
+	}
+
+	dev_info(dev, "Start to disable tx mirror on pf\n");
+
+	vsi->info.tpp_per_vsi_ctxt &= cpu_to_le32((u32)(~NSE_AQ_VSI_SW_FLAG_TPP_MIRR_VSI_M));
+
+	err = nse_vsi_update_switch(vsi, nse_vsi_ctx_clear_tx_mirror);
+	if (err)
+		dev_err(dev, "Failed to disable tx mirror on pf, abs vsi id = %d, tpp_per_vsi_ctxt = 0x%x\n",
+				vsi->vsi_abs_num, le32_to_cpu(vsi->info.tpp_per_vsi_ctxt));
+	else
+		dev_info(dev, "Success to disable tx mirror on pf, abs vsi id = %d, tpp_per_vsi_ctxt = 0x%x\n",
+				vsi->vsi_abs_num, le32_to_cpu(vsi->info.tpp_per_vsi_ctxt));
+}
+
+void nse_debugfs_sw_fltr_mirror_rx_en_vf(struct nse_pf *pf, u32 vf_id)
+{
+	struct nse_vsi *vsi = NULL;
+	struct device *dev = nse_pf_to_dev(pf);
+	struct nse_vf *vf = NULL;
+	int err;
+
+	vf = nse_get_vf_by_id(pf, vf_id);
+	if (!vf) {
+		dev_err(dev,
+			"[%s, %d] Failed to get vf by id(%d)\n",
+			__func__, __LINE__, vf_id);
+		return;
+	}
+
+	vsi = nse_find_vsi_by_abs_id(pf, vf->vf_vsi_abs_id);
+	if (!vsi) {
+		dev_err(dev,
+			"[%s, %d] Failed to get vf vsi by abs id(%d)\n",
+			__func__, __LINE__, vf->vf_vsi_abs_id);
+		return;
+	}
+
+	dev_info(dev, "Start to enable rx mirror on vf\n");
+
+	vsi->info.rpp_per_vsi_ctxt |= cpu_to_le32(((u32)vsi->vsi_abs_num <<
+						NSE_AQ_VSI_SW_FLAG_RPP_MIRR_VSI_S) &
+							NSE_AQ_VSI_SW_FLAG_RPP_MIRR_VSI_M);
+	err = nse_vsi_update_switch(vsi, nse_vsi_ctx_set_rx_mirror);
+	if (err)
+		dev_err(dev, "Failed to enable rx mirror on vf, abs vsi id = %d, rpp_per_vsi_ctxt = 0x%x\n",
+				vsi->vsi_abs_num, le32_to_cpu(vsi->info.rpp_per_vsi_ctxt));
+	else
+		dev_info(dev, "Success to enable rx mirror on vf, abs vsi id = %d, rpp_per_vsi_ctxt = 0x%x\n",
+				vsi->vsi_abs_num, le32_to_cpu(vsi->info.rpp_per_vsi_ctxt));
+}
+
+
+void nse_debugfs_sw_fltr_mirror_rx_dis_vf(struct nse_pf *pf, u32 vf_id)
+{
+	struct nse_vsi *vsi = NULL;
+	struct device *dev = nse_pf_to_dev(pf);
+	struct nse_vf *vf = NULL;
+	int err;
+
+	vf = nse_get_vf_by_id(pf, vf_id);
+	if (!vf) {
+		dev_err(dev,
+			"[%s, %d] Failed to get vf by id(%d)\n",
+			__func__, __LINE__, vf_id);
+		return;
+	}
+
+	vsi = nse_find_vsi_by_abs_id(pf, vf->vf_vsi_abs_id);
+	if (!vsi) {
+		dev_err(dev,
+			"[%s, %d] Failed to get vf vsi by abs id(%d)\n",
+			__func__, __LINE__, vf->vf_vsi_abs_id);
+		return;
+	}
+
+	dev_info(dev, "Start to disable rx mirror on vf\n");
+
+	vsi->info.rpp_per_vsi_ctxt &= cpu_to_le32((u32)(~NSE_AQ_VSI_SW_FLAG_RPP_MIRR_VSI_M));
+	err = nse_vsi_update_switch(vsi, nse_vsi_ctx_clear_rx_mirror);
+	if (err)
+		dev_err(dev, "Failed to disable rx mirror on vf, abs vsi id = %d, rpp_per_vsi_ctxt = 0x%x\n",
+				vsi->vsi_abs_num, le32_to_cpu(vsi->info.rpp_per_vsi_ctxt));
+	else
+		dev_info(dev, "Success to disable rx mirror on vf, abs vsi id = %d, rpp_per_vsi_ctxt = 0x%x\n",
+				vsi->vsi_abs_num, le32_to_cpu(vsi->info.rpp_per_vsi_ctxt));
+}
+
+void nse_debugfs_sw_fltr_mirror_tx_en_vf(struct nse_pf *pf, u32 vf_id)
+{
+	struct nse_vsi *vsi = NULL;
+	struct device *dev = nse_pf_to_dev(pf);
+	struct nse_vf *vf = NULL;
+	int err;
+
+	vf = nse_get_vf_by_id(pf, vf_id);
+	if (!vf) {
+		dev_err(dev,
+			"[%s, %d] Failed to get vf by id(%d)\n",
+			__func__, __LINE__, vf_id);
+		return;
+	}
+
+	vsi = nse_find_vsi_by_abs_id(pf, vf->vf_vsi_abs_id);
+	if (!vsi) {
+		dev_err(dev,
+			"[%s, %d] Failed to get vf vsi by abs id(%d)\n",
+			__func__, __LINE__, vf->vf_vsi_abs_id);
+		return;
+	}
+
+	err = nse_vsi_update_switch(vsi, nse_vsi_ctx_clear_src_prune_rxtx);
+	if (err) {
+		dev_err(dev, "[%s, %d] Failed to clear rxtx src prune before enable tx mirror\n",
+			__func__, __LINE__);
+		return;
+	}
+
+	dev_info(dev, "Start to enable tx mirror on vf\n");
+
+	vsi->info.tpp_per_vsi_ctxt |= cpu_to_le32(((u32)vsi->vsi_abs_num <<
+						NSE_AQ_VSI_SW_FLAG_TPP_MIRR_VSI_S) &
+							NSE_AQ_VSI_SW_FLAG_TPP_MIRR_VSI_M);
+	err = nse_vsi_update_switch(vsi, nse_vsi_ctx_set_tx_mirror);
+	if (err)
+		dev_err(dev, "Failed to enable tx mirror on vf, abs vsi id = %d, tpp_per_vsi_ctxt = 0x%x\n",
+				vsi->vsi_abs_num, le32_to_cpu(vsi->info.tpp_per_vsi_ctxt));
+	else
+		dev_info(dev, "Success to enable tx mirror on vf, abs vsi id = %d, tpp_per_vsi_ctxt = 0x%x\n",
+				vsi->vsi_abs_num, le32_to_cpu(vsi->info.tpp_per_vsi_ctxt));
+}
+
+void nse_debugfs_sw_fltr_mirror_tx_dis_vf(struct nse_pf *pf, u32 vf_id)
+{
+	struct nse_vsi *vsi = NULL;
+	struct device *dev = nse_pf_to_dev(pf);
+	struct nse_vf *vf = NULL;
+	int err;
+
+	vf = nse_get_vf_by_id(pf, vf_id);
+	if (!vf) {
+		dev_err(dev,
+			"[%s, %d] Failed to get vf by id(%d)\n",
+			__func__, __LINE__, vf_id);
+		return;
+	}
+
+	vsi = nse_find_vsi_by_abs_id(pf, vf->vf_vsi_abs_id);
+	if (!vsi) {
+		dev_err(dev,
+			"[%s, %d] Failed to get vf vsi by abs id(%d)\n",
+			__func__, __LINE__, vf->vf_vsi_abs_id);
+		return;
+	}
+
+	err = nse_vsi_update_switch(vsi, nse_vsi_ctx_set_src_prune_rxtx);
+	if (err) {
+		dev_err(dev, "[%s, %d] Failed to set rxtx src prune before disable tx mirror\n",
+					__func__, __LINE__);
+		return;
+	}
+
+	dev_info(dev, "Start to disable tx mirror on pf\n");
+
+	vsi->info.tpp_per_vsi_ctxt &= cpu_to_le32((u32)(~NSE_AQ_VSI_SW_FLAG_TPP_MIRR_VSI_M));
+
+	err = nse_vsi_update_switch(vsi, nse_vsi_ctx_clear_tx_mirror);
+	if (err)
+		dev_err(dev, "Failed to disable tx mirror on pf, abs vsi id = %d, tpp_per_vsi_ctxt = 0x%x\n",
+				vsi->vsi_abs_num, le32_to_cpu(vsi->info.tpp_per_vsi_ctxt));
+	else
+		dev_info(dev, "Success to disable tx mirror on pf, abs vsi id = %d, tpp_per_vsi_ctxt = 0x%x\n",
+				vsi->vsi_abs_num, le32_to_cpu(vsi->info.tpp_per_vsi_ctxt));
+}
+
+
 void nse_debugfs_sw_fltr_dflt_vsi_en(struct nse_hw *hw)
 {
 	struct nse_pf *pf = (struct nse_pf *)hw->back;
@@ -7669,6 +7964,77 @@ nse_debugfs_sw_fltr_wfunc(struct file *filp, const char __user *buf,
 		else
 			goto bad_usage;
 
+	} else if (!strncmp(argv[0], "mirror", 6)) {	/*13. mirror*/
+		if (argc < 3)
+			goto bad_usage;
+
+		if (!strncmp(argv[1], "rx_en", 5)) {
+			if (!strncmp(argv[2], "pf", 2)) {
+				if (argc != 3)
+					goto bad_usage;
+
+				nse_debugfs_sw_fltr_mirror_rx_en_pf(pf);
+			} else if (!strncmp(argv[2], "vf", 2)) {
+				if (argc != 4)
+					goto bad_usage;
+
+				if (kstrtouint(argv[3], 10, &val))
+					goto bad_usage;
+
+				nse_debugfs_sw_fltr_mirror_rx_en_vf(pf, val);
+			} else
+				goto bad_usage;
+		} else if (!strncmp(argv[1], "rx_dis", 6)) {
+			if (!strncmp(argv[2], "pf", 2)) {
+				if (argc != 3)
+					goto bad_usage;
+
+				nse_debugfs_sw_fltr_mirror_rx_dis_pf(pf);
+			} else if (!strncmp(argv[2], "vf", 2)) {
+				if (argc != 4)
+					goto bad_usage;
+
+				if (kstrtouint(argv[3], 10, &val))
+					goto bad_usage;
+
+				nse_debugfs_sw_fltr_mirror_rx_dis_vf(pf, val);
+			} else
+				goto bad_usage;
+		} else if (!strncmp(argv[1], "tx_en", 5)) {
+			if (!strncmp(argv[2], "pf", 2)) {
+				if (argc != 3)
+					goto bad_usage;
+
+				nse_debugfs_sw_fltr_mirror_tx_en_pf(pf);
+			} else if (!strncmp(argv[2], "vf", 2)) {
+				if (argc != 4)
+					goto bad_usage;
+
+				if (kstrtouint(argv[3], 10, &val))
+					goto bad_usage;
+
+				nse_debugfs_sw_fltr_mirror_tx_en_vf(pf, val);
+			} else
+				goto bad_usage;
+		} else if (!strncmp(argv[1], "tx_dis", 6)) {
+			if (!strncmp(argv[2], "pf", 2)) {
+				if (argc != 3)
+					goto bad_usage;
+
+				nse_debugfs_sw_fltr_mirror_tx_dis_pf(pf);
+			} else if (!strncmp(argv[2], "vf", 2)) {
+				if (argc != 4)
+					goto bad_usage;
+
+				if (kstrtouint(argv[3], 10, &val))
+					goto bad_usage;
+
+				nse_debugfs_sw_fltr_mirror_tx_dis_vf(pf, val);
+			} else
+				goto bad_usage;
+		} else
+			goto bad_usage;
+
 	} else if (argc == 2 && !strncmp(argv[0], "dump", 4)) { /*dump cmd*/
 
 		if (!strncmp(argv[1], "mac", 3))
@@ -7728,6 +8094,14 @@ bad_usage:
 	dev_info(dev, "\t src_prune rx_dis\n");
 	dev_info(dev, "\t src_prune tx_en\n");
 	dev_info(dev, "\t src_prune tx_dis\n");
+	dev_info(dev, "\t mirror rx_en pf\n");
+	dev_info(dev, "\t mirror rx_dis pf\n");
+	dev_info(dev, "\t mirror tx_en pf\n");
+	dev_info(dev, "\t mirror tx_dis pf\n");
+	dev_info(dev, "\t mirror rx_en vf $VFID\n");
+	dev_info(dev, "\t mirror rx_dis vf $VFID\n");
+	dev_info(dev, "\t mirror tx_en vf $VFID\n");
+	dev_info(dev, "\t mirror tx_dis vf $VFID\n");
 	dev_info(dev, "dump available commands(dump software DB):\n");
 	dev_info(dev, "\t dump mac\n");
 	dev_info(dev, "\t dump vlan\n");
@@ -13980,6 +14354,7 @@ nse_dump_qvec(struct nse_q_vector *qvec)
 	dev_info(dev, "\t itr_mode: %d (0 for static, 1 for dynamic)\n", qvec->itr_mode);
 	dev_info(dev, "dyn_itr_refresh: %d\n", qvec->dyn_itr_refresh);
 	dev_info(dev, "dyn_itr_val (us): %d\n", (qvec->dyn_itr_val << 1));
+	dev_info(dev, "best_local_cpu_id: %d\n", qvec->best_local_cpu_id);
 
 	dev_info(dev, "rx_rings:\n");
 	ring = qvec->rx.ring;
@@ -15505,10 +15880,6 @@ void nse_debugfs_pf_init(struct nse_pf *pf)
 
 	(void)debugfs_create_file("ptp_info", 0600, pf->pf_dbgfs_dir,
 				  pf, &nse_debugfs_ptp_info_fops);
-	(void)debugfs_create_file("ptp_cur_time", 0600, pf->pf_dbgfs_dir,
-				  pf, &nse_debugfs_ptp_cur_time_fops);
-	(void)debugfs_create_file("ptp_rx", 0600, pf->pf_dbgfs_dir, pf, &nse_debugfs_ptp_rx_fops);
-	(void)debugfs_create_file("ptp_tx", 0600, pf->pf_dbgfs_dir, pf, &nse_debugfs_ptp_tx_fops);
 
 	if (hw->port_info->lmac_phy_info.static_flags & LMAC_PHY_STATIC_FLAG_USE_TEST_PHY) {
 		(void)debugfs_create_file("test_phy_startup", 0600, pf->pf_dbgfs_dir,
@@ -15574,15 +15945,18 @@ void nse_debugfs_pf_init(struct nse_pf *pf)
 	}
 
 #if defined(NSE_DEBUG_EXT)
+	(void)debugfs_create_file("ptp_cur_time", 0600, pf->pf_dbgfs_dir,
+				  pf, &nse_debugfs_ptp_cur_time_fops);
+	(void)debugfs_create_file("ptp_rx", 0600, pf->pf_dbgfs_dir, pf, &nse_debugfs_ptp_rx_fops);
+	(void)debugfs_create_file("ptp_tx", 0600, pf->pf_dbgfs_dir, pf, &nse_debugfs_ptp_tx_fops);
+
 	(void)debugfs_create_file("lan_ena_dis_rxq_txq_many", 0600, pf->pf_dbgfs_dir,
 				  pf, &nse_debugfs_lan_ena_dis_rxq_txq_many);
 	(void)debugfs_create_file("lan_get_status_rxq_txq_many", 0600, pf->pf_dbgfs_dir,
 				  pf, &nse_debugfs_lan_get_status_rxq_txq_many);
 	(void)debugfs_create_file("lan_get_ctx_rxq_txq_many", 0600, pf->pf_dbgfs_dir,
 				  pf, &nse_debugfs_lan_get_ctx_rxq_txq_many);
-#endif
 
-#if defined(NSE_DEBUG_EXT)
 	if (nse_lan_debug_hw_qstat)
 		(void)debugfs_create_file("lan_hw_qstat", 0600, pf->pf_dbgfs_dir,
 					  pf, &nse_debugfs_lan_hw_qstat_fops);

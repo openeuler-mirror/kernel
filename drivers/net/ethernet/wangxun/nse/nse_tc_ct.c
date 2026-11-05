@@ -155,8 +155,8 @@ nse_parse_tc_ct_match(struct net_device *filter_dev, struct nse_vsi *vsi,
 	fltr->ct_state = ctstate;
 	fltr->ct_state_mask = ctstate_mask;
 
-	netdev_info(filter_dev, "Start to set ct_state match:\n");
-	netdev_info(filter_dev, "\t ct_state value(0x%x)/mask(0x%x)\n",
+	nse_debug(hw, NSE_DBG_SW, "Start to set ct_state match:\n");
+	nse_debug(hw, NSE_DBG_SW, "\t ct_state value(0x%x)/mask(0x%x)\n",
 		ctstate, ctstate_mask);
 
 	return 0;
@@ -311,6 +311,7 @@ nse_tc_ct_parse_match(struct nse_tc_ct_priv *ct_priv,
 	struct nse_tc_flower_lyr_2_4_hdrs *headers;
 	struct nse_pf *pf = ct_priv->pf;
 	u16 n_proto_mask = 0, n_proto_key = 0, addr_type = 0;
+	struct nse_hw *hw = &pf->hw;
 
 	headers = &fltr->outer_headers;
 	fltr->tunnel_type = TNL_LAST;
@@ -330,14 +331,14 @@ nse_tc_ct_parse_match(struct nse_tc_ct_priv *ct_priv,
 		} else {
 			fltr->flags |= NSE_TC_FLWR_FIELD_ETH_TYPE;
 		}
-		dev_info(nse_pf_to_dev(pf),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] Start to set KEY_BASIC match:\n",
 				__func__, __LINE__);
-		dev_info(nse_pf_to_dev(pf),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] \t ethernet_type value(0x%x)/mask(0x%x)\n",
 				__func__, __LINE__,
 				cpu_to_be16(n_proto_key), cpu_to_be16(n_proto_mask));
-		dev_info(nse_pf_to_dev(pf),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] \t ip_type value(0x%x)/mask(0x%x)\n",
 				__func__, __LINE__,
 				match.key->ip_proto, match.mask->ip_proto);
@@ -360,14 +361,14 @@ nse_tc_ct_parse_match(struct nse_tc_ct_priv *ct_priv,
 
 		flow_rule_match_ipv4_addrs(rule, &match);
 
-		dev_info(nse_pf_to_dev(pf),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] Start to set KEY_IPV4_ADDRS match\n",
 				__func__, __LINE__);
-		dev_info(nse_pf_to_dev(pf),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] \t ipv4 dst addrs key(%pI4)/mask(%pI4)\n",
 				__func__, __LINE__,
 				&match.key->dst, &match.mask->dst);
-		dev_info(nse_pf_to_dev(pf),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] \t ipv4 src addrs key(%pI4)/mask(%pI4)\n",
 				__func__, __LINE__,
 				&match.key->src, &match.mask->src);
@@ -381,14 +382,14 @@ nse_tc_ct_parse_match(struct nse_tc_ct_priv *ct_priv,
 
 		flow_rule_match_ipv6_addrs(rule, &match);
 
-		dev_info(nse_pf_to_dev(pf),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] Start to set KEY_IPV6_ADDRS match\n",
 				__func__, __LINE__);
-		dev_info(nse_pf_to_dev(pf),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] \t ipv6 dst addrs key(%pI6c)/mask(%pI6c)\n",
 				__func__, __LINE__,
 				&match.key->dst, &match.mask->dst);
-		dev_info(nse_pf_to_dev(pf),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] \t ipv6 src addrs key(%pI6c)/mask(%pI6c)\n",
 				__func__, __LINE__,
 				&match.key->src, &match.mask->src);
@@ -403,18 +404,18 @@ nse_tc_ct_parse_match(struct nse_tc_ct_priv *ct_priv,
 
 		flow_rule_match_ports(rule, &match);
 
-		dev_info(nse_pf_to_dev(pf),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] Start to set KEY_PORTS match\n",
 				__func__, __LINE__);
-		dev_info(nse_pf_to_dev(pf),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] \t ip protocol = 0x%x\n",
 				__func__, __LINE__,
 				headers->l3_key.ip_proto);
-		dev_info(nse_pf_to_dev(pf),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] \t src port key(0x%x)/mask(0x%x)\n",
 				__func__, __LINE__,
 				match.key->src, match.mask->src);
-		dev_info(nse_pf_to_dev(pf),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] \t dst port key(0x%x)/mask(0x%x)\n",
 				__func__, __LINE__,
 				match.key->dst, match.mask->dst);
@@ -435,10 +436,10 @@ nse_tc_ct_parse_match(struct nse_tc_ct_priv *ct_priv,
 
 		flow_rule_match_tcp(rule, &match);
 
-		dev_info(nse_pf_to_dev(pf),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] Start to set TCP FLAG match:\n",
 				__func__, __LINE__);
-		dev_info(nse_pf_to_dev(pf),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] \t tcp_flag value(0x%x)/mask(0x%x)\n",
 				__func__, __LINE__,
 				match.key->flags, match.mask->flags);
@@ -637,6 +638,7 @@ nse_tc_ct_block_flow_offload_add(struct nse_ct_ft *ft,
 	struct nse_ct_entry *entry;
 	struct nse_pf *pf = ct_priv->pf;
 	int err = 0;
+	struct nse_hw *hw = &pf->hw;
 
 	meta_action = nse_tc_ct_get_ct_metadata_action(flow_rule);
 	if (!meta_action)
@@ -672,17 +674,17 @@ nse_tc_ct_block_flow_offload_add(struct nse_ct_ft *ft,
 		goto err_set_tuple;
 	}
 
-	dev_info(nse_pf_to_dev(pf),
+	nse_debug(hw, NSE_DBG_SW,
 		"[%s, %d] Start to add a established ct entry, zone = %d, cookie = %lx\n",
 		__func__, __LINE__, entry->tuple.zone, entry->cookie);
 	if (entry->tuple.addr_type == FLOW_DISSECTOR_KEY_IPV4_ADDRS) {
-		dev_info(nse_pf_to_dev(pf),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] \t tuple is ipv4 type: ip_proto = %d, sip = %pI4, dip = %pI4, sport = %d, dport = %d\n",
 			__func__, __LINE__, entry->tuple.ip_proto, &entry->tuple.ip.src_v4,
 			&entry->tuple.ip.dst_v4, be16_to_cpu(entry->tuple.port.src),
 			be16_to_cpu(entry->tuple.port.dst));
 	} else if (entry->tuple.addr_type == FLOW_DISSECTOR_KEY_IPV6_ADDRS) {
-		dev_info(nse_pf_to_dev(pf),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] \t tuple is ipv6 type: ip_proto = %d, sip = %pI6c, dip = %pI6c, sport = %d, dport = %d\n",
 			__func__, __LINE__, entry->tuple.ip_proto, &entry->tuple.ip.src_v6,
 			&entry->tuple.ip.dst_v6, be16_to_cpu(entry->tuple.port.src),
@@ -756,15 +758,16 @@ nse_tc_ct_block_flow_offload_del(struct nse_ct_ft *ft,
 	unsigned long cookie = flow->cookie;
 	struct nse_ct_entry *entry;
 	struct nse_pf *pf = ct_priv->pf;
+	struct nse_hw *hw = &pf->hw;
 
-	dev_info(nse_pf_to_dev(pf),
+	nse_debug(hw, NSE_DBG_SW,
 		"[%s, %d] Start to del a established ct entry, cookie = %lx\n",
 		__func__, __LINE__, cookie);
 
 	spin_lock_bh(&ct_priv->ht_lock);
 	entry = rhashtable_lookup_fast(&ft->ct_entries_ht, &cookie, ct_ht_params);
 	if (!entry) {
-		dev_info(nse_pf_to_dev(pf),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] ct entry is not existed in hashtable, cookie = %lx\n",
 			__func__, __LINE__, cookie);
 		spin_unlock_bh(&ct_priv->ht_lock);
@@ -772,7 +775,7 @@ nse_tc_ct_block_flow_offload_del(struct nse_ct_ft *ft,
 	}
 
 	if (!nse_tc_ct_entry_valid(entry)) {
-		dev_info(nse_pf_to_dev(pf),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] ct entry is not valid in hashtable, cookie = %lx\n",
 			__func__, __LINE__, cookie);
 		spin_unlock_bh(&ct_priv->ht_lock);
@@ -1006,6 +1009,7 @@ __nse_tc_ct_add_fltr(struct nse_vsi *vsi,	struct nse_tc_flower_fltr *fltr)
 	struct nse_ct_ft *ft;
 	u32 fte_id = 1;
 	int err = 0;
+	struct nse_hw *hw = &pf->hw;
 
 	if (!ct_priv->pf)
 		return -EOPNOTSUPP;
@@ -1043,7 +1047,7 @@ __nse_tc_ct_add_fltr(struct nse_vsi *vsi,	struct nse_tc_flower_fltr *fltr)
 	}
 	ct_flow->fte_id = (u16)fte_id;
 
-	dev_info(nse_pf_to_dev(pf), "Allocated fte id = %d\n", fte_id);
+	nse_debug(hw, NSE_DBG_SW, "Allocated fte id = %d\n", fte_id);
 
 	/* 3. add post ct fltr */
 	memcpy(&ct_flow->post_ct->action, &fltr->action,
@@ -1122,6 +1126,7 @@ nse_tc_ct_add_fltr(struct nse_vsi *vsi, struct nse_tc_flower_fltr *fltr)
 	struct nse_tc_flower_action *tc_action = &fltr->action;
 	bool clear_action = tc_action->ct_action & TCA_CT_ACT_CLEAR;
 	int err = 0;
+	struct nse_hw *hw = &pf->hw;
 
 	if (!ct_priv->pf) {
 		dev_err(nse_pf_to_dev(pf),
@@ -1129,7 +1134,7 @@ nse_tc_ct_add_fltr(struct nse_vsi *vsi, struct nse_tc_flower_fltr *fltr)
 		return -EOPNOTSUPP;
 	}
 
-	dev_info(nse_pf_to_dev(pf),
+	nse_debug(hw, NSE_DBG_SW,
 			"Start to add tc flower fltr with ct action\n");
 
 	mutex_lock(&ct_priv->control_lock);
@@ -1185,11 +1190,12 @@ nse_tc_ct_del_fltr(struct nse_vsi *vsi,	struct nse_tc_flower_fltr *fltr)
 	struct nse_tc_ct_flow *ct_flow = fltr->ct_flow;
 	struct nse_pf *pf = (struct nse_pf *)vsi->back;
 	struct nse_tc_ct_priv *ct_priv = &pf->switchdev.ct_priv;
+	struct nse_hw *hw = &pf->hw;
 
 	if (!ct_flow)
 		return;
 
-	dev_info(nse_pf_to_dev(pf),
+	nse_debug(hw, NSE_DBG_SW,
 			"Start to delete tc conntrack fltr\n");
 
 	mutex_lock(&ct_priv->control_lock);

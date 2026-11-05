@@ -8,7 +8,7 @@
 
 void nse_rx_ring_sync_tail_after_enable(struct nse_ring *rx_ring)
 {
-	writel_relaxed(rx_ring->next_to_use, rx_ring->tail);
+	writel(rx_ring->next_to_use, rx_ring->tail);
 }
 
 /**
@@ -32,7 +32,7 @@ void nse_release_rx_desc(struct nse_ring *rx_ring, u16 val)
 		 * such as IA-64).
 		 */
 		wmb();
-		writel_relaxed(val, rx_ring->tail);
+		writel(val, rx_ring->tail);
 	}
 }
 
@@ -155,7 +155,7 @@ nse_rx_csum(struct nse_ring *ring, struct sk_buff *skb,
 {
 	struct nse_rx_ptype_decoded decoded;
 	u16 rx_status0;
-	bool ipv4, ipv6;
+	bool o_ipv6, i_ipv6;
 
 	rx_status0 = le16_to_cpu(rx_desc->wb.status_error0);
 
@@ -173,30 +173,31 @@ nse_rx_csum(struct nse_ring *ring, struct sk_buff *skb,
 	if (!(decoded.known && decoded.outer_ip))
 		return;
 
-	ipv4 = (decoded.outer_ip == NSE_RX_PTYPE_OUTER_IP) &&
-	       (decoded.outer_ip_ver == NSE_RX_PTYPE_OUTER_IPV4);
-	ipv6 = (decoded.outer_ip == NSE_RX_PTYPE_OUTER_IP) &&
-	       (decoded.outer_ip_ver == NSE_RX_PTYPE_OUTER_IPV6);
+	o_ipv6 = (decoded.outer_ip == NSE_RX_PTYPE_OUTER_IP) &&
+		 (decoded.outer_ip_ver == NSE_RX_PTYPE_OUTER_IPV6);
+	i_ipv6 = (decoded.tunnel_end_prot == NSE_RX_PTYPE_TUNNEL_END_IPV6);
 
 #ifdef NSE_ADD_PROBES
 	nse_rx_extra_counters(ring->vsi, rx_status0, decoded.inner_prot, ipv4);
 #endif
 
-	if (ipv4 && (rx_status0 & (BIT(NSE_RXD_STATUS0_XSUM_IPE_S) |
-				   BIT(NSE_RXD_STATUS0_XSUM_EIPE_S))))
+	/* non-tnl ipv4 pkt - ipv4 csum bad
+	 * tnl pkt - outer ipv4 csum bad or|and inner ipv4 csum bad
+	 */
+	if (rx_status0 & (NSE_RXD_STATUS0_XSUM_IPE_M | NSE_RXD_STATUS0_XSUM_EIPE_M))
 		goto checksum_fail;
 
-	if (ipv6 && (rx_status0 & (BIT(NSE_RXD_STATUS0_IPV6EXADD_S))))
+	if ((o_ipv6 || i_ipv6) && (rx_status0 & NSE_RXD_STATUS0_IPV6EXADD_M))
 		goto checksum_fail;
 
 	/* check for L4 errors and handle packets that were not able to be
 	 * checksummed due to arrival speed
 	 */
-	if (rx_status0 & BIT(NSE_RXD_STATUS0_XSUM_L4E_S))
+	if (rx_status0 & NSE_RXD_STATUS0_XSUM_L4E_M)
 		goto checksum_fail;
 
 	/* check for outer UDP checksum error in tunneled packets */
-	if (rx_status0 & BIT(NSE_RXD_STATUS0_XSUM_EUDPE_S))
+	if (rx_status0 & NSE_RXD_STATUS0_XSUM_EUDPE_M)
 		goto checksum_fail;
 
 	/* If there is an outer header present that might contain a checksum
@@ -341,10 +342,12 @@ nse_receive_skb(struct nse_ring *rx_ring, struct sk_buff *skb, u16 vlan_tag,
 #endif /* NSE_ADD_PROBES */
 	}
 
-	if (!nse_polling_mod)
-		napi_gro_receive(&rx_ring->q_vector->napi, skb);
-	else
+#if defined(NSE_DEBUG_EXT)
+	if (nse_polling_mod)
 		netif_receive_skb(skb);
+	else
+#endif
+		napi_gro_receive(&rx_ring->q_vector->napi, skb);
 }
 
 /**
@@ -363,7 +366,7 @@ void nse_xdp_ring_update_tail(struct nse_ring *xdp_ring)
 	 * know there are new descriptors to fetch.
 	 */
 	wmb();
-	writel_relaxed(xdp_ring->next_to_use, xdp_ring->tail);
+	writel(xdp_ring->next_to_use, xdp_ring->tail);
 }
 
 /* kind of like __vlan_get_protocol(), but operate on raw packet data instead of skb,

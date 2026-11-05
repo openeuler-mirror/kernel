@@ -3,6 +3,7 @@
 
 #include <net/gre.h>
 #include <net/vxlan.h>
+#include <net/geneve.h>
 #include <net/mpls.h>
 #include <linux/mpls.h>
 
@@ -519,6 +520,7 @@ void locate_final_l3_l4_hdr(struct sk_buff *skb,
 
 	struct vxlanhdr *vxh = NULL;
 	struct gre_base_hdr *greh = NULL;
+	struct genevehdr *genvh = NULL;
 
 	struct iphdr *i_iph = NULL;
 	struct ipv6hdr *i_ip6h = NULL;
@@ -717,9 +719,16 @@ found_inner_l3:
 		if (o_udph->dest == cpu_to_be16(4789) ||		//vxlan port defined in RFC
 				o_udph->dest == cpu_to_be16(4790) ||	//vxlan-gpe
 				//linux 'vxlan_port' defined in vxlan.c
-				o_udph->dest == cpu_to_be16(8472)) {
-			vxh = (struct vxlanhdr *)(o_udph + 1);
-			i_eh = (struct ethhdr *)(vxh + 1);
+				o_udph->dest == cpu_to_be16(8472) ||
+				o_udph->dest == cpu_to_be16(6081)) {	/* geneve */
+
+			if (o_udph->dest == cpu_to_be16(6081)) {
+				genvh = (struct genevehdr *)(o_udph + 1);
+				i_eh = (struct ethhdr *)(genvh + 1);
+			} else {
+				vxh = (struct vxlanhdr *)(o_udph + 1);
+				i_eh = (struct ethhdr *)(vxh + 1);
+			}
 
 found_inner_l2:
 			if (i_eh->h_proto == cpu_to_be16(ETH_P_IP)) {

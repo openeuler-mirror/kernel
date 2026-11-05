@@ -124,7 +124,7 @@ static enum nse_status nse_init_fltr_mgmt_flex(struct nse_hw *hw)
 		return status;
 	}
 
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] nse_init_def_lut is done\n", __func__, __LINE__);
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] nse_init_def_lut is done\n", __func__, __LINE__);
 
 	status = nse_init_def_profiles(hw, &hw->switch_info->profile_list);
 	if (status) {
@@ -133,8 +133,8 @@ static enum nse_status nse_init_fltr_mgmt_flex(struct nse_hw *hw)
 		return status;
 	}
 
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] nse_init_def_profiles is done\n",
-		 __func__, __LINE__);
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] nse_init_def_profiles is done\n",
+		  __func__, __LINE__);
 
 	nse_get_prof_index_max(hw);
 
@@ -558,7 +558,7 @@ enum nse_status nse_init_hw(struct nse_hw *hw)
 	if (status) {
 		dev_err(dev, "[%s] FAIL: lmac_phy_init_early(), status=%d(%s)\n",
 					__func__, status, nse_stat_str(status));
-		goto err_unroll_sw_stats;
+		goto err_unroll_fltr_mgmt_struct;
 	}
 
 	/* Get MAC information */
@@ -566,7 +566,7 @@ enum nse_status nse_init_hw(struct nse_hw *hw)
 	if (status) {
 		dev_err(dev, "[%s] FAIL: manage_mac_read(factory_addr) fail: %d (%s)\n",
 					__func__, status, nse_stat_str(status));
-		goto err_unroll_sw_stats;
+		goto err_unroll_fltr_mgmt_struct;
 	}
 
 	if (is_valid_ether_addr(factory_addr) &&
@@ -591,14 +591,12 @@ enum nse_status nse_init_hw(struct nse_hw *hw)
 		if (status) {
 			dev_err(dev, "[%s] FAIL: aq_manage_mac_write(lmac_addr, wol_addr), status=%d(%s)\n",
 						__func__, status, nse_stat_str(status));
-			goto err_unroll_sw_stats;
+			goto err_unroll_fltr_mgmt_struct;
 		}
 	}
 
 	return 0;
 
-err_unroll_sw_stats:
-	nse_cleanup_sw_stats(hw);
 err_unroll_fltr_mgmt_struct:
 	nse_cleanup_fltr_mgmt_struct(hw);
 err_unroll_sched:
@@ -649,10 +647,10 @@ void nse_high_reset_detect_on_fwmng(struct nse_hw *hw, struct nse_fwmng_cmd_rsp_
 	struct nse_pf *pf = (struct nse_pf *)hw->back;
 	struct device *dev = nse_pf_to_dev(pf);
 
-	dev_info(dev, "[%s] detect high_reset (type=0x%X, who=0x%X, reset_status=0x%X)\n",
+	dev_info(dev, "[%s] detect high_reset (type=0x%X, who=0x%X, reset_status=0x%X, reset_reason=0x%X)\n",
 						__func__,
 						cmd_rsp->rsp_buf[0], cmd_rsp->rsp_buf[1],
-							cmd_rsp->rsp_buf[2]);
+							cmd_rsp->rsp_buf[2], cmd_rsp->rsp_buf[3]);
 
 	pf->high_reset_oicr_swint_count++;
 
@@ -719,15 +717,17 @@ enum nse_status nse_reset_wait_complete(struct nse_hw *hw, bool fwmng_locked,
 					fwmng_rsp.rsp_buf[2] == 0) {
 					fwmng_clear_rsp(hw, true, NSE_FWMNG_CLEAR_RSP_VALID_ONLY);
 
-					dev_info(dev, "[%s, %d] saw fwmng_rsp high_reset DONE, reset_type=%d, wait_times=%d times\n",
-						 __func__, __LINE__, fwmng_rsp.rsp_buf[0], cnt);
+					nse_debug(hw, NSE_DBG_SYS, "[%s, %d] saw fwmng_rsp high_reset DONE, reset_type=%d, wait_times=%d times\n",
+						  __func__, __LINE__, fwmng_rsp.rsp_buf[0], cnt);
 					break;
 				}
 		}
 
 		if (cnt == high_reset_wait_timeout) {
-			dev_err(dev, "[%s, %d] timeout wait for fwmng_rsp high_reset DONE\n",
-							__func__, __LINE__);
+			dev_err(dev, "[%s, %d] timeout wait for fwmng_rsp high_reset DONE, rsp=0x%08X, rsp_buf[0,1,2,3]={0x%08X, 0x%08X, 0x%08X, 0x%08X}\n",
+				__func__, __LINE__,
+				fwmng_rsp.rsp, fwmng_rsp.rsp_buf[0], fwmng_rsp.rsp_buf[1],
+				fwmng_rsp.rsp_buf[2], fwmng_rsp.rsp_buf[3]);
 			status = NSE_ERR_RESET_FAILED;
 			goto out;
 		}
@@ -739,8 +739,8 @@ enum nse_status nse_reset_wait_complete(struct nse_hw *hw, bool fwmng_locked,
 
 			/* underlying-FW/HW-cleanup done, FW clear this bit */
 			if (!(reg & NSE_REG_CTL_FRTRIG_STATUS_M)) {
-				dev_info(dev, "[%s, %d] saw PF FRTRIG cleared by high_reset underlying-cleanup, wait_times=%d\n",
-								__func__, __LINE__, cnt);
+				nse_debug(hw, NSE_DBG_SYS, "[%s, %d] saw PF FRTRIG cleared by high_reset underlying-cleanup, wait_times=%d\n",
+					  __func__, __LINE__, cnt);
 				break;
 			}
 
@@ -761,8 +761,8 @@ enum nse_status nse_reset_wait_complete(struct nse_hw *hw, bool fwmng_locked,
 
 			if ((reg & NSE_REG_ST_MNG_INIT_DN_M) &&
 			    !(reg & NSE_REG_ST_MNG_INIT_FAIL_M)) {
-				dev_info(dev, "[%s, %d] saw ST->mng_init status OK, wait_times=%d\n",
-								__func__, __LINE__, cnt);
+				nse_debug(hw, NSE_DBG_SYS, "[%s, %d] saw ST->mng_init status OK, wait_times=%d\n",
+					  __func__, __LINE__, cnt);
 				break;
 			}
 
@@ -843,10 +843,12 @@ enum nse_status nse_reset(struct nse_hw *hw, enum nse_reset_req req)
 
 	nse_debug(hw, NSE_DBG_SYS, "[%s] reset_type=%d\n", __func__, req);
 
+#if defined(NSE_DEBUG_EXT)
 	if (nse_no_reset) {
 		nse_debug(hw, NSE_DBG_SYS, "[%s] return early with no_reset=true\n", __func__);
 		return NSE_SUCCESS;
 	}
+#endif
 
 	switch (req) {
 	case NSE_RESET_PFR:
@@ -892,6 +894,15 @@ static void nse_print_aqm_error(struct nse_hw *hw, struct nse_fwmng_cmd_rsp_gene
 					cmd_rsp->rsp_buf[0]);
 }
 
+static void nse_print_mng_fw_evt_hex(struct nse_hw *hw, struct nse_fwmng_cmd_rsp_generic *cmd_rsp)
+{
+	struct device *dev = nse_hw_to_dev(hw);
+
+	dev_info(dev, "receive fw_evt_hex: %08X %08X %08X %08X\n",
+					cmd_rsp->rsp_buf[0], cmd_rsp->rsp_buf[1],
+					cmd_rsp->rsp_buf[2], cmd_rsp->rsp_buf[3]);
+}
+
 void nse_misc_intr_handle_oicr_swint(struct nse_hw *hw)
 {
 	struct nse_pf *pf = (struct nse_pf *)hw->back;
@@ -912,6 +923,8 @@ void nse_misc_intr_handle_oicr_swint(struct nse_hw *hw)
 		nse_high_reset_detect_on_fwmng(hw, &cmd_rsp);
 	else if (rsp_id == fwmng_evt_id_aqm_err)
 		nse_print_aqm_error(hw, &cmd_rsp);
+	else if (rsp_id == fwmng_evt_id_fw_evt_hex)
+		nse_print_mng_fw_evt_hex(hw, &cmd_rsp);
 	else
 		nse_debug(hw, NSE_DBG_SYS, "[%s, %d] unknown rsp_id = 0x%X\n",
 			  __func__, __LINE__, rsp_id);
@@ -943,6 +956,8 @@ void nse_oicr_sw_int_tmp_poll_timer(struct timer_list *t)
 		}
 	} else if (rsp_id == fwmng_evt_id_aqm_err) {
 		nse_print_aqm_error(hw, &cmd_rsp);
+	} else if (rsp_id == fwmng_evt_id_fw_evt_hex) {
+		nse_print_mng_fw_evt_hex(hw, &cmd_rsp);
 	}
 
 	mod_timer(&pf->oicr_sw_int_tmp_poll_timer, (jiffies + 128));
@@ -1192,8 +1207,8 @@ nse_dis_vsi_txq(struct nse_port_info *pi, u16 vsi_handle, u8 tc,
 
 	node = nse_sched_find_node_by_tnid(pi->sched_info.root, q_tnid);
 	if (!node) {
-		dev_warn(dev, "WARN: node (q_tnid=%d) not exist in SW-tree --- maybe freeing a VF-VSI without TXQ LEAF-node allocated yet\n",
-						q_tnid);
+		nse_debug(hw, NSE_DBG_SCHED, "WARN: node (q_tnid=%d) not exist in SW-tree --- maybe freeing a VF-VSI without TXQ LEAF-node allocated yet\n",
+			  q_tnid);
 		goto out;
 	}
 
@@ -1412,8 +1427,8 @@ nse_dis_vsi_rdma_qset(struct nse_port_info *pi, u32 leaf_node_tnid,
 
 	node = nse_sched_find_node_by_tnid(pi->sched_info.root, leaf_node_tnid);
 	if (!node) {
-		dev_err(dev, "FAIL: node (leaf_node_tnid=%d) not exist in SW-tree --- maybe freeing a VF-VSI without RDMA LEAF-node allocated yet\n",
-					leaf_node_tnid);
+		nse_debug(hw, NSE_DBG_SCHED, "WARN: node (leaf_node_tnid=%d) not exist in SW-tree --- maybe freeing a VF-VSI without RDMA LEAF-node allocated yet\n",
+			  leaf_node_tnid);
 		goto out;
 	}
 
@@ -2787,7 +2802,7 @@ nse_parse_func_caps(struct nse_hw *hw, struct nse_aqc_discover_func_caps *aqc_fu
 			hw->func_caps.first_irq = le32_to_cpu(cap_elem->val1) & 0xFFFF;
 			hw->func_caps.last_irq = le32_to_cpu(cap_elem->val2) & 0xFFFF;
 
-		} else if (cap_elem->cap_id == NSE_AQC_CAP_ID_VF_SPACE) {
+		} else if (cap_elem_id == NSE_AQC_CAP_ID_VF_SPACE) {
 			hw->func_caps.vf_space_valid = le32_to_cpu(cap_elem->val0) & 0x1;
 			hw->func_caps.first_vf = le32_to_cpu(cap_elem->val1) & 0xFF;
 			hw->func_caps.vf_num = le32_to_cpu(cap_elem->val2) & 0xFF;
@@ -3645,6 +3660,32 @@ nse_aq_qos_db_write_up_enforcement(struct nse_hw *hw,
 	return __nse_aq_qos_db_conf_up_enforcement(hw, 1, cmd_data);
 }
 
+enum nse_status
+nse_aq_qos_db_set_dscp_map(struct nse_hw *hw, struct nse_aqc_qos_db_dscp_map *map)
+{
+	struct nse_aq_desc desc;
+
+	nse_fill_dflt_direct_cmd_desc(&desc, NSE_AQ_OPC_CATEGORY_QOS,
+				      NSE_AQ_OPC_QOS_DB_SET_DSCP_MAP);
+
+	nse_aqc_fill_generic_common_hdr_dft(hw, &map->hdr, NSE_VSI_INVAL_ID);
+
+	return nse_aq_send_cmd(hw, &desc, map, sizeof(*map), NULL);
+}
+
+enum nse_status
+nse_aq_qos_db_set_dscp_mode(struct nse_hw *hw, struct nse_aqc_qos_db_dscp_mode *cfg)
+{
+	struct nse_aq_desc desc;
+
+	nse_fill_dflt_direct_cmd_desc(&desc, NSE_AQ_OPC_CATEGORY_QOS,
+				      NSE_AQ_OPC_QOS_DB_DSCP_ENA_DIS);
+
+	nse_aqc_fill_generic_common_hdr_dft(hw, &cfg->hdr, NSE_VSI_INVAL_ID);
+
+	return nse_aq_send_cmd(hw, &desc, cfg, sizeof(*cfg), NULL);
+}
+
 /**
  * nse_aq_clear_pxe_mode
  * @hw: pointer to the HW struct
@@ -4341,6 +4382,84 @@ nse_aq_handle_dbg_dummy_event(struct nse_hw *hw, struct nse_rq_event_info *event
 	dev_info(dev, "    %02X %02X %02X %02X %02X %02X %02X %02X\n",
 						msg[0], msg[1], msg[2], msg[3], msg[4],
 							msg[5], msg[6], msg[7]);
+}
+
+void
+nse_aq_handle_fw_event(struct nse_hw *hw, struct nse_rq_event_info *event)
+{
+	struct device *dev = nse_hw_to_dev(hw);
+	u16 msglen = event->msg_len;
+	u32 data_len, event_type;
+	u32 val;
+	u32 *val_p;
+	int i, hex_cnt;
+	char tmp_str[128] = {0};
+	struct nse_aqc_fw_event *evt = (struct nse_aqc_fw_event *)event->msg_buf;
+
+	event_type = le32_to_cpu(evt->event_type);
+	data_len = le32_to_cpu(evt->data_len);
+
+	dev_info(dev, "receive a fw_event (event_type=%d, data_len=%d\n",
+		 event_type, data_len);
+
+	/* sanity check */
+	if (msglen != (sizeof(*evt) + data_len)) {
+		dev_info(dev,
+			 "\t fw_event BAD length, (msglen=%d) != (sizeof(evt)=%zu + data_len=%d)\n",
+			 msglen, sizeof(*evt), data_len);
+		goto out;
+	}
+
+	if (event_type == FW_EVENT_TYPE_LOG_STR) {
+		/* sanity check */
+		val = strlen((const char *)evt->data);
+		if (val >= data_len) {
+			dev_info(dev,
+				 "\t fw_event - LOG_STR - BAD length: strlen=%d >= data_len=%d\n",
+				 val, data_len);
+			goto out;
+		}
+
+		dev_info(dev, "\t fw_event - LOG_STR: %s\n",
+			 (const char *)evt->data);
+	} else if (event_type == FW_EVENT_TYPE_LOG_HEX) {
+		hex_cnt = data_len / sizeof(u32);
+
+		dev_info(dev, "\t fw_event - LOG_HEX: hex_cnt=%d\n", hex_cnt);
+
+		val_p = (u32 *)evt->data;
+		i = 0;
+
+		if (hex_cnt >= 8) {
+			do {
+				dev_info(dev,
+					 " %08X %08X %08X %08X %08X %08X %08X %08X\n",
+					 val_p[0], val_p[1], val_p[2], val_p[3],
+					 val_p[4], val_p[5], val_p[6], val_p[7]);
+				i += 8;
+				val_p += 8;
+			} while (i <= (hex_cnt - 8));
+		}
+
+		if (i < hex_cnt) {
+			hex_cnt -= i;	/* remaining, must be less than 8 */
+
+			val = 0;	/* used as iterator */
+
+			for (i = 0; i < hex_cnt; i++)
+				val += sprintf(tmp_str + val, " %08X", val_p[i]);
+
+			val += sprintf(tmp_str + val, "\n");
+
+			dev_info(dev, "%s\n", tmp_str);
+		}
+	} else {
+		dev_info(dev, "\t fw_event - unknown type: %d, dump nothing\n",
+			 event_type);
+	}
+
+out:
+	return;
 }
 
 enum nse_status

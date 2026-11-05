@@ -19,7 +19,7 @@ extern struct hlist_head lpm_fltr_list;
 #define NSE_LPM_FLWR_DYNAMIC_SUPPORT	1
 
 #define NSE_MAX_LPM_LKUP_WORDS 19
-#define NSE_MAX_LPM_LKUP_LUTS  NSE_MAX_SUB_NODE_NUM
+#define NSE_MAX_LPM_LKUP_LUTS  NSE_MAX_CHAIN_RECIPE
 #define NSE_ALL_MATCH_PREFIX_LEN	72
 
 /* Mapping of software defined LUT ID to word_num , max prefix len, min prefix len... */

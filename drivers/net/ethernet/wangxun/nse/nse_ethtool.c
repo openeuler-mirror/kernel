@@ -468,7 +468,7 @@ static int nse_diag_send(struct nse_ring *tx_ring, u8 *data, u16 size)
 	if (tx_ring->next_to_use >= tx_ring->count)
 		tx_ring->next_to_use = 0;
 
-	writel_relaxed(tx_ring->next_to_use, tx_ring->tail);
+	writel(tx_ring->next_to_use, tx_ring->tail);
 
 	/* Wait until the packets get transmitted to the receive queue. */
 	usleep_range(1000, 2000);
@@ -2679,6 +2679,8 @@ nse_get_per_q_coalesce(struct net_device *netdev, u32 q_num,
 	return __nse_get_coalesce(netdev, ec, q_num);
 }
 
+extern const struct nse_dim nse_dim_profile[];
+
 /**
  * nse_set_rc_coalesce - set ITR values for specific ring container
  * @c_type: container type, Rx or Tx
@@ -2736,7 +2738,32 @@ nse_set_qvec_coalesce(struct ethtool_coalesce *ec,
 	}
 
 	if (use_adaptive_coalesce) {
-		q_vector->itr_mode = ITR_DYNAMIC;
+
+		if (!ITR_IS_DYNAMIC(q_vector)) {
+			cancel_work_sync(&q_vector->dim.work);
+
+			q_vector->dim.profile_ix = NSE_DIM_DEFAULT_PROFILE_IX;
+
+			/* The interrupt handler itself will take care of programming
+			 * ITR values based on the values we have entered
+			 * into the q_vector, no need to write the values now.
+			 */
+			WRITE_ONCE(q_vector->dyn_itr_val,
+				   (nse_dim_profile[NSE_DIM_DEFAULT_PROFILE_IX].itr >>
+				    NSE_ITR_GRAN_S));
+			/* make sure dyn_itr_val is visible before the refresh flag */
+			wmb();
+			WRITE_ONCE(q_vector->dyn_itr_refresh, true);
+			WRITE_ONCE(q_vector->dim.state, DIM_APPLY_NEW_PROFILE);
+
+			q_vector->itr_mode = ITR_DYNAMIC;
+
+			/* like nse_init_moderation(), no need to schedule, because later
+			 * nse_net_dim() would internally schedule
+			 */
+			//schedule_work(&q_vector->dim.work);
+		}
+
 	} else {
 		q_vector->itr_mode = ITR_STATIC;
 		/* store user facing value how it was set */
@@ -2745,14 +2772,17 @@ nse_set_qvec_coalesce(struct ethtool_coalesce *ec,
 		if (ec->rx_coalesce_usecs_high != q_vector->intrl)
 			q_vector->intrl = ec->rx_coalesce_usecs_high;
 
-		/* write the change to the register */
-		nse_write_itr(q_vector, coalesce_usecs);
+		cancel_work_sync(&q_vector->dim.work);
 
-		/* force writes to take effect immediately, the flush shouldn't
-		 * be done in the functions above because the intent is for
-		 * them to do lazy writes.
+		/* The interrupt handler itself will take care of programming
+		 * ITR values based on the values we have entered
+		 * into the q_vector, no need to write the values now.
 		 */
-		nse_flush(&pf->hw);
+		WRITE_ONCE(q_vector->dyn_itr_val,
+			   (ITR_REG_ALIGN(coalesce_usecs) >> NSE_ITR_GRAN_S));
+		/* make sure dyn_itr_val is visible before the refresh flag */
+		wmb();
+		WRITE_ONCE(q_vector->dyn_itr_refresh, true);
 	}
 
 	/* if use_adaptive_coalesce == true, then intrl need to restore to 4 us.
@@ -2930,6 +2960,8 @@ static const struct ethtool_ops nse_ethtool_ops = {
 	.set_per_queue_coalesce	= nse_set_per_q_coalesce,
 	.get_fecparam		= nse_get_fecparam,
 	.set_fecparam		= nse_set_fecparam,
+	.get_module_info	= nse_ethtool_get_module_info,
+	.get_module_eeprom	= nse_ethtool_get_module_eeprom,
 };
 
 /**

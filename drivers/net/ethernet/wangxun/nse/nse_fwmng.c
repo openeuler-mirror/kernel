@@ -21,6 +21,10 @@ u32 fwmng_cmd_id_high_reset =
 u32 fwmng_evt_id_aqm_err =
 		MAKE_FWMNG_CMD_CODE(NSE_FWMNG_CMD_CATEGORY_RESET, NSE_FWMNG_CMD_AQM_ERROR);
 
+/* cmd = 0x62 */
+u32 fwmng_evt_id_fw_evt_hex =
+		MAKE_FWMNG_CMD_CODE(NSE_FWMNG_CMD_CATEGORY_MISC, NSE_FWMNG_CMD_FW_EVT_HEX);
+
 #define FWMNG_DEFAULT_WAIT_TICK_US				50
 /*  below are base values, would be scaled by *= nse_timeout_scale in
  * __fwmng_send_req_read_rsp_unlocked()

@@ -52,6 +52,35 @@ static int nse_vsi_requires_vf(enum nse_vsi_type vsi_type)
 	}
 }
 
+int nse_get_num_local_cpus(struct device *dev)
+{
+	int node = dev_to_node(dev);
+
+	if (node == NUMA_NO_NODE)
+		return cpumask_weight(cpu_online_mask);
+	else
+		return cpumask_weight(cpumask_of_node(node));
+}
+
+int nse_normalize_cpu_count(int num_cpus)
+{
+	if (num_cpus > MAX_DEFAULT_VECTORS)
+		num_cpus = MAX_DEFAULT_VECTORS;
+	else if (num_cpus < MIN_DEFAULT_VECTORS)
+		num_cpus = MIN_DEFAULT_VECTORS;
+	return num_cpus;
+}
+
+const struct cpumask *nse_get_local_cpus_mask(struct device *dev)
+{
+	int node = dev_to_node(dev);
+
+	if (node == NUMA_NO_NODE)
+		return cpu_online_mask;
+	else
+		return cpumask_of_node(node);
+}
+
 /**
  * nse_vsi_setup_q_map - Setup a VSI queue map
  * @vsi: the VSI being configured
@@ -146,9 +175,10 @@ static int nse_vsi_setup_q_map(struct nse_vsi *vsi)
 
 	if (rx_count != vsi->num_rxq ||
 		tx_count != vsi->num_txq) {
-		dev_info(dev, "VSI->num_rxq,txq (enabled RXQ/TXQ count) changes, may due to DCB TC changes\n");
-		dev_info(dev, "\t old num_rxq=%u, num_txq=%u", vsi->num_rxq, vsi->num_txq);
-		dev_info(dev, "\t new num_rxq=%u, num_txq=%u", rx_count, tx_count);
+		nse_debug(hw, NSE_DBG_LAN, "VSI->num_rxq,txq (enabled RXQ/TXQ count) changes, may due to DCB TC changes\n");
+		nse_debug(hw, NSE_DBG_LAN, "\t old num_rxq=%u, num_txq=%u",
+			  vsi->num_rxq, vsi->num_txq);
+		nse_debug(hw, NSE_DBG_LAN, "\t new num_rxq=%u, num_txq=%u", rx_count, tx_count);
 	}
 
 	vsi->num_rxq = rx_count;
@@ -169,10 +199,10 @@ static int nse_vsi_setup_q_map(struct nse_vsi *vsi)
 			vsi->num_txcq = vsi->num_q_vectors;
 	}
 
-	nse_debug(hw, NSE_DBG_SYS, "%s: VSI: type=%s, alloc_rxq=%u, num_rxq=%u, alloc_txq=%u, num_txq=%u\n",
-				__func__,
-				nse_vsi_type_str(vsi->type),
-				vsi->alloc_rxq, vsi->num_rxq, vsi->alloc_txq, vsi->num_txq);
+	nse_debug(hw, NSE_DBG_LAN, "%s: VSI: type=%s, alloc_rxq=%u, num_rxq=%u, alloc_txq=%u, num_txq=%u\n",
+		  __func__,
+		  nse_vsi_type_str(vsi->type),
+		  vsi->alloc_rxq, vsi->num_rxq, vsi->alloc_txq, vsi->num_txq);
 
 	return 0;
 }
@@ -2197,9 +2227,9 @@ int nse_vsi_ctrl_all_rx_rings(struct nse_vsi *vsi, bool ena)
 	int ret = 0;
 	u16 i;
 
-	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi=(rel_id:%d, abs_id=%d), ena=%d\n",
-								__func__, vsi->vsi_rel_num,
-									vsi->vsi_abs_num, ena);
+	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi (idx=%d, rel_id=%d, abs_id=%d), ena=%d\n",
+							__func__, vsi->idx, vsi->vsi_rel_num,
+								vsi->vsi_abs_num, ena);
 
 	for (i = 0; i < vsi->num_rxq; i++) {
 		ret = nse_vsi_ctrl_one_rx_ring(vsi, ena, i);
@@ -2609,17 +2639,6 @@ void nse_vsi_cfg_msix(struct nse_vsi *vsi)
 
 		nse_cfg_itr(hw, q_vector);
 
-		/* Both Transmit Queue Interrupt Cause Control register
-		 * and Receive Queue Interrupt Cause control register
-		 * expects MSIX_INDX field to be the vector index
-		 * within the function space and not the absolute
-		 * vector index across PF or across device.
-		 * For SR-IOV VF VSIs queue vector index always starts
-		 * with 1 since first vector index(0) is used for OICR
-		 * in VF space. Since VMDq and other PF VSIs are within
-		 * the PF function space, use the vector index that is
-		 * tracked for this PF.
-		 */
 		for (q = 0; q < q_vector->num_ring_tx; q++) {
 			nse_cfg_txq_interrupt(vsi, txq, reg_idx);
 			txq++;
@@ -2643,9 +2662,9 @@ int nse_vsi_start_all_rx_rings(struct nse_vsi *vsi)
 	struct nse_pf *pf = vsi->back;
 	struct nse_hw *hw = &pf->hw;
 
-	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi=(rel_id:%d, abs_id=%d)\n",
-								__func__, vsi->vsi_rel_num,
-									vsi->vsi_abs_num);
+	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi (idx=%d, rel_id=%d, abs_id=%d)\n",
+							__func__, vsi->idx, vsi->vsi_rel_num,
+								vsi->vsi_abs_num);
 
 	if (nse_lan_bulk_ena_dis)
 		return nse_vsi_ctrl_all_rx_rings_bulk(vsi, true);
@@ -2676,10 +2695,9 @@ int nse_vsi_stop_all_rx_rings(struct nse_vsi *vsi, bool rdm_stopped)
 	struct nse_pf *pf = vsi->back;
 	struct nse_hw *hw = &pf->hw;
 
-	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi=(rel_id:%d, abs_id=%d), rdm_stopped=%d\n",
-								__func__, vsi->vsi_rel_num,
-									vsi->vsi_abs_num,
-									rdm_stopped);
+	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi (idx=%d, rel_id=%d, abs_id=%d), rdm_stopped=%d\n",
+							__func__, vsi->idx, vsi->vsi_rel_num,
+								vsi->vsi_abs_num, rdm_stopped);
 
 	if (rdm_stopped)
 		return 0;
@@ -2779,10 +2797,9 @@ nse_vsi_stop_tx_rings(struct nse_vsi *vsi,
 	int q_idx;
 	int ret = 0;
 
-	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi=(rel_id:%d, abs_id=%d), num_txq=%d\n",
-								__func__, vsi->vsi_rel_num,
-									vsi->vsi_abs_num,
-									vsi->num_txq);
+	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi (idx=%d, rel_id=%d, abs_id=%d), num_txq=%d\n",
+							__func__, vsi->idx, vsi->vsi_rel_num,
+								vsi->vsi_abs_num, vsi->num_txq);
 
 	if (!vsi->num_txq)
 		goto out;
@@ -2857,10 +2874,9 @@ nse_vsi_start_lan_tx_rings(struct nse_vsi *vsi)
 	u16 *irqll = NULL;
 	int ret = 0;
 
-	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi=(rel_id:%d, abs_id=%d), num_txq=%d\n",
-								__func__, vsi->vsi_rel_num,
-									vsi->vsi_abs_num,
-									vsi->num_txq);
+	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi (idx=%d, rel_id=%d, abs_id=%d), num_txq=%d\n",
+							__func__, vsi->idx, vsi->vsi_rel_num,
+								vsi->vsi_abs_num, vsi->num_txq);
 
 	if (!vsi->num_txq)
 		goto out;
@@ -2928,11 +2944,10 @@ nse_vsi_stop_lan_tx_rings(struct nse_vsi *vsi, bool tdm_stopped)
 	u16 firstq, lastq, i;
 	int ret = 0;
 
-	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi=(rel_id:%d, abs_id=%d), num_txq=%d, tdm_stopped=%d\n",
-								__func__, vsi->vsi_rel_num,
-									vsi->vsi_abs_num,
-									vsi->num_txq, tdm_stopped);
-
+	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi (idx=%d, rel_id=%d, abs_id=%d, type=%d), num_txq=%d, tdm_stopped=%d\n",
+							__func__, vsi->idx, vsi->vsi_rel_num,
+								vsi->vsi_abs_num, vsi->type,
+								vsi->num_txq, tdm_stopped);
 	if (!vsi->num_txq)
 		goto out;
 
@@ -3008,10 +3023,9 @@ int nse_vsi_start_xdp_tx_rings(struct nse_vsi *vsi)
 	u16 *irqll = NULL;
 	int ret = 0;
 
-	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi=(rel_id:%d, abs_id=%d), num_xdp_txq=%d\n",
-								__func__, vsi->vsi_rel_num,
-									vsi->vsi_abs_num,
-									vsi->num_xdp_txq);
+	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi (idx=%d, rel_id=%d, abs_id=%d), num_xdp_txq=%d\n",
+							__func__, vsi->idx, vsi->vsi_rel_num,
+								vsi->vsi_abs_num, vsi->num_xdp_txq);
 
 	if (!vsi->num_xdp_txq)
 		goto out;
@@ -3163,6 +3177,10 @@ int nse_vsi_cfg_rxqs(struct nse_vsi *vsi)
 	u16 i;
 	int err;
 
+	nse_debug(&vsi->back->hw, NSE_DBG_LAN, "[%s] vsi (idx=%d, rel_id=%d, abs_id=%d)\n",
+							__func__, vsi->idx, vsi->vsi_rel_num,
+								vsi->vsi_abs_num);
+
 	if (vsi->type == NSE_VSI_VF)
 		goto setup_rings;
 
@@ -3234,6 +3252,10 @@ fail_cleanup:
  */
 int nse_vsi_cfg_lan_txqs(struct nse_vsi *vsi)
 {
+	nse_debug(&vsi->back->hw, NSE_DBG_LAN, "[%s] vsi (idx=%d, rel_id=%d, abs_id=%d)\n",
+							__func__, vsi->idx, vsi->vsi_rel_num,
+								vsi->vsi_abs_num);
+
 	return nse_vsi_cfg_txqs(vsi, vsi->tx_rings);
 }
 
@@ -3248,6 +3270,10 @@ int nse_vsi_cfg_xdp_txqs(struct nse_vsi *vsi)
 {
 	int ret;
 	int i;
+
+	nse_debug(&vsi->back->hw, NSE_DBG_LAN, "[%s] vsi (idx=%d, rel_id=%d, abs_id=%d)\n",
+							__func__, vsi->idx, vsi->vsi_rel_num,
+								vsi->vsi_abs_num);
 
 	ret = nse_vsi_cfg_txqs(vsi, vsi->xdp_rings);
 	if (ret)
@@ -3267,6 +3293,10 @@ int nse_vsi_cfg_lan_txcqs(struct nse_vsi *vsi)
 	if (!vsi->sw_conf.lan_tx_use_cq)
 		return 0;
 
+	nse_debug(&vsi->back->hw, NSE_DBG_LAN, "[%s] vsi (idx=%d, rel_id=%d, abs_id=%d)\n",
+							__func__, vsi->idx, vsi->vsi_rel_num,
+								vsi->vsi_abs_num);
+
 	nse_for_each_lan_txcq(vsi, i) {
 		err = nse_vsi_cfg_lan_txcq(vsi->txcq_rings[i]);
 		if (err)
@@ -3281,13 +3311,11 @@ int nse_vsi_start_lan_txcq_rings(struct nse_vsi *vsi)
 	struct nse_pf *pf = vsi->back;
 	struct nse_hw *hw = &pf->hw;
 
-	nse_debug(hw, NSE_DBG_LAN, "[%s]: vsi=(rel_id:%d, abs_id=%d), lan_tx_use_cq=%d\n",
-								__func__, vsi->vsi_rel_num,
-									vsi->vsi_abs_num,
-									vsi->sw_conf.lan_tx_use_cq);
-
 	if (!vsi->sw_conf.lan_tx_use_cq)
 		return 0;
+
+	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi (idx=%d, rel_id=%d, abs_id=%d)\n",
+					__func__, vsi->idx, vsi->vsi_rel_num, vsi->vsi_abs_num);
 
 	return nse_vsi_ctrl_all_txcq_rings(vsi, true);
 }
@@ -3300,10 +3328,8 @@ int nse_vsi_stop_lan_txcq_rings(struct nse_vsi *vsi)
 	if (!vsi->sw_conf.lan_tx_use_cq)
 		return 0;
 
-	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi=(rel_id:%d, abs_id=%d), lan_tx_use_cq=%d\n",
-								__func__, vsi->vsi_rel_num,
-									vsi->vsi_abs_num,
-									vsi->sw_conf.lan_tx_use_cq);
+	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi (idx=%d, rel_id=%d, abs_id=%d)\n",
+					__func__, vsi->idx, vsi->vsi_rel_num, vsi->vsi_abs_num);
 
 	return nse_vsi_ctrl_all_txcq_rings(vsi, false);
 }
@@ -3623,6 +3649,10 @@ void nse_vsi_free_irq(struct nse_vsi *vsi)
 	int base = vsi->base_vector;
 	int i;
 
+	nse_debug(&pf->hw, NSE_DBG_LAN, "[%s] vsi (idx=%d, rel_id=%d, abs_id=%d, type=%d), irqs_ready=%d\n",
+				__func__, vsi->idx, vsi->vsi_rel_num,
+				vsi->vsi_abs_num, vsi->type, vsi->irqs_ready);
+
 	if (!vsi->q_vectors || !vsi->irqs_ready)
 		return;
 
@@ -3632,8 +3662,10 @@ void nse_vsi_free_irq(struct nse_vsi *vsi)
 
 	vsi->irqs_ready = false;
 
+#if defined(NSE_DEBUG_EXT)
 	if (nse_no_irq)
 		return;
+#endif
 
 	nse_for_each_q_vector(vsi, i) {
 		u16 vector = i + base;
@@ -3729,10 +3761,11 @@ void nse_vsi_close(struct nse_vsi *vsi)
  */
 int nse_ena_vsi_under_pf_drv(struct nse_hw *hw, struct nse_vsi *vsi, bool locked)
 {
+	struct device *dev = nse_hw_to_dev(hw);
 	int err = 0;
 
-	nse_debug(hw, NSE_DBG_SYS, "[%s] vsi (rel_id=%d, abs_id=%d)\n",
-					__func__, vsi->vsi_rel_num, vsi->vsi_abs_num);
+	nse_debug(hw, NSE_DBG_SYS, "[%s] vsi (idx=%d, rel_id=%d, abs_id=%d, type=%d)\n",
+				__func__, vsi->idx, vsi->vsi_rel_num, vsi->vsi_abs_num, vsi->type);
 
 	if (!nse_is_vsi_type_under_pf_drv(vsi->type))
 		return 0;
@@ -3763,6 +3796,10 @@ int nse_ena_vsi_under_pf_drv(struct nse_hw *hw, struct nse_vsi *vsi, bool locked
 	} else if (vsi->type == NSE_VSI_OFFLOAD_MACVLAN) {
 		err = nse_vsi_open(vsi);
 	}
+
+	if (err)
+		dev_err(dev, "[%s] FAIL: vsi (idx=%d, rel_id=%d, abs_id=%d, type=%d), err=%d\n",
+			__func__, vsi->idx, vsi->vsi_rel_num, vsi->vsi_abs_num, vsi->type, err);
 
 	return err;
 }
@@ -3824,6 +3861,9 @@ void nse_vsi_dis_irq(struct nse_vsi *vsi)
 	struct nse_hw *hw = &pf->hw;
 	int i;
 
+	nse_debug(hw, NSE_DBG_LAN, "[%s] vsi (idx=%d, rel_id=%d, abs_id=%d, type=%d)\n",
+				__func__, vsi->idx, vsi->vsi_rel_num, vsi->vsi_abs_num, vsi->type);
+
 	/* disable each interrupt */
 	nse_for_each_q_vector(vsi, i) {
 		if (!vsi->q_vectors[i])
@@ -3841,8 +3881,10 @@ void nse_vsi_dis_irq(struct nse_vsi *vsi)
 	if (nse_is_vsi_type_under_vf_drv(vsi->type))
 		return;
 
+#if defined(NSE_DEBUG_EXT)
 	if (nse_no_irq)
 		return;
+#endif
 
 	nse_for_each_q_vector(vsi, i)
 		synchronize_irq(nse_get_irq_num(pf, i + base));
@@ -4909,6 +4951,43 @@ void nse_vsi_ctx_clear_vlan_rx_filter(struct nse_vsi_ctx *ctx)
 }
 
 /**
+ * nse_vsi_ctx_set_tx_mirror - set tpp mirror on VSI
+ * @ctx: pointer to VSI ctx structure
+ */
+void nse_vsi_ctx_set_tx_mirror(struct nse_vsi_ctx *ctx)
+{
+	ctx->info.tpp_per_vsi_ctxt |= cpu_to_le32(NSE_AQ_VSI_SW_FLAG_TPP_MIRR_EN);
+}
+
+/**
+ * nse_vsi_ctx_clear_tx_mirror - turn off tpp mirror on VSI
+ * @ctx: pointer to VSI ctx structure
+ */
+void nse_vsi_ctx_clear_tx_mirror(struct nse_vsi_ctx *ctx)
+{
+	ctx->info.tpp_per_vsi_ctxt &= cpu_to_le32(~NSE_AQ_VSI_SW_FLAG_TPP_MIRR_EN);
+}
+
+/**
+ * nse_vsi_ctx_set_rx_mirror - set rpp mirror on VSI
+ * @ctx: pointer to VSI ctx structure
+ */
+void nse_vsi_ctx_set_rx_mirror(struct nse_vsi_ctx *ctx)
+{
+	ctx->info.rpp_per_vsi_ctxt |= cpu_to_le32(NSE_AQ_VSI_SW_FLAG_RPP_MIRR_EN);
+}
+
+/**
+ * nse_vsi_ctx_clear_rx_mirror - turn off rpp mirror on VSI
+ * @ctx: pointer to VSI ctx structure
+ */
+void nse_vsi_ctx_clear_rx_mirror(struct nse_vsi_ctx *ctx)
+{
+	ctx->info.rpp_per_vsi_ctxt &= cpu_to_le32(~NSE_AQ_VSI_SW_FLAG_RPP_MIRR_EN);
+}
+
+
+/**
  * nse_vsi_ctx_set_tx_ovs_miss - set tpp ovs miss on VSI
  * @ctx: pointer to VSI ctx structure
  */
@@ -4995,6 +5074,26 @@ void nse_vsi_ctx_set_src_prune_tx(struct nse_vsi_ctx *ctx)
  */
 void nse_vsi_ctx_clear_src_prune_tx(struct nse_vsi_ctx *ctx)
 {
+	ctx->info.tpp_per_vsi_ctxt &= cpu_to_le32(~NSE_AQ_VSI_SW_FLAG_TPP_SRC_PRUNE);
+}
+
+/**
+ * nse_vsi_ctx_set_src_prune_rxtx - set rpp/tpp src_prune on VSI
+ * @ctx: pointer to VSI ctx structure
+ */
+void nse_vsi_ctx_set_src_prune_rxtx(struct nse_vsi_ctx *ctx)
+{
+	ctx->info.rpp_per_vsi_ctxt |= cpu_to_le32(NSE_AQ_VSI_SW_FLAG_RPP_SRC_PRUNE);
+	ctx->info.tpp_per_vsi_ctxt |= cpu_to_le32(NSE_AQ_VSI_SW_FLAG_TPP_SRC_PRUNE);
+}
+
+/**
+ * nse_vsi_ctx_clear_src_prune_rxtx - turn off rpp/tpp src_prune on VSI
+ * @ctx: pointer to VSI ctx structure
+ */
+void nse_vsi_ctx_clear_src_prune_rxtx(struct nse_vsi_ctx *ctx)
+{
+	ctx->info.rpp_per_vsi_ctxt &= cpu_to_le32(~NSE_AQ_VSI_SW_FLAG_RPP_SRC_PRUNE);
 	ctx->info.tpp_per_vsi_ctxt &= cpu_to_le32(~NSE_AQ_VSI_SW_FLAG_TPP_SRC_PRUNE);
 }
 
