@@ -2252,7 +2252,7 @@ int ubase_activate_dev(struct auxiliary_device *adev)
 	int ret = 0;
 
 	if (!adev)
-		return 0;
+		return -EINVAL;
 
 	udev = __ubase_get_udev_by_adev(adev);
 
@@ -2344,7 +2344,7 @@ int ubase_deactivate_dev(struct auxiliary_device *adev)
 	int ret;
 
 	if (!adev)
-		return 0;
+		return -EINVAL;
 
 	udev = __ubase_get_udev_by_adev(adev);
 
