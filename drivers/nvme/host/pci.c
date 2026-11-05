@@ -56,6 +56,11 @@ static bool use_cmb_sqes = true;
 module_param(use_cmb_sqes, bool, 0444);
 MODULE_PARM_DESC(use_cmb_sqes, "use controller's memory buffer for I/O SQes");
 
+static unsigned long cmb_devmap_align = PAGE_SIZE;
+module_param(cmb_devmap_align, ulong, 0444);
+MODULE_PARM_DESC(cmb_devmap_align,
+		 "CMB pagemap alignment; zero selects the largest supported alignment");
+
 static unsigned int max_host_mem_size_mb = 128;
 module_param(max_host_mem_size_mb, uint, 0444);
 MODULE_PARM_DESC(max_host_mem_size_mb,
@@ -1931,6 +1936,7 @@ static void nvme_map_cmb(struct nvme_dev *dev)
 	u64 size, offset;
 	resource_size_t bar_size;
 	struct pci_dev *pdev = to_pci_dev(dev->dev);
+	size_t align;
 	int bar;
 
 	if (dev->cmb_size)
@@ -1974,7 +1980,10 @@ static void nvme_map_cmb(struct nvme_dev *dev)
 			     dev->bar + NVME_REG_CMBMSC);
 	}
 
-	if (pci_p2pdma_add_resource(pdev, bar, size, offset)) {
+	align = cmb_devmap_align;
+	if (!align)
+		align = pci_p2pdma_max_pagemap_align(pdev, bar, size, offset);
+	if (pci_p2pdma_add_resource_aligned(pdev, bar, size, align, offset)) {
 		dev_warn(dev->ctrl.device,
 			 "failed to register the CMB\n");
 		hi_lo_writeq(0, dev->bar + NVME_REG_CMBMSC);
