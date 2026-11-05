@@ -213,10 +213,12 @@ static int rnp_fw_send_cmd_wait(struct rnp_hw *hw, struct mbx_fw_cmd_req *req,
 {
 	int err;
 	int retry_cnt = 3;
-	struct device *dev = &hw->pdev->dev;
+	struct device *dev;
 
 	if (!hw || !req || !reply || !hw->mbx.ops.read_posted)
 		return -EINVAL;
+
+	dev = &hw->pdev->dev;
 
 	if (pci_device_check_offline(hw->pdev))
 		return -EIO;
@@ -1366,7 +1368,7 @@ int rnp_get_temperature_v3(struct rnp_hw *hw, int *voltage, int *temp)
 			return -1;
 	}
 	if (voltage)
-		*voltage = (signed char)st.voltage;
+		*voltage = st.voltage;
 
 	if (temp)
 		*temp = (signed char)st.tempreture;
