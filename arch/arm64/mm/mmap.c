@@ -98,6 +98,9 @@ pgprot_t vm_get_page_prot(unsigned long vm_flags)
 	if (vm_flags & VM_MTE)
 		prot |= PTE_ATTRINDX(MT_NORMAL_TAGGED);
 
+	if (vm_flags & VM_PBHA_BIT0)
+		prot |= PTE_PBHA0;
+
 	return __pgprot(prot);
 }
 EXPORT_SYMBOL(vm_get_page_prot);

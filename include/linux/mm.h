@@ -411,6 +411,12 @@ extern unsigned int kobjsize(const void *objp);
 # define VM_SHARE_POOL VM_NONE
 #endif
 
+#if defined(CONFIG_ARM64_PBHA)
+# define VM_PBHA_BIT0	VM_HIGH_ARCH_5	/* Page Based Hardware Attributes bit 0 */
+#else
+# define VM_PBHA_BIT0	VM_NONE
+#endif
+
 #ifndef VM_GROWSUP
 # define VM_GROWSUP	VM_NONE
 #endif
