@@ -234,6 +234,7 @@ static int ubcore_get_tp_list_from_ops(struct ubcore_device *dev,
 					struct ubcore_tp_info *find_tp,
 					struct ubcore_udata *udata)
 {
+	uint64_t start, duration;
 	int ret;
 	uint32_t req_total_tp_cnt = 0;
 	uint32_t actual_total_tp_cnt = 0;
@@ -270,7 +271,9 @@ static int ubcore_get_tp_list_from_ops(struct ubcore_device *dev,
 	cfg->flag.bs.group_id = group_idx;
 
 	UBCORE_PERF_TRACE_BEGIN(PERF_UB_GET_TP_LIST);
+	start = ktime_get_ns();
 	ret = dev->ops->get_tp_list(dev, cfg, &actual_group_tp_cnt, temp_buf, udata);
+	duration = (ktime_get_ns() - start) / UBCORE_NS_TO_MS;
 	UBCORE_PERF_TRACE_END(PERF_UB_GET_TP_LIST);
 	if (ret != 0) {
 		ubcore_log_err_rl("get tp list failed: total=%d idx=%d\n",
@@ -280,6 +283,10 @@ static int ubcore_get_tp_list_from_ops(struct ubcore_device *dev,
 		kfree(temp_buf);
 		return ret;
 	}
+
+	if (duration > UBCORE_DRV_TP_THRESHOLD_MS)
+		ubcore_log_warn_rl("[DRV_WARN]get_tp_list consumes: %llu.\n",
+				   duration);
 
 	if (actual_group_tp_cnt == 0) {
 		ubcore_log_err_rl("group_id = %d, no new tp returned, req=%d.\n",
