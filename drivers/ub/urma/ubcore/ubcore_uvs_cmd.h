@@ -19,7 +19,6 @@
 #include "ubcore_cmd.h"
 #include "ubcore_log.h"
 #include "ubcore_priv.h"
-#include "ubcore_topo_info.h"
 
 #define UBCORE_UVS_CMD_MAGIC 'V'
 #define UBCORE_UVS_CMD _IOWR(UBCORE_UVS_CMD_MAGIC, 1, struct ubcore_cmd_hdr)

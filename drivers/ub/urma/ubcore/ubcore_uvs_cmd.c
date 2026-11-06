@@ -19,13 +19,8 @@
 #include "ubcore_cmd_tlv.h"
 #include "ubcore_main_ue_eid.h"
 #include "ubcore_host_info.h"
-#include "ubcore_topo_info.h"
 #include "net/ubcore_cm.h"
 #include "ubcore_uvs_cmd.h"
-
-int ubcore_get_path_set(union ubcore_eid *src_bonding_eid,
-	union ubcore_eid *dst_bonding_eid, enum ubcore_tp_type tp_type,
-	bool iodie_level, struct ubcore_path_set *path_set);
 
 static int ubcore_eidtbl_add_entry(struct ubcore_device *dev,
 				   union ubcore_eid *eid, uint32_t *eid_idx,
@@ -160,40 +155,7 @@ int ubcore_update_eidtbl_by_idx(struct ubcore_device *dev,
 static int ubcore_cmd_set_topo(struct ubcore_global_file *file,
 			       struct ubcore_cmd_hdr *hdr)
 {
-	struct ubcore_cmd_set_topo arg;
-	struct ubcore_topo_map *new_topo_map;
-	struct ubcore_topo_map *topo_map;
-	int ret = 0;
-
-	ret = ubcore_global_tlv_parse(hdr, (void *)&arg);
-	if (ret != 0)
-		return ret;
-
-	if (arg.in.topo_info == NULL || arg.in.topo_num == 0 ||
-	    arg.in.topo_num > MAX_NODE_NUM) {
-		ubcore_log_err("Invalid set_topo_info param\n");
-		return -EINVAL;
-	}
-	topo_map = ubcore_get_global_topo_map();
-	if (topo_map == NULL) {
-		topo_map = ubcore_create_global_topo_map(arg.in.topo_info,
-							 arg.in.topo_num);
-		if (topo_map == NULL) {
-			ubcore_log_err("Failed to create topo map\n");
-			return -ENOMEM;
-		}
-	} else {
-		new_topo_map = ubcore_create_topo_map_from_user(
-			arg.in.topo_info, arg.in.topo_num);
-		if (ubcore_update_topo_map(new_topo_map, topo_map) != 0) {
-			ubcore_delete_topo_map(new_topo_map);
-			ubcore_log_err("Failed to update topo info\n");
-			return -1;
-		}
-		ubcore_delete_topo_map(new_topo_map);
-	}
-	ubcore_show_topo_map(topo_map);
-
+	/* Compatibility no-op: topology is configured through ubagg. */
 	return 0;
 }
 

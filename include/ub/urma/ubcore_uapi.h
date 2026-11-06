@@ -1175,19 +1175,6 @@ void ubcore_cgroup_uncharge(struct ubcore_cg_object *cg_obj,
 #endif // CONFIG_CGROUP_RDMA
 
 /**
- * Get primary or port eid from topo info
- * @param[in] route_v: bonding route represented as a pair of eid,
- *                     only src and dst is needed as input.
- *                     refer to ubcore_route;
- * @param[out] route_list: list of all ubcore_route, which is
- *                         get from global topo_map.
- *                         refer to source bonding eid;
- * @return: 0 on success, other value on error
- */
-int ubcore_get_route_list(struct ubcore_route *route_v,
-	struct ubcore_route_list *route_list);
-
-/**
  * Get path set between two bonding eids.
  * @param[in] src_bonding_eid: source bonding eid
  * @param[in] dst_bonding_eid: dest bonding eid

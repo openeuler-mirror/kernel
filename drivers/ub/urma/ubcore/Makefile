@@ -21,7 +21,6 @@ ubcore_cdev_file.o \
 ubcore_connect_adapter.o \
 ubcore_log.o \
 net/ubcore_cm.o \
-ubcore_topo_info.o \
 net/ubcore_session.o \
 ubcore_jetty.o \
 ubcore_device.o \

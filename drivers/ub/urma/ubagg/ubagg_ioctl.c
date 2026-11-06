@@ -524,6 +524,50 @@ static int ubagg_get_seg_ctx(struct ubcore_device *dev,
 	return ret;
 }
 
+/*
+ * Kernel-only protocol; keep in sync with the temporary compatibility
+ * definitions beside ubcore_get_path_set() in ubcore_device.c.
+ * uctx must be NULL and in/out.addr must point to kernel buffers.
+ * The output buffer contains struct ubcore_path_set.
+ */
+enum ubagg_kernel_ctl_opcode {
+	UBAGG_KERNEL_CTL_GET_PATH_SET = 0x10000,
+};
+
+struct ubagg_get_path_set_in {
+	union ubcore_eid src_bonding_eid;
+	union ubcore_eid dst_bonding_eid;
+	enum ubcore_tp_type tp_type;
+	bool iodie_level;
+};
+
+static int ubagg_get_path_set_user_ctl(struct ubcore_device *dev,
+	struct ubcore_user_ctl *user_ctl)
+{
+	struct ubagg_get_path_set_in *in;
+	struct ubcore_path_set *out;
+	int ret;
+
+	/* uburma always supplies a ucontext; never dereference user addresses. */
+	if (user_ctl->uctx != NULL)
+		return -EOPNOTSUPP;
+	if (user_ctl->in.addr == 0 || user_ctl->out.addr == 0 ||
+	    user_ctl->in.len != sizeof(*in) || user_ctl->out.len < sizeof(*out))
+		return -EINVAL;
+
+	in = (struct ubagg_get_path_set_in *)(uintptr_t)user_ctl->in.addr;
+	out = (struct ubcore_path_set *)(uintptr_t)user_ctl->out.addr;
+	if (memcmp(&in->src_bonding_eid, &to_ubagg_dev(dev)->bonding_eid,
+		   sizeof(in->src_bonding_eid)) != 0)
+		return -EINVAL;
+
+	ret = ubagg_get_path_set(&in->src_bonding_eid, &in->dst_bonding_eid,
+				in->tp_type, in->iodie_level, out);
+	if (ret == 0)
+		user_ctl->out.len = sizeof(*out);
+	return ret;
+}
+
 int ubagg_user_ctl(struct ubcore_device *dev, struct ubcore_user_ctl *user_ctl)
 {
 	int ret = 0;
@@ -534,6 +578,9 @@ int ubagg_user_ctl(struct ubcore_device *dev, struct ubcore_user_ctl *user_ctl)
 	}
 
 	switch (user_ctl->in.opcode) {
+	case UBAGG_KERNEL_CTL_GET_PATH_SET:
+		ret = ubagg_get_path_set_user_ctl(dev, user_ctl);
+		break;
 	case GET_PHYSICAL_DEVICE:
 		ret = ubagg_get_physical_device(dev, user_ctl);
 		break;
