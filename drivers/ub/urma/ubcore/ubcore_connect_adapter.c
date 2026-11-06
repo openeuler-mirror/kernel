@@ -636,8 +636,8 @@ int ubcore_active_tp(struct ubcore_device *dev,
 			(uint32_t)active_cfg->tp_handle.bs.tpid);
 
 	if (duration > UBCORE_DRV_TP_THRESHOLD_MS)
-		ubcore_log_info_rl("[DRV_INFO]active_tp target consumes: %llu.\n",
-			duration);
+		ubcore_log_warn_rl("[DRV_WARN]active_tp target consumes: %llu.\n",
+				   duration);
 
 	return ret;
 }
