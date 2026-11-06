@@ -1,31 +1,38 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2023-2025. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2023-2026. All rights reserved.
+ *
+ * Import backend create/destroy and ops, plus the IMPORT/UNIMPORT ioctls;
+ * memory state lives in struct obmm_import_backend via reg->backend.
  */
 #include <linux/mm.h>
 #include <linux/memory.h>
 #include <linux/io.h>
 #include <linux/sizes.h>
+#include <linux/huge_mm.h>
+#include <linux/pfn_t.h>
 
 #include <ub/ubus/ub-mem-decoder.h>
 #include <linux/numa_remote.h>
 
 #include "obmm_core.h"
+#include "obmm_backend.h"
 #include "obmm_cache.h"
 #include "obmm_import.h"
+#include "obmm_switch.h"
 #include "obmm_preimport.h"
 #include "obmm_resource.h"
 #include "obmm_addr_check.h"
 #include "obmm_shm_dev.h"
 
-static void set_import_region_datapath(const struct obmm_import_region *i_reg,
-				       struct obmm_datapath *datapath)
+static void set_import_datapath(const struct obmm_import_backend *imp,
+				struct obmm_datapath *datapath)
 {
-	datapath->scna = i_reg->scna;
-	datapath->dcna = i_reg->dcna;
+	datapath->scna = imp->scna;
+	datapath->dcna = imp->dcna;
 	/* shallow copy */
-	datapath->seid = i_reg->seid;
-	datapath->deid = i_reg->deid;
+	datapath->seid = imp->seid;
+	datapath->deid = imp->deid;
 }
 
 static unsigned long get_pa_range_mem_cap(u32 scna, phys_addr_t pa, size_t size)
@@ -44,79 +51,79 @@ static unsigned long get_pa_range_mem_cap(u32 scna, phys_addr_t pa, size_t size)
 	return mem_cap;
 }
 
-static int setup_pa(struct obmm_import_region *i_reg)
+static int setup_pa(struct obmm_import_backend *imp)
 {
 	int ret;
 	phys_addr_t start, end;
 	struct obmm_datapath datapath;
 
-	i_reg->region.mem_cap =
-		get_pa_range_mem_cap(i_reg->scna, i_reg->pa, i_reg->region.mem_size);
-	if (i_reg->region.mem_cap == 0)
+	imp->base.mem_cap = get_pa_range_mem_cap(imp->scna, imp->pa, imp->base.mem_size);
+	if (imp->base.mem_cap == 0) {
+		pr_err("import: PA=%#llx size=%#llx not mappable, ret=%pe\n",
+		       imp->pa, imp->base.mem_size, ERR_PTR(-EINVAL));
 		return -EINVAL;
+	}
 
-	if (!region_preimport(&i_reg->region)) {
+	if (!imp->preimport) {
 		struct ubmem_resource *ubmem_res;
 
-		ubmem_res = setup_ubmem_resource(i_reg->pa, i_reg->region.mem_size, false);
+		ubmem_res = setup_ubmem_resource(imp->pa, imp->base.mem_size, false);
 		if (IS_ERR(ubmem_res)) {
 			pr_err("failed to setup ubmem resource: ret=%pe\n", ubmem_res);
 			return PTR_ERR(ubmem_res);
 		}
-		i_reg->ubmem_res = ubmem_res;
+		imp->ubmem_res = ubmem_res;
 
 		return 0;
 	}
 
-	start = i_reg->pa;
-	end = i_reg->pa + i_reg->region.mem_size - 1;
-	set_import_region_datapath(i_reg, &datapath);
+	start = imp->pa;
+	end = imp->pa + imp->base.mem_size - 1;
+	set_import_datapath(imp, &datapath);
 
-	ret = preimport_commit_prefilled(start, end, &datapath, &i_reg->numa_id,
-					  &i_reg->preimport_handle);
+	ret = preimport_commit_prefilled(start, end, &datapath, &imp->numa_id,
+					  &imp->preimport_handle);
 	if (ret)
 		return ret;
 
-	i_reg->ubmem_res = preimport_get_resource_prefilled(i_reg->preimport_handle);
+	imp->ubmem_res = preimport_get_resource_prefilled(imp->preimport_handle);
 
 	return 0;
 }
 
 /* NOTE: do not clear PA in the teardown process. Error rollback procedure may rely on it. */
-static int teardown_pa(struct obmm_import_region *i_reg)
+static int teardown_pa(struct obmm_import_backend *imp)
 {
-	bool preimport = region_preimport(&i_reg->region);
-
-	if (!preimport)
-		return release_ubmem_resource(i_reg->ubmem_res);
+	if (!imp->preimport)
+		return release_ubmem_resource(imp->ubmem_res);
 	/* prefilled and preimport */
-	return preimport_uncommit_prefilled(i_reg->preimport_handle, i_reg->pa,
-					    i_reg->pa + i_reg->region.mem_size - 1);
+	return preimport_uncommit_prefilled(imp->preimport_handle, imp->pa,
+					    imp->pa + imp->base.mem_size - 1);
 }
 
-static int teardown_remote_numa(struct obmm_import_region *i_reg, bool force)
+static int teardown_remote_numa(struct obmm_import_backend *imp, bool force)
 {
 	int ret, this_ret;
 
-	ret = lock_save_memdev_descendents(i_reg->ubmem_res);
+	ret = lock_save_memdev_descendents(imp->ubmem_res);
 	if (ret)
 		return ret;
 
 	pr_debug("call external: remove_memory_remote(nid=%d, size=%#llx)\n",
-		i_reg->numa_id, i_reg->region.mem_size);
-	ret = remove_memory_remote(i_reg->numa_id, i_reg->pa, i_reg->region.mem_size);
+		imp->numa_id, imp->base.mem_size);
+	ret = remove_memory_remote(imp->numa_id, imp->pa, imp->base.mem_size);
 	pr_debug("external called: remove_memory_remote, ret=%pe\n", ERR_PTR(ret));
 	/* a full rollback is still possible: check whether this is a full teardown */
 	if (ret != 0 && !force) {
 		pr_err("remove_memory_remote(nid=%d, size=%#llx) failed: ret=%pe.\n",
-		       i_reg->numa_id, i_reg->region.mem_size, ERR_PTR(ret));
+		       imp->numa_id, imp->base.mem_size, ERR_PTR(ret));
 		goto out_recover_resource;
 	}
 
-	if (region_preimport(&i_reg->region)) {
+	if (imp->preimport) {
 		pr_debug("call external: add_memory_remote(nid=%d, size=0x%llx, flags=MEMORY_KEEP_ISOLATED)\n",
-			i_reg->numa_id, i_reg->region.mem_size);
-		this_ret = add_memory_remote(i_reg->numa_id, i_reg->pa, i_reg->region.mem_size,
+			imp->numa_id, imp->base.mem_size);
+		this_ret = add_memory_remote(imp->numa_id, imp->pa, imp->base.mem_size,
 					     MEMORY_KEEP_ISOLATED);
 		pr_debug("external called: add_memory_remote() returned %d\n", this_ret);
 		if (this_ret == NUMA_NO_NODE) {
@@ -126,37 +133,37 @@ static int teardown_remote_numa(struct obmm_import_region *i_reg, bool force)
 	}
 
 out_recover_resource:
-	restore_unlock_memdev_descendents(i_reg->ubmem_res);
+	restore_unlock_memdev_descendents(imp->ubmem_res);
 	return ret;
 }
 
-static int setup_remote_numa(struct obmm_import_region *i_reg)
+static int setup_remote_numa(struct obmm_import_backend *imp)
 {
 	int ret, flags;
 
-	if (region_preimport(&i_reg->region))
+	if (imp->preimport)
 		flags = 0;
 	else
 		flags = MEMORY_DIRECT_ONLINE;
 
-	if (!(i_reg->region.mem_cap & OBMM_MEM_ALLOW_CACHEABLE_MMAP)) {
+	if (!(imp->base.mem_cap & OBMM_MEM_ALLOW_CACHEABLE_MMAP)) {
 		pr_err("PA range invalid. Cacheable memory cannot be managed with numa.remote\n");
 		return -EINVAL;
 	}
 
 	pr_debug("call external: add_memory_remote(nid=%d, flags=%d)\n",
-		i_reg->numa_id, flags);
-	ret = add_memory_remote(i_reg->numa_id, i_reg->pa, i_reg->region.mem_size, flags);
+		imp->numa_id, flags);
+	ret = add_memory_remote(imp->numa_id, imp->pa, imp->base.mem_size, flags);
 	pr_debug("external called: add_memory_remote() returned %d\n", ret);
 	if (ret < 0) {
 		pr_err("Remote NUMA creation failed: %d\n", ret);
 		return -EPERM;
 	}
-	WARN_ON(i_reg->numa_id != NUMA_NO_NODE && i_reg->numa_id != ret);
-	i_reg->numa_id = ret;
+	WARN_ON(imp->numa_id != NUMA_NO_NODE && imp->numa_id != ret);
+	imp->numa_id = ret;
 
-	if (!region_preimport(&i_reg->region)) {
-		ret = obmm_set_numa_distance(i_reg->scna, i_reg->numa_id, i_reg->base_dist);
+	if (!imp->preimport) {
+		ret = obmm_set_numa_distance(imp->scna, imp->numa_id, imp->base_dist);
 		if (ret < 0) {
 			pr_err("Failed to set remote numa distance: %pe\n", ERR_PTR(ret));
 			goto out_teardown_remote_numa;
@@ -165,19 +172,20 @@ static int setup_remote_numa(struct obmm_import_region *i_reg)
 
 	return 0;
 out_teardown_remote_numa:
-	WARN_ON(teardown_remote_numa(i_reg, true));
+	WARN_ON(teardown_remote_numa(imp, true));
 	return ret;
 }
 
-static inline int occupy_addr_range(const struct obmm_import_region *i_reg)
+static inline int occupy_addr_range(const struct obmm_import_backend *imp)
 {
 	struct obmm_pa_range pa;
 
-	if (!region_preimport(&i_reg->region)) {
-		pa.start = i_reg->pa;
-		pa.end = i_reg->pa + i_reg->region.mem_size - 1;
+	if (!imp->preimport) {
+		pa.start = imp->pa;
+		pa.end = imp->pa + imp->base.mem_size - 1;
 		pa.info.user = OBMM_ADDR_USER_DIRECT_IMPORT;
-		pa.info.data = (void *)i_reg;
+		/* the occupancy points at the backend object, not at a region */
+		pa.info.data = (void *)imp;
 		return occupy_pa_range(&pa);
 	}
 
@@ -185,163 +193,18 @@ static inline int occupy_addr_range(const struct obmm_import_region *i_reg)
 	return 0;
 }
 
-static int free_addr_range(const struct obmm_import_region *i_reg)
+static int free_addr_range(const struct obmm_import_backend *imp)
 {
 	struct obmm_pa_range pa;
 
-	if (!region_preimport(&i_reg->region)) {
-		pa.start = i_reg->pa;
-		pa.end = i_reg->pa + i_reg->region.mem_size - 1;
+	if (!imp->preimport) {
+		pa.start = imp->pa;
+		pa.end = imp->pa + imp->base.mem_size - 1;
 		return free_pa_range(&pa);
 	}
 
 	/* preimport + decoder_prefilled: address conflicts managed by its perimport range */
 	return 0;
-}
-
-static int setup_iomem_resource(struct obmm_import_region *i_reg)
-{
-	struct resource *memdev_res;
-
-	memdev_res = setup_memdev_resource(i_reg->ubmem_res, i_reg->pa,
-					   i_reg->region.mem_size, i_reg->region.regionid);
-	if (IS_ERR(memdev_res)) {
-		pr_err("memid=%d: failed to setup memdev resource: %pe\n",
-		       i_reg->region.regionid, memdev_res);
-		return PTR_ERR(memdev_res);
-	}
-
-	i_reg->memdev_res = memdev_res;
-
-	return 0;
-}
-
-static int teardown_iomem_resource(struct obmm_import_region *i_reg)
-{
-	int ret;
-
-	ret = release_memdev_resource(i_reg->ubmem_res, i_reg->memdev_res);
-	if (ret)
-		pr_err("memid=%d: failed to release memdev resource: %pe\n",
-		       i_reg->region.regionid, ERR_PTR(ret));
-
-	return ret;
-}
-
-static int prepare_import_memory(struct obmm_import_region *i_reg)
-{
-	int ret, rollback_ret;
-
-	if (!validate_scna(i_reg->scna))
-		return -ENODEV;
-
-	ret = occupy_addr_range(i_reg);
-	if (ret)
-		return ret;
-
-	ret = setup_pa(i_reg);
-	if (ret)
-		goto out_free_addr_range;
-
-	/* register numa node */
-	if (region_numa_remote(&i_reg->region)) {
-		ret = setup_remote_numa(i_reg);
-		if (ret)
-			goto out_teardown_pa;
-	} else {
-		i_reg->numa_id = NUMA_NO_NODE;
-	}
-
-	ret = setup_iomem_resource(i_reg);
-	if (ret)
-		goto out_teardown_numa;
-
-	return 0;
-out_teardown_numa:
-	if (region_numa_remote(&i_reg->region)) {
-		rollback_ret = teardown_remote_numa(i_reg, true);
-		if (rollback_ret) {
-			pr_err("failed to teardown remote numa on rollback, ret=%pe.\n",
-			       ERR_PTR(rollback_ret));
-			ret = -ENOTRECOVERABLE;
-		}
-	}
-out_teardown_pa:
-	rollback_ret = teardown_pa(i_reg);
-	if (rollback_ret) {
-		pr_err("failed to teardown PA level mapping on rollback, ret=%pe.\n",
-		       ERR_PTR(rollback_ret));
-		ret = -ENOTRECOVERABLE;
-	}
-out_free_addr_range:
-	rollback_ret = free_addr_range(i_reg);
-	if (rollback_ret) {
-		pr_err("failed to free address range on rollback, ret=%pe.\n",
-		       ERR_PTR(rollback_ret));
-		ret = -ENOTRECOVERABLE;
-	}
-	return ret;
-}
-
-static int release_import_memory(struct obmm_import_region *i_reg)
-{
-	int ret, rollback_ret, old_numa_id;
-
-	ret = teardown_iomem_resource(i_reg);
-	if (ret)
-		return ret;
-
-	if (region_numa_remote(&i_reg->region)) {
-		old_numa_id = i_reg->numa_id;
-		ret = teardown_remote_numa(i_reg, false);
-		if (ret)
-			goto err_teardown_numa;
-	}
-
-	ret = flush_import_region(i_reg, 0, i_reg->region.mem_size, OBMM_SHM_CACHE_INVAL);
-	if (ret) {
-		pr_err("failed to flush import region, ret=%pe.\n", ERR_PTR(ret));
-		goto err_flush;
-	}
-
-	/* unplug memory */
-	ret = teardown_pa(i_reg);
-	if (ret) {
-		pr_err("failed to release PA level mapping of region %d, ret=%pe.\n",
-		       i_reg->region.regionid, ERR_PTR(ret));
-		goto err_flush;
-	}
-
-	ret = free_addr_range(i_reg);
-	if (ret)
-		goto err_free_addr_range;
-
-	return 0;
-
-err_free_addr_range:
-	rollback_ret = setup_pa(i_reg);
-	if (rollback_ret) {
-		pr_err("failed to restore PA level mapping, ret=%pe.\n", ERR_PTR(rollback_ret));
-		return -ENOTRECOVERABLE; /* rollback cannot proceed */
-	}
-err_flush:
-	if (region_numa_remote(&i_reg->region)) {
-		i_reg->numa_id = old_numa_id;
-
-		rollback_ret = setup_remote_numa(i_reg);
-		if (rollback_ret) {
-			pr_err("failed to restore remote NUMA, ret=%pe.\n", ERR_PTR(rollback_ret));
-			return -ENOTRECOVERABLE; /* rollback cannot proceed */
-		}
-	}
-err_teardown_numa:
-	rollback_ret = setup_iomem_resource(i_reg);
-	if (rollback_ret) {
-		pr_err("failed to restore iomem resource on rollback, ret=%pe.\n",
-		       ERR_PTR(rollback_ret));
-		return -ENOTRECOVERABLE;
-	}
-	return ret;
 }
 
 static bool validate_pa_range(phys_addr_t pa, size_t size)
@@ -367,27 +230,13 @@ static bool validate_pa_range(phys_addr_t pa, size_t size)
 	return true;
 }
 
-static bool validate_import_region(const struct obmm_import_region *i_reg)
-{
-	/* size and alignment check */
-	if (i_reg->region.mem_size == 0) {
-		pr_err("Zero memory segment size is invalid\n");
-		return false;
-	}
-
-	/* PA as parameter */
-	if (!validate_pa_range(i_reg->pa, i_reg->region.mem_size))
-		return false;
-	return true;
-}
-
 static int import_to_region_flags(unsigned long *region_flags, unsigned long import_flags)
 {
 	*region_flags = 0;
 
 	if (import_flags & (~OBMM_IMPORT_FLAG_MASK)) {
 		pr_err("Invalid import flags %#lx (unknown flags: %#lx).\n", import_flags,
-		       import_flags & (~OBMM_IMPORT_FLAG_MASK));
+			import_flags & (~OBMM_IMPORT_FLAG_MASK));
 		return -EINVAL;
 	}
 	if (!!(import_flags & OBMM_IMPORT_FLAG_ALLOW_MMAP) +
@@ -411,39 +260,53 @@ static int import_to_region_flags(unsigned long *region_flags, unsigned long imp
 	return 0;
 }
 
+static void import_spec_from_cmd(const struct obmm_cmd_import *param,
+				 unsigned long region_flags,
+				 struct obmm_import_spec *spec)
+{
+	spec->addr = param->addr;
+	spec->scna = param->scna;
+	spec->dcna = param->dcna;
+	spec->base_dist = param->base_dist;
+	memcpy(spec->deid, param->deid, sizeof(spec->deid));
+	memcpy(spec->seid, param->seid, sizeof(spec->seid));
+	spec->remote = (region_flags & OBMM_REGION_FLAG_NUMA_REMOTE) != 0;
+	spec->preimport = (region_flags & OBMM_REGION_FLAG_PREIMPORT) != 0;
+	/* raw uapi value; the creator defaults NUMA_NO_NODE when not remote */
+	spec->numa_id = param->numa_id;
+}
+
 static int init_import_region_from_cmd(const struct obmm_cmd_import *param,
-				       struct obmm_import_region *i_reg)
+				       struct obmm_region *region,
+				       struct obmm_import_spec *spec)
 {
 	int ret;
 	bool config_numa_dist;
-	struct obmm_region *region = &i_reg->region;
 
-	i_reg->region.type = OBMM_IMPORT_REGION;
-	i_reg->region.mem_size = param->length;
+	region->created_as = OBMM_IMPORT_REGION;
+	region->mem_size = param->length;
 	/* set flags */
 	ret = import_to_region_flags(&region->flags, param->flags);
 	if (ret)
 		return ret;
 
-	i_reg->pa = param->addr;
-
-	i_reg->dcna = param->dcna;
-	i_reg->scna = param->scna;
-	memcpy(i_reg->deid, param->deid, sizeof(i_reg->deid));
-	memcpy(i_reg->seid, param->seid, sizeof(i_reg->seid));
-	i_reg->numa_id = region_numa_remote(&i_reg->region) ? param->numa_id : NUMA_NO_NODE;
+	import_spec_from_cmd(param, region->flags, spec);
 
 	ret = set_obmm_region_priv(region, param->priv_len, param->priv);
 	if (ret)
 		return ret;
 
-	if (!validate_import_region(i_reg))
+	/* PA alignment/overflow is checked in obmm_import_backend_create();
+	 * only the zero-length rule lives here.
+	 */
+	if (region->mem_size == 0) {
+		pr_err("Zero memory segment size is invalid\n");
 		return -EINVAL;
+	}
 
-	config_numa_dist = region_numa_remote(&i_reg->region) && !region_preimport(&i_reg->region);
+	config_numa_dist = region_numa_remote(region) && !region_preimport(region);
 	if (config_numa_dist && !is_numa_base_dist_valid(param->base_dist))
 		return -EINVAL;
-	i_reg->base_dist = param->base_dist;
 
 	/* NOTE: this function initializes the data structure but not the device */
 	return 0;
@@ -458,47 +321,277 @@ static void print_import_param(const struct obmm_cmd_import *cmd_import)
 		EID_ARGS64_L(cmd_import->seid), cmd_import->priv_len);
 }
 
+/* pfn derivation of every import mapping */
+static unsigned long import_base_pfn(const struct obmm_import_backend *imp,
+				     const struct vm_area_struct *vma)
+{
+	return __phys_to_pfn(imp->pa) + vma->vm_pgoff;
+}
+
+/* ops->fault; PFN_DEV is safe because VM_IO|VM_PFNMAP excludes GUP and
+ * update_range normalizes the entry. A PMD leaf needs a PMD_SIZE-aligned
+ * base, but the import PA is only OBMM_BASIC_GRANU-aligned (weaker than
+ * PMD_SIZE on 64K pages), so an unaligned base degrades this page to a PTE.
+ */
+static vm_fault_t import_fault(struct obmm_backend *be, struct vm_fault *vmf,
+			       bool is_pmd)
+{
+	struct obmm_import_backend *imp = obmm_backend_to_import(be);
+	struct vm_area_struct *vma = vmf->vma;
+	unsigned long addr, pfn, base_pfn;
+
+	base_pfn = import_base_pfn(imp, vma);
+	if (is_pmd) {
+		addr = vmf->address & PMD_MASK;
+		pfn = base_pfn + ((addr - vma->vm_start) >> PAGE_SHIFT);
+		if (IS_ALIGNED(pfn, HPAGE_PMD_NR))
+			return vmf_insert_pfn_pmd(vmf, __pfn_to_pfn_t(pfn, PFN_DEV),
+						  vmf->flags & FAULT_FLAG_WRITE);
+	}
+
+	addr = vmf->address;
+	pfn = base_pfn + ((addr - vma->vm_start) >> PAGE_SHIFT);
+
+	return vmf_insert_pfn_prot(vma, vmf->address, pfn, vma->vm_page_prot);
+}
+
+static int import_flush_range(struct obmm_backend *be, u64 off, u64 len, u8 cache_ops)
+{
+	struct obmm_import_backend *imp = obmm_backend_to_import(be);
+	int ret;
+
+	ret = flush_cache_by_pa(imp->pa + off, len, cache_ops);
+	if (ret)
+		return ret;
+
+	if (cache_ops == OBMM_SHM_CACHE_WB_INVAL || cache_ops == OBMM_SHM_CACHE_WB_ONLY)
+		return ub_write_queue_flush(imp->scna);
+	return 0;
+}
+
+static void import_fill_ext_addr(const struct obmm_import_backend *imp, u32 regionid,
+				 u64 offset, u64 pa, struct obmm_ext_addr *ext_addr)
+{
+	ext_addr->region_type = OBMM_IMPORT_REGION;
+	ext_addr->regionid = regionid;
+	ext_addr->offset = offset;
+	ext_addr->tid = 0;
+	ext_addr->uba = 0;
+	ext_addr->pa = pa;
+	ext_addr->numa_id = imp->numa_id;
+}
+
+/* @out->offset is in/out: validated here, the rest filled in */
+static int import_query(struct obmm_backend *be, struct obmm_ext_addr *out)
+{
+	struct obmm_import_backend *imp = obmm_backend_to_import(be);
+
+	if (!be->shell)
+		return -EINVAL;
+	if (out->offset >= be->mem_size) {
+		pr_err("%s: invalid offset 0x%llx\n", __func__, out->offset);
+		return -EINVAL;
+	}
+
+	import_fill_ext_addr(imp, be->shell->regionid, out->offset,
+			     imp->pa + out->offset, out);
+
+	return 0;
+}
+
+static bool import_covers_pa(struct obmm_backend *be, u64 pa, u64 len,
+			     struct obmm_ext_addr *out)
+{
+	struct obmm_import_backend *imp = obmm_backend_to_import(be);
+	u64 offset = pa - imp->pa;
+
+	if (pa < imp->pa || offset > be->mem_size || len > be->mem_size - offset)
+		return false;
+
+	if (out)
+		import_fill_ext_addr(imp, be->regionid, offset, pa, out);
+
+	return true;
+}
+
+/* ops->destroy keeps the flush-failure ladder; MEMID leaf is attach/detach-managed */
+static int obmm_import_backend_destroy(struct obmm_backend *be)
+{
+	int ret, rollback_ret, old_numa_id;
+	struct obmm_import_backend *imp = obmm_backend_to_import(be);
+
+	if (imp->numa_remote) {
+		old_numa_id = imp->numa_id;
+		ret = teardown_remote_numa(imp, false);
+		if (ret)
+			goto err_teardown_numa;
+	}
+
+	ret = import_flush_range(be, 0, be->mem_size, OBMM_SHM_CACHE_INVAL);
+	if (ret) {
+		pr_err("failed to flush import region, ret=%pe.\n", ERR_PTR(ret));
+		goto err_flush;
+	}
+
+	/* unplug memory */
+	ret = teardown_pa(imp);
+	if (ret) {
+		pr_err("failed to release PA level mapping (pa=%#llx, size=%#llx), ret=%pe.\n",
+		       imp->pa, be->mem_size, ERR_PTR(ret));
+		goto err_flush;
+	}
+
+	ret = free_addr_range(imp);
+	if (ret)
+		goto err_free_addr_range;
+
+	return 0;
+
+err_free_addr_range:
+	rollback_ret = setup_pa(imp);
+	if (rollback_ret) {
+		pr_err("failed to restore PA level mapping, ret=%pe.\n", ERR_PTR(rollback_ret));
+		return -ENOTRECOVERABLE; /* rollback cannot proceed */
+	}
+err_flush:
+	if (imp->numa_remote) {
+		imp->numa_id = old_numa_id;
+
+		rollback_ret = setup_remote_numa(imp);
+		if (rollback_ret) {
+			pr_err("failed to restore remote NUMA, ret=%pe.\n", ERR_PTR(rollback_ret));
+			return -ENOTRECOVERABLE; /* rollback cannot proceed */
+		}
+	}
+err_teardown_numa:
+	/* the iomem leaf belongs to the shell's detach path, not this rollback */
+	return ret;
+}
+
+static const struct obmm_backend_ops obmm_import_backend_ops = {
+	.fault		= import_fault,
+	.flush_range	= import_flush_range,
+	.query		= import_query,
+	.covers_pa	= import_covers_pa,
+	.destroy	= obmm_import_backend_destroy,
+};
+
+/*
+ * Create an import backend (existence ref held or ERR_PTR); MEMID leaf is
+ * obmm_backend_attach's. @full=false is the restricted switch target.
+ */
+struct obmm_backend *
+obmm_import_backend_create(const struct obmm_import_spec *spec, u64 mem_size, bool full)
+{
+	struct obmm_import_backend *imp;
+	int ret, rollback_ret;
+
+	if (!validate_scna(spec->scna))
+		return ERR_PTR(-ENODEV);
+
+	if (!validate_pa_range(spec->addr, mem_size))
+		return ERR_PTR(-EINVAL);
+
+	if (!full && (spec->remote || spec->preimport)) {
+		pr_err("numa-remote and preimport imports are unsupported on the restricted entry.\n");
+		return ERR_PTR(-EOPNOTSUPP);
+	}
+
+	imp = kzalloc(sizeof(*imp), GFP_KERNEL);
+	if (!imp)
+		return ERR_PTR(-ENOMEM);
+
+	imp->base.type = OBMM_BACKEND_IMPORT;
+	imp->base.mem_size = mem_size;
+	imp->base.ops = &obmm_import_backend_ops;
+	refcount_set(&imp->base.refcnt, 1); /* the existence reference */
+
+	imp->pa = spec->addr;
+	imp->scna = spec->scna;
+	imp->dcna = spec->dcna;
+	memcpy(imp->deid, spec->deid, sizeof(imp->deid));
+	memcpy(imp->seid, spec->seid, sizeof(imp->seid));
+	imp->base_dist = spec->base_dist;
+	imp->numa_remote = spec->remote;
+	imp->preimport = spec->preimport;
+	imp->numa_id = spec->remote ? spec->numa_id : NUMA_NO_NODE;
+
+	ret = occupy_addr_range(imp);
+	if (ret)
+		goto out_free_backend;
+
+	ret = setup_pa(imp);
+	if (ret)
+		goto out_free_addr_range;
+
+	/* register numa node */
+	if (imp->numa_remote) {
+		ret = setup_remote_numa(imp);
+		if (ret)
+			goto out_teardown_pa;
+	}
+
+	return &imp->base;
+
+out_teardown_pa:
+	rollback_ret = teardown_pa(imp);
+	if (rollback_ret) {
+		pr_err("failed to teardown PA level mapping on rollback, ret=%pe.\n",
+		       ERR_PTR(rollback_ret));
+		ret = -ENOTRECOVERABLE;
+	}
+out_free_addr_range:
+	rollback_ret = free_addr_range(imp);
+	if (rollback_ret) {
+		pr_err("failed to free address range on rollback, ret=%pe.\n",
+		       ERR_PTR(rollback_ret));
+		ret = -ENOTRECOVERABLE;
+	}
+out_free_backend:
+	kfree(imp);
+	return ERR_PTR(ret);
+}
+
 int obmm_import(struct obmm_cmd_import *cmd_import)
 {
-	int retval, rollback_ret, numa_id;
-	struct obmm_import_region *i_reg;
+	int retval, numa_id;
+	struct obmm_region *reg;
+	struct obmm_import_spec spec;
+	struct obmm_backend *be;
 	uint64_t mem_id;
 
 	print_import_param(cmd_import);
-	/* create obmm region */
-	i_reg = kzalloc(sizeof(struct obmm_import_region), GFP_KERNEL);
-	if (i_reg == NULL)
+	reg = kzalloc(sizeof(struct obmm_region), GFP_KERNEL);
+	if (reg == NULL)
 		return -ENOMEM;
 
 	/* arguments to region (logs produced by callee) */
-	retval = init_import_region_from_cmd(cmd_import, i_reg);
+	retval = init_import_region_from_cmd(cmd_import, reg, &spec);
 	if (retval)
-		goto out_free_ireg;
+		goto out_free_reg;
 
-	retval = init_obmm_region(&i_reg->region);
+	retval = init_obmm_region(reg);
 	if (retval)
-		goto out_free_ireg;
+		goto out_free_reg;
 
 	/* from here on the device core owns the region's memory */
-	retval = obmm_shm_dev_init_device(&i_reg->region);
+	retval = obmm_shm_dev_init_device(reg);
 	if (retval)
 		goto out_region_uninit;
 
-	retval = prepare_import_memory(i_reg);
-	if (retval) {
+	be = obmm_import_backend_create(&spec, reg->mem_size, true);
+	if (IS_ERR(be)) {
+		retval = PTR_ERR(be);
 		pr_err("Failed to prepare import memory: ret=%pe\n", ERR_PTR(retval));
 		goto out_dev_put;
 	}
 
-	numa_id = i_reg->numa_id;
-	mem_id = (uint64_t)i_reg->region.regionid;
+	numa_id = obmm_backend_to_import(be)->numa_id;
+	mem_id = (uint64_t)reg->regionid;
 
-	retval = register_obmm_region(&i_reg->region);
-	if (retval) {
-		pr_err("Failed to create import device. ret=%pe\n", ERR_PTR(retval));
-		goto out_release_memory;
-	}
-	activate_obmm_region(&i_reg->region);
+	retval = obmm_region_publish(reg, be, "import");
+	if (retval)
+		return retval;
 
 	/* pass back output value */
 	cmd_import->numa_id = numa_id;
@@ -507,20 +600,15 @@ int obmm_import(struct obmm_cmd_import *cmd_import)
 	pr_debug("%s: mem_id=%llu online\n", __func__, cmd_import->mem_id);
 	return 0;
 
-out_release_memory:
-	rollback_ret = release_import_memory(i_reg);
-	if (rollback_ret)
-		pr_warn("Failed to release import memory on rollback, ret=%pe.\n",
-			ERR_PTR(rollback_ret));
 out_dev_put:
-	uninit_obmm_region(&i_reg->region);
+	uninit_obmm_region(reg);
 	/* frees the region via the device release callback */
-	obmm_shm_dev_put(&i_reg->region);
+	obmm_shm_dev_put(reg);
 	return retval;
 out_region_uninit:
-	uninit_obmm_region(&i_reg->region);
-out_free_ireg:
-	kfree(i_reg);
+	uninit_obmm_region(reg);
+out_free_reg:
+	kfree(reg);
 	return retval;
 }
 
@@ -531,7 +619,6 @@ int obmm_unimport(const struct obmm_cmd_unimport *cmd_unimport)
 {
 	int ret;
 	struct obmm_region *reg;
-	struct obmm_import_region *i_reg;
 
 	pr_debug("%s: mem_id=%llu, flags=%#llx.\n", __func__, cmd_unimport->mem_id,
 		cmd_unimport->flags);
@@ -546,92 +633,24 @@ int obmm_unimport(const struct obmm_cmd_unimport *cmd_unimport)
 	if (IS_ERR(reg))
 		return PTR_ERR(reg);
 
-	if (reg->type != OBMM_IMPORT_REGION) {
-		pr_err("%s: mem_id=%llu region type mismatched.\n", __func__, cmd_unimport->mem_id);
+	if (!obmm_region_teardown_matches(reg, OBMM_IMPORT_REGION)) {
+		pr_err("%s: mem_id=%llu not an import region.\n", __func__, cmd_unimport->mem_id);
 		ret = -EINVAL;
 		goto err_unimport;
 	}
-	i_reg = container_of(reg, struct obmm_import_region, region);
-	ret = release_import_memory(i_reg);
-	if (ret)
-		goto err_unimport;
 
-	deregister_obmm_region(reg);
-	uninit_obmm_region(reg);
-	/* the region is freed by the device release callback */
-	obmm_shm_dev_put(reg);
+	ret = obmm_region_teardown(reg);
+	if (ret)
+		goto err_teardown_aborted;
 
 	pr_debug("%s: mem_id=%llu completed.\n", __func__, cmd_unimport->mem_id);
 	return 0;
 
+err_teardown_aborted:
+	pr_err("%s: mem_id=%llu failed, %pe.\n", __func__, cmd_unimport->mem_id, ERR_PTR(ret));
+	return ret;
 err_unimport:
 	activate_obmm_region(reg);
 	pr_err("%s: mem_id=%llu failed, %pe.\n", __func__, cmd_unimport->mem_id, ERR_PTR(ret));
 	return ret;
-}
-
-int flush_import_region(struct obmm_import_region *i_reg, unsigned long offset,
-			unsigned long length, unsigned long cache_ops)
-{
-	int ret;
-
-	ret = flush_cache_by_pa(i_reg->pa + offset, length, cache_ops);
-	if (ret)
-		return ret;
-
-	if (cache_ops == OBMM_SHM_CACHE_WB_INVAL || cache_ops == OBMM_SHM_CACHE_WB_ONLY)
-		return ub_write_queue_flush(i_reg->scna);
-	return 0;
-}
-
-int map_import_region(struct vm_area_struct *vma, struct obmm_import_region *i_reg,
-		      enum obmm_mmap_granu mmap_granu)
-{
-	unsigned long pfn, size;
-
-	size = vma->vm_end - vma->vm_start;
-	pfn = __phys_to_pfn(i_reg->pa) + vma->vm_pgoff;
-	if (mmap_granu == OBMM_MMAP_GRANU_PAGE)
-		return remap_pfn_range(vma, vma->vm_start, pfn, size, vma->vm_page_prot);
-	else if (mmap_granu == OBMM_MMAP_GRANU_PMD)
-		return remap_pfn_range_try_pmd(vma, vma->vm_start, pfn, size, vma->vm_page_prot);
-	pr_err("invalid mmap granu %d\n", mmap_granu);
-
-	return -EINVAL;
-}
-
-int get_pa_detail_import(const struct obmm_import_region *i_reg, unsigned long pa,
-			 struct obmm_ext_addr *ext_addr)
-{
-	if (pa < i_reg->pa || pa >= i_reg->pa + i_reg->region.mem_size)
-		return -EFAULT;
-
-	ext_addr->region_type = OBMM_IMPORT_REGION;
-	ext_addr->regionid = i_reg->region.regionid;
-	ext_addr->offset = pa - i_reg->pa;
-	ext_addr->tid = 0;
-	ext_addr->uba = 0;
-	ext_addr->numa_id = i_reg->numa_id;
-	ext_addr->pa = pa;
-
-	return 0;
-}
-
-int get_offset_detail_import(const struct obmm_import_region *i_reg, unsigned long offset,
-			     struct obmm_ext_addr *ext_addr)
-{
-	if (offset >= i_reg->region.mem_size) {
-		pr_err("%s: invalid offset 0x%lx\n", __func__, offset);
-		return -EINVAL;
-	}
-
-	ext_addr->region_type = i_reg->region.type;
-	ext_addr->regionid = i_reg->region.regionid;
-	ext_addr->offset = offset;
-	ext_addr->tid = 0;
-	ext_addr->uba = 0;
-	ext_addr->pa = i_reg->pa + offset;
-	ext_addr->numa_id = i_reg->numa_id;
-
-	return 0;
 }

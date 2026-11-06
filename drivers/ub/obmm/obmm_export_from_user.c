@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
- * Description：OBMM Framework's implementations.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2025-2026. All rights reserved.
+ * Description: export-user backend, EXPORT_PID ioctl and its uapi checks.
  */
 
 #include <linux/sched.h>
@@ -15,9 +15,11 @@
 #include <linux/printk.h>
 #include <linux/slab.h>
 #include <linux/numa.h>
+#include <linux/err.h>
 
 #include "obmm_core.h"
 #include "obmm_cache.h"
+#include "obmm_backend.h"
 #include "obmm_export_region_ops.h"
 #include "obmm_export.h"
 #include "obmm_shm_dev.h"
@@ -40,19 +42,19 @@ static struct task_struct *get_tsk_struct(pid_t pid)
 	return task;
 }
 
-void free_export_memory_pid(struct obmm_export_region *e_reg)
+/* Reverse ladder of export_user_alloc_memory; pages live in exp.sgt. */
+static void export_user_free_memory(struct obmm_export_user_backend *ub)
 {
-	struct mem_description_pid *desc = &e_reg->mem_desc_pid;
 	struct mm_struct *mm = NULL;
 	struct task_struct *tsk;
 	struct scatterlist *sg;
 	unsigned int i;
 
-	WARN_ON(desc->pid == 0);
-	tsk = get_tsk_struct(desc->pid);
-	if (tsk && tsk->start_time != desc->start_time) {
+	WARN_ON(ub->pid == 0);
+	tsk = get_tsk_struct(ub->pid);
+	if (tsk && tsk->start_time != ub->start_time) {
 		/* if the process is still alive or its PID has not been reused */
-		pr_err("pid(%d) is reused.\n", desc->pid);
+		pr_err("pid(%d) is reused.\n", ub->pid);
 		put_task_struct(tsk);
 		tsk = NULL;
 	}
@@ -61,26 +63,26 @@ void free_export_memory_pid(struct obmm_export_region *e_reg)
 		mm = get_task_mm(tsk);
 
 	if (mm) {
-		atomic64_sub(desc->pinned, &mm->pinned_vm);
-		WARN_ON(modify_pgtable_prot(mm, desc->user_va, e_reg->region.mem_size, true));
+		atomic64_sub(ub->pinned, &mm->pinned_vm);
+		WARN_ON(modify_pgtable_prot(mm, ub->user_va, ub->base.mem_size, true));
 		mmput(mm);
 	}
 
 	if (tsk)
 		put_task_struct(tsk);
 
-	WARN_ON(kernel_pgtable_set_export_invalid(e_reg, 0, e_reg->region.mem_size, false));
+	WARN_ON(kernel_pgtable_set_export_invalid(&ub->exp.sgt, 0, ub->base.mem_size, false));
 
 	/* unpin all pages from sgt */
-	for_each_sgtable_sg(&e_reg->sgt, sg, i)
+	for_each_sgtable_sg(&ub->exp.sgt, sg, i)
 		unpin_user_page_range_dirty_lock(sg_page(sg), DIV_ROUND_UP(sg->length, PAGE_SIZE),
 						 true);
 
-	sg_free_table(&e_reg->sgt);
+	sg_free_table(&ub->exp.sgt);
 }
 
-static bool hisi_workarounds_check_page_list(struct obmm_export_region *reg, struct page **pages,
-					     int count)
+static bool hisi_workarounds_check_page_list(struct obmm_export_user_backend *ub,
+					     struct page **pages, int count)
 {
 	nodemask_t node_mask;
 	unsigned int node;
@@ -106,27 +108,29 @@ static bool hisi_workarounds_check_page_list(struct obmm_export_region *reg, str
 		}
 
 		node_set(nid, node_mask);
-		reg->node_mem_size[nid] += PAGE_SIZE;
+		ub->exp.node_mem_size[nid] += PAGE_SIZE;
 	}
 
 	for_each_node_mask(node, node_mask) {
 		pr_debug("Page resides in node %u\n", node);
-		reg->node_count = node + 1;
+		ub->exp.node_count = node + 1;
 	}
-	if (reg->affinity > OBMM_MAX_LOCAL_NUMA_NODES ||
-	    reg->affinity < 0) {
-		pr_err("Invalid pxm_numa %d\n", reg->affinity);
+	if (ub->exp.affinity >= OBMM_MAX_LOCAL_NUMA_NODES ||
+	    ub->exp.affinity < 0) {
+		pr_err("Invalid pxm_numa %d\n", ub->exp.affinity);
 		return false;
 	}
-	node_set(reg->affinity, node_mask);
+	node_set(ub->exp.affinity, node_mask);
 
 	return nodes_on_same_package(&node_mask);
 }
 
-int alloc_export_memory_pid(struct obmm_export_region *e_reg)
+/* Pin the backend's pages and account them; the flush calls the per-chunk
+ * export core because obmm_region_flush_range needs an attached shell.
+ */
+static int export_user_alloc_memory(struct obmm_export_user_backend *ub)
 {
 	unsigned long nrpages;
-	struct mem_description_pid *desc = &e_reg->mem_desc_pid;
 	struct page **page_list;
 	struct task_struct *tsk;
 	struct mm_struct *mm;
@@ -134,33 +138,33 @@ int alloc_export_memory_pid(struct obmm_export_region *e_reg)
 	int pinned, ret = 0;
 	int locked = 0;
 
-	nrpages = e_reg->region.mem_size >> PAGE_SHIFT;
+	nrpages = ub->base.mem_size >> PAGE_SHIFT;
 	if (!nrpages) {
 		pr_err("export pages must > 1\n");
 		return -EINVAL;
 	}
 
-	tsk = get_tsk_struct(desc->pid);
+	tsk = get_tsk_struct(ub->pid);
 	if (!tsk) {
-		pr_err("get tsk from pid(%d) failed.\n", desc->pid);
+		pr_err("get tsk from pid(%d) failed.\n", ub->pid);
 		return -ESRCH;
 	}
 
 	mm = get_task_mm(tsk);
 	if (!mm) {
 		ret = -ESRCH;
-		pr_err("get mm from pid(%d) failed.\n", desc->pid);
+		pr_err("get mm from pid(%d) failed.\n", ub->pid);
 		goto drop_tsk;
 	}
-	desc->start_time = tsk->start_time;
+	ub->start_time = tsk->start_time;
 
 	remote_mm = mm != current->mm;
 	if (!remote_mm)
-		desc->pid = current->tgid;
+		ub->pid = current->tgid;
 
 	pr_debug("exporting from %s\n", remote_mm ? "remote" : "current");
 
-	/* account the pages to be pinned; released in free_export_memory_pid() */
+	/* account the pages to be pinned; released in export_user_free_memory() */
 	atomic64_add(nrpages, &mm->pinned_vm);
 
 	page_list = kvmalloc_array(nrpages, sizeof(struct page *), GFP_KERNEL);
@@ -169,16 +173,16 @@ int alloc_export_memory_pid(struct obmm_export_region *e_reg)
 		goto drop_pinned;
 	}
 
-	pr_debug("exporting useraddr: pid(%d) va(%p) size(%#llx)\n", desc->pid, desc->user_va,
-		 e_reg->region.mem_size);
+	pr_debug("exporting useraddr: pid(%d) va(%#llx) size(%#llx)\n", ub->pid,
+		 (u64)(uintptr_t)ub->user_va, ub->base.mem_size);
 
 	mmap_read_lock(mm);
 	locked = 1;
 	if (remote_mm) {
-		pinned = pin_user_pages_remote(mm, (uintptr_t)desc->user_va, nrpages, FOLL_WRITE,
+		pinned = pin_user_pages_remote(mm, (uintptr_t)ub->user_va, nrpages, FOLL_WRITE,
 					       page_list, &locked);
 	} else {
-		pinned = pin_user_pages_fast((uintptr_t)desc->user_va, nrpages, FOLL_WRITE,
+		pinned = pin_user_pages_fast((uintptr_t)ub->user_va, nrpages, FOLL_WRITE,
 					     page_list);
 	}
 	if (locked)
@@ -196,33 +200,32 @@ int alloc_export_memory_pid(struct obmm_export_region *e_reg)
 		goto free_page_list;
 	}
 
-	if (!hisi_workarounds_check_page_list(e_reg, page_list, nrpages)) {
+	if (!hisi_workarounds_check_page_list(ub, page_list, nrpages)) {
 		pr_err("hisi workarounds check no passing.\n");
 		ret = -EOPNOTSUPP;
 		goto free_page_list;
 	}
 
-	ret = sg_alloc_table_from_pages_segment(&e_reg->sgt, page_list, nrpages, 0,
-						e_reg->region.mem_size, SZ_1G, GFP_KERNEL);
+	ret = sg_alloc_table_from_pages_segment(&ub->exp.sgt, page_list, nrpages, 0,
+						ub->base.mem_size, SZ_1G, GFP_KERNEL);
 	if (ret) {
 		pr_err("alloc sg table failed, %pe.\n", ERR_PTR(ret));
 		goto free_page_list;
 	}
 
-	ret = kernel_pgtable_set_export_invalid(e_reg, 0, e_reg->region.mem_size, true);
+	ret = kernel_pgtable_set_export_invalid(&ub->exp.sgt, 0, ub->base.mem_size, true);
 	if (ret)
 		goto out_free_sg;
 
-	ret = modify_pgtable_prot(mm, desc->user_va, e_reg->region.mem_size, false);
+	ret = modify_pgtable_prot(mm, ub->user_va, ub->base.mem_size, false);
 	if (ret)
 		goto out_set_kernel_cacheable;
 
-	ret = obmm_region_flush_range(&e_reg->region, 0, e_reg->region.mem_size,
-				      OBMM_SHM_CACHE_WB_INVAL);
+	ret = export_flush_sgt(&ub->exp.sgt, 0, ub->base.mem_size, OBMM_SHM_CACHE_WB_INVAL);
 	if (ret)
 		goto out_reset_pgtable_prot;
 
-	desc->pinned = pinned;
+	ub->pinned = pinned;
 	kvfree(page_list); /* all pages saved in scatterlist */
 	mmput(mm);
 	put_task_struct(tsk);
@@ -231,11 +234,11 @@ int alloc_export_memory_pid(struct obmm_export_region *e_reg)
 	return 0;
 
 out_reset_pgtable_prot:
-	WARN_ON(modify_pgtable_prot(mm, desc->user_va, e_reg->region.mem_size, true));
+	WARN_ON(modify_pgtable_prot(mm, ub->user_va, ub->base.mem_size, true));
 out_set_kernel_cacheable:
-	WARN_ON(kernel_pgtable_set_export_invalid(e_reg, 0, e_reg->region.mem_size, false));
+	WARN_ON(kernel_pgtable_set_export_invalid(&ub->exp.sgt, 0, ub->base.mem_size, false));
 out_free_sg:
-	sg_free_table(&e_reg->sgt);
+	sg_free_table(&ub->exp.sgt);
 free_page_list:
 	if (pinned > 0)
 		unpin_user_pages_dirty_lock(page_list, pinned, 0);
@@ -246,6 +249,86 @@ drop_pinned:
 drop_tsk:
 	put_task_struct(tsk);
 	return ret;
+}
+
+/*
+ * ops->destroy: teardown_ummu, then the reverse ladder above, plus the
+ * vendor copy; the object is freed by obmm_backend_put regardless of the
+ * result.
+ */
+static int export_user_destroy(struct obmm_backend *be)
+{
+	struct obmm_export_user_backend *ub = obmm_backend_to_export_user(be);
+	int ret;
+
+	ret = teardown_ummu(&ub->exp);
+	if (ret)
+		goto out_free_vendor;
+
+	export_user_free_memory(ub);
+
+out_free_vendor:
+	kfree(ub->exp.vendor_info);
+	return ret;
+}
+
+/*
+ * EXPORT_USER ops: mmap ops stay NULL (mem_cap == 0, all flags rejected),
+ * so no mapping or flush path can reach it. query/covers_pa, shared with
+ * the pool backend, still work by PA and are not mmap-gated.
+ */
+static const struct obmm_backend_ops obmm_export_user_backend_ops = {
+	.query		= export_query,
+	.covers_pa	= export_covers_pa,
+	.destroy	= export_user_destroy,
+};
+
+/*
+ * Create a user-memory export backend; spec->vendor_info ownership
+ * transfers here (obmm_backend.h); returns the existence ref or an ERR_PTR.
+ */
+struct obmm_backend *
+obmm_export_user_backend_create(const struct obmm_export_user_spec *spec)
+{
+	struct obmm_export_user_backend *ub;
+	int ret;
+
+	ub = kzalloc(sizeof(*ub), GFP_KERNEL);
+	if (!ub) {
+		/* hand-off not reached: the vendor buffer is still ours */
+		kfree(spec->vendor_info);
+		return ERR_PTR(-ENOMEM);
+	}
+
+	ub->base.type = OBMM_BACKEND_EXPORT_USER;
+	ub->base.mem_size = spec->length;
+	ub->base.mem_cap = 0;	/* never mmapable */
+	ub->base.ops = &obmm_export_user_backend_ops;
+	refcount_set(&ub->base.refcnt, 1); /* the existence reference */
+
+	ub->pid = spec->pid;
+	ub->user_va = spec->user_va;
+	ub->exp.affinity = spec->pxm_numa;
+	memcpy(ub->exp.deid, spec->deid, sizeof(ub->exp.deid));
+	ub->exp.vendor_info = spec->vendor_info;
+	ub->exp.vendor_len = spec->vendor_len;
+
+	ret = export_user_alloc_memory(ub);
+	if (ret)
+		goto out_free_vendor;
+
+	ret = setup_ummu(&ub->exp);
+	if (ret)
+		goto out_free_memory;
+
+	return &ub->base;
+
+out_free_memory:
+	export_user_free_memory(ub);
+out_free_vendor:
+	kfree(ub->exp.vendor_info);
+	kfree(ub);
+	return ERR_PTR(ret);
 }
 
 static int obmm_cmd_export_pid_allowed(struct obmm_cmd_export_pid *cmd)
@@ -276,40 +359,14 @@ static int obmm_cmd_export_pid_allowed(struct obmm_cmd_export_pid *cmd)
 	return 0;
 }
 
-static struct obmm_export_region *
-alloc_export_region_from_obmm_cmd_export_pid(const struct obmm_cmd_export_pid *export_pid)
+static void user_spec_from_cmd(const struct obmm_cmd_export_pid *export_pid,
+			       struct obmm_export_user_spec *spec)
 {
-	int ret;
-
-	struct obmm_export_region *e_reg = kzalloc(sizeof(struct obmm_export_region), GFP_KERNEL);
-
-	if (e_reg == NULL)
-		return ERR_PTR(-ENOMEM);
-
-	e_reg->mem_desc_pid.pid = export_pid->pid;
-	e_reg->mem_desc_pid.user_va = export_pid->va;
-	e_reg->region.mem_size = export_pid->length;
-	e_reg->region.type = OBMM_EXPORT_REGION;
-	e_reg->region.mem_cap = 0;
-	e_reg->affinity = export_pid->pxm_numa;
-	memcpy(e_reg->deid, export_pid->deid, sizeof(e_reg->deid));
-	ret = export_flags_to_region_flags(&e_reg->region.flags, export_pid->flags);
-	if (ret) {
-		kfree(e_reg);
-		return ERR_PTR(ret);
-	}
-	e_reg->region.flags |= OBMM_REGION_FLAG_MEMORY_FROM_USER;
-	ret = set_obmm_region_priv(&e_reg->region, export_pid->priv_len, export_pid->priv);
-	if (ret) {
-		kfree(e_reg);
-		return ERR_PTR(ret);
-	}
-	ret = set_export_vendor(e_reg, export_pid->vendor_info, export_pid->vendor_len);
-	if (ret) {
-		kfree(e_reg);
-		return ERR_PTR(ret);
-	}
-	return e_reg;
+	spec->pid = export_pid->pid;
+	spec->user_va = export_pid->va;
+	spec->length = export_pid->length;
+	spec->pxm_numa = export_pid->pxm_numa;
+	memcpy(spec->deid, export_pid->deid, sizeof(spec->deid));
 }
 
 static void print_export_pid_param(const struct obmm_cmd_export_pid *cmd_export_pid)
@@ -323,7 +380,10 @@ static void print_export_pid_param(const struct obmm_cmd_export_pid *cmd_export_
 
 int obmm_export_pid(struct obmm_cmd_export_pid *export_pid)
 {
-	struct obmm_export_region *e_reg;
+	struct obmm_export_user_spec spec = { 0 };
+	struct obmm_region *reg;
+	struct obmm_backend *be;
+	void *vendor;
 	uint64_t uba, mem_id;
 	uint32_t token_id;
 	int ret;
@@ -333,31 +393,54 @@ int obmm_export_pid(struct obmm_cmd_export_pid *export_pid)
 	if (ret)
 		return ret;
 
-	e_reg = alloc_export_region_from_obmm_cmd_export_pid(export_pid);
-	if (IS_ERR(e_reg))
-		return PTR_ERR(e_reg);
+	user_spec_from_cmd(export_pid, &spec);
 
-	ret = init_obmm_region(&e_reg->region);
+	reg = kzalloc(sizeof(struct obmm_region), GFP_KERNEL);
+	if (reg == NULL)
+		return -ENOMEM;
+
+	reg->created_as = OBMM_EXPORT_REGION;
+	reg->mem_size = export_pid->length;
+	ret = export_flags_to_region_flags(&reg->flags, export_pid->flags);
+	if (ret)
+		goto out_free_reg;
+	reg->flags |= OBMM_REGION_FLAG_MEMORY_FROM_USER;
+	ret = set_obmm_region_priv(reg, export_pid->priv_len, export_pid->priv);
+	if (ret)
+		goto out_free_reg;
+
+	ret = init_obmm_region(reg);
 	if (ret)
 		goto out_free_reg;
 
 	/* from here on the device core owns the region's memory */
-	ret = obmm_shm_dev_init_device(&e_reg->region);
+	ret = obmm_shm_dev_init_device(reg);
 	if (ret)
 		goto out_unit_reg;
 
-	ret = obmm_export_common(e_reg);
-	if (ret)
-		goto out_put_dev;
+	/* vendor_info ownership passes to the creator below (obmm_backend.h) */
+	vendor = dup_export_vendor(export_pid->vendor_info, export_pid->vendor_len);
+	if (IS_ERR(vendor)) {
+		ret = PTR_ERR(vendor);
+		goto out_dev_put;
+	}
+	spec.vendor_info = vendor;
+	spec.vendor_len = export_pid->vendor_len;
 
-	token_id = e_reg->tokenid;
-	uba = e_reg->uba;
-	mem_id = (uint64_t)e_reg->region.regionid;
+	be = obmm_export_user_backend_create(&spec);
+	if (IS_ERR(be)) {
+		ret = PTR_ERR(be);
+		pr_err("Failed to prepare export memory: ret=%pe\n", ERR_PTR(ret));
+		goto out_dev_put;
+	}
 
-	ret = register_obmm_region(&e_reg->region);
+	token_id = obmm_backend_to_export_common(be)->tokenid;
+	uba = obmm_backend_to_export_common(be)->uba;
+	mem_id = (uint64_t)reg->regionid;
+
+	ret = obmm_region_publish(reg, be, "export");
 	if (ret)
-		goto out_unexport;
-	activate_obmm_region(&e_reg->region);
+		return ret;
 
 	export_pid->tokenid = token_id;
 	export_pid->uba = uba;
@@ -366,16 +449,14 @@ int obmm_export_pid(struct obmm_cmd_export_pid *export_pid)
 	pr_debug("obmm_export_useraddr: mem_id=%llu online.\n", mem_id);
 	return 0;
 
-out_unexport:
-	obmm_unexport_common(e_reg);
-out_put_dev:
-	uninit_obmm_region(&e_reg->region);
+out_dev_put:
+	uninit_obmm_region(reg);
 	/* frees the region via the device release callback */
-	obmm_shm_dev_put(&e_reg->region);
+	obmm_shm_dev_put(reg);
 	return ret;
 out_unit_reg:
-	uninit_obmm_region(&e_reg->region);
+	uninit_obmm_region(reg);
 out_free_reg:
-	free_export_region(e_reg);
+	kfree(reg);
 	return ret;
 }

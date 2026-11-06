@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2023-2025. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2023-2026. All rights reserved.
  * Description：OBMM Framework's implementations.
  * Author:
  */
@@ -17,7 +17,12 @@
 #include <linux/nodemask.h>
 #include <linux/refcount.h>
 #include <linux/numa_remote.h>
+#include <linux/rwsem.h>
+#include <linux/seqlock.h>
+#include <linux/rcupdate.h>
 #include <linux/scatterlist.h>
+#include <linux/wait.h>
+#include <linux/workqueue.h>
 
 #define OBMM_DEV_NAME "obmm"
 
@@ -43,6 +48,9 @@ extern size_t __obmm_memseg_size;
 #define MAX_MEMINFO_COUNT MAX_IMPORT_COUNT
 
 struct ubmem_resource;
+struct resource;
+struct obmm_backend;
+struct attribute_group;
 
 enum obmm_region_type {
 	OBMM_EXPORT_REGION,
@@ -64,7 +72,6 @@ enum obmm_mmap_granu {
 #define OBMM_REGION_FLAG_NUMA_REMOTE		0x1
 #define OBMM_REGION_FLAG_ALLOW_MMAP		0x2
 #define OBMM_REGION_FLAG_MEMORY_FROM_USER	0x4
-#define OBMM_REGION_FLAG_FAST_ALLOC		0x8
 #define OBMM_REGION_FLAG_PREIMPORT		0x10
 
 #define OBMM_INVALID_REGIONID	0
@@ -72,24 +79,34 @@ enum obmm_mmap_granu {
 #define OBMM_MAX_VALID_REGIONID MINORMASK
 #define OBMM_REGIONID_MAX_COUNT (OBMM_MAX_VALID_REGIONID - OBMM_MIN_VALID_REGIONID + 1)
 
-#define OBMM_MEM_ALLOW_CACHEABLE_MMAP 0x1
-#define OBMM_MEM_ALLOW_NONCACHEABLE_MMAP 0x2
+#include "obmm_switch_logic.h"
 
-/* invalidate cache **on start-up** */
-/* region models a set of memory to share across hosts: a unit of sharing. */
+/*
+ * region models a set of memory to share across hosts: a unit of sharing.
+ * Backend-independent shell over the attached struct obmm_backend.
+ */
 struct obmm_region {
 	/* unique within host -- can be used as an access handle */
 	int regionid;
 
-	/* import or export */
-	enum obmm_region_type type;
+	/* how it was created (import or export ioctl); reg->backend->type is
+	 * authoritative, a switch may attach a backend of the other kind;
+	 * teardown accepts either identity (obmm_region_teardown_matches()).
+	 */
+	enum obmm_region_type created_as;
 
 	unsigned long flags;
 
 	struct cdev cdevice;
 	struct device device;
+	/* identity sysfs group (import_info/ or export_info/) tracks backend */
+	const struct attribute_group *sysfs_identity_group;
 
 	refcount_t refcnt;
+	/* OR of attached backends' mem_cap while entitled fds could exist:
+	 * the open-time entitlement gate, deflated at the shrink points.
+	 */
+	u32 promised_cap;
 
 	/* the total size of all memory segments included in meminfo */
 	u64 mem_size;
@@ -106,14 +123,59 @@ struct obmm_region {
 	 * the mmap flags and OBMM_REGION_FLAG_ALLOW_MMAP.
 	 */
 	enum obmm_mmap_granu mmap_granu;
-	/*
-	 * Determines what mode the memory can be mapped with.
-	 * OBMM_MEM_ALLOW_CACHEABLE_MMAP: Supports cacheable mapping
-	 * OBMM_MEM_ALLOW_NONCACHEABLE_MMAP: Supports non-cacheable mapping
-	 */
-	unsigned long mem_cap;
 	/* number of mmap (atomic to avoid deadlock in vma_open during split) */
 	atomic_t mmap_count;
+	/* open fds holding cacheability entitlements */
+	atomic_t fd_count;
+
+	/* MEMID_{regionid} iomem leaf of the CURRENT import backend;
+	 * attach/detach-managed (obmm_backend.c); NULL for export backends.
+	 */
+	struct resource *memdev_res;
+
+	/* current backend: written under state_mutex; read under state_mutex,
+	 * the fault gate's switch_lock(read) or rcu_read_lock (lockless sysfs
+	 * views), and unlocked at region free; RCU-published on swap and freed
+	 * only after a grace period; NULL while detached, dispatch sites
+	 * NULL-guard it.
+	 */
+	struct obmm_backend __rcu *backend;
+
+	/* old backend held across a switch gap: detach keeps its existence
+	 * reference so a keep-old-alive abort can restore it. state_mutex +
+	 * switch_lock(write).
+	 */
+	struct obmm_backend *switch_old;
+
+	/* Cross-process zap channel: the first open caches the device node's
+	 * address_space and igrabs its inode so unmap_mapping_range() outlives
+	 * unlink; iput in uninit_obmm_region(). Kept ahead of switch_lock so
+	 * the rwsem's count and owner share a cacheline with each other and
+	 * not with the hot refcount/mmap counters.
+	 */
+	struct address_space *i_mapping;
+	struct inode *i_inode;
+
+	/* switch machinery: switch_state is written under switch_lock(write)
+	 * except the teardown force-strand's lock-free STRANDED publish, and is
+	 * read with READ_ONCE; the rwsem serializes the fault gate against
+	 * begin/finisher swaps, switch_wqh is its wait channel, switch_work is
+	 * the finisher armed by switch_end. No timeout.
+	 */
+	struct rw_semaphore switch_lock;
+	enum obmm_switch_state switch_state;
+	/* gap generation, bumped by every begin under state_mutex +
+	 * switch_lock(write): a gap-scoped VMA is served only in the
+	 * generation its mmap tagged it with (vm_private_data).
+	 */
+	u32 switch_generation;
+	wait_queue_head_t switch_wqh;
+	struct work_struct switch_work;
+	bool switch_finish_success;
+	bool switch_keep_old_alive;
+	bool switch_old_mapped;
+	bool switch_new_mapped;
+	int switch_flush_result;
 
 	struct obmm_ownership_info *ownership_info;
 	/* protect ownership_info and serialize concurrent page table change requests */
@@ -122,7 +184,15 @@ struct obmm_region {
 	/* regions are chained into a list for management */
 	struct list_head node;
 
+	/* staged priv: committed by the finisher's success branch, else lost */
+	unsigned int switch_pending_priv_len;
+	unsigned char switch_pending_priv[OBMM_MAX_PRIV_LEN];
+
 	unsigned int priv_len;
+	/* sequences priv against the finisher's commit for the lockless sysfs
+	 * views; writers hold state_mutex
+	 */
+	seqcount_t priv_seq;
 	unsigned char priv[OBMM_MAX_PRIV_LEN];
 };
 
@@ -142,73 +212,15 @@ static inline bool region_preimport(const struct obmm_region *reg)
 {
 	return reg->flags & OBMM_REGION_FLAG_PREIMPORT;
 }
-static inline bool region_fast_alloc(const struct obmm_region *reg)
+/* A switch in flight: identity/typed views and query ioctls answer -EAGAIN. */
+static inline bool region_switch_in_flight(const struct obmm_region *reg)
 {
-	return reg->flags & OBMM_REGION_FLAG_FAST_ALLOC;
+	return obmm_switch_state_transitional(READ_ONCE(reg->switch_state));
 }
 
-struct obmm_import_region {
-	struct obmm_region region;
-
-	u32 dcna;
-	u32 scna;
-
-	/* resource of the PA range */
-	struct ubmem_resource *ubmem_res;
-	/* the resource for this region */
-	struct resource *memdev_res;
-	u64 pa;
-
-	/* imported NUMA node */
-	int numa_id;
-	/* the base_dist passed in import, which in some scenario might be an ignored value. It is
-	 * stored here make error rollback feasible.
-	 */
-	u8 base_dist;
-
-	/* handle to manage associated preimport range */
-	void *preimport_handle;
-	u8 deid[16];
-	u8 seid[16];
-};
-
-struct mem_description_pid {
-	int pid;
-	void __user *user_va;
-	int pinned;
-	u64 start_time;
-};
+/* per-node memseg lists of an export-pool backend (obmm_backend.h) */
 struct mem_description_pool {
 	struct list_head head[OBMM_MAX_LOCAL_NUMA_NODES];
-};
-
-struct obmm_export_region {
-	struct obmm_region region;
-
-	/* export region may use physical memory from NUMA node[0] to node[node_count-1] */
-	unsigned int node_count;
-	uint64_t node_mem_size[OBMM_MAX_LOCAL_NUMA_NODES];
-
-	/* physical pages */
-	union {
-		struct mem_description_pid mem_desc_pid;
-		struct mem_description_pool mem_desc;
-	};
-
-	/* DMA mapping */
-	struct sg_table sgt;
-
-	/* UMMU device for the tokenid */
-	struct device *ummu_dev;
-	/* UMMU RAS event notifier */
-	struct ummu_event_block *ummu_event_block;
-
-	unsigned int tokenid;
-	u64 uba;
-	unsigned int vendor_len;
-	void *vendor_info;
-	int affinity;
-	u8 deid[16];
 };
 
 struct obmm_datapath {
@@ -232,7 +244,10 @@ struct obmm_region *search_get_obmm_region(int regionid);
 struct obmm_region *search_deactivate_obmm_region(int regionid);
 void put_obmm_region(struct obmm_region *region);
 
-void obmm_region_flush(struct obmm_region *reg, unsigned long cache_ops);
+/* Called under state_mutex: with no entitled fds and no mappings the
+ * promise deflates to the attached backend's own capability.
+ */
+void obmm_promised_cap_shrink_maybe(struct obmm_region *region);
 
 /* Extended information of a byte address */
 struct obmm_ext_addr {
@@ -317,5 +332,12 @@ void uninit_obmm_region(struct obmm_region *region);
 
 int register_obmm_region(struct obmm_region *region);
 void deregister_obmm_region(struct obmm_region *region);
+
+/* shared shell teardown for unimport/unexport: deregister, uninit, free */
+int obmm_region_teardown(struct obmm_region *region);
+
+/* creation identity or live-backend kind, either accepts the teardown */
+bool obmm_region_teardown_matches(struct obmm_region *region,
+				  enum obmm_region_type kind);
 
 #endif
