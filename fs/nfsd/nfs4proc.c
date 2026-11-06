@@ -1110,31 +1110,42 @@ out:
 	return status;
 }
 
-void nfs4_put_copy(struct nfsd4_copy *copy)
+void nfs4_put_copy(struct nfsd4_async_copy *copy)
 {
 	if (!refcount_dec_and_test(&copy->refcount))
 		return;
 	/* Drop the task_struct pinned in nfsd4_copy(); NULL on error paths. */
 	if (copy->copy_task)
 		put_task_struct(copy->copy_task);
-	atomic_dec(&copy->cp_nn->pending_async_copies);
+	atomic_dec(&copy->cp_copy.cp_nn->pending_async_copies);
+	kfree(copy);
+}
+
+/*
+ * OLK-5.10 still allocates a standalone nfsd4_copy for the CB_OFFLOAD
+ * callback; it has no kthread or pending-copy accounting of its own.
+ */
+static void nfs4_put_cb_copy(struct nfsd4_copy *copy)
+{
+	if (!refcount_dec_and_test(&copy->refcount))
+		return;
 	kfree(copy);
 }
 
 static bool
-check_and_set_stop_copy(struct nfsd4_copy *copy)
+check_and_set_stop_copy(struct nfsd4_async_copy *copy)
 {
 	bool value;
 
-	spin_lock(&copy->cp_clp->async_lock);
+	spin_lock(&copy->cp_copy.cp_clp->async_lock);
 	value = copy->stopped;
 	if (!copy->stopped)
 		copy->stopped = true;
-	spin_unlock(&copy->cp_clp->async_lock);
+	spin_unlock(&copy->cp_copy.cp_clp->async_lock);
 	return value;
 }
 
-static void nfsd4_stop_copy(struct nfsd4_copy *copy)
+static void nfsd4_stop_copy(struct nfsd4_async_copy *copy)
 {
 	/* only 1 thread should stop the copy */
 	if (!check_and_set_stop_copy(copy))
@@ -1142,14 +1153,14 @@ static void nfsd4_stop_copy(struct nfsd4_copy *copy)
 	nfs4_put_copy(copy);
 }
 
-static struct nfsd4_copy *nfsd4_get_copy(struct nfs4_client *clp)
+static struct nfsd4_async_copy *nfsd4_get_copy(struct nfs4_client *clp)
 {
-	struct nfsd4_copy *copy = NULL;
+	struct nfsd4_async_copy *copy = NULL;
 
 	spin_lock(&clp->async_lock);
 	if (!list_empty(&clp->async_copies)) {
-		copy = list_first_entry(&clp->async_copies, struct nfsd4_copy,
-					copies);
+		copy = list_first_entry(&clp->async_copies,
+					struct nfsd4_async_copy, copies);
 		refcount_inc(&copy->refcount);
 	}
 	spin_unlock(&clp->async_lock);
@@ -1158,7 +1169,7 @@ static struct nfsd4_copy *nfsd4_get_copy(struct nfs4_client *clp)
 
 void nfsd4_shutdown_copy(struct nfs4_client *clp)
 {
-	struct nfsd4_copy *copy;
+	struct nfsd4_async_copy *copy;
 
 	while ((copy = nfsd4_get_copy(clp)) != NULL)
 		nfsd4_stop_copy(copy);
@@ -1356,7 +1367,7 @@ static void nfsd4_cb_offload_release(struct nfsd4_callback *cb)
 {
 	struct nfsd4_copy *copy = container_of(cb, struct nfsd4_copy, cp_cb);
 
-	nfs4_put_copy(copy);
+	nfs4_put_cb_copy(copy);
 }
 
 static int nfsd4_cb_offload_done(struct nfsd4_callback *cb,
@@ -1440,28 +1451,28 @@ static void dup_copy_fields(struct nfsd4_copy *src, struct nfsd4_copy *dst)
 	if (src->cp_intra) /* for inter, file_src doesn't exist yet */
 		dst->nf_src = nfsd_file_get(src->nf_src);
 
-	memcpy(&dst->cp_stateid, &src->cp_stateid, sizeof(src->cp_stateid));
 	memcpy(&dst->cp_src, &src->cp_src, sizeof(struct nl4_server));
 	memcpy(&dst->stateid, &src->stateid, sizeof(src->stateid));
 	memcpy(&dst->c_fh, &src->c_fh, sizeof(src->c_fh));
 	dst->ss_mnt = src->ss_mnt;
 }
 
-static void cleanup_async_copy(struct nfsd4_copy *copy)
+static void cleanup_async_copy(struct nfsd4_async_copy *copy)
 {
 	nfs4_free_copy_state(copy);
-	nfsd_file_put(copy->nf_dst);
-	if (copy->cp_intra)
-		nfsd_file_put(copy->nf_src);
-	spin_lock(&copy->cp_clp->async_lock);
+	nfsd_file_put(copy->cp_copy.nf_dst);
+	if (copy->cp_copy.cp_intra)
+		nfsd_file_put(copy->cp_copy.nf_src);
+	spin_lock(&copy->cp_copy.cp_clp->async_lock);
 	list_del(&copy->copies);
-	spin_unlock(&copy->cp_clp->async_lock);
+	spin_unlock(&copy->cp_copy.cp_clp->async_lock);
 	nfs4_put_copy(copy);
 }
 
 static int nfsd4_do_async_copy(void *data)
 {
-	struct nfsd4_copy *copy = (struct nfsd4_copy *)data;
+	struct nfsd4_async_copy *async = data;
+	struct nfsd4_copy *copy = &async->cp_copy;
 	struct nfsd4_copy *cb_copy;
 
 	if (!copy->cp_intra) { /* Inter server SSC */
@@ -1496,7 +1507,7 @@ do_callback:
 out:
 	if (!copy->cp_intra)
 		kfree(copy->nf_src);
-	cleanup_async_copy(copy);
+	cleanup_async_copy(async);
 	return 0;
 }
 
@@ -1506,7 +1517,7 @@ nfsd4_copy(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 {
 	struct nfsd4_copy *copy = &u->copy;
 	__be32 status;
-	struct nfsd4_copy *async_copy = NULL;
+	struct nfsd4_async_copy *async_copy = NULL;
 
 	if (!copy->cp_intra) { /* Inter server SSC */
 		if (!inter_copy_offload_enable || copy->cp_synchronous) {
@@ -1536,21 +1547,35 @@ nfsd4_copy(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 		struct nfsd_net *nn = net_generic(SVC_NET(rqstp), nfsd_net_id);
 		struct task_struct *task;
 
-		async_copy = kzalloc(sizeof(struct nfsd4_copy), GFP_KERNEL);
+		async_copy = kzalloc(sizeof(struct nfsd4_async_copy), GFP_KERNEL);
 		if (!async_copy)
 			goto out_err;
-		async_copy->cp_nn = nn;
+		async_copy->cp_copy.cp_nn = nn;
 		refcount_set(&async_copy->refcount, 1);
 		/* Arbitrary cap on number of pending async copy operations */
 		if (atomic_inc_return(&nn->pending_async_copies) >
 				(int)rqstp->rq_pool->sp_nrthreads)
 			goto out_err;
-		dup_copy_fields(copy, async_copy);
 
-		if (!nfs4_init_copy_state(nn, async_copy))
+		if (!nfs4_init_copy_state(nn, async_copy)) {
+			/*
+			 * dup_copy_fields() has not run yet, so cp_copy is
+			 * still zeroed and cleanup_async_copy() would
+			 * dereference a NULL cp_clp. Nothing has been
+			 * published, so just drop the object and let
+			 * out_err() skip cleanup.
+			 */
+			nfs4_put_copy(async_copy);
+			async_copy = NULL;
 			goto out_err;
+		}
 		memcpy(&copy->cp_res.cb_stateid, &async_copy->cp_stateid.stid,
 			sizeof(copy->cp_res.cb_stateid));
+		/*
+		 * dup after writing cb_stateid; duplicating first would leave
+		 * the callback stateid zeroed.
+		 */
+		dup_copy_fields(copy, &async_copy->cp_copy);
 		task = kthread_create(nfsd4_do_async_copy, async_copy,
 				      "%s", "copy thread");
 		if (IS_ERR(task))
@@ -1561,10 +1586,10 @@ nfsd4_copy(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 		 */
 		get_task_struct(task);
 		async_copy->copy_task = task;
-		spin_lock(&async_copy->cp_clp->async_lock);
+		spin_lock(&async_copy->cp_copy.cp_clp->async_lock);
 		list_add(&async_copy->copies,
-				&async_copy->cp_clp->async_copies);
-		spin_unlock(&async_copy->cp_clp->async_lock);
+				&async_copy->cp_copy.cp_clp->async_copies);
+		spin_unlock(&async_copy->cp_copy.cp_clp->async_lock);
 		wake_up_process(async_copy->copy_task);
 		status = nfs_ok;
 	} else {
@@ -1583,10 +1608,10 @@ out_err:
 	goto out;
 }
 
-struct nfsd4_copy *
+struct nfsd4_async_copy *
 find_async_copy(struct nfs4_client *clp, stateid_t *stateid)
 {
-	struct nfsd4_copy *copy;
+	struct nfsd4_async_copy *copy;
 
 	spin_lock(&clp->async_lock);
 	list_for_each_entry(copy, &clp->async_copies, copies) {
@@ -1606,7 +1631,7 @@ nfsd4_offload_cancel(struct svc_rqst *rqstp,
 		     union nfsd4_op_u *u)
 {
 	struct nfsd4_offload_status *os = &u->offload_status;
-	struct nfsd4_copy *copy;
+	struct nfsd4_async_copy *copy;
 	struct nfs4_client *clp = cstate->clp;
 
 	copy = find_async_copy(clp, &os->stateid);
@@ -1695,12 +1720,12 @@ nfsd4_offload_status(struct svc_rqst *rqstp,
 {
 	struct nfsd4_offload_status *os = &u->offload_status;
 	__be32 status = 0;
-	struct nfsd4_copy *copy;
+	struct nfsd4_async_copy *copy;
 	struct nfs4_client *clp = cstate->clp;
 
 	copy = find_async_copy(clp, &os->stateid);
 	if (copy) {
-		os->count = copy->cp_res.wr_bytes_written;
+		os->count = copy->cp_copy.cp_res.wr_bytes_written;
 		nfs4_put_copy(copy);
 	} else
 		status = nfserr_bad_stateid;
