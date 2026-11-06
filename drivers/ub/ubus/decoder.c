@@ -451,6 +451,7 @@ static irqreturn_t decoder_event_deal_handle(int irq, void *data)
 
 void ub_init_decoder_usi(struct ub_entity *uent)
 {
+	const struct cpumask *mask;
 	int irq_num, ret;
 	u32 usi_idx;
 
@@ -473,10 +474,20 @@ void ub_init_decoder_usi(struct ub_entity *uent)
 
 	ret = request_irq((unsigned int)irq_num, decoder_event_deal_handle,
 			  IRQF_SHARED, "decoder_event_handle", (void *)uent);
-	if (ret)
+	if (ret) {
 		ub_err(uent, "decoder request_irq failed, ret=%d\n", ret);
-	else
-		uent->ubc->decoder->irq_num = irq_num;
+		return;
+	}
+	uent->ubc->decoder->irq_num = irq_num;
+
+	mask = ub_get_ubc_irq_affinity(uent);
+	if (mask) {
+		ret = irq_set_affinity((unsigned int)irq_num, mask);
+		if (ret)
+			ub_err(uent,
+			       "set decoder irq[%d] affinity failed, ret=%d\n",
+			       irq_num, ret);
+	}
 }
 
 void ub_uninit_decoder_usi(struct ub_entity *uent)
@@ -493,6 +504,7 @@ void ub_uninit_decoder_usi(struct ub_entity *uent)
 		return;
 
 	free_irq((unsigned int)irq_num, (void *)uent);
+	uent->ubc->decoder->irq_num = -1;
 }
 
 void ub_decoder_init(struct ub_entity *uent)

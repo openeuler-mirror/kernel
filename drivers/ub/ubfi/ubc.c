@@ -6,6 +6,7 @@
 #define pr_fmt(fmt)	"ubfi ubc: " fmt
 
 #include <linux/acpi.h>
+#include <linux/cpumask.h>
 #include <linux/errno.h>
 #include <linux/io.h>
 #include <linux/irqdomain.h>
@@ -24,12 +25,17 @@
 #define UB_MSGQ_INT_TRIGGER_MASK BIT(0)
 #define UB_MSGQ_INT_POLARITY_MASK BIT(1)
 
+#define UBC_MAX_IRQ_NUM 16
+
 #define ACPI_UBC_DEVICE_HID "HISI0541"
 
 #define to_ub_ubc(n) container_of(n, struct ub_bus_controller, dev)
 
 LIST_HEAD(ubc_list);
 EXPORT_SYMBOL_GPL(ubc_list);
+
+LIST_HEAD(ubc_irqs_affinity_list);
+EXPORT_SYMBOL_GPL(ubc_irqs_affinity_list);
 
 u32 ubc_eid_start;
 EXPORT_SYMBOL_GPL(ubc_eid_start);
@@ -212,6 +218,108 @@ static int ubc_dev_new_resource_entry(struct resource *res,
 	return 0;
 }
 
+static int ub_irq_affinity_prepare(struct device_node *np, u32 ctl_no,
+				   int affinity_irq_idx, u32 *cpu_count,
+				   u32 *phandle_offset)
+{
+	int irq_num, phandle_num, total_cpus, i, ret;
+
+	if (!np)
+		return -EINVAL;
+
+	if (!of_property_present(np, "interrupt-affinity-cpu-count") ||
+	    !of_property_present(np, "interrupt-affinity")) {
+		pr_info("ubc[%u] affinity property missing\n", ctl_no);
+		return -EINVAL;
+	}
+
+	irq_num = of_property_count_u32_elems(np, "interrupt-affinity-cpu-count");
+	phandle_num = of_property_count_u32_elems(np, "interrupt-affinity");
+	if (irq_num <= 0 || phandle_num <= 0 || irq_num > UBC_MAX_IRQ_NUM) {
+		pr_err("ubc[%u] affinity property invalid, irq:%d phandle:%d\n",
+		       ctl_no, irq_num, phandle_num);
+		return -EINVAL;
+	}
+
+	if (affinity_irq_idx >= irq_num) {
+		pr_err("ubc[%u] affinity idx[%u] out of range, irq:%d\n",
+		       ctl_no, affinity_irq_idx, irq_num);
+		return -EINVAL;
+	}
+
+	ret = of_property_read_u32_array(np, "interrupt-affinity-cpu-count",
+					 cpu_count, irq_num);
+	if (ret) {
+		pr_err("ubc[%u] read cpu-count failed, ret:%d\n", ctl_no, ret);
+		return ret;
+	}
+
+	total_cpus = 0;
+	for (i = 0; i < irq_num; i++)
+		total_cpus += cpu_count[i];
+	if (total_cpus != phandle_num) {
+		pr_err("ubc[%u] interrupt-affinity-cpu-count total=%u != interrupt-affinity phandles=%d\n",
+		       ctl_no, total_cpus, phandle_num);
+		return -EINVAL;
+	}
+
+	*phandle_offset = 0;
+	for (i = 0; i < affinity_irq_idx; i++)
+		*phandle_offset += cpu_count[i];
+
+	return 0;
+}
+
+static void ub_irqs_affinity_parse(struct device_node *np, u32 ctl_no,
+				   int affinity_irq_idx)
+{
+	struct ub_irqs_affinity *irq_aff;
+	u32 cpu_count[UBC_MAX_IRQ_NUM];
+	struct device_node *cpu_np;
+	u32 phandle_offset = 0;
+	int i, cpu, ret;
+
+	ret = ub_irq_affinity_prepare(np, ctl_no, affinity_irq_idx, cpu_count,
+				      &phandle_offset);
+	if (ret)
+		return;
+
+	irq_aff = kzalloc(sizeof(*irq_aff), GFP_KERNEL);
+	if (!irq_aff)
+		return;
+
+	for (i = 0; i < cpu_count[affinity_irq_idx]; i++) {
+		cpu_np = of_parse_phandle(np, "interrupt-affinity",
+					  phandle_offset + i);
+		if (!cpu_np) {
+			pr_err("ubc[%u] parse cpu phandle[%d] failed\n", ctl_no,
+			       phandle_offset + i);
+			continue;
+		}
+
+		cpu = of_cpu_node_to_id(cpu_np);
+		of_node_put(cpu_np);
+		if (cpu < 0) {
+			pr_err("ubc[%u] phandle[%d] is not a cpu\n", ctl_no,
+			       phandle_offset + i);
+			continue;
+		}
+
+		cpumask_set_cpu(cpu, &irq_aff->irqs_affinity);
+	}
+
+	if (cpumask_empty(&irq_aff->irqs_affinity)) {
+		pr_err("ubc[%u] irq[%u] affinity is empty\n", ctl_no,
+		       affinity_irq_idx);
+		kfree(irq_aff);
+		return;
+	}
+	irq_aff->ctl_no = ctl_no;
+	list_add_tail(&irq_aff->node, &ubc_irqs_affinity_list);
+	pr_info("ubc[%u] irq[%u] affinity cpu[%*pbl]\n", ctl_no,
+		affinity_irq_idx, cpumask_pr_args(&irq_aff->irqs_affinity));
+}
+
 static int dts_register_irq(u32 ctl_no, int irq_idx, const char *name,
 			    struct resource *res)
 {
@@ -231,6 +339,8 @@ static int dts_register_irq(u32 ctl_no, int irq_idx, const char *name,
 		irq = irq_of_parse_and_map(np, irq_idx);
 		if (!irq)
 			continue;
+
+		ub_irqs_affinity_parse(np, ctl_no, irq_idx);
 	}
 
 	if (!irq) {
@@ -577,10 +687,17 @@ static int parse_ubc_table(void *info_node)
 
 static void ub_destroy_bus_controllers(void)
 {
+	struct ub_irqs_affinity *irq_aff, *next;
 	struct ub_bus_controller *ubc, *tmp;
 
 	list_for_each_entry_safe_reverse(ubc, tmp, &ubc_list, node)
 		device_unregister(&ubc->dev);
+
+	/* Release the irqs affinity list of the bus controllers. */
+	list_for_each_entry_safe(irq_aff, next, &ubc_irqs_affinity_list, node) {
+		list_del(&irq_aff->node);
+		kfree(irq_aff);
+	}
 
 	pr_info("ubc destroy success\n");
 }
