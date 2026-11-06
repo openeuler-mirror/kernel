@@ -13,6 +13,8 @@
 #include <linux/kernel.h>
 #include <linux/inet.h>
 #include <linux/netdevice.h>
+#include <linux/mutex.h>
+#include <linux/rtnetlink.h>
 #include <linux/string.h>
 #include "ipourma_netdev.h"
 #include "ipourma_res.h"
@@ -182,7 +184,10 @@ static int ipourma_netdev_event(struct notifier_block *nb, unsigned long event, 
 	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	struct ipourma_dev_priv *priv = NULL;
 
-	if (!strstr(dev->name, "ipourma"))
+	/* Only react to netdevs created by the ipourma rtnl_link_ops; matching on
+	 * the name alone could dereference a foreign netdev_priv.
+	 */
+	if (dev->rtnl_link_ops != ipourma_get_rtnl_link_ops())
 		return NOTIFY_DONE;
 	priv = (struct ipourma_dev_priv *)netdev_priv(dev);
 
@@ -201,6 +206,7 @@ static struct notifier_block ipourma_netdev_nb = {
 	.notifier_call = ipourma_netdev_event,
 };
 
+/* Caller holds evt_lock: keeps register + flag atomic vs. ndo_uninit. */
 static int ipourma_priv_eid_init(struct net_device *dev)
 {
 	struct ipourma_dev_priv *priv = netdev_priv(dev);
@@ -236,7 +242,11 @@ static int ipourma_priv_eid_init(struct net_device *dev)
 	}
 
 	priv->eid_change_handler.event_callback = ipourma_do_eid_change_handler;
-	ubcore_register_event_handler(priv->urma_dev, &priv->eid_change_handler);
+	/* Our handler cannot be dispatched before this completes. */
+	if (!priv->eid_dying) {
+		ubcore_register_event_handler(priv->urma_dev, &priv->eid_change_handler);
+		priv->eid_handler_registered = true;
+	}
 
 	spin_lock(&urma_dev->eid_table.lock);
 	if (IS_ERR_OR_NULL(urma_dev->eid_table.eid_entries))
@@ -275,9 +285,10 @@ static void ipourma_cleanup_res(struct net_device *dev)
 	ipourma_urma_dev_uninit(dev);
 }
 
-static void ipourma_proc_eid_exist(struct ipourma_dev_priv *priv)
+static bool ipourma_proc_eid_exist(struct ipourma_dev_priv *priv)
 {
 	uint32_t eid_count = priv->eid_count;
+	bool ok = true;
 
 	priv->eid_count = 0;
 	for (uint32_t i = 0; i < eid_count; i++) {
@@ -291,10 +302,15 @@ static void ipourma_proc_eid_exist(struct ipourma_dev_priv *priv)
 		memset(&priv->eid_info[eid_idx], 0, sizeof(priv->eid_info[eid_idx]));
 		priv->eid_info[eid_idx].eid = eid;
 		priv->eid_info[eid_idx].eid_index = eid_idx;
-		if (ipourma_create_new_eid(priv, eid_idx) != IPOURMA_OK)
-			continue;
+		/* On failure create_new_eid queues set_dev_down; stop so the
+		 * caller will not also queue set_dev_up. */
+		if (ipourma_create_new_eid(priv, eid_idx) != IPOURMA_OK) {
+			ok = false;
+			break;
+		}
 		priv->eid_count++;
 	}
+	return ok;
 }
 
 /* register netdev */
@@ -302,33 +318,54 @@ void ipourma_register_netdev(struct work_struct *work)
 {
 	struct ipourma_dev_priv *priv;
 	int ret = 0;
+	bool eid_ok;
 
 	priv = container_of(work, struct ipourma_dev_priv, register_netdev);
-	ret = register_netdev(priv->dev);
+
+	/* Hold rtnl_lock across register + setup so no ndo callback can run
+	 * before the device is fully initialized. evt_lock serializes the
+	 * async eid handler only. */
+	rtnl_lock();
+	ret = register_netdevice(priv->dev);
 	if (ret != 0) {
 		pr_err("register %s failed, ret = %d\n", priv->dev->name, ret);
-		goto REG_ERR;
+		rtnl_unlock();
+		return;
+	}
+
+	mutex_lock(&priv->evt_lock);
+	if (priv->eid_dying) {
+		mutex_unlock(&priv->evt_lock);
+		goto out_unregister;
 	}
 	if (IS_ERR_OR_NULL(priv->net_config_wq)) {
+		mutex_unlock(&priv->evt_lock);
 		pr_err("%s create work queue failed, ret = %d\n", priv->dev->name, ret);
-		goto ALLOC_RESOURCE_ERR;
+		goto out_unregister;
 	}
 	ret = ipourma_priv_eid_init(priv->dev);
 	if (ret != IPOURMA_OK) {
+		mutex_unlock(&priv->evt_lock);
 		pr_err("%s init eid resources failed, ret = %d\n", priv->dev->name, ret);
-		goto ALLOC_RESOURCE_ERR;
+		goto out_unregister;
 	}
-	queue_work(priv->net_config_wq, &(priv->set_dev_up));
-	ipourma_proc_eid_exist(priv);
-
+	/* Bring the device up only if all eids were created; set_dev_up is
+	 * queued after rtnl_unlock since it takes rtnl_lock itself. */
+	eid_ok = ipourma_proc_eid_exist(priv);
 	ipourma_register_sysfs(priv);
+	mutex_unlock(&priv->evt_lock);
+	rtnl_unlock();
+
+	if (eid_ok && !priv->unregistering)
+		queue_work(priv->net_config_wq, &(priv->set_dev_up));
 	return;
 
-ALLOC_RESOURCE_ERR:
-	unregister_netdev(priv->dev);
+out_unregister:
+	/* Drop rtnl before cleanup_res, which flushes net_config_wq. */
+	if (priv->dev->reg_state == NETREG_REGISTERED)
+		unregister_netdevice(priv->dev);
+	rtnl_unlock();
 	ipourma_cleanup_res(priv->dev);
-REG_ERR:
-	return;
 }
 
 static inline void ipourma_flush_register_wq(struct ipourma_dev_priv *priv)
@@ -336,15 +373,24 @@ static inline void ipourma_flush_register_wq(struct ipourma_dev_priv *priv)
 	if (!IS_ERR_OR_NULL(priv->register_wq)) {
 		flush_workqueue(priv->register_wq);
 		destroy_workqueue(priv->register_wq);
+		priv->register_wq = NULL;
 	}
 }
 
 static void ipourma_unregister_netdev(struct ipourma_dev_priv *priv)
 {
-	ubcore_unregister_event_handler(priv->urma_dev, &priv->eid_change_handler);
+	/* ubcore detach (eid handler, sysfs) and set_ip stop run in ndo_uninit
+	 * during unregister_netdev. Skip unregister if `ip link del` already did
+	 * it, to avoid a double unregister; heavy teardown and free need no rtnl. */
 	ipourma_flush_register_wq(priv);
-	ipourma_unregister_sysfs(priv);
-	unregister_netdev(priv->dev);
+	/* Drain a pending set_dev_up: a late ndo_open would hang the unregister. */
+	priv->unregistering = true;
+	if (!IS_ERR_OR_NULL(priv->net_config_wq))
+		flush_workqueue(priv->net_config_wq);
+	rtnl_lock();
+	if (priv->dev->reg_state == NETREG_REGISTERED)
+		unregister_netdevice(priv->dev);
+	rtnl_unlock();
 	ipourma_cleanup_res(priv->dev);
 	ipourma_unalloc_netdev(priv->dev);
 }
@@ -387,15 +433,24 @@ static void ipourma_do_eid_change_handler(struct ubcore_event *event,
 		return;
 	}
 
+	/* Serialize with the ndo callbacks and the register work. No rtnl_lock
+	 * here (see ndo_uninit). */
+	mutex_lock(&priv->evt_lock);
+	if (priv->eid_dying) {
+		mutex_unlock(&priv->evt_lock);
+		return;
+	}
 	if (!eid_is_empty(&priv->eid_info[eid_idx].eid)) {
 		netdev_info(priv->dev, "get an old eid, index:%u, eid:"EID_FMT"\n",
 		eid_idx, EID_ARGS(priv->eid_info[eid_idx].eid));
+		mutex_unlock(&priv->evt_lock);
 		return;
 	}
 	priv->eid_info[eid_idx].eid = eid;
 	priv->eid_info[eid_idx].eid_index = eid_idx;
 	ret = ipourma_create_new_eid(priv, eid_idx);
 	if (ret != IPOURMA_OK) {
+		mutex_unlock(&priv->evt_lock);
 		netdev_err(priv->dev, "create eid resources failed, index:%u, ret:%d\n",
 			eid_idx, ret);
 		return;
@@ -403,6 +458,7 @@ static void ipourma_do_eid_change_handler(struct ubcore_event *event,
 	netdev_info(priv->dev, " get a new eid, index:%u, eid:"EID_FMT"\n",
 		eid_idx, EID_ARGS(priv->eid_info[eid_idx].eid));
 	priv->eid_count++;
+	mutex_unlock(&priv->evt_lock);
 	return;
 unlock_table_out:
 	spin_unlock(&ub_dev->eid_table.lock);

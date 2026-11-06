@@ -11,6 +11,7 @@
 #include <net/route.h>
 #include <linux/version.h>
 #include <linux/netdevice.h>
+#include <linux/mutex.h>
 #include <linux/ipv6.h>
 #include <linux/in6.h>
 #include <linux/if_ether.h>
@@ -29,6 +30,7 @@
 #include "ipourma_addr_res.h"
 #include "ipourma_ethtool.h"
 #include "ipourma_netlink.h"
+#include "ipourma_sysfs.h"
 #include "ub/urma/ubcore_uapi.h"
 #include "ipourma_netdev.h"
 
@@ -275,7 +277,27 @@ static int ipourma_ndo_init(struct net_device *dev)
 
 static void ipourma_ndo_uninit(struct net_device *dev)
 {
-	// do uninit in ipourma_stop
+	struct ipourma_dev_priv *priv = netdev_priv(dev);
+	bool unregister_handler;
+
+	/* Detach from ubcore on every destruction path (also `ip link del`).
+	 * Runs under rtnl_lock. */
+	mutex_lock(&priv->evt_lock);
+	priv->eid_dying = true;
+	unregister_handler = priv->eid_handler_registered;
+	priv->eid_handler_registered = false;
+	if (priv->sysfs_registered) {
+		ipourma_unregister_sysfs(priv);
+		priv->sysfs_registered = false;
+	}
+	mutex_unlock(&priv->evt_lock);
+
+	/* Outside evt_lock: the handler takes evt_lock under the event rwsem
+	 * read side, so the write side here would deadlock. */
+	if (unregister_handler)
+		ubcore_unregister_event_handler(priv->urma_dev, &priv->eid_change_handler);
+
+	atomic_set(&priv->need_set_ip, 0);
 }
 
 static inline void ipourma_napi_enable(struct net_device *dev)
@@ -309,7 +331,10 @@ static int ipourma_open(struct net_device *dev)
 		return -EINVAL;
 	priv = netdev_priv(dev);
 
+	/* Serialize with the eid handler and the register work (evt_lock). */
+	mutex_lock(&priv->evt_lock);
 	ret = ipourma_restart_rings(priv);
+	mutex_unlock(&priv->evt_lock);
 	if (ret != 0) {
 		netdev_err(dev, "Device opened failed. ret = %d\n", ret);
 		return ret;
@@ -349,9 +374,12 @@ static int ipourma_stop(struct net_device *dev)
 		flush_workqueue(priv->tx_wq);
 	if (!IS_ERR_OR_NULL(priv->rx_wq))
 		flush_workqueue(priv->rx_wq);
+	/* Serialize with the eid handler and the register work (evt_lock). */
+	mutex_lock(&priv->evt_lock);
 	priv->anchor_eid_idx = -1;
 	ipourma_reset_rings(priv);
 	ipourma_lru_clear(&priv->tjetty_lru);
+	mutex_unlock(&priv->evt_lock);
 	netif_carrier_off(dev);
 	dev->flags &= ~IFF_RUNNING;
 	queue_work(priv->net_config_wq, &(priv->unset_route));
@@ -532,8 +560,12 @@ static inline void ipourma_open_dev(struct work_struct *work)
 	struct ipourma_dev_priv *priv = container_of(work, struct ipourma_dev_priv, set_dev_up);
 	struct net_device *dev = priv->dev;
 
+	if (priv->unregistering)
+		return;
 	rtnl_lock();
-	dev_change_flags(dev, dev->flags | IFF_UP, NULL);
+	/* The device may be gone after waiting for rtnl_lock. */
+	if (!priv->unregistering && dev->reg_state == NETREG_REGISTERED)
+		dev_change_flags(dev, dev->flags | IFF_UP, NULL);
 	rtnl_unlock();
 }
 
@@ -581,7 +613,7 @@ static int ipourma_priv_base_init(struct net_device *dev,
 {
 	struct ipourma_dev_priv *priv = netdev_priv(dev);
 
-	spin_lock_init(&priv->lock);
+	mutex_init(&priv->evt_lock);
 	priv->urma_dev = urma_dev;
 	priv->dev = dev;
 	priv->urma_mtu = ipourma_mtu_to_bytes(urma_dev->attr.port_attr[0].max_mtu);
@@ -597,6 +629,7 @@ static int ipourma_priv_base_init(struct net_device *dev,
 	priv->eid_count = 0;
 	priv->tjetty_lru.count = 0;
 	priv->need_restart_ring = false;
+	priv->unregistering = false;
 	priv->tjetty_lru.tjetty_capacity = IPOURMA_DEFAULT_TJETTY_CAP;
 
 	ipourma_init_stats(priv);
@@ -671,6 +704,7 @@ int ipourma_unalloc_netdev(struct net_device *dev)
 
 	if (priv->eid_info)
 		ipourma_priv_eid_uninit(priv);
+	mutex_destroy(&priv->evt_lock);
 	free_netdev(dev);
 	return 0;
 }
