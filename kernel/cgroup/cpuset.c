@@ -237,6 +237,12 @@ static cpumask_var_t	subpartitions_cpus;
 static cpumask_var_t	isolated_cpus;
 
 /*
+ * Set if "cpuset_v2_mode" mount option is used
+ * Cached at bind time and not lock protected; accessed via {READ,WRITE}_ONCE
+ */
+static bool		cpuset_v2_mode;
+
+/*
  * A flag to force sched domain rebuild at the end of an operation.
  * It can be set in
  *  - update_partition_sd_lb()
@@ -524,7 +530,7 @@ static inline void check_insane_mems_config(nodemask_t *nodes)
 static inline bool is_in_v2_mode(void)
 {
 	return cgroup_subsys_on_dfl(cpuset_cgrp_subsys) ||
-	      (cpuset_cgrp_subsys.root->flags & CGRP_ROOT_CPUSET_V2_MODE);
+	      READ_ONCE(cpuset_v2_mode);
 }
 
 static inline bool cpuset_is_populated(struct cpuset *cs)
@@ -4377,6 +4383,8 @@ static void cpuset_bind(struct cgroup_subsys_state *root_css)
 	mutex_lock(&cpuset_mutex);
 	spin_lock_irq(&callback_lock);
 
+	WRITE_ONCE(cpuset_v2_mode,
+		   !!(cpuset_cgrp_subsys.root->flags & CGRP_ROOT_CPUSET_V2_MODE));
 	if (is_in_v2_mode()) {
 		cpumask_copy(top_cpuset.cpus_allowed, cpu_possible_mask);
 		cpumask_copy(top_cpuset.effective_xcpus, cpu_possible_mask);
