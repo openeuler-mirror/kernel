@@ -12,6 +12,7 @@
 #define SMH_TYPE ('}')
 #define EID_MAX_LEN 40 /* eid str len 39 + '\0' */
 #define OOM_EVENT_MAX_NUMA_NODES 8
+#define SMH_LOCAL_RAS_SUB_MODULE_NAME_MAX 24
 
 /* ---- version query response ---- */
 struct smh_version_info {
@@ -40,6 +41,7 @@ enum sentry_msg_helper_msg_type {
 	SMH_MESSAGE_HEARTBEAT,
 	SMH_MESSAGE_HEARTBEAT_ACK,
 	SMH_MESSAGE_LINK_EVENT,
+	SMH_MESSAGE_LOCAL_RAS,
 	SMH_MESSAGE_UNKNOWN,
 };
 
@@ -72,6 +74,25 @@ struct sentry_msg_helper_msg {
 			unsigned int scna;
 			int link_event;
 		} link_info;
+		/*
+		 * local_ras_info: local RAS error record forwarded to userspace.
+		 */
+		struct {
+			__u8 version;          /* table version */
+			__u8 soc_id;           /* SOC ID */
+			__u8 socket_id;        /* Socket ID */
+			__u8 nimbus_id;        /* Nimbus ID */
+			__u8 module_id;        /* Module ID */
+			__u8 core_id;          /* Core ID */
+			__u8 port_id;          /* Port ID */
+			__u8 err_severity;     /* error severity */
+			__u16 err_type;        /* error type */
+			__u32 val_bits;        /* valid-field bitmask */
+			/* sub-module NAME, resolved in the kernel from sub_module_id +
+			 * ras_ver, "Unknown" if unrecognized.
+			 */
+			char sub_module_name[SMH_LOCAL_RAS_SUB_MODULE_NAME_MAX];
+		} local_ras_info;
 	} helper_msg_info;
 	unsigned long res;
 };

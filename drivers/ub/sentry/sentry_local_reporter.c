@@ -24,6 +24,7 @@
 #include "smh_message.h"
 #include "oom_rate_limit.h"
 #include "sentry_report_comm.h"
+#include "sentry_local_ras.h"
 
 #define REBOOT_RESULT_SUCCESS	0
 #define MAX_TIMEOUT		3600000
@@ -877,6 +878,9 @@ static int __init sentry_reporter_init(void)
 	ret |= sentry_create_proc_file("link_event",
 				      g_sentry_reporter_proc_dir,
 				      &proc_link_event_file_operations);
+	ret |= sentry_create_proc_file("local_ras",
+				      g_sentry_reporter_proc_dir,
+				      &proc_local_ras_file_operations);
 	if (ret < 0)
 		goto remove_proc_dir;
 
@@ -893,8 +897,17 @@ static int __init sentry_reporter_init(void)
 	ub_mem_ras_handler_register(ub_mem_ras_handler);
 	pr_info("ubus notifier register successful\n");
 
+	ret = sentry_local_ras_init();
+	if (ret)
+		goto unregister_ub_mem_err_and_oom_notifier;
+
 	return 0;
 
+unregister_ub_mem_err_and_oom_notifier:
+	ub_mem_ras_handler_unregister();
+	pr_info("ub_mem notifier unregistered\n");
+	unregister_reclaim_notifier(&lowmem_notifier);
+	pr_info("lowmem notifier unregistered\n");
 unregister_power_notifier:
 	unregister_acpi_power_notifier(&acpi_power_notifier);
 	pr_info("power notifier unregistered\n");
@@ -917,6 +930,8 @@ static void __exit sentry_reporter_exit(void)
 
 	ub_mem_ras_handler_unregister();
 	pr_info("ub_mem notifier unregistered\n");
+
+	sentry_local_ras_exit();
 
 	/* Remove proc entries before tearing down link-event state so that no
 	 * new on/off write can start; the mutex drains any in-flight writer.
