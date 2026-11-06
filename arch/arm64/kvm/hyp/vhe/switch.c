@@ -58,14 +58,15 @@ DEFINE_PER_CPU(u64, kvm_pvm_run_sctlr);
 				 SCTLR_EL1_EnALS)
 
 /*
- * SCTLR_EL1 bits forced on for the guest run, whatever the guest configured:
+ * SCTLR_EL1 bits initially enabled when preparing the guest run:
  *  M:           PVM has no stage 2, so stage 1 is the only translation
  *               between the guest and host memory.
  *  C, I:        the host maps guest memory cacheable; keep the guest's
  *               accesses cacheable as well, so the attributes never mismatch.
  *  UCI:         the guest kernel runs at EL0 but maintains the caches by VA
- *               as an EL1 kernel would; allow it instead of trapping each one.
- *  DZE:         likewise for DC ZVA.
+ *               as an EL1 kernel would. Refine UCI for the virtual EL
+ *               before each entry.
+ *  DZE:         likewise for DC ZVA; refine it for the virtual EL at entry.
  */
 #define PVM_SCTLR_FLAGS1	(SCTLR_EL1_M | SCTLR_EL1_C | \
 				 SCTLR_EL1_I | SCTLR_EL1_UCI | \
@@ -388,15 +389,24 @@ static void __pvm_load_stage1(struct kvm_vcpu *vcpu,
 
 /*
  * Hyp fixups can change the virtual EL without leaving the run loop.
+ * Update UCI and DZE so only guest EL1 bypasses the guest EL0 trap controls.
  * E0PD only affects EL0 accesses and needs no TLB maintenance. The
  * guest-entry ERET synchronizes the update.
  */
-static void __pvm_load_e0pd(struct kvm_vcpu *vcpu)
+static void __pvm_load_el0_controls(struct kvm_vcpu *vcpu)
 {
 	u64 guest_tcr = kvm_pvm_vcpu_mmu_enabled(vcpu) ?
 		ctxt_sys_reg(&vcpu->arch.ctxt, TCR_EL1) : 0;
 	u64 tcr = read_sysreg_el2(SYS_TCR);
 	u64 val = tcr & ~(TCR_E0PD0 | TCR_E0PD1);
+	u64 sctlr = __this_cpu_read(kvm_pvm_run_sctlr);
+
+	u64 guest_sctlr = ctxt_sys_reg(&vcpu->arch.ctxt, SCTLR_EL1);
+	u64 mask = SCTLR_EL1_UCI | SCTLR_EL1_DZE;
+
+	sctlr &= ~mask;
+	sctlr |= vcpu_mode_priv(vcpu) ? mask : guest_sctlr & mask;
+	__this_cpu_write(kvm_pvm_run_sctlr, sctlr);
 
 	if (!vcpu_mode_priv(vcpu)) {
 		val |= guest_tcr & TCR_E0PD0;
@@ -487,7 +497,7 @@ static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
 
 	do {
 		if (is_pvm_mode())
-			__pvm_load_e0pd(vcpu);
+			__pvm_load_el0_controls(vcpu);
 
 		/* Jump in the fire! */
 		if (is_pvm_mode())
