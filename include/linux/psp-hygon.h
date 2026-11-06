@@ -19,6 +19,11 @@
 
 #define CSV_FW_MAX_SIZE		0x80000	/* 512KB */
 
+#define CSV_EXT_CSV3_MULT_LUP_DATA_BIT	0
+#define CSV_EXT_CSV3_MULT_LUP_DATA	(1 << CSV_EXT_CSV3_MULT_LUP_DATA_BIT)
+#define CSV_EXT_CSV3_INJ_SECRET_BIT	1
+#define CSV_EXT_CSV3_INJ_SECRET		(1 << CSV_EXT_CSV3_INJ_SECRET_BIT)
+
 /**
  * Guest/platform management commands for CSV
  */
@@ -415,7 +420,20 @@ int csv_check_stat_queue_status(int *psp_ret);
  */
 int csv_issue_ringbuf_cmds_external_user(struct file *filep, int *psp_ret);
 
-#else  /* !CONFIG_CRYPTO_DEV_SP_PSP */
+/**
+ * csv_get_extension_info - collect extension set of the firmware
+ *
+ * @buf: The buffer to save extension set
+ * @size: The size of the @buf
+ *
+ * Returns:
+ * 0 if @buf is filled with extension bitflags
+ * -%ENODEV if the CSV device is not available
+ * -%EINVAL if @buf is NULL or @size is too smaller
+ */
+int csv_get_extension_info(void *buf, size_t *size);
+
+#else	/* !CONFIG_CRYPTO_DEV_SP_PSP */
 
 static inline int psp_do_cmd(int cmd, void *data, int *psp_ret) { return -ENODEV; }
 static inline int csv_ring_buffer_queue_init(void) { return -ENODEV; }
@@ -426,7 +444,9 @@ static inline int csv_check_stat_queue_status(int *psp_ret) { return -ENODEV; }
 static inline int
 csv_issue_ringbuf_cmds_external_user(struct file *filep, int *psp_ret) { return -ENODEV; }
 
-#endif /* CONFIG_CRYPTO_DEV_SP_PSP */
+static inline int csv_get_extension_info(void *buf, size_t *size) { return -ENODEV; }
+
+#endif	/* CONFIG_CRYPTO_DEV_SP_PSP */
 
 typedef int (*p2c_notifier_t)(uint32_t id, uint64_t data);
 
@@ -442,4 +462,4 @@ int psp_unregister_cmd_notifier(uint32_t cmd_id, p2c_notifier_t notifier) { retu
 
 #endif	/* CONFIG_HYGON_PSP2CPU_CMD */
 
-#endif /* __PSP_HYGON_H__ */
+#endif	/* __PSP_HYGON_H__ */

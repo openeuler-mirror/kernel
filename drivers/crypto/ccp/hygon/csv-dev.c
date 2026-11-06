@@ -625,6 +625,38 @@ int csv_check_stat_queue_status(int *psp_ret)
 }
 EXPORT_SYMBOL_GPL(csv_check_stat_queue_status);
 
+int csv_get_extension_info(void *buf, size_t *size)
+{
+	/* If @hygon_csv_build is 0, this means CSV firmware doesn't exist or
+	 * the psp device doesn't exist.
+	 */
+	if (hygon_csv_build == 0)
+		return -ENODEV;
+
+	/* The caller must provide valid @buf and the @buf must >= 4 bytes in
+	 * size.
+	 */
+	if (!buf || !size || *size < sizeof(uint32_t)) {
+		if (size)
+			*size = sizeof(uint32_t);
+
+		return -EINVAL;
+	}
+
+	/* Since firmware with build id 2200, support:
+	 *   a. issue LAUNCH_ENCRYPT_DATA command more than once for a
+	 *      CSV3 guest.
+	 *   b. inject secret to a CSV3 guest.
+	 */
+	if (csv_version_greater_or_equal(2200)) {
+		*(uint32_t *)buf |= CSV_EXT_CSV3_MULT_LUP_DATA;
+		*(uint32_t *)buf |= CSV_EXT_CSV3_INJ_SECRET;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(csv_get_extension_info);
+
 #ifdef CONFIG_HYGON_CSV
 
 int csv_platform_cmd_set_secure_memory_region(struct sev_device *sev, int *error)
