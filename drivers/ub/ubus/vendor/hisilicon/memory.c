@@ -668,6 +668,7 @@ void hi_mem_decoder_remove(struct ub_bus_controller *ubc)
 void hi_register_ubmem_irq(struct ub_bus_controller *ubc)
 {
 	struct ub_entity *uent = ubc->uent;
+	const struct cpumask *mask;
 	int irq_num, ret;
 	u32 usi_idx;
 
@@ -706,6 +707,16 @@ void hi_register_ubmem_irq(struct ub_bus_controller *ubc)
 	}
 
 	ubc->mem_device->ubmem_irq_num = irq_num;
+
+	/* Set the ubmem irqs affinity according to the controller affinity. */
+	mask = ub_get_ubc_irq_affinity(uent);
+	if (mask) {
+		ret = irq_set_affinity((unsigned int)irq_num, mask);
+		if (ret)
+			ub_err(uent,
+			       "set ubmem irq[%d] affinity failed, ret=%d\n",
+			       irq_num, ret);
+	}
 }
 
 void hi_unregister_ubmem_irq(struct ub_bus_controller *ubc)
@@ -727,6 +738,7 @@ void hi_unregister_ubmem_irq(struct ub_bus_controller *ubc)
 		return;
 
 	free_irq((unsigned int)irq_num, (void *)ubc);
+	ubc->mem_device->ubmem_irq_num = -1;
 }
 
 #define MB_SIZE_OFFSET 20
