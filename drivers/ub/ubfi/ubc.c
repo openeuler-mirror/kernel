@@ -459,6 +459,7 @@ static int init_ubc(struct ub_bus_controller *ubc)
 	int ret;
 
 	INIT_LIST_HEAD(&ubc->devs);
+	INIT_LIST_HEAD(&ubc->node);
 	device_initialize(dev);
 
 	dev->release = ub_release_ubc_dev;
