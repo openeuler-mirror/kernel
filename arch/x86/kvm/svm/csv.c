@@ -998,7 +998,12 @@ done:
 	return ret;
 }
 
-static int csv3_launch_encrypt_data(struct kvm *kvm, struct kvm_sev_cmd *argp)
+/**
+ * csv3_launch_encrypt_data_alt_1 - The legacy handler to encrypt CSV3
+ * guest's memory before VMRUN.
+ */
+static int csv3_launch_encrypt_data_alt_1(struct kvm *kvm,
+					  struct kvm_sev_cmd *argp)
 {
 	struct kvm_csv_info *csv = &to_kvm_svm_csv(kvm)->csv_info;
 	struct kvm_csv3_launch_encrypt_data params;
@@ -1011,9 +1016,6 @@ static int csv3_launch_encrypt_data(struct kvm *kvm, struct kvm_sev_cmd *argp)
 	u32 i, n;
 	unsigned long pfn, pfn_sme_mask;
 	int ret = 0;
-
-	if (!csv3_guest(kvm))
-		return -ENOTTY;
 
 	if (copy_from_user(&params, (void __user *)(uintptr_t)argp->data,
 			   sizeof(params))) {
@@ -1104,6 +1106,225 @@ data_free:
 	vfree(data);
 exit:
 	return ret;
+}
+
+#define MAX_ENTRIES_PER_BLOCK							\
+	(sizeof(((struct encrypt_data_block *)0)->entry) /			\
+	 sizeof(((struct encrypt_data_block *)0)->entry[0]))
+#define MAX_BLOCKS_PER_CSV3_LUP_DATA						\
+	(sizeof(((struct csv3_data_launch_encrypt_data *)0)->data_blocks) /	\
+	 sizeof(((struct csv3_data_launch_encrypt_data *)0)->data_blocks[0]))
+#define MAX_ENTRIES_PER_CSV3_LUP_DATA						\
+	(MAX_BLOCKS_PER_CSV3_LUP_DATA * MAX_ENTRIES_PER_BLOCK)
+
+/**
+ * __csv3_launch_encrypt_data - The helper for handler
+ * csv3_launch_encrypt_data_alt_2.
+ */
+static int __csv3_launch_encrypt_data(struct kvm *kvm,
+				      struct kvm_sev_cmd *argp,
+				      struct kvm_csv3_launch_encrypt_data *params,
+				      void *src_buf,
+				      unsigned int start_pgoff,
+				      unsigned int end_pgoff)
+{
+	struct kvm_csv_info *csv = &to_kvm_svm_csv(kvm)->csv_info;
+	struct csv3_data_launch_encrypt_data *data = NULL;
+	struct encrypt_data_block *block = NULL;
+	struct page **pages = NULL;
+	unsigned long len, remain_len;
+	unsigned long pfn, pfn_sme_mask, last_pfn;
+	unsigned int pgoff = start_pgoff;
+	int i, j;
+	int ret = -ENOMEM;
+
+	/* Alloc command buffer for CSV3_CMD_LAUNCH_ENCRYPT_DATA command */
+	data = kzalloc(sizeof(*data), GFP_KERNEL_ACCOUNT);
+	if (!data)
+		return -ENOMEM;
+
+	/* Alloc pages for data_blocks[] in the command buffer */
+	len = ARRAY_SIZE(data->data_blocks) * sizeof(struct page *);
+	pages = kzalloc(len, GFP_KERNEL_ACCOUNT);
+	if (!pages)
+		goto e_free_data;
+
+	for (i = 0; i < ARRAY_SIZE(data->data_blocks); i++) {
+		pages[i] = alloc_page(GFP_KERNEL_ACCOUNT | __GFP_ZERO);
+		if (!pages[i])
+			goto e_free_pages;
+	}
+
+	i = 0;
+	while (i < ARRAY_SIZE(data->data_blocks) && pgoff < end_pgoff) {
+		block = (struct encrypt_data_block *)page_to_virt(pages[i]);
+
+		j = 0;
+		last_pfn = 0;
+		while (j < ARRAY_SIZE(block->entry) && pgoff < end_pgoff) {
+			pfn = vmalloc_to_pfn(src_buf + (pgoff << PAGE_SHIFT));
+			pfn_sme_mask = __sme_set(pfn << PAGE_SHIFT) >> PAGE_SHIFT;
+
+			/*
+			 * One entry can record a number of contiguous physical
+			 * pages. If the current page is not adjacent to the
+			 * previous physical page, we should record the page to
+			 * the next entry. If entries of current block is used
+			 * up, we should try the next block.
+			 */
+			if (last_pfn && (last_pfn + 1 == pfn)) {
+				block->entry[j].npages++;
+			} else if (j < (ARRAY_SIZE(block->entry) - 1)) {
+				/* @last_pfn == 0 means fill in entry[0] */
+				if (likely(last_pfn != 0))
+					j++;
+				block->entry[j].pfn = pfn_sme_mask;
+				block->entry[j].npages = 1;
+			} else {
+				break;
+			}
+
+			/*
+			 * Succeed to record one page, increase the page offset.
+			 * We also record the pfn of current page so that we can
+			 * record the contiguous physical pages into one entry.
+			 */
+			last_pfn = pfn;
+			pgoff++;
+		}
+
+		i++;
+	}
+
+	if (pgoff < end_pgoff) {
+		pr_err("CSV3: Fail to fill in LAUNCH_ENCRYPT_DATA command!\n");
+		goto e_free_pages;
+	}
+
+	len = (end_pgoff - start_pgoff) << PAGE_SHIFT;
+	clflush_cache_range(src_buf + (start_pgoff << PAGE_SHIFT), len);
+
+	/* Fill in command buffer */
+	data->handle = csv->sev->handle;
+
+	if (start_pgoff == 0) {
+		data->gpa = params->gpa;
+		len -= params->gpa & ~PAGE_MASK;
+	} else {
+		data->gpa = (params->gpa & PAGE_MASK) + (start_pgoff << PAGE_SHIFT);
+	}
+	remain_len = params->len - (data->gpa - params->gpa);
+
+	data->length = (len <= remain_len) ? len : remain_len;
+
+	for (j = 0; j < i; j++)
+		data->data_blocks[j] = __sme_set(page_to_phys(pages[j]));
+
+	/* Issue command */
+	ret = hygon_kvm_hooks.sev_issue_cmd(kvm, CSV3_CMD_LAUNCH_ENCRYPT_DATA,
+							data, &argp->error);
+
+e_free_pages:
+	for (i = 0; i < ARRAY_SIZE(data->data_blocks); i++) {
+		if (pages[i])
+			__free_page(pages[i]);
+	}
+	kfree(pages);
+e_free_data:
+	kfree(data);
+
+	return ret;
+}
+
+/**
+ * csv3_launch_encrypt_data_alt_2 - The handler to support encrypt CSV3
+ * guest's memory before VMRUN. This handler support issue API command
+ * multiple times, both the GPA and length of the memory region are not
+ * required to be 4K-aligned.
+ */
+static int csv3_launch_encrypt_data_alt_2(struct kvm *kvm,
+					  struct kvm_sev_cmd *argp)
+{
+	struct kvm_csv3_launch_encrypt_data params;
+	void *buffer = NULL;
+	unsigned long len;
+	unsigned int total_pages, start_pgoff, next_pgoff;
+	int ret = 0;
+
+	if (copy_from_user(&params, (void __user *)(uintptr_t)argp->data,
+			   sizeof(params))) {
+		return -EFAULT;
+	}
+
+	/* Both the GPA and length must be 16 Bytes aligned at least */
+	if (!params.len ||
+	    !params.uaddr ||
+	    !IS_ALIGNED(params.len, 16) ||
+	    !IS_ALIGNED(params.gpa, 16)) {
+		return -EINVAL;
+	}
+
+	/*
+	 * Alloc buffer to save source data. When we copy source data from
+	 * userspace to the buffer, the data in the first page of the buffer
+	 * should keep the offset as params.gpa.
+	 */
+	len = PAGE_ALIGN((params.gpa & ~PAGE_MASK) + params.len);
+	total_pages = len >> PAGE_SHIFT;
+	next_pgoff = 0;
+
+	buffer = vzalloc(len);
+	if (!buffer)
+		return -ENOMEM;
+
+	if (copy_from_user(buffer + (params.gpa & ~PAGE_MASK),
+			   (void __user *)params.uaddr, params.len)) {
+		ret = -EFAULT;
+		goto e_free_buffer;
+	}
+
+	/*
+	 * If the source data is too large, we should issue command more than
+	 * once. The LAUNCH_ENCRYPT_DATA API updates not only the measurement
+	 * of the data, but also the measurement of the metadata correspond to
+	 * the data. The guest owner is obligated to verify the launch
+	 * measurement, so guest owner must be aware of the launch measurement
+	 * of each LAUNCH_ENCRYPT_DATA API command. If we processing pages more
+	 * than MAX_ENTRIES_PER_CSV3_LUP_DATA in each API command, the guest
+	 * owner could not able to calculate the correct measurement and fail
+	 * to verify the launch measurement. For this reason, we limit the
+	 * maximum number of pages processed by each API command to
+	 * MAX_ENTRIES_PER_CSV3_LUP_DATA.
+	 */
+	while (next_pgoff < total_pages) {
+		start_pgoff = next_pgoff;
+		next_pgoff += MAX_ENTRIES_PER_CSV3_LUP_DATA;
+
+		if (next_pgoff > total_pages)
+			next_pgoff = total_pages;
+
+		ret = __csv3_launch_encrypt_data(kvm, argp, &params,
+						 buffer, start_pgoff, next_pgoff);
+		if (ret)
+			goto e_free_buffer;
+	}
+
+e_free_buffer:
+	vfree(buffer);
+	return ret;
+}
+
+static int csv3_launch_encrypt_data(struct kvm *kvm, struct kvm_sev_cmd *argp)
+{
+	struct kvm_csv_info *csv = &to_kvm_svm_csv(kvm)->csv_info;
+
+	if (!csv3_guest(kvm))
+		return -ENOTTY;
+
+	if (!(csv->inuse_ext & KVM_CAP_HYGON_COCO_EXT_CSV3_MULT_LUP_DATA))
+		return csv3_launch_encrypt_data_alt_1(kvm, argp);
+
+	return csv3_launch_encrypt_data_alt_2(kvm, argp);
 }
 
 static int csv3_sync_vmsa(struct vcpu_svm *svm)
@@ -2241,8 +2462,11 @@ static int csv_get_hygon_coco_extension(struct kvm *kvm)
 	 * field of kvm_csv_info is valid.
 	 */
 	if (csv->kvm_ext_valid == false) {
-		if (csv3_guest(kvm))
+		if (csv3_guest(kvm)) {
 			csv->kvm_ext |= KVM_CAP_HYGON_COCO_EXT_CSV3_SET_PRIV_MEM;
+			if (csv->fw_ext & CSV_EXT_CSV3_MULT_LUP_DATA)
+				csv->kvm_ext |= KVM_CAP_HYGON_COCO_EXT_CSV3_MULT_LUP_DATA;
+		}
 		csv->kvm_ext_valid = true;
 	}
 
