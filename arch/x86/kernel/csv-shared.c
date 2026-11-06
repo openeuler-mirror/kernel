@@ -76,12 +76,33 @@
  * CSV3_SECURE_CMD_UPDATE_SECURE_CALL_TABLE:
  *	CSV3 guest wants to change the secure call pages.
  *	The secure processor re-init the secure call context.
+ *
+ * CSV3_SECURE_CMD_REQ_REPORT:
+ *      CSV3 guest wants to request attestation report.
+ *      The secure processor will update the request message buffer and respond
+ *      buffer to indicate the result of this request.
  */
 enum csv3_secure_command_type {
-	CSV3_SECURE_CMD_ENC	= 1,
+	/* The secure call request should below CSV3_SECURE_CMD_ACK */
+	CSV3_SECURE_CMD_ENC			= 0x1,
 	CSV3_SECURE_CMD_DEC,
 	CSV3_SECURE_CMD_RESET,
 	CSV3_SECURE_CMD_UPDATE_SECURE_CALL_TABLE,
+	CSV3_SECURE_CMD_REQ_REPORT		= 0x7,
+
+	/* SECURE_CMD_ACK indicates secure call request can be handled */
+	CSV3_SECURE_CMD_ACK			= 0x6b,
+
+	/*
+	 * The following values are the error code of the secure call
+	 * when firmware can't handling the specific secure call command
+	 * as expected.
+	 */
+	CSV3_SECURE_CMD_ERROR_INTERNAL		= 0x6c,
+	CSV3_SECURE_CMD_ERROR_INVALID_COMMAND	= 0x6d,
+	CSV3_SECURE_CMD_ERROR_INVALID_PARAM	= 0x6e,
+	CSV3_SECURE_CMD_ERROR_INVALID_ADDRESS	= 0x6f,
+	CSV3_SECURE_CMD_ERROR_INVALID_LENGTH	= 0x70,
 };
 
 /*

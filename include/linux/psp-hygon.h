@@ -305,6 +305,28 @@ struct csv3_data_dbg_read_mem {
 	u32 size;			/* In */
 } __packed;
 
+/**
+ * struct csv3_data_attestation_report - ATTESTATION secure call command parameters
+ *
+ * @handle: handle of the VM to process
+ * @resp_gpa: guest physical address to save the generated report
+ * @resp_length: length of the generated report
+ * @req_gpa: guest physical address of the input for the report
+ * @req_length: length of the input for the report
+ * @fw_error_code: firmware status code when generating the report
+ */
+struct csv3_data_attestation_report {
+	u32 handle;			/* Out */
+	u32 reserved1;
+	u64 resp_gpa;			/* In */
+	u8 reserved2[16];
+	u32 resp_len;			/* In/Out */
+	u32 reserved3;
+	u64 req_gpa;			/* In */
+	u32 req_len;			/* In,Out */
+	u32 fw_error_code;		/* Out */
+} __packed;
+
 /*
  * struct csv3_data_send_encrypt_data - SEND_ENCRYPT_DATA command parameters
  *
