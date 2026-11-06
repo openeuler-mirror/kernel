@@ -162,6 +162,9 @@ static irqreturn_t hi_msg_isr(int irq, void *context)
 
 static int hi_msg_queue_irq_init(struct hi_msg_core *hmc)
 {
+	struct ub_irqs_affinity *irq_aff;
+	struct ub_bus_controller *ubc;
+
 	int ret;
 
 	/* Config sq int mask for imp */
@@ -178,6 +181,20 @@ static int hi_msg_queue_irq_init(struct hi_msg_core *hmc)
 		return ret;
 	}
 	dev_info(hmc->dev, "request irq[%u] succeeded\n", hmc->virq);
+
+	ubc = container_of(hmc->dev, struct ub_bus_controller, dev);
+	list_for_each_entry(irq_aff, &ubc_irqs_affinity_list, node) {
+		if (irq_aff->ctl_no == ubc->ctl_no) {
+			ret = irq_set_affinity(hmc->virq,
+					       &irq_aff->irqs_affinity);
+			if (ret)
+				dev_err(hmc->dev,
+					"set msgq irq[%u] affinity failed",
+					hmc->virq);
+			break;
+		}
+	}
+
 	hi_msg_reg_write(hmc, MSGQ_INT_SEL, hmc->intx);
 	hi_msg_reg_write(hmc, CQ_INT_STATUS, 0x1);
 	hi_msg_reg_write(hmc, CQ_INT_MASK, 0x0);
