@@ -93,6 +93,16 @@
 /* Software bit for solving coherency races */
 #define ARM_LPAE_PTE_SW_SYNC		(((arm_lpae_iopte)1) << 55)
 
+/* PTE Contiguous Bit */
+#define ARM_LPAE_PTE_CONT		(((arm_lpae_iopte)1) << 52)
+
+/*
+ * Granule     CONT page     Block     CONT block     L1 block     CONT L1
+ * 4K          64K           2M        32M            1G           16G
+ * 16K         2M            32M       1G
+ * 64K         2M            512M      16G
+ */
+
 /* Stage-1 PTE */
 #define ARM_LPAE_PTE_AP_UNPRIV		(((arm_lpae_iopte)1) << 6)
 #define ARM_LPAE_PTE_AP_RDONLY_BIT	7
@@ -408,6 +418,24 @@ static arm_lpae_iopte arm_lpae_install_table(arm_lpae_iopte *table,
 	return old;
 }
 
+static int arm_lpae_num_cont(size_t size)
+{
+	switch (size) {
+	case SZ_4K:
+	case SZ_2M:
+	case SZ_1G:
+		return 16;
+	case SZ_64K:
+	case SZ_32M:
+	case SZ_512M:
+		return 32;
+	case SZ_16K:
+		return 128;
+	default:
+		return 1;
+	}
+}
+
 static int __arm_lpae_map(struct arm_lpae_io_pgtable *data, unsigned long iova,
 			  phys_addr_t paddr, size_t size, size_t pgcount,
 			  arm_lpae_iopte prot, int lvl, arm_lpae_iopte *ptep,
@@ -417,19 +445,40 @@ static int __arm_lpae_map(struct arm_lpae_io_pgtable *data, unsigned long iova,
 	size_t block_size = ARM_LPAE_BLOCK_SIZE(lvl, data);
 	size_t tblsz = ARM_LPAE_GRANULE(data);
 	struct io_pgtable_cfg *cfg = &data->iop.cfg;
-	int ret = 0, num_entries, max_entries, map_idx_start;
+	int num_cont = arm_lpae_num_cont(block_size);
+	size_t cont_size = 0, entries_per_map;
+	int num_entries, max_entries, map_idx_start;
+
+	if (num_cont > 1 && block_size <= SIZE_MAX / num_cont)
+		cont_size = num_cont * block_size;
 
 	/* Find our entry at the current level */
 	map_idx_start = ARM_LPAE_LVL_IDX(iova, lvl, data);
 	ptep += map_idx_start;
 
 	/* If we can install a leaf entry at this level, then do so */
-	if (size == block_size) {
+	if (size == block_size ||
+		((cfg->quirks & IO_PGTABLE_QUIRK_ARM_CONT_HINT) &&
+		 size == cont_size)) {
+		bool cont = size == cont_size;
+		int ret;
+
+		if (cont && (!IS_ALIGNED(iova, size) || !IS_ALIGNED(paddr, size)))
+			return -EINVAL;
+
+		entries_per_map = size / block_size;
 		max_entries = arm_lpae_max_entries(map_idx_start, data);
-		num_entries = min_t(int, pgcount, max_entries);
-		ret = arm_lpae_init_pte(data, iova, paddr, prot, lvl, num_entries, ptep);
+		num_entries = min_t(size_t, pgcount,
+				    max_entries / entries_per_map) * entries_per_map;
+		if (!num_entries)
+			return -EINVAL;
+		if (cont)
+			prot |= ARM_LPAE_PTE_CONT;
+
+		ret = arm_lpae_init_pte(data, iova, paddr, prot, lvl, num_entries,
+					ptep);
 		if (!ret)
-			*mapped += num_entries * size;
+			*mapped += num_entries * block_size;
 
 		return ret;
 	}
@@ -683,11 +732,18 @@ static size_t __arm_lpae_unmap(struct arm_lpae_io_pgtable *data,
 {
 	arm_lpae_iopte pte;
 	struct io_pgtable *iop = &data->iop;
+	size_t block_size, cont_size = 0, entries_per_map;
+	int num_cont;
 	int i = 0, num_entries, max_entries, unmap_idx_start;
 
 	/* Something went horribly wrong and we ran out of page table */
 	if (WARN_ON(lvl == ARM_LPAE_MAX_LEVELS))
 		return 0;
+
+	block_size = ARM_LPAE_BLOCK_SIZE(lvl, data);
+	num_cont = arm_lpae_num_cont(block_size);
+	if (num_cont > 1 && block_size <= SIZE_MAX / num_cont)
+		cont_size = num_cont * block_size;
 
 	unmap_idx_start = ARM_LPAE_LVL_IDX(iova, lvl, data);
 	ptep += unmap_idx_start;
@@ -696,9 +752,24 @@ static size_t __arm_lpae_unmap(struct arm_lpae_io_pgtable *data,
 		return 0;
 
 	/* If the size matches this level, we're in the right place */
-	if (size == ARM_LPAE_BLOCK_SIZE(lvl, data)) {
+	if (size == block_size ||
+		((iop->cfg.quirks & IO_PGTABLE_QUIRK_ARM_CONT_HINT) &&
+		 size == cont_size)) {
+		entries_per_map = size / block_size;
 		max_entries = arm_lpae_max_entries(unmap_idx_start, data);
-		num_entries = min_t(int, pgcount, max_entries);
+		num_entries = min_t(size_t, pgcount,
+				    max_entries / entries_per_map) * entries_per_map;
+		if (!num_entries)
+			return 0;
+
+		/* Check this batch before clearing PTEs or freeing sub-tables. */
+		if (((pte & ARM_LPAE_PTE_CONT) &&
+			 !IS_ALIGNED(iova, cont_size)) ||
+			((READ_ONCE(ptep[num_entries - 1]) & ARM_LPAE_PTE_CONT) &&
+			 !IS_ALIGNED(iova + num_entries * block_size, cont_size))) {
+			WARN_ON_ONCE(1);
+			return 0;
+		}
 
 		while (i < num_entries) {
 			pte = READ_ONCE(*ptep);
@@ -709,19 +780,33 @@ static size_t __arm_lpae_unmap(struct arm_lpae_io_pgtable *data,
 
 			if (!iopte_leaf(pte, lvl, iop->fmt)) {
 				/* Also flush any partial walks */
-				io_pgtable_tlb_flush_walk(iop, iova + i * size, size,
-							  ARM_LPAE_GRANULE(data));
+				io_pgtable_tlb_flush_walk(iop, iova + i * block_size,
+							  block_size, ARM_LPAE_GRANULE(data));
 				__arm_lpae_free_pgtable(data, lvl + 1, iopte_deref(pte, data));
 			} else if (!iommu_iotlb_gather_queued(gather)) {
-				io_pgtable_tlb_add_page(iop, gather, iova + i * size, size);
+				unsigned long end = iova + (i + 1) * block_size;
+
+				if (pte & ARM_LPAE_PTE_CONT) {
+					/* Add a complete group after its last PTE is cleared. */
+					if (IS_ALIGNED(end, cont_size))
+						io_pgtable_tlb_add_page(iop, gather,
+							end - cont_size, cont_size);
+				} else {
+					io_pgtable_tlb_add_page(iop, gather,
+								end - block_size,
+								block_size);
+				}
 			}
 
 			ptep++;
 			i++;
 		}
 
-		return i * size;
+		return i * block_size;
 	} else if (iopte_leaf(pte, lvl, iop->fmt)) {
+		/* Never split a block that belongs to a CONT group. */
+		if (WARN_ON_ONCE(pte & ARM_LPAE_PTE_CONT))
+			return 0;
 		/*
 		 * Insert a table at the next level to map the old region,
 		 * minus the part we want to unmap
@@ -1246,6 +1331,10 @@ static int arm_lpae_read_and_clear_dirty(struct io_pgtable_ops *ops,
 	arm_lpae_iopte *ptep = data->pgd;
 	int lvl = data->start_level;
 
+	/* CONT page tables do not support dirty tracking. */
+	if (cfg->quirks & IO_PGTABLE_QUIRK_ARM_CONT_HINT)
+		return -EOPNOTSUPP;
+
 	if (WARN_ON(!size))
 		return -EINVAL;
 	if (WARN_ON((iova + size - 1) & ~(BIT(cfg->ias) - 1)))
@@ -1295,8 +1384,23 @@ static void arm_lpae_restrict_pgsizes(struct io_pgtable_cfg *cfg)
 	}
 
 	cfg->pgsize_bitmap &= page_sizes;
+	if (cfg->quirks & IO_PGTABLE_QUIRK_ARM_CONT_HINT) {
+		unsigned long sizes = cfg->pgsize_bitmap;
+
+		while (sizes) {
+			unsigned long size = BIT(__ffs(sizes));
+			int num_cont = arm_lpae_num_cont(size);
+
+			if (size <= ULONG_MAX / num_cont)
+				cfg->pgsize_bitmap |= num_cont * size;
+			sizes &= ~size;
+		}
+	}
+
 	cfg->ias = min(cfg->ias, max_addr_bits);
 	cfg->oas = min(cfg->oas, max_addr_bits);
+	cfg->pgsize_bitmap &= GENMASK_ULL(cfg->ias, 0);
+	cfg->pgsize_bitmap &= GENMASK_ULL(cfg->oas, 0);
 }
 
 static struct arm_lpae_io_pgtable *
@@ -1334,12 +1438,16 @@ arm_lpae_alloc_pgtable(struct io_pgtable_cfg *cfg)
 		.map_pages	= arm_lpae_map_pages,
 		.unmap_pages	= arm_lpae_unmap_pages,
 		.iova_to_phys	= arm_lpae_iova_to_phys,
-		.split_block	= arm_lpae_split_block,
-		.merge_page	= arm_lpae_merge_page,
-		.sync_dirty_log	= arm_lpae_sync_dirty_log,
-		.clear_dirty_log = arm_lpae_clear_dirty_log,
 		.read_and_clear_dirty = arm_lpae_read_and_clear_dirty,
 	};
+
+	/* CONT page tables do not support dirty tracking. */
+	if (!(cfg->quirks & IO_PGTABLE_QUIRK_ARM_CONT_HINT)) {
+		data->iop.ops.split_block = arm_lpae_split_block;
+		data->iop.ops.merge_page = arm_lpae_merge_page;
+		data->iop.ops.sync_dirty_log = arm_lpae_sync_dirty_log;
+		data->iop.ops.clear_dirty_log = arm_lpae_clear_dirty_log;
+	}
 
 	return data;
 }
@@ -1358,7 +1466,8 @@ arm_64_lpae_alloc_pgtable_s1(struct io_pgtable_cfg *cfg, void *cookie)
 			    IO_PGTABLE_QUIRK_ARM_HD |
 			    IO_PGTABLE_QUIRK_ARM_BBML1 |
 			    IO_PGTABLE_QUIRK_ARM_BBML2 |
-			    IO_PGTABLE_QUIRK_HISI_ERRATA))
+			    IO_PGTABLE_QUIRK_HISI_ERRATA |
+			    IO_PGTABLE_QUIRK_ARM_CONT_HINT))
 		return NULL;
 
 	data = arm_lpae_alloc_pgtable(cfg);
@@ -1464,7 +1573,8 @@ arm_64_lpae_alloc_pgtable_s2(struct io_pgtable_cfg *cfg, void *cookie)
 			    IO_PGTABLE_QUIRK_ARM_BBML1 |
 			    IO_PGTABLE_QUIRK_ARM_BBML2 |
 			    IO_PGTABLE_QUIRK_ARM_S2FWB |
-			    IO_PGTABLE_QUIRK_HISI_ERRATA))
+			    IO_PGTABLE_QUIRK_HISI_ERRATA |
+			    IO_PGTABLE_QUIRK_ARM_CONT_HINT))
 		return NULL;
 
 	data = arm_lpae_alloc_pgtable(cfg);

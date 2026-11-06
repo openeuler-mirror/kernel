@@ -98,6 +98,13 @@ struct io_pgtable_cfg {
 	 * IO_PGTABLE_QUIRK_ARM_BBML2: ARM SMMU supports BBM Level 2 behavior
 	 *	when changing block size.
 	 * IO_PGTABLE_QUIRK_ARM_S2FWB: Use the FWB format for the MemAttrs bits
+	 * IO_PGTABLE_QUIRK_ARM_CONT_HINT: Enable contiguous hints for ARM LPAE.
+	 *      Disabled by default; drivers opt in before alloc_io_pgtable_ops().
+	 *      Only mappings using an advertised CONT group size are tagged.
+	 *      The pgsize_bitmap returned in cfg then also includes CONT
+	 *      group sizes, which may be mistaken for a native granule (e.g.
+	 *      64K). Do not pass it back as the input of another allocation;
+	 *      build each cfg from the native hardware page sizes.
 	 */
 	#define IO_PGTABLE_QUIRK_ARM_NS			BIT(0)
 	#define IO_PGTABLE_QUIRK_NO_PERMS		BIT(1)
@@ -110,6 +117,7 @@ struct io_pgtable_cfg {
 	#define IO_PGTABLE_QUIRK_ARM_BBML2		BIT(9)
 	#define IO_PGTABLE_QUIRK_ARM_S2FWB		BIT(10)
 	#define IO_PGTABLE_QUIRK_HISI_ERRATA            BIT(11)
+	#define IO_PGTABLE_QUIRK_ARM_CONT_HINT          BIT(12)
 	unsigned long			quirks;
 	unsigned long			pgsize_bitmap;
 	unsigned int			ias;
