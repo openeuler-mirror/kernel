@@ -111,6 +111,45 @@ e_free:
 	return ret;
 }
 
+static int csv_get_api_version(void)
+{
+	struct sev_device *sev;
+	struct sev_user_data_status *status;
+	int error = 0, ret;
+
+	if (!hygon_psp_hooks.sev_dev_hooks_installed)
+		return -ENODEV;
+
+	if (!psp_master || !psp_master->sev_data)
+		return -ENODEV;
+
+	sev = psp_master->sev_data;
+
+	status = kzalloc(sizeof(*status), GFP_KERNEL);
+	if (!status)
+		return -ENOMEM;
+
+	ret = hygon_psp_hooks.__sev_do_cmd_locked(SEV_CMD_PLATFORM_STATUS,
+						  status, &error);
+	if (ret) {
+		dev_err(sev->dev,
+			"CSV: failed to get status. Error: %#x\n", error);
+		goto e_free_status;
+	}
+
+	sev->api_major = status->api_major;
+	sev->api_minor = status->api_minor;
+	sev->build = status->build;
+	sev->state = status->state;
+
+	csv_update_api_version(status);
+
+	ret = 0;
+e_free_status:
+	kfree(status);
+	return ret;
+}
+
 static int csv_ioctl_do_download_firmware(struct sev_issue_cmd *argp)
 {
 	struct sev_data_download_firmware *data = NULL;
@@ -168,10 +207,20 @@ static int csv_ioctl_do_download_firmware(struct sev_issue_cmd *argp)
 
 	ret = hygon_psp_hooks.__sev_do_cmd_locked(SEV_CMD_DOWNLOAD_FIRMWARE,
 							data, &argp->error);
-	if (ret)
+	if (ret) {
 		pr_err("Failed to update CSV firmware: %#x\n", argp->error);
-	else
+		goto err_free_page;
+	} else {
 		pr_info("CSV firmware update successful\n");
+	}
+
+	/*
+	 * Synchronize API version status. The return value of csv_get_api_version
+	 * will inform the user of any error encountered when attempting to
+	 * communicate with the Hygon PSP after the DOWNLOAD_FIRMWARE API completes
+	 * successfully.
+	 */
+	ret = csv_get_api_version();
 
 err_free_page:
 	__free_pages(p, order);
