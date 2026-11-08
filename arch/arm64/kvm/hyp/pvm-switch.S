@@ -34,13 +34,6 @@ alternative_else_nop_endif
 	set_loaded_vcpu x0, x1, x2
 	add	x29, x0, #VCPU_CONTEXT
 
-	/* Install the guest-run SCTLR only at the assembly entry boundary. */
-	adr_this_cpu x1, kvm_hyp_ctxt, x2
-	mrs	x0, sctlr_el1
-	str	x0, [x1, #CPU_SCTLR_EL1]
-	ldr_this_cpu x0, kvm_pvm_run_sctlr, x1
-	msr	sctlr_el1, x0
-
 	/* The virtual EL1h stack also runs through physical SP_EL0. */
 	ldr	x0, [x29, #(CPU_USER_PT_REGS + S_PSTATE)]
 	and	x0, x0, #(PSR_MODE_MASK | PSR_MODE32_BIT)
@@ -67,6 +60,11 @@ alternative_else_nop_endif
 	sb
 
 SYM_INNER_LABEL(__pvm_guest_exit_panic, SYM_L_GLOBAL)
+	/* Restore the host SCTLR saved by __sysreg_save_host_state_pvm(). */
+	adr_this_cpu x0, kvm_host_data, x1
+	ldr	x0, [x0, #(HOST_DATA_CONTEXT + CPU_SCTLR_EL1)]
+	msr	sctlr_el1, x0
+	isb
 	/* x0-x1 were saved by the vector; restore the host before panic. */
 	get_loaded_vcpu x0, x1
 	cbnz	x0, 1f
@@ -104,10 +102,6 @@ SYM_INNER_LABEL(__pvm_guest_exit, SYM_L_GLOBAL)
 	save_sp_el0	x1, x2
 2:
 	adr_this_cpu x2, kvm_hyp_ctxt, x3
-	/* Restore the host controls before returning to compiled code. */
-	ldr	x3, [x2, #CPU_SCTLR_EL1]
-	msr	sctlr_el1, x3
-	isb
 	restore_sp_el0 x2, x3
 	restore_callee_saved_regs x2
 	set_loaded_vcpu xzr, x2, x3

@@ -37,15 +37,12 @@ DEFINE_PER_CPU(struct kvm_host_data, kvm_host_data);
 DEFINE_PER_CPU(struct kvm_cpu_context, kvm_hyp_ctxt);
 DEFINE_PER_CPU(unsigned long, kvm_hyp_vector);
 
-/* PVM mode: the SCTLR_EL1 value the guest runs with on this CPU */
-DEFINE_PER_CPU(u64, kvm_pvm_run_sctlr);
-
 /*
  * SCTLR_EL1 bits taken from the guest: those that only control EL0, where the
- * guest runs.  All other bits also control the host, which handles guest exits
- * at EL1 under the guest-run value until __pvm_guest_exit() restores its own, so
- * they keep the host value.  EE, for instance, sets the endianness of the
- * host's data accesses and translation table walks.
+ * guest runs. All other bits also control the host, which handles exits and
+ * hyp fixups at EL1 under the guest-run value until the loop restores its
+ * own. Keep their host values unless overridden below. EE, for instance,
+ * sets the endianness of host data accesses and translation table walks.
  */
 #define PVM_SCTLR_GUEST		(SCTLR_EL1_SA0 | SCTLR_EL1_CP15BEN | \
 				 SCTLR_EL1_ITD | SCTLR_EL1_SED | \
@@ -145,18 +142,7 @@ static void __activate_traps(struct kvm_vcpu *vcpu)
 	u64 val;
 
 	if (is_pvm_mode()) {
-		struct kvm_cpu_context *ctxt = &vcpu->arch.ctxt;
-		u64 sctlr, cpacr, cntkctl;
-
-		sctlr = ctxt_sys_reg(ctxt, SCTLR_EL1) & PVM_SCTLR_GUEST;
-		sctlr |= read_sysreg_el2(SYS_SCTLR) & ~PVM_SCTLR_GUEST;
-		sctlr |= PVM_SCTLR_FLAGS1;
-		sctlr &= ~PVM_SCTLR_FLAGS2;
-		/*
-		 * __pvm_guest_enter() installs it right before the ERET: compiled
-		 * code, with its pointer authentication, never runs under it.
-		 */
-		__this_cpu_write(kvm_pvm_run_sctlr, sctlr);
+		u64 cpacr, cntkctl;
 
 		cpacr = read_sysreg_el2(SYS_CPACR) & ~CPACR_EL1_FPEN_EL0EN;
 		if (pvm_vcpu_fp_enabled(vcpu))
@@ -393,20 +379,18 @@ static void __pvm_load_stage1(struct kvm_vcpu *vcpu,
  * E0PD only affects EL0 accesses and needs no TLB maintenance. The
  * guest-entry ERET synchronizes the update.
  */
-static void __pvm_load_el0_controls(struct kvm_vcpu *vcpu)
+static __always_inline u64 __pvm_load_el0_controls(struct kvm_vcpu *vcpu,
+						   u64 sctlr)
 {
 	u64 guest_tcr = kvm_pvm_vcpu_mmu_enabled(vcpu) ?
 		ctxt_sys_reg(&vcpu->arch.ctxt, TCR_EL1) : 0;
 	u64 tcr = read_sysreg_el2(SYS_TCR);
 	u64 val = tcr & ~(TCR_E0PD0 | TCR_E0PD1);
-	u64 sctlr = __this_cpu_read(kvm_pvm_run_sctlr);
-
 	u64 guest_sctlr = ctxt_sys_reg(&vcpu->arch.ctxt, SCTLR_EL1);
 	u64 mask = SCTLR_EL1_UCI | SCTLR_EL1_DZE;
 
 	sctlr &= ~mask;
 	sctlr |= vcpu_mode_priv(vcpu) ? mask : guest_sctlr & mask;
-	__this_cpu_write(kvm_pvm_run_sctlr, sctlr);
 
 	if (!vcpu_mode_priv(vcpu)) {
 		val |= guest_tcr & TCR_E0PD0;
@@ -415,6 +399,11 @@ static void __pvm_load_el0_controls(struct kvm_vcpu *vcpu)
 
 	if (val != tcr)
 		write_sysreg_el2(val, SYS_TCR);
+
+	write_sysreg_el2(sctlr, SYS_SCTLR);
+	isb();
+
+	return sctlr;
 }
 
 static void __pvm_restore_stage1(struct kvm_cpu_context *ctxt)
@@ -436,6 +425,7 @@ static void __sysreg_save_host_state_pvm(struct kvm_cpu_context *ctxt)
 	if (!is_pvm_mode())
 		return;
 
+	ctxt_sys_reg(ctxt, SCTLR_EL1) = read_sysreg_el2(SYS_SCTLR);
 	ctxt_sys_reg(ctxt, TCR_EL1) = read_sysreg_el2(SYS_TCR);
 	ctxt_sys_reg(ctxt, TTBR0_EL1) = read_sysreg_el2(SYS_TTBR0);
 	ctxt_sys_reg(ctxt, TTBR1_EL1) = read_sysreg_el2(SYS_TTBR1);
@@ -457,7 +447,7 @@ static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
 {
 	struct kvm_cpu_context *host_ctxt;
 	struct kvm_cpu_context *guest_ctxt;
-	u64 exit_code;
+	u64 exit_code, run_sctlr = 0;
 
 	host_ctxt = host_data_ptr(host_ctxt);
 	host_ctxt->__hyp_running_vcpu = vcpu;
@@ -493,11 +483,15 @@ static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
 		/* A pending exception may have changed the virtual mode. */
 		kvm_pvm_sync_fpen(vcpu);
 		__pvm_load_stage1(vcpu, host_ctxt);
+		run_sctlr = ctxt_sys_reg(guest_ctxt, SCTLR_EL1) & PVM_SCTLR_GUEST;
+		run_sctlr |= ctxt_sys_reg(host_ctxt, SCTLR_EL1) & ~PVM_SCTLR_GUEST;
+		run_sctlr |= PVM_SCTLR_FLAGS1;
+		run_sctlr &= ~PVM_SCTLR_FLAGS2;
 	}
 
 	do {
 		if (is_pvm_mode())
-			__pvm_load_el0_controls(vcpu);
+			run_sctlr = __pvm_load_el0_controls(vcpu, run_sctlr);
 
 		/* Jump in the fire! */
 		if (is_pvm_mode())
@@ -508,8 +502,12 @@ static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
 		/* And we're baaack! */
 	} while (fixup_guest_exit(vcpu, &exit_code));
 
-	if (is_pvm_mode())
+	if (is_pvm_mode()) {
+		/* Pair this function's return authentication with its host entry. */
+		write_sysreg_el2(ctxt_sys_reg(host_ctxt, SCTLR_EL1), SYS_SCTLR);
+		isb();
 		__pvm_restore_stage1(host_ctxt);
+	}
 
 	sysreg_save_guest_state_vhe(guest_ctxt);
 
@@ -570,8 +568,11 @@ static void __hyp_call_panic(u64 spsr, u64 elr, u64 par)
 	host_ctxt = host_data_ptr(host_ctxt);
 	vcpu = host_ctxt->__hyp_running_vcpu;
 
-	if (is_pvm_mode())
+	if (is_pvm_mode()) {
+		write_sysreg_el2(ctxt_sys_reg(host_ctxt, SCTLR_EL1), SYS_SCTLR);
+		isb();
 		__pvm_restore_stage1(host_ctxt);
+	}
 
 	__deactivate_traps(vcpu);
 	__sysreg_restore_host_state_pvm(host_ctxt);
