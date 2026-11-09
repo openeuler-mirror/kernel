@@ -174,6 +174,7 @@ struct tty_operations;
  * @write_wait: concurrent writers are waiting in this queue until they are
  *		allowed to write
  * @read_wait: readers wait for data in this queue
+ * @break_wait: wait queue for timed breaks
  * @hangup_work: normally a work to perform a hangup (do_tty_hangup()); while
  *		 freeing the tty, (re)used to release_one_tty()
  * @disc_data: pointer to @ldisc's private data (e.g. to &struct n_tty_data)
@@ -249,9 +250,13 @@ struct tty_struct {
 
 #define N_TTY_BUF_SIZE 4096
 	struct work_struct SAK_work;
+#ifndef __GENKSYMS__
+	wait_queue_head_t break_wait;
+#else
 	KABI_RESERVE(0)
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
+#endif
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 	KABI_RESERVE(5)
