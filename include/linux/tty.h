@@ -239,7 +239,6 @@ struct tty_struct {
 	struct fasync_struct *fasync;
 	wait_queue_head_t write_wait;
 	wait_queue_head_t read_wait;
-	wait_queue_head_t break_wait;
 	struct work_struct hangup_work;
 	void *disc_data;
 	void *driver_data;
@@ -251,9 +250,13 @@ struct tty_struct {
 
 #define N_TTY_BUF_SIZE 4096
 	struct work_struct SAK_work;
+#ifndef __GENKSYMS__
+	wait_queue_head_t break_wait;
+#else
 	KABI_RESERVE(0)
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
+#endif
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 	KABI_RESERVE(5)
