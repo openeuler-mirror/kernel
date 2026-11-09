@@ -2059,6 +2059,9 @@ static int nvme_update_ns_info_generic(struct nvme_ns *ns,
 		nvme_mpath_revalidate_paths(ns);
 		blk_stack_limits(&ns->head->disk->queue->limits,
 				 &ns->queue->limits, 0);
+		if (!blk_queue_pci_p2pdma(ns->queue))
+			blk_queue_flag_clear(QUEUE_FLAG_PCI_P2PDMA,
+					     ns->head->disk->queue);
 		ns->head->disk->flags |= GENHD_FL_HIDDEN;
 		blk_mq_unfreeze_queue(ns->head->disk->queue);
 	}
@@ -2134,6 +2137,9 @@ static int nvme_update_ns_info_block(struct nvme_ns *ns,
 		nvme_mpath_revalidate_paths(ns);
 		blk_stack_limits(&ns->head->disk->queue->limits,
 				 &ns->queue->limits, 0);
+		if (!blk_queue_pci_p2pdma(ns->queue))
+			blk_queue_flag_clear(QUEUE_FLAG_PCI_P2PDMA,
+					     ns->head->disk->queue);
 		disk_update_readahead(ns->head->disk);
 		blk_mq_unfreeze_queue(ns->head->disk->queue);
 	}

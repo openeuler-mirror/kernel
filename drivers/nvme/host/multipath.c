@@ -652,6 +652,7 @@ int nvme_mpath_alloc_disk(struct nvme_ctrl *ctrl, struct nvme_ns_head *head)
 	blk_queue_flag_set(QUEUE_FLAG_NONROT, head->disk->queue);
 	blk_queue_flag_set(QUEUE_FLAG_NOWAIT, head->disk->queue);
 	blk_queue_flag_set(QUEUE_FLAG_IO_STAT, head->disk->queue);
+	blk_queue_flag_set(QUEUE_FLAG_PCI_P2PDMA, head->disk->queue);
 	/*
 	 * This assumes all controllers that refer to a namespace either
 	 * support poll queues or not.  That is not a strict guarantee,
