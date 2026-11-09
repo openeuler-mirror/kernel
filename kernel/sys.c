@@ -2767,6 +2767,16 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 	case PR_RISCV_V_GET_CONTROL:
 		error = RISCV_V_GET_CONTROL();
 		break;
+#ifdef CONFIG_ARM64_PBHA
+	case PR_UPDATE_PBHA_BIT0:
+		if (arg3 || arg4 || arg5)
+			return -EINVAL;
+		if (arg2 != 0 && arg2 != 1)
+			return -EINVAL;
+
+		error = pbha_bit0_update_vma(me->mm, arg2);
+		break;
+#endif
 	default:
 		error = -EINVAL;
 		break;

@@ -8,6 +8,7 @@
  */
 
 #include <linux/bitfield.h>
+#include <asm/cpufeature.h>
 #include <asm/kvm_pgtable.h>
 #include <asm/stage2_pgtable.h>
 
@@ -626,7 +627,7 @@ struct stage2_map_data {
 u64 kvm_get_vtcr(u64 mmfr0, u64 mmfr1, u32 phys_shift)
 {
 	u64 vtcr = VTCR_EL2_FLAGS;
-	u8 lvls;
+	u8 lvls, pbha = 0xf;
 
 	vtcr |= kvm_get_parange(mmfr0) << VTCR_EL2_PS_SHIFT;
 	vtcr |= VTCR_EL2_T0SZ(phys_shift);
@@ -655,6 +656,19 @@ u64 kvm_get_vtcr(u64 mmfr0, u64 mmfr1, u32 phys_shift)
 	if (!cpus_have_final_cap(ARM64_WORKAROUND_AMPERE_AC03_CPU_38))
 		vtcr |= VTCR_EL2_HA;
 #endif /* CONFIG_ARM64_HW_AFDBM */
+
+	/*
+	 * Enable PBHA for stage2 on systems that support it. The configured
+	 * value will always be 0, which is defined as the safe default
+	 * setting. On Cortex cores, enabling PBHA for stage2 effectively
+	 * disables it for stage1.
+	 * When the HAS_PBHA_STAGE2 feature is supported, clear the 'safe'
+	 * bits to allow the guest's stage1 to use these bits.
+	 */
+	if (cpus_have_final_cap(ARM64_HAS_PBHA_STAGE2))
+		pbha = pbha ^ arm64_pbha_stage2_safe_bits;
+	if (cpus_have_final_cap(ARM64_HAS_PBHA))
+		vtcr |= FIELD_PREP(VTCR_EL2_PBHA_MASK, pbha);
 
 	/* Set the vmid bits */
 	vtcr |= (get_vmid_bits(mmfr1) == 16) ?

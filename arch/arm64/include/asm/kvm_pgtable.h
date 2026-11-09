@@ -183,6 +183,10 @@ enum kvm_pgtable_stage2_flags {
  * @KVM_PGTABLE_PROT_SW1:	Software bit 1.
  * @KVM_PGTABLE_PROT_SW2:	Software bit 2.
  * @KVM_PGTABLE_PROT_SW3:	Software bit 3.
+ * @KVM_PGTABLE_PROT_PBHA0:	Page-Based Hardware Attribute 0.
+ * @KVM_PGTABLE_PROT_PBHA1:	Page-Based Hardware Attribute 1.
+ * @KVM_PGTABLE_PROT_PBHA2:	Page-Based Hardware Attribute 2.
+ * @KVM_PGTABLE_PROT_PBHA3:	Page-Based Hardware Attribute 3.
  */
 enum kvm_pgtable_prot {
 	KVM_PGTABLE_PROT_X			= BIT(0),
@@ -197,6 +201,11 @@ enum kvm_pgtable_prot {
 	KVM_PGTABLE_PROT_SW1			= BIT(56),
 	KVM_PGTABLE_PROT_SW2			= BIT(57),
 	KVM_PGTABLE_PROT_SW3			= BIT(58),
+
+	KVM_PGTABLE_PROT_PBHA0			= BIT(59),
+	KVM_PGTABLE_PROT_PBHA1			= BIT(60),
+	KVM_PGTABLE_PROT_PBHA2			= BIT(61),
+	KVM_PGTABLE_PROT_PBHA3			= BIT(62),
 };
 
 #define KVM_PGTABLE_PROT_RW	(KVM_PGTABLE_PROT_R | KVM_PGTABLE_PROT_W)

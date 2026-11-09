@@ -78,6 +78,7 @@
 #include <linux/vmalloc.h>
 #include <linux/sched/sysctl.h>
 #include <linux/userswap.h>
+#include <linux/pbha.h>
 #include <linux/dynamic_pool.h>
 
 #include <trace/events/kmem.h>
@@ -3495,6 +3496,7 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
 				entry = pte_mkuffd_wp(entry);
 		} else {
 			entry = maybe_mkwrite(pte_mkdirty(entry), vma);
+			entry = maybe_mk_pbha_bit0(entry, vma);
 		}
 
 		/*
@@ -4862,6 +4864,7 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 	__folio_mark_uptodate(folio);
 
 	entry = mk_pte(&folio->page, vma->vm_page_prot);
+	entry = maybe_mk_pbha_bit0(entry, vma);
 	entry = pte_sw_mkyoung(entry);
 	if (vma->vm_flags & VM_WRITE)
 		entry = pte_mkwrite(pte_mkdirty(entry), vma);
@@ -5108,6 +5111,7 @@ void set_pte_range(struct vm_fault *vmf, struct folio *folio,
 	} else {
 		folio_add_file_rmap_ptes(folio, page, nr, vma);
 	}
+	entry = maybe_mk_pbha_bit0(entry, vma);
 	set_ptes(vma->vm_mm, addr, vmf->pte, entry, nr);
 
 	/* no need to invalidate: a not-present page won't be cached */

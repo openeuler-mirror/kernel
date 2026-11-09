@@ -4,6 +4,7 @@
 #define __ARM64_ASM_SETUP_H
 
 #include <linux/string.h>
+#include <linux/cache.h>
 
 #include <uapi/asm/setup.h>
 

@@ -113,6 +113,8 @@ KVM_NVHE_ALIAS(kvm_protected_mode_initialized);
 
 /* Capability of non-cacheable snooping */
 KVM_NVHE_ALIAS(kvm_ncsnp_support);
+/* PBHA bits for stage2 */
+KVM_NVHE_ALIAS(arm64_pbha_stage2_safe_bits);
 
 #endif /* CONFIG_KVM */
 

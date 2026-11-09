@@ -21,7 +21,9 @@ There are four components to pagemap:
     * Bit  56    page exclusively mapped (since 4.2)
     * Bit  57    pte is uffd-wp write-protected (since 5.13) (see
       Documentation/admin-guide/mm/userfaultfd.rst)
-    * Bits 58-60 zero
+    * Bits 58 zero
+    * Bit  59    PBHA bit0, used only CONFIG_ARM64_PBHA is enabled
+    * Bits 60 zero
     * Bit  61    page is file-page or shared-anon (since 3.5)
     * Bit  62    page swapped
     * Bit  63    page present

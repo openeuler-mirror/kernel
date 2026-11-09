@@ -9,6 +9,8 @@
 
 #include <linux/efi.h>
 #include <linux/libfdt.h>
+#include <linux/pbha.h>
+
 #include <asm/efi.h>
 
 #include "efistub.h"
@@ -26,6 +28,53 @@ static void fdt_update_cell_size(void *fdt)
 	fdt_setprop_u32(fdt, offset, "#address-cells", EFI_DT_ADDR_CELLS_DEFAULT);
 	fdt_setprop_u32(fdt, offset, "#size-cells",    EFI_DT_SIZE_CELLS_DEFAULT);
 }
+
+#ifdef CONFIG_ARM64_PBHA
+extern bool efi_pbha;
+
+static efi_status_t fdt_init_moc_mode(void *fdt, int node)
+{
+	efi_guid_t oem_config_guid = EFI_OEMCONFIG_VARIABLE_GUID;
+	unsigned long size;
+	efi_status_t efi_status;
+	u8 moc_mode;
+	int status;
+	u8 fdt_val32;
+	u8 arr[16] = { 0x1 };
+
+	if (!efi_pbha)
+		goto out;
+
+	size = sizeof(moc_mode);
+	efi_status = get_efi_var(L"MemoryOnChipMode", &oem_config_guid, NULL, &size,
+				 &moc_mode);
+	if (efi_status != EFI_SUCCESS)
+		goto out;
+
+	if (moc_mode != MOC_MODE_CACHE)
+		goto out;
+
+	fdt_val32 = 1;
+	status = fdt_setprop_var(fdt, node, "linux,pbha-bit0", fdt_val32);
+	if (status)
+		return EFI_LOAD_ERROR;
+
+	/* Current PBHA bit59 is need to enable PBHA bit0 mode. */
+	status = fdt_setprop_var(fdt, node, "arm,pbha-performance-only", arr);
+	if (status) {
+		efi_err("PBHA: arm,pbha-performance-only failed\n");
+		return EFI_LOAD_ERROR;
+	}
+
+out:
+	return EFI_SUCCESS;
+}
+#else
+static inline efi_status_t fdt_init_moc_mode(void *fdt, int node)
+{
+	return EFI_SUCCESS;
+}
+#endif
 
 static efi_status_t update_fdt(void *orig_fdt, unsigned long orig_fdt_size,
 			       void *fdt, int new_fdt_size, char *cmdline_ptr)
@@ -131,6 +180,9 @@ static efi_status_t update_fdt(void *orig_fdt, unsigned long orig_fdt_size,
 				goto fdt_set_fail;
 		}
 	}
+
+	if (fdt_init_moc_mode(fdt, node) != EFI_SUCCESS)
+		goto fdt_set_fail;
 
 	/* Shrink the FDT back to its minimum size: */
 	fdt_pack(fdt);

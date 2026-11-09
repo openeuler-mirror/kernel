@@ -20,6 +20,7 @@
 bool efi_nochunk;
 bool efi_nokaslr = !IS_ENABLED(CONFIG_RANDOMIZE_BASE);
 bool efi_novamap;
+bool efi_pbha;
 
 static bool efi_noinitrd;
 static bool efi_nosoftreserve;
@@ -109,6 +110,8 @@ efi_status_t efi_parse_options(char const *cmdline)
 		} else if (!strcmp(param, "memmap") && val) {
 			mem_avoid_memmap(val);
 #endif
+		} else if (!strcmp(param, "pbha")) {
+			efi_pbha = true;
 		}
 	}
 	efi_bs_call(free_pool, buf);

@@ -27,6 +27,7 @@
 #include <linux/kfence.h>
 #include <linux/pagewalk.h>
 #include <linux/stop_machine.h>
+#include <linux/pbha.h>
 #include <linux/numa_remote.h>
 #include "internal.h"
 
@@ -150,6 +151,10 @@ bool pgattr_change_is_safe(u64 old, u64 new)
 	 * kernel mappings without the need for break-before-make.
 	 */
 	pteval_t mask = PTE_PXN | PTE_RDONLY | PTE_WRITE | PTE_NG;
+
+#ifdef CONFIG_ARM64_PBHA
+	mask |= PTE_PBHA0;
+#endif
 
 	/* creating or taking down mappings is always safe */
 	if (!pte_valid(__pte(old)) || !pte_valid(__pte(new)))
@@ -394,6 +399,8 @@ static void __create_pgd_mapping_locked(pgd_t *pgdir, phys_addr_t phys,
 	 */
 	if (WARN_ON((phys ^ virt) & ~PAGE_MASK))
 		return;
+
+	prot = pgprot_pbha_bit0(prot);
 
 	phys &= PAGE_MASK;
 	addr = virt & PAGE_MASK;
@@ -1630,7 +1637,11 @@ void __init pmd_mapping_reserved_remap(phys_addr_t start, phys_addr_t end)
 void __meminit vmemmap_set_pmd(pmd_t *pmdp, void *p, int node,
 			       unsigned long addr, unsigned long next)
 {
-	pmd_set_huge(pmdp, __pa(p), __pgprot(PROT_SECT_NORMAL));
+	pgprot_t prot;
+
+	prot = __pgprot(PROT_SECT_NORMAL);
+	prot = pgprot_pbha_bit0(prot);
+	pmd_set_huge(pmdp, __pa(p), prot);
 }
 
 int __meminit vmemmap_check_pmd(pmd_t *pmdp, int node,

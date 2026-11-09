@@ -72,14 +72,19 @@
 #include <linux/types.h>
 #include <linux/minmax.h>
 #include <linux/mm.h>
+#include <linux/of.h>
 #include <linux/cpu.h>
 #include <linux/kasan.h>
 #include <linux/percpu.h>
+#include <linux/init.h>
+#include <linux/libfdt.h>
+#include <linux/pbha.h>
 
 #include <asm/actlr.h>
 #include <asm/cpu.h>
 #include <asm/cpufeature.h>
 #include <asm/cpu_ops.h>
+#include <asm/cputype.h>
 #include <asm/fpsimd.h>
 #include <asm/hwcap.h>
 #include <asm/insn.h>
@@ -97,6 +102,7 @@
 #include <asm/vectors.h>
 #include <asm/virt.h>
 #include <asm/vip_smt.h>
+#include <asm/setup.h>
 
 /* Kernel representation of AT_HWCAP and AT_HWCAP2 */
 static DECLARE_BITMAP(elf_hwcap, MAX_CPU_FEATURES) __read_mostly;
@@ -122,6 +128,10 @@ bool arm64_use_ng_mappings = false;
 EXPORT_SYMBOL(arm64_use_ng_mappings);
 
 DEFINE_PER_CPU_READ_MOSTLY(const char *, this_cpu_vector) = vectors;
+
+unsigned long __ro_after_init arm64_pbha_perf_only_values;
+EXPORT_SYMBOL(arm64_pbha_perf_only_values);
+unsigned long __ro_after_init arm64_pbha_stage2_safe_bits;
 
 /*
  * Permit PER_LINUX32 and execve() of 32-bit binaries even if not all CPUs
@@ -2065,6 +2075,232 @@ static bool has_hw_dbm(const struct arm64_cpu_capabilities *cap,
 
 #endif
 
+
+#ifdef CONFIG_ARM64_PBHA
+static u8 pbha_stage1_enable_bits;
+static DEFINE_SPINLOCK(pbha_dt_lock);
+
+bool pbha_enabled;
+
+/* For the value 5, return a bitmap with bits 5, 4, and 1 set. */
+static unsigned long decompose_pbha_values(u8 val)
+{
+	int i;
+	unsigned long mask = 0;
+
+	for (i = 1; i <= 15; i++) {
+		if ((i & val) == i)
+			set_bit(i, &mask);
+	}
+
+	return mask;
+}
+
+/*
+ * The bits of a value are safe if all values that can be built from those
+ * enabled bits are listed as only affecting performance.
+ * e.g. 5 would also need 1 and 4 to be listed.
+ *
+ * When there is a conflict with the bits already enabled, the new value is
+ * skipped.
+ * e.g. if 5 already caused bit-0 and bit-2 to be enabled, adding 3 to the list
+ * would need to test 7 as bit-2 is already enabled. If 7 is not listed, 3 is
+ * skipped and bit-1 is not enabled.
+ */
+static void stage2_test_pbha_value(u8 val)
+{
+	unsigned long mask;
+
+	mask = decompose_pbha_values(val | arm64_pbha_stage2_safe_bits);
+	if ((arm64_pbha_perf_only_values & mask) == mask)
+		arm64_pbha_stage2_safe_bits |= val;
+}
+
+static void update_pbha_perf_only_bit(const u8 *bits, int cnt)
+{
+	u8 val;
+	int i;
+
+	/* any listed value is usable at stage 1 */
+	for (i = 0; i < cnt; i++) {
+		val = bits[i];
+		if (val > 0xf)
+			continue;
+
+		pbha_stage1_enable_bits |= val;
+		set_bit(val, &arm64_pbha_perf_only_values);
+	}
+}
+
+static bool plat_can_use_pbha_stage1(const struct arm64_cpu_capabilities *cap,
+				     int scope)
+{
+	u8 val;
+	struct device_node *cpus;
+	const u8 *perf_only_vals;
+	int num_perf_only_vals, i;
+
+	if (!has_cpuid_feature(cap, scope))
+		return false;
+
+	/*
+	 * Calls with scope == SCOPE_LOCAL_CPU need only testing whether this
+	 * cpu has the feature. A later 'system' scope call will check for a
+	 * firmware description.
+	 */
+	if (scope == SCOPE_LOCAL_CPU)
+		return true;
+
+	spin_lock(&pbha_dt_lock);
+	if (pbha_enabled)
+		goto out_unlock;
+
+	cpus = of_find_node_by_path("/cpus");
+	if (!cpus)
+		goto done;
+
+	perf_only_vals = of_get_property(cpus, "arm,pbha-performance-only",
+					 &num_perf_only_vals);
+	if (!perf_only_vals)
+		goto done;
+
+	/* any listed value is usable at stage 1 */
+	update_pbha_perf_only_bit(perf_only_vals, num_perf_only_vals);
+
+	/*
+	 * for stage2 the values are collapsed back to 4 bits that can only
+	 * enable values in the arm64_pbha_perf_only_values mask.
+	 */
+	for (i = 0; i < num_perf_only_vals; i++) {
+		val = perf_only_vals[i];
+		if (val > 0xf)
+			continue;
+
+		stage2_test_pbha_value(val);
+	}
+
+done:
+	of_node_put(cpus);
+	pbha_enabled = true;
+
+out_unlock:
+	spin_unlock(&pbha_dt_lock);
+	return !!pbha_stage1_enable_bits;
+}
+
+static void enable_pbha_inner(void)
+{
+	u64 tcr;
+
+	if (!pbha_stage1_enable_bits)
+		return;
+
+	tcr = read_sysreg(tcr_el1);
+	tcr |= FIELD_PREP(TCR_HWU0nn_MASK, pbha_stage1_enable_bits);
+	tcr |= FIELD_PREP(TCR_HWU1nn_MASK, pbha_stage1_enable_bits);
+	tcr |= FIELD_PREP(TCR_HPD0, 1) | FIELD_PREP(TCR_HPD1, 1);
+
+	write_sysreg(tcr, tcr_el1);
+	isb();
+	local_flush_tlb_all();
+}
+
+static void cpu_enable_pbha(struct arm64_cpu_capabilities const *cap)
+{
+	enable_pbha_inner();
+}
+
+static inline bool cpu_has_pbha(void)
+{
+	u64 mmfr1 = read_cpuid(ID_AA64MMFR1_EL1);
+	int val = cpuid_feature_extract_unsigned_field(mmfr1,
+						       ID_AA64MMFR1_EL1_HPDS_SHIFT);
+
+	return val == 2;
+}
+
+void __init early_pbha_init(void)
+{
+	void *fdt;
+	int node;
+	const u8 *prop;
+	int size;
+
+	fdt = get_early_fdt_ptr();
+	if (!fdt)
+		return;
+
+	/* arm,pbha-performance-only may exist in both chosen and cpus node */
+	node = fdt_path_offset(fdt, "/chosen");
+	if (node < 0)
+		return;
+
+	prop = fdt_getprop(fdt, node, "arm,pbha-performance-only", &size);
+	if (prop)
+		goto found;
+
+	node = fdt_path_offset(fdt, "/cpus");
+	if (node < 0)
+		return;
+
+	prop = fdt_getprop(fdt, node, "arm,pbha-performance-only", &size);
+	if (!prop)
+		return;
+
+found:
+	if (!cpu_has_pbha())
+		return;
+
+	update_pbha_perf_only_bit(prop, size);
+	enable_pbha_inner();
+
+	pbha_enabled = true;
+
+	early_pbha_bit0_init();
+}
+
+/*
+ * PBHA's behaviour is implementation defined, as is the way it combines
+ * stage1 and stage2 attributes. If the kernel has KVM supported, and booted
+ * at EL2, only these CPUs can allow PBHA in a guest, as KVM knows how the PBHA
+ * bits are combined. This prevents the host being affected by some
+ * implementation defined behaviour from the guest.
+ *
+ * The TRM for these CPUs describe stage2 as overriding stage1.
+ */
+static const struct midr_range pbha_stage2_wins[] = {
+	MIDR_ALL_VERSIONS(MIDR_NEOVERSE_N1),
+	MIDR_ALL_VERSIONS(MIDR_CORTEX_A76),
+	MIDR_ALL_VERSIONS(MIDR_CORTEX_A77),
+	MIDR_ALL_VERSIONS(MIDR_CORTEX_A78),
+	{},
+};
+
+static bool plat_can_use_pbha_stage2(const struct arm64_cpu_capabilities *cap,
+				     int scope)
+{
+	/*  Booted at EL2? */
+	if (!is_hyp_mode_available() && !is_kernel_in_hyp_mode())
+		return false;
+
+	if (!is_midr_in_range_list(cap->midr_range_list))
+		return false;
+
+	/*
+	 * Calls with scope == SCOPE_LOCAL_CPU need only testing whether this
+	 * cpu has the feature. A later 'system' scope call will check for a
+	 * firmware description.
+	 */
+	if (scope == SCOPE_LOCAL_CPU)
+		return true;
+
+	if (!__system_matches_cap(ARM64_HAS_PBHA_STAGE1))
+		return false;
+
+	return !!arm64_pbha_stage2_safe_bits;
+}
+#endif /* CONFIG_ARM64_PBHA */
+
 #ifdef CONFIG_ARM64_AMU_EXTN
 
 /*
@@ -3189,6 +3425,28 @@ static const struct arm64_cpu_capabilities arm64_features[] = {
 		.matches = has_cpuid_feature,
 		ARM64_CPUID_FIELDS(ID_AA64MMFR0_EL1, FGT, IMP)
 	},
+	{
+		.capability = ARM64_HAS_PBHA,
+		.type = ARM64_CPUCAP_SYSTEM_FEATURE,
+		.matches = has_cpuid_feature,
+		ARM64_CPUID_FIELDS(ID_AA64MMFR1_EL1, HPDS, HPDS2)
+	},
+#ifdef CONFIG_ARM64_PBHA
+	{
+		.desc = "Page Based Hardware Attributes (PBHA)",
+		.capability = ARM64_HAS_PBHA_STAGE1,
+		.type = ARM64_CPUCAP_SYSTEM_FEATURE,
+		.matches = plat_can_use_pbha_stage1,
+		.cpu_enable = cpu_enable_pbha,
+		ARM64_CPUID_FIELDS(ID_AA64MMFR1_EL1, HPDS, HPDS2)
+	},
+	{
+		.capability = ARM64_HAS_PBHA_STAGE2,
+		.type = ARM64_CPUCAP_SYSTEM_FEATURE,
+		.matches = plat_can_use_pbha_stage2,
+		.midr_range_list = pbha_stage2_wins,
+	},
+#endif
 #ifdef CONFIG_ARM64_SME
 	{
 		.desc = "Scalable Matrix Extension",
