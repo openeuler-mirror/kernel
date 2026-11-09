@@ -272,6 +272,9 @@ static bool nse_clean_tx_irq_pmd(struct nse_ring *tx_ring, int napi_budget)
 
 	nse_update_tx_ring_stats(tx_ring, total_pkts, total_bytes);
 
+	if (!nse_lan_tx_no_bql)
+		netdev_tx_completed_queue(txring_txq(tx_ring), total_pkts, total_bytes);
+
 	return !!budget;
 }
 
@@ -774,6 +777,7 @@ int nse_clean_tx_irq_on_hw_head(struct nse_ring *tx_ring, u16 head,
 	while (ntc != head) {
 		/* if next_to_watch is not set then there is no work pending */
 		if (!eop_desc) {
+#if defined(NSE_DEBUG_EXT)
 			/* this is not right,
 			 *  in this logic, local var: 'tx_buf' should be always pointing to first
 			 * tx_buf of a
@@ -782,6 +786,8 @@ int nse_clean_tx_irq_on_hw_head(struct nse_ring *tx_ring, u16 head,
 			nse_debug(&vsi->back->hw, NSE_DBG_LAN, "[%s, %d] tx-ring (idx=%d), first tx_buf (idx=%td) does not have next_to_watch eop_desc set?\n",
 				  __func__, __LINE__,
 				  tx_ring->q_index, (tx_buf - tx_ring->tx_buf));
+#endif
+
 			break;
 		}
 
@@ -1020,6 +1026,8 @@ bool nse_clean_tx_irq_legacy_rs(struct nse_ring *tx_ring, int napi_budget)
 		tx_rs = tx_ring->tx_rs_array[tx_rs_ntc];
 
 		next_rs_desc = NSE_TX_DESC(tx_ring, tx_rs);
+
+		smp_rmb();	/* prevent any other reads prior to eop_desc */
 
 		/* if the descriptor isn't done, no work yet to do */
 		if (!(next_rs_desc->cmd_type_offset_bsz & cpu_to_le64(NSE_TXD_DD_M)))
@@ -1948,19 +1956,21 @@ static void nse_net_dim(struct nse_q_vector *q_vector)
  * nse_buildreg_itr - build value for writing to the INT_DYN_CTLN register
  * @itr: interrupt throttling value in usecs
  */
-static u32 nse_buildreg_itr(struct nse_pf *pf, bool update_itr, u16 itr)
+static u32 nse_buildreg_itr(struct nse_pf *pf, bool update_itr, u32 itr)
 {
 	u32 val;
 
-	val = NSE_REG_INT_DYN_CTLN_INTMSK_VLD_M; /* intmask_vld=1, intmsk=0 -- unmask this irq */
+	/* intmask_vld=1, intmsk=0 -- unmask this irq */
+	val = (NSE_REG_INT_DYN_CTLN_CLEARPBA_M |
+			NSE_REG_INT_DYN_CTLN_INTMSK_VLD_M);
 
 	if (update_itr) {
-		if (!itr || pf->sw_conf.min_itr_no_intrl)
-			itr = (NSE_ITR_INTERVAL_MIN_USEC >> 1);
 
-		val |= NSE_REG_INT_DYN_CTLN_ITR_VALID_M;
-		val |= ((itr <<
-			NSE_REG_INT_DYN_CTLN_ITR_INTERVAL_S) & NSE_REG_INT_DYN_CTLN_ITR_INTERVAL_M);
+		if (!itr || pf->sw_conf.min_itr_no_intrl || itr > NSE_ITR_INTERVAL_MAX_IN_2_USEC)
+			itr = NSE_ITR_INTERVAL_MIN_IN_2_USEC;
+
+		val |= (NSE_REG_INT_DYN_CTLN_ITR_VALID_M |
+				(itr << NSE_REG_INT_DYN_CTLN_ITR_INTERVAL_S));
 	}
 
 	return val;
@@ -1978,40 +1988,37 @@ static void nse_enable_interrupt(struct nse_q_vector *q_vector)
 {
 	struct nse_vsi *vsi = q_vector->vsi;
 	bool wb_en = q_vector->wb_on_itr;
+	bool dyn_itr_refresh = READ_ONCE(q_vector->dyn_itr_refresh);
+	u32 itr = READ_ONCE(q_vector->dyn_itr_val);
 	u32 reg_val;
 
 	if (test_bit(NSE_VSI_DOWN, vsi->state))
 		return;
 
-	/* trigger an ITR delayed software interrupt when exiting busy poll, to
-	 * make sure to catch any pending cleanups that might have been missed
-	 * due to interrupt state transition. If busy poll or poll isn't
-	 * enabled, then don't update ITR, and just enable the interrupt.
-	 */
-	if (!wb_en) {
-		reg_val = nse_buildreg_itr(vsi->back, false, 0);
-	} else {
+	reg_val = nse_buildreg_itr(vsi->back, dyn_itr_refresh, dyn_itr_refresh ? itr : 0);
+
+	if (wb_en) {
+
 		q_vector->wb_on_itr = false;
 
-		/* do two things here with a single write. Set up the third ITR
-		 * index to be used for software interrupt moderation, and then
-		 * trigger a software interrupt with a rate limit of 20K on
-		 * software interrupts, this will help avoid high interrupt
-		 * loads due to frequently polling and exiting polling.
-		 */
-		if (q_vector->dyn_itr_refresh) {
-			reg_val = nse_buildreg_itr(vsi->back, true, q_vector->dyn_itr_val);
-			q_vector->dyn_itr_refresh = false;
-		} else {
-			reg_val = nse_buildreg_itr(vsi->back, true, (NSE_ITR_INTERVAL_20K >> 1));
-		}
 		reg_val |= NSE_REG_INT_DYN_CTLN_SWINT_TRIG_M;
 	}
 
 	wr32(&vsi->back->hw, NSE_REG_INT_DYN_CTLN(q_vector->reg_idx), reg_val);
+
+	/* make sure the ITR register write is ordered before the flag
+	 * is cleared below, so that a later interrupt sees the new value
+	 */
+	wmb();
+
+	if (dyn_itr_refresh) {
+		WRITE_ONCE(q_vector->dyn_itr_refresh, false);
+		WRITE_ONCE(q_vector->dim.state, DIM_START_MEASURE);
+	}
 }
 
-static void nse_enable_interrupt_force_and_trig(struct nse_q_vector *q_vector)
+static void __maybe_unused
+nse_enable_interrupt_force_and_trig(struct nse_q_vector *q_vector)
 {
 	u32 reg_val;
 
@@ -2044,20 +2051,39 @@ static void nse_enable_interrupt_force_and_trig(struct nse_q_vector *q_vector)
 static void nse_set_wb_on_itr(struct nse_q_vector *q_vector)
 {
 	struct nse_vsi *vsi = q_vector->vsi;
+	bool dyn_itr_refresh = READ_ONCE(q_vector->dyn_itr_refresh);
+	u32 itr = READ_ONCE(q_vector->dyn_itr_val);
+	u32 val = 0;
 
 	/* already in wb_on_itr mode no need to change it */
-	if (q_vector->wb_on_itr)
+	if (q_vector->wb_on_itr || !dyn_itr_refresh)
 		return;
 
-	/* use previously set ITR values
-	 * which will vary in adaptive (AIM) mode and
-	 * be static in non-adaptive mode (user configured)
-	 */
-	wr32(&vsi->back->hw, NSE_REG_INT_DYN_CTLN(q_vector->reg_idx),
-		(NSE_REG_INT_DYN_CTLN_WB_ON_ITR_M |
-			NSE_REG_INT_DYN_CTLN_INTMSK_VLD_M | NSE_REG_INT_DYN_CTLN_INTMSK_M));
+	val = (NSE_REG_INT_DYN_CTLN_WB_ON_ITR_M |
+			NSE_REG_INT_DYN_CTLN_INTMSK_VLD_M |
+			NSE_REG_INT_DYN_CTLN_INTMSK_M);
+
+	if (dyn_itr_refresh) {
+		if (!itr || itr > NSE_ITR_INTERVAL_MAX_IN_2_USEC)
+			itr = NSE_ITR_INTERVAL_MIN_IN_2_USEC;
+
+		val |= (NSE_REG_INT_DYN_CTLN_ITR_VALID_M |
+				(itr << NSE_REG_INT_DYN_CTLN_ITR_INTERVAL_S));
+	}
+
+	wr32(&vsi->back->hw, NSE_REG_INT_DYN_CTLN(q_vector->reg_idx), val);
 
 	q_vector->wb_on_itr = true;
+
+	/* make sure wb_on_itr is visible to the interrupt handler before
+	 * the refresh flag is cleared below
+	 */
+	mb();
+
+	if (dyn_itr_refresh) {
+		WRITE_ONCE(q_vector->dyn_itr_refresh, false);
+		WRITE_ONCE(q_vector->dim.state, DIM_START_MEASURE);
+	}
 }
 
 int nse_polling(struct nse_q_vector *q_vector, int budget)
@@ -2162,10 +2188,9 @@ int nse_napi_poll(struct napi_struct *napi, int budget)
 	int budget_per_ring;
 	int work_done = 0;
 	bool wd;
-	int cpu_id;
+#if defined(NSE_DEBUG_EXT)
 	u64 poll_ns;
 
-#if defined(NSE_DEBUG_EXT)
 	poll_ns = ktime_get_real_ns();
 
 	q_vector->dbg_stats.napi_poll_total_cnt++;
@@ -2232,7 +2257,7 @@ int nse_napi_poll(struct napi_struct *napi, int budget)
 		q_vector->dbg_stats.napi_poll_budeget_less_0_last_ns = poll_ns;
 #endif
 
-		goto tx_only;
+		return budget;
 	}
 
 	/* normally we have 1 Rx ring per q_vector */
@@ -2286,32 +2311,6 @@ int nse_napi_poll(struct napi_struct *napi, int budget)
 #if defined(NSE_DEBUG_EXT)
 		q_vector->dbg_stats.napi_poll_clean_not_done_cnt++;
 #endif
-
-		cpu_id = smp_processor_id();
-
-		if (!cpumask_test_cpu(cpu_id, &q_vector->affinity_mask)) {
-			/* Tell napi that we are done polling */
-			napi_complete_done(napi, work_done);
-
-			/* Force an interrupt */
-			nse_enable_interrupt_force_and_trig(q_vector);
-
-#if defined(NSE_DEBUG_EXT)
-			q_vector->dbg_stats.napi_poll_cpu_change_cnt++;
-
-			q_vector->dbg_stats.napi_poll_cpu_change_last_poll_cnt =
-				q_vector->dbg_stats.napi_poll_total_cnt;
-			q_vector->dbg_stats.napi_poll_cpu_change_last_ns = poll_ns;
-
-			/* !clean_complete && cpu_change */
-			q_vector->dbg_stats.napi_poll_last_ret_event = 1;
-#endif
-
-			/* Return budget-1 so that polling stops */
-			return budget - 1;
-		}
-
-tx_only:
 
 		/* Set the writeback on ITR so partial completions of
 		 * cache-lines will still continue even if we're polling.
@@ -2687,12 +2686,11 @@ nse_tx_map(struct nse_ring *tx_ring, struct nse_tx_buf *first,
 	nse_maybe_stop_tx(tx_ring, DESC_NEEDED);
 
 	/* notify HW of packet */
-	if (nse_lan_tx_no_bql) {
-		kick = true;
-	} else {
+	if (nse_lan_tx_no_bql)
+		kick = !netdev_xmit_more() || netif_xmit_stopped(txring_txq(tx_ring));
+	else
 		kick = __netdev_tx_sent_queue(txring_txq(tx_ring), first->bytecount,
 					      netdev_xmit_more());
-	}
 
 	/* don't write TAIL if in reset */
 	if (nse_is_reset_in_progress(tx_ring->pf->state))
@@ -2705,7 +2703,7 @@ nse_tx_map(struct nse_ring *tx_ring, struct nse_tx_buf *first,
 		wmb();
 
 		/* notify HW of packet */
-		writel_relaxed(i, tx_ring->tail);
+		writel(i, tx_ring->tail);
 
 #if defined(NSE_DEBUG_EXT)
 		if (tx_ring->txr_used_records) {
@@ -3521,6 +3519,7 @@ nse_xmit_frame_ring(struct sk_buff *skb, struct nse_ring *tx_ring)
 		nse_eswitch_set_target_vsi(skb, &offload);
 #endif /* CONFIG_NET_DEVLINK */
 
+#if defined(NSE_DEBUG_EXT)
 	if (nse_lan_tx_not_use_ctx_desc &&
 	    (offload.cd_qw1 & (NSE_TX_DESC_DTYPE_CTX << NSE_TXD_CTX_DTYPE_S))) {
 		nse_debug(&tx_ring->pf->hw, NSE_DBG_LAN, "[%s, %d] BAD: send a packet need tx-context-desc, drop it\n",
@@ -3529,6 +3528,7 @@ nse_xmit_frame_ring(struct sk_buff *skb, struct nse_ring *tx_ring)
 		dev_kfree_skb_any(skb);
 		return NETDEV_TX_OK;
 	}
+#endif
 
 	if (offload.cd_qw1 & (NSE_TX_DESC_DTYPE_CTX << NSE_TXD_CTX_DTYPE_S)) {
 		struct nse_tx_ctx_desc *cdesc;

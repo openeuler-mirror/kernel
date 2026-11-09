@@ -57,10 +57,15 @@ nse_qvec_toggle_napi(struct nse_vsi *vsi, struct nse_q_vector *q_vector,
 	if (!vsi->netdev || !q_vector)
 		return;
 
-	if (enable)
+	if (enable) {
 		napi_enable(&q_vector->napi);
-	else
-		napi_disable(&q_vector->napi);
+		q_vector->napi_enabled = true;
+	} else {
+		if (q_vector->napi_enabled)
+			napi_disable(&q_vector->napi);
+
+		q_vector->napi_enabled = false;
+	}
 }
 
 /**
@@ -101,7 +106,9 @@ nse_qvec_dis_irq(struct nse_vsi *vsi, struct nse_ring *rx_ring,
 
 		nse_flush(hw);
 
+#if defined(NSE_DEBUG_EXT)
 		if (!nse_no_irq)
+#endif
 			synchronize_irq(nse_get_irq_num(pf, v_idx + base));
 	}
 }

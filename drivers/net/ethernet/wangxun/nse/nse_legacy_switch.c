@@ -75,7 +75,7 @@ nse_legacy_sw_sync_mac_table(struct nse_legacy_switch *sw)
 			elem->content0 = cpu_to_le32(mac_fltr_reg0);
 			elem->content1 = cpu_to_le32(mac_fltr_reg1);
 
-			dev_info(nse_hw_to_dev(hw),
+			nse_debug(hw, NSE_DBG_SW,
 				"Real to config hw mac filter, idx = %d, reg0 = 0x%x, reg1 = 0x%x\n",
 				i, mac_fltr_reg0, mac_fltr_reg1);
 			status = nse_aq_cfg_legacy_sw_fltr(hw, buf, buf_size,
@@ -147,9 +147,9 @@ nse_legacy_sw_add_mac(struct nse_hw *hw, const u8 *addr, u16 vsi_handle)
 					sw->mac_table[i].state |= NSE_FLTR_STATE_MODIFIED;
 					sw->mac_table[i].vsi_list |= (1ULL << hw_vsi_id);
 
-					dev_info(nse_hw_to_dev(hw),
+					nse_debug(hw, NSE_DBG_SW,
 						"Start to update mac fltr into legacy switch:\n");
-					dev_info(nse_hw_to_dev(hw),
+					nse_debug(hw, NSE_DBG_SW,
 						"\t mac addr: %pM, mac entry idx: %d, vsi_list: 0x%x, new vsi: %d\n",
 						addr, i, sw->mac_table[i].vsi_list, hw_vsi_id);
 
@@ -171,9 +171,9 @@ nse_legacy_sw_add_mac(struct nse_hw *hw, const u8 *addr, u16 vsi_handle)
 		memcpy(sw->mac_table[i].addr, addr, ETH_ALEN);
 		sw->mac_table[i].vsi_list |= (1ULL << hw_vsi_id);
 
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"Start to add a new mac fltr into legacy switch:\n");
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"\t mac addr: %pM, mac entry idx: %d, vsi_list: 0x%x, new vsi: %d\n",
 			addr, i, sw->mac_table[i].vsi_list, hw_vsi_id);
 
@@ -233,9 +233,9 @@ nse_legacy_sw_replay_mac(struct nse_hw *hw, const u8 *addr, u16 vsi_handle)
 			if (ether_addr_equal(addr, sw->mac_table[i].addr)) {
 				sw->mac_table[i].state |= NSE_FLTR_STATE_MODIFIED;
 				sw->mac_table[i].vsi_list |= (1ULL << hw_vsi_id);
-				dev_info(nse_hw_to_dev(hw),
+				nse_debug(hw, NSE_DBG_SW,
 					"Start to replay mac fltr into legacy switch:\n");
-				dev_info(nse_hw_to_dev(hw),
+				nse_debug(hw, NSE_DBG_SW,
 					"\t mac addr: %pM, mac entry idx: %d, vsi_list: 0x%x, new vsi: %d\n",
 					addr, i, sw->mac_table[i].vsi_list, hw_vsi_id);
 				status = nse_legacy_sw_sync_mac_table(sw);
@@ -253,9 +253,9 @@ nse_legacy_sw_replay_mac(struct nse_hw *hw, const u8 *addr, u16 vsi_handle)
 		memcpy(sw->mac_table[i].addr, addr, ETH_ALEN);
 		sw->mac_table[i].vsi_list |= (1ULL << hw_vsi_id);
 
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"Start to replay a new mac fltr into legacy switch:\n");
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"\t mac addr: %pM, mac entry idx: %d, vsi_list: 0x%x, new vsi: %d\n",
 			addr, i, sw->mac_table[i].vsi_list, hw_vsi_id);
 
@@ -326,9 +326,9 @@ nse_legacy_sw_remove_mac(struct nse_hw *hw, const u8 *addr, u16 vsi_handle)
 		} else
 			sw->mac_table[i].vsi_list &= ~(1ULL << hw_vsi_id);
 
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"Start to remove mac fltr from legacy switch:\n");
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"\t mac addr: %pM, mac entry idx: %d, vsi_list: 0x%x, removed vsi: %d\n",
 			addr, i, sw->mac_table[i].vsi_list, hw_vsi_id);
 
@@ -491,7 +491,7 @@ nse_legacy_sw_sync_vlan_table(struct nse_legacy_switch *sw)
 
 			elem->content0 = cpu_to_le32(vlan_fltr_reg);
 
-			dev_info(nse_hw_to_dev(hw),
+			nse_debug(hw, NSE_DBG_SW,
 				"Real to config hw vlan filter, idx = %d, reg = 0x%x\n",
 				i, vlan_fltr_reg);
 			status = nse_aq_cfg_legacy_sw_fltr(hw, buf, buf_size,
@@ -555,9 +555,9 @@ nse_legacy_sw_add_vlan(struct nse_hw *hw, u16 vid, u16 vsi_handle)
 					sw->vlan_table[i].state |= NSE_FLTR_STATE_MODIFIED;
 					sw->vlan_table[i].vsi_list |= (1ULL << hw_vsi_id);
 
-					dev_info(nse_hw_to_dev(hw),
+					nse_debug(hw, NSE_DBG_SW,
 						"Start to update vlan fltr into legacy switch:\n");
-					dev_info(nse_hw_to_dev(hw),
+					nse_debug(hw, NSE_DBG_SW,
 						"\t vlan id: %d, vlan entry idx: %d, vsi_list: 0x%x, new vsi: %d\n",
 						vid, i, sw->vlan_table[i].vsi_list, hw_vsi_id);
 
@@ -580,9 +580,9 @@ nse_legacy_sw_add_vlan(struct nse_hw *hw, u16 vid, u16 vsi_handle)
 		sw->vlan_table[i].vid = vid;
 		sw->vlan_table[i].vsi_list |= (1ULL << hw_vsi_id);
 
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"Start to add a new vlan fltr into legacy switch:\n");
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"\t vlan id: %d, vlan entry idx: %d, vsi_list: 0x%x, new vsi: %d\n",
 			vid, i, sw->vlan_table[i].vsi_list, hw_vsi_id);
 
@@ -636,9 +636,9 @@ nse_legacy_sw_replay_vlan(struct nse_hw *hw, u16 vid, u16 vsi_handle)
 				sw->vlan_table[i].state |= NSE_FLTR_STATE_MODIFIED;
 				sw->vlan_table[i].vsi_list |= (1ULL << hw_vsi_id);
 
-				dev_info(nse_hw_to_dev(hw),
+				nse_debug(hw, NSE_DBG_SW,
 					"Start to replay vlan fltr into legacy switch:\n");
-				dev_info(nse_hw_to_dev(hw),
+				nse_debug(hw, NSE_DBG_SW,
 					"\t vlan id: %d, vlan entry idx: %d, vsi_list: 0x%x, new vsi: %d\n",
 					vid, i, sw->vlan_table[i].vsi_list, hw_vsi_id);
 
@@ -658,9 +658,9 @@ nse_legacy_sw_replay_vlan(struct nse_hw *hw, u16 vid, u16 vsi_handle)
 		sw->vlan_table[i].vid = vid;
 		sw->vlan_table[i].vsi_list |= (1ULL << hw_vsi_id);
 
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"Start to replay a new vlan fltr into legacy switch:\n");
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"\t vlan id: %d, vlan entry idx: %d, vsi_list: 0x%x, new vsi: %d\n",
 			vid, i, sw->vlan_table[i].vsi_list, hw_vsi_id);
 
@@ -724,9 +724,9 @@ nse_legacy_sw_remove_vlan(struct nse_hw *hw, u16 vid, u16 vsi_handle)
 		} else
 			sw->vlan_table[i].vsi_list &= ~(1ULL << hw_vsi_id);
 
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"Start to remove vlan fltr from legacy switch:\n");
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"\t vlan id: %d, vlan entry idx: %d, vsi_list: 0x%x, removed vsi: %d\n",
 			vid, i, sw->vlan_table[i].vsi_list, hw_vsi_id);
 
@@ -890,7 +890,7 @@ nse_legacy_sw_sync_ethtype_table(struct nse_legacy_switch *sw)
 			elem->content0 = cpu_to_le32(ethtype_reg0);
 			elem->content1 = cpu_to_le32(ethtype_reg1);
 
-			dev_info(nse_hw_to_dev(hw),
+			nse_debug(hw, NSE_DBG_SW,
 				"Real to config hw ethtype filter, idx = %d, reg0 = 0x%x, reg1 = 0x%x\n",
 				i, ethtype_reg0, ethtype_reg1);
 			status = nse_aq_cfg_legacy_sw_fltr(hw, buf, buf_size,
@@ -954,9 +954,9 @@ nse_legacy_sw_add_ethtype(struct nse_hw *hw, u16 ethtype, u16 vsi_handle)
 					sw->ethtype_table[i].state |= NSE_FLTR_STATE_MODIFIED;
 					sw->ethtype_table[i].vsi_list |= (1ULL << hw_vsi_id);
 
-					dev_info(nse_hw_to_dev(hw),
+					nse_debug(hw, NSE_DBG_SW,
 						"Start to update ethtype fltr into legacy switch:\n");
-					dev_info(nse_hw_to_dev(hw),
+					nse_debug(hw, NSE_DBG_SW,
 						"\t ethtype: 0x%x, ethtype entry idx: %d, vsi_list: 0x%x, new vsi: %d\n",
 						ethtype, i, sw->ethtype_table[i].vsi_list,
 							hw_vsi_id);
@@ -980,9 +980,9 @@ nse_legacy_sw_add_ethtype(struct nse_hw *hw, u16 ethtype, u16 vsi_handle)
 		sw->ethtype_table[i].ethtype = ethtype;
 		sw->ethtype_table[i].vsi_list |= (1ULL << hw_vsi_id);
 
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"Start to add a new ethtype fltr into legacy switch:\n");
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"\t ethtype: 0x%x, ethtype entry idx: %d, vsi_list: 0x%x, new vsi: %d\n",
 			ethtype, i, sw->ethtype_table[i].vsi_list, hw_vsi_id);
 
@@ -1036,9 +1036,9 @@ nse_legacy_sw_replay_ethtype(struct nse_hw *hw, u16 ethtype, u16 vsi_handle)
 				sw->ethtype_table[i].state |= NSE_FLTR_STATE_MODIFIED;
 				sw->ethtype_table[i].vsi_list |= (1ULL << hw_vsi_id);
 
-				dev_info(nse_hw_to_dev(hw),
+				nse_debug(hw, NSE_DBG_SW,
 					"Start to replay ethtype fltr into legacy switch:\n");
-				dev_info(nse_hw_to_dev(hw),
+				nse_debug(hw, NSE_DBG_SW,
 					"\t ethtype: 0x%x, ethtype entry idx: %d, vsi_list: 0x%x, new vsi: %d\n",
 					ethtype, i, sw->ethtype_table[i].vsi_list, hw_vsi_id);
 
@@ -1058,9 +1058,9 @@ nse_legacy_sw_replay_ethtype(struct nse_hw *hw, u16 ethtype, u16 vsi_handle)
 		sw->ethtype_table[i].ethtype = ethtype;
 		sw->ethtype_table[i].vsi_list |= (1ULL << hw_vsi_id);
 
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"Start to replay a new ethtype fltr into legacy switch:\n");
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"\t ethtype: 0x%x, ethtype entry idx: %d, vsi_list: 0x%x, new vsi: %d\n",
 			ethtype, i, sw->ethtype_table[i].vsi_list, hw_vsi_id);
 
@@ -1124,9 +1124,9 @@ nse_legacy_sw_remove_ethtype(struct nse_hw *hw, u16 ethtype, u16 vsi_handle)
 		} else
 			sw->ethtype_table[i].vsi_list &= ~(1ULL << hw_vsi_id);
 
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"Start to remove ethtype fltr from legacy switch:\n");
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"\t ethtype: 0x%x, ethtype entry idx: %d, vsi_list: 0x%x, removed vsi: %d\n",
 			ethtype, i, sw->ethtype_table[i].vsi_list, hw_vsi_id);
 

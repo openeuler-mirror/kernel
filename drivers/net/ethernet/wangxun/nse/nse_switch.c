@@ -819,12 +819,12 @@ nse_aq_alloc_free_vsi_list(struct nse_hw *hw, u16 *vsi_list_id,
 
 	if (opc == NSE_AQ_OPC_ALLOC_RESOURCE) {
 		*vsi_list_id = le16_to_cpu(buf->res_id[0]);
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] alloced vsi list id = %d\n",
 			__func__, __LINE__, *vsi_list_id);
 
 	} else if (opc == NSE_AQ_OPC_FREE_RESOURCE) {
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] Success to free vsi list id = %d\n",
 			__func__, __LINE__, *vsi_list_id);
 	}
@@ -1009,7 +1009,7 @@ nse_init_def_profiles(struct nse_hw *hw, struct nse_profile_info **profile_list)
 		/* set count to 0, means read all profiles*/
 		buf->count = cpu_to_le16(0);
 		buf->start_id = cpu_to_le16(start_id);
-		dev_info(nse_hw_to_dev(hw), "request profile next start id = 0x%x\n", start_id);
+		nse_debug(hw, NSE_DBG_SW, "request profile next start id = 0x%x\n", start_id);
 		status = nse_aq_get_profile_cfg(hw, buf, NSE_AQ_MAX_BUF_LEN);
 		if (status)
 			goto err;
@@ -1017,7 +1017,7 @@ nse_init_def_profiles(struct nse_hw *hw, struct nse_profile_info **profile_list)
 		num_elems = le16_to_cpu(buf->count);
 		/* used for next get profiles aqc*/
 		start_id = le16_to_cpu(buf->start_id);
-		dev_info(nse_hw_to_dev(hw), "response profile next start id = 0x%x\n", start_id);
+		nse_debug(hw, NSE_DBG_SW, "response profile next start id = 0x%x\n", start_id);
 		ele = buf->elems;
 		for (i = 0; i < num_elems; i++, ele++) {
 			profile_id = le16_to_cpu(ele->profile_id);
@@ -1846,21 +1846,21 @@ nse_fill_lut_node(struct nse_hw *hw, struct nse_fltr_info *f_info,
 
 	lut_node->lut_id = cpu_to_le16(f_info->lkup_type);
 	lut_node->action = cpu_to_le16(act);
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] lut id is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] lut id is 0x%x\n",
 		 __func__, __LINE__, le16_to_cpu(lut_node->lut_id));
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] original node_id is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] original node_id is 0x%x\n",
 		 __func__, __LINE__, cpu_to_le16(lut_node->node_id));
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] key0 is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] key0 is 0x%x\n",
 		 __func__, __LINE__, le16_to_cpu(lut_node->key[0]));
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] key1 is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] key1 is 0x%x\n",
 		 __func__, __LINE__, le16_to_cpu(lut_node->key[1]));
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] key2 is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] key2 is 0x%x\n",
 		 __func__, __LINE__, le16_to_cpu(lut_node->key[2]));
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] key3 is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] key3 is 0x%x\n",
 		 __func__, __LINE__, le16_to_cpu(lut_node->key[3]));
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] key4 is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] key4 is 0x%x\n",
 		 __func__, __LINE__, le16_to_cpu(lut_node->key[4]));
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] action is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] action is 0x%x\n",
 		 __func__, __LINE__, le16_to_cpu(lut_node->action));
 }
 
@@ -2048,10 +2048,10 @@ nse_update_pkt_fwd_rule(struct nse_hw *hw, struct nse_fltr_info *f_info)
 
 	lut_node->node_id = cpu_to_le16(f_info->fltr_node_id);
 
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] start to update node\n", __func__, __LINE__);
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] lut id is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] start to update node\n", __func__, __LINE__);
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] lut id is 0x%x\n",
 		 __func__, __LINE__, cpu_to_le16(lut_node->lut_id));
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] node_id is 0x%x\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] node_id is 0x%x\n",
 		 __func__, __LINE__, cpu_to_le16(lut_node->node_id));
 
 	/* Update lut node with new rule to forward VSI list */
@@ -2114,7 +2114,7 @@ nse_create_pkt_fwd_rule(struct nse_hw *hw, struct nse_lut_info *lut,
 	fm_entry->fltr_info.fltr_node_id = le16_to_cpu(lut_node->node_id);
 	/*add entry to software filter DB after populating to HW*/
 	list_add_tail(&fm_entry->list_entry, &lut->filt_rules);
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] returned node_id is %d\n", __func__, __LINE__,
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] returned node_id is %d\n", __func__, __LINE__,
 				f_entry->fltr_info.fltr_node_id);
 nse_create_pkt_fwd_rule_exit:
 	devm_kfree(nse_hw_to_dev(hw), buf);
@@ -2478,11 +2478,11 @@ nse_remove_rule_internal(struct nse_hw *hw, struct nse_lut_info *lut,
 		lut_node = buf->elem;
 		nse_fill_lut_node(hw, &fm_entry->fltr_info, lut_node,
 				 NSE_AQ_OPC_REMOVE_LUT_NODE);
-		dev_info(nse_hw_to_dev(hw), "[%s, %d] start to remove node\n",
+		nse_debug(hw, NSE_DBG_SW, "[%s, %d] start to remove node\n",
 			 __func__, __LINE__);
-		dev_info(nse_hw_to_dev(hw), "[%s, %d] lut id is 0x%x\n",
+		nse_debug(hw, NSE_DBG_SW, "[%s, %d] lut id is 0x%x\n",
 			 __func__, __LINE__, le16_to_cpu(lut_node->lut_id));
-		dev_info(nse_hw_to_dev(hw), "[%s, %d] node_id is 0x%x\n",
+		nse_debug(hw, NSE_DBG_SW, "[%s, %d] node_id is 0x%x\n",
 			 __func__, __LINE__, le16_to_cpu(lut_node->node_id));
 		status = nse_aq_lut_nodes(hw, buf, buf_size,
 			NSE_AQ_OPC_REMOVE_LUT_NODE, NULL);
@@ -2682,7 +2682,7 @@ nse_add_bmc_mac_rule(struct nse_hw *hw, struct list_head *m_list,
 		if (!m_entry)
 			m_list_itr->status = nse_create_pkt_fwd_rule(hw, lut, m_list_itr);
 		else
-			dev_info(nse_hw_to_dev(hw), "[%s, %d] Mac(%pM) is already existed in BMC Lut\n",
+			nse_debug(hw, NSE_DBG_SW, "[%s, %d] Mac(%pM) is already existed in BMC Lut\n",
 				__func__, __LINE__, addr);
 		mutex_unlock(rule_lock);
 
@@ -2738,7 +2738,7 @@ nse_add_roce_mac_rule(struct nse_hw *hw, struct list_head *m_list,
 		if (!m_entry)
 			m_list_itr->status = nse_create_pkt_fwd_rule(hw, lut, m_list_itr);
 		else
-			dev_info(nse_hw_to_dev(hw), "[%s, %d] Mac(%pM) is already existed in ROCE MAC Lut\n",
+			nse_debug(hw, NSE_DBG_SW, "[%s, %d] Mac(%pM) is already existed in ROCE MAC Lut\n",
 				__func__, __LINE__, addr);
 		mutex_unlock(rule_lock);
 
@@ -3162,7 +3162,7 @@ nse_remove_eth_mac_rule(struct nse_hw *hw, struct list_head *em_list,
 
 		lut = &sw->lut_list[l_type];
 
-		dev_info(nse_hw_to_dev(hw), "[%s, %d] start to remove Lut[%d] node, node id = %d\n",
+		nse_debug(hw, NSE_DBG_SW, "[%s, %d] start to remove Lut[%d] node, node id = %d\n",
 			__func__, __LINE__, lut->lut_id, em_list_itr->fltr_info.fltr_node_id);
 
 		em_list_itr->status = nse_remove_rule_internal(hw, lut,
@@ -4170,13 +4170,13 @@ nse_aq_alloc_free_lpm_lut_id(struct nse_hw *hw, u16 *lut_id,
 
 	if (opc == NSE_AQ_OPC_FREE_RESOURCE) {
 		buf->res_id[0] = cpu_to_le16(*lut_id);
-		dev_info(nse_hw_to_dev(hw), "[%s, %d] start to free lpm lut, id = 0x%x\n",
+		nse_debug(hw, NSE_DBG_SW, "[%s, %d] start to free lpm lut, id = 0x%x\n",
 			__func__, __LINE__, le16_to_cpu(buf->res_id[0]));
 	}
 
 	if (opc == NSE_AQ_OPC_ALLOC_RESOURCE) {
 		buf->res_id[0] |= cpu_to_le16(NSE_AQC_RES_TYPE_PLUT_BIT);
-		dev_info(nse_hw_to_dev(hw), "[%s, %d] start to allocated lpm lut, type = 0x%x\n",
+		nse_debug(hw, NSE_DBG_SW, "[%s, %d] start to allocated lpm lut, type = 0x%x\n",
 			__func__, __LINE__, le16_to_cpu(buf->res_id[0]));
 	}
 
@@ -4186,12 +4186,12 @@ nse_aq_alloc_free_lpm_lut_id(struct nse_hw *hw, u16 *lut_id,
 
 	if (opc == NSE_AQ_OPC_ALLOC_RESOURCE) {
 		*lut_id = le16_to_cpu(buf->res_id[0]);
-		dev_info(nse_hw_to_dev(hw), "[%s, %d] allocated lpm lut id = 0x%x\n",
+		nse_debug(hw, NSE_DBG_SW, "[%s, %d] allocated lpm lut id = 0x%x\n",
 			__func__, __LINE__, le16_to_cpu(buf->res_id[0]));
 		if (*lut_id >= NSE_MAX_NUM_LUTS)
 			status = NSE_ERR_MAX_LIMIT;
 	} else if (opc == NSE_AQ_OPC_FREE_RESOURCE) {
-		dev_info(nse_hw_to_dev(hw), "[%s, %d] Success to free lpm lut id = 0x%x\n",
+		nse_debug(hw, NSE_DBG_SW, "[%s, %d] Success to free lpm lut id = 0x%x\n",
 			__func__, __LINE__, *lut_id);
 	}
 nse_aq_alloc_free_lut_id_exit:
@@ -4228,13 +4228,13 @@ nse_aq_alloc_free_lut_id(struct nse_hw *hw, u16 *lut_id,
 
 	if (opc == NSE_AQ_OPC_FREE_RESOURCE) {
 		buf->res_id[0] = cpu_to_le16(*lut_id);
-		dev_info(nse_hw_to_dev(hw), "[%s, %d] start to free lut, id = 0x%x\n",
+		nse_debug(hw, NSE_DBG_SW, "[%s, %d] start to free lut, id = 0x%x\n",
 			__func__, __LINE__, le16_to_cpu(buf->res_id[0]));
 	}
 
 	if (opc == NSE_AQ_OPC_ALLOC_RESOURCE) {
 		buf->res_id[0] |= cpu_to_le16(NSE_AQC_RES_TYPE_TLUT_BIT);
-		dev_info(nse_hw_to_dev(hw), "[%s, %d] start to allocated lut, type = 0x%x\n",
+		nse_debug(hw, NSE_DBG_SW, "[%s, %d] start to allocated lut, type = 0x%x\n",
 			__func__, __LINE__, le16_to_cpu(buf->res_id[0]));
 	}
 
@@ -4244,12 +4244,12 @@ nse_aq_alloc_free_lut_id(struct nse_hw *hw, u16 *lut_id,
 
 	if (opc == NSE_AQ_OPC_ALLOC_RESOURCE) {
 		*lut_id = le16_to_cpu(buf->res_id[0]);
-		dev_info(nse_hw_to_dev(hw), "[%s, %d] allocated lut id = 0x%x\n",
+		nse_debug(hw, NSE_DBG_SW, "[%s, %d] allocated lut id = 0x%x\n",
 			__func__, __LINE__, le16_to_cpu(buf->res_id[0]));
 		if (*lut_id >= NSE_MAX_NUM_LUTS)
 			status = NSE_ERR_MAX_LIMIT;
 	} else if (opc == NSE_AQ_OPC_FREE_RESOURCE) {
-		dev_info(nse_hw_to_dev(hw), "[%s, %d] Success to free lut id = 0x%x\n",
+		nse_debug(hw, NSE_DBG_SW, "[%s, %d] Success to free lut id = 0x%x\n",
 			__func__, __LINE__, *lut_id);
 	}
 nse_aq_alloc_free_lut_id_exit:
@@ -4303,12 +4303,12 @@ nse_aq_alloc_free_counter_pair(struct nse_hw *hw, u16 *counter_id1,
 		else {
 			*counter_id1 = le16_to_cpu(buf->res_id[0]);
 			*counter_id2 = le16_to_cpu(buf->res_id[0]) + 1;
-			dev_info(nse_hw_to_dev(hw),
+			nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] alloced counter_id1 = %d, counter_id2 = %d\n",
 			__func__, __LINE__, *counter_id1, *counter_id2);
 		}
 	} else if (opc == NSE_AQ_OPC_FREE_RESOURCE) {
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] Success to free counter_id1 = %d, counter_id2 = %d\n",
 			__func__, __LINE__, *counter_id1, *counter_id2);
 	}
@@ -4355,11 +4355,11 @@ nse_aq_alloc_free_node_state_id(struct nse_hw *hw,
 
 	if (opc == NSE_AQ_OPC_ALLOC_RESOURCE) {
 		*node_state_id = le16_to_cpu(buf->res_id[0]);
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] alloced node state id = %d\n",
 			__func__, __LINE__, *node_state_id);
 	} else if (opc == NSE_AQ_OPC_FREE_RESOURCE) {
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] Success to free node state id = %d\n",
 			__func__, __LINE__, *node_state_id);
 	}
@@ -4406,11 +4406,11 @@ nse_aq_alloc_free_lite_node_state(struct nse_hw *hw,
 
 	if (opc == NSE_AQ_OPC_ALLOC_RESOURCE) {
 		*node_state_id = le16_to_cpu(buf->res_id[0]);
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] alloced lite node state id = %d\n",
 			__func__, __LINE__, *node_state_id);
 	} else if (opc == NSE_AQ_OPC_FREE_RESOURCE) {
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] Success to free lite node state id = %d\n",
 			__func__, __LINE__, *node_state_id);
 	}
@@ -4468,12 +4468,12 @@ nse_aq_alloc_free_du_data(struct nse_hw *hw,
 		for (i = 0; i < cnt; i++)
 			du_data->du_desc.du_data_id =
 						le16_to_cpu(buf->res_id[i]);
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] alloced du data id = %d, size = %d\n",
 			__func__, __LINE__, du_data->du_desc.du_data_id,
 			du_data->du_desc.data_size);
 	} else if (opc == NSE_AQ_OPC_FREE_RESOURCE) {
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] Success to free du data id = %d, size = %d\n",
 			__func__, __LINE__, du_data->du_desc.du_data_id,
 			du_data->du_desc.data_size);
@@ -4522,11 +4522,11 @@ nse_aq_alloc_free_task_list_id(struct nse_hw *hw,
 	if (opc == NSE_AQ_OPC_ALLOC_RESOURCE) {
 		*task_list_id = le16_to_cpu(buf->res_id[0]) &
 						NSE_AQC_TSK_LST_ID_M;
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] alloced task list id = %d\n",
 			__func__, __LINE__, *task_list_id);
 	} else if (opc == NSE_AQ_OPC_FREE_RESOURCE) {
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] Success to free task list id = %d\n",
 			__func__, __LINE__, *task_list_id);
 	}
@@ -4573,11 +4573,11 @@ nse_aq_alloc_free_meter_id(struct nse_hw *hw,
 
 	if (opc == NSE_AQ_OPC_ALLOC_RESOURCE) {
 		*meter_id = le16_to_cpu(buf->res_id[0]);
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] alloced meter id = %d\n",
 			__func__, __LINE__, *meter_id);
 	} else if (opc == NSE_AQ_OPC_FREE_RESOURCE) {
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] Success to free meter id = %d\n",
 			__func__, __LINE__, *meter_id);
 	}
@@ -4631,13 +4631,13 @@ nse_aq_alloc_free_encap_data(struct nse_hw *hw,
 	if (opc == NSE_AQ_OPC_ALLOC_RESOURCE) {
 		encap_entry->du_desc.du_data_id =
 						le16_to_cpu(buf->res_id[0]);
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] alloced encap du data id = %d, size = %d\n",
 			__func__, __LINE__, encap_entry->du_desc.du_data_id,
 			encap_entry->du_desc.data_size);
 
 	} else if (opc == NSE_AQ_OPC_FREE_RESOURCE) {
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] Success to free encap du data id = %d, size = %d\n",
 			__func__, __LINE__, encap_entry->du_desc.du_data_id,
 			encap_entry->du_desc.data_size);
@@ -4692,13 +4692,13 @@ nse_aq_alloc_free_m_encap_data(struct nse_hw *hw,
 	if (opc == NSE_AQ_OPC_ALLOC_RESOURCE) {
 		m_encap_entry->du_desc.du_data_id =
 						le16_to_cpu(buf->res_id[0]);
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] alloced multi encap du data id = %d, size = %d\n",
 			__func__, __LINE__, m_encap_entry->du_desc.du_data_id,
 			m_encap_entry->du_desc.data_size);
 
 	} else if (opc == NSE_AQ_OPC_FREE_RESOURCE) {
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] Success to free multi encap du data id = %d, size = %d\n",
 			__func__, __LINE__, m_encap_entry->du_desc.du_data_id,
 			m_encap_entry->du_desc.data_size);
@@ -5107,7 +5107,7 @@ void nse_del_all_adv_rcp_per_profile(struct nse_hw *hw)
 		buf->count = cpu_to_le16(del_recps);
 		rcp_elems = buf->elem;
 
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 		"Start to remove %d recipes in Profile[%d]\n",
 		del_recps, profile->profile_id);
 
@@ -5117,7 +5117,7 @@ void nse_del_all_adv_rcp_per_profile(struct nse_hw *hw)
 			rcp_elems[i].profile_id = cpu_to_le16(profile->profile_id);
 			rcp_elems[i].recipe_id = recp_id;
 			rcp_elems[i].content.lut_id = cpu_to_le16(lut_id);
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"\tRemoved recipe id = %d in Profile[%d], and lut_id = %d\n",
 			 recp_id, profile->profile_id, lut_id);
 		}
@@ -5301,7 +5301,7 @@ void nse_del_all_adv_luts(struct nse_hw *hw)
 		if (!lut[i].lut_created || lut[i].is_lpm)
 			continue;
 
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"start to free lut id[%d]'s nodes\n", lut[i].lut_id);
 
 		if (lut[i].adv_rule) {
@@ -5327,7 +5327,7 @@ void nse_del_all_adv_luts(struct nse_hw *hw)
 					lut_node->node_id =
 						cpu_to_le16(lst_itr->node_info.sub_fltr_node_id[j]);
 
-					dev_info(nse_hw_to_dev(hw),
+					nse_debug(hw, NSE_DBG_SW,
 						"Start to remove lut[%d] node[%d]\n",
 						lut_entry->lut_id,
 						lst_itr->node_info.sub_fltr_node_id[j]);
@@ -5350,10 +5350,10 @@ void nse_del_all_adv_luts(struct nse_hw *hw)
 				devm_kfree(nse_hw_to_dev(hw), lst_itr);
 			}
 		} else
-			dev_info(nse_hw_to_dev(hw),
+			nse_debug(hw, NSE_DBG_SW,
 				"Lut[%d] is a NULL Lkup Table\n", lut[i].lut_id);
 
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"start to free lut id[%d]\n", lut[i].lut_id);
 
 		status = nse_aq_alloc_free_lut_id(hw,
@@ -5637,7 +5637,7 @@ nse_get_sw_fv_bitmap(struct nse_hw *hw, enum nse_prof_type req_profs,
 		if (nse_tcam_less) {
 			/* in tcam less mode, profiles in one chain are all in a big group */
 			set_bit(offset, bm);
-			dev_info(nse_hw_to_dev(hw),
+			nse_debug(hw, NSE_DBG_SW,
 				"Request profile type %d, in tcam_less mode we get every profile, cur_id = %d\n",
 				req_profs, offset);
 		} else {
@@ -5648,7 +5648,7 @@ nse_get_sw_fv_bitmap(struct nse_hw *hw, enum nse_prof_type req_profs,
 
 				if (req_profs & prof_type) {
 					set_bit(offset, bm);
-					dev_info(nse_hw_to_dev(hw), "Request tunnel type is %d, get profile[%d]\n",
+					nse_debug(hw, NSE_DBG_SW, "Request tunnel type is %d, get profile[%d]\n",
 						req_profs, offset);
 				}
 			}
@@ -5764,7 +5764,7 @@ nse_get_fv(struct nse_hw *hw, struct nse_prot_lkup_ext *lkup_exts,
 		for (i = 0; i < lkup_exts->n_val_words; i++) {
 			int j;
 
-			dev_info(nse_hw_to_dev(hw),
+			nse_debug(hw, NSE_DBG_SW,
 				"Searching in Profile[%d], User match fv word[%d]: prot_id = %d, off = %d\n",
 				offset, i, lkup_exts->fv_words[i].prot_id,
 					lkup_exts->fv_words[i].off);
@@ -5791,7 +5791,7 @@ nse_get_fv(struct nse_hw *hw, struct nse_prot_lkup_ext *lkup_exts,
 				if (!fv_entry)
 					goto err;
 
-				dev_info(nse_hw_to_dev(hw),
+				nse_debug(hw, NSE_DBG_SW,
 					"Congratulation! Profile[%d] can match user's all lookup words\n",
 					offset);
 
@@ -5827,19 +5827,26 @@ err:
  * @recp_cnt: pointer to a variable that stores returned number of recipe groups
  *
  * Using exact match algorithm, take all the words that are still not done,
- * and start grouping them in 4-word groups.
+ * and start grouping them in 5-word groups.
  * Each group makes up one recipe template(lut)
  */
 static int
 nse_create_first_fit_lut_def(struct nse_hw *hw,
+				  struct nse_adv_node_info *rinfo,
 			      struct nse_prot_lkup_ext *lkup_exts,
 			      struct list_head *lut_group_list,
 			      u8 *lut_cnt)
 {
 	struct nse_pref_lut_group *grp = NULL;
-	u8 j;
+	u8 j, rcp_max_words;
+	bool is_first_rcp = true;
 
 	*lut_cnt = 0;
+
+	if (nse_recipe_serial && rinfo->need_serial)
+		rcp_max_words = NSE_NUM_WORDS_SERIAL_FIRST_RECIPE;
+	else
+		rcp_max_words = NSE_NUM_WORDS_RECIPE;
 
 	/* Iterate every word in the lkups to check whether it is not done.
 	 *  If yes then this word needs to be part of a new recipe.
@@ -5847,7 +5854,7 @@ nse_create_first_fit_lut_def(struct nse_hw *hw,
 	for (j = 0; j < lkup_exts->n_val_words; j++)
 		if (!test_bit(j, lkup_exts->done)) {
 			if (!grp ||
-			    grp->n_val_pairs == NSE_NUM_WORDS_RECIPE) {
+			    grp->n_val_pairs == rcp_max_words) {
 				struct nse_lut_grp_entry *entry;
 
 				entry = devm_kzalloc(nse_hw_to_dev(hw),
@@ -5855,6 +5862,15 @@ nse_create_first_fit_lut_def(struct nse_hw *hw,
 						     GFP_KERNEL);
 				if (!entry)
 					return -ENOMEM;
+
+				if (nse_recipe_serial && rinfo->need_serial && is_first_rcp &&
+					grp && grp->n_val_pairs == rcp_max_words) {
+					/* there are up to 5 words for user in first recipe,
+					 * and 4 in other recipe
+					 */
+					rcp_max_words = NSE_NUM_WORDS_SERIAL_RECIPE;
+					is_first_rcp = false;
+				}
 
 				list_add_tail(&entry->l_entry, lut_group_list);
 				grp = &entry->lut_group;
@@ -5880,7 +5896,8 @@ nse_create_first_fit_lut_def(struct nse_hw *hw,
  * @lkup_exts: lookup elements
  */
 static int
-nse_create_lut_group(struct nse_hw *hw, struct nse_lut_info *lut_info,
+nse_create_lut_group(struct nse_hw *hw, struct nse_adv_node_info *rinfo,
+			struct nse_lut_info *lut_info,
 			struct nse_prot_lkup_ext *lkup_exts)
 {
 	u8 lut_count = 0;
@@ -5888,7 +5905,7 @@ nse_create_lut_group(struct nse_hw *hw, struct nse_lut_info *lut_info,
 
 	lut_info->n_grp_count = 0;
 
-	status = nse_create_first_fit_lut_def(hw, lkup_exts,
+	status = nse_create_first_fit_lut_def(hw, rinfo, lkup_exts,
 					       &lut_info->lut_group_list, &lut_count);
 	if (!status) {
 		lut_info->n_grp_count += lut_count;
@@ -6081,7 +6098,7 @@ nse_find_free_recp_res_idx(struct nse_hw *hw,
 			NSE_MAX_NUM_LUTS);
 	}
 
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 		"[%s, %d] Start to print associated profiles_bm", __func__, __LINE__);
 
 	print_hex_dump(KERN_INFO, "\t", DUMP_PREFIX_ADDRESS,
@@ -6090,7 +6107,7 @@ nse_find_free_recp_res_idx(struct nse_hw *hw,
 	print_hex_dump_debug("\t", DUMP_PREFIX_ADDRESS,
 		16, 1, profiles_bm, BITS_TO_LONGS(NSE_MAX_NUM_PROFILES) * sizeof(long), false);
 
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 		"[%s, %d] Start to print possible_idx_bm", __func__, __LINE__);
 
 	print_hex_dump(KERN_INFO, "\t", DUMP_PREFIX_ADDRESS,
@@ -6099,7 +6116,7 @@ nse_find_free_recp_res_idx(struct nse_hw *hw,
 	print_hex_dump_debug("\t", DUMP_PREFIX_ADDRESS,
 		16, 1, possible_idx_bm, BITS_TO_LONGS(NSE_MAX_FV_WORDS) * sizeof(long), false);
 
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 		"[%s, %d] Start to print associated luts_bm", __func__, __LINE__);
 
 	print_hex_dump(KERN_INFO, "\t", DUMP_PREFIX_ADDRESS,
@@ -6117,7 +6134,7 @@ nse_find_free_recp_res_idx(struct nse_hw *hw,
 			  hw->switch_info->lut_list[bit].res_idxs,
 			  NSE_MAX_FV_WORDS);
 
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 		"[%s, %d] Start to print used_idx_bm", __func__, __LINE__);
 
 	print_hex_dump(KERN_INFO, "\t", DUMP_PREFIX_ADDRESS,
@@ -6134,7 +6151,7 @@ nse_find_free_recp_res_idx(struct nse_hw *hw,
 	for_each_set_bit(bit, used_idx_bm, NSE_MAX_FV_WORDS)
 		clear_bit(bit, free_idx_bm);
 
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 		"[%s, %d] Start to print free_idx_bm", __func__, __LINE__);
 
 	print_hex_dump(KERN_INFO, "\t", DUMP_PREFIX_ADDRESS,
@@ -6145,6 +6162,14 @@ nse_find_free_recp_res_idx(struct nse_hw *hw,
 
 	/* return count of free indexes */
 	return (u16) bitmap_weight(free_idx_bm, NSE_MAX_FV_WORDS);
+}
+
+bool nse_is_need_do_rcp_serial(u16 word_cnt)
+{
+	return (word_cnt < (NSE_TWO_SERIAL_RECIPE_LKUP_WORDS + 1) &&
+			word_cnt > NSE_NUM_WORDS_SERIAL_FIRST_RECIPE) ||
+		(word_cnt < (NSE_MAX_SERIAL_CHAIN_LKUP_WORDS + 1) &&
+		word_cnt > NSE_MAX_CHAIN_LKUP_WORDS);
 }
 
 /**
@@ -6365,6 +6390,286 @@ nse_build_adv_action_field(struct nse_adv_node_info *rinfo,
 
 	return 0;
 }
+
+static int
+nse_add_serial_lut_internal(struct nse_hw *hw, struct nse_adv_node_info *rinfo,
+				struct nse_lut_info *lut_info,
+				unsigned long *result_idx_bm)
+{
+	struct nse_sw_fv_list_entry *fv_entry;
+	struct nse_aqc_recipe_cfg *buf;
+	struct nse_aqc_recipe_data_elem *rcp_elems;
+	struct nse_lut_grp_entry *lut_entry;
+	struct nse_switch_info *sw = hw->switch_info;
+	u16 buf_size;
+	int status = 0;
+	u8 recps = 0;
+	u8 result_idx, last_rslt_idx[NSE_MAX_CHAIN_SERIAL_RECIPE] = { 0 };
+	u8 lut_index = 0;
+
+	buf_size = struct_size(buf, elem, lut_info->n_grp_count);
+	buf = devm_kzalloc(nse_hw_to_dev(hw), buf_size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	rcp_elems = buf->elem;
+
+	/* Step1.1: Start to build aqc buf per recipe*/
+	result_idx = (u8)find_first_bit(result_idx_bm, NSE_MAX_FV_WORDS);
+	list_for_each_entry(lut_entry, &lut_info->lut_group_list, l_entry) {
+		enum nse_status rt;
+		u8 i;
+
+		/* 1) alloc a new lut id */
+		rt = nse_aq_alloc_free_lut_id(hw, &lut_entry->lut_id,
+				NSE_AQ_OPC_ALLOC_RESOURCE);
+		if (rt) {
+			dev_err(nse_hw_to_dev(hw), "[%s, %d] Failed to alloc lut id, err = %d\n",
+				__func__, __LINE__, rt);
+			status = -EIO;
+			goto err_unroll;
+		}
+
+		/* 2) build recipe aqc info, except root flag & priority*/
+		rcp_elems[recps].content.lut_id = cpu_to_le16(lut_entry->lut_id);
+
+		for (i = 0; i < lut_entry->lut_group.n_val_pairs; i++) {
+			rcp_elems[recps].content.lkup_indx[i] =
+				(u8)lut_entry->fv_idx[i];
+			rcp_elems[recps].content.mask[i] =
+				cpu_to_le16(lut_entry->fv_mask[i]);
+		}
+
+		/* handle result_index in buf, if current is not the last recipe*/
+		lut_entry->result_idx = NSE_INVALID_RSLT_IDX;
+		if (lut_info->n_grp_count - 1 != recps) {
+			/* set result index in recipe, except last grp */
+			if (result_idx >= NSE_MAX_FV_WORDS) {
+				nse_debug(hw, NSE_DBG_SW, "[%s, %d] No result index available\n",
+					  __func__, __LINE__);
+				dev_err(nse_hw_to_dev(hw), "[%s, %d] No result index available\n",
+					__func__, __LINE__);
+				status = -ENOSPC;
+				goto err_unroll;
+			}
+			lut_entry->result_idx = result_idx;
+			last_rslt_idx[recps] = result_idx;
+			rcp_elems[recps].content.result_indx |=
+				(result_idx << NSE_AQ_RECIPE_RSLT_INDX_S) &
+					NSE_AQ_RECIPE_RSLT_INDX_M;
+			rcp_elems[recps].content.ctrl_flg |= NSE_AQ_RECIPE_RESULT_EN;
+			rcp_elems[recps].content.ignore_vld |= NSE_AQ_RECIPE_RESULT_SEL;
+			/* prefetch result idx for next recipe */
+			clear_bit(result_idx, result_idx_bm);
+			result_idx = (u8)find_first_bit(result_idx_bm,
+							NSE_MAX_FV_WORDS);
+		} else {
+			rcp_elems[recps].content.ctrl_flg |= NSE_AQ_RECIPE_IS_ROOT;
+			lut_info->root_lut_id = lut_entry->lut_id;
+		}
+
+		if (recps != 0) {
+			rcp_elems[recps].content.lkup_indx[NSE_RSLT_KEY_IN_SERIAL_RCP] =
+							last_rslt_idx[recps - 1];
+			rcp_elems[recps].content.mask[NSE_RSLT_KEY_IN_SERIAL_RCP] =
+							cpu_to_le16(0xFFFF);
+		}
+
+		/*3) go to next recipe */
+		recps++;
+	}
+
+	/*recps should be equal lut_info->n_grp_count*/
+	if (lut_info->n_grp_count != recps) {
+		nse_debug(hw, NSE_DBG_SW,
+			"[%s, %d] Expected recps is not equal real recps\n", __func__, __LINE__);
+		dev_err(nse_hw_to_dev(hw),
+			"[%s, %d] Expected recps is not equal real recps\n", __func__, __LINE__);
+		status = -EIO;
+		goto err_unroll;
+	}
+
+	/*Step2: add recipe per profile.
+	 * except recipe's priority, common recipe aqc buf is built
+	 */
+	list_for_each_entry(fv_entry, &lut_info->fv_list, list_entry) {
+		struct nse_profile_info *profile;
+		u8 start_rcp_id;
+
+		profile = &sw->profile_list[fv_entry->profile_id];
+		start_rcp_id = profile->used_recipe_num;
+		/* check profile's rcp resource one by one before add recipe
+		 * adminq cmd
+		 */
+		if (profile->total_recipe_num < (profile->used_recipe_num + recps)) {
+			dev_err(nse_hw_to_dev(hw),
+				"[%s, %d] Need %d recipes in profile[%d] but not enough, total = %d, used = %d\n",
+				__func__, __LINE__,
+				recps, profile->profile_id, profile->total_recipe_num,
+				profile->used_recipe_num);
+			status = -EIO;
+			goto err_prfl_fail;
+		}
+	}
+
+	buf->count = cpu_to_le16(recps);
+
+	list_for_each_entry(fv_entry, &lut_info->fv_list, list_entry) {
+		struct nse_profile_info *profile;
+		enum nse_status rt;
+		u8 start_rcp_id;
+		u8 i;
+
+		profile = &sw->profile_list[fv_entry->profile_id];
+		start_rcp_id = profile->used_recipe_num;
+		nse_debug(hw, NSE_DBG_SW, "[%s, %d] Start to add %d recps to Profile[%d]\n",
+				__func__, __LINE__, recps, profile->profile_id);
+		for (i = 0; i < recps; i++) {
+			buf->elem[i].profile_id = cpu_to_le16(profile->profile_id);
+			buf->elem[i].recipe_id = start_rcp_id + i;
+			/* it's hw internal priority, which is set to recipe id.
+			 * 1 has higher priority than 2
+			 */
+			buf->elem[i].content.priority = buf->elem[i].recipe_id;
+			nse_debug(hw, NSE_DBG_SW, "\t Profile[%d] start to add recipe[%d]: lut id = %d, priority = %d\n",
+				profile->profile_id, buf->elem[i].recipe_id,
+				le16_to_cpu(buf->elem[i].content.lut_id),
+				buf->elem[i].content.priority);
+
+			nse_debug(hw, NSE_DBG_SW, "\t\t mask[0~4] = [0x%x, 0x%x, 0x%x, 0x%x, 0x%x]\n",
+				le16_to_cpu(buf->elem[i].content.mask[0]),
+				le16_to_cpu(buf->elem[i].content.mask[1]),
+				le16_to_cpu(buf->elem[i].content.mask[2]),
+				le16_to_cpu(buf->elem[i].content.mask[3]),
+				le16_to_cpu(buf->elem[i].content.mask[4]));
+
+			nse_debug(hw, NSE_DBG_SW, "\t\t lkup_Index[0~4] = [0x%x, 0x%x, 0x%x, 0x%x, 0x%x]\n",
+				(buf->elem[i].content.lkup_indx[0]),
+				(buf->elem[i].content.lkup_indx[1]),
+				(buf->elem[i].content.lkup_indx[2]),
+				(buf->elem[i].content.lkup_indx[3]),
+				(buf->elem[i].content.lkup_indx[4]));
+
+			nse_debug(hw, NSE_DBG_SW, "\t\t ctrl_flag = 0x%x, ignore_vld = 0x%x, rslt_idx = 0x%x\n",
+				(buf->elem[i].content.ctrl_flg),
+				(buf->elem[i].content.ignore_vld),
+				(buf->elem[i].content.result_indx >> NSE_AQ_RECIPE_RSLT_INDX_S));
+		}
+
+		/*add recipes to HW*/
+		rt = nse_aq_add_recipe(hw, buf, buf_size);
+		if (rt) {
+			dev_err(nse_hw_to_dev(hw), "Failed to adminq add recipe, err = %d\n", rt);
+			status = -EIO;
+			goto err_prfl_fail;
+		}
+		for (i = 0; i < recps; i++)
+			nse_debug(hw, NSE_DBG_SW, "\t Profile[%d] finish to add recipe[%d]: lut id = %d\n",
+				profile->profile_id, buf->elem[i].recipe_id,
+				le16_to_cpu(buf->elem[i].content.lut_id));
+	}
+
+	/*Step3: Updata Software Lut List and Software Profile List */
+	list_for_each_entry(lut_entry, &lut_info->lut_group_list, l_entry) {
+		struct nse_lut_info *lut;
+		bool is_root, idx_found = false;
+		u16 idx, buf_idx = 0;
+
+		/*Step3.1 Start to updata Software Lut List*/
+
+		/* find buffer index for copying some data */
+		for (idx = 0; idx < lut_info->n_grp_count; idx++) {
+			if (rcp_elems[idx].content.lut_id == cpu_to_le16(lut_entry->lut_id)) {
+				buf_idx = idx;
+				idx_found = true;
+			}
+		}
+
+		if (!idx_found) {
+			dev_err(nse_hw_to_dev(hw), "[%s, %d] Failed to find correct Lut in recp adminq buf\n",
+					__func__, __LINE__);
+			status = -EIO;
+			goto err_prfl_fail;
+		}
+
+		lut = &sw->lut_list[lut_entry->lut_id];
+		is_root = (lut_info->root_lut_id == lut_entry->lut_id);
+		lut->is_root = is_root;
+		lut->lut_id = lut_entry->lut_id;
+		lut->big_lut = (is_root && lut_info->n_grp_count > 1);
+		memcpy(&lut->ext_words, lut_entry->lut_group.pairs,
+			lut_entry->lut_group.n_val_pairs * sizeof(struct nse_fv_word));
+
+		/* set used rslt idx bitmap of global software lut DB */
+		nse_collect_result_idx(&buf->elem[buf_idx], lut);
+
+		/* for non-root recipes, also copy to the root, this
+		 * allows easier matching of a complete chained recipe
+		 */
+		if (!is_root)
+			nse_collect_result_idx(&buf->elem[buf_idx],
+						   &sw->lut_list[lut_info->root_lut_id]);
+
+		lut->n_ext_words = lut_entry->lut_group.n_val_pairs;
+		lut->result_index = lut_entry->result_idx;
+		lut->hw_prio = buf->elem[buf_idx].content.priority;
+		lut->priority = lut_info->priority;
+		lut->n_grp_count = lut_info->n_grp_count;
+		lut->tun_type = lut_info->tun_type;
+		lut->lut_created = true;
+#ifdef NSE_TC_FLWR_MULTI_CHAIN
+		lut->chain_id = lut_info->chain_id;
+#endif
+
+		/* Step3.2: update lut_bitmap per Software Profile */
+		list_for_each_entry(fv_entry, &lut_info->fv_list, list_entry) {
+			struct nse_profile_info *profile;
+			u8 rcp_id;
+
+			profile = &sw->profile_list[fv_entry->profile_id];
+			set_bit(lut_entry->lut_id, profile->lut_bitmap);
+			rcp_id = profile->used_recipe_num + lut_index;
+			profile->lut_id[rcp_id] = lut_entry->lut_id;
+			nse_debug(hw, NSE_DBG_SW, "Lut_id of Profile[%d]_Recipe[%d] = %d\n",
+					profile->profile_id, rcp_id, profile->lut_id[rcp_id]);
+		}
+		lut_index++;
+	}
+
+	/* Step3.3: update used_recipe_num per Software Profile */
+	list_for_each_entry(fv_entry, &lut_info->fv_list, list_entry) {
+		struct nse_profile_info *profile;
+
+		profile = &sw->profile_list[fv_entry->profile_id];
+		profile->used_recipe_num += recps;
+	}
+
+	devm_kfree(nse_hw_to_dev(hw), buf);
+	return 0;
+
+err_prfl_fail:
+err_unroll:
+	devm_kfree(nse_hw_to_dev(hw), buf);
+
+	/*rollback allocated lut id when fail*/
+	list_for_each_entry(lut_entry, &lut_info->lut_group_list, l_entry) {
+		enum nse_status rt = 0;
+
+		if (!lut_entry->lut_id)
+			continue;
+
+		rt = nse_aq_alloc_free_lut_id(hw, &lut_entry->lut_id,
+				NSE_AQ_OPC_FREE_RESOURCE);
+		if (rt)
+			dev_err(nse_hw_to_dev(hw),
+				"Failed to free lut id(%d), err = %d\n", lut_entry->lut_id, rt);
+	}
+
+
+	return status;
+
+}
+
 /**
  * nse_add_lut_internal - function to call AQ to alloc switch lut,
  *				   and, bind current lut to profile's recipe.
@@ -6373,7 +6678,8 @@ nse_build_adv_action_field(struct nse_adv_node_info *rinfo,
  * @rm: recipe management list entry
  */
 static int
-nse_add_lut_internal(struct nse_hw *hw, struct nse_lut_info *lut_info)
+nse_add_lut_internal(struct nse_hw *hw, struct nse_adv_node_info *rinfo,
+				struct nse_lut_info *lut_info)
 {
 	DECLARE_BITMAP(profiles_bm, NSE_MAX_NUM_PROFILES);
 	DECLARE_BITMAP(result_idx_bm, NSE_MAX_FV_WORDS);
@@ -6388,6 +6694,7 @@ nse_add_lut_internal(struct nse_hw *hw, struct nse_lut_info *lut_info)
 	u8 recps = 0;
 	u8 result_idx;
 	u8 lut_index = 0;
+	u8 need_results = 0;
 
 	/*Get bitmap of all profiles that current new lut is associated with*/
 	bitmap_zero(profiles_bm, NSE_MAX_NUM_PROFILES);
@@ -6402,23 +6709,35 @@ nse_add_lut_internal(struct nse_hw *hw, struct nse_lut_info *lut_info)
 	bitmap_zero(result_idx_bm, NSE_MAX_FV_WORDS);
 	free_idx_count = nse_find_free_recp_res_idx(hw, profiles_bm,
 						result_idx_bm);
-	dev_info(nse_hw_to_dev(hw), "Free result idx count: %d, need %d\n",
-		free_idx_count,	(lut_info->n_grp_count == 1) ? 0 : lut_info->n_grp_count);
-	nse_debug(hw, NSE_DBG_SW, "Free result idx count: %d, need %d\n",
-		  free_idx_count, (lut_info->n_grp_count == 1) ? 0 : lut_info->n_grp_count);
+	if (nse_recipe_serial && rinfo->need_serial)
+		need_results = (lut_info->n_grp_count == 1) ? 0 : lut_info->n_grp_count - 1;
+	else
+		need_results = (lut_info->n_grp_count == 1) ? 0 : lut_info->n_grp_count;
+
+	nse_debug(hw, NSE_DBG_SW, "Free result idx count: %d, need %d. need_serial = %d\n",
+		  free_idx_count, need_results, nse_recipe_serial && rinfo->need_serial);
 	if (lut_info->n_grp_count > 1) {
 		/* one free result index is needed per lut group.
 		 * if free result index count can't match current lkup, return err
 		 */
-		if (lut_info->n_grp_count > free_idx_count)
+		if (need_results > free_idx_count)
 			return -ENOSPC;
 
-		/* last root lut group is needed if it's chained lut */
-		lut_info->n_grp_count++;
+		if (nse_recipe_serial && rinfo->need_serial) {
+			if (lut_info->n_grp_count > NSE_MAX_CHAIN_SERIAL_RECIPE)
+				return -ENOSPC;
+		} else {
+			/* last root lut group is needed if it's chained parallel
+			 * lut, but don't need if serial lut
+			 */
+			lut_info->n_grp_count++;
+			if (lut_info->n_grp_count > NSE_MAX_CHAIN_RECIPE)
+				return -ENOSPC;
+		}
 	}
 
-	if (lut_info->n_grp_count > NSE_MAX_CHAIN_RECIPE)
-		return -ENOSPC;
+	if (nse_recipe_serial && rinfo->need_serial)
+		return nse_add_serial_lut_internal(hw, rinfo, lut_info, result_idx_bm);
 
 	/* Start to add signal or chained recipe in multi profiles.
 	 *  recipe aqc buf is same in different profiles.
@@ -6586,7 +6905,7 @@ nse_add_lut_internal(struct nse_hw *hw, struct nse_lut_info *lut_info)
 
 		profile = &sw->profile_list[fv_entry->profile_id];
 		start_rcp_id = profile->used_recipe_num;
-		dev_info(nse_hw_to_dev(hw), "Start to add %d recps to Profile[%d]\n",
+		nse_debug(hw, NSE_DBG_SW, "Start to add %d recps to Profile[%d]\n",
 			 recps, profile->profile_id);
 		for (i = 0; i < recps; i++) {
 			buf->elem[i].profile_id = cpu_to_le16(profile->profile_id);
@@ -6595,26 +6914,26 @@ nse_add_lut_internal(struct nse_hw *hw, struct nse_lut_info *lut_info)
 			 * 1 has higher priority than 2
 			 */
 			buf->elem[i].content.priority = buf->elem[i].recipe_id;
-			dev_info(nse_hw_to_dev(hw), "\t Profile[%d] start to add recipe[%d]: lut id = %d, priority = %d\n",
+			nse_debug(hw, NSE_DBG_SW, "\t Profile[%d] start to add recipe[%d]: lut id = %d, priority = %d\n",
 				profile->profile_id, buf->elem[i].recipe_id,
 				le16_to_cpu(buf->elem[i].content.lut_id),
 					buf->elem[i].content.priority);
 
-			dev_info(nse_hw_to_dev(hw), "\t\t mask[0~4] = [0x%x, 0x%x, 0x%x, 0x%x, 0x%x]\n",
+			nse_debug(hw, NSE_DBG_SW, "\t\t mask[0~4] = [0x%x, 0x%x, 0x%x, 0x%x, 0x%x]\n",
 				le16_to_cpu(buf->elem[i].content.mask[0]),
 				le16_to_cpu(buf->elem[i].content.mask[1]),
 				le16_to_cpu(buf->elem[i].content.mask[2]),
 				le16_to_cpu(buf->elem[i].content.mask[3]),
 				le16_to_cpu(buf->elem[i].content.mask[4]));
 
-			dev_info(nse_hw_to_dev(hw), "\t\t lkup_Index[0~4] = [0x%x, 0x%x, 0x%x, 0x%x, 0x%x]\n",
+			nse_debug(hw, NSE_DBG_SW, "\t\t lkup_Index[0~4] = [0x%x, 0x%x, 0x%x, 0x%x, 0x%x]\n",
 				(buf->elem[i].content.lkup_indx[0]),
 				(buf->elem[i].content.lkup_indx[1]),
 				(buf->elem[i].content.lkup_indx[2]),
 				(buf->elem[i].content.lkup_indx[3]),
 				(buf->elem[i].content.lkup_indx[4]));
 
-			dev_info(nse_hw_to_dev(hw), "\t\t ctrl_flag = 0x%x, ignore_vld = 0x%x, rslt_idx = 0x%x\n",
+			nse_debug(hw, NSE_DBG_SW, "\t\t ctrl_flag = 0x%x, ignore_vld = 0x%x, rslt_idx = 0x%x\n",
 				(buf->elem[i].content.ctrl_flg),
 				(buf->elem[i].content.ignore_vld),
 				(buf->elem[i].content.result_indx >> NSE_AQ_RECIPE_RSLT_INDX_S));
@@ -6628,7 +6947,7 @@ nse_add_lut_internal(struct nse_hw *hw, struct nse_lut_info *lut_info)
 			goto err_prfl_fail;
 		}
 		for (i = 0; i < recps; i++)
-			dev_info(nse_hw_to_dev(hw), "\t Profile[%d] finish to add recipe[%d]: lut id = %d\n",
+			nse_debug(hw, NSE_DBG_SW, "\t Profile[%d] finish to add recipe[%d]: lut id = %d\n",
 				profile->profile_id, buf->elem[i].recipe_id,
 				le16_to_cpu(buf->elem[i].content.lut_id));
 	}
@@ -6691,7 +7010,7 @@ nse_add_lut_internal(struct nse_hw *hw, struct nse_lut_info *lut_info)
 			set_bit(lut_entry->lut_id, profile->lut_bitmap);
 			rcp_id = profile->used_recipe_num + lut_index;
 			profile->lut_id[rcp_id] = lut_entry->lut_id;
-			dev_info(nse_hw_to_dev(hw), "Lut_id of Profile[%d]_Recipe[%d] = %d\n",
+			nse_debug(hw, NSE_DBG_SW, "Lut_id of Profile[%d]_Recipe[%d] = %d\n",
 					profile->profile_id, rcp_id, profile->lut_id[rcp_id]);
 		}
 		lut_index++;
@@ -6808,7 +7127,7 @@ nse_add_adv_lut(struct nse_hw *hw, struct nse_adv_lkup_elem *lkups,
 	}
 
 	/* Calculate how many luts are needed to match current lkups */
-	status = nse_create_lut_group(hw, lut_info, lkup_exts);
+	status = nse_create_lut_group(hw, rinfo, lut_info, lkup_exts);
 	if (status) {
 		dev_err(nse_hw_to_dev(hw), "Failed to creat lut group, err = %d\n", status);
 		goto err_unroll;
@@ -6828,7 +7147,7 @@ nse_add_adv_lut(struct nse_hw *hw, struct nse_adv_lkup_elem *lkups,
 	/* Look for a lut which can matches our requested lkups */
 	*lut_id = nse_find_lut(hw, lkup_exts, rinfo, false);
 	if (*lut_id < NSE_MAX_NUM_LUTS) {
-		dev_info(nse_hw_to_dev(hw), "LUT is existed, lut id = %d\n", *lut_id);
+		nse_debug(hw, NSE_DBG_SW, "LUT is existed, lut id = %d\n", *lut_id);
 		goto err_unroll;
 	}
 
@@ -6837,7 +7156,7 @@ nse_add_adv_lut(struct nse_hw *hw, struct nse_adv_lkup_elem *lkups,
 	lut_info->chain_id = rinfo->chain_id;
 
 	/* Find lut failed, new single or chained lut need be added*/
-	status = nse_add_lut_internal(hw, lut_info);
+	status = nse_add_lut_internal(hw, rinfo, lut_info);
 	if (status) {
 		dev_err(nse_hw_to_dev(hw), "Failed to add_lut_internal, err = %d\n", status);
 		goto err_unroll;
@@ -6913,7 +7232,7 @@ nse_add_adv_fast_node(struct nse_hw *hw, struct nse_adv_lkup_elem *lkups,
 	enum nse_status status;
 	u16 du_act_cnt = 0, buf_size;
 	u16 act_ctrl = 0;
-	u8 n_grp_count = 0, lut_idx = 0;
+	u8 n_grp_count = 0, lut_idx = 0, max_lut_num;
 	int err = 0, i;
 
 	if (!node_state || !lut_info) {
@@ -6929,7 +7248,7 @@ nse_add_adv_fast_node(struct nse_hw *hw, struct nse_adv_lkup_elem *lkups,
 			   struct_size(action, act, du_act_cnt) +
 			   struct_size(match, lut, n_grp_count);
 
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 		"Start to build fast node: du_act_cnt = %d, n_grp_count = %d, buf_size = %d\n",
 		du_act_cnt, n_grp_count, buf_size);
 
@@ -6990,7 +7309,17 @@ nse_add_adv_fast_node(struct nse_hw *hw, struct nse_adv_lkup_elem *lkups,
 	match = (struct nse_aqc_lut_fast_node_match *)((void *)fast_node
 				+ struct_size(action, act, du_act_cnt));
 
+	if (nse_recipe_serial && rinfo->need_serial)
+		match->rcp_type = NSE_AQC_RECIP_TYPE_SERIAL;
+	else
+		match->rcp_type = NSE_AQC_RECIP_TYPE_PARALLEL;
+
 	match->lut_num = n_grp_count;
+
+	if (nse_recipe_serial)
+		max_lut_num = NSE_MAX_CHAIN_SERIAL_RECIPE;
+	else
+		max_lut_num = NSE_MAX_CHAIN_RECIPE;
 
 	lut_idx = 0;
 	list_for_each_entry(lut_entry, &lut_info->lut_group_list, l_entry) {
@@ -6998,7 +7327,7 @@ nse_add_adv_fast_node(struct nse_hw *hw, struct nse_adv_lkup_elem *lkups,
 		int j;
 		bool is_root = false;
 
-		if (lut_idx >= NSE_MAX_SUB_NODE_NUM) {
+		if (lut_idx >= max_lut_num) {
 			dev_err(nse_hw_to_dev(hw),
 				"Too many sub recipes to be supported in fast node\n");
 			err = -EINVAL;
@@ -7011,10 +7340,18 @@ nse_add_adv_fast_node(struct nse_hw *hw, struct nse_adv_lkup_elem *lkups,
 		if (lut_entry->lut_id == lut_id) {
 			match->rt_idx = lut_idx;
 			is_root = true;
-		} else
-			lut->key_idx = cpu_to_le16(lut_idx);
+		} else {
+			if (nse_recipe_serial && rinfo->need_serial) {
+				lut->key_idx = cpu_to_le16(NSE_RSLT_KEY_IN_SERIAL_RCP);
+				lut->parent_lut_idx = cpu_to_le16(lut_idx + 1);
+			} else {
+				lut->key_idx = cpu_to_le16(lut_idx);
+				lut->parent_lut_idx = cpu_to_le16(n_grp_count - 1);
+			}
+		}
 
-		if (lut_info->n_grp_count == 1 || (!is_root)) {
+		if (lut_info->n_grp_count == 1 || (!is_root) ||
+			(nse_recipe_serial && rinfo->need_serial)) {
 			for (j = 0; j < lut_entry->lut_group.n_val_pairs; j++) {
 				/*get key word from lkups,
 				 * according to the pair fv word cfg
@@ -7032,28 +7369,28 @@ nse_add_adv_fast_node(struct nse_hw *hw, struct nse_adv_lkup_elem *lkups,
 		lut_idx++;
 	}
 
-	dev_info(nse_hw_to_dev(hw),	"Start to add fast node to hw: count = %d\n",
+	nse_debug(hw, NSE_DBG_SW,	"Start to add fast node to hw: count = %d\n",
 		 le16_to_cpu(buf->count));
-	dev_info(nse_hw_to_dev(hw), "\t Action Part:\n");
-	dev_info(nse_hw_to_dev(hw), "\t\t node_state_id = %d, act_ctl = %d\n",
+	nse_debug(hw, NSE_DBG_SW, "\t Action Part:\n");
+	nse_debug(hw, NSE_DBG_SW, "\t\t node_state_id = %d, act_ctl = %d\n",
 		le16_to_cpu(action->node_state_id),  le16_to_cpu(action->act_ctrl));
 	for (i = 0; i < du_act_cnt; i++)
-		dev_info(nse_hw_to_dev(hw), "\t\t Action[%d]: act_val = 0x%x, res_type = %d\n",
+		nse_debug(hw, NSE_DBG_SW, "\t\t Action[%d]: act_val = 0x%x, res_type = %d\n",
 			i, le16_to_cpu(action->act[i].action),
 				le16_to_cpu(action->act[i].res_type));
 
-	dev_info(nse_hw_to_dev(hw), "\t Match Part:\n");
-	dev_info(nse_hw_to_dev(hw), "\t\t lut_num = %d, root_lut_idx = %d\n",
-		match->lut_num, match->rt_idx);
+	nse_debug(hw, NSE_DBG_SW, "\t Match Part:\n");
+	nse_debug(hw, NSE_DBG_SW, "\t\t lut_num = %d, root_lut_idx = %d, recipe_type = %d\n",
+		match->lut_num, match->rt_idx, match->rcp_type);
 	lut_idx = 0;
 	list_for_each_entry(lut_entry, &lut_info->lut_group_list, l_entry) {
 		struct nse_aqc_fast_lut_info *lut = &match->lut[lut_idx];
 
-		dev_info(nse_hw_to_dev(hw),
-			"\t\t Lut[%d]: lut_id = %d, node_id = %d, result key index in Root Lut is %d\n",
+		nse_debug(hw, NSE_DBG_SW,
+			"\t\t Lut[%d]: lut_id = %d, node_id = %d, result key index in parent Lut is %d, parent_lut_idx is %d\n",
 			lut_idx, le16_to_cpu(lut->lut_id), le16_to_cpu(lut->node_id),
-				le16_to_cpu(lut->key_idx));
-		dev_info(nse_hw_to_dev(hw), "\t\t key_value[0~4]: [0x%x, 0x%x, 0x%x, 0x%x, 0x%x,]\n",
+				le16_to_cpu(lut->key_idx), le16_to_cpu(lut->parent_lut_idx));
+		nse_debug(hw, NSE_DBG_SW, "\t\t key_value[0~4]: [0x%x, 0x%x, 0x%x, 0x%x, 0x%x,]\n",
 			le16_to_cpu(lut->key[0]), le16_to_cpu(lut->key[1]),
 			le16_to_cpu(lut->key[2]), le16_to_cpu(lut->key[3]),
 			le16_to_cpu(lut->key[4]));
@@ -7070,29 +7407,29 @@ nse_add_adv_fast_node(struct nse_hw *hw, struct nse_adv_lkup_elem *lkups,
 		goto out;
 	}
 
-	dev_info(nse_hw_to_dev(hw), "=======================\n");
-	dev_info(nse_hw_to_dev(hw), "Return from fw after add fast node: count = %d\n",
+	nse_debug(hw, NSE_DBG_SW, "=======================\n");
+	nse_debug(hw, NSE_DBG_SW, "Return from fw after add fast node: count = %d\n",
 		 le16_to_cpu(buf->count));
-	dev_info(nse_hw_to_dev(hw), "\t Action Part:\n");
-	dev_info(nse_hw_to_dev(hw), "\t\t node_state_id = %d, act_ctl = %d\n",
+	nse_debug(hw, NSE_DBG_SW, "\t Action Part:\n");
+	nse_debug(hw, NSE_DBG_SW, "\t\t node_state_id = %d, act_ctl = %d\n",
 		le16_to_cpu(action->node_state_id),  le16_to_cpu(action->act_ctrl));
 	for (i = 0; i < du_act_cnt; i++)
-		dev_info(nse_hw_to_dev(hw), "\t\t Action[%d]: act_val = 0x%x, res_type = %d\n",
+		nse_debug(hw, NSE_DBG_SW, "\t\t Action[%d]: act_val = 0x%x, res_type = %d\n",
 			i, le16_to_cpu(action->act[i].action),
 				le16_to_cpu(action->act[i].res_type));
 
-	dev_info(nse_hw_to_dev(hw), "\t Match Part:\n");
-	dev_info(nse_hw_to_dev(hw), "\t\t lut_num = %d, root_lut_idx = %d\n",
-		match->lut_num, match->rt_idx);
+	nse_debug(hw, NSE_DBG_SW, "\t Match Part:\n");
+	nse_debug(hw, NSE_DBG_SW, "\t\t lut_num = %d, root_lut_idx = %d, recipe_type = %d\n",
+		match->lut_num, match->rt_idx, match->rcp_type);
 	lut_idx = 0;
 	list_for_each_entry(lut_entry, &lut_info->lut_group_list, l_entry) {
 		struct nse_aqc_fast_lut_info *lut = &match->lut[lut_idx];
 
-		dev_info(nse_hw_to_dev(hw),
-			"\t\t Lut[%d]: lut_id = %d, node_id = %d, result key index in Root Lut is %d\n",
+		nse_debug(hw, NSE_DBG_SW,
+			"\t\t Lut[%d]: lut_id = %d, node_id = %d, result key index in parent Lut is %d, parent_lut_idx is %d\n",
 			lut_idx, le16_to_cpu(lut->lut_id), le16_to_cpu(lut->node_id),
-				le16_to_cpu(lut->key_idx));
-		dev_info(nse_hw_to_dev(hw), "\t key_value[0~4]: [0x%x, 0x%x, 0x%x, 0x%x, 0x%x,]\n",
+				le16_to_cpu(lut->key_idx), le16_to_cpu(lut->parent_lut_idx));
+		nse_debug(hw, NSE_DBG_SW, "\t key_value[0~4]: [0x%x, 0x%x, 0x%x, 0x%x, 0x%x,]\n",
 			le16_to_cpu(lut->key[0]), le16_to_cpu(lut->key[1]),
 			le16_to_cpu(lut->key[2]), le16_to_cpu(lut->key[3]),
 			le16_to_cpu(lut->key[4]));
@@ -7176,13 +7513,13 @@ nse_add_adv_node(struct nse_hw *hw, struct nse_adv_lkup_elem *lkups,
 	struct nse_lut_grp_entry *lut_entry;
 	struct nse_lut_info *lut_info;
 	struct mutex *rule_lock;
-	u16 lut_id = 0, i;
+	u16 lut_id = 0, i, max_lkup_words = 0;
 	u16 word_cnt, buf_size;
 	u16 act = 0;
 	u16 lg_act = 0;
 	int status;
 	bool is_fast_created = false;
-	u16 node_id = 0, sub_node_id[NSE_MAX_SUB_NODE_NUM] = { 0 };
+	u16 node_id = 0, sub_node_id[NSE_MAX_CHAIN_SUB_NODES] = { 0 };
 
 	/* Initialize profiles' result index bitmap */
 	if (!hw->switch_info->prof_res_bm_init) {
@@ -7211,8 +7548,14 @@ nse_add_adv_node(struct nse_hw *hw, struct nse_adv_lkup_elem *lkups,
 		return -EINVAL;
 	}
 
-	if (word_cnt > NSE_MAX_CHAIN_LKUP_WORDS) { /*NSE_MAX_CHAIN_WORDS*/
-		dev_err(nse_hw_to_dev(hw), "match words(%d) up to max num\n", word_cnt);
+	if (nse_recipe_serial)
+		max_lkup_words = NSE_MAX_SERIAL_CHAIN_LKUP_WORDS;
+	else
+		max_lkup_words = NSE_MAX_CHAIN_LKUP_WORDS;
+
+	if (word_cnt > max_lkup_words) { /*NSE_MAX_CHAIN_WORDS*/
+		dev_err(nse_hw_to_dev(hw), "match words(=%d) up to max num(=%d)\n",
+			word_cnt, max_lkup_words);
 		return -ENOSPC;
 	}
 
@@ -7225,6 +7568,9 @@ nse_add_adv_node(struct nse_hw *hw, struct nse_adv_lkup_elem *lkups,
 		dev_err(nse_hw_to_dev(hw), "Unsupported action type\n");
 		return -EIO;
 	}
+
+	if (nse_recipe_serial)
+		rinfo->need_serial = nse_is_need_do_rcp_serial(word_cnt);
 
 	/* returned lut_id is root lut id */
 	status = nse_add_adv_lut(hw, lkups, lkups_cnt, rinfo, &lut_id);
@@ -7314,11 +7660,11 @@ nse_add_adv_node(struct nse_hw *hw, struct nse_adv_lkup_elem *lkups,
 		} else {
 			if (lut_entry->lut_id == lut_id)
 				is_root = true;
-			if (is_root) {
-				for (j = 0; j < NSE_MAX_CHAIN_SUB_RECIPE; j++)
+			if (is_root && !(nse_recipe_serial && rinfo->need_serial)) {
+				for (j = 0; j < NSE_NUM_WORDS_RECIPE; j++)
 					lut_node->key[j] = cpu_to_le16(sub_node_id[j]);
 			} else {
-				for (j = 0; j < NSE_MAX_CHAIN_SUB_RECIPE; j++)
+				for (j = 0; j < NSE_NUM_WORDS_RECIPE; j++)
 					lut_node->key[j] = 0;
 
 				for (j = 0; j < lut_entry->lut_group.n_val_pairs; j++) {
@@ -7334,6 +7680,10 @@ nse_add_adv_node(struct nse_hw *hw, struct nse_adv_lkup_elem *lkups,
 						goto err_nse_add_adv_node;
 					}
 				}
+
+				if (nse_recipe_serial && rinfo->need_serial && 0 != i)
+					lut_node->key[NSE_RSLT_KEY_IN_SERIAL_RCP] =
+							cpu_to_le16(sub_node_id[i - 1]);
 			}
 		}
 
@@ -7346,12 +7696,12 @@ nse_add_adv_node(struct nse_hw *hw, struct nse_adv_lkup_elem *lkups,
 		/*2.3 request "add lut node" adminq cmd per lut group*/
 		lut_node->lut_id = cpu_to_le16(lut_entry->lut_id);
 
-		dev_info(nse_hw_to_dev(hw), "Start add advanced node to lut[%d], is_root = %d\n",
+		nse_debug(hw, NSE_DBG_SW, "Start add advanced node to lut[%d], is_root = %d\n",
 			lut_entry->lut_id, !!is_root);
-		dev_info(nse_hw_to_dev(hw), "\t is_lg_act = %d, action/lg_id = 0x%x\n",
+		nse_debug(hw, NSE_DBG_SW, "\t is_lg_act = %d, action/lg_id = 0x%x\n",
 			!!(le16_to_cpu(lut_node->left_ptr) & NSE_LUT_NODE_LARGE_ACTION_EN),
 			le16_to_cpu(lut_node->action));
-		dev_info(nse_hw_to_dev(hw), "\t key_value[0~4]: [0x%x, 0x%x, 0x%x, 0x%x, 0x%x,]\n",
+		nse_debug(hw, NSE_DBG_SW, "\t key_value[0~4]: [0x%x, 0x%x, 0x%x, 0x%x, 0x%x,]\n",
 			le16_to_cpu(lut_node->key[0]), le16_to_cpu(lut_node->key[1]),
 			le16_to_cpu(lut_node->key[2]), le16_to_cpu(lut_node->key[3]),
 			le16_to_cpu(lut_node->key[4]));
@@ -7363,7 +7713,7 @@ nse_add_adv_node(struct nse_hw *hw, struct nse_adv_lkup_elem *lkups,
 			status = -EIO;
 			goto err_nse_add_adv_node;
 		}
-		dev_info(nse_hw_to_dev(hw), "\t return node_id = 0x%x\n",
+		nse_debug(hw, NSE_DBG_SW, "\t return node_id = 0x%x\n",
 			le16_to_cpu(lut_node->node_id));
 		sub_node_id[i] = le16_to_cpu(lut_node->node_id);
 		if (is_root)
@@ -7478,7 +7828,7 @@ nse_rem_adv_fast_node(struct nse_hw *hw,
 	u16 lut_id = remove_entry->lut_id;
 	u16 du_act_cnt = 0, buf_size;
 	u16 act_ctrl = 0;
-	u8 n_grp_count = 0, lut_idx = 0;
+	u8 n_grp_count = 0, lut_idx = 0, max_lut_num;
 	int ret = 0, i;
 
 	if (!lut_info || !lut_info->lut_created) {
@@ -7490,7 +7840,7 @@ nse_rem_adv_fast_node(struct nse_hw *hw,
 	mutex_lock(rule_lock);
 	list_elem = nse_find_adv_rule_entry_by_id(hw, lut_id, remove_entry->node_id);
 	if (!list_elem) {
-		dev_info(nse_hw_to_dev(hw), "adv rule is already removed\n");
+		nse_debug(hw, NSE_DBG_SW, "adv rule is already removed\n");
 		ret = 0;
 		goto err_nse_rem_fast_node;
 	}
@@ -7562,11 +7912,17 @@ nse_rem_adv_fast_node(struct nse_hw *hw,
 	match = (struct nse_aqc_lut_fast_node_match *)((void *)fast_node
 				+ struct_size(action, act, du_act_cnt));
 	match->lut_num = n_grp_count;
+
+	if (nse_recipe_serial)
+		max_lut_num = NSE_MAX_CHAIN_SERIAL_RECIPE;
+	else
+		max_lut_num = NSE_MAX_CHAIN_RECIPE;
+
 	lut_idx = 0;
 	list_for_each_entry(lut_entry, &lut_info->lut_group_list, l_entry) {
 		struct nse_aqc_fast_lut_info *lut = &match->lut[lut_idx];
 
-		if (lut_idx >= NSE_MAX_SUB_NODE_NUM) {
+		if (lut_idx >= max_lut_num) {
 			dev_err(nse_hw_to_dev(hw),
 				"Too many sub recipes to be supported in fast node\n");
 			ret = -EINVAL;
@@ -7578,23 +7934,23 @@ nse_rem_adv_fast_node(struct nse_hw *hw,
 		lut_idx++;
 	}
 
-	dev_info(nse_hw_to_dev(hw), "Start to remove fast node to hw: count = %d\n",
+	nse_debug(hw, NSE_DBG_SW, "Start to remove fast node to hw: count = %d\n",
 		 le16_to_cpu(buf->count));
-	dev_info(nse_hw_to_dev(hw), "\t Action Part:\n");
-	dev_info(nse_hw_to_dev(hw), "\t\t node_state_id = %d, act_ctl = %d\n",
+	nse_debug(hw, NSE_DBG_SW, "\t Action Part:\n");
+	nse_debug(hw, NSE_DBG_SW, "\t\t node_state_id = %d, act_ctl = %d\n",
 		le16_to_cpu(action->node_state_id),  le16_to_cpu(action->act_ctrl));
 	for (i = 0; i < du_act_cnt; i++)
-		dev_info(nse_hw_to_dev(hw), "\t\t Action[%d]: act_val = 0x%x, res_type = %d\n",
+		nse_debug(hw, NSE_DBG_SW, "\t\t Action[%d]: act_val = 0x%x, res_type = %d\n",
 			i, le16_to_cpu(action->act[i].action),
 				le16_to_cpu(action->act[i].res_type));
 
-	dev_info(nse_hw_to_dev(hw), "\t Match Part:\n");
-	dev_info(nse_hw_to_dev(hw), "\t\t lut_num = %d\n", match->lut_num);
+	nse_debug(hw, NSE_DBG_SW, "\t Match Part:\n");
+	nse_debug(hw, NSE_DBG_SW, "\t\t lut_num = %d\n", match->lut_num);
 	lut_idx = 0;
 	list_for_each_entry(lut_entry, &lut_info->lut_group_list, l_entry) {
 		struct nse_aqc_fast_lut_info *lut = &match->lut[lut_idx];
 
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"\t\t Lut[%d]: lut_id = %d, node_id = %d\n",
 			lut_idx, le16_to_cpu(lut->lut_id), le16_to_cpu(lut->node_id));
 		lut_idx++;
@@ -7662,7 +8018,7 @@ nse_rem_adv_node_by_id(struct nse_hw *hw,
 	mutex_lock(rule_lock);
 	list_elem = nse_find_adv_rule_entry_by_id(hw, lut_id, remove_entry->node_id);
 	if (!list_elem) {
-		dev_info(nse_hw_to_dev(hw), "adv rule is already removed\n");
+		nse_debug(hw, NSE_DBG_SW, "adv rule is already removed\n");
 		ret = 0;
 		goto err_nse_rem_adv_rule;
 	}
@@ -7690,7 +8046,7 @@ nse_rem_adv_node_by_id(struct nse_hw *hw,
 			ret = -EIO;
 			goto err_nse_rem_adv_rule;
 		}
-		dev_info(nse_hw_to_dev(hw), "Success to remove lut[%d] node_id[%d]\n",
+		nse_debug(hw, NSE_DBG_SW, "Success to remove lut[%d] node_id[%d]\n",
 			lut_entry->lut_id, node_info->sub_fltr_node_id[i]);
 		i++;
 	}
@@ -7730,7 +8086,7 @@ nse_sw_init_counter(struct nse_hw *hw, struct nse_sw_stats *sw_stats,
 
 		counter->cache.lastuse = jiffies;
 		counter->last_val = counter->cache.val;
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"[%s, %d] Start to idr_alloc_u32, id = %d\n",
 			__func__, __LINE__, id);
 		idr_preload(GFP_KERNEL);
@@ -8018,7 +8374,7 @@ nse_sw_stats_read_range(struct nse_hw *hw,
 #endif
 
 	if (!need_query) {
-		dev_info(nse_hw_to_dev(hw),	"There is no counter need to query!\n");
+		nse_debug(hw, NSE_DBG_SW,	"There is no counter need to query!\n");
 		return status;
 	}
 
@@ -8179,7 +8535,7 @@ static void nse_sw_stats_work(struct work_struct *work)
 	 * it is counter pair obj in dellist.
 	 */
 	llist_for_each_entry_safe(counter_p, tmp_p, dellist, dellist) {
-		dev_info(nse_hw_to_dev(hw), "Real to destroy hw cnt[%d] and cnt[%d]\n",
+		nse_debug(hw, NSE_DBG_SW, "Real to destroy hw cnt[%d] and cnt[%d]\n",
 			counter_p->p_counter.hw_id,	counter_p->b_counter.hw_id);
 		nse_sw_stats_remove_pair(hw, counter_p);
 		nse_sw_free_counter_pair(hw, counter_p);
@@ -8283,6 +8639,7 @@ void nse_cleanup_sw_stats(struct nse_hw *hw)
 	idr_destroy(&sw_stats->counters_idr);
 	dmam_free_coherent(nse_hw_to_dev(hw), sw_stats->dma_buf.size,
 			   sw_stats->dma_buf.va, sw_stats->dma_buf.pa);
+	sw_stats->dma_buf.va = NULL;
 
 	mutex_destroy(&sw_stats->rd_lock);
 
@@ -8408,12 +8765,12 @@ nse_sw_add_lite_node_state(struct nse_hw *hw,
 	if (node_state->is_slowp_orig)
 		ctrl_info |= NSE_AQC_LITE_SLOWPATH_ORIGINAL;
 
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 			"Start to add lite node_state, id = %d\n", node_state_id);
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 			"\t du_act_cnt = %d, md_num = %d\n", du_act_cnt, node_state->md_num);
 	for (j = 0; j < i; j++)
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 				"\t du action = 0x%x\n", le16_to_cpu(elem->act[j]));
 	/*3. send add node state adminq cmd*/
 	elem->ctrl_info = cpu_to_le16(ctrl_info);
@@ -8627,14 +8984,14 @@ nse_sw_add_node_state(struct nse_hw *hw,
 		elem->task_list_id =
 			cpu_to_le16(le16_to_cpu(elem->task_list_id) | NSE_AQC_SLOWPATH_ORIGINAL);
 
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 			"Start to add node_state, id = %d\n", node_state_id);
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 			"\t du_desc_cnt = %d, du_act_cnt = %d, au_task_cnt = %d, task_list_id = %d, md_num = %d\n",
 			du_desc_cnt, du_act_cnt, au_task_cnt,
 				le16_to_cpu(elem->task_list_id), node_state->md_num);
 	for (j = 0; j < i; j++)
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 				"\t du action OR du desc = 0x%x\n",
 					le16_to_cpu(elem->act_or_desc[j]));
 	/*3. send add node state adminq cmd*/
@@ -8868,7 +9225,7 @@ nse_sw_set_slowpath(struct nse_hw *hw,
 		return -EINVAL;
 
 	if (node_state->is_lite) {
-		dev_info(nse_hw_to_dev(hw), "Start to set slowpath in lite node state(id = %d): enable = %d\n",
+		nse_debug(hw, NSE_DBG_SW, "Start to set slowpath in lite node state(id = %d): enable = %d\n",
 			node_state->node_state_id, enable);
 
 		err = nse_sw_slowpath_lite_node_state(hw, node_state, enable);
@@ -8877,7 +9234,7 @@ nse_sw_set_slowpath(struct nse_hw *hw,
 				"[%s, %d] set lite node state slowpath err, node state id = %d\n",
 				__func__, __LINE__, node_state->node_state_id);
 	} else {
-		dev_info(nse_hw_to_dev(hw), "Start to set slowpath in node state(id = %d): enable = %d\n",
+		nse_debug(hw, NSE_DBG_SW, "Start to set slowpath in node state(id = %d): enable = %d\n",
 			node_state->node_state_id, enable);
 
 		err = nse_sw_slowpath_node_state(hw, node_state, enable);
@@ -8934,7 +9291,7 @@ nse_sw_creat_du_data(struct nse_hw *hw, u16 d_size)
 		goto nse_sw_creat_du_data_fail;
 	}
 
-	dev_info(nse_hw_to_dev(hw), "Alloc du data id success, id = %d\n",
+	nse_debug(hw, NSE_DBG_SW, "Alloc du data id success, id = %d\n",
 		du_data->du_desc.du_data_id);
 
 	mutex_lock(&sw->du_data_lock);
@@ -9036,7 +9393,7 @@ nse_sw_add_du_data(struct nse_hw *hw,
 	elem->data_len = cpu_to_le16(data_size >> NSE_AQC_DU_DATA_SHIFT);
 	memcpy(elem->usr_data, du_data->du_desc.data, data_size);
 
-	dev_info(nse_hw_to_dev(hw), "Start to add du data, id = %d, data_len = %d\n",
+	nse_debug(hw, NSE_DBG_SW, "Start to add du data, id = %d, data_len = %d\n",
 		du_data->du_desc.du_data_id, data_size);
 
 	for (i = 0; i < du_data->du_desc.data_size; i++) {
@@ -9047,7 +9404,7 @@ nse_sw_add_du_data(struct nse_hw *hw,
 
 		data |= du_data->du_desc.data[i]<< j;
 		if (j == 0) {
-			dev_info(nse_hw_to_dev(hw),
+			nse_debug(hw, NSE_DBG_SW,
 				"du_data's content(BE) = 0x%08x\n", data);
 			data = 0;
 		}
@@ -9124,7 +9481,7 @@ nse_sw_creat_task_list(struct nse_hw *hw,
 		goto nse_sw_creat_task_list_fail;
 	}
 
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 		"Alloc task list id success, id = %d\n", task_list_id);
 
 	/*step2: alloc a task list obj in kernel,
@@ -9149,7 +9506,7 @@ nse_sw_creat_task_list(struct nse_hw *hw,
 	elem = buf->elem;
 	elem->task_list_id = cpu_to_le16(task_list_id);
 
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 		"Start to add task list, id = %d\n", task_list_id);
 
 	for (i = 0; i < task_list->task_cnt; i++) {
@@ -9159,7 +9516,7 @@ nse_sw_creat_task_list(struct nse_hw *hw,
 		elem->task[i].task_id |= (task->task_id << NSE_AQC_TASK_ID_S) &
 			NSE_AQC_TASK_ID_M;
 		elem->task[i].task_param = task->data_para;
-		dev_info(nse_hw_to_dev(hw),
+		nse_debug(hw, NSE_DBG_SW,
 			"\t task_id = %d, task_param = %d\n", task->task_id,
 			task->data_para);
 	}
@@ -9387,7 +9744,7 @@ nse_sw_set_mode(struct nse_hw *hw, enum nse_sw_mode *mode)
 		goto nse_sw_set_mode_fail;
 	}
 
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 		"[%s, %d] Success to set sw mode to %d\n",
 		__func__, __LINE__, *mode);
 
@@ -9508,7 +9865,7 @@ nse_sw_creat_meter(struct nse_hw *hw,
 	elem->cfg.cbs = cpu_to_le32(cbs);
 	elem->cfg.cir = cpu_to_le32(cir);
 
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 		"Start to add meter: pol_type = 0x%x, cir = 0x%x, cbs = 0x%x, pir = 0x%x, pbs = 0x%x\n",
 		policy_type, cir, cbs, le32_to_cpu(elem->cfg.pir), le32_to_cpu(elem->cfg.pbs));
 
@@ -9921,7 +10278,7 @@ nse_sw_update_encap_entry(struct nse_hw *hw,
 	elem->data_len = cpu_to_le16(data_size >> NSE_AQC_DU_DATA_SHIFT);
 	memcpy(elem->usr_data, encap_entry->du_desc.data, data_size);
 
-	dev_info(nse_hw_to_dev(hw), "Start to update encap du data, id = %d, data_len = %d\n",
+	nse_debug(hw, NSE_DBG_SW, "Start to update encap du data, id = %d, data_len = %d\n",
 		encap_entry->du_desc.du_data_id, data_size);
 
 	for (i = 0; i < encap_entry->du_desc.data_size; i++) {
@@ -9932,7 +10289,7 @@ nse_sw_update_encap_entry(struct nse_hw *hw,
 
 		data |= encap_entry->du_desc.data[i]<< j;
 		if (j == 0) {
-			dev_info(nse_hw_to_dev(hw),
+			nse_debug(hw, NSE_DBG_SW,
 				"du_data's content(BE) = 0x%08x\n", data);
 			data = 0;
 		}
@@ -9979,7 +10336,7 @@ nse_sw_creat_encap_entry(struct nse_hw *hw, u16 d_size)
 	if (status)
 		goto creat_encap_entry_fail;
 
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 		"Alloc encap's du data id successfully, id = %d, data_size = %d\n",
 		encap_entry->du_desc.du_data_id, encap_entry->du_desc.data_size);
 
@@ -10023,7 +10380,7 @@ nse_sw_creat_m_encap_entry(struct nse_hw *hw, u16 d_size)
 	if (status)
 		goto creat_encap_entry_fail;
 
-	dev_info(nse_hw_to_dev(hw), "Alloc multi encap's du data id success, id = %d, data_size = %d\n",
+	nse_debug(hw, NSE_DBG_SW, "Alloc multi encap's du data id success, id = %d, data_size = %d\n",
 		m_encap_entry->du_desc.du_data_id, m_encap_entry->du_desc.data_size);
 
 	return m_encap_entry;
@@ -10063,7 +10420,7 @@ nse_sw_add_encap_entry(struct nse_hw *hw,
 	elem->data_len = cpu_to_le16(data_size >> NSE_AQC_DU_DATA_SHIFT);
 	memcpy(elem->usr_data, encap_entry->du_desc.data, data_size);
 
-	dev_info(nse_hw_to_dev(hw), "Start to add encap du data, id = %d, data_len = %d\n",
+	nse_debug(hw, NSE_DBG_SW, "Start to add encap du data, id = %d, data_len = %d\n",
 		encap_entry->du_desc.du_data_id, data_size);
 
 	for (i = 0; i < encap_entry->du_desc.data_size; i++) {
@@ -10074,7 +10431,7 @@ nse_sw_add_encap_entry(struct nse_hw *hw,
 
 		data |= encap_entry->du_desc.data[i]<< j;
 		if (j == 0) {
-			dev_info(nse_hw_to_dev(hw),
+			nse_debug(hw, NSE_DBG_SW,
 				"du_data's content(BE) = 0x%08x\n", data);
 			data = 0;
 		}
@@ -10118,7 +10475,7 @@ nse_sw_add_m_encap_entry(struct nse_hw *hw,
 	elem->data_len = cpu_to_le16(data_size >> NSE_AQC_DU_DATA_SHIFT);
 	memcpy(elem->usr_data, m_encap_entry->du_desc.data, data_size);
 
-	dev_info(nse_hw_to_dev(hw), "Start to add multi encap du data, id = %d, data_len = %d\n",
+	nse_debug(hw, NSE_DBG_SW, "Start to add multi encap du data, id = %d, data_len = %d\n",
 		m_encap_entry->du_desc.du_data_id, data_size);
 
 	for (i = 0; i < m_encap_entry->du_desc.data_size; i++) {
@@ -10129,7 +10486,7 @@ nse_sw_add_m_encap_entry(struct nse_hw *hw,
 
 		data |= m_encap_entry->du_desc.data[i]<< j;
 		if (j == 0) {
-			dev_info(nse_hw_to_dev(hw),
+			nse_debug(hw, NSE_DBG_SW,
 				"du_data's content(BE) = 0x%08x\n", data);
 			data = 0;
 		}
@@ -10164,7 +10521,7 @@ nse_sw_destroy_encap_entry(struct nse_hw *hw,
 
 	ret = nse_encap_entry_detach_neigh(hw, encap_entry);
 	if (ret)
-		dev_info(nse_hw_to_dev(hw),	"Failed to detach encap entry to neigh\n");
+		nse_debug(hw, NSE_DBG_SW,	"Failed to detach encap entry to neigh\n");
 
 	status = nse_aq_alloc_free_encap_data(hw, encap_entry,
 				NSE_AQ_OPC_FREE_RESOURCE);

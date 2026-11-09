@@ -21,7 +21,7 @@
 
 #define NSE_SUPPORT_FAST_FLWR
 
-#define NSE_MAX_DMA_RD_STATS_NUM   (32 * 1024)
+#define NSE_MAX_DMA_RD_STATS_NUM   (64 * 1024)
 
 #define NSE_MAX_DMA_RD_STATS_SIZE   (NSE_MAX_DMA_RD_STATS_NUM * 8)
 
@@ -29,7 +29,6 @@
 #define NSE_MAX_FLOW_FWD_DEST		16
 #define NSE_MAX_FLOW_ENCAP_CNT		16
 
-#define NSE_MAX_SUB_NODE_NUM 6
 #define NSE_MAX_SW 256
 #define NSE_DFLT_VSI_INVAL 0xff
 #define NSE_FLTR_RX BIT(0)
@@ -50,6 +49,8 @@
 #define NSE_LITE_NODE_STATE_CTRL_WORD   1
 #define NSE_FULL_NODE_STATE_CTRL_WORD   2
 #define NSE_TASK_LIST_WORD_SIZE			16
+
+#define NSE_RSLT_KEY_IN_SERIAL_RCP    4
 
 /* VSI context structure for add/get/update/free operations */
 struct nse_vsi_ctx {
@@ -135,6 +136,8 @@ struct nse_adv_node_info {
 	bool is_lpm;
 	u16 prefix_len;
 
+	bool need_serial; /* to do recipe serial */
+
 	/* src chain id where this tc flower filtr located */
 	u8 chain_id;
 
@@ -142,7 +145,7 @@ struct nse_adv_node_info {
 
 	u16 fltr_node_id;
 	/* it is sub_lut's node id(cbuf addr) when lut chain */
-	u16 sub_fltr_node_id[NSE_MAX_SUB_NODE_NUM];
+	u16 sub_fltr_node_id[NSE_MAX_CHAIN_SUB_NODES];
 	struct nse_adv_rule_flags_info flags_info;
 	struct nse_vsi_list_map_info *vsi_list_info;
 };

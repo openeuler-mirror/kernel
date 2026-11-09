@@ -482,6 +482,119 @@ out:
 	return ret;
 }
 
+int nse_pf_dcb_dscp_cfg(struct nse_pf *pf, struct nse_dcbx_cfg *new_cfg,
+			u32 cfg_chg_type, bool locked)
+{
+	struct nse_dcbx_cfg *old_cfg, *curr_cfg;
+	struct device *dev = nse_pf_to_dev(pf);
+	struct iidc_event *event;
+	int ret = NSE_DCB_NO_HW_CHG;
+	enum nse_status status;
+
+	if (nse_dcb_bwchk(pf, new_cfg)) {
+		dev_err(dev, "[%s] BAD: dcb_bwchk()\n", __func__);
+		return -EINVAL;
+	}
+
+	curr_cfg = &pf->hw.port_info->qos_cfg.local_dcbx_cfg;
+
+	/* Store old config in case FW config fails */
+	old_cfg = kmemdup(curr_cfg, sizeof(*old_cfg), GFP_KERNEL);
+	if (!old_cfg)
+		return -ENOMEM;
+
+	/* Notify capable aux drivers about impending change to TCs */
+	event = kzalloc(sizeof(*event), GFP_KERNEL);
+	if (!event) {
+		kfree(old_cfg);
+		return -ENOMEM;
+	}
+
+	set_bit(IIDC_EVENT_BEFORE_TC_CHANGE, event->type);
+	nse_send_event_to_auxs(pf, event);
+	kfree(event);
+
+	/* avoid race conditions by holding the lock while disabling and
+	 * re-enabling the VSI
+	 */
+	if (!locked)
+		rtnl_lock();
+
+	/* disable VSIs affected by DCB changes */
+	nse_dcb_ena_dis_vsi(pf, false, true);
+
+	memcpy(curr_cfg, new_cfg, sizeof(*curr_cfg));
+	memcpy(&curr_cfg->etsrec, &curr_cfg->etscfg, sizeof(curr_cfg->etsrec));
+	memcpy(&new_cfg->etsrec, &curr_cfg->etscfg, sizeof(curr_cfg->etsrec));
+
+	if (cfg_chg_type == NSE_DCB_CFG_CHG_TYPE_DSCP) {
+		status = nse_set_dcb_dscp_map(pf->hw.port_info);
+		if (status) {
+			dev_err(dev, "[%s, %d] FAIL: set_dscp_map(): %d (%s)\n",
+				__func__, __LINE__,
+				status, nse_stat_str(status));
+
+			/* Restore previous settings to local config */
+			memcpy(curr_cfg, old_cfg, sizeof(*curr_cfg));
+
+			ret = -EIO;
+
+			goto out;
+		}
+
+		status = nse_set_dcb_cfg(pf->hw.port_info, false);
+		if (status) {
+			dev_err(dev, "[%s, %d] FAIL: set_dcb_cfg(): %d (%s)\n",
+				__func__, __LINE__,
+				status, nse_stat_str(status));
+
+			/* Restore previous settings to local config */
+			memcpy(curr_cfg, old_cfg, sizeof(*curr_cfg));
+
+			ret = -EIO;
+
+			goto out;
+		}
+
+		(void)nse_set_dcb_up_enforcement(&pf->hw, curr_cfg);
+
+		status = nse_ena_dcb_dscp_mode(pf->hw.port_info, true);
+		if (status) {
+			dev_err(dev, "[%s, %d] FAIL: ena_dscp_mode(): %d (%s)\n",
+				__func__, __LINE__,
+				status, nse_stat_str(status));
+
+			/* Restore previous settings to local config */
+			memcpy(curr_cfg, old_cfg, sizeof(*curr_cfg));
+
+			ret = -EIO;
+
+			goto out;
+		}
+
+		nse_pf_dcb_recfg(pf);
+	}
+
+	/* Enable DCB tagging only when more than one TC */
+	if (nse_dcb_get_num_tc(new_cfg) > 1) {
+		dev_info(dev, "DCB tagging enabled (num TC > 1)\n");
+		set_bit(NSE_FLAG_DCB_ENA, pf->flags);
+	} else {
+		dev_info(dev, "DCB tagging disabled (num TC = 1)\n");
+		clear_bit(NSE_FLAG_DCB_ENA, pf->flags);
+	}
+
+	ret = NSE_DCB_HW_CHG;
+
+out:
+	/* enable previously downed VSIs */
+	nse_dcb_ena_dis_vsi(pf, true, true);
+	if (!locked)
+		rtnl_unlock();
+	kfree(old_cfg);
+	return ret;
+}
+
 /**
  * nse_dcb_need_recfg - Check if DCB needs reconfig
  * @pf: board private structure
@@ -540,6 +653,13 @@ u32 nse_dcb_need_recfg(struct nse_pf *pf, struct nse_dcbx_cfg *old_cfg,
 		nse_debug(hw, NSE_DBG_DCB, "[%s]: PFC change\n", __func__);
 
 		chg_type |= NSE_DCB_CFG_CHG_TYPE_PFC;
+	}
+
+	/* Check if APP Table has changed */
+	if (memcmp(&new_cfg->app, &old_cfg->app, sizeof(new_cfg->app))) {
+		nse_debug(hw, NSE_DBG_DCB, "[%s]: app change\n", __func__);
+
+		chg_type |= NSE_DCB_CFG_CHG_TYPE_DSCP;
 	}
 
 	nse_debug(hw, NSE_DBG_DCB, "[%s]: chg_type=%X\n", __func__, chg_type);
@@ -826,23 +946,25 @@ nse_tx_prepare_vlan_flags_dcb(struct nse_ring *tx_ring,
 {
 	struct sk_buff *skb = first->skb;
 
-	if (nse_lan_vlan_force_up)	/* work even if !DCB_ENA */
-		goto handle_up;
-
-	if (!test_bit(NSE_FLAG_DCB_ENA, tx_ring->vsi->back->flags))
+	if (!test_bit(NSE_FLAG_DCB_ENA, tx_ring->vsi->back->flags)
+#if defined(NSE_DEBUG_EXT)
+		&& !nse_lan_vlan_force_up	/* change UP even if !DCB_ENA */
+#endif
+	)
 		return;
 
-handle_up:
 	/* Insert 802.1p priority into VLAN header */
 	if ((first->tx_flags & NSE_TX_FLAGS_HW_VLAN ||
 	     first->tx_flags & NSE_TX_FLAGS_HW_OUTER_SINGLE_VLAN)) {
 		first->tx_flags &= ~NSE_TX_FLAGS_VLAN_PR_M;
 
+#if defined(NSE_DEBUG_EXT)
 		if (nse_lan_vlan_force_up)
 			/* Use txq index to set the 802.1p priority */
-			first->tx_flags |= (tx_ring->q_index & 0x7) <<
+			first->tx_flags |= ((u32)tx_ring->q_index & 0x7) <<
 					   NSE_TX_FLAGS_VLAN_PR_S;
 		else
+#endif
 			/* Mask the lower 3 bits to set the 802.1p priority */
 			first->tx_flags |= (skb->priority & 0x7) <<
 					   NSE_TX_FLAGS_VLAN_PR_S;
@@ -886,11 +1008,10 @@ void nse_setup_dcb_qos_info(struct nse_pf *pf, struct iidc_qos_params *qos_info)
 	for (i = 0; i < IEEE_8021QAZ_MAX_TCS; i++)
 		qos_info->tc_info[i].rel_bw =
 			dcbx_cfg->etscfg.tcbwtable[i];
-#ifdef AMBER_PE_NEED_PFC_MODE
+
 	qos_info->pfc_mode = dcbx_cfg->pfc_mode;
 	for (i = 0; i < NSE_DSCP_NUM_VAL; i++)
 		qos_info->dscp_map[i] = dcbx_cfg->dscp_map[i];
-#endif
 }
 
 void nse_save_dcbx_cfg_from_aqc(struct nse_hw *hw, struct nse_dcbx_cfg *dst,

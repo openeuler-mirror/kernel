@@ -1929,18 +1929,19 @@ static int
 nse_lag_dev_alloc_and_add_pf(struct nse_pf *pf)
 {
 	struct device *dev = nse_pf_to_dev(pf);
+	struct nse_hw *hw = &pf->hw;
 	struct nse_lag *ldev = NULL;
 	struct nse_pf *tmp_pf;
 
 	tmp_pf = nse_get_next_phys_dev_lag(pf);
 	if (tmp_pf) {
-		dev_info(dev, "Sibling PF[%d] has beend found, its lag address is %p\n",
-			tmp_pf->hw.pcore_pf_id, tmp_pf->lag);
+		nse_debug(hw, NSE_DBG_SYS, "Sibling PF[%d] has beend found, its lag address is %p\n",
+			  tmp_pf->hw.pcore_pf_id, tmp_pf->lag);
 		ldev = tmp_pf->lag;
 	}
 
 	if (!ldev) {
-		dev_info(dev, "PF[%d] start to alloc lag dev\n", pf->hw.pcore_pf_id);
+		nse_debug(hw, NSE_DBG_SYS, "PF[%d] start to alloc lag dev\n", pf->hw.pcore_pf_id);
 		ldev = nse_lag_dev_alloc(pf);
 		if (!ldev) {
 			dev_err(dev, "Failed to alloc lag dev\n");

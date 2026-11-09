@@ -37,6 +37,8 @@ enum nse_fwmng_cmd_category_misc_subcodes {
 	NSE_FWMNG_CMD_EXT					= 0x0,
 
 	NSE_FWMNG_CMD_TX_TS_EVT				= 0x1,
+
+	NSE_FWMNG_CMD_FW_EVT_HEX			= 0x2,
 };
 
 #define MAKE_FWMNG_CMD_CODE(category, subcode) (((category) << 4) | (subcode))
@@ -47,6 +49,7 @@ enum nse_fwmng_cmd_category_misc_subcodes {
 
 extern u32 fwmng_cmd_id_high_reset;
 extern u32 fwmng_evt_id_aqm_err;
+extern u32 fwmng_evt_id_fw_evt_hex;
 
 struct nse_fwmng_cmd_req_generic {
 	u32 cmd;

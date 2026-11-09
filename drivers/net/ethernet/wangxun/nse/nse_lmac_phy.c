@@ -712,6 +712,8 @@ lmac_type1_set_basic_cfg(struct nse_hw *hw)
 	val &= ~LMAC_TYPE1_TX_CFG_SS_3_M;
 
 	if (hw->hw_conf.hw_platform == NSE_HW_PLATFORM_ASIC) {
+
+#if defined(NSE_DEBUG_EXT)
 		if (nse_dbg_force_mac_ss == 1) {
 			nse_debug(hw, NSE_DBG_LMAC_PHY,
 				  "[%s, %d] force use LMAC_TYPE1_TX_CFG_SS_25G for ASIC\n",
@@ -728,6 +730,7 @@ lmac_type1_set_basic_cfg(struct nse_hw *hw)
 				__func__, __LINE__);
 			val |= (LMAC_TYPE1_TX_CFG_SS_100G << LMAC_TYPE1_TX_CFG_SS_S);
 		} else {
+#endif
 			highest_bit = find_highest_bit_u32(lpinfo->req_link_speeds);
 
 			if (highest_bit >= 0) {
@@ -760,7 +763,10 @@ lmac_type1_set_basic_cfg(struct nse_hw *hw)
 				  __func__, __LINE__, ss);
 
 			val |= (ss << LMAC_TYPE1_TX_CFG_SS_S);
+
+#if defined(NSE_DEBUG_EXT)
 		}
+#endif
 
 	} else {
 		nse_debug(hw, NSE_DBG_LMAC_PHY,
@@ -1336,13 +1342,16 @@ enum nse_status
 nse_aq_test_phy_get_link_status(struct nse_hw *hw, u32 *ls, u32 *speed)
 {
 	struct nse_aq_desc desc;
-	enum nse_status ret;
+	enum nse_status ret = NSE_SUCCESS;
 
+#if defined(NSE_DEBUG_EXT)
 	if (nse_palladium_debug) {	/* == LMAC_PHY_STATIC_FLAG_CONSIDER_ALWAYS_LINK_UP */
-		ret = 0;
 		*ls = 1;
 		*speed = 3;
+
 	} else {
+#endif
+
 		nse_fill_dflt_direct_cmd_desc(&desc, NSE_AQ_OPC_CATEGORY_LMAC_PHY,
 					      NSE_AQ_OPC_TEST_PHY_GET_LINK_STATUS);
 
@@ -1353,7 +1362,10 @@ nse_aq_test_phy_get_link_status(struct nse_hw *hw, u32 *ls, u32 *speed)
 			*ls = le32_to_cpu(desc.param0);
 			*speed = le32_to_cpu(desc.param1);
 		}
+
+#if defined(NSE_DEBUG_EXT)
 	}
+#endif
 
 	return ret;
 }
@@ -1552,10 +1564,11 @@ nse_aq_ephy_cmd(struct nse_hw *hw, struct nse_aqc_ephy_cmd *cmd)
 
 	status = nse_aq_send_cmd(hw, &desc, cmd, sizeof(*cmd), NULL);
 	/* also check output result ... */
-	if (!status && le32_to_cpu(cmd->result) != NSE_AQ_RC_OK) {
-		dev_err(nse_hw_to_dev(hw), "[%s] FAIL: ephy_cmd->result=%d\n",
-			__func__, le32_to_cpu(cmd->result));
-		status = NSE_ERR_IO;
+	if (status || le32_to_cpu(cmd->result) != NSE_AQ_RC_OK) {
+		dev_err(nse_hw_to_dev(hw), "[%s] FAIL: status=%d, ephy_cmd->result=%d\n",
+			__func__, status, le32_to_cpu(cmd->result));
+		if (!status)
+			status = NSE_ERR_IO;
 	}
 
 	return status;
@@ -1779,6 +1792,38 @@ nse_aq_ephy_cmd_sfp_8472_addr_change(struct nse_hw *hw, u8 addr)
 		dev_err(dev, "[%s] FAIL: aq_ephy_cmd(), status=%d\n", __func__, status);
 		goto out;
 	}
+
+out:
+	kfree(cmd);
+
+	return status;
+}
+
+enum nse_status
+nse_aq_ephy_cmd_sfp_query_bytes_ready_in_cbuf(struct nse_hw *hw, bool *ready)
+{
+	struct device *dev = nse_hw_to_dev(hw);
+	struct nse_aqc_ephy_cmd *cmd = NULL;
+	enum nse_status status;
+
+	cmd = kzalloc(sizeof(*cmd), GFP_KERNEL);
+	if (!cmd) {
+		status = NSE_ERR_NO_MEMORY;
+
+		goto out;
+	}
+
+	cmd->ephy_type = cpu_to_le32(EPHY_TYPE_SFP);
+
+	cmd->sfp.cmd = cpu_to_le32(EPHY_CMD_SFP_QUERY_BYTES_READY_IN_CBUF);
+
+	status = nse_aq_ephy_cmd(hw, cmd);
+	if (status) {
+		dev_err(dev, "[%s] FAIL: aq_ephy_cmd(), status=%d\n", __func__, status);
+		goto out;
+	}
+
+	*ready = !!(cmd->sfp.query_bytes_ready_in_cbuf.ready);
 
 out:
 	kfree(cmd);
@@ -2065,7 +2110,7 @@ nse_aq_ephy_cmd_qsfp_get_sff8636_int_status(struct nse_hw *hw,
 	u8 bytes_len_actually_r = 0;
 	enum nse_status status = NSE_SUCCESS;
 
-	status = nse_aq_ephy_cmd_qsfp_read_bytes(hw, true, 0xA0, XSFP_MNG_IF_TYPE_SFF8636,
+	status = nse_aq_ephy_cmd_qsfp_read_bytes(hw, false, 0xA0, XSFP_MNG_IF_TYPE_SFF8636,
 											0, 0, 2, 20,
 						 bytes, &bytes_len_actually_r);
 	if (status || bytes_len_actually_r != 20) {
@@ -2129,7 +2174,7 @@ nse_aq_ephy_cmd_get_cmis_int_status(struct nse_hw *hw, struct cmis_int_status *i
 		cinfo = &ephy_info->qsfp_info.cmis_info;
 	}
 
-	status = read_bytes_func(hw, true, mod_addr, XSFP_MNG_IF_TYPE_CMIS,
+	status = read_bytes_func(hw, false, mod_addr, XSFP_MNG_IF_TYPE_CMIS,
 							0, 0, 3, 11, bytes, &bytes_len_out);
 	if (status || bytes_len_out != 11) {
 		dev_err(dev, "[%s, %d] FAIL: status=%d, bytes_len_out=%d\n",
@@ -2142,7 +2187,7 @@ nse_aq_ephy_cmd_get_cmis_int_status(struct nse_hw *hw, struct cmis_int_status *i
 	memcpy(int_status->flags_summary, &bytes[1], 4);
 	memcpy(int_status->mod_level_flags, &bytes[5], 6);
 
-	int_status->mod_fault_info = cinfo->mem_lp_up0[41];	/* lazy to ready 1 byte */
+	int_status->mod_fault_info = bytes[41];	/* lazy to ready 1 byte */
 
 	memset(int_status->lane_specific_flags, 0, sizeof(int_status->lane_specific_flags));
 
@@ -2154,7 +2199,7 @@ nse_aq_ephy_cmd_get_cmis_int_status(struct nse_hw *hw, struct cmis_int_status *i
 	 *
 	 * it is unlikely we have a CMIS module whose lane cnt > 8
 	 */
-	status = read_bytes_func(hw, true, mod_addr, XSFP_MNG_IF_TYPE_CMIS,
+	status = read_bytes_func(hw, false, mod_addr, XSFP_MNG_IF_TYPE_CMIS,
 							0, 0x11, 134, 20, bytes, &bytes_len_out);
 	if (status || bytes_len_out != 20) {
 		dev_err(dev, "[%s, %d] FAIL: status=%d, bytes_len_out=%d\n",
@@ -2172,6 +2217,37 @@ out:
 		int_status->valid = false;
 	else
 		int_status->valid = true;
+
+	return status;
+}
+
+enum nse_status
+nse_aq_ephy_cmd_qsfp_query_bytes_ready_in_cbuf(struct nse_hw *hw, bool *ready)
+{
+	struct device *dev = nse_hw_to_dev(hw);
+	struct nse_aqc_ephy_cmd *cmd = NULL;
+	enum nse_status status;
+
+	cmd = kzalloc(sizeof(*cmd), GFP_KERNEL);
+	if (!cmd) {
+		status = NSE_ERR_NO_MEMORY;
+		goto out;
+	}
+
+	cmd->ephy_type = cpu_to_le32(EPHY_TYPE_QSFP);
+
+	cmd->sfp.cmd = cpu_to_le32(EPHY_CMD_QSFP_QUERY_BYTES_READY_IN_CBUF);
+
+	status = nse_aq_ephy_cmd(hw, cmd);
+	if (status) {
+		dev_err(dev, "[%s] FAIL: aq_ephy_cmd(), status=%d\n", __func__, status);
+		goto out;
+	}
+
+	*ready = !!(cmd->qsfp.query_bytes_ready_in_cbuf.ready);
+
+out:
+	kfree(cmd);
 
 	return status;
 }
@@ -2473,6 +2549,46 @@ ephy_status_dump(struct nse_hw *hw, bool dump_all)
 }
 
 static enum nse_status
+ephy_query_bytes_ready_in_cbuf(struct nse_hw *hw, bool *ready)
+{
+	struct nse_lmac_phy_info *lpinfo = &hw->port_info->lmac_phy_info;
+	struct nse_ephy_info *ephy_info = &lpinfo->ephy_info;
+	enum nse_status status;
+
+	if (lpinfo->static_flags & LMAC_PHY_STATIC_FLAG_EPHY_FTYPE) {
+		*ready = true;
+	} else if (ephy_info->ephy_type == EPHY_TYPE_SFP) {
+		status = nse_aq_ephy_cmd_sfp_query_bytes_ready_in_cbuf(hw, ready);
+		if (status) {
+			nse_debug(hw, NSE_DBG_LMAC_PHY, "[%s] sfp_query_bytes_ready_in_cbuf() return %d\n",
+				  __func__, status);
+			/* consider ready=true, because usually we would do
+			 * is_module_present(true) check before
+			 */
+			*ready = true;
+		}
+	} else if (ephy_info->ephy_type == EPHY_TYPE_QSFP) {
+		status = nse_aq_ephy_cmd_qsfp_query_bytes_ready_in_cbuf(hw, ready);
+		if (status) {
+			nse_debug(hw, NSE_DBG_LMAC_PHY, "[%s] qsfp_query_bytes_ready_in_cbuf() return %d\n",
+				  __func__, status);
+			/* consider ready=true, because usually we would do
+			 * is_module_present(true) check before
+			 */
+			*ready = true;
+		}
+	} else {
+		nse_debug(hw, NSE_DBG_LMAC_PHY, "[%s] ephy_type=%d not impl\n",
+			  __func__, ephy_info->ephy_type);
+		*ready = false;
+	}
+
+	status = NSE_SUCCESS;
+
+	return status;
+}
+
+static enum nse_status
 ephy_status_get_1st(struct nse_hw *hw)	/* get pin status */
 {
 	struct device *dev = nse_hw_to_dev(hw);
@@ -2513,9 +2629,18 @@ ephy_status_get_2nd(struct nse_hw *hw)	/* get some status to determine if signal
 	struct device *dev = nse_hw_to_dev(hw);
 	struct nse_lmac_phy_info *lpinfo = &hw->port_info->lmac_phy_info;
 	struct nse_ephy_info *ephy_info = &lpinfo->ephy_info;
+	bool bytes_ready_in_cbuf = false;
 	enum nse_status status = NSE_SUCCESS;
 
 	nse_debug(hw, NSE_DBG_LMAC_PHY, "[%s] ephy_type=%d\n", __func__, ephy_info->ephy_type);
+
+	status = ephy_query_bytes_ready_in_cbuf(hw, &bytes_ready_in_cbuf);
+	if (status || !bytes_ready_in_cbuf) {
+		nse_debug(hw, NSE_DBG_LMAC_PHY, "[%s] query_bytes_ready_in_cbuf(), status=%d, bytes_ready_in_cbuf=%d\n",
+			  __func__, status, bytes_ready_in_cbuf);
+		status = NSE_ERR_AGAIN;
+		goto out;
+	}
 
 	if (lpinfo->static_flags & LMAC_PHY_STATIC_FLAG_EPHY_FTYPE) {
 		ephy_info->ftype_info.status.valid = true;
@@ -2550,6 +2675,7 @@ ephy_status_get_2nd(struct nse_hw *hw)	/* get some status to determine if signal
 			  __func__, ephy_info->ephy_type);
 	}
 
+out:
 	return status;
 }
 
@@ -2661,6 +2787,8 @@ ephy_status_is_signal_ok(struct nse_hw *hw, bool status_new_or_old)
 	struct nse_lmac_phy_info *lpinfo = &hw->port_info->lmac_phy_info;
 	struct nse_ephy_info *ephy_info = &lpinfo->ephy_info;
 	struct xsfp_cmis_info *cmis_info = NULL;
+	struct sfp_pin_status *sfp_status = NULL;
+	struct qsfp_sff8636_int_status *qsfp_status = NULL;
 	bool ret = false;
 
 	if (lpinfo->static_flags & LMAC_PHY_STATIC_FLAG_EPHY_FTYPE) {
@@ -2672,37 +2800,36 @@ ephy_status_is_signal_ok(struct nse_hw *hw, bool status_new_or_old)
 					ephy_info->ftype_info.status_old.signal_ok;
 
 	} else if (ephy_info->ephy_type == EPHY_TYPE_SFP) {
-		if (status_new_or_old)
-			ret = ephy_info->sfp_info.pin_status.valid &&
-					!ephy_info->sfp_info.pin_status.tx_fault &&
-					!ephy_info->sfp_info.pin_status.rx_los;
-		else
-			ret = ephy_info->sfp_info.pin_status_old.valid &&
-					!ephy_info->sfp_info.pin_status_old.tx_fault &&
-					!ephy_info->sfp_info.pin_status_old.rx_los;
+
+		sfp_status = status_new_or_old ?
+				&ephy_info->sfp_info.pin_status :
+				&ephy_info->sfp_info.pin_status_old;
+
+		ret = sfp_status->valid && !sfp_status->tx_fault && !sfp_status->rx_los;
+
+		nse_debug(hw, NSE_DBG_LMAC_PHY_DETAIL, "[%s] SFP pin_status(%s): ret=%d (valid=%d, tx_fault=%d, rx_los=%d)\n",
+			  __func__, status_new_or_old ? "new" : "old",
+			  ret, sfp_status->valid, sfp_status->tx_fault, sfp_status->rx_los);
 
 	} else if (ephy_info->ephy_type == EPHY_TYPE_QSFP) {
 		if (ephy_info->qsfp_info.mng_if_type == XSFP_MNG_IF_TYPE_SFF8636) {
-			if (status_new_or_old) {
-				if (ephy_info->qsfp_info.sff8636_info.int_status.valid) {
-					if (ephy_info->qsfp_info.sff8636_info.int_status.interrupt_flags[0] ||
-						ephy_info->qsfp_info.sff8636_info.int_status.interrupt_flags[1])
-						ret = false;
-					else
-						ret = true;
-				} else
-					ret = false;
+			/* SFF-8636 logic
+			 *
+			 *		Byte 4	-	TX Fault
+			 */
+			qsfp_status = status_new_or_old ?
+					&ephy_info->qsfp_info.sff8636_info.int_status :
+					&ephy_info->qsfp_info.sff8636_info.int_status_old;
 
-			} else {
-				if (ephy_info->qsfp_info.sff8636_info.int_status_old.valid) {
-					if (ephy_info->qsfp_info.sff8636_info.int_status_old.interrupt_flags[0] ||
-						ephy_info->qsfp_info.sff8636_info.int_status_old.interrupt_flags[1])
-						ret = false;
-					else
-						ret = true;
-				} else
-					ret = false;
-			}
+			ret = qsfp_status->valid &&
+					(!qsfp_status->interrupt_flags[0] &&
+					 !qsfp_status->interrupt_flags[1]);
+
+			nse_debug(hw, NSE_DBG_LMAC_PHY_DETAIL, "[%s] QSFP int_status(%s): ret=%d (valid=%d, interrupt_flags[0, 1]=0x%02X, 0x%02X)\n",
+				  __func__, status_new_or_old ? "new" : "old",
+				  ret, qsfp_status->valid,
+				  qsfp_status->interrupt_flags[0],
+				  qsfp_status->interrupt_flags[1]);
 
 		} else if (ephy_info->qsfp_info.mng_if_type == XSFP_MNG_IF_TYPE_CMIS) {
 			cmis_info = &ephy_info->qsfp_info.cmis_info;
@@ -2749,7 +2876,7 @@ static void ephy_status_sync_old_new(struct nse_hw *hw)
 }
 
 static void
-ephy_reset_info(struct nse_hw *hw)
+ephy_reset_info(struct nse_hw *hw, bool reset_raw_bytes_info)
 {
 	struct nse_lmac_phy_info *lpinfo = &hw->port_info->lmac_phy_info;
 	struct nse_ephy_info *ephy_info = &lpinfo->ephy_info;
@@ -2765,6 +2892,15 @@ ephy_reset_info(struct nse_hw *hw)
 	ephy_info->cur_temperature_valid = false;
 
 	memset(&ephy_info->mod_lks, 0, sizeof(ephy_info->mod_lks));
+
+
+	if (reset_raw_bytes_info) {
+		ephy_info->raw_bytes_info.valid = false;
+
+		ephy_info->raw_bytes_info.ethtool_modinfo_type = 0;
+		ephy_info->raw_bytes_info.ethtool_modinfo_eeprom_len = 0;
+	}
+
 
 	if (lpinfo->static_flags & LMAC_PHY_STATIC_FLAG_EPHY_FTYPE) {
 		memset(&ephy_info->ftype_info, 0, sizeof(ephy_info->ftype_info));
@@ -2789,7 +2925,7 @@ ephy_reset_info(struct nse_hw *hw)
 
 void nse_lmac_phy_ephy_reset_info(struct nse_hw *hw)
 {
-	ephy_reset_info(hw);
+	ephy_reset_info(hw, false);
 }
 
 static enum nse_status
@@ -2865,9 +3001,13 @@ ephy_mem_read_basic_cmis(struct nse_hw *hw, u8 *bytes, u32 ephy_type)
 		goto out;
 	}
 
-	memcpy(cinfo->mem_lp_up0, bytes, 256);
+	memcpy(ephy_info->raw_bytes_info.cmis_bytes.mem_lp_up0, bytes, 256);
+	ephy_info->raw_bytes_info.valid = true;
 
-	cinfo->mem_model = cinfo->mem_lp_up0[2] & BIT(7);
+	ephy_info->raw_bytes_info.cmis_bytes.mem_model = bytes[2] & BIT(7);	/* prev parse */
+
+
+	cinfo->mem_model = bytes[2] & BIT(7);
 
 	if (cinfo->mem_model)	/* Flat Memory does not have more pages */
 		goto out;
@@ -2885,7 +3025,7 @@ ephy_mem_read_basic_cmis(struct nse_hw *hw, u8 *bytes, u32 ephy_type)
 		goto out;
 	}
 
-	memcpy(cinfo->mem_up1, &bytes[128], 31);
+	memcpy(ephy_info->raw_bytes_info.cmis_bytes.mem_up1, &bytes[128], 31);
 
 out:
 	return status;
@@ -2898,7 +3038,21 @@ ephy_mem_read_basic_sfp(struct nse_hw *hw, u8 *bytes)
 	struct nse_lmac_phy_info *lpinfo = &hw->port_info->lmac_phy_info;
 	struct nse_ephy_info *ephy_info = &lpinfo->ephy_info;
 	u8 bytes_len_out = 0;
+	bool bytes_ready_in_cbuf = false;
 	enum nse_status status = NSE_SUCCESS;
+
+	status = nse_aq_ephy_cmd_sfp_query_bytes_ready_in_cbuf(hw, &bytes_ready_in_cbuf);
+	/* FW support this query, then check query result. If a old FW
+	 * does not support this query, we simply continue
+	 */
+	if (!status) {
+		if (!bytes_ready_in_cbuf) {
+			nse_debug(hw, NSE_DBG_LMAC_PHY, "[%s] bytes_ready_in_cbuf=false, retry again later\n",
+				  __func__);
+			status = NSE_ERR_AGAIN;
+			goto out;
+		}
+	}
 
 	status = nse_aq_ephy_cmd_sfp_read_bytes(hw, false, 0xA0, XSFP_MNG_IF_TYPE_UNKNOWN,
 											0, 0, 0, 1,
@@ -2912,8 +3066,6 @@ ephy_mem_read_basic_sfp(struct nse_hw *hw, u8 *bytes)
 
 	ephy_info->sfp_info.dev_id = bytes[0];
 
-	ephy_info->sfp_info.mng_if_type = is_sff_dev_id_is_cmis(bytes[0]) ?
-		XSFP_MNG_IF_TYPE_CMIS : XSFP_MNG_IF_TYPE_SFF8472;
 
 	if (ephy_info->sfp_info.dev_id != SFF_DEV_ID_SFP_SFF8472 &&
 		ephy_info->sfp_info.dev_id != SFF_DEV_ID_SFP_PLUS_CMIS) {
@@ -2922,6 +3074,13 @@ ephy_mem_read_basic_sfp(struct nse_hw *hw, u8 *bytes)
 		status = NSE_ERR_NOT_SUPPORTED;
 		goto out;
 	}
+
+
+	ephy_info->sfp_info.mng_if_type = is_sff_dev_id_is_cmis(bytes[0]) ?
+		XSFP_MNG_IF_TYPE_CMIS : XSFP_MNG_IF_TYPE_SFF8472;
+
+	ephy_info->raw_bytes_info.mng_if_type = ephy_info->sfp_info.mng_if_type;
+
 
 	/* CMIS read logic
 	 */
@@ -2944,10 +3103,37 @@ ephy_mem_read_basic_sfp(struct nse_hw *hw, u8 *bytes)
 	if (status || bytes_len_out != 128) {
 		dev_err(dev, "[%s] FAIL: aq_ephy_cmd_sfp_read_bytes(rest), status=%d, bytes_len_out=%d\n",
 						__func__, status, bytes_len_out);
+		status = NSE_ERR_IO;
 		goto out;
 	}
 
-	memcpy(ephy_info->sfp_info.sff8472_info.mem_a0, bytes, 128);
+	ephy_info->raw_bytes_info.valid = true;
+
+	memcpy(ephy_info->raw_bytes_info.sff8472_bytes.mem_a0, bytes, 128);
+
+	/* pre parse */
+	ephy_info->raw_bytes_info.sff8472_bytes.impl_mem_a2 = !!(bytes[92] & BIT(6));
+	ephy_info->raw_bytes_info.sff8472_bytes.need_addr_change = !!(bytes[92] & BIT(2));
+
+	if (ephy_info->raw_bytes_info.sff8472_bytes.impl_mem_a2) {
+
+		ephy_info->raw_bytes_info.ethtool_modinfo_type = ETH_MODULE_SFF_8472;
+		ephy_info->raw_bytes_info.ethtool_modinfo_eeprom_len = ETH_MODULE_SFF_8472_LEN;
+
+		bytes_len_out = 0;
+		status = nse_aq_ephy_cmd_sfp_read_bytes(hw, false, 0xA2, XSFP_MNG_IF_TYPE_SFF8472,
+				0, 0, 0, 127,	/* skip 127 - Page Select */
+				ephy_info->raw_bytes_info.sff8472_bytes.mem_a2, &bytes_len_out);
+		if (status || bytes_len_out != 127)
+			nse_debug(hw, NSE_DBG_LMAC_PHY, "[%s, %d] FAIL: read 0xA2 bytes, status=%d, bytes_len_out=%d, but it's OK\n",
+				  __func__, __LINE__, status, bytes_len_out);
+
+		status = NSE_SUCCESS;
+
+	} else {
+		ephy_info->raw_bytes_info.ethtool_modinfo_type = ETH_MODULE_SFF_8079;
+		ephy_info->raw_bytes_info.ethtool_modinfo_eeprom_len = ETH_MODULE_SFF_8079_LEN;
+	}
 
 out:
 	return status;
@@ -2960,7 +3146,21 @@ ephy_mem_read_basic_qsfp(struct nse_hw *hw, u8 *bytes)
 	struct nse_lmac_phy_info *lpinfo = &hw->port_info->lmac_phy_info;
 	struct nse_ephy_info *ephy_info = &lpinfo->ephy_info;
 	u8 bytes_len_out = 0;
+	bool bytes_ready_in_cbuf = false;
 	enum nse_status status = NSE_SUCCESS;
+
+	status = nse_aq_ephy_cmd_qsfp_query_bytes_ready_in_cbuf(hw, &bytes_ready_in_cbuf);
+	/* FW support this query, then check query result. If a old FW
+	 * does not support this query, we simply continue
+	 */
+	if (!status) {
+		if (!bytes_ready_in_cbuf) {
+			nse_debug(hw, NSE_DBG_LMAC_PHY, "[%s] bytes_ready_in_cbuf=false, retry again later\n",
+				  __func__);
+			status = NSE_ERR_AGAIN;
+			goto out;
+		}
+	}
 
 	status = nse_aq_ephy_cmd_qsfp_read_bytes(hw, false, 0xA0, XSFP_MNG_IF_TYPE_UNKNOWN,
 											0, 0, 0, 1,
@@ -2974,8 +3174,6 @@ ephy_mem_read_basic_qsfp(struct nse_hw *hw, u8 *bytes)
 
 	ephy_info->qsfp_info.dev_id = bytes[0];
 
-	ephy_info->qsfp_info.mng_if_type = is_sff_dev_id_is_cmis(bytes[0]) ?
-		XSFP_MNG_IF_TYPE_CMIS : XSFP_MNG_IF_TYPE_SFF8636;
 
 	if (ephy_info->qsfp_info.dev_id != SFF_DEV_ID_QSFP &&
 		ephy_info->qsfp_info.dev_id != SFF_DEV_ID_QSFP_PLUS &&
@@ -2986,6 +3184,13 @@ ephy_mem_read_basic_qsfp(struct nse_hw *hw, u8 *bytes)
 		status = NSE_ERR_NOT_SUPPORTED;
 		goto out;
 	}
+
+
+	ephy_info->qsfp_info.mng_if_type = is_sff_dev_id_is_cmis(bytes[0]) ?
+		XSFP_MNG_IF_TYPE_CMIS : XSFP_MNG_IF_TYPE_SFF8636;
+
+	ephy_info->raw_bytes_info.mng_if_type = ephy_info->qsfp_info.mng_if_type;
+
 
 	/* CMIS read logic
 	 */
@@ -3001,7 +3206,7 @@ ephy_mem_read_basic_qsfp(struct nse_hw *hw, u8 *bytes)
 	/* SFF-8636 read logic
 	 */
 
-	status = nse_aq_ephy_cmd_qsfp_read_bytes(hw, false, 0xA0, ephy_info->qsfp_info.mng_if_type,
+	status = nse_aq_ephy_cmd_qsfp_read_bytes(hw, false, 0xA0, XSFP_MNG_IF_TYPE_SFF8636,
 											0, 0, 1, 2,
 						 &bytes[1], &bytes_len_out);
 
@@ -3014,7 +3219,7 @@ ephy_mem_read_basic_qsfp(struct nse_hw *hw, u8 *bytes)
 
 	/* skip read 6.2.3 Interrupt Flags (Page 00h, Bytes 3-21) because its bits is read-clear */
 
-	status = nse_aq_ephy_cmd_qsfp_read_bytes(hw, false, 0xA0, ephy_info->qsfp_info.mng_if_type,
+	status = nse_aq_ephy_cmd_qsfp_read_bytes(hw, false, 0xA0, XSFP_MNG_IF_TYPE_SFF8636,
 											0, 0, 22,
 												234,
 						 &bytes[22], &bytes_len_out);
@@ -3025,7 +3230,22 @@ ephy_mem_read_basic_qsfp(struct nse_hw *hw, u8 *bytes)
 		goto out;
 	}
 
-	memcpy(ephy_info->qsfp_info.sff8636_info.mem_lp_up0, bytes, 256);
+	ephy_info->raw_bytes_info.valid = true;
+
+	memcpy(ephy_info->raw_bytes_info.sff8636_bytes.mem_lp_up0, bytes, 256);
+
+	ephy_info->raw_bytes_info.sff8636_bytes.mem_model = bytes[2] & BIT(2);	/* pre parse */
+
+	/* Bit 2 = 1b: Flat memory (lower and upper pages 00h only) */
+	if (ephy_info->raw_bytes_info.sff8636_bytes.mem_model) {
+		ephy_info->raw_bytes_info.ethtool_modinfo_type = ETH_MODULE_SFF_8436;
+		ephy_info->raw_bytes_info.ethtool_modinfo_eeprom_len = ETH_MODULE_SFF_8436_LEN;
+	} else {
+		ephy_info->raw_bytes_info.ethtool_modinfo_type = ETH_MODULE_SFF_8636;
+		/* ETH_MODULE_SFF_8636_LEN can not work with ethtool */
+		ephy_info->raw_bytes_info.ethtool_modinfo_eeprom_len =
+				ETH_MODULE_SFF_8636_MAX_LEN;
+	}
 
 out:
 	return status;
@@ -3076,7 +3296,7 @@ out:
 static void ephy_mem_dump_basic_raw_sfp_sff8472(struct nse_hw *hw, struct nse_ephy_info *ephy_info)
 {
 	struct device *dev = nse_hw_to_dev(hw);
-	u8 *m = ephy_info->sfp_info.sff8472_info.mem_a0;
+	u8 *m = ephy_info->raw_bytes_info.sff8472_bytes.mem_a0;
 	char str[32];
 
 	dev_info(dev, "SFP(SFF8472) mem - A0h\n");
@@ -3140,7 +3360,7 @@ static void ephy_mem_dump_basic_raw_sfp_sff8472(struct nse_hw *hw, struct nse_ep
 static void ephy_mem_dump_basic_raw_qsfp_sff8636(struct nse_hw *hw, struct nse_ephy_info *ephy_info)
 {
 	struct device *dev = nse_hw_to_dev(hw);
-	u8 *m = ephy_info->qsfp_info.sff8636_info.mem_lp_up0;
+	u8 *m = ephy_info->raw_bytes_info.sff8636_bytes.mem_lp_up0;
 	char str[32];
 
 	dev_info(dev, "QSFP(SFF8636) mem - A0h - lower page\n");
@@ -3212,17 +3432,11 @@ static void ephy_mem_dump_basic_raw_cmis(struct nse_hw *hw,
 					 struct nse_ephy_info *ephy_info, u32 ephy_type)
 {
 	struct device *dev = nse_hw_to_dev(hw);
-	struct xsfp_cmis_info *ci;
 	u8 *m;
 	char str[32];
 	int i = 0, j = 0;
 
-	if (ephy_type == EPHY_TYPE_SFP)
-		ci = &ephy_info->sfp_info.cmis_info;
-	else
-		ci = &ephy_info->qsfp_info.cmis_info;
-
-	m = ci->mem_lp_up0;
+	m = ephy_info->raw_bytes_info.cmis_bytes.mem_lp_up0;
 
 	dev_info(dev, "%s(CMIS) mem - lower page\n", (ephy_type == EPHY_TYPE_SFP) ? "SFP" : "QSFP");
 
@@ -3285,7 +3499,7 @@ static void ephy_mem_dump_basic_raw_cmis(struct nse_hw *hw,
 	if (m[2] & BIT(7))	/* flat memory, no other pages */
 		return;
 
-	m = ci->mem_up1;
+	m = ephy_info->raw_bytes_info.cmis_bytes.mem_up1;
 
 	dev_info(dev, "%s(CMIS) mem - page 01\n", (ephy_type == EPHY_TYPE_SFP) ? "SFP" : "QSFP");
 
@@ -3338,6 +3552,7 @@ static void ephy_mem_dump_basic_parsing_result_sfp_sff8472(struct nse_hw *hw,
 	dev_info(dev, "\t impl_tx_fault=%d\n", sfp_info->sff8472_info.impl_tx_fault);
 	dev_info(dev, "\t impl_rx_los=%d\n", sfp_info->sff8472_info.impl_rx_los);
 
+	dev_info(dev, "\t impl_mem_a2=%d\n", sfp_info->sff8472_info.impl_mem_a2);
 	dev_info(dev, "\t need_addr_change=%d\n", sfp_info->sff8472_info.need_addr_change);
 
 	dev_info(dev, "\t cable_tech=%d\n", sfp_info->sff8472_info.cable_tech);
@@ -3459,7 +3674,7 @@ static void ephy_mem_parse_basic_cmis(struct nse_hw *hw,
 	else
 		ci = &ephy_info->qsfp_info.cmis_info;
 
-	m = ci->mem_lp_up0;
+	m = ephy_info->raw_bytes_info.cmis_bytes.mem_lp_up0;
 
 	ci->media_type = m[85];
 
@@ -3488,7 +3703,7 @@ static void ephy_mem_parse_basic_cmis(struct nse_hw *hw,
 	ci->media_if_tech = m[212];
 
 	if (!ci->mem_model) {	/* Paged memory */
-		m = ci->mem_up1;
+		m = ephy_info->raw_bytes_info.cmis_bytes.mem_up1;
 
 		ci->supported_pages_adv = m[(142 - 128)];
 
@@ -3650,7 +3865,7 @@ static void ephy_mem_parse_basic_sfp_sff8472(struct nse_hw *hw, struct nse_ephy_
 	struct nse_ephy_sfp_info *sfp_info = &ephy_info->sfp_info;
 	struct sfp_sff8472_info *sff8472_info = &sfp_info->sff8472_info;
 	struct ethtool_link_ksettings *mod_lks = &ephy_info->mod_lks;
-	u8 *m = sfp_info->sff8472_info.mem_a0;
+	u8 *m = ephy_info->raw_bytes_info.sff8472_bytes.mem_a0;
 
 	ephy_info->mod_supported_link_speeds = 0;
 	ephy_info->mod_supported_link_types = 0;
@@ -3663,6 +3878,7 @@ static void ephy_mem_parse_basic_sfp_sff8472(struct nse_hw *hw, struct nse_ephy_
 	sff8472_info->impl_tx_fault = !!(m[65] & BIT(3));
 	sff8472_info->impl_rx_los = !!(m[65] & BIT(1));
 
+	sff8472_info->impl_mem_a2 = !!(m[92] & BIT(6));
 	sff8472_info->need_addr_change = !!(m[92] & BIT(2));
 
 	sff8472_info->cable_tech = m[8];
@@ -3769,7 +3985,7 @@ static void ephy_mem_parse_basic_qsfp_sff8636(struct nse_hw *hw, struct nse_ephy
 	struct nse_ephy_qsfp_info *qsfp_info = &ephy_info->qsfp_info;
 	struct qsfp_sff8636_info *sff8636_info = &qsfp_info->sff8636_info;
 	struct ethtool_link_ksettings *mod_lks = &ephy_info->mod_lks;
-	u8 *m = qsfp_info->sff8636_info.mem_lp_up0;
+	u8 *m = ephy_info->raw_bytes_info.sff8636_bytes.mem_lp_up0;
 	u8 val;
 
 	ephy_info->mod_supported_link_speeds = 0;
@@ -4058,6 +4274,273 @@ static void ephy_mem_parse_basic(struct nse_hw *hw)
 	}
 }
 
+int nse_ethtool_get_module_info(struct net_device *netdev, struct ethtool_modinfo *modinfo)
+{
+	struct nse_netdev_priv *np = netdev_priv(netdev);
+	struct nse_vsi *vsi = np->vsi;
+	struct nse_pf *pf = vsi->back;
+	struct nse_hw *hw = &pf->hw;
+	struct nse_lmac_phy_info *lpinfo = &hw->port_info->lmac_phy_info;
+	struct nse_ephy_info *epinfo = &lpinfo->ephy_info;
+	struct xsfp_raw_bytes_info *rbinfo = &epinfo->raw_bytes_info;
+	struct device *dev = nse_pf_to_dev(pf);
+	enum nse_status status;
+	int ret = 0;
+
+	nse_lmac_phy_lock(hw);
+
+	if (!nse_is_nic_use_ephy(hw->nic_type) ||
+	    (lpinfo->static_flags & LMAC_PHY_STATIC_FLAG_EPHY_FTYPE)) {
+		ret = -EOPNOTSUPP;
+		goto out;
+	}
+
+	status = ephy_status_get_1st(hw);
+	if (status) {
+		nse_debug(hw, NSE_DBG_LMAC_PHY, "get module present info fail\n");
+		ret = -ENODEV;
+		goto out;
+	}
+
+	if (!ephy_status_is_module_present(hw, true)) {
+		nse_debug(hw, NSE_DBG_LMAC_PHY, "module not present\n");
+		ret = -ENODEV;
+		goto out;
+	}
+
+	if (!rbinfo->valid) {
+		nse_debug(hw, NSE_DBG_LMAC_PHY, "module bytes not read ready yet.\n");
+		ret = -EAGAIN;
+		goto out;
+	}
+
+	if (!rbinfo->ethtool_modinfo_type || !rbinfo->ethtool_modinfo_eeprom_len) {
+		nse_debug(hw, NSE_DBG_LMAC_PHY, "modinfo type or eeprom_len not set yet ? retry again\n");
+		ret = -EAGAIN;
+		goto out;
+	}
+
+	if (rbinfo->mng_if_type == XSFP_MNG_IF_TYPE_CMIS) {
+		dev_err(dev, "[%s] CMIS not support yet.\n", __func__);
+		ret = -EOPNOTSUPP;
+		goto out;
+	}
+
+	modinfo->type = rbinfo->ethtool_modinfo_type;
+	modinfo->eeprom_len = rbinfo->ethtool_modinfo_eeprom_len;
+
+out:
+	nse_lmac_phy_unlock(hw);
+	return ret;
+}
+
+static int get_module_eeprom_sfp_sff8472(struct nse_hw *hw,
+					 struct ethtool_eeprom *ee, u8 *data)
+{
+	struct nse_lmac_phy_info *lpinfo = &hw->port_info->lmac_phy_info;
+	struct nse_ephy_info *epinfo = &lpinfo->ephy_info;
+	struct xsfp_raw_bytes_info *rbinfo = &epinfo->raw_bytes_info;
+	struct device *dev = nse_hw_to_dev(hw);
+	u32 bytes_start, bytes_end;
+	enum nse_status status;
+	u8 bytes_len_out;
+	u32 i, j;
+	bool bytes_ready_in_cbuf = false;
+	int ret = 0;
+
+	bytes_start = ee->offset;
+	bytes_end = ee->offset + ee->len;
+
+	if (bytes_end > rbinfo->ethtool_modinfo_eeprom_len) {
+		dev_err(dev, "[%s] BAD val: ee->offset=%d, len=%d out of range=%d\n",
+					__func__, ee->offset, ee->len,
+						rbinfo->ethtool_modinfo_eeprom_len);
+		ret = -ERANGE;
+		goto out;
+	}
+
+	status = nse_aq_ephy_cmd_sfp_query_bytes_ready_in_cbuf(hw, &bytes_ready_in_cbuf);
+	if (!status) {
+		if (!bytes_ready_in_cbuf) {
+			nse_debug(hw, NSE_DBG_LMAC_PHY, "[%s] bytes_ready_in_cbuf=false, retry again later\n",
+				  __func__);
+			ret = -EAGAIN;
+			goto out;
+		}
+	}
+
+	/* need to read address A2h */
+	if (bytes_end > 256 && rbinfo->sff8472_bytes.impl_mem_a2) {
+
+		bytes_len_out = 0;
+
+		status = nse_aq_ephy_cmd_sfp_read_bytes(hw, false, 0xA2, XSFP_MNG_IF_TYPE_SFF8472,
+							0, 0, 0, 127,	/* skip 127 - Page Select */
+							rbinfo->sff8472_bytes.mem_a2,
+								&bytes_len_out);
+		if (status || bytes_len_out != 127) {
+			nse_debug(hw, NSE_DBG_LMAC_PHY, "[%s, %d] FAIL: read 0xA2 bytes, status=%d, bytes_len_out=%d, but it's OK\n",
+						__func__, __LINE__, status, bytes_len_out);
+		}
+	}
+
+
+	for (i = 0; i < ee->len; i++) {
+		j = bytes_start + i;
+
+		if (j < 127)
+			data[i] = rbinfo->sff8472_bytes.mem_a0[j];
+		else if (j >= 128 && j <= 255)
+			data[i] = 0;	/* A0h - [128, 255] - Reserved SFF-8079 (128 bytes) */
+		else if (j >= 256 && j <= 382)
+			data[i] = rbinfo->sff8472_bytes.mem_a2[(j - 256)];
+		else
+			data[i] = 0;	/* A2 - what pages ? just leave this part unfilled */
+	}
+
+out:
+	return ret;
+}
+
+static int get_module_eeprom_qsfp_sff8636(struct nse_hw *hw,
+					  struct ethtool_eeprom *ee, u8 *data)
+{
+	struct nse_lmac_phy_info *lpinfo = &hw->port_info->lmac_phy_info;
+	struct nse_ephy_info *epinfo = &lpinfo->ephy_info;
+	struct xsfp_raw_bytes_info *rbinfo = &epinfo->raw_bytes_info;
+	struct device *dev = nse_hw_to_dev(hw);
+	u32 bytes_start, bytes_end;
+	enum nse_status status;
+	u8 bytes_len_out;
+	u32 i, j;
+	bool bytes_ready_in_cbuf = false;
+	int ret = 0;
+
+	bytes_start = ee->offset;
+	bytes_end = ee->offset + ee->len;
+
+	if (bytes_end > rbinfo->ethtool_modinfo_eeprom_len) {
+		dev_err(dev, "[%s] BAD val: ee->offset=%d, len=%d out of range=%d\n",
+					__func__, ee->offset, ee->len,
+						rbinfo->ethtool_modinfo_eeprom_len);
+		ret = -ERANGE;
+		goto out;
+	}
+
+	status = nse_aq_ephy_cmd_qsfp_query_bytes_ready_in_cbuf(hw, &bytes_ready_in_cbuf);
+	if (!status) {
+		if (!bytes_ready_in_cbuf) {
+			nse_debug(hw, NSE_DBG_LMAC_PHY, "[%s] bytes_ready_in_cbuf=false, retry again later\n",
+				  __func__);
+			ret = -EAGAIN;
+			goto out;
+		}
+	}
+
+	/* request reading Interrupt Flags (Bytes 3-21), Temperature,
+	 * Supply Voltage (Bytes 22 - 27)
+	 */
+	bytes_len_out = 0;
+
+	status = nse_aq_ephy_cmd_qsfp_read_bytes(hw, false, 0xA0, XSFP_MNG_IF_TYPE_SFF8636,
+						0, 0, 3, 25,
+						&rbinfo->sff8636_bytes.mem_lp_up0[3],
+							&bytes_len_out);
+	if (status || bytes_len_out != 25) {
+		nse_debug(hw, NSE_DBG_LMAC_PHY, "[%s, %d] FAIL: read 0xA0 Interrupt Flags and others, status=%d, bytes_len_out=%d, but it's OK\n",
+					__func__, __LINE__, status, bytes_len_out);
+	}
+
+
+	for (i = 0; i < ee->len; i++) {
+		j = bytes_start + i;
+
+		if (j < 256)
+			data[i] = rbinfo->sff8636_bytes.mem_lp_up0[j];
+		else
+			data[i] = 0;	/* don't return those Optional Upper Pages */
+	}
+
+out:
+	return ret;
+}
+
+int nse_ethtool_get_module_eeprom(struct net_device *netdev,
+				  struct ethtool_eeprom *ee, u8 *data)
+{
+	struct nse_netdev_priv *np = netdev_priv(netdev);
+	struct nse_vsi *vsi = np->vsi;
+	struct nse_pf *pf = vsi->back;
+	struct nse_hw *hw = &pf->hw;
+	struct nse_lmac_phy_info *lpinfo = &hw->port_info->lmac_phy_info;
+	struct nse_ephy_info *epinfo = &lpinfo->ephy_info;
+	struct xsfp_raw_bytes_info *rbinfo = &epinfo->raw_bytes_info;
+	struct device *dev = nse_pf_to_dev(pf);
+	enum nse_status status;
+	int ret = 0;
+
+	nse_debug(hw, NSE_DBG_LMAC_PHY, "[%s] ee offset=%d, len=%d\n",
+		  __func__, ee->offset, ee->len);
+
+	nse_lmac_phy_lock(hw);
+
+	if (!nse_is_nic_use_ephy(hw->nic_type) ||
+	    (lpinfo->static_flags & LMAC_PHY_STATIC_FLAG_EPHY_FTYPE)) {
+		ret = -EOPNOTSUPP;
+		goto out;
+	}
+
+	status = ephy_status_get_1st(hw);
+	if (status) {
+		nse_debug(hw, NSE_DBG_LMAC_PHY, "get module present info fail\n");
+		ret = -ENODEV;
+		goto out;
+	}
+
+	if (!ephy_status_is_module_present(hw, true)) {
+		nse_debug(hw, NSE_DBG_LMAC_PHY, "module not present\n");
+		ret = -ENODEV;
+		goto out;
+	}
+
+	if (!rbinfo->valid) {
+		nse_debug(hw, NSE_DBG_LMAC_PHY, "module bytes not read ready yet.\n");
+		ret = -EAGAIN;
+		goto out;
+	}
+
+	if (!rbinfo->ethtool_modinfo_type || !rbinfo->ethtool_modinfo_eeprom_len) {
+		nse_debug(hw, NSE_DBG_LMAC_PHY, "modinfo type or eeprom_len not set yet ? retry again\n");
+		ret = -EAGAIN;
+		goto out;
+	}
+
+	if (rbinfo->mng_if_type == XSFP_MNG_IF_TYPE_CMIS) {
+		dev_err(dev, "[%s] CMIS not support yet.\n", __func__);
+		ret = -EOPNOTSUPP;
+		goto out;
+	}
+
+	if (epinfo->ephy_type == EPHY_TYPE_SFP) {
+		ret = get_module_eeprom_sfp_sff8472(hw, ee, data);
+		if (ret)
+			dev_err(dev, "[%s] FAIL: get_module_eeprom_sfp_sff8472(), ret=%d\n",
+				__func__, ret);
+	} else if (epinfo->ephy_type == EPHY_TYPE_QSFP) {
+		ret = get_module_eeprom_qsfp_sff8636(hw, ee, data);
+		if (ret)
+			dev_err(dev, "[%s] FAIL: get_module_eeprom_qsfp_sff8636(), ret=%d\n",
+				__func__, ret);
+	} else {
+		dev_err(dev, "[%s] BAD: unknown ephy_type=%d\n",
+			__func__, epinfo->ephy_type);
+	}
+
+out:
+	nse_lmac_phy_unlock(hw);
+	return ret;
+}
+
 enum nse_status
 ephy_prepare_for_link(struct nse_hw *hw)	//on module present
 {
@@ -4122,6 +4605,7 @@ read_temperature_sfp(struct nse_hw *hw)
 	struct nse_ephy_sfp_info *sfp_info = &epinfo->sfp_info;
 	u8 bytes[2] = {0};
 	u8 bytes_len_out = 0;
+	bool bytes_ready_in_cbuf = false;
 	enum nse_status status = NSE_SUCCESS;
 
 	if (sfp_info->mng_if_type != XSFP_MNG_IF_TYPE_SFF8472) {
@@ -4129,6 +4613,16 @@ read_temperature_sfp(struct nse_hw *hw)
 			__func__, sfp_info->mng_if_type);
 		status = NSE_ERR_NOT_IMPL;
 		goto out;
+	}
+
+	status = nse_aq_ephy_cmd_sfp_query_bytes_ready_in_cbuf(hw, &bytes_ready_in_cbuf);
+	if (!status) {
+		if (!bytes_ready_in_cbuf) {
+			nse_debug(hw, NSE_DBG_LMAC_PHY, "[%s] bytes_ready_in_cbuf=false, retry again later\n",
+				  __func__);
+			status = NSE_ERR_AGAIN;
+			goto out;
+		}
 	}
 
 	/* SFF-8472 logic
@@ -4146,18 +4640,18 @@ read_temperature_sfp(struct nse_hw *hw)
 	if (sfp_info->sff8472_info.need_addr_change) {
 		status = nse_aq_ephy_cmd_sfp_8472_addr_change(hw, 0xA2);
 		if (status) {
-			dev_err(dev, "[%s. %d] FAIL: sfp_8472_addr_change(0xA2), status=%d\n",
-				__func__, __LINE__, status);
+			nse_debug(hw, NSE_DBG_LMAC_PHY, "[%s. %d] FAIL: sfp_8472_addr_change(0xA2), status=%d\n",
+				  __func__, __LINE__, status);
 			goto out;
 		}
 	}
 
-	status = nse_aq_ephy_cmd_sfp_read_bytes(hw, true, 0xA2, XSFP_MNG_IF_TYPE_SFF8472,
+	status = nse_aq_ephy_cmd_sfp_read_bytes(hw, false, 0xA2, XSFP_MNG_IF_TYPE_SFF8472,
 											0, 0, 96, 2,
 						bytes, &bytes_len_out);
 	if (status) {
-		dev_err(dev, "[%s. %d] FAIL: sfp_read_bytes(), status=%d\n",
-			__func__, __LINE__, status);
+		nse_debug(hw, NSE_DBG_LMAC_PHY, "[%s. %d] FAIL: sfp_read_bytes(), status=%d\n",
+			  __func__, __LINE__, status);
 		goto out;
 	}
 
@@ -4168,8 +4662,8 @@ read_temperature_sfp(struct nse_hw *hw)
 	if (sfp_info->sff8472_info.need_addr_change) {
 		status = nse_aq_ephy_cmd_sfp_8472_addr_change(hw, 0xA0);
 		if (status) {
-			dev_err(dev, "[%s. %d] FAIL: sfp_8472_addr_change(0xA0), status=%d\n",
-				__func__, __LINE__, status);
+			nse_debug(hw, NSE_DBG_LMAC_PHY, "[%s. %d] FAIL: sfp_8472_addr_change(0xA0), status=%d\n",
+				  __func__, __LINE__, status);
 			goto out;
 		}
 	}
@@ -4187,6 +4681,7 @@ read_temperature_qsfp(struct nse_hw *hw)
 	struct nse_ephy_qsfp_info *qsfp_info = &epinfo->qsfp_info;
 	u8 bytes[22] = {0};
 	u8 bytes_len_out = 0;
+	bool bytes_ready_in_cbuf = false;
 	enum nse_status status = NSE_SUCCESS;
 
 	if (qsfp_info->mng_if_type != XSFP_MNG_IF_TYPE_SFF8636) {
@@ -4194,6 +4689,16 @@ read_temperature_qsfp(struct nse_hw *hw)
 			__func__, qsfp_info->mng_if_type);
 		status = NSE_ERR_NOT_IMPL;
 		goto out;
+	}
+
+	status = nse_aq_ephy_cmd_qsfp_query_bytes_ready_in_cbuf(hw, &bytes_ready_in_cbuf);
+	if (!status) {
+		if (!bytes_ready_in_cbuf) {
+			nse_debug(hw, NSE_DBG_LMAC_PHY, "[%s] bytes_ready_in_cbuf=false, retry again later\n",
+				  __func__);
+			status = NSE_ERR_AGAIN;
+			goto out;
+		}
 	}
 
 	/* SFF-8636 logic
@@ -4209,12 +4714,12 @@ read_temperature_qsfp(struct nse_hw *hw)
 	 * So as a workaround, we read Byte 2 - 23, then workaround this.
 	 */
 
-	status = nse_aq_ephy_cmd_qsfp_read_bytes(hw, true, 0xA0, XSFP_MNG_IF_TYPE_SFF8636,
+	status = nse_aq_ephy_cmd_qsfp_read_bytes(hw, false, 0xA0, XSFP_MNG_IF_TYPE_SFF8636,
 											0, 0, 2, 22,
 						 bytes, &bytes_len_out);
 	if (status) {
-		dev_err(dev, "[%s. %d] FAIL: sfp_read_bytes(), status=%d\n",
-			__func__, __LINE__, status);
+		nse_debug(hw, NSE_DBG_LMAC_PHY, "[%s. %d] FAIL: sfp_read_bytes(), status=%d\n",
+			  __func__, __LINE__, status);
 		goto out;
 	}
 
@@ -4266,7 +4771,6 @@ ephy_read_temperature(struct nse_hw *hw)
 enum nse_status
 nse_lmac_phy_ephy_read_temperature(struct nse_hw *hw, int *temperature)
 {
-	struct device *dev = nse_hw_to_dev(hw);
 	struct nse_ephy_info *epinfo = &hw->port_info->lmac_phy_info.ephy_info;
 	enum nse_status status = NSE_SUCCESS;
 
@@ -4282,7 +4786,8 @@ nse_lmac_phy_ephy_read_temperature(struct nse_hw *hw, int *temperature)
 
 	status = ephy_read_temperature(hw);
 	if (status) {
-		dev_warn(dev, "[%s] FAIL: ephy_read_temp(), status=%d\n", __func__, status);
+		nse_debug(hw, NSE_DBG_LMAC_PHY, "[%s] FAIL: ephy_read_temp(), status=%d\n",
+			  __func__, status);
 		goto out;
 	}
 
@@ -4299,7 +4804,7 @@ void nse_lmac_phy_ephy_dump_info(struct nse_hw *hw)
 {
 	struct device *dev = nse_hw_to_dev(hw);
 
-	if (nse_is_nic_use_ephy(hw->nic_type)) {
+	if (!nse_is_nic_use_ephy(hw->nic_type)) {
 		dev_info(dev, "This NIC does not use ephy\n");
 		return;
 	}
@@ -4351,9 +4856,12 @@ lmac_phy_eth_set_link(struct nse_hw *hw, u32 speed, u64 link_type, u32 fec)
 	}
 
 	if (lpinfo->static_flags & LMAC_PHY_STATIC_FLAG_USE_TEST_PHY) {
+
+#if defined(NSE_DEBUG_EXT)
 		if (nse_palladium_debug) {
 			nse_debug(hw, NSE_DBG_LMAC_PHY, "\t PLDM does not need to test_phy_startup()\n");
 		} else {
+#endif
 			status = nse_aq_test_phy_startup(hw);
 			if (status) {
 				nse_debug(hw, NSE_DBG_LMAC_PHY,
@@ -4361,8 +4869,10 @@ lmac_phy_eth_set_link(struct nse_hw *hw, u32 speed, u64 link_type, u32 fec)
 					status);
 				status = NSE_SUCCESS;
 			}
-		}
 
+#if defined(NSE_DEBUG_EXT)
+		}
+#endif
 		goto out;
 	}
 
@@ -5193,7 +5703,7 @@ void nse_lmac_phy_subtask(struct nse_pf *pf)
 				"[%s, %d] FAIL: ephy_status_get_1st(), status=%d, retry again\n",
 				__func__, __LINE__, status);
 
-			ephy_reset_info(hw);
+			ephy_reset_info(hw, true);
 
 			overwrite_link_info = true;	/* link_status = false, speed = UNKNOWN */
 
@@ -5210,7 +5720,7 @@ void nse_lmac_phy_subtask(struct nse_pf *pf)
 			nse_debug(hw, NSE_DBG_LMAC_PHY, "[%s, %d] ephy mod not present\n",
 				  __func__, __LINE__);
 
-			ephy_reset_info(hw);
+			ephy_reset_info(hw, true);
 
 			overwrite_link_info = true;
 
@@ -5224,10 +5734,14 @@ void nse_lmac_phy_subtask(struct nse_pf *pf)
 		    !ephy_status_is_module_present(hw, false)) {
 			status = ephy_mem_read_basic(hw);
 			if (status) {
-				dev_err(dev,
+				if (status == NSE_ERR_AGAIN)
+					nse_debug(hw, NSE_DBG_LMAC_PHY, "[%s, %d] ephy mem_read_basic() would retry again util bytes_ready_in_cbuf\n",
+						  __func__, __LINE__);
+				else
+					dev_err(dev,
 "[%s, %d] FAIL: ephy mem_read_basic(), status=%d, retry again\n", __func__, __LINE__, status);
 
-				ephy_reset_info(hw);
+				ephy_reset_info(hw, true);
 
 				overwrite_link_info = true;
 
@@ -5253,7 +5767,7 @@ void nse_lmac_phy_subtask(struct nse_pf *pf)
 					"[%s, %d] ephy mod is_supported=false, check next time\n",
 					__func__, __LINE__);
 
-				ephy_reset_info(hw);
+				ephy_reset_info(hw, false);
 
 				overwrite_link_info = true;
 
@@ -5279,7 +5793,7 @@ void nse_lmac_phy_subtask(struct nse_pf *pf)
 				dev_err(dev, "[%s, %d] FAIL: ephy prepare_for_link(), status=%d\n",
 					__func__, __LINE__, status);
 
-				ephy_reset_info(hw);
+				ephy_reset_info(hw, false);
 
 				overwrite_link_info = true;
 
@@ -5292,10 +5806,14 @@ void nse_lmac_phy_subtask(struct nse_pf *pf)
 
 		status = ephy_status_get_2nd(hw);
 		if (status) {
-			dev_err(dev, "[%s, %d] FAIL: ephy status_get_2nd(), status=%d\n",
-				__func__, __LINE__, status);
+			if (status == NSE_ERR_AGAIN)
+				nse_debug(hw, NSE_DBG_LMAC_PHY, "[%s, %d] status_get_2nd() tell us retry again\n",
+					  __func__, __LINE__);
+			else
+				dev_err(dev, "[%s, %d] FAIL: ephy status_get_2nd(), status=%d\n",
+					__func__, __LINE__, status);
 
-			ephy_reset_info(hw);
+			ephy_reset_info(hw, false);
 
 			overwrite_link_info = true;
 
@@ -5635,14 +6153,16 @@ lmac_phy_init_early_amber(struct nse_hw *hw, struct nse_lmac_phy_info *lpinfo)
 	enum nse_status status = NSE_SUCCESS;
 
 	if (hw->hw_conf.hw_platform == NSE_HW_PLATFORM_ASIC) {
+
+#if defined(NSE_DEBUG_EXT)
 		if (nse_palladium_debug) {
 			hw->nic_type = NSE_NIC_TYPE_1000BASE_T;
 
 			lpinfo->static_flags = (LMAC_PHY_STATIC_FLAG_USE_TEST_PHY |
 						LMAC_PHY_STATIC_FLAG_EPHY_FTYPE |
 						LMAC_PHY_STATIC_FLAG_CONSIDER_ALWAYS_LINK_UP);
-
 		} else {
+#endif
 			if (hw->device_id == NSE_DEV_ID_AMBER_FDBTACXX ||
 				hw->device_id == NSE_DEV_ID_AMBER_FDBTACRX)
 				hw->nic_type = NSE_NIC_TYPE_QSFP;
@@ -5660,7 +6180,10 @@ lmac_phy_init_early_amber(struct nse_hw *hw, struct nse_lmac_phy_info *lpinfo)
 				status = NSE_ERR_NOT_SUPPORTED;
 				goto out;
 			}
+
+#if defined(NSE_DEBUG_EXT)
 		}
+#endif
 
 	} else {	/* FPGA */
 
@@ -5767,7 +6290,7 @@ lmac_phy_init_early_amber(struct nse_hw *hw, struct nse_lmac_phy_info *lpinfo)
 		goto out;
 	}
 
-	ephy_reset_info(hw);
+	ephy_reset_info(hw, true);
 
 	init_lks_amber(hw, lpinfo);
 
@@ -5870,7 +6393,7 @@ lmac_phy_init_early_ms(struct nse_hw *hw, struct nse_lmac_phy_info *lpinfo)
 
 	lpinfo->ephy_info.ephy_type = EPHY_TYPE_QSFP;
 
-	ephy_reset_info(hw);
+	ephy_reset_info(hw, true);
 
 	init_lks_ms(hw, lpinfo);
 
@@ -5891,11 +6414,14 @@ nse_lmac_phy_init_early(struct nse_hw *hw)
 
 	lpinfo->poll_link_info_prev = jiffies;
 	lpinfo->poll_link_info_period = NSE_LMAC_PHY_POLL_LINK_INFO_PERIOD;
+
+#if defined(NSE_DEBUG_EXT)
 	if (hw->mac_type == NSE_MAC_TYPE_AMBER) {
 		if (nse_palladium_debug)
 			lpinfo->poll_link_info_period =
 				NSE_LMAC_PHY_POLL_LINK_INFO_PERIOD_VERY_LONG;
 	}
+#endif
 
 	lpinfo->req_link_speed_from_user = NSE_AQ_LINK_SPEED_UNKNOWN;
 	lpinfo->req_link_types_from_user = NSE_ETH_LINK_TYPE_UNKNOWN;
@@ -5960,7 +6486,7 @@ nse_lmac_phy_prepare_for_reset(struct nse_hw *hw, enum nse_reset_req reset_type)
 
 	nse_lmac_phy_lock(hw);
 
-	ephy_reset_info(hw);
+	ephy_reset_info(hw, true);
 
 	lpinfo->dyn_flags = LMAC_PHY_DYN_FLAG_NOT_RUN_SUBTASK;
 

@@ -118,6 +118,8 @@ nse_tc_setup_pedit_action(struct net_device *filter_dev, struct nse_tc_flower_fl
 	u8 htype;
 	u32 mask, val, offset;
 	u32 host_mask;
+	struct nse_vsi *vsi = fltr->src_vsi;
+	struct nse_hw *hw = &vsi->back->hw;
 
 	htype = act->mangle.htype;
 	if (htype == FLOW_ACT_MANGLE_UNSPEC) {
@@ -130,7 +132,7 @@ nse_tc_setup_pedit_action(struct net_device *filter_dev, struct nse_tc_flower_fl
 	val = act->mangle.val;
 	offset = act->mangle.offset;
 
-	netdev_info(filter_dev,
+	nse_debug(hw, NSE_DBG_SW,
 		"Current 32bit mangle: type = 0x%x, off = 0x%x, val = 0x%x, mask = 0x%x\n",
 		htype, offset, val, mask);
 
@@ -291,6 +293,8 @@ nse_tc_police_action(struct net_device *filter_dev, struct nse_tc_flower_fltr *f
 {
 	struct nse_tc_flower_action *tc_action;
 	struct nse_sw_meter_param *params;
+	struct nse_vsi *vsi = fltr->src_vsi;
+	struct nse_hw *hw = &vsi->back->hw;
 
 	tc_action = &fltr->action;
 	params = &tc_action->meter_param;
@@ -309,7 +313,7 @@ nse_tc_police_action(struct net_device *filter_dev, struct nse_tc_flower_fltr *f
 	params->index = act->hw_index;
 	tc_action->flags |= NSE_TC_FLWR_ACTION_METER;
 
-	netdev_info(filter_dev,
+	nse_debug(hw, NSE_DBG_SW,
 		"Success to set tc police action: meter idx = %d, mode = %d, rate = %lld, burst = %d\n",
 		params->index, params->mode, params->rate, params->burst);
 
@@ -329,6 +333,8 @@ nse_tc_ct_action(struct net_device *filter_dev, struct nse_tc_flower_fltr *fltr,
 			     const struct flow_action_entry *act)
 {
 	struct nse_tc_flower_action *tc_action;
+	struct nse_vsi *vsi = fltr->src_vsi;
+	struct nse_hw *hw = &vsi->back->hw;
 
 	tc_action = &fltr->action;
 
@@ -342,7 +348,7 @@ nse_tc_ct_action(struct net_device *filter_dev, struct nse_tc_flower_fltr *fltr,
 		return -EOPNOTSUPP;
 	}
 
-	netdev_info(filter_dev,
+	nse_debug(hw, NSE_DBG_SW,
 		"Success to set tc ct action: zone = 0x%x, ct_action = %d\n",
 		act->ct.zone, act->ct.action);
 
@@ -367,18 +373,20 @@ nse_tc_vlan_action(struct net_device *filter_dev, struct nse_tc_flower_fltr *flt
 			     const struct flow_action_entry *act)
 {
 	struct nse_tc_flower_action *tc_action;
+	struct nse_vsi *vsi = fltr->src_vsi;
+	struct nse_hw *hw = &vsi->back->hw;
 
 	tc_action = &fltr->action;
 
 	switch (act->id) {
 	case FLOW_ACTION_VLAN_POP:
 		tc_action->flags |= NSE_TC_FLWR_ACTION_VLAN_POP;
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"Success to set tc vlan pop action\n");
 		break;
 	case FLOW_ACTION_VLAN_PUSH:
 
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"Success to set tc vlan push action: Vid = 0x%x, Prio = %d, vlan_proto = 0x%x\n",
 			act->vlan.vid, act->vlan.prio, act->vlan.proto);
 
@@ -552,6 +560,7 @@ nse_tc_setup_redirect_action(struct net_device *filter_dev, struct nse_vsi *vsi,
 	struct nse_tc_flower_action	*action	= &fltr->action;
 	u16 dest_cnt = action->dest_cnt, i;
 	struct nse_vsi *dest_vsi = NULL, *src_vsi = NULL;
+	struct nse_hw *hw = &vsi->back->hw;
 
 	if (dest_cnt >= NSE_MAX_FLOW_FWD_DEST) {
 		netdev_err(filter_dev, "num of redirect actions up to max limit\n");
@@ -572,12 +581,12 @@ nse_tc_setup_redirect_action(struct net_device *filter_dev, struct nse_vsi *vsi,
 		int err = 0;
 
 		err = dev_get_port_parent_id(filter_dev, &a_id, true);
-		netdev_info(filter_dev, "err = %d, its parent id len = %d\n", err, a_id.id_len);
+		nse_debug(hw, NSE_DBG_SW, "err = %d, its parent id len = %d\n", err, a_id.id_len);
 		print_hex_dump(KERN_INFO, "\t", DUMP_PREFIX_ADDRESS,
 			16, 1, a_id.id, MAX_PHYS_ITEM_ID_LEN, false);
 
 		err = dev_get_port_parent_id(target_dev, &a_id, true);
-		netdev_info(target_dev, "err = %d, its parent id len = %d\n", err, a_id.id_len);
+		nse_debug(hw, NSE_DBG_SW, "err = %d, its parent id len = %d\n", err, a_id.id_len);
 		print_hex_dump(KERN_INFO, "\t", DUMP_PREFIX_ADDRESS,
 			16, 1, a_id.id, MAX_PHYS_ITEM_ID_LEN, false);
 	}
@@ -608,7 +617,7 @@ nse_tc_setup_redirect_action(struct net_device *filter_dev, struct nse_vsi *vsi,
 	src_vsi = vsi;
 	dest_vsi = action->dests[dest_cnt].dest_vsi;
 	if (!nse_is_both_vsi_in_lag(src_vsi, dest_vsi)) {
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"src vsi id = %d, its sw id = %d, dest vsi id = %d, its sw id = %d\n",
 			src_vsi->vsi_abs_num, src_vsi->port_info->sw_id,
 			dest_vsi->vsi_abs_num, dest_vsi->port_info->sw_id);
@@ -1044,6 +1053,8 @@ nse_tc_enc_iph_parse(struct net_device *filter_dev,
 	struct flow_rule *rule = flow_cls_offload_flow_rule(f);
 	struct flow_match_control enc_control;
 	int err = 0;
+	struct nse_vsi *vsi = fltr->src_vsi;
+	struct nse_hw *hw = &vsi->back->hw;
 
 	flow_rule_match_enc_control(rule, &enc_control);
 
@@ -1054,12 +1065,12 @@ nse_tc_enc_iph_parse(struct net_device *filter_dev,
 
 		flow_rule_match_enc_ipv4_addrs(rule, &match);
 
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"Start to set KEY_ENC_IPV4_ADDRS match\n");
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"\t ipv4 dst addrs key(%pI4)/mask(%pI4)\n",
 				&match.key->dst, &match.mask->dst);
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"\t ipv4 src addrs key(%pI4)/mask(%pI4)\n",
 				&match.key->src, &match.mask->src);
 
@@ -1076,12 +1087,12 @@ nse_tc_enc_iph_parse(struct net_device *filter_dev,
 
 		flow_rule_match_enc_ipv6_addrs(rule, &match);
 
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"Start to set KEY_ENC_IPV6_ADDRS match\n");
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"\t ipv6 dst addrs key(%pI6c)/mask(%pI6c)\n",
 				&match.key->dst, &match.mask->dst);
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"\t ipv6 src addrs key(%pI6c)/mask(%pI6c)\n",
 				&match.key->src, &match.mask->src);
 
@@ -1098,12 +1109,12 @@ nse_tc_enc_iph_parse(struct net_device *filter_dev,
 
 		flow_rule_match_enc_ip(rule, &match);
 
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"Start to set KEY_ENC_IP tos/ttl match\n");
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"\t ip tos key(0x%x)/mask(0x%x)\n",
 				match.key->tos, match.mask->tos);
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"\t ip ttl key(0x%x)/mask(0x%x)\n",
 				match.key->ttl, match.mask->ttl);
 
@@ -3582,7 +3593,7 @@ attach_fltr_to_encap_entry:
 	fltr->action.encaps[encap_index].index = encap_index;
 	mutex_unlock(&e->fltr_list_lock);
 
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 		"Success to attach fltr encap item (%p) to encap entry(%p): encap idx = %d\n",
 		&fltr->action.encaps[encap_index], e, encap_index);
 
@@ -4294,7 +4305,7 @@ nse_tc_add_large_action(struct nse_vsi *vsi,
 #endif
 
 	if (du_act_cnt == 1 && !au_task_cnt) {
-		dev_info(nse_hw_to_dev(hw), "It is single action! act type = %d\n",
+		nse_debug(hw, NSE_DBG_SW, "It is single action! act type = %d\n",
 			node_state->du_action[0].du_act);
 		ret = 0;
 		goto add_large_action_to_single;
@@ -4606,11 +4617,11 @@ nse_eswitch_add_tc_fltr(struct nse_vsi *vsi,
 		goto exit;
 	}
 
-	dev_info(nse_hw_to_dev(hw), "[%s, %d] prot_header num = %d\n",
+	nse_debug(hw, NSE_DBG_SW, "[%s, %d] prot_header num = %d\n",
 		__func__, __LINE__, lkups_cnt);
 
 	for (i = 0; i < lkups_cnt; i++)
-		dev_info(nse_hw_to_dev(hw), "[%s, %d] prot_header[%d]_type = %d\n",
+		nse_debug(hw, NSE_DBG_SW, "[%s, %d] prot_header[%d]_type = %d\n",
 			__func__, __LINE__, i, lkups[i].type);
 
 	if (fltr->tunnel_type == TNL_VXLAN)
@@ -4680,6 +4691,7 @@ nse_parse_cls_flower(struct net_device *filter_dev, struct nse_vsi *vsi,
 	struct flow_dissector *dissector;
 	bool match_inner_ecn = true;
 	u32 unsupported_keys;
+	struct nse_hw *hw = &vsi->back->hw;
 
 	/* headers point to outer header default*/
 	headers = &fltr->outer_headers;
@@ -4705,15 +4717,16 @@ nse_parse_cls_flower(struct net_device *filter_dev, struct nse_vsi *vsi,
 	unsupported_keys &= ~BIT(FLOW_DISSECTOR_KEY_PPPOE);
 
 	if (dissector->used_keys & unsupported_keys) {
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"Tc flower used key(=0x%x) Unsupported\n",
 				(unsigned int)dissector->used_keys);
 		NL_SET_ERR_MSG_MOD(fltr->extack, "Unsupported key used");
 		return -EOPNOTSUPP;
 	}
 
-	netdev_info(filter_dev, "Tc flower used key = 0x%x\n", (unsigned int)dissector->used_keys);
-	netdev_info(filter_dev, "Tc flower src chain id = %d\n", fltr->chain_id);
+	nse_debug(hw, NSE_DBG_SW, "Tc flower used key = 0x%x\n",
+		  (unsigned int)dissector->used_keys);
+	nse_debug(hw, NSE_DBG_SW, "Tc flower src chain id = %d\n", fltr->chain_id);
 
 	if (nse_is_tunnel_supported(filter_dev)) {
 		int err;
@@ -4768,10 +4781,10 @@ nse_parse_cls_flower(struct net_device *filter_dev, struct nse_vsi *vsi,
 			fltr->flags |= NSE_TC_FLWR_FIELD_ETH_TYPE;
 		}
 
-		netdev_info(filter_dev,	"Start to set KEY_BASIC match:\n");
-		netdev_info(filter_dev,	"\t ethernet_type value(0x%x)/mask(0x%x)\n",
+		nse_debug(hw, NSE_DBG_SW,	"Start to set KEY_BASIC match:\n");
+		nse_debug(hw, NSE_DBG_SW,	"\t ethernet_type value(0x%x)/mask(0x%x)\n",
 			cpu_to_be16(n_proto_key), cpu_to_be16(n_proto_mask));
-		netdev_info(filter_dev,	"\t ip_type value(0x%x)/mask(0x%x)\n",
+		nse_debug(hw, NSE_DBG_SW,	"\t ip_type value(0x%x)/mask(0x%x)\n",
 			match.key->ip_proto, match.mask->ip_proto);
 
 		headers->l2_key.n_proto = cpu_to_be16(n_proto_key);
@@ -4791,9 +4804,11 @@ nse_parse_cls_flower(struct net_device *filter_dev, struct nse_vsi *vsi,
 			ether_addr_copy(headers->l2_mask.dst_mac, match.mask->dst);
 			fltr->flags |= NSE_TC_FLWR_FIELD_DST_MAC;
 
-			netdev_info(filter_dev,	"Start to set KEY_ETH_ADDRS dst match:\n");
-			netdev_info(filter_dev,	"\t DMac Address Value = %pM\n", match.key->dst);
-			netdev_info(filter_dev,	"\t DMac Address Mask = %pM\n", match.mask->dst);
+			nse_debug(hw, NSE_DBG_SW,	"Start to set KEY_ETH_ADDRS dst match:\n");
+			nse_debug(hw, NSE_DBG_SW,	"\t DMac Address Value = %pM\n",
+				  match.key->dst);
+			nse_debug(hw, NSE_DBG_SW,	"\t DMac Address Mask = %pM\n",
+				  match.mask->dst);
 		}
 
 		if (!is_zero_ether_addr(match.key->src)) {
@@ -4801,9 +4816,9 @@ nse_parse_cls_flower(struct net_device *filter_dev, struct nse_vsi *vsi,
 			ether_addr_copy(headers->l2_mask.src_mac, match.mask->src);
 			fltr->flags |= NSE_TC_FLWR_FIELD_SRC_MAC;
 
-			netdev_info(filter_dev, "Start to set KEY_ETH_ADDRS src match:\n");
-			netdev_info(filter_dev, "\t SMac Address Value = %pM\n", match.key->src);
-			netdev_info(filter_dev, "\t SMac Address Mask = %pM\n", match.mask->src);
+			nse_debug(hw, NSE_DBG_SW, "Start to set KEY_ETH_ADDRS src match:\n");
+			nse_debug(hw, NSE_DBG_SW, "\t SMac Address Value = %pM\n", match.key->src);
+			nse_debug(hw, NSE_DBG_SW, "\t SMac Address Mask = %pM\n", match.mask->src);
 		}
 	}
 
@@ -4830,7 +4845,7 @@ nse_parse_cls_flower(struct net_device *filter_dev, struct nse_vsi *vsi,
 			if (match.mask->vlan_id == VLAN_VID_MASK) {
 				fltr->flags |= NSE_TC_FLWR_FIELD_VLAN;
 			} else {
-				netdev_info(filter_dev, "Bad VLAN mask\n");
+				nse_debug(hw, NSE_DBG_SW, "Bad VLAN mask\n");
 				NL_SET_ERR_MSG_MOD(fltr->extack, "Bad VLAN mask");
 				return -EINVAL;
 			}
@@ -4841,10 +4856,10 @@ nse_parse_cls_flower(struct net_device *filter_dev, struct nse_vsi *vsi,
 		if (match.mask->vlan_priority)
 			headers->vlan_hdr.vlan_prio = match.key->vlan_priority;
 
-		netdev_info(filter_dev, "Start to set KEY_VLAN match:\n");
-		netdev_info(filter_dev, "\t Vlan ID Value = 0x%x\n", match.key->vlan_id);
-		netdev_info(filter_dev, "\t Vlan ID Mask must be 0xFFF\n");
-		netdev_info(filter_dev, "\t Vlan priority Value = 0x%x\n",
+		nse_debug(hw, NSE_DBG_SW, "Start to set KEY_VLAN match:\n");
+		nse_debug(hw, NSE_DBG_SW, "\t Vlan ID Value = 0x%x\n", match.key->vlan_id);
+		nse_debug(hw, NSE_DBG_SW, "\t Vlan ID Mask must be 0xFFF\n");
+		nse_debug(hw, NSE_DBG_SW, "\t Vlan priority Value = 0x%x\n",
 			    match.key->vlan_priority);
 	}
 
@@ -4882,7 +4897,7 @@ nse_parse_cls_flower(struct net_device *filter_dev, struct nse_vsi *vsi,
 		}
 
 		if (match.mask->flags & FLOW_DIS_IS_FRAGMENT)
-			netdev_info(filter_dev, "Match on is_fragment, val is %d\n",
+			nse_debug(hw, NSE_DBG_SW, "Match on is_fragment, val is %d\n",
 				!!(match.key->flags & FLOW_DIS_IS_FRAGMENT));
 
 		addr_type = match.key->addr_type;
@@ -4892,12 +4907,12 @@ nse_parse_cls_flower(struct net_device *filter_dev, struct nse_vsi *vsi,
 
 		flow_rule_match_ipv4_addrs(rule, &match);
 
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"Start to set KEY_IPV4_ADDRS match\n");
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"\t ipv4 dst addrs key(%pI4)/mask(%pI4)\n",
 				&match.key->dst, &match.mask->dst);
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"\t ipv4 src addrs key(%pI4)/mask(%pI4)\n",
 				&match.key->src, &match.mask->src);
 
@@ -4909,12 +4924,12 @@ nse_parse_cls_flower(struct net_device *filter_dev, struct nse_vsi *vsi,
 
 		flow_rule_match_ipv6_addrs(rule, &match);
 
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"Start to set KEY_IPV6_ADDRS match\n");
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"\t ipv6 dst addrs key(%pI6c)/mask(%pI6c)\n",
 				&match.key->dst, &match.mask->dst);
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"\t ipv6 src addrs key(%pI6c)/mask(%pI6c)\n",
 				&match.key->src, &match.mask->src);
 
@@ -4944,12 +4959,12 @@ nse_parse_cls_flower(struct net_device *filter_dev, struct nse_vsi *vsi,
 			headers->l3_mask.ttl = match.mask->ttl;
 		}
 
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"Start to set KEY_IP tos/ttl match\n");
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"\t ip tos key(0x%x)/mask(0x%x)\n",
 				headers->l3_key.tos, headers->l3_mask.tos);
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"\t ip ttl key(0x%x)/mask(0x%x)\n",
 				match.key->ttl, match.mask->ttl);
 	}
@@ -4960,14 +4975,14 @@ nse_parse_cls_flower(struct net_device *filter_dev, struct nse_vsi *vsi,
 
 		flow_rule_match_ports(rule, &match);
 
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"Start to set KEY_PORTS match\n");
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"\t ip protocol = 0x%x\n", headers->l3_key.ip_proto);
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"\t src port key(0x%x)/mask(0x%x)\n",
 			match.key->src, match.mask->src);
-		netdev_info(filter_dev,
+		nse_debug(hw, NSE_DBG_SW,
 			"\t dst port key(0x%x)/mask(0x%x)\n",
 			match.key->dst, match.mask->dst);
 
@@ -5022,6 +5037,8 @@ nse_rewrite_match_supported(struct net_device *filter_dev,
 	struct nse_tc_flower_action *tc_action = &fltr->action;
 	bool modify_ip_header = false;
 	u8 ip_proto = 0;
+	struct nse_vsi *vsi = fltr->src_vsi;
+	struct nse_hw *hw = &vsi->back->hw;
 
 	if (fltr->action.flags & NSE_TC_FLWR_ACTION_DECAP)
 		headers = &fltr->inner_headers;
@@ -5038,7 +5055,7 @@ nse_rewrite_match_supported(struct net_device *filter_dev,
 
 	if (modify_ip_header && ip_proto != IPPROTO_TCP &&
 		ip_proto != IPPROTO_UDP && ip_proto != IPPROTO_ICMP) {
-		netdev_info(filter_dev, "can't offload re-write of ip proto %d\n",
+		nse_debug(hw, NSE_DBG_SW, "can't offload re-write of ip proto %d\n",
 				ip_proto);
 		NL_SET_ERR_MSG_MOD(fltr->extack,
 				   "can't offload re-write of non TCP/UDP/ICMP");
@@ -5064,7 +5081,6 @@ nse_is_actions_supported(struct net_device *filter_dev,
 
 	if (action->flags & NSE_TC_FLWR_ACTION_DROP &&
 		action->flags & NSE_TC_FLWR_ACTION_REWRITE) {
-		netdev_info(filter_dev, "Drop with pedit action is not supported\n");
 		NL_SET_ERR_MSG_MOD(fltr->extack,
 			"Drop with pedit action is not supported");
 		return -EOPNOTSUPP;
@@ -5192,6 +5208,7 @@ nse_parse_tc_flower_actions(struct net_device *filter_dev, struct nse_vsi *vsi,
 	bool encap = false, decap = false;
 	int err;
 	int max_chain;
+	struct nse_hw *hw = &vsi->back->hw;
 
 	struct flow_rule *rule = flow_cls_offload_flow_rule(cls_flower);
 	struct flow_action *flow_action = &rule->action;
@@ -5218,7 +5235,7 @@ nse_parse_tc_flower_actions(struct net_device *filter_dev, struct nse_vsi *vsi,
 			fltr->action.fltr_act = NSE_DROP_PACKET;
 			fltr->action.flags |= NSE_TC_FLWR_ACTION_DROP |
 				NSE_TC_FLWR_ACTION_COUNT;
-			netdev_info(filter_dev, "Tc flower fltr set drop action\n");
+			nse_debug(hw, NSE_DBG_SW, "Tc flower fltr set drop action\n");
 			break;
 		case FLOW_ACTION_CSUM:
 			if (nse_csum_offload_supported(filter_dev, act->csum_flags))
@@ -5227,7 +5244,7 @@ nse_parse_tc_flower_actions(struct net_device *filter_dev, struct nse_vsi *vsi,
 		case FLOW_ACTION_REDIRECT:
 		case FLOW_ACTION_MIRRED:
 
-			netdev_info(filter_dev,
+			nse_debug(hw, NSE_DBG_SW,
 				"Tc flower fltr set redirect action, target dev = %s\n",
 				act->dev->name);
 
@@ -5262,18 +5279,18 @@ nse_parse_tc_flower_actions(struct net_device *filter_dev, struct nse_vsi *vsi,
 			else
 				return -EOPNOTSUPP;
 
-			netdev_info(filter_dev, "Tc flower fltr set TUNNEL_ENCAP action\n");
-	    netdev_info(filter_dev, "\t tunnel type is %s\n",
+			nse_debug(hw, NSE_DBG_SW, "Tc flower fltr set TUNNEL_ENCAP action\n");
+	    nse_debug(hw, NSE_DBG_SW, "\t tunnel type is %s\n",
 				tun_info->mode & IP_TUNNEL_INFO_IPV6 ? "ipv6" : "ipv4");
 			if (tun_info->mode & IP_TUNNEL_INFO_IPV6) {
-				netdev_info(filter_dev, "\t IPV6 SIP Value = %pI6c\n",
+				nse_debug(hw, NSE_DBG_SW, "\t IPV6 SIP Value = %pI6c\n",
 					&tun_info->key.u.ipv6.src);
-				netdev_info(filter_dev, "\t IPV6 DIP Value = %pI6c\n",
+				nse_debug(hw, NSE_DBG_SW, "\t IPV6 DIP Value = %pI6c\n",
 					&tun_info->key.u.ipv6.dst);
 			} else {
-				netdev_info(filter_dev, "\t IPV4 SIP Value = %pI4\n",
+				nse_debug(hw, NSE_DBG_SW, "\t IPV4 SIP Value = %pI4\n",
 					&tun_info->key.u.ipv4.src);
-				netdev_info(filter_dev, "\t IPV4 DIP Value = %pI4\n",
+				nse_debug(hw, NSE_DBG_SW, "\t IPV4 DIP Value = %pI4\n",
 					&tun_info->key.u.ipv4.dst);
 			}
 			break;
@@ -5331,7 +5348,7 @@ nse_parse_tc_flower_actions(struct net_device *filter_dev, struct nse_vsi *vsi,
 			fltr->action.flags |= NSE_TC_FLWR_ACTION_GOTO_CHAIN |
 				NSE_TC_FLWR_ACTION_COUNT;
 			fltr->action.dest_chain = act->chain_index;
-			netdev_info(filter_dev,
+			nse_debug(hw, NSE_DBG_SW,
 				"Tc flower fltr set goto action, dest chain = %d\n",
 				fltr->action.dest_chain);
 			break;
@@ -5355,14 +5372,14 @@ nse_parse_tc_flower_actions(struct net_device *filter_dev, struct nse_vsi *vsi,
 				netdev_err(filter_dev, "Failed to get sflow dest vsi\n");
 				return -EIO;
 			}
-			netdev_info(filter_dev,
+			nse_debug(hw, NSE_DBG_SW,
 				"Tc flower fltr set sflow action, rate = %d, group = %d, is_trunc = %d, trunc_size = %d\n",
 				act->sample.rate, act->sample.psample_group->group_num,
 				act->sample.truncate, act->sample.trunc_size);
 			break;
 #endif
 		default:
-			netdev_info(filter_dev, "Unsupported action(=%d) in switchdev mode\n",
+			nse_debug(hw, NSE_DBG_SW, "Unsupported action(=%d) in switchdev mode\n",
 				act->id);
 			NL_SET_ERR_MSG_MOD(fltr->extack,
 				"Unsupported action in switchdev mode");
@@ -5599,8 +5616,8 @@ void nse_put_tc_fltr(struct nse_vsi *vsi, struct nse_tc_flower_fltr *fltr)
 
 	if (!refcount_dec_and_test(&fltr->ref_cnt))
 		return;
-	dev_info(nse_hw_to_dev(hw), "Start to del fltr\n");
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW, "Start to del fltr\n");
+	nse_debug(hw, NSE_DBG_SW,
 		"\t fltr: cookie = %lx, lut_id = %d, node_id = 0x%x, node_state_id = 0x%x, ref_cnt = %d\n",
 		fltr->cookie, fltr->lut_id, fltr->node_id,
 		fltr->action.large_act_id, refcount_read(&fltr->ref_cnt));
@@ -5801,6 +5818,7 @@ nse_add_cls_flower(struct net_device *netdev, struct nse_vsi *vsi,
 	struct nse_tc_flower_fltr *fltr;
 	struct nse_pf *pf = vsi->back;
 	int err;
+	struct nse_hw *hw = &pf->hw;
 
 	if (nse_is_reset_in_progress(pf->state)) {
 		netdev_err(netdev,
@@ -5808,7 +5826,7 @@ nse_add_cls_flower(struct net_device *netdev, struct nse_vsi *vsi,
 		return -EBUSY;
 	}
 
-	netdev_info(netdev,
+	nse_debug(hw, NSE_DBG_SW,
 			"Start to add tc flower fltr, cookie = %lx\n",
 			cls_flower->cookie);
 
@@ -5879,10 +5897,11 @@ nse_del_cls_flower(struct nse_vsi *vsi, struct flow_cls_offload *cls_flower)
 	struct nse_tc_flower_fltr *fltr;
 	struct nse_pf *pf = vsi->back;
 	struct net_device *vsi_netdev = vsi->netdev;
+	struct nse_hw *hw = &pf->hw;
 
-	dev_info(nse_pf_to_dev(pf),
-			"Start to del tc flower fltr, cookie = %lx\n",
-			cls_flower->cookie);
+	nse_debug(hw, NSE_DBG_SW,
+			"[%s, %d] Start to del tc flower fltr, cookie = %lx\n",
+			__func__, __LINE__, cls_flower->cookie);
 
 	if (!nse_is_eswitch_mode_switchdev(pf) || !pf->switchdev.is_running) {
 		NL_SET_ERR_MSG_MOD(extack,
@@ -6065,7 +6084,7 @@ nse_add_fl_police_action(struct nse_pf *pf,
 		goto fl_police_action_err;
 	}
 
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 		"Start to set hw police action: meter index = %d, mode = %d, rate = %lld, burst = %d\n",
 		params.index, params.mode, params.rate, params.burst);
 
@@ -6076,7 +6095,7 @@ nse_add_fl_police_action(struct nse_pf *pf,
 		goto fl_police_action_err;
 	}
 
-	dev_info(nse_hw_to_dev(hw),
+	nse_debug(hw, NSE_DBG_SW,
 		"Success to set fl police action: meter hw id = %d, mode = %d, rate = %lld, burst = %d\n",
 		meter->meter_id, params.mode, params.rate, params.burst);
 

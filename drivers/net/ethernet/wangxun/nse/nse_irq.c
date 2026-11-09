@@ -9,8 +9,10 @@ static int nse_alloc_and_fill_msix_entries(struct nse_pf *pf, int nvec)
 {
 	int i;
 
+#if defined(NSE_DEBUG_EXT)
 	if (nse_no_irq)
 		return 0;
+#endif
 
 	pf->msix_entries = kcalloc(nvec, sizeof(*pf->msix_entries),
 				   GFP_KERNEL);
@@ -27,8 +29,10 @@ static int nse_alloc_and_fill_msix_entries(struct nse_pf *pf, int nvec)
 
 static void nse_dis_msix(struct nse_pf *pf)
 {
+#if defined(NSE_DEBUG_EXT)
 	if (nse_no_irq)
 		return;
+#endif
 
 	pci_free_irq_vectors(pf->pdev);
 }
@@ -38,8 +42,10 @@ static int nse_ena_msix(struct nse_pf *pf, int nvec)
 	if (nvec > pf->irq_space_size)
 		nvec = pf->irq_space_size;
 
+#if defined(NSE_DEBUG_EXT)
 	if (nse_no_irq)
 		return nvec;
+#endif
 
 	return pci_alloc_irq_vectors(pf->pdev, NSE_MIN_MSIX, nvec,
 				     PCI_IRQ_MSIX);
@@ -108,8 +114,11 @@ static int nse_ena_msix_range(struct nse_pf *pf)
 #define NSE_ADJ_VEC_STEPS 8
 #define NSE_ADJ_VEC_WORST_CASE 0
 #define NSE_ADJ_VEC_BEST_CASE (NSE_ADJ_VEC_STEPS - 1)
-	int num_cpus = num_online_cpus();
+
+	int num_local_cpus = nse_get_num_local_cpus(dev);
+	int default_rdma_ceq = nse_normalize_cpu_count(num_local_cpus);
 	int rdma_adj_vec[NSE_ADJ_VEC_STEPS] = { 0 };
+	int default_lan_qp = nse_normalize_cpu_count(num_local_cpus);
 	int lan_adj_vec[NSE_ADJ_VEC_STEPS] = { 0 };
 	int adj_vec[NSE_ADJ_VEC_STEPS] = {
 		NSE_OICR_MSIX, NSE_OICR_MSIX, NSE_OICR_MSIX,
@@ -126,10 +135,8 @@ static int nse_ena_msix_range(struct nse_pf *pf)
 
 	needed += NSE_OICR_MSIX;
 
-	if (hw->is_only_lan_in_chan)
-		val = num_cpus;
-	else
-		val = num_cpus / 4;		/* for 4x10G, 4x25G*/
+	/* compute val to be best value for LAN-irq-vector */
+	val = default_lan_qp;
 
 	lan_adj_vec[0] = NSE_MIN_LAN_MSIX;
 	lan_adj_vec[1] = max_t(int, val / 4, NSE_MIN_LAN_MSIX);
@@ -192,11 +199,14 @@ static int nse_ena_msix_range(struct nse_pf *pf)
 		nse_adj_vec_clear(macvlan_adj_vec, NSE_ADJ_VEC_STEPS);
 	}
 
+	/* compute val to be best value for RDMA-irq-vector */
+	val = default_rdma_ceq;
+
 	if (hw->hw_conf.hw_platform == NSE_HW_PLATFORM_FPGA) {
 		rdma_adj_vec[0] = NSE_MIN_RDMA_MSIX;
 
-		rdma_adj_vec[1] = num_cpus / 4 > NSE_MIN_RDMA_MSIX ?
-							num_cpus / 4 + NSE_RDMA_NUM_AEQ_MSIX :
+		rdma_adj_vec[1] = val / 4 > NSE_MIN_RDMA_MSIX ?
+							val / 4 + NSE_RDMA_NUM_AEQ_MSIX :
 							NSE_MIN_RDMA_MSIX,
 
 		rdma_adj_vec[2] = rdma_adj_vec[1];
@@ -206,12 +216,6 @@ static int nse_ena_msix_range(struct nse_pf *pf)
 		rdma_adj_vec[6] = rdma_adj_vec[1];
 		rdma_adj_vec[7] = rdma_adj_vec[1];
 	} else {	/* FPGA */
-
-		if (hw->is_only_lan_in_chan)
-			val = num_cpus;
-		else
-			val = num_cpus / 4;		/* for 4x10G, 4x25G*/
-
 		rdma_adj_vec[0] = NSE_MIN_RDMA_MSIX;
 
 		rdma_adj_vec[1] = val / 4 > NSE_MIN_RDMA_MSIX ?
@@ -351,8 +355,10 @@ void nse_clear_interrupt_scheme(struct nse_pf *pf)
  */
 int nse_get_irq_num(struct nse_pf *pf, int idx)
 {
+#if defined(NSE_DEBUG_EXT)
 	if (nse_no_irq)
 		return -EINVAL;
+#endif
 
 	return pci_irq_vector(pf->pdev, idx);
 }

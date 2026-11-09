@@ -29,7 +29,7 @@ static void nse_init_hw_conf_amber_common(struct nse_hw *hw)
 	clear_bit(NSE_HW_STATIC_FEA_TDM_ONLY_CQ_WB, conf->hw_static_fea);
 	set_bit(NSE_HW_STATIC_FEA_TDM_SUPPORT_TNL_CSUM, conf->hw_static_fea);
 	set_bit(NSE_HW_STATIC_FEA_TDM_SUPPORT_TNL_TSO, conf->hw_static_fea);
-	set_bit(NSE_HW_STATIC_FEA_TDM_SUPPORT_UP_ENFORCE, conf->hw_static_fea);
+	clear_bit(NSE_HW_STATIC_FEA_TDM_SUPPORT_UP_ENFORCE, conf->hw_static_fea);
 	set_bit(NSE_HW_STATIC_FEA_TDM_SUPPORT_PVID, conf->hw_static_fea);
 	clear_bit(NSE_HW_STATIC_FEA_TDM_ONLY_HANDLE_L2TAG1, conf->hw_static_fea);
 
@@ -66,12 +66,14 @@ static void nse_init_hw_conf_amber_common(struct nse_hw *hw)
 	clear_bit(NSE_HW_DYN_FEA_BAR2_MAPPED_FOR_PE, conf->hw_dyn_fea);
 
 	if (conf->hw_platform == NSE_HW_PLATFORM_ASIC) {
-		if (nse_palladium_debug ||
-			hw->device_id == NSE_DEV_ID_AMBER_FDBTACRX ||
+		if (hw->device_id == NSE_DEV_ID_AMBER_FDBTACRX ||
 			hw->device_id == NSE_DEV_ID_AMBER_DDATACRX ||
 			hw->device_id == NSE_DEV_ID_AMBER_DDATAIRX ||
-			hw->device_id == NSE_DEV_ID_AMBER_FQATACRX)
-
+			hw->device_id == NSE_DEV_ID_AMBER_FQATACRX
+#if defined(NSE_DEBUG_EXT)
+			|| nse_palladium_debug
+#endif
+		)
 			set_bit(NSE_HW_DYN_FEA_SUPPORT_RDMA, conf->hw_dyn_fea);
 
 	} else {	/* AMBER_FPGA */
@@ -82,13 +84,16 @@ static void nse_init_hw_conf_amber_common(struct nse_hw *hw)
 	conf->hw_lmac_type = NSE_HW_LMAC_TYPE_1;
 
 	if (conf->hw_platform == NSE_HW_PLATFORM_ASIC) {
+
+		conf->hw_lpcs_type = NSE_HW_LPCS_TYPE_1;
+		conf->hw_lphy_internal_type = NSE_HW_LPHY_INTERNAL_TYPE_1;
+
+#if defined(NSE_DEBUG_EXT)
 		if (nse_palladium_debug) {
 			conf->hw_lpcs_type = NSE_HW_LPCS_TYPE_UNKNOWN;
 			conf->hw_lphy_internal_type = NSE_HW_LPHY_INTERNAL_TYPE_UNKNOWN;
-		} else {
-			conf->hw_lpcs_type = NSE_HW_LPCS_TYPE_1;
-			conf->hw_lphy_internal_type = NSE_HW_LPHY_INTERNAL_TYPE_1;
 		}
+#endif
 
 	} else {	/* FPGA */
 

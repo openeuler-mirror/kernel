@@ -576,10 +576,29 @@ struct nse_dcb_pfc_cfg {
 	u8 pfcena;
 } __packed;
 
+struct nse_dcb_app_priority_table {
+	u16 prot_id;
+	u8 priority;
+	u8 selector;
+};
+
+#define NSE_DCBX_MAX_APPS		64
+#define NSE_DSCP_NUM_VAL		64
+
 struct nse_dcbx_cfg {
 	struct nse_dcb_ets_cfg etscfg;
 	struct nse_dcb_ets_cfg etsrec;
 	struct nse_dcb_pfc_cfg pfc;
+
+	u32 numapps;
+#define NSE_QOS_MODE_VLAN	0x0
+#define NSE_QOS_MODE_DSCP	0x1
+	u8 pfc_mode;
+	struct nse_dcb_app_priority_table app[NSE_DCBX_MAX_APPS];
+	/* when DSCP mapping defined by user set its bit to 1 */
+	DECLARE_BITMAP(dscp_mapped, NSE_DSCP_NUM_VAL);
+	/* array holding DSCP -> UP/TC values for DSCP L3 QoS mode */
+	u8 dscp_map[NSE_DSCP_NUM_VAL];
 } __packed;
 
 struct nse_aqc_qos_db_rpb_stat_cnt_amber {
@@ -1455,6 +1474,31 @@ struct nse_aqc_qos_db_conf_up_enforcement {
 
 } __packed;
 
+struct nse_aqc_qos_db_dscp_map {
+
+	struct nse_aqc_generic_common_hdr hdr;
+
+	u8 dscp_map[NSE_DSCP_NUM_VAL];
+
+#define NSE_DCB_DSCP_MAP_IP_V4		1
+#define NSE_DCB_DSCP_MAP_IP_V6		2
+#define NSE_DCB_DSCP_MAP_IP_BOTH	0
+	u8 ip_flags;
+
+	u8 pads[3];
+
+} __packed;
+
+struct nse_aqc_qos_db_dscp_mode {
+
+	struct nse_aqc_generic_common_hdr hdr;
+
+	u8 ena_or_dis;
+
+	u8 pads[3];
+
+} __packed;
+
 struct nse_aqc_fw_lldp_agent_get_status {
 	struct nse_aqc_generic_common_hdr hdr;
 
@@ -1484,6 +1528,18 @@ struct nse_aqc_qos_fw_dcbx_subagent_start_stop {
 	__le32 start_or_stop;	/* 1 for start, 0 for stop. */
 
 } __packed;
+
+struct nse_aqc_fw_event {
+
+	__le32 event_type;
+#define FW_EVENT_TYPE_LOG_STR	0x1
+#define FW_EVENT_TYPE_LOG_HEX	0x2
+
+	__le32 data_len;	/* unit: byte */
+
+	u8 data[];
+};
+
 
 struct nse_aqc_qos_dcbx_conf_chg_event {
 	struct nse_aqc_generic_common_hdr hdr;
@@ -2162,10 +2218,18 @@ struct nse_aqc_fast_lut_info {
 	__le16 lut_id;
 	__le16 node_id;
 
-	/* if it is intermedia Lut, the result key index in Root Lut;
+	/* used for both parallel and serial recipe
+	 * if it is intermedia Lut, the result key index in parent Lut;
 	 * if it is root lut, this field is unmeaningful.
 	 */
 	__le16 key_idx;
+
+	/* used for serial recipe only, because for parallel
+	 * recipe, root recipe is unique parent lut of all intermedia Luts
+	 * if it is intermedia Lut, it is parent lut index in buffer;
+	 * if it is root lut, this field is unmeaningful.
+	 */
+	__le16 parent_lut_idx;
 
 	/*if key is used for packet content, its type should be __be16*/
 	__le16 key[5];
@@ -2183,7 +2247,11 @@ struct nse_aqc_lut_fast_node_action {
 struct nse_aqc_lut_fast_node_match {
 	u8 lut_num;
 	u8 rt_idx;
-	__le16 rsvd;
+	u8 rcp_type; /*0: parallel; 1: serial*/
+#define NSE_AQC_RECIP_TYPE_PARALLEL		0
+#define NSE_AQC_RECIP_TYPE_SERIAL		1
+
+	u8 rsvd;
 	struct nse_aqc_fast_lut_info lut[];
 } __packed;
 
@@ -3358,6 +3426,7 @@ struct nse_aqc_ephy_cmd_sfp {
 /* similar to READ_BYTES, but read cached bytes in buffer */
 #define EPHY_CMD_SFP_READ_BYTES_IN_CBUF	0x5
 #define EPHY_CMD_SFP_ADDR_CHANGE		0x6	/* <<SFF-8472>> / 8.9 Addressing Modes */
+#define EPHY_CMD_SFP_QUERY_BYTES_READY_IN_CBUF	0x7
 
 	__le32 mng_if_type;	/* enum xsfp_mng_if_type */
 
@@ -3394,6 +3463,11 @@ struct nse_aqc_ephy_cmd_sfp {
 		struct {
 			u8 address;	/* 0xA0 or 0xA2 */
 		} __packed addr_change;
+
+		/* cmd: QUERY_BYTES_READY_IN_CBUF */
+		struct {
+			__le32 ready;
+		} __packed query_bytes_ready_in_cbuf;
 	};
 
 } __packed;
@@ -3407,6 +3481,8 @@ struct nse_aqc_ephy_cmd_qsfp {
 #define EPHY_CMD_QSFP_GET_PIN_STATUS			0x4
 /* similar to READ_BYTES, but read cached bytes in buffer */
 #define EPHY_CMD_QSFP_READ_BYTES_IN_CBUF		0x5
+/* reserved - 0x6 */
+#define EPHY_CMD_QSFP_QUERY_BYTES_READY_IN_CBUF	0x7
 
 	__le32 mng_if_type;	/* enum xsfp_mng_if_type */
 
@@ -3431,6 +3507,11 @@ struct nse_aqc_ephy_cmd_qsfp {
 			__le32 modprsl;
 			__le32 intl;
 		} __packed pin_status;
+
+		/* cmd: QUERY_BYTES_READY_IN_CBUF */
+		struct {
+			__le32 ready;
+		} __packed query_bytes_ready_in_cbuf;
 	};
 
 } __packed;
@@ -4470,6 +4551,9 @@ enum nse_adminq_opc_category_basic_subcodes {
 	NSE_AQ_OPC_FW_LLDP_AGENT_GET_STATUS		= 0x10,
 	NSE_AQ_OPC_FW_LLDP_AGENT_START_STOP		= 0x11,
 
+	NSE_AQ_OPC_FW_EVENT					= 0x12,
+
+
 	NSE_AQ_OPC_VFLR_EVENT				= 0x20,
 
 	NSE_AQ_OPC_CONF_IRQLL				= 0x21,
@@ -4664,6 +4748,10 @@ enum nse_adminq_opc_category_qos_subcodes {
 	NSE_AQ_OPC_QOS_DB_GET_STAT_CNT				=	0x3,
 
 	NSE_AQ_OPC_QOS_DB_CONF_UP_ENFORCEMENT		=	0x4,
+
+	NSE_AQ_OPC_QOS_DB_SET_DSCP_MAP				=	0x5,
+
+	NSE_AQ_OPC_QOS_DB_DSCP_ENA_DIS				=	0x6,
 
 	NSE_AQ_OPC_QOS_FW_LLDP_DCBX_SUBAGENT_GET_STATUS		=	0xC,
 	NSE_AQ_OPC_QOS_FW_LLDP_DCBX_SUBAGENT_START_STOP		=	0xD,
@@ -4864,9 +4952,52 @@ static inline bool nse_sq_cmd_is_no_wait(u8 opc_category, u8 opc_subcode)
 	return false;
 }
 
-static inline bool nse_sq_cmd_is_need_retry(u8 opc_category, u8 opc_subcode, u32 *retry_times)
+
+#define NSE_SQ_CMD_RETRY_INTERVAL_US_MAX	100000		/* 100 ms */
+#define NSE_SQ_CMD_RETRY_INTERVAL_US_DFLT	10000		/* 10 ms */
+#define NSE_SQ_CMD_RETRY_INTERVAL_US_MIN	1000		/* 1ms */
+
+#define NSE_SQ_CMD_RETRY_TIMES_MAX			12
+#define NSE_SQ_CMD_RETRY_TIMES_DFLT			5
+#define NSE_SQ_CMD_RETRY_TIMES_MIN			3
+
+static inline bool nse_sq_cmd_is_need_retry(u8 opc_category, u8 opc_subcode,
+					    u32 *retry_times,
+					    u32 *retry_interval_us)
 {
-	if (opc_category == NSE_AQ_OPC_CATEGORY_SWITCH) {
+	bool ret = false;
+
+	*retry_times = NSE_SQ_CMD_RETRY_TIMES_DFLT;
+	*retry_interval_us = NSE_SQ_CMD_RETRY_INTERVAL_US_DFLT;
+
+	if (opc_category == NSE_AQ_OPC_CATEGORY_MISC) {
+		switch (opc_subcode) {
+		case NSE_AQ_OPC_MANAGE_MAC_READ:
+		case NSE_AQ_OPC_MANAGE_MAC_WRITE:
+
+		case NSE_AQ_OPC_PTP_GET_SYS_TIME:
+		case NSE_AQ_OPC_PTP_SET_SYS_TIME:
+		case NSE_AQ_OPC_PTP_ADJ_SYS_TIME:
+		case NSE_AQ_OPC_PTP_GET_CONTROL:
+		case NSE_AQ_OPC_PTP_SET_CONTROL:
+		case NSE_AQ_OPC_PTP_GET_INCVAL:
+		case NSE_AQ_OPC_PTP_SET_INCVAL:
+		case NSE_AQ_OPC_PTP_GET_CORR:
+		case NSE_AQ_OPC_PTP_SET_CORR:
+		case NSE_AQ_OPC_PTP_INIT:
+		case NSE_AQ_OPC_PTP_RD_TX_TS:
+		case NSE_AQ_OPC_PTP_CLR_TX_TS:
+		case NSE_AQ_OPC_PTP_GET_ADDEND:
+		case NSE_AQ_OPC_PTP_SET_ADDEND:
+
+			ret = true;
+			*retry_times = NSE_SQ_CMD_RETRY_TIMES_MAX;
+			break;
+		default:
+			break;
+		}
+
+	} else if (opc_category == NSE_AQ_OPC_CATEGORY_SWITCH) {
 		switch (opc_subcode) {
 		case NSE_AQ_OPC_ADD_LUT_NODE:
 		case NSE_AQ_OPC_UPDATE_LUT_NODE:
@@ -4876,10 +5007,40 @@ static inline bool nse_sq_cmd_is_need_retry(u8 opc_category, u8 opc_subcode, u32
 		case NSE_AQ_OPC_UPDATE_LUT_FAST_NODE:
 		case NSE_AQ_OPC_REMOVE_LUT_FAST_NODE:
 		case NSE_AQ_OPC_GET_LUT_FAST_NODE:
-			return true;
+			ret = true;
+			*retry_times = NSE_SQ_CMD_RETRY_TIMES_MAX;
+			*retry_interval_us = NSE_SQ_CMD_RETRY_INTERVAL_US_MIN;
+			break;
+		default:
+			break;
+		}
+
+	} else if (opc_category == NSE_AQ_OPC_CATEGORY_QOS) {
+
+		switch (opc_subcode) {
+		case NSE_AQ_OPC_QOS_DB_SET_CFG:
+		case NSE_AQ_OPC_QOS_DB_GET_CFG:
+			ret = true;
+			*retry_times = NSE_SQ_CMD_RETRY_TIMES_MAX;
+			break;
+		default:
+			break;
+		}
+
+	} else if (opc_category == NSE_AQ_OPC_CATEGORY_LMAC_PHY) {
+
+		switch (opc_subcode) {
+		case NSE_AQ_OPC_LMAC_GET_SET_BASIC_CFG:
+		case NSE_AQ_OPC_LMAC_READ_STATS:
+			ret = true;
+			*retry_times = NSE_SQ_CMD_RETRY_TIMES_MAX;
+			break;
+		default:
+			break;
 		}
 	}
-	return false;
+
+	return ret;
 }
 
 #define NSE_SCH_TREE_MAX_LAYERS_NUM		16
