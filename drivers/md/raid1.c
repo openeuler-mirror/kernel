@@ -3220,6 +3220,7 @@ static int raid1_run(struct mddev *mddev)
 
 	if (!mddev_is_dm(mddev)) {
 		blk_queue_max_write_zeroes_sectors(mddev->queue, 0);
+		blk_queue_flag_set(QUEUE_FLAG_PCI_P2PDMA, mddev->queue);
 		rdev_for_each(rdev, mddev)
 			disk_stack_limits(mddev->gendisk, rdev->bdev,
 					  rdev->data_offset << 9);
