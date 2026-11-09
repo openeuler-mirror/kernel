@@ -23446,6 +23446,14 @@ F:	Documentation/networking/device_drivers/ethernet/wangxun/*
 F:	drivers/net/ethernet/wangxun/
 F:	drivers/net/pcs/pcs-xpcs-wx.c
 
+WANGXUN ETHERNET DRIVER FOR RDMA
+M:	Sixin Chen <sixinchen@net-swift.com>
+M:	Junlin Ren <junlinren@net-swift.com>
+L:	linux-rdma@vger.kernel.org
+S:	Supported
+F:	drivers/infiniband/hw/nser/
+F:	include/uapi/rdma/nser-abi.h
+
 WATCHDOG DEVICE DRIVERS
 M:	Wim Van Sebroeck <wim@linux-watchdog.org>
 M:	Guenter Roeck <linux@roeck-us.net>
