@@ -1046,7 +1046,7 @@ static inline void blk_account_io_start(struct request *req)
 	 * RQF_IO_STAT is preset at allocation; clear it for passthrough
 	 * requests that cannot be accounted.
 	 */
-	if (blk_rq_is_passthrough(req) && !blk_rq_passthrough_stats(req))
+	if (blk_rq_is_passthrough(req) && !blk_rq_passthrough_stats(req, req->q))
 		req->rq_flags &= ~RQF_IO_STAT;
 
 	if (blk_do_io_stat(req)) {
