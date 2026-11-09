@@ -947,17 +947,17 @@ static void ubase_cmd_crq_handler(struct ubase_dev *udev)
 		opcode = crq->desc[crq->ci].opcode;
 		bd_num = crq->desc[crq->ci].bd_num;
 		flag = crq->desc[crq->ci].flag;
-		msg_data_len = bd_num * sizeof(struct ubase_cmdq_desc) -
-			       UBASE_CMD_HEADER_LENGTH;
 
 		if (unlikely(!bd_num || !(flag & UBASE_CMD_FLAG_OUT))) {
 			ubase_err(udev,
 				  "drop invalid crq message, opcode = 0x%x, bd_num = %u, flag = 0x%x.",
 				  opcode, bd_num, flag);
-			UBASE_MOVE_CRQ_RING_PTR(crq, 1);
+			crq->ci = crq->pi;
 			ubase_write_dev(&udev->hw, UBASE_CRQ_HEAD_REG, crq->ci);
 			continue;
 		}
+		msg_data_len = bd_num * sizeof(struct ubase_cmdq_desc) -
+			       UBASE_CMD_HEADER_LENGTH;
 
 		ret = ubase_gen_bd_data(udev, bd_num, &msg_data, msg_data_len);
 		if (ret) {
