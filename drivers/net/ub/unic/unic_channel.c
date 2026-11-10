@@ -52,8 +52,8 @@ static int unic_check_set_channels_available(struct net_device *ndev)
 	struct unic_dev *unic_dev = netdev_priv(ndev);
 
 	if (netif_running(ndev)) {
-		unic_err(unic_dev,
-			 "failed to set channels, due to network interface is up, please down it first and try again.\n");
+		unic_info(unic_dev,
+			  "can't set channels, please down nic and retry.\n");
 		return -EBUSY;
 	}
 
