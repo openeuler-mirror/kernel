@@ -503,6 +503,7 @@ our $signature_tags = qr{(?xi:
 	Reported-by:|
 	Suggested-by:|
 	Assisted-by:|
+	Co-authored-by:|
 	To:|
 	Cc:
 )};
@@ -2790,11 +2791,12 @@ sub process {
 				}
 			}
 
-			# Assisted-by uses AGENT_NAME:MODEL_VERSION format, not email
+			# Assisted-by uses a free-form value (e.g. "LLM"), not an
+			# email address, so skip the email format checks below.
 			if ($sign_off =~ /^Assisted-by:/i) {
-				if ($email !~ /^\S+:\S+/) {
+				if ($email =~ /^\s*$/) {
 					WARN("BAD_SIGN_OFF",
-					     "Assisted-by expects 'AGENT_NAME:MODEL_VERSION [TOOL1] [TOOL2]' format\n" . $herecurr);
+					     "Assisted-by requires a value\n" . $herecurr);
 				}
 				next;
 			}
