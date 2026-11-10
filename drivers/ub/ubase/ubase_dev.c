@@ -974,6 +974,10 @@ static const struct ubase_init_function ubase_init_func_map[] = {
 		ubase_mem_ops_init, NULL
 	},
 	{
+		"init extdb iova", UBASE_SUP_NO_PMU, 0,
+		ubase_extdb_iova_init, ubase_extdb_iova_uninit
+	},
+	{
 		"dtu memory", UBASE_SUP_NO_PMU, 0,
 		ubase_dtu_mem_init, ubase_dtu_mem_uninit
 	},
