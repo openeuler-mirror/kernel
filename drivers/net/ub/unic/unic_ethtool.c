@@ -259,7 +259,7 @@ static int unic_set_pauseparam(struct net_device *ndev,
 	if (unic_dev->hw.mac.autoneg != eth_pauseparam->autoneg &&
 	    unic_dev->hw.mac.support_autoneg) {
 		unic_err(unic_dev,
-			 "to change autoneg, please use: ethtool -s <dev> autoneg <on|off>\n");
+			 "failed to change autoneg, please use: ethtool -s <dev> autoneg <on|off>\n");
 		return -EOPNOTSUPP;
 	}
 
@@ -448,8 +448,8 @@ static int unic_set_coalesce(struct net_device *netdev,
 	int ret, ret1;
 
 	if (netif_running(netdev)) {
-		unic_err(unic_dev,
-			 "failed to set coalesce param, due to network interface is up, please down it first and try again.\n");
+		unic_info(unic_dev,
+			  "can't set coalesce param, please down nic and retry.\n");
 		return -EBUSY;
 	}
 
