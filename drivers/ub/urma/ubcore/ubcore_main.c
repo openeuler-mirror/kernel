@@ -160,6 +160,8 @@ static void __exit ubcore_exit(void)
 module_init(ubcore_init);
 module_exit(ubcore_exit);
 
+UBCORE_KAPI_BUILD_INFO();
+UBCORE_KABI_BUILD_INFO();
 MODULE_DESCRIPTION("URMA memory semantic kernel module for direct remote memory access.");
 MODULE_AUTHOR("huawei");
 MODULE_LICENSE("GPL");
