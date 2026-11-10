@@ -20,7 +20,7 @@ DEFINE_STATIC_KEY_FALSE(kvm_pvm_is_available);
 
 void __init kvm_arm_init_pvm(void)
 {
-	u64 mmfr2, mmfr3;
+	u64 mmfr0, mmfr2, mmfr3;
 	int ret;
 
 	/*
@@ -31,6 +31,13 @@ void __init kvm_arm_init_pvm(void)
 	 */
 	if (is_hyp_mode_available()) {
 		kvm_err("PVM: not supported when EL2 is available\n");
+		return;
+	}
+	mmfr0 = read_sanitised_ftr_reg(SYS_ID_AA64MMFR0_EL1);
+	if (cpuid_feature_extract_unsigned_field(mmfr0,
+						 ID_AA64MMFR0_EL1_ASIDBITS_SHIFT) !=
+	    ID_AA64MMFR0_EL1_ASIDBITS_16) {
+		kvm_err("PVM: 16-bit hardware ASIDs are required\n");
 		return;
 	}
 

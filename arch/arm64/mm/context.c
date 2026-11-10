@@ -13,11 +13,14 @@
 #include <linux/mm.h>
 
 #include <asm/cpufeature.h>
+#include <asm/kvm_host.h>
 #include <asm/mmu_context.h>
 #include <asm/smp.h>
 #include <asm/tlbflush.h>
+#include <asm/virt.h>
 
 static u32 asid_bits;
+static unsigned long num_user_asids __ro_after_init;
 static DEFINE_RAW_SPINLOCK(cpu_asid_lock);
 
 static atomic64_t asid_generation;
@@ -34,7 +37,7 @@ static unsigned long *pinned_asid_map;
 #define ASID_MASK		(~GENMASK(asid_bits - 1, 0))
 #define ASID_FIRST_VERSION	(1UL << 16)
 
-#define NUM_USER_ASIDS		(1UL << asid_bits)
+#define NUM_USER_ASIDS		num_user_asids
 #define ctxid2asid(asid)	((asid) & ~ASID_MASK)
 #define asid2ctxid(asid, genid)	((asid) | (genid))
 
@@ -404,6 +407,16 @@ arch_initcall(asids_update_limit);
 static int asids_init(void)
 {
 	asid_bits = get_cpu_asid_bits();
+	num_user_asids = 1UL << asid_bits;
+	/*
+	 * Fix the reservation before allocating the bitmaps. Without EL2,
+	 * retain it even if PVM initialization later fails; allocator capacity
+	 * must not change after initialization. Keep the hardware ASID width
+	 * unchanged for generation accounting.
+	 */
+	if (kvm_get_mode() == KVM_MODE_PVM && !is_hyp_mode_available() &&
+	    asid_bits == 16)
+		num_user_asids >>= 1;
 	atomic64_set(&asid_generation, ASID_FIRST_VERSION);
 	asid_map = bitmap_zalloc(NUM_USER_ASIDS, GFP_KERNEL);
 	if (!asid_map)
