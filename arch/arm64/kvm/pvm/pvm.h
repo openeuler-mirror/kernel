@@ -10,11 +10,15 @@
 
 #include <kvm/arm_rv_timer.h>
 
+#include "rmap.h"
+
 struct kvm_pvm_mmu;
 
 struct kvm_pvm {
 	struct kvm kvm;
 	struct rv_timer_vm_data timer_data;
+	struct kvm_pvm_rmap rmap;
+	struct kvm_pvm_mmu_rmap identity_rmap;
 	u16 identity_shadow_asid;
 	struct kvm_pvm_mmu **suser_mmus;
 	size_t suser_mmus_size;
@@ -36,6 +40,7 @@ struct kvm_pvm {
 
 struct kvm_pvm_vcpu {
 	struct kvm_vcpu vcpu;
+	struct kvm_pvm_rmap_cache *rmap_cache;
 	struct kvm_pvm_mmu *suser_mmu;
 	struct rv_timer_cpu timer_cpu;
 	struct kvm_pvm_mmu *skern_mmu;

@@ -864,8 +864,10 @@ void kvm_arch_vcpu_postcreate(struct kvm_vcpu *vcpu)
 
 void kvm_arch_vcpu_destroy(struct kvm_vcpu *vcpu)
 {
-	if (is_pvm_mode())
+	if (is_pvm_mode()) {
 		kvm_pvm_vcpu_put_mmu(vcpu);
+		kvm_pvm_rmap_free_cache(vcpu_to_pvm(vcpu)->rmap_cache);
+	}
 
 	kvm_mmu_free_memory_cache(&vcpu->arch.mmu_page_cache);
 	kvm_timer_vcpu_terminate(vcpu);

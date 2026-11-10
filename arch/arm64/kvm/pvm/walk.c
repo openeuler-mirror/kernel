@@ -356,6 +356,8 @@ static int pvm_s1_walk(struct kvm_vcpu *vcpu, u64 va,
 			result->esr = ESR_ELx_FSC_SEA_TTW0 + level;
 			return 1;
 		}
+		/* Record the backing guest page of each successfully read descriptor. */
+		result->pt_gfns[result->nr_pt_gfns++] = ipa >> PAGE_SHIFT;
 
 		if (!(desc & PTE_VALID)) {
 			result->esr = pvm_s1_fsc(level, ESR_ELx_FSC_FAULT);

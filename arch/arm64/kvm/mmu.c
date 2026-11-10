@@ -1095,6 +1095,8 @@ void kvm_free_stage2_pgd(struct kvm_s2_mmu *mmu)
 		return;
 	}
 	if (pgt) {
+		if (is_pvm_mode())
+			kvm_pvm_rmap_purge(mmu);
 		mmu->pgd_phys = 0;
 		mmu->pgt = NULL;
 		free_percpu(mmu->last_vcpu_ran);
@@ -1149,6 +1151,8 @@ int kvm_phys_addr_ioremap(struct kvm *kvm, phys_addr_t guest_ipa,
 	int ret = 0;
 	struct kvm_mmu_memory_cache cache = { .gfp_zero = __GFP_ZERO };
 	struct kvm_pgtable *pgt = kvm->arch.mmu.pgt;
+	struct kvm_pvm_rmap_cache *rmap_cache = NULL;
+	phys_addr_t end;
 	enum kvm_pgtable_prot prot = KVM_PGTABLE_PROT_DEVICE |
 				     KVM_PGTABLE_PROT_R |
 				     (writable ? KVM_PGTABLE_PROT_W : 0);
@@ -1159,19 +1163,50 @@ int kvm_phys_addr_ioremap(struct kvm *kvm, phys_addr_t guest_ipa,
 	/* We don't support mapping special pages into a Realm */
 	if (_kvm_is_realm(kvm))
 		return -EPERM;
+	if (is_pvm_mode() &&
+	    (check_add_overflow(guest_ipa, (phys_addr_t)size, &end) ||
+	     end > min_t(u64, kvm_phys_size(kvm), PVM_SHADOW_S1_KERNEL_BASE)))
+		return -EINVAL;
 
 	size += offset_in_page(guest_ipa);
 	guest_ipa &= PAGE_MASK;
 
 	for (addr = guest_ipa; addr < guest_ipa + size; addr += PAGE_SIZE) {
+		struct kvm_pvm_rmap_ctx ctx = {
+			.addr = addr,
+			.gfn = addr >> PAGE_SHIFT,
+		};
+
+		if (is_pvm_mode()) {
+			ret = kvm_pvm_rmap_topup(&rmap_cache, 1);
+			if (ret)
+				break;
+			ctx.cache = rmap_cache;
+		}
 		ret = kvm_mmu_topup_memory_cache(&cache,
 						 kvm_mmu_cache_min_pages(kvm));
 		if (ret)
 			break;
 
 		write_lock(&kvm->mmu_lock);
+		if (is_pvm_mode()) {
+			ret = kvm_pvm_rmap_begin(&kvm->arch.mmu, &ctx, NULL);
+			if (ret) {
+				write_unlock(&kvm->mmu_lock);
+				break;
+			}
+		}
 		ret = kvm_pgtable_stage2_map(pgt, addr, PAGE_SIZE, pa, prot,
 					     &cache, 0);
+		if (is_pvm_mode()) {
+			if (!ret || ret == -EAGAIN)
+				kvm_pvm_rmap_check(&kvm->arch.mmu, addr, ctx.gfn);
+			kvm_pvm_rmap_end(&kvm->arch.mmu);
+			if (kvm_to_pvm(kvm)->rmap.state != PVM_RMAP_COMPLETE) {
+				kvm_pvm_rmap_recover(kvm, false);
+				ret = -EAGAIN;
+			}
+		}
 		write_unlock(&kvm->mmu_lock);
 		if (ret)
 			break;
@@ -1180,6 +1215,8 @@ int kvm_phys_addr_ioremap(struct kvm *kvm, phys_addr_t guest_ipa,
 	}
 
 	kvm_mmu_free_memory_cache(&cache);
+	if (is_pvm_mode())
+		kvm_pvm_rmap_free_cache(rmap_cache);
 	return ret;
 }
 
@@ -1625,6 +1662,15 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	struct kvm_pgtable *pgt;
 	bool kernel_shadow = result && kvm_pvm_is_kernel_va(fault_ipa);
 	int cache_min_pages = kvm_mmu_cache_min_pages(kvm);
+	struct kvm_pvm_rmap_ctx rmap_ctx = {};
+	struct kvm_s2_mmu *reclaim = NULL;
+	bool rmap_retry = false;
+
+	if (is_pvm_mode() && fault_status != ESR_ELx_FSC_PERM) {
+		ret = kvm_pvm_rmap_topup(&vcpu_to_pvm(vcpu)->rmap_cache, 1);
+		if (ret)
+			return ret;
+	}
 
 	fault_granule = result ? PAGE_SIZE :
 		1UL << ARM64_HW_PGTABLE_LEVEL_SHIFT(fault_level);
@@ -1790,6 +1836,7 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 		return -EINVAL;
 #endif
 
+retry_mmu_lock:
 	read_lock(&kvm->mmu_lock);
 	pgt = result ? (kernel_shadow ?
 		vcpu_to_pvm(vcpu)->skern_mmu->mmu.pgt :
@@ -1859,6 +1906,29 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 		if (ret)
 			goto out_unlock;
 	}
+	if (is_pvm_mode()) {
+		/* The mapper and reverse index describe a complete shadow page. */
+		map_addr &= PAGE_MASK;
+		rmap_ctx.addr = map_addr;
+		rmap_ctx.gfn = gfn;
+		rmap_ctx.cache = vcpu_to_pvm(vcpu)->rmap_cache;
+		ret = kvm_pvm_rmap_begin(pgt->mmu, &rmap_ctx, result);
+		if (ret == -ENOMEM && fault_status == ESR_ELx_FSC_PERM &&
+		    !rmap_retry) {
+			read_unlock(&kvm->mmu_lock);
+			rmap_retry = true;
+			ret = kvm_pvm_rmap_topup(&vcpu_to_pvm(vcpu)->rmap_cache, 1);
+			if (ret)
+				goto out_release;
+			/* Recheck the PFN, guest walk and shadow versions after allocation. */
+			goto retry_mmu_lock;
+		}
+		if (ret) {
+			if (ret == -E2BIG)
+				reclaim = pgt->mmu;
+			goto out_unlock;
+		}
+	}
 
 	/*
 	 * Under the premise of getting a FSC_PERM fault, we just need to relax
@@ -1881,6 +1951,11 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 #ifdef CONFIG_HISI_VIRTCCA_CODA
 	ret = kvm_cvm_map_ipa(kvm, ipa, pfn, vma_pagesize, prot, ret);
 #endif
+	if (is_pvm_mode()) {
+		if (!ret || ret == -EAGAIN)
+			kvm_pvm_rmap_check(pgt->mmu, map_addr, gfn);
+		kvm_pvm_rmap_end(pgt->mmu);
+	}
 
 	if (kernel_shadow && !ret)
 		kvm_pvm_set_kern_pgd(vcpu_to_pvm(vcpu)->skern_mmu,
@@ -1898,7 +1973,18 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 
 out_unlock:
 	read_unlock(&kvm->mmu_lock);
+out_release:
 	kvm_release_pfn_clean(pfn);
+	if (is_pvm_mode() &&
+	    (reclaim || READ_ONCE(kvm_to_pvm(kvm)->rmap.state) != PVM_RMAP_COMPLETE)) {
+		write_lock(&kvm->mmu_lock);
+		if (kvm_to_pvm(kvm)->rmap.state != PVM_RMAP_COMPLETE)
+			kvm_pvm_rmap_recover(kvm, true);
+		else if (ret == -E2BIG)
+			kvm_pvm_rmap_reclaim_leaf(reclaim, map_addr);
+		write_unlock(&kvm->mmu_lock);
+		return 0;
+	}
 	return ret != -EAGAIN ? ret : 0;
 }
 

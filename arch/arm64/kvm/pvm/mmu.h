@@ -14,6 +14,8 @@
 
 #include <asm/pgtable-hwdef.h>
 
+#include "rmap.h"
+
 /*
  * The host runs PVM guests through a fixed MAIR, so a guest leaf can only
  * be projected when its ATTRINDX selects an encoding that fixed MAIR
@@ -53,6 +55,8 @@ static inline enum pvm_s1_attr pvm_s1_attr_type(u64 mair, u64 desc)
 struct kvm_s1_trans {
 	phys_addr_t output;
 	u64 desc;
+	gfn_t pt_gfns[4];
+	u8 nr_pt_gfns;
 	u64 esr;
 	u8 ap_table;
 	u8 level;
@@ -96,6 +100,7 @@ struct kvm_pvm_mmu {
 	pgd_t *kern_pgd;
 	phys_addr_t kern_pgd_phys;
 	struct page *kern_pgd_page;
+	struct kvm_pvm_mmu_rmap rmap;
 };
 
 int kvm_pvm_init_mmu(struct kvm *kvm);

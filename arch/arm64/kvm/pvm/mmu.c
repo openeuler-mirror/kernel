@@ -151,6 +151,7 @@ int kvm_pvm_init_mmu(struct kvm *kvm)
 	pgd_t *pgd;
 	int ret;
 
+	kvm_pvm_rmap_init(kvm);
 	/* The guest window must not replace a live host mapping. */
 	if (pgd_val(READ_ONCE(init_mm.pgd[PTRS_PER_PGD - 1])))
 		return -EOPNOTSUPP;
@@ -192,6 +193,19 @@ void kvm_pvm_set_kern_pgd(struct kvm_pvm_mmu *mmu, u64 pte)
 	set_pgd(&mmu->kern_pgd[PTRS_PER_PGD - 1], __pgd(pte));
 }
 
+void kvm_pvm_unlink_kernel_pgd(struct kvm_s2_mmu *mmu, u64 addr)
+{
+	struct kvm *kvm = kvm_s2_mmu_to_kvm(mmu);
+	struct kvm_pvm_mmu *shadow;
+
+	lockdep_assert_held_write(&kvm->mmu_lock);
+	if (mmu == &kvm->arch.mmu || addr < PVM_SHADOW_S1_KERNEL_BASE)
+		return;
+	shadow = container_of(mmu, struct kvm_pvm_mmu, mmu);
+	if (shadow->kern_pgd)
+		kvm_pvm_set_kern_pgd(shadow, 0);
+}
+
 static void pvm_free_mmu(struct kvm_pvm_mmu *mmu)
 {
 	if (!mmu)
@@ -224,6 +238,7 @@ static struct kvm_pvm_mmu *pvm_alloc_mmu(struct kvm *kvm, bool kernel)
 			return ERR_PTR(-ENOSPC);
 		}
 	}
+	kvm_pvm_rmap_mmu_init(&mmu->mmu);
 	if (kernel) {
 		mmu->kern_pgd_page = alloc_page(GFP_KERNEL_ACCOUNT | __GFP_ZERO);
 		if (!mmu->kern_pgd_page) {
@@ -327,6 +342,7 @@ void kvm_pvm_destroy_mmu(struct kvm *kvm)
 
 	write_lock(&kvm->mmu_lock);
 	kvm_pvm_unmap_all(kvm, false);
+	kvm_pvm_rmap_purge(&kvm->arch.mmu);
 	write_unlock(&kvm->mmu_lock);
 	for (i = 0; i < pvm->suser_mmus_size; i++)
 		pvm_free_mmu(pvm->suser_mmus[i]);
@@ -341,6 +357,7 @@ void kvm_pvm_destroy_mmu(struct kvm *kvm)
 	pvm->skern_mmus_size = 0;
 	pvm->suser_mmus_next = 0;
 	pvm->skern_mmus_next = 0;
+	kvm_pvm_rmap_destroy(kvm);
 
 	pvm_asid_free(pvm->identity_shadow_asid);
 	pvm->identity_shadow_asid = 0;
@@ -710,4 +727,59 @@ void kvm_pvm_unmap_all(struct kvm *kvm, bool may_block)
 void kvm_pvm_unmap_shadows(struct kvm *kvm, bool may_block)
 {
 	pvm_unmap(kvm, false, may_block);
+}
+
+static int pvm_check_empty_leaf(const struct kvm_pgtable_visit_ctx *ctx,
+				enum kvm_pgtable_walk_flags visit)
+{
+	return kvm_pte_valid(ctx->old) ? -EEXIST : 0;
+}
+
+static bool pvm_empty_mmu(struct kvm_s2_mmu *mmu, u64 start, u64 size)
+{
+	struct kvm_pgtable_walker walker = {
+		.cb = pvm_check_empty_leaf,
+		.flags = KVM_PGTABLE_WALK_LEAF,
+	};
+
+	return !mmu->pgt || !kvm_pgtable_walk(mmu->pgt, start, size, &walker);
+}
+
+bool kvm_pvm_rmap_recover(struct kvm *kvm, bool may_block)
+{
+	struct kvm_pvm *pvm = kvm_to_pvm(kvm);
+	bool empty;
+	size_t i;
+
+	lockdep_assert_held_write(&kvm->mmu_lock);
+	pvm->rmap.blocked++;
+	pvm->rmap.state = PVM_RMAP_RECOVERING;
+	kvm_pvm_unmap_all(kvm, may_block);
+	empty = pvm_empty_mmu(&kvm->arch.mmu, 0,
+			      min_t(u64, kvm_phys_size(kvm), PVM_SHADOW_S1_KERNEL_BASE));
+	for (i = 0; i < pvm->suser_mmus_size; i++) {
+		struct kvm_s2_mmu *user = &pvm->suser_mmus[i]->mmu;
+
+		if (user->pgt)
+			empty &= pvm_empty_mmu(user, 0, BIT_ULL(user->pgt->ia_bits));
+	}
+	for (i = 0; i < pvm->skern_mmus_size; i++) {
+		struct kvm_s2_mmu *kernel = &pvm->skern_mmus[i]->mmu;
+
+		empty &= pvm_empty_mmu(kernel, PVM_SHADOW_S1_KERNEL_BASE,
+				       BIT_ULL(PVM_GKERNEL_VA_BITS));
+	}
+	if (empty) {
+		kvm_pvm_rmap_purge(&kvm->arch.mmu);
+		for (i = 0; i < pvm->suser_mmus_size; i++)
+			kvm_pvm_rmap_purge(&pvm->suser_mmus[i]->mmu);
+		for (i = 0; i < pvm->skern_mmus_size; i++)
+			kvm_pvm_rmap_purge(&pvm->skern_mmus[i]->mmu);
+		pvm->rmap.state = PVM_RMAP_COMPLETE;
+	} else {
+		kvm_vm_bugged(kvm);
+		pvm->rmap.state = PVM_RMAP_UNTRUSTED;
+	}
+	pvm->rmap.blocked--;
+	return empty;
 }

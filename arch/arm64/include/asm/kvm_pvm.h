@@ -32,4 +32,7 @@ void kvm_arm_destroy_pvm(void);
 bool kvm_pvm_vgic_vcpu_pending_irq(struct kvm_vcpu *vcpu);
 void kvm_pvm_vgic_flush_hwstate(struct kvm_vcpu *vcpu);
 
+struct kvm_s2_mmu;
+void kvm_pvm_unlink_kernel_pgd(struct kvm_s2_mmu *mmu, u64 addr);
+
 #endif /* __ARM64_KVM_PVM_H__ */

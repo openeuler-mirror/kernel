@@ -15,6 +15,7 @@
 #include <asm/memory.h>
 #include <asm/stage2_pgtable.h>
 
+#include "../pvm/rmap.h"
 #include "../pvm/tlbi.h"
 
 #define KVM_PTE_TYPE			BIT(1)
@@ -964,6 +965,10 @@ static void stage2_unmap_put_pte(const struct kvm_pgtable_visit_ctx *ctx,
 	 * for the same until the entire unmap walk is completed.
 	 */
 	if (kvm_pte_valid(ctx->old)) {
+		/* Revoke the borrowed parent before the owner or subtree disappears. */
+		if (is_pvm_mode() && !ctx->level &&
+		    kvm_pte_table(ctx->old, ctx->level))
+			kvm_pvm_unlink_kernel_pgd(mmu, ctx->addr);
 		kvm_clear_pte(ctx->ptep);
 
 		if (kvm_pte_table(ctx->old, ctx->level)) {
@@ -1086,6 +1091,15 @@ static int stage2_map_walker_try_leaf(const struct kvm_pgtable_visit_ctx *ctx,
 	    stage2_pte_executable(new))
 		mm_ops->icache_inval_pou(kvm_pte_follow(new, mm_ops), granule);
 
+	if (is_pvm_mode()) {
+		int ret = kvm_pvm_rmap_map(data->mmu, ctx->addr,
+					 kvm_pte_valid(new) ? granule : 0);
+
+		if (ret) {
+			stage2_make_pte(ctx, 0);
+			return ret;
+		}
+	}
 	stage2_make_pte(ctx, new);
 
 	return 0;
@@ -1262,6 +1276,8 @@ static int stage2_unmap_walker(const struct kvm_pgtable_visit_ctx *ctx,
 	 */
 	stage2_unmap_put_pte(ctx, mmu, mm_ops);
 
+	if (is_pvm_mode() && !childp)
+		kvm_pvm_rmap_unmap(mmu, ctx->addr, kvm_granule_size(ctx->level));
 	if (is_pvm_mode()) {
 		if (!childp)
 			pvm_clean_dcache(ctx->old, mm_ops,
