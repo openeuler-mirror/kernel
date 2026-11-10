@@ -429,6 +429,7 @@
 /drivers/char/hw_random/phytium-rng.c @mao-hongbo @GoGo_phytium @xuyanaasss
 /drivers/char/hw_random/amd-rng.c @kile2009 @sming56_admin
 /drivers/char/hw_random/intel-rng.c @zeng_zhaorong @juntianlinux
+/drivers/char/hw_random/hisi-trng-v2.c @liulongfang
 /drivers/char/tpm/t*m_hygon.c @hanliyang @allen-shi
 /drivers/char/agp/amd* @kile2009 @sming56_admin
 /drivers/char/agp/intel* @zeng_zhaorong @juntianlinux
