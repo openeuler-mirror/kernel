@@ -11,7 +11,12 @@
 
 struct kvm_vcpu;
 
+struct kvm_s2_mmu;
+
 void kvm_pvm_flush_tlb_asid(u16 asid);
+void kvm_pvm_flush_shadow_tlb(struct kvm_s2_mmu *mmu);
+void kvm_pvm_flush_shadow_tlb_ipa(struct kvm_s2_mmu *mmu, u64 addr, int level);
+void kvm_pvm_flush_shadow_tlb_ipa_nsh(struct kvm_s2_mmu *mmu, u64 addr, int level);
 
 /*
  * Validate base EL1 operations and perform conservative full invalidation.

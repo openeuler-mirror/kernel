@@ -384,6 +384,7 @@ static void pvm_unmap_mmu(struct kvm_pvm_mmu *mmu, bool may_block)
 		unmap_stage2_range(&mmu->mmu, 0,
 				   BIT_ULL(mmu->mmu.pgt->ia_bits), may_block);
 	}
+	kvm_pvm_flush_shadow_tlb(&mmu->mmu);
 }
 
 static bool pvm_key_matches(struct kvm_pvm_mmu *mmu, bool kernel, u64 tcr,

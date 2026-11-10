@@ -23,6 +23,71 @@ void kvm_pvm_flush_tlb_asid(u16 asid)
 	dsb(ish);
 }
 
+static u16 pvm_mmu_asid(struct kvm_s2_mmu *mmu)
+{
+	struct kvm *kvm = kvm_s2_mmu_to_kvm(mmu);
+
+	if (mmu == &kvm->arch.mmu)
+		return kvm_to_pvm(kvm)->identity_shadow_asid;
+	return container_of(mmu, struct kvm_pvm_mmu, mmu)->shadow_asid;
+}
+
+static bool pvm_mmu_is_kernel(struct kvm_s2_mmu *mmu)
+{
+	struct kvm *kvm = kvm_s2_mmu_to_kvm(mmu);
+
+	return mmu != &kvm->arch.mmu &&
+	       container_of(mmu, struct kvm_pvm_mmu, mmu)->kern_pgd;
+}
+
+void kvm_pvm_flush_shadow_tlb(struct kvm_s2_mmu *mmu)
+{
+	if (pvm_mmu_is_kernel(mmu)) {
+		dsb(ishst);
+		__tlbi(vmalle1is);
+		dsb(ish);
+		isb();
+	} else {
+		kvm_pvm_flush_tlb_asid(pvm_mmu_asid(mmu));
+	}
+}
+
+void kvm_pvm_flush_shadow_tlb_ipa(struct kvm_s2_mmu *mmu, u64 addr, int level)
+{
+	if (level != KVM_PGTABLE_MAX_LEVELS - 1) {
+		kvm_pvm_flush_shadow_tlb(mmu);
+		return;
+	}
+	dsb(ishst);
+	if (pvm_mmu_is_kernel(mmu)) {
+		/* The software walker uses a folded TTBR1 address. */
+		addr = sign_extend64(addr, PVM_SHADOW_S1_VA_BITS - 1);
+		__tlbi(vaae1is, __TLBI_VADDR(addr, 0));
+	} else {
+		__tlbi(vae1is, __TLBI_VADDR(addr, pvm_mmu_asid(mmu)));
+	}
+	dsb(ish);
+}
+
+void kvm_pvm_flush_shadow_tlb_ipa_nsh(struct kvm_s2_mmu *mmu, u64 addr, int level)
+{
+	/* Permission grants may leave other CPUs to fault on their old permissions. */
+	if (level != KVM_PGTABLE_MAX_LEVELS - 1) {
+		kvm_pvm_flush_shadow_tlb_ipa(mmu, addr, level);
+		return;
+	}
+
+	dsb(nshst);
+	if (pvm_mmu_is_kernel(mmu)) {
+		addr = sign_extend64(addr, PVM_SHADOW_S1_VA_BITS - 1);
+		__tlbi(vaae1, __TLBI_VADDR(addr, 0));
+	} else {
+		__tlbi(vae1, __TLBI_VADDR(addr, pvm_mmu_asid(mmu)));
+	}
+	dsb(nsh);
+	isb();
+}
+
 int kvm_pvm_emulate_tlbi(struct kvm_vcpu *vcpu, u32 insn)
 {
 	u32 crm = sys_reg_CRm(insn);
