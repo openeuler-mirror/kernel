@@ -194,6 +194,26 @@ static struct pvm_rmap_entry *pvm_rmap_find_va(struct kvm_s2_mmu *mmu, u64 addr)
 	return NULL;
 }
 
+static struct pvm_rmap_entry *pvm_rmap_find_gfn(struct kvm_pvm_rmap *rmap,
+						gfn_t start, gfn_t end)
+{
+	struct rb_node *node = rmap->gfns.rb_node;
+	struct pvm_rmap_entry *first = NULL;
+
+	while (node) {
+		struct pvm_rmap_entry *entry;
+
+		entry = rb_entry(node, struct pvm_rmap_entry, gfn_node);
+		if (entry->gfn >= start) {
+			first = entry;
+			node = node->rb_left;
+		} else {
+			node = node->rb_right;
+		}
+	}
+	return first && first->gfn < end ? first : NULL;
+}
+
 static struct pvm_rmap_bucket *pvm_rmap_find_bucket(struct kvm_pvm_rmap *rmap,
 						    gfn_t start, gfn_t end)
 {
@@ -529,7 +549,6 @@ void kvm_pvm_rmap_unmap(struct kvm_s2_mmu *mmu, u64 addr, u64 size)
 	spin_unlock(&rmap->lock);
 }
 
-
 void kvm_pvm_rmap_reclaim_leaf(struct kvm_s2_mmu *mmu, u64 addr)
 {
 	struct kvm *kvm = kvm_s2_mmu_to_kvm(mmu);
@@ -552,3 +571,49 @@ void kvm_pvm_rmap_reclaim_leaf(struct kvm_s2_mmu *mmu, u64 addr)
 	pvm->rmap.blocked--;
 }
 
+bool kvm_pvm_rmap_invalidate(struct kvm *kvm, gfn_t start, gfn_t end,
+			     bool may_block)
+{
+	struct kvm_pvm *pvm = kvm_to_pvm(kvm);
+	struct kvm_pvm_rmap *rmap = &pvm->rmap;
+
+	lockdep_assert_held_write(&kvm->mmu_lock);
+	if (start >= end)
+		return true;
+	pvm->invalidate_seq++;
+	if (rmap->state != PVM_RMAP_COMPLETE)
+		return false;
+	for (;;) {
+		struct pvm_rmap_entry *entry;
+		struct pvm_rmap_bucket *bucket;
+		struct kvm_s2_mmu *mmu;
+		u64 addr;
+		int ret;
+
+		entry = pvm_rmap_find_gfn(rmap, start, end);
+		if (!entry) {
+			bucket = pvm_rmap_find_bucket(rmap, start, end);
+			if (!bucket)
+				break;
+			entry = hlist_entry(bucket->deps.first, struct pvm_rmap_dep,
+					    bucket_link)->entry;
+		}
+		mmu = entry->mmu;
+		addr = entry->addr;
+		/* The walker must revoke borrowed kernel roots before freeing tables. */
+		ret = mmu->pgt ? kvm_pgtable_stage2_unmap(mmu->pgt, addr, PAGE_SIZE) :
+				 -EINVAL;
+		/* The helper can free entry and every associated dependency. */
+		if (ret || pvm_rmap_find_va(mmu, addr) ||
+		    rmap->state != PVM_RMAP_COMPLETE)
+			rmap->state = PVM_RMAP_UNTRUSTED;
+		if (rmap->state != PVM_RMAP_COMPLETE)
+			return false;
+		if (may_block)
+			cond_resched_rwlock_write(&kvm->mmu_lock);
+		/* Re-query after every removal and after any MMU teardown. */
+		if (rmap->state != PVM_RMAP_COMPLETE)
+			return false;
+	}
+	return true;
+}

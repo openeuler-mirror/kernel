@@ -70,6 +70,9 @@ void kvm_pvm_rmap_end(struct kvm_s2_mmu *mmu);
 void kvm_pvm_rmap_check(struct kvm_s2_mmu *mmu, u64 addr, gfn_t gfn);
 int kvm_pvm_rmap_map(struct kvm_s2_mmu *mmu, u64 addr, u64 size);
 void kvm_pvm_rmap_unmap(struct kvm_s2_mmu *mmu, u64 addr, u64 size);
+/* Write-locked caller must block publication across any rescheduling. */
+bool kvm_pvm_rmap_invalidate(struct kvm *kvm, gfn_t start, gfn_t end,
+			     bool may_block);
 bool kvm_pvm_rmap_recover(struct kvm *kvm, bool may_block);
 void kvm_pvm_rmap_reclaim_leaf(struct kvm_s2_mmu *mmu, u64 addr);
 

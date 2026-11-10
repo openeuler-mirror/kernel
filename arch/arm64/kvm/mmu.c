@@ -2232,7 +2232,9 @@ bool kvm_unmap_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range)
 		return false;
 
 	if (is_pvm_mode()) {
-		kvm_pvm_unmap_all(kvm, range->may_block);
+		if (!kvm_pvm_rmap_invalidate(kvm, range->start, range->end,
+					     range->may_block))
+			kvm_pvm_rmap_recover(kvm, range->may_block);
 		return false;
 	}
 
@@ -2252,7 +2254,7 @@ bool kvm_set_spte_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 		return false;
 
 	if (is_pvm_mode()) {
-		kvm_pvm_unmap_all(kvm, false);
+		/* invalidate_range_start/end already removed all GVA aliases. */
 		return false;
 	}
 
@@ -2579,10 +2581,16 @@ void kvm_arch_flush_shadow_memslot(struct kvm *kvm,
 	phys_addr_t size = slot->npages << PAGE_SHIFT;
 
 	write_lock(&kvm->mmu_lock);
-	if (is_pvm_mode())
-		kvm_pvm_unmap_all(kvm, true);
-	else
+	if (is_pvm_mode()) {
+		kvm_to_pvm(kvm)->rmap.blocked++;
+		if (!kvm_pvm_rmap_invalidate(kvm, slot->base_gfn,
+					     slot->base_gfn + slot->npages,
+					     true))
+			kvm_pvm_rmap_recover(kvm, true);
+		kvm_to_pvm(kvm)->rmap.blocked--;
+	} else {
 		unmap_stage2_range(&kvm->arch.mmu, gpa, size, true);
+	}
 	write_unlock(&kvm->mmu_lock);
 }
 
