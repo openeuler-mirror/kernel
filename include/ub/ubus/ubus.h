@@ -963,6 +963,20 @@ int ub_irq_vector(struct ub_entity *uent, unsigned int nr);
 const struct cpumask *ub_irq_get_affinity(struct ub_entity *uent, int nr);
 
 /**
+ * ub_get_ubc_irq_affinity() - Get IRQ affinity cpumask by UB entity.
+ * @uent: UB entity associated with a bus controller.
+ *
+ * Obtain the controller number from @uent->ubc->ctl_no and search the
+ * IRQ affinity list for the matching entry. The returned cpumask
+ * describes which CPUs the controller's interrupts are bound to.
+ *
+ * Context: Any context.
+ * Return: Pointer to the cpumask on success, NULL if @uent is NULL,
+ *	   @uent->ubc is NULL, or no affinity is recorded.
+ */
+const struct cpumask *ub_get_ubc_irq_affinity(struct ub_entity *uent);
+
+/**
  * ub_activate_entity() - Activate entity.
  * @uent: UB entity.
  * @entity_idx: Number of the entity to be activated.
@@ -1228,6 +1242,8 @@ static inline int ub_irq_vector(struct ub_entity *uent, unsigned int nr)
 { return -EINVAL; }
 static inline const struct cpumask *
 ub_irq_get_affinity(struct ub_entity *uent, int nr) { return cpu_possible_mask; }
+static inline const struct cpumask *
+ub_get_ubc_irq_affinity(struct ub_entity *uent) { return cpu_possible_mask; }
 static inline int ub_activate_entity(struct ub_entity *uent, u32 entity_idx)
 { return -ENODEV; }
 static inline int ub_deactivate_entity(struct ub_entity *uent, u32 entity_idx)
