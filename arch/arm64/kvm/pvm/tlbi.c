@@ -27,7 +27,7 @@ int kvm_pvm_emulate_tlbi(struct kvm_vcpu *vcpu, u32 insn)
 
 	/* Discard software translations too, or hardware can refill stale data. */
 	write_lock(&vcpu->kvm->mmu_lock);
-	kvm_pvm_unmap_all(vcpu->kvm, true);
+	kvm_pvm_unmap_shadows(vcpu->kvm, true);
 	write_unlock(&vcpu->kvm->mmu_lock);
 	kvm_incr_pc(vcpu);
 	return 1;

@@ -596,7 +596,7 @@ void kvm_pvm_vcpu_put_mmu(struct kvm_vcpu *vcpu)
 	write_unlock(&vcpu->kvm->mmu_lock);
 }
 
-void kvm_pvm_unmap_all(struct kvm *kvm, bool may_block)
+static void pvm_unmap(struct kvm *kvm, bool identity, bool may_block)
 {
 	struct kvm_pvm *pvm = kvm_to_pvm(kvm);
 	size_t i;
@@ -631,9 +631,20 @@ void kvm_pvm_unmap_all(struct kvm *kvm, bool may_block)
 		pvm_unmap_mmu(mmu, may_block);
 		pvm_put_mmu(mmu);
 	}
-	unmap_stage2_range(&kvm->arch.mmu, 0,
-			   min_t(u64, kvm_phys_size(kvm),
-				 PVM_SHADOW_S1_KERNEL_BASE), may_block);
+	if (identity)
+		unmap_stage2_range(&kvm->arch.mmu, 0,
+				   min_t(u64, kvm_phys_size(kvm),
+					 PVM_SHADOW_S1_KERNEL_BASE), may_block);
 	pvm->invalidate_seq++;
 	pvm->invalidating--;
+}
+
+void kvm_pvm_unmap_all(struct kvm *kvm, bool may_block)
+{
+	pvm_unmap(kvm, true, may_block);
+}
+
+void kvm_pvm_unmap_shadows(struct kvm *kvm, bool may_block)
+{
+	pvm_unmap(kvm, false, may_block);
 }

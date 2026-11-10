@@ -103,6 +103,7 @@ void kvm_pvm_sysfs_exit(void);
 int kvm_pvm_init_vcpu_mmu(struct kvm_vcpu *vcpu);
 void kvm_pvm_destroy_mmu(struct kvm *kvm);
 void kvm_pvm_unmap_all(struct kvm *kvm, bool may_block);
+void kvm_pvm_unmap_shadows(struct kvm *kvm, bool may_block);
 int kvm_pvm_vcpu_select_mmu(struct kvm_vcpu *vcpu, bool may_block);
 void kvm_pvm_vcpu_put_mmu(struct kvm_vcpu *vcpu);
 bool kvm_pvm_vcpu_mmu_enabled(struct kvm_vcpu *vcpu);
