@@ -79,6 +79,40 @@ static int ubase_entity_enable(struct ubase_dev *udev, struct ub_entity *ue, u8 
 	return ret;
 }
 
+static bool ubase_dev_support_iova_merge(struct ub_entity *ue)
+{
+	switch (uent_device(ue)) {
+	case UBASE_DEV_ID_A_V2_URMA_MUE:
+	case UBASE_DEV_ID_A_V2_CDMA_MUE:
+	case UBASE_DEV_ID_A_V2_UBOE_MUE:
+		break;
+	default:
+		return false;
+	}
+
+	return true;
+}
+
+static int ubase_dev_merge_iova(struct ub_entity *ue)
+{
+#define IOVA_OFFSET (2 * 1024 * 1024 * 1024ULL)
+	struct ubase_dev *udev = dev_get_drvdata(&ue->dev);
+
+	if (!ubase_dev_support_iova_merge(ue))
+		return 0;
+
+	if (ue->dev.bus_dma_limit > IOVA_OFFSET * ue->uent_num) {
+		ue->dev.bus_dma_limit -= IOVA_OFFSET * ue->uent_num;
+		return 0;
+	}
+
+	ubase_err(udev,
+		  "bus_dma_limit[0x%llx] < IOVA_OFFSET * uent_num[%u].\n",
+		  ue->dev.bus_dma_limit, ue->uent_num);
+
+	return -EINVAL;
+}
+
 static int ubase_ubus_init(struct ub_entity *ue)
 {
 #define UBASE_UBUS_DMA_BIT	48
@@ -97,6 +131,10 @@ static int ubase_ubus_init(struct ub_entity *ue)
 			set_bit(UBASE_STATE_INIT_AGAIN_B, &udev->state_bits);
 		goto err_ubase_entity_enable;
 	}
+
+	ret = ubase_dev_merge_iova(ue);
+	if (ret)
+		goto err_enable_device;
 
 	ret = dma_set_mask_and_coherent(&ue->dev,
 					DMA_BIT_MASK(UBASE_UBUS_DMA_BIT));
