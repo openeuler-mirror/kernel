@@ -38,6 +38,7 @@
 #define KVM_PTE_LEAF_ATTR_LO_S1_SH	GENMASK(9, 8)
 #define KVM_PTE_LEAF_ATTR_LO_S1_SH_IS	3
 #define KVM_PTE_LEAF_ATTR_LO_S1_AF	BIT(10)
+#define KVM_PTE_LEAF_ATTR_LO_S1_NG	BIT(11)
 
 #define KVM_PTE_LEAF_ATTR_LO_S2_MEMATTR	GENMASK(5, 2)
 #define KVM_PTE_LEAF_ATTR_LO_S2_S2AP_R	BIT(6)
@@ -795,6 +796,8 @@ static int pvm_s1_set_prot_attr(enum kvm_pgtable_prot prot,
 	attr |= FIELD_PREP(KVM_PTE_LEAF_ATTR_LO_S1_AP, ap);
 	attr |= FIELD_PREP(KVM_PTE_LEAF_ATTR_LO_S1_SH,
 			   KVM_PTE_LEAF_ATTR_LO_S1_SH_IS);
+	/* Private hardware tags isolate guest translations from host and peers. */
+	attr |= KVM_PTE_LEAF_ATTR_LO_S1_NG;
 	/*
 	 * A leaf executable by either guest privilege stays executable
 	 * at EL0: the virtual EL1 consumes the UXN bit too.

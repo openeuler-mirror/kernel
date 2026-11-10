@@ -15,6 +15,7 @@ struct kvm_pvm_mmu;
 struct kvm_pvm {
 	struct kvm kvm;
 	struct rv_timer_vm_data timer_data;
+	u16 identity_shadow_asid;
 	struct kvm_pvm_mmu **suser_mmus;
 	size_t suser_mmus_size;
 	size_t suser_mmus_next;

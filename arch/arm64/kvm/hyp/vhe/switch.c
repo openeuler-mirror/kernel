@@ -345,12 +345,14 @@ static void __pvm_load_stage1(struct kvm_vcpu *vcpu,
 	u64 ttbr0 = phys_to_ttbr(mmu->pgd_phys);
 	u64 ttbr1 = phys_to_ttbr(kernel ? kernel->kern_pgd_phys : pvm->kern_pgd_phys);
 	u64 tcr = ctxt_sys_reg(host_ctxt, TCR_EL1);
+	u16 asid = shadow ? shadow->shadow_asid : pvm->identity_shadow_asid;
 
 	/* Host mappings require table permissions while the guest runs. */
 	tcr &= ~(TCR_T0SZ_MASK | PVM_TCR_GUEST_MASK | TCR_HPD1 |
 		 TCR_TBID0 | TCR_TBID1);
 	tcr |= FIELD_PREP(TCR_T0SZ_MASK, 64 - mmu->pgt->ia_bits);
 	tcr |= guest_tcr & (TCR_TBI0 | TCR_TBI1);
+	tcr |= TCR_A1 | TCR_ASID16;
 	if (!vcpu_mode_priv(vcpu)) {
 		tcr |= guest_tcr & TCR_E0PD0;
 		tcr |= TCR_E0PD1;
@@ -363,7 +365,7 @@ static void __pvm_load_stage1(struct kvm_vcpu *vcpu,
 	/* Keep TTBR0 empty until the table layout is synchronized. */
 	cpu_set_reserved_ttbr0();
 	local_flush_tlb_all();
-	write_sysreg_el2(ttbr1, SYS_TTBR1);
+	write_sysreg_el2(ttbr1 | FIELD_PREP(TTBR_ASID_MASK, asid), SYS_TTBR1);
 	isb();
 	write_sysreg_el2(tcr, SYS_TCR);
 	isb();

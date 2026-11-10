@@ -84,6 +84,7 @@ struct kvm_pvm_mmu {
 	u64 sctlr;
 	u64 mair;
 	u16 asid;
+	u16 shadow_asid;
 	/*
 	 * mmu.pgt owns the guest shadow tables and frees their descendants.
 	 * For a kernel context, kern_pgd is a separate run root containing

@@ -6,6 +6,7 @@
 
 #include <linux/kvm_host.h>
 #include <linux/kobject.h>
+#include <linux/bitmap.h>
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/sysfs.h>
@@ -16,6 +17,45 @@
 #include <asm/pgtable.h>
 
 #include "mmu.h"
+#include "tlbi.h"
+
+#define PVM_SHADOW_ASID_FIRST 0x8000U
+#define PVM_SHADOW_ASID_NR 0x8000U
+static DEFINE_SPINLOCK(pvm_asid_lock);
+static DECLARE_BITMAP(pvm_asid_map, PVM_SHADOW_ASID_NR);
+static unsigned int pvm_asid_next;
+
+static u16 pvm_asid_alloc(void)
+{
+	unsigned long index, flags;
+
+	spin_lock_irqsave(&pvm_asid_lock, flags);
+	index = find_next_zero_bit(pvm_asid_map, PVM_SHADOW_ASID_NR,
+				   pvm_asid_next);
+	if (index == PVM_SHADOW_ASID_NR)
+		index = find_first_zero_bit(pvm_asid_map, PVM_SHADOW_ASID_NR);
+	if (index < PVM_SHADOW_ASID_NR) {
+		__set_bit(index, pvm_asid_map);
+		pvm_asid_next = (index + 1) % PVM_SHADOW_ASID_NR;
+	}
+	spin_unlock_irqrestore(&pvm_asid_lock, flags);
+	return index < PVM_SHADOW_ASID_NR ? PVM_SHADOW_ASID_FIRST + index : 0;
+}
+
+static void pvm_asid_free(u16 asid)
+{
+	unsigned long flags;
+
+	if (!asid)
+		return;
+	if (WARN_ON_ONCE(asid < PVM_SHADOW_ASID_FIRST))
+		return;
+	/* Complete invalidation before another owner can obtain this tag. */
+	kvm_pvm_flush_tlb_asid(asid);
+	spin_lock_irqsave(&pvm_asid_lock, flags);
+	__clear_bit(asid - PVM_SHADOW_ASID_FIRST, pvm_asid_map);
+	spin_unlock_irqrestore(&pvm_asid_lock, flags);
+}
 
 /*
  * Context replacement acquires the new kernel pin before releasing the
@@ -126,6 +166,13 @@ int kvm_pvm_init_mmu(struct kvm *kvm)
 	pvm->kern_pgd_phys = page_to_phys(page);
 	pvm->kern_pgd_page = page;
 	pvm->mmus_per_vcpu = READ_ONCE(pvm_mmus_per_vcpu);
+	pvm->identity_shadow_asid = pvm_asid_alloc();
+	if (!pvm->identity_shadow_asid) {
+		__free_page(page);
+		pvm->kern_pgd_page = NULL;
+		pvm->kern_pgd_phys = 0;
+		return -ENOSPC;
+	}
 	return 0;
 }
 
@@ -150,6 +197,7 @@ static void pvm_free_mmu(struct kvm_pvm_mmu *mmu)
 	if (!mmu)
 		return;
 	WARN_ON_ONCE(mmu->active);
+	pvm_asid_free(mmu->shadow_asid);
 	if (mmu->kern_pgd_page)
 		__free_page(mmu->kern_pgd_page);
 	kvm_free_stage2_pgd(&mmu->mmu);
@@ -168,6 +216,13 @@ static struct kvm_pvm_mmu *pvm_alloc_mmu(struct kvm *kvm, bool kernel)
 	if (ret) {
 		kfree(mmu);
 		return ERR_PTR(ret);
+	}
+	if (!kernel) {
+		mmu->shadow_asid = pvm_asid_alloc();
+		if (!mmu->shadow_asid) {
+			pvm_free_mmu(mmu);
+			return ERR_PTR(-ENOSPC);
+		}
 	}
 	if (kernel) {
 		mmu->kern_pgd_page = alloc_page(GFP_KERNEL_ACCOUNT | __GFP_ZERO);
@@ -270,6 +325,9 @@ void kvm_pvm_destroy_mmu(struct kvm *kvm)
 	struct kvm_pvm *pvm = kvm_to_pvm(kvm);
 	size_t i;
 
+	write_lock(&kvm->mmu_lock);
+	kvm_pvm_unmap_all(kvm, false);
+	write_unlock(&kvm->mmu_lock);
 	for (i = 0; i < pvm->suser_mmus_size; i++)
 		pvm_free_mmu(pvm->suser_mmus[i]);
 	for (i = 0; i < pvm->skern_mmus_size; i++)
@@ -283,6 +341,9 @@ void kvm_pvm_destroy_mmu(struct kvm *kvm)
 	pvm->skern_mmus_size = 0;
 	pvm->suser_mmus_next = 0;
 	pvm->skern_mmus_next = 0;
+
+	pvm_asid_free(pvm->identity_shadow_asid);
+	pvm->identity_shadow_asid = 0;
 	if (pvm->kern_pgd_page) {
 		__free_page(pvm->kern_pgd_page);
 		pvm->kern_pgd_phys = 0;
@@ -332,7 +393,8 @@ static bool pvm_key_matches(struct kvm_pvm_mmu *mmu, bool kernel, u64 tcr,
 		return false;
 
 	return kernel ? mmu->ttbr1 == ttbr1 :
-			mmu->ttbr0 == ttbr0 && mmu->asid == asid;
+			mmu->ttbr0 == ttbr0 && mmu->ttbr1 == ttbr1 &&
+			mmu->asid == asid;
 }
 
 /*

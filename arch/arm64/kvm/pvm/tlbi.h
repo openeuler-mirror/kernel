@@ -11,6 +11,8 @@
 
 struct kvm_vcpu;
 
+void kvm_pvm_flush_tlb_asid(u16 asid);
+
 /*
  * Validate base EL1 operations and perform conservative full invalidation.
  * Range and Outer Shareable extensions are not accepted.

@@ -8,10 +8,20 @@
 
 #include <asm/insn.h>
 #include <asm/kvm_emulate.h>
+#include <asm/kvm_mmu.h>
+#include <asm/kvm_pvm.h>
+#include <asm/tlbflush.h>
 #include <asm/virt.h>
 
 #include "mmu.h"
 #include "tlbi.h"
+
+void kvm_pvm_flush_tlb_asid(u16 asid)
+{
+	dsb(ishst);
+	__tlbi(aside1is, __TLBI_VADDR(0, asid));
+	dsb(ish);
+}
 
 int kvm_pvm_emulate_tlbi(struct kvm_vcpu *vcpu, u32 insn)
 {
