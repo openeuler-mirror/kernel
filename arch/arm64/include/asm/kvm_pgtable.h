@@ -208,6 +208,9 @@ enum kvm_pgtable_prot {
 	KVM_PGTABLE_PROT_PBHA3			= BIT(62),
 };
 
+/* Access-flag control for PVM shadow stage-1 mappings. */
+#define KVM_PGTABLE_PROT_AF	BIT(8)
+
 #define KVM_PGTABLE_PROT_RW	(KVM_PGTABLE_PROT_R | KVM_PGTABLE_PROT_W)
 #define KVM_PGTABLE_PROT_RWX	(KVM_PGTABLE_PROT_RW | KVM_PGTABLE_PROT_X)
 

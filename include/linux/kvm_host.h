@@ -1566,6 +1566,21 @@ void kvm_arch_mmu_enable_log_dirty_pt_masked(struct kvm *kvm,
 					unsigned long mask);
 void kvm_arch_sync_dirty_log(struct kvm *kvm, struct kvm_memory_slot *memslot);
 
+#ifndef kvm_arch_manual_dirty_log_supported
+#define kvm_arch_manual_dirty_log_supported() true
+#endif
+
+/*
+ * Finish deferred write protection after clearing a dirty-log batch. Called
+ * with mmu_lock held, before the final TLB flush.
+ */
+#ifndef __KVM_HAVE_ARCH_FINISH_DIRTY_LOG
+static inline void kvm_arch_finish_dirty_log(struct kvm *kvm,
+					     struct kvm_memory_slot *memslot)
+{
+}
+#endif
+
 #ifndef CONFIG_KVM_GENERIC_DIRTYLOG_READ_PROTECT
 int kvm_vm_ioctl_get_dirty_log(struct kvm *kvm, struct kvm_dirty_log *log);
 int kvm_get_dirty_log(struct kvm *kvm, struct kvm_dirty_log *log,

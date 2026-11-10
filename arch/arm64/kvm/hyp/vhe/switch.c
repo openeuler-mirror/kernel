@@ -22,26 +22,27 @@
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_hyp.h>
 #include <asm/kvm_mmu.h>
+#include <asm/kvm_pvm.h>
+#include <asm/mmu_context.h>
 #include <asm/fpsimd.h>
 #include <asm/debug-monitors.h>
 #include <asm/processor.h>
 #include <asm/thread_info.h>
 #include <asm/vectors.h>
 
+#include "../../pvm/mmu.h"
+
 /* VHE specific context */
 DEFINE_PER_CPU(struct kvm_host_data, kvm_host_data);
 DEFINE_PER_CPU(struct kvm_cpu_context, kvm_hyp_ctxt);
 DEFINE_PER_CPU(unsigned long, kvm_hyp_vector);
 
-/* PVM mode: the SCTLR_EL1 value the guest runs with on this CPU */
-DEFINE_PER_CPU(u64, kvm_pvm_run_sctlr);
-
 /*
  * SCTLR_EL1 bits taken from the guest: those that only control EL0, where the
- * guest runs.  All other bits also control the host, which handles guest exits
- * at EL1 under the guest-run value until __pvm_guest_exit() restores its own, so
- * they keep the host value.  EE, for instance, sets the endianness of the
- * host's data accesses and translation table walks.
+ * guest runs. All other bits also control the host, which handles exits and
+ * hyp fixups at EL1 under the guest-run value until the loop restores its
+ * own. Keep their host values unless overridden below. EE, for instance,
+ * sets the endianness of host data accesses and translation table walks.
  */
 #define PVM_SCTLR_GUEST		(SCTLR_EL1_SA0 | SCTLR_EL1_CP15BEN | \
 				 SCTLR_EL1_ITD | SCTLR_EL1_SED | \
@@ -54,14 +55,15 @@ DEFINE_PER_CPU(u64, kvm_pvm_run_sctlr);
 				 SCTLR_EL1_EnALS)
 
 /*
- * SCTLR_EL1 bits forced on for the guest run, whatever the guest configured:
+ * SCTLR_EL1 bits initially enabled when preparing the guest run:
  *  M:           PVM has no stage 2, so stage 1 is the only translation
  *               between the guest and host memory.
  *  C, I:        the host maps guest memory cacheable; keep the guest's
  *               accesses cacheable as well, so the attributes never mismatch.
  *  UCI:         the guest kernel runs at EL0 but maintains the caches by VA
- *               as an EL1 kernel would; allow it instead of trapping each one.
- *  DZE:         likewise for DC ZVA.
+ *               as an EL1 kernel would. Refine UCI for the virtual EL
+ *               before each entry.
+ *  DZE:         likewise for DC ZVA; refine it for the virtual EL at entry.
  */
 #define PVM_SCTLR_FLAGS1	(SCTLR_EL1_M | SCTLR_EL1_C | \
 				 SCTLR_EL1_I | SCTLR_EL1_UCI | \
@@ -93,13 +95,29 @@ DEFINE_PER_CPU(u64, kvm_pvm_run_sctlr);
 /*
  * The guest-run TCR_EL1 describes the page tables installed for the run,
  * which the host side builds, not the guest's own: it is the host's value,
- * with these bits forced off:
- *  E0PD1:       the guest kernel runs at EL0 in the TTBR1 range, where E0PD1
- *               would fault every one of its accesses.
+ * with the shadow input size and virtual EL0 access controls projected.
  * TCR2_EL1, PIR_EL1 and PIRE0_EL1 also describe the installed page tables, so
- * they are not switched at all and keep the host's value.
+ * they are not switched at all and keep the host's value. Hosts with S1PIE
+ * are rejected because shadow leaves use the classic AP permission encoding.
+ *
+ * TCR_TBI1 is deliberately not part of this mask.  The run TCR also governs
+ * host EL1 accesses taken before the translation registers are restored: the
+ * entry/exit assembly, the current-EL vectors and the C code they call.
+ * KASAN_SW_TAGS and MTE hosts carry tags in ordinary kernel pointers, which
+ * rely on the host's TBI1.  Clearing it for a guest with TBI1=0 would make
+ * those pointers non-canonical.  Keeping the host bit preserves valid guest
+ * kernel addresses, but it also ignores the top byte of non-canonical ones:
+ * such an address could hit an existing shadow mapping instead of taking the
+ * address-size fault the guest expects.  A guest that requires TBI1=0 is
+ * therefore rejected when its MMU is enabled, and a guest that sets TBI1 is
+ * only added to, never subtracted from, the host value below.
+ *
+ * PVM hides PAuth from the guest, so TBI applies to both instruction and
+ * data addresses. Clear host TBID bits for the run; the host entry/exit
+ * code uses canonical instruction addresses. Restore the saved host TCR
+ * when leaving the run loop.
  */
-#define PVM_TCR_FLAGS		TCR_E0PD1
+#define PVM_TCR_GUEST_MASK	(TCR_TBI0 | TCR_E0PD0 | TCR_E0PD1)
 
 /*
  * The guest-run CPACR_EL1 keeps the host's EL1 controls, as the host handles
@@ -124,21 +142,7 @@ static void __activate_traps(struct kvm_vcpu *vcpu)
 	u64 val;
 
 	if (is_pvm_mode()) {
-		struct kvm_cpu_context *ctxt = &vcpu->arch.ctxt;
-		u64 sctlr, tcr, cpacr, cntkctl;
-
-		sctlr = ctxt_sys_reg(ctxt, SCTLR_EL1) & PVM_SCTLR_GUEST;
-		sctlr |= read_sysreg_el2(SYS_SCTLR) & ~PVM_SCTLR_GUEST;
-		sctlr |= PVM_SCTLR_FLAGS1;
-		sctlr &= ~PVM_SCTLR_FLAGS2;
-		/*
-		 * __pvm_guest_enter() installs it right before the ERET: compiled
-		 * code, with its pointer authentication, never runs under it.
-		 */
-		__this_cpu_write(kvm_pvm_run_sctlr, sctlr);
-
-		tcr = read_sysreg_el2(SYS_TCR) & ~PVM_TCR_FLAGS;
-		write_sysreg_el2(tcr, SYS_TCR);
+		u64 cpacr, cntkctl;
 
 		cpacr = read_sysreg_el2(SYS_CPACR) & ~CPACR_EL1_FPEN_EL0EN;
 		if (pvm_vcpu_fp_enabled(vcpu))
@@ -328,12 +332,103 @@ static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, u64 *exit_code)
 	return __fixup_guest_exit(vcpu, exit_code, hyp_exit_handlers);
 }
 
+static void __pvm_load_stage1(struct kvm_vcpu *vcpu,
+			      struct kvm_cpu_context *host_ctxt)
+{
+	struct kvm_pvm_mmu *shadow = vcpu_to_pvm(vcpu)->suser_mmu;
+	struct kvm_pvm_mmu *kernel = vcpu_to_pvm(vcpu)->skern_mmu;
+	struct kvm_pvm *pvm = kvm_to_pvm(vcpu->kvm);
+	struct kvm_s2_mmu *mmu = shadow ? &shadow->mmu : vcpu->arch.hw_mmu;
+	bool mmu_enabled = kvm_pvm_vcpu_mmu_enabled(vcpu);
+	u64 guest_tcr = mmu_enabled ? ctxt_sys_reg(&vcpu->arch.ctxt, TCR_EL1) : 0;
+	u64 empty_ttbr0 = phys_to_ttbr(__pa_symbol(reserved_pg_dir));
+	u64 ttbr0 = phys_to_ttbr(mmu->pgd_phys);
+	u64 ttbr1 = phys_to_ttbr(kernel ? kernel->kern_pgd_phys : pvm->kern_pgd_phys);
+	u64 tcr = ctxt_sys_reg(host_ctxt, TCR_EL1);
+
+	/* Host mappings require table permissions while the guest runs. */
+	tcr &= ~(TCR_T0SZ_MASK | PVM_TCR_GUEST_MASK | TCR_HPD1 |
+		 TCR_TBID0 | TCR_TBID1);
+	tcr |= FIELD_PREP(TCR_T0SZ_MASK, 64 - mmu->pgt->ia_bits);
+	tcr |= guest_tcr & (TCR_TBI0 | TCR_TBI1);
+	if (!vcpu_mode_priv(vcpu)) {
+		tcr |= guest_tcr & TCR_E0PD0;
+		tcr |= TCR_E0PD1;
+	}
+
+	/* Unsupported T0SZ must fault on access, not reuse MMU-off mappings. */
+	if (mmu_enabled && !shadow)
+		ttbr0 = empty_ttbr0;
+
+	/* Keep TTBR0 empty until the table layout is synchronized. */
+	cpu_set_reserved_ttbr0();
+	local_flush_tlb_all();
+	write_sysreg_el2(ttbr1, SYS_TTBR1);
+	isb();
+	write_sysreg_el2(tcr, SYS_TCR);
+	isb();
+	/* Remove host global entries before the restricted root is used. */
+	local_flush_tlb_all();
+	write_sysreg_el2(ttbr0, SYS_TTBR0);
+	isb();
+}
+
+/*
+ * Hyp fixups can change the virtual EL without leaving the run loop.
+ * Update UCI and DZE so only guest EL1 bypasses the guest EL0 trap controls.
+ * E0PD only affects EL0 accesses and needs no TLB maintenance. The
+ * guest-entry ERET synchronizes the update.
+ */
+static __always_inline u64 __pvm_load_el0_controls(struct kvm_vcpu *vcpu,
+						   u64 sctlr)
+{
+	u64 guest_tcr = kvm_pvm_vcpu_mmu_enabled(vcpu) ?
+		ctxt_sys_reg(&vcpu->arch.ctxt, TCR_EL1) : 0;
+	u64 tcr = read_sysreg_el2(SYS_TCR);
+	u64 val = tcr & ~(TCR_E0PD0 | TCR_E0PD1);
+	u64 guest_sctlr = ctxt_sys_reg(&vcpu->arch.ctxt, SCTLR_EL1);
+	u64 mask = SCTLR_EL1_UCI | SCTLR_EL1_DZE;
+
+	sctlr &= ~mask;
+	sctlr |= vcpu_mode_priv(vcpu) ? mask : guest_sctlr & mask;
+
+	if (!vcpu_mode_priv(vcpu)) {
+		val |= guest_tcr & TCR_E0PD0;
+		val |= TCR_E0PD1;
+	}
+
+	if (val != tcr)
+		write_sysreg_el2(val, SYS_TCR);
+
+	write_sysreg_el2(sctlr, SYS_SCTLR);
+	isb();
+
+	return sctlr;
+}
+
+static void __pvm_restore_stage1(struct kvm_cpu_context *ctxt)
+{
+	cpu_set_reserved_ttbr0();
+	local_flush_tlb_all();
+	write_sysreg_el2(ctxt_sys_reg(ctxt, TTBR1_EL1), SYS_TTBR1);
+	isb();
+	write_sysreg_el2(ctxt_sys_reg(ctxt, TCR_EL1), SYS_TCR);
+	isb();
+	/* Remove guest restrictions before restoring the host TTBR0. */
+	local_flush_tlb_all();
+	write_sysreg_el2(ctxt_sys_reg(ctxt, TTBR0_EL1), SYS_TTBR0);
+	isb();
+}
+
 static void __sysreg_save_host_state_pvm(struct kvm_cpu_context *ctxt)
 {
 	if (!is_pvm_mode())
 		return;
 
+	ctxt_sys_reg(ctxt, SCTLR_EL1) = read_sysreg_el2(SYS_SCTLR);
 	ctxt_sys_reg(ctxt, TCR_EL1) = read_sysreg_el2(SYS_TCR);
+	ctxt_sys_reg(ctxt, TTBR0_EL1) = read_sysreg_el2(SYS_TTBR0);
+	ctxt_sys_reg(ctxt, TTBR1_EL1) = read_sysreg_el2(SYS_TTBR1);
 	ctxt_sys_reg(ctxt, CPACR_EL1) = read_sysreg_el2(SYS_CPACR);
 	ctxt_sys_reg(ctxt, CNTKCTL_EL1) = read_sysreg_el2(SYS_CNTKCTL);
 }
@@ -343,7 +438,6 @@ static void __sysreg_restore_host_state_pvm(struct kvm_cpu_context *ctxt)
 	if (!is_pvm_mode())
 		return;
 
-	write_sysreg_el2(ctxt_sys_reg(ctxt, TCR_EL1), SYS_TCR);
 	write_sysreg_el2(ctxt_sys_reg(ctxt, CPACR_EL1), SYS_CPACR);
 	write_sysreg_el2(ctxt_sys_reg(ctxt, CNTKCTL_EL1), SYS_CNTKCTL);
 }
@@ -353,7 +447,7 @@ static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
 {
 	struct kvm_cpu_context *host_ctxt;
 	struct kvm_cpu_context *guest_ctxt;
-	u64 exit_code;
+	u64 exit_code, run_sctlr = 0;
 
 	host_ctxt = host_data_ptr(host_ctxt);
 	host_ctxt->__hyp_running_vcpu = vcpu;
@@ -382,14 +476,23 @@ static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
 
 	__kvm_adjust_pc(vcpu);
 
-	/* A pending exception may have just changed the virtual mode. */
-	if (is_pvm_mode())
-		kvm_pvm_sync_fpen(vcpu);
-
 	sysreg_restore_guest_state_vhe(guest_ctxt);
 	__debug_switch_to_guest(vcpu);
 
+	if (is_pvm_mode()) {
+		/* A pending exception may have changed the virtual mode. */
+		kvm_pvm_sync_fpen(vcpu);
+		__pvm_load_stage1(vcpu, host_ctxt);
+		run_sctlr = ctxt_sys_reg(guest_ctxt, SCTLR_EL1) & PVM_SCTLR_GUEST;
+		run_sctlr |= ctxt_sys_reg(host_ctxt, SCTLR_EL1) & ~PVM_SCTLR_GUEST;
+		run_sctlr |= PVM_SCTLR_FLAGS1;
+		run_sctlr &= ~PVM_SCTLR_FLAGS2;
+	}
+
 	do {
+		if (is_pvm_mode())
+			run_sctlr = __pvm_load_el0_controls(vcpu, run_sctlr);
+
 		/* Jump in the fire! */
 		if (is_pvm_mode())
 			exit_code = __pvm_guest_enter(vcpu);
@@ -398,6 +501,13 @@ static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
 
 		/* And we're baaack! */
 	} while (fixup_guest_exit(vcpu, &exit_code));
+
+	if (is_pvm_mode()) {
+		/* Pair this function's return authentication with its host entry. */
+		write_sysreg_el2(ctxt_sys_reg(host_ctxt, SCTLR_EL1), SYS_SCTLR);
+		isb();
+		__pvm_restore_stage1(host_ctxt);
+	}
 
 	sysreg_save_guest_state_vhe(guest_ctxt);
 
@@ -457,6 +567,12 @@ static void __hyp_call_panic(u64 spsr, u64 elr, u64 par)
 
 	host_ctxt = host_data_ptr(host_ctxt);
 	vcpu = host_ctxt->__hyp_running_vcpu;
+
+	if (is_pvm_mode()) {
+		write_sysreg_el2(ctxt_sys_reg(host_ctxt, SCTLR_EL1), SYS_SCTLR);
+		isb();
+		__pvm_restore_stage1(host_ctxt);
+	}
 
 	__deactivate_traps(vcpu);
 	__sysreg_restore_host_state_pvm(host_ctxt);

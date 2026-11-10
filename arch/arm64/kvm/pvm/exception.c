@@ -7,9 +7,95 @@
 #include <linux/kvm_host.h>
 
 #include <asm/kvm_asm.h>
+#include <asm/insn.h>
 #include <asm/kvm_emulate.h>
+#include <asm/kvm_mmu.h>
 
 #include <pvm/pvm.h>
+
+#include "mmu.h"
+
+/* Copy an opcode without retaining a translation or page reference. */
+int kvm_pvm_read_guest_insn(struct kvm_vcpu *vcpu, u32 *insn)
+{
+	struct kvm *kvm = vcpu->kvm;
+	struct kvm_s1_trans trans = {};
+	u64 pc = *vcpu_pc(vcpu);
+	__le32 opcode;
+	int idx, ret;
+
+	*insn = 0;
+	if (!IS_ALIGNED(pc, sizeof(opcode)))
+		return -EFAULT;
+
+	idx = srcu_read_lock(&kvm->srcu);
+	if (kvm_pvm_vcpu_mmu_enabled(vcpu)) {
+		ret = kvm_pvm_walk_shadow_s1(vcpu, pc, &trans);
+		if (ret || !(trans.px || trans.ux)) {
+			ret = -EFAULT;
+			goto out;
+		}
+	} else {
+		if (pc >= kvm_phys_size(kvm)) {
+			ret = -EFAULT;
+			goto out;
+		}
+		trans.output = pc;
+	}
+
+	ret = kvm_read_guest(kvm, trans.output, &opcode, sizeof(opcode));
+	if (!ret)
+		*insn = le32_to_cpu(opcode);
+out:
+	srcu_read_unlock(&kvm->srcu, idx);
+	return ret;
+}
+
+/* The caller classifies MRS/MSR/SYS; supply the missing SYS64 syndrome. */
+int kvm_pvm_emulate_sysreg(struct kvm_vcpu *vcpu, u32 insn)
+{
+	u32 sysreg, rt;
+	u64 esr;
+
+	sysreg = (u32)aarch64_insn_decode_immediate(AARCH64_INSN_IMM_16,
+						    insn) << 5;
+	rt = aarch64_insn_decode_register(AARCH64_INSN_REGTYPE_RT, insn);
+	esr = ESR_ELx_IL | (ESR_ELx_EC_SYS64 << ESR_ELx_EC_SHIFT) |
+	      sysreg_to_esr_sys64_iss(sysreg) |
+	      (rt << ESR_ELx_SYS64_ISS_RT_SHIFT) |
+	      (aarch64_insn_is_mrs(insn) ? ESR_ELx_SYS64_ISS_DIR_READ :
+					ESR_ELx_SYS64_ISS_DIR_WRITE);
+	vcpu->arch.fault.esr_el2 = esr;
+
+	return kvm_handle_sys_reg(vcpu);
+}
+
+int kvm_pvm_recover_mmio(struct kvm_vcpu *vcpu)
+{
+	u64 iss;
+	u32 insn, size;
+	int ret;
+
+	ret = kvm_pvm_read_guest_insn(vcpu, &insn);
+	if (ret)
+		return ret;
+	if (!aarch64_insn_is_str_imm(insn) &&
+	    !aarch64_insn_is_ldr_imm(insn))
+		return -EOPNOTSUPP;
+
+	size = insn >> 30;
+	iss = ESR_ELx_ISV | (size << ESR_ELx_SAS_SHIFT) |
+	      ((insn & 0x1f) << ESR_ELx_SRT_SHIFT);
+	if (aarch64_insn_is_str_imm(insn))
+		iss |= ESR_ELx_WNR;
+	if (size == AARCH64_INSN_SIZE_64)
+		iss |= ESR_ELx_SF;
+	vcpu->arch.fault.esr_el2 &= ~(ESR_ELx_ISV | ESR_ELx_WNR |
+				       ESR_ELx_SAS | ESR_ELx_SSE |
+				       ESR_ELx_SRT_MASK | ESR_ELx_SF | ESR_ELx_AR);
+	vcpu->arch.fault.esr_el2 |= iss;
+	return 0;
+}
 
 void kvm_pvm_emulate_eret(struct kvm_vcpu *vcpu)
 {

@@ -14,6 +14,7 @@
 #include <asm/cacheflush.h>
 #include <asm/kvm_arm.h>
 #include <asm/kvm_mmu.h>
+#include <asm/kvm_pvm.h>
 #include <asm/kvm_pgtable.h>
 #include <asm/kvm_ras.h>
 #include <asm/kvm_asm.h>
@@ -23,6 +24,7 @@
 #include <asm/kvm_tmi.h>
 #endif
 #include "trace.h"
+#include "pvm/mmu.h"
 
 static struct kvm_pgtable *hyp_pgtable;
 static DEFINE_MUTEX(kvm_hyp_pgd_mutex);
@@ -279,6 +281,8 @@ static void clean_dcache_guest_page(void *va, size_t size)
 
 static void invalidate_icache_guest_page(void *va, size_t size)
 {
+	if (is_pvm_mode() && !cpus_have_const_cap(ARM64_HAS_CACHE_IDC))
+		dcache_clean_pou((unsigned long)va, (unsigned long)va + size);
 	__invalidate_icache_guest_page(va, size);
 }
 
@@ -371,9 +375,14 @@ static void stage2_flush_vm(struct kvm *kvm)
 	idx = srcu_read_lock(&kvm->srcu);
 	write_lock(&kvm->mmu_lock);
 
-	slots = kvm_memslots(kvm);
-	kvm_for_each_memslot(memslot, bkt, slots)
-		stage2_flush_memslot(kvm, memslot);
+	if (is_pvm_mode()) {
+		/* Unmapping also covers every GVA alias and its cache maintenance. */
+		kvm_pvm_unmap_all(kvm, true);
+	} else {
+		slots = kvm_memslots(kvm);
+		kvm_for_each_memslot(memslot, bkt, slots)
+			stage2_flush_memslot(kvm, memslot);
+	}
 
 	write_unlock(&kvm->mmu_lock);
 	srcu_read_unlock(&kvm->srcu, idx);
@@ -885,7 +894,7 @@ static int kvm_init_ipa_range(struct kvm *kvm,
 		    phys_shift < ARM64_MIN_PARANGE_BITS)
 			return -EINVAL;
 	} else {
-		phys_shift = KVM_PHYS_SHIFT;
+		phys_shift = is_pvm_mode() ? KVM_PVM_IPA_BITS : KVM_PHYS_SHIFT;
 		if (phys_shift > kvm_ipa_limit) {
 			pr_warn_once("%s using unsupported default IPA limit, upgrade your VMM\n",
 				     current->comm);
@@ -900,17 +909,7 @@ static int kvm_init_ipa_range(struct kvm *kvm,
 	return 0;
 }
 
-/**
- * kvm_init_stage2_mmu - Initialise a S2 MMU structure
- * @kvm:	The pointer to the KVM structure
- * @mmu:	The pointer to the s2 MMU structure
- * @type:	The machine type of the virtual machine
- *
- * Allocates only the stage-2 HW PGD level table(s).
- * Note we don't need locking here as this is only called when the VM is
- * created, which can only be done once.
- */
-int kvm_init_stage2_mmu(struct kvm *kvm, struct kvm_s2_mmu *mmu, unsigned long type)
+static int __kvm_init_stage2_mmu(struct kvm *kvm, struct kvm_s2_mmu *mmu)
 {
 	int cpu, err;
 	struct kvm_pgtable *pgt;
@@ -919,10 +918,6 @@ int kvm_init_stage2_mmu(struct kvm *kvm, struct kvm_s2_mmu *mmu, unsigned long t
 		kvm_err("kvm_arch already initialized?\n");
 		return -EINVAL;
 	}
-
-	err = kvm_init_ipa_range(kvm, mmu, type);
-	if (err)
-		return err;
 
 	pgt = kzalloc(sizeof(*pgt), GFP_KERNEL_ACCOUNT);
 	if (!pgt)
@@ -956,6 +951,38 @@ out_destroy_pgtable:
 out_free_pgtable:
 	kfree(pgt);
 	return err;
+}
+
+/**
+ * kvm_init_stage2_mmu - Initialise a stage-2 MMU structure
+ * @kvm: The VM that owns the MMU
+ * @mmu: The stage-2 MMU structure
+ * @type: The machine type of the virtual machine
+ *
+ * Establish the VM-wide IPA configuration before allocating its root.
+ */
+int kvm_init_stage2_mmu(struct kvm *kvm, struct kvm_s2_mmu *mmu,
+			unsigned long type)
+{
+	int ret;
+
+	ret = kvm_init_ipa_range(kvm, mmu, type);
+	if (ret)
+		return ret;
+
+	return __kvm_init_stage2_mmu(kvm, mmu);
+}
+
+/**
+ * kvm_init_shadow_mmu - Allocate an additional shadow MMU root
+ * @kvm: The VM that owns the MMU
+ * @mmu: The shadow MMU structure
+ *
+ * Use the IPA configuration already established for the VM.
+ */
+int kvm_init_shadow_mmu(struct kvm *kvm, struct kvm_s2_mmu *mmu)
+{
+	return __kvm_init_stage2_mmu(kvm, mmu);
 }
 
 void kvm_uninit_stage2_mmu(struct kvm *kvm)
@@ -1028,9 +1055,13 @@ void stage2_unmap_vm(struct kvm *kvm)
 	mmap_read_lock(current->mm);
 	write_lock(&kvm->mmu_lock);
 
-	slots = kvm_memslots(kvm);
-	kvm_for_each_memslot(memslot, bkt, slots)
-		stage2_unmap_memslot(kvm, memslot);
+	if (is_pvm_mode()) {
+		kvm_pvm_unmap_all(kvm, true);
+	} else {
+		slots = kvm_memslots(kvm);
+		kvm_for_each_memslot(memslot, bkt, slots)
+			stage2_unmap_memslot(kvm, memslot);
+	}
 
 	write_unlock(&kvm->mmu_lock);
 	mmap_read_unlock(current->mm);
@@ -1163,6 +1194,50 @@ static void stage2_wp_range(struct kvm_s2_mmu *mmu, phys_addr_t addr, phys_addr_
 	stage2_apply_range_resched(mmu, addr, end, kvm_pgtable_stage2_wrprotect);
 }
 
+static void pvm_wp_all(struct kvm *kvm)
+{
+	struct kvm_pvm *pvm = kvm_to_pvm(kvm);
+	size_t i;
+
+	lockdep_assert_held_write(&kvm->mmu_lock);
+	pvm->invalidating++;
+	pvm->invalidate_seq++;
+	for (i = 0; i < pvm->suser_mmus_size; i++) {
+		struct kvm_s2_mmu *mmu = &pvm->suser_mmus[i]->mmu;
+
+		stage2_wp_range(mmu, 0, BIT_ULL(mmu->pgt->ia_bits));
+	}
+	for (i = 0; i < pvm->skern_mmus_size; i++) {
+		struct kvm_s2_mmu *mmu = &pvm->skern_mmus[i]->mmu;
+
+		stage2_wp_range(mmu, PVM_SHADOW_S1_KERNEL_BASE,
+				PVM_SHADOW_S1_KERNEL_BASE + BIT_ULL(PVM_GKERNEL_VA_BITS));
+	}
+	stage2_wp_range(&kvm->arch.mmu, 0,
+			min_t(u64, kvm_phys_size(kvm), PVM_SHADOW_S1_KERNEL_BASE));
+	/*
+	 * PVM's __kvm_tlb_flush_vmid() performs vmalle1is regardless of the
+	 * MMU passed in, so this also invalidates the user and kernel shadow
+	 * roots protected above.
+	 */
+	kvm_call_hyp(__kvm_tlb_flush_vmid, &kvm->arch.mmu);
+	pvm->invalidate_seq++;
+	pvm->invalidating--;
+}
+
+/*
+ * Re-arm dirty logging once the bitmap batch has been cleared.  PVM snapshot
+ * save and restore requires all vCPUs and other guest memory writers paused.
+ */
+void kvm_arch_finish_dirty_log(struct kvm *kvm,
+			       struct kvm_memory_slot *memslot)
+{
+	lockdep_assert_held_write(&kvm->mmu_lock);
+
+	if (is_pvm_mode())
+		pvm_wp_all(kvm);
+}
+
 /**
  * kvm_mmu_wp_memory_region() - write protect stage 2 entries for memory slot
  * @kvm:	The KVM pointer
@@ -1189,7 +1264,10 @@ static void kvm_mmu_wp_memory_region(struct kvm *kvm, int slot)
 	end = (memslot->base_gfn + memslot->npages) << PAGE_SHIFT;
 
 	write_lock(&kvm->mmu_lock);
-	stage2_wp_range(&kvm->arch.mmu, start, end);
+	if (is_pvm_mode())
+		pvm_wp_all(kvm);
+	else
+		stage2_wp_range(&kvm->arch.mmu, start, end);
 	write_unlock(&kvm->mmu_lock);
 	kvm_flush_remote_tlbs_memslot(kvm, memslot);
 }
@@ -1242,6 +1320,10 @@ void kvm_arch_mmu_enable_log_dirty_pt_masked(struct kvm *kvm,
 	phys_addr_t end = (base_gfn + __fls(mask) + 1) << PAGE_SHIFT;
 
 	lockdep_assert_held_write(&kvm->mmu_lock);
+
+	/* Protect all PVM aliases once the complete bitmap batch is cleared. */
+	if (is_pvm_mode())
+		return;
 
 #ifdef CONFIG_HISI_VIRTCCA_HOST
 	if (kvm_is_realm(kvm)) {
@@ -1471,15 +1553,65 @@ static int realm_map_ipa(struct kvm *kvm, phys_addr_t ipa,
 	return realm_map_protected(realm, ipa, pfn, map_size, memcache);
 }
 
+static int adjust_shadow_s1_prots(struct kvm_vcpu *vcpu,
+				  const struct kvm_s1_trans *result,
+				  enum kvm_pgtable_prot *prot)
+{
+	enum kvm_pgtable_prot adjusted = 0;
+	enum pvm_s1_attr type;
+	bool device;
+
+	/*
+	 * Project only attributes representable by the host's fixed
+	 * MAIR.  The walker denies the leaves that fail this test, so
+	 * reaching this point with one is a bug.
+	 */
+	type = pvm_s1_attr_type(ctxt_sys_reg(&vcpu->arch.ctxt, MAIR_EL1),
+				result->desc);
+	if (type == PVM_S1_ATTR_UNSUPPORTED)
+		return -EOPNOTSUPP;
+	device = type == PVM_S1_ATTR_DEVICE;
+
+	if (*prot & KVM_PGTABLE_PROT_R) {
+		if (result->pr || result->ur)
+			adjusted |= KVM_PGTABLE_PROT_R;
+	}
+	if (*prot & KVM_PGTABLE_PROT_W) {
+		if (result->pw || result->uw)
+			adjusted |= KVM_PGTABLE_PROT_W;
+	}
+	if (device || (*prot & KVM_PGTABLE_PROT_DEVICE))
+		adjusted |= KVM_PGTABLE_PROT_DEVICE;
+	else if (type == PVM_S1_ATTR_NORMAL_NC ||
+		 (*prot & KVM_PGTABLE_PROT_NORMAL_NC))
+		adjusted |= KVM_PGTABLE_PROT_NORMAL_NC;
+	if ((*prot & KVM_PGTABLE_PROT_X) &&
+	    !(adjusted & KVM_PGTABLE_PROT_DEVICE)) {
+		if (result->px || result->ux)
+			adjusted |= KVM_PGTABLE_PROT_X;
+	}
+	if (result->af)
+		adjusted |= KVM_PGTABLE_PROT_AF;
+
+	*prot = adjusted;
+	return 0;
+}
+
 static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
+			  struct kvm_s1_trans *result,
 			  struct kvm_memory_slot *memslot, unsigned long hva,
-			  unsigned long fault_status)
+			  unsigned long fault_status, unsigned long shadow_seq,
+			  unsigned long walk_seq)
 {
 	int ret = 0;
 	bool write_fault, writable, force_pte = false;
 	bool exec_fault, mte_allowed;
 	bool device = false, vfio_allow_any_uc = false;
+	bool tlb_flushed = false;
 	unsigned long mmu_seq;
+	phys_addr_t ipa = result ? result->output : fault_ipa;
+	phys_addr_t map_addr = result ? kvm_pvm_shadow_s1_addr(fault_ipa) :
+				       fault_ipa;
 	struct kvm *kvm = vcpu->kvm;
 	struct kvm_mmu_memory_cache *memcache = &vcpu->arch.mmu_page_cache;
 	struct vm_area_struct *vma;
@@ -1491,8 +1623,11 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	long vma_pagesize, fault_granule;
 	enum kvm_pgtable_prot prot = KVM_PGTABLE_PROT_R;
 	struct kvm_pgtable *pgt;
+	bool kernel_shadow = result && kvm_pvm_is_kernel_va(fault_ipa);
+	int cache_min_pages = kvm_mmu_cache_min_pages(kvm);
 
-	fault_granule = 1UL << ARM64_HW_PGTABLE_LEVEL_SHIFT(fault_level);
+	fault_granule = result ? PAGE_SIZE :
+		1UL << ARM64_HW_PGTABLE_LEVEL_SHIFT(fault_level);
 	write_fault = kvm_is_write_fault(vcpu);
 
 	/*
@@ -1504,7 +1639,8 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	if (vcpu_is_tec(vcpu))
 		prot = KVM_PGTABLE_PROT_R | KVM_PGTABLE_PROT_W;
 
-	exec_fault = kvm_vcpu_trap_is_exec_fault(vcpu);
+	exec_fault = result ? kvm_vcpu_trap_is_iabt(vcpu) :
+		kvm_vcpu_trap_is_exec_fault(vcpu);
 	VM_BUG_ON(write_fault && exec_fault);
 	vcpu->stat.mabt_exit_stat++;
 
@@ -1519,10 +1655,13 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	 * only exception to this is when dirty logging is enabled at runtime
 	 * and a write fault needs to collapse a block entry into a table.
 	 */
+	if (is_pvm_mode())
+		cache_min_pages = max(cache_min_pages,
+				      PVM_PGTABLE_LEVELS(PVM_SHADOW_S1_VA_BITS));
+
 	if (fault_status != ESR_ELx_FSC_PERM ||
 	    (logging_active && write_fault)) {
-		ret = kvm_mmu_topup_memory_cache(memcache,
-						 kvm_mmu_cache_min_pages(kvm));
+		ret = kvm_mmu_topup_memory_cache(memcache, cache_min_pages);
 		if (ret)
 			return ret;
 	}
@@ -1543,7 +1682,11 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	 * logging_active is guaranteed to never be true for VM_PFNMAP
 	 * memslots.
 	 */
-	if (logging_active) {
+	if (is_pvm_mode()) {
+		/* Do not extend a shadow mapping beyond the guest S1 leaf. */
+		force_pte = true;
+		vma_shift = PAGE_SHIFT;
+	} else if (logging_active) {
 		force_pte = true;
 		vma_shift = PAGE_SHIFT;
 	} else if (_vcpu_is_rec(vcpu)) {
@@ -1579,10 +1722,12 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	}
 
 	vma_pagesize = 1UL << vma_shift;
-	if (vma_pagesize == PMD_SIZE || vma_pagesize == PUD_SIZE)
-		fault_ipa &= ~(vma_pagesize - 1);
+	if (vma_pagesize == PMD_SIZE || vma_pagesize == PUD_SIZE) {
+		ipa &= ~(vma_pagesize - 1);
+		map_addr &= ~(vma_pagesize - 1);
+	}
 
-	gfn = kvm_gpa_from_fault(kvm, fault_ipa) >> PAGE_SHIFT;
+	gfn = kvm_gpa_from_fault(kvm, ipa) >> PAGE_SHIFT;
 	mte_allowed = kvm_vma_mte_allowed(vma);
 
 	vfio_allow_any_uc = vma->vm_flags & VM_ALLOW_ANY_UNCACHED;
@@ -1641,13 +1786,21 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	 * Here we should handle protected addresses fault expect protected devices.
 	 */
 	if (device && _vcpu_is_rec(vcpu) &&
-	    kvm_gpa_from_fault(kvm, fault_ipa) == fault_ipa)
+	    kvm_gpa_from_fault(kvm, ipa) == ipa)
 		return -EINVAL;
 #endif
 
 	read_lock(&kvm->mmu_lock);
-	pgt = vcpu->arch.hw_mmu->pgt;
+	pgt = result ? (kernel_shadow ?
+		vcpu_to_pvm(vcpu)->skern_mmu->mmu.pgt :
+		vcpu_to_pvm(vcpu)->suser_mmu->mmu.pgt) : vcpu->arch.hw_mmu->pgt;
 	if (mmu_invalidate_retry(kvm, mmu_seq))
+		goto out_unlock;
+	if (result && mmu_invalidate_retry(kvm, walk_seq))
+		goto out_unlock;
+
+	if (result && (kvm_to_pvm(kvm)->invalidating ||
+		       kvm_to_pvm(kvm)->invalidate_seq != shadow_seq))
 		goto out_unlock;
 
 	/*
@@ -1660,14 +1813,16 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 			vma_pagesize = fault_granule;
 		else
 			vma_pagesize = transparent_hugepage_adjust(kvm, memslot,
-								   hva, &pfn,
-								   &fault_ipa);
+							   hva, &pfn, &ipa);
 
 		if (vma_pagesize < 0) {
 			ret = vma_pagesize;
 			goto out_unlock;
 		}
 	}
+
+	if (!result)
+		map_addr = ipa;
 
 	if (fault_status != ESR_ELx_FSC_PERM && !device && kvm_has_mte(kvm)) {
 		/* Check the VMM hasn't introduced a new disallowed VMA */
@@ -1699,26 +1854,41 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 		prot |= KVM_PGTABLE_PROT_X;
 	}
 
+	if (result) {
+		ret = adjust_shadow_s1_prots(vcpu, result, &prot);
+		if (ret)
+			goto out_unlock;
+	}
+
 	/*
 	 * Under the premise of getting a FSC_PERM fault, we just need to relax
 	 * permissions only if vma_pagesize equals fault_granule. Otherwise,
 	 * kvm_pgtable_stage2_map() should be called to change block size.
 	 */
-	if (fault_status == ESR_ELx_FSC_PERM && vma_pagesize == fault_granule)
-		ret = kvm_pgtable_stage2_relax_perms(pgt, fault_ipa, prot);
-	else if (_kvm_is_realm(kvm))
-		ret = realm_map_ipa(kvm, fault_ipa, pfn, vma_pagesize,
+	if (fault_status == ESR_ELx_FSC_PERM && vma_pagesize == fault_granule) {
+		ret = kvm_pgtable_stage2_relax_perms(pgt, map_addr, prot);
+		tlb_flushed = !ret;
+	} else if (_kvm_is_realm(kvm))
+		ret = realm_map_ipa(kvm, ipa, pfn, vma_pagesize,
 				    prot, memcache);
 	else
-		ret = kvm_pgtable_stage2_map(pgt, fault_ipa, vma_pagesize,
+		ret = kvm_pgtable_stage2_map(pgt, map_addr, vma_pagesize,
 					     __pfn_to_phys(pfn), prot,
 					     memcache,
 					     KVM_PGTABLE_WALK_HANDLE_FAULT |
 					     KVM_PGTABLE_WALK_SHARED);
 
 #ifdef CONFIG_HISI_VIRTCCA_CODA
-	ret = kvm_cvm_map_ipa(kvm, fault_ipa, pfn, vma_pagesize, prot, ret);
+	ret = kvm_cvm_map_ipa(kvm, ipa, pfn, vma_pagesize, prot, ret);
 #endif
+
+	if (kernel_shadow && !ret)
+		kvm_pvm_set_kern_pgd(vcpu_to_pvm(vcpu)->skern_mmu,
+				     READ_ONCE(pgt->pgd[PTRS_PER_PGD - 1]));
+	/* Kernel root publication still needs context-wide maintenance. */
+	if (is_pvm_mode() && (!tlb_flushed || kernel_shadow) &&
+	    (ret == 0 || ret == -EAGAIN))
+		kvm_call_hyp(__kvm_tlb_flush_vmid, pgt->mmu);
 
 	/* Mark the page dirty only if the fault is handled successfully */
 	if (writable && !ret) {
@@ -1733,16 +1903,21 @@ out_unlock:
 }
 
 /* Resolve the access fault by making the page young again. */
-static void handle_access_fault(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa)
+static void handle_access_fault(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
+				struct kvm_s1_trans *result)
 {
-	kvm_pte_t pte;
 	struct kvm_s2_mmu *mmu;
+	kvm_pte_t pte;
+	u64 va;
 
 	trace_kvm_access_fault(fault_ipa);
 
 	read_lock(&vcpu->kvm->mmu_lock);
-	mmu = vcpu->arch.hw_mmu;
-	pte = kvm_pgtable_stage2_mkyoung(mmu->pgt, fault_ipa);
+	mmu = result ? (kvm_pvm_is_kernel_va(fault_ipa) ?
+		&vcpu_to_pvm(vcpu)->skern_mmu->mmu :
+		&vcpu_to_pvm(vcpu)->suser_mmu->mmu) : vcpu->arch.hw_mmu;
+	va = result ? kvm_pvm_shadow_s1_addr(fault_ipa) : fault_ipa;
+	pte = kvm_pgtable_stage2_mkyoung(mmu->pgt, va);
 	read_unlock(&vcpu->kvm->mmu_lock);
 
 	if (kvm_pte_valid(pte))
@@ -1764,15 +1939,23 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu)
 {
 	unsigned long fault_status;
 	phys_addr_t fault_ipa;
+	phys_addr_t ipa;
 	struct kvm_memory_slot *memslot;
 	unsigned long hva, iss2;
 	bool is_iabt, write_fault, writable;
+	bool pvm_size_fault;
 	gfn_t gfn;
 	int ret, idx;
+	struct kvm_s1_trans trans = {};
+	struct kvm_s1_trans *result = NULL;
+	unsigned long shadow_seq = 0;
+	unsigned long walk_seq = 0;
 
 	fault_status = kvm_vcpu_trap_get_fault_type(vcpu);
 
-	fault_ipa = kvm_vcpu_get_fault_ipa(vcpu);
+	fault_ipa = is_pvm_mode() ? kvm_vcpu_get_hfar(vcpu) :
+				   kvm_vcpu_get_fault_ipa(vcpu);
+	ipa = fault_ipa;
 	is_iabt = kvm_vcpu_trap_is_iabt(vcpu);
 
 #ifdef CONFIG_ARM64_HDBSS
@@ -1785,7 +1968,7 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu)
 		return 1;
 #endif
 
-	if (fault_status == ESR_ELx_FSC_FAULT) {
+	if (fault_status == ESR_ELx_FSC_FAULT && !is_pvm_mode()) {
 		/* Beyond sanitised PARange (which is the IPA limit) */
 		if (fault_ipa >= BIT_ULL(get_kvm_ipa_limit())) {
 			kvm_inject_size_fault(vcpu);
@@ -1819,10 +2002,16 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu)
 	trace_kvm_guest_fault(*vcpu_pc(vcpu), kvm_vcpu_get_esr(vcpu),
 			      kvm_vcpu_get_hfar(vcpu), fault_ipa);
 
-	/* Check the stage-2 fault is trans. fault or write fault */
+	/* PVM also receives stage-1 address-size faults (FSC type 0). */
+	pvm_size_fault = is_pvm_mode() && fault_status == 0;
+	if (pvm_size_fault && !kvm_pvm_vcpu_mmu_enabled(vcpu))
+		return kvm_pvm_inject_s1_fault(vcpu,
+					    kvm_vcpu_trap_get_fault(vcpu));
+
+	/* Keep the ordinary stage-2 FSC whitelist. */
 	if (fault_status != ESR_ELx_FSC_FAULT &&
 	    fault_status != ESR_ELx_FSC_PERM &&
-	    fault_status != ESR_ELx_FSC_ACCESS) {
+	    fault_status != ESR_ELx_FSC_ACCESS && !pvm_size_fault) {
 		kvm_err("Unsupported FSC: EC=%#x xFSC=%#lx ESR_EL2=%#lx\n",
 			kvm_vcpu_trap_get_class(vcpu),
 			(unsigned long)kvm_vcpu_trap_get_fault(vcpu),
@@ -1832,7 +2021,41 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu)
 
 	idx = srcu_read_lock(&vcpu->kvm->srcu);
 
-	gfn = kvm_gpa_from_fault(vcpu->kvm, fault_ipa) >> PAGE_SHIFT;
+	if (is_pvm_mode() && kvm_pvm_vcpu_mmu_enabled(vcpu)) {
+		/* Include context selection in the shadow invalidation epoch. */
+		shadow_seq = READ_ONCE(kvm_to_pvm(vcpu->kvm)->invalidate_seq);
+		ret = kvm_pvm_vcpu_select_mmu(vcpu, true);
+		if (ret) {
+			if (ret == -EAGAIN)
+				ret = 1;
+			goto out_unlock;
+		}
+
+		walk_seq = READ_ONCE(vcpu->kvm->mmu_invalidate_seq);
+		/* Sample the sequence before reading guest descriptors. */
+		smp_rmb();
+		ret = kvm_pvm_walk_shadow_s1(vcpu, fault_ipa, &trans);
+		/* Validate descriptor reads before consuming even a guest fault. */
+		read_lock(&vcpu->kvm->mmu_lock);
+		if (mmu_invalidate_retry(vcpu->kvm, walk_seq) ||
+		    kvm_to_pvm(vcpu->kvm)->invalidating ||
+		    shadow_seq != kvm_to_pvm(vcpu->kvm)->invalidate_seq) {
+			read_unlock(&vcpu->kvm->mmu_lock);
+			ret = 1;
+			goto out_unlock;
+		}
+		if (ret || kvm_pvm_s1_access_denied(vcpu, &trans))
+			ret = kvm_pvm_inject_s1_fault(vcpu,
+						      trans.esr & ESR_ELx_FSC);
+		read_unlock(&vcpu->kvm->mmu_lock);
+		if (ret)
+			goto out_unlock;
+
+		ipa = trans.output;
+		result = &trans;
+	}
+
+	gfn = kvm_gpa_from_fault(vcpu->kvm, ipa) >> PAGE_SHIFT;
 	memslot = gfn_to_memslot(vcpu->kvm, gfn);
 	hva = gfn_to_hva_memslot_prot(memslot, gfn, &writable);
 	write_fault = kvm_is_write_fault(vcpu);
@@ -1876,27 +2099,35 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu)
 		 * faulting VA. This is always 12 bits, irrespective
 		 * of the page size.
 		 */
-		fault_ipa |= kvm_vcpu_get_hfar(vcpu) & ((1 << 12) - 1);
-		ret = io_mem_abort(vcpu, kvm_gpa_from_fault(vcpu->kvm, fault_ipa));
+		ipa |= kvm_vcpu_get_hfar(vcpu) & GENMASK(11, 0);
+		ret = io_mem_abort(vcpu, kvm_gpa_from_fault(vcpu->kvm, ipa));
 		goto out_unlock;
 	}
 
 #ifdef CONFIG_HISI_VIRTCCA_CODA
-	ret = virtcca_io_mem_abort(vcpu, hva, fault_ipa);
+	ret = virtcca_io_mem_abort(vcpu, hva, ipa);
 	if (ret != -EPERM)
 		goto out_unlock;
 #endif
 
 	/* Userspace should not be able to register out-of-bounds IPAs */
-	VM_BUG_ON(fault_ipa >= kvm_phys_size(vcpu->kvm));
+	if (is_pvm_mode()) {
+		if (WARN_ON_ONCE(ipa >= kvm_phys_size(vcpu->kvm))) {
+			ret = -EFAULT;
+			goto out_unlock;
+		}
+	} else {
+		VM_BUG_ON(fault_ipa >= kvm_phys_size(vcpu->kvm));
+	}
 
 	if (fault_status == ESR_ELx_FSC_ACCESS) {
-		handle_access_fault(vcpu, fault_ipa);
+		handle_access_fault(vcpu, fault_ipa, result);
 		ret = 1;
 		goto out_unlock;
 	}
 
-	ret = user_mem_abort(vcpu, fault_ipa, memslot, hva, fault_status);
+	ret = user_mem_abort(vcpu, fault_ipa, result, memslot, hva,
+			     fault_status, shadow_seq, walk_seq);
 	if (ret == 0)
 		ret = 1;
 out:
@@ -1914,6 +2145,11 @@ bool kvm_unmap_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range)
 	if (!kvm->arch.mmu.pgt)
 		return false;
 
+	if (is_pvm_mode()) {
+		kvm_pvm_unmap_all(kvm, range->may_block);
+		return false;
+	}
+
 	__unmap_stage2_range(&kvm->arch.mmu, range->start << PAGE_SHIFT,
 			     (range->end - range->start) << PAGE_SHIFT,
 			     range->may_block,
@@ -1928,6 +2164,11 @@ bool kvm_set_spte_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 
 	if (!kvm->arch.mmu.pgt)
 		return false;
+
+	if (is_pvm_mode()) {
+		kvm_pvm_unmap_all(kvm, false);
+		return false;
+	}
 
 	WARN_ON(range->end - range->start != 1);
 
@@ -1963,6 +2204,10 @@ bool kvm_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 	if (!kvm->arch.mmu.pgt)
 		return false;
 
+	/* A GFN does not identify all aliases in the GVA-indexed shadows. */
+	if (is_pvm_mode())
+		return true;
+
 	/* We don't support aging for Realms */
 	if (_kvm_is_realm(kvm))
 		return true;
@@ -1978,6 +2223,9 @@ bool kvm_test_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 
 	if (!kvm->arch.mmu.pgt)
 		return false;
+
+	if (is_pvm_mode())
+		return true;
 
 	/* We don't support aging for Realms */
 	if (_kvm_is_realm(kvm))
@@ -2174,6 +2422,10 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 	if ((new->base_gfn + new->npages) > (kvm_phys_size(kvm) >> PAGE_SHIFT))
 		return -EFAULT;
 
+	if (is_pvm_mode() && new->base_gfn + new->npages >
+			    (PVM_SHADOW_S1_KERNEL_BASE >> PAGE_SHIFT))
+		return -EFAULT;
+
 	hva = new->userspace_addr;
 	reg_end = hva + (new->npages << PAGE_SHIFT);
 
@@ -2225,6 +2477,12 @@ void kvm_arch_memslots_updated(struct kvm *kvm, u64 gen)
 
 void kvm_arch_flush_shadow_all(struct kvm *kvm)
 {
+	if (is_pvm_mode()) {
+		write_lock(&kvm->mmu_lock);
+		kvm_pvm_unmap_all(kvm, true);
+		write_unlock(&kvm->mmu_lock);
+		return;
+	}
 	kvm_uninit_stage2_mmu(kvm);
 }
 
@@ -2235,7 +2493,10 @@ void kvm_arch_flush_shadow_memslot(struct kvm *kvm,
 	phys_addr_t size = slot->npages << PAGE_SHIFT;
 
 	write_lock(&kvm->mmu_lock);
-	unmap_stage2_range(&kvm->arch.mmu, gpa, size, true);
+	if (is_pvm_mode())
+		kvm_pvm_unmap_all(kvm, true);
+	else
+		unmap_stage2_range(&kvm->arch.mmu, gpa, size, true);
 	write_unlock(&kvm->mmu_lock);
 }
 

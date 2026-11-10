@@ -49,6 +49,7 @@
 #include <kvm/arm_pmu.h>
 #include <kvm/arm_psci.h>
 
+#include "pvm/mmu.h"
 #include "pvm/pvm.h"
 
 static enum kvm_mode kvm_mode = KVM_MODE_DEFAULT;
@@ -438,10 +439,6 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 {
 	int ret;
 
-	/* PVM guest execution requires the separate vCPU run-path support. */
-	if (is_pvm_mode())
-		return -EOPNOTSUPP;
-
 	ret = kvm_sched_affinity_vm_init(kvm);
 	if (ret)
 		return ret;
@@ -489,6 +486,12 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 	if (ret)
 		goto err_free_cpumask;
 
+	if (is_pvm_mode()) {
+		ret = kvm_pvm_init_mmu(kvm);
+		if (ret)
+			goto err_uninit_mmu;
+	}
+
 	kvm_vgic_early_init(kvm);
 
 	kvm_timer_init_vm(kvm);
@@ -514,6 +517,8 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 
 	return 0;
 
+err_uninit_mmu:
+	kvm_uninit_stage2_mmu(kvm);
 err_free_cpumask:
 	free_cpumask_var(kvm->arch.supported_cpus);
 err_unshare_kvm:
@@ -544,6 +549,11 @@ void kvm_arch_destroy_vm(struct kvm *kvm)
 		pkvm_destroy_hyp_vm(kvm);
 
 	kvm_destroy_vcpus(kvm);
+
+	if (is_pvm_mode()) {
+		kvm_pvm_destroy_mmu(kvm);
+		kvm_uninit_stage2_mmu(kvm);
+	}
 
 	kvm_unshare_hyp(kvm, kvm + 1);
 
@@ -588,14 +598,16 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 	case KVM_CAP_ARM_TIMER_EARLY_INJECT:
 #endif
 	case KVM_CAP_READONLY_MEM:
-	case KVM_CAP_SET_GUEST_DEBUG:
 		r = !kvm_is_realm(kvm);
+		break;
+	case KVM_CAP_SET_GUEST_DEBUG:
+		r = !kvm_is_realm(kvm) && !is_pvm_mode();
 		break;
 	case KVM_CAP_COUNTER_OFFSET:
 		r = !kvm_is_realm(kvm) && !is_pvm_mode();
 		break;
 	case KVM_CAP_SET_GUEST_DEBUG2:
-		return KVM_GUESTDBG_VALID_MASK;
+		return is_pvm_mode() ? 0 : KVM_GUESTDBG_VALID_MASK;
 	case KVM_CAP_ARM_SET_DEVICE_ADDR:
 		r = 1;
 		break;
@@ -642,13 +654,13 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 		r = cpus_have_const_cap(ARM64_HAS_32BIT_EL1) && !is_pvm_mode();
 		break;
 	case KVM_CAP_GUEST_DEBUG_HW_BPS:
-		r = kvm_is_realm(kvm) ? 0 : get_num_brps();
+		r = kvm_is_realm(kvm) || is_pvm_mode() ? 0 : get_num_brps();
 		break;
 	case KVM_CAP_GUEST_DEBUG_HW_WPS:
-		r = kvm_is_realm(kvm) ? 0 : get_num_wrps();
+		r = kvm_is_realm(kvm) || is_pvm_mode() ? 0 : get_num_wrps();
 		break;
 	case KVM_CAP_ARM_PMU_V3:
-		r = kvm_arm_support_pmu_v3();
+		r = !is_pvm_mode() && kvm_arm_support_pmu_v3();
 		break;
 	case KVM_CAP_ARM_INJECT_SERROR_ESR:
 		r = cpus_have_const_cap(ARM64_HAS_RAS_EXTN);
@@ -768,6 +780,16 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
 {
 	int err;
 
+	/*
+	 * PVM supports snapshot save and restore with the vCPUs paused, not
+	 * live migration.  PVM does not re-arm shadows after a dirty ring
+	 * reset, so refuse a VM that enabled one instead of losing writes.
+	 */
+	if (is_pvm_mode() && vcpu->kvm->dirty_ring_size) {
+		kvm_err("PVM: dirty-ring logging is not supported\n");
+		return -EINVAL;
+	}
+
 	spin_lock_init(&vcpu->arch.mp_state_lock);
 
 #ifdef CONFIG_LOCKDEP
@@ -842,6 +864,9 @@ void kvm_arch_vcpu_postcreate(struct kvm_vcpu *vcpu)
 
 void kvm_arch_vcpu_destroy(struct kvm_vcpu *vcpu)
 {
+	if (is_pvm_mode())
+		kvm_pvm_vcpu_put_mmu(vcpu);
+
 	kvm_mmu_free_memory_cache(&vcpu->arch.mmu_page_cache);
 	kvm_timer_vcpu_terminate(vcpu);
 	kvm_pmu_vcpu_destroy(vcpu);
@@ -1752,6 +1777,15 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		if (ret > 0 && vcpu_is_rec(vcpu))
 			ret = kvm_rec_pre_enter(vcpu);
 
+		if (ret > 0 && is_pvm_mode()) {
+			int err = kvm_pvm_vcpu_select_mmu(vcpu, true);
+
+			if (err) {
+				ret = err == -EAGAIN ? 1 : err;
+				continue;
+			}
+		}
+
 		/*
 		 * Preparing the interrupts to be injected also
 		 * involves poking the GIC, which must be done in a
@@ -2117,6 +2151,9 @@ static int kvm_setup_vcpu(struct kvm_vcpu *vcpu)
 	if (kvm_vcpu_has_pmu(vcpu) && !kvm->arch.arm_pmu)
 		ret = kvm_arm_set_default_pmu(kvm);
 
+	if (!ret && is_pvm_mode())
+		ret = kvm_pvm_init_vcpu_mmu(vcpu);
+
 	return ret;
 }
 
@@ -2252,7 +2289,7 @@ static int kvm_arch_vcpu_ioctl_vcpu_init(struct kvm_vcpu *vcpu,
 	 * imply CTR_EL0.DIC.
 	 */
 	if (vcpu_has_run_once(vcpu)) {
-		if (!cpus_have_final_cap(ARM64_HAS_STAGE2_FWB))
+		if (!cpus_have_final_cap(ARM64_HAS_STAGE2_FWB) || is_pvm_mode())
 			stage2_unmap_vm(vcpu->kvm);
 		else
 			icache_inval_all_pou();
@@ -3553,8 +3590,11 @@ static __init int kvm_arm_init(void)
 	int err;
 	bool in_hyp_mode;
 
-	if (kvm_get_mode() == KVM_MODE_PVM)
+	if (kvm_get_mode() == KVM_MODE_PVM) {
 		kvm_arm_init_pvm();
+		if (is_hyp_mode_available())
+			kvm_mode = KVM_MODE_DEFAULT;
+	}
 
 	if (!is_hyp_mode_available() && !is_pvm_mode()) {
 		kvm_info("HYP mode not available\n");
@@ -3635,6 +3675,14 @@ static __init int kvm_arm_init(void)
 	 * FIXME: Do something reasonable if kvm_init() fails after pKVM
 	 * hypervisor protection is finalized.
 	 */
+	if (is_pvm_mode()) {
+		err = kvm_pvm_sysfs_init();
+		if (err) {
+			kvm_err("Failed to initialize PVM sysfs: %d\n", err);
+			goto out_subs;
+		}
+	}
+
 	err = kvm_init(is_pvm_mode() ? sizeof(struct kvm_pvm_vcpu) :
 				      sizeof(struct kvm_vcpu), 0, THIS_MODULE);
 	if (err)

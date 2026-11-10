@@ -606,6 +606,14 @@ static inline bool kvm_is_write_fault(struct kvm_vcpu *vcpu)
 	if (kvm_vcpu_trap_is_iabt(vcpu))
 		return false;
 
+	/*
+	 * Cache maintenance allowed at physical EL0 needs a readable
+	 * shadow, even though its abort reports WnR. IVAC traps as UNKNOWN
+	 * and its guest write permission is checked by the PVM backend.
+	 */
+	if (is_pvm_mode() && kvm_vcpu_dabt_is_cm(vcpu))
+		return false;
+
 	return kvm_vcpu_dabt_iswrite(vcpu);
 }
 

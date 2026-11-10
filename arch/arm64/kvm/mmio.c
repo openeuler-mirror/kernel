@@ -10,6 +10,7 @@
 #include <asm/kvm_tmi.h>
 #include <trace/events/kvm.h>
 
+#include "pvm/pvm.h"
 #include "trace.h"
 
 void kvm_mmio_write_buf(void *buf, unsigned int len, unsigned long data)
@@ -174,6 +175,10 @@ int io_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa)
 	bool is_write;
 	int len;
 	u8 data_buf[8];
+
+	/* Keep the existing NISV handling if instruction recovery fails. */
+	if (is_pvm_mode() && !kvm_vcpu_dabt_isvalid(vcpu))
+		kvm_pvm_recover_mmio(vcpu);
 
 	/*
 	 * No valid syndrome? Ask userspace for help if it has

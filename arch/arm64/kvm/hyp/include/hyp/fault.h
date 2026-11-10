@@ -45,6 +45,12 @@ static inline bool __get_fault_info(u64 esr, struct kvm_vcpu_fault_info *fault)
 {
 	u64 hpfar, far;
 
+	if (is_pvm_mode()) {
+		fault->far_el2 = read_sysreg(far_el1);
+		fault->hpfar_el2 = 0;
+		return true;
+	}
+
 	far = read_sysreg_el2(SYS_FAR);
 
 	/*

@@ -32,6 +32,7 @@
 #include <asm/sysreg.h>
 
 #include <pvm/id_regs.h>
+#include <pvm/pvm.h>
 
 #include <trace/events/kvm.h>
 
@@ -2923,7 +2924,8 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 
 	{ SYS_DESC(SYS_FAR_EL1), access_vm_reg, reset_unknown, FAR_EL1,
 	  .pvm_access = access_rw },
-	{ SYS_DESC(SYS_PAR_EL1), NULL, reset_unknown, PAR_EL1 },
+	{ SYS_DESC(SYS_PAR_EL1), NULL, reset_unknown, PAR_EL1,
+	  .pvm_access = access_rw },
 
 	{ SYS_DESC(SYS_PMSCR_EL1), undef_access },
 	{ SYS_DESC(SYS_PMSNEVFR_EL1), undef_access },
@@ -4127,6 +4129,29 @@ int kvm_handle_sys_reg(struct kvm_vcpu *vcpu)
 		return 1;
 
 	params = esr_sys64_to_params(esr);
+
+	/* Forward the guest EL0 trap rather than emulate a privileged access. */
+	if (pvm_vcpu_in_user_ctxt(vcpu) && params.is_write) {
+		u64 sctlr = vcpu_read_sys_reg(vcpu, SCTLR_EL1);
+
+		switch (sys_reg(params.Op0, params.Op1, params.CRn,
+				params.CRm, params.Op2)) {
+		case SYS_DC_CVAC:
+		case SYS_DC_CVAU:
+		case SYS_DC_CIVAC:
+		case SYS_DC_CVAP:
+		case SYS_DC_CVADP:
+		case SYS_IC_IVAU:
+			if (!(sctlr & SCTLR_EL1_UCI))
+				return kvm_pvm_inject_sync(vcpu, esr);
+			break;
+		case SYS_DC_ZVA:
+			if (!(sctlr & SCTLR_EL1_DZE))
+				return kvm_pvm_inject_sync(vcpu, esr);
+			break;
+		}
+	}
+
 	params.regval = vcpu_get_reg(vcpu, Rt);
 
 	if (!emulate_sys_reg(vcpu, &params))

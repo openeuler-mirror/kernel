@@ -8,8 +8,11 @@
  */
 
 #include <linux/bitfield.h>
+#include <asm/cacheflush.h>
 #include <asm/cpufeature.h>
 #include <asm/kvm_pgtable.h>
+#include <asm/kvm_pvm.h>
+#include <asm/memory.h>
 #include <asm/stage2_pgtable.h>
 
 
@@ -26,6 +29,12 @@
 	({ cpus_have_final_cap(ARM64_KVM_HVHE) ? 2 : 3; })
 #define KVM_PTE_LEAF_ATTR_LO_S1_AP_RW		\
 	({ cpus_have_final_cap(ARM64_KVM_HVHE) ? 0 : 1; })
+/* AP field values for the EL0-only encoding installed in PVM mode. */
+#define KVM_PTE_LEAF_ATTR_LO_S1_AP_EL0_RW	1
+#define KVM_PTE_LEAF_ATTR_LO_S1_AP_EL0_RO	3
+#define KVM_PTE_LEAF_ATTR_LO_S1_AP_EL0_NONE	2
+#define KVM_PTE_LEAF_ATTR_LO_S1_AP2	BIT(7)
+
 #define KVM_PTE_LEAF_ATTR_LO_S1_SH	GENMASK(9, 8)
 #define KVM_PTE_LEAF_ATTR_LO_S1_SH_IS	3
 #define KVM_PTE_LEAF_ATTR_LO_S1_AF	BIT(10)
@@ -42,6 +51,8 @@
 #define KVM_PTE_LEAF_ATTR_HI_SW		GENMASK(58, 55)
 
 #define KVM_PTE_LEAF_ATTR_HI_S1_XN	BIT(54)
+#define KVM_PTE_LEAF_ATTR_HI_S1_UXN	KVM_PTE_LEAF_ATTR_HI_S1_XN
+#define KVM_PTE_LEAF_ATTR_HI_S1_PXN	BIT(53)
 
 #define KVM_PTE_LEAF_ATTR_HI_S2_XN	BIT(54)
 
@@ -746,6 +757,65 @@ static int stage2_set_prot_attr(struct kvm_pgtable *pgt, enum kvm_pgtable_prot p
 	return 0;
 }
 
+static int pvm_s1_set_prot_attr(enum kvm_pgtable_prot prot,
+				kvm_pte_t *ptep)
+{
+	bool device = prot & KVM_PGTABLE_PROT_DEVICE;
+	bool write = prot & KVM_PGTABLE_PROT_W;
+	bool read = prot & KVM_PGTABLE_PROT_R;
+	u32 mtype;
+	u32 ap;
+	kvm_pte_t attr;
+
+	if (prot & KVM_PGTABLE_PROT_NORMAL_NC)
+		mtype = MT_NORMAL_NC;
+	else if (device)
+		mtype = MT_DEVICE_nGnRnE;
+	else
+		mtype = MT_NORMAL;
+
+	if (device && (prot & KVM_PGTABLE_PROT_X))
+		return -EINVAL;
+
+	if (write && !read)
+		return -EINVAL;
+
+	/*
+	 * The caller supplies the union of the virtual EL0/EL1 permissions.
+	 * Project data access onto physical EL0, retaining no-data-access
+	 * leaves for execute-only mappings. E0PD1 isolates the kernel window.
+	 */
+	if (!read)
+		ap = KVM_PTE_LEAF_ATTR_LO_S1_AP_EL0_NONE;
+	else
+		ap = write ? KVM_PTE_LEAF_ATTR_LO_S1_AP_EL0_RW :
+			     KVM_PTE_LEAF_ATTR_LO_S1_AP_EL0_RO;
+
+	attr = FIELD_PREP(KVM_PTE_LEAF_ATTR_LO_S1_ATTRIDX, mtype);
+	attr |= FIELD_PREP(KVM_PTE_LEAF_ATTR_LO_S1_AP, ap);
+	attr |= FIELD_PREP(KVM_PTE_LEAF_ATTR_LO_S1_SH,
+			   KVM_PTE_LEAF_ATTR_LO_S1_SH_IS);
+	/*
+	 * A leaf executable by either guest privilege stays executable
+	 * at EL0: the virtual EL1 consumes the UXN bit too.
+	 */
+	if (!(prot & KVM_PGTABLE_PROT_X)) {
+		attr |= KVM_PTE_LEAF_ATTR_HI_S1_PXN;
+		attr |= KVM_PTE_LEAF_ATTR_HI_S1_UXN;
+	}
+	if (prot & KVM_PGTABLE_PROT_AF)
+		attr |= KVM_PTE_LEAF_ATTR_LO_S1_AF;
+	attr |= prot & KVM_PTE_LEAF_ATTR_HI_SW;
+
+	*ptep = attr;
+	return 0;
+}
+
+/*
+ * PVM installs only 4 KiB leaves and does not reach the block-split
+ * path that uses this decoder and creates unlinked child tables.
+ * Both helpers therefore handle stage-2 attributes only.
+ */
 enum kvm_pgtable_prot kvm_pgtable_stage2_pte_prot(kvm_pte_t pte)
 {
 	enum kvm_pgtable_prot prot = pte & KVM_PTE_LEAF_ATTR_HI_SW;
@@ -863,6 +933,10 @@ static void stage2_make_pte(const struct kvm_pgtable_visit_ctx *ctx, kvm_pte_t n
 
 static bool stage2_unmap_defer_tlb_flush(struct kvm_pgtable *pgt)
 {
+	/* PVM must complete TLBI before cleaning the backing memory. */
+	if (is_pvm_mode())
+		return false;
+
 	/*
 	 * If FEAT_TLBIRANGE is implemented, defer the individual
 	 * TLB invalidations until the entire walk is finished, and
@@ -904,6 +978,29 @@ static bool stage2_pte_cacheable(struct kvm_pgtable *pgt, kvm_pte_t pte)
 {
 	u64 memattr = pte & KVM_PTE_LEAF_ATTR_LO_S2_MEMATTR;
 	return memattr == KVM_S2_MEMATTR(pgt, NORMAL);
+}
+
+/*
+ * PVM leaves use stage-1 attributes. Even NC or Device aliases of RAM
+ * need cleaning because the host may hold dirty cache lines. MMIO has
+ * no cacheable host alias.
+ */
+static bool pvm_pte_needs_clean(kvm_pte_t pte)
+{
+	return kvm_pte_valid(pte) && pfn_is_map_memory(kvm_pte_to_pfn(pte));
+}
+
+static void pvm_clean_dcache(kvm_pte_t pte,
+			     struct kvm_pgtable_mm_ops *mm_ops, u64 size)
+{
+	unsigned long addr;
+
+	if (!pvm_pte_needs_clean(pte))
+		return;
+
+	/* Do not use stage-2 callbacks that can skip maintenance. */
+	addr = (unsigned long)kvm_pte_follow(pte, mm_ops);
+	dcache_clean_inval_poc(addr, addr + size);
 }
 
 static bool stage2_pte_executable(kvm_pte_t pte)
@@ -972,8 +1069,10 @@ static int stage2_map_walker_try_leaf(const struct kvm_pgtable_visit_ctx *ctx,
 		return -EAGAIN;
 
 	/* Perform CMOs before installation of the guest stage-2 PTE */
-	if (!kvm_pgtable_walk_skip_cmo(ctx) && mm_ops->dcache_clean_inval_poc &&
-	    stage2_pte_cacheable(pgt, new))
+	if (is_pvm_mode())
+		pvm_clean_dcache(new, mm_ops, granule);
+	else if (!kvm_pgtable_walk_skip_cmo(ctx) && mm_ops->dcache_clean_inval_poc &&
+		 stage2_pte_cacheable(pgt, new))
 		mm_ops->dcache_clean_inval_poc(kvm_pte_follow(new, mm_ops),
 					       granule);
 
@@ -1087,7 +1186,10 @@ int kvm_pgtable_stage2_map(struct kvm_pgtable *pgt, u64 addr, u64 size,
 	if (WARN_ON((pgt->flags & KVM_PGTABLE_S2_IDMAP) && (addr != phys)))
 		return -EINVAL;
 
-	ret = stage2_set_prot_attr(pgt, prot, &map_data.attr);
+	if (is_pvm_mode())
+		ret = pvm_s1_set_prot_attr(prot, &map_data.attr);
+	else
+		ret = stage2_set_prot_attr(pgt, prot, &map_data.attr);
 	if (ret)
 		return ret;
 
@@ -1154,9 +1256,14 @@ static int stage2_unmap_walker(const struct kvm_pgtable_visit_ctx *ctx,
 	 */
 	stage2_unmap_put_pte(ctx, mmu, mm_ops);
 
-	if (need_flush && mm_ops->dcache_clean_inval_poc)
+	if (is_pvm_mode()) {
+		if (!childp)
+			pvm_clean_dcache(ctx->old, mm_ops,
+					 kvm_granule_size(ctx->level));
+	} else if (need_flush && mm_ops->dcache_clean_inval_poc) {
 		mm_ops->dcache_clean_inval_poc(kvm_pte_follow(ctx->old, mm_ops),
 					       kvm_granule_size(ctx->level));
+	}
 
 	if (childp)
 		mm_ops->put_page(childp);
@@ -1256,6 +1363,11 @@ static int stage2_update_leaf_attrs(struct kvm_pgtable *pgt, u64 addr,
 
 int kvm_pgtable_stage2_wrprotect(struct kvm_pgtable *pgt, u64 addr, u64 size)
 {
+	if (is_pvm_mode())
+		return stage2_update_leaf_attrs(pgt, addr, size,
+					       KVM_PTE_LEAF_ATTR_LO_S1_AP2, 0,
+					       NULL, NULL, 0);
+
 	return stage2_update_leaf_attrs(pgt, addr, size, 0,
 					KVM_PTE_LEAF_ATTR_LO_S2_S2AP_W,
 					NULL, NULL, 0);
@@ -1336,19 +1448,36 @@ int kvm_pgtable_stage2_relax_perms(struct kvm_pgtable *pgt, u64 addr,
 	if (prot & KVM_PTE_LEAF_ATTR_HI_SW)
 		return -EINVAL;
 
-	if (prot & KVM_PGTABLE_PROT_R)
-		set |= KVM_PTE_LEAF_ATTR_LO_S2_S2AP_R;
+	if (is_pvm_mode()) {
+		kvm_pte_t attr;
 
-	if (prot & KVM_PGTABLE_PROT_W)
-		set |= KVM_PTE_LEAF_ATTR_LO_S2_S2AP_W;
-
+		ret = pvm_s1_set_prot_attr(prot, &attr);
+		if (ret)
+			return ret;
+		/*
+		 * Relax within the current shadow context; guest permission
+		 * revocation requires invalidation. AP=2 retains XOM until a
+		 * data grant sets AP[2:1] to RO (3) or RW (1). Do not set AP2
+		 * for a read grant: that would revoke an existing write grant.
+		 */
+		if (prot & KVM_PGTABLE_PROT_R)
+			set |= FIELD_PREP(KVM_PTE_LEAF_ATTR_LO_S1_AP, 1);
+		if (prot & KVM_PGTABLE_PROT_W)
+			clr |= KVM_PTE_LEAF_ATTR_LO_S1_AP2;
+		clr |= ~attr & (KVM_PTE_LEAF_ATTR_HI_S1_UXN |
+				KVM_PTE_LEAF_ATTR_HI_S1_PXN);
+	} else {
+		if (prot & KVM_PGTABLE_PROT_R)
+			set |= KVM_PTE_LEAF_ATTR_LO_S2_S2AP_R;
+		if (prot & KVM_PGTABLE_PROT_W)
+			set |= KVM_PTE_LEAF_ATTR_LO_S2_S2AP_W;
 #ifdef CONFIG_ARM64_HDBSS
-	if (prot & KVM_PGTABLE_PROT_DBM)
-		set |= KVM_PTE_LEAF_ATTR_HI_S2_DBM;
+		if (prot & KVM_PGTABLE_PROT_DBM)
+			set |= KVM_PTE_LEAF_ATTR_HI_S2_DBM;
 #endif
-
-	if (prot & KVM_PGTABLE_PROT_X)
-		clr |= KVM_PTE_LEAF_ATTR_HI_S2_XN;
+		if (prot & KVM_PGTABLE_PROT_X)
+			clr |= KVM_PTE_LEAF_ATTR_HI_S2_XN;
+	}
 
 	ret = stage2_update_leaf_attrs(pgt, addr, 1, set, clr, NULL, &level,
 				       KVM_PGTABLE_WALK_HANDLE_FAULT |
@@ -1365,12 +1494,16 @@ static int stage2_flush_walker(const struct kvm_pgtable_visit_ctx *ctx,
 	struct kvm_pgtable *pgt = ctx->arg;
 	struct kvm_pgtable_mm_ops *mm_ops = pgt->mm_ops;
 
-	if (!kvm_pte_valid(ctx->old) || !stage2_pte_cacheable(pgt, ctx->old))
-		return 0;
+	if (is_pvm_mode()) {
+		pvm_clean_dcache(ctx->old, mm_ops, kvm_granule_size(ctx->level));
+	} else {
+		if (!kvm_pte_valid(ctx->old) || !stage2_pte_cacheable(pgt, ctx->old))
+			return 0;
 
-	if (mm_ops->dcache_clean_inval_poc)
-		mm_ops->dcache_clean_inval_poc(kvm_pte_follow(ctx->old, mm_ops),
-					       kvm_granule_size(ctx->level));
+		if (mm_ops->dcache_clean_inval_poc)
+			mm_ops->dcache_clean_inval_poc(kvm_pte_follow(ctx->old, mm_ops),
+						       kvm_granule_size(ctx->level));
+	}
 	return 0;
 }
 
@@ -1382,7 +1515,8 @@ int kvm_pgtable_stage2_flush(struct kvm_pgtable *pgt, u64 addr, u64 size)
 		.arg	= pgt,
 	};
 
-	if (kvm_ncsnp_support || stage2_has_fwb(pgt))
+	if (!is_pvm_mode() &&
+	    (kvm_ncsnp_support || stage2_has_fwb(pgt)))
 		return 0;
 
 	return kvm_pgtable_walk(pgt, addr, size, &walker);
@@ -1553,6 +1687,11 @@ int __kvm_pgtable_stage2_init(struct kvm_pgtable *pgt, struct kvm_s2_mmu *mmu,
 	u32 ia_bits = VTCR_EL2_IPA(vtcr);
 	u32 sl0 = FIELD_GET(VTCR_EL2_SL0_MASK, vtcr);
 	u32 start_level = VTCR_EL2_TGRAN_SL0_BASE - sl0;
+
+	if (is_pvm_mode()) {
+		ia_bits = PVM_SHADOW_S1_VA_BITS;
+		start_level = 0;
+	}
 
 	pgd_sz = kvm_pgd_pages(ia_bits, start_level) * PAGE_SIZE;
 	pgt->pgd = (kvm_pteref_t)mm_ops->zalloc_pages_exact(pgd_sz);
