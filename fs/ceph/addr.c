@@ -1759,6 +1759,7 @@ void ceph_fill_inline_data(struct inode *inode, struct page *locked_page,
 			   char	*data, size_t len)
 {
 	struct address_space *mapping = inode->i_mapping;
+	struct ceph_client *cl = ceph_inode_to_fs_client(inode)->client;
 	struct page *page;
 
 	if (locked_page) {
@@ -1780,6 +1781,12 @@ void ceph_fill_inline_data(struct inode *inode, struct page *locked_page,
 
 	dout("fill_inline_data %p %llx.%llx len %zu locked_page %p\n",
 	     inode, ceph_vinop(inode), len, locked_page);
+
+	if (len > PAGE_SIZE) {
+		pr_warn_ratelimited_client(cl, "oversized inline data %zu\n",
+						   len);
+		len = PAGE_SIZE;
+	}
 
 	if (len > 0) {
 		void *kaddr = kmap_atomic(page);
