@@ -757,6 +757,10 @@ static int destroy_access_ctx(struct access_ctx_inner *ctx, struct shm_container
 		return -EBUSY;
 	}
 	list_del(&ctx->node);
+	if (list_empty(&ctx->sa->ctx_list)) {
+		__shm_area_delete(cntr, ctx->sa);
+		kfree(ctx->sa);
+	}
 	mutex_unlock(&cntr->lock);
 
 	down_write(&ubdevshm_rw_semlock);
@@ -767,16 +771,6 @@ static int destroy_access_ctx(struct access_ctx_inner *ctx, struct shm_container
 
 	kfree(ctx);
 	return 0;
-}
-
-static void shm_area_cleanup(struct shm_area *sa, struct shm_container *cntr)
-{
-	mutex_lock(&cntr->lock);
-	if (list_empty(&sa->ctx_list)) {
-		__shm_area_delete(cntr, sa);
-		kfree(sa);
-	}
-	mutex_unlock(&cntr->lock);
 }
 
 static bool is_shm_container_free(struct shm_container *cntr)
@@ -810,7 +804,6 @@ int ubdevshm_unregister_segment(unsigned long *handle, struct mem_uva *va)
 	struct shm_container *cntr;
 	struct role_provider rp;
 	struct role_info role;
-	struct shm_area *sa;
 	int ret;
 
 	if (!handle || !va) {
@@ -845,11 +838,8 @@ int ubdevshm_unregister_segment(unsigned long *handle, struct mem_uva *va)
 		access_ctx_put(ctx_inner);
 		goto out;
 	}
-	sa = ctx_inner->sa;
 	access_ctx_put(ctx_inner);
 	ret = destroy_access_ctx(ctx_inner, cntr);
-	if (!ret)
-		shm_area_cleanup(sa, cntr);
 
 out:
 	if (cntr)
