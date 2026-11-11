@@ -231,8 +231,10 @@ void __kvm_flush_cpu_context(struct kvm_s2_mmu *mmu)
 
 	if (is_pvm_mode()) {
 		pvm_tlb_flush_all();
-		asm volatile("ic iallu");
-		dsb(ish);
+		if (!cpus_have_final_cap(ARM64_HAS_CACHE_DIC)) {
+			asm volatile("ic iallu");
+			dsb(ish);
+		}
 		isb();
 		return;
 	}
