@@ -6,6 +6,7 @@
 
 #include <linux/sort.h>
 #include <linux/kvm_host.h>
+#include <linux/overflow.h>
 
 #include <asm/insn.h>
 #include <asm/kvm_emulate.h>
@@ -15,6 +16,7 @@
 #include <asm/tlbflush.h>
 #include <asm/virt.h>
 
+#include "id_regs.h"
 #include "mmu.h"
 #include "tlbi.h"
 
@@ -185,6 +187,8 @@ enum pvm_tlbi_op {
 	PVM_TLBI_ASID,
 	PVM_TLBI_VA_ASID,
 	PVM_TLBI_VA_ALL_ASIDS,
+	PVM_TLBI_RANGE_ASID,
+	PVM_TLBI_RANGE_ALL_ASIDS,
 };
 
 /*
@@ -192,7 +196,7 @@ enum pvm_tlbi_op {
  * variants. The backend conservatively broadcasts invalidation across vCPUs
  * and revokes all matching levels for each accepted variant.
  */
-static enum pvm_tlbi_op pvm_decode_tlbi(u32 insn)
+static enum pvm_tlbi_op pvm_decode_tlbi(u32 insn, u64 features)
 {
 	if (!aarch64_insn_is_tlbi(insn))
 		return PVM_TLBI_UNSUPPORTED;
@@ -214,20 +218,76 @@ static enum pvm_tlbi_op pvm_decode_tlbi(u32 insn)
 	case OP_TLBI_VAALE1:
 	case OP_TLBI_VAALE1IS:
 		return PVM_TLBI_VA_ALL_ASIDS;
+	case OP_TLBI_VMALLE1OS:
+		return features >= 1 ? PVM_TLBI_ALL :
+				       PVM_TLBI_UNSUPPORTED;
+	case OP_TLBI_ASIDE1OS:
+		return features >= 1 ? PVM_TLBI_ASID :
+				       PVM_TLBI_UNSUPPORTED;
+	case OP_TLBI_VAE1OS:
+	case OP_TLBI_VALE1OS:
+		return features >= 1 ? PVM_TLBI_VA_ASID :
+				       PVM_TLBI_UNSUPPORTED;
+	case OP_TLBI_VAAE1OS:
+	case OP_TLBI_VAALE1OS:
+		return features >= 1 ? PVM_TLBI_VA_ALL_ASIDS :
+				       PVM_TLBI_UNSUPPORTED;
+	case OP_TLBI_RVAE1:
+	case OP_TLBI_RVAE1IS:
+	case OP_TLBI_RVAE1OS:
+	case OP_TLBI_RVALE1:
+	case OP_TLBI_RVALE1IS:
+	case OP_TLBI_RVALE1OS:
+		return features >= 2 ? PVM_TLBI_RANGE_ASID :
+				       PVM_TLBI_UNSUPPORTED;
+	case OP_TLBI_RVAAE1:
+	case OP_TLBI_RVAAE1IS:
+	case OP_TLBI_RVAAE1OS:
+	case OP_TLBI_RVAALE1:
+	case OP_TLBI_RVAALE1IS:
+	case OP_TLBI_RVAALE1OS:
+		return features >= 2 ? PVM_TLBI_RANGE_ALL_ASIDS :
+				       PVM_TLBI_UNSUPPORTED;
 	default:
 		return PVM_TLBI_UNSUPPORTED;
 	}
 }
 
+static bool pvm_tlbi_range(u64 val, u64 tcr, u64 *start, u64 *size)
+{
+	u64 tg = FIELD_GET(GENMASK_ULL(47, 46), val);
+	u64 scale = FIELD_GET(GENMASK_ULL(45, 44), val);
+	u64 num = FIELD_GET(GENMASK_ULL(43, 39), val);
+	u64 base, last;
+	unsigned int pgshift;
+
+	/* DS changes BaseADDR encoding; keep the conservative fallback. */
+	if (!tg || (tcr & BIT_ULL(59)))
+		return false;
+	pgshift = 10 + 2 * tg;
+	base = sign_extend64((val & GENMASK_ULL(36, 0)) << pgshift,
+			     36 + pgshift);
+	*size = (num + 1) << (5 * scale + 1 + pgshift);
+	if (check_add_overflow(base, *size - 1, &last))
+		return false;
+
+	/* Complex guest leaves are covered by the context tlbi_broad flag. */
+	*start = base & PVM_SHADOW_S1_ADDR_MASK;
+	return *size && *size - 1 <= PVM_SHADOW_S1_ADDR_MASK - *start;
+}
+
 int kvm_pvm_emulate_tlbi(struct kvm_vcpu *vcpu, u32 insn)
 {
 	enum pvm_tlbi_op op;
-	u64 val, addr;
+	u64 val, addr, size, features;
 
 	if (!is_pvm_mode() || !vcpu_mode_priv(vcpu))
 		return 0;
 
-	op = pvm_decode_tlbi(insn);
+	features = kvm_read_vm_id_reg(vcpu->kvm, SYS_ID_AA64ISAR0_EL1);
+	features = kvm_pvm_filter_id_reg(SYS_ID_AA64ISAR0_EL1, features);
+	features = FIELD_GET(ID_AA64ISAR0_EL1_TLB, features);
+	op = pvm_decode_tlbi(insn, features);
 	if (op == PVM_TLBI_UNSUPPORTED)
 		return 0;
 
@@ -235,6 +295,18 @@ int kvm_pvm_emulate_tlbi(struct kvm_vcpu *vcpu, u32 insn)
 	addr = kvm_pvm_shadow_s1_addr(val << 12);
 	/* Revoke software mappings too, or hardware can refill stale translations. */
 	write_lock(&vcpu->kvm->mmu_lock);
+	/* Ordinary Outer Shareable forms still use complete shadow invalidation. */
+	switch (insn & GENMASK(20, 5)) {
+	case OP_TLBI_VMALLE1OS:
+	case OP_TLBI_ASIDE1OS:
+	case OP_TLBI_VAE1OS:
+	case OP_TLBI_VALE1OS:
+	case OP_TLBI_VAAE1OS:
+	case OP_TLBI_VAALE1OS:
+		kvm_pvm_unmap_shadows(vcpu->kvm, true);
+		goto out_unlock;
+	}
+
 	switch (op) {
 	case PVM_TLBI_VA_ASID:
 		kvm_pvm_unmap_shadow_va(vcpu->kvm, addr, val >> 48);
@@ -245,11 +317,24 @@ int kvm_pvm_emulate_tlbi(struct kvm_vcpu *vcpu, u32 insn)
 	case PVM_TLBI_ASID:
 		kvm_pvm_unmap_shadow_asid(vcpu->kvm, val >> 48);
 		break;
+	case PVM_TLBI_RANGE_ASID:
+	case PVM_TLBI_RANGE_ALL_ASIDS:
+		if (pvm_tlbi_range(val, ctxt_sys_reg(&vcpu->arch.ctxt, TCR_EL1),
+				   &addr, &size)) {
+			if (op == PVM_TLBI_RANGE_ASID)
+				kvm_pvm_unmap_shadow_range_asid(vcpu->kvm, addr, size,
+								val >> 48);
+			else
+				kvm_pvm_unmap_shadow_range(vcpu->kvm, addr, size);
+			break;
+		}
+		fallthrough;
 	case PVM_TLBI_ALL:
 	default:
 		kvm_pvm_unmap_shadows(vcpu->kvm, true);
 		break;
 	}
+out_unlock:
 	write_unlock(&vcpu->kvm->mmu_lock);
 	kvm_incr_pc(vcpu);
 	return 1;

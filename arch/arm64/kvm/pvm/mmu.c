@@ -833,14 +833,22 @@ void kvm_pvm_unmap_shadow_asid(struct kvm *kvm, u16 asid)
 	kfree(batch);
 }
 
-void kvm_pvm_unmap_shadow_va(struct kvm *kvm, u64 addr, u16 asid)
+void kvm_pvm_unmap_shadow_range_asid(struct kvm *kvm, u64 addr, u64 size,
+				     u16 asid)
 {
 	struct kvm_pvm *pvm = kvm_to_pvm(kvm);
 	size_t i;
 
 	lockdep_assert_held_write(&kvm->mmu_lock);
+	if (!size || addr > PVM_SHADOW_S1_ADDR_MASK ||
+	    size - 1 > PVM_SHADOW_S1_ADDR_MASK - addr ||
+	    (addr < PVM_SHADOW_S1_KERNEL_BASE &&
+	     addr + size > PVM_SHADOW_S1_KERNEL_BASE)) {
+		kvm_pvm_unmap_shadows(kvm, true);
+		return;
+	}
 	if (addr >= PVM_SHADOW_S1_KERNEL_BASE) {
-		kvm_pvm_unmap_shadow_range(kvm, addr, PAGE_SIZE);
+		kvm_pvm_unmap_shadow_range(kvm, addr, size);
 		return;
 	}
 	pvm->invalidating++;
@@ -850,10 +858,15 @@ void kvm_pvm_unmap_shadow_va(struct kvm *kvm, u64 addr, u16 asid)
 		enum kvm_pgtable_prot keep = pvm_asid_matches(user, asid) ? 0 :
 						 KVM_PGTABLE_PROT_PVM_NONGLOBAL;
 
-		pvm_unmap_selected(user, addr, PAGE_SIZE, keep, NULL);
+		pvm_unmap_selected(user, addr, size, keep, NULL);
 	}
 	pvm->invalidate_seq++;
 	pvm->invalidating--;
+}
+
+void kvm_pvm_unmap_shadow_va(struct kvm *kvm, u64 addr, u16 asid)
+{
+	kvm_pvm_unmap_shadow_range_asid(kvm, addr, PAGE_SIZE, asid);
 }
 
 static int pvm_check_empty_leaf(const struct kvm_pgtable_visit_ctx *ctx,
