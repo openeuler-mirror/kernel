@@ -6,7 +6,11 @@
 
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_atomic.h>
+#if defined(__arm__) || defined(__aarch64__)
 #include <asm/neon.h>
+#elif defined(__x86_64)
+#include <asm/fpu/api.h>
+#endif
 #include <drm/drm_vblank.h>
 #include "phytium_display_drv.h"
 #include "phytium_crtc.h"
@@ -29,7 +33,7 @@
 #define MATH_Add(X, Y)			((float)((X) + (Y)))
 #define MATH_Multiply(X, Y)		((float)((X) * (Y)))
 #define MATH_Divide(X, Y)		((float)((X) / (Y)))
-#define MATH_DivideFromUInteger(X, Y)	((float)(X) / (float)(Y))
+#define MATH_DivideFromUInteger(X, Y)	(((float)(X) / (float)(Y)))
 #define MATH_I2Float(X)		((float)(X))
 
 struct filter_blit_array {
@@ -38,6 +42,7 @@ struct filter_blit_array {
 	uint32_t *kernelStates;
 };
 
+
 static void phytium_crtc_gamma_set(struct drm_crtc *crtc)
 {
 	struct drm_device *dev = crtc->dev;
@@ -45,9 +50,11 @@ static void phytium_crtc_gamma_set(struct drm_crtc *crtc)
 	struct phytium_crtc *phytium_crtc = to_phytium_crtc(crtc);
 	int phys_pipe = phytium_crtc->phys_pipe;
 	uint32_t group_offset = priv->dc_reg_base[phys_pipe];
-	uint32_t config = 0;
+	uint32_t config = 0, data;
 	struct drm_crtc_state *state = crtc->state;
 	struct drm_color_lut *lut;
+	unsigned long flags;
+	uint32_t active_line = 0, timeout = 500;
 	int i;
 
 	if (state->gamma_lut) {
@@ -55,13 +62,44 @@ static void phytium_crtc_gamma_set(struct drm_crtc *crtc)
 			"gamma size is not match\n"))
 			return;
 		lut = (struct drm_color_lut *)state->gamma_lut->data;
-		for (i = 0; i < GAMMA_INDEX_MAX; i++) {
-			phytium_writel_reg(priv, i, group_offset, PHYTIUM_DC_GAMMA_INDEX);
-			config = ((lut[i].red >> 6) & GAMMA_RED_MASK) << GAMMA_RED_SHIFT;
-			config |= (((lut[i].green >> 6) & GAMMA_GREEN_MASK) << GAMMA_GREEN_SHIFT);
-			config |= (((lut[i].blue >> 6) & GAMMA_BLUE_MASK) << GAMMA_BLUE_SHIFT);
-			phytium_writel_reg(priv, config, group_offset, PHYTIUM_DC_GAMMA_DATA);
+
+		config = phytium_readl_reg(priv, group_offset, PHYTIUM_DC_FRAMEBUFFER_CONFIG);
+		if (config & FRAMEBUFFER_OUTPUT) {
+			struct drm_display_mode *mode = &state->adjusted_mode;
+			uint32_t frame_time;
+			uint32_t value_a, value_b;
+
+			frame_time = mode->crtc_vtotal * mode->crtc_htotal / mode->crtc_clock;
+			value_b = (frame_time - 2) * mode->crtc_vtotal;
+			local_irq_save(flags);
+			do {
+				active_line = phytium_readl_reg(priv, group_offset,
+								PHYTIUM_DC_LOCATION);
+				active_line = active_line >> LOVATION_Y_SHIFT;
+				value_a = (mode->crtc_vblank_end - mode->crtc_vblank_start +
+					   active_line) * frame_time;
+				if (value_a < value_b)
+					break;
+				local_irq_restore(flags);
+				udelay(1000);
+				timeout--;
+				local_irq_save(flags);
+			} while (timeout);
+
+			if (timeout == 0)
+				DRM_ERROR("wait gamma active line timeout\n");
 		}
+
+		phytium_writel_reg(priv, 0, group_offset, PHYTIUM_DC_GAMMA_INDEX);
+		for (i = 0; i < GAMMA_INDEX_MAX; i++) {
+			data = ((lut[i].red >> 6) & GAMMA_RED_MASK) << GAMMA_RED_SHIFT;
+			data |= (((lut[i].green >> 6) & GAMMA_GREEN_MASK) << GAMMA_GREEN_SHIFT);
+			data |= (((lut[i].blue >> 6) & GAMMA_BLUE_MASK) << GAMMA_BLUE_SHIFT);
+			phytium_writel_reg(priv, data, group_offset, PHYTIUM_DC_GAMMA_DATA);
+		}
+
+		if (config & FRAMEBUFFER_OUTPUT)
+			local_irq_restore(flags);
 	}
 }
 
@@ -72,8 +110,11 @@ static void phytium_crtc_gamma_init(struct drm_crtc *crtc)
 	struct phytium_crtc *phytium_crtc = to_phytium_crtc(crtc);
 	int phys_pipe = phytium_crtc->phys_pipe;
 	uint32_t group_offset = priv->dc_reg_base[phys_pipe];
-	uint32_t config = 0;
+	struct drm_crtc_state *state = crtc->state;
+	uint32_t config = 0, data;
 	uint16_t *red, *green, *blue;
+	unsigned long flags;
+	uint32_t active_line = 0, timeout = 500;
 	int i;
 
 	if (WARN((crtc->gamma_size != GAMMA_INDEX_MAX), "gamma size is not match\n"))
@@ -83,13 +124,42 @@ static void phytium_crtc_gamma_init(struct drm_crtc *crtc)
 	green = red + crtc->gamma_size;
 	blue = green + crtc->gamma_size;
 
-	for (i = 0; i < GAMMA_INDEX_MAX; i++) {
-		phytium_writel_reg(priv, i, group_offset, PHYTIUM_DC_GAMMA_INDEX);
-		config = ((*red++ >> 6) & GAMMA_RED_MASK) << GAMMA_RED_SHIFT;
-		config |= (((*green++ >> 6) & GAMMA_GREEN_MASK) << GAMMA_GREEN_SHIFT);
-		config |= (((*blue++ >> 6) & GAMMA_BLUE_MASK) << GAMMA_BLUE_SHIFT);
-		phytium_writel_reg(priv, config, group_offset, PHYTIUM_DC_GAMMA_DATA);
+	config = phytium_readl_reg(priv, group_offset, PHYTIUM_DC_FRAMEBUFFER_CONFIG);
+	if (config & FRAMEBUFFER_OUTPUT) {
+		struct drm_display_mode *mode = &state->adjusted_mode;
+		uint32_t frame_time;
+		uint32_t value_a, value_b;
+
+		frame_time = mode->crtc_vtotal * mode->crtc_htotal / mode->crtc_clock;
+		value_b = (frame_time - 2) * mode->crtc_vtotal;
+		local_irq_save(flags);
+		do {
+			active_line = phytium_readl_reg(priv, group_offset, PHYTIUM_DC_LOCATION);
+			active_line = active_line >> LOVATION_Y_SHIFT;
+			value_a = (mode->crtc_vblank_end - mode->crtc_vblank_start +
+				   active_line) * frame_time;
+			if (value_a < value_b)
+				break;
+			local_irq_restore(flags);
+			udelay(1000);
+			timeout--;
+			local_irq_save(flags);
+		} while (timeout);
+
+		if (timeout == 0)
+			DRM_ERROR("wait gamma active line timeout\n");
 	}
+
+	phytium_writel_reg(priv, 0, group_offset, PHYTIUM_DC_GAMMA_INDEX);
+	for (i = 0; i < GAMMA_INDEX_MAX; i++) {
+		data = ((*red++ >> 6) & GAMMA_RED_MASK) << GAMMA_RED_SHIFT;
+		data |= (((*green++ >> 6) & GAMMA_GREEN_MASK) << GAMMA_GREEN_SHIFT);
+		data |= (((*blue++ >> 6) & GAMMA_BLUE_MASK) << GAMMA_BLUE_SHIFT);
+		phytium_writel_reg(priv, data, group_offset, PHYTIUM_DC_GAMMA_DATA);
+	}
+
+	if (config & FRAMEBUFFER_OUTPUT)
+		local_irq_restore(flags);
 }
 
 static void phytium_crtc_destroy(struct drm_crtc *crtc)
@@ -197,7 +267,6 @@ phytium_crtc_atomic_enable(struct drm_crtc *crtc,
 	/* config pix clock */
 	phytium_crtc->dc_hw_config_pix_clock(crtc, mode->clock);
 
-	//phytium_dc_scaling_config(crtc, old_state);
 	config = ((mode->crtc_hdisplay & HDISPLAY_END_MASK) << HDISPLAY_END_SHIFT)
 		| ((mode->crtc_htotal&HDISPLAY_TOTAL_MASK) << HDISPLAY_TOTAL_SHIFT);
 	phytium_writel_reg(priv, config, group_offset, PHYTIUM_DC_HDISPLAY);
@@ -231,10 +300,19 @@ phytium_crtc_atomic_enable(struct drm_crtc *crtc,
 	else
 		config &= (~FRAMEBUFFER_SCALE_ENABLE);
 
+	if (!priv->info.bmc_mode)
+		config |= FRAMEBUFFER_GAMMA_ENABLE;
+
 	if (crtc->state->gamma_lut)
 		phytium_crtc_gamma_set(crtc);
 	else
 		phytium_crtc_gamma_init(crtc);
+
+	/* enable dither*/
+	DRM_DEBUG_KMS("Enable dither on DC-%d\n", phys_pipe);
+	phytium_writel_reg(priv, DITHER_TABLE_LOW, group_offset, DC_DITHER_TABLE_LOW);
+	phytium_writel_reg(priv, DITHER_TABLE_HIGH, group_offset, DC_DITHER_TABLE_HIGH);
+	phytium_writel_reg(priv, ENABLE, group_offset, DC_DITHER_CONFIG);
 
 	phytium_writel_reg(priv, config, group_offset, PHYTIUM_DC_FRAMEBUFFER_CONFIG);
 	drm_crtc_vblank_on(crtc);
@@ -406,6 +484,7 @@ int phytium_crtc_init(struct drm_device *dev, int phys_pipe)
 	struct phytium_crtc_state *phytium_crtc_state;
 	struct phytium_plane *phytium_primary_plane = NULL;
 	struct phytium_plane *phytium_cursor_plane = NULL;
+	struct drm_plane *cursor_base = NULL;
 	struct phytium_display_private *priv = dev->dev_private;
 	int ret;
 
@@ -448,16 +527,21 @@ int phytium_crtc_init(struct drm_device *dev, int phys_pipe)
 		goto failed_create_primary;
 	}
 
-	phytium_cursor_plane = phytium_cursor_plane_create(dev, phys_pipe);
-	if (IS_ERR(phytium_cursor_plane)) {
-		ret = PTR_ERR(phytium_cursor_plane);
-		DRM_ERROR("create cursor plane failed, phys_pipe(%d)\n", phys_pipe);
-		goto failed_create_cursor;
+	if (priv->info.bmc_mode) {
+		cursor_base = NULL;
+	} else {
+		phytium_cursor_plane = phytium_cursor_plane_create(dev, phys_pipe);
+		if (IS_ERR(phytium_cursor_plane)) {
+			ret = PTR_ERR(phytium_cursor_plane);
+			DRM_ERROR("create cursor plane failed, phys_pipe(%d)\n", phys_pipe);
+			goto failed_create_cursor;
+		}
+		cursor_base = &phytium_cursor_plane->base;
 	}
 
 	ret = drm_crtc_init_with_planes(dev, &phytium_crtc->base,
 					&phytium_primary_plane->base,
-					&phytium_cursor_plane->base,
+					cursor_base,
 					&phytium_crtc_funcs,
 					"phys_pipe %d", phys_pipe);
 
@@ -471,7 +555,6 @@ int phytium_crtc_init(struct drm_device *dev, int phys_pipe)
 	drm_crtc_enable_color_mgmt(&phytium_crtc->base, 0, false, GAMMA_INDEX_MAX);
 	if (phytium_crtc->dc_hw_reset)
 		phytium_crtc->dc_hw_reset(&phytium_crtc->base);
-	phytium_crtc_gamma_init(&phytium_crtc->base);
 
 	return 0;
 

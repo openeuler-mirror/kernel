@@ -106,6 +106,35 @@ phytium_plane_atomic_destroy_state(struct drm_plane *plane, struct drm_plane_sta
 	kfree(phytium_state);
 }
 
+static bool phytium_plane_format_mod_supported(struct drm_plane *plane,
+						uint32_t format, uint64_t modifier)
+{
+	if (modifier == DRM_FORMAT_MOD_LINEAR)
+		return true;
+
+	if (modifier == DRM_FORMAT_MOD_PHYTIUM_TILE_MODE3_FBCDC) {
+		switch (format) {
+		case DRM_FORMAT_ARGB2101010:
+		case DRM_FORMAT_ABGR2101010:
+		case DRM_FORMAT_RGBA1010102:
+		case DRM_FORMAT_BGRA1010102:
+		case DRM_FORMAT_ARGB8888:
+		case DRM_FORMAT_ABGR8888:
+		case DRM_FORMAT_RGBA8888:
+		case DRM_FORMAT_BGRA8888:
+		case DRM_FORMAT_XRGB8888:
+		case DRM_FORMAT_XBGR8888:
+		case DRM_FORMAT_RGBX8888:
+		case DRM_FORMAT_BGRX8888:
+			return true;
+		default:
+			return false;
+		}
+	}
+
+	return false;
+}
+
 const struct drm_plane_funcs phytium_plane_funcs = {
 	.update_plane		= drm_atomic_helper_update_plane,
 	.disable_plane		= drm_atomic_helper_disable_plane,
@@ -115,6 +144,7 @@ const struct drm_plane_funcs phytium_plane_funcs = {
 	.atomic_set_property	= phytium_plane_atomic_set_property,
 	.atomic_duplicate_state	= phytium_plane_atomic_duplicate_state,
 	.atomic_destroy_state	= phytium_plane_atomic_destroy_state,
+	.format_mod_supported	= phytium_plane_format_mod_supported,
 };
 
 static int phytium_plane_prepare_fb(struct drm_plane *plane,
@@ -442,6 +472,16 @@ static void phytium_dc_cursor_plane_update(struct drm_plane *plane)
 	phytium_plane->cursor_x = plane->state->crtc_x + fb->hot_x;
 	phytium_plane->cursor_y = plane->state->crtc_y + fb->hot_y;
 
+	if (phytium_plane->cursor_x < 0) {
+		phytium_plane->cursor_hot_x = plane->state->crtc_w - 1;
+		phytium_plane->cursor_x = plane->state->crtc_x + phytium_plane->cursor_hot_x;
+	}
+
+	if (phytium_plane->cursor_y < 0) {
+		phytium_plane->cursor_hot_y = plane->state->crtc_h - 1;
+		phytium_plane->cursor_y = plane->state->crtc_y + phytium_plane->cursor_hot_y;
+	}
+
 	config = CURSOR_FORMAT_ARGB8888 |
 		((phytium_plane->cursor_hot_y & CURSOR_HOT_Y_MASK) << CURSOR_HOT_Y_SHIFT) |
 		((phytium_plane->cursor_hot_x & CURSOR_HOT_X_MASK) << CURSOR_HOT_X_SHIFT);
@@ -551,7 +591,12 @@ struct phytium_plane *phytium_primary_plane_create(struct drm_device *dev, int p
 		phytium_plane->dc_hw_update_primary_hi_addr = px210_dc_hw_update_primary_hi_addr;
 		phytium_plane->dc_hw_update_cursor_hi_addr = NULL;
 	}  else if (IS_PE220X(priv)) {
-		phytium_plane->dc_hw_plane_get_format = pe220x_dc_hw_plane_get_primary_format;
+		if (priv->info.bmc_mode)
+			phytium_plane->dc_hw_plane_get_format =
+				pe220x_dc_bmc_hw_plane_get_primary_format;
+		else
+			phytium_plane->dc_hw_plane_get_format =
+				pe220x_dc_hw_plane_get_primary_format;
 		phytium_plane->dc_hw_update_dcreq = NULL;
 		phytium_plane->dc_hw_update_primary_hi_addr = pe220x_dc_hw_update_primary_hi_addr;
 		phytium_plane->dc_hw_update_cursor_hi_addr = NULL;
