@@ -336,9 +336,9 @@ enum ub_fwctl_cmdrpc_type {
 	UTOOL_CMD_QUERY_UE_INFO = 0x00F2,
 
 	/**
-	 * @UBCTL_CMD_QUERY_CONF_USER_COMM: User-space interface command code
+	 * @UTOOL_CMD_QUERY_CONF_USER_COMM: User-space interface command code
 	 */
-	UBCTL_CMD_QUERY_CONF_USER_COMM = 0x0101,
+	UTOOL_CMD_QUERY_CONF_USER_COMM = 0x0101,
 	/**
 	 * @UTOOL_CMD_QUERY_DSCP_INFO: Query DSCP-related information
 	 */

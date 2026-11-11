@@ -26,7 +26,8 @@
 #define UBCTL_WRITE false
 #define UBCTL_PORT_TYPE_ETH 0U
 #define UBCTL_PORT_TYPE_UB 1U
-#define MODULE_UBCTL "ubctl"
+#define UBCTL_MODULE "ub_fwctl"
+#define UBCTL_SET_USED(x) ((void)(x))
 
 #define ubctl_err(ucdev, format, ...) \
 	dev_err(&ucdev->fwctl.dev, format, ##__VA_ARGS__)
@@ -43,8 +44,7 @@
 	dev_warn(&ucdev->fwctl.dev, "PID %u: " format, current->pid, \
 		##__VA_ARGS__)
 
-#define ubctl_nodev_warn(fmt, ...) pr_warn(MODULE_UBCTL ": <%s:%d>" fmt, \
-		__func__, __LINE__, ##__VA_ARGS__)
+#define ubctl_nodev_warn(fmt, ...)  pr_warn(UBCTL_MODULE ": " fmt, ##__VA_ARGS__)
 
 #define UBCTL_GET_PHY_ADDR(high, low) ((((u64)(high)) << 32) | (low))
 #define UBCTL_EXTRACT_BITS(value, start, end) \
@@ -170,7 +170,7 @@ int ubctl_query_perf_stats(struct ubctl_dev *ucdev, u32 port_bitmap,
 			   struct ubase_perf_stats_result *result_data,
 			   u32 result_data_size);
 
-int ubctl_dev_client_init(struct ubctl_dev *ucdev);
+int ubctl_dev_client_init(void);
 void ubctl_dev_client_uninit(struct ubctl_dev *ucdev);
 struct device *ubctl_find_device_by_name(const char *dev_name);
 

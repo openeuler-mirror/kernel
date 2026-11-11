@@ -442,7 +442,7 @@ static int ubctl_query_perf_data(struct ubctl_dev *ucdev,
 				 struct ubctl_query_cmd_param *query_cmd_param,
 				 u32 port_bitmap, u32 period, u32 rpc_cmd)
 {
-	struct ubase_perf_stats_result *result_data;
+	struct ubase_perf_stats_result *result_data, *tmp_result_data;
 	u8 *perf_out_data;
 	int ret = 0;
 	u32 i = 0;
@@ -465,6 +465,7 @@ static int ubctl_query_perf_data(struct ubctl_dev *ucdev,
 	if (!result_data)
 		return -ENOMEM;
 
+	tmp_result_data = result_data;
 	if (rpc_cmd == UTOOL_CMD_QUERY_DL_PERF) {
 		ret = ubctl_query_perf_stats(ucdev, port_bitmap, result_data, UBCTL_MAX_PORT_NUM);
 		if (ret)
@@ -486,7 +487,7 @@ static int ubctl_query_perf_data(struct ubctl_dev *ucdev,
 query_perf_failed:
 	if (ret)
 		ubctl_err(ucdev, "failed to query perf by ubctl, ret = %d.\n", ret);
-	kvfree(result_data);
+	kvfree(tmp_result_data);
 	return ret;
 }
 
@@ -1581,6 +1582,9 @@ int ubctl_port_link_status_init(struct auxiliary_device *adev, struct ubctl_dev 
 	struct ubase_caps *ucaps;
 	int ret = 0;
 
+	if (!adev || !ucdev)
+		return -EINVAL;
+
 	ucaps = ubase_get_dev_caps(adev);
 	if (ucaps == NULL)
 		return -ENODEV;
@@ -1866,7 +1870,7 @@ static int ubctl_get_device(struct ubctl_dev *ucdev,
 
 	adev = ubctl_find_device_by_name(pkt_in->dev_name);
 	if (!adev || !adev->parent) {
-		ubctl_err(ucdev, "no such device %s.\n", pkt_in->dev_name);
+		ubctl_err(ucdev, "no such device or not supported %s.\n", pkt_in->dev_name);
 		return -ENXIO;
 	}
 	*dev = adev->parent;
@@ -1891,9 +1895,9 @@ static int ubctl_query_dscp(struct ubctl_dev *ucdev,
 
 	out_data_size = &query_cmd_param->out->data_size;
 	out_size = query_cmd_param->out_len;
-	if (out_size > sizeof(struct ubase_dbg_dscp_vl_map) + sizeof(struct fwctl_rpc_ub_out)) {
+	if (out_size > sizeof(struct ubase_dbg_dscp_vl_map)) {
 		ubctl_err(ucdev, "data size(%u) is too large, out data size(%zu).\n", out_size,
-			  sizeof(struct ubase_dbg_dscp_vl_map) + sizeof(struct fwctl_rpc_ub_out));
+			  sizeof(struct ubase_dbg_dscp_vl_map));
 		return -EINVAL;
 	}
 
@@ -1927,9 +1931,9 @@ static int ubctl_query_sl_vl_map(struct ubctl_dev *ucdev,
 
 	out_data_size = &query_cmd_param->out->data_size;
 	out_size = query_cmd_param->out_len;
-	if (out_size > sizeof(struct ubase_dbg_sl_vl_map) + sizeof(struct fwctl_rpc_ub_out)) {
+	if (out_size > sizeof(struct ubase_dbg_sl_vl_map)) {
 		ubctl_err(ucdev, "data size(%u) is too large, out data size(%zu).\n", out_size,
-			  sizeof(struct ubase_dbg_sl_vl_map) + sizeof(struct fwctl_rpc_ub_out));
+			  sizeof(struct ubase_dbg_sl_vl_map));
 		return -EINVAL;
 	}
 
@@ -1963,9 +1967,9 @@ static int ubctl_query_caps_info(struct ubctl_dev *ucdev,
 
 	out_data_size = &query_cmd_param->out->data_size;
 	out_size = query_cmd_param->out_len;
-	if (out_size > sizeof(struct ubase_dbg_caps_info) + sizeof(struct fwctl_rpc_ub_out)) {
+	if (out_size > sizeof(struct ubase_dbg_caps_info)) {
 		ubctl_err(ucdev, "data size(%u) is too large, out data size(%zu).\n", out_size,
-			  sizeof(struct ubase_dbg_caps_info) + sizeof(struct fwctl_rpc_ub_out));
+			  sizeof(struct ubase_dbg_caps_info));
 		return -EINVAL;
 	}
 	buf = (void *)query_cmd_param->out->data;
@@ -2139,6 +2143,14 @@ int ubctl_check_port_type(struct ubctl_dev *ucdev, struct ubctl_query_cmd_param 
 {
 	struct fwctl_pkt_in_port *pkt_in;
 
+	if (!ucdev || !(ucdev->adev))
+		return -EINVAL;
+
+	if (!query_cmd_param || !(query_cmd_param->in)) {
+		ubctl_err(ucdev, "query cmd parameter or fwctl rpc ub in is null.\n");
+		return -EINVAL;
+	}
+
 	pkt_in = (struct fwctl_pkt_in_port *)query_cmd_param->in->data;
 
 	return ubctl_check_single_port_type(ucdev, pkt_in->port_id, expect_port_type);
@@ -2153,6 +2165,14 @@ int ubctl_check_port_type_from_bitmap(struct ubctl_dev *ucdev,
 	u32 bitmap;
 	int ret;
 	u32 i;
+
+	if (!ucdev || !(ucdev->adev))
+		return -EINVAL;
+
+	if (!query_cmd_param || !(query_cmd_param->in)) {
+		ubctl_err(ucdev, "query cmd parameter or fwctl rpc ub in is null.\n");
+		return -EINVAL;
+	}
 
 	pkt_in = (struct fwctl_pkt_in_port *)query_cmd_param->in->data;
 	bitmap = pkt_in->port_id;

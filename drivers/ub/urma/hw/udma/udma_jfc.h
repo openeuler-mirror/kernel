@@ -82,6 +82,7 @@ struct udma_jfc {
 	bool dtu_en;
 	struct udma_dtu_pg_info dtu_pg_info;
 	struct sg_table *sgt;
+	bool buf_cstm;
 };
 
 struct udma_jfc_ctx {

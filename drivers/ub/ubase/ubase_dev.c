@@ -130,7 +130,7 @@ bool ubase_dev_fwctl_supported(struct ubase_dev *udev)
 	return ubase_dev_pmu_supported(udev);
 }
 
-static bool ubase_dev_proxy_supported(struct ubase_dev *udev)
+bool ubase_dev_proxy_supported(struct ubase_dev *udev)
 {
 	return udev->caps.dev_caps.ue_num > 1 &&
 	       ubase_dev_mbx_proxy_supported(udev);
@@ -771,6 +771,10 @@ static struct ubase_crq_event_nb ubase_crq_events[] = {
 	{
 		.opcode = UBASE_OPC_PROXY_TO_UBASE,
 		.crq_handler = ubase_handle_mbx_over_cmdq_resp,
+	},
+	{
+		.opcode = UBASE_OPC_UE_CMDQ_RATELIMIT,
+		.crq_handler = ubase_handle_ue_cmdq_ratelimit_notify,
 	},
 };
 
@@ -1738,6 +1742,9 @@ void ubase_virt_handler(struct ubase_dev *udev, u16 bus_ue_id, bool is_en)
 		return;
 
 	ubase_update_ue_isolated_state(udev);
+
+	if (is_en)
+		ubase_update_ue_cmdq_ratelimit_state(udev, bus_ue_id);
 
 	mutex_lock(&udev->priv.uadev_lock);
 	for (i = 0; i < UBASE_DRV_MAX; i++) {

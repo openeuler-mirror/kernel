@@ -38,10 +38,21 @@ struct ubase_ctx_buf {
 	struct ubase_ctx_buf_cap rc;
 };
 
+#define UBASE_CMDQ_RATELIMIT_STAT_MAX_NUM 10U
+struct ubase_cmdq_ratelimit_stats {
+	u64	limited_cnt;
+	u64	unlimited_cnt;
+	struct {
+		u8		limited;
+		time64_t	time;
+	} stats[UBASE_CMDQ_RATELIMIT_STAT_MAX_NUM];
+};
+
 struct ubase_ue_node {
-	struct list_head	list;
-	u16			bus_ue_id;
-	u8			isolated;
+	struct list_head			list;
+	u16					bus_ue_id;
+	u8					isolated;
+	struct ubase_cmdq_ratelimit_stats	cmdq_ratelimit_stats;
 };
 
 struct ubase_cmdq_desc;
@@ -170,6 +181,8 @@ struct ubase_reset_stat {
 	u32 reset_retry_cnt;
 	u32 port_reset_cnt;
 	u32 himac_reset_cnt;
+	u32 force_reset_cnt;
+	u32 force_reset_fail_cnt;
 };
 
 enum ubase_dev_state_bit {
@@ -476,6 +489,7 @@ bool ubase_dev_unic_supported(struct ubase_dev *udev);
 bool ubase_dev_cdma_supported(struct ubase_dev *udev);
 bool ubase_dev_pmu_supported(struct ubase_dev *udev);
 bool ubase_dev_fwctl_supported(struct ubase_dev *udev);
+bool ubase_dev_proxy_supported(struct ubase_dev *udev);
 
 static inline
 struct ubase_dev *__ubase_get_udev_by_adev(struct auxiliary_device *adev)

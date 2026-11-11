@@ -21,10 +21,20 @@ struct ubase_query_ue_isolated_state_cmd {
 	__le32 bitmap[5];
 };
 
+struct ubase_cmdq_ratelimit_cmd {
+	__le16	bus_ue_id;
+	u8	status;
+	u8	resv[21];
+};
+
 int ubase_ue_req_ctx_buf(struct ubase_dev *udev);
 int ubase_handle_ue_ctx_va_resp(void *dev, void *data, u32 len);
 int ubase_handle_ue_isolated_notify_event(void *dev, void *data, u32 len);
 int ubase_init_ue_isolated_state(struct ubase_dev *udev);
 int ubase_update_ue_isolated_state(struct ubase_dev *udev);
+int ubase_handle_ue_cmdq_ratelimit_notify(void *dev, void *data, u32 len);
+int ubase_query_ue_cmdq_ratelimit_state(struct ubase_dev *udev, u16 bus_ue_id,
+					u8 *status);
+int ubase_update_ue_cmdq_ratelimit_state(struct ubase_dev *udev, u16 bus_ue_id);
 
 #endif /* __UBASE_PROXY_H__ */

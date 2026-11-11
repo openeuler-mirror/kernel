@@ -11,6 +11,7 @@
 #include "memory.h"
 
 static ubmem_ras_handler handler;
+static ubmem_event_handler event_handler;
 
 static bool ub_mem_uent_valid(struct ub_entity *uent)
 {
@@ -76,6 +77,28 @@ ubmem_ras_handler ub_mem_ras_handler_get(void)
 	return handler;
 }
 EXPORT_SYMBOL_GPL(ub_mem_ras_handler_get);
+
+void ub_mem_event_handler_register(ubmem_event_handler eh)
+{
+	mutex_lock(&mem_ras_mutex);
+	event_handler = eh;
+	mutex_unlock(&mem_ras_mutex);
+}
+EXPORT_SYMBOL_GPL(ub_mem_event_handler_register);
+
+void ub_mem_event_handler_unregister(void)
+{
+	mutex_lock(&mem_ras_mutex);
+	event_handler = NULL;
+	mutex_unlock(&mem_ras_mutex);
+}
+EXPORT_SYMBOL_GPL(ub_mem_event_handler_unregister);
+
+ubmem_event_handler ub_mem_event_handler_get(void)
+{
+	return event_handler;
+}
+EXPORT_SYMBOL_GPL(ub_mem_event_handler_get);
 
 void ub_mem_init_usi(struct ub_entity *uent)
 {

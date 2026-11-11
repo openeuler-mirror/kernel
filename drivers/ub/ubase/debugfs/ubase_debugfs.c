@@ -35,6 +35,8 @@ static int ubase_dbg_dump_rst_info(struct seq_file *s, void *data)
 	seq_printf(s, "reset done count: %u\n", udev->reset_stat.reset_done_cnt);
 	seq_printf(s, "HW reset done count: %u\n", udev->reset_stat.hw_reset_done_cnt);
 	seq_printf(s, "reset fail count: %u\n", udev->reset_stat.reset_fail_cnt);
+	seq_printf(s, "force reset count: %u\n", udev->reset_stat.force_reset_cnt);
+	seq_printf(s, "force reset fail count: %u\n", udev->reset_stat.force_reset_fail_cnt);
 	seq_printf(s, "udev state: 0x%lx\n", udev->state_bits);
 	seq_printf(s, "udev status: 0x%lx\n", udev->status);
 
@@ -665,6 +667,16 @@ static bool ubase_dbg_udma_mac_tbl_list_support(struct device *dev, u32 property
 	return __ubase_dbg_dentry_support(dev, property);
 }
 
+static bool ubase_dbg_dev_proxy_support(struct device *dev, u32 property)
+{
+	struct ubase_dev *udev = dev_get_drvdata(dev);
+
+	if (!ubase_dev_proxy_supported(udev))
+		return false;
+
+	return __ubase_dbg_dentry_support(dev, property);
+}
+
 /**
  * ubase_dbg_dentry_support() - determine whether to create debugfs dentries and debugfs cmd files
  * @adev: auxiliary device
@@ -946,7 +958,7 @@ static struct ubase_dbg_cmd_info ubase_dbg_cmd[] = {
 		.name = "ue_isolated_state",
 		.dentry_index = UBASE_DBG_DENTRY_ROOT,
 		.property = UBASE_SUP_URMA | UBASE_SUP_UBL_ETH,
-		.support = __ubase_dbg_dentry_support,
+		.support = ubase_dbg_dev_proxy_support,
 		.init = __ubase_dbg_seq_file_init,
 		.read_func = ubase_dbg_dump_ue_isolated_state,
 	},
@@ -989,6 +1001,14 @@ static struct ubase_dbg_cmd_info ubase_dbg_cmd[] = {
 		.support = ubase_dbg_udma_mac_tbl_list_support,
 		.init = __ubase_dbg_seq_file_init,
 		.read_func = ubase_dbg_dump_udma_mac_tbl_list_hw,
+	},
+	{
+		.name = "ue_cmdq_ratelimit_record",
+		.dentry_index = UBASE_DBG_DENTRY_ROOT,
+		.property = UBASE_SUP_URMA | UBASE_SUP_UBL_ETH,
+		.support = ubase_dbg_dev_proxy_support,
+		.init = __ubase_dbg_seq_file_init,
+		.read_func = ubase_dbg_dump_ue_cmdq_ratelimit_record,
 	}
 };
 

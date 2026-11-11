@@ -167,3 +167,107 @@ int ubase_handle_ue_ctx_va_resp(void *dev, void *data, u32 len)
 
 	return 0;
 }
+
+static void ubase_update_ue_cmdq_ratelimit_record(struct ubase_ue_node *ue_node,
+						  u8 status)
+{
+	struct ubase_cmdq_ratelimit_stats *record;
+	u64 idx, total;
+
+	record = &ue_node->cmdq_ratelimit_stats;
+	if (status)
+		record->limited_cnt++;
+	else
+		record->unlimited_cnt++;
+
+	total = record->limited_cnt + record->unlimited_cnt;
+	idx = (total - 1) % UBASE_CMDQ_RATELIMIT_STAT_MAX_NUM;
+	record->stats[idx].limited = status;
+	record->stats[idx].time = ktime_get_real_seconds();
+}
+
+static int ubase_record_ue_cmdq_ratelimit_state(struct ubase_dev *udev,
+						u16 bus_ue_id, u8 status)
+{
+	struct ubase_ue_node *ue_pos;
+
+	mutex_lock(&udev->ue_list_lock);
+	list_for_each_entry(ue_pos, &udev->ue_list, list) {
+		if (ue_pos->bus_ue_id != bus_ue_id)
+			continue;
+
+		ubase_update_ue_cmdq_ratelimit_record(ue_pos, status);
+		mutex_unlock(&udev->ue_list_lock);
+		ubase_info(udev,
+			   "update ue(%u) cmdq ratelimit status to %u.\n",
+			   bus_ue_id, status);
+		return 0;
+	}
+
+	mutex_unlock(&udev->ue_list_lock);
+	ubase_warn(udev, "recv unknown ue(%u) cmdq ratelimit event.\n",
+		   bus_ue_id);
+
+	return -ENXIO;
+}
+
+int ubase_handle_ue_cmdq_ratelimit_notify(void *dev, void *data, u32 len)
+{
+	struct ubase_cmdq_ratelimit_cmd *cmd = data;
+	struct ubase_dev *udev = dev;
+	u16 bus_ue_id;
+
+	if (len < sizeof(*cmd)) {
+		ubase_err(udev,
+			  "cmdq ratelimit notify len error, len = %u, expect = %lu.\n",
+			  len, sizeof(*cmd));
+		return -EINVAL;
+	}
+
+	bus_ue_id = le16_to_cpu(cmd->bus_ue_id);
+	return ubase_record_ue_cmdq_ratelimit_state(udev, bus_ue_id,
+						    cmd->status);
+}
+
+int ubase_query_ue_cmdq_ratelimit_state(struct ubase_dev *udev, u16 bus_ue_id,
+					u8 *status)
+{
+	struct ubase_cmdq_ratelimit_cmd resp = {0};
+	struct ubase_cmdq_ratelimit_cmd req = {0};
+	struct ubase_cmd_buf in, out;
+	int ret;
+
+	req.bus_ue_id = cpu_to_le16(bus_ue_id);
+	__ubase_fill_inout_buf(&in, UBASE_OPC_UE_CMDQ_RATELIMIT, true,
+			       sizeof(req), &req);
+	__ubase_fill_inout_buf(&out, UBASE_OPC_UE_CMDQ_RATELIMIT, true,
+			       sizeof(resp), &resp);
+	ret = __ubase_cmd_send_inout(udev, &in, &out);
+	if (ret) {
+		ubase_err(udev,
+			  "failed to query ue(%u) cmdq ratelimit state, ret = %d.\n",
+			  bus_ue_id, ret);
+		return ret;
+	}
+
+	*status = resp.status;
+	return 0;
+}
+
+int ubase_update_ue_cmdq_ratelimit_state(struct ubase_dev *udev, u16 bus_ue_id)
+{
+	u8 status;
+	int ret;
+
+	if (!ubase_dev_mbx_proxy_supported(udev))
+		return 0;
+
+	ret = ubase_query_ue_cmdq_ratelimit_state(udev, bus_ue_id, &status);
+	if (ret)
+		return ret;
+
+	if (!status)
+		return 0;
+
+	return ubase_record_ue_cmdq_ratelimit_state(udev, bus_ue_id, status);
+}

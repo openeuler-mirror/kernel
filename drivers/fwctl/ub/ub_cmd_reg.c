@@ -709,12 +709,15 @@ static int ubctl_query_conf_user_comm(struct ubctl_dev *ucdev,
 				      struct ubctl_func_dispatch *query_func)
 {
 	struct ubctl_query_dp query_dp[] = {
-		{ UBCTL_CMD_QUERY_CONF_USER_COMM, 0, 0, NULL, 0 },
+		{ 0, 0, 0, NULL, 0 },
 	};
 	struct ubctl_cmd_in_head *in_head_data = NULL;
 	u32 biz_data_size = 0;
 	void *tmp_buf = NULL;
 	u32 in_head_size = 0;
+
+	if (!query_cmd_param || !query_cmd_param->in)
+		return -EINVAL;
 
 	if (query_cmd_param->in->data_size < sizeof(struct ubctl_cmd_in_head)) {
 		ubctl_err(ucdev, "user api data size %u is too small for cmd head.\n",
@@ -937,7 +940,7 @@ static struct ubctl_func_dispatch g_ubctl_query_reg[] = {
 	{ UTOOL_CMD_QUERY_FIRMWARE_VERSION, ubctl_query_fw_version,
 	  ubctl_query_data_deal },
 
-	{ UBCTL_CMD_QUERY_CONF_USER_COMM, ubctl_query_conf_user_comm, ubctl_query_data_deal },
+	{ UTOOL_CMD_QUERY_CONF_USER_COMM, ubctl_query_conf_user_comm, ubctl_query_data_deal },
 
 	{ UTOOL_CMD_QUERY_UPA_PKT_STATS, ubctl_query_upa_pkt_stats, ubctl_query_data_deal },
 
