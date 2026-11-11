@@ -3053,7 +3053,7 @@ create_field_var_hist(struct hist_trigger_data *target_hist_data,
 		key_field = hist_data->fields[i];
 		if (!first)
 			seq_buf_putc(&s, ',');
-		seq_buf_puts(&s, key_field->field->name);
+		seq_buf_puts(&s, hist_field_name(key_field, 0));
 		first = false;
 	}
 
