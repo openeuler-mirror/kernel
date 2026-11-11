@@ -364,7 +364,6 @@ static void __pvm_load_stage1(struct kvm_vcpu *vcpu,
 
 	/* Keep TTBR0 empty until the table layout is synchronized. */
 	cpu_set_reserved_ttbr0();
-	local_flush_tlb_all();
 	write_sysreg_el2(ttbr1 | FIELD_PREP(TTBR_ASID_MASK, asid), SYS_TTBR1);
 	isb();
 	write_sysreg_el2(tcr, SYS_TCR);
@@ -411,13 +410,11 @@ static __always_inline u64 __pvm_load_el0_controls(struct kvm_vcpu *vcpu,
 static void __pvm_restore_stage1(struct kvm_cpu_context *ctxt)
 {
 	cpu_set_reserved_ttbr0();
-	local_flush_tlb_all();
-	write_sysreg_el2(ctxt_sys_reg(ctxt, TTBR1_EL1), SYS_TTBR1);
-	isb();
 	write_sysreg_el2(ctxt_sys_reg(ctxt, TCR_EL1), SYS_TCR);
 	isb();
-	/* Remove guest restrictions before restoring the host TTBR0. */
-	local_flush_tlb_all();
+	/* TCR.A1 selects the host ASID before its user mappings are installed. */
+	write_sysreg_el2(ctxt_sys_reg(ctxt, TTBR1_EL1), SYS_TTBR1);
+	isb();
 	write_sysreg_el2(ctxt_sys_reg(ctxt, TTBR0_EL1), SYS_TTBR0);
 	isb();
 }
