@@ -1915,6 +1915,19 @@ retry_mmu_lock:
 			WRITE_ONCE(container_of(pgt->mmu, struct kvm_pvm_mmu, mmu)->tlbi_broad,
 				   true);
 	}
+
+	/*
+	 * Record possible loss of GLOBAL proof before publishing the mapping.
+	 * Permission-only updates and failed attempts may set this conservatively.
+	 */
+	if (kernel_shadow &&
+	    (PAGE_SHIFT != 12 || !(prot & KVM_PGTABLE_PROT_PVM_GLOBAL))) {
+		struct kvm_pvm_mmu *mmu = container_of(pgt->mmu,
+						      struct kvm_pvm_mmu, mmu);
+
+		WRITE_ONCE(mmu->may_have_non_global, true);
+	}
+
 	if (is_pvm_mode()) {
 		/* The mapper and reverse index describe a complete shadow page. */
 		map_addr &= PAGE_MASK;

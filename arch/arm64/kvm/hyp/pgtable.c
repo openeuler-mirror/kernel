@@ -1087,7 +1087,9 @@ static int stage2_map_walker_try_leaf(const struct kvm_pgtable_visit_ctx *ctx,
 		if (kvm_pte_valid(ctx->old) && ((ctx->old ^ new) & meta) &&
 		    !((ctx->old ^ new) & ~(meta | perms))) {
 			/* Drop proof without changing permissions or translation. */
-			stage2_try_set_pte(ctx, (ctx->old & ~meta) | (new & meta));
+			new = (ctx->old & ~meta) | (new & meta);
+			kvm_pvm_note_shadow_leaf(data->mmu, new);
+			stage2_try_set_pte(ctx, new);
 			return -EAGAIN;
 		}
 	}
@@ -1454,6 +1456,7 @@ int kvm_pvm_unmap_shadow_selected(struct kvm_pgtable *pgt, u64 addr,
 }
 
 struct stage2_attr_data {
+	struct kvm_s2_mmu		*mmu;
 	kvm_pte_t			attr_set;
 	kvm_pte_t			attr_clr;
 	kvm_pte_t			pte;
@@ -1474,6 +1477,10 @@ static int stage2_attr_walker(const struct kvm_pgtable_visit_ctx *ctx,
 	data->pte = pte;
 	pte &= ~data->attr_clr;
 	pte |= data->attr_set;
+
+	if (is_pvm_mode() &&
+	    (data->attr_clr & KVM_PGTABLE_PROT_PVM_GLOBAL_MASK))
+		kvm_pvm_note_shadow_leaf(data->mmu, pte);
 
 	/*
 	 * We may race with the CPU trying to set the access flag here,
@@ -1505,6 +1512,7 @@ static int stage2_update_leaf_attrs(struct kvm_pgtable *pgt, u64 addr,
 	int ret;
 	kvm_pte_t attr_mask = KVM_PTE_LEAF_ATTR_LO | KVM_PTE_LEAF_ATTR_HI;
 	struct stage2_attr_data data = {
+		.mmu		= pgt->mmu,
 		.attr_set	= attr_set & attr_mask,
 		.attr_clr	= attr_clr & attr_mask,
 	};

@@ -42,6 +42,14 @@ static bool pvm_mmu_is_kernel(struct kvm_s2_mmu *mmu)
 	       container_of(mmu, struct kvm_pvm_mmu, mmu)->kern_pgd;
 }
 
+/* Record missing GLOBAL proof before publishing a kernel leaf update. */
+void kvm_pvm_note_shadow_leaf(struct kvm_s2_mmu *mmu, u64 pte)
+{
+	if (pvm_mmu_is_kernel(mmu) && !(pte & KVM_PGTABLE_PROT_PVM_GLOBAL))
+		WRITE_ONCE(container_of(mmu, struct kvm_pvm_mmu, mmu)->may_have_non_global,
+			   true);
+}
+
 static unsigned int pvm_batch_key(const struct kvm_pvm_unmap_page *page)
 {
 	struct kvm_s2_mmu *mmu = page->pgt->mmu;

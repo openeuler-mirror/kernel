@@ -807,9 +807,17 @@ void kvm_pvm_unmap_shadow_asid(struct kvm *kvm, u16 asid)
 			pvm_unmap_selected(user, 0, BIT_ULL(user->mmu.pgt->ia_bits),
 					   KVM_PGTABLE_PROT_PVM_GLOBAL);
 	}
-	/* Shared kernel roots are not owned by any one guest ASID. */
+	/*
+	 * Shared kernel roots are not owned by any one guest ASID, but
+	 * proven-global leaves do not need ASID invalidation.
+	 */
 	for (i = 0; i < pvm->skern_mmus_size; i++) {
-		pvm_unmap_selected(pvm->skern_mmus[i], PVM_SHADOW_S1_KERNEL_BASE,
+		struct kvm_pvm_mmu *kernel = pvm->skern_mmus[i];
+
+		if (!kernel->may_have_non_global)
+			continue;
+
+		pvm_unmap_selected(kernel, PVM_SHADOW_S1_KERNEL_BASE,
 				   BIT_ULL(PVM_GKERNEL_VA_BITS),
 				   KVM_PGTABLE_PROT_PVM_GLOBAL);
 	}

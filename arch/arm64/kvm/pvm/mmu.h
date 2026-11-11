@@ -87,6 +87,8 @@ struct kvm_pvm_mmu {
 	 * object lifetime; neither unmapping nor context reuse clears the flag.
 	 */
 	bool tlbi_broad;
+	/* Sticky until destruction: a leaf may be non-global or lack GLOBAL proof. */
+	bool may_have_non_global;
 	unsigned int active;
 	u64 ttbr0;
 	u64 ttbr1;
