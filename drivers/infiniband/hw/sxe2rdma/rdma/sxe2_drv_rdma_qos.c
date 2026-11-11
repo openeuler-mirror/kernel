@@ -110,6 +110,7 @@ static int sxe2_qos_bar_query_qset(struct sxe2_rdma_ctx_dev *dev, u32 qset_id,
 					  dev->hw_regs[resp_reg_idx]);
 			break;
 		}
+		udelay(SXE2_SLEEP_COUNT);
 		cond_resched();
 	} while ((--pull) != 0);
 
@@ -191,10 +192,13 @@ static int sxe2_qos_bar_apply_qset(struct sxe2_rdma_ctx_dev *dev, u16 *qset_id)
 					err_code);
 			}
 #endif
-			DRV_RDMA_LOG_DEV_ERR(
-				"qos:err code:%u err type is %s\n",
-				sxe2_qos_apply_qset_err_code[err_code].err_code,
-				sxe2_qos_apply_qset_err_code[err_code].err_mean);
+			if (err_code >= ARRAY_SIZE(sxe2_qos_apply_qset_err_code))
+				DRV_RDMA_LOG_DEV_ERR("qos err_code(%u) exception!\n", err_code);
+			else
+				DRV_RDMA_LOG_DEV_ERR(
+					"qos:err code:%u err type is %s\n",
+					sxe2_qos_apply_qset_err_code[err_code].err_code,
+					sxe2_qos_apply_qset_err_code[err_code].err_mean);
 			resp_reg_val = WRITE_BIT(0, APPLY_QSET_RESP_DONE_M,
 						 APPLY_QSET_RESP_DONE_S) |
 				       WRITE_BIT(0, APPLY_QSET_RESP_ERR_M,
@@ -203,6 +207,7 @@ static int sxe2_qos_bar_apply_qset(struct sxe2_rdma_ctx_dev *dev, u16 *qset_id)
 					  dev->hw_regs[resp_reg_idx]);
 			break;
 		}
+		udelay(SXE2_SLEEP_COUNT);
 		cond_resched();
 	} while ((--pull) != 0);
 
@@ -276,9 +281,9 @@ static void sxe2_qos_bar_release_qset(struct sxe2_rdma_ctx_dev *dev,
 			     RELEASE_QSET_RESP_DONE_S) &&
 		    !READ_BIT(resp_reg_val, RELEASE_QSET_RESP_ERR_M,
 			      RELEASE_QSET_RESP_ERR_S)) {
-			req_reg_val = WRITE_BIT(0, RELEASE_QSET_RESP_DONE_M,
+			resp_reg_val = WRITE_BIT(0, RELEASE_QSET_RESP_DONE_M,
 						RELEASE_QSET_RESP_DONE_S);
-			SXE2_BAR_WRITE_32(req_reg_val,
+			SXE2_BAR_WRITE_32(resp_reg_val,
 					  dev->hw_regs[resp_reg_idx]);
 			break;
 		} else if (READ_BIT(resp_reg_val, RELEASE_QSET_RESP_DONE_M,
@@ -297,12 +302,15 @@ static void sxe2_qos_bar_release_qset(struct sxe2_rdma_ctx_dev *dev,
 					err_code);
 			}
 #endif
-			DRV_RDMA_LOG_DEV_ERR(
-				"qos:err code:%u err type is %s\n",
-				sxe2_qos_release_qset_err_code[err_code]
-					.err_code,
-				sxe2_qos_release_qset_err_code[err_code]
-					.err_mean);
+			if (err_code >= ARRAY_SIZE(sxe2_qos_release_qset_err_code))
+				DRV_RDMA_LOG_DEV_ERR("qos err_code(%u) exception!\n", err_code);
+			else
+				DRV_RDMA_LOG_DEV_ERR(
+					"qos:err code:%u err type is %s\n",
+					sxe2_qos_release_qset_err_code[err_code]
+						.err_code,
+					sxe2_qos_release_qset_err_code[err_code]
+						.err_mean);
 			if (err_code == QSET_FUNC_NOT_MATCH) {
 				ret = sxe2_qos_bar_query_qset(dev, qset_id,
 							      &func_id);
@@ -321,6 +329,7 @@ static void sxe2_qos_bar_release_qset(struct sxe2_rdma_ctx_dev *dev,
 					  dev->hw_regs[resp_reg_idx]);
 			break;
 		}
+		udelay(SXE2_SLEEP_COUNT);
 		cond_resched();
 	} while ((--pull) != 0);
 
@@ -401,9 +410,9 @@ static int sxe2_qos_bar_qp_bind_qset(struct sxe2_rdma_ctx_dev *dev, u32 qpn,
 			     QP_BIND_QSET_RESP_DONE_S) &&
 		    !READ_BIT(resp_reg_val, QP_BIND_QSET_RESP_ERR_M,
 			      QP_BIND_QSET_RESP_ERR_S)) {
-			req_reg_val = WRITE_BIT(0, QP_BIND_QSET_RESP_DONE_M,
+			resp_reg_val = WRITE_BIT(0, QP_BIND_QSET_RESP_DONE_M,
 						QP_BIND_QSET_RESP_DONE_S);
-			SXE2_BAR_WRITE_32(req_reg_val,
+			SXE2_BAR_WRITE_32(resp_reg_val,
 					  dev->hw_regs[resp_reg_idx]);
 			break;
 		} else if (READ_BIT(resp_reg_val, QP_BIND_QSET_RESP_DONE_M,
@@ -421,12 +430,15 @@ static int sxe2_qos_bar_qp_bind_qset(struct sxe2_rdma_ctx_dev *dev, u32 qpn,
 					err_code);
 			}
 #endif
-			DRV_RDMA_LOG_DEV_ERR(
-				"qos:err code:%u err type is %s\n",
-				sxe2_qos_qp_bind_qset_err_code[err_code]
-					.err_code,
-				sxe2_qos_qp_bind_qset_err_code[err_code]
-					.err_mean);
+			if (err_code >= ARRAY_SIZE(sxe2_qos_qp_bind_qset_err_code))
+				DRV_RDMA_LOG_DEV_ERR("qos err_code(%u) exception!\n", err_code);
+			else
+				DRV_RDMA_LOG_DEV_ERR(
+					"qos:err code:%u err type is %s\n",
+					sxe2_qos_qp_bind_qset_err_code[err_code]
+						.err_code,
+					sxe2_qos_qp_bind_qset_err_code[err_code]
+						.err_mean);
 			if (err_code == BIND_QSET_NOT_BIND_THIS_FUNCTION ||
 			    err_code == BIND_QP_QSET_NOT_BIND_THIS_FUNCTION ||
 			    err_code == UNBIND_QSET_NOT_BIND_THIS_FUNCTION ||
@@ -440,14 +452,15 @@ static int sxe2_qos_bar_qp_bind_qset(struct sxe2_rdma_ctx_dev *dev, u32 qpn,
 				}
 			}
 			ret = -EINVAL;
-			resp_reg_val = WRITE_BIT(0, RELEASE_QSET_RESP_DONE_M,
-						 RELEASE_QSET_RESP_DONE_S) |
-				       WRITE_BIT(0, RELEASE_QSET_RESP_ERR_M,
-						 RELEASE_QSET_RESP_ERR_S);
+			resp_reg_val = WRITE_BIT(0, QP_BIND_QSET_RESP_DONE_M,
+						 QP_BIND_QSET_RESP_DONE_S) |
+				       WRITE_BIT(0, QP_BIND_QSET_RESP_ERR_M,
+						 QP_BIND_QSET_RESP_ERR_S);
 			SXE2_BAR_WRITE_32(resp_reg_val,
 					  dev->hw_regs[resp_reg_idx]);
 			break;
 		}
+		udelay(SXE2_SLEEP_COUNT);
 		cond_resched();
 	} while ((--pull) != 0);
 
@@ -936,6 +949,7 @@ int sxe2_qos_register_qset_bond(struct sxe2_rdma_ctx_vsi *vsi, u8 user_pri)
 		}
 		mutex_unlock(&vsi->dev->lag_mutex);
 	}
+	qset_idx--;
 
 	ret = vsi->register_qsets(
 		vsi, &vsi->qos[user_pri].qset[QOS_QSET_IDX_0],
@@ -970,7 +984,7 @@ qet_bind_tc_err:
 		vsi, &vsi->qos[user_pri].qset[QOS_QSET_IDX_0],
 		&vsi->qos[user_pri].qset[QOS_QSET_IDX_1]);
 lan_register_err:
-	while ((qset_idx == QOS_QSET_IDX_0) &&
+	while ((qset_idx == QOS_QSET_IDX_0) ||
 	       (qset_idx == QOS_QSET_IDX_1)) {
 		sxe2_qos_bar_release_qset(
 			dev, vsi->qos[user_pri].qset[qset_idx].qset_id);
@@ -1048,7 +1062,7 @@ void sxe2_qos_unregister_qset_bond(struct sxe2_rdma_ctx_vsi *vsi, u8 user_pri)
 		goto end;
 	}
 
-	if (!vsi->qos[user_pri].qp_cnt == 0) {
+	if (vsi->qos[user_pri].qp_cnt != 0) {
 		DRV_RDMA_LOG_DEV_ERR("qos: qp cnt %u\n",
 				     vsi->qos[user_pri].qp_cnt);
 		goto end;
@@ -1166,6 +1180,8 @@ int sxe2_qos_qp_add_qos_bond(struct sxe2_rdma_ctx_vsi *vsi,
 		dev, qp->qp_common.qpn,
 		vsi->qos[qp->user_pri].qset[qp->qset_idx].qset_id);
 	if (ret != SXE2_OK) {
+		qp->qset_idx ? atomic_dec(&vsi->port2_qp_cnt) :
+			       atomic_dec(&vsi->port1_qp_cnt);
 		DRV_RDMA_LOG_DEV_ERR("qos:qset add qp err ret=%d\n", ret);
 		goto unlock;
 	}
@@ -1229,7 +1245,7 @@ void sxe2_qos_remove_all_qset(struct sxe2_rdma_ctx_vsi *vsi)
 
 	for (i = 0; i < SXE2_MAX_UESER_PRIORITY; i++) {
 		if (vsi->lag_aa)
-			sxe2_qos_unregister_qset(vsi, i);
+			sxe2_qos_unregister_qset_bond(vsi, i);
 		else
 			sxe2_qos_unregister_qset(vsi, i);
 	}

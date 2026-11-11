@@ -44,6 +44,9 @@
 		((u16)((((__R)->next_to_clean > (__R)->next_to_use) ? 0 : (__R)->depth) +   \
 		       (__R)->next_to_clean - (__R)->next_to_use - 1)); \
 	})
+
+#define SXE2_QUEUE_QUARTER(R) ((R)->depth >> 2)
+
 #define SXE2_TX_DESC(q, i)                                                    \
 	(&(((union sxe2_tx_data_desc *)((q)->desc.base_addr))[i]))
 #define SXE2_TXCD(q, i)                                                       \
@@ -362,7 +365,7 @@ sxe2_eswitch_tx_desc_setup(struct sxe2_tx_offload_info *offload,
 		dst_vsi = ((u64)dst->u.port_info.port_id
 			   << SXE2_TXCD_QW1_VSI_S) &
 			  SXE2_TXCD_QW1_VSI_M;
-		offload->ctxt_desc_qw1 =
+		offload->ctxt_desc_qw1 |=
 			cd_cmd | dst_vsi | SXE2_TX_DESC_DTYPE_CTXT;
 	}
 }
@@ -373,6 +376,16 @@ sxe2_eswitch_tx_desc_setup(struct sxe2_tx_offload_info *offload,
 {
 }
 #endif
+
+static inline bool sxe2_find_q_in_range(u16 low, u16 high, u32 txq)
+{
+	return (txq >= low) && (txq < high);
+}
+
+static inline struct netdev_queue *sxe2_netdev_txq_get(const struct sxe2_queue *txq)
+{
+	return netdev_get_tx_queue(txq->netdev, txq->idx_in_vsi);
+}
 
 s32 sxe2_tx_cfg(struct sxe2_vsi *vsi);
 
@@ -414,6 +427,8 @@ void sxe2_tx_ring_free(struct sxe2_queue *txq);
 
 static inline void sxe2_xdp_ring_update_tail(struct sxe2_queue *xdp_ring)
 {
+	if (xdp_ring->next_to_use >= xdp_ring->depth)
+		xdp_ring->next_to_use = 0;
 	/* in order to force CPU ordering */
 	wmb();
 	writel(xdp_ring->next_to_use, xdp_ring->desc.tail);
@@ -433,9 +448,7 @@ sxe2_tx_first_buffer_get(struct sk_buff *skb, struct sxe2_queue *txq)
 	return first_buf;
 }
 
-#ifdef HAVE_XDP_SUPPORT
-s32 sxe2_xmit_xdp_ring(void *data, u16 size, struct sxe2_queue *xdp_ring);
-#endif
+s32 sxe2_xmit_xdp_ring(struct xdp_frame *xdpf, struct sxe2_queue *xdp_ring);
 
 static inline __le64
 sxe2_tx_data_desc_qword1_setup(struct sxe2_tx_offload_info *offload, u32 size)
@@ -446,8 +459,6 @@ sxe2_tx_data_desc_qword1_setup(struct sxe2_tx_offload_info *offload, u32 size)
 			   ((u64)size << SXE2_TXDD_BUF_SZ_S) |
 			   ((u64)offload->data_desc_l2tag1 << SXE2_TXDD_L2TAG1_S));
 }
-
-void sxe2_tx_timeout(struct net_device *netdev, u32 txqueue);
 
 void sxe2_tx_hang_check_subtask(struct sxe2_adapter *adapter);
 
@@ -466,4 +477,25 @@ s32 sxe2_txq_cfg_ena_common_handle(struct sxe2_adapter *adapter,
 s32 sxe2_txq_dis_common_handle(struct sxe2_adapter *adapter,
 			       struct sxe2_txq_ucmd_dis_params *params);
 
+struct sxe2_queue *sxe2_tx_queue_get(struct sxe2_vsi *vsi, u16 queue);
+
+void sxe2_txtimeout_clean(struct sxe2_adapter *adapter);
+
+#ifdef HAVE_TX_TIMEOUT_TXQUEUE
+void sxe2_tx_timeout(struct net_device *netdev, unsigned int txqueue);
+#else
+void sxe2_tx_timeout(struct net_device *netdev);
+#endif
+
+static inline u32 sxe2_set_rs_bit(const struct sxe2_queue *xdp_ring)
+{
+	u32 rs_idx = xdp_ring->next_to_use ? xdp_ring->next_to_use - 1 : xdp_ring->depth - 1;
+	union sxe2_tx_data_desc *tx_desc;
+
+	tx_desc = SXE2_TX_DESC(xdp_ring, rs_idx);
+	tx_desc->read.cmd_type_offset_bsz |=
+		cpu_to_le64(SXE2_TXDD_CMD_RS << SXE2_TXCD_QW1_CMD_S);
+
+	return rs_idx;
+}
 #endif

@@ -33,6 +33,8 @@
 
 #define SXE2_COM_DEV_NAME 16
 
+#define SXE2_COM_MMAP_POLL_MS 1
+
 struct com_log_param {
 	char dev_name[SXE2_COM_DEV_NAME];
 	struct pci_dev *pdev;
@@ -91,15 +93,6 @@ enum sxe2_com_dev_status {
 	SXE2_COM_CDEV_STATUS_NORMAL,
 };
 
-enum sxe2_com_module {
-	SXE2_COM_MODULE_KERNEL = 0,
-	SXE2_COM_MODULE_DPDK,
-	SXE2_COM_MODULE_MIXED,
-	SXE2_COM_MODULE_RDMA,
-	SXE2_COM_MODULE_UNDEFINED,
-	SXE2_COM_MODULE_INVAL,
-};
-
 enum sxe2_func_type {
 	SXE2_PF = 0,
 	SXE2_VF,
@@ -112,7 +105,8 @@ enum sxe2_drv_type {
 
 struct sxe2_obj {
 	u32 func_type : 2;
-	u32 resv : 2;
+	u32 valid : 1;
+	u32 resv : 1;
 	u32 pf_id : 4;
 	u32 vf_id : 12;
 	u32 resv1 : 4;
@@ -145,6 +139,7 @@ struct sxe2_com_context {
 	struct com_log_param com_log_param;
 	u8 dpdk_mode;
 	atomic_t ref_count;
+	atomic_t bar_mapping_in_progress;
 	struct list_head list;
 	wait_queue_head_t waitq;
 	enum sxe2_com_dev_status status;
@@ -160,11 +155,6 @@ struct sxe2_com_context {
 	struct sxe2_obj obj;
 	/* in order to protect the data */
 	struct mutex com_lock;
-};
-
-struct sxe2_com_dev_mgr {
-	/* in order to protect the data */
-	struct mutex lock;
 };
 
 struct sxe2_com_vma_device {

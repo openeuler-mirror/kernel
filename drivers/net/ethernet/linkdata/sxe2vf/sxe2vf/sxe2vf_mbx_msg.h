@@ -107,6 +107,8 @@ s32 sxe2vf_func_caps_init(struct sxe2vf_adapter *adapter);
 
 void sxe2vf_func_caps_deinit(struct sxe2vf_adapter *adapter);
 
+s32 sxe2vf_adv_cfg_get(struct sxe2vf_adapter *adapter);
+
 s32 sxe2vf_txq_cfg_request(struct sxe2vf_adapter *adapter);
 
 s32 sxe2vf_rxq_cfg_request(struct sxe2vf_adapter *adapter);
@@ -146,7 +148,7 @@ s32 __sxe2vf_drv_mode_get(struct sxe2vf_adapter *adapter,
 			  struct sxe2_vf_drv_mode_resp *vf_resp, u32 resp_len,
 			  enum sxe2vf_resp_wait_mode mode);
 
-s32 sxe2vf_drv_mode_get(struct sxe2vf_adapter *adapter, enum sxe2vf_resp_wait_mode mode);
+void sxe2vf_drv_mode_get(struct sxe2vf_adapter *adapter, enum sxe2vf_resp_wait_mode mode);
 
 void sxe2vf_wait_in_resetting(struct sxe2vf_adapter *adapter, bool is_close);
 #endif

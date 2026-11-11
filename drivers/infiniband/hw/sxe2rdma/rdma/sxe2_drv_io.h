@@ -31,12 +31,18 @@
 #define SXE2_CQE_VALID	BIT_ULL(63)
 #define SXE2_CQE_WQEIDX GENMASK_ULL(46, 32)
 
-#define SXE2_SET_FIELD(origin, mask, val) ((origin) |= FIELD_PREP(mask, val))
+#define SXE2_SET_FIELD(origin, mask, val) \
+	((origin) = ((origin) & ~(mask)) | FIELD_PREP(mask, val))
 
 #define SXE2_SRQE_BUSY 1
 #define SXE2_SRQE_FREE 0
 
 #define SXE2_WQE_QUANTA_ODD_NUMBER 0x1
+
+#define SXE2_CLEAR_WQE_VALUE 0xFF
+#define SXE2_PAGE_SIZE_4K 0x1000
+#define SXE2_4K_PAGE_QUANTA_MASK 0x7F
+#define SXE2_4K_PAGE_QUANTA_COUNT 128
 
 enum sxe2_disp_id {
 	SXE2_RDMA_SEND	       = 0,
@@ -405,14 +411,29 @@ int sxe2_hw_local_invalidate(struct sxe2_qp_common *qp,
 int sxe2_hw_mr_fast_register(struct sxe2_qp_common *qp,
 			     struct sxe2_wr_info *wr_info, bool post_sq);
 int sxe2_kpoll_cq(struct ib_cq *ibcq, int num_entries, struct ib_wc *entry);
+#ifdef RDMA_POST_NO_CONST
+int sxe2_kpost_recv(struct ib_qp *ibqp, struct ib_recv_wr *ib_wr,
+		    struct ib_recv_wr **bad_wr);
+#else
 int sxe2_kpost_recv(struct ib_qp *ibqp, const struct ib_recv_wr *ib_wr,
 		    const struct ib_recv_wr **bad_wr);
+#endif
+#ifdef RDMA_POST_NO_CONST
+int sxe2_kpost_send(struct ib_qp *ibqp, struct ib_send_wr *ib_wr,
+		    struct ib_send_wr **bad_wr);
+#else
 int sxe2_kpost_send(struct ib_qp *ibqp, const struct ib_send_wr *ib_wr,
 		    const struct ib_send_wr **bad_wr);
+#endif
 int sxe2_kreq_notify_cq(struct ib_cq *ibcq,
 			enum ib_cq_notify_flags notify_flags);
+#ifdef RDMA_POST_NO_CONST
+int sxe2_kpost_srq_recv(struct ib_srq *ib_srq, struct ib_recv_wr *ib_wr,
+			struct ib_recv_wr **bad_wr);
+#else
 int sxe2_kpost_srq_recv(struct ib_srq *ib_srq, const struct ib_recv_wr *ib_wr,
 			const struct ib_recv_wr **bad_wr);
+#endif
 int sxe2_generated_cmpls(struct sxe2_rdma_cq *rdma_cq,
 			 struct sxe2_cqe_info *out_cqeinfo);
 

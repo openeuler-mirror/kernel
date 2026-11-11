@@ -19,6 +19,8 @@
 #include "sxe2vf_l2_filter.h"
 #include "sxe2vf_regs.h"
 
+#define SXE2VF_INVAL_VLAN 0xffff
+
 STATIC s32 sxe2vf_rx_ring_alloc(struct sxe2vf_queue *rxq)
 {
 	s32 ret;
@@ -158,7 +160,7 @@ void sxe2vf_rx_rings_res_free(struct sxe2vf_vsi *vsi)
 
 static s32 sxe2vf_rx_rings_alloc(struct sxe2vf_vsi *vsi)
 {
-	s32 ret;
+	s32 ret = 0;
 	u16 i;
 	struct sxe2vf_queue *rxq;
 	struct sxe2vf_adapter *adapter = vsi->adapter;
@@ -507,10 +509,10 @@ l_skip_sync:
 
 static void sxe2vf_rxq_stats_update(struct sxe2vf_queue *rxq, u64 pkts, u64 bytes)
 {
-	u64_stats_update_begin(&rxq->syncp);
+	u64_stats_update_begin(&rxq->stats->syncp);
 	rxq->stats->bytes += bytes;
 	rxq->stats->packets += pkts;
-	u64_stats_update_end(&rxq->syncp);
+	u64_stats_update_end(&rxq->stats->syncp);
 }
 
 static void sxe2vf_rx_page_reuse(struct sxe2vf_queue *rxq,
@@ -807,21 +809,20 @@ static void sxe2vf_rx_csum_check(struct sxe2vf_queue *rxq,
 	ipv6 = (ptype_info.outer_ip == SXE2VF_PTYPE_OUTER_IP) &&
 	       (ptype_info.outer_ip_ver == SXE2VF_PTYPE_OUTER_IPV6);
 
-	if (ipv4 && (status0_err & (BIT(SXE2VF_RX_DESC_ERROR_IPE) |
-				    BIT(SXE2VF_RX_DESC_ERROR_EIPE))))
+	if (ipv4 && (status0_err & (BIT(SXE2VF_RX_DESC_ERROR_EIPE))))
 		goto checksum_fail;
 
 	if (ipv6 && (le32_to_cpu(rx_desc->wb.pktl_hdrl_status2) &
 		     (BIT(SXE2VF_RX_DESC_STATUS2_IPV6EXADD))))
 		goto l_out;
 
-	if (status0_err & BIT(SXE2VF_RX_DESC_ERROR_L4E))
+	if (status0_err & (BIT(SXE2VF_RX_DESC_ERROR_L4E) | BIT(SXE2VF_RX_DESC_ERROR_IPE)))
 		goto checksum_fail;
 
 	if (rx_desc->wb.rxdid_src & BIT(SXE2VF_RX_DESC_EUDPE))
 		goto checksum_fail;
 
-	if (ptype_info.tunnel_type >= SXE2VF_PTYPE_TUNNEL_IP_GRENAT) {
+	if (ptype_info.tunnel_type >= SXE2VF_PTYPE_TUNNEL_IP_IP) {
 		skb->csum_level = 1;
 		rxq->stats->rx_stats.rx_csum_unnecessary_inner++;
 	}
@@ -861,22 +862,23 @@ static inline u16 sxe2vf_vlan_tag_get(union sxe2vf_rx_desc *rx_desc)
 	    BIT(SXE2VF_RX_DESC_STATUS0_L2TAG1_P))
 		return le16_to_cpu(rx_desc->wb.l2tag1);
 
-	return 0;
+	return SXE2VF_INVAL_VLAN;
 }
 
-static void sxe2vf_skb_vlan_tag_put(struct sxe2vf_queue *rxq,
+STATIC void sxe2vf_skb_vlan_tag_put(struct sxe2vf_queue *rxq,
 				    union sxe2vf_rx_desc *rx_desc,
 				    struct sk_buff *skb)
 {
 	netdev_features_t features = rxq->netdev->features;
 	u16 vlan_tag = sxe2vf_vlan_tag_get(rx_desc);
-	bool non_zero_vlan = !!(vlan_tag & VLAN_VID_MASK);
+	bool have_vlan = (vlan_tag != SXE2VF_INVAL_VLAN ? true : false);
 
-	if ((features & NETIF_F_HW_VLAN_CTAG_RX) && non_zero_vlan) {
+	if ((features & NETIF_F_HW_VLAN_CTAG_RX) && have_vlan) {
 		__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), vlan_tag);
 		rxq->stats->rx_stats.rx_vlan_strip++;
-	} else if ((features & NETIF_F_HW_VLAN_STAG_RX) && non_zero_vlan) {
+	} else if ((features & NETIF_F_HW_VLAN_STAG_RX) && have_vlan) {
 		__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021AD), vlan_tag);
+		rxq->stats->rx_stats.rx_vlan_strip++;
 	}
 
 	LOG_INFO("rxq:%u vlan tag strip ctag:%s stag:%s vlan tag:0x%x.\n",

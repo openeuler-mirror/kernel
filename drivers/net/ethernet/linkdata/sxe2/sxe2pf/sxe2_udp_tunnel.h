@@ -40,7 +40,7 @@ struct sxe2_udp_tunnel_cfg {
 	u8 fw_used;
 };
 
-#ifdef HAVE_UDP_TUNNEL_NIC_INFO
+#if defined(HAVE_UDP_TUNNEL_NIC_INFO) && !defined(HAVE_DEVLINK_PARAMS)
 s32 sxe2_udp_tunnel_set_port(struct net_device *netdev, u32 table_idx, u32 idx,
 			     struct udp_tunnel_info *ti);
 
@@ -50,6 +50,18 @@ s32 sxe2_udp_tunnel_unset_port(struct net_device *netdev, u32 table_idx, u32 idx
 
 s32 sxe2_com_udptunnel_handler(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
 			       struct sxe2_drv_cmd_params *cmd_buf);
+
+bool sxe2_udp_tunnel_proto_is_valid(enum sxe2_udp_tunnel_protocol proto);
+
+s32 sxe2_udp_tunnel_main_vsi_set(struct sxe2_adapter *adapter,
+				 enum sxe2_udp_tunnel_protocol proto,
+				 u16 port);
+
+s32 sxe2_udp_tunnel_main_vsi_get(struct sxe2_adapter *adapter,
+				 enum sxe2_udp_tunnel_protocol proto,
+				 u16 *port);
+
+s32 sxe2_udp_tunnel_restore(struct sxe2_adapter *adapter);
 
 void sxe2_udptunnel_vsi_init(struct sxe2_vsi *vsi);
 

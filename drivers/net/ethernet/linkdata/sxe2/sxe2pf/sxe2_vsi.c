@@ -29,9 +29,6 @@
 #include "sxe2_linkchg.h"
 #include "sxe2_txsched.h"
 #include "sxe2_com_vlan.h"
-#ifndef NOT_HAVE_MINMAX_H
-#include <linux/minmax.h>
-#endif
 #include "sxe2_acl.h"
 #include "sxe2_com_ioctl.h"
 
@@ -51,7 +48,7 @@ bool sxe2_vsi_id_is_valid(struct sxe2_adapter *adapter, u16 vsi_id)
 	}
 }
 
-STATIC void sxe2_mac_addr_clear(struct sxe2_vsi *vsi)
+void sxe2_mac_addr_clear(struct sxe2_vsi *vsi)
 {
 	struct sxe2_addr_node *node;
 	struct sxe2_addr_node *tmp;
@@ -85,7 +82,7 @@ u16 sxe2_vsi_get(struct sxe2_vsi_context *vsi_ctxt)
 void sxe2_vsi_put(struct sxe2_vsi_context *vsi_ctxt, u16 vsi_id)
 {
 	if (vsi_id > vsi_ctxt->max_cnt - 1) {
-		LOG_ERROR("invali vsi id:%d max cnt:%d\n", vsi_id,
+		LOG_ERROR("invalid vsi id:%d max cnt:%d\n", vsi_id,
 			  vsi_ctxt->max_cnt);
 		return;
 	}
@@ -96,50 +93,6 @@ void sxe2_vsi_put(struct sxe2_vsi_context *vsi_ctxt, u16 vsi_id)
 		vsi_ctxt->next_vsi_id = vsi_id;
 
 	vsi_ctxt->cnt--;
-}
-
-STATIC s32 sxe2_vsi_qs_stats_num_set(struct sxe2_vsi *vsi)
-{
-	s32 ret = 0;
-	struct sxe2_adapter *adapter = vsi->adapter;
-
-	switch (vsi->type) {
-	case SXE2_VSI_T_PF:
-	case SXE2_VSI_T_DPDK_PF:
-		vsi->vsi_qs_stats.vsi_qs_stats_maxcnt = (u16)SXE2_VSI_TXRX_Q_MAX_CNT;
-		break;
-
-	case SXE2_VSI_T_LB:
-		vsi->vsi_qs_stats.vsi_qs_stats_maxcnt = 1;
-		break;
-
-	case SXE2_VSI_T_VF:
-	case SXE2_VSI_T_DPDK_VF:
-		vsi->vsi_qs_stats.vsi_qs_stats_maxcnt = SXE2_VF_RSS_Q_NUM;
-		break;
-
-	case SXE2_VSI_T_MACVLAN:
-		vsi->vsi_qs_stats.vsi_qs_stats_maxcnt = SXE2_DFLT_TXQ_VMDQ_VSI;
-		break;
-
-	case SXE2_VSI_T_CTRL:
-		vsi->vsi_qs_stats.vsi_qs_stats_maxcnt = 1;
-		break;
-	case SXE2_VSI_T_ESW:
-	case SXE2_VSI_T_DPDK_ESW:
-		vsi->vsi_qs_stats.vsi_qs_stats_maxcnt = SXE2_VF_NUM;
-		break;
-	default:
-		LOG_DEV_WARN("unknown vsi type: %d\n", vsi->type);
-		ret = -EINVAL;
-		goto l_end;
-	}
-
-	LOG_DEBUG_BDF("vsi id:%u type:%u set qs stats num: %d.\n", vsi->id_in_pf,
-		      vsi->type, vsi->vsi_qs_stats.vsi_qs_stats_maxcnt);
-
-l_end:
-	return ret;
 }
 
 STATIC struct sxe2_vsi *sxe2_vsi_init(struct sxe2_adapter *adapter,
@@ -178,9 +131,6 @@ STATIC struct sxe2_vsi *sxe2_vsi_init(struct sxe2_adapter *adapter,
 		vsi->rxqs.base_idx_in_feature = vsi_create->rxq_base_idx;
 		vsi->irqs.base_idx_in_feature = vsi_create->irq_base_idx;
 	}
-
-	if (sxe2_vsi_qs_stats_num_set(vsi))
-		goto l_err;
 
 	set_bit(SXE2_VSI_S_DOWN, vsi->state);
 	set_bit(SXE2_VSI_S_CLOSE, vsi->state);
@@ -468,7 +418,6 @@ STATIC s32 sxe2_vsi_queues_alloc(struct sxe2_vsi *vsi)
 		q->idx_in_pf = SXE2_Q_IDX_INVAL;
 		q->dev = dev;
 		q->depth = vsi->txqs.depth;
-		u64_stats_init(&q->syncp);
 		WRITE_ONCE(vsi->txqs.q[i], q);
 	}
 
@@ -484,10 +433,9 @@ STATIC s32 sxe2_vsi_queues_alloc(struct sxe2_vsi *vsi)
 		q->idx_in_pf = SXE2_Q_IDX_INVAL;
 		q->dev = dev;
 		q->depth = vsi->rxqs.depth;
-		u64_stats_init(&q->syncp);
 		WRITE_ONCE(vsi->rxqs.q[i], q);
 	}
-	vsi->af_xdp_zc_qps = bitmap_zalloc((unsigned int)max(vsi->rxqs.q_cnt, vsi->txqs.q_cnt),
+	vsi->af_xdp_zc_qps = bitmap_zalloc((unsigned int)max(vsi->rxqs.q_alloc, vsi->txqs.q_alloc),
 					   GFP_KERNEL);
 	if (!vsi->af_xdp_zc_qps) {
 		ret = -ENOMEM;
@@ -527,7 +475,7 @@ l_end:
 
 STATIC s32 sxe2_vsi_irqs_data_alloc(struct sxe2_vsi *vsi)
 {
-	s32 ret;
+	s32 ret = 0;
 	struct sxe2_adapter *adapter = vsi->adapter;
 	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
 	u16 i;
@@ -934,6 +882,19 @@ void sxe2_vsi_tc_cfg(struct sxe2_vsi *vsi)
 	LOG_INFO_BDF("vsi txq_cnt=%d, rxq_cnt=%d\n", txq_cnt, rxq_cnt);
 }
 
+static void sxe2_irq_affinity_set(struct sxe2_vsi *vsi, u16 irq_idx)
+{
+	struct sxe2_irq_data *irq_data = vsi->irqs.irq_data[irq_idx];
+	struct sxe2_adapter *adapter = vsi->adapter;
+	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
+	s32 node = dev_to_node(dev);
+	u32 cpu;
+
+	cpu = cpumask_local_spread(irq_idx, node);
+
+	cpumask_set_cpu(cpu, &irq_data->affinity_mask);
+}
+
 STATIC void sxe2_vsi_irq_cfg(struct sxe2_vsi *vsi, u16 idx)
 {
 	struct sxe2_irq_data *irq_data = vsi->irqs.irq_data[idx];
@@ -968,8 +929,7 @@ STATIC void sxe2_vsi_irq_cfg(struct sxe2_vsi *vsi, u16 idx)
 		break;
 	}
 
-	if (cpu_online(idx))
-		cpumask_set_cpu(idx, &irq_data->affinity_mask);
+	sxe2_irq_affinity_set(vsi, idx);
 }
 
 STATIC void sxe2_vsi_irqs_cfg(struct sxe2_vsi *vsi)
@@ -1114,10 +1074,38 @@ l_end:
 	return ret;
 }
 
+STATIC bool sxe2_vsi_irq_pooled(struct sxe2_vsi *vsi)
+{
+	return vsi->type == SXE2_VSI_T_PF &&
+	       vsi->adapter->irq_ctxt.pool.entries;
+}
+
 STATIC void sxe2_vsi_irqs_deinit(struct sxe2_vsi *vsi)
 {
 	if (vsi->irqs.cnt == 0 || !vsi->irqs.irq_data)
 		return;
+
+	if (sxe2_vsi_irq_pooled(vsi)) {
+		struct sxe2_irq_pool *pool = &vsi->adapter->irq_ctxt.pool;
+		u16 i;
+
+		mutex_lock(&pool->lock);
+		sxe2_for_each_vsi_irq(vsi, i)
+		{
+			struct sxe2_irq_pool_entry *entry;
+			u16 idx = vsi->irqs.irq_data[i]->idx_in_pf;
+
+			if (idx < pool->base || idx >= pool->base + pool->cnt)
+				continue;
+			entry = &pool->entries[idx - pool->base];
+			if (WARN_ON_ONCE(entry->irq_data ==
+					 vsi->irqs.irq_data[i])) {
+				synchronize_irq(entry->irqn);
+				WRITE_ONCE(entry->irq_data, NULL);
+			}
+		}
+		mutex_unlock(&pool->lock);
+	}
 
 	sxe2_vsi_queues_irqs_unmap(vsi);
 
@@ -1149,11 +1137,14 @@ STATIC s32 sxe2_vsi_rss_init(struct sxe2_vsi *vsi)
 	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
 	bool new_lut = false;
 	bool new_hkey = false;
+	u16 queue_size = 0;
 
 	if (!sxe2_vsi_rxft_support_get(vsi)) {
 		LOG_INFO_BDF("unsupport vsi type: %u\n", vsi->type);
 		return 0;
 	}
+
+	queue_size = vsi->rss_ctxt.queue_size;
 
 	sxe2_rss_ctxt_init(vsi);
 
@@ -1177,7 +1168,10 @@ STATIC s32 sxe2_vsi_rss_init(struct sxe2_vsi *vsi)
 		new_lut = true;
 		sxe2_rss_fill_lut(vsi->rss_ctxt.lut, vsi->rss_ctxt.lut_size,
 				  vsi->rss_ctxt.queue_size);
+	} else {
+		vsi->rss_ctxt.queue_size = queue_size;
 	}
+
 	ret = sxe2_fwc_rss_lut_set(vsi, vsi->rss_ctxt.lut, vsi->rss_ctxt.lut_size);
 	if (ret != 0) {
 		LOG_ERROR_BDF("sxe2_rss_lut_set failed, ret: %d, lut: %p, lut_size: \t"
@@ -1246,7 +1240,10 @@ STATIC void sxe2_vsi_rss_deinit(struct sxe2_vsi *vsi)
 		vsi->rss_ctxt.hkey = NULL;
 	}
 
-	sxe2_rss_vsi_flow_clean(vsi);
+	if (vsi->type == SXE2_VSI_T_VF)
+		sxe2_rss_vsi_flow_clean_for_vf(vsi);
+	else
+		sxe2_rss_vsi_flow_clean(vsi);
 
 	lut = kzalloc(vsi->rss_ctxt.lut_size, GFP_KERNEL);
 	if (!lut) {
@@ -1282,57 +1279,124 @@ l_end:
 
 STATIC void sxe2_vsi_qs_stats_deinit(struct sxe2_vsi *vsi)
 {
-	struct sxe2_vsi_qs_stats *vsi_qs_stat = &vsi->vsi_qs_stats;
+	u16 i;
 
-	kfree(vsi_qs_stat->txqs_stats);
-	vsi_qs_stat->txqs_stats = NULL;
+	sxe2_for_each_vsi_alloc_txq(vsi, i)
+	{
+		struct sxe2_queue *txq = vsi->txqs.q[i];
 
-	kfree(vsi_qs_stat->rxqs_stats);
-	vsi_qs_stat->rxqs_stats = NULL;
+		txq->stats = NULL;
+	}
+
+	sxe2_for_each_vsi_alloc_rxq(vsi, i)
+	{
+		struct sxe2_queue *rxq = vsi->rxqs.q[i];
+
+		rxq->stats = NULL;
+	}
+}
+
+struct sxe2_vsi_hw_stats *sxe2_vsi_hw_stats_get(struct sxe2_adapter *adapter, u16 vsi_sw_id)
+{
+	struct sxe2_vsis_stats *vsi_stats = NULL;
+	struct sxe2_vsi_hw_stats *vsi_hw_stats = NULL;
+
+	if (vsi_sw_id >= adapter->vsi_ctxt.max_cnt) {
+		LOG_ERROR_BDF("invalid sw vsi id:%d exceed max:%d.\n", vsi_sw_id,
+			      adapter->vsi_ctxt.max_cnt);
+		goto l_out;
+	}
+
+	vsi_stats = &adapter->vsi_ctxt.vsis_stats[vsi_sw_id];
+	if (!vsi_stats) {
+		LOG_ERROR_BDF("vsi:%d stats null.\n", vsi_sw_id);
+		goto l_out;
+	}
+
+	vsi_hw_stats = &vsi_stats->vsi_stats.vsi_hw_stats;
+
+l_out:
+	return vsi_hw_stats;
+}
+
+struct sxe2_vsi_sw_stats *sxe2_vsi_sw_stats_get(struct sxe2_adapter *adapter, u16 vsi_sw_id)
+{
+	struct sxe2_vsis_stats *vsi_stats = NULL;
+	struct sxe2_vsi_sw_stats *vsi_sw_stats = NULL;
+
+	if (vsi_sw_id >= adapter->vsi_ctxt.max_cnt) {
+		LOG_ERROR_BDF("invalid sw vsi id:%d exceed max:%d.\n", vsi_sw_id,
+			      adapter->vsi_ctxt.max_cnt);
+		goto l_out;
+	}
+
+	vsi_stats = &adapter->vsi_ctxt.vsis_stats[vsi_sw_id];
+	if (!vsi_stats) {
+		LOG_ERROR_BDF("vsi:%d stats null.\n", vsi_sw_id);
+		goto l_out;
+	}
+
+	vsi_sw_stats = &vsi_stats->vsi_stats.vsi_sw_stats;
+
+l_out:
+	return vsi_sw_stats;
+}
+
+struct sxe2_vsi_hw_stats *sxe2_parse_hw_stats_get(struct sxe2_adapter *adapter, u16 vsi_sw_id)
+{
+	struct sxe2_vsis_stats *vsi_stats = NULL;
+	struct sxe2_vsi_hw_stats *vsi_hw_stats = NULL;
+
+	if (vsi_sw_id >= adapter->vsi_ctxt.max_cnt) {
+		LOG_ERROR_BDF("invalid sw vsi id:%d exceed max:%d.\n", vsi_sw_id,
+			      adapter->vsi_ctxt.max_cnt);
+		goto l_out;
+	}
+
+	vsi_stats = &adapter->vsi_ctxt.vsis_stats[vsi_sw_id];
+	if (!vsi_stats) {
+		LOG_ERROR_BDF("vsi:%d stats null.\n", vsi_sw_id);
+		goto l_out;
+	}
+
+	vsi_hw_stats = &vsi_stats->vsi_stats.parse_vsi_hw_stats;
+
+l_out:
+	return vsi_hw_stats;
+}
+
+struct sxe2_vsi_qs_stats *sxe2_vsi_qs_stats_get(struct sxe2_adapter *adapter, u16 vsi_sw_id)
+{
+	struct sxe2_vsis_stats *vsi_stats = NULL;
+	struct sxe2_vsi_qs_stats *vsi_qs_stats = NULL;
+
+	if (vsi_sw_id >= adapter->vsi_ctxt.max_cnt) {
+		LOG_ERROR_BDF("invalid sw vsi id:%d exceed max:%d.\n", vsi_sw_id,
+			      adapter->vsi_ctxt.max_cnt);
+		goto l_out;
+	}
+
+	vsi_stats = &adapter->vsi_ctxt.vsis_stats[vsi_sw_id];
+	if (!vsi_stats) {
+		LOG_ERROR_BDF("vsi:%d stats null.\n", vsi_sw_id);
+		goto l_out;
+	}
+
+	vsi_qs_stats = &vsi_stats->vsi_qs_stats;
+
+l_out:
+	return vsi_qs_stats;
 }
 
 STATIC s32 sxe2_vsi_qs_stats_init(struct sxe2_vsi *vsi)
 {
-	struct sxe2_vsi_qs_stats *vsi_qs_stats;
 	struct sxe2_adapter *adapter = vsi->adapter;
+	struct sxe2_vsi_qs_stats *vsi_qs_stats = sxe2_vsi_qs_stats_get(adapter, vsi->id_in_pf);
 	u16 i;
 
-	vsi_qs_stats = &vsi->vsi_qs_stats;
-
-	if (!vsi_qs_stats->txqs_stats) {
-		vsi_qs_stats->txqs_stats = kcalloc(vsi_qs_stats->vsi_qs_stats_maxcnt,
-						   sizeof(*vsi_qs_stats->txqs_stats),
-						   GFP_KERNEL);
-		if (!vsi_qs_stats->txqs_stats) {
-			LOG_ERROR_BDF("alloc txqs stats failed, count: %d, size: \t"
-				      "%zu.\n",
-				      vsi_qs_stats->vsi_qs_stats_maxcnt,
-				      sizeof(*vsi_qs_stats->txqs_stats));
-			goto err_out;
-		}
-
-		sxe2_for_each_vsi_q_maxcnt(vsi, i)
-		{
-			u64_stats_init(&vsi_qs_stats->txqs_stats[i].syncp);
-		}
-	}
-
-	if (!vsi_qs_stats->rxqs_stats) {
-		vsi_qs_stats->rxqs_stats = kcalloc(vsi_qs_stats->vsi_qs_stats_maxcnt,
-						   sizeof(*vsi_qs_stats->rxqs_stats),
-						   GFP_KERNEL);
-		if (!vsi_qs_stats->rxqs_stats) {
-			LOG_ERROR_BDF("alloc rxqs stats failed, count: %d, size: \t"
-				      "%zu.\n",
-				      vsi_qs_stats->vsi_qs_stats_maxcnt,
-				      sizeof(*vsi_qs_stats->rxqs_stats));
-			goto err_out;
-		}
-
-		sxe2_for_each_vsi_q_maxcnt(vsi, i)
-		{
-			u64_stats_init(&vsi_qs_stats->rxqs_stats[i].syncp);
-		}
+	if (!vsi_qs_stats) {
+		LOG_ERROR_BDF("vsi:%d queue stats null.\n", vsi->id_in_pf);
+		return -EIO;
 	}
 
 	sxe2_for_each_vsi_alloc_txq(vsi, i)
@@ -1350,10 +1414,6 @@ STATIC s32 sxe2_vsi_qs_stats_init(struct sxe2_vsi *vsi)
 	}
 
 	return 0;
-
-err_out:
-	sxe2_vsi_qs_stats_deinit(vsi);
-	return -ENOMEM;
 }
 
 STATIC void sxe2_vsi_fnav_init(struct sxe2_vsi *vsi)
@@ -1402,7 +1462,7 @@ STATIC void sxe2_vsi_fnav_deinit(struct sxe2_vsi *vsi)
 		     vsi->type);
 }
 
-static struct sxe2_vsi *
+STATIC struct sxe2_vsi *
 sxe2_vsi_create_unlock(struct sxe2_adapter *adapter,
 		       struct sxe2_vsi_cfg_params *vsi_create)
 {
@@ -1423,7 +1483,9 @@ sxe2_vsi_create_unlock(struct sxe2_adapter *adapter,
 
 	sxe2_vsi_fnav_init(vsi);
 
-	sxe2_vsi_acl_init(vsi);
+	if (sxe2_vsi_acl_init(vsi))
+		goto l_acl_init_failed;
+
 	sxe2_udptunnel_vsi_init(vsi);
 
 	if (sxe2_vsi_hw_cfg(vsi) != 0)
@@ -1498,6 +1560,8 @@ l_vsi_sched_failed:
 	sxe2_vsi_fltr_remove(adapter, vsi->idx_in_dev);
 	(void)sxe2_vsi_hw_decfg(adapter, vsi->idx_in_dev);
 l_vsi_setup_failed:
+	sxe2_vsi_acl_deinit(vsi);
+l_acl_init_failed:
 	sxe2_vsi_irqs_deinit(vsi);
 l_irq_init_failed:
 	sxe2_vsi_qs_stats_deinit(vsi);
@@ -1553,6 +1617,8 @@ void sxe2_vsi_destroy_unlock(struct sxe2_vsi *vsi)
 
 	sxe2_txsched_vsi_q_ctxt_free(vsi);
 
+	sxe2_cpu_rx_rmap_free(vsi);
+
 	sxe2_vsi_irqs_deinit(vsi);
 	sxe2_vsi_qs_stats_deinit(vsi);
 #ifdef HAVE_XDP_SUPPORT
@@ -1561,6 +1627,9 @@ void sxe2_vsi_destroy_unlock(struct sxe2_vsi *vsi)
 	sxe2_vsi_queues_deinit(vsi);
 
 	sxe2_vsi_irqs_coalesce_deinit(vsi);
+
+	if (vsi->type != SXE2_VSI_T_VF)
+		sxe2_vsis_stats_clear(vsi->adapter, vsi->id_in_pf);
 
 	sxe2_vsi_deinit(vsi);
 }
@@ -1752,18 +1821,10 @@ STATIC void sxe2_vsi_get_q_idx(struct sxe2_vsi *vsi, u16 irq_idx, u16 *txq, u16 
 		     (irq_idx < rxq_remainder ? irq_idx : rxq_remainder));
 }
 
-STATIC s32 sxe2_vsi_irq_request(struct sxe2_vsi *vsi, s8 *base_name, u16 idx)
+STATIC bool sxe2_vsi_irq_name_set(struct sxe2_vsi *vsi, s8 *base_name,
+				  struct sxe2_irq_data *irq_data, u16 idx)
 {
-	s32 ret = 0;
-	struct sxe2_irq_data *irq_data;
-	struct sxe2_adapter *adapter = vsi->adapter;
-	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
 	u16 rx_idx, tx_idx;
-	unsigned int irq_num;
-
-	irq_data = vsi->irqs.irq_data[idx];
-	irq_num = adapter->irq_ctxt.msix_entries[vsi->irqs.base_idx_in_pf + idx]
-				  .vector;
 
 	sxe2_vsi_get_q_idx(vsi, idx, &tx_idx, &rx_idx);
 
@@ -1782,8 +1843,26 @@ STATIC s32 sxe2_vsi_irq_request(struct sxe2_vsi *vsi, s8 *base_name, u16 idx)
 		(void)snprintf(irq_data->name, sizeof(irq_data->name) - 1,
 			       "%s-%s-%d", base_name, "Rx", rx_idx);
 	} else {
-		goto l_end;
+		return false;
 	}
+
+	return true;
+}
+
+STATIC s32 sxe2_vsi_irq_request(struct sxe2_vsi *vsi, s8 *base_name, u16 idx)
+{
+	s32 ret = 0;
+	struct sxe2_irq_data *irq_data;
+	struct sxe2_adapter *adapter = vsi->adapter;
+	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
+	unsigned int irq_num;
+
+	irq_data = vsi->irqs.irq_data[idx];
+	irq_num = adapter->irq_ctxt.msix_entries[vsi->irqs.base_idx_in_pf + idx]
+				  .vector;
+
+	if (!sxe2_vsi_irq_name_set(vsi, base_name, irq_data, idx))
+		goto l_end;
 
 	ret = devm_request_irq(dev, irq_num, vsi->irqs.proc, 0, irq_data->name,
 			       irq_data);
@@ -1791,7 +1870,7 @@ STATIC s32 sxe2_vsi_irq_request(struct sxe2_vsi *vsi, s8 *base_name, u16 idx)
 		LOG_DEV_ERR("MSI-X devm_request_irq failed, result: %d\n", ret);
 		goto l_end;
 	}
-	if (!IS_ENABLED(CONFIG_RFS_ACCEL)) {
+	if (!sxe2_arfs_supported(adapter)) {
 		irq_data->affinity_notify.notify = sxe2_irq_affinity_notify;
 		irq_data->affinity_notify.release = sxe2_irq_affinity_release;
 		(void)irq_set_affinity_notifier(irq_num, &irq_data->affinity_notify);
@@ -1799,6 +1878,83 @@ STATIC s32 sxe2_vsi_irq_request(struct sxe2_vsi *vsi, s8 *base_name, u16 idx)
 
 l_end:
 	return ret;
+}
+
+STATIC s32 sxe2_vsi_irqs_attach(struct sxe2_vsi *vsi)
+{
+	struct sxe2_adapter *adapter = vsi->adapter;
+	struct sxe2_irq_pool *pool = &adapter->irq_ctxt.pool;
+	struct sxe2_irq_pool_entry *entry;
+	struct sxe2_irq_data *irq_data;
+	u16 idx;
+	s32 ret;
+	u16 i;
+
+	mutex_lock(&pool->lock);
+	sxe2_for_each_vsi_irq(vsi, i)
+	{
+		irq_data = vsi->irqs.irq_data[i];
+		idx = irq_data->idx_in_pf;
+		if (!SXE2_IRQ_HAS_TXQ(irq_data) && !SXE2_IRQ_HAS_RXQ(irq_data))
+			continue;
+
+		if (idx < pool->base || idx >= pool->base + pool->cnt) {
+			LOG_DEV_ERR("irq idx %u out of pool range [%u, %u)\n",
+				    idx, pool->base, pool->base + pool->cnt);
+			ret = -EINVAL;
+			goto l_failed;
+		}
+
+		entry = &pool->entries[idx - pool->base];
+		if (WARN_ON(entry->irq_data)) {
+			ret = -EBUSY;
+			goto l_failed;
+		}
+
+		cpumask_copy(&irq_data->affinity_mask, &entry->affinity_mask);
+		(void)strscpy(irq_data->name, entry->name,
+			      sizeof(irq_data->name));
+		WRITE_ONCE(entry->irq_data, irq_data);
+	}
+	mutex_unlock(&pool->lock);
+
+	return 0;
+
+l_failed:
+	while (i) {
+		i--;
+		irq_data = vsi->irqs.irq_data[i];
+		idx = irq_data->idx_in_pf;
+		if (idx >= pool->base && idx < pool->base + pool->cnt) {
+			entry = &pool->entries[idx - pool->base];
+			WRITE_ONCE(entry->irq_data, NULL);
+			memset(irq_data->name, 0, sizeof(irq_data->name));
+		}
+	}
+	mutex_unlock(&pool->lock);
+	return ret;
+}
+
+STATIC void sxe2_vsi_irqs_detach(struct sxe2_vsi *vsi)
+{
+	struct sxe2_irq_pool *pool = &vsi->adapter->irq_ctxt.pool;
+	struct sxe2_irq_pool_entry *entry;
+	struct sxe2_irq_data *irq_data;
+	u16 i;
+
+	mutex_lock(&pool->lock);
+	sxe2_for_each_vsi_irq(vsi, i)
+	{
+		irq_data = vsi->irqs.irq_data[i];
+		if (!SXE2_IRQ_HAS_TXQ(irq_data) && !SXE2_IRQ_HAS_RXQ(irq_data))
+			continue;
+
+		entry = &pool->entries[irq_data->idx_in_pf - pool->base];
+		synchronize_irq(entry->irqn);
+		WRITE_ONCE(entry->irq_data, NULL);
+		memset(irq_data->name, 0, sizeof(irq_data->name));
+	}
+	mutex_unlock(&pool->lock);
 }
 
 s32 sxe2_vsi_irqs_request(struct sxe2_vsi *vsi)
@@ -1810,6 +1966,9 @@ s32 sxe2_vsi_irqs_request(struct sxe2_vsi *vsi)
 	u16 i;
 	u32 irq_num;
 	struct sxe2_irq_data *irq_data;
+
+	if (sxe2_vsi_irq_pooled(vsi))
+		return sxe2_vsi_irqs_attach(vsi);
 
 	if (vsi->type == SXE2_VSI_T_CTRL) {
 		(void)snprintf(base_name, sizeof(base_name) - 1, "%s-%s:ctrl",
@@ -1856,7 +2015,7 @@ l_end:
 		irq_num = adapter->irq_ctxt
 					  .msix_entries[vsi->irqs.base_idx_in_pf + i]
 					  .vector;
-		if (!IS_ENABLED(CONFIG_RFS_ACCEL))
+		if (!sxe2_arfs_supported(adapter))
 			(void)irq_set_affinity_notifier(irq_num, NULL);
 
 		(void)irq_set_affinity_hint(irq_num, NULL);
@@ -1876,7 +2035,7 @@ STATIC void sxe2_vsi_irq_free(struct sxe2_vsi *vsi, u16 idx)
 	if (!irq_data || !(SXE2_IRQ_HAS_TXQ(irq_data) || SXE2_IRQ_HAS_RXQ(irq_data)))
 		return;
 
-	if (!IS_ENABLED(CONFIG_RFS_ACCEL))
+	if (!sxe2_arfs_supported(adapter))
 		(void)irq_set_affinity_notifier(irq_num, NULL);
 
 	(void)irq_set_affinity_hint(irq_num, NULL);
@@ -1887,6 +2046,11 @@ STATIC void sxe2_vsi_irq_free(struct sxe2_vsi *vsi, u16 idx)
 STATIC void sxe2_vsi_irqs_free(struct sxe2_vsi *vsi)
 {
 	u16 i;
+
+	if (sxe2_vsi_irq_pooled(vsi)) {
+		sxe2_vsi_irqs_detach(vsi);
+		return;
+	}
 
 	sxe2_cpu_rx_rmap_free(vsi);
 
@@ -1910,18 +2074,6 @@ void sxe2_irq_txqs_cause_setup(struct sxe2_irq_data *irq_data)
 	}
 }
 
-void sxe2_irq_txqs_cause_clear(struct sxe2_irq_data *irq_data)
-{
-	struct sxe2_hw *hw = &irq_data->vsi->adapter->hw;
-	struct sxe2_queue *queue;
-
-	sxe2_for_each_queue(queue, irq_data->tx.list)
-	{
-		sxe2_hw_txq_irq_cause_clear(hw, queue->idx_in_pf);
-		sxe2_flush(hw);
-	}
-}
-
 void sxe2_irq_rxqs_cause_setup(struct sxe2_irq_data *irq_data)
 {
 	struct sxe2_hw *hw = &irq_data->vsi->adapter->hw;
@@ -1936,18 +2088,6 @@ void sxe2_irq_rxqs_cause_setup(struct sxe2_irq_data *irq_data)
 	}
 }
 
-void sxe2_irq_rxqs_cause_clear(struct sxe2_irq_data *irq_data)
-{
-	struct sxe2_hw *hw = &irq_data->vsi->adapter->hw;
-	struct sxe2_queue *queue;
-
-	sxe2_for_each_queue(queue, irq_data->rx.list)
-	{
-		sxe2_hw_rxq_irq_cause_clear(hw, queue->idx_in_pf);
-		sxe2_flush(hw);
-	}
-}
-
 STATIC void sxe2_vsi_irq_setup(struct sxe2_vsi *vsi, u16 idx)
 {
 	struct sxe2_irq_data *irq_data = vsi->irqs.irq_data[idx];
@@ -1955,7 +2095,9 @@ STATIC void sxe2_vsi_irq_setup(struct sxe2_vsi *vsi, u16 idx)
 	struct sxe2_vf_node *vf;
 	u16 i;
 
-	if (vsi->type != SXE2_VSI_T_VF)
+	if ((vsi->type != SXE2_VSI_T_VF) &&
+	    (vsi->type != SXE2_VSI_T_DPDK_VF) &&
+		(vsi->type != SXE2_VSI_T_DPDK_PF))
 		sxe2_irq_itr_init(irq_data);
 
 	sxe2_irq_rate_limit_init(irq_data);
@@ -1992,8 +2134,11 @@ STATIC void sxe2_vsi_irq_setup(struct sxe2_vsi *vsi, u16 idx)
 		}
 	}
 
-	if (vsi->type != SXE2_VSI_T_VF) {
-		sxe2_hw_irq_enable(&irq_data->vsi->adapter->hw, irq_data->idx_in_pf);
+	if ((vsi->type != SXE2_VSI_T_VF) &&
+	    (vsi->type != SXE2_VSI_T_DPDK_VF) &&
+	    (vsi->type != SXE2_VSI_T_DPDK_PF)) {
+		sxe2_hw_irq_enable(&irq_data->vsi->adapter->hw,
+				   irq_data->idx_in_pf);
 		sxe2_hw_irq_trigger(&irq_data->vsi->adapter->hw,
 				    irq_data->idx_in_pf);
 	}
@@ -2203,9 +2348,11 @@ STATIC void sxe2_vsi_irq_disable(struct sxe2_vsi *vsi, u16 idx)
 		sxe2_hw_rxq_irq_cause_switch(hw, queue->idx_in_pf, false);
 	}
 
-	if (vsi->type != SXE2_VSI_T_VF)
+	if ((vsi->type != SXE2_VSI_T_VF) &&
+	    (vsi->type != SXE2_VSI_T_DPDK_VF) &&
+	    (vsi->type != SXE2_VSI_T_DPDK_PF))
 		synchronize_irq(adapter->irq_ctxt.msix_entries[irq_data->idx_in_pf]
-						.vector);
+				.vector);
 
 	if (vsi->type == SXE2_VSI_T_ESW) {
 		sxe2_for_each_vf(adapter, vf_idx)
@@ -2260,6 +2407,10 @@ void sxe2_napi_del(struct sxe2_vsi *vsi)
 
 	sxe2_for_each_vsi_irq(vsi, i)
 	{
+#ifdef HAS_NAPI_STATE_HASHED
+		if (!test_bit(NAPI_STATE_HASHED, &vsi->irqs.irq_data[i]->napi.state))
+			continue;
+#endif
 		netif_napi_del(&vsi->irqs.irq_data[i]->napi);
 	}
 
@@ -2284,6 +2435,12 @@ STATIC void sxe2_vsi_txq_clean(struct sxe2_vsi *vsi)
 void sxe2_vsi_rxq_clean(struct sxe2_vsi *vsi)
 {
 	u16 i;
+
+	if (vsi->type == SXE2_VSI_T_CTRL) {
+		LOG_WARN("ctrl vsi:%u %u no need clean rxq.\n",
+			 vsi->id_in_pf, vsi->idx_in_dev);
+		return;
+	}
 
 	sxe2_for_each_vsi_rxq(vsi, i)
 	{
@@ -2329,7 +2486,7 @@ s32 sxe2_vsi_down(struct sxe2_vsi *vsi)
 
 	sxe2_vsi_irqs_disable(vsi);
 
-	if (need_reset)
+	if (need_reset && sxe2_dev_state_check(adapter))
 		sxe2_trigger_and_wait_resetting(adapter);
 
 	sxe2_vsi_txq_clean(vsi);
@@ -2774,7 +2931,7 @@ STATIC void sxe2_vsi_coalesce_set(struct sxe2_vsi *vsi,
 }
 
 #ifdef HAVE_XDP_SUPPORT
-STATIC s32 sxe2_vsi_xdp_qs_stats_realloc(struct sxe2_vsi *vsi)
+s32 sxe2_vsi_xdp_qs_stats_realloc(struct sxe2_vsi *vsi)
 {
 	struct sxe2_adapter *adapter = vsi->adapter;
 	u16 req_txq = (u16)vsi->num_xdp_txq;
@@ -2782,7 +2939,7 @@ STATIC s32 sxe2_vsi_xdp_qs_stats_realloc(struct sxe2_vsi *vsi)
 	struct sxe2_vsi_qs_stats *vsi_qs_stats;
 	u16 i;
 
-	vsi_qs_stats = &vsi->vsi_qs_stats;
+	vsi_qs_stats = sxe2_vsi_qs_stats_get(adapter, vsi->id_in_pf);
 	if (req_txq < vsi->xdp_rings.q_cnt) {
 		for (i = req_txq; i < vsi->xdp_rings.q_cnt; i++) {
 			kfree(vsi_qs_stats->xdp_stats[i]);
@@ -2835,8 +2992,7 @@ s32 sxe2_vsi_recfg(struct sxe2_vsi *vsi)
 		goto l_defcfg;
 
 	if (vsi->type == SXE2_VSI_T_PF) {
-		ret = sxe2_rss_replay_hash_cfg(&vsi->adapter->rss_flow_ctxt,
-					       vsi->id_in_pf);
+		ret = sxe2_rss_replay_hash_cfg(&vsi->adapter->rss_flow_ctxt, vsi->id_in_pf);
 		if (ret)
 			goto l_defcfg;
 	}
@@ -2881,6 +3037,9 @@ s32 sxe2_vsi_rebuild(struct sxe2_vsi *vsi, bool init)
 
 	(void)sxe2_txsched_lan_vsi_rm(vsi);
 
+	if (sxe2_vsi_irq_pooled(vsi))
+		sxe2_cpu_rx_rmap_free(vsi);
+
 	sxe2_vsi_irqs_deinit(vsi);
 
 #ifdef HAVE_XDP_SUPPORT
@@ -2900,6 +3059,12 @@ s32 sxe2_vsi_rebuild(struct sxe2_vsi *vsi, bool init)
 	ret = sxe2_vsi_irqs_init(vsi);
 	if (ret)
 		goto l_queue_init_failed;
+
+	if (sxe2_vsi_irq_pooled(vsi)) {
+		ret = sxe2_cpu_rx_rmap_set(vsi);
+		if (ret)
+			goto l_queue_init_failed;
+	}
 
 	ret = sxe2_vsi_recfg(vsi);
 	if (ret)
@@ -2944,16 +3109,6 @@ s32 sxe2_vsi_rebuild_by_type(struct sxe2_adapter *adapter, enum sxe2_vsi_type ty
 		if (!vsi || vsi->type != type)
 			continue;
 
-		if (vsi->type == SXE2_VSI_T_PF) {
-			ret = sxe2_switch_fltr_restore_prepare(adapter);
-			if (ret) {
-				LOG_DEV_ERR("adapter %d switch filter restore \t"
-					    "prepare failed, ret %d\n",
-					    adapter->pf_idx, ret);
-				break;
-			}
-		}
-
 		ret = sxe2_vsi_rebuild(vsi, init);
 		if (ret)
 			break;
@@ -2982,23 +3137,6 @@ struct sxe2_vsi *sxe2_macvlan_vsi_create(struct sxe2_adapter *adapter)
 		return NULL;
 
 	return vsi;
-}
-
-void sxe2_vsi_id_in_dev_clear(struct sxe2_adapter *adapter)
-{
-	struct sxe2_vsi *vsi;
-	u16 i;
-
-	mutex_lock(&adapter->vsi_ctxt.lock);
-	sxe2_for_each_vsi(&adapter->vsi_ctxt, i)
-	{
-		vsi = adapter->vsi_ctxt.vsi[i];
-		if (!vsi)
-			continue;
-
-		vsi->idx_in_dev = SXE2_VSI_ID_INVALID;
-	}
-	mutex_unlock(&adapter->vsi_ctxt.lock);
 }
 
 struct sxe2_addr_node *sxe2_mac_addr_find(struct sxe2_vsi *vsi, const u8 *macaddr)
@@ -3065,6 +3203,46 @@ int sxe2_mac_addr_add(struct sxe2_vsi *vsi, const u8 *addr,
 
 	set_bit((s32)owner, &node->usage);
 
+l_end:
+	mutex_unlock(&switch_ctxt->mac_addr_lock);
+	return ret;
+}
+
+s32 sxe2_rdma_multi_mac_addr_clean(struct sxe2_adapter *adapter)
+{
+	s32 ret = 0;
+	struct sxe2_addr_node *node;
+	struct sxe2_addr_node *tmp;
+	struct sxe2_vsi *vsi = adapter->vsi_ctxt.main_vsi;
+	s32 owner_nr = (s32)SXE2_MAC_OWNER_ROCE;
+	struct sxe2_switch_context *switch_ctxt = &adapter->switch_ctxt;
+
+	mutex_lock(&switch_ctxt->mac_addr_lock);
+
+	list_for_each_entry_safe(node, tmp, &vsi->mac_filter.mac_addr_list, list) {
+		if (!test_bit(owner_nr, &node->usage))
+			continue;
+
+		clear_bit(owner_nr, &node->usage);
+
+		if (node->usage)
+			continue;
+
+		ret = sxe2_mac_rule_del(adapter, vsi->idx_in_dev,
+					node->mac_addr);
+		if (ret == -ENOENT) {
+			LOG_WARN_BDF("mac filter not exist, addr %pM\n",
+				     node->mac_addr);
+			ret = 0;
+		} else if (ret) {
+			LOG_ERROR_BDF("del mac %pM failed err:%d\n",
+				      node->mac_addr, ret);
+			set_bit(owner_nr, &node->usage);
+			goto l_end;
+		}
+
+		sxe2_switch_mac_node_del_and_free(node);
+	}
 l_end:
 	mutex_unlock(&switch_ctxt->mac_addr_lock);
 	return ret;
@@ -3191,10 +3369,12 @@ s32 sxe2_dpdk_vsi_create(struct sxe2_adapter *adapter,
 	s32 ret = 0;
 	struct sxe2_vsi *vsi;
 
-	vsi = sxe2_vsi_create(adapter, params);
+	mutex_lock(&adapter->vsi_ctxt.lock);
+
+	vsi = sxe2_vsi_create_unlock(adapter, params);
 	if (!vsi) {
 		LOG_ERROR_BDF("dpdk pf vsi create fail.\n");
-		return -ENOMEM;
+		goto l_unlock;
 	}
 
 	resp->vsi_id = vsi->idx_in_dev;
@@ -3202,6 +3382,9 @@ s32 sxe2_dpdk_vsi_create(struct sxe2_adapter *adapter,
 	LOG_INFO_BDF("dpdk pf vsi create success vsi_id_in_pf:%d \t"
 		     "vsi_id_in_dev:%d.\n",
 		     vsi->id_in_pf, vsi->idx_in_dev);
+
+l_unlock:
+	mutex_unlock(&adapter->vsi_ctxt.lock);
 
 	return ret;
 }
@@ -3230,6 +3413,17 @@ l_unlock:
 	return ret;
 }
 
+STATIC void sxe2_dpdk_pf_global_lut_release(struct sxe2_adapter *adapter)
+{
+	if (adapter->vsi_ctxt.dpdk_lut_type == SXE2_RSS_GLOBAL_LUT) {
+		sxe2_global_lut_put(adapter,
+				    adapter->vsi_ctxt.dpdk_global_lut_id);
+		adapter->vsi_ctxt.dpdk_global_lut_id =
+			SXE2_VF_GLOBAL_LUT_INVALID_ID;
+		adapter->vsi_ctxt.dpdk_lut_type = SXE2_RSS_VSI_LUT;
+	}
+}
+
 static s32 sxe2_dpdk_pfvsi_resource_release(struct sxe2_adapter *adapter)
 {
 	s32 ret = 0;
@@ -3238,6 +3432,7 @@ static s32 sxe2_dpdk_pfvsi_resource_release(struct sxe2_adapter *adapter)
 	mutex_lock(&adapter->vsi_ctxt.lock);
 	vsi = sxe2_vsi_get_by_type_unlock(adapter, SXE2_VSI_T_DPDK_PF);
 	if (!vsi) {
+		sxe2_dpdk_pf_global_lut_release(adapter);
 		mutex_unlock(&adapter->vsi_ctxt.lock);
 		LOG_ERROR_BDF("dpdk vsi null.\n");
 		ret = -EINVAL;
@@ -3261,9 +3456,11 @@ static s32 sxe2_dpdk_pfvsi_resource_release(struct sxe2_adapter *adapter)
 
 	(void)sxe2_user_l2_feature_clean(adapter, vsi->idx_in_dev);
 
-	mutex_unlock(&adapter->vsi_ctxt.lock);
+	sxe2_vsi_destroy_unlock(vsi);
 
-	sxe2_vsi_destroy(vsi);
+	sxe2_dpdk_pf_global_lut_release(adapter);
+
+	mutex_unlock(&adapter->vsi_ctxt.lock);
 
 	return ret;
 }
@@ -3290,7 +3487,7 @@ static s32 sxe2_dpdk_repr_recover(struct sxe2_adapter *adapter)
 	return ret;
 }
 
-static s32 sxe2_dpdk_reprvsi_resource_release(struct sxe2_adapter *adapter)
+s32 sxe2_dpdk_reprvsi_resource_release(struct sxe2_adapter *adapter)
 {
 	s32 ret = 0;
 	struct sxe2_vsi *vsi;
@@ -3315,6 +3512,7 @@ static s32 sxe2_dpdk_reprvsi_resource_release(struct sxe2_adapter *adapter)
 
 	sxe2_vsi_irqs_disable(vsi);
 	mutex_unlock(&adapter->vsi_ctxt.lock);
+
 	return ret;
 }
 
@@ -3327,9 +3525,11 @@ s32 sxe2_dpdk_resource_release(void *pf_adapter, struct sxe2_obj *obj)
 	if (ret)
 		LOG_ERROR_BDF("dpdk pfvsi resource release failed.\n");
 
+	mutex_lock(&adapter->vf_ctxt.vfs_lock);
 	ret = sxe2_dpdk_reprvsi_resource_release(adapter);
 	if (ret)
 		LOG_ERROR_BDF("dpdk reprvsi resource release failed.\n");
+	mutex_unlock(&adapter->vf_ctxt.vfs_lock);
 
 	ret = sxe2_dpdk_ipsec_resource_release(adapter, obj);
 	if (ret)
@@ -3373,3 +3573,158 @@ l_end:
 	mutex_unlock(&adapter->vsi_ctxt.lock);
 	return ret;
 }
+
+STATIC void sxe2_vsi_queues_stats_free(struct sxe2_adapter *adapter, u16 idx)
+{
+	struct sxe2_vsis_stats *vsis_stats = &adapter->vsi_ctxt.vsis_stats[idx];
+	struct sxe2_queue_stats *txqs_stats;
+	struct sxe2_queue_stats *rxqs_stats;
+	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
+
+	txqs_stats = vsis_stats->vsi_qs_stats.txqs_stats;
+	if (txqs_stats) {
+		devm_kfree(dev, txqs_stats);
+		vsis_stats->vsi_qs_stats.txqs_stats = NULL;
+	}
+
+	rxqs_stats = vsis_stats->vsi_qs_stats.rxqs_stats;
+	if (rxqs_stats) {
+		devm_kfree(dev, rxqs_stats);
+		vsis_stats->vsi_qs_stats.rxqs_stats = NULL;
+	}
+}
+
+STATIC s32 sxe2_vsi_queues_stats_alloc(struct sxe2_adapter *adapter, u16 idx)
+{
+	s32 ret = 0;
+	struct sxe2_vsis_stats *vsis_stats = &adapter->vsi_ctxt.vsis_stats[idx];
+	struct sxe2_queue_stats *txqs_stats;
+	struct sxe2_queue_stats *rxqs_stats;
+	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
+	u16 i;
+
+	txqs_stats = devm_kcalloc(dev, SXE2_VSI_TXRX_Q_MAX_CNT,
+				  sizeof(*txqs_stats), GFP_KERNEL);
+	if (!txqs_stats) {
+		LOG_DEV_ERR("vsis stats txq stats alloc failed.\n");
+		ret = -ENOMEM;
+		goto l_failed;
+	}
+	sxe2_for_each_vsi_q_maxcnt(i)
+			u64_stats_init(&txqs_stats[i].syncp);
+
+	vsis_stats->vsi_qs_stats.txqs_stats = txqs_stats;
+
+	rxqs_stats = devm_kcalloc(dev, SXE2_VSI_TXRX_Q_MAX_CNT,
+				  sizeof(*rxqs_stats), GFP_KERNEL);
+	if (!rxqs_stats) {
+		LOG_DEV_ERR("vsis stats rxq stats alloc failed.\n");
+		ret = -ENOMEM;
+		goto l_failed;
+	}
+	sxe2_for_each_vsi_q_maxcnt(i)
+			u64_stats_init(&rxqs_stats[i].syncp);
+
+	vsis_stats->vsi_qs_stats.rxqs_stats = rxqs_stats;
+
+	return ret;
+
+l_failed:
+	sxe2_vsi_queues_stats_free(adapter, idx);
+	return ret;
+}
+
+STATIC void sxe2_vsis_queues_stats_free(struct sxe2_adapter *adapter)
+{
+	u16 i;
+
+	sxe2_for_each_vsi(&adapter->vsi_ctxt, i) {
+		sxe2_vsi_queues_stats_free(adapter, i);
+	}
+}
+
+STATIC s32 sxe2_vsis_queues_stats_alloc(struct sxe2_adapter *adapter)
+{
+	s32 ret = 0;
+	u16 i;
+
+	sxe2_for_each_vsi(&adapter->vsi_ctxt, i) {
+		ret = sxe2_vsi_queues_stats_alloc(adapter, i);
+		if (ret) {
+			sxe2_vsis_queues_stats_free(adapter);
+			goto l_out;
+		}
+	}
+
+l_out:
+	return ret;
+}
+
+void sxe2_vsis_stats_deinit(struct sxe2_adapter *adapter)
+{
+	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
+
+	if (adapter->vsi_ctxt.vsis_stats) {
+		sxe2_vsis_queues_stats_free(adapter);
+
+		devm_kfree(dev, adapter->vsi_ctxt.vsis_stats);
+		adapter->vsi_ctxt.vsis_stats = NULL;
+	}
+}
+
+s32 sxe2_vsis_stats_init(struct sxe2_adapter *adapter)
+{
+	u16 vsi_cnt = adapter->vsi_ctxt.max_cnt;
+	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
+	s32 ret;
+
+	adapter->vsi_ctxt.vsis_stats =
+		devm_kcalloc(dev, vsi_cnt,
+			     sizeof(*adapter->vsi_ctxt.vsis_stats), GFP_KERNEL);
+	if (!adapter->vsi_ctxt.vsis_stats) {
+		ret = -ENOMEM;
+		LOG_DEV_ERR("alloc vsis stats failed, count: %d, size: %zu.\n",
+			    vsi_cnt, sizeof(*adapter->vsi_ctxt.vsis_stats));
+		goto l_end;
+	}
+
+	ret = sxe2_vsis_queues_stats_alloc(adapter);
+	if (ret) {
+		LOG_ERROR_BDF("vsi queue stats alloc failed %d.\n", ret);
+		goto l_failed;
+	}
+
+	return ret;
+
+l_failed:
+	sxe2_vsis_stats_deinit(adapter);
+
+l_end:
+	return ret;
+}
+
+void sxe2_vsis_stats_clear(struct sxe2_adapter *adapter, u16 vsi_sw_id)
+{
+	struct sxe2_vsis_stats *vsis_stats;
+	struct sxe2_vsi_qs_stats *vsi_qs_stats;
+
+	if (vsi_sw_id >= adapter->vsi_ctxt.max_cnt) {
+		LOG_ERROR_BDF("invalid vsi id:%d exceed max_cnt:%d.\n",
+			      vsi_sw_id, adapter->vsi_ctxt.max_cnt);
+		return;
+	}
+
+	vsis_stats = &adapter->vsi_ctxt.vsis_stats[vsi_sw_id];
+	vsi_qs_stats = sxe2_vsi_qs_stats_get(adapter, vsi_sw_id);
+	if (!vsis_stats || !vsi_qs_stats) {
+		LOG_ERROR_BDF("invalid vsi id:%d vsis stats or qs_stats null.\n", vsi_sw_id);
+		return;
+	}
+
+	memset(&vsis_stats->vsi_stats, 0, sizeof(vsis_stats->vsi_stats));
+	memset(vsi_qs_stats->txqs_stats, 0, sizeof(*vsi_qs_stats->txqs_stats)
+	       * SXE2_VSI_TXRX_Q_MAX_CNT);
+	memset(vsi_qs_stats->rxqs_stats, 0, sizeof(*vsi_qs_stats->rxqs_stats)
+	       * SXE2_VSI_TXRX_Q_MAX_CNT);
+}
+

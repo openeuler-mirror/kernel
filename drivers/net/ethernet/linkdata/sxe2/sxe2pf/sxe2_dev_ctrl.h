@@ -148,6 +148,10 @@ s32 sxe2_wait_vfr_done(struct sxe2_adapter *adapter, u16 vf_id);
 
 void sxe2_trigger_and_wait_resetting(struct sxe2_adapter *adapter);
 
+void sxe2_pf_reset_and_check(struct sxe2_adapter *adapter);
+
 s32 sxe2_wait_fw_init(struct sxe2_adapter *adapter);
+
+s32 sxe2_check_in_reset(struct sxe2_adapter *adapter);
 
 #endif

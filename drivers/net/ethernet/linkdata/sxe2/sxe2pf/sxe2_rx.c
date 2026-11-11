@@ -9,6 +9,8 @@
  * @note:
  */
 
+#include "sxe2_compat.h"
+
 #include <linux/netdevice.h>
 #include <linux/if_vlan.h>
 #include <linux/if_macvlan.h>
@@ -20,13 +22,13 @@
 #endif
 #endif
 
-#include "sxe2_compat.h"
 #include "sxe2.h"
 #include "sxe2_log.h"
 #include "sxe2_netdev.h"
 #include "sxe2_vsi.h"
 #include "sxe2_queue.h"
 #include "sxe2_rx.h"
+#include "sxe2_tx.h"
 #include "sxe2_common.h"
 #include "sxe2_skb_dump.h"
 #include "sxe2_cmd_channel.h"
@@ -34,6 +36,8 @@
 #include "sxe2_xsk.h"
 
 #define SXE2_LAST_OFFSET (SKB_WITH_OVERHEAD(PAGE_SIZE) - SXE2_RXBUF_2048)
+
+#define SXE2_INVAL_VLAN 0xffff
 
 STATIC s32 sxe2_xdp_info_get(struct sxe2_queue *rxq)
 {
@@ -98,12 +102,26 @@ void sxe2_rx_ring_clean(struct sxe2_queue *rxq)
 #ifdef HAVE_AF_XDP_ZC_SUPPORT
 rx_skip_free:
 #endif
+#ifndef HAVE_AF_XDP_MULTI_BUF_SUPPORT
 	memset(rxq->rx_buf, 0, SXE2_RX_BUF_LEN(rxq));
+#else
+#ifdef HAVE_AF_XDP_ZC_SUPPORT
+	if (rxq->xsk_pool)
+		memset(rxq->xdp_buf, 0, rxq->depth * sizeof(*rxq->xdp_buf));
+	else
+#endif
+		memset(rxq->rx_buf, 0, SXE2_RX_BUF_LEN(rxq));
+#endif
 	memset(rxq->desc.base_addr, 0, SXE2_RX_DESC_SIZE(rxq));
 
 	rxq->next_to_alloc = 0;
 	rxq->next_to_clean = 0;
 	rxq->next_to_use = 0;
+#ifdef HAVE_AF_XDP_MULTI_BUF_SUPPORT
+	rxq->first_desc = 0;
+	rxq->nr_frags = 0;
+	rxq->xdp.data = NULL;
+#endif
 }
 
 void sxe2_rx_ring_free(struct sxe2_queue *rxq)
@@ -117,7 +135,10 @@ void sxe2_rx_ring_free(struct sxe2_queue *rxq)
 
 	kfree(rxq->rx_buf);
 	rxq->rx_buf = NULL;
-
+#ifdef HAVE_AF_XDP_MULTI_BUF_SUPPORT
+	kfree(rxq->xdp_buf);
+	rxq->xdp_buf = NULL;
+#endif
 	if (rxq->desc.base_addr) {
 		dmam_free_coherent(rxq->dev, SXE2_RX_DESC_SIZE(rxq),
 				   rxq->desc.base_addr, rxq->desc.dma);
@@ -195,7 +216,7 @@ l_desc_alloc_failed:
 
 static s32 sxe2_rx_rings_alloc(struct sxe2_vsi *vsi)
 {
-	s32 ret;
+	s32 ret = 0;
 	u16 i;
 	struct sxe2_queue *rxq;
 	struct sxe2_adapter *adapter = vsi->adapter;
@@ -232,6 +253,12 @@ void sxe2_rx_ring_res_free(struct sxe2_queue *rxq)
 void sxe2_rx_rings_res_free(struct sxe2_vsi *vsi)
 {
 	u16 i;
+
+	if (vsi->type == SXE2_VSI_T_CTRL) {
+		LOG_WARN("ctrl vsi:%u %u no need free rxq res due to no alloc.\n",
+			 vsi->id_in_pf, vsi->idx_in_dev);
+		return;
+	}
 
 	sxe2_for_each_vsi_rxq(vsi, i) sxe2_rx_ring_res_free(vsi->rxqs.q[i]);
 }
@@ -331,7 +358,7 @@ static u16 sxe2_rxq_get_lro_desc_num(u32 max_lro_pkt_size, u16 buf_size)
 	return lro_desc_num;
 }
 
-static s32 sxe2_buffer_split_set(struct sxe2_queue *rxq,
+STATIC s32 sxe2_buffer_split_set(struct sxe2_queue *rxq,
 				 struct sxe2_rxq_ctxt *rx_ctx)
 {
 	struct sxe2_adapter *adapter = rxq->vsi->adapter;
@@ -468,7 +495,7 @@ static s32 sxe2_rxq_ctxt_fill(struct sxe2_queue *rxq, struct sxe2_rxq_ctxt *rxq_
 	if (ret)
 		return ret;
 
-#ifdef HAVE_AF_XDP_ZC_SUPPORT
+#if defined(HAVE_AF_XDP_ZC_SUPPORT) && !defined(HAVE_AF_XDP_MULTI_BUF_SUPPORT)
 	if (rxq->xsk_pool)
 		chain_len = 1;
 #endif
@@ -764,6 +791,9 @@ STATIC s32 sxe2_rxq_xdp_cfg(struct sxe2_queue *rxq)
 					rxq->xsk_pool->chunk_size_nohr -
 					XDP_PACKET_HEADROOM;
 #endif
+#ifdef HAVE_AF_XDP_MULTI_BUF_SUPPORT
+			rxq->rx_buf_len -= SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
+#endif
 #ifdef HAVE_MEM_TYPE_XSK_BUFF_POOL
 			err = xdp_rxq_info_reg_mem_model(&rxq->xdp_rxq,
 							 MEM_TYPE_XSK_BUFF_POOL,
@@ -904,6 +934,12 @@ s32 sxe2_rxqs_stop(struct sxe2_vsi *vsi)
 	struct sxe2_hw *hw = &vsi->adapter->hw;
 	u16 reg_idx;
 
+	if (vsi->type == SXE2_VSI_T_CTRL) {
+		LOG_WARN_BDF("ctrl vsi:%u %u no need stop rxq.\n",
+			     vsi->id_in_pf, vsi->idx_in_dev);
+		return ret;
+	}
+
 	sxe2_for_each_vsi_rxq(vsi, i)
 	{
 		reg_idx = vsi->rxqs.q[i]->idx_in_pf;
@@ -963,6 +999,7 @@ s32 sxe2_rxq_ctxt_cfg(struct sxe2_queue *rxq)
 	return ret;
 }
 
+#ifdef HAVE_AF_XDP_ZC_SUPPORT
 #ifdef HAVE_MEM_TYPE_XSK_BUFF_POOL
 STATIC s32 sxe2_alloc_rx_xsk_cfg_bufs(struct sxe2_queue *rxq, u16 count)
 {
@@ -988,6 +1025,34 @@ STATIC s32 sxe2_alloc_rx_xsk_cfg_bufs(struct sxe2_queue *rxq, u16 count)
 	return 0;
 }
 #endif
+#endif
+
+u32 sxe2_rx_frame_truesize(struct sxe2_queue *rxq, u32 __maybe_unused size)
+{
+	u32 truesize;
+
+#if (PAGE_SIZE < 8192)
+	truesize = SXE2_RX_PAGE_SIZE(rxq) / 2;
+#else
+	truesize = rxq->rx_offset ? SKB_DATA_ALIGN(rxq->rx_offset + size) +
+						    SKB_DATA_ALIGN(sizeof(struct skb_shared_info))
+				  : SKB_DATA_ALIGN(size);
+#endif
+	return truesize;
+}
+
+#ifdef HAVE_AF_XDP_MULTI_BUF_SUPPORT
+static u32 sxe2_rx_frame_size(struct sxe2_queue *rxq)
+{
+	u32 truesize;
+#if (PAGE_SIZE < 8192)
+	truesize = SXE2_RX_PAGE_SIZE(rxq) / 2;
+#else
+	truesize = rxq->rx_buf_len;
+#endif
+	return truesize;
+}
+#endif
 
 s32 sxe2_vsi_cfg_rxq(struct sxe2_queue *rxq)
 {
@@ -1005,6 +1070,12 @@ s32 sxe2_vsi_cfg_rxq(struct sxe2_queue *rxq)
 		goto l_err;
 	}
 #endif
+#endif
+
+#ifdef HAVE_AF_XDP_MULTI_BUF_SUPPORT
+	xdp_init_buff(&rxq->xdp, sxe2_rx_frame_size(rxq), &rxq->xdp_rxq);
+	rxq->xdp.data = NULL;
+	rxq->xdp_ext.pkt_ctx = &rxq->pkt_ctx;
 #endif
 
 	ret = sxe2_rxq_ctxt_cfg(rxq);
@@ -1077,7 +1148,13 @@ l_err:
 s32 sxe2_rx_cfg(struct sxe2_vsi *vsi)
 {
 	struct sxe2_adapter *adapter = vsi->adapter;
-	s32 ret;
+	s32 ret = 0;
+
+	if (vsi->type == SXE2_VSI_T_CTRL) {
+		LOG_WARN_BDF("ctrl vsi:%u %u no need cfg rx.\n",
+			     vsi->id_in_pf, vsi->idx_in_dev);
+		goto l_out;
+	}
 
 	ret = sxe2_rx_rings_alloc(vsi);
 	if (ret) {
@@ -1300,7 +1377,7 @@ STATIC void sxe2_skb_hash_set(struct sxe2_queue *rxq, union sxe2_rx_desc *rx_des
 #endif
 }
 
-static void sxe2_rx_csum_check(struct sxe2_queue *rxq, union sxe2_rx_desc *rx_desc,
+STATIC void sxe2_rx_csum_check(struct sxe2_queue *rxq, union sxe2_rx_desc *rx_desc,
 			       struct sk_buff *skb, u16 ptype)
 {
 	struct sxe2_rx_ptype_info ptype_info;
@@ -1340,21 +1417,20 @@ static void sxe2_rx_csum_check(struct sxe2_queue *rxq, union sxe2_rx_desc *rx_de
 	ipv6 = (ptype_info.outer_ip == SXE2_PTYPE_OUTER_IP) &&
 	       (ptype_info.outer_ip_ver == SXE2_PTYPE_OUTER_IPV6);
 
-	if (ipv4 && (status0_err &
-		     (BIT(SXE2_RX_DESC_ERROR_IPE) | BIT(SXE2_RX_DESC_ERROR_EIPE))))
+	if (ipv4 && (status0_err & (BIT(SXE2_RX_DESC_ERROR_EIPE))))
 		goto checksum_fail;
 
 	if (ipv6 && (le32_to_cpu(rx_desc->wb.pktl_hdrl_status2) &
 		     (BIT(SXE2_RX_DESC_STATUS2_IPV6EXADD))))
 		goto l_out;
 
-	if (status0_err & BIT(SXE2_RX_DESC_ERROR_L4E))
+	if (status0_err & (BIT(SXE2_RX_DESC_ERROR_L4E) | BIT(SXE2_RX_DESC_ERROR_IPE)))
 		goto checksum_fail;
 
 	if (rx_desc->wb.rxdid_src & BIT(SXE2_RX_DESC_EUDPE))
 		goto checksum_fail;
 
-	if (ptype_info.tunnel_type >= SXE2_PTYPE_TUNNEL_IP_GRENAT) {
+	if (ptype_info.tunnel_type >= SXE2_PTYPE_TUNNEL_IP_IP) {
 		skb->csum_level = 1;
 		rxq->stats->rx_stats.rx_csum_unnecessary_inner++;
 	}
@@ -1407,20 +1483,20 @@ static inline u16 sxe2_vlan_tag_get(union sxe2_rx_desc *rx_desc)
 	    BIT(SXE2_RX_DESC_STATUS0_L2TAG1_P))
 		return le16_to_cpu(rx_desc->wb.l2tag1);
 
-	return 0;
+	return SXE2_INVAL_VLAN;
 }
 
-static void sxe2_skb_vlan_tag_put(struct sxe2_queue *rxq,
+STATIC void sxe2_skb_vlan_tag_put(struct sxe2_queue *rxq,
 				  union sxe2_rx_desc *rx_desc, struct sk_buff *skb)
 {
 	netdev_features_t features = rxq->netdev->features;
 	u16 vlan_tag = sxe2_vlan_tag_get(rx_desc);
-	bool non_zero_vlan = !!(vlan_tag & VLAN_VID_MASK);
+	bool have_vlan = (vlan_tag != SXE2_INVAL_VLAN ? true : false);
 
-	if ((features & NETIF_F_HW_VLAN_CTAG_RX) && non_zero_vlan) {
+	if ((features & NETIF_F_HW_VLAN_CTAG_RX) && have_vlan) {
 		rxq->stats->rx_stats.rx_vlan_strip++;
 		__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), vlan_tag);
-	} else if ((features & NETIF_F_HW_VLAN_STAG_RX) && non_zero_vlan) {
+	} else if ((features & NETIF_F_HW_VLAN_STAG_RX) && have_vlan) {
 		rxq->stats->rx_stats.rx_vlan_strip++;
 		__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021AD), vlan_tag);
 	}
@@ -1509,6 +1585,38 @@ static bool sxe2_page_is_reusable(struct sxe2_rx_buf *rx_buf, int pg_refcnt)
 
 	return true;
 }
+
+#ifdef HAVE_AF_XDP_MULTI_BUF_SUPPORT
+static void sxe2_rx_buffer_put_mbuf(struct sxe2_queue *rxq, struct sxe2_rx_buf *rx_buf)
+{
+#ifdef SXE2_CFG_DEBUG
+	struct sxe2_adapter *adapter = rxq->vsi->adapter;
+#endif
+
+	if (!rx_buf)
+		return;
+
+	if (sxe2_page_is_reusable(rx_buf, page_count(rx_buf->page))) {
+		sxe2_rx_page_reuse(rxq, rx_buf);
+	} else {
+		dma_unmap_page_attrs(rxq->dev, rx_buf->dma,
+				     SXE2_RX_PAGE_SIZE(rxq), DMA_FROM_DEVICE,
+				     SXE2_RX_DMA_ATTR);
+
+		__page_frag_cache_drain(rx_buf->page, rx_buf->drv_refcnt);
+	}
+
+	rx_buf->page = NULL;
+
+#ifdef SXE2_CFG_DEBUG
+	if (test_bit(SXE2_DATAPATH_LOG_ENABLE, adapter->flags)) {
+		LOG_DEBUG_BDF("rxq[%u][%u] ntc:%u nta:%u rx_buffer:%p put\n",
+			      rxq->idx_in_vsi, rxq->idx_in_pf, rxq->next_to_clean,
+			      rxq->next_to_alloc, rx_buf);
+	}
+#endif
+}
+#endif
 
 static void sxe2_rx_buffer_put(struct sxe2_queue *rxq, union sxe2_rx_desc *rx_desc,
 			       struct sxe2_rx_buf *rx_buf, struct sk_buff *skb,
@@ -1658,6 +1766,58 @@ static struct sk_buff *sxe2_skb_build(struct sxe2_queue *rxq,
 	return skb;
 }
 
+#ifdef HAVE_AF_XDP_MULTI_BUF_SUPPORT
+static struct sk_buff *sxe2_skb_build_mbuf(struct sxe2_queue *rxq,
+					   struct sxe2_rx_buf *rx_buf,
+				      struct xdp_buff *xdp,
+				      union sxe2_rx_desc *rx_desc)
+{
+	unsigned int nr_frags = 0;
+	struct skb_shared_info *sinfo = NULL;
+#ifdef HAVE_XDP_BUFF_DATA_META
+	u8 metasize = (u8)(xdp->data - xdp->data_meta);
+#endif
+#if (PAGE_SIZE < SXE2_PAGE_SIZE_8KB)
+	u32 truesize = SXE2_RX_PAGE_SIZE(rxq) / 2;
+#else
+	u32 truesize = SKB_DATA_ALIGN(sizeof(struct skb_shared_info)) +
+		       SKB_DATA_ALIGN(xdp->data_end - xdp->data_hard_start);
+#endif
+	struct sk_buff *skb;
+
+	if (unlikely(xdp_buff_has_frags(xdp))) {
+		sinfo = xdp_get_shared_info_from_buff(xdp);
+		nr_frags = sinfo->nr_frags;
+	}
+
+#ifdef HAVE_XDP_BUFF_DATA_META
+	net_prefetch(xdp->data_meta);
+#else
+	net_prefetch(xdp->data);
+#endif
+
+	skb = napi_build_skb(xdp->data_hard_start, truesize);
+	if (unlikely(!skb))
+		return NULL;
+
+	skb_record_rx_queue(skb, rxq->idx_in_vsi);
+	skb_reserve(skb, xdp->data - xdp->data_hard_start);
+	(void)__skb_put(skb, (u32)(xdp->data_end - xdp->data));
+#ifdef HAVE_XDP_BUFF_DATA_META
+	if (metasize)
+		skb_metadata_set(skb, metasize);
+#endif
+	if (unlikely(xdp_buff_has_frags(xdp)))
+		xdp_update_skb_shared_info(skb, nr_frags,
+					   sinfo->xdp_frags_size,
+					   nr_frags * xdp->frame_sz,
+					   xdp_buff_is_frag_pfmemalloc(xdp));
+
+	return skb;
+}
+
+#endif
+
 static struct sk_buff *sxe2_skb_construct(struct sxe2_queue *rxq,
 					  struct sxe2_rx_buf *rx_buf,
 					  struct xdp_buff *xdp,
@@ -1712,19 +1872,64 @@ static struct sk_buff *sxe2_skb_construct(struct sxe2_queue *rxq,
 	return skb;
 }
 
-#ifdef HAVE_XDP_BUFF_FRAME_SZ
-static u32 sxe2_rx_frame_truesize(struct sxe2_queue *rxq, u32 __maybe_unused size)
+#ifdef HAVE_AF_XDP_MULTI_BUF_SUPPORT
+static struct sk_buff *sxe2_skb_construct_mbuf(struct sxe2_queue *rxq,
+					       struct xdp_buff *xdp,
+					  union sxe2_rx_desc *rx_desc)
 {
-	u32 truesize;
+	unsigned int size = xdp->data_end - xdp->data;
+	struct skb_shared_info *sinfo = NULL;
+	u32 nr_frags = 0;
+	unsigned int headlen;
+	struct sk_buff *skb;
+	struct sxe2_rx_buf *rx_buf;
 
-#if (PAGE_SIZE < 8192)
-	truesize = SXE2_RX_PAGE_SIZE(rxq) / 2;
-#else
-	truesize = rxq->rx_offset ? SKB_DATA_ALIGN(rxq->rx_offset + size) +
-						    SKB_DATA_ALIGN(sizeof(struct skb_shared_info))
-				  : SKB_DATA_ALIGN(size);
-#endif
-	return truesize;
+	net_prefetch(xdp->data);
+	if (unlikely(xdp_buff_has_frags(xdp))) {
+		sinfo = xdp_get_shared_info_from_buff(xdp);
+		nr_frags = sinfo->nr_frags;
+	}
+
+	skb = __napi_alloc_skb(&rxq->irq_data->napi, SXE2_RX_HDR_SIZE,
+			       GFP_ATOMIC | __GFP_NOWARN);
+	if (unlikely(!skb))
+		return NULL;
+
+	rx_buf = &rxq->rx_buf[rxq->first_desc];
+	skb_record_rx_queue(skb, rxq->idx_in_vsi);
+	headlen = size;
+	if (headlen > SXE2_RX_HDR_SIZE)
+		headlen = eth_get_headlen(skb->dev, xdp->data, SXE2_RX_HDR_SIZE);
+
+	memcpy(__skb_put(skb, headlen), xdp->data,
+	       ALIGN(headlen, sizeof(long)));
+
+	size -= headlen;
+	if (size) {
+		if (unlikely(nr_frags >= MAX_SKB_FRAGS - 1)) {
+			dev_kfree_skb(skb);
+			return NULL;
+		}
+		skb_add_rx_frag(skb, 0, rx_buf->page,
+				rx_buf->pg_offset + headlen, size,
+				xdp->frame_sz);
+	} else {
+		rx_buf->drv_refcnt++;
+	}
+
+	if (unlikely(xdp_buff_has_frags(xdp))) {
+		struct skb_shared_info *skinfo = skb_shinfo(skb);
+
+		memcpy(&skinfo->frags[skinfo->nr_frags], &sinfo->frags[0],
+		       sizeof(skb_frag_t) * nr_frags);
+
+		xdp_update_skb_shared_info(skb, skinfo->nr_frags + nr_frags,
+					   sinfo->xdp_frags_size,
+					   nr_frags * xdp->frame_sz,
+					   xdp_buff_is_frag_pfmemalloc(xdp));
+	}
+
+	return skb;
 }
 #endif
 
@@ -1740,8 +1945,9 @@ static s32 sxe2_xdp_run(struct sxe2_queue *rxq, struct xdp_buff *xdp,
 #ifdef SXE2_CFG_DEBUG
 	struct sxe2_adapter *adapter = rxq->vsi->adapter;
 #endif
-	u32 queue_index = (smp_processor_id() %
-			   rxq->vsi->num_xdp_txq);
+
+	if (!xdp_prog)
+		return SXE2_XDP_PASS;
 
 	xdp_stats->rx_xdp_pkts++;
 	xdp_stats->rx_xdp_bytes += rx_bytes;
@@ -1759,15 +1965,23 @@ static s32 sxe2_xdp_run(struct sxe2_queue *rxq, struct xdp_buff *xdp,
 		result = SXE2_XDP_PASS;
 		break;
 
-	case XDP_TX:
-		xdp_ring = rxq->vsi->xdp_rings.q[queue_index];
-		result = sxe2_xmit_xdp_buff(xdp, xdp_ring);
-		if (result == SXE2_XDP_TX)
-			xdp_stats->rx_xdp_tx_xmit++;
-		else
+	case XDP_TX: {
+		xdp_ring = rxq->xdp_ring;
+		if (unlikely(!xdp_ring)) {
+			WRITE_ONCE(rxq->xdp_prog, NULL);
+			xdp_prog = NULL;
 			xdp_stats->rx_xdp_tx_xmit_fail++;
-		break;
+			result = SXE2_XDP_CONSUMED;
+		} else {
+			result = __sxe2_xmit_xdp_ring(xdp, xdp_ring, false);
+			if (result == SXE2_XDP_TX)
+				xdp_stats->rx_xdp_tx_xmit++;
+			else
+				xdp_stats->rx_xdp_tx_xmit_fail++;
+		}
 
+		break;
+	}
 	case XDP_REDIRECT:
 		err = xdp_do_redirect(rxq->netdev, xdp, xdp_prog);
 		result = !err ? SXE2_XDP_REDIR : SXE2_XDP_CONSUMED;
@@ -1815,16 +2029,115 @@ void sxe2_xdp_tail_update(struct sxe2_queue *rxq, u32 xdp_res)
 	}
 }
 
+STATIC void sxe2_finalize_xdp_rx(struct sxe2_queue *xdp_ring, unsigned int xdp_res,
+				 u32 first_idx)
+{
+	struct sxe2_tx_buf *tx_buf = &xdp_ring->tx_buf[first_idx];
+
+	if (xdp_res & SXE2_XDP_REDIR)
+		xdp_do_flush_map();
+
+	if (xdp_res & SXE2_XDP_TX) {
+		tx_buf->rs_idx = sxe2_set_rs_bit(xdp_ring);
+		sxe2_xdp_tail_update(xdp_ring, xdp_res);
+	}
+}
+
+#ifdef HAVE_AF_XDP_MULTI_BUF_SUPPORT
+static int
+sxe2_add_xdp_frag(struct sxe2_queue *rxq, struct xdp_buff *xdp,
+		  struct sxe2_rx_buf *rx_buf, const unsigned int size)
+{
+	struct skb_shared_info *sinfo = xdp_get_shared_info_from_buff(xdp);
+
+	if (!size)
+		return 0;
+
+	if (!xdp_buff_has_frags(xdp)) {
+		sinfo->nr_frags = 0;
+		sinfo->xdp_frags_size = 0;
+		xdp_buff_set_frags_flag(xdp);
+	}
+
+	if (unlikely(sinfo->nr_frags == MAX_SKB_FRAGS))
+		return -ENOMEM;
+
+	__skb_fill_page_desc_noacc(sinfo, sinfo->nr_frags++, rx_buf->page,
+				   rx_buf->pg_offset, size);
+	sinfo->xdp_frags_size += size;
+	rxq->nr_frags = sinfo->nr_frags;
+
+	if (page_is_pfmemalloc(rx_buf->page))
+		xdp_buff_set_frag_pfmemalloc(xdp);
+
+	return 0;
+}
+
+static void sxe2_put_rx_mbuf(struct sxe2_queue *rxq, struct xdp_buff *xdp,
+			     u32 *xdp_xmit, u32 ntc, u32 verdict)
+{
+	u32 nr_frags = rxq->nr_frags + 1;
+	u32 idx = rxq->first_desc;
+	u32 cnt = rxq->depth;
+	u32 post_xdp_frags = 1;
+	struct sxe2_rx_buf *buf;
+	u32 i;
+
+	if (unlikely(xdp_buff_has_frags(xdp)))
+		post_xdp_frags += xdp_get_shared_info_from_buff(xdp)->nr_frags;
+
+	for (i = 0; i < post_xdp_frags; i++) {
+		buf = &rxq->rx_buf[idx];
+
+		if (verdict & (SXE2_XDP_TX | SXE2_XDP_REDIR)) {
+#ifdef HAVE_XDP_BUFF_FRAME_SZ
+			sxe2_rx_pg_offset_update(buf, xdp->frame_sz);
+#else
+			sxe2_rx_pg_offset_update(buf, sxe2_rx_frame_truesize(rxq, 0));
+#endif
+			*xdp_xmit |= verdict;
+		} else if (verdict & SXE2_XDP_CONSUMED) {
+			buf->drv_refcnt++;
+		} else if (verdict == SXE2_XDP_PASS) {
+#ifdef HAVE_XDP_BUFF_FRAME_SZ
+			sxe2_rx_pg_offset_update(buf, xdp->frame_sz);
+#else
+			sxe2_rx_pg_offset_update(buf, sxe2_rx_frame_truesize(rxq, 0));
+#endif
+		}
+
+		sxe2_rx_buffer_put_mbuf(rxq, buf);
+
+		if (++idx == cnt)
+			idx = 0;
+	}
+
+	for (; i < nr_frags; i++) {
+		buf = &rxq->rx_buf[idx];
+		sxe2_rx_buffer_put_mbuf(rxq, buf);
+		if (++idx == cnt)
+			idx = 0;
+	}
+
+	xdp->data = NULL;
+	rxq->first_desc = ntc;
+	rxq->nr_frags = 0;
+}
+
+#endif
+
 int sxe2_rxq_irq_clean(struct sxe2_queue *rxq, int budget)
 {
 	u32 total_rx_bytes = 0;
+	u32 xdp_res = 0;
 	u32 total_rx_pkts = 0;
 	u16 idle = SXE2_DESC_IDLE(rxq);
 	u32 offset = rxq->rx_offset;
 	struct sk_buff *skb = rxq->skb;
-	u32 xdp_res = 0;
 	u32 xdp_xmit = 0;
 	struct bpf_prog *xdp_prog = NULL;
+	struct sxe2_queue *xdp_ring = NULL;
+	u32 cached_ntu = 0;
 	struct xdp_buff xdp;
 	bool failure;
 	struct sxe2_adapter *adapter = rxq->vsi->adapter;
@@ -1854,6 +2167,17 @@ int sxe2_rxq_irq_clean(struct sxe2_queue *rxq, int budget)
 	}
 #endif
 
+	xdp_prog = READ_ONCE(rxq->xdp_prog);
+	if (xdp_prog) {
+		xdp_ring = rxq->xdp_ring;
+		if (unlikely(!xdp_ring)) {
+			WRITE_ONCE(rxq->xdp_prog, NULL);
+			xdp_prog = NULL;
+		} else {
+			cached_ntu = xdp_ring->next_to_use;
+		}
+	}
+
 	while (likely(total_rx_pkts < (u32)budget)) {
 		union sxe2_rx_desc *rx_desc;
 		union sxe2_rx_desc_fnav *rx_fnav_desc;
@@ -1864,7 +2188,6 @@ int sxe2_rxq_irq_clean(struct sxe2_queue *rxq, int budget)
 		u16 rx_ptype;
 
 		rx_desc = SXE2_RX_DESC(rxq, rxq->next_to_clean);
-
 #ifdef SXE2_CFG_DEBUG
 		if (test_bit(SXE2_DATAPATH_LOG_ENABLE, adapter->flags)) {
 			(void)snprintf(str, SXE2_LOG_STR_LEN - 1,
@@ -1915,16 +2238,7 @@ int sxe2_rxq_irq_clean(struct sxe2_queue *rxq, int budget)
 		}
 
 		hard_start = page_address(rx_buf->page) + rx_buf->pg_offset - offset;
-#ifdef HAVE_XDP_SUPPORT
 		xdp_prepare_buff(&xdp, hard_start, (int)offset, (int)size, true);
-#endif
-
-#ifdef HAVE_XDP_BUFF_FRAME_SZ
-#if (PAGE_SIZE > SXE2_PAGE_SIZE_4KB)
-		xdp.frame_sz = sxe2_rx_frame_truesize(rxq, size);
-#endif
-#endif
-
 		xdp_prog = READ_ONCE(rxq->xdp_prog);
 		if (!xdp_prog)
 			goto construct_skb;
@@ -2027,8 +2341,8 @@ construct_skb:
 
 	failure = sxe2_rx_buffers_alloc(rxq, idle);
 
-	if (xdp_prog)
-		sxe2_xdp_tail_update(rxq, xdp_xmit);
+	if (xdp_xmit)
+		sxe2_finalize_xdp_rx(xdp_ring, xdp_xmit, cached_ntu);
 
 	rxq->skb = skb;
 
@@ -2036,6 +2350,233 @@ construct_skb:
 
 	return failure ? budget : (int)total_rx_pkts;
 }
+
+#ifdef HAVE_AF_XDP_MULTI_BUF_SUPPORT
+static struct sxe2_rx_buf *sxe2_rx_buffer_get_mbuf(struct sxe2_queue *rxq,
+						   const u32 size)
+{
+	struct sxe2_rx_buf *rx_buffer = &rxq->rx_buf[rxq->next_to_clean];
+
+#ifdef SXE2_CFG_DEBUG
+	struct sxe2_adapter *adapter = rxq->vsi->adapter;
+#endif
+
+	prefetchw(rx_buffer->page);
+
+	if (!size)
+		return rx_buffer;
+
+	dma_sync_single_range_for_cpu(rxq->dev, rx_buffer->dma, rx_buffer->pg_offset,
+				      size, DMA_FROM_DEVICE);
+
+	rx_buffer->drv_refcnt--;
+
+#ifdef SXE2_CFG_DEBUG
+	if (test_bit(SXE2_DATAPATH_LOG_ENABLE, adapter->flags)) {
+		LOG_DEBUG_BDF("rxq[%u][%u] ntc:%u pkt len:%u \t"
+			      "drv_refcnt:0x%x pg_offset:%u rx_buffer[%u]:%p get\n",
+			      rxq->idx_in_vsi, rxq->idx_in_pf, rxq->next_to_clean,
+			      size, rx_buffer->drv_refcnt, rx_buffer->pg_offset,
+			      rxq->next_to_clean, rx_buffer);
+	}
+#endif
+
+	return rx_buffer;
+}
+
+int sxe2_rxq_irq_clean_mbuf(struct sxe2_queue *rxq, int budget)
+{
+	u32 total_rx_bytes = 0;
+	u32 total_rx_pkts = 0;
+	u32 offset = rxq->rx_offset;
+	struct sk_buff *skb;
+	u32 xdp_res = 0;
+	u32 xdp_xmit = 0;
+	struct bpf_prog *xdp_prog = NULL;
+#ifdef HAVE_AF_XDP_MULTI_BUF_SUPPORT
+	struct xdp_buff *xdp = &rxq->xdp;
+#else
+	struct xdp_buff  xdp_buf;
+	struct xdp_buff *xdp = &xdp_buf;
+#endif
+	u32 cached_ntu = 0;
+	bool failure;
+	struct sxe2_adapter *adapter = rxq->vsi->adapter;
+	struct sxe2_queue *xdp_ring = NULL;
+#ifdef SXE2_CFG_DEBUG
+#define SXE2_LOG_STR_LEN 32
+	char str[SXE2_LOG_STR_LEN] = {0};
+#endif
+#ifdef HAVE_XDP_BUFF_RXQ
+	xdp->rxq = &rxq->xdp_rxq;
+#endif
+
+#ifdef SXE2_CFG_DEBUG
+	if (test_bit(SXE2_DATAPATH_LOG_ENABLE, adapter->flags)) {
+		LOG_DEBUG_BDF("rxq[%u][%u] ntc:%u ntu:%u \t"
+			      "nta:%u budget:%u rxq_offset:%u \t"
+			      "descriptor idle:%u vsi:%p\n",
+			      rxq->idx_in_vsi, rxq->idx_in_pf, rxq->next_to_clean,
+			      rxq->next_to_use, rxq->next_to_alloc, budget, offset,
+			      SXE2_DESC_IDLE(rxq), rxq->vsi);
+	}
+#endif
+
+	xdp_prog = READ_ONCE(rxq->xdp_prog);
+	if (xdp_prog) {
+		xdp_ring = rxq->xdp_ring;
+		if (unlikely(!xdp_ring)) {
+			WRITE_ONCE(rxq->xdp_prog, NULL);
+			xdp_prog = NULL;
+		} else {
+			cached_ntu = xdp_ring->next_to_use;
+		}
+	}
+
+	while (likely(total_rx_pkts < (u32)budget)) {
+		union sxe2_rx_desc *rx_desc;
+		union sxe2_rx_desc_fnav *rx_fnav_desc;
+		struct sxe2_rx_buf *rx_buf;
+		u32 size;
+		u16 rx_ptype;
+
+		rx_desc = SXE2_RX_DESC(rxq, rxq->next_to_clean);
+
+#ifdef SXE2_CFG_DEBUG
+		if (test_bit(SXE2_DATAPATH_LOG_ENABLE, adapter->flags)) {
+			(void)snprintf(str, SXE2_LOG_STR_LEN - 1,
+				       "rxq[%d][%d] desc[%d]", rxq->idx_in_vsi,
+				       rxq->idx_in_pf, rxq->next_to_clean);
+			DATA_DUMP(rx_desc, sizeof(*rx_desc), str);
+		}
+#endif
+
+		if (!sxe2_desc_status0_err_test(rx_desc->wb.status0_err,
+						BIT(SXE2_RX_DESC_STATUS0_DD)))
+			break;
+
+		dma_rmb();
+
+		sxe2_trace(rx_pkt_clean_begin, rxq);
+
+		if ((rx_desc->wb.rxdid_src & SXE2_RX_DESC_RXDID_MASK) ==
+				    SXE2_RX_DESC_ID_FD ||
+		    !rxq->netdev) {
+			adapter->fnav_ctxt.pkt_err_cnt++;
+			rx_fnav_desc = (union sxe2_rx_desc_fnav *)rx_desc;
+#ifdef SXE2_CFG_DEBUG
+			if (test_bit(SXE2_DATAPATH_LOG_ENABLE, adapter->flags)) {
+				LOG_INFO_BDF("flowid=%u, fdid=%u, fd_prog_sts=%u",
+					     rx_fnav_desc->wb.flowid,
+					     rx_fnav_desc->wb.fdid,
+					     rx_fnav_desc->wb.fd_prog_sts);
+			}
+#endif
+
+			if (++rxq->next_to_clean == rxq->depth)
+				rxq->next_to_clean = 0;
+			rxq->first_desc = rxq->next_to_clean;
+			continue;
+		}
+
+		size = le32_to_cpu(rx_desc->wb.pktl_hdrl_status2) &
+		       SXE2_RX_DESC_PKT_LEN_MASK;
+
+		rx_buf = sxe2_rx_buffer_get_mbuf(rxq, size);
+
+		if (!xdp->data) {
+			void *hard_start;
+
+			hard_start = page_address(rx_buf->page) + rx_buf->pg_offset -
+				     offset;
+			xdp_prepare_buff(xdp, hard_start, offset, size, !!offset);
+			xdp_buff_clear_frags_flag(xdp);
+		} else if (sxe2_add_xdp_frag(rxq, xdp, rx_buf, size)) {
+			sxe2_put_rx_mbuf(rxq, xdp, NULL, rxq->next_to_clean, SXE2_XDP_CONSUMED);
+			break;
+		}
+
+		if (++rxq->next_to_clean == rxq->depth)
+			rxq->next_to_clean = 0;
+
+		if (sxe2_is_non_eop(rxq, rx_desc)) {
+			rxq->stats->rx_stats.rx_non_eop_descs++;
+			continue;
+		}
+
+#ifdef HAVE_XDP_SUPPORT
+		sxe2_xdp_meta_set_desc(xdp, rx_desc);
+
+		xdp_res = (u32)sxe2_xdp_run(rxq, xdp, xdp_prog);
+		if (!xdp_res)
+			goto construct_skb;
+#endif
+		total_rx_bytes += xdp_get_buff_len(xdp);
+		total_rx_pkts++;
+		sxe2_put_rx_mbuf(rxq, xdp, &xdp_xmit, rxq->next_to_clean, xdp_res);
+		continue;
+
+construct_skb:
+		if (test_bit(SXE2_RXQ_BUILD_SKB_ENABLED, &rxq->flags))
+			skb = sxe2_skb_build_mbuf(rxq, rx_buf, xdp, rx_desc);
+		else
+			skb = sxe2_skb_construct_mbuf(rxq, xdp, rx_desc);
+
+		if (!skb) {
+			rxq->stats->rx_stats.rx_buff_alloc_err++;
+			xdp_res = SXE2_XDP_CONSUMED;
+			sxe2_put_rx_mbuf(rxq, xdp, &xdp_xmit, rxq->next_to_clean,
+					 xdp_res);
+			break;
+		}
+
+#ifdef SXE2_CFG_DEBUG
+		if (test_bit(SXE2_DATAPATH_LOG_ENABLE, adapter->flags))
+			SKB_DUMP(skb);
+#endif
+		sxe2_put_rx_mbuf(rxq, xdp, &xdp_xmit, rxq->next_to_clean, xdp_res);
+
+		if (unlikely(sxe2_desc_status0_err_test(rx_desc->wb.status0_err,
+							BIT(SXE2_RX_DESC_ERROR_PA_ERR)))) {
+			rxq->stats->rx_stats.rx_pa_err++;
+		}
+
+		if (unlikely(sxe2_desc_status0_err_test(rx_desc->wb.status0_err,
+							BIT(SXE2_RX_DESC_ERROR_RXE)) ||
+			     sxe2_desc_status0_err_test(rx_desc->wb.status0_err,
+							BIT(SXE2_RX_DESC_ERROR_OVERSIZE)))) {
+			rxq->stats->rx_stats.rx_pkts_sw_drop++;
+			dev_kfree_skb_any(skb);
+			continue;
+		}
+
+		if (eth_skb_pad(skb))
+			continue;
+
+		total_rx_bytes += skb->len;
+
+		rx_ptype = le16_to_cpu(rx_desc->wb.ptype_status1) &
+			   SXE2_RX_DESC_PTYPE_MASK;
+
+		sxe2_skb_field_fill(rxq, rx_desc, skb, rx_ptype);
+
+		sxe2_trace(rx_pkt_clean_end, rxq);
+
+		(void)napi_gro_receive(&rxq->irq_data->napi, skb);
+
+		total_rx_pkts++;
+	}
+
+	failure = sxe2_rx_buffers_alloc(rxq, SXE2_RX_DESC_UNUSED(rxq));
+
+	if (xdp_xmit)
+		sxe2_finalize_xdp_rx(xdp_ring, xdp_xmit, cached_ntu);
+
+	sxe2_rxq_stats_update(rxq, total_rx_pkts, total_rx_bytes);
+
+	return failure ? budget : (int)total_rx_pkts;
+}
+#endif
 
 static bool sxe2_rx_buf_len_is_valid(u16 rx_buf_len)
 {
@@ -2102,7 +2643,7 @@ static bool sxe2_rxq_dis_param_is_valid(struct sxe2_adapter *adapter,
 		return false;
 	}
 
-	if (params->q_idx > vsi->rxqs.q_cnt) {
+	if (params->q_idx >= vsi->rxqs.q_cnt) {
 		LOG_ERROR_BDF(" rxq id:%u invalid max:%u vsi_id:%d.\n",
 			      params->q_idx, vsi->rxqs.q_cnt, params->vsi_id);
 		return false;
@@ -2185,6 +2726,7 @@ s32 sxe2_rxq_cfg_ena_common_handle(struct sxe2_adapter *adapter,
 l_err:
 	while (i) {
 		i--;
+		ctxt = &params->cfg[i];
 		rxq = vsi->rxqs.q[ctxt->queue_id];
 		if (sxe2_rxq_ctrl_set(adapter, rxq, false, true))
 			LOG_DEV_ERR("vsi:%u i:%u rxq:%u disable failed.\n",
@@ -2263,3 +2805,79 @@ s32 sxe2_rxq_ctrl_set(struct sxe2_adapter *adapter, struct sxe2_queue *rxq,
 l_out:
 	return ret;
 }
+
+#if defined(HAVE_AF_XDP_MULTI_BUF_SUPPORT) && defined(HAVE_XDP_METADATA_OPS)
+static int sxe2_xdp_rx_hw_ts(const struct xdp_md *ctx, u64 *ts_ns)
+{
+	return -ENODATA;
+}
+
+#ifdef HAVE_XMO_RX_HASH
+static u32 sxe2_get_rx_hash(const union sxe2_rx_desc *rx_desc)
+{
+	if (unlikely(rx_desc->wb.rxdid_src != SXE2_RX_DESC_TYPE_1588))
+		return 0;
+
+	return le32_to_cpu(rx_desc->wb.filter_status);
+}
+
+static enum xdp_rss_hash_type
+sxe2_xdp_rx_hash_type(const union sxe2_rx_desc *rx_desc)
+{
+	u16 rx_ptype = le16_to_cpu(rx_desc->wb.ptype_status1) &
+			   SXE2_RX_DESC_PTYPE_MASK;
+	return libie_rx_pt_parse(rx_ptype).hash_type;
+}
+
+static int sxe2_xdp_rx_hash(const struct xdp_md *ctx, u32 *hash,
+			    enum xdp_rss_hash_type *rss_type)
+{
+	const struct sxe2_xdp_buff *xdp_ext = (void *)ctx;
+
+	*hash = sxe2_get_rx_hash(xdp_ext->eop_desc);
+	*rss_type = sxe2_xdp_rx_hash_type(xdp_ext->eop_desc);
+	if (!likely(*hash))
+		return -ENODATA;
+
+	return 0;
+}
+#endif
+static inline u16
+sxe2_get_vlan_tci(const union sxe2_rx_desc *rx_desc)
+{
+	return 0;
+}
+
+#ifdef HAVE_XDP_RX_VLAN_TAG
+STATIC int sxe2_xdp_rx_vlan_tag(const struct xdp_md *ctx, __be16 *vlan_proto,
+				u16 *vlan_tci)
+{
+	const struct sxe2_xdp_buff *xdp_ext = (void *)ctx;
+
+	*vlan_proto = xdp_ext->pkt_ctx->vlan_proto;
+	if (!*vlan_proto)
+		return -ENODATA;
+
+	*vlan_tci = sxe2_get_vlan_tci(xdp_ext->eop_desc);
+	if (!*vlan_tci)
+		return -ENODATA;
+
+	return 0;
+}
+#endif
+
+static struct xdp_metadata_ops sxe2_xdp_md_ops = {
+	.xmo_rx_timestamp		= sxe2_xdp_rx_hw_ts,
+#ifdef HAVE_XDP_RX_VLAN_TAG
+	.xmo_rx_vlan_tag		= sxe2_xdp_rx_vlan_tag,
+#endif
+#ifdef HAVE_XMO_RX_HASH
+	.xmo_rx_hash			= sxe2_xdp_rx_hash,
+#endif
+};
+
+struct xdp_metadata_ops *sxe2_get_xdp_md_ops(void)
+{
+	return &sxe2_xdp_md_ops;
+}
+#endif

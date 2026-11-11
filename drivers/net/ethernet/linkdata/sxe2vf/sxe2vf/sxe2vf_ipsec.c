@@ -49,6 +49,29 @@ enum sxe2vf_rx_ipsec_status {
 	SXE2VF_IPSEC_MACSEC_BYPASS
 };
 
+#ifdef XDO_DEV_STATE_NEED_NETDEV_PARAM
+int sxe2vf_ipsec_state_add(struct net_device *netdev, struct xfrm_state *xs,
+			   struct netlink_ext_ack *extack);
+
+void sxe2vf_ipsec_state_delete(struct net_device *netdev, struct xfrm_state *xs);
+
+void sxe2vf_ipsec_state_free(struct net_device *netdev, struct xfrm_state *xs);
+
+#else
+
+#ifdef IPSEC_STATE_ADD_API_NEED_1_PARAMS
+int sxe2vf_ipsec_state_add(struct xfrm_state *xs);
+#else
+int sxe2vf_ipsec_state_add(struct xfrm_state *xs,
+			   struct netlink_ext_ack *extack);
+#endif
+void sxe2vf_ipsec_state_delete(struct xfrm_state *xs);
+
+void sxe2vf_ipsec_state_free(struct xfrm_state *xs);
+#endif
+
+bool sxe2vf_ipsec_offload_ok(struct sk_buff *skb, struct xfrm_state *xs);
+
 static s32 sxe2vf_ipsec_xs_validate(struct xfrm_state *xs)
 {
 #ifdef IPSEC_HAVE_REAL_DEV
@@ -126,7 +149,7 @@ static s32 sxe2vf_ipsec_xs_validate(struct xfrm_state *xs)
 	return 0;
 }
 
-static int sxe2vf_ipsec_parse_proto_keys(struct xfrm_state *xs, u8 *ealg_key,
+STATIC int sxe2vf_ipsec_parse_proto_keys(struct xfrm_state *xs, u8 *ealg_key,
 					 u8 *aalg_key)
 {
 #ifdef IPSEC_HAVE_REAL_DEV
@@ -192,7 +215,7 @@ static int sxe2vf_ipsec_parse_proto_keys(struct xfrm_state *xs, u8 *ealg_key,
 			       SXE2VF_IPSEC_SMAUTH_LENGTH);
 		}
 	} else {
-		LOG_ERROR_BDF("wrong aelg name:%s .\n", xs->ealg->alg_name);
+		LOG_ERROR_BDF("wrong ealg name:%s .\n", xs->ealg->alg_name);
 		return -EINVAL;
 	}
 	return 0;
@@ -203,7 +226,7 @@ bool sxe2vf_is_ipsec_offload_enable(struct net_device *netdev)
 	return netdev->features & NETIF_F_HW_ESP;
 }
 
-static s32 sxe2vf_ipsec_empty_rxtable_find(struct sxe2vf_adapter *adapter)
+STATIC s32 sxe2vf_ipsec_empty_rxtable_find(struct sxe2vf_adapter *adapter)
 {
 	u16 i;
 	struct sxe2vf_ipsec_context *ipsec = &adapter->ipsec_ctxt;
@@ -288,7 +311,7 @@ static s32 sxe2vf_ipsec_rx_state_add(struct sxe2vf_adapter *adapter,
 	return 0;
 }
 
-static s32 sxe2vf_ipsec_empty_txtable_find(struct sxe2vf_adapter *adapter)
+STATIC s32 sxe2vf_ipsec_empty_txtable_find(struct sxe2vf_adapter *adapter)
 {
 	u32 i;
 	struct sxe2vf_ipsec_context *ipsec = &adapter->ipsec_ctxt;
@@ -307,7 +330,7 @@ out_full:
 	return -ENOSPC;
 }
 
-static struct sxe2vf_tx_sa *sxe2vf_ipsec_tx_sa_find(struct sxe2vf_adapter *adapter,
+STATIC struct sxe2vf_tx_sa *sxe2vf_ipsec_tx_sa_find(struct sxe2vf_adapter *adapter,
 						    u32 index)
 {
 	struct sxe2vf_ipsec_context *ipsec = &adapter->ipsec_ctxt;
@@ -330,7 +353,7 @@ out:
 	return NULL;
 }
 
-static s32 sxe2vf_ipsec_tx_state_add(struct sxe2vf_adapter *adapter,
+STATIC s32 sxe2vf_ipsec_tx_state_add(struct sxe2vf_adapter *adapter,
 				     struct xfrm_state *xs)
 {
 	struct sxe2vf_ipsec_context *ipsec = &adapter->ipsec_ctxt;
@@ -381,16 +404,21 @@ static s32 sxe2vf_ipsec_tx_state_add(struct sxe2vf_adapter *adapter,
 }
 
 #ifdef IPSEC_STATE_ADD_API_NEED_1_PARAMS
-static int sxe2vf_ipsec_state_add(struct xfrm_state *xs)
+int sxe2vf_ipsec_state_add(struct xfrm_state *xs)
+#elif defined(XDO_DEV_STATE_NEED_NETDEV_PARAM)
+int sxe2vf_ipsec_state_add(struct net_device *netdev, struct xfrm_state *xs,
+			   struct netlink_ext_ack *extack)
 #else
-static int sxe2vf_ipsec_state_add(struct xfrm_state *xs,
-				  struct netlink_ext_ack *extack)
+int sxe2vf_ipsec_state_add(struct xfrm_state *xs,
+			   struct netlink_ext_ack *extack)
 #endif
 {
+#ifndef XDO_DEV_STATE_NEED_NETDEV_PARAM
 #ifdef IPSEC_HAVE_REAL_DEV
 	struct net_device *netdev = xs->xso.real_dev;
 #else
 	struct net_device *netdev = xs->xso.dev;
+#endif
 #endif
 	struct sxe2vf_adapter *adapter = netdev_priv(netdev);
 	s32 ret;
@@ -456,7 +484,7 @@ out:
 	return NULL;
 }
 
-static struct sxe2vf_rx_sa *
+STATIC struct sxe2vf_rx_sa *
 sxe2vf_ipsec_rx_sa_find_rcu(struct sxe2vf_adapter *adapter, u32 index, u32 spi)
 {
 	struct sxe2vf_rx_sa *rsa = NULL;
@@ -488,7 +516,7 @@ sxe2vf_ipsec_rx_sa_find_rcu(struct sxe2vf_adapter *adapter, u32 index, u32 spi)
 	return rsa;
 }
 
-static void sxe2vf_ipsec_rx_state_clear(struct sxe2vf_adapter *adapter,
+STATIC void sxe2vf_ipsec_rx_state_clear(struct sxe2vf_adapter *adapter,
 					struct sxe2vf_rx_sa *rsa)
 {
 	struct sxe2vf_ipsec_context *ipsec = &adapter->ipsec_ctxt;
@@ -510,7 +538,7 @@ static void sxe2vf_ipsec_rx_state_clear(struct sxe2vf_adapter *adapter,
 	LOG_DEBUG_BDF("[count--]current rx sa cnt is %d\n", ipsec->rx_sa_cnt);
 }
 
-static void sxe2vf_ipsec_tx_state_clear(struct sxe2vf_adapter *adapter,
+STATIC void sxe2vf_ipsec_tx_state_clear(struct sxe2vf_adapter *adapter,
 					struct sxe2vf_tx_sa *tsa)
 {
 	struct sxe2vf_ipsec_context *ipsec = &adapter->ipsec_ctxt;
@@ -534,12 +562,18 @@ static void sxe2vf_ipsec_tx_state_clear(struct sxe2vf_adapter *adapter,
 	LOG_DEBUG_BDF("[count--]current tx sa cnt is %d\n", ipsec->tx_sa_cnt);
 }
 
-static void sxe2vf_ipsec_state_delete(struct xfrm_state *xs)
+#ifdef XDO_DEV_STATE_NEED_NETDEV_PARAM
+void sxe2vf_ipsec_state_delete(struct net_device *netdev, struct xfrm_state *xs)
+#else
+void sxe2vf_ipsec_state_delete(struct xfrm_state *xs)
+#endif
 {
+#ifndef XDO_DEV_STATE_NEED_NETDEV_PARAM
 #ifdef IPSEC_HAVE_REAL_DEV
 	struct net_device *netdev = xs->xso.real_dev;
 #else
 	struct net_device *netdev = xs->xso.dev;
+#endif
 #endif
 	struct sxe2vf_adapter *adapter = netdev_priv(netdev);
 	struct sxe2vf_ipsec_context *ipsec = &adapter->ipsec_ctxt;
@@ -568,12 +602,18 @@ static void sxe2vf_ipsec_state_delete(struct xfrm_state *xs)
 	}
 }
 
-static void sxe2vf_ipsec_state_free(struct xfrm_state *xs)
+#ifdef XDO_DEV_STATE_NEED_NETDEV_PARAM
+void sxe2vf_ipsec_state_free(struct net_device *netdev, struct xfrm_state *xs)
+#else
+void sxe2vf_ipsec_state_free(struct xfrm_state *xs)
+#endif
 {
+#ifndef XDO_DEV_STATE_NEED_NETDEV_PARAM
 #ifdef IPSEC_HAVE_REAL_DEV
 	struct net_device *netdev = xs->xso.real_dev;
 #else
 	struct net_device *netdev = xs->xso.dev;
+#endif
 #endif
 	struct sxe2vf_adapter *adapter = netdev_priv(netdev);
 	struct sxe2vf_rx_sa *rx_sa = NULL;
@@ -614,7 +654,7 @@ static void sxe2vf_ipsec_state_free(struct xfrm_state *xs)
 	}
 }
 
-static bool sxe2vf_ipsec_offload_ok(struct sk_buff *skb, struct xfrm_state *xs)
+bool sxe2vf_ipsec_offload_ok(struct sk_buff *skb, struct xfrm_state *xs)
 {
 	if (xs->props.family == AF_INET) {
 		if (ip_hdr(skb)->ihl != 5)
@@ -630,16 +670,20 @@ static bool sxe2vf_ipsec_offload_ok(struct sk_buff *skb, struct xfrm_state *xs)
 	return true;
 }
 
+#ifdef CONFIG_XFRM_OFFLOAD
 const struct xfrmdev_ops sxe2vf_ipsec_ops = {
 		.xdo_dev_state_add = sxe2vf_ipsec_state_add,
 		.xdo_dev_state_delete = sxe2vf_ipsec_state_delete,
 		.xdo_dev_state_free = sxe2vf_ipsec_state_free,
 		.xdo_dev_offload_ok = sxe2vf_ipsec_offload_ok,
 };
+#endif
 
 s32 sxe2vf_ipsec_init(struct sxe2vf_adapter *adapter)
 {
+#ifdef CONFIG_XFRM_OFFLOAD
 	struct net_device *netdev = adapter->netdev;
+#endif
 	struct sxe2vf_ipsec_context *ipsec = &adapter->ipsec_ctxt;
 	s32 ret = 0;
 	u32 size;
@@ -656,7 +700,13 @@ s32 sxe2vf_ipsec_init(struct sxe2vf_adapter *adapter)
 	LOG_DEBUG_BDF("[init]current ipsec depth:[tx:%d rx:%d]\n",
 		      ipsec->max_tx_sa_cnt, ipsec->max_rx_sa_cnt);
 
-	if (ipsec->max_tx_sa_cnt == 0 && ipsec->max_rx_sa_cnt == 0) {
+	if (ipsec->max_tx_sa_cnt == 0 &&
+	    ipsec->max_rx_sa_cnt == 0) {
+#ifdef CONFIG_XFRM_OFFLOAD
+		netdev->hw_features &= ~NETIF_F_HW_ESP;
+		netdev->hw_enc_features &= ~NETIF_F_HW_ESP;
+		netdev->features &= ~NETIF_F_HW_ESP;
+#endif
 		ret = 0;
 		goto l_disable;
 	}
@@ -682,7 +732,9 @@ s32 sxe2vf_ipsec_init(struct sxe2vf_adapter *adapter)
 	hash_init(ipsec->rx_sa_list);
 	spin_lock_init(&ipsec->rx_hlist_lock);
 	(void)memset(&ipsec->hw_stats, 0x0, sizeof(struct sxe2vf_ipsec_hw_stats));
+#ifdef CONFIG_XFRM_OFFLOAD
 	netdev->xfrmdev_ops = &sxe2vf_ipsec_ops;
+#endif
 	ipsec->status = SXE2VF_IPSEC_READY;
 
 l_disable:
@@ -703,11 +755,15 @@ void sxe2vf_ipsec_deinit(struct sxe2vf_adapter *adapter)
 	struct sxe2vf_ipsec_context *ipsec = &adapter->ipsec_ctxt;
 
 	ipsec->status = SXE2VF_IPSEC_UNINITIALIZED;
-	kfree(ipsec->rx_sa_table);
-	ipsec->rx_sa_table = NULL;
+	if (ipsec->rx_sa_table) {
+		kfree_sensitive(ipsec->rx_sa_table);
+		ipsec->rx_sa_table = NULL;
+	}
 
-	kfree(ipsec->tx_sa_table);
-	ipsec->tx_sa_table = NULL;
+	if (ipsec->tx_sa_table) {
+		kfree_sensitive(ipsec->tx_sa_table);
+		ipsec->tx_sa_table = NULL;
+	}
 
 	mutex_destroy(&ipsec->context_lock);
 }
@@ -993,7 +1049,11 @@ s32 sxe2vf_ipsec_rebuild(struct sxe2vf_adapter *adapter)
 
 		ret = sxe2vf_ipsec_add_txsa_msg_send(adapter, tsa, true);
 		if (ret) {
+#ifdef XDO_DEV_STATE_NEED_NETDEV_PARAM
+			sxe2vf_ipsec_state_delete(adapter->netdev, tsa->xs);
+#else
 			sxe2vf_ipsec_state_delete(tsa->xs);
+#endif
 			tsa->used = false;
 			ipsec->tx_sa_cnt--;
 			LOG_DEV_ERR("failed to request Tx SA[spi:0x%x] in reset, \t"
@@ -1013,7 +1073,11 @@ s32 sxe2vf_ipsec_rebuild(struct sxe2vf_adapter *adapter)
 
 		ret = sxe2vf_ipsec_add_rxsa_msg_send(adapter, rsa, true);
 		if (ret) {
+#ifdef XDO_DEV_STATE_NEED_NETDEV_PARAM
+			sxe2vf_ipsec_state_delete(adapter->netdev, rsa->xs);
+#else
 			sxe2vf_ipsec_state_delete(rsa->xs);
+#endif
 			rsa->used = false;
 			ipsec->rx_sa_cnt--;
 			LOG_DEV_ERR("failed to request Tx SA[spi:0x%x] in reset, \t"

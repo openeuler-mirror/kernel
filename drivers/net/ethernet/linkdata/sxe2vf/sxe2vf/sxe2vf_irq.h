@@ -39,9 +39,9 @@ struct sxe2vf_adapter;
 #define SXE2VF_EVENT_MSIX_CNT    1
 #define SXE2VF_DPDK_MSIX_MIN_CNT 1
 #define SXE2VF_RDMA_MSIX_MIN_CNT 1
-#define SXE2VF_DPDK_MSIX_MAX_CNT 16
+#define SXE2VF_DPDK_MSIX_MAX_CNT 64
 
-#define SXE2VF_IRQ_MAX_CNT (64 + SXE2VF_EVENT_MSIX_CNT)
+#define SXE2VF_IRQ_MAX_CNT (128 + SXE2VF_EVENT_MSIX_CNT)
 #define SXE2VF_DFLT_NUM_RX_DESC 512
 #define SXE2VF_DFLT_NUM_TX_DESC 512
 #define SXE2VF_MAX_NUM_DESC 8160
@@ -95,7 +95,7 @@ struct sxe2vf_irq_data {
 	u16 irq_idx;
 	u8 rate_limit;
 	u8 q_cnt;
-	u32 q_bitmap;
+	u64 q_bitmap;
 	u8 multiple_polling : 1;
 	u8 pad : 7;
 	u8 reserve[3];
@@ -126,6 +126,23 @@ struct sxe2vf_vsi_irqs {
 		*coalesce;
 };
 
+struct sxe2vf_irq_pool_entry {
+	u16 idx_in_pf;
+	unsigned int irqn;
+	bool requested;
+	struct sxe2vf_irq_data *irq_data;
+	struct sxe2vf_irq_pool *pool;
+	cpumask_t affinity_mask;
+	struct irq_affinity_notify affinity_notify;
+	s8 name[SXE2VF_IRQ_NAME_MAX_LEN];
+};
+
+struct sxe2vf_irq_pool {
+	struct sxe2vf_irq_pool_entry *entries;
+	struct mutex lock;
+	u16 cnt;
+};
+
 struct sxe2vf_irq_context {
 	u16 max_cnt;
 	struct msix_entry *msix_entries;
@@ -138,6 +155,7 @@ struct sxe2vf_irq_context {
 	u16 rdma_offset;
 	u16 msix_cnt;
 	u16 itr_gran;
+	struct sxe2vf_irq_pool pool;
 };
 
 irqreturn_t sxe2vf_event_irq_handler(int irq, void *data);
@@ -163,6 +181,10 @@ s32 sxe2vf_main_vsi_create(struct sxe2vf_adapter *adapter);
 s32 sxe2vf_irq_init(struct sxe2vf_adapter *adapter);
 
 void sxe2vf_irq_deinit(struct sxe2vf_adapter *adapter);
+
+s32 sxe2vf_irq_pool_init(struct sxe2vf_adapter *adapter);
+
+void sxe2vf_irq_pool_destroy(struct sxe2vf_adapter *adapter);
 
 void sxe2vf_queue_irq_enable(struct sxe2vf_vsi *vsi);
 

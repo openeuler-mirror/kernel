@@ -616,6 +616,7 @@ void sxe2_drv_inject_create_debugfs_files(struct sxe2_rdma_device *dev)
 	struct sxe2_inject_debug *dbg_node = NULL;
 
 	dbg_node	   = &dev->rdma_func->inject_dbg;
+	spin_lock_init(&dbg_node->dbg_lock);
 	dbg_node->dbg_root = sxe2_debugfs_create_dir(
 		"inject", sxe2_drv_debugfs_get_dev_root(dev));
 	if (IS_ERR_OR_NULL(dbg_node->dbg_root)) {
@@ -639,9 +640,6 @@ void sxe2_drv_inject_create_debugfs_files(struct sxe2_rdma_device *dev)
 				 SXE2_INJECT_DEBUG_FILE_WRITE_ONLY,
 				 dbg_node->dbg_root, dev->rdma_func,
 				 &inject_deactive_fops);
-
-	spin_lock_init(&dbg_node->dbg_lock);
-
 end:
 	return;
 }

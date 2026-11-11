@@ -44,10 +44,11 @@ struct sxe2_com_irq_entry {
 
 struct sxe2_com_irqs_ctxt {
 	/* in order to protect the data */
-	struct mutex lock;
 	struct atomic_notifier_head irq_nh;
 	u32 num_irqs;
 	struct sxe2_com_irq_entry *entry;
+	struct file *io_irq_owner;
+
 	/* in order to protect the data */
 	spinlock_t evt_lock;
 	struct eventfd_ctx *evt_trigger;
@@ -63,6 +64,8 @@ s32 sxe2_com_irq_notifier_call_chain(struct sxe2_com_context *com_ctxt,
 				     enum sxe2_com_event_cause ec);
 
 s32 sxe2_com_io_irq_req(struct sxe2_com_context *com_ctxt, unsigned long arg);
+
+void sxe2_com_io_irq_clear(struct sxe2_com_context *com_ctxt);
 
 s32 sxe2_com_event_irq_req(struct sxe2_com_context *com_ctxt, unsigned long arg);
 s32 sxe2_com_reset_irq_req(struct sxe2_com_context *com_ctxt, unsigned long arg);

@@ -359,7 +359,7 @@ static int sxe2_setup_umode_qp(struct ib_udata *udata,
 	qp->qp_umem = ib_umem_get(&rdma_dev->ibdev, req.user_wqe_bufs, buf_size,
 				  IB_ACCESS_LOCAL_WRITE);
 #endif
-	if (!qp->qp_umem) {
+	if (IS_ERR(qp->qp_umem)) {
 		DRV_RDMA_LOG_DEV_ERR("qp umem ib_umem_get failed ret %ld\n", PTR_ERR(qp->qp_umem));
 		ret = -EINVAL;
 		goto end;
@@ -396,7 +396,7 @@ static int sxe2_setup_umode_qp(struct ib_udata *udata,
 				       SZ_4K, IB_ACCESS_LOCAL_WRITE);
 #endif
 
-	if (!qp->db_note_umem) {
+	if (IS_ERR(qp->db_note_umem)) {
 		ret = -EINVAL;
 		DRV_RDMA_LOG_DEV_ERR("dbnote umem ib_umem_get failed\n");
 		goto free_pble;
@@ -577,7 +577,7 @@ static void sxe2_free_qp_buf(struct sxe2_rdma_qp *qp,
 {
 	struct sxe2_rdma_device *device = to_rdmadev(dev);
 
-	if (udata) {
+	if (udata || qp->user_mod) {
 		ib_umem_release(qp->qp_umem);
 		if (qp->wqe_access_mod == SXE2_QP_WQE_ACCESS_MOD_1) {
 			sxe2_pbl_free_pble(
@@ -807,7 +807,7 @@ static void sxe2_ctx_qp_setctx_roce(struct sxe2_rdma_qp *qp, u64 *ctx_va)
 static void sxe2_print_qpc_info(struct sxe2_rdma_device *rdma_dev,
 				struct sxe2_qpc *qpc)
 {
-	DRV_RDMA_LOG_DEV_DEBUG(
+	DRV_RDMA_LOG_DEV_INFO(
 		"\nack_timeout(%llu) retry_mode(%llu) credit_en(%llu)\n"
 		"\trqe_lwm(%llu)\n"
 		"\tretry_resp_op_sel(%llu) log_rtm(%llu) qp_state(%llu) dqpn(%#llx)\n"
@@ -876,7 +876,7 @@ static void sxe2_print_qpc_info(struct sxe2_rdma_device *rdma_dev,
 }
 
 static void sxe2_fill_and_set_qpctx_info(struct sxe2_rdma_qp *qp,
-					 struct sxe2_qp_host_ctx_info *ctx_info)
+					 struct sxe2_qp_host_ctx_info *ctx_info, struct ib_udata *udata)
 {
 	struct sxe2_rdma_device *rdma_dev = qp->dev;
 	struct sxe2_rdma_ctx_dev *dev	  = &rdma_dev->rdma_func->ctx_dev;
@@ -919,9 +919,12 @@ static void sxe2_fill_and_set_qpctx_info(struct sxe2_rdma_qp *qp,
 	ctx_info->qp_bucket_type    = SXE2_QP_BUCKET_128K;
 	ctx_info->dispatch_min_unit = 54;
 	ctx_info->dispatch_mode	    = 1;
-	ctx_info->udp_info->min_rnr_timer = SXE2_RDMA_MIN_RNR_NAK_DEFAULT;
+	if (udata && rdma_dev->rdma_func->user_min_rnr_timer_en)
+		ctx_info->udp_info->min_rnr_timer = rdma_dev->rdma_func->user_min_rnr_timer_val;
+	else if (!udata && rdma_dev->rdma_func->kernel_min_rnr_timer_en)
+		ctx_info->udp_info->min_rnr_timer = rdma_dev->rdma_func->kernel_min_rnr_timer_val;
 	sxe2_ctx_qp_setctx_roce(qp, qp->host_ctx.va);
-	DRV_RDMA_LOG_DEV_DEBUG("create qp%#x qpc print:\n", qp->ibqp.qp_num);
+	DRV_RDMA_LOG_DEV_INFO("create qp%#x qpc print:\n", qp->ibqp.qp_num);
 	sxe2_print_qpc_info(rdma_dev, qp->host_ctx.va);
 }
 
@@ -1489,18 +1492,19 @@ int sxe2_rdma_qp_init(struct ib_qp_init_attr *init_attr, struct ib_udata *udata,
 	}
 
 	qp->sw_cc_enable = SXE2_QP_DISABLE_SW_CC;
-	if ((rf->cc_params.dcqcn_enable || rf->cc_params.timely_enable) &&
+	if (((rf->cc_params.dcqcn_enable == SXE2_CC_DCQCN_MODE_SW) ||
+		rf->cc_params.timely_enable) &&
 	    init_attr->qp_type == IB_QPT_RC) {
 		mutex_lock(&rf->cc_refcount.refcount_lock);
 		if ((u32)atomic_read(&rf->cc_refcount.cc_qp_refcount) <
 		    rf->max_cc_qp_cnt) {
 			atomic_inc(&rf->cc_refcount.cc_qp_refcount);
-			if (rf->cc_params.dcqcn_enable &&
+			if ((rf->cc_params.dcqcn_enable == SXE2_CC_DCQCN_MODE_SW) &&
 			    rf->cc_params.timely_enable) {
 				qp->sw_cc_enable = SXE2_QP_ENABLE_DCQCN_TIMLEY;
 			} else {
 				qp->sw_cc_enable =
-					(rf->cc_params.dcqcn_enable == true) ?
+					(rf->cc_params.dcqcn_enable == SXE2_CC_DCQCN_MODE_SW) ?
 						SXE2_QP_ENABLE_DCQCN :
 						SXE2_QP_ENABLE_TIMELY;
 			}
@@ -1659,7 +1663,7 @@ struct ib_qp *sxe2_kcreate_qp(struct ib_pd *ibpd,
 	ctx_info->send_cq_num = qp->send_cq->cq_ctx.cq_uk.cq_id;
 	ctx_info->rcv_cq_num  = qp->recv_cq->cq_ctx.cq_uk.cq_id;
 	ctx_info->src_vsi     = rdma_dev->vsi.vsi_idx;
-	sxe2_fill_and_set_qpctx_info(qp, ctx_info);
+	sxe2_fill_and_set_qpctx_info(qp, ctx_info, udata);
 	ret = sxe2_mq_create_qp_cmd(qp);
 	if (ret) {
 		DRV_RDMA_LOG_DEV_ERR("sxe2_mq_create_qp_cmd failed , err(%d)\n",
@@ -1762,7 +1766,7 @@ int sxe2_kcreate_qp(struct ib_qp *ibqp, struct ib_qp_init_attr *init_attr,
 	ctx_info->send_cq_num = qp->send_cq->cq_ctx.cq_uk.cq_id;
 	ctx_info->rcv_cq_num = qp->recv_cq->cq_ctx.cq_uk.cq_id;
 	ctx_info->src_vsi = rdma_dev->vsi.vsi_idx;
-	sxe2_fill_and_set_qpctx_info(qp, ctx_info);
+	sxe2_fill_and_set_qpctx_info(qp, ctx_info, udata);
 	ret = sxe2_mq_create_qp_cmd(qp);
 	if (ret) {
 		DRV_RDMA_LOG_DEV_ERR("sxe2_mq_create_qp_cmd failed , err(%d)\n",
@@ -1874,27 +1878,62 @@ end:
 static int sxe2_set_roce_cm_info(struct sxe2_rdma_qp *qp,
 				 struct ib_qp_attr *attr, u16 *vlan_id)
 {
+#ifdef GRH_NOT_SUPPORT_SGID
+	union ib_gid sgid = {};
+	struct ib_gid_attr sgid_attr = {};
+#else
 	const struct ib_gid_attr *sgid_attr;
+#endif
 	int ret		   = 0;
 	struct sxe2_av *av = &qp->roce_ah.av;
+	struct net_device *ndev;
 
-	sgid_attr = attr->ah_attr.grh.sgid_attr;
-	if (sgid_attr->ndev) {
-#ifdef HAVE_NO_FIELD_GID
-		*vlan_id = rdma_vlan_dev_vlan_id(sgid_attr->ndev);
-		ether_addr_copy(qp->ctx_info.roce_info->mac_addr,
-				sgid_attr->ndev->dev_addr);
+#ifdef GRH_NOT_SUPPORT_SGID
+	ret = ib_query_gid(&qp->dev->ibdev, attr->ah_attr.port_num,
+				attr->ah_attr.grh.sgid_index, &sgid, &sgid_attr);
+	if (ret)
+		goto end;
 #else
-		ret = rdma_read_gid_l2_fields(sgid_attr, vlan_id,
-					      qp->ctx_info.roce_info->mac_addr);
+	sgid_attr = attr->ah_attr.grh.sgid_attr;
 #endif
-		if (ret)
-			goto end;
+	rcu_read_lock();
+#ifdef GRH_NOT_SUPPORT_SGID
+	ndev = rcu_dereference(sgid_attr.ndev);
+#else
+	ndev = rcu_dereference(sgid_attr->ndev);
+#endif
+	if (!ndev) {
+		ret = -ENODEV;
+		rcu_read_unlock();
+		goto end;
 	}
+#ifdef HAVE_NO_FIELD_GID
+	*vlan_id = rdma_vlan_dev_vlan_id(ndev);
+	ether_addr_copy(qp->ctx_info.roce_info->mac_addr,
+			ndev->dev_addr);
+#else
+#ifdef GRH_NOT_SUPPORT_SGID
+	ret = rdma_read_gid_l2_fields(&sgid_attr, vlan_id,
+						qp->ctx_info.roce_info->mac_addr);
+#else
+	ret = rdma_read_gid_l2_fields(sgid_attr, vlan_id,
+						qp->ctx_info.roce_info->mac_addr);
+#endif
+#endif
+	rcu_read_unlock();
+	if (ret)
+		goto end;
+#ifdef GRH_NOT_SUPPORT_SGID
+	av->net_type = ib_gid_to_network_type(sgid_attr.gid_type, &sgid);
+	rdma_gid2ip((struct sockaddr *)&av->sgid_addr, &sgid);
+	qp->ctx_info.user_pri =
+		sxe2_roce_get_vlan_prio(ndev, qp->ctx_info.user_pri);
+#else
 	av->net_type = rdma_gid_attr_network_type(sgid_attr);
 	rdma_gid2ip((struct sockaddr *)&av->sgid_addr, &sgid_attr->gid);
 	qp->ctx_info.user_pri =
-		sxe2_roce_get_vlan_prio(sgid_attr->ndev, qp->ctx_info.user_pri);
+		sxe2_roce_get_vlan_prio(ndev, qp->ctx_info.user_pri);
+#endif
 	qp->qp_ctx.user_pri = qp->ctx_info.user_pri;
 end:
 	return ret;
@@ -2010,19 +2049,21 @@ static int drv_ib_rate_to_sxe2(struct sxe2_rdma_qp *qp, u8 rate)
 		}
 	}
 	if (port_active_speed == SXE2_LINK_SPEED_UNKNOWN) {
-		ret = -EPERM;
-		DRV_RDMA_LOG_DEV_ERR("qp:port active speed is unknown\n");
-		goto end;
+		if (!rdma_dev->lag_mode) {
+			ret = -EPERM;
+			DRV_RDMA_LOG_DEV_ERR("qp:port active speed is unknown\n");
+			goto end;
+		}
 	}
 	if (rate == IB_RATE_PORT_CURRENT) {
-		rel_rate = port_active_speed;
+		rel_rate = SXE2_LINK_SPEED_100G;
 		DRV_RDMA_LOG_DEV_DEBUG("qp:rate %u rel rate %u\n", rate, rel_rate);
 	} else if (rate < SXE2_IB_RATE_2_5_GBPS || rate > SXE2_IB_RATE_600_GBPS) {
 		ret = -EINVAL;
 		goto end;
 	} else {
 		rel_rate = ib_rate_to_real_rate[rate];
-		if (rel_rate > port_active_speed)
+		if (!rdma_dev->lag_mode && (rel_rate > port_active_speed))
 			rel_rate = port_active_speed;
 	}
 	qp->ctx_info.roce_info->state_rate = drv_rel_rate_to_stat_rate(rel_rate);
@@ -2237,7 +2278,7 @@ static int sxe2_modify_qp_qset_and_vlan_set(struct ib_qp *ibqp,
 		DRV_RDMA_LOG_DEV_ERR(
 			"sxe2_qos_qp_add_qos fail, aa(%d), ret(%d)\n",
 			rdma_dev->vsi.lag_aa, ret);
-		goto end;
+		goto unregist_qset;
 	}
 	if (vlan_id >= VLAN_N_VID && rdma_dev->dcb_vlan_mode)
 		vlan_id = 0;
@@ -2251,6 +2292,12 @@ static int sxe2_modify_qp_qset_and_vlan_set(struct ib_qp *ibqp,
 
 end:
 	return ret;
+unregist_qset:
+	if (rdma_dev->vsi.lag_aa)
+		sxe2_qos_unregister_qset_bond(&rdma_dev->vsi, ctx_info->user_pri);
+	else
+		sxe2_qos_unregister_qset(&rdma_dev->vsi, ctx_info->user_pri);
+	goto end;
 }
 
 static int sxe2_rdma_gid_to_ip(struct sxe2_av *av, struct ib_qp_attr *attr,
@@ -2294,7 +2341,7 @@ end:
 }
 
 static int sxe2_modify_qp_udp_info_set(struct ib_qp *ibqp,
-				       struct ib_qp_attr *attr, int attr_mask)
+				       struct ib_qp_attr *attr, int attr_mask, struct ib_udata *udata)
 {
 	int ret					 = 0;
 	u32 active_mtu				 = 0;
@@ -2326,8 +2373,16 @@ static int sxe2_modify_qp_udp_info_set(struct ib_qp *ibqp,
 		udp_info->rq_psn = attr->rq_psn;
 	if (attr_mask & IB_QP_RNR_RETRY)
 		udp_info->rnr_retry = attr->rnr_retry;
-	if (attr_mask & IB_QP_MIN_RNR_TIMER)
-		udp_info->min_rnr_timer = attr->min_rnr_timer;
+	if (attr_mask & IB_QP_MIN_RNR_TIMER) {
+		if (rdma_dev->rdma_func->kernel_min_rnr_timer_en && !attr->min_rnr_timer && !udata) {
+			udp_info->min_rnr_timer = rdma_dev->rdma_func->kernel_min_rnr_timer_val;
+		} else if (rdma_dev->rdma_func->user_min_rnr_timer_en && !attr->min_rnr_timer
+			&& udata) {
+			udp_info->min_rnr_timer = rdma_dev->rdma_func->user_min_rnr_timer_val;
+		} else {
+			udp_info->min_rnr_timer = attr->min_rnr_timer;
+		}
+	}
 	if (attr_mask & IB_QP_RETRY_CNT)
 		udp_info->retry_cnt = attr->retry_cnt;
 
@@ -2498,6 +2553,75 @@ end:
 	return ret;
 }
 
+static void sxe2_log_hex_dump(struct sxe2_rdma_device *rdma_dev,
+			      const char *tag, const void *buf, size_t size)
+{
+	const u8 *ptr = (const u8 *)buf;
+	char *hex;
+	size_t i;
+
+	hex = kmalloc(size * 2 + 1, GFP_KERNEL);
+	if (!hex) {
+		DRV_RDMA_LOG_DEV_ERR("alloc hex dump buf failed\n");
+		return;
+	}
+
+	for (i = 0; i < size; i++)
+		snprintf(hex + 2 * i, 3, "%02x", ptr[i]);
+
+	DRV_RDMA_LOG_DEV_WARN("%s[%zu]: %s\n", tag, size, hex);
+
+	kfree(hex);
+}
+
+static void sxe2_dump_qpc_cqc_err(struct sxe2_rdma_qp *qp)
+{
+	struct sxe2_rdma_device *rdma_dev = qp->dev;
+	struct sxe2_rdma_ctx_dev *dev_ctx = &rdma_dev->rdma_func->ctx_dev;
+	struct sxe2_rdma_cq *cqs[2] = { qp->send_cq, qp->recv_cq };
+	struct sxe2_rdma_dma_mem query_cq;
+	int i, ret;
+
+	DRV_RDMA_LOG_DEV_WARN("dump qpc/cqc before qp:%u set err, send_cq(%u), recv_cq(%u)\n",
+			      qp->ibqp.qp_num, qp->send_cq->cq_num, qp->recv_cq->cq_num);
+
+	if (sxe2_mq_query_qp_cmd(qp))
+		DRV_RDMA_LOG_DEV_ERR("query qpc failed before err dump\n");
+	else
+		sxe2_log_hex_dump(rdma_dev, "QPC", qp->host_ctx.va,
+				  SXE2_QP_CTX_SIZE);
+
+	for (i = 0; i < 2; i++) {
+		if (!cqs[i] || (i == 1 && cqs[i] == qp->send_cq))
+			continue;
+
+		memset(&query_cq, 0, sizeof(query_cq));
+		query_cq.size = sizeof(struct sxe2_rdma_cqc);
+		query_cq.va   = dma_alloc_coherent(dev_ctx->hw->device,
+						   query_cq.size, &query_cq.pa,
+						   GFP_KERNEL);
+		if (!query_cq.va) {
+			DRV_RDMA_LOG_DEV_ERR("alloc cqc dump buf failed\n");
+			continue;
+		}
+		memset(query_cq.va, 0, query_cq.size);
+
+		ret = sxe2_drv_cq_query_op(rdma_dev, &cqs[i]->cq_ctx,
+					   query_cq.pa);
+		if (ret)
+			DRV_RDMA_LOG_DEV_ERR(
+				"query cqc failed before err dump, ret:%d\n",
+				ret);
+		else
+			sxe2_log_hex_dump(rdma_dev,
+					  i ? "CQC(recv)" : "CQC(send)",
+					  query_cq.va, query_cq.size);
+
+		dma_free_coherent(dev_ctx->hw->device, query_cq.size,
+				  query_cq.va, query_cq.pa);
+	}
+}
+
 static int sxe2_qp_state_change(struct sxe2_rdma_qp *qp,
 				struct ib_qp_attr *attr, int attr_mask,
 				struct ib_udata *udata, u8 *issue_modify_qp,
@@ -2517,6 +2641,9 @@ static int sxe2_qp_state_change(struct sxe2_rdma_qp *qp,
 		if (ret)
 			goto end;
 	}
+	if (attr->qp_state == IB_QPS_ERR)
+		sxe2_dump_qpc_cqc_err(qp);
+
 	ctx_info->send_cq_num = qp->send_cq->cq_ctx.cq_uk.cq_id;
 	ctx_info->rcv_cq_num  = qp->recv_cq->cq_ctx.cq_uk.cq_id;
 	qp->qp_ctx.qp_state   = attr->qp_state;
@@ -2607,7 +2734,7 @@ static int sxe2_qp_state_change(struct sxe2_rdma_qp *qp,
 	INJECT_DEACTIVE(rdma_dev->rdma_func, "mq_rcs_wqe_qpc_swState_jump");
 #endif
 	sxe2_ctx_qp_setctx_roce(qp, qp->host_ctx.va);
-	DRV_RDMA_LOG_DEV_DEBUG("modify qp%#x qpc print:\n", qp->ibqp.qp_num);
+	DRV_RDMA_LOG_DEV_INFO("modify qp%#x qpc print:\n", qp->ibqp.qp_num);
 	sxe2_print_qpc_info(rdma_dev, qp->host_ctx.va);
 end:
 	return ret;
@@ -2635,7 +2762,7 @@ int sxe2_kmodify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr, int attr_mask,
 
 	sxe2_modify_qp_ctx_info_set(qp, pd, ctx_info);
 
-	ret = sxe2_modify_qp_udp_info_set(ibqp, attr, attr_mask);
+	ret = sxe2_modify_qp_udp_info_set(ibqp, attr, attr_mask, udata);
 	if (ret)
 		goto end;
 
@@ -2899,6 +3026,8 @@ free_rsrc:
 	}
 #ifndef DESTROY_QP_V1
 	sxe2_free_qp_buf(qp, &rdma_dev->rdma_func->ctx_dev, udata);
+#else
+	sxe2_free_qp_buf(qp, &rdma_dev->rdma_func->ctx_dev, NULL);
 #endif
 	if (qp->ibqp.qp_type != IB_QPT_GSI) {
 		sxe2_kfree_rsrc(rdma_dev->rdma_func,
@@ -2954,7 +3083,7 @@ out:
 	return;
 }
 
-static void sxe2_qp_cm_disconn_true(struct sxe2_rdma_qp *qp)
+static void sxe2_qp_cm_disconn_true(struct sxe2_rdma_qp *qp, enum sxe2_qp_event_type event_type)
 {
 	struct sxe2_rdma_device *rdma_dev;
 	struct sxe2_rdma_ctx_qp *qp_ctx = &qp->qp_ctx;
@@ -2972,7 +3101,7 @@ static void sxe2_qp_cm_disconn_true(struct sxe2_rdma_qp *qp)
 	spin_unlock_irqrestore(&qp->lock, flags);
 	attr.qp_state = IB_QPS_ERR;
 	sxe2_kmodify_qp(&qp->ibqp, &attr, IB_QP_STATE, NULL);
-	sxe2_ib_qp_event(qp, qp_ctx->event_type);
+	sxe2_ib_qp_event(qp, event_type);
 
 out:
 	return;
@@ -2983,13 +3112,14 @@ static void sxe2_qp_disconnect_worker(struct work_struct *work)
 	struct qp_disconn_work *dwork =
 		container_of(work, struct qp_disconn_work, work);
 	struct sxe2_rdma_qp *qp = dwork->qp;
+	enum sxe2_qp_event_type event_type = dwork->event_type;
 
 	kfree(dwork);
-	sxe2_qp_cm_disconn_true(qp);
+	sxe2_qp_cm_disconn_true(qp, event_type);
 	sxe2_qp_rem_ref(&qp->ibqp);
 }
 
-void sxe2_cm_disconn(struct sxe2_rdma_qp *qp)
+void sxe2_cm_disconn(struct sxe2_rdma_qp *qp, enum sxe2_qp_event_type event_type)
 {
 	struct sxe2_rdma_device *rdma_dev = qp->dev;
 	struct qp_disconn_work *work;
@@ -3015,6 +3145,7 @@ void sxe2_cm_disconn(struct sxe2_rdma_qp *qp)
 	spin_unlock_irqrestore(&rdma_dev->rdma_func->qptable_lock, flags);
 
 	work->qp = qp;
+	work->event_type = event_type;
 	INIT_WORK(&work->work, sxe2_qp_disconnect_worker);
 	queue_work(rdma_dev->cleanup_wq, &work->work);
 

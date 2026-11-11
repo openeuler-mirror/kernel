@@ -21,13 +21,7 @@
 
 #define SXE2_FW_LOG_PATH "/var/log/sxe2_fw_log/"
 
-struct sxe2_event_handle {
-	u16 event_code;
-	s32 (*handler)(struct sxe2_adapter *adapter, void *buf, u32 buf_len);
-	enum sxe2_cmd_event_status event_status;
-};
-
-STATIC struct sxe2_event_handle event_table[] = {
+STATIC struct sxe2_event_handle event_table_dflt[] = {
 		{SXE2_EVENT_CODE_AUTO_LOG, sxe2_event_log_export,
 		 SXE2_CMD_EVENT_STATUS_INIT},
 		{SXE2_EVENT_CODE_MIB_NOTIFY, sxe2_dcb_process_lldp_set_mib_change,
@@ -45,6 +39,20 @@ STATIC struct sxe2_event_handle event_table[] = {
 		}
 };
 
+STATIC u32 sxe2_event_dflt_table_size(void)
+{
+	return sizeof(event_table_dflt);
+}
+
+void sxe2_event_table_init(struct sxe2_adapter *adapter)
+{
+	u32 table_size = sizeof(adapter->event_table);
+
+	if (table_size > sxe2_event_dflt_table_size())
+		table_size = sxe2_event_dflt_table_size();
+	memcpy(adapter->event_table, event_table_dflt, table_size);
+}
+
 s32 sxe2_event_handle(struct sxe2_adapter *adapter, u16 event_code, void *buf,
 		      u32 buf_len)
 {
@@ -53,7 +61,7 @@ s32 sxe2_event_handle(struct sxe2_adapter *adapter, u16 event_code, void *buf,
 	struct mutex *event_lock = sxe2_cmd_channel_get_event_lock(adapter);
 
 	mutex_lock(event_lock);
-	for (event_handler = &event_table[0]; event_handler->event_code;
+	for (event_handler = &adapter->event_table[0]; event_handler->event_code;
 	     event_handler++) {
 		if (event_handler->event_code == event_code)
 			break;
@@ -122,7 +130,7 @@ s32 sxe2_set_event_status(struct sxe2_adapter *adapter, u16 event_code,
 	s32 ret = 0;
 
 	mutex_lock(event_lock);
-	for (event_handler = &event_table[0]; event_handler->event_code;
+	for (event_handler = &adapter->event_table[0]; event_handler->event_code;
 	     event_handler++) {
 		if (event_handler->event_code == event_code)
 			break;

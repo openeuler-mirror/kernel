@@ -21,7 +21,7 @@
 
 #define STATS_TIMER_DELAY      3600000
 #define MQ_GATHER_STATS_POST   1
-#define STATS_DEFAULT_LIFESPAN 3600000
+#define STATS_DEFAULT_LIFESPAN 1000
 
 #ifdef ALLOC_HW_STATS_STRUCT_V1
 const char *const sxe2_rdma_hw_stat_names[] = {
@@ -162,10 +162,10 @@ int sxe2_kgather_stats(struct sxe2_mq_ctx *mq,
 	DRV_RDMA_LOG_DEV_DEBUG(
 		"GATHER_STATS WQE: statistics_instance_index %#x, op %#x\n"
 		"use_rcms_func_index %#x, use_statistics_instance %#x\n"
-		"physical_buffer_address %#llx, rcms_fcn_index %#x, wqe_valid %#x\n",
+		"physical_buffer_address %#llx, rcms_fcn_index %#llx, wqe_valid %#x\n",
 		wqe->statistics_instance_index, wqe->op,
 		wqe->use_rcms_func_index, wqe->use_statistics_instance,
-		wqe->physical_buffer_address, wqe->rcms_fcn_index,
+		wqe->physical_buffer_address, (unsigned long long)wqe->rcms_fcn_index,
 		wqe->wqe_valid);
 
 	print_hex_dump_debug("STATS: GATHER_STATS WQE", DUMP_PREFIX_OFFSET,
@@ -386,11 +386,16 @@ int sxe2_kgather_vf_stats_mq_cmd(struct sxe2_rdma_ctx_dev *dev,
 		&pestat->vsi->pestat->hw_stats;
 	const struct sxe2_rdma_hw_stat_map *map =
 		pestat->vsi->dev->hw_stats_map;
-	struct sxe2_rdma_gather_stats *pgather_stats_resp =
-		kzalloc(sizeof(struct sxe2_rdma_gather_stats), GFP_KERNEL);
 	int ret_code = 0;
 	u16 i;
 	u16 idx;
+	struct sxe2_rdma_gather_stats *pgather_stats_resp =
+		kzalloc(sizeof(struct sxe2_rdma_gather_stats), GFP_KERNEL);
+	if (!pgather_stats_resp) {
+		DRV_RDMA_LOG_DEV_ERR("STATS: pgather stats resp alloc failed.");
+		ret_code = -ENOMEM;
+		goto end;
+	}
 
 	mutex_lock(&pestat->stats_lock);
 
@@ -398,14 +403,14 @@ int sxe2_kgather_vf_stats_mq_cmd(struct sxe2_rdma_ctx_dev *dev,
 		ret_code = -EIO;
 		DRV_RDMA_LOG_DEV_ERR("STATS: Current func is %d, ret_code %d\n",
 				     dev->privileged, ret_code);
-		goto end;
+		goto free;
 	}
 
 	ret_code = sxe2_vchnl_req_gather_stats(dev, pgather_stats_resp);
 	if (ret_code) {
 		DRV_RDMA_LOG_DEV_ERR("gather stats vf fail, ret_code %d\n",
 				     ret_code);
-		goto end;
+		goto free;
 	}
 
 	for (i = 0; i < SXE2_RDMA_HW_STAT_INDEX_MAX; i++) {
@@ -415,9 +420,10 @@ int sxe2_kgather_vf_stats_mq_cmd(struct sxe2_rdma_ctx_dev *dev,
 			 map[i].bitmask);
 	}
 
-end:
+free:
 	kfree(pgather_stats_resp);
 	mutex_unlock(&pestat->stats_lock);
+end:
 	return ret_code;
 }
 
@@ -612,7 +618,9 @@ end:
 #ifdef ALLOC_HW_STATS_V1
 struct rdma_hw_stats *sxe2_kalloc_hw_port_stats(struct ib_device *ibdev,
 						u8 port_num)
-
+#elif defined ALLOC_HW_STATS_V2
+struct rdma_hw_stats *sxe2_kalloc_hw_port_stats(struct ib_device *ibdev,
+						u32 port_num)
 #else
 struct rdma_hw_stats *sxe2_kalloc_hw_port_stats(struct ib_device *ibdev,
 						u32 port_num)

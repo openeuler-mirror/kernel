@@ -19,6 +19,7 @@
 #include "sxe2_common.h"
 #include "sxe2_flow_public.h"
 #include "sxe2_ethtool.h"
+#include "sxe2_vsi.h"
 
 s32 sxe2_fwc_acl_trace_trigger(struct sxe2_adapter *adapter)
 {
@@ -195,7 +196,7 @@ s32 sxe2_fwc_acl_set_scen_prof(struct sxe2_adapter *adapter,
 				  sizeof(*prof_sel_req), NULL, 0);
 	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 	if (ret) {
-		LOG_ERROR("Failed to set acl profile, ret=%d", ret);
+		LOG_ERROR_BDF("Failed to set acl profile, ret=%d", ret);
 		goto l_end;
 	}
 
@@ -222,7 +223,7 @@ STATIC s32 sxe2_fwc_acl_lut_alloc(struct sxe2_adapter *adapter,
 				  sizeof(acl_lut_alloc_resp));
 	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 	if (ret) {
-		LOG_ERROR("Failed to add acl entry, ret=%d\n", ret);
+		LOG_ERROR_BDF("Failed to add acl entry, ret=%d\n", ret);
 		goto l_end;
 	}
 
@@ -238,8 +239,33 @@ STATIC s32 sxe2_fwc_acl_lut_alloc(struct sxe2_adapter *adapter,
 
 	for (i = 0; i < SXE2_ACL_ACTION_MEM_CNT; i++) {
 		acl_tbl_info->act_mems[i].act_mem = acl_lut_alloc_resp.act_mem[i];
-		LOG_DEBUG("dump acl entry msg,act_mems[%u]:%u\n", i,
-			  acl_tbl_info->act_mems[i].act_mem);
+		LOG_DEBUG_BDF("dump acl entry msg,act_mems[%u]:%u\n", i,
+			      acl_tbl_info->act_mems[i].act_mem);
+	}
+
+l_end:
+	return ret;
+}
+
+STATIC s32 sxe2_fwc_acl_qvsi_map_set(struct sxe2_adapter *adapter, u16 act_entry_idx, u16 vsi_num)
+{
+	s32 ret = 0;
+	struct sxe2_cmd_params cmd = {};
+	struct sxe2_fwc_acl_qvsi_map_req req = {0};
+
+	if (!test_bit(SXE2_FLAG_ACL_EXT_CAPABLE, adapter->flags))
+		return -EOPNOTSUPP;
+
+	req.act_entry_idx = cpu_to_le16(act_entry_idx);
+	req.vsi_num = cpu_to_le16(vsi_num);
+
+	sxe2_cmd_params_dflt_fill(&cmd, SXE2_CMD_ACL_QVSI_MAP_SET, &req,
+				  sizeof(req), NULL, 0);
+
+	ret = sxe2_cmd_fw_exec(adapter, &cmd);
+	if (ret) {
+		LOG_ERROR_BDF("Failed to set acl qvsi map, ret=%d\n", ret);
+		goto l_end;
 	}
 
 l_end:
@@ -257,7 +283,7 @@ STATIC s32 sxe2_fwc_acl_lut_dealloc(struct sxe2_adapter *adapter, u16 alloc_id)
 				  sizeof(act_lut_dealloc_req), NULL, 0);
 	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 	if (ret) {
-		LOG_ERROR("Failed to dealloc acl lut, ret=%d", ret);
+		LOG_ERROR_BDF("Failed to dealloc acl lut, ret=%d", ret);
 		goto l_end;
 	}
 
@@ -267,23 +293,26 @@ l_end:
 
 STATIC s32 sxe2_fwc_acl_act_entry(struct sxe2_adapter *adapter, u8 act_mem_idx,
 				  u16 act_entry_idx,
-				  struct sxe2_acl_act_entry_data *act_entry_data)
+				  struct sxe2_acl_act_entry_data *act_entry_data, u8 act_cnt)
 {
 	s32 ret = 0;
+	s32 i = 0;
 	struct sxe2_cmd_params cmd = {};
 	struct sxe2_fwc_acl_act_entry_set_req act_entry_req = {};
 
 	act_entry_req.act_mem_idx = act_mem_idx;
 	act_entry_req.act_entry_idx = cpu_to_le16(act_entry_idx);
-	act_entry_req.data[0].prio = act_entry_data->prio;
-	act_entry_req.data[0].mdid = act_entry_data->mdid;
-	act_entry_req.data[0].value = cpu_to_le16(act_entry_data->value);
 
+	for (i = 0; i < act_cnt && i < SXE2_ACL_ACTION_NUM_PER_ENTRY; i++) {
+		act_entry_req.data[i].prio = act_entry_data[i].prio;
+		act_entry_req.data[i].mdid = act_entry_data[i].mdid;
+		act_entry_req.data[i].value = cpu_to_le16(act_entry_data[i].value);
+	}
 	sxe2_cmd_params_dflt_fill(&cmd, SXE2_CMD_ACL_ACT_ENTRY_SET, &act_entry_req,
 				  sizeof(act_entry_req), NULL, 0);
 	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 	if (ret) {
-		LOG_ERROR("Failed to add acl entry, ret=%d\n", ret);
+		LOG_ERROR_BDF("Failed to add acl entry, ret=%d\n", ret);
 		goto l_end;
 	}
 
@@ -308,7 +337,7 @@ STATIC s32 sxe2_fwc_acl_lut_entry(struct sxe2_adapter *adapter, u8 tcam_idx,
 
 	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 	if (ret) {
-		LOG_ERROR("Failed to add acl entry, ret=%d\n", ret);
+		LOG_ERROR_BDF("Failed to add acl entry, ret=%d\n", ret);
 		goto l_end;
 	}
 
@@ -327,13 +356,13 @@ STATIC s32 sxe2_fwc_acl_scen_alloc(struct sxe2_adapter *adapter,
 				  &act_scen_alloc_rsp, sizeof(act_scen_alloc_rsp));
 	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 	if (ret) {
-		LOG_ERROR("Failed to alloc scen, ret=%d\n", ret);
+		LOG_ERROR_BDF("Failed to alloc scen, ret=%d\n", ret);
 		goto l_end;
 	}
 
 	*scen_id = le16_to_cpu(act_scen_alloc_rsp.scen_id);
 
-	LOG_DEBUG("acl scen alloc id:%u\n", *scen_id);
+	LOG_DEBUG_BDF("acl scen alloc id:%u\n", *scen_id);
 
 l_end:
 	return ret;
@@ -350,7 +379,7 @@ STATIC s32 sxe2_fwc_acl_scen_dealloc(struct sxe2_adapter *adapter, u16 scen_id)
 				  sizeof(act_scen_dealloc_req), NULL, 0);
 	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 	if (ret) {
-		LOG_ERROR("Failed to dealloc scen, ret=%d\n", ret);
+		LOG_ERROR_BDF("Failed to dealloc scen, ret=%d\n", ret);
 		goto l_end;
 	}
 
@@ -397,27 +426,28 @@ void sxe2_acl_flow_cfg_add_list(struct sxe2_vsi *vsi, struct sxe2_acl_flow_cfg *
 }
 
 STATIC s32 sxe2_acl_add_act(struct sxe2_adapter *adapter, struct sxe2_acl_scen_info *scen,
-			    u16 entry_idx, struct sxe2_acl_act_entry_data *act_entry_data)
+			    u16 entry_idx, struct sxe2_acl_act_entry_data *act_entry_data,
+			    u8 act_cnt)
 {
 	s32 ret = -EINVAL;
 	struct sxe2_acl_tbl_info *acl_tbl_info = adapter->acl_ctxt.acl_tbl_info;
 	struct sxe2_acl_act_mem *act_mem = NULL;
 	u16 cnt_cascade, first_tcam_id, last_tcam_id;
-	u16 absolute_line_idx, line_in_mem;
+	u16 line_in_mem;
 	u16 i = 0;
 
-	absolute_line_idx = scen->start + entry_idx;
-	line_in_mem = absolute_line_idx % SXE2_FW_ACL_TCAM_DEPTH;
-
+	line_in_mem = entry_idx % SXE2_FW_ACL_TCAM_DEPTH;
 	cnt_cascade = DIV_ROUND_UP(scen->width, SXE2_FW_ACL_KEY_WIDTH_BYTES);
-	first_tcam_id = (absolute_line_idx / SXE2_FW_ACL_TCAM_DEPTH) * cnt_cascade;
+	first_tcam_id = (scen->start / SXE2_FW_ACL_TCAM_DEPTH) +
+		(entry_idx / SXE2_FW_ACL_TCAM_DEPTH) * cnt_cascade;
 	last_tcam_id = first_tcam_id + cnt_cascade;
+
 	for_each_set_bit(i, scen->acl_act_mem_bitmap, SXE2_FW_MAX_ACTION_MEMORIES) {
 		act_mem = &acl_tbl_info->act_mems[i];
 		if (act_mem->member_of_tcam >= first_tcam_id &&
 		    act_mem->member_of_tcam < last_tcam_id) {
 			ret = sxe2_fwc_acl_act_entry(adapter, i, line_in_mem,
-						     act_entry_data);
+						     act_entry_data, act_cnt);
 			if (ret) {
 				LOG_ERROR_BDF("Acl add flow act entry cmd failed, ret:%d\n", ret);
 				goto l_end;
@@ -525,14 +555,14 @@ STATIC s32 sxe2_acl_create_table(struct sxe2_adapter *adapter,
 
 	acl_tbl_info = devm_kzalloc(dev, sizeof(*acl_tbl_info), GFP_KERNEL);
 	if (!acl_tbl_info) {
-		LOG_ERROR("Failed to alloc acl tbl info.\n");
+		LOG_ERROR_BDF("Failed to alloc acl tbl info.\n");
 		ret = -ENOMEM;
 		goto l_end;
 	}
 
 	ret = sxe2_fwc_acl_lut_alloc(adapter, &tbl_params, acl_tbl_info);
 	if (ret) {
-		LOG_ERROR("acl table create cmd fail, ret:%d.\n", ret);
+		LOG_ERROR_BDF("acl table create cmd fail, ret:%d.\n", ret);
 		goto l_free_acl_tbl_info;
 	}
 
@@ -684,6 +714,11 @@ STATIC s32 sxe2_acl_alloc_partition_from_tbl(struct sxe2_adapter *adapter,
 			}
 		}
 	} while (!is_ser_finish);
+
+	if (cnt_entry < num_entry) {
+		LOG_ERROR_BDF("no contiguous ACL partition found\n");
+		ret = -ENOSPC;
+	}
 
 l_end:
 	return ret;
@@ -856,7 +891,7 @@ STATIC s32 sxe2_acl_create_scen_info(struct sxe2_adapter *adapter,
 
 	ret = sxe2_fwc_acl_scen_alloc(adapter, &req, &scen_id);
 	if (ret) {
-		LOG_ERROR("Alloc scen cmd failed, ret:%d.\n", ret);
+		LOG_ERROR_BDF("Alloc scen cmd failed, ret:%d.\n", ret);
 		goto l_end;
 	}
 
@@ -878,7 +913,7 @@ STATIC s32 sxe2_acl_create_scenario(struct sxe2_adapter *adapter,
 
 	scen = devm_kzalloc(dev, sizeof(*scen), GFP_KERNEL);
 	if (!scen) {
-		LOG_ERROR("Failed to alloc scen mem.\n");
+		LOG_ERROR_BDF("Failed to alloc scen mem.\n");
 		ret = -ENOMEM;
 		goto l_end;
 	}
@@ -890,16 +925,17 @@ STATIC s32 sxe2_acl_create_scenario(struct sxe2_adapter *adapter,
 
 	ret = sxe2_acl_alloc_partition_from_tbl(adapter, scen);
 	if (ret) {
-		LOG_ERROR("Failed to alloc scen mem.\n");
+		LOG_ERROR_BDF("Failed to alloc scen mem.\n");
 		goto l_free_scen;
 	}
 
 	ret = sxe2_acl_create_scen_info(adapter, scen);
 	if (ret) {
-		LOG_ERROR("Failed to init scen.\n");
+		LOG_ERROR_BDF("Failed to init scen.\n");
 		goto l_free_scen;
 	}
 	list_add(&scen->l_entry, &acl_tbl_info->scens);
+	LOG_DEBUG_BDF("acl scenario added to table: scen_id=%u\n", scen->scen_id);
 	goto l_end;
 
 l_free_scen:
@@ -910,6 +946,17 @@ l_free_scen:
 
 l_end:
 	return ret;
+}
+
+STATIC void sxe2_acl_stat_ctxt_init(struct sxe2_adapter *adapter)
+{
+	struct sxe2_acl_stat_ctxt *acl_stat_ctxt =
+			&adapter->acl_ctxt.acl_stat_ctxt;
+
+	mutex_init(&acl_stat_ctxt->acl_stat_lock);
+	acl_stat_ctxt->stat_base = adapter->caps_ctxt.acl_stat_base;
+	acl_stat_ctxt->stat_num = adapter->caps_ctxt.acl_stat_num;
+	INIT_LIST_HEAD(&acl_stat_ctxt->acl_stat_list);
 }
 
 s32 sxe2_acl_init(struct sxe2_adapter *adapter)
@@ -924,18 +971,21 @@ s32 sxe2_acl_init(struct sxe2_adapter *adapter)
 	mutex_init(&acl_ctx->filter_lock);
 	bitmap_fill(adapter->acl_ctxt.slots, SXE2_ACL_MAX_NUM_ENTRY);
 	sxe2_flow_ppp_comm_ctxt_init(&acl_ctx->ppp, adapter, SXE2_HW_BLOCK_ID_ACL);
+	sxe2_acl_stat_ctxt_init(adapter);
 
 	sxe2_acl_tbl_param_calc(adapter, &params);
+	LOG_DEBUG_BDF("acl init: pf_idx=%u, pf_cnt=%u, table width=%u, depth=%u\n",
+		      adapter->pf_idx, adapter->pf_cnt, params.width, params.depth);
 
 	ret = sxe2_acl_create_table(adapter, &params);
 	if (ret) {
-		LOG_ERROR("Failed to create acl table, ret=%d\n", ret);
+		LOG_ERROR_BDF("Failed to create acl table, ret=%d\n", ret);
 		goto l_deinit;
 	}
 
 	ret = sxe2_acl_create_scenario(adapter, &params);
 	if (ret) {
-		LOG_ERROR("Failed to create acl scenario, ret=%d\n", ret);
+		LOG_ERROR_BDF("Failed to create acl scenario, ret=%d\n", ret);
 		goto l_deinit;
 	}
 
@@ -961,7 +1011,10 @@ STATIC s32 sxe2_acl_hw_deinit(struct sxe2_adapter *adapter)
 	if (!acl_tbl_info)
 		goto l_end;
 
+	LOG_DEBUG_BDF("acl hw deinit: table id=%u\n", acl_tbl_info->id);
+
 	list_for_each_entry_safe(scen, tmp_scen, &acl_tbl_info->scens, l_entry) {
+		LOG_DEBUG_BDF("acl dealloc scenario: scen_id=%u\n", scen->scen_id);
 		ret = sxe2_fwc_acl_scen_dealloc(adapter, scen->scen_id);
 		if (ret) {
 			LOG_ERROR_BDF("Dealloc scen cmd failed, ret:%d.\n", ret);
@@ -971,9 +1024,11 @@ STATIC s32 sxe2_acl_hw_deinit(struct sxe2_adapter *adapter)
 
 	ret = sxe2_fwc_acl_lut_dealloc(adapter, acl_tbl_info->id);
 	if (ret) {
-		LOG_ERROR("Acl tbl dealloc cmd failed, ret:%d\n", ret);
+		LOG_ERROR_BDF("Acl tbl dealloc cmd failed, ret:%d\n", ret);
 		goto l_end;
 	}
+
+	LOG_DEBUG_BDF("acl table deallocated: id=%u\n", acl_tbl_info->id);
 
 l_end:
 	return ret;
@@ -1000,7 +1055,10 @@ STATIC void sxe2_acl_sw_deinit(struct sxe2_adapter *adapter)
 	if (!acl_tbl_info)
 		return;
 
+	LOG_DEBUG_BDF("acl sw deinit: cleaning scenarios and table\n");
+
 	list_for_each_entry_safe(scen, tmp_scen, &acl_tbl_info->scens, l_entry) {
+		LOG_DEBUG_BDF("acl free scenario sw node: scen_id=%u\n", scen->scen_id);
 		list_del(&scen->l_entry);
 		devm_kfree(dev, scen);
 	}
@@ -1008,15 +1066,21 @@ STATIC void sxe2_acl_sw_deinit(struct sxe2_adapter *adapter)
 	devm_kfree(dev, acl_tbl_info);
 	acl_tbl_info = NULL;
 	mutex_destroy(&acl_ctx->filter_lock);
+	adapter->acl_ctxt.acl_tbl_info = NULL;
+	bitmap_fill(adapter->acl_ctxt.slots, SXE2_ACL_MAX_NUM_ENTRY);
 }
 
 void sxe2_acl_deinit(struct sxe2_adapter *adapter)
 {
+	LOG_DEBUG_BDF("acl deinit start\n");
+
 	(void)sxe2_acl_hw_deinit(adapter);
 
 	sxe2_acl_flow_ctxt_deinit(adapter);
 
 	sxe2_acl_sw_deinit(adapter);
+
+	LOG_DEBUG_BDF("acl deinit done\n");
 }
 
 s32 sxe2_acl_ptg_parse_from_ddp(u8 *data, u16 cnt, u16 base_id,
@@ -1036,8 +1100,8 @@ s32 sxe2_acl_ptg_parse_from_ddp(u8 *data, u16 cnt, u16 base_id,
 	per_size = sizeof(struct sxe2_ddp_acl_ptg);
 	ddp_max_cnt = (SXE2_MAX_PTYPE_NUM * SXE2_MAX_CDID_NUM) / per_size;
 	if (!data || base_id >= ddp_max_cnt || cnt > ddp_max_cnt) {
-		LOG_ERROR("sxe2 acl ptg parse from ddp failed, port_idx=%u !\n",
-			  port_idx);
+		LOG_ERROR_BDF("sxe2 acl ptg parse from ddp failed, port_idx=%u !\n",
+			      port_idx);
 		ret = -EINVAL;
 		goto l_end;
 	}
@@ -1091,14 +1155,13 @@ STATIC s32 sxe2_acl_remove_flow_lut_entry(struct sxe2_adapter *adapter,
 {
 	struct sxe2_acl_tbl_info *acl_tbl_info = adapter->acl_ctxt.acl_tbl_info;
 	struct sxe2_acl_entry_data lut_entry_data = {};
-	struct sxe2_acl_act_entry_data act_entry_data = {0};
+	struct sxe2_acl_act_entry_data act_entry_data[SXE2_ACL_ACTION_NUM_PER_ENTRY] = {};
 	struct sxe2_acl_act_mem *act_mem = NULL;
 	s32 ret = 0, last_err = 0;
 	u16 cnt_cascade = 0;
 	u16 first_tcam = 0;
 	u16 idx_in_tcam = 0;
 	u16 i = 0;
-	u16 absolute_idx = 0;
 
 	if (!scen || scen->num_entry <= entry_idx) {
 		LOG_ERROR_BDF("Invalid entry_idx %d\n", entry_idx);
@@ -1112,12 +1175,12 @@ STATIC s32 sxe2_acl_remove_flow_lut_entry(struct sxe2_adapter *adapter,
 		goto l_end;
 	}
 
-	absolute_idx = scen->start + entry_idx;
-	first_tcam = (u16)(absolute_idx / SXE2_FW_ACL_TCAM_DEPTH);
-	idx_in_tcam = (u16)(absolute_idx % SXE2_FW_ACL_TCAM_DEPTH);
+	first_tcam   = (u16)(scen->start / SXE2_FW_ACL_TCAM_DEPTH);
+	idx_in_tcam  = (u16)(entry_idx % SXE2_FW_ACL_TCAM_DEPTH);
 	cnt_cascade = DIV_ROUND_UP(scen->width, SXE2_FW_ACL_KEY_WIDTH_BYTES);
+	first_tcam += (entry_idx / SXE2_FW_ACL_TCAM_DEPTH) * cnt_cascade;
 	for (i = 0; i < cnt_cascade; i++) {
-		ret = sxe2_fwc_acl_lut_entry(adapter, (u8)(first_tcam * cnt_cascade + i),
+		ret = sxe2_fwc_acl_lut_entry(adapter, (u8)(first_tcam + i),
 					     idx_in_tcam, &lut_entry_data);
 		if (ret) {
 			LOG_ERROR_BDF("Acl remove flow lut entry cmd failed, ret:%d\n",
@@ -1128,10 +1191,10 @@ STATIC s32 sxe2_acl_remove_flow_lut_entry(struct sxe2_adapter *adapter,
 
 	for_each_set_bit(i, scen->acl_act_mem_bitmap, SXE2_FW_MAX_ACTION_MEMORIES) {
 		act_mem = &acl_tbl_info->act_mems[i];
-		if (act_mem->member_of_tcam >= first_tcam * cnt_cascade &&
-		    act_mem->member_of_tcam < first_tcam * cnt_cascade + cnt_cascade) {
-			ret = sxe2_fwc_acl_act_entry(adapter, (u8)i, idx_in_tcam,
-						     &act_entry_data);
+		if (act_mem->member_of_tcam >= first_tcam &&
+		    act_mem->member_of_tcam < first_tcam + cnt_cascade) {
+			ret = sxe2_fwc_acl_act_entry(adapter, (u8)i, idx_in_tcam, act_entry_data,
+						     SXE2_ACL_ACTION_NUM_PER_ENTRY);
 			if (ret) {
 				LOG_ERROR_BDF("Acl remove flow act cmd failed, ret:%d\n", ret);
 				last_err = ret;
@@ -1140,6 +1203,8 @@ STATIC s32 sxe2_acl_remove_flow_lut_entry(struct sxe2_adapter *adapter,
 	}
 
 	clear_bit(entry_idx, scen->acl_entry_bitmap);
+	LOG_DEBUG_BDF("acl entry removed: scen_id=%u, entry_idx=%u\n",
+		      scen->scen_id, entry_idx);
 
 l_end:
 	return last_err;
@@ -1149,14 +1214,16 @@ STATIC s32 sxe2_acl_add_flow_lut_entry(struct sxe2_adapter *adapter,
 				       struct sxe2_acl_scen_info *scen, u16 *entry_idx,
 				       enum sxe2_acl_lut_entry_priority priority, u8 *keys,
 				       u8 *inverts,
-				       struct sxe2_acl_flow_action *act_entry_data)
+				       struct sxe2_acl_flow_action *act_entry_data,
+					   u8 act_cnt)
 {
 	struct sxe2_acl_entry_data lut_entry_data = {};
+	struct sxe2_acl_act_entry_data tmp_acts[SXE2_ACL_ACTION_NUM_PER_ENTRY] = {};
 	s32 ret = 0;
 	u16 cnt_cascade = 0;
 	u16 i = 0;
+	u8 k = 0;
 	u8 cascade_ver_idx = 0;
-	u16 absolute_idx = 0;
 	u16 tcam_block_offset = 0;
 	u16 line_idx_in_tcam = 0;
 	u16 target_tcam_id = 0;
@@ -1175,13 +1242,14 @@ STATIC s32 sxe2_acl_add_flow_lut_entry(struct sxe2_adapter *adapter,
 		goto l_end;
 	}
 
-	absolute_idx = scen->start + *entry_idx;
-	tcam_block_offset = (u16)(absolute_idx / SXE2_FW_ACL_TCAM_DEPTH);
-	line_idx_in_tcam = absolute_idx % SXE2_FW_ACL_TCAM_DEPTH;
+	line_idx_in_tcam = (u16)(*entry_idx % SXE2_FW_ACL_TCAM_DEPTH);
 	cnt_cascade = DIV_ROUND_UP(scen->width, SXE2_FW_ACL_KEY_WIDTH_BYTES);
+	tcam_block_offset = (u16)(scen->start / SXE2_FW_ACL_TCAM_DEPTH +
+		(*entry_idx / SXE2_FW_ACL_TCAM_DEPTH) * cnt_cascade);
+
 	for (i = 0; i < cnt_cascade; i++) {
 		cascade_ver_idx = (u8)(cnt_cascade - i - 1);
-		target_tcam_id = tcam_block_offset * cnt_cascade + cascade_ver_idx;
+		target_tcam_id = tcam_block_offset + cascade_ver_idx;
 
 		memcpy(&lut_entry_data.entry_key.val,
 		       &keys[cascade_ver_idx * SXE2_FW_ACL_KEY_WIDTH_BYTES],
@@ -1202,7 +1270,10 @@ STATIC s32 sxe2_acl_add_flow_lut_entry(struct sxe2_adapter *adapter,
 			goto l_rem_flow_entry;
 		}
 	}
-	ret = sxe2_acl_add_act(adapter, scen, *entry_idx, &act_entry_data->data.acl_act);
+
+	for (k = 0; k < act_cnt && k < SXE2_ACL_ACTION_NUM_PER_ENTRY; k++)
+		tmp_acts[k] = act_entry_data[k].data.acl_act;
+	ret = sxe2_acl_add_act(adapter, scen, *entry_idx, tmp_acts, act_cnt);
 	if (ret) {
 		LOG_ERROR_BDF("Acl add flow act cmd failed, ret:%d\n", ret);
 		goto l_rem_flow_entry;
@@ -1265,6 +1336,20 @@ STATIC void sxe2_flow_acl_set_diss_fld(struct sxe2_flow_dissector_info *dissecto
 		sxe2_flow_set_diss_fld(dissector, (enum sxe2_flow_fld_id)fld_id, val_loc,
 				       mask_loc, SXE2_U16_MASK);
 		break;
+	case SXE2_FLOW_FLD_ID_IPV6_SA:
+		val_loc = offsetof(struct sxe2_fnav_filter_full_key, ip.v6.src_ip);
+		mask_loc = offsetof(struct sxe2_fnav_filter_full_key, mask.v6.src_ip);
+		sxe2_flow_set_diss_fld(dissector, (enum sxe2_flow_fld_id)fld_id,
+				       val_loc, mask_loc,
+				       SXE2_U16_MASK);
+		break;
+	case SXE2_FLOW_FLD_ID_IPV6_DA:
+		val_loc = offsetof(struct sxe2_fnav_filter_full_key, ip.v6.dst_ip);
+		mask_loc = offsetof(struct sxe2_fnav_filter_full_key, mask.v6.dst_ip);
+		sxe2_flow_set_diss_fld(dissector, (enum sxe2_flow_fld_id)fld_id,
+				       val_loc, mask_loc,
+				       SXE2_U16_MASK);
+		break;
 	default:
 		break;
 	}
@@ -1322,8 +1407,12 @@ STATIC struct sxe2_flow_info_node *sxe2_acl_hw_flow_add(struct sxe2_adapter *ada
 	}
 
 	ret = sxe2_flow_creat(ppp_ctxt, dissectors, dissectors_cnt, &flow);
-	if (ret)
+	if (ret) {
 		LOG_ERROR_BDF("create a flow with seg cfg failed, ret:%d\n", ret);
+	} else {
+		INIT_LIST_HEAD(&flow->acl_entry);
+		mutex_init(&flow->acl_entry_lock);
+	}
 
 l_end:
 	if (dissectors)
@@ -1366,7 +1455,7 @@ STATIC s32 sxe2_acl_flow_cfg_del(struct sxe2_vsi *vsi, struct sxe2_acl_flow_cfg 
 	for_each_set_bit(vsi_sw_id, flow_cfg->seg->vsis, SXE2_MAX_VSI_NUM) {
 		ret = sxe2_flow_disassoc_vsi(ppp_ctxt, flow, (u16)vsi_sw_id);
 		if (ret) {
-			LOG_ERROR_BDF("fnav hw flow disassociate vsi failed, vsi_sw_id:%u ret:%d\n",
+			LOG_ERROR_BDF("acl hw flow disassociate vsi failed, vsi_sw_id:%u ret:%d\n",
 				      (u16)vsi_sw_id, ret);
 		}
 		clear_bit((u16)vsi_sw_id, flow_cfg->seg->vsis);
@@ -1374,7 +1463,7 @@ STATIC s32 sxe2_acl_flow_cfg_del(struct sxe2_vsi *vsi, struct sxe2_acl_flow_cfg 
 
 	ret = sxe2_acl_hw_flow_del(vsi, flow);
 	if (ret) {
-		LOG_ERROR_BDF("fnav hw flow del failed, vsi_sw_id:%u ret:%d\n",
+		LOG_ERROR_BDF("acl hw flow del failed, vsi_sw_id:%u ret:%d\n",
 			      (u16)vsi_sw_id, ret);
 	}
 
@@ -1392,11 +1481,20 @@ s32 sxe2_acl_flow_cfg_add(struct sxe2_vsi *vsi, struct sxe2_acl_flow_cfg *flow_c
 	struct sxe2_flow_info_node *flow = NULL;
 
 	if (seg_old) {
-		if (bitmap_equal(seg_old->headers, seg->headers, SXE2_FLOW_HDR_MAX)) {
+		if (bitmap_equal(seg_old->headers, seg->headers, SXE2_FLOW_HDR_MAX) &&
+		    bitmap_equal(seg_old->fields, seg->fields, SXE2_FLOW_FLD_ID_MAX)) {
 			LOG_INFO_BDF("both segs are same, flow_type:%d, tun:%d.\n",
 				     flow_cfg->flow_type, seg->is_tunnel);
 			devm_kfree(dev, seg);
 			return -EEXIST;
+		}
+
+		if (bitmap_equal(seg_old->headers, seg->headers, SXE2_FLOW_HDR_MAX)) {
+			LOG_ERROR_BDF("same headers with different fields, "
+				      "flow_type:%d not allowed.\n",
+				      flow_cfg->flow_type);
+			ret = -EINVAL;
+			goto l_flow_add_failed;
 		}
 	}
 
@@ -1417,8 +1515,6 @@ s32 sxe2_acl_flow_cfg_add(struct sxe2_vsi *vsi, struct sxe2_acl_flow_cfg *flow_c
 	if (seg_old)
 		devm_kfree(dev, seg_old);
 
-	INIT_LIST_HEAD(&flow->acl_entry);
-	mutex_init(&flow->acl_entry_lock);
 	set_bit(vsi->id_in_pf, seg->vsis);
 	seg->flow_ptr = flow;
 	flow_cfg->seg = seg;
@@ -1489,16 +1585,17 @@ l_end:
 STATIC struct sxe2_acl_flow_entry *
 sxe2_flow_acl_scen_entry_cond_compare(struct sxe2_flow_info_node *flow_node,
 				      struct sxe2_acl_flow_entry *flow_entry,
-				      bool *do_chg_action, bool *do_add_entry,
-				      bool *do_rem_entry)
+				      bool *do_chg_action, bool *do_add_entry)
 {
 	struct sxe2_acl_flow_entry *return_node = NULL;
 	struct sxe2_acl_flow_entry *node = NULL;
 	struct sxe2_acl_flow_entry *tmp = NULL;
+	bool action_mismatch;
+	bool found_match;
+	u8 i, j;
 
 	*do_chg_action = false;
 	*do_add_entry = true;
-	*do_rem_entry = false;
 
 	mutex_lock(&flow_node->acl_entry_lock);
 	list_for_each_entry_safe(node, tmp, &flow_node->acl_entry, l_entry) {
@@ -1509,11 +1606,32 @@ sxe2_flow_acl_scen_entry_cond_compare(struct sxe2_flow_info_node *flow_node,
 		*do_add_entry = false;
 		return_node = node;
 
-		if (memcmp(node->action, flow_entry->action, sizeof(*node->action))) {
+		if (node->act_cnt != flow_entry->act_cnt) {
 			*do_chg_action = true;
-			*do_rem_entry = true;
 			break;
 		}
+
+		action_mismatch = false;
+		for (i = 0; i < node->act_cnt; i++) {
+			found_match = false;
+			for (j = 0; j < flow_entry->act_cnt; j++) {
+				if (memcmp(&node->action[i], &flow_entry->action[j],
+					   sizeof(*node->action)) == 0) {
+					found_match = true;
+					break;
+				}
+			}
+
+			if (!found_match) {
+				action_mismatch = true;
+				break;
+			}
+		}
+		if (action_mismatch) {
+			*do_chg_action = true;
+			break;
+		}
+		break;
 	}
 	mutex_unlock(&flow_node->acl_entry_lock);
 
@@ -1525,44 +1643,25 @@ STATIC s32 sxe2_flow_acl_add_scen_entry(struct sxe2_adapter *adapter,
 					struct sxe2_flow_info_node *flow)
 {
 	struct sxe2_acl_flow_entry *node = NULL;
-	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
 	s32 ret = -EEXIST;
 	bool do_add_entry = false;
-	bool do_rem_entry = false;
 	bool do_chg_action = false;
 	u8 *keys = NULL;
 	u8 *inverts = NULL;
 	u16 entry_idx = 0;
 
 	node = sxe2_flow_acl_scen_entry_cond_compare(flow, flow_entry, &do_chg_action,
-						     &do_add_entry, &do_rem_entry);
-
-	if (do_rem_entry && node) {
-		ret = sxe2_acl_remove_flow_lut_entry(adapter, node->flow->cfg.scen,
-						     node->scen_entry_idx);
-		if (ret) {
-			LOG_ERROR_BDF("Failed to remove flow entry, ret:%d\n", ret);
-			goto l_end;
-		}
-
-		list_del(&node->l_entry);
-		if (node->action) {
-			devm_kfree(dev, node->action);
-			node->action = NULL;
-		}
-		if (node->entry) {
-			devm_kfree(dev, node->entry);
-			node->entry = NULL;
-		}
-		devm_kfree(dev, node);
-	}
-
+						     &do_add_entry);
+	LOG_DEBUG_BDF("acl scen entry compare: do_add=%d, do_chg_action=%d, flow=%p\n",
+		      do_add_entry, do_chg_action, flow);
 	if (do_add_entry) {
 		keys = (u8 *)flow_entry->entry;
 		inverts = keys + (flow_entry->entry_size / 2);
+		LOG_DEBUG_BDF("acl scen add new entry: flow=%p, act_cnt=%u\n",
+			      flow, flow_entry->act_cnt);
 		ret = sxe2_acl_add_flow_lut_entry(adapter, flow->cfg.scen, &entry_idx,
 						  SXE2_ACL_LUT_ENTRY_PRIO_NORMAL, keys,
-						  inverts, flow_entry->action);
+						  inverts, flow_entry->action, flow_entry->act_cnt);
 		if (ret) {
 			LOG_ERROR_BDF("Failed to add flow entry, ret:%d\n", ret);
 			goto l_end;
@@ -1571,22 +1670,30 @@ STATIC s32 sxe2_flow_acl_add_scen_entry(struct sxe2_adapter *adapter,
 		mutex_lock(&flow->acl_entry_lock);
 		list_add_tail(&flow_entry->l_entry, &flow->acl_entry);
 		mutex_unlock(&flow->acl_entry_lock);
+		LOG_DEBUG_BDF("acl scen entry added: scen_entry_idx=%u\n", entry_idx);
+	} else if (!do_chg_action && node) {
+		flow_entry->scen_entry_idx = node->scen_entry_idx;
+		mutex_lock(&flow->acl_entry_lock);
+		list_add_tail(&flow_entry->l_entry, &flow->acl_entry);
+		mutex_unlock(&flow->acl_entry_lock);
+		LOG_DEBUG_BDF("acl scen entry reused: scen_entry_idx=%u\n",
+			      flow_entry->scen_entry_idx);
+		ret = 0;
 	} else {
-		if (do_chg_action) {
-			LOG_INFO_BDF("flow entry is exist, do change action.\n");
-			goto l_end;
-		}
+		ret = -EEXIST;
+		LOG_INFO_BDF("flow entry is exist, do change action.\n");
 	}
-
 l_end:
 	return ret;
 }
 
-s32 sxe2_acl_lut_entry_add(struct sxe2_vsi *vsi, struct sxe2_acl_filter *filter,
-			   struct sxe2_acl_flow_action *acts)
+s32 sxe2_acl_lut_entry_add(struct sxe2_vsi *ori_vsi,
+			   struct sxe2_vsi *rule_vsi,
+						   struct sxe2_acl_filter *filter,
+						   struct sxe2_acl_flow_action *acts)
 {
 	s32 ret = 0;
-	struct sxe2_adapter *adapter = vsi->adapter;
+	struct sxe2_adapter *adapter = ori_vsi->adapter;
 	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
 	struct sxe2_acl_flow_cfg *flow_cfg = NULL;
 	struct sxe2_flow_info_node *flow = NULL;
@@ -1596,12 +1703,17 @@ s32 sxe2_acl_lut_entry_add(struct sxe2_vsi *vsi, struct sxe2_acl_filter *filter,
 
 	mutex_lock(&adapter->acl_ctxt.filter_lock);
 
+	LOG_DEBUG_BDF("acl lut entry add start: slot_id=%u, flow_type=%d, rule_vsi=%u\n",
+		      slot_id, filter->flow_type, rule_vsi->id_in_pf);
+
 	ret = sxe2_acl_slot_id_alloc(adapter->acl_ctxt.slots, &slot_id);
 	if (ret) {
 		LOG_ERROR_BDF("failed to alloc slot id, ret:%d\n", ret);
 		goto l_unlock;
 	}
 
+	LOG_DEBUG_BDF("acl slot allocated: slot_id=%u, max_filter_cnt=%u\n",
+		      slot_id, max_filter_cnt);
 	if (slot_id >= max_filter_cnt) {
 		LOG_ERROR_BDF("Exceed the max entry number:%d of HW support\n",
 			      max_filter_cnt);
@@ -1609,7 +1721,7 @@ s32 sxe2_acl_lut_entry_add(struct sxe2_vsi *vsi, struct sxe2_acl_filter *filter,
 		goto l_free_slot_id;
 	}
 
-	flow_cfg = sxe2_acl_find_flow_cfg_by_flow_type(vsi, filter->flow_type);
+	flow_cfg = sxe2_acl_find_flow_cfg_by_flow_type(ori_vsi, filter->flow_type);
 	if (!flow_cfg) {
 		LOG_ERROR_BDF("flow node is not exist, flow_type: %d.\n",
 			      filter->flow_type);
@@ -1630,7 +1742,7 @@ s32 sxe2_acl_lut_entry_add(struct sxe2_vsi *vsi, struct sxe2_acl_filter *filter,
 	ret = sxe2_flow_acl_format_lut_act_entry(adapter, acl_flow_entry, flow, acts,
 						 (u8 *)&filter->full_key);
 	if (ret) {
-		LOG_ERROR_BDF("Failed to format lut ands act entry, ret %d.\n", ret);
+		LOG_ERROR_BDF("Failed to format lut and act entry, ret %d.\n", ret);
 		goto l_err_free_flow_struct;
 	}
 
@@ -1641,12 +1753,17 @@ s32 sxe2_acl_lut_entry_add(struct sxe2_vsi *vsi, struct sxe2_acl_filter *filter,
 	}
 
 	filter->flow_entry = acl_flow_entry;
-	list_add(&filter->l_node, &vsi->acl.filter_list);
+	list_add(&filter->l_node, &rule_vsi->acl.filter_list);
 	flow_cfg->filter_cnt++;
+	LOG_DEBUG_BDF("acl lut entry add done: filter_id=%llu, slot_id=%u, "
+		      "flow_type=%d, flow_cfg_filter_cnt=%u\n",
+		      filter->filter_id, slot_id, filter->flow_type,
+		      flow_cfg->filter_cnt);
 	mutex_unlock(&adapter->acl_ctxt.filter_lock);
 	return 0;
 
 l_err_free_flow_members:
+	LOG_DEBUG_BDF("acl lut entry add failed, free members: ret=%d\n", ret);
 	if (acl_flow_entry->action) {
 		devm_kfree(dev, acl_flow_entry->action);
 		acl_flow_entry->action = NULL;
@@ -1658,9 +1775,12 @@ l_err_free_flow_members:
 	}
 
 l_err_free_flow_struct:
+	LOG_DEBUG_BDF("acl lut entry add failed, free flow struct: ret=%d\n", ret);
 	devm_kfree(dev, acl_flow_entry);
 
 l_free_slot_id:
+	LOG_DEBUG_BDF("acl lut entry add failed, free slot: slot_id=%u, ret=%d\n",
+		      slot_id, ret);
 	sxe2_acl_slot_id_free(adapter->acl_ctxt.slots, slot_id);
 
 l_unlock:
@@ -1674,37 +1794,67 @@ STATIC s32 sxe2_acl_del_entry(struct sxe2_adapter *adapter,
 	s32 ret = 0;
 	struct sxe2_acl_scen_info *scen = NULL;
 	struct sxe2_flow_info_node *flow = NULL;
-	u16 entry_idx = 0;
+	struct sxe2_acl_flow_entry *curr, *tmp;
+	u16 entry_idx;
+	u32 match_count = 0;
+	bool found = false;
 
 	if (!flow_entry) {
 		LOG_DEBUG_BDF("flow_entry is NULL, nothing to delete\n");
 		return 0;
 	}
 
+	entry_idx = flow_entry->scen_entry_idx;
 	flow = flow_entry->flow;
 	if (flow) {
-		scen = flow->cfg.scen;
-		if (!scen) {
-			LOG_ERROR_BDF("scen is NULL, nothing to delete\n");
-		} else {
-			entry_idx = flow_entry->scen_entry_idx;
-			ret = sxe2_acl_remove_flow_lut_entry(adapter, scen, entry_idx);
-			if (ret) {
-				LOG_ERROR_BDF("Failed to delete entry,scen_entry_idx:%u\n",
-					      entry_idx);
+		mutex_lock(&flow->acl_entry_lock);
+		list_for_each_entry_safe(curr, tmp, &flow->acl_entry, l_entry) {
+			if (curr == flow_entry) {
+				list_del(&curr->l_entry);
+				found = true;
+				break;
 			}
+		}
+
+		if (!found) {
+			mutex_unlock(&flow->acl_entry_lock);
+			LOG_WARN_BDF("Flow entry not found in SW list, scen_idx: %d\n", entry_idx);
+			return -ENOENT;
+		}
+
+		list_for_each_entry(curr, &flow->acl_entry, l_entry) {
+			if (curr->scen_entry_idx == entry_idx)
+				match_count++;
+		}
+
+		mutex_unlock(&flow->acl_entry_lock);
+		if (match_count == 0) {
+			scen = flow->cfg.scen;
+			if (!scen) {
+				LOG_ERROR_BDF("scen is NULL, nothing to delete\n");
+			} else {
+				entry_idx = flow_entry->scen_entry_idx;
+				LOG_DEBUG_BDF("acl delete hw entry: scen_id=%u, entry_idx=%u, "
+					      "flow_entry=%p\n",
+					      scen->scen_id, entry_idx, flow_entry);
+				ret = sxe2_acl_remove_flow_lut_entry(adapter, scen, entry_idx);
+				if (ret)
+					LOG_ERROR_BDF("Failed to delete entry,scen_entry_idx:%u\n",
+						      entry_idx);
+			}
+		} else {
+			LOG_DEBUG_BDF("There are still %u entries sharing the same HW index %u\n",
+				      match_count, flow_entry->scen_entry_idx);
+			ret = 0;
 		}
 	}
 
-	if (!list_empty(&flow_entry->l_entry))
-		list_del(&flow_entry->l_entry);
-	else
-		LOG_WARN_BDF("flow_entry %p not in any list\n", flow_entry);
-
+	LOG_DEBUG_BDF("acl del entry done: flow_entry=%p, scen_entry_idx=%u, ret=%d\n",
+		      flow_entry, flow_entry->scen_entry_idx, ret);
 	return ret;
 }
 
-STATIC s32 sxe2_acl_filter_del(struct sxe2_vsi *vsi, struct sxe2_acl_filter *filter)
+STATIC s32 sxe2_acl_filter_del_hw(struct sxe2_vsi *vsi, struct sxe2_acl_filter *filter)
 {
 	s32 ret1 = 0;
 	s32 ret2 = 0;
@@ -1730,6 +1880,8 @@ STATIC s32 sxe2_acl_filter_del(struct sxe2_vsi *vsi, struct sxe2_acl_filter *fil
 	if (!list_empty(&filter->l_node)) {
 		list_del(&filter->l_node);
 		acl_flow_entry = filter->flow_entry;
+		LOG_DEBUG_BDF("acl filter del hw: filter_id=%llu, flow_type=%d, flow_entry=%p\n",
+			      filter->filter_id, filter->flow_type, acl_flow_entry);
 		ret1 = sxe2_acl_del_entry(adapter, acl_flow_entry);
 		if (ret1) {
 			LOG_ERROR_BDF("Failed to delete, filter_id:%llu, flow_type:%d,ret:%d\n",
@@ -1776,8 +1928,40 @@ STATIC s32 sxe2_acl_filter_del(struct sxe2_vsi *vsi, struct sxe2_acl_filter *fil
 
 	devm_kfree(dev, filter);
 	(void)sxe2_acl_slot_id_set(adapter->acl_ctxt.slots, max_filter_cnt);
+	LOG_DEBUG_BDF("acl filter del hw done: ret1=%d, ret2=%d\n", ret1, ret2);
 
 	return ret1 ? ret1 : ret2;
+}
+
+s32 sxe2_acl_filter_del(struct sxe2_vsi *rule_vsi, struct sxe2_acl_filter *filter)
+{
+	s32 ret = 0;
+	struct sxe2_adapter *adapter = rule_vsi->adapter;
+	u16 ori_vsi_id = 0;
+	struct sxe2_vsi *ori_vsi = NULL;
+	u32 flow_id = 0;
+
+	ori_vsi_id = filter->ori_vsi_hw;
+	flow_id = filter->filter_id;
+	ori_vsi = sxe2_vsi_get_by_idx(adapter, ori_vsi_id);
+
+	if (!ori_vsi) {
+		LOG_DEBUG_BDF("acl filter del: no ori_vsi, flow_id=%u, ori_vsi_hw=%u\n",
+			      flow_id, ori_vsi_id);
+		return -EINVAL;
+	}
+
+	LOG_DEBUG_BDF("acl filter del: flow_id=%u, ori_vsi_id=%u\n",
+		      flow_id, ori_vsi->id_in_pf);
+
+	ret = sxe2_acl_filter_del_hw(ori_vsi, filter);
+	if (ret) {
+		LOG_ERROR_BDF("sxe2 acl delete filter failed, flow_id=%u,\t"
+					  "ori_vsi_id=%u, ret:%d\n",
+					  flow_id, ori_vsi->id_in_pf, ret);
+	}
+
+	return ret;
 }
 
 s32 sxe2_acl_del_filter_by_vsi(struct sxe2_vsi *rule_vsi)
@@ -1787,11 +1971,15 @@ s32 sxe2_acl_del_filter_by_vsi(struct sxe2_vsi *rule_vsi)
 	struct sxe2_adapter *adapter = rule_vsi->adapter;
 	struct sxe2_acl_filter *filter = NULL;
 	struct sxe2_acl_filter *tmp = NULL;
+	struct sxe2_vsi_acl *vsi_acl = &rule_vsi->acl;
 
 	if (!test_bit(SXE2_FLAG_ACL_CAPABLE, adapter->flags))
 		return 0;
 
-	mutex_lock(&adapter->acl_ctxt.filter_lock);
+	LOG_DEBUG_BDF("acl del filter by vsi start: rule_vsi_id=%u\n",
+		      rule_vsi->idx_in_dev);
+
+	mutex_lock(&vsi_acl->flow_cfg_lock);
 	list_for_each_entry_safe(filter, tmp, &rule_vsi->acl.filter_list, l_node) {
 		ret = sxe2_acl_filter_del(rule_vsi, filter);
 		if (ret) {
@@ -1801,21 +1989,104 @@ s32 sxe2_acl_del_filter_by_vsi(struct sxe2_vsi *rule_vsi)
 		}
 	}
 
-	mutex_unlock(&adapter->acl_ctxt.filter_lock);
+	mutex_unlock(&vsi_acl->flow_cfg_lock);
+
+	LOG_DEBUG_BDF("acl del filter by vsi done: rule_vsi_id=%u, error=%d\n",
+		      rule_vsi->idx_in_dev, error);
 
 	return error;
 }
 
-void sxe2_vsi_acl_init(struct sxe2_vsi *vsi)
+STATIC s32 sxe2_acl_hw_stats_get(struct sxe2_adapter *adapter, u16 stat_index,
+				 u32 is_clear, struct sxe2_fwc_acl_stats_resp *resp)
+{
+	s32 ret = 0;
+	struct sxe2_cmd_params cmd = {};
+	struct sxe2_fwc_acl_stats_req req = {};
+
+	if (!test_bit(SXE2_FLAG_ACL_EXT_CAPABLE, adapter->flags))
+		return -EOPNOTSUPP;
+
+	req.is_clear = (u8)is_clear;
+	req.counter_idx = cpu_to_le16(stat_index);
+
+	sxe2_cmd_params_dflt_fill(&cmd, SXE2_CMD_ACL_STATS_GET,
+				  &req, sizeof(req), resp, sizeof(*resp));
+	ret = sxe2_cmd_fw_exec(adapter, &cmd);
+	if (ret) {
+		LOG_ERROR_BDF("sxe2 acl get state failed, stat_index=%u, ret=%d",
+			      stat_index, ret);
+	}
+	return ret;
+}
+
+STATIC s32 sxe2_acl_stats_clear_by_vsi(struct sxe2_vsi *vsi)
+{
+	struct sxe2_adapter *adapter = vsi->adapter;
+	struct sxe2_acl_stat_node *stat_node = NULL;
+	struct sxe2_acl_stat_node *tmp = NULL;
+	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
+	s32 ret = 0;
+	u16 vsi_id = vsi->id_in_pf;
+	struct sxe2_fwc_acl_stats_resp resp = {};
+
+	mutex_lock(&adapter->acl_ctxt.acl_stat_ctxt.acl_stat_lock);
+
+	list_for_each_entry_safe(stat_node, tmp,
+				 &adapter->acl_ctxt.acl_stat_ctxt.acl_stat_list,
+				 l_node) {
+		if (stat_node->vsi_id == vsi_id) {
+			ret = sxe2_acl_hw_stats_get(adapter, stat_node->stat_index, true, &resp);
+			if (ret) {
+				LOG_ERROR_BDF("sxe2 acl stats clear failed,\t"
+					      "stat_index=%u, ret=%d",
+					      stat_node->stat_index, ret);
+				break;
+			}
+			list_del(&stat_node->l_node);
+			devm_kfree(dev, stat_node);
+			adapter->acl_ctxt.acl_stat_ctxt.stat_cnt--;
+		}
+	}
+
+	mutex_unlock(&adapter->acl_ctxt.acl_stat_ctxt.acl_stat_lock);
+	return ret;
+}
+
+static s32 sxe2_acl_queue_vsi_map_init(struct sxe2_vsi *vsi)
+{
+	s32 ret = 0;
+	struct sxe2_adapter *adapter = vsi->adapter;
+	u16 i;
+	u16 offset;
+
+	sxe2_for_each_vsi_alloc_rxq(vsi, i)
+	{
+		offset = vsi->rxqs.q[i]->idx_in_pf + adapter->q_ctxt.rxq_base_idx_in_dev;
+		ret = sxe2_fwc_acl_qvsi_map_set(adapter, offset, vsi->idx_in_dev);
+		if (ret) {
+			LOG_ERROR_BDF("sxe2 acl queue vsi map init failed, ret:%d\n", ret);
+			goto l_end;
+		}
+	}
+l_end:
+	return ret;
+}
+
+s32 sxe2_vsi_acl_init(struct sxe2_vsi *vsi)
 {
 	if (!test_bit(SXE2_FLAG_ACL_CAPABLE, vsi->adapter->flags))
-		return;
+		return 0;
 
 	memset(&vsi->acl, 0, sizeof(vsi->acl));
 	mutex_init(&vsi->acl.flow_cfg_lock);
 	INIT_LIST_HEAD(&vsi->acl.filter_list);
 	INIT_LIST_HEAD(&vsi->acl.flow_cfg_list);
 	bitmap_fill(vsi->acl.filter_ids, SXE2_ACL_MAX_NUM_ENTRY);
+
+	if (test_bit(SXE2_FLAG_ACL_EXT_CAPABLE, vsi->adapter->flags))
+		return sxe2_acl_queue_vsi_map_init(vsi);
+	return 0;
 }
 
 void sxe2_vsi_acl_deinit(struct sxe2_vsi *vsi)
@@ -1826,20 +2097,19 @@ void sxe2_vsi_acl_deinit(struct sxe2_vsi *vsi)
 		return;
 
 	(void)sxe2_acl_del_filter_by_vsi(vsi);
+	(void)sxe2_acl_stats_clear_by_vsi(vsi);
 
 	mutex_destroy(&vsi_acl->flow_cfg_lock);
 	bitmap_zero(vsi->acl.filter_ids, SXE2_ACL_MAX_NUM_ENTRY);
 }
 
-STATIC struct sxe2_acl_filter *sxe2_acl_find_filter_by_id_unlock(struct sxe2_vsi *vsi,
+STATIC struct sxe2_acl_filter *sxe2_acl_find_filter_by_id_unlock(struct sxe2_vsi_acl *vsi_acl,
 								 u64 loc)
 {
 	struct sxe2_acl_filter *filter_tmp = NULL;
 	struct sxe2_acl_filter *filter_find = NULL;
-	struct sxe2_adapter *adapter = vsi->adapter;
 
-	list_for_each_entry(filter_tmp, &vsi->acl.filter_list, l_node) {
-		LOG_DEBUG_BDF("filter_id:%llu\n", filter_tmp->filter_id);
+	list_for_each_entry(filter_tmp, &vsi_acl->filter_list, l_node) {
 		if (loc == filter_tmp->filter_id) {
 			filter_find = filter_tmp;
 			break;
@@ -1861,7 +2131,7 @@ s32 sxe2_acl_del_filter_by_id(struct sxe2_vsi *vsi, u64 filter_id)
 	}
 
 	mutex_lock(&adapter->acl_ctxt.filter_lock);
-	filter = sxe2_acl_find_filter_by_id_unlock(vsi, filter_id);
+	filter = sxe2_acl_find_filter_by_id_unlock(&vsi->acl, filter_id);
 	if (filter) {
 		ret = sxe2_acl_filter_del(vsi, filter);
 		if (ret) {
@@ -1876,13 +2146,59 @@ s32 sxe2_acl_del_filter_by_id(struct sxe2_vsi *vsi, u64 filter_id)
 	return ret;
 }
 
+STATIC u8 sxe2_acl_field_width(enum sxe2_flow_fld_id fld)
+{
+	switch (fld) {
+	case SXE2_FLOW_FLD_ID_ETH_DA:
+	case SXE2_FLOW_FLD_ID_ETH_SA:
+		return ETH_ALEN;
+	case SXE2_FLOW_FLD_ID_IPV4_DA:
+	case SXE2_FLOW_FLD_ID_IPV4_SA:
+		return SXE2_FLOW_FLD_SZ_IPV4_ADDR;
+	case SXE2_FLOW_FLD_ID_IPV6_DA:
+	case SXE2_FLOW_FLD_ID_IPV6_SA:
+		return SXE2_FLOW_FLD_SZ_IPV6_ADDR;
+	case SXE2_FLOW_FLD_ID_TCP_SRC_PORT:
+	case SXE2_FLOW_FLD_ID_TCP_DST_PORT:
+	case SXE2_FLOW_FLD_ID_UDP_SRC_PORT:
+	case SXE2_FLOW_FLD_ID_UDP_DST_PORT:
+	case SXE2_FLOW_FLD_ID_SCTP_SRC_PORT:
+	case SXE2_FLOW_FLD_ID_SCTP_DST_PORT:
+		return SXE2_FLOW_FLD_SZ_PORT;
+	default:
+		LOG_WARN("unknown acl filed id:%d, returning 0.\n", fld);
+		return 0;
+	}
+}
+
+STATIC s32 sxe2_acl_fields_width_check(unsigned long *fld_spec)
+{
+	u64 i;
+	u16 total = 0;
+
+	for_each_set_bit(i, fld_spec, SXE2_FLOW_FLD_ID_MAX) {
+		total += sxe2_acl_field_width((enum sxe2_flow_fld_id)i);
+	}
+
+	if (total > SXE2_FW_ACL_KEY_WIDTH_BYTES * SXE2_ACL_MAX_CASCADE_WIDTH - 3) {
+		LOG_ERROR("acl fields total width %u exceeds avail %u.\n",
+			  total, SXE2_FW_ACL_KEY_WIDTH_BYTES * SXE2_ACL_MAX_CASCADE_WIDTH - 3);
+		return -ENOSPC;
+	}
+
+	return 0;
+}
+
 STATIC s32 sxe2_com_acl_input_parse(struct sxe2_acl_filter *filter,
 				    struct sxe2_fnav_flow_seg *seg,
-				    struct sxe2_flow_pattern *pattern, u16 flow_type)
+				    const struct sxe2_flow_pattern_ext *pattern,
+				    u16 flow_type)
 {
 	struct sxe2_fnav_filter_full_key *full_key = &filter->full_key;
+	const struct sxe2_flow_item_ext *it;
 	bool has_l4 = false;
 	u32 weight;
+	s32 ret = 0;
 	DECLARE_BITMAP(fld_spec, SXE2_FLOW_FLD_ID_MAX);
 	DECLARE_BITMAP(head_spec, SXE2_FLOW_HDR_MAX);
 
@@ -1890,19 +2206,20 @@ STATIC s32 sxe2_com_acl_input_parse(struct sxe2_acl_filter *filter,
 	bitmap_zero(head_spec, SXE2_FLOW_HDR_MAX);
 
 	if (test_bit(SXE2_FLOW_HDR_ETH, pattern->hdrs)) {
-		if (test_bit(SXE2_FLOW_FLD_ID_ETH_DA, pattern->map_spec)) {
-			memcpy(&full_key->eth.h_dest, &pattern->item_spec.eth.dst_addr,
+		it = sxe2_flow_pattern_ext_item_find(pattern, SXE2_FLOW_HDR_ETH);
+		if (it && test_bit(SXE2_FLOW_FLD_ID_ETH_DA, pattern->map_spec)) {
+			memcpy(&full_key->eth.h_dest, &it->val.eth.dst_addr,
 			       ETH_ALEN * sizeof(u8));
 			memcpy(&full_key->eth_mask.h_dest,
-			       &pattern->item_mask.eth.dst_addr, ETH_ALEN * sizeof(u8));
+			       &it->mask.eth.dst_addr, ETH_ALEN * sizeof(u8));
 			set_bit(SXE2_FLOW_FLD_ID_ETH_DA, fld_spec);
 		}
 
-		if (test_bit(SXE2_FLOW_FLD_ID_ETH_SA, pattern->map_spec)) {
-			memcpy(&full_key->eth.h_source, &pattern->item_spec.eth.src_addr,
+		if (it && test_bit(SXE2_FLOW_FLD_ID_ETH_SA, pattern->map_spec)) {
+			memcpy(&full_key->eth.h_source, &it->val.eth.src_addr,
 			       ETH_ALEN * sizeof(u8));
 			memcpy(&full_key->eth_mask.h_source,
-			       &pattern->item_mask.eth.src_addr, ETH_ALEN * sizeof(u8));
+			       &it->mask.eth.src_addr, ETH_ALEN * sizeof(u8));
 			set_bit(SXE2_FLOW_FLD_ID_ETH_SA, fld_spec);
 		}
 
@@ -1910,30 +2227,51 @@ STATIC s32 sxe2_com_acl_input_parse(struct sxe2_acl_filter *filter,
 	}
 
 	if (test_bit(SXE2_FLOW_HDR_IPV4, pattern->hdrs)) {
-		if (test_bit(SXE2_FLOW_FLD_ID_IPV4_DA, pattern->map_spec)) {
-			full_key->ip.v4.dst_ip = pattern->item_spec.ipv4.daddr;
-			full_key->mask.v4.dst_ip = pattern->item_mask.ipv4.daddr;
+		it = sxe2_flow_pattern_ext_item_find(pattern, SXE2_FLOW_HDR_IPV4);
+		if (it && test_bit(SXE2_FLOW_FLD_ID_IPV4_DA, pattern->map_spec)) {
+			full_key->ip.v4.dst_ip = it->val.ipv4.daddr;
+			full_key->mask.v4.dst_ip = it->mask.ipv4.daddr;
 			set_bit(SXE2_FLOW_FLD_ID_IPV4_DA, fld_spec);
 		}
 
-		if (test_bit(SXE2_FLOW_FLD_ID_IPV4_SA, pattern->map_spec)) {
-			full_key->ip.v4.src_ip = pattern->item_spec.ipv4.saddr;
-			full_key->mask.v4.src_ip = pattern->item_mask.ipv4.saddr;
+		if (it && test_bit(SXE2_FLOW_FLD_ID_IPV4_SA, pattern->map_spec)) {
+			full_key->ip.v4.src_ip = it->val.ipv4.saddr;
+			full_key->mask.v4.src_ip = it->mask.ipv4.saddr;
 			set_bit(SXE2_FLOW_FLD_ID_IPV4_SA, fld_spec);
 		}
 
 		set_bit(SXE2_FLOW_HDR_IPV4, head_spec);
 	}
 
+	if (test_bit(SXE2_FLOW_HDR_IPV6, pattern->hdrs)) {
+		it = sxe2_flow_pattern_ext_item_find(pattern, SXE2_FLOW_HDR_IPV6);
+		if (it && test_bit(SXE2_FLOW_FLD_ID_IPV6_DA, pattern->map_spec)) {
+			memcpy(&full_key->ip.v6.dst_ip, &it->val.ipv6.daddr,
+			       sizeof(full_key->ip.v6.dst_ip));
+			memcpy(&full_key->mask.v6.dst_ip, &it->mask.ipv6.daddr,
+			       sizeof(full_key->mask.v6.dst_ip));
+			set_bit(SXE2_FLOW_FLD_ID_IPV6_DA, fld_spec);
+		}
+		if (it && test_bit(SXE2_FLOW_FLD_ID_IPV6_SA, pattern->map_spec)) {
+			memcpy(&full_key->ip.v6.src_ip, &it->val.ipv6.saddr,
+			       sizeof(full_key->ip.v6.src_ip));
+			memcpy(&full_key->mask.v6.src_ip, &it->mask.ipv6.saddr,
+			       sizeof(full_key->mask.v6.src_ip));
+			set_bit(SXE2_FLOW_FLD_ID_IPV6_SA, fld_spec);
+		}
+		set_bit(SXE2_FLOW_HDR_IPV6, head_spec);
+	}
+
 	if (test_bit(SXE2_FLOW_HDR_TCP, pattern->hdrs)) {
-		if (test_bit(SXE2_FLOW_FLD_ID_TCP_SRC_PORT, pattern->map_spec)) {
-			full_key->l4.src_port = pattern->item_spec.tcp.source;
-			full_key->l4_mask.src_port = pattern->item_mask.tcp.source;
+		it = sxe2_flow_pattern_ext_item_find(pattern, SXE2_FLOW_HDR_TCP);
+		if (it && test_bit(SXE2_FLOW_FLD_ID_TCP_SRC_PORT, pattern->map_spec)) {
+			full_key->l4.src_port = it->val.tcp.source;
+			full_key->l4_mask.src_port = it->mask.tcp.source;
 			set_bit(SXE2_FLOW_FLD_ID_TCP_SRC_PORT, fld_spec);
 		}
-		if (test_bit(SXE2_FLOW_FLD_ID_TCP_DST_PORT, pattern->map_spec)) {
-			full_key->l4.dst_port = pattern->item_spec.tcp.dest;
-			full_key->l4_mask.dst_port = pattern->item_mask.tcp.dest;
+		if (it && test_bit(SXE2_FLOW_FLD_ID_TCP_DST_PORT, pattern->map_spec)) {
+			full_key->l4.dst_port = it->val.tcp.dest;
+			full_key->l4_mask.dst_port = it->mask.tcp.dest;
 			set_bit(SXE2_FLOW_FLD_ID_TCP_DST_PORT, fld_spec);
 		}
 
@@ -1943,15 +2281,16 @@ STATIC s32 sxe2_com_acl_input_parse(struct sxe2_acl_filter *filter,
 	}
 
 	if (test_bit(SXE2_FLOW_HDR_UDP, pattern->hdrs)) {
-		if (test_bit(SXE2_FLOW_FLD_ID_UDP_SRC_PORT, pattern->map_spec)) {
-			full_key->l4.src_port = pattern->item_spec.udp.source;
-			full_key->l4_mask.src_port = pattern->item_mask.udp.source;
+		it = sxe2_flow_pattern_ext_item_find(pattern, SXE2_FLOW_HDR_UDP);
+		if (it && test_bit(SXE2_FLOW_FLD_ID_UDP_SRC_PORT, pattern->map_spec)) {
+			full_key->l4.src_port = it->val.udp.source;
+			full_key->l4_mask.src_port = it->mask.udp.source;
 			set_bit(SXE2_FLOW_FLD_ID_UDP_SRC_PORT, fld_spec);
 		}
 
-		if (test_bit(SXE2_FLOW_FLD_ID_UDP_DST_PORT, pattern->map_spec)) {
-			full_key->l4.dst_port = pattern->item_spec.udp.dest;
-			full_key->l4_mask.dst_port = pattern->item_mask.udp.dest;
+		if (it && test_bit(SXE2_FLOW_FLD_ID_UDP_DST_PORT, pattern->map_spec)) {
+			full_key->l4.dst_port = it->val.udp.dest;
+			full_key->l4_mask.dst_port = it->mask.udp.dest;
 			set_bit(SXE2_FLOW_FLD_ID_UDP_DST_PORT, fld_spec);
 		}
 
@@ -1961,15 +2300,16 @@ STATIC s32 sxe2_com_acl_input_parse(struct sxe2_acl_filter *filter,
 	}
 
 	if (test_bit(SXE2_FLOW_HDR_SCTP, pattern->hdrs)) {
-		if (test_bit(SXE2_FLOW_FLD_ID_SCTP_SRC_PORT, pattern->map_spec)) {
-			full_key->l4.src_port = pattern->item_spec.sctp.src_port;
-			full_key->l4_mask.src_port = pattern->item_mask.sctp.src_port;
+		it = sxe2_flow_pattern_ext_item_find(pattern, SXE2_FLOW_HDR_SCTP);
+		if (it && test_bit(SXE2_FLOW_FLD_ID_SCTP_SRC_PORT, pattern->map_spec)) {
+			full_key->l4.src_port = it->val.sctp.src_port;
+			full_key->l4_mask.src_port = it->mask.sctp.src_port;
 			set_bit(SXE2_FLOW_FLD_ID_SCTP_SRC_PORT, fld_spec);
 		}
 
-		if (test_bit(SXE2_FLOW_FLD_ID_SCTP_DST_PORT, pattern->map_spec)) {
-			full_key->l4.dst_port = pattern->item_spec.sctp.dst_port;
-			full_key->l4_mask.dst_port = pattern->item_mask.sctp.dst_port;
+		if (it && test_bit(SXE2_FLOW_FLD_ID_SCTP_DST_PORT, pattern->map_spec)) {
+			full_key->l4.dst_port = it->val.sctp.dst_port;
+			full_key->l4_mask.dst_port = it->mask.sctp.dst_port;
 			set_bit(SXE2_FLOW_FLD_ID_SCTP_DST_PORT, fld_spec);
 		}
 
@@ -1983,10 +2323,15 @@ STATIC s32 sxe2_com_acl_input_parse(struct sxe2_acl_filter *filter,
 		return -EINVAL;
 	}
 
-	if (flow_type != SXE2_FLOW_MAC_PAY && flow_type != SXE2_FLOW_MAC_IPV4_TCP_PAY &&
-	    flow_type != SXE2_FLOW_MAC_IPV4_UDP_PAY &&
-	    flow_type != SXE2_FLOW_MAC_IPV4_SCTP_PAY &&
-	    flow_type != SXE2_FLOW_MAC_IPV4_PAY) {
+	if (flow_type != SXE2_FLOW_MAC_PAY &&
+	    flow_type !=  SXE2_FLOW_MAC_IPV4_TCP_PAY &&
+	    flow_type !=  SXE2_FLOW_MAC_IPV4_UDP_PAY &&
+	    flow_type !=  SXE2_FLOW_MAC_IPV4_SCTP_PAY &&
+	    flow_type !=  SXE2_FLOW_MAC_IPV4_PAY &&
+	    flow_type !=  SXE2_FLOW_MAC_IPV6_TCP_PAY &&
+	    flow_type !=  SXE2_FLOW_MAC_IPV6_UDP_PAY &&
+	    flow_type !=  SXE2_FLOW_MAC_IPV6_SCTP_PAY &&
+	    flow_type !=  SXE2_FLOW_MAC_IPV6_PAY) {
 		LOG_ERROR("flow_type:%d not support.\n", flow_type);
 		return -EOPNOTSUPP;
 	}
@@ -2002,59 +2347,124 @@ STATIC s32 sxe2_com_acl_input_parse(struct sxe2_acl_filter *filter,
 		full_key->ip.v4.proto = 0;
 	}
 
+	if (test_bit(SXE2_FLOW_HDR_IPV6, head_spec) && !has_l4) {
+		set_bit(SXE2_FLOW_HDR_IPV_OTHER, head_spec);
+			full_key->ip.v6.proto = 0;
+	}
+
+	ret = sxe2_acl_fields_width_check(fld_spec);
+	if (ret)
+		return ret;
+
 	bitmap_copy(seg->headers, head_spec, SXE2_FLOW_HDR_MAX);
 	bitmap_copy(seg->fields, fld_spec, SXE2_FLOW_FLD_ID_MAX);
 	filter->flow_type = flow_type;
 	return 0;
 }
 
-STATIC void sxe2_com_acl_action_parse(struct sxe2_acl_flow_action *action,
-				      struct sxe2_flow_action *flow_action)
+STATIC void sxe2_acl_stat_ctrl_convert(enum sxe2_fnav_stat_ctrl_type ori_stat_ctrl,
+				       u32 *stat_ctrl)
 {
-	if (test_bit(SXE2_FLOW_ACTION_QUEUE, flow_action->act_types)) {
-		action[0].type = SXE2_ACL_ACT_QINDEX;
-		action[0].data.acl_act.mdid = SXE2_ACL_ACTION_MDID_RX_DST_Q;
-		action[0].data.acl_act.prio = 3;
-		action[0].data.acl_act.value = cpu_to_le16(flow_action->queue.q_index);
-	}
-	if (test_bit(SXE2_FLOW_ACTION_DROP, flow_action->act_types)) {
-		action[0].type = SXE2_ACL_ACT_DROP;
-		action[0].data.acl_act.mdid = SXE2_ACL_ACTION_MDID_PKT_DROP;
-		action[0].data.acl_act.prio = 3;
-		action[0].data.acl_act.value = cpu_to_le16(0x1);
-	}
-	if (test_bit(SXE2_FLOW_ACTION_Q_REGION, flow_action->act_types)) {
-		action[0].type = SXE2_ACL_ACT_QGROUP;
-		action[0].data.acl_act.mdid = SXE2_ACL_ACTION_MDID_RX_DST_Q_REGION;
-		action[0].data.acl_act.prio = 3;
-		action[0].data.acl_act.value =
-				((cpu_to_le16(flow_action->q_region.q_index) & 0x7ff)
-				 << 3) |
-				(cpu_to_le16(flow_action->q_region.region) & 0x7);
-	}
-	if (test_bit(SXE2_FLOW_ACTION_TO_VSI, flow_action->act_types)) {
-		action[0].type = SXE2_ACL_ACT_VSI;
-		action[0].data.acl_act.mdid = SXE2_ACL_ACTION_MDID_RX_DST_VSI;
-		action[0].data.acl_act.prio = 3;
-		action[0].data.acl_act.value = cpu_to_le16(flow_action->vsi.vsi_index);
+	switch (ori_stat_ctrl) {
+	case SXE2_FNAV_STAT_ENA_PKTS:
+		*stat_ctrl = SXE2_ACL_ACTION_MDID_CNT_PKT;
+		break;
+	case SXE2_FNAV_STAT_ENA_BYTES:
+		*stat_ctrl = SXE2_ACL_ACTION_MDID_CNT_BYTE;
+		break;
+	case SXE2_FNAV_STAT_ENA_ALL:
+	case SXE2_FNAV_STAT_ENA_NONE:
+	default:
+		*stat_ctrl = SXE2_ACL_ACTION_MDID_CNT_PKT_BYTE;
+		break;
 	}
 }
 
-STATIC s32 sxe2_com_acl_filter_add_internal(struct sxe2_vsi *vsi, u16 flow_type,
-					    struct sxe2_flow_pattern *pattern,
+STATIC u16 sxe2_qindex_in_hw_get_by_vsi(struct sxe2_adapter *adapter, u16 dst_vsi_id, u16 q_index)
+{
+	struct sxe2_vsi *dst_vsi;
+
+	dst_vsi = sxe2_vsi_get_by_idx(adapter, dst_vsi_id);
+	if (!dst_vsi) {
+		LOG_ERROR_BDF("Failed to get vsi, vsi_id=%d\n", dst_vsi_id);
+		return 0;
+	}
+
+	return (adapter->q_ctxt.rxq_base_idx_in_dev + dst_vsi->rxqs.q[q_index]->idx_in_pf);
+}
+
+STATIC u8 sxe2_com_acl_action_parse(struct sxe2_adapter *adapter,
+				    struct sxe2_acl_flow_action *action,
+				    struct sxe2_flow_action *flow_action)
+{
+	u32 stat_ctrl;
+	u16 q_index_in_dev;
+	u16 dst_vsi_id;
+	u8 cnt = 0;
+
+	if (test_bit(SXE2_FLOW_ACTION_QUEUE, flow_action->act_types)) {
+		dst_vsi_id = flow_action->queue.vsi_index;
+		action[cnt].type = SXE2_ACL_ACT_QINDEX;
+		action[cnt].data.acl_act.mdid = SXE2_ACL_ACTION_MDID_RX_DST_Q;
+		action[cnt].data.acl_act.prio = 3;
+		q_index_in_dev = sxe2_qindex_in_hw_get_by_vsi(adapter, dst_vsi_id,
+							      flow_action->queue.q_index);
+		action[cnt].data.acl_act.value = cpu_to_le16(q_index_in_dev);
+		cnt++;
+	}
+
+	if (test_bit(SXE2_FLOW_ACTION_DROP, flow_action->act_types)) {
+		action[cnt].type = SXE2_ACL_ACT_DROP;
+		action[cnt].data.acl_act.mdid = SXE2_ACL_ACTION_MDID_PKT_DROP;
+		action[cnt].data.acl_act.prio = 3;
+		action[cnt].data.acl_act.value = cpu_to_le16(0x1);
+		cnt++;
+	}
+
+	if (test_bit(SXE2_FLOW_ACTION_Q_REGION, flow_action->act_types)) {
+		dst_vsi_id = flow_action->q_region.vsi_index;
+		action[cnt].type = SXE2_ACL_ACT_QGROUP;
+		action[cnt].data.acl_act.mdid = SXE2_ACL_ACTION_MDID_RX_DST_Q_REGION;
+		action[cnt].data.acl_act.prio = 3;
+		q_index_in_dev = sxe2_qindex_in_hw_get_by_vsi(adapter, dst_vsi_id,
+							      flow_action->q_region.q_index);
+		action[cnt].data.acl_act.value =
+				((cpu_to_le16(q_index_in_dev) & 0x7ff)
+				 << 3) |
+				(cpu_to_le16(flow_action->q_region.region) & 0x7);
+		cnt++;
+	}
+
+	if (test_bit(SXE2_FLOW_ACTION_COUNT, flow_action->act_types)) {
+		action[cnt].type = SXE2_ACL_ACT_OTHER;
+		sxe2_acl_stat_ctrl_convert(flow_action->count.stat_ctrl, &stat_ctrl);
+		action[cnt].data.acl_act.mdid = stat_ctrl;
+		action[cnt].data.acl_act.prio = 3;
+		action[cnt].data.acl_act.value = cpu_to_le16(flow_action->count.stat_index);
+		cnt++;
+	}
+
+	return cnt;
+}
+
+STATIC s32 sxe2_com_acl_filter_add_internal(struct sxe2_vsi *ori_vsi,
+					    struct sxe2_vsi *rule_vsi,
+					    u16 flow_type,
+					    const struct sxe2_flow_pattern_ext *pattern,
 					    struct sxe2_flow_action *action,
 					    u32 filter_id)
 {
 	s32 ret = 0;
-	struct sxe2_adapter *adapter = vsi->adapter;
-	struct sxe2_acl_flow_action acts[1] = {};
+	struct sxe2_adapter *adapter = ori_vsi->adapter;
+	struct sxe2_acl_flow_action acts[SXE2_FLOW_ACTION_MAX] = {};
 	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
 	struct sxe2_fnav_flow_seg *seg = NULL;
 	struct sxe2_acl_flow_cfg *flow_cfg = NULL;
 	struct sxe2_acl_filter *filter = NULL;
 	bool new_alloc_flow = false;
+	u8 action_cnt = 0;
 
-	flow_cfg = sxe2_acl_find_flow_cfg_by_flow_type(vsi, flow_type);
+	flow_cfg = sxe2_acl_find_flow_cfg_by_flow_type(ori_vsi, flow_type);
 	if (!flow_cfg) {
 		flow_cfg = devm_kzalloc(dev, sizeof(*flow_cfg), GFP_KERNEL);
 		if (!flow_cfg) {
@@ -2066,7 +2476,13 @@ STATIC s32 sxe2_com_acl_filter_add_internal(struct sxe2_vsi *vsi, u16 flow_type,
 		new_alloc_flow = true;
 	}
 
-	sxe2_com_acl_action_parse(acts, action);
+	action_cnt = sxe2_com_acl_action_parse(adapter, acts, action);
+	if (action_cnt == 0 || action_cnt > SXE2_ACL_ACTION_NUM_PER_ENTRY) {
+		LOG_ERROR_BDF("no action or action_cnt is %d.\n", action_cnt);
+		ret = -EINVAL;
+		goto l_free_cfg;
+	}
+	LOG_DEBUG_BDF("action_cnt is %d.\n", action_cnt);
 
 	seg = devm_kzalloc(dev, sizeof(*seg), GFP_KERNEL);
 	if (!seg) {
@@ -2088,7 +2504,11 @@ STATIC s32 sxe2_com_acl_filter_add_internal(struct sxe2_vsi *vsi, u16 flow_type,
 		goto l_free_filter;
 	}
 
-	ret = sxe2_acl_flow_cfg_add(vsi, flow_cfg, seg);
+	filter->ori_vsi_sw = ori_vsi->id_in_pf;
+	filter->ori_vsi_hw = ori_vsi->idx_in_dev;
+	filter->rule_vsi_sw = rule_vsi->id_in_pf;
+
+	ret = sxe2_acl_flow_cfg_add(ori_vsi, flow_cfg, seg);
 	if (ret == -EEXIST) {
 		seg = NULL;
 		LOG_DEBUG_BDF("acl rule exist.\n");
@@ -2102,16 +2522,17 @@ STATIC s32 sxe2_com_acl_filter_add_internal(struct sxe2_vsi *vsi, u16 flow_type,
 	}
 
 	if (ret == 0 && new_alloc_flow)
-		sxe2_acl_flow_cfg_add_list(vsi, flow_cfg);
+		sxe2_acl_flow_cfg_add_list(ori_vsi, flow_cfg);
 
 	INIT_LIST_HEAD(&filter->l_node);
-	ret = sxe2_acl_lut_entry_add(vsi, filter, acts);
+	ret = sxe2_acl_lut_entry_add(ori_vsi, rule_vsi, filter, acts);
 	if (ret) {
 		LOG_ERROR_BDF("acl lut entry add failed, ret:%d\n", ret);
-		(void)sxe2_acl_filter_del(vsi, filter);
+		(void)sxe2_acl_filter_del(ori_vsi, filter);
 		goto l_end;
 	}
-	filter->filter_id = SXE2_GEN_FILTER_ID(vsi->idx_in_dev, filter_id);
+
+	filter->filter_id = SXE2_GEN_FILTER_ID(rule_vsi->idx_in_dev, filter_id);
 	LOG_DEBUG_BDF("filter_id:%llu\n", filter->filter_id);
 	goto l_end;
 
@@ -2130,75 +2551,225 @@ l_end:
 	return ret;
 }
 
-s32 sxe2_com_flow_acl_filter_add(struct sxe2_adapter *adapter, u16 rule_vsi_id,
-				 struct sxe2_drv_flow_filter_req *req,
-				 struct sxe2_drv_flow_filter_resp *resp)
+s32 sxe2_com_add_acl_filter(struct sxe2_adapter *adapter, u16 ori_vsi_id,
+			    u16 rule_vsi_id, u16 flow_type,
+			      const struct sxe2_flow_pattern_ext *pattern,
+			      struct sxe2_flow_action *action, u32 *flow_id)
 {
-	s32 ret = 0;
+	struct sxe2_vsi *ori_vsi = NULL;
+	struct sxe2_vsi *rule_vsi = NULL;
 	u32 pos = 0;
-	struct sxe2_vsi *rule_vsi;
+	s32 ret = 0;
 
-	if (!test_bit(SXE2_FLAG_ACL_CAPABLE, adapter->flags)) {
-		LOG_INFO_BDF("acl not supported.\n");
-		return -EOPNOTSUPP;
-	}
+	LOG_INFO_BDF("add acl filter, ori_vsi_id(in_pf)=%u, rule_vsi_id(in_pf)=%u, flow_type=%u\n",
+		     ori_vsi_id, rule_vsi_id, flow_type);
 
 	mutex_lock(&adapter->vsi_ctxt.lock);
-	rule_vsi = sxe2_vsi_get_by_idx(adapter, rule_vsi_id);
-	if (!rule_vsi) {
-		LOG_ERROR_BDF("vsi not found, vsi_id:%u.\n", rule_vsi_id);
+	ori_vsi = adapter->vsi_ctxt.vsi[ori_vsi_id];
+	rule_vsi = adapter->vsi_ctxt.vsi[rule_vsi_id];
+	if (!ori_vsi || !rule_vsi) {
+		LOG_ERROR_BDF("vsi is null, ori_vsi_id(in_pf)=%u, rule_vsi_id(in_pf)=%u, "
+			      "base_idx_in_dev=%u\n",
+			      ori_vsi_id, rule_vsi_id,
+			      adapter->vsi_ctxt.base_idx_in_dev);
 		ret = -EINVAL;
 		goto l_end;
 	}
+	LOG_INFO_BDF("acl vsi found, ori(idx_in_dev=%u type=%d), rule(idx_in_dev=%u type=%d)\n",
+		     ori_vsi->idx_in_dev, ori_vsi->type, rule_vsi->idx_in_dev, rule_vsi->type);
 
 	pos = find_next_bit(rule_vsi->acl.filter_ids, SXE2_ACL_MAX_NUM_ENTRY, 0);
 	if (pos >= SXE2_ACL_MAX_NUM_ENTRY) {
 		ret = -EINVAL;
 		goto l_end;
 	}
-	clear_bit(pos, rule_vsi->acl.filter_ids);
-	resp->flow_id = pos;
 
-	ret = sxe2_com_acl_filter_add_internal(rule_vsi, req->meta.flow_type,
-					       &req->pattern_outer, &req->action, pos);
+	ret = sxe2_com_acl_filter_add_internal(ori_vsi, rule_vsi, flow_type,
+					       pattern, action, pos);
 	if (ret) {
-		set_bit(pos, rule_vsi->acl.filter_ids);
 		LOG_ERROR_BDF("failed to add acl filter, ret:%d\n", ret);
 		goto l_end;
 	}
+
+	clear_bit(pos, rule_vsi->acl.filter_ids);
+	*flow_id = pos;
 
 l_end:
 	mutex_unlock(&adapter->vsi_ctxt.lock);
 	return ret;
 }
 
-s32 sxe2_com_flow_acl_filter_del(struct sxe2_adapter *adapter, u16 rule_vsi_id,
-				 struct sxe2_drv_flow_filter_req *req)
+s32 sxe2_com_flow_acl_filter_del_by_flow_id(struct sxe2_adapter *adapter,
+					    u16 rule_vsi_id, u32 flow_id)
 {
 	s32 ret = 0;
-	struct sxe2_vsi *rule_vsi;
+	struct sxe2_vsi *rule_vsi = NULL;
 
 	if (!test_bit(SXE2_FLAG_ACL_CAPABLE, adapter->flags)) {
 		LOG_INFO_BDF("acl not supported.\n");
 		return -EOPNOTSUPP;
 	}
 
+	LOG_INFO_BDF("del acl filter, rule_vsi_id(in_pf)=%u, flow_id=%u\n",
+		     rule_vsi_id, flow_id);
+
 	mutex_lock(&adapter->vsi_ctxt.lock);
-	rule_vsi = sxe2_vsi_get_by_idx(adapter, rule_vsi_id);
+	rule_vsi = adapter->vsi_ctxt.vsi[rule_vsi_id];
 	if (!rule_vsi) {
-		LOG_ERROR_BDF("vsi not found, vsi_id:%u.\n", rule_vsi_id);
+		LOG_ERROR_BDF("vsi is null, rule_vsi_id(in_pf)=%u, base_idx_in_dev=%u\n",
+			      rule_vsi_id, adapter->vsi_ctxt.base_idx_in_dev);
+		ret = -EINVAL;
+		mutex_unlock(&adapter->vsi_ctxt.lock);
+		return ret;
+	}
+	ret = sxe2_acl_del_filter_by_id(rule_vsi,
+					SXE2_GEN_FILTER_ID(rule_vsi->idx_in_dev, flow_id));
+	if (ret)
+		LOG_ERROR_BDF("delete acl filter failed, ret:%d\n", ret);
+
+	set_bit(flow_id, rule_vsi->acl.filter_ids);
+	mutex_unlock(&adapter->vsi_ctxt.lock);
+	return ret;
+}
+
+s32 sxe2_acl_stat_idx_alloc_with_lock(struct sxe2_adapter *adapter, u16 vsi_id,
+				      u16 *stat_index, bool need_update)
+{
+	struct sxe2_fnav_stat_node *stat_node = NULL;
+	struct sxe2_fnav_stat_node *tmp, *pre = NULL;
+	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
+	s32 ret = 0;
+	u16 stat_base_id = adapter->acl_ctxt.acl_stat_ctxt.stat_base;
+	u16 stat_num = adapter->acl_ctxt.acl_stat_ctxt.stat_num;
+	u16 count = adapter->acl_ctxt.acl_stat_ctxt.stat_cnt;
+	u16 new_index = stat_base_id;
+
+	if (count >= stat_num)
+		return -ENOMEM;
+
+	mutex_lock(&adapter->acl_ctxt.acl_stat_ctxt.acl_stat_lock);
+	list_for_each_entry(tmp, &adapter->acl_ctxt.acl_stat_ctxt.acl_stat_list, l_node) {
+		if (tmp->stat_index > new_index)
+			break;
+		else if (tmp->stat_index == new_index)
+			new_index++;
+
+		pre = tmp;
+	}
+
+	stat_node = devm_kzalloc(dev, sizeof(*stat_node), GFP_KERNEL);
+	if (!stat_node) {
+		LOG_ERROR_BDF("no memory.\n");
+		ret = -ENOMEM;
+		goto l_end;
+	}
+	stat_node->stat_index = new_index;
+	stat_node->vsi_id = vsi_id;
+	stat_node->need_update = need_update;
+	if (pre) {
+		list_add(&stat_node->l_node, &pre->l_node);
+	} else {
+		list_add(&stat_node->l_node,
+			 &adapter->acl_ctxt.acl_stat_ctxt.acl_stat_list);
+	}
+	adapter->acl_ctxt.acl_stat_ctxt.stat_cnt++;
+	*stat_index = new_index;
+
+l_end:
+	mutex_unlock(&adapter->acl_ctxt.acl_stat_ctxt.acl_stat_lock);
+	return ret;
+}
+
+s32 sxe2_acl_stat_idx_free_with_lock(struct sxe2_adapter *adapter, u16 stat_index)
+{
+	struct sxe2_fnav_stat_node *stat_node = NULL;
+	struct sxe2_fnav_stat_node *tmp = NULL;
+	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
+	s32 ret = 0;
+	u16 stat_base_id = adapter->acl_ctxt.acl_stat_ctxt.stat_base;
+	u16 stat_num = adapter->acl_ctxt.acl_stat_ctxt.stat_num;
+	struct sxe2_fwc_acl_stats_resp resp = {};
+
+	if (stat_index < stat_base_id || stat_index >= stat_base_id + stat_num) {
+		LOG_ERROR_BDF("stat_index is out of range.\n");
 		ret = -EINVAL;
 		goto l_end;
 	}
 
-	ret = sxe2_acl_del_filter_by_id(rule_vsi,
-					SXE2_GEN_FILTER_ID(rule_vsi->idx_in_dev, req->flow_id));
-	if (ret)
-		LOG_ERROR_BDF("delete acl filter failed, ret:%d\n", ret);
+	ret = sxe2_acl_hw_stats_get(adapter, stat_index, true, &resp);
+	if (ret) {
+		LOG_ERROR_BDF("sxe2 acl now has valid stat index! idx: %u\n",
+			      stat_index);
+		goto l_end;
+	}
 
-	set_bit(req->flow_id, rule_vsi->acl.filter_ids);
+	mutex_lock(&adapter->acl_ctxt.acl_stat_ctxt.acl_stat_lock);
+	list_for_each_entry_safe(stat_node, tmp,
+				 &adapter->acl_ctxt.acl_stat_ctxt.acl_stat_list,
+				 l_node) {
+		if (stat_node->stat_index == stat_index) {
+			list_del(&stat_node->l_node);
+			devm_kfree(dev, stat_node);
+			break;
+		}
+	}
+	adapter->acl_ctxt.acl_stat_ctxt.stat_cnt--;
+	mutex_unlock(&adapter->acl_ctxt.acl_stat_ctxt.acl_stat_lock);
 
 l_end:
-	mutex_unlock(&adapter->vsi_ctxt.lock);
 	return ret;
+}
+
+void sxe2_acl_flow_ctxt_clean(struct sxe2_adapter *adapter)
+{
+	u32 i;
+	struct sxe2_vsi *vsi;
+	struct sxe2_acl_flow_cfg *flow_cfg = NULL;
+
+	if (!test_bit(SXE2_FLAG_ACL_CAPABLE, adapter->flags))
+		return;
+
+	for (i = 0; i < adapter->vsi_ctxt.cnt; i++) {
+		vsi = adapter->vsi_ctxt.vsi[i];
+		if (vsi)
+			(void)sxe2_acl_del_filter_by_vsi(vsi);
+	}
+
+	sxe2_flow_ppp_comm_ctxt_clean(&adapter->acl_ctxt.ppp);
+
+	for (i = 0; i < adapter->vsi_ctxt.cnt; i++) {
+		vsi = adapter->vsi_ctxt.vsi[i];
+		if (vsi) {
+			mutex_lock(&vsi->acl.flow_cfg_lock);
+			list_for_each_entry(flow_cfg, &vsi->acl.flow_cfg_list, l_node) {
+				if (flow_cfg->seg)
+					flow_cfg->seg->flow_ptr = NULL;
+			}
+			mutex_unlock(&vsi->acl.flow_cfg_lock);
+		}
+	}
+
+	sxe2_acl_sw_deinit(adapter);
+}
+
+void sxe2_acl_rebuild(struct sxe2_adapter *adapter)
+{
+	s32 ret = 0;
+	struct sxe2_acl_tbl_params params = {};
+
+	if (!test_bit(SXE2_FLAG_ACL_CAPABLE, adapter->flags))
+		return;
+
+	sxe2_acl_tbl_param_calc(adapter, &params);
+	ret = sxe2_acl_create_table(adapter, &params);
+	if (ret) {
+		LOG_ERROR_BDF("Failed to create acl table, ret=%d\n", ret);
+		return;
+	}
+
+	ret = sxe2_acl_create_scenario(adapter, &params);
+	if (ret) {
+		LOG_ERROR_BDF("Failed to create acl scenario, ret=%d\n", ret);
+		return;
+	}
 }

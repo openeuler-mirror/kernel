@@ -91,6 +91,8 @@ void sxe2_set_device_ops(struct ib_device *dev_ops)
 	dev_ops->destroy_srq		= sxe2_kdestroy_srq;
 #ifdef ALLOC_HW_STATS_V1
 	dev_ops->alloc_hw_stats = sxe2_kalloc_hw_port_stats;
+#elif defined ALLOC_HW_STATS_V2
+	dev_ops->alloc_hw_stats = sxe2_kalloc_hw_port_stats;
 #else
 	dev_ops->alloc_hw_port_stats = sxe2_kalloc_hw_port_stats;
 #endif

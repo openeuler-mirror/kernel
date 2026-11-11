@@ -72,6 +72,8 @@
 #define MQ_CRIERR_MQC_ECC_ERR	   (0x8032)
 #define MQ_CRIERR_QP_DESTROY_ABORT (0x8034)
 
+#define MQ_ERR_VF_NUM_OVERFLOW  (0x8026)
+
 #define SXE2_LAG_PRIMARY_IDX   (0)
 #define SXE2_LAG_SECONDARY_IDX (1)
 
@@ -94,6 +96,42 @@
 #define SXE2_PCI_EXP_EXT_TPH_REQ_ENABLE_MASK (0x100)
 
 #define SXE2_MAX_ACK_TIMEOUT_VAL 28
+
+#define SXE2_HW_CC_DCQCN_MIN_RATE_DEFAULT     2
+#define SXE2_HW_CC_DCQCN_MIN_RATE_MIN     2
+#define SXE2_HW_CC_DCQCN_MIN_RATE_MAX     100
+
+#define SXE2_HW_CC_DCQCN_RREDUCE_MPERIOD_DEFAULT 0xE000
+#define SXE2_HW_CC_DCQCN_RREDUCE_MPERIOD_MIN 0x1000
+#define SXE2_HW_CC_DCQCN_RREDUCE_MPERIOD_MAX 0xF000
+
+#define SXE2_HW_CC_DCQCN_T_DEFAULT 0xF000
+#define SXE2_HW_CC_DCQCN_T_MIN 0x2000
+#define SXE2_HW_CC_DCQCN_T_MAX 0xF000
+
+#define SXE2_HW_CC_DCQCN_B_DEFAULT 4
+#define SXE2_HW_CC_DCQCN_B_MIN 0
+#define SXE2_HW_CC_DCQCN_B_MAX 7
+
+#define SXE2_HW_CC_DCQCN_ALPHA_CNT_DEFAULT 0
+#define SXE2_HW_CC_DCQCN_ALPHA_CNT_MIN 0
+#define SXE2_HW_CC_DCQCN_ALPHA_CNT_MAX 1023
+
+#define SXE2_HW_CC_DCQCN_RATE_CNT_DEFAULT 0
+#define SXE2_HW_CC_DCQCN_RATE_CNT_MIN 0
+#define SXE2_HW_CC_DCQCN_RATE_CNT_MAX 1023
+
+#define SXE2_HW_CC_DCQCN_F_DEFAULT 5
+#define SXE2_HW_CC_DCQCN_F_MIN 0
+#define SXE2_HW_CC_DCQCN_F_MAX 7
+
+#define SXE2_HW_CC_DCQCN_RAI_DEFAULT 5
+#define SXE2_HW_CC_DCQCN_RAI_MIN 1
+#define SXE2_HW_CC_DCQCN_RAI_MAX 14
+
+#define SXE2_HW_CC_DCQCN_RHAI_DEFAULT 10
+#define SXE2_HW_CC_DCQCN_RHAI_MIN 2
+#define SXE2_HW_CC_DCQCN_RHAI_MAX 15
 
 enum { PH_BI_DIRECTIONAL = 0x0,
 		PH_DXDX		 = 0x1,
@@ -150,6 +188,15 @@ enum sxe2_qp_caps {
 	SXE2_SEND_WITH_IMM  = 2,
 	SXE2_ROCE	    = 4,
 	SXE2_PUSH_MODE	    = 8,
+};
+
+enum sxe2_link_get_speed {
+	SXE2_LINK_SPEED_UNKNOWN = 0,
+	SXE2_LINK_SPEED_10G    = 10000,
+	SXE2_LINK_SPEED_25G    = 25000,
+	SXE2_LINK_SPEED_50G    = 50000,
+	SXE2_LINK_SPEED_100G   = 100000,
+	SXE2_LINK_SPEED_AUTO   = 200000,
 };
 
 struct sxe2_rcms_update_fpt_entry {
@@ -1216,6 +1263,7 @@ struct sxe2_rdma_srq {
 	u32 max_sge;
 	struct sxe2_rdma_rsc_debug *dbg_node;
 	struct sxe2_rdma_pd *pd;
+	bool user_mode;
 };
 
 struct sxe2_io_info {
@@ -1614,8 +1662,39 @@ struct sxe2_rdma_cc_timely_params {
 	u16 rtt_diff;
 };
 
+enum sxe2_rdma_cc_dcqcn_mode {
+	SXE2_CC_DCQCN_DISABLE,
+	SXE2_CC_DCQCN_MODE_HW,
+	SXE2_CC_DCQCN_MODE_SW,
+	SXE2_CC_DCQCN_MODE_MAX
+};
+
+enum sxe2_rdma_cc_bc_type {
+	CC_BC_125K = 0,
+	CC_BC_250K,
+	CC_BC_500K,
+	CC_BC_1M,
+	CC_BC_2M,
+	CC_BC_4M,
+	CC_BC_8M,
+	CC_BC_16M,
+	CC_BC_TYPE_BUTT
+};
+
+struct sxe2_hw_cc_dcqcn_param_info {
+	u32 rhai;
+	u32 rai;
+	u32 f;
+	enum sxe2_rdma_cc_bc_type bc;
+	u32 t;
+	u32 rdPeriod;
+	u32 alphaCnt;
+	u32 rateCnt;
+	u32 minTh;
+};
+
 struct sxe2_rdma_cc_params {
-	bool dcqcn_enable;
+	u8 dcqcn_enable;
 	bool dcqcn_cfg_valid;
 	struct sxe2_rdma_cc_dcqcn_params dcqcn_params;
 	bool timely_enable;
@@ -1624,6 +1703,7 @@ struct sxe2_rdma_cc_params {
 	u8 ecn;
 	u8 cnp_ecn;
 	u32 cc_qp_idx;
+	struct sxe2_hw_cc_dcqcn_param_info hw_cc_params;
 };
 
 struct sxe2_cc_refcount {
@@ -2230,6 +2310,10 @@ struct sxe2_rdma_pci_f {
 	struct sxe2_inject_debug inject_dbg;
 	struct sxe2_rdma_qos_inject inject_qos;
 #endif
+	u8 kernel_min_rnr_timer_en;
+	u8 user_min_rnr_timer_en;
+	u8 kernel_min_rnr_timer_val;
+	u8 user_min_rnr_timer_val;
 	atomic_t aeq_created;
 };
 
@@ -2350,6 +2434,11 @@ struct sxe2_rdma_device {
 	struct sxe2_reset_debug_func_info *reset_func_info;
 #endif
 	struct aux_ver_info fw_ver;
+	bool vf_num_overflow_print;
+#ifdef SXE2_SUPPORT_CONFIGFS
+	s8 configfs_dir_name[32];
+#endif
+
 };
 
 struct sxe2_rdma_kcontext {

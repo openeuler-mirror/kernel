@@ -12,11 +12,23 @@
 #ifndef __SXE2_EVENT_H__
 #define __SXE2_EVENT_H__
 
+#include "sxe2_cmd.h"
+
 enum sxe2_cmd_event_status {
 	SXE2_CMD_EVENT_STATUS_INIT = 0,
 	SXE2_CMD_EVENT_STATUS_SUB,
 	SXE2_CMD_EVENT_STATUS_UNSUB,
 };
+
+#define SXE2_EVENT_TABLE_SIZE SXE2_EVENT_CODE_MAX
+
+struct sxe2_event_handle {
+	u16 event_code;
+	s32 (*handler)(struct sxe2_adapter *adapter, void *buf, u32 buf_len);
+	enum sxe2_cmd_event_status event_status;
+};
+
+void sxe2_event_table_init(struct sxe2_adapter *adapter);
 
 s32 sxe2_event_handle(struct sxe2_adapter *adapter, u16 event_code, void *buf, u32 buf_len);
 

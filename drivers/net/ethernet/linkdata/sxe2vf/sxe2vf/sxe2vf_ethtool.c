@@ -153,8 +153,10 @@ static void sxe2vf_get_ethtool_stats(struct net_device *netdev,
 	char *p;
 
 	mutex_lock(&adapter->vsi_ctxt.lock);
-	if (test_bit(SXE2VF_VSI_DISABLE, vsi->state))
+	if (test_bit(SXE2VF_VSI_DISABLE, vsi->state)) {
+		LOG_DEV_WARN("stats get fail during vf reset.\n");
 		goto l_unlock;
+	}
 
 	sxe2vf_vsi_sw_stats_update(vsi);
 	sxe2_vf_vsi_hw_stats_update(adapter);
@@ -172,7 +174,7 @@ static void sxe2vf_get_ethtool_stats(struct net_device *netdev,
 	sxe2vf_for_each_vsi_txq(vsi, j)
 	{
 		tx_q = READ_ONCE(vsi->txqs.q[j]);
-		sxe2vf_fetch_u64_data_per_ring(&tx_q->syncp, tx_q->stats, &pkts,
+		sxe2vf_fetch_u64_data_per_ring(&tx_q->stats->syncp, tx_q->stats, &pkts,
 					       &bytes);
 		data[i++] = pkts;
 		data[i++] = bytes;
@@ -193,7 +195,7 @@ static void sxe2vf_get_ethtool_stats(struct net_device *netdev,
 	sxe2vf_for_each_vsi_rxq(vsi, j)
 	{
 		rx_q = READ_ONCE(vsi->rxqs.q[j]);
-		sxe2vf_fetch_u64_data_per_ring(&rx_q->syncp, rx_q->stats, &pkts,
+		sxe2vf_fetch_u64_data_per_ring(&rx_q->stats->syncp, rx_q->stats, &pkts,
 					       &bytes);
 		data[i++] = pkts;
 		data[i++] = bytes;
@@ -242,6 +244,7 @@ static void sxe2vf_get_ethtool_stats(struct net_device *netdev,
 	data[i++] = tx_error_invalid_sp;
 
 	data[i++] = adapter->fnav_ctxt.fnav_match;
+	data[i++] = adapter->work_ctxt.tx_timeout_cnt;
 
 l_unlock:
 	(void)i;
@@ -337,6 +340,7 @@ STATIC void sxe2vf_get_strings(struct net_device *netdev, u32 stringset, u8 *dat
 		}
 		sxe2vf_get_ipsec_strings(adapter, &p);
 		ethtool_sprintf(&p, "fnav_match");
+		ethtool_sprintf(&p, "tx_timeout");
 		break;
 	case ETH_SS_PRIV_FLAGS:
 		for (i = 0; i < SXE2VF_PRIV_FLAG_LEN; i++)
@@ -481,7 +485,7 @@ static void sxe2vf_ringparam_set_offline(struct sxe2vf_vsi *vsi, u32 tx_size,
 	if (vsi->txqs.depth == tx_size) {
 		LOG_NETDEV_DEBUG("tx desc depth[%d] not changed.\n", tx_size);
 	} else {
-		LOG_NETDEV_DEBUG("link is down, tx desc depth chang from [%d] to \t"
+		LOG_NETDEV_DEBUG("link is down, tx desc depth change from [%d] to \t"
 				 "[%d] happens\t"
 				 " when link is brought up.\n",
 				 vsi->txqs.depth, tx_size);
@@ -496,7 +500,7 @@ static void sxe2vf_ringparam_set_offline(struct sxe2vf_vsi *vsi, u32 tx_size,
 	if (vsi->rxqs.depth == rx_size) {
 		LOG_NETDEV_DEBUG("rx desc depth[%d] not changed.\n", rx_size);
 	} else {
-		LOG_NETDEV_DEBUG("link is down, rx desc depth chang from [%d] to \t"
+		LOG_NETDEV_DEBUG("link is down, rx desc depth change from [%d] to \t"
 				 "[%d] happens\t"
 				 "when link is brought up.\n",
 				 vsi->rxqs.depth, rx_size);
@@ -595,9 +599,7 @@ static int sxe2vf_set_channels(struct net_device *netdev,
 	struct sxe2vf_adapter *adapter = netdev_priv(netdev);
 	u32 num_new = ch->combined_count;
 	s32 ret = 0;
-#ifndef SXE2_CFG_RELEASE
 	u32 old_cnt = adapter->q_ctxt.q_cnt_req;
-#endif
 	struct sxe2vf_vsi *vsi = adapter->vsi_ctxt.vf_vsi;
 
 	if (num_new == 0 || num_new > adapter->q_ctxt.eth_q_cnt)
@@ -627,6 +629,7 @@ static int sxe2vf_set_channels(struct net_device *netdev,
 
 	ret = sxe2vf_set_channels_rss_reset(netdev, adapter, num_new);
 	if (ret) {
+		adapter->q_ctxt.q_cnt_req = (u16)old_cnt;
 		(void)sxe2vf_vsi_disable(vsi);
 		LOG_ERROR_BDF("change channel from %u to %u rss lut reset failed. \t"
 			      "%d\n",
@@ -636,6 +639,7 @@ static int sxe2vf_set_channels(struct net_device *netdev,
 
 	ret = sxe2vf_vsi_rebuild(vsi);
 	if (ret) {
+		adapter->q_ctxt.q_cnt_req = (u16)old_cnt;
 		(void)sxe2vf_vsi_disable(vsi);
 		LOG_ERROR_BDF("change channel from %u to %u rebuild failed. %d\n",
 			      old_cnt, num_new, ret);
@@ -660,19 +664,10 @@ static void sxe2_vf_get_hw_autoneg_info(struct ethtool_link_ksettings *ks,
 					u32 advertising)
 {
 	ks->base.autoneg = link_cfg->current_an_en.current_an;
-	if (link_cfg->configed_pause_result.tx_en &&
-	    link_cfg->configed_pause_result.rx_en) {
+	if (link_cfg->local_pause.bit_asym)
+		ethtool_link_ksettings_add_link_mode(ks, advertising, Asym_Pause);
+	if (link_cfg->local_pause.bit_pause)
 		ethtool_link_ksettings_add_link_mode(ks, advertising, Pause);
-		ethtool_link_ksettings_add_link_mode(ks, advertising, Asym_Pause);
-	} else if (link_cfg->configed_pause_result.tx_en) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising, Asym_Pause);
-	} else if (link_cfg->configed_pause_result.rx_en) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising, Pause);
-		ethtool_link_ksettings_add_link_mode(ks, advertising, Asym_Pause);
-	} else {
-		ethtool_link_ksettings_add_link_mode(ks, advertising, Pause);
-		ethtool_link_ksettings_add_link_mode(ks, advertising, Asym_Pause);
-	}
 }
 
 static void
@@ -681,16 +676,21 @@ sxe2_vf_get_advertise_fec_info(struct ethtool_link_ksettings *ks,
 			       u32 advertising, u32 supported, u32 linkstate)
 {
 	if (linkstate) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising, FEC_NONE);
-		if (link_cfg->advertis_fec.fec_br) {
-			ethtool_link_ksettings_add_link_mode(ks, advertising,
-							     FEC_BASER);
-		}
-
-		if (link_cfg->advertis_fec.fec_528 ||
-		    link_cfg->advertis_fec.fec_544) {
-			ethtool_link_ksettings_add_link_mode(ks, advertising,
-							     FEC_RS);
+		switch (link_cfg->local_fec_mode) {
+		case FLM_FEC_528:
+		case FLM_FEC_544:
+			ethtool_link_ksettings_add_link_mode(ks, advertising, FEC_RS);
+			break;
+		case FLM_FEC_BSFEC:
+			ethtool_link_ksettings_add_link_mode(ks, advertising, FEC_BASER);
+			break;
+		case FLM_FEC_NONE:
+			ethtool_link_ksettings_add_link_mode(ks, advertising, FEC_NONE);
+			break;
+		default:
+			LOG_ERROR("unknown FEC mode 0x%x.\n", link_cfg->local_fec_mode);
+			ethtool_link_ksettings_add_link_mode(ks, advertising, FEC_NONE);
+			break;
 		}
 	}
 }
@@ -704,6 +704,9 @@ static void sxe2_vf_get_an_info(struct ethtool_link_ksettings *ks,
 
 	if (link_cfg->local_an_en.advertis_an)
 		ethtool_link_ksettings_add_link_mode(ks, advertising, Autoneg);
+
+	if (link_cfg->sxe2_ana_fsm == SXE2_AN_GOOD)
+		ethtool_link_ksettings_add_link_mode(ks, lp_advertising, Autoneg);
 }
 
 static void sxe2_vf_get_hw_connect_info(struct ethtool_link_ksettings *ks,
@@ -742,26 +745,11 @@ sxe2_vf_get_hw_part_adver_info(struct ethtool_link_ksettings *ks,
 			       u32 lp_advertising, u32 supported)
 {
 	ethtool_link_ksettings_add_link_mode(ks, supported, Pause);
-	if (link_cfg->sxe2_ana_fsm == SXE2_AN_GOOD) {
-		if (link_cfg->partner_pause_result.tx_en &&
-		    link_cfg->partner_pause_result.rx_en) {
-			ethtool_link_ksettings_add_link_mode(ks, lp_advertising,
-							     Pause);
-		} else if (link_cfg->partner_pause_result.tx_en) {
-			ethtool_link_ksettings_add_link_mode(ks, lp_advertising,
-							     Pause);
-			ethtool_link_ksettings_add_link_mode(ks, lp_advertising,
-							     Asym_Pause);
-		} else if (link_cfg->partner_pause_result.rx_en) {
-			ethtool_link_ksettings_add_link_mode(ks, lp_advertising,
-							     Asym_Pause);
-		} else {
-			ethtool_link_ksettings_del_link_mode(ks, lp_advertising,
-							     Pause);
-			ethtool_link_ksettings_del_link_mode(ks, lp_advertising,
-							     Asym_Pause);
-		}
-	}
+	ethtool_link_ksettings_add_link_mode(ks, supported, Asym_Pause);
+	if (link_cfg->partner_pause.bit_asym)
+		ethtool_link_ksettings_add_link_mode(ks, lp_advertising, Asym_Pause);
+	if (link_cfg->partner_pause.bit_pause)
+		ethtool_link_ksettings_add_link_mode(ks, lp_advertising, Pause);
 }
 
 static void
@@ -887,64 +875,48 @@ static void sxe2_vf_get_speed_ability(struct ethtool_link_ksettings *ks,
 		}
 	}
 
-	if (link_cfg->an_publicity.an_mode.speed_ability_10Gkr) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising,
-						     10000baseKR_Full);
-	}
+	if (link_cfg->current_an_en.current_an) {
+		if (link_cfg->an_publicity.an_mode.speed_ability_10Gkr) {
+			ethtool_link_ksettings_add_link_mode(ks, advertising,
+							     10000baseKR_Full);
+		}
 
-	if (link_cfg->an_publicity.an_mode.speed_ability_25Gkrcr ||
-	    link_cfg->an_publicity.an_mode.speed_ability_25Gkrcr_s) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising,
-						     25000baseKR_Full);
-	}
+		if (link_cfg->an_publicity.an_mode.speed_ability_25Gkrcr ||
+		    link_cfg->an_publicity.an_mode.speed_ability_25Gkrcr_s) {
+			ethtool_link_ksettings_add_link_mode(ks, advertising,
+							     25000baseKR_Full);
+		}
 
-	if (link_cfg->an_publicity.an_np_mode.speed_ability_25Gkr) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising,
-						     25000baseKR_Full);
-	}
+		if (link_cfg->an_publicity.an_np_mode.speed_ability_25Gkr) {
+			ethtool_link_ksettings_add_link_mode(ks, advertising,
+							     25000baseKR_Full);
+		}
 
-	if (link_cfg->an_publicity.an_np_mode.speed_ability_25Gcr) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising,
-						     25000baseCR_Full);
-	}
+		if (link_cfg->an_publicity.an_np_mode.speed_ability_25Gcr) {
+			ethtool_link_ksettings_add_link_mode(ks, advertising,
+							     25000baseCR_Full);
+		}
 
-	if (link_cfg->an_publicity.an_np_mode.speed_ability_50Gcr2) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising,
-						     50000baseCR2_Full);
-	}
+		if (link_cfg->an_publicity.an_np_mode.speed_ability_50Gcr2) {
+			ethtool_link_ksettings_add_link_mode(ks, advertising,
+							     50000baseCR2_Full);
+		}
 
-	if (link_cfg->an_publicity.an_np_mode.speed_ability_50Gkr2) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising,
-						     50000baseKR2_Full);
-	}
+		if (link_cfg->an_publicity.an_np_mode.speed_ability_50Gkr2) {
+			ethtool_link_ksettings_add_link_mode(ks, advertising,
+							     50000baseKR2_Full);
+		}
 
-	if (link_cfg->an_publicity.an_mode.fec_rs528_25g) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising,
-						     25000baseKR_Full);
-	}
+		if (link_cfg->an_publicity.an_mode.speed_ability_100Gcr4) {
+			ethtool_link_ksettings_add_link_mode(ks, advertising,
+							     100000baseCR4_Full);
+		}
 
-	if (link_cfg->an_publicity.an_mode.fec_ability_10g) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising,
-						     10000baseKR_Full);
+		if (link_cfg->an_publicity.an_mode.speed_ability_100Gkr4) {
+			ethtool_link_ksettings_add_link_mode(ks, advertising,
+							     100000baseKR4_Full);
+		}
 	}
-
-	if (link_cfg->an_publicity.an_mode.fec_bsfec_25g) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising,
-						     25000baseKR_Full);
-	}
-
-	if (link_cfg->an_publicity.an_mode.fec_en_10g) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising,
-						     10000baseKR_Full);
-	}
-
-	if (link_cfg->an_publicity.an_mode.Consortium_25g_50g_en) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising,
-						     25000baseKR_Full);
-		ethtool_link_ksettings_add_link_mode(ks, advertising,
-						     50000baseKR2_Full);
-	}
-
 	sxe2_vf_ethtool_support_fec_get(ability, ks);
 }
 
@@ -1476,7 +1448,9 @@ STATIC int sxe2vf_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key, u8 *h
 
 	if (indir) {
 		if (adapter->rss_ctxt.lut) {
-			for (i = 0; i < adapter->rss_ctxt.rss_lut_size; i++)
+			for (i =
+			     0; i < adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.lut_size;
+			     i++)
 				indir[i] = (u32)(adapter->rss_ctxt.lut[i]);
 		}
 	}
@@ -1484,7 +1458,7 @@ STATIC int sxe2vf_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key, u8 *h
 	if (key) {
 		if (adapter->rss_ctxt.key)
 			memcpy(key, adapter->rss_ctxt.key,
-			       adapter->rss_ctxt.rss_key_size);
+			       adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.key_size);
 	}
 
 l_unlock:
@@ -1530,32 +1504,34 @@ STATIC int sxe2vf_set_rxfh(struct net_device *netdev, const u32 *indir,
 	}
 
 	if (key) {
-		user_key = devm_kzalloc(dev, adapter->rss_ctxt.rss_key_size,
+		user_key = devm_kzalloc(dev, adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.key_size,
 					GFP_KERNEL);
 		if (!user_key) {
 			LOG_ERROR_BDF("no memory for user hash key.\n");
 			ret = -ENOMEM;
 			goto l_unlock;
 		}
-		memcpy(user_key, key, adapter->rss_ctxt.rss_key_size);
+		memcpy(user_key, key,
+		       adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.key_size);
 	}
 
 	if (indir) {
-		user_lut = devm_kzalloc(dev, adapter->rss_ctxt.rss_lut_size,
+		user_lut = devm_kzalloc(dev, adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.lut_size,
 					GFP_KERNEL);
 		if (!user_lut) {
 			LOG_ERROR_BDF("no memory for user lut.\n");
 			ret = -ENOMEM;
 			goto l_unlock;
 		}
-		for (i = 0; i < adapter->rss_ctxt.rss_lut_size; i++)
+		for (i = 0; i < adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.lut_size;
+		     i++)
 			user_lut[i] = (u8)(indir[i]);
 	}
 
 	if (key) {
 		sxe2vf_mbx_msg_dflt_params_fill(&params, SXE2VF_MSG_RESP_WAIT_NOTIFY,
 						SXE2_VF_SET_RSS_KEY, user_key,
-						adapter->rss_ctxt.rss_key_size, NULL,
+						adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.key_size, NULL,
 						0);
 		ret = sxe2vf_mbx_msg_send(adapter, &params);
 		if (ret) {
@@ -1566,14 +1542,14 @@ STATIC int sxe2vf_set_rxfh(struct net_device *netdev, const u32 *indir,
 		}
 		if (adapter->rss_ctxt.key) {
 			memcpy(adapter->rss_ctxt.key, user_key,
-			       adapter->rss_ctxt.rss_key_size);
+			       adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.key_size);
 		}
 	}
 
 	if (indir) {
 		sxe2vf_mbx_msg_dflt_params_fill(&params, SXE2VF_MSG_RESP_WAIT_NOTIFY,
 						SXE2_VF_SET_RSS_LUT, user_lut,
-						adapter->rss_ctxt.rss_lut_size, NULL,
+						adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.lut_size, NULL,
 						0);
 		ret = sxe2vf_mbx_msg_send(adapter, &params);
 		if (ret) {
@@ -1584,7 +1560,7 @@ STATIC int sxe2vf_set_rxfh(struct net_device *netdev, const u32 *indir,
 		}
 		if (adapter->rss_ctxt.lut) {
 			memcpy(adapter->rss_ctxt.lut, user_lut,
-			       adapter->rss_ctxt.rss_lut_size);
+			       adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.lut_size);
 		}
 	}
 
@@ -1602,14 +1578,14 @@ STATIC u32 sxe2vf_get_rxft_key_size(struct net_device __always_unused *netdev)
 {
 	struct sxe2vf_adapter *adapter = netdev_priv(netdev);
 
-	return (u32)adapter->rss_ctxt.rss_key_size;
+	return (u32)adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.key_size;
 }
 
 STATIC u32 sxe2vf_get_rxft_indir_size(struct net_device *netdev)
 {
 	struct sxe2vf_adapter *adapter = netdev_priv(netdev);
 
-	return (u32)adapter->rss_ctxt.rss_lut_size;
+	return (u32)adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.lut_size;
 }
 
 static const u8 eth_addr_full_mask[SXE2_FNAV_ETH_ADDR_LEN] = {
@@ -2412,9 +2388,9 @@ s32 sxe2vf_fnav_add_filter_with_packet(struct sxe2vf_adapter *adapter,
 				       struct sxe2vf_fnav_filter *filter)
 {
 	struct sxe2_fnav_comm_full_msg *filter_msg = NULL;
-	struct sxe2vf_msg_params params = {0};
-	s32 ret = 0;
-	struct sxe2_vf_fnav_add_filter_resp filter_resp;
+	struct sxe2vf_msg_params params   = { 0 };
+	s32 ret					   = 0;
+	struct sxe2_vf_fnav_add_filter_resp filter_resp = { 0 };
 
 	filter_msg = kzalloc(sizeof(*filter_msg), GFP_KERNEL);
 	if (!filter_msg) {
@@ -2667,8 +2643,9 @@ STATIC s32 sxe2vf_ethtool_ntuple_filter_del(struct sxe2vf_adapter *adapter,
 					    struct ethtool_rxnfc *cmd)
 {
 	s32 ret = -ENOENT;
-	struct sxe2vf_fnav_filter *filter;
-	struct ethtool_rx_flow_spec *fsp = (struct ethtool_rx_flow_spec *)&cmd->fs;
+	struct sxe2vf_fnav_filter *filter = NULL;
+	struct ethtool_rx_flow_spec *fsp =
+		(struct ethtool_rx_flow_spec *)&cmd->fs;
 
 	if (!test_bit(SXE2VF_FLAG_FNAV_ENABLE, adapter->flags)) {
 		LOG_DEV_ERR("ntuple feature is not enabled, please type \t"

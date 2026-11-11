@@ -151,6 +151,7 @@ bool sxe2_drv_core_is_tph_enable(struct sxe2_rdma_device *rdma_dev,
 		goto out;
 	}
 
+	ret = false;
 	pos = pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_TPH);
 	if (!pos) {
 		ret = false;

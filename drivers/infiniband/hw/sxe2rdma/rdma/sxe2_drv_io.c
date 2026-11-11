@@ -33,6 +33,22 @@ static const rdma_disp_func g_rdma_op[SXE2_RDMA_MAX_ID] = {
 
 static const int g_frag2quanta[SXE2_MAX_FRAGCNT] = { 1, 1, 2, 2, 3, 3, 4, 4,
 						     5, 5, 6, 6, 7, 7, 8, 8 };
+static void sxe2_clr_wqes(struct sxe2_qp_common *qp, u32 qp_wqe_idx)
+{
+	__le64 *wqe;
+	u32 wqe_idx;
+
+	if (!(qp_wqe_idx & SXE2_4K_PAGE_QUANTA_MASK)) {
+		wqe_idx = (qp_wqe_idx + SXE2_4K_PAGE_QUANTA_COUNT) % qp->sq_ring.size;
+		wqe = (__le64 *)&qp->sq_base[wqe_idx];
+		if (wqe_idx)
+			memset((void *)wqe, qp->swqe_polarity ? 0 : SXE2_CLEAR_WQE_VALUE,
+				SXE2_PAGE_SIZE_4K);
+		else
+			memset((void *)wqe, qp->swqe_polarity ? SXE2_CLEAR_WQE_VALUE : 0,
+				SXE2_PAGE_SIZE_4K);
+	}
+}
 
 static void sxe2_dump_wqe(struct sxe2_qp_common *qp, __le64 *wqe, __u16 quanta,
 			  __u32 wqe_idx, const char *desc)
@@ -103,7 +119,7 @@ static void sxe2_qp_ring_normal_db(struct sxe2_qp_common *qp)
 
 	rdma_qp	 = container_of(qp, struct sxe2_rdma_qp, qp_ctx.qp_common);
 	rdma_dev = rdma_qp->dev;
-	/* Serialize access to the foo structure */
+
 	mb();
 	writel(qp->qpn, qp->qp_db_no_llwqe);
 
@@ -138,7 +154,6 @@ static void sxe2_qp_push_wqe(struct sxe2_qp_common *qp, __le64 *wqe,
 #else
 		sxe2_memcpy_x64(push, wqe, quanta * SXE2_QP_WQE_MIN_SIZE);
 #endif
-		/* Ensure DMA buffer writes are ordered before kicking the device */
 		wmb();
 
 		set_32bit_val(qp->push_db, 0,
@@ -640,6 +655,7 @@ static __le64 *sxe2_qp_get_next_send_wqe(struct sxe2_qp_common *qp,
 	qp->sq_wrtrk_array[*wqe_idx].wrid   = wr_id;
 	qp->sq_wrtrk_array[*wqe_idx].wr_len = total_size;
 	qp->sq_wrtrk_array[*wqe_idx].quanta = org_wqe_quanta;
+	sxe2_clr_wqes(qp, *wqe_idx);
 
 	if (push_wqe_pad) {
 		nop_wqe_idx = *wqe_idx + org_wqe_quanta;
@@ -1095,12 +1111,12 @@ static int sxe2_hw_post_receive(struct sxe2_qp_common *qp,
 	dma_wmb();
 
 	qp->doorbell_note[SXE2_QP_RQ_PI] =
-		cpu_to_le32(SXE2_RING_CURRENT_HEAD(qp->rq_ring));
+		cpu_to_le32(SXE2_RING_CURRENT_HEAD(qp->rq_ring) * qp->rq_wqe_size_multiplier);
 
 	DRV_RDMA_LOG_DEV_DEBUG("POST RCV(qpn = %u): wqe_idx %u wr_id %llu\n"
 			       " rq_pi %u ring_size %u\n",
 			       qp->qpn, wqe_idx, qp->rq_wrid_array[wqe_idx],
-			       SXE2_RING_CURRENT_HEAD(qp->rq_ring),
+			       SXE2_RING_CURRENT_HEAD(qp->rq_ring) * qp->rq_wqe_size_multiplier,
 			       SXE2_RING_SIZE(qp->rq_ring));
 	for (i = 0; i < wr_info->num_sges; i++) {
 		DRV_RDMA_LOG_DEV_DEBUG(
@@ -1273,15 +1289,20 @@ static int sxe2_wrinfo_init(struct ib_qp *ibqp, const struct ib_send_wr *ib_wr,
 
 	DRV_RDMA_LOG_DEV_DEBUG(
 		"wr_info qpn [0x%x] opcode [%d]\n"
-		"wr_id %llu push_mode %d post_wqe %d signald %d\n",
+		"wr_id %llu push_mode %d post_wqe %d signaled %d\n",
 		ibqp->qp_num, ib_wr->opcode, wr_info->wr_id, wr_info->push_wqe,
 		wr_info->post_wqe, wr_info->signaled);
 
 	return err;
 }
 
+#ifdef RDMA_POST_NO_CONST
+int sxe2_kpost_send(struct ib_qp *ibqp, struct ib_send_wr *ib_wr,
+		    struct ib_send_wr **bad_wr)
+#else
 int sxe2_kpost_send(struct ib_qp *ibqp, const struct ib_send_wr *ib_wr,
 		    const struct ib_send_wr **bad_wr)
+#endif
 {
 	struct sxe2_rdma_qp *qp;
 	struct sxe2_qp_common *kqp;
@@ -1330,8 +1351,13 @@ int sxe2_kpost_send(struct ib_qp *ibqp, const struct ib_send_wr *ib_wr,
 	return err;
 }
 
+#ifdef RDMA_POST_NO_CONST
+int sxe2_kpost_recv(struct ib_qp *ibqp, struct ib_recv_wr *ib_wr,
+		    struct ib_recv_wr **bad_wr)
+#else
 int sxe2_kpost_recv(struct ib_qp *ibqp, const struct ib_recv_wr *ib_wr,
 		    const struct ib_recv_wr **bad_wr)
+#endif
 {
 	struct sxe2_rdma_qp *qp		  = to_qp(ibqp);
 	struct sxe2_qp_common *kqp	  = &qp->qp_ctx.qp_common;
@@ -1456,7 +1482,10 @@ static int sxe2_hw_flush_one_sq_wqe(struct sxe2_rdma_cq_uk *cq,
 	cq_ctx	 = container_of(cq, struct sxe2_rdma_ctx_cq, cq_uk);
 	rdma_dev = to_rdmadev(cq_ctx->dev);
 
-	if (!SXE2_RING_MORE_WORK(qp->sq_ring) || !SXE2_RING_MORE_WORK_PAD(qp->sq_ring))
+	if (qp->push_db && !SXE2_RING_MORE_WORK_PAD(qp->sq_ring))
+		return -ENOENT;
+
+	if (!SXE2_RING_MORE_WORK(qp->sq_ring))
 		return -ENOENT;
 
 	do {
@@ -1538,14 +1567,19 @@ static int sxe2_hw_deal_rq_cqe(struct sxe2_rdma_cq_uk *cq,
 	__u32 wqe_idx;
 	struct sxe2_rdma_device *rdma_dev;
 	struct sxe2_rdma_ctx_cq *cq_ctx;
+	unsigned long flags;
+	int ret = 0;
 
 	cq_ctx	  = container_of(cq, struct sxe2_rdma_ctx_cq, cq_uk);
 	rdma_dev  = to_rdmadev(cq_ctx->dev);
 	wqe_idx	  = (__u32)cqe_info->info.field.wq_desc_idx;
 	array_idx = wqe_idx / qp->rq_wqe_size_multiplier;
+	spin_lock_irqsave(qp->lock, flags);
 	if (cqe_info->info.field.major_err == SXE2_WR_FLUSH_ERR) {
-		if (!SXE2_RING_MORE_WORK(qp->rq_ring))
-			return -ENOENT;
+		if (!SXE2_RING_MORE_WORK(qp->rq_ring)) {
+			ret = -ENOENT;
+			goto out;
+		}
 		DRV_RDMA_LOG_DEV_DEBUG(
 			"flush qp %u state rq_pi %u rq_ci %u .\n", qpn,
 			SXE2_RING_CURRENT_HEAD(qp->rq_ring),
@@ -1558,7 +1592,9 @@ static int sxe2_hw_deal_rq_cqe(struct sxe2_rdma_cq_uk *cq,
 		"update qp %u rq_ci %u wqeidx %u arridx %u wrid %llu.\n", qpn,
 		SXE2_RING_CURRENT_TAIL(qp->rq_ring), wqe_idx, array_idx,
 		cqe_info->wr_id);
-	return 0;
+out:
+	spin_unlock_irqrestore(qp->lock, flags);
+	return ret;
 }
 static int sxe2_hw_deal_sq_cqe(struct sxe2_rdma_cq_uk *cq,
 			       struct sxe2_cqe_info *cqe_info,
@@ -1567,10 +1603,13 @@ static int sxe2_hw_deal_sq_cqe(struct sxe2_rdma_cq_uk *cq,
 	__u32 wqe_idx;
 	struct sxe2_rdma_device *rdma_dev;
 	struct sxe2_rdma_ctx_cq *cq_ctx;
+	unsigned long flags;
+	int ret = 0;
 
 	cq_ctx	 = container_of(cq, struct sxe2_rdma_ctx_cq, cq_uk);
 	rdma_dev = to_rdmadev(cq_ctx->dev);
 	wqe_idx	 = (__u32)cqe_info->info.field.wq_desc_idx;
+	spin_lock_irqsave(qp->lock, flags);
 	if (cqe_info->info.field.push_dropped) {
 		qp->llwqe_mode	 = false;
 		qp->push_dropped = true;
@@ -1584,9 +1623,10 @@ static int sxe2_hw_deal_sq_cqe(struct sxe2_rdma_cq_uk *cq,
 			SXE2_RING_CURRENT_TAIL(qp->sq_ring), wqe_idx,
 			cqe_info->wr_id);
 	} else {
-		return sxe2_hw_flush_one_sq_wqe(cq, qp, cqe_info);
+		ret = sxe2_hw_flush_one_sq_wqe(cq, qp, cqe_info);
 	}
-	return 0;
+	spin_unlock_irqrestore(qp->lock, flags);
+	return ret;
 }
 static int sxe2_hw_cq_poll(struct sxe2_rdma_cq_uk *cq,
 			   struct sxe2_cqe_info *cqe_info)
@@ -2355,8 +2395,13 @@ static int sxe2_hw_srq_post_receive(struct sxe2_rdma_srq *ksrq,
 	return 0;
 }
 
+#ifdef RDMA_POST_NO_CONST
+int sxe2_kpost_srq_recv(struct ib_srq *ib_srq, struct ib_recv_wr *ib_wr,
+			struct ib_recv_wr **bad_wr)
+#else
 int sxe2_kpost_srq_recv(struct ib_srq *ib_srq, const struct ib_recv_wr *ib_wr,
 			const struct ib_recv_wr **bad_wr)
+#endif
 {
 	struct sxe2_rdma_srq *ksrq    = to_srq(ib_srq);
 	struct sxe2_srq_drv *ksrq_drv = &ksrq->srq_ctx.srq_drv;

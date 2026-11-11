@@ -41,11 +41,11 @@ int sxe2_file_write(struct file *file, char *buf, int len)
 
 	void *journal;
 
-	journal = current->journal_info;
-	current->journal_info = NULL;
-
 	if (!file)
 		return 0;
+
+	journal = current->journal_info;
+	current->journal_info = NULL;
 
 	do {
 #ifdef KERNEL_WRITE_POS_LOFF
@@ -345,7 +345,7 @@ static int sxe2_file_open(struct sxe2_log_t *log, struct file **pp_file)
 
 #ifdef SWITCH_FILE
 	memset(filename, 0, FILE_NAME_SIZE);
-	len += snprintf(filename, PAGE_SIZE, "%s", log->file_path);
+	len += snprintf(filename, sizeof(filename), "%s", log->file_path);
 	if (log->file_num == 0) {
 		time_for_file_name(filename + len, FILE_NAME_SIZE - len);
 	} else {
@@ -533,8 +533,9 @@ static void sxe2_klog_out(struct sxe2_log_t *log)
 #ifdef SWITCH_FILE
 	if (log->file_pos >= log->file_size) {
 		rc = sxe2_file_open(log, &file);
-		if (rc >= 0 && log->file && log->file_num != 1) {
-			sxe2_file_close(&log->file);
+		if (rc >= 0) {
+			if (log->file && log->file_num != 1)
+				sxe2_file_close(&log->file);
 			log->file = file;
 			log->file_pos = 0;
 		}

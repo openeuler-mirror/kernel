@@ -16,6 +16,10 @@
 #include <linux/bitfield.h>
 #include <linux/ethtool.h>
 #include "sxe2vf.h"
+#include "sxe2_mbx_public.h"
+
+#define SXE2_VSI_LUT_MAX_QUEUE 16
+#define SXE2_GLOBAL_LUT_MAX_QUEUE 64
 
 struct sxe2vf_rss_hash_cfg {
 	DECLARE_BITMAP(headers, SXE2_FLOW_HDR_MAX);

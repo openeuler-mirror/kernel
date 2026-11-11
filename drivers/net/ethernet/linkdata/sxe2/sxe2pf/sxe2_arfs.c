@@ -9,10 +9,10 @@
  * @note:
  */
 
+#include "sxe2_compat.h"
 #include <linux/cpu_rmap.h>
 #include <net/flow_dissector.h>
 
-#include "sxe2_compat.h"
 #include "sxe2_common.h"
 #include "sxe2_log.h"
 #include "sxe2_netdev.h"
@@ -71,7 +71,7 @@ static void sxe2_arfs_filter_print(struct sxe2_adapter *adapter,
 			 be16_to_cpu(fltr_info->full_key.l4.src_port),
 			 be16_to_cpu(fltr_info->full_key.l4.dst_port));
 	}
-	LOG_ARFS("flow_id %u, q_inedx %u, loc %u\n", arfs_filter->flow_id,
+	LOG_ARFS("flow_id %u, q_index %u, loc %u\n", arfs_filter->flow_id,
 		 fltr_info->q_index, arfs_filter->filter_idx);
 }
 
@@ -92,8 +92,8 @@ STATIC void sxe2_arfs_filter_print_screen(struct sxe2_adapter *adapter,
 		 fltr_info->flow_type == SXE2_FNAV_FLOW_TYPE_ARFS_IPV4_UDP);
 
 	if (is_v4) {
-		LOG_DEV_INFO("ipv4 src_ip 0x%X, dst_ip 0x%X, ip_proto %u, src_port\t"
-			     "%u, dst_port %u\n",
+		LOG_DEV_INFO("ipv4 src_ip 0x%X, dst_ip 0x%X, ip_proto %u,\t"
+			     "src_port %u, dst_port %u\n",
 			     fltr_info->full_key.ip.v4.src_ip,
 			     fltr_info->full_key.ip.v4.dst_ip,
 			     fltr_info->full_key.ip.v4.proto,
@@ -117,7 +117,7 @@ STATIC void sxe2_arfs_filter_print_screen(struct sxe2_adapter *adapter,
 			     be16_to_cpu(fltr_info->full_key.l4.src_port),
 			     be16_to_cpu(fltr_info->full_key.l4.dst_port));
 	}
-	LOG_DEV_INFO("flow_id %u, q_inedx %u, loc %u\n", arfs_filter->flow_id,
+	LOG_DEV_INFO("flow_id %u, q_index %u, loc %u\n", arfs_filter->flow_id,
 		     fltr_info->q_index, arfs_filter->filter_idx);
 }
 
@@ -145,7 +145,7 @@ s32 sxe2_arfs_enable(struct sxe2_adapter *adapter)
 void sxe2_arfs_disable(struct sxe2_adapter *adapter)
 {
 	u32 i = 0;
-	s32 ret;
+	s32 ret = 0;
 	struct sxe2_vsi *vsi = adapter->vsi_ctxt.main_vsi;
 	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
 	struct sxe2_arfs_filter *filter;
@@ -251,12 +251,17 @@ s32 sxe2_cpu_rx_rmap_set(struct sxe2_vsi *vsi)
 		return 0;
 
 	netdev = vsi->netdev;
-	if (!netdev || !vsi->irqs.cnt)
+	if (!netdev)
+		return 0;
+	if (!vsi->irqs.cnt)
 		return -EINVAL;
 
 	adapter = vsi->adapter;
 	LOG_NETDEV_DEBUG("setup CPU RMAP: vsi type 0x%x, ifname %s, q_vectors %d\n",
 			 vsi->type, netdev->name, vsi->irqs.cnt);
+
+	if (netdev->rx_cpu_rmap)
+		sxe2_cpu_rx_rmap_free(vsi);
 
 	netdev->rx_cpu_rmap = alloc_irq_cpu_rmap(vsi->irqs.cnt);
 	if (unlikely(!netdev->rx_cpu_rmap))
@@ -370,7 +375,7 @@ STATIC struct sxe2_arfs_filter *sxe2_arfs_filter_build(struct sxe2_adapter *adap
 	struct sxe2_vsi *vsi = adapter->vsi_ctxt.main_vsi;
 	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
 	struct sxe2_arfs_filter *arfs_filter = NULL;
-	struct sxe2_fnav_filter *fltr_info;
+	struct sxe2_fnav_filter *fltr_info = NULL;
 	u8 ip_proto;
 
 	arfs_filter = devm_kzalloc(dev, sizeof(*arfs_filter),
@@ -860,6 +865,7 @@ STATIC void sxe2_arfs_filters_del(struct sxe2_adapter *adapter,
 						     filter->filter_idx,
 						     filter->flow_id,
 						     filter->filter_info.q_index);
+					continue;
 				}
 			} else {
 				sxe2_arfs_active_filter_cnt_update(adapter, filter,

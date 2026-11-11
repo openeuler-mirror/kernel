@@ -19,7 +19,7 @@
 
 #define SXE2_MAX_CQ_PERIOD (0xFFF)
 
-#define SXE2_RDMA_DB_NOTE_SIZE (64)
+#define SXE2_RDMA_DB_NOTE_SIZE (8)
 
 #define SXE2_RDMA_CQ_TYPE_IO (1)
 #define SXE2_RDMA_CQ_TYPE_MQ (2)
@@ -64,6 +64,15 @@ static inline struct sxe2_rdma_cq *to_scq(struct ib_cq *ibcq)
 #ifdef CREATE_CQ_V1
 struct ib_cq *sxe2_kcreate_cq(struct ib_device *ibdev, const struct ib_cq_init_attr *attr,
 		    struct ib_ucontext *ibucontext, struct ib_udata *udata);
+#elif defined CREATE_CQ_V2
+struct ib_cq *sxe2_kcreate_cq(struct ib_device *ibdev, const struct ib_cq_init_attr *attr,
+		    struct ib_udata *udata);
+#elif defined HAVE_CREATE_CQ_UVERBS_ATTR_BUNDLE
+int sxe2_kcreate_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
+			struct uverbs_attr_bundle *attrs);
+#elif defined RDMA_OFED_CREATE_CQ
+int sxe2_kcreate_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
+		    struct uverbs_attr_bundle *attrs);
 #else
 int sxe2_kcreate_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
 		    struct ib_udata *udata);

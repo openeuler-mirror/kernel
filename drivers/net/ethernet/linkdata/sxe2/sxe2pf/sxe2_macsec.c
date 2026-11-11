@@ -16,6 +16,7 @@
 #include "sxe2_rx.h"
 #include "sxe2_tx.h"
 #include "sxe2_spec.h"
+#include "sxe2_common.h"
 
 #ifdef HAVE_MACSEC_SUPPORT
 
@@ -110,7 +111,7 @@ static void sxe2_macsec_sa_clear(struct sxe2_macsec_sa *sa)
 	(void)memset(sa->key, 0, sizeof(sa->key));
 }
 
-static s32 sxe2_macsec_txsc_cfg(struct sxe2_adapter *adapter)
+STATIC s32 sxe2_macsec_txsc_cfg(struct sxe2_adapter *adapter)
 {
 	s32 ret				   = 0;
 	struct sxe2_cmd_params cmd	   = {};
@@ -227,7 +228,7 @@ static s32 sxe2_macsec_rxsa_cfg(struct sxe2_adapter *adapter,
 	return ret;
 }
 
-static s32 sxe2_macsec_add_secy(struct macsec_context *ctx)
+STATIC s32 sxe2_macsec_add_secy(struct macsec_context *ctx)
 {
 	s32 ret				     = 0;
 	struct sxe2_netdev_priv *priv	     = netdev_priv(ctx->netdev);
@@ -285,7 +286,7 @@ out:
 	return ret;
 }
 
-static s32 sxe2_macsec_upd_secy(struct macsec_context *ctx)
+STATIC s32 sxe2_macsec_upd_secy(struct macsec_context *ctx)
 {
 	s32 ret				     = 0;
 	struct sxe2_netdev_priv *priv	     = netdev_priv(ctx->netdev);
@@ -353,10 +354,10 @@ static s32 sxe2_macsec_upd_secy(struct macsec_context *ctx)
 out:
 	mutex_unlock(&macsec->lock);
 
-	return 0;
+	return ret;
 }
 
-static s32 sxe2_macsec_del_secy(struct macsec_context *ctx)
+STATIC s32 sxe2_macsec_del_secy(struct macsec_context *ctx)
 {
 	s32 ret = 0;
 	u8 i;
@@ -433,7 +434,7 @@ out:
 	return ret;
 }
 
-static s32 sxe2_macsec_add_txsa(struct macsec_context *ctx)
+STATIC s32 sxe2_macsec_add_txsa(struct macsec_context *ctx)
 {
 	s32 ret	 = 0;
 	u8 sa_id = ctx->sa.assoc_num;
@@ -521,7 +522,7 @@ out:
 	return ret;
 }
 
-static s32 sxe2_macsec_upd_txsa(struct macsec_context *ctx)
+STATIC s32 sxe2_macsec_upd_txsa(struct macsec_context *ctx)
 {
 	s32 ret	 = 0;
 	u8 sa_id = ctx->sa.assoc_num;
@@ -595,7 +596,7 @@ out:
 	return ret;
 }
 
-static s32 sxe2_macsec_del_txsa(struct macsec_context *ctx)
+STATIC s32 sxe2_macsec_del_txsa(struct macsec_context *ctx)
 {
 	s32 ret				   = 0;
 	u8 sa_id			   = ctx->sa.assoc_num;
@@ -647,13 +648,16 @@ out:
 	return ret;
 }
 
-static s32 sxe2_macsec_add_rxsc(struct macsec_context *ctx)
+#ifndef METADATA_MACSEC
+#define METADATA_MACSEC 2
+#endif
+STATIC s32 sxe2_macsec_add_rxsc(struct macsec_context *ctx)
 {
 	s32 ret				   = 0;
 	struct sxe2_netdev_priv *priv	   = netdev_priv(ctx->netdev);
 	struct sxe2_adapter *adapter	   = priv->vsi->adapter;
 	struct sxe2_macsec_context *macsec = &adapter->macsec_ctxt;
-	struct sxe2_macsec_rxsc *rx_sc;
+	struct sxe2_macsec_rxsc *rx_sc = NULL;
 	const struct macsec_rx_sc *ctx_rx_sc = ctx->rx_sc;
 
 	LOG_DEBUG_BDF("macsec add rxsc start...\n");
@@ -663,18 +667,18 @@ static s32 sxe2_macsec_add_rxsc(struct macsec_context *ctx)
 	if (!sxe2_macsec_offload_en(ctx->netdev)) {
 		LOG_ERROR_BDF("failed to add rxsc, because macsec offload is disable.\n");
 		ret = -EINVAL;
-		goto out;
+		goto l_end;
 	}
 
 	if (macsec->state != SXE2_MACSEC_STATE_READY) {
 		ret = -EBUSY;
-		goto out;
+		goto l_end;
 	}
 
 	if (macsec->rx_sc) {
 		LOG_ERROR_BDF("macsec rx sc add error, rx sc already exist.\n");
 		ret = -EEXIST;
-		goto out;
+		goto l_end;
 	}
 
 	rx_sc = kzalloc(sizeof(*rx_sc), GFP_KERNEL);
@@ -703,12 +707,20 @@ static s32 sxe2_macsec_add_rxsc(struct macsec_context *ctx)
 	}
 
 out:
+	if (ret) {
+		rcu_replace_pointer(macsec->rx_sc, NULL, 1);
+		if (rx_sc && rx_sc->md_dst)
+			metadata_dst_free(rx_sc->md_dst);
+
+		kfree(rx_sc);
+	}
+l_end:
 	mutex_unlock(&macsec->lock);
 
 	return ret;
 }
 
-static s32 sxe2_macsec_upd_rxsc(struct macsec_context *ctx)
+STATIC s32 sxe2_macsec_upd_rxsc(struct macsec_context *ctx)
 {
 	s32 ret				     = 0;
 	struct sxe2_netdev_priv *priv	     = netdev_priv(ctx->netdev);
@@ -758,7 +770,7 @@ out:
 	return ret;
 }
 
-static s32 sxe2_macsec_del_rxsc(struct macsec_context *ctx)
+STATIC s32 sxe2_macsec_del_rxsc(struct macsec_context *ctx)
 {
 	s32 ret = 0;
 	u8 i;
@@ -812,7 +824,7 @@ out:
 	return ret;
 }
 
-static s32 sxe2_macsec_add_rxsa(struct macsec_context *ctx)
+STATIC s32 sxe2_macsec_add_rxsa(struct macsec_context *ctx)
 {
 	s32 ret = 0;
 	u8 i, j, other_sa;
@@ -896,7 +908,7 @@ out:
 	return ret;
 }
 
-static s32 sxe2_macsec_upd_rxsa(struct macsec_context *ctx)
+STATIC s32 sxe2_macsec_upd_rxsa(struct macsec_context *ctx)
 {
 	s32 ret	 = 0;
 	u8 sa_id = ctx->sa.assoc_num;
@@ -976,7 +988,7 @@ out:
 	return ret;
 }
 
-static s32 sxe2_macsec_del_rxsa(struct macsec_context *ctx)
+STATIC s32 sxe2_macsec_del_rxsa(struct macsec_context *ctx)
 {
 	s32 ret				   = 0;
 	u8 sa_id			   = ctx->sa.assoc_num;
@@ -1065,15 +1077,69 @@ static s32 sxe2_macsec_fix_cfg(struct sxe2_adapter *adapter)
 	return ret;
 }
 
+STATIC s32 sxe2_macsec_fwc_get_cap(struct sxe2_adapter *adapter,
+				   struct sxe2_fwc_macsec_cap *cap)
+{
+	s32 ret;
+	struct sxe2_cmd_params cmd = {0};
+
+	sxe2_cmd_params_dflt_fill(&cmd, SXE2_CMD_MACSEC_CAP_GET, NULL, 0, cap,
+				  sizeof(*cap));
+	ret = sxe2_cmd_fw_exec(adapter, &cmd);
+	if (ret) {
+		LOG_ERROR_BDF("failed to get macsec capacity with adminq, ret=%d\n",
+			      ret);
+		ret = -EIO;
+	}
+
+	return ret;
+}
+
+STATIC s32 sxe2_macsec_get_cap(struct sxe2_adapter *adapter, u8 *enable)
+{
+	s32 ret;
+	struct sxe2_fwc_macsec_cap cap;
+
+	cap.enable = 0;
+	ret = sxe2_macsec_fwc_get_cap(adapter, &cap);
+	if (ret) {
+		LOG_ERROR_BDF("failed to get macsec cap, ret=%d\n", ret);
+		ret = -EIO;
+		goto out;
+	}
+
+	*enable = cap.enable;
+out:
+	return ret;
+}
+
 s32 sxe2_macsec_init(struct sxe2_adapter *adapter)
 {
 	s32 ret = 0;
+	u8 enable = 0;
 	struct net_device *netdev	   = adapter->vsi_ctxt.main_vsi->netdev;
 	struct sxe2_macsec_context *macsec = &adapter->macsec_ctxt;
 
 	LOG_DEBUG_BDF("macsec init start...\n");
 
 	mutex_init(&adapter->macsec_ctxt.lock);
+
+	if (sxe2_is_safe_mode(adapter)) {
+		LOG_INFO_BDF("device is in safe mode, unsupport macsec\n");
+		macsec->state = SXE2_MACSEC_STATE_UNINIT;
+		return 0;
+	}
+
+	ret = sxe2_macsec_get_cap(adapter, &enable);
+	if (ret || !enable) {
+		LOG_INFO_BDF("no macsec capability, ret: %d, enable: %u\n",
+			     ret, enable);
+		macsec->state = SXE2_MACSEC_STATE_UNINIT;
+		netdev->hw_features &= ~NETIF_F_HW_MACSEC;
+		netdev->features &= ~NETIF_F_HW_MACSEC;
+		return 0;
+	}
+
 	netdev->macsec_ops = &sxe2_macsec_ops;
 	macsec->netdev = NULL;
 	macsec->rx_sc  = NULL;
@@ -1172,19 +1238,9 @@ out:
 
 bool sxe2_macsec_offload(struct sxe2_adapter *adapter, struct sk_buff *skb)
 {
-	bool ret = false;
-#ifdef SXE2_UNSUPPORT
 	struct metadata_dst *md_dst = skb_metadata_dst(skb);
 
 	return md_dst && (md_dst->type == METADATA_MACSEC);
-#endif
-
-	if (adapter->vsi_ctxt.main_vsi->netdev->features & NETIF_F_HW_MACSEC)
-		ret = true;
-	else
-		ret = false;
-
-	return ret;
 }
 
 void sxe2_macsec_rx(struct sxe2_queue *rxq, struct sk_buff *skb)

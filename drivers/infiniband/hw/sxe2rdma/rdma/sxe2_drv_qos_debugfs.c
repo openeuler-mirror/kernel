@@ -62,11 +62,13 @@ static ssize_t drv_rdma_qos_info_read(struct file *filp, char __user *buf,
 	char *rsp	 = NULL;
 	char *rsp_end;
 	struct sxe2_rdma_device *rdma_dev;
+	struct sxe2_rdma_pci_f *rf;
 	struct sxe2_rdma_ctx_vsi *vsi_ctx;
 	struct sxe2_rdma_ctx_qp *qp = NULL;
 	int i;
 	int j;
 	int qset_idx_cnt = 0;
+	size_t buf_size = 0;
 
 	if (*off != 0)
 		goto end;
@@ -80,8 +82,10 @@ static ssize_t drv_rdma_qos_info_read(struct file *filp, char __user *buf,
 	}
 
 	vsi_ctx = &rdma_dev->vsi;
+	rf = rdma_dev->rdma_func;
 
-	rsp = kzalloc(sizeof(char) * SXE2_DEBUG_DUMP_BUF_SIZE,
+	buf_size = rf->max_qp * 8;
+	rsp = kcalloc(buf_size, sizeof(char),
 			      GFP_KERNEL);
 	if (!rsp) {
 		ret = -ENOMEM;
@@ -91,39 +95,39 @@ static ssize_t drv_rdma_qos_info_read(struct file *filp, char __user *buf,
 	}
 	rsp_end = rsp;
 
-	len_total += dbg_vsnprintf(rsp_end, len_total, "qos info:\n");
+	len_total += dbg_vsnprintf_buf_szie(rsp_end, buf_size, len_total, "qos info:\n");
 
 	if (vsi_ctx->lag_aa)
 		qset_idx_cnt = SXE2_QSET_PER_USER_PRI_BOND;
 	else
 		qset_idx_cnt = SXE2_QSET_PER_USER_PRI;
 	for (j = 0; j < qset_idx_cnt; j++) {
-		len_total += dbg_vsnprintf(rsp_end, len_total, "dscp mode:%u\n",
+		len_total += dbg_vsnprintf_buf_szie(rsp_end, buf_size, len_total, "dscp mode:%u\n",
 				   vsi_ctx->dscp_mode[j]);
 	}
 	for (i = 0; i < SXE2_MAX_USER_PRIORITY; i++) {
 		mutex_lock(&vsi_ctx->qos[i].qos_mutex);
 		if (!vsi_ctx->qos[i].valid) {
 			len_total +=
-				dbg_vsnprintf(rsp_end, len_total,
+				dbg_vsnprintf_buf_szie(rsp_end, buf_size, len_total,
 					      "user pri %u is invalid\n", i);
 			mutex_unlock(&vsi_ctx->qos[i].qos_mutex);
 			continue;
 		}
-		len_total += dbg_vsnprintf(
-			rsp_end, len_total,
+		len_total += dbg_vsnprintf_buf_szie(
+			rsp_end, buf_size, len_total,
 			"user pri=%u:qp cnt=%u\n",
 			i, vsi_ctx->qos[i].qp_cnt);
 		for (j = 0; j < qset_idx_cnt; j++) {
-			len_total += dbg_vsnprintf(
-				rsp_end, len_total,
+			len_total += dbg_vsnprintf_buf_szie(
+				rsp_end, buf_size, len_total,
 				"user pri=%u:tc=%u pri type=%u rel bw=%u qp cnt=%u\n",
 				i, vsi_ctx->qos[i].qset[j].traffic_class,
 				vsi_ctx->qos[i].prio_type[j], vsi_ctx->qos[i].rel_bw[j],
 				vsi_ctx->qos[i].qset[j].qset_qp_cnt);
 
-			len_total += dbg_vsnprintf(
-				rsp_end, len_total,
+			len_total += dbg_vsnprintf_buf_szie(
+				rsp_end, buf_size, len_total,
 				"qset idx %u:qset num=%u qset id=%u teid=%u qset bind qp cnt=%u\n",
 				j, vsi_ctx->qos[i].qset[j].qset_num,
 				vsi_ctx->qos[i].qset[j].qset_id,
@@ -132,17 +136,17 @@ static ssize_t drv_rdma_qos_info_read(struct file *filp, char __user *buf,
 			qp = sxe2_qos_get_qp_from_list(
 				&vsi_ctx->qos[i].qset[j].qp_list, qp);
 			if (qp) {
-				len_total += dbg_vsnprintf(rsp_end, len_total,
+				len_total += dbg_vsnprintf_buf_szie(rsp_end, buf_size, len_total,
 							   "qpn: ");
 			}
 			while (qp) {
 				len_total +=
-					dbg_vsnprintf(rsp_end, len_total, "%u ",
+					dbg_vsnprintf_buf_szie(rsp_end, buf_size, len_total, "%u ",
 						      qp->qp_common.qpn);
 				qp = sxe2_qos_get_qp_from_list(
 					&vsi_ctx->qos[i].qset[j].qp_list, qp);
 			}
-			len_total += dbg_vsnprintf(rsp_end, len_total, "\n");
+			len_total += dbg_vsnprintf_buf_szie(rsp_end, buf_size, len_total, "\n");
 		}
 		mutex_unlock(&vsi_ctx->qos[i].qos_mutex);
 	}

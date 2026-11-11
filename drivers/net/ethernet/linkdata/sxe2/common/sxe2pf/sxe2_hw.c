@@ -121,7 +121,7 @@ void sxe2_write_reg(struct sxe2_hw *hw, u32 reg, u32 value)
 
 	SXE2_SET_USED(adapter);
 
-	if (unlikely(sxe2_hw_is_fault(hw)) || IS_ERR(reg_addr))
+	if (IS_ERR(reg_addr))
 		goto l_ret;
 
 	SXE2_HW_REG_WRITE(hw, reg_addr, value);
@@ -138,16 +138,45 @@ l_ret:
 
 static void sxe2_hw_evt_irq_cause_cfg(struct sxe2_hw *hw, u32 cause)
 {
+#ifndef SXE2_DPDK_DRIVER
+	struct sxe2_adapter *adapter = (struct sxe2_adapter *)hw->adapter;
+	unsigned long flags;
+
+	spin_lock_irqsave(&adapter->irq_ctxt.cause_lock, flags);
+
 	sxe2_write_reg(hw, SXE2_PF_INT_OICR_ENABLE, 0);
 	(void)sxe2_read_reg(hw, SXE2_PF_INT_OICR);
 	(void)sxe2_hw_fw_irq_cause_get(hw);
 
 	sxe2_write_reg(hw, SXE2_PF_INT_OICR_ENABLE, cause);
+	spin_unlock_irqrestore(&adapter->irq_ctxt.cause_lock, flags);
+#else
+	sxe2_write_reg(hw, SXE2_PF_INT_OICR_ENABLE, 0);
+	(void)sxe2_read_reg(hw, SXE2_PF_INT_OICR);
+	(void)sxe2_hw_fw_irq_cause_get(hw);
+
+	sxe2_write_reg(hw, SXE2_PF_INT_OICR_ENABLE, cause);
+#endif
 }
 
 static void sxe2_hw_evt_irq_cause_enable(struct sxe2_hw *hw, u16 itr_idx,
 					 u16 irq_idx)
 {
+#ifndef SXE2_DPDK_DRIVER
+	struct sxe2_adapter *adapter = (struct sxe2_adapter *)hw->adapter;
+	unsigned long flags;
+	u32 value;
+
+	spin_lock_irqsave(&adapter->irq_ctxt.cause_lock, flags);
+
+	value = (irq_idx & SXE2_PF_INT_OICR_CTL_MSIX_IDX) |
+		(itr_idx << SXE2_PF_INT_OICR_CTL_ITR_IDX_S &
+		 SXE2_PF_INT_OICR_CTL_ITR_IDX) |
+		SXE2_PF_INT_OICR_CTL_CAUSE_ENABLE;
+
+	sxe2_write_reg(hw, SXE2_PF_INT_OICR_CTL, value);
+	spin_unlock_irqrestore(&adapter->irq_ctxt.cause_lock, flags);
+#else
 	u32 value;
 
 	value = (irq_idx & SXE2_PF_INT_OICR_CTL_MSIX_IDX) |
@@ -156,13 +185,26 @@ static void sxe2_hw_evt_irq_cause_enable(struct sxe2_hw *hw, u16 itr_idx,
 		SXE2_PF_INT_OICR_CTL_CAUSE_ENABLE;
 
 	sxe2_write_reg(hw, SXE2_PF_INT_OICR_CTL, value);
+#endif
 }
 
 void sxe2_hw_evt_irq_clear(struct sxe2_hw *hw)
 {
+#ifndef SXE2_DPDK_DRIVER
+	struct sxe2_adapter *adapter = (struct sxe2_adapter *)hw->adapter;
+	unsigned long flags;
+
+	spin_lock_irqsave(&adapter->irq_ctxt.cause_lock, flags);
 	sxe2_write_reg(hw, SXE2_PF_INT_OICR_CTL, 0);
 	sxe2_write_reg(hw, SXE2_PF_INT_OICR_ENABLE, 0);
 	(void)sxe2_read_reg(hw, SXE2_PF_INT_OICR);
+	spin_unlock_irqrestore(&adapter->irq_ctxt.cause_lock, flags);
+#else
+	sxe2_write_reg(hw, SXE2_PF_INT_OICR_CTL, 0);
+	sxe2_write_reg(hw, SXE2_PF_INT_OICR_ENABLE, 0);
+	(void)sxe2_read_reg(hw, SXE2_PF_INT_OICR);
+
+#endif
 }
 
 u32 sxe2_hw_evt_irq_mask_get(struct sxe2_hw *hw)
@@ -380,8 +422,8 @@ void sxe2_hw_rxq_irq_cause_switch(struct sxe2_hw *hw, u16 rxq_idx, bool enable)
 #define SXE2_HW_CMD_QUEUE_DISABLE(type)                                             \
 	do {                                                                        \
 		bool is_admin = false;                                              \
-		bool old_tail = false;                                              \
-		bool old_head = false;                                              \
+		u32 old_tail = false;                                              \
+		u32 old_head = false;                                              \
 		u32 value = sxe2_read_reg(hw, SXE2_PF_CTRLQ_##type##LEN);           \
 		value &= ~(SXE2_CMD_REG_LEN_VFE_M | SXE2_CMD_REG_LEN_OVFL_M |       \
 			   SXE2_CMD_REG_LEN_CRIT_M | SXE2_CMD_REG_LEN_ENABLE_M);    \
@@ -595,9 +637,22 @@ void sxe2_hw_mbx_tq_disable(struct sxe2_hw *hw)
 
 void sxe2_hw_mbx_tq_write_tail(struct sxe2_hw *hw, u32 value)
 {
+	u32 tq_len_enable;
+#if !defined(SXE2_DPDK_VF_DRIVER) && !defined(SXE2_DPDK_DRIVER)
+	struct sxe2_adapter *adapter = (struct sxe2_adapter *)hw->adapter;
+#endif
 	SXE2_SET_USED(hw);
 	SXE2_SET_USED(value);
-
+	if (value == 0) {
+		tq_len_enable = sxe2_read_reg(hw, SXE2_PF_CTRLQ_MBX_ATQLEN);
+		tq_len_enable &= SXE2_CMD_REG_LEN_ENABLE_M;
+		if (!tq_len_enable) {
+#if !defined(SXE2_DPDK_VF_DRIVER) && !defined(SXE2_DPDK_DRIVER)
+			LOG_INFO_BDF("no need write tail.\n");
+#endif
+			return;
+		}
+	}
 	SXE2_HW_CMD_QUEUE_WRITE_TAIL(MBX_ATQ);
 }
 
@@ -750,6 +805,11 @@ void sxe2_hw_rxq_ctxt_cfg(struct sxe2_hw *hw, struct sxe2_hw_rxq_ctxt *rxq_ctxt,
 		SXE2_REG_WRITE(hw, SXE2_RXQ_CTXT(i, rxq_idx), value[i]);
 		LOG_INFO_BDF("rxq:%u ctxt[%u]:0x%x.\n", rxq_idx, i, value[i]);
 	}
+}
+
+u32 sxe2_hw_vf_alloc(struct sxe2_hw *hw)
+{
+	return sxe2_read_reg(hw, SXE2_PCIEPROC_VFALLOC);
 }
 
 void sxe2_hw_vf_irq_cfg(struct sxe2_hw *hw, struct sxe2_hw_vf_irq *vf_irq)
@@ -1292,13 +1352,13 @@ u32 sxe2_hw_vfr_done(struct sxe2_hw *hw, u16 vf_id)
 	UNUSED(adapter);
 #endif
 
-	val = sxe2_read_reg(hw, SXE2_VF_VRC_VFGEN_RSTAT(vf_id));
+	val = sxe2_read_reg(hw, SXE2_VFGEN_CTRL(vf_id));
 	if (val == SXE2_REG_INVALID_VALUE) {
 		LOG_WARN_BDF("core reset or pfr detected.\n");
 		return SXE2_REG_UNACCESS;
 	}
 
-	return (val & SXE2_VF_VRC_VFGEN_VFRSTAT_COMPLETE);
+	return !(val & SXE2_VFGEN_CTRL_VFSWR);
 }
 
 void sxe2_hw_vf_active(struct sxe2_hw *hw, u16 vf_id)
@@ -1413,6 +1473,21 @@ void sxe2_hw_ptp_init_incval(struct sxe2_hw *hw, u64 incval)
 
 void sxe2_hw_ptp_tsyn_switch(struct sxe2_hw *hw, bool on)
 {
+#ifndef SXE2_DPDK_DRIVER
+	struct sxe2_adapter *adapter = (struct sxe2_adapter *)hw->adapter;
+	unsigned long flags;
+	u32 reg;
+
+	spin_lock_irqsave(&adapter->irq_ctxt.cause_lock, flags);
+
+	reg = sxe2_read_reg(hw, SXE2_PF_INT_OICR_ENABLE);
+	if (on)
+		reg |= SXE2_PF_INT_OICR_TSYN_TX;
+	else
+		reg &= ~SXE2_PF_INT_OICR_TSYN_TX;
+	sxe2_write_reg(hw, SXE2_PF_INT_OICR_ENABLE, reg);
+	spin_unlock_irqrestore(&adapter->irq_ctxt.cause_lock, flags);
+#else
 	u32 reg;
 
 	reg = sxe2_read_reg(hw, SXE2_PF_INT_OICR_ENABLE);
@@ -1421,10 +1496,44 @@ void sxe2_hw_ptp_tsyn_switch(struct sxe2_hw *hw, bool on)
 	else
 		reg &= ~SXE2_PF_INT_OICR_TSYN_TX;
 	sxe2_write_reg(hw, SXE2_PF_INT_OICR_ENABLE, reg);
+#endif
 }
+
+#ifndef SXE2_DPDK_DRIVER
+void sxe2_hw_event_mdd_irq_switch(struct sxe2_hw *hw, u32 cause, bool on)
+{
+	struct sxe2_adapter *adapter = (struct sxe2_adapter *)hw->adapter;
+	unsigned long flags;
+	u32 reg;
+
+	spin_lock_irqsave(&adapter->irq_ctxt.cause_lock, flags);
+
+	reg = sxe2_read_reg(hw, SXE2_PF_INT_OICR_ENABLE);
+	if (on)
+		reg |= cause;
+	else
+		reg &= ~cause;
+	sxe2_write_reg(hw, SXE2_PF_INT_OICR_ENABLE, reg);
+	spin_unlock_irqrestore(&adapter->irq_ctxt.cause_lock, flags);
+}
+#endif
 
 void sxe2_hw_ptp_tsyn_event_switch(struct sxe2_hw *hw, bool on)
 {
+#ifndef SXE2_DPDK_DRIVER
+	struct sxe2_adapter *adapter = (struct sxe2_adapter *)hw->adapter;
+	unsigned long flags;
+	u32 oicr_value;
+
+	spin_lock_irqsave(&adapter->irq_ctxt.cause_lock, flags);
+	oicr_value = sxe2_read_reg(hw, SXE2_PF_INT_OICR_ENABLE);
+	if (on)
+		oicr_value |= SXE2_PF_INT_OICR_TSYN_EVENT;
+	else
+		oicr_value &= ~SXE2_PF_INT_OICR_TSYN_EVENT;
+	sxe2_write_reg(hw, SXE2_PF_INT_OICR_ENABLE, oicr_value);
+	spin_unlock_irqrestore(&adapter->irq_ctxt.cause_lock, flags);
+#else
 	u32 oicr_value;
 
 	oicr_value = sxe2_read_reg(hw, SXE2_PF_INT_OICR_ENABLE);
@@ -1433,11 +1542,18 @@ void sxe2_hw_ptp_tsyn_event_switch(struct sxe2_hw *hw, bool on)
 	else
 		oicr_value &= ~SXE2_PF_INT_OICR_TSYN_EVENT;
 	sxe2_write_reg(hw, SXE2_PF_INT_OICR_ENABLE, oicr_value);
+
+#endif
 }
 
 void sxe2_hw_ptp_aux_in_set(struct sxe2_hw *hw, u32 index, u32 value)
 {
 	sxe2_write_reg(hw, (u32)GLTSYN_AUXIN(index), value);
+}
+
+u32 sxe2_hw_ptp_aux_in_get(struct sxe2_hw *hw, u32 index)
+{
+	return sxe2_read_reg(hw, (u32)GLTSYN_AUXIN(index));
 }
 
 u64 sxe2_hw_ptp_get_event_second(struct sxe2_hw *hw, u32 index)
@@ -1603,8 +1719,6 @@ void sxe2_hw_ptp_auxout_set(struct sxe2_hw *hw, u32 index, u32 value)
 	sxe2_write_reg(hw, GLTSYN_AUXOUT(index), value);
 }
 
-#define PTP_GLTSYN_SHADJ_NS_POS (0x3fffffff)
-#define PTP_GLTSYN_SHADJ_NS_NEG (0x80000000)
 void sxe2_hw_ptp_1588_timestamp_adjust(struct sxe2_hw *hw, u32 nanosecond, bool neg)
 {
 	sxe2_write_reg(hw, GLTSYN_SHADJ_SUBNS, 0);
@@ -1627,6 +1741,16 @@ void sxe2_hw_ptp_1588_timestamp_adjust_at_time(struct sxe2_hw *hw, u32 nanosecon
 	sxe2_write_reg(hw, GLTSYN_SYNC, GLTSYN_SYNC_EXEC | GLTSYN_SYNC_GEN_PULSE);
 }
 
+u32 sxe2_hw_ptp_auxout_diff_get(struct sxe2_hw *hw)
+{
+	return sxe2_read_reg(hw, GLTSYN_AUXOUT_DIFF);
+}
+
+void sxe2_hw_ptp_auxout_diff_set(struct sxe2_hw *hw, u32 value)
+{
+	sxe2_write_reg(hw, GLTSYN_AUXOUT_DIFF, value);
+}
+
 s32 sxe2_hw_ptp_stat_get(struct sxe2_hw *hw)
 {
 	return (s32)sxe2_read_reg(hw, GLTSYN_STAT);
@@ -1634,25 +1758,6 @@ s32 sxe2_hw_ptp_stat_get(struct sxe2_hw *hw)
 
 #define SXE2_IPSEC_RX_SPI_TBL (0x1)
 #define SXE2_IPSEC_RX_KEY_TBL (0x2)
-
-void sxe2_hw_ipsec_tcam_clear(struct sxe2_hw *hw, u32 sa_index)
-{
-	u32 val = 0;
-
-	sxe2_write_reg(hw, SXE2_IPSEC_RX_IPSIPID_ADDR, 0);
-
-	sxe2_write_reg(hw, SXE2_IPSEC_RX_IPSSPI0_ADDR, 0);
-	sxe2_write_reg(hw, SXE2_IPSEC_RX_IPSSPI0_ADDR,
-		       0 ^ SXE2_IPSEC_RX_IPSSPI1_SPI_Y_MASK);
-
-	val = (SXE2_IPSEC_RX_SPI_TBL << SXE2_IPSEC_RX_IPSIDX_TABLE_SHIFT) &
-	      SXE2_IPSEC_RX_IPSIDX_TABLE_MASK;
-	val &= ~(BIT(SXE2_IPSEC_RX_IPSIDX_VBI_SHIFT));
-	val |= (sa_index << SXE2_IPSEC_RX_IPSIDX_SA_IDX_SHIFT) &
-	       SXE2_IPSEC_RX_IPSIDX_SA_IDX_MASK;
-	val |= SXE2_IPSEC_RX_IPSIDX_SWRITE_SHIFT;
-	sxe2_write_reg(hw, SXE2_IPSEC_RX_IPSIDX_ADDR, val);
-}
 
 STATIC void sxe2_stat_update32(struct sxe2_hw *hw, u32 reg, u64 *prev_stat,
 			       u64 *cur_stat, bool prev_stat_loaded)

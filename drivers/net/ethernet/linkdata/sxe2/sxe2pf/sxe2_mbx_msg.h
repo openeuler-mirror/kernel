@@ -25,6 +25,9 @@ enum {
 #define SXE2_MBX_DESC_SRC_TYPE_SHIFT 10
 #define SXE2_MBX_DESC_SRC_TYPE_MASK 0x3
 
+#define SXE2_MBX_RDMA_TRYLOCK_SLEEP (30)
+#define SXE2_MBX_RDMA_TIMES_OUT     (3)
+
 struct sxe2_mbx_msg_info {
 	u32 opcode;
 	u16 msg_len;
@@ -43,6 +46,12 @@ void sxe2_cmd_vf_msg_handler(struct sxe2_adapter *adapter,
 struct sxe2_mbx_msg_table *sxe2_mbx_msg_table_get(void);
 
 void sxe2_notify_vf_link_state(struct sxe2_vf_node *vf);
+
+s32 sxe2_send_mdd_notify_to_vf(struct sxe2_adapter *adapter,
+			       struct sxe2_vf_node *vf, u64 tx_queues_bitmap);
+
+s32 sxe2_send_mdd_fault_notify_to_vf(struct sxe2_adapter *adapter,
+				     struct sxe2_vf_node *vf);
 
 void sxe2_mbx_msg_params_fill(struct sxe2_cmd_params *cmd, u32 opc,
 			      void *req_data, u32 req_len, u16 vf_idx,

@@ -74,6 +74,11 @@ s32 sxe2_ipsec_txsa_add(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
 		ret = -EFAULT;
 		goto l_end;
 	}
+	if (cmd_buf->req_len < sizeof(*req)) {
+		LOG_ERROR_BDF("req_len %u too small, need %zu\n", cmd_buf->req_len, sizeof(*req));
+		ret = -EINVAL;
+		goto l_end;
+	}
 	memset(&resp, 0, sizeof(resp));
 
 	LOG_INFO_BDF("ipsec tx sa add.");
@@ -112,6 +117,11 @@ s32 sxe2_ipsec_txsa_del(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
 		ret = -EFAULT;
 		goto l_end;
 	}
+	if (cmd_buf->req_len < sizeof(*req)) {
+		LOG_ERROR_BDF("req_len %u too small, need %zu\n", cmd_buf->req_len, sizeof(*req));
+		ret = -EINVAL;
+		goto l_end;
+	}
 	LOG_INFO_BDF("ipsec tx sa del, id=%u.", req->sa_idx);
 
 	req->func_type = obj->func_type;
@@ -139,6 +149,11 @@ s32 sxe2_ipsec_rxsa_add(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
 	if (!req) {
 		LOG_ERROR_BDF("copy_from_user failed, len=%lu\n", sizeof(*req));
 		ret = -EFAULT;
+		goto l_end;
+	}
+	if (cmd_buf->req_len < sizeof(*req)) {
+		LOG_ERROR_BDF("req_len %u too small, need %zu\n", cmd_buf->req_len, sizeof(*req));
+		ret = -EINVAL;
 		goto l_end;
 	}
 	memset(&resp, 0, sizeof(resp));
@@ -175,6 +190,11 @@ s32 sxe2_ipsec_rxsa_del(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
 	if (!req) {
 		LOG_ERROR_BDF("copy_from_user failed, len=%lu\n", sizeof(*req));
 		ret = -EFAULT;
+		goto l_end;
+	}
+	if (cmd_buf->req_len < sizeof(*req)) {
+		LOG_ERROR_BDF("req_len %u too small, need %zu\n", cmd_buf->req_len, sizeof(*req));
+		ret = -EINVAL;
 		goto l_end;
 	}
 	LOG_DEBUG_BDF("ipsec rx sa del, id=%u.", req->sa_idx);

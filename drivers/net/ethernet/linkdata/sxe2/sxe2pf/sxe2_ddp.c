@@ -13,6 +13,7 @@
 #include "sxe2_log.h"
 #include "sxe2_cmd.h"
 #include "sxe2_ddp.h"
+#include "sxe2_ddp_static.h"
 #include "sxe2_sriov.h"
 #include "sxe2_fnav.h"
 #include "sxe2_rss.h"
@@ -85,8 +86,6 @@ s32 sxe2_ddp_pre_deal(struct sxe2_adapter *adapter, struct sxe2_pkg_hdr *hdr)
 	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 	if (ret) {
 		LOG_ERROR_BDF("get ddp pre failed, ret=%d\n", ret);
-		if (ret != -SXE2_DDP_PKG_BUSY)
-			ret = -SXE2_DDP_PKG_ERR;
 		goto l_end;
 	}
 
@@ -258,10 +257,55 @@ notify:
 		rc = err;
 
 	err = sxe2_ddp_deal_done(adapter, err);
-	if (err)
-		rc = err;
+	if (err) {
+		rc = (rc == 0) ? err : rc;
+		LOG_DEBUG_BDF("ddp download pkg done(err: %d)\n", err);
+	}
+
 end:
 	return rc;
+}
+
+void sxe2_ddp_compat_proc(struct sxe2_adapter *adapter)
+{
+	s32 err;
+	struct sxe2_pkg_hdr hdr;
+	u32 i = 0;
+	u16 timeout = SXE2_WAIT_BUSY_DONE_TIMEOUT;
+
+	if (!(adapter->fw_ver.major == SXE2_FW_NEED_COMP_MAJOR_VER &&
+	      adapter->fw_ver.minor == SXE2_FW_NEED_COMP_MINOR_VER)) {
+		goto l_end;
+	}
+
+	if (!sxe2_is_safe_mode(adapter))
+		goto l_end;
+
+	memset(&hdr, 0, sizeof(hdr));
+	err = sxe2_ddp_acquire_state(adapter, &hdr);
+	if (err == -SXE2_DDP_PKG_ALREADY_LOADED_NOT_SUPPORTED)
+		goto l_end;
+
+	err = sxe2_ddp_pre_deal(adapter, &hdr);
+	if (err == -SXE2_DDP_PKG_BUSY) {
+		do {
+			(void)msleep(SXE2_DDP_DELAY_100MS);
+			err = sxe2_ddp_acquire_state(adapter, &hdr);
+			i++;
+			if (i > timeout) {
+				err = -SXE2_DDP_PKG_ERR;
+				break;
+			}
+		} while (err == -SXE2_DDP_PKG_BUSY);
+	}
+
+	err = sxe2_ddp_deal_done(adapter, SXE2_DDP_PKG_ERR);
+	if (err)
+		LOG_DEBUG_BDF("ddp download pkg done(err: %d)\n", err);
+
+	LOG_DEV_INFO("safe mode, ddp compatible cmd run over.");
+l_end:
+	return;
 }
 
 s32 sxe2_copy_and_init_pkg(struct sxe2_adapter *adapter, const u8 *buf, u32 len)
@@ -316,9 +360,68 @@ void sxe2_free_seg(struct sxe2_adapter *adapter)
 	}
 }
 
+bool sxe2_ddp_file_drv_major_match(const u8 *buf, u32 size,
+				   u16 *file_maj, u16 *builtin_maj)
+{
+	struct sxe2_pkg_hdr *hdr;
+	u16 f_maj, s_maj = 0;
+
+	if (size < sizeof(struct sxe2_ddp_pkg_ver))
+		return false;
+
+	hdr = (struct sxe2_pkg_hdr *)buf;
+	f_maj = le16_to_cpu(hdr->pkg_drv_ver.major);
+	sxe2_ddp_static_ver_get(&s_maj, NULL, NULL, NULL);
+
+	if (file_maj)
+		*file_maj = f_maj;
+	if (builtin_maj)
+		*builtin_maj = s_maj;
+
+	return f_maj == s_maj;
+}
+
+s32 sxe2_ddp_static_load(struct sxe2_adapter *adapter)
+{
+	struct sxe2_hw *hw = &adapter->hw;
+	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
+	u16 drv_maj, drv_mnr, fw_maj, fw_mnr;
+	u32 total = 0;
+	u8 *img;
+	s32 err;
+
+	if (hw->pkg_copy)
+		return SXE2_DDP_PKG_SUCCESS;
+
+	img = sxe2_ddp_static_assemble(adapter, &total);
+	if (IS_ERR(img)) {
+		LOG_ERROR_BDF("assemble static ddp pkg failed.\n");
+		return -SXE2_DDP_PKG_ERR;
+	}
+
+	sxe2_ddp_static_ver_get(&drv_maj, &drv_mnr, &fw_maj, &fw_mnr);
+	LOG_DEV_INFO("Try load built-in static DDP pkg: drv_ver=%u.%u fw_ver=%u.%u, %u bytes.\n",
+		     drv_maj, drv_mnr, fw_maj, fw_mnr, total);
+
+	err = sxe2_init_pkg(adapter, img, total);
+	if (!sxe2_is_init_pkg_successful(err)) {
+		devm_kfree(dev, img);
+		goto l_end;
+	}
+
+	hw->pkg_copy = img;
+	hw->pkg_size = total;
+	err = 0;
+
+l_end:
+	sxe2_log_pkg_init(adapter, err);
+	return err;
+}
+
 s32 sxe2_ddp_rebuild(struct sxe2_adapter *adapter)
 {
 	s32 ret = SXE2_DDP_PKG_SUCCESS;
+	u32 retry = 0;
 
 	if (!sxe2_is_safe_mode(adapter)) {
 		do {
@@ -340,6 +443,12 @@ s32 sxe2_ddp_rebuild(struct sxe2_adapter *adapter)
 				}
 				break;
 			} else if (ret == -SXE2_DDP_PKG_BUSY) {
+				if (++retry > SXE2_WAIT_BUSY_DONE_TIMEOUT) {
+					LOG_DEV_ERR("wait ddp state timeout (%u ms), give up.\n",
+						    retry * SXE2_DDP_DELAY_100MS);
+					ret = -ETIMEDOUT;
+					break;
+				}
 				msleep(SXE2_DDP_DELAY_100MS);
 				continue;
 			} else {

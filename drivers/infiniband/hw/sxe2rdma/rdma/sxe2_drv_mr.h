@@ -94,9 +94,15 @@ struct ib_mr *sxe2_krereg_user_mr(struct ib_mr *ib_mr, int flags, u64 start,
 #endif
 
 #ifndef REG_USER_MR_DMABUF_VER_1
+#if defined(REG_USER_MR_DMABUF_VER_2) || defined(RDMA_OFED_REG_USER_MR_DMABUF)
+struct ib_mr *sxe2_kreg_user_mr_dmabuf(struct ib_pd *pd, u64 start, u64 len,
+				       u64 virt, int fd, int access,
+				       struct uverbs_attr_bundle *attrs);
+#else
 struct ib_mr *sxe2_kreg_user_mr_dmabuf(struct ib_pd *pd, u64 start, u64 len,
 				       u64 virt, int fd, int access,
 				       struct ib_udata *udata);
+#endif
 #endif
 
 u32 sxe2_create_stag(struct sxe2_rdma_device *rdma_dev);

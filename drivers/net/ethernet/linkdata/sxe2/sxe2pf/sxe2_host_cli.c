@@ -38,7 +38,7 @@ struct sxe2_cli_dev_mgr *sxe2_cdev_mgr_get(void)
 	return &sxe2_cdev_mgr;
 }
 
-STATIC s32 sxe2_cli_open(struct inode *inode, struct file *filep)
+STATIC s32 sxe2_cli_open(struct inode *inode, struct file *filp)
 {
 	struct sxe2_cli_dev_mgr *cli_dev_mgr = sxe2_cdev_mgr_get();
 	s32 ret = 0;
@@ -47,7 +47,7 @@ STATIC s32 sxe2_cli_open(struct inode *inode, struct file *filep)
 	cdev_mgr = container_of(inode->i_cdev, struct sxe2_cli_dev_mgr_data,
 				cdev_info.cdev);
 
-	filep->private_data = cdev_mgr;
+	filp->private_data = cdev_mgr;
 
 	mutex_lock(&cli_dev_mgr->lock);
 
@@ -64,11 +64,11 @@ l_unlock:
 	return ret;
 }
 
-STATIC s32 sxe2_cli_close(struct inode *inode, struct file *filep)
+STATIC s32 sxe2_cli_close(struct inode *inode, struct file *filp)
 {
 	struct sxe2_cli_dev_mgr *cli_dev_mgr = sxe2_cdev_mgr_get();
 	struct sxe2_cli_dev_mgr_data *cdev_mgr =
-			(struct sxe2_cli_dev_mgr_data *)filep->private_data;
+			(struct sxe2_cli_dev_mgr_data *)filp->private_data;
 	s32 ref_count = 0;
 
 	mutex_lock(&cli_dev_mgr->lock);
@@ -145,20 +145,20 @@ l_end:
 	return ret;
 }
 
-STATIC long sxe2_cli_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
+STATIC long sxe2_cli_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	long ret;
 	struct sxe2_adapter *adapter = NULL;
 	struct sxe2_cli_dev_mgr_data *cdev_mgr = NULL;
 	struct sxe2_cli_dev_mgr *cli_dev_mgr = sxe2_cdev_mgr_get();
 
-	if (!filep || cmd == 0 || arg == 0) {
-		LOG_ERROR("filep=%p cmd=%d arg=%ld\n", filep, cmd, arg);
+	if (!filp || cmd == 0 || arg == 0) {
+		LOG_ERROR("filp=%p cmd=%d arg=%ld\n", filp, cmd, arg);
 		ret = -EINVAL;
 		goto l_end;
 	}
 
-	cdev_mgr = (struct sxe2_cli_dev_mgr_data *)filep->private_data;
+	cdev_mgr = (struct sxe2_cli_dev_mgr_data *)filp->private_data;
 
 	mutex_lock(&cli_dev_mgr->lock);
 	if (cdev_mgr->status == SXE2_CDEV_STATUS_UNACCESS) {
@@ -186,13 +186,13 @@ STATIC long sxe2_cli_ioctl(struct file *filep, unsigned int cmd, unsigned long a
 		break;
 	default:
 		ret = -EINVAL;
-		LOG_ERROR_BDF("unknown ioctl cmd, filep=%p, cmd=%d,arg=0x%8.8lx\n",
-			      filep, cmd, arg);
+		LOG_ERROR_BDF("unknown ioctl cmd, filp=%p, cmd=%d,arg=0x%8.8lx\n",
+			      filp, cmd, arg);
 		break;
 	}
 
 	if (ret) {
-		LOG_ERROR_BDF("filep=%p, cmd=%d, arg=%lx, ret=%ld\n", filep, cmd,
+		LOG_ERROR_BDF("filp=%p, cmd=%d, arg=%lx, ret=%ld\n", filp, cmd,
 			      arg, ret);
 	}
 
@@ -438,7 +438,12 @@ l_cdev_mgr_get_failed:
 void sxe2_cli_cdev_delete(struct sxe2_adapter *adapter)
 {
 	s32 dev_minor;
-	struct sxe2_cdev_info *cdev_info = &adapter->cdev_mgr->cdev_info;
+	struct sxe2_cdev_info *cdev_info;
+
+	if (!adapter || !adapter->cdev_mgr)
+		return;
+
+	cdev_info = &adapter->cdev_mgr->cdev_info;
 
 	dev_minor = (s32)MINOR(cdev_info->dev_no);
 

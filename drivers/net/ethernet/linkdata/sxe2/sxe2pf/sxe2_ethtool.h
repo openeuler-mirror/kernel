@@ -21,9 +21,15 @@
 #include "sxe2_log.h"
 #include "sxe2_msg.h"
 
+#define SXE2_LB_TEST_DOWN_TIME_OUT_CNT  (50)
+#define SXE2_LB_TEST_DOWN_WAIT_TIME     (100)
 #define SXE2_PF_DOWN_ETHTOOL_BASE_SPEED (0xffffffff)
 #define SXE2_LB_FRAME_SIZE (64)
 #define SXE2_Q_STATS_LEN   (2)
+#define SXE2_QSFP_UP_PAGE_PROVIDE_OFF   (195)
+#define SXE2_QSFP_UP_PAGE_1             (1)
+#define SXE2_QSFP_UP_PAGE_2             (2)
+#define SXE2_QSFP_UP_PAGE_3             (3)
 #define SXE2_STATS(_type, _name, type)                                       \
 	{                                                                      \
 		.stats_string = _name,                                         \
@@ -126,7 +132,7 @@ static const struct sxe2_stats sxe2_gstrings_vsi_sw_stats[] = {
 	SXE2_VSI_SW_STATS("rx_xdp_drop", rx_xdp_drop),
 	SXE2_VSI_SW_STATS("rx_xdp_redirect", rx_xdp_redirect),
 	SXE2_VSI_SW_STATS("rx_xdp_redirect_fail", rx_xdp_redirect_fail),
-	SXE2_VSI_SW_STATS("rx_xdp_pkts", rx_xdp_pkts),
+	SXE2_VSI_SW_STATS("rx_xdp_packets", rx_xdp_pkts),
 	SXE2_VSI_SW_STATS("rx_xdp_bytes", rx_xdp_bytes),
 	SXE2_VSI_SW_STATS("rx_xdp_pass", rx_xdp_pass),
 	SXE2_VSI_SW_STATS("rx_xdp_unknown", rx_xdp_unknown),
@@ -177,7 +183,7 @@ static const struct sxe2_stats sxe2_gstrings_pf_hw_stats[] = {
 	SXE2_PF_HW_STATS("tx_packets_all_phy", tx_frame_good_bad),
 	SXE2_PF_HW_STATS("rx_packets_all_phy", rx_frame_good_bad),
 	SXE2_PF_HW_STATS("tx_bytes_all_phy", tx_bytes_good_bad),
-	SXE2_PF_HW_STATS("rx_bytes_all_phy", rx_byte_good_bad),
+	SXE2_PF_HW_STATS("rx_bytes_all_phy", rx_bytes_good_bad),
 
 	SXE2_PF_HW_STATS("tx_64_bytes_phy", tx_size_64),
 	SXE2_PF_HW_STATS("tx_65_to_127_bytes_phy", tx_size_65_127),
@@ -287,7 +293,7 @@ static inline u32 sxe2_rxq_stats_len(struct net_device *netdev)
 #define SXE2_PF_HW_STATS_LEN  ARRAY_SIZE(sxe2_gstrings_pf_hw_stats)
 #define SXE2_VSI_HW_STATS_LEN ARRAY_SIZE(sxe2_gstrings_vsi_hw_stats)
 #define SXE2_PF_SW_STATS_LEN  ARRAY_SIZE(sxe2_gstrings_pf_sw_stats)
-
+#define SXE2_PF_TX_TIMEOUT_CNT 1
 #define SXE2_IPSEC_STATS_LEN                                                   \
 	((sizeof_field(struct sxe2_queue_ipsec_stats, tx_error_invalid_sp) +   \
 	  sizeof_field(struct sxe2_queue_ipsec_stats,                          \
@@ -300,13 +306,20 @@ static inline u32 sxe2_rxq_stats_len(struct net_device *netdev)
 	  sizeof_field(struct sxe2_queue_ipsec_stats, rx_offload_success)) /   \
 	 sizeof(__le64))
 
+#ifdef SXE2_MACVLAN_STATS
+#define SXE2_MACVLAN_STATS_LEN	(4 * SXE2_MAX_MACVLANS)
+#else
+#define SXE2_MACVLAN_STATS_LEN	0
+#endif
+
 #define SXE2_ALL_STATS_LEN(n)                                                  \
 	({ \
 		typeof(n) _n = (n); \
 		((SXE2_PF_HW_STATS_LEN + SXE2_VSI_HW_STATS_LEN + IEEE_8021QAZ_MAX_TCS +     \
 		  SXE2_VSI_SW_STATS_LEN + SXE2_PFC_STATS_LEN + SXE2_IPSEC_STATS_LEN +  \
 		  SXE2_PF_SW_STATS_LEN + sxe2_q_stats_len(_n)) +                        \
-		 sxe2_rxq_stats_len(_n) + sxe2_txq_stats_len(_n)); \
+		 sxe2_rxq_stats_len(_n) + sxe2_txq_stats_len(_n)) + SXE2_PF_TX_TIMEOUT_CNT + \
+		 SXE2_MACVLAN_STATS_LEN; \
 	})
 
 #define sxe2_for_each_prioirty(type)                                              \
@@ -322,6 +335,8 @@ enum sxe2_ethtool_test_id {
 static const u32 sxe2_regs_dump_list[] = { SXE2_PF_INT_OICR_ENABLE,
 					   SXE2_PF_INT_TQCTL(0),
 					   SXE2_PF_INT_RQCTL(0) };
+
+void sxe2_fc_stats_backup(struct sxe2_adapter *adapter);
 
 void sxe2_hw_pf_stats_update(struct sxe2_adapter *adapter);
 
@@ -383,9 +398,6 @@ s32 sxe2_get_link_configure(struct sxe2_adapter *adapter,
 			    struct flm_ethtool_get_link_resp *link_cfg);
 
 s32 sxe2_set_link_autoneg_en(struct sxe2_adapter *adapter, u32 an_en);
-
-s32 sxe2_link_set_fc_configure(struct sxe2_adapter *adapter, u8 tx_fc,
-			       u8 rx_fc);
 
 u32 sxe2_speed_dut_switch_cfg(s32 speed);
 

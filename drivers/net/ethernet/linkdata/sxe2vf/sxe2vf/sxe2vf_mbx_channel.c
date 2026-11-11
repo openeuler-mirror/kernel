@@ -372,13 +372,13 @@ STATIC void sxe2vf_mbx_tx_unprepare(struct sxe2vf_msg_ctxt *msg_ctxt)
 
 	out_hdr = msg_ctxt->rcv_buf;
 	inner_hdr = (struct sxe2vf_mbx_msg_hdr *)((u8 *)msg_ctxt->rcv_buf +
-						  out_hdr->hdr_len);
+							  le16_to_cpu(out_hdr->hdr_len));
 
 	if (msg_ctxt->rcv_buf) {
 		if (msg_ctxt->msg_raw->out_len)
 			(void)memcpy(msg_ctxt->msg_raw->out_data,
-				     msg_ctxt->rcv_buf + out_hdr->hdr_len +
-						     inner_hdr->data_offset,
+				     msg_ctxt->rcv_buf + le16_to_cpu(out_hdr->hdr_len) +
+					     le32_to_cpu(inner_hdr->data_offset),
 				     msg_ctxt->msg_raw->out_len);
 		kfree(msg_ctxt->rcv_buf);
 	}
@@ -624,8 +624,10 @@ STATIC s32 __sxe2vf_mbx_msg_send(struct sxe2vf_adapter *adapter,
 		      le16_to_cpu(desc->ret));
 
 l_unlock:
+#ifndef SXE2_CFG_RELEASE
 	if (desc)
 		DATA_DUMP(desc, sizeof(*desc), "mbx tq desc after");
+#endif
 	if (ret)
 		sxe2vf_hw_mbx_regs_dump(&adapter->hw);
 	mutex_unlock(&txq->lock);
@@ -830,29 +832,57 @@ static void sxe2vf_mbx_rcv_clear(struct sxe2vf_adapter *adapter,
 	(void)memset(&mbx_rcv->desc, 0, sizeof(mbx_rcv->desc));
 }
 
-STATIC s32 sxe2vf_rcv_msg_valid(struct sxe2vf_cmd_hdr *out_hdr,
-				struct sxe2vf_mbx_msg_hdr *inner_hdr)
+STATIC s32 sxe2vf_rcv_msg_valid(struct sxe2vf_mbx_rcv *mbx_rcv,
+				struct sxe2vf_cmd_hdr **out_hdr,
+				struct sxe2vf_mbx_msg_hdr **inner_hdr)
 {
 	s32 ret = 0;
-	u32 opcode = le32_to_cpu(inner_hdr->op_code);
+	u32 opcode;
+	u32 hdr_len;
+	u32 data_offset;
+	u32 data_len;
 
-	if (le32_to_cpu(out_hdr->magic_code) != SXE2_VF_MBX_MAGIC) {
+	*out_hdr = (struct sxe2vf_cmd_hdr *)mbx_rcv->buf;
+	hdr_len = le16_to_cpu((*out_hdr)->hdr_len);
+
+	if (hdr_len < SXE2VF_CMD_HDR_SIZE ||
+	    hdr_len + SXE2VF_MBX_MSG_HDR_SIZE > mbx_rcv->buf_len) {
+		LOG_ERROR("traceid:0x%llx recv cmd hdr_len:%u buf_len:%u invalid.\n",
+			  (*out_hdr)->trace_id, hdr_len, mbx_rcv->buf_len);
+		return -EIO;
+	}
+
+	*inner_hdr = (struct sxe2vf_mbx_msg_hdr *)((u8 *)*out_hdr + hdr_len);
+
+	data_offset = le32_to_cpu((*inner_hdr)->data_offset);
+	data_len = le32_to_cpu((*inner_hdr)->data_len);
+	if (hdr_len + data_offset > mbx_rcv->buf_len ||
+	    hdr_len + data_offset + data_len > mbx_rcv->buf_len) {
+		LOG_ERROR("traceid:0x%llx recv cmd data_offset:%u data_len:%u buf_len:%u "
+			  "invalid.\n",
+			  (*out_hdr)->trace_id, data_offset, data_len, mbx_rcv->buf_len);
+		return -EIO;
+	}
+
+	opcode = le32_to_cpu((*inner_hdr)->op_code);
+
+	if (le32_to_cpu((*out_hdr)->magic_code) != SXE2_VF_MBX_MAGIC) {
 		LOG_ERROR("traceid:0x%llx recv cmd magic:0x%x check failed.\n",
-			  out_hdr->trace_id, le32_to_cpu(out_hdr->magic_code));
+			  (*out_hdr)->trace_id, le32_to_cpu((*out_hdr)->magic_code));
 		ret = -EIO;
 		return ret;
 	}
-	ret = (s32)le32_to_cpu(out_hdr->ret);
+	ret = (s32)le32_to_cpu((*out_hdr)->ret);
 	if (ret < 0) {
 		LOG_ERROR("traceid:0x%llx recv cmd failed, ret: %d.\n",
-			  out_hdr->trace_id, ret);
+			  (*out_hdr)->trace_id, ret);
 		ret = -EIO;
 		return ret;
 	}
 
 	if (opcode >= SXE2_VF_OPCODE_NR) {
 		LOG_ERROR("traceid:0x%llx recv cmd opcode(%d) invalid, ret: %d.\n",
-			  out_hdr->trace_id, opcode, ret);
+			  (*out_hdr)->trace_id, opcode, ret);
 		ret = -EIO;
 		return ret;
 	}
@@ -959,10 +989,15 @@ STATIC void __sxe2vf_notify_msg_handle(struct sxe2vf_adapter *adapter,
 	struct sxe2vf_mbx_msg_hdr *inner_hdr;
 	struct sxe2vf_cmd_hdr *out_hdr;
 	u32 opcode;
+	u32 data_offset;
 	s32 ret;
 
-	out_hdr = (struct sxe2vf_cmd_hdr *)msg->buf;
-	inner_hdr = (struct sxe2vf_mbx_msg_hdr *)(msg->buf + out_hdr->hdr_len);
+	ret = sxe2vf_rcv_msg_valid(msg, &out_hdr, &inner_hdr);
+	if (ret) {
+		LOG_ERROR_BDF("recv notify msg valid failed, ret:%d.\n", ret);
+		return;
+	}
+
 	opcode = le32_to_cpu(inner_hdr->op_code);
 
 	if (opcode >= SXE2_VF_OPCODE_NR) {
@@ -971,8 +1006,9 @@ STATIC void __sxe2vf_notify_msg_handle(struct sxe2vf_adapter *adapter,
 		return;
 	}
 
+	data_offset = le32_to_cpu(inner_hdr->data_offset);
 	if (msg_table[opcode].func) {
-		ret = msg_table[opcode].func(adapter, ((u8 *)inner_hdr + inner_hdr->data_offset));
+		ret = msg_table[opcode].func(adapter, ((u8 *)inner_hdr + data_offset));
 		if (ret)
 			LOG_ERROR_BDF("opcode:0x%x vf handle result:%d.\n", opcode,
 				      ret);
@@ -1044,13 +1080,11 @@ s32 sxe2vf_mbx_msg_rcv(struct sxe2vf_adapter *adapter)
 		if (ret == -ENODATA)
 			goto l_free;
 
-		out_hdr = (struct sxe2vf_cmd_hdr *)mbx_rcv->buf;
-		inner_hdr = SXE2_MBX_MSG_HDR_PTR(out_hdr);
-		opcode = le32_to_cpu(inner_hdr->op_code);
-
-		ret = sxe2vf_rcv_msg_valid(out_hdr, inner_hdr);
+		ret = sxe2vf_rcv_msg_valid(mbx_rcv, &out_hdr, &inner_hdr);
 		if (ret)
 			goto l_free;
+
+		opcode = le32_to_cpu(inner_hdr->op_code);
 
 		switch (out_hdr->cmd_type) {
 		case SXE2VF_MSG_TYPE_PF_TO_VF:
@@ -1093,11 +1127,7 @@ STATIC s32 sxe2vf_msg_rsp_polling(struct sxe2vf_msg_ctxt *msg_ctxt)
 	do {
 		ret = __sxe2vf_mbx_msg_rcv(adapter, mbx_rcv);
 		if (ret == 0) {
-			out_hdr = (struct sxe2vf_cmd_hdr *)mbx_rcv->buf;
-			inner_hdr = (struct sxe2vf_mbx_msg_hdr *)(mbx_rcv->buf +
-								  out_hdr->hdr_len);
-
-			ret = sxe2vf_rcv_msg_valid(out_hdr, inner_hdr);
+			ret = sxe2vf_rcv_msg_valid(mbx_rcv, &out_hdr, &inner_hdr);
 			if (ret)
 				goto l_end;
 
@@ -1126,7 +1156,7 @@ STATIC s32 sxe2vf_msg_rsp_polling(struct sxe2vf_msg_ctxt *msg_ctxt)
 				      msg_ctxt->msg_raw->opcode, ret);
 			break;
 		}
-		(void)msleep(SXE2VF_MSG_WB_WAIT_INTERVAL);
+		usleep_range(SXE2VF_MSG_POLLING_INTERVAL_MIN, SXE2VF_MSG_POLLING_INTERVAL_MAX);
 	} while (!sxe2vf_dev_state_check(adapter) &&
 		 time_before(jiffies, (unsigned long)msg_ctxt->expired_time));
 
@@ -1190,6 +1220,46 @@ s32 sxe2vf_dev_state_check(struct sxe2vf_adapter *adapter)
 	return ret;
 }
 
+STATIC const u16 sxe2vf_opcode_boundary_tbl[SXE2VF_PF_VER_MAJOR_MAX]
+					   [SXE2VF_PF_VER_MINOR_MAX] = {
+	[SXE2_PF_VF_VERSION_MAJOR_V1][SXE2_PF_VF_VERSION_MINOR_V1] = SXE2VF_OPCODE_BOUNDARY_V1_1,
+	[SXE2_PF_VF_VERSION_MAJOR_V1][SXE2_PF_VF_VERSION_MINOR_V2] = SXE2VF_OPCODE_BOUNDARY_V1_2,
+};
+
+STATIC u16 sxe2vf_opcode_boundary_get(struct sxe2vf_adapter *adapter, u16 major, u16 minor)
+{
+	if (major < SXE2VF_PF_VER_MAJOR_MAX && minor < SXE2VF_PF_VER_MINOR_MAX &&
+	    sxe2vf_opcode_boundary_tbl[major][minor] != 0)
+		return sxe2vf_opcode_boundary_tbl[major][minor];
+
+	if (major != SXE2_PF_VF_VERSION_MAJOR && minor != SXE2_PF_VF_VERSION_MINOR)
+		LOG_WARN_BDF("pf ver %u.%u not in opcode boundary tbl, use default 0x%x.\n",
+			     major, minor, SXE2VF_OPCODE_BOUNDARY_DEFAULT);
+
+	return SXE2VF_OPCODE_BOUNDARY_DEFAULT;
+}
+
+STATIC s32 sxe2vf_opcode_boundary_check(struct sxe2vf_adapter *adapter,
+					u32 opcode)
+{
+	u16 boundary;
+	u16 major = (u16)adapter->pf_ver.major;
+	u16 minor = (u16)adapter->pf_ver.minor;
+
+	if (major == 0)
+		return SXE2_VF_ERR_SUCCESS;
+
+	boundary = sxe2vf_opcode_boundary_get(adapter, major, minor);
+
+	if (opcode >= boundary) {
+		LOG_ERROR_BDF("opcode:0x%x exceed pf ver %u.%u boundary:0x%x, "
+			      "drop send.\n", opcode, major, minor, boundary);
+		return -EOPNOTSUPP;
+	}
+
+	return SXE2_VF_ERR_SUCCESS;
+}
+
 s32 sxe2vf_mbx_msg_send(struct sxe2vf_adapter *adapter,
 			struct sxe2vf_msg_params *msg_raw)
 {
@@ -1198,6 +1268,10 @@ s32 sxe2vf_mbx_msg_send(struct sxe2vf_adapter *adapter,
 	struct sxe2vf_cmd_hdr *out_hdr;
 	struct sxe2vf_mbx_msg_hdr *inner_hdr;
 	u16 retry_cnt = 0;
+
+	ret = sxe2vf_opcode_boundary_check(adapter, msg_raw->opcode);
+	if (ret != SXE2_VF_ERR_SUCCESS)
+		return ret;
 
 	ret = sxe2vf_dev_state_check(adapter);
 	if (ret != SXE2_VF_ERR_SUCCESS) {
@@ -1261,7 +1335,7 @@ s32 sxe2vf_mbx_msg_send(struct sxe2vf_adapter *adapter,
 		ret = -EIO;
 	} else {
 		inner_hdr = (struct sxe2vf_mbx_msg_hdr *)(msg_ctxt.rcv_buf +
-							  out_hdr->hdr_len);
+							  le16_to_cpu(out_hdr->hdr_len));
 		ret = (s32)le32_to_cpu(inner_hdr->err_code);
 		if (ret) {
 			LOG_ERROR_BDF("vf msg opcode:0x%x trace_id:0x%llx\t"

@@ -10,12 +10,12 @@
  */
 
 #include <linux/debugfs.h>
-#include <linux/cpu_rmap.h>
 #include <linux/cpumask.h>
 #include <linux/atomic.h>
 
 #include "sxe2.h"
 #include "sxe2_log.h"
+#include "sxe2_common.h"
 #include "sxe2_debugfs.h"
 #include "sxe2_switch.h"
 #include "sxe2_txsched.h"
@@ -30,6 +30,9 @@
 #include "sxe2_com_dma.h"
 #include "sxe2_ethtool.h"
 #include "sxe2_com_cdev.h"
+#include "sxe2_sriov.h"
+#include "sxe2_queue.h"
+#include "sxe2_tx.h"
 
 static struct dentry *sxe2_debugfs_root;
 
@@ -372,10 +375,13 @@ STATIC void sxe2_pf_lag_dump(struct sxe2_adapter *adapter)
 	}
 
 	mutex_lock(&lag->lock);
+
+	LOG_DEV_INFO("lag bond id %d.\n", lag->bond_id);
 	LOG_DEV_INFO("lag bonded:%d mode:%d pf 0 \t"
 		     "state: %d pf 1 state: %d ref_num: %d\n",
 		     lag->bonded, lag->bond_mode, lag->state[SXE2_LAG_PF0],
 		     lag->state[SXE2_LAG_PF0], lag->ref_num);
+
 	LOG_DEV_INFO("lag serinum:%s\n", lag->serial_num);
 	LOG_DEV_INFO("lag adapters[0] 0x%p pfid %d\n", lag->adapters[0],
 		     lag->adapters[0] ? lag->adapters[0]->pf_idx : -1);
@@ -397,15 +403,25 @@ STATIC void sxe2_vf_nodes_show(struct sxe2_adapter *adapter)
 {
 	u16 vf_idx;
 	struct sxe2_vf_node_e *vf_node_e;
+	bool cfg_exists;
+	u16 max_vf_id;
 
 	LOG_DEV_INFO("\t vf node show start.\n");
 
-	LOG_DEV_INFO("\t adapter.vf_ctxt.irq_cnt=%d\n", adapter->vf_ctxt.irq_cnt);
 	LOG_DEV_INFO("\t adapter.vf_ctxt.max_vfs=%d\n", adapter->vf_ctxt.max_vfs);
 	LOG_DEV_INFO("\t adapter.vf_ctxt.num_vfs=%d\n", adapter->vf_ctxt.num_vfs);
-	LOG_DEV_INFO("\t adapter.vf_ctxt.q_cnt=%d\n", adapter->vf_ctxt.q_cnt);
 	LOG_DEV_INFO("\t adapter.vf_ctxt.vfid_base=%d\n",
 		     adapter->vf_ctxt.vfid_base);
+	LOG_DEV_INFO("\t adapter.vf_ctxt.large_q.dflt_large_q_en=%d\n",
+		     adapter->vf_ctxt.large_q.dflt_large_q_en);
+	LOG_DEV_INFO("\t adapter.vf_ctxt.large_q.occupied_q_cnt=%d\n",
+		     adapter->vf_ctxt.large_q.occupied_q_cnt);
+	LOG_DEV_INFO("\t adapter.vf_ctxt.large_q.spare_q=%d\n",
+		     adapter->vf_ctxt.large_q.spare_q);
+	LOG_DEV_INFO("\t adapter.vf_ctxt.large_q.extra_q_cnt=%d\n",
+		     adapter->vf_ctxt.large_q.extra_q_cnt);
+	LOG_DEV_INFO("\t adapter.vf_ctxt.large_q.max_vf_id=%d\n",
+		     adapter->vf_ctxt.large_q.max_vf_id);
 
 	mutex_lock(&adapter->vf_ctxt.vfs_lock);
 
@@ -416,6 +432,14 @@ STATIC void sxe2_vf_nodes_show(struct sxe2_adapter *adapter)
 		LOG_DEV_INFO("\t adapter.vf_ctxt.vf_node_e[%d]\n", vf_idx);
 		LOG_DEV_INFO("\t adapter.vf_ctxt.vf_node_e[%d].irq_base_idx=%d\n",
 			     vf_idx, vf_node_e->vf_node->irq_base_idx);
+		LOG_DEV_INFO("\t adapter.vf_ctxt.vf_node_e[%d].irq_cnt=%d\n",
+			     vf_idx, vf_node_e->vf_node->irq_cnt);
+		LOG_DEV_INFO("\t adapter.vf_ctxt.vf_node_e[%d].q_cnt=%d\n",
+			     vf_idx, vf_node_e->vf_node->q_cnt);
+		LOG_DEV_INFO("\t adapter.vf_ctxt.vf_node_e[%d].rxq_base=%d\n",
+			     vf_idx, vf_node_e->vf_node->rxq_base);
+		LOG_DEV_INFO("\t adapter.vf_ctxt.vf_node_e[%d].txq_base=%d\n",
+			     vf_idx, vf_node_e->vf_node->txq_base);
 		LOG_DEV_INFO("\t adapter.vf_ctxt.vf_node_e[%d].vf_idx=%d\n", vf_idx,
 			     vf_node_e->vf_node->vf_idx);
 
@@ -433,12 +457,35 @@ STATIC void sxe2_vf_nodes_show(struct sxe2_adapter *adapter)
 			     vf_idx, vf_node_e->vf_node->prop.min_tx_rate);
 		LOG_DEV_INFO("\t adapter.vf_ctxt.vf_node_e[%d].max_tx_rate=%d\n",
 			     vf_idx, vf_node_e->vf_node->prop.max_tx_rate);
+		LOG_DEV_INFO("\t vf:%d vf_cfg_mode=%d vf_run_mode:%d\n",
+			     vf_idx, vf_node_e->vf_node->vf_cfg_mode,
+			     vf_node_e->vf_node->vf_run_mode);
+		LOG_DEV_INFO("\t vf:%d master vsi id=%d slave vsi id=%d\n",
+			     vf_idx, vf_node_e->vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER],
+			     vf_node_e->vf_node->vsi_id[SXE2_VF_VSI_ID_SLAVE]);
 
 		if (vf_node_e->vf_node->vsi)
 			sxe2_vsi_dump(vf_node_e->vf_node->vsi);
 		else if (vf_node_e->vf_node->dpdk_vf_vsi)
 			sxe2_vsi_dump(vf_node_e->vf_node->dpdk_vf_vsi);
 		mutex_unlock(SXE2_VF_NODE_LOCK(adapter, vf_idx));
+	}
+
+	cfg_exists = sxe2_vf_user_cfg_is_set(adapter);
+	max_vf_id = adapter->vf_ctxt.large_q.max_vf_id;
+	for (vf_idx = 0; cfg_exists && vf_idx <= max_vf_id; vf_idx++) {
+		struct sxe2_vf_usr_cfg *usr_cfg = SXE2_VF_USR_CFG(adapter, vf_idx);
+
+		LOG_DEV_INFO("\t adapter.vf_ctxt.large_q.usr_cfg[%d]: "
+			     "kernel(q_cfg=%u lut_type=%u lut_id=%u) "
+			     "dpdk(q_cfg=%u lut_type=%u lut_id=%u)\n",
+			     vf_idx,
+			     usr_cfg->product[SXE2_PRODUCT_ID_KERNEL].q_cfg,
+			     usr_cfg->product[SXE2_PRODUCT_ID_KERNEL].lut_type,
+			     usr_cfg->product[SXE2_PRODUCT_ID_KERNEL].lut_id,
+			     usr_cfg->product[SXE2_PRODUCT_ID_DPDK].q_cfg,
+			     usr_cfg->product[SXE2_PRODUCT_ID_DPDK].lut_type,
+			     usr_cfg->product[SXE2_PRODUCT_ID_DPDK].lut_id);
 	}
 	mutex_unlock(&adapter->vf_ctxt.vfs_lock);
 
@@ -469,11 +516,7 @@ STATIC void sxe2_fnav_hw_clear(struct sxe2_adapter *adapter)
 
 STATIC void sxe2_fnav_hw_replay(struct sxe2_adapter *adapter)
 {
-	s32 ret = 0;
-
-	ret = sxe2_fnav_rule_reply(adapter);
-	if (ret)
-		LOG_DEV_ERR("fnav rule failed, ret:%d\n", ret);
+	sxe2_fnav_rule_reply(adapter);
 }
 
 STATIC void sxe2_heart_close(struct sxe2_adapter *adapter)
@@ -674,7 +717,7 @@ STATIC void sxe2_fw_optical_waring_info_show(struct sxe2_adapter *adapter)
 
 	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 	if (ret) {
-		LOG_DEV_ERR("get fw optical vendor info cmd fail, ret=%d\n", ret);
+		LOG_DEV_ERR("get fw optical vendor info cmd failed, ret=%d\n", ret);
 		return;
 	}
 
@@ -731,7 +774,128 @@ STATIC void sxe2_monitor_stats_open(struct sxe2_adapter *adapter)
 {
 	g_pf_switch_stats = 1;
 }
+
+STATIC void sxe2_ntxq_stack_set(struct sxe2_adapter *adapter,
+				const struct sxe2_debugfs_arg_val *argv)
+{
+	bool on = false;
+	u16 queue = 0;
+	struct sxe2_queue *txq = NULL;
+	struct sxe2_vsi *vsi = adapter->vsi_ctxt.main_vsi;
+	struct netdev_queue *ntxq = NULL;
+
+	queue = argv[0].num;
+	on = argv[1].on;
+
+	mutex_lock(&adapter->vsi_ctxt.lock);
+	if (test_bit(SXE2_VSI_S_DISABLE, vsi->state)) {
+		LOG_DEV_ERR("dev busy, please wait a moment.\n");
+		goto l_end;
+	}
+
+	txq = sxe2_tx_queue_get(vsi, queue);
+	if (!txq) {
+		LOG_DEV_ERR("get txq failed.\n");
+		goto l_end;
+	}
+
+	ntxq = sxe2_netdev_txq_get(txq);
+	if (on) {
+		clear_bit(__QUEUE_STATE_STACK_XOFF, &ntxq->state);
+		LOG_DEV_INFO("set netdev txq %u stack on.\n", queue);
+	} else {
+		set_bit(__QUEUE_STATE_STACK_XOFF, &ntxq->state);
+		LOG_DEV_INFO("set netdev txq %u stack off.\n", queue);
+	}
+
+l_end:
+	mutex_unlock(&adapter->vsi_ctxt.lock);
+}
+
+STATIC void sxe2_ntxq_drv_set(struct sxe2_adapter *adapter,
+			      const struct sxe2_debugfs_arg_val *argv)
+{
+	bool on = false;
+	u16 queue = 0;
+	struct sxe2_queue *txq = NULL;
+	struct sxe2_vsi *vsi = adapter->vsi_ctxt.main_vsi;
+	struct netdev_queue *ntxq = NULL;
+
+	queue = argv[0].num;
+	on = argv[1].on;
+
+	mutex_lock(&adapter->vsi_ctxt.lock);
+	if (test_bit(SXE2_VSI_S_DISABLE, vsi->state)) {
+		LOG_DEV_ERR("dev busy, please wait a moment.\n");
+		goto l_end;
+	}
+
+	if (!netif_carrier_ok(vsi->netdev)) {
+		LOG_DEV_ERR("netdev not carrier on.\n");
+		goto l_end;
+	}
+
+	txq = sxe2_tx_queue_get(vsi, queue);
+	if (!txq) {
+		LOG_DEV_ERR("get txq %d failed.\n", queue);
+		goto l_end;
+	}
+
+	ntxq = sxe2_netdev_txq_get(txq);
+	if (on) {
+		netif_tx_start_queue(ntxq);
+		LOG_DEV_INFO("set netdev txq %u drv on.\n", queue);
+	} else {
+		netif_tx_stop_queue(ntxq);
+		LOG_DEV_INFO("set netdev txq %u drv off.\n", queue);
+	}
+
+l_end:
+	mutex_unlock(&adapter->vsi_ctxt.lock);
+}
 #endif
+
+STATIC void sxe2_debugfs_fnav_algo_set(struct sxe2_adapter *adapter,
+				       const struct sxe2_debugfs_arg_val *argv)
+{
+	long mode = argv[0].num;
+	s32 ret;
+
+	if (mode < 0 || mode > SXE2_FNAV_ALGO_MODE_MAX) {
+		LOG_DEV_ERR("fnav algo mode %ld out of range [0, %d].\n",
+			    mode, SXE2_FNAV_ALGO_MODE_MAX);
+		return;
+	}
+
+	ret = sxe2_fwc_fnav_algo_set(adapter, (u8)mode);
+	if (ret) {
+		LOG_DEV_ERR("fnav algo set mode %ld failed, ret=%d.\n",
+			    mode, ret);
+	} else {
+		LOG_DEV_INFO("fnav algo set mode %ld success.\n", mode);
+	}
+}
+
+STATIC void sxe2_debugfs_switch_algo_set(struct sxe2_adapter *adapter,
+					 const struct sxe2_debugfs_arg_val *argv)
+{
+	long mode = argv[0].num;
+	s32 ret;
+
+	if (mode < 0 || mode > SXE2_SWITCH_ALGO_MODE_MAX) {
+		LOG_DEV_ERR("switch algo mode %ld out of range [0, %d].\n",
+			    mode, SXE2_SWITCH_ALGO_MODE_MAX);
+		return;
+	}
+
+	ret = sxe2_fwc_switch_algo_set(adapter, (u8)mode);
+	if (ret) {
+		LOG_DEV_ERR("switch algo set mode %ld failed, ret=%d.\n",
+			    mode, ret);
+	} else {
+		LOG_DEV_INFO("switch algo set mode %ld success.\n", mode);
+	}
+}
 
 static struct sxe2_debugfs_command command[] = {
 		{"info dump", sxe2_info_dump},
@@ -743,6 +907,7 @@ static struct sxe2_debugfs_command command[] = {
 		{"switch recipe get", sxe2_switch_recipe_dump},
 		{"switch profile recipe map", sxe2_switch_profile_recipemap_dump},
 		{"switch share id", sxe2_switch_share_id_dump},
+		{"switch profile fv dump", sxe2_switch_profile_fv_dump},
 		{"txsched tree dump", sxe2_txsched_tree_dump},
 		{"rss trigger", sxe2_fwc_rss_trace_trigger},
 		{"rss recorder", sxe2_fwc_rss_trace_recorder},
@@ -799,17 +964,133 @@ static struct sxe2_debugfs_command command[] = {
 		{"stats open", sxe2_monitor_stats_open},
 #endif
 		{"spoof stats", sxe2_spoof_stats_debugfs_dump},
+		{"sdf open", sxe2_sdf_open_test},
+		{"sdf close", sxe2_sdf_close_test},
 		{"", NULL},
+
 };
+
+static struct sxe2_debugfs_command_arg command_arg[] = {
+#ifdef SXE2_CFG_DEBUG
+	{"txq drv flag set", 2, {SXE2_DEBUGFS_ARG_NUM, SXE2_DEBUGFS_ARG_ONOFF}, sxe2_ntxq_drv_set},
+	{"txq stack flag set", 2, {SXE2_DEBUGFS_ARG_NUM, SXE2_DEBUGFS_ARG_ONOFF},
+		sxe2_ntxq_stack_set},
+#endif
+	{"fnav algo set", 1, {SXE2_DEBUGFS_ARG_NUM}, sxe2_debugfs_fnav_algo_set},
+	{"switch algo set", 1, {SXE2_DEBUGFS_ARG_NUM}, sxe2_debugfs_switch_algo_set},
+	{"", 0, {0}, NULL},
+};
+
+static const char *sxe2_debugfs_arg_type_str(enum sxe2_debugfs_arg_type type)
+{
+	switch (type) {
+	case SXE2_DEBUGFS_ARG_NUM:
+		return "num";
+	case SXE2_DEBUGFS_ARG_STR:
+		return "str";
+	case SXE2_DEBUGFS_ARG_ONOFF:
+		return "on|off";
+	default:
+		return "unknown";
+	}
+}
+
+STATIC s32 sxe2_debugfs_args_parse(struct sxe2_adapter *adapter,
+				   const struct sxe2_debugfs_command_arg *cmd,
+				   char *args, struct sxe2_debugfs_arg_val *argv)
+{
+	u32 n = 0;
+	char *tok;
+	s32 ret;
+
+	while ((tok = strsep(&args, " ")) != NULL) {
+		if (*tok == '\0')
+			continue;
+
+		if (n >= cmd->argc) {
+			LOG_DEV_ERR("command '%s' needs %u args, got more\n",
+				    cmd->string, cmd->argc);
+			return -EINVAL;
+		}
+
+		switch (cmd->argt[n]) {
+		case SXE2_DEBUGFS_ARG_NUM:
+			ret = kstrtol(tok, 10, &argv[n].num);
+			if (ret) {
+				LOG_DEV_ERR("arg %u '%s' is not a decimal number\n",
+					    n + 1, tok);
+				return -EINVAL;
+			}
+			break;
+		case SXE2_DEBUGFS_ARG_STR:
+			if (strlen(tok) > SXE2_DEBUGFS_STR_MAX_LEN) {
+				LOG_DEV_ERR("arg %u string too long (max %d)\n",
+					    n + 1, SXE2_DEBUGFS_STR_MAX_LEN);
+				return -EINVAL;
+			}
+			argv[n].str = tok;
+			break;
+		case SXE2_DEBUGFS_ARG_ONOFF:
+			if (strlen(tok) > SXE2_DEBUGFS_ONOFF_MAX_LEN) {
+				LOG_DEV_ERR("arg %u string too long (max %d)\n",
+					    n + 1, SXE2_DEBUGFS_ONOFF_MAX_LEN);
+				return -EINVAL;
+			}
+
+			if (strncmp(tok, "on", 2) == 0) {
+				argv[n].on = true;
+			} else if (strncmp(tok, "off", 3) == 0) {
+				argv[n].on = false;
+			} else {
+				LOG_DEV_ERR("arg %u string is not on or off\n", n + 1);
+				return -EINVAL;
+			}
+
+			break;
+		default:
+			return -EINVAL;
+		}
+
+		n++;
+	}
+
+	if (n != cmd->argc) {
+		LOG_DEV_ERR("command '%s' needs %u args, got %u\n",
+			    cmd->string, cmd->argc, n);
+		return -EINVAL;
+	}
+
+	return 0;
+}
 
 static s32 sxe2_debugfs_command_match(struct sxe2_adapter *adapter, s8 *cmd_buf,
 				      size_t size)
 {
 	u32 i;
+	size_t verb_len;
+	char *args;
+	struct sxe2_debugfs_arg_val argv[SXE2_DEBUGFS_ARG_MAX] = {};
 
 	for (i = 0; strlen(command[i].string) != 0; i++) {
 		if (!strcmp(cmd_buf, command[i].string)) {
 			command[i].debugfs_cb(adapter);
+			goto l_end;
+		}
+	}
+
+	for (i = 0; strlen(command_arg[i].string) != 0; i++) {
+		verb_len = strlen(command_arg[i].string);
+		if (strncmp(cmd_buf, command_arg[i].string, verb_len) == 0 &&
+		    (cmd_buf[verb_len] == '\0' || cmd_buf[verb_len] == ' ')) {
+			args = (char *)cmd_buf + verb_len;
+			while (*args == ' ')
+				args++;
+
+			if (sxe2_debugfs_args_parse(adapter, &command_arg[i],
+						    args, argv))
+				return -EINVAL;
+
+			command_arg[i].debugfs_cb(adapter, argv);
 			goto l_end;
 		}
 	}
@@ -822,12 +1103,23 @@ l_end:
 
 static void sxe2_debugfs_command_help_info(struct sxe2_adapter *adapter)
 {
-	u32 i;
+	u32 i, j;
+	char usage[80];
+	int len;
 
 	LOG_DEV_INFO("available commands:\n");
 
 	for (i = 0; strlen(command[i].string) != 0; i++)
 		LOG_DEV_INFO("\t %s\n", command[i].string);
+
+	for (i = 0; strlen(command_arg[i].string) != 0; i++) {
+		len = scnprintf(usage, sizeof(usage), "%s", command_arg[i].string);
+		for (j = 0; j < command_arg[i].argc && j < SXE2_DEBUGFS_ARG_MAX; j++)
+			len += scnprintf(usage + len, sizeof(usage) - len,
+					 " <%s>",
+					 sxe2_debugfs_arg_type_str(command_arg[i].argt[j]));
+		LOG_DEV_INFO("\t %s\n", usage);
+	}
 }
 
 STATIC ssize_t sxe2_debugfs_command_write(struct file *file, const char __user *buf,
@@ -865,9 +1157,9 @@ STATIC ssize_t sxe2_debugfs_command_write(struct file *file, const char __user *
 }
 
 static const struct file_operations sxe2_debugfs_command_fops = {
-		.owner = THIS_MODULE,
-		.open = simple_open,
-		.write = sxe2_debugfs_command_write,
+	.owner = THIS_MODULE,
+	.open = simple_open,
+	.write = sxe2_debugfs_command_write,
 };
 
 void sxe2_debugfs_create_common_file(struct sxe2_adapter *adapter)
@@ -924,6 +1216,7 @@ STATIC ssize_t sxe2_debugfs_drv_mode_read(struct file *file, char __user *buf,
 	len += snprintf(tmp_buf + len, SXE2_COM_MODE_NAME_SIZE - len,
 			"configured mode:%s \t",
 			ret ? "get failed" : sxe2_com_mode_to_str(resp.drv_mode));
+	len += snprintf(tmp_buf + len, SXE2_COM_MODE_NAME_SIZE - len, "\n");
 
 	return simple_read_from_buffer(buf, count, ppos, &tmp_buf, len);
 }
@@ -952,7 +1245,7 @@ STATIC s32 sxe2_debugfs_drv_mode_set(struct sxe2_adapter *adapter, char *cmd_buf
 
 		ret = sxe2_drv_mode_set(adapter, new_mode);
 		if (ret) {
-			LOG_ERROR_BDF("drv mode configurate failed.\n");
+			LOG_ERROR_BDF("drv mode configuration failed.\n");
 			goto end;
 		}
 
@@ -960,8 +1253,8 @@ STATIC s32 sxe2_debugfs_drv_mode_set(struct sxe2_adapter *adapter, char *cmd_buf
 			     g_sxe2_com_mode_to_str[adapter->drv_mode],
 			     g_sxe2_com_mode_to_str[new_mode]);
 	} else {
-		LOG_DEV_INFO("unknown or invalid command '%s'\n", cmd_buf);
-		LOG_DEV_INFO("supported commands: %s、%s.\n",
+		LOG_DEV_INFO("unknown or invalid drv mode '%s'\n", cmd_buf);
+		LOG_DEV_INFO("supported drv mode: %s、%s.\n",
 			     SXE2_COM_KERNEL_MODE_NAME, SXE2_COM_MIXED_MODE_NAME);
 		ret = -EINVAL;
 	}
@@ -978,7 +1271,7 @@ STATIC ssize_t sxe2_debugfs_drv_mode_write(struct file *file, const char __user 
 	struct sxe2_adapter *adapter = file->private_data;
 
 	if (*ppos != 0) {
-		LOG_DEV_ERR("dont't allow partial writes.\n, *ppos!=NULL");
+		LOG_DEV_ERR("don't allow partial writes.\n, *ppos!=NULL");
 		return -EINVAL;
 	}
 
@@ -1010,6 +1303,551 @@ static const struct file_operations sxe2_debugfs_drv_mode_fops = {
 		.write = sxe2_debugfs_drv_mode_write,
 };
 
+#define SXE2_VF_CFG_LINE_BUF_LEN	64
+#define SXE2_VF_CFG_HDR_BUF_LEN		64
+STATIC ssize_t sxe2_debugfs_vf_config_read(struct file *file, char __user *buf,
+					   size_t count, loff_t *ppos)
+{
+	struct sxe2_adapter *adapter = file->private_data;
+	ssize_t ret;
+	ssize_t len = 0;
+	u32 buf_size;
+	char *tmp_buf;
+	bool cfg_exists;
+	u16 max_vf_id;
+	u16 i;
+
+	buf_size = (u32)adapter->vf_ctxt.max_vfs * SXE2_VF_CFG_LINE_BUF_LEN +
+		   SXE2_VF_CFG_HDR_BUF_LEN;
+	tmp_buf = kzalloc(buf_size, GFP_KERNEL);
+	if (!tmp_buf)
+		return -ENOMEM;
+
+	len += scnprintf(tmp_buf + len, buf_size - len,
+			 "vf queue config (kernel_q,dpdk_q; empty means no user cfg):\n");
+
+	mutex_lock(&adapter->vf_ctxt.vfs_lock);
+	cfg_exists = sxe2_vf_user_cfg_is_set(adapter);
+	max_vf_id = adapter->vf_ctxt.large_q.max_vf_id;
+	for (i = 0; cfg_exists && i <= max_vf_id; i++) {
+		u16 kernel_cfg = SXE2_VF_USR_CFG(adapter, i)->product[SXE2_PRODUCT_ID_KERNEL].q_cfg;
+		u16 dpdk_cfg = SXE2_VF_USR_CFG(adapter, i)->product[SXE2_PRODUCT_ID_DPDK].q_cfg;
+		char kernel_str[10] = "Unset";
+		char dpdk_str[10] = "Unset";
+		char vf_str[8];
+
+		if (!kernel_cfg && !dpdk_cfg)
+			continue;
+		if (kernel_cfg)
+			(void)scnprintf(kernel_str, sizeof(kernel_str), "%u", kernel_cfg);
+		if (dpdk_cfg)
+			(void)scnprintf(dpdk_str, sizeof(dpdk_str), "%u", dpdk_cfg);
+		(void)scnprintf(vf_str, sizeof(vf_str), "vf%u:", i);
+
+		len += scnprintf(tmp_buf + len, buf_size - len,
+				 "%-5s kernel_q_cfg:%-5s dpdk_q_cfg:%s\n",
+				 vf_str, kernel_str, dpdk_str);
+	}
+	mutex_unlock(&adapter->vf_ctxt.vfs_lock);
+
+	ret = simple_read_from_buffer(buf, count, ppos, tmp_buf, len);
+	kfree(tmp_buf);
+
+	return ret;
+}
+
+struct sxe2_usr_input_ctxt {
+	u16 *kernel_usr_q;
+	u16 *dpdk_usr_q;
+	unsigned long *listed_vf_bmap;
+	u16 max_vf_id;
+	u16 large_q_cfg;
+	u16 explicit_queues;
+	u16 unconfigured_slots;
+	u16 per_slot;
+};
+
+static struct sxe2_usr_input_ctxt *sxe2_vf_config_ctx_alloc(void)
+{
+	struct sxe2_usr_input_ctxt *ctx;
+
+	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
+	if (!ctx)
+		return NULL;
+
+	ctx->kernel_usr_q = kcalloc(SXE2_VF_NUM, sizeof(*ctx->kernel_usr_q), GFP_KERNEL);
+	ctx->dpdk_usr_q = kcalloc(SXE2_VF_NUM, sizeof(*ctx->dpdk_usr_q), GFP_KERNEL);
+	ctx->listed_vf_bmap = bitmap_zalloc(SXE2_VF_NUM, GFP_KERNEL);
+	if (!ctx->kernel_usr_q || !ctx->dpdk_usr_q || !ctx->listed_vf_bmap) {
+		bitmap_free(ctx->listed_vf_bmap);
+		kfree(ctx->dpdk_usr_q);
+		kfree(ctx->kernel_usr_q);
+		kfree(ctx);
+		return NULL;
+	}
+
+	return ctx;
+}
+
+static void sxe2_vf_config_ctx_free(struct sxe2_usr_input_ctxt *ctx)
+{
+	if (!ctx)
+		return;
+
+	bitmap_free(ctx->listed_vf_bmap);
+	kfree(ctx->dpdk_usr_q);
+	kfree(ctx->kernel_usr_q);
+	kfree(ctx);
+}
+
+static s32 sxe2_vf_config_vf_range_parse(struct sxe2_adapter *adapter,
+					 char *vf_str, u16 *vf_start, u16 *vf_end)
+{
+	if (strchr(vf_str, '-')) {
+		if (sscanf(vf_str, "%hu-%hu", vf_start, vf_end) != 2) {
+			LOG_DEV_ERR("invalid vf range: %s\n", vf_str);
+			return -EINVAL;
+		}
+	} else {
+		if (kstrtou16(vf_str, 10, vf_start)) {
+			LOG_DEV_ERR("invalid vf id: %s\n", vf_str);
+			return -EINVAL;
+		}
+		*vf_end = *vf_start;
+	}
+
+	return 0;
+}
+
+static s32 sxe2_vf_config_queue_num_parse(struct sxe2_adapter *adapter,
+					  char *q_str, u16 *kernel_q, u16 *dpdk_q)
+{
+	char *kq, *dq;
+	int err;
+
+	*kernel_q = 0;
+	*dpdk_q = 0;
+	if (!strchr(q_str, ',')) {
+		LOG_DEV_ERR("queue config must be kernel,dpdk form: %s\n", q_str);
+		return -EINVAL;
+	}
+
+	kq = strsep(&q_str, ",");
+	dq = q_str;
+	if (*kq) {
+		err = kstrtou16(kq, 10, kernel_q);
+		if (err) {
+			LOG_DEV_ERR("invalid kernel queue: %s\n", kq);
+			return -EINVAL;
+		}
+		if (!*kernel_q) {
+			LOG_DEV_ERR("kernel queue 0 invalid, leave empty for default\n");
+			return -EINVAL;
+		}
+	}
+	if (*dq) {
+		err = kstrtou16(dq, 10, dpdk_q);
+		if (err) {
+			LOG_DEV_ERR("invalid dpdk queue: %s\n", dq);
+			return -EINVAL;
+		}
+		if (!*dpdk_q) {
+			LOG_DEV_ERR("dpdk queue 0 invalid, leave empty for default\n");
+			return -EINVAL;
+		}
+	}
+
+	if (!*kernel_q && !*dpdk_q) {
+		LOG_DEV_ERR("kernel and dpdk queue both empty\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static s32 sxe2_vf_config_input_parse(struct sxe2_adapter *adapter,
+				      char *cmd_buf,
+				      struct sxe2_usr_input_ctxt *ctx)
+{
+	char *token, *cur = cmd_buf;
+	char *vf_str, *q_str;
+	u16 vf_start = 0, vf_end = 0, vf_id;
+	u16 kernel_q, dpdk_q;
+
+	while ((token = strsep(&cur, ";")) != NULL) {
+		if (!*token)
+			continue;
+
+		vf_str = strsep(&token, ":");
+		q_str = token;
+		if (!vf_str || !q_str) {
+			LOG_DEV_ERR("invalid format, expected {vf_id}:{kernel_q},{dpdk_q}\n");
+			return -EINVAL;
+		}
+
+		if (sxe2_vf_config_vf_range_parse(adapter, vf_str, &vf_start, &vf_end))
+			return -EINVAL;
+
+		if (vf_start > vf_end || vf_end >= adapter->vf_ctxt.max_vfs) {
+			LOG_DEV_ERR("vf range %u-%u invalid, max vfs capability %u\n",
+				    vf_start, vf_end, adapter->vf_ctxt.max_vfs);
+			return -EINVAL;
+		}
+
+		if (sxe2_vf_config_queue_num_parse(adapter, q_str, &kernel_q, &dpdk_q))
+			return -EINVAL;
+
+		if (kernel_q > SXE2_VF_KERNEL_Q_CFG_MAX ||
+		    dpdk_q > SXE2_VF_DPDK_Q_NUM) {
+			LOG_DEV_ERR("queue num too large, kernel_q:%u(max:%u) dpdk_q:%u(max:%u)\n",
+				    kernel_q, SXE2_VF_KERNEL_Q_CFG_MAX,
+				    dpdk_q, SXE2_VF_DPDK_Q_NUM);
+			return -EINVAL;
+		}
+
+		if (vf_end > ctx->max_vf_id)
+			ctx->max_vf_id = vf_end;
+		for (vf_id = vf_start; vf_id <= vf_end; vf_id++) {
+			if (test_and_set_bit(vf_id, ctx->listed_vf_bmap)) {
+				LOG_DEV_ERR("vf %u duplicate or overlapped config\n", vf_id);
+				return -EINVAL;
+			}
+
+			if (vf_id >= SXE2_VF_LARGE_Q_VF_NUM_MAX &&
+			    (kernel_q > SXE2_VSI_LUT_MAX_QUEUE ||
+			     dpdk_q > SXE2_VF_LARGE_Q_DPDK_Q_MAX)) {
+				LOG_DEV_ERR("vf %u not allowed kernel_q > %u or dpdk_q > %u when "
+					    "vf num exceeds %u, kernel_q:%u dpdk_q:%u\n",
+					    vf_id, SXE2_VSI_LUT_MAX_QUEUE,
+					    SXE2_VF_LARGE_Q_DPDK_Q_MAX,
+					    SXE2_VF_LARGE_Q_VF_NUM_MAX,
+					    kernel_q, dpdk_q);
+				return -EINVAL;
+			}
+
+			ctx->kernel_usr_q[vf_id] = kernel_q;
+			ctx->dpdk_usr_q[vf_id] = dpdk_q;
+
+			if (kernel_q > SXE2_VSI_LUT_MAX_QUEUE)
+				ctx->large_q_cfg++;
+			if (dpdk_q > SXE2_VSI_LUT_MAX_QUEUE)
+				ctx->large_q_cfg++;
+
+			if (kernel_q > 0)
+				ctx->explicit_queues += kernel_q;
+			else
+				ctx->unconfigured_slots++;
+
+			if (dpdk_q > 0)
+				ctx->explicit_queues += dpdk_q;
+			else
+				ctx->unconfigured_slots++;
+		}
+	}
+
+	if (!bitmap_weight(ctx->listed_vf_bmap, SXE2_VF_NUM)) {
+		LOG_DEV_ERR("no valid vf config entry\n");
+		return -EINVAL;
+	}
+
+	for (vf_id = 0; vf_id <= ctx->max_vf_id; vf_id++) {
+		if (!test_bit(vf_id, ctx->listed_vf_bmap))
+			ctx->unconfigured_slots += SXE2_PRODUCT_ID_NR;
+	}
+
+	return 0;
+}
+
+static void sxe2_vf_config_lut_release(struct sxe2_adapter *adapter,
+				       struct sxe2_usr_input_ctxt *ctx)
+{
+	struct sxe2_vf_usr_cfg *usr_cfg;
+	u16 i;
+	u8 v;
+
+	for (i = 0; i <= ctx->max_vf_id; i++) {
+		usr_cfg = SXE2_VF_USR_CFG(adapter, i);
+
+		for (v = 0; v < SXE2_PRODUCT_ID_NR; v++)
+			sxe2_global_lut_put(adapter,
+					    usr_cfg->product[v].lut_id);
+
+		memset(usr_cfg, 0, sizeof(*usr_cfg));
+		for (v = 0; v < SXE2_PRODUCT_ID_NR; v++) {
+			usr_cfg->product[v].lut_id =
+				SXE2_VF_GLOBAL_LUT_INVALID_ID;
+			usr_cfg->product[v].lut_type = SXE2_RSS_VSI_LUT;
+			usr_cfg->product[v].lut_size = SXE2_RSS_LUT_SIZE_64;
+		}
+	}
+}
+
+static s32 sxe2_vf_config_lut_apply(struct sxe2_adapter *adapter,
+				    struct sxe2_usr_input_ctxt *ctx)
+{
+	struct sxe2_vf_usr_cfg *usr_cfg;
+	u8 lut_ids[SXE2_RSS_GLOBAL_LUT_NUM_MAX];
+	u16 lut_idx = 0;
+	u16 vf_id;
+	u8 v;
+
+	if (ctx->large_q_cfg &&
+	    !sxe2_global_lut_get_bulk(adapter, ctx->large_q_cfg, lut_ids)) {
+		LOG_DEV_ERR("need %u global lut, but not enough available\n",
+			    ctx->large_q_cfg);
+		return -EINVAL;
+	}
+
+	for (vf_id = 0; vf_id <= ctx->max_vf_id; vf_id++) {
+		usr_cfg = SXE2_VF_USR_CFG(adapter, vf_id);
+
+		if (!test_bit(vf_id, ctx->listed_vf_bmap)) {
+			for (v = 0; v < SXE2_PRODUCT_ID_NR; v++) {
+				usr_cfg->product[v].q_cfg = 0;
+				usr_cfg->product[v].lut_id =
+					SXE2_VF_GLOBAL_LUT_INVALID_ID;
+				usr_cfg->product[v].lut_type = SXE2_RSS_VSI_LUT;
+				usr_cfg->product[v].lut_size =
+					SXE2_RSS_LUT_SIZE_64;
+			}
+			continue;
+		}
+
+		for (v = 0; v < SXE2_PRODUCT_ID_NR; v++) {
+			u16 q = (v == SXE2_PRODUCT_ID_KERNEL) ? ctx->kernel_usr_q[vf_id] :
+							     ctx->dpdk_usr_q[vf_id];
+
+			usr_cfg->product[v].q_cfg = q;
+
+			if (q > SXE2_VSI_LUT_MAX_QUEUE) {
+				usr_cfg->product[v].lut_id = lut_ids[lut_idx++];
+				usr_cfg->product[v].lut_type = SXE2_RSS_GLOBAL_LUT;
+				usr_cfg->product[v].lut_size =
+					SXE2_RSS_LUT_SIZE_512;
+			} else {
+				usr_cfg->product[v].lut_id =
+					SXE2_VF_GLOBAL_LUT_INVALID_ID;
+				usr_cfg->product[v].lut_type = SXE2_RSS_VSI_LUT;
+				usr_cfg->product[v].lut_size =
+					SXE2_RSS_LUT_SIZE_64;
+			}
+		}
+		usr_cfg->configured = true;
+	}
+
+	return 0;
+}
+
+static s32 sxe2_vf_config_queue_apply(struct sxe2_adapter *adapter,
+				      struct sxe2_usr_input_ctxt *ctx)
+{
+	u16 txq_idle, rxq_idle;
+	u16 total_avail;
+	u16 occupied_q_total;
+	s32 ret = 0;
+
+	mutex_lock(&adapter->q_ctxt.lock);
+
+	txq_idle = sxe2_sriov_qs_avail_nums_get(adapter, SXE2_DATA_TQ);
+	rxq_idle = sxe2_sriov_qs_avail_nums_get(adapter, SXE2_DATA_RQ);
+	total_avail = min_t(u16, txq_idle, rxq_idle);
+
+	if (ctx->explicit_queues > total_avail) {
+		LOG_DEV_ERR("explicit queues %u exceed available %u\n",
+			    ctx->explicit_queues, total_avail);
+		ret = -ENOSPC;
+		goto l_unlock;
+	}
+
+	if (ctx->unconfigured_slots > 0) {
+		ctx->per_slot = (unsigned int)(total_avail - ctx->explicit_queues) /
+				ctx->unconfigured_slots;
+		if (ctx->per_slot < SXE2_VF_QUEUE_CNT_MIN) {
+			LOG_DEV_ERR("queue resource not enough, per_slot:%u min:%u\n",
+				    ctx->per_slot, SXE2_VF_QUEUE_CNT_MIN);
+			ret = -ENOSPC;
+			goto l_unlock;
+		}
+		ctx->per_slot = min_t(u16, ctx->per_slot, SXE2_VSI_LUT_MAX_QUEUE);
+	}
+
+	occupied_q_total = ctx->explicit_queues +
+		      ctx->unconfigured_slots * ctx->per_slot;
+	bitmap_set(adapter->q_ctxt.rxq_layout.rxq_map,
+		   adapter->q_ctxt.max_rxq_cnt - occupied_q_total, occupied_q_total);
+	bitmap_set(adapter->q_ctxt.txq_layout.txq_map,
+		   adapter->q_ctxt.max_txq_cnt - occupied_q_total, occupied_q_total);
+
+	adapter->vf_ctxt.large_q.occupied_q_cnt = occupied_q_total;
+	adapter->vf_ctxt.large_q.spare_q = ctx->unconfigured_slots * ctx->per_slot;
+	adapter->vf_ctxt.large_q.max_vf_id = ctx->max_vf_id;
+
+l_unlock:
+	mutex_unlock(&adapter->q_ctxt.lock);
+	return ret;
+}
+
+STATIC s32 sxe2_debugfs_vf_config(struct sxe2_adapter *adapter, char *cmd_buf)
+{
+	struct sxe2_usr_input_ctxt *ctx;
+	s32 ret;
+
+	ctx = sxe2_vf_config_ctx_alloc();
+	if (!ctx)
+		return -ENOMEM;
+
+	mutex_lock(&adapter->vf_ctxt.vfs_lock);
+
+	if (sxe2_vf_user_cfg_is_set(adapter)) {
+		LOG_DEV_ERR("vf queue config already exists, please echo clear first.\n");
+		ret = -EBUSY;
+		goto l_unlock;
+	}
+
+	if (adapter->vf_ctxt.num_vfs > 0) {
+		LOG_DEV_ERR("vfs exist, please echo 0 to sriov_numvfs first.\n");
+		ret = -EBUSY;
+		goto l_unlock;
+	}
+
+	ret = sxe2_vf_config_input_parse(adapter, cmd_buf, ctx);
+	if (ret)
+		goto l_unlock;
+
+	ret = sxe2_vf_config_lut_apply(adapter, ctx);
+	if (ret)
+		goto l_lut_release;
+
+	ret = sxe2_vf_config_queue_apply(adapter, ctx);
+	if (ret)
+		goto l_lut_release;
+
+	LOG_INFO_BDF("vf queue config saved, need %u global lut\n",
+		     ctx->large_q_cfg);
+	goto l_unlock;
+
+l_lut_release:
+	sxe2_vf_config_lut_release(adapter, ctx);
+
+l_unlock:
+	mutex_unlock(&adapter->vf_ctxt.vfs_lock);
+	sxe2_vf_config_ctx_free(ctx);
+	return ret;
+}
+
+static s32 sxe2_debugfs_vf_config_clear(struct sxe2_adapter *adapter)
+{
+	struct sxe2_vf_usr_cfg *usr_cfg;
+	u16 occupied_q_total;
+	u16 i;
+	u8 v;
+
+	mutex_lock(&adapter->vf_ctxt.vfs_lock);
+
+	if (adapter->vf_ctxt.num_vfs > 0) {
+		LOG_DEV_ERR("vfs exist, please echo 0 to sriov_numvfs first.\n");
+		mutex_unlock(&adapter->vf_ctxt.vfs_lock);
+		return -EBUSY;
+	}
+
+	occupied_q_total = adapter->vf_ctxt.large_q.occupied_q_cnt;
+
+	if (occupied_q_total) {
+		mutex_lock(&adapter->q_ctxt.lock);
+		bitmap_clear(adapter->q_ctxt.rxq_layout.rxq_map,
+			     adapter->q_ctxt.max_rxq_cnt - occupied_q_total,
+			     occupied_q_total);
+		bitmap_clear(adapter->q_ctxt.txq_layout.txq_map,
+			     adapter->q_ctxt.max_txq_cnt - occupied_q_total,
+			     occupied_q_total);
+		adapter->q_ctxt.txq_layout.sriov = 0;
+		adapter->q_ctxt.txq_layout.sriov_offset =
+			adapter->q_ctxt.max_txq_cnt;
+		adapter->q_ctxt.rxq_layout.sriov = 0;
+		adapter->q_ctxt.rxq_layout.sriov_offset =
+			adapter->q_ctxt.max_rxq_cnt;
+		mutex_unlock(&adapter->q_ctxt.lock);
+	}
+
+	for (i = 0; i < SXE2_VF_NUM; i++) {
+		usr_cfg = SXE2_VF_USR_CFG(adapter, i);
+
+		for (v = 0; v < SXE2_PRODUCT_ID_NR; v++)
+			sxe2_global_lut_put(adapter,
+					    usr_cfg->product[v].lut_id);
+
+		memset(usr_cfg, 0, sizeof(*usr_cfg));
+		for (v = 0; v < SXE2_PRODUCT_ID_NR; v++) {
+			usr_cfg->product[v].lut_id =
+				SXE2_VF_GLOBAL_LUT_INVALID_ID;
+			usr_cfg->product[v].lut_type = SXE2_RSS_VSI_LUT;
+			usr_cfg->product[v].lut_size = SXE2_RSS_LUT_SIZE_64;
+		}
+	}
+	adapter->vf_ctxt.large_q.occupied_q_cnt = 0;
+	adapter->vf_ctxt.large_q.spare_q = 0;
+	adapter->vf_ctxt.large_q.extra_q_cnt = 0;
+	adapter->vf_ctxt.large_q.max_vf_id = 0;
+	mutex_unlock(&adapter->vf_ctxt.vfs_lock);
+
+	return 0;
+}
+
+STATIC ssize_t sxe2_debugfs_vf_config_write(struct file *file,
+					    const char __user *buf,
+					    size_t count, loff_t *ppos)
+{
+	struct sxe2_adapter *adapter = file->private_data;
+	char *cmd_buf;
+	ssize_t ret;
+
+	cmd_buf = kzalloc(count + 1, GFP_KERNEL);
+	if (!cmd_buf)
+		return -ENOMEM;
+
+	if (copy_from_user(cmd_buf, buf, count)) {
+		kfree(cmd_buf);
+		return -EFAULT;
+	}
+
+	cmd_buf[count] = '\0';
+
+	if (count > 0 && cmd_buf[count - 1] == '\n')
+		cmd_buf[count - 1] = '\0';
+
+	if (!strcmp(cmd_buf, "clear")) {
+		ret = sxe2_debugfs_vf_config_clear(adapter);
+		if (!ret) {
+			LOG_INFO_BDF("vf queue config cleared.\n");
+			ret = count;
+		}
+	} else {
+		ret = sxe2_debugfs_vf_config(adapter, cmd_buf);
+		if (!ret)
+			ret = count;
+	}
+
+	kfree(cmd_buf);
+	return ret;
+}
+
+static const struct file_operations sxe2_debugfs_vf_config_fops = {
+		.owner = THIS_MODULE,
+		.open = simple_open,
+		.read = sxe2_debugfs_vf_config_read,
+		.write = sxe2_debugfs_vf_config_write,
+};
+
+static void sxe2_debugfs_create_vf_config_file(struct sxe2_adapter *adapter)
+{
+#if defined(CONFIG_DEBUG_FS) || defined(PCLINT)
+	if (IS_ERR(debugfs_create_file("vf_config", 0600, adapter->sxe2_debugfs_pf,
+				       adapter, &sxe2_debugfs_vf_config_fops))) {
+		LOG_DEV_ERR("debugfs vf_config file create failed\n");
+	}
+#endif
+}
+
 void sxe2_debugfs_create_drv_mode_file(struct sxe2_adapter *adapter)
 {
 #if defined(CONFIG_DEBUG_FS) || defined(PCLINT)
@@ -1035,6 +1873,7 @@ void sxe2_debugfs_pf_init(struct sxe2_adapter *adapter)
 
 	sxe2_debugfs_create_common_file(adapter);
 	sxe2_debugfs_create_drv_mode_file(adapter);
+	sxe2_debugfs_create_vf_config_file(adapter);
 
 l_end:
 	return;

@@ -20,6 +20,7 @@
 #include <linux/mm.h>
 #include <linux/wait.h>
 
+#include "sxe2_cmd.h"
 #include "sxe2_compat.h"
 #include "sxe2_log.h"
 #include "sxe2_ioctl_chnl.h"
@@ -30,14 +31,8 @@
 
 STATIC dev_t sxe2_com_cdev_major;
 STATIC struct class *sxe2_com_cdev_class;
-STATIC struct sxe2_com_dev_mgr sxe2_com_mgr;
 STATIC struct mutex sxe2_com_minor_lock;
 STATIC DEFINE_IDR(sxe2_com_minor_idr);
-
-static struct sxe2_com_dev_mgr *sxe2_com_dev_get(void)
-{
-	return &sxe2_com_mgr;
-}
 
 STATIC s32 sxe2_com_handshake(struct sxe2_com_context *com_ctxt, unsigned long arg)
 {
@@ -46,13 +41,12 @@ STATIC s32 sxe2_com_handshake(struct sxe2_com_context *com_ctxt, unsigned long a
 	u32 arg_sz;
 	u32 dpdk_ver;
 
-	mutex_lock(&com_ctxt->com_lock);
 	ret = sxe2_com_get_arg_sz(com_ctxt->dpdk_ver, SXE2_DEVICE_HANDSHAKE);
 	if (ret < 0) {
 		LOG_ERROR_BDF_COM("sxe2_com_get_arg_sz failed, ver: %d, cmd:%d\n",
 				  com_ctxt->dpdk_ver,
 				  SXE2_DEVICE_HANDSHAKE);
-		goto l_unlock;
+		goto l_end;
 	}
 
 	arg_sz = ret;
@@ -62,13 +56,13 @@ STATIC s32 sxe2_com_handshake(struct sxe2_com_context *com_ctxt, unsigned long a
 		ret = -EFAULT;
 		LOG_ERROR_BDF_COM("copy user arg failed ver: 0x%x arg_sz:%u.\n",
 				  com_ctxt->dpdk_ver, arg_sz);
-		goto l_unlock;
+		goto l_end;
 	}
 
 	if (SXE2_MK_VER_MAJOR(hdr.dpdk_ver) != SXE2_MK_VER_MAJOR(SXE2_COM_VER)) {
 		LOG_ERROR_BDF_COM("incompatible dpdk ver: 0x%x.\n", hdr.dpdk_ver);
 		ret = -EINVAL;
-		goto l_unlock;
+		goto l_end;
 	}
 
 	dpdk_ver = hdr.dpdk_ver;
@@ -80,17 +74,18 @@ STATIC s32 sxe2_com_handshake(struct sxe2_com_context *com_ctxt, unsigned long a
 	if (sxe2_com_iommu_supp(&com_ctxt->dma_dev))
 		hdr.cap |= (1 << SXE2_COM_CAP_IOMMU_MAP);
 
+	hdr.cap |= (1 << SXE2_COM_CAP_MP);
+
 	if (copy_to_user((void __user *)arg, &hdr, arg_sz)) {
 		ret = -EFAULT;
 		LOG_ERROR_BDF_COM("copy user hdr failed ver: 0x%x.\n", com_ctxt->dpdk_ver);
-		goto l_unlock;
+		goto l_end;
 	}
 
 	com_ctxt->dpdk_ver = dpdk_ver;
 	com_ctxt->is_handshake = true;
 
-l_unlock:
-	mutex_unlock(&com_ctxt->com_lock);
+l_end:
 	return ret;
 }
 
@@ -124,31 +119,28 @@ static s32 sxe2_com_cmd_exec(struct sxe2_com_context *com_ctxt, unsigned long ar
 	return ret;
 }
 
-STATIC long sxe2_com_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
+STATIC long sxe2_com_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	long ret = 0;
-	struct sxe2_com_context *com_ctxt = (struct sxe2_com_context *)filep->private_data;
-	struct sxe2_com_dev_mgr *dev_mgr = sxe2_com_dev_get();
+	struct sxe2_com_context *com_ctxt = (struct sxe2_com_context *)filp->private_data;
 
-	if (!filep || cmd == 0 || arg == 0 || !com_ctxt) {
-		LOG_ERROR_BDF_COM("filep=%pK cmd=%d arg=%ld, com_ctxt=%pK\n",
-				  filep, cmd, arg, com_ctxt);
+	if (!filp || cmd == 0 || arg == 0 || !com_ctxt) {
+		LOG_ERROR_BDF_COM("filp=%pK cmd=%d arg=%ld, com_ctxt=%pK\n",
+				  filp, cmd, arg, com_ctxt);
 		ret = -EINVAL;
-		goto l_end;
+		return ret;
 	}
 
 	LOG_DEBUG_BDF_COM("driver dpdk cmd=%x, arg=0x%lx\n", cmd, arg);
 
-	mutex_lock(&dev_mgr->lock);
+	mutex_lock(&com_ctxt->com_lock);
 	if (com_ctxt->status == SXE2_COM_CDEV_STATUS_UNACCESS) {
-		mutex_unlock(&dev_mgr->lock);
 		ret = -EACCES;
 		goto l_end;
 	}
-	mutex_unlock(&dev_mgr->lock);
 
 	if (!com_ctxt->is_handshake && cmd != SXE2_COM_CMD_HANDSHAKE) {
-		LOG_WARN_BDF_COM("plase handshake first\n");
+		LOG_WARN_BDF_COM("please handshake first\n");
 		ret = -ERESTARTSYS;
 		goto l_end;
 	}
@@ -164,7 +156,17 @@ STATIC long sxe2_com_ioctl(struct file *filep, unsigned int cmd, unsigned long a
 		ret = sxe2_com_handshake(com_ctxt, arg);
 		break;
 	case SXE2_COM_CMD_IO_IRQS_REQ:
+		if (com_ctxt->irqs.io_irq_owner &&
+		    com_ctxt->irqs.io_irq_owner != filp) {
+			LOG_WARN_BDF_COM("io irqs owned by filp=%pK, secondary process polling "
+					 "only\n",
+					 com_ctxt->irqs.io_irq_owner);
+			ret = -EOPNOTSUPP;
+			break;
+		}
 		ret = sxe2_com_io_irq_req(com_ctxt, arg);
+		if (!ret)
+			com_ctxt->irqs.io_irq_owner = filp;
 		break;
 	case SXE2_COM_CMD_EVT_IRQ_REQ:
 		ret = sxe2_com_event_irq_req(com_ctxt, arg);
@@ -186,20 +188,21 @@ STATIC long sxe2_com_ioctl(struct file *filep, unsigned int cmd, unsigned long a
 		break;
 	default:
 		ret = -EINVAL;
-		LOG_ERROR_BDF_COM("unknown ioctl cmd, filep=%p, cmd=%d, arg=0x%8.8lx\n",
-				  filep, cmd, arg);
+		LOG_ERROR_BDF_COM("unknown ioctl cmd, filp=%p, cmd=%d, arg=0x%8.8lx\n",
+				  filp, cmd, arg);
 		break;
 	}
 
 	up(&com_ctxt->cdev_info.cdev_sem);
 
 l_end:
+	mutex_unlock(&com_ctxt->com_lock);
 	if (ret) {
-		LOG_ERROR_BDF_COM("driver ioctl filep=%p, cmd=%x, arg=0x%lx end, ret:%ld\n",
-				  filep, cmd, arg, ret);
+		LOG_ERROR_BDF_COM("driver ioctl filp=%p, cmd=%x, arg=0x%lx end, ret:%ld\n",
+				  filp, cmd, arg, ret);
 	} else {
-		LOG_DEBUG_BDF_COM("driver ioctl filep=%p, cmd=%x, arg=0x%lx end, ret:%ld\n",
-				  filep, cmd, arg, ret);
+		LOG_DEBUG_BDF_COM("driver ioctl filp=%p, cmd=%x, arg=0x%lx end, ret:%ld\n",
+				  filp, cmd, arg, ret);
 	}
 
 	return ret;
@@ -219,6 +222,43 @@ static s32 sxe2_com_add_vma(struct sxe2_com_context *com_ctxt, struct vm_area_st
 	return 0;
 }
 
+#ifdef NOT_SUPP_IO_REMAP_PFN_RANGE_UNLOCK
+STATIC vm_fault_t __sxe2_com_mmap(struct vm_fault *vmf)
+{
+	struct vm_area_struct *vma = vmf->vma;
+	struct sxe2_com_context *com_ctxt = vma->vm_private_data;
+	struct sxe2_com_vma_device *mmap_vma;
+	vm_fault_t ret = VM_FAULT_NOPAGE;
+	unsigned long pfn, offset;
+
+	mutex_lock(&com_ctxt->vma.vma_lock);
+
+	offset = vmf->address - vma->vm_start;
+	pfn = vma->vm_pgoff + (offset >> PAGE_SHIFT);
+	ret = vmf_insert_pfn(vma, vmf->address, pfn);
+	if (ret & VM_FAULT_ERROR) {
+		LOG_ERROR_BDF_COM("failed to insert pfn 0x%lx at VA 0x%lx, ret:%d\n",
+				  pfn, vmf->address, ret);
+		goto l_out;
+	}
+
+	LOG_INFO_BDF_COM("mapped pfn 0x%lx at VA 0x%lx\n", pfn, vmf->address);
+
+	list_for_each_entry(mmap_vma, &com_ctxt->vma.vma_list, vma_next) {
+		if (mmap_vma->vma == vma)
+			goto l_out;
+	}
+
+	if (sxe2_com_add_vma(com_ctxt, vma)) {
+		ret = VM_FAULT_OOM;
+		zap_vma_ptes(vma, vma->vm_start, vma->vm_end - vma->vm_start);
+	}
+
+l_out:
+	mutex_unlock(&com_ctxt->vma.vma_lock);
+	return ret;
+}
+#else
 STATIC vm_fault_t __sxe2_com_mmap(struct vm_area_struct *vma)
 {
 	struct sxe2_com_context *com_ctxt = vma->vm_private_data;
@@ -231,6 +271,7 @@ STATIC vm_fault_t __sxe2_com_mmap(struct vm_area_struct *vma)
 		if (mmap_vma->vma == vma)
 			goto l_out;
 	}
+
 	if (io_remap_pfn_range(vma, vma->vm_start, vma->vm_pgoff,
 			       vma->vm_end - vma->vm_start, vma->vm_page_prot)) {
 		ret = VM_FAULT_SIGBUS;
@@ -247,6 +288,7 @@ l_out:
 	mutex_unlock(&com_ctxt->vma.vma_lock);
 	return ret;
 }
+#endif
 
 STATIC vm_fault_t __sxe2_com_mmap_fault(struct vm_fault *vmf)
 {
@@ -258,7 +300,7 @@ STATIC vm_fault_t __sxe2_com_mmap_fault(struct vm_fault *vmf)
 
 	mutex_lock(&com_ctxt->vma.vma_lock);
 
-	if (vma->vm_flags & FAULT_FLAG_WRITE) {
+	if (vmf->flags & FAULT_FLAG_WRITE) {
 		new_page = com_ctxt->vma.write_page;
 		LOG_WARN_BDF_COM("write fault at VA 0x%lx\n", vmf->address);
 	} else {
@@ -286,16 +328,21 @@ static vm_fault_t sxe2_com_mmap_fault(struct vm_fault *vmf)
 	vm_fault_t ret = VM_FAULT_SIGBUS;
 	struct vm_area_struct *vma = vmf->vma;
 	struct sxe2_com_context *com_ctxt = vma->vm_private_data;
-	struct sxe2_com_dev_mgr *dev_mgr = sxe2_com_dev_get();
 
-	mutex_lock(&dev_mgr->lock);
+	atomic_inc(&com_ctxt->bar_mapping_in_progress);
 
-	if (com_ctxt->status == SXE2_COM_CDEV_STATUS_UNACCESS)
+	if (com_ctxt->status == SXE2_COM_CDEV_STATUS_UNACCESS ||
+	    com_ctxt->is_handshake == false) {
+		atomic_dec(&com_ctxt->bar_mapping_in_progress);
 		ret = __sxe2_com_mmap_fault(vmf);
-	else
+	} else {
+#ifdef NOT_SUPP_IO_REMAP_PFN_RANGE_UNLOCK
+		ret = __sxe2_com_mmap(vmf);
+#else
 		ret = __sxe2_com_mmap(vma);
-
-	mutex_unlock(&dev_mgr->lock);
+#endif
+		atomic_dec(&com_ctxt->bar_mapping_in_progress);
+	}
 
 	return ret;
 }
@@ -352,6 +399,14 @@ STATIC s32 sxe2_com_mmap(struct file *filp, struct vm_area_struct *vma)
 	u32 bar_idx;
 	u64 phys_len, req_len, pgoff, req_start;
 
+	mutex_lock(&com_ctxt->com_lock);
+	if (!com_ctxt->is_handshake) {
+		LOG_WARN_BDF_COM("please handshake first\n");
+		mutex_unlock(&com_ctxt->com_lock);
+		return -ERESTARTSYS;
+	}
+	mutex_unlock(&com_ctxt->com_lock);
+
 	bar_idx = vma->vm_pgoff >> (SXE2_COM_PCI_OFFSET_SHIFT - PAGE_SHIFT);
 
 	if (bar_idx >= DEVICE_COUNT_RESOURCE) {
@@ -360,7 +415,7 @@ STATIC s32 sxe2_com_mmap(struct file *filp, struct vm_area_struct *vma)
 	}
 
 	if (vma->vm_end <= vma->vm_start) {
-		LOG_WARN_BDF_COM("end:%lu large than start:%lu.\n", vma->vm_end, vma->vm_start);
+		LOG_WARN_BDF_COM("end:%lu less than start:%lu.\n", vma->vm_end, vma->vm_start);
 		return -EINVAL;
 		(void)pdev;
 	}
@@ -416,6 +471,7 @@ STATIC int sxe2_com_bar_init(struct sxe2_com_context *com_ctxt)
 		ret = -ENOMEM;
 		goto l_read_page_failed;
 	}
+	fill_page_with_ff(com_ctxt->vma.write_page);
 
 	return ret;
 l_read_page_failed:
@@ -430,31 +486,33 @@ STATIC void sxe2_com_bar_deinit(struct sxe2_com_context *com_ctxt)
 	__free_pages(com_ctxt->vma.write_page, 0);
 }
 
-STATIC s32 sxe2_com_open(struct inode *node, struct file *filep)
+STATIC s32 sxe2_com_open(struct inode *node, struct file *filp)
 {
 	s32 ret = 0;
-	struct sxe2_com_dev_mgr *dev_mgr = sxe2_com_dev_get();
 	struct sxe2_com_context *com_ctxt;
 
 	com_ctxt = container_of(node->i_cdev, struct sxe2_com_context, cdev_info.cdev);
 
-	filep->private_data = com_ctxt;
+	filp->private_data = com_ctxt;
 
-	mutex_lock(&dev_mgr->lock);
-
-	if (!atomic_read(&com_ctxt->ref_count) == 0) {
-		LOG_DEV_WARN_COM("only allow open once\n");
-		ret = -EBUSY;
-		goto l_unlock;
-	}
+	mutex_lock(&com_ctxt->com_lock);
 
 	if (com_ctxt->status == SXE2_COM_CDEV_STATUS_UNACCESS) {
 		ret = -EACCES;
 		goto l_unlock;
 	}
 
+	if ((filp->f_flags & O_EXCL) &&
+	    atomic_read(&com_ctxt->ref_count) != 0) {
+		LOG_ERROR_BDF_COM("dpdk primary open rejected, ref_count=%d\n",
+				  atomic_read(&com_ctxt->ref_count));
+		ret = -EBUSY;
+		goto l_unlock;
+	}
+
 	atomic_inc(&com_ctxt->ref_count);
 
+	com_ctxt->obj.valid = 1;
 	com_ctxt->obj.func_type = com_ctxt->func_type;
 	com_ctxt->obj.drv_type = SXE2_DPDK_DRV;
 	com_ctxt->obj.pf_id = com_ctxt->pf_id;
@@ -462,16 +520,14 @@ STATIC s32 sxe2_com_open(struct inode *node, struct file *filep)
 	com_ctxt->obj.drv_id = 0;
 
 l_unlock:
-	mutex_unlock(&dev_mgr->lock);
+	mutex_unlock(&com_ctxt->com_lock);
 	return ret;
 }
 
-STATIC void sxe2_com_ctxt_clear(struct sxe2_com_context *com_ctxt)
+static void sxe2_com_ctxt_clear(struct sxe2_com_context *com_ctxt)
 {
-	mutex_lock(&com_ctxt->com_lock);
 	com_ctxt->dpdk_ver = SXE2_COM_INVAL_U32;
 	com_ctxt->is_handshake = false;
-	mutex_unlock(&com_ctxt->com_lock);
 }
 
 STATIC void sxe2_com_resource_clear(struct sxe2_com_context *com_ctxt)
@@ -483,67 +539,72 @@ STATIC void sxe2_com_resource_clear(struct sxe2_com_context *com_ctxt)
 	sxe2_com_dma_clear(com_ctxt);
 }
 
-STATIC void sxe2_com_clear(struct sxe2_com_context *com_ctxt)
+STATIC void sxe2_com_clear(struct sxe2_com_context *com_ctxt, bool need_notify)
 {
+	if (!com_ctxt->is_handshake)
+		LOG_INFO_BDF_COM("user not handshake yet.\n");
+
 	sxe2_com_ctxt_clear(com_ctxt);
+
+	while (atomic_read(&com_ctxt->bar_mapping_in_progress) != false)
+		msleep(SXE2_COM_MMAP_POLL_MS);
 
 	if (com_ctxt->ops && com_ctxt->ops->release)
 		com_ctxt->ops->release(com_ctxt->adapter, &com_ctxt->obj);
 
-	(void)sxe2_com_irq_notifier_call_chain(com_ctxt, SXE2_COM_EC_RESET);
+	if (need_notify)
+		(void)sxe2_com_irq_notifier_call_chain(com_ctxt, SXE2_COM_EC_RESET);
 
 	sxe2_com_resource_clear(com_ctxt);
 }
 
-STATIC s32 sxe2_com_close(struct inode *node, struct file *filep)
+STATIC s32 sxe2_com_close(struct inode *node, struct file *filp)
 {
-	struct sxe2_com_context *com_ctxt = (struct sxe2_com_context *)filep->private_data;
-	s32 ref_count = 0;
-	struct sxe2_com_dev_mgr *dev_mgr = sxe2_com_dev_get();
+	struct sxe2_com_context *com_ctxt = (struct sxe2_com_context *)filp->private_data;
+	s32 ref_count;
 
-	sxe2_com_clear(com_ctxt);
+	mutex_lock(&com_ctxt->com_lock);
 
-	mutex_lock(&dev_mgr->lock);
+	if (com_ctxt->irqs.io_irq_owner == filp)
+		sxe2_com_io_irq_clear(com_ctxt);
+
 	ref_count = atomic_dec_return(&com_ctxt->ref_count);
-	if (ref_count == 0)
+	if (ref_count == 0) {
+		sxe2_com_clear(com_ctxt, false);
 		wake_up(&com_ctxt->waitq);
-	mutex_unlock(&dev_mgr->lock);
+	}
+	mutex_unlock(&com_ctxt->com_lock);
 
 	return 0;
 }
 
 void sxe2_com_disable(struct sxe2_com_context *com_ctxt)
 {
-	struct sxe2_com_dev_mgr *dev_mgr = sxe2_com_dev_get();
-
 	if (!com_ctxt->ops || !com_ctxt->ops->com_mode_get ||
 	    (com_ctxt->ops->com_mode_get(com_ctxt->adapter) == SXE2_COM_MODULE_KERNEL))
 		return;
 
-	mutex_lock(&dev_mgr->lock);
+	mutex_lock(&com_ctxt->com_lock);
 	com_ctxt->status = SXE2_COM_CDEV_STATUS_UNACCESS;
-	sxe2_com_clear(com_ctxt);
-	mutex_unlock(&dev_mgr->lock);
+	sxe2_com_clear(com_ctxt, true);
+	mutex_unlock(&com_ctxt->com_lock);
 }
 
 void sxe2_com_enable(struct sxe2_com_context *com_ctxt)
 {
-	struct sxe2_com_dev_mgr *dev_mgr = sxe2_com_dev_get();
+	if (!com_ctxt->ops || !com_ctxt->ops->com_mode_get ||
+	    (com_ctxt->ops->com_mode_get(com_ctxt->adapter) == SXE2_COM_MODULE_KERNEL))
+		return;
 
-	mutex_lock(&dev_mgr->lock);
+	mutex_lock(&com_ctxt->com_lock);
 	com_ctxt->status = SXE2_COM_CDEV_STATUS_NORMAL;
-	mutex_unlock(&dev_mgr->lock);
+	mutex_unlock(&com_ctxt->com_lock);
 }
 
 static void sxe2_com_cdev_wait_clear(struct sxe2_com_context *com_ctxt)
 {
 	s32 ret;
-	struct sxe2_com_dev_mgr *dev_mgr = sxe2_com_dev_get();
 	unsigned long cur_jiffies;
-
-	mutex_lock(&dev_mgr->lock);
-	com_ctxt->status = SXE2_COM_CDEV_STATUS_UNACCESS;
-	mutex_unlock(&dev_mgr->lock);
 
 	do {
 		cur_jiffies = msecs_to_jiffies(SXE2_COM_CMD_DFLT_TIMEOUT_MS);
@@ -553,12 +614,12 @@ static void sxe2_com_cdev_wait_clear(struct sxe2_com_context *com_ctxt)
 		if (!ret) {
 			LOG_INFO_BDF_COM("cdev wait ref count time out.\n");
 		} else {
-			mutex_lock(&dev_mgr->lock);
+			mutex_lock(&com_ctxt->com_lock);
 			if (atomic_read(&com_ctxt->ref_count) == 0) {
-				mutex_unlock(&dev_mgr->lock);
+				mutex_unlock(&com_ctxt->com_lock);
 				break;
 			}
-			mutex_unlock(&dev_mgr->lock);
+			mutex_unlock(&com_ctxt->com_lock);
 		}
 	} while (1);
 }
@@ -680,6 +741,7 @@ STATIC s32 sxe2_com_ctxt_init_once(struct sxe2_com_context *com_ctxt,
 	com_ctxt->com_log_param.pdev = com_ctxt->pdev;
 	com_ctxt->dma_dev.dev = &com_ctxt->pdev->dev;
 	atomic_set(&com_ctxt->ref_count, 0);
+	atomic_set(&com_ctxt->bar_mapping_in_progress, 0);
 	com_ctxt->dpdk_mode = ops->com_mode_get(adapter);
 	com_ctxt->status = SXE2_COM_CDEV_STATUS_UNACCESS;
 
@@ -696,7 +758,6 @@ STATIC s32 sxe2_com_ctxt_init_once(struct sxe2_com_context *com_ctxt,
 	mutex_init(&com_ctxt->dma_dev.lock);
 	INIT_LIST_HEAD(&com_ctxt->dma_dev.buffer_list);
 	INIT_LIST_HEAD(&com_ctxt->list);
-	mutex_init(&com_ctxt->irqs.lock);
 
 	mutex_init(&com_ctxt->com_lock);
 
@@ -718,7 +779,6 @@ STATIC void sxe2_com_ctxt_deinit_once(struct sxe2_com_context *com_ctxt)
 	mutex_destroy(&com_ctxt->com_lock);
 	mutex_destroy(&com_ctxt->vma.vma_lock);
 	mutex_destroy(&com_ctxt->dma_dev.lock);
-	mutex_destroy(&com_ctxt->irqs.lock);
 }
 
 s32 sxe2_com_init(struct sxe2_com_context *com_ctxt, void *adapter, struct sxe2_com_ops *ops)
@@ -788,9 +848,6 @@ s32 sxe2_com_adapter_register(enum sxe2_func_type func_type)
 {
 	s32 ret;
 
-	memset(&sxe2_com_mgr, 0, sizeof(sxe2_com_mgr));
-	mutex_init(&sxe2_com_mgr.lock);
-
 	ret = alloc_chrdev_region(&sxe2_com_cdev_major, 0, SXE2_MAX_DEVICES_NUM,
 				  func_type ==
 					SXE2_PF ? SXE2_COM_CHRDEV_NAME : SXE2VF_COM_CHRDEV_NAME);
@@ -825,21 +882,22 @@ void sxe2_com_adapter_unregister(void)
 	idr_destroy(&sxe2_com_minor_idr);
 
 	mutex_destroy(&sxe2_com_minor_lock);
-	mutex_destroy(&sxe2_com_mgr.lock);
 }
 
 void sxe2_com_info_print(struct sxe2_com_context *com_ctxt)
 {
-	struct sxe2_com_dev_mgr *dev_mgr = sxe2_com_dev_get();
+	enum sxe2_com_dev_status status;
 
-	mutex_lock(&dev_mgr->lock);
+	mutex_lock(&com_ctxt->com_lock);
 
 	if (!com_ctxt->adapter)
-		return;
+		goto l_unlock;
 
-	LOG_DEV_INFO_COM("com cdev status: %s\n", com_ctxt->status == 0 ? "Unaccess" : "Normal");
+	status = com_ctxt->status;
 
 	sxe2_com_dma_print(com_ctxt);
+	LOG_DEV_INFO_COM("com cdev status: %s\n", status == 0 ? "Unaccess" : "Normal");
 
-	mutex_unlock(&dev_mgr->lock);
+l_unlock:
+	mutex_unlock(&com_ctxt->com_lock);
 }

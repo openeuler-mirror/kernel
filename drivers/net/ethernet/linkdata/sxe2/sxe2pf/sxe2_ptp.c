@@ -177,7 +177,7 @@ static void dump_timespec64(struct sxe2_adapter *adapter,
 #endif
 }
 
-static bool sxe2_ptp_sem_acquire(struct sxe2_adapter *adapter)
+STATIC bool sxe2_ptp_sem_acquire(struct sxe2_adapter *adapter)
 {
 	int cnt	   = 0;
 	bool value = false;
@@ -198,7 +198,7 @@ static void sxe2_ptp_sem_release(struct sxe2_adapter *adapter)
 	sxe2_hw_ptp_release_1588_lock(&adapter->hw);
 }
 
-static int sxe2_ptp_primary_timer_set(struct sxe2_adapter *adapter,
+STATIC int sxe2_ptp_primary_timer_set(struct sxe2_adapter *adapter,
 				      struct timespec64 tstamp)
 {
 	if (!sxe2_ptp_sem_acquire(adapter))
@@ -698,7 +698,6 @@ static u64 sxe2_ptp_32bit_to_realtime(u64 cached_time, u64 rawtstamp)
 }
 
 #define SXE2_RX_WB_RXDID_MASK (0x7)
-#define SXE2_RX_DESC_TYPE_1588 (0x2)
 void sxe2_ptp_rxts_request(struct sxe2_queue *rxq,
 			   union sxe2_rx_desc_1588 *desc, struct sk_buff *skb)
 {
@@ -942,7 +941,7 @@ out:
 					msecs_to_jiffies(period));
 }
 
-static s32 sxe2_fwc_ptp_mac_init(struct sxe2_adapter *adapter)
+STATIC s32 sxe2_fwc_ptp_mac_init(struct sxe2_adapter *adapter)
 {
 	s32 ret;
 	struct sxe2_cmd_params cmd	 = { 0 };
@@ -1056,6 +1055,9 @@ int sxe2_ptp_init(struct sxe2_adapter *adapter)
 	int ret = 0;
 	struct device *dev = &((adapter)->pdev->dev);
 
+	if (sxe2_is_safe_mode(adapter))
+		return 0;
+
 	adapter->ptp_ctxt.status = PTP_UNINITIALIZED;
 
 	if (sxe2_ptp_owned(adapter)) {
@@ -1084,7 +1086,7 @@ int sxe2_ptp_init(struct sxe2_adapter *adapter)
 	ret = sxe2_fwc_ptp_mac_init(adapter);
 	if (ret) {
 		LOG_DEV_ERR("failed to initial ptp.%d\n", ret);
-		goto set_owner_err;
+		goto init_mac_err;
 	}
 
 	bitmap_zero(adapter->ptp_ctxt.tx.in_use, SXE2_INDEX_PER_PORT);
@@ -1227,6 +1229,11 @@ int sxe2_ptp_rebuild(struct sxe2_adapter *adapter)
 			err = -EINVAL;
 			goto error;
 		}
+	}
+	err = sxe2_fwc_ptp_mac_init(adapter);
+	if (err) {
+		LOG_DEV_ERR("failed to initial ptp.%d\n", err);
+		goto error;
 	}
 
 	sxe2_ptp_all_perout_restore(adapter);

@@ -62,14 +62,13 @@
 #define SXE2_RCMS_MQ_WQE_LEN		       8
 #define SXE2_RCMS_QUERY_BUF_LEN		       24
 #define SXE2_RCMS_AMO_PAGE_SIZE		       12
-
-#define FPT_INDEX_GET(a)		   ((a >> 21))
-#define SPT_INDEX_GET(a)		   ((a >> 12))
-#define REL_SPTE_INDEX_GET(a)		   ((a & 0x1FF))
-#define SPT_IDX_TO_FPT_IDX(a)		   ((a >> 9))
-#define FIST_PAGE_TABLE_CP_OFFSET_GET(a)   (a & 0x1FFFFF)
-#define SECOND_PAGE_TABLE_CP_OFFSET_GET(a) (a & 0xFFF)
-#define LINER_ADDR_TO_REL_SPT_IDX(a)	   ((a >> 12) & 0x1FF)
+#define FPT_INDEX_GET(a)		   (((a) >> 21))
+#define SPT_INDEX_GET(a)		   (((a) >> 12))
+#define REL_SPTE_INDEX_GET(a)		   (((a) & 0x1FF))
+#define SPT_IDX_TO_FPT_IDX(a)		   (((a) >> 9))
+#define FIST_PAGE_TABLE_CP_OFFSET_GET(a)   ((a) & 0x1FFFFF)
+#define SECOND_PAGE_TABLE_CP_OFFSET_GET(a) ((a) & 0xFFF)
+#define LINER_ADDR_TO_REL_SPT_IDX(a)	   (((a) >> 12) & 0x1FF)
 
 #define SXE2_RCMS_FPT_CMD_WR	       BIT(31)
 #define SXE2_RCMS_FPT_DATALOW_VALID    BIT(0)
@@ -92,6 +91,9 @@
 #if defined(SXE2_CFG_DEBUG) && defined(SXE2_SUPPORT_INJECT)
 extern u32 g_inject_fpte_err;
 #endif
+
+#define TXRX_TOM_PBL_DISABLE     (0)
+#define TXRX_TOM_PBL_ENBALE      (1)
 
 struct sxe2_rcms_rsrc_limits {
 	u32 qp_limit;

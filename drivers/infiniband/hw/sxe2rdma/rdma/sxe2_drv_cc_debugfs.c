@@ -58,6 +58,7 @@ static ssize_t drv_rdma_cc_np_write(struct file *filp, const char __user *buf,
 	if (!rdma_dev->rdma_func->cc_params.dcqcn_enable) {
 		ret = -EINVAL;
 		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:cc dcqcn is disable\n");
+		goto end;
 	}
 
 	if (np_enable) {
@@ -115,7 +116,7 @@ static ssize_t drv_rdma_cc_np_read(struct file *filp,
 
 	ret = simple_read_from_buffer(buf, count, off, rsp, (ssize_t)len_total);
 	if (ret < 0)
-		DRV_RDMA_LOG_ERROR("cc debugfs:simple read error %zu\n", ret);
+		DRV_RDMA_LOG_ERROR("cc debugfs:simple read error %zd\n", ret);
 
 	kfree(rsp);
 	rsp = NULL;
@@ -219,7 +220,7 @@ static ssize_t drv_rdma_cc_qp_dfx_read(struct file *filp,
 		(u16)sizeof(cmd_info), (u8 *)(&cc_entry),  (u16)sizeof(cc_entry));
 	if (ret) {
 		DRV_RDMA_LOG_ERROR("cc debugfs:rdma send cme err\n");
-		goto end;
+		goto free_rsp;
 	}
 	timely = &(cc_entry.timely);
 	dcqcn  =  &(cc_entry.dcqcn);
@@ -294,8 +295,8 @@ static ssize_t drv_rdma_cc_qp_dfx_read(struct file *filp,
 
 	ret = simple_read_from_buffer(buf, count, off, rsp, (ssize_t)len_total);
 	if (ret < 0)
-		DRV_RDMA_LOG_ERROR("cc debugfs:simple read error %zu\n", ret);
-
+		DRV_RDMA_LOG_ERROR("cc debugfs:simple read error %zd\n", ret);
+free_rsp:
 	kfree(rsp);
 	rsp = NULL;
 end:
@@ -307,6 +308,1101 @@ static const struct file_operations sxe2_rdma_cc_qp_dfx_fops = {
 	.open  = simple_open,
 	.read  = drv_rdma_cc_qp_dfx_read,
 	.write = drv_rdma_cc_qp_dfx_write,
+};
+
+static ssize_t drv_rdma_cc_hw_dcqcn_min_rate_write(struct file *filp, const char __user *buf,
+									 size_t count, loff_t *off)
+{
+	ssize_t ret = SXE2_OK;
+	int tmpRet = SXE2_OK;
+	char cmd[CC_DEBUGFS_WRITE_BUF_MAX_LEN] = {0};
+	struct sxe2_rdma_device *rdma_dev;
+	struct aux_core_dev_info *cdev_info;
+	struct sxe2_hw_cc_dcqcn_param_info *hw_cc_p;
+	struct sxe2_hw_cc_dcqcn_param_info hw_cc_tmp;
+	u32 hw_dcqcn_min_rate;
+
+	if (*off != 0)
+		goto end;
+
+	if (count >= CC_DEBUGFS_WRITE_BUF_MAX_LEN) {
+		ret = -ENOSPC;
+		DRV_RDMA_LOG_ERROR("cc debugfs:cmd exceeded length limit err\n");
+		goto end;
+	}
+
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		DRV_RDMA_LOG_ERROR("cc debugfs:dev find failed err\n");
+		goto end;
+	}
+	cdev_info = rdma_dev->rdma_func->cdev;
+	hw_cc_p = &rdma_dev->rdma_func->cc_params.hw_cc_params;
+
+	if (copy_from_user(cmd, buf, count)) {
+		ret = -EFAULT;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:cmd copy from user failed err\n");
+		goto end;
+	}
+
+	ret = sscanf(cmd, "%u", &hw_dcqcn_min_rate);
+	if (ret != 1) {
+		ret = -ENODATA;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:analyze cmd err please input 2-100\n");
+		goto end;
+	}
+	if (hw_dcqcn_min_rate > SXE2_HW_CC_DCQCN_MIN_RATE_MAX ||
+		hw_dcqcn_min_rate < SXE2_HW_CC_DCQCN_MIN_RATE_MIN) {
+		ret = -EINVAL;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:min min_rate is %u, max min_rate is %u.\n",
+				SXE2_HW_CC_DCQCN_MIN_RATE_MIN, SXE2_HW_CC_DCQCN_MIN_RATE_MAX);
+		goto end;
+	}
+	hw_cc_tmp = *hw_cc_p;
+	hw_cc_tmp.minTh = hw_dcqcn_min_rate;
+
+	tmpRet = sxe2_rdma_adminq_send(cdev_info, SXE2_CMD_RDMA_SET_HW_CC_PARAM,
+						(u8 *)&hw_cc_tmp, (u16)sizeof(hw_cc_tmp),
+						NULL, 0);
+	if (tmpRet) {
+		ret = -EIO;
+		DRV_RDMA_LOG_DEV_ERR(
+			"debugfs cc:aq send set hw cc param err ret=%d\n", tmpRet);
+		goto end;
+	}
+	hw_cc_p->minTh = hw_dcqcn_min_rate;
+	DRV_RDMA_LOG_DEV_INFO("cc debugfs:set hw cc param success, minTh(%u), rdPeriod(%u),\n"
+	"\tt(%u), bc(%u), alphaCnt(%u), rateCnt(%u), f(%u), rai(%u), rhai(%u)\n",
+	hw_cc_p->minTh, hw_cc_p->rdPeriod, hw_cc_p->t, hw_cc_p->bc,
+	hw_cc_p->alphaCnt, hw_cc_p->rateCnt, hw_cc_p->f, hw_cc_p->rai, hw_cc_p->rhai);
+
+	ret  = count;
+	*off = count;
+
+end:
+	return ret;
+}
+
+static ssize_t drv_rdma_cc_hw_dcqcn_min_rate_read(struct file *filp,
+					char __user *buf, size_t count, loff_t *off)
+{
+	ssize_t ret	  = SXE2_OK;
+	u32 len_total = 0;
+	char *rsp	  = NULL;
+	char *rsp_end;
+	struct sxe2_rdma_device *rdma_dev;
+	u32 hw_dcqcn_min_rate;
+
+	if (*off != 0)
+		goto end;
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		DRV_RDMA_LOG_ERROR(
+			"cc debugfs:find dev struct from private_data failed err\n");
+		goto end;
+	}
+	hw_dcqcn_min_rate = rdma_dev->rdma_func->cc_params.hw_cc_params.minTh;
+	rsp = kzalloc(sizeof(char) * SXE2_DEBUG_DUMP_BUF_SIZE, GFP_KERNEL);
+	if (!rsp) {
+		ret = -ENOMEM;
+		DRV_RDMA_LOG_ERROR("cc debugfs:cc info rsp kmalloc failed err\n");
+		goto end;
+	}
+	rsp_end = rsp;
+
+	len_total += dbg_vsnprintf(rsp_end, len_total, "hw_dcqcn_min_rate:%u\n", hw_dcqcn_min_rate);
+
+	ret = simple_read_from_buffer(buf, count, off, rsp, (ssize_t)len_total);
+	if (ret < 0)
+		DRV_RDMA_LOG_ERROR("cc debugfs:simple read error %zd\n", ret);
+
+	kfree(rsp);
+	rsp = NULL;
+end:
+	return ret;
+}
+
+static const struct file_operations sxe2_rdma_cc_hw_dcqcn_min_rate_fops = {
+	.owner = THIS_MODULE,
+	.open  = simple_open,
+	.read  = drv_rdma_cc_hw_dcqcn_min_rate_read,
+	.write = drv_rdma_cc_hw_dcqcn_min_rate_write,
+};
+
+static ssize_t drv_rdma_cc_hw_dcqcn_rreduce_mperiod_write(struct file *filp, const char __user *buf,
+									 size_t count, loff_t *off)
+{
+	ssize_t ret = SXE2_OK;
+	int tmpRet = SXE2_OK;
+	char cmd[CC_DEBUGFS_WRITE_BUF_MAX_LEN] = {0};
+	struct sxe2_rdma_device *rdma_dev;
+	struct aux_core_dev_info *cdev_info;
+	struct sxe2_hw_cc_dcqcn_param_info *hw_cc_p;
+	struct sxe2_hw_cc_dcqcn_param_info hw_cc_tmp;
+	u32 hw_dcqcn_rreduce_mperiod;
+
+	if (*off != 0)
+		goto end;
+
+	if (count >= CC_DEBUGFS_WRITE_BUF_MAX_LEN) {
+		ret = -ENOSPC;
+		DRV_RDMA_LOG_ERROR("cc debugfs:cmd exceeded length limit err\n");
+		goto end;
+	}
+
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		DRV_RDMA_LOG_ERROR("cc debugfs:dev find failed err\n");
+		goto end;
+	}
+	cdev_info = rdma_dev->rdma_func->cdev;
+	hw_cc_p = &rdma_dev->rdma_func->cc_params.hw_cc_params;
+
+	if (copy_from_user(cmd, buf, count)) {
+		ret = -EFAULT;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:cmd copy from user failed err\n");
+		goto end;
+	}
+
+	ret = sscanf(cmd, "%u", &hw_dcqcn_rreduce_mperiod);
+	if (ret != 1) {
+		ret = -ENODATA;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:analyze cmd err please input 4096-61440\n");
+		goto end;
+	}
+	if (hw_dcqcn_rreduce_mperiod > SXE2_HW_CC_DCQCN_RREDUCE_MPERIOD_MAX ||
+		hw_dcqcn_rreduce_mperiod < SXE2_HW_CC_DCQCN_RREDUCE_MPERIOD_MIN ||
+		hw_dcqcn_rreduce_mperiod < hw_cc_p->t/2 ||
+		hw_dcqcn_rreduce_mperiod > hw_cc_p->t) {
+		ret = -EINVAL;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:min rreduce is %u, max rreduce is %u.\n",
+					SXE2_HW_CC_DCQCN_RREDUCE_MPERIOD_MIN,
+					SXE2_HW_CC_DCQCN_RREDUCE_MPERIOD_MAX);
+		goto end;
+	}
+	hw_cc_tmp = *hw_cc_p;
+	hw_cc_tmp.rdPeriod = hw_dcqcn_rreduce_mperiod;
+
+	tmpRet = sxe2_rdma_adminq_send(cdev_info, SXE2_CMD_RDMA_SET_HW_CC_PARAM,
+						(u8 *)&hw_cc_tmp, (u16)sizeof(hw_cc_tmp),
+						NULL, 0);
+	if (tmpRet) {
+		ret = -EIO;
+		DRV_RDMA_LOG_DEV_ERR(
+			"debugfs cc:aq send set hw cc param err ret=%d\n", tmpRet);
+		goto end;
+	}
+	hw_cc_p->rdPeriod = hw_dcqcn_rreduce_mperiod;
+	DRV_RDMA_LOG_DEV_INFO("cc debugfs:set hw cc param success, minTh(%u), rdPeriod(%u),\n"
+	"\tt(%u), bc(%u), alphaCnt(%u), rateCnt(%u), f(%u), rai(%u), rhai(%u)\n",
+	hw_cc_p->minTh, hw_cc_p->rdPeriod, hw_cc_p->t, hw_cc_p->bc,
+	hw_cc_p->alphaCnt, hw_cc_p->rateCnt, hw_cc_p->f, hw_cc_p->rai, hw_cc_p->rhai);
+
+	ret  = count;
+	*off = count;
+
+end:
+	return ret;
+}
+
+static ssize_t drv_rdma_cc_hw_dcqcn_rreduce_mperiod_read(struct file *filp,
+					char __user *buf, size_t count, loff_t *off)
+{
+	ssize_t ret	  = SXE2_OK;
+	u32 len_total = 0;
+	char *rsp	  = NULL;
+	char *rsp_end;
+	struct sxe2_rdma_device *rdma_dev;
+	u32 hw_dcqcn_rreduce_mperiod;
+
+	if (*off != 0)
+		goto end;
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		DRV_RDMA_LOG_ERROR(
+			"cc debugfs:find dev struct from private_data failed err\n");
+		goto end;
+	}
+	hw_dcqcn_rreduce_mperiod = rdma_dev->rdma_func->cc_params.hw_cc_params.rdPeriod;
+	rsp = kzalloc(sizeof(char) * SXE2_DEBUG_DUMP_BUF_SIZE, GFP_KERNEL);
+	if (!rsp) {
+		ret = -ENOMEM;
+		DRV_RDMA_LOG_ERROR("cc debugfs:cc info rsp kmalloc failed err\n");
+		goto end;
+	}
+	rsp_end = rsp;
+
+	len_total += dbg_vsnprintf(rsp_end, len_total, "hw_dcqcn_rreduce_mperiod:%u\n",
+						hw_dcqcn_rreduce_mperiod);
+
+	ret = simple_read_from_buffer(buf, count, off, rsp, (ssize_t)len_total);
+	if (ret < 0)
+		DRV_RDMA_LOG_ERROR("cc debugfs:simple read error %zd\n", ret);
+
+	kfree(rsp);
+	rsp = NULL;
+end:
+	return ret;
+}
+
+static const struct file_operations sxe2_rdma_cc_hw_dcqcn_rreduce_mperiod_fops = {
+	.owner = THIS_MODULE,
+	.open  = simple_open,
+	.read  = drv_rdma_cc_hw_dcqcn_rreduce_mperiod_read,
+	.write = drv_rdma_cc_hw_dcqcn_rreduce_mperiod_write,
+};
+
+static ssize_t drv_rdma_cc_hw_dcqcn_T_write(struct file *filp, const char __user *buf,
+									 size_t count, loff_t *off)
+{
+	ssize_t ret = SXE2_OK;
+	int tmpRet = SXE2_OK;
+	char cmd[CC_DEBUGFS_WRITE_BUF_MAX_LEN] = {0};
+	struct sxe2_rdma_device *rdma_dev;
+	struct aux_core_dev_info *cdev_info;
+	struct sxe2_hw_cc_dcqcn_param_info *hw_cc_p;
+	struct sxe2_hw_cc_dcqcn_param_info hw_cc_tmp;
+	u32 hw_dcqcn_T;
+
+	if (*off != 0)
+		goto end;
+
+	if (count >= CC_DEBUGFS_WRITE_BUF_MAX_LEN) {
+		ret = -ENOSPC;
+		DRV_RDMA_LOG_ERROR("cc debugfs:cmd exceeded length limit err\n");
+		goto end;
+	}
+
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		DRV_RDMA_LOG_ERROR("cc debugfs:dev find failed err\n");
+		goto end;
+	}
+	cdev_info = rdma_dev->rdma_func->cdev;
+	hw_cc_p = &rdma_dev->rdma_func->cc_params.hw_cc_params;
+
+	if (copy_from_user(cmd, buf, count)) {
+		ret = -EFAULT;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:cmd copy from user failed err\n");
+		goto end;
+	}
+
+	ret = sscanf(cmd, "%u", &hw_dcqcn_T);
+	if (ret != 1) {
+		ret = -ENODATA;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:analyze cmd err please input 8192-61440\n");
+		goto end;
+	}
+	if (hw_dcqcn_T > SXE2_HW_CC_DCQCN_T_MAX || hw_dcqcn_T < SXE2_HW_CC_DCQCN_T_MIN ||
+		hw_dcqcn_T < hw_cc_p->rdPeriod || hw_dcqcn_T > 2*(hw_cc_p->rdPeriod)) {
+		ret = -EINVAL;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:min hw_dcqcn_T is %u, max hw_dcqcn_T is %u.\n",
+					SXE2_HW_CC_DCQCN_T_MIN, SXE2_HW_CC_DCQCN_T_MAX);
+		goto end;
+	}
+	hw_cc_tmp = *hw_cc_p;
+	hw_cc_tmp.t = hw_dcqcn_T;
+
+	tmpRet = sxe2_rdma_adminq_send(cdev_info, SXE2_CMD_RDMA_SET_HW_CC_PARAM,
+						(u8 *)&hw_cc_tmp, (u16)sizeof(hw_cc_tmp),
+						NULL, 0);
+	if (tmpRet) {
+		ret = -EIO;
+		DRV_RDMA_LOG_DEV_ERR(
+			"debugfs cc:aq send set hw cc param err ret=%d\n", tmpRet);
+		goto end;
+	}
+	hw_cc_p->t = hw_dcqcn_T;
+	DRV_RDMA_LOG_DEV_INFO("cc debugfs:set hw cc param success, minTh(%u), rdPeriod(%u),\n"
+	"\tt(%u), bc(%u), alphaCnt(%u), rateCnt(%u), f(%u), rai(%u), rhai(%u)\n",
+	hw_cc_p->minTh, hw_cc_p->rdPeriod, hw_cc_p->t, hw_cc_p->bc,
+	hw_cc_p->alphaCnt, hw_cc_p->rateCnt, hw_cc_p->f, hw_cc_p->rai, hw_cc_p->rhai);
+
+	ret  = count;
+	*off = count;
+
+end:
+	return ret;
+}
+
+static ssize_t drv_rdma_cc_hw_dcqcn_T_read(struct file *filp,
+					char __user *buf, size_t count, loff_t *off)
+{
+	ssize_t ret	  = SXE2_OK;
+	u32 len_total = 0;
+	char *rsp	  = NULL;
+	char *rsp_end;
+	struct sxe2_rdma_device *rdma_dev;
+	u32 hw_dcqcn_T;
+
+	if (*off != 0)
+		goto end;
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		DRV_RDMA_LOG_ERROR(
+			"cc debugfs:find dev struct from private_data failed err\n");
+		goto end;
+	}
+	hw_dcqcn_T = rdma_dev->rdma_func->cc_params.hw_cc_params.t;
+	rsp = kzalloc(sizeof(char) * SXE2_DEBUG_DUMP_BUF_SIZE, GFP_KERNEL);
+	if (!rsp) {
+		ret = -ENOMEM;
+		DRV_RDMA_LOG_ERROR("cc debugfs:cc info rsp kmalloc failed err\n");
+		goto end;
+	}
+	rsp_end = rsp;
+
+	len_total += dbg_vsnprintf(rsp_end, len_total, "hw_dcqcn_T:%u\n", hw_dcqcn_T);
+
+	ret = simple_read_from_buffer(buf, count, off, rsp, (ssize_t)len_total);
+	if (ret < 0)
+		DRV_RDMA_LOG_ERROR("cc debugfs:simple read error %zd\n", ret);
+
+	kfree(rsp);
+	rsp = NULL;
+end:
+	return ret;
+}
+
+static const struct file_operations sxe2_rdma_cc_hw_dcqcn_T_fops = {
+	.owner = THIS_MODULE,
+	.open  = simple_open,
+	.read  = drv_rdma_cc_hw_dcqcn_T_read,
+	.write = drv_rdma_cc_hw_dcqcn_T_write,
+};
+
+static ssize_t drv_rdma_cc_hw_dcqcn_B_write(struct file *filp, const char __user *buf,
+									 size_t count, loff_t *off)
+{
+	ssize_t ret = SXE2_OK;
+	int tmpRet = SXE2_OK;
+	char cmd[CC_DEBUGFS_WRITE_BUF_MAX_LEN] = {0};
+	struct sxe2_rdma_device *rdma_dev;
+	struct aux_core_dev_info *cdev_info;
+	struct sxe2_hw_cc_dcqcn_param_info *hw_cc_p;
+	struct sxe2_hw_cc_dcqcn_param_info hw_cc_tmp;
+	u32 hw_dcqcn_B;
+
+	if (*off != 0)
+		goto end;
+
+	if (count >= CC_DEBUGFS_WRITE_BUF_MAX_LEN) {
+		ret = -ENOSPC;
+		DRV_RDMA_LOG_ERROR("cc debugfs:cmd exceeded length limit err\n");
+		goto end;
+	}
+
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		DRV_RDMA_LOG_ERROR("cc debugfs:dev find failed err\n");
+		goto end;
+	}
+	cdev_info = rdma_dev->rdma_func->cdev;
+	hw_cc_p = &rdma_dev->rdma_func->cc_params.hw_cc_params;
+
+	if (copy_from_user(cmd, buf, count)) {
+		ret = -EFAULT;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:cmd copy from user failed err\n");
+		goto end;
+	}
+
+	ret = sscanf(cmd, "%u", &hw_dcqcn_B);
+	if (ret != 1) {
+		ret = -ENODATA;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:analyze cmd err please input 0-7\n");
+		goto end;
+	}
+	if (hw_dcqcn_B > SXE2_HW_CC_DCQCN_B_MAX) {
+		ret = -EINVAL;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:min hw_dcqcn_B is %u, max hw_dcqcn_B is %u.\n",
+					SXE2_HW_CC_DCQCN_B_MIN, SXE2_HW_CC_DCQCN_B_MAX);
+		goto end;
+	}
+	hw_cc_tmp = *hw_cc_p;
+	hw_cc_tmp.bc = hw_dcqcn_B;
+
+	tmpRet = sxe2_rdma_adminq_send(cdev_info, SXE2_CMD_RDMA_SET_HW_CC_PARAM,
+						(u8 *)&hw_cc_tmp, (u16)sizeof(hw_cc_tmp),
+						NULL, 0);
+	if (tmpRet) {
+		ret = -EIO;
+		DRV_RDMA_LOG_DEV_ERR(
+			"debugfs cc:aq send set hw cc param err ret=%d\n", tmpRet);
+		goto end;
+	}
+	hw_cc_p->bc = hw_dcqcn_B;
+	DRV_RDMA_LOG_DEV_INFO("cc debugfs:set hw cc param success, minTh(%u), rdPeriod(%u),\n"
+	"\tt(%u), bc(%u), alphaCnt(%u), rateCnt(%u), f(%u), rai(%u), rhai(%u)\n",
+	hw_cc_p->minTh, hw_cc_p->rdPeriod, hw_cc_p->t, hw_cc_p->bc,
+	hw_cc_p->alphaCnt, hw_cc_p->rateCnt, hw_cc_p->f, hw_cc_p->rai, hw_cc_p->rhai);
+
+	ret  = count;
+	*off = count;
+
+end:
+	return ret;
+}
+
+static ssize_t drv_rdma_cc_hw_dcqcn_B_read(struct file *filp,
+					char __user *buf, size_t count, loff_t *off)
+{
+	ssize_t ret	  = SXE2_OK;
+	u32 len_total = 0;
+	char *rsp	  = NULL;
+	char *rsp_end;
+	struct sxe2_rdma_device *rdma_dev;
+	u32 hw_dcqcn_B;
+
+	if (*off != 0)
+		goto end;
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		DRV_RDMA_LOG_ERROR(
+			"cc debugfs:find dev struct from private_data failed err\n");
+		goto end;
+	}
+	hw_dcqcn_B = rdma_dev->rdma_func->cc_params.hw_cc_params.bc;
+	rsp = kzalloc(sizeof(char) * SXE2_DEBUG_DUMP_BUF_SIZE, GFP_KERNEL);
+	if (!rsp) {
+		ret = -ENOMEM;
+		DRV_RDMA_LOG_ERROR("cc debugfs:cc info rsp kmalloc failed err\n");
+		goto end;
+	}
+	rsp_end = rsp;
+
+	len_total += dbg_vsnprintf(rsp_end, len_total, "hw_dcqcn_B:%u\n", hw_dcqcn_B);
+
+	ret = simple_read_from_buffer(buf, count, off, rsp, (ssize_t)len_total);
+	if (ret < 0)
+		DRV_RDMA_LOG_ERROR("cc debugfs:simple read error %zd\n", ret);
+
+	kfree(rsp);
+	rsp = NULL;
+end:
+	return ret;
+}
+
+static const struct file_operations sxe2_rdma_cc_hw_dcqcn_B_fops = {
+	.owner = THIS_MODULE,
+	.open  = simple_open,
+	.read  = drv_rdma_cc_hw_dcqcn_B_read,
+	.write = drv_rdma_cc_hw_dcqcn_B_write,
+};
+
+static ssize_t drv_rdma_cc_hw_dcqcn_alpha_cnt_write(struct file *filp, const char __user *buf,
+									 size_t count, loff_t *off)
+{
+	ssize_t ret = SXE2_OK;
+	int tmpRet = SXE2_OK;
+	char cmd[CC_DEBUGFS_WRITE_BUF_MAX_LEN] = {0};
+	struct sxe2_rdma_device *rdma_dev;
+	struct aux_core_dev_info *cdev_info;
+	struct sxe2_hw_cc_dcqcn_param_info *hw_cc_p;
+	struct sxe2_hw_cc_dcqcn_param_info hw_cc_tmp;
+	u32 hw_dcqcn_alpha_cnt;
+
+	if (*off != 0)
+		goto end;
+
+	if (count >= CC_DEBUGFS_WRITE_BUF_MAX_LEN) {
+		ret = -ENOSPC;
+		DRV_RDMA_LOG_ERROR("cc debugfs:cmd exceeded length limit err\n");
+		goto end;
+	}
+
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		DRV_RDMA_LOG_ERROR("cc debugfs:dev find failed err\n");
+		goto end;
+	}
+	cdev_info = rdma_dev->rdma_func->cdev;
+	hw_cc_p = &rdma_dev->rdma_func->cc_params.hw_cc_params;
+
+	if (copy_from_user(cmd, buf, count)) {
+		ret = -EFAULT;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:cmd copy from user failed err\n");
+		goto end;
+	}
+
+	ret = sscanf(cmd, "%u", &hw_dcqcn_alpha_cnt);
+	if (ret != 1) {
+		ret = -ENODATA;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:analyze cmd err please input 0-1023\n");
+		goto end;
+	}
+	if (hw_dcqcn_alpha_cnt > SXE2_HW_CC_DCQCN_ALPHA_CNT_MAX) {
+		ret = -EINVAL;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:min alpha_cnt is %u, max alpha_cnt is %u.\n",
+				SXE2_HW_CC_DCQCN_ALPHA_CNT_MIN, SXE2_HW_CC_DCQCN_ALPHA_CNT_MAX);
+		goto end;
+	}
+	hw_cc_tmp = *hw_cc_p;
+	hw_cc_tmp.alphaCnt = hw_dcqcn_alpha_cnt;
+
+	tmpRet = sxe2_rdma_adminq_send(cdev_info, SXE2_CMD_RDMA_SET_HW_CC_PARAM,
+						(u8 *)&hw_cc_tmp, (u16)sizeof(hw_cc_tmp),
+						NULL, 0);
+	if (tmpRet) {
+		ret = -EIO;
+		DRV_RDMA_LOG_DEV_ERR(
+			"debugfs cc:aq send set hw cc param err ret=%d\n", tmpRet);
+		goto end;
+	}
+	hw_cc_p->alphaCnt = hw_dcqcn_alpha_cnt;
+	DRV_RDMA_LOG_DEV_INFO("cc debugfs:set hw cc param success, minTh(%u), rdPeriod(%u),\n"
+	"\tt(%u), bc(%u), alphaCnt(%u), rateCnt(%u), f(%u), rai(%u), rhai(%u)\n",
+	hw_cc_p->minTh, hw_cc_p->rdPeriod, hw_cc_p->t, hw_cc_p->bc,
+	hw_cc_p->alphaCnt, hw_cc_p->rateCnt, hw_cc_p->f, hw_cc_p->rai, hw_cc_p->rhai);
+
+	ret  = count;
+	*off = count;
+
+end:
+	return ret;
+}
+
+static ssize_t drv_rdma_cc_hw_dcqcn_alpha_cnt_read(struct file *filp,
+				char __user *buf, size_t count, loff_t *off)
+{
+	ssize_t ret	  = SXE2_OK;
+	u32 len_total = 0;
+	char *rsp	  = NULL;
+	char *rsp_end;
+	struct sxe2_rdma_device *rdma_dev;
+	u32 hw_dcqcn_alpha_cnt;
+
+	if (*off != 0)
+		goto end;
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		DRV_RDMA_LOG_ERROR(
+			"cc debugfs:find dev struct from private_data failed err\n");
+		goto end;
+	}
+	hw_dcqcn_alpha_cnt = rdma_dev->rdma_func->cc_params.hw_cc_params.alphaCnt;
+	rsp = kzalloc(sizeof(char) * SXE2_DEBUG_DUMP_BUF_SIZE, GFP_KERNEL);
+	if (!rsp) {
+		ret = -ENOMEM;
+		DRV_RDMA_LOG_ERROR("cc debugfs:cc info rsp kmalloc failed err\n");
+		goto end;
+	}
+	rsp_end = rsp;
+
+	len_total += dbg_vsnprintf(rsp_end, len_total, "hw_dcqcn_alpha_cnt:%u\n",
+						hw_dcqcn_alpha_cnt);
+
+	ret = simple_read_from_buffer(buf, count, off, rsp, (ssize_t)len_total);
+	if (ret < 0)
+		DRV_RDMA_LOG_ERROR("cc debugfs:simple read error %zd\n", ret);
+
+	kfree(rsp);
+	rsp = NULL;
+end:
+	return ret;
+}
+
+static const struct file_operations sxe2_rdma_cc_hw_dcqcn_alpha_cnt_fops = {
+	.owner = THIS_MODULE,
+	.open  = simple_open,
+	.read  = drv_rdma_cc_hw_dcqcn_alpha_cnt_read,
+	.write = drv_rdma_cc_hw_dcqcn_alpha_cnt_write,
+};
+
+static ssize_t drv_rdma_cc_hw_dcqcn_rate_cnt_write(struct file *filp, const char __user *buf,
+									 size_t count, loff_t *off)
+{
+	ssize_t ret = SXE2_OK;
+	int tmpRet = SXE2_OK;
+	char cmd[CC_DEBUGFS_WRITE_BUF_MAX_LEN] = {0};
+	struct sxe2_rdma_device *rdma_dev;
+	struct aux_core_dev_info *cdev_info;
+	struct sxe2_hw_cc_dcqcn_param_info *hw_cc_p;
+	struct sxe2_hw_cc_dcqcn_param_info hw_cc_tmp;
+	u32 hw_dcqcn_rate_cnt;
+
+	if (*off != 0)
+		goto end;
+
+	if (count >= CC_DEBUGFS_WRITE_BUF_MAX_LEN) {
+		ret = -ENOSPC;
+		DRV_RDMA_LOG_ERROR("cc debugfs:cmd exceeded length limit err\n");
+		goto end;
+	}
+
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		DRV_RDMA_LOG_ERROR("cc debugfs:dev find failed err\n");
+		goto end;
+	}
+	cdev_info = rdma_dev->rdma_func->cdev;
+	hw_cc_p = &rdma_dev->rdma_func->cc_params.hw_cc_params;
+
+	if (copy_from_user(cmd, buf, count)) {
+		ret = -EFAULT;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:cmd copy from user failed err\n");
+		goto end;
+	}
+
+	ret = sscanf(cmd, "%u", &hw_dcqcn_rate_cnt);
+	if (ret != 1) {
+		ret = -ENODATA;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:analyze cmd err please input 0-1023\n");
+		goto end;
+	}
+	if (hw_dcqcn_rate_cnt > SXE2_HW_CC_DCQCN_RATE_CNT_MAX) {
+		ret = -EINVAL;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:min rate_cnt is %u, max rate_cnt is %u.\n",
+				SXE2_HW_CC_DCQCN_RATE_CNT_MIN, SXE2_HW_CC_DCQCN_RATE_CNT_MAX);
+		goto end;
+	}
+	hw_cc_tmp = *hw_cc_p;
+	hw_cc_tmp.rateCnt = hw_dcqcn_rate_cnt;
+
+	tmpRet = sxe2_rdma_adminq_send(cdev_info, SXE2_CMD_RDMA_SET_HW_CC_PARAM,
+						(u8 *)&hw_cc_tmp, (u16)sizeof(hw_cc_tmp),
+						NULL, 0);
+	if (tmpRet) {
+		ret = -EIO;
+		DRV_RDMA_LOG_DEV_ERR(
+			"debugfs cc:aq send set hw cc param err ret=%d\n", tmpRet);
+		goto end;
+	}
+	hw_cc_p->rateCnt = hw_dcqcn_rate_cnt;
+	DRV_RDMA_LOG_DEV_INFO("cc debugfs:set hw cc param success, minTh(%u), rdPeriod(%u),\n"
+	"\tt(%u), bc(%u), alphaCnt(%u), rateCnt(%u), f(%u), rai(%u), rhai(%u)\n",
+	hw_cc_p->minTh, hw_cc_p->rdPeriod, hw_cc_p->t, hw_cc_p->bc,
+	hw_cc_p->alphaCnt, hw_cc_p->rateCnt, hw_cc_p->f, hw_cc_p->rai, hw_cc_p->rhai);
+
+	ret  = count;
+	*off = count;
+
+end:
+	return ret;
+}
+
+static ssize_t drv_rdma_cc_hw_dcqcn_rate_cnt_read(struct file *filp,
+					char __user *buf, size_t count, loff_t *off)
+{
+	ssize_t ret	  = SXE2_OK;
+	u32 len_total = 0;
+	char *rsp	  = NULL;
+	char *rsp_end;
+	struct sxe2_rdma_device *rdma_dev;
+	u32 hw_dcqcn_rate_cnt;
+
+	if (*off != 0)
+		goto end;
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		DRV_RDMA_LOG_ERROR(
+			"cc debugfs:find dev struct from private_data failed err\n");
+		goto end;
+	}
+	hw_dcqcn_rate_cnt = rdma_dev->rdma_func->cc_params.hw_cc_params.rateCnt;
+	rsp = kzalloc(sizeof(char) * SXE2_DEBUG_DUMP_BUF_SIZE, GFP_KERNEL);
+	if (!rsp) {
+		ret = -ENOMEM;
+		DRV_RDMA_LOG_ERROR("cc debugfs:cc info rsp kmalloc failed err\n");
+		goto end;
+	}
+	rsp_end = rsp;
+
+	len_total += dbg_vsnprintf(rsp_end, len_total, "hw_dcqcn_rate_cnt:%u\n", hw_dcqcn_rate_cnt);
+
+	ret = simple_read_from_buffer(buf, count, off, rsp, (ssize_t)len_total);
+	if (ret < 0)
+		DRV_RDMA_LOG_ERROR("cc debugfs:simple read error %zd\n", ret);
+
+	kfree(rsp);
+	rsp = NULL;
+end:
+	return ret;
+}
+
+static const struct file_operations sxe2_rdma_cc_hw_dcqcn_rate_cnt_fops = {
+	.owner = THIS_MODULE,
+	.open  = simple_open,
+	.read  = drv_rdma_cc_hw_dcqcn_rate_cnt_read,
+	.write = drv_rdma_cc_hw_dcqcn_rate_cnt_write,
+};
+
+static ssize_t drv_rdma_cc_hw_dcqcn_F_write(struct file *filp, const char __user *buf,
+									 size_t count, loff_t *off)
+{
+	ssize_t ret = SXE2_OK;
+	int tmpRet = SXE2_OK;
+	char cmd[CC_DEBUGFS_WRITE_BUF_MAX_LEN] = {0};
+	struct sxe2_rdma_device *rdma_dev;
+	struct aux_core_dev_info *cdev_info;
+	struct sxe2_hw_cc_dcqcn_param_info *hw_cc_p;
+	struct sxe2_hw_cc_dcqcn_param_info hw_cc_tmp;
+	u32 hw_dcqcn_F;
+
+	if (*off != 0)
+		goto end;
+
+	if (count >= CC_DEBUGFS_WRITE_BUF_MAX_LEN) {
+		ret = -ENOSPC;
+		DRV_RDMA_LOG_ERROR("cc debugfs:cmd exceeded length limit err\n");
+		goto end;
+	}
+
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		DRV_RDMA_LOG_ERROR("cc debugfs:dev find failed err\n");
+		goto end;
+	}
+	cdev_info = rdma_dev->rdma_func->cdev;
+	hw_cc_p = &rdma_dev->rdma_func->cc_params.hw_cc_params;
+
+	if (copy_from_user(cmd, buf, count)) {
+		ret = -EFAULT;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:cmd copy from user failed err\n");
+		goto end;
+	}
+
+	ret = sscanf(cmd, "%u", &hw_dcqcn_F);
+	if (ret != 1) {
+		ret = -ENODATA;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:analyze cmd err please input 0-7\n");
+		goto end;
+	}
+	if (hw_dcqcn_F > SXE2_HW_CC_DCQCN_F_MAX) {
+		ret = -EINVAL;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:min hw_dcqcn_F is %u, max hw_dcqcn_F is %u.\n",
+					SXE2_HW_CC_DCQCN_F_MIN, SXE2_HW_CC_DCQCN_F_MAX);
+		goto end;
+	}
+	hw_cc_tmp = *hw_cc_p;
+	hw_cc_tmp.f = hw_dcqcn_F;
+
+	tmpRet = sxe2_rdma_adminq_send(cdev_info, SXE2_CMD_RDMA_SET_HW_CC_PARAM,
+						(u8 *)&hw_cc_tmp, (u16)sizeof(hw_cc_tmp),
+						NULL, 0);
+	if (tmpRet) {
+		ret = -EIO;
+		DRV_RDMA_LOG_DEV_ERR(
+			"debugfs cc:aq send set hw cc param err ret=%d\n", tmpRet);
+		goto end;
+	}
+	hw_cc_p->f = hw_dcqcn_F;
+	DRV_RDMA_LOG_DEV_INFO("cc debugfs:set hw cc param success, minTh(%u), rdPeriod(%u),\n"
+	"\tt(%u), bc(%u), alphaCnt(%u), rateCnt(%u), f(%u), rai(%u), rhai(%u)\n",
+	hw_cc_p->minTh, hw_cc_p->rdPeriod, hw_cc_p->t, hw_cc_p->bc,
+	hw_cc_p->alphaCnt, hw_cc_p->rateCnt, hw_cc_p->f, hw_cc_p->rai, hw_cc_p->rhai);
+
+	ret  = count;
+	*off = count;
+
+end:
+	return ret;
+}
+
+static ssize_t drv_rdma_cc_hw_dcqcn_F_read(struct file *filp,
+					char __user *buf, size_t count, loff_t *off)
+{
+	ssize_t ret	  = SXE2_OK;
+	u32 len_total = 0;
+	char *rsp	  = NULL;
+	char *rsp_end;
+	struct sxe2_rdma_device *rdma_dev;
+	u32 hw_dcqcn_F;
+
+	if (*off != 0)
+		goto end;
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		DRV_RDMA_LOG_ERROR(
+			"cc debugfs:find dev struct from private_data failed err\n");
+		goto end;
+	}
+	hw_dcqcn_F = rdma_dev->rdma_func->cc_params.hw_cc_params.f;
+	rsp = kzalloc(sizeof(char) * SXE2_DEBUG_DUMP_BUF_SIZE, GFP_KERNEL);
+	if (!rsp) {
+		ret = -ENOMEM;
+		DRV_RDMA_LOG_ERROR("cc debugfs:cc info rsp kmalloc failed err\n");
+		goto end;
+	}
+	rsp_end = rsp;
+
+	len_total += dbg_vsnprintf(rsp_end, len_total, "hw_dcqcn_F:%u\n", hw_dcqcn_F);
+
+	ret = simple_read_from_buffer(buf, count, off, rsp, (ssize_t)len_total);
+	if (ret < 0)
+		DRV_RDMA_LOG_ERROR("cc debugfs:simple read error %zd\n", ret);
+
+	kfree(rsp);
+	rsp = NULL;
+end:
+	return ret;
+}
+
+static const struct file_operations sxe2_rdma_cc_hw_dcqcn_F_fops = {
+	.owner = THIS_MODULE,
+	.open  = simple_open,
+	.read  = drv_rdma_cc_hw_dcqcn_F_read,
+	.write = drv_rdma_cc_hw_dcqcn_F_write,
+};
+
+static ssize_t drv_rdma_cc_hw_dcqcn_rai_factor_write(struct file *filp, const char __user *buf,
+									 size_t count, loff_t *off)
+{
+	ssize_t ret = SXE2_OK;
+	int tmpRet = SXE2_OK;
+	char cmd[CC_DEBUGFS_WRITE_BUF_MAX_LEN] = {0};
+	struct sxe2_rdma_device *rdma_dev;
+	struct aux_core_dev_info *cdev_info;
+	struct sxe2_hw_cc_dcqcn_param_info *hw_cc_p;
+	struct sxe2_hw_cc_dcqcn_param_info hw_cc_tmp;
+	u32 hw_dcqcn_rai_factor;
+
+	if (*off != 0)
+		goto end;
+
+	if (count >= CC_DEBUGFS_WRITE_BUF_MAX_LEN) {
+		ret = -ENOSPC;
+		DRV_RDMA_LOG_ERROR("cc debugfs:cmd exceeded length limit err\n");
+		goto end;
+	}
+
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		DRV_RDMA_LOG_ERROR("cc debugfs:dev find failed err\n");
+		goto end;
+	}
+	cdev_info = rdma_dev->rdma_func->cdev;
+	hw_cc_p = &rdma_dev->rdma_func->cc_params.hw_cc_params;
+
+	if (copy_from_user(cmd, buf, count)) {
+		ret = -EFAULT;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:cmd copy from user failed err\n");
+		goto end;
+	}
+
+	ret = sscanf(cmd, "%u", &hw_dcqcn_rai_factor);
+	if (ret != 1) {
+		ret = -ENODATA;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:analyze cmd err please input 1-14\n");
+		goto end;
+	}
+	if (hw_dcqcn_rai_factor > SXE2_HW_CC_DCQCN_RAI_MAX ||
+		hw_dcqcn_rai_factor < SXE2_HW_CC_DCQCN_RAI_MIN ||
+		hw_dcqcn_rai_factor >= hw_cc_p->rhai) {
+		ret = -EINVAL;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:min rai is %u, max rai is %u.\n",
+					SXE2_HW_CC_DCQCN_RAI_MIN, SXE2_HW_CC_DCQCN_RAI_MAX);
+		goto end;
+	}
+	hw_cc_tmp = *hw_cc_p;
+	hw_cc_tmp.rai = hw_dcqcn_rai_factor;
+
+	tmpRet = sxe2_rdma_adminq_send(cdev_info, SXE2_CMD_RDMA_SET_HW_CC_PARAM,
+						(u8 *)&hw_cc_tmp, (u16)sizeof(hw_cc_tmp),
+						NULL, 0);
+	if (tmpRet) {
+		ret = -EIO;
+		DRV_RDMA_LOG_DEV_ERR(
+			"debugfs cc:aq send set hw cc param err ret=%d\n", tmpRet);
+		goto end;
+	}
+	hw_cc_p->rai = hw_dcqcn_rai_factor;
+	DRV_RDMA_LOG_DEV_INFO("cc debugfs:set hw cc param success, minTh(%u), rdPeriod(%u),\n"
+	"\tt(%u), bc(%u), alphaCnt(%u), rateCnt(%u), f(%u), rai(%u), rhai(%u)\n",
+	hw_cc_p->minTh, hw_cc_p->rdPeriod, hw_cc_p->t, hw_cc_p->bc,
+	hw_cc_p->alphaCnt, hw_cc_p->rateCnt, hw_cc_p->f, hw_cc_p->rai, hw_cc_p->rhai);
+
+	ret  = count;
+	*off = count;
+
+end:
+	return ret;
+}
+
+static ssize_t drv_rdma_cc_hw_dcqcn_rai_factor_read(struct file *filp,
+					char __user *buf, size_t count, loff_t *off)
+{
+	ssize_t ret	  = SXE2_OK;
+	u32 len_total = 0;
+	char *rsp	  = NULL;
+	char *rsp_end;
+	struct sxe2_rdma_device *rdma_dev;
+	u32 hw_dcqcn_rai_factor;
+
+	if (*off != 0)
+		goto end;
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		DRV_RDMA_LOG_ERROR(
+			"cc debugfs:find dev struct from private_data failed err\n");
+		goto end;
+	}
+	hw_dcqcn_rai_factor = rdma_dev->rdma_func->cc_params.hw_cc_params.rai;
+	rsp = kzalloc(sizeof(char) * SXE2_DEBUG_DUMP_BUF_SIZE, GFP_KERNEL);
+	if (!rsp) {
+		ret = -ENOMEM;
+		DRV_RDMA_LOG_ERROR("cc debugfs:cc info rsp kmalloc failed err\n");
+		goto end;
+	}
+	rsp_end = rsp;
+
+	len_total += dbg_vsnprintf(rsp_end, len_total, "hw_dcqcn_rai_factor:%u\n",
+						hw_dcqcn_rai_factor);
+
+	ret = simple_read_from_buffer(buf, count, off, rsp, (ssize_t)len_total);
+	if (ret < 0)
+		DRV_RDMA_LOG_ERROR("cc debugfs:simple read error %zd\n", ret);
+
+	kfree(rsp);
+	rsp = NULL;
+end:
+	return ret;
+}
+
+static const struct file_operations sxe2_rdma_cc_hw_dcqcn_rai_factor_fops = {
+	.owner = THIS_MODULE,
+	.open  = simple_open,
+	.read  = drv_rdma_cc_hw_dcqcn_rai_factor_read,
+	.write = drv_rdma_cc_hw_dcqcn_rai_factor_write,
+};
+
+static ssize_t drv_rdma_cc_hw_dcqcn_rhai_factor_write(struct file *filp, const char __user *buf,
+									 size_t count, loff_t *off)
+{
+	ssize_t ret = SXE2_OK;
+	int tmpRet = SXE2_OK;
+	char cmd[CC_DEBUGFS_WRITE_BUF_MAX_LEN] = {0};
+	struct sxe2_rdma_device *rdma_dev;
+	struct aux_core_dev_info *cdev_info;
+	struct sxe2_hw_cc_dcqcn_param_info *hw_cc_p;
+	struct sxe2_hw_cc_dcqcn_param_info hw_cc_tmp;
+	u32 hw_dcqcn_rhai_factor;
+
+	if (*off != 0)
+		goto end;
+
+	if (count >= CC_DEBUGFS_WRITE_BUF_MAX_LEN) {
+		ret = -ENOSPC;
+		DRV_RDMA_LOG_ERROR("cc debugfs:cmd exceeded length limit err\n");
+		goto end;
+	}
+
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		DRV_RDMA_LOG_ERROR("cc debugfs:dev find failed err\n");
+		goto end;
+	}
+	cdev_info = rdma_dev->rdma_func->cdev;
+	hw_cc_p = &rdma_dev->rdma_func->cc_params.hw_cc_params;
+
+	if (copy_from_user(cmd, buf, count)) {
+		ret = -EFAULT;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:cmd copy from user failed err\n");
+		goto end;
+	}
+
+	ret = sscanf(cmd, "%u", &hw_dcqcn_rhai_factor);
+	if (ret != 1) {
+		ret = -ENODATA;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:analyze cmd err please input 2-15\n");
+		goto end;
+	}
+	if (hw_dcqcn_rhai_factor > SXE2_HW_CC_DCQCN_RHAI_MAX ||
+		hw_dcqcn_rhai_factor < SXE2_HW_CC_DCQCN_RHAI_MIN ||
+		hw_dcqcn_rhai_factor <= hw_cc_p->rai) {
+		ret = -EINVAL;
+		DRV_RDMA_LOG_ERROR_BDF("cc debugfs:min rhai is %u, max rhai is %u.\n",
+					SXE2_HW_CC_DCQCN_RHAI_MIN, SXE2_HW_CC_DCQCN_RHAI_MAX);
+		goto end;
+	}
+	hw_cc_tmp = *hw_cc_p;
+	hw_cc_tmp.rhai = hw_dcqcn_rhai_factor;
+
+	tmpRet = sxe2_rdma_adminq_send(cdev_info, SXE2_CMD_RDMA_SET_HW_CC_PARAM,
+						(u8 *)&hw_cc_tmp, (u16)sizeof(hw_cc_tmp),
+						NULL, 0);
+	if (tmpRet) {
+		ret = -EIO;
+		DRV_RDMA_LOG_DEV_ERR(
+			"debugfs cc:aq send set hw cc param err ret=%d\n", tmpRet);
+		goto end;
+	}
+	hw_cc_p->rhai = hw_dcqcn_rhai_factor;
+	DRV_RDMA_LOG_DEV_INFO("cc debugfs:set hw cc param success, minTh(%u), rdPeriod(%u),\n"
+	"\tt(%u), bc(%u), alphaCnt(%u), rateCnt(%u), f(%u), rai(%u), rhai(%u)\n",
+	hw_cc_p->minTh, hw_cc_p->rdPeriod, hw_cc_p->t, hw_cc_p->bc,
+	hw_cc_p->alphaCnt, hw_cc_p->rateCnt, hw_cc_p->f, hw_cc_p->rai, hw_cc_p->rhai);
+
+	ret  = count;
+	*off = count;
+
+end:
+	return ret;
+}
+
+static ssize_t drv_rdma_cc_hw_dcqcn_rhai_factor_read(struct file *filp,
+								char __user *buf,
+								size_t count, loff_t *off)
+{
+	ssize_t ret	  = SXE2_OK;
+	u32 len_total = 0;
+	char *rsp	  = NULL;
+	char *rsp_end;
+	struct sxe2_rdma_device *rdma_dev;
+	u32 hw_dcqcn_rhai_factor;
+
+	if (*off != 0)
+		goto end;
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		DRV_RDMA_LOG_ERROR(
+			"cc debugfs:find dev struct from private_data failed err\n");
+		goto end;
+	}
+	hw_dcqcn_rhai_factor = rdma_dev->rdma_func->cc_params.hw_cc_params.rhai;
+	rsp = kzalloc(sizeof(char) * SXE2_DEBUG_DUMP_BUF_SIZE, GFP_KERNEL);
+	if (!rsp) {
+		ret = -ENOMEM;
+		DRV_RDMA_LOG_ERROR("cc debugfs:cc info rsp kmalloc failed err\n");
+		goto end;
+	}
+	rsp_end = rsp;
+
+	len_total += dbg_vsnprintf(rsp_end, len_total, "hw_dcqcn_rhai_factor:%u\n",
+						hw_dcqcn_rhai_factor);
+
+	ret = simple_read_from_buffer(buf, count, off, rsp, (ssize_t)len_total);
+	if (ret < 0)
+		DRV_RDMA_LOG_ERROR("cc debugfs:simple read error %zd\n", ret);
+
+	kfree(rsp);
+	rsp = NULL;
+end:
+	return ret;
+}
+
+static const struct file_operations sxe2_rdma_cc_hw_dcqcn_rhai_factor_fops = {
+	.owner = THIS_MODULE,
+	.open  = simple_open,
+	.read  = drv_rdma_cc_hw_dcqcn_rhai_factor_read,
+	.write = drv_rdma_cc_hw_dcqcn_rhai_factor_write,
 };
 
 int drv_rdma_debug_cc_add(struct sxe2_rdma_device *rdma_dev)
@@ -332,7 +1428,35 @@ int drv_rdma_debug_cc_add(struct sxe2_rdma_device *rdma_dev)
 			rdma_dev->hdl->cc_debugfs, rdma_dev, &sxe2_rdma_cc_np_fops);
 #endif
 	debugfs_create_file("cc_qp_dfx", SXE2_DEBUG_FILE_READ_WRITE,
-				rdma_dev->hdl->cc_debugfs, rdma_dev, &sxe2_rdma_cc_qp_dfx_fops);
+				rdma_dev->hdl->cc_debugfs, rdma_dev,
+				&sxe2_rdma_cc_qp_dfx_fops);
+	debugfs_create_file("hw_dcqcn_min_rate", SXE2_DEBUG_FILE_READ_WRITE,
+				rdma_dev->hdl->cc_debugfs, rdma_dev,
+				&sxe2_rdma_cc_hw_dcqcn_min_rate_fops);
+	debugfs_create_file("hw_dcqcn_rreduce_mperiod", SXE2_DEBUG_FILE_READ_WRITE,
+				rdma_dev->hdl->cc_debugfs, rdma_dev,
+				&sxe2_rdma_cc_hw_dcqcn_rreduce_mperiod_fops);
+	debugfs_create_file("hw_dcqcn_T", SXE2_DEBUG_FILE_READ_WRITE,
+				rdma_dev->hdl->cc_debugfs, rdma_dev,
+				&sxe2_rdma_cc_hw_dcqcn_T_fops);
+	debugfs_create_file("hw_dcqcn_B", SXE2_DEBUG_FILE_READ_WRITE,
+				rdma_dev->hdl->cc_debugfs, rdma_dev,
+				&sxe2_rdma_cc_hw_dcqcn_B_fops);
+	debugfs_create_file("hw_dcqcn_alpha_cnt", SXE2_DEBUG_FILE_READ_WRITE,
+				rdma_dev->hdl->cc_debugfs, rdma_dev,
+				&sxe2_rdma_cc_hw_dcqcn_alpha_cnt_fops);
+	debugfs_create_file("hw_dcqcn_rate_cnt", SXE2_DEBUG_FILE_READ_WRITE,
+				rdma_dev->hdl->cc_debugfs, rdma_dev,
+				&sxe2_rdma_cc_hw_dcqcn_rate_cnt_fops);
+	debugfs_create_file("hw_dcqcn_F", SXE2_DEBUG_FILE_READ_WRITE,
+				rdma_dev->hdl->cc_debugfs, rdma_dev,
+				&sxe2_rdma_cc_hw_dcqcn_F_fops);
+	debugfs_create_file("hw_dcqcn_rai_factor", SXE2_DEBUG_FILE_READ_WRITE,
+				rdma_dev->hdl->cc_debugfs, rdma_dev,
+				&sxe2_rdma_cc_hw_dcqcn_rai_factor_fops);
+	debugfs_create_file("hw_dcqcn_rhai_factor", SXE2_DEBUG_FILE_READ_WRITE,
+				rdma_dev->hdl->cc_debugfs, rdma_dev,
+				&sxe2_rdma_cc_hw_dcqcn_rhai_factor_fops);
 
 end:
 	return ret;

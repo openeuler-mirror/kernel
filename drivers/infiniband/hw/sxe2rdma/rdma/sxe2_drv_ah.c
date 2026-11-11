@@ -99,8 +99,22 @@ static void sxe2_fill_ah_info(struct sxe2_rdma_device *rdma_dev,
 	int i;
 	int j;
 	u32 tmp_ip[4] = {};
+#ifdef GRH_NOT_SUPPORT_SGID
+	union ib_gid sgid;
+	struct ib_gid_attr sgid_attr = {};
+	int ret = 0;
+#endif
 
+#ifdef GRH_NOT_SUPPORT_SGID
+	ret = ib_query_gid(&rdma_dev->ibdev, attr->port_num, attr->grh.sgid_index, &sgid, &sgid_attr);
+	if (ret) {
+		DRV_RDMA_LOG_DEV_ERR("ib_query_gid err, ret(%d).", ret);
+		return;
+	}
+	rdma_gid2ip((struct sockaddr *)&sgid_addr, &sgid);
+#else
 	rdma_gid2ip((struct sockaddr *)&sgid_addr, &attr->grh.sgid_attr->gid);
+#endif
 	rdma_gid2ip((struct sockaddr *)&dgid_addr, &attr->grh.dgid);
 	ether_addr_copy(dmac, attr->roce.dmac);
 
@@ -180,7 +194,11 @@ static void sxe2_fill_ah_info(struct sxe2_rdma_device *rdma_dev,
 	if (ah_info->field.vlan_tag < VLAN_N_VID) {
 		ah_info->field.insert_vlan_tag = true;
 		vlan_prio		       = (u16)sxe2_get_vlan_prio(
+#ifdef GRH_NOT_SUPPORT_SGID
+				 sgid_attr.ndev,
+#else
 			     attr->grh.sgid_attr->ndev,
+#endif
 			     rt_tos2priority(ah_info->field.tc_tos));
 		ah_info->field.vlan_tag |= vlan_prio << VLAN_PRIO_SHIFT;
 	}
@@ -455,11 +473,18 @@ static void sxe2_process_create_ah_err(struct sxe2_rdma_device *rdma_dev,
 	}
 }
 
+#if defined(CREATE_AH_VER_3) || defined(CREATE_AH_VER_4)
 #ifdef CREATE_AH_VER_3
 struct ib_ah *sxe2_kcreate_ah(struct ib_pd *ibpd, struct rdma_ah_attr *attr,
 		    struct ib_udata *udata)
+#elif defined CREATE_AH_VER_4
+struct ib_ah *sxe2_kcreate_ah(struct ib_pd *ibpd, struct rdma_ah_attr *attr, u32 flags,
+		    struct ib_udata *udata)
+#endif
 {
+#ifdef CREATE_AH_VER_3
 	u32 flags		  = attr->ah_flags;
+#endif
 	struct sxe2_rdma_pd *pd	  = ibpd_to_vendor_pd(ibpd);
 	struct sxe2_ah *vendor_ah = NULL;
 	struct sxe2_rdma_device *rdma_dev = ibdev_to_rdmadev(ibpd->device);
@@ -471,6 +496,10 @@ struct ib_ah *sxe2_kcreate_ah(struct ib_pd *ibpd, struct rdma_ah_attr *attr,
 	int err;
 	u16 vlan_id;
 	bool sleep = (flags & RDMA_CREATE_AH_SLEEPABLE) != 0;
+#ifdef GRH_NOT_SUPPORT_SGID
+	union ib_gid sgid;
+	struct ib_gid_attr sgid_attr = {};
+#endif
 
 	DRV_RDMA_LOG_DEV_DEBUG("AH:kcreate enter, sleep %d.\n", sleep);
 
@@ -496,13 +525,30 @@ struct ib_ah *sxe2_kcreate_ah(struct ib_pd *ibpd, struct rdma_ah_attr *attr,
 		goto err_gid_l2;
 	}
 
+#ifdef GRH_NOT_SUPPORT_SGID
+	err = ib_query_gid(&rdma_dev->ibdev, attr->port_num, attr->grh.sgid_index, &sgid, &sgid_attr);
+	if (err) {
+		DRV_RDMA_LOG_DEV_ERR("ib_query_gid err, ret(%d).", err);
+		err = -EINVAL;
+		goto err_kalloc_ah;
+	}
+#endif
+
 	ctx_ah		    = &vendor_ah->ctx_ah;
 	ctx_ah->dev	    = &rf->ctx_dev;
 	vendor_ah->av.attrs = *attr;
 	vendor_ah->av.net_type =
+#ifdef GRH_NOT_SUPPORT_SGID
+		ib_gid_to_network_type(sgid_attr.gid_type, &sgid);
+#else
 		rdma_gid_attr_network_type(attr->grh.sgid_attr);
+#endif
 	ah_info = &ctx_ah->ah_info;
+#ifdef GRH_NOT_SUPPORT_SGID
+	vlan_id = rdma_vlan_dev_vlan_id(sgid_attr.ndev);
+#else
 	vlan_id = rdma_vlan_dev_vlan_id(attr->grh.sgid_attr->ndev);
+#endif
 	if (err) {
 		DRV_RDMA_LOG_DEV_ERR("AH: failed read vlan_id, ret %d\n", err);
 		goto err_kalloc_ah;
@@ -608,6 +654,10 @@ int sxe2_kcreate_ah(struct ib_ah *ibah, struct rdma_ah_init_attr *init_attr,
 	int err;
 	u16 vlan_id;
 	bool sleep = (flags & RDMA_CREATE_AH_SLEEPABLE) != 0;
+#ifdef GRH_NOT_SUPPORT_SGID
+	union ib_gid sgid;
+	struct ib_gid_attr sgid_attr = {};
+#endif
 
 	DRV_RDMA_LOG_DEV_DEBUG("AH:kcreate ah(%p) enter, sleep %d.\n",
 			       vendor_ah, sleep);
@@ -626,13 +676,29 @@ int sxe2_kcreate_ah(struct ib_ah *ibah, struct rdma_ah_init_attr *init_attr,
 		DRV_RDMA_LOG_DEV_ERR("AH: failed alloc ah idx, ret %d\n", err);
 		return err;
 	}
+#ifdef GRH_NOT_SUPPORT_SGID
+	err = ib_query_gid(&rdma_dev->ibdev, attr->port_num, attr->grh.sgid_index, &sgid, &sgid_attr);
+	if (err) {
+		DRV_RDMA_LOG_DEV_ERR("ib_query_gid err, ret(%d).", err);
+		err = -EINVAL;
+		goto err_gid_l2;
+	}
+#endif
 	ctx_ah		    = &vendor_ah->ctx_ah;
 	ctx_ah->dev	    = &rf->ctx_dev;
 	vendor_ah->av.attrs = *attr;
 	vendor_ah->av.net_type =
+#ifdef GRH_NOT_SUPPORT_SGID
+		ib_gid_to_network_type(sgid_attr.gid_type, &sgid);
+#else
 		rdma_gid_attr_network_type(attr->grh.sgid_attr);
+#endif
 	ah_info = &ctx_ah->ah_info;
+#ifdef GRH_NOT_SUPPORT_SGID
+	err	= rdma_read_gid_l2_fields(&sgid_attr, &vlan_id, NULL);
+#else
 	err	= rdma_read_gid_l2_fields(attr->grh.sgid_attr, &vlan_id, NULL);
+#endif
 	if (err) {
 		DRV_RDMA_LOG_DEV_ERR("AH: failed read vlan_id, ret %d\n", err);
 		goto err_gid_l2;

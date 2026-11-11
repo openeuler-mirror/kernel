@@ -704,6 +704,7 @@ STATIC const struct net_device_ops sxe2vf_netdev_ops = {
 		.ndo_open = sxe2vf_open,
 		.ndo_stop = sxe2vf_stop,
 		.ndo_start_xmit = sxe2vf_xmit,
+		.ndo_tx_timeout = sxe2vf_tx_timeout,
 		.ndo_set_mac_address = sxe2vf_set_mac_address,
 		.ndo_set_rx_mode = sxe2vf_set_rx_mode,
 		.ndo_validate_addr = eth_validate_addr,

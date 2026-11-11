@@ -11,7 +11,8 @@
 
 #ifndef __SXE2_CDEV_H__
 #define __SXE2_CDEV_H__
-
+#include <linux/cdev.h>
+#include <linux/device.h>
 #include <linux/semaphore.h>
 
 struct sxe2_cdev_info {

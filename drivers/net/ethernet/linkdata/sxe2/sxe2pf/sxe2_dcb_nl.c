@@ -82,7 +82,7 @@ static int sxe2_dcbnl_setets(struct net_device *netdev, struct ieee_ets *ets)
 
 	new_cfg->ets.maxtcs = IEEE_8021QAZ_MAX_TCS;
 
-	LOG_INFO_BDF("ets cfg, willing=%d, cbs=%d, maxtcs=%d\n"
+	LOG_DEBUG_BDF("ets cfg, willing=%d, cbs=%d, maxtcs=%d\n"
 		     "prio[0]=%d, tcbw[0]=%d, tsa_tbl[0]=%d\n"
 		     "prio[1]=%d, tcbw[1]=%d, tsa_tbl[1]=%d\n"
 		     "prio[2]=%d, tcbw[2]=%d, tsa_tbl[2]=%d\n"
@@ -202,25 +202,10 @@ static int sxe2_dcbnl_getpfc(struct net_device *netdev, struct ieee_pfc *pfc)
 static void sxe2_pfc_cfg_recover(struct sxe2_adapter *adapter)
 {
 	struct sxe2_dcbx_cfg *new_cfg;
-	struct sxe2_vsi *vsi = adapter->vsi_ctxt.main_vsi;
-	struct sxe2_vsi *dpdk_vsi = NULL;
-	bool fc = false;
 
 	new_cfg = &adapter->dcb_ctxt.desired_dcbx_cfg;
 	(void)memcpy(new_cfg, &adapter->dcb_ctxt.local_dcbx_cfg,
 		     sizeof(*new_cfg));
-
-	mutex_lock(&adapter->vsi_ctxt.lock);
-	dpdk_vsi = sxe2_vsi_get_by_type_unlock(adapter, SXE2_VSI_T_DPDK_PF);
-
-	if (new_cfg->pfc.enable)
-		fc = true;
-
-	if (dpdk_vsi)
-		sxe2_set_fc_flag(dpdk_vsi, fc);
-	sxe2_set_fc_flag(vsi, fc);
-
-	mutex_unlock(&adapter->vsi_ctxt.lock);
 }
 
 static int sxe2_dcbnl_setpfc(struct net_device *netdev, struct ieee_pfc *pfc)
@@ -230,13 +215,14 @@ static int sxe2_dcbnl_setpfc(struct net_device *netdev, struct ieee_pfc *pfc)
 	struct sxe2_netdev_priv *np = netdev_priv(netdev);
 	struct sxe2_vsi *vsi = np->vsi;
 	struct sxe2_adapter *adapter = vsi->adapter;
-	struct sxe2_vsi *dpdk_vsi = NULL;
-	bool fc = false;
-	bool changed = false;
 	u8 old_fc = SXE2_FC_MODE_DISABLE;
-	u8 new_fc = SXE2_FC_MODE_DISABLE;
 
-	(void)sxe2_fc_get(adapter, vsi->idx_in_dev, &old_fc);
+	sxe2_fc_get(adapter, &old_fc);
+	if (old_fc == SXE2_FC_MODE_LFC) {
+		LOG_DEV_INFO("link flow control enabled. Cannot set priority flow control.\n");
+		ret = -EOPNOTSUPP;
+		return ret;
+	}
 
 	mutex_lock(&adapter->dcb_ctxt.tc_mutex);
 	if (adapter->dcb_ctxt.state != SXE2_DCB_STATE_READY) {
@@ -258,15 +244,6 @@ static int sxe2_dcbnl_setpfc(struct net_device *netdev, struct ieee_pfc *pfc)
 		new_cfg->pfc.cap = IEEE_8021QAZ_MAX_TCS;
 
 	new_cfg->pfc.enable = pfc->pfc_en;
-	if (new_cfg->pfc.enable)
-		fc = true;
-
-	mutex_lock(&adapter->vsi_ctxt.lock);
-	dpdk_vsi = sxe2_vsi_get_by_type_unlock(adapter, SXE2_VSI_T_DPDK_PF);
-	if (dpdk_vsi)
-		sxe2_set_fc_flag(dpdk_vsi, fc);
-	sxe2_set_fc_flag(vsi, fc);
-	mutex_unlock(&adapter->vsi_ctxt.lock);
 
 	LOG_INFO_BDF("pfc cfg, willing=%d, cap=%d, enable=%d\n",
 		     new_cfg->pfc.willing, new_cfg->pfc.cap, new_cfg->pfc.enable);
@@ -279,14 +256,6 @@ static int sxe2_dcbnl_setpfc(struct net_device *netdev, struct ieee_pfc *pfc)
 
 l_unlock:
 	mutex_unlock(&adapter->dcb_ctxt.tc_mutex);
-
-	(void)sxe2_fc_get(adapter, vsi->idx_in_dev, &new_fc);
-	if (new_fc != old_fc)
-		changed = true;
-
-	if (changed && ret == 0)
-		(void)sxe2_com_irq_notifier_call_chain(&adapter->com_ctxt,
-						       SXE2_COM_FC_ST_CHANGE);
 
 	return ret;
 }
@@ -461,6 +430,8 @@ static int sxe2_dcbnl_setapp(struct net_device *netdev, struct dcb_app *app)
 	ret = dcb_ieee_setapp(netdev, app);
 	if (ret) {
 		memcpy(new_cfg, old_cfg, sizeof(struct sxe2_dcbx_cfg));
+		if (!old_cfg->numapps)
+			(void)sxe2_qos_mode_set(adapter, SXE2_QOS_MODE_VLAN);
 		LOG_NETDEV_ERR("set app failed, ret=%d\n", ret);
 		goto l_unlock;
 	}
@@ -1085,7 +1056,7 @@ void sxe2_dcbnl_flush_apps(struct sxe2_adapter *adapter,
 	u32 i;
 	struct sxe2_vsi *pf_vsi = adapter->vsi_ctxt.main_vsi;
 
-	if (!pf_vsi)
+	if (!pf_vsi || !pf_vsi->netdev)
 		return;
 
 	for (i = 0; i < old_cfg->numapps; i++) {
@@ -1104,7 +1075,8 @@ void sxe2_dcbnl_setup(struct sxe2_vsi *vsi)
 	if (!test_bit(SXE2_FLAG_DCB_CAPABLE, adapter->flags))
 		return;
 
+#ifdef CONFIG_DCB
 	netdev->dcbnl_ops = &dcbnl_ops;
-
 	sxe2_dcbnl_set_all(vsi);
+#endif
 }

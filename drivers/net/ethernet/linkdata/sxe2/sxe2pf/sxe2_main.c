@@ -59,12 +59,65 @@ STATIC const struct pci_device_id sxe2_pci_tbl[] = {
 				0,
 		}};
 
-STATIC int com_mode = SXE2_COM_MODULE_UNDEFINED;
-module_param(com_mode, uint, 0644);
-MODULE_PARM_DESC(com_mode, "driver mode. kernel:0, mixed:2(default)");
+STATIC int drv_mode = SXE2_COM_MODULE_MIXED;
+
+STATIC int sxe2_param_get_drv_mode(char *buffer, const struct kernel_param *kp)
+{
+	return sprintf(buffer, "%d\n", *(int *)kp->arg);
+}
+
+STATIC int sxe2_param_set_drv_mode(const char *val, const struct kernel_param *kp)
+{
+	int ret, temp_val;
+
+	ret = kstrtoint(val, 0, &temp_val);
+	if (ret)
+		return ret;
+
+	if (temp_val !=  SXE2_COM_MODULE_KERNEL && temp_val != SXE2_COM_MODULE_MIXED)
+		return -EINVAL;
+
+	*(int *)kp->arg = temp_val;
+
+	return 0;
+}
+
+STATIC const struct kernel_param_ops sxe2_drv_mode_param_ops = {
+	.set = sxe2_param_set_drv_mode,
+	.get = sxe2_param_get_drv_mode,
+};
+
+module_param_cb(drv_mode, &sxe2_drv_mode_param_ops, &drv_mode, 0644);
+MODULE_PARM_DESC(drv_mode, "driver mode. kernel:0, mixed(default):2");
+
+STATIC int sxe2_param_set_debug(const char *val, const struct kernel_param *kp)
+{
+	int ret, temp_val;
+
+	ret = kstrtoint(val, 0, &temp_val);
+	if (ret)
+		return ret;
+
+	if (temp_val < -1 || temp_val > 16)
+		return -EINVAL;
+
+	*(int *)kp->arg = temp_val;
+
+	return 0;
+}
+
+STATIC int sxe2_param_get_debug(char *buffer, const struct kernel_param *kp)
+{
+	return sprintf(buffer, "%d\n", *(int *)kp->arg);
+}
+
+STATIC const struct kernel_param_ops sxe2_debug_param_ops = {
+	.set = sxe2_param_set_debug,
+	.get = sxe2_param_get_debug,
+};
 
 STATIC int debug = -1;
-module_param(debug, int, 0644);
+module_param_cb(debug, &sxe2_debug_param_ops, &debug, 0644);
 #ifndef CONFIG_DYNAMIC_DEBUG
 MODULE_PARM_DESC(debug, "netif level (0=none,...,16=all), debug_mask (0x8XXXXXXXX)");
 #else
@@ -84,14 +137,45 @@ MODULE_PARM_DESC(switch_heart_check,
 s32 g_pf_switch_stats = 1;
 module_param(g_pf_switch_stats, int, 0644);
 MODULE_PARM_DESC(g_pf_switch_stats,
-		 "pf switch  stats open/close. open:1. close:1. default: 1");
+		 "pf switch  stats open/close. open:1. close:0. default: 1");
 #endif
 
+STATIC int sxe2_param_set_bool(const char *val, const struct kernel_param *kp)
+{
+	int ret, temp_val;
+
+	ret = kstrtoint(val, 0, &temp_val);
+	if (ret)
+		return ret;
+
+	if (temp_val != 0 && temp_val != 1)
+		return -EINVAL;
+
+	*(int *)kp->arg = temp_val;
+
+	return 0;
+}
+
+STATIC int sxe2_param_get_bool(char *buffer, const struct kernel_param *kp)
+{
+	return sprintf(buffer, "%d\n", *(int *)kp->arg);
+}
+
+STATIC const struct kernel_param_ops sxe2_bool_param_ops = {
+	.set = sxe2_param_set_bool,
+	.get = sxe2_param_get_bool,
+};
+
 int allow_inval_mac;
-module_param(allow_inval_mac, int, 0644);
+module_param_cb(allow_inval_mac, &sxe2_bool_param_ops, &allow_inval_mac, 0644);
 MODULE_PARM_DESC(allow_inval_mac,
-		 "Indicates device can be probed successfully or \t"
-		 "not when mac addr invalid.");
+		 "Allow device probing even if the MAC address is invalid");
+
+static char *ddp_pkg;
+module_param(ddp_pkg, charp, 0444);
+MODULE_PARM_DESC(ddp_pkg,
+		 "DDP package firmware name relative to /lib/firmware/sxe2/ddp/"
+     "(e.g. sxe2_cloud.cfg). Default: sxe2.cfg");
 
 static void sxe2_com_ctxt_fill(void *adapter)
 {
@@ -107,9 +191,9 @@ int sxe2_com_mode_get(void *adapter)
 	return ((struct sxe2_adapter *)adapter)->drv_mode;
 }
 
-int sxe2_g_com_mode_get(void)
+int sxe2_g_drv_mode_get(void)
 {
-	return com_mode;
+	return drv_mode;
 }
 
 static struct sxe2_com_ops g_com_ops = {
@@ -308,10 +392,24 @@ STATIC s32 sxe2_request_fw(struct sxe2_adapter *adapter,
 {
 	s32 err = 0;
 	struct device *dev = &adapter->pdev->dev;
+	char ddp_path[NAME_MAX];
+
+	memset(ddp_path, 0, sizeof(ddp_path));
+	(void)sprintf(ddp_path, "%s%s", SXE2_DDP_PKG_PATH, ddp_pkg);
+	if (ddp_pkg) {
+		err = request_firmware(firmware,  ddp_path, dev);
+		if (!err) {
+			LOG_DEV_INFO("using DDP package '%s' (from ddp_pkg param)\n", ddp_path);
+			return 0;
+		}
+
+		LOG_DEV_WARN("ddp_pkg='%s' load failed (%d), falling back to %s\n",
+			     ddp_path, err, SXE2_DDP_PKG_FILE);
+	}
 
 	err = request_firmware(firmware, SXE2_DDP_PKG_FILE, dev);
 	if (err)
-		LOG_DEV_ERR("the DDP package file was not found or could not be read.\t"
+		LOG_DEV_INFO("the DDP package file was not found or could not be read.\t"
 			    "Entering Safe Mode\n");
 
 	return err;
@@ -320,14 +418,28 @@ STATIC s32 sxe2_request_fw(struct sxe2_adapter *adapter,
 STATIC s32 sxe2_init_ddp_config(struct sxe2_adapter *adapter)
 {
 	const struct firmware *firmware = NULL;
+	u16 file_maj = 0, builtin_maj = 0;
 	s32 err;
 
 	err = sxe2_request_fw(adapter, &firmware);
-	if (err)
-		return err;
+	if (!err) {
+		if (sxe2_ddp_file_drv_major_match(firmware->data, firmware->size,
+						  &file_maj, &builtin_maj)) {
+			sxe2_load_pkg(firmware, adapter);
+		} else {
+			LOG_DEV_INFO("sxe2.cfg drv major(%u) mismatch built-in static ddp(%u),\t"
+				     "skip file and use built-in.\n", file_maj, builtin_maj);
+		}
+		release_firmware(firmware);
+	}
 
-	sxe2_load_pkg(firmware, adapter);
-	release_firmware(firmware);
+	if (sxe2_is_safe_mode(adapter)) {
+		if (!sxe2_ddp_static_load(adapter))
+			set_bit(SXE2_FLAG_ADVANCE_MODE, adapter->flags);
+	}
+
+	sxe2_ddp_compat_proc(adapter);
+
 	return err;
 }
 
@@ -412,16 +524,15 @@ STATIC s32 sxe2_hw_base_init(struct sxe2_adapter *adapter)
 
 	sxe2_fw_version_get(adapter);
 
+	sxe2_event_table_init(adapter);
+
 	ret = sxe2_cmd_channels_init(adapter);
 	if (ret) {
 		LOG_DEV_ERR("init cmd channel failed, ret=%d\n", ret);
 		goto l_unmap;
 	}
 
-	if (sxe2_drv_mode_get(adapter)) {
-		LOG_ERROR_BDF("get drv mode failed, ret=%d\n", ret);
-		adapter->drv_mode = SXE2_COM_MODULE_MIXED;
-	}
+	sxe2_drv_mode_get(adapter);
 
 	ret = sxe2_fwc_clear_pf_cfg(adapter);
 	if (ret) {
@@ -432,7 +543,7 @@ STATIC s32 sxe2_hw_base_init(struct sxe2_adapter *adapter)
 	ret = sxe2_fwc_pxe_disable(adapter);
 	if (ret) {
 		LOG_DEV_ERR("pxe mode disable failed, ret=%d\n", ret);
-		goto l_unmap;
+		goto l_cmd_channel_release;
 	}
 
 	sxe2_hw_board_type_get(adapter);
@@ -455,7 +566,7 @@ STATIC s32 sxe2_hw_base_init(struct sxe2_adapter *adapter)
 	ret = sxe2_caps_get(adapter);
 	if (ret) {
 		LOG_DEV_ERR("get device and function caps failed, ret=%d\n", ret);
-		goto l_cmd_channel_release;
+		goto l_cmd_free_ddp;
 	}
 	sxe2_hw_pf_stats_update(adapter);
 
@@ -463,6 +574,8 @@ STATIC s32 sxe2_hw_base_init(struct sxe2_adapter *adapter)
 
 	return ret;
 
+l_cmd_free_ddp:
+	sxe2_free_seg(adapter);
 l_cmd_channel_release:
 	sxe2_cmd_channels_deinit(adapter);
 l_unmap:
@@ -491,21 +604,27 @@ STATIC void sxe2_hw_base_deinit(struct sxe2_adapter *adapter)
 STATIC void sxe2_sw_lock_init(struct sxe2_adapter *adapter)
 {
 	mutex_init(&adapter->irq_ctxt.lock);
+	spin_lock_init(&adapter->irq_ctxt.cause_lock);
 	mutex_init(&adapter->q_ctxt.lock);
 	mutex_init(&adapter->vsi_ctxt.lock);
 	mutex_init(&adapter->dcb_ctxt.tc_mutex);
+	mutex_init(&adapter->dcb_ctxt.pending_lock);
 	mutex_init(&adapter->aux_ctxt.adev_mutex);
+	mutex_init(&adapter->udp_tunnel_ctxt.lock);
 	mutex_init(&adapter->switch_ctxt.lldp_rule_lock);
 	spin_lock_init(&adapter->monitor_ctxt.lock);
+	mutex_init(&adapter->caps_ctxt.global_lut_lock);
 }
 
 STATIC void sxe2_sw_lock_deinit(struct sxe2_adapter *adapter)
 {
+	mutex_destroy(&adapter->caps_ctxt.global_lut_lock);
 	mutex_destroy(&adapter->switch_ctxt.lldp_rule_lock);
 	mutex_destroy(&adapter->irq_ctxt.lock);
 	mutex_destroy(&adapter->q_ctxt.lock);
 	mutex_destroy(&adapter->vsi_ctxt.lock);
 	mutex_destroy(&adapter->dcb_ctxt.tc_mutex);
+	mutex_destroy(&adapter->dcb_ctxt.pending_lock);
 	mutex_destroy(&adapter->aux_ctxt.adev_mutex);
 	mutex_destroy(&adapter->udp_tunnel_ctxt.lock);
 }
@@ -654,7 +773,7 @@ STATIC s32 sxe2_mac_addr_init(struct sxe2_vsi *vsi)
 	return ret;
 }
 
-STATIC void sxe2_log_pkg_init(struct sxe2_adapter *adapter, s32 err)
+void sxe2_log_pkg_init(struct sxe2_adapter *adapter, s32 err)
 {
 	switch (err) {
 	case SXE2_DDP_PKG_SUCCESS:
@@ -664,7 +783,7 @@ STATIC void sxe2_log_pkg_init(struct sxe2_adapter *adapter, s32 err)
 		LOG_DEV_INFO("DDP package already present on device.\n");
 		break;
 	case -SXE2_DDP_PKG_ALREADY_LOADED_NOT_SUPPORTED:
-		LOG_DEV_ERR("the device has a DDP package that is not supported by\t"
+		LOG_DEV_INFO("the device has a DDP package that is not supported by\t"
 			    "the driver.\n");
 		break;
 	case -SXE2_DDP_PKG_COMPATIBLE_ALREADY_LOADED:
@@ -673,36 +792,36 @@ STATIC void sxe2_log_pkg_init(struct sxe2_adapter *adapter, s32 err)
 			     "on the device.\n");
 		break;
 	case -SXE2_DDP_PKG_FW_MISMATCH:
-		LOG_DEV_ERR("the firmware loaded on the device is not compatible\t"
+		LOG_DEV_INFO("the firmware loaded on the device is not compatible\t"
 			    "with the DDP package. Please update the device's NVM.\t"
 			    "Entering safe mode.\n");
 		break;
 	case -SXE2_DDP_PKG_INVALID_FILE:
-		LOG_DEV_ERR("the DDP package file is invalid. Entering Safe\t"
+		LOG_DEV_INFO("the DDP package file is invalid. Entering Safe\t"
 			    "Mode.\n");
 		break;
 	case -SXE2_DDP_PKG_FILE_VERSION_TOO_HIGH:
-		LOG_DEV_ERR("the DDP package file version is higher than the driver\t"
+		LOG_DEV_INFO("the DDP package file version is higher than the driver\t"
 			    "supports. Please use an updated driver. Entering Safe\t"
 			    "Mode.\n");
 		break;
 	case -SXE2_DDP_PKG_FILE_VERSION_TOO_LOW:
-		LOG_DEV_ERR("the DDP package file version is lower than the driver\t"
+		LOG_DEV_INFO("the DDP package file version is lower than the driver\t"
 			    "supports.\n");
 		break;
 	case -SXE2_DDP_PKG_NO_SEC_MANIFEST:
-		LOG_DEV_ERR("the DDP package could not be loaded because its\t"
+		LOG_DEV_INFO("the DDP package could not be loaded because its\t"
 			    "security manifest is missing. Please use a valid DDP\t"
 			    "Package. Entering Safe Mode.\n");
 		break;
 	case -SXE2_DDP_PKG_MANIFEST_INVALID:
 	case -SXE2_DDP_PKG_BUFFER_INVALID:
-		LOG_DEV_ERR("an error occurred on the device while loading the DDP package.\n"
+		LOG_DEV_INFO("an error occurred on the device while loading the DDP package.\n"
 			    "The device will be reset.\n");
 		break;
 	case -SXE2_DDP_PKG_ERR:
 	default:
-		LOG_DEV_ERR("an unknown error occurred when loading the DDP package.\n"
+		LOG_DEV_INFO("an unknown error occurred when loading the DDP package.\n"
 			    "Entering Safe Mode.\n");
 		break;
 	}
@@ -720,7 +839,7 @@ void sxe2_load_pkg(const struct firmware *firmware, struct sxe2_adapter *adapter
 	} else if (!firmware && hw->pkg_copy) {
 		ret = sxe2_init_pkg(adapter, hw->pkg_copy, hw->pkg_size);
 	} else {
-		LOG_DEV_WARN("The DDP package file failed to load. Entering Safe Mode.\n");
+		LOG_DEV_INFO("The DDP package file failed to load. Entering Safe Mode.\n");
 	}
 
 	if (!sxe2_is_init_pkg_successful(ret)) {
@@ -781,6 +900,14 @@ STATIC s32 sxe2_init_eth(struct sxe2_adapter *adapter)
 		if (ret) {
 			LOG_DEV_ERR("netdev init failed, ret=%d\n", ret);
 			goto l_netdev_init_failed;
+		}
+
+		if (adapter->irq_ctxt.pool.entries) {
+			ret = sxe2_cpu_rx_rmap_set(pf_vsi);
+			if (ret) {
+				LOG_DEV_ERR("setup cpu rmap failed, ret=%d\n", ret);
+				goto l_netdev_init_failed;
+			}
 		}
 		ret = sxe2_mac_addr_init(pf_vsi);
 		if (ret) {
@@ -858,20 +985,6 @@ STATIC s32 sxe2_init_feature_with_netdev(struct sxe2_adapter *adapter)
 {
 	s32 ret;
 
-#ifdef HAVE_MACSEC_SUPPORT
-	ret = sxe2_macsec_init(adapter);
-	if (ret) {
-		LOG_DEV_ERR("macsec initial failed.\n");
-		goto l_macsec_init_failed;
-	}
-#endif
-
-	ret = sxe2_ipsec_init(adapter);
-	if (ret) {
-		LOG_DEV_ERR("ipsec initial failed.\n");
-		goto l_ipsec_init_failed;
-	}
-
 	ret = sxe2_lag_init(adapter);
 	if (ret) {
 		LOG_DEV_ERR("lag init failed.\n");
@@ -900,12 +1013,6 @@ l_tc_block_register_failed:
 l_cdev_create_failed:
 	sxe2_lag_deinit(adapter);
 l_lag_init_failed:
-	sxe2_ipsec_deinit(adapter);
-l_ipsec_init_failed:
-#ifdef HAVE_MACSEC_SUPPORT
-	sxe2_macsec_deinit(adapter);
-l_macsec_init_failed:
-#endif
 	return ret;
 }
 
@@ -919,21 +1026,33 @@ STATIC void sxe2_deinit_feature_with_netdev(struct sxe2_adapter *adapter)
 	sxe2_lag_deinit(adapter);
 
 	sxe2_ipsec_deinit(adapter);
-
-#ifdef HAVE_MACSEC_SUPPORT
-	sxe2_macsec_deinit(adapter);
-#endif
 }
 
 STATIC s32 sxe2_init_feature_without_netdev(struct sxe2_adapter *adapter)
 {
 	s32 ret = 0;
 
+#ifdef HAVE_MACSEC_SUPPORT
+	ret = sxe2_macsec_init(adapter);
+	if (ret) {
+		LOG_DEV_ERR("macsec initial failed.\n");
+		goto l_macsec_init_failed;
+	}
+#endif
+
+	ret = sxe2_ipsec_init(adapter);
+	if (ret) {
+		LOG_DEV_ERR("ipsec initial failed.\n");
+		goto l_ipsec_init_failed;
+	}
+
 	ret = sxe2_pf_eth_fnav_init(adapter);
 	if (ret) {
 		LOG_DEV_ERR("ctrl vsi init failed, ret=%d\n", ret);
 		goto l_fnav_init_failed;
 	}
+
+	sxe2_sdf_ctxt_init(adapter);
 
 	ret = sxe2_ptp_init(adapter);
 	if (ret) {
@@ -954,6 +1073,12 @@ l_dcb_init_failed:
 l_ptp_init_failed:
 	sxe2_pf_eth_fnav_deinit(adapter);
 l_fnav_init_failed:
+	sxe2_ipsec_deinit(adapter);
+l_ipsec_init_failed:
+#ifdef HAVE_MACSEC_SUPPORT
+	sxe2_macsec_deinit(adapter);
+l_macsec_init_failed:
+#endif
 	return ret;
 }
 
@@ -963,7 +1088,15 @@ STATIC void sxe2_deinit_feature_without_netdev(struct sxe2_adapter *adapter)
 
 	sxe2_ptp_deinit(adapter);
 
+	sxe2_sdf_ctxt_deinit(adapter);
+
 	sxe2_pf_eth_fnav_deinit(adapter);
+
+	sxe2_ipsec_deinit(adapter);
+
+#ifdef HAVE_MACSEC_SUPPORT
+	sxe2_macsec_deinit(adapter);
+#endif
 }
 
 STATIC void sxe2_init_work_tasks(struct sxe2_adapter *adapter)
@@ -988,7 +1121,7 @@ STATIC void sxe2_start_work_tasks(struct sxe2_adapter *adapter)
 	sxe2_dev_ctrl_work_start(adapter);
 }
 
-#ifdef HAVE_UDP_TUNNEL_NIC_INFO
+#if defined(HAVE_UDP_TUNNEL_NIC_INFO) && !defined(HAVE_DEVLINK_PARAMS)
 static struct udp_tunnel_nic_info sxe2_udp_tunnels = {
 		.set_port = sxe2_udp_tunnel_set_port,
 		.unset_port = sxe2_udp_tunnel_unset_port,
@@ -1016,15 +1149,15 @@ static void sxe2_udp_tunnel_init(struct sxe2_adapter *adapter)
 {
 	struct sxe2_udp_tunnel_context *udp_tunnel_ctxt = &adapter->udp_tunnel_ctxt;
 
-#ifdef HAVE_UDP_TUNNEL_NIC_INFO
+#if defined(HAVE_UDP_TUNNEL_NIC_INFO) && !defined(HAVE_DEVLINK_PARAMS)
 	adapter->udp_tunnel_nic = &sxe2_udp_tunnels;
 #ifdef HAVE_UDP_TUNNEL_NIC_SHARED
 	adapter->udp_tunnel_nic->shared = &adapter->udp_tunnel_shared;
 #endif
+#elif defined(HAVE_UDP_TUNNEL_NIC_INFO)
+	adapter->udp_tunnel_nic = NULL;
 #endif
 
-	memset(udp_tunnel_ctxt, 0, sizeof(struct sxe2_udp_tunnel_context));
-	mutex_init(&udp_tunnel_ctxt->lock);
 	bitmap_zero(udp_tunnel_ctxt->vsi_map, SXE2_MAX_VSI_NUM);
 }
 
@@ -1037,7 +1170,15 @@ STATIC s32 sxe2_sw_base_init(struct sxe2_adapter *adapter)
 	if (ret)
 		return ret;
 
+	sxe2_udp_tunnel_init(adapter);
+
 	sxe2_init_work_tasks(adapter);
+
+	ret = sxe2_vsis_stats_init(adapter);
+	if (ret) {
+		LOG_DEV_ERR("init eth device failed, ret=%d\n", ret);
+		goto l_stats_init_failed;
+	}
 
 	ret = sxe2_init_eth(adapter);
 	if (ret) {
@@ -1051,14 +1192,10 @@ STATIC s32 sxe2_sw_base_init(struct sxe2_adapter *adapter)
 		goto l_dump_init_failed;
 	}
 
-	if (sxe2_is_safe_mode(adapter))
-		goto l_probe_dev_regist;
-
 	ret = sxe2_init_feature_without_netdev(adapter);
 	if (ret)
 		goto l_init_feature_without_netdev_failed;
 
-l_probe_dev_regist:
 	pf_vsi = adapter->vsi_ctxt.main_vsi;
 	ret = sxe2_netdev_register(pf_vsi);
 	if (ret) {
@@ -1084,8 +1221,6 @@ l_probe_dev_regist:
 
 	sxe2_start_work_tasks(adapter);
 
-	sxe2_udp_tunnel_init(adapter);
-
 	return ret;
 
 l_com_init_failed:
@@ -1101,6 +1236,8 @@ l_init_feature_without_netdev_failed:
 l_dump_init_failed:
 	sxe2_deinit_eth(adapter);
 l_eth_init_failed:
+	sxe2_vsis_stats_deinit(adapter);
+l_stats_init_failed:
 	sxe2_deinit_work_tasks(adapter);
 	sxe2_sw_deinit_once(adapter);
 
@@ -1143,6 +1280,8 @@ STATIC void sxe2_sw_base_deinit(struct sxe2_adapter *adapter)
 
 	sxe2_netdev_deinit(adapter->vsi_ctxt.main_vsi);
 
+	sxe2_sdf_ctxt_deinit(adapter);
+
 	sxe2_ctrl_vsi_deinit(adapter);
 
 #ifdef HAVE_MACSEC_SUPPORT
@@ -1160,6 +1299,8 @@ STATIC void sxe2_sw_base_deinit(struct sxe2_adapter *adapter)
 	sxe2_txsched_deinit(adapter);
 
 	sxe2_irq_deinit(adapter);
+
+	sxe2_vsis_stats_deinit(adapter);
 
 	sxe2_sw_deinit_once(adapter);
 
@@ -1281,11 +1422,10 @@ STATIC int sxe2_probe(struct pci_dev *pdev,
 
 	sxe2_msg_level_init(adapter);
 
-	sxe2_devlink_register(adapter);
 	ret = sxe2_pci_init(adapter);
 	if (ret) {
 		LOG_DEV_ERR("pci init failed, ret=%d\n", ret);
-		goto l_create;
+		goto l_end;
 	}
 
 	ret = sxe2_hw_base_init(adapter);
@@ -1300,21 +1440,31 @@ STATIC int sxe2_probe(struct pci_dev *pdev,
 		goto l_sw_base_init_failed;
 	}
 
+	sxe2_devlink_register(adapter);
+
 	return ret;
 
 l_sw_base_init_failed:
 	sxe2_hw_base_deinit(adapter);
 l_pci_deinit:
 	sxe2_pci_deinit(adapter);
-l_create:
-	sxe2_devlink_unregister(adapter);
 l_end:
+	return ret;
+}
+
+bool sxe2_dev_status_abnormal(struct sxe2_adapter *adapter)
+{
+	bool ret = (sxe2_read_reg(&adapter->hw, SXE2_STATUS) == SXE2_REG_INVALID_VALUE);
+
+	if (ret)
+		LOG_WARN_BDF("pf dev status abnormal.\n");
 	return ret;
 }
 
 STATIC void sxe2_remove(struct pci_dev *pdev)
 {
 	struct sxe2_adapter *adapter = pci_get_drvdata(pdev);
+	unsigned long flags;
 
 	if (!adapter) {
 		LOG_WARN("adapter NULL, skip remove oper.\n");
@@ -1322,6 +1472,16 @@ STATIC void sxe2_remove(struct pci_dev *pdev)
 	}
 
 	LOG_DEBUG_BDF("sxe2 driver remove start.\n");
+
+	sxe2_devlink_unregister(adapter);
+
+	if (sxe2_dev_status_abnormal(adapter)) {
+		spin_lock_irqsave(&adapter->dev_ctrl_ctxt.cmd_list_lock, flags);
+		sxe2_dev_state_set(adapter, SXE2_DEVSTATE_FAULT, SXE2_RESET_INVAL);
+		sxe2_wait_task_cancel_all(adapter);
+		spin_unlock_irqrestore(&adapter->dev_ctrl_ctxt.cmd_list_lock, flags);
+		LOG_INFO_BDF("dev status abnormal set fault state.\n");
+	}
 
 	sxe2_dev_ctrl_deinit(adapter);
 
@@ -1342,13 +1502,44 @@ STATIC void sxe2_remove(struct pci_dev *pdev)
 #endif
 
 	sxe2_pci_deinit(adapter);
+}
 
-	sxe2_devlink_unregister(adapter);
+STATIC s32 sxe2_try_fast_shutdown(struct pci_dev *pdev)
+{
+	struct sxe2_adapter *adapter = pci_get_drvdata(pdev);
+	s32 ret;
+
+	if (!adapter) {
+		LOG_WARN("adapter NULL, skip remove oper.\n");
+		return 0;
+	}
+
+	sxe2_monitor_stop(adapter);
+	sxe2_dev_ctrl_work_stop(adapter);
+
+	LOG_DEV_WARN("try fast shutdown was called\n");
+	sxe2_hw_trigger_pfr(&adapter->hw);
+	ret = sxe2_check_in_reset(adapter);
+	if (ret) {
+		sxe2_monitor_start(adapter);
+		sxe2_dev_ctrl_work_start(adapter);
+	} else {
+		sxe2_cmd_channels_disable(adapter);
+		sxe2_event_irq_disable(adapter);
+
+		pci_disable_device(pdev);
+	}
+
+	return ret;
 }
 
 STATIC void sxe2_shutdown(struct pci_dev *pdev)
 {
-	sxe2_remove(pdev);
+	s32 ret;
+
+	ret = sxe2_try_fast_shutdown(pdev);
+	if (ret)
+		sxe2_remove(pdev);
 }
 
 STATIC void __sxe2_pci_err_reset_prepare(struct sxe2_adapter *adapter)
@@ -1660,6 +1851,8 @@ MODULE_AUTHOR(SXE2_DRV_AUTHOR);
 MODULE_VERSION(SXE2_VERSION);
 MODULE_LICENSE(SXE2_DRV_LICENSE);
 MODULE_ALIAS(SXE2_DRV_NAME);
+MODULE_FIRMWARE(SXE2_DDP_PKG_FILE);
+MODULE_FIRMWARE(SXE2_DDP_PKG_CLOUD);
 
 module_init(sxe2_init);
 module_exit(sxe2_exit);

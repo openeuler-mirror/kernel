@@ -17,6 +17,8 @@
 #ifdef ALLOC_PD_V1
 struct ib_pd *sxe2_kalloc_pd(struct ib_device *ibdev, struct ib_ucontext *ibucontext,
 									struct ib_udata *udata);
+#elif defined ALLOC_PD_V2
+int sxe2_kalloc_pd(struct ib_pd *ibpd, struct ib_ucontext *ibucontext, struct ib_udata *udata);
 #else
 int sxe2_kalloc_pd(struct ib_pd *ibpd, struct ib_udata *udata);
 #endif
@@ -25,6 +27,8 @@ int sxe2_kalloc_pd(struct ib_pd *ibpd, struct ib_udata *udata);
 void sxe2_kdealloc_pd(struct ib_pd *pd, struct ib_udata *udata);
 #elif defined DEALLOC_PD_VER_4
 int sxe2_kdealloc_pd(struct ib_pd *pd);
+#elif defined DEALLOC_PD_VER_2
+void sxe2_kdealloc_pd(struct ib_pd *pd);
 #else
 int sxe2_kdealloc_pd(struct ib_pd *pd, struct ib_udata *udata);
 #endif

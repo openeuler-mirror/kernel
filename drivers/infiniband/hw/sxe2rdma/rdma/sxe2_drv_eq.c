@@ -50,7 +50,6 @@ static void sxe2_eq_update_ci(u32 __iomem *addr, u32 cons_index, u32 eqn)
 	DRV_RDMA_LOG_DEBUG("db eqn:%d addr:%p cons_index:%d\n", eqn, addr,
 			   cons_index);
 	set_32bit_val(addr, 0, val);
-	/* Ensure all prior memory operations are completed */
 	mb();
 }
 
@@ -65,6 +64,7 @@ static void *sxe2_ctx_process_ceq(struct sxe2_rdma_pci_f *rf,
 	u8 polarity;
 	u32 cq_idx;
 	struct sxe2_rdma_device *rdma_dev = rf->rdma_dev;
+	unsigned long flags		  = 0;
 
 	do {
 		if (rdma_dev->cache_line_64_en == false)
@@ -84,9 +84,10 @@ static void *sxe2_ctx_process_ceq(struct sxe2_rdma_pci_f *rf,
 		if (polarity != ceq->polarity)
 			return NULL;
 
-		if (cq_idx > rf->max_cq) {
+		if (cq_idx >= rf->max_cq) {
 			cq_idx = SXE2_INVALID_CQ_IDX;
 			SXE2_RING_MOVE_TAIL(ceq->ceq_ring);
+			ceq->cons_index = SXE2_RING_CURRENT_TAIL(ceq->ceq_ring);
 
 			if (!SXE2_RING_CURRENT_TAIL(ceq->ceq_ring))
 				ceq->polarity ^= 1;
@@ -97,17 +98,20 @@ static void *sxe2_ctx_process_ceq(struct sxe2_rdma_pci_f *rf,
 			temp_mcq = &rf->mcq;
 			cq	 = &temp_mcq->ctx_cq;
 		} else {
+			spin_lock_irqsave(&rf->cqtable_lock, flags);
 			temp_cq = rf->cq_table[cq_idx];
 			if (!temp_cq) {
 				cq_idx = SXE2_INVALID_CQ_IDX;
 				SXE2_RING_MOVE_TAIL(ceq->ceq_ring);
-
+				ceq->cons_index = SXE2_RING_CURRENT_TAIL(ceq->ceq_ring);
+				spin_unlock_irqrestore(&rf->cqtable_lock, flags);
 				if (!SXE2_RING_CURRENT_TAIL(ceq->ceq_ring))
 					ceq->polarity ^= 1;
 				continue;
 			}
-
+			sxe2_drv_cq_add_ref(temp_cq);
 			cq = &temp_cq->cq_ctx;
+			spin_unlock_irqrestore(&rf->cqtable_lock, flags);
 		}
 
 		SXE2_RING_MOVE_TAIL(ceq->ceq_ring);
@@ -159,6 +163,7 @@ static void sxe2_process_ceq(struct sxe2_rdma_pci_f *rf,
 	u32 update_ci_eqn;
 	struct sxe2_rdma_ctx_dev *dev;
 	struct sxe2_rdma_device *rdma_dev;
+	struct sxe2_rdma_cq *rdma_cq;
 
 	ctx_ceq	 = &ceq->ctx_ceq;
 	dev	 = ctx_ceq->dev;
@@ -194,10 +199,13 @@ static void sxe2_process_ceq(struct sxe2_rdma_pci_f *rf,
 #endif
 
 		++num_eqes;
-
-		if (cq->cq_type == SXE2_RDMA_CQ_TYPE_IO)
-			sxe2_rdma_comp_handler(cq);
 		spin_unlock_irqrestore(&ceq->ce_lock, flags);
+
+		if (cq->cq_type == SXE2_RDMA_CQ_TYPE_IO) {
+			sxe2_rdma_comp_handler(cq);
+			rdma_cq = container_of(cq, struct sxe2_rdma_cq, cq_ctx);
+			sxe2_drv_cq_rem_ref(rdma_cq);
+		}
 
 		if (cq->cq_type == SXE2_RDMA_CQ_TYPE_MQ && rf->mq_cmpl_wq != NULL)
 			queue_work(rf->mq_cmpl_wq, &rf->mq_cmpl_work);
@@ -638,11 +646,11 @@ static void sxe2_process_aeq(struct sxe2_rdma_pci_f *rf)
 		switch (info->ae_code) {
 		case SXE2_AE_CQ_OPERATION_ERROR:
 		case SXE2_AE_CQ_STATUS_ERR:
-			DRV_RDMA_LOG_DEV_DEBUG(
+			DRV_RDMA_LOG_DEV_ERR(
 				"Processing CQ[0x%x] op error, AE 0x%04X\n",
 				info->qp_cq_id, info->ae_code);
 
-			if (info->qp_cq_id > rf->max_cq) {
+			if (info->qp_cq_id >= rf->max_cq) {
 				DRV_RDMA_LOG_DEV_ERR(
 					"AEQ: cq_id %u invalid, max_cq:%u\n",
 					info->qp_cq_id, rf->max_cq);
@@ -870,7 +878,7 @@ static void sxe2_process_aeq(struct sxe2_rdma_pci_f *rf)
 			DRV_RDMA_LOG_WARN_BDF("qp:%u modify to SQD finish.\n",
 					      info->qp_cq_id);
 
-			if (info->qp_cq_id > rf->max_qp) {
+			if (info->qp_cq_id >= rf->max_qp) {
 				DRV_RDMA_LOG_DEV_ERR(
 					"AEQ: qp_id %u invalid, max_qp:%u\n",
 					info->qp_cq_id, rf->max_qp);
@@ -973,11 +981,13 @@ static void sxe2_process_aeq(struct sxe2_rdma_pci_f *rf)
 		case SXE2_AE_RXENG_REMOTE_ACCESS_ERROR:
 		case SXE2_AE_RXENG_REMOTE_QP_ERROR:
 		case SXE2_AE_RXENG_RXI_WQE_MISMATCH:
-			DRV_RDMA_LOG_DEV_WARN(
-				"AEQ: abnormal ae_id = 0x%x  , is_qp = %d, qp_id = %u\n",
-				info->ae_code, info->qp, info->qp_cq_id);
+			if (info->ae_code != SXE2_AE_RXENG_RTR_FIRST_PKT) {
+				DRV_RDMA_LOG_DEV_WARN(
+					"AEQ: abnormal ae_id = 0x%x  , is_qp = %d, qp_id = %u\n",
+					info->ae_code, info->qp, info->qp_cq_id);
+			}
 
-			if (info->qp_cq_id > rf->max_qp) {
+			if (info->qp_cq_id >= rf->max_qp) {
 				DRV_RDMA_LOG_DEV_ERR(
 					"AEQ: qp_id %u invalid, max_qp:%u\n",
 					info->qp_cq_id, rf->max_qp);
@@ -1013,7 +1023,7 @@ static void sxe2_process_aeq(struct sxe2_rdma_pci_f *rf)
 			if (info->ae_code == SXE2_AE_RXENG_RTR_FIRST_PKT)
 				sxe2_ib_qp_event(qp, qp->qp_ctx.event_type);
 			else
-				sxe2_cm_disconn(qp);
+				sxe2_cm_disconn(qp, qp->qp_ctx.event_type);
 
 			sxe2_qp_rem_ref(&qp->ibqp);
 			break;
@@ -2559,6 +2569,7 @@ static int sxe2_rdma_aeq_alloc_coherent_mem(struct sxe2_rdma_device *rdma_dev,
 	}
 #else
 	if (rf->aeq_pble_en) {
+		ret = -ENOMEM;
 		DRV_RDMA_LOG_INFO_BDF("aeq alloc use pble.\n");
 	} else {
 		aeq->mem.va = dma_alloc_coherent(dev->hw->device, aeq->mem.size,

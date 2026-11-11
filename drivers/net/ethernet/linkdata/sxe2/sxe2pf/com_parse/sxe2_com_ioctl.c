@@ -37,6 +37,8 @@
 #include "sxe2_netdev.h"
 #include "sxe2_ethtool.h"
 
+#define SXE2_DRV_CMD_REQ_LEN_MAX (64 * 1024)
+
 STATIC s32 sxe2_com_handshake_disable(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
 				      struct sxe2_drv_cmd_params *cmd_buf)
 {
@@ -88,10 +90,12 @@ STATIC s32 sxe2_com_cap_get(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
 	resp->vsi_caps.func_id = adapter->pf_idx;
 
 	resp->rss_hash_caps.hash_key_size = SXE2_RSS_HASH_KEY_SIZE;
-	if (adapter->q_ctxt.rxq_layout.dpdk == SXE2_DPDK_QUEUE_DFLT_CNT)
+	if (caps.vsi_caps.dpdk_lut_type == SXE2_RSS_PF_LUT)
+		resp->rss_hash_caps.lut_key_size = SXE2_RSS_LUT_SIZE_2K;
+	else if (caps.vsi_caps.dpdk_lut_type == SXE2_RSS_GLOBAL_LUT)
 		resp->rss_hash_caps.lut_key_size = SXE2_RSS_LUT_SIZE_512;
 	else
-		resp->rss_hash_caps.lut_key_size = adapter->caps_ctxt.max_rss_lut_size;
+		resp->rss_hash_caps.lut_key_size = SXE2_RSS_LUT_SIZE_64;
 
 	resp->pf_idx = adapter->pf_idx;
 	resp->port_idx = adapter->port_idx;
@@ -105,7 +109,8 @@ STATIC s32 sxe2_com_cap_get(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
 	resp->cap_flags = SXE2_DEV_CAPS_OFFLOAD_L2 | SXE2_DEV_CAPS_OFFLOAD_VLAN |
 			  SXE2_DEV_CAPS_OFFLOAD_RSS | SXE2_DEV_CAPS_OFFLOAD_FNAV |
 			  SXE2_DEV_CAPS_OFFLOAD_TM | SXE2_DEV_CAPS_OFFLOAD_Q_MAP |
-			  SXE2_DEV_CAPS_OFFLOAD_FC_STATE;
+			  SXE2_DEV_CAPS_OFFLOAD_FC_STATE |
+			  SXE2_DEV_CAPS_OFFLOAD_FLOW_EXT;
 	if (adapter->ipsec_ctxt.max_tx_sa_cnt && adapter->ipsec_ctxt.max_rx_sa_cnt)
 		resp->cap_flags |= SXE2_DEV_CAPS_OFFLOAD_IPSEC;
 
@@ -137,11 +142,13 @@ STATIC s32 sxe2_com_switchdev_info_get(struct sxe2_adapter *adapter, struct sxe2
 		resp->port_name_type = SXE2_PHYS_PORT_NAME_TYPE_PFVF;
 		resp->representor = 1;
 		resp->master = 0;
+		resp->pf_num = adapter->pf_idx;
 	} else {
 		resp->is_switchdev = false;
 		resp->port_name_type = SXE2_PHYS_PORT_NAME_TYPE_LEGACY;
 		resp->representor = 0;
 		resp->master = 1;
+		resp->pf_num = adapter->pf_idx;
 	}
 
 	LOG_DEBUG_BDF("adapter->eswitch_ctxt.mode = %d\n", adapter->eswitch_ctxt.mode);
@@ -229,10 +236,9 @@ l_end:
 static s32 sxe2_com_vsi_fc_get(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
 			       struct sxe2_drv_cmd_params *cmd_buf)
 {
-	struct sxe2_drv_vsi_fc_get_req *req =
-		(struct sxe2_drv_vsi_fc_get_req *)sxe2_com_req_data_copy_to_kernel(cmd_buf, obj);
+	struct sxe2_drv_vsi_fc_get_req *req;
 	struct sxe2_drv_vsi_fc_get_resp resp;
-	s32 ret;
+	s32 ret = 0;
 
 	req = (struct sxe2_drv_vsi_fc_get_req *)
 	       sxe2_com_req_data_copy_to_kernel(cmd_buf, obj);
@@ -241,12 +247,8 @@ static s32 sxe2_com_vsi_fc_get(struct sxe2_adapter *adapter, struct sxe2_obj *ob
 		ret = -EINVAL;
 		goto l_end;
 	}
-	ret = sxe2_fc_get(adapter, req->vsi_id, &resp.fc_enable);
-	if (ret) {
-		LOG_ERROR_BDF("sxe2_fc_get failed, ret: %d\n", ret);
-		ret = -EINVAL;
-		goto l_end;
-	}
+
+	sxe2_fc_get(adapter, &resp.fc_enable);
 
 	if (sxe2_com_resp_copy_to_user(cmd_buf, &resp, sizeof(resp), obj) != 0) {
 		LOG_ERROR_BDF("copy_to_user failed, len=%zu\n", sizeof(resp));
@@ -308,6 +310,7 @@ static s32 sxe2_com_rxq_cfg_enable(struct sxe2_adapter *adapter, struct sxe2_obj
 	s32 ret;
 	u32 len;
 	u16 q_idx;
+	u16 q_cnt;
 
 	req = (struct sxe2_drv_rxq_cfg_req *)
 	       sxe2_com_req_data_copy_to_kernel(cmd_buf, obj);
@@ -317,23 +320,32 @@ static s32 sxe2_com_rxq_cfg_enable(struct sxe2_adapter *adapter, struct sxe2_obj
 		goto l_end;
 	}
 
-	if (req->q_cnt == 0) {
-		LOG_ERROR_BDF("dpdk rxq q_cnt is 0\n");
+	q_cnt = le16_to_cpu(req->q_cnt);
+	if (q_cnt == 0 || q_cnt > adapter->q_ctxt.max_rxq_cnt) {
+		LOG_ERROR_BDF("dpdk rxq q_cnt %u invalid, max %u\n",
+			      q_cnt, adapter->q_ctxt.max_rxq_cnt);
 		ret = -EINVAL;
 		goto l_end;
 	}
 
-	len = sizeof(*rxq_params) + sizeof(struct sxe2_ctxt_elem) * req->q_cnt;
+	if (cmd_buf->req_len < sizeof(*req) + q_cnt * sizeof(req->cfg[0])) {
+		LOG_ERROR_BDF("rxq cfg req_len %u too small for q_cnt %u\n",
+			      cmd_buf->req_len, q_cnt);
+		ret = -EINVAL;
+		goto l_end;
+	}
+
+	len = sizeof(*rxq_params) + sizeof(struct sxe2_ctxt_elem) * q_cnt;
 	rxq_params = kzalloc(len, GFP_KERNEL);
 	if (!rxq_params) {
 		ret = -SXE2_VF_ERR_NO_MEMORY;
 		LOG_ERROR_BDF("rxq msg mem %uB alloc failed.\n", len);
 		goto l_end;
 	}
-	rxq_params->q_cnt = req->q_cnt;
+	rxq_params->q_cnt = q_cnt;
 	rxq_params->vsi_id = req->vsi_id;
 	rxq_params->max_frame_size = req->max_frame_size;
-	for (q_idx = 0; q_idx < req->q_cnt; q_idx++) {
+	for (q_idx = 0; q_idx < q_cnt; q_idx++) {
 		rxq_params->cfg[q_idx].dma_addr = req->cfg[q_idx].dma_addr;
 		rxq_params->cfg[q_idx].max_lro_size = req->cfg[q_idx].max_lro_size;
 		rxq_params->cfg[q_idx].split_type_mask = req->cfg[q_idx].split_type_mask;
@@ -426,6 +438,7 @@ static s32 sxe2_com_txq_cfg_enable(struct sxe2_adapter *adapter, struct sxe2_obj
 {
 	s32 ret;
 	u32 i, len;
+	u16 q_cnt;
 	struct sxe2_drv_txq_ctxt *ctxt;
 	struct sxe2_drv_txq_cfg_req *req;
 	struct sxe2_txq_ucmd_en_params *txq_params;
@@ -438,7 +451,22 @@ static s32 sxe2_com_txq_cfg_enable(struct sxe2_adapter *adapter, struct sxe2_obj
 		goto l_end;
 	}
 
-	len = sizeof(*txq_params) + sizeof(*ctxt) * req->q_cnt;
+	q_cnt = le16_to_cpu(req->q_cnt);
+	if (q_cnt == 0 || q_cnt > adapter->q_ctxt.max_txq_cnt) {
+		LOG_ERROR_BDF("dpdk txq q_cnt %u invalid, max %u\n",
+			      q_cnt, adapter->q_ctxt.max_txq_cnt);
+		ret = -EINVAL;
+		goto l_end;
+	}
+
+	if (cmd_buf->req_len < sizeof(*req) + q_cnt * sizeof(req->cfg[0])) {
+		LOG_ERROR_BDF("txq cfg req_len %u too small for q_cnt %u\n",
+			      cmd_buf->req_len, q_cnt);
+		ret = -EINVAL;
+		goto l_end;
+	}
+
+	len = sizeof(*txq_params) + sizeof(*ctxt) * q_cnt;
 	txq_params = kzalloc(len, GFP_KERNEL);
 	if (!txq_params) {
 		LOG_ERROR_BDF("txq msg mem %u alloc failed.\n", len);
@@ -446,9 +474,9 @@ static s32 sxe2_com_txq_cfg_enable(struct sxe2_adapter *adapter, struct sxe2_obj
 		goto l_end;
 	}
 
-	txq_params->q_cnt = req->q_cnt;
+	txq_params->q_cnt = q_cnt;
 	txq_params->vsi_idx = req->vsi_id;
-	for (i = 0; i < txq_params->q_cnt; i++) {
+	for (i = 0; i < q_cnt; i++) {
 		ctxt = &req->cfg[i];
 		txq_params->ctxts[i].depth = ctxt->depth;
 		txq_params->ctxts[i].dma_addr = ctxt->dma_addr;
@@ -878,7 +906,7 @@ STATIC s32 sxe2_com_txq_mapping_set(struct sxe2_adapter *adapter, struct sxe2_ob
 		if (map_pool_idx == req->pool_idx) {
 			LOG_ERROR_BDF("pool_idx%u: queue_id = %u already exist.\n",
 				      req->pool_idx, params.q_id_in_dev);
-			ret = -EFAULT;
+			ret = -EEXIST;
 			goto l_end;
 		}
 	} else {
@@ -895,6 +923,12 @@ STATIC s32 sxe2_com_txq_mapping_set(struct sxe2_adapter *adapter, struct sxe2_ob
 	}
 
 	map_pool = &stats_txq_map->txq_map_pool[req->pool_idx];
+	if (map_pool->curr_map_idx >= SXE2_TXQ_STATS_MAP_MAX_NUM) {
+		LOG_ERROR_BDF("txq pool %u full, curr_map_idx=%u\n",
+			      req->pool_idx, map_pool->curr_map_idx);
+		ret = -EFAULT;
+		goto l_end;
+	}
 	map_pool->queue_id_pool[map_pool->curr_map_idx++] = params.q_id_in_dev;
 
 	LOG_DEBUG_BDF("CREATE:TX pool [%u] cfg: %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u\n",
@@ -926,6 +960,7 @@ STATIC s32 sxe2_com_rxq_mapping_set(struct sxe2_adapter *adapter, struct sxe2_ob
 	u16 last_q_id;
 	s32 ret = 0;
 	u32 qid_cfg;
+	u16 i;
 	struct sxe2_q_id_transe params = {0};
 
 	req = (struct sxe2_drv_rx_map_req *)
@@ -966,6 +1001,14 @@ STATIC s32 sxe2_com_rxq_mapping_set(struct sxe2_adapter *adapter, struct sxe2_ob
 		map_pool->pool_id = get_resp.hw_pool_idx;
 
 	} else {
+		for (i = 0; i <= map_pool->curr_map_idx; i++) {
+			if (params.q_id_in_dev == map_pool->queue_id_pool[i]) {
+				LOG_ERROR_BDF("Qmap config already exists.");
+				ret = -EEXIST;
+				goto l_end;
+			}
+		}
+
 		last_q_id = map_pool->queue_id_pool[map_pool->curr_map_idx - 1];
 		if (last_q_id + 1 != params.q_id_in_dev) {
 			LOG_ERROR_BDF("Mapping failed: the rxq:%u qmapping[%u] contiguous.\n",
@@ -1012,6 +1055,7 @@ static s32 sxe2_user_mac_addr_get(struct sxe2_vsi *vsi, u16 vf_idx,
 	struct sxe2_adapter *adapter = vsi->adapter;
 	struct sxe2_vf_node *vf = NULL;
 	enum sxe2_vsi_type type;
+	struct sxe2_vsi *main_vsi = NULL;
 	s32 ret = 0;
 
 	if (!vsi || !resp)
@@ -1020,7 +1064,10 @@ static s32 sxe2_user_mac_addr_get(struct sxe2_vsi *vsi, u16 vf_idx,
 	type = vsi->type;
 	switch (type) {
 	case SXE2_VSI_T_DPDK_PF:
-		memcpy(resp->mac_addr, adapter->hw.mac_info.perm_addr, ETH_ALEN);
+		main_vsi = adapter->vsi_ctxt.main_vsi;
+		netif_addr_lock_bh(main_vsi->netdev);
+		memcpy(resp->mac_addr, main_vsi->netdev->dev_addr, ETH_ALEN);
+		netif_addr_unlock_bh(main_vsi->netdev);
 		break;
 	case SXE2_VSI_T_DPDK_VF:
 		vf = vsi->vf_node;
@@ -1117,7 +1164,7 @@ STATIC s32 sxe2_com_info_get(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
 	} else {
 		pci_read_config_dword(pdev, pos + 4, &dsn_low);
 		pci_read_config_dword(pdev, pos + 8, &dsn_high);
-		dsn = ((u64)dsn_high << 22) | dsn_low;
+		dsn = ((u64)dsn_high << 32) | dsn_low;
 	}
 	resp.dsn = dsn;
 
@@ -1305,7 +1352,7 @@ STATIC s32 sxe2_com_sched_tm_mid_add(struct sxe2_adapter *adapter, struct sxe2_o
 	if (ret) {
 		LOG_ERROR_BDF("sxe2_txsched_ucmd_node_add failed.\n");
 		ret = -EIO;
-		return ret;
+		goto l_end;
 	}
 
 	tm_res.teid = ucmd_node_param.node_teid;
@@ -1384,6 +1431,7 @@ STATIC s32 sxe2_com_irq_band_rxq(struct sxe2_adapter *adapter, struct sxe2_obj *
 	struct sxe2_queue *rxq;
 	struct sxe2_vsi *vsi;
 	struct sxe2_drv_queue_irq_bind_req *req = NULL;
+	u16 q_idx, msix_idx;
 	s32 ret = 0;
 
 	if (sizeof(*req) != cmd_buf->req_len) {
@@ -1400,6 +1448,9 @@ STATIC s32 sxe2_com_irq_band_rxq(struct sxe2_adapter *adapter, struct sxe2_obj *
 		goto l_end;
 	}
 
+	q_idx = le16_to_cpu(req->q_idx);
+	msix_idx = le16_to_cpu(req->msix_idx);
+
 	vsi = sxe2_vsi_get_by_idx(adapter, cmd_buf->vsi_id);
 	if (!vsi) {
 		LOG_ERROR_BDF("failed to get vsi[%u]\n", cmd_buf->vsi_id);
@@ -1407,28 +1458,46 @@ STATIC s32 sxe2_com_irq_band_rxq(struct sxe2_adapter *adapter, struct sxe2_obj *
 		goto l_end;
 	}
 
-	rxq = vsi->rxqs.q[req->q_idx];
+	if (q_idx >= vsi->rxqs.q_cnt) {
+		LOG_ERROR_BDF("invalid q_idx %u, vsi rxq cnt %u\n",
+			      q_idx, vsi->rxqs.q_cnt);
+		ret = -EINVAL;
+		goto l_end;
+	}
+	if (msix_idx >= vsi->irqs.cnt) {
+		LOG_ERROR_BDF("invalid msix_idx %u, vsi irqs cnt %u\n",
+			      msix_idx, vsi->irqs.cnt);
+		ret = -EINVAL;
+		goto l_end;
+	}
+	if (req->itr_idx >= SXE2_ITR_IDX_NONE) {
+		LOG_ERROR_BDF("invalid itr_idx %u\n", req->itr_idx);
+		ret = -EINVAL;
+		goto l_end;
+	}
+
+	rxq = vsi->rxqs.q[q_idx];
 	if (!rxq) {
 		LOG_ERROR_BDF("failed to get vsi[%u] rxq[%u].\n", cmd_buf->vsi_id,
-			      req->q_idx);
+			      q_idx);
 		ret = -EFAULT;
 		goto l_end;
 	}
 
 	LOG_DEBUG("irq band rxq, vsi[%d] rxq[%u/%u] bind irq[%u->%u] itr[%u].\n",
-		  cmd_buf->vsi_id, rxq->idx_in_vsi, rxq->idx_in_pf, req->msix_idx,
-		  req->msix_idx + vsi->irqs.base_idx_in_pf, req->itr_idx);
+		  cmd_buf->vsi_id, rxq->idx_in_vsi, rxq->idx_in_pf, msix_idx,
+		  msix_idx + vsi->irqs.base_idx_in_pf, req->itr_idx);
 
 	if (req->bind) {
 		sxe2_hw_rxq_irq_cause_setup(&adapter->hw, rxq->idx_in_pf, req->itr_idx,
-					    req->msix_idx + vsi->irqs.base_idx_in_pf);
+					    msix_idx + vsi->irqs.base_idx_in_pf);
 		LOG_DEBUG("vsi[%d] rxq[%u/%u] bind irq[%u] itr[%u] setup.\n",
-			  cmd_buf->vsi_id, rxq->idx_in_vsi, rxq->idx_in_pf, req->msix_idx,
+			  cmd_buf->vsi_id, rxq->idx_in_vsi, rxq->idx_in_pf, msix_idx,
 			  req->itr_idx);
 	} else {
 		sxe2_hw_rxq_irq_cause_clear(&adapter->hw, rxq->idx_in_pf);
 		LOG_DEBUG("vsi[%d] rxq[%u/%u] bind irq[%u] clear.\n", cmd_buf->vsi_id,
-			  rxq->idx_in_vsi, rxq->idx_in_pf, req->msix_idx);
+			  rxq->idx_in_vsi, rxq->idx_in_pf, msix_idx);
 	}
 
 l_end:
@@ -1458,6 +1527,12 @@ STATIC s32 sxe2_com_switch_srcvsi_ext_prune(struct sxe2_adapter *adapter,
 
 	is_add = srcvsi_ext_cfg_req->is_add;
 	srcvsi_cnt = srcvsi_ext_cfg_req->srcvsi_cnt;
+	if (srcvsi_cnt > SXE2_SRCVSI_PRUNE_MAX_NUM) {
+		LOG_ERROR_BDF("srcvsi_cnt %u exceeds max %u\n",
+			      srcvsi_cnt, SXE2_SRCVSI_PRUNE_MAX_NUM);
+		ret = -EINVAL;
+		goto l_end;
+	}
 	vsi_id = le16_to_cpu(srcvsi_ext_cfg_req->vsi_id);
 	for (idx = 0; idx < srcvsi_cnt; idx++)
 		srcvsi_list[idx] = le16_to_cpu(srcvsi_ext_cfg_req->srcvsi_list[idx]);
@@ -1483,12 +1558,31 @@ l_end:
 STATIC s32 sxe2_com_sfp_eeprom_read(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
 				    struct sxe2_drv_cmd_params *cmd_buf)
 {
-	s32 ret = 0;
-	struct sxe2_drv_sfp_req *req =
-		(struct sxe2_drv_sfp_req *)sxe2_com_req_data_copy_to_kernel(cmd_buf, obj);
-	u32 resp_len = sizeof(struct sxe2_drv_sfp_resp) + req->data_len;
+	struct sxe2_drv_sfp_req *req = NULL;
 	struct sxe2_drv_sfp_resp *resp = NULL;
 	struct sxe2_sfp_resp *sff_value = NULL;
+	s32 ret = 0;
+	u32 resp_len;
+	u16 data_len, bus_addr, page_cnt, offset;
+
+	req = (struct sxe2_drv_sfp_req *)sxe2_com_req_data_copy_to_kernel(cmd_buf, obj);
+	if (!req) {
+		LOG_ERROR_BDF("sfp req is NULL\n");
+		ret = -EINVAL;
+		goto l_end;
+	}
+
+	data_len = le16_to_cpu(req->data_len);
+	bus_addr = le16_to_cpu(req->bus_addr);
+	page_cnt = le16_to_cpu(req->page_cnt);
+	offset = le16_to_cpu(req->offset);
+
+	if (data_len > SXE2_SFP_EEP_LEN_MAX || data_len == 0) {
+		LOG_ERROR_BDF("invalid sfp data_len %u\n", data_len);
+		ret = -EINVAL;
+		goto l_end;
+	}
+	resp_len = sizeof(struct sxe2_drv_sfp_resp) + data_len;
 
 	resp = kzalloc(resp_len, GFP_KERNEL);
 	if (!resp) {
@@ -1496,23 +1590,24 @@ STATIC s32 sxe2_com_sfp_eeprom_read(struct sxe2_adapter *adapter, struct sxe2_ob
 		goto l_end;
 	}
 
-	sff_value = kzalloc(sizeof(*sff_value) + req->data_len, GFP_KERNEL);
+	sff_value = kzalloc(sizeof(*sff_value) + data_len, GFP_KERNEL);
 	if (!sff_value) {
 		ret = -ENOMEM;
 		goto l_end;
 	}
 
 	memset(resp, 0, resp_len);
-	memset(sff_value, 0, sizeof(*sff_value) + req->data_len);
+	memset(sff_value, 0, sizeof(*sff_value) + data_len);
 
-	ret = sxe2_fwc_sff_eeprom_get(adapter, req->is_qsfp, req->bus_addr, req->page_cnt,
-				      req->offset, req->data_len, sff_value);
+	ret = sxe2_fwc_sff_eeprom_get(adapter, req->is_qsfp, bus_addr,
+				      page_cnt, offset,
+				      data_len, sff_value);
 	if (ret) {
 		LOG_ERROR_BDF("get eeprom failed, ret=%d.\n", ret);
 		goto l_end;
 	}
 
-	memcpy(resp->data, sff_value->data, req->data_len);
+	memcpy(resp->data, sff_value->data, data_len);
 	if (sxe2_com_resp_copy_to_user(cmd_buf, resp, resp_len, obj) != 0) {
 		LOG_ERROR_BDF("copy_to_user failed.\n");
 		ret = -EFAULT;
@@ -1596,6 +1691,8 @@ struct sxe2_ioctl_cmd_table driver_cmd_table[] = {
 
 	{SXE2_DRV_CMD_FLOW_FILTER_ADD, sxe2_com_flow_filter_add},
 	{SXE2_DRV_CMD_FLOW_FILTER_DEL, sxe2_com_flow_filter_del},
+	{SXE2_DRV_CMD_FLOW_FILTER_ADD_EXT, sxe2_com_flow_filter_add_ext},
+	{SXE2_DRV_CMD_FLOW_FILTER_DEL_EXT, sxe2_com_flow_filter_del_ext},
 	{SXE2_DRV_CMD_FLOW_FNAV_STAT_ALLOC, sxe2_com_flow_fnav_stat_alloc},
 	{SXE2_DRV_CMD_FLOW_FNAV_STAT_FREE, sxe2_com_flow_fnav_stat_free},
 	{SXE2_DRV_CMD_FLOW_FNAV_STAT_QUERY, sxe2_com_flow_fnav_stat_query},
@@ -1608,10 +1705,20 @@ struct sxe2_ioctl_cmd_table driver_cmd_table[] = {
 	{SXE2_DRV_CMD_VSI_SRCVSI_PRUNE, sxe2_com_switch_srcvsi_ext_prune},
 
 	{SXE2_DRV_CMD_OPT_EEP_GET, sxe2_com_sfp_eeprom_read},
+
+	{SXE2_DRV_CMD_ACL_STAT_QUERY, sxe2_com_flow_acl_stat_query},
+	{SXE2_DRV_CMD_FLOW_ACL_STAT_ALLOC, sxe2_com_flow_acl_stat_alloc},
+	{SXE2_DRV_CMD_FLOW_ACL_STAT_FREE, sxe2_com_flow_acl_stat_free},
 };
 
-STATIC s32 sxe2_drv_cmd_len_check(struct sxe2_drv_cmd_params *cmd_buf)
+STATIC s32 sxe2_drv_cmd_len_check(struct sxe2_adapter *adapter,
+				  struct sxe2_drv_cmd_params *cmd_buf)
 {
+	if (cmd_buf->req_len > SXE2_DRV_CMD_REQ_LEN_MAX) {
+		LOG_ERROR_BDF("invalid req_len %u\n", cmd_buf->req_len);
+		return -EINVAL;
+	}
+
 	return 0;
 }
 
@@ -1626,7 +1733,7 @@ STATIC s32 sxe2_drv_msg_check(struct sxe2_adapter *adapter,
 {
 	s32 ret = 0;
 
-	ret = sxe2_drv_cmd_len_check(cmd_buf);
+	ret = sxe2_drv_cmd_len_check(adapter, cmd_buf);
 	if (ret)
 		return ret;
 

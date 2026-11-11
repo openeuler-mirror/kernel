@@ -69,11 +69,22 @@ u16 sxe2_min_queue_num_calc(struct sxe2_adapter *adapter);
 
 s32 sxe2_dpdk_pf_caps_get(struct sxe2_adapter *adapter, struct sxe2_fwc_func_caps *caps);
 
+s32 sxe2_global_lut_get(struct sxe2_adapter *adapter);
+
+s32 __sxe2_global_lut_get(struct sxe2_adapter *adapter);
+
+void sxe2_global_lut_put(struct sxe2_adapter *adapter, u8 lut_id);
+
+u16 __sxe2_global_lut_remaining(struct sxe2_adapter *adapter);
+
+bool sxe2_global_lut_get_bulk(struct sxe2_adapter *adapter, u16 cnt,
+			      u8 *lut_ids);
+
 s32 sxe2_drv_mode_set(struct sxe2_adapter *adapter, enum sxe2_com_module type);
 
 s32 __sxe2_drv_mode_get(struct sxe2_adapter *adapter,
 			struct sxe2_fwc_drv_mode_resp *resp, u32 resp_len);
 
-s32 sxe2_drv_mode_get(struct sxe2_adapter *adapter);
+void sxe2_drv_mode_get(struct sxe2_adapter *adapter);
 
 #endif

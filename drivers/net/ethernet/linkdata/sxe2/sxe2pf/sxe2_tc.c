@@ -10,9 +10,7 @@
  */
 
 #include <linux/netdevice.h>
-#ifdef HAVE_FLOW_OFFLOAD_H
-#include <net/flow_offload.h>
-#endif
+#include <net/devlink.h>
 #include <net/vxlan.h>
 #include <net/geneve.h>
 #include <net/gre.h>
@@ -26,6 +24,11 @@
 #include "sxe2_common.h"
 #include "sxe2_tc.h"
 #include "sxe2_switch.h"
+
+#if defined(HAVE_TCF_MIRRED_DEV)
+#include <net/tc_act/tc_gact.h>
+#include <net/tc_act/tc_mirred.h>
+#endif
 
 #define SXE2_TC_FLOWER_MASK_32 0xFFFFFFFF
 #define SXE2_TC_FLOWER_MASK_16 0xFFFF
@@ -76,7 +79,6 @@ static struct net_device *sxe2_tunnel_device_get(struct net_device *dev,
 }
 #endif
 
-#if defined(HAVE_TC_FLOWER_ENC) && defined(HAVE_TC_INDIR_BLOCK)
 static s32 sxe2_tc_set_ipv4(struct flow_match_ipv4_addrs *match,
 			    struct sxe2_tcf_fltr *fltr, bool is_outer)
 {
@@ -202,6 +204,7 @@ static s32 sxe2_tc_set_ttl_tos(struct flow_match_ip *match,
 	return 0;
 }
 
+#if defined(HAVE_TC_FLOWER_ENC) && defined(HAVE_TC_INDIR_BLOCK)
 static inline s32 sxe2_match_key_parse_enc_keyid(struct flow_rule *rule,
 						 struct sxe2_tcf_fltr *fltr)
 {
@@ -272,6 +275,7 @@ static inline s32 sxe2_match_key_parse_enc_ipv6(struct flow_rule *rule,
 	return 0;
 }
 
+#ifdef HAVE_FLOW_DISSECTOR_KEY_ENC_IP
 static inline s32 sxe2_match_key_parse_enc_ip(struct flow_rule *rule,
 					      struct sxe2_tcf_fltr *fltr)
 {
@@ -280,6 +284,8 @@ static inline s32 sxe2_match_key_parse_enc_ip(struct flow_rule *rule,
 	flow_rule_match_enc_ip(rule, &match);
 	return sxe2_tc_set_ttl_tos(&match, fltr, true);
 }
+#endif
+#endif
 
 static s32 sxe2_tc_set_ipv4_proto(struct flow_match_basic *match,
 				  struct sxe2_tcf_fltr *fltr, bool is_outer)
@@ -331,7 +337,12 @@ static inline s32 sxe2_match_key_parse_basic(struct flow_rule *rule,
 
 	if (fltr->tunnel_type != SXE2_TNL_NONE)
 		is_outer = false;
-	(void)sxe2_tc_set_ipv4_proto(&match, fltr, is_outer);
+	if (proto_key == ETH_P_IP) {
+		(void)sxe2_tc_set_ipv4_proto(&match, fltr, is_outer);
+		LOG_DEBUG_BDF("0x%x support ip_proto 0x%x\n", proto_key, fltr->ip_proto);
+	} else {
+		LOG_DEBUG_BDF("0x%x pass ip_proto 0x%x\n", proto_key, fltr->ip_proto);
+	}
 
 	LOG_DEBUG_BDF("prot_type %d, ethtype[%d], mask[0x%x], ip_proto %d\n",
 		      item->type, match.key->n_proto, match.mask->n_proto,
@@ -535,10 +546,11 @@ static inline s32 sxe2_match_key_parse_port(struct flow_rule *rule,
 	struct sxe2_tcf_key_item *item;
 
 	flow_rule_match_ports(rule, &match);
-	if (fltr->ip_proto != IPPROTO_TCP && fltr->ip_proto != IPPROTO_UDP) {
+	if (fltr->ip_proto != IPPROTO_TCP && fltr->ip_proto != IPPROTO_UDP &&
+	    fltr->ip_proto != IPPROTO_SCTP) {
 #ifdef HAVE_NDO_SETUP_TC_REMOVE_TC_TO_NETDEV
 		NL_SET_ERR_MSG_MOD(cls_flower->common.extack,
-				   "Only UDP and TCP transport are supported");
+				   "Only UDP, TCP and SCTP transport are supported");
 #endif
 		return -EINVAL;
 	}
@@ -548,6 +560,10 @@ static inline s32 sxe2_match_key_parse_port(struct flow_rule *rule,
 			item = &fltr->items[SXE2_LAST_TCP_DPORT];
 			item->value.hdr.tcp_hdr.dest = match.key->dst;
 			item->mask.hdr.tcp_hdr.dest  = match.mask->dst;
+		} else if (fltr->ip_proto == IPPROTO_SCTP) {
+			item = &fltr->items[SXE2_LAST_SCTP_DPORT];
+			item->value.hdr.sctp_hdr.dst_port = match.key->dst;
+			item->mask.hdr.sctp_hdr.dst_port  = match.mask->dst;
 		} else {
 			if (fltr->tunnel_type == SXE2_TNL_NONE)
 				item = &fltr->items[SXE2_OUTER_UDP_DPORT];
@@ -564,6 +580,10 @@ static inline s32 sxe2_match_key_parse_port(struct flow_rule *rule,
 			item = &fltr->items[SXE2_LAST_TCP_SPORT];
 			item->value.hdr.tcp_hdr.source = match.key->src;
 			item->mask.hdr.tcp_hdr.source  = match.mask->src;
+		} else if (fltr->ip_proto == IPPROTO_SCTP) {
+			item = &fltr->items[SXE2_LAST_SCTP_SPORT];
+			item->value.hdr.sctp_hdr.src_port = match.key->src;
+			item->mask.hdr.sctp_hdr.src_port  = match.mask->src;
 		} else {
 			if (fltr->tunnel_type == SXE2_TNL_NONE)
 				item = &fltr->items[SXE2_OUTER_UDP_SPORT];
@@ -579,6 +599,85 @@ static inline s32 sxe2_match_key_parse_port(struct flow_rule *rule,
 	return 0;
 }
 
+#ifdef HAVE_TC_FLOWER_TCP
+#define SXE2_FLOWER_KEY_TCP	FLOW_DISSECTOR_KEY_TCP
+static inline s32 sxe2_match_key_parse_tcp_flags(struct flow_rule *rule,
+						 struct sxe2_tcf_fltr *fltr)
+{
+	struct sxe2_adapter *adapter = fltr->adapter;
+	struct sxe2_tcf_key_item *item;
+	struct flow_dissector_key_tcp *key, *mask;
+
+	key = skb_flow_dissector_target(rule->match.dissector,
+					FLOW_DISSECTOR_KEY_TCP,
+					rule->match.key);
+	mask = skb_flow_dissector_target(rule->match.dissector,
+					 FLOW_DISSECTOR_KEY_TCP,
+					rule->match.mask);
+	item = &fltr->items[SXE2_LAST_TCP_FLAGS];
+	item->value.raw[6] = key->flags;
+	item->mask.raw[6] = mask->flags;
+	LOG_DEBUG_BDF("prot_type %d, tcp flags[0x%x], mask[0x%x]\n",
+		      item->type, key->flags, mask->flags);
+
+	return 0;
+}
+#endif
+
+#ifdef HAVE_TC_FLOWER_ICMP
+static inline s32 sxe2_match_key_parse_icmp(struct flow_rule *rule,
+					    struct sxe2_tcf_fltr *fltr)
+{
+	struct sxe2_adapter *adapter = fltr->adapter;
+	struct sxe2_tcf_key_item *item;
+	struct flow_dissector_key_icmp *key, *mask;
+
+	key = skb_flow_dissector_target(rule->match.dissector,
+					FLOW_DISSECTOR_KEY_ICMP,
+					rule->match.key);
+	mask = skb_flow_dissector_target(rule->match.dissector,
+					 FLOW_DISSECTOR_KEY_ICMP,
+					rule->match.mask);
+	if (mask->type) {
+		item = &fltr->items[SXE2_ICMP_TYPE];
+		item->value.raw[0] = cpu_to_be16((u16)key->type << 8);
+		item->mask.raw[0] = cpu_to_be16((u16)mask->type << 8);
+		LOG_DEBUG_BDF("prot_type %d, icmp type[%d], mask[0x%x]\n",
+			      item->type, key->type, mask->type);
+	}
+	if (mask->code) {
+		item = &fltr->items[SXE2_ICMP_CODE];
+		item->value.raw[0] = cpu_to_be16(key->code);
+		item->mask.raw[0] = cpu_to_be16(mask->code);
+		LOG_DEBUG_BDF("prot_type %d, icmp code[%d], mask[0x%x]\n",
+			      item->type, key->code, mask->code);
+	}
+
+	return 0;
+}
+#endif
+
+#ifdef HAVE_TC_FLOWER_ESP
+static inline s32 sxe2_match_key_parse_esp(struct flow_rule *rule,
+					   struct sxe2_tcf_fltr *fltr)
+{
+	struct sxe2_adapter *adapter = fltr->adapter;
+	struct flow_match_ipsec match;
+	struct sxe2_tcf_key_item *item;
+
+	flow_rule_match_ipsec(rule, &match);
+
+	item = &fltr->items[SXE2_ESP_SPI];
+	item->value.hdr.esp_hdr.spi = match.key->spi;
+	item->mask.hdr.esp_hdr.spi  = match.mask->spi;
+	LOG_DEBUG_BDF("prot_type %d, esp spi[0x%x], mask[0x%x]\n",
+		      item->type, match.key->spi, match.mask->spi);
+
+	return 0;
+}
+#endif
+
+#if defined(HAVE_TC_FLOWER_ENC) && defined(HAVE_TC_INDIR_BLOCK)
 static s32 sxe2_tcf_match_tunnel_parse(enum sxe2_tunnel_type tunnel_type,
 				       struct flow_rule *rule,
 				       struct sxe2_tcf_fltr *fltr,
@@ -610,14 +709,17 @@ static s32 sxe2_tcf_match_tunnel_parse(enum sxe2_tunnel_type tunnel_type,
 			return ret;
 	}
 
+#ifdef HAVE_FLOW_DISSECTOR_KEY_ENC_IP
 	if (flow_rule_match_key(rule, FLOW_DISSECTOR_KEY_ENC_IP)) {
 		ret = sxe2_match_key_parse_enc_ip(rule, fltr);
 		if (ret)
 			return ret;
 	}
+#endif
 
 	return 0;
 }
+#endif
 
 static s32 sxe2_tcf_match_parse(struct net_device *filter_dev,
 				struct sxe2_adapter *adapter,
@@ -626,9 +728,13 @@ static s32 sxe2_tcf_match_parse(struct net_device *filter_dev,
 {
 	struct flow_rule *rule = flow_cls_offload_flow_rule(cls_flower);
 	struct flow_dissector *dissector = rule->match.dissector;
+#if defined(HAVE_TC_FLOWER_ENC) && defined(HAVE_TC_INDIR_BLOCK)
 	struct net_device *tunnel_dev;
 	enum sxe2_tunnel_type tunnel_type;
+#endif
 	s32 ret;
+
+	LOG_INFO_BDF("dissector used_keys = %llx\n", dissector->used_keys);
 
 	if (dissector->used_keys &
 	    ~(BIT(FLOW_DISSECTOR_KEY_CONTROL) | BIT(FLOW_DISSECTOR_KEY_BASIC) |
@@ -644,6 +750,15 @@ static s32 sxe2_tcf_match_parse(struct net_device *filter_dev,
 	      BIT(FLOW_DISSECTOR_KEY_ENC_IPV6_ADDRS) |
 	      BIT(FLOW_DISSECTOR_KEY_ENC_IP) |
 #endif
+#ifdef HAVE_TC_FLOWER_TCP
+	      BIT(SXE2_FLOWER_KEY_TCP) |
+#endif
+#ifdef HAVE_TC_FLOWER_ICMP
+	      BIT(FLOW_DISSECTOR_KEY_ICMP) |
+#endif
+#ifdef HAVE_TC_FLOWER_ESP
+	      BIT(FLOW_DISSECTOR_KEY_IPSEC) |
+#endif
 	      BIT(FLOW_DISSECTOR_KEY_IP))) {
 #ifdef HAVE_NDO_SETUP_TC_REMOVE_TC_TO_NETDEV
 		NL_SET_ERR_MSG_MOD(cls_flower->common.extack, "Unsupported key used");
@@ -651,6 +766,7 @@ static s32 sxe2_tcf_match_parse(struct net_device *filter_dev,
 		return -EOPNOTSUPP;
 	}
 
+#if defined(HAVE_TC_FLOWER_ENC) && defined(HAVE_TC_INDIR_BLOCK)
 	tunnel_dev = sxe2_tunnel_device_get(filter_dev, rule);
 	if (tunnel_dev) {
 		tunnel_type = sxe2_tc_tun_type_get(tunnel_dev);
@@ -675,6 +791,9 @@ static s32 sxe2_tcf_match_parse(struct net_device *filter_dev,
 		}
 		fltr->tunnel_type = SXE2_TNL_NONE;
 	}
+#else
+	fltr->tunnel_type = SXE2_TNL_NONE;
+#endif
 
 	if (flow_rule_match_key(rule, FLOW_DISSECTOR_KEY_BASIC)) {
 		ret = sxe2_match_key_parse_basic(rule, fltr);
@@ -720,12 +839,32 @@ static s32 sxe2_tcf_match_parse(struct net_device *filter_dev,
 		if (ret)
 			return ret;
 	}
+#ifdef HAVE_TC_FLOWER_TCP
+	if (flow_rule_match_key(rule, SXE2_FLOWER_KEY_TCP)) {
+		ret = sxe2_match_key_parse_tcp_flags(rule, fltr);
+		if (ret)
+			return ret;
+	}
+#endif
+#ifdef HAVE_TC_FLOWER_ICMP
+	if (flow_rule_match_key(rule, FLOW_DISSECTOR_KEY_ICMP)) {
+		ret = sxe2_match_key_parse_icmp(rule, fltr);
+		if (ret)
+			return ret;
+	}
+#endif
+#ifdef HAVE_TC_FLOWER_ESP
+	if (flow_rule_match_key(rule, FLOW_DISSECTOR_KEY_IPSEC)) {
+		ret = sxe2_match_key_parse_esp(rule, fltr);
+		if (ret)
+			return ret;
+	}
+#endif
 
 	return 0;
 }
-#endif
 
-#ifdef HAVE_TC_FLOW_RULE_INFRASTRUCTURE
+#if defined(HAVE_TC_FLOW_RULE_INFRASTRUCTURE) || defined(HAVE_TCF_MIRRED_DEV)
 static bool sxe2_is_uplink_netdev(struct net_device *dev)
 {
 	return sxe2_netdev_is(dev) || (sxe2_tc_tun_type_get(dev) != SXE2_TNL_NONE);
@@ -785,7 +924,7 @@ static s32 sxe2_tcf_action_parse(struct net_device *filter_dev,
 
 			np = netdev_priv(filter_dev);
 			if (sxe2_is_repr_netdev(filter_dev))
-				fltr->src_vsi_id = np->repr->vf_node->vsi_id[SXE2_VF_TYPE_ETH];
+				fltr->src_vsi_id = np->repr->vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER];
 			else if (sxe2_tc_tun_type_get(filter_dev) != SXE2_TNL_NONE)
 				fltr->src_vsi_id = adapter->vsi_ctxt.main_vsi->idx_in_dev;
 			else
@@ -804,19 +943,19 @@ static s32 sxe2_tcf_action_parse(struct net_device *filter_dev,
 			if (sxe2_is_repr_netdev(filter_dev) && sxe2_is_repr_netdev(act->dev)) {
 				fltr->src_type	 = SXE2_SRC_TYPE_TX;
 				np		 = netdev_priv(filter_dev);
-				fltr->src_vsi_id = np->repr->vf_node->vsi_id[SXE2_VF_TYPE_ETH];
+				fltr->src_vsi_id = np->repr->vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER];
 				np		 = netdev_priv(act->dev);
 
 				if (fltr->action == SXE2_FWD_TO_VSI_LIST)
-					set_bit(np->repr->vf_node->vsi_id[SXE2_VF_TYPE_ETH],
+					set_bit(np->repr->vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER],
 						fltr->dst_vsi_map);
 				else
 					fltr->dst_vsi_id =
-						np->repr->vf_node->vsi_id[SXE2_VF_TYPE_ETH];
+						np->repr->vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER];
 			} else if (sxe2_is_repr_netdev(filter_dev) && sxe2_netdev_is(act->dev)) {
 				fltr->src_type	 = SXE2_SRC_TYPE_TX;
 				np		 = netdev_priv(filter_dev);
-				fltr->src_vsi_id = np->repr->vf_node->vsi_id[SXE2_VF_TYPE_ETH];
+				fltr->src_vsi_id = np->repr->vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER];
 				np		 = netdev_priv(act->dev);
 				if (fltr->action == SXE2_FWD_TO_VSI_LIST)
 					set_bit(np->vsi->idx_in_dev, fltr->dst_vsi_map);
@@ -829,22 +968,22 @@ static s32 sxe2_tcf_action_parse(struct net_device *filter_dev,
 				fltr->src_vsi_id = np->vsi->idx_in_dev;
 				np		 = netdev_priv(act->dev);
 				if (fltr->action == SXE2_FWD_TO_VSI_LIST)
-					set_bit(np->repr->vf_node->vsi_id[SXE2_VF_TYPE_ETH],
+					set_bit(np->repr->vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER],
 						fltr->dst_vsi_map);
 				else
 					fltr->dst_vsi_id =
-						np->repr->vf_node->vsi_id[SXE2_VF_TYPE_ETH];
+						np->repr->vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER];
 			} else if ((sxe2_tc_tun_type_get(filter_dev) != SXE2_TNL_NONE) &&
 				   (sxe2_is_repr_netdev(act->dev))) {
 				fltr->src_type = SXE2_SRC_TYPE_RX;
 				fltr->src_vsi_id = adapter->vsi_ctxt.main_vsi->idx_in_dev;
 				np = netdev_priv(act->dev);
 				if (fltr->action == SXE2_FWD_TO_VSI_LIST)
-					set_bit(np->repr->vf_node->vsi_id[SXE2_VF_TYPE_ETH],
+					set_bit(np->repr->vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER],
 						fltr->dst_vsi_map);
 				else
 					fltr->dst_vsi_id =
-						np->repr->vf_node->vsi_id[SXE2_VF_TYPE_ETH];
+						np->repr->vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER];
 			} else if ((sxe2_tc_tun_type_get(act->dev) !=
 				    SXE2_TNL_NONE) &&
 				   (sxe2_is_repr_netdev(filter_dev))) {
@@ -855,7 +994,7 @@ static s32 sxe2_tcf_action_parse(struct net_device *filter_dev,
 				else
 					fltr->dst_vsi_id = adapter->vsi_ctxt.main_vsi->idx_in_dev;
 				np = netdev_priv(filter_dev);
-				fltr->src_vsi_id = np->repr->vf_node->vsi_id[SXE2_VF_TYPE_ETH];
+				fltr->src_vsi_id = np->repr->vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER];
 			} else {
 #ifdef HAVE_NDO_SETUP_TC_REMOVE_TC_TO_NETDEV
 				NL_SET_ERR_MSG_MOD(cls_flower->common.extack,
@@ -900,6 +1039,165 @@ static s32 sxe2_tcf_action_parse(struct net_device *filter_dev,
 			      fltr->dst_vsi_id, fltr->src_type);
 	}
 
+#elif defined(HAVE_TCF_MIRRED_DEV)
+
+	struct tc_cls_flower_offload *tc_flow_cmd =
+		(struct tc_cls_flower_offload *)cls_flower;
+	struct tcf_exts *exts = tc_flow_cmd->exts;
+	struct sxe2_adapter *adapter = fltr->adapter;
+	struct sxe2_netdev_priv *np;
+	struct tc_action *tc_act;
+	u16 vsi_id = 0;
+
+#if defined(HAVE_NDO_SETUP_TC_REMOVE_TC_TO_NETDEV)
+	if (!tcf_exts_has_actions(exts))
+#else
+	if (tc_no_actions(exts))
+#endif
+		return -EINVAL;
+
+#ifdef HAVE_TCF_EXTS_FOR_EACH_ACTION
+	{
+		int _i;
+
+		tcf_exts_for_each_action(_i, tc_act, exts) {
+#else
+	{
+		struct tc_action *temp;
+#if defined(HAVE_TCF_EXTS_TO_LIST)
+		LIST_HEAD(tc_actions);
+
+		tcf_exts_to_list(exts, &tc_actions);
+		list_for_each_entry_safe(tc_act, temp, &tc_actions, list) {
+#else
+		list_for_each_entry_safe(tc_act, temp, &(exts)->actions, list) {
+#endif
+#endif
+
+			if (is_tcf_gact_shot(tc_act)) {
+				fltr->dst_vsi_id = 0;
+				fltr->action     = SXE2_DROP_PACKET;
+				if (sxe2_is_repr_netdev(filter_dev))
+					fltr->src_type = SXE2_SRC_TYPE_TX;
+				else if (sxe2_is_uplink_netdev(filter_dev))
+					fltr->src_type = SXE2_SRC_TYPE_RX;
+				else
+					return -EINVAL;
+
+				np = netdev_priv(filter_dev);
+				if (sxe2_is_repr_netdev(filter_dev))
+					fltr->src_vsi_id =
+						np->repr->vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER];
+				else if (sxe2_tc_tun_type_get(filter_dev) != SXE2_TNL_NONE)
+					fltr->src_vsi_id = adapter->vsi_ctxt.main_vsi->idx_in_dev;
+				else
+					fltr->src_vsi_id = np->vsi->idx_in_dev;
+			}
+
+			else if (is_tcf_mirred_egress_redirect(tc_act) ||
+				 is_tcf_mirred_egress_mirror(tc_act)) {
+				struct net_device *target_dev = tcf_mirred_dev(tc_act);
+
+				if (!sxe2_netdev_pf_check(adapter, target_dev))
+					return -EINVAL;
+
+				fltr->action = is_tcf_mirred_egress_redirect(tc_act) ?
+						SXE2_FWD_TO_VSI : SXE2_MIRROR_PACKET;
+
+				if (sxe2_is_repr_netdev(filter_dev) &&
+				    sxe2_is_repr_netdev(target_dev)) {
+					fltr->src_type   = SXE2_SRC_TYPE_TX;
+					np               = netdev_priv(filter_dev);
+					fltr->src_vsi_id =
+						np->repr->vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER];
+					np               = netdev_priv(target_dev);
+					if (fltr->action == SXE2_FWD_TO_VSI_LIST)
+						set_bit(np->repr->vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER],
+							fltr->dst_vsi_map);
+					else
+						fltr->dst_vsi_id =
+							np->repr->vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER];
+				} else if (sxe2_is_repr_netdev(filter_dev) &&
+					   sxe2_netdev_is(target_dev)) {
+					fltr->src_type   = SXE2_SRC_TYPE_TX;
+					np               = netdev_priv(filter_dev);
+					fltr->src_vsi_id =
+						np->repr->vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER];
+					np               = netdev_priv(target_dev);
+					if (fltr->action == SXE2_FWD_TO_VSI_LIST)
+						set_bit(np->vsi->idx_in_dev, fltr->dst_vsi_map);
+					else
+						fltr->dst_vsi_id = np->vsi->idx_in_dev;
+				} else if (sxe2_netdev_is(filter_dev) &&
+					   sxe2_is_repr_netdev(target_dev)) {
+					fltr->src_type   = SXE2_SRC_TYPE_RX;
+					np               = netdev_priv(filter_dev);
+					fltr->src_vsi_id = np->vsi->idx_in_dev;
+					np               = netdev_priv(target_dev);
+					if (fltr->action == SXE2_FWD_TO_VSI_LIST)
+						set_bit(np->repr->vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER],
+							fltr->dst_vsi_map);
+					else
+						fltr->dst_vsi_id =
+							np->repr->vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER];
+				} else if ((sxe2_tc_tun_type_get(filter_dev) != SXE2_TNL_NONE) &&
+					   (sxe2_is_repr_netdev(target_dev))) {
+					fltr->src_type   = SXE2_SRC_TYPE_RX;
+					fltr->src_vsi_id = adapter->vsi_ctxt.main_vsi->idx_in_dev;
+					np               = netdev_priv(target_dev);
+					if (fltr->action == SXE2_FWD_TO_VSI_LIST)
+						set_bit(np->repr->vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER],
+							fltr->dst_vsi_map);
+					else
+						fltr->dst_vsi_id =
+							np->repr->vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER];
+				} else if ((sxe2_tc_tun_type_get(target_dev) != SXE2_TNL_NONE) &&
+					   (sxe2_is_repr_netdev(filter_dev))) {
+					fltr->src_type = SXE2_SRC_TYPE_TX;
+					if (fltr->action == SXE2_FWD_TO_VSI_LIST)
+						set_bit(adapter->vsi_ctxt.main_vsi->idx_in_dev,
+							fltr->dst_vsi_map);
+					else
+						fltr->dst_vsi_id =
+							adapter->vsi_ctxt.main_vsi->idx_in_dev;
+					np               = netdev_priv(filter_dev);
+					fltr->src_vsi_id =
+						np->repr->vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER];
+				} else {
+					return -EINVAL;
+				}
+
+				if ((fltr->action == SXE2_FWD_TO_VSI_LIST &&
+				     test_bit(fltr->src_vsi_id, fltr->dst_vsi_map)) ||
+				    (fltr->action != SXE2_FWD_TO_VSI_LIST &&
+				     fltr->src_vsi_id == fltr->dst_vsi_id))
+					return -EOPNOTSUPP;
+
+			} else {
+				return -EINVAL;
+		}
+	}
+	}
+
+	fltr->priority = SXE2_SWITCH_RECIPE_PRIO_7;
+
+	if (fltr->action == SXE2_FWD_TO_VSI_LIST) {
+		while (true) {
+			vsi_id =
+			 (u16)find_next_bit((unsigned long *)fltr->dst_vsi_map,
+					    SXE2_VSI_MAX_CNT, vsi_id);
+			if (vsi_id >= SXE2_VSI_MAX_CNT)
+				break;
+			LOG_DEBUG_BDF("src_id %d, dst_id %d, src_type %d\n", fltr->src_vsi_id,
+				      vsi_id, fltr->src_type);
+			vsi_id++;
+		}
+	} else {
+		LOG_DEBUG_BDF("src_id %d, dst_id %d, src_type %d\n", fltr->src_vsi_id,
+			      fltr->dst_vsi_id, fltr->src_type);
+	}
+#else
+	return -EOPNOTSUPP;
 #endif
 	return 0;
 }
@@ -916,6 +1214,7 @@ static void sxe2_tcf_fltr_init(struct sxe2_adapter *adapter,
 
 	fltr->cookie  = cls_flower->cookie;
 	fltr->adapter = adapter;
+	fltr->rule_vsi_id = adapter->vsi_ctxt.main_vsi->idx_in_dev;
 }
 
 s32 sxe2_tcf_word_cnt_calc(struct sxe2_tcf_fltr *fltr)
@@ -968,11 +1267,9 @@ static s32 sxe2_tcf_fltr_add(struct sxe2_adapter *adapter,
 	if (ret)
 		goto l_end;
 
-#if defined(HAVE_TC_FLOWER_ENC) && defined(HAVE_TC_INDIR_BLOCK)
 	ret = sxe2_tcf_match_parse(netdev, adapter, cls_flower, fltr);
 	if (ret)
 		goto l_end;
-#endif
 
 	sxe2_tcf_match_meta_fill(fltr);
 
@@ -1038,32 +1335,15 @@ STATIC bool sxe2_tcf_fltr_find_by_cookie(struct sxe2_adapter *adapter,
 }
 
 STATIC s32 sxe2_cls_flower_add(struct sxe2_adapter *adapter,
-			       struct net_device *netdev, struct sxe2_vsi *vsi,
+			       struct net_device *netdev,
 			       u16 vsi_id_in_dev, struct flow_cls_offload *cls_flower)
 {
-	struct sxe2_rule_info *save_rule = NULL;
-	struct net_device *vsi_netdev;
-	bool is_find = false;
+	struct sxe2_rule_info *save_rule     = NULL;
+	bool is_find		       = false;
 	s32 ret;
 
 	if (test_bit(SXE2_FLAG_FW_DCBX_AGENT, adapter->flags))
 		return -EINVAL;
-
-	if (sxe2_is_repr_netdev(netdev))
-		vsi_netdev = netdev;
-	else
-		vsi_netdev  = vsi->netdev;
-
-	if (!(vsi_netdev->features & NETIF_F_HW_TC)) {
-#ifdef HAVE_NDO_SETUP_TC_REMOVE_TC_TO_NETDEV
-		if (netdev == vsi_netdev)
-			NL_SET_ERR_MSG_MOD(cls_flower->common.extack,
-					   "can't apply TC flower filters, \t"
-					   "turn ON hw-tc-offload and try again");
-#endif
-		ret = -EINVAL;
-		goto l_end;
-	}
 
 	is_find = sxe2_tcf_fltr_find_by_cookie(adapter, cls_flower->cookie,
 					       false, &save_rule);
@@ -1150,8 +1430,19 @@ s32 sxe2_setup_tc_cls_flower(struct sxe2_netdev_priv *np,
 		goto l_unlock;
 	}
 
+	if (!(vsi->netdev->features & NETIF_F_HW_TC)) {
+#ifdef HAVE_NDO_SETUP_TC_REMOVE_TC_TO_NETDEV
+		if (filter_dev == vsi->netdev)
+			NL_SET_ERR_MSG_MOD(cls_flower->common.extack,
+					   "can't apply TC flower filters, \t"
+					   "turn ON hw-tc-offload and try again");
+#endif
+		ret = -EINVAL;
+		goto l_unlock;
+	}
+
 	if (cls_flower->command == FLOW_CLS_REPLACE)
-		ret = sxe2_cls_flower_add(adapter, filter_dev, vsi, vsi->idx_in_dev, cls_flower);
+		ret = sxe2_cls_flower_add(adapter, filter_dev, vsi->idx_in_dev, cls_flower);
 	else if (cls_flower->command == FLOW_CLS_DESTROY)
 		ret = sxe2_cls_flower_del(adapter, cls_flower);
 	else
@@ -1209,11 +1500,20 @@ s32 sxe2_repr_setup_tc_cls_flower(struct sxe2_vf_repr *repr,
 		goto l_unlock;
 	}
 
-	vsi_id_indev = repr->vf_node->vsi_id[SXE2_VF_TYPE_ETH] - adapter->vsi_ctxt.base_idx_in_dev;
+	vsi_id_indev = repr->vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER] -
+		adapter->vsi_ctxt.base_idx_in_dev;
+	if (!(repr->netdev->features & NETIF_F_HW_TC)) {
+#ifdef HAVE_NDO_SETUP_TC_REMOVE_TC_TO_NETDEV
+		NL_SET_ERR_MSG_MOD(cls_flower->common.extack,
+				   "can't apply TC flower filters, \t"
+				   "turn ON hw-tc-offload and try again");
+#endif
+		ret = -EINVAL;
+		goto l_unlock;
+	}
 
 	if (cls_flower->command == FLOW_CLS_REPLACE)
-		ret = sxe2_cls_flower_add(adapter, repr->netdev,
-					  repr->src_vsi, vsi_id_indev, cls_flower);
+		ret = sxe2_cls_flower_add(adapter, repr->netdev, vsi_id_indev, cls_flower);
 	else if (cls_flower->command == FLOW_CLS_DESTROY)
 		ret = sxe2_cls_flower_del(adapter, cls_flower);
 	else
@@ -1245,6 +1545,7 @@ s32 sxe2_eswitch_vf_slow_path_rule_setup(struct sxe2_vf_node *vf_node,
 	struct sxe2_adapter *adapter = vf_node->adapter;
 	u16 qid_in_vsi;
 	struct sxe2_vsi *esw_vsi;
+	u16 vsi_id;
 
 	fltr = kzalloc(sizeof(*fltr), GFP_KERNEL);
 	if (!fltr) {
@@ -1254,9 +1555,10 @@ s32 sxe2_eswitch_vf_slow_path_rule_setup(struct sxe2_vf_node *vf_node,
 
 	fltr->action	 = SXE2_FWD_TO_Q;
 	if (is_user)
-		fltr->src_vsi_id = vf_node->vsi_id[SXE2_VF_TYPE_DPDK];
+		vsi_id = vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER];
 	else
-		fltr->src_vsi_id = vf_node->vsi_id[SXE2_VF_TYPE_ETH];
+		vsi_id = vf_node->vsi_id[SXE2_VF_VSI_ID_SLAVE];
+	fltr->src_vsi_id = vsi_id;
 
 	mutex_lock(&vf_node->repr_cfg_lock);
 
@@ -1285,8 +1587,9 @@ s32 sxe2_eswitch_vf_slow_path_rule_setup(struct sxe2_vf_node *vf_node,
 	if (ret)
 		goto l_end;
 
-	ret = is_add ? sxe2_tcf_rule_add(adapter, vf_node->vsi_id[SXE2_VF_TYPE_ETH], fltr) :
-		       sxe2_tcf_rule_del(adapter, vf_node->vsi_id[SXE2_VF_TYPE_ETH], fltr);
+	ret = is_add ? sxe2_tcf_rule_add(adapter, vsi_id, fltr) :
+		       sxe2_tcf_rule_del(adapter, vsi_id, fltr);
+
 	LOG_DEBUG_BDF("slowpath rule %s %s, src vsi %u, dst vsi %u, \t"
 		      "queue in vsi %u, queue in dev %u\n",
 		      is_add ? "add" : "del", ret ? "failed" : "success",

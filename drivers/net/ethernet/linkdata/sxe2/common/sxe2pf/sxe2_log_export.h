@@ -21,6 +21,7 @@ struct sxe2_adapter;
 
 #define SXE2_DUMP_FILE_DIR_LEN  (128)
 #define SXE2_DUMP_FILE_NAME_LEN (256)
+#define SXE2_FW_LOG_DIR_LEN     (80)
 
 struct sxe2_export_file_info {
 	u8           filename[SXE2_DUMP_FILE_NAME_LEN];

@@ -55,6 +55,12 @@ MODULE_PARM_DESC(tc_force_fkot,
 		(__dst_rule_info)->tcf_fltr->backup_type =                     \
 			(__src_rule_info)->tcf_fltr->backup_type;              \
 		(__dst_rule_info)->vsi_list = (__src_rule_info)->vsi_list;     \
+		(__dst_rule_info)->tcf_fltr->dst_queue_id =                    \
+			(__src_rule_info)->tcf_fltr->dst_queue_id;             \
+		(__dst_rule_info)->tcf_fltr->dst_queue_high =                  \
+			(__src_rule_info)->tcf_fltr->dst_queue_high;           \
+		(__dst_rule_info)->tcf_fltr->dst_queue_group =                 \
+			(__src_rule_info)->tcf_fltr->dst_queue_group;          \
 	} while (0)
 
 #define SWITCH_TC_RULE_ACT_INFO_GET_FROM_RULE(dst_tc_rule_info, src_rule_info) \
@@ -101,6 +107,12 @@ MODULE_PARM_DESC(tc_force_fkot,
 		(__dst_rule_info)->tcf_fltr->backup_type =    \
 			(__src_tc_rule_info)->backup_type;    \
 		(__dst_rule_info)->vsi_list = (__src_tc_rule_info)->vsi_list;   \
+		(__dst_rule_info)->tcf_fltr->dst_queue_id =                    \
+			(__src_tc_rule_info)->act.fwd_id.q_id;             \
+		(__dst_rule_info)->tcf_fltr->dst_queue_high =                    \
+			(__src_tc_rule_info)->act.q_high;             \
+		(__dst_rule_info)->tcf_fltr->dst_queue_group =                    \
+			(__src_tc_rule_info)->act.qgrp_size;             \
 	} while (0)
 
 #define SWITCH_TC_RULE_ACT_INFO_GET_FROM_TC_RULE(dst_tc_rule_info, src_tc_rule_info) \
@@ -179,6 +191,24 @@ static struct sxe2_prot_entry sxe2_prot_id_tbl[SXE2_PROT_FIELD_LAST] = {
 	{ SXE2_VXLAN_ENC_ID, SXE2_UDP_OL_HW },
 	{ SXE2_GENEVE_ENC_ID, SXE2_UDP_OL_HW },
 	{ SXE2_NVGRE_ENC_ID, SXE2_GRE_HW },
+	{ SXE2_LAST_TCP_FLAGS, SXE2_TCP_IL_HW },
+	{ SXE2_LAST_SCTP_SPORT, SXE2_SCTP_IL_HW },
+	{ SXE2_LAST_SCTP_DPORT, SXE2_SCTP_IL_HW },
+	{ SXE2_ICMP_TYPE, SXE2_ICMP_IL_HW },
+	{ SXE2_ICMP_CODE, SXE2_ICMP_IL_HW },
+	{ SXE2_ESP_SPI, SXE2_ESP_HW },
+	{ SXE2_ESP_SEQ, SXE2_ESP_HW },
+	{ SXE2_ESP_NATT_SPI, SXE2_ESP_NATT_HW },
+	{ SXE2_ESP_NATT_SEQ, SXE2_ESP_NATT_HW },
+	{ SXE2_ICMP_IDENT, SXE2_ICMP_IL_HW },
+	{ SXE2_IPV6_FRAG_NEXT_HDR, SXE2_IPV6_FRAG_HW },
+	{ SXE2_IPV6_FRAG_DATA, SXE2_IPV6_FRAG_HW },
+	{ SXE2_IPV6_FRAG_ID, SXE2_IPV6_FRAG_HW },
+	{ SXE2_GRE_PROTOCOL, SXE2_GRE_HW },
+	{ SXE2_ICMPV6_ND_TYPE, SXE2_ICMPV6_IL_HW },
+	{ SXE2_ICMPV6_ND_TARGET, SXE2_ICMPV6_IL_HW },
+	{ SXE2_GTPU, SXE2_UDP_OL_HW },
+	{ SXE2_GTPC, SXE2_UDP_OL_HW },
 };
 
 static u32 sxe2_tc_rule_hash_func(const void *data)
@@ -261,7 +291,7 @@ static void sxe2_hash_cookie_del(struct sxe2_adapter *adapter,
 	}
 }
 
-static s32 sxe2_hash_cookie_add(struct sxe2_adapter *adapter,
+STATIC s32 sxe2_hash_cookie_add(struct sxe2_adapter *adapter,
 				unsigned long cookie, struct sxe2_rule_info *rule_info)
 {
 	u32 key;
@@ -471,6 +501,10 @@ void sxe2_switch_context_deinit(struct sxe2_adapter *adapter)
 	}
 	kfree(switch_ctxt->profile_fv_item);
 	switch_ctxt->profile_fv_item = NULL;
+	kfree(switch_ctxt->fv_prof_map);
+	switch_ctxt->fv_prof_map = NULL;
+	bitmap_zero(switch_ctxt->profile_used, SXE2_MAX_NUM_PROFILES);
+	memset(switch_ctxt->profile_tun_kind, 0, sizeof(switch_ctxt->profile_tun_kind));
 }
 
 s32 sxe2_switch_context_init(struct sxe2_adapter *adapter)
@@ -520,6 +554,16 @@ s32 sxe2_switch_context_init(struct sxe2_adapter *adapter)
 			goto l_end;
 		}
 	}
+
+	switch_ctxt->fv_prof_map = kcalloc(SXE2_FV_KEY_CNT,
+					   sizeof(*switch_ctxt->fv_prof_map),
+					   GFP_KERNEL);
+	if (!switch_ctxt->fv_prof_map) {
+		LOG_DEV_ERR("alloc fv prof map memory failed\n");
+		goto l_end;
+	}
+	bitmap_zero(switch_ctxt->profile_used, SXE2_MAX_NUM_PROFILES);
+	memset(switch_ctxt->profile_tun_kind, 0, sizeof(switch_ctxt->profile_tun_kind));
 
 	switch_ctxt->evb_mode = BRIDGE_MODE_VEB;
 
@@ -859,6 +903,131 @@ STATIC void sxe2_make_switch_full_key(struct sxe2_adapter *adapter,
 			(u32)((mac_addr[2] << (u32)8) | mac_addr[3]);
 		full_key_d2.field.fv3 =
 			(u32)((mac_addr[4] << (u32)8) | mac_addr[5]);
+		full_key_d2.field.fv4 =
+			(u32)((mac_addr[4] << (u32)8) | mac_addr[5]);
+	} else if (rule->recipe_id == SXE2_DEFAULT_RECIPE_VLAN) {
+		full_key_d1.field.fv1 = rule_filter->data.vlan.tpid;
+		full_key_d1.field.fv2 = rule_filter->data.vlan.vlan_id;
+		full_key_d2.field.fv3 = rule_filter->data.vlan.tpid;
+		full_key_d2.field.fv4 = rule_filter->data.vlan.vlan_id;
+	} else if (rule->recipe_id == SXE2_DEFAULT_RECIPE_TX_ETYPE) {
+		full_key_d1.field.fv1 |=
+			(rule_filter->data.etype.vsi_id << SXE2_FV_VSI_NUM_OFFSET);
+		full_key_d1.field.fv2 |=
+			(SXE2_FV_DIRECTION_TX << SXE2_FV_DIRECTION_OFFSET);
+		full_key_d2.field.fv3 = rule_filter->data.etype.ethertype;
+		full_key_d2.field.fv4 = rule_filter->data.etype.ethertype;
+	} else if (rule->recipe_id == SXE2_DEFAULT_RECIPE_RX_ETYPE) {
+		full_key_d1.field.fv1 |=
+			(SXE2_FV_DIRECTION_RX << SXE2_FV_DIRECTION_OFFSET);
+		full_key_d1.field.fv2 = rule_filter->data.etype.ethertype;
+		full_key_d2.field.fv3 =
+			(SXE2_FV_DIRECTION_RX << SXE2_FV_DIRECTION_OFFSET);
+		full_key_d2.field.fv4 = rule_filter->data.etype.ethertype;
+	} else if (rule->recipe_id == SXE2_DEFAULT_RECIPE_ALLMULTI) {
+		full_key_d1.field.fv1 |=
+			(SXE2_FV_CAST_MULTI << SXE2_FV_CAST_OFFSET);
+		full_key_d1.field.fv2 =
+			(SXE2_FV_CAST_MULTI << SXE2_FV_CAST_OFFSET);
+		full_key_d2.field.fv3 =
+			(SXE2_FV_CAST_MULTI << SXE2_FV_CAST_OFFSET);
+		full_key_d2.field.fv4 =
+			(SXE2_FV_CAST_MULTI << SXE2_FV_CAST_OFFSET);
+	} else if (rule->recipe_id == SXE2_DEFAULT_RECIPE_PROMISC) {
+		if (rule_filter->src_type == SXE2_SRC_TYPE_TX) {
+			full_key_d1.field.fv1 = (SXE2_FV_DIRECTION_TX
+						  << SXE2_FV_DIRECTION_OFFSET);
+			full_key_d1.field.fv2 = (SXE2_FV_DIRECTION_TX
+						<< SXE2_FV_DIRECTION_OFFSET);
+			full_key_d2.field.fv3 = (SXE2_FV_DIRECTION_TX
+						<< SXE2_FV_DIRECTION_OFFSET);
+			full_key_d2.field.fv4 = (SXE2_FV_DIRECTION_TX
+						<< SXE2_FV_DIRECTION_OFFSET);
+		} else {
+			full_key_d1.field.fv1 = (SXE2_FV_DIRECTION_RX
+						<< SXE2_FV_DIRECTION_OFFSET);
+			full_key_d1.field.fv2 = (SXE2_FV_DIRECTION_RX
+						<< SXE2_FV_DIRECTION_OFFSET);
+			full_key_d2.field.fv3 = (SXE2_FV_DIRECTION_RX
+						<< SXE2_FV_DIRECTION_OFFSET);
+			full_key_d2.field.fv4 = (SXE2_FV_DIRECTION_RX
+						<< SXE2_FV_DIRECTION_OFFSET);
+		}
+	} else if (rule->recipe_id == SXE2_DEFAULT_RECIPE_SRCVSI) {
+		full_key_d1.field.fv1 |=
+			(rule_filter->data.srcvsi.vsi_id << SXE2_FV_VSI_NUM_OFFSET);
+		full_key_d1.field.fv2 |= (rule_filter->data.srcvsi.to_rdma
+					  << SXE2_FV_PKT_TO_RDMA_OFFSET);
+		full_key_d2.field.fv3 |=
+			(rule_filter->data.srcvsi.packet_src_type
+			 << SXE2_FV_PKT_SRC_OFFSET);
+		full_key_d2.field.fv4 |=
+			(rule_filter->data.srcvsi.packet_src_type
+				<< SXE2_FV_PKT_SRC_OFFSET);
+	} else if (rule->recipe_id == SXE2_DEFAULT_RECIPE_SRCVSI_EXT) {
+		full_key_d1.field.fv1 |= (rule_filter->data.srcvsi.to_rdma
+					  << SXE2_FV_PKT_TO_RDMA_OFFSET);
+		full_key_d1.field.fv2 |=
+			(rule_filter->data.srcvsi.packet_src_type
+			 << SXE2_FV_PKT_SRC_OFFSET);
+		full_key_d2.field.fv3 |=
+			 (rule_filter->data.srcvsi.vsi_id << SXE2_FV_VSI_NUM_OFFSET);
+		full_key_d2.field.fv4 |=
+			(rule_filter->data.srcvsi.vsi_id
+			 << SXE2_FV_VSI_NUM_OFFSET);
+	} else if (rule->recipe_id == SXE2_DEFAULT_RECIPE_MAC_SPOOFCHK) {
+		full_key_d1.field.fv1 |=
+			(rule_filter->data.mac_spoofchk.vsi_id << SXE2_FV_VSI_NUM_OFFSET);
+		full_key_d1.field.fv2 =
+			(SXE2_FV_DIRECTION_TX << SXE2_FV_DIRECTION_OFFSET);
+		full_key_d2.field.fv3 |=
+			(rule_filter->data.mac_spoofchk.vsi_id << SXE2_FV_VSI_NUM_OFFSET);
+		full_key_d2.field.fv4 =
+			(SXE2_FV_DIRECTION_TX << SXE2_FV_DIRECTION_OFFSET);
+	} else if (rule->recipe_id == SXE2_DEFAULT_RECIPE_MAC_SPOOFCHK_EXT) {
+		mac_addr = rule_filter->data.mac_spoofchk_ext.mac_addr;
+		full_key_d1.field.fv1 =
+			(u32)((mac_addr[0] << (u32)8) | mac_addr[1]);
+		full_key_d1.field.fv2 =
+			(u32)((mac_addr[2] << (u32)8) | mac_addr[3]);
+		full_key_d2.field.fv3 =
+			(u32)((mac_addr[4] << (u32)8) | mac_addr[5]);
+		full_key_d2.field.fv4 = rule_filter->data.mac_spoofchk_ext.hid;
+	}
+
+	full_key[0] = cpu_to_le32(full_key_d0.val);
+	full_key[1] = cpu_to_le32(full_key_d1.val);
+	full_key[2] = cpu_to_le32(full_key_d2.val);
+}
+
+STATIC void sxe2_make_switch_full_key_safe_mode(struct sxe2_adapter *adapter,
+						struct sxe2_rule_info *rule,
+				      u32 *full_key)
+{
+	struct sxe2_rule_filter *rule_filter = &rule->fltr;
+	union sxe2_switch_full_key_dw0 full_key_d0;
+	union sxe2_switch_full_key_dw1 full_key_d1;
+	union sxe2_switch_full_key_dw2 full_key_d2;
+	u8 *mac_addr;
+
+	memset(&full_key_d0, 0, sizeof(full_key_d0));
+	memset(&full_key_d1, 0, sizeof(full_key_d1));
+	memset(&full_key_d2, 0, sizeof(full_key_d2));
+
+	full_key_d0.field.rid = rule->recipe_id;
+	if (adapter->switch_ctxt.recipe[rule->recipe_id].is_root)
+		full_key_d0.field.is_root = 1;
+
+	full_key_d0.field.fv0 = adapter->switch_ctxt.switch_id;
+
+	if (rule->recipe_id == SXE2_DEFAULT_RECIPE_MAC) {
+		mac_addr = rule_filter->data.mac.mac_addr;
+		full_key_d1.field.fv1 =
+			(u32)((mac_addr[0] << (u32)8) | mac_addr[1]);
+		full_key_d1.field.fv2 =
+			(u32)((mac_addr[2] << (u32)8) | mac_addr[3]);
+		full_key_d2.field.fv3 =
+			(u32)((mac_addr[4] << (u32)8) | mac_addr[5]);
 	} else if (rule->recipe_id == SXE2_DEFAULT_RECIPE_VLAN) {
 		full_key_d1.field.fv1 = rule_filter->data.vlan.tpid;
 		full_key_d1.field.fv2 = rule_filter->data.vlan.vlan_id;
@@ -878,30 +1047,34 @@ STATIC void sxe2_make_switch_full_key(struct sxe2_adapter *adapter,
 	} else if (rule->recipe_id == SXE2_DEFAULT_RECIPE_PROMISC) {
 		if (rule_filter->src_type == SXE2_SRC_TYPE_TX)
 			full_key_d1.field.fv1 |= (SXE2_FV_DIRECTION_TX
-						  << SXE2_FV_DIRECTION_OFFSET);
+							<< SXE2_FV_DIRECTION_OFFSET);
 		else
 			full_key_d1.field.fv1 |= (SXE2_FV_DIRECTION_RX
-						  << SXE2_FV_DIRECTION_OFFSET);
+							<< SXE2_FV_DIRECTION_OFFSET);
 	} else if (rule->recipe_id == SXE2_DEFAULT_RECIPE_SRCVSI) {
 		full_key_d1.field.fv1 |=
 			(rule_filter->data.srcvsi.vsi_id << SXE2_FV_VSI_NUM_OFFSET);
 		full_key_d1.field.fv2 |= (rule_filter->data.srcvsi.to_rdma
-					  << SXE2_FV_PKT_TO_RDMA_OFFSET);
+						<< SXE2_FV_PKT_TO_RDMA_OFFSET);
 		full_key_d2.field.fv3 |=
 			(rule_filter->data.srcvsi.packet_src_type
-			 << SXE2_FV_PKT_SRC_OFFSET);
+				<< SXE2_FV_PKT_SRC_OFFSET);
 	} else if (rule->recipe_id == SXE2_DEFAULT_RECIPE_SRCVSI_EXT) {
 		full_key_d1.field.fv1 |=
 			(rule_filter->data.srcvsi.vsi_id << SXE2_FV_VSI_NUM_OFFSET);
 		full_key_d1.field.fv2 |= (rule_filter->data.srcvsi.to_rdma
-					  << SXE2_FV_PKT_TO_RDMA_OFFSET);
+						<< SXE2_FV_PKT_TO_RDMA_OFFSET);
 		full_key_d2.field.fv3 |=
 			(rule_filter->data.srcvsi.packet_src_type
-			 << SXE2_FV_PKT_SRC_OFFSET);
+				<< SXE2_FV_PKT_SRC_OFFSET);
 	} else if (rule->recipe_id == SXE2_DEFAULT_RECIPE_MAC_SPOOFCHK) {
 		full_key_d1.field.fv1 |=
 			(rule_filter->data.mac_spoofchk.vsi_id << SXE2_FV_VSI_NUM_OFFSET);
 		full_key_d1.field.fv2 =
+			(SXE2_FV_DIRECTION_TX << SXE2_FV_DIRECTION_OFFSET);
+		full_key_d2.field.fv3 |=
+			(rule_filter->data.mac_spoofchk.vsi_id << SXE2_FV_VSI_NUM_OFFSET);
+		full_key_d2.field.fv4 =
 			(SXE2_FV_DIRECTION_TX << SXE2_FV_DIRECTION_OFFSET);
 	} else if (rule->recipe_id == SXE2_DEFAULT_RECIPE_MAC_SPOOFCHK_EXT) {
 		mac_addr = rule_filter->data.mac_spoofchk_ext.mac_addr;
@@ -1005,9 +1178,13 @@ STATIC void sxe2_switch_rule_fill(struct sxe2_adapter *adapter,
 	rule_fwc->act	    = cpu_to_le32(act);
 	rule_fwc->rule_id   = cpu_to_le16(rule_info->rule_id);
 
-	sxe2_make_switch_full_key(adapter, rule_info, rule_fwc->full_key);
+	if (sxe2_is_safe_mode(adapter))
+		sxe2_make_switch_full_key_safe_mode(adapter, rule_info, rule_fwc->full_key);
+	else
+		sxe2_make_switch_full_key(adapter, rule_info, rule_fwc->full_key);
 
-	LOG_DEBUG_BDF("rule_fwc, recipe id %d, act %x, full_key %08x:%08x:%08x\n",
+	LOG_DEBUG_BDF("rule_fwc, safe mode %d, recipe id %d, act %x, full_key %08x:%08x:%08x\n",
+		      sxe2_is_safe_mode(adapter),
 		      le16_to_cpu(rule_fwc->recipe_id),
 		      le32_to_cpu(rule_fwc->act),
 		      le32_to_cpu(rule_fwc->full_key[0]),
@@ -1823,8 +2000,16 @@ STATIC void *sxe2_switch_cpx_samerule_check(struct sxe2_adapter *adapter,
 		if ((tcf_fltr->action == SXE2_FWD_TO_VSI_LIST &&
 		     !memcmp(tcf_fltr->dst_vsi_map, save_rule->tcf_fltr->dst_vsi_map,
 		     sizeof(tcf_fltr->dst_vsi_map))) ||
-		    (tcf_fltr->action != SXE2_FWD_TO_VSI_LIST &&
-		     tcf_fltr->dst_vsi_id == save_rule->tcf_fltr->dst_vsi_id)) {
+		    ((tcf_fltr->action == SXE2_FWD_TO_VSI  ||
+		     tcf_fltr->action == SXE2_DROP_PACKET ||
+		     tcf_fltr->action == SXE2_MIRROR_PACKET ||
+		     tcf_fltr->action == SXE2_LARGE_ACTION) &&
+		     tcf_fltr->dst_vsi_id == save_rule->tcf_fltr->dst_vsi_id) ||
+		    (tcf_fltr->action == SXE2_FWD_TO_Q &&
+		     tcf_fltr->dst_queue_id == save_rule->tcf_fltr->dst_queue_id) ||
+		    (tcf_fltr->action == SXE2_FWD_TO_QGRP &&
+		     tcf_fltr->dst_queue_id == save_rule->tcf_fltr->dst_queue_id &&
+		     tcf_fltr->dst_queue_group == save_rule->tcf_fltr->dst_queue_group)) {
 			ret = save_rule;
 			goto l_end;
 		}
@@ -1836,8 +2021,16 @@ STATIC void *sxe2_switch_cpx_samerule_check(struct sxe2_adapter *adapter,
 			if ((tcf_fltr->action == SXE2_FWD_TO_VSI_LIST &&
 			     !memcmp(tcf_fltr->dst_vsi_map, list_itr->dst_vsi_map,
 			     sizeof(tcf_fltr->dst_vsi_map))) ||
-			   (tcf_fltr->action != SXE2_FWD_TO_VSI_LIST &&
-			    tcf_fltr->dst_vsi_id == list_itr->dst_vsi_id)) {
+			    ((tcf_fltr->action == SXE2_FWD_TO_VSI  ||
+			     tcf_fltr->action == SXE2_DROP_PACKET ||
+			     tcf_fltr->action == SXE2_MIRROR_PACKET ||
+			     tcf_fltr->action == SXE2_LARGE_ACTION) &&
+			     tcf_fltr->dst_vsi_id == list_itr->dst_vsi_id) ||
+			    (tcf_fltr->action == SXE2_FWD_TO_Q &&
+			     tcf_fltr->dst_queue_id == list_itr->act.fwd_id.q_id) ||
+			    (tcf_fltr->action == SXE2_FWD_TO_QGRP &&
+			     tcf_fltr->dst_queue_id == list_itr->act.fwd_id.q_id &&
+			     tcf_fltr->dst_queue_group == list_itr->act.qgrp_size)) {
 				ret = list_itr;
 				goto l_end;
 			}
@@ -1941,6 +2134,13 @@ STATIC s32 sxe2_switch_cpx_samerule_add(struct sxe2_adapter *adapter,
 					struct sxe2_rule_info *save_rule)
 {
 	s32 ret = 0;
+
+	if (rule_info->tcf_fltr->priority != save_rule->tcf_fltr->priority) {
+		LOG_ERROR_BDF("same match with different fw priority %u vs %u, reject\n",
+			      save_rule->tcf_fltr->priority, rule_info->tcf_fltr->priority);
+		ret = -EINVAL;
+		goto l_end;
+	}
 
 	if (rule_info->tcf_fltr->is_user_rule != save_rule->tcf_fltr->is_user_rule) {
 		ret = -EINVAL;
@@ -3064,6 +3264,112 @@ s32 sxe2_mac_spoofchk_rule_del(struct sxe2_adapter *adapter, u16 id_in_dev)
 	return ret;
 }
 
+s32 sxe2_vf_vsi_mac_spoof_sync(struct sxe2_adapter *adapter,
+			       struct sxe2_vsi *eth_vsi, struct sxe2_vsi *dpdk_vsi)
+{
+	s32 ret = 0;
+	struct mutex *rule_lock;
+	struct sxe2_rule_info *list_itr;
+	struct sxe2_rule_info *tmp_rule;
+	struct list_head sync_head;
+	struct list_head *list_head;
+
+	rule_lock =
+		&adapter->switch_ctxt.recipe[SXE2_DEFAULT_RECIPE_MAC_SPOOFCHK_EXT].rule_lock;
+	list_head =
+		&adapter->switch_ctxt.recipe[SXE2_DEFAULT_RECIPE_MAC_SPOOFCHK_EXT].rule_head;
+	INIT_LIST_HEAD(&sync_head);
+
+	mutex_lock(rule_lock);
+	list_for_each_entry(list_itr, list_head, list_entry) {
+		if (list_itr->act.fwd_id.vsi_id != eth_vsi->idx_in_dev)
+			continue;
+		tmp_rule = kzalloc(sizeof(*tmp_rule), GFP_KERNEL);
+		if (!tmp_rule) {
+			ret = -ENOMEM;
+			goto l_free;
+		}
+		memcpy(tmp_rule, list_itr, sizeof(*tmp_rule));
+		list_add(&tmp_rule->list_entry, &sync_head);
+	}
+	mutex_unlock(rule_lock);
+
+	list_for_each_entry(list_itr, &sync_head, list_entry) {
+		if (!is_unicast_ether_addr(list_itr->fltr.data.mac_spoofchk_ext.mac_addr))
+			continue;
+		ret = sxe2_mac_spoofchk_ext_rule_add(adapter, dpdk_vsi->idx_in_dev,
+						     list_itr->fltr.data.mac_spoofchk_ext.mac_addr);
+		if (ret == -EEXIST)
+			ret = 0;
+		else if (ret)
+			break;
+	}
+
+	if (ret) {
+		list_for_each_entry(list_itr, &sync_head, list_entry) {
+			(void)sxe2_mac_spoofchk_ext_rule_del(adapter, dpdk_vsi->idx_in_dev,
+			list_itr->fltr.data.mac_spoofchk_ext.mac_addr);
+		}
+	}
+
+l_free:
+	list_for_each_entry_safe(list_itr, tmp_rule, &sync_head, list_entry) {
+		list_del(&list_itr->list_entry);
+		kfree(list_itr);
+	}
+
+	return ret;
+}
+
+s32 sxe2_vf_vsi_mac_spoof_unsync(struct sxe2_adapter *adapter,
+				 struct sxe2_vsi *dpdk_vsi, struct sxe2_vsi *eth_vsi)
+{
+	s32 ret;
+	struct mutex *rule_lock;
+	struct sxe2_rule_info *list_itr;
+	struct sxe2_rule_info *tmp_rule;
+	struct list_head unsync_head;
+	struct list_head *list_head;
+
+	rule_lock =
+		&adapter->switch_ctxt.recipe[SXE2_DEFAULT_RECIPE_MAC].rule_lock;
+	list_head =
+		&adapter->switch_ctxt.recipe[SXE2_DEFAULT_RECIPE_MAC].rule_head;
+	INIT_LIST_HEAD(&unsync_head);
+
+	mutex_lock(rule_lock);
+	list_for_each_entry(list_itr, list_head, list_entry) {
+		if (!is_unicast_ether_addr(list_itr->fltr.data.mac.mac_addr))
+			continue;
+		if (!list_itr->vsi_list && list_itr->act.fwd_id.vsi_id != dpdk_vsi->idx_in_dev)
+			continue;
+		else if (list_itr->vsi_list &&
+			 !test_bit(dpdk_vsi->idx_in_dev, list_itr->vsi_list->vsi_map))
+			continue;
+		tmp_rule = kzalloc(sizeof(*tmp_rule), GFP_KERNEL);
+		if (!tmp_rule) {
+			ret = -ENOMEM;
+			goto l_free;
+		}
+		memcpy(tmp_rule, list_itr, sizeof(*tmp_rule));
+		list_add(&tmp_rule->list_entry, &unsync_head);
+	}
+	mutex_unlock(rule_lock);
+
+	list_for_each_entry(list_itr, &unsync_head, list_entry) {
+		(void)sxe2_mac_spoofchk_ext_rule_del(adapter, eth_vsi->idx_in_dev,
+		list_itr->fltr.data.mac.mac_addr);
+	}
+
+l_free:
+	list_for_each_entry_safe(list_itr, tmp_rule, &unsync_head, list_entry) {
+		list_del(&list_itr->list_entry);
+		kfree(list_itr);
+	}
+
+	return ret;
+}
+
 static bool sxe2_profile_is_empty(u16 profile_id, struct sxe2_adapter *adapter)
 {
 	struct sxe2_profile_fv_item fv_item[SXE2_SWITCH_PROFILE_FV_CNT];
@@ -3076,36 +3382,48 @@ static bool sxe2_profile_is_empty(u16 profile_id, struct sxe2_adapter *adapter)
 	return false;
 }
 
-static bool sxe2_profile_tunnel_check(u16 profile_id,
-				      struct sxe2_tcf_fltr *fltr)
+STATIC void sxe2_profile_index_build(struct sxe2_adapter *adapter)
 {
-	s32 i;
-	struct sxe2_profile_fv_item fv_item;
-	struct sxe2_adapter *adapter = fltr->adapter;
+	struct sxe2_switch_context *switch_ctxt = &adapter->switch_ctxt;
+	struct sxe2_profile_fv_item *fv_item;
+	u16 prof_id;
+	u16 k;
 
-	if (fltr->tunnel_type == SXE2_TNL_ALL)
-		return true;
+	bitmap_zero(switch_ctxt->profile_used, SXE2_MAX_NUM_PROFILES);
+	memset(switch_ctxt->profile_tun_kind, 0, sizeof(switch_ctxt->profile_tun_kind));
+	memset(switch_ctxt->fv_prof_map, 0,
+	       SXE2_FV_KEY_CNT * sizeof(*switch_ctxt->fv_prof_map));
 
-	for (i = 0; i < SXE2_SWITCH_PROFILE_FV_CNT; i++) {
-		fv_item = adapter->switch_ctxt.profile_fv_item[profile_id][i];
-		if (fv_item.prot_id == SXE2_UDP_OL_HW &&
-		    fv_item.offset == SXE2_PROT_OFFSET_VNI && fv_item.enable) {
-			if (fltr->tunnel_type == SXE2_TNL_VXLAN ||
-			    fltr->tunnel_type == SXE2_TNL_GENEVE)
-				return true;
-			else
-				return false;
-		} else if (fv_item.prot_id == SXE2_GRE_HW && fv_item.enable) {
-			if (fltr->tunnel_type == SXE2_TNL_GRETAP)
-				return true;
-			else
-				return false;
+	for (prof_id = 0; prof_id < SXE2_MAX_NUM_PROFILES; prof_id++) {
+		if (sxe2_profile_is_empty(prof_id, adapter))
+			continue;
+
+		set_bit(prof_id, switch_ctxt->profile_used);
+
+		for (k = 0; k < SXE2_SWITCH_PROFILE_FV_CNT; k++) {
+			fv_item = &switch_ctxt->profile_fv_item[prof_id][k];
+			if (!fv_item->enable)
+				continue;
+
+			if (switch_ctxt->profile_tun_kind[prof_id] == SXE2_PROFILE_TUN_NONE) {
+				if (fv_item->prot_id == SXE2_UDP_OL_HW &&
+				    fv_item->offset == SXE2_PROT_OFFSET_VNI)
+					switch_ctxt->profile_tun_kind[prof_id] =
+						SXE2_PROFILE_TUN_VNI;
+				else if (fv_item->prot_id == SXE2_GRE_HW)
+					switch_ctxt->profile_tun_kind[prof_id] =
+						SXE2_PROFILE_TUN_GRE;
+			}
+
+			if (fv_item->offset & 1 ||
+			    fv_item->offset / 2 >= SXE2_FV_OFF_SLOT_MAX)
+				continue;
+
+			set_bit(prof_id,
+				switch_ctxt->fv_prof_map[SXE2_FV_KEY_GEN(fv_item->prot_id,
+									fv_item->offset / 2)]);
 		}
 	}
-
-	if (fltr->tunnel_type == SXE2_TNL_NONE)
-		return true;
-	return false;
 }
 
 s32 sxe2_sw_profile_parse_from_ddp(u8 *data, u16 cnt, u16 base_id,
@@ -3132,22 +3450,26 @@ s32 sxe2_sw_profile_parse_from_ddp(u8 *data, u16 cnt, u16 base_id,
 		}
 	}
 
+	sxe2_profile_index_build(adapter);
+
 	return 0;
 }
 
-static s32 sxe2_profile_fv_check(u16 profile_id, struct sxe2_tcf_fltr *fltr,
-				 bool *match)
+struct sxe2_rule_word {
+	u8 prot_id;
+	u16 offset;
+	u16 value;
+	u16 mask;
+};
+
+static s32 sxe2_profile_rule_words_build(struct sxe2_tcf_fltr *fltr,
+					 struct sxe2_rule_word *words,
+					 u16 *word_cnt)
 {
 	struct sxe2_adapter *adapter = fltr->adapter;
 	struct sxe2_tcf_key_item *item;
-	s32 fv_idx;
-	bool find;
-	struct sxe2_profile_fv_item fv_item;
-	u16 i, j, k;
+	u16 i, j, n = 0;
 
-	*match = false;
-
-	fv_idx = 0;
 	for (i = 0; i < SXE2_PROT_FIELD_LAST; i++) {
 		if (sxe2_tcf_item_is_empty(fltr, i))
 			continue;
@@ -3156,65 +3478,155 @@ static s32 sxe2_profile_fv_check(u16 profile_id, struct sxe2_tcf_fltr *fltr,
 		for (j = 0; j < ARRAY_SIZE(item->mask.raw); j++) {
 			if (!item->mask.raw[j])
 				continue;
-			find = false;
-			for (k = 0; k < SXE2_SWITCH_PROFILE_FV_CNT; k++) {
-				fv_item = adapter->switch_ctxt.profile_fv_item[profile_id][k];
-				if (fv_item.enable &&
-				    fv_item.prot_id == sxe2_prot_id_tbl[i].prot_id &&
-				    (fv_item.offset == sizeof(u16) * j)) {
-					find = true;
-					if (fltr->lkup_mask[fv_idx] &&
-					    (fltr->lkup_index[fv_idx] != k + 1)) {
-						LOG_ERROR_BDF("profile fv conflict profile id %d\n",
-							      profile_id);
-						return -EIO;
-					}
-					fltr->lkup_value[fv_idx] = item->value.raw[j];
-					fltr->lkup_mask[fv_idx] = item->mask.raw[j];
-					fltr->lkup_index[fv_idx++] = k + 1;
-					break;
-				}
+			if (n >= SXE2_MAX_CHAIN_WORDS) {
+				LOG_ERROR_BDF("word count %d is bigger than limit %d\n",
+					      n, SXE2_MAX_CHAIN_WORDS);
+				return -EINVAL;
 			}
-
-			if (!find)
-				return 0;
+			words[n].prot_id = sxe2_prot_id_tbl[i].prot_id;
+			words[n].offset = sizeof(u16) * j;
+			words[n].value = item->value.raw[j];
+			words[n].mask = item->mask.raw[j];
+			fltr->lkup_value[n] = item->value.raw[j];
+			fltr->lkup_mask[n] = item->mask.raw[j];
+			n++;
 		}
 	}
 
-	*match = true;
+	*word_cnt = n;
 	return 0;
+}
+
+static s32 sxe2_profile_fv_k_get(u16 profile_id, u8 prot_id, u16 offset,
+				 struct sxe2_adapter *adapter)
+{
+	struct sxe2_profile_fv_item *fv_item;
+	s32 k;
+
+	for (k = 0; k < SXE2_SWITCH_PROFILE_FV_CNT; k++) {
+		fv_item = &adapter->switch_ctxt.profile_fv_item[profile_id][k];
+		if (fv_item->enable && fv_item->prot_id == prot_id &&
+		    fv_item->offset == offset)
+			return k;
+	}
+
+	return -1;
+}
+
+static bool sxe2_profile_tunnel_kind_ok(u8 tun_kind, struct sxe2_tcf_fltr *fltr)
+{
+	if (fltr->tunnel_type == SXE2_TNL_ALL)
+		return true;
+
+	switch (tun_kind) {
+	case SXE2_PROFILE_TUN_VNI:
+		return fltr->tunnel_type == SXE2_TNL_VXLAN ||
+		       fltr->tunnel_type == SXE2_TNL_GENEVE ||
+		       fltr->tunnel_type == SXE2_TNL_GTPU ||
+		       fltr->tunnel_type == SXE2_TNL_GTPC;
+	case SXE2_PROFILE_TUN_GRE:
+		if (fltr->tunnel_type == SXE2_TNL_GRETAP)
+			return true;
+		return fltr->tunnel_type == SXE2_TNL_NONE &&
+		       !sxe2_tcf_item_is_empty(fltr, SXE2_GRE_PROTOCOL);
+	default:
+		return fltr->tunnel_type == SXE2_TNL_NONE;
+	}
 }
 
 void sxe2_tc_item_print(struct sxe2_tcf_fltr *user_cpx_fltr);
 
 s32 sxe2_tcf_profile_find(struct sxe2_tcf_fltr *fltr)
 {
-	u16 prof_id, i;
+	DECLARE_BITMAP(cand, SXE2_MAX_NUM_PROFILES);
+	struct sxe2_rule_word words[SXE2_MAX_CHAIN_WORDS];
 	struct sxe2_adapter *adapter = fltr->adapter;
+	struct sxe2_switch_context *switch_ctxt = &adapter->switch_ctxt;
+	unsigned long prof_id;
+	u16 word_cnt = 0;
+	u16 tun_reject = 0;
+	u16 fv_miss = 0;
 	s32 ret;
-	bool match;
+	u16 i, n;
 
 	sxe2_tc_item_print(fltr);
 
-	for (prof_id = 0; prof_id < SXE2_MAX_NUM_PROFILES; prof_id++) {
-		if (sxe2_profile_is_empty(prof_id, adapter))
-			continue;
+	ret = sxe2_profile_rule_words_build(fltr, words, &word_cnt);
+	if (ret) {
+		LOG_ERROR_BDF("rule words build fail ret %d\n", ret);
+		return ret;
+	}
 
-		if (!sxe2_profile_tunnel_check(prof_id, fltr))
-			continue;
+	LOG_DEBUG_BDF("words %u, profiles used %u, fltr tun type %d\n",
+		      word_cnt,
+		      bitmap_weight(switch_ctxt->profile_used, SXE2_MAX_NUM_PROFILES),
+		      fltr->tunnel_type);
+	for (n = 0; n < word_cnt; n++) {
+		LOG_DEBUG_BDF("word[%u] prot id %u off %u value 0x%x mask 0x%x\n",
+			      n, words[n].prot_id, words[n].offset,
+			      words[n].value, words[n].mask);
+	}
 
-		ret = sxe2_profile_fv_check(prof_id, fltr, &match);
-		if (ret)
-			return ret;
-
-		if (match) {
-			set_bit(prof_id, fltr->profiles);
-			LOG_DEBUG_BDF("profile id %d match\n", prof_id);
+	bitmap_copy(cand, switch_ctxt->profile_used, SXE2_MAX_NUM_PROFILES);
+	for (n = 0; n < word_cnt; n++) {
+		if (!bitmap_and(cand, cand,
+				switch_ctxt->fv_prof_map[SXE2_FV_KEY_GEN(words[n].prot_id,
+									words[n].offset / 2)],
+				SXE2_MAX_NUM_PROFILES)) {
+			LOG_ERROR_BDF("word %u prot id %u off %u carried by no ddp profile, \t"
+				      "fv map weight %u, profiles used %u\n",
+				      n, words[n].prot_id, words[n].offset,
+				      bitmap_weight(switch_ctxt->fv_prof_map[
+						SXE2_FV_KEY_GEN(words[n].prot_id,
+								words[n].offset / 2)],
+						SXE2_MAX_NUM_PROFILES),
+				      bitmap_weight(switch_ctxt->profile_used,
+						    SXE2_MAX_NUM_PROFILES));
+			break;
 		}
 	}
 
+	for_each_set_bit(prof_id, cand, SXE2_MAX_NUM_PROFILES) {
+		if (!sxe2_profile_tunnel_kind_ok(switch_ctxt->profile_tun_kind[prof_id], fltr)) {
+			LOG_DEBUG_BDF("profile %lu tun kind %u rejected, fltr tun type %d\n",
+				      prof_id, switch_ctxt->profile_tun_kind[prof_id],
+				      fltr->tunnel_type);
+				tun_reject++;
+			continue;
+		}
+
+		for (i = 0; i < word_cnt; i++) {
+			ret = sxe2_profile_fv_k_get(prof_id, words[i].prot_id,
+						    words[i].offset, adapter);
+			if (ret < 0) {
+				LOG_DEBUG_BDF("profile %lu fv miss on word %u prot id %u off %u\n",
+					      prof_id, i, words[i].prot_id,
+					      words[i].offset);
+				fv_miss++;
+				break;
+			}
+
+			if (fltr->lkup_index[i] && fltr->lkup_index[i] != ret + 1) {
+				LOG_ERROR_BDF("profile fv conflict profile id %lu\n",
+					      prof_id);
+				return -EIO;
+			}
+			fltr->lkup_index[i] = ret + 1;
+		}
+		if (i < word_cnt)
+			continue;
+
+		set_bit(prof_id, fltr->profiles);
+		LOG_DEBUG_BDF("profile id %lu match\n", prof_id);
+	}
+
 	if (bitmap_weight(fltr->profiles, SXE2_MAX_NUM_PROFILES) == 0) {
-		LOG_ERROR_BDF("no profile can match request\n");
+		LOG_ERROR_BDF("no profile can match request, words %u cand %u profiles used %u \t"
+			      "tun rejected %u fv missed %u\n",
+			      word_cnt,
+			      bitmap_weight(cand, SXE2_MAX_NUM_PROFILES),
+			      bitmap_weight(switch_ctxt->profile_used, SXE2_MAX_NUM_PROFILES),
+			      tun_reject, fv_miss);
 		return -EINVAL;
 	}
 
@@ -3235,6 +3647,8 @@ s32 sxe2_tcf_profile_find(struct sxe2_tcf_fltr *fltr)
 			      fltr->lkup_index[i * SXE2_NUM_WORDS_RECIPE + 2],
 			      fltr->lkup_index[i * SXE2_NUM_WORDS_RECIPE + 3]);
 	}
+	LOG_DEBUG_BDF("profile find ok, %u profiles selected\n",
+		      bitmap_weight(fltr->profiles, SXE2_MAX_NUM_PROFILES));
 
 	return 0;
 }
@@ -3412,7 +3826,7 @@ void sxe2_vsi_l2_fltr_clean(struct sxe2_vsi *vsi)
 					 list_entry) {
 			if (recipe_id == SXE2_DEFAULT_RECIPE_SRCVSI_EXT) {
 				if (list_itr->act.fwd_id.vsi_id == vsi->idx_in_dev ||
-				    list_itr->fltr.data.srcvsi.vsi_id == vsi->idx_in_dev){
+				    list_itr->fltr.data.srcvsi.vsi_id == vsi->idx_in_dev) {
 					list_del(&list_itr->list_entry);
 					kfree(list_itr);
 					list_itr = NULL;
@@ -3503,7 +3917,7 @@ void sxe2_vsi_complex_fltr_clean(struct sxe2_vsi *vsi)
 	mutex_lock(rule_lock);
 	mutex_lock(vsi_list_lock);
 	hash_for_each_safe(adapter->switch_ctxt.complex_recipe.ht_lkup, bkt, temp, tcf_fltr, node) {
-		if (tcf_fltr->src_vsi_id == vsi->idx_in_dev) {
+		if (tcf_fltr->rule_vsi_id == vsi->idx_in_dev) {
 			rule_info = tcf_fltr->rule_info;
 			sxe2_hash_cookie_del(adapter, tcf_fltr->cookie);
 			sxe2_hash_lkup_del(adapter, tcf_fltr);
@@ -3642,10 +4056,10 @@ void sxe2_vsi_complex_fltr_remove(struct sxe2_adapter *adapter,
 	vsi_list_lock = &switch_ctxt->vsi_list_mgmt[SXE2_VSI_LIST_TYPE_FORWARD].vsi_list_lock;
 	mutex_lock(rule_lock);
 	mutex_lock(vsi_list_lock);
-	hash_for_each_safe(adapter->switch_ctxt.complex_recipe.ht_lkup, bkt, temp, tcf_fltr, node) {
-		if (tcf_fltr->src_vsi_id == id_in_dev ||
-		    (tcf_fltr->is_user_rule &&
-		     tcf_fltr->rule_vsi_id == id_in_dev)) {
+
+	hash_for_each_safe(adapter->switch_ctxt.complex_recipe.ht_lkup, bkt, temp,
+			   tcf_fltr, node) {
+		if (tcf_fltr->rule_vsi_id == id_in_dev) {
 			ret = sxe2_fwd_rule_remove(adapter, tcf_fltr->rule_info, false);
 			if (ret) {
 				LOG_ERROR_BDF("complex rule delete fail, ret %d\n", ret);
@@ -3705,7 +4119,7 @@ s32 sxe2_rule_bridge_mode_update(struct sxe2_adapter *adapter)
 	return ret;
 }
 
-static s32 sxe2_switch_restore_list_fill(struct sxe2_adapter *adapter,
+STATIC s32 sxe2_switch_restore_list_fill(struct sxe2_adapter *adapter,
 					 struct sxe2_rule_info *rule,
 					 struct list_head *rule_head)
 {
@@ -3720,7 +4134,7 @@ static s32 sxe2_switch_restore_list_fill(struct sxe2_adapter *adapter,
 	if (!vsi_list) {
 		list_del(&rule->list_entry);
 		vsi = sxe2_vsi_get_by_idx(adapter, rule->act.fwd_id.vsi_id);
-		if (vsi->type == SXE2_VSI_T_PF)
+		if (vsi->type == SXE2_VSI_T_PF || vsi->type == SXE2_VSI_T_MACVLAN)
 			list_add(&rule->list_entry, rule_head);
 		else
 			kfree(rule);
@@ -3735,7 +4149,8 @@ static s32 sxe2_switch_restore_list_fill(struct sxe2_adapter *adapter,
 			vsi_id = (u16)find_next_bit(vsi_list->vsi_map,
 						    SXE2_VSI_MAX_CNT, vsi_id);
 			vsi = sxe2_vsi_get_by_idx(adapter, vsi_id);
-			if (vsi && vsi->type == SXE2_VSI_T_PF) {
+			if (vsi &&
+			    (vsi->type == SXE2_VSI_T_PF || vsi->type == SXE2_VSI_T_MACVLAN)) {
 				new_rule = kzalloc(sizeof(*rule), GFP_KERNEL);
 				if (!new_rule)
 					return -ENOMEM;
@@ -3771,6 +4186,7 @@ s32 sxe2_switch_fltr_restore_prepare(struct sxe2_adapter *adapter)
 	u32 bkt;
 	struct hlist_node *temp;
 
+	mutex_lock(&adapter->vsi_ctxt.lock);
 	for (i = 0; i < SXE2_DEFAULT_RECIPE_MAX; i++) {
 		list_head    = &switch_ctxt->recipe[i].rule_head;
 		restore_head = &switch_ctxt->recipe[i].restore_head;
@@ -3785,6 +4201,7 @@ s32 sxe2_switch_fltr_restore_prepare(struct sxe2_adapter *adapter)
 							    restore_head);
 			if (ret) {
 				mutex_unlock(list_lock);
+				mutex_unlock(&adapter->vsi_ctxt.lock);
 				return ret;
 			}
 		}
@@ -3822,6 +4239,7 @@ s32 sxe2_switch_fltr_restore_prepare(struct sxe2_adapter *adapter)
 		mutex_unlock(list_lock);
 	}
 
+	mutex_unlock(&adapter->vsi_ctxt.lock);
 	return 0;
 }
 
@@ -4085,7 +4503,8 @@ s32 sxe2_vfs_complex_fltr_restore(struct sxe2_adapter *adapter)
 
 	sxe2_for_each_vf(adapter, vf_idx) {
 		vf_node = SXE2_VF_NODE(adapter, vf_idx);
-		ret	= sxe2_vsi_complex_fltr_restore(adapter, vf_node->vsi_id[SXE2_VF_TYPE_ETH]);
+		ret	= sxe2_vsi_complex_fltr_restore(adapter,
+							vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER]);
 		if (ret) {
 			LOG_ERROR_BDF("vf:%u add complex rule failed, ret %d.\n",
 				      vf_node->vf_idx, ret);
@@ -4455,6 +4874,21 @@ void sxe2_fwc_switch_trace_tx_trigger(struct sxe2_adapter *adapter)
 		LOG_ERROR_BDF("switch trace trigger cmd fail, ret=%d\n", ret);
 }
 
+s32 sxe2_fwc_switch_algo_set(struct sxe2_adapter *adapter, u8 mode)
+{
+	s32 ret;
+	struct sxe2_cmd_params cmd = {};
+	struct sxe2_fwc_switch_algo_set_req req = {};
+
+	req.mode = mode;
+	sxe2_cmd_params_dflt_fill(&cmd, SXE2_CMD_SWITCH_ALGO_SET, &req,
+				  sizeof(req), NULL, 0);
+
+	ret = sxe2_cmd_fw_exec(adapter, &cmd);
+
+	return ret;
+}
+
 void sxe2_fwc_switch_trace_recorder(struct sxe2_adapter *adapter)
 {
 	s32 ret;
@@ -4616,6 +5050,75 @@ void sxe2_switch_share_id_dump(struct sxe2_adapter *adapter)
 
 	LOG_DEV_INFO("================switch share id dump end================\n");
 	kfree(fwc_share_id);
+}
+
+void sxe2_switch_profile_fv_dump(struct sxe2_adapter *adapter)
+{
+	struct sxe2_switch_context *switch_ctxt = &adapter->switch_ctxt;
+	struct sxe2_profile_fv_item *fv_item;
+	char line[128];
+	u16 prof_id;
+	u16 k;
+	u32 used_cnt = 0;
+	u32 en_cnt = 0;
+	u32 fv_cnt;
+	u32 pos;
+
+	if (!switch_ctxt->profile_fv_item) {
+		LOG_DEV_ERR("switch profile fv table is not ready\n");
+		return;
+	}
+
+	for (prof_id = 0; prof_id < SXE2_MAX_NUM_PROFILES; prof_id++) {
+		if (!test_bit(prof_id, switch_ctxt->profile_used))
+			continue;
+
+		used_cnt++;
+		for (k = 0; k < SXE2_SWITCH_PROFILE_FV_CNT; k++) {
+			if (switch_ctxt->profile_fv_item[prof_id][k].enable)
+				en_cnt++;
+		}
+	}
+
+	LOG_DEV_INFO("===============switch profile fv dump start===============\n");
+	LOG_DEV_INFO("profiles %u, used %u, enabled fv %u\n",
+		     (u32)SXE2_MAX_NUM_PROFILES, used_cnt, en_cnt);
+
+	for (prof_id = 0; prof_id < SXE2_MAX_NUM_PROFILES; prof_id++) {
+		if (!test_bit(prof_id, switch_ctxt->profile_used))
+			continue;
+
+		fv_cnt = 0;
+		for (k = 0; k < SXE2_SWITCH_PROFILE_FV_CNT; k++) {
+			if (switch_ctxt->profile_fv_item[prof_id][k].enable)
+				fv_cnt++;
+		}
+
+		LOG_DEV_INFO("profile[%3u]: fv_cnt %u\n", prof_id, fv_cnt);
+
+		line[0] = '\0';
+		pos = 0;
+		for (k = 0; k < SXE2_SWITCH_PROFILE_FV_CNT; k++) {
+			fv_item = &switch_ctxt->profile_fv_item[prof_id][k];
+			if (!fv_item->enable)
+				continue;
+
+			snprintf(line + strlen(line), sizeof(line) - strlen(line),
+				 "%sfv[%2u] prot %2u off %3u",
+				 (pos % 3 != 0) ? " | " : "",
+				 k, fv_item->prot_id, fv_item->offset);
+			pos++;
+			if (pos % 3 == 0) {
+				LOG_DEV_INFO("  %s\n", line);
+				line[0] = '\0';
+			}
+		}
+
+		if (pos % 3 != 0)
+			LOG_DEV_INFO("  %s\n", line);
+	}
+
+	LOG_DEV_INFO("================switch profile fv dump end================\n");
 }
 
 struct sxe2_switch_dfx_stats_info {
@@ -4796,52 +5299,6 @@ s32 sxe2_mac_rule_update(struct sxe2_adapter *adapter, const u8 *mac, u16 old_vs
 
 	mutex_unlock(vsi_list_lock);
 	mutex_unlock(rule_lock);
-	return ret;
-}
-
-s32 sxe2_mac_spoof_rule_update(struct sxe2_vsi *eth_vsi,
-			       struct sxe2_vsi *user_vsi, u8 *mac_addr, bool to_user)
-{
-	s32 ret;
-	struct sxe2_adapter *adapter = eth_vsi->adapter;
-
-	if (to_user) {
-		ret = sxe2_mac_spoofchk_ext_rule_del(adapter, eth_vsi->idx_in_dev, mac_addr);
-		if (ret) {
-			LOG_ERROR_BDF("mac %pM spoofchk del failed, vsi_id:%u\n",
-				      mac_addr, eth_vsi->idx_in_dev);
-			goto l_end;
-		}
-
-		ret = sxe2_mac_spoofchk_ext_rule_add(adapter, user_vsi->idx_in_dev, mac_addr);
-		if (ret) {
-			LOG_ERROR_BDF("mac %pM spoofchk add failed, vsi_id:%u\n",
-				      mac_addr, user_vsi->idx_in_dev);
-			(void)sxe2_mac_spoofchk_ext_rule_add(adapter,
-							     eth_vsi->idx_in_dev, mac_addr);
-			goto l_end;
-		}
-	} else {
-		ret = sxe2_mac_spoofchk_ext_rule_del(adapter,
-						     user_vsi->idx_in_dev, mac_addr);
-		if (ret) {
-			LOG_ERROR_BDF("mac %pM spoofchk del failed, vsi_id:%u\n",
-				      mac_addr, user_vsi->idx_in_dev);
-			goto l_end;
-		}
-
-		ret = sxe2_mac_spoofchk_ext_rule_add(adapter,
-						     eth_vsi->idx_in_dev, mac_addr);
-		if (ret) {
-			LOG_ERROR_BDF("mac %pM spoofchk add failed, vsi_id:%u\n",
-				      mac_addr, eth_vsi->idx_in_dev);
-			(void)sxe2_mac_spoofchk_ext_rule_add(adapter,
-							     user_vsi->idx_in_dev, mac_addr);
-			goto l_end;
-		}
-	}
-
-l_end:
 	return ret;
 }
 
@@ -5156,12 +5613,14 @@ s32 sxe2_ucmd_srcvsi_ext_add(struct sxe2_adapter *adapter,
 	mutex_lock(&adapter->vsi_ctxt.lock);
 
 	if (vsi_id_cnt != 2)  {
+		ret = -EINVAL;
 		LOG_ERROR_BDF("User src vsi list cnt just support two vsi id.\n");
 		goto l_end;
 	}
 
 	vsi = sxe2_vsi_get_by_idx(adapter, vsi_id);
 	if (!vsi) {
+		ret = -ENOENT;
 		LOG_ERROR_BDF("src vsi id_in_dev:%u is NULL.\n", vsi_id);
 		goto l_end;
 	}
@@ -5236,7 +5695,7 @@ s32 sxe2_ucmd_multi_broad_mac_del(struct sxe2_adapter *adapter, u16 vsi_id, cons
 	user_mac_node = sxe2_mac_addr_find(user_vsi, mac);
 	if (!user_mac_node) {
 		LOG_ERROR_BDF("mac:%pM is not in mac list.\n", mac);
-		ret = -EEXIST;
+		ret = -ENOENT;
 		goto l_mac_list_unlock;
 	}
 
@@ -5758,9 +6217,40 @@ static void sxe2_ucmd_complex_fltr_init(struct sxe2_user_cpx_fltr *user_cpx_fltr
 	fltr->backup_type = user_cpx_fltr->backup_type;
 	fltr->cookie_invalid = true;
 	fltr->is_user_rule = true;
-	fltr->priority = SXE2_SWITCH_RECIPE_PRIO_7;
 	memcpy(fltr->dst_vsi_map, user_cpx_fltr->dst_vsi_map, sizeof(fltr->dst_vsi_map));
 	fltr->dst_vsi_id = user_cpx_fltr->dst_vsi_id;
+}
+
+static s32 sxe2_ucmd_complex_fltr_priority_set(struct sxe2_adapter *adapter,
+					       struct sxe2_user_cpx_fltr *user_cpx_fltr,
+					       struct sxe2_tcf_fltr *fltr)
+{
+	s32 ret = 0;
+	bool is_switchdev = false;
+
+	ret = sxe2_eswitch_ucmd_mode_get(adapter, &is_switchdev);
+	if (ret) {
+		LOG_ERROR_BDF("get eswitch mode failed, ret %d\n", ret);
+		goto l_end;
+	}
+
+	if (is_switchdev) {
+		fltr->priority = SXE2_SWITCH_RECIPE_PRIO_7;
+	} else {
+		if (user_cpx_fltr->prio > 2) {
+			LOG_ERROR_BDF("legacy switch flow_prio %u invalid, only 0-2 supported\n",
+				      user_cpx_fltr->prio);
+			ret = -EINVAL;
+			goto l_end;
+		}
+		fltr->priority = SXE2_SWITCH_RECIPE_PRIO_7 - user_cpx_fltr->prio;
+	}
+
+	LOG_DEBUG_BDF("switch flow_prio %u -> fw priority %u (switchdev:%u)\n",
+		      user_cpx_fltr->prio, fltr->priority, is_switchdev);
+
+l_end:
+	return ret;
 }
 
 static bool sxe2_tc_item_is_empty(struct sxe2_tcf_fltr *fltr, u16 id)
@@ -5824,7 +6314,6 @@ s32 sxe2_ucmd_complex_fltr_proc(struct sxe2_user_cpx_fltr *user_cpx_fltr,
 {
 	struct sxe2_tcf_fltr *fltr;
 	struct sxe2_adapter *adapter = user_cpx_fltr->adapter;
-	struct sxe2_vsi *vsi;
 	struct sxe2_vsi *vsi_q;
 	s32 ret = 0;
 	u16 dst_vsi_cnt;
@@ -5867,6 +6356,10 @@ s32 sxe2_ucmd_complex_fltr_proc(struct sxe2_user_cpx_fltr *user_cpx_fltr,
 
 	sxe2_ucmd_complex_fltr_init(user_cpx_fltr, fltr);
 
+	ret = sxe2_ucmd_complex_fltr_priority_set(adapter, user_cpx_fltr, fltr);
+	if (ret)
+		goto l_end;
+
 	sxe2_tcf_match_meta_fill(fltr);
 
 	ret = sxe2_tcf_word_cnt_calc(fltr);
@@ -5877,45 +6370,36 @@ s32 sxe2_ucmd_complex_fltr_proc(struct sxe2_user_cpx_fltr *user_cpx_fltr,
 	if (ret)
 		goto l_end;
 
-	mutex_lock(&adapter->vsi_ctxt.lock);
-	vsi = sxe2_vsi_get_by_idx(adapter, user_cpx_fltr->src_vsi_id);
-	if (!vsi) {
-		LOG_ERROR_BDF("src vsi id_in_dev:%u is NULL.\n", user_cpx_fltr->src_vsi_id);
-		ret = -EINVAL;
-		goto l_unlock;
-	}
-
-	if (test_bit(SXE2_VSI_S_DISABLE, vsi->state)) {
-		LOG_ERROR_BDF("src vsi id_in_dev:%u is disable .\n", user_cpx_fltr->src_vsi_id);
-		ret = -EBUSY;
-		goto l_unlock;
-	}
-
-	if (fltr->action == SXE2_FWD_TO_Q || fltr->action == SXE2_FWD_TO_QGRP) {
+	if ((fltr->action == SXE2_FWD_TO_Q) || (fltr->action == SXE2_FWD_TO_QGRP)) {
+		mutex_lock(&adapter->vsi_ctxt.lock);
 		vsi_q = sxe2_vsi_get_by_idx(adapter, user_cpx_fltr->dst_vsi_id);
 		if (!vsi_q) {
-			LOG_ERROR_BDF("dst vsi id_in_dev:%u is NULL\n", user_cpx_fltr->dst_vsi_id);
+			LOG_ERROR_BDF("dst vsi id_in_dev:%u is NULL.\n", user_cpx_fltr->dst_vsi_id);
+			mutex_unlock(&adapter->vsi_ctxt.lock);
 			ret = -EINVAL;
-			goto l_unlock;
+			goto l_end;
 		}
 		if (test_bit(SXE2_VSI_S_DISABLE, vsi_q->state)) {
 			LOG_ERROR_BDF("dst vsi id_in_dev:%u is disable\n",
 				      user_cpx_fltr->dst_vsi_id);
+			mutex_unlock(&adapter->vsi_ctxt.lock);
 			ret = -EBUSY;
-			goto l_unlock;
+			goto l_end;
 		}
 		if (vsi_q->rxqs.q_cnt < user_cpx_fltr->dst_queue_id) {
-			LOG_ERROR_BDF("dst vsi queue count %u insufficient for flow queue id %u\n",
+			LOG_ERROR_BDF("dst vsi queue count %u insufficient for flow queue id %u.\n",
 				      vsi_q->rxqs.q_cnt, user_cpx_fltr->dst_queue_id);
+			mutex_unlock(&adapter->vsi_ctxt.lock);
 			ret = -EINVAL;
-			goto l_unlock;
+			goto l_end;
 		}
 		fltr->dst_queue_id = vsi_q->rxqs.q[user_cpx_fltr->dst_queue_id]->idx_in_pf +
 			     adapter->q_ctxt.rxq_base_idx_in_dev;
+		mutex_unlock(&adapter->vsi_ctxt.lock);
 	}
 
-	ret = is_add ? sxe2_tcf_rule_add(adapter, vsi->idx_in_dev, fltr) :
-		       sxe2_tcf_rule_del(adapter, vsi->idx_in_dev, fltr);
+	ret = is_add ? sxe2_tcf_rule_add(adapter, user_cpx_fltr->src_vsi_id, fltr) :
+		       sxe2_tcf_rule_del(adapter, user_cpx_fltr->src_vsi_id, fltr);
 
 	dst_vsi = 0;
 	if (user_cpx_fltr->action == SXE2_FWD_TO_VSI_LIST) {
@@ -5930,8 +6414,6 @@ s32 sxe2_ucmd_complex_fltr_proc(struct sxe2_user_cpx_fltr *user_cpx_fltr,
 			      user_cpx_fltr->dst_vsi_id, fltr->dst_queue_id);
 	}
 
-l_unlock:
-	mutex_unlock(&adapter->vsi_ctxt.lock);
 l_end:
 	kfree(fltr);
 	return ret;

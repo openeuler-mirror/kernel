@@ -26,7 +26,6 @@
 #endif
 
 #ifdef SXE2_DPDK_DRIVER
-#include "rte_os.h"
 #include "sxe2_type.h"
 #include "sxe2_common.h"
 #include "sxe2_osal.h"
@@ -48,10 +47,13 @@
 #define SXE2_CMD_MAGIC (0xFEFEEFEF)
 
 #define SXE2_FW_COMP_MAJOR_VER (1)
-#define SXE2_FW_COMP_MINOR_VER (1)
+#define SXE2_FW_COMP_MINOR_VER (2)
 #define SXE2_FW_COMP_VER           \
 	(SXE2_FW_COMP_MAJOR_VER << 16 | \
 	 SXE2_FW_COMP_MINOR_VER)
+
+#define SXE2_FW_NEED_COMP_MAJOR_VER (1)
+#define SXE2_FW_NEED_COMP_MINOR_VER (1)
 
 #define SXE2_CMD_LARGE_BUF_SIZE (512)
 #define SXE2_CMD_MAX_BUF \
@@ -79,6 +81,8 @@
 #define SXE2_CMD_NO_INTR   BIT(13)
 
 #define SXE2_CMD_DONE   (SXE2_CMD_DD | SXE2_CMD_COMPLETE | SXE2_CMD_ERROR)
+
+#define ETH_ALEN	6
 
 #define SXE2_VSI_SCATTER_TXRX_Q_MAX_CNT \
 	(16)
@@ -226,6 +230,8 @@
 
 #define SXE2_FNAV_DEFAULT_MASK_CNT (6)
 
+#define SXE2_FNAV_ASSIGN_MASK_CNT (SXE2_FNAV_INPUT_CNT - SXE2_FNAV_DEFAULT_MASK_CNT)
+
 #define SXE2_RSS_CORE_LUT_SIZE (32)
 
 #define SXE2_LARGE_ACTION_COUNT_IN_GROUP (4)
@@ -236,6 +242,22 @@
 
 #define SXE2_LLDP_FW_AGENT_DISABLE 0
 #define SXE2_LLDP_FW_AGENT_ENABLE 1
+
+#define SXE2_LFC_AN_ON 0x1f
+#define SXE2_LFC_AN_OFF 0xf
+
+#define SXE2_RX_MDD_EVENT_NONE 0
+
+#define SXE2_RX_MDD_EVENT_INVALID 3
+
+enum sxe2_com_module {
+	SXE2_COM_MODULE_KERNEL = 0,
+	SXE2_COM_MODULE_DPDK,
+	SXE2_COM_MODULE_MIXED,
+	SXE2_COM_MODULE_RDMA,
+	SXE2_COM_MODULE_UNDEFINED,
+	SXE2_COM_MODULE_INVAL,
+};
 
 enum sxe2_txq_quanta_prof_cfg {
 	SXE2_TXQ_QUANTA_PROF_DEFAULT = 0,
@@ -315,6 +337,7 @@ enum sxe2_drv_cmd_opcode {
 	SXE2_CMD_VSI_MDD_CHECK,
 	SXE2_CMD_VSI_VF_QUEUE_SET,
 	SXE2_CMD_VSI_VF_QUEUE_CLEAR,
+	SXE2_CMD_VSI_MDD_CHECK_V2,
 
 	SXE2_CMD_TXQ_CFG_AND_ENABLE  = SXE2_MK_CMD(SXE2_CMD_MODULE_QUEUE, 1),
 	SXE2_CMD_RXQ_CFG    = SXE2_MK_CMD(SXE2_CMD_MODULE_QUEUE, 2),
@@ -349,6 +372,7 @@ enum sxe2_drv_cmd_opcode {
 	SXE2_CMD_SWITCH_PROFILE_RECIPE_MAP_GET,
 	SXE2_CMD_SWITCH_SHARE_ID_GET,
 	SXE2_CMD_SWITCH_DFX_IRQ,
+	SXE2_CMD_SWITCH_ALGO_SET,
 
 	SXE2_CMD_PARSE_RULE = SXE2_MK_CMD(SXE2_CMD_MODULE_RULE, 1),
 	SXE2_CMD_UDP_TUNNEL_PORT,
@@ -412,6 +436,9 @@ enum sxe2_drv_cmd_opcode {
 	SXE2_CMD_OG_PROF_ID_ALLOC,
 	SXE2_CMD_OG_PROF_ID_FREE,
 	SXE2_CMD_OG_MASK_SEL_UPDATE,
+	SXE2_CMD_OG_MASK_ALLOC,
+	SXE2_CMD_OG_MASK_FREE,
+	SXE2_CMD_OG_MASK_UPDATE,
 
 	SXE2_CMD_RDMA_QP_ATTACH_MC = SXE2_MK_CMD(SXE2_CMD_MODULE_RDMA, 1),
 	SXE2_CMD_RDMA_QP_DETACH_MC,
@@ -420,6 +447,7 @@ enum sxe2_drv_cmd_opcode {
 	SXE2_CMD_RDMA_DESTROY_CC_QP,
 	SXE2_CMD_RDMA_GET_CC_QP_DFX,
 	SXE2_CMD_RDMA_NOTIFY_STATUS,
+	SXE2_CMD_RDMA_SET_HW_CC_PARAM,
 
 	SXE2_CMD_IPSEC_GET_CAPA = SXE2_MK_CMD(SXE2_CMD_MODULE_IPSEC, 1),
 	SXE2_CMD_IPSEC_TXSA_ADD,
@@ -443,6 +471,10 @@ enum sxe2_drv_cmd_opcode {
 	SXE2_CMD_FNAV_DFLT_COMP_QIDX_SET,
 	SXE2_CMD_FNAV_SPACE_CNT_GET,
 	SXE2_CMD_FNAV_MATCH_GET_BATCH,
+	SXE2_CMD_SDF_EN,
+	SXE2_CMD_SDF_CFG_SET,
+	SXE2_CMD_SDF_CFG_GET,
+	SXE2_CMD_FNAV_ALGO_SET,
 
 	SXE2_PXE_CTRL = SXE2_MK_CMD(SXE2_CMD_MODULE_PXE, 1),
 	SXE2_UEFI_PRIV_DATA_SET,
@@ -468,6 +500,7 @@ enum sxe2_drv_cmd_opcode {
 	SXE2_CMD_PTP_INIT = SXE2_MK_CMD(SXE2_CMD_MODULE_PTP, 1),
 	SXE2_CMD_PTP_RX_MODE_SET,
 	SXE2_CMD_PTP_SEM_CLEAN,
+	SXE2_CMD_PTP_PPS_CFG,
 
 	SXE2_CMD_MAC_ADDR_GET = SXE2_MK_CMD(SXE2_CMD_MODULE_MACADDR, 1),
 	SXE2_CMD_MAC_ADDR_SET,
@@ -478,6 +511,7 @@ enum sxe2_drv_cmd_opcode {
 	SXE2_CMD_MACSEC_RXSC_CFG,
 	SXE2_CMD_MACSEC_RXSA_CFG,
 	SXE2_CMD_MACSEC_FIX_CFG,
+	SXE2_CMD_MACSEC_CAP_GET,
 
 	SXE2_CMD_FW_DOWNLOAD = SXE2_MK_CMD(SXE2_CMD_MODULE_UPGRADE, 1),
 	SXE2_CMD_FW_DOWNLOAD_PRE,
@@ -586,6 +620,8 @@ enum sxe2_drv_cmd_opcode {
 	SXE2_CMD_ACL_TRACE_TRIGGER,
 	SXE2_CMD_ACL_TRACE_RECORDER,
 	SXE2_CMD_ACL_DFX_INFO_GET,
+	SXE2_CMD_ACL_STATS_GET,
+	SXE2_CMD_ACL_QVSI_MAP_SET,
 
 	SXE2_CMD_MAX = 0xFFFF,
 };
@@ -669,6 +705,7 @@ enum sxe2_cmd_drv_err_code {
 
 	SXE2_CMD_DRV_LINK_UPDATE_FAILED,
 	SXE2_OPT_DEV_BUSY,
+	SXE2_CMD_DRV_FLM_LINK_NOT_UPDATE,
 
 };
 
@@ -797,7 +834,9 @@ struct sxe2_fwc_msix_caps {
 struct sxe2_fwc_vsi_caps {
 	__le16 cnt;
 	__le16 base_idx;
-	u8     resv[28];
+	u8 dpdk_lut_type;
+	u8 dpdk_global_lut_id;
+	u8 resv[26];
 };
 
 struct sxe2_fwc_ppe_caps {
@@ -809,7 +848,9 @@ struct sxe2_fwc_ppe_caps {
 	__le16 bfd_sess_size;
 	__le16 rss_global_lut_base;
 	__le16 rss_global_lut_num;
-	u8     resv[16];
+	__le16 acl_counter_base;
+	__le16 acl_counter_num;
+	u8     resv[12];
 };
 
 struct sxe2_dev_common_caps {
@@ -826,7 +867,9 @@ struct sxe2_dev_common_caps {
 	u8 core_fs_support;
 	u8 switch_tag_support;
 	u8 mac_ts_support;
-	u8 resv[19];
+	u8 acl_ext_support;
+	u8 ptp_pps_support;
+	u8 resv[17];
 };
 
 struct sxe2_fwc_dev_caps {
@@ -1009,7 +1052,7 @@ struct sxe2_fwc_txsched_cap_resp {
 	struct sxe2_txsched_layer_props layer[SXE2_TXSCHED_HW_LAYER_7];
 };
 
-struct scbge_txsched_node_bw {
+struct sxe2_txsched_node_bw {
 	__le32 bw;
 	__le32 prof_id;
 	__le16 weight;
@@ -1022,8 +1065,8 @@ struct sxe2_txsched_node_props {
 	u8 arb_mode;
 	u8 rl_type;
 	enum sxe2_txsched_hw_layer  hw_layer;
-	struct scbge_txsched_node_bw cir;
-	struct scbge_txsched_node_bw srlPir;
+	struct sxe2_txsched_node_bw cir;
+	struct sxe2_txsched_node_bw srlPir;
 	u8 adj_lvl;
 	u8 rsv[3];
 };
@@ -1449,7 +1492,7 @@ struct sxe2_pf_hw_stats {
 	__le64 tx_size_1024_1522;
 	__le64 tx_size_1523_max;
 	__le64 tx_underflow_error;
-	__le64 rx_byte_good_bad;
+	__le64 rx_bytes_good_bad;
 	__le64 rx_frame_good_bad;
 	__le64 rx_unicast_good;
 	__le64 rx_vlan_packets;
@@ -2313,6 +2356,31 @@ struct sxe2_vf_fnav_clear_ctxt {
 	u8 io_close;
 };
 
+struct sxe2_fwc_sdf_req {
+	__le16 eth_type;
+	__le16 mask;
+	u8  en;
+	u8 resv[3];
+};
+
+struct sxe2_fwc_sdf_resp {
+	__le16 eth_type;
+	__le16 mask;
+};
+
+#define SXE2_FNAV_ALGO_MODE_MAX		(5)
+#define SXE2_SWITCH_ALGO_MODE_MAX	(5)
+
+struct sxe2_fwc_fnav_algo_set_req {
+	u8 mode;
+	u8 resv[3];
+};
+
+struct sxe2_fwc_switch_algo_set_req {
+	u8 mode;
+	u8 resv[3];
+};
+
 enum sxe2_rxft_dbg_ppe_info_type {
 	SXE2_RXFT_PPE_INFO_TX_IN,
 	SXE2_RXFT_PPE_INFO_TX_EX,
@@ -2490,7 +2558,7 @@ struct sxe2_fwc_lfc_info {
 	__le32 low_water[SXE2_MAX_TRAFFIC_CLASS];
 	__le16 pause_time[SXE2_MAX_TRAFFIC_CLASS];
 	u8 priority;
-	u8 resv1;
+	u8 an;
 };
 
 struct sxe2_mdd_vf_req {
@@ -2522,6 +2590,56 @@ struct sxe2_fwc_mdd_resp {
 	__le16 mdd_vf_cnt;
 	struct sxe2_mdd_vf_resp mdd_vfs[];
 };
+
+struct sxe2_mdd_vf_req_v2 {
+	__le16 vf_idx;
+	__le16 q_offset;
+	u8 q_mapping_mode;
+	u8 reserve[4];
+};
+
+struct sxe2_fwc_mdd_req_v2 {
+	__le16 vf_cnt;
+	__le16 q_offset;
+	u8 mdd_check;
+	struct sxe2_mdd_vf_req_v2 vfs[];
+};
+
+struct sxe2_mdd_vf_resp_v2 {
+	__le64 tx_queues_bitmap;
+	__le16 vf_idx;
+	u8 mdd;
+	u8 reserve[5];
+};
+
+struct sxe2_fwc_mdd_resp_v2 {
+	__le32 vf_mdd_tx_event;
+	__le32 pf_mdd_tx_event;
+	__le64 pf_tx_queues_bitmap;
+
+	u8 vf_mdd_rx_event;
+	u8 pf_mdd_rx_event;
+	u8 reserved[2];
+
+	__le16 mdd_vf_cnt;
+	struct sxe2_mdd_vf_resp_v2 mdd_vfs[];
+};
+
+#define SXE2_MAX_MDD_REQ_BUF                                                      \
+		(sizeof(struct sxe2_fwc_mdd_req) +					      \
+		 SXE2_VF_NUM * sizeof(struct sxe2_mdd_vf_req))
+
+#define SXE2_MAX_MDD_RESP_BUF                                                     \
+		(sizeof(struct sxe2_fwc_mdd_resp) +					      \
+		 SXE2_VF_NUM * sizeof(struct sxe2_mdd_vf_resp))
+
+#define SXE2_MAX_MDD_REQ_BUF_V2                                                      \
+	(sizeof(struct sxe2_fwc_mdd_req_v2) +                                         \
+	 SXE2_VF_NUM * sizeof(struct sxe2_mdd_vf_req_v2))
+
+#define SXE2_MAX_MDD_RESP_BUF_V2                                                     \
+	(sizeof(struct sxe2_fwc_mdd_resp_v2) +                                        \
+	 SXE2_VF_NUM * sizeof(struct sxe2_mdd_vf_resp_v2))
 
 struct sxe2_fwc_ptp_filter_addr {
 	u8 filter_type;
@@ -2558,6 +2676,28 @@ enum sxe2_rx_timestamp_mode {
 
 struct sxe2_fwc_ptp_mode_set_req {
 	u8 mode;
+};
+
+enum sxe2_ptp_pps_index {
+	SXE2_PTP_PPS_INDEX_0 = 0,
+	SXE2_PTP_PPS_INDEX_1,
+	SXE2_PTP_PPS_INDEX_2,
+	SXE2_PTP_PPS_INDEX_3,
+	SXE2_PTP_PPS_INDEX_CLK,
+	SXE2_PTP_PPS_INDEX_MAX,
+};
+
+enum sxe2_ptp_pps_cfg_mode {
+	SXE2_PTP_PPS_CFG_MODE_DISABLE,
+	SXE2_PTP_PPS_CFG_MODE_OUT,
+	SXE2_PTP_PPS_CFG_MODE_IN,
+	SXE2_PTP_PPS_CFG_MODE_MAX,
+};
+
+struct sxe2_fwc_ptp_pps_cfg {
+	u8 pps_index;
+	u8 cfg_mode;
+	u8 resv[2];
 };
 
 #define SXE2_IPSEC_KEY_LEN (32)
@@ -2703,6 +2843,11 @@ struct sxe2_fw_macsec_rxsc {
 	__le64 sci;
 };
 
+struct sxe2_fwc_macsec_cap {
+	u8 enable;
+	u8 rsv[3];
+};
+
 struct sxe2_fwc_ddp_state {
 	u8      act_pfid;
 	u8      pad;
@@ -2761,7 +2906,8 @@ struct flm_link_fec_result {
 struct configure_fc {
 	u8 rx_en;
 	u8 tx_en;
-	u8 resv[2];
+	u8 is_fc_en;
+	u8 resv[1];
 };
 
 struct configure_an {
@@ -2817,12 +2963,12 @@ struct sxe2_fw_loop_back_config {
 };
 
 struct flm_link_info {
-	u32           port_num;
-	u32           is_link_up;
-	u32           module_type;
-	u32           is_an_enable;
-	u32           speed;
-	u32           fec;
+	u32 port_num;
+	u32 is_link_up;
+	u32 module_type;
+	u32 is_an_enable;
+	u32 speed;
+	u32 fec;
 	struct configure_fc fc_mode;
 };
 
@@ -3445,6 +3591,7 @@ struct sxe2_fwc_ppe_dfx {
 #define SXE2_ACL_ACTION_NUM_PER_ENTRY    (2)
 #define SXE2_ACL_ACTION_TCAM_DEPTH       (512)
 #define SXE2_ACL_ACTION_MEM_DEPTH        (512)
+#define SXE2_ACL_MAX_COUNTER_BANK_NUM    (2)
 
 struct sxe2_fwc_acl_lut_alloc_req {
 	__le16 width;
@@ -3510,6 +3657,22 @@ struct sxe2_fwc_acl_act_entry_set_req {
 	u8 rsv;
 
 	struct sxe2_acl_act_entry_data data[SXE2_ACL_ACTION_NUM_PER_ENTRY];
+};
+
+struct sxe2_fwc_acl_stats_req {
+	__le16 counter_idx;
+	u8 is_clear;
+	u8 rsv;
+};
+
+struct sxe2_fwc_acl_stats_resp {
+	__le64 pkt_cnt;
+	__le64 byte_cnt;
+};
+
+struct sxe2_fwc_acl_qvsi_map_req {
+	__le16 act_entry_idx;
+	__le16 vsi_num;
 };
 
 struct sxe2_fwc_acl_scen_alloc_req {

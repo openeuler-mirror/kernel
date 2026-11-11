@@ -22,15 +22,24 @@
 
 #pragma pack(1)
 
-#define SXE2_VF_VERSION_MAJOR 1
-#define SXE2_VF_VERSION_MINOR 1
+#define SXE2_PF_VF_VERSION_MAJOR 1
+
+#define SXE2_PF_VF_VERSION_MAJOR_V1 1
+#define SXE2_PF_VF_VERSION_MINOR 3
+
+#define SXE2_PF_VF_VERSION_MINOR_V1 1
+
+#define SXE2_PF_VF_VERSION_MINOR_V2 2
+
+#define SXE2VF_PF_VER_MAJOR_MAX (SXE2_PF_VF_VERSION_MAJOR + 1)
+#define SXE2VF_PF_VER_MINOR_MAX (SXE2_PF_VF_VERSION_MINOR + 1)
 
 #define SXE2_VF_MAX_VSI_CNT   4
 
 #define SXE2_VF_VLAN_STATUS_INVALID  (0xFF)
 
 #define SXE2_VF_ETH_Q_NUM 16
-#define SXE2_VF_DPDK_Q_NUM 16
+#define SXE2_VF_DPDK_Q_NUM 64
 
 #define SXE2_VF_DRV_TO_HW      (0x3)
 #define SXE2_VF_VF_TO_PF       (0x0801)
@@ -54,13 +63,37 @@
 #define SXE2_IPSEC_DIR_RX (1)
 #define SXE2_IPSEC_INVALID_SA_IDX (0xFFFF)
 
-enum sxe2vf_vsi_type {
-	SXE2VF_VSI_TYPE_ETH = 0,
-	SXE2VF_VSI_TYPE_DPDK,
-	SXE2VF_VSI_TYPE_NR,
+#define SXE2_RSS_HASH_KEY_SIZE 52
+
+enum sxe2_rss_lut_type {
+	SXE2_RSS_VSI_LUT = 0,
+	SXE2_RSS_LUT_TYPE_RSV,
+	SXE2_RSS_PF_LUT,
+	SXE2_RSS_GLOBAL_LUT,
+	SXE2_RSS_MAX_LUT_TYPE,
 };
 
-#define SXE2_VF_VSI_CNT_USED  SXE2VF_VSI_TYPE_NR
+enum sxe2_rss_lut_size {
+	SXE2_RSS_LUT_SIZE_64  = 64,
+	SXE2_RSS_LUT_SIZE_128 = 128,
+	SXE2_RSS_LUT_SIZE_512 = 512,
+	SXE2_RSS_LUT_SIZE_2K  = 2048,
+};
+
+enum sxe2_rss_lut_max_queue {
+	SXE2_VSI_LUT_MAX_QUEUE	  = 16,
+	SXE2_GLOBAL_LUT_MAX_QUEUE = 64,
+	SXE2_PF_LUT_MAX_QUEUE	  = 256,
+};
+
+#define SXE2_RSS_GLOBAL_LUT_NUM_MAX (16)
+enum sxe2_vf_vsi_id_type {
+	SXE2_VF_VSI_ID_MASTER = 0,
+	SXE2_VF_VSI_ID_SLAVE,
+	SXE2_VF_VSI_ID_NR,
+};
+
+#define SXE2_VF_VSI_CNT_USED  SXE2_VF_VSI_ID_NR
 
 enum sxe2_vf_opcode {
 	SXE2_VF_UNKNOWN = 0,
@@ -139,9 +172,27 @@ enum sxe2_vf_opcode {
 	SXE2_VF_DRV_MODE_SET = 0x3d,
 	SXE2_VF_DRV_MODE_GET = 0x3e,
 
+	SXE2_VF_ETH_STATS_CLEAR = 0x3f,
+
+	SXE2_VF_IRQ_MAP_EXT = 0x40,
+	SXE2_VF_ADV_CFG_GET = 0x41,
+
+	SXE2_VF_MDD_NOTIFY = 0x42,
+	SXE2_VF_MDD_FAULT_NOTIFY = 0x43,
+
 	SXE2_VF_OPCODE_NR,
 
 	SXE2_VF_MBX_DISABLE = 0xFFFF,
+};
+
+struct sxe2_mdd_notify_msg {
+	__le64 vf_tx_queues_bitmap;
+} __packed;
+
+enum sxe2vf_opcode_boundary {
+	SXE2VF_OPCODE_BOUNDARY_V1_1    = SXE2_VF_DRV_MODE_GET + 1,
+	SXE2VF_OPCODE_BOUNDARY_V1_2    = SXE2_VF_ETH_STATS_CLEAR + 1,
+	SXE2VF_OPCODE_BOUNDARY_DEFAULT = SXE2_VF_OPCODE_NR,
 };
 
 enum sxe2_vf_err_code {
@@ -181,13 +232,14 @@ enum sxe2_vf_msg_type {
 #define SXE2_MBX_MSG_HDR_PTR(cmd_hdr_ptr) \
 	({ \
 		typeof(cmd_hdr_ptr) ptr = (cmd_hdr_ptr); \
-		((struct sxe2vf_mbx_msg_hdr *)((u8 *)(ptr) + (ptr)->hdr_len)); \
+		((struct sxe2vf_mbx_msg_hdr *)((u8 *)(ptr) + le16_to_cpu((ptr)->hdr_len))); \
 	}) \
 
 #define SXE2VF_MBX_DATA_OFFSET(buf)                                   \
 	({                                                                \
 		struct sxe2_cmd_hdr *_buf = (struct sxe2_cmd_hdr *)(buf);     \
-		((_buf->hdr_len) + (SXE2_MBX_MSG_HDR_PTR(_buf)->data_offset)); \
+		((le16_to_cpu(_buf->hdr_len)) +                               \
+		 (le32_to_cpu(SXE2_MBX_MSG_HDR_PTR(_buf)->data_offset)));     \
 	})
 
 #define SXE2_FNAV_MAX_NUM_PROTO_HDRS    (9)
@@ -234,7 +286,8 @@ enum sxe2_driver_type {
 struct sxe2_vf_vfres_msg_req {
 	u8 driver_type;
 	u8 support_sw_stats;
-	u8 reserve[2];
+	u8 run_mode;
+	u8 reserve[1];
 };
 
 struct sxe2_vf_drv_mode_req {
@@ -356,6 +409,44 @@ struct sxe2_vf_irq_map_msg {
 	__le16 num_irqs;
 	__le16 vsi_id;
 	struct sxe2_vf_irq_map irq_maps[];
+};
+
+struct sxe2_vf_irq_map_ext {
+	__le16 irq_id;
+	u8     rsv[6];
+	__le64 txq_map;
+	__le64 rxq_map;
+	__le16 rxitr_idx;
+	__le16 txitr_idx;
+	u8     resv[4];
+};
+
+struct sxe2_vf_irq_map_msg_ext {
+	__le16 num_irqs;
+	__le16 vsi_id;
+	struct sxe2_vf_irq_map_ext irq_maps[];
+};
+
+struct sxe2_vf_vsi_adv_cfg {
+	__le16 q_cfg;
+	__le16 q_alloc;
+	__le16 lut_size;
+	u8     lut_type;
+	u8     lut_id;
+	u8     resv[24];
+};
+
+enum sxe2_vf_adv_vsi_id {
+	SXE2_VF_ADV_VSI_KERNEL = 0,
+	SXE2_VF_ADV_VSI_DPDK,
+	SXE2_VF_ADV_VSI_NR
+};
+
+struct sxe2_vf_adv_cfg_msg {
+	__le16 vsi_id;
+	u8     is_pre_assigned;
+	u8     resv[29];
+	struct sxe2_vf_vsi_adv_cfg vsi[SXE2_VF_ADV_VSI_NR];
 };
 
 struct sxe2_vf_irq_unmap_msg {

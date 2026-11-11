@@ -482,6 +482,24 @@ bool mq_kcheck_cqe_err(struct sxe2_rdma_ctx_dev *dev, u8 mq_cmd, bool error,
 	bool ret_code			  = true;
 	struct sxe2_rdma_device *rdma_dev = to_rdmadev(dev);
 
+	if (error == true && maj_err_code == MQ_CRIERR_MAJ_ERRCODE &&
+		min_err_code == MQ_ERR_VF_NUM_OVERFLOW) {
+		if (!rdma_dev->vf_num_overflow_print) {
+			if (sxe2_mq_cmd_names[mq_cmd]) {
+				DRV_RDMA_LOG_DEV_WARN("MQ: [VF Num Overflow][%s] maj=%#04X\n"
+					"\tmin=%#04X\n",
+					sxe2_mq_cmd_names[mq_cmd], maj_err_code,
+					min_err_code);
+			} else {
+				DRV_RDMA_LOG_DEV_WARN("MQ: [VF Num Overflow][Opcode Err]\n"
+					"\tmaj=%#04X min=%#04X\n",
+					maj_err_code, min_err_code);
+			}
+		}
+		ret_code = false;
+		goto end;
+	}
+
 	for (i = 0; i < ARRAY_SIZE(sxe2_mq_cqe_err_list); ++i) {
 		if (maj_err_code == sxe2_mq_cqe_err_list[i].maj &&
 		    min_err_code == sxe2_mq_cqe_err_list[i].min &&
@@ -694,6 +712,7 @@ void sxe2_khandler_mcqe(struct sxe2_rdma_pci_f *rdma_func,
 	unsigned long flags = 0;
 	int ret_code;
 	struct sxe2_rdma_device *rdma_dev = rdma_func->rdma_dev;
+	bool was_waiting = false;
 
 #ifdef SXE2_CFG_DEBUG
 	if (rdma_dev->rdma_func->mq.mcqe_ignore)
@@ -713,9 +732,10 @@ void sxe2_khandler_mcqe(struct sxe2_rdma_pci_f *rdma_func,
 			mq_request->cmpl_info.min_err_code = info.min_err_code;
 			mq_request->cmpl_info.op_ret_val   = info.op_ret_val;
 			mq_request->cmpl_info.error	   = info.error;
+			was_waiting = mq_request->waiting;
 			mq_kcomplete_mq_request(&rdma_func->mq, mq_request);
 		}
-		if (mq_request && mq_request->waiting == false && info.error &&
+		if (mq_request && !was_waiting && info.error &&
 		    (!rdma_func->reset)) {
 			if ((info.maj_err_code == MQ_CRIERR_MAJ_ERRCODE) &&
 			    ((info.min_err_code == MQ_CRIERR_MQC_NOT_CREATED) ||
@@ -820,6 +840,9 @@ int sxe2_kwait_event(struct sxe2_rdma_pci_f *rdma_func,
 				rdma_func->reset = true;
 				rdma_func->gen_ops.request_reset(rdma_func);
 			}
+		} else if ((maj_err == MQ_CRIERR_MAJ_ERRCODE) &&
+				   (min_err == MQ_ERR_VF_NUM_OVERFLOW)) {
+			ret_code = -ENOSPC;
 		}
 	}
 

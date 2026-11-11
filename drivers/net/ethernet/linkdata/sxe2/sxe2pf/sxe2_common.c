@@ -22,6 +22,8 @@ STATIC void sxe2_dev_caps_set(struct sxe2_adapter *adapter,
 
 	if (dev_caps->dev_common_caps.acl_support)
 		set_bit(SXE2_FLAG_ACL_CAPABLE, adapter->flags);
+	if (dev_caps->dev_common_caps.acl_ext_support)
+		set_bit(SXE2_FLAG_ACL_EXT_CAPABLE, adapter->flags);
 
 	set_bit(SXE2_FLAG_DCB_CAPABLE, adapter->flags);
 
@@ -142,10 +144,20 @@ STATIC s32 sxe2_sw_caps_set(struct sxe2_adapter *adapter,
 			le16_to_cpu(func_caps->ppe_caps.fnav_counter_base);
 	adapter->caps_ctxt.fnav_stat_num =
 			le16_to_cpu(func_caps->ppe_caps.fnav_counter_num);
+	adapter->caps_ctxt.acl_stat_base =
+			le16_to_cpu(func_caps->ppe_caps.acl_counter_base);
+	adapter->caps_ctxt.acl_stat_num =
+			le16_to_cpu(func_caps->ppe_caps.acl_counter_num);
 	adapter->caps_ctxt.global_lut_base =
 			le16_to_cpu(func_caps->ppe_caps.rss_global_lut_base);
 	adapter->caps_ctxt.global_lut_num =
 			le16_to_cpu(func_caps->ppe_caps.rss_global_lut_num);
+	adapter->vsi_ctxt.dpdk_lut_type = SXE2_RSS_VSI_LUT;
+	adapter->vsi_ctxt.dpdk_global_lut_id = SXE2_VF_GLOBAL_LUT_INVALID_ID;
+	adapter->caps_ctxt.acl_stat_base =
+			le16_to_cpu(func_caps->ppe_caps.acl_counter_base);
+	adapter->caps_ctxt.acl_stat_num =
+			le16_to_cpu(func_caps->ppe_caps.acl_counter_num);
 
 	if (func_caps->vf_caps.sriov_cap) {
 		set_bit(SXE2_FLAG_SRIOV_CAPABLE, adapter->flags);
@@ -169,7 +181,8 @@ STATIC s32 sxe2_sw_caps_set(struct sxe2_adapter *adapter,
 	LOG_INFO_BDF("pf_idx:%u port_idx:%u irq max:%u base:%u txq max:%u\n"
 		     "txq_base_idx_in_dev:%u rxq max:%u rxq_base_idx_in_dev:%u\n"
 		     "sriov_cap:%u max_vfs:%u vfid_base:%u rss_lut_size:%u.\n"
-		     "fnav_bsize: %u, fnav_gsize: %u vsi_max_cnt:%u vsi_base_id:%u\n",
+		     "fnav_bsize: %u, fnav_gsize: %u vsi_max_cnt:%u vsi_base_id:%u\n"
+			 "acl_stat_base:%u, acl_stat_num:%u.\n",
 		     adapter->pf_idx, adapter->port_idx, adapter->irq_ctxt.max_cnt,
 		     adapter->irq_ctxt.base_idx_in_dev, adapter->q_ctxt.max_txq_cnt,
 		     adapter->q_ctxt.txq_base_idx_in_dev,
@@ -179,8 +192,8 @@ STATIC s32 sxe2_sw_caps_set(struct sxe2_adapter *adapter,
 		     adapter->vf_ctxt.vfid_base, adapter->caps_ctxt.max_rss_lut_size,
 		     adapter->caps_ctxt.fnav_space_bsize,
 		     adapter->caps_ctxt.fnav_space_gsize, adapter->vsi_ctxt.max_cnt,
-		     adapter->vsi_ctxt.base_idx_in_dev);
-
+		     adapter->vsi_ctxt.base_idx_in_dev, adapter->caps_ctxt.acl_stat_base,
+		     adapter->caps_ctxt.acl_stat_num);
 	return 0;
 }
 
@@ -227,29 +240,23 @@ s32 __sxe2_drv_mode_get(struct sxe2_adapter *adapter,
 	return ret;
 }
 
-s32 sxe2_drv_mode_get(struct sxe2_adapter *adapter)
+void sxe2_drv_mode_get(struct sxe2_adapter *adapter)
 {
 	s32 ret = 0;
+	enum sxe2_com_module drv_mode = sxe2_g_drv_mode_get();
 	struct sxe2_fwc_drv_mode_resp resp = {};
+
+	adapter->drv_mode = drv_mode;
 
 	ret = __sxe2_drv_mode_get(adapter, &resp, sizeof(resp));
 	if (!ret) {
 		if (resp.drv_mode != SXE2_COM_MODULE_UNDEFINED) {
 			adapter->drv_mode = resp.drv_mode;
-			goto end;
-		} else {
-			ret = -EINVAL;
+			return;
 		}
+	} else {
+		LOG_ERROR_BDF("__sxe2_drv_mode_get failed: %d\n", ret);
 	}
-
-	if ((sxe2_g_com_mode_get() != SXE2_COM_MODULE_UNDEFINED) &&
-	    (sxe2_g_com_mode_get() != SXE2_COM_MODULE_DPDK)) {
-		adapter->drv_mode = sxe2_g_com_mode_get();
-		ret = 0;
-	}
-
-end:
-	return ret;
 }
 
 s32 sxe2_drv_mode_set(struct sxe2_adapter *adapter, enum sxe2_com_module type)
@@ -404,10 +411,88 @@ void sxe2_queue_work(struct sxe2_adapter *adapter, struct workqueue_struct *wq,
 		LOG_WARN_BDF("work was already on a queue.\n");
 }
 
+s32 __sxe2_global_lut_get(struct sxe2_adapter *adapter)
+{
+	struct sxe2_caps_context *caps_ctxt = &adapter->caps_ctxt;
+	s32 lut_id;
+
+	lut_id = bitmap_find_free_region(caps_ctxt->global_lut_id,
+					 caps_ctxt->global_lut_num, 0);
+	if (lut_id < 0)
+		return lut_id;
+
+	return lut_id + (s32)caps_ctxt->global_lut_base;
+}
+
+s32 sxe2_global_lut_get(struct sxe2_adapter *adapter)
+{
+	s32 lut_id;
+
+	mutex_lock(&adapter->caps_ctxt.global_lut_lock);
+	lut_id = __sxe2_global_lut_get(adapter);
+	mutex_unlock(&adapter->caps_ctxt.global_lut_lock);
+
+	return lut_id;
+}
+
+void sxe2_global_lut_put(struct sxe2_adapter *adapter, u8 lut_id)
+{
+	struct sxe2_caps_context *caps_ctxt = &adapter->caps_ctxt;
+
+	if (lut_id == SXE2_VF_GLOBAL_LUT_INVALID_ID)
+		return;
+
+	mutex_lock(&caps_ctxt->global_lut_lock);
+	clear_bit(lut_id - caps_ctxt->global_lut_base,
+		  caps_ctxt->global_lut_id);
+	mutex_unlock(&caps_ctxt->global_lut_lock);
+}
+
+u16 __sxe2_global_lut_remaining(struct sxe2_adapter *adapter)
+{
+	struct sxe2_caps_context *caps_ctxt = &adapter->caps_ctxt;
+
+	return caps_ctxt->global_lut_num -
+	       (u16)bitmap_weight(caps_ctxt->global_lut_id,
+				  caps_ctxt->global_lut_num);
+}
+
+bool sxe2_global_lut_get_bulk(struct sxe2_adapter *adapter, u16 cnt, u8 *lut_ids)
+{
+	struct sxe2_caps_context *caps_ctxt = &adapter->caps_ctxt;
+	bool sufficient = true;
+	u16 i;
+
+	mutex_lock(&caps_ctxt->global_lut_lock);
+	if (cnt > __sxe2_global_lut_remaining(adapter)) {
+		sufficient = false;
+		goto l_end;
+	}
+
+	for (i = 0; i < cnt; i++) {
+		s32 lut_id = __sxe2_global_lut_get(adapter);
+
+		if (lut_id < 0) {
+			while (i > 0)
+				clear_bit(lut_ids[--i] -
+					  caps_ctxt->global_lut_base,
+					  caps_ctxt->global_lut_id);
+			sufficient = false;
+			goto l_end;
+		}
+		lut_ids[i] = (u8)lut_id;
+	}
+
+l_end:
+	mutex_unlock(&caps_ctxt->global_lut_lock);
+	return sufficient;
+}
+
 s32 sxe2_dpdk_pf_caps_get(struct sxe2_adapter *adapter,
 			  struct sxe2_fwc_func_caps *caps)
 {
 	s32 ret = 0;
+	u16 q_max;
 
 	if (!adapter || !caps) {
 		ret = -EINVAL;
@@ -415,19 +500,40 @@ s32 sxe2_dpdk_pf_caps_get(struct sxe2_adapter *adapter,
 		goto l_end;
 	}
 
+	if (adapter->vsi_ctxt.dpdk_lut_type != SXE2_RSS_GLOBAL_LUT) {
+		s32 lut_id = sxe2_global_lut_get(adapter);
+
+		if (lut_id >= 0) {
+			adapter->vsi_ctxt.dpdk_lut_type = SXE2_RSS_GLOBAL_LUT;
+			adapter->vsi_ctxt.dpdk_global_lut_id = (u8)lut_id;
+		} else {
+			adapter->vsi_ctxt.dpdk_lut_type = SXE2_RSS_VSI_LUT;
+			adapter->vsi_ctxt.dpdk_global_lut_id =
+				SXE2_VF_GLOBAL_LUT_INVALID_ID;
+		}
+	}
+
+	q_max = (adapter->vsi_ctxt.dpdk_lut_type == SXE2_RSS_GLOBAL_LUT) ?
+		SXE2_GLOBAL_LUT_MAX_QUEUE : SXE2_VSI_LUT_MAX_QUEUE;
+
 	caps->tx_caps.base_idx = adapter->q_ctxt.txq_layout.dpdk_offset;
-	caps->tx_caps.cnt = adapter->q_ctxt.txq_layout.dpdk;
+	caps->tx_caps.cnt = min_t(u16, q_max, adapter->q_ctxt.txq_layout.dpdk);
 
 	caps->rx_caps.base_idx = adapter->q_ctxt.rxq_layout.dpdk_offset;
-	caps->rx_caps.cnt = adapter->q_ctxt.rxq_layout.dpdk;
+	caps->rx_caps.cnt = min_t(u16, q_max, adapter->q_ctxt.rxq_layout.dpdk);
 
 	caps->msix_caps.base_idx = adapter->irq_ctxt.irq_layout.dpdk_offset;
 	caps->msix_caps.cnt = adapter->irq_ctxt.irq_layout.dpdk;
 
-	LOG_INFO_BDF("dpdk pf txq base:%d cnt:%d rxq base:%d cnt:%d irq base:%d cnt:%d.\n",
+	caps->vsi_caps.dpdk_lut_type = adapter->vsi_ctxt.dpdk_lut_type;
+	caps->vsi_caps.dpdk_global_lut_id = adapter->vsi_ctxt.dpdk_global_lut_id;
+
+	LOG_INFO_BDF("dpdk pf txq base:%d cnt:%d rxq base:%d cnt:%d irq base:%d cnt:%d "
+		     "lut_type:%u lut_id:%u.\n",
 		     caps->tx_caps.base_idx, caps->tx_caps.cnt,
 		     caps->rx_caps.base_idx, caps->rx_caps.cnt,
-		     caps->msix_caps.base_idx, caps->msix_caps.cnt);
+		     caps->msix_caps.base_idx, caps->msix_caps.cnt,
+		     caps->vsi_caps.dpdk_lut_type, caps->vsi_caps.dpdk_global_lut_id);
 
 l_end:
 	return ret;

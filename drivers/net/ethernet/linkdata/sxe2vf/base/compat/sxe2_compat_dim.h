@@ -118,7 +118,7 @@ dim_update_sample(u16 event_ctr, u64 packets, u64 bytes, struct dim_sample *s)
 	s->event_ctr = event_ctr;
 }
 
-void net_dim(struct dim *dim, const struct dim_sample end_sample);
+void net_dim(struct dim *dim, const struct dim_sample *end_sample);
 #endif
 #endif
 

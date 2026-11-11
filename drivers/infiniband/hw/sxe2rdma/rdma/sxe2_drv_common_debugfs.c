@@ -387,14 +387,413 @@ static ssize_t drv_rdma_common_dump_pcap_en_read(struct file *filp,
 end:
 	return ret;
 }
+static ssize_t drv_rdma_common_kernel_min_rnr_timer_en_write(struct file *filp,
+						  const char __user *buf,
+						  size_t count, loff_t *off)
+{
+	ssize_t ret					    = SXE2_OK;
+	char cmd[COMMON_MIN_RNR_TIMER_EN_DEBUGFS_WRITE_BUF_MAX_LEN] = { 0 };
+	struct sxe2_rdma_device *rdma_dev;
+	u32 input_val;
 
+	if (*off != 0)
+		goto end;
+
+	if (count >= COMMON_MIN_RNR_TIMER_EN_DEBUGFS_WRITE_BUF_MAX_LEN) {
+		ret = -ENOSPC;
+		goto end;
+	}
+
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		goto end;
+	}
+
+	if (copy_from_user(cmd, buf, count)) {
+		ret = -EFAULT;
+		DRV_RDMA_LOG_DEV_ERR(
+			"common debugfs:Cmd copy from user failed err\n");
+		goto end;
+	}
+	ret = sscanf(cmd, "%u", &input_val);
+	if (ret != 1 || input_val > 1) {
+		ret = -ENODATA;
+		DRV_RDMA_LOG_DEV_ERR(
+			"common debugfs:analyze cmd err please input enable:1 disable:0\n");
+		goto end;
+	}
+
+	if (input_val) {
+		rdma_dev->rdma_func->kernel_min_rnr_timer_en = 1;
+		DRV_RDMA_LOG_DEV_DEBUG("common debugfs:kernel_min_rnr_timer_en enable\n");
+
+	} else {
+		rdma_dev->rdma_func->kernel_min_rnr_timer_en = 0;
+		DRV_RDMA_LOG_DEV_DEBUG("common debugfs:kernel_min_rnr_timer_en disable\n");
+	}
+
+	ret  = (ssize_t)count;
+	*off = (loff_t)count;
+
+end:
+	return ret;
+}
+static ssize_t drv_rdma_common_kernel_min_rnr_timer_en_read(struct file *filp,
+					     char __user *buf, size_t count,
+					     loff_t *off)
+{
+	ssize_t ret	 = SXE2_OK;
+	size_t len_total = 0;
+	char *rsp	 = NULL;
+	char *rsp_end;
+	struct sxe2_rdma_device *rdma_dev;
+
+	if (*off != 0)
+		goto end;
+
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		goto end;
+	}
+
+	rsp = kzalloc(sizeof(char) * SXE2_DEBUG_DUMP_BUF_SIZE, GFP_KERNEL);
+	if (!rsp) {
+		ret = -ENOMEM;
+		DRV_RDMA_LOG_DEV_ERR(
+			"common debugfs:rsp kmalloc failed err\n");
+		goto end;
+	}
+	rsp_end = rsp;
+
+	if (rdma_dev->rdma_func->kernel_min_rnr_timer_en)
+		len_total += dbg_vsnprintf(rsp_end, len_total, "kernel min rnr timer set enable\n");
+	else
+		len_total +=
+			dbg_vsnprintf(rsp_end, len_total, "kernel min rnr timer set disable\n");
+
+	ret = simple_read_from_buffer(buf, count, off, rsp, len_total);
+	if (ret < 0)
+		DRV_RDMA_LOG_DEV_ERR("common debugfs:simple read error %zu\n",
+				     ret);
+
+	kfree(rsp);
+	rsp = NULL;
+
+end:
+	return ret;
+}
+static ssize_t drv_rdma_common_user_min_rnr_timer_en_write(struct file *filp,
+						  const char __user *buf,
+						  size_t count, loff_t *off)
+{
+	ssize_t ret					    = SXE2_OK;
+	char cmd[COMMON_MIN_RNR_TIMER_EN_DEBUGFS_WRITE_BUF_MAX_LEN] = { 0 };
+	struct sxe2_rdma_device *rdma_dev;
+	u32 input_val;
+
+	if (*off != 0)
+		goto end;
+
+	if (count >= COMMON_MIN_RNR_TIMER_EN_DEBUGFS_WRITE_BUF_MAX_LEN) {
+		ret = -ENOSPC;
+		goto end;
+	}
+
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		goto end;
+	}
+
+	if (copy_from_user(cmd, buf, count)) {
+		ret = -EFAULT;
+		DRV_RDMA_LOG_DEV_ERR(
+			"common debugfs:Cmd copy from user failed err\n");
+		goto end;
+	}
+	ret = sscanf(cmd, "%u", &input_val);
+	if (ret != 1 || input_val > 1) {
+		ret = -ENODATA;
+		DRV_RDMA_LOG_DEV_ERR(
+			"common debugfs:analyze cmd err please input enable:1 disable:0\n");
+		goto end;
+	}
+
+	if (input_val) {
+		rdma_dev->rdma_func->user_min_rnr_timer_en = 1;
+		DRV_RDMA_LOG_DEV_DEBUG("common debugfs:user_min_rnr_timer_en enable\n");
+
+	} else {
+		rdma_dev->rdma_func->user_min_rnr_timer_en = 0;
+		DRV_RDMA_LOG_DEV_DEBUG("common debugfs:user_min_rnr_timer_en disable\n");
+	}
+
+	ret  = (ssize_t)count;
+	*off = (loff_t)count;
+
+end:
+	return ret;
+}
+static ssize_t drv_rdma_common_user_min_rnr_timer_en_read(struct file *filp,
+					     char __user *buf, size_t count,
+					     loff_t *off)
+{
+	ssize_t ret	 = SXE2_OK;
+	size_t len_total = 0;
+	char *rsp	 = NULL;
+	char *rsp_end;
+	struct sxe2_rdma_device *rdma_dev;
+
+	if (*off != 0)
+		goto end;
+
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		goto end;
+	}
+
+	rsp = kzalloc(sizeof(char) * SXE2_DEBUG_DUMP_BUF_SIZE, GFP_KERNEL);
+	if (!rsp) {
+		ret = -ENOMEM;
+		DRV_RDMA_LOG_DEV_ERR(
+			"common debugfs:rsp kmalloc failed err\n");
+		goto end;
+	}
+	rsp_end = rsp;
+
+	if (rdma_dev->rdma_func->user_min_rnr_timer_en)
+		len_total += dbg_vsnprintf(rsp_end, len_total, "user min rnr timer set enable\n");
+	else
+		len_total +=
+			dbg_vsnprintf(rsp_end, len_total, "user min rnr timer set disable\n");
+
+	ret = simple_read_from_buffer(buf, count, off, rsp, len_total);
+	if (ret < 0)
+		DRV_RDMA_LOG_DEV_ERR("common debugfs:simple read error %zu\n",
+				     ret);
+
+	kfree(rsp);
+	rsp = NULL;
+
+end:
+	return ret;
+}
+static ssize_t drv_rdma_common_kernel_min_rnr_timer_value_write(
+						  struct file *filp,
+						  const char __user *buf,
+						  size_t count, loff_t *off)
+{
+	ssize_t ret					    = SXE2_OK;
+	char cmd[COMMON_MIN_RNR_TIMER_EN_DEBUGFS_WRITE_BUF_MAX_LEN] = { 0 };
+	struct sxe2_rdma_device *rdma_dev;
+	u32 input_val;
+
+	if (*off != 0)
+		goto end;
+
+	if (count >= COMMON_MIN_RNR_TIMER_EN_DEBUGFS_WRITE_BUF_MAX_LEN) {
+		ret = -ENOSPC;
+		goto end;
+	}
+
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		goto end;
+	}
+
+	if (copy_from_user(cmd, buf, count)) {
+		ret = -EFAULT;
+		DRV_RDMA_LOG_DEV_ERR(
+			"common debugfs:Cmd copy from user failed err\n");
+		goto end;
+	}
+	ret = sscanf(cmd, "%u", &input_val);
+	if (ret != 1 || input_val > COMMON_MIN_RNR_TIMER_VALUE_DEBUGFS_WRITE_MAX_VALUE) {
+		ret = -ENODATA;
+		DRV_RDMA_LOG_DEV_ERR(
+			"common debugfs:analyze cmd err please input 0 to 31\n");
+		goto end;
+	} else {
+		if (rdma_dev->rdma_func->kernel_min_rnr_timer_en) {
+			rdma_dev->rdma_func->kernel_min_rnr_timer_val = input_val;
+			DRV_RDMA_LOG_DEV_DEBUG(
+				"common debugfs:input kernel min_rnr_timer val %u\n", input_val);
+		} else {
+			DRV_RDMA_LOG_DEV_DEBUG(
+				"common debugfs:kernel_min_rnr_timer_en disable\n");
+		}
+	}
+	ret  = (ssize_t)count;
+	*off = (loff_t)count;
+
+end:
+	return ret;
+}
+static ssize_t drv_rdma_common_kernel_min_rnr_timer_value_read(struct file *filp,
+					     char __user *buf, size_t count,
+					     loff_t *off)
+{
+	ssize_t ret	 = SXE2_OK;
+	size_t len_total = 0;
+	char *rsp	 = NULL;
+	char *rsp_end;
+	struct sxe2_rdma_device *rdma_dev;
+
+	if (*off != 0)
+		goto end;
+
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		goto end;
+	}
+
+	rsp = kzalloc(sizeof(char) * SXE2_DEBUG_DUMP_BUF_SIZE, GFP_KERNEL);
+	if (!rsp) {
+		ret = -ENOMEM;
+		DRV_RDMA_LOG_DEV_ERR(
+			"common debugfs:rsp kmalloc failed err\n");
+		goto end;
+	}
+	rsp_end = rsp;
+	len_total += dbg_vsnprintf(rsp_end, len_total, "kernel min rnr timer value:%u\n",
+		rdma_dev->rdma_func->kernel_min_rnr_timer_val);
+	ret = simple_read_from_buffer(buf, count, off, rsp, len_total);
+	if (ret < 0)
+		DRV_RDMA_LOG_DEV_ERR("common debugfs:simple read error %zu\n",
+				     ret);
+
+	kfree(rsp);
+	rsp = NULL;
+
+end:
+	return ret;
+}
+static ssize_t drv_rdma_common_user_min_rnr_timer_value_write(struct file *filp,
+						  const char __user *buf,
+						  size_t count, loff_t *off)
+{
+	ssize_t ret					    = SXE2_OK;
+	char cmd[COMMON_MIN_RNR_TIMER_EN_DEBUGFS_WRITE_BUF_MAX_LEN] = { 0 };
+	struct sxe2_rdma_device *rdma_dev;
+	u32 input_val;
+
+	if (*off != 0)
+		goto end;
+
+	if (count >= COMMON_MIN_RNR_TIMER_EN_DEBUGFS_WRITE_BUF_MAX_LEN) {
+		ret = -ENOSPC;
+		goto end;
+	}
+
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		goto end;
+	}
+
+	if (copy_from_user(cmd, buf, count)) {
+		ret = -EFAULT;
+		DRV_RDMA_LOG_DEV_ERR(
+			"common debugfs:Cmd copy from user failed err\n");
+		goto end;
+	}
+	ret = sscanf(cmd, "%u", &input_val);
+	if (ret != 1 || input_val > COMMON_MIN_RNR_TIMER_VALUE_DEBUGFS_WRITE_MAX_VALUE) {
+		ret = -ENODATA;
+		DRV_RDMA_LOG_DEV_ERR(
+			"common debugfs:analyze cmd err please input 0 to 31\n");
+		goto end;
+	} else {
+		if (rdma_dev->rdma_func->user_min_rnr_timer_en) {
+			rdma_dev->rdma_func->user_min_rnr_timer_val = input_val;
+			DRV_RDMA_LOG_DEV_DEBUG(
+				"common debugfs:input user min_rnr_timer val %u\n", input_val);
+		} else {
+			DRV_RDMA_LOG_DEV_DEBUG(
+				"common debugfs:user_min_rnr_timer_en disable can not set\n");
+		}
+	}
+	ret  = (ssize_t)count;
+	*off = (loff_t)count;
+
+end:
+	return ret;
+}
+static ssize_t drv_rdma_common_user_min_rnr_timer_value_read(struct file *filp,
+					     char __user *buf, size_t count,
+					     loff_t *off)
+{
+	ssize_t ret	 = SXE2_OK;
+	size_t len_total = 0;
+	char *rsp	 = NULL;
+	char *rsp_end;
+	struct sxe2_rdma_device *rdma_dev;
+
+	if (*off != 0)
+		goto end;
+
+	rdma_dev = (struct sxe2_rdma_device *)filp->private_data;
+	if (!rdma_dev) {
+		ret = -ENXIO;
+		goto end;
+	}
+
+	rsp = kzalloc(sizeof(char) * SXE2_DEBUG_DUMP_BUF_SIZE, GFP_KERNEL);
+	if (!rsp) {
+		ret = -ENOMEM;
+		DRV_RDMA_LOG_DEV_ERR(
+			"common debugfs:rsp kmalloc failed err\n");
+		goto end;
+	}
+	rsp_end = rsp;
+	len_total += dbg_vsnprintf(rsp_end, len_total, "user min rnr timer value:%u\n",
+		rdma_dev->rdma_func->user_min_rnr_timer_val);
+	ret = simple_read_from_buffer(buf, count, off, rsp, len_total);
+	if (ret < 0)
+		DRV_RDMA_LOG_DEV_ERR("common debugfs:simple read error %zu\n",
+				     ret);
+
+	kfree(rsp);
+	rsp = NULL;
+
+end:
+	return ret;
+}
 static const struct file_operations sxe2_rdma_common_dump_pcap_en_fops = {
 	.owner = THIS_MODULE,
 	.open  = simple_open,
 	.read  = drv_rdma_common_dump_pcap_en_read,
 	.write = drv_rdma_common_dump_pcap_en_write,
 };
-
+static const struct file_operations sxe2_rdma_common_kernel_min_rnr_timer_en_fops = {
+	.owner = THIS_MODULE,
+	.open  = simple_open,
+	.read  = drv_rdma_common_kernel_min_rnr_timer_en_read,
+	.write = drv_rdma_common_kernel_min_rnr_timer_en_write,
+};
+static const struct file_operations sxe2_rdma_common_user_min_rnr_timer_en_fops = {
+	.owner = THIS_MODULE,
+	.open  = simple_open,
+	.read  = drv_rdma_common_user_min_rnr_timer_en_read,
+	.write = drv_rdma_common_user_min_rnr_timer_en_write,
+};
+static const struct file_operations sxe2_rdma_common_kernel_min_rnr_timer_value_fops = {
+	.owner = THIS_MODULE,
+	.open  = simple_open,
+	.read  = drv_rdma_common_kernel_min_rnr_timer_value_read,
+	.write = drv_rdma_common_kernel_min_rnr_timer_value_write,
+};
+static const struct file_operations sxe2_rdma_common_user_min_rnr_timer_value_fops = {
+	.owner = THIS_MODULE,
+	.open  = simple_open,
+	.read  = drv_rdma_common_user_min_rnr_timer_value_read,
+	.write = drv_rdma_common_user_min_rnr_timer_value_write,
+};
 int drv_rdma_debug_common_add(struct sxe2_rdma_device *rdma_dev)
 {
 	int ret = SXE2_OK;
@@ -424,6 +823,19 @@ int drv_rdma_debug_common_add(struct sxe2_rdma_device *rdma_dev)
 	debugfs_create_file("dump_pcap_en", SXE2_DEBUG_FILE_READ_WRITE,
 			    rdma_dev->hdl->common_debugfs, rdma_dev,
 			    &sxe2_rdma_common_dump_pcap_en_fops);
+	debugfs_create_file("kernel_min_rnr_timer_en", SXE2_DEBUG_FILE_READ_WRITE,
+			    rdma_dev->hdl->common_debugfs, rdma_dev,
+			    &sxe2_rdma_common_kernel_min_rnr_timer_en_fops);
+	debugfs_create_file("user_min_rnr_timer_en", SXE2_DEBUG_FILE_READ_WRITE,
+			    rdma_dev->hdl->common_debugfs, rdma_dev,
+			    &sxe2_rdma_common_user_min_rnr_timer_en_fops);
+	debugfs_create_file("kernel_min_rnr_timer_value", SXE2_DEBUG_FILE_READ_WRITE,
+			    rdma_dev->hdl->common_debugfs, rdma_dev,
+			    &sxe2_rdma_common_kernel_min_rnr_timer_value_fops);
+	debugfs_create_file("user_min_rnr_timer_value", SXE2_DEBUG_FILE_READ_WRITE,
+			    rdma_dev->hdl->common_debugfs, rdma_dev,
+			    &sxe2_rdma_common_user_min_rnr_timer_value_fops);
+
 end:
 	return ret;
 }

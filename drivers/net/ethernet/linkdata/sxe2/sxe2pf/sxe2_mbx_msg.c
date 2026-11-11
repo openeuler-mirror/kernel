@@ -35,8 +35,8 @@
 
 static bool sxe2_mbx_msg_vsi_id_is_valid(struct sxe2_vf_node *vf, u16 vsi_id)
 {
-	return (vf->vsi_id[SXE2_VF_TYPE_ETH] == vsi_id) ||
-	       (vf->vsi_id[SXE2_VF_TYPE_DPDK] == vsi_id);
+	return (vf->vsi_id[SXE2_VF_VSI_ID_MASTER] == vsi_id) ||
+	       (vf->vsi_id[SXE2_VF_VSI_ID_SLAVE] == vsi_id);
 }
 
 void sxe2_mbx_msg_params_fill(struct sxe2_cmd_params *cmd, u32 opc, void *req_data,
@@ -85,8 +85,8 @@ STATIC s32 sxe2_ver_msg_func(struct sxe2_vf_node *vf,
 	vf->vf_ver.major = le16_to_cpu(ver_msg->major);
 	vf->vf_ver.minor = le16_to_cpu(ver_msg->minor);
 
-	pf_ver.major = cpu_to_le16(SXE2_VF_VERSION_MAJOR);
-	pf_ver.minor = cpu_to_le16(SXE2_VF_VERSION_MINOR);
+	pf_ver.major = cpu_to_le16(SXE2_PF_VF_VERSION_MAJOR);
+	pf_ver.minor = cpu_to_le16(SXE2_PF_VF_VERSION_MINOR);
 
 	sxe2_mbx_msg_reply_params_fill(&params, msg_info->opcode, &pf_ver,
 				       SXE2_CALC_RESP_LEN(pf_ver, cmd_hdr->tran_out_len),
@@ -95,8 +95,8 @@ STATIC s32 sxe2_ver_msg_func(struct sxe2_vf_node *vf,
 
 	LOG_INFO_BDF("rcv vf:%u drv version:%d.%d reply pf version:%d.%d.(ret:%d)\n",
 		     vf->vf_idx, le16_to_cpu(ver_msg->major),
-		     le16_to_cpu(ver_msg->minor), SXE2_VF_VERSION_MAJOR,
-		     SXE2_VF_VERSION_MINOR, ret);
+		     le16_to_cpu(ver_msg->minor), SXE2_PF_VF_VERSION_MAJOR,
+		     SXE2_PF_VF_VERSION_MINOR, ret);
 
 	return ret;
 }
@@ -149,6 +149,29 @@ void sxe2_notify_vf_link_state(struct sxe2_vf_node *vf)
 	sxe2_mbx_msg_params_fill(&params, SXE2_VF_LINK_UPDATE_NOTIFY, &link_msg, len,
 				 vf->vf_idx, true);
 	(void)sxe2_mbx_msg_send(adapter, &params);
+}
+
+s32 sxe2_send_mdd_notify_to_vf(struct sxe2_adapter *adapter,
+			       struct sxe2_vf_node *vf, u64 tx_queues_bitmap)
+{
+	struct sxe2_cmd_params params = {0};
+	struct sxe2_mdd_notify_msg msg = {0};
+
+	msg.vf_tx_queues_bitmap = cpu_to_le64(tx_queues_bitmap);
+
+	sxe2_mbx_msg_params_fill(&params, SXE2_VF_MDD_NOTIFY, &msg,
+				 sizeof(msg), vf->vf_idx, true);
+	return sxe2_mbx_msg_send(adapter, &params);
+}
+
+s32 sxe2_send_mdd_fault_notify_to_vf(struct sxe2_adapter *adapter,
+				     struct sxe2_vf_node *vf)
+{
+	struct sxe2_cmd_params params = {0};
+
+	sxe2_mbx_msg_params_fill(&params, SXE2_VF_MDD_FAULT_NOTIFY,
+				 NULL, 0, vf->vf_idx, true);
+	return sxe2_mbx_msg_send(adapter, &params);
 }
 
 static s32 sxe2_rxq_cfg_ena_msg_func(struct sxe2_vf_node *vf,
@@ -295,6 +318,9 @@ STATIC s32 sxe2_res_get_msg_func(struct sxe2_vf_node *vf,
 		goto err;
 	}
 
+	vf->vf_run_mode = vfreq->run_mode;
+	LOG_INFO_BDF("vf:%d vf driver run mode:%d.\n", vf->vf_idx, vf->vf_run_mode);
+
 	vsi_res = vfres->vsi_res;
 
 	if (vfreq->support_sw_stats)
@@ -314,14 +340,21 @@ STATIC s32 sxe2_res_get_msg_func(struct sxe2_vf_node *vf,
 	vfres->rxft_cap.rss_lut_size = cpu_to_le16(SXE2_RSS_LUT_SIZE_64);
 	vfres->rxft_cap.rss_lut_type = cpu_to_le16(SXE2_RSS_VSI_LUT);
 
-	vfres->q_cnt = cpu_to_le16(adapter->vf_ctxt.q_cnt);
-	vfres->max_vectors = cpu_to_le16(adapter->vf_ctxt.irq_cnt);
+	vfres->q_cnt = cpu_to_le16(vf->q_cnt);
+	if (vf->vf_ver.minor <= SXE2_PF_VF_VERSION_MINOR_V2 &&
+	    vf->q_cnt > SXE2_VF_QUEUE_CNT_DFLT_MAX) {
+		vfres->q_cnt = cpu_to_le16(SXE2_VF_QUEUE_CNT_DFLT_MAX);
+		LOG_WARN_BDF("vf:%u version:%d.%d q_cnt:%u report capped to %u\n",
+			     vf->vf_idx, vf->vf_ver.major, vf->vf_ver.minor,
+			     vf->q_cnt, SXE2_VF_QUEUE_CNT_DFLT_MAX);
+	}
+	vfres->max_vectors = cpu_to_le16(vf->irq_cnt);
 	vfres->itr_gran = cpu_to_le16(adapter->hw.hw_cfg.itr_gran);
 	ether_addr_copy(vfres->addr, vf->mac_addr.addr);
 	vfres->port_vlan_exsit = (u8)sxe2_port_vlan_is_exist(vf);
 	vfres->is_switchdev =
 			(u8)test_bit(SXE2_FLAG_SWITCHDEV_ENABLE, adapter->flags);
-	vfres->max_vlan_cnt = cpu_to_le16(vf->prop.trusted ? VLAN_N_VID
+	vfres->max_vlan_cnt = cpu_to_le16(vf->prop.trusted ? SXE2_VF_VLAN_MAX
 							   : SXE2_VF_VLAN_CNT_MAX);
 
 	vfres->pf_cnt = adapter->aux_ctxt.cdev_info.pf_cnt;
@@ -372,7 +405,7 @@ l_end:
 STATIC void sxe2_vsi_stats_to_le(struct sxe2_vsi *vsi,
 				 struct sxe2_vf_vsi_hw_stats *stats)
 {
-	struct sxe2_vsi_hw_stats *new_stats = &vsi->vsi_stats.vsi_hw_stats;
+	struct sxe2_vsi_hw_stats *new_stats = sxe2_vsi_hw_stats_get(vsi->adapter, vsi->id_in_pf);
 
 	stats->rx_vsi_unicast_packets =
 			cpu_to_le64(new_stats->rx_vsi_unicast_packets);
@@ -392,7 +425,7 @@ STATIC void sxe2_vsi_stats_to_le(struct sxe2_vsi *vsi,
 
 STATIC void sxe2_hw_vsi_stats_clear(struct sxe2_vsi *vsi)
 {
-	struct sxe2_vsi_hw_stats *stats = &vsi->vsi_stats.vsi_hw_stats;
+	struct sxe2_vsi_hw_stats *stats = sxe2_vsi_hw_stats_get(vsi->adapter, vsi->id_in_pf);
 
 	stats->rx_vsi_unicast_packets = 0;
 	stats->rx_vsi_bytes = 0;
@@ -408,6 +441,7 @@ STATIC s32 sxe2_stats_clear_msg_func(struct sxe2_vf_node *vf,
 				     struct sxe2_mbx_msg_info *msg_info)
 {
 	struct sxe2_adapter *adapter = vf->adapter;
+	struct sxe2_vsi_hw_stats *last_stats = NULL;
 	s32 ret = SXE2_VF_ERR_SUCCESS;
 	struct sxe2_vsi *vsi;
 	struct sxe2_cmd_params params = {0};
@@ -431,7 +465,11 @@ STATIC s32 sxe2_stats_clear_msg_func(struct sxe2_vf_node *vf,
 	}
 
 	mutex_lock(&adapter->vsi_ctxt.lock);
+
 	sxe2_hw_vsi_stats_clear(vsi);
+	last_stats = sxe2_parse_hw_stats_get(adapter, vsi->id_in_pf);
+	if (last_stats)
+		memset(last_stats, 0, sizeof(*last_stats));
 	mutex_unlock(&adapter->vsi_ctxt.lock);
 err:
 	sxe2_mbx_msg_reply_params_fill(&params, msg_info->opcode, NULL, 0,
@@ -439,6 +477,43 @@ err:
 
 	ret = sxe2_mbx_msg_reply(adapter, &params);
 	LOG_DEV_INFO("vf stats clear. vsi id:%d ret:%d\n",
+		     le16_to_cpu(res_msg->vsi_id), ret);
+	return ret;
+}
+
+STATIC s32 sxe2_eth_stats_clear_msg_func(struct sxe2_vf_node *vf,
+					 struct sxe2_mbx_msg_info *msg_info)
+{
+	struct sxe2_adapter *adapter = vf->adapter;
+	s32 ret = SXE2_VF_ERR_SUCCESS;
+	struct sxe2_cmd_params params = { 0 };
+	struct sxe2_cmd_hdr *cmd_hdr = (struct sxe2_cmd_hdr *)msg_info->buf;
+	u64 session_id = le64_to_cpu(cmd_hdr->session_id);
+	struct sxe2_vf_vsi_res *res_msg =
+		(struct sxe2_vf_vsi_res *)(msg_info->buf +
+					   SXE2VF_MBX_DATA_OFFSET(msg_info->buf));
+	u16 vsi_sw_id;
+
+	if (!sxe2_mbx_msg_vsi_id_is_valid(vf, le16_to_cpu(res_msg->vsi_id))) {
+		ret = -SXE2_VF_ERR_PARAM;
+		LOG_DEV_ERR("vsi id:%d is invalid.\n",
+			    le16_to_cpu(res_msg->vsi_id));
+		goto err;
+	}
+
+	if (sxe2_vf_sw_vsi_id_get(vf, SXE2_VSI_T_VF, &vsi_sw_id)) {
+		ret = -SXE2_VF_ERR_PARAM;
+		LOG_DEV_ERR("params invalid %d.\n", le16_to_cpu(res_msg->vsi_id));
+		goto err;
+	}
+
+	sxe2_vsis_stats_clear(adapter, vsi_sw_id);
+err:
+	sxe2_mbx_msg_reply_params_fill(&params, msg_info->opcode, NULL, 0,
+				       vf->vf_idx, session_id, ret);
+
+	ret = sxe2_mbx_msg_reply(adapter, &params);
+	LOG_INFO_BDF("vf stats clear. vsi id:%d ret:%d\n",
 		     le16_to_cpu(res_msg->vsi_id), ret);
 	return ret;
 }
@@ -474,7 +549,13 @@ STATIC s32 sxe2_stats_get_msg_func(struct sxe2_vf_node *vf,
 	}
 
 	vf_sw_stats = &res_msg->sw_stats;
-	vsi_sw_stats = &vsi->vsi_stats.vsi_sw_stats;
+	vsi_sw_stats = sxe2_vsi_sw_stats_get(adapter, vsi->id_in_pf);
+	if (!vsi_sw_stats) {
+		LOG_ERROR_BDF("invalid vsi id:%d vsi sw stats null.\n",
+			      le16_to_cpu(res_msg->vsi_id));
+		ret = -SXE2_VF_ERR_PARAM;
+		goto err;
+	}
 
 	mutex_lock(&adapter->vsi_ctxt.lock);
 	vsi_sw_stats->rx_bytes = le64_to_cpu(vf_sw_stats->rx_bytes);
@@ -534,7 +615,12 @@ STATIC s32 sxe2_stats_push_msg_func(struct sxe2_vf_node *vf,
 	}
 
 	vf_sw_stats = &res_msg->sw_stats;
-	vsi_sw_stats = &vsi->vsi_stats.vsi_sw_stats;
+	vsi_sw_stats = sxe2_vsi_sw_stats_get(adapter, vsi->id_in_pf);
+	if (!vsi_sw_stats) {
+		LOG_ERROR_BDF("invalid vsi id:%d sw stats null.\n", le16_to_cpu(res_msg->vsi_id));
+		ret = -SXE2_VF_ERR_PARAM;
+		goto err;
+	}
 
 	mutex_lock(&adapter->vsi_ctxt.lock);
 	vsi_sw_stats->rx_bytes = le64_to_cpu(vf_sw_stats->rx_bytes);
@@ -668,7 +754,7 @@ STATIC s32 sxe2_irq_map_msg_func(struct sxe2_vf_node *vf,
 
 	num_irqs = le16_to_cpu(irq_map_msg->num_irqs);
 
-	if (adapter->vf_ctxt.irq_cnt < num_irqs || !num_irqs) {
+	if (vf->irq_cnt < num_irqs || !num_irqs) {
 		ret = -SXE2_VF_ERR_PARAM;
 		LOG_INFO_BDF("num_irqs:%d invalid.\n", num_irqs);
 		goto err;
@@ -712,6 +798,143 @@ STATIC s32 sxe2_irq_map_msg_func(struct sxe2_vf_node *vf,
 err:
 	sxe2_mbx_msg_reply_params_fill(&params, msg_info->opcode, NULL, 0,
 				       vf->vf_idx, session_id, ret);
+	ret = sxe2_mbx_msg_reply(adapter, &params);
+	return ret;
+}
+
+STATIC s32 sxe2_irq_map_ext_msg_func(struct sxe2_vf_node *vf,
+				     struct sxe2_mbx_msg_info *msg_info)
+{
+	struct sxe2_adapter *adapter = vf->adapter;
+	s32 ret = SXE2_VF_ERR_SUCCESS;
+	struct sxe2_cmd_params params = {0};
+	struct sxe2_vsi *vsi = NULL;
+	struct sxe2_vf_irq_map_ext *irq_map;
+	u16 i, num_irqs, irq_id;
+	struct sxe2_vf_irq_map_msg_ext *irq_map_msg =
+			(struct sxe2_vf_irq_map_msg_ext
+					 *)(msg_info->buf +
+					    SXE2VF_MBX_DATA_OFFSET(msg_info->buf));
+	struct sxe2_cmd_hdr *cmd_hdr = (struct sxe2_cmd_hdr *)msg_info->buf;
+	u64 session_id = le64_to_cpu(cmd_hdr->session_id);
+	u16 vsi_id = le16_to_cpu(irq_map_msg->vsi_id);
+
+	num_irqs = le16_to_cpu(irq_map_msg->num_irqs);
+
+	if (vf->irq_cnt < num_irqs || !num_irqs) {
+		ret = -SXE2_VF_ERR_PARAM;
+		LOG_INFO_BDF("num_irqs:%d invalid.\n", num_irqs);
+		goto err;
+	}
+
+	vsi = sxe2_vf_vsi_get(vf, vsi_id);
+	if (!vsi) {
+		ret = -SXE2_VF_ERR_PARAM;
+		LOG_INFO_BDF("vsi_id:%d vsi null.\n", vsi_id);
+		goto err;
+	}
+
+	sxe2_vsi_queues_irqs_unmap(vsi);
+
+	for (i = 0; i < num_irqs; i++) {
+		struct sxe2_irq_data *irq_data;
+
+		irq_map = &irq_map_msg->irq_maps[i];
+
+		irq_id = le16_to_cpu(irq_map->irq_id);
+		if (irq_id >= vsi->irqs.cnt) {
+			ret = -SXE2_VF_ERR_PARAM;
+			LOG_INFO_BDF("irq_id:%d exceed vsi:%d irq cnt:%d.\n", irq_id,
+				     vsi_id, vsi->irqs.cnt);
+			goto err;
+		}
+
+		irq_data = vsi->irqs.irq_data[i];
+		if (!irq_data) {
+			ret = -SXE2_VF_ERR_PARAM;
+			goto err;
+		}
+
+		{
+			unsigned long qmap;
+			u16 queue_cnt;
+			u16 vsi_q_id_idx;
+			u64 vsi_q_id;
+
+			qmap = (unsigned long)le64_to_cpu(irq_map->txq_map);
+			queue_cnt = vsi->txqs.q_cnt;
+			for_each_set_bit(vsi_q_id_idx, &qmap, queue_cnt) {
+				vsi_q_id = vsi_q_id_idx;
+				sxe2_irq_queue_cfg(irq_data, &irq_data->tx,
+						   vsi->txqs.q[vsi_q_id],
+						   irq_map->txitr_idx);
+			}
+
+			qmap = (unsigned long)le64_to_cpu(irq_map->rxq_map);
+			queue_cnt = vsi->rxqs.q_cnt;
+			for_each_set_bit(vsi_q_id_idx, &qmap, queue_cnt) {
+				vsi_q_id = vsi_q_id_idx;
+				sxe2_irq_queue_cfg(irq_data, &irq_data->rx,
+						   vsi->rxqs.q[vsi_q_id],
+						   irq_map->rxitr_idx);
+			}
+		}
+		sxe2_vsi_irqs_setup(vsi);
+	}
+err:
+	sxe2_mbx_msg_reply_params_fill(&params, msg_info->opcode, NULL, 0,
+				       vf->vf_idx, session_id, ret);
+	ret = sxe2_mbx_msg_reply(adapter, &params);
+	return ret;
+}
+
+STATIC s32 sxe2_adv_cfg_get_msg_func(struct sxe2_vf_node *vf,
+				     struct sxe2_mbx_msg_info *msg_info)
+{
+	struct sxe2_adapter *adapter = vf->adapter;
+	s32 ret = SXE2_VF_ERR_SUCCESS;
+	struct sxe2_cmd_params params = {0};
+	struct sxe2_vf_adv_cfg_msg adv_cfg = {0};
+	struct sxe2_cmd_hdr *cmd_hdr = (struct sxe2_cmd_hdr *)msg_info->buf;
+	u64 session_id = le64_to_cpu(cmd_hdr->session_id);
+	u16 vsi_id;
+	struct sxe2_vf_usr_cfg *usr_cfg = SXE2_VF_USR_CFG(adapter, vf->vf_idx);
+	u16 kernel_q_cfg = usr_cfg->product[SXE2_PRODUCT_ID_KERNEL].q_cfg;
+	u16 dpdk_q_cfg = usr_cfg->product[SXE2_PRODUCT_ID_DPDK].q_cfg;
+	u16 kernel_q_alloc = 0;
+	u16 dpdk_q_alloc = 0;
+	u8 v;
+
+	vsi_id = le16_to_cpu(*(__le16 *)(msg_info->buf +
+					 SXE2VF_MBX_DATA_OFFSET(msg_info->buf)));
+
+	adv_cfg.vsi_id = cpu_to_le16(vsi_id);
+	adv_cfg.vsi[SXE2_VF_ADV_VSI_KERNEL].q_cfg = cpu_to_le16(kernel_q_cfg);
+	adv_cfg.vsi[SXE2_VF_ADV_VSI_DPDK].q_cfg = cpu_to_le16(dpdk_q_cfg);
+
+	if (usr_cfg->configured) {
+		kernel_q_alloc = kernel_q_cfg ? kernel_q_cfg :
+				 vf->q_cnt - dpdk_q_cfg;
+		dpdk_q_alloc = dpdk_q_cfg ? dpdk_q_cfg :
+			       vf->q_cnt - kernel_q_cfg;
+	} else if (adapter->vf_ctxt.large_q.dflt_large_q_en) {
+		dpdk_q_alloc = SXE2_VF_DFLT_LARGE_Q_NUM;
+		kernel_q_alloc = vf->q_cnt - SXE2_VF_DFLT_LARGE_Q_NUM;
+	}
+	adv_cfg.vsi[SXE2_VF_ADV_VSI_KERNEL].q_alloc = cpu_to_le16(kernel_q_alloc);
+	adv_cfg.vsi[SXE2_VF_ADV_VSI_DPDK].q_alloc = cpu_to_le16(dpdk_q_alloc);
+	adv_cfg.is_pre_assigned = (usr_cfg->configured ||
+				   adapter->vf_ctxt.large_q.dflt_large_q_en) ?
+				  true : false;
+
+	for (v = 0; v < SXE2_VF_ADV_VSI_NR; v++) {
+		adv_cfg.vsi[v].lut_type = usr_cfg->product[v].lut_type;
+		adv_cfg.vsi[v].lut_id = usr_cfg->product[v].lut_id;
+		adv_cfg.vsi[v].lut_size = cpu_to_le16(usr_cfg->product[v].lut_size);
+	}
+
+	sxe2_mbx_msg_reply_params_fill(&params, msg_info->opcode, &adv_cfg,
+				       sizeof(adv_cfg), vf->vf_idx, session_id, ret);
 	ret = sxe2_mbx_msg_reply(adapter, &params);
 	return ret;
 }
@@ -762,11 +985,11 @@ static bool sxe2_addr_msg_is_valid(struct sxe2_vf_node *vf,
 	struct sxe2_adapter *adapter = vf->adapter;
 
 	if (!sxe2_mbx_msg_vsi_id_is_valid(vf, le16_to_cpu(addr_msg->vsi_id))) {
-		LOG_ERROR("addr msg invalid vsi_id:%u correct vsi_id_eth:%u\t"
-			  "vsi_id_dpdk:%u.\n",
+		LOG_ERROR("addr msg invalid vsi_id:%u correct master_vsi_id:%u\t"
+			  "slave_vsi_id:%u.\n",
 			  le16_to_cpu(addr_msg->vsi_id),
-			  vf->vsi_id[SXE2_VF_TYPE_ETH],
-			  vf->vsi_id[SXE2_VF_TYPE_DPDK]);
+			  vf->vsi_id[SXE2_VF_VSI_ID_MASTER],
+			  vf->vsi_id[SXE2_VF_VSI_ID_SLAVE]);
 		return false;
 	}
 
@@ -780,17 +1003,59 @@ static bool sxe2_addr_msg_is_valid(struct sxe2_vf_node *vf,
 		}
 
 		if (!sxe2_vf_is_trusted(vf) &&
-		    ((addr_msg->addr_cnt + vf->mac_cnt - addr_msg_has_pf_mac) >
+		    ((addr_msg->addr_cnt + vf->total_mac_cnt - addr_msg_has_pf_mac) >
 		     SXE2_VF_MACADDR_CNT_MAX)) {
 			LOG_DEV_ERR("vf:%u mac addr most add:%u, set vf to trusted\t"
 				    "mode to add more\n",
 				    vf->vf_idx,
-				    (SXE2_VF_MACADDR_CNT_MAX - vf->mac_cnt));
+				    (SXE2_VF_MACADDR_CNT_MAX - vf->total_mac_cnt));
 			return false;
 		}
 	}
 
 	return true;
+}
+
+static s32 sxe2_vf_mac_spoof_add(struct sxe2_vf_node *vf, u8 *mac_addr)
+{
+	struct sxe2_adapter *adapter = vf->adapter;
+	s32 ret = 0;
+	s32 ret_t;
+	u32 i = 0;
+	struct sxe2_vsi *vsi = NULL;
+
+	for (i = 0; i < SXE2_VF_VSI_ID_NR; i++) {
+		vsi = sxe2_vf_vsi_get(vf, vf->vsi_id[i]);
+		if (!vsi)
+			continue;
+		ret = sxe2_mac_spoofchk_ext_rule_add(adapter, vsi->idx_in_dev, mac_addr);
+		if (ret && ret != -EEXIST) {
+			LOG_DEV_ERR(
+				    "Failed to add mac spoof ext rule %pM for VF %d vsi %u,\t"
+				    "error %d\n",
+				    mac_addr, vf->vf_idx, vsi->idx_in_dev, ret);
+			break;
+		}
+		ret = 0;
+	}
+
+	if (ret) {
+		while (i) {
+			i--;
+			vsi = sxe2_vf_vsi_get(vf, vf->vsi_id[i]);
+			if (!vsi)
+				continue;
+			ret_t = sxe2_mac_spoofchk_ext_rule_del(adapter, vsi->idx_in_dev, mac_addr);
+			if (ret_t && ret_t != -ENOENT) {
+				LOG_DEV_WARN("Failed to del mac spoof\t"
+					     "ext rule %pM for VF %d vsi %u,\t"
+					     "error %d\n",
+					     mac_addr, vf->vf_idx, vsi->idx_in_dev, ret_t);
+			}
+		}
+	}
+
+	return ret;
 }
 
 static s32 sxe2_vf_addr_add(struct sxe2_vf_node *vf, struct sxe2_vsi *vsi,
@@ -799,11 +1064,13 @@ static s32 sxe2_vf_addr_add(struct sxe2_vf_node *vf, struct sxe2_vsi *vsi,
 	struct sxe2_adapter *adapter = vf->adapter;
 	u8 *mac_addr = addr->addr;
 	s32 ret;
+	s32 ret_t;
 
 	if (is_unicast_ether_addr(mac_addr) &&
 	    !ether_addr_equal(mac_addr, vf->mac_addr.addr) &&
 	    !sxe2_vf_set_mac_is_allow(vf)) {
-		LOG_DEV_ERR("untrusted vf modify mac addr from pf not permed\n");
+		LOG_DEV_ERR("VF attempting to override administratively set MAC address, no "
+			    "permission.\n");
 		return -EPERM;
 	}
 	if (!vsi) {
@@ -815,35 +1082,67 @@ static s32 sxe2_vf_addr_add(struct sxe2_vf_node *vf, struct sxe2_vsi *vsi,
 	if (ret == -EEXIST) {
 		LOG_WARN_BDF("MAC %pM already exists for VF %d\n", mac_addr,
 			     vf->vf_idx);
-		ret = SXE2_VF_ERR_SUCCESS;
 	} else if (ret) {
 		LOG_DEV_ERR("Failed to add MAC %pM for VF %d\n, error %d\n",
 			    mac_addr, vf->vf_idx, ret);
 		goto l_out;
 	} else {
 		if (is_unicast_ether_addr(mac_addr)) {
-			ret = sxe2_mac_spoofchk_ext_rule_add(adapter,
-							     vsi->idx_in_dev,
-							     mac_addr);
+			ret = sxe2_vf_mac_spoof_add(vf, mac_addr);
 			if (ret) {
-				LOG_DEV_ERR("Failed to add mac spoof ext rule %pM \t"
-					    "for VF %d vsi %u\n, error %d\n",
-					    mac_addr, vf->vf_idx, vsi->idx_in_dev,
-					    ret);
-				(void)sxe2_mac_rule_del(adapter, vsi->idx_in_dev,
-							mac_addr);
-				return ret;
+				ret_t = sxe2_mac_rule_del(adapter, vsi->idx_in_dev, mac_addr);
+				if (ret_t) {
+					LOG_DEV_ERR("Failed to delete MAC %pM for VF %d\n err %d\n",
+						    mac_addr, vf->vf_idx, ret_t);
+				}
+				goto l_out;
 			}
 		}
-		vf->mac_cnt++;
 	}
-
-	LOG_INFO_BDF("vf:%u mac:%pM added mac_cnt:%u\n", vf->vf_idx, mac_addr,
-		     vf->mac_cnt);
 
 	if (vsi->type == SXE2_VSI_T_VF && addr->type == SXE2_VF_MAC_TYPE_P)
 		ether_addr_copy(vf->mac_addr.addr, mac_addr);
 l_out:
+	return ret;
+}
+
+static s32 sxe2_vf_mac_spoof_del(struct sxe2_vf_node *vf, u8 *mac_addr)
+{
+	struct sxe2_adapter *adapter = vf->adapter;
+	s32 ret = 0;
+	s32 ret_t;
+	u32 i = 0;
+	struct sxe2_vsi *vsi = NULL;
+
+	for (i = 0; i < SXE2_VF_VSI_ID_NR; i++) {
+		vsi = sxe2_vf_vsi_get(vf, vf->vsi_id[i]);
+		if (!vsi)
+			continue;
+		ret = sxe2_mac_spoofchk_ext_rule_del(adapter, vsi->idx_in_dev, mac_addr);
+		if (ret && ret != -ENOENT) {
+			LOG_DEV_ERR("Failed to del mac spoof\t"
+				    "ext rule %pM for VF %d vsi %u\n, error %d\n",
+				    mac_addr, vf->vf_idx, vsi->idx_in_dev, ret);
+			break;
+		}
+		ret = 0;
+	}
+
+	if (ret) {
+		while (i) {
+			i--;
+			vsi = sxe2_vf_vsi_get(vf, vf->vsi_id[i]);
+			if (!vsi)
+				continue;
+			ret_t = sxe2_mac_spoofchk_ext_rule_add(adapter, vsi->idx_in_dev, mac_addr);
+			if (ret_t && ret != -EEXIST) {
+				LOG_DEV_WARN("Failed to add mac spoof\t"
+					     "ext rule %pM for VF %d vsi %u\n, error %d\n",
+					     mac_addr, vf->vf_idx, vsi->idx_in_dev, ret_t);
+			}
+		}
+	}
+
 	return ret;
 }
 
@@ -853,6 +1152,7 @@ static s32 sxe2_vf_addr_del(struct sxe2_vf_node *vf, struct sxe2_vsi *vsi,
 	struct sxe2_adapter *adapter = vf->adapter;
 	u8 *mac_addr = addr->addr;
 	s32 ret;
+	s32 ret_t;
 
 	if (!sxe2_vf_set_mac_is_allow(vf) &&
 	    ether_addr_equal(mac_addr, vf->mac_addr.addr))
@@ -875,24 +1175,20 @@ static s32 sxe2_vf_addr_del(struct sxe2_vf_node *vf, struct sxe2_vsi *vsi,
 	}
 
 	if (is_unicast_ether_addr(mac_addr)) {
-		ret = sxe2_mac_spoofchk_ext_rule_del(adapter, vsi->idx_in_dev,
-						     mac_addr);
+		ret = sxe2_vf_mac_spoof_del(vf, mac_addr);
 		if (ret) {
-			LOG_DEV_ERR("Failed to del MAC spoof rule %pM for VF %d,\t"
-				    "error %d\n",
+			LOG_DEV_ERR("Failed to del MAC spoof rule %pM for VF %d\n, error %d\n",
 				    mac_addr, vf->vf_idx, ret);
-			ret = sxe2_mac_rule_add(vsi, mac_addr);
-			if (ret)
-				LOG_DEV_ERR("Failed to add MAC %pM for VF %d, error\t"
-					    "%d\n",
-					    mac_addr, vf->vf_idx, ret);
+			ret_t = sxe2_mac_rule_add(vsi, mac_addr);
+			if (ret_t) {
+				LOG_DEV_ERR("Failed to add MAC %pM for VF %d, error %d\n",
+					    mac_addr, vf->vf_idx, ret_t);
+			}
+			goto l_out;
 		}
 	}
 
-	vf->mac_cnt--;
-	LOG_INFO_BDF("vf:%u mac:%pM del mac_cnt:%u\n", vf->vf_idx, mac_addr,
-		     vf->mac_cnt);
-
+l_out:
 	return ret;
 }
 
@@ -913,15 +1209,12 @@ static s32 sxe2_addr_msg_handle(struct sxe2_vf_node *vf,
 	u32 i = 0;
 	s32 ret;
 
-	if (add)
-		sxe2_vf_addr_action = sxe2_vf_addr_add;
-	else
-		sxe2_vf_addr_action = sxe2_vf_addr_del;
-
 	if (!sxe2_addr_msg_is_valid(vf, msg, add)) {
 		h_ret = -EPERM;
 		goto l_msg_reply;
 	}
+
+	sxe2_vf_addr_action = add ? sxe2_vf_addr_add : sxe2_vf_addr_del;
 
 	if (msg->is_user) {
 		for (i = 0; i < msg->addr_cnt; i++) {
@@ -938,12 +1231,17 @@ static s32 sxe2_addr_msg_handle(struct sxe2_vf_node *vf,
 				h_ret = ret;
 				break;
 			}
+
+			if (add)
+				sxe2_vf_mac_cnt_inc(vf, vf->dpdk_vf_vsi);
+			else
+				sxe2_vf_mac_cnt_dec(vf, vf->dpdk_vf_vsi);
 		}
 	} else {
-		vsi = sxe2_vf_vsi_get(vf, vf->vsi_id[SXE2_VF_TYPE_ETH]);
+		vsi = sxe2_vf_vsi_get(vf, sxe2_kernel_vf_vsi_id_get(vf));
 		if (!vsi) {
 			LOG_ERROR_BDF("invalid vsi id:%d.\n",
-				      vf->vsi_id[SXE2_VF_TYPE_ETH]);
+				      sxe2_kernel_vf_vsi_id_get(vf));
 			h_ret = -SXE2_VF_ERR_PARAM;
 			goto l_msg_reply;
 		}
@@ -961,6 +1259,11 @@ static s32 sxe2_addr_msg_handle(struct sxe2_vf_node *vf,
 				h_ret = ret;
 				break;
 			}
+
+			if (add)
+				sxe2_vf_mac_cnt_inc(vf, vsi);
+			else
+				sxe2_vf_mac_cnt_dec(vf, vsi);
 		}
 	}
 
@@ -997,57 +1300,33 @@ static s32 sxe2_addr_update_msg_func(struct sxe2_vf_node *vf,
 	s32 ret;
 	u16 old_vsi, new_vsi;
 	u8 *mac_addr;
-	struct sxe2_vsi *vsi;
 
 	update_msg = (struct sxe2_vf_addr_update_msg *)(msg_info->buf +
 							SXE2VF_MBX_FULL_HDR_SIZE);
 
 	if (!sxe2_mbx_msg_vsi_id_is_valid(vf, le16_to_cpu(update_msg->vsi_id))) {
-		LOG_ERROR("addr msg invalid vsi_id:%u correct vsi_id:%u.\n",
+		LOG_ERROR("addr msg invalid vsi_id:%u  master_vsi_id:%u slave_vsi_id:%u.\n",
 			  le16_to_cpu(update_msg->vsi_id),
-			  vf->vsi_id[SXE2_VF_TYPE_ETH]);
+			  vf->vsi_id[SXE2_VF_VSI_ID_MASTER],
+			  vf->vsi_id[SXE2_VF_VSI_ID_SLAVE]);
 		ret = -EPERM;
 		goto l_msg_reply;
 	}
 
 	if (update_msg->to_user) {
-		old_vsi = vf->vsi_id[SXE2_VF_TYPE_ETH];
-		new_vsi = vf->vsi_id[SXE2_VF_TYPE_DPDK];
+		old_vsi = sxe2_kernel_vf_vsi_id_get(vf);
+		new_vsi = sxe2_user_vf_vsi_id_get(vf);
 	} else {
-		old_vsi = vf->vsi_id[SXE2_VF_TYPE_DPDK];
-		new_vsi = vf->vsi_id[SXE2_VF_TYPE_ETH];
+		old_vsi = sxe2_user_vf_vsi_id_get(vf);
+		new_vsi = sxe2_kernel_vf_vsi_id_get(vf);
 	}
 
 	mac_addr = update_msg->addr;
 	ret = sxe2_mac_rule_update(adapter, mac_addr, old_vsi, new_vsi);
 	if (ret) {
 		LOG_ERROR_BDF("update mac rule %pM, failed, to_user:%u, \t"
-			      "old_vsi:%u,\t"
-			      "new_vsi:%u, ret:%d.\n",
+			      "old_vsi:%u, new_vsi:%u, ret:%d.\n",
 			      mac_addr, update_msg->to_user, old_vsi, new_vsi, ret);
-		goto l_msg_reply;
-	}
-
-	if (is_unicast_ether_addr(mac_addr)) {
-		vsi = sxe2_vf_vsi_get(vf, vf->vsi_id[SXE2_VF_TYPE_ETH]);
-		if (!vsi) {
-			LOG_ERROR_BDF("invalid vsi id:%d.\n",
-				      vf->vsi_id[SXE2_VF_TYPE_ETH]);
-			ret = -SXE2_VF_ERR_PARAM;
-			goto l_msg_reply;
-		}
-
-		ret = sxe2_mac_spoof_rule_update(vsi, vf->dpdk_vf_vsi, mac_addr,
-						 update_msg->to_user);
-		if (ret) {
-			LOG_ERROR_BDF("update spoofchk rule %pM, failed, \t"
-				      "to_user:%u, old_vsi:%u,\t"
-				      "new_vsi:%u, ret:%d.\n",
-				      mac_addr, update_msg->to_user, old_vsi,
-				      new_vsi, ret);
-			(void)sxe2_mac_rule_update(adapter, mac_addr, new_vsi,
-						   old_vsi);
-		}
 	}
 
 l_msg_reply:
@@ -1076,17 +1355,17 @@ static s32 sxe2_promisc_update_msg_func(struct sxe2_vf_node *vf,
 	if (!sxe2_mbx_msg_vsi_id_is_valid(vf, le16_to_cpu(update_msg->vsi_id))) {
 		LOG_ERROR("addr msg invalid vsi_id:%u correct vsi_id:%u.\n",
 			  le16_to_cpu(update_msg->vsi_id),
-			  vf->vsi_id[SXE2_VF_TYPE_ETH]);
+			  vf->vsi_id[SXE2_VF_VSI_ID_MASTER]);
 		ret = -EPERM;
 		goto l_msg_reply;
 	}
 
 	if (update_msg->to_user) {
-		old_vsi = vf->vsi_id[SXE2_VF_TYPE_ETH];
-		new_vsi = vf->vsi_id[SXE2_VF_TYPE_DPDK];
+		old_vsi = sxe2_kernel_vf_vsi_id_get(vf);
+		new_vsi = sxe2_user_vf_vsi_id_get(vf);
 	} else {
-		old_vsi = vf->vsi_id[SXE2_VF_TYPE_DPDK];
-		new_vsi = vf->vsi_id[SXE2_VF_TYPE_ETH];
+		old_vsi = sxe2_user_vf_vsi_id_get(vf);
+		new_vsi = sxe2_kernel_vf_vsi_id_get(vf);
 	}
 
 	if (update_msg->is_promisc) {
@@ -1112,7 +1391,7 @@ l_msg_reply:
 				       vf->vf_idx, session_id, ret);
 	ret = sxe2_mbx_msg_reply(adapter, &params);
 	if (ret)
-		LOG_ERROR_BDF("update promisc or aullmulti rule mbx msg reply \t"
+		LOG_ERROR_BDF("update promisc or allmulti rule mbx msg reply \t"
 			      "failed ret:%d.\n",
 			      ret);
 	return ret;
@@ -1128,24 +1407,23 @@ static s32 sxe2_vf_vlan_add(struct sxe2_vf_node *vf, struct sxe2_vsi *vsi,
 	vlan.tpid = le16_to_cpu(vlan_info->tpid);
 	vlan.vid = le16_to_cpu(vlan_info->vid);
 
-	if (vf->vlan_info.vlan_cnt >=
-	    (vf->prop.trusted ? VLAN_N_VID : SXE2_VF_VLAN_CNT_MAX))
+	if ((vlan_info->vid != 0) &&
+	    vf->vlan_info.total_vlan_cnt >=
+	    (vf->prop.trusted ? SXE2_VF_VLAN_MAX : SXE2_VF_VLAN_CNT_MAX))
 		return -EIO;
+
 	ret = sxe2_vlan_rule_add(vsi, &vlan);
 	if (ret == -EEXIST) {
-		ret = 0;
+		goto l_out;
 	} else if (ret) {
 		LOG_DEV_ERR("Failed to add vlan tpid:0x%x vid:%u for VF %d, error \t"
 			    "%d\n",
 			    vlan.tpid, vlan.vid, vf->vf_idx, ret);
 		goto l_out;
-	} else {
-		if (vsi->type != SXE2_VSI_T_DPDK_VF || vlan.vid != 0)
-			vf->vlan_info.vlan_cnt++;
 	}
 
-	LOG_INFO_BDF("vf:%u vlan tpid:0x%x vid:0x%x added vlan_cnt:%u.\n",
-		     vf->vf_idx, vlan.tpid, vlan.vid, vf->vlan_info.vlan_cnt);
+	LOG_INFO_BDF("vf:%u vlan tpid:0x%x vid:0x%x added\n",
+		     vf->vf_idx, vlan.tpid, vlan.vid);
 l_out:
 	return ret;
 }
@@ -1162,25 +1440,22 @@ static s32 sxe2_vf_vlan_del(struct sxe2_vf_node *vf, struct sxe2_vsi *vsi,
 
 	ret = sxe2_vlan_rule_del(adapter, vsi->idx_in_dev, &vlan);
 	if (ret == -ENOENT) {
-		ret = 0;
+		goto l_out;
 	} else if (ret) {
 		LOG_DEV_ERR("Failed to del vlan tpid:0x%x vid:%u for VF %d, error \t"
 			    "%d\n",
 			    vlan.tpid, vlan.vid, vf->vf_idx, ret);
 		goto l_out;
-	} else {
-		if (vsi->type != SXE2_VSI_T_DPDK_VF || vlan.vid != 0)
-			vf->vlan_info.vlan_cnt--;
 	}
 
-	LOG_INFO_BDF("vf:%u vlan tpid:0x%x vid:0x%x deleted vlan_cnt:%u.\n",
-		     vf->vf_idx, vlan.tpid, vlan.vid, vf->vlan_info.vlan_cnt);
+	LOG_INFO_BDF("vf:%u vlan tpid:0x%x vid:0x%x deleted\n",
+		     vf->vf_idx, vlan.tpid, vlan.vid);
 
 l_out:
 	return ret;
 }
 
-static s32 sxe2_user_vlan_msg_func(struct sxe2_vf_node *vf,
+STATIC s32 sxe2_user_vlan_msg_func(struct sxe2_vf_node *vf,
 				   struct sxe2_mbx_msg_info *msg_info)
 {
 	s32 (*sxe2_vf_vlan_action)(struct sxe2_vf_node *vf, struct sxe2_vsi *vsi,
@@ -1195,6 +1470,9 @@ static s32 sxe2_user_vlan_msg_func(struct sxe2_vf_node *vf,
 	u64 sesstion_id = le64_to_cpu(cmd_hdr->session_id);
 	s32 ret;
 
+	if (!vf->dpdk_vf_vsi)
+		return 0;
+
 	if (msg->is_add && sxe2_port_vlan_is_exist(vf)) {
 		LOG_WARN_BDF("vf %u has set port vlan, not support add vlan rule.\n",
 			     vf->vf_idx);
@@ -1208,8 +1486,14 @@ static s32 sxe2_user_vlan_msg_func(struct sxe2_vf_node *vf,
 		sxe2_vf_vlan_action = sxe2_vf_vlan_del;
 
 	ret = sxe2_vf_vlan_action(vf, vf->dpdk_vf_vsi, &msg->vlan);
-	if (ret != -EEXIST && ret != -ENOENT)
+	if (!ret) {
+		if (msg->is_add)
+			sxe2_vf_vlan_cnt_inc(vf, vf->dpdk_vf_vsi, msg->vlan.vid);
+		else
+			sxe2_vf_vlan_cnt_dec(vf, vf->dpdk_vf_vsi, msg->vlan.vid);
+	} else if (ret != -EEXIST && ret != -ENOENT) {
 		h_ret = ret;
+	}
 
 l_msg_reply:
 	sxe2_mbx_msg_reply_params_fill(&params, msg_info->opcode, NULL, 0,
@@ -1255,7 +1539,7 @@ static s32 sxe2_repr_promisc_update_msg_func(struct sxe2_vf_node *vf,
 				       vf->vf_idx, session_id, h_ret);
 	ret = sxe2_mbx_msg_reply(adapter, &params);
 	if (ret)
-		LOG_ERROR_BDF("repr update peomisc rule mbx msg \t"
+		LOG_ERROR_BDF("repr update promisc rule mbx msg \t"
 			      "reply failed ret:%d.\n",
 			      ret);
 	return ret;
@@ -1422,6 +1706,7 @@ static s32 sxe2_aux_rdma_msg_handler(struct sxe2_adapter *adapter, u16 vf_id,
 	struct sxe2_auxiliary_drv *iadrv;
 	s32 ret = -ENODEV;
 	struct sxe2_cmd_params params = {0};
+	u8 times = 0;
 
 	mutex_lock(&adapter->aux_ctxt.adev_mutex);
 	if (!cdev_info->adev) {
@@ -1430,13 +1715,26 @@ static s32 sxe2_aux_rdma_msg_handler(struct sxe2_adapter *adapter, u16 vf_id,
 			     session_id);
 		return 0;
 	}
-	device_lock(&cdev_info->adev->dev);
+	do {
+		if (!device_trylock(&cdev_info->adev->dev)) {
+			times++;
+			msleep(SXE2_MBX_RDMA_TRYLOCK_SLEEP);
+		} else {
+			break;
+		}
+		if (times > SXE2_MBX_RDMA_TIMES_OUT) {
+			ret = -EBUSY;
+			goto l_failed;
+		}
+	} while (1);
+
 	iadrv = sxe2_rdma_aux_drv_get(cdev_info);
 	if (iadrv && iadrv->aux_ops.vc_receive)
 		ret = iadrv->aux_ops.vc_receive(cdev_info, vf_id, msg, len,
 						session_id);
 	device_unlock(&cdev_info->adev->dev);
 
+l_failed:
 	mutex_unlock(&adapter->aux_ctxt.adev_mutex);
 	if (ret) {
 		LOG_ERROR_BDF("failed to send message to rdma pf.\n");
@@ -1447,7 +1745,7 @@ static s32 sxe2_aux_rdma_msg_handler(struct sxe2_adapter *adapter, u16 vf_id,
 	return ret;
 }
 
-static s32 sxe2_rdma_msg_func(struct sxe2_vf_node *vf,
+STATIC s32 sxe2_rdma_msg_func(struct sxe2_vf_node *vf,
 			      struct sxe2_mbx_msg_info *msg_info)
 {
 	s32 ret;
@@ -1477,7 +1775,7 @@ static s32 sxe2_qv_map_unmap_params_chk(const struct sxe2_vf_node *vf,
 	u32 i;
 	s32 ret = 0;
 	struct sxe2_adapter *adapter = vf->adapter;
-	u32 num_msix_per_vf = adapter->vf_ctxt.irq_cnt;
+	u32 num_msix_per_vf = vf->irq_cnt;
 	const struct aux_qv_info *qv_info;
 
 	for (i = 0; i < qvlist->num_vectors; i++) {
@@ -1640,7 +1938,6 @@ STATIC s32 sxe2_promisc_cfg_msg_func(struct sxe2_vf_node *vf,
 l_end:
 	sxe2_mbx_msg_reply_params_fill(&params, msg_info->opcode, NULL, 0,
 				       vf->vf_idx, session_id, 0);
-
 	return sxe2_mbx_msg_reply(adapter, &params);
 }
 
@@ -1651,6 +1948,7 @@ STATIC s32 sxe2_vlan_offload_cfg_msg_func(struct sxe2_vf_node *vf,
 			(struct sxe2_vf_vlan_offload_cfg
 					 *)(msg_info->buf +
 					    SXE2VF_MBX_FULL_HDR_SIZE);
+	struct sxe2_adapter *adapter = vf->adapter;
 	struct sxe2_hw *hw = &vf->adapter->hw;
 	struct sxe2_cmd_params params = {0};
 	struct sxe2_cmd_hdr *cmd_hdr = (struct sxe2_cmd_hdr *)msg_info->buf;
@@ -1669,10 +1967,9 @@ STATIC s32 sxe2_vlan_offload_cfg_msg_func(struct sxe2_vf_node *vf,
 		ret = -SXE2_VF_ERR_HANDLE_ERROR;
 		goto l_reply;
 	}
-
 	if (vlan_cfg->ctag_strip_enable != SXE2_VF_VLAN_STATUS_INVALID) {
 		(void)sxe2_hw_desc_vlan_strip_switch(hw,
-						     vf->vsi_id[SXE2_VF_TYPE_ETH],
+						     sxe2_kernel_vf_vsi_id_get(vf),
 						     ETH_P_8021Q,
 						     port_vlan_exist,
 						     vlan_cfg->ctag_strip_enable);
@@ -1680,34 +1977,37 @@ STATIC s32 sxe2_vlan_offload_cfg_msg_func(struct sxe2_vf_node *vf,
 
 	if (vlan_cfg->stag_strip_enable != SXE2_VF_VLAN_STATUS_INVALID) {
 		(void)sxe2_hw_desc_vlan_strip_switch(hw,
-						     vf->vsi_id[SXE2_VF_TYPE_ETH],
+						     sxe2_kernel_vf_vsi_id_get(vf),
 						     ETH_P_8021AD,
 						     port_vlan_exist,
 						     vlan_cfg->stag_strip_enable);
 	}
 
+	LOG_DEBUG_BDF("ctag_insert_enable=%x, stag_insert_enable=%x\n",
+		      vlan_cfg->ctag_insert_enable, vlan_cfg->stag_insert_enable);
+
 	if (vlan_cfg->ctag_insert_enable != SXE2_VF_VLAN_STATUS_INVALID ||
 	    vlan_cfg->stag_insert_enable != SXE2_VF_VLAN_STATUS_INVALID) {
-		if (!vlan_cfg->ctag_insert_enable) {
+		if (vlan_cfg->ctag_insert_enable == 0) {
 			(void)sxe2_hw_desc_vlan_insert_switch(hw,
-							      vf->vsi_id[SXE2_VF_TYPE_ETH],
+							      sxe2_kernel_vf_vsi_id_get(vf),
 							      ETH_P_8021Q, port_vlan_exist,
 							      vlan_cfg->ctag_insert_enable);
-		} else if (!vlan_cfg->stag_insert_enable) {
+		} else if (vlan_cfg->stag_insert_enable == 0) {
 			(void)sxe2_hw_desc_vlan_insert_switch(hw,
-							      vf->vsi_id[SXE2_VF_TYPE_ETH],
+							      sxe2_kernel_vf_vsi_id_get(vf),
 							      ETH_P_8021AD, port_vlan_exist,
 							      vlan_cfg->stag_insert_enable);
 		}
 
-		if (vlan_cfg->ctag_insert_enable) {
+		if (vlan_cfg->ctag_insert_enable == 1) {
 			(void)sxe2_hw_desc_vlan_insert_switch(hw,
-							      vf->vsi_id[SXE2_VF_TYPE_ETH],
+							      sxe2_kernel_vf_vsi_id_get(vf),
 							      ETH_P_8021Q, port_vlan_exist,
 							      vlan_cfg->ctag_insert_enable);
-		} else if (vlan_cfg->stag_insert_enable) {
+		} else if (vlan_cfg->stag_insert_enable == 1) {
 			(void)sxe2_hw_desc_vlan_insert_switch(hw,
-							      vf->vsi_id[SXE2_VF_TYPE_ETH],
+							      sxe2_kernel_vf_vsi_id_get(vf),
 							      ETH_P_8021AD, port_vlan_exist,
 							      vlan_cfg->stag_insert_enable);
 		}
@@ -1735,9 +2035,9 @@ STATIC s32 sxe2_vlan_filter_cfg_msg_func(struct sxe2_vf_node *vf,
 	u16 vsi_id_indev;
 
 	if (filter_cfg->is_user)
-		vsi_id_indev = vf->vsi_id[SXE2_VF_TYPE_DPDK];
+		vsi_id_indev = sxe2_user_vf_vsi_id_get(vf);
 	else
-		vsi_id_indev = vf->vsi_id[SXE2_VF_TYPE_ETH];
+		vsi_id_indev = sxe2_kernel_vf_vsi_id_get(vf);
 
 	ret = sxe2_vlan_filter_control(adapter, vsi_id_indev,
 				       filter_cfg->ctag_filter_enable);
@@ -1794,9 +2094,9 @@ static s32 sxe2_vlan_msg_handle(struct sxe2_vf_node *vf,
 		goto l_msg_reply;
 	}
 
-	vsi = sxe2_vf_vsi_get(vf, vf->vsi_id[SXE2_VF_TYPE_ETH]);
+	vsi = sxe2_vf_vsi_get(vf, sxe2_kernel_vf_vsi_id_get(vf));
 	if (!vsi) {
-		LOG_ERROR_BDF("invalid vsi id:%d.\n", vf->vsi_id[SXE2_VF_TYPE_ETH]);
+		LOG_ERROR_BDF("invalid vsi id:%d.\n", sxe2_kernel_vf_vsi_id_get(vf));
 		h_ret = -SXE2_VF_ERR_PARAM;
 		goto l_msg_reply;
 	}
@@ -1804,14 +2104,20 @@ static s32 sxe2_vlan_msg_handle(struct sxe2_vf_node *vf,
 	for (i = 0; i < le16_to_cpu(msg->vlan_cnt); i++) {
 		vlan.tpid = le16_to_cpu(msg->elem[i].tpid);
 		vlan.vid = le16_to_cpu(msg->elem[i].vid);
-		if (vlan.vid == 0 && vlan.tpid == ETH_P_8021Q)
-			continue;
+
 		ret = sxe2_vf_vlan_action(vf, vsi, &msg->elem[i]);
 		if (ret == -EEXIST || ret == -ENOENT) {
 			continue;
 		} else if (ret) {
 			h_ret = ret;
 			break;
+		}
+
+		if (!ret) {
+			if (add)
+				sxe2_vf_vlan_cnt_inc(vf, vsi, vlan.vid);
+			else
+				sxe2_vf_vlan_cnt_dec(vf, vsi, vlan.vid);
 		}
 	}
 
@@ -1914,7 +2220,7 @@ static s32 sxe2_vf_vsi_cfg_msg_check(struct sxe2_vf_node *vf_node,
 	    params->irq_cnt > adapter->irq_ctxt.irq_layout.sriov ||
 	    params->txq_base_idx >= adapter->q_ctxt.txq_layout.sriov ||
 	    params->txq_cnt > adapter->q_ctxt.txq_layout.sriov ||
-	    params->rxq_base_idx >= adapter->q_ctxt.txq_layout.sriov ||
+	    params->rxq_base_idx >= adapter->q_ctxt.rxq_layout.sriov ||
 	    params->rxq_cnt > adapter->q_ctxt.rxq_layout.sriov ||
 	    params->vsi_id >=
 	     (adapter->vsi_ctxt.max_cnt + adapter->vsi_ctxt.base_idx_in_dev) ||
@@ -1933,6 +2239,31 @@ static s32 sxe2_vf_vsi_cfg_msg_check(struct sxe2_vf_node *vf_node,
 			      adapter->q_ctxt.rxq_layout.sriov, ret);
 	}
 
+	if (!ret && vf_node->q_cnt > 0 &&
+	    (params->txq_base_idx >= vf_node->q_cnt ||
+	     params->txq_cnt > vf_node->q_cnt ||
+	     params->txq_base_idx + params->txq_cnt > vf_node->q_cnt ||
+	     params->rxq_base_idx >= vf_node->q_cnt ||
+	     params->rxq_cnt > vf_node->q_cnt ||
+	     params->rxq_base_idx + params->rxq_cnt > vf_node->q_cnt)) {
+		ret = -EINVAL;
+		LOG_ERROR_BDF("vf:%u txq_base:%u rxq_base:%u txq_cnt:%u "
+			      "rxq_cnt:%u exceed alloc:%u\n",
+			      vf_node->vf_idx, params->txq_base_idx,
+			      params->rxq_base_idx, params->txq_cnt,
+			      params->rxq_cnt, vf_node->q_cnt);
+	}
+
+	if (!ret && vf_node->irq_cnt > 0 &&
+	    (params->irq_base_idx >= vf_node->irq_cnt ||
+	     params->irq_cnt > vf_node->irq_cnt ||
+	     params->irq_base_idx + params->irq_cnt > vf_node->irq_cnt)) {
+		ret = -EINVAL;
+		LOG_ERROR_BDF("vf:%u irq_base:%u irq_cnt:%u exceed alloc:%u\n",
+			      vf_node->vf_idx, params->irq_base_idx,
+			      params->irq_cnt, vf_node->irq_cnt);
+	}
+
 	return ret;
 }
 
@@ -1940,6 +2271,7 @@ STATIC s32 sxe2_vf_vsi_rule_cfg(struct sxe2_adapter *adapter,
 				struct sxe2_vf_node *vf_node, struct sxe2_vsi *vsi)
 {
 	s32 ret = 0;
+	struct sxe2_vsi *eth_vsi;
 
 	sxe2_vf_trust_cfg_restore(vf_node);
 
@@ -1951,23 +2283,26 @@ STATIC s32 sxe2_vf_vsi_rule_cfg(struct sxe2_adapter *adapter,
 			return ret;
 		}
 	} else if (!sxe2_eswitch_is_offload(adapter) &&
-		   vsi->type == SXE2_VSI_T_DPDK_VF &&
-		   sxe2_port_vlan_is_exist(vf_node)) {
-		ret = sxe2_vf_vsi_port_vlan_cfg(vf_node, vsi);
-		if (ret) {
-			LOG_ERROR("vf:%u vsi %u port vlan cfg fail %d.\n",
-				  vf_node->vf_idx, vsi->idx_in_dev, ret);
-			return ret;
-		}
-	} else if (sxe2_eswitch_is_offload(adapter) &&
 		   vsi->type == SXE2_VSI_T_DPDK_VF) {
-		ret = sxe2_vf_sp_rule_add(vf_node, true);
-		if (ret) {
-			LOG_ERROR("vf:%u vsi %u sp rule add fail %d.\n",
-				  vf_node->vf_idx, vsi->idx_in_dev, ret);
-			return ret;
+		if (sxe2_port_vlan_is_exist(vf_node)) {
+			ret = sxe2_vf_vsi_port_vlan_cfg(vf_node, vsi);
+			if (ret) {
+				LOG_ERROR("vf:%u vsi %u port vlan cfg fail %d.\n",
+					  vf_node->vf_idx, vsi->idx_in_dev, ret);
+				return ret;
+			}
+		}
+		eth_vsi = sxe2_vf_vsi_get(vf_node, sxe2_kernel_vf_vsi_id_get(vf_node));
+		if (eth_vsi) {
+			ret = sxe2_vf_vsi_mac_spoof_sync(adapter, eth_vsi, vsi);
+			if (ret) {
+				LOG_ERROR_BDF("vf:%u vsi %u spoof sync cfg fail %d.\n",
+					      vf_node->vf_idx, vsi->idx_in_dev, ret);
+				return ret;
+			}
 		}
 	}
+
 	return ret;
 }
 
@@ -2010,9 +2345,9 @@ STATIC s32 __sxe2_vf_vsi_cfg(struct sxe2_vf_node *vf_node,
 	}
 
 	LOG_INFO_BDF("vf[%u] hw vsi_id:%u type:%d vsi irq cnt:%u vsi queue \t"
-		     "cnt:%u.\n",
+		     "cnt:%u vsi:%p.\n",
 		     vf_node->vf_idx, vsi->idx_in_dev, vsi->type, vsi->irqs.cnt,
-		     vsi->rxqs.q_cnt);
+		     vsi->rxqs.q_cnt, vsi);
 
 	if (params.type == SXE2_VSI_T_VF) {
 		vf_node->vsi = vsi;
@@ -2035,6 +2370,11 @@ STATIC s32 __sxe2_vf_vsi_cfg(struct sxe2_vf_node *vf_node,
 			      vf_node->vf_idx, vsi->idx_in_dev, vsi->type);
 		sxe2_vf_vsi_destroy_by_id(vf_node, params.vsi_id);
 		goto l_end;
+	}
+
+	if (sxe2_vf_rate_cfg_restore(vf_node)) {
+		LOG_DEV_ERR("vf:%u rate configure restore failed.\n",
+			    vf_node->vf_idx);
 	}
 
 l_end:
@@ -2079,16 +2419,16 @@ static s32 sxe2_vf_vsi_cfg_msg_func(struct sxe2_vf_node *vf,
 	return sxe2_mbx_msg_reply(adapter, &params);
 }
 
-static s32 sxe2_vf_user_driver_vsi_release(struct sxe2_vf_node *vf)
+STATIC s32 sxe2_vf_user_driver_vsi_release(struct sxe2_vf_node *vf)
 {
 	struct sxe2_vsi *vsi = NULL;
 	s32 ret = 0;
 	struct sxe2_adapter *adapter = vf->adapter;
 
-	vsi = sxe2_vf_vsi_get(vf, vf->vsi_id[SXE2_VF_TYPE_DPDK]);
+	vsi = vf->dpdk_vf_vsi;
 	if (!vsi) {
 		ret = -SXE2_VF_ERR_PARAM;
-		LOG_ERROR_BDF("invalid vsi id:%d.\n", vf->vsi_id[SXE2_VF_TYPE_DPDK]);
+		LOG_ERROR_BDF("dpdk vf vsi null vf driver run mode:%d.\n", vf->vf_run_mode);
 		return ret;
 	}
 
@@ -2121,13 +2461,15 @@ static s32 sxe2_vf_user_driver_release_msg_func(struct sxe2_vf_node *vf,
 
 	(void)sxe2_vf_user_driver_vsi_release(vf);
 
+	obj.valid = 1;
 	obj.func_type = SXE2_VF;
 	obj.vf_id = release->func_id;
 	obj.drv_type = SXE2_DPDK_DRV;
 	obj.drv_id = release->drv_id;
+
 	if (sxe2_dpdk_ipsec_resource_release(adapter, &obj))
-		LOG_DEV_ERR("func[%u] drv[%u] ipsec clear failed.\n", obj.vf_id,
-			    (obj.drv_type << 6 | obj.drv_id));
+		LOG_ERROR_BDF("func[%u] drv[%u] ipsec clear failed.\n",
+			      obj.vf_id, (obj.drv_type << 6 | obj.drv_id));
 
 	sxe2_mbx_msg_reply_params_fill(&params, msg_info->opcode, NULL, 0,
 				       vf->vf_idx, session_id, ret);
@@ -2166,7 +2508,7 @@ STATIC s32 sxe2_rss_key_get_msg_func(struct sxe2_vf_node *vf,
 	}
 
 	sxe2_mbx_msg_reply_params_fill(&params, msg_info->opcode, key_msg,
-				       SXE2_CALC_RESP_LEN(*key_msg, cmd_hdr->tran_out_len),
+				       min_t(u32, SXE2_RSS_HASH_KEY_SIZE, cmd_hdr->tran_out_len),
 				       vf->vf_idx, session_id, ret);
 	ret = sxe2_mbx_msg_reply(adapter, &params);
 	goto l_end;
@@ -2213,7 +2555,7 @@ STATIC s32 sxe2_rss_lut_get_msg_func(struct sxe2_vf_node *vf,
 	}
 
 	sxe2_mbx_msg_reply_params_fill(&params, msg_info->opcode, lut_msg,
-				       SXE2_CALC_RESP_LEN(*lut_msg, cmd_hdr->tran_out_len),
+				       min_t(u32, vsi->rss_ctxt.lut_size, cmd_hdr->tran_out_len),
 				       vf->vf_idx, session_id, ret);
 	ret = sxe2_mbx_msg_reply(adapter, &params);
 	goto l_end;
@@ -2706,8 +3048,8 @@ STATIC s32 sxe2_fnav_stat_alloc_msg_func(struct sxe2_vf_node *vf,
 	}
 
 	need_update = stat_req->need_update;
-	ret = sxe2_fnav_stat_idx_alloc_with_lock(adapter, vsi->id_in_pf, &stat_index,
-						 need_update);
+	ret = sxe2_fnav_stat_idx_alloc(adapter, vsi->id_in_pf, &stat_index,
+				       need_update, true);
 	if (ret)
 		LOG_ERROR_BDF("sxe2 fnav now has valid stat index! vsi type: %u, \t"
 			      "idx: %u\n",
@@ -3052,9 +3394,9 @@ static s32 sxe2_vf_rdma_dump_pcap_msg_func(struct sxe2_vf_node *vf,
 	struct sxe2_cmd_hdr *cmd_hdr = (struct sxe2_cmd_hdr *)msg_info->buf;
 	u64 session_id = le64_to_cpu(cmd_hdr->session_id);
 
-	vsi = sxe2_vf_vsi_get(vf, vf->vsi_id[SXE2_VF_TYPE_ETH]);
+	vsi = sxe2_vf_vsi_get(vf, sxe2_kernel_vf_vsi_id_get(vf));
 	if (!vsi) {
-		LOG_ERROR_BDF("invalid vsi id:%d.\n", vf->vsi_id[SXE2_VF_TYPE_ETH]);
+		LOG_ERROR_BDF("invalid vsi id:%d.\n", sxe2_kernel_vf_vsi_id_get(vf));
 		ret = -SXE2_VF_ERR_PARAM;
 		goto l_msg_reply;
 	}
@@ -3159,7 +3501,7 @@ static s32 sxe2_vf_drv_mode_set_func(struct sxe2_vf_node *vf,
 	u64 session_id = le64_to_cpu(cmd_hdr->session_id);
 	s32 ret = 0;
 
-	vf->mode = vf_msg->drv_mode;
+	vf->vf_cfg_mode = vf_msg->drv_mode;
 
 	sxe2_mbx_msg_reply_params_fill(&params, msg_info->opcode, NULL, 0,
 				       vf->vf_idx, session_id, ret);
@@ -3181,7 +3523,7 @@ static s32 sxe2_vf_drv_mode_get_func(struct sxe2_vf_node *vf,
 	struct sxe2_vf_drv_mode_resp resp;
 	s32 ret = 0;
 
-	resp.drv_mode = vf->mode;
+	resp.drv_mode = vf->vf_cfg_mode;
 
 	sxe2_mbx_msg_reply_params_fill(&params, msg_info->opcode, &resp,
 				       sizeof(resp), vf->vf_idx, session_id, ret);
@@ -3309,6 +3651,12 @@ struct sxe2_mbx_msg_table vf_msg_table[SXE2_VF_OPCODE_NR] = {
 					  sxe2_vf_drv_mode_set_func},
 		[SXE2_VF_DRV_MODE_GET] = {SXE2_VF_DRV_MODE_GET,
 					  sxe2_vf_drv_mode_get_func},
+		[SXE2_VF_ETH_STATS_CLEAR] = {SXE2_VF_ETH_STATS_CLEAR,
+					     sxe2_eth_stats_clear_msg_func},
+		[SXE2_VF_IRQ_MAP_EXT] = {SXE2_VF_IRQ_MAP_EXT,
+					 sxe2_irq_map_ext_msg_func},
+		[SXE2_VF_ADV_CFG_GET] = {SXE2_VF_ADV_CFG_GET,
+					 sxe2_adv_cfg_get_msg_func},
 
 		[0] = {0, NULL}};
 
@@ -3576,23 +3924,18 @@ struct sxe2_mbx_msg_table eswitch_vf_msg_table[SXE2_VF_OPCODE_NR] = {
 					  sxe2_vf_drv_mode_set_func},
 		[SXE2_VF_DRV_MODE_GET] = {SXE2_VF_DRV_MODE_GET,
 					  sxe2_vf_drv_mode_get_func},
+		[SXE2_VF_ETH_STATS_CLEAR] = {SXE2_VF_ETH_STATS_CLEAR,
+					     sxe2_eth_stats_clear_msg_func},
+		[SXE2_VF_IRQ_MAP_EXT] = {SXE2_VF_IRQ_MAP_EXT,
+					 sxe2_irq_map_ext_msg_func},
+		[SXE2_VF_ADV_CFG_GET] = {SXE2_VF_ADV_CFG_GET,
+					 sxe2_adv_cfg_get_msg_func},
 
 		[0] = {0, NULL}};
 
 struct sxe2_mbx_msg_table *sxe2_esw_mbx_msg_table_get(void)
 {
 	return &eswitch_vf_msg_table[0];
-}
-
-static s32 sxe2_msg_len_check(struct sxe2_mbx_msg_info *msg_info)
-{
-	return 0;
-}
-
-static bool sxe2_opcode_is_support(struct sxe2_vf_node *vf,
-				   struct sxe2_mbx_msg_info *msg_info)
-{
-	return true;
 }
 
 static bool sxe2_is_vf_init_opcode(u32 opcode)
@@ -3640,14 +3983,7 @@ static s32 sxe2_vf_status_check(struct sxe2_vf_node *vf,
 static s32 sxe2_vf_msg_check(struct sxe2_vf_node *vf,
 			     struct sxe2_mbx_msg_info *msg_info)
 {
-	s32 ret = 0;
-
-	(void)sxe2_msg_len_check(msg_info);
-	(void)sxe2_opcode_is_support(vf, msg_info);
-
-	ret = sxe2_vf_status_check(vf, msg_info);
-
-	return ret;
+	return sxe2_vf_status_check(vf, msg_info);
 }
 
 static s32 sxe2_vf_msg_parse(struct sxe2_adapter *adapter, struct sxe2_recv_msg *msg,
@@ -3656,22 +3992,48 @@ static s32 sxe2_vf_msg_parse(struct sxe2_adapter *adapter, struct sxe2_recv_msg 
 	struct sxe2_drv_msg_hdr msg_hdr;
 	struct sxe2_cmd_hdr *cmd_hdr = (struct sxe2_cmd_hdr *)msg->buf;
 	u32 data_offset = 0;
+	u32 data_len = 0;
 	u32 raw_len = 0;
+	u32 hdr_len;
 #ifndef SXE2_CFG_RELEASE
 	u32 vf_id = le32_to_cpu(msg->desc.custom2);
 #endif
-	(void)memcpy((u8 *)&msg_hdr, msg->buf + cmd_hdr->hdr_len, sizeof(msg_hdr));
+
+	hdr_len = le16_to_cpu(cmd_hdr->hdr_len);
+	if (hdr_len < SXE2VF_CMD_HDR_SIZE ||
+	    hdr_len + SXE2VF_MBX_MSG_HDR_SIZE > msg->buf_len) {
+		LOG_ERROR("vf:%u recv msg hdr_len:%u buf_len:%u invalid.\n",
+			  SXE2_VF_IDX(vf_id), hdr_len, msg->buf_len);
+		return -SXE2_VF_ERR_PARAM;
+	}
+
+	(void)memcpy((u8 *)&msg_hdr, msg->buf + hdr_len, sizeof(msg_hdr));
+
 	msg_info->opcode = le32_to_cpu(msg_hdr.op_code);
 	msg_info->msg_len = msg->buf_len;
+	data_offset = le32_to_cpu(msg_hdr.data_offset);
+	data_len = le32_to_cpu(msg_hdr.data_len);
 
-	data_offset = cmd_hdr->hdr_len + msg_hdr.data_offset;
-	raw_len = msg->buf_len - data_offset;
-	if (le32_to_cpu(msg_hdr.data_len) != raw_len ||
-	    msg_info->opcode >= SXE2_VF_OPCODE_NR) {
+	if (hdr_len + data_offset > msg->buf_len ||
+	    hdr_len + data_offset + data_len > msg->buf_len) {
+		LOG_ERROR("vf:%u recv msg data_offset:%u data_len:%u buf_len:%u invalid.\n",
+			  SXE2_VF_IDX(vf_id), data_offset,
+			  data_len, msg->buf_len);
+		return -SXE2_VF_ERR_PARAM;
+	}
+
+	raw_len = msg->buf_len - (hdr_len + data_offset);
+	if (le32_to_cpu(msg_hdr.data_len) != raw_len) {
 		LOG_ERROR("vf:%u desc msg len:%u and hdr msg len:%u mismatch.\n",
 			  SXE2_VF_IDX(vf_id), raw_len,
-			  le32_to_cpu(msg_hdr.data_len));
+			  data_len);
 		return -SXE2_VF_ERR_PARAM;
+	}
+
+	if (msg_info->opcode >= SXE2_VF_OPCODE_NR) {
+		LOG_ERROR("vf:%u opcode:0x%x exceed max 0x%x.\n",
+			  SXE2_VF_IDX(vf_id), msg_info->opcode, SXE2_VF_OPCODE_NR);
+		return -SXE2_VF_ERR_NOT_SUPPORTED;
 	}
 
 	if (msg_info->msg_len) {
@@ -3721,8 +4083,24 @@ void sxe2_cmd_vf_msg_handler(struct sxe2_adapter *adapter, struct sxe2_recv_msg 
 	struct sxe2_cmd_hdr *cmd_hdr;
 	u64 session_id;
 
-	if (sxe2_vf_msg_parse(adapter, msg, &msg_info))
+	ret = sxe2_vf_msg_parse(adapter, msg, &msg_info);
+	if (ret) {
+		if (ret == -SXE2_VF_ERR_NOT_SUPPORTED) {
+			struct sxe2_cmd_hdr *req_hdr =
+				(struct sxe2_cmd_hdr *)msg->buf;
+
+			sxe2_mbx_msg_reply_params_fill(&param, msg_info.opcode,
+						       NULL, 0,
+						       SXE2_VF_IDX(le32_to_cpu(msg->desc.custom2)),
+						       le64_to_cpu(req_hdr->session_id),
+						       -SXE2_VF_ERR_NOT_SUPPORTED);
+			if (sxe2_mbx_msg_reply(adapter, &param))
+				LOG_ERROR("vf:%u opcode:0x%x not supported reply failed.\n",
+					  SXE2_VF_IDX(le32_to_cpu(msg->desc.custom2)),
+					  msg_info.opcode);
+		}
 		return;
+	}
 
 	ret = sxe2_vf_id_valid(adapter, vf_id);
 	if (ret)
@@ -3746,7 +4124,7 @@ void sxe2_cmd_vf_msg_handler(struct sxe2_adapter *adapter, struct sxe2_recv_msg 
 	} else {
 		LOG_DEV_ERR("vf:%u mbx msg opcode:0x%x invalid func NULL.\n",
 			    vf->vf_idx, msg_info.opcode);
-		ret = -SXE2_VF_ERR_PARAM;
+		ret = -SXE2_VF_ERR_NOT_SUPPORTED;
 	}
 
 l_unlock:

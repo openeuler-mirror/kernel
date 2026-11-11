@@ -15,7 +15,7 @@
 
 #define MIN_SQ_SIZE (8)
 #define MIN_RQ_SIZE (8)
-#define SQ_RSV_SIZE (8)
+#define SQ_RSV_SIZE (258)
 #define RQ_RSV_SIZE (8)
 #define QP_QUANTA_SIZE (32)
 #define SXE2_DEFAULT_PKEY (0xFFFF)
@@ -142,15 +142,6 @@ enum sxe2_ib_rate {
 	SXE2_IB_RATE_600_GBPS	 = 22,
 };
 
-enum sxe2_link_get_speed {
-	SXE2_LINK_SPEED_UNKNOWN = 0,
-	SXE2_LINK_SPEED_10G    = 10000,
-	SXE2_LINK_SPEED_25G    = 25000,
-	SXE2_LINK_SPEED_50G    = 50000,
-	SXE2_LINK_SPEED_100G   = 100000,
-	SXE2_LINK_SPEED_AUTO   = 200000,
-};
-
 enum sxe2_qp_bucket_type {
 	SXE2_QP_BUCKET_4K = 0,
 	SXE2_QP_BUCKET_8K = 1,
@@ -264,6 +255,7 @@ struct sxe2_qp_init_info {
 struct qp_disconn_work {
 	struct work_struct work;
 	struct sxe2_rdma_qp *qp;
+	enum sxe2_qp_event_type event_type;
 };
 
 int drv_rdma_debug_qp_add(struct sxe2_rdma_device *rdma_dev,
@@ -298,7 +290,7 @@ int sxe2_ctx_qp_query(struct sxe2_rdma_ctx_qp *qp, struct sxe2_query_qp_info *in
 int sxe2_mq_query_qp_cmd(struct sxe2_rdma_qp *qp);
 int sxe2_mq_modify_qp_cmd(struct sxe2_rdma_qp *qp);
 
-void sxe2_cm_disconn(struct sxe2_rdma_qp *qp);
+void sxe2_cm_disconn(struct sxe2_rdma_qp *qp, enum sxe2_qp_event_type event_type);
 
 void sxe2_ib_qp_event(struct sxe2_rdma_qp *qp, enum sxe2_qp_event_type event);
 

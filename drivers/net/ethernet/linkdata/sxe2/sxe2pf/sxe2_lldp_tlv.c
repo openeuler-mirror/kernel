@@ -369,6 +369,8 @@ static void sxe2_ieee_app_tlv_parse(struct sxe2_lldp_org_tlv *tlv,
 	typelen = ntohs(tlv->typelen);
 	len = FIELD_GET(SXE2_LLDP_TLV_LEN_M, typelen);
 	buf = tlv->tlvinfo;
+	if (len < sizeof(tlv->ouisubtype) + 1)
+		return;
 
 	len -= (sizeof(tlv->ouisubtype) + 1);
 
@@ -565,7 +567,7 @@ static void sxe2_parse_org_tlv(struct sxe2_lldp_org_tlv *tlv, struct sxe2_dcbx_c
 	}
 }
 
-s32 sxe2_lldp_to_dcb_cfg(u8 *lldpmib, struct sxe2_dcbx_cfg *dcbcfg)
+s32 sxe2_lldp_to_dcb_cfg(u8 *lldpmib, u32 lldpmib_len, struct sxe2_dcbx_cfg *dcbcfg)
 {
 	struct sxe2_lldp_org_tlv *tlv;
 	u16 offset = 0;
@@ -573,11 +575,17 @@ s32 sxe2_lldp_to_dcb_cfg(u8 *lldpmib, struct sxe2_dcbx_cfg *dcbcfg)
 	u16 type;
 	u16 len;
 
-	if (!lldpmib || !dcbcfg)
+	if (!lldpmib || !dcbcfg || !lldpmib_len)
 		return -EINVAL;
 
 	tlv = (struct sxe2_lldp_org_tlv *)lldpmib;
 	while (1) {
+		if (offset + sizeof(tlv->typelen) > lldpmib_len) {
+			LOG_WARN("lldp tlv header truncated: offset=%u mib_len=%u\n",
+				 offset, lldpmib_len);
+			break;
+		}
+
 		typelen = ntohs(tlv->typelen);
 		type = FIELD_GET(SXE2_LLDP_TLV_TYPE_M, typelen);
 		len = FIELD_GET(SXE2_LLDP_TLV_LEN_M, typelen);
@@ -633,7 +641,8 @@ s32 sxe2_fw_dcbx_agent_cfg_get(struct sxe2_adapter *adapter,
 
 	ret = sxe2_fw_dcbx_local_mib_get(adapter, mib);
 	if (!ret)
-		ret = sxe2_lldp_to_dcb_cfg(mib->mib_buffer, dcbcfg);
+		ret = sxe2_lldp_to_dcb_cfg(mib->mib_buffer,
+					   min_t(u32, mib->mib_len, SXE2_LLDPDU_SIZE), dcbcfg);
 
 	devm_kfree(&adapter->pdev->dev, mib);
 

@@ -28,6 +28,7 @@
 
 #define SXE2_DPDK_QUEUE_DFLT_CNT 64
 #define SXE2_DPDK_QUEUE_MAX_CNT  256
+#define SXE2_MAX_BUF_TXD         8
 
 #define sxe2_for_each_queue(type, head)                            \
 		for ((type) = (head).next; (type) != NULL;         \
@@ -70,12 +71,22 @@ struct sxe2_ptp_tx;
 	(u16)(((ntc > ntu) ? 0 : depth) + ntc - ntu - 1);   \
 })
 
+#define SXE2_RX_DESC_UNUSED(queue)                            \
+({                                                              \
+	const typeof(queue) __q = (queue);                  \
+	u16 first_desc = __q->first_desc;                        \
+	u16 ntu = __q->next_to_use;                         \
+	u16 depth = __q->depth;                             \
+	(u16)(((first_desc > ntu) ? 0 : depth) + first_desc - ntu - 1); \
+})
+
 enum sxe2_queue_flags {
 	SXE2_RXQ_BUILD_SKB_ENABLED = 0,
 	SXE2_RXQ_LRO_ENABLED,
 	SXE2_RXQ_CRC_STRIP_DISABLED,
 	SXE2_TX_FLAGS_Q_XDP,
 	SXE2_RXQ_SPLIT_ENABLED,
+	SXE2_TXQ_MDD_DISABLED,
 };
 
 enum sxe2_data_queue_type {
@@ -101,9 +112,9 @@ struct sxe2_rx_buf {
 		struct {
 			dma_addr_t dma;
 			struct page *page;
+			struct sk_buff *skb;
 			u32 pg_offset;
 			u16 drv_refcnt;
-			struct sk_buff *skb;
 		};
 #ifdef HAVE_AF_XDP_ZC_SUPPORT
 #ifndef HAVE_XSK_BATCHED_RX_ALLOC
@@ -121,15 +132,33 @@ struct sxe2_rx_buf {
 	};
 };
 
+enum sxe2_tx_buf_type {
+	SXE2_TX_BUF_EMPTY	= 0U,
+	SXE2_TX_BUF_DUMMY,
+	SXE2_TX_BUF_FRAG,
+	SXE2_TX_BUF_SKB,
+	SXE2_TX_BUF_XDP_TX,
+	SXE2_TX_BUF_XDP_XMIT,
+	SXE2_TX_BUF_XSK_TX,
+};
+
 struct sxe2_tx_buf {
-	void *next_to_watch;
+	union {
+		void *next_to_watch;
+		u32 rs_idx;
+	};
+
 	union {
 		struct sk_buff *skb;
 		void *raw_buf;
+		struct xdp_frame *xdpf;
+		struct xdp_buff *xdp;
 	};
 	u32 bytecount;
 	u16 gso_segs;
+	u16 nr_frags;
 	u32 tx_features;
+	enum sxe2_tx_buf_type type;
 	DEFINE_DMA_UNMAP_LEN(len);
 	DEFINE_DMA_UNMAP_ADDR(dma);
 };
@@ -219,6 +248,19 @@ struct sxe2_queue_stats {
 	struct u64_stats_sync syncp;
 };
 
+struct sxe2_pkt_ctx {
+	u64 cached_phctime;
+	__be16 vlan_proto;
+};
+
+#ifdef HAVE_AF_XDP_MULTI_BUF_SUPPORT
+struct sxe2_xdp_buff {
+	struct xdp_buff xdp_buff;
+	const union sxe2_rx_desc *eop_desc;
+	const struct sxe2_pkt_ctx *pkt_ctx;
+};
+#endif
+
 struct sxe2_queue {
 	struct sxe2_queue *next;
 	struct device *dev;
@@ -228,12 +270,21 @@ struct sxe2_queue {
 	union {
 		struct sxe2_rx_buf *rx_buf;
 		struct sxe2_tx_buf *tx_buf;
+		struct xdp_buff **xdp_buf;
 	};
 
 	struct sxe2_vsi *vsi;
 #ifdef HAVE_XDP_BUFF_RXQ
 	struct xdp_rxq_info xdp_rxq;
 #endif
+#ifdef HAVE_AF_XDP_MULTI_BUF_SUPPORT
+	union {
+		struct sxe2_xdp_buff xdp_ext;
+		struct xdp_buff xdp;
+	};
+#endif
+
+	struct sxe2_pkt_ctx pkt_ctx;
 
 	u16 depth;
 	u16 idx_in_pf;
@@ -241,6 +292,7 @@ struct sxe2_queue {
 
 	u16 next_to_use;
 	u16 next_to_clean;
+	u16 first_desc;
 	union {
 		struct {
 			u16 rx_offset;
@@ -256,7 +308,6 @@ struct sxe2_queue {
 	};
 
 	struct sxe2_queue_stats *stats;
-	struct u64_stats_sync syncp;
 
 	struct rcu_head rcu;
 
@@ -269,7 +320,7 @@ struct sxe2_queue {
 	};
 
 #ifdef HAVE_AF_XDP_ZC_SUPPORT
-#ifdef HAVE_NETDEV_BPF_XSK_POOL
+#if defined(HAVE_NETDEV_BPF_XSK_POOL) || defined(NEED_XSK_POOL_FROM_UMEM)
 	struct xsk_buff_pool *xsk_pool;
 #else
 	struct xdp_umem *xsk_pool;
@@ -279,7 +330,7 @@ struct sxe2_queue {
 	struct zero_copy_allocator zca;
 #endif
 #endif
-
+	u32 nr_frags;
 	struct sk_buff *skb;
 
 	union {
@@ -372,20 +423,24 @@ void sxe2_queue_init(struct sxe2_adapter *adapter);
 static inline void sxe2_tx_pkt_stats_update(struct sxe2_queue *txq,
 					    struct sxe2_queue_stats *stats)
 {
-	u64_stats_update_begin(&txq->syncp);
+	u64_stats_update_begin(&stats->syncp);
 	txq->stats->bytes += stats->bytes;
 	txq->stats->packets += stats->packets;
-	u64_stats_update_end(&txq->syncp);
+	u64_stats_update_end(&stats->syncp);
 }
 
 static inline void sxe2_rxq_stats_update(struct sxe2_queue *rxq, u64 pkts,
 					 u64 bytes)
 {
-	u64_stats_update_begin(&rxq->syncp);
+	u64_stats_update_begin(&rxq->stats->syncp);
 	rxq->stats->bytes += bytes;
 	rxq->stats->packets += pkts;
-	u64_stats_update_end(&rxq->syncp);
+	u64_stats_update_end(&rxq->stats->syncp);
 }
+
+s32 sxe2_vsi_qs_offset_get(struct sxe2_vsi *vsi,
+			   struct sxe2_queue_layout *q_layout,
+				 unsigned long *map, u16 size, u16 cnt, u8 q_type);
 
 s32 sxe2_dpdk_abs_qid_get(struct sxe2_adapter *adapter, struct sxe2_q_id_transe *params);
 
@@ -394,5 +449,17 @@ static inline bool sxe2_queue_depth_is_valid(u16 depth)
 	return (depth >= SXE2_MIN_NUM_DESC && depth <= SXE2_MAX_NUM_DESC &&
 		!(depth % SXE2_REQ_DESC_MULTIPLE));
 }
+
+#ifdef HAVE_AF_XDP_MULTI_BUF_SUPPORT
+static inline void
+sxe2_xdp_meta_set_desc(struct xdp_buff *xdp,
+		       union sxe2_rx_desc *eop_desc)
+{
+	struct sxe2_xdp_buff *xdp_ext = container_of(xdp, struct sxe2_xdp_buff,
+						    xdp_buff);
+
+	xdp_ext->eop_desc = eop_desc;
+}
+#endif
 
 #endif

@@ -92,11 +92,13 @@ s32 sxe2_com_switch_repr(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
 	repr_vf_id = le16_to_cpu(switchdev_repr_info_req.repr_vf_id);
 	repr_pf_id = le16_to_cpu(switchdev_repr_info_req.repr_pf_id);
 
-	vf_node = sxe2_vf_node_get(adapter, repr_vf_id);
-	if (!vf_node)
-		goto l_end;
-
 	mutex_lock(SXE2_VF_NODE_LOCK(adapter, repr_vf_id));
+	vf_node = sxe2_vf_node_get(adapter, repr_vf_id);
+	if (!vf_node) {
+		ret = -EINVAL;
+		goto l_unlock;
+	}
+
 	esw_vsi = vf_node->adapter->eswitch_ctxt.user_esw_vsi;
 	if (!esw_vsi) {
 		LOG_ERROR_BDF("esw vsi null\n");

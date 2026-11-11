@@ -140,9 +140,10 @@ STATIC s32 sxe2vf_add_rss_cfg_func(struct sxe2vf_adapter *adapter,
 				   struct sxe2vf_rss_hash_cfg *hash_cfg)
 {
 	s32 ret = 0;
-	struct sxe2vf_msg_params params = {0};
-	struct sxe2_vf_rss_hash_msg rss_hash_msg = {0};
+	struct sxe2vf_msg_params params = { 0 };
+	struct sxe2_vf_rss_hash_msg rss_hash_msg;
 
+	memset(&rss_hash_msg, 0, sizeof(rss_hash_msg));
 	sxe2vf_rss_hash_cfg_convert_hash_msg(hash_cfg, &rss_hash_msg);
 
 	sxe2vf_mbx_msg_dflt_params_fill(&params,
@@ -175,15 +176,15 @@ STATIC s32 sxe2vf_clear_rss_cfg_func(struct sxe2vf_adapter *adapter)
 STATIC s32 sxe2vf_set_rss_hash_ctrl_func(struct sxe2vf_adapter *adapter)
 {
 	s32 ret = 0;
-	struct sxe2vf_msg_params params = {0};
-	struct sxe2_vf_rss_hash_ctrl hash_ctrl;
+	struct sxe2vf_msg_params params = { 0 };
+	struct sxe2_vf_rss_hash_ctrl hash_ctrl = { 0 };
 
 	hash_ctrl.hash_func = SXE2_RSS_HASH_FUNC_TOEPLITZ;
 	sxe2vf_mbx_msg_dflt_params_fill(&params, SXE2VF_MSG_RESP_WAIT_NOTIFY,
 					SXE2_VF_SET_RSS_HASH_CTRL, &hash_ctrl,
 					sizeof(struct sxe2_vf_rss_hash_ctrl), NULL,
 					0);
-
+	ret = sxe2vf_mbx_msg_send(adapter, &params);
 	if (ret)
 		LOG_ERROR_BDF("sxe2 vf rss send mbx clear rss cfg fail!\n");
 
@@ -193,8 +194,8 @@ STATIC s32 sxe2vf_set_rss_hash_ctrl_func(struct sxe2vf_adapter *adapter)
 STATIC void sxe2vf_rss_clear_cfg(struct sxe2vf_adapter *adapter)
 {
 	struct device *dev = SXE2VF_ADAPTER_TO_DEV(adapter);
-	struct sxe2vf_rss_cfg *rss_cfg;
-	struct sxe2vf_rss_cfg *tmp;
+	struct sxe2vf_rss_cfg *rss_cfg = NULL;
+	struct sxe2vf_rss_cfg *tmp = NULL;
 	s32 ret = 0;
 
 	if (list_empty(&adapter->rss_ctxt.rss_cfgs))
@@ -221,8 +222,8 @@ s32 sxe2vf_rss_add_cfg(struct sxe2vf_adapter *adapter,
 		       struct sxe2vf_rss_hash_cfg *hash_cfg, bool is_default)
 {
 	struct device *dev = SXE2VF_ADAPTER_TO_DEV(adapter);
-	struct sxe2vf_rss_cfg *old_cfg;
-	struct sxe2vf_rss_cfg *new_cfg;
+	struct sxe2vf_rss_cfg *old_cfg = NULL;
+	struct sxe2vf_rss_cfg *new_cfg = NULL;
 	s32 ret = 0;
 
 	mutex_lock(&adapter->rss_ctxt.rss_cfgs_lock);
@@ -370,7 +371,7 @@ void sxe2vf_get_rss_flow(struct sxe2vf_adapter *adapter, struct ethtool_rxnfc *n
 {
 	DECLARE_BITMAP(headers, SXE2_FLOW_HDR_MAX);
 	DECLARE_BITMAP(hash_flds, SXE2_FLOW_FLD_ID_MAX);
-	struct sxe2vf_rss_cfg *hash_cfg;
+	struct sxe2vf_rss_cfg *hash_cfg = NULL;
 	struct sxe2vf_vsi *vsi = adapter->vsi_ctxt.vf_vsi;
 
 	nfc->data = 0;
@@ -423,13 +424,13 @@ void sxe2vf_get_rss_flow(struct sxe2vf_adapter *adapter, struct ethtool_rxnfc *n
 int sxe2vf_set_rss_flow(struct sxe2vf_adapter *adapter, struct ethtool_rxnfc *nfc)
 {
 	int ret = 0;
-	struct sxe2vf_rss_hash_cfg hash_cfg = {0};
+	struct sxe2vf_rss_hash_cfg hash_cfg;
 	struct sxe2vf_vsi *vsi = adapter->vsi_ctxt.vf_vsi;
 
 #ifdef SXE2_CFG_RELEASE
 	UNUSED(vsi);
 #endif
-
+	memset(&hash_cfg, 0, sizeof(hash_cfg));
 	sxe2vf_analysis_hdrs(nfc, hash_cfg.headers);
 	if (bitmap_empty(hash_cfg.headers, SXE2_FLOW_HDR_MAX)) {
 		LOG_ERROR_BDF("sxe2 vf rss (id: %u) invalid field type!\n",
@@ -452,7 +453,7 @@ s32 sxe2vf_rss_default_flow_set(struct sxe2vf_adapter *adapter)
 {
 	u32 i;
 	s32 ret = 0;
-	struct sxe2vf_rss_hash_cfg *cfg;
+	struct sxe2vf_rss_hash_cfg *cfg = NULL;
 	struct sxe2vf_vsi *vsi = adapter->vsi_ctxt.vf_vsi;
 	struct sxe2vf_msg_params params = {0};
 
@@ -490,9 +491,9 @@ STATIC s32 sxe2vf_rss_replay_hash_cfg(struct sxe2vf_adapter *adapter)
 {
 	struct device *dev = SXE2VF_ADAPTER_TO_DEV(adapter);
 	s32 ret = 0;
-	struct sxe2vf_msg_params params = {0};
-	struct sxe2vf_rss_cfg *rss_cfg;
-	struct sxe2vf_rss_cfg *tmp;
+	struct sxe2vf_msg_params params = { 0 };
+	struct sxe2vf_rss_cfg *rss_cfg = NULL;
+	struct sxe2vf_rss_cfg *tmp = NULL;
 
 	sxe2vf_mbx_msg_dflt_params_fill(&params, SXE2VF_MSG_RESP_WAIT_NOTIFY,
 					SXE2_VF_REPLAY_RSS_CFG, NULL, 0, NULL, 0);
@@ -521,7 +522,8 @@ STATIC s32 sxe2vf_rss_hash_key_deinit(struct sxe2vf_adapter *adapter)
 	s32 ret = 0;
 	struct device *dev = SXE2VF_ADAPTER_TO_DEV(adapter);
 
-	key_msg = kzalloc(adapter->rss_ctxt.rss_key_size, GFP_KERNEL);
+	key_msg = kzalloc(adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.key_size,
+			  GFP_KERNEL);
 	if (!key_msg) {
 		ret = -ENOMEM;
 		LOG_ERROR_BDF("No memory!\n");
@@ -530,7 +532,7 @@ STATIC s32 sxe2vf_rss_hash_key_deinit(struct sxe2vf_adapter *adapter)
 
 	sxe2vf_mbx_msg_dflt_params_fill(&params, SXE2VF_MSG_RESP_WAIT_NOTIFY,
 					SXE2_VF_SET_RSS_KEY, key_msg,
-					adapter->rss_ctxt.rss_key_size, NULL, 0);
+					adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.key_size, NULL, 0);
 	ret = sxe2vf_mbx_msg_send(adapter, &params);
 	if (ret)
 		LOG_ERROR_BDF("sxe2 vf rss set hash key fail!\n");
@@ -554,7 +556,8 @@ STATIC s32 sxe2vf_rss_hash_lut_deinit(struct sxe2vf_adapter *adapter)
 	u8 *lut_msg = NULL;
 	s32 ret = 0;
 
-	lut_msg = kzalloc(adapter->rss_ctxt.rss_lut_size, GFP_KERNEL);
+	lut_msg = kzalloc(adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.lut_size,
+			  GFP_KERNEL);
 	if (!lut_msg) {
 		ret = -ENOMEM;
 		LOG_ERROR_BDF("No memory!\n");
@@ -563,7 +566,7 @@ STATIC s32 sxe2vf_rss_hash_lut_deinit(struct sxe2vf_adapter *adapter)
 
 	sxe2vf_mbx_msg_dflt_params_fill(&params, SXE2VF_MSG_RESP_WAIT_NOTIFY,
 					SXE2_VF_SET_RSS_LUT, lut_msg,
-					adapter->rss_ctxt.rss_lut_size, NULL, 0);
+					adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.lut_size, NULL, 0);
 	ret = sxe2vf_mbx_msg_send(adapter, &params);
 	if (ret)
 		LOG_ERROR_BDF("sxe2 vf rss set lut fail!\n");
@@ -606,13 +609,14 @@ STATIC s32 sxe2vf_rss_hash_key_init(struct sxe2vf_adapter *adapter)
 	u8 *key_msg = NULL;
 	s32 ret = 0;
 
-	if (adapter->rss_ctxt.rss_key_size == 0) {
+	if (adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.key_size == 0) {
 		LOG_ERROR_BDF("sxe2 vf rss hash key init failed. key size is 0!\n");
 		ret = -EINVAL;
 		goto l_out;
 	}
 
-	key_msg = devm_kzalloc(dev, adapter->rss_ctxt.rss_key_size, GFP_KERNEL);
+	key_msg = devm_kzalloc(dev, adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.key_size,
+			       GFP_KERNEL);
 	if (!key_msg) {
 		ret = -ENOMEM;
 		LOG_ERROR_BDF("No memory!\n");
@@ -620,20 +624,20 @@ STATIC s32 sxe2vf_rss_hash_key_init(struct sxe2vf_adapter *adapter)
 	}
 	if (adapter->rss_ctxt.key) {
 		memcpy(key_msg, adapter->rss_ctxt.key,
-		       adapter->rss_ctxt.rss_key_size);
+		       adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.key_size);
 	} else {
-		netdev_rss_key_fill((void *)key_msg, adapter->rss_ctxt.rss_key_size);
+		netdev_rss_key_fill((void *)key_msg, adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.key_size);
 	}
 
 	sxe2vf_mbx_msg_dflt_params_fill(&params, SXE2VF_MSG_RESP_WAIT_NOTIFY,
 					SXE2_VF_SET_RSS_KEY, key_msg,
-					adapter->rss_ctxt.rss_key_size, NULL, 0);
+					adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.key_size, NULL, 0);
 	ret = sxe2vf_mbx_msg_send(adapter, &params);
 	if (ret) {
 		LOG_ERROR_BDF("sxe2 vf rss set hash key fail!\n");
 		if (adapter->rss_ctxt.key)
 			memset(adapter->rss_ctxt.key, 0,
-			       adapter->rss_ctxt.rss_key_size);
+			       adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.key_size);
 
 		devm_kfree(dev, key_msg);
 		goto l_out;
@@ -655,13 +659,14 @@ STATIC s32 sxe2vf_rss_hash_lut_init(struct sxe2vf_adapter *adapter)
 	s32 ret = 0;
 	u16 i = 0;
 
-	if (adapter->rss_ctxt.rss_lut_size == 0) {
+	if (adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.lut_size == 0) {
 		LOG_ERROR_BDF("sxe2 vf rss hash lut init failed. lut size is 0!\n");
 		ret = -EINVAL;
 		goto l_out;
 	}
 
-	lut_msg = devm_kzalloc(dev, adapter->rss_ctxt.rss_lut_size, GFP_KERNEL);
+	lut_msg = devm_kzalloc(dev, adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.lut_size,
+			       GFP_KERNEL);
 	if (!lut_msg) {
 		ret = -ENOMEM;
 		LOG_ERROR_BDF("No memory!\n");
@@ -669,21 +674,22 @@ STATIC s32 sxe2vf_rss_hash_lut_init(struct sxe2vf_adapter *adapter)
 	}
 	if (adapter->rss_ctxt.lut) {
 		memcpy(lut_msg, adapter->rss_ctxt.lut,
-		       adapter->rss_ctxt.rss_lut_size);
+		       adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.lut_size);
 	} else {
-		for (i = 0; i < adapter->rss_ctxt.rss_lut_size; i++)
+		for (i = 0; i < adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.lut_size;
+		     i++)
 			lut_msg[i] = (u8)(i % adapter->vsi_ctxt.vf_vsi->rxqs.q_cnt);
 	}
 
 	sxe2vf_mbx_msg_dflt_params_fill(&params, SXE2VF_MSG_RESP_WAIT_NOTIFY,
 					SXE2_VF_SET_RSS_LUT, lut_msg,
-					adapter->rss_ctxt.rss_lut_size, NULL, 0);
+					adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.lut_size, NULL, 0);
 	ret = sxe2vf_mbx_msg_send(adapter, &params);
 	if (ret) {
 		LOG_ERROR_BDF("sxe2 vf rss set lut fail!\n");
 		if (adapter->rss_ctxt.lut)
 			memset(adapter->rss_ctxt.lut, 0,
-			       adapter->rss_ctxt.rss_lut_size);
+			       adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.lut_size);
 
 		devm_kfree(dev, lut_msg);
 		goto l_out;
@@ -778,24 +784,28 @@ s32 sxe2vf_set_channels_rss_reset(struct net_device *netdev,
 
 	if (!netif_is_rxfh_configured(netdev)) {
 		if (adapter->rss_ctxt.lut) {
-			for (i = 0; i < adapter->rss_ctxt.rss_lut_size; i++)
+			for (i =
+			     0; i < adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.lut_size;
+			     i++)
 				adapter->rss_ctxt.lut[i] = (u8)(i % new_queue);
 		}
 		LOG_DEV_INFO("rx queue size change, clearing user lut,\t"
 			     "re-run ethtool [-x|-X] to [check|set] settings if needed.\n");
 
-		lut_msg = kzalloc(adapter->rss_ctxt.rss_lut_size, GFP_KERNEL);
+		lut_msg = kzalloc(adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.lut_size,
+				  GFP_KERNEL);
 		if (!lut_msg) {
 			ret = -ENOMEM;
 			LOG_ERROR_BDF("No memory!\n");
 			goto l_out;
 		}
-		for (i = 0; i < adapter->rss_ctxt.rss_lut_size; i++)
+		for (i = 0; i < adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.lut_size;
+		     i++)
 			lut_msg[i] = (u8)(i % new_queue);
 
 		sxe2vf_mbx_msg_dflt_params_fill(&params, SXE2VF_MSG_RESP_WAIT_NOTIFY,
 						SXE2_VF_SET_RSS_LUT, lut_msg,
-						adapter->rss_ctxt.rss_lut_size, NULL,
+						adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.lut_size, NULL,
 						0);
 		ret = sxe2vf_mbx_msg_send(adapter, &params);
 		if (ret)
@@ -1070,9 +1080,9 @@ STATIC s32 sxe2vf_fnav_alloc_stat_idx(struct sxe2vf_adapter *adapter)
 {
 	s32 ret = 0;
 	struct sxe2vf_fnav_context *fnav_ctxt = &adapter->fnav_ctxt;
-	struct sxe2vf_msg_params params = {0};
-	struct sxe2_vf_fnav_stat_msg stat_msg;
-	struct sxe2_vf_fnav_stat_alloc_req_msg stat_req;
+	struct sxe2vf_msg_params params = { 0 };
+	struct sxe2_vf_fnav_stat_msg stat_msg = { 0 };
+	struct sxe2_vf_fnav_stat_alloc_req_msg stat_req = { 0 };
 
 	fnav_ctxt->stat_idx = SXE2_VF_FNAV_INVALID_STAT_IDX;
 	stat_req.need_update = true;
@@ -1096,8 +1106,8 @@ STATIC s32 sxe2vf_fnav_free_stat_idx(struct sxe2vf_adapter *adapter)
 {
 	s32 ret = 0;
 	struct sxe2vf_fnav_context *fnav_ctxt = &adapter->fnav_ctxt;
-	struct sxe2vf_msg_params params = {0};
-	struct sxe2_vf_fnav_stat_msg stat_msg;
+	struct sxe2vf_msg_params params = { 0 };
+	struct sxe2_vf_fnav_stat_msg stat_msg = { 0 };
 
 	stat_msg.stat_index = cpu_to_le16(fnav_ctxt->stat_idx);
 
@@ -1200,7 +1210,7 @@ void sxe2vf_fnav_deinit(struct sxe2vf_adapter *adapter)
 bool sxe2vf_fnav_is_dup_filter(struct sxe2vf_adapter *adapter,
 			       struct sxe2vf_fnav_filter *filter)
 {
-	struct sxe2vf_fnav_filter *tmp;
+	struct sxe2vf_fnav_filter *tmp = NULL;
 	bool ret = false;
 
 	mutex_lock(&adapter->fnav_ctxt.filter_list_lock);
@@ -1232,8 +1242,8 @@ s32 sxe2vf_fnav_del_filter(struct sxe2vf_adapter *adapter,
 	s32 ret = 0;
 	struct device *dev = SXE2VF_ADAPTER_TO_DEV(adapter);
 	struct sxe2vf_fnav_context *fnav_ctxt = &adapter->fnav_ctxt;
-	struct sxe2vf_msg_params params = {0};
-	struct sxe2_vf_fnav_filter_del_msg del_msg;
+	struct sxe2vf_msg_params params = { 0 };
+	struct sxe2_vf_fnav_filter_del_msg del_msg = { 0 };
 
 	del_msg.flow_id = cpu_to_le32(filter->flow_id);
 

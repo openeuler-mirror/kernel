@@ -58,8 +58,8 @@ struct sxe2_vf_node;
 #define sxe2_for_each_tc(i) \
 	sxe2_for_each_array_element(i, 0, IEEE_8021QAZ_MAX_TCS)
 
-#define sxe2_for_each_vsi_q_maxcnt(vsi, i)                                     \
-	sxe2_for_each_array_element(i, 0, (vsi)->vsi_qs_stats.vsi_qs_stats_maxcnt)
+#define sxe2_for_each_vsi_q_maxcnt(i)                                     \
+	sxe2_for_each_array_element(i, 0, SXE2_VSI_TXRX_Q_MAX_CNT)
 
 #ifdef SXE2_TEST
 #define SXE2_REALLOC(p, new_n, new_size, gfp, old_n)                           \
@@ -248,7 +248,6 @@ struct sxe2_vsi_qs_stats {
 	struct sxe2_queue_stats *txqs_stats;
 	struct sxe2_queue_stats *rxqs_stats;
 	struct sxe2_queue_stats **xdp_stats;
-	u16 vsi_qs_stats_maxcnt;
 };
 
 struct sxe2_vsi_stats {
@@ -342,8 +341,6 @@ struct sxe2_vsi {
 	struct sxe2_vsi_fnav fnav;
 	struct sxe2_vsi_acl acl;
 	struct sxe2_vf_node *vf_node;
-	struct sxe2_vsi_qs_stats vsi_qs_stats;
-	struct sxe2_vsi_stats vsi_stats;
 	struct sxe2_vsi_user_vlan_info user_vlan;
 	struct sxe2_vsi_udp_tunnel udp_tunnel;
 	struct sxe2_vsilist_prune_info src_prune;
@@ -362,6 +359,11 @@ struct sxe2_vsi {
 #endif
 };
 
+struct sxe2_vsis_stats {
+	struct sxe2_vsi_qs_stats vsi_qs_stats;
+	struct sxe2_vsi_stats vsi_stats;
+};
+
 struct sxe2_vsi_context {
 	struct sxe2_vsi **vsi;
 	u16 next_vsi_id;
@@ -372,6 +374,9 @@ struct sxe2_vsi_context {
 	struct mutex lock;
 	struct sxe2_vsi *main_vsi;
 	struct sxe2_vsi *ctrl_vsi;
+	struct sxe2_vsis_stats *vsis_stats;
+	u8 dpdk_lut_type;
+	u8 dpdk_global_lut_id;
 };
 
 s32 sxe2_main_vsi_create(struct sxe2_adapter *adapter);
@@ -412,6 +417,10 @@ void sxe2_vsi_tc_cfg(struct sxe2_vsi *vsi);
 
 void sxe2_vsi_queues_irqs_map(struct sxe2_vsi *vsi);
 
+#ifdef HAVE_XDP_SUPPORT
+s32 sxe2_vsi_xdp_qs_stats_realloc(struct sxe2_vsi *vsi);
+#endif
+
 s32 sxe2_vsi_disable_all(struct sxe2_adapter *adapter);
 
 s32 sxe2_vsi_disable_unlock(struct sxe2_vsi *vsi);
@@ -446,8 +455,6 @@ s32 sxe2_eswitch_vsi_create(struct sxe2_adapter *adapter);
 
 s32 sxe2_vsi_rebuild(struct sxe2_vsi *vsi, bool init);
 
-void sxe2_vsi_id_in_dev_clear(struct sxe2_adapter *adapter);
-
 s32 sxe2_vsi_enable_unlock(struct sxe2_vsi *vsi);
 s32 sxe2_rdma_vsi_create(struct sxe2_adapter *adapter);
 void sxe2_rdma_vsi_destroy(struct sxe2_adapter *adapter);
@@ -463,6 +470,10 @@ int sxe2_mac_addr_add(struct sxe2_vsi *vsi, const u8 *addr,
 
 int sxe2_mac_addr_del(struct sxe2_vsi *vsi, const u8 *addr,
 		      enum sxe2_mac_owner owner);
+
+s32 sxe2_rdma_multi_mac_addr_clean(struct sxe2_adapter *adapter);
+
+void sxe2_mac_addr_clear(struct sxe2_vsi *vsi);
 
 s32 sxe2_main_vsi_disable_unlock(struct sxe2_vsi *vsi);
 
@@ -481,10 +492,6 @@ s32 sxe2_macvlan_vsi_enable_unlock(struct sxe2_vsi *vsi);
 s32 sxe2_esw_vsi_enable_unlock(struct sxe2_vsi *vsi);
 
 s32 sxe2_vsi_irqs_request(struct sxe2_vsi *vsi);
-
-void sxe2_irq_txqs_cause_clear(struct sxe2_irq_data *irq_data);
-
-void sxe2_irq_rxqs_cause_clear(struct sxe2_irq_data *irq_data);
 
 void sxe2_vsi_irqs_disable(struct sxe2_vsi *vsi);
 
@@ -525,5 +532,21 @@ bool sxe2_vsi_rxft_support_get(struct sxe2_vsi *vsi);
 
 s32 sxe2_user_vsi_info_get(struct sxe2_adapter *adapter, u16 vsi_id,
 			   struct sxe2_fwc_func_caps *caps);
+
+s32 sxe2_dpdk_reprvsi_resource_release(struct sxe2_adapter *adapter);
+
+void sxe2_vsis_stats_deinit(struct sxe2_adapter *adapter);
+
+s32 sxe2_vsis_stats_init(struct sxe2_adapter *adapter);
+
+struct sxe2_vsi_qs_stats *sxe2_vsi_qs_stats_get(struct sxe2_adapter *adapter, u16 vsi_sw_id);
+
+struct sxe2_vsi_hw_stats *sxe2_vsi_hw_stats_get(struct sxe2_adapter *adapter, u16 vsi_sw_id);
+
+struct sxe2_vsi_sw_stats *sxe2_vsi_sw_stats_get(struct sxe2_adapter *adapter, u16 vsi_sw_id);
+
+struct sxe2_vsi_hw_stats *sxe2_parse_hw_stats_get(struct sxe2_adapter *adapter, u16 vsi_sw_id);
+
+void sxe2_vsis_stats_clear(struct sxe2_adapter *adapter, u16 vsi_sw_id);
 
 #endif

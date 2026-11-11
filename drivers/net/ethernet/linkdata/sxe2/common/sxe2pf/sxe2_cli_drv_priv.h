@@ -10,6 +10,7 @@
  */
 
 #include "sxe2_cmd.h"
+#include "sxe2_cli_drv_msg.h"
 
 struct sxe2_adapter;
 struct sxe2_hw;

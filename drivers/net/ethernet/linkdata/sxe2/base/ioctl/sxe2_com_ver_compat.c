@@ -70,7 +70,7 @@ s32 sxe2_com_get_arg_sz(u32 ver, u32 cmd)
 	if (cmd == SXE2_DEVICE_HANDSHAKE)
 		return sizeof(struct sxe2_ioctl_cmd_common_hdr);
 
-	if (cmd >= SXE2_DEVICE_MAX)
+	if (cmd <= SXE2_DEVICE_HANDSHAKE || cmd >= SXE2_DEVICE_MAX)
 		return -EINVAL;
 
 	if (ver == SXE2_COM_INVAL_U32)

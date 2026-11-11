@@ -36,6 +36,8 @@
 #include "sxe2_linkchg.h"
 #include "sxe2_cmd.h"
 
+#define SXE2_WATCHDOG_TIMEO (15 * HZ)
+
 #define SXE2_SET_FEATURE(features, feature, enable)                                 \
 	do {                                                                        \
 		typeof(feature) _feature = (feature);                               \
@@ -94,17 +96,28 @@ STATIC void sxe2_get_stats64(struct net_device *netdev,
 #endif
 {
 	struct sxe2_netdev_priv *priv = netdev_priv(netdev);
-	struct sxe2_vsi *vsi = priv->vsi;
-	struct sxe2_adapter *adapter = vsi->adapter;
+	struct sxe2_vsi *vsi	      = priv->vsi;
+	struct sxe2_adapter *adapter  = vsi->adapter;
+	struct sxe2_vsi_sw_stats *vsi_sw_stats = sxe2_vsi_sw_stats_get(adapter, vsi->id_in_pf);
+	struct sxe2_vsi_hw_stats *vsi_hw_stats = sxe2_vsi_hw_stats_get(adapter, vsi->id_in_pf);
 
 	sxe2_sw_vsi_stats_update(vsi);
 
-	stats->tx_packets = vsi->vsi_stats.vsi_sw_stats.tx_packets;
-	stats->rx_packets = vsi->vsi_stats.vsi_sw_stats.rx_packets;
-	stats->tx_bytes = vsi->vsi_stats.vsi_sw_stats.tx_bytes;
-	stats->rx_bytes = vsi->vsi_stats.vsi_sw_stats.rx_bytes;
+	if (!vsi_sw_stats || !vsi_hw_stats) {
+		LOG_ERROR_BDF("vsi sw/hw stats null. vsi_sw_id:%d\n", vsi->id_in_pf);
+#ifdef HAVE_RTNL_LINK_NDO_GET_STATS64
+		return stats;
+#else
+		return;
+#endif
+	}
 
-	stats->multicast = vsi->vsi_stats.vsi_hw_stats.rx_vsi_multicast_packets;
+	stats->tx_packets = vsi_sw_stats->tx_packets;
+	stats->rx_packets = vsi_sw_stats->rx_packets;
+	stats->tx_bytes	  = vsi_sw_stats->tx_bytes;
+	stats->rx_bytes	  = vsi_sw_stats->rx_bytes;
+
+	stats->multicast = vsi_hw_stats->rx_vsi_multicast_packets;
 	stats->rx_crc_errors = adapter->pf_stats.pf_hw_stats.rx_crc_errors;
 
 	if (vsi->type == SXE2_VSI_T_PF) {
@@ -112,9 +125,9 @@ STATIC void sxe2_get_stats64(struct net_device *netdev,
 				   adapter->pf_stats.pf_hw_stats.rx_illegal_bytes +
 				   adapter->pf_stats.pf_hw_stats.rx_len_errors +
 				   adapter->pf_stats.pf_hw_stats.rx_undersize_good +
-				   vsi->vsi_stats.vsi_sw_stats.rx_csum_err +
+				   vsi_sw_stats->rx_csum_err +
 				   adapter->pf_stats.pf_hw_stats.rx_oversize_good +
-				   vsi->vsi_stats.vsi_sw_stats.rx_pkts_sw_drop;
+				   vsi_sw_stats->rx_pkts_sw_drop;
 		stats->rx_length_errors =
 				adapter->pf_stats.pf_hw_stats.rx_len_errors;
 		stats->rx_missed_errors =
@@ -159,7 +172,7 @@ out:
 	return ret;
 }
 
-static int sxe2_change_mtu(struct net_device *netdev, int new_mtu)
+STATIC int sxe2_change_mtu(struct net_device *netdev, int new_mtu)
 {
 	s32 ret = 0;
 	struct sxe2_netdev_priv *priv = netdev_priv(netdev);
@@ -179,13 +192,21 @@ static int sxe2_change_mtu(struct net_device *netdev, int new_mtu)
 	}
 
 #ifdef HAVE_XDP_SUPPORT
-	if (sxe2_xdp_is_enable(vsi)) {
-		int frame_size = sxe2_max_xdp_frame_size(vsi);
+	{
+#ifdef HAVE_AF_XDP_MULTI_BUF_SUPPORT
+		struct bpf_prog *prog = vsi->xdp_prog;
 
-		if (new_mtu + SXE2_PACKET_HDR_PAD > frame_size) {
-			LOG_NETDEV_ERR("max MTU for XDP usage is %d\n",
-				       frame_size - SXE2_PACKET_HDR_PAD);
-			return -EINVAL;
+		if (prog && !prog->aux->xdp_has_frags) {
+#else
+		if (sxe2_xdp_is_enable(vsi)) {
+#endif
+			int frame_size = sxe2_max_xdp_frame_size(vsi);
+
+			if (new_mtu + SXE2_PACKET_HDR_PAD > frame_size) {
+				LOG_NETDEV_ERR("max MTU for XDP usage is %d\n",
+					       frame_size - SXE2_PACKET_HDR_PAD);
+				return -EINVAL;
+			}
 		}
 	}
 #endif
@@ -296,7 +317,7 @@ s32 sxe2_set_vlan_filter_features(struct sxe2_vsi *vsi, netdev_features_t featur
 	return ret;
 }
 
-static s32 sxe2_set_vlan_features(struct net_device *netdev,
+STATIC s32 sxe2_set_vlan_features(struct net_device *netdev,
 				  netdev_features_t features,
 				  netdev_features_t *oper_features)
 {
@@ -349,6 +370,12 @@ static s32 sxe2_set_lro_features(struct net_device *netdev,
 	bool lro_ena = !!(features & NETIF_F_LRO);
 	bool old_lro_feature = (bool)test_bit(SXE2_VSI_FLAG_LRO_ENABLE, vsi->flags);
 
+	if (sxe2_xdp_is_enable(vsi) && lro_ena) {
+		LOG_NETDEV_INFO("Cannot simultaneously enable lro and enable xdp.\n");
+		ret = -EPERM;
+		goto l_out;
+	}
+
 	if (!(features & NETIF_F_LRO)) {
 		if (test_bit(SXE2_VSI_FLAG_LRO_ENABLE, vsi->flags)) {
 			need_reinit = true;
@@ -394,7 +421,7 @@ l_end:
 		else
 			clear_bit(SXE2_VSI_FLAG_LRO_ENABLE, vsi->flags);
 	}
-
+l_out:
 	return ret;
 }
 
@@ -451,7 +478,7 @@ static s32 sxe2_set_fnav_features(struct net_device *netdev,
 	return ret;
 }
 
-static s32 sxe2_set_rxcsum_features(struct net_device *netdev,
+STATIC s32 sxe2_set_rxcsum_features(struct net_device *netdev,
 				    netdev_features_t features,
 				    netdev_features_t *oper_features)
 {
@@ -463,7 +490,7 @@ static s32 sxe2_set_rxcsum_features(struct net_device *netdev,
 	return ret;
 }
 
-static s32 sxe2_set_rxfcs_features(struct net_device *netdev,
+STATIC s32 sxe2_set_rxfcs_features(struct net_device *netdev,
 				   netdev_features_t features,
 				   netdev_features_t *oper_features)
 {
@@ -601,7 +628,7 @@ STATIC s32 sxe2_set_ipsec_features(struct net_device *netdev,
 	return ret;
 }
 
-static s32 sxe2_conflict_features_check(struct net_device *netdev,
+STATIC s32 sxe2_conflict_features_check(struct net_device *netdev,
 					netdev_features_t features)
 {
 	netdev_features_t changed_features = netdev->features ^ features;
@@ -639,7 +666,7 @@ static s32 sxe2_conflict_features_check(struct net_device *netdev,
 	return 0;
 }
 
-static int sxe2_set_features(struct net_device *netdev, netdev_features_t features)
+STATIC int sxe2_set_features(struct net_device *netdev, netdev_features_t features)
 {
 	struct sxe2_netdev_priv *np = netdev_priv(netdev);
 	struct sxe2_vsi *vsi = np->vsi;
@@ -829,7 +856,7 @@ static netdev_features_t sxe2_fix_ipsec_features(struct sxe2_adapter *adapter,
 	return features;
 }
 
-static netdev_features_t sxe2_fix_features(struct net_device *netdev,
+STATIC netdev_features_t sxe2_fix_features(struct net_device *netdev,
 					   netdev_features_t features)
 {
 	netdev_features_t req_vlan_fltr, cur_vlan_fltr;
@@ -1032,7 +1059,7 @@ unlock:
 	return ret;
 }
 
-static int sxe2_set_mac_address(struct net_device *netdev, void *pi)
+STATIC int sxe2_set_mac_address(struct net_device *netdev, void *pi)
 {
 	int ret = 0;
 	struct sxe2_netdev_priv *np = netdev_priv(netdev);
@@ -1195,14 +1222,16 @@ void sxe2_netdev_feature_init(struct net_device *netdev)
 			defaults | csum_features | tso_features | vlan_features;
 	netdev->features = netdev->hw_features;
 
-	netdev->hw_features |= NETIF_F_LRO | NETIF_F_RXFCS;
+	netdev->hw_features |= NETIF_F_LRO;
+	netdev->hw_features |= NETIF_F_RXFCS;
 
 	netdev->mpls_features = NETIF_F_HW_CSUM;
 
 	netdev->hw_enc_features |= defaults | csum_features | tso_features;
 
 	netdev->vlan_features |=
-			defaults | csum_features | tso_features | NETIF_F_LRO;
+			defaults | csum_features | tso_features;
+	netdev->vlan_features |= NETIF_F_LRO;
 
 	netdev->hw_features |= NETIF_F_HW_VLAN_STAG_RX | NETIF_F_HW_VLAN_STAG_TX;
 
@@ -1220,9 +1249,24 @@ void sxe2_netdev_feature_init(struct net_device *netdev)
 
 	if (test_bit(SXE2_FLAG_VMDQ_CAPABLE, adapter->flags))
 		netdev->hw_features |= NETIF_F_HW_L2FW_DOFFLOAD;
-
+#if defined(HAVE_AF_XDP_MULTI_BUF_SUPPORT) && defined(HAVE_XDP_METADATA_OPS)
+	netdev->xdp_metadata_ops = sxe2_get_xdp_md_ops();
+#endif
+	xdp_set_features_flag(netdev, NETDEV_XDP_ACT_BASIC		|
+#ifdef HAVE_AF_XDP_ZC_SUPPORT
+				      NETDEV_XDP_ACT_XSK_ZEROCOPY	|
+#endif
+#ifdef HAVE_AF_XDP_MULTI_BUF_SUPPORT
+				      NETDEV_XDP_ACT_RX_SG              |
+				      NETDEV_XDP_ACT_NDO_XMIT_SG        |
+#endif
+				      NETDEV_XDP_ACT_NDO_XMIT           |
+				      NETDEV_XDP_ACT_REDIRECT);
 	LOG_DEBUG_BDF("netdev init features:0x%llx hw_features:0x%llx.\n",
 		      netdev->features, netdev->hw_features);
+#if defined(HAVE_AF_XDP_MULTI_BUF_SUPPORT) && defined(HAVE_XDP_ZC_MAX_SEGS)
+	netdev->xdp_zc_max_segs = SXE2_MAX_BUF_TXD;
+#endif
 }
 
 static int sxe2_bridge_getlink(struct sk_buff *skb, u32 pid, u32 seq,
@@ -1236,7 +1280,7 @@ static int sxe2_bridge_getlink(struct sk_buff *skb, u32 pid, u32 seq,
 				       filter_mask, NULL);
 }
 
-#ifdef NETDEV_NO_NEED_EXTACK_PRAM
+#ifdef BRIDGE_SETLINK_NO_NEED_EXTACK
 static int sxe2_bridge_setlink(struct net_device *dev, struct nlmsghdr *nlh,
 			       u16 __always_unused flags)
 #else
@@ -1309,21 +1353,19 @@ l_unlock:
 	return ret;
 }
 
-#ifdef NETDEV_NO_NEED_EXTACK_PRAM
 static int sxe2_fdb_add(struct ndmsg *ndm, struct nlattr *tb[],
 			struct net_device *dev, const unsigned char *addr, u16 vid,
-			u16 flags)
-{
-	return ndo_dflt_fdb_add(ndm, tb, dev, addr, vid, flags);
-}
-#else
-static int sxe2_fdb_add(struct ndmsg *ndm, struct nlattr *tb[],
-			struct net_device *dev, const unsigned char *addr, u16 vid,
-			u16 flags, struct netlink_ext_ack __always_unused *extack)
-{
-	return ndo_dflt_fdb_add(ndm, tb, dev, addr, vid, flags);
-}
+			u16 flags
+#ifdef HAVE_NDO_FDB_ADD_NOTIFIED
+			, bool __always_unused *notified
 #endif
+#ifndef FDB_ADD_NO_NEED_EXTACK
+			, struct netlink_ext_ack __always_unused *extack
+#endif
+)
+{
+	return ndo_dflt_fdb_add(ndm, tb, dev, addr, vid, flags);
+}
 
 static int sxe2_set_tx_maxrate(struct net_device *netdev, int queue_index,
 			       u32 maxrate)
@@ -1372,14 +1414,15 @@ l_unlock:
 	return ret;
 }
 
-#ifdef NDO_FDB_DEL_API_NEED_5_PARAMS
 static int sxe2_fdb_del(struct ndmsg *ndm, struct nlattr *tb[],
-			struct net_device *dev, const unsigned char *addr, u16 vid)
-#else
-static int sxe2_fdb_del(struct ndmsg *ndm, struct nlattr *tb[],
-			struct net_device *dev, const unsigned char *addr, u16 vid,
-			struct netlink_ext_ack *xtack)
+			struct net_device *dev, const unsigned char *addr, u16 vid
+#ifdef HAVE_NDO_FDB_ADD_NOTIFIED
+			, bool __always_unused *notified
 #endif
+#ifndef NDO_FDB_DEL_API_NEED_5_PARAMS
+			, struct netlink_ext_ack __always_unused *extack
+#endif
+)
 {
 	return ndo_dflt_fdb_del(ndm, tb, dev, addr, vid);
 }
@@ -1838,10 +1881,9 @@ STATIC s32 sxe2_xdp_alloc_and_setup_rings(struct sxe2_vsi *vsi)
 		xdp_ring->dev = dev;
 		xdp_ring->depth = vsi->txqs.depth;
 		WRITE_ONCE(vsi->xdp_rings.q[i], xdp_ring);
+		sxe2_set_ring_xdp(xdp_ring);
 		if (sxe2_tx_ring_alloc(vsi->xdp_rings.q[i], vsi))
 			goto free_xdp_rings;
-		sxe2_set_ring_xdp(xdp_ring);
-		xdp_ring->netdev = NULL;
 #ifdef HAVE_XDP_SUPPORT
 #ifdef HAVE_AF_XDP_ZC_SUPPORT
 		xdp_ring->xsk_pool = sxe2_xsk_pool(xdp_ring);
@@ -1862,8 +1904,11 @@ free_xdp_rings:
 
 void sxe2_vsi_xdp_qs_stats_deinit(struct sxe2_vsi *vsi)
 {
-	struct sxe2_vsi_qs_stats *vsi_qs_stat = &vsi->vsi_qs_stats;
+	struct sxe2_vsi_qs_stats *vsi_qs_stat = sxe2_vsi_qs_stats_get(vsi->adapter, vsi->id_in_pf);
 	u16 i;
+
+	if (!vsi_qs_stat)
+		return;
 
 	if (vsi_qs_stat->xdp_stats) {
 		for (i = 0; i < vsi->num_xdp_txq; i++) {
@@ -1881,7 +1926,11 @@ STATIC s32 sxe2_vsi_xdp_qs_stats_init(struct sxe2_vsi *vsi)
 	struct sxe2_adapter *adapter = vsi->adapter;
 	u16 i;
 
-	vsi_qs_stats = &vsi->vsi_qs_stats;
+	vsi_qs_stats = sxe2_vsi_qs_stats_get(adapter, vsi->id_in_pf);
+	if (!vsi_qs_stats) {
+		LOG_ERROR_BDF("vsi:%d queue stats null.\n", vsi->id_in_pf);
+		return -EINVAL;
+	}
 
 	if (!vsi_qs_stats->xdp_stats) {
 		vsi_qs_stats->xdp_stats = kcalloc(vsi->num_xdp_txq,
@@ -1919,30 +1968,12 @@ err_out:
 	return -ENOMEM;
 }
 
-s32 sxe2_prepare_xdp_rings(struct sxe2_vsi *vsi, struct bpf_prog *prog)
+STATIC void sxe2_map_xdp_rings(struct sxe2_vsi *vsi)
 {
-	struct sxe2_adapter *adapter = vsi->adapter;
+	u32 i;
+	s32 xdp_rings_per_v, q_id, q_base;
 	struct sxe2_irq_data *irq_data;
 	s32 xdp_rings_rem = (s32)vsi->num_xdp_txq;
-	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
-	u32 i;
-	s32 ret;
-	s32 xdp_rings_per_v, q_id, q_base;
-
-	vsi->xdp_rings.q = devm_kcalloc(dev, vsi->num_xdp_txq,
-					sizeof(*vsi->xdp_rings.q), GFP_KERNEL);
-	if (!vsi->xdp_rings.q)
-		return -ENOMEM;
-
-	if (sxe2_xdp_alloc_and_setup_rings(vsi))
-		goto clear_xdp_rings;
-
-	ret = sxe2_vsi_queues_get(vsi, SXE2_DATA_XDP_TQ);
-	if (ret) {
-		LOG_DEV_ERR("get txqs %d failed(%d).\n", vsi->xdp_rings.q_cnt, ret);
-		goto err_map_xdp;
-	}
-	adapter->q_ctxt.txq_layout.xdp += vsi->xdp_rings.q_cnt;
 
 	sxe2_for_each_vsi_irq(vsi, i)
 	{
@@ -1960,6 +1991,33 @@ s32 sxe2_prepare_xdp_rings(struct sxe2_vsi *vsi, struct bpf_prog *prog)
 		xdp_rings_rem -= xdp_rings_per_v;
 	}
 
+	sxe2_for_each_vsi_rxq(vsi, q_id) {
+		vsi->rxqs.q[q_id]->xdp_ring = vsi->xdp_rings.q[(u32)q_id % vsi->num_xdp_txq];
+	}
+}
+
+s32 sxe2_prepare_xdp_rings(struct sxe2_vsi *vsi, struct bpf_prog *prog)
+{
+	struct sxe2_adapter *adapter = vsi->adapter;
+	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
+	u32 i;
+	s32 ret;
+
+	vsi->xdp_rings.q = devm_kcalloc(dev, vsi->num_xdp_txq,
+					sizeof(*vsi->xdp_rings.q), GFP_KERNEL);
+	if (!vsi->xdp_rings.q)
+		return -ENOMEM;
+
+	if (sxe2_xdp_alloc_and_setup_rings(vsi))
+		goto clear_xdp_rings;
+
+	ret = sxe2_vsi_queues_get(vsi, SXE2_DATA_XDP_TQ);
+	if (ret) {
+		LOG_DEV_ERR("get txqs %d failed(%d).\n", vsi->xdp_rings.q_cnt, ret);
+		goto err_map_xdp;
+	}
+	adapter->q_ctxt.txq_layout.xdp += vsi->xdp_rings.q_cnt;
+
 	ret = sxe2_vsi_xdp_qs_stats_init(vsi);
 	if (ret) {
 		LOG_DEV_ERR("failed qs stats config for xdp, error(%d)\n", ret);
@@ -1971,6 +2029,8 @@ s32 sxe2_prepare_xdp_rings(struct sxe2_vsi *vsi, struct bpf_prog *prog)
 		LOG_DEV_ERR("failed vsi lan queue config for xdp, error(%d)\n", ret);
 		goto clear_xdp_stats;
 	}
+
+	sxe2_map_xdp_rings(vsi);
 
 	sxe2_vsi_assign_bpf_prog(vsi, prog);
 
@@ -1987,6 +2047,8 @@ err_map_xdp:
 				  adapter->q_ctxt.txq_layout.txq_map);
 			vsi->xdp_rings.q[i]->idx_in_pf = SXE2_Q_IDX_INVAL;
 		}
+		if (vsi->xdp_rings.q[i])
+			sxe2_tx_ring_free(vsi->xdp_rings.q[i]);
 	}
 	(void)mutex_unlock(&adapter->q_ctxt.lock);
 
@@ -2065,6 +2127,42 @@ free_qmap:
 	sxe2_vsi_xdp_qs_stats_deinit(vsi);
 	return ret;
 }
+
+s32 sxe2_xdp_rings_rebind(struct sxe2_vsi *vsi, bool q_cnt_changed)
+{
+	struct sxe2_adapter *adapter = vsi->adapter;
+	s32 ret;
+
+	if (!sxe2_xdp_is_enable(vsi))
+		return 0;
+
+	if (!q_cnt_changed) {
+		sxe2_map_xdp_rings(vsi);
+		return 0;
+	}
+
+	ret = sxe2_destroy_xdp_rings(vsi, true);
+	if (ret)
+		return ret;
+
+	sxe2_xdp_queue_cnt_set(vsi, vsi->rxqs.q_cnt);
+
+	ret = sxe2_vsi_xdp_qs_stats_realloc(vsi);
+	if (ret)
+		goto err_detach;
+
+	ret = sxe2_prepare_xdp_rings(vsi, vsi->xdp_prog);
+	if (ret)
+		goto err_detach;
+
+	return 0;
+
+err_detach:
+	sxe2_xdp_queue_cnt_set(vsi, 0);
+	sxe2_vsi_assign_bpf_prog(vsi, NULL);
+	LOG_ERROR_BDF("rebind xdp rings failed(%d), detach xdp prog\n", ret);
+	return ret;
+}
 #endif
 
 #ifdef HAVE_AF_XDP_ZC_SUPPORT
@@ -2102,11 +2200,18 @@ STATIC s32 sxe2_xdp_setup_prog(struct sxe2_vsi *vsi, struct bpf_prog *prog,
 {
 	u32 frame_size = vsi->netdev->mtu + SXE2_PACKET_HDR_PAD;
 	bool if_running = netif_running(vsi->netdev);
-	s32 ret = 0, xdp_ring_err = 0;
+	s32 ret = 0, xdp_ring_err = 0, zc_err = 0;
+	bool roback_setup = false;
 
-	if (frame_size > vsi->rxqs.rx_buf_len) {
-		NL_SET_ERR_MSG_MOD(extack, "MTU too large for loading XDP");
-		return -EOPNOTSUPP;
+#ifdef HAVE_AF_XDP_MULTI_BUF_SUPPORT
+	if (prog && !prog->aux->xdp_has_frags) {
+#else
+	if (prog) {
+#endif
+		if (frame_size > vsi->rxqs.rx_buf_len) {
+			NL_SET_ERR_MSG_MOD(extack, "MTU too large for loading XDP");
+			return -EOPNOTSUPP;
+		}
 	}
 
 	if (sxe2_xdp_is_enable(vsi) == !!prog) {
@@ -2128,15 +2233,31 @@ STATIC s32 sxe2_xdp_setup_prog(struct sxe2_vsi *vsi, struct bpf_prog *prog,
 		sxe2_xdp_queue_cnt_set(vsi, vsi->rxqs.q_cnt);
 
 		xdp_ring_err = sxe2_prepare_xdp_rings(vsi, prog);
-		if (xdp_ring_err)
+		if (xdp_ring_err) {
+			sxe2_xdp_queue_cnt_set(vsi, 0);
 			NL_SET_ERR_MSG_MOD(extack,
 					   "Setting up XDP Tx resources failed");
+		}
 		sxe2_clear_xdp_stats(vsi);
+#ifdef HAVE_AF_XDP_MULTI_BUF_SUPPORT
+		xdp_features_set_redirect_target(vsi->netdev, true);
+#else
+		xdp_features_set_redirect_target(vsi->netdev, false);
+#endif
+		roback_setup = true;
+		zc_err = sxe2_realloc_zc_buf(vsi, true);
+		if (zc_err)
+			NL_SET_ERR_MSG_MOD(extack, "Setting up XDP Rx resources failed");
 	} else if (sxe2_xdp_is_enable(vsi) && !prog) {
+		xdp_features_clear_redirect_target(vsi->netdev);
 		xdp_ring_err = sxe2_destroy_xdp_rings(vsi, false);
+		sxe2_xdp_queue_cnt_set(vsi, 0);
 		if (xdp_ring_err)
 			NL_SET_ERR_MSG_MOD(extack,
 					   "Freeing XDP Tx resources failed");
+		zc_err = sxe2_realloc_zc_buf(vsi, false);
+		if (zc_err)
+			NL_SET_ERR_MSG_MOD(extack, "Freeing XDP Rx resources failed");
 	}
 #endif
 
@@ -2152,8 +2273,29 @@ STATIC s32 sxe2_xdp_setup_prog(struct sxe2_vsi *vsi, struct bpf_prog *prog,
 		sxe2_vsi_rx_napi_schedule(vsi);
 #endif
 #endif
+	if (ret && roback_setup) {
+		(void)sxe2_destroy_xdp_rings(vsi, false);
+		sxe2_xdp_queue_cnt_set(vsi, 0);
+	}
 
-	return (ret || xdp_ring_err) ? -ENOMEM : 0;
+	return (ret || xdp_ring_err || zc_err) ? -ENOMEM : 0;
+}
+
+STATIC bool sxe2_opt_is_setup_xdp(struct netdev_bpf *xdp)
+{
+	if (xdp->command == XDP_SETUP_PROG)
+		return true;
+#ifdef HAVE_AF_XDP_ZC_SUPPORT
+	else if (xdp->command == XDP_SETUP_XSK_POOL)
+		return true;
+#endif
+	else
+		return false;
+}
+
+STATIC s32 sxe2_lro_is_enable(struct sxe2_vsi *vsi)
+{
+	return test_bit(SXE2_VSI_FLAG_LRO_ENABLE, vsi->flags);
 }
 
 STATIC s32 sxe2_xdp(struct net_device *dev, struct netdev_bpf *xdp)
@@ -2189,7 +2331,8 @@ STATIC s32 sxe2_xdp(struct net_device *dev, struct netdev_bpf *xdp)
 	}
 #endif
 
-	if (test_bit(SXE2_FLAG_MACVLAN_ENABLE, adapter->flags)) {
+	if (test_bit(SXE2_FLAG_MACVLAN_ENABLE, adapter->flags) &&
+	    sxe2_opt_is_setup_xdp(xdp)) {
 		LOG_DEV_ERR("MACVLAN is enabled, can not set xdp.\n");
 		ret = -EPERM;
 		goto unlock;
@@ -2202,6 +2345,13 @@ STATIC s32 sxe2_xdp(struct net_device *dev, struct netdev_bpf *xdp)
 		}
 	}
 
+	if (sxe2_lro_is_enable(vsi) &&
+	    sxe2_opt_is_setup_xdp(xdp)) {
+		LOG_DEV_ERR("lro is enabled, can not set xdp.\n");
+		ret = -EPERM;
+		goto unlock;
+	}
+
 	switch (xdp->command) {
 	case XDP_SETUP_PROG:
 		ret = sxe2_xdp_setup_prog(vsi, xdp->prog, xdp->extack);
@@ -2211,6 +2361,13 @@ STATIC s32 sxe2_xdp(struct net_device *dev, struct netdev_bpf *xdp)
 	case XDP_SETUP_XSK_POOL:
 #ifdef HAVE_NETDEV_BPF_XSK_POOL
 		ret = sxe2_xsk_pool_setup(vsi, xdp->xsk.pool, xdp->xsk.queue_id);
+#elif defined(NEED_XSK_POOL_FROM_UMEM)
+		if (xdp->xsk.pool && xdp->xsk.pool->umem)
+			xdp->xsk.pool->umem->pool = xdp->xsk.pool;
+		ret = sxe2_xsk_umem_setup(vsi,
+					  xdp->xsk.pool ? xdp->xsk.pool->umem :
+					  NULL,
+					  xdp->xsk.queue_id);
 #else
 		ret = sxe2_xsk_umem_setup(vsi, xdp->xsk.umem, xdp->xsk.queue_id);
 #endif
@@ -2236,11 +2393,11 @@ STATIC s32 sxe2_xdp_xmit(struct net_device *dev, s32 frame_cnt,
 	u32 queue_index;
 	struct sxe2_queue *xdp_ring;
 	s32 nxmit = 0, i;
+	struct sxe2_tx_buf *tx_buf;
 
 	preempt_disable();
 	queue_index = smp_processor_id();
 	preempt_enable();
-	queue_index = (queue_index % vsi->num_xdp_txq);
 
 	if (unlikely(flags & ~XDP_XMIT_FLAGS_MASK))
 		return -EINVAL;
@@ -2254,18 +2411,21 @@ STATIC s32 sxe2_xdp_xmit(struct net_device *dev, s32 frame_cnt,
 		nxmit = -ENXIO;
 		goto l_end;
 	}
+	queue_index = (queue_index % vsi->num_xdp_txq);
 
 	xdp_ring = vsi->xdp_rings.q[queue_index];
+	tx_buf = &xdp_ring->tx_buf[xdp_ring->next_to_use];
 	for (i = 0; i < frame_cnt; i++) {
 		struct xdp_frame *xdpf = frames[i];
 		s32 err;
 
-		err = sxe2_xmit_xdp_ring(xdpf->data, xdpf->len, xdp_ring);
+		err = sxe2_xmit_xdp_ring(xdpf, xdp_ring);
 		if (err != SXE2_XDP_TX)
 			break;
 		nxmit++;
 	}
 
+	tx_buf->rs_idx = sxe2_set_rs_bit(xdp_ring);
 	if (unlikely(flags & XDP_XMIT_FLUSH))
 		sxe2_xdp_ring_update_tail(xdp_ring);
 
@@ -2473,13 +2633,18 @@ STATIC const struct net_device_ops sxe2_netdev_ops = {
 
 		.ndo_select_queue = sxe2_select_queue,
 		.ndo_start_xmit = sxe2_xmit,
+#ifdef HAVE_RTNL_LINK_NDO_GET_STATS64
 		.ndo_get_stats64 = sxe2_get_stats64,
+#else
+		.ndo_get_stats64 = sxe2_get_stats64,
+#endif
 		.ndo_change_mtu = sxe2_change_mtu,
 		.ndo_validate_addr = eth_validate_addr,
 		.ndo_set_features = sxe2_set_features,
 		.ndo_features_check = sxe2_features_check,
 		.ndo_fix_features = sxe2_fix_features,
 		.ndo_set_mac_address = sxe2_set_mac_address,
+		.ndo_tx_timeout = sxe2_tx_timeout,
 #ifdef HAVE_NDO_ETH_IOCTL
 		.ndo_eth_ioctl = sxe2_eth_ioctl,
 #else
@@ -2586,6 +2751,9 @@ s32 sxe2_netdev_init(struct sxe2_vsi *vsi)
 #ifdef HAVE_NETDEV_MIN_MAX_MTU
 	sxe2_netdev_mtu_init(netdev);
 #endif
+
+	netdev->watchdog_timeo = SXE2_WATCHDOG_TIMEO;
+
 	if (!sxe2_is_safe_mode(adapter))
 		sxe2_ethtool_ops_set(netdev);
 	else
@@ -2599,6 +2767,7 @@ l_end:
 
 void sxe2_netdev_deinit(struct sxe2_vsi *vsi)
 {
+	sxe2_cpu_rx_rmap_free(vsi);
 	free_netdev(vsi->netdev);
 	vsi->netdev = NULL;
 }
@@ -2660,23 +2829,28 @@ sxe2_indr_block_priv_find(struct sxe2_netdev_priv *np, struct net_device *netdev
 	return NULL;
 }
 
-#ifdef SXE2_INDR_SETUP_TC_BLOCK_NEED_3_PARAMS
+#if defined(HAVE_TC_FLOW_INDIR_DEV) && defined(HAVE_FLOW_INDIR_BLOCK_QDISC)
+STATIC s32 sxe2_indr_setup_tc_block(struct net_device *netdev,
+				    struct Qdisc *sch, struct sxe2_netdev_priv *np,
+				       struct flow_block_offload *f,
+				       void *data,
+				       void (*cleanup)(struct flow_block_cb *block_cb))
+#elif defined(HAVE_TC_FLOW_INDIR_DEV) && defined(HAVE_TC_FLOW_INDIR_BLOCK_CLEANUP)
 STATIC s32 sxe2_indr_setup_tc_block(struct net_device *netdev,
 				    struct sxe2_netdev_priv *np,
-				    struct flow_block_offload *f)
-#else
-STATIC s32 sxe2_indr_setup_tc_block(struct net_device *netdev, struct Qdisc *sch,
-				    struct sxe2_netdev_priv *np,
-				    struct flow_block_offload *f, void *data,
+				       struct flow_block_offload *f,
+				       void *data,
 				    void (*cleanup)(struct flow_block_cb *block_cb))
+#else
+STATIC s32 sxe2_indr_setup_tc_block(struct net_device *netdev, struct sxe2_netdev_priv *np,
+				    struct flow_block_offload *f)
 #endif
 {
-#ifndef HAVE_FLOW_BLOCK_API
-	s32 ret;
-#endif
 	struct sxe2_indr_block_priv *indr_priv;
 #ifdef HAVE_FLOW_BLOCK_API
 	struct flow_block_cb *block_cb;
+#else
+	s32 ret;
 #endif
 
 	if ((sxe2_tc_tun_type_get(netdev) == SXE2_TNL_NONE) &&
@@ -2701,11 +2875,16 @@ STATIC s32 sxe2_indr_setup_tc_block(struct net_device *netdev, struct Qdisc *sch
 		list_add(&indr_priv->list, &np->tc_indr_block_priv_list);
 
 #ifdef HAVE_FLOW_BLOCK_API
-#ifdef HAVE_FLOW_INDR_BLOCK_API
+#if defined(HAVE_TC_FLOW_INDIR_DEV) && defined(HAVE_FLOW_INDIR_BLOCK_QDISC)
 		block_cb = flow_indr_block_cb_alloc(sxe2_indr_setup_block_cb,
 						    indr_priv, indr_priv,
 						    sxe2_rep_indr_tc_block_unbind, f,
 						    netdev, sch, data, np, cleanup);
+#elif defined(HAVE_TC_FLOW_INDIR_DEV) && defined(HAVE_TC_FLOW_INDIR_BLOCK_CLEANUP)
+		block_cb = flow_indr_block_cb_alloc(sxe2_indr_setup_block_cb,
+						    indr_priv, indr_priv,
+					sxe2_rep_indr_tc_block_unbind, f,
+					netdev, data, np, cleanup);
 #else
 		block_cb = flow_block_cb_alloc(sxe2_indr_setup_block_cb, indr_priv,
 					       indr_priv,
@@ -2739,7 +2918,7 @@ STATIC s32 sxe2_indr_setup_tc_block(struct net_device *netdev, struct Qdisc *sch
 		if (!block_cb)
 			return -ENOENT;
 
-#ifdef HAVE_FLOW_INDR_BLOCK_API
+#if defined(HAVE_TC_FLOW_INDIR_DEV) && defined(HAVE_TC_FLOW_INDIR_BLOCK_CLEANUP)
 		flow_indr_block_cb_remove(block_cb, f);
 #else
 		flow_block_cb_remove(block_cb, f);
@@ -2758,16 +2937,7 @@ STATIC s32 sxe2_indr_setup_tc_block(struct net_device *netdev, struct Qdisc *sch
 	return 0;
 }
 
-#ifdef SXE2_INDR_SETUP_TC_BLOCK_CB_NEED_4_PARAMS
-STATIC s32 sxe2_indr_setup_tc_block_cb(struct net_device *netdev, void *cb_priv,
-				       enum tc_setup_type type, void *type_data)
-{
-	if (type == TC_SETUP_BLOCK)
-		return sxe2_indr_setup_tc_block(netdev, cb_priv, type_data);
-	else
-		return -EOPNOTSUPP;
-}
-#else
+#if defined(HAVE_TC_FLOW_INDIR_DEV) && defined(HAVE_FLOW_INDIR_BLOCK_QDISC)
 STATIC s32 sxe2_indr_setup_tc_block_cb(struct net_device *netdev,
 				       struct Qdisc *sch, void *cb_priv,
 				       enum tc_setup_type type, void *type_data,
@@ -2777,6 +2947,28 @@ STATIC s32 sxe2_indr_setup_tc_block_cb(struct net_device *netdev,
 	if (type == TC_SETUP_BLOCK)
 		return sxe2_indr_setup_tc_block(netdev, sch, cb_priv, type_data,
 						data, cleanup);
+	else
+		return -EOPNOTSUPP;
+}
+#elif defined(HAVE_TC_FLOW_INDIR_DEV) && defined(HAVE_TC_FLOW_INDIR_BLOCK_CLEANUP)
+STATIC s32 sxe2_indr_setup_tc_block_cb(struct net_device *netdev,
+				       void *cb_priv,
+				       enum tc_setup_type type, void *type_data,
+				       void *data,
+				       void (*cleanup)(struct flow_block_cb *block_cb))
+{
+	if (type == TC_SETUP_BLOCK)
+		return sxe2_indr_setup_tc_block(netdev, cb_priv, type_data,
+						data, cleanup);
+	else
+		return -EOPNOTSUPP;
+}
+#else
+STATIC s32 sxe2_indr_setup_tc_block_cb(struct net_device *netdev, void *cb_priv,
+				       enum tc_setup_type type, void *type_data)
+{
+	if (type == TC_SETUP_BLOCK)
+		return sxe2_indr_setup_tc_block(netdev, cb_priv, type_data);
 	else
 		return -EOPNOTSUPP;
 }

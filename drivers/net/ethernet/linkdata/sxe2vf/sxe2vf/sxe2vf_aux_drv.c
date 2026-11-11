@@ -18,6 +18,8 @@
 #include "sxe2vf_irq.h"
 #include "sxe2vf_aux_drv.h"
 #include "sxe2_version.h"
+#include "sxe2vf_ethtool.h"
+
 static DEFINE_IDA(sxe2vf_aux_ida);
 
 static int sxe2vf_aux_vc_send(struct aux_core_dev_info *cdev_info, u16 vf_id,
@@ -206,6 +208,25 @@ static int sxe2vf_rdma_dump_pcap_cmd(struct aux_core_dev_info *cdev_info, u8 *ma
 	return sxe2vf_rdma_dump_pcap_msg_send(adapter, mac, is_add);
 }
 
+static u32 sxe2vf_rdma_get_link_speed(struct aux_core_dev_info *cdev_info)
+{
+	struct sxe2vf_adapter *adapter;
+	u32 speed;
+
+	adapter = SXE2VF_DEV_TO_ADAPTER(cdev_info->pdev);
+
+	mutex_lock(&adapter->vsi_ctxt.lock);
+
+	if (adapter->link_ctxt.link_up)
+		speed = adapter->link_ctxt.speed;
+	else
+		speed = SXE2_LINK_SPEED_VF_UNKNOWN;
+
+	mutex_unlock(&adapter->vsi_ctxt.lock);
+
+	return speed;
+}
+
 static struct sxe2_core_ops core_ops = {
 		.request_reset = sxe2vf_aux_request_reset,
 		.vc_send = sxe2vf_aux_vc_send,
@@ -214,6 +235,7 @@ static struct sxe2_core_ops core_ops = {
 		.rdma_send_cmd = sxe2vf_rdma_send_cmd,
 		.dump_pcap_cmd = sxe2vf_rdma_dump_pcap_cmd,
 		.rdma_drv_config = sxe2vf_rdma_drv_config,
+		.rdma_get_link_speed = sxe2vf_rdma_get_link_speed,
 };
 
 static struct sxe2_auxiliary_drv *
@@ -269,7 +291,7 @@ static s32 sxe2vf_aux_dev_add(struct aux_core_dev_info *cdev_info)
 	ret = auxiliary_device_add(adev);
 	if (ret) {
 		auxiliary_device_uninit(adev);
-		goto err_vfadev_alloc;
+		cdev_info->adev = NULL;
 	}
 
 	goto out;
@@ -335,7 +357,7 @@ STATIC s32 sxe2vf_aux_device_init(struct sxe2vf_adapter *adapter)
 	cdev_info->pdev = pdev;
 	cdev_info->netdev = adapter->netdev;
 	cdev_info->vport_id =
-			adapter->vsi_ctxt.vsi_ids[SXE2VF_VSI_TYPE_ETH];
+			adapter->vsi_ctxt.vsi_ids[SXE2_VF_VSI_ID_MASTER];
 	cdev_info->pf_id = 0;
 	cdev_info->ops = &core_ops;
 	cdev_info->ftype = AUX_FUNCTION_TYPE_VF;

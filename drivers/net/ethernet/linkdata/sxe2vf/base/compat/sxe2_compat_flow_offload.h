@@ -47,12 +47,6 @@ struct flow_match_ipv6_addrs {
 	struct flow_dissector_key_ipv6_addrs *key, *mask;
 };
 
-#ifdef HAVE_FLOW_DISSECTOR_KEY_IP
-struct flow_match_ip {
-	struct flow_dissector_key_ip *key, *mask;
-};
-#endif
-
 struct flow_match_ports {
 	struct flow_dissector_key_ports *key, *mask;
 };
@@ -83,8 +77,8 @@ static inline bool flow_rule_match_key(const struct flow_rule *rule,
 	typeof(_rule) _local_rule = (_rule); \
 	typeof(_type) _local_type = (_type); \
 	typeof(_out) _local_out = (_out); \
-	const struct flow_dissector *_d = (_local_rule)->match; \
-	struct flow_match _m = (_local_rule)->mask; \
+	const struct flow_match *_m = &(_local_rule)->match; \
+	struct flow_dissector *_d = (_m)->dissector; \
 	(_local_out)->key = skb_flow_dissector_target(_d, _local_type, (_m)->key); \
 	(_local_out)->mask = skb_flow_dissector_target(_d, _local_type, (_m)->mask); \
 } while (0)
@@ -132,14 +126,6 @@ flow_rule_match_ipv6_addrs(const struct flow_rule *rule,
 	FLOW_DISSECTOR_MATCH(rule, FLOW_DISSECTOR_KEY_IPV6_ADDRS, out);
 }
 
-#ifdef HAVE_FLOW_DISSECTOR_KEY_IP
-static inline void
-flow_rule_match_ip(const struct flow_rule *rule, struct flow_match_ip *out)
-{
-	FLOW_DISSECTOR_MATCH(rule, FLOW_DISSECTOR_KEY_IP, out);
-}
-#endif
-
 static inline void
 flow_rule_match_ports(const struct flow_rule *rule,
 		      struct flow_match_ports *out)
@@ -170,6 +156,17 @@ flow_rule_match_enc_ipv6_addrs(const struct flow_rule *rule,
 }
 
 #ifdef HAVE_FLOW_DISSECTOR_KEY_IP
+
+struct flow_match_ip {
+	struct flow_dissector_key_ip *key, *mask;
+};
+
+static inline void
+flow_rule_match_ip(const struct flow_rule *rule, struct flow_match_ip *out)
+{
+	FLOW_DISSECTOR_MATCH(rule, FLOW_DISSECTOR_KEY_IP, out);
+}
+
 #ifdef HAVE_FLOW_DISSECTOR_KEY_ENC_IP
 static inline void
 flow_rule_match_enc_ip(const struct flow_rule *rule, struct flow_match_ip *out)
@@ -192,22 +189,6 @@ flow_rule_match_enc_keyid(const struct flow_rule *rule,
 {
 	FLOW_DISSECTOR_MATCH(rule, FLOW_DISSECTOR_KEY_ENC_KEYID, out);
 }
-#endif
-
-#ifdef COMPILER_HAS_GENERIC_BUILTIN_OVERFLOW
-static inline bool __must_check __must_check_overflow(bool overflow)
-{
-	return unlikely(overflow);
-}
-
-#define check_add_overflow(a, b, d)		\
-	__must_check_overflow(__builtin_add_overflow(a, b, d))
-
-#define check_sub_overflow(a, b, d)		\
-	__must_check_overflow(__builtin_sub_overflow(a, b, d))
-
-#define check_mul_overflow(a, b, d)		\
-	__must_check_overflow(__builtin_mul_overflow(a, b, d))
 #endif
 
 #endif

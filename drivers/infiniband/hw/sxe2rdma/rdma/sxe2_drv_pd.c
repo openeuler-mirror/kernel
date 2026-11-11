@@ -57,7 +57,7 @@ struct ib_pd *sxe2_kalloc_pd(struct ib_device *ibdev, struct ib_ucontext *ibucon
 			ret = -EFAULT;
 			sxe2_kfree_rsrc(rdma_func, rdma_func->allocated_pds,
 					pd_id);
-			goto end;
+			goto free_pd;
 		}
 	} else {
 		pd_ctx->pd_id	= pd_id;
@@ -74,7 +74,11 @@ end:
 	return ret ? ERR_PTR(ret) : &pd->ibpd;
 }
 #else
+#ifdef ALLOC_PD_V2
+int sxe2_kalloc_pd(struct ib_pd *ibpd, struct ib_ucontext *ibucontext, struct ib_udata *udata)
+#else
 int sxe2_kalloc_pd(struct ib_pd *ibpd, struct ib_udata *udata)
+#endif
 {
 	int ret;
 	u32 pd_id;
@@ -84,7 +88,7 @@ int sxe2_kalloc_pd(struct ib_pd *ibpd, struct ib_udata *udata)
 	struct sxe2_rdma_kcontext *ucontext;
 	struct sxe2_rdma_ctx_pd *pd_ctx;
 	struct sxe2_rdma_pci_f *rdma_func = rdma_dev->rdma_func;
-#ifdef HAVE_NO_RDMA_UDATA_TO_DRV_CONTEXT
+#if defined(HAVE_NO_RDMA_UDATA_TO_DRV_CONTEXT) && !defined(ALLOC_PD_V2)
 	struct ib_ucontext      *ibucontext;
 #endif
 	ret = sxe2_kalloc_rsrc(rdma_func, rdma_func->allocated_pds,
@@ -132,6 +136,8 @@ end:
 void sxe2_kdealloc_pd(struct ib_pd *ibpd, struct ib_udata *udata)
 #elif defined DEALLOC_PD_VER_4
 int sxe2_kdealloc_pd(struct ib_pd *ibpd)
+#elif defined DEALLOC_PD_VER_2
+void sxe2_kdealloc_pd(struct ib_pd *ibpd)
 #else
 int sxe2_kdealloc_pd(struct ib_pd *ibpd, struct ib_udata *udata)
 #endif
@@ -139,14 +145,14 @@ int sxe2_kdealloc_pd(struct ib_pd *ibpd, struct ib_udata *udata)
 {
 	struct sxe2_rdma_pd *drv_pd	  = to_kpd(ibpd);
 	struct sxe2_rdma_device *rdma_dev = to_dev(ibpd->device);
-#ifndef DEALLOC_PD_VER_4
+#if !defined(DEALLOC_PD_VER_4) && !defined(DEALLOC_PD_VER_2)
 	(void)udata;
 #endif
 	DRV_RDMA_LOG_DEV_DEBUG("pd:%d dealloc\n", drv_pd->pd_ctx.pd_id);
 
 	sxe2_kfree_rsrc(rdma_dev->rdma_func, rdma_dev->rdma_func->allocated_pds,
 			drv_pd->pd_ctx.pd_id);
-#ifdef DEALLOC_PD_VER_3
+#if defined(DEALLOC_PD_VER_3) || defined(DEALLOC_PD_VER_2)
 	return;
 #else
 	return 0;

@@ -14,6 +14,7 @@
 #define SXE2_VER_MAJOR_OFFSET (16)
 #define SXE2_MK_VER(major, minor) \
 	((major) << SXE2_VER_MAJOR_OFFSET | (minor))
+
 #define SXE2_MK_VER_MAJOR(ver) (((ver) >> SXE2_VER_MAJOR_OFFSET) & 0xff)
 #define SXE2_MK_VER_MINOR(ver) ((ver) & 0xff)
 

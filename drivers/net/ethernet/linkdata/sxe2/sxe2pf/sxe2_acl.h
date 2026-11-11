@@ -156,6 +156,8 @@ struct sxe2_acl_flow_entry {
 	void *entry;
 	u16 entry_size;
 	u16 scen_entry_idx;
+
+	u8 act_cnt;
 };
 
 struct sxe2_acl_flow_cfg {
@@ -165,12 +167,28 @@ struct sxe2_acl_flow_cfg {
 	enum sxe2_fnav_flow_type flow_type;
 };
 
+struct sxe2_acl_stat_node {
+	struct list_head l_node;
+	u16 vsi_id;
+	u16 stat_index;
+	bool need_update;
+};
+
+struct sxe2_acl_stat_ctxt {
+	u16 stat_base;
+	u16 stat_num;
+	u16 stat_cnt;
+	struct mutex acl_stat_lock;
+	struct list_head acl_stat_list;
+};
+
 struct sxe2_acl_context {
 	struct sxe2_acl_tbl_info *acl_tbl_info;
 	DECLARE_BITMAP(slots, SXE2_ACL_MAX_NUM_ENTRY);
 	/* in order to protect the data */
 	struct mutex filter_lock;
 	struct sxe2_ppp_common_ctxt ppp;
+	struct sxe2_acl_stat_ctxt acl_stat_ctxt;
 };
 
 struct sxe2_acl_filter {
@@ -179,6 +197,9 @@ struct sxe2_acl_filter {
 	enum sxe2_fnav_flow_type flow_type;
 	struct sxe2_acl_flow_entry *flow_entry;
 	u64 filter_id;
+	u16 ori_vsi_sw;
+	u16 ori_vsi_hw;
+	u16 rule_vsi_sw;
 };
 
 s32 sxe2_acl_ptg_parse_from_ddp(u8 *data, u16 cnt, u16 base_id,
@@ -194,17 +215,18 @@ s32 sxe2_fwc_acl_set_scen_prof(struct sxe2_adapter *adapter,
 s32 sxe2_acl_flow_cfg_add(struct sxe2_vsi *vsi, struct sxe2_acl_flow_cfg *flow_cfg,
 			  struct sxe2_fnav_flow_seg *seg);
 
-s32 sxe2_acl_del_filter_by_id(struct sxe2_vsi *vsi, u64 filter_id);
+s32 sxe2_com_flow_acl_filter_del_by_flow_id(struct sxe2_adapter *adapter,
+					    u16 rule_vsi_id, u32 flow_id);
 
-s32 sxe2_acl_lut_entry_add(struct sxe2_vsi *vsi, struct sxe2_acl_filter *filter,
-			   struct sxe2_acl_flow_action *acts);
+s32 sxe2_acl_lut_entry_add(struct sxe2_vsi *ori_vsi,
+			   struct sxe2_vsi *rule_vsi,
+					struct sxe2_acl_filter *filter,
+					struct sxe2_acl_flow_action *acts);
 
-s32 sxe2_com_flow_acl_filter_del(struct sxe2_adapter *adapter, u16 rule_vsi_id,
-				 struct sxe2_drv_flow_filter_req *req);
-
-s32 sxe2_com_flow_acl_filter_add(struct sxe2_adapter *adapter, u16 rule_vsi_id,
-				 struct sxe2_drv_flow_filter_req *req,
-				 struct sxe2_drv_flow_filter_resp *resp);
+s32 sxe2_com_add_acl_filter(struct sxe2_adapter *adapter, u16 ori_vsi_id,
+			    u16 rule_vsi_id, u16 flow_type,
+					const struct sxe2_flow_pattern_ext *pattern,
+					struct sxe2_flow_action *action, u32 *flow_id);
 s32 sxe2_fwc_acl_trace_trigger(struct sxe2_adapter *adapter);
 
 s32 sxe2_fwc_acl_trace_recorder(struct sxe2_adapter *adapter);
@@ -219,8 +241,21 @@ s32 sxe2_acl_del_filter_by_vsi(struct sxe2_vsi *rule_vsi);
 
 void sxe2_acl_flow_cfg_add_list(struct sxe2_vsi *vsi, struct sxe2_acl_flow_cfg *flow_cfg);
 
-void sxe2_vsi_acl_init(struct sxe2_vsi *vsi);
+s32 sxe2_vsi_acl_init(struct sxe2_vsi *vsi);
 
 void sxe2_vsi_acl_deinit(struct sxe2_vsi *vsi);
+
+s32 sxe2_acl_stat_idx_alloc_with_lock(struct sxe2_adapter *adapter,
+				      u16 vsi_id, u16 *stat_index, bool need_update);
+
+s32 sxe2_acl_stat_idx_free_with_lock(struct sxe2_adapter *adapter, u16 stat_index);
+
+void sxe2_acl_flow_ctxt_clean(struct sxe2_adapter *adapter);
+
+void sxe2_acl_rebuild(struct sxe2_adapter *adapter);
+
+s32 sxe2_acl_filter_del(struct sxe2_vsi *rule_vsi, struct sxe2_acl_filter *filter);
+
+s32 sxe2_acl_del_filter_by_id(struct sxe2_vsi *vsi, u64 filter_id);
 
 #endif

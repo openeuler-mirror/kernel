@@ -33,7 +33,19 @@
 
 #include "sxe2.h"
 
+#if defined(NEED_XSK_POOL_FROM_UMEM) && defined(HAVE_AF_XDP_ZC_SUPPORT)
+static inline struct xsk_buff_pool *xsk_pool_from_umem(struct xdp_umem *umem)
+{
+	return umem ? umem->pool : NULL;
+}
+
+#define sxe2_xsk_pool_ptr(p) xsk_pool_from_umem(p)
+#else
+#define sxe2_xsk_pool_ptr(p) (p)
+#endif
+
 #define SXE2_RX_BUF_WRITE 16
+#define PKTS_PER_BATCH		    (8)
 
 #ifdef HAVE_AF_XDP_ZC_SUPPORT
 #ifndef HAVE_MEM_TYPE_XSK_BUFF_POOL
@@ -89,7 +101,7 @@ static inline bool sxe2_queue_is_xdp(struct sxe2_queue *q)
 	return (bool)test_bit(SXE2_TX_FLAGS_Q_XDP, &q->flags);
 }
 
-#ifdef HAVE_NETDEV_BPF_XSK_POOL
+#if defined(HAVE_NETDEV_BPF_XSK_POOL) || defined(NEED_XSK_POOL_FROM_UMEM)
 struct xsk_buff_pool *sxe2_xsk_pool(struct sxe2_queue *ring);
 #else
 struct xdp_umem *sxe2_xsk_pool(struct sxe2_queue *ring);
@@ -101,4 +113,21 @@ s32 sxe2_xsk_wakeup(struct net_device *netdev, u32 queue_id, u32 flags);
 s32 sxe2_xsk_async_xmit(struct net_device *netdev, u32 queue_id);
 #endif
 
+#ifdef HAVE_AF_XDP_ZC_SUPPORT
+int sxe2_realloc_zc_buf(struct sxe2_vsi *vsi, bool zc);
+#else
+static inline int
+sxe2_realloc_zc_buf(struct sxe2_vsi __always_unused *vsi,
+		    bool __always_unused zc)
+{
+	return 0;
+}
+#endif
+
+bool sxe2_xmit_zc(struct sxe2_queue *xdp_ring, s32 budget);
+
+#ifdef HAVE_AF_XDP_MULTI_BUF_SUPPORT
+bool sxe2_xmit_clean_zc(struct sxe2_queue *xdp_ring,
+			struct xsk_buff_pool *xsk_pool);
+#endif
 #endif

@@ -25,7 +25,7 @@
 #include "sxe2_common.h"
 #endif
 
-#define SXE2_DDP_DRV_VER_MAJ	1
+#define SXE2_DDP_DRV_VER_MAJ	2
 #define SXE2_DDP_DRV_VER_MNR	0
 
 #define SXE2_DDP_FW_VER_MAJ	1
@@ -56,9 +56,9 @@ enum sxe2_ddp_error {
 
 	SXE2_DDP_PKG_BUFFER_INVALID			    = 11,
 
-	SXE2_DDP_PKG_BUSY					        = 12,
+	SXE2_DDP_PKG_BUSY				    = 12,
 
-	SXE2_DDP_PKG_ERR					        = 13,
+	SXE2_DDP_PKG_ERR				    = 13,
 };
 
 enum sxe2_ddp_state {

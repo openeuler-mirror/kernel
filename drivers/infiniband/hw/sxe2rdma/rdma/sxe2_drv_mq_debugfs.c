@@ -294,10 +294,12 @@ static ssize_t mq_kget_status_dbg_read_op(struct file *filp, char __user *buf,
 	struct sxe2_rdma_device *rdma_dev;
 	struct sxe2_mq *mq;
 	struct sxe2_rdma_mcq *mcq;
+#ifdef SXE2_CFG_DEBUG
 	struct mq_wqe_nop *wqe = NULL;
 	u32 pending_index      = 0;
-	u32 pending_count      = 0;
 	u32 pending_i	       = 0;
+#endif
+	u32 pending_count      = 0;
 
 	if (*off != 0)
 		goto end;
@@ -333,6 +335,7 @@ static ssize_t mq_kget_status_dbg_read_op(struct file *filp, char __user *buf,
 	pending_count = (u32)SXE2_RING_USED_QUANTA(mq->mq.mq_ring);
 	len_total += dbg_vsnprintf(rsp_end, len_total,
 				   "MQ pending WQE count %#x\n", pending_count);
+#ifdef SXE2_CFG_DEBUG
 	for (pending_i = 0; pending_i < pending_count; pending_i++) {
 		pending_index = mq->mq.mq_ring.tail;
 		wqe = (struct mq_wqe_nop *)(mq->mq.mq_buf_va[pending_index]
@@ -349,6 +352,7 @@ static ssize_t mq_kget_status_dbg_read_op(struct file *filp, char __user *buf,
 					      pending_index);
 		pending_index = (pending_index + 1) % mq->mq.mq_ring.size;
 	}
+#endif
 
 	len_total += dbg_vsnprintf(rsp_end, len_total,
 				   "MCQ head %#x, tail %#x, size %#x\n",

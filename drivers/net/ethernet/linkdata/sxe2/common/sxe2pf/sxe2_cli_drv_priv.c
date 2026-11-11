@@ -36,6 +36,13 @@ STATIC s32 sxe2_cli_get_netdev_name_handler(struct sxe2_adapter *adapter,
 	       sizeof(dev_name_rsp_msg->netdev_name));
 
 	rtnl_lock();
+	if (!adapter->vsi_ctxt.main_vsi ||
+	    !adapter->vsi_ctxt.main_vsi->netdev) {
+		rtnl_unlock();
+		LOG_ERROR_BDF("main vsi or netdev not ready.\n");
+		return -ENODEV;
+	}
+
 	strscpy(dev_name_rsp_msg->netdev_name,
 		adapter->vsi_ctxt.main_vsi->netdev->name, IFNAMSIZ);
 	rtnl_unlock();

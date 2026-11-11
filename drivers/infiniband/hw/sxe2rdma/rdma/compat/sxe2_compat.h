@@ -32,6 +32,7 @@
 #define CREATE_AH_NOT_SUPPORT
 #define REREG_MR_VER_1
 #define UVERBS_CMD_MASK
+#define UVERBS_EX_CMD_MASK
 
 #ifdef NEED_KERNEL_AUX_DEFINE
 #include "auxiliary_bus.h"

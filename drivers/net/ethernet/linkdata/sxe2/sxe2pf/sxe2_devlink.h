@@ -16,6 +16,9 @@ void sxe2_adapter_free(void *devlink_ptr);
 void sxe2_devlink_register(struct sxe2_adapter *adapter);
 void sxe2_devlink_unregister(struct sxe2_adapter *adapter);
 
+s32 sxe2_devlink_udp_tunnel_params_register(struct sxe2_adapter *adapter);
+void sxe2_devlink_udp_tunnel_params_unregister(struct sxe2_adapter *adapter);
+
 #ifdef ESWITCH_MODE_SET_NEED_TWO_PRAMS
 int sxe2_eswitch_mode_set(struct devlink *devlink, u16 mode);
 #else

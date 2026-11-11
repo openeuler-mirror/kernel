@@ -114,6 +114,24 @@ struct sxe2_irq_layout {
 	u16 sriov_offset;
 };
 
+struct sxe2_irq_pool_entry {
+	u16 idx_in_pf;
+	unsigned int irqn;
+	bool requested;
+	struct sxe2_irq_data *irq_data;
+	struct sxe2_irq_pool *pool;
+	cpumask_t affinity_mask;
+	struct irq_affinity_notify affinity_notify;
+	s8 name[SXE2_INT_NAME_MAX_LEN];
+};
+
+struct sxe2_irq_pool {
+	struct sxe2_irq_pool_entry *entries;
+	struct mutex lock;
+	u16 base;
+	u16 cnt;
+};
+
 struct sxe2_irq_context {
 	u16 max_cnt;
 	u16 avail_cnt;
@@ -124,9 +142,11 @@ struct sxe2_irq_context {
 	struct msix_entry *msix_entries;
 	s8 event_int_name[SXE2_INT_NAME_MAX_LEN];
 	u32 event_irq_cnt;
+	struct sxe2_irq_pool pool;
 
 	/* in order to protect the data */
 	struct mutex lock;
+	spinlock_t cause_lock;
 	DECLARE_BITMAP(map, SXE2_IRQ_MAX_CNT);
 };
 
@@ -156,6 +176,10 @@ struct sxe2_irq_data {
 s32 sxe2_irq_init(struct sxe2_adapter *adapter);
 
 void sxe2_irq_deinit(struct sxe2_adapter *adapter);
+
+s32 sxe2_irq_pool_init(struct sxe2_adapter *adapter);
+
+void sxe2_irq_pool_destroy(struct sxe2_adapter *adapter);
 
 s32 sxe2_event_irq_request(struct sxe2_adapter *adapter);
 

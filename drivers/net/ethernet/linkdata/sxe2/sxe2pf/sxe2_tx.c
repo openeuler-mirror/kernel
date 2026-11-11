@@ -26,6 +26,7 @@
 #include "sxe2_skb_dump.h"
 #include "sxe2_fnav.h"
 #include "sxe2_xsk.h"
+#include "sxe2_ethtool.h"
 
 #define SXE2_MIN_TX_LEN 17
 
@@ -60,26 +61,50 @@
 #define SXE2_FNAV_DESC_CLEAN_DELAY 10
 #define SXE2_FNAV_DESC_NEED_USE	   2
 
-static struct netdev_queue *sxe2_netdev_txq_get(const struct sxe2_queue *txq)
-{
-	return netdev_get_tx_queue(txq->netdev, txq->idx_in_vsi);
-}
-
 STATIC void sxe2_tx_buffer_unmap(struct sxe2_queue *txq,
 				 struct sxe2_tx_buf *tx_buf)
 {
-	if (tx_buf->skb) {
-		if (sxe2_queue_is_xdp(txq)) {
-			page_frag_free(tx_buf->raw_buf);
-		} else {
-			dev_kfree_skb_any(tx_buf->skb);
-
-			if (dma_unmap_len(tx_buf, len)) {
+	if (sxe2_queue_is_xdp(txq)) {
+		switch (tx_buf->type) {
+		case SXE2_TX_BUF_XDP_TX:
+			if (dma_unmap_len(tx_buf, len))
 				dma_unmap_single(txq->dev,
 						 dma_unmap_addr(tx_buf, dma),
 						 dma_unmap_len(tx_buf, len),
 						 DMA_TO_DEVICE);
-			}
+#ifdef NOT_SUPP_FREE_PAGE_FRAG
+			devm_kfree(txq->dev, tx_buf->raw_buf);
+#else
+			page_frag_free(tx_buf->raw_buf);
+#endif
+			break;
+		case SXE2_TX_BUF_XDP_XMIT:
+			if (dma_unmap_len(tx_buf, len))
+				dma_unmap_single(txq->dev,
+						 dma_unmap_addr(tx_buf, dma),
+						 dma_unmap_len(tx_buf, len),
+						 DMA_TO_DEVICE);
+			xdp_return_frame(tx_buf->xdpf);
+			break;
+		case SXE2_TX_BUF_FRAG:
+			if (dma_unmap_len(tx_buf, len))
+				dma_unmap_single(txq->dev,
+						 dma_unmap_addr(tx_buf, dma),
+						 dma_unmap_len(tx_buf, len),
+						 DMA_TO_DEVICE);
+			break;
+		default:
+			break;
+		}
+		tx_buf->type = SXE2_TX_BUF_EMPTY;
+	} else if (tx_buf->skb) {
+		dev_kfree_skb_any(tx_buf->skb);
+
+		if (dma_unmap_len(tx_buf, len)) {
+			dma_unmap_single(txq->dev,
+					 dma_unmap_addr(tx_buf, dma),
+					 dma_unmap_len(tx_buf, len),
+					 DMA_TO_DEVICE);
 		}
 	} else if (dma_unmap_len(tx_buf, len)) {
 		dma_unmap_page(txq->dev, dma_unmap_addr(tx_buf, dma),
@@ -192,8 +217,11 @@ s32 sxe2_tx_ring_alloc(struct sxe2_queue *txq, struct sxe2_vsi *vsi)
 		goto l_alloc_failed;
 	}
 
-	if (vsi->netdev)
+	if (sxe2_queue_is_xdp(txq))
+		txq->netdev = NULL;
+	else if (vsi->netdev)
 		txq->netdev = vsi->netdev;
+
 	txq->next_to_use   = 0;
 	txq->next_to_clean = 0;
 	txq->tx_tstamps = &adapter->ptp_ctxt.tx;
@@ -511,6 +539,11 @@ s32 sxe2_txq_stop(struct sxe2_vsi *vsi, struct sxe2_queue *txq)
 {
 	s32 ret;
 	struct sxe2_adapter *adapter = vsi->adapter;
+
+	if (test_and_clear_bit(SXE2_TXQ_MDD_DISABLED, &txq->flags)) {
+		LOG_INFO_BDF("hw tx txq[%u] already stop because mdd.\n", txq->idx_in_pf);
+		return 0;
+	}
 
 	if (sxe2_txsched_support_chk(adapter)) {
 		ret = sxe2_txsched_txq_node_del(adapter, txq);
@@ -991,7 +1024,7 @@ l_end:
 	return ret;
 }
 
-static void sxe2_tx_vlan(struct sxe2_queue *txq, struct sxe2_tx_buf *first_buf,
+STATIC void sxe2_tx_vlan(struct sxe2_queue *txq, struct sxe2_tx_buf *first_buf,
 			 struct sxe2_tx_offload_info *offload)
 {
 	struct sk_buff *skb = first_buf->skb;
@@ -1014,7 +1047,7 @@ static void sxe2_tx_vlan(struct sxe2_queue *txq, struct sxe2_tx_buf *first_buf,
 	}
 }
 
-static void sxe2_request_tstamp(struct sxe2_queue *txq,
+STATIC void sxe2_request_tstamp(struct sxe2_queue *txq,
 				struct sxe2_tx_buf *first_buf,
 				struct sxe2_tx_offload_info *offload)
 {
@@ -1108,7 +1141,7 @@ l_end:
 	return ret;
 }
 
-static void sxe2_tx_dma_err(struct sxe2_queue *txq,
+STATIC void sxe2_tx_dma_err(struct sxe2_queue *txq,
 			    struct sxe2_tx_buf *first_buf, u16 ntu)
 {
 	struct sxe2_tx_buf *tx_buf;
@@ -1129,7 +1162,7 @@ static void sxe2_tx_dma_err(struct sxe2_queue *txq,
 	txq->next_to_use = ntu;
 }
 
-static inline void sxe2_tx_desc_update(struct sxe2_queue *txq,
+STATIC inline void sxe2_tx_desc_update(struct sxe2_queue *txq,
 				       union sxe2_tx_data_desc **desc,
 				       u16 *ntu)
 {
@@ -1246,6 +1279,15 @@ STATIC s32 sxe2_tx_desc_ring_map(struct sxe2_queue *txq,
 l_dma_err:
 	sxe2_tx_dma_err(txq, first_buf, *ntu);
 	return -ENOMEM;
+}
+
+void sxe2_txtimeout_clean(struct sxe2_adapter *adapter)
+{
+	adapter->txtimeout_ctxt.last_hung_jiffies = 0;
+	adapter->txtimeout_ctxt.last_hung_txq = 0;
+	adapter->txtimeout_ctxt.txq_last_trans = 0;
+	memset(&adapter->txtimeout_ctxt.pause_stats, 0, sizeof(struct sxe2_pause_stats));
+	clear_bit(SXE2_FLAG_TX_TIMEOUT, adapter->flags);
 }
 
 s32 sxe2_xmit_pkt(struct sxe2_queue *txq, struct sxe2_tx_buf *first_buf,
@@ -1567,7 +1609,7 @@ static inline void sxe2_tx_skb_unmap(struct sxe2_queue *txq,
 	dma_unmap_len_set(tx_buf, len, 0);
 }
 
-static inline void sxe2_tx_desc_buf_update(struct sxe2_queue *txq,
+STATIC inline void sxe2_tx_desc_buf_update(struct sxe2_queue *txq,
 					   struct sxe2_tx_buf **tx_buf,
 					   union sxe2_tx_data_desc **tx_desc,
 					   u32 *ntc)
@@ -1631,7 +1673,11 @@ static void sxe2_tx_desc_ring_unmap(struct sxe2_queue *txq, s32 napi_budget,
 		queue_stats->packets += tx_buf->gso_segs;
 
 		if (sxe2_queue_is_xdp(txq))
+#ifdef NOT_SUPP_FREE_PAGE_FRAG
+			devm_kfree(txq->dev, tx_buf->raw_buf);
+#else
 			page_frag_free(tx_buf->raw_buf);
+#endif
 		else
 			napi_consume_skb(tx_buf->skb, napi_budget);
 
@@ -1781,14 +1827,220 @@ bool sxe2_txq_irq_clean(struct sxe2_queue *txq, s32 napi_budget)
 	return !!budget;
 }
 
-#ifdef HAVE_XDP_SUPPORT
-s32 sxe2_xmit_xdp_ring(void *data, u16 size, struct sxe2_queue *xdp_ring)
+#if defined(HAVE_AF_XDP_MULTI_BUF_SUPPORT) && !defined(SXE2_TEST)
+STATIC void
+sxe2_clean_xdp_tx_buf(struct device *dev, struct sxe2_tx_buf *tx_buf,
+		      struct xdp_frame_bulk *bq)
+{
+	dma_unmap_single(dev, dma_unmap_addr(tx_buf, dma),
+			 dma_unmap_len(tx_buf, len), DMA_TO_DEVICE);
+	dma_unmap_len_set(tx_buf, len, 0);
+
+	switch (tx_buf->type) {
+	case SXE2_TX_BUF_XDP_TX:
+		page_frag_free(tx_buf->raw_buf);
+		break;
+	case SXE2_TX_BUF_XDP_XMIT:
+		xdp_return_frame_bulk(tx_buf->xdpf, bq);
+		break;
+	default:
+		break;
+	}
+
+	tx_buf->type = SXE2_TX_BUF_EMPTY;
+}
+
+STATIC u32 sxe2_clean_xdp_irq(struct sxe2_queue *xdp_ring)
+{
+	struct device *dev = xdp_ring->dev;
+	u32 ntc = xdp_ring->next_to_clean;
+	union sxe2_tx_data_desc *tx_desc;
+	u32 depth = xdp_ring->depth;
+	struct xdp_frame_bulk bq;
+	u32 frags, xdp_tx = 0;
+	u32 ready_frames = 0;
+	u32 idx;
+	u32 ret;
+	u32 i = 0;
+
+	idx = xdp_ring->tx_buf[ntc].rs_idx;
+	tx_desc = SXE2_TX_DESC(xdp_ring, idx);
+	if (tx_desc->wb.dd & cpu_to_le64(SXE2_TX_DESC_DTYPE_DESC_DONE)) {
+		if (idx >= ntc)
+			ready_frames = idx - ntc + 1;
+		else
+			ready_frames = idx + depth - ntc + 1;
+	}
+
+	if (unlikely(!ready_frames))
+		return 0;
+
+	ret = ready_frames;
+
+	xdp_frame_bulk_init(&bq);
+	rcu_read_lock();
+
+	while (ready_frames) {
+		struct sxe2_tx_buf *tx_buf = &xdp_ring->tx_buf[ntc];
+		struct sxe2_tx_buf *head = tx_buf;
+
+		frags = tx_buf->nr_frags;
+
+		ready_frames -= frags + 1;
+		xdp_tx++;
+
+		ntc++;
+		if (ntc == depth)
+			ntc = 0;
+
+		for (i = 0; i < frags; i++) {
+			tx_buf = &xdp_ring->tx_buf[ntc];
+
+			sxe2_clean_xdp_tx_buf(dev, tx_buf, &bq);
+			ntc++;
+			if (ntc == depth)
+				ntc = 0;
+		}
+
+		sxe2_clean_xdp_tx_buf(dev, head, &bq);
+	}
+
+	xdp_flush_frame_bulk(&bq);
+	rcu_read_unlock();
+
+	tx_desc->read.cmd_type_offset_bsz = 0;
+	xdp_ring->next_to_clean = ntc;
+	xdp_ring->xdp_tx_active -= xdp_tx;
+
+	return ret;
+}
+
+s32 __sxe2_xmit_xdp_ring(struct xdp_buff *xdp, struct sxe2_queue *xdp_ring, bool frame)
+{
+	struct skb_shared_info *sinfo = NULL;
+	u16 ntu = xdp_ring->next_to_use;
+	union sxe2_tx_data_desc *tx_desc;
+	struct device *dev = xdp_ring->dev;
+	struct sxe2_tx_buf *tx_buf;
+	struct sxe2_tx_buf *tx_head;
+	struct sxe2_tx_offload_info offload;
+	u32 depth = xdp_ring->depth;
+	dma_addr_t dma;
+	u32 nr_frags = 0;
+	u32 free_space;
+	u32 frag = 0;
+	u32 size = xdp->data_end - xdp->data;
+	void *data = xdp->data;
+
+	free_space = SXE2_DESC_UNUSED(xdp_ring);
+	if (free_space < SXE2_QUEUE_QUARTER(xdp_ring))
+		free_space += sxe2_clean_xdp_irq(xdp_ring);
+
+	if (unlikely(!free_space))
+		goto l_busy;
+#ifdef HAVE_AF_XDP_MULTI_BUF_SUPPORT
+	if (unlikely(xdp_buff_has_frags(xdp))) {
+		sinfo = xdp_get_shared_info_from_buff(xdp);
+		nr_frags = sinfo->nr_frags;
+		if (free_space < nr_frags + 1)
+			goto l_busy;
+	}
+#endif
+
+	tx_desc = SXE2_TX_DESC(xdp_ring, ntu);
+	tx_head = &xdp_ring->tx_buf[ntu];
+	tx_buf = tx_head;
+	offload.data_desc_cmd = 0;
+	offload.data_desc_offset = 0;
+	offload.data_desc_l2tag1 = 0;
+
+	for (;;) {
+		dma = dma_map_single(dev, data, size, DMA_TO_DEVICE);
+		if (dma_mapping_error(dev, dma))
+			goto dma_unmap;
+
+		dma_unmap_len_set(tx_buf, len, size);
+		dma_unmap_addr_set(tx_buf, dma, dma);
+
+		if (frame) {
+			tx_buf->type = SXE2_TX_BUF_FRAG;
+		} else {
+			tx_buf->type = SXE2_TX_BUF_XDP_TX;
+			tx_buf->raw_buf = data;
+		}
+
+		tx_desc->read.buf_addr = cpu_to_le64(dma);
+		tx_desc->read.cmd_type_offset_bsz =
+			sxe2_tx_data_desc_qword1_setup(&offload, size);
+
+		ntu++;
+		if (ntu == depth)
+			ntu = 0;
+
+		if (frag == nr_frags)
+			break;
+
+		tx_desc = SXE2_TX_DESC(xdp_ring, ntu);
+		tx_buf = &xdp_ring->tx_buf[ntu];
+
+		data = skb_frag_address(&sinfo->frags[frag]);
+		size = skb_frag_size(&sinfo->frags[frag]);
+		frag++;
+	}
+
+#ifdef HAVE_AF_XDP_MULTI_BUF_SUPPORT
+	tx_head->bytecount = xdp_get_buff_len(xdp);
+#else
+	tx_head->bytecount = size;
+#endif
+
+	tx_head->nr_frags = nr_frags;
+
+	if (frame) {
+		tx_head->type = SXE2_TX_BUF_XDP_XMIT;
+		tx_head->xdpf = xdp->data_hard_start;
+	}
+
+	tx_desc->read.cmd_type_offset_bsz |=
+		cpu_to_le64((SXE2_TXDD_CMD_EOP | SXE2_TXDD_CMD_RS) << SXE2_TXDD_CMD_S);
+
+	xdp_ring->xdp_tx_active++;
+	xdp_ring->next_to_use = ntu;
+
+	return SXE2_XDP_TX;
+
+dma_unmap:
+	for (;;) {
+		tx_buf = &xdp_ring->tx_buf[ntu];
+		dma_unmap_page(dev, dma_unmap_addr(tx_buf, dma),
+			       dma_unmap_len(tx_buf, len), DMA_TO_DEVICE);
+		dma_unmap_len_set(tx_buf, len, 0);
+		tx_buf->type = SXE2_TX_BUF_EMPTY;
+		tx_buf->raw_buf = NULL;
+		if (tx_buf == tx_head)
+			break;
+
+		if (!ntu)
+			ntu += depth;
+		ntu--;
+	}
+	return SXE2_XDP_CONSUMED;
+
+l_busy:
+	xdp_ring->stats->tx_stats.tx_busy++;
+
+	return SXE2_XDP_CONSUMED;
+}
+#else
+s32 __sxe2_xmit_xdp_ring(struct xdp_buff *xdp, struct sxe2_queue *xdp_ring, bool frame)
 {
 	u16 ntu = xdp_ring->next_to_use;
 	union sxe2_tx_data_desc *tx_desc;
 	struct sxe2_tx_buf *tx_buf;
 	struct sxe2_tx_offload_info offload;
 	dma_addr_t dma;
+	void *data = xdp->data;
+	u32 size = (u32)(xdp->data_end - xdp->data);
 
 	if (!unlikely(SXE2_DESC_UNUSED(xdp_ring))) {
 		xdp_ring->stats->tx_stats.tx_busy++;
@@ -1828,19 +2080,22 @@ s32 sxe2_xmit_xdp_ring(void *data, u16 size, struct sxe2_queue *xdp_ring)
 
 	return SXE2_XDP_TX;
 }
-
-s32 sxe2_xmit_xdp_buff(struct xdp_buff *xdp, struct sxe2_queue *xdp_ring)
-{
-	struct xdp_frame *xdpf = xdp_convert_buff_to_frame(xdp);
-
-	if (unlikely(!xdpf))
-		return SXE2_XDP_CONSUMED;
-
-	return sxe2_xmit_xdp_ring(xdpf->data, xdpf->len, xdp_ring);
-}
 #endif
+s32 sxe2_xmit_xdp_ring(struct xdp_frame *xdpf, struct sxe2_queue *xdp_ring)
+{
+	struct xdp_buff xdp;
 
-static u16 sxe2_txq_pending_get(struct sxe2_queue *txq)
+	xdp.data_hard_start = (void *)xdpf;
+	xdp.data = xdpf->data;
+	xdp.data_end = xdp.data + xdpf->len;
+#ifdef HAVE_AF_XDP_MULTI_BUF_SUPPORT
+	xdp.frame_sz = xdpf->frame_sz;
+	xdp.flags = xdpf->flags;
+#endif
+	return __sxe2_xmit_xdp_ring(&xdp, xdp_ring, true);
+}
+
+STATIC u16 sxe2_txq_pending_get(struct sxe2_queue *txq)
 {
 	u16 head, tail;
 	u16 pending_txq_seq;
@@ -1900,117 +2155,89 @@ unlock:
 	mutex_unlock(&adapter->vsi_ctxt.lock);
 }
 
-static inline bool sxe2_find_q_in_range(u16 low, u16 high, u32 txq)
+struct sxe2_queue *sxe2_tx_queue_get(struct sxe2_vsi *vsi, u16 queue)
 {
-	return (txq >= low) && (txq < high);
-}
+	struct sxe2_queue *txq = NULL;
+	u32 i = 0;
 
-STATIC bool sxe2_is_pfc_causing_hung_q(struct sxe2_adapter *adapter,
-				       u32 txqueue)
-{
-	u8 num_tcs = 0, i, tc, up_in_tc = 0;
-	u64 ref_prio_xoff[SXE2_MAX_USER_PRIORITY];
-	struct sxe2_vsi *vsi	      = adapter->vsi_ctxt.main_vsi;
-	struct sxe2_dcb_stats *stats  = &adapter->pf_stats.dcb_stats;
-	struct sxe2_dcbx_cfg *dcb_cfg = &adapter->dcb_ctxt.local_dcbx_cfg;
-
-	if (!vsi)
-		return false;
-
-	sxe2_for_each_tc(i)
-		if (vsi->tc.tc_map & BIT(i))
-			num_tcs++;
-
-	for (tc = 0; tc < num_tcs - 1; tc++)
-		if (sxe2_find_q_in_range(vsi->tc.info[tc].txq_offset,
-					 vsi->tc.info[tc + 1].txq_offset,
-					 txqueue))
-			break;
-
-	for (i = 0; i < IEEE_8021Q_MAX_PRIORITIES; i++) {
-		if (dcb_cfg->ets.prio_tbl[i] == tc)
-			up_in_tc |= BIT(i);
-	}
-
-	for (i = 0; i < IEEE_8021Q_MAX_PRIORITIES; i++)
-		if (up_in_tc & BIT(i))
-			ref_prio_xoff[i] = stats->curr_pause_stats.prio_xoff_rx[i];
-
-	sxe2_dcb_stats_update(adapter);
-
-	for (i = 0; i < IEEE_8021Q_MAX_PRIORITIES; i++)
-		if (up_in_tc & BIT(i))
-			if (stats->curr_pause_stats.prio_xoff_rx[i] >
-			    ref_prio_xoff[i])
-				return true;
-
-	return false;
-}
-
-void sxe2_tx_timeout(struct net_device *netdev, u32 txqueue)
-{
-	u32 i;
-	struct sxe2_netdev_priv *np  = netdev_priv(netdev);
-	struct sxe2_vsi *vsi	     = np->vsi;
-	struct sxe2_adapter *adapter = vsi->adapter;
-	struct sxe2_queue *txq	     = NULL;
-	struct netdev_queue *ntxq = NULL;
-
-	adapter->tx_timeout_count++;
-
-	if (sxe2_is_pfc_causing_hung_q(adapter, txqueue)) {
-		LOG_DEV_INFO("fake Tx hang detected on queue %u, \t"
-			     "timeout caused by PFC storm\n",
-			     txqueue);
-		return;
-	}
-
-	sxe2_for_each_vsi_txq(vsi, i) {
-		if (vsi->txqs.q[i] && vsi->txqs.q[i]->desc.base_addr) {
-			if (txqueue == vsi->txqs.q[i]->idx_in_vsi) {
+	sxe2_for_each_vsi_txq(vsi, i)
+	{
+		if (vsi->txqs.q[i]) {
+			if (queue == vsi->txqs.q[i]->idx_in_vsi) {
 				txq = vsi->txqs.q[i];
 				break;
 			}
 		}
 	}
 
-	if (time_after(jiffies, (adapter->tx_timeout_last_recovery + HZ * 20)))
-		adapter->tx_timeout_recovery_level = 1;
-	else if (time_before(jiffies, (adapter->tx_timeout_last_recovery +
-				       netdev->watchdog_timeo)))
-		return;
-
-	if (txq) {
-		ntxq = sxe2_netdev_txq_get(txq);
-		LOG_NETDEV_INFO("tx_timeout: VSI_num: %u, Q %u, NTC: 0x%x, \t"
-				"NTU: 0x%x netdev txq state %lu\t"
-				"(BIT: 0 - DRV_XOFF; 1 - STACK_XOFF; 2- FROZEN)\n",
-				vsi->idx_in_dev, txqueue, txq->next_to_clean,
-				txq->next_to_use, ntxq->state);
-	}
-
-	adapter->tx_timeout_last_recovery = jiffies;
-	LOG_NETDEV_INFO("tx_timeout recovery level %d, txqueue %u\n",
-			adapter->tx_timeout_recovery_level, txqueue);
-
-	switch (adapter->tx_timeout_recovery_level) {
-	case 1:
-		(void)sxe2_reset_async(adapter, SXE2_RESET_PFR);
-		break;
-	case 2:
-		(void)sxe2_reset_async(adapter, SXE2_RESET_CORER);
-		break;
-	default:
-		LOG_NETDEV_ERR("tx_timeout recovery unsuccessful, \t"
-			       "device is in unrecoverable state\n");
-
-		break;
-	}
-
-	adapter->tx_timeout_recovery_level++;
+	return txq;
 }
 
-static void sxe2_txq_ucmd_err_handle(struct sxe2_vsi *vsi,
+#ifdef HAVE_TX_TIMEOUT_TXQUEUE
+void sxe2_tx_timeout(struct net_device *netdev, unsigned int txqueue)
+#else
+void sxe2_tx_timeout(struct net_device *netdev)
+#endif
+{
+	struct sxe2_netdev_priv *np  = netdev_priv(netdev);
+	struct sxe2_vsi *vsi	     = np->vsi;
+	struct sxe2_adapter *adapter = vsi->adapter;
+	struct sxe2_queue *txq	     = NULL;
+	struct netdev_queue *ntxq = NULL;
+#ifndef HAVE_TX_TIMEOUT_TXQUEUE
+	unsigned int txqueue = 0;
+	u32 i;
+	unsigned long trans_start;
+	struct netdev_queue *q;
+#endif
+
+	adapter->txtimeout_ctxt.tx_timeout_count++;
+#ifndef HAVE_TX_TIMEOUT_TXQUEUE
+	for (i = 0; i < netdev->num_tx_queues; i++) {
+		q = netdev_get_tx_queue(netdev, i);
+		trans_start = q->trans_start;
+		if (netif_xmit_stopped(q) &&
+		    time_after(jiffies,
+			       trans_start + netdev->watchdog_timeo)) {
+			txqueue = i;
+			break;
+		}
+	}
+
+	if (i == netdev->num_tx_queues) {
+		LOG_DEV_INFO("tx_timeout: no netdev hung queue found\n");
+		return;
+	}
+#endif
+
+	if (test_bit(SXE2_FLAG_TX_TIMEOUT, adapter->flags)) {
+		LOG_DEV_INFO("Tx Q-%u timeout detected.\n", txqueue);
+		return;
+	}
+
+	txq = sxe2_tx_queue_get(vsi, txqueue);
+	if (!txq)
+		return;
+
+	sxe2_fc_stats_backup(adapter);
+
+	ntxq = sxe2_netdev_txq_get(txq);
+
+	adapter->txtimeout_ctxt.last_hung_txq = txqueue;
+	adapter->txtimeout_ctxt.txq_last_trans = ntxq->trans_start;
+	adapter->txtimeout_ctxt.last_hung_jiffies = jiffies;
+
+	set_bit(SXE2_FLAG_TX_TIMEOUT, adapter->flags);
+
+	LOG_NETDEV_INFO("tx_timeout: VSI_num: %u, Q %u, NTC: 0x%x, \t"
+			"msecs since last trans: %u NTU: 0x%x netdev txq state %lu\t"
+			"(BIT: 0 - DRV_XOFF; 1 - STACK_XOFF; 2- FROZEN)\n",
+			vsi->idx_in_dev, txqueue, txq->next_to_clean,
+			jiffies_to_msecs(jiffies - ntxq->trans_start),
+			txq->next_to_use, ntxq->state);
+}
+
+STATIC void sxe2_txq_ucmd_err_handle(struct sxe2_vsi *vsi,
 				     struct sxe2_txq_ucmd_en_params *params, u32 q_err_id)
 {
 	u32 i = 0;
@@ -2021,7 +2248,7 @@ static void sxe2_txq_ucmd_err_handle(struct sxe2_vsi *vsi,
 		q_ctxt_info = &params->ctxts[i];
 		txq = vsi->txqs.q[q_ctxt_info->queue_id];
 
-		if (q_ctxt_info->sched_mode == SXE2_SCHED_MODE_TM &&
+		if (q_ctxt_info->sched_mode == SXE2_SCHED_MODE_TM ||
 		    q_ctxt_info->sched_mode == SXE2_SCHED_MODE_HIGH_PERFORMANCE)
 			(void)sxe2_fwc_txq_stop(vsi, txq);
 		else if (q_ctxt_info->sched_mode == SXE2_SCHED_MODE_DEFAULT)

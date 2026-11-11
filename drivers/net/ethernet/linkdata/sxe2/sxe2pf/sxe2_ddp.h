@@ -18,6 +18,7 @@
 
 #define SXE2_DDP_PKG_PATH "sxe2/ddp/"
 #define SXE2_DDP_PKG_FILE SXE2_DDP_PKG_PATH "sxe2.cfg"
+#define SXE2_DDP_PKG_CLOUD SXE2_DDP_PKG_PATH "sxe2_cloud.cfg"
 
 #define SXE2_DDP_DELAY_100MS (100)
 
@@ -52,8 +53,15 @@ s32 sxe2_ddp_acquire_state(struct sxe2_adapter *adapter,
 
 s32 sxe2_init_pkg(struct sxe2_adapter *adapter, u8 *buff, u32 len);
 
+void sxe2_ddp_compat_proc(struct sxe2_adapter *adapter);
+
 s32 sxe2_copy_and_init_pkg(struct sxe2_adapter *adapter, const u8 *buf,
 			   u32 len);
+
+s32 sxe2_ddp_static_load(struct sxe2_adapter *adapter);
+
+bool sxe2_ddp_file_drv_major_match(const u8 *buf, u32 size,
+				   u16 *file_maj, u16 *builtin_maj);
 
 bool sxe2_is_init_pkg_successful(s32 state);
 

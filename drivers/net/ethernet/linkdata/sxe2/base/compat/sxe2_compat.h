@@ -1,90 +1,293 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-
 /**
  * Copyright (C), 2020, Linkdata Technologies Co., Ltd.
  *
  * @file: sxe2_compat.h
  * @author: Linkdata
- * @date: 2026.04.18
+ * @date: 2025.02.16
  * @brief:
  * @note:
  */
 #ifndef __SXE2_COMPAT_H__
 #define __SXE2_COMPAT_H__
 
-#include "sxe2_compat_gcc.h"
-#include <linux/filter.h>
-#include <linux/version.h>
 #include <net/devlink.h>
 #include <linux/netdevice.h>
 #include <linux/iommu.h>
 #include <linux/mm.h>
 #include <linux/highmem.h>
+#include <linux/skbuff.h>
+#include <linux/filter.h>
+#include <linux/version.h>
+#include "sxe2_compat_gcc.h"
+
+#ifndef NEED_COMPAT_DIM
+#include <linux/dim.h>
+#endif
 
 #include "sxe2_compat_flow_offload.h"
 
-#define HAVE_MACSEC_SUPPORT
-#define SUPPORT_ETHTOOL_GET_RMON_STATS
-#define HAVE_NDO_XSK_WAKEUP
-#define HAVE_NETDEV_BPF_XSK_POOL
-#define HAVE_MEM_TYPE_XSK_BUFF_POOL
-#define HAVE_XDP_BUFF_RXQ
-#define HAVE_AF_XDP_ZC_SUPPORT
-#define XSK_UMEM_RETURNS_XDP_DESC
-#define HAVE_XDP_BUFF_FRAME_SZ
-#define HAVE_AF_XDP_NETDEV_UMEM
-#define SUPPORTED_COALESCE_PARAMS
-#define IPSEC_HAVE_REAL_DEV
-#define SUPPORTED_FLASH_UPDATE_PARAMS
-#define HAVE_NDO_ETH_IOCTL
-#define HAVE_FLOW_BLOCK_API
-#define HAVE_FLOW_INDR_BLOCK_API
-#define HAVE_TC_FLOW_INDIR_DEV
-#define HAVE_FLOW_OFFLOAD_H
-#define HAVE_TC_FLOW_RULE_INFRASTRUCTURE
-#define HAVE_TC_INDIR_BLOCK
-#define HAVE_TC_FLOWER_ENC
-#define HAVE_VXLAN_TYPE
-#define HAVE_GENEVE_TYPE
-#define HAVE_GRETAP_TYPE
-#define HAVE_TC_FLOWER_VLAN_IN_TAGS
-#define HAVE_FLOW_DISSECTOR_KEY_CVLAN
-#define HAVE_PTP_CLOCK_INFO_GETTIMEX64
-#define HAVE_XDP_BUFF_IN_XDP_H
-#define HAVE_SCTP
-#define HAVE_METADATA_PORT_INFO
-#define HAVE_NDO_SETUP_TC_REMOVE_TC_TO_NETDEV
-#define HAVE_NDO_OFFLOAD_STATS
-#define HAVE_XDP_SUPPORT
-#define HAVE_NETDEV_MIN_MAX_MTU
-#define HAVE_NDO_SELECT_QUEUE_SB_DEV
-#define HAVE_XDP_BUFF_DATA_META
-#define HAVE_PTP_CLOCK_INFO_ADJFINE
-#define HAVE_PCI_ERROR_HANDLER_RESET_PREPARE
-#define HAVE_NETDEV_SB_DEV
-#define HAVE_ETHTOOL_FLOW_RSS
-#define NOT_SUPP_KMAP_LOCAL_PAGE
+#include "sxe2_compat_overflow.h"
 
-#undef SUPPORT_ETHTOOL_GET_RMON_STATS
-#undef HAVE_NDO_ETH_IOCTL
-#define HAVE_AUXILIARY_DEVICE_ID
-#define IPSEC_STATE_ADD_API_NEED_1_PARAMS
-#define NDO_FDB_DEL_API_NEED_5_PARAMS
-#define NETIF_NAPI_ADD_API_NEED_4_PARAMS
-#define CLASS_CREATE_API_NEED_2_PARAMS
-#define DEVLINK_REGISTER_NEED_2_PARAMS
-#define DEVLINK_ALLOC_NEED_2_PARAMS
-#define NEED_DEFINE_ETHTOOL_SPRINTF
-#define METADATA_MACSEC 2
-#define XDP_RXQ_INFO_REG_NEED_3_PARAMS
-#define NEED_NAPI_BUILD_SKB
-#define BPF_WARN_INVALID_XDP_ACTION_NEED_1_PARAM
-#define NEED_DEFINE_XDP_PREPARE_BUFF
-#define NEED_DEFINE_KREALLOC_ARRAY
-#define SXE2_KERNEL_MATCHED
+#define HAVE_DEVLINK_FLASH_UPDATE_BEGIN_END_NOTIFY 1
+#define HAVE_DEVLINK_FLASH_UPDATE_PARAMS 1
+#define HAVE_DEVLINK_FLASH_UPDATE_PARAMS_OVERWRITE_MASK 1
+#define HAVE_DEVLINK_HEALTH 1
+#define HAVE_DEVLINK_HEALTH_OPS_EXTACK 1
+#define HAVE_DEVLINK_INFO_DRIVER_NAME_PUT 1
+#define HAVE_DEVLINK_PARAMS 1
+#define HAVE_DEVLINK_PARAMS_PUBLISH 1
+#define HAVE_DEVLINK_PORT_REGISTERED 1
+#define HAVE_DEVLINK_PORT_SPLIT 1
+#define HAVE_DEVLINK_PORT_SPLIT_EXTACK 1
+#define HAVE_DEVLINK_PORT_SPLIT_IN_OPS 1
+#define HAVE_DEVLINK_PORT_TYPE_ETH_HAS_NETDEV 1
+#define HAVE_DEVLINK_REGIONS 1
+#define HAVE_DEVLINK_REGION_OPS_SNAPSHOT 1
+#define HAVE_DEVLINK_REGION_OPS_SNAPSHOT_OPS 1
+#define DEVLINK_REGISTER_NEED_2_PARAMS 1
+#define HAVE_DEVLINK_RELOAD_ENABLE_DISABLE 1
+#define NEED_DEVLINK_FMSG_DUMP_SKB 1
+#define NEED_DEVLINK_FMSG_PUT 1
+#define NEED_DEVLINK_RESOURCES_UNREGISTER_NO_RESOURCE 1
+#define NEED_DEVLINK_TO_DEV 1
+#define NEED_DEVLINK_UNLOCKED_RESOURCE 1
+#define NEED_DEVL_HEALTH_REPORTER_CREATE 1
+#define NEED_DEVL_LOCK 1
+#define NEED_DEVL_PARAMS_REGISTER 1
+#define NEED_DEVL_PORT_REGISTER 1
+#define NEED_DEVL_REGION_CREATE 1
+#define NEED_DEVL_REGISTER 1
+#define NEED_DEVL_RESOURCE_REGISTER 1
+#define DEVLINK_ALLOC_NEED_2_PARAMS 1
+#define HAVE_DEVLINK_RELOAD_ACTION_AND_LIMIT 1
+#define HAVE_NETDEV_SB_DEV 1
+#define HAVE_NDO_BRIDGE_SETLINK_EXTACK 1
+#define HAVE_NDO_OFFLOAD_STATS 1
+#define HAVE_NDO_FDB_ADD_EXTACK 1
+#define HAVE_NDO_FDB_ADD_VID 1
+#define NDO_FDB_DEL_API_NEED_5_PARAMS 1
+#define HAVE_NDO_GET_DEVLINK_PORT 1
+#define HAVE_NDO_SETUP_TC_REMOVE_TC_TO_NETDEV 1
+#define HAVE_NDO_UDP_TUNNEL_CALLBACK 1
+#define HAVE_NETDEV_MIN_MAX_MTU 1
+#define NETIF_NAPI_ADD_API_NEED_4_PARAMS 1
+#define NEED_XDP_FEATURES 1
+#define HAVE_AF_XDP_ZC_SUPPORT 1
+#define HAVE_NDO_SELECT_QUEUE_SB_DEV 1
+#define HAVE_XDP_SUPPORT 1
+#define NEED_DEFINE_XDP_PREPARE_BUFF 1
+#define HAVE_TX_TIMEOUT_TXQUEUE 1
+#define HAVE_INCLUDE_BITFIELD 1
+#define NEED_DPLL_NETDEV_PIN_SET 1
+#define HAVE_NDO_XSK_WAKEUP 1
+#define HAVE_ETHTOOL_SUPPORTED_RING_PARAMS 1
+#define NEED_DEFINE_ETHTOOL_SPRINTF 1
+#define HAVE_ETHTOOL_FLOW_RSS 1
+#define HAVE_ETHTOOL_LINK_MODE_FEC_NONE_BIT 1
+#define SUPPORTED_COALESCE_PARAMS 1
+#define HAVE_EXPORTED_IRQ_SET_AFFINITY 1
+#define BPF_WARN_INVALID_XDP_ACTION_NEED_1_PARAM 1
+#define XDP_DO_FLUSH_MAP_DROP 1
+#define HAVE_FLOW_BLOCK_API 1
+#define HAVE_FLOW_INDR_BLOCK_API 1
+#define NEED_FLOW_INDR_BLOCK_CB_REGISTER 1
+#define HAVE_FLOW_INDIR_BLOCK_QDISC 1
+#define HAVE_FLOW_DISSECTOR_KEY_CVLAN 1
+#define HAVE_FLOW_MATCH_ICMP 1
+#define HAVE_TC_FLOWER_TCP 1
+#define HAVE_TC_FLOWER_ICMP 1
+#define HAVE_TC_FLOW_INDIR_BLOCK_CLEANUP 1
+#define HAVE_TC_FLOW_INDIR_DEV 1
+#define HAVE_TC_FLOW_RULE_INFRASTRUCTURE 1
+#define HAVE_FLOW_DISSECTOR_KEY_ENC_IP 1
+#define HAVE_TC_FLOWER_ENC 1
+#define HAVE_TC_FLOWER_VLAN_IN_TAGS 1
+#define HAVE_TCF_EXTS_FOR_EACH_ACTION 1
+#define HAVE_TCF_EXTS_HAS_ACTION 1
+#define HAVE_TCF_BLOCK 1
+#define HAVE_TC_CB_AND_SETUP_QDISC_MQPRIO 1
+#define HAVE_TC_INDIR_BLOCK 1
+#define HAVE_TC_SETUP_CLSFLOWER 1
+#define HAVE_TCF_MIRRED_DEV 1
+#define HAVE_TCF_MIRRED_EGRESS_REDIRECT 1
+#define HAVE_TCF_MIRRED_REDIRECT 1
+#define HAVE_CDEV_DEVICE 1
+#define HAVE_NO_LLSEEK 1
+#define HAVE_STREAM_OPEN 1
+#define CLASS_CREATE_API_NEED_2_PARAMS 1
+#define HAVE_GNSS_MODULE 1
+#define HAVE_POLL_T 1
+#define HAVE_DEV_IN_MDEV_API 1
+#define HAVE_KOBJ_IN_MDEV_PARENT_OPS_CREATE 1
+#define NEED_DEFINE_KREALLOC_ARRAY 1
+#define NEED_KMEM_CACHE_ALLOC_LRU 1
+#define NOT_SUPP_GET_USER_PAGES_LONGTERM 1
+#define NOT_SUPP_KMAP_LOCAL_PAGE 1
+#define HAVE_GENEVE_TYPE 1
+#define HAVE_GRETAP_TYPE 1
+#define HAVE_VXLAN_TYPE 1
+#define HAVE_STRUCT_PCI_DEV_PTM_ENABLED 1
+#define NEED_PCIE_PTM_ENABLED 1
+#define NEED_PCI_DISABLE_PTM 1
+#define HAVE_PCI_ERROR_HANDLER_RESET_PREPARE 1
+#define HAVE_PTP_CANCEL_WORKER_SYNC 1
+#define HAVE_PTP_CLOCK_DO_AUX_WORK 1
+#define HAVE_PTP_CLOCK_INFO_ADJFINE 1
+#define HAVE_PTP_CLOCK_INFO_GETTIME64 1
+#define HAVE_PTP_CLOCK_INFO_GETTIMEX64 1
+#define HAVE_PTP_FIND_PIN_UNLOCKED 1
+#define NEED_DIFF_BY_SCALED_PPM 1
+#define HAVE_PTP_TX_ONESTEP_P2P 1
+#define HAVE_PTP_SYS_OFFSET_EXTENDED_IOCTL 1
+#define HAVE_PTP_CROSSTIMESTAMP 1
+#define HAVE_STDDEF_OFFSETTOEND 1
+#define HAVE_PASID_SUPPORT 1
+#define HAVE_LMV1_SUPPORT 1
+#define HAVE_PAGE_COUNT_BULK_UPDATE 1
+#define HAVE_X86_STEPPING 1
+#define HAVE_PCI_ENABLE_PCIE_ERROR_REPORTING 1
+#define NEED_CLEANUP_API 1
+#define NEED___STRUCT_SIZE 1
+#define HAVE_COMPLETION_RAW_SPINLOCK 1
+#define NEED_FIND_NEXT_BIT_WRAP 1
+#define HAVE_HWMON_DEVICE_REGISTER_WITH_INFO 1
+#define HAVE_IOMMU_DEV_FEAT_AUX 1
+#define HAVE_STRUCT_STATIC_KEY_FALSE 1
+#define NEED_LOWER_16_BITS 1
+#define NEED_UPPER_16_BITS 1
+#define HAVE_LINKMODE 1
+#define NEED_LIST_COUNT_NODES 1
+#define NEED_DIV_U64_ROUND_CLOSEST 1
+#define NEED_DIV_U64_ROUND_UP 1
+#define NEED_ROUNDUP_U64 1
+#define HAVE_MDEV_GET_DRVDATA 1
+#define HAVE_LINUX_REFCOUNT_HEADER 1
+#define NEED_SCHED_PARAM 1
+#define HAVE_SKB_CSUM_IS_SCTP 1
+#define NEED_NAPI_BUILD_SKB 1
+#define NEED_STR_ENABLED_DISABLED 1
+#define HAVE_STRING_HELPERS_H 1
+#define NEED_TIMER_CONTAINER_OF 1
+#define HAVE_TRACE_ENABLED_SUPPORT 1
+#define HAVE_U64_STATS_FETCH_BEGIN_IRQ 1
+#define HAVE_U64_STATS_FETCH_RETRY_IRQ 1
+#define NEED_U64_STATS_SET 1
+#define HAVE_XARRAY_API 1
+#define HAVE_UDP_TUNNEL_NIC_INFO_MAY_SLEEP 1
+#define HAVE_UDP_TUNNEL_NIC_SHARED 1
+#define HAVE_UDP_TUNNEL_NIC_INFO 1
+#define HAVE_ASSIGN_STR_2_PARAMS 1
+#define HAVE_STRSCPY 1
+#define XSK_UMEM_RETURNS_XDP_DESC 1
+#define HAVE_METADATA_PORT_INFO 1
+#define HAVE_SCTP 1
+#define HAVE_LINUX_BITS_HEADER 1
+#define IPSEC_HAVE_REAL_DEV 1
+#define IPSEC_STATE_ADD_API_NEED_1_PARAMS 1
+#define XDP_RXQ_INFO_REG_NEED_3_PARAMS 1
+#define NEED_DEFINE_XDP_PREPARE_BUFF 1
+#define HAVE_XDP_BUFF_IN_XDP_H 1
+#define HAVE_XDP_BUFF_DATA_META 1
+#define HAVE_XDP_BUFF_RXQ 1
+#define HAVE_MEM_TYPE_XSK_BUFF_POOL 1
+#define HAVE_AF_XDP_NETDEV_UMEM 1
+#define HAVE_NETDEV_BPF_XSK_POOL 1
+#define HAVE_XDP_BUFF_FRAME_SZ 1
+#define HAVE_XSK_IS_EOP_DESC 1
+#define HAVE_SKB_FILL_PAGE_DESC_NOACC 1
+
+#ifndef ETH_GSTRING_LEN
+#define ETH_GSTRING_LEN 32
+#endif
+
+#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
+struct _kc_xdp_buff {
+	void *data;
+	void *data_end;
+	void *data_meta;
+	void *data_hard_start;
+};
+
+#define xdp_buff _kc_xdp_buff
+
+#define TIMER_DATA_TYPE		unsigned long
+#define TIMER_FUNC_TYPE		void (*)(TIMER_DATA_TYPE)
+
+#define timer_setup(timer, callback, flags)				\
+	__setup_timer((timer), (TIMER_FUNC_TYPE)(callback),		\
+		      (TIMER_DATA_TYPE)(timer), (flags))
+
+#define from_timer(var, callback_timer, timer_fieldname) \
+	container_of(callback_timer, typeof(*var), timer_fieldname)
+
+#ifndef xdp_do_flush_map
+#define xdp_do_flush_map() do {} while (0)
+#endif
+#endif
+
+#if (KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE)
+static inline bool _kc_napi_complete_done2(struct napi_struct *napi,
+					   int __always_unused work_done)
+{
+	(void)napi_complete(napi);
+
+	return true;
+}
+
+#ifdef napi_complete_done
+#undef napi_complete_done
+#endif
+#define napi_complete_done _kc_napi_complete_done2
+#endif
+
+#if ((KERNEL_VERSION(4, 19, 0) > LINUX_VERSION_CODE) || defined(NEED_BITMAP_ALLOC))
+#define bitmap_alloc(nbits, flags) \
+	kmalloc_array(BITS_TO_LONGS(nbits), sizeof(unsigned long), flags)
+#define bitmap_zalloc(nbits, flags) bitmap_alloc(nbits, ((flags) | __GFP_ZERO))
+#define bitmap_free(bitmap) kfree(bitmap)
+#endif
+
+#if (KERNEL_VERSION(4, 18, 0) > LINUX_VERSION_CODE)
+#define KERNEL_WRITE_POS_LOFF
+#endif
 
 #ifdef RANDOM_ETHER_ADDR_RENAME
 #define random_ether_addr eth_random_addr
+#endif
+
+#ifdef NEED_XDP_FEATURES
+enum netdev_xdp_act {
+	NETDEV_XDP_ACT_BASIC = 1,
+	NETDEV_XDP_ACT_REDIRECT = 2,
+	NETDEV_XDP_ACT_NDO_XMIT = 4,
+	NETDEV_XDP_ACT_XSK_ZEROCOPY = 8,
+	NETDEV_XDP_ACT_HW_OFFLOAD = 16,
+	NETDEV_XDP_ACT_RX_SG = 32,
+	NETDEV_XDP_ACT_NDO_XMIT_SG = 64,
+
+	NETDEV_XDP_ACT_MASK = 127,
+};
+
+typedef u32 xdp_features_t;
+
+static inline void
+xdp_set_features_flag(struct net_device *dev, xdp_features_t val)
+{
+}
+
+static inline void xdp_clear_features_flag(struct net_device *dev)
+{
+}
+
+static inline void
+xdp_features_set_redirect_target(struct net_device *dev, bool support_sg)
+{
+}
+
+static inline void xdp_features_clear_redirect_target(struct net_device *dev)
+{
+}
 #endif
 
 #ifdef NEED_XSK_BUFF_POOL_RENAME
@@ -107,6 +310,12 @@
 #ifdef NEED_XSK_UMEM_RELEASE_RENAME
 #define xsk_umem_release_addr		xsk_umem_discard_addr
 #define xsk_umem_release_addr_rq	xsk_umem_discard_addr_rq
+#endif
+
+#if defined(HAVE_MEM_TYPE_XSK_BUFF_POOL) && \
+!defined(HAVE_NETDEV_BPF_XSK_POOL) && \
+defined(HAVE_AF_XDP_MULTI_BUF_SUPPORT)
+#define NEED_XSK_POOL_FROM_UMEM
 #endif
 
 #ifdef NEED_DEFINE_PCI_AER_CLEAR_NONFATAL_STATUS
@@ -147,6 +356,7 @@ struct tc_block_offload;
 #endif
 
 #ifdef NEED_FLOW_INDR_BLOCK_CB_REGISTER
+#include <net/pkt_cls.h>
 #define __flow_indr_block_cb_register __tc_indr_block_cb_register
 #define __flow_indr_block_cb_unregister __tc_indr_block_cb_unregister
 #endif
@@ -179,8 +389,7 @@ bpf_warn_invalid_xdp_action_compat(struct net_device *dev, struct bpf_prog *prog
 #ifdef bpf_warn_invalid_xdp_action
 #undef bpf_warn_invalid_xdp_action
 #endif
-#define bpf_warn_invalid_xdp_action(dev, prog, act) \
-	bpf_warn_invalid_xdp_action_compat(dev, prog, act)
+#define bpf_warn_invalid_xdp_action(dev, prog, act) bpf_warn_invalid_xdp_action_compat(dev, prog, act)
 #endif
 
 #ifndef CLASS_CREATE_API_NEED_2_PARAMS
@@ -207,6 +416,45 @@ xdp_rxq_info_reg_compat(struct xdp_rxq_info *xdp_rxq, struct net_device *dev,
 		xdp_rxq_info_reg_compat(xdp_rxq, dev, queue_index, napi_id)
 #endif
 
+#if !defined(PCLINT)
+#if defined(HAVE_AF_XDP_MULTI_BUF_SUPPORT) && \
+	!defined(HAVE_SKB_FILL_PAGE_DESC_NOACC)
+static inline void
+__skb_fill_page_desc_noacc(struct skb_shared_info *shinfo, int i,
+			   struct page *page, int off, int size)
+{
+	skb_frag_t *frag = &shinfo->frags[i];
+
+	__skb_frag_set_page(frag, page);
+	skb_frag_off_set(frag, off);
+	skb_frag_size_set(frag, size);
+}
+#endif
+
+#if defined(HAVE_AF_XDP_MULTI_BUF_SUPPORT) && !defined(HAVE_XDP_FRAME_BULK)
+struct xdp_frame_bulk {
+	int count;
+};
+
+static inline void xdp_frame_bulk_init(struct xdp_frame_bulk *bq)
+{
+	bq->count = 0;
+}
+
+static inline void
+xdp_return_frame_bulk(struct xdp_frame *xdpf, struct xdp_frame_bulk *bq)
+{
+	(void)bq;
+	xdp_return_frame(xdpf);
+}
+
+static inline void xdp_flush_frame_bulk(struct xdp_frame_bulk *bq)
+{
+	(void)bq;
+}
+#endif
+#endif
+
 #ifdef DEVLINK_ALLOC_NEED_2_PARAMS
 static inline struct devlink *
 devlink_alloc_compat(const struct devlink_ops *ops, size_t priv_size,
@@ -216,6 +464,16 @@ devlink_alloc_compat(const struct devlink_ops *ops, size_t priv_size,
 }
 
 #define devlink_alloc(ops, priv_size, dev) devlink_alloc_compat(ops, priv_size, dev)
+#endif
+
+#ifdef DEVLINK_REGISTER_NEED_2_PARAMS
+static inline int
+devlink_register_compat(struct devlink *devlink, struct device *dev)
+{
+	return devlink_register(devlink, dev);
+}
+
+#define devlink_register(devlink, dev) devlink_register_compat(devlink, dev)
 #endif
 
 #ifdef XDP_DO_FLUSH_MAP_DROP
@@ -229,7 +487,12 @@ devlink_alloc_compat(const struct devlink_ops *ops, size_t priv_size,
 #endif
 
 #ifdef NEED_NAPI_ALLOC_SKB
-#define __napi_alloc_skb(napi, len, gfp_mask) napi_alloc_skb(napi, len)
+#define __napi_alloc_skb(napi, len, gfp_mask) \
+	({ \
+		typeof(gfp_mask) __unused_mask __attribute__((unused)) = (gfp_mask); \
+		napi_alloc_skb(napi, len); \
+	})
+
 #endif
 
 #ifdef NEED_NAPI_BUILD_SKB
@@ -237,7 +500,7 @@ devlink_alloc_compat(const struct devlink_ops *ops, size_t priv_size,
 #endif
 
 #ifndef sizeof_field
-#define sizeof_field(TYPE, MEMBER) (sizeof((((TYPE *)0)->(MEMBER))))
+#define sizeof_field(TYPE, MEMBER) (sizeof((((TYPE *)0)->MEMBER)))
 #endif
 
 #ifndef BITS_PER_TYPE
@@ -288,7 +551,7 @@ static inline void *__must_check krealloc_array(void *p,
 static inline bool dev_page_is_reusable(struct page *page)
 {
 	return likely(page_to_nid(page) == numa_mem_id() &&
-			!page_is_pfmemalloc(page));
+		      !page_is_pfmemalloc(page));
 }
 #endif
 
@@ -349,6 +612,7 @@ static inline u64 mul_u64_u64_div_u64(u64 a, u64 b, u64 c)
 
 #ifdef NEED_DEFINE_FLEX_ARRAY_SIZE
 #ifndef array_size
+#ifndef SXE2_NEED_DEFINE_SIZE_MUL
 static inline size_t size_mul(size_t factor1, size_t factor2)
 {
 	size_t bytes;
@@ -358,13 +622,15 @@ static inline size_t size_mul(size_t factor1, size_t factor2)
 
 	return bytes;
 }
+#endif
 
 #define array_size(a, b)  size_mul(a, b)
 #endif
 
 #undef flex_array_size
 #define flex_array_size(p, member, count)				\
-		((count) * sizeof(p->(member)[0]))
+		array_size(count,						\
+			    sizeof(*(p)->member) + __must_be_array((p)->member))
 #endif
 
 #ifdef NEED_FLOW_BLOCK_CB_SETUP_SIMPLE
@@ -372,9 +638,9 @@ static inline size_t size_mul(size_t factor1, size_t factor2)
 #include <net/pkt_cls.h>
 static inline int flow_block_cb_setup_simple(struct flow_block_offload *f,
 					     struct list_head __always_unused *driver_list,
-					     tc_setup_cb_t *cb,
-					     void *cb_ident, void *cb_priv,
-					     bool ingress_only)
+				   tc_setup_cb_t *cb,
+				   void *cb_ident, void *cb_priv,
+				   bool ingress_only)
 {
 	if (ingress_only &&
 	    f->binder_type != TCF_BLOCK_BINDER_TYPE_CLSACT_INGRESS)
@@ -382,8 +648,12 @@ static inline int flow_block_cb_setup_simple(struct flow_block_offload *f,
 
 	switch (f->command) {
 	case TC_BLOCK_BIND:
+#ifdef HAVE_TCF_BLOCK_CB_REGISTER_EXTACK
 		return tcf_block_cb_register(f->block, cb, cb_ident, cb_priv,
-					f->extack);
+					     f->extack);
+#else
+		return tcf_block_cb_register(f->block, cb, cb_ident, cb_priv);
+#endif
 	case TC_BLOCK_UNBIND:
 		tcf_block_cb_unregister(f->block, cb, cb_ident);
 		return 0;
@@ -411,12 +681,12 @@ static inline void kfree_sensitive(const void *p)
 static inline bool netif_is_geneve(const struct net_device *dev)
 {
 	return dev->rtnl_link_ops &&
-		!strcmp(dev->rtnl_link_ops->kind, "geneve");
+	       !strcmp(dev->rtnl_link_ops->kind, "geneve");
 }
 #endif
 
 #ifdef NEED_DEFINE_SKB_FRAG_OFF
-#define skb_frag_off(frag)	((frag)->page_offset)
+#define skb_frag_off(frag)	frag->page_offset
 #endif
 
 #ifndef DIV_ROUND_DOWN_ULL
@@ -435,27 +705,19 @@ struct ptp_system_timestamp {
 };
 
 static inline void
-ptp_read_system_prets(struct ptp_system_timestamp *sts)
-{
-}
+ptp_read_system_prets(struct ptp_system_timestamp *sts) { }
 
 static inline void
-ptp_read_system_postts(struct ptp_system_timestamp *sts)
-{
-}
+ptp_read_system_postts(struct ptp_system_timestamp *sts) { }
 #endif
 
 #ifdef NEED_PTP_SYSTEM_TIMESTAMP_INTERFACE
 #include <linux/ptp_clock_kernel.h>
 static inline void
-ptp_read_system_prets(struct ptp_system_timestamp *sts)
-{
-}
+ptp_read_system_prets(struct ptp_system_timestamp *sts) { }
 
 static inline void
-ptp_read_system_postts(struct ptp_system_timestamp *sts)
-{
-}
+ptp_read_system_postts(struct ptp_system_timestamp *sts) { }
 #endif
 
 #ifdef HAVE_SKB_XMIT_MORE
@@ -517,10 +779,10 @@ static inline void ida_free(struct ida *ida, unsigned int id)
 #endif
 
 #ifndef struct_size
-#define struct_size(p, member, count)					\
+#define struct_size(p, member, count) \
 	({ \
 		typeof(p) __p = (p); \
-		(sizeof(*__p) + sizeof(*__p->(member)) * (count)); \
+		(sizeof(*__p) + sizeof(*__p->member) * (count)); \
 	})
 #endif
 
@@ -544,7 +806,7 @@ static inline void bitmap_from_arr32(unsigned long *bitmap, const u32 *buf,
 #else
 #define bitmap_from_arr32(bitmap, buf, nbits)			\
 	bitmap_copy_clear_tail((unsigned long *)(bitmap),	\
-			(const unsigned long *)(buf), (nbits))
+			       (const unsigned long *)(buf), (nbits))
 #endif
 #endif
 
@@ -568,7 +830,7 @@ static inline void bitmap_to_arr32(u32 *buf, const unsigned long *bitmap,
 #else
 #define bitmap_to_arr32(buf, bitmap, nbits)			\
 	bitmap_copy_clear_tail((unsigned long *)(buf),		\
-			(const unsigned long *)(bitmap), (nbits))
+			       (const unsigned long *)(bitmap), (nbits))
 #endif
 #endif
 
@@ -639,7 +901,7 @@ static inline void __page_frag_cache_drain(struct page *page,
 static inline int
 fixup_user_fault_compat(struct mm_struct *mm,
 			unsigned long address, unsigned int fault_flags,
-			bool *unlocked)
+		     bool *unlocked)
 {
 	return fixup_user_fault(NULL, mm, address, fault_flags, unlocked);
 }
@@ -681,8 +943,8 @@ struct vm_area_struct *vma_lookup(struct mm_struct *mm, unsigned long addr)
 #ifdef PIN_USER_PAGE_8_PARAMS
 static inline long pin_user_pages_remote_compat(struct mm_struct *mm,
 						unsigned long start, unsigned long nr_pages,
-						unsigned int gup_flags, struct page **pages,
-						struct vm_area_struct **vmas, int *locked)
+			   unsigned int gup_flags, struct page **pages,
+			   struct vm_area_struct **vmas, int *locked)
 {
 	return pin_user_pages_remote(NULL, mm, start, nr_pages, gup_flags, pages, vmas, locked);
 }
@@ -695,8 +957,8 @@ static inline long pin_user_pages_remote_compat(struct mm_struct *mm,
 #elif defined(PIN_USER_PAGE_6_PARAMS)
 static inline long pin_user_pages_remote_compat(struct mm_struct *mm,
 						unsigned long start, unsigned long nr_pages,
-						unsigned int gup_flags, struct page **pages,
-						struct vm_area_struct **vmas, int *locked)
+			   unsigned int gup_flags, struct page **pages,
+			   struct vm_area_struct **vmas, int *locked)
 {
 	(void)vmas;
 	return pin_user_pages_remote(mm, start, nr_pages, gup_flags, pages, locked);
@@ -754,10 +1016,27 @@ static inline void *kmap_local_page(struct page *page)
 
 static inline void kunmap_local(void *vaddr)
 {
-	kunmap(vaddr);
+	kunmap(virt_to_page(vaddr));
 }
 
 #endif
 
+#ifndef CONFIG_DCB
+#define IEEE_8021QAZ_MAX_TCS    8
+#define IEEE_8021Q_MAX_PRIORITIES 8
 #endif
 
+#ifndef NEED_COMPAT_DIM
+#ifndef NEED_DIM_END_SAMPLE_POINTER
+static inline void net_dim_compat(struct dim *dim,
+				  const struct dim_sample *end_sample)
+{
+	if (end_sample)
+		net_dim(dim, *end_sample);
+}
+
+#define net_dim(_dim, _p_dim_sample) net_dim_compat(_dim, _p_dim_sample)
+#endif
+#endif
+
+#endif

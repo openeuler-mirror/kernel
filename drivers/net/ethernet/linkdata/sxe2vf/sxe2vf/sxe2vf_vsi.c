@@ -232,34 +232,34 @@ s32 sxe2vf_vsi_qs_stats_init(struct sxe2vf_vsi *vsi)
 	vsi_qs_stats = &vsi->vsi_qs_stats;
 
 	if (!vsi_qs_stats->txqs_stats) {
-		vsi_qs_stats->txqs_stats = kcalloc(SXE2_VF_ETH_Q_NUM,
+		vsi_qs_stats->txqs_stats = kcalloc(SXE2_GLOBAL_LUT_MAX_QUEUE,
 						   sizeof(*vsi_qs_stats->txqs_stats),
 						   GFP_KERNEL);
 		if (!vsi_qs_stats->txqs_stats) {
 			LOG_ERROR_BDF("alloc txqs stats failed, count: %d, size: \t"
 				      "%zu.\n",
-				      SXE2_VF_ETH_Q_NUM,
+				      SXE2_GLOBAL_LUT_MAX_QUEUE,
 				      sizeof(*vsi_qs_stats->txqs_stats));
 			goto err_out;
 		}
 
-		for (i = 0; i < SXE2_VF_ETH_Q_NUM; i++)
+		for (i = 0; i < SXE2_GLOBAL_LUT_MAX_QUEUE; i++)
 			u64_stats_init(&vsi_qs_stats->txqs_stats[i].syncp);
 	}
 
 	if (!vsi_qs_stats->rxqs_stats) {
-		vsi_qs_stats->rxqs_stats = kcalloc(SXE2_VF_ETH_Q_NUM,
+		vsi_qs_stats->rxqs_stats = kcalloc(SXE2_GLOBAL_LUT_MAX_QUEUE,
 						   sizeof(*vsi_qs_stats->rxqs_stats),
 						   GFP_KERNEL);
 		if (!vsi_qs_stats->rxqs_stats) {
 			LOG_ERROR_BDF("alloc rxqs stats failed, count: %d, size: \t"
 				      "%zu.\n",
-				      SXE2_VF_ETH_Q_NUM,
+				      SXE2_GLOBAL_LUT_MAX_QUEUE,
 				      sizeof(*vsi_qs_stats->rxqs_stats));
 			goto err_out;
 		}
 
-		for (i = 0; i < SXE2_VF_ETH_Q_NUM; i++)
+		for (i = 0; i < SXE2_GLOBAL_LUT_MAX_QUEUE; i++)
 			u64_stats_init(&vsi_qs_stats->rxqs_stats[i].syncp);
 	}
 
@@ -475,13 +475,24 @@ s32 sxe2vf_dpdk_irq_vector_idx_get(void *adapter, u16 irq_idx)
 	return (s32)vf_adapter->irq_ctxt.msix_entries[offset].vector;
 }
 
-s32 sxe2vf_dpdk_resource_release(void *pf_adapter, struct sxe2_obj *obj)
+static void sxe2vf_dpdk_irq_disable(struct sxe2vf_adapter *adapter)
+{
+	struct sxe2vf_hw *hw = &adapter->hw;
+	u16 idx;
+	u16 base = adapter->irq_ctxt.dpdk_offset;
+	u16 cnt = adapter->irq_ctxt.dpdk_irq_cnt;
+
+	for (idx = 0; idx < cnt; idx++)
+		sxe2vf_hw_irq_disable(hw, base + idx);
+}
+
+s32 sxe2vf_dpdk_resource_release(void *vf_adapter, struct sxe2_obj *obj)
 {
 	s32 ret;
-	struct sxe2vf_adapter *adapter = pf_adapter;
+	struct sxe2vf_adapter *adapter = vf_adapter;
 	struct sxe2vf_msg_params params = {0};
 	struct sxe2_vf_user_driver_release msg = {0};
-	u16 vsi_id = adapter->vsi_ctxt.vsi_ids[SXE2VF_VSI_TYPE_DPDK];
+	u16 vsi_id = sxe2vf_dpdk_vsi_id_get(adapter);
 
 	msg.func_id = obj->vf_id;
 	msg.drv_id = obj->drv_id;
@@ -494,6 +505,8 @@ s32 sxe2vf_dpdk_resource_release(void *pf_adapter, struct sxe2_obj *obj)
 	ret = sxe2vf_mbx_msg_send(adapter, &params);
 	if (ret)
 		LOG_ERROR_BDF("dpdk resource release failed.(err:%d)\n", ret);
+
+	sxe2vf_dpdk_irq_disable(adapter);
 
 	return ret;
 }

@@ -52,6 +52,7 @@ enum sxe2_vf_states {
 
 #define SXE2_VF_MACADDR_CNT_MAX 18
 #define SXE2_VF_VLAN_CNT_MAX 8
+#define SXE2_VF_VLAN_MAX 0xffff
 
 #define SXE2_VF_64Q_MSIX_NUM (64 + SXE2_VF_EVENT_MSIX_NUM)
 #define SXE2_VF_32Q_MSIX_NUM (32 + SXE2_VF_EVENT_MSIX_NUM)
@@ -66,9 +67,46 @@ enum sxe2_vf_states {
 
 #define SXE2_VF_RESET_DONE_WAIT_COUNT (1000)
 #define SXE2_VF_QUEUE_CNT_MIN (1)
-#define SXE2_VF_QUEUE_CNT_MAX (SXE2_VF_ETH_Q_NUM + SXE2_VF_DPDK_Q_NUM)
+#define SXE2_VF_KERNEL_Q_CFG_MAX (64)
+#define SXE2_VF_QUEUE_CNT_MAX (SXE2_VF_KERNEL_Q_CFG_MAX + SXE2_VF_DPDK_Q_NUM)
+#define SXE2_VF_QUEUE_CNT_DFLT_MAX (32)
+
+#define SXE2_VF_LARGE_Q_VF_NUM_MAX (48)
+#define SXE2_VF_LARGE_Q_DPDK_Q_MAX (32)
 
 #define SXE2_VF_ESW_CNT (2)
+
+#define SXE2_VF_DFLT_LARGE_Q_NUM (64)
+
+#define SXE2_VF_GLOBAL_LUT_INVALID_ID (0xFF)
+
+enum sxe2_vf_product_id {
+	SXE2_PRODUCT_ID_KERNEL = 0,
+	SXE2_PRODUCT_ID_DPDK,
+	SXE2_PRODUCT_ID_NR
+};
+
+struct sxe2_vf_vsi_queue_cfg {
+	u16 q_cfg;
+	u16 lut_size;
+	u8  lut_id;
+	u8  lut_type;
+};
+
+struct sxe2_vf_usr_cfg {
+	struct sxe2_vf_vsi_queue_cfg product[SXE2_PRODUCT_ID_NR];
+	bool configured;
+};
+
+struct sxe2_vf_large_q {
+	bool dflt_large_q_en;
+	u16 occupied_q_cnt;
+	u16 spare_q;
+	u16 extra_q_cnt;
+	u16 esw_cov;
+	u16 max_vf_id;
+	struct sxe2_vf_usr_cfg usr_cfg[SXE2_VF_NUM];
+};
 
 #define sxe2_for_each_vf(adapter, type)                                \
 		for ((type) = 0; (type) < (adapter)->vf_ctxt.num_vfs;    \
@@ -83,11 +121,8 @@ enum sxe2_vf_states {
 #define SXE2_VF_NODE(adapter, vf_id) \
 	((adapter)->vf_ctxt.vf_node_e[(vf_id)].vf_node)
 
-enum sxe2_vf_type {
-	SXE2_VF_TYPE_ETH = 0,
-	SXE2_VF_TYPE_DPDK,
-	SXE2_VF_TYPE_NR
-};
+#define SXE2_VF_USR_CFG(adapter, vf_id) \
+	(&((adapter)->vf_ctxt.large_q.usr_cfg[(vf_id)]))
 
 struct sxe2_vf_node_e {
 	struct sxe2_vf_node *vf_node;
@@ -102,9 +137,8 @@ struct sxe2_vf_context {
 	u16 max_vfs;
 	u16 num_vfs;
 	u16 vfid_base;
-	u16 q_cnt;
-	u16 irq_cnt;
 	u16 irq_base;
+	struct sxe2_vf_large_q large_q;
 	struct sxe2_vf_node_e vf_node_e[SXE2_VF_NUM];
 };
 
@@ -141,7 +175,8 @@ struct sxe2_vf_vlaninfo {
 	struct sxe2_vlan port_vlan;
 	u8 port_vlan_exsit;
 	u16 max_cnt;
-	u16 vlan_cnt;
+	u16 total_vlan_cnt;
+	u16 usr_vlan_cnt;
 	struct sxe2_user_vlan_offload_cfg vlan_offload;
 };
 
@@ -149,15 +184,20 @@ struct sxe2_vf_node {
 	struct sxe2_adapter *adapter;
 	struct sxe2_vsi *vsi;
 	struct sxe2_vsi *dpdk_vf_vsi;
-	u16 vsi_id[SXE2_VF_TYPE_NR];
+	u16 vsi_id[SXE2_VF_VSI_ID_NR];
 	struct sxe2_vf_addr mac_addr;
 	struct sxe2_vf_vlaninfo vlan_info;
 	struct sxe2_mbx_msg_table *msg_table;
 	const struct sxe2_vf_ops *vf_ops;
 	struct sxe2_vf_prop prop;
 	u16 irq_base_idx;
+	u16 irq_cnt;
+	u16 q_cnt;
+	u16 rxq_base;
+	u16 txq_base;
 	u16 vf_idx;
-	u32 mac_cnt;
+	u32 total_mac_cnt;
+	u32 usr_mac_cnt;
 	DECLARE_BITMAP(states, SXE2_VF_STATES_NBITS);
 	DECLARE_BITMAP(caps, SXE2_VF_CAP_NBITS);
 	struct sxe2_vf_repr *repr;
@@ -165,7 +205,8 @@ struct sxe2_vf_node {
 	bool user_repr_valid;
 	/* in order to protect the data */
 	struct mutex repr_cfg_lock;
-	enum sxe2_com_module mode;
+	enum sxe2_com_module vf_cfg_mode;
+	enum sxe2_com_module vf_run_mode;
 };
 
 static inline u16 sxe2_vf_port_vid_get(struct sxe2_vf_node *vf)
@@ -188,6 +229,13 @@ static inline bool sxe2_port_vlan_is_exist(struct sxe2_vf_node *vf)
 	return (sxe2_vf_port_vid_get(vf) || sxe2_vf_port_vprio_get(vf));
 }
 
+void sxe2_vf_mac_cnt_inc(struct sxe2_vf_node *vf_node, struct sxe2_vsi *vsi);
+void sxe2_vf_vlan_cnt_inc(struct sxe2_vf_node *vf_node, struct sxe2_vsi *vsi, u16 vlan_id);
+void sxe2_vf_mac_cnt_dec(struct sxe2_vf_node *vf_node, struct sxe2_vsi *vsi);
+void sxe2_vf_vlan_cnt_dec(struct sxe2_vf_node *vf_node, struct sxe2_vsi *vsi, u16 vlan_id);
+void sxe2_vf_mac_cnt_clr(struct sxe2_vf_node *vf_node, struct sxe2_vsi *vsi);
+void sxe2_vf_vlan_cnt_clr(struct sxe2_vf_node *vf_node, struct sxe2_vsi *vsi);
+
 struct sxe2_vf_node *sxe2_vf_node_get(struct sxe2_adapter *adapter, u16 vf_id);
 
 bool sxe2_vf_is_trusted(struct sxe2_vf_node *vf);
@@ -199,6 +247,8 @@ int sxe2_sriov_configure(struct pci_dev *pdev, int num_vfs);
 void sxe2_vf_init(struct sxe2_adapter *adapter);
 
 void sxe2_vf_deinit(struct sxe2_adapter *adapter);
+
+bool sxe2_vf_user_cfg_is_set(struct sxe2_adapter *adapter);
 
 int sxe2_set_vf_port_vlan(struct net_device *netdev, int vf_idx, u16 vlan_id,
 			  u8 qos, __be16 protocol);
@@ -217,11 +267,13 @@ void sxe2_vf_adv_cfg_clear(struct sxe2_vf_node *vf_node, bool is_vfr_vflr);
 
 s32 sxe2_vf_rebuild(struct sxe2_vf_node *vf_node, bool is_vfr_vflr);
 
+s32 sxe2_vf_rate_cfg_restore(struct sxe2_vf_node *vf_node);
+
 u16 sxe2_vf_num_get(struct sxe2_adapter *adapter);
 
 s32 sxe2_vf_reset_notify(struct sxe2_adapter *adapter, struct sxe2_vf_node *vf_node);
 
-s32 sxe2_vf_clean_and_rebuild(struct sxe2_vf_node *vf_node, bool is_vfr_vflr);
+s32 sxe2_vf_cfg_clear(struct sxe2_vf_node *vf_node, bool is_vfr_vflr);
 
 s32 sxe2_sriov_vsi_rebuild(struct sxe2_vsi *vsi, bool is_vfr_vflr);
 
@@ -248,5 +300,16 @@ void sxe2_vf_vsi_destroy_by_id(struct sxe2_vf_node *vf_node, u16 vsi_id_in_dev);
 s32 sxe2_vf_vsi_port_vlan_cfg(struct sxe2_vf_node *vf_node, struct sxe2_vsi *vsi);
 
 void sxe2_vf_trust_cfg_restore(struct sxe2_vf_node *vf_node);
+
+s32 sxe2_vf_sw_vsi_id_get(struct sxe2_vf_node *vf_node,
+			  enum sxe2_vsi_type type, u16 *sw_vsi_id);
+
+u16 sxe2_kernel_vf_vsi_id_get(struct sxe2_vf_node *vf_node);
+
+u16 sxe2_user_vf_vsi_id_get(struct sxe2_vf_node *vf_node);
+
+s32 sxe2_vf_queue_range_set(struct sxe2_adapter *adapter);
+
+u16 sxe2_sriov_qs_avail_nums_get(struct sxe2_adapter *adapter, u8 q_type);
 
 #endif

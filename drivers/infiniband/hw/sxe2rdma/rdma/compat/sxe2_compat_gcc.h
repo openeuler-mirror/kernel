@@ -12,6 +12,7 @@
 #define __SXE2_COMPAT_GCC_H__
 
 #ifndef SXE2_TEST
+#ifndef fallthrough
 #ifdef __has_attribute
 #if __has_attribute(__fallthrough__)
 #define fallthrough __attribute__((__fallthrough__))
@@ -24,6 +25,7 @@
 #define fallthrough                                                            \
 	do {                                                                   \
 	} while (0)
+#endif
 #endif
 #endif
 

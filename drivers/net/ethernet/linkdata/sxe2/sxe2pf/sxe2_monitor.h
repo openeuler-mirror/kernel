@@ -13,6 +13,12 @@
 #define __SXE2_MONITOR_H__
 
 #include <linux/types.h>
+#include <linux/workqueue.h>
+#include <linux/mutex.h>
+#include <linux/list.h>
+#include <linux/if_ether.h>
+
+struct sxe2_adapter;
 
 #define SXE2_NORMAL_TIMER_PERIOD (2 * HZ)
 

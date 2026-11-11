@@ -61,7 +61,7 @@ static inline const char *sxe2_debug_level_name(enum debug_level lv)
 
 #define sxe2_print(level, bdf, fmt, ...)                             \
 	do {                                 \
-		if (!level) {                                            \
+		if (level) {                                            \
 			if (!strcmp(level, KERN_DEBUG)) {                           \
 				pr_debug("[SXE2][%s]%s():%d:" fmt, bdf ? bdf : "unknown", \
 		       __func__, __LINE__, ##__VA_ARGS__);                      \

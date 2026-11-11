@@ -48,6 +48,9 @@
 #define SXE2_REG_READ(hw, addr) sxe2_read_reg(hw, addr)
 #define SXE2_REG_WRITE(hw, reg, value) sxe2_write_reg(hw, reg, value)
 
+#define SXE2_MDD_OICR_MASK \
+	(SXE2_PF_INT_OICR_LAN_TX_ERR | SXE2_PF_INT_OICR_LAN_RX_ERR)
+
 struct sxe2_adapter;
 
 enum sxe2_hw_err_code {
@@ -350,6 +353,8 @@ s32 sxe2_hw_port_outer_vlan_acceptrule_setup(struct sxe2_hw *hw, u16 vsi_hw_id,
 					     u16 tpid, bool acceptedtagged,
 					     bool accepteduntagged);
 
+u32 sxe2_hw_vf_alloc(struct sxe2_hw *hw);
+
 void sxe2_hw_vf_irq_cfg(struct sxe2_hw *hw, struct sxe2_hw_vf_irq *vf_irq);
 
 void sxe2_hw_vf_queue_cfg(struct sxe2_hw *hw, struct sxe2_hw_vf_queue *vf_queue);
@@ -361,10 +366,13 @@ void sxe2_hw_ptp_main_disable(struct sxe2_hw *hw);
 bool sxe2_hw_ptp_main_is_enabled(struct sxe2_hw *hw);
 void sxe2_hw_ptp_init_incval(struct sxe2_hw *hw, u64 incval);
 
+void sxe2_hw_ptp_1588_timestamp_adjust(struct sxe2_hw *hw, u32 nanosecond, bool neg);
 void sxe2_hw_ptp_tsyn_switch(struct sxe2_hw *hw, bool on);
 void sxe2_hw_ptp_tsyn_event_switch(struct sxe2_hw *hw, bool on);
 u64 sxe2_hw_ptp_get_event_second(struct sxe2_hw *hw, u32 index);
 u64 sxe2_hw_ptp_get_event_nanosecond(struct sxe2_hw *hw, u32 index);
+u32 sxe2_hw_ptp_aux_in_get(struct sxe2_hw *hw, u32 index);
+
 void sxe2_hw_ptp_aux_in_set(struct sxe2_hw *hw, u32 index, u32 value);
 
 bool sxe2_hw_ptp_tx_tstamp_read(struct sxe2_hw *hw, u8 port_id, u32 index, u64 *timestamp);
@@ -384,6 +392,9 @@ void sxe2_hw_ptp_1588_timestamp_adjust_at_time(struct sxe2_hw *hw, u32 nanosecon
 u32 sxe2_hw_ptp_auxout_get(struct sxe2_hw *hw, u32 index);
 void sxe2_hw_ptp_auxout_set(struct sxe2_hw *hw, u32 index, u32 value);
 
+u32 sxe2_hw_ptp_auxout_diff_get(struct sxe2_hw *hw);
+void sxe2_hw_ptp_auxout_diff_set(struct sxe2_hw *hw, u32 value);
+
 s32 sxe2_hw_ptp_stat_get(struct sxe2_hw *hw);
 
 s32 sxe2_hw_ptp_stat_get(struct sxe2_hw *hw);
@@ -392,6 +403,8 @@ void sxe2_hw_vf_queue_decfg(struct sxe2_hw *hw, struct sxe2_hw_vf_queue *vf_queu
 
 void sxe2_hw_vf_irq_decfg(struct sxe2_hw *hw, struct sxe2_hw_vf_irq *vf_irq);
 
-void sxe2_hw_ipsec_tcam_clear(struct sxe2_hw *hw, u32 sa_index);
+#ifndef SXE2_DPDK_DRIVER
+void sxe2_hw_event_mdd_irq_switch(struct sxe2_hw *hw, u32 cause, bool on);
+#endif
 
 #endif

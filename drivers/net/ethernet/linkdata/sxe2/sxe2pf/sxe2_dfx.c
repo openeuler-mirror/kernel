@@ -132,12 +132,14 @@ static void ppe_info_protocol_id_convert(struct sxe2_rxft_dbg_ppe_info_action_ty
 	prot_info[15].reg.protocol_offset = ppe_info->protocol_offset15;
 }
 
+#define PPE_PROT_INFO_MAX_NUM 16
+
 static void rxft_ppe_info_common_analysis(struct sxe2_adapter *adapter,
 					  u32 *pdata)
 {
 	int i;
 	struct sxe2_rxft_dbg_ppe_info_action_type_1 ppe_info;
-	union sxe2_rxft_ppe_protocol_info prot_info[16];
+	union sxe2_rxft_ppe_protocol_info prot_info[PPE_PROT_INFO_MAX_NUM];
 
 	(void)memset(&prot_info, 0,
 		     sizeof(union sxe2_rxft_ppe_protocol_info) * 16);
@@ -315,7 +317,7 @@ static void rxft_ppe_info_common_analysis(struct sxe2_adapter *adapter,
 	ppe_info_protocol_id_convert(&ppe_info, prot_info);
 
 	LOG_DEV_INFO("protocol_id_num  = 0x%x\r\n", ppe_info.protocol_id_num);
-	for (i = 0; i < ppe_info.protocol_id_num; i++) {
+	for (i = 0; (i < ppe_info.protocol_id_num) && (i < PPE_PROT_INFO_MAX_NUM); i++) {
 		LOG_DEV_INFO("protocol_id[%d] = %3d, offset : %d\r\n", i,
 			     prot_info[i].reg.protocol_id,
 			     prot_info[i].reg.protocol_offset);
@@ -556,7 +558,7 @@ void sxe2_fwc_rxft_ppe_info(struct sxe2_adapter *adapter)
 
 	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 	if (ret) {
-		LOG_DEV_ERR("rxft ppe info cmd fail, ret=%d\n", ret);
+		LOG_DEV_ERR("rxft ppe info cmd failed, ret=%d\n", ret);
 		return;
 	}
 
@@ -645,7 +647,7 @@ void sxe2_fwc_ppe_dfx_show(struct sxe2_adapter *adapter)
 
 	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 	if (ret) {
-		LOG_DEV_ERR("ppe dfx cmd fail, ret=%d\n", ret);
+		LOG_DEV_ERR("ppe dfx cmd failed, ret=%d\n", ret);
 		return;
 	}
 
