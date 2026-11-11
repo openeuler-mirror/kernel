@@ -15,6 +15,7 @@
 #include <asm/memory.h>
 #include <asm/stage2_pgtable.h>
 
+#include "../pvm/tlbi.h"
 
 #define KVM_PTE_TYPE			BIT(1)
 #define KVM_PTE_TYPE_BLOCK		0
@@ -966,8 +967,10 @@ static void stage2_unmap_put_pte(const struct kvm_pgtable_visit_ctx *ctx,
 		kvm_clear_pte(ctx->ptep);
 
 		if (kvm_pte_table(ctx->old, ctx->level)) {
-			kvm_call_hyp(__kvm_tlb_flush_vmid_ipa, mmu, ctx->addr,
-				     0);
+			if (is_pvm_mode())
+				kvm_pvm_flush_shadow_tlb_ipa(mmu, ctx->addr, ctx->level);
+			else
+				kvm_call_hyp(__kvm_tlb_flush_vmid_ipa, mmu, ctx->addr, 0);
 		} else if (!stage2_unmap_defer_tlb_flush(pgt)) {
 			kvm_call_hyp(__kvm_tlb_flush_vmid_ipa, mmu, ctx->addr,
 				     ctx->level);

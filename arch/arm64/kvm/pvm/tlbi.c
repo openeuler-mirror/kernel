@@ -52,9 +52,34 @@ void kvm_pvm_flush_shadow_tlb(struct kvm_s2_mmu *mmu)
 	}
 }
 
+/**
+ * kvm_pvm_flush_shadow_tlb_ipa() - Invalidate a shadow mapping or subtree
+ * @mmu: Shadow translation context owning the mapping.
+ * @addr: Address within the shadow mapping being invalidated.
+ * @level: Level of the removed shadow page-table descriptor.
+ *
+ * For a table descriptor, use @level to determine the subtree's address
+ * range, not as a hardware TTL hint. Range invalidation must cover all
+ * translation levels, including cached intermediate walks. Fall back to
+ * context invalidation when range maintenance is unavailable or unsuitable.
+ * Complete the broadcast invalidation before returning so the caller can
+ * release the affected page-table references.
+ */
 void kvm_pvm_flush_shadow_tlb_ipa(struct kvm_s2_mmu *mmu, u64 addr, int level)
 {
 	if (level != KVM_PGTABLE_MAX_LEVELS - 1) {
+		if (!pvm_mmu_is_kernel(mmu) && (level == 1 || level == 2) &&
+		    system_supports_tlb_range()) {
+			u64 size = kvm_granule_size(level);
+			u64 start = ALIGN_DOWN(addr, size);
+
+			dsb(ishst);
+			/* Invalidate intermediate walks as well as the retired leaves. */
+			__flush_tlb_range_op(vae1is, start, size >> PAGE_SHIFT,
+					     PAGE_SIZE, pvm_mmu_asid(mmu), 0, false);
+			dsb(ish);
+			return;
+		}
 		kvm_pvm_flush_shadow_tlb(mmu);
 		return;
 	}
