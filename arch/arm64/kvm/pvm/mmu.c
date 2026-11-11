@@ -729,6 +729,92 @@ void kvm_pvm_unmap_shadows(struct kvm *kvm, bool may_block)
 	pvm_unmap(kvm, false, may_block);
 }
 
+void kvm_pvm_unmap_shadow_range(struct kvm *kvm, u64 addr, u64 size)
+{
+	struct kvm_pvm *pvm = kvm_to_pvm(kvm);
+	bool kernel = addr >= PVM_SHADOW_S1_KERNEL_BASE;
+	size_t i, nr = kernel ? pvm->skern_mmus_size : pvm->suser_mmus_size;
+
+	lockdep_assert_held_write(&kvm->mmu_lock);
+	/* Do not split an invalid interval or let it reach the host PGD slots. */
+	if (!size || addr > PVM_SHADOW_S1_ADDR_MASK ||
+	    size - 1 > PVM_SHADOW_S1_ADDR_MASK - addr ||
+	    (!kernel && addr + size > PVM_SHADOW_S1_KERNEL_BASE)) {
+		kvm_pvm_unmap_shadows(kvm, true);
+		return;
+	}
+	pvm->invalidating++;
+	pvm->invalidate_seq++;
+	for (i = 0; i < nr; i++) {
+		struct kvm_pvm_mmu *mmu = kernel ? pvm->skern_mmus[i] :
+						 pvm->suser_mmus[i];
+		u64 limit;
+
+		if (!mmu->mmu.pgt)
+			continue;
+		/* A 4 KiB TLBI can invalidate a larger original guest leaf. */
+		if (mmu->tlbi_broad) {
+			pvm_unmap_mmu(mmu, false);
+		} else {
+			limit = BIT_ULL(mmu->mmu.pgt->ia_bits);
+			if (addr < limit)
+				unmap_stage2_range(&mmu->mmu, addr,
+						   min(size, limit - addr), false);
+		}
+	}
+	pvm->invalidate_seq++;
+	pvm->invalidating--;
+}
+
+static bool pvm_asid_matches(struct kvm_pvm_mmu *mmu, u16 asid)
+{
+	return mmu->asid == ((mmu->tcr & TCR_ASID16) ? asid : asid & 0xff);
+}
+
+static void pvm_unmap_selected(struct kvm_pvm_mmu *mmu, u64 addr, u64 size,
+			       enum kvm_pgtable_prot keep)
+{
+	u64 limit;
+	int ret;
+
+	if (!mmu->mmu.pgt)
+		return;
+	limit = BIT_ULL(mmu->mmu.pgt->ia_bits);
+	if (mmu->tlbi_broad) {
+		addr = mmu->kern_pgd ? PVM_SHADOW_S1_KERNEL_BASE : 0;
+		size = mmu->kern_pgd ? BIT_ULL(PVM_GKERNEL_VA_BITS) : limit;
+	}
+	if (addr >= limit)
+		return;
+	size = min(size, limit - addr);
+	ret = kvm_pvm_unmap_shadow_selected(mmu->mmu.pgt, addr, size, keep);
+	if (ret)
+		pvm_unmap_mmu(mmu, false);
+}
+
+void kvm_pvm_unmap_shadow_va(struct kvm *kvm, u64 addr, u16 asid)
+{
+	struct kvm_pvm *pvm = kvm_to_pvm(kvm);
+	size_t i;
+
+	lockdep_assert_held_write(&kvm->mmu_lock);
+	if (addr >= PVM_SHADOW_S1_KERNEL_BASE) {
+		kvm_pvm_unmap_shadow_range(kvm, addr, PAGE_SIZE);
+		return;
+	}
+	pvm->invalidating++;
+	pvm->invalidate_seq++;
+	for (i = 0; i < pvm->suser_mmus_size; i++) {
+		struct kvm_pvm_mmu *user = pvm->suser_mmus[i];
+		enum kvm_pgtable_prot keep = pvm_asid_matches(user, asid) ? 0 :
+						 KVM_PGTABLE_PROT_PVM_NONGLOBAL;
+
+		pvm_unmap_selected(user, addr, PAGE_SIZE, keep);
+	}
+	pvm->invalidate_seq++;
+	pvm->invalidating--;
+}
+
 static int pvm_check_empty_leaf(const struct kvm_pgtable_visit_ctx *ctx,
 				enum kvm_pgtable_walk_flags visit)
 {

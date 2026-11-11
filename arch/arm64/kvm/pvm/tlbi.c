@@ -11,6 +11,7 @@
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_mmu.h>
 #include <asm/kvm_pvm.h>
+#include <asm/sysreg.h>
 #include <asm/tlbflush.h>
 #include <asm/virt.h>
 
@@ -170,21 +171,75 @@ void kvm_pvm_flush_shadow_tlb_ipa_nsh(struct kvm_s2_mmu *mmu, u64 addr, int leve
 	isb();
 }
 
+enum pvm_tlbi_op {
+	PVM_TLBI_UNSUPPORTED,
+	PVM_TLBI_ALL,
+	PVM_TLBI_ASID,
+	PVM_TLBI_VA_ASID,
+	PVM_TLBI_VA_ALL_ASIDS,
+};
+
+/*
+ * Decode exact architectural encodings, including shareability and last-level
+ * variants. The backend conservatively broadcasts invalidation across vCPUs
+ * and revokes all matching levels for each accepted variant.
+ */
+static enum pvm_tlbi_op pvm_decode_tlbi(u32 insn)
+{
+	if (!aarch64_insn_is_tlbi(insn))
+		return PVM_TLBI_UNSUPPORTED;
+
+	switch (insn & GENMASK(20, 5)) {
+	case OP_TLBI_VMALLE1:
+	case OP_TLBI_VMALLE1IS:
+		return PVM_TLBI_ALL;
+	case OP_TLBI_ASIDE1:
+	case OP_TLBI_ASIDE1IS:
+		return PVM_TLBI_ASID;
+	case OP_TLBI_VAE1:
+	case OP_TLBI_VAE1IS:
+	case OP_TLBI_VALE1:
+	case OP_TLBI_VALE1IS:
+		return PVM_TLBI_VA_ASID;
+	case OP_TLBI_VAAE1:
+	case OP_TLBI_VAAE1IS:
+	case OP_TLBI_VAALE1:
+	case OP_TLBI_VAALE1IS:
+		return PVM_TLBI_VA_ALL_ASIDS;
+	default:
+		return PVM_TLBI_UNSUPPORTED;
+	}
+}
+
 int kvm_pvm_emulate_tlbi(struct kvm_vcpu *vcpu, u32 insn)
 {
-	u32 crm = sys_reg_CRm(insn);
-	u32 op2 = sys_reg_Op2(insn);
+	enum pvm_tlbi_op op;
+	u64 val, addr;
 
-	/* Base EL1 operations; range and OS extensions are not advertised. */
-	if (!is_pvm_mode() || !vcpu_mode_priv(vcpu) ||
-	    !aarch64_insn_is_tlbi(insn) || sys_reg_Op1(insn) != 0 ||
-	    sys_reg_CRn(insn) != 8 || (crm != 3 && crm != 7) ||
-	    !(op2 <= 3 || op2 == 5 || op2 == 7))
+	if (!is_pvm_mode() || !vcpu_mode_priv(vcpu))
 		return 0;
 
-	/* Discard software translations too, or hardware can refill stale data. */
+	op = pvm_decode_tlbi(insn);
+	if (op == PVM_TLBI_UNSUPPORTED)
+		return 0;
+
+	val = vcpu_get_reg(vcpu, insn & 0x1f);
+	addr = kvm_pvm_shadow_s1_addr(val << 12);
+	/* Revoke software mappings too, or hardware can refill stale translations. */
 	write_lock(&vcpu->kvm->mmu_lock);
-	kvm_pvm_unmap_shadows(vcpu->kvm, true);
+	switch (op) {
+	case PVM_TLBI_VA_ASID:
+		kvm_pvm_unmap_shadow_va(vcpu->kvm, addr, val >> 48);
+		break;
+	case PVM_TLBI_VA_ALL_ASIDS:
+		kvm_pvm_unmap_shadow_range(vcpu->kvm, addr, PAGE_SIZE);
+		break;
+	case PVM_TLBI_ALL:
+	case PVM_TLBI_ASID:
+	default:
+		kvm_pvm_unmap_shadows(vcpu->kvm, true);
+		break;
+	}
 	write_unlock(&vcpu->kvm->mmu_lock);
 	kvm_incr_pc(vcpu);
 	return 1;

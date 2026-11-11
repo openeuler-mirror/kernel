@@ -1910,6 +1910,10 @@ retry_mmu_lock:
 		ret = adjust_shadow_s1_prots(vcpu, result, &prot);
 		if (ret)
 			goto out_unlock;
+		if (result->pgshift != PAGE_SHIFT || result->level != 3 ||
+		    (result->desc & PTE_CONT))
+			WRITE_ONCE(container_of(pgt->mmu, struct kvm_pvm_mmu, mmu)->tlbi_broad,
+				   true);
 	}
 	if (is_pvm_mode()) {
 		/* The mapper and reverse index describe a complete shadow page. */

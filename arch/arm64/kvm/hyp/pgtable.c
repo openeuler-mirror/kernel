@@ -1409,6 +1409,50 @@ int kvm_pvm_unmap_shadow_pages(struct kvm_pvm_unmap_page *pages,
 	return ret;
 }
 
+struct stage2_unmap_selected_data {
+	struct kvm_pgtable *pgt;
+	kvm_pte_t keep_mask;
+};
+
+static int stage2_unmap_selected_walker(const struct kvm_pgtable_visit_ctx *ctx,
+					enum kvm_pgtable_walk_flags visit)
+{
+	struct stage2_unmap_selected_data *data = ctx->arg;
+	struct kvm_pgtable_visit_ctx unmap_ctx = *ctx;
+
+	if (kvm_pte_valid(ctx->old) &&
+	    ctx->level == KVM_PGTABLE_MAX_LEVELS - 1 &&
+	    (ctx->old & data->keep_mask))
+		return 0;
+
+	/* Preserve the ordinary walker and its rmap/borrowed-parent hooks. */
+	unmap_ctx.arg = data->pgt;
+	return stage2_unmap_walker(&unmap_ctx, visit);
+}
+
+int kvm_pvm_unmap_shadow_selected(struct kvm_pgtable *pgt, u64 addr,
+				  u64 size, kvm_pte_t keep_mask)
+{
+	struct stage2_unmap_selected_data data = {
+		.pgt = pgt,
+		.keep_mask = keep_mask,
+	};
+	struct kvm_pgtable_walker walker = {
+		.cb = stage2_unmap_selected_walker,
+		.arg = &data,
+		.flags = KVM_PGTABLE_WALK_LEAF | KVM_PGTABLE_WALK_TABLE_POST,
+	};
+	int ret;
+
+	if (!is_pvm_mode() || PAGE_SHIFT != 12 ||
+	    (keep_mask & ~KVM_PGTABLE_PROT_PVM_GLOBAL_MASK))
+		return -EINVAL;
+
+	ret = kvm_pgtable_walk(pgt, addr, size, &walker);
+
+	return ret;
+}
+
 struct stage2_attr_data {
 	kvm_pte_t			attr_set;
 	kvm_pte_t			attr_clr;

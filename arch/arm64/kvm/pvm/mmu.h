@@ -82,6 +82,11 @@ struct kvm_pvm_mmu {
 	 * Protected by kvm->mmu_lock, along with active and the context key.
 	 */
 	bool used;
+	/*
+	 * Complex guest mappings require broader invalidation. Sticky for this
+	 * object lifetime; neither unmapping nor context reuse clears the flag.
+	 */
+	bool tlbi_broad;
 	unsigned int active;
 	u64 ttbr0;
 	u64 ttbr1;
@@ -111,6 +116,8 @@ int kvm_pvm_init_vcpu_mmu(struct kvm_vcpu *vcpu);
 void kvm_pvm_destroy_mmu(struct kvm *kvm);
 void kvm_pvm_unmap_all(struct kvm *kvm, bool may_block);
 void kvm_pvm_unmap_shadows(struct kvm *kvm, bool may_block);
+void kvm_pvm_unmap_shadow_range(struct kvm *kvm, u64 addr, u64 size);
+void kvm_pvm_unmap_shadow_va(struct kvm *kvm, u64 addr, u16 asid);
 int kvm_pvm_vcpu_select_mmu(struct kvm_vcpu *vcpu, bool may_block);
 void kvm_pvm_vcpu_put_mmu(struct kvm_vcpu *vcpu);
 bool kvm_pvm_vcpu_mmu_enabled(struct kvm_vcpu *vcpu);

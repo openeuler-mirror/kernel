@@ -22,9 +22,9 @@ void kvm_pvm_flush_shadow_tlb_ipa(struct kvm_s2_mmu *mmu, u64 addr, int level);
 void kvm_pvm_flush_shadow_tlb_ipa_nsh(struct kvm_s2_mmu *mmu, u64 addr, int level);
 
 /*
- * Validate base EL1 operations and perform conservative full invalidation.
+ * Decode base EL1 operations and perform shadow invalidation.
  * Range and Outer Shareable extensions are not accepted.
- * Return one after full invalidation and PC advancement, or zero if rejected.
+ * Return one after shadow invalidation and PC advancement, or zero if rejected.
  * Call from a sleepable host context without mmu_lock held. This function
  * acquires mmu_lock, and the full unmap may drop the lock and reschedule.
  */
