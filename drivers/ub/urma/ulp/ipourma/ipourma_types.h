@@ -319,6 +319,8 @@ struct ipourma_dev_priv {
 	spinlock_t *tx_ring_locks;
 	struct dentry *address_dentry;
 	bool need_restart_ring;
+	/* Set after the first NETDEV_REGISTER; a later one is a netns move-in. */
+	bool netdev_registered;
 	/* Set while unregistering, so a late set_dev_up will not re-open the device. */
 	bool unregistering;
 	/* guard ndo_uninit: only tear down what was actually set up */
@@ -328,9 +330,7 @@ struct ipourma_dev_priv {
 	struct work_struct set_dev_up;
 	struct work_struct set_dev_down;
 	struct work_struct set_ip;
-	struct work_struct unset_ip;
 	struct work_struct set_route;
-	struct work_struct unset_route;
 	struct work_struct set_route_entry;
 	struct work_struct rx_cr_event;
 	/* register netdev */
