@@ -25,6 +25,7 @@
 #endif
 #include "trace.h"
 #include "pvm/mmu.h"
+#include "pvm/tlbi.h"
 
 static struct kvm_pgtable *hyp_pgtable;
 static DEFINE_MUTEX(kvm_hyp_pgd_mutex);
@@ -1979,13 +1980,22 @@ retry_mmu_lock:
 		kvm_pvm_rmap_end(pgt->mmu);
 	}
 
-	if (kernel_shadow && !ret)
-		kvm_pvm_set_kern_pgd(vcpu_to_pvm(vcpu)->skern_mmu,
-				     READ_ONCE(pgt->pgd[PTRS_PER_PGD - 1]));
-	/* Kernel root publication still needs context-wide maintenance. */
-	if (is_pvm_mode() && (!tlb_flushed || kernel_shadow) &&
-	    (ret == 0 || ret == -EAGAIN))
-		kvm_call_hyp(__kvm_tlb_flush_vmid, pgt->mmu);
+	if (is_pvm_mode() && (ret == 0 || ret == -EAGAIN)) {
+		bool root_changed = false;
+
+		if (kernel_shadow && !ret) {
+			struct kvm_pvm_mmu *mmu = vcpu_to_pvm(vcpu)->skern_mmu;
+			kvm_pte_t entry = READ_ONCE(pgt->pgd[PTRS_PER_PGD - 1]);
+
+			root_changed =
+				pgd_val(READ_ONCE(mmu->kern_pgd[PTRS_PER_PGD - 1])) != entry;
+			kvm_pvm_set_kern_pgd(mmu, entry);
+		}
+		if (root_changed || ret == -EAGAIN)
+			kvm_call_hyp(__kvm_tlb_flush_vmid, pgt->mmu);
+		else if (!tlb_flushed)
+			kvm_pvm_flush_shadow_tlb_ipa(pgt->mmu, map_addr, 3);
+	}
 
 	/* Mark the page dirty only if the fault is handled successfully */
 	if (writable && !ret) {
