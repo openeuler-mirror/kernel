@@ -60,6 +60,7 @@ struct kvm_s1_trans {
 	u64 esr;
 	u8 ap_table;
 	u8 level;
+	u8 pgshift;
 	bool uxn_table;
 	bool pxn_table;
 	bool ur;

@@ -211,6 +211,13 @@ enum kvm_pgtable_prot {
 /* Access-flag control for PVM shadow stage-1 mappings. */
 #define KVM_PGTABLE_PROT_AF	BIT(8)
 
+/* Guest mapping proofs; hardware PVM leaves remain non-global. */
+#define KVM_PGTABLE_PROT_PVM_GLOBAL KVM_PGTABLE_PROT_SW2
+/* Proven non-global, 4KiB, non-contiguous guest L3 mappings only. */
+#define KVM_PGTABLE_PROT_PVM_NONGLOBAL KVM_PGTABLE_PROT_SW3
+#define KVM_PGTABLE_PROT_PVM_GLOBAL_MASK (KVM_PGTABLE_PROT_PVM_GLOBAL | \
+				   KVM_PGTABLE_PROT_PVM_NONGLOBAL)
+
 #define KVM_PGTABLE_PROT_RW	(KVM_PGTABLE_PROT_R | KVM_PGTABLE_PROT_W)
 #define KVM_PGTABLE_PROT_RWX	(KVM_PGTABLE_PROT_RW | KVM_PGTABLE_PROT_X)
 
@@ -666,7 +673,8 @@ bool kvm_pgtable_stage2_test_clear_young(struct kvm_pgtable *pgt, u64 addr,
  * relax the permissions in that entry according to the read, write and
  * execute permissions specified by @prot. No permissions are removed, and
  * TLB invalidation is performed after updating the entry. Software bits cannot
- * be set or cleared using kvm_pgtable_stage2_relax_perms().
+ * be changed, except that PVM_GLOBAL/PVM_NONGLOBAL proofs may be downgraded in
+ * PVM mode. An existing unknown source is never upgraded to a proven mapping.
  *
  * Return: 0 on success, negative error code on failure.
  */

@@ -410,6 +410,7 @@ static int pvm_s1_walk(struct kvm_vcpu *vcpu, u64 va,
 	result->level = level;
 	result->desc = desc;
 	result->af = true;
+	result->pgshift = wi->pgshift;
 	pvm_s1_compute_permissions(vcpu, result);
 
 	return 0;

@@ -1073,6 +1073,25 @@ static int stage2_map_walker_try_leaf(const struct kvm_pgtable_visit_ctx *ctx,
 	 * the vCPU will exit one more time from guest if still needed
 	 * and then go through the path of relaxing permissions.
 	 */
+	if (is_pvm_mode() && kvm_pte_valid(new)) {
+		kvm_pte_t meta = KVM_PGTABLE_PROT_PVM_GLOBAL_MASK;
+		kvm_pte_t perms = KVM_PTE_LEAF_ATTR_LO_S1_AP |
+				  KVM_PTE_LEAF_ATTR_HI_S1_UXN |
+				  KVM_PTE_LEAF_ATTR_HI_S1_PXN;
+
+		/* Proofs apply only to the 4KiB leaves used by PVM shadows. */
+		if (PAGE_SHIFT != 12 || ctx->level != KVM_PGTABLE_MAX_LEVELS - 1)
+			new &= ~meta;
+		if (kvm_pte_valid(ctx->old))
+			new &= ~(meta & ~ctx->old);
+		if (kvm_pte_valid(ctx->old) && ((ctx->old ^ new) & meta) &&
+		    !((ctx->old ^ new) & ~(meta | perms))) {
+			/* Drop proof without changing permissions or translation. */
+			stage2_try_set_pte(ctx, (ctx->old & ~meta) | (new & meta));
+			return -EAGAIN;
+		}
+	}
+
 	if (!stage2_pte_needs_update(ctx->old, new))
 		return -EAGAIN;
 
@@ -1547,7 +1566,8 @@ int kvm_pgtable_stage2_relax_perms(struct kvm_pgtable *pgt, u64 addr,
 	u32 level;
 	kvm_pte_t set = 0, clr = 0;
 
-	if (prot & KVM_PTE_LEAF_ATTR_HI_SW)
+	if (prot & KVM_PTE_LEAF_ATTR_HI_SW &
+	    ~(is_pvm_mode() ? KVM_PGTABLE_PROT_PVM_GLOBAL_MASK : 0))
 		return -EINVAL;
 
 	if (is_pvm_mode()) {
@@ -1568,6 +1588,8 @@ int kvm_pgtable_stage2_relax_perms(struct kvm_pgtable *pgt, u64 addr,
 			clr |= KVM_PTE_LEAF_ATTR_LO_S1_AP2;
 		clr |= ~attr & (KVM_PTE_LEAF_ATTR_HI_S1_UXN |
 				KVM_PTE_LEAF_ATTR_HI_S1_PXN);
+		/* Intersect provenance; never promote an existing unknown leaf. */
+		clr |= KVM_PGTABLE_PROT_PVM_GLOBAL_MASK & ~prot;
 	} else {
 		if (prot & KVM_PGTABLE_PROT_R)
 			set |= KVM_PTE_LEAF_ATTR_LO_S2_S2AP_R;

@@ -1629,6 +1629,11 @@ static int adjust_shadow_s1_prots(struct kvm_vcpu *vcpu,
 	}
 	if (result->af)
 		adjusted |= KVM_PGTABLE_PROT_AF;
+	if (!(result->desc & PTE_NG))
+		adjusted |= KVM_PGTABLE_PROT_PVM_GLOBAL;
+	else if (result->pgshift == PAGE_SHIFT && result->level == 3 &&
+		 !(result->desc & PTE_CONT))
+		adjusted |= KVM_PGTABLE_PROT_PVM_NONGLOBAL;
 
 	*prot = adjusted;
 	return 0;
