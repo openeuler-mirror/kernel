@@ -1414,7 +1414,23 @@ int kvm_pvm_unmap_shadow_pages(struct kvm_pvm_unmap_page *pages,
 struct stage2_unmap_selected_data {
 	struct kvm_pgtable *pgt;
 	kvm_pte_t keep_mask;
+	struct kvm_pgtable_visit_ctx *batch;
+	unsigned int nr;
 };
+
+static void stage2_unmap_drain(struct stage2_unmap_selected_data *data)
+{
+	unsigned int i;
+
+	if (!data->nr)
+		return;
+
+	/* Complete invalidation before cleaning memory or dropping references. */
+	kvm_call_hyp(__kvm_tlb_flush_vmid, data->pgt->mmu);
+	for (i = 0; i < data->nr; i++)
+		stage2_unmap_one(&data->batch[i], KVM_PGTABLE_WALK_LEAF, true);
+	data->nr = 0;
+}
 
 static int stage2_unmap_selected_walker(const struct kvm_pgtable_visit_ctx *ctx,
 					enum kvm_pgtable_walk_flags visit)
@@ -1429,15 +1445,30 @@ static int stage2_unmap_selected_walker(const struct kvm_pgtable_visit_ctx *ctx,
 
 	/* Preserve the ordinary walker and its rmap/borrowed-parent hooks. */
 	unmap_ctx.arg = data->pgt;
+	if (data->batch) {
+		if (kvm_pte_valid(ctx->old) &&
+		    ctx->level == KVM_PGTABLE_MAX_LEVELS - 1) {
+			data->batch[data->nr++] = unmap_ctx;
+			kvm_clear_pte(ctx->ptep);
+			if (data->nr == KVM_PVM_UNMAP_BATCH_SIZE)
+				stage2_unmap_drain(data);
+			return 0;
+		}
+
+		/* Drop leaf references before checking or freeing a child table. */
+		stage2_unmap_drain(data);
+	}
 	return stage2_unmap_walker(&unmap_ctx, visit);
 }
 
 int kvm_pvm_unmap_shadow_selected(struct kvm_pgtable *pgt, u64 addr,
-				  u64 size, kvm_pte_t keep_mask)
+				  u64 size, kvm_pte_t keep_mask,
+				  struct kvm_pgtable_visit_ctx *batch)
 {
 	struct stage2_unmap_selected_data data = {
 		.pgt = pgt,
 		.keep_mask = keep_mask,
+		.batch = batch,
 	};
 	struct kvm_pgtable_walker walker = {
 		.cb = stage2_unmap_selected_walker,
@@ -1451,6 +1482,7 @@ int kvm_pvm_unmap_shadow_selected(struct kvm_pgtable *pgt, u64 addr,
 		return -EINVAL;
 
 	ret = kvm_pgtable_walk(pgt, addr, size, &walker);
+	stage2_unmap_drain(&data);
 
 	return ret;
 }

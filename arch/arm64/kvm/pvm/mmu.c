@@ -9,6 +9,7 @@
 #include <linux/bitmap.h>
 #include <linux/mm.h>
 #include <linux/module.h>
+#include <linux/slab.h>
 #include <linux/sysfs.h>
 
 #include <asm/kvm_mmu.h>
@@ -772,7 +773,8 @@ static bool pvm_asid_matches(struct kvm_pvm_mmu *mmu, u16 asid)
 }
 
 static void pvm_unmap_selected(struct kvm_pvm_mmu *mmu, u64 addr, u64 size,
-			       enum kvm_pgtable_prot keep)
+			       enum kvm_pgtable_prot keep,
+			       struct kvm_pgtable_visit_ctx *batch)
 {
 	u64 limit;
 	int ret;
@@ -787,7 +789,8 @@ static void pvm_unmap_selected(struct kvm_pvm_mmu *mmu, u64 addr, u64 size,
 	if (addr >= limit)
 		return;
 	size = min(size, limit - addr);
-	ret = kvm_pvm_unmap_shadow_selected(mmu->mmu.pgt, addr, size, keep);
+	ret = kvm_pvm_unmap_shadow_selected(mmu->mmu.pgt, addr, size, keep,
+					    batch);
 	if (ret)
 		pvm_unmap_mmu(mmu, false);
 }
@@ -795,9 +798,13 @@ static void pvm_unmap_selected(struct kvm_pvm_mmu *mmu, u64 addr, u64 size,
 void kvm_pvm_unmap_shadow_asid(struct kvm *kvm, u16 asid)
 {
 	struct kvm_pvm *pvm = kvm_to_pvm(kvm);
+	struct kvm_pgtable_visit_ctx *batch;
 	size_t i;
 
 	lockdep_assert_held_write(&kvm->mmu_lock);
+	/* Optional scratch space: allocation failure keeps per-entry TLBI. */
+	batch = kmalloc_array(KVM_PVM_UNMAP_BATCH_SIZE, sizeof(*batch),
+			      GFP_NOWAIT);
 	pvm->invalidating++;
 	pvm->invalidate_seq++;
 	for (i = 0; i < pvm->suser_mmus_size; i++) {
@@ -805,7 +812,7 @@ void kvm_pvm_unmap_shadow_asid(struct kvm *kvm, u16 asid)
 
 		if (pvm_asid_matches(user, asid) && user->mmu.pgt)
 			pvm_unmap_selected(user, 0, BIT_ULL(user->mmu.pgt->ia_bits),
-					   KVM_PGTABLE_PROT_PVM_GLOBAL);
+					   KVM_PGTABLE_PROT_PVM_GLOBAL, batch);
 	}
 	/*
 	 * Shared kernel roots are not owned by any one guest ASID, but
@@ -819,10 +826,11 @@ void kvm_pvm_unmap_shadow_asid(struct kvm *kvm, u16 asid)
 
 		pvm_unmap_selected(kernel, PVM_SHADOW_S1_KERNEL_BASE,
 				   BIT_ULL(PVM_GKERNEL_VA_BITS),
-				   KVM_PGTABLE_PROT_PVM_GLOBAL);
+				   KVM_PGTABLE_PROT_PVM_GLOBAL, NULL);
 	}
 	pvm->invalidate_seq++;
 	pvm->invalidating--;
+	kfree(batch);
 }
 
 void kvm_pvm_unmap_shadow_va(struct kvm *kvm, u64 addr, u16 asid)
@@ -842,7 +850,7 @@ void kvm_pvm_unmap_shadow_va(struct kvm *kvm, u64 addr, u16 asid)
 		enum kvm_pgtable_prot keep = pvm_asid_matches(user, asid) ? 0 :
 						 KVM_PGTABLE_PROT_PVM_NONGLOBAL;
 
-		pvm_unmap_selected(user, addr, PAGE_SIZE, keep);
+		pvm_unmap_selected(user, addr, PAGE_SIZE, keep, NULL);
 	}
 	pvm->invalidate_seq++;
 	pvm->invalidating--;

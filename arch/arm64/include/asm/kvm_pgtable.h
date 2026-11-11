@@ -612,17 +612,22 @@ int kvm_pgtable_stage2_unmap(struct kvm_pgtable *pgt, u64 addr, u64 size);
  * @addr:	Folded shadow virtual address at which to start unmapping.
  * @size:	Size of the range, with the same rounding as stage2_unmap().
  * @keep_mask:	PVM_GLOBAL and/or PVM_NONGLOBAL proof bits to preserve.
+ * @batch:	Optional scratch array of KVM_PVM_UNMAP_BATCH_SIZE contexts.
  *
  * Only valid 4KiB shadow leaves carrying a bit in @keep_mask are preserved.
  * Unknown leaves are removed; a zero mask removes all leaves. Cleared entries
  * use the ordinary unmap path, including TLB maintenance and page references.
- * The caller must serialize against page-table updates, as for stage2_unmap().
+ * With @batch, removed leaves are invalidated in bounded batches before their
+ * backing memory is cleaned. The scratch array must remain live for the walk.
+ * A NULL @batch retains per-entry invalidation. The caller must serialize
+ * against page-table updates, as for stage2_unmap().
  *
  * Return: 0 on success, negative error code on failure. Non-PVM mode, a host
  * granule other than 4KiB, or unsupported @keep_mask bits return -EINVAL.
  */
 int kvm_pvm_unmap_shadow_selected(struct kvm_pgtable *pgt, u64 addr,
-				  u64 size, kvm_pte_t keep_mask);
+				  u64 size, kvm_pte_t keep_mask,
+				  struct kvm_pgtable_visit_ctx *batch);
 
 /**
  * kvm_pgtable_stage2_wrprotect() - Write-protect guest stage-2 address range
