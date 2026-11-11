@@ -792,6 +792,31 @@ static void pvm_unmap_selected(struct kvm_pvm_mmu *mmu, u64 addr, u64 size,
 		pvm_unmap_mmu(mmu, false);
 }
 
+void kvm_pvm_unmap_shadow_asid(struct kvm *kvm, u16 asid)
+{
+	struct kvm_pvm *pvm = kvm_to_pvm(kvm);
+	size_t i;
+
+	lockdep_assert_held_write(&kvm->mmu_lock);
+	pvm->invalidating++;
+	pvm->invalidate_seq++;
+	for (i = 0; i < pvm->suser_mmus_size; i++) {
+		struct kvm_pvm_mmu *user = pvm->suser_mmus[i];
+
+		if (pvm_asid_matches(user, asid) && user->mmu.pgt)
+			pvm_unmap_selected(user, 0, BIT_ULL(user->mmu.pgt->ia_bits),
+					   KVM_PGTABLE_PROT_PVM_GLOBAL);
+	}
+	/* Shared kernel roots are not owned by any one guest ASID. */
+	for (i = 0; i < pvm->skern_mmus_size; i++) {
+		pvm_unmap_selected(pvm->skern_mmus[i], PVM_SHADOW_S1_KERNEL_BASE,
+				   BIT_ULL(PVM_GKERNEL_VA_BITS),
+				   KVM_PGTABLE_PROT_PVM_GLOBAL);
+	}
+	pvm->invalidate_seq++;
+	pvm->invalidating--;
+}
+
 void kvm_pvm_unmap_shadow_va(struct kvm *kvm, u64 addr, u16 asid)
 {
 	struct kvm_pvm *pvm = kvm_to_pvm(kvm);

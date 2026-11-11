@@ -234,8 +234,10 @@ int kvm_pvm_emulate_tlbi(struct kvm_vcpu *vcpu, u32 insn)
 	case PVM_TLBI_VA_ALL_ASIDS:
 		kvm_pvm_unmap_shadow_range(vcpu->kvm, addr, PAGE_SIZE);
 		break;
-	case PVM_TLBI_ALL:
 	case PVM_TLBI_ASID:
+		kvm_pvm_unmap_shadow_asid(vcpu->kvm, val >> 48);
+		break;
+	case PVM_TLBI_ALL:
 	default:
 		kvm_pvm_unmap_shadows(vcpu->kvm, true);
 		break;

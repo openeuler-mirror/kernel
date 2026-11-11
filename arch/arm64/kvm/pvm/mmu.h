@@ -117,6 +117,7 @@ void kvm_pvm_destroy_mmu(struct kvm *kvm);
 void kvm_pvm_unmap_all(struct kvm *kvm, bool may_block);
 void kvm_pvm_unmap_shadows(struct kvm *kvm, bool may_block);
 void kvm_pvm_unmap_shadow_range(struct kvm *kvm, u64 addr, u64 size);
+void kvm_pvm_unmap_shadow_asid(struct kvm *kvm, u16 asid);
 void kvm_pvm_unmap_shadow_va(struct kvm *kvm, u64 addr, u16 asid);
 int kvm_pvm_vcpu_select_mmu(struct kvm_vcpu *vcpu, bool may_block);
 void kvm_pvm_vcpu_put_mmu(struct kvm_vcpu *vcpu);
