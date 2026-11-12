@@ -681,7 +681,6 @@ static int unic_query_flush_status(struct unic_dev *unic_dev, u8 *status)
 static int unic_wait_hw_queue_flush_done(struct unic_dev *unic_dev)
 {
 #define UNIC_FLUSH_STATUS_WAIT_CNT	10
-#define UNIC_FLUSH_STATUS_WAIT_MS	50
 #define UNIC_FLUSH_DONE			1
 
 	int i, ret;
@@ -690,14 +689,14 @@ static int unic_wait_hw_queue_flush_done(struct unic_dev *unic_dev)
 	for (i = 0; i < UNIC_FLUSH_STATUS_WAIT_CNT; i++) {
 		ret = unic_query_flush_status(unic_dev, &status);
 		if (ret) {
-			msleep(UNIC_FLUSH_STATUS_WAIT_MS);
+			msleep(UNIC_WAIT_HW_QUEUE_FLUSH_DONE_MS);
 			continue;
 		}
 
 		if (status == UNIC_FLUSH_DONE)
 			return 0;
 
-		msleep(UNIC_FLUSH_STATUS_WAIT_MS);
+		msleep(UNIC_WAIT_HW_QUEUE_FLUSH_DONE_MS);
 	}
 
 	return -EBUSY;

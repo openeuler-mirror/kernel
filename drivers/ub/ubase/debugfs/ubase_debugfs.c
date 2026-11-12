@@ -4,6 +4,7 @@
  *
  */
 
+#include <linux/bits.h>
 #include <linux/debugfs.h>
 #include <linux/delay.h>
 #include <linux/kernel.h>
@@ -19,6 +20,7 @@
 #include "ubase_proxy_debugfs.h"
 #include "ubase_qos_debugfs.h"
 #include "ubase_stats.h"
+#include "ubase_timing.h"
 #include "ubase_tp.h"
 #include "ubase_debugfs.h"
 
@@ -444,7 +446,6 @@ static void ubase_dbg_fill_single_port(struct seq_file *s,
 static int ubase_dbg_dump_perf_stats_ub(struct seq_file *s,
 					struct ubase_dev *udev)
 {
-#define UBASE_UB_PERF_STATS_PERIOD	100
 #define UBASE_QUERY_ALL_BITMAP	0
 
 	struct ubase_perf_stats_result *stats;
@@ -464,7 +465,7 @@ static int ubase_dbg_dump_perf_stats_ub(struct seq_file *s,
 		return ret;
 	}
 
-	seq_printf(s, "perf_stats_period: %d(ms)\n", UBASE_UB_PERF_STATS_PERIOD);
+	seq_printf(s, "perf_stats_period: %u(ms)\n", UBASE_UB_PERF_STATS_PERIOD);
 	seq_puts(s, "port bandwidth info:\n");
 
 	for (i = 0; i < UBASE_MAX_PORT_NUM; i++) {

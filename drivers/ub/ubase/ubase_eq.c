@@ -11,6 +11,7 @@
 #include "ubase_dtumem.h"
 #include "ubase_mailbox.h"
 #include "ubase_reset.h"
+#include "ubase_timing.h"
 #include "ubase_tp.h"
 #include "ubase_trace.h"
 #include "ubase_eq.h"
@@ -712,7 +713,7 @@ static inline void ubase_poll_aeqe(struct ubase_dev *udev,
 	unsigned long keep, end;
 
 	keep = msecs_to_jiffies(UBASE_KEEP_POLL_TIME) + jiffies;
-	end = msecs_to_jiffies(UBASE_CMDQ_MBX_TX_TIMEOUT) + jiffies;
+	end = msecs_to_jiffies(UBASE_MBX_TX_TIMEOUT) + jiffies;
 
 	while (time_before(jiffies, end)) {
 		ubase_async_event_handler(udev);

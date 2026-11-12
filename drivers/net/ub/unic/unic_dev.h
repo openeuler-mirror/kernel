@@ -18,6 +18,7 @@
 #include "unic_cmd.h"
 #include "unic_ethtool.h"
 #include "unic_rx.h"
+#include "unic_timing.h"
 #include "unic_tx.h"
 #include "unic_txrx.h"
 
@@ -494,8 +495,6 @@ static inline bool unic_rx_changed(struct unic_dev *unic_dev)
 
 static inline u32 unic_cmd_timeout(struct unic_dev *unic_dev)
 {
-#define UNIC_CMD_TIMEOUT 5000
-
 	return __unic_removing(unic_dev) ? UNIC_CMD_TIMEOUT : 0;
 }
 
