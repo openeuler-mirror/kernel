@@ -269,6 +269,7 @@ static inline void ras_recover_entry_init(struct ras_recover_entry *entry,
 
 static DEFINE_SPINLOCK(ub_ras_recover_ring_lock);
 static DECLARE_WORK(ub_ras_recover_work, ub_ras_recover_work_func);
+static bool ub_ras_recover_exiting;
 
 static void ub_ras_recover_queue(struct cper_sec_ubus *ubus_err, int severity)
 {
@@ -277,6 +278,7 @@ static void ub_ras_recover_queue(struct cper_sec_ubus *ubus_err, int severity)
 	int ub_severity = cper_severity_to_ub_ras(severity);
 	struct ras_cap_regs *ras_cap, *tmp_cap;
 	struct ras_recover_entry entry = {};
+	unsigned long flags;
 	u32 overflow = 0;
 	u32 err_status;
 	u32 err_level;
@@ -309,11 +311,21 @@ static void ub_ras_recover_queue(struct cper_sec_ubus *ubus_err, int severity)
 	entry.overflow = overflow;
 	entry.regs = ras_cap;
 
-	if (kfifo_in_spinlocked(&ras_recover_ring, &entry, 1,
-				&ub_ras_recover_ring_lock)) {
-		schedule_work(&ub_ras_recover_work);
+	spin_lock_irqsave(&ub_ras_recover_ring_lock, flags);
+	if (ub_ras_recover_exiting) {
+		spin_unlock_irqrestore(&ub_ras_recover_ring_lock, flags);
+		pr_warn("drop ras recover request of eid:%05x, severity:%s when exiting\n",
+			ubus_err->eid, RAS_SEVERITY_STR(ub_severity));
+		kfree(ras_cap);
 		return;
 	}
+
+	if (kfifo_in(&ras_recover_ring, &entry, 1)) {
+		schedule_work(&ub_ras_recover_work);
+		spin_unlock_irqrestore(&ub_ras_recover_ring_lock, flags);
+		return;
+	}
+	spin_unlock_irqrestore(&ub_ras_recover_ring_lock, flags);
 
 	if (ub_severity == RAS_UC_FE)
 		pr_err("FIFO ring overflow when recovering error for eid:%05x, severity:%s\n",
@@ -328,11 +340,24 @@ static void ub_ras_recover_queue(struct cper_sec_ubus *ubus_err, int severity)
 
 void ub_ras_init(void)
 {
+	unsigned long flags;
+
+	spin_lock_irqsave(&ub_ras_recover_ring_lock, flags);
+	ub_ras_recover_exiting = false;
+	spin_unlock_irqrestore(&ub_ras_recover_ring_lock, flags);
+
 	ub_ras_register_recover_func(ub_ras_recover_queue);
 }
 
 void ub_ras_uninit(void)
 {
+	unsigned long flags;
+
 	ub_ras_register_recover_func(NULL);
+
+	spin_lock_irqsave(&ub_ras_recover_ring_lock, flags);
+	ub_ras_recover_exiting = true;
+	spin_unlock_irqrestore(&ub_ras_recover_ring_lock, flags);
+
 	(void)flush_work(&ub_ras_recover_work);
 }
