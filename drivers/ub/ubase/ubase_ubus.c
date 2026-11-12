@@ -522,9 +522,7 @@ static int ubase_ubus_virt_notify(struct ub_entity *ue, int bus_ue_id, bool is_e
 	ubase_info(udev, "ubase virt notify, ue id = %d, en = %d.\n",
 		   bus_ue_id, is_en);
 
-	ubase_virt_handler(udev, (u16)bus_ue_id, is_en);
-
-	return 0;
+	return ubase_virt_handler(udev, (u16)bus_ue_id, is_en);
 }
 
 static int ubase_ubus_activate(struct ub_entity *ue, u32 bus_ue_id)

@@ -77,6 +77,7 @@ static void ubase_dbg_dump_caps_bits(struct seq_file *s, struct ubase_dev *udev)
 	PRINT_CAP(usc, ubase_dev_usc_supported);
 	PRINT_CAP(ucp, ubase_ucp_supported);
 	PRINT_CAP(non_mirror_mem, ubase_dev_non_mirror_mem_supported);
+	PRINT_CAP(extbuf_manage_in_que, __ubase_dev_extbuf_manage_in_que_supported);
 	PRINT_CAP(batch_query_pmu, ubase_dev_batch_query_pmu_supported);
 	PRINT_CAP(ue_elr_ras, ubase_dev_ue_elr_ras_supported);
 }
@@ -125,6 +126,7 @@ static void ubase_dbg_dump_caps_info(struct seq_file *s, struct ubase_dev *udev)
 		{"\tumv_tbl_size: %u\n", udev->caps.umv_tbl_size},
 		{"\tctrlq_remote_version: %u\n", udev->ctrlq.remote_ver},
 		{"\tctrlq_local_version: %u\n", UBASE_CTRLQ_LOCAL_VERSION},
+		{"\textdb_buf_que_size:%u\n", udev->ta_ctx.extdb_buf_que_size},
 	};
 	int i;
 
@@ -691,6 +693,30 @@ static int ubase_dbg_dump_udma_mac_tbl_list_hw(struct seq_file *s, void *data)
 	return ret;
 }
 
+static int ubase_dbg_dump_extdb_buf_info(struct seq_file *s, void *data)
+{
+	struct ubase_dev *udev = dev_get_drvdata(s->private);
+	struct ubase_ue_node *node;
+
+	if (!test_bit(UBASE_STATE_INITED_B, &udev->state_bits) ||
+	    test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
+		return -EBUSY;
+
+	seq_puts(s, "current ue:\n");
+	seq_printf(s, "extq_start_id: %u\n", udev->ta_ctx.extq_start_id);
+	seq_printf(s, "extq_end_id: %u\n", udev->ta_ctx.extq_end_id);
+
+	mutex_lock(&udev->ue_list_lock);
+	list_for_each_entry(node, &udev->ue_list, list) {
+		seq_printf(s, "\nue%u:\n", node->bus_ue_id);
+		seq_printf(s, "extq_start_id: %u\n", node->extq_start_id);
+		seq_printf(s, "extq_end_id: %u\n", node->extq_end_id);
+	}
+	mutex_unlock(&udev->ue_list_lock);
+
+	return 0;
+}
+
 static int ubase_dbg_dump_adev_list_info(struct seq_file *s, void *data)
 {
 	struct ubase_dev *udev = dev_get_drvdata(s->private);
@@ -756,6 +782,17 @@ static bool ubase_dbg_dev_proxy_support(struct device *dev, u32 property)
 	struct ubase_dev *udev = dev_get_drvdata(dev);
 
 	if (!ubase_dev_proxy_supported(udev))
+		return false;
+
+	return __ubase_dbg_dentry_support(dev, property);
+}
+
+static bool ubase_dbg_extdb_buf_info_support(struct device *dev, u32 property)
+{
+	struct ubase_dev *udev = dev_get_drvdata(dev);
+
+	if (!ubase_dev_ta_extdb_buf_supported(udev) ||
+	    !ubase_dev_extbuf_manage_in_que_supported(udev))
 		return false;
 
 	return __ubase_dbg_dentry_support(dev, property);
@@ -1093,6 +1130,14 @@ static struct ubase_dbg_cmd_info ubase_dbg_cmd[] = {
 		.support = ubase_dbg_dev_proxy_support,
 		.init = __ubase_dbg_seq_file_init,
 		.read_func = ubase_dbg_dump_ue_cmdq_ratelimit_record,
+	},
+	{
+		.name = "extdb_buf_info",
+		.dentry_index = UBASE_DBG_DENTRY_ROOT,
+		.property = UBASE_SUP_URMA | UBASE_SUP_CDMA | UBASE_SUP_UBL_ETH,
+		.support = ubase_dbg_extdb_buf_info_support,
+		.init = __ubase_dbg_seq_file_init,
+		.read_func = ubase_dbg_dump_extdb_buf_info,
 	},
 	{
 		.name = "all_adev_name",
