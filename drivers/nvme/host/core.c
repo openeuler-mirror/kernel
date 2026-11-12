@@ -2102,6 +2102,12 @@ static int nvme_update_ns_info_block(struct nvme_ns *ns,
 	}
 	nvme_set_chunk_sectors(ns, id);
 	nvme_update_disk_info(ns->disk, ns, id);
+	/* P2P pages cannot be used for block layer PI processing. */
+	if (blk_get_integrity(ns->disk))
+		blk_queue_flag_clear(QUEUE_FLAG_PCI_P2PDMA, ns->queue);
+	else if (ns->ctrl->ops->supports_pci_p2pdma &&
+		 ns->ctrl->ops->supports_pci_p2pdma(ns->ctrl))
+		blk_queue_flag_set(QUEUE_FLAG_PCI_P2PDMA, ns->queue);
 	nvme_set_queue_limits(ns->ctrl, ns->queue);
 
 	if (ns->head->ids.csi == NVME_CSI_ZNS) {
