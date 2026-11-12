@@ -62,8 +62,8 @@ struct ubase_cfg_dtu_tbl {
 
 int ubase_dtu_mem_init(struct ubase_dev *udev);
 void ubase_dtu_mem_uninit(struct ubase_dev *udev);
-void *ubase_dtu_alloc(struct ubase_dev *udev, struct page **page,
-		      size_t size, dma_addr_t *iova);
+void *ubase_dtu_alloc(struct ubase_dev *udev, struct page **page_ptr,
+		      size_t size, dma_addr_t *iova_ptr);
 void ubase_dtu_free(struct ubase_dev *udev, struct page *page,
 		    size_t size, dma_addr_t iova);
 

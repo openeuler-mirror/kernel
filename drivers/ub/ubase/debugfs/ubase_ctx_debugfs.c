@@ -307,21 +307,7 @@ int ubase_dbg_dump_aeq_context(struct seq_file *s, void *data)
 
 int ubase_dbg_dump_ceq_context(struct seq_file *s, void *data)
 {
-	struct ubase_dev *udev = dev_get_drvdata(s->private);
-	int ret;
-
-	if (!mutex_trylock(&udev->irq_table.ceq_lock))
-		return -EBUSY;
-
-	if (!udev->irq_table.ceqs.ceq) {
-		mutex_unlock(&udev->irq_table.ceq_lock);
-		return -EBUSY;
-	}
-
-	ret = ubase_dbg_dump_context(s, UBASE_DBG_CEQ_CTX);
-	mutex_unlock(&udev->irq_table.ceq_lock);
-
-	return ret;
+	return ubase_dbg_dump_context(s, UBASE_DBG_CEQ_CTX);
 }
 
 int ubase_dbg_dump_tpg_ctx(struct seq_file *s, void *data)

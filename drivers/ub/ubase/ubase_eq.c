@@ -10,6 +10,7 @@
 #include "ubase_dev.h"
 #include "ubase_dtumem.h"
 #include "ubase_mailbox.h"
+#include "ubase_mem.h"
 #include "ubase_reset.h"
 #include "ubase_timing.h"
 #include "ubase_tp.h"
@@ -510,29 +511,6 @@ static void ubase_construct_eq_ctx(struct ubase_eq *eq,
 	ctx->state2 = eq->state;
 }
 
-static int ubase_alloc_eq_buf(struct ubase_dev *udev, struct ubase_eq *eq)
-{
-	eq->addr.addr = ubase_alloc_buf(udev, eq->addr.size, &eq->addr.dma_addr,
-					&eq->addr.page);
-	if (!eq->addr.addr)
-		return -ENOMEM;
-
-	return 0;
-}
-
-static void ubase_free_eq_buf(struct ubase_dev *udev, struct ubase_eq *eq)
-{
-	if (!eq->addr.addr || !eq->addr.dma_addr)
-		return;
-
-	ubase_free_buf(udev, eq->addr.size, eq->addr.addr, eq->addr.dma_addr,
-		       eq->addr.page);
-
-	eq->addr.addr = NULL;
-	eq->addr.dma_addr = 0;
-	eq->addr.page = NULL;
-}
-
 static int ubase_fill_eq_attribute(struct ubase_dev *udev, struct ubase_eq *eq,
 				   u32 eqn, struct ubase_irq *irq,
 				   enum ubase_eq_type eq_type)
@@ -562,7 +540,7 @@ static int ubase_fill_eq_attribute(struct ubase_dev *udev, struct ubase_eq *eq,
 	eq->irqn = irq->irqn;
 
 	eq_addr->size = eq->entries_num * eq->eqe_size;
-	ret = ubase_alloc_eq_buf(udev, eq);
+	ret = udev->mem_ops.eq.alloc(udev, eq);
 	if (ret)
 		ubase_err(udev, "failed to alloc eqe base addr.\n");
 
@@ -610,7 +588,7 @@ static int ubase_create_eq(struct ubase_dev *udev, struct ubase_eq *eq, u32 eqn,
 err_upgrade_ctx:
 	__ubase_free_cmd_mailbox(udev, mbx);
 err_alloc_mailbox:
-	ubase_free_eq_buf(udev, eq);
+	udev->mem_ops.eq.free(udev, eq);
 
 	return ret;
 }
@@ -626,7 +604,7 @@ static int ubase_destroy_eq(struct ubase_dev *udev, struct ubase_eq *eq,
 	if ((!ubase_dev_mbx_supported(udev) &&
 	     test_bit(UBASE_STATE_REMOVING_B, &udev->state_bits)) ||
 	    udev->reset_stage == UBASE_RESET_STAGE_UNINIT) {
-		ubase_free_eq_buf(udev, eq);
+		udev->mem_ops.eq.free(udev, eq);
 		return 0;
 	}
 
@@ -648,7 +626,7 @@ static int ubase_destroy_eq(struct ubase_dev *udev, struct ubase_eq *eq,
 		ubase_err(udev, "failed to destroy EQC, ret = %d.\n", ret);
 
 	__ubase_free_cmd_mailbox(udev, mbx);
-	ubase_free_eq_buf(udev, eq);
+	udev->mem_ops.eq.free(udev, eq);
 
 	return ret;
 }
@@ -881,10 +859,11 @@ static void ubase_destroy_ceqs(struct ubase_dev *udev)
 		if (ubase_destroy_eq(udev, &ceqs->ceq[i].eq, UBASE_EQ_TYPE_CEQ))
 			ubase_err(udev, "failed to destroy ceq[%u].\n", i);
 	}
-	mutex_lock(&udev->irq_table.ceq_lock);
-	devm_kfree(udev->dev, ceqs->ceq);
-	ceqs->ceq = NULL;
-	mutex_unlock(&udev->irq_table.ceq_lock);
+
+	if (!test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits)) {
+		devm_kfree(udev->dev, ceqs->ceq);
+		ceqs->ceq = NULL;
+	}
 }
 
 static void ubase_flush_ae_work(struct ubase_dev *udev)
@@ -955,19 +934,17 @@ static int ubase_request_ceq_irqs(struct ubase_dev *udev,
 	if (ubase_dev_pmu_supported(udev))
 		return 0;
 
-	mutex_lock(&udev->irq_table.ceq_lock);
-	ceq_irq_num = udev->caps.dev_caps.num_ceq_vectors;
-	ceqs->ceq = devm_kcalloc(udev->dev, ceq_irq_num,
-				 sizeof(struct ubase_ceq), GFP_KERNEL);
-	if (!ceqs->ceq) {
-		mutex_unlock(&udev->irq_table.ceq_lock);
-		return -ENOMEM;
+	if (!test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits)) {
+		ceq_irq_num = udev->caps.dev_caps.num_ceq_vectors;
+		ceqs->ceq = devm_kcalloc(udev->dev, ceq_irq_num,
+					 sizeof(struct ubase_ceq), GFP_KERNEL);
+		if (!ceqs->ceq)
+			return -ENOMEM;
+
+		ceqs->num = ceq_irq_num;
 	}
-	mutex_unlock(&udev->irq_table.ceq_lock);
 
-	ceqs->num = ceq_irq_num;
-
-	for (i = 0; i < ceq_irq_num; i++) {
+	for (i = 0; i < ceqs->num; i++) {
 		ret = ubase_request_ceq_irq(udev, &ceqs->ceq[i], i, affinity);
 		if (ret) {
 			ubase_err(udev,
@@ -1108,14 +1085,12 @@ int ubase_irq_table_init(struct ubase_dev *udev)
 			for (j = 0; j < UBASE_EVENT_TYPE_MAX; j++)
 				BLOCKING_INIT_NOTIFIER_HEAD(&irq_table->nh[i][j]);
 		}
-		mutex_init(&udev->irq_table.ceq_lock);
 	}
 
 	ret = ubase_ubus_irq_vectors_alloc(udev->dev);
 	if (ret) {
-		ubase_err(udev, "failed to alloc irq vectors, ret = %d.\n",
-			  ret);
-		goto err_irq_res_init;
+		ubase_err(udev, "failed to alloc irq vectors, ret = %d.\n", ret);
+		return ret;
 	}
 
 	ret = ubase_irq_init(udev);
@@ -1141,9 +1116,6 @@ err_request_irq:
 	ubase_irq_uninit(udev);
 err_irq_init:
 	ubase_ubus_irq_vectors_free(udev->dev);
-err_irq_res_init:
-	if (!test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
-		mutex_destroy(&udev->irq_table.ceq_lock);
 
 	return ret;
 }
@@ -1166,9 +1138,6 @@ void ubase_irq_table_uninit(struct ubase_dev *udev)
 	ubase_irq_table_free(udev);
 	ubase_destroy_ceqs(udev);
 	ubase_destroy_aeq(udev);
-
-	if (!test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
-		mutex_destroy(&udev->irq_table.ceq_lock);
 }
 
 void ubase_disable_ce_irqs(struct ubase_dev *udev)

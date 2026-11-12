@@ -5,6 +5,7 @@
  */
 
 #include <linux/bitmap.h>
+#include <linux/limits.h>
 #include <linux/ummu_core.h>
 #include <linux/kernel.h>
 #include <ub/ubase/ubase_comm_dev.h>
@@ -261,40 +262,62 @@ void ubase_dtu_mem_uninit(struct ubase_dev *udev)
 	dma_free_iova(udev->dtu_info.dtu_slot);
 }
 
-void *ubase_dtu_alloc(struct ubase_dev *udev, struct page **page,
-		      size_t size, dma_addr_t *iova)
+static inline bool ubase_dtu_pa_invalid(phys_addr_t pa, int order,
+					u64 dtu_pa_base, u64 dtu_pa_size)
+{
+	u64 size = PAGE_SIZE << order;
+
+	return U64_MAX - dtu_pa_base < dtu_pa_size ||
+	       U64_MAX - pa < size ||
+	       pa < dtu_pa_base ||
+	       pa + size > dtu_pa_base + dtu_pa_size;
+}
+
+void *ubase_dtu_alloc(struct ubase_dev *udev, struct page **page_ptr,
+		      size_t size, dma_addr_t *iova_ptr)
 {
 	u64 dtu_iova_base = udev->caps.dev_caps.dtu_iova_base;
 	u64 dtu_pa_base = udev->caps.dev_caps.dtu_pa_base;
+	u64 dtu_pa_size = udev->caps.dev_caps.dtu_pa_size;
 	int order = get_order(size);
+	struct page *page;
+	dma_addr_t iova;
 	phys_addr_t pa;
 	void *va;
 	int ret;
 
-	*page = alloc_pages_node(udev->dtu_info.dtu_mem_node_id,
-				 udev->gfp | __GFP_ZERO, order);
-	if (!(*page)) {
+	page = alloc_pages_node(udev->dtu_info.dtu_mem_node_id,
+				udev->gfp | __GFP_ZERO, order);
+	if (!page) {
 		ubase_err(udev, "failed to alloc pages, size = %lu, order = %d.\n",
 			  size, order);
 		return NULL;
 	}
 
-	pa = page_to_phys(*page);
-	va = page_address(*page);
-	*iova = pa + dtu_iova_base - dtu_pa_base;
+	pa = page_to_phys(page);
+	if (ubase_dtu_pa_invalid(pa, order, dtu_pa_base, dtu_pa_size)) {
+		ubase_err(udev, "dtu pages out of range, size = %lu, order = %d.\n",
+			  size, order);
+		goto err_dtu_alloc;
+	}
 
-	ret = iommu_map(udev->dtu_info.domain, *iova, pa, PAGE_SIZE << order,
+	va = page_address(page);
+	iova = pa - dtu_pa_base + dtu_iova_base;
+
+	ret = iommu_map(udev->dtu_info.domain, iova, pa, PAGE_SIZE << order,
 			IOMMU_READ | IOMMU_WRITE, GFP_KERNEL);
 	if (ret) {
 		ubase_err(udev, "failed to map iova, ret = %d.\n", ret);
-		goto err_iommu_map;
+		goto err_dtu_alloc;
 	}
+
+	*page_ptr = page;
+	*iova_ptr = iova;
 
 	return va;
 
-err_iommu_map:
-	__free_pages(*page, order);
-	*page = NULL;
+err_dtu_alloc:
+	__free_pages(page, order);
 
 	return NULL;
 }
