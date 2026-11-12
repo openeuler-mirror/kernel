@@ -91,3 +91,21 @@ config CGROUP_XCU
 
       Required for systems requiring fine-grained resource control in cgroups.
       If unsure, say N.
+
+config FAMEM
+    bool "Enable FaMem (Fast-Map Memory) NPU HBM management"
+    default n
+    help
+      This option enables the FaMem (Fast-Map Memory) feature for managing
+      NPU HBM (High Bandwidth Memory) across multiple model instances.
+
+      FaMem establishes a stable virtual address Arena per NPU to hold model
+      weights and KV Cache. A native HBM server owns the physical pages and
+      manages cross-model leases. Suspend releases physical HBM while
+      preserving virtual addresses; resume uses a dedicated Copier process to
+      restore weights layer-by-layer (H2D), overlapping weight loading with
+      inference computation to significantly reduce model-switching latency
+      and enable time-division multiplexing of HBM across model instances.
+
+      This code is userspace-oriented and is isolated from the kernel build
+      by this config option. If unsure, say N.

@@ -8,3 +8,5 @@ obj-$(CONFIG_XCU_SCHED_CFS) += cfs.o cfs_quota.o
 obj-$(CONFIG_CGROUP_XCU) += cgroup.o
 obj-$(CONFIG_CGROUP_DMEM) += dmem.o
 endif
+
+obj- += famem_hbm_server.o
