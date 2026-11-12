@@ -9,7 +9,6 @@
 #include <linux/delay.h>
 #include <linux/types.h>
 #include <linux/pci.h>
-#include <linux/delay.h>
 #include <linux/vgaarb.h>
 #include <linux/io-64-nonatomic-lo-hi.h>
 #include <asm/cacheflush.h>
@@ -99,6 +98,14 @@ static void pci_fixup_vgadev(struct pci_dev *pdev)
 			vga_set_default_device(devp);
 			dev_info(&pdev->dev,
 				"Overriding boot device as %X:%X\n",
+				devp->vendor, devp->device);
+		}
+	}
+}
+DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_LOONGSON, PCI_DEVICE_ID_LOONGSON_DC1, pci_fixup_vgadev);
+DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_LOONGSON, PCI_DEVICE_ID_LOONGSON_DC2, pci_fixup_vgadev);
+DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_LOONGSON, PCI_DEVICE_ID_LOONGSON_DC3, pci_fixup_vgadev);
+
 
 #define DEV_LS2K3000_DC 0x7a46
 #define DEV_LS2K2000_DC 0x7a36
@@ -190,8 +197,10 @@ DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_LOONGSON, DEV_LS2K2000_GPU,
 DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_LOONGSON, DEV_LS2K3000_GPU,
 			loongson_dma_hangs_early_quirk);
 DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_LOONGSON, DEV_LS2K2000_GPU,
+			loongson_dma_hangs_final_quirk);
 DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_LOONGSON, DEV_LS2K3000_GPU,
 			loongson_dma_hangs_final_quirk);
+
 
 static void loongson_display_quirk(struct pci_dev *dev)
 {
@@ -241,13 +250,3 @@ DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_LOONGSON, 0x7a15, loongson_display_quirk);
 DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_LOONGSON, 0x7a25, loongson_display_quirk);
 DECLARE_PCI_FIXUP_CLASS_FINAL(PCI_ANY_ID, PCI_ANY_ID,
 			      PCI_BASE_CLASS_DISPLAY, 16, loongson_display_quirk);
-			loongson_dma_hangs_final_quirk);
-				devp->vendor, devp->device);
-		}
-	}
-}
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_LOONGSON, PCI_DEVICE_ID_LOONGSON_DC1, pci_fixup_vgadev);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_LOONGSON, PCI_DEVICE_ID_LOONGSON_DC2, pci_fixup_vgadev);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_LOONGSON, PCI_DEVICE_ID_LOONGSON_DC3, pci_fixup_vgadev);
-
-
