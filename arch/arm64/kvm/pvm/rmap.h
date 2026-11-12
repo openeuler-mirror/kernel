@@ -12,10 +12,27 @@
 #include <linux/spinlock.h>
 
 struct kvm;
+struct kvm_pgtable;
+struct kvm_pgtable_visit_ctx;
 struct kvm_s2_mmu;
 struct kvm_s1_trans;
 struct kvm_pvm_rmap_cache;
 struct kvm_pvm_rmap_ctx;
+
+#define KVM_PVM_UNMAP_BATCH_SIZE	64
+
+struct kvm_pvm_unmap_page {
+	struct kvm_pgtable *pgt;
+	u64 addr;
+};
+
+/*
+ * Caller holds the owning VM's mmu_lock for writing throughout.
+ * The pages array is sorted in place; its original order is not preserved.
+ */
+int kvm_pvm_unmap_shadow_pages(struct kvm_pvm_unmap_page *pages,
+			       unsigned int nr,
+			       struct kvm_pgtable_visit_ctx *scratch);
 
 enum kvm_pvm_rmap_state {
 	PVM_RMAP_COMPLETE,

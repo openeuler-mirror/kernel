@@ -4,6 +4,7 @@
  * Author: Kunkun Jiang <jiangkunkun@huawei.com>
  */
 
+#include <linux/sort.h>
 #include <linux/kvm_host.h>
 
 #include <asm/insn.h>
@@ -40,6 +41,56 @@ static bool pvm_mmu_is_kernel(struct kvm_s2_mmu *mmu)
 	       container_of(mmu, struct kvm_pvm_mmu, mmu)->kern_pgd;
 }
 
+static unsigned int pvm_batch_key(const struct kvm_pvm_unmap_page *page)
+{
+	struct kvm_s2_mmu *mmu = page->pgt->mmu;
+
+	/* Shared kernel translations must be invalidated across all ASIDs. */
+	return pvm_mmu_is_kernel(mmu) ? BIT(16) : pvm_mmu_asid(mmu);
+}
+
+static int pvm_batch_compare(const void *a, const void *b)
+{
+	const struct kvm_pvm_unmap_page *left = a, *right = b;
+	unsigned int lk = pvm_batch_key(left), rk = pvm_batch_key(right);
+
+	if (lk != rk)
+		return lk < rk ? -1 : 1;
+	return left->addr < right->addr ? -1 : left->addr > right->addr;
+}
+
+void kvm_pvm_flush_shadow_tlb_batch(struct kvm_pvm_unmap_page *pages,
+				    unsigned int nr)
+{
+	unsigned int i = 0;
+
+	/* Reordering the targets does not change the saved leaf-cleanup records. */
+	sort(pages, nr, sizeof(*pages), pvm_batch_compare, NULL);
+	dsb(ishst);
+	while (i < nr) {
+		unsigned int key = pvm_batch_key(&pages[i]);
+		u64 start = pages[i].addr, end = start + PAGE_SIZE, nr_pages;
+
+		i++;
+		while (i < nr && pvm_batch_key(&pages[i]) == key &&
+		       pages[i].addr <= end) {
+			end = max(end, pages[i].addr + PAGE_SIZE);
+			i++;
+		}
+		nr_pages = (end - start) >> PAGE_SHIFT;
+		if (key == BIT(16)) {
+			start = sign_extend64(start, PVM_SHADOW_S1_VA_BITS - 1);
+			__flush_tlb_range_op(vaae1is, start, nr_pages,
+					     PAGE_SIZE, 0, 0, false);
+		} else {
+			__flush_tlb_range_op(vae1is, start, nr_pages,
+					     PAGE_SIZE, key, 0, false);
+		}
+	}
+	dsb(ish);
+	isb();
+}
+
 void kvm_pvm_flush_shadow_tlb(struct kvm_s2_mmu *mmu)
 {
 	if (pvm_mmu_is_kernel(mmu)) {
@@ -68,15 +119,21 @@ void kvm_pvm_flush_shadow_tlb(struct kvm_s2_mmu *mmu)
 void kvm_pvm_flush_shadow_tlb_ipa(struct kvm_s2_mmu *mmu, u64 addr, int level)
 {
 	if (level != KVM_PGTABLE_MAX_LEVELS - 1) {
-		if (!pvm_mmu_is_kernel(mmu) && (level == 1 || level == 2) &&
+		if ((level == 1 || level == 2) &&
 		    system_supports_tlb_range()) {
 			u64 size = kvm_granule_size(level);
 			u64 start = ALIGN_DOWN(addr, size);
 
 			dsb(ishst);
 			/* Invalidate intermediate walks as well as the retired leaves. */
-			__flush_tlb_range_op(vae1is, start, size >> PAGE_SHIFT,
-					     PAGE_SIZE, pvm_mmu_asid(mmu), 0, false);
+			if (pvm_mmu_is_kernel(mmu)) {
+				start = sign_extend64(start, PVM_SHADOW_S1_VA_BITS - 1);
+				__flush_tlb_range_op(vaae1is, start, size >> PAGE_SHIFT,
+						     PAGE_SIZE, 0, 0, false);
+			} else {
+				__flush_tlb_range_op(vae1is, start, size >> PAGE_SHIFT,
+						     PAGE_SIZE, pvm_mmu_asid(mmu), 0, false);
+			}
 			dsb(ish);
 			return;
 		}

@@ -571,24 +571,109 @@ void kvm_pvm_rmap_reclaim_leaf(struct kvm_s2_mmu *mmu, u64 addr)
 	pvm->rmap.blocked--;
 }
 
+struct pvm_rmap_unmap_batch {
+	struct kvm_pvm_unmap_page pages[KVM_PVM_UNMAP_BATCH_SIZE];
+	struct kvm_pgtable_visit_ctx *scratch;
+};
+
+static unsigned int pvm_rmap_collect(struct kvm_pvm_rmap *rmap,
+				     gfn_t start, gfn_t end,
+				     struct pvm_rmap_unmap_batch *batch)
+{
+	struct pvm_rmap_entry *entry = pvm_rmap_find_gfn(rmap, start, end);
+	struct pvm_rmap_bucket *bucket;
+	struct rb_node *node;
+	unsigned int nr = 0;
+
+	for (node = entry ? &entry->gfn_node : NULL; node; node = rb_next(node)) {
+		entry = rb_entry(node, struct pvm_rmap_entry, gfn_node);
+		if (entry->gfn >= end)
+			break;
+		batch->pages[nr++] = (struct kvm_pvm_unmap_page) {
+			.pgt = entry->mmu->pgt, .addr = entry->addr,
+		};
+		if (nr == KVM_PVM_UNMAP_BATCH_SIZE)
+			return nr;
+	}
+	bucket = pvm_rmap_find_bucket(rmap, start, end);
+	for (node = bucket ? &bucket->node : NULL; node; node = rb_next(node)) {
+		struct pvm_rmap_dep *dep;
+
+		bucket = rb_entry(node, struct pvm_rmap_bucket, node);
+		if (bucket->gfn >= end)
+			break;
+		hlist_for_each_entry(dep, &bucket->deps, bucket_link) {
+			unsigned int i;
+
+			entry = dep->entry;
+			for (i = 0; i < nr; i++)
+				if (batch->pages[i].pgt == entry->mmu->pgt &&
+				    batch->pages[i].addr == entry->addr)
+					break;
+			if (i != nr)
+				continue;
+			batch->pages[nr++] = (struct kvm_pvm_unmap_page) {
+				.pgt = entry->mmu->pgt, .addr = entry->addr,
+			};
+			if (nr == KVM_PVM_UNMAP_BATCH_SIZE)
+				return nr;
+		}
+	}
+	return nr;
+}
+
 bool kvm_pvm_rmap_invalidate(struct kvm *kvm, gfn_t start, gfn_t end,
 			     bool may_block)
 {
 	struct kvm_pvm *pvm = kvm_to_pvm(kvm);
 	struct kvm_pvm_rmap *rmap = &pvm->rmap;
+	struct pvm_rmap_unmap_batch *batch = NULL;
+	bool success = false;
 
 	lockdep_assert_held_write(&kvm->mmu_lock);
 	if (start >= end)
 		return true;
 	pvm->invalidate_seq++;
 	if (rmap->state != PVM_RMAP_COMPLETE)
-		return false;
+		goto out;
+	batch = kmalloc(sizeof(*batch), GFP_NOWAIT);
+	if (batch) {
+		batch->scratch = kmalloc_array(KVM_PVM_UNMAP_BATCH_SIZE,
+					       sizeof(*batch->scratch), GFP_NOWAIT);
+		if (!batch->scratch) {
+			kfree(batch);
+			batch = NULL;
+		}
+	}
 	for (;;) {
 		struct pvm_rmap_entry *entry;
 		struct pvm_rmap_bucket *bucket;
 		struct kvm_s2_mmu *mmu;
 		u64 addr;
 		int ret;
+
+		if (batch) {
+			unsigned int i, nr;
+
+			nr = pvm_rmap_collect(rmap, start, end, batch);
+			if (!nr)
+				break;
+			ret = kvm_pvm_unmap_shadow_pages(batch->pages, nr,
+							 batch->scratch);
+			for (i = 0; !ret && i < nr; i++)
+				if (pvm_rmap_find_va(batch->pages[i].pgt->mmu,
+						     batch->pages[i].addr))
+					ret = -EINVAL;
+			if (ret || rmap->state != PVM_RMAP_COMPLETE) {
+				rmap->state = PVM_RMAP_UNTRUSTED;
+				goto out;
+			}
+			if (may_block)
+				cond_resched_rwlock_write(&kvm->mmu_lock);
+			if (rmap->state != PVM_RMAP_COMPLETE)
+				goto out;
+			continue;
+		}
 
 		entry = pvm_rmap_find_gfn(rmap, start, end);
 		if (!entry) {
@@ -608,12 +693,17 @@ bool kvm_pvm_rmap_invalidate(struct kvm *kvm, gfn_t start, gfn_t end,
 		    rmap->state != PVM_RMAP_COMPLETE)
 			rmap->state = PVM_RMAP_UNTRUSTED;
 		if (rmap->state != PVM_RMAP_COMPLETE)
-			return false;
+			goto out;
 		if (may_block)
 			cond_resched_rwlock_write(&kvm->mmu_lock);
 		/* Re-query after every removal and after any MMU teardown. */
 		if (rmap->state != PVM_RMAP_COMPLETE)
-			return false;
+			goto out;
 	}
-	return true;
+	success = true;
+out:
+	if (batch)
+		kfree(batch->scratch);
+	kfree(batch);
+	return success;
 }

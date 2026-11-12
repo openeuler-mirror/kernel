@@ -1243,8 +1243,8 @@ int kvm_pgtable_stage2_set_owner(struct kvm_pgtable *pgt, u64 addr, u64 size,
 	return ret;
 }
 
-static int stage2_unmap_walker(const struct kvm_pgtable_visit_ctx *ctx,
-			       enum kvm_pgtable_walk_flags visit)
+static int stage2_unmap_one(const struct kvm_pgtable_visit_ctx *ctx,
+			    enum kvm_pgtable_walk_flags visit, bool invalidated)
 {
 	struct kvm_pgtable *pgt = ctx->arg;
 	struct kvm_s2_mmu *mmu = pgt->mmu;
@@ -1274,7 +1274,10 @@ static int stage2_unmap_walker(const struct kvm_pgtable_visit_ctx *ctx,
 	 * block entry and rely on the remaining portions being faulted
 	 * back lazily.
 	 */
-	stage2_unmap_put_pte(ctx, mmu, mm_ops);
+	if (invalidated)
+		mm_ops->put_page(ctx->ptep);
+	else
+		stage2_unmap_put_pte(ctx, mmu, mm_ops);
 
 	if (is_pvm_mode() && !childp)
 		kvm_pvm_rmap_unmap(mmu, ctx->addr, kvm_granule_size(ctx->level));
@@ -1293,6 +1296,12 @@ static int stage2_unmap_walker(const struct kvm_pgtable_visit_ctx *ctx,
 	return 0;
 }
 
+static int stage2_unmap_walker(const struct kvm_pgtable_visit_ctx *ctx,
+			       enum kvm_pgtable_walk_flags visit)
+{
+	return stage2_unmap_one(ctx, visit, false);
+}
+
 int kvm_pgtable_stage2_unmap(struct kvm_pgtable *pgt, u64 addr, u64 size)
 {
 	int ret;
@@ -1307,6 +1316,77 @@ int kvm_pgtable_stage2_unmap(struct kvm_pgtable *pgt, u64 addr, u64 size)
 		/* Perform the deferred TLB invalidations */
 		kvm_tlb_flush_vmid_range(pgt->mmu, addr, size);
 
+	return ret;
+}
+
+struct pvm_unmap_pages_data {
+	struct kvm_pgtable *pgt;
+	struct kvm_pgtable_visit_ctx *scratch;
+	unsigned int nr;
+};
+
+static int pvm_unmap_pages_leaf(const struct kvm_pgtable_visit_ctx *ctx,
+				enum kvm_pgtable_walk_flags visit)
+{
+	struct pvm_unmap_pages_data *data = ctx->arg;
+	struct kvm_pgtable_visit_ctx *saved;
+
+	if (!kvm_pte_valid(ctx->old))
+		return 0;
+	if (ctx->level != KVM_PGTABLE_MAX_LEVELS - 1)
+		return -EINVAL;
+	saved = &data->scratch[data->nr++];
+	*saved = *ctx;
+	saved->arg = data->pgt;
+	/* Retain page-table references until invalidation completes. */
+	kvm_clear_pte(ctx->ptep);
+	return 0;
+}
+
+int kvm_pvm_unmap_shadow_pages(struct kvm_pvm_unmap_page *pages,
+			       unsigned int nr,
+			       struct kvm_pgtable_visit_ctx *scratch)
+{
+	struct pvm_unmap_pages_data data = { .scratch = scratch };
+	struct kvm_pgtable_walker walker = {
+		.cb = pvm_unmap_pages_leaf,
+		.arg = &data,
+		.flags = KVM_PGTABLE_WALK_LEAF,
+	};
+	struct kvm_arch *arch;
+	unsigned int i;
+	int ret = 0;
+
+	if (!is_pvm_mode() || PAGE_SHIFT != 12 || !pages || !scratch ||
+	    !nr || nr > KVM_PVM_UNMAP_BATCH_SIZE || !pages[0].pgt)
+		return -EINVAL;
+	arch = pages[0].pgt->mmu->arch;
+	for (i = 0; i < nr; i++) {
+		if (!pages[i].pgt || !IS_ALIGNED(pages[i].addr, PAGE_SIZE) ||
+		    pages[i].pgt->mmu->arch != arch)
+			return -EINVAL;
+	}
+	if (nr == 1)
+		return kvm_pgtable_stage2_unmap(pages[0].pgt, pages[0].addr, PAGE_SIZE);
+	for (i = 0; i < nr; i++) {
+		data.pgt = pages[i].pgt;
+		ret = kvm_pgtable_walk(data.pgt, pages[i].addr, PAGE_SIZE, &walker);
+		if (ret)
+			break;
+	}
+	if (data.nr) {
+		kvm_pvm_flush_shadow_tlb_batch(pages, nr);
+		for (i = 0; i < data.nr; i++)
+			stage2_unmap_one(&scratch[i], KVM_PGTABLE_WALK_LEAF, true);
+	}
+	/* Reclaim empty tables only after all queued leaf references are dropped. */
+	for (i = 0; i < nr; i++) {
+		int err = kvm_pgtable_stage2_unmap(pages[i].pgt, pages[i].addr,
+						 PAGE_SIZE);
+
+		if (!ret)
+			ret = err;
+	}
 	return ret;
 }
 

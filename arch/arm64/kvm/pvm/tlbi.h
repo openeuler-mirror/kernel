@@ -12,8 +12,11 @@
 struct kvm_vcpu;
 
 struct kvm_s2_mmu;
+struct kvm_pvm_unmap_page;
 
 void kvm_pvm_flush_tlb_asid(u16 asid);
+void kvm_pvm_flush_shadow_tlb_batch(struct kvm_pvm_unmap_page *pages,
+				    unsigned int nr);
 void kvm_pvm_flush_shadow_tlb(struct kvm_s2_mmu *mmu);
 void kvm_pvm_flush_shadow_tlb_ipa(struct kvm_s2_mmu *mmu, u64 addr, int level);
 void kvm_pvm_flush_shadow_tlb_ipa_nsh(struct kvm_s2_mmu *mmu, u64 addr, int level);
