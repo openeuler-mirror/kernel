@@ -1426,7 +1426,7 @@ static void stage2_unmap_drain(struct stage2_unmap_selected_data *data)
 		return;
 
 	/* Complete invalidation before cleaning memory or dropping references. */
-	kvm_call_hyp(__kvm_tlb_flush_vmid, data->pgt->mmu);
+	kvm_pvm_flush_shadow_tlb_entries(data->pgt->mmu, data->batch, data->nr);
 	for (i = 0; i < data->nr; i++)
 		stage2_unmap_one(&data->batch[i], KVM_PGTABLE_WALK_LEAF, true);
 	data->nr = 0;

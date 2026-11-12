@@ -114,6 +114,25 @@ void kvm_pvm_flush_shadow_tlb(struct kvm_s2_mmu *mmu)
 	}
 }
 
+/* Complete leaf invalidation before the saved walk records are cleaned up. */
+void kvm_pvm_flush_shadow_tlb_entries(struct kvm_s2_mmu *mmu,
+				      struct kvm_pgtable_visit_ctx *entries,
+				      unsigned int nr)
+{
+	struct kvm_pvm_unmap_page pages[KVM_PVM_UNMAP_BATCH_SIZE];
+	unsigned int i;
+
+	if (!pvm_mmu_is_kernel(mmu)) {
+		kvm_pvm_flush_shadow_tlb(mmu);
+		return;
+	}
+	for (i = 0; i < nr; i++) {
+		pages[i].pgt = mmu->pgt;
+		pages[i].addr = entries[i].addr;
+	}
+	kvm_pvm_flush_shadow_tlb_batch(pages, nr);
+}
+
 /**
  * kvm_pvm_flush_shadow_tlb_ipa() - Invalidate a shadow mapping or subtree
  * @mmu: Shadow translation context owning the mapping.

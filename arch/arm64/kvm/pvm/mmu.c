@@ -733,6 +733,7 @@ void kvm_pvm_unmap_shadows(struct kvm *kvm, bool may_block)
 void kvm_pvm_unmap_shadow_range(struct kvm *kvm, u64 addr, u64 size)
 {
 	struct kvm_pvm *pvm = kvm_to_pvm(kvm);
+	struct kvm_pgtable_visit_ctx *batch = NULL;
 	bool kernel = addr >= PVM_SHADOW_S1_KERNEL_BASE;
 	size_t i, nr = kernel ? pvm->skern_mmus_size : pvm->suser_mmus_size;
 
@@ -744,6 +745,9 @@ void kvm_pvm_unmap_shadow_range(struct kvm *kvm, u64 addr, u64 size)
 		kvm_pvm_unmap_shadows(kvm, true);
 		return;
 	}
+	if (kernel && size > PAGE_SIZE)
+		batch = kmalloc_array(KVM_PVM_UNMAP_BATCH_SIZE, sizeof(*batch),
+				      GFP_NOWAIT);
 	pvm->invalidating++;
 	pvm->invalidate_seq++;
 	for (i = 0; i < nr; i++) {
@@ -758,13 +762,22 @@ void kvm_pvm_unmap_shadow_range(struct kvm *kvm, u64 addr, u64 size)
 			pvm_unmap_mmu(mmu, false);
 		} else {
 			limit = BIT_ULL(mmu->mmu.pgt->ia_bits);
-			if (addr < limit)
+			if (addr < limit && batch) {
+				u64 range_size = min(size, limit - addr);
+				int ret;
+
+				ret = kvm_pvm_unmap_shadow_selected(mmu->mmu.pgt,
+								    addr, range_size, 0, batch);
+				if (ret)
+					pvm_unmap_mmu(mmu, false);
+			} else if (addr < limit)
 				unmap_stage2_range(&mmu->mmu, addr,
 						   min(size, limit - addr), false);
 		}
 	}
 	pvm->invalidate_seq++;
 	pvm->invalidating--;
+	kfree(batch);
 }
 
 static bool pvm_asid_matches(struct kvm_pvm_mmu *mmu, u16 asid)
