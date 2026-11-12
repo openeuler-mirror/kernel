@@ -185,6 +185,8 @@ static long fd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 		if (get_user(bytes, &ua->max))
 			return -EFAULT;
+		if (bytes > MFS_MAXPATHLEN)
+			return -ENAMETOOLONG;
 		rpath = kzalloc(bytes + sizeof(struct mfs_ioc_rpath), GFP_KERNEL);
 		if (!rpath)
 			return -ENOMEM;
