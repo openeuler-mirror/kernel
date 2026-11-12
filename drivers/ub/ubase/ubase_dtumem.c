@@ -231,10 +231,9 @@ int ubase_dtu_mem_init(struct ubase_dev *udev)
 	udev->dtu_info.dtu_slot = dma_alloc_iova(udev->dev,
 						 udev->caps.dev_caps.dtu_pa_size,
 						 0, &iova_base, &size);
-	if (!udev->dtu_info.dtu_slot || !iova_base ||
-	    size != udev->caps.dev_caps.dtu_pa_size) {
-		ubase_err(udev, "failed to alloc dtu iova, dtu_pa_size = %llu, size = %lu.\n",
-			  udev->caps.dev_caps.dtu_pa_size, size);
+	if (IS_ERR_OR_NULL(udev->dtu_info.dtu_slot)) {
+		ubase_err(udev, "failed to alloc dtu iova, dtu_pa_size = %llu.\n",
+			  udev->caps.dev_caps.dtu_pa_size);
 		return -ENOMEM;
 	}
 

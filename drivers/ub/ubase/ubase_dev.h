@@ -52,7 +52,10 @@ struct ubase_ue_node {
 	struct list_head			list;
 	u16					bus_ue_id;
 	u8					isolated;
+	u8					extbuf_ok;
 	struct ubase_cmdq_ratelimit_stats	cmdq_ratelimit_stats;
+	u16					extq_start_id;
+	u16					extq_end_id;
 };
 
 struct ubase_cmdq_desc;
@@ -165,8 +168,14 @@ struct ubase_ctx_page {
 };
 
 struct ubase_ta_layer_ctx {
-	struct ubase_dma_buf	extdb_buf;
 	struct ubase_dma_buf	timer_buf;
+	struct ubase_dma_buf	extdb_buf;
+	struct iova_slot	*extdb_slot;
+	dma_addr_t		extdb_iova;
+	u32			extdb_buf_que_size;
+	u16			extq_start_id;
+	u16			extq_end_id;
+	u8			extbuf_ok;
 };
 
 struct ubase_tp_layer_ctx {
@@ -643,6 +652,37 @@ static inline bool ubase_dev_batch_query_pmu_supported(struct ubase_dev *udev)
 	return ubase_get_cap_bit(udev, UBASE_SUPPORT_BATCH_QUERY_PMU_B);
 }
 
+static inline bool __ubase_dev_extbuf_manage_in_que_supported(struct ubase_dev *udev)
+{
+	return ubase_get_cap_bit(udev, UBASE_SUPPORT_EXTBUF_MANAGE_IN_QUE_B);
+}
+
+static inline bool ubase_dev_extbuf_manage_in_que_supported(struct ubase_dev *udev)
+{
+	if (!__ubase_dev_extbuf_manage_in_que_supported(udev))
+		return false;
+
+	/*
+	 * If the buf_size of a single queue is not an integer multiple of a
+	 * PAGE, it indicates that the number of jetty instances is small and
+	 * the memory usage is relatively low. In this case, there is no need
+	 * to support memory management int queue, thus can avoid errors
+	 * caused by misaligned memory pages in the queue.
+	 */
+	if (udev->ta_ctx.extdb_buf_que_size % PAGE_SIZE)
+		return false;
+
+	/*
+	 * DTU feature requires contiguous physical memory, so it conflicts with
+	 * this feature. If both features are supported, the DTU feature takes
+	 * effect first to ensure performance.
+	 */
+	if (ubase_dev_dtu_supported(udev))
+		return false;
+
+	return true;
+}
+
 static inline u32 ubase_jfs_num(struct ubase_dev *udev)
 {
 	struct ubase_adev_caps *unic_caps = &udev->caps.unic_caps;
@@ -709,7 +749,7 @@ void ubase_suspend_aux_devices(struct ubase_dev *udev,
 int ubase_resume_aux_devices(struct ubase_dev *udev,
 			     enum ubase_reset_stage stage);
 
-void ubase_virt_handler(struct ubase_dev *udev, u16 bus_ue_id, bool is_en);
+int ubase_virt_handler(struct ubase_dev *udev, u16 bus_ue_id, bool is_en);
 
 void __ubase_deactivate_dev(struct ubase_dev *udev);
 
