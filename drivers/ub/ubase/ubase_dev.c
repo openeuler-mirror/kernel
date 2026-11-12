@@ -18,6 +18,7 @@
 #include "ubase_dtumem.h"
 #include "ubase_hw.h"
 #include "ubase_mailbox.h"
+#include "ubase_mem.h"
 #include "ubase_pmem.h"
 #include "ubase_proxy.h"
 #include "ubase_rct.h"
@@ -967,6 +968,10 @@ static const struct ubase_init_function ubase_init_func_map[] = {
 	{
 		"query dev res", UBASE_SUP_ALL, 0,
 		ubase_query_dev_res, NULL
+	},
+	{
+		"init mem ops", UBASE_SUP_ALL, 0,
+		ubase_mem_ops_init, NULL
 	},
 	{
 		"dtu memory", UBASE_SUP_NO_PMU, 0,

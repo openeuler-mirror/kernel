@@ -424,6 +424,15 @@ struct ubase_mem_init_ops {
 	void (*mem_uninit)(struct device *dev, struct ubase_mm_ops *mm_ops);
 };
 
+struct ubase_eq_ops {
+	int (*alloc)(struct ubase_dev *udev, struct ubase_eq *eq);
+	void (*free)(struct ubase_dev *udev, struct ubase_eq *eq);
+};
+
+struct ubase_mem_ops {
+	struct ubase_eq_ops		eq;
+};
+
 typedef int (*ub_entity_enable_ret)(struct ub_entity *uent, u8 enable);
 
 struct ubase_mbx_stats {
@@ -492,6 +501,7 @@ struct ubase_dev {
 	struct ubase_dtu_info	dtu_info;
 	struct ubase_mem_init_ops	mem_init_ops;
 	struct ubase_mm_ops	mm_ops;
+	struct ubase_mem_ops	mem_ops;
 	gfp_t			gfp;
 	unsigned long		status;
 	int (*ub_entity_enable_ret)(struct ub_entity *uent, u8 enable);
