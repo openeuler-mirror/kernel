@@ -8,10 +8,11 @@
 #include <linux/iommu.h>
 #include <linux/ktime.h>
 
-#include "ubase_cmd.h"
 #include "ubase_arq.h"
 #include "ubase_hw.h"
 #include "ubase_mailbox.h"
+#include "ubase_timing.h"
+#include "ubase_cmd.h"
 
 /* When use tracepoint, must define "CREATE_TRACE_POINTS" before include the
  * trace header file.
@@ -1007,14 +1008,14 @@ static inline u32 ubase_mbx_get_send_cmd_timeout(struct ubase_dev *udev,
 						 struct ubase_mbx_attr *attr)
 {
 	return ubase_mbx_need_extend_timeout(udev, attr) ?
-	       del_jfs_send_cmd_timeout : UBASE_CMDQ_MBX_TX_TIMEOUT;
+	       del_jfs_send_cmd_timeout : UBASE_MBX_TX_TIMEOUT;
 }
 
 static inline u32 ubase_mbx_get_wait_ae_timeout(struct ubase_dev *udev,
 						struct ubase_mbx_attr *attr)
 {
 	return ubase_mbx_need_extend_timeout(udev, attr) ?
-	       del_jfs_wait_ae_timeout : UBASE_CMDQ_MBX_TX_TIMEOUT;
+	       del_jfs_wait_ae_timeout : UBASE_MBX_TX_TIMEOUT;
 }
 
 static int ubase_cmd_wait_mbx_completed(struct ubase_dev *udev,

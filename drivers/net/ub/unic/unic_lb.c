@@ -57,7 +57,6 @@ static int unic_set_lb_mode(struct unic_dev *unic_dev, bool en, int loop_type)
 
 static int unic_lb_link_status_wait(struct unic_dev *unic_dev, bool en)
 {
-#define UNIC_LINK_STATUS_MS		30
 #define UNIC_MAC_LINK_STATUS_NUM	100
 
 	u8 link_status = UNIC_LINK_STATUS_DOWN;
@@ -76,7 +75,7 @@ static int unic_lb_link_status_wait(struct unic_dev *unic_dev, bool en)
 		if (link_status == link_ret)
 			return 0;
 
-		msleep(UNIC_LINK_STATUS_MS);
+		msleep(UNIC_LB_WAIT_LINK_STATUS_MS);
 	} while (++i < UNIC_MAC_LINK_STATUS_NUM);
 
 	unic_warn(unic_dev, "query mac link status timeout, en = %d.\n", en);
@@ -393,8 +392,7 @@ static int unic_lb_run_test(struct net_device *ndev, int loop_mode)
 		goto out;
 	}
 
-	/* Allow 200 milliseconds for packets to go from Tx to Rx */
-	msleep(200);
+	msleep(UNIC_LB_WAIT_TIME);
 
 	cnt = unic_lb_check_rx(unic_dev, UNIC_LB_TEST_PKT_NUM, skb);
 	if (cnt != UNIC_LB_TEST_PKT_NUM) {

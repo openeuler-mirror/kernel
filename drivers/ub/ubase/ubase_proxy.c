@@ -7,6 +7,7 @@
 #include <ub/ubase/ubase_comm_dev.h>
 
 #include "ubase_cmd.h"
+#include "ubase_timing.h"
 #include "ubase_proxy.h"
 
 int ubase_handle_ue_isolated_notify_event(void *dev, void *data, u32 len)
