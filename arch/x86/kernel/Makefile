@@ -169,3 +169,7 @@ ifeq ($(CONFIG_X86_64),y)
 endif
 
 obj-$(CONFIG_IMA_SECURE_AND_OR_TRUSTED_BOOT)	+= ima_arch.o
+
+obj-$(CONFIG_HYGON_CSV)			+= csv.o
+KASAN_SANITIZE_csv.o			:= n
+CFLAGS_csv.o				:= $(DISABLE_FTRACE)

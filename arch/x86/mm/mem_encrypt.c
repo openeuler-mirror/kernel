@@ -34,6 +34,7 @@
 /* HYGON added to avoid kabi breakage of pv_ops (start) */
 #include <asm/kvm_para.h>
 /* HYGON added to avoid kabi breakage of pv_ops (end) */
+#include <asm/csv.h>
 
 #include "mm_internal.h"
 
@@ -355,12 +356,16 @@ static void __init __set_clr_pte_enc(pte_t *kpte, int level, bool enc)
 	 */
 	clflush_cache_range(__va(pa), size);
 
+	if (csv3_active())
+		goto skip_in_place_enc_dec;
+
 	/* Encrypt/decrypt the contents in-place */
 	if (enc)
 		sme_early_encrypt(pa, size);
 	else
 		sme_early_decrypt(pa, size);
 
+skip_in_place_enc_dec:
 	/* Change the page encryption mask. */
 	new_pte = pfn_pte(pfn, new_prot);
 	set_pte_atomic(kpte, new_pte);
@@ -433,6 +438,15 @@ static int __init early_set_memory_enc_dec(unsigned long vaddr,
 	notify_range_enc_status_changed(start, size, enc);
 out:
 	__flush_tlb_all();
+
+	/*
+	 * On CSV3, the shared and private page attr changes should be managed
+	 * by secure processor. Private pages live in isolated memory region,
+	 * while shared pages live out of isolated memory region.
+	 */
+	if (csv3_active())
+		csv_early_memory_enc_dec(vaddr_end - size, size, enc);
+
 	return ret;
 }
 
