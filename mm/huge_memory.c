@@ -2562,7 +2562,8 @@ static inline int pmd_move_must_withdraw(spinlock_t *new_pmd_ptl,
 	 *
 	 * We also don't deposit and withdraw tables for file pages.
 	 */
-	return (new_pmd_ptl != old_pmd_ptl) && vma_is_anonymous(vma);
+	return (new_pmd_ptl != old_pmd_ptl) &&
+	       (vma_is_anonymous(vma) || arch_needs_pgtable_deposit(vma));
 }
 #endif
 
