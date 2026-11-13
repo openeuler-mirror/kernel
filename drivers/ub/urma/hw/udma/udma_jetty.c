@@ -1656,10 +1656,8 @@ int udma_verify_jetty_opt(struct udma_dev *udma_dev, struct udma_jetty_opt_attr 
 
 	/* The return value EEXIST indicates that the current opt does not need to be processed. */
 	if ((attr.is_user && (opt_info[opt_index].ignore_attr & USER_IGNORE)) ||
-		(!attr.is_user && (opt_info[opt_index].ignore_attr & KERNEL_IGNORE))) {
-		dev_info_ratelimited(udma_dev->dev, "opt %llu no need to process\n", attr.opt);
+	    (!attr.is_user && (opt_info[opt_index].ignore_attr & KERNEL_IGNORE)))
 		return -EEXIST;
-	}
 
 	return 0;
 }
