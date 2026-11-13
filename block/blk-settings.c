@@ -801,6 +801,9 @@ void disk_stack_limits(struct gendisk *disk, struct block_device *bdev,
 		pr_notice("%s: Warning: Device %pg is misaligned\n",
 			disk->disk_name, bdev);
 
+	if (!blk_queue_pci_p2pdma(bdev_get_queue(bdev)))
+		blk_queue_flag_clear(QUEUE_FLAG_PCI_P2PDMA, t);
+
 	disk_update_readahead(disk);
 }
 EXPORT_SYMBOL(disk_stack_limits);
