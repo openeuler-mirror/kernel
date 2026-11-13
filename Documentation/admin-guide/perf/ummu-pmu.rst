@@ -26,6 +26,38 @@ Constraints
 
 - No more than 8 events can be monitored at the same time.
 
+Interrupt Affinity
+==================
+
+The UMMU-PMU uses a single MSI to report counter overflows. On device tree
+platforms, the UMMU-PMU node accepts the ``interrupt-affinity`` property,
+which pins that interrupt to a fixed set of CPUs::
+
+    interrupt-affinity = <&cpu4>, <&cpu5>;
+
+The property uses the same syntax as the ``interrupt-affinity`` property
+defined by the ARM PMU binding: each entry is a single phandle pointing to a
+CPU node, written as its own ``<...>`` group and carrying no additional
+arguments.
+
+As on the UMMU side, entries are not matched to individual interrupts: all
+listed CPUs are collected into one CPU mask and applied to the single
+overflow interrupt with ``irq_set_affinity()``, after the interrupt has been
+registered::
+
+    ummu-pmu@0 {
+            compatible = "ub,ummu_pmu";
+            index = <0x0>;
+            msi-parent = <&its>;
+            interrupt-affinity = <&cpu4>, <&cpu5>;
+    };
+
+When the property is absent, the default interrupt placement is kept.
+Invalid phandles are reported with a warning and skipped, and a failing
+``irq_set_affinity()`` only produces a warning without failing the probe.
+Under ACPI the PMU platform device has no device node, so the property has
+no effect.
+
 UMMU PMU Events
 ===============
 

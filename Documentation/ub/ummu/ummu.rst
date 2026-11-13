@@ -105,6 +105,82 @@ the probe function `ummu_device_probe()`. This function identifies the
 device's hardware capabilities, allocates queues, configuration tables,
 and interrupt handlers, and initializes the associated resources.
 
+Interrupt Handling
+==================
+
+The UMMU driver requests two MSIs per UMMU device, both allocated from the
+platform MSI domain referenced by the ``msi-parent`` property:
+
+- **Event Queue (evtq) interrupt**:
+  Reports events written by the UMMU into the event queue. It is registered
+  as a threaded handler (``IRQF_ONESHOT``) serviced by
+  ``ummu_evtq_thread()``.
+
+- **Global Error (gerror) interrupt**:
+  Reports global errors detected by the UMMU. It is registered as a normal
+  hardirq handler serviced by ``ummu_gerror_handler()``.
+
+Both interrupts are set up by ``ummu_setup_irqs()`` during probe, after the
+event queue and the command queue have been initialized.
+
+Interrupt Affinity
+------------------
+
+By default the UMMU interrupts are left to the generic IRQ balancer. On
+device tree platforms, the UMMU and the UMMU-PMU nodes accept the
+``interrupt-affinity`` property, which pins their MSIs to a fixed set of
+CPUs::
+
+    interrupt-affinity = <&cpu1>, <&cpu3>;
+
+The property uses the same syntax as the ``interrupt-affinity`` property
+defined by the ARM PMU binding: each entry is a single phandle pointing to a
+CPU node, written as its own ``<...>`` group and carrying no additional
+arguments.
+
+The semantics are different, though. The ARM PMU binding matches the i-th
+entry to the i-th interrupt, while UMMU does not match entries to individual
+interrupts at all: all listed CPUs are collected into one CPU mask, which is
+applied to both the evtq and the gerror interrupt with
+``irq_set_affinity()`` right after the interrupts have been requested.
+
+Behaviour details:
+
+- If the property is absent or empty, the default interrupt placement is
+  kept and no message is emitted.
+- Phandles that cannot be parsed, or that do not resolve to a valid logical
+  CPU, are reported with a warning and skipped. If no valid CPU remains, the
+  affinity is left untouched.
+- A failing ``irq_set_affinity()`` is reported with a warning; probe
+  continues and the interrupt keeps its previous placement.
+- The property is only evaluated on device tree systems. UMMU platform
+  devices created from ACPI have no device node, so the property has no
+  effect there.
+
+Example which pins the UMMU interrupts to CPU1 and CPU3::
+
+    ummu@0 {
+            compatible = "ub,ummu";
+            index = <0x0>;
+            msi-parent = <&its>;
+            interrupt-affinity = <&cpu1>, <&cpu3>;
+    };
+
+UMMU-PMU Interrupt Affinity
+---------------------------
+
+The UMMU-PMU owns a single overflow MSI, registered as a non-threaded shared
+interrupt (``IRQF_NOBALANCING | IRQF_SHARED | IRQF_NO_THREAD``). It accepts
+the same ``interrupt-affinity`` property, and the whole CPU mask is applied
+to that single interrupt::
+
+    ummu-pmu@0 {
+            compatible = "ub,ummu_pmu";
+            index = <0x0>;
+            msi-parent = <&its>;
+            interrupt-affinity = <&cpu1>;
+    };
+
 UMMU Device Registration
 ========================
 
