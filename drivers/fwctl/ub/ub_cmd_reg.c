@@ -720,13 +720,13 @@ static int ubctl_query_conf_user_comm(struct ubctl_dev *ucdev,
 				      struct ubctl_query_cmd_param *query_cmd_param,
 				      struct ubctl_func_dispatch *query_func)
 {
+	u32 env_type = ubase_get_hw_ver(ucdev->adev);
 	struct ubctl_query_dp query_dp[] = {
 		{ 0, 0, 0, NULL, 0 },
 	};
-	struct ubctl_cmd_in_head *in_head_data = NULL;
-	u32 biz_data_size = 0;
-	void *tmp_buf = NULL;
-	u32 in_head_size = 0;
+	struct ubctl_cmd_in_head *in_head_data;
+	u32 biz_data_size, in_head_size;
+	void *tmp_buf;
 
 	if (!query_cmd_param || !query_cmd_param->in)
 		return -EINVAL;
@@ -738,6 +738,12 @@ static int ubctl_query_conf_user_comm(struct ubctl_dev *ucdev,
 	}
 
 	in_head_data = (struct ubctl_cmd_in_head *)query_cmd_param->in->data;
+	if (in_head_data->opcode == UBCTL_QUERY_TP_PRE_BER_DFX && env_type != UBASE_HW_VER_A_0) {
+		ubctl_err(ucdev, "rpc cmd(0x%x) cannot be used in current env type(%u)\n",
+			  UBCTL_QUERY_TP_PRE_BER_DFX, env_type);
+		return -EINVAL;
+	}
+
 	in_head_size = sizeof(struct ubctl_cmd_in_head);
 	biz_data_size = query_cmd_param->in->data_size - in_head_size;
 
