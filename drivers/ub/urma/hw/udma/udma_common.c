@@ -679,7 +679,7 @@ udma_alloc_hugepage_priv(struct udma_dev *dev, uint32_t len)
 	list_add(&priv->list, &dev->hugepage_list);
 
 	if (debug_switch)
-		dev_info_ratelimited(dev->dev, "alloc_hugepage, seq=%u, 2m_page_num=%u.\n",
+		udma_info_rl(dev->dev, "alloc_hugepage, seq=%u, 2m_page_num=%u.\n",
 				     priv->seq, priv->va_len >> UDMA_HUGEPAGE_SHIFT);
 	return priv;
 
@@ -727,7 +727,7 @@ udma_alloc_hugepage(struct udma_dev *dev, uint32_t len)
 	mutex_unlock(&dev->hugepage_lock);
 
 	if (debug_switch)
-		dev_info_ratelimited(dev->dev, "occupy_hugepage, seq=%u, 4k_page_num=%u.\n",
+		udma_info_rl(dev->dev, "occupy_hugepage, seq=%u, 4k_page_num=%u.\n",
 				     priv->seq, len >> UDMA_HW_PAGE_SHIFT);
 	return hugepage;
 }
@@ -742,11 +742,11 @@ static void udma_free_hugepage(struct udma_dev *dev, struct udma_hugepage *hugep
 	priv = hugepage->priv;
 
 	if (debug_switch)
-		dev_info_ratelimited(dev->dev, "return_hugepage, seq=%u.\n", priv->seq);
+		udma_info_rl(dev->dev, "return_hugepage, seq=%u.\n", priv->seq);
 	mutex_lock(&dev->hugepage_lock);
 	if (refcount_dec_and_test(&priv->refcnt)) {
 		if (debug_switch)
-			dev_info_ratelimited(dev->dev, "free_hugepage, seq=%u.\n", priv->seq);
+			udma_info_rl(dev->dev, "free_hugepage, seq=%u.\n", priv->seq);
 		list_del(&priv->list);
 
 		udma_unpin_k_addr(priv->umem);
@@ -768,13 +768,13 @@ static void *udma_iova_map(struct udma_dev *udma_dev, uint32_t size, struct udma
 	buf->pages = alloc_pages_node(udma_dev->dtu_info.dtu_mem_node_id,
 				      GFP_HIGHUSER_MOVABLE | __GFP_ZERO, get_order(align_size));
 	if (!buf->pages) {
-		dev_err_ratelimited(udma_dev->dev, "failed to alloc pages.\n");
+		udma_err_rl(udma_dev->dev, "failed to alloc pages.\n");
 		return NULL;
 	}
 
 	pa_addr = page_to_phys(buf->pages);
 	if (pa_addr < udma_dev->dtu_info.pa_base) {
-		dev_err_ratelimited(udma_dev->dev, "physical address is error.\n");
+		udma_err_rl(udma_dev->dev, "physical address is error.\n");
 		goto err_free_mem;
 	}
 	buf->addr = pa_addr - udma_dev->dtu_info.pa_base + udma_dev->dtu_info.iova_base;
@@ -808,7 +808,7 @@ int udma_k_alloc_buf(struct udma_dev *dev, struct udma_buf *buf, bool need_dtu)
 			return ret;
 		}
 
-		dev_warn_ratelimited(dev->dev, "DTU IOVA map unavailable, fallback to normal.\n");
+		udma_warn_rl(dev->dev, "DTU IOVA map unavailable, fallback to normal.\n");
 	}
 
 	buf->k_dtu_enable = false;
@@ -820,7 +820,7 @@ int udma_k_alloc_buf(struct udma_dev *dev, struct udma_buf *buf, bool need_dtu)
 			buf->addr = (uint64_t)buf->kva;
 			buf->is_hugepage = true;
 		} else {
-			dev_warn_ratelimited(dev->dev,
+			udma_warn_rl(dev->dev,
 				 "not enough hugepage buffer, switch to alloc normal buffer.\n");
 			ret = udma_alloc_normal_buf(dev, size, buf);
 		}
@@ -963,7 +963,7 @@ void udma_destroy_hugepage(struct udma_dev *dev)
 	mutex_lock(&dev->hugepage_lock);
 	list_for_each_entry_safe(priv, tmp, &dev->hugepage_list, list) {
 		list_del(&priv->list);
-		dev_info_ratelimited(dev->dev, "free_hugepage, seq=%u.\n", priv->seq);
+		udma_info_rl(dev->dev, "free_hugepage, seq=%u.\n", priv->seq);
 		udma_unpin_k_addr(priv->umem);
 		vfree(priv->va_base);
 		kfree(priv);

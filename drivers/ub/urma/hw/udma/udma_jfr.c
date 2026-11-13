@@ -59,7 +59,7 @@ static int udma_get_k_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr)
 	if (!jfr->rq.cstm) {
 		ret = udma_k_alloc_buf(dev, &jfr->rq.buf, false);
 		if (ret) {
-			dev_err(dev->dev, "failed to alloc RQ buffer, id=%u.\n", jfr->rq.id);
+			udma_err_rl(dev->dev, "failed to alloc RQ buffer, id=%u.\n", jfr->rq.id);
 			return ret;
 		}
 	}
@@ -68,7 +68,7 @@ static int udma_get_k_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr)
 	idx_buf_size = jfr->idx_que.buf.entry_size * jfr->idx_que.buf.entry_cnt;
 	ret = udma_alloc_normal_buf(dev, idx_buf_size, &jfr->idx_que.buf);
 	if (ret) {
-		dev_err(dev->dev,
+		udma_err_rl(dev->dev,
 			"failed to alloc IDX queue buffer for JFR when buffer size = %u.\n",
 			idx_buf_size);
 		goto err_idx_que;
@@ -81,7 +81,7 @@ static int udma_get_k_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr)
 	jfr->jetty_addr = (uintptr_t)&jfr->rq;
 
 	if (udma_alloc_sw_db(dev, &jfr->sw_db, UDMA_JFR_TYPE_DB)) {
-		dev_err(dev->dev, "failed to alloc SW doorbell for JFR(%u).\n", jfr->rq.id);
+		udma_err_rl(dev->dev, "failed to alloc SW doorbell for JFR(%u).\n", jfr->rq.id);
 		goto err_alloc_db;
 	}
 
@@ -121,7 +121,7 @@ static int udma_jfr_get_u_cmd(struct udma_dev *dev, struct ubcore_udata *udata,
 	byte = copy_from_user(ucmd, (void *)(uintptr_t)udata->udrv_data->in_addr,
 			      sizeof(*ucmd));
 	if (byte) {
-		dev_err(dev->dev,
+		udma_err_rl(dev->dev,
 			"failed to copy jfr udata, byte = %lu.\n", byte);
 		return -EFAULT;
 	}
@@ -136,7 +136,7 @@ static int udma_u_alloc_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr,
 
 	if (ucmd->is_hugepage) {
 		if (!udma_alloc_u_hugepage(jfr->udma_ctx, jfr->rq.buf.addr, jfr->rq.buf.len)) {
-			dev_err(dev->dev, "failed to create RQ.\n");
+			udma_err_rl(dev->dev, "failed to create RQ.\n");
 			return -ENOMEM;
 		}
 		jfr->rq.buf.is_hugepage = true;
@@ -144,7 +144,7 @@ static int udma_u_alloc_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr,
 		jfr->rq.buf.page_priv =
 			udma_get_map_page_priv(jfr->udma_ctx, jfr->rq.buf.addr, ucmd->buf_len);
 		if (jfr->rq.buf.page_priv == NULL) {
-			dev_err(dev->dev, "failed to get RQ page.\n");
+			udma_err_rl(dev->dev, "failed to get RQ page.\n");
 			return -EINVAL;
 		}
 		jfr->rq.buf.is_hugepage = false;
@@ -153,14 +153,14 @@ static int udma_u_alloc_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr,
 	jfr->idx_que.buf.page_priv =
 		udma_get_map_page_priv(jfr->udma_ctx, jfr->idx_que.buf.addr, ucmd->idx_len);
 	if (jfr->idx_que.buf.page_priv == NULL) {
-		dev_err(dev->dev, "failed to get index queue page.\n");
+		udma_err_rl(dev->dev, "failed to get index queue page.\n");
 		ret = -EINVAL;
 		goto err_get_idx_buf;
 	}
 
 	jfr->sw_db.page_priv = udma_get_sw_db(jfr->udma_ctx, jfr->sw_db.db_addr);
 	if (jfr->sw_db.page_priv == NULL) {
-		dev_err(dev->dev, "failed to get SW DB page.\n");
+		udma_err_rl(dev->dev, "failed to get SW DB page.\n");
 		ret = -EINVAL;
 		goto err_get_sw_db;
 	}
@@ -204,7 +204,7 @@ static int udma_get_u_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr,
 	if (likely(jfr->jfr_sleep_buf.db_addr)) {
 		ret = udma_pin_sw_db(jfr->udma_ctx, &jfr->jfr_sleep_buf);
 		if (ret) {
-			dev_err(dev->dev, "failed to pin JFR sleep time buf, ret = %d.\n", ret);
+			udma_err_rl(dev->dev, "failed to pin JFR sleep time buf, ret = %d.\n", ret);
 			return ret;
 		}
 	}
@@ -216,7 +216,7 @@ static int udma_get_u_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr,
 
 	ret = udma_u_alloc_jfr_buf(dev, jfr, ucmd);
 	if (ret) {
-		dev_err(dev->dev, "failed to alloc JFR buffer, ret = %d.\n", ret);
+		udma_err_rl(dev->dev, "failed to alloc JFR buffer, ret = %d.\n", ret);
 		goto err_alloc_jfr_buf;
 	}
 
@@ -318,7 +318,7 @@ static void udma_init_jfrc(struct udma_dev *dev, struct ubcore_jfr_cfg *cfg,
 	ctx->jfcn_l = cfg->jfc->id & (uint32_t)JFR_JFCN_L_VALID_BIT;
 	ctx->jfcn_h = (cfg->jfc->id >> JFR_JFCN_H_OFFSET) & (uint32_t)JFR_JFCN_H_VALID_BIT;
 	if (cfg->min_rnr_timer > UDMA_RNR_MAX) {
-		dev_warn(dev->dev,
+		udma_warn_rl(dev->dev,
 			 "min_rnr_timer is out of range, max_value(%d) is applied.\n",
 			 UDMA_RNR_MAX);
 		ctx->rnr_timer = UDMA_RNR_MAX;
@@ -359,7 +359,7 @@ static int udma_hw_init_jfrc(struct udma_dev *dev, struct ubcore_jfr_cfg *cfg,
 
 	mailbox = udma_alloc_cmd_mailbox(dev);
 	if (!mailbox) {
-		dev_err(dev->dev, "failed to alloc mailbox for JFRC.\n");
+		udma_err_rl(dev->dev, "failed to alloc mailbox for JFRC.\n");
 		return -ENOMEM;
 	}
 
@@ -369,7 +369,7 @@ static int udma_hw_init_jfrc(struct udma_dev *dev, struct ubcore_jfr_cfg *cfg,
 	mbox_attr.op = UDMA_CMD_CREATE_JFR_CONTEXT;
 	ret = udma_post_mbox(dev, mailbox, &mbox_attr);
 	if (ret)
-		dev_err(dev->dev,
+		udma_err_rl(dev->dev,
 			"failed to post mbox cmd of create JFRC, ret = %d.\n",
 			ret);
 
@@ -429,7 +429,7 @@ static int udma_alloc_jfr_id(struct udma_dev *udma_dev, uint32_t cfg_id, uint32_
 					     max, GFP_ATOMIC);
 		if (id < 0) {
 			spin_unlock(&ida_table->lock);
-			dev_err(udma_dev->dev,
+			udma_err_rl(udma_dev->dev,
 				"alloc JFR ID range (%u - %u) failed, ret = %d.\n",
 				min, max, id);
 			return id == -ENOSPC ? -ENOSR : id;
@@ -481,13 +481,13 @@ struct ubcore_jfr *udma_create_jfr(struct ubcore_device *dev,
 	ret = xa_err(xa_store(&udma_dev->jfr_table.xa, udma_jfr->rq.id,
 			      udma_jfr, GFP_KERNEL));
 	if (ret) {
-		dev_err(udma_dev->dev, "store JFR to JFR table failed.\n");
+		udma_err_rl(udma_dev->dev, "store JFR to JFR table failed.\n");
 		goto err_xa_store;
 	}
 
 	ret = udma_hw_init_jfrc(udma_dev, cfg, udma_jfr, 0);
 	if (ret) {
-		dev_err(udma_dev->dev, "failed to init JFR context, ret = %d.\n", ret);
+		udma_err_rl(udma_dev->dev, "failed to init JFR context, ret = %d.\n", ret);
 		goto err_hw_init_jfrc;
 	}
 
@@ -524,7 +524,7 @@ static int udma_query_jfr_ctx(struct udma_dev *dev, struct udma_jfr_ctx *ctx,
 	mbox_attr.op = UDMA_CMD_QUERY_JFR_CONTEXT;
 	mailbox = udma_mailbox_query_ctx(dev, &mbox_attr);
 	if (!mailbox) {
-		dev_err(dev->dev, "failed to alloc mailbox for JFRC.\n");
+		udma_err_rl(dev->dev, "failed to alloc mailbox for JFRC.\n");
 		return -ENOMEM;
 	}
 	memcpy((void *)ctx, mailbox->buf, sizeof(*ctx));
@@ -545,7 +545,7 @@ static int modify_jfr_context(struct udma_dev *dev, uint32_t jfrn,
 
 	mailbox = udma_alloc_cmd_mailbox(dev);
 	if (!mailbox) {
-		dev_err(dev->dev, "failed to alloc mailbox for JFRC.\n");
+		udma_err_rl(dev->dev, "failed to alloc mailbox for JFRC.\n");
 		return -EINVAL;
 	}
 
@@ -567,7 +567,7 @@ static int modify_jfr_context(struct udma_dev *dev, uint32_t jfrn,
 
 	ret = udma_post_mbox(dev, mailbox, &mbox_attr);
 	if (ret)
-		dev_err(dev->dev,
+		udma_err_rl(dev->dev,
 			"failed to post mbox cmd of modify JFRC, ret = %d.\n", ret);
 
 	udma_free_cmd_mailbox(dev, mailbox);
@@ -587,7 +587,7 @@ static int udma_modify_jfr_to_error(struct ubcore_jfr *jfr, bool *need_sleep)
 		attr.mask = UBCORE_JFR_STATE;
 		ret = modify_jfr_context(udma_dev, udma_jfr->rq.id, true, false, &attr);
 		if (ret) {
-			dev_err(udma_dev->dev, "failed to modify JFR state to error, id: %u.\n",
+			udma_err_rl(udma_dev->dev, "failed to modify JFR state to error, id: %u.\n",
 				udma_jfr->rq.id);
 			return ret;
 		}
@@ -611,9 +611,8 @@ static int udma_modify_jfr_to_reset(struct ubcore_jfr *jfr)
 		mbox_attr.op = UDMA_CMD_DESTROY_JFR_CONTEXT;
 		ret = post_mailbox_update_ctx(udma_dev, NULL, 0, &mbox_attr);
 		if (ret) {
-			dev_err_ratelimited(udma_dev->dev,
-					    "failed to post JFR destroy command, id: %u.\n",
-					    udma_jfr->rq.id);
+			udma_err_rl(udma_dev->dev, "failed to post JFR destroy command, id: %u.\n",
+				    udma_jfr->rq.id);
 			return ret;
 		}
 
@@ -661,7 +660,7 @@ static void udma_flush_jfr_by_sleep(struct udma_dev *udma_dev, struct udma_jfr *
 
 	sleep_time = large_payload ? jfr_sleep_time : UDMA_JFR_FLUSH_SLEEP_US;
 	if (debug_switch)
-		dev_info_ratelimited(udma_dev->dev, "JFR sleep time = %u us.\n", sleep_time);
+		udma_info_rl(udma_dev->dev, "JFR sleep time = %u us.\n", sleep_time);
 	usleep_range(sleep_time, sleep_time + UDMA_SLEEP_DELAY_US);
 }
 
@@ -681,7 +680,7 @@ static int udma_flush_jfr_by_poll(struct udma_dev *udma_dev, struct udma_jfr *ud
 		times++;
 	}
 
-	dev_err(udma_dev->dev,
+	udma_err_rl(udma_dev->dev,
 		"JFR flush timed out, id = %u.\n", udma_jfr->rq.id);
 
 	return -ETIMEDOUT;
@@ -747,7 +746,7 @@ int udma_destroy_jfr(struct ubcore_jfr *jfr)
 
 	ret = udma_modify_and_del_jfr(udma_dev, udma_jfr);
 	if (ret) {
-		dev_err(udma_dev->dev,
+		udma_err_rl(udma_dev->dev,
 			"failed to modify and delete JFR, id: %u, ret = %d.\n",
 			udma_jfr->rq.id, ret);
 		return ret;
@@ -781,7 +780,7 @@ static void udma_batch_flush_jfr_by_sleep(struct udma_dev *udma_dev,
 
 	sleep_time = large_payload ? jfr_sleep_time : UDMA_JFR_FLUSH_SLEEP_US;
 	if (debug_switch)
-		dev_info_ratelimited(udma_dev->dev, "JFR batch sleep time = %u us.\n", sleep_time);
+		udma_info_rl(udma_dev->dev, "JFR batch sleep time = %u us.\n", sleep_time);
 	usleep_range(sleep_time, sleep_time + UDMA_SLEEP_DELAY_US);
 }
 
@@ -827,7 +826,7 @@ static int udma_batch_flush_jfr_by_poll(struct udma_dev *udma_dev,
 		if (jfr_flag[i])
 			continue;
 
-		dev_err(udma_dev->dev, "JFR flush timed out, id = %u.\n",
+		udma_err_rl(udma_dev->dev, "JFR flush timed out, id = %u.\n",
 			to_udma_jfr_from_queue(rq_list[i])->rq.id);
 	}
 
@@ -957,7 +956,7 @@ static int verify_modify_jfr(struct udma_dev *udma_dev, struct udma_jfr *udma_jf
 
 	if (attr->mask & UBCORE_JFR_STATE) {
 		if (udma_jfr->state == attr->state) {
-			dev_info_ratelimited(udma_dev->dev,
+			udma_info_rl(udma_dev->dev,
 				"jfr(%u) state has been %s, keep it unchanged.\n",
 				udma_jfr->rq.id, to_state_str(attr->state));
 			return 0;
@@ -991,7 +990,7 @@ static int udma_destroy_hw_jfr_ctx(struct udma_dev *dev, uint32_t jfr_id)
 	attr.op = UDMA_CMD_DESTROY_JFR_CONTEXT;
 	ret = post_mailbox_update_ctx(dev, NULL, 0, &attr);
 	if (ret)
-		dev_err_ratelimited(dev->dev,
+		udma_err_rl(dev->dev,
 			"post mailbox destroy JFR context failed, ret = %d.\n", ret);
 
 	return ret;
@@ -1100,15 +1099,16 @@ static int post_recv_one(struct udma_dev *dev, struct udma_jfr *jfr,
 	}
 
 	if (udma_jfrwq_overflow(jfr)) {
-		dev_err(dev->dev, "failed to check JFR work queue, JFR work queue is full, JFR number = %u.\n",
-			jfr->rq.id);
+		udma_err_rl(dev->dev,
+			    "failed to check JFR work queue, JFR work queue is full, jfrn=%u.\n",
+			    jfr->rq.id);
 		return -ENOMEM;
 	}
 
 	ret = udma_id_alloc(dev, &jfr->idx_que.jfr_idx_table.ida_table,
 			    &wqe_idx);
 	if (ret) {
-		dev_err(dev->dev, "failed to get JFR WQE index.\n");
+		udma_err_rl(dev->dev, "failed to get JFR WQE index.\n");
 		return ret;
 	}
 	wqe = get_buf_entry(&jfr->rq.buf, wqe_idx);
@@ -1261,7 +1261,7 @@ static int udma_k_get_jfr_param(struct udma_dev *dev, struct ubcore_jfr *ubcore_
 	case UBCORE_JFR_PI:
 		ret = udma_query_jfr_ctx(dev, &jfr_ctx, udma_jfr->rq.id);
 		if (ret) {
-			dev_err(dev->dev,
+			udma_err_rl(dev->dev,
 				"failed to query JFR context, rq_id = %u, ret = %d.\n",
 				udma_jfr->rq.id, ret);
 			return ret;
@@ -1274,7 +1274,7 @@ static int udma_k_get_jfr_param(struct udma_dev *dev, struct ubcore_jfr *ubcore_
 	case UBCORE_JFR_CI:
 		ret = udma_query_jfr_ctx(dev, &jfr_ctx, udma_jfr->rq.id);
 		if (ret) {
-			dev_err(dev->dev,
+			udma_err_rl(dev->dev,
 				"failed to query JFR context, id = %u, ret = %d.\n",
 				udma_jfr->rq.id, ret);
 			return ret;
@@ -1284,7 +1284,7 @@ static int udma_k_get_jfr_param(struct udma_dev *dev, struct ubcore_jfr *ubcore_
 	case UBCORE_JFR_FULL_CTX:
 		ret = udma_query_jfr_ctx(dev, (struct udma_jfr_ctx *)buf, udma_jfr->rq.id);
 		if (ret) {
-			dev_err(dev->dev,
+			udma_err_rl(dev->dev,
 				"failed to query JFR context, id = %u, ret = %d.\n",
 				udma_jfr->rq.id, ret);
 			return ret;
@@ -1406,13 +1406,13 @@ int udma_active_jfr(struct ubcore_jfr *jfr, struct ubcore_udata *udata)
 
 	ret = xa_err(xa_store(&udma_dev->jfr_table.xa, udma_jfr->rq.id, udma_jfr, GFP_KERNEL));
 	if (ret) {
-		dev_err(udma_dev->dev, "failed to store JFR table.\n");
+		udma_err_rl(udma_dev->dev, "failed to store JFR table.\n");
 		goto err_xa_store;
 	}
 
 	ret = udma_hw_init_jfrc(udma_dev, cfg, udma_jfr, 0);
 	if (ret) {
-		dev_err(udma_dev->dev, "failed to init JFR context, ret = %d.\n", ret);
+		udma_err_rl(udma_dev->dev, "failed to init JFR context, ret = %d.\n", ret);
 		goto err_hw_init_jfrc;
 	}
 
@@ -1448,13 +1448,14 @@ int udma_set_jfr_opt(struct ubcore_jfr *jfr, uint64_t opt, void *buf, uint32_t l
 		return 0;
 
 	if (ret) {
-		dev_err(udma_dev->dev, "failed to check option, length=%u, opt=%llu.\n", len, opt);
+		udma_err_rl(udma_dev->dev, "failed to check option, length=%u, opt=%llu.\n",
+			    len, opt);
 		return ret;
 	}
 
 	ret = udma_k_set_jfr_param(udma_dev, jfr, opt, buf);
 	if (ret)
-		dev_err(udma_dev->dev, "failed to get JFR parameter.\n");
+		udma_err_rl(udma_dev->dev, "failed to get JFR parameter.\n");
 
 	return ret;
 }
@@ -1469,7 +1470,7 @@ int udma_get_jfr_opt(struct ubcore_jfr *jfr, uint64_t opt, void *buf, uint32_t l
 	if (ret == -EEXIST)
 		return 0;
 	if (ret) {
-		dev_err(udma_dev->dev,
+		udma_err_rl(udma_dev->dev,
 			"opt %llu, len %u, perm value or buf addr is invalid, ret = %d.\n",
 			opt, len, ret);
 		return ret;
@@ -1477,7 +1478,7 @@ int udma_get_jfr_opt(struct ubcore_jfr *jfr, uint64_t opt, void *buf, uint32_t l
 
 	ret = udma_k_get_jfr_param(udma_dev, jfr, opt, buf);
 	if (ret)
-		dev_err(udma_dev->dev, "failed to get JFR parameter.\n");
+		udma_err_rl(udma_dev->dev, "failed to get JFR parameter.\n");
 
 	return ret;
 }
@@ -1489,15 +1490,14 @@ int udma_deactive_jfr(struct ubcore_jfr *jfr, struct ubcore_udata *udata)
 	int ret;
 
 	if (!udma_jfr->rq.activated) {
-		dev_info_ratelimited(udma_dev->dev, "JFR no need deactivate.\n");
+		udma_info_rl(udma_dev->dev, "JFR no need deactivate.\n");
 		return 0;
 	}
 
 	ret = udma_modify_and_del_jfr(udma_dev, udma_jfr);
 	if (ret) {
-		dev_err(udma_dev->dev,
-			"failed to deactivate JFR, rq_id = %u, ret = %d.\n",
-			udma_jfr->rq.id, ret);
+		udma_err_rl(udma_dev->dev, "failed to deactivate JFR, rq_id = %u, ret = %d.\n",
+			    udma_jfr->rq.id, ret);
 		return ret;
 	}
 

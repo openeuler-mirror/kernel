@@ -83,9 +83,9 @@ static int udma_ae_tp_level(struct notifier_block *nb,
 	queue_num = info->aeqe->event.queue_event.num;
 	udma_dev = get_udma_dev(adev);
 
-	dev_warn_ratelimited(udma_dev->dev,
-		"trigger TP level AE, event type is %u, sub type is %u, queue_num is %u.\n",
-		info->event_type, info->sub_type, queue_num);
+	udma_warn_rl(udma_dev->dev,
+		     "trigger TP level AE, event type is %u, sub type is %u, queue_num is %u.\n",
+		     info->event_type, info->sub_type, queue_num);
 
 	return udma_ae_tp_ctrlq_msg_deal(udma_dev, info, queue_num);
 }
@@ -104,7 +104,7 @@ static int udma_ae_jfs_check_err(struct auxiliary_device *adev, uint32_t queue_n
 	udma_sq = (struct udma_jetty_queue *)xa_load(&udma_dev->jetty_table.xa, queue_num);
 	if (!udma_sq) {
 		xa_unlock(&udma_dev->jetty_table.xa);
-		dev_warn_ratelimited(udma_dev->dev,
+		udma_warn_rl(udma_dev->dev,
 			"async event for bogus queue number = %u.\n", queue_num);
 		return -EINVAL;
 	}
@@ -158,7 +158,7 @@ static int udma_ae_jfr_check_err(struct auxiliary_device *adev, uint32_t queue_n
 	udma_jfr = (struct udma_jfr *)xa_load(&udma_dev->jfr_table.xa, queue_num);
 	if (!udma_jfr) {
 		xa_unlock(&udma_dev->jfr_table.xa);
-		dev_warn_ratelimited(udma_dev->dev,
+		udma_warn_rl(udma_dev->dev,
 			"async event for bogus jfr number = %u.\n", queue_num);
 		return -EINVAL;
 	}
@@ -192,7 +192,7 @@ static int udma_ae_jfc_check_err(struct auxiliary_device *adev, uint32_t queue_n
 	udma_jfc = (struct udma_jfc *)xa_load(&udma_dev->jfc_table.xa, queue_num);
 	if (!udma_jfc) {
 		xa_unlock_irqrestore(&udma_dev->jfc_table.xa, flags);
-		dev_warn_ratelimited(udma_dev->dev,
+		udma_warn_rl(udma_dev->dev,
 			"async event for bogus jfc number = %u.\n", queue_num);
 		return -EINVAL;
 	}
@@ -226,7 +226,7 @@ static int udma_ae_jetty_group_check_err(struct auxiliary_device *adev, uint32_t
 	udma_jetty_grp = (struct udma_jetty_grp *)xa_load(&udma_dev->jetty_grp_table.xa, queue_num);
 	if (!udma_jetty_grp) {
 		xa_unlock(&udma_dev->jetty_grp_table.xa);
-		dev_warn_ratelimited(udma_dev->dev,
+		udma_warn_rl(udma_dev->dev,
 			"async event for bogus jetty group number = %u.\n", queue_num);
 		return -EINVAL;
 	}
@@ -258,9 +258,9 @@ static int udma_ae_jetty_level(struct notifier_block *nb,
 
 	queue_num = info->aeqe->event.queue_event.num;
 
-	dev_warn_ratelimited(&adev->dev,
-		"trigger jetty level ae, event type is %u, sub type is %u, queue_num is %u.\n",
-		info->event_type, info->sub_type, queue_num);
+	udma_warn_rl(&adev->dev,
+		     "trigger jetty level ae, event type is %u, sub type is %u, queue_num is %u.\n",
+		     info->event_type, info->sub_type, queue_num);
 
 	if (info->event_type == UBASE_EVENT_TYPE_JFR_LIMIT_REACHED)
 		return udma_ae_jfr_check_err(adev, queue_num, UBCORE_EVENT_JFR_LIMIT_REACHED);
@@ -837,8 +837,7 @@ static int udma_ctrlq_check_tp_active(struct auxiliary_device *adev,
 
 	ret = ubase_ctrlq_send_msg(adev, &msg);
 	if (ret)
-		dev_err_ratelimited(udev->dev,
-			"send check TP active ctrlq msg failed, ret(%d).\n", ret);
+		udma_err_rl(udev->dev, "send check TP active ctrlq msg failed, ret(%d).\n", ret);
 
 	kfree(rsp_info);
 
@@ -952,8 +951,7 @@ static int udma_ctrlq_tpid_destroy_done_response(struct udma_dev *udma_dev,
 
 	ret = ubase_ctrlq_send_msg(udma_dev->comdev.adev, &msg);
 	if (ret)
-		dev_err_ratelimited(udma_dev->dev,
-			"send tpid destroy done rsp failed, ret = %d.\n", ret);
+		udma_err_rl(udma_dev->dev, "send tpid destroy done rsp failed, ret = %d.\n", ret);
 
 	return ret;
 }
