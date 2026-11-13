@@ -140,6 +140,7 @@ static int init_tdev(struct tid_dev *tdev, struct tdev_attr *attr, u32 *ptid,
 	tdev->pdev.dev.dma_mask = &(tdev->pdev.dev.coherent_dma_mask);
 	tdev->pdev.dev.groups = ummu_vdev_groups;
 	tdev->pdev.dma_parms.max_segment_size = U32_MAX;
+	dev_set_uevent_suppress(&tdev->pdev.dev, true);
 	device_set_pm_not_required(&tdev->pdev.dev);
 	set_dev_node(&tdev->pdev.dev, NUMA_NO_NODE);
 
