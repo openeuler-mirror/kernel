@@ -227,3 +227,81 @@ void __init csv_early_memory_enc_dec(u64 vaddr, u64 size, bool enc)
 	__csv3_memory_enc_dec(__csv3_early_secure_call, vaddr & PAGE_MASK,
 			      npages, enc);
 }
+
+static void print_secure_call_error(enum csv3_secure_command_type code)
+{
+	switch (code) {
+	case CSV3_SECURE_CMD_ACK:
+		pr_debug("secure call: handled\n");
+		break;
+	case CSV3_SECURE_CMD_ERROR_INTERNAL:
+		pr_err("secure call: internal error\n");
+		break;
+	case CSV3_SECURE_CMD_ERROR_INVALID_COMMAND:
+		pr_err("secure call: unsupported cmd\n");
+		break;
+	case CSV3_SECURE_CMD_ERROR_INVALID_PARAM:
+		pr_err("secure call: invalid param\n");
+		break;
+	case CSV3_SECURE_CMD_ERROR_INVALID_ADDRESS:
+		pr_err("secure call: invalid address\n");
+		break;
+	case CSV3_SECURE_CMD_ERROR_INVALID_LENGTH:
+		pr_err("secure call: invalid length\n");
+		break;
+	default:
+		pr_err("secure call: shouldn't reach here\n");
+		break;
+	}
+}
+
+int csv3_issue_request_report(phys_addr_t paddr, size_t size)
+{
+	struct secure_call_pages *sc_page_info;
+	struct csv3_secure_call_cmd *sc_wr, *sc_rd;
+	unsigned long flags;
+	int sc_page_idx;
+	enum csv3_secure_command_type sc_return_code;
+
+	/*
+	 * secure call pages needs to access with IRQs disabled because it is
+	 * using a per-CPU data.
+	 */
+	local_irq_save(flags);
+
+	sc_page_info = this_cpu_read(secure_call_data);
+	if (!sc_page_info) {
+		local_irq_restore(flags);
+		return -EIO;
+	}
+
+	sc_page_idx = this_cpu_read(secure_call_page_idx);
+
+	sc_wr = sc_page_idx ? &sc_page_info->page_a : &sc_page_info->page_b;
+	sc_rd = sc_page_idx ? &sc_page_info->page_b : &sc_page_info->page_a;
+
+	sc_wr->cmd_type = CSV3_SECURE_CMD_REQ_REPORT;
+	sc_wr->nums = 1;
+	sc_wr->unused = 0;
+	sc_wr->entry[0].base_address = (u64)paddr;
+	sc_wr->entry[0].size = size;
+
+	/*
+	 * Write command in sc_wr must be done before retrieve status code
+	 * from sc_rd, and it's ensured by the smp_mb below.
+	 */
+	smp_mb();
+
+	sc_return_code = sc_rd->cmd_type;
+
+	this_cpu_write(secure_call_page_idx, sc_page_idx ^ 1);
+
+	/* Leave per-CPU data access */
+	local_irq_restore(flags);
+
+	/* Print return code of the secure call */
+	print_secure_call_error(sc_return_code);
+
+	return sc_return_code == CSV3_SECURE_CMD_ACK ? 0 : -EIO;
+}
+EXPORT_SYMBOL_GPL(csv3_issue_request_report);
