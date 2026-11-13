@@ -94,7 +94,7 @@ int udma_post_mbox(struct udma_dev *dev, struct ubase_cmd_mailbox *mailbox,
 	int ret;
 
 	if (debug_switch)
-		dev_info_ratelimited(dev->dev,
+		udma_info_rl(dev->dev,
 				     "Send cmd mailbox, data: %08x %04x%04x.\n",
 				     attr->tag, attr->op, attr->mbx_ue_id);
 
@@ -138,7 +138,7 @@ int post_mailbox_update_ctx(struct udma_dev *udma_dev, void *ctx, uint32_t size,
 
 	mailbox = udma_alloc_cmd_mailbox(udma_dev);
 	if (!mailbox) {
-		dev_err(udma_dev->dev,
+		udma_err_rl(udma_dev->dev,
 			"failed to alloc mailbox for opcode 0x%x.\n", attr->op);
 		return -ENOMEM;
 	}
@@ -148,9 +148,8 @@ int post_mailbox_update_ctx(struct udma_dev *udma_dev, void *ctx, uint32_t size,
 
 	ret = udma_post_mbox(udma_dev, mailbox, attr);
 	if (ret)
-		dev_err_ratelimited(udma_dev->dev,
-				    "failed to post mailbox, opcode = 0x%x, ret = %d.\n", attr->op,
-				    ret);
+		udma_err_rl(udma_dev->dev,
+			    "failed to post mailbox, opcode = 0x%x, ret = %d.\n", attr->op, ret);
 
 	udma_free_cmd_mailbox(udma_dev, mailbox);
 
@@ -165,7 +164,7 @@ struct ubase_cmd_mailbox *udma_mailbox_query_ctx(struct udma_dev *udma_dev,
 
 	mailbox = udma_alloc_cmd_mailbox(udma_dev);
 	if (!mailbox) {
-		dev_err(udma_dev->dev,
+		udma_err_rl(udma_dev->dev,
 			"failed to alloc mailbox query context, opcode = %hhu, id = %u.\n",
 			attr->op, attr->tag);
 		return NULL;
@@ -173,9 +172,9 @@ struct ubase_cmd_mailbox *udma_mailbox_query_ctx(struct udma_dev *udma_dev,
 
 	ret = udma_post_mbox(udma_dev, mailbox, attr);
 	if (ret) {
-		dev_err(udma_dev->dev,
-			"failed to post mailbox query ctx, opcode = %u, id = %u, ret = %d.\n",
-			attr->op, attr->tag, ret);
+		udma_err_rl(udma_dev->dev,
+			    "failed to post mailbox query ctx, opcode = %u, id = %u, ret = %d.\n",
+			    attr->op, attr->tag, ret);
 		udma_free_cmd_mailbox(udma_dev, mailbox);
 		return NULL;
 	}
@@ -235,7 +234,7 @@ static void udma_open_ue_rx_work(struct work_struct *work)
 			msleep(wait_time);
 			if (wait_time < UDMA_OPEN_RX_MAX_SLEEP_TIME)
 				wait_time *= UDMA_TIME_SLEEP_RATE;
-			dev_err_ratelimited(udma_dev->dev, "failed to open ue rx when retry\n");
+			udma_err_rl(udma_dev->dev, "failed to open ue rx when retry\n");
 			continue;
 		}
 		mutex_unlock(&udma_dev->open_rx_mutex);

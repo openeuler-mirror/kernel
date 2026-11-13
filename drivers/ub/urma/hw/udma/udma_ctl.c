@@ -204,7 +204,7 @@ static struct ubcore_jfs *udma_create_jfs_ex(struct ubcore_device *ub_dev,
 	if (!jfs)
 		return NULL;
 
-	dev_info_ratelimited(dev->dev, "start alloc id!\n");
+	udma_info_rl(dev->dev, "start alloc id!\n");
 	ret = udma_alloc_jetty_id(dev, &jfs->sq.id, &dev->caps.jetty);
 	if (ret) {
 		dev_err(dev->dev, "alloc JFS id failed, ret = %d.\n", ret);
@@ -224,7 +224,7 @@ static struct ubcore_jfs *udma_create_jfs_ex(struct ubcore_device *ub_dev,
 		goto err_store_jfs_sq;
 	}
 
-	dev_info_ratelimited(dev->dev, "start get stars JFS buf!\n");
+	udma_info_rl(dev->dev, "start get stars JFS buf!\n");
 	ret = udma_get_jfs_buf_ex(dev, jfs, cfg_ex);
 	if (ret)
 		goto err_alloc_jfs_id;
@@ -236,7 +236,7 @@ static struct ubcore_jfs *udma_create_jfs_ex(struct ubcore_device *ub_dev,
 	attr.op = UDMA_CMD_CREATE_JFS_CONTEXT;
 	ret = post_mailbox_update_ctx(dev, &ctx, sizeof(ctx), &attr);
 	if (ret) {
-		dev_err_ratelimited(dev->dev, "failed to upgrade JFS context, ret = %d.\n", ret);
+		udma_err_rl(dev->dev, "failed to upgrade JFS context, ret = %d.\n", ret);
 		goto err_update_ctx;
 	}
 
@@ -247,7 +247,7 @@ static struct ubcore_jfs *udma_create_jfs_ex(struct ubcore_device *ub_dev,
 	if (dfx_switch)
 		udma_dfx_store_jfs_id(dev, jfs);
 
-	dev_info_ratelimited(dev->dev, "create stars JFS success!\n");
+	udma_info_rl(dev->dev, "create stars JFS success!\n");
 
 	return &jfs->ubcore_jfs;
 

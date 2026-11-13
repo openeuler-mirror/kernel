@@ -5,6 +5,7 @@
 
 #include <linux/ummu_core.h>
 #include "udma_ctx.h"
+#include "udma_common.h"
 #include "udma_tid.h"
 
 static int udma_get_key_id_from_user(struct udma_dev *udma_dev,
@@ -26,12 +27,12 @@ static int udma_get_key_id_from_user(struct udma_dev *udma_dev,
 			      min(udata->udrv_data->in_len,
 			      (uint32_t)sizeof(tid)));
 	if (byte) {
-		dev_err(udma_dev->dev, "get user data failed, byte = %lu.\n", byte);
+		udma_err_rl(udma_dev->dev, "get user data failed, byte = %lu.\n", byte);
 		return -EFAULT;
 	}
 
 	if ((tid >> UDMA_TID_SHIFT) > UDMA_MAX_TID) {
-		dev_err(udma_dev->dev, "user tid is overflow.\n");
+		udma_err_rl(udma_dev->dev, "user tid is overflow.\n");
 		return -EINVAL;
 	}
 
@@ -51,18 +52,18 @@ static int udma_alloc_k_tid(struct udma_dev *udma_dev,
 
 	ksva = iommu_ksva_bind_device(udma_dev->dev, &param);
 	if (IS_ERR(ksva)) {
-		dev_err(udma_dev->dev, "ksva bind device failed.\n");
+		udma_err_rl(udma_dev->dev, "ksva bind device failed.\n");
 		return -ENOMEM;
 	}
 
 	ret = ummu_get_tid(udma_dev->dev, ksva, &tid);
 	if (ret) {
-		dev_err(udma_dev->dev, "get TID from UMMU failed, ret = %d.\n", ret);
+		udma_err_rl(udma_dev->dev, "get TID from UMMU failed, ret = %d.\n", ret);
 		goto err_get_tid;
 	}
 
 	if (tid > UDMA_MAX_TID) {
-		dev_err(udma_dev->dev, "tid is overflow.\n");
+		udma_err_rl(udma_dev->dev, "tid is overflow.\n");
 		ret = -EINVAL;
 		goto err_get_tid;
 	}
@@ -71,7 +72,7 @@ static int udma_alloc_k_tid(struct udma_dev *udma_dev,
 	ret = xa_err(__xa_store(&udma_dev->ksva_table, tid, ksva, GFP_KERNEL));
 	mutex_unlock(&udma_dev->ksva_mutex);
 	if (ret) {
-		dev_err(udma_dev->dev, "save ksva failed, ret = %d.\n", ret);
+		udma_err_rl(udma_dev->dev, "save ksva failed, ret = %d.\n", ret);
 		goto err_get_tid;
 	}
 
@@ -102,7 +103,7 @@ struct ubcore_token_id *udma_alloc_tid(struct ubcore_device *ub_dev,
 	if (udata) {
 		ret = udma_get_key_id_from_user(udma_dev, udata, udma_tid);
 		if (ret) {
-			dev_err(udma_dev->dev, "get user key id failed, ret = %d.\n", ret);
+			udma_err_rl(udma_dev->dev, "get user key id failed, ret = %d.\n", ret);
 			goto err_get_key_id;
 		}
 		return &udma_tid->core_key_id;
@@ -137,7 +138,7 @@ int udma_free_tid(struct ubcore_token_id *token_id)
 		inva_param.mm = ctx->mm;
 		ret = ummu_core_invalidate_cfg(&inva_param);
 		if (ret && ret != -ENOENT && ret != -ESRCH)
-			dev_err_ratelimited(udma_dev->dev,
+			udma_err_rl(udma_dev->dev,
 					    "invalidate cfg_table failed, ret=%d.\n", ret);
 
 		goto out;
@@ -147,7 +148,7 @@ int udma_free_tid(struct ubcore_token_id *token_id)
 	ksva = (struct iommu_sva *)xa_load(&udma_dev->ksva_table, udma_tid->tid);
 	if (!ksva) {
 		mutex_unlock(&udma_dev->ksva_mutex);
-		dev_warn(udma_dev->dev,
+		udma_warn_rl(udma_dev->dev,
 			 "unable to get ksva while free tid, token maybe is free.\n");
 		goto out;
 	}

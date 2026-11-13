@@ -153,7 +153,7 @@ static void udma_dfx_store_seg(struct udma_dev *udma_dev,
 	seg = (struct udma_dfx_seg *)xa_load(&udma_dev->dfx_info->seg.table,
 					     cfg->token_id->token_id);
 	if (seg) {
-		dev_warn(udma_dev->dev, "segment already exists in DFX.\n");
+		udma_warn_rl(udma_dev->dev, "segment already exists in DFX.\n");
 		return;
 	}
 
@@ -171,7 +171,7 @@ static void udma_dfx_store_seg(struct udma_dev *udma_dev,
 			      seg, GFP_ATOMIC));
 	if (ret) {
 		write_unlock(&udma_dev->dfx_info->seg.rwlock);
-		dev_err(udma_dev->dev, "store segment to table failed in DFX.\n");
+		udma_err_rl(udma_dev->dev, "store segment to table failed in DFX.\n");
 		kfree(seg);
 		return;
 	}
@@ -206,13 +206,13 @@ static struct page *va_to_page(struct udma_dev *dev, uint64_t va)
 		return NULL;
 
 	if (!pfn_valid(pfn)) {
-		dev_err(dev->dev, "invalid PFN=0x%llx.\n", pfn);
+		udma_err_rl(dev->dev, "invalid PFN=0x%llx.\n", pfn);
 		return NULL;
 	}
 
 	page = pfn_to_page(pfn);
 	if (!page || PageReserved(page)) {
-		dev_err(dev->dev, "invalid page structure for PFN=0x%llx.\n", pfn);
+		udma_err_rl(dev->dev, "invalid page structure for PFN=0x%llx.\n", pfn);
 		return NULL;
 	}
 
@@ -230,19 +230,20 @@ static int udma_get_user_page(struct udma_dev *dev, struct udma_segment *seg,
 	uint64_t i;
 
 	if (page_left == 0 || page_left > UINT_MAX) {
-		dev_err(dev->dev, "invalid page number %llu.\n", page_left);
+		udma_err_rl(dev->dev, "invalid page number %llu.\n", page_left);
 		return -EINVAL;
 	}
 
 	seg->first_page = va_to_page(dev, seg->addr);
 	if (!seg->first_page) {
-		dev_err(dev->dev, "failed to get first physical page.\n");
+		udma_err_rl(dev->dev, "failed to get first physical page.\n");
 		return -EINVAL;
 	}
 	if (!PageCompound(seg->first_page)) {
 		seg->first_page = va_to_page(dev, vma->vm_start);
 		if (!seg->first_page)
-			dev_warn(dev->dev, "failed to get first physical page of normal page.\n");
+			udma_warn_rl(dev->dev,
+				     "failed to get first physical page of normal page.\n");
 	}
 
 	seg->umem = kzalloc(sizeof(*seg->umem), GFP_KERNEL);
@@ -257,7 +258,7 @@ static int udma_get_user_page(struct udma_dev *dev, struct udma_segment *seg,
 		for (i = 0; i < min_t(uint64_t, page_left, arr_num); i++) {
 			pages[i] = va_to_page(dev, va);
 			if (!pages[i]) {
-				dev_err(dev->dev, "failed to get physical page.\n");
+				udma_err_rl(dev->dev, "failed to get physical page.\n");
 				ret = -EINVAL;
 				goto err_tr_va;
 			}
@@ -269,13 +270,13 @@ static int udma_get_user_page(struct udma_dev *dev, struct udma_segment *seg,
 						       i, 0, i * PAGE_SIZE, UINT_MAX,
 						       page_left, GFP_KERNEL);
 		if (ret) {
-			dev_err(dev->dev, "failed to SG alloc append table, ret=%d.\n", ret);
+			udma_err_rl(dev->dev, "failed to SG alloc append table, ret=%d.\n", ret);
 			goto err_append;
 		}
 	}
 
 	if (seg->first_page && !try_get_page(seg->first_page)) {
-		dev_err(dev->dev, "failed to get_page.\n");
+		udma_err_rl(dev->dev, "failed to get_page.\n");
 		ret = -EINVAL;
 		goto err_get_page;
 	}
@@ -317,7 +318,7 @@ static int udma_pin_seg_pages(struct ubcore_device *ub_dev,
 	vma = vma_lookup(current->mm, seg->addr);
 	if (!vma) {
 		mmap_read_unlock(current->mm);
-		dev_err(ctx->dev->dev, "failed to vma_lookup.\n");
+		udma_err_rl(ctx->dev->dev, "failed to vma_lookup.\n");
 		return -EINVAL;
 	}
 
@@ -332,7 +333,7 @@ static int udma_pin_seg_pages(struct ubcore_device *ub_dev,
 
 		ret = udma_align_segment(seg);
 		if (unlikely(ret)) {
-			dev_err(ctx->dev->dev, "failed to align segment addr and length.\n");
+			udma_err_rl(ctx->dev->dev, "failed to align segment addr and length.\n");
 			return ret;
 		}
 
@@ -346,7 +347,7 @@ static int udma_pin_seg_pages(struct ubcore_device *ub_dev,
 	}
 
 	if (unlikely(ret)) {
-		dev_err(ctx->dev->dev, "failed to get user page, ret = %d.\n", ret);
+		udma_err_rl(ctx->dev->dev, "failed to get user page, ret = %d.\n", ret);
 		return ret;
 	}
 
@@ -392,7 +393,8 @@ static int udma_iommu_partial_overlap_seg(struct ubcore_device *ub_dev,
 		ret = udma_pin_seg_pages(ub_dev, ctx, &none_overlap_seg,
 					 cfg, &prot);
 		if (unlikely(ret)) {
-			dev_err(ctx->dev->dev, "failed to pin none_overlap_seg, ret = %d.\n", ret);
+			udma_err_rl(ctx->dev->dev,
+				    "failed to pin none_overlap_seg, ret=%d.\n", ret);
 			goto err_local_page_ping_segment;
 		}
 
@@ -400,15 +402,15 @@ static int udma_iommu_partial_overlap_seg(struct ubcore_device *ub_dev,
 				      none_overlap_seg.addr,
 				      &(none_overlap_seg.umem->append.sgt));
 		if (unlikely(ret)) {
-			dev_err(ctx->dev->dev, "failed to IOMMU map none_overlap_seg, ret = %d.\n",
-				ret);
+			udma_err_rl(ctx->dev->dev,
+				    "failed to IOMMU map none_overlap_seg, ret=%d.\n", ret);
 			goto err_local_page_ioummu_map;
 		}
 
 		ret = udma_range_list_rollback(&mappedList, none_overlap_node);
 		if (unlikely(ret)) {
 			dirty = true;
-			dev_err(ctx->dev->dev, "failed to rollback list, ret = %d.\n", ret);
+			udma_err_rl(ctx->dev->dev, "failed to rollback list, ret = %d.\n", ret);
 			goto err_local_page_ioummu_map;
 		}
 
@@ -447,7 +449,7 @@ static int udma_iommu_local_map(struct ubcore_device *ub_dev,
 	ret = udma_seg_range_occupy(ctx, seg, &pageList);
 	if (unlikely(ret)) {
 		mutex_unlock(&ctx->seg_tree->lock);
-		dev_err(ctx->dev->dev, "segment have invalid parameter,ret = %d.\n", ret);
+		udma_err_rl(ctx->dev->dev, "segment have invalid parameter,ret = %d.\n", ret);
 		return ret;
 	}
 
@@ -460,12 +462,12 @@ static int udma_iommu_local_map(struct ubcore_device *ub_dev,
 		ret = udma_ioummu_map(ctx->tid, UMMU_INVALID_TID, prot,
 				      seg->addr, &(seg->umem->append.sgt));
 		if (unlikely(ret))
-			dev_err(ctx->dev->dev, "IOMMU segment failed, ret = %d.\n", ret);
+			udma_err_rl(ctx->dev->dev, "IOMMU segment failed, ret = %d.\n", ret);
 	} else {
 		ret = udma_iommu_partial_overlap_seg(ub_dev, ctx, seg, cfg,
 						     &pageList);
 		if (unlikely(ret))
-			dev_err(ctx->dev->dev,
+			udma_err_rl(ctx->dev->dev,
 				"IOMMU partial overlap segment failed, ret = %d.\n", ret);
 	}
 	udma_range_list_destroy(&pageList);
@@ -495,7 +497,7 @@ static int udma_pin_pages_and_ioummu_map(struct ubcore_device *ub_dev, struct ud
 	if (!local_only) {
 		ret = udma_ioummu_remote_map(tid, seg, prot);
 		if (unlikely(ret)) {
-			dev_err(ctx->dev->dev, "IOMMU remote map failed, ret = %d.\n", ret);
+			udma_err_rl(ctx->dev->dev, "IOMMU remote map failed, ret = %d.\n", ret);
 			goto err_ioummu_remote_map;
 		}
 	}
@@ -503,7 +505,7 @@ static int udma_pin_pages_and_ioummu_map(struct ubcore_device *ub_dev, struct ud
 	ret = udma_iommu_local_map(ub_dev, ctx, seg, cfg, prot);
 	if (unlikely(ret)) {
 		dirty = true;
-		dev_err(ctx->dev->dev, "IOMMU local map failed, ret = %d.\n", ret);
+		udma_err_rl(ctx->dev->dev, "IOMMU local map failed, ret = %d.\n", ret);
 		goto err_ioummu_local_map;
 	}
 
@@ -573,7 +575,7 @@ struct ubcore_target_seg *udma_register_seg(struct ubcore_device *ub_dev,
 		ret = udma_pin_pages_and_ioummu_map(ub_dev, to_udma_context(udata->uctx), seg,
 						    cfg, udma_tid->tid);
 		if (ret) {
-			dev_err(udma_dev->dev, "IOMMU map failed, ret = %d.\n", ret);
+			udma_err_rl(udma_dev->dev, "IOMMU map failed, ret = %d.\n", ret);
 			goto err_pin_seg;
 		}
 		return &seg->core_tseg;
@@ -583,7 +585,7 @@ struct ubcore_target_seg *udma_register_seg(struct ubcore_device *ub_dev,
 		udma_init_pin_flag(&flag, !!(cfg->flag.bs.access & UBCORE_ACCESS_WRITE), false);
 		ret = udma_pin_segment(ub_dev, cfg, seg, &flag);
 		if (ret) {
-			dev_err(udma_dev->dev, "pin segment failed, ret = %d.\n", ret);
+			udma_err_rl(udma_dev->dev, "pin segment failed, ret = %d.\n", ret);
 			goto err_pin_seg;
 		}
 	}
@@ -594,16 +596,16 @@ struct ubcore_target_seg *udma_register_seg(struct ubcore_device *ub_dev,
 	mutex_lock(&udma_dev->ksva_mutex);
 	ksva = (struct iommu_sva *)xa_load(&udma_dev->ksva_table, udma_tid->tid);
 	if (!ksva) {
-		dev_err(udma_dev->dev,
-			"unable to get ksva while register segment, token maybe is free.\n");
+		udma_err_rl(udma_dev->dev,
+			    "unable to get ksva while register segment, token maybe is free.\n");
 		goto err_load_ksva;
 	}
 
 	ret = udma_sva_grant(cfg, ksva);
 	if (ret) {
-		dev_err(udma_dev->dev,
-			"ksva grant failed token policy %d, access %d, ret = %d.\n",
-			cfg->flag.bs.token_policy, cfg->flag.bs.access, ret);
+		udma_err_rl(udma_dev->dev,
+			    "ksva grant failed token policy %d, access %d, ret = %d.\n",
+			    cfg->flag.bs.token_policy, cfg->flag.bs.access, ret);
 		goto err_load_ksva;
 	}
 
@@ -638,7 +640,7 @@ int udma_unregister_seg(struct ubcore_target_seg *ubcore_seg)
 	mutex_lock(&udma_dev->ksva_mutex);
 	ksva = (struct iommu_sva *)xa_load(&udma_dev->ksva_table, udma_tid->tid);
 	if (!ksva) {
-		dev_warn(udma_dev->dev,
+		udma_warn_rl(udma_dev->dev,
 			 "unable to get ksva while unregister segment, token maybe is free.\n");
 	} else {
 		if (seg->token_value_valid) {
@@ -654,7 +656,7 @@ int udma_unregister_seg(struct ubcore_target_seg *ubcore_seg)
 		}
 		if (ret) {
 			mutex_unlock(&udma_dev->ksva_mutex);
-			dev_err(udma_dev->dev, "unregister segment failed, ret = %d.\n", ret);
+			udma_err_rl(udma_dev->dev, "unregister segment failed, ret = %d.\n", ret);
 			return ret;
 		}
 	}
