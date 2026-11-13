@@ -7,16 +7,16 @@
  * Author: Huacai Chen <chenhuacai@loongson.cn>
  * Copyright (C) 2024 Loongson Technology Corporation Limited
  */
+#include <linux/acpi.h>
 #include <linux/cpufreq.h>
 #include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/units.h>
-
+#include <acpi/processor.h>
 #include <asm/idle.h>
 #include <asm/loongarch.h>
 #include <asm/loongson.h>
-#include <asm/smp.h>
 
 /* Message */
 union smc_message {
@@ -27,6 +27,15 @@ union smc_message {
 		u32 val		: 12;
 		u32 cmd		: 6;
 		u32 extra	: 1;
+		u32 complete	: 1;
+	};
+};
+
+union smc_message_v0 {
+	u32 value;
+	struct {
+		u32 info	: 24;
+		u32 cmd		: 7;
 		u32 complete	: 1;
 	};
 };
@@ -159,31 +168,66 @@ union smc_message {
  */
 #define CMD_SET_FREQ_INFO		0x13
 
+/*
+ * CMD_SET_FREQ_INFO_V0 - Used in SMC_VERSION_V0
+ */
+#define CMD_SET_FREQ_INFO_V0		0x21
+
 /* Freq types */
 #define FREQ_INFO_TYPE_FREQ		0
 #define FREQ_INFO_TYPE_LEVEL		1
 
 #define FREQ_MAX_LEVEL			16
 
+#define MMIO_SMCMBX(node) \
+	((void __iomem *)(nid_to_addrbase(node) | IO_BASE | \
+	LOONGSON_REG_BASE | LOONGARCH_IOCSR_SMCMBX))
+
+#define MMIO_MISC_FUNC(node) \
+	((void __iomem *)(nid_to_addrbase(node) | IO_BASE | \
+	LOONGSON_REG_BASE | LOONGARCH_IOCSR_MISC_FUNC))
+
 struct loongson3_freq_data {
 	unsigned int def_freq_level;
+	unsigned int def_freq_value;
 	struct cpufreq_frequency_table table[];
 };
 
+enum smc_version {
+	SMC_VERSION_V0,
+	SMC_VERSION_V1,
+};
+
+static int smc_version;
 static struct mutex cpufreq_mutex[MAX_NUMNODES];
 static struct cpufreq_driver loongson3_cpufreq_driver;
 static DEFINE_PER_CPU(struct loongson3_freq_data *, freq_data);
+static DEFINE_PER_CPU(struct acpi_processor_performance *, acpi_perf_data);
 
 static inline int do_service_request(u32 id, u32 info, u32 cmd, u32 val, u32 extra)
 {
 	int retries;
-	unsigned int cpu = raw_smp_processor_id();
-	unsigned int nid = cpu_to_node(cpu);
+	unsigned int cpu = 0, nid;
 	union smc_message msg, last;
+
+#ifdef CONFIG_SMP
+	switch (cmd) {
+	case CMD_GET_FREQ_INFO:
+	case CMD_SET_FREQ_INFO:
+	case CMD_GET_FREQ_LEVEL_NUM:
+	case CMD_GET_FREQ_LEVEL_INFO:
+	case CMD_GET_FREQ_BOOST_LEVEL:
+		cpu = cpu_number_map(id);
+		break;
+	default:
+		cpu = raw_smp_processor_id();
+	}
+#endif
+	nid = cpu_to_node(cpu);
 
 	mutex_lock(&cpufreq_mutex[nid]);
 
-	last.value = iocsr_read32(LOONGARCH_IOCSR_SMCMBX);
+	last.value = readl(MMIO_SMCMBX(nid));
 	if (!last.complete) {
 		mutex_unlock(&cpufreq_mutex[nid]);
 		return -EPERM;
@@ -196,12 +240,12 @@ static inline int do_service_request(u32 id, u32 info, u32 cmd, u32 val, u32 ext
 	msg.extra	= extra;
 	msg.complete	= 0;
 
-	iocsr_write32(msg.value, LOONGARCH_IOCSR_SMCMBX);
-	iocsr_write32(iocsr_read32(LOONGARCH_IOCSR_MISC_FUNC) | IOCSR_MISC_FUNC_SOFT_INT,
-		      LOONGARCH_IOCSR_MISC_FUNC);
+	writel(msg.value, MMIO_SMCMBX(nid));
+	writel(readl(MMIO_MISC_FUNC(nid)) | IOCSR_MISC_FUNC_SOFT_INT,
+		MMIO_MISC_FUNC(nid));
 
 	for (retries = 0; retries < 10000; retries++) {
-		msg.value = iocsr_read32(LOONGARCH_IOCSR_SMCMBX);
+		msg.value = readl(MMIO_SMCMBX(nid));
 		if (msg.complete)
 			break;
 
@@ -218,21 +262,90 @@ static inline int do_service_request(u32 id, u32 info, u32 cmd, u32 val, u32 ext
 	return msg.val;
 }
 
+static inline  int do_service_request_v0(u32 info, u32 cmd)
+{
+	int retries;
+	union smc_message_v0 msg;
+	unsigned int cpu = 0;
+	unsigned int nid = cpu_to_node(cpu);
+
+	mutex_lock(&cpufreq_mutex[nid]);
+
+	msg.value = readl(MMIO_SMCMBX(nid));
+	if (!msg.complete) {
+		mutex_unlock(&cpufreq_mutex[nid]);
+		return -EPERM;
+	}
+
+	msg.info	= info;
+	msg.cmd		= cmd;
+	msg.complete	= 0;
+
+	writel(msg.value, MMIO_SMCMBX(nid));
+	writel(readl(MMIO_MISC_FUNC(nid)) | IOCSR_MISC_FUNC_SOFT_INT,
+		MMIO_MISC_FUNC(nid));
+
+	for (retries = 0; retries < 10000; retries++) {
+		msg.value = readl(MMIO_SMCMBX(nid));
+		if (msg.complete)
+			break;
+
+		usleep_range(8, 12);
+	}
+
+	if (!msg.complete) {
+		msg.complete = 1;
+		writel(msg.value, MMIO_SMCMBX(nid));
+		mutex_unlock(&cpufreq_mutex[nid]);
+		return -EPERM;
+	}
+
+	msg.complete = 0;
+
+	mutex_unlock(&cpufreq_mutex[nid]);
+
+	return msg.value;
+}
+
 static unsigned int loongson3_cpufreq_get(unsigned int cpu)
 {
-	int ret, core = cpu_logical_map(cpu);
+	int ret = 0;
+	struct cpufreq_policy *policy = cpufreq_cpu_get_raw(cpu);
+	unsigned int core = cpu_logical_map(cpu);
 
-	ret = do_service_request(core, FREQ_INFO_TYPE_FREQ, CMD_GET_FREQ_INFO, 0, 0);
+	if (smc_version == SMC_VERSION_V1)
+		ret = do_service_request(core, FREQ_INFO_TYPE_FREQ,
+					 CMD_GET_FREQ_INFO, 0, 0);
+	if (ret <= 0)
+		ret = policy->cur;
+	else
+		ret = ret * KILO;
 
-	return (ret < 0) ? 0 : ret * KILO;
+	pr_debug("get cpufreq for cpu%d: %dKHz\n", cpu, ret);
+
+	return ret;
 }
 
 static int loongson3_cpufreq_target(struct cpufreq_policy *policy, unsigned int index)
 {
-	int ret, core = cpu_logical_map(policy->cpu);
+	int ret;
+	unsigned int core = cpu_logical_map(policy->cpu);
 
-	ret = do_service_request(core, FREQ_INFO_TYPE_LEVEL, CMD_SET_FREQ_INFO,
-				 index, 0);
+	if (smc_version == SMC_VERSION_V1)
+		ret = do_service_request(core, FREQ_INFO_TYPE_LEVEL,
+					 CMD_SET_FREQ_INFO, index, 0);
+	else {
+		struct acpi_processor_performance *perf =
+			per_cpu(acpi_perf_data, policy->cpu);
+		unsigned int level = perf->states[index].control & 0xf;
+		u32 info = (((core >> 4) & 0xf) << 8) | (level << 4) |
+			    (core & 0xf);
+
+		ret = do_service_request_v0(info, CMD_SET_FREQ_INFO_V0);
+	}
+
+	pr_debug("cpufreq target for cpu%d: index = %u, ret = %d\n",
+		 policy->cpu, index, ret);
 
 	return (ret >= 0) ? 0 : ret;
 }
@@ -278,8 +391,64 @@ static int configure_freq_table(int cpu)
 
 	data->table[freq_level].flags = 0;
 	data->table[freq_level].frequency = CPUFREQ_TABLE_END;
+	data->def_freq_value = data->table[data->def_freq_level].frequency;
 
 	per_cpu(freq_data, cpu) = data;
+
+	return 0;
+}
+
+static int configure_freq_table_acpi(int cpu)
+{
+	int i, ret, normal_max_level = 0, normal_max_freq = 0;
+	struct platform_device *pdev = cpufreq_get_driver_data();
+	struct loongson3_freq_data *data;
+	struct acpi_processor_performance *perf;
+
+	if (per_cpu(freq_data, cpu))
+		return 0;
+
+	perf = devm_kzalloc(&pdev->dev, sizeof(*perf), GFP_KERNEL);
+	if (!perf)
+		return -ENOMEM;
+
+	if (!zalloc_cpumask_var_node(&perf->shared_cpu_map, GFP_KERNEL,
+	    cpu_to_node(cpu)))
+		return -ENOMEM;
+
+	ret = acpi_processor_register_performance(perf, cpu);
+	if (ret)
+		return ret;
+
+	if (perf->state_count < 2) {
+		acpi_processor_unregister_performance(cpu);
+		return -EINVAL;
+	}
+
+	data = devm_kzalloc(&pdev->dev, struct_size(data, table,
+			    perf->state_count + 1), GFP_KERNEL);
+	if (!data)
+		return -ENOMEM;
+
+	for (i = 0; i < perf->state_count; i++) {
+		data->table[i].frequency = perf->states[i].core_frequency *
+					   KILO;
+		data->table[i].flags = (perf->states[i].control & (0x1 << 8)) ?
+					CPUFREQ_BOOST_FREQ : 0;
+		if (!(data->table[i].flags)) {
+			if (perf->states[i].core_frequency > normal_max_freq) {
+				normal_max_freq = perf->states[i].core_frequency;
+				normal_max_level = perf->states[i].control;
+			}
+		}
+	}
+
+	data->table[i].flags = 0;
+	data->table[i].frequency = CPUFREQ_TABLE_END;
+	data->def_freq_level = normal_max_level;
+	data->def_freq_value = normal_max_freq * KILO;
+	per_cpu(freq_data, cpu) = data;
+	per_cpu(acpi_perf_data, cpu) = perf;
 
 	return 0;
 }
@@ -288,28 +457,48 @@ static int loongson3_cpufreq_cpu_init(struct cpufreq_policy *policy)
 {
 	int i, ret, cpu = policy->cpu;
 
-	ret = configure_freq_table(cpu);
+	if (smc_version == SMC_VERSION_V1)
+		ret = configure_freq_table(cpu);
+	else
+		ret = configure_freq_table_acpi(cpu);
 	if (ret < 0)
 		return ret;
 
 	policy->cpuinfo.transition_latency = 10000;
 	policy->freq_table = per_cpu(freq_data, cpu)->table;
-	policy->suspend_freq = policy->freq_table[per_cpu(freq_data, cpu)->def_freq_level].frequency;
-	cpumask_copy(policy->cpus, topology_sibling_cpumask(cpu));
+	policy->suspend_freq = per_cpu(freq_data, cpu)->def_freq_value;
+	policy->cur = per_cpu(freq_data, cpu)->def_freq_value;
 
+	cpumask_copy(policy->cpus, topology_sibling_cpumask(cpu));
 	for_each_cpu(i, policy->cpus) {
-		if (i != cpu)
+		if (i != cpu) {
 			per_cpu(freq_data, i) = per_cpu(freq_data, cpu);
+			per_cpu(acpi_perf_data, i) =
+				per_cpu(acpi_perf_data, cpu);
+		}
 	}
+
+	pr_info("cpu %d: loongson3 cpufreq init.\n", cpu);
 
 	return 0;
 }
 
 static void loongson3_cpufreq_cpu_exit(struct cpufreq_policy *policy)
 {
-	int cpu = policy->cpu;
+	unsigned int index;
+	unsigned int cpu = policy->cpu;
+	unsigned int target_freq = per_cpu(freq_data, cpu)->def_freq_value;
 
-	loongson3_cpufreq_target(policy, per_cpu(freq_data, cpu)->def_freq_level);
+	index = cpufreq_frequency_table_target(policy, target_freq, policy->min, policy->max,
+				       CPUFREQ_RELATION_H);
+	loongson3_cpufreq_target(policy, index);
+
+	if (smc_version != SMC_VERSION_V1)
+		acpi_processor_unregister_performance(cpu);
+
+	pr_info("cpu %d: loongson3 cpufreq exit.\n", cpu);
+
+	return;
 }
 
 static int loongson3_cpufreq_cpu_online(struct cpufreq_policy *policy)
@@ -319,6 +508,26 @@ static int loongson3_cpufreq_cpu_online(struct cpufreq_policy *policy)
 
 static int loongson3_cpufreq_cpu_offline(struct cpufreq_policy *policy)
 {
+	return 0;
+}
+
+static int loongson3_cpufreq_smc_detect(void)
+{
+	union smc_message msg;
+	unsigned int cpu = 0;
+	unsigned int nid = cpu_to_node(cpu);
+
+	mutex_lock(&cpufreq_mutex[nid]);
+
+	msg.value = readl(MMIO_SMCMBX(nid));
+	if (!msg.complete) {
+		pr_warn("cpufreq smc inactive.\n");
+		mutex_unlock(&cpufreq_mutex[nid]);
+		return -EPERM;
+	}
+
+	mutex_unlock(&cpufreq_mutex[nid]);
+
 	return 0;
 }
 
@@ -340,20 +549,33 @@ static int loongson3_cpufreq_probe(struct platform_device *pdev)
 {
 	int i, ret;
 
+	if (cpufreq_get_current_driver()) {
+		pr_warn("Loongson-3: cpufreq driver already exist\n");
+		return -EEXIST;
+	}
+
 	for (i = 0; i < MAX_NUMNODES; i++) {
 		ret = devm_mutex_init(&pdev->dev, &cpufreq_mutex[i]);
 		if (ret)
 			return ret;
 	}
 
+	ret = loongson3_cpufreq_smc_detect();
+	if (ret)
+		return ret;
+
 	ret = do_service_request(0, 0, CMD_GET_VERSION, 0, 0);
 	if (ret <= 0)
-		return -EPERM;
+		smc_version = SMC_VERSION_V0;
+	else
+		smc_version = SMC_VERSION_V1;
 
-	ret = do_service_request(FEATURE_DVFS, 0, CMD_SET_FEATURE,
+	if (smc_version == SMC_VERSION_V1) {
+		ret = do_service_request(FEATURE_DVFS, 0, CMD_SET_FEATURE,
 				 FEATURE_DVFS_ENABLE | FEATURE_DVFS_BOOST, 0);
-	if (ret < 0)
-		return -EPERM;
+		if (ret < 0)
+			return -EPERM;
+	}
 
 	loongson3_cpufreq_driver.driver_data = pdev;
 
@@ -361,7 +583,8 @@ static int loongson3_cpufreq_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	pr_info("cpufreq: Loongson-3 CPU frequency driver.\n");
+	pr_info("cpufreq (smc %d): Loongson-3 CPU frequency driver.\n",
+		smc_version);
 
 	return 0;
 }
