@@ -360,6 +360,36 @@ enum elv_merge blk_try_merge(struct request *rq, struct bio *bio);
 void blk_set_default_limits(struct queue_limits *lim);
 int blk_dev_init(void);
 
+static inline bool blk_rq_passthrough_stats(struct request *req)
+{
+	struct bio *bio = req->bio;
+
+	if (!blk_queue_passthrough_stat(req->q))
+		return false;
+
+	/* Requests without a bio do not transfer data. */
+	if (!bio)
+		return false;
+
+	/*
+	 * Stats are accumulated in the bdev, so must have one attached to a
+	 * bio to track stats. Most drivers do not set the bdev for passthrough
+	 * requests, but nvme is one that will set it.
+	 */
+	if (!bio->bi_bdev)
+		return false;
+
+	/*
+	 * We don't know what a passthrough command does, but we know the
+	 * payload size and data direction. Ensuring the size is aligned to the
+	 * block size filters out most commands with payloads that don't
+	 * represent sector access.
+	 */
+	if (blk_rq_bytes(req) & (bdev_logical_block_size(bio->bi_bdev) - 1))
+		return false;
+	return true;
+}
+
 /*
  * Contribute to IO statistics IFF:
  *
@@ -368,7 +398,7 @@ int blk_dev_init(void);
  */
 static inline bool blk_do_io_stat(struct request *rq)
 {
-	return (rq->rq_flags & RQF_IO_STAT) && !blk_rq_is_passthrough(rq);
+	return rq->rq_flags & RQF_IO_STAT;
 }
 
 void update_io_ticks(struct block_device *part, unsigned long now, bool end);
