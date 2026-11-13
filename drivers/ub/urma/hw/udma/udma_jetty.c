@@ -353,6 +353,7 @@ static int udma_verify_jetty_type_urma_ex(struct udma_dev *udma_dev, uint32_t cf
 		CFGID_CHECK(cfg_id, udma_dev->caps.ccu_jetty) ||
 		CFGID_CHECK(cfg_id, udma_dev->caps.stars_jetty) ||
 		CFGID_CHECK(cfg_id, udma_dev->caps.user_ctrl_normal_jetty) ||
+		CFGID_CHECK(cfg_id, udma_dev->caps.ucp_caps.ucp_jetty) ||
 		CFGID_CHECK(cfg_id, udma_dev->caps.jetty))) {
 		dev_err(udma_dev->dev, "user id %u error, jetty id from %u to %u is not belong to udma.\n",
 			cfg_id, udma_dev->caps.user_ctrl_normal_jetty.start_idx +
@@ -1011,6 +1012,7 @@ static int udma_batch_jetty_get_ack(struct udma_dev *dev,
 	int ret;
 
 	for (i = 0; i < jetty_cnt; i++) {
+		cond_resched();
 		sq = sq_list[i];
 		if (sq->state != UBCORE_JETTY_STATE_READY &&
 		    sq->state != UBCORE_JETTY_STATE_SUSPENDED)
@@ -1091,6 +1093,7 @@ static bool udma_batch_query_jetty_fd(struct udma_dev *dev,
 				continue;
 
 			sq = sq_list[i];
+			cond_resched();
 			if (udma_query_jetty_ctx(dev, &ctx, sq->id)) {
 				kfree(jetty_flag);
 				*bad_jetty_index = 0;
@@ -1132,6 +1135,7 @@ static int batch_modify_jetty_to_error(struct udma_dev *dev,
 	int ret;
 
 	for (i = 0; i < jetty_cnt; i++) {
+		cond_resched();
 		sq = sq_list[i];
 		if (sq->state == UBCORE_JETTY_STATE_ERROR ||
 		    sq->state == UBCORE_JETTY_STATE_RESET)
@@ -1235,6 +1239,7 @@ int udma_batch_modify_and_destroy_jetty(struct udma_dev *dev,
 				}
 			}
 
+			cond_resched();
 			ret = udma_destroy_hw_jetty_ctx(dev, sq_list[i]->id);
 			if (ret) {
 				dev_err(dev->dev,

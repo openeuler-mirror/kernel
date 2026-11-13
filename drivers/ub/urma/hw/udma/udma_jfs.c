@@ -729,6 +729,7 @@ err_bind_jfc:
 	udma_free_jfs_sq(dev, jfs);
 err_alloc_sq:
 	kfree(jfs);
+
 	return ERR_PTR(ret);
 }
 
@@ -1465,8 +1466,16 @@ static int udma_k_set_sqe(struct udma_sqe_ctl *sqe_ctl, struct ubcore_jfs_wr *wr
 		tjetty = wr->tjetty;
 
 	if (!(sq->bind_tp_type.value & (1U << tjetty->cfg.tp_type))) {
-		dev_err(dev->dev, "tp_type unmatched. tp_type: %u, bind_tp_type: %u.\n",
-			tjetty->cfg.tp_type, sq->bind_tp_type.value);
+		dev_err(dev->dev,
+			"tp_type unmatched. tp_type:%u(%s%s%s ); bind_tp_type:0x%x(%s%s%s).\n",
+			(uint32_t)tjetty->cfg.tp_type,
+			tjetty->cfg.tp_type == UBCORE_RTP ? " rtp" : "",
+			tjetty->cfg.tp_type == UBCORE_CTP ? " ctp" : "",
+			tjetty->cfg.tp_type == UBCORE_UTP ? " utp" : "",
+			sq->bind_tp_type.value,
+			sq->bind_tp_type.bs.rtp ? " rtp" : "",
+			sq->bind_tp_type.bs.ctp ? " ctp" : "",
+			sq->bind_tp_type.bs.utp ? " utp" : "");
 		return -EINVAL;
 	}
 
@@ -1646,7 +1655,7 @@ static void udma_write_multi_bb_dsqe(struct udma_jetty_queue *sq,
 		[UDMA_WQEBB_CNT_IS_4] = UDMA_WQEBB_BASE_OFFSET_WITH_CNT_4,
 	};
 	void *base = sq->dwqe_addr + base_offset[sq->cur_wqebb_cnt];
-	struct udma_sqe_ctl *src = ctrl;
+	struct udma_sqe_ctl *src;
 	uint8_t i;
 
 	ctrl->sqe_bb_idx = sq->pi;

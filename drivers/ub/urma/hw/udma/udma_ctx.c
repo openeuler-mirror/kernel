@@ -47,6 +47,8 @@ static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udr
 	resp.dtu_va_size = dev->dtu_info.pa_size;
 	resp.ccu_jetty_start_id = dev->caps.ccu_jetty.start_idx;
 	resp.ccu_jetty_max_cnt = dev->caps.ccu_jetty.max_cnt;
+	resp.ucp_jetty_start_id = (uint16_t)dev->caps.ucp_caps.ucp_jetty.start_idx;
+	resp.ucp_jetty_max_cnt = (uint16_t)dev->caps.ucp_caps.ucp_jetty.max_cnt;
 	resp.hugepage_enable = ubase_adev_prealloc_supported(dev->comdev.adev) & hugepage_enable;
 	resp.sva_sep_mode_en = dev->caps.sva_sep_mode_en;
 	resp.st64b_en = dev->caps.st64b_en;
