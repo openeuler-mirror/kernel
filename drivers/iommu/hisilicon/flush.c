@@ -481,6 +481,28 @@ static int ummu_device_flush_plb(struct ummu_device *ummu, u32 tag, u32 tid,
 	return ret;
 }
 
+static int ummu_device_flush_plb_free_bit(struct ummu_device *ummu, u32 tag, u32 tid,
+				   u32 next_lvl_idx, u32 next_lvl_offset)
+{
+	struct ummu_mcmdq_ent cmd = {
+		.opcode = CMD_PLBI_FREE_BIT,
+		.plbi_free_bit = {
+			.tid = tid,
+			.tecte_tag = (u16)tag,
+			.next_lvl_idx = next_lvl_idx,
+			.next_lvl_offset = next_lvl_offset,
+		},
+	};
+	int ret;
+
+	ret = ummu_mcmdq_issue_cmd_with_sync(ummu, &cmd);
+	if (ret)
+		dev_err_ratelimited(ummu->dev,
+			"issue plbi free_bit cmd failed, ret = %d\n", ret);
+
+	return ret;
+}
+
 void ummu_device_ioplb_sync(struct iommu_domain *domain,
 			    struct iommu_plb_gather *plb_gather)
 {
@@ -489,13 +511,33 @@ void ummu_device_ioplb_sync(struct iommu_domain *domain,
 	struct ummu_domain *u_domain = to_ummu_domain(domain);
 	u32 tid = u_domain->base_domain.tid;
 	u32 tag = u_domain->cfgs.tecte_tag;
+	struct ummu_plbi_node *node;
 	u64 addr;
 
-	if (!plb_gather->size)
-		return;
+	/* legacy va/size direct path (used by framework-level iommu_plb_sync) */
+	if (plb_gather->size) {
+		addr = (u64)(uintptr_t)plb_gather->va & GENMASK_ULL(ummu->cap.ias - 1, 0U);
+		ummu_device_flush_plb(ummu, tag, tid, addr, plb_gather->size);
+	}
 
-	addr = (u64)(uintptr_t)plb_gather->va & GENMASK_ULL(ummu->cap.ias - 1, 0U);
-	ummu_device_flush_plb(ummu, tag, tid, addr, plb_gather->size);
+	/* dispatch plbi_list by opcode (used by perm_table immediate iommu_plb_sync) */
+	list_for_each_entry(node, &plb_gather->plbi_list, list) {
+		switch (node->opcode) {
+		case CMD_PLBI_OS_VA:
+			addr = node->plbi_va.va & GENMASK_ULL(ummu->cap.ias - 1, 0U);
+			ummu_device_flush_plb(ummu, tag, tid, addr, node->plbi_va.size);
+			break;
+		case CMD_PLBI_FREE_BIT:
+			ummu_device_flush_plb_free_bit(ummu, tag, tid,
+						       (u32)node->plbi_f_bit.lvl_idx,
+						       (u32)node->plbi_f_bit.lvl_offset);
+			break;
+		default:
+			dev_warn_ratelimited(ummu->dev, "wrong plbi opcode %u in ioplb sync.\n",
+				     node->opcode);
+			break;
+		}
+	}
 }
 
 void ummu_device_flush_plb_all(struct iommu_domain *domain)

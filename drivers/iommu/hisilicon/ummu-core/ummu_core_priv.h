@@ -22,6 +22,7 @@ struct tid_dev {
 	struct iommu_sva *sva;
 	struct kref ref;
 	struct mm_struct *mm;
+	struct mutex sva_mutex;
 };
 
 /* private definition */
