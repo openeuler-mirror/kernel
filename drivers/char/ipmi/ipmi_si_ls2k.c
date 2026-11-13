@@ -153,6 +153,7 @@ static int ipmi_ls2k_probe(struct platform_device *pdev)
 	memset(&io, 0, sizeof(io));
 
 	io.si_type	= SI_KCS;
+	io.addr_space	= IPMI_MEM_ADDR_SPACE;
 	io.io_setup	= ipmi_ls2k_mem_setup;
 	io.addr_data	= pdev->resource[0].start;
 	io.regspacing	= resource_size(&pdev->resource[0]);

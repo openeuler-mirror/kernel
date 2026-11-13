@@ -126,11 +126,20 @@ static void loongson_dma_hangs_fixup(struct pci_dev *pdev, bool open)
 	u32 val, count, i, crtc_offset, device;
 
 	base = pdev->bus->ops->map_bus(pdev->bus, pdev->devfn + 1, 0);
+	if (!base)
+		return;
 	device = readw(base + PCI_DEVICE_ID);
 
-	crtc_offset = (device == DEV_LS2K3000_DC) ? LS2K3000_DC_CRTC_OFFSET :
-		      (device == DEV_LS2K2000_DC) ? LS2K2000_DC_CRTC_OFFSET :
-						    0;
+	switch (device) {
+	case DEV_LS2K3000_DC:
+		crtc_offset = LS2K3000_DC_CRTC_OFFSET;
+		break;
+	case DEV_LS2K2000_DC:
+		crtc_offset = LS2K2000_DC_CRTC_OFFSET;
+		break;
+	default:
+		return;
+	}
 	regbase = ioremap(readq(base + PCI_BASE_ADDRESS_0) & ~0xffull,
 			  LS2K_DC_BAR_SIZE);
 	if (!regbase) {
@@ -219,6 +228,8 @@ static void loongson_display_quirk(struct pci_dev *dev)
 		      (dev->device == 0x7a15 || dev->device == 0x7a25)))
 			return;
 	} else {
+		if (!bus->parent)
+			return;
 		while (!pci_is_root_bus(bus->parent))
 			bus = bus->parent;
 
@@ -246,7 +257,5 @@ static void loongson_display_quirk(struct pci_dev *dev)
 	writel(val, (void *)TO_UNCACHE(0xefdfb000174));
 	writel(0x80000000, (void *)TO_UNCACHE(0xefdfb000170));
 }
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_LOONGSON, 0x7a15, loongson_display_quirk);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_LOONGSON, 0x7a25, loongson_display_quirk);
 DECLARE_PCI_FIXUP_CLASS_FINAL(PCI_ANY_ID, PCI_ANY_ID,
 			      PCI_BASE_CLASS_DISPLAY, 16, loongson_display_quirk);

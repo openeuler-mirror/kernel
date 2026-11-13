@@ -268,18 +268,18 @@ static int ls2k_bmc_recover_pci_data(void *data)
 	};
 
 	if (i == 0)
-		return false;
+		return -EIO;
 
 	ls2k_bmc_restore_bridge_pci_data(parent, ddata);
 
 	/* Check if PCI-E is connected */
 	if (!ls2k_bmc_pcie_is_connected(parent, ddata))
-		return false;
+		return -EIO;
 
 	/* Waiting for U-Boot and DDR ready */
 	mdelay(LS2K_BMC_RESET_WAIT_TIME);
 	if (!ls2k_bmc_bar0_addr_is_set(parent))
-		return false;
+		return -EIO;
 
 	/* Restore LS2K BMC PCI-E config data */
 	pci_write_config_dword(pdev, PCI_COMMAND, ddata->bmc_pci_data.pci_command);
@@ -292,12 +292,15 @@ static int ls2k_bmc_recover_pci_data(void *data)
 static void ls2k_bmc_events_fn(struct work_struct *work)
 {
 	struct ls2k_bmc_ddata *ddata = container_of(work, struct ls2k_bmc_ddata, bmc_reset_work);
+	int ret;
 
 	/*
 	 * The PCI-E is lost when the BMC resets, at which point access to the PCI-E
 	 * from other CPUs is suspended to prevent a crash.
 	 */
-	stop_machine(ls2k_bmc_recover_pci_data, ddata, NULL);
+	ret = stop_machine(ls2k_bmc_recover_pci_data, ddata, NULL);
+	if (ret)
+		dev_err(ddata->dev, "BMC reset PCIe recovery failed: %d\n", ret);
 
 	if (IS_ENABLED(CONFIG_VT)) {
 		/* Re-push the display due to previous PCI-E loss. */
@@ -510,6 +513,10 @@ disable_pci:
 
 static void ls2k_bmc_remove(struct pci_dev *dev)
 {
+	struct ls2k_bmc_ddata *ddata = pci_get_drvdata(dev);
+
+	cancel_work_sync(&ddata->bmc_reset_work);
+
 	pci_disable_device(dev);
 }
 

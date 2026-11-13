@@ -78,6 +78,19 @@ void avecintc_sync(struct avecintc_data *adata)
 	}
 }
 
+/* Called from the IR redirect driver: take the avec lock so the pending
+ * list is not mutated concurrently with complete_irq_moving().
+ */
+void avecintc_sync_locked(struct avecintc_data *adata)
+{
+	unsigned long flags;
+
+	raw_spin_lock_irqsave(&loongarch_avec.lock, flags);
+	avecintc_sync(adata);
+	raw_spin_unlock_irqrestore(&loongarch_avec.lock, flags);
+}
+EXPORT_SYMBOL_GPL(avecintc_sync_locked);
+
 static int avecintc_set_affinity(struct irq_data *data, const struct cpumask *dest, bool force)
 {
 	int cpu, ret, vector;

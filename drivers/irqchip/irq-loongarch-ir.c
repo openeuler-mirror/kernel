@@ -226,9 +226,9 @@ static void redirect_table_free(struct redirect_item *item)
 	clear_bit(item->index, ird_table->bitmap);
 	raw_spin_unlock_irq(&ird_table->lock);
 
-	kfree(item->gpid);
-
 	irde_invalidate_entry(item);
+
+	kfree(item->gpid);
 }
 
 static inline void redirect_domain_prepare_entry(struct redirect_item *item,
@@ -261,6 +261,8 @@ static void redirect_free_resources(struct irq_domain *domain,
 }
 
 #ifdef CONFIG_SMP
+extern void avecintc_sync_locked(struct avecintc_data *adata);
+
 static int redirect_set_affinity(struct irq_data *data, const struct cpumask *dest, bool force)
 {
 	struct avecintc_data *adata = irq_data_get_avec_data(data);
@@ -280,7 +282,7 @@ static int redirect_set_affinity(struct irq_data *data, const struct cpumask *de
 
 	redirect_domain_prepare_entry(item, adata);
 	irde_invalidate_entry(item);
-	avecintc_sync(adata);
+	avecintc_sync_locked(adata);
 
 	return IRQ_SET_MASK_OK;
 }
@@ -325,6 +327,7 @@ static int redirect_domain_alloc(struct irq_domain *domain, unsigned int virq,
 	index = redirect_table_alloc(node, nr_irqs);
 	if (index < 0) {
 		pr_err("Alloc redirect table entry failed\n");
+		irq_domain_free_irqs_parent(domain, virq, nr_irqs);
 		return -EINVAL;
 	}
 
@@ -436,8 +439,8 @@ static void redirect_irde_cfg(struct redirect_desc *irde)
 
 static void __init redirect_irde_free(struct redirect_desc *irde)
 {
-	struct redirect_table *ird_table = &redirect_descs->ird_table;
-	struct redirect_queue *inv_queue = &redirect_descs->inv_queue;
+	struct redirect_table *ird_table = &irde->ird_table;
+	struct redirect_queue *inv_queue = &irde->inv_queue;
 
 	if (ird_table->table) {
 		folio_put(virt_to_folio(ird_table->table));
