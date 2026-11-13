@@ -57,7 +57,6 @@ static int unic_set_lb_mode(struct unic_dev *unic_dev, bool en, int loop_type)
 
 static int unic_lb_link_status_wait(struct unic_dev *unic_dev, bool en)
 {
-#define UNIC_LINK_STATUS_MS		30
 #define UNIC_MAC_LINK_STATUS_NUM	100
 
 	u8 link_status = UNIC_LINK_STATUS_DOWN;
@@ -76,7 +75,7 @@ static int unic_lb_link_status_wait(struct unic_dev *unic_dev, bool en)
 		if (link_status == link_ret)
 			return 0;
 
-		msleep(UNIC_LINK_STATUS_MS);
+		msleep(UNIC_LB_WAIT_LINK_STATUS_MS);
 	} while (++i < UNIC_MAC_LINK_STATUS_NUM);
 
 	unic_warn(unic_dev, "query mac link status timeout, en = %d.\n", en);
@@ -209,8 +208,8 @@ static void unic_eth_lb_check_skb_data(struct unic_channel *c,
 				       struct sk_buff *skb)
 {
 	struct unic_dev *unic_dev = netdev_priv(skb->dev);
+	struct unic_channel_stats *c_stats;
 	struct net_device *ndev = skb->dev;
-	struct unic_rq *rq = c->rq;
 	u32 len = skb_headlen(skb);
 	u8 *packet = skb->data;
 	struct ethhdr *ethh;
@@ -250,10 +249,11 @@ out:
 	 * can also increase packet and byte counts, the statistics should be
 	 * subtracted when counting if the packets are incorrect.
 	 */
-	u64_stats_update_begin(&rq->syncp);
-	rq->stats.packets--;
-	rq->stats.bytes -= skb->len;
-	u64_stats_update_end(&rq->syncp);
+	c_stats = &unic_dev->channels.c_stats[c->c_idx];
+	u64_stats_update_begin(&c_stats->rq_syncp);
+	c_stats->rq_stats.packets--;
+	c_stats->rq_stats.bytes -= skb->len;
+	u64_stats_update_end(&c_stats->rq_syncp);
 	print_hex_dump(KERN_ERR, "eth selftest:", DUMP_PREFIX_OFFSET,
 		       UNIC_HEX, 1, skb->data, len, true);
 	dev_kfree_skb_any(skb);
@@ -262,6 +262,7 @@ out:
 static u32 unic_lb_check_rx(struct unic_dev *unic_dev, u32 budget,
 			    struct sk_buff *skb)
 {
+	struct unic_channel_stats *c_stats;
 	struct unic_channel *c;
 	u64 pre_pkt, pre_byte;
 	u32 pkt_total = 0;
@@ -269,16 +270,17 @@ static u32 unic_lb_check_rx(struct unic_dev *unic_dev, u32 budget,
 
 	for (i = 0; i < unic_dev->channels.num; i++) {
 		c = &unic_dev->channels.c[i];
-		pre_pkt = c->rq->stats.packets;
-		pre_byte = c->rq->stats.bytes;
+		c_stats = &unic_dev->channels.c_stats[c->c_idx];
+		pre_pkt = c_stats->rq_stats.packets;
+		pre_byte = c_stats->rq_stats.bytes;
 
 		preempt_disable();
 		unic_poll_rx(c, budget, unic_eth_lb_check_skb_data);
 		preempt_enable();
 
-		pkt_total += (c->rq->stats.packets - pre_pkt);
-		c->rq->stats.packets = pre_pkt;
-		c->rq->stats.bytes = pre_byte;
+		pkt_total += (c_stats->rq_stats.packets - pre_pkt);
+		c_stats->rq_stats.packets = pre_pkt;
+		c_stats->rq_stats.bytes = pre_byte;
 	}
 	return pkt_total;
 }
@@ -322,21 +324,23 @@ static struct sk_buff *unic_lb_skb_prepare(struct net_device *ndev)
 
 static void unic_lb_poll_tx(struct unic_dev *unic_dev, struct sk_buff *skb)
 {
+	struct unic_channel_stats *c_stats;
 	u64 pre_pkt, pre_byte;
 	struct unic_sq *sq;
 
 	sq = unic_dev->channels.c[skb->queue_mapping].sq;
 
-	pre_pkt = sq->stats.packets;
-	pre_byte = sq->stats.bytes;
+	c_stats = &unic_dev->channels.c_stats[sq->queue_index];
+	pre_pkt = c_stats->sq_stats.packets;
+	pre_byte = c_stats->sq_stats.bytes;
 
 	/* The free skb process is executed within poll tx */
 	unic_poll_tx(sq, 0);
 	if (sq->pi != sq->ci)
 		unic_err(unic_dev, "cqe error, sp pi doesn't match sp ci.\n");
 
-	sq->stats.packets = pre_pkt;
-	sq->stats.bytes = pre_byte;
+	c_stats->sq_stats.packets = pre_pkt;
+	c_stats->sq_stats.bytes = pre_byte;
 }
 
 static int unic_lb_run_test(struct net_device *ndev, int loop_mode)
@@ -388,8 +392,7 @@ static int unic_lb_run_test(struct net_device *ndev, int loop_mode)
 		goto out;
 	}
 
-	/* Allow 200 milliseconds for packets to go from Tx to Rx */
-	msleep(200);
+	msleep(UNIC_LB_WAIT_TIME);
 
 	cnt = unic_lb_check_rx(unic_dev, UNIC_LB_TEST_PKT_NUM, skb);
 	if (cnt != UNIC_LB_TEST_PKT_NUM) {

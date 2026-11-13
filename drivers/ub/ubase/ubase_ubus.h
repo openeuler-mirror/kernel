@@ -60,6 +60,7 @@ void ubase_ubus_unregister_driver(void);
 int ubase_ubus_irq_vectors_alloc(struct device *dev);
 void ubase_ubus_irq_vectors_free(struct device *dev);
 int ubase_ubus_irq_vector(struct device *dev, u32 idx);
+const struct cpumask *ubase_ubus_irq_get_affinity(struct device *dev);
 
 int ubase_ubus_reset_entry(struct device *dev);
 int ubase_ubus_reset_init(struct device *dev);

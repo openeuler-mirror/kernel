@@ -18,6 +18,7 @@
 #include "ubase_dtumem.h"
 #include "ubase_hw.h"
 #include "ubase_mailbox.h"
+#include "ubase_mem.h"
 #include "ubase_pmem.h"
 #include "ubase_proxy.h"
 #include "ubase_rct.h"
@@ -969,6 +970,10 @@ static const struct ubase_init_function ubase_init_func_map[] = {
 		ubase_query_dev_res, NULL
 	},
 	{
+		"init mem ops", UBASE_SUP_ALL, 0,
+		ubase_mem_ops_init, NULL
+	},
+	{
 		"dtu memory", UBASE_SUP_NO_PMU, 0,
 		ubase_dtu_mem_init, ubase_dtu_mem_uninit
 	},
@@ -1772,23 +1777,25 @@ struct ubase_adev_caps *ubase_get_unic_caps(struct auxiliary_device *adev)
 }
 EXPORT_SYMBOL(ubase_get_unic_caps);
 
-static bool ubase_add_ue_list(struct ubase_dev *udev, u16 bus_ue_id)
+static int ubase_add_ue_list(struct ubase_dev *udev, u16 bus_ue_id, bool *added)
 {
 	struct ubase_ue_node *pos_node, *tmp_node, *new_node;
+	int ret;
 
 	new_node = kzalloc(sizeof(*new_node), GFP_KERNEL);
 	if (!new_node) {
 		ubase_err(udev, "failed to alloc ue node.\n");
-		return false;
+		return -ENOMEM;
 	}
 	new_node->bus_ue_id = bus_ue_id;
 
 	mutex_lock(&udev->ue_list_lock);
 	list_for_each_entry_safe(pos_node, tmp_node, &udev->ue_list, list) {
 		if (pos_node->bus_ue_id == bus_ue_id) {
+			/* maybe receive repeated notifications */
 			kfree(new_node);
 			mutex_unlock(&udev->ue_list_lock);
-			return false;
+			return 0;
 		} else if (bus_ue_id < pos_node->bus_ue_id) {
 			list_add(&new_node->list, pos_node->list.prev);
 			goto add_ue_end;
@@ -1797,8 +1804,15 @@ static bool ubase_add_ue_list(struct ubase_dev *udev, u16 bus_ue_id)
 	list_add_tail(&new_node->list, &udev->ue_list);
 
 add_ue_end:
+	ret = ubase_init_ue_extdb_buf(udev, new_node);
+	if (ret) {
+		list_del(&new_node->list);
+		kfree(new_node);
+	} else {
+		*added = true;
+	}
 	mutex_unlock(&udev->ue_list_lock);
-	return true;
+	return ret;
 }
 
 static bool ubase_del_ue_list(struct ubase_dev *udev, u16 bus_ue_id)
@@ -1808,6 +1822,7 @@ static bool ubase_del_ue_list(struct ubase_dev *udev, u16 bus_ue_id)
 	mutex_lock(&udev->ue_list_lock);
 	list_for_each_entry_safe(pos_node, tmp_node, &udev->ue_list, list) {
 		if (pos_node->bus_ue_id == bus_ue_id) {
+			ubase_uninit_ue_extdb_buf(udev, pos_node);
 			list_del(&pos_node->list);
 			kfree(pos_node);
 			mutex_unlock(&udev->ue_list_lock);
@@ -1819,23 +1834,24 @@ static bool ubase_del_ue_list(struct ubase_dev *udev, u16 bus_ue_id)
 	return false;
 }
 
-static bool ubase_modify_ue_list(struct ubase_dev *udev, u16 bus_ue_id, bool is_en)
-{
-	if (is_en)
-		return ubase_add_ue_list(udev, bus_ue_id);
-	else
-		return ubase_del_ue_list(udev, bus_ue_id);
-}
-
-void ubase_virt_handler(struct ubase_dev *udev, u16 bus_ue_id, bool is_en)
+int ubase_virt_handler(struct ubase_dev *udev, u16 bus_ue_id, bool is_en)
 {
 	struct ubase_adev *uadev;
-	int i;
+	bool added = false;
+	int ret, i;
 
-	if (!ubase_modify_ue_list(udev, bus_ue_id, is_en))
-		return;
+	if (is_en) {
+		ret = ubase_add_ue_list(udev, bus_ue_id, &added);
+		if (ret)
+			return ret;
+		if (!added)
+			return 0;
 
-	ubase_update_ue_isolated_state(udev);
+		ubase_update_ue_isolated_state(udev);
+	} else {
+		if (!ubase_del_ue_list(udev, bus_ue_id))
+			return 0;
+	}
 
 	if (is_en)
 		ubase_update_ue_cmdq_ratelimit_state(udev, bus_ue_id);
@@ -1852,6 +1868,8 @@ void ubase_virt_handler(struct ubase_dev *udev, u16 bus_ue_id, bool is_en)
 		mutex_unlock(&uadev->virt_lock);
 	}
 	mutex_unlock(&udev->priv.uadev_lock);
+
+	return 0;
 }
 
 bool ubase_dbg_log(void)
@@ -2252,7 +2270,7 @@ int ubase_activate_dev(struct auxiliary_device *adev)
 	int ret = 0;
 
 	if (!adev)
-		return 0;
+		return -EINVAL;
 
 	udev = __ubase_get_udev_by_adev(adev);
 
@@ -2344,7 +2362,7 @@ int ubase_deactivate_dev(struct auxiliary_device *adev)
 	int ret;
 
 	if (!adev)
-		return 0;
+		return -EINVAL;
 
 	udev = __ubase_get_udev_by_adev(adev);
 

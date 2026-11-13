@@ -18,6 +18,7 @@
 #include "unic_cmd.h"
 #include "unic_ethtool.h"
 #include "unic_rx.h"
+#include "unic_timing.h"
 #include "unic_tx.h"
 #include "unic_txrx.h"
 
@@ -121,6 +122,7 @@ struct unic_channel {
 	struct napi_struct	napi;
 	/*​ ​monitor each jetty's return status in parallel operations.​ */
 	int			ret;
+	u8			c_idx;
 };
 
 struct unic_coal_txrx {
@@ -149,24 +151,32 @@ struct unic_vl {
 	struct	unic_pfc_info	pfc_info;
 };
 
+struct unic_channel_stats {
+	struct unic_sq_stats	sq_stats;
+	struct unic_rq_stats	rq_stats;
+	struct u64_stats_sync	sq_syncp;
+	struct u64_stats_sync	rq_syncp;
+};
+
 struct unic_channels {
-	struct unic_channel	*c;
-	struct unic_vl		vl;
-	u32			num;
-	u16			sqebb_depth;
-	u16			rqe_depth;
-	u32			sq_cqe_depth;
-	u32			rq_cqe_depth;
-	u16			rx_buff_len;
-	u16			cqe_size;
-	u32			rss_size;
-	u8			rss_vl_num; /* the number of vl used by unic */
-	u8			sqebb_shift;
-	u8			sq_jfc_shift;
-	u8			rq_jfc_shift;
-	struct unic_coal_txrx	unic_coal;
-	struct mutex		mutex; /* protects modify channel's resource and mapping */
-	unsigned long		state;
+	struct unic_channel		*c;
+	struct unic_vl			vl;
+	u32				num;
+	u16				sqebb_depth;
+	u16				rqe_depth;
+	u32				sq_cqe_depth;
+	u32				rq_cqe_depth;
+	u16				rx_buff_len;
+	u16				cqe_size;
+	u32				rss_size;
+	u8				rss_vl_num; /* the number of vl used by unic */
+	u8				sqebb_shift;
+	u8				sq_jfc_shift;
+	u8				rq_jfc_shift;
+	struct unic_coal_txrx		unic_coal;
+	struct mutex			mutex; /* protects modify channel's resource and mapping */
+	unsigned long			state;
+	struct unic_channel_stats	*c_stats;
 };
 
 struct unic_caps {
@@ -325,6 +335,7 @@ int unic_change_rss_size(struct unic_dev *unic_dev, u32 new_rss_size,
 			 u32 org_rss_size);
 int unic_update_channels(struct unic_dev *unic_dev, u8 vl_num);
 int unic_dbg_log(void);
+void unic_clear_channel_stats(struct unic_dev *unic_dev);
 
 static inline bool unic_dev_ubl_supported(struct unic_dev *unic_dev)
 {
@@ -484,8 +495,6 @@ static inline bool unic_rx_changed(struct unic_dev *unic_dev)
 
 static inline u32 unic_cmd_timeout(struct unic_dev *unic_dev)
 {
-#define UNIC_CMD_TIMEOUT 5000
-
 	return __unic_removing(unic_dev) ? UNIC_CMD_TIMEOUT : 0;
 }
 

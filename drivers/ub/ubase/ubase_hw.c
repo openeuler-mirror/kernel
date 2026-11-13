@@ -133,6 +133,12 @@ static int ubase_check_dev_caps_extdb(struct ubase_dev *udev)
 		}
 	}
 
+	if (__ubase_dev_extbuf_manage_in_que_supported(udev) &&
+	    !udev->ta_ctx.extdb_buf_que_size) {
+		ubase_err(udev, "failed to check caps: extdb_buf_que_size=0.\n");
+		return -EINVAL;
+	}
+
 	return 0;
 }
 
@@ -191,6 +197,7 @@ static void ubase_parse_dev_caps_comm(struct ubase_dev *udev,
 	dev_caps->ue_num = resp->ue_num;
 	dev_caps->mac_stats_num = le16_to_cpu(resp->mac_stats_num);
 
+	udev->ta_ctx.extdb_buf_que_size = le32_to_cpu(resp->ta_extdb_buf_que_size);
 	udev->ta_ctx.extdb_buf.size = le32_to_cpu(resp->ta_extdb_buf_size);
 	udev->ta_ctx.timer_buf.size = le32_to_cpu(resp->ta_timer_buf_size);
 	udev->caps.umv_tbl_size = le32_to_cpu(resp->umv_tbl_size);
@@ -660,36 +667,10 @@ static int ubase_config_dma_buf(struct ubase_dev *udev, u16 opc, u64 dma_addr)
 
 	ret = __ubase_cmd_send_in(udev, &in);
 	if (ret)
-		ubase_err(udev,
-			  "failed to send cmd in cfg dma buf, ret = %d.\n", ret);
+		ubase_err(udev, "failed to cfg dma buf, opc=0x%x, ret=%d.\n",
+			  opc, ret);
 
 	return ret;
-}
-
-static int ubase_config_ta_timer_buf_by_pmem(struct ubase_dev *udev, u16 opc)
-{
-	u64 dma_addr, offset;
-
-	offset = ubase_jfs_ctx_align_size(udev);
-	dma_addr = udev->pmem_info.comm.dma_addr + offset;
-
-	return ubase_config_dma_buf(udev, opc, dma_addr);
-}
-
-static int ubase_alloc_ta_buf(struct ubase_dev *udev, struct ubase_dma_buf *buf)
-{
-	buf->addr = ubase_alloc_buf(udev, buf->size, &buf->dma_addr, &buf->page);
-	if (!buf->addr)
-		return -ENOMEM;
-
-	return 0;
-}
-
-static void ubase_free_ta_buf(struct ubase_dev *udev, struct ubase_dma_buf *buf)
-{
-	ubase_free_buf(udev, buf->size, buf->addr, buf->dma_addr, buf->page);
-
-	buf->addr = NULL;
 }
 
 static void ubase_free_dma_buf(struct ubase_dev *udev,
@@ -698,8 +679,9 @@ static void ubase_free_dma_buf(struct ubase_dev *udev,
 	if (!buf->addr || !buf->dma_addr)
 		return;
 
-	ubase_free_ta_buf(udev, buf);
+	ubase_free_buf(udev, buf->size, buf->addr, buf->dma_addr, buf->page);
 
+	buf->addr = NULL;
 	buf->dma_addr = 0;
 	buf->page = NULL;
 }
@@ -715,15 +697,10 @@ static int ubase_init_dma_buf(struct ubase_dev *udev, struct ubase_dma_buf *buf,
 {
 	int ret;
 
-	if (opc == UBASE_OPC_TA_TIMER_VA_CONFIG &&
-	    test_bit(UBASE_STATE_PREALLOC_OK_B, &udev->state_bits) &&
-	    !ubase_dev_dtu_supported(udev))
-		return ubase_config_ta_timer_buf_by_pmem(udev, opc);
-
-	ret = ubase_alloc_ta_buf(udev, buf);
-	if (ret) {
-		ubase_err(udev, "failed to alloc ta buf, ret = %d.\n", ret);
-		return ret;
+	buf->addr = ubase_alloc_buf(udev, buf->size, &buf->dma_addr, &buf->page);
+	if (!buf->addr) {
+		ubase_err(udev, "failed to alloc ta buf, opc=0x%x.\n", opc);
+		return -ENOMEM;
 	}
 
 	ret = ubase_config_dma_buf(udev, opc, buf->dma_addr);
@@ -733,39 +710,341 @@ static int ubase_init_dma_buf(struct ubase_dev *udev, struct ubase_dma_buf *buf,
 	return ret;
 }
 
-static int ubase_init_ta_ext_buf(struct ubase_dev *udev)
+static inline u64 ubase_extdb_iova_size(struct ubase_dev *udev)
 {
-	UBASE_DEFINE_TA_DMA_BUFS(udev);
-	int i, ret;
+	return (u64)udev->ta_ctx.extdb_buf_que_size * UBASE_MAX_VL_NUM *
+	       udev->caps.dev_caps.ue_num;
+}
 
-	for (i = 0; i < ARRAY_SIZE(bufs); i++) {
-		ret = bufs[i].is_supported(udev) ?
-		      ubase_init_dma_buf(udev, bufs[i].buf, bufs[i].opc) : 0;
-		if (ret) {
-			ubase_err(udev,
-				  "failed to init buf[%d], ret = %d.\n", i, ret);
-			goto err_out;
-		}
+static inline u64 ubase_extdb_page_cnt(struct ubase_dev *udev,
+				       u16 start_qid, u16 end_qid)
+{
+	u64 que_num = end_qid - start_qid + 1;
+
+	return (que_num * udev->ta_ctx.extdb_buf_que_size) / PAGE_SIZE;
+}
+
+static inline dma_addr_t ubase_extdb_start_iova(struct ubase_dev *udev,
+						u64 start_qid)
+{
+	u64 offset = start_qid * udev->ta_ctx.extdb_buf_que_size;
+
+	return udev->ta_ctx.extdb_iova + offset;
+}
+
+static int ubase_query_extdb_que_id(struct ubase_dev *udev, u16 bus_ue_id,
+				    u16 *start_qid, u16 *end_qid)
+{
+	struct ubase_query_fst_fvt_rqmt_cmd resp = {0};
+	u16 vl_num;
+	int ret;
+
+	ret = ubase_query_fst_fvt_rqmt(udev, &resp, bus_ue_id);
+	if (ret)
+		return ret;
+
+	vl_num = le16_to_cpu(resp.sl_queue_vl_num);
+	if (!vl_num || vl_num > UBASE_MAX_VL_NUM) {
+		ubase_err(udev, "extdb que num is invalid, num=%u.\n", vl_num);
+		return -EINVAL;
 	}
+
+	*start_qid = resp.fstr_info[0].queue_que_num;
+	*end_qid = resp.fstr_info[vl_num - 1].queue_que_num;
+	if (vl_num > 1 && *start_qid >= *end_qid) {
+		ubase_err(udev,
+			  "extdb que id is invalid, start_qid=%u, end_qid=%u, vl_num=%u.\n",
+			  *start_qid, *end_qid, vl_num);
+		return -EINVAL;
+	}
+
+	ubase_dbg(udev, "extdb start_qid=%u, end_qid=%u.\n", *start_qid, *end_qid);
+	return 0;
+}
+
+static int ubase_fill_ue_extdb_buf(struct ubase_dev *udev, u16 bus_ue_id,
+				   u16 start_qid, u16 end_qid)
+{
+	dma_addr_t start_iova;
+	u64 page_cnt;
+	int ret;
+
+	start_iova = ubase_extdb_start_iova(udev, start_qid);
+	page_cnt = ubase_extdb_page_cnt(udev, start_qid, end_qid);
+	ret = ummu_core_fill_pages(udev->ta_ctx.extdb_slot, start_iova, page_cnt,
+				   udev->gfp | __GFP_ZERO);
+	if (ret)
+		ubase_err(udev, "failed to fill ue%u's extdb pages, ret=%d.\n",
+			  bus_ue_id, ret);
+
+	return ret;
+}
+
+static void ubase_drain_ue_extdb_buf(struct ubase_dev *udev, u16 bus_ue_id,
+				     u16 start_qid, u16 end_qid)
+{
+	dma_addr_t start_iova;
+	u64 page_cnt;
+	int ret;
+
+	start_iova = ubase_extdb_start_iova(udev, start_qid);
+	page_cnt = ubase_extdb_page_cnt(udev, start_qid, end_qid);
+	ret = ummu_core_drain_pages(udev->ta_ctx.extdb_slot, start_iova, page_cnt);
+	if (ret)
+		ubase_warn(udev, "failed to drain ue%u's extdb pages, ret=%d.\n",
+			   bus_ue_id, ret);
+}
+
+int ubase_init_ue_extdb_buf(struct ubase_dev *udev, struct ubase_ue_node *node)
+{
+	int ret;
+
+	if (!ubase_dev_extbuf_manage_in_que_supported(udev))
+		return 0;
+
+	ret = ubase_query_extdb_que_id(udev, node->bus_ue_id,
+				       &node->extq_start_id, &node->extq_end_id);
+	if (ret)
+		return ret;
+
+	ret = ubase_fill_ue_extdb_buf(udev, node->bus_ue_id,
+				      node->extq_start_id, node->extq_end_id);
+	if (ret)
+		return ret;
+
+	ubase_info(udev, "init ue%u's extdb buf success.\n", node->bus_ue_id);
+	node->extbuf_ok = 1;
 
 	return 0;
-err_out:
-	for (i -= 1; i >= 0; i--) {
-		if (bufs[i].is_supported(udev))
-			ubase_uninit_dma_buf(udev, bufs[i].buf);
+}
+
+void ubase_uninit_ue_extdb_buf(struct ubase_dev *udev, struct ubase_ue_node *node)
+{
+	if (!ubase_dev_extbuf_manage_in_que_supported(udev))
+		return;
+
+	if (!node->extbuf_ok)
+		return;
+
+	ubase_drain_ue_extdb_buf(udev, node->bus_ue_id,
+				 node->extq_start_id, node->extq_end_id);
+	node->extbuf_ok = 0;
+}
+
+static int ubase_reinit_all_ue_extdb_buf(struct ubase_dev *udev)
+{
+	struct ubase_ue_node *pos, *prev;
+	int ret;
+
+	mutex_lock(&udev->ue_list_lock);
+
+	list_for_each_entry(pos, &udev->ue_list, list) {
+		ret = ubase_fill_ue_extdb_buf(udev, pos->bus_ue_id,
+					      pos->extq_start_id,
+					      pos->extq_end_id);
+		if (ret)
+			goto rollback;
+
+		pos->extbuf_ok = 1;
 	}
+	mutex_unlock(&udev->ue_list_lock);
+	return 0;
+
+rollback:
+	prev = list_prev_entry(pos, list);
+	list_for_each_entry_from_reverse(prev, &udev->ue_list, list) {
+		ubase_drain_ue_extdb_buf(udev, prev->bus_ue_id,
+					 prev->extq_start_id,
+					 prev->extq_end_id);
+		prev->extbuf_ok = 0;
+	}
+
+	mutex_unlock(&udev->ue_list_lock);
+	return ret;
+}
+
+static void ubase_uninit_all_ue_extdb_buf(struct ubase_dev *udev)
+{
+	struct ubase_ue_node *pos;
+
+	mutex_lock(&udev->ue_list_lock);
+
+	list_for_each_entry(pos, &udev->ue_list, list)
+		ubase_uninit_ue_extdb_buf(udev, pos);
+
+	mutex_unlock(&udev->ue_list_lock);
+}
+
+static int ubase_reinit_ta_extdb_buf_manage_in_que(struct ubase_dev *udev)
+{
+	u16 opc = UBASE_OPC_TA_EXTDB_VA_CONFIG;
+	int ret;
+
+	ret = ubase_fill_ue_extdb_buf(udev, 0, udev->ta_ctx.extq_start_id,
+				      udev->ta_ctx.extq_end_id);
+	if (ret)
+		return ret;
+
+	ret = ubase_reinit_all_ue_extdb_buf(udev);
+	if (ret)
+		goto drain_self;
+
+	ret = ubase_config_dma_buf(udev, opc, udev->ta_ctx.extdb_iova);
+	if (ret)
+		goto drain_all;
+
+	udev->ta_ctx.extbuf_ok = 1;
+	return 0;
+
+drain_all:
+	ubase_uninit_all_ue_extdb_buf(udev);
+drain_self:
+	ubase_drain_ue_extdb_buf(udev, 0, udev->ta_ctx.extq_start_id,
+				 udev->ta_ctx.extq_end_id);
+	return ret;
+}
+
+static int ubase_init_ta_extdb_buf_manage_in_que(struct ubase_dev *udev)
+{
+	u16 opc = UBASE_OPC_TA_EXTDB_VA_CONFIG;
+	u64 iova_size;
+	size_t sizep;
+	int ret;
+
+	ret = ubase_query_extdb_que_id(udev, 0, &udev->ta_ctx.extq_start_id,
+				       &udev->ta_ctx.extq_end_id);
+	if (ret)
+		return ret;
+
+	iova_size = ubase_extdb_iova_size(udev);
+	udev->ta_ctx.extdb_slot = dma_alloc_iova(udev->dev, iova_size, 0,
+						 &udev->ta_ctx.extdb_iova, &sizep);
+	if (IS_ERR_OR_NULL(udev->ta_ctx.extdb_slot)) {
+		ubase_err(udev,
+			  "failed to alloc extdb iova slot, iova_size=%llu.\n",
+			  iova_size);
+		return -ENOMEM;
+	}
+
+	ret = ubase_fill_ue_extdb_buf(udev, 0, udev->ta_ctx.extq_start_id,
+				      udev->ta_ctx.extq_end_id);
+	if (ret)
+		goto free_slot;
+
+	ret = ubase_config_dma_buf(udev, opc, udev->ta_ctx.extdb_iova);
+	if (ret)
+		goto drain_self;
+
+	udev->ta_ctx.extbuf_ok = 1;
+	return 0;
+
+drain_self:
+	ubase_drain_ue_extdb_buf(udev, 0, udev->ta_ctx.extq_start_id,
+				 udev->ta_ctx.extq_end_id);
+free_slot:
+	dma_free_iova(udev->ta_ctx.extdb_slot);
+	udev->ta_ctx.extdb_slot = NULL;
+	udev->ta_ctx.extdb_iova = 0;
+	return ret;
+}
+
+static int ubase_init_ta_extdb_buf(struct ubase_dev *udev)
+{
+	struct ubase_dma_buf *buf = &udev->ta_ctx.extdb_buf;
+	u16 opc = UBASE_OPC_TA_EXTDB_VA_CONFIG;
+	int ret;
+
+	if (!ubase_dev_ta_extdb_buf_supported(udev))
+		return 0;
+
+	if (!ubase_dev_extbuf_manage_in_que_supported(udev))
+		return ubase_init_dma_buf(udev, buf, opc);
+
+	if (test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
+		ret = ubase_reinit_ta_extdb_buf_manage_in_que(udev);
+	else
+		ret = ubase_init_ta_extdb_buf_manage_in_que(udev);
+
+	return ret;
+}
+
+static int ubase_init_ta_timer_buf(struct ubase_dev *udev)
+{
+	struct ubase_dma_buf *buf = &udev->ta_ctx.timer_buf;
+	u16 opc = UBASE_OPC_TA_TIMER_VA_CONFIG;
+	u64 dma_addr, offset;
+
+	if (!ubase_dev_ta_timer_buf_supported(udev))
+		return 0;
+
+	if (test_bit(UBASE_STATE_PREALLOC_OK_B, &udev->state_bits) &&
+	    !ubase_dev_dtu_supported(udev)) {
+		offset = ubase_jfs_ctx_align_size(udev);
+		dma_addr = udev->pmem_info.comm.dma_addr + offset;
+		return ubase_config_dma_buf(udev, opc, dma_addr);
+	}
+
+	return ubase_init_dma_buf(udev, buf, opc);
+}
+
+static void ubase_uninit_ta_extdb_buf(struct ubase_dev *udev)
+{
+	if (!ubase_dev_ta_extdb_buf_supported(udev))
+		return;
+
+	if (!ubase_dev_extbuf_manage_in_que_supported(udev)) {
+		ubase_uninit_dma_buf(udev, &udev->ta_ctx.extdb_buf);
+		return;
+	}
+
+	ubase_uninit_all_ue_extdb_buf(udev);
+	if (udev->ta_ctx.extbuf_ok) {
+		ubase_drain_ue_extdb_buf(udev, 0, udev->ta_ctx.extq_start_id,
+					 udev->ta_ctx.extq_end_id);
+		udev->ta_ctx.extbuf_ok = 0;
+	}
+
+	if (test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
+		return;
+
+	dma_free_iova(udev->ta_ctx.extdb_slot);
+	udev->ta_ctx.extdb_slot = NULL;
+	udev->ta_ctx.extdb_iova = 0;
+}
+
+static void ubase_uninit_ta_timer_buf(struct ubase_dev *udev)
+{
+	if (!ubase_dev_ta_timer_buf_supported(udev))
+		return;
+
+	if (test_bit(UBASE_STATE_PREALLOC_OK_B, &udev->state_bits) &&
+	    !ubase_dev_dtu_supported(udev)) {
+		/* the timer buf is released by pmem sub module. */
+		return;
+	}
+
+	ubase_uninit_dma_buf(udev, &udev->ta_ctx.timer_buf);
+}
+
+static int ubase_init_ta_ext_buf(struct ubase_dev *udev)
+{
+	int ret;
+
+	ret = ubase_init_ta_extdb_buf(udev);
+	if (ret)
+		return ret;
+
+	ret = ubase_init_ta_timer_buf(udev);
+	if (ret)
+		ubase_uninit_ta_extdb_buf(udev);
+
 	return ret;
 }
 
 static void ubase_uninit_ta_ext_buf(struct ubase_dev *udev)
 {
-	UBASE_DEFINE_TA_DMA_BUFS(udev);
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(bufs); i++) {
-		if (bufs[i].is_supported(udev))
-			ubase_uninit_dma_buf(udev, bufs[i].buf);
-	}
+	ubase_uninit_ta_timer_buf(udev);
+	ubase_uninit_ta_extdb_buf(udev);
 }
 
 int ubase_query_hw_oor_caps(struct ubase_dev *udev)

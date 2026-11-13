@@ -1274,6 +1274,8 @@ static bool ubase_is_udma_tp_vl(struct ubase_adev_qos *qos, u8 vl)
  *
  * The function updates the dscp to vl mapping based on 'dscp_vl' and saves it
  * to 'udma_dscp_vl' in 'struct ubase_adev_qos'.
+ * This function was originally provided for UNIC. UNIC no longer uses it, so
+ * this function is deprecated and will be removed in openEuler 2803.
  *
  * Context: Any context.
  */

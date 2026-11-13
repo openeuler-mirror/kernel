@@ -401,9 +401,11 @@ static void unic_dbg_channel_abn_cqe_cnt(struct seq_file *s,
 		"STATUS_6:   ",
 		"OTHERS:     "
 	};
-	struct unic_sq_stats *stats = &c->sq->stats;
+	struct unic_dev *unic_dev = dev_get_drvdata(s->private);
+	struct unic_sq_stats *stats;
 	int i, j;
 
+	stats = &unic_dev->channels.c_stats[c->c_idx].sq_stats;
 	seq_printf(s, "txq%d:\n", idx);
 	seq_printf(s, "TOTAL_ABN_CQE_COUNT:%-20llu\n", stats->abn_cqe_total_cnt);
 	seq_printf(s, "%-12s%20s%20s%20s%20s%20s%20s\n", "", "SUB_0", "SUB_1",

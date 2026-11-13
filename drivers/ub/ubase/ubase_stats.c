@@ -7,6 +7,7 @@
 #include <linux/delay.h>
 
 #include "ubase_cmd.h"
+#include "ubase_timing.h"
 #include "ubase_stats.h"
 
 #define UBASE_FLIT_TO_BYTE	20
@@ -734,7 +735,8 @@ int __ubase_perf_stats(struct ubase_dev *udev, u64 port_bitmap, u32 period,
 	if (ret)
 		goto unlock;
 
-	usleep_range(UBASE_MS_TO_US(period), UBASE_MS_TO_US(period + 1));
+	usleep_range(UBASE_MS_TO_US(UBASE_PERF_CIRCLE * period),
+		     UBASE_MS_TO_US(UBASE_PERF_CIRCLE * period + 1));
 
 	port_num = bitmap_weight((unsigned long *)&port_bitmap,
 				 UBASE_MAX_PORT_NUM);

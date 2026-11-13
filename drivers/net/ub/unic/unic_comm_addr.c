@@ -10,6 +10,23 @@
 #include "unic_comm_addr.h"
 
 struct unic_comm_addr_node *
+unic_comm_alloc_addr_node(enum UNIC_COMM_ADDR_STATE state, const u8 *addr,
+			  u16 node_mask)
+{
+	struct unic_comm_addr_node *addr_node;
+
+	addr_node = kzalloc(sizeof(*addr_node), GFP_ATOMIC);
+	if (!addr_node)
+		return NULL;
+
+	addr_node->state = state;
+	addr_node->node_mask = node_mask;
+	memcpy(addr_node->unic_addr, addr, UNIC_ADDR_LEN);
+
+	return addr_node;
+}
+
+struct unic_comm_addr_node *
 unic_comm_find_addr_node(struct list_head *list, const u8 *addr, u16 node_mask)
 {
 	struct unic_comm_addr_node *addr_node, *tmp;
@@ -51,7 +68,7 @@ void unic_comm_update_addr_state(struct unic_comm_addr_node *addr_node,
 int unic_comm_update_addr_list(struct list_head *list,
 			       spinlock_t *addr_list_lock,
 			       enum UNIC_COMM_ADDR_STATE state,
-			       const u8 *addr)
+			       const u8 *addr, u16 node_mask)
 {
 	struct unic_comm_addr_node *addr_node;
 
@@ -61,7 +78,7 @@ int unic_comm_update_addr_list(struct list_head *list,
 	 * one into it, just check the addr state, convert it to a new
 	 * state, or just remove it, or do nothing.
 	 */
-	addr_node = unic_comm_find_addr_node(list, addr, UNIC_COMM_ADDR_NO_MASK);
+	addr_node = unic_comm_find_addr_node(list, addr, node_mask);
 	if (addr_node) {
 		unic_comm_update_addr_state(addr_node, state);
 		spin_unlock_bh(addr_list_lock);
@@ -74,14 +91,12 @@ int unic_comm_update_addr_list(struct list_head *list,
 		return -ENOENT;
 	}
 
-	addr_node = kzalloc(sizeof(*addr_node), GFP_ATOMIC);
+	addr_node = unic_comm_alloc_addr_node(state, addr, node_mask);
 	if (!addr_node) {
 		spin_unlock_bh(addr_list_lock);
 		return -ENOMEM;
 	}
 
-	addr_node->state = state;
-	memcpy(addr_node->unic_addr, addr, UNIC_ADDR_LEN);
 	list_add_tail(&addr_node->node, list);
 
 	spin_unlock_bh(addr_list_lock);
@@ -174,16 +189,14 @@ bool unic_comm_sync_addr_table(struct unic_vport *vport,
 			list_move_tail(&addr_node->node, &tmp_del_list);
 			break;
 		case UNIC_COMM_ADDR_TO_ADD:
-			new_node = kzalloc(sizeof(*new_node), GFP_ATOMIC);
+			new_node = unic_comm_alloc_addr_node(addr_node->state,
+							     addr_node->unic_addr,
+							     addr_node->node_mask);
 			if (!new_node) {
 				all_added = false;
 				goto stop_traverse;
 			}
-			memcpy(new_node->unic_addr, addr_node->unic_addr,
-			       UNIC_ADDR_LEN);
-			new_node->state = addr_node->state;
 			new_node->is_pfc = addr_node->is_pfc;
-			new_node->node_mask = addr_node->node_mask;
 			list_add_tail(&new_node->node, &tmp_add_list);
 			break;
 		default:

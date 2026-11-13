@@ -435,35 +435,37 @@ int unic_net_stop(struct net_device *netdev)
 }
 
 static void unic_fetch_stats_tx(struct rtnl_link_stats64 *stats,
-				struct unic_channel *channel)
+				struct unic_dev *unic_dev, u32 idx)
 {
+	struct unic_channel_stats *c_stats;
 	struct rtnl_link_stats64 tmp_stats;
 	unsigned int start;
 
+	c_stats = &unic_dev->channels.c_stats[idx];
 	do {
 		memset(&tmp_stats, 0, sizeof(tmp_stats));
-		start = u64_stats_fetch_begin(&channel->sq->syncp);
+		start = u64_stats_fetch_begin(&c_stats->sq_syncp);
 
-		tmp_stats.tx_bytes += channel->sq->stats.bytes;
-		tmp_stats.tx_packets += channel->sq->stats.packets;
-		tmp_stats.tx_errors += channel->sq->stats.pad_err;
-		tmp_stats.tx_errors += channel->sq->stats.over_max_sge_num;
-		tmp_stats.tx_errors += channel->sq->stats.csum_err;
-		tmp_stats.tx_errors += channel->sq->stats.vlan_err;
-		tmp_stats.tx_errors += channel->sq->stats.fd_cnt;
-		tmp_stats.tx_errors += channel->sq->stats.drop_cnt;
-		tmp_stats.tx_errors += channel->sq->stats.cfg5_drop_cnt;
-		tmp_stats.tx_errors += channel->sq->stats.abn_cqe_total_cnt;
+		tmp_stats.tx_bytes += c_stats->sq_stats.bytes;
+		tmp_stats.tx_packets += c_stats->sq_stats.packets;
+		tmp_stats.tx_errors += c_stats->sq_stats.pad_err;
+		tmp_stats.tx_errors += c_stats->sq_stats.over_max_sge_num;
+		tmp_stats.tx_errors += c_stats->sq_stats.csum_err;
+		tmp_stats.tx_errors += c_stats->sq_stats.vlan_err;
+		tmp_stats.tx_errors += c_stats->sq_stats.fd_cnt;
+		tmp_stats.tx_errors += c_stats->sq_stats.drop_cnt;
+		tmp_stats.tx_errors += c_stats->sq_stats.cfg5_drop_cnt;
+		tmp_stats.tx_errors += c_stats->sq_stats.abn_cqe_total_cnt;
 
-		tmp_stats.tx_dropped += channel->sq->stats.pad_err;
-		tmp_stats.tx_dropped += channel->sq->stats.over_max_sge_num;
-		tmp_stats.tx_dropped += channel->sq->stats.csum_err;
-		tmp_stats.tx_dropped += channel->sq->stats.vlan_err;
-		tmp_stats.tx_dropped += channel->sq->stats.fd_cnt;
-		tmp_stats.tx_dropped += channel->sq->stats.drop_cnt;
-		tmp_stats.tx_dropped += channel->sq->stats.cfg5_drop_cnt;
-		tmp_stats.tx_dropped += channel->sq->stats.abn_cqe_total_cnt;
-	} while (u64_stats_fetch_retry(&channel->sq->syncp, start));
+		tmp_stats.tx_dropped += c_stats->sq_stats.pad_err;
+		tmp_stats.tx_dropped += c_stats->sq_stats.over_max_sge_num;
+		tmp_stats.tx_dropped += c_stats->sq_stats.csum_err;
+		tmp_stats.tx_dropped += c_stats->sq_stats.vlan_err;
+		tmp_stats.tx_dropped += c_stats->sq_stats.fd_cnt;
+		tmp_stats.tx_dropped += c_stats->sq_stats.drop_cnt;
+		tmp_stats.tx_dropped += c_stats->sq_stats.cfg5_drop_cnt;
+		tmp_stats.tx_dropped += c_stats->sq_stats.abn_cqe_total_cnt;
+	} while (u64_stats_fetch_retry(&c_stats->sq_syncp, start));
 
 	stats->tx_bytes += tmp_stats.tx_bytes;
 	stats->tx_packets += tmp_stats.tx_packets;
@@ -472,29 +474,31 @@ static void unic_fetch_stats_tx(struct rtnl_link_stats64 *stats,
 }
 
 static void unic_fetch_stats_rx(struct rtnl_link_stats64 *stats,
-				struct unic_channel *channel)
+				struct unic_dev *unic_dev, u32 idx)
 {
+	struct unic_channel_stats *c_stats;
 	struct rtnl_link_stats64 tmp_stats;
 	unsigned int start;
 
+	c_stats = &unic_dev->channels.c_stats[idx];
 	do {
 		memset(&tmp_stats, 0, sizeof(tmp_stats));
-		start = u64_stats_fetch_begin(&channel->rq->syncp);
+		start = u64_stats_fetch_begin(&c_stats->rq_syncp);
 
-		tmp_stats.rx_bytes += channel->rq->stats.bytes;
-		tmp_stats.rx_packets += channel->rq->stats.packets;
-		tmp_stats.rx_crc_errors += channel->rq->stats.l2_err;
-		tmp_stats.rx_errors += channel->rq->stats.l3_l4_csum_err;
-		tmp_stats.rx_errors += channel->rq->stats.l2_err;
-		tmp_stats.rx_length_errors += channel->rq->stats.err_pkt_len_cnt;
+		tmp_stats.rx_bytes += c_stats->rq_stats.bytes;
+		tmp_stats.rx_packets += c_stats->rq_stats.packets;
+		tmp_stats.rx_crc_errors += c_stats->rq_stats.l2_err;
+		tmp_stats.rx_errors += c_stats->rq_stats.l3_l4_csum_err;
+		tmp_stats.rx_errors += c_stats->rq_stats.l2_err;
+		tmp_stats.rx_length_errors += c_stats->rq_stats.err_pkt_len_cnt;
 
-		tmp_stats.rx_dropped += channel->rq->stats.alloc_skb_err;
-		tmp_stats.rx_dropped += channel->rq->stats.l2_err;
-		tmp_stats.rx_dropped += channel->rq->stats.err_pkt_len_cnt;
-		tmp_stats.rx_dropped += channel->rq->stats.trunc_cnt;
-		tmp_stats.rx_dropped += channel->rq->stats.doi_cnt;
-		tmp_stats.multicast += channel->rq->stats.multicast;
-	} while (u64_stats_fetch_retry(&channel->rq->syncp, start));
+		tmp_stats.rx_dropped += c_stats->rq_stats.alloc_skb_err;
+		tmp_stats.rx_dropped += c_stats->rq_stats.l2_err;
+		tmp_stats.rx_dropped += c_stats->rq_stats.err_pkt_len_cnt;
+		tmp_stats.rx_dropped += c_stats->rq_stats.trunc_cnt;
+		tmp_stats.rx_dropped += c_stats->rq_stats.doi_cnt;
+		tmp_stats.multicast += c_stats->rq_stats.multicast;
+	} while (u64_stats_fetch_retry(&c_stats->rq_syncp, start));
 
 	stats->rx_bytes += tmp_stats.rx_bytes;
 	stats->rx_packets += tmp_stats.rx_packets;
@@ -510,27 +514,17 @@ static void unic_get_stats64(struct net_device *netdev,
 {
 	struct unic_dev *unic_dev = netdev_priv(netdev);
 	struct rtnl_link_stats64 total_stats;
-	struct unic_channel *channel;
 	u32 i, channel_num;
 
 	if (test_bit(UNIC_STATE_DOWN, &unic_dev->state))
 		return;
 
-	mutex_lock(&unic_dev->channels.mutex);
-	if (!unic_dev->channels.c) {
-		mutex_unlock(&unic_dev->channels.mutex);
-		return;
-	}
-
 	channel_num = unic_dev->channels.num;
 	memset(&total_stats, 0, sizeof(total_stats));
 	for (i = 0; i < channel_num; i++) {
-		channel = &unic_dev->channels.c[i];
-		unic_fetch_stats_tx(&total_stats, channel);
-		unic_fetch_stats_rx(&total_stats, channel);
+		unic_fetch_stats_tx(&total_stats, unic_dev, i);
+		unic_fetch_stats_rx(&total_stats, unic_dev, i);
 	}
-
-	mutex_unlock(&unic_dev->channels.mutex);
 
 	stats->tx_bytes = total_stats.tx_bytes;
 	stats->tx_packets = total_stats.tx_packets;

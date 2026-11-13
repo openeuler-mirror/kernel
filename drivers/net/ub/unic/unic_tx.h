@@ -40,11 +40,15 @@ enum unic_jfs_ctx_mode {
 #define UNIC_CQE_SUB_STATUS_MAX		6
 #define UNIC_CQE_OTHERS_SUB_STATUS	5
 
-#define unic_sq_stats_inc(sq, cnt)	do {		\
-		typeof(sq) _sq = (sq);			\
-		u64_stats_update_begin(&(_sq)->syncp);	\
-		((_sq)->stats.cnt)++;			\
-		u64_stats_update_end(&(_sq)->syncp);	\
+#define unic_sq_stats_inc(sq, cnt) do {					\
+		typeof(sq) _sq = (sq);					\
+		struct unic_dev *_dev =					\
+			netdev_priv((_sq)->netdev);			\
+		struct unic_channel_stats *_c_stats =			\
+			&_dev->channels.c_stats[(_sq)->queue_index];	\
+		u64_stats_update_begin(&_c_stats->sq_syncp);			\
+		(_c_stats->sq_stats.cnt)++;					\
+		u64_stats_update_end(&_c_stats->sq_syncp);			\
 	} while (0)
 
 union l3_hdr_info {
@@ -305,8 +309,6 @@ struct unic_tx_buff {
 struct unic_sq {
 	void __iomem		*db_addr;
 	struct device		*parent_dev;
-	struct unic_sq_stats	stats;
-	struct u64_stats_sync	syncp;
 	struct unic_jfs_ctx	jfs_ctx;
 	struct unic_sqebb	*sqebb;
 	dma_addr_t		sqebb_dma_addr;
@@ -321,20 +323,6 @@ struct unic_sq {
 	struct net_device	*netdev;
 	struct unic_tx_buff	*tx_buff;
 };
-
-static inline void unic_sq_abn_cqe_inc(struct unic_sq *sq,
-				       unsigned int status,
-				       unsigned int sub_status)
-{
-	if (status > UNIC_CQE_OTHERS_STATUS)
-		status = UNIC_CQE_OTHERS_STATUS;
-	if (sub_status > UNIC_CQE_OTHERS_SUB_STATUS)
-		sub_status = UNIC_CQE_OTHERS_SUB_STATUS;
-	u64_stats_update_begin(&sq->syncp);
-	sq->stats.abn_cqe_total_cnt++;
-	sq->stats.abn_cqe_cnt[status][sub_status]++;
-	u64_stats_update_end(&sq->syncp);
-}
 
 void unic_poll_tx(struct unic_sq *sq, int budget);
 int unic_create_sq(struct unic_dev *unic_dev, u32 idx);

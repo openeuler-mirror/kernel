@@ -12,6 +12,7 @@
 #include "ubase_hw.h"
 #include "ubase_proxy.h"
 #include "ubase_rct.h"
+#include "ubase_timing.h"
 #include "ubase_trace.h"
 #include "ubase_usc.h"
 #include "ubase_mailbox.h"
@@ -474,8 +475,8 @@ static int ubase_cmd_mbox_poll(struct ubase_dev *udev,
 
 	mb->seq_num = CMD_MBX_POLL_VALUE;
 
-	ret = ubase_post_mailbox(udev, &desc, UBASE_CMDQ_MBX_TX_TIMEOUT, &status,
-				 false);
+	ret = ubase_post_mailbox(udev, &desc, UBASE_MBX_TX_TIMEOUT,
+				 &status, false);
 	if (ret) {
 		ubase_err(udev,
 			  "failed to post mailbox 0x%x in poll mode, status = %u, ret = %d.\n",
@@ -483,7 +484,7 @@ static int ubase_cmd_mbox_poll(struct ubase_dev *udev,
 		return ret;
 	}
 
-	return ubase_poll_mbox_done(udev, UBASE_CMDQ_MBX_TX_TIMEOUT);
+	return ubase_poll_mbox_done(udev, UBASE_MBX_TX_TIMEOUT);
 }
 
 static int ubase_cmd_mbox_event(struct ubase_dev *udev,

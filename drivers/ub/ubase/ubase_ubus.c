@@ -183,28 +183,21 @@ static void ubase_port_event_notify(struct ub_entity *ue, u16 port_id, int event
 
 	switch (event) {
 	case UB_PORT_EVENT_LINK_DOWN:
-		ubase_info(udev, "port %u link down.\n", port_id);
-		udev->reset_stat.port_reset_start_cnt++;
+		ubase_dbg(udev, "port %u link down.\n", port_id);
 		ubase_port_down(udev);
 		break;
 	case UB_PORT_EVENT_LINK_UP:
 		ubase_port_up(udev);
-		ubase_info(udev, "port %u link up.\n", port_id);
-		udev->reset_stat.port_reset_done_cnt++;
+		ubase_dbg(udev, "port %u link up.\n", port_id);
 		break;
 	case UB_PORT_EVENT_RESET_PREPARE:
-		ubase_info(udev, "port %u reset prepare.\n", port_id);
-		udev->reset_stat.port_reset_start_cnt++;
-		ubase_port_down(udev);
+		ubase_dbg(udev, "port %u reset prepare.\n", port_id);
 		break;
 	case UB_PORT_EVENT_RESET_DONE:
-		ubase_port_up(udev);
-		ubase_info(udev, "port %u reset done.\n", port_id);
-		udev->reset_stat.port_reset_done_cnt++;
+		ubase_dbg(udev, "port %u reset done.\n", port_id);
 		break;
 	case UB_PORT_EVENT_RESET_FAILED:
-		ubase_warn(udev, "port %u reset failed.\n", port_id);
-		udev->reset_stat.port_reset_fail_cnt++;
+		ubase_dbg(udev, "port %u reset failed.\n", port_id);
 		break;
 	default:
 		ubase_warn(udev, "port %u unknown event(%d).\n", port_id, event);
@@ -474,6 +467,13 @@ int ubase_ubus_irq_vector(struct device *dev, u32 idx)
 	return ub_irq_vector(ue, idx);
 }
 
+const struct cpumask *ubase_ubus_irq_get_affinity(struct device *dev)
+{
+	struct ub_entity *ue = container_of(dev, struct ub_entity, dev);
+
+	return ub_get_ubc_irq_affinity(ue);
+}
+
 static int ubase_ubus_suspend(struct device *dev)
 {
 	struct ubase_dev *udev = dev_get_drvdata(dev);
@@ -522,9 +522,7 @@ static int ubase_ubus_virt_notify(struct ub_entity *ue, int bus_ue_id, bool is_e
 	ubase_info(udev, "ubase virt notify, ue id = %d, en = %d.\n",
 		   bus_ue_id, is_en);
 
-	ubase_virt_handler(udev, (u16)bus_ue_id, is_en);
-
-	return 0;
+	return ubase_virt_handler(udev, (u16)bus_ue_id, is_en);
 }
 
 static int ubase_ubus_activate(struct ub_entity *ue, u32 bus_ue_id)

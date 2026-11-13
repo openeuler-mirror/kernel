@@ -45,7 +45,7 @@ struct ubase_res_cmd_resp {
 	__le32	aeqe_depth;
 	__le32	ceqe_depth;
 	__le32	udma_jfs_max_cnt;
-	u8	rsvd2[4];
+	__le32	ta_extdb_buf_que_size;
 
 	__le32	udma_jfs_depth;
 	__le32	udma_jfr_max_cnt;
@@ -202,5 +202,7 @@ void __ubase_cmd_ctx_buf_free(struct ubase_dev *udev,
 int ubase_config_ctx_buf_to_hw(struct ubase_dev *udev,
 			       struct ubase_ctx_buf_cap *ctx_buf,
 			       struct ubase_mbx_attr *attr);
+int ubase_init_ue_extdb_buf(struct ubase_dev *udev, struct ubase_ue_node *node);
+void ubase_uninit_ue_extdb_buf(struct ubase_dev *udev, struct ubase_ue_node *node);
 
 #endif /* __UBASE_HW_H__ */

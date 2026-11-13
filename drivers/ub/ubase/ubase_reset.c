@@ -15,6 +15,7 @@
 #include "ubase_eq.h"
 #include "ubase_hw.h"
 #include "ubase_mailbox.h"
+#include "ubase_timing.h"
 #include "ubase_ubus.h"
 #include "ubase_reset.h"
 
