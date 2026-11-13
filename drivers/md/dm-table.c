@@ -1569,7 +1569,8 @@ static bool dm_table_supports_poll(struct dm_table *t)
 static int device_not_pci_p2pdma_capable(struct dm_target *ti,
 		struct dm_dev *dev, sector_t start, sector_t len, void *data)
 {
-	return !blk_queue_pci_p2pdma(bdev_get_queue(dev->bdev));
+	return !blk_queue_pci_p2pdma(bdev_get_queue(dev->bdev)) ||
+		bdev_get_integrity(dev->bdev);
 }
 
 static bool dm_table_supports_pci_p2pdma(struct dm_table *t)
