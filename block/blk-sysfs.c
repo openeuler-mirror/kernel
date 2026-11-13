@@ -361,7 +361,7 @@ static ssize_t queue_max_active_zones_show(struct request_queue *q, char *page)
 static ssize_t queue_iostats_passthrough_show(struct request_queue *q,
 		char *page)
 {
-	return queue_var_show(blk_queue_passthrough_stat(q), page);
+	return queue_var_show(!!blk_queue_passthrough_stat(q), page);
 }
 
 static ssize_t queue_iostats_passthrough_store(struct request_queue *q,
