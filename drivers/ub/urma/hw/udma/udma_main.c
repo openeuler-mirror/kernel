@@ -1551,7 +1551,7 @@ static void check_and_wait_flush_done(struct udma_dev *udma_dev)
 			break;
 
 		if (ubase_adev_shutting_down(udma_dev->comdev.adev)) {
-			dev_err_ratelimited(udma_dev->dev, "exit flush in shutdown process.\n");
+			udma_err_rl(udma_dev->dev, "exit flush in shutdown process.\n");
 			break;
 		}
 
@@ -1717,7 +1717,7 @@ void udma_remove(struct auxiliary_device *adev)
 		}
 
 		if (ubase_adev_shutting_down(adev)) {
-			dev_err_ratelimited(&adev->dev, "enter shutdown process.\n");
+			udma_err_rl(&adev->dev, "enter shutdown process.\n");
 			break;
 		}
 
@@ -1726,7 +1726,7 @@ void udma_remove(struct auxiliary_device *adev)
 			ubase_adev_fault_log(adev, UDMA_FAULT_EVENT_ID_REMOVE, NULL);
 		if (wait_time < UDMA_REMOVE_MAX_SLEEP_TIME)
 			wait_time *= UDMA_TIME_SLEEP_RATE;
-		dev_err_ratelimited(&adev->dev, "udma close ue rx failed in remove process.\n");
+		udma_err_rl(&adev->dev, "udma close ue rx failed in remove process.\n");
 	}
 	udma_report_reset_event(UBCORE_EVENT_ELR_ERR, udma_dev);
 	udma_unregister_none_crq_event(adev);

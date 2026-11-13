@@ -9,6 +9,7 @@
 #include <ub/urma/ubcore_api.h>
 #include "udma_ctx.h"
 #include "udma_dev.h"
+#include "udma_log.h"
 
 #define UDMA_WQE_LOCK_BUFFER_JETTY_IDX 4096
 #define TP_ACK_UDP_SPORT_H_OFFSET 8

@@ -48,7 +48,7 @@ static int update_jetty_grp_ctx_valid(struct udma_dev *udma_dev,
 	mbox_attr.op = UDMA_CMD_MODIFY_JETTY_GROUP_CONTEXT;
 	ret = post_mailbox_update_ctx(udma_dev, ctx, sizeof(ctx), &mbox_attr);
 	if (ret)
-		dev_err_ratelimited(udma_dev->dev,
+		udma_err_rl(udma_dev->dev,
 			"post mailbox update jetty group context failed, ret = %d.\n",
 			ret);
 
@@ -189,7 +189,7 @@ static int udma_alloc_jetty_grp_id(struct udma_dev *udma_dev,
 					&udma_dev->jetty_table.bitmap_table,
 					&jetty_grp->start_jetty_id);
 	if (ret) {
-		dev_err(udma_dev->dev,
+		udma_err_rl(udma_dev->dev,
 			"alloc jetty id for group failed, ret = %d.\n", ret);
 		return ret;
 	}
@@ -197,7 +197,7 @@ static int udma_alloc_jetty_grp_id(struct udma_dev *udma_dev,
 	ret = udma_id_alloc_auto_grow(udma_dev, &udma_dev->jetty_grp_table.ida_table,
 				      &jetty_grp->jetty_grp_id);
 	if (ret) {
-		dev_err(udma_dev->dev,
+		udma_err_rl(udma_dev->dev,
 			"alloc jetty group id failed, ret = %d.\n", ret);
 		udma_adv_id_free(&udma_dev->jetty_table.bitmap_table,
 				 jetty_grp->start_jetty_id, true);
@@ -237,7 +237,7 @@ struct ubcore_jetty_group *udma_create_jetty_grp(struct ubcore_device *dev,
 	ret = xa_err(xa_store(&udma_dev->jetty_grp_table.xa,
 			      jetty_grp->jetty_grp_id, jetty_grp, GFP_KERNEL));
 	if (ret) {
-		dev_err(udma_dev->dev,
+		udma_err_rl(udma_dev->dev,
 			"store jetty group(%u) failed, ret = %d.\n",
 			jetty_grp->jetty_grp_id, ret);
 		goto err_store_jetty_grp;
@@ -247,7 +247,7 @@ struct ubcore_jetty_group *udma_create_jetty_grp(struct ubcore_device *dev,
 	mbox_attr.op = UDMA_CMD_CREATE_JETTY_GROUP_CONTEXT;
 	ret = post_mailbox_update_ctx(udma_dev, &ctx, sizeof(ctx), &mbox_attr);
 	if (ret) {
-		dev_err_ratelimited(udma_dev->dev,
+		udma_err_rl(udma_dev->dev,
 			"post mailbox update jetty ctx failed, ret = %d.\n", ret);
 		goto err_post_mailbox;
 	}
@@ -284,7 +284,7 @@ int udma_delete_jetty_grp(struct ubcore_jetty_group *jetty_grp)
 	mbox_attr.op = UDMA_CMD_DESTROY_JETTY_GROUP_CONTEXT;
 	ret = post_mailbox_update_ctx(udma_dev, NULL, 0, &mbox_attr);
 	if (ret) {
-		dev_err_ratelimited(udma_dev->dev,
+		udma_err_rl(udma_dev->dev,
 			"post mailbox destroy jetty group failed, ret = %d.\n", ret);
 		return ret;
 	}
