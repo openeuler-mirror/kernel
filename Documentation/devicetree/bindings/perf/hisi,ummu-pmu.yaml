@@ -28,6 +28,18 @@ properties:
     $ref: /schemas/types.yaml#/definitions/phandle
     description: |
       MSI parent device phandle. Required for MSI interrupt handling.
+  interrupt-affinity:
+    $ref: /schemas/types.yaml#/definitions/phandle-array
+    items:
+      maxItems: 1
+    description: |
+      Specifies a list of phandles to CPU nodes to which the PMU overflow
+      interrupt should be affine. The syntax is the same as the
+      ``interrupt-affinity`` property of the ARM PMU binding, i.e. each entry
+      is a single phandle without additional arguments, but the semantics
+      differ: entries are not matched to individual interrupts, and all
+      listed CPUs form one CPU mask which is applied to the overflow
+      interrupt. When omitted, the default interrupt placement is used.
 
 required:
   - compatible
@@ -42,4 +54,5 @@ examples:
         compatible = "ub,ummu_pmu";
         index = <0x0>;
         msi-parent = <&its>;
+        interrupt-affinity = <&cpu4>, <&cpu5>;
     };
