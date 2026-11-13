@@ -30,7 +30,7 @@ struct uburma_cmd_hdr {
 #define UBURMA_CMD_MAX_ARGS_SIZE 25600
 #define UBURMA_CMD_MAX_PORT_CNT 8
 #define UBURMA_CMD_TP_ATTR_BYTES 128
-#define UBURMA_CMD_MAX_OPT_LEN 256
+#define UBURMA_CMD_MAX_OPT_LEN PAGE_SIZE
 
 /* only for uburma device ioctl */
 #define UBURMA_CMD_MAGIC 'U'
