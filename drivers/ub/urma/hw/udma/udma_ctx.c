@@ -47,6 +47,8 @@ static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udr
 	resp.dtu_va_size = dev->dtu_info.pa_size;
 	resp.ccu_jetty_start_id = dev->caps.ccu_jetty.start_idx;
 	resp.ccu_jetty_max_cnt = dev->caps.ccu_jetty.max_cnt;
+	resp.ucp_jetty_start_id = (uint16_t)dev->caps.ucp_caps.ucp_jetty.start_idx;
+	resp.ucp_jetty_max_cnt = (uint16_t)dev->caps.ucp_caps.ucp_jetty.max_cnt;
 	resp.hugepage_enable = ubase_adev_prealloc_supported(dev->comdev.adev) & hugepage_enable;
 	resp.sva_sep_mode_en = dev->caps.sva_sep_mode_en;
 	resp.st64b_en = dev->caps.st64b_en;
@@ -214,7 +216,7 @@ static void udma_destroy_u_hugepage_list(struct udma_context *ctx)
 			mmap_write_unlock(current->mm);
 		}
 
-		dev_info_ratelimited(ctx->dev->dev, "free_hugepage, seq=%u.\n", priv->seq);
+		udma_info_rl(ctx->dev->dev, "free_hugepage, seq=%u.\n", priv->seq);
 		for (i = 0; i < priv->page_num; i++)
 			udma_free_pages(priv->pages[i], get_order(priv->page_size));
 		kfree(priv->pages);
@@ -243,7 +245,7 @@ static void udma_destroy_u_reserved_list(struct udma_context *ctx)
 			mmap_write_unlock(current->mm);
 		}
 		if (debug_switch)
-			dev_info_ratelimited(ctx->dev->dev, "free_reserved, seq=%u.\n", priv->seq);
+			udma_info_rl(ctx->dev->dev, "free_reserved, seq=%u.\n", priv->seq);
 		udma_id_free(&ctx->dev->sq_reserved_info.ida_table, priv->seq);
 		for (i = 0; i < priv->page_num; i++)
 			udma_free_pages(priv->pages[i], get_order(priv->page_size));
@@ -354,8 +356,8 @@ udma_alloc_page_priv(struct udma_context *ctx, struct vm_area_struct *vma, uint3
 		goto err_alloc_arr;
 
 	if (debug_switch)
-		dev_info_ratelimited(ctx->dev->dev, "vm_flags=0x%lx, vm_page_prot=0x%llx.\n",
-				     vma->vm_flags, vma->vm_page_prot.pgprot);
+		udma_info_rl(ctx->dev->dev, "vm_flags=0x%lx, vm_page_prot=0x%llx.\n",
+			     vma->vm_flags, vma->vm_page_prot.pgprot);
 
 	vma->vm_page_prot = __pgprot(((~PTE_ATTRINDX_MASK) & vma->vm_page_prot.pgprot) |
 				     PTE_ATTRINDX(MT_NORMAL));
@@ -386,8 +388,7 @@ udma_alloc_page_priv(struct udma_context *ctx, struct vm_area_struct *vma, uint3
 	priv->va_len = priv->page_num << PAGE_SHIFT;
 
 	if (debug_switch)
-		dev_info_ratelimited(ctx->dev->dev, "map normal page, page num=%u.\n",
-				     priv->page_num);
+		udma_info_rl(ctx->dev->dev, "map normal page, page num=%u.\n", priv->page_num);
 	return priv;
 
 err_remap_pfn_range:
@@ -528,8 +529,6 @@ static void udma_free_page_priv(struct udma_context *ctx, struct udma_page_priv 
 		    vma->vm_end >= (unsigned long)(priv->va_base + priv->va_len))
 			zap_vma_ptes(vma, (unsigned long)priv->va_base, priv->va_len);
 		mmap_write_unlock(current->mm);
-	} else {
-		dev_warn_ratelimited(ctx->dev->dev, "current mm released.\n");
 	}
 
 	for (i = 0; i < priv->page_num; i++)
@@ -659,8 +658,8 @@ static int udma_remap_hugepage(struct udma_context *ctx, struct vm_area_struct *
 		return ret;
 
 	if (debug_switch)
-		dev_info_ratelimited(ctx->dev->dev, "vm_flags=0x%lx, vm_page_prot=0x%llx.\n",
-				     vma->vm_flags, vma->vm_page_prot.pgprot);
+		udma_info_rl(ctx->dev->dev, "vm_flags=0x%lx, vm_page_prot=0x%llx.\n",
+			    vma->vm_flags, vma->vm_page_prot.pgprot);
 
 	zap_vma_ptes(vma, vma->vm_start, priv->page_num << page_shift);
 	for (i = 0; i < priv->page_num; i++) {
@@ -669,7 +668,7 @@ static int udma_remap_hugepage(struct udma_context *ctx, struct vm_area_struct *
 			(GFP_KERNEL | __GFP_NOWARN | __GFP_ZERO);
 		priv->pages[i] = udma_alloc_pages(flag, get_order(priv->page_size));
 		if (!priv->pages[i]) {
-			dev_err_ratelimited(ctx->dev->dev, "failed to alloc pages.\n");
+			udma_err_rl(ctx->dev->dev, "failed to alloc pages.\n");
 			goto err_alloc_pages;
 		}
 		ret = udma_remap_pfn_range(vma, vma->vm_start + i * priv->page_size,
@@ -706,7 +705,7 @@ udma_alloc_u_hugepage_priv(struct udma_context *ctx, struct vm_area_struct *vma)
 		return NULL;
 
 	if (udma_remap_hugepage(ctx, vma, priv, UDMA_HUGEPAGE_SHIFT)) {
-		dev_warn_ratelimited(ctx->dev->dev,
+		udma_warn_rl(ctx->dev->dev,
 			 "failed to alloc hugepage buf, switch to alloc normal buf.\n");
 		if (udma_remap_hugepage(ctx, vma, priv, PAGE_SHIFT))
 			goto err_remap_hugepage;
@@ -718,7 +717,7 @@ udma_alloc_u_hugepage_priv(struct udma_context *ctx, struct vm_area_struct *vma)
 	list_add(&priv->list, &ctx->hugepage_list);
 
 	if (debug_switch)
-		dev_info_ratelimited(ctx->dev->dev,
+		udma_info_rl(ctx->dev->dev,
 			"alloc_hugepage, seq=%u, 2m_page_num=%u.\n",
 			priv->seq, priv->va_len >> UDMA_HUGEPAGE_SHIFT);
 	return priv;
@@ -740,7 +739,7 @@ bool udma_alloc_u_hugepage(struct udma_context *ctx, uint64_t buf_addr, uint32_t
 	priv = udma_list_find_before(ctx, buf_addr);
 	if (priv) {
 		if (debug_switch)
-			dev_info_ratelimited(ctx->dev->dev,
+			udma_info_rl(ctx->dev->dev,
 				"occupy_hugepage, seq=%u, 4k_page_num=%u.\n",
 				priv->seq, buf_len >> UDMA_HW_PAGE_SHIFT);
 		refcount_inc(&priv->refcnt);
@@ -789,13 +788,13 @@ void udma_free_u_hugepage(struct udma_context *ctx, uint64_t buf_addr)
 	if (!refcount_dec_and_test(&priv->refcnt)) {
 		mutex_unlock(&ctx->hugepage_lock);
 		if (debug_switch)
-			dev_info_ratelimited(ctx->dev->dev,
+			udma_info_rl(ctx->dev->dev,
 					     "return_hugepage, seq=%u.\n", priv->seq);
 		return;
 	} else {
 		list_del(&priv->list);
 		if (debug_switch)
-			dev_info_ratelimited(ctx->dev->dev, "free_hugepage, seq=%u.\n", priv->seq);
+			udma_info_rl(ctx->dev->dev, "free_hugepage, seq=%u.\n", priv->seq);
 	}
 
 	udma_matt_unmap_by_priv(ctx, priv);
@@ -807,7 +806,7 @@ void udma_free_u_hugepage(struct udma_context *ctx, uint64_t buf_addr)
 			zap_vma_ptes(vma, (unsigned long)priv->va_base, priv->va_len);
 		mmap_write_unlock(current->mm);
 	} else {
-		dev_warn_ratelimited(ctx->dev->dev, "current mm released.\n");
+		udma_warn_rl(ctx->dev->dev, "current mm released.\n");
 	}
 	mutex_unlock(&ctx->hugepage_lock);
 

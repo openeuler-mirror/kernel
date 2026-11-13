@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0+
 /* Copyright(c) 2026 HiSilicon Technologies CO., Ltd. All rights reserved. */
 
+#define dev_fmt(fmt) "UDMA: <%s:%d> " fmt, __func__, __LINE__
+
 #include <linux/limits.h>
 #include <linux/slab.h>
 #include "udma_common.h"
@@ -358,7 +360,7 @@ int udma_seg_range_occupy(struct udma_context *ctx, struct udma_segment *seg,
 	list->head = list->tail = NULL;
 
 	if (udma_seg_range_check(ctx, seg, range_check_occupy) != 0)
-		dev_info_ratelimited(ctx->dev->dev,
+		udma_info_rl(ctx->dev->dev,
 			"the mv_start and/or mv_end of VMA was modified.\n");
 
 	return udma_seg_update_range(ctx, seg, 1, list);

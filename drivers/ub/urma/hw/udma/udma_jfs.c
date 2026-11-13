@@ -49,7 +49,7 @@ static void udma_free_reserved_sq(struct udma_dev *dev, struct udma_jetty_queue 
 
 	if (b_del) {
 		if (debug_switch)
-			dev_info_ratelimited(dev->dev, "free_reserved, seq=%u.\n", priv->seq);
+			udma_info_rl(dev->dev, "free_reserved, seq=%u.\n", priv->seq);
 		udma_id_free(&dev->sq_reserved_info.ida_table, priv->seq);
 		for (i = 0; i < priv->page_num; i++)
 			udma_free_pages(priv->pages[i], get_order(priv->page_size));
@@ -108,8 +108,8 @@ static int udma_remap_reserved_va(struct udma_dev *dev, struct udma_hugepage_pri
 	}
 
 	if (debug_switch)
-		dev_info_ratelimited(dev->dev, "vm_flags=0x%lx, vm_page_prot=0x%llx.\n",
-				     vma->vm_flags, vma->vm_page_prot.pgprot);
+		udma_info_rl(dev->dev, "vm_flags=0x%lx, vm_page_prot=0x%llx.\n",
+			     vma->vm_flags, vma->vm_page_prot.pgprot);
 	for (remapped_num = 0; remapped_num < priv->page_num; remapped_num++) {
 		ret = udma_remap_pfn_range(vma, (uintptr_t)priv->va_base +
 					   remapped_num * priv->page_size,
@@ -178,7 +178,7 @@ udma_alloc_reserved_priv(struct udma_dev *dev, struct udma_jetty_queue *sq)
 	list_add(&priv->list, &sq->udma_ctx->reserved_list);
 
 	if (debug_switch)
-		dev_info_ratelimited(dev->dev, "alloc_reserved, seq=%u.\n", priv->seq);
+		udma_info_rl(dev->dev, "alloc_reserved, seq=%u.\n", priv->seq);
 	return priv;
 
 err_matt_map:
@@ -251,7 +251,7 @@ int udma_alloc_u_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 
 	if (is_support_ccu_jetty(dev, sq) && (((uint64_t)ucmd->buf_addr >> SQE_VA_L_OFFSET) >=
 	    UDMA_WQE_LOCK_BUFFER_JETTY_IDX)) {
-		dev_err(dev->dev, "buffer index is out of range, buffer index = %llu.\n",
+		udma_err_rl(dev->dev, "buffer index is out of range, buffer index = %llu.\n",
 			((uint64_t)ucmd->buf_addr >> SQE_VA_L_OFFSET));
 		return -EINVAL;
 	}
@@ -276,14 +276,14 @@ int udma_alloc_u_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 		ret = udma_alloc_reserved_sq(dev, sq, ucmd->buf_len);
 	} else if (ucmd->is_hugepage) {
 		if (!udma_alloc_u_hugepage(sq->udma_ctx, sq->buf.addr, sq->buf.len)) {
-			dev_err(dev->dev, "failed to create SQ.\n");
+			udma_err_rl(dev->dev, "failed to create SQ.\n");
 			return -ENOMEM;
 		}
 		sq->buf.is_hugepage = true;
 	} else {
 		sq->buf.page_priv = udma_get_map_page_priv(sq->udma_ctx, sq->buf.addr, sq->buf.len);
 		if (sq->buf.page_priv == NULL) {
-			dev_err(dev->dev, "failed to get SQ page.\n");
+			udma_err_rl(dev->dev, "failed to get SQ page.\n");
 			return -EINVAL;
 		}
 	}
@@ -335,7 +335,7 @@ int udma_alloc_k_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 	if (!sq->cstm) {
 		ret = udma_k_alloc_buf(dev, &sq->buf, true);
 		if (ret) {
-			dev_err(dev->dev, "failed to alloc SQ buffer, id=%u.\n", sq->id);
+			udma_err_rl(dev->dev, "failed to alloc SQ buffer, id=%u.\n", sq->id);
 			return ret;
 		}
 	}
@@ -443,7 +443,7 @@ void udma_dfx_store_jfs_id(struct udma_dev *udma_dev, struct udma_jfs *udma_jfs)
 	jfs = (struct udma_dfx_jfs *)xa_load(&udma_dev->dfx_info->jfs.table,
 					     udma_jfs->sq.id);
 	if (jfs) {
-		dev_warn(udma_dev->dev, "JFS id(%u) already exists in DFX.\n",
+		udma_warn_rl(udma_dev->dev, "JFS id(%u) already exists in DFX.\n",
 			 udma_jfs->sq.id);
 		return;
 	}
@@ -460,7 +460,7 @@ void udma_dfx_store_jfs_id(struct udma_dev *udma_dev, struct udma_jfs *udma_jfs)
 			      jfs, GFP_ATOMIC));
 	if (ret) {
 		write_unlock(&udma_dev->dfx_info->jfs.rwlock);
-		dev_err(udma_dev->dev, "store JFS id(%u) to table failed in DFX.\n",
+		udma_err_rl(udma_dev->dev, "store JFS id(%u) to table failed in DFX.\n",
 			udma_jfs->sq.id);
 		kfree(jfs);
 		return;
@@ -488,7 +488,7 @@ static int udma_create_hw_jfs_ctx(struct udma_dev *dev, struct udma_jfs *jfs,
 	attr.op = UDMA_CMD_CREATE_JFS_CONTEXT;
 	ret = post_mailbox_update_ctx(dev, &ctx, sizeof(ctx), &attr);
 	if (ret) {
-		dev_err_ratelimited(dev->dev, "failed to upgrade JFS context, ret = %d.\n", ret);
+		udma_err_rl(dev->dev, "failed to upgrade JFS context, ret = %d.\n", ret);
 		return ret;
 	}
 
@@ -517,7 +517,7 @@ static int udma_get_user_jfs_cmd(struct udma_dev *dev, struct udma_jfs *jfs,
 		byte = copy_from_user(ucmd, (void *)(uintptr_t)udata->udrv_data->in_addr,
 				      sizeof(*ucmd));
 		if (byte) {
-			dev_err(dev->dev,
+			udma_err_rl(dev->dev,
 				"failed to copy jfs udata, ret = %lu.\n", byte);
 			return -EFAULT;
 		}
@@ -559,7 +559,7 @@ static int udma_jfs_copy_resp(struct udma_dev *dev, struct udma_jetty_queue *sq,
 	byte = copy_to_user((void *)(uintptr_t)udata->udrv_data->out_addr,
 			    &resp, sizeof(resp));
 	if (byte) {
-		dev_err(dev->dev, "failed to copy to user, ret=%lu.\n", byte);
+		udma_err_rl(dev->dev, "failed to copy to user, ret=%lu.\n", byte);
 		return -EFAULT;
 	}
 
@@ -588,7 +588,7 @@ static int udma_alloc_jfs_sq(struct udma_dev *dev, struct ubcore_jfs_cfg *cfg,
 
 	ret = alloc_jetty_id(dev, &jfs->sq, jfs->sq.id, NULL);
 	if (ret) {
-		dev_err(dev->dev, "failed to alloc_id.\n");
+		udma_err_rl(dev->dev, "failed to alloc_id.\n");
 		goto err_alloc_id;
 	}
 	jfs->ubcore_jfs.jfs_id.id = jfs->sq.id;
@@ -597,7 +597,7 @@ static int udma_alloc_jfs_sq(struct udma_dev *dev, struct ubcore_jfs_cfg *cfg,
 
 	ret = xa_err(xa_store(&dev->jetty_table.xa, jfs->sq.id, &jfs->sq, GFP_KERNEL));
 	if (ret) {
-		dev_err(dev->dev, "failed to store SQ(%u), ret=%d.\n", jfs->sq.id, ret);
+		udma_err_rl(dev->dev, "failed to store SQ(%u), ret=%d.\n", jfs->sq.id, ret);
 		goto err_store_sq;
 	}
 
@@ -647,7 +647,7 @@ int udma_active_jfs(struct ubcore_jfs *jfs, struct ubcore_udata *udata)
 
 	ret = udma_alloc_jfs_sq(dev, cfg, ujfs, udata);
 	if (ret) {
-		dev_err(dev->dev, "failed to alloc JFS SQ, ret = %d.\n", ret);
+		udma_err_rl(dev->dev, "failed to alloc JFS SQ, ret = %d.\n", ret);
 		return ret;
 	}
 
@@ -657,7 +657,7 @@ int udma_active_jfs(struct ubcore_jfs *jfs, struct ubcore_udata *udata)
 
 	ret = udma_create_hw_jfs_ctx(dev, ujfs, cfg);
 	if (ret) {
-		dev_err(dev->dev,
+		udma_err_rl(dev->dev,
 			"post mailbox create JFS context failed, ret = %d.\n", ret);
 		goto err_create_hw_jfs;
 	}
@@ -698,7 +698,7 @@ struct ubcore_jfs *udma_create_jfs(struct ubcore_device *ub_dev,
 
 	ret = udma_alloc_jfs_sq(dev, cfg, jfs, udata);
 	if (ret) {
-		dev_err(dev->dev, "failed to alloc JFS SQ, ret = %d.\n", ret);
+		udma_err_rl(dev->dev, "failed to alloc JFS SQ, ret = %d.\n", ret);
 		goto err_alloc_sq;
 	}
 
@@ -708,7 +708,7 @@ struct ubcore_jfs *udma_create_jfs(struct ubcore_device *ub_dev,
 
 	ret = udma_create_hw_jfs_ctx(dev, jfs, cfg);
 	if (ret) {
-		dev_err(dev->dev,
+		udma_err_rl(dev->dev,
 			"post mailbox create JFS context failed, ret = %d.\n", ret);
 		goto err_create_hw_jfs;
 	}
@@ -729,6 +729,7 @@ err_bind_jfc:
 	udma_free_jfs_sq(dev, jfs);
 err_alloc_sq:
 	kfree(jfs);
+
 	return ERR_PTR(ret);
 }
 
@@ -767,19 +768,19 @@ int udma_deactive_jfs(struct ubcore_jfs *jfs, struct ubcore_udata *udata)
 	int ret;
 
 	if (!ujfs->sq.activated) {
-		dev_info_ratelimited(dev->dev, "jetty no need deactivate.\n");
+		udma_info_rl(dev->dev, "jetty no need deactivate.\n");
 		return 0;
 	}
 
 	if (!ujfs->ue_rx_closed && udma_close_ue_rx(dev, true, true, false, 0)) {
-		dev_err(dev->dev, "close UE rx failed when destroying JFS.\n");
+		udma_err_rl(dev->dev, "close UE rx failed when destroying JFS.\n");
 		return -EINVAL;
 	}
 
 	ret = udma_modify_and_destroy_jetty(dev, &ujfs->sq);
 	if (ret) {
-		dev_warn(dev->dev, "udma modify state and destroy JFS failed, id: %u.\n",
-			 jfs->jfs_id.id);
+		udma_warn_rl(dev->dev, "udma modify state and destroy JFS failed, id: %u.\n",
+			     jfs->jfs_id.id);
 		if (!ujfs->ue_rx_closed)
 			udma_open_ue_rx_with_retry(dev, true, true, false, 0);
 		return ret;
@@ -835,7 +836,7 @@ int udma_destroy_jfs_batch(struct ubcore_jfs **jfs, int jfs_cnt, int *bad_jfs_in
 
 	ret = udma_batch_modify_and_destroy_jetty(udma_dev, sq_list, active_jfs_cnt, bad_jfs_index);
 	if (ret) {
-		dev_err(udma_dev->dev,
+		udma_err_rl(udma_dev->dev,
 			 "udma modify error and destroy JFS failed.\n");
 		kfree(sq_list);
 		return ret;
@@ -903,7 +904,7 @@ int udma_modify_jfs(struct ubcore_jfs *jfs, struct ubcore_jfs_attr *attr,
 	}
 
 	if (udma_jfs->sq.state == attr->state) {
-		dev_info_ratelimited(udma_dev->dev, "JFS state has been %s.\n",
+		udma_info_rl(udma_dev->dev, "JFS state has been %s.\n",
 				     to_state_name(attr->state));
 		return 0;
 	}
@@ -917,8 +918,8 @@ int udma_modify_jfs(struct ubcore_jfs *jfs, struct ubcore_jfs_attr *attr,
 
 	ret = udma_modify_jfs_state(udma_dev, udma_jfs, attr);
 	if (ret) {
-		dev_err(udma_dev->dev, "modify JFS %u state to %u failed.\n",
-			udma_jfs->sq.id, attr->state);
+		udma_err_rl(udma_dev->dev, "modify JFS %u state to %u failed.\n",
+			    udma_jfs->sq.id, attr->state);
 		return ret;
 	}
 
@@ -953,7 +954,7 @@ static void fill_imm_data_or_token_for_cr(struct udma_dev *udma_dev,
 		       sizeof(uint64_t));
 		break;
 	default:
-		dev_err(udma_dev->dev, "Flush invalid opcode :%u.\n", opcode);
+		udma_err_rl(udma_dev->dev, "Flush invalid opcode :%u.\n", opcode);
 		break;
 	}
 }
@@ -991,7 +992,7 @@ static void fill_cr_by_sqe_ctl(struct udma_dev *udma_dev,
 
 	if (total_len > UINT32_MAX) {
 		cr->completion_len = UINT32_MAX;
-		dev_warn(udma_dev->dev, "total len %llu is overflow.\n", total_len);
+		udma_warn_rl(udma_dev->dev, "total len %llu is overflow.\n", total_len);
 	} else {
 		cr->completion_len = total_len;
 	}
@@ -1171,7 +1172,7 @@ udma_fill_sw_sge(struct udma_dev *dev, struct udma_sqe_ctl *sqe_ctl,
 		sqe_ctl->sge_num = sge_num;
 	} else {
 		if (sge_info[0].len > SQE_CTL_ATOMICADD_LEN_BIT) {
-			dev_err(dev->dev, "local payload length overflow.\n");
+			udma_err_rl(dev->dev, "local payload length overflow.\n");
 			return -EINVAL;
 		}
 		memcpy((void *)sqe_ctl + SQE_WRITE_ATOMICADD_DATA_ADDR_FIELD,
@@ -1465,8 +1466,16 @@ static int udma_k_set_sqe(struct udma_sqe_ctl *sqe_ctl, struct ubcore_jfs_wr *wr
 		tjetty = wr->tjetty;
 
 	if (!(sq->bind_tp_type.value & (1U << tjetty->cfg.tp_type))) {
-		dev_err(dev->dev, "tp_type unmatched. tp_type: %u, bind_tp_type: %u.\n",
-			tjetty->cfg.tp_type, sq->bind_tp_type.value);
+		udma_err_rl(dev->dev,
+			    "tp_type unmatched. tp_type:%u(%s%s%s ); bind_tp_type:0x%x(%s%s%s).\n",
+			    (uint32_t)tjetty->cfg.tp_type,
+			    tjetty->cfg.tp_type == UBCORE_RTP ? " rtp" : "",
+			    tjetty->cfg.tp_type == UBCORE_CTP ? " ctp" : "",
+			    tjetty->cfg.tp_type == UBCORE_UTP ? " utp" : "",
+			    sq->bind_tp_type.value,
+			    sq->bind_tp_type.bs.rtp ? " rtp" : "",
+			    sq->bind_tp_type.bs.ctp ? " ctp" : "",
+			    sq->bind_tp_type.bs.utp ? " utp" : "");
 		return -EINVAL;
 	}
 
@@ -1483,8 +1492,8 @@ static int udma_k_set_sqe(struct udma_sqe_ctl *sqe_ctl, struct ubcore_jfs_wr *wr
 
 	ret = udma_fill_normal_sge(dev, sqe_ctl, sq->max_inline_size, wr, tjetty);
 	if (ret)
-		dev_err(dev->dev, "failed to fill normal SGE, opcode :%u in wr.\n",
-			(uint8_t)wr->opcode);
+		udma_err_rl(dev->dev, "failed to fill normal SGE, opcode :%u in wr.\n",
+			    (uint8_t)wr->opcode);
 
 	return ret;
 }
@@ -1576,7 +1585,7 @@ static int udma_post_one_wr(struct udma_jetty_queue *sq, struct ubcore_jfs_wr *w
 		*dwqe_enable = true;
 
 	if (sq->db_status == 0 && to_check_sq_overflow(sq, wqebb_cnt)) {
-		dev_err(udma_dev->dev, "JFS overflow, wqebb_cnt:%u.\n", wqebb_cnt);
+		udma_err_rl(udma_dev->dev, "JFS overflow, wqebb_cnt:%u.\n", wqebb_cnt);
 		return -ENOMEM;
 	}
 
@@ -1646,7 +1655,7 @@ static void udma_write_multi_bb_dsqe(struct udma_jetty_queue *sq,
 		[UDMA_WQEBB_CNT_IS_4] = UDMA_WQEBB_BASE_OFFSET_WITH_CNT_4,
 	};
 	void *base = sq->dwqe_addr + base_offset[sq->cur_wqebb_cnt];
-	struct udma_sqe_ctl *src = ctrl;
+	struct udma_sqe_ctl *src;
 	uint8_t i;
 
 	ctrl->sqe_bb_idx = sq->pi;
@@ -1713,7 +1722,7 @@ int udma_post_jfs_wr(struct ubcore_jfs *jfs, struct ubcore_jfs_wr *wr,
 
 	ret = udma_post_sq_wr(udma_dev, &udma_jfs->sq, wr, bad_wr);
 	if (ret)
-		dev_err(udma_dev->dev, "failed to post JFS work request, SQ id = %u.\n",
+		udma_err_rl(udma_dev->dev, "failed to post JFS work request, SQ id = %u.\n",
 			udma_jfs->sq.id);
 
 	return ret;

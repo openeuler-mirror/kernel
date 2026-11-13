@@ -51,6 +51,7 @@ extern struct mutex g_seg_tree_mutex;
 #define SEID_TABLE_SIZE 1024
 
 #define UDMA_MAX_SL_NUM 16
+#define UDMA_MAX_TOTAL_SL_NUM 48
 #define UDMA_DEFAULT_SL_NUM 0
 
 #define UDMA_RCV_SEND_MAX_DIFF 512U
@@ -191,7 +192,7 @@ struct udma_dev {
 	u8 udma_ctp_sl[UDMA_MAX_SL_NUM];
 	u8 udma_utp_sl[UDMA_MAX_SL_NUM];
 	u8 unic_sl[UDMA_MAX_SL_NUM];
-	u8 udma_sl[UDMA_MAX_SL_NUM];
+	u8 udma_sl[UDMA_MAX_TOTAL_SL_NUM];
 	struct ubcore_sl_info priority_info[UDMA_MAX_SL_NUM];
 	int disable_ue_rx_count;
 	struct mutex open_rx_mutex;

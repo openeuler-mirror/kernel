@@ -188,37 +188,40 @@ static int udma_query_device_attr(struct ubcore_device *dev,
 static int udma_set_sl(struct ubcore_device *dev, uint32_t priority, uint32_t SL)
 {
 	struct udma_dev *udma_dev = to_udma_dev(dev);
+	bool found = false;
+	uint8_t i;
 
 	if (priority >= UDMA_MAX_PRIORITY || SL >= UDMA_MAX_SL_NUM) {
 		dev_err(udma_dev->dev,
-			"invalid priority(%d) or SL(%d)\n", priority, SL);
+			"invalid priority(%u) or SL(%u)\n", priority, SL);
 		return -EINVAL;
 	}
 
-	for (int i = 0; i < udma_dev->udma_total_sl_num; i++) {
-		if (udma_dev->udma_sl[i] == SL) {
+	for (i = 0; i < udma_dev->udma_total_sl_num; i++) {
+		if (udma_dev->udma_sl[i] != SL)
+			continue;
+
+		if (!found) {
+			found = true;
 			udma_dev->priority_info[priority].SL = SL;
-			if (i < udma_dev->udma_tp_sl_num) {
-				udma_dev->priority_info[priority].tp_type.bs.rtp = 1;
-				udma_dev->priority_info[priority].tp_type.bs.ctp = 0;
-				udma_dev->priority_info[priority].tp_type.bs.utp = 0;
-			} else if (i < udma_dev->udma_tp_sl_num +
-					   udma_dev->udma_ctp_sl_num) {
-				udma_dev->priority_info[priority].tp_type.bs.rtp = 0;
-				udma_dev->priority_info[priority].tp_type.bs.ctp = 1;
-				udma_dev->priority_info[priority].tp_type.bs.utp = 0;
-			} else {
-				udma_dev->priority_info[priority].tp_type.bs.rtp = 0;
-				udma_dev->priority_info[priority].tp_type.bs.ctp = 0;
-				udma_dev->priority_info[priority].tp_type.bs.utp = 1;
-			}
-			return 0;
+			udma_dev->priority_info[priority].tp_type.value = 0;
 		}
+
+		if (i < udma_dev->udma_tp_sl_num)
+			udma_dev->priority_info[priority].tp_type.bs.rtp = 1;
+		else if (i < udma_dev->udma_tp_sl_num + udma_dev->udma_ctp_sl_num)
+			udma_dev->priority_info[priority].tp_type.bs.ctp = 1;
+		else
+			udma_dev->priority_info[priority].tp_type.bs.utp = 1;
 	}
 
-	dev_err(udma_dev->dev, "SL(%d) to set is not in correct range.\n", SL);
+	if (!found) {
+		dev_err(udma_dev->dev,
+			"SL(%u) to set is not in correct range.\n", SL);
+		return -EINVAL;
+	}
 
-	return -EINVAL;
+	return 0;
 }
 
 static int udma_query_stats(struct ubcore_device *dev, struct ubcore_stats_key *key,
@@ -769,6 +772,45 @@ static void get_dev_caps_from_ubase(struct udma_dev *udma_dev)
 	udma_get_dtu_param(udma_dev, ubase_caps);
 }
 
+static void construct_priority_info(struct udma_dev *dev)
+{
+	struct ubcore_sl_info default_priority_info = {};
+	uint8_t i;
+
+	memset(dev->priority_info, 0, sizeof(dev->priority_info));
+
+	for (i = 0; i < dev->udma_tp_sl_num; i++) {
+		dev->priority_info[dev->udma_tp_sl[i]].SL = dev->udma_tp_sl[i];
+		dev->priority_info[dev->udma_tp_sl[i]].tp_type.bs.rtp = 1;
+	}
+
+	for (i = 0; i < dev->udma_ctp_sl_num; i++) {
+		dev->priority_info[dev->udma_ctp_sl[i]].SL = dev->udma_ctp_sl[i];
+		dev->priority_info[dev->udma_ctp_sl[i]].tp_type.bs.ctp = 1;
+	}
+
+	for (i = 0; i < dev->udma_utp_sl_num; i++) {
+		dev->priority_info[dev->udma_utp_sl[i]].SL = dev->udma_utp_sl[i];
+		dev->priority_info[dev->udma_utp_sl[i]].tp_type.bs.utp = 1;
+	}
+
+	if (dev->udma_tp_sl_num) {
+		default_priority_info.SL = dev->udma_tp_sl[UDMA_DEFAULT_SL_NUM];
+		default_priority_info.tp_type.bs.rtp = 1;
+	} else if (dev->udma_ctp_sl_num) {
+		default_priority_info.SL = dev->udma_ctp_sl[UDMA_DEFAULT_SL_NUM];
+		default_priority_info.tp_type.bs.ctp = 1;
+	} else {
+		default_priority_info.SL = dev->udma_utp_sl[UDMA_DEFAULT_SL_NUM];
+		default_priority_info.tp_type.bs.utp = 1;
+	}
+
+	for (i = 0; i < UDMA_MAX_SL_NUM; i++) {
+		if (dev->priority_info[i].tp_type.value == 0)
+			dev->priority_info[i] = default_priority_info;
+	}
+}
+
 static int udma_construct_qos_param(struct udma_dev *dev)
 {
 	struct ubase_adev_utp_qos *utp_qos_info;
@@ -793,70 +835,46 @@ static int udma_construct_qos_param(struct udma_dev *dev)
 	dev->udma_utp_sl_num = utp_qos_info->utp_sl_num;
 	dev->udma_tp_resp_vl_off = qos_info->tp_resp_vl_offset;
 	dev->udma_total_sl_num = dev->udma_tp_sl_num + dev->udma_ctp_sl_num +
-							 dev->udma_utp_sl_num;
-	if (dev->udma_total_sl_num > UDMA_MAX_SL_NUM ||
-	    dev->udma_total_sl_num == 0) {
+				 dev->udma_utp_sl_num;
+
+	if (dev->udma_total_sl_num == 0 ||
+	    dev->udma_tp_sl_num > UDMA_MAX_SL_NUM ||
+	    dev->udma_ctp_sl_num > UDMA_MAX_SL_NUM ||
+	    dev->udma_utp_sl_num > UDMA_MAX_SL_NUM ||
+	    dev->unic_sl_num > UDMA_MAX_SL_NUM) {
 		dev_err(dev->dev,
-			"total sl num is invalid, tp is %u, ctp is %u, utp is %u.\n",
+			"invalid sl num, tp %hhu, ctp %hhu, utp %hhu, nic %hhu.\n",
 			dev->udma_tp_sl_num, dev->udma_ctp_sl_num,
-			dev->udma_utp_sl_num);
+			dev->udma_utp_sl_num, dev->unic_sl_num);
 		return -EINVAL;
 	}
 
-	(void)memcpy(dev->udma_tp_sl,
-		     qos_info->tp_sl, sizeof(u8) * qos_info->tp_sl_num);
-	(void)memcpy(dev->udma_ctp_sl,
-		     qos_info->ctp_sl, sizeof(u8) * qos_info->ctp_sl_num);
-	(void)memcpy(dev->udma_utp_sl,
-		     utp_qos_info->utp_sl, sizeof(u8) * utp_qos_info->utp_sl_num);
-	(void)memcpy(dev->unic_sl,
-		     qos_info->nic_sl, sizeof(u8) * qos_info->nic_sl_num);
-	(void)memcpy(dev->udma_sl,
-		     qos_info->tp_sl, sizeof(u8) * qos_info->tp_sl_num);
+	(void)memcpy(dev->udma_tp_sl, qos_info->tp_sl,
+		     sizeof(uint8_t) * dev->udma_tp_sl_num);
+	(void)memcpy(dev->udma_ctp_sl, qos_info->ctp_sl,
+		     sizeof(uint8_t) * dev->udma_ctp_sl_num);
+	(void)memcpy(dev->udma_utp_sl, utp_qos_info->utp_sl,
+		     sizeof(uint8_t) * dev->udma_utp_sl_num);
+	(void)memcpy(dev->unic_sl, qos_info->nic_sl,
+		     sizeof(uint8_t) * dev->unic_sl_num);
 
-	for (i = 0; i < qos_info->ctp_sl_num; i++)
-		dev->udma_sl[qos_info->tp_sl_num + i] = qos_info->ctp_sl[i];
-	for (i = 0; i < utp_qos_info->utp_sl_num; i++)
-		dev->udma_sl[qos_info->tp_sl_num + qos_info->ctp_sl_num + i] =
-			utp_qos_info->utp_sl[i];
+	for (i = 0; i < dev->udma_tp_sl_num; i++)
+		dev->udma_sl[i] = dev->udma_tp_sl[i];
+	for (i = 0; i < dev->udma_ctp_sl_num; i++)
+		dev->udma_sl[dev->udma_tp_sl_num + i] = dev->udma_ctp_sl[i];
+	for (i = 0; i < dev->udma_utp_sl_num; i++)
+		dev->udma_sl[dev->udma_tp_sl_num + dev->udma_ctp_sl_num + i] =
+			dev->udma_utp_sl[i];
 
-	if (qos_info->tp_sl_num != 0) {
-		for (i = 0; i < UDMA_MAX_SL_NUM; i++) {
-			dev->priority_info[i].SL = dev->udma_tp_sl[UDMA_DEFAULT_SL_NUM];
-			dev->priority_info[i].tp_type.bs.rtp = 1;
-		}
-	} else if (qos_info->ctp_sl_num != 0) {
-		for (i = 0; i < UDMA_MAX_SL_NUM; i++) {
-			dev->priority_info[i].SL = dev->udma_ctp_sl[UDMA_DEFAULT_SL_NUM];
-			dev->priority_info[i].tp_type.bs.ctp = 1;
-		}
-	} else {
-		for (i = 0; i < UDMA_MAX_SL_NUM; i++) {
-			dev->priority_info[i].SL = dev->udma_utp_sl[UDMA_DEFAULT_SL_NUM];
-			dev->priority_info[i].tp_type.bs.utp = 1;
+	for (i = 0; i < dev->udma_total_sl_num; i++) {
+		if (dev->udma_sl[i] >= UDMA_MAX_SL_NUM) {
+			dev_err(dev->dev, "sl %u out of range, expected [0, %u]\n",
+				dev->udma_sl[i], UDMA_MAX_SL_NUM - 1);
+			return -EINVAL;
 		}
 	}
 
-	for (i = 0; i < dev->udma_tp_sl_num; i++) {
-		dev->priority_info[dev->udma_tp_sl[i]].SL = dev->udma_tp_sl[i];
-		dev->priority_info[dev->udma_tp_sl[i]].tp_type.bs.rtp = 1;
-		dev->priority_info[dev->udma_tp_sl[i]].tp_type.bs.ctp = 0;
-		dev->priority_info[dev->udma_tp_sl[i]].tp_type.bs.utp = 0;
-	}
-
-	for (i = 0; i < dev->udma_ctp_sl_num; i++) {
-		dev->priority_info[dev->udma_ctp_sl[i]].SL = dev->udma_ctp_sl[i];
-		dev->priority_info[dev->udma_ctp_sl[i]].tp_type.bs.rtp = 0;
-		dev->priority_info[dev->udma_ctp_sl[i]].tp_type.bs.ctp = 1;
-		dev->priority_info[dev->udma_ctp_sl[i]].tp_type.bs.utp = 0;
-	}
-
-	for (i = 0; i < dev->udma_utp_sl_num; i++) {
-		dev->priority_info[dev->udma_utp_sl[i]].SL = dev->udma_utp_sl[i];
-		dev->priority_info[dev->udma_utp_sl[i]].tp_type.bs.rtp = 0;
-		dev->priority_info[dev->udma_utp_sl[i]].tp_type.bs.ctp = 0;
-		dev->priority_info[dev->udma_utp_sl[i]].tp_type.bs.utp = 1;
-	}
+	construct_priority_info(dev);
 
 	return 0;
 }
@@ -951,7 +969,8 @@ static int udma_set_hw_caps(struct udma_dev *udma_dev)
 	udma_dev->caps.ipourma_en = ubase_adev_ip_over_urma_supported(udma_dev->comdev.adev);
 	udma_dev->caps.ctp_en = !(ubase_adev_ip_over_urma_utp_supported(udma_dev->comdev.adev));
 	udma_dev->caps.rc_max_cnt = a_caps->rc_max_cnt;
-	udma_dev->caps.st64b_en = udma_dev->hw_ver != UBASE_HW_VER_A_0;
+	udma_dev->caps.st64b_en = (udma_dev->hw_ver != UBASE_HW_VER_A_0) &&
+				  (udma_dev->hw_ver != UBASE_HW_VER_S_0);
 	/* TODO: get dwqe_multi_bb_en from IMP */
 	udma_dev->caps.multi_wqebb_dwqe = (udma_dev->hw_ver == UBASE_HW_VER_K_1) &&
 					  !!(udma_dev->caps.feature & UDMA_CAP_FEATURE_DIRECT_WQE);
@@ -1474,15 +1493,15 @@ static int udma_init_dev(struct auxiliary_device *adev, bool is_probe)
 		goto err_create;
 	}
 
-	ret = udma_register_event(adev);
-	if (ret)
-		goto err_event_register;
-
 	ret = udma_register_workqueue(udma_dev);
 	if (ret) {
 		dev_err(udma_dev->dev, "UDMA activate workqueue failed.\n");
 		goto err_register_act_init;
 	}
+
+	ret = udma_register_event(adev);
+	if (ret)
+		goto err_event_register;
 
 	ret = udma_set_ubcore_dev(udma_dev);
 	if (ret) {
@@ -1507,11 +1526,11 @@ err_init_eid:
 	udma_dev->status = UDMA_INITIALIZING;
 	ubcore_unregister_device(&udma_dev->ub_dev);
 err_set_ubcore_dev:
-	udma_unregister_workqueue(udma_dev);
-err_register_act_init:
 	udma_unregister_none_crq_event(adev);
 	udma_unregister_crq_event(adev);
 err_event_register:
+	udma_unregister_workqueue(udma_dev);
+err_register_act_init:
 	udma_destroy_dev(udma_dev);
 err_create:
 	mutex_unlock(&udma_reset_mutex);
@@ -1532,7 +1551,7 @@ static void check_and_wait_flush_done(struct udma_dev *udma_dev)
 			break;
 
 		if (ubase_adev_shutting_down(udma_dev->comdev.adev)) {
-			dev_err_ratelimited(udma_dev->dev, "exit flush in shutdown process.\n");
+			udma_err_rl(udma_dev->dev, "exit flush in shutdown process.\n");
 			break;
 		}
 
@@ -1603,10 +1622,10 @@ int udma_reset_uninit(struct auxiliary_device *adev)
 
 	udma_unregister_none_crq_event(adev);
 	ubcore_unregister_device(&udma_dev->ub_dev);
-	udma_unregister_workqueue(udma_dev);
 	udma_open_ue_rx(udma_dev, false, false, true, 0);
 	/* Crq event should unregister after wait flush done. */
 	udma_unregister_crq_event(adev);
+	udma_unregister_workqueue(udma_dev);
 	udma_destroy_dev(udma_dev);
 	mutex_unlock(&udma_reset_mutex);
 
@@ -1639,7 +1658,7 @@ int udma_reset_abort(struct auxiliary_device *adev)
 int udma_probe(struct auxiliary_device *adev,
 	       const struct auxiliary_device_id *id)
 {
-	struct udma_dev *udma_dev = NULL;
+	struct udma_dev *udma_dev;
 
 	if (udma_init_dev(adev, true)) {
 		ubase_adev_fault_log(adev, UDMA_FAULT_EVENT_ID_PROBE, NULL);
@@ -1698,7 +1717,7 @@ void udma_remove(struct auxiliary_device *adev)
 		}
 
 		if (ubase_adev_shutting_down(adev)) {
-			dev_err_ratelimited(&adev->dev, "enter shutdown process.\n");
+			udma_err_rl(&adev->dev, "enter shutdown process.\n");
 			break;
 		}
 
@@ -1707,17 +1726,17 @@ void udma_remove(struct auxiliary_device *adev)
 			ubase_adev_fault_log(adev, UDMA_FAULT_EVENT_ID_REMOVE, NULL);
 		if (wait_time < UDMA_REMOVE_MAX_SLEEP_TIME)
 			wait_time *= UDMA_TIME_SLEEP_RATE;
-		dev_err_ratelimited(&adev->dev, "udma close ue rx failed in remove process.\n");
+		udma_err_rl(&adev->dev, "udma close ue rx failed in remove process.\n");
 	}
 	udma_report_reset_event(UBCORE_EVENT_ELR_ERR, udma_dev);
 	udma_unregister_none_crq_event(adev);
 	ubcore_unregister_device(&udma_dev->ub_dev);
-	udma_unregister_workqueue(udma_dev);
 	check_and_wait_flush_done(udma_dev);
 	if ((udma_dev->caps.feature & UDMA_CAP_FEATURE_UE_RX_CLOSE) && ubase_activate_dev(adev))
 		ubase_update_dev_status(adev, UBASE_DEV_NEED_TO_ACTIVATE);
 	/* Crq event should unregister after wait flush done,  */
 	udma_unregister_crq_event(adev);
+	udma_unregister_workqueue(udma_dev);
 	udma_destroy_dev(udma_dev);
 	dev_info(&adev->dev, "udma device remove success.\n");
 }
