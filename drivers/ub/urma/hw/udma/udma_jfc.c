@@ -48,7 +48,9 @@ static void udma_construct_jfc_ctx(struct udma_dev *dev,
 	else
 		ctx->hw_ver_0.cq_cnt_mode = UDMA_CQE_CNT_MODE_BY_COUNT;
 
-	if (dev->hw_ver == UBASE_HW_VER_K_1 || dev->hw_ver == UBASE_HW_VER_A_1)
+	if (dev->hw_ver == UBASE_HW_VER_K_1 ||
+	    dev->hw_ver == UBASE_HW_VER_A_1 ||
+	    dev->hw_ver == UBASE_HW_VER_S_0)
 		ctx->hw_ver_1.ceqn = jfc->ceqn;
 	else
 		ctx->hw_ver_0.ceqn = jfc->ceqn;

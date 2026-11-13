@@ -722,6 +722,7 @@ err_bind_jfc:
 	udma_free_jfs_sq(dev, jfs);
 err_alloc_sq:
 	kfree(jfs);
+
 	return ERR_PTR(ret);
 }
 
