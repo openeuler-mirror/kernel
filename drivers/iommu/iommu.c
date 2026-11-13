@@ -1256,7 +1256,7 @@ rename:
 
 	trace_add_device_to_group(group->id, dev);
 
-	dev_info(dev, "Adding to iommu group %d\n", group->id);
+	dev_dbg(dev, "Adding to iommu group %d\n", group->id);
 
 	return device;
 
@@ -1320,7 +1320,7 @@ void iommu_group_remove_device(struct device *dev)
 	if (!group)
 		return;
 
-	dev_info(dev, "Removing from iommu group %d\n", group->id);
+	dev_dbg(dev, "Removing from iommu group %d\n", group->id);
 
 	__iommu_group_remove_device(dev);
 }
