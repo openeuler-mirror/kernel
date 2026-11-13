@@ -1566,6 +1566,27 @@ static bool dm_table_supports_poll(struct dm_table *t)
 	return true;
 }
 
+static int device_not_pci_p2pdma_capable(struct dm_target *ti,
+		struct dm_dev *dev, sector_t start, sector_t len, void *data)
+{
+	return !blk_queue_pci_p2pdma(bdev_get_queue(dev->bdev));
+}
+
+static bool dm_table_supports_pci_p2pdma(struct dm_table *t)
+{
+	for (unsigned int i = 0; i < t->num_targets; i++) {
+		struct dm_target *ti = dm_table_get_target(t, i);
+
+		if (!dm_target_supports_pci_p2pdma(ti->type) ||
+		    !ti->type->iterate_devices ||
+		    ti->type->iterate_devices(ti,
+				device_not_pci_p2pdma_capable, NULL))
+			return false;
+	}
+
+	return t->num_targets > 0;
+}
+
 /*
  * Check whether a table has no data devices attached using each
  * target's iterate_devices method.
@@ -1962,6 +1983,11 @@ int dm_table_set_restrictions(struct dm_table *t, struct request_queue *q,
 		blk_queue_flag_set(QUEUE_FLAG_NOWAIT, q);
 	else
 		blk_queue_flag_clear(QUEUE_FLAG_NOWAIT, q);
+
+	if (dm_table_supports_pci_p2pdma(t))
+		blk_queue_flag_set(QUEUE_FLAG_PCI_P2PDMA, q);
+	else
+		blk_queue_flag_clear(QUEUE_FLAG_PCI_P2PDMA, q);
 
 	if (!dm_table_supports_discards(t)) {
 		q->limits.max_discard_sectors = 0;
