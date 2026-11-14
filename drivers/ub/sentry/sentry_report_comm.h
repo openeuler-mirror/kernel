@@ -34,8 +34,9 @@
  * (4) oom
  * (5) ub mem err
  * (6) ub link
+ * (7) NL SSU link credit overtime error
  */
-#define SMH_VERSION_MINOR  6
+#define SMH_VERSION_MINOR  7
 
 static inline int sentry_create_proc_file(const char *name, struct proc_dir_entry *parent,
 					  const struct proc_ops *proc_ops)

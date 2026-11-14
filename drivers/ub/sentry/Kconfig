@@ -2,7 +2,7 @@
 
 config UB_SENTRY
     tristate "sentry message report"
-    depends on UB && ACPI_POWER_NOTIFIER_CHAIN
+    depends on UB && ACPI_POWER_NOTIFIER_CHAIN && ACPI_APEI_GHES
     default m
     help
       Listens to kernel event(eg. oom) and send sentry msg to userspace
