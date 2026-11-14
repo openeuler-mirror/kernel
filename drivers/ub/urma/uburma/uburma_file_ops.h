@@ -12,9 +12,20 @@
 #ifndef UBURMA_FILE_OPS_H
 #define UBURMA_FILE_OPS_H
 
+#include <linux/types.h>
 #include <linux/kref.h>
 #include <linux/fs.h>
 #include <linux/mm_types.h>
+
+/**
+ * uburma_is_delay_free_enabled() - check asynchronous resource release mode
+ *
+ * The module parameter may be changed at runtime. Callers making a multi-step
+ * decision should read the returned value once and reuse it.
+ *
+ * Return: true when asynchronous resource release is enabled.
+ */
+bool uburma_is_delay_free_enabled(void);
 
 void uburma_release_file(struct kref *ref);
 int uburma_mmap(struct file *filp, struct vm_area_struct *vma);
