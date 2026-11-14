@@ -3493,7 +3493,17 @@ struct ubcore_ops {
 	 */
 	int (*get_dmac)(struct ubcore_device *dev,
 		const struct ubcore_net_addr *net_addr, uint8_t *mac);
+	/**
+	 * invalidate the process address space used by a user ucontext.
+	 * @param[in] uctx: the user context to invalidate;
+	 * @return: 0 on success, -EOPNOTSUPP if unsupported,
+	 * other error code otherwise
+	 */
+#ifndef __GENKSYMS__
+	int (*invalidate_ucontext)(struct ubcore_ucontext *uctx);
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)

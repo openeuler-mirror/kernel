@@ -38,6 +38,18 @@
 
 module_param(g_uburma_log_level, uint, UBURMA_LOG_FILE_PERMISSION);
 MODULE_PARM_DESC(g_uburma_log_level, " 3: ERR, 4: WARNING, 6: INFO, 7: DEBUG");
+
+static bool ubres_delay_free __read_mostly;
+
+module_param(ubres_delay_free, bool, UBURMA_LOG_FILE_PERMISSION);
+MODULE_PARM_DESC(ubres_delay_free,
+		 "Enable asynchronous UB resource release on process exit");
+
+bool uburma_is_delay_free_enabled(void)
+{
+	return READ_ONCE(ubres_delay_free);
+}
+
 static int uburma_ratelimit_burst_set(const char *val,
 				      const struct kernel_param *kp)
 {

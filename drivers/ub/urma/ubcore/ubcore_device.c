@@ -1912,6 +1912,30 @@ void ubcore_free_ucontext(struct ubcore_device *dev,
 }
 EXPORT_SYMBOL(ubcore_free_ucontext);
 
+int ubcore_invalidate_ucontext(struct ubcore_ucontext *ucontext)
+{
+	struct ubcore_device *dev;
+	int ret;
+
+	if (!ucontext || !ucontext->ub_dev)
+		return -EINVAL;
+
+	dev = ucontext->ub_dev;
+	if (!dev->ops)
+		return -EINVAL;
+
+	if (!dev->ops->invalidate_ucontext)
+		return -EOPNOTSUPP;
+
+	ret = dev->ops->invalidate_ucontext(ucontext);
+	if (ret != 0 && ret != -EOPNOTSUPP)
+		ubcore_log_err("failed to invalidate ucontext, dev: %s, ret: %d.\n",
+			       dev->dev_name, ret);
+
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_invalidate_ucontext);
+
 int ubcore_add_ueid(struct ubcore_device *dev, uint16_t ue_idx,
 		    struct ubcore_ueid_cfg *cfg)
 {
