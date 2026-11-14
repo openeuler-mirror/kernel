@@ -13,6 +13,7 @@
 #include <net/checksum.h>
 #include <linux/scatterlist.h>
 #include <linux/instrumented.h>
+#include <linux/memremap.h>
 
 /* covers ubuf and kbuf alike */
 #define iterate_buf(i, n, base, len, off, __p, STEP) {		\
@@ -52,8 +53,12 @@
 	while (n) {						\
 		unsigned offset = p->bv_offset + skip;		\
 		unsigned left;					\
-		void *kaddr = kmap_local_page(p->bv_page +	\
-					offset / PAGE_SIZE);	\
+		struct page *bv_pg = p->bv_page +		\
+					offset / PAGE_SIZE;	\
+		void *kaddr;					\
+		if (is_pci_p2pdma_page(bv_pg))			\
+			break;					\
+		kaddr = kmap_local_page(bv_pg);			\
 		base = kaddr + offset % PAGE_SIZE;		\
 		len = min(min(n, (size_t)(p->bv_len - skip)),	\
 		     (size_t)(PAGE_SIZE - offset % PAGE_SIZE));	\
@@ -197,6 +202,23 @@ static int copyin(void *to, const void __user *from, size_t n)
 }
 
 /*
+ * The copy and zero helpers make no progress on a p2pdma page. Report such
+ * a bvec as not faultable so that callers do not retry the copy forever.
+ */
+static bool iov_iter_bvec_has_p2pdma(const struct iov_iter *i)
+{
+	const struct bio_vec *bv;
+	unsigned int offset;
+
+	if (!iov_iter_is_bvec(i) || !i->count || !i->nr_segs)
+		return false;
+
+	bv = i->bvec;
+	offset = bv->bv_offset + i->iov_offset;
+	return is_pci_p2pdma_page(bv->bv_page + offset / PAGE_SIZE);
+}
+
+/*
  * fault_in_iov_iter_readable - fault in iov iterator for reading
  * @i: iterator
  * @size: maximum length
@@ -207,7 +229,8 @@ static int copyin(void *to, const void __user *from, size_t n)
  * Returns the number of bytes not faulted in (like copy_to_user() and
  * copy_from_user()).
  *
- * Always returns 0 for non-userspace iterators.
+ * Returns 0 for non-userspace iterators, except for a bvec iterator whose
+ * next page is p2pdma memory: that page cannot be faulted in.
  */
 size_t fault_in_iov_iter_readable(const struct iov_iter *i, size_t size)
 {
@@ -233,6 +256,8 @@ size_t fault_in_iov_iter_readable(const struct iov_iter *i, size_t size)
 				break;
 		}
 		return count + size;
+	} else if (iov_iter_bvec_has_p2pdma(i)) {
+		return size;
 	}
 	return 0;
 }
@@ -250,7 +275,8 @@ EXPORT_SYMBOL(fault_in_iov_iter_readable);
  * Returns the number of bytes not faulted in, like copy_to_user() and
  * copy_from_user().
  *
- * Always returns 0 for non-user-space iterators.
+ * Returns 0 for non-user-space iterators, except for a bvec iterator whose
+ * next page is p2pdma memory: that page cannot be faulted in.
  */
 size_t fault_in_iov_iter_writeable(const struct iov_iter *i, size_t size)
 {
@@ -276,6 +302,8 @@ size_t fault_in_iov_iter_writeable(const struct iov_iter *i, size_t size)
 				break;
 		}
 		return count + size;
+	} else if (iov_iter_bvec_has_p2pdma(i)) {
+		return size;
 	}
 	return 0;
 }
