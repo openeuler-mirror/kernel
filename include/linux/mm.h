@@ -4154,7 +4154,8 @@ void vmemmap_free(unsigned long start, unsigned long end,
 #endif
 
 #define VMEMMAP_RESERVE_NR	2
-#ifdef CONFIG_ARCH_WANT_OPTIMIZE_DAX_VMEMMAP
+#if defined(CONFIG_ARCH_WANT_OPTIMIZE_DAX_VMEMMAP) || \
+	defined(CONFIG_ARCH_WANT_OPTIMIZE_P2PDMA_VMEMMAP)
 static inline bool __vmemmap_can_optimize(struct vmem_altmap *altmap,
 					  struct dev_pagemap *pgmap)
 {
@@ -4164,11 +4165,23 @@ static inline bool __vmemmap_can_optimize(struct vmem_altmap *altmap,
 	if (!pgmap || !is_power_of_2(sizeof(struct page)))
 		return false;
 
+	/*
+	 * DAX and P2PDMA share the metadata layout but have separate
+	 * architecture opt-ins, so only allow the pgmap types whose
+	 * capability is enabled.
+	 */
+	if (pgmap->type == MEMORY_DEVICE_PCI_P2PDMA) {
+		if (!IS_ENABLED(CONFIG_ARCH_WANT_OPTIMIZE_P2PDMA_VMEMMAP))
+			return false;
+	} else if (!IS_ENABLED(CONFIG_ARCH_WANT_OPTIMIZE_DAX_VMEMMAP)) {
+		return false;
+	}
+
 	nr_pages = pgmap_vmemmap_nr(pgmap);
 	nr_vmemmap_pages = ((nr_pages * sizeof(struct page)) >> PAGE_SHIFT);
 	/*
-	 * For vmemmap optimization with DAX we need minimum 2 vmemmap
-	 * pages. See layout diagram in Documentation/mm/vmemmap_dedup.rst
+	 * Vmemmap optimization needs a minimum of 2 vmemmap pages. See the
+	 * layout diagram in Documentation/mm/vmemmap_dedup.rst.
 	 */
 	return !altmap && (nr_vmemmap_pages > VMEMMAP_RESERVE_NR);
 }

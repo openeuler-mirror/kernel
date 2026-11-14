@@ -18,7 +18,31 @@ struct scatterlist;
 
 #ifdef CONFIG_PCI_P2PDMA
 int pci_p2pdma_add_resource(struct pci_dev *pdev, int bar, size_t size,
-		u64 offset);
+			    u64 offset);
+int pci_p2pdma_add_resource_aligned(struct pci_dev *pdev, int bar,
+				    size_t size, size_t align, u64 offset);
+size_t pci_p2pdma_max_pagemap_align(struct pci_dev *pdev, int bar,
+				    size_t size, u64 offset);
+#ifdef CONFIG_PCI_P2PDMA_DEDUP_TEST
+/*
+ * Result of the test-only vmemmap measurement helper.  align and base_pages
+ * describe the un-deduplicated vmemmap; unique_pages is the physical count.
+ */
+struct pci_p2pdma_vmemmap_stats {
+	/* Compound page size: PAGE_SIZE << vmemmap_shift. */
+	u64 align;
+	/* 4 KiB vmemmap virtual pages for the whole BAR. */
+	u64 base_pages;
+	/* Distinct physical pages backing the vmemmap. */
+	u64 unique_pages;
+};
+/*
+ * Test helper for CONFIG_PCI_P2PDMA_DEDUP_TEST.  The implementation walks
+ * the kernel page tables; see drivers/pci/p2pdma.c.
+ */
+int pci_p2pdma_measure_vmemmap(struct pci_dev *pdev, int bar,
+			       struct pci_p2pdma_vmemmap_stats *stats);
+#endif
 int pci_p2pdma_distance_many(struct pci_dev *provider, struct device **clients,
 			     int num_clients, bool verbose);
 bool pci_has_p2pmem(struct pci_dev *pdev);
@@ -36,9 +60,22 @@ ssize_t pci_p2pdma_enable_show(char *page, struct pci_dev *p2p_dev,
 			       bool use_p2pdma);
 #else /* CONFIG_PCI_P2PDMA */
 static inline int pci_p2pdma_add_resource(struct pci_dev *pdev, int bar,
-		size_t size, u64 offset)
+					  size_t size, u64 offset)
 {
 	return -EOPNOTSUPP;
+}
+
+static inline int pci_p2pdma_add_resource_aligned(struct pci_dev *pdev, int bar,
+						  size_t size, size_t align,
+						  u64 offset)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline size_t pci_p2pdma_max_pagemap_align(struct pci_dev *pdev, int bar,
+						  size_t size, u64 offset)
+{
+	return PAGE_SIZE;
 }
 static inline int pci_p2pdma_distance_many(struct pci_dev *provider,
 	struct device **clients, int num_clients, bool verbose)

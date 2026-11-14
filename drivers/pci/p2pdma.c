@@ -11,6 +11,7 @@
 #define pr_fmt(fmt) "pci-p2pdma: " fmt
 #include <linux/ctype.h>
 #include <linux/dma-map-ops.h>
+#include <linux/mm.h>
 #include <linux/pci-p2pdma.h>
 #include <linux/module.h>
 #include <linux/slab.h>
@@ -20,6 +21,10 @@
 #include <linux/random.h>
 #include <linux/seq_buf.h>
 #include <linux/xarray.h>
+#ifdef CONFIG_PCI_P2PDMA_DEDUP_TEST
+#include <linux/sort.h>
+#include <linux/vmalloc.h>
+#endif
 
 struct pci_p2pdma {
 	struct gen_pool *pool;
@@ -36,6 +41,11 @@ struct pci_p2pdma_pagemap {
 static struct pci_p2pdma_pagemap *to_p2p_pgmap(struct dev_pagemap *pgmap)
 {
 	return container_of(pgmap, struct pci_p2pdma_pagemap, pgmap);
+}
+
+static size_t pci_p2pdma_align(struct pci_p2pdma *p2pdma)
+{
+	return 1UL << p2pdma->pool->min_alloc_order;
 }
 
 static ssize_t size_show(struct device *dev, struct device_attribute *attr,
@@ -121,6 +131,10 @@ static int p2pmem_alloc_mmap(struct file *filp, struct kobject *kobj,
 		ret = -ENODEV;
 		goto out;
 	}
+	if (pci_p2pdma_align(p2pdma) != PAGE_SIZE) {
+		ret = -EOPNOTSUPP;
+		goto out;
+	}
 
 	kaddr = (void *)gen_pool_alloc_owner(p2pdma->pool, len, (void **)&ref);
 	if (!kaddr) {
@@ -194,14 +208,14 @@ static const struct attribute_group p2pmem_group = {
 
 static void p2pdma_page_free(struct page *page)
 {
-	struct pci_p2pdma_pagemap *pgmap = to_p2p_pgmap(page->pgmap);
+	struct pci_p2pdma_pagemap *pgmap = to_p2p_pgmap(page_pgmap(page));
 	/* safe to dereference while a reference is held to the percpu ref */
-	struct pci_p2pdma *p2pdma =
-		rcu_dereference_protected(pgmap->provider->p2pdma, 1);
+	struct pci_p2pdma *p2pdma;
 	struct percpu_ref *ref;
 
+	p2pdma = rcu_dereference_protected(pgmap->provider->p2pdma, 1);
 	gen_pool_free_owner(p2pdma->pool, (uintptr_t)page_to_virt(page),
-			    PAGE_SIZE, (void **)&ref);
+			    pci_p2pdma_align(p2pdma), (void **)&ref);
 	percpu_ref_put(ref);
 }
 
@@ -227,7 +241,7 @@ static void pci_p2pdma_release(void *data)
 	xa_destroy(&p2pdma->map_types);
 }
 
-static int pci_p2pdma_setup(struct pci_dev *pdev)
+static int pci_p2pdma_setup(struct pci_dev *pdev, size_t align)
 {
 	int error = -ENOMEM;
 	struct pci_p2pdma *p2p;
@@ -238,7 +252,7 @@ static int pci_p2pdma_setup(struct pci_dev *pdev)
 
 	xa_init(&p2p->map_types);
 
-	p2p->pool = gen_pool_create(PAGE_SHIFT, dev_to_node(&pdev->dev));
+	p2p->pool = gen_pool_create(ilog2(align), dev_to_node(&pdev->dev));
 	if (!p2p->pool)
 		goto out;
 
@@ -273,18 +287,214 @@ static void pci_p2pdma_unmap_mappings(void *data)
 				     p2pmem_group.name);
 }
 
+static bool pci_p2pdma_vmemmap_can_optimize(size_t align)
+{
+	struct dev_pagemap pgmap = { };
+
+	pgmap.type = MEMORY_DEVICE_PCI_P2PDMA;
+	pgmap.vmemmap_shift = ilog2(align) - PAGE_SHIFT;
+	return vmemmap_can_optimize(NULL, &pgmap);
+}
+
 /**
- * pci_p2pdma_add_resource - add memory for use as p2p memory
+ * pci_p2pdma_max_pagemap_align - find the largest deduplicated page geometry
+ * @pdev: the provider device
+ * @bar: PCI BAR to add
+ * @size: effective size of the resource, not zero
+ * @offset: offset into the PCI BAR
+ *
+ * Return: PAGE_SIZE when the architecture cannot deduplicate vmemmap pages,
+ * or when the resource has no supported PUD or PMD alignment.
+ */
+size_t pci_p2pdma_max_pagemap_align(struct pci_dev *pdev, int bar,
+				    size_t size, u64 offset)
+{
+	resource_size_t start = pci_resource_start(pdev, bar);
+
+	if (IS_ALIGNED(start | size | offset, PUD_SIZE) &&
+	    pci_p2pdma_vmemmap_can_optimize(PUD_SIZE))
+		return PUD_SIZE;
+	if (IS_ALIGNED(start | size | offset, PMD_SIZE) &&
+	    pci_p2pdma_vmemmap_can_optimize(PMD_SIZE))
+		return PMD_SIZE;
+	return PAGE_SIZE;
+}
+EXPORT_SYMBOL_GPL(pci_p2pdma_max_pagemap_align);
+
+/*
+ * Test-only helper.  It is built in because the vmemmap walk uses init_mm
+ * and the kernel page-table helpers, which are not exported to modules.
+ * CONFIG_PCI_P2PDMA_DEDUP_TEST gates both this helper and the test module
+ * that calls it.
+ */
+#ifdef CONFIG_PCI_P2PDMA_DEDUP_TEST
+/*
+ * Sort comparator for the physical PFNs collected by
+ * pci_p2pdma_measure_vmemmap().  The array holds unsigned long values; the
+ * order is only used to count duplicate PFNs.
+ */
+static int pci_p2pdma_compare_ul(const void *a, const void *b)
+{
+	unsigned long left = *(const unsigned long *)a;
+	unsigned long right = *(const unsigned long *)b;
+
+	if (left < right)
+		return -1;
+	return left > right;
+}
+
+/**
+ * pci_p2pdma_measure_vmemmap - count physical pages backing a P2PDMA vmemmap
+ * @pdev: provider PCI device
+ * @bar: BAR that holds the provider memory
+ * @stats: output geometry and page counts
+ *
+ * The BAR must be covered by one MEMORY_DEVICE_PCI_P2PDMA pagemap with a
+ * nonzero vmemmap_shift.  The helper walks the vmemmap virtual range in
+ * 4 KiB steps and records the physical page behind each step.  With vmemmap
+ * deduplication active, many virtual vmemmap pages map to the same physical
+ * page, so stats->unique_pages is smaller than stats->base_pages.
+ *
+ * The walk uses the kernel page tables (init_mm).  It assumes the vmemmap is
+ * mapped at PTE level; a huge PMD leaf is not handled.
+ *
+ * This is a test helper, not a normal I/O path.  It does not read or write
+ * the provider memory.
+ *
+ * Return: 0 on success, negative errno on failure.
+ */
+int pci_p2pdma_measure_vmemmap(struct pci_dev *pdev, int bar,
+			       struct pci_p2pdma_vmemmap_stats *stats)
+{
+	unsigned long *backing_pfns = NULL;
+	struct dev_pagemap *pgmap;
+	unsigned long start_pfn;
+	u64 nr_pages, i, unique = 1;
+	int err = 0;
+
+	if (!stats)
+		return -EINVAL;
+	memset(stats, 0, sizeof(*stats));
+
+	/*
+	 * The provider pagemap must cover exactly this BAR.  A pagemap for a
+	 * sub-range has a different vmemmap layout and is not measurable here.
+	 */
+	pgmap = get_dev_pagemap(PHYS_PFN(pci_resource_start(pdev, bar)), NULL);
+	if (!pgmap)
+		return -ENODEV;
+
+	/*
+	 * Base-page registration has neither vmemmap_shift nor deduplication.
+	 * There is nothing to measure in that case.
+	 */
+	if (pgmap->type != MEMORY_DEVICE_PCI_P2PDMA ||
+	    pgmap->range.start != pci_resource_start(pdev, bar) ||
+	    pgmap->range.end != pci_resource_end(pdev, bar) ||
+	    !pgmap->vmemmap_shift) {
+		err = -EOPNOTSUPP;
+		goto out_put_pgmap;
+	}
+
+	start_pfn = PHYS_PFN(pgmap->range.start);
+	nr_pages = pci_resource_len(pdev, bar) >> PAGE_SHIFT;
+
+	/*
+	 * vmemmap_shift is the compound page order: PAGE_SIZE << 18 = 1 GiB
+	 * for PUD, PAGE_SIZE << 9 = 2 MiB for PMD.  base_pages is the number
+	 * of 4 KiB virtual pages in the vmemmap for the whole BAR before
+	 * deduplication.
+	 */
+	stats->align = (u64)PAGE_SIZE << pgmap->vmemmap_shift;
+	stats->base_pages = DIV_ROUND_UP_ULL((u64)nr_pages * sizeof(struct page), PAGE_SIZE);
+	if (stats->base_pages > SIZE_MAX) {
+		/*
+		 * kvmalloc_array() takes a size_t; reject an impossible count.
+		 */
+		err = -EOVERFLOW;
+		goto out_put_pgmap;
+	}
+
+	/*
+	 * One entry per 4 KiB vmemmap virtual page.  The value is the PFN of
+	 * the page that backs the vmemmap virtual page, not the PFN of the HBM
+	 * page represented by the struct page.
+	 */
+	backing_pfns = kvmalloc_array(stats->base_pages, sizeof(*backing_pfns), GFP_KERNEL);
+	if (!backing_pfns) {
+		err = -ENOMEM;
+		goto out_put_pgmap;
+	}
+
+	for (i = 0; i < stats->base_pages; i++) {
+		/*
+		 * pfn_to_page() returns the vmemmap address of the first HBM
+		 * page.  i * PAGE_SIZE walks the vmemmap array.  pmd_off_k()
+		 * and pte_offset_kernel() resolve the kernel PTE; pte_page()
+		 * is the physical page that stores the vmemmap struct page.
+		 */
+		unsigned long addr = (unsigned long)pfn_to_page(start_pfn) + i * PAGE_SIZE;
+		pte_t *ptep = pte_offset_kernel(pmd_off_k(addr), addr);
+		pte_t pte = ptep_get(ptep);
+
+		if (pte_none(pte)) {
+			/* The vmemmap must be fully populated. */
+			err = -EFAULT;
+			goto out_free;
+		}
+		backing_pfns[i] = page_to_pfn(pte_page(pte));
+	}
+
+	/*
+	 * Sort and compact the PFNs.  The unique count is the number of
+	 * physical pages used for the vmemmap.  The caller compares it with
+	 * the expected compound-page geometry.
+	 */
+	sort(backing_pfns, stats->base_pages, sizeof(*backing_pfns), pci_p2pdma_compare_ul, NULL);
+	for (i = 1; i < stats->base_pages; i++) {
+		if (backing_pfns[i] != backing_pfns[unique - 1])
+			backing_pfns[unique++] = backing_pfns[i];
+	}
+	stats->unique_pages = unique;
+
+out_free:
+	kvfree(backing_pfns);
+out_put_pgmap:
+	put_dev_pagemap(pgmap);
+	return err;
+}
+/* Used by the vmemmap dedup test module. */
+EXPORT_SYMBOL_GPL(pci_p2pdma_measure_vmemmap);
+#endif /* CONFIG_PCI_P2PDMA_DEDUP_TEST */
+
+static int pci_p2pdma_check_pagemap_align(struct pci_dev *pdev, int bar,
+					  size_t size, size_t align, u64 offset)
+{
+	if (align == PAGE_SIZE)
+		return 0;
+	if (align != PUD_SIZE && align != PMD_SIZE)
+		return -EINVAL;
+	if (!IS_ALIGNED(pci_resource_start(pdev, bar) | size | offset, align))
+		return -EINVAL;
+	if (!pci_p2pdma_vmemmap_can_optimize(align))
+		return -EOPNOTSUPP;
+	return 0;
+}
+
+/**
+ * pci_p2pdma_add_resource_aligned - add memory with compound struct pages
  * @pdev: the device to add the memory to
  * @bar: PCI BAR to add
  * @size: size of the memory to add, may be zero to use the whole BAR
+ * @align: allocation and compound-page alignment
  * @offset: offset into the PCI BAR
  *
- * The memory will be given ZONE_DEVICE struct pages so that it may
- * be used with any DMA request.
+ * The memory will be given ZONE_DEVICE struct pages so that it may be used
+ * with kernel DMA requests. Compound-page resources cannot be mapped through
+ * the p2pmem allocate sysfs file.
  */
-int pci_p2pdma_add_resource(struct pci_dev *pdev, int bar, size_t size,
-			    u64 offset)
+int pci_p2pdma_add_resource_aligned(struct pci_dev *pdev, int bar, size_t size,
+				    size_t align, u64 offset)
 {
 	struct pci_p2pdma_pagemap *p2p_pgmap;
 	struct dev_pagemap *pgmap;
@@ -301,11 +511,18 @@ int pci_p2pdma_add_resource(struct pci_dev *pdev, int bar, size_t size,
 	if (!size)
 		size = pci_resource_len(pdev, bar) - offset;
 
-	if (size + offset > pci_resource_len(pdev, bar))
+	if (size > pci_resource_len(pdev, bar) - offset)
+		return -EINVAL;
+
+	error = pci_p2pdma_check_pagemap_align(pdev, bar, size, align, offset);
+	if (error)
+		return error;
+
+	if (pdev->p2pdma && pci_p2pdma_align(pdev->p2pdma) != align)
 		return -EINVAL;
 
 	if (!pdev->p2pdma) {
-		error = pci_p2pdma_setup(pdev);
+		error = pci_p2pdma_setup(pdev, align);
 		if (error)
 			return error;
 	}
@@ -320,6 +537,8 @@ int pci_p2pdma_add_resource(struct pci_dev *pdev, int bar, size_t size,
 	pgmap->nr_range = 1;
 	pgmap->type = MEMORY_DEVICE_PCI_P2PDMA;
 	pgmap->ops = &p2pdma_pgmap_ops;
+	if (align > PAGE_SIZE)
+		pgmap->vmemmap_shift = ilog2(align) - PAGE_SHIFT;
 
 	p2p_pgmap->provider = pdev;
 	p2p_pgmap->bus_offset = pci_bus_address(pdev, bar) -
@@ -344,8 +563,8 @@ int pci_p2pdma_add_resource(struct pci_dev *pdev, int bar, size_t size,
 	if (error)
 		goto pages_free;
 
-	pci_info(pdev, "added peer-to-peer DMA memory %#llx-%#llx\n",
-		 pgmap->range.start, pgmap->range.end);
+	pci_info(pdev, "added peer-to-peer DMA memory %#llx-%#llx alignment %#lx\n",
+		 pgmap->range.start, pgmap->range.end, (unsigned long)align);
 
 	return 0;
 
@@ -354,6 +573,20 @@ pages_free:
 pgmap_free:
 	devm_kfree(&pdev->dev, p2p_pgmap);
 	return error;
+}
+EXPORT_SYMBOL_GPL(pci_p2pdma_add_resource_aligned);
+
+/**
+ * pci_p2pdma_add_resource - add memory with base struct pages
+ * @pdev: the device to add the memory to
+ * @bar: PCI BAR to add
+ * @size: size of the memory to add, may be zero to use the whole BAR
+ * @offset: offset into the PCI BAR
+ */
+int pci_p2pdma_add_resource(struct pci_dev *pdev, int bar, size_t size,
+			    u64 offset)
+{
+	return pci_p2pdma_add_resource_aligned(pdev, bar, size, PAGE_SIZE, offset);
 }
 EXPORT_SYMBOL_GPL(pci_p2pdma_add_resource);
 
@@ -449,6 +682,8 @@ static const struct pci_p2pdma_whitelist_entry {
 	{PCI_VENDOR_ID_ZHAOXIN, 0x1006, REQ_SAME_HOST_BRIDGE},
 	{PCI_VENDOR_ID_ZHAOXIN, 0x1007, REQ_SAME_HOST_BRIDGE},
 	{PCI_VENDOR_ID_ZHAOXIN, 0x1008, 0},
+	/* HiSilicon Kunpeng 920 root ports */
+	{PCI_VENDOR_ID_HUAWEI,	0xa120, 0},
 	{}
 };
 
@@ -1024,8 +1259,8 @@ enum pci_p2pdma_map_type
 pci_p2pdma_map_segment(struct pci_p2pdma_map_state *state, struct device *dev,
 		       struct scatterlist *sg)
 {
-	if (state->pgmap != sg_page(sg)->pgmap) {
-		state->pgmap = sg_page(sg)->pgmap;
+	if (state->pgmap != page_pgmap(sg_page(sg))) {
+		state->pgmap = page_pgmap(sg_page(sg));
 		state->map = pci_p2pdma_map_type(state->pgmap, dev);
 		state->bus_off = to_p2p_pgmap(state->pgmap)->bus_offset;
 	}

@@ -24,6 +24,7 @@
 #include <linux/mutex.h>
 #include <linux/once.h>
 #include <linux/pci.h>
+#include <linux/scatterlist.h>
 #include <linux/suspend.h>
 #include <linux/t10-pi.h>
 #include <linux/types.h>
@@ -54,6 +55,11 @@ module_param(use_threaded_interrupts, int, 0444);
 static bool use_cmb_sqes = true;
 module_param(use_cmb_sqes, bool, 0444);
 MODULE_PARM_DESC(use_cmb_sqes, "use controller's memory buffer for I/O SQes");
+
+static unsigned long cmb_devmap_align = PAGE_SIZE;
+module_param(cmb_devmap_align, ulong, 0444);
+MODULE_PARM_DESC(cmb_devmap_align,
+		 "CMB pagemap alignment; zero selects the largest supported alignment");
 
 static unsigned int max_host_mem_size_mb = 128;
 module_param(max_host_mem_size_mb, uint, 0444);
@@ -525,6 +531,17 @@ static inline bool nvme_pci_use_sgls(struct nvme_dev *dev, struct request *req,
 	return true;
 }
 
+static bool nvme_sg_has_p2pdma(struct sg_table *sgt)
+{
+	struct scatterlist *sg;
+	int i;
+
+	for_each_sg(sgt->sgl, sg, sgt->orig_nents, i)
+		if (is_pci_p2pdma_page(sg_page(sg)))
+			return true;
+	return false;
+}
+
 static void nvme_free_prps(struct nvme_dev *dev, struct request *req)
 {
 	const int last_prp = NVME_CTRL_PAGE_SIZE / sizeof(__le64) - 1;
@@ -811,7 +828,9 @@ static blk_status_t nvme_map_data(struct nvme_dev *dev, struct request *req,
 		goto out_free_sg;
 	}
 
-	if (nvme_pci_use_sgls(dev, req, iod->sgt.nents))
+	/* A multi-entry SGL has a host-memory list; do not mix it with CMB data. */
+	if (nvme_pci_use_sgls(dev, req, iod->sgt.nents) &&
+	    (iod->sgt.nents == 1 || !nvme_sg_has_p2pdma(&iod->sgt)))
 		ret = nvme_pci_setup_sgls(dev, req, &cmnd->rw);
 	else
 		ret = nvme_pci_setup_prps(dev, req, &cmnd->rw);
@@ -1917,6 +1936,7 @@ static void nvme_map_cmb(struct nvme_dev *dev)
 	u64 size, offset;
 	resource_size_t bar_size;
 	struct pci_dev *pdev = to_pci_dev(dev->dev);
+	size_t align;
 	int bar;
 
 	if (dev->cmb_size)
@@ -1960,7 +1980,10 @@ static void nvme_map_cmb(struct nvme_dev *dev)
 			     dev->bar + NVME_REG_CMBMSC);
 	}
 
-	if (pci_p2pdma_add_resource(pdev, bar, size, offset)) {
+	align = cmb_devmap_align;
+	if (!align)
+		align = pci_p2pdma_max_pagemap_align(pdev, bar, size, offset);
+	if (pci_p2pdma_add_resource_aligned(pdev, bar, size, align, offset)) {
 		dev_warn(dev->ctrl.device,
 			 "failed to register the CMB\n");
 		hi_lo_writeq(0, dev->bar + NVME_REG_CMBMSC);

@@ -4008,6 +4008,7 @@ static int raid10_run(struct mddev *mddev)
 		blk_queue_max_write_zeroes_sectors(mddev->queue, 0);
 		blk_queue_io_min(mddev->queue, mddev->chunk_sectors << 9);
 		raid10_set_io_opt(conf);
+		blk_queue_flag_set(QUEUE_FLAG_PCI_P2PDMA, mddev->queue);
 	}
 
 	rdev_for_each(rdev, mddev) {
