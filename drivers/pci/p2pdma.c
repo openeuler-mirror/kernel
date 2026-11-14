@@ -361,7 +361,7 @@ int pci_p2pdma_add_resource_aligned(struct pci_dev *pdev, int bar, size_t size,
 	if (!size)
 		size = pci_resource_len(pdev, bar) - offset;
 
-	if (size + offset > pci_resource_len(pdev, bar))
+	if (size > pci_resource_len(pdev, bar) - offset)
 		return -EINVAL;
 
 	error = pci_p2pdma_check_pagemap_align(pdev, bar, size, align, offset);
