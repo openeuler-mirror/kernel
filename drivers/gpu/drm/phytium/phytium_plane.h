@@ -21,10 +21,10 @@ struct phytium_plane {
 	/* only for cursor */
 	bool enable;
 	bool reserve[3];
-	unsigned int cursor_x;
-	unsigned int cursor_y;
-	unsigned int cursor_hot_x;
-	unsigned int cursor_hot_y;
+	int cursor_x;
+	int cursor_y;
+	int cursor_hot_x;
+	int cursor_hot_y;
 
 	void (*dc_hw_plane_get_format)(const uint64_t **format_modifiers,
 				       const uint32_t **formats,

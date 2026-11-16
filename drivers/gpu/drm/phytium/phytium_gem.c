@@ -94,7 +94,7 @@ phytium_gem_prime_get_sg_table(struct drm_gem_object *obj)
 			DRM_ERROR("failed to allocate sg\n");
 			goto sgt_free;
 		}
-		page = phys_to_page(phytium_gem_obj->phys_addr);
+		page = pfn_to_page(__phys_to_pfn(phytium_gem_obj->phys_addr));
 		sg_set_page(sgt->sgl, page, PAGE_ALIGN(phytium_gem_obj->size), 0);
 	} else if (phytium_gem_obj->memory_type == MEMORY_TYPE_SYSTEM_UNIFIED) {
 		ret = dma_get_sgtable_attrs(dev->dev, sgt, phytium_gem_obj->vaddr,
@@ -166,7 +166,7 @@ void *phytium_gem_prime_vmap(struct drm_gem_object *obj)
 
 void phytium_gem_prime_vunmap(struct drm_gem_object *obj, void *vaddr)
 {
-
+	return;
 }
 
 int phytium_gem_prime_mmap(struct drm_gem_object *obj, struct vm_area_struct *vma)
@@ -460,7 +460,7 @@ struct phytium_gem_object *phytium_gem_create_object(struct drm_device *dev, uns
 			DRM_ERROR("fail to allocate carveout memory with size %lx\n", size);
 			goto failed_dma_alloc;
 		}
-		page = phys_to_page(phytium_gem_obj->phys_addr);
+		page = pfn_to_page(__phys_to_pfn(phytium_gem_obj->phys_addr));
 		phytium_gem_obj->iova = dma_map_page(dev->dev, page, 0, size, DMA_TO_DEVICE);
 		if (dma_mapping_error(dev->dev, phytium_gem_obj->iova)) {
 			DRM_ERROR("fail to dma map carveout memory with size %lx\n", size);
