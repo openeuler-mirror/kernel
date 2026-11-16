@@ -330,10 +330,10 @@ static void hisi_l3t_destroy_sccl(void)
 
 static void __exit hisi_l3t_exit(void)
 {
+	platform_driver_unregister(&hisi_l3t_driver);
+
 	hisi_l3t_destroy_sccl();
 	xa_destroy(&l3t_mapping);
-
-	platform_driver_unregister(&hisi_l3t_driver);
 }
 module_exit(hisi_l3t_exit);
 
