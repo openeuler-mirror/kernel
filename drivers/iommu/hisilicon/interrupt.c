@@ -287,12 +287,12 @@ static bool ummu_report_iommu_fault(struct device *evt_src, u32 tid)
 	struct iommu_domain *domain = ummu_core_get_domain_by_tid(evt_src, tid);
 
 	if (!domain) {
-		pr_err("get domain failed.\n");
+		pr_err_ratelimited("get domain failed.\n");
 		return false;
 	}
 
 	if (!domain->mm || iommu_is_ksva_domain(domain)) {
-		pr_err("An iopf event reported by ksva/dma device is not allowed.\n");
+		pr_err_ratelimited("An iopf event reported by ksva/dma device is not allowed.\n");
 		return false;
 	}
 	return true;
@@ -333,7 +333,7 @@ static int ummu_handle_iopf(struct ummu_device *ummu,
 abort_req:
 	ummu_abort_page_fault(ummu, iommu_flt->prm.grpid,
 			      iommu_flt->prm.private_data[0]);
-	pr_err("handle iopf failed, ret = %d\n", ret);
+	pr_err_ratelimited("handle iopf failed, ret = %d\n", ret);
 
 	return ret;
 }

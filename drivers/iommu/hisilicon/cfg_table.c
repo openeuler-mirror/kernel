@@ -1149,9 +1149,6 @@ static void ummu_device_make_default_tecte(struct ummu_device *ummu,
 		FIELD_PREP(TECT_ENT1_TCT_PTR_MD0, TECT_ENT1_MD_CACHE_WBRA) |
 		FIELD_PREP(TECT_ENT1_TCT_PTR_MD1, TECT_ENT1_MD_CACHE_WBRA) |
 		FIELD_PREP(TECT_ENT1_TCT_PTR_MSD, TECT_ENT1_MD_CACHE_WB));
-
-	if (!(ummu->cap.features & UMMU_FEAT_STALLS))
-		target->data[1] |= cpu_to_le64(TECT_ENT1_TCT_STALL_DISABLE);
 }
 
 void ummu_build_s2_domain_tecte(struct ummu_domain *u_domain,
