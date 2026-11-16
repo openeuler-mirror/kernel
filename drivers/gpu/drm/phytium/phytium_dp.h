@@ -98,6 +98,7 @@ struct phytium_dp_device {
 	uint32_t trigger_train_fail;
 
 	unsigned char train_set[4];
+	struct edid *detect_edid;
 	struct edid *edp_edid;
 	bool has_audio;
 	bool fast_train_support;
@@ -145,6 +146,9 @@ enum phytium_dpcd_phy_tp {
 #define connector_to_dp_device(x) container_of(x, struct phytium_dp_device, connector)
 #define panel_to_dp_device(x) container_of(x, struct phytium_dp_device, panel)
 #define train_retry_to_dp_device(x)	container_of(x, struct phytium_dp_device, train_retry_work)
+#define HSYNC_LANE_COUNT_MULTI 30
+#define HSYNC_MIN_ADJ_OFFSET 1
+
 void phytium_phy_writel(struct phytium_dp_device *phytium_dp, uint32_t address, uint32_t data);
 uint32_t phytium_phy_readl(struct phytium_dp_device *phytium_dp, uint32_t address);
 
