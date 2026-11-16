@@ -468,31 +468,35 @@ static int ubmad_jetty_set_priority(struct ubmad_device_priv *dev_priv,
 		  struct ubcore_jetty_cfg *jetty_cfg)
 {
 	struct ubcore_device_attr attr = {0};
-	int set_priority_ret = 0;
 	int ret = 0;
 	int i;
 
 	ret = ubcore_query_device_attr(dev_priv->device, &attr);
-	if (ret == 0) {
-		for (i = 0; i < UBCORE_MAX_PRIORITY_CNT; ++i) {
-			/* No priority supports utp currently, so rtp priority used */
-			if (attr.dev_cap.priority_info[i].tp_type.bs.rtp == 1) {
-				jetty_cfg->priority = i;
-				ubcore_log_info(
-					"ubmad create jetty set priority : %d, tp_type : ctp\n", i);
-				set_priority_ret = 1;
-				break;
-			}
-		}
-		if (set_priority_ret == 0) {
-			ubcore_log_err("set priority default value : 0\n");
-			return -EINVAL;
-		}
-	} else {
+	if (ret != 0) {
 		ubcore_log_err("Failed to ubcore get dev_attr!\n");
 		return -EINVAL;
 	}
-	return 0;
+
+	for (i = 0; i < UBCORE_MAX_PRIORITY_CNT; ++i) {
+		if (attr.dev_cap.priority_info[i].tp_type.bs.utp == 1) {
+			jetty_cfg->priority = i;
+			ubcore_log_info(
+				"ubmad create jetty set priority: %d, tp_type: utp\n", i);
+			return 0;
+		}
+	}
+	/* Fall back to RTP for legacy environments where no UTP SL is provisioned. */
+	for (i = 0; i < UBCORE_MAX_PRIORITY_CNT; ++i) {
+		if (attr.dev_cap.priority_info[i].tp_type.bs.rtp == 1) {
+			jetty_cfg->priority = i;
+			ubcore_log_info(
+				"ubmad create jetty set priority: %d, tp_type: rtp\n", i);
+			return 0;
+		}
+	}
+
+	ubcore_log_err("set priority default value: 0\n");
+	return -EINVAL;
 }
 
 static struct ubcore_jetty *
