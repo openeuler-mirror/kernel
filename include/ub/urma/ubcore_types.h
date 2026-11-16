@@ -33,8 +33,42 @@
 
 #include "ubcore_opcode.h"
 
-#define UBCORE_GET_VERSION(a, b) (((a) << 16) + ((b) > 65535 ? 65535 : (b)))
 #define UBCORE_API_VERSION ((0 << 16) + 9) // Current Version: 0.9
+
+/* UBCORE kernel API version in MAJOR.MINOR.PATCH order */
+#define UBCORE_KAPI_VERSION_MAJOR 1
+#define UBCORE_KAPI_VERSION_MINOR 0
+#define UBCORE_KAPI_VERSION_PATCH 0
+
+/* UBCORE kernel ABI version, same layout as UBCORE_KAPI_VERSION */
+#define UBCORE_KABI_VERSION_MAJOR 1
+#define UBCORE_KABI_VERSION_MINOR 0
+#define UBCORE_KABI_VERSION_PATCH 0
+
+#define UBCORE_GET_VERSION(major, minor, patch) \
+	((major) * (1ULL << 32) + (minor) * (1ULL << 16) + (patch))
+
+#define UBCORE_KAPI_VERSION \
+	UBCORE_GET_VERSION(UBCORE_KAPI_VERSION_MAJOR, UBCORE_KAPI_VERSION_MINOR, \
+			   UBCORE_KAPI_VERSION_PATCH)
+#define UBCORE_KABI_VERSION \
+	UBCORE_GET_VERSION(UBCORE_KABI_VERSION_MAJOR, UBCORE_KABI_VERSION_MINOR, \
+			   UBCORE_KABI_VERSION_PATCH)
+
+#define UBCORE_STR_1(x) #x
+#define UBCORE_STR(x) UBCORE_STR_1(x)
+#define UBCORE_VERSION_STR(major, minor, patch) \
+	UBCORE_STR(major) "." UBCORE_STR(minor) "." UBCORE_STR(patch)
+
+#define UBCORE_KAPI_VERSION_STR \
+	UBCORE_VERSION_STR(UBCORE_KAPI_VERSION_MAJOR, UBCORE_KAPI_VERSION_MINOR, \
+			   UBCORE_KAPI_VERSION_PATCH)
+#define UBCORE_KABI_VERSION_STR \
+	UBCORE_VERSION_STR(UBCORE_KABI_VERSION_MAJOR, UBCORE_KABI_VERSION_MINOR, \
+			   UBCORE_KABI_VERSION_PATCH)
+
+#define UBCORE_KAPI_BUILD_INFO() MODULE_INFO(ubcore_kapi_build, UBCORE_KAPI_VERSION_STR)
+#define UBCORE_KABI_BUILD_INFO() MODULE_INFO(ubcore_kabi_build, UBCORE_KABI_VERSION_STR)
 
 #define UBCORE_MAX_PORT_CNT 16
 #define UBCORE_MAX_PRIORITY_CNT 16
@@ -3459,7 +3493,17 @@ struct ubcore_ops {
 	 */
 	int (*get_dmac)(struct ubcore_device *dev,
 		const struct ubcore_net_addr *net_addr, uint8_t *mac);
+	/**
+	 * invalidate the process address space used by a user ucontext.
+	 * @param[in] uctx: the user context to invalidate;
+	 * @return: 0 on success, -EOPNOTSUPP if unsupported,
+	 * other error code otherwise
+	 */
+#ifndef __GENKSYMS__
+	int (*invalidate_ucontext)(struct ubcore_ucontext *uctx);
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)

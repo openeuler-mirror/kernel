@@ -38,6 +38,16 @@ ubcore_alloc_ucontext(struct ubcore_device *dev, uint32_t eid_index,
 void ubcore_free_ucontext(struct ubcore_device *dev,
 			 struct ubcore_ucontext *ucontext);
 /**
+ * Invalidate the process address space used by a user ucontext.
+ * A successful call does not wait for all in-flight hardware requests
+ * to complete.
+ * @param[in] ucontext: user context allocated by ubcore_alloc_ucontext.
+ * @return: 0 on success, -EINVAL for invalid parameters,
+ * -EOPNOTSUPP if the provider does not implement the operation,
+ * other provider error code otherwise
+ */
+int ubcore_invalidate_ucontext(struct ubcore_ucontext *ucontext);
+/**
  * add a function entity id (eid) to ub device (for uvs)
  * @param[in] dev: the ubcore_device handle;
  * @param[in] ue_idx: ue_idx;
