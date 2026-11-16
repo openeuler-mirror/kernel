@@ -375,16 +375,21 @@ static inline void nvme_end_req_zoned(struct request *req)
 			le64_to_cpu(nvme_req(req)->result.u64));
 }
 
+static inline void __nvme_end_req(struct request *req)
+{
+	nvme_end_req_zoned(req);
+	nvme_trace_bio_complete(req);
+	if (req->cmd_flags & REQ_NVME_MPATH)
+		nvme_mpath_end_request(req);
+}
+
 void nvme_end_req(struct request *req)
 {
 	blk_status_t status = nvme_error_status(nvme_req(req)->status);
 
 	if (unlikely(nvme_req(req)->status && !(req->rq_flags & RQF_QUIET)))
 		nvme_log_error(req);
-	nvme_end_req_zoned(req);
-	nvme_trace_bio_complete(req);
-	if (req->cmd_flags & REQ_NVME_MPATH)
-		nvme_mpath_end_request(req);
+	__nvme_end_req(req);
 	blk_mq_end_request(req, status);
 }
 
@@ -435,7 +440,7 @@ void nvme_complete_batch_req(struct request *req)
 	if (unlikely(nvme_req(req)->status && !(req->rq_flags & RQF_QUIET)))
 		nvme_log_error(req);
 	nvme_cleanup_cmd(req);
-	nvme_end_req_zoned(req);
+	__nvme_end_req(req);
 }
 EXPORT_SYMBOL_GPL(nvme_complete_batch_req);
 
@@ -2054,6 +2059,9 @@ static int nvme_update_ns_info_generic(struct nvme_ns *ns,
 		nvme_mpath_revalidate_paths(ns);
 		blk_stack_limits(&ns->head->disk->queue->limits,
 				 &ns->queue->limits, 0);
+		if (!blk_queue_pci_p2pdma(ns->queue))
+			blk_queue_flag_clear(QUEUE_FLAG_PCI_P2PDMA,
+					     ns->head->disk->queue);
 		ns->head->disk->flags |= GENHD_FL_HIDDEN;
 		blk_mq_unfreeze_queue(ns->head->disk->queue);
 	}
@@ -2094,6 +2102,12 @@ static int nvme_update_ns_info_block(struct nvme_ns *ns,
 	}
 	nvme_set_chunk_sectors(ns, id);
 	nvme_update_disk_info(ns->disk, ns, id);
+	/* P2P pages cannot be used for block layer PI processing. */
+	if (blk_get_integrity(ns->disk))
+		blk_queue_flag_clear(QUEUE_FLAG_PCI_P2PDMA, ns->queue);
+	else if (ns->ctrl->ops->supports_pci_p2pdma &&
+		 ns->ctrl->ops->supports_pci_p2pdma(ns->ctrl))
+		blk_queue_flag_set(QUEUE_FLAG_PCI_P2PDMA, ns->queue);
 	nvme_set_queue_limits(ns->ctrl, ns->queue);
 
 	if (ns->head->ids.csi == NVME_CSI_ZNS) {
@@ -2129,6 +2143,9 @@ static int nvme_update_ns_info_block(struct nvme_ns *ns,
 		nvme_mpath_revalidate_paths(ns);
 		blk_stack_limits(&ns->head->disk->queue->limits,
 				 &ns->queue->limits, 0);
+		if (!blk_queue_pci_p2pdma(ns->queue))
+			blk_queue_flag_clear(QUEUE_FLAG_PCI_P2PDMA,
+					     ns->head->disk->queue);
 		disk_update_readahead(ns->head->disk);
 		blk_mq_unfreeze_queue(ns->head->disk->queue);
 	}

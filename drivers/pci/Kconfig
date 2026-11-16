@@ -182,6 +182,16 @@ config PCI_P2PDMA
 
 	  If unsure, say N.
 
+config PCI_P2PDMA_DEDUP_TEST
+	bool "PCI P2PDMA vmemmap dedup test helper"
+	depends on PCI_P2PDMA
+	help
+	  Export a test helper that counts unique physical pages backing a
+	  P2PDMA resource's vmemmap. This adds no runtime work unless the
+	  helper is called by the vmemmap_dedup_test module.
+
+	  If unsure, say N.
+
 config PCI_LABEL
 	def_bool y if (DMI || ACPI)
 	select NLS
