@@ -68,9 +68,12 @@ static int ipourma_send_ipv6_netlink_n(struct net_device *dev, union ubcore_eid 
 	 * in the user space and trigger the
 	 * kernel to invoke the private function ipv6_add_addr.
 	 */
+	/*
+	 * rtnl_unicast() consumes skb on both success and failure (it frees it
+	 * itself on error), so skb must not be freed here on the error path.
+	 */
 	ret = rtnl_unicast(skb, net, 0);
 	if (ret != 0) {
-		kfree_skb(skb);
 		pr_err("send_ipv6_netlink:send netlink msg failed: %d\n", ret);
 		return -IPOURMA_NL_SEND_ERR;
 	}
