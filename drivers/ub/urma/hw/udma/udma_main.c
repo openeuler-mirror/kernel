@@ -263,7 +263,7 @@ static int udma_config_device(struct ubcore_device *ubcore_dev,
 
 	if ((cfg->mask.bs.reserved_jetty_id_min && cfg->reserved_jetty_id_min != 0) ||
 	    (cfg->mask.bs.reserved_jetty_id_max && cfg->reserved_jetty_id_max !=
-	    dev->caps.public_jetty.max_cnt - 1)) {
+	    dev->caps.public_jetty.max_cnt + dev->caps.public_jetty.start_idx - 1)) {
 		dev_err(dev->dev, "public jetty range must 0-%u.\n",
 			dev->caps.public_jetty.max_cnt - 1);
 		return -EINVAL;
@@ -562,6 +562,11 @@ static void udma_dump_jetty_id_range(struct udma_dev *udma_dev)
 		dev_info(udma_dev->dev, "%s jetty start_idx=%u, max_cnt=%u\n",
 			 jetty_name[i], jetty_res_list[i]->start_idx,
 			 jetty_res_list[i]->max_cnt);
+
+	dev_info(udma_dev->dev, "ccu jfc start_idx=%u, max_cnt=%u\n",
+		 udma_dev->caps.ccu_jfc.start_idx, udma_dev->caps.ccu_jfc.max_cnt);
+	dev_info(udma_dev->dev, "stars jfc start_idx=%u, max_cnt=%u\n",
+		 udma_dev->caps.stars_jfc.start_idx, udma_dev->caps.stars_jfc.max_cnt);
 }
 
 static void udma_get_jetty_id_range(struct udma_dev *udma_dev,
@@ -569,6 +574,7 @@ static void udma_get_jetty_id_range(struct udma_dev *udma_dev,
 {
 	udma_dev->caps.public_jetty.start_idx = cmd->well_known_jetty_start;
 	udma_dev->caps.public_jetty.max_cnt = cmd->well_known_jetty_num;
+	udma_dev->caps.public_jetty.next_idx = udma_dev->caps.public_jetty.start_idx;
 
 	udma_dev->caps.ccu_jetty.start_idx = cmd->ccu_jetty_start;
 	udma_dev->caps.ccu_jetty.max_cnt = cmd->ccu_jetty_num;
@@ -908,8 +914,7 @@ static int udma_set_hw_caps(struct udma_dev *udma_dev)
 	udma_dev->caps.ipourma_en = ubase_adev_ip_over_urma_supported(udma_dev->comdev.adev);
 	udma_dev->caps.ctp_en = !(ubase_adev_ip_over_urma_utp_supported(udma_dev->comdev.adev));
 	udma_dev->caps.rc_max_cnt = a_caps->rc_max_cnt;
-	udma_dev->caps.st64b_en = (udma_dev->hw_ver != UBASE_HW_VER_A_0) &&
-				  (udma_dev->hw_ver != UBASE_HW_VER_A_1);
+	udma_dev->caps.st64b_en = udma_dev->hw_ver != UBASE_HW_VER_A_0;
 
 	ret = udma_construct_qos_param(udma_dev);
 	if (ret)
@@ -1481,11 +1486,14 @@ static void check_and_wait_flush_done(struct udma_dev *udma_dev)
 	uint32_t wait_times = 0;
 
 	while (true) {
+		if (!(udma_dev->caps.feature & UDMA_CAP_FEATURE_UE_RX_CLOSE))
+			break;
+
 		if (udma_dev->disable_ue_rx_count == 1)
 			break;
 
 		if (ubase_adev_shutting_down(udma_dev->comdev.adev)) {
-			dev_err_ratelimited(udma_dev->dev, "exit flush in shutdown process.\n");
+			udma_err_rl(udma_dev->dev, "exit flush in shutdown process.\n");
 			break;
 		}
 
@@ -1638,14 +1646,14 @@ void udma_remove(struct auxiliary_device *adev)
 		udma_notify_mue_delete_guid(udma_dev);
 	ubcore_stop_requests(&udma_dev->ub_dev);
 	while (true) {
-		if (!udma_close_ue_rx(udma_dev, false, false, false, 0)) {
+		if (!udma_close_ue_rx(udma_dev, true, false, false, 0)) {
 			if (wait_time != UDMA_MIN_SLEEP_TIME)
 				ubase_adev_fault_log(adev, UDMA_FAULT_EVENT_ID_REMOVE, NULL);
 			break;
 		}
 
 		if (ubase_adev_shutting_down(adev)) {
-			dev_err_ratelimited(&adev->dev, "enter shutdown process.\n");
+			udma_err_rl(&adev->dev, "enter shutdown process.\n");
 			break;
 		}
 
@@ -1654,14 +1662,14 @@ void udma_remove(struct auxiliary_device *adev)
 			ubase_adev_fault_log(adev, UDMA_FAULT_EVENT_ID_REMOVE, NULL);
 		if (wait_time < UDMA_REMOVE_MAX_SLEEP_TIME)
 			wait_time *= UDMA_TIME_SLEEP_RATE;
-		dev_err_ratelimited(&adev->dev, "udma close ue rx failed in remove process.\n");
+		udma_err_rl(&adev->dev, "udma close ue rx failed in remove process.\n");
 	}
 	udma_report_reset_event(UBCORE_EVENT_ELR_ERR, udma_dev);
 	udma_unregister_none_crq_event(adev);
 	ubcore_unregister_device(&udma_dev->ub_dev);
 	udma_unregister_workqueue(udma_dev);
 	check_and_wait_flush_done(udma_dev);
-	if (ubase_activate_dev(adev))
+	if ((udma_dev->caps.feature & UDMA_CAP_FEATURE_UE_RX_CLOSE) && ubase_activate_dev(adev))
 		ubase_update_dev_status(adev, UBASE_DEV_NEED_TO_ACTIVATE);
 	/* Crq event should unregister after wait flush done,  */
 	udma_unregister_crq_event(adev);
