@@ -2,7 +2,8 @@
 # UB Memory virtualization support
 config UB_UBMEMPFD
 	tristate "ubmempfd driver"
-	depends on UB_UBFI && UB_UMMU_CORE && UB_UMMU
+	depends on UB_UMMU_CORE_DRIVER
+	select IOMMU_API
 	help
 	   This option enables support for ubmempfd drivers. The ubmempfd
 	   driver provides address mapping on the host side for QEMU,
