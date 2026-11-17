@@ -2787,7 +2787,7 @@ again:
 #if IS_ENABLED(CONFIG_AF_UNIX_OOB)
 		if (skb) {
 			skb = manage_oob(skb, sk, flags, copied);
-			if (!skb && (copied || !size)) {
+			if (!skb && copied) {
 				unix_state_unlock(sk);
 				break;
 			}
