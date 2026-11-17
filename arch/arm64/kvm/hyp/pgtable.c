@@ -15,6 +15,8 @@
 #include <asm/memory.h>
 #include <asm/stage2_pgtable.h>
 
+#include "../pvm/rmap.h"
+#include "../pvm/tlbi.h"
 
 #define KVM_PTE_TYPE			BIT(1)
 #define KVM_PTE_TYPE_BLOCK		0
@@ -38,6 +40,7 @@
 #define KVM_PTE_LEAF_ATTR_LO_S1_SH	GENMASK(9, 8)
 #define KVM_PTE_LEAF_ATTR_LO_S1_SH_IS	3
 #define KVM_PTE_LEAF_ATTR_LO_S1_AF	BIT(10)
+#define KVM_PTE_LEAF_ATTR_LO_S1_NG	BIT(11)
 
 #define KVM_PTE_LEAF_ATTR_LO_S2_MEMATTR	GENMASK(5, 2)
 #define KVM_PTE_LEAF_ATTR_LO_S2_S2AP_R	BIT(6)
@@ -795,6 +798,8 @@ static int pvm_s1_set_prot_attr(enum kvm_pgtable_prot prot,
 	attr |= FIELD_PREP(KVM_PTE_LEAF_ATTR_LO_S1_AP, ap);
 	attr |= FIELD_PREP(KVM_PTE_LEAF_ATTR_LO_S1_SH,
 			   KVM_PTE_LEAF_ATTR_LO_S1_SH_IS);
+	/* Private hardware tags isolate guest translations from host and peers. */
+	attr |= KVM_PTE_LEAF_ATTR_LO_S1_NG;
 	/*
 	 * A leaf executable by either guest privilege stays executable
 	 * at EL0: the virtual EL1 consumes the UXN bit too.
@@ -960,11 +965,17 @@ static void stage2_unmap_put_pte(const struct kvm_pgtable_visit_ctx *ctx,
 	 * for the same until the entire unmap walk is completed.
 	 */
 	if (kvm_pte_valid(ctx->old)) {
+		/* Revoke the borrowed parent before the owner or subtree disappears. */
+		if (is_pvm_mode() && !ctx->level &&
+		    kvm_pte_table(ctx->old, ctx->level))
+			kvm_pvm_unlink_kernel_pgd(mmu, ctx->addr);
 		kvm_clear_pte(ctx->ptep);
 
 		if (kvm_pte_table(ctx->old, ctx->level)) {
-			kvm_call_hyp(__kvm_tlb_flush_vmid_ipa, mmu, ctx->addr,
-				     0);
+			if (is_pvm_mode())
+				kvm_pvm_flush_shadow_tlb_ipa(mmu, ctx->addr, ctx->level);
+			else
+				kvm_call_hyp(__kvm_tlb_flush_vmid_ipa, mmu, ctx->addr, 0);
 		} else if (!stage2_unmap_defer_tlb_flush(pgt)) {
 			kvm_call_hyp(__kvm_tlb_flush_vmid_ipa, mmu, ctx->addr,
 				     ctx->level);
@@ -1062,6 +1073,27 @@ static int stage2_map_walker_try_leaf(const struct kvm_pgtable_visit_ctx *ctx,
 	 * the vCPU will exit one more time from guest if still needed
 	 * and then go through the path of relaxing permissions.
 	 */
+	if (is_pvm_mode() && kvm_pte_valid(new)) {
+		kvm_pte_t meta = KVM_PGTABLE_PROT_PVM_GLOBAL_MASK;
+		kvm_pte_t perms = KVM_PTE_LEAF_ATTR_LO_S1_AP |
+				  KVM_PTE_LEAF_ATTR_HI_S1_UXN |
+				  KVM_PTE_LEAF_ATTR_HI_S1_PXN;
+
+		/* Proofs apply only to the 4KiB leaves used by PVM shadows. */
+		if (PAGE_SHIFT != 12 || ctx->level != KVM_PGTABLE_MAX_LEVELS - 1)
+			new &= ~meta;
+		if (kvm_pte_valid(ctx->old))
+			new &= ~(meta & ~ctx->old);
+		if (kvm_pte_valid(ctx->old) && ((ctx->old ^ new) & meta) &&
+		    !((ctx->old ^ new) & ~(meta | perms))) {
+			/* Drop proof without changing permissions or translation. */
+			new = (ctx->old & ~meta) | (new & meta);
+			kvm_pvm_note_shadow_leaf(data->mmu, new);
+			stage2_try_set_pte(ctx, new);
+			return -EAGAIN;
+		}
+	}
+
 	if (!stage2_pte_needs_update(ctx->old, new))
 		return -EAGAIN;
 
@@ -1080,6 +1112,15 @@ static int stage2_map_walker_try_leaf(const struct kvm_pgtable_visit_ctx *ctx,
 	    stage2_pte_executable(new))
 		mm_ops->icache_inval_pou(kvm_pte_follow(new, mm_ops), granule);
 
+	if (is_pvm_mode()) {
+		int ret = kvm_pvm_rmap_map(data->mmu, ctx->addr,
+					 kvm_pte_valid(new) ? granule : 0);
+
+		if (ret) {
+			stage2_make_pte(ctx, 0);
+			return ret;
+		}
+	}
 	stage2_make_pte(ctx, new);
 
 	return 0;
@@ -1223,8 +1264,8 @@ int kvm_pgtable_stage2_set_owner(struct kvm_pgtable *pgt, u64 addr, u64 size,
 	return ret;
 }
 
-static int stage2_unmap_walker(const struct kvm_pgtable_visit_ctx *ctx,
-			       enum kvm_pgtable_walk_flags visit)
+static int stage2_unmap_one(const struct kvm_pgtable_visit_ctx *ctx,
+			    enum kvm_pgtable_walk_flags visit, bool invalidated)
 {
 	struct kvm_pgtable *pgt = ctx->arg;
 	struct kvm_s2_mmu *mmu = pgt->mmu;
@@ -1254,8 +1295,13 @@ static int stage2_unmap_walker(const struct kvm_pgtable_visit_ctx *ctx,
 	 * block entry and rely on the remaining portions being faulted
 	 * back lazily.
 	 */
-	stage2_unmap_put_pte(ctx, mmu, mm_ops);
+	if (invalidated)
+		mm_ops->put_page(ctx->ptep);
+	else
+		stage2_unmap_put_pte(ctx, mmu, mm_ops);
 
+	if (is_pvm_mode() && !childp)
+		kvm_pvm_rmap_unmap(mmu, ctx->addr, kvm_granule_size(ctx->level));
 	if (is_pvm_mode()) {
 		if (!childp)
 			pvm_clean_dcache(ctx->old, mm_ops,
@@ -1269,6 +1315,12 @@ static int stage2_unmap_walker(const struct kvm_pgtable_visit_ctx *ctx,
 		mm_ops->put_page(childp);
 
 	return 0;
+}
+
+static int stage2_unmap_walker(const struct kvm_pgtable_visit_ctx *ctx,
+			       enum kvm_pgtable_walk_flags visit)
+{
+	return stage2_unmap_one(ctx, visit, false);
 }
 
 int kvm_pgtable_stage2_unmap(struct kvm_pgtable *pgt, u64 addr, u64 size)
@@ -1288,7 +1340,155 @@ int kvm_pgtable_stage2_unmap(struct kvm_pgtable *pgt, u64 addr, u64 size)
 	return ret;
 }
 
+struct pvm_unmap_pages_data {
+	struct kvm_pgtable *pgt;
+	struct kvm_pgtable_visit_ctx *scratch;
+	unsigned int nr;
+};
+
+static int pvm_unmap_pages_leaf(const struct kvm_pgtable_visit_ctx *ctx,
+				enum kvm_pgtable_walk_flags visit)
+{
+	struct pvm_unmap_pages_data *data = ctx->arg;
+	struct kvm_pgtable_visit_ctx *saved;
+
+	if (!kvm_pte_valid(ctx->old))
+		return 0;
+	if (ctx->level != KVM_PGTABLE_MAX_LEVELS - 1)
+		return -EINVAL;
+	saved = &data->scratch[data->nr++];
+	*saved = *ctx;
+	saved->arg = data->pgt;
+	/* Retain page-table references until invalidation completes. */
+	kvm_clear_pte(ctx->ptep);
+	return 0;
+}
+
+int kvm_pvm_unmap_shadow_pages(struct kvm_pvm_unmap_page *pages,
+			       unsigned int nr,
+			       struct kvm_pgtable_visit_ctx *scratch)
+{
+	struct pvm_unmap_pages_data data = { .scratch = scratch };
+	struct kvm_pgtable_walker walker = {
+		.cb = pvm_unmap_pages_leaf,
+		.arg = &data,
+		.flags = KVM_PGTABLE_WALK_LEAF,
+	};
+	struct kvm_arch *arch;
+	unsigned int i;
+	int ret = 0;
+
+	if (!is_pvm_mode() || PAGE_SHIFT != 12 || !pages || !scratch ||
+	    !nr || nr > KVM_PVM_UNMAP_BATCH_SIZE || !pages[0].pgt)
+		return -EINVAL;
+	arch = pages[0].pgt->mmu->arch;
+	for (i = 0; i < nr; i++) {
+		if (!pages[i].pgt || !IS_ALIGNED(pages[i].addr, PAGE_SIZE) ||
+		    pages[i].pgt->mmu->arch != arch)
+			return -EINVAL;
+	}
+	if (nr == 1)
+		return kvm_pgtable_stage2_unmap(pages[0].pgt, pages[0].addr, PAGE_SIZE);
+	for (i = 0; i < nr; i++) {
+		data.pgt = pages[i].pgt;
+		ret = kvm_pgtable_walk(data.pgt, pages[i].addr, PAGE_SIZE, &walker);
+		if (ret)
+			break;
+	}
+	if (data.nr) {
+		kvm_pvm_flush_shadow_tlb_batch(pages, nr);
+		for (i = 0; i < data.nr; i++)
+			stage2_unmap_one(&scratch[i], KVM_PGTABLE_WALK_LEAF, true);
+	}
+	/* Reclaim empty tables only after all queued leaf references are dropped. */
+	for (i = 0; i < nr; i++) {
+		int err = kvm_pgtable_stage2_unmap(pages[i].pgt, pages[i].addr,
+						 PAGE_SIZE);
+
+		if (!ret)
+			ret = err;
+	}
+	return ret;
+}
+
+struct stage2_unmap_selected_data {
+	struct kvm_pgtable *pgt;
+	kvm_pte_t keep_mask;
+	struct kvm_pgtable_visit_ctx *batch;
+	unsigned int nr;
+};
+
+static void stage2_unmap_drain(struct stage2_unmap_selected_data *data)
+{
+	unsigned int i;
+
+	if (!data->nr)
+		return;
+
+	/* Complete invalidation before cleaning memory or dropping references. */
+	kvm_pvm_flush_shadow_tlb_entries(data->pgt->mmu, data->batch, data->nr);
+	for (i = 0; i < data->nr; i++)
+		stage2_unmap_one(&data->batch[i], KVM_PGTABLE_WALK_LEAF, true);
+	data->nr = 0;
+}
+
+static int stage2_unmap_selected_walker(const struct kvm_pgtable_visit_ctx *ctx,
+					enum kvm_pgtable_walk_flags visit)
+{
+	struct stage2_unmap_selected_data *data = ctx->arg;
+	struct kvm_pgtable_visit_ctx unmap_ctx = *ctx;
+
+	if (kvm_pte_valid(ctx->old) &&
+	    ctx->level == KVM_PGTABLE_MAX_LEVELS - 1 &&
+	    (ctx->old & data->keep_mask))
+		return 0;
+
+	/* Preserve the ordinary walker and its rmap/borrowed-parent hooks. */
+	unmap_ctx.arg = data->pgt;
+	if (data->batch) {
+		if (kvm_pte_valid(ctx->old) &&
+		    ctx->level == KVM_PGTABLE_MAX_LEVELS - 1) {
+			data->batch[data->nr++] = unmap_ctx;
+			kvm_clear_pte(ctx->ptep);
+			if (data->nr == KVM_PVM_UNMAP_BATCH_SIZE)
+				stage2_unmap_drain(data);
+			return 0;
+		}
+
+		/* Drop leaf references before checking or freeing a child table. */
+		stage2_unmap_drain(data);
+	}
+	return stage2_unmap_walker(&unmap_ctx, visit);
+}
+
+int kvm_pvm_unmap_shadow_selected(struct kvm_pgtable *pgt, u64 addr,
+				  u64 size, kvm_pte_t keep_mask,
+				  struct kvm_pgtable_visit_ctx *batch)
+{
+	struct stage2_unmap_selected_data data = {
+		.pgt = pgt,
+		.keep_mask = keep_mask,
+		.batch = batch,
+	};
+	struct kvm_pgtable_walker walker = {
+		.cb = stage2_unmap_selected_walker,
+		.arg = &data,
+		.flags = KVM_PGTABLE_WALK_LEAF | KVM_PGTABLE_WALK_TABLE_POST,
+	};
+	int ret;
+
+	if (!is_pvm_mode() || PAGE_SHIFT != 12 ||
+	    (keep_mask & ~KVM_PGTABLE_PROT_PVM_GLOBAL_MASK))
+		return -EINVAL;
+
+	ret = kvm_pgtable_walk(pgt, addr, size, &walker);
+	stage2_unmap_drain(&data);
+
+	return ret;
+}
+
 struct stage2_attr_data {
+	struct kvm_s2_mmu		*mmu;
 	kvm_pte_t			attr_set;
 	kvm_pte_t			attr_clr;
 	kvm_pte_t			pte;
@@ -1309,6 +1509,10 @@ static int stage2_attr_walker(const struct kvm_pgtable_visit_ctx *ctx,
 	data->pte = pte;
 	pte &= ~data->attr_clr;
 	pte |= data->attr_set;
+
+	if (is_pvm_mode() &&
+	    (data->attr_clr & KVM_PGTABLE_PROT_PVM_GLOBAL_MASK))
+		kvm_pvm_note_shadow_leaf(data->mmu, pte);
 
 	/*
 	 * We may race with the CPU trying to set the access flag here,
@@ -1340,6 +1544,7 @@ static int stage2_update_leaf_attrs(struct kvm_pgtable *pgt, u64 addr,
 	int ret;
 	kvm_pte_t attr_mask = KVM_PTE_LEAF_ATTR_LO | KVM_PTE_LEAF_ATTR_HI;
 	struct stage2_attr_data data = {
+		.mmu		= pgt->mmu,
 		.attr_set	= attr_set & attr_mask,
 		.attr_clr	= attr_clr & attr_mask,
 	};
@@ -1445,7 +1650,8 @@ int kvm_pgtable_stage2_relax_perms(struct kvm_pgtable *pgt, u64 addr,
 	u32 level;
 	kvm_pte_t set = 0, clr = 0;
 
-	if (prot & KVM_PTE_LEAF_ATTR_HI_SW)
+	if (prot & KVM_PTE_LEAF_ATTR_HI_SW &
+	    ~(is_pvm_mode() ? KVM_PGTABLE_PROT_PVM_GLOBAL_MASK : 0))
 		return -EINVAL;
 
 	if (is_pvm_mode()) {
@@ -1466,6 +1672,8 @@ int kvm_pgtable_stage2_relax_perms(struct kvm_pgtable *pgt, u64 addr,
 			clr |= KVM_PTE_LEAF_ATTR_LO_S1_AP2;
 		clr |= ~attr & (KVM_PTE_LEAF_ATTR_HI_S1_UXN |
 				KVM_PTE_LEAF_ATTR_HI_S1_PXN);
+		/* Intersect provenance; never promote an existing unknown leaf. */
+		clr |= KVM_PGTABLE_PROT_PVM_GLOBAL_MASK & ~prot;
 	} else {
 		if (prot & KVM_PGTABLE_PROT_R)
 			set |= KVM_PTE_LEAF_ATTR_LO_S2_S2AP_R;

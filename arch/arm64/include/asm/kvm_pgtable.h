@@ -211,6 +211,13 @@ enum kvm_pgtable_prot {
 /* Access-flag control for PVM shadow stage-1 mappings. */
 #define KVM_PGTABLE_PROT_AF	BIT(8)
 
+/* Guest mapping proofs; hardware PVM leaves remain non-global. */
+#define KVM_PGTABLE_PROT_PVM_GLOBAL KVM_PGTABLE_PROT_SW2
+/* Proven non-global, 4KiB, non-contiguous guest L3 mappings only. */
+#define KVM_PGTABLE_PROT_PVM_NONGLOBAL KVM_PGTABLE_PROT_SW3
+#define KVM_PGTABLE_PROT_PVM_GLOBAL_MASK (KVM_PGTABLE_PROT_PVM_GLOBAL | \
+				   KVM_PGTABLE_PROT_PVM_NONGLOBAL)
+
 #define KVM_PGTABLE_PROT_RW	(KVM_PGTABLE_PROT_R | KVM_PGTABLE_PROT_W)
 #define KVM_PGTABLE_PROT_RWX	(KVM_PGTABLE_PROT_RW | KVM_PGTABLE_PROT_X)
 
@@ -600,6 +607,29 @@ int kvm_pgtable_stage2_set_owner(struct kvm_pgtable *pgt, u64 addr, u64 size,
 int kvm_pgtable_stage2_unmap(struct kvm_pgtable *pgt, u64 addr, u64 size);
 
 /**
+ * kvm_pvm_unmap_shadow_selected() - Unmap PVM leaves lacking a kept proof.
+ * @pgt:	Page-table structure initialised by kvm_pgtable_stage2_init*().
+ * @addr:	Folded shadow virtual address at which to start unmapping.
+ * @size:	Size of the range, with the same rounding as stage2_unmap().
+ * @keep_mask:	PVM_GLOBAL and/or PVM_NONGLOBAL proof bits to preserve.
+ * @batch:	Optional scratch array of KVM_PVM_UNMAP_BATCH_SIZE contexts.
+ *
+ * Only valid 4KiB shadow leaves carrying a bit in @keep_mask are preserved.
+ * Unknown leaves are removed; a zero mask removes all leaves. Cleared entries
+ * use the ordinary unmap path, including TLB maintenance and page references.
+ * With @batch, removed leaves are invalidated in bounded batches before their
+ * backing memory is cleaned. The scratch array must remain live for the walk.
+ * A NULL @batch retains per-entry invalidation. The caller must serialize
+ * against page-table updates, as for stage2_unmap().
+ *
+ * Return: 0 on success, negative error code on failure. Non-PVM mode, a host
+ * granule other than 4KiB, or unsupported @keep_mask bits return -EINVAL.
+ */
+int kvm_pvm_unmap_shadow_selected(struct kvm_pgtable *pgt, u64 addr,
+				  u64 size, kvm_pte_t keep_mask,
+				  struct kvm_pgtable_visit_ctx *batch);
+
+/**
  * kvm_pgtable_stage2_wrprotect() - Write-protect guest stage-2 address range
  *                                  without TLB invalidation.
  * @pgt:	Page-table structure initialised by kvm_pgtable_stage2_init*().
@@ -666,7 +696,8 @@ bool kvm_pgtable_stage2_test_clear_young(struct kvm_pgtable *pgt, u64 addr,
  * relax the permissions in that entry according to the read, write and
  * execute permissions specified by @prot. No permissions are removed, and
  * TLB invalidation is performed after updating the entry. Software bits cannot
- * be set or cleared using kvm_pgtable_stage2_relax_perms().
+ * be changed, except that PVM_GLOBAL/PVM_NONGLOBAL proofs may be downgraded in
+ * PVM mode. An existing unknown source is never upgraded to a proven mapping.
  *
  * Return: 0 on success, negative error code on failure.
  */

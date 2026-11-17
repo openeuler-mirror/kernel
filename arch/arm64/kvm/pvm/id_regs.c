@@ -6,6 +6,7 @@
 
 #include <linux/bitfield.h>
 #include <linux/bits.h>
+#include <linux/minmax.h>
 
 #include <asm/sysreg.h>
 
@@ -53,7 +54,9 @@ u64 kvm_pvm_filter_id_reg(u32 id, u64 val)
 		val = 0;
 		break;
 	case SYS_ID_AA64ISAR0_EL1:
+		field = min_t(u64, FIELD_GET(ID_AA64ISAR0_EL1_TLB, val), 2);
 		val &= ~(ID_AA64ISAR0_EL1_TLB | ID_AA64ISAR0_EL1_TME);
+		val |= FIELD_PREP(ID_AA64ISAR0_EL1_TLB, field);
 		break;
 	case SYS_ID_AA64ISAR1_EL1:
 		val &= ~(GENMASK_ULL(63, 56) | ID_AA64ISAR1_EL1_SPECRES |

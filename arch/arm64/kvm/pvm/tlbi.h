@@ -11,10 +11,25 @@
 
 struct kvm_vcpu;
 
+struct kvm_s2_mmu;
+struct kvm_pgtable_visit_ctx;
+struct kvm_pvm_unmap_page;
+
+void kvm_pvm_note_shadow_leaf(struct kvm_s2_mmu *mmu, u64 pte);
+void kvm_pvm_flush_tlb_asid(u16 asid);
+void kvm_pvm_flush_shadow_tlb_batch(struct kvm_pvm_unmap_page *pages,
+				    unsigned int nr);
+void kvm_pvm_flush_shadow_tlb(struct kvm_s2_mmu *mmu);
+void kvm_pvm_flush_shadow_tlb_entries(struct kvm_s2_mmu *mmu,
+				      struct kvm_pgtable_visit_ctx *entries,
+				      unsigned int nr);
+void kvm_pvm_flush_shadow_tlb_ipa(struct kvm_s2_mmu *mmu, u64 addr, int level);
+void kvm_pvm_flush_shadow_tlb_ipa_nsh(struct kvm_s2_mmu *mmu, u64 addr, int level);
+
 /*
- * Validate base EL1 operations and perform conservative full invalidation.
- * Range and Outer Shareable extensions are not accepted.
- * Return one after full invalidation and PC advancement, or zero if rejected.
+ * Decode guest-visible EL1 TLBI forms and perform shadow invalidation.
+ * Unsupported operand layouts fall back to complete shadow invalidation.
+ * Return one after shadow invalidation and PC advancement, or zero if rejected.
  * Call from a sleepable host context without mmu_lock held. This function
  * acquires mmu_lock, and the full unmap may drop the lock and reschedule.
  */

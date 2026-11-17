@@ -14,6 +14,8 @@
 
 #include <asm/pgtable-hwdef.h>
 
+#include "rmap.h"
+
 /*
  * The host runs PVM guests through a fixed MAIR, so a guest leaf can only
  * be projected when its ATTRINDX selects an encoding that fixed MAIR
@@ -53,9 +55,12 @@ static inline enum pvm_s1_attr pvm_s1_attr_type(u64 mair, u64 desc)
 struct kvm_s1_trans {
 	phys_addr_t output;
 	u64 desc;
+	gfn_t pt_gfns[4];
+	u8 nr_pt_gfns;
 	u64 esr;
 	u8 ap_table;
 	u8 level;
+	u8 pgshift;
 	bool uxn_table;
 	bool pxn_table;
 	bool ur;
@@ -77,6 +82,13 @@ struct kvm_pvm_mmu {
 	 * Protected by kvm->mmu_lock, along with active and the context key.
 	 */
 	bool used;
+	/*
+	 * Complex guest mappings require broader invalidation. Sticky for this
+	 * object lifetime; neither unmapping nor context reuse clears the flag.
+	 */
+	bool tlbi_broad;
+	/* Sticky until destruction: a leaf may be non-global or lack GLOBAL proof. */
+	bool may_have_non_global;
 	unsigned int active;
 	u64 ttbr0;
 	u64 ttbr1;
@@ -84,6 +96,7 @@ struct kvm_pvm_mmu {
 	u64 sctlr;
 	u64 mair;
 	u16 asid;
+	u16 shadow_asid;
 	/*
 	 * mmu.pgt owns the guest shadow tables and frees their descendants.
 	 * For a kernel context, kern_pgd is a separate run root containing
@@ -95,6 +108,7 @@ struct kvm_pvm_mmu {
 	pgd_t *kern_pgd;
 	phys_addr_t kern_pgd_phys;
 	struct page *kern_pgd_page;
+	struct kvm_pvm_mmu_rmap rmap;
 };
 
 int kvm_pvm_init_mmu(struct kvm *kvm);
@@ -103,6 +117,12 @@ void kvm_pvm_sysfs_exit(void);
 int kvm_pvm_init_vcpu_mmu(struct kvm_vcpu *vcpu);
 void kvm_pvm_destroy_mmu(struct kvm *kvm);
 void kvm_pvm_unmap_all(struct kvm *kvm, bool may_block);
+void kvm_pvm_unmap_shadows(struct kvm *kvm, bool may_block);
+void kvm_pvm_unmap_shadow_range(struct kvm *kvm, u64 addr, u64 size);
+void kvm_pvm_unmap_shadow_asid(struct kvm *kvm, u16 asid);
+void kvm_pvm_unmap_shadow_va(struct kvm *kvm, u64 addr, u16 asid);
+void kvm_pvm_unmap_shadow_range_asid(struct kvm *kvm, u64 addr, u64 size,
+				     u16 asid);
 int kvm_pvm_vcpu_select_mmu(struct kvm_vcpu *vcpu, bool may_block);
 void kvm_pvm_vcpu_put_mmu(struct kvm_vcpu *vcpu);
 bool kvm_pvm_vcpu_mmu_enabled(struct kvm_vcpu *vcpu);
