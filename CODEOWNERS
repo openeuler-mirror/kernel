@@ -806,6 +806,8 @@
 /drivers/reset/reset-intel-gw.c @zeng_zhaorong @juntianlinux
 /drivers/soc/bcm/raspberrypi-power.c @woqidaideshi
 /drivers/soc/hisilicon/ @li-huisong
+/drivers/soc/hisilicon/hisi_mem_ras.c @hunan4222
+/drivers/soc/hisilicon/hisi_mem_ras.h @hunan4222
 /drivers/soc/loongson/ @lixuefeng-loongson @maobibo @gaojuxin09 @robinorg
 /drivers/soundwire/amd_manager* @kile2009 @sming56_admin
 /drivers/soundwire/intel* @zeng_zhaorong @juntianlinux
