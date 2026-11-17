@@ -1315,6 +1315,14 @@ struct kvm_ppc_resize_hpt {
 #define KVM_CAP_HYGON_COCO_EXT_CSV3_NPT_EX        (1 << 5)
 /* support userspace to request clearing CSV3 guest's nested page tables */
 #define KVM_CAP_HYGON_COCO_EXT_CSV3_CLEAR_MMU_SPTE (1 << 6)
+/*
+ * Support the new CSV3 shared page manager interfaces.  Mutually exclusive
+ * with KVM_CAP_HYGON_COCO_EXT_CSV3_SP_MGR (both are requested means the
+ * latter is used): the layout of the manager's entries is latched by the
+ * first KVM_ENABLE_CAP(KVM_CAP_HYGON_COCO_EXT), and a later KVM_ENABLE_CAP
+ * asking for the other one fails with -EINVAL.
+ */
+#define KVM_CAP_HYGON_COCO_EXT_CSV3_SP_MGR_V2	(1 << 7)
 
 #define KVM_CAP_ARM_HW_DIRTY_STATE_TRACK 502
 
@@ -2270,13 +2278,20 @@ struct kvm_csv3_receive_encrypt_context {
  * This union is used to pass input and output parameters between userspace
  * and kernel for KVM_CSV3 memory management commands.
  *
- * It supports three ioctl commands:
+ * It supports five ioctl commands:
  *   - KVM_CSV3_RELEASE_SHARED_MEMORY: Notify userspace VMM to madvise pages
  *     as unused, releasing shared memory mappings.
  *   - KVM_CSV3_GET_SHARED_MEMORY: Query how many pages are currently pinned
  *     at a given GPA range.
  *   - KVM_CSV3_CLEAR_MMU_SPTE: Ask the CSV firmware to clear the nested page
  *     tables of the pages in the given GPA range.
+ *   - KVM_CSV3_PIN_SHARED_MEMORY: Pin the pages in the given GPA range and
+ *     track them in the shared page manager (available with
+ *     KVM_CAP_HYGON_COCO_EXT_CSV3_SP_MGR_V2).
+ *   - KVM_CSV3_UNPIN_AND_CHECK_SHARED_MEMORY: Unpin the pages in the given
+ *     GPA range, then report whether any tracked page remains in the
+ *     enclosing 2M range, so that userspace VMM knows whether it may release
+ *     that range (available with KVM_CAP_HYGON_COCO_EXT_CSV3_SP_MGR_V2).
  *
 
  * The union contains three nested structs:
@@ -2301,6 +2316,8 @@ struct kvm_csv3_handle_memory {
 #define KVM_CSV3_RELEASE_SHARED_MEMORY	0x0001
 #define KVM_CSV3_GET_SHARED_MEMORY	0x0002
 #define KVM_CSV3_CLEAR_MMU_SPTE		0x0003
+#define KVM_CSV3_PIN_SHARED_MEMORY	0x0004
+#define KVM_CSV3_UNPIN_AND_CHECK_SHARED_MEMORY	0x0005
 			__u32 opcode;
 		};
 		/* Output of ioctl command KVM_CSV3_RELEASE_SHARED_MEMORY. */
