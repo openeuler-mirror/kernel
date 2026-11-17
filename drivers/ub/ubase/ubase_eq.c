@@ -135,7 +135,9 @@ static unsigned long ubase_check_event_cause(struct ubase_dev *udev)
 	if (cmdq_src_reg & BIT(UBASE_VECTOR0_RX_CMDQ_INT_B))
 		event_cause |= BIT(UBASE_ASYNC_EVENT_CRQ_B);
 
-	if (ubase_dev_err_handle_supported(udev)) {
+	if (ubase_dev_err_handle_supported(udev) &&
+	    test_bit(UBASE_STATE_INITED_B, &udev->state_bits) &&
+	    !test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits)) {
 		sw_handshake_0_reg = ubase_read_dev(&udev->hw,
 						    UBASE_SW_HANDSHAKE_0_REG);
 		if (sw_handshake_0_reg & BIT(UBASE_SW_HANDSHAKE_0_RAS_B))
