@@ -43,16 +43,20 @@ static int hisi_mem_get_pcc_chan_id(struct hisi_mem_dev *hdev)
 	struct platform_device *pdev = hdev->pdev;
 	struct acpi_device *adev = ACPI_COMPANION(&pdev->dev);
 	struct hisi_mem_register_ctx ctx = {0};
-	acpi_handle handle = adev->handle;
 	acpi_status status;
 
-	if (!acpi_has_method(handle, METHOD_NAME__CRS)) {
+	if (!adev) {
+		dev_err(&pdev->dev, "ACPI companion missing\n");
+		return -ENODEV;
+	}
+
+	if (!acpi_has_method(adev->handle, METHOD_NAME__CRS)) {
 		dev_err(&pdev->dev, "No _CRS method.\n");
 		return -ENODEV;
 	}
 
 	ctx.dev = &pdev->dev;
-	status = acpi_walk_resources(handle, METHOD_NAME__CRS,
+	status = acpi_walk_resources(adev->handle, METHOD_NAME__CRS,
 				     hisi_mem_get_chan_id_cb, &ctx);
 	if (ACPI_FAILURE(status))
 		return ctx.err;
@@ -229,7 +233,7 @@ static struct page *trans_and_check_paddr(struct device *dev, const char *buf, u
 
 	page = pfn_to_online_page(__phys_to_pfn(paddr_tmp));
 	if (!page) {
-		dev_info(dev, "The page of paddr 0x%llx is not online page.\n", paddr_tmp);
+		dev_info(dev, "The page of paddr 0x%llx not online.\n", paddr_tmp);
 		return NULL;
 	}
 
@@ -283,7 +287,7 @@ static ssize_t acls_repair_store(struct device *dev, struct device_attribute *at
 		return -EINVAL;
 
 	if (hdev->mem_type == MEMORY_TYPE_HBM && !PageHWPoison(page)) {
-		dev_info(dev, "The page of paddr 0x%llx is not unpoisoned.\n", paddr);
+		dev_info(dev, "The page of paddr 0x%llx not poisoned.\n", paddr);
 		return -EIO;
 	}
 
@@ -350,7 +354,7 @@ static ssize_t sppr_repair_store(struct device *dev, struct device_attribute *at
 		return -EINVAL;
 
 	if (hdev->mem_type == MEMORY_TYPE_HBM && !PageHWPoison(page)) {
-		dev_info(dev, "The page of paddr 0x%llx is not poisoned.\n", paddr);
+		dev_info(dev, "The page of paddr 0x%llx not poisoned.\n", paddr);
 		return -EIO;
 	}
 
