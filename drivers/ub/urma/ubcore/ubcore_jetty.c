@@ -2333,6 +2333,22 @@ static int check_jetty_cfg(struct ubcore_device *dev,
 	return 0;
 }
 
+static int ubcore_jetty_check_status(struct ubcore_jetty *jetty)
+{
+	if (jetty->jetty_opt.is_actived) {
+		ubcore_log_err("jetty has activated.\n");
+		return -EINVAL;
+	}
+
+	if (jetty->jetty_cfg.jfr->jfr_opt.is_actived == false ||
+		jetty->jetty_cfg.recv_jfc->jfc_opt.is_actived == false) {
+		ubcore_log_err("jetty's jfr or jfc is not activated.\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 int ubcore_alloc_jfr(struct ubcore_device *dev, struct ubcore_jfr_cfg *cfg,
 	ubcore_event_callback_t jfae_handler, struct ubcore_jfr **jfr, struct ubcore_udata *udata)
 {
@@ -4814,11 +4830,8 @@ int ubcore_active_jetty(struct ubcore_jetty *jetty, struct ubcore_udata *udata)
 	if (ubcore_jetty_pre_check(dev, cfg) != 0)
 		return -EINVAL;
 
-	if (jetty->jetty_cfg.jfr->jfr_opt.is_actived == false ||
-		jetty->jetty_cfg.recv_jfc->jfc_opt.is_actived == false) {
-		ubcore_log_err("jetty's jfr or jfc is not activated.\n");
+	if (ubcore_jetty_check_status(jetty) != 0)
 		return -EINVAL;
-	}
 
 	ret = dev->ops->active_jetty(jetty, udata);
 	if (ret != 0) {
