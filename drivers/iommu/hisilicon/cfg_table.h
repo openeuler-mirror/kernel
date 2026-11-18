@@ -8,7 +8,6 @@
 #define __UMMU_CFG_TABLE_H__
 
 #include <linux/types.h>
-#include <linux/kref.h>
 #include "ummu.h"
 
 /* TECT's max space size: 6(4K)/8(16K)/10(64K) */
@@ -203,6 +202,10 @@ struct ummu_tecte_data {
 #define TCT_ENT4_MAPT_BTA GENMASK_ULL(47, 5)
 #define TCT_ENT4_MAPT_BTA_SZ GENMASK_ULL(62, 60)
 
+struct ummu_tcte_data {
+	__le64 data[TCT_ENTRY_SIZE_DWORDS];
+};
+
 /* USER LOGIC DEFINE */
 #define UMMU_KV_TABLE_BASE_OFFSET 0x3800
 #define KV_TABLE_RA (1ULL << 63)
@@ -247,45 +250,27 @@ struct ummu_tecte_data {
 #define HASH_ENTRY_SIZE_BYTES 32
 #define HASH_ENTRY_V (1UL << 0)
 
-/* target OS config table */
-struct ummu_tect_l1_desc {
-	u32		l2_tecte_num;
-	__le64		*l2ptr;
-	phys_addr_t	l2ptr_pa;
-};
-
-struct ummu_tect_cfg {
-	__le64				*tbl_vaddr;
-	phys_addr_t			phys;
-	size_t				tbl_size;
-	unsigned int			num_ents;
-	struct ummu_tect_l1_desc	*l1_tect_desc;
-	u8				tect_fmt;
-	u64				tect_reg_addr;
-	u32				tect_reg_cfg;
-
-	struct kref			ref;
-};
-
 const struct ummu_capability *ummu_get_cap(void);
 int ummu_check_cap(struct ummu_device *ummu);
 int ummu_prepare_tect_tct(struct ummu_device *ummu);
 void ummu_device_set_tect(struct ummu_device *ummu);
 int ummu_device_init_hash_table(struct ummu_device *ummu);
 void ummu_device_config_hash_table(struct ummu_device *ummu);
-void ummu_put_tct_table(struct ummu_tct_desc_cfg *cfg);
-void ummu_put_tect_table(struct ummu_tect_cfg *tect);
 int ummu_init_global_meta(void);
 void ummu_free_global_meta(void);
-int ummu_write_tct_desc(struct ummu_device *ummu, struct ummu_domain_cfgs *cfgs,
-			bool is_clear);
+void ummu_free_tect_tct(struct ummu_device *ummu);
+void ummu_device_clear_tct_desc(struct ummu_device *ummu, u32 tect_tag, u32 tid);
+int ummu_write_tct_desc(struct ummu_device *ummu, u32 tect_tag, u32 tid,
+			struct ummu_tcte_data *tcte_data);
 void ummu_device_write_tecte(struct ummu_device *ummu, u32 deid,
 			     struct ummu_tecte_data *src);
-int ummu_get_tecte_tag_by_eid(eid_t eid, u32 *tecte_tag);
+int ummu_get_tect_tag_by_eid(eid_t eid, u32 *tect_tag);
 int ummu_add_eid(struct ummu_core_device *core_dev, guid_t *guid, eid_t eid, enum eid_type type);
 void ummu_del_eid(struct ummu_core_device *core_dev, guid_t *guid, eid_t eid, enum eid_type type);
 char *ummu_get_eid_list(void);
 bool dev_work_on_local(struct ummu_master *master);
+void ummu_build_s1_domain_tcte(struct ummu_domain *u_domain,
+				struct ummu_tcte_data *target);
 void ummu_build_s2_domain_tecte(struct ummu_domain *u_domain,
 				struct ummu_tecte_data *target);
 int ummu_set_domain_cfgs_tag(struct ummu_domain_cfgs *cfgs,

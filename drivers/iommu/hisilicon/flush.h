@@ -39,6 +39,7 @@ void ummu_flush_iotlb_all(struct iommu_domain *domain);
 
 void ummu_iotlb_sync(struct iommu_domain *domain,
 		     struct iommu_iotlb_gather *gather);
+
 void ummu_device_tlb_inv_walk(struct iommu_domain *domain,
 			      struct iommu_iotlb_gather *gather);
 
@@ -53,15 +54,15 @@ void ummu_tlbi_walk(unsigned long iova, size_t size, size_t granule,
 void ummu_tlbi_page(struct iommu_iotlb_gather *gather, unsigned long iova,
 		    size_t granule, void *cookie);
 
-void ummu_device_prefetch_cfg(struct ummu_device *ummu, u32 tecte_tag,
+void ummu_device_prefetch_cfg(struct ummu_device *ummu, u32 tect_tag,
 			      u32 tid);
-void ummu_sync_tect_range(struct ummu_device *ummu, u32 tecte_tag,
+void ummu_sync_tect_range(struct ummu_device *ummu, u32 tect_tag,
 			  u8 range);
 void ummu_sync_tect_all(struct ummu_device *ummu);
-void ummu_device_sync_tect(struct ummu_device *ummu, u32 tecte_tag);
-void ummu_sync_tct(struct ummu_device *ummu, u32 tecte_tag, u32 tid,
+void ummu_device_sync_tect(struct ummu_device *ummu, u32 tect_tag);
+void ummu_sync_tct(struct ummu_device *ummu, u32 tect_tag, u32 tid,
 		   bool leaf);
-void ummu_sync_tct_all(struct ummu_device *ummu, u32 tecte_tag);
+void ummu_sync_tct_all(struct ummu_device *ummu, u32 tect_tag);
 void ummu_device_ioplb_sync(struct iommu_domain *domain,
 			    struct iommu_plb_gather *plb_gather);
 void ummu_device_flush_plb_all(struct iommu_domain *domain);

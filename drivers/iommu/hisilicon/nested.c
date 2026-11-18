@@ -19,8 +19,8 @@ static void ummu_build_nested_domain_tct(struct ummu_domain *u_domain,
 	u64 tcr_sel;
 
 	target->data[1] |= cpu_to_le64(
-		FIELD_PREP(TECT_ENT1_TCT_MAX_NUM, ummu->local_tct_cfg->tcte_max_bits) |
-		FIELD_PREP(TECT_ENT1_TCT_FMT, ummu->local_tct_cfg->tct_fmt) |
+		FIELD_PREP(TECT_ENT1_TCT_MAX_NUM, ummu->local_tct_cfg.tcte_max_bits) |
+		FIELD_PREP(TECT_ENT1_TCT_FMT, ummu->local_tct_cfg.tct_fmt) |
 		FIELD_PREP(TECT_ENT1_TCT_PTR_MD0, TECT_ENT1_MD_CACHE_WBRA) |
 		FIELD_PREP(TECT_ENT1_TCT_PTR_MD1, TECT_ENT1_MD_CACHE_WBRA) |
 		FIELD_PREP(TECT_ENT1_TCT_PTR_MSD, TECT_ENT1_MD_CACHE_WB));
@@ -55,14 +55,14 @@ static int ummu_attach_dev_nested(struct iommu_domain *domain,
 				  struct device *dev)
 {
 	struct ummu_nested_domain *nested_domain = to_nested_domain(domain);
-	struct ummu_master *master =
-		(struct ummu_master *)dev_iommu_priv_get(dev);
+	struct ummu_device *ummu =
+		core_to_ummu_device(nested_domain->base_domain.core_dev);
 	struct ummu_tecte_data target;
 
 	guard(mutex)(&nested_domain->s2_parent->init_mutex);
 	ummu_build_nested_domain_tecte(nested_domain, &target);
-	ummu_device_write_tecte(master->ummu,
-		nested_domain->s2_parent->cfgs.tecte_tag, &target);
+	ummu_device_write_tecte(ummu, nested_domain->s2_parent->cfgs.tect_tag,
+				&target);
 	return 0;
 }
 
@@ -146,7 +146,7 @@ ummu_viommu_alloc_domain_nested(struct iommu_domain *parent, u32 flags,
 }
 
 static int ummu_fix_user_cmd(struct ummu_device *ummu,
-			    u64 *cmd, u32 tecte_tag, u16 vmid)
+			    u64 *cmd, u32 tect_tag, u16 vmid)
 {
 	u8 opcode;
 	int i;
@@ -162,13 +162,14 @@ static int ummu_fix_user_cmd(struct ummu_device *ummu,
 	case CMD_TLBI_HYP_TID:
 	case CMD_TLBI_HYP_VA:
 	case CMD_TLBI_HYP_ASID_U:
+	case CMD_TLBI_HYP_VA_U:
 		break;
 	case CMD_PLBI_OS_EID:
 	case CMD_PLBI_OS_EIDTID:
 	case CMD_PLBI_OS_VA:
 	case CMD_PLBI_FREE_BIT:
 		cmd[2] &= ~CMD_PLBI_2_TECTE_TAG;
-		cmd[2] |= FIELD_PREP(CMD_PLBI_2_TECTE_TAG, tecte_tag);
+		cmd[2] |= FIELD_PREP(CMD_PLBI_2_TECTE_TAG, tect_tag);
 		break;
 	case CMD_TLBI_OS_ALL:
 	case CMD_TLBI_OS_TID:
@@ -177,14 +178,14 @@ static int ummu_fix_user_cmd(struct ummu_device *ummu,
 	case CMD_TLBI_S1S2_VMALL:
 	case CMD_TLBI_S2_IPA:
 		cmd[2] &= ~CMD_TLBI_2_TECTE_TAG;
-		cmd[2] |= FIELD_PREP(CMD_TLBI_2_TECTE_TAG, tecte_tag);
+		cmd[2] |= FIELD_PREP(CMD_TLBI_2_TECTE_TAG, tect_tag);
 		break;
 	case CMD_CFGI_TECT:
 	case CMD_CFGI_TECT_RANGE:
 	case CMD_CFGI_TCT:
 	case CMD_CFGI_TCT_ALL:
 		cmd[2] &= ~CMD_CFGI_2_TECTE_TAG;
-		cmd[2] |= FIELD_PREP(CMD_CFGI_2_TECTE_TAG, tecte_tag);
+		cmd[2] |= FIELD_PREP(CMD_CFGI_2_TECTE_TAG, tect_tag);
 		break;
 	case CMD_TLBI_OS_ASID_U:
 		cmd[0] &= ~CMD_TLBI_0_VMID;
@@ -206,12 +207,12 @@ int ummu_viommu_cache_invalidate_user(struct iommu_domain *domain,
 	struct iommufd_viommu_ummu_invalidate *cur;
 	struct iommufd_viommu_ummu_invalidate *end;
 	struct ummu_device *ummu;
-	u64 tecte_tag;
+	u64 tect_tag;
 	u16 vmid;
 	int ret;
 
 	nested_domain = to_nested_domain(domain);
-	tecte_tag = nested_domain->s2_parent->cfgs.tecte_tag;
+	tect_tag = nested_domain->s2_parent->cfgs.tect_tag;
 	vmid = nested_domain->s2_parent->vmid;
 
 	ummu = core_to_ummu_device(nested_domain->base_domain.core_dev);
@@ -230,7 +231,7 @@ int ummu_viommu_cache_invalidate_user(struct iommu_domain *domain,
 
 	last = cmds;
 	while (cur != end) {
-		ret = ummu_fix_user_cmd(ummu, cur->cmd, tecte_tag, vmid);
+		ret = ummu_fix_user_cmd(ummu, cur->cmd, tect_tag, vmid);
 		if (ret)
 			goto out;
 

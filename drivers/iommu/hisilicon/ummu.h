@@ -73,12 +73,27 @@ struct ummu_tct_desc_cfg {
 	unsigned int			l1_tcte_num;
 	u8				tct_fmt;
 	u8				tcte_max_bits;
-	struct kref			ref;
+};
+
+struct ummu_tect_l1_desc {
+	u32		l2_tecte_num;
+	__le64		*l2ptr;
+	phys_addr_t	l2ptr_pa;
+};
+
+struct ummu_tect_cfg {
+	__le64				*tbl_vaddr;
+	phys_addr_t			phys;
+	size_t				tbl_size;
+	unsigned int			num_ents;
+	struct ummu_tect_l1_desc	*l1_tect_desc;
+	u8				tect_fmt;
+	u64				tect_reg_addr;
+	u32				tect_reg_cfg;
 };
 
 /* translation stage1 table config */
 struct ummu_s1_cfg {
-	struct ummu_tct_desc_cfg *tct_cfg;
 	struct ummu_tct_desc tct;
 	struct ummu_mapt_info io_pt_cfg;
 };
@@ -252,14 +267,10 @@ struct ummu_hash_table_cfg {
 /* ummu device inner helper functions */
 enum ummu_dom_cfg_sync_type {
 	SYNC_TYPE_NONE,
-	SYNC_DOM_ALL_CFG,
-	SYNC_DOM_MUTI_CFG,
-	SYNC_CLEAR_DOM_ALL_CFG,
+	SYNC_DOMAIN_MAPT_CFG,
 };
 
 struct ummu_device_helper {
-	void (*sync_tlb)(struct iommu_domain *domain,
-			 struct iommu_iotlb_gather *iotlb_gather);
 	int (*sync_dom_cfg)(struct ummu_base_domain *src, struct ummu_base_domain *dst,
 			    enum ummu_dom_cfg_sync_type type);
 	struct iommu_domain *(*alloc_domain_nested)(
@@ -273,6 +284,16 @@ struct ummu_device_helper {
 	void (*sync_iommu_domain)(struct ummu_base_domain *base_domain,
 				  struct iommu_domain *domain);
 	bool (*needs_mmu_notifier)(struct ummu_base_domain *base_domain);
+	int (*iommu_device_probe_master)(struct device *dev);
+	void (*iommu_device_remove_master)(struct ummu_core_device *core_dev,
+					   struct device *dev);
+	void (*clear_domain_mapt)(struct ummu_base_domain *base_domain);
+	int (*prepare_context_user)(struct device *dev, int vmid,
+				    struct ummu_base_domain *base_domain);
+	int (*iommu_dev_set_mpam)(struct ummu_core_device *core_dev, u32 tid,
+				  u16 partid, u8 pmg);
+	int (*device_set_config)(struct ummu_core_device *core_dev,
+				 struct device *dev, int type, void *data);
 };
 
 struct ummu_device {
@@ -286,9 +307,9 @@ struct ummu_device {
 	struct ummu_mcmdq *__percpu *mcmdq;
 	struct ummu_evtq evtq;
 
-	struct ummu_tect_cfg *tect_cfg;
+	struct ummu_tect_cfg tect_cfg;
 	struct ummu_hash_table_cfg hash_tbl_cfg;
-	struct ummu_tct_desc_cfg *local_tct_cfg;
+	struct ummu_tct_desc_cfg local_tct_cfg;
 	struct ummu_permq_context_cfg permq_ctx_cfg;
 
 	struct ummu_core_device core_dev;
@@ -312,7 +333,7 @@ struct ummu_domain_cfgs {
 	enum ummu_domain_stage stage;
 	enum ummu_sva_mode sva_mode;
 
-	u32 tecte_tag;
+	u32 tect_tag;
 
 	union {
 		struct ummu_s1_cfg	s1_cfg;
@@ -331,7 +352,6 @@ struct ummu_domain {
 	bool has_cfged;
 	bool dirty_tracking;
 	struct ummu_domain_cfgs cfgs;
-	struct kvm *kvm;
 	u16 vmid;
 	bool tlbi_asid;
 };
@@ -345,6 +365,7 @@ struct ummu_master {
 	bool			ksva_enabled;
 	refcount_t		sva_ref;
 	refcount_t		ksva_ref;
+	struct kref		ref;
 };
 
 static inline

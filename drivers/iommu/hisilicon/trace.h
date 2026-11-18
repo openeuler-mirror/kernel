@@ -92,67 +92,67 @@ TRACE_EVENT(ummu_perm_ungrant,
 );
 
 TRACE_EVENT(ummu_sync_tect,
-	    TP_PROTO(const char *name, u32 tecte_tag),
-	    TP_ARGS(name, tecte_tag),
+	    TP_PROTO(const char *name, u32 tect_tag),
+	    TP_ARGS(name, tect_tag),
 	    TP_STRUCT__entry(
 		__string(name, name)
-		__field(u32, tecte_tag)
+		__field(u32, tect_tag)
 	),
 	    TP_fast_assign(
 		__assign_str(name, name);
-		__entry->tecte_tag = tecte_tag;
+		__entry->tect_tag = tect_tag;
 	),
-	    TP_printk("%s, tecte_tag = %u", __get_str(name), __entry->tecte_tag)
+	    TP_printk("%s, tect_tag = %u", __get_str(name), __entry->tect_tag)
 );
 
 TRACE_EVENT(ummu_sync_tect_range,
-	    TP_PROTO(const char *name, u32 tecte_tag, u8 range),
-	    TP_ARGS(name, tecte_tag, range),
+	    TP_PROTO(const char *name, u32 tect_tag, u8 range),
+	    TP_ARGS(name, tect_tag, range),
 	    TP_STRUCT__entry(
 		__string(name, name)
-		__field(u32, tecte_tag)
+		__field(u32, tect_tag)
 		__field(u8, range)
 	),
 	    TP_fast_assign(
 		__assign_str(name, name);
-		__entry->tecte_tag = tecte_tag;
+		__entry->tect_tag = tect_tag;
 		__entry->range = range;
 	),
-	    TP_printk("%s, tecte_tag = %u, range = %u",
-		      __get_str(name), __entry->tecte_tag, __entry->range)
+	    TP_printk("%s, tect_tag = %u, range = %u",
+		      __get_str(name), __entry->tect_tag, __entry->range)
 );
 
 TRACE_EVENT(ummu_sync_tct,
-	    TP_PROTO(const char *name, u32 tecte_tag, u32 tid, bool leaf),
-	    TP_ARGS(name, tecte_tag, tid, leaf),
+	    TP_PROTO(const char *name, u32 tect_tag, u32 tid, bool leaf),
+	    TP_ARGS(name, tect_tag, tid, leaf),
 	    TP_STRUCT__entry(
 		__string(name, name)
-		__field(u32, tecte_tag)
+		__field(u32, tect_tag)
 		__field(u32, tid)
 		__field(bool, leaf)
 	),
 	    TP_fast_assign(
 		__assign_str(name, name);
-		__entry->tecte_tag = tecte_tag;
+		__entry->tect_tag = tect_tag;
 		__entry->tid = tid;
 		__entry->leaf = leaf;
 	),
-	    TP_printk("%s, tecte_tag = %u, tid = %u, leaf = %d",
-		      __get_str(name), __entry->tecte_tag, __entry->tid, __entry->leaf)
+	    TP_printk("%s, tect_tag = %u, tid = %u, leaf = %d",
+		      __get_str(name), __entry->tect_tag, __entry->tid, __entry->leaf)
 );
 
 TRACE_EVENT(ummu_sync_tct_all,
-	    TP_PROTO(const char *name, u32 tecte_tag),
-	    TP_ARGS(name, tecte_tag),
+	    TP_PROTO(const char *name, u32 tect_tag),
+	    TP_ARGS(name, tect_tag),
 	    TP_STRUCT__entry(
 		__string(name, name)
-		__field(u32, tecte_tag)
+		__field(u32, tect_tag)
 	),
 	    TP_fast_assign(
 		__assign_str(name, name);
-		__entry->tecte_tag = tecte_tag;
+		__entry->tect_tag = tect_tag;
 	),
-	    TP_printk("%s, tecte_tag = %u", __get_str(name), __entry->tecte_tag)
+	    TP_printk("%s, tect_tag = %u", __get_str(name), __entry->tect_tag)
 );
 
 TRACE_EVENT(ummu_event,
