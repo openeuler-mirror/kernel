@@ -245,7 +245,8 @@ void write_ack_msg_buf(const struct sentry_msg_helper_msg *msg,
  * @random_id: Pointer to store extracted random ID for certain message types
  *
  * Return: 0 on success, negative error code on failure:
- *         -EINVAL if any input pointer is NULL or message type is unsupported.
+ *         -EINVAL if any input pointer is NULL or message type is unsupported or msg
+ *         data is invalid (eg. timeout is not within a limited range).
  */
 int convert_binary_to_smh_msg(const struct sentry_binary_msg *binary_msg,
 			 struct sentry_msg_helper_msg *smh_msg,
@@ -268,6 +269,11 @@ int convert_binary_to_smh_msg(const struct sentry_binary_msg *binary_msg,
 	switch (binary_msg->type) {
 	case SMH_MESSAGE_PANIC:
 	case SMH_MESSAGE_KERNEL_REBOOT:
+		if (binary_msg->timeout_ms > MAX_TIMEOUT) {
+			pr_err("%s: timeout_ms %u out of range [0, %u]\n",
+			       __func__, binary_msg->timeout_ms, MAX_TIMEOUT);
+			return -EINVAL;
+		}
 		smh_msg->timeout_time = binary_msg->timeout_ms;
 		*random_id = binary_msg->random_id;
 		break;

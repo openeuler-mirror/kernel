@@ -27,7 +27,6 @@
 #include "sentry_local_ras.h"
 
 #define REBOOT_RESULT_SUCCESS	0
-#define MAX_TIMEOUT		3600000
 #define FD_MODE			0
 #define NUMA_MODE		1
 

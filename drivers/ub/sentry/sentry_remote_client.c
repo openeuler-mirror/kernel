@@ -29,10 +29,6 @@
 #include "sentry_remote_reporter.h"
 #include "sentry_report_comm.h"
 
-#define PANIC_TIMEOUT_MS_MIN		0
-#define PANIC_TIMEOUT_MS_MAX		3600000
-#define KERNEL_REBOOT_TIMEOUT_MS_MIN	0
-#define KERNEL_REBOOT_TIMEOUT_MS_MAX	3600000
 #define LOCAL_EID_MAX_LEN		(EID_MAX_LEN * MAX_DIE_NUM + 1 + 1)
 #define MSLEEP_TIME_EACH_ROUND_OF_ACK_CHECK  10  // < MILLISECONDS_OF_EACH_MDELAY
 
@@ -868,9 +864,9 @@ static ssize_t proc_panic_timeout_write(struct file *file, const char __user *ub
 		return ret;
 	}
 
-	if (val < PANIC_TIMEOUT_MS_MIN || val > PANIC_TIMEOUT_MS_MAX) {
+	if (val > MAX_TIMEOUT) {
 		pr_err("panic_timeout range [%d, %d], current %lu\n",
-		       PANIC_TIMEOUT_MS_MIN, PANIC_TIMEOUT_MS_MAX, val);
+		       MIN_TIMEOUT, MAX_TIMEOUT, val);
 		return -EINVAL;
 	}
 
@@ -900,9 +896,9 @@ static ssize_t proc_kernel_reboot_timeout_write(struct file *file,
 		return ret;
 	}
 
-	if (val < KERNEL_REBOOT_TIMEOUT_MS_MIN || val > KERNEL_REBOOT_TIMEOUT_MS_MAX) {
+	if (val > MAX_TIMEOUT) {
 		pr_err("kernel_reboot_timeout range [%d, %d], current %lu\n",
-		       KERNEL_REBOOT_TIMEOUT_MS_MIN, KERNEL_REBOOT_TIMEOUT_MS_MAX, val);
+		       MIN_TIMEOUT, MAX_TIMEOUT, val);
 		return -EINVAL;
 	}
 
