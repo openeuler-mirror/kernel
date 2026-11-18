@@ -1858,13 +1858,15 @@ static int csv3_pin_shared_memory(struct kvm_vcpu *vcpu,
 			return -ENOMEM;
 
 		hva = __gfn_to_hva_memslot(slot, gfn);
-		npinned = pin_user_pages_fast(hva, 1, FOLL_WRITE | FOLL_LONGTERM,
-					      &page);
+		mmap_write_lock(current->mm);
+		npinned = pin_user_pages(hva, 1, FOLL_WRITE | FOLL_LONGTERM, &page, NULL);
 		if (npinned != 1) {
+			mmap_write_unlock(current->mm);
 			kmem_cache_free(csv->sp_slab, sp);
 			return -ENOMEM;
 		}
 
+		mmap_write_unlock(current->mm);
 		sp->page = page;
 		sp->gfn = gfn;
 		shared_page_insert(&csv->sp_mgr, sp);
