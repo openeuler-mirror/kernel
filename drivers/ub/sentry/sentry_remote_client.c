@@ -149,10 +149,22 @@ int remote_event_handler(enum sentry_msg_helper_msg_type remote_type,
 	uint64_t start_count, current_count;
 	uint64_t code_run_count, code_run_times_ms;
 	uint64_t counts_per_sec = arch_timer_get_cntfrq();
-	uint64_t timeout_counts = timeout_ms / 1000 * counts_per_sec;
+	/*
+	 * Round up the timeout to a whole number of loop rounds and timer
+	 * ticks. Integer division rounds down: for timeout_ms in [1,999]
+	 * (< MILLISECONDS_OF_EACH_MDELAY == 1000) both terms were 0, so the
+	 * "for (i = 0; i < times; i++)" body never ran and the event was
+	 * never sent at all -- panic/reboot reporting silently failed for any
+	 * sub-second configured timeout. Round up so any positive timeout
+	 * yields at least one send round. timeout_ms == 0 still gives 0 rounds
+	 * (its existing "don't block / don't send" behavior is preserved).
+	 */
+	uint64_t timeout_counts = (timeout_ms + MILLISECONDS_OF_EACH_MDELAY - 1) /
+				  MILLISECONDS_OF_EACH_MDELAY * counts_per_sec;
 	bool ack_done = false;
 	int recv_msg_nodes;
-	int times = timeout_ms / MILLISECONDS_OF_EACH_MDELAY;
+	int times = (timeout_ms + MILLISECONDS_OF_EACH_MDELAY - 1) /
+		    MILLISECONDS_OF_EACH_MDELAY;
 
 	/* Prepare send data for each die */
 	for (int i = 0; i < sentry_client_ctx.die_num_configured; i++) {
@@ -870,6 +882,9 @@ static ssize_t proc_panic_timeout_write(struct file *file, const char __user *ub
 		return -EINVAL;
 	}
 
+	if (val < MILLISECONDS_OF_EACH_MDELAY)
+		pr_warn("timeout_ms=%lu < %d is risky, don't set it too small\n",
+				val, MILLISECONDS_OF_EACH_MDELAY);
 	sentry_client_ctx.panic_timeout_ms = val;
 	return cnt;
 }
@@ -901,6 +916,10 @@ static ssize_t proc_kernel_reboot_timeout_write(struct file *file,
 		       MIN_TIMEOUT, MAX_TIMEOUT, val);
 		return -EINVAL;
 	}
+
+	if (val < MILLISECONDS_OF_EACH_MDELAY)
+		pr_warn("timeout_ms=%lu < %d is risky, don't set it too small\n",
+				val, MILLISECONDS_OF_EACH_MDELAY);
 
 	sentry_client_ctx.kernel_reboot_timeout_ms = val;
 	return cnt;
