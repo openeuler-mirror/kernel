@@ -2024,6 +2024,8 @@ static int csv3_mmio_page_fault(struct kvm_vcpu *vcpu, gva_t gpa, u32 error_code
 
 	update_npt = kzalloc(sizeof(*update_npt), GFP_KERNEL);
 	if (!update_npt) {
+		pr_err_ratelimited("Failure allocate npt command: gpa 0x%llx, error code 0x%x\n",
+				   (unsigned long long)gpa, error_code);
 		r = -ENOMEM;
 		goto exit;
 	}
@@ -2037,8 +2039,11 @@ static int csv3_mmio_page_fault(struct kvm_vcpu *vcpu, gva_t gpa, u32 error_code
 	r = hygon_kvm_hooks.sev_issue_cmd(vcpu->kvm, CSV3_CMD_UPDATE_NPT,
 					  update_npt, &psp_ret);
 
-	if (psp_ret != SEV_RET_SUCCESS)
+	if (psp_ret != SEV_RET_SUCCESS) {
+		pr_err_ratelimited("Failure update NPT: gpa 0x%llx, error code 0x%x, ret %d\n",
+				   (unsigned long long)gpa, error_code, r);
 		r = -EFAULT;
+	}
 
 	kfree(update_npt);
 exit:
@@ -2059,6 +2064,8 @@ static int __csv3_page_fault(struct kvm_vcpu *vcpu, gva_t gpa,
 
 	update_npt = kzalloc(sizeof(*update_npt), GFP_KERNEL);
 	if (!update_npt) {
+		pr_err_ratelimited("Failure allocate npt command: gpa 0x%llx, error code 0x%x\n",
+				   (unsigned long long)gpa, error_code);
 		r = -ENOMEM;
 		goto exit;
 	}
@@ -2103,8 +2110,11 @@ static int csv3_pin_shared_memory(struct kvm_vcpu *vcpu,
 
 	tmp_pfn = __gfn_to_pfn_memslot(slot, gfn, false, NULL, write,
 				       NULL, NULL);
-	if (unlikely(is_error_pfn(tmp_pfn)))
-		return -ENOMEM;
+	if (unlikely(is_error_pfn(tmp_pfn))) {
+		pr_err_ratelimited("Invalid pfn 0x%llx for gfn 0x%llx\n",
+				   (unsigned long long)tmp_pfn, gfn);
+		return -EINVAL;
+	}
 
 	if (csv3_is_mmio_pfn(tmp_pfn)) {
 		*pfn = tmp_pfn;
@@ -2131,7 +2141,17 @@ static int csv3_pin_shared_memory(struct kvm_vcpu *vcpu,
 		if (npinned != 1) {
 			mmap_write_unlock(current->mm);
 			kmem_cache_free(csv->sp_slab, sp);
-			return -ENOMEM;
+			pr_err_ratelimited("Failure pin gfn:0x%llx\n", gfn);
+			/*
+			 * GUP returns -ENOMEM when it fails to allocate memory
+			 * for the pin or to migrate a long-term pinned page.
+			 * Such failures can be transient, so report -EAGAIN to
+			 * resume the guest and retry #NPF. Permanent failures
+			 * are propagated to userspace.
+			 */
+			if (npinned == -ENOMEM)
+				return -EAGAIN;
+			return npinned < 0 ? npinned : -EFAULT;
 		}
 
 		mmap_write_unlock(current->mm);
@@ -2231,6 +2251,8 @@ end:
 	return to_csv3_pg_level(level);
 }
 
+#define RETRY_CSV3_NPF_MAX	10
+
 static int csv3_page_fault(struct kvm_vcpu *vcpu, struct kvm_memory_slot *slot,
 			   gfn_t gfn, u32 error_code)
 {
@@ -2239,6 +2261,7 @@ static int csv3_page_fault(struct kvm_vcpu *vcpu, struct kvm_memory_slot *slot,
 	int level;
 	kvm_pfn_t pfn = KVM_PFN_NOSLOT;
 	struct kvm_csv_info *csv = &to_kvm_svm_csv(vcpu->kvm)->csv_info;
+	struct vcpu_svm *svm = to_svm(vcpu);
 
 	if (error_code & PFERR_PRESENT_MASK)
 		level = CSV3_PG_LEVEL_4K;
@@ -2246,17 +2269,36 @@ static int csv3_page_fault(struct kvm_vcpu *vcpu, struct kvm_memory_slot *slot,
 		mutex_lock(&csv->sp_lock);
 		ret = csv3_pin_shared_memory(vcpu, slot, gfn, &pfn);
 		mutex_unlock(&csv->sp_lock);
-		if (ret)
+		if (ret) {
+			/*
+			 * -EAGAIN indicates that the page could not be pinned
+			 * due to transient memory pressure. Resume the guest to
+			 * retry #NPF. Permanent failures are propagated to
+			 * userspace.
+			 */
+			if (ret == -EAGAIN) {
+				if (++svm->csv3_npf_retry <= RETRY_CSV3_NPF_MAX) {
+					ret = 0;
+					goto exit;
+				}
+				pr_err_ratelimited("CSV3: pin retry limit, gfn 0x%llx\n", gfn);
+				svm->csv3_npf_retry = 0;
+			}
 			goto exit;
+		}
 
+		svm->csv3_npf_retry = 0;
 		level = csv3_mapping_level(vcpu, gfn, pfn, slot);
 	}
 
 	ret = __csv3_page_fault(vcpu, gfn << PAGE_SHIFT, error_code, slot,
 				&psp_ret, pfn, level);
 
-	if (psp_ret != SEV_RET_SUCCESS)
+	if (psp_ret != SEV_RET_SUCCESS) {
+		pr_err_ratelimited("Failure update NPT: gfn 0x%llx, error code 0x%x, psp_ret 0x%x\n",
+				   gfn, error_code, psp_ret);
 		ret = -EFAULT;
+	}
 exit:
 	return ret;
 }
