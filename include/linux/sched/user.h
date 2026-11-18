@@ -7,6 +7,7 @@
 #include <linux/percpu_counter.h>
 #include <linux/refcount.h>
 #include <linux/ratelimit.h>
+#include <linux/kabi.h>
 
 /*
  * Some day this will be a full-fledged user tracking system..
@@ -23,10 +24,10 @@ struct user_struct {
 	struct hlist_node uidhash_node;
 	kuid_t uid;
 
-#if defined(CONFIG_PERF_EVENTS) || defined(CONFIG_BPF_SYSCALL) || \
-	defined(CONFIG_NET) || defined(CONFIG_IO_URING) || \
-	defined(CONFIG_VFIO_PCI_ZDEV_KVM) || IS_ENABLED(CONFIG_IOMMUFD)
-	atomic_long_t locked_vm;
+#if defined(CONFIG_NET) || defined(CONFIG_IO_URING) || \
+	defined(CONFIG_VFIO_PCI_ZDEV_KVM) || IS_ENABLED(CONFIG_IOMMUFD) || \
+	defined(CONFIG_SECRETMEM)
+	atomic_long_t locked_vm;	/* pinned pages charged to RLIMIT_MEMLOCK */
 #endif
 #ifdef CONFIG_WATCH_QUEUE
 	atomic_t nr_watches;	/* The number of watches this user currently has */
@@ -34,6 +35,10 @@ struct user_struct {
 
 	/* Miscellaneous per-user rate limit */
 	struct ratelimit_state ratelimit;
+
+#ifdef CONFIG_PERF_EVENTS
+	KABI_EXTEND(atomic_long_t perf_mlock)	/* perf buffer pages within perf_event_mlock_kb */
+#endif
 };
 
 extern int uids_sysfs_init(void);
