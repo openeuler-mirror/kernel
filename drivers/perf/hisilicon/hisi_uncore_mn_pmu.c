@@ -14,9 +14,6 @@
 
 #include "hisi_uncore_pmu.h"
 
-/* Dynamic CPU hotplug state used by MN PMU */
-static enum cpuhp_state hisi_mn_pmu_online;
-
 /* MN register definition */
 #define HISI_MN_DYNAMIC_CTRL_REG	0x400
 #define   HISI_MN_DYNAMIC_CTRL_EN	BIT(0)
@@ -333,7 +330,7 @@ static int hisi_mn_pmu_dev_init(struct platform_device *pdev,
 
 static void hisi_mn_pmu_remove_cpuhp(void *hotplug_node)
 {
-	cpuhp_state_remove_instance_nocalls(hisi_mn_pmu_online, hotplug_node);
+	cpuhp_state_remove_instance_nocalls(hisi_uncore_pmu_cpuhp_state, hotplug_node);
 }
 
 static void hisi_mn_pmu_unregister(void *pmu)
@@ -362,7 +359,7 @@ static int hisi_mn_pmu_probe(struct platform_device *pdev)
 	if (!name)
 		return -ENOMEM;
 
-	ret = cpuhp_state_add_instance(hisi_mn_pmu_online, &mn_pmu->node);
+	ret = cpuhp_state_add_instance(hisi_uncore_pmu_cpuhp_state, &mn_pmu->node);
 	if (ret)
 		return dev_err_probe(&pdev->dev, ret, "Failed to register cpu hotplug\n");
 
@@ -406,8 +403,8 @@ static const struct hisi_pmu_dev_info hisi_mn_v2 = {
 };
 
 static const struct acpi_device_id hisi_mn_pmu_acpi_match[] = {
-	{ "HISI0222", (kernel_ulong_t) &hisi_mn_v1 },
-	{ "HISI0224", (kernel_ulong_t) &hisi_mn_v2 },
+	{ "HISI0222", (kernel_ulong_t)&hisi_mn_v1 },
+	{ "HISI0224", (kernel_ulong_t)&hisi_mn_v2 },
 	{ }
 };
 MODULE_DEVICE_TABLE(acpi, hisi_mn_pmu_acpi_match);
@@ -426,33 +423,7 @@ static struct platform_driver hisi_mn_pmu_driver = {
 	.probe = hisi_mn_pmu_probe,
 };
 
-static int __init hisi_mn_pmu_module_init(void)
-{
-	int ret;
-
-	ret = cpuhp_setup_state_multi(CPUHP_AP_ONLINE_DYN, "perf/hisi/mn:online",
-				      hisi_uncore_pmu_online_cpu,
-				      hisi_uncore_pmu_offline_cpu);
-	if (ret < 0) {
-		pr_err("hisi_mn_pmu: Failed to setup MN PMU hotplug: %d\n", ret);
-		return ret;
-	}
-	hisi_mn_pmu_online = ret;
-
-	ret = platform_driver_register(&hisi_mn_pmu_driver);
-	if (ret)
-		cpuhp_remove_multi_state(hisi_mn_pmu_online);
-
-	return ret;
-}
-module_init(hisi_mn_pmu_module_init);
-
-static void __exit hisi_mn_pmu_module_exit(void)
-{
-	platform_driver_unregister(&hisi_mn_pmu_driver);
-	cpuhp_remove_multi_state(hisi_mn_pmu_online);
-}
-module_exit(hisi_mn_pmu_module_exit);
+module_platform_driver(hisi_mn_pmu_driver);
 
 MODULE_IMPORT_NS(HISI_PMU);
 MODULE_DESCRIPTION("HiSilicon SoC MN uncore PMU driver");
