@@ -4209,6 +4209,30 @@ extern atomic_long_t num_poisoned_pages __read_mostly;
 extern int soft_offline_page(unsigned long pfn, int flags);
 extern int soft_online_page(unsigned long pfn);
 int kill_accessing_process(unsigned long pfn, int flags, bool force_kill);
+
+struct hwpoison_event {
+	u64 phys_base;
+	u64 size_mask;
+	bool hard;
+	bool online;
+	bool success;
+	int reason;
+};
+
+#ifdef CONFIG_MEMORY_FAILURE
+extern int register_hwpoison_notifier(struct notifier_block *nb);
+extern int unregister_hwpoison_notifier(struct notifier_block *nb);
+#else
+static inline int register_hwpoison_notifier(struct notifier_block *nb)
+{
+	return 0;
+}
+static inline int unregister_hwpoison_notifier(struct notifier_block *nb)
+{
+	return 0;
+}
+#endif
+
 #ifdef CONFIG_MEMORY_FAILURE
 /*
  * Sysfs entries for memory failure handling statistics.
