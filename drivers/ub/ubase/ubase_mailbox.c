@@ -623,8 +623,7 @@ static void ubase_free_buf_ctx_page(struct ubase_dev *udev,
 
 	refcount_dec(&ctx_page->refcount);
 	if (refcount_dec_if_one(&ctx_page->refcount)) {
-		ubase_info(udev,
-			   "refcount of ctx page is equal to one and the ctx_page is going to be erased.\n");
+		ubase_dbg(udev, "refcount of ctx page is 1, erase it.\n");
 		xa_erase(&ctx_buf->ctx_xa, npage);
 		ubase_destroy_ctx_page(udev, ctx_page, ctx_buf);
 	}
@@ -789,17 +788,17 @@ int __ubase_hw_upgrade_ctx_ex(struct ubase_dev *udev,
 		} else if (type == UBASE_MB_QUERY) {
 			ret = ubase_check_buf_ctx_page(udev, ctx_buf, attr->tag);
 			if (ret) {
-				dev_info_ratelimited(udev->dev,
-						     "query ctx before create, op = 0x%x.\n",
-						     attr->op);
+				ubase_dbg(udev,
+					  "query ctx before create, op = 0x%x.\n",
+					  attr->op);
 				return 0;
 			}
 		} else if (type == UBASE_MB_MODIFY || type == UBASE_MB_DESTROY) {
 			ret = ubase_check_buf_ctx_page(udev, ctx_buf, attr->tag);
 			if (ret) {
-				dev_info_ratelimited(udev->dev,
-						     "access ctx before create, op = 0x%x.\n",
-						     attr->op);
+				ubase_dbg(udev,
+					  "access ctx before create, op = 0x%x.\n",
+					  attr->op);
 				return ret;
 			}
 		}

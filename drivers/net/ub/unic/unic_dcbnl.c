@@ -522,7 +522,7 @@ static u8 unic_dcbnl_setdcbx(struct net_device *ndev, u8 mode)
 	    !(mode & DCB_CAP_DCBX_HOST))
 		return 1;
 
-	unic_info(unic_dev, "set dcbx mode = %u\n.", mode);
+	unic_info(unic_dev, "set dcbx mode = %u.\n", mode);
 
 	unic_dev->dcbx_cap = mode;
 

@@ -544,7 +544,8 @@ static int ubase_fill_eq_attribute(struct ubase_dev *udev, struct ubase_eq *eq,
 	eq_addr->size = eq->entries_num * eq->eqe_size;
 	ret = udev->mem_ops.eq.alloc(udev, eq);
 	if (ret)
-		ubase_err(udev, "failed to alloc eqe base addr.\n");
+		ubase_err(udev, "failed to alloc eqe base addr, ret = %d.\n",
+			  ret);
 
 	return ret;
 }
@@ -558,10 +559,8 @@ static int ubase_create_eq(struct ubase_dev *udev, struct ubase_eq *eq, u32 eqn,
 	int ret;
 
 	ret = ubase_fill_eq_attribute(udev, eq, eqn, irq, eq_type);
-	if (ret) {
-		ubase_err(udev, "failed to fill eq attribute.\n");
+	if (ret)
 		return ret;
-	}
 
 	mbx_cmd = eq_type == UBASE_EQ_TYPE_AEQ ? UBASE_MB_CREATE_AEQ_CONTEXT :
 						 UBASE_MB_CREATE_CEQ_CONTEXT;

@@ -945,6 +945,7 @@ static int ubase_log_rs_init(struct ubase_dev *udev)
 	UBASE_RATELIMIT_INIT(udev, send_ue_ctrlq_msg_fail);
 	UBASE_RATELIMIT_INIT(udev, proxy_resp_seq_invalid);
 	UBASE_RATELIMIT_INIT(udev, err_msn_in_act_resp);
+	UBASE_RATELIMIT_INIT_HR(udev, csq_clean_bd_mismatch);
 
 	return 0;
 }
@@ -2279,8 +2280,8 @@ int ubase_activate_dev(struct auxiliary_device *adev)
 
 	udev = __ubase_get_udev_by_adev(adev);
 
-	ubase_info(udev, "ubase activate dev, state_bits = 0x%lx.\n",
-		   udev->state_bits);
+	ubase_dbg(udev, "ubase activate dev, state_bits = 0x%lx.\n",
+		  udev->state_bits);
 
 	if (test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits)) {
 		ubase_info(udev, "skip activate dev while resetting.\n");
@@ -2371,8 +2372,8 @@ int ubase_deactivate_dev(struct auxiliary_device *adev)
 
 	udev = __ubase_get_udev_by_adev(adev);
 
-	ubase_info(udev, "ubase deactivate dev, state_bits = 0x%lx.\n",
-		   udev->state_bits);
+	ubase_dbg(udev, "ubase deactivate dev, state_bits = 0x%lx.\n",
+		  udev->state_bits);
 
 	if (test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits)) {
 		ret = ubase_deactivate_wait_reset_done(udev);

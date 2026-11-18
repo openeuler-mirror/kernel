@@ -54,12 +54,12 @@ static void unic_link_fail_parse(struct auxiliary_device *adev,
 		return;
 
 	if (link_fail_code >= UNIC_LF_REF_MAX) {
-		unic_warn(unic_dev, "unknown fail code, fail_code = %u.\n",
-			  link_fail_code);
+		unic_dbg(unic_dev, "unknown fail code, fail_code = %u.\n",
+			 link_fail_code);
 		return;
 	}
 
-	unic_warn(unic_dev, "link fail cause: %s", codes[link_fail_code - 1].str);
+	unic_dbg(unic_dev, "link fail cause: %s", codes[link_fail_code - 1].str);
 }
 
 int unic_handle_link_status_event(void *dev, void *data, u32 len)

@@ -447,6 +447,29 @@ out:
 	return ret;
 }
 
+static int unic_dbg_dump_limit_log_cnt(struct seq_file *s, void *data)
+{
+#define UNIC_PRINT_LOG_CNT(name) \
+	seq_printf(s, #name "_cnt:%u\n", unic_dev->log_rs.name##_cnt)
+
+	struct unic_dev *unic_dev = dev_get_drvdata(s->private);
+
+	UNIC_PRINT_LOG_CNT(query_link_status_fail);
+	UNIC_PRINT_LOG_CNT(set_promisc_fail);
+	UNIC_PRINT_LOG_CNT(set_vlan_fail);
+	UNIC_PRINT_LOG_CNT(set_stack_ip_fail);
+	UNIC_PRINT_LOG_CNT(alloc_skb_fail);
+	UNIC_PRINT_LOG_CNT(fill_netlink_ip_req_fail);
+	UNIC_PRINT_LOG_CNT(rm_mac_fail);
+	UNIC_PRINT_LOG_CNT(uc_mac_exists);
+	UNIC_PRINT_LOG_CNT(add_mac_fail);
+	UNIC_PRINT_LOG_CNT(notify_bond_ip_fail);
+	UNIC_PRINT_LOG_CNT(send_ctrlq_bond_status_fail);
+	UNIC_PRINT_LOG_CNT(tx_timeout);
+
+	return 0;
+}
+
 static bool unic_dbg_dentry_support(struct device *dev, u32 property)
 {
 	struct unic_dev *unic_dev = dev_get_drvdata(dev);
@@ -744,6 +767,13 @@ static struct ubase_dbg_cmd_info unic_dbg_cmd[] = {
 		.support = unic_dbg_abn_cqe_support,
 		.init = ubase_dbg_seq_file_init,
 		.read_func = unic_dbg_dump_abn_cqe_cnt,
+	}, {
+		.name = "limit_log_cnt",
+		.dentry_index = UNIC_DBG_DENTRY_ROOT,
+		.property = UBASE_SUP_UNIC | UBASE_SUP_UBL_ETH,
+		.support = unic_dbg_dentry_support,
+		.init = ubase_dbg_seq_file_init,
+		.read_func = unic_dbg_dump_limit_log_cnt,
 	}
 };
 

@@ -1074,7 +1074,7 @@ static int unic_set_l4(struct sk_buff *skb, struct unic_sqe_ctrl_section *ctrl,
 		 * because hardware can't calculate csum when TSO.
 		 */
 		if (skb_is_gso(skb)) {
-			unic_err(unic_dev,
+			unic_dbg(unic_dev,
 				 "unknown l4 header tso packets checksum offload.\n");
 			return -EDOM;
 		}
@@ -1304,7 +1304,7 @@ netdev_tx_t unic_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 			return NETDEV_TX_BUSY;
 		}
 
-		unic_err(unic_dev, "unic stop tx, ret = %d.\n", ret);
+		unic_dbg(unic_dev, "unic stop tx, ret = %d.\n", ret);
 		goto xmit_drop_pkt;
 	}
 
@@ -1368,34 +1368,34 @@ void unic_dump_sq_stats(struct net_device *netdev, u32 queue_idx)
 	sq = channel->sq;
 	sq_stats = &unic_dev->channels.c_stats[channel->c_idx].sq_stats;
 
-	unic_info(unic_dev,
-		  "tx timeout, queue index: %u, state: %lu\n"
-		  "sq->pi:            %u\n"
-		  "sq->ci:            %u\n"
-		  "pad_err:           %llu\n"
-		  "bytes:             %llu\n"
-		  "packets:           %llu\n"
-		  "busy:              %llu\n"
-		  "more:              %llu\n"
-		  "restart_queue:     %llu\n"
-		  "over_max_sge_num:  %llu\n"
-		  "csum_err:          %llu\n"
-		  "ci_mismatch:       %llu\n"
-		  "fd_cnt:            %llu\n"
-		  "drop_cnt:          %llu\n"
-		  "cfg5_drop_cnt:     %llu\n"
-		  "polled_old_pi:     %llu\n"
-		  "polled_skb_null:   %llu\n"
-		  "pi_ci_over_depth:  %llu\n"
-		  "abn_cqe_total_cnt: %llu\n",
-		  queue_idx, queue->state, sq->pi, sq->ci,
-		  sq_stats->pad_err, sq_stats->bytes, sq_stats->packets,
-		  sq_stats->busy, sq_stats->more, sq_stats->restart_queue,
-		  sq_stats->over_max_sge_num, sq_stats->csum_err,
-		  sq_stats->ci_mismatch, sq_stats->fd_cnt, sq_stats->drop_cnt,
-		  sq_stats->cfg5_drop_cnt, sq_stats->polled_old_pi,
-		  sq_stats->polled_skb_null, sq_stats->pi_ci_over_depth,
-		  sq_stats->abn_cqe_total_cnt);
+	unic_info_rl_hr(unic_dev, tx_timeout,
+			"tx timeout, queue index: %u, state: %lu\n"
+			"sq->pi:            %u\n"
+			"sq->ci:            %u\n"
+			"pad_err:           %llu\n"
+			"bytes:             %llu\n"
+			"packets:           %llu\n"
+			"busy:              %llu\n"
+			"more:              %llu\n"
+			"restart_queue:     %llu\n"
+			"over_max_sge_num:  %llu\n"
+			"csum_err:          %llu\n"
+			"ci_mismatch:       %llu\n"
+			"fd_cnt:            %llu\n"
+			"drop_cnt:          %llu\n"
+			"cfg5_drop_cnt:     %llu\n"
+			"polled_old_pi:     %llu\n"
+			"polled_skb_null:   %llu\n"
+			"pi_ci_over_depth:  %llu\n"
+			"abn_cqe_total_cnt: %llu\n",
+			queue_idx, queue->state, sq->pi, sq->ci,
+			sq_stats->pad_err, sq_stats->bytes, sq_stats->packets,
+			sq_stats->busy, sq_stats->more, sq_stats->restart_queue,
+			sq_stats->over_max_sge_num, sq_stats->csum_err,
+			sq_stats->ci_mismatch, sq_stats->fd_cnt,
+			sq_stats->drop_cnt, sq_stats->cfg5_drop_cnt,
+			sq_stats->polled_old_pi, sq_stats->polled_skb_null,
+			sq_stats->pi_ci_over_depth, sq_stats->abn_cqe_total_cnt);
 }
 
 void unic_mask_key_words(void *sqebb)

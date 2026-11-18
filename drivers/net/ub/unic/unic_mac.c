@@ -45,12 +45,13 @@ static int unic_add_mac_addr_common(struct unic_vport *vport, u8 *mac_addr,
 	if (!ret) {
 		return 0;
 	} else if (ret == -EEXIST && mac_type == UNIC_MAC_ADDR_UC) {
-		unic_info(unic_dev, "mac addr(%s) exists.\n", format_mac);
+		unic_info_rl_hr(unic_dev, uc_mac_exists,
+				"mac addr(%s) exists.\n", format_mac);
 		return -EEXIST;
 	} else if (ret != -ENOSPC) {
-		unic_err(unic_dev,
-			 "failed to add mac addr(%s), ret = %d.\n", format_mac,
-			 ret);
+		unic_err_rl_hr(unic_dev, add_mac_fail,
+			       "failed to add mac addr(%s), ret = %d.\n",
+			       format_mac, ret);
 		return ret;
 	}
 
@@ -84,8 +85,9 @@ static int unic_del_mac_addr_common(struct unic_vport *vport, u8 *mac_addr,
 	ret = ret ? ret : -resp.resp_code;
 	if (ret) {
 		unic_comm_format_mac_addr(format_mac, mac_addr);
-		dev_err(adev->dev.parent, "failed to rm mac addr(%s), ret = %d.\n",
-			format_mac, ret);
+		unic_err_rl_hr(vport->back, rm_mac_fail,
+			       "failed to rm mac addr(%s), ret = %d.\n",
+			       format_mac, ret);
 	}
 
 	return ret;
@@ -324,8 +326,9 @@ static int unic_update_mac_list(struct net_device *netdev,
 					 state, unic_addr, UNIC_COMM_ADDR_NO_MASK);
 	if (ret) {
 		unic_err(unic_dev,
-			 "failed to update mac addr(%s). mac_type = %s.\n",
-			 format_mac, mac_type == UNIC_MAC_ADDR_UC ? "uc" : "mc");
+			 "failed to update mac addr(%s). mac_type = %s, ret = %d.\n",
+			 format_mac, mac_type == UNIC_MAC_ADDR_UC ? "uc" : "mc",
+			 ret);
 		return ret;
 	}
 
