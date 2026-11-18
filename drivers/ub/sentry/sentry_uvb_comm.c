@@ -184,20 +184,34 @@ int sentry_uvb_comm_init(void)
 		return -ENOMEM;
     }
 
-    ret = sentry_create_proc_file("server_cna", uvb_proc_dir, &proc_uvb_server_cna_file_operations);
-    if (ret == -ENOMEM) {
-		goto remove_uvb_proc_dir;
-    }
-
+    /*
+     * Allocate the backing buffer BEFORE creating the proc file. The proc
+     * entry is globally visible the instant proc_create() succeeds, so
+     * creating it first opened a window in which a concurrent
+     * echo 1 > /proc/sentry_uvb_comm/server_cna ran proc_uvb_server_cna_write()
+     * against a NULL g_kbuf_server_cna and dereferenced it in snprintf().
+     * (proc_uvb_server_cna_show() already guarded with a NULL check; the
+     * write path did not.) With the buffer allocated first, both handlers
+     * always see a valid pointer.
+     */
     g_kbuf_server_cna = kzalloc((MAX_NODE_NUM + 1) * INTEGER_TO_STR_MAX_LEN, GFP_KERNEL);
     if (!g_kbuf_server_cna) {
 		pr_err("kzalloc g_kbuf_server_cna failed!\n");
 		ret = -ENOMEM;
 		goto remove_uvb_proc_dir;
     }
+
+	ret = sentry_create_proc_file("server_cna", uvb_proc_dir,
+			&proc_uvb_server_cna_file_operations);
+	if (ret == -ENOMEM)
+		goto free_kbuf_server_cna;
+
     pr_info("uvb communication is enabled.\n");
     return 0;
 
+free_kbuf_server_cna:
+	kfree(g_kbuf_server_cna);
+	g_kbuf_server_cna = NULL;
 remove_uvb_proc_dir:
     proc_remove(uvb_proc_dir);
     return ret;
