@@ -82,6 +82,10 @@ static int ubase_entity_enable(struct ubase_dev *udev, struct ub_entity *ue, u8 
 static bool ubase_dev_support_iova_merge(struct ub_entity *ue)
 {
 	switch (uent_device(ue)) {
+	case UBASE_DEV_ID_A_0_URMA_MUE:
+	case UBASE_DEV_ID_A_0_URMA_UE:
+	case UBASE_DEV_ID_A_0_UBOE_MUE:
+	case UBASE_DEV_ID_A_0_UBOE_UE:
 	case UBASE_DEV_ID_A_V2_URMA_MUE:
 	case UBASE_DEV_ID_A_V2_CDMA_MUE:
 	case UBASE_DEV_ID_A_V2_UBOE_MUE:
@@ -95,7 +99,7 @@ static bool ubase_dev_support_iova_merge(struct ub_entity *ue)
 
 static int ubase_dev_merge_iova(struct ub_entity *ue)
 {
-#define IOVA_OFFSET (2 * 1024 * 1024 * 1024ULL)
+#define IOVA_OFFSET (4 * 1024 * 1024 * 1024ULL)
 	struct ubase_dev *udev = dev_get_drvdata(&ue->dev);
 
 	if (!ubase_dev_support_iova_merge(ue))
