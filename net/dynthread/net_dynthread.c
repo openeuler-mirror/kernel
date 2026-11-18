@@ -34,15 +34,22 @@
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Dynamic threaded NAPI scheduler");
 
-static char ifname[64];
+/* Maximum length of the ifname/irqname/appname module parameters. A
+ * device name is at most IFNAMSIZ - 1 characters and ifname can hold
+ * SCHED_MAX_NETDEV_NUM names separated by '#', so a 64 byte buffer is
+ * too small for the maximum number of devices.
+ */
+#define DYN_THREAD_PARAM_LEN	(SCHED_MAX_NETDEV_NUM * IFNAMSIZ)
+
+static char ifname[DYN_THREAD_PARAM_LEN];
 module_param_string(ifname, ifname, sizeof(ifname), 0444);
 MODULE_PARM_DESC(ifname, "net device names to monitor, separated by '#'");
 
-static char irqname[64] = "comp";
+static char irqname[DYN_THREAD_PARAM_LEN] = "comp";
 module_param_string(irqname, irqname, sizeof(irqname), 0444);
 MODULE_PARM_DESC(irqname, "substring of the NIC RX queue IRQ names, default comp");
 
-static char appname[64] = "mysqld";
+static char appname[DYN_THREAD_PARAM_LEN] = "mysqld";
 module_param_string(appname, appname, sizeof(appname), 0644);
 MODULE_PARM_DESC(appname, "name of the target application threads, default mysqld");
 
@@ -212,6 +219,24 @@ static void clamp_dyn_threaded_corenum(void)
 		WRITE_ONCE(dyn_threaded_corenum, num);
 	}
 	spin_unlock(&dyn_threaded_corenum_lock);
+}
+
+/* dyn_threaded_corenum_default is computed and clamped to the limits
+ * at init only, so a later limit change can leave it outside of the
+ * current range. Clamp it again whenever it is used to reset the count,
+ * otherwise the next start would bind the napi threads to a count that
+ * violates the limits.
+ */
+static u32 get_default_dyn_threaded_corenum(void)
+{
+	u32 num = READ_ONCE(dyn_threaded_corenum_default);
+
+	if (num < READ_ONCE(dyn_threaded_corenum_lower_limit))
+		return READ_ONCE(dyn_threaded_corenum_lower_limit);
+	if (num > READ_ONCE(dyn_threaded_corenum_upper_limit))
+		return READ_ONCE(dyn_threaded_corenum_upper_limit);
+
+	return num;
 }
 
 static int dyn_threaded_corenum_lower_limit_set(const char *val,
@@ -1255,7 +1280,7 @@ static void clear_corenum_napi(void)
 {
 	memset(&snapshot_napi_per, 0, sizeof(snapshot_napi_per));
 	memset(&snapshot_napi_cpustat, 0, sizeof(snapshot_napi_cpustat));
-	last_threaded_corenum = dyn_threaded_corenum_default;
+	last_threaded_corenum = get_default_dyn_threaded_corenum();
 	dynamic_corenum_changed = true;
 	dynamic_corenum_keep = false;
 }
@@ -1296,7 +1321,7 @@ static void dyn_threaded_handler(struct work_struct *work)
 		set_all_napi_threaded(false);
 		recover_irq_affinity();
 		spin_lock(&dyn_threaded_corenum_lock);
-		dyn_threaded_corenum = dyn_threaded_corenum_default;
+		dyn_threaded_corenum = get_default_dyn_threaded_corenum();
 		spin_unlock(&dyn_threaded_corenum_lock);
 		clear_corenum_napi();
 		break;
@@ -1313,7 +1338,7 @@ static void dyn_threaded_handler(struct work_struct *work)
 		recover_irq_affinity();
 		/* the napi thread cpu count goes back to the default */
 		spin_lock(&dyn_threaded_corenum_lock);
-		dyn_threaded_corenum = dyn_threaded_corenum_default;
+		dyn_threaded_corenum = get_default_dyn_threaded_corenum();
 		spin_unlock(&dyn_threaded_corenum_lock);
 		clear_corenum_napi();
 		break;
@@ -1395,6 +1420,9 @@ static void stop_worker(void)
 	set_all_napi_threaded(false);
 	recover_irq_affinity();
 	cpumask_clear(&napi_cpumask);
+	spin_lock(&dyn_threaded_corenum_lock);
+	dyn_threaded_corenum = get_default_dyn_threaded_corenum();
+	spin_unlock(&dyn_threaded_corenum_lock);
 	clear_corenum_napi();
 
 	dyn_threaded_dbg("worker stopped\n");
@@ -1470,8 +1498,8 @@ MODULE_PARM_DESC(dynthreaded, "enable the scheduler, default 0");
 /* set_default_dyn_threaded_corenum - compute the default napi thread cpu count
  *
  * The default is the number of RX queues of the busiest monitored device
- * divided by the number of NUMA nodes, clamped between the core number
- * lower and upper limits.
+ * divided by the number of NUMA nodes. The limits are applied when the
+ * value is used through get_default_dyn_threaded_corenum().
  */
 static void set_default_dyn_threaded_corenum(void)
 {
@@ -1487,10 +1515,6 @@ static void set_default_dyn_threaded_corenum(void)
 	}
 
 	num = max_rxq / num_online_nodes();
-	if (num < dyn_threaded_corenum_lower_limit)
-		num = dyn_threaded_corenum_lower_limit;
-	if (num > dyn_threaded_corenum_upper_limit)
-		num = dyn_threaded_corenum_upper_limit;
 	dyn_threaded_corenum_default = num;
 }
 
@@ -1504,7 +1528,7 @@ static int __init dynthread_init(void)
 
 	set_default_dyn_threaded_corenum();
 	if (!dyn_threaded_corenum)
-		dyn_threaded_corenum = dyn_threaded_corenum_default;
+		dyn_threaded_corenum = get_default_dyn_threaded_corenum();
 	last_threaded_corenum = dyn_threaded_corenum;
 
 	/* the module parameters were parsed before this function ran;
