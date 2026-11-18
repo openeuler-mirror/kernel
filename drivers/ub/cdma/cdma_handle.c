@@ -28,7 +28,7 @@ static inline void cdma_fill_comm_wr(struct cdma_jfs_wr *wr,
 {
 	wr->flag.bs.complete_enable = CDMA_ENABLE_FLAG;
 	wr->flag.bs.inline_flag = CDMA_DISABLE_FLAG;
-	wr->flag.bs.fence = CDMA_ENABLE_FLAG;
+	wr->flag.bs.fence = CDMA_DISABLE_FLAG;
 	wr->tpn = queue->tp->tpn;
 	wr->rmt_eid = queue->cfg.rmt_eid.dw0;
 	wr->next = NULL;

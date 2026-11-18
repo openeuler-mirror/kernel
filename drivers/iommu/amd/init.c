@@ -889,7 +889,9 @@ static void free_ga_log(struct amd_iommu *iommu)
 {
 #ifdef CONFIG_IRQ_REMAP
 	iommu_free_pages(iommu->ga_log, get_order(GA_LOG_SIZE));
+	iommu->ga_log = NULL;
 	iommu_free_pages(iommu->ga_log_tail, get_order(8));
+	iommu->ga_log_tail = NULL;
 #endif
 }
 
@@ -932,6 +934,9 @@ static int iommu_ga_log_enable(struct amd_iommu *iommu)
 static int iommu_init_ga_log(struct amd_iommu *iommu)
 {
 	if (!AMD_IOMMU_GUEST_IR_VAPIC(amd_iommu_guest_ir))
+		return 0;
+
+	if (iommu->ga_log && iommu->ga_log_tail)
 		return 0;
 
 	iommu->ga_log = iommu_alloc_pages(GFP_KERNEL, get_order(GA_LOG_SIZE));
@@ -3032,7 +3037,7 @@ static bool __init check_ioapic_information(void)
 	int idx;
 
 	has_sb_ioapic = false;
-	ret           = false;
+	ret           = true;
 
 	/*
 	 * If we have map overrides on the kernel command line the
@@ -3057,7 +3062,6 @@ static bool __init check_ioapic_information(void)
 			    boot_cpu_data.x86_model <= 0x18 &&
 			    devid == IOAPIC_SB_DEVID_FAM18H_M4H)) {
 			has_sb_ioapic = true;
-			ret           = true;
 		}
 	}
 
@@ -3071,6 +3075,7 @@ static bool __init check_ioapic_information(void)
 		 * device id for the IOAPIC in the system.
 		 */
 		pr_err("%s: No southbridge IOAPIC found\n", fw_bug);
+		ret = false;
 	}
 
 	if (!ret)

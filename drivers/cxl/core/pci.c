@@ -826,12 +826,25 @@ static bool cxl_handle_rdport_ras(struct cxl_dev_state *cxlds,
 static bool cxl_rch_get_aer_info(void __iomem *aer_base,
 				 struct aer_capability_regs *aer_regs)
 {
-	int read_cnt = sizeof(struct aer_capability_regs) / sizeof(u32);
+	/*
+	 * Bound the copy to the physically-defined AER registers (header
+	 * through the 16-byte Header Log). struct aer_capability_regs is a
+	 * software layout that may be larger than the on-wire AER
+	 * capability; copying sizeof(*aer_regs) could over-read the
+	 * RCRB-mapped MMIO block.
+	 */
+	int read_cnt = (PCI_ERR_HEADER_LOG + 16) / sizeof(u32);
 	u32 *aer_regs_buf = (u32 *)aer_regs;
 	int n;
 
 	if (!aer_base)
 		return false;
+
+	/*
+	 * Zero the destination so the software-only tail fields are
+	 * deterministic rather than left as uninitialized stack.
+	 */
+	memset(aer_regs, 0, sizeof(*aer_regs));
 
 	/* Use readl() to guarantee 32-bit accesses */
 	for (n = 0; n < read_cnt; n++)

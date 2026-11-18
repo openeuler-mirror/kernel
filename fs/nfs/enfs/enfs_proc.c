@@ -108,72 +108,38 @@ static void debug_print_all_xprt(void)
 		enfs_iter_rpc_clnt(debug_show_clnt, NULL);
 }
 
-static bool is_valid_ip_address(const char *ip_str)
-{
-	struct in_addr addr4;
-	struct in6_addr addr6;
-
-	if (in4_pton(ip_str, -1, (u8 *)&addr4, '\0', NULL) == 1)
-		return true;
-
-	if (in6_pton(ip_str, -1, (u8 *)&addr6, '\0', NULL) == 1)
-		return true;
-
-	return false;
-}
-
 static void enfs_proc_format_xprt_addr_display(
-	struct rpc_clnt *clnt, struct rpc_xprt *xprt, char *local_name_buf,
-	int local_name_buf_len, char *remote_name_buf, int remote_name_buf_len)
+	struct rpc_xprt *xprt, char *local_name_buf, int local_name_buf_len,
+	char *remote_name_buf, int remote_name_buf_len)
 {
 	int err;
+	struct sockaddr *addr;
 	struct sockaddr_storage srcaddr;
 	struct enfs_xprt_context *ctx;
-	char local_name[INET6_ADDRSTRLEN];
-	const char *local = local_name;
 
 	ctx = (struct enfs_xprt_context *)xprt_get_reserve_context(xprt);
 
 	sockaddr_ip_to_str((struct sockaddr *)&xprt->addr, remote_name_buf,
 			   remote_name_buf_len);
 
-	// get local address depend one main or not
-	if (enfs_is_main_xprt(xprt)) {
-		err = rpc_localaddr(clnt, (struct sockaddr *)&srcaddr,
-				    sizeof(srcaddr));
-		if (err != 0)
-			(void)snprintf(local_name_buf, local_name_buf_len,
-				       "Unknown");
-		else {
-			if (ctx->protocol != XPRT_TRANSPORT_RDMA) {
-				sockaddr_ip_to_str((struct sockaddr *)&srcaddr,
-						   local_name_buf,
-						   local_name_buf_len);
-			} else {
-				sockaddr_ip_to_str(NULL, local_name_buf,
-						   local_name_buf_len);
-			}
-		}
-	} else {
-		if (ctx->protocol != XPRT_TRANSPORT_RDMA) {
-			sockaddr_ip_to_str((struct sockaddr *)&ctx->srcaddr,
-					   local_name, sizeof(local_name));
-			if (!is_valid_ip_address(local)) {
-				rpc_localalladdr(xprt,
-						 (struct sockaddr *)&srcaddr,
-						 sizeof(srcaddr));
-				sockaddr_ip_to_str((struct sockaddr *)&srcaddr,
-						   local_name_buf,
-						   local_name_buf_len);
-				return;
-			}
-			sockaddr_ip_to_str((struct sockaddr *)&ctx->srcaddr,
-					   local_name_buf, local_name_buf_len);
-		} else {
-			sockaddr_ip_to_str(NULL, local_name_buf,
-					   local_name_buf_len);
-		}
+	if (ctx->protocol == XPRT_TRANSPORT_RDMA) {
+		sockaddr_ip_to_str(NULL, local_name_buf, local_name_buf_len);
+		return;
 	}
+
+	/* ctx->srcaddr is the stable local endpoint identity of this xprt. */
+	addr = (struct sockaddr *)&ctx->srcaddr;
+	err = sockaddr_ip_to_str(addr, local_name_buf, local_name_buf_len);
+	if (err == 0)
+		return;
+
+	err = rpc_localalladdr(xprt, (struct sockaddr *)&srcaddr,
+			       sizeof(srcaddr));
+	addr = (struct sockaddr *)&srcaddr;
+	if (err == 0)
+		err = sockaddr_ip_to_str(addr, local_name_buf, local_name_buf_len);
+	if (err != 0)
+		(void)snprintf(local_name_buf, local_name_buf_len, "Unknown");
 }
 
 static int enfs_show_xprt_stats(struct rpc_clnt *clnt, struct rpc_xprt *xprt,
@@ -183,6 +149,9 @@ static int enfs_show_xprt_stats(struct rpc_clnt *clnt, struct rpc_xprt *xprt,
 	unsigned int maxproc = clnt->cl_maxproc;
 	struct enfs_xprt_iter *iter = (struct enfs_xprt_iter *)data;
 	struct enfs_xprt_context *ctx;
+	unsigned long ops;
+	ktime_t rtt;
+	ktime_t execute;
 	char local_name[INET6_ADDRSTRLEN];
 	char remote_name[INET6_ADDRSTRLEN];
 
@@ -191,8 +160,8 @@ static int enfs_show_xprt_stats(struct rpc_clnt *clnt, struct rpc_xprt *xprt,
 		enfs_log_debug("multipath_context is null.\n");
 		return 0;
 	}
-	enfs_proc_format_xprt_addr_display(clnt, xprt, local_name,
-					   sizeof(local_name), remote_name,
+	enfs_proc_format_xprt_addr_display(xprt, local_name, sizeof(local_name),
+					   remote_name,
 					   sizeof(remote_name));
 
 	seq_printf(iter->seq, "%-6u%-*s%-*s", iter->id,
@@ -204,16 +173,18 @@ static int enfs_show_xprt_stats(struct rpc_clnt *clnt, struct rpc_xprt *xprt,
 	for (op = 0; op < maxproc; op++) {
 		if (!should_print(clnt->cl_procinfo[op].p_name))
 			continue;
+		if (!ctx->stats) {
+			seq_printf(iter->seq, "%-22u%-22u%-22u", 0, 0, 0);
+			continue;
+		}
+		spin_lock(&ctx->stats[op].om_lock);
+		ops = ctx->stats[op].om_ops;
+		rtt = ctx->stats[op].om_rtt;
+		execute = ctx->stats[op].om_execute;
+		spin_unlock(&ctx->stats[op].om_lock);
 		seq_printf(iter->seq, "%-22lu%-22Lu%-22Lu",
-			   ctx->stats[op].om_ops,
-			   ctx->stats[op].om_ops == 0 ?
-				   0 :
-				   ktime_to_ms(ctx->stats[op].om_rtt) /
-					   ctx->stats[op].om_ops,
-			   ctx->stats[op].om_ops == 0 ?
-				   0 :
-				   ktime_to_ms(ctx->stats[op].om_execute) /
-					   ctx->stats[op].om_ops);
+			   ops, ops == 0 ? 0 : ktime_to_ms(rtt) / ops,
+			   ops == 0 ? 0 : ktime_to_ms(execute) / ops);
 	}
 	seq_printf(iter->seq, "%-22lu", atomic_long_read(&(ctx->queuelen)));
 	seq_puts(iter->seq, "\n");
@@ -236,8 +207,8 @@ static int rpc_proc_show_path_status(struct rpc_clnt *clnt,
 		return 0;
 	}
 
-	enfs_proc_format_xprt_addr_display(clnt, xprt, local_name,
-					   sizeof(local_name), remote_name,
+	enfs_proc_format_xprt_addr_display(xprt, local_name, sizeof(local_name),
+					   remote_name,
 					   sizeof(remote_name));
 
 	pm_get_path_state_desc(xprt, multiapth_status,
@@ -267,8 +238,8 @@ static int enfs_get_max_addrs_length(struct rpc_clnt *clnt,
 		return 0;
 	}
 
-	enfs_proc_format_xprt_addr_display(clnt, xprt, local_name,
-					   sizeof(local_name), remote_name,
+	enfs_proc_format_xprt_addr_display(xprt, local_name, sizeof(local_name),
+					   remote_name,
 					   sizeof(remote_name));
 
 	if (iter->max_addrs_length < strlen(local_name))
@@ -341,15 +312,21 @@ static int enfs_reset_xprt_stats(struct rpc_clnt *clnt, struct rpc_xprt *xprt,
 	unsigned int op;
 	struct enfs_xprt_context *ctx;
 	unsigned int maxproc = clnt->cl_maxproc;
-	struct rpc_iostats stats;
 
-	memset(&stats, 0, sizeof(struct rpc_iostats));
 	ctx = (struct enfs_xprt_context *)xprt_get_reserve_context(xprt);
-	if (!ctx)
+	if (!ctx || !ctx->stats)
 		return 0;
 	for (op = 0; op < maxproc; op++) {
 		spin_lock(&ctx->stats[op].om_lock);
-		ctx->stats[op] = stats;
+		ctx->stats[op].om_ops = 0;
+		ctx->stats[op].om_ntrans = 0;
+		ctx->stats[op].om_timeouts = 0;
+		ctx->stats[op].om_bytes_sent = 0;
+		ctx->stats[op].om_bytes_recv = 0;
+		ctx->stats[op].om_queue = 0;
+		ctx->stats[op].om_rtt = 0;
+		ctx->stats[op].om_execute = 0;
+		ctx->stats[op].om_error_status = 0;
 		spin_unlock(&ctx->stats[op].om_lock);
 	}
 	return 0;

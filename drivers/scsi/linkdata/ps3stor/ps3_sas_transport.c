@@ -404,7 +404,7 @@ l_out:
 	return ret;
 }
 
-int ps3_sas_update_phy_info(struct sas_phy *phy)
+static int ps3_sas_update_phy_info(struct sas_phy *phy)
 {
 	int ret = -PS3_FAILED;
 	struct PS3SasMgr sas_req_param;
@@ -555,8 +555,147 @@ static inline void show_smp(unsigned char *data, unsigned short len)
 	LOG_DEBUG("smp frame data end\n");
 }
 
-#if defined(PS3_SAS_SMP_RETURN)
+#if defined(PS3_SAS_SMP_RETURN_VOID)
+static inline unsigned int ps3_sas_req_to_ext_buf(struct ps3_instance *instance,
+						  struct bsg_buffer *req_buf,
+						  void *ext_buf)
+{
+	unsigned int req_len = 0;
 
+	if (unlikely(req_buf->payload_len >
+		     instance->cmd_context.ext_buf_size)) {
+		LOG_ERROR(
+			"hno:%u request is too big!(req_len:%d > ext_buf_len:%d\n",
+			PS3_HOST(instance), req_buf->payload_len,
+			instance->cmd_context.ext_buf_size);
+		goto l_out;
+	}
+
+	req_len = sg_copy_to_buffer(req_buf->sg_list, req_buf->sg_cnt, ext_buf,
+				    req_buf->payload_len);
+l_out:
+	return req_len;
+}
+
+static inline unsigned int ps3_sas_ext_buf_to_rsp(struct ps3_instance *instance,
+						  struct bsg_buffer *rsp_buf,
+						  void *ext_buf)
+{
+	unsigned short rsq_data_len = 0;
+	unsigned short smp_len = 0;
+
+	rsq_data_len =
+		min(rsp_buf->payload_len, instance->cmd_context.ext_buf_size);
+
+	smp_len = ((unsigned char *)ext_buf)[3] * 4 + 4;
+	LOG_DEBUG("hno:%u  smp frame len[%d], rsq_data_len[%d]\n",
+		  PS3_HOST(instance), smp_len, rsq_data_len);
+
+	rsq_data_len = min(smp_len, rsq_data_len);
+
+	show_smp((unsigned char *)ext_buf, rsq_data_len);
+
+	sg_copy_from_buffer(rsp_buf->sg_list, rsp_buf->sg_cnt, ext_buf,
+			    rsp_buf->payload_len);
+	return rsq_data_len;
+}
+
+void ps3_sas_smp_handler(struct bsg_job *job, struct Scsi_Host *shost,
+			 struct sas_rphy *rphy)
+{
+	int ret = PS3_SUCCESS;
+	int send_result = PS3_SUCCESS;
+	struct ps3_instance *instance = (struct ps3_instance *)shost->hostdata;
+	struct ps3_cmd *cmd = NULL;
+	unsigned int req_data_len = 0;
+	unsigned int resp_len = 0;
+	unsigned long long sas_addr = 0;
+	struct ps3_sas_node *ps3_sas_node = NULL;
+
+	ret = ps3_sas_smp_pre_check(instance);
+	if (ret != PS3_SUCCESS) {
+		ret = -EFAULT;
+		goto l_out;
+	}
+
+	sas_addr = (rphy) ? (rphy->identify.sas_address) :
+			    (instance->sas_dev_context.ps3_hba_sas.sas_address);
+	ps3_sas_node = ps3_sas_find_node_by_sas_addr(instance, sas_addr);
+	if (ps3_sas_node == NULL) {
+		LOG_ERROR("hno:%u cannot find node[%llx] !\n",
+			  PS3_HOST(instance), sas_addr);
+		up(&instance->sas_dev_context.ps3_sas_smp_semaphore);
+		ret = -EFAULT;
+		goto l_out;
+	}
+	ps3_atomic_inc(&instance->cmd_statistics.cmd_delivering);
+	if (ps3_sas_request_pre_check(instance) != PS3_SUCCESS) {
+		LOG_WARN_LIM("sas_addr[%016llx], hno:%u smp pre check NOK\n",
+			     sas_addr, PS3_HOST(instance));
+		ps3_atomic_dec(&instance->cmd_statistics.cmd_delivering);
+		ret = -EFAULT;
+		goto l_no_free_cmd;
+	}
+	cmd = ps3_mgr_cmd_alloc(instance);
+	if (cmd == NULL) {
+		LOG_WARN("hno:%u Failed to get a cmd packet\n",
+			 PS3_HOST(instance));
+		ps3_atomic_dec(&instance->cmd_statistics.cmd_delivering);
+		ret = -ENOMEM;
+		goto l_no_free_cmd;
+	}
+	cmd->time_out = PS3_SAS_TIMEOUT_SEC;
+	cmd->is_interrupt = PS3_DRV_FALSE;
+
+	req_data_len = ps3_sas_req_to_ext_buf(instance, &job->request_payload,
+					      cmd->ext_buf);
+	if (req_data_len == 0) {
+		ret = -ENOMEM;
+		ps3_atomic_dec(&instance->cmd_statistics.cmd_delivering);
+		goto l_out_failed;
+	}
+
+	LOG_DEBUG(
+		"hno:%u trace_id[0x%llx] CFID [%u], sas_addr[%016llx], len[%u] send smp req\n",
+		PS3_HOST(instance), cmd->trace_id, cmd->index, sas_addr,
+		req_data_len);
+
+	ps3_sas_smp_reqframe_build(cmd, sas_addr, req_data_len);
+	ps3_mgr_cmd_word_build(cmd);
+	send_result = ps3_cmd_send_sync(instance, cmd);
+	ps3_atomic_dec(&instance->cmd_statistics.cmd_delivering);
+	if (send_result == PS3_SUCCESS)
+		send_result = ps3_cmd_wait_sync(instance, cmd);
+	ret = ps3_mgr_complete_proc(instance, cmd, send_result);
+	if (ret == -PS3_CMD_NO_RESP) {
+		LOG_ERROR("hno:%u  %d respStatus NOK CFID[%d] respStatus[%d]\n",
+			  PS3_HOST(cmd->instance), ret,
+			  cmd->cmd_word.cmdFrameID, ps3_cmd_resp_status(cmd));
+		ret = -ETIMEDOUT;
+		goto l_no_free_cmd;
+	}
+
+	if (ret != PS3_SUCCESS) {
+		LOG_ERROR("hno:%u  %d respStatus NOK CFID[%d] respStatus[%d]\n",
+			  PS3_HOST(cmd->instance), ret,
+			  cmd->cmd_word.cmdFrameID, ps3_cmd_resp_status(cmd));
+		ret = -ENXIO;
+		goto l_out_failed;
+	}
+
+	resp_len = ps3_sas_ext_buf_to_rsp(instance, &job->reply_payload,
+					  cmd->ext_buf);
+
+	LOG_DEBUG("hno:%u trace_id[0x%llx] CFID [%u], end, ret[%d]\n",
+		  PS3_HOST(instance), cmd->trace_id, cmd->index, ret);
+l_out_failed:
+	ps3_mgr_cmd_free(instance, cmd);
+l_no_free_cmd:
+	up(&instance->sas_dev_context.ps3_sas_smp_semaphore);
+l_out:
+	bsg_job_done(job, ret, resp_len);
+}
+#else
 static inline unsigned int ps3_sas_req_to_ext_buf(struct ps3_instance *instance,
 						  struct request *req,
 						  void *ext_buf)
@@ -760,147 +899,6 @@ l_no_free_cmd:
 	up(&instance->sas_dev_context.ps3_sas_smp_semaphore);
 l_out:
 	return ret;
-}
-#else
-
-static inline unsigned int ps3_sas_req_to_ext_buf(struct ps3_instance *instance,
-						  struct bsg_buffer *req_buf,
-						  void *ext_buf)
-{
-	unsigned int req_len = 0;
-
-	if (unlikely(req_buf->payload_len >
-		     instance->cmd_context.ext_buf_size)) {
-		LOG_ERROR(
-			"hno:%u request is too big!(req_len:%d > ext_buf_len:%d\n",
-			PS3_HOST(instance), req_buf->payload_len,
-			instance->cmd_context.ext_buf_size);
-		goto l_out;
-	}
-
-	req_len = sg_copy_to_buffer(req_buf->sg_list, req_buf->sg_cnt, ext_buf,
-				    req_buf->payload_len);
-l_out:
-	return req_len;
-}
-
-static inline unsigned int ps3_sas_ext_buf_to_rsp(struct ps3_instance *instance,
-						  struct bsg_buffer *rsp_buf,
-						  void *ext_buf)
-{
-	unsigned short rsq_data_len = 0;
-	unsigned short smp_len = 0;
-
-	rsq_data_len =
-		min(rsp_buf->payload_len, instance->cmd_context.ext_buf_size);
-
-	smp_len = ((unsigned char *)ext_buf)[3] * 4 + 4;
-	LOG_DEBUG("hno:%u  smp frame len[%d], rsq_data_len[%d]\n",
-		  PS3_HOST(instance), smp_len, rsq_data_len);
-
-	rsq_data_len = min(smp_len, rsq_data_len);
-
-	show_smp((unsigned char *)ext_buf, rsq_data_len);
-
-	sg_copy_from_buffer(rsp_buf->sg_list, rsp_buf->sg_cnt, ext_buf,
-			    rsp_buf->payload_len);
-	return rsq_data_len;
-}
-
-void ps3_sas_smp_handler(struct bsg_job *job, struct Scsi_Host *shost,
-			 struct sas_rphy *rphy)
-{
-	int ret = PS3_SUCCESS;
-	int send_result = PS3_SUCCESS;
-	struct ps3_instance *instance = (struct ps3_instance *)shost->hostdata;
-	struct ps3_cmd *cmd = NULL;
-	unsigned int req_data_len = 0;
-	unsigned int resp_len = 0;
-	unsigned long long sas_addr = 0;
-	struct ps3_sas_node *ps3_sas_node = NULL;
-
-	ret = ps3_sas_smp_pre_check(instance);
-	if (ret != PS3_SUCCESS) {
-		ret = -EFAULT;
-		goto l_out;
-	}
-
-	sas_addr = (rphy) ? (rphy->identify.sas_address) :
-			    (instance->sas_dev_context.ps3_hba_sas.sas_address);
-	ps3_sas_node = ps3_sas_find_node_by_sas_addr(instance, sas_addr);
-	if (ps3_sas_node == NULL) {
-		LOG_ERROR("hno:%u cannot find node[%llx] !\n",
-			  PS3_HOST(instance), sas_addr);
-		up(&instance->sas_dev_context.ps3_sas_smp_semaphore);
-		ret = -EFAULT;
-		goto l_out;
-	}
-	ps3_atomic_inc(&instance->cmd_statistics.cmd_delivering);
-	if (ps3_sas_request_pre_check(instance) != PS3_SUCCESS) {
-		LOG_WARN_LIM("sas_addr[%016llx], hno:%u smp pre check NOK\n",
-			     sas_addr, PS3_HOST(instance));
-		ps3_atomic_dec(&instance->cmd_statistics.cmd_delivering);
-		ret = -EFAULT;
-		goto l_no_free_cmd;
-	}
-	cmd = ps3_mgr_cmd_alloc(instance);
-	if (cmd == NULL) {
-		LOG_WARN("hno:%u Failed to get a cmd packet\n",
-			 PS3_HOST(instance));
-		ps3_atomic_dec(&instance->cmd_statistics.cmd_delivering);
-		ret = -ENOMEM;
-		goto l_no_free_cmd;
-	}
-	cmd->time_out = PS3_SAS_TIMEOUT_SEC;
-	cmd->is_interrupt = PS3_DRV_FALSE;
-
-	req_data_len = ps3_sas_req_to_ext_buf(instance, &job->request_payload,
-					      cmd->ext_buf);
-	if (req_data_len == 0) {
-		ret = -ENOMEM;
-		ps3_atomic_dec(&instance->cmd_statistics.cmd_delivering);
-		goto l_out_failed;
-	}
-
-	LOG_DEBUG(
-		"hno:%u trace_id[0x%llx] CFID [%u], sas_addr[%016llx], len[%u] send smp req\n",
-		PS3_HOST(instance), cmd->trace_id, cmd->index, sas_addr,
-		req_data_len);
-
-	ps3_sas_smp_reqframe_build(cmd, sas_addr, req_data_len);
-	ps3_mgr_cmd_word_build(cmd);
-	send_result = ps3_cmd_send_sync(instance, cmd);
-	ps3_atomic_dec(&instance->cmd_statistics.cmd_delivering);
-	if (send_result == PS3_SUCCESS)
-		send_result = ps3_cmd_wait_sync(instance, cmd);
-	ret = ps3_mgr_complete_proc(instance, cmd, send_result);
-	if (ret == -PS3_CMD_NO_RESP) {
-		LOG_ERROR("hno:%u  %d respStatus NOK CFID[%d] respStatus[%d]\n",
-			  PS3_HOST(cmd->instance), ret,
-			  cmd->cmd_word.cmdFrameID, ps3_cmd_resp_status(cmd));
-		ret = -ETIMEDOUT;
-		goto l_no_free_cmd;
-	}
-
-	if (ret != PS3_SUCCESS) {
-		LOG_ERROR("hno:%u  %d respStatus NOK CFID[%d] respStatus[%d]\n",
-			  PS3_HOST(cmd->instance), ret,
-			  cmd->cmd_word.cmdFrameID, ps3_cmd_resp_status(cmd));
-		ret = -ENXIO;
-		goto l_out_failed;
-	}
-
-	resp_len = ps3_sas_ext_buf_to_rsp(instance, &job->reply_payload,
-					  cmd->ext_buf);
-
-	LOG_DEBUG("hno:%u trace_id[0x%llx] CFID [%u], end, ret[%d]\n",
-		  PS3_HOST(instance), cmd->trace_id, cmd->index, ret);
-l_out_failed:
-	ps3_mgr_cmd_free(instance, cmd);
-l_no_free_cmd:
-	up(&instance->sas_dev_context.ps3_sas_smp_semaphore);
-l_out:
-	bsg_job_done(job, ret, resp_len);
 }
 #endif
 

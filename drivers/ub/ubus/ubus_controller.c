@@ -72,9 +72,13 @@ struct ub_bus_controller *ub_find_bus_controller_by_cna(u32 cna)
 		return NULL;
 	}
 
-	list_for_each_entry(ubc, &ubc_list, node)
+	list_for_each_entry(ubc, &ubc_list, node) {
+		if (!ubc->uent)
+			continue;
+
 		if (ubc->uent->cna == cna)
 			return ubc;
+	}
 
 	return NULL;
 }

@@ -15,6 +15,11 @@
 #include <ub/urma/ubcore_types.h>
 #include "ubcore_tpid_table.h"
 
+#define UBCORE_TPID_REUSE_WAIT_MIN_US 100
+#define UBCORE_TPID_REUSE_WAIT_MAX_US 200
+#define UBCORE_TPID_REUSE_MAX_WAIT_TIMES \
+	(30 * 1000 * 1000 / UBCORE_TPID_REUSE_WAIT_MAX_US)
+
 struct ubcore_ex_tp_info {
 	struct hlist_node hnode; /* key: tp_handle */
 	uint64_t tp_handle;

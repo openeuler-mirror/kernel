@@ -406,21 +406,21 @@ static int udma_save_tpn_ue_idx_info(struct udma_dev *udma_dev, uint8_t ue_idx,
 
 		return 0;
 	}
-	xa_unlock(&udma_dev->tpn_ue_idx_table);
-
-	tp_ue_idx_info = kzalloc(sizeof(*tp_ue_idx_info), GFP_KERNEL);
-	if (!tp_ue_idx_info)
+	tp_ue_idx_info = kzalloc(sizeof(*tp_ue_idx_info), GFP_ATOMIC);
+	if (!tp_ue_idx_info) {
+		xa_unlock(&udma_dev->tpn_ue_idx_table);
 		return -ENOMEM;
-
+	}
 	tp_ue_idx_info->ue_idx[tp_ue_idx_info->num++] = ue_idx;
-	ret = xa_err(xa_store(&udma_dev->tpn_ue_idx_table, tpn, tp_ue_idx_info,
-			      GFP_KERNEL));
+	ret = xa_err(__xa_store(&udma_dev->tpn_ue_idx_table, tpn, tp_ue_idx_info,
+				GFP_ATOMIC));
 	if (ret) {
+		xa_unlock(&udma_dev->tpn_ue_idx_table);
 		dev_err(udma_dev->dev,
 			"store tpn UE index table failed, ret is %d.\n", ret);
 		goto err_store_ue_id;
 	}
-
+	xa_unlock(&udma_dev->tpn_ue_idx_table);
 	return ret;
 
 err_store_ue_id:
@@ -837,7 +837,8 @@ static int udma_ctrlq_check_tp_active(struct auxiliary_device *adev,
 
 	ret = ubase_ctrlq_send_msg(adev, &msg);
 	if (ret)
-		dev_err(udev->dev, "send check TP active ctrlq msg failed, ret(%d).\n", ret);
+		dev_err_ratelimited(udev->dev,
+			"send check TP active ctrlq msg failed, ret(%d).\n", ret);
 
 	kfree(rsp_info);
 
@@ -951,7 +952,8 @@ static int udma_ctrlq_tpid_destroy_done_response(struct udma_dev *udma_dev,
 
 	ret = ubase_ctrlq_send_msg(udma_dev->comdev.adev, &msg);
 	if (ret)
-		dev_err(udma_dev->dev, "send tpid destroy done rsp failed, ret = %d.\n", ret);
+		dev_err_ratelimited(udma_dev->dev,
+			"send tpid destroy done rsp failed, ret = %d.\n", ret);
 
 	return ret;
 }

@@ -636,7 +636,7 @@ static bool ghes_handle_arm_hw_error(struct acpi_hest_generic_data *gdata,
 
 	p = (char *)(err + 1);
 	critical = ghes_armp_vendor_critical_error(err, sync);
-	length -= sizeof(err);
+	length -= sizeof(*err);
 
 	for (i = 0; i < err->err_info_num; i++) {
 		const char *error_type = "unknown error";
@@ -1261,8 +1261,16 @@ static int ghes_in_nmi_queue_one_entry(struct ghes *ghes,
 	ghes_clear_estatus(ghes, &tmp_header, buf_paddr, fixmap_idx);
 
 	/* This error has been reported before, don't process it again. */
-	if (ghes_estatus_cached(estatus))
+	if (ghes_estatus_cached(estatus)) {
+		/*
+		 * Return failure on duplicate SEA entries so that the
+		 * subsequent SEA handler invocation sends a SIGBUS signal to
+		 * the task to prevent it from re-entering the handler loop.
+		 */
+		if (is_hest_sync_notify(ghes))
+			rc = -ECANCELED;
 		goto no_work;
+	}
 
 	llist_add(&estatus_node->llnode, &ghes_estatus_llist);
 

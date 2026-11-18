@@ -555,7 +555,6 @@ static int ext4_map_query_blocks(handle_t *handle, struct inode *inode,
 static int ext4_map_create_blocks(handle_t *handle, struct inode *inode,
 				  struct ext4_map_blocks *map, int flags)
 {
-	struct extent_status es;
 	unsigned int status;
 	int err, retval = 0;
 
@@ -606,16 +605,6 @@ static int ext4_map_create_blocks(handle_t *handle, struct inode *inode,
 					 map->m_len);
 		if (err)
 			return err;
-	}
-
-	/*
-	 * If the extent has been zeroed out, we don't need to update
-	 * extent status tree.
-	 */
-	if (flags & EXT4_GET_BLOCKS_SPLIT_NOMERGE &&
-	    ext4_es_lookup_extent(inode, map->m_lblk, NULL, &es)) {
-		if (ext4_es_is_written(&es))
-			return retval;
 	}
 
 	status = map->m_flags & EXT4_MAP_UNWRITTEN ?
@@ -1250,6 +1239,8 @@ static int ext4_write_begin(struct file *file, struct address_space *mapping,
 	if (unlikely(ext4_forced_shutdown(inode->i_sb)))
 		return -EIO;
 
+	*fsdata = (void *)((unsigned long)*fsdata & ~EXT4_WRITE_DATA_INLINE);
+
 	trace_ext4_write_begin(inode, pos, len);
 	/*
 	 * Reserve one block more for addition to orphan list in case
@@ -1265,8 +1256,10 @@ static int ext4_write_begin(struct file *file, struct address_space *mapping,
 						    pagep);
 		if (ret < 0)
 			return ret;
-		if (ret == 1)
+		if (ret == 1) {
+			*fsdata = (void *)((unsigned long)*fsdata | EXT4_WRITE_DATA_INLINE);
 			return 0;
+		}
 	}
 
 	/*
@@ -1402,8 +1395,7 @@ static int ext4_write_end(struct file *file,
 
 	trace_ext4_write_end(inode, pos, len, copied);
 
-	if (ext4_has_inline_data(inode) &&
-	    ext4_test_inode_state(inode, EXT4_STATE_MAY_INLINE_DATA))
+	if ((unsigned long)fsdata & EXT4_WRITE_DATA_INLINE)
 		return ext4_write_inline_data_end(inode, pos, len, copied,
 						  folio);
 
@@ -1514,8 +1506,7 @@ static int ext4_journalled_write_end(struct file *file,
 
 	BUG_ON(!ext4_handle_valid(handle));
 
-	if (ext4_has_inline_data(inode) &&
-	    ext4_test_inode_state(inode, EXT4_STATE_MAY_INLINE_DATA))
+	if ((unsigned long)fsdata & EXT4_WRITE_DATA_INLINE)
 		return ext4_write_inline_data_end(inode, pos, len, copied,
 						  folio);
 
@@ -2319,7 +2310,7 @@ static int mpage_map_one_extent(handle_t *handle, struct mpage_da_data *mpd)
 			   EXT4_GET_BLOCKS_IO_SUBMIT;
 	dioread_nolock = ext4_should_dioread_nolock(inode);
 	if (dioread_nolock)
-		get_blocks_flags |= EXT4_GET_BLOCKS_IO_CREATE_EXT;
+		get_blocks_flags |= EXT4_GET_BLOCKS_UNWRIT_EXT;
 	if (map->m_flags & BIT(BH_Delay))
 		get_blocks_flags |= EXT4_GET_BLOCKS_DELALLOC_RESERVE;
 
@@ -2593,10 +2584,22 @@ static int mpage_prepare_extent_to_map(struct mpage_da_data *mpd)
 			 * page is already under writeback and we are not doing
 			 * a data integrity writeback, skip the page
 			 */
-			if (!folio_test_dirty(folio) ||
-			    (folio_test_writeback(folio) &&
-			     (mpd->wbc->sync_mode == WB_SYNC_NONE)) ||
+			if ((folio_test_writeback(folio) &&
+			    mpd->wbc->sync_mode == WB_SYNC_NONE) ||
 			    unlikely(folio->mapping != mapping)) {
+				folio_unlock(folio);
+				continue;
+			}
+			/*
+			 * If the folio is clean, skip writing it back.
+			 * Cycle the folio through the writeback state
+			 * though, to clear stale xarray tags.
+			 */
+			if (!folio_test_dirty(folio)) {
+				if (!folio_test_writeback(folio)) {
+					__folio_start_writeback(folio, false);
+					folio_end_writeback(folio);
+				}
 				folio_unlock(folio);
 				continue;
 			}
@@ -3045,8 +3048,10 @@ static int ext4_da_write_begin(struct file *file, struct address_space *mapping,
 						      pagep, fsdata);
 		if (ret < 0)
 			return ret;
-		if (ret == 1)
+		if (ret == 1) {
+			*fsdata = (void *)((unsigned long)*fsdata | EXT4_WRITE_DATA_INLINE);
 			return 0;
+		}
 	}
 
 retry:
@@ -3181,18 +3186,16 @@ static int ext4_da_write_end(struct file *file,
 			     struct page *page, void *fsdata)
 {
 	struct inode *inode = mapping->host;
-	int write_mode = (int)(unsigned long)fsdata;
+	unsigned long write_mode = (unsigned long)fsdata;
 	struct folio *folio = page_folio(page);
 
-	if (write_mode == FALL_BACK_TO_NONDELALLOC)
+	if (write_mode & FALL_BACK_TO_NONDELALLOC)
 		return ext4_write_end(file, mapping, pos,
 				      len, copied, &folio->page, fsdata);
 
 	trace_ext4_da_write_end(inode, pos, len, copied);
 
-	if (write_mode != CONVERT_INLINE_DATA &&
-	    ext4_test_inode_state(inode, EXT4_STATE_MAY_INLINE_DATA) &&
-	    ext4_has_inline_data(inode))
+	if (write_mode & EXT4_WRITE_DATA_INLINE)
 		return ext4_write_inline_data_end(inode, pos, len, copied,
 						  folio);
 
@@ -3605,6 +3608,9 @@ static int ext4_iomap_alloc(struct inode *inode, struct ext4_map_blocks *map,
 	int ret, dio_credits, m_flags = 0, retries = 0;
 	bool force_commit = false;
 
+	if (flags & IOMAP_NOWAIT)
+		return -EAGAIN;
+
 	/*
 	 * Trim the mapping request to the maximum value that we can map at
 	 * once for direct I/O.
@@ -3640,8 +3646,9 @@ retry:
 	/*
 	 * Either we allocate blocks and then don't get an unwritten extent, so
 	 * in that case we have reserved enough credits. Or, the blocks are
-	 * already allocated and unwritten. In that case, the extent conversion
-	 * fits into the credits as well.
+	 * already allocated and unwritten, and the unwritten extent is left
+	 * unsplit here; the split is deferred to I/O completion and handled
+	 * by the end_io callback via a separate handle.
 	 */
 	handle = ext4_journal_start(inode, EXT4_HT_MAP_BLOCKS, dio_credits);
 	if (IS_ERR(handle))
@@ -3663,7 +3670,7 @@ retry:
 	else if (((loff_t)map->m_lblk << blkbits) >= i_size_read(inode))
 		m_flags = EXT4_GET_BLOCKS_CREATE;
 	else if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
-		m_flags = EXT4_GET_BLOCKS_IO_CREATE_EXT;
+		m_flags = EXT4_GET_BLOCKS_CREATE_UNWRIT_EXT;
 
 	if (flags & IOMAP_ATOMIC)
 		ret = ext4_map_blocks_atomic_write(handle, inode, map, m_flags,
@@ -3735,22 +3742,25 @@ static int ext4_iomap_begin(struct inode *inode, loff_t offset, loff_t length,
 		if (offset + length <= i_size_read(inode)) {
 			ret = ext4_map_blocks(NULL, inode, &map, 0);
 			/*
-			 * For atomic writes the entire requested length should
-			 * be mapped.
+			 * For DAX we convert extents to initialized ones before
+			 * copying the data, otherwise we do it after I/O so
+			 * there's no need to call into ext4_iomap_alloc().
 			 */
-			if (map.m_flags & EXT4_MAP_MAPPED) {
-				if ((!(flags & IOMAP_ATOMIC) && ret > 0) ||
-				   (flags & IOMAP_ATOMIC && ret >= orig_mlen))
+			if ((map.m_flags & EXT4_MAP_MAPPED) ||
+			    (!(flags & IOMAP_DAX) &&
+			     (map.m_flags & EXT4_MAP_UNWRITTEN))) {
+				/*
+				 * For atomic writes the entire requested
+				 * length should be mapped.
+				 */
+				if (ret == orig_mlen ||
+				    (!(flags & IOMAP_ATOMIC) && ret > 0))
 					goto out;
 			}
 			map.m_len = orig_mlen;
 		}
 		ret = ext4_iomap_alloc(inode, &map, flags);
 	} else {
-		/*
-		 * This can be called for overwrites path from
-		 * ext4_iomap_overwrite_begin().
-		 */
 		ret = ext4_map_blocks(NULL, inode, &map, 0);
 	}
 
@@ -3777,22 +3787,6 @@ out:
 	ext4_set_iomap(inode, iomap, &map, offset, length, flags);
 
 	return 0;
-}
-
-static int ext4_iomap_overwrite_begin(struct inode *inode, loff_t offset,
-		loff_t length, unsigned flags, struct iomap *iomap,
-		struct iomap *srcmap)
-{
-	int ret;
-
-	/*
-	 * Even for writes we don't need to allocate blocks, so just pretend
-	 * we are reading to save overhead of starting a transaction.
-	 */
-	flags &= ~IOMAP_WRITE;
-	ret = ext4_iomap_begin(inode, offset, length, flags, iomap, srcmap);
-	WARN_ON_ONCE(!ret && iomap->type != IOMAP_MAPPED);
-	return ret;
 }
 
 static inline bool ext4_want_directio_fallback(unsigned flags, ssize_t written)
@@ -3830,11 +3824,6 @@ static int ext4_iomap_end(struct inode *inode, loff_t offset, loff_t length,
 
 const struct iomap_ops ext4_iomap_ops = {
 	.iomap_begin		= ext4_iomap_begin,
-	.iomap_end		= ext4_iomap_end,
-};
-
-const struct iomap_ops ext4_iomap_overwrite_ops = {
-	.iomap_begin		= ext4_iomap_overwrite_begin,
 	.iomap_end		= ext4_iomap_end,
 };
 
@@ -7022,6 +7011,16 @@ static int ext4_try_to_expand_extra_isize(struct inode *inode,
 
 	if (ext4_test_inode_state(inode, EXT4_STATE_NO_EXPAND))
 		return -EOVERFLOW;
+
+	/*
+	 * Skip expansion during mount (!SB_ACTIVE).  Expanding extra isize
+	 * may move xattrs to external blocks and release ea_inodes via iput.
+	 * When !SB_ACTIVE, iput triggers write_inode_now() which acquires
+	 * s_writepages_rwsem, causing a deadlock with the caller's active
+	 * jbd2 handle (lock order: s_writepages_rwsem -> jbd2_handle).
+	 */
+	if (unlikely(!(inode->i_sb->s_flags & SB_ACTIVE)))
+		return -EBUSY;
 
 	/*
 	 * In nojournal mode, we can immediately attempt to expand

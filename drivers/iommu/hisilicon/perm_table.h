@@ -98,6 +98,7 @@ struct ummu_mapt_table_ctx {
 struct ummu_mapt_info {
 	struct iommu_domain *domain;
 	enum ummu_mapt_mode mode;
+	atomic_t mapt_blk_cnt;
 	union {
 		struct ummu_mapt_entry_node *entry_block;
 		struct ummu_mapt_table_ctx *table_ctx;
@@ -141,7 +142,8 @@ struct ummu_data_info {
 	struct ummu_mapt_info *mapt_info;
 	u8 lvl;
 	u8 head_flag;
-	struct ummu_plbi_gather *ummu_gather;
+	/* reverse pointer to logic domain, for immediate iommu_plb_sync */
+	struct iommu_domain *domain;
 };
 
 struct ummu_domain;

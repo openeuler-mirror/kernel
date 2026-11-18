@@ -169,7 +169,7 @@ int ummu_core_device_register(struct ummu_core_device *ummu_core,
 			goto out_reset_device;
 		}
 
-		list_add_tail(&ummu_core->list, &core_device_list);
+		list_add(&ummu_core->list, &core_device_list);
 		break;
 	default:
 		ret = -EOPNOTSUPP;
@@ -448,7 +448,6 @@ EXPORT_SYMBOL_GPL(ummu_core_invalidate_cfg_table);
 
 int ummu_core_invalidate_cfg(struct ummu_invalid_cfg_param *param)
 {
-
 	if (!param || !param->mm)
 		return -EINVAL;
 

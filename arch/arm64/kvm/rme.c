@@ -1596,7 +1596,10 @@ static int kvm_create_realm(struct kvm *kvm)
 	ret = realm_attach_devs(realm);
 	if (ret) {
 		kvm_err("Fail to attach devs\n");
-		kvm_destroy_realm(kvm);
+		/*
+		 * realm_attach_devs() has rolled back its own partial attach;
+		 * leave the rest of cleanup to kvm_vm_release().
+		 */
 		return ret;
 	}
 #endif
@@ -1720,7 +1723,6 @@ int _kvm_realm_enable_cap(struct kvm *kvm, struct kvm_enable_cap *cap)
 
 int realm_add_hugetlb_folios(struct realm *realm, struct folio *folio)
 {
-	int ret = 0;
 	unsigned long flags;
 	struct realm_hugetlb_folios *rhf;
 	struct realm_hugetlb_folios *free_rhf = NULL;
@@ -1737,25 +1739,22 @@ int realm_add_hugetlb_folios(struct realm *realm, struct folio *folio)
 		INIT_LIST_HEAD(&free_rhf->page_node);
 
 		spin_lock_irqsave(&realm->realm_lock, flags);
-		if (!realm->cur_rhf) {
+		if (!realm->cur_rhf ||
+		    realm->cur_rhf->folio_num >= REALM_HUGETLB_FOLIO_NUM) {
 			realm->cur_rhf = free_rhf;
 			list_add(&free_rhf->page_node, &realm->hugetlb_page_list);
 			free_rhf = NULL;
 		}
 		rhf = realm->cur_rhf;
-		if (rhf->folio_num >= REALM_HUGETLB_FOLIO_NUM) {
-			ret = -ENOMEM;
-			goto out;
-		}
 	}
+	folio_get(folio);
 	rhf->folio_addr[rhf->folio_num] = (unsigned long)folio;
 	rhf->folio_num++;
 
-out:
 	spin_unlock_irqrestore(&realm->realm_lock, flags);
 	if (free_rhf)
 		free_page((unsigned long)free_rhf);
-	return ret;
+	return 0;
 }
 
 int rmi_granule_delegate_get(unsigned long phys, void *realm_p)
@@ -1912,6 +1911,9 @@ int _kvm_rec_pre_enter(struct kvm_vcpu *vcpu)
 	struct realm_rec *rec = vcpu->arch.rec;
 	if (kvm_realm_state(vcpu->kvm) != REALM_STATE_ACTIVE)
 		return -EINVAL;
+
+	rec->run->enter.clidr_el1 = vcpu_read_sys_reg(vcpu, CLIDR_EL1);
+
 	switch (rec->run->exit.exit_reason) {
 	case RMI_EXIT_HOST_CALL:
 	case RMI_EXIT_PSCI:

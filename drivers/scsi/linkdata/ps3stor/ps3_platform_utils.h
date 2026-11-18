@@ -10,6 +10,8 @@
 #include <linux/spinlock.h>
 #include <linux/delay.h>
 #include "linux/kernel.h"
+#include <linux/version.h>
+#include <linux/workqueue.h>
 #endif
 
 #include "ps3_err_def.h"
@@ -49,6 +51,17 @@ struct ps3_cmd;
 #ifndef PS3_DESC
 #define PS3_DESC(a) 1
 #endif
+
+static inline unsigned char ps3_cancel_work_sync(struct work_struct *work)
+{
+#if defined(PS3_WORK_FUNC_CHECK)
+	if (work->func != NULL)
+		return cancel_work_sync(work);
+	return PS3_FALSE;
+#else
+	return cancel_work_sync(work);
+#endif
+}
 
 static inline void ps3_mutex_init(struct mutex *mutex_lock)
 {

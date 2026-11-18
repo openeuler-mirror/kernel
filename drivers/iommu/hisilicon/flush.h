@@ -8,6 +8,26 @@
 
 #include "ummu.h"
 
+/*
+ * PLBI command node carried on struct iommu_plb_gather.plbi_list.
+ * The node is placed on the caller's stack (iommu_plb_sync is synchronous,
+ * so the node is consumed before ummu_plbi_issue returns) — no kzalloc/kfree.
+ */
+struct ummu_plbi_node {
+	struct list_head list;
+	u32 opcode; /* CMD_PLBI_OS_VA or CMD_PLBI_FREE_BIT */
+	union {
+		struct {
+			u64 va;
+			u64 size;
+		} plbi_va;
+		struct {
+			u64 lvl_idx;
+			u64 lvl_offset;
+		} plbi_f_bit;
+	};
+};
+
 void ummu_sync_iommu_domain(struct ummu_base_domain *base_domain,
 			    struct iommu_domain *domain);
 

@@ -792,6 +792,8 @@ struct realm_smmu_device {
 	unsigned long *vmid_bitmap;
 	rwlock_t fwd_lock;
 
+	struct mutex strtab_l2_lock;
+
 	bool				support_msi;
 	bool				forward_cmd;
 	bool				enabled;

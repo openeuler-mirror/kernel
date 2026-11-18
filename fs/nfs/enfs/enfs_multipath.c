@@ -20,6 +20,7 @@
 #include <linux/sunrpc/metrics.h>
 #include <linux/sunrpc/rpc_pipe_fs.h>
 #include <linux/sunrpc/xprt.h>
+#include <linux/sunrpc/xprtsock.h>
 #include <linux/sunrpc/xprtmultipath.h>
 #include <linux/types.h>
 #include <linux/un.h>
@@ -880,10 +881,19 @@ static int set_main_xprt_ctx(struct rpc_clnt *clnt, struct rpc_xprt *xprt,
 			     struct sockaddr_storage *srcaddr, int protocol)
 {
 	struct enfs_xprt_context *ctx = xprt_get_reserve_context(xprt);
+	int err;
 
 	if (!ctx) {
 		enfs_log_error("main xprt not multipath ctx.\n");
 		return -1;
+	}
+	if (protocol != XPRT_TRANSPORT_RDMA) {
+		err = xs_xprt_set_srcaddr(xprt, (struct sockaddr *)srcaddr);
+		if (err) {
+			enfs_log_error("set main xprt source address failed: %d.\n",
+				       err);
+			return err;
+		}
 	}
 
 	ctx->main = true;

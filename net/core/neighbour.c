@@ -734,7 +734,9 @@ out_neigh_release:
 struct neighbour *__neigh_create(struct neigh_table *tbl, const void *pkey,
 				 struct net_device *dev, bool want_ref)
 {
-	return ___neigh_create(tbl, pkey, dev, 0, false, want_ref);
+	bool exempt_from_gc = !!(dev->flags & IFF_LOOPBACK);
+
+	return ___neigh_create(tbl, pkey, dev, 0, exempt_from_gc, want_ref);
 }
 EXPORT_SYMBOL(__neigh_create);
 
@@ -2296,6 +2298,13 @@ static const struct nla_policy nl_neightbl_policy[NDTA_MAX+1] = {
 	[NDTA_PARMS]		= { .type = NLA_NESTED },
 };
 
+#define NTBL_PARM_MS_MAX	(24 * 60 * 60 * MSEC_PER_SEC)
+
+static struct netlink_range_validation nl_ntbl_parm_ms_range = {
+	.min = 1,
+	.max = NTBL_PARM_MS_MAX,
+};
+
 static const struct nla_policy nl_ntbl_parm_policy[NDTPA_MAX+1] = {
 	[NDTPA_IFINDEX]			= { .type = NLA_U32 },
 	[NDTPA_QUEUE_LEN]		= { .type = NLA_U32 },
@@ -2312,7 +2321,8 @@ static const struct nla_policy nl_ntbl_parm_policy[NDTPA_MAX+1] = {
 	[NDTPA_ANYCAST_DELAY]		= { .type = NLA_U64 },
 	[NDTPA_PROXY_DELAY]		= { .type = NLA_U64 },
 	[NDTPA_LOCKTIME]		= { .type = NLA_U64 },
-	[NDTPA_INTERVAL_PROBE_TIME_MS]	= { .type = NLA_U64, .min = 1 },
+	[NDTPA_INTERVAL_PROBE_TIME_MS]	= NLA_POLICY_FULL_RANGE(NLA_U64,
+								&nl_ntbl_parm_ms_range),
 };
 
 static int neightbl_set(struct sk_buff *skb, struct nlmsghdr *nlh,
@@ -3622,12 +3632,13 @@ static int neigh_proc_dointvec_ms_jiffies_positive(struct ctl_table *ctl, int wr
 						   void *buffer, size_t *lenp, loff_t *ppos)
 {
 	struct ctl_table tmp = *ctl;
-	int ret;
+	int ret, min, max;
 
-	int min = msecs_to_jiffies(1);
+	min = msecs_to_jiffies(1);
+	max = msecs_to_jiffies(NTBL_PARM_MS_MAX);
 
 	tmp.extra1 = &min;
-	tmp.extra2 = NULL;
+	tmp.extra2 = &max;
 
 	ret = proc_dointvec_ms_jiffies_minmax(&tmp, write, buffer, lenp, ppos);
 	neigh_proc_update(ctl, write);

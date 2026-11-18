@@ -13,6 +13,7 @@
 
 #include "../../../../drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h"
 #include "../../../../drivers/iommu/arm/arm-smmu-v3/arm-r-smmu-v3.h"
+#include "../../../../drivers/pci/pci.h"
 
 #define MAX_REALM_DEV_NUM_ORDER		8
 #define PCI_DEVICE_ID_HUAWEI_ZIP_PF	0xa250
@@ -78,16 +79,16 @@ void hisi_pcipc_ns_add(const struct pci_device_id *id_table)
 	if (!is_support_rme())
 		return;
 
-	spin_lock(&g_pcipc_ns_lock);
 	for_each_pci_dev(pdev) {
 		ent = pci_match_id(id_table, pdev);
 		if (!ent)
 			continue;
 
 		bdf = pci_dev_id(pdev);
+		spin_lock(&g_pcipc_ns_lock);
 		bitmap_set(g_pcipc_ns, bdf, 1);
+		spin_unlock(&g_pcipc_ns_lock);
 	}
-	spin_unlock(&g_pcipc_ns_lock);
 }
 EXPORT_SYMBOL_GPL(hisi_pcipc_ns_add);
 
@@ -98,11 +99,9 @@ bool is_hisi_pcipc_ns(struct device *dev)
 	if (!is_support_rme() || !dev)
 		return false;
 
-	if (dev_is_pci(dev)) {
-		spin_lock(&g_pcipc_ns_lock);
-		is_pcipc_ns = bitmap_read(g_pcipc_ns, pci_dev_id(to_pci_dev(dev)), 1);
-		spin_unlock(&g_pcipc_ns_lock);
-	}
+	if (dev_is_pci(dev))
+		is_pcipc_ns = bitmap_read(g_pcipc_ns,
+					  pci_dev_id(to_pci_dev(dev)), 1);
 
 	return is_pcipc_ns;
 }
@@ -113,7 +112,7 @@ struct realm *rme_get_realm(u64 vttbr)
 	struct realm_dev_entry *dev_entry;
 	struct vfio_device *vfio_device;
 	struct device *dev = NULL;
-	struct kvm *kvm;
+	struct kvm *kvm = NULL;
 	int bkt;
 
 	spin_lock(&g_realm_dev_lock);
@@ -123,24 +122,26 @@ struct realm *rme_get_realm(u64 vttbr)
 			break;
 		}
 	}
+
+	if (dev) {
+		vfio_device = dev_get_drvdata(dev);
+		if (vfio_device && vfio_device->dev == dev &&
+		    vfio_device->kvm && kvm_get_kvm_safe(vfio_device->kvm))
+			kvm = vfio_device->kvm;
+	}
 	spin_unlock(&g_realm_dev_lock);
 
-	if (!dev)
+	if (!kvm)
 		return NULL;
-
-	vfio_device = dev_get_drvdata(dev);
-	if (!vfio_device || vfio_device->dev != dev) {
-		pr_err("Can not find vfio_device\n");
-		return NULL;
-	}
-
-	kvm = vfio_device->kvm;
-	if (!kvm) {
-		pr_err("Can not find kvm\n");
-		return NULL;
-	}
 
 	return &kvm->arch.realm;
+}
+
+void rme_put_realm(struct realm *realm)
+{
+	struct kvm *kvm = container_of(realm, struct kvm, arch.realm);
+
+	kvm_put_kvm(kvm);
 }
 
 static void rme_dev_entry_set(struct realm_dev_entry *dev_entry,
@@ -152,6 +153,8 @@ static void rme_dev_entry_set(struct realm_dev_entry *dev_entry,
 	dev_entry->realm = realm;
 	dev_entry->ns_vttbr = ns_vttbr;
 	dev_entry->pcipc_ns = pcipc_ns;
+	dev_entry->msi_iova = 0;
+	dev_entry->msi_page_index = 0;
 }
 
 void rme_add_dev_entry(struct device *dev, u64 vttbr, bool realm, u64 ns_vttbr,
@@ -174,6 +177,7 @@ void rme_add_dev_entry(struct device *dev, u64 vttbr, bool realm, u64 ns_vttbr,
 		pr_err("Alloc realm_dev_entry failed\n");
 		return;
 	}
+	get_device(dev);
 	rme_dev_entry_set(dev_entry, dev, vttbr, realm, ns_vttbr, pcipc_ns);
 	hash_add(g_realm_dev_htable, &dev_entry->node, (u64)dev);
 	spin_unlock(&g_realm_dev_lock);
@@ -271,6 +275,7 @@ void rme_remove_dev_entry(struct device *dev)
 	hash_for_each_possible_safe(g_realm_dev_htable, dev_entry, next, node, (u64)dev) {
 		if (dev_entry->dev == dev) {
 			hash_del(&dev_entry->node);
+			put_device(dev_entry->dev);
 			kfree(dev_entry);
 			break;
 		}
@@ -287,15 +292,20 @@ int realm_smmu_init_l2_strtab(struct arm_smmu_device *smmu, u32 sid)
 	struct realm_smmu_strtab_cfg *cfg = &smmu->realm.strtab_cfg;
 	struct arm_smmu_strtab_l1_desc *desc = &cfg->l1_desc[sid >> STRTAB_SPLIT];
 
-	if (desc->l2ptr)
+	mutex_lock(&smmu->realm.strtab_l2_lock);
+	if (desc->l2ptr) {
+		mutex_unlock(&smmu->realm.strtab_l2_lock);
 		return 0;
+	}
 
 	size = (1 << STRTAB_SPLIT) * sizeof(struct arm_smmu_ste);
 	desc->span = STRTAB_SPLIT + 1;
 
 	l2ptr = dma_alloc_coherent(smmu->dev, size, &desc->l2ptr_dma, GFP_KERNEL);
-	if (!l2ptr)
-		return -ENOMEM;
+	if (!l2ptr) {
+		ret = -ENOMEM;
+		goto out_unlock;
+	}
 
 	ret = granule_delegate_range(desc->l2ptr_dma, size);
 	if (ret) {
@@ -315,13 +325,18 @@ int realm_smmu_init_l2_strtab(struct arm_smmu_device *smmu, u32 sid)
 		goto out_undelegate;
 	}
 	desc->l2ptr = l2ptr;
+	mutex_unlock(&smmu->realm.strtab_l2_lock);
 	return 0;
 
 out_undelegate:
-	if (WARN_ON(granule_undelegate_range(desc->l2ptr_dma, size)))
+	if (WARN_ON(granule_undelegate_range(desc->l2ptr_dma, size))) {
+		mutex_unlock(&smmu->realm.strtab_l2_lock);
 		return ret;
+	}
 out_free:
 	dma_free_coherent(smmu->dev, size, l2ptr, desc->l2ptr_dma);
+out_unlock:
+	mutex_unlock(&smmu->realm.strtab_l2_lock);
 	return ret;
 }
 EXPORT_SYMBOL_GPL(realm_smmu_init_l2_strtab);
@@ -344,11 +359,15 @@ static int get_child_devices_rec(struct pci_dev *dev, uint16_t *devs,
 		struct pci_dev *child;
 		int ret = 0;
 
+		down_read(&pci_bus_sem);
 		list_for_each_entry(child, &bus->devices, bus_list) {
 			ret = get_child_devices_rec(child, devs, max_devs, ndev, pdevs);
-			if (ret < 0)
+			if (ret < 0) {
+				up_read(&pci_bus_sem);
 				return ret;
+			}
 		}
+		up_read(&pci_bus_sem);
 	} else { /* dev is a regular device */
 		uint16_t bdf = pci_dev_id(dev);
 		int i;
@@ -557,7 +576,6 @@ static inline struct dev_hash_entry *add_root_dev_entry(u16 root_bdf)
 static int rme_root_dev_delegate(phys_addr_t params_addr)
 {
 	unsigned long out_dev_bdf = ~0;
-	unsigned long last_dev_bdf = ~0;
 	phys_addr_t dev_info_phys;
 	void *dev_info;
 	int ret;
@@ -565,7 +583,6 @@ static int rme_root_dev_delegate(phys_addr_t params_addr)
 retry:
 	ret = rmi_root_dev_delegate(params_addr, &out_dev_bdf);
 	if (ret == RMI_ERROR_DEV_INFO) {
-
 		dev_info = (void *)get_zeroed_page(GFP_ATOMIC);
 		if (!dev_info) {
 			pr_err("Failed to allocate page for dev %#lx\n",
@@ -587,7 +604,6 @@ retry:
 			free_page((unsigned long)dev_info);
 			return -ENXIO;
 		}
-		last_dev_bdf = out_dev_bdf;
 		goto retry;
 	} else if (ret) {
 		return -ENXIO;
@@ -648,6 +664,7 @@ static int _realm_unbind_drivers(struct pci_dev **pdevs, uint16_t nr)
 static int delegate_root_dev(struct pci_dev *root_dev)
 {
 	struct rmi_dev_delegate_params *params = NULL;
+	unsigned long flags;
 	int ret;
 
 	params = (struct rmi_dev_delegate_params *)get_zeroed_page(GFP_ATOMIC);
@@ -660,10 +677,10 @@ static int delegate_root_dev(struct pci_dev *root_dev)
 		return ret;
 	}
 
-	spin_lock(&g_dev_protected_lock);
+	spin_lock_irqsave(&g_dev_protected_lock, flags);
 	for (int i = 0; i < params->num_dev; i++)
 		bitmap_set(g_dev_protected, params->devs[i], 1);
-	spin_unlock(&g_dev_protected_lock);
+	spin_unlock_irqrestore(&g_dev_protected_lock, flags);
 
 	ret = rme_root_dev_delegate(virt_to_phys(params));
 	if (ret)
@@ -711,21 +728,22 @@ static int dev_assign_to_ns(struct dev_hash_entry *entry, struct pci_dev *root_d
 static int rme_dev_assign(struct pci_dev *root_dev, struct kvm *kvm)
 {
 	struct dev_hash_entry *entry;
+	unsigned long flags;
 	int ret;
 
-	spin_lock(&g_dev_htable_lock);
+	spin_lock_irqsave(&g_dev_htable_lock, flags);
 	entry = find_root_dev_entry(pci_dev_id(root_dev));
 	if (!entry) {
 		entry = add_root_dev_entry(pci_dev_id(root_dev));
 		if (!entry) {
-			spin_unlock(&g_dev_htable_lock);
+			spin_unlock_irqrestore(&g_dev_htable_lock, flags);
 			return -ENOMEM;
 		}
 	}
 
 	ret = kvm_is_realm(kvm) ? dev_assign_to_realm(entry, root_dev) :
 				  dev_assign_to_ns(entry, root_dev);
-	spin_unlock(&g_dev_htable_lock);
+	spin_unlock_irqrestore(&g_dev_htable_lock, flags);
 	return ret;
 }
 
@@ -733,15 +751,16 @@ static void rme_dev_unassign(struct pci_dev *pdev)
 {
 	struct dev_hash_entry *entry;
 	struct pci_dev *root_dev;
+	unsigned long flags;
 
 	root_dev = rme_get_root_dev(pdev);
 	if (!root_dev)
 		return;
 
-	spin_lock(&g_dev_htable_lock);
+	spin_lock_irqsave(&g_dev_htable_lock, flags);
 	entry = find_root_dev_entry(pci_dev_id(root_dev));
 	if (!entry) {
-		spin_unlock(&g_dev_htable_lock);
+		spin_unlock_irqrestore(&g_dev_htable_lock, flags);
 		return;
 	}
 
@@ -753,7 +772,7 @@ static void rme_dev_unassign(struct pci_dev *pdev)
 		kfree(entry);
 	}
 
-	spin_unlock(&g_dev_htable_lock);
+	spin_unlock_irqrestore(&g_dev_htable_lock, flags);
 }
 
 static int realm_add_dev_to_list(struct pci_dev *pdev, struct kvm *kvm)
@@ -905,6 +924,7 @@ int kvm_rme_assign_device(struct pci_dev *pdev, struct kvm *kvm)
 		pci_err(pdev, "Failed to delegate dev\n");
 		realm_del_dev_from_list(pdev, kvm);
 		rme_dev_unassign(pdev);
+		ret = -EIO;
 	}
 
 	return ret;
@@ -913,12 +933,29 @@ EXPORT_SYMBOL_GPL(kvm_rme_assign_device);
 
 void kvm_rme_unassign_device(struct pci_dev *pdev, struct kvm *kvm)
 {
+	struct rdev_node *pos;
+
 	if (!pdev || !kvm || !is_support_rme())
 		return;
 
-	/* Rme dev undelegate will be processed in _kvm_destroy_realm */
-	if (kvm_is_realm(kvm))
-		rmi_dev_detach(pci_dev_id(pdev));
+	if (kvm_is_realm(kvm)) {
+		list_for_each_entry(pos, &kvm->arch.realm.rdev_list, list) {
+			if (pos->dev == &pdev->dev) {
+				if (pos->attached)
+					rmi_dev_detach(pos->dev_bdf);
+				break;
+			}
+		}
+		/*
+		 * Normally, dev_undelegate should be processed in realm_destroy_dev_list.
+		 * This handles exception exit flow that dev is delegated but
+		 * realm fails to create.
+		 */
+		if (!kvm_realm_is_created(kvm)) {
+			rmi_dev_undelegate(pci_dev_id(pdev));
+			realm_del_dev_from_list(pdev, kvm);
+		}
+	}
 
 	rme_dev_unassign(pdev);
 }
@@ -932,13 +969,14 @@ void realm_destroy_dev_list(struct realm *realm)
 		WARN_ON(rmi_dev_undelegate(pos->dev_bdf));
 		list_del(&pos->list);
 		kfree(pos);
+		cond_resched();
 	}
 }
 
 /* After RD created, call this to do attach dev */
 int realm_attach_devs(struct realm *realm)
 {
-	struct rdev_node *dev;
+	struct rdev_node *dev, *tmp, *last_attached = NULL;
 	phys_addr_t rd;
 	int ret;
 
@@ -956,31 +994,43 @@ int realm_attach_devs(struct realm *realm)
 		u64 smmu_addr;
 
 		domain = iommu_get_domain_for_dev(dev->dev);
-		smmu_domain = to_smmu_domain(domain);
-
-		if (!smmu_domain) {
+		if (!domain) {
 			ret = -EINVAL;
 			goto err_detach;
 		}
+		smmu_domain = to_smmu_domain(domain);
 
 		smmu = smmu_domain->smmu;
 		smmu_addr = smmu->realm.ioaddr;
 
-		ret = realm_smmu_init_l2_strtab(smmu, dev->dev_bdf);
-		if (ret)
-			goto err_detach;
+		lvl_strtab = !!(smmu->features & ARM_SMMU_FEAT_2_LVL_STRTAB);
+		if (lvl_strtab) {
+			ret = realm_smmu_init_l2_strtab(smmu, dev->dev_bdf);
+			if (ret)
+				goto err_detach;
+		}
 
 		s2_cfg = &smmu_domain->s2_cfg;
-		lvl_strtab = !!(smmu->features & ARM_SMMU_FEAT_2_LVL_STRTAB);
 		ret = rmi_dev_attach(dev->dev_bdf, rd, smmu_addr, s2_cfg->vmid,
 				     lvl_strtab);
 		if (ret)
 			goto err_detach;
+
+		dev->attached = true;
+		last_attached = dev;
 	}
 
 	return 0;
 
 err_detach:
+	if (last_attached) {
+		list_for_each_entry_safe(dev, tmp, &realm->rdev_list, list) {
+			WARN_ON(rmi_dev_detach(dev->dev_bdf));
+			dev->attached = false;
+			if (dev == last_attached)
+				break;
+		}
+	}
 	realm_destroy_dev_list(realm);
 
 	return ret;
@@ -1246,7 +1296,6 @@ bool rme_dev_msix_mask_all(struct pci_dev *dev, int tsize)
 out:
 	pci_read_config_word(dev, dev->msix_cap + PCI_MSIX_FLAGS, &rw_ctrl);
 	rw_ctrl &= ~PCI_MSIX_FLAGS_MASKALL;
-	rw_ctrl |= 0;
 	pci_write_config_word(dev, dev->msix_cap + PCI_MSIX_FLAGS, rw_ctrl);
 
 	pcibios_free_irq(dev);
@@ -1264,6 +1313,9 @@ EXPORT_SYMBOL_GPL(rme_dev_msix_mask_all);
 static u64 rme_mmio_va_to_pa(const void *addr)
 {
 	uint64_t pa, par_el1;
+	unsigned long flags;
+
+	local_irq_save(flags);
 
 	asm volatile(
 		"AT S1E1W, %0\n"
@@ -1275,13 +1327,17 @@ static u64 rme_mmio_va_to_pa(const void *addr)
 		: "=r"(par_el1)
 	);
 
+	local_irq_restore(flags);
+
 	pa = ((uint64_t)(addr) & (PAGE_SIZE - 1)) |
 		(par_el1 & ULL(0x000ffffffffff000));
 
-	if (par_el1 & UL(1 << 0))
+	if (par_el1 & UL(1 << 0)) {
+		pr_err("Failed to translate va to pa, return va directly\n");
 		return (uint64_t)(addr);
-	else
+	} else {
 		return pa;
+	}
 }
 
 u32 rme_readl_hook(void __iomem *addr, struct pci_dev *pdev)

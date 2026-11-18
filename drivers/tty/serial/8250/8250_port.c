@@ -458,6 +458,9 @@ static void set_io_from_upio(struct uart_port *p)
 		p->serial_out = mem32be_serial_out;
 		break;
 
+	case UPIO_AU:
+		break;
+
 	default:
 		p->serial_in = io_serial_in;
 		p->serial_out = io_serial_out;
@@ -1915,6 +1918,13 @@ int serial8250_handle_irq(struct uart_port *port, unsigned int iir)
 	spin_lock_irqsave(&port->lock, flags);
 
 	status = serial_lsr_in(up);
+
+	/*
+	 * Recover from no-data-ready and FIFO error condition to avoid getting
+	 * stuck in the ISR.
+	 */
+	if (!(status & UART_LSR_DR) && (status & UART_LSR_FIFOE))
+		serial8250_clear_and_reinit_fifos(up);
 
 	/*
 	 * If port is stopped and there are no error conditions in the

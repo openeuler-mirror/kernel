@@ -16,6 +16,7 @@
 #include <linux/file.h>
 #include <linux/poll.h>
 #include <linux/random.h>
+#include <linux/delay.h>
 #include <ub/urma/ubcore_types.h>
 #include <ub/urma/ubcore_uapi.h>
 #include <ub/urma/ubcore_jetty.h>
@@ -1561,6 +1562,8 @@ struct ubcore_jfr *ubcore_create_jfr(struct ubcore_device *dev,
 		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFR);
 		return ERR_PTR(-EINVAL);
 	}
+	/* Sync jfr_cfg.id to the driver-assigned jfr_id.id */
+	jfr->jfr_cfg.id = jfr->jfr_id.id;
 	jfr->ub_dev = dev;
 	jfr->uctx = ubcore_get_uctx(udata);
 	jfr->jfae_handler = jfae_handler;
@@ -1812,10 +1815,12 @@ static struct ubcore_tjetty *ubcore_import_jfr_compat_retry(
 
 	for (retry = 0; retry < UBCORE_CONN_RETRY_MAX; retry++) {
 		tjfr = ubcore_import_jfr_compat(dev, cfg, udata);
-		if (tjfr != ERR_PTR(-EIO))
+		if (tjfr != ERR_PTR(-EAGAIN))
 			return tjfr;
+		usleep_range(UBCORE_TPID_REUSE_WAIT_MIN_US,
+				UBCORE_TPID_REUSE_WAIT_MAX_US);
 	}
-	return ERR_PTR(-EIO);
+	return tjfr;
 }
 
 struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
@@ -2725,6 +2730,8 @@ struct ubcore_jetty *ubcore_create_jetty(struct ubcore_device *dev,
 		goto delete_jetty_to_grp;
 	}
 
+	/* Sync jetty_cfg.id to the driver-assigned jetty_id.id */
+	jetty->jetty_cfg.id = jetty->jetty_id.id;
 	jetty->uctx = ubcore_get_uctx(udata);
 	jetty->jfae_handler = jfae_handler;
 	jetty->jetty_id.eid = eid;
@@ -3077,10 +3084,12 @@ static struct ubcore_tjetty *ubcore_import_jetty_compat_retry(
 
 	for (retry = 0; retry < UBCORE_CONN_RETRY_MAX; retry++) {
 		tjetty = ubcore_import_jetty_compat(dev, cfg, udata);
-		if (tjetty != ERR_PTR(-EIO))
+		if (tjetty != ERR_PTR(-EAGAIN))
 			return tjetty;
+		usleep_range(UBCORE_TPID_REUSE_WAIT_MIN_US,
+				UBCORE_TPID_REUSE_WAIT_MAX_US);
 	}
-	return ERR_PTR(-EIO);
+	return tjetty;
 }
 
 struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
@@ -3460,11 +3469,13 @@ static int ubcore_bind_jetty_reuse_compat_retry(
 
 	for (retry = 0; retry < UBCORE_CONN_RETRY_MAX; retry++) {
 		ret = ubcore_bind_jetty_reuse_compat(jetty, tjetty, udata);
-		if (ret != -EIO)
+		if (ret != -EAGAIN)
 			return ret;
+		usleep_range(UBCORE_TPID_REUSE_WAIT_MIN_US,
+				UBCORE_TPID_REUSE_WAIT_MAX_US);
 	}
 
-	return -EIO;
+	return ret;
 }
 
 static int ubcore_inner_bind_ub_jetty(struct ubcore_jetty *jetty,

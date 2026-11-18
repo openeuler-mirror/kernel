@@ -3752,8 +3752,7 @@ errout:
  * This works the same way in the case of initialized -> unwritten conversion.
  *
  * One of more index blocks maybe needed if the extent tree grow after
- * the unwritten extent split. To prevent ENOSPC occur at the IO
- * complete, we need to split the unwritten extent before DIO submit
+ * the unwritten extent split. The split is deferred to I/O completion in
  * the IO. The unwritten extent called at this time will be split
  * into three unwritten extent(at most). After IO complete, the part
  * being filled will be convert to initialized by the end_io callback function
@@ -3828,24 +3827,7 @@ ext4_convert_unwritten_extents_endio(handle_t *handle, struct inode *inode,
 	ext_debug(inode, "logical block %llu, max_blocks %u\n",
 		  (unsigned long long)ee_block, ee_len);
 
-	/*
-	 * For the inodes that use the buffered iomap path need to split
-	 * extents in endio, other inodes not.
-	 *
-	 * TODO: Reserve enough sapce for splitting extents, always split
-	 * extents here, and totally remove this warning.
-	 */
 	if (ee_block != map->m_lblk || ee_len > map->m_len) {
-#ifdef CONFIG_EXT4_DEBUG
-		if (!ext4_test_inode_state(inode, EXT4_STATE_BUFFERED_IOMAP)) {
-			ext4_warning(inode->i_sb,
-				     "Inode (%ld) finished: extent logical block %llu, "
-				     "len %u; IO logical block %llu, len %u",
-				     inode->i_ino, (unsigned long long)ee_block,
-				     ee_len, (unsigned long long)map->m_lblk,
-				     map->m_len);
-		}
-#endif
 		path = ext4_split_convert_extents(handle, inode, map, path,
 						EXT4_GET_BLOCKS_CONVERT |
 						EXT4_GET_BLOCKS_METADATA_NOFAIL,
@@ -3983,26 +3965,6 @@ ext4_ext_handle_unwritten_extents(handle_t *handle, struct inode *inode,
 	trace_ext4_ext_handle_unwritten_extents(inode, map, flags,
 						*allocated, newblock);
 
-	/* get_block() before submitting IO, split the extent */
-	if (flags & EXT4_GET_BLOCKS_SPLIT_NOMERGE) {
-		path = ext4_split_convert_extents(handle, inode, map, path,
-						  flags, allocated);
-		if (IS_ERR(path))
-			return path;
-		/*
-		 * shouldn't get a 0 allocated when splitting an extent unless
-		 * m_len is 0 (bug) or extent has been corrupted
-		 */
-		if (unlikely(*allocated == 0)) {
-			EXT4_ERROR_INODE(inode,
-					 "unexpected allocated == 0, m_len = %u",
-					 map->m_len);
-			err = -EFSCORRUPTED;
-			goto errout;
-		}
-		map->m_flags |= EXT4_MAP_UNWRITTEN;
-		goto out;
-	}
 	/* IO end_io complete, convert the filled extent to written */
 	if (flags & EXT4_GET_BLOCKS_CONVERT) {
 		path = ext4_convert_unwritten_extents_endio(handle, inode,
@@ -4056,7 +4018,6 @@ ext4_ext_handle_unwritten_extents(handle_t *handle, struct inode *inode,
 		goto errout;
 	}
 
-out:
 	map->m_flags |= EXT4_MAP_NEW;
 map_out:
 	map->m_flags |= EXT4_MAP_MAPPED;

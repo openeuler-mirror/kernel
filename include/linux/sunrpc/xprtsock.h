@@ -8,8 +8,13 @@
 #ifndef _LINUX_SUNRPC_XPRTSOCK_H
 #define _LINUX_SUNRPC_XPRTSOCK_H
 
+struct rpc_xprt;
+struct sockaddr;
+
 int		init_socket_xprt(void);
 void		cleanup_socket_xprt(void);
+int xs_xprt_set_srcaddr(struct rpc_xprt *xprt,
+			const struct sockaddr *srcaddr);
 
 #define RPC_MIN_RESVPORT	(1U)
 #define RPC_MAX_RESVPORT	(65535U)

@@ -64,6 +64,7 @@ static inline char const *mgrEvtCodeTrans(unsigned int opCode)
 			"MGR_EVT_MULITPILE_VD_OUT",
 			"MGR_EVT_VD_UNLOCK",
 			"MGR_EVT_VD_OFFLINE",
+			"MGR_EVT_VD_CHANGE",
 		},
 		{
 			"MGR_EVT_CTRL_INFO_START",

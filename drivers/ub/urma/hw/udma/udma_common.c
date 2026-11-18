@@ -768,13 +768,13 @@ static void *udma_iova_map(struct udma_dev *udma_dev, uint32_t size, struct udma
 	buf->pages = alloc_pages_node(udma_dev->dtu_info.dtu_mem_node_id,
 				      GFP_HIGHUSER_MOVABLE | __GFP_ZERO, get_order(align_size));
 	if (!buf->pages) {
-		dev_err(udma_dev->dev, "failed to alloc pages.\n");
+		dev_err_ratelimited(udma_dev->dev, "failed to alloc pages.\n");
 		return NULL;
 	}
 
 	pa_addr = page_to_phys(buf->pages);
 	if (pa_addr < udma_dev->dtu_info.pa_base) {
-		dev_err(udma_dev->dev, "physical address is error.\n");
+		dev_err_ratelimited(udma_dev->dev, "physical address is error.\n");
 		goto err_free_mem;
 	}
 	buf->addr = pa_addr - udma_dev->dtu_info.pa_base + udma_dev->dtu_info.iova_base;
@@ -808,7 +808,7 @@ int udma_k_alloc_buf(struct udma_dev *dev, struct udma_buf *buf, bool need_dtu)
 			return ret;
 		}
 
-		dev_warn(dev->dev, "DTU IOVA map unavailable, fallback to normal.\n");
+		dev_warn_ratelimited(dev->dev, "DTU IOVA map unavailable, fallback to normal.\n");
 	}
 
 	buf->k_dtu_enable = false;
@@ -820,7 +820,7 @@ int udma_k_alloc_buf(struct udma_dev *dev, struct udma_buf *buf, bool need_dtu)
 			buf->addr = (uint64_t)buf->kva;
 			buf->is_hugepage = true;
 		} else {
-			dev_warn(dev->dev,
+			dev_warn_ratelimited(dev->dev,
 				 "not enough hugepage buffer, switch to alloc normal buffer.\n");
 			ret = udma_alloc_normal_buf(dev, size, buf);
 		}

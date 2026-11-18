@@ -164,9 +164,9 @@ int post_mailbox_update_ctx(struct udma_dev *udma_dev, void *ctx, uint32_t size,
 
 	ret = udma_post_mbox(udma_dev, mailbox, attr);
 	if (ret)
-		dev_err(udma_dev->dev,
-			"failed to post mailbox, opcode = 0x%x, ret = %d.\n", attr->op,
-			ret);
+		dev_err_ratelimited(udma_dev->dev,
+				    "failed to post mailbox, opcode = 0x%x, ret = %d.\n", attr->op,
+				    ret);
 
 	udma_free_cmd_mailbox(udma_dev, mailbox);
 

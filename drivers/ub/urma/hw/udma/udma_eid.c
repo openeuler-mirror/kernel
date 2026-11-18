@@ -158,6 +158,7 @@ int udma_query_eid_from_ctrl_cpu(struct udma_dev *udma_dev)
 		if (eid_out_query.eids[i].eid_idx >= SEID_TABLE_SIZE) {
 			dev_err(udma_dev->dev, "invalid EID index = %u.\n",
 				eid_out_query.eids[i].eid_idx);
+			ret = -EINVAL;
 			goto err_add_ummu_eid;
 		}
 		ret = udma_add_one_eid(udma_dev, &(eid_out_query.eids[i]));

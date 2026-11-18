@@ -452,6 +452,32 @@ static inline bool btf_record_has_field(const struct btf_record *rec, enum btf_f
 	return rec->field_mask & type;
 }
 
+static inline bool btf_field_is_nmi_safe(enum btf_field_type type)
+{
+	switch (type) {
+	case BPF_SPIN_LOCK:
+	case BPF_TIMER:
+	case BPF_KPTR_UNREF:
+	case BPF_REFCOUNT:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static inline bool btf_record_has_nmi_unsafe_fields(const struct btf_record *rec)
+{
+	int i;
+
+	if (IS_ERR_OR_NULL(rec))
+		return false;
+	for (i = 0; i < rec->cnt; i++) {
+		if (!btf_field_is_nmi_safe(rec->fields[i].type))
+			return true;
+	}
+	return false;
+}
+
 static inline void bpf_obj_init(const struct btf_record *rec, void *obj)
 {
 	int i;
@@ -2564,6 +2590,8 @@ int bpf_get_file_flag(int flags);
 int bpf_check_uarg_tail_zero(bpfptr_t uaddr, size_t expected_size,
 			     size_t actual_size);
 
+bool bpf_rewrite_must_abort(void);
+
 /* verify correctness of eBPF program */
 int bpf_check(struct bpf_prog **fp, union bpf_attr *attr, bpfptr_t uattr, u32 uattr_size);
 
@@ -2666,7 +2694,7 @@ int btf_struct_access(struct bpf_verifier_log *log,
 bool btf_struct_ids_match(struct bpf_verifier_log *log,
 			  const struct btf *btf, u32 id, int off,
 			  const struct btf *need_btf, u32 need_type_id,
-			  bool strict);
+			  bool strict, bool walk_flex_arrays);
 
 int btf_distill_func_proto(struct bpf_verifier_log *log,
 			   struct btf *btf,

@@ -316,6 +316,7 @@ int lookupcache_add_work(struct nfs_fh *fh, struct nfs_server *server,
 		    &server->nfs_client->cl_rpcclient->cl_count)) {
 		kfree(work_info);
 		kfree(item);
+		return -EINVAL;
 	}
 	work_info->fh = *fh;
 	work_info->server = server;

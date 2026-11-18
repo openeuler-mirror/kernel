@@ -4,6 +4,7 @@
 #define _UAPI_LINUX_MFS_H
 
 #include <linux/types.h>
+#include <linux/limits.h>
 #include <linux/ioctl.h>
 
 enum mfs_opcode {
@@ -37,6 +38,7 @@ struct mfs_ioc_rpath {
 #define MFS_IOC_RA	_IOW(0xbc,	1, struct mfs_ioc_ra)
 #define MFS_IOC_DONE	_IOW(0xbc,	2, struct mfs_ioc_done)
 #define MFS_IOC_RPATH	_IOWR(0xbc,	3, struct mfs_ioc_rpath)
+#define MFS_MAXPATHLEN	PATH_MAX
 
 struct mfs_ioc_fsinfo {
 	__u8 mode;  /* 0: none, 1: local, 2: remote */

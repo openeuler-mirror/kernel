@@ -484,8 +484,8 @@ static int get_bifur_drv_version(struct drv_version_info *ver_info, u32 *out_siz
 		return -EINVAL;
 	}
 
-	err = snprintf(ver_info->ver, sizeof(ver_info->ver), "%s  %s",
-		       BIFUR_DRV_VERSION, __TIME_STR__);
+	err = snprintf(ver_info->ver, sizeof(ver_info->ver), "%s",
+			BIFUR_DRV_VERSION);
 	if (err == -1) {
 		pr_err("Snprintf bifur version err\n");
 		return -EFAULT;
@@ -627,8 +627,8 @@ static __init int hibifur_init(void)
 {
 	int err = 0;
 
-	pr_info("%s - version %s, compile time:%s\n", BIFUR_DRV_DESC,
-		BIFUR_DRV_VERSION, __TIME_STR__);
+	pr_info("%s - version %s\n", BIFUR_DRV_DESC,
+		BIFUR_DRV_VERSION);
 
 	if (!bifur_check_dpdk_kdriver()) {
 		pr_err("Invalid dpdk kernel driver type: %s\n", g_bifur_dpdk_kdriver);

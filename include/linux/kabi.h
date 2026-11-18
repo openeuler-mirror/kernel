@@ -332,6 +332,9 @@
  *   the end of the enum.  Before using this macro, make sure this is actually
  *   safe to do.
  */
+#undef linux
+#define linux linux
+
 #if defined(__GENKSYMS__) && IS_ENABLED(CONFIG_KABI_COMPAT)
 
 # define KABI_CONST

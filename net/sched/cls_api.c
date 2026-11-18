@@ -3151,7 +3151,7 @@ errout:
 	tcf_chain_put(chain);
 errout_block:
 	tcf_block_release(q, block, true);
-	if (err == -EAGAIN)
+	if (err == -EAGAIN && n->nlmsg_type == RTM_NEWCHAIN)
 		/* Replay the request. */
 		goto replay;
 	return err;
@@ -3270,7 +3270,7 @@ int tcf_exts_init_ex(struct tcf_exts *exts, struct net *net, int action,
 	 */
 	exts->net = net;
 	exts->actions = kcalloc(TCA_ACT_MAX_PRIO, sizeof(struct tc_action *),
-				GFP_KERNEL);
+				GFP_KERNEL_ACCOUNT);
 	if (!exts->actions)
 		return -ENOMEM;
 #endif

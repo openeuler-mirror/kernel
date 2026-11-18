@@ -55,76 +55,107 @@ void set_cca_cvm_type(int type)
 }
 EXPORT_SYMBOL_GPL(set_cca_cvm_type);
 
+/* Fetch the active CCA backend ops; NULL if no backend registered for cca_cvm_type. */
+static struct cca_operations *cca_ops(void)
+{
+	if (cca_cvm_type < ARMCCA_CVM || cca_cvm_type >= CCA_CVM_MAX)
+		return NULL;
+	return READ_ONCE(g_cca_operations[cca_cvm_type]);
+}
+
 int kvm_realm_enable_cap(struct kvm *kvm, struct kvm_enable_cap *cap)
 {
-	if (g_cca_operations[cca_cvm_type]->enable_cap)
-		return g_cca_operations[cca_cvm_type]->enable_cap(kvm, cap);
-	return 0;
+	struct cca_operations *ops = cca_ops();
+
+	if (!ops || !ops->enable_cap)
+		return -EINVAL;
+	return ops->enable_cap(kvm, cap);
 }
 
 int kvm_init_realm_vm(struct kvm *kvm)
 {
-	if (g_cca_operations[cca_cvm_type]->init_realm_vm)
-		return g_cca_operations[cca_cvm_type]->init_realm_vm(kvm);
-	return 0;
+	struct cca_operations *ops = cca_ops();
+
+	if (!ops || !ops->init_realm_vm)
+		return 0;
+	return ops->init_realm_vm(kvm);
 }
 
 int kvm_rec_enter(struct kvm_vcpu *vcpu)
 {
-	if (g_cca_operations[cca_cvm_type]->realm_vm_enter)
-		return g_cca_operations[cca_cvm_type]->realm_vm_enter(vcpu);
-	return 0;
+	struct cca_operations *ops = cca_ops();
+
+	if (!ops || !ops->realm_vm_enter)
+		return 0;
+	return ops->realm_vm_enter(vcpu);
 }
 
 int kvm_rec_pre_enter(struct kvm_vcpu *vcpu)
 {
-	if (g_cca_operations[cca_cvm_type]->realm_vm_pre_enter)
-		return g_cca_operations[cca_cvm_type]->realm_vm_pre_enter(vcpu);
-	return 1;
+	struct cca_operations *ops = cca_ops();
+
+	if (!ops || !ops->realm_vm_pre_enter)
+		return 1;
+	return ops->realm_vm_pre_enter(vcpu);
 }
 
 int handle_rec_exit(struct kvm_vcpu *vcpu, int rec_run_ret)
 {
-	if (g_cca_operations[cca_cvm_type]->realm_vm_exit)
-		return g_cca_operations[cca_cvm_type]->realm_vm_exit(vcpu, rec_run_ret);
-	return 0;
+	struct cca_operations *ops = cca_ops();
+
+	if (!ops || !ops->realm_vm_exit)
+		return 0;
+	return ops->realm_vm_exit(vcpu, rec_run_ret);
 }
 
 void kvm_destroy_realm(struct kvm *kvm)
 {
-	if (g_cca_operations[cca_cvm_type]->destroy_vm)
-		g_cca_operations[cca_cvm_type]->destroy_vm(kvm);
+	struct cca_operations *ops = cca_ops();
+
+	if (ops && ops->destroy_vm)
+		ops->destroy_vm(kvm);
 }
 
 int kvm_create_rec(struct kvm_vcpu *vcpu)
 {
-	if (g_cca_operations[cca_cvm_type]->create_vcpu)
-		return g_cca_operations[cca_cvm_type]->create_vcpu(vcpu);
-	return 0;
+	struct cca_operations *ops = cca_ops();
+
+	if (!ops || !ops->create_vcpu)
+		return 0;
+	return ops->create_vcpu(vcpu);
 }
 
 void kvm_destroy_rec(struct kvm_vcpu *vcpu)
 {
-	if (g_cca_operations[cca_cvm_type]->destroy_vcpu)
-		g_cca_operations[cca_cvm_type]->destroy_vcpu(vcpu);
+	struct cca_operations *ops = cca_ops();
+
+	if (ops && ops->destroy_vcpu)
+		ops->destroy_vcpu(vcpu);
 }
 
 void kvm_init_rme(void)
 {
-	if (g_cca_operations[cca_cvm_type]->init_sel2_hypervisor)
-		g_cca_operations[cca_cvm_type]->init_sel2_hypervisor();
+	struct cca_operations *ops = cca_ops();
+
+	if (!ops || !ops->init_sel2_hypervisor)
+		return;
+	ops->init_sel2_hypervisor();
 }
 
 int realm_psci_complete(struct kvm_vcpu *calling, struct kvm_vcpu *target, unsigned long status)
 {
-	if (g_cca_operations[cca_cvm_type]->psci_complete)
-		return g_cca_operations[cca_cvm_type]->psci_complete(calling, target, status);
-	return 0;
+	struct cca_operations *ops = cca_ops();
+
+	if (!ops || !ops->psci_complete)
+		return 0;
+	return ops->psci_complete(calling, target, status);
 }
 
 u32 kvm_realm_vgic_nr_lr(void)
 {
-	if (g_cca_operations[cca_cvm_type]->vgic_nr_lr)
-		return g_cca_operations[cca_cvm_type]->vgic_nr_lr();
-	return 0;
+	struct cca_operations *ops = cca_ops();
+
+	if (!ops || !ops->vgic_nr_lr)
+		return 0;
+	return ops->vgic_nr_lr();
 }

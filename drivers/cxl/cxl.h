@@ -438,7 +438,7 @@ typedef struct cxl_dport *(*cxl_calc_hb_fn)(struct cxl_root_decoder *cxlrd,
  * @region_id: region id for next region provisioning event
  * @calc_hb: which host bridge covers the n'th position by granularity
  * @platform_data: platform specific configuration data
- * @range_lock: sync region autodiscovery by address range
+ * @regions_lock: sync region discovery, construction, and deletion
  * @cxlsd: base cxl switch decoder
  */
 struct cxl_root_decoder {
@@ -446,7 +446,7 @@ struct cxl_root_decoder {
 	atomic_t region_id;
 	cxl_calc_hb_fn calc_hb;
 	void *platform_data;
-	struct mutex range_lock;
+	struct mutex regions_lock;
 	struct cxl_switch_decoder cxlsd;
 };
 
@@ -535,7 +535,8 @@ struct cxl_nvdimm_bridge {
 	struct nvdimm_bus_descriptor nd_desc;
 };
 
-#define CXL_DEV_ID_LEN 19
+/* Holds a u64 serial as a decimal string: up to 20 digits + NUL */
+#define CXL_DEV_ID_LEN 21
 
 struct cxl_nvdimm {
 	struct device dev;

@@ -62,6 +62,7 @@ int hns3_handle_roh_arp_req(struct sk_buff *skb, struct hns3_nic_priv *priv)
 	struct ethhdr *ethhdr;
 	int reply_idx, len;
 	__be32 *sip, *tip;
+	u16 vlan_tci = 0;
 
 	/* use same queue num in rx */
 	ring = &priv->ring[skb->queue_mapping + h->kinfo.num_tqps];
@@ -76,11 +77,18 @@ int hns3_handle_roh_arp_req(struct sk_buff *skb, struct hns3_nic_priv *priv)
 
 	if (skb_vlan_tagged(skb)) {
 		ring->arp_reply[reply_idx].has_vlan = true;
-		ring->arp_reply[reply_idx].vlan_tci = skb_vlan_tag_get(skb);
-		if (likely(!skb_vlan_pop(skb)))
+		if (skb_vlan_tag_present(skb)) {
+			vlan_tci = skb_vlan_tag_get(skb);
+			__vlan_hwaccel_clear_tag(skb);
+		} else {
+			/* if txvlan offload is off, get vlan from skb data buffer. */
+			if (__skb_vlan_pop(skb, &vlan_tci))
+				goto err_vlan_head;
+
 			len += VLAN_HLEN;
-		else
-			goto err_vlan_head;
+		}
+
+		ring->arp_reply[reply_idx].vlan_tci = vlan_tci;
 	} else {
 		ring->arp_reply[reply_idx].has_vlan = false;
 	}

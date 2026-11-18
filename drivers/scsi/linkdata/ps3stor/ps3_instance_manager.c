@@ -646,6 +646,16 @@ l_out:
 	return ret;
 }
 
+static void ps3_cpu_type_parse(struct ps3_host_info *host_info)
+{
+	if (host_info->vendor == PS3_HOST_VENDOR_HYGON) {
+		if (host_info->model < 4)
+			host_info->cpu_type = PS3_HOST_HYGON_CPU_TYPE1;
+		else
+			host_info->cpu_type = PS3_HOST_HYGON_CPU_TYPE2;
+	}
+}
+
 void ps3_host_info_get(void)
 {
 #if defined(CONFIG_X86) || defined(CONFIG_X86_64)
@@ -660,19 +670,19 @@ void ps3_host_info_get(void)
 		g_ps3_host_info.vendor = PS3_HOST_VENDOR_HYGON;
 	else if (strstr(cpu->x86_vendor_id, "AMD"))
 		g_ps3_host_info.vendor = PS3_HOST_VENDOR_AMD;
+	g_ps3_host_info.model = cpu->x86_model;
 	g_ps3_host_info.processor_cnt = num_online_cpus();
 #else
 	memset(&g_ps3_host_info, 0, sizeof(struct ps3_host_info));
 #endif
 
 	memset(g_ps3_host_info.release, 0, SYS_INFO_LEN + 1);
-	snprintf(g_ps3_host_info.release, SYS_INFO_LEN, "%s",
-		 utsname()->release);
+	snprintf(g_ps3_host_info.release, SYS_INFO_LEN, "%s", utsname()->release);
 
-	LOG_DEBUG(
-		"host info: machine=%u,vendor=%u,processor_cnt=%u release=%s\n",
+	ps3_cpu_type_parse(&g_ps3_host_info);
+	LOG_DEBUG("host info: machine=%u,vendor=%u,processor_cnt=%u release=%s cpu_type=%u\n",
 		g_ps3_host_info.machine, g_ps3_host_info.vendor,
-		g_ps3_host_info.processor_cnt, g_ps3_host_info.release);
+		g_ps3_host_info.processor_cnt, g_ps3_host_info.release, g_ps3_host_info.cpu_type);
 }
 
 unsigned short ps3_host_vendor_get(void)
@@ -683,6 +693,11 @@ unsigned short ps3_host_vendor_get(void)
 char *ps3_host_release_get(void)
 {
 	return g_ps3_host_info.release;
+}
+
+unsigned short ps3_host_cpu_type_get(void)
+{
+	return g_ps3_host_info.cpu_type;
 }
 
 unsigned char ps3_is_last_func(struct ps3_instance *instance)

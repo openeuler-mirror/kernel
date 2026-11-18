@@ -6,6 +6,7 @@
 
 #define pr_fmt(fmt) "UMMU: " fmt
 
+#include <linux/bitfield.h>
 #include <linux/kvm_host.h>
 #include <linux/iommu.h>
 #include <uapi/linux/iommufd.h>
@@ -30,6 +31,8 @@
 #include "sva.h"
 #include "nested.h"
 #include "iommu.h"
+
+#define UMMU_CAPS_NUM 7
 
 static bool ummu_capable(struct device *dev, enum iommu_cap cap)
 {
@@ -56,6 +59,7 @@ static void *ummu_hw_info(struct device *dev, u32 *length, u32 *type)
 {
 	struct ummu_master *master = (struct ummu_master *)dev_iommu_priv_get(dev);
 	struct iommu_hw_info_ummu *info;
+	u32 __iomem *base_cap;
 
 	info = kzalloc(sizeof(*info), GFP_KERNEL);
 	if (!info)
@@ -63,6 +67,20 @@ static void *ummu_hw_info(struct device *dev, u32 *length, u32 *type)
 
 	info->iidr = readl_relaxed(master->ummu->base + UMMU_IIDR);
 	info->aidr = readl_relaxed(master->ummu->base + UMMU_AIDR);
+	base_cap = master->ummu->base + UMMU_CAP0;
+	/*
+	 * The first-generation UMMU does not expose its capability registers
+	 * to userspace: caps[] keeps the zeroed value from kzalloc, which is
+	 * the contract the VMM has been adapted to.
+	 */
+	if (!ummu_first_generation()) {
+		for (int i = 0; i < UMMU_CAPS_NUM; i++)
+			info->caps[i] = readl_relaxed(base_cap + i);
+
+		/* Mask IOPF capability because nested guests do not support it.*/
+		u32p_replace_bits(&info->caps[STALL_CAP], CAP3_STALL_MODE_NOT_SUPPORT,
+				  CAP3_STALL_MODEL_MASK);
+	}
 
 	*length = sizeof(*info);
 	*type = IOMMU_HW_INFO_TYPE_UMMU;
@@ -761,25 +779,6 @@ static int ummu_sync_dom_cfg(struct ummu_base_domain *src,
 	return 0;
 }
 
-static void ummu_plbi_free_bit(struct iommu_domain *domain, u32 next_lvl_idx,
-			u32 next_lvl_offset)
-{
-	struct ummu_base_domain *base_domain = to_ummu_base_domain(domain);
-	struct ummu_device *ummu = core_to_ummu_device(base_domain->core_dev);
-	struct ummu_domain *u_domain = to_ummu_domain(domain);
-	struct ummu_mcmdq_ent cmd = {
-		.opcode = CMD_PLBI_OS_N,
-		.plbi_free_bit = {
-			.tid = base_domain->tid,
-			.tecte_tag = u_domain->cfgs.tecte_tag,
-			.next_lvl_idx = next_lvl_idx,
-			.next_lvl_offset = next_lvl_offset,
-		},
-	};
-
-	ummu_mcmdq_issue_cmd_with_sync(ummu, &cmd);
-}
-
 static int ummu_invalidate_cfg(struct ummu_base_domain *base_domain)
 {
 	ummu_sva_tcte_invalidate(to_ummu_domain(&base_domain->domain));
@@ -848,7 +847,6 @@ const struct ummu_device_helper ummu_helper = {
 	.sync_dom_cfg = ummu_sync_dom_cfg,
 	.alloc_domain_nested = ummu_viommu_alloc_domain_nested,
 	.cache_invalidate_user = ummu_viommu_cache_invalidate_user,
-	.plbi_free_bit = ummu_plbi_free_bit,
 	.sync_iotlb_all = ummu_flush_iotlb_all,
 	.mm_arch_inv_secondary_tlbs = ummu_mm_arch_inv_secondary_tlbs,
 	.sync_iommu_domain = ummu_sync_iommu_domain,

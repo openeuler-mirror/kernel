@@ -82,11 +82,9 @@ void ps3_io_outstand_inc(struct ps3_instance *instance,
 void ps3_io_outstand_dec(struct ps3_instance *instance,
 			 const struct scsi_cmnd *s_cmd);
 
-void ps3_vd_outstand_dec(struct ps3_instance *instance,
-			 const struct scsi_cmnd *s_cmd);
+void ps3_vd_outstand_dec(struct ps3_cmd *cmd);
 
-void ps3_vd_outstand_inc(struct ps3_instance *instance,
-			 const struct scsi_cmnd *s_cmd);
+void ps3_vd_outstand_inc(struct ps3_cmd *cmd);
 
 void ps3_dev_io_outstand_dec(const struct ps3_cmd *cmd);
 
@@ -359,10 +357,9 @@ ps3_stat_qos_switch_is_open(const struct ps3_instance *instance)
 		}                                                              \
 	} while (0)
 
-#define PS3_VD_OUTSTAND_DEC(instance, s_cmd)                                   \
-		ps3_vd_outstand_dec(instance, s_cmd)                           \
+#define PS3_VD_OUTSTAND_DEC(instance, cmd) ps3_vd_outstand_dec(cmd)
 
-#define PS3_VD_OUTSTAND_INC(instance, s_cmd) ps3_vd_outstand_inc(instance, s_cmd)
+#define PS3_VD_OUTSTAND_INC(instance, cmd) ps3_vd_outstand_inc(cmd)
 
 #define PS3_DEV_IO_OUTSTAND_DEC(instance, cmd)                                 \
 	do {                                                                   \
@@ -400,6 +397,10 @@ ps3_stat_qos_switch_is_open(const struct ps3_instance *instance)
 					 PS3_STAT_BACK);                       \
 		}                                                              \
 	} while (0)
+
+#define PS3_VD_READ_OUTSTAND(data) ps3_atomic_read(&(data)->rd_io_outstand)
+
+#define PS3_VD_WRITE_OUTSTAND(data) ps3_atomic_read(&(data)->wr_io_outstand)
 
 int ps3_stat_workq_start(struct ps3_instance *instance);
 

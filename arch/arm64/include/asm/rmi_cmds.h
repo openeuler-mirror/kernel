@@ -165,8 +165,10 @@ static inline int granule_delegate_range(unsigned long phys, size_t size)
 			break;
 	}
 
-	if (ret)
-		granule_undelegate_range(phys, off - GRANULE_DELEGATE_SIZE);
+	if (ret) {
+		if (off >= GRANULE_DELEGATE_SIZE)
+			granule_undelegate_range(phys, off - GRANULE_DELEGATE_SIZE);
+	}
 
 	return ret;
 }
@@ -822,7 +824,8 @@ static inline int rmi_smmu_reg_read32(unsigned long ioaddr, unsigned long reg,
 	int ret;
 
 	ret = rmi_smmu_reg_read(ioaddr, reg, SMMU_R_REG_32_BIT, &reg_value);
-	*value = (u32)reg_value;
+	if (!ret)
+		*value = (u32)reg_value;
 
 	return ret;
 }

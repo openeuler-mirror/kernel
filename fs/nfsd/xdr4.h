@@ -599,16 +599,28 @@ struct nfsd4_copy {
 	struct nfsd_file        *nf_src;
 	struct nfsd_file        *nf_dst;
 
-	copy_stateid_t		cp_stateid;
-
-	struct list_head	copies;
-	struct task_struct	*copy_task;
-	refcount_t		refcount;
-
 	struct nfsd4_ssc_umount_item *ss_nsui;
 	struct nfs_fh		c_fh;
 	nfs4_stateid		stateid;
 	struct nfsd_net		*cp_nn;
+};
+
+/*
+ * Durable state for an async (background) server-side COPY.
+ *
+ * struct nfsd4_copy is transient: it lives in the COMPOUND argument buffer
+ * and is reused once the op returns. An async COPY outlives the COMPOUND
+ * (worker kthread, async_copies linkage), so its params and result are
+ * snapshotted into the embedded cp_copy and it never points into the request
+ * buffer.
+ */
+struct nfsd4_async_copy {
+	struct nfsd4_copy	cp_copy;	/* operation params + result */
+
+	struct list_head	copies;		/* nfs4_client.async_copies */
+	struct task_struct	*copy_task;
+	refcount_t		refcount;
+	copy_stateid_t		cp_stateid;	/* s2s_cp_stateids IDR entry */
 };
 
 static inline void nfsd4_copy_set_sync(struct nfsd4_copy *copy, bool sync)

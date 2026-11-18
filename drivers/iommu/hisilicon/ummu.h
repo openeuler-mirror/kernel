@@ -12,6 +12,8 @@
 #include <linux/kernel.h>
 #include <linux/sizes.h>
 #include <linux/init.h>
+#include <linux/list.h>
+#include <linux/xarray.h>
 
 #include "perm_table.h"
 
@@ -255,26 +257,6 @@ enum ummu_dom_cfg_sync_type {
 	SYNC_CLEAR_DOM_ALL_CFG,
 };
 
-#define UMMU_GATHER_MAX_CNT 12
-struct logic_ummu_plb {
-	u32 opcode;
-	union {
-		struct {
-			u64 va;
-			u64 size;
-		} plbi_va;
-		struct {
-			u64 lvl_idx;
-			u64 lvl_offset;
-		} plbi_f_bit;
-	};
-};
-struct ummu_plbi_gather {
-	void *cookie;
-	struct logic_ummu_plb plbis[UMMU_GATHER_MAX_CNT];
-	u32 data_cnt;
-};
-
 struct ummu_device_helper {
 	void (*sync_tlb)(struct iommu_domain *domain,
 			 struct iommu_iotlb_gather *iotlb_gather);
@@ -285,8 +267,6 @@ struct ummu_device_helper {
 		const struct iommu_user_data *user_data);
 	int (*cache_invalidate_user)(struct iommu_domain *domain,
 				     struct iommu_user_data_array *array);
-	void (*plbi_free_bit)(struct iommu_domain *domain, u32 next_lvl_idx,
-			      u32 next_lvl_offset);
 	void (*sync_iotlb_all)(struct iommu_domain *domain);
 	void (*mm_arch_inv_secondary_tlbs)(struct iommu_domain *domain,
 					unsigned long start, size_t size);
@@ -400,4 +380,6 @@ bool ummu_get_mapt_blk_exp(void);
 size_t ummu_get_mapt_base_blk_size(void);
 
 int ummu_bypass_dev_domain_type(struct device *dev);
+
+bool ummu_first_generation(void);
 #endif /* __UMMU_H__ */

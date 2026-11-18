@@ -185,6 +185,8 @@ extern int movable_gigantic_pages __read_mostly;
 extern int sysctl_hugetlb_shm_group;
 extern struct list_head huge_boot_pages;
 
+void hugetlb_bootmem_struct_page_init(void);
+
 /* arch callbacks */
 
 #ifndef CONFIG_HIGHPTE
@@ -1325,6 +1327,10 @@ static inline bool hugetlbfs_pagecache_present(
     struct hstate *h, struct vm_area_struct *vma, unsigned long address)
 {
 	return false;
+}
+
+static inline void hugetlb_bootmem_struct_page_init(void)
+{
 }
 #endif	/* CONFIG_HUGETLB_PAGE */
 

@@ -1667,6 +1667,7 @@ static void sm501_pci_remove(struct pci_dev *dev)
 	release_mem_region(sm->io_res->start, 0x100);
 
 	pci_disable_device(dev);
+	kfree(sm);
 }
 
 static int sm501_plat_remove(struct platform_device *dev)
@@ -1678,6 +1679,7 @@ static int sm501_plat_remove(struct platform_device *dev)
 
 	release_mem_region(sm->io_res->start, 0x100);
 
+	kfree(sm);
 	return 0;
 }
 

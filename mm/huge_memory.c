@@ -20,6 +20,7 @@
 #include <linux/swapops.h>
 #include <linux/backing-dev.h>
 #include <linux/dax.h>
+#include <linux/dynamic_pool.h>
 #include <linux/mm_types.h>
 #include <linux/khugepaged.h>
 #include <linux/freezer.h>
@@ -113,6 +114,16 @@ unsigned long __thp_vma_allowable_orders(struct vm_area_struct *vma,
 		return 0;
 
 	if (thp_disabled_by_hw() || vma_thp_disabled(vma, vm_flags))
+		return 0;
+
+	/*
+	 * dpool serves order-0 allocations only.
+	 * dynamic_pool_should_alloc() rejects any higher order.
+	 * A huge folio would bypass the pool and come from the
+	 * global buddy allocator.  Block all huge orders so every
+	 * THP path falls back to order-0.
+	 */
+	if (mm_in_dynamic_pool(vma->vm_mm))
 		return 0;
 
 	/* khugepaged doesn't collapse DAX vma, but page fault is fine. */
@@ -1823,9 +1834,11 @@ int copy_huge_pmd(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 
 	pmd = pmdp_get_lockless(src_pmd);
 	if (unlikely(pmd_present(pmd) && pmd_special(pmd))) {
-		pgtable = pte_alloc_one(dst_mm);
-		if (unlikely(!pgtable))
-			goto out;
+		if (arch_needs_pgtable_deposit(dst_vma)) {
+			pgtable = pte_alloc_one(dst_mm);
+			if (unlikely(!pgtable))
+				goto out;
+		}
 		dst_ptl = pmd_lock(dst_mm, dst_pmd);
 		src_ptl = pmd_lockptr(src_mm, src_pmd);
 		spin_lock_nested(src_ptl, SINGLE_DEPTH_NESTING);
@@ -1843,8 +1856,10 @@ int copy_huge_pmd(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 		/* dax won't reach here, it will be intercepted at vma_needs_copy() */
 		VM_WARN_ON_ONCE(vma_is_dax(src_vma));
 
-		mm_inc_nr_ptes(dst_mm);
-		pgtable_trans_huge_deposit(dst_mm, dst_pmd, pgtable);
+		if (pgtable) {
+			mm_inc_nr_ptes(dst_mm);
+			pgtable_trans_huge_deposit(dst_mm, dst_pmd, pgtable);
+		}
 		goto set_pmd;
 	}
 
@@ -2547,7 +2562,8 @@ static inline int pmd_move_must_withdraw(spinlock_t *new_pmd_ptl,
 	 *
 	 * We also don't deposit and withdraw tables for file pages.
 	 */
-	return (new_pmd_ptl != old_pmd_ptl) && vma_is_anonymous(vma);
+	return (new_pmd_ptl != old_pmd_ptl) &&
+	       (vma_is_anonymous(vma) || arch_needs_pgtable_deposit(vma));
 }
 #endif
 
@@ -2921,6 +2937,8 @@ static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
 			pte_t entry;
 
 			if (vma_is_dax(vma))
+				return;
+			if (!arch_needs_pgtable_deposit(vma))
 				return;
 			pgtable = pgtable_trans_huge_withdraw(mm, pmd);
 			if (unlikely(!pgtable))

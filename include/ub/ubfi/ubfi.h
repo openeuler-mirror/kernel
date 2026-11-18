@@ -186,8 +186,21 @@ void ubrt_fwnode_del(u32 index, enum ubrt_node_type type);
  */
 void ubrt_fwnode_del_all(void);
 
+/**
+ * struct ub_irqs_affinity - Irqs affinity node of a bus controller
+ * @node:		List node of ubc_irqs_affinity_list
+ * @irqs_affinity:	CPU affinity cpumask of the controller's irqs
+ * @ctl_no:		Bus controller number, used as the key
+ */
+struct ub_irqs_affinity {
+	struct list_head node;
+	cpumask_t irqs_affinity;
+	u32 ctl_no;
+};
+
 #if IS_ENABLED(CONFIG_UB_UBFI)
 extern struct list_head ubc_list;
+extern struct list_head ubc_irqs_affinity_list;
 extern u32 ubc_eid_start;
 extern u32 ubc_eid_end;
 extern u32 ubc_cna_start;

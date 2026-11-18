@@ -21,7 +21,6 @@
 #include <linux/mmu_notifier.h>
 #include <linux/rwsem.h>
 
-#include "../queue.h"
 #include "logic_ummu.h"
 
 struct logic_ummu_device {
@@ -65,13 +64,6 @@ struct logic_ummu_identity_device {
 	refcount_t refcount;
 };
 
-struct support_cb {
-	tdev_select_logic_ummu func;
-	struct list_head node;
-};
-
-static DEFINE_SPINLOCK(support_cb_list_lock);
-static LIST_HEAD(support_cb_list_head);
 static DEFINE_SPINLOCK(eid_list_lock);
 static LIST_HEAD(cached_eid_list);
 static DEFINE_XARRAY(logic_ummu_ops_info);
@@ -495,19 +487,19 @@ static void *logic_ummu_hw_info(struct device *dev, u32 *length, u32 *type)
 }
 
 #if IS_ENABLED(CONFIG_UB_UMMU_SVA)
-static void logic_ummu_plb_sync(struct iommu_domain *d, struct iommu_plb_gather *plb_gather);
 static int logic_ummu_grant(struct iommu_domain *d, void *va, size_t size,
 			    int perm, void *cookie,
 			    struct iommu_plb_gather *plb_gather)
 {
-	struct ummu_plbi_gather ummu_gather = {.cookie = cookie, .data_cnt = 0};
 	struct ummu_base_domain *agent_domain = iommu_to_logic_domain(d)->agent_domain;
-	struct iommu_plb_gather local_plb_gather = {};
 	const struct iommu_perm_ops *perm_ops;
-	int ret;
 
 	if (!agent_domain) {
 		pr_err("find agent domain failed.\n");
+		return -EINVAL;
+	}
+	if (!cookie) {
+		pr_err("cookie is invalid\n");
 		return -EINVAL;
 	}
 	perm_ops = agent_domain->domain.perm_ops;
@@ -515,39 +507,18 @@ static int logic_ummu_grant(struct iommu_domain *d, void *va, size_t size,
 		pr_err("unsupport ops.\n");
 		return -EOPNOTSUPP;
 	}
-	ret = perm_ops->grant(&agent_domain->domain, va, size, perm, (void *)&ummu_gather,
-			      plb_gather);
-	if (ret || !ummu_gather.data_cnt)
-		return ret;
 
-	for (u32 idx = 0; idx < ummu_gather.data_cnt; idx++) {
-		switch (ummu_gather.plbis[idx].opcode) {
-		case CMD_PLBI_OS_VA:
-			local_plb_gather.va = (void *)ummu_gather.plbis[idx].plbi_va.va;
-			local_plb_gather.size = ummu_gather.plbis[idx].plbi_va.size;
-			logic_ummu_plb_sync(d, &local_plb_gather);
-			break;
-		case CMD_PLBI_OS_N:
-			logic_ummu_plbi_free_bit(d, ummu_gather.plbis[idx].plbi_f_bit.lvl_idx,
-						 ummu_gather.plbis[idx].plbi_f_bit.lvl_offset);
-			break;
-		default:
-			pr_warn("wrong cmd op code in logic grant.\n");
-			break;
-		}
-	}
-
-	return 0;
+	/* transparent forwarding — PLBI dispatch is done inside perm_table
+	 * via immediate iommu_plb_sync(); no gather/replay here.
+	 */
+	return perm_ops->grant(&agent_domain->domain, va, size, perm, cookie, plb_gather);
 }
 
 static int logic_ummu_ungrant(struct iommu_domain *d, void *va, size_t size,
 			      void *cookie, struct iommu_plb_gather *plb_gather)
 {
-	struct ummu_plbi_gather ummu_gather = {.cookie = cookie, .data_cnt = 0};
 	struct ummu_base_domain *agent_domain = iommu_to_logic_domain(d)->agent_domain;
-	struct iommu_plb_gather local_plb_gather = {};
 	const struct iommu_perm_ops *perm_ops;
-	int ret;
 
 	if (!agent_domain) {
 		pr_err("find agent domain failed.\n");
@@ -558,28 +529,9 @@ static int logic_ummu_ungrant(struct iommu_domain *d, void *va, size_t size,
 		pr_err("unsupport ops.\n");
 		return -EOPNOTSUPP;
 	}
-	ret = perm_ops->ungrant(&agent_domain->domain, va, size, (void *)&ummu_gather, plb_gather);
-	if (ret || !ummu_gather.data_cnt)
-		return ret;
 
-	for (u32 idx = 0; idx < ummu_gather.data_cnt; idx++) {
-		switch (ummu_gather.plbis[idx].opcode) {
-		case CMD_PLBI_OS_VA:
-			local_plb_gather.va = (void *)ummu_gather.plbis[idx].plbi_va.va;
-			local_plb_gather.size = ummu_gather.plbis[idx].plbi_va.size;
-			logic_ummu_plb_sync(d, &local_plb_gather);
-			break;
-		case CMD_PLBI_OS_N:
-			logic_ummu_plbi_free_bit(d, ummu_gather.plbis[idx].plbi_f_bit.lvl_idx,
-						 ummu_gather.plbis[idx].plbi_f_bit.lvl_offset);
-			break;
-		default:
-			pr_warn("wrong cmd op code in logic ungrant.\n");
-			break;
-		}
-	}
-
-	return 0;
+	/* transparent forwarding — cookie may be NULL (by-VA) or ummu_token_info* (by-token) */
+	return perm_ops->ungrant(&agent_domain->domain, va, size, cookie, plb_gather);
 }
 
 static void logic_ummu_plb_sync_all(struct iommu_domain *d)
@@ -1693,49 +1645,10 @@ static int logic_ummu_invalidate_cfg(struct ummu_base_domain *domain)
 	return 0;
 }
 
-int logic_ummu_register_support_attr(tdev_select_logic_ummu func)
-{
-	struct support_cb *scb_entry;
-
-	guard(spinlock)(&support_cb_list_lock);
-	list_for_each_entry(scb_entry, &support_cb_list_head, node) {
-		if (scb_entry->func == func) {
-			pr_err("target func exist\n");
-			return -EEXIST;
-		}
-	}
-
-	scb_entry = kzalloc(sizeof(*scb_entry), GFP_ATOMIC);
-	if (!scb_entry)
-		return -ENOMEM;
-
-	scb_entry->func = func;
-	list_add_tail(&scb_entry->node, &support_cb_list_head);
-
-	return 0;
-}
-EXPORT_SYMBOL_NS_GPL(logic_ummu_register_support_attr, UMMU_INTERNAL);
-
-void logic_ummu_unregister_support_attr(tdev_select_logic_ummu func)
-{
-	struct support_cb *scb_entry, *next;
-
-	guard(spinlock)(&support_cb_list_lock);
-	list_for_each_entry_safe(scb_entry, next, &support_cb_list_head, node) {
-		if (scb_entry->func == func) {
-			list_del(&scb_entry->node);
-			kfree(scb_entry);
-		}
-	}
-}
-EXPORT_SYMBOL_NS_GPL(logic_ummu_unregister_support_attr, UMMU_INTERNAL);
-
 static bool logic_ummu_device_support_attr(struct ummu_core_device *core_device,
 					   struct tdev_attr *attr)
 {
 	struct hisi_ummu_tdev_info *info;
-	struct support_cb *scb_entry;
-	bool select_logic_ummu;
 
 	if (!attr->priv || !attr->priv_len)
 		return true;
@@ -1743,12 +1656,6 @@ static bool logic_ummu_device_support_attr(struct ummu_core_device *core_device,
 	if (attr->priv_len < sizeof(struct hisi_ummu_tdev_info)) {
 		pr_err("para is invalid.\n");
 		return false;
-	}
-
-	guard(spinlock)(&support_cb_list_lock);
-	list_for_each_entry(scb_entry, &support_cb_list_head, node) {
-		if (scb_entry->func(attr, &select_logic_ummu))
-			return select_logic_ummu;
 	}
 
 	info = (struct hisi_ummu_tdev_info *)attr->priv;
@@ -1994,21 +1901,6 @@ out_del_list:
 	list_del(&ummu->list);
 	logic_ummu.ummu_cnt--;
 	return ret;
-}
-
-void logic_ummu_plbi_free_bit(struct iommu_domain *d, u32 next_lvl_idx, u32 next_lvl_offset)
-{
-	struct logic_ummu_domain *logic_domain = iommu_to_logic_domain(d);
-	const struct ummu_device_helper *helper = get_agent_helper();
-	struct ummu_base_domain *base_domain;
-
-	if (!helper || !helper->plbi_free_bit) {
-		pr_err("find agent domain failed.\n");
-		return;
-	}
-
-	list_for_each_entry(base_domain, &logic_domain->base_domain.list, list)
-		helper->plbi_free_bit(&base_domain->domain, next_lvl_idx, next_lvl_offset);
 }
 
 int logic_add_ummu_device(struct ummu_device *ummu,

@@ -2542,11 +2542,8 @@ static int __arch_prepare_bpf_trampoline(struct bpf_tramp_image *im, void *rw_im
 	WARN_ON_ONCE((flags & BPF_TRAMP_F_INDIRECT) &&
 		     (flags & ~(BPF_TRAMP_F_INDIRECT | BPF_TRAMP_F_RET_FENTRY_RET)));
 
-	/* extra registers for struct arguments */
-	for (i = 0; i < m->nr_args; i++) {
-		if (m->arg_flags[i] & BTF_FMODEL_STRUCT_ARG)
-			nr_regs += (m->arg_size[i] + 7) / 8 - 1;
-	}
+	for (i = 0; i < m->nr_args; i++)
+		nr_regs += (m->arg_size[i] + 7) / 8 - 1;
 
 	/* x86-64 supports up to MAX_BPF_FUNC_ARGS arguments. 1-6
 	 * are passed through regs, the remains are through stack.
@@ -2989,11 +2986,14 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
 
 	tmp = bpf_jit_blind_constants(prog);
 	/*
-	 * If blinding was requested and we failed during blinding,
-	 * we must fall back to the interpreter.
+	 * Fall back to the interpreter after blinding failures, except when
+	 * the loader was killed.
 	 */
-	if (IS_ERR(tmp))
+	if (IS_ERR(tmp)) {
+		if (PTR_ERR(tmp) == -EINTR)
+			return tmp;
 		return orig_prog;
+	}
 	if (tmp != prog) {
 		tmp_blinded = true;
 		prog = tmp;

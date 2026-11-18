@@ -586,6 +586,8 @@ typedef int (*write_byte_f)(struct ub_entity *uent, u64 pos, u8 val);
 typedef int (*write_word_f)(struct ub_entity *uent, u64 pos, u16 val);
 typedef int (*write_dword_f)(struct ub_entity *uent, u64 pos, u32 val);
 
+typedef bool (*ub_port_auth_handler)(void *data);
+
 #ifdef CONFIG_UB_UBUS
 extern struct bus_type ub_bus_type;
 #define dev_is_ub(d) ((d)->bus == &ub_bus_type)
@@ -789,6 +791,25 @@ void ub_unregister_share_port(struct ub_entity *uent, u16 port_id,
 			      struct ub_share_port_ops *ops);
 
 /**
+ * ub_port_auth_handler_register() - Register ub port authentication handler.
+ * @rh: ub port auth handler.
+ *
+ * Register the callback function of UB port authentication.
+ *
+ * Context: Process context only. Must not be called from atomic/IRQ context.
+ */
+void ub_port_auth_handler_register(ub_port_auth_handler rh);
+
+/**
+ * ub_port_auth_handler_unregister() - Unregister ub port authentication handler.
+ *
+ * Clear the callback function.
+ *
+ * Context: Process context only. Must not be called from atomic/IRQ context.
+ */
+void ub_port_auth_handler_unregister(void);
+
+/**
  * ub_reset_entity() - Function entity level reset.
  * @ent: UB entity.
  *
@@ -940,6 +961,20 @@ int ub_irq_vector(struct ub_entity *uent, unsigned int nr);
  * ub_alloc_irq_vectors_affinity() without the %UB_IRQ_AFFINITY flag).
  */
 const struct cpumask *ub_irq_get_affinity(struct ub_entity *uent, int nr);
+
+/**
+ * ub_get_ubc_irq_affinity() - Get IRQ affinity cpumask by UB entity.
+ * @uent: UB entity associated with a bus controller.
+ *
+ * Obtain the controller number from @uent->ubc->ctl_no and search the
+ * IRQ affinity list for the matching entry. The returned cpumask
+ * describes which CPUs the controller's interrupts are bound to.
+ *
+ * Context: Any context.
+ * Return: Pointer to the cpumask on success, NULL if @uent is NULL,
+ *	   @uent->ubc is NULL, or no affinity is recorded.
+ */
+const struct cpumask *ub_get_ubc_irq_affinity(struct ub_entity *uent);
 
 /**
  * ub_activate_entity() - Activate entity.
@@ -1170,6 +1205,8 @@ static inline int ub_register_share_port(struct ub_entity *uent, u16 port_id,
 { return -ENODEV; }
 static inline void ub_unregister_share_port(struct ub_entity *uent, u16 port_id,
 					    struct ub_share_port_ops *ops) {}
+static inline void ub_port_auth_handler_register(ub_port_auth_handler rh) {}
+static inline void ub_port_auth_handler_unregister(void) {}
 static inline int ub_reset_entity(struct ub_entity *uent)
 { return -ENODEV; }
 static inline int ub_device_reset(struct ub_entity *uent)
@@ -1205,6 +1242,8 @@ static inline int ub_irq_vector(struct ub_entity *uent, unsigned int nr)
 { return -EINVAL; }
 static inline const struct cpumask *
 ub_irq_get_affinity(struct ub_entity *uent, int nr) { return cpu_possible_mask; }
+static inline const struct cpumask *
+ub_get_ubc_irq_affinity(struct ub_entity *uent) { return cpu_possible_mask; }
 static inline int ub_activate_entity(struct ub_entity *uent, u32 entity_idx)
 { return -ENODEV; }
 static inline int ub_deactivate_entity(struct ub_entity *uent, u32 entity_idx)

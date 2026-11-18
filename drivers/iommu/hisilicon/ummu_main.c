@@ -39,6 +39,7 @@ MODULE_PARM_DESC(sva_separated_mode,
 	"Enable user-mode SVA with an independent page table (no process page table sharing).");
 
 static u16 ummu_chip_identifier;
+static bool ummu_first_gen;
 bool hw_bypass;
 
 bool ummu_sva_separated_enabled(void)
@@ -155,16 +156,22 @@ resource_release:
 	return ret;
 }
 
+bool ummu_first_generation(void)
+{
+	return ummu_first_gen;
+}
+
 static void ummu_device_hw_probe_iidr(struct ummu_device *ummu)
 {
-	u32 reg;
+	u32 reg = readl_relaxed(ummu->base + UMMU_IIDR);
 
 	/*
 	 * In the 1st generation On the hisi chip, IIDR_PROD_ID is set to 0,
 	 * ummu enables chip_identifier to perform some specialized operations.
 	 */
-	reg = readl_relaxed(ummu->base + UMMU_IIDR);
-	if (ummu_chip_identifier == HISI_VENDOR_ID && !FIELD_GET(IIDR_PROD_ID, reg)) {
+	ummu_first_gen = (ummu_chip_identifier == HISI_VENDOR_ID) &&
+			 !FIELD_GET(IIDR_PROD_ID, reg);
+	if (ummu_first_gen) {
 		ummu->cap.options |= UMMU_OPT_DOUBLE_PLBI;
 		ummu->cap.options |= UMMU_OPT_KCMD_PLBI;
 		ummu->cap.options |= UMMU_OPT_CHK_MAPT_CONTINUITY;

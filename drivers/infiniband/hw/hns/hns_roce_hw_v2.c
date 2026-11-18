@@ -1020,19 +1020,67 @@ static void hns_roce_drain_qp_done(struct ib_cq *cq, struct ib_wc *wc)
 	complete(&cqe->done);
 }
 
+static void hns_roce_flush_drain_wr(struct ib_cq *ibcq,
+				    struct hns_roce_qp *hr_qp,
+				    struct hns_roce_wq *wq)
+{
+	struct hns_roce_cq *hr_cq = to_hr_cq(ibcq);
+	struct ib_wc wc = {};
+	unsigned long flags;
+	u32 head;
+
+	wc.status = IB_WC_WR_FLUSH_ERR;
+	wc.vendor_err = 0;
+	wc.qp = &hr_qp->ibqp;
+
+	spin_lock_irqsave(&hr_cq->lock, flags);
+	wq->is_drained = true;
+	head = wq->head;
+	spin_unlock_irqrestore(&hr_cq->lock, flags);
+
+	while (true) {
+		struct ib_cqe *cqe;
+
+		spin_lock_irqsave(&hr_cq->lock, flags);
+		if (wq->tail == head) {
+			spin_unlock_irqrestore(&hr_cq->lock, flags);
+			return;
+		}
+		cqe = (struct ib_cqe *)wq->wrid[wq->tail & (wq->wqe_cnt - 1)];
+		wq->tail++;
+		spin_unlock_irqrestore(&hr_cq->lock, flags);
+
+		if (cqe) {
+			wc.wr_cqe = cqe;
+			cqe->done(ibcq, &wc);
+		}
+	}
+}
+
 static void handle_drain_completion(struct ib_cq *ibcq,
 				    struct hns_roce_drain_cqe *drain,
-				    struct hns_roce_dev *hr_dev)
+				    struct hns_roce_dev *hr_dev,
+				    struct hns_roce_qp *hr_qp,
+				    struct hns_roce_wq *wq)
 {
-#define DRAIN_QP_TMO (HZ * 30)
+#define DRAIN_QP_TMO (HZ * 60)
 #define TIMEOUT (HZ / 10)
 	struct hns_roce_cq *hr_cq = to_hr_cq(ibcq);
 	unsigned long flags;
 	bool triggered;
 
 	if (ibcq->poll_ctx == IB_POLL_DIRECT) {
-		while (wait_for_completion_timeout(&drain->done, TIMEOUT) <= 0)
+		unsigned long end = jiffies + DRAIN_QP_TMO;
+
+		while (wait_for_completion_timeout(&drain->done, TIMEOUT) <= 0) {
+			if (time_after(jiffies, end)) {
+				ibdev_err_ratelimited(&hr_dev->ib_dev,
+						      "Drain qp timeout!\n");
+				hns_roce_flush_drain_wr(ibcq, hr_qp, wq);
+				return;
+			}
 			ib_process_cq_direct(ibcq, -1);
+		}
 		return;
 	}
 
@@ -1070,8 +1118,10 @@ static void handle_drain_completion(struct ib_cq *ibcq,
 
 waiting_done:
 	if (ibcq->comp_handler) {
-		if (!wait_for_completion_timeout(&drain->done, DRAIN_QP_TMO))
+		if (!wait_for_completion_timeout(&drain->done, DRAIN_QP_TMO)) {
 			ibdev_err_ratelimited(&hr_dev->ib_dev, "Drain qp timeout!\n");
+			hns_roce_flush_drain_wr(ibcq, hr_qp, wq);
+		}
 	}
 }
 
@@ -1091,6 +1141,7 @@ static void hns_roce_v2_drain_rq(struct ib_qp *ibqp)
 		ibdev_err_ratelimited(&hr_dev->ib_dev,
 				      "failed to modify qp during drain rq, ret = %d.\n",
 				      ret);
+		hns_roce_flush_drain_wr(cq, hr_qp, &hr_qp->rq);
 		return;
 	}
 
@@ -1106,10 +1157,11 @@ static void hns_roce_v2_drain_rq(struct ib_qp *ibqp)
 		ibdev_err_ratelimited(&hr_dev->ib_dev,
 				      "failed to post recv for drain rq, ret = %d.\n",
 				      ret);
+		hns_roce_flush_drain_wr(cq, hr_qp, &hr_qp->rq);
 		return;
 	}
 
-	handle_drain_completion(cq, &rdrain, hr_dev);
+	handle_drain_completion(cq, &rdrain, hr_dev, hr_qp, &hr_qp->rq);
 }
 
 static void hns_roce_v2_drain_sq(struct ib_qp *ibqp)
@@ -1134,6 +1186,7 @@ static void hns_roce_v2_drain_sq(struct ib_qp *ibqp)
 		ibdev_err_ratelimited(&hr_dev->ib_dev,
 				      "failed to modify qp during drain sq, ret = %d.\n",
 				      ret);
+		hns_roce_flush_drain_wr(cq, hr_qp, &hr_qp->sq);
 		return;
 	}
 
@@ -1148,10 +1201,11 @@ static void hns_roce_v2_drain_sq(struct ib_qp *ibqp)
 		ibdev_err_ratelimited(&hr_dev->ib_dev,
 				      "failed to post send for drain sq, ret = %d.\n",
 				      ret);
+		hns_roce_flush_drain_wr(cq, hr_qp, &hr_qp->sq);
 		return;
 	}
 
-	handle_drain_completion(cq, &sdrain, hr_dev);
+	handle_drain_completion(cq, &sdrain, hr_dev, hr_qp, &hr_qp->sq);
 }
 
 static void *get_srq_wqe_buf(struct hns_roce_srq *srq, u32 n)
@@ -4549,6 +4603,7 @@ static int hns_roce_v2_poll_one(struct hns_roce_cq *hr_cq,
 	u16 wqe_idx;
 	int ret;
 
+retry:
 	cqe = get_sw_cqe_v2(hr_cq, hr_cq->cons_index);
 	if (!cqe)
 		return -EAGAIN;
@@ -4568,6 +4623,9 @@ static int hns_roce_v2_poll_one(struct hns_roce_cq *hr_cq,
 
 	is_send = !hr_reg_read(cqe, CQE_S_R);
 	if (is_send) {
+		if (unlikely(qp->sq.is_drained))
+			goto retry;
+
 		wq = &qp->sq;
 
 		/* If sg_signal_bit is set, tail pointer will be updated to
@@ -4587,6 +4645,9 @@ static int hns_roce_v2_poll_one(struct hns_roce_cq *hr_cq,
 			wc->wr_id = srq->wrid[wqe_idx];
 			hns_roce_free_srq_wqe(srq, wqe_idx);
 		} else {
+			if (unlikely(qp->rq.is_drained))
+				goto retry;
+
 			wq = &qp->rq;
 			wc->wr_id = wq->wrid[wq->tail & (wq->wqe_cnt - 1)];
 			hns_roh_restore_grh(hr_dev, qp, wc, cqe);
@@ -4610,6 +4671,7 @@ static int hns_roce_v2_poll_cq(struct ib_cq *ibcq, int num_entries,
 	struct hns_roce_cq *hr_cq = to_hr_cq(ibcq);
 	struct hns_roce_qp *cur_qp = NULL;
 	unsigned long flags;
+	u32 cons_index;
 	int npolled;
 	int ret;
 
@@ -4627,6 +4689,8 @@ static int hns_roce_v2_poll_cq(struct ib_cq *ibcq, int num_entries,
 		goto out;
 	}
 
+	cons_index = hr_cq->cons_index;
+
 	for (npolled = 0; npolled < num_entries; ++npolled) {
 		ret = hns_roce_v2_poll_one(hr_cq, &cur_qp, wc + npolled);
 		if (cur_qp && check_dca_detach_enable(cur_qp))
@@ -4635,7 +4699,7 @@ static int hns_roce_v2_poll_cq(struct ib_cq *ibcq, int num_entries,
 			break;
 	}
 
-	if (npolled)
+	if (hr_cq->cons_index != cons_index)
 		update_cq_db(hr_dev, hr_cq);
 
 out:

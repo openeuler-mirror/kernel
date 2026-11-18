@@ -1191,9 +1191,9 @@ static void xs_save_old_callbacks(struct sock_xprt *transport, struct sock *sk)
 
 static void xs_restore_old_callbacks(struct sock_xprt *transport, struct sock *sk)
 {
-	sk->sk_data_ready = transport->old_data_ready;
+	WRITE_ONCE(sk->sk_data_ready, transport->old_data_ready);
 	sk->sk_state_change = transport->old_state_change;
-	sk->sk_write_space = transport->old_write_space;
+	WRITE_ONCE(sk->sk_write_space, transport->old_write_space);
 	sk->sk_error_report = transport->old_error_report;
 }
 
@@ -1649,6 +1649,7 @@ static void xs_udp_do_set_buffer_size(struct rpc_xprt *xprt)
 {
 	struct sock_xprt *transport = container_of(xprt, struct sock_xprt, xprt);
 	struct sock *sk = transport->inet;
+	void (*write_space)(struct sock *sock);
 
 	if (transport->rcvsize) {
 		sk->sk_userlocks |= SOCK_RCVBUF_LOCK;
@@ -1657,7 +1658,8 @@ static void xs_udp_do_set_buffer_size(struct rpc_xprt *xprt)
 	if (transport->sndsize) {
 		sk->sk_userlocks |= SOCK_SNDBUF_LOCK;
 		sk->sk_sndbuf = transport->sndsize * xprt->max_reqs * 2;
-		sk->sk_write_space(sk);
+		write_space = READ_ONCE(sk->sk_write_space);
+		write_space(sk);
 	}
 }
 
@@ -1757,6 +1759,22 @@ static int xs_get_srcport(struct sock_xprt *transport)
 	return port;
 }
 
+static bool xs_srcaddr_is_any(const struct sockaddr *srcaddr)
+{
+	const struct sockaddr_in6 *sin6;
+
+	switch (srcaddr->sa_family) {
+	case AF_INET:
+		return ((const struct sockaddr_in *)srcaddr)->sin_addr.s_addr ==
+			htonl(INADDR_ANY);
+	case AF_INET6:
+		sin6 = (const struct sockaddr_in6 *)srcaddr;
+		return ipv6_addr_any(&sin6->sin6_addr);
+	default:
+		return true;
+	}
+}
+
 static unsigned short xs_sock_srcport(struct rpc_xprt *xprt)
 {
 	struct sock_xprt *sock = container_of(xprt, struct sock_xprt, xprt);
@@ -1787,6 +1805,34 @@ static int xs_sock_srcaddr(struct rpc_xprt *xprt, char *buf, size_t buflen)
 	return ret;
 }
 
+/**
+ * xs_xprt_set_srcaddr - set the source address for future connections
+ * @xprt: socket transport to update
+ * @srcaddr: source address to use
+ *
+ * The caller must ensure that no connect attempt can start while the source
+ * address is updated. The currently connected socket, if any, is unchanged.
+ */
+int xs_xprt_set_srcaddr(struct rpc_xprt *xprt,
+			const struct sockaddr *srcaddr)
+{
+	struct sock_xprt *transport;
+
+	if (!xprt || !srcaddr)
+		return -EINVAL;
+	if (xprt->xprt_class != &xs_udp_transport &&
+	    xprt->xprt_class != &xs_tcp_transport)
+		return -EOPNOTSUPP;
+	if (srcaddr->sa_family != xprt->addr.ss_family)
+		return -EAFNOSUPPORT;
+
+	transport = container_of(xprt, struct sock_xprt, xprt);
+	if (!rpc_copy_addr((struct sockaddr *)&transport->srcaddr, srcaddr))
+		return -EAFNOSUPPORT;
+	return 0;
+}
+EXPORT_SYMBOL_GPL(xs_xprt_set_srcaddr);
+
 static unsigned short xs_next_srcport(struct sock_xprt *transport, unsigned short port)
 {
 	if (transport->srcport != 0)
@@ -1803,12 +1849,16 @@ static int xs_bind(struct sock_xprt *transport, struct socket *sock)
 	int err, nloop = 0;
 	int port = xs_get_srcport(transport);
 	unsigned short last;
+	struct sockaddr *srcaddr = (struct sockaddr *)&transport->srcaddr;
 
 	/*
 	 * If we are asking for any ephemeral port (i.e. port == 0 &&
-	 * transport->xprt.resvport == 0), don't bind.  Let the local
-	 * port selection happen implicitly when the socket is used
-	 * (for example at connect time).
+	 * transport->xprt.resvport == 0) and no source address was
+	 * configured, don't bind. Let the local address and port selection
+	 * happen implicitly when the socket is used (for example at connect
+	 * time). A configured source address still needs bind(addr, 0) to
+	 * pin the address while leaving ephemeral port selection to the
+	 * network stack.
 	 *
 	 * This ensures that we can continue to establish TCP
 	 * connections even when all local ephemeral ports are already
@@ -1819,8 +1869,17 @@ static int xs_bind(struct sock_xprt *transport, struct socket *sock)
 	 * transport->xprt.resvport == 1) xs_get_srcport above will
 	 * ensure that port is non-zero and we will bind as needed.
 	 */
-	if (port <= 0)
+	if (port < 0)
 		return port;
+	if (port == 0) {
+		if (xs_srcaddr_is_any(srcaddr))
+			return 0;
+
+		memcpy(&myaddr, &transport->srcaddr, transport->xprt.addrlen);
+		rpc_set_port((struct sockaddr *)&myaddr, 0);
+		return kernel_bind(sock, (struct sockaddr *)&myaddr,
+				   transport->xprt.addrlen);
+	}
 
 	memcpy(&myaddr, &transport->srcaddr, transport->xprt.addrlen);
 	do {
@@ -1968,8 +2027,8 @@ static int xs_local_finish_connecting(struct rpc_xprt *xprt,
 		xs_save_old_callbacks(transport, sk);
 
 		sk->sk_user_data = xprt;
-		sk->sk_data_ready = xs_data_ready;
-		sk->sk_write_space = xs_udp_write_space;
+		WRITE_ONCE(sk->sk_data_ready, xs_data_ready);
+		WRITE_ONCE(sk->sk_write_space, xs_udp_write_space);
 		sk->sk_state_change = xs_local_state_change;
 		sk->sk_error_report = xs_error_report;
 		sk->sk_use_task_frag = false;
@@ -2171,8 +2230,8 @@ static void xs_udp_finish_connecting(struct rpc_xprt *xprt, struct socket *sock)
 		xs_save_old_callbacks(transport, sk);
 
 		sk->sk_user_data = xprt;
-		sk->sk_data_ready = xs_data_ready;
-		sk->sk_write_space = xs_udp_write_space;
+		WRITE_ONCE(sk->sk_data_ready, xs_data_ready);
+		WRITE_ONCE(sk->sk_write_space, xs_udp_write_space);
 		sk->sk_use_task_frag = false;
 
 		xprt_set_connected(xprt);
@@ -2358,9 +2417,9 @@ static int xs_tcp_finish_connecting(struct rpc_xprt *xprt, struct socket *sock)
 		xs_save_old_callbacks(transport, sk);
 
 		sk->sk_user_data = xprt;
-		sk->sk_data_ready = xs_data_ready;
+		WRITE_ONCE(sk->sk_data_ready, xs_data_ready);
 		sk->sk_state_change = xs_tcp_state_change;
-		sk->sk_write_space = xs_tcp_write_space;
+		WRITE_ONCE(sk->sk_write_space, xs_tcp_write_space);
 		sk->sk_error_report = xs_error_report;
 		sk->sk_use_task_frag = false;
 
@@ -2627,7 +2686,17 @@ static int xs_tls_handshake_sync(struct rpc_xprt *lower_xprt, struct xprtsec_par
 	rc = wait_for_completion_interruptible_timeout(&lower_transport->handshake_done,
 						       XS_TLS_HANDSHAKE_TO);
 	if (rc <= 0) {
-		tls_handshake_cancel(sk);
+		if (!tls_handshake_cancel(sk)) {
+			/*
+			 * Cancellation lost to handshake_complete(): the
+			 * callback still owns its xprt reference and is in
+			 * flight. Wait for it to finish before returning.
+			 */
+			wait_for_completion(&lower_transport->handshake_done);
+			if (rc == 0)
+				rc = -ETIMEDOUT;
+			goto out;
+		}
 		if (rc == 0)
 			rc = -ETIMEDOUT;
 		goto out_put_xprt;

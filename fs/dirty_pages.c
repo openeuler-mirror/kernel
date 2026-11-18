@@ -225,12 +225,13 @@ static int proc_buffer_show(struct seq_file *m, void *v)
 static int proc_buffer_open(struct inode *inode, struct file *filp)
 {
 	int ret;
+	bool need_lock = (filp->f_flags & O_ACCMODE) != O_RDONLY;
 
-	if (((filp->f_flags & O_ACCMODE) != O_RDONLY) && !dirty_pages_lock())
+	if (need_lock && !dirty_pages_lock())
 		return -EBUSY;
 
 	ret = single_open(filp, proc_buffer_show, NULL);
-	if (ret)
+	if (ret && need_lock)
 		dirty_pages_unlock();
 
 	return ret;

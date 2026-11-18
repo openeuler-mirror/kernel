@@ -54,10 +54,10 @@ extern unsigned int g_ps3_r1x_lock_flag;
 extern unsigned int g_ps3_r1x_lock_enable;
 #ifndef _WINDOWS
 
-module_param(g_ps3_r1x_lock_enable, uint, 0644);
+module_param(g_ps3_r1x_lock_enable, uint, 0444);
 MODULE_PARM_DESC(
 	g_ps3_r1x_lock_enable,
-	"R1x write conflict check feature enable/disable. Default: enable(1)");
+	"R1x write conflict check feature enable/disable. Default: disable(0)");
 #endif
 
 #if defined(PS3_SUPPORT_DEBUG) ||                                              \
@@ -196,6 +196,11 @@ MODULE_PARM_DESC(
 	"R1X conflict queue function feature enable/disable. Default: enable(1)");
 #endif
 #endif
+
+static unsigned int g_latency_perf_mode_enable;
+module_param(g_latency_perf_mode_enable, uint, 0444);
+MODULE_PARM_DESC(g_latency_perf_mode_enable,
+	"Latency perf mode enable/disable. Default: disable(0)");
 
 #ifndef _WINDOWS
 #endif
@@ -346,6 +351,13 @@ static unsigned int g_smp_affinity_enable = 1;
 module_param(g_smp_affinity_enable, int, 0444);
 MODULE_PARM_DESC(g_smp_affinity_enable,
 		 "SMP affinity feature enable/disable. Default: enable(1)");
+
+static int max_sgl_entries = PS3_DEFAULT_SGE_CNT;
+module_param(max_sgl_entries, int, 0444);
+MODULE_PARM_DESC(max_sgl_entries,
+	"Preferred max number of SGE to be used for a single I/O\n\t\t"
+	"The actual value will be determined by the driver\n\t\t"
+	"This parameter can be [128,256,262,512]. Default: 262");
 
 void ps3_version_verbose_fill(void)
 {
@@ -606,10 +618,12 @@ unsigned int ps3_pci_irq_mode_query(void)
 	return g_pci_irq_mode;
 }
 
+#ifdef PS3_UT
 unsigned int ps3_cli_ver_query(void)
 {
 	return cli_ver;
 }
+#endif
 #if defined(PS3_TAGSET_SUPPORT)
 
 void ps3_tagset_enable_modify(unsigned char enable)
@@ -626,4 +640,24 @@ unsigned char ps3_tagset_enable_query(void)
 unsigned char ps3_smp_affinity_query(void)
 {
 	return (g_smp_affinity_enable == 1) ? PS3_TRUE : PS3_FALSE;
+}
+
+unsigned char ps3_latency_perf_mode_query(void)
+{
+	return (g_latency_perf_mode_enable == 1);
+}
+
+void ps3_latency_perf_mode_modify(unsigned char enable)
+{
+	g_latency_perf_mode_enable = enable;
+}
+
+int ps3_max_sge_cnt_query(void)
+{
+	return max_sgl_entries;
+}
+
+void ps3_max_sge_cnt_modify(int value)
+{
+	max_sgl_entries = value;
 }

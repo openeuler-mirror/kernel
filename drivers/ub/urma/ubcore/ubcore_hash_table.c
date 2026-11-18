@@ -21,7 +21,7 @@ int ubcore_hash_table_alloc(struct ubcore_hash_table *ht,
 	if (!p || p->size == 0)
 		return -EINVAL;
 	ht->p = *p;
-	ht->head = kcalloc(p->size, sizeof(struct hlist_head), GFP_KERNEL);
+	ht->head = kvcalloc(p->size, sizeof(struct hlist_head), GFP_KERNEL);
 	if (!ht->head)
 		return -ENOMEM;
 
@@ -63,7 +63,7 @@ void ubcore_hash_table_free_with_cb(struct ubcore_hash_table *ht,
 	head = ht->head;
 	ht->head = NULL;
 	spin_unlock(&ht->lock);
-	kfree(head);
+	kvfree(head);
 }
 
 void ubcore_hash_table_free(struct ubcore_hash_table *ht)

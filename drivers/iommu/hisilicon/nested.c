@@ -169,6 +169,7 @@ static int ummu_fix_user_cmd(struct ummu_device *ummu,
 	case CMD_PLBI_OS_EID:
 	case CMD_PLBI_OS_EIDTID:
 	case CMD_PLBI_OS_VA:
+	case CMD_PLBI_FREE_BIT:
 		cmd[2] &= ~CMD_PLBI_2_TECTE_TAG;
 		cmd[2] |= FIELD_PREP(CMD_PLBI_2_TECTE_TAG, tecte_tag);
 		break;

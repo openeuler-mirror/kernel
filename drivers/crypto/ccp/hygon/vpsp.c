@@ -67,7 +67,7 @@ static int vpsp_restore_cmd_ctx(struct cmd_ctx_ctl *ctl);
  */
 DEFINE_HASHTABLE(vpsp_cmd_ctx_table, 11);
 DEFINE_RWLOCK(table_rwlock);
-static struct vpsp_cmd_ctx *vpsp_cmd_ctx_array[CSV_COMMAND_PRIORITY_NUM]
+static struct vpsp_cmd_ctx *vpsp_ring_cmd_ctx_lookup[CSV_COMMAND_PRIORITY_NUM]
 				[CSV_RING_BUFFER_SIZE / CSV_RING_BUFFER_ESIZE];
 
 static struct vpsp_cmd_ctx *vpsp_hashtable_find_cmd_ctx(gpa_t key1, pid_t key2)
@@ -946,12 +946,23 @@ int do_vpsp_op_ioctl(struct vpsp_dev_ctrl *ctrl)
 }
 
 struct csv_ringbuffer_queue vpsp_ring_buffer[CSV_COMMAND_PRIORITY_NUM];
+static void vpsp_complete_ring_cmd_ctx(int prio, uint32_t index, uint32_t statval)
+{
+	struct vpsp_cmd_ctx *ctx = vpsp_ring_cmd_ctx_lookup[prio][index];
+
+	if (!ctx)
+		return;
+
+	ctx->statval = statval;
+	vpsp_ring_cmd_ctx_lookup[prio][index] = NULL;
+	vpsp_cmd_ctx_obj_put(ctx, false);
+}
+
 static void vpsp_ring_update_head(int prio, uint32_t new_head)
 {
 	struct csv_ringbuffer_queue *ring_buffer = &vpsp_ring_buffer[prio];
 	uint32_t orig_head = cmd_queue_head(&ring_buffer->cmd_ptr);
 	uint32_t comple_num = 0, index = orig_head;
-	struct vpsp_cmd_ctx *ctx = NULL;
 	int i, mask = ring_buffer->cmd_ptr.mask;
 
 	if (new_head >= orig_head)
@@ -961,17 +972,13 @@ static void vpsp_ring_update_head(int prio, uint32_t new_head)
 
 	for (i = 0; i < comple_num; ++i) {
 		index = (orig_head + i) & mask;
-		ctx = vpsp_cmd_ctx_array[prio][index];
-		if (ctx) {
-			/**
-			 * Write the result back to the cmd ctx,
-			 * after which we can safely perform
-			 * the ringbuffer dequeue operation without
-			 * waiting for the Guest to retrieve the result.
-			 */
-			ctx->statval = ringbuffer_get_status(ring_buffer, index);
-			vpsp_cmd_ctx_obj_put(ctx, false);
-		}
+		/**
+		 * Write the result back to the cmd ctx, after which we can
+		 * safely perform the ringbuffer dequeue operation without
+		 * waiting for the Guest to retrieve the result.
+		 */
+		vpsp_complete_ring_cmd_ctx(prio, index,
+					   ringbuffer_get_status(ring_buffer, index));
 	}
 	psp_ringbuffer_dequeue(ring_buffer, NULL, NULL, comple_num);
 }
@@ -1080,11 +1087,14 @@ int vpsp_try_get_result(struct vpsp_cmd_ctx *cmd_ctx, struct vpsp_ret *psp_ret)
 	if (vpsp_psp_mutex_trylock()) {
 		/* Use mailbox mode to execute a command if there is only one command */
 		if (cmd_queue_size(&vpsp_ring_buffer[prio].cmd_ptr) == 1) {
+			uint32_t head = cmd_queue_head(&vpsp_ring_buffer[prio].cmd_ptr);
+
 			/* dequeue command from queue*/
 			psp_ringbuffer_dequeue(&vpsp_ring_buffer[prio], &cmd, NULL, 1);
 			ret = psp_do_cmd_locked(cmd.cmd_id, (void *)phy_addr,
 						(int *)psp_ret, PSP_DO_CMD_OP_PHYADDR);
 			psp_ret->status = VPSP_FINISH;
+			vpsp_complete_ring_cmd_ctx(prio, head, psp_ret->pret);
 			vpsp_psp_mutex_unlock();
 			if (unlikely(ret)) {
 				if (ret == -EIO) {
@@ -1162,7 +1172,7 @@ int vpsp_try_do_cmd(int cmd, phys_addr_t phy_addr,
 		cmd_ctx->rb_index = index;
 		cmd_ctx->rb_prio = prio;
 		cmd_ctx->psp_cmdbuf_paddr = phy_addr;
-		vpsp_cmd_ctx_array[prio][index] = cmd_ctx;
+		vpsp_ring_cmd_ctx_lookup[prio][index] = cmd_ctx;
 		vpsp_cmd_ctx_obj_get(cmd_ctx);
 
 		/* try to get result from the ringbuffer command */
