@@ -17,6 +17,10 @@
 #include <linux/kernel.h>
 #include <linux/export.h>
 #include <linux/pci.h>
+#ifdef CONFIG_ARCH_PHYTIUM
+#include <asm/cputype.h>
+#include <asm/sysreg.h>
+#endif
 #include <linux/isa-dma.h> /* isa_dma_bridge_buggy */
 #include <linux/init.h>
 #include <linux/delay.h>
@@ -5135,6 +5139,30 @@ static int  pci_quirk_wangxun_nic_acs(struct pci_dev *dev, u16 acs_flags)
 	return false;
 }
 
+#ifdef CONFIG_ARCH_PHYTIUM
+/*
+ * Phytium PS24080 has no ACS capability and does not use peer-to-peer
+ * transactions between functions on multi-function devices.  The hardware
+ * provides isolation and source validation through the SMMU: the stream ID
+ * carries the requester's bus/device/function plus the port ID in its
+ * three most significant bits.  Tell the PCI core that these ACS features
+ * are enforced so each function can be isolated.
+ *
+ * Other Phytium SoCs do have working ACS: return -ENOTTY for them so
+ * pci_dev_specific_acs_enabled() keeps looking and finally falls back to
+ * the generic ACS capability check instead of treating them as "no ACS".
+ */
+static int pci_quirk_phytium_acs(struct pci_dev *dev, u16 acs_flags)
+{
+	if (read_sysreg_s(SYS_AIDR_EL1) != PHYTIUM_CPU_SOCID_PS24080)
+		return -ENOTTY;
+
+	return pci_acs_ctrl_enabled(acs_flags,
+				    PCI_ACS_SV | PCI_ACS_RR |
+				    PCI_ACS_CR | PCI_ACS_UF);
+}
+#endif
+
 static int pci_quirk_loongson_acs(struct pci_dev *dev, u16 acs_flags)
 {
 	/*
@@ -5258,6 +5286,8 @@ static const struct pci_dev_acs_enabled {
 	{ 0x10b5, PCI_ANY_ID, pci_quirk_xgene_acs },
 	/* because rootcomplex Vendor id is 0x17cd on phytium cpu */
 	{ 0x17cd, PCI_ANY_ID, pci_quirk_xgene_acs },
+	/* Phytium PS24080 has no ACS; see pci_quirk_phytium_acs() */
+	{ PCI_VENDOR_ID_PHYTIUM, PCI_ANY_ID, pci_quirk_phytium_acs },
 #endif
 
 	/* Broadcom multi-function device */
