@@ -88,6 +88,7 @@ static int smh_message_retry_send(struct sentry_msg_helper_msg *msg, bool ack)
 
 	for (i = 0; i < times; i++) {
 		uint64_t cur_time = ktime_get_ns();
+		uint64_t elapsed_ms;
 
 		ret = smh_message_send(msg, ack);
 		if (!ack)
@@ -99,8 +100,10 @@ static int smh_message_retry_send(struct sentry_msg_helper_msg *msg, bool ack)
 		if (ret)
 			return 0;
 
-		msleep_interruptible(MILLISECONDS_OF_EACH_MDELAY -
-				     (ktime_get_ns() - cur_time) / NSEC_PER_MSEC);
+		elapsed_ms = (ktime_get_ns() - cur_time) / NSEC_PER_MSEC;
+
+		if (elapsed_ms < MILLISECONDS_OF_EACH_MDELAY)
+			msleep_interruptible(MILLISECONDS_OF_EACH_MDELAY - elapsed_ms);
 	}
 
 	if (msg->type == SMH_MESSAGE_OOM && __ratelimit(&oom_log_rs))
