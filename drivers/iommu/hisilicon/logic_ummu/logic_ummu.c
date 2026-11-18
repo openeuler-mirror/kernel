@@ -1455,10 +1455,8 @@ static int logic_ummu_dev_disable_feat(struct device *dev, enum iommu_dev_featur
 {
 	const struct iommu_ops *ops = get_agent_iommu_ops();
 
-	if (!ops || !ops->dev_disable_feat) {
-		pr_err("invalid ops.\n");
+	if (!ops || !ops->dev_disable_feat)
 		return -ENODEV;
-	}
 
 	return ops->dev_disable_feat(dev, f);
 }
@@ -1468,10 +1466,8 @@ static void logic_ummu_page_response(struct device *dev, struct iopf_fault *evt,
 {
 	const struct iommu_ops *ops = get_agent_iommu_ops();
 
-	if (!ops || !ops->page_response) {
-		pr_err("invalid ops.\n");
+	if (!ops || !ops->page_response)
 		return;
-	}
 
 	ops->page_response(dev, evt, msg);
 }
@@ -1789,10 +1785,8 @@ static bool logic_ummu_device_support_attr(struct ummu_core_device *core_device,
 	if (!attr->priv || !attr->priv_len)
 		return true;
 
-	if (attr->priv_len < sizeof(struct hisi_ummu_tdev_info)) {
-		pr_err("para is invalid.\n");
+	if (attr->priv_len < sizeof(struct hisi_ummu_tdev_info))
 		return false;
-	}
 
 	info = (struct hisi_ummu_tdev_info *)attr->priv;
 	return !info->v1.on_chip;

@@ -244,7 +244,7 @@ void ummu_page_response(struct device *dev, struct iopf_fault *evt,
 	struct ummu_mcmdq_ent cmd = { 0 };
 
 	if (!(prm->flags & IOMMU_FAULT_PAGE_REQUEST_PRIV_DATA)) {
-		dev_err(dev, "tect_tag and ummu instance not set.\n");
+		dev_err_ratelimited(dev, "tect_tag and ummu instance not set.\n");
 		return;
 	}
 

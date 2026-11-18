@@ -360,8 +360,6 @@ static int ummu_device_hw_probe_cap2(struct ummu_device *ummu)
 
 	if (FIELD_GET(CAP2_BTLBI_BIT, reg))
 		ummu->cap.features |= UMMU_FEAT_BTM;
-	else
-		dev_warn(ummu->dev, "don't support BTM!\n");
 
 	if (FIELD_GET(CAP2_HW_BYPASS, reg))
 		hw_bypass = true;

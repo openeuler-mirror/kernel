@@ -214,8 +214,6 @@ int ummu_core_alloc_tid(struct ummu_core_device *ummu_core,
 	if (!ret)
 		trace_ummu_core_alloc_tid(dev_name(ummu_core->iommu.dev),
 					  dev_name(param->device), *tidp);
-	else
-		pr_err("allocate tid failed.\n");
 	return ret;
 }
 EXPORT_SYMBOL_NS_GPL(ummu_core_alloc_tid, UMMU_CORE_DRIVER);
