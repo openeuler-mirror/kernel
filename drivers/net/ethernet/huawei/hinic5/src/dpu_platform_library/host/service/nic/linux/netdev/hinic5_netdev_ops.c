@@ -2154,12 +2154,11 @@ static int hinic5_xdp_setup(struct hinic5_nic_dev *nic_dev,
 	}
  
 	old_prog = xchg(&nic_dev->xdp_prog, prog);
-	if (old_prog)
-		bpf_prog_put(old_prog);
  
 	if (!nic_dev->remove_flag && netif_running(nic_dev->netdev)) {
 		err = hinic5_safe_switch_channels(nic_dev);
 		if (err) {
+			xchg(&nic_dev->xdp_prog, old_prog);
 			return err;
 		}
 	}
@@ -2168,6 +2167,9 @@ static int hinic5_xdp_setup(struct hinic5_nic_dev *nic_dev,
 		xchg(&nic_dev->rxqs[q_id].xdp_prog, nic_dev->xdp_prog);
 	}
  
+	if (old_prog)
+		bpf_prog_put(old_prog);
+
 	return 0;
 }
 

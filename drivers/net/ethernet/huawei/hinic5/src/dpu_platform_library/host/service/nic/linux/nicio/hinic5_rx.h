@@ -195,6 +195,7 @@ struct hinic5_rxq {
 	struct net_dim dim;
 #endif
 	atomic_t dim_applying;
+	unsigned long last_dim_jiffies;
 #endif
 	u8 last_coalesc_timer_cfg;
 	u8 last_pending_limt;

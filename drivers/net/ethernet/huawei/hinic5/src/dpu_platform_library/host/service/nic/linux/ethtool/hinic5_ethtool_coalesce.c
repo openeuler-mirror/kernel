@@ -426,7 +426,9 @@ int set_coalesce(struct net_device *netdev,
 					   HINIC5_MODERATONE_DELAY);
 #ifdef HAVE_DIM_SUPPORT
 		if (HINIC5_SUPPORT_SQ_RQ_CI_COALESCE(nic_dev->hwdev) &&
-			nic_dev->adaptive_rx_coal == 0 && last_adaptive_rx != 0) {
+		    nic_dev->adaptive_rx_coal == 0 &&
+		    last_adaptive_rx != 0 &&
+		    !HINIC5_FUNC_IS_VF(nic_dev->hwdev)) {
 			for (q_id = 0; q_id < nic_dev->q_params.num_qps + nic_dev->q_params.xdp_qps; q_id++) {
 				cancel_work_sync(&nic_dev->rxqs[q_id].dim.work);
 				nic_dev->rxqs[q_id].dim.state = DIM_START_MEASURE;

@@ -60,6 +60,11 @@ MODULE_PARM_DESC(cmdq_cos_offset, "Set cmdq cos start offset");
 #define DEFAULT_RX_BUF_SIZE	((u16)0xB)
 #define HINIC5_HT_GPA_PAGE_LEN 1024
 
+/* Total attempts including the first one (i.e 2 retries),
+ * with 1 second interval between attempts*/
+#define HINIC5_MSIX_CFG_RETRY_TIMES			3
+#define HINIC5_MSIX_CFG_RETRY_INTERVAL		1000		/* ms */
+
 enum hinic5_rx_buf_size {
 	HINIC5_RX_BUF_SIZE_32B = 0x20,
 	HINIC5_RX_BUF_SIZE_64B = 0x40,
@@ -137,39 +142,54 @@ int hinic5_get_interrupt_cfg(void *dev, struct interrupt_info *info,
 	return 0;
 }
 
+/* retry is a temporary blanket solution for possible mgmt command
+ * failure during driver load in stress tests. It currently applies
+ * to all callers including runtime coalesce updates; The scope
+ * will be refined in a follow-up update */
 int hinic5_set_interrupt_cfg_direct(void *hwdev, struct interrupt_info *info,
 				    u16 channel)
 {
 	struct comm_cmd_msix_config msix_cfg;
 	u16 out_size = sizeof(msix_cfg);
+	int retry;
 	int err;
 
 	if (!hwdev)
 		return -EINVAL;
 
-	(void)memset(&msix_cfg, 0, sizeof(msix_cfg));
-	msix_cfg.func_id = hinic5_global_func_id(hwdev);
-	msix_cfg.msix_index = info->msix_index;
-	msix_cfg.opcode = MGMT_MSG_CMD_OP_SET;
+	for (retry = 0; retry < HINIC5_MSIX_CFG_RETRY_TIMES; retry++) {
+		(void)memset(&msix_cfg, 0, sizeof(msix_cfg));
+		msix_cfg.func_id = hinic5_global_func_id(hwdev);
+		msix_cfg.msix_index = info->msix_index;
+		msix_cfg.opcode = MGMT_MSG_CMD_OP_SET;
 
-	msix_cfg.lli_credit_cnt = info->lli_credit_limit;
-	msix_cfg.lli_timer_cnt = info->lli_timer_cfg;
-	msix_cfg.pending_cnt = info->pending_limt;
-	msix_cfg.coalesce_timer_cnt = info->coalesc_timer_cfg;
-	msix_cfg.resend_timer_cnt = info->resend_timer_cfg;
+		msix_cfg.lli_credit_cnt = info->lli_credit_limit;
+		msix_cfg.lli_timer_cnt = info->lli_timer_cfg;
+		msix_cfg.pending_cnt = info->pending_limt;
+		msix_cfg.coalesce_timer_cnt = info->coalesc_timer_cfg;
+		msix_cfg.resend_timer_cnt = info->resend_timer_cfg;
 
-	err = comm_msg_to_mgmt_sync_ch(hwdev, COMM_MGMT_CMD_CFG_MSIX_CTRL_REG,
-				       &msix_cfg, sizeof(msix_cfg), &msix_cfg,
-				       &out_size, channel);
-	if ((err != 0) || (out_size == 0) || (msix_cfg.head.status) != 0) {
+		out_size = sizeof(msix_cfg);
+		err = comm_msg_to_mgmt_sync_ch(hwdev, COMM_MGMT_CMD_CFG_MSIX_CTRL_REG,
+						&msix_cfg, sizeof(msix_cfg), &msix_cfg,
+						&out_size, channel);
+		if (err == 0 && out_size != 0 && msix_cfg.head.status == 0)
+			return 0;
+
+		if (retry < HINIC5_MSIX_CFG_RETRY_TIMES - 1) {
+			sdk_warn(((struct hinic5_hwdev *)hwdev)->dev_hdl,
+				"Failed to set interrupt config, err: %d, status: 0x%x, out size: 0x%x, channel: 0x%x, retry: %d\n",
+				err, msix_cfg.head.status, out_size, channel, retry);
+			msleep(HINIC5_MSIX_CFG_RETRY_INTERVAL);
+			continue;
+		}
 		sdk_err(((struct hinic5_hwdev *)hwdev)->dev_hdl,
-			"Failed to set interrupt config, err: %d, status: 0x%x, out size: 0x%x, channel: 0x%x\n",
-			err, msix_cfg.head.status, out_size, channel);
-		return -EINVAL;
+			"Failed to set interrupt config, err: %d, status: 0x%x, out size: 0x%x, channel: 0x%x, retry: %d\n",
+			err, msix_cfg.head.status, out_size, channel, retry);
 	}
-
-	return 0;
+	return -EINVAL;
 }
+
 
 int hinic5_set_interrupt_cfg(void *dev, struct interrupt_info info, u16 channel)
 {
