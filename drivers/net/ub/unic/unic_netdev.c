@@ -299,7 +299,7 @@ int unic_net_open(struct net_device *netdev)
 		return -ENODATA;
 
 	if (!test_bit(UNIC_STATE_DOWN, &unic_dev->state)) {
-		unic_warn(unic_dev, "net open repeatedly.\n");
+		unic_dbg(unic_dev, "net open repeatedly.\n");
 		return 0;
 	}
 
@@ -1009,8 +1009,8 @@ int unic_query_link_status(struct unic_dev *unic_dev, u8 *link_status,
 
 	ret = ubase_cmd_send_inout(unic_dev->comdev.adev, &in, &out);
 	if (ret) {
-		unic_err(unic_dev,
-			 "failed to get mac link status, ret = %d.\n", ret);
+		unic_err_rl_hr(unic_dev, query_link_status_fail,
+			       "failed to get mac link status, ret = %d.\n", ret);
 		return ret;
 	}
 

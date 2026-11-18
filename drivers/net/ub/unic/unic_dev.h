@@ -17,6 +17,7 @@
 #include "unic.h"
 #include "unic_cmd.h"
 #include "unic_ethtool.h"
+#include "unic_log.h"
 #include "unic_rx.h"
 #include "unic_timing.h"
 #include "unic_tx.h"
@@ -70,25 +71,6 @@ enum unic_channel_state {
 #define UNIC_CQE_PERIOD_ERR	16385
 
 #define UNIC_DEFAULT_CHANNEL_NUM	1
-
-#define unic_dbg(_unic_dev, fmt, ...)                                         \
-	do {								      \
-		if (unic_dbg_log())                                           \
-			netdev_info((_unic_dev)->comdev.netdev, "(pid %d) " fmt, \
-				    current->pid, ##__VA_ARGS__);		\
-	} while (0)
-
-#define unic_err(_unic_dev, fmt, ...)                                         \
-	netdev_err((_unic_dev)->comdev.netdev, "(pid %d) " fmt,                 \
-		   current->pid, ##__VA_ARGS__)
-
-#define unic_info(_unic_dev, fmt, ...)                                        \
-	netdev_info((_unic_dev)->comdev.netdev, "(pid %d) " fmt,                \
-		    current->pid, ##__VA_ARGS__)
-
-#define unic_warn(_unic_dev, fmt, ...)                                        \
-	netdev_warn((_unic_dev)->comdev.netdev, "(pid %d) " fmt,                \
-		    current->pid, ##__VA_ARGS__)
 
 struct unic_mac {
 	u8  port; /* see PORT_TP/PORT_FIBRE... */
@@ -311,6 +293,7 @@ struct unic_dev {
 	struct unic_bond_status	bond_status;
 	gfp_t			gfp;
 	u32			hw_ver;
+	struct unic_log_rs	log_rs;
 };
 
 int unic_dev_init(struct auxiliary_device *adev);
