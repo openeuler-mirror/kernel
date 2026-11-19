@@ -10671,12 +10671,6 @@ idle:
 #endif
 	}
 
-	/*
-	 * rq is about to be idle, check if we need to update the
-	 * lost_idle_time of clock_pelt
-	 */
-	update_idle_rq_clock_pelt(rq);
-
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 	qos_smt_expel(this_cpu, NULL);
 #endif
