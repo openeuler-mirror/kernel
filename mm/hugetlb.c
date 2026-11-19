@@ -1577,6 +1577,7 @@ struct hstate *size_to_hstate(unsigned long size)
 	}
 	return NULL;
 }
+EXPORT_SYMBOL(size_to_hstate);
 
 void free_huge_page(struct page *page)
 {
@@ -2259,6 +2260,7 @@ struct page *alloc_huge_page_nodemask(struct hstate *h, int preferred_nid,
 
 	return alloc_migrate_huge_page(h, gfp_mask, preferred_nid, nmask);
 }
+EXPORT_SYMBOL(alloc_huge_page_nodemask);
 
 /* mempolicy aware migration callback */
 struct page *alloc_huge_page_vma(struct hstate *h, struct vm_area_struct *vma,
