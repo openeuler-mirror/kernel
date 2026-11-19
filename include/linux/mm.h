@@ -3185,6 +3185,31 @@ extern int soft_offline_page(unsigned long pfn, int flags);
 extern void collect_procs(struct page *page, struct list_head *tokill,
 				int force_early);
 
+struct hwpoison_event {
+	u64 phys_base;
+	u64 size_mask;
+	bool hard;
+	bool online;
+	bool success;
+	int reason;
+};
+
+struct notifier_block;
+
+#ifdef CONFIG_MEMORY_FAILURE
+extern int register_hwpoison_notifier(struct notifier_block *nb);
+extern int unregister_hwpoison_notifier(struct notifier_block *nb);
+#else
+static inline int register_hwpoison_notifier(struct notifier_block *nb)
+{
+	return 0;
+}
+static inline int unregister_hwpoison_notifier(struct notifier_block *nb)
+{
+	return 0;
+}
+#endif
+
 /*
  * Error handlers for various types of pages.
  */

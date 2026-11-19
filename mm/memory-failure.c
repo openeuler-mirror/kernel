@@ -35,6 +35,7 @@
  */
 #include <linux/kernel.h>
 #include <linux/mm.h>
+#include <linux/notifier.h>
 #include <linux/page-flags.h>
 #include <linux/kernel-page-flags.h>
 #include <linux/sched/signal.h>
@@ -1077,6 +1078,51 @@ static struct page_state {
 #undef slab
 #undef reserved
 
+static BLOCKING_NOTIFIER_HEAD(hwpoison_notifier);
+
+int register_hwpoison_notifier(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_register(&hwpoison_notifier, nb);
+}
+EXPORT_SYMBOL_GPL(register_hwpoison_notifier);
+
+int unregister_hwpoison_notifier(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_unregister(&hwpoison_notifier, nb);
+}
+EXPORT_SYMBOL_GPL(unregister_hwpoison_notifier);
+
+static void notify_hwpoison_offline(unsigned long pfn, bool hard, bool success,
+				    int reason)
+{
+	struct page *head = pfn_valid(pfn) ?
+			    compound_head(pfn_to_page(pfn)) : NULL;
+	struct hwpoison_event ev = {
+		.phys_base = head ? page_to_pfn(head) << PAGE_SHIFT :
+				   (pfn << PAGE_SHIFT),
+		.size_mask = head ? page_size(head) - 1 : ~0ULL,
+		.hard = hard,
+		.online = false,
+		.success = success,
+		.reason = reason,
+	};
+
+	blocking_notifier_call_chain(&hwpoison_notifier, 0, &ev);
+}
+
+static void notify_hwpoison_online(u64 phys_base, u64 size_mask)
+{
+	struct hwpoison_event ev = {
+		.phys_base = phys_base,
+		.size_mask = size_mask,
+		.hard = false,
+		.online = true,
+		.success = true,
+	};
+
+	blocking_notifier_call_chain(&hwpoison_notifier, 0, &ev);
+}
+
 /*
  * "Dirty/Clean" indication is not 100% accurate due to the possibility of
  * setting PG_dirty outside page lock. See also comment above set_page_dirty().
@@ -1085,6 +1131,11 @@ static void action_result(unsigned long pfn, enum mf_action_page_type type,
 			  enum mf_result result)
 {
 	trace_memory_failure_event(pfn, type, result);
+
+	if (type != MF_MSG_DAX)
+		notify_hwpoison_offline(pfn, true,
+			result == MF_RECOVERED || result == MF_DELAYED,
+			(int)result);
 
 	pr_err("Memory failure: %#lx: recovery action for %s: %s\n",
 		pfn, action_page_types[type], action_name[result]);
@@ -1563,6 +1614,8 @@ int memory_failure(unsigned long pfn, int flags)
 				goto unlock_mutex;
 			}
 		}
+		if (!pfn_valid(pfn))
+			notify_hwpoison_offline(pfn, true, false, -ENXIO);
 		pr_err("Memory failure: %#lx: memory outside kernel control\n",
 			pfn);
 		res = -ENXIO;
@@ -1839,6 +1892,7 @@ int unpoison_memory(unsigned long pfn)
 	struct page *page;
 	struct page *p;
 	int freeit = 0;
+	u64 online_base = 0, online_size_mask = 0;
 	static DEFINE_RATELIMIT_STATE(unpoison_rs, DEFAULT_RATELIMIT_INTERVAL,
 					DEFAULT_RATELIMIT_BURST);
 
@@ -1846,6 +1900,8 @@ int unpoison_memory(unsigned long pfn)
 	if (!p)
 		return -EIO;
 	page = compound_head(p);
+	online_base = page_to_pfn(page) << PAGE_SHIFT;
+	online_size_mask = page_size(page) - 1;
 
 	if (!PageHWPoison(p)) {
 		unpoison_pr_info("Unpoison: Page was already unpoisoned %#lx\n",
@@ -1902,6 +1958,7 @@ int unpoison_memory(unsigned long pfn)
 				 pfn, &unpoison_rs);
 		num_poisoned_pages_dec();
 		freeit = 1;
+		notify_hwpoison_online(online_base, online_size_mask);
 	}
 	unlock_page(page);
 
@@ -2149,14 +2206,17 @@ int soft_offline_page(unsigned long pfn, int flags)
 
 	WARN_ON_ONCE(!pfn_valid(pfn) && (flags & MF_COUNT_INCREASED));
 
-	if (!pfn_valid(pfn))
+	if (!pfn_valid(pfn)) {
+		notify_hwpoison_offline(pfn, false, false, -ENXIO);
 		return -ENXIO;
+	}
 	if (flags & MF_COUNT_INCREASED)
 		ref_page = pfn_to_page(pfn);
 
 	/* Only online pages can be soft-offlined (esp., not ZONE_DEVICE). */
 	page = pfn_to_online_page(pfn);
 	if (!page) {
+		notify_hwpoison_offline(pfn, false, false, -EIO);
 		put_ref_page(ref_page);
 		return -EIO;
 	}
@@ -2169,6 +2229,7 @@ int soft_offline_page(unsigned long pfn, int flags)
 
 	if (PageHWPoison(page)) {
 		pr_info("soft offline: %#lx page already poisoned\n", pfn);
+		notify_hwpoison_offline(pfn, false, true, 0);
 		put_ref_page(ref_page);
 		return 0;
 	}
@@ -2186,6 +2247,8 @@ retry:
 			flags &= ~MF_COUNT_INCREASED;
 			goto retry;
 		}
+
+	notify_hwpoison_offline(pfn, false, !ret, ret);
 
 	return ret;
 }
