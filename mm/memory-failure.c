@@ -61,6 +61,7 @@
 #include <linux/shmem_fs.h>
 #include <linux/sysctl.h>
 #include <linux/dynamic_pool.h>
+#include <linux/notifier.h>
 #include "swap.h"
 #include "internal.h"
 #include "ras/ras_event.h"
@@ -1375,6 +1376,50 @@ static void update_per_node_mf_stats(unsigned long pfn,
 	++mf_stats->total;
 }
 
+static BLOCKING_NOTIFIER_HEAD(hwpoison_notifier);
+int register_hwpoison_notifier(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_register(&hwpoison_notifier, nb);
+}
+EXPORT_SYMBOL_GPL(register_hwpoison_notifier);
+
+int unregister_hwpoison_notifier(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_unregister(&hwpoison_notifier, nb);
+}
+EXPORT_SYMBOL_GPL(unregister_hwpoison_notifier);
+
+static void notify_hwpoison_offline(unsigned long pfn, bool hard, bool success,
+				    int reason)
+{
+	struct page *head = pfn_valid(pfn) ?
+			    compound_head(pfn_to_page(pfn)) : NULL;
+	struct hwpoison_event ev = {
+		.phys_base = head ? page_to_pfn(head) << PAGE_SHIFT :
+				   (pfn << PAGE_SHIFT),
+		.size_mask = head ? page_size(head) - 1 : ~0ULL,
+		.hard = hard,
+		.online = false,
+		.success = success,
+		.reason = reason,
+	};
+
+	blocking_notifier_call_chain(&hwpoison_notifier, 0, &ev);
+}
+
+static void notify_hwpoison_online(u64 phys_base, u64 size_mask)
+{
+	struct hwpoison_event ev = {
+		.phys_base = phys_base,
+		.size_mask = size_mask,
+		.hard = false,
+		.online = true,
+		.success = true,
+	};
+
+	blocking_notifier_call_chain(&hwpoison_notifier, 0, &ev);
+}
+
 /*
  * "Dirty/Clean" indication is not 100% accurate due to the possibility of
  * setting PG_dirty outside page lock. See also comment above set_page_dirty().
@@ -1385,6 +1430,11 @@ static int action_result(unsigned long pfn, enum mf_action_page_type type,
 	trace_memory_failure_event(pfn, type, result);
 
 	num_poisoned_pages_inc(pfn);
+
+	if (type != MF_MSG_DAX)
+		notify_hwpoison_offline(pfn, true,
+			result == MF_RECOVERED || result == MF_DELAYED ||
+			type == MF_MSG_ALREADY_POISONED, (int)result);
 
 	update_per_node_mf_stats(pfn, result);
 
@@ -2298,6 +2348,8 @@ int memory_failure(unsigned long pfn, int flags)
 				goto unlock_mutex;
 			}
 		}
+		if (!pfn_valid(pfn))
+			notify_hwpoison_offline(pfn, true, false, -ENXIO);
 		pr_err("%#lx: memory outside kernel control\n", pfn);
 		res = -ENXIO;
 		goto unlock_mutex;
@@ -2591,6 +2643,7 @@ static int __unpoison_memory(unsigned long pfn, bool hw_mf_check)
 	int ret = -EBUSY, ghp;
 	unsigned long count = 1;
 	bool huge = false;
+	u64 online_base = 0, online_size_mask = 0;
 	static DEFINE_RATELIMIT_STATE(unpoison_rs, DEFAULT_RATELIMIT_INTERVAL,
 					DEFAULT_RATELIMIT_BURST);
 
@@ -2600,6 +2653,9 @@ static int __unpoison_memory(unsigned long pfn, bool hw_mf_check)
 	folio = page_folio(p);
 
 	mutex_lock(&mf_mutex);
+
+	online_base = page_to_pfn(&folio->page) << PAGE_SHIFT;
+	online_size_mask = folio_size(folio) - 1;
 
 	if (hw_mf_check && hw_memory_failure) {
 		unpoison_pr_info("Unpoison: Disabled after HW memory failure %#lx\n",
@@ -2688,6 +2744,7 @@ unlock_mutex:
 			num_poisoned_pages_sub(pfn, 1);
 		unpoison_pr_info("Unpoison: Software-unpoisoned page %#lx\n",
 				 page_to_pfn(p), &unpoison_rs);
+		notify_hwpoison_online(online_base, online_size_mask);
 	}
 	return ret;
 }
@@ -2851,12 +2908,14 @@ int soft_offline_page(unsigned long pfn, int flags)
 
 	if (!pfn_valid(pfn)) {
 		WARN_ON_ONCE(flags & MF_COUNT_INCREASED);
+		notify_hwpoison_offline(pfn, false, false, -ENXIO);
 		return -ENXIO;
 	}
 
 	/* Only online pages can be soft-offlined (esp., not ZONE_DEVICE). */
 	page = pfn_to_online_page(pfn);
 	if (!page) {
+		notify_hwpoison_offline(pfn, false, false, -EIO);
 		put_ref_page(pfn, flags);
 		return -EIO;
 	}
@@ -2871,6 +2930,7 @@ int soft_offline_page(unsigned long pfn, int flags)
 
 	if (PageHWPoison(page)) {
 		pr_info("%s: %#lx page already poisoned\n", __func__, pfn);
+		notify_hwpoison_offline(pfn, false, true, 0);
 		put_ref_page(pfn, flags);
 		mutex_unlock(&mf_mutex);
 		return 0;
@@ -2903,6 +2963,8 @@ retry:
 	}
 
 	mutex_unlock(&mf_mutex);
+
+	notify_hwpoison_offline(pfn, false, !ret, ret);
 
 	return ret;
 }
