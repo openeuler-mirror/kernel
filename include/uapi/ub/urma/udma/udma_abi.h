@@ -48,7 +48,7 @@ enum udma_jetty_type {
 	UDMA_CCU_JETTY_TYPE,
 	UDMA_NORMAL_JETTY_TYPE,
 	UDMA_URMA_NORMAL_JETTY_TYPE,
-	UDMA_LOCK_BUFFER_JETTY_TYPE,
+	UDMA_LOCK_BUFFER_JETTY_TYPE, /* deprecated */
 	UDMA_URMA_EX_JETTY_TYPE,
 	UDMA_JETTY_TYPE_MAX
 };
@@ -124,7 +124,8 @@ struct udma_create_ctx_resp {
 	__u32 jfr_sge;
 	__u32 ccu_jetty_start_id;
 	__u32 ccu_jetty_max_cnt;
-	__u32 rsv1;
+	__u16 ucp_jetty_start_id;
+	__u16 ucp_jetty_max_cnt;
 	__aligned_u64 sq_reserved_va;
 	__aligned_u64 sq_reserved_len;
 	__aligned_u64 dtu_va_base;

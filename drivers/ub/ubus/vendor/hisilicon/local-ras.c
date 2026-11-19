@@ -357,7 +357,21 @@ static int ubus_port_recover_cluster(struct ub_entity *uent, u16 port_id)
 static int ubus_recover(struct ub_entity *uent,
 			 const struct hisi_ubus_error_data *edata)
 {
+	ub_port_auth_handler handler;
 	int port_id;
+	bool ret;
+
+	mutex_lock(&ub_port_auth_mutex);
+	handler = ub_port_auth_handler_get();
+	if (handler) {
+		ret = handler((void *)edata);
+		if (!ret) {
+			ub_info(uent, "UB is not allowed to recover port.\n");
+			mutex_unlock(&ub_port_auth_mutex);
+			return 0;
+		}
+	}
+	mutex_unlock(&ub_port_auth_mutex);
 
 	port_id = (int)edata->port_id;
 	if (uent->ubc->cluster)

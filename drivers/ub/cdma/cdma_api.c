@@ -872,8 +872,9 @@ int dma_poll_queue(struct dma_device *dma_dev, int queue_id, u32 cr_cnt,
 
 	npolled = cdma_poll_jfc(cdma_queue->jfc, cr_cnt, cr);
 	if (npolled > 0 && cr->status != DMA_CR_SUCCESS)
-		dev_err(cdev->dev, "poll jfc npolled = %d, seid = %u, deid = %u\n",
-			npolled, cfg->seid, cfg->deid);
+		dev_err_ratelimited(cdev->dev,
+				    "poll jfc npolled = %d, seid = %u, deid = %u\n",
+				    npolled, cfg->seid, cfg->deid);
 
 	return npolled;
 }

@@ -324,9 +324,9 @@ int hi_eu_cfg(struct ub_bus_controller *ubc, bool add, u32 eid, u16 upi)
 		entry->eid[0] = eid;
 		entry->upi = upi;
 	} else {
-		hi_eu_put_bit(p, bit);
 		entry->eid[0] = 0;
 		entry->upi = 0;
+		hi_eu_put_bit(p, bit);
 	}
 
 	dev_info(&ubc->dev, "eu cfg bit(%d) type(%d) eid %#05x upi %#04x\n",

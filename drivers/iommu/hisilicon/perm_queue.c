@@ -231,7 +231,7 @@ static void ummu_init_permq_ctxtbl_ent(struct ummu_domain *domain,
 	      FIELD_PREP(PERMQ_CTXTBL_ENT4_TID, tid);
 	ctxtbl_ptr[4] = cpu_to_le64(val);
 
-	val = FIELD_PREP(PERMQ_CTXTBL_ENT2_TECTE_TAG, domain->cfgs.tecte_tag);
+	val = FIELD_PREP(PERMQ_CTXTBL_ENT2_TECTE_TAG, domain->cfgs.tect_tag);
 	ctxtbl_ptr[2] = cpu_to_le64(val);
 
 	sh = FIELD_GET(TCT_ENT1_MSD, domain->cfgs.s1_cfg.tct.tcr1);

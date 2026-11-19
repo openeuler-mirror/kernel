@@ -94,7 +94,7 @@ static int proc_manager_open(struct inode *inode, struct file *filp)
 	int ret;
 
 	mutex_lock(&global_proc_mtx);
-	manager = xa_load(&proc_info_xa, (unsigned long)mm);
+	manager = xa_load(&proc_info_xa, (uintptr_t)mm);
 	if (manager) {
 		mutex_unlock(&global_proc_mtx);
 		return -EEXIST;
@@ -108,7 +108,7 @@ static int proc_manager_open(struct inode *inode, struct file *filp)
 
 	mutex_init(&manager->proc_mtx);
 	mutex_lock(&manager->proc_mtx);
-	ret = xa_err(xa_store(&proc_info_xa, (unsigned long)mm, manager, GFP_KERNEL));
+	ret = xa_err(xa_store(&proc_info_xa, (uintptr_t)mm, manager, GFP_KERNEL));
 	if (ret)
 		goto mtx_unlock;
 
@@ -154,6 +154,15 @@ static void disable_dev_feat(struct device *dev)
 
 static void release_tid_resource(struct ktid_info *entry)
 {
+	struct tid_dev *tdev = NULL;
+
+	if (entry->dev) {
+		tdev = to_tid_dev(entry->dev);
+		mutex_lock(&tdev->sva_mutex);
+		tdev->sva = NULL;
+		mutex_unlock(&tdev->sva_mutex);
+	}
+
 	if (entry->sva)
 		iommu_sva_unbind_device_isolated(entry->sva);
 
@@ -172,13 +181,13 @@ static int proc_manager_close(struct inode *inode, struct file *filp)
 	unsigned long idx = 0;
 
 	mutex_lock(&global_proc_mtx);
-	manager = xa_load(&proc_info_xa, (unsigned long)mm);
+	manager = xa_load(&proc_info_xa, (uintptr_t)mm);
 	if (!manager) {
 		mutex_unlock(&global_proc_mtx);
 		return -EINVAL;
 	}
 
-	xa_erase(&proc_info_xa, (unsigned long)mm);
+	xa_erase(&proc_info_xa, (uintptr_t)mm);
 	mutex_lock(&manager->proc_mtx);
 	mutex_unlock(&global_proc_mtx);
 	mmdrop(mm);
@@ -605,7 +614,9 @@ static int user_mode_device_init(struct ktid_info *entry)
 		goto unbind;
 
 	tdev = to_tid_dev(entry->dev);
+	mutex_lock(&tdev->sva_mutex);
 	tdev->sva = entry->sva;
+	mutex_unlock(&tdev->sva_mutex);
 
 	return 0;
 
@@ -852,7 +863,7 @@ int ummu_core_invalidate_tid(struct mm_struct *mm, u32 tid)
 	struct ktid_info *entry;
 
 	mutex_lock(&global_proc_mtx);
-	manager = xa_load(&proc_info_xa, (unsigned long)mm);
+	manager = xa_load(&proc_info_xa, (uintptr_t)mm);
 	if (!manager) {
 		mutex_unlock(&global_proc_mtx);
 		return -ESRCH;

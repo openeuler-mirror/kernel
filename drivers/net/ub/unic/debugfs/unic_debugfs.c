@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -70,7 +70,7 @@ static int unic_dbg_query_vport_ctx(struct seq_file *s)
 {
 	struct unic_dev *unic_dev = dev_get_drvdata(s->private);
 	struct unic_vport_ctx_cmd resp;
-	u16 offset = 0;
+	u16 offset = 0, next;
 	int ret;
 
 	do {
@@ -78,10 +78,13 @@ static int unic_dbg_query_vport_ctx(struct seq_file *s)
 		ret = unic_query_vport_ctx(unic_dev, offset, &resp);
 		if (ret)
 			return ret;
-		offset = resp.offset;
+		next = le16_to_cpu(resp.offset);
+		if (next && next <= offset)
+			return -EINVAL;
+		offset = next;
 
 		unic_dbg_fill_vport_ctx_content(&resp, s);
-	} while (resp.offset);
+	} while (next);
 
 	return 0;
 }
@@ -194,7 +197,7 @@ static int unic_dbg_dump_page_pool_info(struct seq_file *s, void *data)
 		return -EBUSY;
 
 	if (__unic_resetting(unic_dev) ||
-	    !unic_dev->channels.c) {
+	    test_bit(UNIC_STATE_CHANNEL_INVALID, &unic_dev->state)) {
 		ret = -EBUSY;
 		goto out;
 	}
@@ -398,9 +401,11 @@ static void unic_dbg_channel_abn_cqe_cnt(struct seq_file *s,
 		"STATUS_6:   ",
 		"OTHERS:     "
 	};
-	struct unic_sq_stats *stats = &c->sq->stats;
+	struct unic_dev *unic_dev = dev_get_drvdata(s->private);
+	struct unic_sq_stats *stats;
 	int i, j;
 
+	stats = &unic_dev->channels.c_stats[c->c_idx].sq_stats;
 	seq_printf(s, "txq%d:\n", idx);
 	seq_printf(s, "TOTAL_ABN_CQE_COUNT:%-20llu\n", stats->abn_cqe_total_cnt);
 	seq_printf(s, "%-12s%20s%20s%20s%20s%20s%20s\n", "", "SUB_0", "SUB_1",
@@ -427,7 +432,8 @@ static int unic_dbg_dump_abn_cqe_cnt(struct seq_file *s, void *data)
 	if (!mutex_trylock(&unic_dev->channels.mutex))
 		return -EBUSY;
 
-	if (__unic_resetting(unic_dev) || !unic_dev->channels.c) {
+	if (__unic_resetting(unic_dev) ||
+	    test_bit(UNIC_STATE_CHANNEL_INVALID, &unic_dev->state)) {
 		ret = -EBUSY;
 		goto out;
 	}

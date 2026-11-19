@@ -224,7 +224,7 @@ struct ummu_mcmdq_ent {
 #define CMD_PLBI_OS_VA 0x16
 		struct {
 			u32 tid;
-			u16 tecte_tag;
+			u16 tect_tag;
 			u8 range;
 			u64 addr;
 		} plbi;
@@ -271,7 +271,7 @@ struct ummu_mcmdq_ent {
 #define CMD_CREATE_KVTBL 0x60
 		struct {
 			bool evt_en;
-			u16 tecte_tag;
+			u16 tect_tag;
 			u32 kv_index;
 			u64 tect_base_addr;
 			u64 eid_low;
@@ -281,7 +281,7 @@ struct ummu_mcmdq_ent {
 #define CMD_DELETE_KVTBL 0x61
 		struct {
 			bool evt_en;
-			u16 tecte_tag;
+			u16 tect_tag;
 			u32 kv_index;
 			u64 eid_low;
 			u64 eid_high;
@@ -301,10 +301,10 @@ struct ummu_mcmdq_ent {
 				} check_pa_conti;
 			};
 		} null_op;
-#define CMD_PLBI_OS_N 0x63
+#define CMD_PLBI_FREE_BIT 0x63
 		struct {
 			u32 tid;
-			u16 tecte_tag;
+			u16 tect_tag;
 			u32 next_lvl_idx;
 			u32 next_lvl_offset;
 		} plbi_free_bit;

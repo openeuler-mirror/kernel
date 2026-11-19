@@ -43,21 +43,41 @@ static int ubaseproxy_ctrlq_check_ue_msg(struct auxiliary_device *adev,
 int ubaseproxy_ctrlq_handle_query_eid_resp(struct auxiliary_device *adev,
 					   void *data, u16 len)
 {
+#define RSVD_BYTES_NUM	3
+
 	struct ubaseproxy_dev *udev = get_ubaseproxy_dev(adev);
 	struct ubaseproxy_ue_seid_table *ue_seid_table;
 	struct ubase_ctrlq_ue_msg_info msg_info = {0};
 	struct ubaseproxy_ctrlq_query_seid_info *resp;
 	u16 hdr_len = ubase_ctrlq_ue_msg_header_len();
-	u32 i, seid_idx;
+	u32 i, seid_idx, expect_len;
 	int ret;
 
-	ret = ubaseproxy_ctrlq_check_ue_msg(adev, data, len, hdr_len, &msg_info);
+	expect_len = hdr_len;
+	ret = ubaseproxy_ctrlq_check_ue_msg(adev, data, len, expect_len, &msg_info);
 	if (ret)
 		return 0;
 
 	resp = (struct ubaseproxy_ctrlq_query_seid_info *)((u8 *)data + hdr_len);
+	expect_len = hdr_len + sizeof(resp->seid_num);
+	if (len < expect_len) {
+		ubaseproxy_err(udev,
+			       "failed to check msg len, msg not contain seid num, len = %u, expect len = %u.\n",
+			       len, expect_len);
+		return 0;
+	}
+
+	expect_len = hdr_len + sizeof(resp->seid_num) + RSVD_BYTES_NUM +
+		     resp->seid_num * sizeof(struct ubaseproxy_seid_info);
+	if (len < expect_len) {
+		ubaseproxy_err(udev,
+			       "failed to check msg len, msg not contain seid info, len = %u, expect len = %u.\n",
+			       len, expect_len);
+		return 0;
+	}
+
 	if (resp->seid_num > UBASEPROXY_CTRLQ_SEID_NUM) {
-		ubaseproxy_err(udev, "invalid seid num[%u]].\n", resp->seid_num);
+		ubaseproxy_err(udev, "invalid seid num[%u].\n", resp->seid_num);
 		return 0;
 	}
 
@@ -67,7 +87,7 @@ int ubaseproxy_ctrlq_handle_query_eid_resp(struct auxiliary_device *adev,
 	bitmap_zero(ue_seid_table->seid_bmap, UBASEPROXY_MAX_SEID_TABLE_SIZE);
 	for (i = 0; i < resp->seid_num; i++) {
 		seid_idx = le32_to_cpu(resp->seids[i].seid_idx);
-		if (seid_idx > UBASEPROXY_MAX_SEID_TABLE_SIZE) {
+		if (seid_idx >= UBASEPROXY_MAX_SEID_TABLE_SIZE) {
 			ubaseproxy_err(udev,
 				       "invalid seid idx when query eid[%u].\n",
 				       seid_idx);
@@ -80,7 +100,7 @@ int ubaseproxy_ctrlq_handle_query_eid_resp(struct auxiliary_device *adev,
 	return 0;
 }
 
-int ubaseproxy_ctrlq_handle_updata_eid_resp(struct auxiliary_device *adev,
+int ubaseproxy_ctrlq_handle_update_eid_resp(struct auxiliary_device *adev,
 					    void *data, u16 len)
 {
 	struct ubaseproxy_dev *udev = get_ubaseproxy_dev(adev);
@@ -101,7 +121,8 @@ int ubaseproxy_ctrlq_handle_updata_eid_resp(struct auxiliary_device *adev,
 	resp = (struct ubaseproxy_ctrlq_update_seid_info *)((u8 *)data + hdr_len);
 
 	seid_cmd = le32_to_cpu(resp->seid_operation) & UBASEPROXY_CTRLQ_SEID_CMD;
-	if (seid_cmd != UBASEPROXY_CTRLQ_ADD_SEID && seid_cmd != UBASEPROXY_CTRLQ_DEL_SEID) {
+	if (seid_cmd != UBASEPROXY_CTRLQ_ADD_SEID &&
+	    seid_cmd != UBASEPROXY_CTRLQ_DEL_SEID) {
 		ubaseproxy_err(udev, "invalid seid cmd[%u].\n", seid_cmd);
 		return 0;
 	}
@@ -110,7 +131,7 @@ int ubaseproxy_ctrlq_handle_updata_eid_resp(struct auxiliary_device *adev,
 
 	spin_lock_bh(&ue_seid_table->seid_lock);
 	seid_idx = le32_to_cpu(resp->seid_info.seid_idx);
-	if (seid_idx > UBASEPROXY_MAX_SEID_TABLE_SIZE)
+	if (seid_idx >= UBASEPROXY_MAX_SEID_TABLE_SIZE)
 		ubaseproxy_err(udev,
 			       "invalid seid idx when update eid[%u].\n",
 			       seid_idx);

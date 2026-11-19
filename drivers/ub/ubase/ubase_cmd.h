@@ -13,8 +13,7 @@
 
 #define UBASE_CMDQ_DESC_NUM_S		3
 #define UBASE_CMDQ_DESC_NUM		1024
-#define UBASE_CMDQ_TX_TIMEOUT		300000
-#define UBASE_CMDQ_MBX_TX_TIMEOUT	3000
+
 #define UBASE_DEL_JFS_SEND_CMD_TIMEOUT	45000
 #define UBASE_DEL_JFS_WAIT_AE_TIMEOUT	21000
 #define UBASE_CMDQ_CLEAR_WAIT_TIME	200
@@ -27,8 +26,6 @@
 #define UBASE_CMD_FLAG_NO_INTR		BIT(4)
 #define UBASE_CMD_FLAG_ERR_INTR		BIT(5)
 #define UBASE_CMD_FLAG_GET_BD_NUM	BIT(6)
-
-#define UBASE_UE2UE_MSG_WAIT_TIME	3000
 
 #define UBASE_CRQ_SCHED_TIMEOUT		(HZ / 2)
 
@@ -85,10 +82,6 @@ struct ubase_cmdq_desc {
 	__le16 ret;
 	__le16 rsv;
 	__le32 data[UBASE_DESC_DATA_LEN];
-};
-
-enum ubase_cmd_state {
-	UBASE_STATE_CMD_DISABLE
 };
 
 struct ubase_query_version_cmd {
@@ -392,12 +385,12 @@ void ubase_cmd_uninit(struct ubase_dev *udev);
 
 static inline void __ubase_cmd_enable(struct ubase_dev *udev)
 {
-	clear_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state);
+	clear_bit(UBASE_STATE_CMD_DISABLE_B, &udev->state_bits);
 }
 
 static inline void __ubase_cmd_disable(struct ubase_dev *udev)
 {
-	set_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state);
+	set_bit(UBASE_STATE_CMD_DISABLE_B, &udev->state_bits);
 }
 
 void ubase_cmd_disable(struct ubase_dev *udev);

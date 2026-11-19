@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -241,6 +241,38 @@ static int unic_init_vl_info(struct unic_dev *unic_dev)
 	return 0;
 }
 
+static int unic_alloc_channel_stats_buf(struct unic_dev *unic_dev)
+{
+	u32 num = unic_channels_max_num(unic_dev->comdev.adev);
+	struct unic_channel_stats *c_stats;
+
+	c_stats = kcalloc(num, sizeof(*c_stats), GFP_KERNEL);
+	if (ZERO_OR_NULL_PTR(c_stats))
+		return -ENOMEM;
+
+	unic_dev->channels.c_stats = c_stats;
+
+	return 0;
+}
+
+static void unic_free_channel_stats_buf(struct unic_dev *unic_dev)
+{
+	if (!unic_dev->channels.c_stats)
+		return;
+
+	kfree(unic_dev->channels.c_stats);
+	unic_dev->channels.c_stats = NULL;
+}
+
+void unic_clear_channel_stats(struct unic_dev *unic_dev)
+{
+	u32 num = unic_channels_max_num(unic_dev->comdev.adev);
+	struct unic_channel_stats *c_stats;
+
+	c_stats = unic_dev->channels.c_stats;
+	memset(c_stats, 0, num * sizeof(*c_stats));
+}
+
 static int unic_init_channels_attr(struct unic_dev *unic_dev)
 {
 	struct auxiliary_device *adev = unic_dev->comdev.adev;
@@ -265,11 +297,21 @@ static int unic_init_channels_attr(struct unic_dev *unic_dev)
 	channels->sqebb_shift = ilog2(roundup_pow_of_two(channels->sqebb_depth));
 	channels->sq_jfc_shift = ilog2(roundup_pow_of_two(channels->sq_cqe_depth));
 	channels->rq_jfc_shift = ilog2(roundup_pow_of_two(channels->rq_cqe_depth));
+	ret = unic_alloc_channel_stats_buf(unic_dev);
+	if (ret)
+		goto err_alloc_buf;
+
 
 	ret = unic_init_vl_info(unic_dev);
 	if (ret)
-		mutex_destroy(&channels->mutex);
+		goto err_init_vl_info;
 
+	return 0;
+
+err_init_vl_info:
+	unic_free_channel_stats_buf(unic_dev);
+err_alloc_buf:
+	mutex_destroy(&channels->mutex);
 	return ret;
 }
 
@@ -281,6 +323,7 @@ static void unic_uninit_channels_attr(struct unic_dev *unic_dev)
 	/* Prevent residual QoS configurations caused by the unic driver. */
 	ubase_restore_initial_qset_qos(adev);
 
+	unic_free_channel_stats_buf(unic_dev);
 	mutex_destroy(&channels->mutex);
 }
 
@@ -444,9 +487,11 @@ static int __unic_init_channels(struct unic_dev *unic_dev, u32 channels_num)
 		goto err_init_jetty;
 	}
 
-	for (i = 0; i < channels->num; i++)
+	for (i = 0; i < channels->num; i++) {
 		netif_napi_add(unic_dev->comdev.netdev, &channels->c[i].napi,
 			       unic_napi_poll);
+		channels->c[i].c_idx = i;
+	}
 
 	ret = unic_init_rss(unic_dev);
 	if (ret) {
@@ -706,6 +751,8 @@ static void unic_init_vport_info(struct unic_dev *unic_dev)
 	INIT_LIST_HEAD(&unic_dev->vport.addr_tbl.bond_ip_list);
 	spin_lock_init(&unic_dev->vport.addr_tbl.bond_ip_list_lock);
 
+	INIT_LIST_HEAD(&unic_dev->vport.vlan_tbl.vlan_list);
+
 	if (unic_dev_eth_mac_supported(unic_dev)) {
 		INIT_LIST_HEAD(&unic_dev->vport.addr_tbl.uc_mac_list);
 		INIT_LIST_HEAD(&unic_dev->vport.addr_tbl.mc_mac_list);
@@ -847,9 +894,11 @@ static int unic_init_netdev_priv(struct net_device *netdev,
 	priv->msg_enable = netif_msg_init(netif_debug, DEFAULT_MSG_LEVEL);
 	priv->tid = ubase_get_dev_caps(adev)->tid;
 	priv->hw_ver = ubase_get_hw_ver(adev);
-	mutex_init(&priv->act_info.mutex);
+	mutex_init(&priv->act_info.period_mutex);
+	mutex_init(&priv->act_info.event_mutex);
 	mutex_init(&priv->bond_status.mutex);
 	mutex_init(&priv->stats.bond_record.lock);
+	mutex_init(&priv->vport.vlan_tbl.mutex);
 
 	ret = unic_query_dev_res(priv);
 	if (ret)
@@ -899,7 +948,9 @@ err_uninit_vport:
 destroy_lock:
 	mutex_destroy(&priv->stats.bond_record.lock);
 	mutex_destroy(&priv->bond_status.mutex);
-	mutex_destroy(&priv->act_info.mutex);
+	mutex_destroy(&priv->act_info.period_mutex);
+	mutex_destroy(&priv->act_info.event_mutex);
+	mutex_destroy(&priv->vport.vlan_tbl.mutex);
 
 	return ret;
 }
@@ -915,7 +966,9 @@ static void unic_uninit_netdev_priv(struct net_device *netdev)
 	unic_uninit_vport(priv);
 	mutex_destroy(&priv->stats.bond_record.lock);
 	mutex_destroy(&priv->bond_status.mutex);
-	mutex_destroy(&priv->act_info.mutex);
+	mutex_destroy(&priv->act_info.period_mutex);
+	mutex_destroy(&priv->act_info.event_mutex);
+	mutex_destroy(&priv->vport.vlan_tbl.mutex);
 }
 
 int unic_init_wq(void)
@@ -973,6 +1026,7 @@ int unic_change_rss_size(struct unic_dev *unic_dev, u32 new_rss_size,
 
 	channels->rss_size = new_rss_size;
 	channels->num = channels->rss_size * channels->rss_vl_num;
+	unic_clear_channel_stats(unic_dev);
 
 	unic_update_queue_info(unic_dev);
 

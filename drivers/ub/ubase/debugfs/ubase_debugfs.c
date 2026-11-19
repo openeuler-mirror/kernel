@@ -4,6 +4,7 @@
  *
  */
 
+#include <linux/bits.h>
 #include <linux/debugfs.h>
 #include <linux/delay.h>
 #include <linux/kernel.h>
@@ -19,6 +20,7 @@
 #include "ubase_proxy_debugfs.h"
 #include "ubase_qos_debugfs.h"
 #include "ubase_stats.h"
+#include "ubase_timing.h"
 #include "ubase_tp.h"
 #include "ubase_debugfs.h"
 
@@ -30,16 +32,16 @@ static int ubase_dbg_dump_rst_info(struct seq_file *s, void *data)
 	int i;
 
 	seq_printf(s, "ELR reset count: %u\n", udev->reset_stat.elr_reset_cnt);
-	seq_printf(s, "port reset count: %u\n", udev->reset_stat.port_reset_cnt);
+	seq_printf(s, "RAS ELR reset count: %u\n", udev->reset_stat.ras_elr_reset_cnt);
 	seq_printf(s, "himac reset count: %u\n", udev->reset_stat.himac_reset_cnt);
 	seq_printf(s, "reset done count: %u\n", udev->reset_stat.reset_done_cnt);
 	seq_printf(s, "HW reset done count: %u\n", udev->reset_stat.hw_reset_done_cnt);
 	seq_printf(s, "reset fail count: %u\n", udev->reset_stat.reset_fail_cnt);
 	seq_printf(s, "force reset count: %u\n", udev->reset_stat.force_reset_cnt);
 	seq_printf(s, "force reset fail count: %u\n", udev->reset_stat.force_reset_fail_cnt);
+
 	seq_printf(s, "udev state: 0x%lx\n", udev->state_bits);
 	seq_printf(s, "udev status: 0x%lx\n", udev->status);
-
 	for (i = 0; i < UBASE_DRV_MAX; i++)
 		seq_printf(s, "adev[%d] dev_id %d status: 0x%lx\n",
 			   i, udev->dev_id, udev->priv.adev_status[i]);
@@ -75,7 +77,9 @@ static void ubase_dbg_dump_caps_bits(struct seq_file *s, struct ubase_dev *udev)
 	PRINT_CAP(usc, ubase_dev_usc_supported);
 	PRINT_CAP(ucp, ubase_ucp_supported);
 	PRINT_CAP(non_mirror_mem, ubase_dev_non_mirror_mem_supported);
+	PRINT_CAP(extbuf_manage_in_que, __ubase_dev_extbuf_manage_in_que_supported);
 	PRINT_CAP(batch_query_pmu, ubase_dev_batch_query_pmu_supported);
+	PRINT_CAP(ue_elr_ras, ubase_dev_ue_elr_ras_supported);
 }
 
 static void ubase_dbg_dump_caps_info(struct seq_file *s, struct ubase_dev *udev)
@@ -122,6 +126,7 @@ static void ubase_dbg_dump_caps_info(struct seq_file *s, struct ubase_dev *udev)
 		{"\tumv_tbl_size: %u\n", udev->caps.umv_tbl_size},
 		{"\tctrlq_remote_version: %u\n", udev->ctrlq.remote_ver},
 		{"\tctrlq_local_version: %u\n", UBASE_CTRLQ_LOCAL_VERSION},
+		{"\textdb_buf_que_size:%u\n", udev->ta_ctx.extdb_buf_que_size},
 	};
 	int i;
 
@@ -244,6 +249,46 @@ int ubase_dbg_get_caps_info(struct device *dev, struct ubase_dbg_caps_info *info
 }
 EXPORT_SYMBOL(ubase_dbg_get_caps_info);
 
+/**
+ * ubase_dbg_get_caps_info_by_name() - get caps info by name
+ * @dev_name: device name
+ * @map: debug get caps info
+ *
+ * The function is used to get caps info by name.
+ *
+ * Context: Any context.
+ * Return: 0 on success, negative error code otherwise
+ */
+int ubase_dbg_get_caps_info_by_name(const char *dev_name,
+				    struct ubase_dbg_caps_info *info)
+{
+	struct ubase_caps *dev_caps;
+	struct ubase_dev *udev;
+
+	if (!dev_name || !info)
+		return -EINVAL;
+
+	ubase_adev_list_read_lock();
+	udev = ubase_get_dev_from_adev_list_locked(dev_name);
+	if (!udev) {
+		ubase_adev_list_read_unlock();
+		return -ENODEV;
+	}
+
+	dev_caps = &udev->caps.dev_caps;
+	info->aeq_num = dev_caps->num_aeq_vectors;
+	info->ceq_num = dev_caps->num_ceq_vectors;
+	info->aeq_ctx_size = UBASE_AEQ_CTX_SIZE;
+	info->ceq_ctx_size = UBASE_CEQ_CTX_SIZE;
+	info->die_id = dev_caps->die_id;
+	info->io_port_logic_id = dev_caps->io_port_logic_id;
+
+	ubase_adev_list_read_unlock();
+
+	return 0;
+}
+EXPORT_SYMBOL(ubase_dbg_get_caps_info_by_name);
+
 static int ubase_query_ubcl_config(struct ubase_dev *udev, u16 offset,
 				   u16 is_query, u16 size,
 				   struct ubase_ubcl_config_cmd *resp)
@@ -294,8 +339,8 @@ static int ubase_dbg_dump_ubcl_config(struct seq_file *s, void *data)
 	struct ubase_dev *udev = dev_get_drvdata(s->private);
 	struct ubase_ubcl_config_cmd resp = {0};
 	u16 read_size = sizeof(resp.data);
+	u16 total_size, resp_size;
 	u16 offset = 0;
-	u16 total_size;
 	u32 addr = 0;
 	int ret;
 
@@ -306,8 +351,8 @@ static int ubase_dbg_dump_ubcl_config(struct seq_file *s, void *data)
 	ret = ubase_query_ubcl_config(udev, offset, 1, 0, &resp);
 	if (ret)
 		return ret;
-	total_size = le16_to_cpu(resp.size);
 
+	total_size = le16_to_cpu(resp.size);
 	seq_puts(s, "UBCL_config:\n");
 	seq_printf(s, "total_size: %u\n", total_size);
 	while (offset < total_size) {
@@ -315,8 +360,16 @@ static int ubase_dbg_dump_ubcl_config(struct seq_file *s, void *data)
 		ret = ubase_query_ubcl_config(udev, offset, 0, read_size, &resp);
 		if (ret)
 			return ret;
-		offset += le16_to_cpu(resp.size);
 
+		resp_size = le16_to_cpu(resp.size);
+		if (!resp_size || resp_size > read_size) {
+			ubase_err(udev,
+				  "invalid resp size, resp size = %u, read size = %u.\n",
+				  resp_size, read_size);
+			return -EINVAL;
+		}
+
+		offset += resp_size;
 		ubase_dbg_fill_ubcl_content(&resp, &addr, s);
 	}
 
@@ -395,7 +448,6 @@ static void ubase_dbg_fill_single_port(struct seq_file *s,
 static int ubase_dbg_dump_perf_stats_ub(struct seq_file *s,
 					struct ubase_dev *udev)
 {
-#define UBASE_UB_PERF_STATS_PERIOD	100
 #define UBASE_QUERY_ALL_BITMAP	0
 
 	struct ubase_perf_stats_result *stats;
@@ -415,7 +467,7 @@ static int ubase_dbg_dump_perf_stats_ub(struct seq_file *s,
 		return ret;
 	}
 
-	seq_printf(s, "perf_stats_period: %d(ms)\n", UBASE_UB_PERF_STATS_PERIOD);
+	seq_printf(s, "perf_stats_period: %u(ms)\n", UBASE_UB_PERF_STATS_PERIOD);
 	seq_puts(s, "port bandwidth info:\n");
 
 	for (i = 0; i < UBASE_MAX_PORT_NUM; i++) {
@@ -641,6 +693,52 @@ static int ubase_dbg_dump_udma_mac_tbl_list_hw(struct seq_file *s, void *data)
 	return ret;
 }
 
+static int ubase_dbg_dump_extdb_buf_info(struct seq_file *s, void *data)
+{
+	struct ubase_dev *udev = dev_get_drvdata(s->private);
+	struct ubase_ue_node *node;
+
+	if (!test_bit(UBASE_STATE_INITED_B, &udev->state_bits) ||
+	    test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
+		return -EBUSY;
+
+	seq_puts(s, "current ue:\n");
+	seq_printf(s, "extq_start_id: %u\n", udev->ta_ctx.extq_start_id);
+	seq_printf(s, "extq_end_id: %u\n", udev->ta_ctx.extq_end_id);
+
+	mutex_lock(&udev->ue_list_lock);
+	list_for_each_entry(node, &udev->ue_list, list) {
+		seq_printf(s, "\nue%u:\n", node->bus_ue_id);
+		seq_printf(s, "extq_start_id: %u\n", node->extq_start_id);
+		seq_printf(s, "extq_end_id: %u\n", node->extq_end_id);
+	}
+	mutex_unlock(&udev->ue_list_lock);
+
+	return 0;
+}
+
+static int ubase_dbg_dump_adev_list_info(struct seq_file *s, void *data)
+{
+	struct ubase_dev *udev = dev_get_drvdata(s->private);
+	struct ubase_adev_node *pos_node;
+	struct list_head *adev_list;
+
+	if (!test_bit(UBASE_STATE_INITED_B, &udev->state_bits) ||
+	    test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
+		return -EBUSY;
+
+	adev_list = ubase_get_adev_list();
+
+	ubase_adev_list_read_lock();
+	list_for_each_entry(pos_node, adev_list, list) {
+		if (pos_node->name[0])
+			seq_printf(s, "%s\n", pos_node->name);
+	}
+	ubase_adev_list_read_unlock();
+
+	return 0;
+}
+
 static bool __ubase_dbg_dentry_support(struct device *dev, u32 property)
 {
 	struct ubase_dev *udev = dev_get_drvdata(dev);
@@ -655,6 +753,18 @@ static bool __ubase_dbg_dentry_support(struct device *dev, u32 property)
 	}
 
 	return false;
+}
+
+static bool ubase_dbg_ub_perf_stats_supported(struct device *dev, u32 property)
+{
+	struct ubase_dev *udev = dev_get_drvdata(dev);
+
+	if (udev->caps.hw_ver != UBASE_HW_VER_A_0 &&
+	    udev->caps.hw_ver != UBASE_HW_VER_K_0 &&
+	    ubase_dev_ubl_supported(udev))
+		return false;
+
+	return __ubase_dbg_dentry_support(dev, property);
 }
 
 static bool ubase_dbg_udma_mac_tbl_list_support(struct device *dev, u32 property)
@@ -672,6 +782,17 @@ static bool ubase_dbg_dev_proxy_support(struct device *dev, u32 property)
 	struct ubase_dev *udev = dev_get_drvdata(dev);
 
 	if (!ubase_dev_proxy_supported(udev))
+		return false;
+
+	return __ubase_dbg_dentry_support(dev, property);
+}
+
+static bool ubase_dbg_extdb_buf_info_support(struct device *dev, u32 property)
+{
+	struct ubase_dev *udev = dev_get_drvdata(dev);
+
+	if (!ubase_dev_ta_extdb_buf_supported(udev) ||
+	    !ubase_dev_extbuf_manage_in_que_supported(udev))
 		return false;
 
 	return __ubase_dbg_dentry_support(dev, property);
@@ -886,7 +1007,7 @@ static struct ubase_dbg_cmd_info ubase_dbg_cmd[] = {
 		.name = "perf_stats",
 		.dentry_index = UBASE_DBG_DENTRY_ROOT,
 		.property = UBASE_SUP_URMA | UBASE_SUP_CDMA | UBASE_SUP_UBL_ETH,
-		.support = __ubase_dbg_dentry_support,
+		.support = ubase_dbg_ub_perf_stats_supported,
 		.init = __ubase_dbg_seq_file_init,
 		.read_func = ubase_dbg_dump_perf_stats,
 	},
@@ -1009,6 +1130,22 @@ static struct ubase_dbg_cmd_info ubase_dbg_cmd[] = {
 		.support = ubase_dbg_dev_proxy_support,
 		.init = __ubase_dbg_seq_file_init,
 		.read_func = ubase_dbg_dump_ue_cmdq_ratelimit_record,
+	},
+	{
+		.name = "extdb_buf_info",
+		.dentry_index = UBASE_DBG_DENTRY_ROOT,
+		.property = UBASE_SUP_URMA | UBASE_SUP_CDMA | UBASE_SUP_UBL_ETH,
+		.support = ubase_dbg_extdb_buf_info_support,
+		.init = __ubase_dbg_seq_file_init,
+		.read_func = ubase_dbg_dump_extdb_buf_info,
+	},
+	{
+		.name = "all_adev_name",
+		.dentry_index = UBASE_DBG_DENTRY_ROOT,
+		.property = UBASE_SUP_URMA | UBASE_SUP_UBL_ETH,
+		.support = __ubase_dbg_dentry_support,
+		.init = __ubase_dbg_seq_file_init,
+		.read_func = ubase_dbg_dump_adev_list_info,
 	}
 };
 

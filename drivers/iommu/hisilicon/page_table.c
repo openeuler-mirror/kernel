@@ -8,7 +8,6 @@
 #include <linux/dma-mapping.h>
 #include <linux/io-pgtable.h>
 #include <linux/errno.h>
-#include <linux/kvm_host.h>
 
 #include "flush.h"
 #include "cfg_table.h"
@@ -25,8 +24,6 @@ static const struct iommu_flush_ops ummu_flush_ops = {
 	.tlb_flush_walk = ummu_tlbi_walk,
 	.tlb_add_page = ummu_tlbi_page,
 };
-
-struct ummu_domain identity_u_domain = {};
 
 static int ummu_get_pgtable_cfg(struct ummu_domain *u_domain,
 				struct ummu_pgtable_cfg *cfg)
@@ -56,9 +53,7 @@ static int ummu_get_pgtable_cfg(struct ummu_domain *u_domain,
 
 	cfg->pgtbl_cfg.coherent_walk = ummu->cap.features & UMMU_FEAT_COHERENCY;
 	cfg->pgtbl_cfg.pgsize_bitmap = ummu->cap.pgsize_bitmap;
-
-	if (u_domain->base_domain.domain.type != IOMMU_DOMAIN_IDENTITY)
-		cfg->pgtbl_cfg.tlb = &ummu_flush_ops;
+	cfg->pgtbl_cfg.tlb = &ummu_flush_ops;
 
 	cfg->pgtbl_cfg.iommu_dev = ummu->dev;
 
@@ -99,15 +94,8 @@ static int ummu_domain_collect_pgtable_s2(struct ummu_domain *u_domain,
 	typeof(&pgtbl_cfg->arm_lpae_s2_cfg.vtcr) vtcr =
 		&pgtbl_cfg->arm_lpae_s2_cfg.vtcr;
 	struct ummu_s2_cfg *cfg = &u_domain->cfgs.s2_cfg;
-	int vmid = 0;
 
-	if (u_domain->kvm)
-		vmid = kvm_pinned_vmid_get(u_domain->kvm);
-	if (vmid < 0)
-		return vmid;
-
-	cfg->vmid = (u16)vmid;
-	u_domain->vmid = cfg->vmid;
+	cfg->vmid = u_domain->vmid;
 	cfg->vttbr = pgtbl_cfg->arm_lpae_s2_cfg.vttbr;
 	cfg->vtcr = FIELD_PREP(TECT_ENT2_NS_S2_TSZ, vtcr->tsz) |
 		    FIELD_PREP(TECT_ENT2_NS_S2_SL, vtcr->sl) |
@@ -141,6 +129,7 @@ int ummu_domain_collect_pgtable(struct ummu_domain *u_domain)
 
 	if (ret) {
 		free_io_pgtable_ops(cfg.pgtbl_ops);
+		cfg.pgtbl_ops = NULL;
 		return ret;
 	}
 
@@ -154,11 +143,11 @@ int ummu_domain_collect_pgtable(struct ummu_domain *u_domain)
 	return 0;
 }
 
-static int ummu_map_identity_pages(void)
+static int ummu_map_identity_pages(struct ummu_domain *u_domain)
 {
-	struct io_pgtable_ops *pgtbl_ops = identity_u_domain.cfgs.pgtbl_ops;
+	struct io_pgtable_ops *pgtbl_ops = u_domain->cfgs.pgtbl_ops;
 	struct ummu_device *ummu = core_to_ummu_device(
-					identity_u_domain.base_domain.core_dev);
+				u_domain->base_domain.core_dev);
 	int prot = IOMMU_READ | IOMMU_WRITE;
 	size_t pgcount = 0;
 	size_t pgsize = 0;
@@ -188,7 +177,7 @@ static int ummu_map_identity_pages(void)
 	if (!pgtbl_ops)
 		return -EOPNOTSUPP;
 
-	end = ALIGN(identity_u_domain.base_domain.domain.geometry.aperture_end +
+	end = ALIGN(u_domain->base_domain.domain.geometry.aperture_end +
 		1, pgsize);
 	step = pgsize * pgcount;
 	for (start = 0; start < end; start += step) {
@@ -203,42 +192,22 @@ static int ummu_map_identity_pages(void)
 	return 0;
 }
 
-int ummu_global_identity_pgtbl_init(struct ummu_device *ummu)
+int ummu_identity_pgtbl_init(struct ummu_domain *u_domain)
 {
 	int ret;
 
-	if (identity_u_domain.cfgs.pgtbl_ops)
-		return 0;
-
-	identity_u_domain.base_domain.domain.type = IOMMU_DOMAIN_IDENTITY;
-	identity_u_domain.base_domain.core_dev = &ummu->core_dev;
-	identity_u_domain.base_domain.tid = UMMU_INVALID_TID;
-	identity_u_domain.cfgs.stage = UMMU_DOMAIN_S1;
-	mutex_init(&identity_u_domain.init_mutex);
-
-	ret = ummu_domain_collect_pgtable(&identity_u_domain);
-	if (ret) {
-		pr_err("init global identity page table failed, ret = %d\n", ret);
+	ret = ummu_domain_collect_pgtable(u_domain);
+	if (ret)
 		return ret;
-	}
 
-	ret = ummu_map_identity_pages();
-	if (ret) {
-		ummu_global_identity_pgtbl_free();
-		return ret;
-	}
+	ret = ummu_map_identity_pages(u_domain);
+	if (ret)
+		goto err_free_pgtbl;
 
-	identity_u_domain.cfgs.s1_cfg.tct_cfg = ummu->local_tct_cfg;
 	return 0;
-}
 
-void ummu_global_identity_pgtbl_free(void)
-{
-	free_io_pgtable_ops(identity_u_domain.cfgs.pgtbl_ops);
-	identity_u_domain.cfgs.pgtbl_ops = NULL;
-}
-
-struct ummu_domain *ummu_get_global_identity_domain(void)
-{
-	return &identity_u_domain;
+err_free_pgtbl:
+	free_io_pgtable_ops(u_domain->cfgs.pgtbl_ops);
+	u_domain->cfgs.pgtbl_ops = NULL;
+	return ret;
 }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -14,8 +14,6 @@ static int unic_init_vlan_filter(struct unic_dev *unic_dev)
 	struct unic_vlan_tbl *vlan_tbl = &unic_dev->vport.vlan_tbl;
 
 	vlan_tbl->cur_vlan_fltr_en = false;
-
-	INIT_LIST_HEAD(&vlan_tbl->vlan_list);
 
 	return unic_set_vlan_filter_hw(unic_dev, false);
 }
@@ -45,19 +43,20 @@ void unic_uninit_vlan_config(struct unic_dev *unic_dev)
 	    !unic_dev_cfg_vlan_filter_supported(unic_dev))
 		return;
 
+	mutex_lock(&vlan_tbl->mutex);
+
 	INIT_LIST_HEAD(&tmp_del_list);
-	spin_lock_bh(&vlan_tbl->vlan_lock);
 
 	list_for_each_entry_safe(vlan, tmp, &vlan_tbl->vlan_list, node)
 		list_move_tail(&vlan->node, &tmp_del_list);
-
-	spin_unlock_bh(&vlan_tbl->vlan_lock);
 
 	list_for_each_entry_safe(vlan, tmp, &tmp_del_list, node) {
 		unic_set_port_vlan_hw(unic_dev, vlan->vlan_id, false);
 		list_del(&vlan->node);
 		kfree(vlan);
 	}
+
+	mutex_unlock(&vlan_tbl->mutex);
 }
 
 static bool unic_need_update_port_vlan(struct unic_dev *unic_dev, u16 vlan_id,
@@ -70,16 +69,12 @@ static bool unic_need_update_port_vlan(struct unic_dev *unic_dev, u16 vlan_id,
 	if (!is_add && !vlan_id)
 		return false;
 
-	spin_lock_bh(&vlan_tbl->vlan_lock);
-
 	list_for_each_entry(vlan, &vlan_tbl->vlan_list, node) {
 		if (vlan->vlan_id == vlan_id) {
 			exist = true;
 			break;
 		}
 	}
-
-	spin_unlock_bh(&vlan_tbl->vlan_lock);
 
 	if (is_add && exist) {
 		/* vlan 0 may be added twice when 8021q module is enabled */
@@ -115,27 +110,20 @@ static void unic_add_vlan_table(struct unic_dev *unic_dev,
 	struct unic_vlan_tbl *vlan_tbl = &unic_dev->vport.vlan_tbl;
 	struct unic_vlan_cfg *entry;
 
-	spin_lock_bh(&vlan_tbl->vlan_lock);
-
 	list_for_each_entry(entry, &vlan_tbl->vlan_list, node) {
 		if (entry->vlan_id == vlan->vlan_id) {
 			kfree(vlan);
-			goto out;
+			return;
 		}
 	}
 
 	list_add_tail(&vlan->node, &vlan_tbl->vlan_list);
-
-out:
-	spin_unlock_bh(&vlan_tbl->vlan_lock);
 }
 
 static void unic_rm_vlan_table(struct unic_dev *unic_dev, u16 vlan_id)
 {
 	struct unic_vlan_tbl *vlan_tbl = &unic_dev->vport.vlan_tbl;
 	struct unic_vlan_cfg *vlan, *tmp;
-
-	spin_lock_bh(&vlan_tbl->vlan_lock);
 
 	list_for_each_entry_safe(vlan, tmp, &vlan_tbl->vlan_list, node) {
 		if (vlan->vlan_id == vlan_id) {
@@ -144,8 +132,6 @@ static void unic_rm_vlan_table(struct unic_dev *unic_dev, u16 vlan_id)
 			break;
 		}
 	}
-
-	spin_unlock_bh(&vlan_tbl->vlan_lock);
 }
 
 int unic_set_vlan_table(struct unic_dev *unic_dev, __be16 proto, u16 vlan_id,
@@ -161,23 +147,23 @@ int unic_set_vlan_table(struct unic_dev *unic_dev, __be16 proto, u16 vlan_id,
 	if (proto != htons(ETH_P_8021Q))
 		return -EPROTONOSUPPORT;
 
-	spin_lock_bh(&vlan_tbl->vlan_lock);
+	mutex_lock(&vlan_tbl->mutex);
 
 	if (is_add && test_bit(vlan_id, vlan_tbl->vlan_del_fail_bmap)) {
 		clear_bit(vlan_id, vlan_tbl->vlan_del_fail_bmap);
 	} else if (test_bit(UNIC_STATE_RESETTING, &unic_dev->state) &&
 		   !is_add) {
 		set_bit(vlan_id, vlan_tbl->vlan_del_fail_bmap);
-		spin_unlock_bh(&vlan_tbl->vlan_lock);
-		return -EBUSY;
+		ret = -EBUSY;
+		goto unlock;
 	}
-
-	spin_unlock_bh(&vlan_tbl->vlan_lock);
 
 	if (is_add) {
 		vlan = kzalloc(sizeof(*vlan), GFP_KERNEL);
-		if (!vlan)
-			return -ENOMEM;
+		if (!vlan) {
+			ret = -ENOMEM;
+			goto unlock;
+		}
 
 		vlan->vlan_id = vlan_id;
 	}
@@ -195,12 +181,13 @@ int unic_set_vlan_table(struct unic_dev *unic_dev, __be16 proto, u16 vlan_id,
 		 * and try to remove it from hw later, to be consistent
 		 * with stack.
 		 */
-		spin_lock_bh(&vlan_tbl->vlan_lock);
 		set_bit(vlan_id, vlan_tbl->vlan_del_fail_bmap);
-		spin_unlock_bh(&vlan_tbl->vlan_lock);
 	} else {
 		kfree(vlan);
 	}
+
+unlock:
+	mutex_unlock(&vlan_tbl->mutex);
 
 	return ret;
 }
@@ -213,20 +200,16 @@ static bool unic_need_enable_vlan_filter(struct unic_dev *unic_dev, bool enable)
 	if ((unic_dev->netdev_flags & UNIC_USER_UPE) || !enable)
 		return false;
 
-	spin_lock_bh(&vlan_tbl->vlan_lock);
 	list_for_each_entry(vlan, &vlan_tbl->vlan_list, node) {
-		if (vlan->vlan_id != 0) {
-			spin_unlock_bh(&vlan_tbl->vlan_lock);
+		if (vlan->vlan_id != 0)
 			return true;
-		}
 	}
-
-	spin_unlock_bh(&vlan_tbl->vlan_lock);
 
 	return false;
 }
 
-int unic_set_vlan_filter(struct unic_dev *unic_dev, bool enable)
+/* caller must hold vlan_tbl->mutex */
+static int __unic_set_vlan_filter(struct unic_dev *unic_dev, bool enable)
 {
 	struct unic_vlan_tbl *vlan_tbl = &unic_dev->vport.vlan_tbl;
 	bool need_en;
@@ -245,6 +228,18 @@ int unic_set_vlan_filter(struct unic_dev *unic_dev, bool enable)
 	return ret;
 }
 
+int unic_set_vlan_filter(struct unic_dev *unic_dev, bool enable)
+{
+	struct unic_vlan_tbl *vlan_tbl = &unic_dev->vport.vlan_tbl;
+	int ret;
+
+	mutex_lock(&vlan_tbl->mutex);
+	ret = __unic_set_vlan_filter(unic_dev, enable);
+	mutex_unlock(&vlan_tbl->mutex);
+
+	return ret;
+}
+
 static void unic_sync_vlan_filter_state(struct unic_dev *unic_dev)
 {
 	struct unic_vport *vport = &unic_dev->vport;
@@ -254,7 +249,8 @@ static void unic_sync_vlan_filter_state(struct unic_dev *unic_dev)
 				&vport->state))
 		return;
 
-	ret = unic_set_vlan_filter(unic_dev, true);
+	/* called with vlan_tbl->mutex held from unic_sync_vlan_filter */
+	ret = __unic_set_vlan_filter(unic_dev, true);
 	if (ret) {
 		unic_err(unic_dev,
 			 "failed to sync vlan filter state, ret = %d.\n", ret);
@@ -265,13 +261,23 @@ static void unic_sync_vlan_filter_state(struct unic_dev *unic_dev)
 static u16 unic_find_del_fail_vlan(struct unic_dev *unic_dev)
 {
 	struct unic_vlan_tbl *vlan_tbl = &unic_dev->vport.vlan_tbl;
-	u16 vlan_id;
 
-	spin_lock_bh(&vlan_tbl->vlan_lock);
-	vlan_id = find_first_bit(vlan_tbl->vlan_del_fail_bmap, VLAN_N_VID);
-	spin_unlock_bh(&vlan_tbl->vlan_lock);
+	return find_first_bit(vlan_tbl->vlan_del_fail_bmap, VLAN_N_VID);
+}
 
-	return vlan_id;
+static void unic_rm_del_fail_vlan(struct unic_dev *unic_dev, u16 vlan_id)
+{
+	struct unic_vlan_tbl *vlan_tbl = &unic_dev->vport.vlan_tbl;
+	bool pending;
+
+	/* the vlan was re-added by user while the delete was in flight,
+	 * keep it in the table.
+	 */
+	pending = test_and_clear_bit(vlan_id, vlan_tbl->vlan_del_fail_bmap);
+	if (!pending)
+		return;
+
+	unic_rm_vlan_table(unic_dev, vlan_id);
 }
 
 void unic_sync_vlan_filter(struct unic_dev *unic_dev)
@@ -286,14 +292,15 @@ void unic_sync_vlan_filter(struct unic_dev *unic_dev)
 	    !unic_dev_cfg_vlan_filter_supported(unic_dev))
 		return;
 
+	mutex_lock(&vlan_tbl->mutex);
+
 	vlan_id = unic_find_del_fail_vlan(unic_dev);
 	while (vlan_id != VLAN_N_VID) {
 		ret = unic_set_port_vlan(unic_dev, vlan_id, false);
 		if (ret)
 			break;
 
-		clear_bit(vlan_id, vlan_tbl->vlan_del_fail_bmap);
-		unic_rm_vlan_table(unic_dev, vlan_id);
+		unic_rm_del_fail_vlan(unic_dev, vlan_id);
 		set_bit(UNIC_VPORT_STATE_VLAN_FILTER_CHANGE,
 			&unic_dev->vport.state);
 
@@ -304,4 +311,6 @@ void unic_sync_vlan_filter(struct unic_dev *unic_dev)
 	}
 
 	unic_sync_vlan_filter_state(unic_dev);
+
+	mutex_unlock(&vlan_tbl->mutex);
 }

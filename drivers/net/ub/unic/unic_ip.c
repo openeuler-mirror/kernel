@@ -78,15 +78,12 @@ static int unic_update_stack_ip_addr(struct unic_vport *vport,
 	}
 
 	/* handle accidental addition, create addr node for deleting*/
-	addr_node = kzalloc(sizeof(*addr_node), GFP_ATOMIC);
+	addr_node = unic_comm_alloc_addr_node(UNIC_COMM_ADDR_TO_DEL, addr, ip_mask);
 	if (!addr_node) {
 		ret = -ENOMEM;
 		goto finish_update_state;
 	}
 
-	addr_node->state = UNIC_COMM_ADDR_TO_DEL;
-	addr_node->node_mask = ip_mask;
-	memcpy(addr_node->unic_addr, addr, UNIC_ADDR_LEN);
 	list_add_tail(&addr_node->node, list);
 	unic_format_masked_ip_addr(format_masked_ip_addr, addr);
 	set_bit(UNIC_VPORT_STATE_IP_TBL_CHANGE, &vport->state);
@@ -310,16 +307,15 @@ static void unic_sync_addr_table(struct unic_vport *vport,
 		if (addr_node->state == UNIC_COMM_ADDR_ACTIVE)
 			continue;
 
-		new_node = kzalloc(sizeof(*new_node), GFP_ATOMIC);
+		new_node = unic_comm_alloc_addr_node(addr_node->state,
+						     addr_node->unic_addr,
+						     addr_node->node_mask);
 		if (!new_node) {
 			spin_unlock_bh(addr_list_lock);
 			dev_err_ratelimited(&adev->dev,
 					    "failed to alloc memory for new node.\n");
 			goto stop_traverse;
 		}
-		memcpy(new_node->unic_addr, addr_node->unic_addr, UNIC_ADDR_LEN);
-		new_node->state = addr_node->state;
-		new_node->node_mask = addr_node->node_mask;
 
 		if (new_node->state == UNIC_COMM_ADDR_TO_DEL)
 			list_add_tail(&new_node->node, &tmp_del_list);
@@ -358,48 +354,6 @@ static void unic_build_stack_ip_info(struct unic_ctrlq_ip_notify_req *req,
 	st_ip->ip_addr[3] = le32_to_be32(req->ip_addr[0]);
 }
 
-static int unic_update_addr_list(struct list_head *list,
-				 spinlock_t *addr_list_lock,
-				 enum UNIC_COMM_ADDR_STATE state,
-				 const u8 *addr, u16 ip_mask)
-{
-	struct unic_comm_addr_node *addr_node;
-
-	spin_lock_bh(addr_list_lock);
-
-	/* if the addr is already in the addr list, no need to add a new
-	 * one into it, just check the addr state, convert it to a new
-	 * state, or just remove it, or do nothing.
-	 */
-	addr_node = unic_comm_find_addr_node(list, addr, ip_mask);
-	if (addr_node) {
-		unic_comm_update_addr_state(addr_node, state);
-		spin_unlock_bh(addr_list_lock);
-		return 0;
-	}
-
-	/* if this addr is never added, unnecessary to delete */
-	if (state == UNIC_COMM_ADDR_TO_DEL) {
-		spin_unlock_bh(addr_list_lock);
-		return -ENOENT;
-	}
-
-	addr_node = kzalloc(sizeof(*addr_node), GFP_ATOMIC);
-	if (!addr_node) {
-		spin_unlock_bh(addr_list_lock);
-		return -ENOMEM;
-	}
-
-	addr_node->state = state;
-	addr_node->node_mask = ip_mask;
-	memcpy(addr_node->unic_addr, addr, UNIC_ADDR_LEN);
-	list_add_tail(&addr_node->node, list);
-
-	spin_unlock_bh(addr_list_lock);
-
-	return 0;
-}
-
 static void unic_send_notify_ip_resp(struct auxiliary_device *adev, u16 seq,
 				     u8 result)
 {
@@ -423,21 +377,35 @@ static void unic_send_notify_ip_resp(struct auxiliary_device *adev, u16 seq,
 			 "failed to notify ip resp by ctrlq, ret = %d.\n", ret);
 }
 
+static int unic_ip_cmd_to_state(u16 ip_cmd, enum UNIC_COMM_ADDR_STATE *state)
+{
+	switch (ip_cmd) {
+	case UNIC_CTRLQ_ADD_IP:
+		*state = UNIC_COMM_ADDR_TO_ADD;
+		break;
+	case UNIC_CTRLQ_DEL_IP:
+		*state = UNIC_COMM_ADDR_TO_DEL;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int unic_update_tmp_ip_list(struct unic_dev *unic_dev,
 				   struct list_head *list,
 				   struct unic_stack_ip_info *st_ip)
 {
 	struct unic_comm_addr_node *addr_node;
 	enum UNIC_COMM_ADDR_STATE state;
+	int ret;
 
-	if (st_ip->ip_cmd == UNIC_CTRLQ_ADD_IP) {
-		state = UNIC_COMM_ADDR_TO_ADD;
-	} else if (st_ip->ip_cmd == UNIC_CTRLQ_DEL_IP) {
-		state = UNIC_COMM_ADDR_TO_DEL;
-	} else {
+	ret = unic_ip_cmd_to_state(st_ip->ip_cmd, &state);
+	if (ret) {
 		unic_err(unic_dev, "invalid ip cmd by ctrlq, ip cmd = %u.\n",
 			 st_ip->ip_cmd);
-		return -EINVAL;
+		return ret;
 	}
 
 	addr_node = unic_comm_find_addr_node(list, (u8 *)&st_ip->ip_addr,
@@ -447,13 +415,11 @@ static int unic_update_tmp_ip_list(struct unic_dev *unic_dev,
 		return 0;
 	}
 
-	addr_node = kzalloc(sizeof(*addr_node), GFP_ATOMIC);
+	addr_node = unic_comm_alloc_addr_node(state, (u8 *)&st_ip->ip_addr,
+					      st_ip->ip_mask);
 	if (!addr_node)
 		return -ENOMEM;
 
-	addr_node->state = state;
-	addr_node->node_mask = st_ip->ip_mask;
-	memcpy(addr_node->unic_addr, (u8 *)&st_ip->ip_addr, UNIC_ADDR_LEN);
 	list_add_tail(&addr_node->node, list);
 
 	return 0;
@@ -467,6 +433,7 @@ int unic_handle_notify_ip_event(struct auxiliary_device *adev, u8 service_ver,
 	struct unic_vport *vport = &priv->vport;
 	struct unic_ctrlq_ip_notify_req *req;
 	struct unic_stack_ip_info st_ip;
+	enum UNIC_COMM_ADDR_STATE state;
 	int ret;
 
 	if (!unic_dev_ubl_supported(priv))
@@ -496,26 +463,18 @@ int unic_handle_notify_ip_event(struct auxiliary_device *adev, u8 service_ver,
 		goto unlock;
 	}
 
-	if (st_ip.ip_cmd == UNIC_CTRLQ_ADD_IP) {
-		ret = unic_update_addr_list(&vport->addr_tbl.ip_list,
-					    &vport->addr_tbl.ip_list_lock,
-					    UNIC_COMM_ADDR_TO_ADD,
-					    (u8 *)&st_ip.ip_addr,
-					    st_ip.ip_mask);
-	} else if (st_ip.ip_cmd == UNIC_CTRLQ_DEL_IP) {
-		ret = unic_update_addr_list(&vport->addr_tbl.ip_list,
-					    &vport->addr_tbl.ip_list_lock,
-					    UNIC_COMM_ADDR_TO_DEL,
-					    (u8 *)&st_ip.ip_addr,
-					    st_ip.ip_mask);
-	} else {
+	ret = unic_ip_cmd_to_state(st_ip.ip_cmd, &state);
+	if (ret) {
 		spin_unlock_bh(&vport->addr_tbl.tmp_ip_lock);
 		unic_err(priv, "invalid ip cmd by ctrlq, cmd = %u.\n",
 			 st_ip.ip_cmd);
-		ret = -EINVAL;
 		goto send_resp;
 	}
 
+	ret = unic_comm_update_addr_list(&vport->addr_tbl.ip_list,
+					 &vport->addr_tbl.ip_list_lock,
+					 state, (u8 *)&st_ip.ip_addr,
+					 st_ip.ip_mask);
 	if (ret == -ENOENT) {
 		spin_unlock_bh(&vport->addr_tbl.tmp_ip_lock);
 		unic_err(priv, "failed to delete IP %s from ip list.\n",
@@ -536,12 +495,11 @@ send_resp:
 }
 
 static int unic_update_ctrlq_ip_list(struct unic_ip_info *ip_info,
-				     struct unic_vport *vport,
 				     struct list_head *list)
 {
 #define le32_to_be32(x) cpu_to_be32(le32_to_cpu(x))
 
-	struct unic_comm_addr_node *ip_node, *new_node, *tmp_node;
+	struct unic_comm_addr_node *tmp_node;
 	struct unic_stack_ip_info st_ip;
 
 	st_ip.ip_mask = le16_to_cpu(ip_info->ip_mask);
@@ -550,41 +508,19 @@ static int unic_update_ctrlq_ip_list(struct unic_ip_info *ip_info,
 	st_ip.ip_addr[2] = le32_to_be32(ip_info->ip_addr[1]);
 	st_ip.ip_addr[3] = le32_to_be32(ip_info->ip_addr[0]);
 
-	ip_node = kzalloc(sizeof(*ip_node), GFP_ATOMIC);
-	if (!ip_node)
-		return -ENOMEM;
-
-	ip_node->state = UNIC_COMM_ADDR_TO_ADD;
-	ip_node->node_mask = st_ip.ip_mask;
-	memcpy(ip_node->unic_addr, &st_ip.ip_addr, UNIC_ADDR_LEN);
-
-	new_node = unic_comm_find_addr_node(&vport->addr_tbl.ip_list,
-					    ip_node->unic_addr,
-					    ip_node->node_mask);
-	if (new_node) {
-		if (new_node->state != UNIC_COMM_ADDR_TO_ADD)
-			new_node->state = UNIC_COMM_ADDR_ACTIVE;
-
-		kfree(ip_node);
-	} else {
-		list_add_tail(&ip_node->node, &vport->addr_tbl.ip_list);
-	}
-
-	tmp_node = kzalloc(sizeof(*tmp_node), GFP_ATOMIC);
+	tmp_node = unic_comm_alloc_addr_node(UNIC_COMM_ADDR_TO_ADD,
+					     (u8 *)&st_ip.ip_addr,
+					     st_ip.ip_mask);
 	if (!tmp_node)
 		return -ENOMEM;
 
-	tmp_node->state = UNIC_COMM_ADDR_TO_ADD;
-	tmp_node->node_mask = st_ip.ip_mask;
-	memcpy(tmp_node->unic_addr, &st_ip.ip_addr, UNIC_ADDR_LEN);
 	list_add_tail(&tmp_node->node, list);
 
 	return 0;
 }
 
 static int unic_ctrlq_query_ip(struct auxiliary_device *adev, u16 *ip_index,
-			       u8 *get_count, struct unic_vport *vport,
-			       struct list_head *list)
+			       u8 *get_count, struct list_head *list)
 {
 	struct unic_dev *unic_dev = dev_get_drvdata(&adev->dev);
 	struct unic_ctrlq_query_ip_resp resp = {0};
@@ -619,10 +555,8 @@ static int unic_ctrlq_query_ip(struct auxiliary_device *adev, u16 *ip_index,
 		return -EINVAL;
 	}
 
-	spin_lock_bh(&vport->addr_tbl.ip_list_lock);
-
 	for (i = 0; i < resp.get_count; i++) {
-		ret = unic_update_ctrlq_ip_list(&resp.ip_info[i], vport, list);
+		ret = unic_update_ctrlq_ip_list(&resp.ip_info[i], list);
 		if (ret)
 			goto out;
 	}
@@ -631,8 +565,6 @@ static int unic_ctrlq_query_ip(struct auxiliary_device *adev, u16 *ip_index,
 	*ip_index = le16_to_cpu(resp.ip_index);
 
 out:
-	spin_unlock_bh(&vport->addr_tbl.ip_list_lock);
-
 	return ret;
 }
 
@@ -651,14 +583,31 @@ static void unic_update_ip_list(struct unic_vport *vport,
 	list_for_each_entry_safe(ip_node, tmp, &vport->addr_tbl.ip_list, node) {
 		new_node = unic_comm_find_addr_node(list, ip_node->unic_addr,
 						    ip_node->node_mask);
-		if (!new_node) {
-			if (ip_node->state == UNIC_COMM_ADDR_ACTIVE) {
-				ip_node->state = UNIC_COMM_ADDR_TO_DEL;
-			} else if (ip_node->state == UNIC_COMM_ADDR_TO_ADD) {
-				list_del(&ip_node->node);
-				kfree(ip_node);
-			}
+		if (new_node)
+			continue;
+
+		if (ip_node->state == UNIC_COMM_ADDR_ACTIVE) {
+			ip_node->state = UNIC_COMM_ADDR_TO_DEL;
+		} else if (ip_node->state == UNIC_COMM_ADDR_TO_ADD) {
+			list_del(&ip_node->node);
+			kfree(ip_node);
 		}
+	}
+
+	/* If the ip exists in tmp list but not in ip list, it indicates that
+	 * the ip is newly added by the manager and should be moved to ip list.
+	 * If the ip is already in the ip list but its status is not TO_ADD,
+	 * it means the protocol stack already has this ip, and its status
+	 * should be directly set to ACTIVE.
+	 */
+	list_for_each_entry_safe(ip_node, tmp, list, node) {
+		new_node = unic_comm_find_addr_node(&vport->addr_tbl.ip_list,
+						    ip_node->unic_addr,
+						    ip_node->node_mask);
+		if (!new_node)
+			list_move_tail(&ip_node->node, &vport->addr_tbl.ip_list);
+		else if (new_node->state != UNIC_COMM_ADDR_TO_ADD)
+			new_node->state = UNIC_COMM_ADDR_ACTIVE;
 	}
 
 	/* During the query, the ip added or deleted by the manager are saved in
@@ -708,8 +657,7 @@ int unic_query_ip_addr(struct auxiliary_device *adev)
 
 	while (ip_index < UNIC_IP_TABLE_SIZE &&
 	       cnt < UNIC_LOOP_COUNT(UNIC_IP_TABLE_SIZE, UNIC_CTRLQ_IP_REQ_SIZE)) {
-		ret = unic_ctrlq_query_ip(adev, &ip_index, &get_count, vport,
-					  &tmp_list);
+		ret = unic_ctrlq_query_ip(adev, &ip_index, &get_count, &tmp_list);
 		if (ret) {
 			unic_err(priv,
 				 "failed to query ip info by ctrlq, ret = %d.\n",

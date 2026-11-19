@@ -57,6 +57,8 @@ static inline bool unic_comm_addr_equal(const u8 *addr1, const u8 *addr2,
 		(mask1 ^ mask2)) == 0;
 }
 
+struct unic_comm_addr_node *unic_comm_alloc_addr_node(enum UNIC_COMM_ADDR_STATE state,
+						      const u8 *addr, u16 node_mask);
 struct unic_comm_addr_node *unic_comm_find_addr_node(struct list_head *list,
 						     const u8 *addr,
 						     u16 node_mask);
@@ -65,7 +67,7 @@ void unic_comm_update_addr_state(struct unic_comm_addr_node *addr_node,
 int unic_comm_update_addr_list(struct list_head *list,
 			       spinlock_t *addr_list_lock,
 			       enum UNIC_COMM_ADDR_STATE state,
-			       const u8 *addr);
+			       const u8 *addr, u16 node_mask);
 bool unic_comm_sync_addr_table(struct unic_vport *vport,
 			       struct list_head *list,
 			       spinlock_t *addr_list_lock,

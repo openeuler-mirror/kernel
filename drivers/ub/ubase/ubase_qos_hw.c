@@ -223,7 +223,7 @@ static int __ubase_config_tm_vl_sch(struct ubase_dev *udev, u16 vl_bitmap,
 
 	ret = __ubase_cmd_send_in(udev, &in);
 	if (ret && ret != -EPERM)
-		ubase_err(udev, "failed to config tm vl sch, ret = %d", ret);
+		ubase_err(udev, "failed to config tm vl sch, ret = %d.\n", ret);
 
 	return ret;
 }
@@ -609,7 +609,7 @@ static void ubase_gather_udma_req_resp_vl(struct ubase_dev *udev, u8 *req_vl,
 			if (req_vl[i] == dev_caps->req_vl[j]) {
 				dev_caps->resp_vl[j] = req_vl[i] + resp_vl_off;
 				ubase_warn(udev,
-					   "vl %u has been allocated to other traffic type",
+					   "vl %u has been allocated to other traffic type.\n",
 					   req_vl[i]);
 				break;
 			}
@@ -1274,6 +1274,8 @@ static bool ubase_is_udma_tp_vl(struct ubase_adev_qos *qos, u8 vl)
  *
  * The function updates the dscp to vl mapping based on 'dscp_vl' and saves it
  * to 'udma_dscp_vl' in 'struct ubase_adev_qos'.
+ * This function was originally provided for UNIC. UNIC no longer uses it, so
+ * this function is deprecated and will be removed in openEuler 2803.
  *
  * Context: Any context.
  */

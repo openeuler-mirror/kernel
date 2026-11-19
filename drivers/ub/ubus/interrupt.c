@@ -319,3 +319,19 @@ const struct cpumask *ub_irq_get_affinity(struct ub_entity *dev, int nr)
 	return &desc->affinity[idx].mask;
 }
 EXPORT_SYMBOL_GPL(ub_irq_get_affinity);
+
+const struct cpumask *ub_get_ubc_irq_affinity(struct ub_entity *uent)
+{
+	struct ub_irqs_affinity *irq_aff;
+
+	if (!uent || !uent->ubc)
+		return NULL;
+
+	list_for_each_entry(irq_aff, &ubc_irqs_affinity_list, node)
+		if (irq_aff->ctl_no == uent->ubc->ctl_no)
+			return &irq_aff->irqs_affinity;
+
+	return NULL;
+}
+EXPORT_SYMBOL_GPL(ub_get_ubc_irq_affinity);
+

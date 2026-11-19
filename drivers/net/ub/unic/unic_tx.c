@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -194,6 +194,23 @@ static bool unic_check_hw_ci_late(struct unic_sq *sq, u32 sq_pi, u32 sq_ci)
 	return false;
 }
 
+static void unic_sq_abn_cqe_inc(struct unic_sq *sq, unsigned int status,
+				unsigned int sub_status)
+{
+	struct unic_dev *unic_dev = netdev_priv(sq->netdev);
+	struct unic_channel_stats *c_stats;
+
+	if (status > UNIC_CQE_OTHERS_STATUS)
+		status = UNIC_CQE_OTHERS_STATUS;
+	if (sub_status > UNIC_CQE_OTHERS_SUB_STATUS)
+		sub_status = UNIC_CQE_OTHERS_SUB_STATUS;
+	c_stats = &unic_dev->channels.c_stats[sq->queue_index];
+	u64_stats_update_begin(&c_stats->sq_syncp);
+	c_stats->sq_stats.abn_cqe_total_cnt++;
+	c_stats->sq_stats.abn_cqe_cnt[status][sub_status]++;
+	u64_stats_update_end(&c_stats->sq_syncp);
+}
+
 static void unic_count_tx_comp_stats(struct unic_sq *sq, union unic_cqe *cqe,
 				     struct unic_tx_comp_stats *stats,
 				     struct sk_buff *skb)
@@ -276,16 +293,19 @@ void unic_poll_tx(struct unic_sq *sq, int budget)
 
 	struct net_device *netdev = sq->netdev;
 	struct unic_tx_comp_stats stats = {0};
+	struct unic_channel_stats *c_stats;
 	struct netdev_queue *dev_queue;
 	struct unic_dev *unic_dev;
 
 	if (unlikely(!unic_reclaim_sq_space(sq, budget, false, &stats)))
 		return;
 
-	u64_stats_update_begin(&sq->syncp);
-	sq->stats.bytes += stats.bytes;
-	sq->stats.packets += stats.packets;
-	u64_stats_update_end(&sq->syncp);
+	unic_dev = netdev_priv(netdev);
+	c_stats = &unic_dev->channels.c_stats[sq->queue_index];
+	u64_stats_update_begin(&c_stats->sq_syncp);
+	c_stats->sq_stats.bytes += stats.bytes;
+	c_stats->sq_stats.packets += stats.packets;
+	u64_stats_update_end(&c_stats->sq_syncp);
 
 	dev_queue = netdev_get_tx_queue(netdev, sq->queue_index);
 	netdev_tx_completed_queue(dev_queue, stats.packets + stats.abn_packets,
@@ -294,7 +314,6 @@ void unic_poll_tx(struct unic_sq *sq, int budget)
 	if (unlikely(netif_carrier_ok(netdev) &&
 		     unic_get_spare_sqebb_num(sq) >= UNIC_MIN_SPARE_SQEBB &&
 		     unic_get_spare_page_num(sq->tx_buff) >= UNIC_MIN_SPARE_PAGE)) {
-		unic_dev = netdev_priv(netdev);
 		if (netif_tx_queue_stopped(dev_queue) &&
 		    !test_bit(UNIC_STATE_DOWN, &unic_dev->state)) {
 			netif_tx_wake_queue(dev_queue);
@@ -423,8 +442,7 @@ static bool unic_jfs_schedule_complete(struct unic_jfs_ctx *ctx)
 {
 	u16 rcv_send_diff;
 
-	rcv_send_diff = le16_to_cpu(ctx->next_rcv_ssn) -
-			le16_to_cpu(ctx->next_send_ssn);
+	rcv_send_diff = ctx->next_rcv_ssn - ctx->next_send_ssn;
 	if (ctx->state == UNIC_JFS_STATE_READY && ctx->PI == ctx->CI &&
 	    rcv_send_diff < UNIC_RCV_SEND_MAX_DIFF_VAL)
 		return true;
@@ -463,8 +481,7 @@ out:
 
 static inline bool unic_jfs_flush_ssn_vld(struct unic_jfs_ctx *ctx)
 {
-	u16 rcv_send_diff = le16_to_cpu(ctx->next_rcv_ssn) -
-			    le16_to_cpu(ctx->next_send_ssn);
+	u16 rcv_send_diff = ctx->next_rcv_ssn - ctx->next_send_ssn;
 
 	return ctx->flush_ssn_vld &&
 	       (rcv_send_diff < UNIC_RCV_SEND_MAX_DIFF_VAL);
@@ -741,7 +758,8 @@ err_alloc_pages:
 
 static int unic_sq_alloc_resource(struct unic_dev *unic_dev, struct unic_sq *sq)
 {
-	u16 page_num = UNIC_TX_PAGES_NUM / unic_dev->channels.num;
+	u16 page_num = min(UNIC_TX_PAGES_NUM / unic_dev->channels.num,
+			   unic_dev->channels.sqebb_depth);
 	struct auxiliary_device *adev = unic_dev->comdev.adev;
 	u16 sqebb_depth = unic_dev->channels.sqebb_depth;
 	u32 size = sqebb_depth * sizeof(struct unic_sqebb);
@@ -1196,6 +1214,9 @@ static void unic_handle_sge_section(struct unic_sq *sq, struct sk_buff *skb,
 		page_info = &tx_buff->page_info[tx_buff->pi % tx_buff->num];
 		len = i < sge_num - 1 ? PAGE_SIZE : size;
 		memcpy(page_info->sge_va_addr, skb->data + i * PAGE_SIZE, len);
+		dma_sync_single_for_device(sq->parent_dev,
+					   page_info->sge_dma_addr, PAGE_SIZE,
+					   DMA_TO_DEVICE);
 		unic_fill_sge_section(sge, (u64)page_info->sge_dma_addr, len);
 
 		sge = unic_get_next_sge(&sec_num, sge, sq, sqebb_mask, &sq_pi);
@@ -1250,7 +1271,6 @@ static void unic_tx_compensate_doorbell(struct unic_sq *sq)
 	if (sq->last_pi == sq->pi)
 		return;
 
-	trace_unic_tx_sqe(sq, 0, unic_get_sqe_mask(sq));
 	jfs_db.pi = cpu_to_le16(sq->pi);
 	writel(*(u32 *)&jfs_db, sq->db_addr);
 	sq->last_pi = sq->pi;
@@ -1346,7 +1366,7 @@ void unic_dump_sq_stats(struct net_device *netdev, u32 queue_idx)
 
 	channel = &unic_dev->channels.c[queue_idx];
 	sq = channel->sq;
-	sq_stats = &sq->stats;
+	sq_stats = &unic_dev->channels.c_stats[channel->c_idx].sq_stats;
 
 	unic_info(unic_dev,
 		  "tx timeout, queue index: %u, state: %lu\n"

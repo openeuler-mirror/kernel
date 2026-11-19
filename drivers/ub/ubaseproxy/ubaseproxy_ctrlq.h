@@ -8,7 +8,7 @@
 
 #include "ubaseproxy_dev.h"
 
-#define UBASEPROXY_CTRLQ_SEID_NUM	64
+#define UBASEPROXY_CTRLQ_SEID_NUM	32
 #define UBASEPROXY_CTRLQ_SEID_CMD	GENMASK(3, 0)
 
 enum ubaseproxy_ctrlq_seid_event {
@@ -50,7 +50,7 @@ int ubaseproxy_ctrlq_handle_query_sl_resp(struct auxiliary_device *adev,
 					  void *data, u16 len);
 int ubaseproxy_ctrlq_handle_query_eid_resp(struct auxiliary_device *adev,
 					   void *data, u16 len);
-int ubaseproxy_ctrlq_handle_updata_eid_resp(struct auxiliary_device *adev,
+int ubaseproxy_ctrlq_handle_update_eid_resp(struct auxiliary_device *adev,
 					    void *data, u16 len);
 
 #endif /* __UBASEPROXY_CTRLQ_H__ */

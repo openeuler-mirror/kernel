@@ -84,7 +84,7 @@ ubaseproxy_init_jfc_modify_mask(struct ubaseproxy_jfc_default *jfc_default)
 		/* DW0-DW2 */
 		GENMASK(1, 0) | GENMASK(31, 4), GENMASK(31, 0), GENMASK(31, 0),
 		/* DW3-DW5 */
-		GENMASK(31, 0), GENMASK(21, 0), GENMASK(21, 0) || GENMASK(31, 25),
+		GENMASK(31, 0), GENMASK(21, 0), GENMASK(21, 0) | GENMASK(31, 25),
 		/* DW6-DW31 */
 		GENMASK(31, 0), GENMASK(31, 0), GENMASK(31, 0), GENMASK(31, 0),
 		GENMASK(31, 0), GENMASK(31, 0), GENMASK(31, 0), GENMASK(31, 0),
@@ -234,6 +234,8 @@ ubaseproxy_create_jfc_res(struct ubaseproxy_dev *udev,
 	if (ret) {
 		ubaseproxy_err(udev, "create jfc(%u) failed, ret=%d.\n", jfcn,
 			       ret);
+		ubaseproxy_ceq_ref_dec(udev, ue_ctx_xa, jfc->ceqn,
+				       le16_to_cpu(req->mbx_ue_id));
 		kfree(jfc);
 		return NULL;
 	}
@@ -352,7 +354,7 @@ int ubaseproxy_handle_create_jfc_ctx_req(struct ubaseproxy_dev *udev,
 	int ret;
 
 	if (ctx_len != UBASEPROXY_JFC_CTX_BYTES) {
-		ubaseproxy_risk_rl(udev, mbx_ue_id, jfc_req_len,
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfc_create_req_len,
 				   "create jfc(%u) ctx_len(%u) error.\n",
 				   jfcn, ctx_len);
 		return -EINVAL;
@@ -408,7 +410,7 @@ int ubaseproxy_handle_destroy_jfc_ctx_req(struct ubaseproxy_dev *udev,
 	int ret;
 
 	if (req->data_len) {
-		ubaseproxy_risk_rl(udev, mbx_ue_id, jfc_req_len,
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfc_destroy_req_len,
 				   "destroy jfc(%u) data_len(%u) error.\n",
 				   jfcn, req->data_len);
 		return -EINVAL;
@@ -458,7 +460,7 @@ int ubaseproxy_handle_modify_jfc_ctx_req(struct ubaseproxy_dev *udev,
 	int ret;
 
 	if (ctx_len != UBASEPROXY_JFC_CTX_BYTES * UBASEPROXY_CTXLEN_AND_MASK) {
-		ubaseproxy_risk_rl(udev, mbx_ue_id, jfc_req_len,
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfc_modify_req_len,
 				   "modify jfc(%u) ctx_len(%u) error.\n",
 				   jfcn, ctx_len);
 		return -EINVAL;
@@ -508,7 +510,7 @@ int ubaseproxy_handle_query_jfc_ctx_req(struct ubaseproxy_dev *udev,
 	int ret;
 
 	if (req->data_len) {
-		ubaseproxy_risk_rl(udev, mbx_ue_id, jfc_req_len,
+		ubaseproxy_risk_rl(udev, mbx_ue_id, jfc_query_req_len,
 				   "query jfc(%u) data_len(%u) error.\n",
 				   jfcn, req->data_len);
 		return -EINVAL;

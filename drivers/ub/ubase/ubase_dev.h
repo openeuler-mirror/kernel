@@ -52,7 +52,10 @@ struct ubase_ue_node {
 	struct list_head			list;
 	u16					bus_ue_id;
 	u8					isolated;
+	u8					extbuf_ok;
 	struct ubase_cmdq_ratelimit_stats	cmdq_ratelimit_stats;
+	u16					extq_start_id;
+	u16					extq_end_id;
 };
 
 struct ubase_cmdq_desc;
@@ -79,7 +82,6 @@ struct ubase_hw {
 	struct ubase_resource_space io_base;
 	struct ubase_resource_space mem_base;
 	struct ubase_cmdq cmdq;
-	unsigned long state;
 };
 
 struct ubase_mbx_event_context {
@@ -88,6 +90,14 @@ struct ubase_mbx_event_context {
 	u64				out_param;
 	u16				seq_num;
 	struct ubase_cmd_mailbox	*mbx_buff;
+};
+
+#define UBASE_ADEV_NAME_MAX_LEN	64
+struct ubase_adev_node {
+	struct list_head	list;
+	struct auxiliary_device *adev;
+	struct ubase_dev	*udev;
+	char name[UBASE_ADEV_NAME_MAX_LEN];
 };
 
 struct ubase_adev {
@@ -158,8 +168,14 @@ struct ubase_ctx_page {
 };
 
 struct ubase_ta_layer_ctx {
-	struct ubase_dma_buf	extdb_buf;
 	struct ubase_dma_buf	timer_buf;
+	struct ubase_dma_buf	extdb_buf;
+	struct iova_slot	*extdb_slot;
+	dma_addr_t		extdb_iova;
+	u32			extdb_buf_que_size;
+	u16			extq_start_id;
+	u16			extq_end_id;
+	u8			extbuf_ok;
 };
 
 struct ubase_tp_layer_ctx {
@@ -177,29 +193,35 @@ struct ubase_reset_stat {
 	u32 reset_done_cnt;
 	u32 hw_reset_done_cnt;
 	u32 elr_reset_cnt;
+	u32 ras_elr_reset_cnt;
 	u32 reset_fail_cnt;
 	u32 reset_retry_cnt;
-	u32 port_reset_cnt;
 	u32 himac_reset_cnt;
 	u32 force_reset_cnt;
 	u32 force_reset_fail_cnt;
 };
 
 enum ubase_dev_state_bit {
-	UBASE_STATE_INITED_B,
-	UBASE_STATE_DISABLED_B,
-	UBASE_STATE_RST_HANDLING_B,
-	UBASE_STATE_IRQ_INVALID_B,
-	UBASE_STATE_PORT_RESETTING_B,
-	UBASE_STATE_CTX_READY_B,
-	UBASE_STATE_PREALLOC_OK_B,
-	UBASE_STATE_RST_WAIT_DEACTIVE_B,
-	UBASE_STATE_SHUTDOWN,
-	UBASE_STATE_CMD_CRQ_UNAVAIL_B,
-	UBASE_STATE_REMOVING_B,
-	UBASE_STATE_INIT_AGAIN_B,
-	UBASE_STATE_RST_TIMEOUT_RETRY_B,
-	UBASE_STATE_RST_FAILED_B,
+	UBASE_STATE_INITED_B		= 0,
+	UBASE_STATE_DISABLED_B		= 1,
+	UBASE_STATE_RST_HANDLING_B	= 2,
+	UBASE_STATE_IRQ_INVALID_B	= 3,
+	UBASE_STATE_PORT_RESETTING_B	= 4,
+	UBASE_STATE_CTX_READY_B		= 5,
+	UBASE_STATE_PREALLOC_OK_B	= 6,
+	UBASE_STATE_RST_WAIT_DEACTIVE_B	= 7,
+	UBASE_STATE_SHUTDOWN_B		= 8,
+	UBASE_STATE_CMD_CRQ_UNAVAIL_B	= 9,
+	UBASE_STATE_REMOVING_B		= 10,
+	UBASE_STATE_INIT_AGAIN_B	= 11,
+	UBASE_STATE_RST_TIMEOUT_RETRY_B	= 12,
+	UBASE_STATE_RST_FAILED_B	= 13,
+
+	/* cmd channel state */
+	UBASE_STATE_CMD_DISABLE_B	= 32,
+
+	/* ctrlq state */
+	UBASE_STATE_CTRLQ_ENABLE_B	= 40,
 };
 
 struct ubase_crq_event_nbs {
@@ -242,10 +264,12 @@ struct ubase_ctrlq_ring {
 struct ubase_ctrlq_msg_ctx {
 	u8	valid : 1;
 	u8	is_sync : 1;
-	u8	rsv0 : 6;
+	u8	resp_done : 1;
+	u8	rsv0 : 5;
 	u8	mbx_ue_id;
 	u8	result;
 	u8	rsv1;
+	u16	seq;
 	u16	ue_seq;
 	u16	bus_ue_id;
 	u16	out_size;
@@ -283,7 +307,6 @@ struct ubase_ctrlq_ue_resp_table {
 
 struct ubase_ctrlq {
 	u16				csq_next_seq;
-	unsigned long			state;
 	atomic_t			req_cnt;
 	struct ubase_ctrlq_ring		csq;
 	struct ubase_ctrlq_ring		crq;
@@ -362,7 +385,7 @@ struct ubase_prealloc_mem_info {
 };
 
 struct ubase_mbox_over_cmdq_info {
-	u32 seq_num;
+	atomic_t seq_num;
 	struct xarray seq_tbl;
 	wait_queue_head_t queue;
 };
@@ -399,6 +422,15 @@ struct ubase_mm_ops {
 struct ubase_mem_init_ops {
 	int (*mem_init)(struct device *dev, struct ubase_mm_ops *mm_ops);
 	void (*mem_uninit)(struct device *dev, struct ubase_mm_ops *mm_ops);
+};
+
+struct ubase_eq_ops {
+	int (*alloc)(struct ubase_dev *udev, struct ubase_eq *eq);
+	void (*free)(struct ubase_dev *udev, struct ubase_eq *eq);
+};
+
+struct ubase_mem_ops {
+	struct ubase_eq_ops		eq;
 };
 
 typedef int (*ub_entity_enable_ret)(struct ub_entity *uent, u8 enable);
@@ -469,6 +501,7 @@ struct ubase_dev {
 	struct ubase_dtu_info	dtu_info;
 	struct ubase_mem_init_ops	mem_init_ops;
 	struct ubase_mm_ops	mm_ops;
+	struct ubase_mem_ops	mem_ops;
 	gfp_t			gfp;
 	unsigned long		status;
 	int (*ub_entity_enable_ret)(struct ub_entity *uent, u8 enable);
@@ -548,6 +581,11 @@ static inline bool ubase_dev_ta_timer_buf_supported(struct ubase_dev *udev)
 	return ubase_get_cap_bit(udev, UBASE_SUPPORT_TA_TIMER_BUF_B);
 }
 
+static inline bool ubase_dev_ue_elr_ras_supported(struct ubase_dev *udev)
+{
+	return ubase_get_cap_bit(udev, UBASE_SUPPORT_UE_ELR_RAS_B);
+}
+
 static inline bool ubase_dev_err_handle_supported(struct ubase_dev *udev)
 {
 	return ubase_get_cap_bit(udev, UBASE_SUPPORT_ERR_HANDLE_B);
@@ -624,6 +662,37 @@ static inline bool ubase_dev_batch_query_pmu_supported(struct ubase_dev *udev)
 	return ubase_get_cap_bit(udev, UBASE_SUPPORT_BATCH_QUERY_PMU_B);
 }
 
+static inline bool __ubase_dev_extbuf_manage_in_que_supported(struct ubase_dev *udev)
+{
+	return ubase_get_cap_bit(udev, UBASE_SUPPORT_EXTBUF_MANAGE_IN_QUE_B);
+}
+
+static inline bool ubase_dev_extbuf_manage_in_que_supported(struct ubase_dev *udev)
+{
+	if (!__ubase_dev_extbuf_manage_in_que_supported(udev))
+		return false;
+
+	/*
+	 * If the buf_size of a single queue is not an integer multiple of a
+	 * PAGE, it indicates that the number of jetty instances is small and
+	 * the memory usage is relatively low. In this case, there is no need
+	 * to support memory management int queue, thus can avoid errors
+	 * caused by misaligned memory pages in the queue.
+	 */
+	if (udev->ta_ctx.extdb_buf_que_size % PAGE_SIZE)
+		return false;
+
+	/*
+	 * DTU feature requires contiguous physical memory, so it conflicts with
+	 * this feature. If both features are supported, the DTU feature takes
+	 * effect first to ensure performance.
+	 */
+	if (ubase_dev_dtu_supported(udev))
+		return false;
+
+	return true;
+}
+
 static inline u32 ubase_jfs_num(struct ubase_dev *udev)
 {
 	struct ubase_adev_caps *unic_caps = &udev->caps.unic_caps;
@@ -655,7 +724,7 @@ static inline bool ubase_mbx_ue_id_is_valid(u16 mbx_ue_id,
 
 static inline bool ubase_shutting_down(struct ubase_dev *udev)
 {
-	return test_bit(UBASE_STATE_SHUTDOWN, &udev->state_bits);
+	return test_bit(UBASE_STATE_SHUTDOWN_B, &udev->state_bits);
 }
 
 static inline bool ubase_is_ctrl_node(struct ubase_dev *udev)
@@ -690,7 +759,7 @@ void ubase_suspend_aux_devices(struct ubase_dev *udev,
 int ubase_resume_aux_devices(struct ubase_dev *udev,
 			     enum ubase_reset_stage stage);
 
-void ubase_virt_handler(struct ubase_dev *udev, u16 bus_ue_id, bool is_en);
+int ubase_virt_handler(struct ubase_dev *udev, u16 bus_ue_id, bool is_en);
 
 void __ubase_deactivate_dev(struct ubase_dev *udev);
 
@@ -706,5 +775,9 @@ void ubase_free_buf(struct ubase_dev *udev, size_t size,
 int ubase_reinit_aux_devices(struct ubase_dev *udev);
 int __ubase_activate_dev(struct ubase_dev *udev);
 u32 __ubase_get_hw_ver(struct ubase_dev *udev);
+void ubase_adev_list_read_lock(void);
+void ubase_adev_list_read_unlock(void);
+struct list_head *ubase_get_adev_list(void);
+struct ubase_dev *ubase_get_dev_from_adev_list_locked(const char *dev_name);
 
 #endif /* __UBASE_DEV_H__ */

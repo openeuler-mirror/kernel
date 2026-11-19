@@ -10,6 +10,9 @@
 #include "ubase_trace.h"
 #include "ubase_ctrlq.h"
 
+/* msleep polling interval used while shutting down / cleaning the ctrlq. */
+#define UBASE_CTRLQ_CLEAN_SLEEP_TIME	5
+
 /* UBASE ctrlq msg white list */
 static const struct ubase_ctrlq_event_nb ubase_ctrlq_wlist_ubase[] = {
 	{
@@ -517,7 +520,7 @@ int ubase_ctrlq_init(struct ubase_dev *udev)
 	sema_init(&udev->ctrlq.msg_queue_sem, ubase_ctrlq_msg_queue_depth(udev));
 
 success:
-	set_bit(UBASE_CTRLQ_STATE_ENABLE, &udev->ctrlq.state);
+	set_bit(UBASE_STATE_CTRLQ_ENABLE_B, &udev->state_bits);
 	return 0;
 
 err_table_init:
@@ -571,8 +574,6 @@ void ubase_ctrlq_disable_remote(struct ubase_dev *udev)
 
 static void ubase_ctrlq_clean_pending_msgs(struct ubase_dev *udev)
 {
-#define UBASE_CTRLQ_CLEAN_WAIT_TIME	5
-
 	struct ubase_ctrlq_ring *csq = &udev->ctrlq.csq;
 	u32 depth = ubase_ctrlq_msg_queue_depth(udev);
 	struct ubase_ctrlq_msg_ctx *ctx;
@@ -587,14 +588,12 @@ static void ubase_ctrlq_clean_pending_msgs(struct ubase_dev *udev)
 	spin_unlock_bh(&csq->lock);
 
 	while (atomic_read(&udev->ctrlq.req_cnt))
-		msleep(UBASE_CTRLQ_CLEAN_WAIT_TIME);
+		msleep(UBASE_CTRLQ_CLEAN_SLEEP_TIME);
 }
 
 void ubase_ctrlq_disable(struct ubase_dev *udev)
 {
-#define UBASE_CTRLQ_CLEAR_WAIT_TIME	5
-
-	if (!test_and_clear_bit(UBASE_CTRLQ_STATE_ENABLE, &udev->ctrlq.state))
+	if (!test_and_clear_bit(UBASE_STATE_CTRLQ_ENABLE_B, &udev->state_bits))
 		return;
 
 	/* wait to ensure that the crq completes the possible left
@@ -603,7 +602,7 @@ void ubase_ctrlq_disable(struct ubase_dev *udev)
 	if (!test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits)) {
 		while (test_bit(UBASE_STATE_CTRLQ_HANDLING,
 		       &udev->ctrlq_service_task.state))
-			msleep(UBASE_CTRLQ_CLEAR_WAIT_TIME);
+			msleep(UBASE_CTRLQ_CLEAN_SLEEP_TIME);
 	}
 
 	ubase_ctrlq_clean_pending_msgs(udev);
@@ -880,8 +879,10 @@ static void ubase_ctrlq_addto_msg_queue(struct ubase_dev *udev, u16 seq,
 
 	dead_time = UBASE_CTRLQ_DEAD_TIME(msg->timeout ? msg->timeout : csq->tx_timeout);
 	ctx = &udev->ctrlq.msg_queue[seq % depth];
+	ctx->seq = seq;
 	ctx->valid = 1;
 	ctx->is_sync = ubase_ctrlq_msg_is_sync_req(msg) ? 1 : 0;
+	ctx->resp_done = 0;
 	ctx->result = ETIME;
 	ctx->dead_jiffies = jiffies + msecs_to_jiffies(dead_time);
 	ctx->out = msg->out;
@@ -961,7 +962,7 @@ static int ubase_ctrlq_check_send_state(struct ubase_dev *udev,
 		return -EAGAIN;
 	}
 
-	if (!test_bit(UBASE_CTRLQ_STATE_ENABLE, &udev->ctrlq.state)) {
+	if (!test_bit(UBASE_STATE_CTRLQ_ENABLE_B, &udev->state_bits)) {
 		ubase_warn_rl(udev, ctrlq_is_disabled,
 			      "ctrlq is disabled in csq.\n");
 		return -EAGAIN;
@@ -1109,7 +1110,7 @@ int __ubase_ctrlq_send(struct ubase_dev *udev, struct ubase_ctrlq_msg *msg,
 	int ret;
 	u16 num;
 
-	if (!test_bit(UBASE_CTRLQ_STATE_ENABLE, &udev->ctrlq.state)) {
+	if (!test_bit(UBASE_STATE_CTRLQ_ENABLE_B, &udev->state_bits)) {
 		dev_warn_ratelimited(udev->dev, "ctrlq is disabled.\n");
 		return -EAGAIN;
 	}
@@ -1325,7 +1326,7 @@ int ubase_ctrlq_ue_req_event_callback(struct ubase_dev *udev,
 	u16 bus_ue_id, len;
 	int ret = 0;
 
-	len = le16_to_cpu(cmd->in_size) + ubase_ctrlq_ue_msg_header_len();
+	len = cmd->in_size + ubase_ctrlq_ue_msg_header_len();
 	bus_ue_id = le16_to_cpu(cmd->head.bus_ue_id);
 	mutex_lock(&ue_req_tab->lock);
 	list_for_each_entry(nbs, &ue_req_tab->ue_req_nbs.list, list) {
@@ -1379,7 +1380,7 @@ void ubase_ctrlq_handle_crq_msg(struct ubase_dev *udev,
 	if (!is_pushed) {
 		spin_lock_bh(&csq->lock);
 		ctx = &udev->ctrlq.msg_queue[seq % depth];
-		if (!ctx->valid) {
+		if (!ctx->valid || ctx->seq != seq) {
 			spin_unlock_bh(&csq->lock);
 			ubase_dbg(udev,
 				  "seq is invalid, opcode = 0x%x, service_type = 0x%x, seq = %u.\n",
@@ -1387,6 +1388,14 @@ void ubase_ctrlq_handle_crq_msg(struct ubase_dev *udev,
 			return;
 		}
 		if (ctx->is_sync) {
+			if (ctx->resp_done) {
+				spin_unlock_bh(&csq->lock);
+				ubase_dbg(udev,
+					  "resp is duplicated, opcode = 0x%x, service_type = 0x%x, seq = %u.\n",
+					  head->opcode, head->service_type, seq);
+				return;
+			}
+			ctx->resp_done = 1;
 			ubase_ctrlq_notify_completed(udev, head, seq, msg_data,
 						     data_len);
 			spin_unlock_bh(&csq->lock);
@@ -1444,7 +1453,7 @@ static void ubase_ctrlq_handle_other_msg(struct ubase_dev *udev,
 	if (!is_pushed) {
 		spin_lock_bh(&csq->lock);
 		ctx = udev->ctrlq.msg_queue[seq % depth];
-		if (!ctx.valid) {
+		if (!ctx.valid || ctx.seq != seq) {
 			spin_unlock_bh(&csq->lock);
 			ubase_warn_rl(udev, ctrlq_other_seq_invalid,
 				      "invalid seq = %u, opcode = 0x%x, service_type = 0x%x.\n",
@@ -1540,7 +1549,7 @@ static void ubase_ctrlq_crq_handler(struct ubase_dev *udev)
 
 	while (cnt++ < UBASE_CTRLQ_CRQ_POLLING_BUDGET &&
 	       !ubase_ctrlq_crq_is_empty(udev, &udev->hw)) {
-		if (!test_bit(UBASE_CTRLQ_STATE_ENABLE, &udev->ctrlq.state)) {
+		if (!test_bit(UBASE_STATE_CTRLQ_ENABLE_B, &udev->state_bits)) {
 			dev_err_ratelimited(udev->dev,
 					    "ctrlq is disabled in crq.\n");
 			return;
@@ -1618,7 +1627,7 @@ void ubase_ctrlq_clean_service_task(struct ubase_dev *udev)
 	struct ubase_ctrlq_msg_ctx *ctx;
 	u32 loop = 0, up_cnt = 0;
 
-	if (!test_bit(UBASE_CTRLQ_STATE_ENABLE, &udev->ctrlq.state) ||
+	if (!test_bit(UBASE_STATE_CTRLQ_ENABLE_B, &udev->state_bits) ||
 	    ubase_dev_pmu_supported(udev))
 		return;
 

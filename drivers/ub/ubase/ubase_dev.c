@@ -18,6 +18,7 @@
 #include "ubase_dtumem.h"
 #include "ubase_hw.h"
 #include "ubase_mailbox.h"
+#include "ubase_mem.h"
 #include "ubase_pmem.h"
 #include "ubase_proxy.h"
 #include "ubase_rct.h"
@@ -33,6 +34,23 @@ module_param_named(debug, ubase_debug, int, 0644);
 MODULE_PARM_DESC(debug, "enable ubase debug log, 0:disable, others:enable, default:0");
 
 static DEFINE_IDA(ubase_adev_ida);
+static DECLARE_RWSEM(ubase_adev_rwsem);
+static LIST_HEAD(ubase_adev_list);
+
+void ubase_adev_list_read_lock(void)
+{
+	down_read(&ubase_adev_rwsem);
+}
+
+void ubase_adev_list_read_unlock(void)
+{
+	up_read(&ubase_adev_rwsem);
+}
+
+struct list_head *ubase_get_adev_list(void)
+{
+	return &ubase_adev_list;
+}
 
 bool ubase_dev_urma_supported(struct ubase_dev *udev)
 {
@@ -268,6 +286,66 @@ static struct ubase_adev *ubase_create_one_adev(struct ubase_dev *udev, int idx)
 	return uadev;
 }
 
+struct ubase_dev *ubase_get_dev_from_adev_list_locked(const char *dev_name)
+{
+	struct ubase_dev *udev = NULL;
+	struct ubase_adev_node *pos;
+
+	list_for_each_entry(pos, &ubase_adev_list, list) {
+		if (strcmp(pos->name, dev_name) == 0) {
+			udev = pos->udev;
+			break;
+		}
+	}
+
+	return udev;
+}
+
+static int ubase_add_adev_list(struct ubase_adev *uadev)
+{
+	struct ubase_adev_node *pos, *new_node;
+
+	down_write(&ubase_adev_rwsem);
+	list_for_each_entry(pos, &ubase_adev_list, list) {
+		if (pos->adev == &uadev->adev) {
+			up_write(&ubase_adev_rwsem);
+			return -EEXIST;
+		}
+	}
+
+	new_node = kzalloc(sizeof(*new_node), GFP_KERNEL);
+	if (!new_node) {
+		up_write(&ubase_adev_rwsem);
+		return -ENOMEM;
+	}
+
+	new_node->adev = &uadev->adev;
+	new_node->udev = uadev->udev;
+
+	list_add_tail(&new_node->list, &ubase_adev_list);
+
+	up_write(&ubase_adev_rwsem);
+
+	return 0;
+}
+
+static void ubase_del_adev_list(struct ubase_adev *uadev)
+{
+	struct ubase_adev_node *pos_node;
+
+	down_write(&ubase_adev_rwsem);
+
+	list_for_each_entry(pos_node, &ubase_adev_list, list) {
+		if (pos_node->adev == &uadev->adev) {
+			list_del(&pos_node->list);
+			kfree(pos_node);
+			break;
+		}
+	}
+
+	up_write(&ubase_adev_rwsem);
+}
+
 static int ubase_add_one_adev(struct ubase_dev *udev, int idx)
 {
 	struct ubase_adev *uadev;
@@ -284,6 +362,12 @@ static int ubase_add_one_adev(struct ubase_dev *udev, int idx)
 			  uadev->adev.name, udev->dev_id, ret);
 		ubase_destroy_one_adev(uadev);
 		return ret;
+	}
+
+	ret = ubase_add_adev_list(uadev);
+	if (ret) {
+		ubase_err(udev, "failed to add adev node, ret = %d\n", ret);
+		goto err_adev_list_add;
 	}
 
 	ret = auxiliary_device_add(&uadev->adev);
@@ -309,6 +393,8 @@ static int ubase_add_one_adev(struct ubase_dev *udev, int idx)
 err_probe_fail:
 	auxiliary_device_delete(&uadev->adev);
 err_adev_add:
+	ubase_del_adev_list(uadev);
+err_adev_list_add:
 	auxiliary_device_uninit(&uadev->adev);
 	udev->priv.uadev[idx] = NULL;
 
@@ -323,6 +409,7 @@ static void ubase_del_one_adev(struct ubase_dev *udev, int idx)
 		return;
 
 	auxiliary_device_delete(&uadev->adev);
+	ubase_del_adev_list(uadev);
 	auxiliary_device_uninit(&uadev->adev);
 	udev->priv.uadev[idx] = NULL;
 }
@@ -432,6 +519,10 @@ static void ubase_period_service_task(struct work_struct *work)
 
 	if (test_bit(UBASE_STATE_INITED_B, &udev->state_bits))
 		ubase_ctrlq_clean_service_task(udev);
+
+	if (test_bit(UBASE_STATE_INITED_B, &udev->state_bits) &&
+	    !test_bit(UBASE_SERVICE_STATE_ERR_SCHED, &udev->service_task.state))
+		ubase_elr_ras_service_task(udev);
 
 	if (test_bit(UBASE_STATE_INITED_B, &udev->state_bits) &&
 	    !(udev->serv_proc_cnt % UBASE_RL_LOG_TIMER_INTERVAL))
@@ -727,18 +818,22 @@ static int ubase_handle_activate_resp(void *dev, void *data, u32 len)
 	ubase_dbg(udev, "recv activate resp.\n");
 
 	msn = le16_to_cpu(resp->msn);
+	mutex_lock(&udev->act_ctx.lock);
 	self = &udev->act_ctx.self;
 	if (self->wait_msn == msn) {
 		self->result = -resp->result;
+		mutex_unlock(&udev->act_ctx.lock);
 		complete(&self->activate_done);
 		return 0;
 	}
 	other = &udev->act_ctx.other;
 	if (other->wait_msn == msn) {
 		other->result = -resp->result;
+		mutex_unlock(&udev->act_ctx.lock);
 		complete(&other->activate_done);
 		return 0;
 	}
+	mutex_unlock(&udev->act_ctx.lock);
 
 	ubase_warn_rl(udev, err_msn_in_act_resp,
 		      "unknown msn in activate resp, msn = %u, self msn = %u, other msn = %u.\n",
@@ -873,6 +968,10 @@ static const struct ubase_init_function ubase_init_func_map[] = {
 	{
 		"query dev res", UBASE_SUP_ALL, 0,
 		ubase_query_dev_res, NULL
+	},
+	{
+		"init mem ops", UBASE_SUP_ALL, 0,
+		ubase_mem_ops_init, NULL
 	},
 	{
 		"dtu memory", UBASE_SUP_NO_PMU, 0,
@@ -1033,14 +1132,14 @@ void ubase_dev_uninit(struct ubase_dev *udev)
 		set_bit(UBASE_STATE_CMD_CRQ_UNAVAIL_B, &udev->state_bits);
 		ubase_ctrlq_uninit(udev);
 		ubase_irq_table_uninit(udev);
-		if (test_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state) &&
+		if (test_bit(UBASE_STATE_CMD_DISABLE_B, &udev->state_bits) &&
 		    ubase_cmd_init(udev))
 			goto start_uninit;
 		if (test_bit(UBASE_STATE_IRQ_INVALID_B, &udev->state_bits) &&
 		    ubase_irq_table_init(udev))
 			goto start_uninit;
 		clear_bit(UBASE_STATE_CMD_CRQ_UNAVAIL_B, &udev->state_bits);
-		if (!test_bit(UBASE_CTRLQ_STATE_ENABLE, &udev->ctrlq.state))
+		if (!test_bit(UBASE_STATE_CTRLQ_ENABLE_B, &udev->state_bits))
 			ubase_ctrlq_init(udev);
 		ubase_register_ae_event(udev);
 		ubase_register_cmdq_crq_event(udev);
@@ -1678,23 +1777,25 @@ struct ubase_adev_caps *ubase_get_unic_caps(struct auxiliary_device *adev)
 }
 EXPORT_SYMBOL(ubase_get_unic_caps);
 
-static bool ubase_add_ue_list(struct ubase_dev *udev, u16 bus_ue_id)
+static int ubase_add_ue_list(struct ubase_dev *udev, u16 bus_ue_id, bool *added)
 {
 	struct ubase_ue_node *pos_node, *tmp_node, *new_node;
+	int ret;
 
 	new_node = kzalloc(sizeof(*new_node), GFP_KERNEL);
 	if (!new_node) {
 		ubase_err(udev, "failed to alloc ue node.\n");
-		return false;
+		return -ENOMEM;
 	}
 	new_node->bus_ue_id = bus_ue_id;
 
 	mutex_lock(&udev->ue_list_lock);
 	list_for_each_entry_safe(pos_node, tmp_node, &udev->ue_list, list) {
 		if (pos_node->bus_ue_id == bus_ue_id) {
+			/* maybe receive repeated notifications */
 			kfree(new_node);
 			mutex_unlock(&udev->ue_list_lock);
-			return false;
+			return 0;
 		} else if (bus_ue_id < pos_node->bus_ue_id) {
 			list_add(&new_node->list, pos_node->list.prev);
 			goto add_ue_end;
@@ -1703,8 +1804,15 @@ static bool ubase_add_ue_list(struct ubase_dev *udev, u16 bus_ue_id)
 	list_add_tail(&new_node->list, &udev->ue_list);
 
 add_ue_end:
+	ret = ubase_init_ue_extdb_buf(udev, new_node);
+	if (ret) {
+		list_del(&new_node->list);
+		kfree(new_node);
+	} else {
+		*added = true;
+	}
 	mutex_unlock(&udev->ue_list_lock);
-	return true;
+	return ret;
 }
 
 static bool ubase_del_ue_list(struct ubase_dev *udev, u16 bus_ue_id)
@@ -1714,6 +1822,7 @@ static bool ubase_del_ue_list(struct ubase_dev *udev, u16 bus_ue_id)
 	mutex_lock(&udev->ue_list_lock);
 	list_for_each_entry_safe(pos_node, tmp_node, &udev->ue_list, list) {
 		if (pos_node->bus_ue_id == bus_ue_id) {
+			ubase_uninit_ue_extdb_buf(udev, pos_node);
 			list_del(&pos_node->list);
 			kfree(pos_node);
 			mutex_unlock(&udev->ue_list_lock);
@@ -1725,23 +1834,24 @@ static bool ubase_del_ue_list(struct ubase_dev *udev, u16 bus_ue_id)
 	return false;
 }
 
-static bool ubase_modify_ue_list(struct ubase_dev *udev, u16 bus_ue_id, bool is_en)
-{
-	if (is_en)
-		return ubase_add_ue_list(udev, bus_ue_id);
-	else
-		return ubase_del_ue_list(udev, bus_ue_id);
-}
-
-void ubase_virt_handler(struct ubase_dev *udev, u16 bus_ue_id, bool is_en)
+int ubase_virt_handler(struct ubase_dev *udev, u16 bus_ue_id, bool is_en)
 {
 	struct ubase_adev *uadev;
-	int i;
+	bool added = false;
+	int ret, i;
 
-	if (!ubase_modify_ue_list(udev, bus_ue_id, is_en))
-		return;
+	if (is_en) {
+		ret = ubase_add_ue_list(udev, bus_ue_id, &added);
+		if (ret)
+			return ret;
+		if (!added)
+			return 0;
 
-	ubase_update_ue_isolated_state(udev);
+		ubase_update_ue_isolated_state(udev);
+	} else {
+		if (!ubase_del_ue_list(udev, bus_ue_id))
+			return 0;
+	}
 
 	if (is_en)
 		ubase_update_ue_cmdq_ratelimit_state(udev, bus_ue_id);
@@ -1758,6 +1868,8 @@ void ubase_virt_handler(struct ubase_dev *udev, u16 bus_ue_id, bool is_en)
 		mutex_unlock(&uadev->virt_lock);
 	}
 	mutex_unlock(&udev->priv.uadev_lock);
+
+	return 0;
 }
 
 bool ubase_dbg_log(void)
@@ -1999,19 +2111,8 @@ static int ubase_wait_activate_done(struct ubase_dev *udev, u16 bus_ue_id,
 	return info->result;
 }
 
-static void ubase_record_msn(struct ubase_dev *udev, u16 bus_ue_id, u16 msn)
-{
-	struct ub_entity *ue = container_of(udev->dev, struct ub_entity, dev);
-	struct ubase_act_info *info;
-
-	info = (ue->entity_idx == bus_ue_id) ? &udev->act_ctx.self :
-		&udev->act_ctx.other;
-
-	info->wait_msn = msn;
-	reinit_completion(&info->activate_done);
-}
-
-static void ubase_alloc_msn(struct ubase_dev *udev, u16 *msn)
+static void ubase_alloc_msn(struct ubase_dev *udev, struct ubase_act_info *info,
+			    u16 *msn)
 {
 	struct ubase_act_ctx *ctx = &udev->act_ctx;
 
@@ -2023,6 +2124,8 @@ static void ubase_alloc_msn(struct ubase_dev *udev, u16 *msn)
 	++ctx->msn;
 	if (!ctx->msn)
 		ctx->msn = 1;
+
+	info->wait_msn = ctx->msn;
 	*msn = ctx->msn;
 	mutex_unlock(&ctx->lock);
 }
@@ -2068,7 +2171,7 @@ static int ubase_send_activate_dev_req(struct ubase_dev *udev, bool activate,
 		return -EPERM;
 
 	if (test_bit(UBASE_STATE_REMOVING_B, &udev->state_bits) &&
-	    test_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state)) {
+	    test_bit(UBASE_STATE_CMD_DISABLE_B, &udev->state_bits)) {
 		ubase_warn(udev, "cmdq is disabled, can't send %s req.\n",
 			   activate ? "activate" : "deactivate");
 		return 0;
@@ -2077,9 +2180,9 @@ static int ubase_send_activate_dev_req(struct ubase_dev *udev, bool activate,
 	req.activate = activate ? 1 : 0;
 	req.bus_ue_id = cpu_to_le16(bus_ue_id);
 	req.shutdown = ubase_shutting_down(udev);
-	ubase_alloc_msn(udev, &msn);
+	ubase_alloc_msn(udev, info, &msn);
 	req.msn = cpu_to_le16(msn);
-	ubase_record_msn(udev, bus_ue_id, msn);
+	reinit_completion(&info->activate_done);
 
 	ubase_fill_inout_buf(&in, UBASE_OPC_ACTIVATE_REQ, false, sizeof(req),
 			     &req);
@@ -2167,7 +2270,7 @@ int ubase_activate_dev(struct auxiliary_device *adev)
 	int ret = 0;
 
 	if (!adev)
-		return 0;
+		return -EINVAL;
 
 	udev = __ubase_get_udev_by_adev(adev);
 
@@ -2259,7 +2362,7 @@ int ubase_deactivate_dev(struct auxiliary_device *adev)
 	int ret;
 
 	if (!adev)
-		return 0;
+		return -EINVAL;
 
 	udev = __ubase_get_udev_by_adev(adev);
 
@@ -2560,3 +2663,46 @@ void ubase_update_adev_status(struct auxiliary_device *adev, unsigned long statu
 		   adev->name, udev->dev_id, status);
 }
 EXPORT_SYMBOL(ubase_update_adev_status);
+
+/**
+ * ubase_update_adev_name() - Update the name of auxiliary device.
+ * @adev: auxiliary device
+ * @dev_name: device name
+ *
+ * This function is used to update the name of auxiliary device.
+ *
+ * Context: Any context.
+ * Return: 0 on success, negative error code otherwise
+ */
+int ubase_update_adev_name(struct auxiliary_device *adev, const char *dev_name)
+{
+	struct ubase_adev_node *pos_node;
+	struct ubase_dev *udev;
+	int len;
+
+	if (!adev || !dev_name)
+		return -EINVAL;
+
+	len = strnlen(dev_name, UBASE_ADEV_NAME_MAX_LEN);
+	udev = __ubase_get_udev_by_adev(adev);
+	if (len >= UBASE_ADEV_NAME_MAX_LEN || !len) {
+		ubase_err(udev, "dev name len %d is out of range(0, %d).\n", len,
+			  UBASE_ADEV_NAME_MAX_LEN);
+		return -EINVAL;
+	}
+
+	down_write(&ubase_adev_rwsem);
+	list_for_each_entry(pos_node, &ubase_adev_list, list) {
+		if (pos_node->adev == adev) {
+			strscpy(pos_node->name, dev_name, UBASE_ADEV_NAME_MAX_LEN);
+			up_write(&ubase_adev_rwsem);
+			return 0;
+		}
+	}
+
+	up_write(&ubase_adev_rwsem);
+
+	ubase_err(udev, "adev not found in adev list.\n");
+	return -ENODEV;
+}
+EXPORT_SYMBOL(ubase_update_adev_name);

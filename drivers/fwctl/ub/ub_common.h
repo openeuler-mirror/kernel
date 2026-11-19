@@ -11,14 +11,12 @@
 #include <linux/fwctl.h>
 #include <linux/kfifo.h>
 #include <linux/time.h>
-#include <linux/netdevice.h>
+#include <linux/io.h>
 #include <linux/printk.h>
 #include <ub/ubase/ubase_comm_stats.h>
 #include <ub/ubase/ubase_comm_cmd.h>
 #include <ub/ubase/ubase_comm_dev.h>
 #include <ub/ubase/ubase_comm_debugfs.h>
-#include <ub/urma/ubcore_uapi.h>
-#include "../../ub/urma/hw/udma/udma_dev.h"
 
 #include <uapi/fwctl/ub_fwctl.h>
 
@@ -26,6 +24,7 @@
 #define UBCTL_WRITE false
 #define UBCTL_PORT_TYPE_ETH 0U
 #define UBCTL_PORT_TYPE_UB 1U
+#define UBCTL_MAX_PORT_NUM 64U
 #define UBCTL_MODULE "ub_fwctl"
 #define UBCTL_SET_USED(x) ((void)(x))
 
@@ -44,22 +43,29 @@
 	dev_warn(&ucdev->fwctl.dev, "PID %u: " format, current->pid, \
 		##__VA_ARGS__)
 
-#define ubctl_nodev_warn(fmt, ...)  pr_warn(UBCTL_MODULE ": " fmt, ##__VA_ARGS__)
-
 #define UBCTL_GET_PHY_ADDR(high, low) ((((u64)(high)) << 32) | (low))
 #define UBCTL_EXTRACT_BITS(value, start, end) \
 	(((value) >> (start)) & ((1UL << ((end) - (start) + 1)) - 1))
+
+struct ubctl_rt_bandwidth_data {
+	u32 port_id;
+	u32 is_valid;
+	u64 tx_bandwidth;
+	u64 rx_bandwidth;
+};
 
 /**
  * struct ubctl_dev - Device struct of framework
  * @fwctl: The device of fwctl
  * @data_size: Length of @data
  * @adev: data transmitted to users
+ * @rt_bandwidth_data: The data of rt_bandwidth
  */
 struct ubctl_dev {
 	struct fwctl_device fwctl;
 	DECLARE_KFIFO_PTR(ioctl_fifo, unsigned long);
 	struct auxiliary_device *adev;
+	struct ubctl_rt_bandwidth_data rt_bandwidth_data[UBCTL_MAX_PORT_NUM];
 };
 
 /**
@@ -169,9 +175,5 @@ int ubctl_query_perf(struct ubctl_dev *ucdev, u32 port_bitmap,
 int ubctl_query_perf_stats(struct ubctl_dev *ucdev, u32 port_bitmap,
 			   struct ubase_perf_stats_result *result_data,
 			   u32 result_data_size);
-
-int ubctl_dev_client_init(void);
-void ubctl_dev_client_uninit(struct ubctl_dev *ucdev);
-struct device *ubctl_find_device_by_name(const char *dev_name);
 
 #endif

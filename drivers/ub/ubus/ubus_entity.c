@@ -54,6 +54,7 @@ struct ub_entity *ub_alloc_ent(void)
 	INIT_LIST_HEAD(&uent->instance_node);
 
 	mutex_init(&uent->active_mutex);
+	mutex_init(&uent->instance_lock);
 
 	uent->dev.type = &ub_dev_type;
 	uent->cna = 0;

@@ -185,7 +185,6 @@ struct ubase_ceqs {
 };
 
 struct ubase_irq_table {
-	struct mutex			ceq_lock;
 	struct ubase_ceqs		ceqs;
 	struct ubase_aeq		aeq;
 	struct blocking_notifier_head	nh[UBASE_DRV_MAX][UBASE_EVENT_TYPE_MAX];

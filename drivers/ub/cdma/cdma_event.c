@@ -147,7 +147,8 @@ static int cdma_jfce_wait(struct cdma_jfce *jfce, struct file *filp,
 	}
 	if (ret < 0) {
 		if (ret != -EAGAIN)
-			pr_err("wait jfce event failed, ret = %d\n", ret);
+			pr_err_ratelimited("wait jfce event failed, ret = %d\n",
+					   ret);
 		cdma_free_event_list(&event_list);
 		return ret;
 	}
@@ -505,7 +506,7 @@ static int cdma_get_async_event(struct cdma_jfae *jfae, struct file *filp,
 			      &event_cnt, &event_list);
 	if (ret < 0) {
 		if (ret != -EAGAIN)
-			pr_err("wait event failed, ret = %d\n", ret);
+			pr_err_ratelimited("wait event failed, ret = %d\n", ret);
 		return ret;
 	}
 

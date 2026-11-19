@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2025-2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  *
  */
 
@@ -144,9 +144,7 @@ void ubase_cmd_arq_handler(struct ubase_delay_work *ubase_work)
 	struct ubase_arq_msg *msg;
 
 	if (!test_and_clear_bit(UBASE_STATE_ARQ_SERVICE_SCHED,
-				&udev->arq_service_task.state) ||
-	    test_and_set_bit(UBASE_STATE_ARQ_HANDLING,
-			     &udev->arq_service_task.state))
+				&udev->arq_service_task.state))
 		return;
 
 	while (atomic_read(&arq->count) > 0) {
@@ -164,8 +162,6 @@ void ubase_cmd_arq_handler(struct ubase_delay_work *ubase_work)
 		arq->ci = (arq->ci + 1) % MAX_ARQ_MSG_NUM;
 		atomic_dec(&arq->count);
 	}
-
-	clear_bit(UBASE_STATE_ARQ_HANDLING, &udev->arq_service_task.state);
 }
 
 static void ubase_arq_task_schedule(struct ubase_dev *udev)

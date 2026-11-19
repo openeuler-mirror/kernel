@@ -8,6 +8,8 @@
 #include <linux/acpi.h>
 #include <linux/of.h>
 #include <linux/cpuhotplug.h>
+#include <linux/cpumask.h>
+#include <linux/interrupt.h>
 #include <linux/mod_devicetable.h>
 #include <linux/platform_device.h>
 #include <linux/perf_event.h>
@@ -273,6 +275,52 @@ static void ummu_pmu_write_msi_msg(struct msi_desc *desc, struct msi_msg *msg)
 	writel_relaxed(UMMU_USI_MEMATTR_DEVICE_nGnRE, ummu_pmu->reg_base + UMMU_PMCG_OVF_USI_ATTR);
 }
 
+static void ummu_pmu_setup_irq_affinity(struct ummu_pmu *ummu_pmu,
+					 const char *affinity_prop)
+{
+	struct device_node *np = ummu_pmu->dev->of_node;
+	struct cpumask affinity_mask;
+	int phandle_num, cpu, i;
+	struct device_node *dn;
+	int ret;
+
+	if (!np)
+		return;
+
+	phandle_num = of_count_phandle_with_args(np, affinity_prop, NULL);
+	if (phandle_num <= 0)
+		return;
+
+	cpumask_clear(&affinity_mask);
+	for (i = 0; i < phandle_num; i++) {
+		dn = of_parse_phandle(np, affinity_prop, i);
+		if (!dn) {
+			dev_warn(ummu_pmu->dev,
+				 "failed to parse %s[%d]\n", affinity_prop, i);
+			continue;
+		}
+
+		cpu = of_cpu_node_to_id(dn);
+		of_node_put(dn);
+		if (cpu < 0) {
+			dev_warn(ummu_pmu->dev,
+				 "failed to find logical CPU for phandle[%d]\n", i);
+			continue;
+		}
+
+		cpumask_set_cpu(cpu, &affinity_mask);
+	}
+
+	if (cpumask_empty(&affinity_mask))
+		return;
+
+	ret = irq_set_affinity(ummu_pmu->irq, &affinity_mask);
+	if (ret)
+		dev_warn(ummu_pmu->dev,
+			 "failed to set irq affinity=%*pb, ret=%d\n",
+			 cpumask_pr_args(&affinity_mask), ret);
+}
+
 static int ummu_pmu_setup_irq(struct ummu_pmu *ummu_pmu)
 {
 	unsigned long flags = IRQF_NOBALANCING | IRQF_SHARED | IRQF_NO_THREAD;
@@ -305,8 +353,14 @@ static int ummu_pmu_setup_irq(struct ummu_pmu *ummu_pmu)
 		return ret;
 	}
 
-	return devm_request_irq(ummu_pmu->dev, irq, ummu_pmu_handle_irq, flags,
+	ret = devm_request_irq(ummu_pmu->dev, irq, ummu_pmu_handle_irq, flags,
 				dev_name(ummu_pmu->dev), ummu_pmu);
+	if (ret)
+		return ret;
+
+	ummu_pmu_setup_irq_affinity(ummu_pmu, "interrupt-affinity");
+
+	return 0;
 }
 
 static int ummu_pmu_reset(struct ummu_pmu *ummu_pmu)

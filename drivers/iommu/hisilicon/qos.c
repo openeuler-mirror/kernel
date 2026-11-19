@@ -27,10 +27,8 @@ static u16 *g_partids;
 static int ummu_check_mpam_cap_info(struct ummu_device *ummu,
 				    u32 partid, u32 pmg)
 {
-	if (!(ummu->cap.features & UMMU_FEAT_MTM)) {
-		dev_warn(ummu->dev, "ummu mpam is not supported!\n");
-		return -EINVAL;
-	}
+	if (!(ummu->cap.features & UMMU_FEAT_MTM))
+		return -EOPNOTSUPP;
 
 	if (partid > ummu->cap.mtm_id_max || pmg > ummu->cap.mtm_gp_max) {
 		dev_err(ummu->dev,
@@ -141,7 +139,7 @@ static int ummu_get_tecte_and_tcte(struct ummu_device *ummu,
 	}
 
 	if (mpam->tid != UMMU_INVALID_TID) {
-		tct_cfg = ummu->local_tct_cfg;
+		tct_cfg = &ummu->local_tct_cfg;
 		*tcte = ummu_get_tcte_ptr(tct_cfg, mpam->tid);
 		if (!(*tcte)) {
 			pr_err("can not find tct entry to write!\n");
@@ -217,7 +215,7 @@ static int ummu_set_master_mpam(struct ummu_device *ummu, struct ummu_mpam *mpam
 	if (ret)
 		return ret;
 
-	ret = ummu_get_tecte_tag_by_eid(mpam->eid, &tect_tag);
+	ret = ummu_get_tect_tag_by_eid(mpam->eid, &tect_tag);
 	if (ret) {
 		dev_err(ummu->dev, "invalid eid_high[0x%llx] eid_low[0x%llx]\n",
 			(u64)(mpam->eid >> EID_HIGH_SZ_SHIFT),
@@ -267,25 +265,13 @@ out:
 	return 0;
 }
 
-static int ummu_device_set_mpam(struct device *dev, struct ummu_mpam *mpam)
+static int ummu_device_set_mpam(struct ummu_device *ummu, struct device *dev,
+				struct ummu_mpam *mpam)
 {
-	struct ummu_master *master;
-
-	if (!dev || !mpam) {
-		pr_err("Invalid input parameter during set_mpam!\n");
-		return -EINVAL;
-	}
-
-	master = (struct ummu_master *)dev_iommu_priv_get(dev);
-	if (!master) {
-		pr_err("get invalid dev!\n");
-		return -EINVAL;
-	}
-
 	if (check_domain_type(dev, mpam))
 		return -EINVAL;
 
-	return ummu_set_master_mpam(master->ummu, mpam);
+	return ummu_set_master_mpam(ummu, mpam);
 }
 
 static int ummu_get_mpam_from_tcte(struct ummu_device *ummu,
@@ -294,7 +280,7 @@ static int ummu_get_mpam_from_tcte(struct ummu_device *ummu,
 	__le64 *tcte;
 	u64 val;
 
-	tcte = ummu_get_tcte_ptr(ummu->local_tct_cfg, mpam->tid);
+	tcte = ummu_get_tcte_ptr(&ummu->local_tct_cfg, mpam->tid);
 	if (!tcte)
 		return -ENOMEM;
 
@@ -317,7 +303,7 @@ static int ummu_get_master_mpam(struct ummu_device *ummu, struct ummu_mpam *mpam
 	u64 val;
 	int tid_valid;
 
-	if (ummu_get_tecte_tag_by_eid(mpam->eid, &tect_tag)) {
+	if (ummu_get_tect_tag_by_eid(mpam->eid, &tect_tag)) {
 		dev_err(ummu->dev, "invalid eid_high[0x%llx] eid_low[0x%llx]\n",
 			(u64)(mpam->eid >> EID_HIGH_SZ_SHIFT),
 			(u64)(mpam->eid));
@@ -375,7 +361,7 @@ static int ummu_get_cfg_table_ptr(struct ummu_device *ummu,
 {
 	struct ummu_tct_desc_cfg *tct_cfg;
 
-	tct_cfg = ummu->local_tct_cfg;
+	tct_cfg = &ummu->local_tct_cfg;
 	*tcte = ummu_get_tcte_ptr(tct_cfg, tid);
 	if (!(*tcte))
 		return -ESPIPE;
@@ -386,40 +372,33 @@ static int ummu_get_cfg_table_ptr(struct ummu_device *ummu,
 	return 0;
 }
 
-int ummu_group_set_mpam(struct iommu_group *group, u16 partid, u8 pmg)
+int ummu_device_set_group_mpam(struct ummu_core_device *core_dev, u32 tid,
+				u16 partid, u8 pmg)
 {
-	struct iommu_domain *domain;
-	struct ummu_domain *u_domain;
-	struct ummu_device *ummu;
-	u32 domain_type, tid;
+	struct ummu_device *ummu = core_to_ummu_device(core_dev);
 	__le64 *tcte;
 	int ret;
-
-	domain = iommu_get_domain_for_group(group);
-	domain_type = domain->type & IOMMU_DOMAIN_ALLOC_FLAGS;
-	if (domain_type == IOMMU_DOMAIN_IDENTITY ||
-		domain_type == IOMMU_DOMAIN_BLOCKED)
-		return -EINVAL;
-
-	u_domain = to_ummu_domain(iommu_to_agent_domain(domain));
-	ummu = core_to_ummu_device(u_domain->base_domain.core_dev);
 
 	ret = ummu_check_mpam_cap_info(ummu, partid, pmg);
 	if (ret)
 		return ret;
 
-	tid = u_domain->base_domain.tid;
 	ret = ummu_get_cfg_table_ptr(ummu, tid, &tcte);
 	if (ret)
 		return ret;
 
 	/* write mpam info to tcte */
 	ummu_set_tct_mtm(tcte, partid, pmg);
-	ummu_sync_tct(ummu, 0, tid, true);
+	ummu_sync_tct(ummu, LOCAL_TECT_TAG, tid, true);
 
 	/* It's likely that we'll want to use the new tcte soon */
-	ummu_device_prefetch_cfg(ummu, 0, tid);
+	ummu_device_prefetch_cfg(ummu, LOCAL_TECT_TAG, tid);
 	pr_info("partid %u, pmg %u already matched\n", partid, pmg);
+	return 0;
+}
+
+int ummu_group_qos_set_mpam(struct iommu_group *group, u16 partid, u8 pmg)
+{
 	return 0;
 }
 
@@ -441,7 +420,7 @@ static int ummu_get_mpam_info(struct ummu_device *ummu,
 	return 0;
 }
 
-int ummu_group_get_mpam(struct iommu_group *group, u16 *partid, u8 *pmg)
+int ummu_group_qos_get_mpam(struct iommu_group *group, u16 *partid, u8 *pmg)
 {
 	struct iommu_domain *domain;
 	struct ummu_domain *u_domain;
@@ -458,8 +437,8 @@ int ummu_group_get_mpam(struct iommu_group *group, u16 *partid, u8 *pmg)
 		return -EINVAL;
 	u_domain = to_ummu_domain(iommu_to_agent_domain(domain));
 	ummu = core_to_ummu_device(u_domain->base_domain.core_dev);
-	return ummu_get_mpam_info(ummu,
-				  u_domain->base_domain.tid, partid, pmg);
+	return ummu_get_mpam_info(ummu, u_domain->base_domain.tid,
+				  partid, pmg);
 }
 
 int ummu_set_bypass_mpam(struct ummu_device *ummu, int partid, int pmg)
@@ -542,13 +521,39 @@ int ummu_get_uotr_mpam(struct ummu_device *ummu, int *partid, int *pmg)
 	return 0;
 }
 
+int ummu_device_set_config(struct ummu_core_device *core_dev, struct device *dev,
+			   int type, void *data)
+{
+	if (!dev || !data)
+		return -EINVAL;
+
+	switch (type) {
+	case UMMU_MPAM:
+		return ummu_device_set_mpam(core_to_ummu_device(core_dev), dev,
+					    (struct ummu_mpam *)data);
+	default:
+		return -EINVAL;
+	}
+}
+
 int ummu_device_dev_config(struct device *dev, int type, int command, void *data)
 {
+	struct ummu_master *master;
+
+	if (!dev || !data)
+		return -EINVAL;
+
 	switch (type) {
 	case UMMU_MPAM:
 		switch (command) {
 		case UMMU_COMMAND_SET:
-			return ummu_device_set_mpam(dev, (struct ummu_mpam *)data);
+			master = (struct ummu_master *)dev_iommu_priv_get(dev);
+			if (!master) {
+				pr_err("get invalid dev!\n");
+				return -EINVAL;
+			}
+			return ummu_device_set_mpam(master->ummu, dev,
+						    (struct ummu_mpam *)data);
 		case UMMU_COMMAND_GET:
 			return ummu_device_get_mpam(dev, (struct ummu_mpam *)data);
 		default:

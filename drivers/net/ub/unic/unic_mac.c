@@ -250,6 +250,9 @@ static void unic_sync_mac_table_common(struct unic_vport *vport,
 	all_added = unic_comm_sync_addr_table(vport, mac_list,
 					      &vport->addr_tbl.mac_list_lock,
 					      sync, unsync);
+	if (!all_added)
+		set_bit(UNIC_VPORT_STATE_MAC_TBL_CHANGE, &vport->state);
+
 	if (mac_type == UNIC_MAC_ADDR_UC) {
 		if (all_added)
 			vport->overflow_promisc_flags &= ~UNIC_OVERFLOW_UP_MAC;
@@ -268,7 +271,7 @@ void unic_sync_mac_table(struct unic_dev *unic_dev)
 	struct unic_act_info *act_info = &unic_dev->act_info;
 	struct unic_vport *vport = &unic_dev->vport;
 
-	if (!mutex_trylock(&act_info->mutex))
+	if (!mutex_trylock(&act_info->period_mutex))
 		return;
 
 	if (act_info->deactivate)
@@ -281,7 +284,7 @@ void unic_sync_mac_table(struct unic_dev *unic_dev)
 	unic_sync_mac_table_common(vport, UNIC_MAC_ADDR_MC);
 
 out:
-	mutex_unlock(&act_info->mutex);
+	mutex_unlock(&act_info->period_mutex);
 }
 
 static int unic_update_mac_list(struct net_device *netdev,
@@ -318,7 +321,7 @@ static int unic_update_mac_list(struct net_device *netdev,
 
 	ether_addr_copy(unic_addr, mac_addr);
 	ret = unic_comm_update_addr_list(list, &vport->addr_tbl.mac_list_lock,
-					 state, unic_addr);
+					 state, unic_addr, UNIC_COMM_ADDR_NO_MASK);
 	if (ret) {
 		unic_err(unic_dev,
 			 "failed to update mac addr(%s). mac_type = %s.\n",
@@ -576,12 +579,11 @@ static void unic_deactivate_sync_mac_table(struct unic_vport *vport,
 			list_move_tail(&mac_node->node, &tmp_list);
 			break;
 		case UNIC_COMM_ADDR_ACTIVE:
-			new_node = kzalloc(sizeof(*new_node), GFP_ATOMIC);
+			new_node = unic_comm_alloc_addr_node(mac_node->state,
+							     mac_node->unic_addr,
+							     mac_node->node_mask);
 			if (!new_node)
 				goto stop_traverse;
-			memcpy(new_node->unic_addr, mac_node->unic_addr,
-			       UNIC_ADDR_LEN);
-			new_node->state = mac_node->state;
 			new_node->is_pfc = mac_node->is_pfc;
 			list_add_tail(&new_node->node, &tmp_list);
 			break;

@@ -60,7 +60,7 @@ u8 ummu_tlbi_code_table[UMMU_TLBI_SCENE_NUM][UMMU_TLBI_SCOPE_NUM][UMMU_TLBI_TYPE
 			[UMMU_TLBI_TYPE_S1NH]	= CMD_TLBI_OS_ASID_U,
 			[UMMU_TLBI_TYPE_S2]	= CMD_TLBI_OS_ASID_U,
 		},
-		[UMMU_TLBI_SCOPE_RNG] =  {
+		[UMMU_TLBI_SCOPE_RNG] = {
 			[UMMU_TLBI_TYPE_S1E2H]	= CMD_TLBI_HYP_VA_U,
 			[UMMU_TLBI_TYPE_S1NH]	= CMD_TLBI_OS_ASID_U,
 			[UMMU_TLBI_TYPE_S2]	= CMD_TLBI_OS_VA_U,
@@ -96,7 +96,7 @@ static int ummu_domain_tlbi_cmd(struct ummu_domain *u_domain,
 		break;
 	case UMMU_DOMAIN_S2:
 		if (scene == UMMU_TLBI_SCENE_DMA)
-			cmd->tlbi.tect_tag = u_domain->cfgs.tecte_tag;
+			cmd->tlbi.tect_tag = u_domain->cfgs.tect_tag;
 		else
 			cmd->tlbi.vmid = s2cfg->vmid;
 
@@ -243,8 +243,13 @@ void ummu_tlbi_walk(unsigned long iova, size_t size, size_t granule,
 		    void *cookie)
 {
 	struct ummu_domain *u_domain = (struct ummu_domain *)cookie;
+	struct ummu_tlb_range range = {
+		.iova = iova,
+		.size = size,
+		.granule = granule ?: PAGE_SIZE,
+	};
 
-	ummu_core_tlb_inv_walk(u_domain->domain, iova, size, granule);
+	ummu_tlbi_range(&range, false, u_domain);
 }
 
 void ummu_tlbi_page(struct iommu_iotlb_gather *gather, unsigned long iova,
@@ -351,7 +356,7 @@ void ummu_init_flush_iotlb(struct ummu_device *ummu)
 	ummu_mcmdq_issue_cmd_with_sync(ummu, &cmd);
 }
 
-void ummu_device_prefetch_cfg(struct ummu_device *ummu, u32 tecte_tag,
+void ummu_device_prefetch_cfg(struct ummu_device *ummu, u32 tect_tag,
 			      u32 tid)
 {
 	struct ummu_mcmdq_ent cmd_prefet = {
@@ -359,25 +364,25 @@ void ummu_device_prefetch_cfg(struct ummu_device *ummu, u32 tecte_tag,
 		.prefet = {
 			.tkv = (tid == UMMU_INVALID_TID) ? false : true,
 			.tid = tid,
-			.deid_0 = tecte_tag,
+			.deid_0 = tect_tag,
 		},
 	};
 
 	ummu_mcmdq_issue_cmd_with_sync(ummu, &cmd_prefet);
 }
 
-void ummu_sync_tect_range(struct ummu_device *ummu, u32 tecte_tag,
+void ummu_sync_tect_range(struct ummu_device *ummu, u32 tect_tag,
 			  u8 range)
 {
 	struct ummu_mcmdq_ent cmd_cfgi_tect_range = {
 		.opcode = CMD_CFGI_TECT_RANGE,
 		.cfgi = {
 			.range = range,
-			.deid_0 = tecte_tag,
+			.deid_0 = tect_tag,
 		},
 	};
 
-	trace_ummu_sync_tect_range(dev_name(ummu->dev), tecte_tag, range);
+	trace_ummu_sync_tect_range(dev_name(ummu->dev), tect_tag, range);
 	ummu_mcmdq_issue_cmd_with_sync(ummu, &cmd_cfgi_tect_range);
 }
 
@@ -386,21 +391,21 @@ void ummu_sync_tect_all(struct ummu_device *ummu)
 	ummu_sync_tect_range(ummu, 0, CMD_TLBI_RANGE_NUM_MAX);
 }
 
-void ummu_device_sync_tect(struct ummu_device *ummu, u32 tecte_tag)
+void ummu_device_sync_tect(struct ummu_device *ummu, u32 tect_tag)
 {
 	struct ummu_mcmdq_ent cmd_cfgi_tect = {
 		.opcode = CMD_CFGI_TECT,
 		.cfgi = {
 			.leaf = true,
-			.deid_0 = tecte_tag,
+			.deid_0 = tect_tag,
 		},
 	};
 
-	trace_ummu_sync_tect(dev_name(ummu->dev), tecte_tag);
+	trace_ummu_sync_tect(dev_name(ummu->dev), tect_tag);
 	ummu_mcmdq_issue_cmd_with_sync(ummu, &cmd_cfgi_tect);
 }
 
-void ummu_sync_tct(struct ummu_device *ummu, u32 tecte_tag, u32 tid,
+void ummu_sync_tct(struct ummu_device *ummu, u32 tect_tag, u32 tid,
 		   bool leaf)
 {
 	struct ummu_mcmdq_ent cmd_cfgi_tct = {
@@ -408,7 +413,7 @@ void ummu_sync_tct(struct ummu_device *ummu, u32 tecte_tag, u32 tid,
 		.cfgi = {
 			.leaf = leaf,
 			.tid = tid,
-			.deid_0 = tecte_tag,
+			.deid_0 = tect_tag,
 		},
 	};
 
@@ -417,26 +422,26 @@ void ummu_sync_tct(struct ummu_device *ummu, u32 tecte_tag, u32 tid,
 			.opcode = CMD_PLBI_OS_EIDTID,
 			.plbi = {
 				.tid = tid,
-				.tecte_tag = tecte_tag,
+				.tect_tag = tect_tag,
 			},
 		};
 		ummu_mcmdq_issue_cmd(ummu, &cmd_plbi_all);
 	}
 
-	trace_ummu_sync_tct(dev_name(ummu->dev), tecte_tag, tid, leaf);
+	trace_ummu_sync_tct(dev_name(ummu->dev), tect_tag, tid, leaf);
 	ummu_mcmdq_issue_cmd_with_sync(ummu, &cmd_cfgi_tct);
 }
 
-void ummu_sync_tct_all(struct ummu_device *ummu, u32 tecte_tag)
+void ummu_sync_tct_all(struct ummu_device *ummu, u32 tect_tag)
 {
 	struct ummu_mcmdq_ent cmd_cfgi_tct_all = {
 		.opcode = CMD_CFGI_TCT_ALL,
 		.cfgi = {
-			.deid_0 = tecte_tag,
+			.deid_0 = tect_tag,
 		},
 	};
 
-	trace_ummu_sync_tct_all(dev_name(ummu->dev), tecte_tag);
+	trace_ummu_sync_tct_all(dev_name(ummu->dev), tect_tag);
 	ummu_mcmdq_issue_cmd_with_sync(ummu, &cmd_cfgi_tct_all);
 }
 
@@ -463,7 +468,7 @@ static int ummu_device_flush_plb(struct ummu_device *ummu, u32 tag, u32 tid,
 		.opcode = CMD_PLBI_OS_VA,
 		.plbi = {
 			.tid = tid,
-			.tecte_tag = (u16)tag,
+			.tect_tag = (u16)tag,
 			.range = get_minist_log2size_range(size),
 			.addr = addr,
 		},
@@ -481,6 +486,28 @@ static int ummu_device_flush_plb(struct ummu_device *ummu, u32 tag, u32 tid,
 	return ret;
 }
 
+static int ummu_device_flush_plb_free_bit(struct ummu_device *ummu, u32 tag, u32 tid,
+				   u32 next_lvl_idx, u32 next_lvl_offset)
+{
+	struct ummu_mcmdq_ent cmd = {
+		.opcode = CMD_PLBI_FREE_BIT,
+		.plbi_free_bit = {
+			.tid = tid,
+			.tect_tag = (u16)tag,
+			.next_lvl_idx = next_lvl_idx,
+			.next_lvl_offset = next_lvl_offset,
+		},
+	};
+	int ret;
+
+	ret = ummu_mcmdq_issue_cmd_with_sync(ummu, &cmd);
+	if (ret)
+		dev_err_ratelimited(ummu->dev,
+			"issue plbi free_bit cmd failed, ret = %d\n", ret);
+
+	return ret;
+}
+
 void ummu_device_ioplb_sync(struct iommu_domain *domain,
 			    struct iommu_plb_gather *plb_gather)
 {
@@ -488,14 +515,34 @@ void ummu_device_ioplb_sync(struct iommu_domain *domain,
 	struct ummu_device *ummu = core_to_ummu_device(base_domain->core_dev);
 	struct ummu_domain *u_domain = to_ummu_domain(domain);
 	u32 tid = u_domain->base_domain.tid;
-	u32 tag = u_domain->cfgs.tecte_tag;
+	u32 tag = u_domain->cfgs.tect_tag;
+	struct ummu_plbi_node *node;
 	u64 addr;
 
-	if (!plb_gather->size)
-		return;
+	/* legacy va/size direct path (used by framework-level iommu_plb_sync) */
+	if (plb_gather->size) {
+		addr = (u64)(uintptr_t)plb_gather->va & GENMASK_ULL(ummu->cap.ias - 1, 0U);
+		ummu_device_flush_plb(ummu, tag, tid, addr, plb_gather->size);
+	}
 
-	addr = (u64)(uintptr_t)plb_gather->va & GENMASK_ULL(ummu->cap.ias - 1, 0U);
-	ummu_device_flush_plb(ummu, tag, tid, addr, plb_gather->size);
+	/* dispatch plbi_list by opcode (used by perm_table immediate iommu_plb_sync) */
+	list_for_each_entry(node, &plb_gather->plbi_list, list) {
+		switch (node->opcode) {
+		case CMD_PLBI_OS_VA:
+			addr = node->plbi_va.va & GENMASK_ULL(ummu->cap.ias - 1, 0U);
+			ummu_device_flush_plb(ummu, tag, tid, addr, node->plbi_va.size);
+			break;
+		case CMD_PLBI_FREE_BIT:
+			ummu_device_flush_plb_free_bit(ummu, tag, tid,
+						       (u32)node->plbi_f_bit.lvl_idx,
+						       (u32)node->plbi_f_bit.lvl_offset);
+			break;
+		default:
+			dev_warn_ratelimited(ummu->dev, "wrong plbi opcode %u in ioplb sync.\n",
+					     node->opcode);
+			break;
+		}
+	}
 }
 
 void ummu_device_flush_plb_all(struct iommu_domain *domain)
@@ -508,7 +555,7 @@ void ummu_device_flush_plb_all(struct iommu_domain *domain)
 		.opcode = CMD_PLBI_OS_EIDTID,
 		.plbi = {
 			.tid = base_domain->tid,
-			.tecte_tag = u_domain->cfgs.tecte_tag,
+			.tect_tag = u_domain->cfgs.tect_tag,
 		},
 	};
 	u32 idx;
@@ -527,7 +574,7 @@ void ummu_device_flush_ioplb_all(struct ummu_device *ummu)
 	struct ummu_mcmdq_ent cmd = {
 		.opcode = CMD_PLBI_OS_EID,
 		.plbi = {
-			.tecte_tag = LOCAL_TECT_TAG,
+			.tect_tag = LOCAL_TECT_TAG,
 		},
 	};
 

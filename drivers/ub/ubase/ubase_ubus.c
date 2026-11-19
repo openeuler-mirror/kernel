@@ -115,9 +115,9 @@ static int ubase_ubus_init(struct ub_entity *ue)
 	}
 
 	udev->hw.mem_base.addr_unmapped = ub_resource_start(ue, UBASE_UBUS_MEM_RESOURCE);
-	udev->hw.mem_base.addr = devm_ioremap_wc(&ue->dev,
-					ub_resource_start(ue, UBASE_UBUS_MEM_RESOURCE),
-					ub_resource_len(ue, UBASE_UBUS_MEM_RESOURCE));
+	udev->hw.mem_base.addr = devm_ioremap(&ue->dev,
+					      ub_resource_start(ue, UBASE_UBUS_MEM_RESOURCE),
+					      ub_resource_len(ue, UBASE_UBUS_MEM_RESOURCE));
 	if (!udev->hw.mem_base.addr) {
 		ubase_err(udev, "failed to map memory base.\n");
 		ret = -ENOMEM;
@@ -181,13 +181,27 @@ static void ubase_port_event_notify(struct ub_entity *ue, u16 port_id, int event
 {
 	struct ubase_dev *udev = dev_get_drvdata(&ue->dev);
 
-	if (event == UB_PORT_EVENT_RESET_PREPARE) {
-		ubase_info(udev, "port %u reset prepare.\n", port_id);
+	switch (event) {
+	case UB_PORT_EVENT_LINK_DOWN:
+		ubase_dbg(udev, "port %u link down.\n", port_id);
 		ubase_port_down(udev);
-	} else if (event == UB_PORT_EVENT_RESET_DONE) {
+		break;
+	case UB_PORT_EVENT_LINK_UP:
 		ubase_port_up(udev);
-		ubase_info(udev, "port %u reset done.\n", port_id);
-		udev->reset_stat.port_reset_cnt++;
+		ubase_dbg(udev, "port %u link up.\n", port_id);
+		break;
+	case UB_PORT_EVENT_RESET_PREPARE:
+		ubase_dbg(udev, "port %u reset prepare.\n", port_id);
+		break;
+	case UB_PORT_EVENT_RESET_DONE:
+		ubase_dbg(udev, "port %u reset done.\n", port_id);
+		break;
+	case UB_PORT_EVENT_RESET_FAILED:
+		ubase_dbg(udev, "port %u reset failed.\n", port_id);
+		break;
+	default:
+		ubase_warn(udev, "port %u unknown event(%d).\n", port_id, event);
+		break;
 	}
 }
 
@@ -270,6 +284,7 @@ static int ubase_ubus_probe(struct ub_entity *ue,
 	udev = devm_kzalloc(&ue->dev, sizeof(*udev), GFP_KERNEL);
 	if (!udev) {
 		dev_err(&ue->dev, "failed to alloc ubase dev.\n");
+		ub_unset_user_info(ue);
 		return -ENOMEM;
 	}
 
@@ -279,6 +294,7 @@ static int ubase_ubus_probe(struct ub_entity *ue,
 		ubase_err(udev,
 			  "failed to alloc dev id(%d).\n", udev->dev_id);
 		devm_kfree(&ue->dev, udev);
+		ub_unset_user_info(ue);
 		return udev->dev_id;
 	}
 
@@ -361,7 +377,7 @@ static void ubase_ubus_shutdown(struct ub_entity *ue)
 	while (test_and_set_bit(UBASE_STATE_DISABLED_B, &udev->state_bits))
 		msleep(UBASE_RST_WAIT_TIME);
 
-	set_bit(UBASE_STATE_SHUTDOWN, &udev->state_bits);
+	set_bit(UBASE_STATE_SHUTDOWN_B, &udev->state_bits);
 
 	ubase_info(udev, "ubase shutdown start.\n");
 
@@ -451,6 +467,13 @@ int ubase_ubus_irq_vector(struct device *dev, u32 idx)
 	return ub_irq_vector(ue, idx);
 }
 
+const struct cpumask *ubase_ubus_irq_get_affinity(struct device *dev)
+{
+	struct ub_entity *ue = container_of(dev, struct ub_entity, dev);
+
+	return ub_get_ubc_irq_affinity(ue);
+}
+
 static int ubase_ubus_suspend(struct device *dev)
 {
 	struct ubase_dev *udev = dev_get_drvdata(dev);
@@ -499,9 +522,7 @@ static int ubase_ubus_virt_notify(struct ub_entity *ue, int bus_ue_id, bool is_e
 	ubase_info(udev, "ubase virt notify, ue id = %d, en = %d.\n",
 		   bus_ue_id, is_en);
 
-	ubase_virt_handler(udev, (u16)bus_ue_id, is_en);
-
-	return 0;
+	return ubase_virt_handler(udev, (u16)bus_ue_id, is_en);
 }
 
 static int ubase_ubus_activate(struct ub_entity *ue, u32 bus_ue_id)

@@ -33,7 +33,7 @@
 #define MAP_INDEX_MASK 0xffffff
 #define MAP_INDEX_SHIFT 8
 
-/* cdma queue cfg deault value */
+/* cdma queue cfg default value */
 #define CDMA_TYPICAL_RNR_RETRY 7
 #define CDMA_TYPICAL_ERR_TIMEOUT 2 /* 0:128ms 1:1s 2:8s 3:64s */
 

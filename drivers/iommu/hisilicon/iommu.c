@@ -6,6 +6,7 @@
 
 #define pr_fmt(fmt) "UMMU: " fmt
 
+#include <linux/bitfield.h>
 #include <linux/kvm_host.h>
 #include <linux/iommu.h>
 #include <uapi/linux/iommufd.h>
@@ -30,6 +31,8 @@
 #include "sva.h"
 #include "nested.h"
 #include "iommu.h"
+
+#define UMMU_CAPS_NUM 7
 
 static bool ummu_capable(struct device *dev, enum iommu_cap cap)
 {
@@ -56,6 +59,7 @@ static void *ummu_hw_info(struct device *dev, u32 *length, u32 *type)
 {
 	struct ummu_master *master = (struct ummu_master *)dev_iommu_priv_get(dev);
 	struct iommu_hw_info_ummu *info;
+	u32 __iomem *base_cap;
 
 	info = kzalloc(sizeof(*info), GFP_KERNEL);
 	if (!info)
@@ -63,6 +67,20 @@ static void *ummu_hw_info(struct device *dev, u32 *length, u32 *type)
 
 	info->iidr = readl_relaxed(master->ummu->base + UMMU_IIDR);
 	info->aidr = readl_relaxed(master->ummu->base + UMMU_AIDR);
+	base_cap = master->ummu->base + UMMU_CAP0;
+	/*
+	 * The first-generation UMMU does not expose its capability registers
+	 * to userspace: caps[] keeps the zeroed value from kzalloc, which is
+	 * the contract the VMM has been adapted to.
+	 */
+	if (!ummu_first_generation()) {
+		for (int i = 0; i < UMMU_CAPS_NUM; i++)
+			info->caps[i] = readl_relaxed(base_cap + i);
+
+		/* Mask IOPF capability because nested guests do not support it.*/
+		u32p_replace_bits(&info->caps[STALL_CAP], CAP3_STALL_MODE_NOT_SUPPORT,
+				  CAP3_STALL_MODEL_MASK);
+	}
 
 	*length = sizeof(*info);
 	*type = IOMMU_HW_INFO_TYPE_UMMU;
@@ -146,18 +164,12 @@ static void ummu_domain_free(struct iommu_domain *domain)
 	struct ummu_domain *u_domain = to_ummu_domain(domain);
 	struct ummu_domain_cfgs *cfgs = &u_domain->cfgs;
 
-	if (u_domain->base_domain.domain.type != IOMMU_DOMAIN_IDENTITY)
-		free_io_pgtable_ops(cfgs->pgtbl_ops);
+	free_io_pgtable_ops(cfgs->pgtbl_ops);
 
 	if (cfgs->stage == UMMU_DOMAIN_S1 &&
 	    u_domain->base_domain.tid != UMMU_INVALID_TID &&
-	    u_domain->base_domain.tid != UMMU_NO_TID) {
+	    u_domain->base_domain.tid != UMMU_NO_TID)
 		ummu_release_domain_mapt_mem(u_domain);
-		ummu_core_free_tid(u_domain->base_domain.core_dev,
-				   u_domain->base_domain.tid);
-	}
-	if (cfgs->stage == UMMU_DOMAIN_S2 && u_domain->kvm)
-		kvm_pinned_vmid_put(u_domain->kvm);
 
 	kfree(u_domain);
 }
@@ -172,14 +184,14 @@ static void set_dev_tid(struct device *dev, u32 tid)
 	}
 }
 
-static void ummu_detach_dev(struct ummu_master *master)
+static void ummu_detach_dev(struct ummu_device *ummu,
+			    struct ummu_master *master)
 {
 	struct ummu_domain *u_domain;
 	struct iommu_domain *domain;
 	u32 tid;
 	int ret;
 
-	/* get tid from dev */
 	ret = ummu_get_tid(master->dev, NULL, &tid);
 	if (ret || tid == UMMU_INVALID_TID)
 		return;
@@ -193,28 +205,20 @@ static void ummu_detach_dev(struct ummu_master *master)
 		return;
 
 	u_domain = to_ummu_domain(domain);
-	if (!u_domain->cfgs.s1_cfg.tct_cfg || tid != u_domain->base_domain.tid)
-		return;
 
 	if (tid != UMMU_NO_TID)
-		ummu_write_tct_desc(core_to_ummu_device(
-					u_domain->base_domain.core_dev),
-					&u_domain->cfgs, true);
+		ummu_device_clear_tct_desc(ummu, u_domain->cfgs.tect_tag, tid);
 }
 
 static int ummu_domain_collect_pgtable_passthrough(struct ummu_domain *u_domain)
 {
-	struct ummu_domain *identity_dom;
 	struct ummu_device *ummu;
 	struct ummu_s1_cfg *cfg;
+	int ret = 0;
 	u32 ias;
 
 	if (!hw_bypass) {
-		identity_dom = ummu_get_global_identity_domain();
-		if (!identity_dom->cfgs.pgtbl_ops)
-			return -EFAULT;
-		memcpy(&u_domain->cfgs, &identity_dom->cfgs,
-			sizeof(u_domain->cfgs));
+		ret = ummu_identity_pgtbl_init(u_domain);
 	} else {
 		ummu = core_to_ummu_device(u_domain->base_domain.core_dev);
 		cfg = &u_domain->cfgs.s1_cfg;
@@ -223,95 +227,26 @@ static int ummu_domain_collect_pgtable_passthrough(struct ummu_domain *u_domain)
 		cfg->tct.tcr1 |= FIELD_PREP(TCT_ENT1_SZ, 64ULL - ias);
 		cfg->tct.matt_bypass = 1;
 	}
-	return 0;
-}
-
-static int ummu_domain_context_prepare(struct ummu_domain *u_domain)
-{
-	u32 features = core_to_ummu_device(u_domain->base_domain.core_dev)->cap.features;
-	int ret;
-
-	if (u_domain->cfgs.stage == UMMU_DOMAIN_S1) {
-		if (!(features & UMMU_FEAT_TRANS_S1))
-			return -EOPNOTSUPP;
-	} else if (u_domain->cfgs.stage == UMMU_DOMAIN_S2) {
-		if (!(features & UMMU_FEAT_TRANS_S2))
-			return -EOPNOTSUPP;
-	} else {
-		return -EINVAL;
-	}
-
-	if (u_domain->base_domain.domain.type != IOMMU_DOMAIN_IDENTITY)
-		ret = ummu_domain_collect_pgtable(u_domain);
-	else
-		ret = ummu_domain_collect_pgtable_passthrough(u_domain);
-
-	if (!ret)
-		u_domain->has_cfged = true;
-
 	return ret;
 }
 
-static void parse_tid_property(struct ummu_domain *u_domain,
-				struct ummu_master *master,
-				struct ummu_tid_param *para)
-{
-	para->domain_type = u_domain->base_domain.domain.type;
-	para->device = master->dev;
-
-	if (device_property_read_u32(master->dev, "assign-pasid",
-					&para->assign_tid))
-		para->assign_tid = UMMU_INVALID_TID;
-
-	if (para->assign_tid == UMMU_INVALID_TID)
-		para->alloc_mode = TID_ALLOC_NORMAL;
-	else
-		para->alloc_mode = TID_ALLOC_ASSIGNED;
-
-	if (device_property_read_u32(master->dev, "mapt-mode",
-					(u32 *)&para->mode))
-		para->mode = MAPT_MODE_END;
-
-	if (device_property_read_bool(master->dev, "usva-used"))
-		para->mm = current->mm;
-}
-
-static int ummu_domain_alloc_tid(struct ummu_domain *u_domain,
-				 struct ummu_master *master)
-{
-	struct ummu_tid_param para = { .mode = MAPT_MODE_END };
-	int ret;
-
-	if (dev_work_on_local(master) &&
-	    (u_domain->base_domain.tid == UMMU_INVALID_TID)) {
-		parse_tid_property(u_domain, master, &para);
-		ret = ummu_core_alloc_tid(&master->ummu->core_dev, &para, &para.assign_tid);
-		if (ret) {
-			dev_err(master->dev, "alloc tid failed ret = %d!\n", ret);
-			return ret;
-		}
-		u_domain->base_domain.tid = para.assign_tid;
-	} else {
-		if (u_domain->base_domain.tid == UMMU_INVALID_TID)
-			u_domain->base_domain.tid = UMMU_NO_TID;
-	}
-
-	return 0;
-}
-
-static void ummu_domain_attach_mapt(struct ummu_domain *u_domain)
+static int ummu_domain_attach_mapt(struct ummu_domain *u_domain)
 {
 #if IS_ENABLED(CONFIG_UB_UMMU_SVA)
 	struct ummu_device *ummu = core_to_ummu_device(
 					u_domain->base_domain.core_dev);
 	u32 tid = u_domain->base_domain.tid;
 	enum ummu_mapt_mode mode;
+	int ret;
+
+	if (u_domain->cfgs.stage != UMMU_DOMAIN_S1)
+		return 0;
 
 	if (unlikely(!(ummu->cap.features & UMMU_FEAT_MAPT)))
-		return;
+		return 0;
 
 	if (tid == UMMU_NO_TID)
-		return;
+		return 0;
 
 	mode = ummu_core_get_mapt_mode(&ummu->core_dev, tid);
 	if (mode != MAPT_MODE_END) {
@@ -322,15 +257,59 @@ static void ummu_domain_attach_mapt(struct ummu_domain *u_domain)
 		u_domain->cfgs.sva_mode = UMMU_MODE_SVA_SEPARATE_PG;
 		u_domain->cfgs.s1_cfg.io_pt_cfg.mode = mode;
 		u_domain->base_domain.domain.perm_ops = &ummu_sva_perm_ops;
-		ummu_init_sva_mapt_context(u_domain, mode);
+		ret = ummu_init_sva_mapt_context(u_domain, mode);
+		if (ret)
+			return ret;
 	}
+	return 0;
+#else
+	return 0;
 #endif
+}
+
+static int ummu_domain_context_prepare(struct ummu_domain *u_domain)
+{
+	struct ummu_device *ummu = core_to_ummu_device(u_domain->base_domain.core_dev);
+	int ret;
+
+	if (u_domain->cfgs.stage == UMMU_DOMAIN_S1) {
+		if (!(ummu->cap.features & UMMU_FEAT_TRANS_S1))
+			return -EOPNOTSUPP;
+	} else if (u_domain->cfgs.stage == UMMU_DOMAIN_S2) {
+		if (!(ummu->cap.features & UMMU_FEAT_TRANS_S2))
+			return -EOPNOTSUPP;
+	} else {
+		return -EINVAL;
+	}
+
+	if (u_domain->base_domain.domain.type != IOMMU_DOMAIN_IDENTITY) {
+		ret = ummu_domain_collect_pgtable(u_domain);
+		if (ret)
+			return ret;
+
+		ret = ummu_domain_attach_mapt(u_domain);
+		if (ret)
+			goto err_free_pgtbl;
+	} else {
+		ret = ummu_domain_collect_pgtable_passthrough(u_domain);
+		if (ret)
+			return ret;
+	}
+
+	u_domain->has_cfged = true;
+	return 0;
+
+err_free_pgtbl:
+	free_io_pgtable_ops(u_domain->cfgs.pgtbl_ops);
+	u_domain->cfgs.pgtbl_ops = NULL;
+	return ret;
 }
 
 static int ummu_domain_context_set(struct ummu_domain *u_domain,
 				   struct ummu_master *master)
 {
-	struct ummu_tecte_data target;
+	struct ummu_tecte_data tect_data;
+	struct ummu_tcte_data tct_data;
 	int ret;
 
 	ret = ummu_set_domain_cfgs_tag(&u_domain->cfgs, master);
@@ -338,20 +317,18 @@ static int ummu_domain_context_set(struct ummu_domain *u_domain,
 		return ret;
 
 	if (u_domain->cfgs.stage == UMMU_DOMAIN_S1) {
-		ret = ummu_domain_alloc_tid(u_domain, master);
-		if (ret)
-			return ret;
-
-		ummu_domain_attach_mapt(u_domain);
+		ummu_build_s1_domain_tcte(u_domain, &tct_data);
 		ummu_write_tct_desc(core_to_ummu_device(
-					u_domain->base_domain.core_dev),
-					&u_domain->cfgs, false);
+				    u_domain->base_domain.core_dev),
+				    u_domain->cfgs.tect_tag,
+				    u_domain->base_domain.tid,
+				    &tct_data);
 		set_dev_tid(master->dev, u_domain->base_domain.tid);
 	} else {
-		ummu_build_s2_domain_tecte(u_domain, &target);
+		ummu_build_s2_domain_tecte(u_domain, &tect_data);
 		ummu_device_write_tecte(core_to_ummu_device(
 					u_domain->base_domain.core_dev),
-					u_domain->cfgs.tecte_tag, &target);
+					u_domain->cfgs.tect_tag, &tect_data);
 	}
 	return 0;
 }
@@ -361,9 +338,9 @@ static struct iommu_domain *ummu_domain_alloc_user(struct device *dev,
 				struct kvm *kvm,
 				const struct iommu_user_data *user_data)
 {
-	struct ummu_master *master = (struct ummu_master *)dev_iommu_priv_get(dev);
 	bool nested_parent = flags & IOMMU_HWPT_ALLOC_NEST_PARENT;
 	bool dirty_enable = flags & IOMMU_HWPT_ALLOC_DIRTY_TRACKING;
+	const struct ummu_capability *cap = ummu_get_cap();
 	struct ummu_domain *u_domain;
 	int ret;
 
@@ -378,24 +355,14 @@ static struct iommu_domain *ummu_domain_alloc_user(struct device *dev,
 		return (struct iommu_domain *)ERR_PTR(-ENOMEM);
 
 	if (nested_parent) {
-		if (!(master->ummu->cap.features & UMMU_FEAT_NESTING)) {
+		if (!(cap->features & UMMU_FEAT_NESTING)) {
 			ret = -EOPNOTSUPP;
 			goto exit_free;
 		}
 		u_domain->cfgs.stage = UMMU_DOMAIN_S2;
 		u_domain->cfgs.nested_parent = true;
-		u_domain->kvm = kvm;
 	}
-	u_domain->base_domain.core_dev = &master->ummu->core_dev;
-	ret = ummu_set_domain_cfgs_tag(&u_domain->cfgs, master);
-	if (ret)
-		goto exit_free;
 
-	ret = ummu_domain_context_prepare(u_domain);
-	if (ret) {
-		pr_err("prepare user domain ctx failed, ret = %d\n", ret);
-		goto exit_free;
-	}
 	u_domain->base_domain.domain.type = IOMMU_DOMAIN_UNMANAGED;
 	if (dirty_enable && u_domain->cfgs.stage == UMMU_DOMAIN_S1)
 		u_domain->base_domain.domain.dirty_ops = &ummu_dirty_ops;
@@ -406,6 +373,26 @@ exit_free:
 	return (struct iommu_domain *)ERR_PTR(ret);
 }
 
+static int ummu_domain_prepare_context_user(struct device *dev, int vmid,
+				struct ummu_base_domain *base_domain)
+{
+	struct ummu_master *master = (struct ummu_master *)dev_iommu_priv_get(dev);
+	struct ummu_domain *u_domain = to_ummu_domain(&base_domain->domain);
+	int ret;
+
+	u_domain->vmid = (u16)vmid;
+	ret = ummu_set_domain_cfgs_tag(&u_domain->cfgs, master);
+	if (ret)
+		return ret;
+
+	ret = ummu_domain_context_prepare(u_domain);
+	if (ret) {
+		pr_err("prepare user domain ctx failed, ret = %d\n", ret);
+		return ret;
+	}
+	return 0;
+}
+
 static int ummu_attach_dev(struct iommu_domain *domain, struct device *dev)
 {
 	struct ummu_domain *u_domain = to_ummu_domain(domain);
@@ -413,11 +400,8 @@ static int ummu_attach_dev(struct iommu_domain *domain, struct device *dev)
 		(struct ummu_master *)dev_iommu_priv_get(dev);
 	int ret;
 
-	if (domain->type == IOMMU_DOMAIN_BLOCKED)
-		return 0;
-
 	/* if the pgtable has been set, clean up the data structures */
-	ummu_detach_dev(master);
+	ummu_detach_dev(core_to_ummu_device(u_domain->base_domain.core_dev), master);
 
 	guard(mutex)(&u_domain->init_mutex);
 	if (!u_domain->has_cfged) {
@@ -437,12 +421,19 @@ static int ummu_map_pages(struct iommu_domain *domain, unsigned long iova,
 {
 	struct ummu_domain *u_domain = to_ummu_domain(domain);
 	struct io_pgtable_ops *ops = u_domain->cfgs.pgtbl_ops;
+	int ret;
 
 	if (unlikely(!ops || !ops->map_pages))
 		return -ENODEV;
 
-	return ops->map_pages(ops, iova, paddr, pgsize, pgcount, prot, gfp,
+	ret = ops->map_pages(ops, iova, paddr, pgsize, pgcount, prot, gfp,
 			      mapped);
+	if (ret) {
+		pr_err("tid %u map_pages failed on instance, ret = %d.\n",
+			u_domain->base_domain.tid, ret);
+		return ret;
+	}
+	return 0;
 }
 
 static size_t ummu_unmap_pages(struct iommu_domain *domain, unsigned long iova,
@@ -486,30 +477,60 @@ static struct iommu_device *ummu_probe_device(struct device *dev)
 	master->ummu = ummu;
 	refcount_set(&master->ksva_ref, 1);
 	refcount_set(&master->sva_ref, 1);
+	kref_init(&master->ref);
 	dev_iommu_priv_set(dev, master);
 	return &ummu->core_dev.iommu;
 }
 
+static void free_ummu_master(struct kref *ref)
+{
+	struct ummu_master *master = container_of(ref, struct ummu_master, ref);
+
+	set_dev_tid(master->dev, UMMU_INVALID_TID);
+	kfree(master);
+}
+
+static void ummu_get_master(struct ummu_master *master)
+{
+	kref_get(&master->ref);
+}
+
+static void ummu_put_master(struct ummu_master *master)
+{
+	kref_put(&master->ref, free_ummu_master);
+}
+
+static int ummu_device_probe_master(struct device *dev)
+{
+	struct ummu_master *master = (struct ummu_master *)dev_iommu_priv_get(dev);
+
+	if (!master)
+		return -ENODEV;
+
+	ummu_get_master(master);
+	return 0;
+}
+
 static void ummu_release_device(struct device *dev)
+{
+}
+
+static void ummu_device_remove_master(struct ummu_core_device *core_dev,
+				      struct device *dev)
 {
 	struct ummu_master *master =
 		(struct ummu_master *)dev_iommu_priv_get(dev);
-	u32 tid;
-	int ret;
+	struct ummu_device *ummu = core_to_ummu_device(core_dev);
 
-	if (WARN_ON(ummu_master_sva_enabled(master)) && master->ummu->evtq.iopf)
-		iopf_queue_remove_device(master->ummu->evtq.iopf, dev);
+	if (WARN_ON(ummu_master_sva_enabled(master)) && ummu->evtq.iopf) {
+		iopf_queue_flush_dev(dev);
+		iopf_queue_remove_device(ummu->evtq.iopf, dev);
+	}
 
-	ret = ummu_get_tid(dev, NULL, &tid);
-	if (ret || tid == UMMU_INVALID_TID)
-		return;
-
-	ummu_detach_dev(master);
-	set_dev_tid(dev, UMMU_INVALID_TID);
+	ummu_detach_dev(ummu, master);
 	WARN_ON(refcount_read(&master->sva_ref) > 1);
 	WARN_ON(refcount_read(&master->ksva_ref) > 1);
-	dev_iommu_priv_set(dev, NULL);
-	kfree(master);
+	ummu_put_master(master);
 }
 
 static void ummu_get_resv_regions(struct device *device, struct list_head *head)
@@ -628,8 +649,8 @@ struct iommu_ops ummu_iommu_ops = {
 	.page_response = ummu_page_response,
 	.def_domain_type = ummu_def_domain_type,
 	.remove_dev_pasid = ummu_remove_dev_pasid,
-	.get_group_qos_params = ummu_group_get_mpam,
-	.set_group_qos_params = ummu_group_set_mpam,
+	.get_group_qos_params = ummu_group_qos_get_mpam,
+	.set_group_qos_params = ummu_group_qos_set_mpam,
 	.viommu_alloc = ummu_viommu_alloc,
 	.default_domain_ops = &default_domain_ops,
 	.pgsize_bitmap = -1UL,
@@ -701,7 +722,7 @@ static void ummu_cfg_sync(struct ummu_base_domain *base_domain)
 		u_domain = to_ummu_domain(&base_domain->domain);
 
 	ummu = core_to_ummu_device(base_domain->core_dev);
-	tag = u_domain->cfgs.tecte_tag;
+	tag = u_domain->cfgs.tect_tag;
 	tid = u_domain->base_domain.tid;
 	if (tid == UMMU_INVALID_TID)
 		return;
@@ -721,36 +742,34 @@ static void ummu_cfg_sync_all(struct ummu_base_domain *base_domain)
 		u_domain = to_ummu_domain(&base_domain->domain);
 
 	ummu = core_to_ummu_device(base_domain->core_dev);
-	tag = u_domain->cfgs.tecte_tag;
+	tag = u_domain->cfgs.tect_tag;
 
 	ummu_device_sync_tect(ummu, tag);
+}
+
+static void ummu_sync_domain_mapt_cfg(struct ummu_base_domain *src,
+					struct ummu_base_domain *dst)
+{
+	struct ummu_tct_desc *src_tct, *dst_tct;
+
+	src_tct = &to_ummu_domain(&src->domain)->cfgs.s1_cfg.tct;
+	dst_tct = &to_ummu_domain(&dst->domain)->cfgs.s1_cfg.tct;
+	dst_tct->mapt_mode = src_tct->mapt_mode;
+	dst_tct->mapt_en = src_tct->mapt_en;
+	dst_tct->token_en = src_tct->token_en;
+	dst_tct->mapt_blk_tbl_phys = src_tct->mapt_blk_tbl_phys;
+	dst_tct->mapt_blk_phys = src_tct->mapt_blk_phys;
+	dst_tct->blk_tbl_size_order = src_tct->blk_tbl_size_order;
+	dst_tct->blk_size_order = src_tct->blk_size_order;
 }
 
 static int ummu_sync_dom_cfg(struct ummu_base_domain *src,
 			     struct ummu_base_domain *dst,
 			     enum ummu_dom_cfg_sync_type type)
 {
-	struct ummu_domain *src_domain, *dst_domain;
-
 	switch (type) {
-	case SYNC_DOM_ALL_CFG:
-		src_domain = to_ummu_domain(&src->domain);
-		dst_domain = to_ummu_domain(&dst->domain);
-		memcpy(&dst_domain->cfgs, &src_domain->cfgs,
-		       sizeof(struct ummu_domain_cfgs));
-		dst_domain->base_domain.tid = src_domain->base_domain.tid;
-		break;
-	case SYNC_DOM_MUTI_CFG:
-		src_domain = to_ummu_domain(&src->domain);
-		dst_domain = to_ummu_domain(&dst->domain);
-		dst_domain->base_domain.tid = src_domain->base_domain.tid;
-		dst_domain->cfgs.tecte_tag = src_domain->cfgs.tecte_tag;
-		dst_domain->cfgs.stage = src_domain->cfgs.stage;
-		break;
-	case SYNC_CLEAR_DOM_ALL_CFG:
-		dst_domain = to_ummu_domain(&dst->domain);
-		memset(&dst_domain->cfgs, 0, sizeof(dst_domain->cfgs));
-		dst_domain->base_domain.tid = UMMU_INVALID_TID;
+	case SYNC_DOMAIN_MAPT_CFG:
+		ummu_sync_domain_mapt_cfg(src, dst);
 		break;
 	case SYNC_TYPE_NONE:
 		break;
@@ -759,25 +778,6 @@ static int ummu_sync_dom_cfg(struct ummu_base_domain *src,
 	}
 
 	return 0;
-}
-
-static void ummu_plbi_free_bit(struct iommu_domain *domain, u32 next_lvl_idx,
-			u32 next_lvl_offset)
-{
-	struct ummu_base_domain *base_domain = to_ummu_base_domain(domain);
-	struct ummu_device *ummu = core_to_ummu_device(base_domain->core_dev);
-	struct ummu_domain *u_domain = to_ummu_domain(domain);
-	struct ummu_mcmdq_ent cmd = {
-		.opcode = CMD_PLBI_OS_N,
-		.plbi_free_bit = {
-			.tid = base_domain->tid,
-			.tecte_tag = u_domain->cfgs.tecte_tag,
-			.next_lvl_idx = next_lvl_idx,
-			.next_lvl_offset = next_lvl_offset,
-		},
-	};
-
-	ummu_mcmdq_issue_cmd_with_sync(ummu, &cmd);
 }
 
 static int ummu_invalidate_cfg(struct ummu_base_domain *base_domain)
@@ -831,6 +831,19 @@ static bool ummu_needs_mmu_notifier(struct ummu_base_domain *base_domain)
 	return !(ummu->cap.features & UMMU_FEAT_BTM);
 }
 
+static void ummu_domain_clear_mapt_cfg(struct ummu_base_domain *base_domain)
+{
+	struct ummu_tct_desc *tct;
+
+	tct = &to_ummu_domain(&base_domain->domain)->cfgs.s1_cfg.tct;
+	tct->mapt_en = 0;
+	tct->token_en = 0;
+	tct->mapt_blk_tbl_phys = 0;
+	tct->mapt_blk_phys = 0;
+	tct->blk_tbl_size_order = 0;
+	tct->blk_size_order = 0;
+}
+
 const struct ummu_core_ops ummu_ops = {
 	.cfg_sync_all = ummu_cfg_sync_all,
 	.cfg_sync = ummu_cfg_sync,
@@ -844,13 +857,17 @@ const struct ummu_core_ops ummu_ops = {
 };
 
 const struct ummu_device_helper ummu_helper = {
-	.sync_tlb = ummu_device_tlb_inv_walk,
 	.sync_dom_cfg = ummu_sync_dom_cfg,
 	.alloc_domain_nested = ummu_viommu_alloc_domain_nested,
 	.cache_invalidate_user = ummu_viommu_cache_invalidate_user,
-	.plbi_free_bit = ummu_plbi_free_bit,
 	.sync_iotlb_all = ummu_flush_iotlb_all,
 	.mm_arch_inv_secondary_tlbs = ummu_mm_arch_inv_secondary_tlbs,
 	.sync_iommu_domain = ummu_sync_iommu_domain,
 	.needs_mmu_notifier = ummu_needs_mmu_notifier,
+	.iommu_device_probe_master = ummu_device_probe_master,
+	.iommu_device_remove_master = ummu_device_remove_master,
+	.clear_domain_mapt = ummu_domain_clear_mapt_cfg,
+	.prepare_context_user = ummu_domain_prepare_context_user,
+	.iommu_dev_set_mpam = ummu_device_set_group_mpam,
+	.device_set_config = ummu_device_set_config,
 };

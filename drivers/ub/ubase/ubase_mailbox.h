@@ -14,12 +14,6 @@
 #define CMD_MBX_POLL_VALUE 0xffff
 #define UBASE_MAILBOX_SIZE 4096
 
-#if defined(UBASE_FPGA_COMPILE) || defined(UBASE_ESL_COMPILE)
-#define UBASE_WAIT_PROXY_RESP_TIME	60000
-#else
-#define UBASE_WAIT_PROXY_RESP_TIME	7000
-#endif
-
 enum ubase_mb_type {
 	UBASE_MB_CREATE,
 	UBASE_MB_MODIFY,

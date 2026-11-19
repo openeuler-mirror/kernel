@@ -544,6 +544,18 @@ static int ubctl_query_queue_data(struct ubctl_dev *ucdev,
 				ARRAY_SIZE(query_dp));
 }
 
+static int ubctl_query_cmdq_data(struct ubctl_dev *ucdev,
+				 struct ubctl_query_cmd_param *query_cmd_param,
+				 struct ubctl_func_dispatch *query_func)
+{
+	struct ubctl_query_dp query_dp[] = {
+		{ UBCTL_QUERY_UE_STORM_DFX, UBCTL_UE_LEN, UBCTL_READ, NULL, 0 },
+	};
+
+	return ubctl_query_data(ucdev, query_cmd_param, query_func,
+				query_dp, ARRAY_SIZE(query_dp));
+}
+
 static int ubctl_query_loopback(struct ubctl_dev *ucdev,
 				struct ubctl_query_cmd_param *query_cmd_param,
 				struct ubctl_func_dispatch *query_func)
@@ -708,13 +720,13 @@ static int ubctl_query_conf_user_comm(struct ubctl_dev *ucdev,
 				      struct ubctl_query_cmd_param *query_cmd_param,
 				      struct ubctl_func_dispatch *query_func)
 {
+	u32 env_type = ubase_get_hw_ver(ucdev->adev);
 	struct ubctl_query_dp query_dp[] = {
 		{ 0, 0, 0, NULL, 0 },
 	};
-	struct ubctl_cmd_in_head *in_head_data = NULL;
-	u32 biz_data_size = 0;
-	void *tmp_buf = NULL;
-	u32 in_head_size = 0;
+	struct ubctl_cmd_in_head *in_head_data;
+	u32 biz_data_size, in_head_size;
+	void *tmp_buf;
 
 	if (!query_cmd_param || !query_cmd_param->in)
 		return -EINVAL;
@@ -726,6 +738,12 @@ static int ubctl_query_conf_user_comm(struct ubctl_dev *ucdev,
 	}
 
 	in_head_data = (struct ubctl_cmd_in_head *)query_cmd_param->in->data;
+	if (in_head_data->opcode == UBCTL_QUERY_TP_PRE_BER_DFX && env_type != UBASE_HW_VER_A_0) {
+		ubctl_err(ucdev, "rpc cmd(0x%x) cannot be used in current env type(%u)\n",
+			  UBCTL_QUERY_TP_PRE_BER_DFX, env_type);
+		return -EINVAL;
+	}
+
 	in_head_size = sizeof(struct ubctl_cmd_in_head);
 	biz_data_size = query_cmd_param->in->data_size - in_head_size;
 
@@ -929,6 +947,7 @@ static struct ubctl_func_dispatch g_ubctl_query_reg[] = {
 
 	{ UTOOL_CMD_QUERY_ECC_2B, ubctl_query_ecc_2b_data, ubctl_query_data_deal },
 	{ UTOOL_CMD_QUERY_QUEUE, ubctl_query_queue_data, ubctl_query_data_deal },
+	{ UTOOL_CMD_QUERY_CMDQ_STATS, ubctl_query_cmdq_data, ubctl_query_data_deal },
 
 	{ UTOOL_CMD_QUERY_LOOPBACK, ubctl_query_loopback, ubctl_query_data_deal },
 	{ UTOOL_CMD_CONF_LOOPBACK, ubctl_config_loopback, ubctl_query_data_deal },

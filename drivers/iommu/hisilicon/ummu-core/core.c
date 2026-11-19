@@ -169,7 +169,7 @@ int ummu_core_device_register(struct ummu_core_device *ummu_core,
 			goto out_reset_device;
 		}
 
-		list_add_tail(&ummu_core->list, &core_device_list);
+		list_add(&ummu_core->list, &core_device_list);
 		break;
 	default:
 		ret = -EOPNOTSUPP;
@@ -448,22 +448,12 @@ EXPORT_SYMBOL_GPL(ummu_core_invalidate_cfg_table);
 
 int ummu_core_invalidate_cfg(struct ummu_invalid_cfg_param *param)
 {
-
 	if (!param || !param->mm)
 		return -EINVAL;
 
 	return ummu_core_invalidate_tid(param->mm, param->tid);
 }
 EXPORT_SYMBOL_GPL(ummu_core_invalidate_cfg);
-
-void ummu_core_tlb_inv_walk(struct iommu_domain *domain, unsigned long iova,
-			    size_t size, size_t granule)
-{
-	if (global_core_device && global_core_device->ops &&
-	    global_core_device->ops->tlb_inv_walk)
-		global_core_device->ops->tlb_inv_walk(domain, iova, size, granule);
-}
-EXPORT_SYMBOL_NS_GPL(ummu_core_tlb_inv_walk, UMMU_CORE_DRIVER);
 
 static int __init ummu_core_init(void)
 {
