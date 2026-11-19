@@ -465,7 +465,7 @@ static ssize_t hns3_roh_dfx_cmd_write(struct file *filp, const char __user *buff
 
 	cmd_buf = kzalloc(count + 1, GFP_KERNEL);
 	if (!cmd_buf)
-		return count;
+		return -ENOMEM;
 
 	uncopied_bytes = copy_from_user(cmd_buf, buffer, count);
 	if (uncopied_bytes) {
@@ -488,7 +488,7 @@ static ssize_t hns3_roh_dfx_cmd_write(struct file *filp, const char __user *buff
 	kfree(cmd_buf);
 	cmd_buf = NULL;
 
-	return count;
+	return ret ? ret : count;
 }
 
 static const struct file_operations hns3_roh_dfx_cmd_fops = {

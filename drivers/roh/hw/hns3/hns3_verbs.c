@@ -162,6 +162,7 @@ static const char * const hns3_roh_hw_stats_name_private[] = {
 struct roh_mib_stats *hns3_roh_alloc_hw_stats(struct roh_device *rohdev, enum roh_mib_type mib_type)
 {
 	struct roh_mib_stats *stats = NULL;
+	u32 num_mib_private_value;
 	u32 num_counters;
 
 	switch (mib_type) {
@@ -175,7 +176,8 @@ struct roh_mib_stats *hns3_roh_alloc_hw_stats(struct roh_device *rohdev, enum ro
 		break;
 	case ROH_MIB_PRIVATE:
 		num_counters = ARRAY_SIZE(hns3_roh_hw_stats_name_private);
-		stats = kzalloc(sizeof(*stats) + num_counters * sizeof(u64), GFP_KERNEL);
+		num_mib_private_value = DIV_ROUND_UP(num_counters, HNS3_ROH_RD_OTHER_STATS_NUM) * HNS3_ROH_RD_OTHER_STATS_NUM;
+		stats = kzalloc(sizeof(*stats) + num_mib_private_value * sizeof(u64), GFP_KERNEL);
 		if (!stats)
 			return NULL;
 		stats->names = hns3_roh_hw_stats_name_private;
