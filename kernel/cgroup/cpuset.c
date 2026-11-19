@@ -1040,16 +1040,6 @@ static int update_prefer_cpumask(struct cpuset *cs, struct cpuset *trialcs,
 
 	return 0;
 }
-
-static inline bool prefer_cpus_updated(struct cpuset *cs, struct cpuset *oldcs)
-{
-	return !cpumask_equal(cs->prefer_cpus, oldcs->prefer_cpus);
-}
-#else
-static inline bool prefer_cpus_updated(struct cpuset *cs, struct cpuset *oldcs)
-{
-	return false;
-}
 #endif
 
 #ifdef CONFIG_SMP
@@ -3613,6 +3603,49 @@ static void cpuset_attach_task(struct cpuset *cs, struct task_struct *task)
 	cpuset_update_task_spread_flags(cs, task);
 }
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+/*
+ * Check if pushing @cs->prefer_cpus to all the tasks of @tset is a no-op.
+ *
+ * The per-task value has to be used instead of comparing @cs against the old
+ * cpuset: a task's prefer_cpus may legitimately differ from the cpuset's
+ * configuration, e.g. it has been overridden via
+ * /proc/<pid>/preferred_cpuset, or a previous push was rejected because the
+ * task was pinned to a narrower cpumask.  Comparing cpusets would skip the
+ * attach in that case and leave the task with a stale mask.
+ *
+ * A task with a NULL prefer_cpus does not support this feature and is
+ * ignored.
+ */
+static bool tasks_prefer_cpus_unchanged(struct cgroup_taskset *tset,
+					struct cpuset *cs)
+{
+	struct cgroup_subsys_state *css;
+	struct task_struct *task;
+
+	/*
+	 * The per-task masks are inert when both features are off, so there is
+	 * nothing to synchronize.  Keep this in sync with prefer_cpus_valid().
+	 */
+	if (likely(!dynamic_affinity_enabled() && !sched_paral_used()))
+		return true;
+
+	cgroup_taskset_for_each(task, css, tset) {
+		if (task->prefer_cpus &&
+		    !cpumask_equal(task->prefer_cpus, cs->prefer_cpus))
+			return false;
+	}
+
+	return true;
+}
+#else
+static inline bool tasks_prefer_cpus_unchanged(struct cgroup_taskset *tset,
+					       struct cpuset *cs)
+{
+	return true;
+}
+#endif
+
 static void cpuset_attach(struct cgroup_taskset *tset)
 {
 	struct task_struct *task;
@@ -3638,7 +3671,8 @@ static void cpuset_attach(struct cgroup_taskset *tset)
 	 * by skipping the task iteration and update.
 	 */
 	if (cgroup_subsys_on_dfl(cpuset_cgrp_subsys) &&
-	    !cpus_updated && !mems_updated && !prefer_cpus_updated(cs, oldcs)) {
+	    !cpus_updated && !mems_updated &&
+	    tasks_prefer_cpus_unchanged(tset, cs)) {
 		cpuset_attach_nodemask_to = cs->effective_mems;
 		goto out;
 	}
