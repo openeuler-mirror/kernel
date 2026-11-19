@@ -200,6 +200,7 @@ struct csv_cma {
 
 struct cma_array {
 	unsigned long count;
+	unsigned int index;
 	struct csv_cma csv_cma[];
 };
 
@@ -271,6 +272,7 @@ static void __init csv_cma_reserve_mem(void)
 		}
 
 		array->count = 0;
+		array->index = 0;
 		csv_contiguous_pernuma_area[node] = array;
 
 		for (i = 0; i < count; i++) {
@@ -384,7 +386,13 @@ retry:
 
 		count = array->count;
 		while (count) {
-			csv_cma = &array->csv_cma[count - 1];
+			/*
+			 * array->count stays constant while "count" shrinks on
+			 * every attempt; using the latter as the divisor would
+			 * skip some csv_cma entries and revisit others.
+			 */
+			array->index = (array->index + 1) % array->count;
+			csv_cma = &array->csv_cma[array->index];
 
 			/*
 			 * The value check of csv_cma->fast is lockless, but
