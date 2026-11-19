@@ -800,7 +800,9 @@ void hinic5_auto_moderation_work(struct work_struct *work)
 	u16 qid;
 
 #ifdef HAVE_DIM_SUPPORT
-	if (test_bit(HINIC5_INTF_UP, &nic_dev->flags) == 0 || HINIC5_SUPPORT_SQ_RQ_CI_COALESCE(nic_dev->hwdev))
+	if (test_bit(HINIC5_INTF_UP, &nic_dev->flags) == 0 ||
+	    (HINIC5_SUPPORT_SQ_RQ_CI_COALESCE(nic_dev->hwdev) &&
+	    !HINIC5_FUNC_IS_VF(nic_dev->hwdev)))
 		return;
 #else
 	if (test_bit(HINIC5_INTF_UP, &nic_dev->flags) == 0)

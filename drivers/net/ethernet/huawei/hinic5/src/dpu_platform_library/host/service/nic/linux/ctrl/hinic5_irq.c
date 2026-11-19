@@ -35,6 +35,7 @@
 
 #define HINIC5_DIM_PARAMS_NUM_PROFILES  5
 #define HINIC5_DIM_DEFAULT_RX_PKTS  256
+#define HINIC5_DIM_INTERVAL_MS  200
 
 struct hinic5_dim_moder {
 	u16 usec;
@@ -133,6 +134,9 @@ static void hinic5_handle_dim(struct hinic5_irq *irq_cfg)
 
 	if (nic_dev == NULL || nic_dev->adaptive_rx_coal == 0 || atomic_read(&rxq->dim_applying) != 0)
 		return;
+	if (time_before(jiffies, rxq->last_dim_jiffies + msecs_to_jiffies(HINIC5_DIM_INTERVAL_MS)))
+		return;
+	rxq->last_dim_jiffies = jiffies;
 
 	hinic5_handle_rx_dim(irq_cfg);
 }
@@ -173,7 +177,7 @@ int hinic5_poll(struct napi_struct *napi, int budget)
 		return max(tx_pkts, rx_pkts);
 	}
 #ifdef HAVE_DIM_SUPPORT
-	if (HINIC5_SUPPORT_SQ_RQ_CI_COALESCE(nic_dev->hwdev))
+	if (HINIC5_SUPPORT_SQ_RQ_CI_COALESCE(nic_dev->hwdev) && !HINIC5_FUNC_IS_VF(nic_dev->hwdev))
 		hinic5_handle_dim(irq_cfg);
 #endif
 
@@ -199,7 +203,7 @@ int hinic5_poll(struct napi_struct *napi, int budget)
 
 	napi_complete(napi);
 #ifdef HAVE_DIM_SUPPORT
-	if (HINIC5_SUPPORT_SQ_RQ_CI_COALESCE(nic_dev->hwdev))
+	if (HINIC5_SUPPORT_SQ_RQ_CI_COALESCE(nic_dev->hwdev) && !HINIC5_FUNC_IS_VF(nic_dev->hwdev))
 		hinic5_handle_dim(irq_cfg);
 #endif
 
@@ -255,7 +259,8 @@ static int hinic5_request_irq(struct hinic5_irq *irq_cfg, u16 q_id)
 		return err;
 	}
 #ifdef HAVE_DIM_SUPPORT
-	if (nic_dev->adaptive_rx_coal && HINIC5_SUPPORT_SQ_RQ_CI_COALESCE(nic_dev->hwdev)) {
+	if (nic_dev->adaptive_rx_coal && HINIC5_SUPPORT_SQ_RQ_CI_COALESCE(nic_dev->hwdev) &&
+	    !HINIC5_FUNC_IS_VF(nic_dev->hwdev)) {
 		struct hinic5_dim_moder rx_moder;
 		rx_moder = hinic5_dim_get_rx_moderation(DIM_START_MODE, DIM_START_PROFILE);
 
@@ -323,10 +328,12 @@ int hinic5_qps_irq_init(struct hinic5_nic_dev *nic_dev)
 		nic_dev->rxqs[q_id].irq_cfg = irq_cfg;
 
 #ifdef HAVE_DIM_SUPPORT
-		if (HINIC5_SUPPORT_SQ_RQ_CI_COALESCE(nic_dev->hwdev)) {
+		if (HINIC5_SUPPORT_SQ_RQ_CI_COALESCE(nic_dev->hwdev) &&
+		    !HINIC5_FUNC_IS_VF(nic_dev->hwdev)) {
 			INIT_WORK(&nic_dev->rxqs[q_id].dim.work, hinic5_rx_dim_work);
 			nic_dev->rxqs[q_id].dim.mode = DIM_START_MODE;
 			nic_dev->rxqs[q_id].dim.profile_ix = DIM_START_PROFILE;
+			nic_dev->rxqs[q_id].last_dim_jiffies = jiffies;
 			atomic_set(&nic_dev->rxqs[q_id].dim_applying, 0);
 		}
 #endif
@@ -363,7 +370,8 @@ req_tx_irq_err:
 		hinic5_release_irq(irq_cfg, nic_dev->state);
 
 #ifdef HAVE_DIM_SUPPORT
-		if (HINIC5_SUPPORT_SQ_RQ_CI_COALESCE(nic_dev->hwdev))
+		if (HINIC5_SUPPORT_SQ_RQ_CI_COALESCE(nic_dev->hwdev) &&
+		    !HINIC5_FUNC_IS_VF(nic_dev->hwdev))
 			cancel_work_sync(&nic_dev->rxqs[i].dim.work);
 #endif
 	}
@@ -384,7 +392,8 @@ void hinic5_qps_irq_deinit(struct hinic5_nic_dev *nic_dev)
 						HINIC5_CLR_MSIX_AUTO_MASK);
 		hinic5_release_irq(irq_cfg, nic_dev->state);
 #ifdef HAVE_DIM_SUPPORT
-		if (HINIC5_SUPPORT_SQ_RQ_CI_COALESCE(nic_dev->hwdev))
+		if (HINIC5_SUPPORT_SQ_RQ_CI_COALESCE(nic_dev->hwdev) &&
+		    !HINIC5_FUNC_IS_VF(nic_dev->hwdev))
 			cancel_work_sync(&nic_dev->rxqs[q_id].dim.work);
 #endif
 	}
