@@ -7,15 +7,41 @@
 #include <linux/crypto.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
+#include <linux/kstrtox.h>
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/net.h>
+#include <linux/printk.h>
 #include <linux/vmalloc.h>
 #include <linux/zstd.h>
 #include <crypto/internal/scompress.h>
 
 
 #define ZSTD_DEF_LEVEL	3
+
+static int crypto_zstd_level = ZSTD_DEF_LEVEL;
+
+static int crypto_zstd_level_set(const char *val, const struct kernel_param *kp)
+{
+	int lv;
+
+	if (kstrtoint(val, 0, &lv) || lv < 1 || lv > 22) {
+		pr_err("zstd: invalid crypto_zstd_level '%s' (valid 1-22)\n", val);
+		return -EINVAL;
+	}
+
+	*(int *)kp->arg = lv;
+	pr_info("zstd: crypto_zstd_level set to %d\n", lv);
+	return 0;
+}
+
+static const struct kernel_param_ops crypto_zstd_level_ops = {
+	.set = crypto_zstd_level_set,
+	.get = param_get_int,
+};
+
+module_param_cb(crypto_zstd_level, &crypto_zstd_level_ops, &crypto_zstd_level, 0444);
+MODULE_PARM_DESC(crypto_zstd_level, "zstd compression level (1-22, default 3)");
 
 struct zstd_ctx {
 	zstd_cctx *cctx;
@@ -26,7 +52,7 @@ struct zstd_ctx {
 
 static zstd_parameters zstd_params(void)
 {
-	return zstd_get_params(ZSTD_DEF_LEVEL, 0);
+	return zstd_get_params(crypto_zstd_level, 0);
 }
 
 static int zstd_comp_init(struct zstd_ctx *ctx)

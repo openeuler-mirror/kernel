@@ -7661,3 +7661,22 @@
 				pte entry.
 			user	only select user task will update PBHA bit0 for
 				their pte entry.
+
+	zstd.crypto_zstd_level=
+			[KNL] Set the zstd compression level used by the zstd
+			crypto compressor. Valid values are 1-22. Default is 3.
+			The parameter is set at boot time (or when the module is
+			loaded) and cannot be changed at run time via sysfs.
+
+			When zstd is built in, an invalid value on the kernel
+			command line is rejected and the default 3 is kept.
+			When zstd is built as a module, pass the parameter when
+			loading it; an invalid value makes the load fail and the
+			algorithm stays unavailable.
+
+			Higher levels compress better but need much more memory
+			for the compression workspace: about 0.6 MiB at level 1,
+			1.3 MiB at level 3, 12 MiB at level 9 and hundreds of
+			MiB at level 22 per compression context. Consumers such
+			as zram and zswap create one context per CPU, so the
+			total memory grows accordingly.
