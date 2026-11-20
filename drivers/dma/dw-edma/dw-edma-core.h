@@ -129,7 +129,7 @@ struct dw_edma {
 	struct dw_edma_chan		*chan;
 	const struct dw_edma_core_ops	*ops;
 
-	raw_spinlock_t			lock;		/* Only for legacy */
+	raw_spinlock_t			lock;		/* Protect v0 shared registers */
 };
 
 struct dw_edma_sg {
