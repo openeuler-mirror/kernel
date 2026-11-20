@@ -287,7 +287,7 @@ enum {
 #define STEAM_PAD_BOTH 2
 
 /* Other random constants */
-#define STEAM_SERIAL_LEN 10
+#define STEAM_SERIAL_LEN 0x15
 
 struct steam_device {
 	struct list_head list;
@@ -322,6 +322,13 @@ static int steam_recv_report(struct steam_device *steam,
 	u8 *buf;
 	int ret;
 
+	/*
+	 * All reports start with a two byte header.
+	 * We must read at least two bytes to get a sensible output.
+	 */
+	if (size < 2)
+		return -EINVAL;
+
 	r = steam->hdev->report_enum[HID_FEATURE_REPORT].report_id_hash[0];
 	if (!r) {
 		hid_err(steam->hdev, "No HID_FEATURE_REPORT submitted -  nothing to read\n");
@@ -344,10 +351,31 @@ static int steam_recv_report(struct steam_device *steam,
 	ret = hid_hw_raw_request(steam->hdev, 0x00,
 			buf, hid_report_len(r) + 1,
 			HID_FEATURE_REPORT, HID_REQ_GET_REPORT);
-	if (ret > 0)
-		memcpy(data, buf + 1, min(size, ret - 1));
+	if (ret > 0) {
+		/* Remove the report ID from the return buffer */
+		ret--;
+		size = min(size, ret);
+		memcpy(data, buf + 1, size);
+	}
 	kfree(buf);
-	return ret;
+
+	if (ret < 0)
+		hid_err(steam->hdev, "%s: error %d\n", __func__, ret);
+	else
+		hid_dbg(steam->hdev, "Received report %*ph\n", size, data);
+	if (ret < 0)
+		return ret;
+
+	if (ret < 2) {
+		hid_err(steam->hdev, "%s: reply too short\n", __func__);
+		return -EPROTO;
+	}
+	if (ret < data[1] + 2) {
+		hid_err(steam->hdev, "%s: expected %u bytes, read %i\n",
+				__func__, data[1] + 2, ret);
+		return -EPROTO;
+	}
+	return size;
 }
 
 static int steam_send_report(struct steam_device *steam,
@@ -440,11 +468,11 @@ static int steam_get_serial(struct steam_device *steam)
 {
 	/*
 	 * Send: 0xae 0x15 0x01
-	 * Recv: 0xae 0x15 0x01 serialnumber (10 chars)
+	 * Recv: 0xae 0x15 0x01 serialnumber
 	 */
 	int ret = 0;
-	u8 cmd[] = {ID_GET_STRING_ATTRIBUTE, 0x15, ATTRIB_STR_UNIT_SERIAL};
-	u8 reply[3 + STEAM_SERIAL_LEN + 1];
+	u8 cmd[] = {ID_GET_STRING_ATTRIBUTE, sizeof(steam->serial_no), ATTRIB_STR_UNIT_SERIAL};
+	u8 reply[3 + STEAM_SERIAL_LEN + 1] = {0};
 
 	mutex_lock(&steam->report_mutex);
 	ret = steam_send_report(steam, cmd, sizeof(cmd));
@@ -453,12 +481,12 @@ static int steam_get_serial(struct steam_device *steam)
 	ret = steam_recv_report(steam, reply, sizeof(reply));
 	if (ret < 0)
 		goto out;
-	if (reply[0] != ID_GET_STRING_ATTRIBUTE || reply[1] != 0x15 || reply[2] != ATTRIB_STR_UNIT_SERIAL) {
+	if (reply[0] != ID_GET_STRING_ATTRIBUTE || reply[1] < 1 ||
+	    reply[1] > sizeof(steam->serial_no) || reply[2] != ATTRIB_STR_UNIT_SERIAL) {
 		ret = -EIO;
 		goto out;
 	}
-	reply[3 + STEAM_SERIAL_LEN] = 0;
-	strscpy(steam->serial_no, reply + 3, sizeof(steam->serial_no));
+	strscpy(steam->serial_no, reply + 3, reply[1]);
 out:
 	mutex_unlock(&steam->report_mutex);
 	return ret;
