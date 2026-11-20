@@ -48,8 +48,9 @@ struct ubaseproxy_rc_ctx {
 	u32 rce_base_addr_l : 20;
 	/* DW2 */
 	u32 rce_base_addr_h;
-	/* DW3~DW31 */
+	/* DW3~DW30 */
 	u32 rsv4[28];
+	/* DW31 */
 	u32 avail_sgmt_ost : 10;
 	u32 rsv5 : 22;
 	/* DW32~DW63 */

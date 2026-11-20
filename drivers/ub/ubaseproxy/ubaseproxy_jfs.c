@@ -696,13 +696,10 @@ static int ubaseproxy_jfc_reduce_jetty_cnt(struct ubaseproxy_dev *udev,
 
 	ret = ubaseproxy_jfc_ref_dec(udev, ue_ctx_xa, jettyn, rx_jfcn,
 				     mbx_ue_id);
-	if (ret) {
+	if (ret)
 		ubaseproxy_err(udev,
 			       "failed to decrease rx jfc(%u) cnt by jetty(%u) res, ret=%d.\n",
 			       rx_jfcn, jettyn, ret);
-		ubaseproxy_jfc_ref_inc(udev, ue_ctx_xa, jettyn, tx_jfcn,
-				       mbx_ue_id);
-	}
 
 	return ret;
 }
