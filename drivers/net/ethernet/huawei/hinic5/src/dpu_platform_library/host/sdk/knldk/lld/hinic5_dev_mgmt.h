@@ -161,7 +161,7 @@ struct hinic5_adev {
 #ifdef __VMWARE__
 	#include "vm_pci.h"
 #endif
-	const struct hinic5_bus_ops *bus_ops;
+	struct hinic5_bus_ops *bus_ops;
 	struct hinic5_device_info info;
 
 	char vpmd_proc_name[HINIC5_VPMD_PROC_NAME_LEN];
