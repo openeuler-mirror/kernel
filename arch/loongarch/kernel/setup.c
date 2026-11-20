@@ -70,8 +70,13 @@ struct cpuinfo_loongarch cpu_data[NR_CPUS] __read_mostly;
 
 EXPORT_SYMBOL(cpu_data);
 
+DEFINE_STATIC_KEY_FALSE(cpu_crc32_support);
+DEFINE_STATIC_KEY_FALSE(cpu_ual_support);
 struct loongson_board_info b_info;
 static const char dmi_empty_string[] = "        ";
+#if IS_REACHABLE(CONFIG_CRC32)
+extern void crc3way_table_init(void);
+#endif
 
 /*
  * Setup information
@@ -92,8 +97,21 @@ const char *get_system_type(void)
 	return "generic-loongson-machine";
 }
 
+static void __init cpu_features_init(void)
+{
+	if (cpu_has_crc32)
+		static_branch_enable(&cpu_crc32_support);
+	if (cpu_has_ual) {
+		static_branch_enable(&cpu_ual_support);
+	}
+#if IS_REACHABLE(CONFIG_CRC32)
+	crc3way_table_init();
+#endif
+}
+
 void __init arch_cpu_finalize_init(void)
 {
+	cpu_features_init();
 	alternative_instructions();
 }
 

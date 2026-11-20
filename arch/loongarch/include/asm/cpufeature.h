@@ -16,6 +16,8 @@
 
 #define cpu_feature(x)		ilog2(HWCAP_ ## x)
 
+DECLARE_STATIC_KEY_FALSE(cpu_crc32_support);
+DECLARE_STATIC_KEY_FALSE(cpu_ual_support);
 static inline bool cpu_have_feature(unsigned int num)
 {
 	return elf_hwcap & (1UL << num);

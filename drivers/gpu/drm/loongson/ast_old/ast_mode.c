@@ -953,7 +953,7 @@ static void ast_cursor_plane_destroy(struct drm_plane *plane)
 	struct drm_gem_vram_object *gbo = ast_plane->gbo;
 	struct iosys_map map = ast_plane->map;
 
-	drm_gem_vram_vunmap(gbo, &map);
+	drm_gem_vunmap_unlocked(&gbo->bo.base, &map);
 	drm_gem_vram_unpin(gbo);
 	drm_gem_vram_put(gbo);
 
@@ -993,7 +993,7 @@ static int ast_cursor_plane_init(struct ast_private *ast)
 					    DRM_GEM_VRAM_PL_FLAG_TOPDOWN);
 	if (ret)
 		goto err_drm_gem_vram_put;
-	ret = drm_gem_vram_vmap(gbo, &map);
+	ret = drm_gem_vmap_unlocked(&gbo->bo.base, &map);
 	if (ret)
 		goto err_drm_gem_vram_unpin;
 	off = drm_gem_vram_offset(gbo);
@@ -1025,7 +1025,7 @@ static int ast_cursor_plane_init(struct ast_private *ast)
 	return 0;
 
 err_drm_gem_vram_vunmap:
-	drm_gem_vram_vunmap(gbo, &map);
+	drm_gem_vunmap_unlocked(&gbo->bo.base, &map);
 err_drm_gem_vram_unpin:
 	drm_gem_vram_unpin(gbo);
 err_drm_gem_vram_put:

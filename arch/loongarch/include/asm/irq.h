@@ -126,8 +126,6 @@ extern struct fwnode_handle *liointc_handle;
 extern struct fwnode_handle *pch_lpc_handle;
 extern struct fwnode_handle *pch_pic_handle[MAX_IO_PICS];
 
-extern void fixup_irqs(void);
-
 static inline int get_percpu_irq(int vector)
 {
 	struct irq_domain *d;

@@ -55,3 +55,4 @@ obj-y += intel/
 obj-y += starfive/
 obj-y += montage/
 obj-$(CONFIG_SW_SE_CHIP) += sedriver/
+obj-y += loongson/
