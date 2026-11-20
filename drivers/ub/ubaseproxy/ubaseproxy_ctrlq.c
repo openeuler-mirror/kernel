@@ -67,17 +67,17 @@ int ubaseproxy_ctrlq_handle_query_eid_resp(struct auxiliary_device *adev,
 		return 0;
 	}
 
+	if (resp->seid_num > UBASEPROXY_CTRLQ_SEID_NUM) {
+		ubaseproxy_err(udev, "invalid seid num[%u].\n", resp->seid_num);
+		return 0;
+	}
+
 	expect_len = hdr_len + sizeof(resp->seid_num) + RSVD_BYTES_NUM +
 		     resp->seid_num * sizeof(struct ubaseproxy_seid_info);
 	if (len < expect_len) {
 		ubaseproxy_err(udev,
 			       "failed to check msg len, msg not contain seid info, len = %u, expect len = %u.\n",
 			       len, expect_len);
-		return 0;
-	}
-
-	if (resp->seid_num > UBASEPROXY_CTRLQ_SEID_NUM) {
-		ubaseproxy_err(udev, "invalid seid num[%u].\n", resp->seid_num);
 		return 0;
 	}
 

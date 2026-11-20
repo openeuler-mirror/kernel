@@ -60,7 +60,6 @@ static void ubaseproxy_remove(struct auxiliary_device *adev)
 	while (test_and_set_bit(UBASEPROXY_STATE_DISABLED, &udev->state))
 		msleep(UBASEPROXY_RESET_WAIT_TIME);
 
-	set_bit(UBASEPROXY_STATE_REMOVING, &udev->state);
 	ubaseproxy_dbg_uninit(adev);
 	ubaseproxy_dev_uninit(udev);
 
