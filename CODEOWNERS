@@ -435,7 +435,6 @@
 /drivers/char/agp/intel* @zeng_zhaorong @juntianlinux
 /drivers/char/loongson_se.c @lixuefeng-loongson @maobibo @gaojuxin09 @robinorg
 /drivers/cpufreq/ @chriszjh @zouyipeng
-/drivers/cpufreq/loongson3-acpi-cpufreq.c @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
 /drivers/cpufreq/intel_pstate.c @zeng_zhaorong @juntianlinux
 /drivers/cpufreq/sunway-cpufreq.c @guzitao
 /drivers/cpufreq/amd_freq_sensitivity.c @kile2009 @sming56_admin
@@ -657,6 +656,7 @@
 /drivers/crypto/ccp/hygon/ @hanliyang @allen-shi
 /drivers/crypto/zhaoxin* @leoliu-oc
 /drivers/crypto/intel/ @zeng_zhaorong @juntianlinux
+/drivers/crypto/loongson/ @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
 /drivers/roh/core/ @chenke2026
 /drivers/roh/hw/hns3/ @chenke2026 @linyunsheng
 /drivers/hwtracing/intel_th/ @zeng_zhaorong @juntianlinux
@@ -765,6 +765,7 @@
 /drivers/media/platform/phytium-jpeg/ @mao-hongbo @GoGo_phytium @xuyanaasss
 /drivers/mfd/intel* @zeng_zhaorong @juntianlinux
 /drivers/mfd/intel_pmt.c @zeng_zhaorong @allen-shi
+/drivers/mfd/loongson-se.c @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
 /drivers/mfd/lpc_sunway.c @guzitao
 /drivers/mfd/sunway_ast2400.c @guzitao
 /drivers/ntb/hw/intel/ @zeng_zhaorong @juntianlinux
@@ -1293,6 +1294,7 @@
 /include/linux/memstick.h @wkfxxx @mawupeng @sun_nanyong
 /include/linux/mfd/ @UNMAINTAINED
 /include/linux/mfd/intel* @zeng_zhaorong @juntianlinux
+/include/linux/mfd/loongson-se.h @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
 /include/linux/migrate* @wkfxxx @mawupeng @sun_nanyong
 /include/linux/mlx4/ @UNMAINTAINED
 /include/linux/mlx5/ @UNMAINTAINED
