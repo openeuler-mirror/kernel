@@ -23,6 +23,8 @@
 #define CSV_EXT_CSV3_MULT_LUP_DATA	(1 << CSV_EXT_CSV3_MULT_LUP_DATA_BIT)
 #define CSV_EXT_CSV3_INJ_SECRET_BIT	1
 #define CSV_EXT_CSV3_INJ_SECRET		(1 << CSV_EXT_CSV3_INJ_SECRET_BIT)
+#define CSV_EXT_CSV3_LFINISH_EX_BIT	2
+#define CSV_EXT_CSV3_LFINISH_EX		(1 << CSV_EXT_CSV3_LFINISH_EX_BIT)
 
 /**
  * Guest/platform management commands for CSV
@@ -41,6 +43,7 @@ enum csv3_cmd {
 	CSV3_CMD_SET_GUEST_PRIVATE_MEMORY	= 0x200,
 	CSV3_CMD_LAUNCH_ENCRYPT_DATA		= 0x201,
 	CSV3_CMD_LAUNCH_ENCRYPT_VMCB		= 0x202,
+	CSV3_CMD_LAUNCH_FINISH_EX		= 0x204,
 	/* Guest NPT(Nested Page Table) management commands */
 	CSV3_CMD_UPDATE_NPT			= 0x203,
 
@@ -202,6 +205,21 @@ struct csv3_data_launch_encrypt_vmcb {
 	u32 reserved3;			/* In */
 	u64 secure_vmcb_addr;		/* Out */
 	u32 secure_vmcb_len;		/* Out */
+} __packed;
+
+/**
+ * struct csv3_data_launch_finish_ex - CSV3_CMD_LAUNCH_FINISH_EX command
+ *
+ * @handle: handle assigned to the VM
+ * @reserved0: reserved field, for future use
+ * @host_data: the host supplied data
+ * @reserved1: reserved field, for future use
+ */
+struct csv3_data_launch_finish_ex {
+	u32 handle;			/* In */
+	u32 reserved0;			/* In */
+	u8  host_data[64];		/* In */
+	u8  reserved1[184];		/* In */
 } __packed;
 
 /**
