@@ -281,6 +281,8 @@ static unsigned int zero_checksum __read_mostly;
 /* Whether to merge empty (zeroed) pages with actual zero pages */
 static bool ksm_use_zero_pages __read_mostly;
 
+static bool ksm_only_merge_zero_pages __read_mostly;
+
 /* The number of zero pages which is placed by KSM */
 atomic_long_t ksm_zero_pages = ATOMIC_LONG_INIT(0);
 
@@ -1348,6 +1350,44 @@ out:
 }
 
 /*
+ * This function returns 0 if the pages were merged or if they are
+ * no longer merging candidates (e.g., VMA stale), -EFAULT otherwise.
+ */
+static int try_to_merge_with_zero_page(struct ksm_rmap_item *rmap_item,
+				       struct page *page)
+{
+	struct mm_struct *mm = rmap_item->mm;
+	int err = -EFAULT;
+
+	/*
+	 * Same checksum as an empty page. We attempt to merge it with the
+	 * appropriate zero page if the user enabled this via sysfs.
+	 */
+	if (ksm_use_zero_pages && (rmap_item->oldchecksum == zero_checksum)) {
+		struct vm_area_struct *vma;
+
+		mmap_read_lock(mm);
+		vma = find_mergeable_vma(mm, rmap_item->address);
+		if (vma) {
+			err = try_to_merge_one_page(vma, page,
+					ZERO_PAGE(rmap_item->address));
+			trace_ksm_merge_one_page(
+				page_to_pfn(ZERO_PAGE(rmap_item->address)),
+				rmap_item, mm, err);
+		} else {
+			/*
+			 * If the vma is out of date, we do not need to
+			 * continue.
+			 */
+			err = 0;
+		}
+		mmap_read_unlock(mm);
+	}
+
+	return err;
+}
+
+/*
  * try_to_merge_with_ksm_page - like try_to_merge_two_pages,
  * but no new kernel page is allocated: kpage must already be a ksm page.
  *
@@ -2117,7 +2157,6 @@ static void stable_tree_append(struct ksm_rmap_item *rmap_item,
  */
 static void cmp_and_merge_page(struct page *page, struct ksm_rmap_item *rmap_item)
 {
-	struct mm_struct *mm = rmap_item->mm;
 	struct ksm_rmap_item *tree_rmap_item;
 	struct page *tree_page = NULL;
 	struct ksm_stable_node *stable_node;
@@ -2144,6 +2183,23 @@ static void cmp_and_merge_page(struct page *page, struct ksm_rmap_item *rmap_ite
 		 */
 		if (!is_page_sharing_candidate(stable_node))
 			max_page_sharing_bypass = true;
+	} else {
+		remove_rmap_item_from_tree(rmap_item);
+
+		/*
+		 * If the hash value of the page has changed from the last time
+		 * we calculated it, this page is changing frequently: therefore we
+		 * don't want to insert it in the unstable tree, and we don't want
+		 * to waste our time searching for something identical to it there.
+		 */
+		checksum = calc_checksum(page);
+		if (rmap_item->oldchecksum != checksum) {
+			rmap_item->oldchecksum = checksum;
+			return;
+		}
+
+		if (!try_to_merge_with_zero_page(rmap_item, page))
+			return;
 	}
 
 	/* We first start with searching the page inside the stable tree */
@@ -2174,48 +2230,6 @@ static void cmp_and_merge_page(struct page *page, struct ksm_rmap_item *rmap_ite
 		return;
 	}
 
-	/*
-	 * If the hash value of the page has changed from the last time
-	 * we calculated it, this page is changing frequently: therefore we
-	 * don't want to insert it in the unstable tree, and we don't want
-	 * to waste our time searching for something identical to it there.
-	 */
-	checksum = calc_checksum(page);
-	if (rmap_item->oldchecksum != checksum) {
-		rmap_item->oldchecksum = checksum;
-		return;
-	}
-
-	/*
-	 * Same checksum as an empty page. We attempt to merge it with the
-	 * appropriate zero page if the user enabled this via sysfs.
-	 */
-	if (ksm_use_zero_pages && (checksum == zero_checksum)) {
-		struct vm_area_struct *vma;
-
-		mmap_read_lock(mm);
-		vma = find_mergeable_vma(mm, rmap_item->address);
-		if (vma) {
-			err = try_to_merge_one_page(vma, page,
-					ZERO_PAGE(rmap_item->address));
-			trace_ksm_merge_one_page(
-				page_to_pfn(ZERO_PAGE(rmap_item->address)),
-				rmap_item, mm, err);
-		} else {
-			/*
-			 * If the vma is out of date, we do not need to
-			 * continue.
-			 */
-			err = 0;
-		}
-		mmap_read_unlock(mm);
-		/*
-		 * In case of failure, the page was not really empty, so we
-		 * need to continue. Otherwise we're done.
-		 */
-		if (!err)
-			return;
-	}
 	tree_rmap_item =
 		unstable_tree_search_insert(rmap_item, page, &tree_page);
 	if (tree_rmap_item) {
@@ -2312,7 +2326,41 @@ struct ksm_next_page_arg {
 	struct folio *folio;
 	struct page *page;
 	unsigned long addr;
+	unsigned int nr_to_skip;
 };
+
+static inline bool page_maybe_zero(struct page *page)
+{
+	unsigned long *p;
+	bool ret = true;
+	unsigned int last_pos = PAGE_SIZE / sizeof(*p) - 1;
+
+	p = kmap_atomic(page);
+	if (p[0] || p[last_pos])
+		ret = false;
+	kunmap_atomic(p);
+	return ret;
+}
+
+static struct page *ksm_skip_nonzero_pages(struct page *page,
+					   unsigned long *addr,
+					   unsigned long nr,
+					   unsigned int *nr_to_skip)
+{
+	unsigned long i;
+
+	for (i = 0; i < nr; i++) {
+		if (!*nr_to_skip)
+			break;
+		(*nr_to_skip)--;
+		if (page_maybe_zero(page + i))
+			break;
+	}
+	if (i == nr)
+		return NULL;
+	*addr += i << PAGE_SHIFT;
+	return page + i;
+}
 
 static int ksm_next_page_pmd_entry(pmd_t *pmdp, unsigned long addr, unsigned long end,
 		struct mm_walk *walk)
@@ -2351,6 +2399,13 @@ static int ksm_next_page_pmd_entry(pmd_t *pmdp, unsigned long addr, unsigned lon
 				goto not_found_unlock;
 
 			page += ((addr & (PMD_SIZE - 1)) >> PAGE_SHIFT);
+			if (ksm_only_merge_zero_pages) {
+				page = ksm_skip_nonzero_pages(page, &addr,
+					(end - addr) >> PAGE_SHIFT,
+					&private->nr_to_skip);
+				if (!page)
+					goto not_found_unlock;
+			}
 			goto found_unlock;
 		}
 		spin_unlock(ptl);
@@ -2373,6 +2428,14 @@ static int ksm_next_page_pmd_entry(pmd_t *pmdp, unsigned long addr, unsigned lon
 
 		if (folio_is_zone_device(folio) || !folio_test_anon(folio))
 			continue;
+
+		if (ksm_only_merge_zero_pages && !folio_test_ksm(folio)) {
+			page = ksm_skip_nonzero_pages(page, &addr, 1,
+						      &private->nr_to_skip);
+			if (!page)
+				continue;
+		}
+
 		goto found_unlock;
 	}
 
@@ -2396,6 +2459,40 @@ static struct mm_walk_ops ksm_next_page_ops = {
 	.pmd_entry = ksm_next_page_pmd_entry,
 	.walk_lock = PGWALK_RDLOCK,
 };
+
+static bool should_skip_page(struct ksm_rmap_item **rmap_list,
+					    unsigned long addr, struct page *page)
+{
+	struct ksm_rmap_item *rmap_item;
+	unsigned long *p;
+	int i;
+
+	if (!ksm_only_merge_zero_pages)
+		return false;
+
+	if (PageKsm(page))
+		return false;
+
+	p = kmap_atomic(page);
+	for (i = 0; i < PAGE_SIZE / sizeof(unsigned long); ++i) {
+		if (p[i] != 0) {
+			kunmap_atomic(p);
+			while (*rmap_list) {
+				rmap_item = *rmap_list;
+				if ((rmap_item->address & PAGE_MASK) > addr)
+					break;
+				*rmap_list = rmap_item->rmap_list;
+				remove_rmap_item_from_tree(rmap_item);
+				free_rmap_item(rmap_item);
+			}
+			return true;
+		}
+	}
+	kunmap_atomic(p);
+
+	return false;
+}
+
 
 static struct ksm_rmap_item *scan_get_next_rmap_item(struct page **page)
 {
@@ -2492,6 +2589,7 @@ next_mm:
 
 			int found;
 
+			ksm_next_page_arg.nr_to_skip = 1024;
 			found = walk_page_range_vma(vma, ksm_scan.address,
 						    vma->vm_end,
 						    &ksm_next_page_ops,
@@ -2508,6 +2606,14 @@ next_mm:
 			if (tmp_page) {
 				flush_anon_page(vma, tmp_page, ksm_scan.address);
 				flush_dcache_page(tmp_page);
+
+				if (should_skip_page(ksm_scan.rmap_list, ksm_scan.address, tmp_page)) {
+					folio_put(folio);
+					ksm_scan.address += PAGE_SIZE;
+					mmap_read_unlock(mm);
+					return ERR_PTR(-EAGAIN);
+				}
+
 				rmap_item = get_next_rmap_item(mm_slot,
 					ksm_scan.rmap_list, ksm_scan.address);
 				if (rmap_item) {
@@ -2601,6 +2707,10 @@ static void ksm_do_scan(unsigned int scan_npages)
 		rmap_item = scan_get_next_rmap_item(&page);
 		if (!rmap_item)
 			return;
+		if (rmap_item == ERR_PTR(-EAGAIN)) {
+			ksm_pages_scanned++;
+			continue;
+		}
 		cmp_and_merge_page(page, rmap_item);
 		put_page(page);
 		ksm_pages_scanned++;
@@ -2650,6 +2760,73 @@ static void __ksm_add_vma(struct vm_area_struct *vma)
 
 	if (vma_ksm_compatible(vma))
 		vm_flags_set(vma, VM_MERGEABLE);
+}
+
+/*
+ * ksm_should_add_vma - Could a VMA with these characteristics participate in KSM?
+ *
+ * @file:      the VMA's backing file, if any (NULL for anonymous).
+ * @vm_flags:  the proposed VMA flags.
+ *
+ * Like vma_ksm_compatible(), but does not require a VMA pointer: it judges
+ * KSM eligibility purely from the proposed (file, vm_flags). This is needed
+ * to decide whether to set VM_MERGEABLE on proposed VMA flags *before* a
+ * vma_merge() attempt, where no VMA exists yet.
+ */
+static bool ksm_should_add_vma(const struct file *file, unsigned long vm_flags)
+{
+	if (vm_flags & (VM_SHARED  | VM_MAYSHARE   | VM_PFNMAP  |
+			VM_IO      | VM_DONTEXPAND | VM_HUGETLB |
+			VM_MIXEDMAP))
+		return false;		/* just ignore the advice */
+
+	if (file && IS_DAX(file->f_mapping->host))
+		return false;
+
+#ifdef VM_SAO
+	if (vm_flags & VM_SAO)
+		return false;
+#endif
+#ifdef VM_SPARC_ADI
+	if (vm_flags & VM_SPARC_ADI)
+		return false;
+#endif
+
+	return true;
+}
+
+/**
+ * ksm_vma_flags - Pre-set VM_MERGEABLE on proposed VMA flags for process KSM
+ *
+ * @mm:        the mm_struct of the target process.
+ * @file:      the proposed VMA's backing file, if any (NULL for anonymous).
+ * @vm_flags:  the proposed VMA flags.
+ *
+ * When the process has opted into process-wide KSM merging (prctl
+ * PR_SET_MEMORY_MERGE, i.e. MMF_VM_MERGE_ANY), mark the proposed flags as
+ * KSM-mergeable if eligible. Setting VM_MERGEABLE *before* vma_merge() avoids
+ * breaking VMA merging for new VMAs: otherwise adjacent VMAs already carry
+ * VM_MERGEABLE while the proposed flags do not, and is_mergeable_vma() rejects
+ * the merge on the flag mismatch.
+ *
+ * Returns: @vm_flags possibly updated with VM_MERGEABLE.
+ */
+unsigned long ksm_vma_flags(struct mm_struct *mm, const struct file *file,
+			   unsigned long vm_flags)
+{
+	if (test_bit(MMF_VM_MERGE_ANY, &mm->flags) &&
+	    ksm_should_add_vma(file, vm_flags)) {
+		vm_flags |= VM_MERGEABLE;
+		/*
+		 * Generally the flags here always include MMF_VM_MERGEABLE.
+		 * However, in rare cases, this flag may be cleared by ksmd who
+		 * scans a cycle without finding any mergeable vma.
+		 */
+		if (unlikely(!test_bit(MMF_VM_MERGEABLE, &mm->flags)))
+			__ksm_enter(mm);
+	}
+
+	return vm_flags;
 }
 
 static int __ksm_del_vma(struct vm_area_struct *vma)
@@ -3416,6 +3593,28 @@ static ssize_t use_zero_pages_store(struct kobject *kobj,
 }
 KSM_ATTR(use_zero_pages);
 
+static ssize_t only_merge_zero_pages_show(struct kobject *kobj,
+				struct kobj_attribute *attr, char *buf)
+{
+	return sysfs_emit(buf, "%u\n", ksm_only_merge_zero_pages);
+}
+static ssize_t only_merge_zero_pages_store(struct kobject *kobj,
+				   struct kobj_attribute *attr,
+				   const char *buf, size_t count)
+{
+	int err;
+	bool value;
+
+	err = kstrtobool(buf, &value);
+	if (err)
+		return -EINVAL;
+
+	ksm_only_merge_zero_pages = value;
+
+	return count;
+}
+KSM_ATTR(only_merge_zero_pages);
+
 static ssize_t max_page_sharing_show(struct kobject *kobj,
 				     struct kobj_attribute *attr, char *buf)
 {
@@ -3587,6 +3786,7 @@ static struct attribute *ksm_attrs[] = {
 	&stable_node_dups_attr.attr,
 	&stable_node_chains_prune_millisecs_attr.attr,
 	&use_zero_pages_attr.attr,
+	&only_merge_zero_pages_attr.attr,
 	&general_profit_attr.attr,
 	NULL,
 };

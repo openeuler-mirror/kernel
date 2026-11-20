@@ -2867,6 +2867,22 @@ static unsigned long __mmap_region(struct mm_struct *mm, struct file *file,
 		vm_flags |= VM_ACCOUNT;
 	}
 
+	/*
+	 * For process-wide KSM (prctl PR_SET_MEMORY_MERGE), pre-set
+	 * VM_MERGEABLE on the proposed flags *before* the vma_merge() attempt
+	 * below. Otherwise adjacent VMAs already carry VM_MERGEABLE while the
+	 * proposed flags do not, and is_mergeable_vma() rejects the merge on
+	 * the flag mismatch, fragmenting the VMA space for every new mapping.
+	 *
+	 * Only anonymous mappings are handled here: for file-backed mappings
+	 * the driver's .mmap() callback (call_mmap) may adjust vm_flags and
+	 * thus KSM eligibility, so we cannot safely decide up front. Those
+	 * keep the existing post-merge ksm_add_vma() path, which also covers
+	 * the second merge attempt after call_mmap().
+	 */
+	if (!file)
+		vm_flags = ksm_vma_flags(mm, file, vm_flags);
+
 	next = vma_next(&vmi);
 	prev = vma_prev(&vmi);
 	if (vm_flags & VM_SPECIAL) {
@@ -3306,6 +3322,12 @@ static int do_brk_flags(struct vma_iterator *vmi, struct vm_area_struct *vma,
 	 * Note: This happens *after* clearing old mappings in some code paths.
 	 */
 	flags |= VM_DATA_DEFAULT_FLAGS | VM_ACCOUNT | mm->def_flags;
+	/*
+	 * brk() always creates anonymous mappings, so it is safe to pre-set
+	 * VM_MERGEABLE for process-wide KSM before the merge attempt below;
+	 * there is no driver .mmap() callback that could later alter flags.
+	 */
+	flags = ksm_vma_flags(mm, NULL, flags);
 	if (!may_expand_vm(mm, flags, len >> PAGE_SHIFT))
 		return -ENOMEM;
 

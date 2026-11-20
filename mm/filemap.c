@@ -3197,8 +3197,7 @@ static inline void try_enable_file_exec_thp(struct vm_area_struct *vma,
 	if (!file_exec_thp_enabled())
 		return;
 
-	if (thp_vma_allowable_order(vma, *vm_flags, TVA_ENFORCE_SYSFS,
-				PMD_ORDER))
+	if (thp_vma_allowable_order(vma, *vm_flags, 0, PMD_ORDER))
 		*vm_flags |= VM_HUGEPAGE;
 }
 
