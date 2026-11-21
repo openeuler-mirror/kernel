@@ -19,6 +19,7 @@
 #include <linux/string.h>
 #include <linux/kthread.h>
 #include <linux/inet.h>
+#include <linux/kernel.h>
 #include <linux/mutex.h>
 #include <ub/urma/ubcore_api.h>
 #include <ub/urma/ubcore_uapi.h>
@@ -1097,10 +1098,20 @@ int import(void)
 		}
 
 print_import_result:
-		pr_info("import: %d/%d success for device %s\n",
-			tjetty_valid_num,
-			sentry_urma_dev[die_index].server_eid_valid_num - 1, /* Exclude local EID */
-			sentry_urma_dev[die_index].sentry_ubcore_dev->dev_name);
+		if (sentry_urma_dev[die_index].sentry_ubcore_dev) {
+			pr_info("%s: %d/%d success for device %s\n",
+				__func__,
+				tjetty_valid_num,
+				/* Exclude local EID */
+				sentry_urma_dev[die_index].server_eid_valid_num - 1,
+				sentry_urma_dev[die_index].sentry_ubcore_dev->dev_name);
+		} else {
+			pr_info("%s: %d/%d success for device not set\n",
+				__func__,
+				tjetty_valid_num,
+				/* Exclude local EID */
+				max(sentry_urma_dev[die_index].server_eid_valid_num - 1, 0));
+		}
 	}
 
 	/* Start heartbeat thread if enabled */

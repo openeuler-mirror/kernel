@@ -19,6 +19,9 @@
 #define ENABLE_VALUE_MAX_LEN 4 // 'off' + '\0'
 #define REPORT_COMM_TIME  5000
 #define MILLISECONDS_OF_EACH_MDELAY 1000
+#define MIN_TIMEOUT     0
+/* Maximum allowed message timeout in milliseconds (1 hour) */
+#define MAX_TIMEOUT		3600000
 
 /*
  * The main version of the sentry driver.

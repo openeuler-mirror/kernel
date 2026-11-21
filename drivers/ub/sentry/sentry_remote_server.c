@@ -53,7 +53,18 @@ int send_msg_to_userspace_and_ack(struct sentry_msg_helper_msg *msg,
 				  uint32_t random_id, enum sentry_msg_helper_msg_type ack_type)
 {
 	int ret;
-	int times = msg->timeout_time / MILLISECONDS_OF_EACH_MDELAY;
+	/*
+	 * Round up so any positive timeout_time runs at least one send/ack
+	 * round. Integer division rounds down: for timeout_time in [1,999]
+	 * (< MILLISECONDS_OF_EACH_MDELAY == 1000) times was 0, so the
+	 * "for (i = 0; i < times; i++)" body never ran and the remote
+	 * panic/reboot event was never forwarded to userspace. timeout_time
+	 * comes from the peer's binary_msg->timeout_ms, which a peer can
+	 * configure to any value in [0, MAX_TIMEOUT] (only the upper bound is
+	 * checked). timeout_time == 0 still gives 0 rounds.
+	 */
+	int times = (msg->timeout_time + MILLISECONDS_OF_EACH_MDELAY - 1) /
+		    MILLISECONDS_OF_EACH_MDELAY;
 	int i, j, urma_ack_success_num = 0;
 	int sleep_time;
 	union ubcore_eid dst_ubcore_eid;
@@ -245,7 +256,8 @@ void write_ack_msg_buf(const struct sentry_msg_helper_msg *msg,
  * @random_id: Pointer to store extracted random ID for certain message types
  *
  * Return: 0 on success, negative error code on failure:
- *         -EINVAL if any input pointer is NULL or message type is unsupported.
+ *         -EINVAL if any input pointer is NULL or message type is unsupported or msg
+ *         data is invalid (eg. timeout is not within a limited range).
  */
 int convert_binary_to_smh_msg(const struct sentry_binary_msg *binary_msg,
 			 struct sentry_msg_helper_msg *smh_msg,
@@ -268,6 +280,11 @@ int convert_binary_to_smh_msg(const struct sentry_binary_msg *binary_msg,
 	switch (binary_msg->type) {
 	case SMH_MESSAGE_PANIC:
 	case SMH_MESSAGE_KERNEL_REBOOT:
+		if (binary_msg->timeout_ms > MAX_TIMEOUT) {
+			pr_err("%s: timeout_ms %u out of range [0, %u]\n",
+			       __func__, binary_msg->timeout_ms, MAX_TIMEOUT);
+			return -EINVAL;
+		}
 		smh_msg->timeout_time = binary_msg->timeout_ms;
 		*random_id = binary_msg->random_id;
 		break;
