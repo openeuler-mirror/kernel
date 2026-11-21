@@ -637,6 +637,12 @@ static int ubctl_query_fw_version(struct ubctl_dev *ucdev,
 	if (!query_cmd_param || !query_cmd_param->in)
 		return -EINVAL;
 
+	if (query_cmd_param->in->data_size != sizeof(u32)) {
+		ubctl_err(ucdev, "fw version data size = %ubytes, it must be %zubytes.\n",
+			  query_cmd_param->in->data_size, sizeof(u32));
+		return -EINVAL;
+	}
+
 	*query_cmd_param->in->data = QUERY_TYPE;
 	return ubctl_query_data(ucdev, query_cmd_param, query_func,
 				query_dp, ARRAY_SIZE(query_dp));

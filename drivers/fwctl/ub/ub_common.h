@@ -60,12 +60,14 @@ struct ubctl_rt_bandwidth_data {
  * @data_size: Length of @data
  * @adev: data transmitted to users
  * @rt_bandwidth_data: The data of rt_bandwidth
+ * @rt_bandwidth_mutex: Mutex used for rt_bandwidth
  */
 struct ubctl_dev {
 	struct fwctl_device fwctl;
 	DECLARE_KFIFO_PTR(ioctl_fifo, unsigned long);
 	struct auxiliary_device *adev;
 	struct ubctl_rt_bandwidth_data rt_bandwidth_data[UBCTL_MAX_PORT_NUM];
+	struct mutex rt_bandwidth_mutex;
 };
 
 /**

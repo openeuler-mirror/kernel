@@ -165,8 +165,6 @@ static struct ubctl_ummu_reg_info g_ubctl_ummu_reg_addr[] = {
 	{ UBCTL_UMMU_SYNC_TIMEOUT_OPEN, UBCTL_REG_SUPPORT_ALL },
 };
 
-static u32 g_ubctl_env_type;
-
 #define UBCTL_UMMU_READ_ADDR_MAX 8
 struct ubctl_ummu_relation {
 	u32 reg_addr_list[UBCTL_UMMU_READ_ADDR_MAX];
@@ -287,7 +285,8 @@ static int ubctl_ummu_normal_read(struct ubctl_reg_pro_cmd *cmd)
 	return 0;
 }
 
-static struct ubctl_ummu_relation *ubctl_ummu_get_relation(struct ubctl_reg_pro_cmd *cmd)
+static struct ubctl_ummu_relation *ubctl_ummu_get_relation(struct ubctl_reg_pro_cmd *cmd,
+							   u32 env_type)
 {
 	static struct ubctl_ummu_relation ummu_relation[] = {
 		{ { UBCTL_UMMU_GPC_QUEUE_STAT_0_15 }, UBCTL_UMMU_GPC_QUEUE_POINTER,
@@ -320,7 +319,7 @@ static struct ubctl_ummu_relation *ubctl_ummu_get_relation(struct ubctl_reg_pro_
 	u32 relation_table_size;
 	u32 i, j;
 
-	if (g_ubctl_env_type == UBASE_HW_VER_K_1) {
+	if (env_type == UBASE_HW_VER_K_1) {
 		relation_table = ummu_relation_K1;
 		relation_table_size = ARRAY_SIZE(ummu_relation_K1);
 	} else {
@@ -343,14 +342,14 @@ static struct ubctl_ummu_relation *ubctl_ummu_get_relation(struct ubctl_reg_pro_
 	return relation;
 }
 
-static int ubctl_ummu_process_repeat_reg(struct ubctl_reg_pro_cmd *cmd)
+static int ubctl_ummu_process_repeat_reg(struct ubctl_reg_pro_cmd *cmd, u32 env_type)
 {
 	u32 ummu_reg_cnt = ubctl_ummu_get_reg_count();
 	struct ubctl_ummu_relation *relation = NULL;
 	u32 set_reg_offset, read_reg_offset;
 	u32 i, j;
 
-	relation = ubctl_ummu_get_relation(cmd);
+	relation = ubctl_ummu_get_relation(cmd, env_type);
 	if (relation == NULL)
 		return ubctl_ummu_normal_read(cmd);
 
@@ -418,7 +417,7 @@ static int ubctl_ummu_read_tect_tag_info(struct ubctl_reg_pro_cmd *cmd)
 	return 0;
 }
 
-static int ubctl_ummu_process_reg(struct ubctl_reg_pro_cmd *cmd)
+static int ubctl_ummu_process_reg(struct ubctl_reg_pro_cmd *cmd, u32 env_type)
 {
 #define UBCTL_TBU_MASK 0xFFFFFC00U
 #define UBCTL_BANK_OFFSET 6
@@ -430,7 +429,7 @@ static int ubctl_ummu_process_reg(struct ubctl_reg_pro_cmd *cmd)
 		return ubctl_ummu_read_tect_tag_info(cmd);
 
 	if (g_ubctl_ummu_reg_addr[cmd->reg_index].addr != UBCTL_UMMU_TBU_RAB_ENTRY_INFO_0_7_15)
-		return ubctl_ummu_process_repeat_reg(cmd);
+		return ubctl_ummu_process_repeat_reg(cmd, env_type);
 
 	set_reg_offset = UBCTL_UMMU_TBU_RAB_FUNC_EN - UBCTL_UMMU_REGISTER_BASE;
 	read_reg_offset = UBCTL_UMMU_TBU_RAB_ENTRY_INFO_0_7_15 -
@@ -462,7 +461,7 @@ static int ubctl_ummu_process_reg(struct ubctl_reg_pro_cmd *cmd)
 
 static int ubctl_ummu_copy_data(struct ubctl_dev *ucdev,
 				struct ubctl_query_cmd_param *query_cmd_param,
-				void __iomem *map_addr, u32 map_length)
+				void __iomem *map_addr, u32 map_length, u32 env_type)
 {
 	u32 ummu_array_cnt = ARRAY_SIZE(g_ubctl_ummu_reg_addr);
 	u32 ummu_reg_cnt = ubctl_ummu_get_reg_count();
@@ -487,11 +486,10 @@ static int ubctl_ummu_copy_data(struct ubctl_dev *ucdev,
 	}
 
 	for (i = 0; i < ummu_array_cnt; i++) {
-		if (!(ubctl_ummu_is_reg_supported(g_ubctl_env_type,
-		      g_ubctl_ummu_reg_addr[i].env_support)))
+		if (!(ubctl_ummu_is_reg_supported(env_type, g_ubctl_ummu_reg_addr[i].env_support)))
 			continue;
 		reg_pro_cmd.reg_index = i;
-		ret = ubctl_ummu_process_reg(&reg_pro_cmd);
+		ret = ubctl_ummu_process_reg(&reg_pro_cmd, env_type);
 		if (ret) {
 			ubctl_err(ucdev, "failed to execute ummu process reg, ret=%d.\n", ret);
 			return ret;
@@ -503,7 +501,8 @@ static int ubctl_ummu_copy_data(struct ubctl_dev *ucdev,
 }
 
 static int ubctl_ummu_proc_all_data(struct ubctl_dev *ucdev, struct resource *res,
-				    struct ubctl_query_cmd_param *query_cmd_param)
+				    struct ubctl_query_cmd_param *query_cmd_param,
+				    u32 env_type)
 {
 	u32 map_length = UBCTL_UMMU_REGISTER_MAX_ADDR - UBCTL_UMMU_REGISTER_BASE;
 	void __iomem *vaddr;
@@ -515,7 +514,7 @@ static int ubctl_ummu_proc_all_data(struct ubctl_dev *ucdev, struct resource *re
 			  map_length);
 		return -ENOMEM;
 	}
-	ret = ubctl_ummu_copy_data(ucdev, query_cmd_param, vaddr, map_length);
+	ret = ubctl_ummu_copy_data(ucdev, query_cmd_param, vaddr, map_length, env_type);
 	iounmap(vaddr);
 
 	return ret;
@@ -564,6 +563,7 @@ int ubctl_ummu_process_data(struct ubctl_dev *ucdev,
 	struct fwctl_pkt_in_ummuid_value *ummu_data;
 	struct resource *root = &iomem_resource;
 	struct resource *res;
+	u32 env_type;
 
 	if (!ucdev || !query_cmd_param || !query_func)
 		return -EINVAL;
@@ -573,7 +573,7 @@ int ubctl_ummu_process_data(struct ubctl_dev *ucdev,
 		return -EINVAL;
 	}
 
-	g_ubctl_env_type = ubase_get_hw_ver(ucdev->adev);
+	env_type = ubase_get_hw_ver(ucdev->adev);
 
 	if (query_cmd_param->in->data_size != sizeof(*ummu_data)) {
 		ubctl_err(ucdev, "ummuid value size = %ubytes, it must be %zubytes.\n",
@@ -588,7 +588,7 @@ int ubctl_ummu_process_data(struct ubctl_dev *ucdev,
 		return -EINVAL;
 
 	if (query_func->rpc_cmd == UTOOL_CMD_QUERY_UMMU_ALL)
-		return ubctl_ummu_proc_all_data(ucdev, res, query_cmd_param);
+		return ubctl_ummu_proc_all_data(ucdev, res, query_cmd_param, env_type);
 	if (query_func->rpc_cmd == UTOOL_CMD_QUERY_UMMU_SYNC)
 		return ubctl_ummu_proc_sync_data(res, query_cmd_param, ummu_data, true);
 	if (query_func->rpc_cmd == UTOOL_CMD_CONFIG_UMMU_SYNC)
