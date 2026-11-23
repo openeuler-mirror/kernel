@@ -734,7 +734,12 @@ int csv_platform_cmd_set_secure_memory_region(struct sev_device *sev, int *error
 
 		csv_release_to_contiguous(cmd_set_smcr->base_address,
 					1UL << CSV_MR_ALIGN_BITS);
+		goto e_free_cmd_set_smcr;
 	}
+
+#ifdef CONFIG_SYSFS
+	csv3_meta = cmd_set_smcr->size;
+#endif
 
 e_free_cmd_set_smcr:
 	kfree((void *)cmd_set_smcr);

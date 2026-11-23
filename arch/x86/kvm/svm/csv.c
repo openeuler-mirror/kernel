@@ -708,6 +708,11 @@ struct kvm_csv_info {
 	bool kvm_ext_valid;	/* if @kvm_ext field is valid */
 	u32 kvm_ext;		/* extensions supported by KVM */
 	u32 inuse_ext;		/* extensions inused by current VM */
+
+#ifdef CONFIG_SYSFS
+	unsigned long npt_size;
+	unsigned long pri_mem;
+#endif
 };
 
 struct kvm_svm_csv {
@@ -720,6 +725,20 @@ struct secure_memory_region {
 	u64 npages;
 	u64 hpa;
 };
+
+#ifdef CONFIG_SYSFS
+static void update_csv_share_mem(struct page *page, bool add)
+{
+	int nid = page_to_nid(page);
+
+	if (add)
+		atomic_long_add(page_size(page), &csv3_shared_mem[nid]);
+	else
+		atomic_long_sub(page_size(page), &csv3_shared_mem[nid]);
+}
+#else
+static void update_csv_share_mem(struct page *page, bool add) { }
+#endif	/* CONFIG_SYSFS */
 
 /**
  * insert_shared_page_entry_locked - Insert a shared_page into the manager tree
@@ -799,6 +818,7 @@ static bool insert_shared_page_entry_locked(struct shared_page_mgr *mgr,
 	/* Update shared page statistics */
 	mgr->count++;
 	mgr->nr_pages += 1UL << new_sp->order;
+	update_csv_share_mem(new_sp->track_page, true);
 
 	return true;
 }
@@ -972,6 +992,7 @@ struct shared_page *remove_shared_page_entry_locked(struct shared_page_mgr *mgr,
 		rb_erase(&sp->node, &mgr->root);
 		mgr->count--;
 		mgr->nr_pages -= 1UL << sp->order;
+		update_csv_share_mem(sp->track_page, false);
 	}
 
 	return sp;
@@ -1256,6 +1277,13 @@ static int csv3_set_guest_private_memory(struct kvm *kvm, struct kvm_sev_cmd *ar
 	}
 
 	list_splice(&tmp_list, &csv->smr_list);
+
+#ifdef CONFIG_SYSFS
+	csv->npt_size = ALIGN(nr_pages * 9, 1UL << smr_entry_shift);
+	csv->pri_mem = ALIGN((nr_pages << PAGE_SHIFT), 1UL << smr_entry_shift);
+	atomic_long_add(csv->npt_size, &csv3_npt_size);
+	atomic_long_add(csv->pri_mem, &csv3_pri_mem);
+#endif
 
 	goto done;
 
@@ -2869,6 +2897,7 @@ static void csv_vm_destroy(struct kvm *kvm)
 			/* Update shared page statistics */
 			csv->sp_mgr.count--;
 			csv->sp_mgr.nr_pages -= 1UL << sp->order;
+			update_csv_share_mem(sp->track_page, false);
 			/* Putback the tracked page to system */
 			if (page_maybe_dma_pinned(sp->track_page))
 				unpin_user_page(sp->track_page);
@@ -2911,6 +2940,11 @@ static void csv_vm_destroy(struct kvm *kvm)
 				kfree(smr);
 			}
 		}
+
+#ifdef CONFIG_SYSFS
+		atomic_long_sub(csv->npt_size, &csv3_npt_size);
+		atomic_long_sub(csv->pri_mem, &csv3_pri_mem);
+#endif
 	}
 }
 
