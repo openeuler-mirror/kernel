@@ -136,68 +136,43 @@ bool csv3_active(void)
 }
 EXPORT_SYMBOL_GPL(csv3_active);
 
-/******************************************************************************/
-/**************************** CSV3 CMA interfaces *****************************/
-/******************************************************************************/
-
-#define CSV_MEM_PCT_MAX			(95U)
-
-/* 0 percent of total memory by default*/
-static unsigned char csv_mem_percentage;
-static unsigned long csv_mem_size;
-
-static int __init cmdline_parse_csv_mem_size(char *str)
-{
-	unsigned long size;
-	char *endp;
-
-	if (str) {
-		size  = memparse(str, &endp);
-		csv_mem_size = size;
-		if (!csv_mem_size)
-			csv_mem_percentage = 0;
-	}
-
-	return 0;
-}
-early_param("csv_mem_size", cmdline_parse_csv_mem_size);
-
-static int __init cmdline_parse_csv_mem_percentage(char *str)
-{
-	unsigned char percentage;
-	int ret;
-
-	if (!str)
-		return 0;
-
-	ret  = kstrtou8(str, 10, &percentage);
-	if (!ret) {
-		csv_mem_percentage = min_t(unsigned char, percentage, CSV_MEM_PCT_MAX);
-		if (csv_mem_percentage != percentage)
-			pr_warn("csv_mem_percentage is limited to %d.\n",
-				CSV_MEM_PCT_MAX);
-	} else {
-		/* Disable CSV CMA. */
-		csv_mem_percentage = 0;
-		pr_err("csv_mem_percentage is invalid. (0 - %d) is expected.\n",
-		       CSV_MEM_PCT_MAX);
-	}
-
-	return ret;
-}
-early_param("csv_mem_percentage", cmdline_parse_csv_mem_percentage);
-
+/* Common CSV3 memory protection macros */
 #define NUM_SMR_ENTRIES			(8 * 1024)
-#define CSV_CMA_SHIFT			PUD_SHIFT
-#define CSV_CMA_SIZE			(1 << CSV_CMA_SHIFT)
 #define MIN_SMR_ENTRY_SHIFT		23
 #define CSV_SMR_INFO_SIZE		(nr_node_ids * sizeof(struct csv_mem))
+/* CSV3 CMA macros */
+#define CSV_CMA_SHIFT			PUD_SHIFT
+#define CSV_CMA_SIZE			(1 << CSV_CMA_SHIFT)
+#define MAX_CSV_CMA_PCT			95
+#define CSV_CMA_AREAS			2458
 
+/**
+ * An array of Secure Memory Regions (SMRs), where each entry records a physical
+ * address range within a NUMA node that will be managed by hardware.
+ * Each NUMA node has at most one entry, and NUMA nodes without physical memory
+ * are not included in the array.
+ */
 struct csv_mem *csv_smr;
 EXPORT_SYMBOL_GPL(csv_smr);
-
+/* Number of entries in the @csv_smr array */
 unsigned int csv_smr_num;
 EXPORT_SYMBOL_GPL(csv_smr_num);
+/**
+ * @csv_cma_pct specifies the percentage of total system memory to be managed by
+ * CMA, while the @csv_cma_size specifies the absolute size of CMA-managed
+ * memory.
+ * These values can be set via the mutually exclusive kernel cmdline parameter:
+ *   - 'csv_mem_percentage=<N>' sets @csv_cma_pct
+ *   - 'csv_mem_size=<N><k|K|m|M|g|G>' sets @csv_cma_size.
+ * Required when the CSV3 private memory is allocated from CSV-CMA.
+ */
+static unsigned char csv_cma_pct;
+static unsigned long csv_cma_size;
+/**
+ * The memory unit size managed by the hardware. Do not confuse this with
+ * @csv_smr or @csv_smr_num.
+ */
+static unsigned int smr_entry_shift;
 
 #ifdef CONFIG_SYSFS
 
@@ -224,6 +199,59 @@ EXPORT_SYMBOL_GPL(csv3_shared_mem);
 
 #endif	/* CONFIG_SYSFS */
 
+static int __init cmdline_parse_csv_cma_size(char *str)
+{
+	unsigned long size;
+	char *endp;
+
+	if (str) {
+		size = memparse(str, &endp);
+		csv_cma_size = size;
+		if (!csv_cma_size)
+			csv_cma_pct = 0;
+	}
+
+	return 0;
+}
+early_param("csv_mem_size", cmdline_parse_csv_cma_size);
+
+static int __init cmdline_parse_csv_cma_pct(char *str)
+{
+	unsigned char percentage;
+	int ret;
+
+	if (!str)
+		return 0;
+
+	ret = kstrtou8(str, 10, &percentage);
+	if (!ret) {
+		csv_cma_pct = min_t(unsigned char, percentage, MAX_CSV_CMA_PCT);
+		if (csv_cma_pct != percentage)
+			pr_warn("csv_mem_percentage is limited to %d.\n",
+				MAX_CSV_CMA_PCT);
+	} else {
+		/* Disable CSV CMA. */
+		csv_cma_pct = 0;
+		pr_err("csv_mem_percentage is invalid. [0 - %d] is expected.\n",
+		       MAX_CSV_CMA_PCT);
+	}
+
+	return ret;
+}
+early_param("csv_mem_percentage", cmdline_parse_csv_cma_pct);
+
+static void csv_set_smr_entry_shift(unsigned int shift)
+{
+	smr_entry_shift = max_t(unsigned int, shift, MIN_SMR_ENTRY_SHIFT);
+	pr_info("CSV-CMA: SMR entry size is 0x%x\n", 1 << smr_entry_shift);
+}
+
+unsigned int csv_get_smr_entry_shift(void)
+{
+	return smr_entry_shift;
+}
+EXPORT_SYMBOL_GPL(csv_get_smr_entry_shift);
+
 
 #ifdef CONFIG_CMA
 
@@ -240,20 +268,7 @@ struct cma_array {
 	struct csv_cma csv_cma[];
 };
 
-static unsigned int smr_entry_shift;
 static struct cma_array *csv_contiguous_pernuma_area[MAX_NUMNODES];
-
-static void csv_set_smr_entry_shift(unsigned int shift)
-{
-	smr_entry_shift = max_t(unsigned int, shift, MIN_SMR_ENTRY_SHIFT);
-	pr_info("CSV-CMA: SMR entry size is 0x%x\n", 1 << smr_entry_shift);
-}
-
-unsigned int csv_get_smr_entry_shift(void)
-{
-	return smr_entry_shift;
-}
-EXPORT_SYMBOL_GPL(csv_get_smr_entry_shift);
 
 static unsigned long __init present_pages_in_node(int nid)
 {
@@ -269,7 +284,7 @@ static unsigned long __init present_pages_in_node(int nid)
 
 static phys_addr_t __init csv_early_percent_memory_on_node(int nid)
 {
-	return (present_pages_in_node(nid) * csv_mem_percentage / 100) << PAGE_SHIFT;
+	return (present_pages_in_node(nid) * csv_cma_pct / 100) << PAGE_SHIFT;
 }
 
 static void __init csv_cma_reserve_mem(void)
@@ -355,40 +370,6 @@ static void __init csv_cma_reserve_mem(void)
 		if (likely((max_spanned_size / NUM_SMR_ENTRIES) >= 1))
 			csv_set_smr_entry_shift(ilog2(max_spanned_size / NUM_SMR_ENTRIES - 1) + 1);
 	}
-}
-
-#define CSV_CMA_AREAS		2458
-
-void __init early_csv_reserve_mem(void)
-{
-	unsigned long total_pages;
-
-	/* Only reserve memory on the host that enabled CSV3 feature */
-	if (!csv3_check_cpu_support())
-		return;
-
-	total_pages = PHYS_PFN(memblock_phys_mem_size());
-	if (csv_mem_size) {
-		if (csv_mem_size < (total_pages << PAGE_SHIFT)) {
-			csv_mem_percentage = div64_u64((u64)csv_mem_size * 100,
-					(u64)total_pages << PAGE_SHIFT);
-			if (csv_mem_percentage > CSV_MEM_PCT_MAX)
-				csv_mem_percentage = CSV_MEM_PCT_MAX; /* Maximum percentage */
-		} else
-			csv_mem_percentage = CSV_MEM_PCT_MAX; /* Maximum percentage */
-	}
-
-	if (!csv_mem_percentage) {
-		pr_warn("CSV-CMA: Don't reserve any memory\n");
-		return;
-	}
-
-	if (cma_alloc_areas(CSV_CMA_AREAS)) {
-		pr_err("CSV-CMA: cma_alloc_areas failed, max areas %d\n", CSV_CMA_AREAS);
-		return;
-	}
-
-	csv_cma_reserve_mem();
 }
 
 phys_addr_t csv_alloc_from_contiguous(size_t size, nodemask_t *nodes_allowed,
@@ -495,6 +476,61 @@ void csv_release_to_contiguous(phys_addr_t pa, size_t size)
 }
 EXPORT_SYMBOL_GPL(csv_release_to_contiguous);
 
+#else	/* !CONFIG_CMA */
+
+phys_addr_t csv_alloc_from_contiguous(size_t size, nodemask_t *nodes_allowed,
+				      unsigned int align)
+{
+	return 0;
+}
+EXPORT_SYMBOL_GPL(csv_alloc_from_contiguous);
+
+void csv_release_to_contiguous(phys_addr_t pa, size_t size)
+{
+}
+EXPORT_SYMBOL_GPL(csv_release_to_contiguous);
+
+#endif	/* CONFIG_CMA */
+
+void __init early_csv_reserve_mem(void)
+{
+	unsigned long total_pages;
+
+	/* Only reserve memory on the host that enabled CSV3 feature */
+	if (!csv3_check_cpu_support())
+		return;
+
+	total_pages = PHYS_PFN(memblock_phys_mem_size());
+	if (csv_cma_size) {
+		if (csv_cma_size < (total_pages << PAGE_SHIFT)) {
+			csv_cma_pct = div64_u64((u64)csv_cma_size * 100,
+					(u64)total_pages << PAGE_SHIFT);
+			/* Maximum percentage */
+			if (csv_cma_pct > MAX_CSV_CMA_PCT)
+				csv_cma_pct = MAX_CSV_CMA_PCT;
+		} else
+			/* Maximum percentage */
+			csv_cma_pct = MAX_CSV_CMA_PCT;
+	}
+
+	if (!csv_cma_pct) {
+		pr_warn("CSV-CMA: Don't reserve any memory\n");
+		return;
+	}
+
+#ifdef CONFIG_CMA
+	if (cma_alloc_areas(CSV_CMA_AREAS)) {
+		pr_err("CSV-CMA: cma_alloc_areas failed, max areas %d\n",
+		       CSV_CMA_AREAS);
+		return;
+	}
+
+	csv_cma_reserve_mem();
+#else
+	pr_warn("CSV: Fail, csv_mem_percentage depends on CONFIG_CMA\n");
+#endif
+}
+
 #ifdef CONFIG_SYSFS
 
 /**
@@ -505,40 +541,26 @@ static ssize_t mem_info_show(struct kobject *kobj,
 {
 	int node;
 	int offset = 0;
-	unsigned long csv_used_size, total_used_size = 0;
-	unsigned long csv_size, total_csv_size = 0;
-	unsigned long shared_mem, total_shared_mem = 0;
-	unsigned long npt_size, pri_mem;
-	struct cma_array *array = NULL;
-	unsigned long bytes_per_mib = 1UL << 20;
+	unsigned long cma_cur_used, cma_total_used = 0;
+	unsigned long cma_cur, cma_total = 0;
+	unsigned long shared_mem, shared_mem_total = 0;
+	unsigned long npt_total, priv_mem_total;
 
 	for_each_node_state(node, N_ONLINE) {
-		array = csv_contiguous_pernuma_area[node];
-		if (array == NULL) {
-			csv_size = 0;
-			csv_used_size = 0;
-			shared_mem = 0;
-
-			offset += sysfs_emit_at(buf, offset, "Node%d:\n", node);
-			offset += sysfs_emit_at(buf, offset,
-						" csv3 shared size:%10lu MiB\n", shared_mem);
-			offset += sysfs_emit_at(buf, offset,
-						" total cma size:%12lu MiB\n", csv_size);
-			offset += sysfs_emit_at(buf, offset,
-						" csv3 cma used:%13lu MiB\n", csv_used_size);
-			continue;
+#ifdef CONFIG_CMA
+		struct cma_array *array = csv_contiguous_pernuma_area[node];
+#endif
+		cma_cur = 0;
+		cma_cur_used = 0;
+#ifdef CONFIG_CMA
+		if (array) {
+			cma_cur = DIV_ROUND_UP(array->count * CSV_CMA_SIZE, SZ_1M);
+			cma_cur_used = DIV_ROUND_UP(atomic64_read(&array->csv_used_size),
+							SZ_1M);
 		}
-
+#endif
 		shared_mem = DIV_ROUND_UP(atomic_long_read(&csv3_shared_mem[node]),
-						bytes_per_mib);
-		csv_size = DIV_ROUND_UP(array->count * CSV_CMA_SIZE,
-						bytes_per_mib);
-		csv_used_size = DIV_ROUND_UP(atomic64_read(&array->csv_used_size),
-						bytes_per_mib);
-
-		total_shared_mem += shared_mem;
-		total_csv_size += csv_size;
-		total_used_size += csv_used_size;
+							SZ_1M);
 
 		/*
 		 * sysfs_emit_at() truncates its output to the space left in
@@ -552,13 +574,17 @@ static ssize_t mem_info_show(struct kobject *kobj,
 		offset += sysfs_emit_at(buf, offset,
 					" csv3 shared size:%10lu MiB\n", shared_mem);
 		offset += sysfs_emit_at(buf, offset,
-					" total cma size:%12lu MiB\n", csv_size);
+					" total cma size:%12lu MiB\n", cma_cur);
 		offset += sysfs_emit_at(buf, offset,
-					" csv3 cma used:%13lu MiB\n",  csv_used_size);
+					" csv3 cma used:%13lu MiB\n",  cma_cur_used);
+
+		shared_mem_total += shared_mem;
+		cma_total += cma_cur;
+		cma_total_used += cma_cur_used;
 	}
 
-	npt_size = DIV_ROUND_UP(atomic_long_read(&csv3_npt_size), bytes_per_mib);
-	pri_mem = DIV_ROUND_UP(atomic_long_read(&csv3_pri_mem), bytes_per_mib);
+	npt_total = DIV_ROUND_UP(atomic_long_read(&csv3_npt_size), SZ_1M);
+	priv_mem_total = DIV_ROUND_UP(atomic_long_read(&csv3_pri_mem), SZ_1M);
 
 	/* Keep the summary from being appended to an almost full buffer. */
 	if (offset > PAGE_SIZE - 64)
@@ -566,18 +592,18 @@ static ssize_t mem_info_show(struct kobject *kobj,
 
 	offset += sysfs_emit_at(buf, offset, "All Nodes:\n");
 	offset += sysfs_emit_at(buf, offset,
-				" csv3 shared size:%10lu MiB\n", total_shared_mem);
+				" csv3 shared size:%10lu MiB\n", shared_mem_total);
 	offset += sysfs_emit_at(buf, offset,
-				" total cma size:%12lu MiB\n", total_csv_size);
+				" total cma size:%12lu MiB\n", cma_total);
 	offset += sysfs_emit_at(buf, offset,
-				" csv3 cma used:%13lu MiB\n", total_used_size);
+				" csv3 cma used:%13lu MiB\n", cma_total_used);
 	offset += sysfs_emit_at(buf, offset,
-				"  npt table:%16lu MiB\n", npt_size);
+				"  npt table:%16lu MiB\n", npt_total);
 	offset += sysfs_emit_at(buf, offset,
-				"  csv3 private memory:%6lu MiB\n", pri_mem);
+				"  csv3 private memory:%6lu MiB\n", priv_mem_total);
 	offset += sysfs_emit_at(buf, offset,
 				"  meta data:%16lu MiB\n",
-				DIV_ROUND_UP(csv3_meta, bytes_per_mib));
+				DIV_ROUND_UP(csv3_meta, SZ_1M));
 
 	return offset;
 }
@@ -629,40 +655,13 @@ static void __exit csv_cma_sysfs_exit(void)
 	if (!is_x86_vendor_hygon() || !boot_cpu_has(X86_FEATURE_CSV3))
 		return;
 
-	if (csv_cma_kobj_root != NULL)
+	if (csv_cma_kobj_root) {
+		sysfs_remove_group(csv_cma_kobj_root, &csv_cma_attr_group);
 		kobject_put(csv_cma_kobj_root);
+	}
 }
 
 module_init(csv_cma_sysfs_init);
 module_exit(csv_cma_sysfs_exit);
 
 #endif	/* CONFIG_SYSFS */
-
-#else /*  !CONFIG_CMA */
-
-unsigned int csv_get_smr_entry_shift(void)
-{
-	return 0;
-}
-EXPORT_SYMBOL_GPL(csv_get_smr_entry_shift);
-
-void __init early_csv_reserve_mem(void)
-{
-	/* Only reserve memory on the host that enabled CSV3 feature */
-	if (csv3_check_cpu_support())
-		pr_warn("CSV-CMA: CONFIG_CMA=n, memory for CSV3 unavailable!\n");
-}
-
-phys_addr_t csv_alloc_from_contiguous(size_t size, nodemask_t *nodes_allowed,
-		unsigned int align)
-{
-	return 0;
-}
-EXPORT_SYMBOL_GPL(csv_alloc_from_contiguous);
-
-void csv_release_to_contiguous(phys_addr_t pa, size_t size)
-{
-}
-EXPORT_SYMBOL_GPL(csv_release_to_contiguous);
-
-#endif /* CONFIG_CMA */
