@@ -712,8 +712,43 @@ static int ubase_init_dma_buf(struct ubase_dev *udev, struct ubase_dma_buf *buf,
 
 static inline u64 ubase_extdb_iova_size(struct ubase_dev *udev)
 {
-	return (u64)udev->ta_ctx.extdb_buf_que_size * UBASE_MAX_VL_NUM *
-	       udev->caps.dev_caps.ue_num;
+	if (ubase_dev_extbuf_manage_in_que_supported(udev))
+		return (u64)udev->ta_ctx.extdb_buf_que_size * UBASE_MAX_VL_NUM *
+		       udev->caps.dev_caps.ue_num;
+
+	return PAGE_ALIGN(udev->ta_ctx.extdb_buf.size);
+}
+
+int ubase_extdb_iova_init(struct ubase_dev *udev)
+{
+	u64 iova_size;
+	size_t sizep;
+
+	if (!ubase_dev_ta_extdb_buf_supported(udev))
+		return 0;
+
+	iova_size = ubase_extdb_iova_size(udev);
+	udev->ta_ctx.extdb_slot = dma_alloc_iova(udev->dev, iova_size, 0,
+						 &udev->ta_ctx.extdb_iova,
+						 &sizep);
+	if (IS_ERR_OR_NULL(udev->ta_ctx.extdb_slot)) {
+		ubase_err(udev,
+			  "failed to alloc extdb iova slot, iova_size = %llu.\n",
+			  iova_size);
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+void ubase_extdb_iova_uninit(struct ubase_dev *udev)
+{
+	if (!ubase_dev_ta_extdb_buf_supported(udev) || !udev->ta_ctx.extdb_slot)
+		return;
+
+	dma_free_iova(udev->ta_ctx.extdb_slot);
+	udev->ta_ctx.extdb_slot = NULL;
+	udev->ta_ctx.extdb_iova = 0;
 }
 
 static inline u64 ubase_extdb_page_cnt(struct ubase_dev *udev,
@@ -791,8 +826,42 @@ static void ubase_drain_ue_extdb_buf(struct ubase_dev *udev, u16 bus_ue_id,
 	page_cnt = ubase_extdb_page_cnt(udev, start_qid, end_qid);
 	ret = ummu_core_drain_pages(udev->ta_ctx.extdb_slot, start_iova, page_cnt);
 	if (ret)
-		ubase_warn(udev, "failed to drain ue%u's extdb pages, ret=%d.\n",
-			   bus_ue_id, ret);
+		ubase_err(udev, "failed to drain ue%u's extdb pages, ret=%d.\n",
+			  bus_ue_id, ret);
+}
+
+static inline u64 ubase_extdb_whole_page_cnt(struct ubase_dev *udev)
+{
+	return DIV_ROUND_UP_ULL(udev->ta_ctx.extdb_buf.size, PAGE_SIZE);
+}
+
+static int ubase_fill_whole_extdb_buf(struct ubase_dev *udev)
+{
+	u64 page_cnt;
+	int ret;
+
+	page_cnt = ubase_extdb_whole_page_cnt(udev);
+	ret = ummu_core_fill_pages(udev->ta_ctx.extdb_slot,
+				   udev->ta_ctx.extdb_iova, page_cnt,
+				   udev->gfp | __GFP_ZERO);
+	if (ret)
+		ubase_err(udev, "failed to fill the whole extdb pages, ret = %d.\n",
+			  ret);
+
+	return ret;
+}
+
+static void ubase_drain_whole_extdb_buf(struct ubase_dev *udev)
+{
+	u64 page_cnt;
+	int ret;
+
+	page_cnt = ubase_extdb_whole_page_cnt(udev);
+	ret = ummu_core_drain_pages(udev->ta_ctx.extdb_slot,
+				    udev->ta_ctx.extdb_iova, page_cnt);
+	if (ret)
+		ubase_err(udev, "failed to drain the whole extdb pages, ret = %d.\n",
+			  ret);
 }
 
 int ubase_init_ue_extdb_buf(struct ubase_dev *udev, struct ubase_ue_node *node)
@@ -907,8 +976,6 @@ drain_self:
 static int ubase_init_ta_extdb_buf_manage_in_que(struct ubase_dev *udev)
 {
 	u16 opc = UBASE_OPC_TA_EXTDB_VA_CONFIG;
-	u64 iova_size;
-	size_t sizep;
 	int ret;
 
 	ret = ubase_query_extdb_que_id(udev, 0, &udev->ta_ctx.extq_start_id,
@@ -916,20 +983,10 @@ static int ubase_init_ta_extdb_buf_manage_in_que(struct ubase_dev *udev)
 	if (ret)
 		return ret;
 
-	iova_size = ubase_extdb_iova_size(udev);
-	udev->ta_ctx.extdb_slot = dma_alloc_iova(udev->dev, iova_size, 0,
-						 &udev->ta_ctx.extdb_iova, &sizep);
-	if (IS_ERR_OR_NULL(udev->ta_ctx.extdb_slot)) {
-		ubase_err(udev,
-			  "failed to alloc extdb iova slot, iova_size=%llu.\n",
-			  iova_size);
-		return -ENOMEM;
-	}
-
 	ret = ubase_fill_ue_extdb_buf(udev, 0, udev->ta_ctx.extq_start_id,
 				      udev->ta_ctx.extq_end_id);
 	if (ret)
-		goto free_slot;
+		return ret;
 
 	ret = ubase_config_dma_buf(udev, opc, udev->ta_ctx.extdb_iova);
 	if (ret)
@@ -941,10 +998,27 @@ static int ubase_init_ta_extdb_buf_manage_in_que(struct ubase_dev *udev)
 drain_self:
 	ubase_drain_ue_extdb_buf(udev, 0, udev->ta_ctx.extq_start_id,
 				 udev->ta_ctx.extq_end_id);
-free_slot:
-	dma_free_iova(udev->ta_ctx.extdb_slot);
-	udev->ta_ctx.extdb_slot = NULL;
-	udev->ta_ctx.extdb_iova = 0;
+	return ret;
+}
+
+static int ubase_init_ta_extdb_whole_buf(struct ubase_dev *udev)
+{
+	u16 opc = UBASE_OPC_TA_EXTDB_VA_CONFIG;
+	int ret;
+
+	ret = ubase_fill_whole_extdb_buf(udev);
+	if (ret)
+		return ret;
+
+	ret = ubase_config_dma_buf(udev, opc, udev->ta_ctx.extdb_iova);
+	if (ret)
+		goto drain_buf;
+
+	udev->ta_ctx.extbuf_ok = 1;
+	return 0;
+
+drain_buf:
+	ubase_drain_whole_extdb_buf(udev);
 	return ret;
 }
 
@@ -957,8 +1031,12 @@ static int ubase_init_ta_extdb_buf(struct ubase_dev *udev)
 	if (!ubase_dev_ta_extdb_buf_supported(udev))
 		return 0;
 
-	if (!ubase_dev_extbuf_manage_in_que_supported(udev))
-		return ubase_init_dma_buf(udev, buf, opc);
+	if (!ubase_dev_extbuf_manage_in_que_supported(udev)) {
+		if (ubase_dev_dtu_supported(udev))
+			return ubase_init_dma_buf(udev, buf, opc);
+
+		return ubase_init_ta_extdb_whole_buf(udev);
+	}
 
 	if (test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
 		ret = ubase_reinit_ta_extdb_buf_manage_in_que(udev);
@@ -993,7 +1071,15 @@ static void ubase_uninit_ta_extdb_buf(struct ubase_dev *udev)
 		return;
 
 	if (!ubase_dev_extbuf_manage_in_que_supported(udev)) {
-		ubase_uninit_dma_buf(udev, &udev->ta_ctx.extdb_buf);
+		if (ubase_dev_dtu_supported(udev)) {
+			ubase_uninit_dma_buf(udev, &udev->ta_ctx.extdb_buf);
+			return;
+		}
+
+		if (udev->ta_ctx.extbuf_ok) {
+			ubase_drain_whole_extdb_buf(udev);
+			udev->ta_ctx.extbuf_ok = 0;
+		}
 		return;
 	}
 
@@ -1003,13 +1089,6 @@ static void ubase_uninit_ta_extdb_buf(struct ubase_dev *udev)
 					 udev->ta_ctx.extq_end_id);
 		udev->ta_ctx.extbuf_ok = 0;
 	}
-
-	if (test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
-		return;
-
-	dma_free_iova(udev->ta_ctx.extdb_slot);
-	udev->ta_ctx.extdb_slot = NULL;
-	udev->ta_ctx.extdb_iova = 0;
 }
 
 static void ubase_uninit_ta_timer_buf(struct ubase_dev *udev)

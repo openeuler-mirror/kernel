@@ -44,10 +44,19 @@ static void ubaseproxy_reset_uninit(struct auxiliary_device *adev)
 	if (!managed_ue_num)
 		return;
 
+	if (!test_bit(UBASEPROXY_STATE_INITED, &udev->state) ||
+	    test_and_set_bit(UBASEPROXY_STATE_DISABLED, &udev->state)) {
+		ubaseproxy_warn(udev,
+				"failed to reset ubaseproxy, device is not ready.\n");
+		return;
+	}
+
 	for (i = 0; i < managed_ue_num; i++) {
 		ubaseproxy_erase_ue_ctx_resources(udev, &udev->ue_res_info[i].ue_ctx_xa);
 		ubaseproxy_ue_ctx_buf_free(udev, &udev->ue_res_info[i].ue_ctx_buf);
 	}
+
+	clear_bit(UBASEPROXY_STATE_DISABLED, &udev->state);
 }
 
 int ubaseproxy_reset_handler(struct auxiliary_device *adev,

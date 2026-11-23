@@ -578,6 +578,7 @@ static int ubase_dbg_dump_limit_log_cnt(struct seq_file *s, void *data)
 	UBASE_PRINT_LOG_CNT(send_ue_ctrlq_msg_fail);
 	UBASE_PRINT_LOG_CNT(proxy_resp_seq_invalid);
 	UBASE_PRINT_LOG_CNT(err_msn_in_act_resp);
+	UBASE_PRINT_LOG_CNT(csq_clean_bd_mismatch);
 
 	return 0;
 }

@@ -13,15 +13,27 @@
 #define UBASEPROXY_EQ_CTX_BYTES (sizeof(struct ubaseproxy_eq_ctx))
 #define UBASEPROXY_EQ_CTX_SIZE (UBASEPROXY_EQ_CTX_BYTES / sizeof(u32))
 
+static bool ubaseproxy_eq_is_aeq(u16 opcode)
+{
+	return opcode == UBASE_MB_CREATE_AEQ_CONTEXT ||
+	       opcode == UBASE_MB_DESTROY_AEQ_CONTEXT ||
+	       opcode == UBASE_MB_QUERY_AEQ_CONTEXT;
+}
+
+static u8 ubaseproxy_get_eq_vector_num(struct ubaseproxy_dev *udev, u16 opcode)
+{
+	if (ubaseproxy_eq_is_aeq(opcode))
+		return udev->caps.ue_caps.aeq_vector_num;
+
+	return udev->caps.ue_caps.ceq_vector_num;
+}
+
 static int ubaseproxy_check_eq_mbx_header(struct ubaseproxy_dev *udev,
 					  struct ubase_proxy_req_msg *req)
 {
-	struct ubaseproxy_ue_caps *ue_caps = &udev->caps.ue_caps;
 	u8 eq_vector_num;
 
-	eq_vector_num = req->opcode == UBASE_MB_CREATE_AEQ_CONTEXT ?
-				       ue_caps->aeq_vector_num :
-				       ue_caps->ceq_vector_num;
+	eq_vector_num = ubaseproxy_get_eq_vector_num(udev, req->opcode);
 	if (req->tag >= eq_vector_num) {
 		ubaseproxy_risk_rl(udev, le16_to_cpu(req->mbx_ue_id),
 				   eq_req_tag,
@@ -39,7 +51,6 @@ static int ubaseproxy_check_eq_ctx_range_values(struct ubaseproxy_dev *udev,
 #define UBASEPROXY_EQ_DEPTH_SHIFT_BASE	6
 
 	struct ubaseproxy_eq_ctx *ctx = (struct ubaseproxy_eq_ctx *)req->data;
-	struct ubaseproxy_ue_caps *ue_caps = &udev->caps.ue_caps;
 	u8 eq_vector_num;
 	u32 eqe_depth;
 
@@ -70,9 +81,7 @@ static int ubaseproxy_check_eq_ctx_range_values(struct ubaseproxy_dev *udev,
 		return -EINVAL;
 	}
 
-	eq_vector_num = req->opcode == UBASE_MB_CREATE_AEQ_CONTEXT ?
-				       ue_caps->aeq_vector_num :
-				       ue_caps->ceq_vector_num;
+	eq_vector_num = ubaseproxy_get_eq_vector_num(udev, req->opcode);
 	if (ctx->eqn >= eq_vector_num) {
 		ubaseproxy_risk_rl(udev, le16_to_cpu(req->mbx_ue_id),
 				   eq_field_eqn,
@@ -123,23 +132,16 @@ static int ubaseproxy_check_create_eq_ctx(struct ubaseproxy_dev *udev,
 }
 
 static struct ubaseproxy_eq_key_words*
-ubaseproxy_create_eq_res(struct ubaseproxy_dev *udev,
-			 struct ubase_proxy_req_msg *req)
+ubaseproxy_create_eq_res(struct xarray *eq_xa, u16 eqn)
 {
-	u16 mbx_ue_id = le16_to_cpu(req->mbx_ue_id);
-	struct ubaseproxy_ue_ctx_xarray *ue_ctx_xa;
 	struct ubaseproxy_eq_key_words *eq_info;
-	struct xarray *eq_xa;
 	int ret;
 
 	eq_info = kzalloc(sizeof(struct ubaseproxy_eq_key_words), GFP_KERNEL);
 	if (!eq_info)
 		return NULL;
 
-	ue_ctx_xa = ubaseproxy_get_ue_ctx_xa(udev, mbx_ue_id);
-	eq_xa = req->opcode == UBASE_MB_CREATE_AEQ_CONTEXT ?
-		&ue_ctx_xa->aeq : &ue_ctx_xa->ceq;
-	ret = xa_err(xa_store(eq_xa, req->tag, eq_info, GFP_KERNEL));
+	ret = xa_err(xa_store(eq_xa, eqn, eq_info, GFP_KERNEL));
 	if (ret) {
 		kfree(eq_info);
 		return NULL;
@@ -150,7 +152,7 @@ ubaseproxy_create_eq_res(struct ubaseproxy_dev *udev,
 
 static void ubaseproxy_del_eq_res(struct xarray *arr,
 				  struct ubaseproxy_eq_key_words *eq_info,
-				  u8 eqn)
+				  u16 eqn)
 {
 	xa_erase(arr, eqn);
 	kfree(eq_info);
@@ -163,8 +165,8 @@ int ubaseproxy_handle_create_eq_ctx_req(struct ubaseproxy_dev *udev,
 	struct ubaseproxy_ue_ctx_xarray *ue_ctx_xa;
 	struct ubaseproxy_eq_key_words *eq_info;
 	struct ubase_ctx_result ctx_res;
-	u8 eqn = (u8)req->tag;
 	struct xarray *eq_xa;
+	u16 eqn = req->tag;
 	int ret;
 
 	if (req->data_len != UBASEPROXY_EQ_CTX_BYTES) {
@@ -175,7 +177,7 @@ int ubaseproxy_handle_create_eq_ctx_req(struct ubaseproxy_dev *udev,
 	}
 
 	ue_ctx_xa = ubaseproxy_get_ue_ctx_xa(udev, mbx_ue_id);
-	eq_xa = req->opcode == UBASE_MB_CREATE_AEQ_CONTEXT ?
+	eq_xa = ubaseproxy_eq_is_aeq(req->opcode) ?
 		&ue_ctx_xa->aeq : &ue_ctx_xa->ceq;
 	eq_info = (struct ubaseproxy_eq_key_words *)xa_load(eq_xa, eqn);
 	if (eq_info) {
@@ -190,7 +192,7 @@ int ubaseproxy_handle_create_eq_ctx_req(struct ubaseproxy_dev *udev,
 	if (ret)
 		return ret;
 
-	eq_info = ubaseproxy_create_eq_res(udev, req);
+	eq_info = ubaseproxy_create_eq_res(eq_xa, eqn);
 	if (!eq_info) {
 		ubaseproxy_err(udev, "failed to create eq res.\n");
 		ret = -ENOMEM;
@@ -223,8 +225,8 @@ int ubaseproxy_handle_destroy_eq_ctx_req(struct ubaseproxy_dev *udev,
 	struct ubaseproxy_ue_ctx_xarray *ue_ctx_xa;
 	struct ubaseproxy_eq_key_words *eq_info;
 	struct ubase_ctx_result ctx_res;
-	u8 eqn = (u8)req->tag;
 	struct xarray *eq_xa;
+	u16 eqn = req->tag;
 	int ret;
 
 	if (req->data_len) {
@@ -235,7 +237,7 @@ int ubaseproxy_handle_destroy_eq_ctx_req(struct ubaseproxy_dev *udev,
 	}
 
 	ue_ctx_xa = ubaseproxy_get_ue_ctx_xa(udev, mbx_ue_id);
-	eq_xa = req->opcode == UBASE_MB_DESTROY_AEQ_CONTEXT ?
+	eq_xa = ubaseproxy_eq_is_aeq(req->opcode) ?
 		&ue_ctx_xa->aeq : &ue_ctx_xa->ceq;
 	eq_info = (struct ubaseproxy_eq_key_words *)xa_load(eq_xa, eqn);
 	if (!eq_info) {
@@ -277,8 +279,8 @@ int ubaseproxy_handle_query_eq_ctx_req(struct ubaseproxy_dev *udev,
 	struct ubaseproxy_eq_key_words *eq_info;
 	struct ubase_cmd_mailbox *mailbox;
 	struct ubase_ctx_result ctx_res;
-	u8 eqn = (u8)req->tag;
 	struct xarray *eq_xa;
+	u16 eqn = req->tag;
 	int ret;
 
 	if (req->data_len) {
@@ -289,7 +291,7 @@ int ubaseproxy_handle_query_eq_ctx_req(struct ubaseproxy_dev *udev,
 	}
 
 	ue_ctx_xa = ubaseproxy_get_ue_ctx_xa(udev, mbx_ue_id);
-	eq_xa = req->opcode == UBASE_MB_QUERY_AEQ_CONTEXT ?
+	eq_xa = ubaseproxy_eq_is_aeq(req->opcode) ?
 		&ue_ctx_xa->aeq : &ue_ctx_xa->ceq;
 	eq_info = (struct ubaseproxy_eq_key_words *)xa_load(eq_xa, eqn);
 	if (!eq_info) {

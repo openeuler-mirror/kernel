@@ -122,8 +122,8 @@ static int unic_setets_preconditions(struct net_device *net_dev)
 		return -EOPNOTSUPP;
 
 	if (netif_running(net_dev)) {
-		unic_err(unic_dev,
-			 "failed to set ets, due to network interface is up, please down it first and try again.\n");
+		unic_info(unic_dev,
+			  "can't set ets, please down nic and retry.\n");
 		return -EBUSY;
 	}
 
@@ -378,8 +378,8 @@ static int unic_dscp_prio_check(struct net_device *netdev, struct dcb_app *app)
 		return -EOPNOTSUPP;
 
 	if (netif_running(netdev)) {
-		unic_err(unic_dev,
-			 "failed to set dscp-prio, due to network interface is up, please down it first and try again.\n");
+		unic_info(unic_dev,
+			  "can't set dscp-prio, please down nic and retry.\n");
 		return -EBUSY;
 	}
 
@@ -522,7 +522,7 @@ static u8 unic_dcbnl_setdcbx(struct net_device *ndev, u8 mode)
 	    !(mode & DCB_CAP_DCBX_HOST))
 		return 1;
 
-	unic_info(unic_dev, "set dcbx mode = %u\n.", mode);
+	unic_info(unic_dev, "set dcbx mode = %u.\n", mode);
 
 	unic_dev->dcbx_cap = mode;
 

@@ -401,8 +401,8 @@ static int unic_send_cfg_promisc_req(struct unic_dev *unic_dev,
 	time_out = unic_cmd_timeout(unic_dev);
 	ret = ubase_cmd_send_in_ex(adev, &in, time_out);
 	if (ret)
-		unic_err(unic_dev,
-			 "failed to set promisc mode, ret = %d.\n", ret);
+		unic_err_rl_hr(unic_dev, set_promisc_fail,
+			       "failed to set promisc mode, ret = %d.\n", ret);
 
 	return ret;
 }
@@ -535,6 +535,7 @@ static u32 unic_get_max_speed(u32 cur_speed, u32 speed_ability)
 static void unic_parse_mac_cfg(struct unic_dev *unic_dev,
 			       const struct unic_res_cmd_resp *resp)
 {
+	struct auxiliary_device *adev = unic_dev->comdev.adev;
 	struct unic_mac *mac = &unic_dev->hw.mac;
 
 	mac->media_type = resp->media_type;
@@ -546,9 +547,10 @@ static void unic_parse_mac_cfg(struct unic_dev *unic_dev,
 
 	mac->max_speed = unic_get_max_speed(mac->speed, mac->speed_ability);
 
-	unic_dbg(unic_dev,
-		 "default speed = %u, lanes = %u, speed_ability = 0x%x\n",
-		 mac->speed, mac->lanes, mac->speed_ability);
+	if (unic_dbg_log())
+		dev_info(adev->dev.parent,
+			 "default speed = %u, lanes = %u, speed_ability = 0x%x\n",
+			 mac->speed, mac->lanes, mac->speed_ability);
 }
 
 static void unic_parse_dev_caps(struct unic_dev *unic_dev,
@@ -556,13 +558,14 @@ static void unic_parse_dev_caps(struct unic_dev *unic_dev,
 {
 #define KB 1024U
 
+	struct auxiliary_device *adev = unic_dev->comdev.adev;
 	struct unic_caps *caps = &unic_dev->caps;
 	int i;
 
 	for (i = 0; i < UNIC_CAP_LEN; i++) {
 		unic_dev->cap_bits[i] = le32_to_cpu(resp->cap_bits[i]);
-		unic_info(unic_dev, "unic_dev cap_bits[%d] = 0x%x\n", i,
-			  unic_dev->cap_bits[i]);
+		dev_info(adev->dev.parent, "unic_dev cap_bits[%d] = 0x%x\n", i,
+			 unic_dev->cap_bits[i]);
 	}
 
 	caps->rx_buff_len = le16_to_cpu(resp->rx_buff_len);
@@ -660,19 +663,15 @@ static int unic_query_flush_status(struct unic_dev *unic_dev, u8 *status)
 	int ret;
 
 	if (unic_dev_ubl_supported(unic_dev))
-		return -EOPNOTSUPP;
+		return 0;
 
 	ubase_fill_inout_buf(&in, UBASE_OPC_QUERY_FLUSH_STATUS, true, 0, NULL);
 	ubase_fill_inout_buf(&out, UBASE_OPC_QUERY_FLUSH_STATUS, false,
 			     sizeof(resp), &resp);
 
 	ret = ubase_cmd_send_inout(unic_dev->comdev.adev, &in, &out);
-	if (ret) {
-		unic_err(unic_dev,
-			 "failed to send cmd when query flush status, ret = %d.\n",
-			 ret);
+	if (ret)
 		return ret;
-	}
 
 	*status = resp.status;
 	return ret;
@@ -683,8 +682,8 @@ static int unic_wait_hw_queue_flush_done(struct unic_dev *unic_dev)
 #define UNIC_FLUSH_STATUS_WAIT_CNT	10
 #define UNIC_FLUSH_DONE			1
 
+	u8 status = 0;
 	int i, ret;
-	u8 status;
 
 	for (i = 0; i < UNIC_FLUSH_STATUS_WAIT_CNT; i++) {
 		ret = unic_query_flush_status(unic_dev, &status);
@@ -698,6 +697,11 @@ static int unic_wait_hw_queue_flush_done(struct unic_dev *unic_dev)
 
 		msleep(UNIC_WAIT_HW_QUEUE_FLUSH_DONE_MS);
 	}
+
+	if (ret)
+		unic_err(unic_dev,
+			 "failed to send cmd when query flush status, ret = %d.\n",
+			 ret);
 
 	return -EBUSY;
 }
@@ -881,7 +885,6 @@ err_send_cmd:
 
 int unic_set_vlan_filter_hw(struct unic_dev *unic_dev, bool filter_en)
 {
-	struct auxiliary_device *adev = unic_dev->comdev.adev;
 	struct unic_vlan_filter_ctrl_cmd req = {0};
 	struct ubase_cmd_buf in;
 	u32 time_out;
@@ -895,8 +898,8 @@ int unic_set_vlan_filter_hw(struct unic_dev *unic_dev, bool filter_en)
 	time_out = unic_cmd_timeout(unic_dev);
 	ret = ubase_cmd_send_in_ex(unic_dev->comdev.adev, &in, time_out);
 	if (ret)
-		dev_err(adev->dev.parent,
-			"failed to set vlan filter, ret = %d.\n", ret);
+		unic_err_rl_hr(unic_dev, set_vlan_fail,
+			       "failed to set vlan filter, ret = %d.\n", ret);
 
 	return ret;
 }

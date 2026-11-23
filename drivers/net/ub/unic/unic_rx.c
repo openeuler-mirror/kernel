@@ -666,7 +666,6 @@ static int unic_page_pool_alloc_frag(struct unic_dev *unic_dev,
 				     struct unic_rq *rq,
 				     struct unic_rqe_info *rqe_info)
 {
-	struct auxiliary_device *adev = unic_dev->comdev.adev;
 	struct unic_channels *channels = &unic_dev->channels;
 
 	rqe_info->page_offset = 0;
@@ -674,7 +673,7 @@ static int unic_page_pool_alloc_frag(struct unic_dev *unic_dev,
 					       &rqe_info->page_offset,
 					       channels->rx_buff_len);
 	if (unlikely(!rqe_info->p)) {
-		dev_err(adev->dev.parent, "failed to alloc page pool frag.\n");
+		unic_dbg(unic_dev, "failed to alloc page pool frag.\n");
 		return -ENOMEM;
 	}
 
@@ -719,8 +718,10 @@ static int unic_rq_fill_rx_buffers(struct unic_dev *unic_dev, struct unic_rq *rq
 	rqe = rq->rqe;
 	for (i = 0; i < rqe_depth; i++, rq->pi++) {
 		ret = unic_page_pool_alloc_frag(unic_dev, rq, &rq->rqe_info[i]);
-		if (ret)
+		if (ret) {
+			unic_rq_stats_inc(rq, alloc_frag_err);
 			goto err_alloc_page;
+		}
 
 		rqe[i].buff_addr = cpu_to_le64(rq->rqe_info[i].rqe_dma_addr +
 					       rq->rqe_info[i].page_offset);

@@ -3,6 +3,7 @@
  * Copyright (c) 2026 HiSilicon Technologies Co., Ltd. All rights reserved.
  */
 
+#include <linux/bitmap.h>
 #include <linux/debugfs.h>
 #include <linux/time.h>
 #include <ub/ubase/ubase_comm_cmd.h>
@@ -82,6 +83,7 @@ static int ubaseproxy_dbg_dump_ue_seid_idx(struct seq_file *s, void *data)
 {
 #define SEID_NUM_PER_LINE	10
 
+	DECLARE_BITMAP(local_bmap, UBASEPROXY_MAX_SEID_TABLE_SIZE);
 	struct ubaseproxy_dev *udev = dev_get_drvdata(s->private);
 	struct ubase_caps *ubase_caps = ubase_get_dev_caps(udev->comdev.adev);
 	struct ubaseproxy_ue_seid_table	*ue_seid_table;
@@ -97,8 +99,12 @@ static int ubaseproxy_dbg_dump_ue_seid_idx(struct seq_file *s, void *data)
 		ue_seid_table = &udev->ue_res_info[i].ue_seid_table;
 		count = 0;
 		spin_lock_bh(&ue_seid_table->seid_lock);
+		bitmap_copy(local_bmap, ue_seid_table->seid_bmap,
+			    UBASEPROXY_MAX_SEID_TABLE_SIZE);
+		spin_unlock_bh(&ue_seid_table->seid_lock);
+
 		for (j = 0; j < UBASEPROXY_MAX_SEID_TABLE_SIZE; j++) {
-			if (test_bit(j, ue_seid_table->seid_bmap)) {
+			if (test_bit(j, local_bmap)) {
 				seq_printf(s, "%-6u", j);
 				count++;
 			}
@@ -108,7 +114,6 @@ static int ubaseproxy_dbg_dump_ue_seid_idx(struct seq_file *s, void *data)
 				count = 0;
 			}
 		}
-		spin_unlock_bh(&ue_seid_table->seid_lock);
 		seq_puts(s, "\n\n");
 	}
 
@@ -326,6 +331,15 @@ static int ubaseproxy_dbg_dump_ue_active(struct seq_file *s, void *data)
 	return 0;
 }
 
+static int ubaseproxy_dbg_dump_dev_state(struct seq_file *s, void *data)
+{
+	struct ubaseproxy_dev *udev = dev_get_drvdata(s->private);
+
+	seq_printf(s, "udev state: 0x%lx\n", udev->state);
+
+	return 0;
+}
+
 static struct ubase_dbg_cmd_info ubaseproxy_dbg_cmd[] = {
 	{
 		.name = "ue_context_spec",
@@ -366,6 +380,14 @@ static struct ubase_dbg_cmd_info ubaseproxy_dbg_cmd[] = {
 		.support = ubaseproxy_dbg_dentry_support,
 		.init = ubase_dbg_seq_file_init,
 		.read_func = ubaseproxy_dbg_dump_ue_active,
+	},
+	{
+		.name = "dev_state",
+		.dentry_index = UBASEPROXY_DBG_DENTRY_ROOT,
+		.property = UBASE_SUP_UDMA | UBASE_SUP_UBL,
+		.support = ubaseproxy_dbg_dentry_support,
+		.init = ubase_dbg_seq_file_init,
+		.read_func = ubaseproxy_dbg_dump_dev_state,
 	},
 };
 

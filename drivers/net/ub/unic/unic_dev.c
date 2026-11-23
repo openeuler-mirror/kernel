@@ -301,7 +301,6 @@ static int unic_init_channels_attr(struct unic_dev *unic_dev)
 	if (ret)
 		goto err_alloc_buf;
 
-
 	ret = unic_init_vl_info(unic_dev);
 	if (ret)
 		goto err_init_vl_info;
@@ -883,6 +882,22 @@ static int unic_init_dev_addr(struct unic_dev *unic_dev)
 	return unic_init_mac_addr(unic_dev);
 }
 
+static void unic_log_rs_init(struct unic_dev *unic_dev)
+{
+	UNIC_RATELIMIT_INIT_HR(unic_dev, query_link_status_fail);
+	UNIC_RATELIMIT_INIT_HR(unic_dev, set_promisc_fail);
+	UNIC_RATELIMIT_INIT_HR(unic_dev, set_vlan_fail);
+	UNIC_RATELIMIT_INIT_HR(unic_dev, set_stack_ip_fail);
+	UNIC_RATELIMIT_INIT_HR(unic_dev, alloc_skb_fail);
+	UNIC_RATELIMIT_INIT_HR(unic_dev, fill_netlink_ip_req_fail);
+	UNIC_RATELIMIT_INIT_HR(unic_dev, rm_mac_fail);
+	UNIC_RATELIMIT_INIT_HR(unic_dev, uc_mac_exists);
+	UNIC_RATELIMIT_INIT_HR(unic_dev, add_mac_fail);
+	UNIC_RATELIMIT_INIT_HR(unic_dev, notify_bond_ip_fail);
+	UNIC_RATELIMIT_INIT_HR(unic_dev, send_ctrlq_bond_status_fail);
+	UNIC_RATELIMIT_INIT_HR(unic_dev, tx_timeout);
+}
+
 static int unic_init_netdev_priv(struct net_device *netdev,
 				 struct auxiliary_device *adev)
 {
@@ -899,6 +914,7 @@ static int unic_init_netdev_priv(struct net_device *netdev,
 	mutex_init(&priv->bond_status.mutex);
 	mutex_init(&priv->stats.bond_record.lock);
 	mutex_init(&priv->vport.vlan_tbl.mutex);
+	unic_log_rs_init(priv);
 
 	ret = unic_query_dev_res(priv);
 	if (ret)

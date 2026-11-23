@@ -521,6 +521,7 @@ static void ubase_period_service_task(struct work_struct *work)
 		ubase_ctrlq_clean_service_task(udev);
 
 	if (test_bit(UBASE_STATE_INITED_B, &udev->state_bits) &&
+	    !test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits) &&
 	    !test_bit(UBASE_SERVICE_STATE_ERR_SCHED, &udev->service_task.state))
 		ubase_elr_ras_service_task(udev);
 
@@ -944,6 +945,7 @@ static int ubase_log_rs_init(struct ubase_dev *udev)
 	UBASE_RATELIMIT_INIT(udev, send_ue_ctrlq_msg_fail);
 	UBASE_RATELIMIT_INIT(udev, proxy_resp_seq_invalid);
 	UBASE_RATELIMIT_INIT(udev, err_msn_in_act_resp);
+	UBASE_RATELIMIT_INIT_HR(udev, csq_clean_bd_mismatch);
 
 	return 0;
 }
@@ -972,6 +974,10 @@ static const struct ubase_init_function ubase_init_func_map[] = {
 	{
 		"init mem ops", UBASE_SUP_ALL, 0,
 		ubase_mem_ops_init, NULL
+	},
+	{
+		"init extdb iova", UBASE_SUP_NO_PMU, 0,
+		ubase_extdb_iova_init, ubase_extdb_iova_uninit
 	},
 	{
 		"dtu memory", UBASE_SUP_NO_PMU, 0,
@@ -2274,8 +2280,8 @@ int ubase_activate_dev(struct auxiliary_device *adev)
 
 	udev = __ubase_get_udev_by_adev(adev);
 
-	ubase_info(udev, "ubase activate dev, state_bits = 0x%lx.\n",
-		   udev->state_bits);
+	ubase_dbg(udev, "ubase activate dev, state_bits = 0x%lx.\n",
+		  udev->state_bits);
 
 	if (test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits)) {
 		ubase_info(udev, "skip activate dev while resetting.\n");
@@ -2366,8 +2372,8 @@ int ubase_deactivate_dev(struct auxiliary_device *adev)
 
 	udev = __ubase_get_udev_by_adev(adev);
 
-	ubase_info(udev, "ubase deactivate dev, state_bits = 0x%lx.\n",
-		   udev->state_bits);
+	ubase_dbg(udev, "ubase deactivate dev, state_bits = 0x%lx.\n",
+		  udev->state_bits);
 
 	if (test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits)) {
 		ret = ubase_deactivate_wait_reset_done(udev);

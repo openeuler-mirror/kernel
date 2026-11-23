@@ -226,8 +226,8 @@ static int unic_set_stack_ip(struct net_device *dev,
 
 	skb = alloc_skb(NLMSG_ALIGN(sizeof(*req)), GFP_KERNEL);
 	if (!skb) {
-		unic_err(unic_dev,
-			 "failed to alloc skb, unic stop setting stack ip.\n");
+		unic_err_rl_hr(unic_dev, alloc_skb_fail,
+			       "failed to alloc skb, unic stop setting stack ip.\n");
 		return -ENOMEM;
 	}
 
@@ -235,8 +235,8 @@ static int unic_set_stack_ip(struct net_device *dev,
 	sa_family = unic_is_ipv4(ip_info) ? AF_INET : AF_INET6;
 	ret = unic_fill_netlink_ip_req(req, skb, dev, ip_info, sa_family);
 	if (ret) {
-		unic_err(unic_dev,
-			 "failed to fill netlink ip req, ret = %d.\n", ret);
+		unic_err_rl_hr(unic_dev, fill_netlink_ip_req_fail,
+			       "failed to fill netlink ip req, ret = %d.\n", ret);
 		goto failed_packet_seq;
 	}
 
@@ -265,8 +265,8 @@ static int unic_sync_stack_ip(struct unic_vport *vport,
 
 	ret = unic_set_stack_ip(netdev, &ip_info);
 	if (ret)
-		unic_err(unic_dev,
-			 "failed to set ip to stack, ret = %d.\n", ret);
+		unic_err_rl_hr(unic_dev, set_stack_ip_fail,
+			       "failed to set ip to stack, ret = %d.\n", ret);
 
 	return ret;
 }
