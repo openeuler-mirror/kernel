@@ -6121,7 +6121,7 @@ static int hisi_qm_memory_init(struct hisi_qm *qm)
 			QMC_ALIGN(sizeof(struct qm_sqc) * qm->qp_num) +
 			QMC_ALIGN(sizeof(struct qm_cqc) * qm->qp_num);
 	qm->qdma.va = dma_alloc_coherent(dev, qm->qdma.size, &qm->qdma.dma,
-					 GFP_ATOMIC);
+					 GFP_KERNEL);
 	dev_dbg(dev, "allocate qm dma buf size=%zx)\n", qm->qdma.size);
 	if (!qm->qdma.va) {
 		ret = -ENOMEM;
