@@ -26,6 +26,7 @@
 
 #define HZIP_ALG_PRIORITY			80
 #define HZIP_SGL_SGE_NR				10
+#define HZIP_MAX_INPUT_LEN			((u32)0x100000)
 
 #define HZIP_ALG_DEFLATE			GENMASK(5, 4)
 #define HZIP_ALG_LZ4				BIT(8)
@@ -129,6 +130,12 @@ static int hisi_zip_fallback_do_work(struct crypto_comp *tfm, struct acomp_req *
 
 	if (!tfm)
 		return -EINVAL;
+
+	/* The software fallback expects single contiguous src/dst buffers */
+	if (sg_nents(acomp_req->src) > 1 || sg_nents(acomp_req->dst) > 1) {
+		pr_err("failed to do fallback work, scatter src/dst nents > 1\n");
+		return -EINVAL;
+	}
 
 	input = kmap_local_page(sg_page(acomp_req->src)) + acomp_req->src->offset;
 	output = kmap_local_page(sg_page(acomp_req->dst)) + acomp_req->dst->offset;
@@ -443,6 +450,7 @@ static int hisi_zip_do_comp(struct hisi_zip_req *req, bool is_decompress)
 	struct acomp_req *acomp_req = req->req;
 	struct hisi_zip_ctx *ctx = crypto_tfm_ctx(acomp_req->base.tfm);
 	struct hisi_qp *qp = req->qp_ctx->qp;
+	struct device *dev;
 	int ret;
 
 	if (unlikely(!acomp_req->src || !acomp_req->slen ||
@@ -452,6 +460,15 @@ static int hisi_zip_do_comp(struct hisi_zip_req *req, bool is_decompress)
 	if (ctx->fallback)
 		return hisi_zip_fallback_do_work(ctx->soft_tfm, acomp_req,
 						 is_decompress);
+
+	dev = &qp->qm->pdev->dev;
+
+	if (req->qp_ctx->req_type == HZIP_ALG_TYPE_LZ4 &&
+	    acomp_req->slen > HZIP_MAX_INPUT_LEN) {
+		dev_info_ratelimited(dev, "input len %u exceeds the limit %u\n",
+				     acomp_req->slen, HZIP_MAX_INPUT_LEN);
+		return -EINVAL;
+	}
 
 	/* Check whether any request is being queued */
 	if ((acomp_req->base.flags & CRYPTO_TFM_REQ_MAY_BACKLOG) &&
@@ -480,8 +497,7 @@ static int hisi_zip_do_comp(struct hisi_zip_req *req, bool is_decompress)
 		/* hardwre busy add to backlog list */
 		hisi_zip_enqueue_backlog(req);
 	} else if (unlikely(ret != -EINPROGRESS)) {
-		dev_info_ratelimited(&qp->qm->pdev->dev,
-				     "failed to do %scompress (%d)!\n",
+		dev_info_ratelimited(dev, "failed to do %scompress (%d)!\n",
 				     qp->alg_type ? "de" : "", ret);
 		ret = -ENOSPC;
 		goto unmap_req;
