@@ -3925,8 +3925,11 @@ static int hisi_qm_sort_devices(int node, struct list_head *head,
 			dev_node = 0;
 
 		res = kzalloc(sizeof(*res), GFP_KERNEL);
-		if (!res)
+		if (!res) {
+			free_list(&non_full_list);
+			free_list(&full_list);
 			return -ENOMEM;
+		}
 
 		res->qm = qm;
 		res->distance = node_distance(dev_node, node);
