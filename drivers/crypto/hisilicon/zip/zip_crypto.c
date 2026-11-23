@@ -335,14 +335,15 @@ static int hisi_zip_do_work(struct hisi_zip_req *req)
 	return ret;
 }
 
-static void hisi_zip_send_backlog_soft(struct hisi_zip_qp_ctx *qp_ctx)
+static void hisi_zip_send_backlog_soft(struct hisi_zip_qp_ctx *qp_ctx,
+				       struct list_head *head)
 {
 	struct hisi_zip_ctx *ctx = qp_ctx->ctx;
 	bool is_decomp = qp_ctx->qp->alg_type;
 	struct  hisi_zip_req *req, *tmp;
 	int ret;
 
-	list_for_each_entry_safe(req, tmp, &qp_ctx->qp->backlog.list, list) {
+	list_for_each_entry_safe(req, tmp, head, list) {
 		list_del(&req->list);
 
 		if (req->req_id != HZIP_INVAL_REQ_ID) {
@@ -364,12 +365,12 @@ static void hisi_zip_send_backlog_soft(struct hisi_zip_qp_ctx *qp_ctx)
 static void hisi_zip_send_backlog(struct hisi_qp *qp)
 {
 	struct  hisi_zip_req *req, *tmp;
-	struct hisi_zip_req_q *req_q;
+	struct hisi_zip_qp_ctx *qp_ctx = NULL;
+	LIST_HEAD(soft_list);
 	int ret;
 
 	spin_lock_bh(&qp->backlog.lock);
 	list_for_each_entry_safe(req, tmp, &qp->backlog.list, list) {
-		req_q = &req->qp_ctx->req_q;
 		if (req->req_id == HZIP_INVAL_REQ_ID) {
 			ret = hisi_zip_create_req(req);
 			if (ret)
@@ -378,8 +379,11 @@ static void hisi_zip_send_backlog(struct hisi_qp *qp)
 			ret = hisi_zip_map_req_buffers(req);
 			if (unlikely(ret)) {
 				hisi_zip_remove_req(req);
-				hisi_zip_send_backlog_soft(req->qp_ctx);
-				goto unlock;
+				qp_ctx = req->qp_ctx;
+				list_splice_init(&qp->backlog.list, &soft_list);
+				spin_unlock_bh(&qp->backlog.lock);
+				hisi_zip_send_backlog_soft(qp_ctx, &soft_list);
+				return;
 			}
 		}
 
@@ -393,8 +397,11 @@ static void hisi_zip_send_backlog(struct hisi_qp *qp)
 		case -EBUSY:
 			goto unlock;
 		default:
-			hisi_zip_send_backlog_soft(req->qp_ctx);
-			goto unlock;
+			qp_ctx = req->qp_ctx;
+			list_splice_init(&qp->backlog.list, &soft_list);
+			spin_unlock_bh(&qp->backlog.lock);
+			hisi_zip_send_backlog_soft(qp_ctx, &soft_list);
+			return;
 		}
 	}
 
