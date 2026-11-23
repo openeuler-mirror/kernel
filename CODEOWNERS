@@ -535,7 +535,7 @@
 /drivers/net/ethernet/intel/ @zeng_zhaorong @juntianlinux
 /drivers/net/ethernet/amd/ @kile2009 @sming56_admin
 /drivers/net/ethernet/motorcomm/ @Frank_Sae
-/drivers/net/ethernet/mucse/ @sinat_17738335
+/drivers/net/ethernet/mucse/ @sinat_17738335 @qich @AlphaLan2025 @huzhitao @gcw_EzAoulpf @eaglew-forge
 /drivers/net/ethernet/wangxun/ @duanqiangwen @linyuexie1
 /drivers/net/phy/motorcomm.c @Frank_Sae
 /drivers/net/phy/amd.c @kile2009 @sming56_admin
