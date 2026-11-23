@@ -2515,7 +2515,7 @@ static int sec_aead_soft_crypto(struct sec_ctx *ctx,
 	struct aead_request *subreq;
 	int ret;
 
-	subreq = aead_request_alloc(a_ctx->fallback_aead_tfm, GFP_KERNEL);
+	subreq = aead_request_alloc(a_ctx->fallback_aead_tfm, GFP_ATOMIC);
 	if (!subreq)
 		return -ENOMEM;
 
