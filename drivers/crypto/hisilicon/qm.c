@@ -3978,9 +3978,6 @@ int hisi_qm_alloc_qps_node(struct hisi_qm_list *qm_list, int qp_num,
 	}
 
 	mutex_unlock(&qm_list->lock);
-	if (ret)
-		pr_info("Failed to create qps, node[%d], qp[%d]!\n",
-			node, qp_num);
 
 err:
 	free_list(&head);
