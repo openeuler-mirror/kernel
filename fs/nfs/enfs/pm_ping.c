@@ -319,7 +319,7 @@ static void pm_ping_call_done(struct rpc_task *task, void *data)
 		return;
 	}
 	ktime = ktime_get();
-	ctx->lastTime = ktime_to_ms(ktime);
+	WRITE_ONCE(ctx->lastTime, ktime_to_ms(ktime));
 	xprt_put(xprt);
 }
 
@@ -387,10 +387,9 @@ static int pm_ping_add_work(struct rpc_clnt *clnt, struct rpc_xprt *xprt,
 		return -EINVAL;
 	}
 
-	if (!enfs_timeout_ms
-		((ktime_t *) &ctx->lastTime, ENFS_PM_PING_TMIE_OUT * 1000)) {
+	if (ktime_to_ms(ktime_get()) - READ_ONCE(ctx->lastTime) <
+	    ENFS_PM_PING_TMIE_OUT * 1000)
 		return 0;
-	}
 
 	if (pm_ping_get_path_check_state(xprt) == PM_CHECK_FINISH ||
 		pm_ping_get_path_check_state(xprt) == PM_CHECK_INIT) {
