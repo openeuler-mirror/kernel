@@ -1839,22 +1839,37 @@ int enfs_shard_init(void)
 	rc = enfs_check_shard();
 	if (rc) {
 		enfs_log_error("check shard failed!");
-		return rc;
+		goto out_check;
 	}
 
 	shard_workq = create_workqueue("enfs_shard_workqueue");
 	if (!shard_workq) {
 		enfs_log_error("create workqueue failed.\n");
-		return -ENOMEM;
+		rc = -ENOMEM;
+		goto out_check;
 	}
 
 	shard_thread =
 		kthread_run(shard_update_loop, NULL, "enfs_shard_update");
 	if (IS_ERR(shard_thread)) {
 		enfs_log_error("Failed to create thread shard update.\n");
-		return PTR_ERR(shard_thread);
+		rc = PTR_ERR(shard_thread);
+		shard_thread = NULL;
+		goto out_workqueue;
 	}
 	return 0;
+
+out_workqueue:
+	destroy_workqueue(shard_workq);
+	shard_workq = NULL;
+out_check:
+	if (shard_check_wq) {
+		destroy_workqueue(shard_check_wq);
+		shard_check_wq = NULL;
+	}
+	enfs_shard_ctrl_clear();
+	shard_ctrl = NULL;
+	return rc;
 }
 
 void enfs_shard_exit(void)
