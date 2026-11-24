@@ -686,8 +686,7 @@ free_dev:
 	return ret;
 }
 
-static int sva_mode_alloc_tid(struct proc_manager *manager,
-			      struct ummu_tid_info *tid_data,
+static int sva_mode_alloc_tid(struct ummu_tid_info *tid_data,
 			      struct ktid_info **entry_out)
 {
 	struct ktid_info *entry;
@@ -828,7 +827,7 @@ static long tid_ioctl(struct file *filp, u32 cmd, unsigned long arg)
 	mutex_unlock(&global_proc_mtx);
 	switch (cmd) {
 	case UMMU_IOCALLOC_TID:
-		ret = sva_mode_alloc_tid(manager, &tid_data, &entry);
+		ret = sva_mode_alloc_tid(&tid_data, &entry);
 		break;
 	case UMMU_IOCFREE_TID:
 		ret = sva_mode_free_tid(manager, &tid_data);
@@ -842,7 +841,7 @@ static long tid_ioctl(struct file *filp, u32 cmd, unsigned long arg)
 	}
 	mutex_unlock(&manager->proc_mtx);
 
-	if ((!ret) && (cmd == UMMU_IOCALLOC_TID)) {
+	if (!ret && cmd == UMMU_IOCALLOC_TID) {
 		if (copy_to_user((struct ummu_tid_info __user *)arg, &tid_data,
 			    sizeof(struct ummu_tid_info))) {
 			release_tid_resource(entry);

@@ -205,7 +205,7 @@ static int ummu_device_calc_kv_index(struct ummu_device *ummu, eid_t eid,
 	return -ERANGE;
 }
 
-static void ummu_device_create_kvtable(struct ummu_device *ummu, u32 tag,
+static int ummu_device_create_kvtable(struct ummu_device *ummu, u32 tag,
 				      eid_t eid, u32 kv_index)
 {
 	struct ummu_mcmdq_ent cmd_create_kvtbl;
@@ -227,9 +227,10 @@ static void ummu_device_create_kvtable(struct ummu_device *ummu, u32 tag,
 	ret = ummu_mcmdq_issue_cmd_with_sync(ummu, &cmd_create_kvtbl);
 	if (ret)
 		dev_warn(ummu->dev, "issue create kvtbl cmd timeout, ret = %d\n", ret);
+	return ret;
 }
 
-static void ummu_device_delete_kvtbl(struct ummu_device *ummu, u32 tag,
+static int ummu_device_delete_kvtbl(struct ummu_device *ummu, u32 tag,
 				     eid_t eid, u32 kv_index)
 {
 	struct ummu_mcmdq_ent cmd_delete_kvtbl = {
@@ -251,6 +252,7 @@ static void ummu_device_delete_kvtbl(struct ummu_device *ummu, u32 tag,
 	if (ret)
 		dev_err(ummu->dev, "failed to issue delete kvtbl cmd(%d)\n",
 			ret);
+	return ret;
 }
 
 static void ummu_free_tct_table(struct ummu_tct_desc_cfg *cfg)
@@ -1166,9 +1168,11 @@ static void ummu_device_fill_tecte(struct ummu_device *ummu, u32 deid,
 		return;
 
 	tecte = ummu_alloc_tecte(ummu, deid);
-	if (!tecte)
+	if (!tecte) {
+		dev_err(ummu->dev, "alloc tecte failed, deid=%u, tecte keeps abort/stale cfg\n",
+			deid);
 		return;
-
+	}
 	if (check_tecte_can_set(tecte, src)) {
 		for (i = 0; i < TECT_ENTRY_SIZE_DWORDS; i++)
 			WRITE_ONCE(tecte->data[i], src->data[i]);
@@ -1227,8 +1231,14 @@ int ummu_add_eid(struct ummu_core_device *core_dev, guid_t *guid, eid_t eid, enu
 		ummu_device_make_default_tecte(ummu, &ummu->local_tct_cfg, &target);
 
 	ummu_device_write_tecte(ummu, meta->tect_tag, &target);
-	ummu_device_create_kvtable(ummu, meta->tect_tag, eid, kv_index);
-	return 0;
+	ret = ummu_device_create_kvtable(ummu, meta->tect_tag, eid, kv_index);
+	if (ret) {
+		dev_err(ummu->dev,
+			"create kvtbl failed, eid_high=0x%llx, eid_low=0x%llx, ret=%d\n",
+			(u64)(eid >> EID_HIGH_SZ_SHIFT), (u64)eid, ret);
+		os_meta_del_eid(meta, eid);
+	}
+	return ret;
 }
 
 void ummu_del_eid(struct ummu_core_device *core_dev, guid_t *guid, eid_t eid, enum eid_type type)
@@ -1251,7 +1261,11 @@ void ummu_del_eid(struct ummu_core_device *core_dev, guid_t *guid, eid_t eid, en
 		return;
 	}
 
-	ummu_device_delete_kvtbl(ummu, meta->tect_tag, eid, kv_index);
+	ret = ummu_device_delete_kvtbl(ummu, meta->tect_tag, eid, kv_index);
+	if (ret)
+		dev_err(ummu->dev,
+			"delete kvtbl failed, eid_high=0x%llx, eid_low=0x%llx, ret=%d; stale table may remain\n",
+			(u64)(eid >> EID_HIGH_SZ_SHIFT), (u64)eid, ret);
 	/* 2 indicates that only the last EID remains. */
 	if (kref_read(&meta->ref) == 2) {
 		ummu_device_write_tecte(ummu, meta->tect_tag, &ummu_clear_tecte);

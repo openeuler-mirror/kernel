@@ -143,7 +143,10 @@ static int ummu_init_structures(struct ummu_device *ummu)
 
 	if (ummu->cap.features & UMMU_FEAT_MAPT) {
 		/* ctrl page is private for every ummu hardware */
-		ummu_device_init_permq_ctrl_page(ummu);
+		ret = ummu_device_init_permq_ctrl_page(ummu);
+		if (ret)
+			goto resource_release;
+
 		/* ctx table is common for every ummu hardware */
 		ret = ummu_device_init_permqs(ummu);
 		if (ret)
@@ -154,6 +157,8 @@ static int ummu_init_structures(struct ummu_device *ummu)
 
 resource_release:
 	ummu_free_tect_tct(ummu);
+	ummu_device_free_mcmdq(ummu);
+	ummu_device_free_evtq(ummu);
 	ummu_iopf_queue_free(ummu);
 	return ret;
 }
@@ -637,13 +642,13 @@ static int ummu_device_reset(struct ummu_device *ummu)
 		ret = ummu_device_mapt_enable(ummu);
 		if (ret)
 			return ret;
+
+		ummu_device_flush_ioplb_all(ummu);
 	}
 
 	ummu_setup_irqs(ummu);
 	ummu_sync_tect_all(ummu);
 	ummu_init_flush_iotlb(ummu);
-	ummu_device_flush_ioplb_all(ummu);
-
 	return ummu_device_enable(ummu);
 }
 

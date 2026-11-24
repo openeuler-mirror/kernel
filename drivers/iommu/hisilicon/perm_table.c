@@ -1049,13 +1049,9 @@ static int ummu_table_clear_head_node(struct ummu_data_info *data_info,
 				      struct ummu_mapt_table_node *cur_node, u64 node_base,
 				      u64 node_limit)
 {
-	uint32_t lvl_idx, lvl_offset;
 	uint64_t cur_base, cur_limit;
 	int ret;
 
-	lvl_idx = cur_node->next_lv_index;
-	lvl_offset = TABLE_LVL_OFFSET(cur_node->next_lv_offset_low,
-			cur_node->next_lv_offset_high);
 	cur_base = ADDR_FULL(cur_node->base_low, cur_node->base_high);
 	cur_limit = ADDR_FULL(cur_node->limit_low, cur_node->limit_high);
 	if (!IS_RTE_IN_USE(cur_base) && !IS_RTE_IN_USE(cur_limit)) {

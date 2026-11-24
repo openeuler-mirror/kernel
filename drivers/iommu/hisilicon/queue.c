@@ -306,6 +306,7 @@ static int ummu_mcmdq_init(struct ummu_device *ummu)
 	ummu->mcmdq = devm_alloc_percpu(ummu->dev, struct ummu_mcmdq *);
 	if (!ummu->mcmdq) {
 		dev_err(ummu->dev, "alloc mcmdq ptr failed\n");
+		ret = -ENOMEM;
 		goto err;
 	}
 
@@ -341,7 +342,7 @@ free_q:
 	ummu_device_free_mcmdq(ummu);
 err:
 	ummu->nr_mcmdq = 0;
-	return -ENOMEM;
+	return ret;
 }
 
 static int ummu_write_mcmdq_regs(struct ummu_device *ummu)
@@ -467,17 +468,21 @@ static int ummu_evtq_init(struct ummu_device *ummu)
 
 int ummu_init_queues(struct ummu_device *ummu)
 {
+	int ret;
+
 	if (!(ummu->cap.features & UMMU_FEAT_MCMDQ) ||
 	    !(ummu->cap.features & UMMU_FEAT_EVENTQ))
 		return -EOPNOTSUPP;
 
-	if (ummu_mcmdq_init(ummu))
-		return -ENOMEM;
+	ret = ummu_mcmdq_init(ummu);
+	if (ret)
+		return ret;
 
-	if (ummu_evtq_init(ummu))
-		return -ENOMEM;
+	ret = ummu_evtq_init(ummu);
+	if (ret)
+		ummu_device_free_mcmdq(ummu);
 
-	return 0;
+	return ret;
 }
 
 #define ummu_mcmdq_exclusive_trylock_irqsave(mcmdq, flags)                   \
@@ -1093,9 +1098,9 @@ static int ummu_mcmdq_exclusive_issue_cmdlist(struct ummu_device *ummu,
 				llq.prod,
 				readl_relaxed(mcmdq->q.prod_reg),
 				readl_relaxed(mcmdq->q.cons_reg));
+		} else {
+			ret = check_pa_continuity_nop_exec(&mcmdq->q, sprod);
 		}
-
-		ret = check_pa_continuity_nop_exec(&mcmdq->q, sprod);
 		/*
 		 * Update mcmdq->q.llq.cons, to improve the success rate of
 		 * ummu_queue_has_space() when some new commands are inserted next
@@ -1231,8 +1236,8 @@ int ummu_mcmdq_issue_cmdlist(struct ummu_device *ummu, u64 *cmds,
 				"CMD_SYNC timeout at 0x%08x [hwprod 0x%08x, hwcons 0x%08x]\n",
 				llq.prod, readl_relaxed(mcmdq->q.prod_reg),
 				readl_relaxed(mcmdq->q.cons_reg));
-
-		ret = check_pa_continuity_nop_exec(&mcmdq->q, sprod);
+		else
+			ret = check_pa_continuity_nop_exec(&mcmdq->q, sprod);
 		/*
 		 * Try to unlock the mcmdq lock. This will fail if we're the last
 		 * reader, in which case we can safely update mcmdq->q.llq.cons

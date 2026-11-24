@@ -894,7 +894,8 @@ void ummu_core_free_tid(struct ummu_core_device *dev, u32 tid);
  * @dev: the ummu_core device tid belongs to.
  * @tid: token id.
  *
- * Return: ummu_mapt_mode, negative for an error.
+ * Return: the MAPT mode of @tid, or MAPT_MODE_END if @tid is invalid or no
+ * mode has been recorded.
  */
 enum ummu_mapt_mode ummu_core_get_mapt_mode(struct ummu_core_device *dev,
 					    u32 tid);

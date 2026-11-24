@@ -15,7 +15,7 @@
 
 int ummu_device_init_permqs(struct ummu_device *ummu);
 void ummu_device_uninit_permqs(struct ummu_device *ummu);
-void ummu_device_init_permq_ctrl_page(struct ummu_device *ummu);
+int ummu_device_init_permq_ctrl_page(struct ummu_device *ummu);
 int ummu_get_permq_resource(struct ummu_device *ummu, u32 qid,
 			    struct queue_args *queue);
 void ummu_release_permq_resource(struct ummu_domain *domain);

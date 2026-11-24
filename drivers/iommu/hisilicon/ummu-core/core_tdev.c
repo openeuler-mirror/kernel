@@ -70,10 +70,17 @@ static ssize_t tid_val_show(struct device *dev, struct device_attribute *attr,
 }
 static DEVICE_ATTR_RO(tid_val);
 
+static const char * const mapt_mode_str[] = {
+	[MAPT_MODE_TABLE]	= "MAPT_MODE_TABLE",
+	[MAPT_MODE_ENTRY]	= "MAPT_MODE_ENTRY",
+	[MAPT_MODE_END]		= "MAPT_MODE_END",
+};
+
 static ssize_t tid_mode_show(struct device *dev, struct device_attribute *attr,
 			     char *buf)
 {
 	struct ummu_core_device *ummu_core;
+	enum ummu_mapt_mode mode;
 	u32 tid;
 	int ret;
 
@@ -82,9 +89,11 @@ static ssize_t tid_mode_show(struct device *dev, struct device_attribute *attr,
 	if (ret)
 		return ret;
 
-	ret = ummu_core_get_mapt_mode(ummu_core, tid);
+	mode = ummu_core_get_mapt_mode(ummu_core, tid);
+	if (mode > MAPT_MODE_END)
+		return -EINVAL;
 
-	return sysfs_emit(buf, "%d\n", ret);
+	return sysfs_emit(buf, "%s\n", mapt_mode_str[mode]);
 }
 static DEVICE_ATTR_RO(tid_mode);
 

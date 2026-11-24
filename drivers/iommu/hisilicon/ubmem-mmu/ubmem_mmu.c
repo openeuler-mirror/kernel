@@ -825,7 +825,7 @@ static struct iommu_device *ubmem_mmu_probe_device(struct device *dev)
 
 free:
 	kfree(master);
-	return NULL;
+	return ERR_PTR(-EOPNOTSUPP);
 }
 
 static void ubmem_mmu_release_device(struct device *dev)
@@ -1029,7 +1029,7 @@ remove_sysfs:
 exit_mmu_init:
 	bitmap_free(mmu->ate_bitmap);
 exit_err:
-	return -ENODEV;
+	return ret;
 }
 
 static void ubmem_mmu_device_remove(struct ummu_device *ummu)
