@@ -814,7 +814,8 @@ struct tlbi_partial_entry {
 
 #define Q_IDX(qs, p) ((p) & ((1 << (qs)) - 1))
 #define Q_WRP(qs, p) ((p) & (1 << (qs)))
-#define Q_OVF(p) ((p) & Q_OVERFLOW_FLAG)
+#define Q_OVERFLOW_SHIFT 31
+#define Q_OVF(p) ((p) & (1 << Q_OVERFLOW_SHIFT))
 
 enum NOTIFY_TYPE {
 	DISABLE_NOTIFY = 0,
@@ -1114,5 +1115,13 @@ void hi_decoder_event_deal(struct ub_decoder *decoder)
 		if (ub_cfg_write_dword(uent, DECODER_EVENTQ_CONS,
 				       evtq->cons.val))
 			ub_err(uent, "decoder handle event, write eventq ci fail\n");
+	}
+
+	if (Q_OVF(evtq->cons.val) != Q_OVF(evtq->prod.val)) {
+		dev_err_ratelimited(&uent->dev, "decoder handle eventq overflow\n");
+
+		evtq->cons.eventq_ovfl_err_resp = (evtq->prod.val >> Q_OVERFLOW_SHIFT) & 0x1;
+		if (ub_cfg_write_dword(uent, DECODER_EVENTQ_CONS, evtq->cons.val))
+			ub_err(uent, "decoder handle event, write eventq ovfl err resp failed\n");
 	}
 }
