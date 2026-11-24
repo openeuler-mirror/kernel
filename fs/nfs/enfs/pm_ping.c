@@ -593,6 +593,7 @@ int pm_ping_rpc_test_xprt_with_callback(struct rpc_clnt *clnt,
 	if (ret != 1) {
 		enfs_log_debug("ping xprt execute failed ,ret %d", ret);
 		atomic_dec(&check_xprt_count);
+		kfree(callback_data);
 	}
 
 	return ret;

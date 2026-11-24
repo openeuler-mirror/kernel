@@ -277,8 +277,10 @@ static void pm_xprt_ping_callback(void *data)
 {
 	struct xprt_attach_callback_data *attach_callback_data =
 		(struct xprt_attach_callback_data *)data;
+	wait_queue_head_t *waitq = attach_callback_data->waitq;
+
 	atomic_dec(attach_callback_data->condition);
-	wake_up(attach_callback_data->waitq);
+	wake_up(waitq);
 }
 
 static int enfs_add_xprt_setup(struct rpc_clnt *clnt,
@@ -305,8 +307,10 @@ static int enfs_add_xprt_setup(struct rpc_clnt *clnt,
 
 	ret = pm_ping_rpc_test_xprt_with_callback(
 		clnt, xprt, pm_xprt_ping_callback, attach_info->data);
-	if (ret != 1)
+	if (ret != 1) {
 		enfs_log_error("Failed to add ping task.\n");
+		pm_xprt_ping_callback(attach_info->data);
+	}
 
 	ret = 1;
 
