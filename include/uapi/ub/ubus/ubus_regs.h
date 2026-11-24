@@ -250,6 +250,7 @@ enum ub_port_cap_id {
 /* Physical Port Link Status */
 #define UB_PORT_PHYSICAL_PORT_LINK_STATUS (0x1c0 << 2)
 #define  UB_PORT_LINK_STATE 0x1
+#define  UB_PORT_DL_STATE BIT(1)
 
 /* PORT CAP15 QDLWS */
 #define PORT_CAP15_QDLWS_CAP (0xf01 << 2)

@@ -96,7 +96,9 @@ static ssize_t linkup_show(struct ub_port *port, char *buf)
 		return -EIO;
 	}
 
-	return sysfs_emit(buf, "%u\n", val & UB_PORT_LINK_STATE);
+	return sysfs_emit(buf, "Phy State: %u, DL State: %u\n",
+			  !!(val & UB_PORT_LINK_STATE),
+			  !!(val & UB_PORT_DL_STATE));
 }
 UB_PORT_ATTR_RO(linkup);
 
