@@ -972,7 +972,7 @@ int sprint_uuid(char *buf, int buflen, struct enfs_file_uuid *file_uuid)
 	int n;
 	char *head = buf;
 
-	if (buflen < FILE_UUID_BUFF_LEN)
+	if (buflen < FILE_UUID_BUFF_LEN * 2 + 1)
 		return -1;
 
 	for (i = 0; i < FILE_UUID_BUFF_LEN; i++) {
