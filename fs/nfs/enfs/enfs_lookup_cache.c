@@ -306,7 +306,7 @@ int lookupcache_add_work(struct nfs_fh *fh, struct nfs_server *server,
 	if (work_info == NULL)
 		return -ENOMEM;
 
-	item = kzalloc(sizeof(*item), GFP_KERNEL);
+	item = kzalloc(sizeof(*item), GFP_ATOMIC);
 	if (!item) {
 		enfs_log_error("alloc item failed.\n");
 		kfree(work_info);
