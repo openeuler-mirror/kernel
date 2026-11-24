@@ -1051,7 +1051,7 @@ static void debug_show_uuidinfo(int argc, char *argv[])
 
 	ret = scan_uuid(argv[0], file_uuid.data, FILE_UUID_BUFF_LEN);
 	if (ret) {
-		enfs_log_info("uuid str is wrong, str:%s.\n", argv[1]);
+		enfs_log_info("uuid str is wrong, str:%s.\n", argv[0]);
 		return;
 	}
 
@@ -1082,6 +1082,7 @@ static void debug_show_uuidinfo(int argc, char *argv[])
 			if (shardId >= view->num) {
 				enfs_log_error("shardNum:%u shardId:%u",
 						   view->num, shardId);
+				break;
 			}
 			enfs_log_info("fsidinfo clusterId:%llu storagePoolId:%u shardNum:%u shard:%u lsid:%llu cpuId:%u.\n",
 				      view->clusterId, view->storagePoolId, view->num,
