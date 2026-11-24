@@ -569,61 +569,43 @@ static void enfs_combine_addr_with_no_local(struct xprt_create *xprtargs,
 					    struct nfs_ip_list *local,
 					    struct nfs_ip_list *remote)
 {
-	int i;
-	int err;
-	int link_count = 0;
-	int local_total = local->count;
-	int remote_total = remote->count;
-	int total_combinations = remote_total;
+	unsigned int i, submitted = 0;
+	unsigned int capacity = remote->count;
 	struct xprt_attach_info *attach_infos;
-	atomic_t wait_queue_condition;
+	atomic_t wait_queue_condition = ATOMIC_INIT(1);
 	struct xprt_attach_callback_data attach_callback_data = {
 		&wait_queue_condition, &path_attach_wait_queue
 	};
 
-	atomic_set(&wait_queue_condition, total_combinations);
-
-	enfs_log_debug("local count:%d remote count:%d\n",
-		       local_total, remote_total);
-	if (remote_total == 0) {
-		enfs_log_debug("no ip list is present.\n");
+	if (!capacity)
 		return;
-	}
 
-	attach_infos = kzalloc((total_combinations) * sizeof(struct xprt_attach_info),
-		GFP_KERNEL);
-	if (attach_infos == NULL) {
-		enfs_log_error("Failed to kzalloc memory\n");
+	attach_infos = kcalloc(capacity, sizeof(*attach_infos), GFP_KERNEL);
+	if (!attach_infos)
 		return;
-	}
 
-	for (i = 0; i < total_combinations; i++) {
-		if (enfs_already_have_xprt(clnt, NULL, &remote->address[i])) {
-			atomic_dec(&wait_queue_condition);
-			link_count++;
+	for (i = 0; i < remote->count; i++) {
+		struct xprt_attach_info *info = &attach_infos[submitted];
+		int err;
+
+		if (enfs_already_have_xprt(clnt, NULL, &remote->address[i]))
 			continue;
-		}
 
-		attach_infos[i].localAddress = NULL;
-		attach_infos[i].remoteAddress = &remote->address[i];
-		attach_infos[i].data = &attach_callback_data;
-		attach_infos[i].protocol = xprtargs->ident;
-
-		err = enfs_configure_xprt_to_clnt(xprtargs, clnt,
-						  &attach_infos[i]);
-		if (err) {
-			enfs_log_error("add xprt ippair err:%d\n", err);
+		info->remoteAddress = &remote->address[i];
+		info->data = &attach_callback_data;
+		info->protocol = xprtargs->ident;
+		atomic_inc(&wait_queue_condition);
+		submitted++;
+		err = enfs_configure_xprt_to_clnt(xprtargs, clnt, info);
+		if (err)
 			atomic_dec(&wait_queue_condition);
-		}
-		link_count++;
 	}
 
+	atomic_dec(&wait_queue_condition);
 	wait_event(path_attach_wait_queue,
 		   atomic_read(&wait_queue_condition) == 0);
-
-	enfs_add_xprts_to_clnt(clnt, attach_infos, total_combinations,
-			       remote_total, local_total);
-
+	enfs_add_xprts_to_clnt(clnt, attach_infos, submitted,
+			       remote->count, local->count);
 	kfree(attach_infos);
 }
 
