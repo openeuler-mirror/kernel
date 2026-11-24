@@ -77,6 +77,18 @@ struct ubcore_deactive_stp_work {
 extern uint32_t ubcore_conn_timeout;
 extern bool ubcore_enable_shared_ctp;
 
+extern uint32_t ubcore_share_mode;
+
+/* TP reuse diagnostics (count / key traces). */
+struct ubcore_tpid_reuse;
+struct ubcore_tpid_reuse_key;
+void ubcore_tp_trace_cnt(const struct ubcore_tpid_reuse *entry, const char *tag);
+void ubcore_tp_trace_key(const struct ubcore_tpid_reuse_key *key, const char *site);
+
+bool ubcore_fill_tpid_reuse_key_cna(struct ubcore_tpid_reuse_key *key,
+	union ubcore_net_addr_union local_cna, union ubcore_net_addr_union peer_cna,
+	struct ubcore_device *dev, const char *site);
+
 struct ubcore_tjetty *ubcore_import_jfr_compat(struct ubcore_device *dev,
 					       struct ubcore_tjetty_cfg *cfg,
 					       struct ubcore_udata *udata);

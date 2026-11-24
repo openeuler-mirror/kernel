@@ -21,6 +21,11 @@ enum ubcore_net_msg_type {
 	UBCORE_NET_DESTROY_REQ,
 	UBCORE_NET_DESTROY_RESP,
 	UBCORE_NET_ISREF_REQ,
+	/* ISREF response: the peer always replies (result 0 on success, -EAGAIN
+	 * when the entry is missing/mismatched/retired). The resp echoes the req
+	 * fields; the source correlates it by the comm header session_id and
+	 * either continues the reuse (0) or rebuilds the TP pair (-EAGAIN).
+	 */
 	UBCORE_NET_ISREF_RESP,
 	UBCORE_NET_MSG_MAX,
 };
