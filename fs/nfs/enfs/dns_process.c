@@ -560,6 +560,10 @@ int enfs_iter_nfs_clnt(enfs_iter_clnt fn, void *data)
 			continue;
 		spin_lock(&nn->nfs_client_lock);
 		list_for_each_entry(clp, &nn->nfs_client_list, cl_share_link) {
+			if (READ_ONCE(clp->cl_cons_state) != NFS_CS_READY)
+				continue;
+			/* Pairs with nfs_mark_client_ready(). */
+			smp_rmb();
 			if (!clp->cl_multipath_data)
 				continue;
 
@@ -592,6 +596,9 @@ static int collect_clnt_name(struct nfs_client *clp, void *data)
 {
 	int i;
 	struct multipath_client_info *clp_info = clp->cl_multipath_data;
+
+	if (!clp_info || !clp_info->pRemoteDnsInfo)
+		return 0;
 
 	for (i = 0; i < MAX_DNS_SUPPORTED &&
 		    i < clp_info->pRemoteDnsInfo->dnsNameCount;
@@ -826,20 +833,21 @@ static int dns_update_work(struct nfs_client *clp, void *data)
 static int requery_clnt_dns(struct nfs_client *clp, void *data)
 {
 	int error;
-	struct multipath_client_info *clp_info = clp->cl_multipath_data;
+	struct multipath_client_info *clp_info;
 
 	if (kthread_should_stop())
 		return 1;
 
-	if (!clp_info || !clp->cl_rpcclient || clp_info->fill_local ||
-	    clp_info->updating_domain) {
-		return 0;
-	}
-
-	if (clp->cl_cons_state > NFS_CS_READY) {
+	if (READ_ONCE(clp->cl_cons_state) != NFS_CS_READY) {
 		enfs_log_info("client not ready.\n");
 		return 0;
 	}
+	/* Pairs with nfs_mark_client_ready() before reading initialized fields. */
+	smp_rmb();
+	clp_info = clp->cl_multipath_data;
+	if (!clp_info || IS_ERR_OR_NULL(clp->cl_rpcclient) ||
+	    clp_info->fill_local || clp_info->updating_domain)
+		return 0;
 
 	if (!clp_info->pRemoteDnsInfo ||
 	    clp_info->pRemoteDnsInfo->dnsNameCount == 0) {
