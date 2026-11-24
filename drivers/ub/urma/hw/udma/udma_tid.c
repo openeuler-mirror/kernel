@@ -98,7 +98,7 @@ struct ubcore_token_id *udma_alloc_tid(struct ubcore_device *ub_dev,
 
 	udma_tid = kzalloc(sizeof(*udma_tid), GFP_KERNEL);
 	if (!udma_tid)
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 
 	if (udata) {
 		ret = udma_get_key_id_from_user(udma_dev, udata, udma_tid);
@@ -109,14 +109,15 @@ struct ubcore_token_id *udma_alloc_tid(struct ubcore_device *ub_dev,
 		return &udma_tid->core_key_id;
 	}
 
-	if (udma_alloc_k_tid(udma_dev, udma_tid))
+	ret = udma_alloc_k_tid(udma_dev, udma_tid);
+	if (ret)
 		goto err_get_key_id;
 
 	return &udma_tid->core_key_id;
 
 err_get_key_id:
 	kfree(udma_tid);
-	return NULL;
+	return ERR_PTR(ret);
 }
 
 int udma_free_tid(struct ubcore_token_id *token_id)

@@ -68,11 +68,20 @@ int add_jetty_to_grp(struct udma_dev *udma_dev, struct ubcore_jetty_group *jetty
 		bit_idx = udma_get_jetty_grp_jetty_id(&udma_jetty_grp->valid,
 						      &udma_jetty_grp->next_jetty_id);
 
-	if (bit_idx >= UDMA_BITS_PER_INT || (udma_jetty_grp->valid & BIT(bit_idx))) {
-		dev_err(udma_dev->dev, "jetty group(%u.%u) valid %lu is full or user id(%u) error",
-			udma_jetty_grp->jetty_grp_id, udma_jetty_grp->start_jetty_id,
-			udma_jetty_grp->valid, cfg_id);
-		ret = -ENOMEM;
+	if (bit_idx >= UDMA_BITS_PER_INT) {
+		dev_err(udma_dev->dev,
+			"Invalid Jetty ID %u for Jetty Group %u (start Jetty ID: %u).\n",
+			cfg_id, udma_jetty_grp->jetty_grp_id, udma_jetty_grp->start_jetty_id);
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (udma_jetty_grp->valid & BIT(bit_idx)) {
+		dev_err(udma_dev->dev,
+			"Jetty ID %u for Jetty Group %u (start Jetty ID: %u, valid Jetty ID bitmap: 0x%lx) is already allocated.\n",
+			cfg_id, udma_jetty_grp->jetty_grp_id, udma_jetty_grp->start_jetty_id,
+			udma_jetty_grp->valid);
+		ret = -ENOSR;
 		goto out;
 	}
 
@@ -221,12 +230,12 @@ struct ubcore_jetty_group *udma_create_jetty_grp(struct ubcore_device *dev,
 
 	if (cfg->policy != UBCORE_JETTY_GRP_POLICY_HASH_HINT) {
 		dev_err(udma_dev->dev, "policy %u not support.\n", cfg->policy);
-		return NULL;
+		return ERR_PTR(-EINVAL);
 	}
 
 	jetty_grp = kzalloc(sizeof(*jetty_grp), GFP_KERNEL);
 	if (!jetty_grp)
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 
 	ret = udma_alloc_jetty_grp_id(udma_dev, jetty_grp);
 	if (ret)
@@ -270,7 +279,7 @@ err_store_jetty_grp:
 err_alloc_jetty_grp_id:
 	kfree(jetty_grp);
 
-	return NULL;
+	return ERR_PTR(ret);
 }
 
 int udma_delete_jetty_grp(struct ubcore_jetty_group *jetty_grp)

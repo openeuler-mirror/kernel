@@ -44,12 +44,12 @@ static int udma_ae_tp_ctrlq_msg_deal(struct udma_dev *udma_dev,
 		if (!!(udma_dev->caps.feature & UDMA_CAP_FEATURE_PORT_CHANGE_AE))
 			return udma_ctrlq_notify_tp_port_change(udma_dev, queue_num);
 
-		dev_warn(udma_dev->dev,
-			 "unsupported port change asynchronous event.\n");
+		udma_warn_rl(udma_dev->dev,
+			     "unsupported port change asynchronous event.\n");
 		return 0;
 	default:
-		dev_warn(udma_dev->dev, "udma get unsupported asynchronous event %u.\n",
-			 info->event_type);
+		udma_warn_rl(udma_dev->dev, "udma get unsupported asynchronous event %u.\n",
+			     info->event_type);
 		return 0;
 	}
 }
@@ -275,8 +275,9 @@ static int udma_ae_jetty_level(struct notifier_block *nb,
 	case UBASE_SUBEVENT_TYPE_JETTY_GROUP_CHECK_ERROR:
 		return udma_ae_jetty_group_check_err(adev, queue_num);
 	default:
-		dev_warn(&adev->dev,
-			 "udma get unsupported asynchronous event.\n");
+		udma_warn_rl(&adev->dev,
+			     "udma get unsupported asynchronous event sub type %hhu.\n",
+			     info->sub_type);
 		return -EINVAL;
 	}
 }
@@ -394,8 +395,8 @@ static int udma_save_tpn_ue_idx_info(struct udma_dev *udma_dev, uint8_t ue_idx,
 	if (tp_ue_idx_info) {
 		if (tp_ue_idx_info->num >= UDMA_UE_NUM) {
 			xa_unlock(&udma_dev->tpn_ue_idx_table);
-			dev_err(udma_dev->dev,
-				"num exceeds the maximum value.\n");
+			udma_err_rl(udma_dev->dev,
+				    "num exceeds the maximum value.\n");
 			return -EINVAL;
 		}
 
@@ -416,8 +417,8 @@ static int udma_save_tpn_ue_idx_info(struct udma_dev *udma_dev, uint8_t ue_idx,
 				GFP_ATOMIC));
 	if (ret) {
 		xa_unlock(&udma_dev->tpn_ue_idx_table);
-		dev_err(udma_dev->dev,
-			"store tpn UE index table failed, ret is %d.\n", ret);
+		udma_err_rl(udma_dev->dev,
+			    "store tpn UE index table failed, ret is %d.\n", ret);
 		goto err_store_ue_id;
 	}
 	xa_unlock(&udma_dev->tpn_ue_idx_table);
@@ -455,8 +456,8 @@ int udma_save_tp_info(struct udma_dev *udma_dev, struct udma_ue_tp_info *info,
 		tpn = info->start_tpn + i;
 		ret = udma_save_tpn_ue_idx_info(udma_dev, ue_idx, tpn);
 		if (ret) {
-			dev_err(udma_dev->dev, "save TPN info fail, ret = %d, tpn = %u.\n",
-				ret, tpn);
+			udma_err_rl(udma_dev->dev, "save TPN info fail, ret = %d, tpn = %u.\n",
+				    ret, tpn);
 			goto err_save_ue_id;
 		}
 	}
@@ -734,7 +735,7 @@ static void udma_get_tpid_status(struct udma_dev *udev,
 
 	ret = ubcore_query_tpid(&udev->ub_dev, tp_id, &attr);
 	if (ret)
-		dev_err(udev->dev, "failed to query tpid(%u) in ubcore, ret = %d.\n", tp_id, ret);
+		udma_err_rl(udev->dev, "failed to query tpid(%u) in ubcore, ret=%d.\n", tp_id, ret);
 	if (!ret && (attr.mask & UBCORE_TPID_STATE) && attr.state == UBCORE_TPID_STATE_RTS)
 		data->result = UDMA_CTRLQ_TPID_IN_USE;
 	else

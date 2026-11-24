@@ -361,7 +361,7 @@ int udma_adv_id_alloc(struct udma_dev *udma_dev, struct udma_group_bitmap *bitma
 
 	if (i == bitmap_cnt) {
 		spin_unlock(&bitmap_table->lock);
-		return -ENOMEM;
+		return -ENOSR;
 	}
 
 	if (!is_grp) {
@@ -378,7 +378,7 @@ int udma_adv_id_alloc(struct udma_dev *udma_dev, struct udma_group_bitmap *bitma
 	if (i == bitmap_cnt ||
 	    (i + 1) * NUM_JETTY_PER_GROUP > bitmap_table->n_bits) {
 		spin_unlock(&bitmap_table->lock);
-		return -ENOMEM;
+		return -ENOSR;
 	}
 
 	bit[i] = 0;
@@ -963,7 +963,8 @@ void udma_destroy_hugepage(struct udma_dev *dev)
 	mutex_lock(&dev->hugepage_lock);
 	list_for_each_entry_safe(priv, tmp, &dev->hugepage_list, list) {
 		list_del(&priv->list);
-		udma_info_rl(dev->dev, "free_hugepage, seq=%u.\n", priv->seq);
+		if (debug_switch)
+			udma_info_rl(dev->dev, "free_hugepage, seq=%u.\n", priv->seq);
 		udma_unpin_k_addr(priv->umem);
 		vfree(priv->va_base);
 		kfree(priv);

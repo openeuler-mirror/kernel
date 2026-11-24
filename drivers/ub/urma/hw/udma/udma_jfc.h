@@ -211,6 +211,12 @@ static inline struct udma_jfc *to_udma_jfc(struct ubcore_jfc *jfc)
 	return container_of(jfc, struct udma_jfc, base);
 }
 
+static inline bool is_ccu_cqe_other_die(struct udma_dev *dev, struct udma_buf buf)
+{
+	return (dev->caps.ccu_start_addr.ccu_start_addrh ==
+	       (buf.addr >> CQE_VA_H_OFFSET)) ? false : true;
+}
+
 struct ubcore_jfc *udma_create_jfc(struct ubcore_device *ubcore_dev,
 				   struct ubcore_jfc_cfg *cfg,
 				   struct ubcore_udata *udata);

@@ -204,7 +204,6 @@ static struct ubcore_jfs *udma_create_jfs_ex(struct ubcore_device *ub_dev,
 	if (!jfs)
 		return NULL;
 
-	udma_info_rl(dev->dev, "start alloc id!\n");
 	ret = udma_alloc_jetty_id(dev, &jfs->sq.id, &dev->caps.jetty);
 	if (ret) {
 		dev_err(dev->dev, "alloc JFS id failed, ret = %d.\n", ret);
@@ -224,7 +223,6 @@ static struct ubcore_jfs *udma_create_jfs_ex(struct ubcore_device *ub_dev,
 		goto err_store_jfs_sq;
 	}
 
-	udma_info_rl(dev->dev, "start get stars JFS buf!\n");
 	ret = udma_get_jfs_buf_ex(dev, jfs, cfg_ex);
 	if (ret)
 		goto err_alloc_jfs_id;
@@ -246,8 +244,6 @@ static struct ubcore_jfs *udma_create_jfs_ex(struct ubcore_device *ub_dev,
 
 	if (dfx_switch)
 		udma_dfx_store_jfs_id(dev, jfs);
-
-	udma_info_rl(dev->dev, "create stars JFS success!\n");
 
 	return &jfs->ubcore_jfs;
 
@@ -1191,10 +1187,10 @@ static int copy_out_ae_data_from_user(struct udma_dev *udma_dev,
 		    aux_info_out->aux_info_type != NULL &&
 		    aux_info_out->aux_info_value != NULL) {
 			if (aux_info_out->aux_info_num > MAX_AE_AUX_INFO_TYPE_NUM) {
-				dev_info(udma_dev->dev,
-					 "ae aux info num change from %u to %u",
-					 aux_info_out->aux_info_num,
-					 MAX_AE_AUX_INFO_TYPE_NUM);
+				udma_info_rl(udma_dev->dev,
+					     "ae aux info num change from %u to %u",
+					     aux_info_out->aux_info_num,
+					     MAX_AE_AUX_INFO_TYPE_NUM);
 				aux_info_out->aux_info_num = MAX_AE_AUX_INFO_TYPE_NUM;
 			}
 

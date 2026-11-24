@@ -151,7 +151,7 @@ struct ubcore_ucontext *udma_alloc_ucontext(struct ubcore_device *ub_dev,
 
 	ctx = kzalloc(sizeof(struct udma_context), GFP_KERNEL);
 	if (ctx == NULL)
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 
 	ret = udma_get_usva_tid(dev, ctx);
 	if (ret) {
@@ -193,7 +193,7 @@ err_init_ctx_resp:
 err_free_ctx:
 	kfree(ctx);
 
-	return NULL;
+	return ERR_PTR(ret);
 }
 
 static void udma_destroy_u_hugepage_list(struct udma_context *ctx)
@@ -216,7 +216,8 @@ static void udma_destroy_u_hugepage_list(struct udma_context *ctx)
 			mmap_write_unlock(current->mm);
 		}
 
-		udma_info_rl(ctx->dev->dev, "free_hugepage, seq=%u.\n", priv->seq);
+		if (debug_switch)
+			udma_info_rl(ctx->dev->dev, "free_hugepage, seq=%u.\n", priv->seq);
 		for (i = 0; i < priv->page_num; i++)
 			udma_free_pages(priv->pages[i], get_order(priv->page_size));
 		kfree(priv->pages);

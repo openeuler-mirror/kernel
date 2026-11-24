@@ -106,6 +106,18 @@ int udma_post_mbox(struct udma_dev *dev, struct ubase_cmd_mailbox *mailbox,
 		udma_op_ignore_eagain(attr->op, mailbox->buf)) ? 0 : ret;
 }
 
+int udma_cmd_query_ccu_addr_resource(struct udma_dev *udma_dev, void *out_addr)
+{
+	struct ubase_cmd_buf out = {};
+	struct ubase_cmd_buf in = {};
+
+	udma_fill_buf(&in, UDMA_CMD_QUERY_CCU_START_ADDR, true, 0, NULL);
+	udma_fill_buf(&out, UDMA_CMD_QUERY_CCU_START_ADDR, true,
+		      sizeof(struct udma_cmd_get_ccu_start_addr), out_addr);
+
+	return ubase_cmd_send_inout(udma_dev->comdev.adev, &in, &out);
+}
+
 int udma_cmd_query_hw_resource(struct udma_dev *udma_dev, void *out_addr)
 {
 	struct ubase_cmd_buf out = {};
@@ -277,7 +289,7 @@ int udma_open_ue_rx(struct udma_dev *dev, bool check_feature_enable, bool check_
 	   (!tp_num && dev->disable_ue_rx_count == 1))) {
 		ret = ubase_activate_dev(dev->comdev.adev);
 		if (ret) {
-			dev_err(dev->dev, "failed to open UE rx, ret = %d.\n", ret);
+			udma_err_rl(dev->dev, "failed to open UE rx, ret = %d.\n", ret);
 			goto out;
 		}
 	}

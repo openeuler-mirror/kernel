@@ -552,11 +552,8 @@ udma_alloc_jetty_sq(struct udma_dev *udma_dev, struct udma_jetty *jetty,
 	int ret;
 
 	ret = udma_get_user_jetty_cmd(udma_dev, jetty, udata, &ucmd);
-	if (ret) {
-		udma_err_rl(udma_dev->dev,
-			"udma get user jetty ucmd failed, ret = %d.\n", ret);
+	if (ret)
 		return ret;
-	}
 
 	udma_set_k_jetty_type(udma_dev, &jetty->sq, cfg->id, udata);
 
@@ -867,9 +864,10 @@ void udma_modify_jetty_precondition(struct udma_dev *dev, struct udma_jetty_queu
 		}
 
 		if (udma_wait_timeout(&sum_times, times, sq->ta_timeout)) {
-			dev_warn(dev->dev, "TA timeout, id = %u. PI = %d, CI = %d, nxt_send_ssn = %d nxt_rcv_ssn = %d state = %d.\n",
-				 sq->id, ctx.PI, ctx.CI, ctx.next_send_ssn,
-				 ctx.next_rcv_ssn, ctx.state);
+			udma_warn_rl(dev->dev,
+				     "TA context, id = %u. PI = %u, CI = %u. nxt_ssn: send = %u, rcv = %u. state = %u.\n",
+				     sq->id, ctx.PI, ctx.CI, ctx.next_send_ssn, ctx.next_rcv_ssn,
+				     ctx.state);
 			break;
 		}
 		times++;
@@ -960,11 +958,6 @@ int udma_deactive_jetty(struct ubcore_jetty *jetty, struct ubcore_udata *udata)
 	struct udma_dev *udma_dev = to_udma_dev(jetty->ub_dev);
 	struct udma_jetty *udma_jetty = to_udma_jetty(jetty);
 	int ret;
-
-	if (!udma_jetty->sq.activated) {
-		udma_info_rl(udma_dev->dev, "jetty no need deactivate.\n");
-		return 0;
-	}
 
 	if (!udma_jetty->ue_rx_closed && udma_close_ue_rx(udma_dev, true, true, false, 0)) {
 		udma_err_rl(udma_dev->dev, "close UE rx failed when destroying jetty.\n");
@@ -1203,7 +1196,7 @@ static bool udma_batch_destroy_jetty_precondition(struct udma_dev *dev,
 		return false;
 
 	if (batch_modify_jetty_to_error(dev, sq_list, jetty_cnt, bad_jetty_index)) {
-		dev_err(dev->dev, "batch modify jetty error failed.\n");
+		udma_err_rl(dev->dev, "batch modify jetty error failed.\n");
 		return false;
 	}
 
@@ -1410,11 +1403,8 @@ int udma_modify_jetty(struct ubcore_jetty *jetty, struct ubcore_jetty_attr *attr
 		return -EINVAL;
 	}
 
-	if (udma_jetty->sq.state == attr->state) {
-		udma_info_rl(udma_dev->dev, "jetty state has been %s.\n",
-				     to_state_name(attr->state));
+	if (udma_jetty->sq.state == attr->state)
 		return 0;
-	}
 
 	if (!verify_modify_jetty(udma_jetty->sq.state, attr->state)) {
 		dev_err(udma_dev->dev, "not support modify jetty state from %s to %s.\n",

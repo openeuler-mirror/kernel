@@ -745,7 +745,7 @@ int udma_query_res(struct ubcore_device *dev, struct ubcore_res_key *key,
 	struct udma_dev *udma_dev = to_udma_dev(dev);
 
 	if (!dfx_switch) {
-		dev_warn(udma_dev->dev, "the dfx_switch is not enabled.\n");
+		udma_err_rl(udma_dev->dev, "the dfx_switch is not enabled.\n");
 		return -EPERM;
 	}
 

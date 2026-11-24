@@ -859,12 +859,12 @@ int udma_destroy_jfr_batch(struct ubcore_jfr **jfr, int jfr_cnt, int *bad_jfr_in
 	int ret;
 
 	if (!jfr) {
-		pr_info("JFR array is null.\n");
+		pr_err("JFR array is null.\n");
 		return -EINVAL;
 	}
 
 	if (!jfr_cnt) {
-		pr_info("JFR count is 0.\n");
+		pr_err("JFR count is 0.\n");
 		return -EINVAL;
 	}
 
@@ -956,9 +956,6 @@ static int verify_modify_jfr(struct udma_dev *udma_dev, struct udma_jfr *udma_jf
 
 	if (attr->mask & UBCORE_JFR_STATE) {
 		if (udma_jfr->state == attr->state) {
-			udma_info_rl(udma_dev->dev,
-				"jfr(%u) state has been %s, keep it unchanged.\n",
-				udma_jfr->rq.id, to_state_str(attr->state));
 			return 0;
 		} else if (!verify_modify_jfr_state(udma_jfr->state,
 						    attr->state)) {
@@ -1102,7 +1099,7 @@ static int post_recv_one(struct udma_dev *dev, struct udma_jfr *jfr,
 		udma_err_rl(dev->dev,
 			    "failed to check JFR work queue, JFR work queue is full, jfrn=%u.\n",
 			    jfr->rq.id);
-		return -ENOMEM;
+		return -EINVAL;
 	}
 
 	ret = udma_id_alloc(dev, &jfr->idx_que.jfr_idx_table.ida_table,
@@ -1170,11 +1167,11 @@ struct ubcore_tjetty *udma_import_jfr_ex(struct ubcore_device *dev,
 
 	ret = udma_check_tp_type_available(udma_dev, cfg);
 	if (ret)
-		return NULL;
+		return ERR_PTR(ret);
 
 	udma_tjfr = kzalloc(sizeof(*udma_tjfr), GFP_KERNEL);
 	if (!udma_tjfr)
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 
 	if (!udata) {
 		if (cfg->flag.bs.token_policy != UBCORE_TOKEN_NONE) {
@@ -1262,7 +1259,7 @@ static int udma_k_get_jfr_param(struct udma_dev *dev, struct ubcore_jfr *ubcore_
 		ret = udma_query_jfr_ctx(dev, &jfr_ctx, udma_jfr->rq.id);
 		if (ret) {
 			udma_err_rl(dev->dev,
-				"failed to query JFR context, rq_id = %u, ret = %d.\n",
+				"failed to query JFR PI, rq_id = %u, ret = %d.\n",
 				udma_jfr->rq.id, ret);
 			return ret;
 		}
@@ -1275,7 +1272,7 @@ static int udma_k_get_jfr_param(struct udma_dev *dev, struct ubcore_jfr *ubcore_
 		ret = udma_query_jfr_ctx(dev, &jfr_ctx, udma_jfr->rq.id);
 		if (ret) {
 			udma_err_rl(dev->dev,
-				"failed to query JFR context, id = %u, ret = %d.\n",
+				"failed to query JFR CI, id = %u, ret = %d.\n",
 				udma_jfr->rq.id, ret);
 			return ret;
 		}
@@ -1488,11 +1485,6 @@ int udma_deactive_jfr(struct ubcore_jfr *jfr, struct ubcore_udata *udata)
 	struct udma_dev *udma_dev = to_udma_dev(jfr->ub_dev);
 	struct udma_jfr *udma_jfr = to_udma_jfr(jfr);
 	int ret;
-
-	if (!udma_jfr->rq.activated) {
-		udma_info_rl(udma_dev->dev, "JFR no need deactivate.\n");
-		return 0;
-	}
 
 	ret = udma_modify_and_del_jfr(udma_dev, udma_jfr);
 	if (ret) {

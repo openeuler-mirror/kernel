@@ -252,7 +252,7 @@ static void udma_set_jfc_ccu_or_stars(struct udma_dev *dev, struct udma_jfc *jfc
 
 		if (jfc->mode == UDMA_CCU_JFC_TYPE) {
 			jfc->ccu_en = true;
-			jfc->ccu_cqe_flag = false;
+			jfc->ccu_cqe_flag = is_ccu_cqe_other_die(dev, jfc->buf);
 		}
 	} else {
 		if (jfc->mode == UDMA_CCU_JFC_TYPE || jfc->mode == UDMA_STARS_JFC_TYPE ||
