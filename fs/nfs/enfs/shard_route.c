@@ -1886,9 +1886,9 @@ void enfs_shard_exit(void)
 	if (shard_workq)
 		destroy_workqueue(shard_workq);
 
-	if (shard_ctrl)
-		enfs_shard_ctrl_clear();
-
 	if (shard_check_wq)
 		destroy_workqueue(shard_check_wq);
+
+	if (shard_ctrl)
+		enfs_shard_ctrl_clear();
 }
