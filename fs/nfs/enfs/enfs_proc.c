@@ -396,7 +396,7 @@ static int clnt_proc_name(struct rpc_clnt *clnt, char *buf, int len)
 
 	ret = snprintf(buf, len, "%s_%u",
 		       rpc_peeraddr2str(clnt, RPC_DISPLAY_ADDR), clnt->cl_clid);
-	if (ret > len)
+	if (ret >= len)
 		return -E2BIG;
 	return 0;
 }
