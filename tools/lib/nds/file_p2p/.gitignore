@@ -3,4 +3,7 @@ build/
 file_p2p*.so
 nds*.so
 libfile_p2p.so
+libnds.so*
+*.o
+.*.d
 /nds_example

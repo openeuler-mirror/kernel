@@ -12,10 +12,8 @@
 #include <string.h>
 #include <errno.h>
 #include <stddef.h>
-#include <pthread.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/sysmacros.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
@@ -53,25 +51,23 @@ _Static_assert(offsetof(struct nds_io_event, user_data) ==
 	       offsetof(struct nds_io_event, reserved) ==
 		       offsetof(struct p2p_io_event, reserved),
 	       "nds_io_event field layout must match p2p_io_event");
-
-struct nds_reg_entry {
-	struct nds_reg_entry *next;
-	void *addr;
-	uint64_t size;
-	uint64_t handle;
-};
+_Static_assert(sizeof(struct nds_mem_range) == sizeof(struct p2p_mem_range) &&
+	       offsetof(struct nds_mem_range, addr) ==
+		       offsetof(struct p2p_mem_range, addr) &&
+	       offsetof(struct nds_mem_range, size) ==
+		       offsetof(struct p2p_mem_range, size),
+	       "nds_mem_range must match p2p_mem_range for zero-copy registration");
+_Static_assert(NDS_MEM_MAX_RANGES <= P2P_MEM_MAX_RANGES,
+	       "NDS group size must fit the kernel registration ioctl");
 
 struct nds_state {
-	int book_fd;
-	int topo_fd;
-	struct nds_reg_entry *regs;
-	pthread_mutex_t reg_lock;
+	int book_fd;   /* per-fd VA table for nds_register_mem / nds_unregister_mem */
+	int topo_fd;   /* filesystem topology ownership */
 };
 
 static struct nds_state g_state = {
 	.book_fd = -1,
 	.topo_fd = -1,
-	.reg_lock = PTHREAD_MUTEX_INITIALIZER,
 };
 
 static int is_init(void)
@@ -79,34 +75,18 @@ static int is_init(void)
 	return g_state.book_fd >= 0 && g_state.topo_fd >= 0;
 }
 
-static int topo_fd_to_bdev(int32_t topo_fd, char *bdev, size_t bdev_size)
+static int topo_fd_to_devt(int32_t topo_fd, dev_t *dev_id)
 {
-	char sys[64];
-	char link[PATH_MAX];
-	const char *base;
 	struct stat st;
-	dev_t target;
-	ssize_t n;
 
 	if (fstat(topo_fd, &st) < 0)
 		return -errno;
 	if (S_ISBLK(st.st_mode))
-		target = st.st_rdev;
+		*dev_id = st.st_rdev;
 	else if (S_ISREG(st.st_mode))
-		target = st.st_dev;
+		*dev_id = st.st_dev;
 	else
 		return -EINVAL;
-
-	snprintf(sys, sizeof(sys), "/sys/dev/block/%u:%u",
-		 major(target), minor(target));
-	n = readlink(sys, link, sizeof(link) - 1);
-	if (n < 0)
-		return -errno;
-	link[n] = '\0';
-	base = strrchr(link, '/');
-	base = base ? base + 1 : link;
-	if (snprintf(bdev, bdev_size, "/dev/%s", base) >= (int)bdev_size)
-		return -ENAMETOOLONG;
 	return 0;
 }
 
@@ -116,31 +96,52 @@ static int topo_fd_to_bdev(int32_t topo_fd, char *bdev, size_t bdev_size)
 
 int nds_init(struct nds_init_param *param)
 {
+	uint32_t version;
+	uint32_t topo_version;
+	int ret;
+
 	/* Not thread-safe: see nds_api.h. Concurrent init is undefined. */
-	if (!param || param->flags || is_init() || param->reserved[0] ||
-	    param->reserved[1] || param->reserved[2] || param->reserved[3])
+	if (!param || param->flags || param->reserved1 || param->reserved2 || is_init() ||
+	    param->reserved3[0] || param->reserved3[1] || param->reserved3[2] ||
+	    param->reserved3[3])
 		return -EINVAL;
 
 	/* Keep memory registration and topology ownership on separate fds. */
 	g_state.book_fd = p2p_open_dev();
 	if (g_state.book_fd < 0)
 		return g_state.book_fd;
+	ret = p2p_check_uapi(g_state.book_fd, &version);
+	if (ret)
+		goto close_book;
+
 	g_state.topo_fd = p2p_open_dev();
 	if (g_state.topo_fd < 0) {
-		int ret = g_state.topo_fd;
-
-		close(g_state.book_fd);
-		g_state.book_fd = -1;
-		return ret;
+		ret = g_state.topo_fd;
+		goto close_book;
 	}
-	g_state.regs = NULL;
-	param->version = NDS_API_VERSION;
+	ret = p2p_check_uapi(g_state.topo_fd, &topo_version);
+	if (ret)
+		goto close_topo;
+	if (topo_version != version) {
+		ret = -EPROTONOSUPPORT;
+		goto close_topo;
+	}
+
+	param->version = version;
 	return 0;
+
+close_topo:
+	close(g_state.topo_fd);
+	g_state.topo_fd = -1;
+close_book:
+	close(g_state.book_fd);
+	g_state.book_fd = -1;
+	return ret;
 }
 
 int nds_register_fs(const struct nds_fs_desc *desc)
 {
-	char bdev[PATH_MAX];
+	dev_t dev_id = 0;
 	uint32_t i;
 	int ret;
 
@@ -149,12 +150,20 @@ int nds_register_fs(const struct nds_fs_desc *desc)
 
 	/* Register every supplied topology for the lifetime of topo_fd. */
 	for (i = 0; i < desc->fs_fd_cnt; i++) {
-		ret = topo_fd_to_bdev(desc->fs_fd[i], bdev, sizeof(bdev));
+		ret = topo_fd_to_devt(desc->fs_fd[i], &dev_id);
 		if (!ret)
-			ret = p2p_add_topo(g_state.topo_fd, bdev);
+			ret = p2p_add_topo(g_state.topo_fd, dev_id);
 		if (ret) {
 			fprintf(stderr, "nds: add topology for fd %d failed %d\n",
 				desc->fs_fd[i], ret);
+			if (i) {
+				const struct nds_fs_desc done = {
+					.fs_fd = desc->fs_fd,
+					.fs_fd_cnt = i,
+				};
+
+				nds_unregister_fs(&done);
+			}
 			return ret;
 		}
 	}
@@ -163,33 +172,34 @@ int nds_register_fs(const struct nds_fs_desc *desc)
 
 int nds_unregister_fs(const struct nds_fs_desc *desc)
 {
-	(void)desc;
+	uint32_t i;
+	int ret;
+
+	if (!desc || !desc->fs_fd || !desc->fs_fd_cnt || desc->reserved)
+		return -EINVAL;
+
+	for (i = 0; i < desc->fs_fd_cnt; i++) {
+		ret = p2p_del_topo_fd(g_state.topo_fd, desc->fs_fd[i]);
+		if (ret) {
+			fprintf(stderr, "nds: delete topology for fd %d failed %d\n",
+				desc->fs_fd[i], ret);
+			if (i) {
+				const struct nds_fs_desc done = {
+					.fs_fd = desc->fs_fd,
+					.fs_fd_cnt = i,
+				};
+
+				nds_register_fs(&done);
+			}
+			return ret;
+		}
+	}
 	return 0;
 }
 
 int nds_exit(void)
 {
-	struct nds_reg_entry *r, *next;
-
-	pthread_mutex_lock(&g_state.reg_lock);
-	r = g_state.regs;
-	g_state.regs = NULL;
-	pthread_mutex_unlock(&g_state.reg_lock);
-
-	for (; r; r = next) {
-		struct p2p_mem_unregister_param up = {
-			.mem_handle = r->handle,
-			.reserved = 0,
-		};
-		next = r->next;
-		if (ioctl(g_state.book_fd, IOCTL_UNREGISTER_MEM, &up) < 0)
-			fprintf(stderr,
-				"nds: unregister memory addr=%p size=%llu handle=%llu failed %d\n",
-				r->addr, (unsigned long long)r->size,
-				(unsigned long long)r->handle, -errno);
-		free(r);
-	}
-
+	/* Closing book_fd revokes and unpins all remaining registered ranges in kernel. */
 	close(g_state.topo_fd);
 	g_state.topo_fd = -1;
 	close(g_state.book_fd);
@@ -197,87 +207,56 @@ int nds_exit(void)
 	return 0;
 }
 
-int nds_register_mem(void *addr, uint64_t size, int flags)
+static int nds_mem_desc_valid(const struct nds_mem_desc *desc)
+{
+	return desc && desc->ranges && desc->nr && desc->nr <= NDS_MEM_MAX_RANGES &&
+	       !desc->flags && !desc->reserved[0] && !desc->reserved[1] &&
+	       !desc->reserved[2] && !desc->reserved[3];
+}
+
+int nds_register_mem(const struct nds_mem_desc *desc)
 {
 	struct p2p_mem_register_param p = { 0 };
-	struct nds_reg_entry *r;
-	int ret;
 
-	/* addr may be 0 (stub CMB window starts at VA 0). */
-	if (!size || flags)
+	if (!nds_mem_desc_valid(desc))
+		return -EINVAL;
+	if (g_state.book_fd < 0)
 		return -EINVAL;
 
-	r = calloc(1, sizeof(*r));
-	if (!r)
-		return -ENOMEM;
-
-	p.addr = (__u64)(uintptr_t)addr;
-	p.size = size;
+	p.ranges = (uint64_t)(uintptr_t)desc->ranges;
+	p.nr = desc->nr;
 	if (ioctl(g_state.book_fd, IOCTL_REGISTER_MEM, &p) < 0) {
-		ret = -errno;
+		int ret = -errno;
+
 		fprintf(stderr,
-			"nds: register memory addr=%p size=%llu failed %d\n",
-			addr, (unsigned long long)size, ret);
-		free(r);
+			"nds: register memory addr=0x%llx size=%llu ranges=%u failed %d\n",
+			(unsigned long long)desc->ranges[0].addr,
+			(unsigned long long)desc->ranges[0].size, desc->nr, ret);
 		return ret;
 	}
-	r->addr = addr;
-	r->size = size;
-	r->handle = p.mem_handle;
-	pthread_mutex_lock(&g_state.reg_lock);
-	r->next = g_state.regs;
-	g_state.regs = r;
-	pthread_mutex_unlock(&g_state.reg_lock);
-
 	return 0;
 }
 
-int nds_unregister_mem(void *addr, uint64_t size, int flags)
+int nds_unregister_mem(const struct nds_mem_desc *desc)
 {
-	struct nds_reg_entry *r, **prev;
-	struct p2p_mem_unregister_param up;
-	int ret = 0;
+	struct p2p_mem_unregister_param p = { 0 };
 
-	if (flags)
+	if (!nds_mem_desc_valid(desc))
+		return -EINVAL;
+	if (g_state.book_fd < 0)
 		return -EINVAL;
 
-	pthread_mutex_lock(&g_state.reg_lock);
-	for (prev = &g_state.regs; *prev; prev = &(*prev)->next) {
-		if ((*prev)->addr == addr)
-			break;
-	}
-	if (!*prev) {
-		pthread_mutex_unlock(&g_state.reg_lock);
-		return -ENOENT;
-	}
-	if ((*prev)->size != size) {
-		fprintf(stderr,
-			"nds: unregister memory addr=%p size=%llu does not match registered size=%llu\n",
-			addr, (unsigned long long)size,
-			(unsigned long long)(*prev)->size);
-		pthread_mutex_unlock(&g_state.reg_lock);
-		return -EINVAL;
-	}
+	p.ranges = (uint64_t)(uintptr_t)desc->ranges;
+	p.nr = desc->nr;
+	if (ioctl(g_state.book_fd, IOCTL_UNREGISTER_MEM, &p) < 0) {
+		int ret = -errno;
 
-	r = *prev;
-	*prev = r->next;
-	pthread_mutex_unlock(&g_state.reg_lock);
-
-	up.mem_handle = r->handle;
-	up.reserved = 0;
-	if (ioctl(g_state.book_fd, IOCTL_UNREGISTER_MEM, &up) < 0) {
-		ret = -errno;
 		fprintf(stderr,
-			"nds: unregister memory addr=%p size=%llu handle=%llu failed %d\n",
-			r->addr, (unsigned long long)r->size,
-			(unsigned long long)r->handle, ret);
-		pthread_mutex_lock(&g_state.reg_lock);
-		r->next = g_state.regs;
-		g_state.regs = r;
-		pthread_mutex_unlock(&g_state.reg_lock);
+			"nds: unregister memory addr=0x%llx size=%llu ranges=%u failed %d\n",
+			(unsigned long long)desc->ranges[0].addr,
+			(unsigned long long)desc->ranges[0].size, desc->nr, ret);
 		return ret;
 	}
-	free(r);
 	return 0;
 }
 
@@ -337,29 +316,6 @@ int nds_io_destroy_ctx(struct nds_io_ctx *ctx)
 	return drain_err ? drain_err : close_err;
 }
 
-static int find_registered_mem(const struct nds_io_vec *iov,
-			       uint64_t *handle_out)
-{
-	struct nds_reg_entry *r;
-	uint64_t addr = iov->buf_addr;
-	uint64_t len = iov->buf_len;
-	int ret = -EINVAL;
-
-	pthread_mutex_lock(&g_state.reg_lock);
-	for (r = g_state.regs; r; r = r->next) {
-		uint64_t base = (uint64_t)(uintptr_t)r->addr;
-
-		if (addr >= base && len <= r->size &&
-		    addr - base <= r->size - len) {
-			*handle_out = r->handle;
-			ret = 0;
-			break;
-		}
-	}
-	pthread_mutex_unlock(&g_state.reg_lock);
-	return ret;
-}
-
 static int validate_nds_iov(const struct nds_io_cb *cb, unsigned long *io_size)
 {
 	unsigned long size = 0;
@@ -370,15 +326,14 @@ static int validate_nds_iov(const struct nds_io_cb *cb, unsigned long *io_size)
 	for (i = 0; i < cb->iov_cnt; i++) {
 		if (!cb->iov[i].buf_len || cb->iov[i].reserved)
 			return -EINVAL;
-		if (__builtin_add_overflow(size, (unsigned long)cb->iov[i].buf_len, &size))
-			return -EINVAL;
+		/* NDS_IO_MAX_IOV uint32_t lengths fit in a 64-bit unsigned long. */
+		size += cb->iov[i].buf_len;
 	}
 	*io_size = size;
 	return 0;
 }
 
-static int nds_iocb_to_io_param(const struct nds_io_cb *cb, int file_fd,
-				struct p2p_io_param *io,
+static int nds_iocb_to_io_param(const struct nds_io_cb *cb, int file_fd, struct p2p_io_param *io,
 				struct fiemap **exts_out)
 {
 	struct fiemap *exts = NULL;
@@ -386,7 +341,6 @@ static int nds_iocb_to_io_param(const struct nds_io_cb *cb, int file_fd,
 	unsigned long io_size;
 	unsigned long long total_size = 0;
 	unsigned int ext_num = 0;
-	uint64_t mem_handle = 0;
 	int err;
 
 	if (cb->opcode > NDS_IO_OP_PWRITE || (cb->rw_flags & ~NDS_IO_F_MASK))
@@ -395,36 +349,31 @@ static int nds_iocb_to_io_param(const struct nds_io_cb *cb, int file_fd,
 	err = validate_nds_iov(cb, &io_size);
 	if (err)
 		return err;
-	if (cb->offset > ULONG_MAX ||
-	    io_size > ULONG_MAX - (unsigned long)cb->offset)
+	if (cb->offset > ULONG_MAX || io_size > ULONG_MAX - (unsigned long)cb->offset)
 		return -EOVERFLOW;
 
 	if (cb->rw_flags & NDS_IO_F_REGISTERED_MEM) {
 		if (cb->host_pid)
 			return -EINVAL;
-		err = find_registered_mem(&cb->iov[0], &mem_handle);
-		if (err)
-			return err;
 	} else if (cb->host_pid < 0) {
 		return -EINVAL;
 	}
 
 	if (fstat(file_fd, &file_stat) < 0) {
 		err = -errno;
-		fprintf(stderr, "nds: fstat fd %d failed, errno: %d\n",
-			file_fd, err);
+		fprintf(stderr, "nds: fstat fd %d failed, errno: %d\n", file_fd, err);
 		return err;
 	}
 
-	err = p2p_prepare_io_extents(file_fd, &file_stat, cb->offset, io_size,
-				     &exts, &ext_num, &total_size);
+	err = p2p_prepare_io_extents(file_fd, &file_stat,
+				     cb->opcode == NDS_IO_OP_PWRITE ? P2P_IO_WRITE : P2P_IO_READ,
+				     cb->offset, io_size, &exts, &ext_num, &total_size);
 	if (err) {
 		fprintf(stderr, "nds: prepare extents failed, errno: %d\n", err);
 		return err;
 	}
 	if (!ext_num || total_size < io_size) {
-		fprintf(stderr, "nds: extent size %llu < IOV size %lu\n",
-			total_size, io_size);
+		fprintf(stderr, "nds: extent size %llu < IOV size %lu\n", total_size, io_size);
 		free(exts);
 		return -ENODATA;
 	}
@@ -441,11 +390,10 @@ static int nds_iocb_to_io_param(const struct nds_io_cb *cb, int file_fd,
 	if (cb->rw_flags & NDS_IO_F_REGISTERED_MEM) {
 		io->flags = P2P_IO_F_REGISTERED_MEM;
 		io->host_pid = 0;
-		io->mem_handle = mem_handle;
+		io->mem_fd = g_state.book_fd;
 	} else {
 		io->flags = 0;
 		io->host_pid = cb->host_pid ? cb->host_pid : getpid();
-		io->mem_handle = 0;
 	}
 
 	*exts_out = exts;

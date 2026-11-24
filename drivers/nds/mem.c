@@ -6,60 +6,43 @@
 
 #include "mem.h"
 
-static typeof(devmm_get_mem_pa_list) *get_mem_pa_list;
-static typeof(devmm_put_mem_pa_list) *put_mem_pa_list;
-static typeof(devmm_get_mem_page_size) *get_mem_page_size;
+static typeof(hal_kernel_p2p_get_pages) *get_pages;
+static typeof(hal_kernel_p2p_put_pages) *put_pages;
 
 int p2p_mem_init(void)
 {
-	get_mem_pa_list = symbol_get(devmm_get_mem_pa_list);
-	if (!get_mem_pa_list) {
-		pr_err("required symbol devmm_get_mem_pa_list is unavailable\n");
+	get_pages = symbol_get(hal_kernel_p2p_get_pages);
+	if (!get_pages) {
+		pr_err("required symbol hal_kernel_p2p_get_pages is unavailable\n");
 		return -ENODEV;
 	}
 
-	put_mem_pa_list = symbol_get(devmm_put_mem_pa_list);
-	if (!put_mem_pa_list) {
-		pr_err("required symbol devmm_put_mem_pa_list is unavailable\n");
-		goto put_get_mem_pa_list;
-	}
-
-	get_mem_page_size = symbol_get(devmm_get_mem_page_size);
-	if (!get_mem_page_size) {
-		pr_err("required symbol devmm_get_mem_page_size is unavailable\n");
-		goto put_put_mem_pa_list;
+	put_pages = symbol_get(hal_kernel_p2p_put_pages);
+	if (!put_pages) {
+		pr_err("required symbol hal_kernel_p2p_put_pages is unavailable\n");
+		goto put_get_pages;
 	}
 
 	return 0;
 
-put_put_mem_pa_list:
-	symbol_put(devmm_put_mem_pa_list);
-put_get_mem_pa_list:
-	symbol_put(devmm_get_mem_pa_list);
+put_get_pages:
+	symbol_put(hal_kernel_p2p_get_pages);
 	return -ENODEV;
 }
 
-int p2p_mem_get_pa_list(struct devmm_svm_process_id *process_id, u64 addr,
-			u64 size, u64 *pa_list, u32 pa_num)
+int p2p_mem_get_pages(u64 addr, u64 size, void (*free_callback)(void *data), void *data,
+		      struct p2p_page_table **page_table)
 {
-	return get_mem_pa_list(process_id, addr, size, pa_list, pa_num);
+	return get_pages(addr, size, free_callback, data, page_table);
 }
 
-void p2p_mem_put_pa_list(struct devmm_svm_process_id *process_id, u64 addr,
-			 u64 size, u64 *pa_list, u32 pa_num)
+int p2p_mem_put_pages(struct p2p_page_table *page_table)
 {
-	put_mem_pa_list(process_id, addr, size, pa_list, pa_num);
-}
-
-int p2p_mem_get_page_size(struct devmm_svm_process_id *process_id, u64 addr,
-			  u64 size)
-{
-	return get_mem_page_size(process_id, addr, size);
+	return put_pages(page_table);
 }
 
 void p2p_mem_exit(void)
 {
-	symbol_put(devmm_get_mem_page_size);
-	symbol_put(devmm_put_mem_pa_list);
-	symbol_put(devmm_get_mem_pa_list);
+	symbol_put(hal_kernel_p2p_put_pages);
+	symbol_put(hal_kernel_p2p_get_pages);
 }

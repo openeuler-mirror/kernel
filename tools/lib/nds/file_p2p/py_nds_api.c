@@ -195,36 +195,89 @@ static PyObject *py_nds_exit(PyObject *Py_UNUSED(self),
 	return PyLong_FromLong(ret);
 }
 
+static int parse_nds_mem_ranges(PyObject *obj, struct nds_mem_range **ranges_out,
+				uint32_t *nr_out)
+{
+	struct nds_mem_range *ranges;
+	PyObject *seq;
+	Py_ssize_t count;
+	Py_ssize_t i;
+
+	seq = PySequence_Fast(obj, "ranges must be a sequence of (addr, size)");
+	if (!seq)
+		return -1;
+	count = PySequence_Fast_GET_SIZE(seq);
+	if (count <= 0 || count > NDS_MEM_MAX_RANGES) {
+		Py_DECREF(seq);
+		PyErr_SetString(PyExc_ValueError, "range count out of range");
+		return -1;
+	}
+	ranges = calloc((size_t)count, sizeof(*ranges));
+	if (!ranges) {
+		Py_DECREF(seq);
+		PyErr_NoMemory();
+		return -1;
+	}
+	for (i = 0; i < count; i++) {
+		unsigned long long addr;
+		unsigned long long size;
+
+		if (!PyArg_ParseTuple(PySequence_Fast_GET_ITEM(seq, i), "KK",
+				      &addr, &size)) {
+			free(ranges);
+			Py_DECREF(seq);
+			return -1;
+		}
+		ranges[i].addr = addr;
+		ranges[i].size = size;
+	}
+	Py_DECREF(seq);
+	*ranges_out = ranges;
+	*nr_out = (uint32_t)count;
+	return 0;
+}
+
 static PyObject *py_nds_register_mem(PyObject *Py_UNUSED(self), PyObject *args)
 {
-	unsigned long long addr;
-	unsigned long long size;
+	struct nds_mem_range *ranges;
+	PyObject *ranges_py;
+	uint32_t nr;
 	int flags = 0;
 	int ret;
 
-	if (!PyArg_ParseTuple(args, "KK|i", &addr, &size, &flags))
+	if (!PyArg_ParseTuple(args, "O|i", &ranges_py, &flags))
+		return NULL;
+	if (parse_nds_mem_ranges(ranges_py, &ranges, &nr))
 		return NULL;
 
 	Py_BEGIN_ALLOW_THREADS
-	ret = nds_register_mem((void *)(uintptr_t)addr, size, flags);
+	ret = nds_register_mem(&(struct nds_mem_desc){
+		.ranges = ranges, .nr = nr, .flags = flags,
+	});
 	Py_END_ALLOW_THREADS
-
+	free(ranges);
 	return PyLong_FromLong(ret);
 }
 
 static PyObject *py_nds_unregister_mem(PyObject *Py_UNUSED(self), PyObject *args)
 {
-	unsigned long long addr;
-	unsigned long long size;
+	struct nds_mem_range *ranges;
+	PyObject *ranges_py;
+	uint32_t nr;
 	int flags = 0;
 	int ret;
 
-	if (!PyArg_ParseTuple(args, "KK|i", &addr, &size, &flags))
+	if (!PyArg_ParseTuple(args, "O|i", &ranges_py, &flags))
+		return NULL;
+	if (parse_nds_mem_ranges(ranges_py, &ranges, &nr))
 		return NULL;
 
 	Py_BEGIN_ALLOW_THREADS
-	ret = nds_unregister_mem((void *)(uintptr_t)addr, size, flags);
+	ret = nds_unregister_mem(&(struct nds_mem_desc){
+		.ranges = ranges, .nr = nr, .flags = flags,
+	});
 	Py_END_ALLOW_THREADS
+	free(ranges);
 	return PyLong_FromLong(ret);
 }
 
@@ -476,12 +529,13 @@ static PyMethodDef NdsMethods[] = {
 	  "fs_fds: file/block fds identifying topologies to add\n" },
 	{ "unregister_fs", py_nds_unregister_fs, METH_VARARGS,
 	  "unregister_fs(fs_fds) -> int\n"
-	  "Currently a no-op; topologies remain until exit().\n" },
+	  "Remove the topology identified by each file descriptor.\n" },
 	{ "register_mem", py_nds_register_mem, METH_VARARGS,
-	  "register_mem(addr, size[, flags=0]) -> int\n" },
+	  "register_mem(ranges[, flags=0]) -> int\n"
+	  "ranges: sequence of (addr, size); each range gets one entry\n" },
 	{ "unregister_mem", py_nds_unregister_mem, METH_VARARGS,
-	  "unregister_mem(addr, size[, flags=0]) -> int\n"
-	  "size must match the registered range.\n" },
+	  "unregister_mem(ranges[, flags=0]) -> int\n"
+	  "ranges are matched by address; the array need not be identical.\n" },
 	{ "io_new_ctx", py_nds_io_new_ctx, METH_VARARGS,
 	  "io_new_ctx(max_io_cnt[, flags=0]) -> ctx capsule | negative errno\n" },
 	{ "io_destroy_ctx", py_nds_io_destroy_ctx, METH_VARARGS,
@@ -517,8 +571,7 @@ PyMODINIT_FUNC PyInit_nds(void)
 	if (!module)
 		return NULL;
 
-	if (PyModule_AddIntConstant(module, "NDS_API_VERSION", NDS_API_VERSION) ||
-	    PyModule_AddIntConstant(module, "NDS_IO_MAX_IO_CNT",
+	if (PyModule_AddIntConstant(module, "NDS_IO_MAX_IO_CNT",
 				    NDS_IO_MAX_IO_CNT) ||
 	    PyModule_AddIntConstant(module, "NDS_IO_MAX_IOV", NDS_IO_MAX_IOV) ||
 	    PyModule_AddIntConstant(module, "NDS_IO_OP_PREAD", NDS_IO_OP_PREAD) ||
