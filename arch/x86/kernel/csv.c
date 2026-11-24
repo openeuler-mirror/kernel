@@ -172,6 +172,64 @@ static void __init __csv3_early_secure_call(u64 base_address, u64 num_pages,
 	early_secure_call_page_idx ^= 1;
 }
 
+static void csv3_secure_call(u64 base_address, u64 num_pages,
+			     enum csv3_secure_command_type cmd_type)
+{
+	u32 cmd_ack;
+	struct secure_call_pages *data;
+	struct csv3_secure_call_cmd *page_rd;
+	struct csv3_secure_call_cmd *page_wr;
+	int page_idx;
+	int cpu;
+	unsigned long flags;
+
+	local_irq_save(flags);
+
+	cpu = smp_processor_id();
+	data = per_cpu(secure_call_data, cpu);
+	if (!data) {
+		/*
+		 * The per-CPU secure call pages are only allocated when the
+		 * firmware advertised them at boot. Bail out instead of
+		 * dereferencing a NULL pointer if they are missing.
+		 */
+		pr_err_once("%s: secure call pages not initialized\n",
+			    __func__);
+		local_irq_restore(flags);
+		return;
+	}
+
+	page_idx = per_cpu(secure_call_page_idx, cpu);
+
+	if (page_idx == 0) {
+		page_rd = &data->page_a;
+		page_wr = &data->page_b;
+	} else {
+		page_rd = &data->page_b;
+		page_wr = &data->page_a;
+	}
+
+	while (1) {
+		page_wr->cmd_type = (u32)cmd_type;
+		page_wr->nums = 1;
+		page_wr->entry[0].base_address = base_address;
+		page_wr->entry[0].size = num_pages << PAGE_SHIFT;
+
+		/*
+		 * Write command in page_wr must be done before retrieve cmd
+		 * ack from page_rd, and it is ensured by the smp_mb below.
+		 */
+		smp_mb();
+
+		cmd_ack = page_rd->cmd_type;
+		if (cmd_ack != cmd_type)
+			break;
+	}
+
+	per_cpu(secure_call_page_idx, cpu) ^= 1;
+	local_irq_restore(flags);
+}
+
 static void __csv3_memory_enc_dec(csv3_secure_call_func secure_call, u64 vaddr,
 				  u64 pages, bool enc)
 {
@@ -305,3 +363,11 @@ int csv3_issue_request_report(phys_addr_t paddr, size_t size)
 	return sc_return_code == CSV3_SECURE_CMD_ACK ? 0 : -EIO;
 }
 EXPORT_SYMBOL_GPL(csv3_issue_request_report);
+
+void csv_memory_enc_dec(u64 vaddr, u64 pages, bool enc)
+{
+	if (!csv3_active())
+		return;
+
+	__csv3_memory_enc_dec(csv3_secure_call, vaddr & PAGE_MASK, pages, enc);
+}

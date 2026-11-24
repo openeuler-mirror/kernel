@@ -27,6 +27,7 @@
 #include <asm/proto.h>
 #include <asm/memtype.h>
 #include <asm/set_memory.h>
+#include <asm/csv.h>
 
 #include "../mm_internal.h"
 
@@ -2011,6 +2012,14 @@ static int __set_memory_enc_dec(unsigned long addr, int numpages, bool enc)
 	 * as above.
 	 */
 	cpa_flush(&cpa, 0);
+
+	/*
+	 * On CSV3, the shared and private page attr changes should be managed
+	 * by secure processor. Private pages live in isolated memory region,
+	 * while shared pages live out of isolated memory region.
+	 */
+	if (csv3_active())
+		csv_memory_enc_dec(addr, numpages, enc);
 
 	/*
 	 * Notify hypervisor that a given memory range is mapped encrypted
