@@ -468,6 +468,8 @@ static void enfs_add_xprts_to_clnt(struct rpc_clnt *clnt,
 	ip_list = kzalloc(sizeof(struct nfs_ip_list), GFP_KERNEL);
 	if (!ip_list) {
 		enfs_log_error("alloc memery failed.\n");
+		for (i = 0; i < total_combinations; i++)
+			xprt_put(attach_infos[i].xprt);
 		return;
 	}
 
