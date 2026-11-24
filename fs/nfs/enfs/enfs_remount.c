@@ -37,22 +37,16 @@ static bool enfs_rpc_xprt_switch_need_delete_addr(
 
 	local_total = enfs_option->local_ip_list->count;
 	remote_total = enfs_option->remote_ip_list->count;
-	if (local_total == 0 || remote_total == 0) {
+	if (remote_total == 0) {
 		enfs_log_debug("no ip list is present.\n");
 		return false;
 	}
 
-	for (i = 0; i < local_total; i++) {
-		if (protocol == XPRT_TRANSPORT_RDMA) {
-			find_same_ip = true;
-			break;
-		}
+	find_same_ip = local_total == 0 || protocol == XPRT_TRANSPORT_RDMA;
+	for (i = 0; i < local_total && !find_same_ip; i++)
 		find_same_ip = rpc_cmp_addr((struct sockaddr *)&enfs_option
 						    ->local_ip_list->address[i],
 					    srcaddr);
-		if (find_same_ip)
-			break;
-	}
 
 	if (find_same_ip == false)
 		return true;
