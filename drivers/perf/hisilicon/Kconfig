@@ -27,7 +27,7 @@ config HNS3_PMU
 
 config UB_UMMU_PMU
 	tristate "HiSilicon UMMU PMU Support"
-	depends on ARM64
+	depends on ARM64 && UB_UBFI
 	help
 	  Provide support for hisilicon UMMU performance monitoring unit (PMU)
 	  devices.

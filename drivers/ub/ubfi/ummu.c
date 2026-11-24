@@ -399,8 +399,6 @@ static int parse_ummu(void *info_node)
 		return 0;
 	}
 
-	pr_info("ummu node num: %u\n", sub_table->count);
-
 	ummu_node = (struct ummu_node *)sub_table->node_data;
 	for (index = 0; index < sub_table->count; index++, ummu_node++) {
 		if (firmware_mode == ACPI)
@@ -416,6 +414,12 @@ static int parse_ummu(void *info_node)
 
 	return 0;
 }
+
+u32 ubrt_get_ummu_pmu_node_count(void)
+{
+	return ubrt_fwnode_get_count(UBRT_UMMU_PMU);
+}
+EXPORT_SYMBOL_GPL(ubrt_get_ummu_pmu_node_count);
 
 int handle_ummu_table(u64 pointer)
 {

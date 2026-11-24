@@ -14,6 +14,7 @@
 #include <linux/platform_device.h>
 #include <linux/perf_event.h>
 #include <linux/msi.h>
+#include <ub/ubfi/ubfi.h>
 
 #define UMMU_PMCG_MAX_COUNTERS 8
 
@@ -41,12 +42,6 @@ struct ummu_pmu {
 
 #define UMMU_PMCG_INT_EN 0x18
 #define UMMU_PMCG_INT_OVF_EN BIT(0)
-#define UMMU_PMCG_USI_MPAM 0x1C
-#define UMMU_PMCG_USI_MPAM_NS BIT(24)
-#define UMMU_PMCG_USI_MPAM_PMG GENMASK(23, 16)
-#define UMMU_PMCG_USI_MPAM_PARTID GENMASK(15, 0)
-#define UMMU_PMCG_USI_MPAM_PMG_MAX 0x03
-#define UMMU_PMCG_USI_MPAM_PARTID_MAX 0x0FF
 #define UMMU_PMCG_USI_IDX 0x20
 #define UMMU_PMCG_ICG_EN 0x24
 #define UMMU_PMCG_ICG_EN_ICG BIT(0)
@@ -117,9 +112,6 @@ struct ummu_pmu {
 #define UMMU_USI_MEMATTR_DEVICE_nGnRE 0x01
 #define UMMU_COUNTER_LEN 31
 
-static int g_partid;
-static int g_pmg;
-#define NUMBER_BASE_DECIMAL 10
 #define UMMU_PMU_MULTIPLES_RATE 100
 
 #define UMMU_PMU_DRV_NAME "ummu_pmu"
@@ -913,62 +905,12 @@ static const struct attribute_group ummu_pmu_format_attr_group = {
 	.attrs = ummu_pmu_formats_attrs
 };
 
-static int ummu_pmu_check_usi_mpam_cap(struct ummu_pmu *pmu, int partid, int pmg)
-{
-	if (partid < 0 || partid > UMMU_PMCG_USI_MPAM_PARTID_MAX) {
-		dev_err(pmu->dev, "usi_mpam partid exceeds range: partid[0, %d]\n",
-			UMMU_PMCG_USI_MPAM_PARTID_MAX);
-		return -ERANGE;
-	}
-
-	if (pmg < 0 || pmg > UMMU_PMCG_USI_MPAM_PMG_MAX) {
-		dev_err(pmu->dev, "usi_mpam pmg exceeds range: pmg[0, %d]\n",
-			UMMU_PMCG_USI_MPAM_PMG_MAX);
-		return -ERANGE;
-	}
-
-	return 0;
-}
-
 static const struct attribute_group *ummu_pmu_attr_groups[] = {
 	&ummu_pmu_cpumask_attr_group,
 	&ummu_pmu_events_attr_group,
 	&ummu_pmu_format_attr_group,
 	NULL
 };
-
-static int ummu_pmu_set_usi_mpam(struct ummu_pmu *pmu, int partid, int pmg)
-{
-	uint32_t reg;
-	int ret;
-
-	if (!pmu)
-		return -EINVAL;
-
-	ret = ummu_pmu_check_usi_mpam_cap(pmu, partid, pmg);
-	if (ret)
-		return ret;
-
-	reg = UMMU_PMCG_USI_MPAM_NS;
-	reg |= FIELD_PREP(UMMU_PMCG_USI_MPAM_PMG, pmg);
-	reg |= FIELD_PREP(UMMU_PMCG_USI_MPAM_PARTID, partid);
-	writel_relaxed(reg, pmu->reg_base + UMMU_PMCG_USI_MPAM);
-
-	return 0;
-}
-
-static int ummu_pmu_get_usi_mpam(struct ummu_pmu *pmu, int *partid, int *pmg)
-{
-	uint32_t reg;
-
-	if (!pmu)
-		return -EINVAL;
-
-	reg = readl_relaxed(pmu->reg_base + UMMU_PMCG_USI_MPAM);
-	*partid = FIELD_GET(UMMU_PMCG_USI_MPAM_PARTID, reg);
-	*pmg = FIELD_GET(UMMU_PMCG_USI_MPAM_PMG, reg);
-	return 0;
-}
 
 static int ummu_pmu_offline_cpu(uint32_t cpu, struct hlist_node *node)
 {
@@ -1019,7 +961,12 @@ static int ummu_pmu_probe(struct platform_device *pdev)
 	struct ummu_pmu *ummu_pmu;
 	struct resource *res;
 	char *name;
+	u32 ummu_node_count;
 	int ret;
+
+	ummu_node_count = ubrt_get_ummu_pmu_node_count();
+	if (!ummu_node_count)
+		return dev_err_probe(dev, -ENODEV, "ummu pmu node num is zero\n");
 
 	ummu_pmu = devm_kzalloc(dev, sizeof(*ummu_pmu), GFP_KERNEL);
 	if (!ummu_pmu)
@@ -1101,111 +1048,12 @@ static const struct acpi_device_id hisi_ummu_pmu_acpi_match[] = {
 MODULE_DEVICE_TABLE(acpi, hisi_ummu_pmu_acpi_match);
 #endif
 
-static ssize_t partid_store(struct device *kobj, struct device_attribute *attr,
-			    const char *buf, size_t count)
-{
-	int var, ret;
-
-	ret = kstrtoint(buf, NUMBER_BASE_DECIMAL, &var);
-	if (ret < 0)
-		return ret;
-
-	g_partid = var;
-	dev_info(kobj, "ummu mpam input partid = %d.\n", var);
-	return count;
-}
-
-static ssize_t pmg_store(struct device *kobj, struct device_attribute *attr,
-			 const char *buf, size_t count)
-{
-	int var, ret;
-
-	ret = kstrtoint(buf, NUMBER_BASE_DECIMAL, &var);
-	if (ret < 0)
-		return ret;
-
-	g_pmg = var;
-	dev_info(kobj, "ummu mpam input pmg = %d.\n", var);
-	return count;
-}
-
-static int check_input_buf(const char *buf)
-{
-	int var, ret;
-
-	ret = kstrtoint(buf, NUMBER_BASE_DECIMAL, &var);
-	if (ret)
-		return ret;
-
-	if (var != 1)
-		return -EINVAL;
-
-	return 0;
-}
-
-static ssize_t run_store(struct device *dev, struct device_attribute *attr,
-			 const char *buf, size_t count)
-{
-	struct ummu_pmu *pmu;
-	int ret;
-
-	ret = check_input_buf(buf);
-	if (ret)
-		return ret;
-
-	pmu = (struct ummu_pmu *)dev_get_drvdata(dev);
-	ret = ummu_pmu_set_usi_mpam(pmu, g_partid, g_pmg);
-	if (ret) {
-		dev_err(dev,
-			"ummu_pmu set usi_mpam(partid[%d], pmg[%d]) failed, ret[%d]\n",
-			g_partid, g_pmg, ret);
-		return ret;
-	}
-
-	return count;
-}
-
-static ssize_t mpam_info_show(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	struct ummu_pmu *pmu = (struct ummu_pmu *)dev_get_drvdata(dev);
-	int partid = 0, pmg = 0, ret;
-
-	ret = ummu_pmu_get_usi_mpam(pmu, &partid, &pmg);
-	if (ret)
-		return ret;
-	return sysfs_emit(buf, "partid:%d\npmg:%d\n", partid, pmg);
-}
-
-static DEVICE_ATTR_WO(partid);
-static DEVICE_ATTR_WO(pmg);
-static DEVICE_ATTR_WO(run);
-static DEVICE_ATTR_RO(mpam_info);
-
-static struct attribute *ummu_pmu_usi_mpam_attrs[] = {
-	&dev_attr_partid.attr,
-	&dev_attr_pmg.attr,
-	&dev_attr_run.attr,
-	&dev_attr_mpam_info.attr,
-	NULL
-};
-
-static const struct attribute_group ummu_pmu_usi_mpam_attr_group = {
-	.name = "usi_mpam",
-	.attrs = ummu_pmu_usi_mpam_attrs
-};
-
-static const struct attribute_group *ummu_pmu_groups[] = {
-	&ummu_pmu_usi_mpam_attr_group,
-	NULL
-};
-
 static struct platform_driver ummu_pmu_driver = {
 	.driver = {
 		.name = UMMU_PMU_DRV_NAME,
 		.suppress_bind_attrs = true,
 		.of_match_table = of_match_ptr(hisi_ummu_pmu_of_match),
 		.acpi_match_table = ACPI_PTR(hisi_ummu_pmu_acpi_match),
-		.dev_groups = ummu_pmu_groups
 	},
 	.probe = ummu_pmu_probe,
 	.remove = ummu_pmu_remove,
@@ -1243,5 +1091,4 @@ module_exit(ummu_pmu_module_exit);
 
 MODULE_DESCRIPTION("PMU driver for UMMU Performance Monitors Extension");
 MODULE_LICENSE("GPL");
-MODULE_SOFTDEP("pre: ubfi");
 MODULE_ALIAS("platform:" UMMU_PMU_DRV_NAME);
