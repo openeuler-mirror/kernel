@@ -2107,6 +2107,22 @@ static bool has_locked_children(struct mount *mnt, struct dentry *dentry)
 	return false;
 }
 
+/*
+ * Check whether @mnt has a mount mounted below @dentry.
+ *
+ * locks: namespace_shared && pinned(mnt)
+ */
+static bool __has_children(struct mount *mnt, struct dentry *dentry)
+{
+	struct mount *child;
+
+	list_for_each_entry(child, &mnt->mnt_mounts, mnt_child) {
+		if (is_subdir(child->mnt_mountpoint, dentry))
+			return true;
+	}
+	return false;
+}
+
 /**
  * clone_private_mount - create a private clone of a path
  * @path: path to clone
@@ -2764,9 +2780,16 @@ static struct mnt_namespace *create_new_namespace(struct path *path, unsigned in
 	struct mount *mnt;
 	unsigned int copy_flags = 0;
 	int err;
+	bool recurse = flags & AT_RECURSIVE;
+	bool foreign = user_ns != ns->user_ns;
 
-	if (user_ns != ns->user_ns)
-		copy_flags |= CL_SLAVE;
+	/*
+	 * Without privileges over the mount namespace the copy is made from
+	 * nothing mounted below @path may be left out. It would reveal what
+	 * it covers. That's what unshare() gives such a caller as well.
+	 */
+	if (foreign)
+		copy_flags |= CL_SLAVE | CL_COPY_UNBINDABLE;
 
 	new_ns = alloc_mnt_ns(user_ns, false);
 	if (IS_ERR(new_ns))
@@ -2791,9 +2814,15 @@ static struct mnt_namespace *create_new_namespace(struct path *path, unsigned in
 	/*
 	 * We don't emulate unshare()ing a mount namespace. We stick
 	 * to the restrictions of creating detached bind-mounts. It
-	 * has a lot saner and simpler semantics.
+	 * has a lot saner and simpler semantics. A caller without
+	 * privileges over the mount namespace can't leave out any
+	 * child though.
 	 */
-	mnt = __do_loopback(path, flags, copy_flags);
+	if (foreign && !recurse &&
+	    __has_children(real_mount(path->mnt), path->dentry))
+		mnt = ERR_PTR(-EINVAL);
+	else
+		mnt = __do_loopback(path, flags, copy_flags);
 
 	lock_mount_hash();
 	if (IS_ERR(mnt)) {
@@ -2808,7 +2837,7 @@ static struct mnt_namespace *create_new_namespace(struct path *path, unsigned in
 	 * of the real rootfs we created.
 	 */
 	attach_mnt(mnt, new_ns_root, mp, false);
-	if (user_ns != ns->user_ns)
+	if (foreign)
 		lock_mnt_tree(new_ns_root);
 	unlock_mount_hash();
 
