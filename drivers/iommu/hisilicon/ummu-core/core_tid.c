@@ -259,6 +259,7 @@ struct device *ummu_core_get_device(struct ummu_core_device *ummu_core,
 				    u32 tid)
 {
 	struct ummu_tid_data *tid_data;
+	struct device *dev;
 
 	if (!ummu_core || !ummu_core->tid_manager) {
 		pr_err("invalid ummu_core.\n");
@@ -271,9 +272,10 @@ struct device *ummu_core_get_device(struct ummu_core_device *ummu_core,
 		return NULL;
 	}
 	get_device(tid_data->device);
+	dev = tid_data->device;
 	xa_unlock(&ummu_core->tid_manager->token_ids);
 
-	return tid_data->device;
+	return dev;
 }
 EXPORT_SYMBOL_GPL(ummu_core_get_device);
 
@@ -311,6 +313,7 @@ EXPORT_SYMBOL_GPL(ummu_core_get_tid_type);
 struct mm_struct *ummu_core_get_mm(struct ummu_core_device *ummu_core, u32 tid)
 {
 	struct ummu_tid_data *tid_data;
+	struct mm_struct *mm;
 
 	if (!ummu_core || !ummu_core->tid_manager) {
 		pr_err("invalid ummu_core.\n");
@@ -323,9 +326,10 @@ struct mm_struct *ummu_core_get_mm(struct ummu_core_device *ummu_core, u32 tid)
 		xa_unlock(&ummu_core->tid_manager->token_ids);
 		return NULL;
 	}
+	mm = tid_data->mm;
 	xa_unlock(&ummu_core->tid_manager->token_ids);
 
-	return tid_data->mm;
+	return mm;
 }
 
 const struct tid_ops *ummu_core_tid_ops[] = {

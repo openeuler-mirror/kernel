@@ -267,7 +267,10 @@ static int ummu_sva_domain_collect_tct_info(struct ummu_device *ummu,
 
 	tct_desc->asid = asid;
 	tct_desc->mair = read_sysreg(mair_el1);
-	tct_desc->ttbr = virt_to_phys(domain->base_domain.domain.mm->pgd);
+	if (!virt_addr_valid(domain->base_domain.domain.mm->pgd))
+		tct_desc->ttbr = __pa_symbol(domain->base_domain.domain.mm->pgd);
+	else
+		tct_desc->ttbr = virt_to_phys(domain->base_domain.domain.mm->pgd);
 	return 0;
 }
 

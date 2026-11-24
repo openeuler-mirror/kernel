@@ -10,6 +10,7 @@
 #include <linux/errno.h>
 #include <linux/bitfield.h>
 #include <linux/kernel.h>
+#include <linux/mutex.h>
 
 #include "regs.h"
 #include "flush.h"
@@ -23,6 +24,8 @@
 #define PAID_ARRAY_SIZE 32
 
 static u16 *g_partids;
+
+static DEFINE_MUTEX(ummu_mpam_lock);
 
 static int ummu_check_mpam_cap_info(struct ummu_device *ummu,
 				    u32 partid, u32 pmg)
@@ -211,6 +214,8 @@ static int ummu_set_master_mpam(struct ummu_device *ummu, struct ummu_mpam *mpam
 	__le64 *tcte;
 	int ret;
 
+	guard(mutex)(&ummu_mpam_lock);
+
 	ret = ummu_check_mpam_info(ummu, mpam);
 	if (ret)
 		return ret;
@@ -303,6 +308,8 @@ static int ummu_get_master_mpam(struct ummu_device *ummu, struct ummu_mpam *mpam
 	u64 val;
 	int tid_valid;
 
+	guard(mutex)(&ummu_mpam_lock);
+
 	if (ummu_get_tect_tag_by_eid(mpam->eid, &tect_tag)) {
 		dev_err(ummu->dev, "invalid eid_high[0x%llx] eid_low[0x%llx]\n",
 			(u64)(mpam->eid >> EID_HIGH_SZ_SHIFT),
@@ -379,6 +386,8 @@ int ummu_device_set_group_mpam(struct ummu_core_device *core_dev, u32 tid,
 	__le64 *tcte;
 	int ret;
 
+	guard(mutex)(&ummu_mpam_lock);
+
 	ret = ummu_check_mpam_cap_info(ummu, partid, pmg);
 	if (ret)
 		return ret;
@@ -408,6 +417,8 @@ static int ummu_get_mpam_info(struct ummu_device *ummu,
 	__le64 *tcte;
 	u64 val;
 	int ret;
+
+	guard(mutex)(&ummu_mpam_lock);
 
 	ret = ummu_get_cfg_table_ptr(ummu, tid, &tcte);
 	if (ret)
