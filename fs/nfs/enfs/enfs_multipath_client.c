@@ -3,6 +3,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2025-2025. All rights reserved.
  */
 #include <linux/types.h>
+#include <linux/bitmap.h>
 #include <linux/nfs.h>
 #include <linux/nfs4.h>
 #include <linux/nfs_fs.h>
@@ -176,6 +177,7 @@ nfs_multipath_ip_list_info_match(
 	int i;
 	int j;
 	bool is_find;
+	DECLARE_BITMAP(matched, MAX_SUPPORTED_REMOTE_IP_COUNT);
 	/* if both are equal or NULL, then return true. */
 	if (ip_list_src == ip_list_dst)
 		return true;
@@ -186,14 +188,22 @@ nfs_multipath_ip_list_info_match(
 	if (ip_list_src->count != ip_list_dst->count)
 		return false;
 
+	if (ip_list_src->count < 0 ||
+	    ip_list_src->count > MAX_SUPPORTED_REMOTE_IP_COUNT)
+		return false;
+
+	bitmap_zero(matched, MAX_SUPPORTED_REMOTE_IP_COUNT);
 	for (i = 0; i < ip_list_src->count; i++) {
 		is_find = false;
 		for (j = 0; j < ip_list_src->count; j++) {
+			if (test_bit(j, matched))
+				continue;
 			if (rpc_cmp_addr_port(
 				    (const struct sockaddr *)&ip_list_src
 					    ->address[i],
 				    (const struct sockaddr *)&ip_list_dst
 					    ->address[j])) {
+				__set_bit(j, matched);
 				is_find = true;
 				break;
 			}
