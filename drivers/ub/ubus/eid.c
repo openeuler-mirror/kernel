@@ -55,7 +55,7 @@ int ub_eid_alloc(struct ub_entity *uent)
 
 		eid &= UB_COMPACT_EID_MASK;
 		if (eid)
-			dev_info(dev, "update cluster ubc eid, eid=%#x\n", eid);
+			dev_dbg(dev, "update cluster ubc eid, eid=%#x\n", eid);
 
 		uent->eid = eid;
 		return 0;

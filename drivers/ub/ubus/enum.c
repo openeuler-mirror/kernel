@@ -622,8 +622,8 @@ int ub_query_port_na(struct ub_entity *uent, void *buf)
 
 		p->cna = cna;
 		if (p->cna)
-			dev_info(dev, "update boundary port%u cna to %#x\n",
-				 p->index, p->cna);
+			dev_dbg(dev, "update boundary port%u cna to %#x\n",
+				p->index, p->cna);
 	}
 
 	return 0;
@@ -663,7 +663,7 @@ int ub_query_ent_na(struct ub_entity *uent, void *buf)
 
 	uent->cna = cna;
 	if (uent->cna)
-		dev_info(dev, "update cluster ubc cna to %#x\n", uent->cna);
+		dev_dbg(dev, "update cluster ubc cna to %#x\n", uent->cna);
 
 	return 0;
 }

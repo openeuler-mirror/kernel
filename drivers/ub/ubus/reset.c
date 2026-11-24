@@ -163,7 +163,7 @@ static void ub_restore_config_dword(struct ub_entity *dev, u32 pos, u32 saved_va
 	if (ret || val == saved_val)
 		return;
 	while (retry-- > 0) {
-		ub_info(dev, "restoring config space at address %#x (was %#x, writing %#x)\n",
+		ub_dbg(dev, "restoring config space at address %#x (was %#x, writing %#x)\n",
 			pos, val, saved_val);
 		ub_cfg_write_dword(dev, pos, saved_val);
 

@@ -607,7 +607,7 @@ static int hi_vdm_vendor_handler(struct ub_bus_controller *ubc, void *pkt, u16 l
 
 	opcode = pld_dw0->opcode;
 	sub_opcode = pld_dw0->sub_opcode;
-	dev_info(&ubc->dev, "vdm msg opcode %#x, sub %#x\n", opcode, sub_opcode);
+	dev_dbg(&ubc->dev, "vdm msg opcode %#x, sub %#x\n", opcode, sub_opcode);
 
 	switch (opcode) {
 	case VDM_OPCODE_FM2UB_COMM_MSG:

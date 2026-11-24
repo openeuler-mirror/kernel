@@ -293,8 +293,8 @@ static void ub_ras_recover_queue(struct cper_sec_ubus *ubus_err, int severity)
 	err_status = (ub_severity == RAS_CE) ?
 		     tmp_cap->cor_status : tmp_cap->uncor_status;
 	if (err_status == 0 && overflow == 0) {
-		pr_info("no need to handle ras with err_status=0x%x, severity=%s\n",
-			err_status, RAS_SEVERITY_STR(ub_severity));
+		pr_debug("no need to handle ras with err_status=0x%x, severity=%s\n",
+			 err_status, RAS_SEVERITY_STR(ub_severity));
 		return;
 	}
 

@@ -290,15 +290,15 @@ static void hi_mem_ras_process_v1(struct ub_bus_controller *ubc)
 			if (handler) {
 				ret = handler((u64)vals, err_info.type);
 				if (ret)
-					pr_err("UB memory ras handler failed, ret=%d\n",
-					       ret);
+					printk_ratelimited("UB memory ras handler failed, ret=%d\n",
+							   ret);
 			}
 		} else {
 			if (handler) {
 				ret = handler(err_info.val0, err_info.type);
 				if (ret)
-					pr_err("UB memory ras handler failed, ret=%d\n",
-					       ret);
+					printk_ratelimited("UB memory ras handler failed, ret=%d\n",
+							   ret);
 			}
 		}
 	}
@@ -599,7 +599,7 @@ int hi_mem_decoder_create(struct ub_bus_controller *ubc)
 	int ret;
 
 	if (!is_ub_mem_version_valid(ubc)) {
-		dev_info(&ubc->dev, "Don't need to create mem decoder\n");
+		dev_dbg(&ubc->dev, "Don't need to create mem decoder\n");
 		return 0;
 	}
 
@@ -659,7 +659,7 @@ void hi_mem_decoder_remove(struct ub_bus_controller *ubc)
 		return;
 
 	if (!is_ub_mem_version_valid(ubc)) {
-		dev_info(&ubc->dev, "Don't need to remove mem decoder\n");
+		dev_dbg(&ubc->dev, "Don't need to remove mem decoder\n");
 		return;
 	}
 
@@ -685,7 +685,7 @@ void hi_register_ubmem_irq(struct ub_bus_controller *ubc)
 	}
 
 	if (!is_ub_mem_version_valid(ubc)) {
-		dev_info(&ubc->dev, "Don't need to register_ubmem_irq\n");
+		dev_dbg(&ubc->dev, "Don't need to register_ubmem_irq\n");
 		return;
 	}
 
@@ -736,7 +736,7 @@ void hi_unregister_ubmem_irq(struct ub_bus_controller *ubc)
 	}
 
 	if (!is_ub_mem_version_valid(ubc)) {
-		dev_info(&ubc->dev, "Don't need to unregister_ubmem_irq\n");
+		dev_dbg(&ubc->dev, "Don't need to unregister_ubmem_irq\n");
 		return;
 	}
 

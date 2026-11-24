@@ -41,7 +41,7 @@ static int ub_ioctl_bus_instance(void __user *uptr)
 	if (copy_from_user(&bi, uptr, UBUS_IOCTL_HEADER_SIZE))
 		return -EFAULT;
 
-	pr_info("ub ioctl bus instance, sub_cmd=%#x\n", bi.sub_cmd);
+	pr_debug("ub ioctl bus instance, sub_cmd=%#x\n", bi.sub_cmd);
 	switch (bi.sub_cmd) {
 	case UBUS_CMD_BI_CREATE:
 		if (bi.argsz != sizeof(struct ubus_cmd_bi_create))
