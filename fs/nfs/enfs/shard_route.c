@@ -113,6 +113,7 @@ struct clnt_uuid_info {
 	struct rpc_clnt *clnt;
 	struct enfs_file_uuid root_uuid;
 	bool updating;
+	bool recovery_pending;
 };
 
 static bool delete_view_table(uint64_t devId);
@@ -158,6 +159,7 @@ static int enfs_insert_clnt_root(struct rpc_clnt *clnt, struct enfs_file_uuid *r
 	info->root_uuid = *root_uuid;
 	list_add_tail(&info->next, &shard_ctrl->clnt_info_list);
 	info->updating = false;
+	info->recovery_pending = false;
 
 out:
 	write_unlock(&shard_ctrl->clnt_info_lock);
@@ -1548,13 +1550,14 @@ static int each_xprt_update_shard(struct rpc_clnt *clnt, struct rpc_xprt *xprt,
 	return 0;
 }
 
-static void shard_update_done(struct rpc_clnt *clnt)
+static void shard_update_done(struct rpc_clnt *clnt, bool recovery_pending)
 {
 	struct clnt_uuid_info *info;
 
 	write_lock(&shard_ctrl->clnt_info_lock);
 	list_for_each_entry(info, &shard_ctrl->clnt_info_list, next) {
 		if (info->clnt == clnt) {
+			info->recovery_pending = recovery_pending;
 			info->updating = false;
 			break;
 		}
@@ -1568,6 +1571,7 @@ static void do_shard_update(struct work_struct *work)
 	struct shard_work *shard_work =
 		container_of(work, struct shard_work, work);
 	struct clnt_uuid_info *info = &shard_work->info;
+	bool recovery_pending = info->recovery_pending;
 
 	error =
 		query_and_update_shard(info->clnt, &info->root_uuid, shard_work);
@@ -1577,12 +1581,12 @@ static void do_shard_update(struct work_struct *work)
 	rpc_clnt_iterate_for_each_xprt(info->clnt, each_xprt_update_shard,
 					   NULL);
 
-	if (shard_work->isupdate) {
-		// Actively reassert the nlm lock
-		enfs_recovery_nlm_lock(info->clnt);
+	if (shard_work->isupdate || recovery_pending) {
+		/* Keep failed recoveries pending until a later update succeeds. */
+		recovery_pending = enfs_recovery_nlm_lock(info->clnt) != 0;
 	}
 
-	shard_update_done(info->clnt);
+	shard_update_done(info->clnt, recovery_pending);
 	rpc_release_client(shard_work->info.clnt);
 	xprt_switch_put(shard_work->xps);
 	kfree(shard_work);
