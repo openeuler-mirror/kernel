@@ -304,7 +304,7 @@ static int get_ls_and_cpu_id(struct view_table *table, uint64_t clusterId,
 				 uint64_t *lsid, uint32_t *cpuId)
 {
 	struct shard_view *view;
-	bool matched;
+	bool matched = false;
 
 	list_for_each_entry(view, &table->shard_head, next) {
 		matched = (view->clusterId == clusterId &&
