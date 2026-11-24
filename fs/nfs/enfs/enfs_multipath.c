@@ -73,12 +73,12 @@ bool enfs_link_count_add(int num)
 
 	spin_lock(&link_count_lock);
 	if (num < 0) {
-		link_count += num;
-		ret = true;
-		spin_unlock(&link_count_lock);
-		return ret;
-	}
-	if (link_count <= enfs_get_config_link_count_total() - num) {
+		if (num >= -link_count) {
+			link_count += num;
+			ret = true;
+		}
+	} else if (num <= enfs_get_config_link_count_total() &&
+		   link_count <= enfs_get_config_link_count_total() - num) {
 		link_count += num;
 		ret = true;
 	}
@@ -130,7 +130,13 @@ bool enfs_mount_count_add(int num)
 	bool ret = false;
 
 	spin_lock(&mount_count_lock);
-	if (mount_count <= ENFS_MAX_MOUNT_COUNT - num) {
+	if (num < 0) {
+		if (num >= -mount_count) {
+			mount_count += num;
+			ret = true;
+		}
+	} else if (num <= ENFS_MAX_MOUNT_COUNT &&
+		   mount_count <= ENFS_MAX_MOUNT_COUNT - num) {
 		mount_count += num;
 		ret = true;
 	}
