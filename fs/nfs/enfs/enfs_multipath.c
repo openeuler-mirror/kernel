@@ -689,7 +689,7 @@ static void enfs_auto_fill_local_inet(struct nfs_ip_list *list,
 	if (!dvice)
 		return;
 	in_dev_for_each_ifa_rcu(ifa, dvice) {
-		if (list->count >= enfs_get_config_link_count_per_mount())
+		if (list->count >= MAX_SUPPORTED_LOCAL_IP_COUNT)
 			break;
 
 		snprintf(buf, INET6_ADDRSTRLEN, "%pI4", &ifa->ifa_address);
@@ -713,7 +713,7 @@ static void enfs_auto_fill_local_inet6(struct nfs_ip_list *list,
 		return;
 
 	list_for_each_entry(ifp, &idev->addr_list, if_list) {
-		if (list->count >= enfs_get_config_link_count_per_mount())
+		if (list->count >= MAX_SUPPORTED_LOCAL_IP_COUNT)
 			break;
 
 		snprintf(buf, INET6_ADDRSTRLEN, "%pI6", &ifp->addr);
@@ -735,7 +735,7 @@ static void find_fill_local_addr(struct nfs_ip_list *list,
 
 	rtnl_lock();
 	for_each_netdev(&init_net, dev) {
-		if (list->count >= enfs_get_config_link_count_per_mount())
+		if (list->count >= MAX_SUPPORTED_LOCAL_IP_COUNT)
 			break;
 		enfs_log_debug("device: %s\n", dev->name);
 
