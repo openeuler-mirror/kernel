@@ -138,8 +138,15 @@ out:
 
 static int enfs_insert_clnt_root(struct rpc_clnt *clnt, struct enfs_file_uuid *root_uuid)
 {
-	int ret = 0;
-	struct clnt_uuid_info *info;
+	struct clnt_uuid_info *info, *new_info;
+
+	new_info = kmalloc(sizeof(*new_info), GFP_KERNEL);
+	if (!new_info)
+		return -ENOMEM;
+	new_info->clnt = clnt;
+	new_info->root_uuid = *root_uuid;
+	new_info->updating = false;
+	new_info->recovery_pending = false;
 
 	write_lock(&shard_ctrl->clnt_info_lock);
 	list_for_each_entry(info, &shard_ctrl->clnt_info_list, next) {
@@ -148,22 +155,12 @@ static int enfs_insert_clnt_root(struct rpc_clnt *clnt, struct enfs_file_uuid *r
 			goto out;
 		}
 	}
-
-	info = kmalloc(sizeof(*info), GFP_KERNEL);
-	if (!info) {
-		ret = -1;
-		goto out;
-	}
-
-	info->clnt = clnt;
-	info->root_uuid = *root_uuid;
-	list_add_tail(&info->next, &shard_ctrl->clnt_info_list);
-	info->updating = false;
-	info->recovery_pending = false;
-
+	list_add_tail(&new_info->next, &shard_ctrl->clnt_info_list);
+	new_info = NULL;
 out:
 	write_unlock(&shard_ctrl->clnt_info_lock);
-	return ret;
+	kfree(new_info);
+	return 0;
 }
 
 int enfs_delete_clnt_shard_cache(struct rpc_clnt *clnt)
