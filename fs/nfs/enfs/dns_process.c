@@ -8,6 +8,7 @@
 #include <linux/sunrpc/clnt.h>
 #include <net/netns/generic.h>
 #include <linux/dns_resolver.h>
+#include <linux/sort.h>
 #include "../../../fs/nfs/nfs4_fs.h"
 #include "../../../fs/nfs/netns.h"
 #include "dns_internal.h"
@@ -23,9 +24,6 @@ static struct workqueue_struct *dns_workq; // timer for test xprt workqueue
 
 static LIST_HEAD(dns_cache_list);
 static spinlock_t dns_cache_lock;
-
-static char dns_sort_ip
-	[IP_ADDRESS_LEN_MAX]; // Temporary character string used for sorting.
 
 struct name_list {
 	struct list_head next;
@@ -350,39 +348,12 @@ static bool query_domain_name_in_cache(struct nfs_ip_list *ip_list, char *name,
 	return ret;
 }
 
-int enfs_quick_sort(int low, int high, struct enfs_dns_query_ip_info_single *dns_query_ip_info)
+static int enfs_dns_compare_lsid(const void *a, const void *b)
 {
-	int i = low;
-	int j = high;
-	u64 key = dns_query_ip_info[i].lsId;
+	const struct enfs_dns_query_ip_info_single *left = a;
+	const struct enfs_dns_query_ip_info_single *right = b;
 
-	strscpy(dns_sort_ip, dns_query_ip_info[i].ipAddr, IP_ADDRESS_LEN_MAX);
-
-	while (i < j) {
-		while (i < j && dns_query_ip_info[j].lsId >= key)
-			j--;
-
-		dns_query_ip_info[i].lsId = dns_query_ip_info[j].lsId;
-		strscpy(dns_query_ip_info[i].ipAddr,
-			dns_query_ip_info[j].ipAddr, IP_ADDRESS_LEN_MAX);
-
-		while (i < j && dns_query_ip_info[i].lsId <= key)
-			i++;
-
-		dns_query_ip_info[j].lsId = dns_query_ip_info[i].lsId;
-		strscpy(dns_query_ip_info[j].ipAddr,
-			dns_query_ip_info[i].ipAddr, IP_ADDRESS_LEN_MAX);
-	}
-	dns_query_ip_info[i].lsId = key;
-	strscpy(dns_query_ip_info[i].ipAddr, dns_sort_ip, IP_ADDRESS_LEN_MAX);
-	if (i - 1 > low)
-		enfs_quick_sort(low, i - 1, dns_query_ip_info);
-
-	if (i + 1 < high)
-		enfs_quick_sort(i + 1, high, dns_query_ip_info);
-	memset(dns_sort_ip, 0, sizeof(dns_sort_ip));
-
-	return 0;
+	return (left->lsId > right->lsId) - (left->lsId < right->lsId);
 }
 
 int enfs_dns_process_ip(struct enfs_dns_query_ip_info_single *dns_query_ip_info,
@@ -395,7 +366,8 @@ int enfs_dns_process_ip(struct enfs_dns_query_ip_info_single *dns_query_ip_info,
 	struct enfs_dns_query_lsid_rsp *ls_id_info = NULL;
 
 	// sort all ip by lsid
-	enfs_quick_sort(0, ipNumber - 1, dns_query_ip_info);
+	sort(dns_query_ip_info, ipNumber, sizeof(*dns_query_ip_info),
+	     enfs_dns_compare_lsid, NULL);
 	for (i = 1; i < ipNumber; i++) {
 		if (dns_query_ip_info[i - 1].lsId != dns_query_ip_info[i].lsId)
 			count++;
