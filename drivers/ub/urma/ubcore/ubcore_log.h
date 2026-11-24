@@ -15,7 +15,6 @@
 #include <linux/types.h>
 #include <linux/printk.h>
 #include <linux/sched.h>
-#include <linux/pid.h>
 
 enum ubcore_log_level {
 	UBCORE_LOG_LEVEL_EMERG = 0,
