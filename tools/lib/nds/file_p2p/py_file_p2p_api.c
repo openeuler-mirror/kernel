@@ -89,13 +89,13 @@ static PyObject *py_rw_file(PyObject *Py_UNUSED(self), PyObject *args)
 	struct p2p_iov *iov = NULL;
 	unsigned int iov_nr = 0;
 	PyObject *py_iovs = NULL;
-	long long mem_handle = 0;
+	int mem_fd = -1;
 	unsigned int flags = 0;
 	int host_pid = 0;
 	int ret = 0;
 
-	if (!PyArg_ParseTuple(args, "iIskOLI|i", &dev_fd, &op, &file_name, &file_offset,
-			      &py_iovs, &mem_handle, &flags, &host_pid))
+	if (!PyArg_ParseTuple(args, "iIskOiI|i", &dev_fd, &op, &file_name, &file_offset,
+			      &py_iovs, &mem_fd, &flags, &host_pid))
 		return NULL;
 	if (parse_iovs(py_iovs, &iov, &iov_nr))
 		return NULL;
@@ -108,7 +108,7 @@ static PyObject *py_rw_file(PyObject *Py_UNUSED(self), PyObject *args)
 		.iov = iov,
 		.iov_nr = iov_nr,
 		.flags = flags,
-		.mem_handle = (uint64_t)mem_handle,
+		.mem_fd = mem_fd,
 	};
 
 	Py_BEGIN_ALLOW_THREADS
@@ -119,38 +119,91 @@ static PyObject *py_rw_file(PyObject *Py_UNUSED(self), PyObject *args)
 	return PyLong_FromLong((long)ret);
 }
 
+static int parse_mem_ranges(PyObject *object, struct p2p_mem_range **ranges_out,
+			    uint32_t *nr_out)
+{
+	struct p2p_mem_range *ranges;
+	PyObject *sequence;
+	Py_ssize_t count;
+	Py_ssize_t i;
+
+	sequence = PySequence_Fast(object, "ranges must be a sequence of (addr, size)");
+	if (!sequence)
+		return -1;
+	count = PySequence_Fast_GET_SIZE(sequence);
+	if (count <= 0 || count > P2P_MEM_MAX_RANGES) {
+		PyErr_SetString(PyExc_ValueError, "range count out of range");
+		Py_DECREF(sequence);
+		return -1;
+	}
+
+	ranges = calloc((size_t)count, sizeof(*ranges));
+	if (!ranges) {
+		PyErr_NoMemory();
+		Py_DECREF(sequence);
+		return -1;
+	}
+
+	for (i = 0; i < count; i++) {
+		unsigned long long addr;
+		unsigned long long size;
+
+		if (!PyArg_ParseTuple(PySequence_Fast_GET_ITEM(sequence, i), "KK",
+				      &addr, &size)) {
+			free(ranges);
+			Py_DECREF(sequence);
+			return -1;
+		}
+		ranges[i].addr = addr;
+		ranges[i].size = size;
+	}
+
+	Py_DECREF(sequence);
+	*ranges_out = ranges;
+	*nr_out = (uint32_t)count;
+	return 0;
+}
+
 static PyObject *py_register_mem(PyObject *Py_UNUSED(self), PyObject *args)
 {
 	struct p2p_mem_register_param param = { };
+	struct p2p_mem_range *ranges;
+	PyObject *ranges_py;
 	int dev_fd;
 	int ret;
 
-	if (!PyArg_ParseTuple(args, "iKK", &dev_fd, &param.addr, &param.size))
+	if (!PyArg_ParseTuple(args, "iO", &dev_fd, &ranges_py))
 		return NULL;
+	if (parse_mem_ranges(ranges_py, &ranges, &param.nr))
+		return NULL;
+	param.ranges = (uint64_t)(uintptr_t)ranges;
 
 	Py_BEGIN_ALLOW_THREADS
 	ret = register_mem(dev_fd, &param);
 	Py_END_ALLOW_THREADS
+	free(ranges);
 
-	if (ret)
-		Py_RETURN_NONE;
-	return PyLong_FromLongLong((long long)param.mem_handle);
+	return PyLong_FromLong((long)ret);
 }
 
 static PyObject *py_unregister_mem(PyObject *Py_UNUSED(self), PyObject *args)
 {
 	struct p2p_mem_unregister_param param = { };
-	long long mem_handle;
+	struct p2p_mem_range *ranges;
+	PyObject *ranges_py;
 	int dev_fd;
 	int ret;
 
-	if (!PyArg_ParseTuple(args, "iL", &dev_fd, &mem_handle))
+	if (!PyArg_ParseTuple(args, "iO", &dev_fd, &ranges_py))
 		return NULL;
-	param.mem_handle = (uint64_t)mem_handle;
+	if (parse_mem_ranges(ranges_py, &ranges, &param.nr))
+		return NULL;
+	param.ranges = (uint64_t)(uintptr_t)ranges;
 
 	Py_BEGIN_ALLOW_THREADS
 	ret = unregister_mem(dev_fd, &param);
 	Py_END_ALLOW_THREADS
+	free(ranges);
 
 	return PyLong_FromLong((long)ret);
 }
@@ -194,6 +247,21 @@ static PyObject *py_add_topo(PyObject *Py_UNUSED(self), PyObject *args)
 	return PyLong_FromLong((long)ret);
 }
 
+static PyObject *py_del_topo(PyObject *Py_UNUSED(self), PyObject *args)
+{
+	const char *dev;
+	int dev_fd;
+	int ret;
+
+	if (!PyArg_ParseTuple(args, "is", &dev_fd, &dev))
+		return NULL;
+
+	Py_BEGIN_ALLOW_THREADS
+	ret = del_topo(dev_fd, dev);
+	Py_END_ALLOW_THREADS
+	return PyLong_FromLong((long)ret);
+}
+
 static PyObject *py_close_p2p_fd(PyObject *Py_UNUSED(self), PyObject *args)
 {
 	int dev_fd = 0;
@@ -209,7 +277,7 @@ static PyObject *py_close_p2p_fd(PyObject *Py_UNUSED(self), PyObject *args)
 
 static PyMethodDef FileP2PMethods[] = {
 	{ "rw_file", py_rw_file, METH_VARARGS,
-	  "rw_file(dev_fd, op, file_name, file_offset, iovs, mem_handle, flags"
+	  "rw_file(dev_fd, op, file_name, file_offset, iovs, mem_fd, flags"
 	  "[, host_pid]) -> int\n\n"
 	  "Read from or write to a p2p I/O target.\n"
 	  "\n"
@@ -219,21 +287,23 @@ static PyMethodDef FileP2PMethods[] = {
 	  "    file_name (str): Name of the I/O target.\n"
 	  "    file_offset (int): Starting file offset.\n"
 	  "    iovs (sequence): Device-memory (address, size) pairs.\n"
-	  "    mem_handle (int): Registered-memory handle, or zero.\n"
+	  "    mem_fd (int): Registered-memory p2p device fd, ignored unless\n"
+	  "        P2P_IO_F_REGISTERED_MEM is set.\n"
 	  "    flags (int): P2P I/O flags.\n"
 	  "    host_pid (int, optional): PID owning unregistered IOV addresses;\n"
-	  "        zero or omitted selects the current process. Must be zero for\n"
+	  "        only zero/current process is supported. Must be zero for\n"
 	  "        registered memory.\n"
 	  "\n"
 	  "Returns:\n"
 	  "    int: 0 on success, non-zero on error.\n" },
 	{ "register_mem", py_register_mem, METH_VARARGS,
-	  "register_mem(dev_fd, addr, size) -> int | None\n\n"
-	  "Register a device-memory VA range and return its handle.\n"
-	  "The handle may be negative. Returns None on failure.\n" },
+	  "register_mem(dev_fd, ranges) -> int\n\n"
+	  "ranges: sequence of (addr, size) registered into dev_fd's VA table.\n"
+	  "Returns 0 on success or negative errno on failure.\n" },
 	{ "unregister_mem", py_unregister_mem, METH_VARARGS,
-	  "unregister_mem(dev_fd, mem_handle) -> int\n\n"
-	  "Synchronously unregister a device-memory handle.\n" },
+	  "unregister_mem(dev_fd, ranges) -> int\n\n"
+	  "Synchronously unregister (addr, size) ranges from dev_fd's VA table.\n"
+	  "Returns 0 on success or negative errno on failure.\n" },
 	{ "drain_io", py_drain_io, METH_VARARGS,
 	  "drain_io(dev_fd) -> int\n\n"
 	  "Drain I/O from p2p device.\n"
@@ -252,6 +322,10 @@ static PyMethodDef FileP2PMethods[] = {
 	{ "add_topo", py_add_topo, METH_VARARGS,
 	  "add_topo(dev_fd, dev) -> int\n\n"
 	  "Discover and register the required block-device topology.\n"
+	  "Returns 0 on success or a negative errno.\n" },
+	{ "del_topo", py_del_topo, METH_VARARGS,
+	  "del_topo(dev_fd, dev) -> int\n\n"
+	  "Delete one topology pin from the p2p device fd.\n"
 	  "Returns 0 on success or a negative errno.\n" },
 	{ "close_p2p_fd", py_close_p2p_fd, METH_VARARGS,
 	  "close_p2p_fd(dev_fd) -> None\n\n"

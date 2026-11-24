@@ -19,15 +19,15 @@
  *            .fs_fd = fds,
  *            .fs_fd_cnt = 1,
  *        };
- *        nds_init(&ip);
- *        assert(ip.version == NDS_API_VERSION);
+ *        nds_init(&ip);  // ip.version is the driver UAPI version
  *        nds_register_fs(&fs);
  *      Call nds_register_fs() again to add filesystems after initialization.
  *
  *   2. (Optional) Register HBM / CMB windows once:
- *        nds_register_mem(addr, size, 0);
+ *        struct nds_mem_desc mem = { .ranges = ranges, .nr = nr };
+ *        nds_register_mem(&mem);
  *      Later I/Os that use those VAs set NDS_IO_F_REGISTERED_MEM; the library
- *      looks up the handle — callers never see mem_handle.
+ *      passes its internal memory-table fd to the driver automatically.
  *
  *   3. Create an I/O context and submit work (Linux-AIO style):
  *        struct nds_io_ctx *ctx;
@@ -60,16 +60,19 @@
  *   - reserved fields must be zero.
  */
 
-#define NDS_API_VERSION 1u
 #define NDS_IO_MAX_IO_CNT 1024u
 #define NDS_IO_MAX_IOV 65536u
+
+#define NDS_MEM_MAX_RANGES 8192u
 
 struct nds_io_ctx;
 
 struct nds_init_param {
-	uint32_t flags;			/* must be 0 in v1 */
-	uint64_t reserved[4];		/* must be zero when unused */
-	uint32_t version;		/* output: NDS_API_VERSION on success */
+	uint32_t flags;			/* must be 0 */
+	uint32_t reserved1;		/* must be 0 */
+	uint32_t version;		/* output: driver UAPI version (major << 8 | minor) */
+	uint32_t reserved2;		/* must be 0 */
+	uint64_t reserved3[4];		/* must be zero when unused */
 };
 
 /*
@@ -77,11 +80,25 @@ struct nds_init_param {
  * v1: fs_fd_cnt must be at least 1. Every entry is a regular-file or
  * block-device fd whose underlying block device is registered via add_topo
  * for the process. Additional descriptors may be registered after nds_init.
+ * Discovery uses the fd device ID and sysfs; no target /dev node is needed.
+ * dm-linear discovery also requires access to /dev/mapper/control.
  */
 struct nds_fs_desc {
 	int32_t *fs_fd;
 	uint32_t fs_fd_cnt;
 	uint32_t reserved;
+};
+
+struct nds_mem_range {
+	uint64_t addr;
+	uint64_t size;
+};
+
+struct nds_mem_desc {
+	const struct nds_mem_range *ranges;
+	uint32_t nr;
+	uint32_t flags;			/* must be 0 */
+	uint64_t reserved[4];		/* must be zero */
 };
 
 /* max_io_cnt: v1 accepts 1..NDS_IO_MAX_IO_CNT as a queue-size hint but does
@@ -103,7 +120,7 @@ struct nds_io_obj {
 };
 
 #define NDS_IO_OP_PREAD  0u	/* read one or more buffers */
-#define NDS_IO_OP_PWRITE 1u	/* write one or more buffers (block dev only) */
+#define NDS_IO_OP_PWRITE 1u /* write one or more buffers */
 
 /* Buffer was previously registered with nds_register_mem(). */
 #define NDS_IO_F_REGISTERED_MEM (1u << 0)
@@ -119,9 +136,15 @@ struct nds_io_vec {
  * One async I/O request. Fill an array of these and pass to nds_io_submit().
  *
  * iov / iov_cnt describe the HBM (or CMB) VA windows for this transfer.
- * With NDS_IO_F_REGISTERED_MEM, iov[0] selects a region previously passed to
- * nds_register_mem(); the kernel requires every vector to fit that region.
+ * With NDS_IO_F_REGISTERED_MEM, every vector must fit within a single
+ * registered range (-ERANGE otherwise, -ENOENT if no ranges are registered).
  * Otherwise buffers are one-shot.
+ *
+ * Regular writes preallocate before FIEMAP, even if later submission fails.
+ * File I/O accesses raw extents, including unwritten extents, without cache
+ * coherence or unwritten conversion. Only successfully XDS-written ranges
+ * are valid for raw readback; normal file reads may still return zeros.
+ * Callers must exclusively manage files and keep mappings stable through I/O.
  */
 struct nds_io_cb {
 	uint32_t opcode;		/* NDS_IO_OP_* */
@@ -132,7 +155,7 @@ struct nds_io_cb {
 	const struct nds_io_vec *iov;
 	uint32_t iov_cnt;
 	/*
-	 * Owner of one-shot HBM VAs. 0 = current process.
+	 * Owner of one-shot HBM VAs. Only 0/current process is supported.
 	 * Must be 0 when NDS_IO_F_REGISTERED_MEM is set.
 	 */
 	int32_t host_pid;
@@ -162,21 +185,28 @@ int nds_exit(void);
  * once for the initial filesystem set and again whenever more filesystems
  * become available. Concurrent nds_register_fs() calls are thread-safe.
  *
- * nds_unregister_fs() is currently a no-op placeholder; registered
- * topologies remain active until nds_exit() closes the topology device fd.
+ * nds_unregister_fs() removes the topology identified by each descriptor
+ * from NDS's topology fd. A topology remains active if another registration
+ * still pins the same top device.
  */
 int nds_register_fs(const struct nds_fs_desc *desc);
 int nds_unregister_fs(const struct nds_fs_desc *desc);
 
 /*
- * Pin / unpin an HBM (or CMB) VA range for P2P I/O.
- * flags must be 0. No handle is returned — use NDS_IO_F_REGISTERED_MEM and
- * vectors within that range on later submits. Unregister by the same base
- * address and exact size. A size mismatch returns -EINVAL, and any unregister
- * failure keeps the registration tracked so it can be retried.
+ * Pin / unpin one or more separately allocated VA ranges (for example,
+ * KV-cache blocks) into the process's registered-memory VA table.
+ *
+ * Ranges may be registered in one batch or incrementally across multiple
+ * nds_register_mem() calls. One NDS_IO_F_REGISTERED_MEM iocb may scatter
+ * across any registered ranges (each vector must fit within a single
+ * registered range; -ERANGE otherwise). Any subset of registered ranges may
+ * be unregistered in any order by exact (addr, size) match (-ENOENT if
+ * missing, -EINVAL on size mismatch).
+ *
+ * desc->nr must be 1..NDS_MEM_MAX_RANGES. flags and reserved must be zero.
  */
-int nds_register_mem(void *addr, uint64_t size, int flags);
-int nds_unregister_mem(void *addr, uint64_t size, int flags);
+int nds_register_mem(const struct nds_mem_desc *desc);
+int nds_unregister_mem(const struct nds_mem_desc *desc);
 
 /* Create / destroy a per-queue I/O context. Destroy drains outstanding I/O
  * and frees @ctx. The caller owns the pointer until destroy; double destroy

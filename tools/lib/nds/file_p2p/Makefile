@@ -1,14 +1,15 @@
 # SPDX-License-Identifier: GPL-2.0
 CC ?= cc
 CFLAGS ?= -O2 -Wall -Wextra -Werror -g -ggdb -fno-omit-frame-pointer
+
 # linux/nds_p2p.h lives in tools/include/uapi
 UAPI_DIR ?= $(abspath ../../../include/uapi)
 CPPFLAGS += -I. -I$(UAPI_DIR)
 
-NDS_API_VER := $(shell sed -n 's/^[[:space:]]*#define[[:space:]]\+NDS_API_VERSION[[:space:]]\+\([0-9]\+\)u\?.*/\1/p' nds_api.h)
-NDS_MAJOR := $(shell echo $$(($(NDS_API_VER) >> 8)))
-NDS_MINOR := $(shell echo $$(($(NDS_API_VER) & 255)))
-NDS_VERSION := $(NDS_MAJOR).$(NDS_MINOR)
+# The library ABI follows the driver UAPI version in linux/nds_p2p.h.
+P2P_UAPI_MAJOR := $(shell awk '$$2 == "P2P_UAPI_VERSION_MAJOR" { print $$3 + 0 }' $(UAPI_DIR)/linux/nds_p2p.h)
+P2P_UAPI_MINOR := $(shell awk '$$2 == "P2P_UAPI_VERSION_MINOR" { print $$3 + 0 }' $(UAPI_DIR)/linux/nds_p2p.h)
+NDS_VERSION := $(P2P_UAPI_MAJOR).$(P2P_UAPI_MINOR)
 NDS_LIB := libnds.so.$(NDS_VERSION)
 NDS_SONAME := libnds.so.$(NDS_VERSION)
 
@@ -16,9 +17,12 @@ NDS_SRCS := nds_api.c p2p_common.c
 NDS_OBJS := $(NDS_SRCS:.c=.o)
 NDS_DEPS := $(addprefix .,$(NDS_OBJS:.o=.d))
 
-.PHONY: all clean
+.PHONY: all binding clean
 
 all: $(NDS_LIB)
+
+binding:
+	python3 setup.py build_ext --inplace
 
 $(NDS_LIB): $(NDS_OBJS)
 	$(CC) -shared -Wl,-soname,$(NDS_SONAME) -o $@ $(NDS_OBJS) -lpthread
