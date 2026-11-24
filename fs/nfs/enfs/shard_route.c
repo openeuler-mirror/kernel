@@ -1379,9 +1379,9 @@ static int EnfsChooseNewNlmXprt(struct rpc_clnt *clnt, struct rpc_xprt *xprt,
 	char localip[64] = { "*" };
 	struct enfs_xprt_context *ctx = NULL;
 	struct enfs_xprt_context *nlm_ctx = NULL;
-	char local_name[INET6_ADDRSTRLEN];
+	char local_name[INET6_ADDRSTRLEN] = {};
 	const char *local = local_name;
-	struct sockaddr_storage srcaddr;
+	struct sockaddr_storage srcaddr = {};
 	struct rpc_xprt *nlm_xprt = (struct rpc_xprt *)data;
 	enum enfs_path_state state = pm_get_path_state(xprt);
 
