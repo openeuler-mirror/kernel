@@ -401,7 +401,7 @@ static int pm_ping_add_work(struct rpc_clnt *clnt, struct rpc_xprt *xprt,
 		if (work_info == NULL)
 			return -ENOMEM;
 
-		item = kzalloc(sizeof(*item), GFP_KERNEL);
+		item = kzalloc(sizeof(*item), GFP_ATOMIC);
 		if (!item) {
 			enfs_log_error("alloc item failed.\n");
 			kfree(work_info);
