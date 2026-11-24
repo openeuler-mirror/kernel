@@ -25,7 +25,6 @@
 #include "ubmem_mmu.h"
 
 #define UMMU_MEM_MAX_GRANULE 8
-#define UMMU_VENDOR_INFO_RESERVED 46
 #define UMMU_CHIP_VERSION_FIRST 0
 #define UMMU_GRANULE_MAX (UMMU_MEM_MAX_GRANULE - 1)
 #define UMAU_GRANULE_MAX 14
@@ -191,17 +190,6 @@ static const struct ubmem_reg_offset reg_umau_v2 = {
 	.mem_bte = UMAU_MEM_BTE,
 	.mem_index = UMAU_MEM_INDEX,
 	.ubif_reg = umau_ubif_reg
-};
-
-struct ubmem_mmu_info {
-	u64 valid;
-	u32 cap0;
-	u32 cap1;
-	u64 reg_base;
-	u64 reg_size;
-	u8 reserved[UMMU_VENDOR_INFO_RESERVED];
-	u8 version;
-	u8 type;
 };
 
 struct ubmem_mmu_device {
@@ -929,7 +917,7 @@ static int umau_tab_init(struct ubmem_mmu_device *mmu)
 }
 
 static int ubmem_mmu_init(struct platform_device *pdev,
-			  struct ubmem_mmu_info *info,
+			  struct ummu_vendor_info *info,
 			  struct ubmem_mmu_device *mmu)
 {
 	struct resource *res;
@@ -1005,12 +993,12 @@ static int register_to_ummu_core(struct platform_device *pdev, struct ubmem_mmu_
 static int ubmem_mmu_device_probe(struct ummu_device *ummu)
 {
 	struct platform_device *pdev = to_platform_device(ummu->dev);
-	struct ubmem_mmu_info *info;
+	struct ummu_vendor_info *info;
 	struct ubmem_mmu_device *mmu;
 	struct iommu_device *iommu;
 	int ret;
 
-	info = (struct ubmem_mmu_info *)pdev->dev.platform_data;
+	info = (struct ummu_vendor_info *)pdev->dev.platform_data;
 	mmu = (struct ubmem_mmu_device *)to_ubmem_mmu_dev(ummu);
 	mmu->chip_version = info->version;
 
@@ -1062,10 +1050,10 @@ struct ummu_device *ubmem_mmu_impl_init(struct ummu_device *ummu)
 	struct platform_device *pdev = to_platform_device(ummu->dev);
 	struct ubmem_mmu_device *ubmem_mmu;
 	struct device *dev = ummu->dev;
-	struct ubmem_mmu_info *info;
+	struct ummu_vendor_info *info;
 
 	/* bit0: protection table, bit1: translation table, bit2:ubmem reg base */
-	info = (struct ubmem_mmu_info *)pdev->dev.platform_data;
+	info = (struct ummu_vendor_info *)pdev->dev.platform_data;
 	if (!info || (info->valid & UBMEM_VALID_MASK) != UBMEM_VALID_VALUE)
 		return ummu;
 
