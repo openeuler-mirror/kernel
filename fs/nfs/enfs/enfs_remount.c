@@ -108,6 +108,9 @@ void enfs_clnt_delete_obsolete_xprts(struct nfs_client *nfs_client,
 		return;
 	}
 	list_for_each_entry_rcu(pos, &xps->xps_xprt_list, xprt_switch) {
+		/* Keep the main transport even when the new limit is one. */
+		if (enfs_is_main_xprt(pos))
+			continue;
 		if (xprt_count < (enfs_get_config_link_count_per_mount() - 1)) {
 			if (enfs_delete_xprt_from_switch(pos, enfs_option,
 							 xps) == false) {
