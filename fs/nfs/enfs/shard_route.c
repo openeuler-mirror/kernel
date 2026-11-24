@@ -720,9 +720,9 @@ void enfs_print_uuid(struct enfs_file_uuid *file_uuid)
 static void enfs_debug_fh(const struct nfs_fh *fh)
 {
 	int i;
-	char str[NFS_MAXFHSIZE * 2];
+	char str[NFS_MAXFHSIZE * 2 + 1];
 
-	for (i = 0; i < fh->size; i++)
+	for (i = 0; i < min_t(unsigned int, fh->size, NFS_MAXFHSIZE); i++)
 		sprintf(str + 2 * i, "%02X", fh->data[i]);
 	str[2 * i] = '\0';
 	enfs_log_debug("fh: %s\n", str);
