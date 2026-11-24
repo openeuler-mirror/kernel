@@ -953,15 +953,19 @@ static int hisi_l3c_pmu_probe(struct platform_device *pdev)
 		dev_err(l3c_pmu->dev, "L3C PMU register failed!\n");
 		cpuhp_state_remove_instance_nocalls(
 			hisi_l3c_pmu_cpuhp_state, &l3c_pmu->node);
+		return ret;
 	}
 
-	return ret;
+	hisi_uncore_pmu_list_add(l3c_pmu);
+
+	return 0;
 }
 
 static int hisi_l3c_pmu_remove(struct platform_device *pdev)
 {
 	struct hisi_pmu *l3c_pmu = platform_get_drvdata(pdev);
 
+	hisi_uncore_pmu_list_del(l3c_pmu);
 	perf_pmu_unregister(&l3c_pmu->pmu);
 	cpuhp_state_remove_instance_nocalls(hisi_l3c_pmu_cpuhp_state,
 					    &l3c_pmu->node);

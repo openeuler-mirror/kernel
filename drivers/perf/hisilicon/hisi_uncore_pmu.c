@@ -11,9 +11,12 @@
 #include <linux/bitmap.h>
 #include <linux/bitops.h>
 #include <linux/bug.h>
+#include <linux/cleanup.h>
 #include <linux/err.h>
 #include <linux/errno.h>
 #include <linux/interrupt.h>
+#include <linux/mutex.h>
+#include <linux/perf/hisi_pmu.h>
 #include <linux/property.h>
 
 #include <asm/cputype.h>
@@ -25,6 +28,10 @@
 
 enum cpuhp_state hisi_uncore_pmu_cpuhp_state;
 EXPORT_SYMBOL_NS_GPL(hisi_uncore_pmu_cpuhp_state, HISI_PMU);
+
+/* Registered PMUs that in-kernel users can look up */
+static LIST_HEAD(hisi_pmu_list);
+static DEFINE_MUTEX(hisi_pmu_list_lock);
 
 /*
  * PMU format attributes
@@ -641,6 +648,57 @@ void hisi_pmu_init(struct hisi_pmu *hisi_pmu, struct module *module)
 	pmu->capabilities       = PERF_PMU_CAP_NO_EXCLUDE;
 }
 EXPORT_SYMBOL_NS_GPL(hisi_pmu_init, HISI_PMU);
+
+/**
+ * hisi_uncore_pmu_list_add - Expose a PMU to in-kernel users
+ * @hisi_pmu: the PMU, already registered with perf_pmu_register()
+ */
+void hisi_uncore_pmu_list_add(struct hisi_pmu *hisi_pmu)
+{
+	guard(mutex)(&hisi_pmu_list_lock);
+	list_add_tail(&hisi_pmu->entry, &hisi_pmu_list);
+}
+EXPORT_SYMBOL_NS_GPL(hisi_uncore_pmu_list_add, HISI_PMU);
+
+/**
+ * hisi_uncore_pmu_list_del - Hide a PMU from in-kernel users
+ * @hisi_pmu: the PMU, to be unregistered with perf_pmu_unregister()
+ */
+void hisi_uncore_pmu_list_del(struct hisi_pmu *hisi_pmu)
+{
+	guard(mutex)(&hisi_pmu_list_lock);
+	list_del(&hisi_pmu->entry);
+}
+EXPORT_SYMBOL_NS_GPL(hisi_uncore_pmu_list_del, HISI_PMU);
+
+/**
+ * hisi_uncore_pmu_get_type - Get the perf type of a HiSilicon uncore PMU
+ * @dev: the device backing the PMU, e.g. the L3C PMU platform device
+ *
+ * Allow in-kernel users to fill perf_event_attr::type for
+ * perf_event_create_kernel_counter(). Only PMUs whose driver has called
+ * hisi_uncore_pmu_list_add() can be found.
+ *
+ * The returned type is only a snapshot. The PMU may be unregistered right after
+ * the lookup and its type reused by another PMU. Once a counter has been
+ * created, it holds a reference on the PMU's module, so the PMU cannot be
+ * removed by unloading its driver until the counter is released.
+ *
+ * Return: the perf type of the PMU, or -ENODEV if no such PMU is registered.
+ */
+int hisi_uncore_pmu_get_type(struct device *dev)
+{
+	struct hisi_pmu *hisi_pmu;
+
+	guard(mutex)(&hisi_pmu_list_lock);
+	list_for_each_entry(hisi_pmu, &hisi_pmu_list, entry) {
+		if (hisi_pmu->dev == dev)
+			return hisi_pmu->pmu.type;
+	}
+
+	return -ENODEV;
+}
+EXPORT_SYMBOL_NS_GPL(hisi_uncore_pmu_get_type, HISI_PMU);
 
 static int __init hisi_uncore_pmu_init(void)
 {
