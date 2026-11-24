@@ -293,6 +293,8 @@ static int enfs_add_xprt_setup(struct rpc_clnt *clnt,
 	struct sockaddr_storage *srcaddr = attach_info->localAddress;
 
 	ctx = (struct enfs_xprt_context *)xprt_get_reserve_context(xprt);
+	if (!ctx)
+		return -ESHUTDOWN;
 	memset(ctx, 0, sizeof(struct enfs_xprt_context));
 	ctx->stats = rpc_alloc_iostats(clnt);
 	ctx->main = false;
