@@ -3499,11 +3499,7 @@ struct ubcore_ops {
 	 * @return: 0 on success, -EOPNOTSUPP if unsupported,
 	 * other error code otherwise
 	 */
-#ifndef __GENKSYMS__
-	int (*invalidate_ucontext)(struct ubcore_ucontext *uctx);
-#else
-	KABI_RESERVE(1)
-#endif
+	KABI_USE(1, int (*invalidate_ucontext)(struct ubcore_ucontext *uctx))
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
