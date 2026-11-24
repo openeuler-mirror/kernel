@@ -395,12 +395,17 @@ static void copy_shard_entry(struct shard_view *view,
 {
 	int i;
 
+	if (view->num != fs_shard_view->num)
+		*flag = FAULT_DETECTED;
+
 	for (i = 0; i < fs_shard_view->num; i++) {
-		if (view->entry[i].lsid != fs_shard_view->shardView[i].lsid)
+		if (i >= view->num ||
+		    view->entry[i].lsid != fs_shard_view->shardView[i].lsid)
 			*flag = FAULT_DETECTED;
 		view->entry[i].lsid = fs_shard_view->shardView[i].lsid;
 		view->entry[i].cpuid = fs_shard_view->shardView[i].cpuId;
 	}
+	view->num = fs_shard_view->num;
 }
 
 static int update_shard_view(struct view_table *table,
@@ -436,6 +441,9 @@ static int enfs_update_fsshard(uint64_t devId, struct enfs_shard_view *fs_shard_
 {
 	int ret = 0;
 	struct view_table *table;
+
+	if (fs_shard_view->num > MAX_SHARD_NUMBER_IN_CLUSTER_4FS)
+		return -EINVAL;
 
 	write_lock(&shard_ctrl->view_lock);
 	table = get_view_table(devId, true);
