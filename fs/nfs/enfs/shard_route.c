@@ -1804,13 +1804,14 @@ static int enfs_check_shard(void)
 				continue;
 			if (atomic_read(&super->s_active) == 0)
 				continue;
-			if (!nfs_sb_active(super))
-				continue;
 			info = kmalloc(sizeof(*info), GFP_ATOMIC);
 			if (!info) {
-				nfs_sb_deactive(super);
 				ret = -ENOMEM;
-				goto out;
+				goto out_unlock;
+			}
+			if (!nfs_sb_active(super)) {
+				kfree(info);
+				continue;
 			}
 			INIT_WORK(&info->work, enfs_shard_workfn);
 			info->server = server;
@@ -1824,6 +1825,11 @@ static int enfs_check_shard(void)
 out:
 	// free shard_check_wq in enfs_shard_exit() if an error occurs
 	return ret;
+
+out_unlock:
+	spin_unlock(&nn->nfs_client_lock);
+	rcu_read_unlock();
+	goto out;
 }
 
 int enfs_shard_init(void)
