@@ -300,7 +300,7 @@
 /Documentation/ABI/testing/sysfs-fs-ext4 @zhangyi089
 /Documentation/ABI/testing/sysfs-fs-xfs @zhangyi089
 /Documentation/ABI/testing/sysfs-class-iommu-ummu*-mpam @henryze
-/Documentation/admin-guide/perf/hisi-p* @young-sun
+/Documentation/admin-guide/perf/hisi-p* @yushan_wang
 /Documentation/admin-guide/bcache.rst @colyli
 /Documentation/admin-guide/ext4.rst @zhangyi089
 /Documentation/admin-guide/xfs.rst @zhangyi089
@@ -562,7 +562,7 @@
 /drivers/pci/controller/dwc/pcie-intel-gw.c @zeng_zhaorong @juntianlinux
 /drivers/pci/hotplug/sunway_pciehp* @guzitao
 /drivers/perf/ @xukuohai @yeweihua999
-/drivers/perf/hisilicon/ @young-sun
+/drivers/perf/hisilicon/ @yushan_wang
 /drivers/perf/hisilicon/hns3_pmu.c @WangBoe2022 @linyunsheng
 /drivers/perf/hisilicon/ummu_pmu.c @fangfeng123 @Tankll2021 @gongleihuawei
 /drivers/perf/riscv_pmu* @xingmz1 @whoisxxx @siyanteng
@@ -1369,6 +1369,7 @@
 /include/linux/pcs/ @UNMAINTAINED
 /include/linux/percpu.h @wkfxxx @mawupeng @sun_nanyong
 /include/linux/perf/ @xukuohai @yeweihua999
+/include/linux/perf/hisi_pmu.h @yushan_wang
 /include/linux/perf_event.h @xukuohai @yeweihua999
 /include/linux/perf_regs.h @xukuohai @yeweihua999
 /include/linux/pfn* @wkfxxx @mawupeng @sun_nanyong
