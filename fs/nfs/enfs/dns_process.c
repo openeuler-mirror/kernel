@@ -929,8 +929,13 @@ int enfs_dns_init(void)
 
 	dns_thread = kthread_run(dns_update_loop, NULL, "enfs_dns_update");
 	if (IS_ERR(dns_thread)) {
+		int ret = PTR_ERR(dns_thread);
+
 		enfs_log_error("Failed to create thread enfs_dns_update.\n");
-		return PTR_ERR(dns_thread);
+		dns_thread = NULL;
+		destroy_workqueue(dns_workq);
+		dns_workq = NULL;
+		return ret;
 	}
 	return 0;
 }
