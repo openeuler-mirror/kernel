@@ -278,7 +278,7 @@ static inline int init_helper_init(struct enfs_init_entry *job, int size)
 
 init_err:
 	init_helper_finalize(job, i);
-	return -1;
+	return ret;
 }
 
 static struct enfs_init_entry init_entry[] = {
@@ -286,6 +286,7 @@ static struct enfs_init_entry init_entry[] = {
 	{ "shard", enfs_shard_init, enfs_shard_exit },
 	{ "mgmt", mgmt_init, mgmt_fini },
 	{ "dns", enfs_dns_init, enfs_dns_exit },
+	{ "rpc", enfs_rpc_init, enfs_lookupcache_fini },
 };
 
 static int __init init_enfs(void)
@@ -303,13 +304,7 @@ static int __init init_enfs(void)
 	ret = init_helper_init(init_entry, ARRAY_SIZE(init_entry));
 	if (ret) {
 		enfs_adapter_unregister(&enfs_adapter);
-		return -1;
-	}
-
-	ret = enfs_rpc_init();
-	if (ret) {
-		enfs_adapter_unregister(&enfs_adapter);
-		return -1;
+		return ret;
 	}
 
 	enfs_nfsd_link_debug_init();
@@ -319,7 +314,6 @@ static int __init init_enfs(void)
 static void __exit exit_enfs(void)
 {
 	enfs_nfsd_link_debug_exit();
-	enfs_lookupcache_fini();
 	init_helper_finalize(init_entry, ARRAY_SIZE(init_entry));
 	enfs_adapter_unregister(&enfs_adapter);
 }
