@@ -1574,9 +1574,9 @@ static void do_shard_update(struct work_struct *work)
 		enfs_recovery_nlm_lock(info->clnt);
 	}
 
+	shard_update_done(info->clnt);
 	rpc_release_client(shard_work->info.clnt);
 	xprt_switch_put(shard_work->xps);
-	shard_update_done(info->clnt);
 	kfree(shard_work);
 }
 
