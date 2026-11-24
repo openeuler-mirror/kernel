@@ -92,9 +92,12 @@ config ARM_EXYNOS_BUS_DEVFREQ
 
 config ARM_HISI_UNCORE_DEVFREQ
 	tristate "HiSilicon uncore DEVFREQ Driver"
-	depends on ACPI && ACPI_PPTT && PCC
+	depends on ARM64 && ACPI && ACPI_PPTT && PCC && PERF_EVENTS
+	depends on HISI_PMU || !HISI_PMU
 	select DEVFREQ_GOV_PERFORMANCE
 	select DEVFREQ_GOV_USERSPACE
+	select DEVFREQ_GOV_SIMPLE_ONDEMAND
+	select PM_DEVFREQ_EVENT
 	help
 	  This adds a DEVFREQ driver that manages uncore frequency scaling for
 	  HiSilicon Kunpeng SoCs. This enables runtime management of uncore
