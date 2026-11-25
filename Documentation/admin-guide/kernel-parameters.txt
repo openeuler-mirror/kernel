@@ -2732,6 +2732,14 @@
 			[KVM,ARM] Allow use of HiSilicon DVMBM capability.
 			Default: 0
 
+	kvm-arm.pv_qspinlock=
+			[KVM,ARM] Force enable the PV queued spinlock
+			(KICK_CPU hypercall) for guests, even if userspace
+			did not enable it. Needed on setups where the VMM
+			cannot configure it, e.g. sandboxes that do not use
+			QEMU.
+			Default is 0 (disabled).
+
 	kvm_cma_resv_ratio=n [PPC]
 			Reserves given percentage from system memory area for
 			contiguous memory allocation for KVM hash pagetable

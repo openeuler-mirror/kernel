@@ -98,6 +98,16 @@ bool pv_preempted_enable = true;
 MODULE_PARM_DESC(pv_preempted_enable, "bool");
 module_param_cb(pv_preempted_enable, &pv_preempted_enable_ops, &pv_preempted_enable, 0644);
 
+#ifdef CONFIG_PARAVIRT_SPINLOCKS
+bool __ro_after_init pv_qspinlock_force_enable;
+
+static int __init early_pv_qspinlock_cfg(char *buf)
+{
+	return strtobool(buf, &pv_qspinlock_force_enable);
+}
+early_param("kvm-arm.pv_qspinlock", early_pv_qspinlock_cfg);
+#endif
+
 static int vcpu_req_reload_wfi_traps(const char *val, const struct kernel_param *kp);
 
 static const struct kernel_param_ops force_wfi_trap_ops = {

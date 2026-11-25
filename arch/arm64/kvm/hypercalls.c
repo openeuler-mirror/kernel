@@ -107,6 +107,23 @@ static bool kvm_smccc_default_allowed(u32 func_id)
 	}
 }
 
+#ifdef CONFIG_PARAVIRT_SPINLOCKS
+static bool kvm_pvspin_is_enabled(struct kvm_smccc_features *smccc_feat)
+{
+	if (pv_qspinlock_force_enable)
+		return true;
+
+	/*
+	 * NOPVSPINLOCK carries negative polarity: the bit is set by
+	 * default (feature disabled) and userspace clears it to enable
+	 * the PV queued spinlock. KICK_CPU is therefore allowed only
+	 * while the bit is clear.
+	 */
+	return !test_bit(KVM_REG_ARM_VENDOR_HYP_BIT_NOPVSPINLOCK,
+			 &smccc_feat->vendor_hyp_bmap);
+}
+#endif
+
 static bool kvm_smccc_test_fw_bmap(struct kvm_vcpu *vcpu, u32 func_id)
 {
 	struct kvm_smccc_features *smccc_feat = &vcpu->kvm->arch.smccc_feat;
@@ -150,14 +167,7 @@ static bool kvm_smccc_test_fw_bmap(struct kvm_vcpu *vcpu, u32 func_id)
 #endif
 #ifdef CONFIG_PARAVIRT_SPINLOCKS
 	case ARM_SMCCC_VENDOR_KICK_CPU:
-		/*
-		 * NOPVSPINLOCK carries negative polarity: the bit is set by
-		 * default (feature disabled) and userspace clears it to enable
-		 * the PV queued spinlock. KICK_CPU is therefore allowed only
-		 * while the bit is clear.
-		 */
-		return !test_bit(KVM_REG_ARM_VENDOR_HYP_BIT_NOPVSPINLOCK,
-				 &smccc_feat->vendor_hyp_bmap);
+		return kvm_pvspin_is_enabled(smccc_feat);
 #endif
 	default:
 		return false;
@@ -411,8 +421,7 @@ int kvm_smccc_call_handler(struct kvm_vcpu *vcpu)
 #endif /* CONFIG_PARAVIRT_SCHED */
 #ifdef CONFIG_PARAVIRT_SPINLOCKS
 		case ARM_SMCCC_VENDOR_KICK_CPU:
-			if (!test_bit(KVM_REG_ARM_VENDOR_HYP_BIT_NOPVSPINLOCK,
-				      &smccc_feat->vendor_hyp_bmap))
+			if (kvm_pvspin_is_enabled(smccc_feat))
 				val[0] = SMCCC_RET_SUCCESS;
 			break;
 #endif /* CONFIG_PARAVIRT_SPINLOCKS */
@@ -444,7 +453,10 @@ int kvm_smccc_call_handler(struct kvm_vcpu *vcpu)
 #endif /* CONFIG_PARAVIRT_SCHED */
 #ifdef CONFIG_PARAVIRT_SPINLOCKS
 	case ARM_SMCCC_VENDOR_KICK_CPU:
-		val[0] = kvm_pvspin_kick_vcpu(vcpu);
+		if (kvm_pvspin_is_enabled(smccc_feat))
+			val[0] = kvm_pvspin_kick_vcpu(vcpu);
+		else
+			val[0] = SMCCC_RET_NOT_SUPPORTED;
 		break;
 #endif /* CONFIG_PARAVIRT_SPINLOCKS */
 #ifdef CONFIG_ARM64_HISI_IPIV

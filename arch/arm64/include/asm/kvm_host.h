@@ -1319,6 +1319,7 @@ static inline bool kvm_arm_vcpu_is_preempted(struct kvm_vcpu_arch *vcpu_arch)
 #endif
 
 #ifdef CONFIG_PARAVIRT_SPINLOCKS
+extern bool pv_qspinlock_force_enable;
 static inline void kvm_arm_pvspin_vcpu_init(struct kvm_vcpu_arch *vcpu_arch)
 {
 	vcpu_arch->pv.pv_unhalted = false;
