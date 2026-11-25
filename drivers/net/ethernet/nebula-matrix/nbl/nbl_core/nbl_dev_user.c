@@ -1677,8 +1677,8 @@ err_cdev_add:
 	unregister_chrdev_region(nbl_userdev.cdevt, MINORMASK + 1);
 err_alloc_chrdev:
 	class_destroy(nbl_userdev.cls);
-	nbl_userdev.cls = NULL;
 err_create_cls:
+	nbl_userdev.cls = NULL;
 #if (IS_ENABLED(CONFIG_VFIO) && IS_ENABLED(CONFIG_VFIO_MDEV))
 	driver_unregister(&nbl_userdev_driver);
 	bus_unregister(&nbl_bus_type);
