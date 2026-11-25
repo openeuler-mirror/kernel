@@ -110,8 +110,6 @@ u16	la_iommu_last_bdf;			/* largest PCI device id
 						 *  we have to handle
 						 */
 
-int loongarch_iommu_disable;
-
 #define iommu_write_regl(iommu, off, val) \
 	writel(val, iommu->confbase + off)
 #define iommu_read_regl(iommu, off)	readl(iommu->confbase + off)
@@ -695,8 +693,8 @@ struct loongarch_iommu *find_iommu_by_dev(struct pci_dev  *pdev)
 struct iommu_device *iommu_init_device(struct device *dev)
 {
 	struct la_iommu_dev_data *dev_data;
-	struct pci_dev	*pdev = to_pci_dev(dev);
-	struct pci_bus	*bus = pdev->bus;
+	struct pci_dev	*pdev;
+	struct pci_bus	*bus;
 	unsigned short devid;
 	struct loongarch_iommu *iommu = NULL;
 	struct iommu_device *iommu_dev = ERR_PTR(-ENODEV);
@@ -704,6 +702,8 @@ struct iommu_device *iommu_init_device(struct device *dev)
 	if (!dev_is_pci(dev))
 		return iommu_dev;
 
+	pdev = to_pci_dev(dev);
+	bus = pdev->bus;
 	if (dev->archdata.iommu != NULL || bus == NULL) {
 		pr_info("LA-IOMMU: bdf:0x%x has added\n", pdev->devfn);
 		return iommu_dev;
@@ -1787,26 +1787,6 @@ static void free_iommu_rlookup_entry(void)
 		kfree(rlookupentry);
 	}
 }
-
-static int __init la_iommu_setup(char *str)
-{
-	if (!str)
-		return -EINVAL;
-	while (*str) {
-		if (!strncmp(str, "on", 2)) {
-			loongarch_iommu_disable = 0;
-			pr_info("IOMMU enabled\n");
-		} else if (!strncmp(str, "off", 3)) {
-			loongarch_iommu_disable = 1;
-			pr_info("IOMMU disabled\n");
-		}
-		str += strcspn(str, ",");
-		while (*str == ',')
-			str++;
-	}
-	return 0;
-}
-__setup("loongarch_iommu=", la_iommu_setup);
 
 static const struct pci_device_id loongson_iommu_pci_tbl[] = {
 	{ PCI_DEVICE(0x14, 0x3c0f) },
