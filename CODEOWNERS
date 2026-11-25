@@ -28,7 +28,7 @@
 /arch/arm/boot/dts/aspeed/aspeed-bmc-amd* @kile2009 @sming56_admin
 /arch/arm/boot/dts/intel/ @zeng_zhaorong @juntianlinux
 /arch/arm/configs/ @UNMAINTAINED
-/arch/arm/crypto/ @lujialin2
+/arch/arm/crypto/ @lujialin2 @raverstern
 /arch/arm/include/ @chriszjh @zouyipeng
 /arch/arm/include/asm/ @chriszjh @zouyipeng
 /arch/arm/include/asm/dma* @wkfxxx @mawupeng @sun_nanyong
@@ -67,7 +67,7 @@
 /arch/arm64/boot/dts/amd/ @kile2009 @sming56_admin
 /arch/arm64/boot/dts/intel/ @zeng_zhaorong @juntianlinux
 /arch/arm64/configs/ @SuperSix173
-/arch/arm64/crypto/ @lujialin2
+/arch/arm64/crypto/ @lujialin2 @raverstern
 /arch/arm64/include/ @chriszjh @zouyipeng
 /arch/arm64/include/asm/ @chriszjh @zouyipeng
 /arch/arm64/include/asm/cache* @wkfxxx @mawupeng @sun_nanyong
@@ -122,9 +122,10 @@
 /arch/arm64/include/uapi/asm/kvm* @kevinzhu1 @yuzenghui
 /arch/arm64/include/uapi/asm/virtcca_cvm_tsi.h @hjx_gitff
 /arch/arm64/kernel/ @chriszjh @zouyipeng
+/arch/arm64/kernel/bpf-rvi.c @raverstern
 /arch/arm64/kernel/cacheinfo.c @wkfxxx @mawupeng @sun_nanyong
 /arch/arm64/kernel/ftrace.c @xukuohai @yeweihua999
-/arch/arm64/kernel/kaslr.c @lujialin2
+/arch/arm64/kernel/kaslr.c @lujialin2 @raverstern
 /arch/arm64/kernel/livepatch.c @xukuohai @yeweihua999
 /arch/arm64/kernel/mpam/ @henryze
 /arch/arm64/kernel/pci.c @stkid @LiuYongQiang0816
@@ -150,7 +151,7 @@
 /arch/powerpc/boot/ @chriszjh @zouyipeng
 /arch/powerpc/boot/dts/ @UNMAINTAINED
 /arch/powerpc/configs/ @UNMAINTAINED
-/arch/powerpc/crypto/ @lujialin2
+/arch/powerpc/crypto/ @lujialin2 @raverstern
 /arch/powerpc/include/ @chriszjh @zouyipeng
 /arch/powerpc/include/asm/ @chriszjh @zouyipeng
 /arch/powerpc/include/asm/book3s/ @wkfxxx @mawupeng @sun_nanyong
@@ -195,14 +196,14 @@
 /arch/powerpc/mm/ @wkfxxx @mawupeng @sun_nanyong
 /arch/powerpc/perf/ @xukuohai @yeweihua999
 /arch/x86/ @stkid @zeng_zhaorong @juntianlinux
-/arch/x86/boot/compressed/kaslr.c @lujialin2
+/arch/x86/boot/compressed/kaslr.c @lujialin2 @raverstern
 /arch/x86/boot/compressed/pgtable* @wkfxxx @mawupeng @sun_nanyong
 /arch/x86/boot/memory.c @wkfxxx @mawupeng @sun_nanyong
-/arch/x86/crypto/ @lujialin2
+/arch/x86/crypto/ @lujialin2 @raverstern
 /arch/x86/crypto/sm*-zhaoxin-gmi.c @leoliu-oc
 /arch/x86/include/asm/iommu* @chen-jun-hw
 /arch/x86/include/asm/kasan.h @wkfxxx @mawupeng @sun_nanyong
-/arch/x86/include/asm/kaslr.h @lujialin2
+/arch/x86/include/asm/kaslr.h @lujialin2 @raverstern
 /arch/x86/include/asm/kprobes.h @xukuohai @yeweihua999
 /arch/x86/include/asm/livepatch.h @xukuohai @yeweihua999
 /arch/x86/include/asm/mmconfig.h @wkfxxx @mawupeng @sun_nanyong
@@ -235,6 +236,7 @@
 /arch/x86/kernel/unwind* @xukuohai @yeweihua999
 /arch/x86/kernel/cpu/zhaoxin.c @leoliu-oc
 /arch/x86/kernel/cpu/amd.c @kile2009 @sming56_admin
+/arch/x86/kernel/cpu/bpf-rvi.c @raverstern
 /arch/x86/kernel/cpu/hygon.c @hanliyang @allen-shi
 /arch/x86/kernel/cpu/mce/amd.c @kile2009 @sming56_admin
 /arch/x86/kernel/cpu/microcode/amd* @kile2009 @sming56_admin
@@ -280,6 +282,7 @@
 /block/blk-rq-qos* @UNMAINTAINED
 /block/blk-wbt* @UNMAINTAINED
 /block/bounce.c @UNMAINTAINED
+/block/bpf-rvi.c @raverstern
 /block/ioprio.c @UNMAINTAINED
 /block/opal_proto.h @UNMAINTAINED
 /block/partitions/ @zhangyi089
@@ -291,8 +294,8 @@
 /block/partitions/ultrix.c @UNMAINTAINED
 /block/sed-opal.c @UNMAINTAINED
 /block/t10-pi.c @UNMAINTAINED
-/certs/ @lujialin2
-/crypto/ @lujialin2
+/certs/ @lujialin2 @raverstern
+/crypto/ @lujialin2 @raverstern
 /Documentation/ @UNMAINTAINED
 /Documentation/vm/ @wkfxxx @mawupeng @sun_nanyong
 /Documentation/ABI/testing/debugfs-hisi* @liulongfang
@@ -411,7 +414,7 @@
 /drivers/cdrom/ @chen-jun-hw
 /drivers/char/ @UNMAINTAINED
 /drivers/char/hpet.c @chriszjh @zouyipeng
-/drivers/char/ipmi/ @lujialin2
+/drivers/char/ipmi/ @lujialin2 @raverstern
 /drivers/char/ipmi/btlock.h @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
 /drivers/char/ipmi/ipmi_si.h @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
 /drivers/char/ipmi/ipmi_si_intf.c @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
@@ -422,7 +425,7 @@
 /drivers/char/Makefile @chen-jun-hw
 /drivers/char/mem.c @wkfxxx @mawupeng @sun_nanyong
 /drivers/char/random.c @chen-jun-hw
-/drivers/char/ttyprintk.c @lujialin2
+/drivers/char/ttyprintk.c @lujialin2 @raverstern
 /drivers/char/virtio_console.c @chen-jun-hw
 /drivers/char/gmem_dev.c @SuperSix173
 /drivers/char/hw_random/zhaoxin-rng.c @leoliu-oc
@@ -512,7 +515,7 @@
 /drivers/md/persistent-data/ @zhangyi089
 /drivers/md/raid1.* @zhangyi089
 /drivers/md/bcache/ @colyli
-/drivers/mtd/ @lujialin2
+/drivers/mtd/ @lujialin2 @raverstern
 /drivers/mtd/ubi/ @zhangyi089
 /drivers/mtd/spi-nor/phytium-quadspi.c @mao-hongbo @GoGo_phytium @xuyanaasss
 /drivers/mtd/spi-nor/controllers/intel-spi* @zeng_zhaorong @juntianlinux
@@ -640,7 +643,7 @@
 /drivers/thermal/cpuidle_cooling.c @zqiao216
 /drivers/thermal/intel/ @zeng_zhaorong @juntianlinux
 /drivers/thermal/loongson2_thermal.c @lixuefeng-loongson @maobibo @gaojuxin09 @robinorg
-/drivers/tty/ @lujialin2
+/drivers/tty/ @lujialin2 @raverstern
 /drivers/tty/serial/8250/8250_sunway.c @guzitao
 /drivers/uio/ @UNMAINTAINED
 /drivers/uio/Kconfig @chen-jun-hw
@@ -897,12 +900,12 @@
 /fs/proc/Kconfig @zhangyi089
 /fs/proc/Makefile @zhangyi089
 /fs/proc/meminfo.c @wkfxxx @mawupeng @sun_nanyong
-/fs/proc/namespaces.c @lujialin2
+/fs/proc/namespaces.c @lujialin2 @raverstern
 /fs/proc/nommu.c @wkfxxx @mawupeng @sun_nanyong
 /fs/proc/page.c @wkfxxx @mawupeng @sun_nanyong
 /fs/proc/proc_net.c @yuehaibing_planb
 /fs/proc/proc_sysctl.c @zhangyi089
-/fs/proc/proc_tty.c @lujialin2
+/fs/proc/proc_tty.c @lujialin2 @raverstern
 /fs/proc/root.c @zhangyi089
 /fs/proc/softirqs.c @chriszjh @zouyipeng
 /fs/proc/task* @wkfxxx @mawupeng @sun_nanyong
@@ -941,7 +944,7 @@
 /include/acpi/p*_intel.h @zeng_zhaorong @juntianlinux
 /include/acpi/platform/acintel.h @zeng_zhaorong @juntianlinux
 /include/asm-generic/ @zqiao216
-/include/asm-generic/audit* @lujialin2
+/include/asm-generic/audit* @lujialin2 @raverstern
 /include/asm-generic/barrier.h @wkfxxx @mawupeng @sun_nanyong
 /include/asm-generic/delay.h @chriszjh @zouyipeng
 /include/asm-generic/dma* @wkfxxx @mawupeng @sun_nanyong
@@ -972,8 +975,8 @@
 /include/asm-generic/spinlock_types.h @LiuYongQiang0816 @stkid
 /include/clocksource/ @UNMAINTAINED
 /include/clocksource/arm_arch_timer.h @chriszjh @zouyipeng
-/include/crypto/ @lujialin2
-/include/keys/ @lujialin2
+/include/crypto/ @lujialin2 @raverstern
+/include/keys/ @lujialin2 @raverstern
 /include/keys/ceph-type.h @UNMAINTAINED
 /include/linux/ @zqiao216
 /include/linux/8250_pci.h @UNMAINTAINED
@@ -1009,7 +1012,7 @@
 /include/linux/atalk.h @UNMAINTAINED
 /include/linux/ath9k_platform.h @UNMAINTAINED
 /include/linux/atm* @UNMAINTAINED
-/include/linux/audit* @lujialin2
+/include/linux/audit* @lujialin2 @raverstern
 /include/linux/auto* @zhangyi089
 /include/linux/auxiliary_bus.h @UNMAINTAINED
 /include/linux/auxvec.h @yuehaibing_planb
@@ -1053,20 +1056,20 @@
 /include/linux/c2port.h @UNMAINTAINED
 /include/linux/cache* @wkfxxx @mawupeng @sun_nanyong
 /include/linux/can/ @yuehaibing_planb
-/include/linux/capability.h @lujialin2
+/include/linux/capability.h @lujialin2 @raverstern
 /include/linux/cb710.h @UNMAINTAINED
 /include/linux/cc_platform.h @stkid
 /include/linux/cciss_ioctl.h @zhangyi089
-/include/linux/ccp.h @lujialin2
+/include/linux/ccp.h @lujialin2 @raverstern
 /include/linux/cdev.h @chen-jun-hw
 /include/linux/cdrom.h @zhangyi089
 /include/linux/ceph/ @UNMAINTAINED
 /include/linux/cfag12864b.h @UNMAINTAINED
-/include/linux/cfi.h @lujialin2
-/include/linux/cgroup.h @lujialin2
-/include/linux/cgroup_rdma.h @lujialin2
-/include/linux/cgroup_subsys.h @lujialin2
-/include/linux/cgroup-defs.h @lujialin2
+/include/linux/cfi.h @lujialin2 @raverstern
+/include/linux/cgroup.h @lujialin2 @raverstern
+/include/linux/cgroup_rdma.h @lujialin2 @raverstern
+/include/linux/cgroup_subsys.h @lujialin2 @raverstern
+/include/linux/cgroup-defs.h @lujialin2 @raverstern
 /include/linux/circ_buf.h @chen-jun-hw
 /include/linux/clk*.h @chen-jun-hw
 /include/linux/clk/ @UNMAINTAINED
@@ -1101,9 +1104,9 @@
 /include/linux/cpumask.h @chriszjh @zouyipeng
 /include/linux/cpuset.h @chriszjh @zouyipeng
 /include/linux/crash* @chen-jun-hw
-/include/linux/cred.h @lujialin2
+/include/linux/cred.h @lujialin2 @raverstern
 /include/linux/crush/ @UNMAINTAINED
-/include/linux/crypto.h @lujialin2
+/include/linux/crypto.h @lujialin2 @raverstern
 /include/linux/cs5535.h @chen-jun-hw
 /include/linux/ctype.h @chen-jun-hw
 /include/linux/cuda.h @chen-jun-hw
@@ -1231,8 +1234,8 @@
 /include/linux/io_uring*.h @zhangyi089
 /include/linux/iomap.h @zhangyi089
 /include/linux/ip.h @yuehaibing_planb
-/include/linux/ipc_namespace.h @lujialin2
-/include/linux/ipmi* @lujialin2
+/include/linux/ipc_namespace.h @lujialin2 @raverstern
+/include/linux/ipmi* @lujialin2 @raverstern
 /include/linux/ipv6* @yuehaibing_planb
 /include/linux/irq.h @chriszjh @zouyipeng
 /include/linux/irq_poll.h @chriszjh @zouyipeng
@@ -1281,13 +1284,13 @@
 /include/linux/lockdep.h @stkid @LiuYongQiang0816
 /include/linux/lockdep_types.h @stkid @LiuYongQiang0816
 /include/linux/lockref.h @stkid @LiuYongQiang0816
-/include/linux/lsm_hook_defs.h @lujialin2
+/include/linux/lsm_hook_defs.h @lujialin2 @raverstern
 /include/linux/mailbox/ @UNMAINTAINED
 /include/linux/maple.h @UNMAINTAINED
 /include/linux/mdio/ @UNMAINTAINED
 /include/linux/mdio/mdio-i2c.h @yuehaibing_planb
 /include/linux/memblock.h @wkfxxx @mawupeng @sun_nanyong
-/include/linux/memcontrol.h @lujialin2
+/include/linux/memcontrol.h @lujialin2 @raverstern
 /include/linux/memfd.h @wkfxxx @mawupeng @sun_nanyong
 /include/linux/memory.h @wkfxxx @mawupeng @sun_nanyong
 /include/linux/memory_hotplug.h @wkfxxx @mawupeng @sun_nanyong
@@ -1308,10 +1311,10 @@
 /include/linux/mmdebug.h @wkfxxx @mawupeng @sun_nanyong
 /include/linux/mmu* @wkfxxx @mawupeng @sun_nanyong
 /include/linux/mmzone.h @wkfxxx @mawupeng @sun_nanyong
-/include/linux/mnt_namespace.h @lujialin2
+/include/linux/mnt_namespace.h @lujialin2 @raverstern
 /include/linux/mount.h @zhangyi089
 /include/linux/mpage.h @wkfxxx @mawupeng @sun_nanyong
-/include/linux/mtd/ @lujialin2
+/include/linux/mtd/ @lujialin2 @raverstern
 /include/linux/mtd/ubi.h @zhangyi089
 /include/linux/mutex.h @stkid @LiuYongQiang0816
 /include/linux/mux/ @UNMAINTAINED
@@ -1332,8 +1335,8 @@
 /include/linux/netpoll.h @yuehaibing_planb
 /include/linux/nfs* @chenxiaosonggitcode @zhangguodong11
 /include/linux/nmi.h @chriszjh @zouyipeng
-/include/linux/ns_common.h @lujialin2
-/include/linux/nsproxy.h @lujialin2
+/include/linux/ns_common.h @lujialin2 @raverstern
+/include/linux/nsproxy.h @lujialin2 @raverstern
 /include/linux/numa.h @wkfxxx @mawupeng @sun_nanyong
 /include/linux/nvme.h @htforge
 /include/linux/nvme-* @htforge
@@ -1374,7 +1377,7 @@
 /include/linux/pfn* @wkfxxx @mawupeng @sun_nanyong
 /include/linux/pgtable.h @wkfxxx @mawupeng @sun_nanyong
 /include/linux/phy/ @yuehaibing_planb
-/include/linux/pid_namespace.h @lujialin2
+/include/linux/pid_namespace.h @lujialin2 @raverstern
 /include/linux/pinctrl/ @UNMAINTAINED
 /include/linux/platform_data/ @UNMAINTAINED
 /include/linux/platform_data/cpuidle-exynos.h @zqiao216
@@ -1400,7 +1403,7 @@
 /include/linux/quota* @zhangyi089
 /include/linux/raid/ @UNMAINTAINED
 /include/linux/ramfs.h @zhangyi089
-/include/linux/random* @lujialin2
+/include/linux/random* @lujialin2 @raverstern
 /include/linux/rcu_* @stkid @LiuYongQiang0816
 /include/linux/rculist* @stkid @LiuYongQiang0816
 /include/linux/rcupdate* @stkid @LiuYongQiang0816
@@ -1442,7 +1445,7 @@
 /include/linux/seccomp.h @chen-jun-hw
 /include/linux/secretmem.h @wkfxxx @mawupeng @sun_nanyong
 /include/linux/securebits.h @chen-jun-hw
-/include/linux/security.h @lujialin2
+/include/linux/security.h @lujialin2 @raverstern
 /include/linux/sed-opal.h @chen-jun-hw
 /include/linux/seg6* @yuehaibing_planb
 /include/linux/selection.h @chen-jun-hw
@@ -1563,7 +1566,7 @@
 /include/linux/transport_class.h @chen-jun-hw
 /include/linux/tsacct_kern.h @chen-jun-hw
 /include/linux/ts-nbus.h @chen-jun-hw
-/include/linux/tty* @lujialin2
+/include/linux/tty* @lujialin2 @raverstern
 /include/linux/type* @chen-jun-hw
 /include/linux/u64_stats_sync.h @chen-jun-hw
 /include/linux/uacce.h @UNMAINTAINED
@@ -1579,7 +1582,7 @@
 /include/linux/usb*.h @chen-jun-hw
 /include/linux/usb/ @UNMAINTAINED
 /include/linux/user.h @chen-jun-hw
-/include/linux/user_namespace.h @lujialin2
+/include/linux/user_namespace.h @lujialin2 @raverstern
 /include/linux/userfaultfd_k* @wkfxxx @mawupeng @sun_nanyong
 /include/linux/usermode_driver.h @chen-jun-hw
 /include/linux/user-return-notifier.h @chen-jun-hw
@@ -1725,28 +1728,28 @@
 /include/uapi/asm-generic/kvm_para.h @kevinzhu1 @yuzenghui
 /include/uapi/asm-generic/sembuf.h @LiuYongQiang0816 @stkid
 /include/uapi/linux/ @UNMAINTAINED
-/include/uapi/linux/audit.h @lujialin2
+/include/uapi/linux/audit.h @lujialin2 @raverstern
 /include/uapi/linux/auto_fs* @zhangyi089
 /include/uapi/linux/binfmts.h @zhangyi089
 /include/uapi/linux/blk* @zhangyi089
 /include/uapi/linux/bpf* @xukuohai @yeweihua999
 /include/uapi/linux/bpqether.h @yuehaibing_planb
 /include/uapi/linux/bsg.h @zhangyi089
-/include/uapi/linux/bt-bmc.h @lujialin2
+/include/uapi/linux/bt-bmc.h @lujialin2 @raverstern
 /include/uapi/linux/btf.h @xukuohai @yeweihua999
 /include/uapi/linux/byteorder/ @wkfxxx @mawupeng @sun_nanyong
 /include/uapi/linux/caif/ @yuehaibing_planb
 /include/uapi/linux/can.h @yuehaibing_planb
 /include/uapi/linux/can/ @yuehaibing_planb
-/include/uapi/linux/capability.h @lujialin2
+/include/uapi/linux/capability.h @lujialin2 @raverstern
 /include/uapi/linux/cciss* @zhangyi089
 /include/uapi/linux/cfm_bridge.h @yuehaibing_planb
-/include/uapi/linux/cgroupstats.h @lujialin2
+/include/uapi/linux/cgroupstats.h @lujialin2 @raverstern
 /include/uapi/linux/chio.h @zhangyi089
 /include/uapi/linux/cifs/ @zhangyi089
 /include/uapi/linux/connector.h @yuehaibing_planb
 /include/uapi/linux/const.h @chen-jun-hw
-/include/uapi/linux/cryptouser.h @lujialin2
+/include/uapi/linux/cryptouser.h @lujialin2 @raverstern
 /include/uapi/linux/cyc* @chen-jun-hw
 /include/uapi/linux/dc* @yuehaibing_planb
 /include/uapi/linux/devlink.h @yuehaibing_planb
@@ -1770,9 +1773,9 @@
 /include/uapi/linux/fuse.h @zhangyi089
 /include/uapi/linux/futex.h @stkid @LiuYongQiang0816
 /include/uapi/linux/gen*.h @yuehaibing_planb
-/include/uapi/linux/gsmmux.h @lujialin2
+/include/uapi/linux/gsmmux.h @lujialin2 @raverstern
 /include/uapi/linux/gtp.h @yuehaibing_planb
-/include/uapi/linux/hash_info.h @lujialin2
+/include/uapi/linux/hash_info.h @lujialin2 @raverstern
 /include/uapi/linux/hdlc*.h @yuehaibing_planb
 /include/uapi/linux/hpet.h @chriszjh @zouyipeng
 /include/uapi/linux/hsr_netlink.h @yuehaibing_planb
@@ -1794,9 +1797,9 @@
 /include/uapi/linux/ip_vs.h @yuehaibing_planb
 /include/uapi/linux/ip6_tunnel.h @yuehaibing_planb
 /include/uapi/linux/ipc.h @zqiao216
-/include/uapi/linux/ipmi.h @lujialin2
-/include/uapi/linux/ipmi_bmc.h @lujialin2
-/include/uapi/linux/ipmi_msgdefs.h @lujialin2
+/include/uapi/linux/ipmi.h @lujialin2 @raverstern
+/include/uapi/linux/ipmi_bmc.h @lujialin2 @raverstern
+/include/uapi/linux/ipmi_msgdefs.h @lujialin2 @raverstern
 /include/uapi/linux/ipsec.h @yuehaibing_planb
 /include/uapi/linux/ipv6* @yuehaibing_planb
 /include/uapi/linux/irqnr.h @chriszjh @zouyipeng
@@ -1805,13 +1808,13 @@
 /include/uapi/linux/kcm.h @yuehaibing_planb
 /include/uapi/linux/kcmp.h @zqiao216
 /include/uapi/linux/kcov.h @xukuohai @yeweihua999
-/include/uapi/linux/kd.h @lujialin2
+/include/uapi/linux/kd.h @lujialin2 @raverstern
 /include/uapi/linux/kdev_t.h @zhangyi089
 /include/uapi/linux/kernel.h @chen-jun-hw
 /include/uapi/linux/kernel-page-flags.h @wkfxxx @mawupeng @sun_nanyong
 /include/uapi/linux/kexec.h @xukuohai @yeweihua999
 /include/uapi/linux/l2tp.h @yuehaibing_planb
-/include/uapi/linux/landlock.h @lujialin2
+/include/uapi/linux/landlock.h @lujialin2 @raverstern
 /include/uapi/linux/libc-compat.h @chen-jun-hw
 /include/uapi/linux/limits.h @chen-jun-hw
 /include/uapi/linux/llc.h @yuehaibing_planb
@@ -1852,7 +1855,7 @@
 /include/uapi/linux/nfs*.h @chenxiaosonggitcode @zhangguodong11
 /include/uapi/linux/nl80211.h @yuehaibing_planb
 /include/uapi/linux/nl80211-vnd-intel.h @zeng_zhaorong @juntianlinux
-/include/uapi/linux/nsfs.h @lujialin2
+/include/uapi/linux/nsfs.h @lujialin2 @raverstern
 /include/uapi/linux/nvme_ioctl.h @htforge
 /include/uapi/linux/oom.h @wkfxxx @mawupeng @sun_nanyong
 /include/uapi/linux/openat2.h @zhangyi089
@@ -1873,7 +1876,7 @@
 /include/uapi/linux/psample.h @yuehaibing_planb
 /include/uapi/linux/qrtr.h @yuehaibing_planb
 /include/uapi/linux/quota.h @zhangyi089
-/include/uapi/linux/random.h @lujialin2
+/include/uapi/linux/random.h @lujialin2 @raverstern
 /include/uapi/linux/rds.h @yuehaibing_planb
 /include/uapi/linux/reboot.h @chriszjh @zouyipeng
 /include/uapi/linux/resource.h @chen-jun-hw
@@ -1889,11 +1892,11 @@
 /include/uapi/linux/sched/ @zqiao216
 /include/uapi/linux/scif_ioctl.h @chen-jun-hw
 /include/uapi/linux/sctp.h @yuehaibing_planb
-/include/uapi/linux/sec* @lujialin2
+/include/uapi/linux/sec* @lujialin2 @raverstern
 /include/uapi/linux/seg6* @yuehaibing_planb
-/include/uapi/linux/selinux_netlink.h @lujialin2
+/include/uapi/linux/selinux_netlink.h @lujialin2 @raverstern
 /include/uapi/linux/sem.h @LiuYongQiang0816 @stkid
-/include/uapi/linux/serial* @lujialin2
+/include/uapi/linux/serial* @lujialin2 @raverstern
 /include/uapi/linux/shm.h @zqiao216
 /include/uapi/linux/signal* @zqiao216
 /include/uapi/linux/smc* @yuehaibing_planb
@@ -1905,14 +1908,14 @@
 /include/uapi/linux/suspend_ioctls.h @stkid
 /include/uapi/linux/swab.h @chen-jun-hw
 /include/uapi/linux/switchtec_ioctl.h @stkid
-/include/uapi/linux/synclink.h @lujialin2
+/include/uapi/linux/synclink.h @lujialin2 @raverstern
 /include/uapi/linux/sys* @chen-jun-hw
 /include/uapi/linux/tcp* @yuehaibing_planb
 /include/uapi/linux/time* @zqiao216
-/include/uapi/linux/tiocl.h @lujialin2
+/include/uapi/linux/tiocl.h @lujialin2 @raverstern
 /include/uapi/linux/tipc* @yuehaibing_planb
 /include/uapi/linux/tls.h @yuehaibing_planb
-/include/uapi/linux/tty* @lujialin2
+/include/uapi/linux/tty* @lujialin2 @raverstern
 /include/uapi/linux/types.h @chen-jun-hw
 /include/uapi/linux/udp.h @yuehaibing_planb
 /include/uapi/linux/uio.h @chen-jun-hw
@@ -1920,17 +1923,17 @@
 /include/uapi/linux/unix_diag.h @yuehaibing_planb
 /include/uapi/linux/userfaultfd.h @wkfxxx @mawupeng @sun_nanyong
 /include/uapi/linux/utime.h @zhangyi089
-/include/uapi/linux/utsname.h @lujialin2
+/include/uapi/linux/utsname.h @lujialin2 @raverstern
 /include/uapi/linux/uuid.h @xukuohai @yeweihua999
 /include/uapi/linux/veth.h @yuehaibing_planb
 /include/uapi/linux/virtio_9p.h @yuehaibing_planb
-/include/uapi/linux/virtio_crypto.h @lujialin2
+/include/uapi/linux/virtio_crypto.h @lujialin2 @raverstern
 /include/uapi/linux/virtio_fs.h @zhangyi089
 /include/uapi/linux/virtio_iommu.h @chen-jun-hw
 /include/uapi/linux/vm_sockets* @yuehaibing_planb
 /include/uapi/linux/vmcore.h @xukuohai @yeweihua999
 /include/uapi/linux/vsockmon.h @yuehaibing_planb
-/include/uapi/linux/vt.h @lujialin2
+/include/uapi/linux/vt.h @lujialin2 @raverstern
 /include/uapi/linux/wait.h @zqiao216
 /include/uapi/linux/watch_queue.h @zhangyi089
 /include/uapi/linux/wire* @yuehaibing_planb
@@ -1951,7 +1954,7 @@
 /include/uapi/linux/nfsd/nfsfh.h @chenxiaosonggitcode @zhangguodong11
 /include/uapi/misc/ @chen-jun-hw
 /include/uapi/misc/xilinx_sdfec.h @xukuohai @yeweihua999
-/include/uapi/mtd/ @lujialin2
+/include/uapi/mtd/ @lujialin2 @raverstern
 /include/uapi/rdma/ @yuehaibing_planb
 /include/uapi/rdma/hns-abi.h @hellotcc
 /include/uapi/scsi/ @UNMAINTAINED
@@ -1994,19 +1997,20 @@
 /K* @xukuohai @yeweihua999
 /kernel/ @zqiao216
 /kernel/.gitignore @UNMAINTAINED
-/kernel/audit* @lujialin2
+/kernel/audit* @lujialin2 @raverstern
 /kernel/b*.c @UNMAINTAINED
 /kernel/bpf/ @xukuohai @yeweihua999
-/kernel/capability.c @lujialin2
-/kernel/cfi.c @lujialin2
-/kernel/cgroup/ @lujialin2
+/kernel/bpf-rvi/ @raverstern
+/kernel/capability.c @lujialin2 @raverstern
+/kernel/cfi.c @lujialin2 @raverstern
+/kernel/cgroup/ @lujialin2 @raverstern
 /kernel/compat.c @chriszjh @zouyipeng
 /kernel/configs.c @UNMAINTAINED
 /kernel/configs/ @UNMAINTAINED
 /kernel/configs/kvm_guest.config @kevinzhu1 @yuzenghui
 /kernel/cpu* @chriszjh @zouyipeng
 /kernel/crash* @xukuohai @yeweihua999
-/kernel/cred.c @lujialin2
+/kernel/cred.c @lujialin2 @raverstern
 /kernel/debug/ @xukuohai @yeweihua999
 /kernel/dma.c @wkfxxx @mawupeng @sun_nanyong
 /kernel/dma/ @wkfxxx @mawupeng @sun_nanyong
@@ -2039,10 +2043,10 @@
 /kernel/module.c @stkid
 /kernel/module_* @stkid
 /kernel/module-internal.h @stkid
-/kernel/nsproxy.c @lujialin2
+/kernel/nsproxy.c @lujialin2 @raverstern
 /kernel/panic.c @xukuohai @yeweihua999
 /kernel/params.c @xukuohai @yeweihua999
-/kernel/pid_namespace.c @lujialin2
+/kernel/pid_namespace.c @lujialin2 @raverstern
 /kernel/power/ @chriszjh @zouyipeng
 /kernel/printk/ @xukuohai @yeweihua999
 /kernel/profile.c @xukuohai @yeweihua999
@@ -2055,10 +2059,10 @@
 /kernel/resource.c @chen-jun-hw
 /kernel/resource_kunit.c @UNMAINTAINED
 /kernel/sc*.c @UNMAINTAINED
-/kernel/seccomp.c @lujialin2
+/kernel/seccomp.c @lujialin2 @raverstern
 /kernel/smp* @chriszjh @zouyipeng
 /kernel/softirq.c @chriszjh @zouyipeng
-/kernel/stackleak.c @lujialin2
+/kernel/stackleak.c @lujialin2 @raverstern
 /kernel/stacktrace.c @xukuohai @yeweihua999
 /kernel/static_call.c @yeweihua999 @xukuohai
 /kernel/stop_machine.c @chriszjh @zouyipeng
@@ -2078,10 +2082,10 @@
 /kernel/trace/ @xukuohai @yeweihua999
 /kernel/trace/trace_sched* @zqiao216
 /kernel/tracepoint.c @xukuohai @yeweihua999
-/kernel/user.c @lujialin2
-/kernel/user_namespace.c @lujialin2
+/kernel/user.c @lujialin2 @raverstern
+/kernel/user_namespace.c @lujialin2 @raverstern
 /kernel/usermode_driver.c @xukuohai @yeweihua999
-/kernel/utsname* @lujialin2
+/kernel/utsname* @lujialin2 @raverstern
 /kernel/watch_queue.c @UNMAINTAINED
 /kernel/watchdog* @xukuohai @yeweihua999
 /kernel/workqueue.c @LiuYongQiang0816
@@ -2093,7 +2097,7 @@
 /lib/argv_split.c @chen-jun-hw
 /lib/ash* @chen-jun-hw
 /lib/assoc_array.c @chen-jun-hw
-/lib/audit.c @lujialin2
+/lib/audit.c @lujialin2 @raverstern
 /lib/bc* @chen-jun-hw
 /lib/bit* @chen-jun-hw
 /lib/bootconfig.c @chen-jun-hw
@@ -2107,14 +2111,14 @@
 /lib/compat_audit.c @chen-jun-hw
 /lib/cpu_rmap.c @chen-jun-hw
 /lib/cpumask.c @chen-jun-hw
-/lib/crc16.c @lujialin2
-/lib/crc32* @lujialin2
-/lib/crc4.c @lujialin2
-/lib/crc64.c @lujialin2
-/lib/crc7.c @lujialin2
-/lib/crc8.c @lujialin2
-/lib/crc-* @lujialin2
-/lib/crypto/ @lujialin2
+/lib/crc16.c @lujialin2 @raverstern
+/lib/crc32* @lujialin2 @raverstern
+/lib/crc4.c @lujialin2 @raverstern
+/lib/crc64.c @lujialin2 @raverstern
+/lib/crc7.c @lujialin2 @raverstern
+/lib/crc8.c @lujialin2 @raverstern
+/lib/crc-* @lujialin2 @raverstern
+/lib/crypto/ @lujialin2 @raverstern
 /lib/dec_and_lock.c @chen-jun-hw
 /lib/devmem_is_allowed.c @wkfxxx @mawupeng @sun_nanyong
 /lib/devres.c @chen-jun-hw
@@ -2170,14 +2174,14 @@
 /lib/raid6/ @UNMAINTAINED
 /lib/raid6/loongarch* @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
 /lib/raid6/recov_loongarch_simd.c @lixuefeng-loongson @gaojuxin09 @robinorg @bibo_mao
-/lib/random32.c @lujialin2
+/lib/random32.c @lujialin2 @raverstern
 /lib/ratelimit.c @zqiao216
 /lib/reed_solomon/ @UNMAINTAINED
 /lib/ref_tracker.c @zqiao216
-/lib/rhashtable.c @lujialin2
+/lib/rhashtable.c @lujialin2 @raverstern
 /lib/seq_buf.c @zhangyi089
 /lib/show_mem.c @wkfxxx @mawupeng @sun_nanyong
-/lib/siphash.c @lujialin2
+/lib/siphash.c @lujialin2 @raverstern
 /lib/smp_processor_id.c @zqiao216
 /lib/test_fortify @UNMAINTAINED
 /lib/test_free_pages.c @wkfxxx @mawupeng @sun_nanyong
@@ -2194,7 +2198,7 @@
 /lib/rcuref.c @LiuYongQiang0816 @stkid
 /Makefile @xukuohai @yeweihua999
 /mm/ @wkfxxx @mawupeng @sun_nanyong
-/mm/memcontrol.c @lujialin2
+/mm/memcontrol.c @lujialin2 @raverstern
 /mm/gmem.c @SuperSix173
 /mm/share_pool.c @chen-jun-hw
 /net/ @yuehaibing_planb
@@ -2203,10 +2207,10 @@
 /net/bpf/ @xukuohai @yeweihua999
 /net/bpf/modules.builtin @xukuohai @yeweihua
 /net/sunrpc/ @chenxiaosonggitcode @zhangguodong11
-/security/ @lujialin2
-/security/smack/ @lujialin2
+/security/ @lujialin2 @raverstern
+/security/smack/ @lujialin2 @raverstern
 /security/smack/Kconfig @UNMAINTAINED
-/security/integrity/ @zhujianwei001
+/security/integrity/ @zhujianwei001 @lujialin2 @raverstern
 /tools/ @UNMAINTAINED
 /tools/arch/ @UNMAINTAINED
 /tools/arch/arm64/ @chriszjh @zouyipeng
@@ -2288,5 +2292,6 @@
 /sound/pci/intel8x0* @zeng_zhaorong @juntianlinux
 /sound/hda/intel* @zeng_zhaorong @juntianlinux
 /sound/x86/intel_hdmi* @zeng_zhaorong @juntianlinux
+/samples/bpf/bpf_rvi/ @raverstern
 /samples/watchdog/ @xukuohai @yeweihua999
 /io_uring/ @zhangyi089
