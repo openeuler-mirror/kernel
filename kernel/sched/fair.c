@@ -1130,6 +1130,13 @@ static inline void __max_slice_update(struct sched_entity *se, struct rb_node *n
 	}
 }
 
+static inline void min_vruntime_copy(struct sched_entity *new, struct sched_entity *old)
+{
+	new->min_vruntime = old->min_vruntime;
+	new->min_slice = old->min_slice;
+	new->max_slice = old->max_slice;
+}
+
 /*
  * se->min_vruntime = min(se->vruntime, {left,right}->min_vruntime)
  */
@@ -1157,8 +1164,9 @@ static inline bool min_vruntime_update(struct sched_entity *se, bool exit)
 	       se->max_slice == old_max_slice;
 }
 
-RB_DECLARE_CALLBACKS(static, min_vruntime_cb, struct sched_entity,
-		     run_node, min_vruntime, min_vruntime_update);
+
+RB_DECLARE_CALLBACKS_MULTI(static, min_vruntime_cb, struct sched_entity,
+		     run_node, min_vruntime_copy, min_vruntime_update);
 
 /*
  * Enqueue an entity into the rb-tree:
@@ -1168,6 +1176,8 @@ static void __enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 	sum_w_vruntime_add(cfs_rq, se);
 	se->min_vruntime = se->vruntime;
 	se->min_slice = se->slice;
+	se->max_slice = se->slice;
+
 	rb_add_augmented_cached(&se->run_node, &cfs_rq->tasks_timeline,
 				__entity_less, &min_vruntime_cb);
 }
@@ -10632,57 +10642,51 @@ simple:
 	return p;
 
 idle:
-	if (!rf)
-		return NULL;
+	if (rf) {
+		time = schedstat_start_time();
 
-	time = schedstat_start_time();
+		/*
+		 * We must set idle_stamp _before_ calling try_steal() or
+		 * idle_balance(), such that we measure the duration as idle time.
+		 */
+		rq_idle_stamp_update(rq);
 
-	/*
-	 * We must set idle_stamp _before_ calling try_steal() or
-	 * idle_balance(), such that we measure the duration as idle time.
-	 */
-	rq_idle_stamp_update(rq);
-
-	if (steal_fail_ni_enabled()) {
-		new_tasks = try_steal(rq, rf);
-		if (new_tasks == 0)
-			new_tasks = newidle_balance(rq, rf);
-	} else {
-		new_tasks = newidle_balance(rq, rf);
-		if (new_tasks == 0)
+		if (steal_fail_ni_enabled()) {
 			new_tasks = try_steal(rq, rf);
-	}
-	schedstat_end_time(rq, time);
+			if (new_tasks == 0)
+				new_tasks = newidle_balance(rq, rf);
+		} else {
+			new_tasks = newidle_balance(rq, rf);
+			if (new_tasks == 0)
+				new_tasks = try_steal(rq, rf);
+		}
+		schedstat_end_time(rq, time);
 
-	if (new_tasks)
-		rq_idle_stamp_clear(rq);
+		if (new_tasks)
+			rq_idle_stamp_clear(rq);
 
 
-	/*
-	 * Because try_steal() and idle_balance() release (and re-acquire)
-	 * rq->lock, it is possible for any higher priority task to appear.
-	 * In that case we must re-start the pick_next_entity() loop.
-	 */
-	if (new_tasks < 0)
-		return RETRY_TASK;
+		/*
+		 * Because try_steal() and idle_balance() release (and re-acquire)
+		 * rq->lock, it is possible for any higher priority task to appear.
+		 * In that case we must re-start the pick_next_entity() loop.
+		 */
+		if (new_tasks < 0)
+			return RETRY_TASK;
 
-	if (new_tasks > 0)
-		goto again;
+		if (new_tasks > 0)
+			goto again;
 
 #ifdef CONFIG_QOS_SCHED
-	if (unthrottle_qos_cfs_rqs(cpu_of(rq))) {
-		rq->idle_stamp = 0;
-		goto again;
-	}
+		if (unthrottle_qos_cfs_rqs(cpu_of(rq))) {
+			rq->idle_stamp = 0;
+			goto again;
+		}
 
-	if (!qos_smt_expelled(cpu_of(rq)))
-		__this_cpu_write(qos_cpu_overload, 0);
+		if (!qos_smt_expelled(cpu_of(rq)))
+			__this_cpu_write(qos_cpu_overload, 0);
 #endif
-	/*
-	 * rq is about to be idle, check if we need to update the
-	 * lost_idle_time of clock_pelt
-	 */
-	update_idle_rq_clock_pelt(rq);
+	}
 
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 	qos_smt_expel(this_cpu, NULL);

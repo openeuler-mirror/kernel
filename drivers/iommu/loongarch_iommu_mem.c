@@ -32,12 +32,41 @@ static struct loongarch_iommu_mem {
 	bool init_failed;
 } iommu_mem;
 
+int loongarch_iommu_disable;
+EXPORT_SYMBOL(loongarch_iommu_disable);
+
+static int __init __maybe_unused la_iommu_setup(char *str)
+{
+	if (!str)
+		return -EINVAL;
+	while (*str) {
+		if (!strncmp(str, "on", 2)) {
+			loongarch_iommu_disable = 0;
+			pr_info("IOMMU enabled\n");
+		} else if (!strncmp(str, "off", 3)) {
+			loongarch_iommu_disable = 1;
+			pr_info("IOMMU disabled\n");
+		}
+		str += strcspn(str, ",");
+		while (*str == ',')
+			str++;
+	}
+	return 0;
+}
+__setup("loongarch_iommu=", la_iommu_setup);
+
 void __init loongarch_iommu_mem_init(void)
 {
 	struct acpi_table_header *ivrs_base;
 	acpi_status status;
 	phys_addr_t phys;
-	int bytes;
+	struct page *pages;
+
+	if (!IS_ENABLED(CONFIG_LOONGARCH_IOMMU) || loongarch_iommu_disable) {
+		iommu_mem.init_failed = true;
+		pr_info("%s disabled the iommu device\n", __func__);
+		return;
+	}
 
 	status = acpi_get_table("IVRS", 0, &ivrs_base);
 	if (status == AE_NOT_FOUND) {
@@ -47,18 +76,17 @@ void __init loongarch_iommu_mem_init(void)
 	}
 	acpi_put_table(ivrs_base);
 
-	phys = memblock_phys_alloc_range(ALLOC_MEM, ALLOC_PAGE_SIZE, 0,
-					 MEMBLOCK_ALLOC_ACCESSIBLE);
-	if (!phys) {
+	pages = alloc_contig_pages(ALLOC_PAGES, GFP_KERNEL, numa_mem_id(), &node_online_map);
+	if (!pages) {
 		iommu_mem.init_failed = true;
 		pr_info("%s Unable to alloc memory for iommu page table\n",
 				__func__);
 		return;
 	}
 
+	phys = page_to_phys(pages);
 	iommu_mem.vaddr = TO_UNCACHE(phys);
-	bytes = ALLOC_PAGES / 8;
-	iommu_mem.bitmap_sz = (ALLOC_PAGES % 8) ? (bytes + 1) : bytes;
+	iommu_mem.bitmap_sz = ALLOC_PAGES;
 	iommu_mem.mem_bitmap = memblock_alloc(iommu_mem.bitmap_sz, GFP_KERNEL);
 
 	spin_lock_init(&iommu_mem.bitmap_lock);
@@ -70,6 +98,7 @@ void __init loongarch_iommu_mem_init(void)
 			iommu_mem.bitmap_sz);
 
 	if (!iommu_mem.mem_bitmap) {
+		free_contig_range(page_to_pfn(pages), ALLOC_PAGES);
 		iommu_mem.init_failed = true;
 		pr_info("%s Failed to allocate bitmap for iommu\n",
 			__func__);

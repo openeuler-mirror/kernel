@@ -158,10 +158,14 @@ static struct attribute *alloc_hsa(const char *name,
 
 static void free_hw_stats(struct roh_device *device)
 {
-	kfree(device->hw_private_stats);
-	device->hw_private_stats = NULL;
-	kfree(device->hw_public_stats);
-	device->hw_public_stats = NULL;
+	if (device->hw_private_stats) {
+		kfree(device->hw_private_stats);
+		device->hw_private_stats = NULL;
+	}
+	if (device->hw_public_stats) {
+		kfree(device->hw_public_stats);
+		device->hw_public_stats = NULL;
+	}
 }
 
 static int alloc_and_get_hw_stats(struct roh_device *device)

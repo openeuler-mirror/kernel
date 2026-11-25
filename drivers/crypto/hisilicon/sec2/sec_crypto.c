@@ -214,18 +214,11 @@ static int qp_send_message(struct sec_req *req)
 		return -EBUSY;
 	}
 
-	if (qp_ctx->ctx->type_supported == SEC_BD_TYPE2) {
-		req->sec_sqe.type2.tag = cpu_to_le16((u16)qp_ctx->send_head);
-		qp_ctx->req_list[qp_ctx->send_head] = req;
-	}
-
 	ret = hisi_qp_send(qp_ctx->qp, &req->sec_sqe);
 	if (ret) {
 		spin_unlock_bh(&qp_ctx->req_lock);
 		return ret;
 	}
-	if (qp_ctx->ctx->type_supported == SEC_BD_TYPE2)
-		qp_ctx->send_head = (qp_ctx->send_head + 1) % qp_ctx->qp->sq_depth;
 
 	spin_unlock_bh(&qp_ctx->req_lock);
 
@@ -574,13 +567,9 @@ static int sec_alloc_qp_ctx_resource(struct sec_ctx *ctx, struct sec_qp_ctx *qp_
 	struct device *dev = ctx->dev;
 	int ret = -ENOMEM;
 
-	qp_ctx->req_list = kcalloc(q_depth, sizeof(struct sec_req *), GFP_KERNEL);
-	if (!qp_ctx->req_list)
-		return ret;
-
 	qp_ctx->res = kcalloc(q_depth, sizeof(struct sec_alg_res), GFP_KERNEL);
 	if (!qp_ctx->res)
-		goto err_free_req_list;
+		return ret;
 	qp_ctx->res->depth = q_depth;
 
 	qp_ctx->c_in_pool = hisi_acc_create_sgl_pool(dev, q_depth, SEC_SGL_SGE_NR);
@@ -607,8 +596,6 @@ err_free_c_in_pool:
 	hisi_acc_free_sgl_pool(dev, qp_ctx->c_in_pool);
 err_free_res:
 	kfree(qp_ctx->res);
-err_free_req_list:
-	kfree(qp_ctx->req_list);
 	return ret;
 }
 
@@ -620,7 +607,6 @@ static void sec_free_qp_ctx_resource(struct sec_ctx *ctx, struct sec_qp_ctx *qp_
 	hisi_acc_free_sgl_pool(dev, qp_ctx->c_out_pool);
 	hisi_acc_free_sgl_pool(dev, qp_ctx->c_in_pool);
 	kfree(qp_ctx->res);
-	kfree(qp_ctx->req_list);
 }
 
 static int sec_create_qp_ctx(struct sec_ctx *ctx, int qp_ctx_id)
@@ -642,7 +628,6 @@ static int sec_create_qp_ctx(struct sec_ctx *ctx, int qp_ctx_id)
 	spin_lock_init(&qp_ctx->req_lock);
 	idr_init(&qp_ctx->req_idr);
 	spin_lock_init(&qp_ctx->id_lock);
-	qp_ctx->send_head = 0;
 
 	ret = sec_alloc_qp_ctx_resource(ctx, qp_ctx);
 	if (ret)
@@ -2530,7 +2515,7 @@ static int sec_aead_soft_crypto(struct sec_ctx *ctx,
 	struct aead_request *subreq;
 	int ret;
 
-	subreq = aead_request_alloc(a_ctx->fallback_aead_tfm, GFP_KERNEL);
+	subreq = aead_request_alloc(a_ctx->fallback_aead_tfm, GFP_ATOMIC);
 	if (!subreq)
 		return -ENOMEM;
 

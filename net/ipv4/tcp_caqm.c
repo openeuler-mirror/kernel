@@ -36,7 +36,7 @@ static void caqm_init(struct sock *sk)
 	/* No CAQM support Fall back to Reno.
 	 * checkout clear work, see tcp_dctcp.c:95
 	 */
-	inet_csk(sk)->icsk_ca_ops = &caqm_reno;
+	WRITE_ONCE(inet_csk(sk)->icsk_ca_ops, &caqm_reno);
 }
 
 static u32 tcp_caqm_ssthresh(struct sock *sk)

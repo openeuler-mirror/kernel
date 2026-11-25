@@ -3873,8 +3873,11 @@ static int hisi_qm_sort_devices(int node, struct list_head *head,
 			dev_node = 0;
 
 		res = kzalloc(sizeof(*res), GFP_KERNEL);
-		if (!res)
+		if (!res) {
+			free_list(&non_full_list);
+			free_list(&full_list);
 			return -ENOMEM;
+		}
 
 		res->qm = qm;
 		res->distance = node_distance(dev_node, node);
@@ -3926,9 +3929,6 @@ int hisi_qm_alloc_qps_node(struct hisi_qm_list *qm_list, int qp_num,
 	}
 
 	mutex_unlock(&qm_list->lock);
-	if (ret)
-		pr_info("Failed to create qps, node[%d], qp[%d]!\n",
-			node, qp_num);
 
 err:
 	free_list(&head);
@@ -5812,7 +5812,7 @@ static int qm_pre_store_caps(struct hisi_qm *qm)
 	size_t i, size;
 
 	size = ARRAY_SIZE(qm_cap_query_info);
-	qm_cap = devm_kcalloc(&pdev->dev, sizeof(*qm_cap), size, GFP_KERNEL);
+	qm_cap = devm_kcalloc(&pdev->dev, size, sizeof(*qm_cap), GFP_KERNEL);
 	if (!qm_cap)
 		return -ENOMEM;
 
@@ -6121,7 +6121,7 @@ static int hisi_qm_memory_init(struct hisi_qm *qm)
 			QMC_ALIGN(sizeof(struct qm_sqc) * qm->qp_num) +
 			QMC_ALIGN(sizeof(struct qm_cqc) * qm->qp_num);
 	qm->qdma.va = dma_alloc_coherent(dev, qm->qdma.size, &qm->qdma.dma,
-					 GFP_ATOMIC);
+					 GFP_KERNEL);
 	dev_dbg(dev, "allocate qm dma buf size=%zx)\n", qm->qdma.size);
 	if (!qm->qdma.va) {
 		ret = -ENOMEM;
