@@ -21,7 +21,6 @@
 #include <crypto/hash.h>
 
 #include "ima.h"
-#include "ima_tpm.h"
 
 /* minimum file size for ahash use */
 static unsigned long ima_ahash_minsize;
@@ -89,7 +88,7 @@ static int __init ima_init_ima_crypto(void)
 	return 0;
 }
 
-static struct crypto_shash *ima_alloc_tfm(enum hash_algo algo)
+struct crypto_shash *ima_alloc_tfm(enum hash_algo algo)
 {
 	struct crypto_shash *tfm = ima_shash_tfm;
 	int rc, i;
@@ -212,7 +211,7 @@ out:
 	return rc;
 }
 
-static void ima_free_tfm(struct crypto_shash *tfm)
+void ima_free_tfm(struct crypto_shash *tfm)
 {
 	int i;
 
@@ -776,99 +775,4 @@ int ima_calc_buffer_hash(const void *buf, loff_t len,
 	}
 
 	return calc_buffer_shash(buf, len, hash);
-}
-
-/*
- * The boot_aggregate is a cumulative hash over TPM registers 0 - 7.  With
- * TPM 1.2 the boot_aggregate was based on reading the SHA1 PCRs, but with
- * TPM 2.0 hash agility, TPM chips could support multiple TPM PCR banks,
- * allowing firmware to configure and enable different banks.
- *
- * Knowing which TPM bank is read to calculate the boot_aggregate digest
- * needs to be conveyed to a verifier.  For this reason, use the same
- * hash algorithm for reading the TPM PCRs as for calculating the boot
- * aggregate digest as stored in the measurement list.
- */
-static int ima_calc_boot_aggregate_tfm(char *digest, u16 alg_id,
-				       struct crypto_shash *tfm)
-{
-	struct tpm_digest d = { .alg_id = alg_id, .digest = {0} };
-	int rc;
-	u32 i;
-	SHASH_DESC_ON_STACK(shash, tfm);
-
-	shash->tfm = tfm;
-
-	pr_devel("calculating the boot-aggregate based on TPM bank: %04x\n",
-		 d.alg_id);
-
-	rc = crypto_shash_init(shash);
-	if (rc != 0)
-		return rc;
-
-	/* cumulative digest over TPM registers 0-7 */
-	for (i = TPM_PCR0; i < TPM_PCR8; i++) {
-		ima_pcrread(i, &d);
-		/* now accumulate with current aggregate */
-		rc = crypto_shash_update(shash, d.digest,
-					 crypto_shash_digestsize(tfm));
-		if (rc != 0)
-			return rc;
-	}
-	/*
-	 * Extend cumulative digest over TPM registers 8-9, which contain
-	 * measurement for the kernel command line (reg. 8) and image (reg. 9)
-	 * in a typical PCR allocation. Registers 8-9 are only included in
-	 * non-SHA1 boot_aggregate digests to avoid ambiguity.
-	 */
-	if (alg_id != TPM_ALG_SHA1) {
-		for (i = TPM_PCR8; i < TPM_PCR10; i++) {
-			ima_pcrread(i, &d);
-			rc = crypto_shash_update(shash, d.digest,
-						crypto_shash_digestsize(tfm));
-		}
-	}
-	if (!rc)
-		rc = crypto_shash_final(shash, digest);
-	return rc;
-}
-
-int ima_calc_boot_aggregate(struct ima_digest_data *hash)
-{
-	struct crypto_shash *tfm;
-	u16 crypto_id, alg_id;
-	int rc, i, bank_idx = -1;
-
-	for (i = 0; i < NR_BANKS(ima_rot_inst); i++) {
-		crypto_id = ima_rot_inst->allocated_banks[i].crypto_id;
-		if (crypto_id == hash->algo) {
-			bank_idx = i;
-			break;
-		}
-
-		if (crypto_id == HASH_ALGO_SHA256)
-			bank_idx = i;
-
-		if (bank_idx == -1 && crypto_id == HASH_ALGO_SHA1)
-			bank_idx = i;
-	}
-
-	if (bank_idx == -1) {
-		pr_err("No suitable TPM algorithm for boot aggregate\n");
-		return 0;
-	}
-
-	hash->algo = ima_rot_inst->allocated_banks[bank_idx].crypto_id;
-
-	tfm = ima_alloc_tfm(hash->algo);
-	if (IS_ERR(tfm))
-		return PTR_ERR(tfm);
-
-	hash->length = crypto_shash_digestsize(tfm);
-	alg_id = ima_rot_inst->allocated_banks[bank_idx].alg_id;
-	rc = ima_calc_boot_aggregate_tfm(hash->digest, alg_id, tfm);
-
-	ima_free_tfm(tfm);
-
-	return rc;
 }
