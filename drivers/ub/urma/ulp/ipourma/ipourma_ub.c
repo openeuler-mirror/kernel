@@ -560,7 +560,7 @@ int ipourma_xmit(struct net_device *dev, struct sk_buff *skb,
 	spin_lock(&priv->tx_ring_locks[jetty_idx]);
 	if (priv->tx_ring_is_full[jetty_idx]) {
 		spin_unlock(&priv->tx_ring_locks[jetty_idx]);
-		priv->runtime_stats.tx_stats.tx_ring_full++;
+		priv->runtime_stats.tx_stats.ring_full++;
 		return IPOURMA_TX_RING_FULL;
 	}
 	tx_idx = priv->tx_head[jetty_idx] % priv->tx_ring_size;
@@ -900,7 +900,7 @@ void ipourma_rx_cr_event(struct work_struct *work)
 	int left, max_num, actual_num, i, ret;
 	struct net_device *dev = priv->dev;
 
-	priv->runtime_stats.rx_stats.rx_deque++;
+	priv->runtime_stats.rx_stats.deque++;
 	while (done < budget) {
 		left = budget - done;
 		/* DO NOT exceed the weight */
@@ -997,7 +997,7 @@ int ipourma_napi_rx_poll(struct napi_struct *napi, int budget)
 		container_of(napi, struct ipourma_dev_priv, napi_recv);
 
 	priv->runtime_stats.rx_stats.num_napi_rx++;
-	priv->runtime_stats.rx_stats.rx_enque++;
+	priv->runtime_stats.rx_stats.enque++;
 	queue_work(priv->rx_wq, &(priv->rx_cr_event));
 	napi_complete(napi);
 

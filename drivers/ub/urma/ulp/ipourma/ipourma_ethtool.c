@@ -37,6 +37,97 @@ static const struct ipourma_stats ipourma_gstrings_stats[] = {
 
 #define IPOURMA_GLOBAL_STATS_LEN	ARRAY_SIZE(ipourma_gstrings_stats)
 
+/*
+ * Runtime statistics mirrored from sysfs query_ipourma_stats. Each entry maps
+ * a flat ethtool counter name to a byte offset within struct
+ * ipourma_runtime_stats. The tx_/rx_ prefixes keep names unique in the flat
+ * ethtool -S namespace (sysfs groups them under ==tx_stats==/==rx_stats==).
+ */
+struct ipourma_rt_stat {
+	char name[ETH_GSTRING_LEN];
+	size_t offset; /* byte offset within struct ipourma_runtime_stats */
+};
+
+#define IPOURMA_RT_STAT_TX(f) { \
+		.name = "tx_" #f, \
+		.offset = offsetof(struct ipourma_runtime_stats, tx_stats.f) }
+#define IPOURMA_RT_STAT_RX(f) { \
+		.name = "rx_" #f, \
+		.offset = offsetof(struct ipourma_runtime_stats, rx_stats.f) }
+
+/* tx_stats scalar fields (cqe_stats[] expanded separately below) */
+static const struct ipourma_rt_stat ipourma_rt_tx_stats[] = {
+	IPOURMA_RT_STAT_TX(num_recv_pkts_from_kernel),
+	IPOURMA_RT_STAT_TX(post_send_enque),
+	IPOURMA_RT_STAT_TX(post_send_bypass),
+	IPOURMA_RT_STAT_TX(gso_not_support),
+	IPOURMA_RT_STAT_TX(packet_size_error),
+	IPOURMA_RT_STAT_TX(frag_error),
+	IPOURMA_RT_STAT_TX(not_ipv6_proto),
+	IPOURMA_RT_STAT_TX(not_ipv6_addr),
+	IPOURMA_RT_STAT_TX(ip_eid_not_equal),
+	IPOURMA_RT_STAT_TX(ring_full),
+	IPOURMA_RT_STAT_TX(post_send_start),
+	IPOURMA_RT_STAT_TX(num_import_jetty_real),
+	IPOURMA_RT_STAT_TX(num_import_jetty_bypass),
+	IPOURMA_RT_STAT_TX(num_tjetty_hash_hit),
+	IPOURMA_RT_STAT_TX(linear_len_oversize),
+	IPOURMA_RT_STAT_TX(import_jetty_failed),
+	IPOURMA_RT_STAT_TX(send_wr_failed),
+	IPOURMA_RT_STAT_TX(pass_to_ub),
+	IPOURMA_RT_STAT_TX(cqe_notify),
+	IPOURMA_RT_STAT_TX(num_napi_tx),
+	IPOURMA_RT_STAT_TX(cqe_recved),
+	IPOURMA_RT_STAT_TX(cqe_success),
+	IPOURMA_RT_STAT_TX(cqe_err),
+	IPOURMA_RT_STAT_TX(poll_jfc_success),
+	IPOURMA_RT_STAT_TX(poll_jfc_failed),
+	IPOURMA_RT_STAT_TX(rearm_success),
+	IPOURMA_RT_STAT_TX(rearm_failed),
+	IPOURMA_RT_STAT_TX(flush_jetty_success),
+};
+
+/* rx_stats scalar fields (cqe_stats[] expanded separately below) */
+static const struct ipourma_rt_stat ipourma_rt_rx_stats[] = {
+	IPOURMA_RT_STAT_RX(cqe_notify),
+	IPOURMA_RT_STAT_RX(num_napi_rx),
+	IPOURMA_RT_STAT_RX(enque),
+	IPOURMA_RT_STAT_RX(deque),
+	IPOURMA_RT_STAT_RX(cqe_recved),
+	IPOURMA_RT_STAT_RX(cqe_success),
+	IPOURMA_RT_STAT_RX(cqe_err),
+	IPOURMA_RT_STAT_RX(poll_jfc_success),
+	IPOURMA_RT_STAT_RX(poll_jfc_failed),
+	IPOURMA_RT_STAT_RX(rearm_success),
+	IPOURMA_RT_STAT_RX(rearm_failed),
+	IPOURMA_RT_STAT_RX(cr_len_err),
+	IPOURMA_RT_STAT_RX(replenish_enque),
+	IPOURMA_RT_STAT_RX(pass_to_kernel),
+	IPOURMA_RT_STAT_RX(replenish_deque),
+	IPOURMA_RT_STAT_RX(num_post_wr),
+	IPOURMA_RT_STAT_RX(alloc_skb_failed),
+	IPOURMA_RT_STAT_RX(register_seg_failed),
+	IPOURMA_RT_STAT_RX(post_wr_failed),
+	IPOURMA_RT_STAT_RX(alloc_skb_retry),
+};
+
+#define IPOURMA_RT_TX_STATS_LEN		ARRAY_SIZE(ipourma_rt_tx_stats)
+#define IPOURMA_RT_RX_STATS_LEN		ARRAY_SIZE(ipourma_rt_rx_stats)
+/* per-direction CQE-status breakdown: tx_cqes_<name> / rx_cqes_<name>.
+ * Short "cqes" (cqe-status) prefix keeps names within ETH_GSTRING_LEN (31).
+ */
+#define IPOURMA_CQE_STATUS_LEN		IPOURMA_MAX_CR_STATUS
+
+/* Order MUST be: base netdev stats, tx scalars, tx cqe_status, rx scalars, rx cqe_status */
+#define IPOURMA_RT_STATS_LEN		(IPOURMA_RT_TX_STATS_LEN + IPOURMA_CQE_STATUS_LEN + \
+					 IPOURMA_RT_RX_STATS_LEN + IPOURMA_CQE_STATUS_LEN)
+#define IPOURMA_TOTAL_STATS_LEN		(IPOURMA_GLOBAL_STATS_LEN + IPOURMA_RT_STATS_LEN)
+
+/* Byte offset of cqe_stats[i] within struct ipourma_runtime_stats */
+#define IPOURMA_CQE_STAT_OFFSET(dir, i) \
+	(offsetof(struct ipourma_runtime_stats, dir##_stats.cqe_stats) + \
+	 (i) * sizeof(uint64_t))
+
 static int ub_speed_enum_to_int(enum ubcore_speed speed)
 {
 	switch (speed) {
@@ -152,6 +243,24 @@ static void ipourma_get_strings(struct net_device __always_unused *dev,
 				ETH_GSTRING_LEN);
 			p += ETH_GSTRING_LEN;
 		}
+		for (i = 0; i < IPOURMA_RT_TX_STATS_LEN; i++) {
+			memcpy(p, ipourma_rt_tx_stats[i].name, ETH_GSTRING_LEN);
+			p += ETH_GSTRING_LEN;
+		}
+		for (i = 0; i < IPOURMA_CQE_STATUS_LEN; i++) {
+			snprintf((char *)p, ETH_GSTRING_LEN, "tx_cqes_%s",
+				 ipourma_cr_status_names[i]);
+			p += ETH_GSTRING_LEN;
+		}
+		for (i = 0; i < IPOURMA_RT_RX_STATS_LEN; i++) {
+			memcpy(p, ipourma_rt_rx_stats[i].name, ETH_GSTRING_LEN);
+			p += ETH_GSTRING_LEN;
+		}
+		for (i = 0; i < IPOURMA_CQE_STATUS_LEN; i++) {
+			snprintf((char *)p, ETH_GSTRING_LEN, "rx_cqes_%s",
+				 ipourma_cr_status_names[i]);
+			p += ETH_GSTRING_LEN;
+		}
 		break;
 	default:
 		break;
@@ -162,16 +271,35 @@ static void ipourma_get_ethtool_stats(struct net_device *dev,
 				    struct ethtool_stats __always_unused *stats,
 				    u64 *data)
 {
-	int i;
+	int i, idx = 0;
 	struct net_device_stats *net_stats;
-	u8 *p;
+	struct ipourma_dev_priv *priv;
+	struct ipourma_runtime_stats *rt;
+	u8 *p, *base;
 
 	if (IS_ERR_OR_NULL(dev) || IS_ERR_OR_NULL(data))
 		return;
+
+	/* standard netdev counters from dev->stats */
 	net_stats = &dev->stats;
 	p = (u8 *)net_stats;
 	for (i = 0; i < IPOURMA_GLOBAL_STATS_LEN; i++)
-		data[i] = *(u64 *)(p + ipourma_gstrings_stats[i].stat_offset);
+		data[idx++] = *(u64 *)(p + ipourma_gstrings_stats[i].stat_offset);
+
+	/* runtime tx/rx counters, snapshot under the same lock as sysfs */
+	priv = netdev_priv(dev);
+	rt = &priv->runtime_stats;
+	base = (u8 *)rt;
+	spin_lock(&rt->lock);
+	for (i = 0; i < IPOURMA_RT_TX_STATS_LEN; i++)
+		data[idx++] = *(u64 *)(base + ipourma_rt_tx_stats[i].offset);
+	for (i = 0; i < IPOURMA_CQE_STATUS_LEN; i++)
+		data[idx++] = *(u64 *)(base + IPOURMA_CQE_STAT_OFFSET(tx, i));
+	for (i = 0; i < IPOURMA_RT_RX_STATS_LEN; i++)
+		data[idx++] = *(u64 *)(base + ipourma_rt_rx_stats[i].offset);
+	for (i = 0; i < IPOURMA_CQE_STATUS_LEN; i++)
+		data[idx++] = *(u64 *)(base + IPOURMA_CQE_STAT_OFFSET(rx, i));
+	spin_unlock(&rt->lock);
 }
 
 static int ipourma_get_sset_count(struct net_device __always_unused *dev,
@@ -181,7 +309,7 @@ static int ipourma_get_sset_count(struct net_device __always_unused *dev,
 		return -EINVAL;
 	switch (sset) {
 	case ETH_SS_STATS:
-		return IPOURMA_GLOBAL_STATS_LEN;
+		return IPOURMA_TOTAL_STATS_LEN;
 	default:
 		break;
 	}
