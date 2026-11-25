@@ -100,7 +100,7 @@ bool tcp_synack_comp_enabled(struct sock *sk,
 
 static struct tcp_comp_context *comp_get_ctx(const struct sock *sk)
 {
-	struct inet_connection_sock *icsk = inet_csk(sk);
+	const struct inet_connection_sock *icsk = inet_csk(sk);
 
 	return (__force void *)icsk->icsk_ulp_data;
 }
