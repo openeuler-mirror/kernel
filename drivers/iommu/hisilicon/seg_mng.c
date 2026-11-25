@@ -59,8 +59,6 @@ static enum ummu_grant_op_type ummu_ungrant_param_check(struct ummu_seg_info *ex
 			return UMMU_UNGRANT;
 		else if (exist_addr->token_count == UMMU_MAX_TOKEN_NUM)
 			return UMMU_REMOVE_TOKEN;
-
-		pr_err("Token count invalid.\n");
 	}
 
 	pr_err("Token not match.\n");

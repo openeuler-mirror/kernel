@@ -170,11 +170,8 @@ int ummu_master_disable_sva(struct ummu_master *master,
 		if (!master->sva_enabled)
 			goto err_out;
 
-		if (refcount_read(&master->sva_ref) > 1) {
-			dev_err(master->dev,
-				"cannot disable SVA, device is shared\n");
+		if (refcount_read(&master->sva_ref) > 1)
 			return -EBUSY;
-		}
 
 		if (ummu_master_iopf_supported(master))
 			ummu_master_sva_disable_iopf(master);
@@ -184,11 +181,8 @@ int ummu_master_disable_sva(struct ummu_master *master,
 		if (!master->ksva_enabled)
 			goto err_out;
 
-		if (refcount_read(&master->ksva_ref) > 1) {
-			dev_err(master->dev,
-				"cannot disable KSVA, device is shared\n");
+		if (refcount_read(&master->ksva_ref) > 1)
 			return -EBUSY;
-		}
 		master->ksva_enabled = false;
 	}
 

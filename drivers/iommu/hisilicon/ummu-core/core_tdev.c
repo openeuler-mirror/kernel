@@ -177,7 +177,7 @@ static struct iommu_device *get_iommu_dev(struct tdev_attr *attr)
 	}
 	mutex_unlock(&global_device_lock);
 
-	pr_err("ummu device not found.\n");
+	pr_err_ratelimited("ummu device not found.\n");
 	return NULL;
 }
 

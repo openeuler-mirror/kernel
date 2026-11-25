@@ -1165,17 +1165,13 @@ static int ummu_table_clear_node_by_level(struct ummu_data_info *data_info,
 	u16 base_idx, limit_idx;
 	int ret;
 
-	if (level > MAPT_MAX_LVL_INDEX) {
-		pr_err("level overflow\n");
+	if (level > MAPT_MAX_LVL_INDEX)
 		return -EINVAL;
-	}
 
 	mapt_blk = xa_load(&data_info->mapt_info->block_base.table_ctx->xa,
 			   pre_node->next_lv_index);
-	if (mapt_blk == NULL) {
-		pr_err("invalid mapt_block\n");
+	if (mapt_blk == NULL)
 		return -EINVAL;
-	}
 	lvl_blk_base = (struct ummu_mapt_table_node *)mapt_blk->block_addr +
 			TABLE_LVL_OFFSET(pre_node->next_lv_offset_low,
 					 pre_node->next_lv_offset_high);
@@ -1444,10 +1440,8 @@ int ummu_perm_grant(struct iommu_domain *domain, void *va, size_t size,
 	data_info.domain = ummu_dom->domain;
 
 	mapt_info = &ummu_dom->cfgs.s1_cfg.io_pt_cfg;
-	if (mapt_info == NULL || mapt_info->valid == 0) {
-		pr_err("invalid mapt_info\n");
+	if (mapt_info == NULL || mapt_info->valid == 0)
 		return -EINVAL;
-	}
 
 	if (!ummu_perm_table_mode_is_valid(mapt_info->mode)) {
 		pr_err("tid %u get invalid perm table mode[%d].\n",
