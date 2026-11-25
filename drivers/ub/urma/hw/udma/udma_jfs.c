@@ -767,11 +767,6 @@ int udma_deactive_jfs(struct ubcore_jfs *jfs, struct ubcore_udata *udata)
 	struct udma_jfs *ujfs = to_udma_jfs(jfs);
 	int ret;
 
-	if (!ujfs->sq.activated) {
-		udma_info_rl(dev->dev, "jetty no need deactivate.\n");
-		return 0;
-	}
-
 	if (!ujfs->ue_rx_closed && udma_close_ue_rx(dev, true, true, false, 0)) {
 		udma_err_rl(dev->dev, "close UE rx failed when destroying JFS.\n");
 		return -EINVAL;
@@ -779,8 +774,8 @@ int udma_deactive_jfs(struct ubcore_jfs *jfs, struct ubcore_udata *udata)
 
 	ret = udma_modify_and_destroy_jetty(dev, &ujfs->sq);
 	if (ret) {
-		udma_warn_rl(dev->dev, "udma modify state and destroy JFS failed, id: %u.\n",
-			     jfs->jfs_id.id);
+		udma_err_rl(dev->dev, "udma modify state and destroy JFS failed, id: %u.\n",
+			    jfs->jfs_id.id);
 		if (!ujfs->ue_rx_closed)
 			udma_open_ue_rx_with_retry(dev, true, true, false, 0);
 		return ret;
@@ -903,11 +898,8 @@ int udma_modify_jfs(struct ubcore_jfs *jfs, struct ubcore_jfs_attr *attr,
 		return -EINVAL;
 	}
 
-	if (udma_jfs->sq.state == attr->state) {
-		udma_info_rl(udma_dev->dev, "JFS state has been %s.\n",
-				     to_state_name(attr->state));
+	if (udma_jfs->sq.state == attr->state)
 		return 0;
-	}
 
 	if (!verify_modify_jetty(udma_jfs->sq.state, attr->state)) {
 		dev_err(udma_dev->dev, "not support modify JFS state from %s to %s, JFS id = %u.\n",
@@ -1149,8 +1141,8 @@ udma_fill_sw_sge(struct udma_dev *dev, struct udma_sqe_ctl *sqe_ctl,
 	if (wr->flag.bs.inline_flag) {
 		for (i = 0; i < num_sge; i++) {
 			if (total_len + sge_info[i].len > max_inline_size) {
-				dev_info(dev->dev, "inline_size %u is over max_size %u.\n",
-					 total_len + sge_info[i].len, max_inline_size);
+				dev_err(dev->dev, "inline_size %u is over max_size %u.\n",
+					total_len + sge_info[i].len, max_inline_size);
 				return -EINVAL;
 			}
 
@@ -1586,7 +1578,7 @@ static int udma_post_one_wr(struct udma_jetty_queue *sq, struct ubcore_jfs_wr *w
 
 	if (sq->db_status == 0 && to_check_sq_overflow(sq, wqebb_cnt)) {
 		udma_err_rl(udma_dev->dev, "JFS overflow, wqebb_cnt:%u.\n", wqebb_cnt);
-		return -ENOMEM;
+		return -EINVAL;
 	}
 
 	udma_copy_to_sq(sq, wqebb_cnt, tmp_sq);

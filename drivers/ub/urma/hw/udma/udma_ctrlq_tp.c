@@ -771,8 +771,8 @@ int udma_ctrlq_query_host_ubmem_info(struct ubcore_device *dev, struct ubcore_uc
 
 	ret = ubase_get_bus_eid(udev->comdev.adev, &eid);
 	if (ret) {
-		dev_err(udev->dev,
-			"get device bus EID failed in query host UBMEM info, ret is %d.\n", ret);
+		udma_err_rl(udev->dev,
+			    "get device bus EID failed in query host UBMEM info, ret=%d.\n", ret);
 		return ret;
 	}
 

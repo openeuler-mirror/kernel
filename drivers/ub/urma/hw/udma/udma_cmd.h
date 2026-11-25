@@ -83,6 +83,7 @@ enum udma_cmd_opcode_type {
 	UDMA_CMD_CHANGE_ACTIVE_PORT = 0x3102,
 	UDMA_CMD_GET_CQE_AUX_INFO = 0x4213,
 	UDMA_CMD_GET_AE_AUX_INFO = 0x4214,
+	UDMA_CMD_QUERY_CCU_START_ADDR = 0x4215,
 	UDMA_CMD_QUERY_PORT_INFO = 0x6200,
 	UDMA_CMD_WQEBB_VA_INFO = 0xa01f,
 };
@@ -231,6 +232,12 @@ struct udma_cmd_ue_resource {
 	uint32_t rsvd6;
 };
 
+struct udma_cmd_get_ccu_start_addr {
+	/* BD1 */
+	uint32_t ccu_start_addrl;
+	uint32_t ccu_start_addrh;
+};
+
 struct udma_cmd_ucp_resource {
 	/* BD0 */
 	uint16_t ucp_jetty_start;
@@ -331,6 +338,7 @@ int udma_cmd_init(struct udma_dev *udma_dev);
 void udma_cmd_cleanup(struct udma_dev *udma_dev);
 int udma_post_mbox(struct udma_dev *dev, struct ubase_cmd_mailbox *mailbox,
 		   struct ubase_mbx_attr *attr);
+int udma_cmd_query_ccu_addr_resource(struct udma_dev *udma_dev, void *out_addr);
 int udma_cmd_query_hw_resource(struct udma_dev *udma_dev, void *out_addr);
 int udma_query_ucp_res(struct udma_dev *udma_dev, void *out_addr);
 int post_mailbox_update_ctx(struct udma_dev *udma_dev, void *ctx, uint32_t size,

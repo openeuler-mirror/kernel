@@ -139,7 +139,7 @@ static int udma_send_query_eid_cmd(struct udma_dev *udma_dev,
 int udma_query_eid_from_ctrl_cpu(struct udma_dev *udma_dev)
 {
 	struct udma_ctrlq_eid_out_query eid_out_query = {};
-	int ret, ret_tmp, i;
+	int ret, i;
 
 	ret = udma_send_query_eid_cmd(udma_dev, &eid_out_query);
 	if (ret) {
@@ -172,12 +172,8 @@ int udma_query_eid_from_ctrl_cpu(struct udma_dev *udma_dev)
 
 	return 0;
 err_add_ummu_eid:
-	for (i--; i >= 0; i--) {
-		ret_tmp = udma_del_one_eid(udma_dev, &eid_out_query.eids[i]);
-		if (ret_tmp)
-			dev_err(udma_dev->dev, "Delete EID failed, ret = %d, IDX = %u.\n",
-				ret_tmp, eid_out_query.eids[i].eid_idx);
-	}
+	for (i--; i >= 0; i--)
+		(void)udma_del_one_eid(udma_dev, &eid_out_query.eids[i]);
 	mutex_unlock(&udma_dev->eid_mutex);
 
 	return ret;
@@ -203,8 +199,8 @@ int udma_add_one_eid_guid(struct udma_dev *udma_dev,
 	eid_guid_entry = (struct udma_ctrlq_ue_eid_guid_out *)
 		xa_load(&udma_dev->eid_guid_table, eid_guid_idx);
 	if (eid_guid_entry) {
-		dev_info(udma_dev->dev, "eid-guid exist, update index = %u eid-guid.\n",
-			 eid_guid_idx);
+		udma_info_rl(udma_dev->dev, "eid-guid exist, update index = %u eid-guid.\n",
+			     eid_guid_idx);
 		xa_erase(&udma_dev->eid_guid_table, eid_guid_idx);
 		(void)memcpy(&guid, &eid_guid_entry->ue_guid, sizeof(guid));
 		(void)memcpy(&ummu_eid, eid_guid_entry->eid_info.eid.raw, sizeof(ummu_eid));

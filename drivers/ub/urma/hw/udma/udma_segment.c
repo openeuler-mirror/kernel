@@ -561,11 +561,11 @@ struct ubcore_target_seg *udma_register_seg(struct ubcore_device *ub_dev,
 
 	ret = udma_check_seg_cfg(udma_dev, cfg);
 	if (ret)
-		return NULL;
+		return ERR_PTR(ret);
 
 	seg = kzalloc(sizeof(*seg), GFP_KERNEL);
 	if (!seg)
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 
 	seg->kernel_mode = udata == NULL;
 	udma_init_seg_cfg(seg, cfg);
@@ -598,6 +598,7 @@ struct ubcore_target_seg *udma_register_seg(struct ubcore_device *ub_dev,
 	if (!ksva) {
 		udma_err_rl(udma_dev->dev,
 			    "unable to get ksva while register segment, token maybe is free.\n");
+		ret = -EINVAL;
 		goto err_load_ksva;
 	}
 
@@ -622,7 +623,7 @@ err_load_ksva:
 err_pin_seg:
 	seg->token_value = 0;
 	kfree(seg);
-	return NULL;
+	return ERR_PTR(ret);
 }
 
 int udma_unregister_seg(struct ubcore_target_seg *ubcore_seg)
@@ -689,12 +690,12 @@ struct ubcore_target_seg *udma_import_seg(struct ubcore_device *dev,
 	if (cfg->seg.attr.bs.token_policy > UBCORE_TOKEN_PLAIN_TEXT) {
 		dev_err(udma_dev->dev, "invalid token policy = %d.\n",
 			cfg->seg.attr.bs.token_policy);
-		return NULL;
+		return ERR_PTR(-EINVAL);
 	}
 
 	seg = kzalloc(sizeof(*seg), GFP_KERNEL);
 	if (!seg)
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 
 	if (cfg->seg.attr.bs.token_policy != UBCORE_TOKEN_NONE) {
 		seg->token_value = cfg->token_value.token;

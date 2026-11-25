@@ -670,10 +670,27 @@ static int udma_set_ucp_res(struct udma_dev *udma_dev)
 
 	ret = udma_query_ucp_res(udma_dev, (void *)&ucp_cmd);
 	if (ret) {
-		dev_err(udma_dev->dev, "fail to query UCP resource from firmware %d\n", ret);
+		dev_err(udma_dev->dev, "fail to query UCP resource from firmware, ret = %d\n", ret);
 		return ret;
 	}
 	udma_get_ucp_jfx_id_range(udma_dev, &ucp_cmd);
+
+	return 0;
+}
+
+static int udma_cmd_set_ccu_addr_res(struct udma_dev *udma_dev)
+{
+	struct udma_cmd_get_ccu_start_addr ccu_addr_cmd = {};
+	int ret;
+
+	ret = udma_cmd_query_ccu_addr_resource(udma_dev, (void *)&ccu_addr_cmd);
+	if (ret) {
+		dev_err(udma_dev->dev,
+			"fail to query ccu start addr from firmware, ret=%d.\n", ret);
+		return ret;
+	}
+	udma_dev->caps.ccu_start_addr.ccu_start_addrl = ccu_addr_cmd.ccu_start_addrl;
+	udma_dev->caps.ccu_start_addr.ccu_start_addrh = ccu_addr_cmd.ccu_start_addrh;
 
 	return 0;
 }
@@ -685,7 +702,8 @@ static int query_caps_from_firmware(struct udma_dev *udma_dev)
 
 	ret = udma_cmd_query_hw_resource(udma_dev, (void *)&cmd);
 	if (ret) {
-		dev_err(udma_dev->dev, "fail to query hardware resource from firmware %d\n", ret);
+		dev_err(udma_dev->dev,
+			"fail to query hardware resource from firmware, ret=%d.\n", ret);
 		return ret;
 	}
 
@@ -705,6 +723,14 @@ static int query_caps_from_firmware(struct udma_dev *udma_dev)
 	udma_dev->caps.atomic_feat = cmd.atomic_feat;
 
 	udma_get_jetty_id_range(udma_dev, &cmd);
+
+	if (udma_dev->hw_ver == UBASE_HW_VER_A_1) {
+		ret = udma_cmd_set_ccu_addr_res(udma_dev);
+		if (ret) {
+			dev_err(udma_dev->dev, "fail to set ccu start addr.\n");
+			return ret;
+		}
+	}
 
 	if (ubase_adev_ucp_supported(udma_dev->comdev.adev)) {
 		ret = udma_set_ucp_res(udma_dev);
@@ -1583,7 +1609,7 @@ int udma_reset_down(struct auxiliary_device *adev)
 	}
 
 	if (udma_dev->status != UDMA_NORMAL) {
-		dev_info(&adev->dev, "udma device status(%u).\n", udma_dev->status);
+		dev_err(&adev->dev, "udma device status(%u).\n", udma_dev->status);
 		mutex_unlock(&udma_reset_mutex);
 		return -EINVAL;
 	}

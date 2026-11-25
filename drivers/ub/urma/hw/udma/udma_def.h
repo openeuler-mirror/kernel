@@ -67,6 +67,11 @@ struct udma_udp_sport {
 	uint8_t udp_global_en	  : 1;
 };
 
+struct udma_dfx_ccu_start_addr {
+	uint32_t ccu_start_addrl;
+	uint32_t ccu_start_addrh;
+};
+
 struct udma_caps {
 	struct udma_res jfs;
 	struct udma_res jfr;
@@ -98,6 +103,7 @@ struct udma_caps {
 	struct udma_res ccu_jfc;
 	struct udma_res stars_jfc;
 	struct udma_ucp_caps ucp_caps;
+	struct udma_dfx_ccu_start_addr ccu_start_addr;
 	union udma_tp_type_cap um_tp;
 	union udma_tp_type_cap rc_tp;
 	union udma_tp_type_cap rm_tp;
