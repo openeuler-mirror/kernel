@@ -294,6 +294,11 @@ struct target_type {
 #define dm_target_supports_mixed_zoned_model(type) (false)
 #endif
 
+/* Target passes bio data to its underlying devices without CPU access. */
+#define DM_TARGET_PCI_P2PDMA		0x00000400
+#define dm_target_supports_pci_p2pdma(type) \
+	((type)->features & DM_TARGET_PCI_P2PDMA)
+
 struct dm_target {
 	struct dm_table *table;
 	struct target_type *type;

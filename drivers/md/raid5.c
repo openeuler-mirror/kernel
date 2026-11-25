@@ -8021,6 +8021,12 @@ static int raid5_run(struct mddev *mddev)
 
 		blk_queue_max_write_zeroes_sectors(mddev->queue, 0);
 
+		/*
+		 * Parity RAID requires CPU access to data pages, which is
+		 * incompatible with P2P mappings.
+		 */
+		blk_queue_flag_clear(QUEUE_FLAG_PCI_P2PDMA, mddev->queue);
+
 		rdev_for_each(rdev, mddev) {
 			disk_stack_limits(mddev->gendisk, rdev->bdev,
 					  rdev->data_offset << 9);
