@@ -443,7 +443,7 @@ static int ub_fm_flush_ubc_info(struct ub_bus_controller *ubc)
 	}
 
 	ubc->uent->upi = upi & UB_UPI_MASK;
-	dev_info(dev, "update cluster ubc upi to %#x\n", ubc->uent->upi);
+	dev_dbg(dev, "update cluster ubc upi to %#x\n", ubc->uent->upi);
 
 	ret = ub_cfg_read_dword(ubc->uent, UB_EID_0, &eid);
 	if (ret) {
@@ -458,7 +458,7 @@ static int ub_fm_flush_ubc_info(struct ub_bus_controller *ubc)
 	}
 
 	ubc->uent->eid = eid & UB_COMPACT_EID_MASK;
-	dev_info(dev, "update cluster ubc eid to %#x\n", ubc->uent->eid);
+	dev_dbg(dev, "update cluster ubc eid to %#x\n", ubc->uent->eid);
 
 	ret = ub_cfg_read_dword(ubc->uent, UB_FM_CNA, &fm_cna);
 	if (ret) {
@@ -467,7 +467,7 @@ static int ub_fm_flush_ubc_info(struct ub_bus_controller *ubc)
 	}
 
 	ubc->uent->fm_cna = fm_cna & UB_FM_CNA_MASK;
-	dev_info(dev, "update cluster ubc fm cna to %#x\n", ubc->uent->fm_cna);
+	dev_dbg(dev, "update cluster ubc fm cna to %#x\n", ubc->uent->fm_cna);
 
 free_buf:
 	kfree(buf);

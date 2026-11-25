@@ -137,7 +137,7 @@ static void ub_config_upi(struct ub_entity *uent)
 
 		upi &= UB_UPI_MASK;
 		if (upi) {
-			dev_info(dev, "update cluster ubc upi, upi=%#x\n", upi);
+			dev_dbg(dev, "update cluster ubc upi, upi=%#x\n", upi);
 			uent->upi = upi;
 		}
 		return;
@@ -483,7 +483,7 @@ static void ub_release_ent(struct device *dev)
 	uent->token_value = 0;
 	uent_num = uent->uent_num;
 	kfree(uent);
-	pr_info("uent[%#x] release\n", uent_num);
+	pr_debug("uent[%#x] release\n", uent_num);
 }
 
 void ub_stop_ent(struct ub_entity *uent)

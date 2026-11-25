@@ -96,9 +96,11 @@ struct upa_err_misc {
 			u32 err_addrl;
 			struct {
 				u32 ras_asddr_msb : 24;
-				u32 rsvd : 5;
+				u32 rsvd : 2;
+				u32 ras_address_dfx : 1;
+				u32 rsv1 : 2;
 				u32 ras_address_ai : 1;
-				u32 rsvd1 : 2;
+				u32 rsvd2 : 2;
 			} err_addrh;
 			u32 err_misc0l;
 			u32 err_misc0h;
@@ -288,15 +290,15 @@ static void hi_mem_ras_process_v1(struct ub_bus_controller *ubc)
 			if (handler) {
 				ret = handler((u64)vals, err_info.type);
 				if (ret)
-					pr_err("UB memory ras handler failed, ret=%d\n",
-					       ret);
+					printk_ratelimited("UB memory ras handler failed, ret=%d\n",
+							   ret);
 			}
 		} else {
 			if (handler) {
 				ret = handler(err_info.val0, err_info.type);
 				if (ret)
-					pr_err("UB memory ras handler failed, ret=%d\n",
-					       ret);
+					printk_ratelimited("UB memory ras handler failed, ret=%d\n",
+							   ret);
 			}
 		}
 	}
@@ -309,6 +311,8 @@ static void hi_mem_ras_process_v2(struct ub_bus_controller *ubc)
 	struct ub_mem_event_info event_data;
 	ubmem_event_handler event_handler;
 	struct upa_err_misc err_misc;
+	phys_addr_t pa;
+	bool pa_valid;
 	int ret;
 
 	mutex_lock(&mem_ras_mutex);
@@ -319,20 +323,23 @@ static void hi_mem_ras_process_v2(struct ub_bus_controller *ubc)
 
 		if (!event_handler)
 			continue;
-
 		if (event_data.status0) {
 			memcpy(&err_misc, event_data.info, sizeof(err_misc));
 			event_info.event_id = find_match_event_id(&err_misc);
-			event_info.pa_valid = err_misc.err_statusl.ras_status_av &&
-				!err_misc.err_addrh.ras_address_ai;
-			if (event_info.pa_valid)
-				event_info.pa = hpa_gen(err_misc.err_addrh.ras_asddr_msb,
-							err_misc.err_addrl);
+			pa_valid = (err_misc.err_statusl.ras_status_av &&
+				    !err_misc.err_addrh.ras_address_ai) ||
+				    err_misc.err_addrh.ras_address_dfx;
+			pa = hpa_gen(err_misc.err_addrh.ras_asddr_msb,
+				     err_misc.err_addrl);
+			if (pa_valid && pa) {
+				event_info.pa_valid = true;
+				event_info.pa = pa;
+			}
 		} else {
 			event_info.event_id = UBMEVT_UNDEFINE_NULL;
 		}
 		event_info.vendor_info = vendor_gen(ubc->uent->guid.bits.vendor,
-							    ubc->uent->guid.bits.device);
+						    ubc->uent->guid.bits.device);
 		event_info.vendor_data_len = sizeof(event_data);
 		event_info.vendor_data = &event_data;
 
@@ -592,7 +599,7 @@ int hi_mem_decoder_create(struct ub_bus_controller *ubc)
 	int ret;
 
 	if (!is_ub_mem_version_valid(ubc)) {
-		dev_info(&ubc->dev, "Don't need to create mem decoder\n");
+		dev_dbg(&ubc->dev, "Don't need to create mem decoder\n");
 		return 0;
 	}
 
@@ -652,7 +659,7 @@ void hi_mem_decoder_remove(struct ub_bus_controller *ubc)
 		return;
 
 	if (!is_ub_mem_version_valid(ubc)) {
-		dev_info(&ubc->dev, "Don't need to remove mem decoder\n");
+		dev_dbg(&ubc->dev, "Don't need to remove mem decoder\n");
 		return;
 	}
 
@@ -678,7 +685,7 @@ void hi_register_ubmem_irq(struct ub_bus_controller *ubc)
 	}
 
 	if (!is_ub_mem_version_valid(ubc)) {
-		dev_info(&ubc->dev, "Don't need to register_ubmem_irq\n");
+		dev_dbg(&ubc->dev, "Don't need to register_ubmem_irq\n");
 		return;
 	}
 
@@ -729,7 +736,7 @@ void hi_unregister_ubmem_irq(struct ub_bus_controller *ubc)
 	}
 
 	if (!is_ub_mem_version_valid(ubc)) {
-		dev_info(&ubc->dev, "Don't need to unregister_ubmem_irq\n");
+		dev_dbg(&ubc->dev, "Don't need to unregister_ubmem_irq\n");
 		return;
 	}
 

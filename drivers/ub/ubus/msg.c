@@ -324,8 +324,8 @@ static void message_rx_work(struct work_struct *work)
 	if (handler)
 		handler(ubc, task->pkt, task->len);
 	else
-		dev_err(&ubc->dev, "rx msg code not support, code=%#x\n",
-			msg_code);
+		dev_err_ratelimited(&ubc->dev, "rx msg code not support, code=%#x\n",
+				    msg_code);
 
 	message_rx_task_free(task);
 }
@@ -340,19 +340,20 @@ int message_rx_handler(struct ub_bus_controller *ubc, void *pkt, u16 len)
 		return -EBUSY;
 
 	if (len < MSG_PKT_HEADER_SIZE) {
-		dev_err(&ubc->dev, "rx msg len invalid, len=%#x\n", len);
+		dev_err_ratelimited(&ubc->dev, "rx msg len invalid, len=%#x\n",
+				    len);
 		return -EINVAL;
 	}
 
 	if (msgetah->plen != len - MSG_PKT_HEADER_SIZE) {
-		dev_err(&ubc->dev, "rx msg plen invalid, len=%#x, plen=%#x\n",
-			len, msgetah->plen);
+		dev_err_ratelimited(&ubc->dev, "rx msg plen invalid, len=%#x, plen=%#x\n",
+				    len, msgetah->plen);
 		return -EINVAL;
 	}
 
 	if (!msg_rx_code_valid(ubc, msgetah->code)) {
-		dev_err(&ubc->dev, "rx msg code invalid, code=%#x\n",
-			msgetah->code);
+		dev_err_ratelimited(&ubc->dev, "rx msg code invalid, code=%#x\n",
+				    msgetah->code);
 		return -EINVAL;
 	}
 

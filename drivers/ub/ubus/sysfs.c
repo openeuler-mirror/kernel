@@ -361,9 +361,7 @@ DEVICE_ATTR_RO(upi);
 static ssize_t numa_show(struct device *dev, struct device_attribute *attr,
 			 char *buf)
 {
-	struct ub_entity *uent = to_ub_entity(dev);
-
-	return sysfs_emit(buf, "%#04x\n", uent->ubc->attr.proximity_domain);
+	return sysfs_emit(buf, "%d\n", dev_to_node(dev));
 }
 DEVICE_ATTR_RO(numa);
 
