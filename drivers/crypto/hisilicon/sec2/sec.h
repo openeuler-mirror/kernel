@@ -158,7 +158,6 @@ struct sec_cipher_ctx {
 /* SEC queue context which defines queue's relatives */
 struct sec_qp_ctx {
 	struct hisi_qp *qp;
-	struct sec_req **req_list;
 	struct idr req_idr;
 	struct sec_alg_res *res;
 	struct sec_ctx *ctx;
@@ -166,7 +165,6 @@ struct sec_qp_ctx {
 	spinlock_t id_lock;
 	struct hisi_acc_sgl_pool *c_in_pool;
 	struct hisi_acc_sgl_pool *c_out_pool;
-	u16 send_head;
 };
 
 enum sec_alg_type {
