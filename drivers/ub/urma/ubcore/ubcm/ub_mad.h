@@ -17,6 +17,12 @@
 /* agent */
 #define UBMAD_SGE_MAX_LEN 2048 // cm data max len
 
+/* CM agent: jetty id 1,2 */
+#define UBMAD_CM_JETTY_ID_0 1U
+#define UBMAD_CM_JETTY_ID_1 2U
+/* H2D agent: jetty 80, unreliable */
+#define UBMAD_H2D_JETTY_ID_0 80U
+
 enum ubmad_msg_type {
 	UBMAD_CONN_DATA = 0,
 	UBMAD_CONN_ACK,
@@ -70,19 +76,38 @@ struct ubmad_agent {
 	void *usr_ctx;
 };
 
+struct ubmad_jetty_cfg {
+	uint32_t jetty_id; /* well-known jetty id */
+	uint32_t sge_size; /* size of each sge buffer in the seg */
+	uint32_t send_sge_num; /* send sge num in the seg, also jfs depth */
+	uint32_t recv_sge_num; /* recv sge num in the seg, also jfr depth */
+	uint32_t write_sge_num; /* write sge num, reserved for write path */
+	uint32_t max_write_len; /* max write length, reserved for write path */
+	bool reliable; /* reliable communication (ack & retransmit) or not */
+};
+
+/* agent cfg, describes the jetty resources owned by the agent */
+struct ubmad_agent_cfg {
+	const struct ubmad_jetty_cfg *jetty_cfg;
+	uint32_t jetty_num;
+};
+
 int ubmad_init(void);
 void ubmad_uninit(void);
 
 struct ubmad_agent *ubmad_register_agent(struct ubcore_device *device,
+	const struct ubmad_agent_cfg *cfg,
 	ubmad_send_handler send_handler,
 	ubmad_recv_handler recv_handler,
 	void *usr_ctx);
 int ubmad_unregister_agent(struct ubmad_agent *agent);
 
-int ubmad_post_send(struct ubcore_device *device,
+int ubmad_post_send(struct ubmad_agent *agent, uint32_t jetty_id,
 	struct ubmad_send_buf *send_buf,
 	struct ubmad_send_buf **bad_send_buf);
 int ubmad_ubc_send(struct ubcore_device *device,
 	struct ubcore_cm_send_buf *send_buf);
+
+uint32_t ubmad_get_jetty_id_by_msg_type(uint32_t msg_type);
 
 #endif /* UB_MAD_H */
