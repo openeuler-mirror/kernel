@@ -5493,6 +5493,7 @@ static int kvm_hygon_arch_hypercall(struct kvm *kvm, u64 nr, u64 a0, u64 a1, u64
 	if (sev_guest(kvm)) {
 		vpsp.vm_handle = to_kvm_svm(kvm)->sev_info.handle;
 		vpsp.is_csv_guest = 1;
+		vpsp.is_csv3_guest = csv3_guest(kvm) ? 1 : 0;
 	}
 
 	switch (nr) {

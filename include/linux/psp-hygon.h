@@ -753,6 +753,7 @@ struct kvm_vpsp {
 	kvm_pfn_t (*gfn_to_pfn)(struct kvm *kvm, gfn_t gfn);
 	u32 vm_handle;
 	u8 is_csv_guest;
+	u8 is_csv3_guest;
 };
 
 #ifdef CONFIG_CRYPTO_DEV_SP_PSP

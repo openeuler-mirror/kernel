@@ -42,6 +42,7 @@ enum HYGON_PSP_OPCODE {
 	HYGON_VPSP_CTRL_OPT,
 	HYGON_PSP_OP_PIN_USER_PAGE,
 	HYGON_PSP_OP_UNPIN_USER_PAGE,
+	HYGON_PSP_OP_GET_PATCH_FLAGS,
 	HYGON_PSP_OPCODE_MAX_NR,
 };
 
@@ -50,6 +51,56 @@ enum HYGON_PSP_RESOURCE2_OPCODE {
 	HYGON_RESOURCE2_OP_GET_PCI_BAR_RANGE = 1,
 	HYGON_RESOURCE2_OPCODE_MAX_NR,
 };
+
+#define FORMAT_PATCH_BUFFER_SIZE		4096
+static const char * const psp_patch_flags[] = {
+	"cap_user_psp_mutex",
+	"cap_vtkm_basic",
+	"cap_vtkm_key_isolated",
+	"cap_vtkm_csv",
+	"cap_vtkm_overcommit",
+	"cap_vtkm_nodep_csv",
+	"cap_vtkm_live_mig",
+	"cap_vtkm_csv3",
+
+	"bug_memmove",
+	"bug_longtime_csv",
+	"bug_panic_nohg",
+	"bug_highque_cmd",
+	"bug_mutex_softlockup",
+};
+
+/*
+ * Format the patch flags into a NUL-terminated, space separated string.
+ *
+ * Returns the length of the string (excluding the trailing NUL) on success,
+ * or a negative error code on failure.
+ */
+static int psp_format_patch_flags(char *buf, size_t size)
+{
+	int i, n = ARRAY_SIZE(psp_patch_flags);
+	size_t len = 0;
+
+	for (i = 0; i < n; ++i) {
+		size_t name_len = strlen(psp_patch_flags[i]);
+		/* leading separator (except the first entry) + trailing NUL */
+		size_t need = name_len + (i ? 2 : 1);
+
+		if (len + need > size) {
+			pr_warn("psp_patch_flags too long\n");
+			return -ENOSPC;
+		}
+
+		if (i)
+			buf[len++] = ' ';
+		memcpy(buf + len, psp_patch_flags[i], name_len);
+		len += name_len;
+	}
+
+	buf[len] = '\0';
+
+	return len;
+}
 
 uint64_t atomic64_exchange(uint64_t *dst, uint64_t val)
 {
@@ -245,6 +296,7 @@ static int psp_unpin_user_page(u64 vaddr)
 
 static long ioctl_psp(struct file *file, unsigned int ioctl, unsigned long arg)
 {
+	char *patch_flags = NULL;
 	unsigned int opcode = 0;
 	struct vpsp_dev_ctrl vpsp_ctrl_op;
 	int ret = -EFAULT;
@@ -300,6 +352,24 @@ static long ioctl_psp(struct file *file, unsigned int ioctl, unsigned long arg)
 		ret = psp_unpin_user_page((u64)arg);
 		break;
 
+	case HYGON_PSP_OP_GET_PATCH_FLAGS:
+		patch_flags = kmalloc(FORMAT_PATCH_BUFFER_SIZE, GFP_KERNEL);
+		if (!patch_flags) {
+			ret = -ENOMEM;
+			break;
+		}
+
+		ret = psp_format_patch_flags(patch_flags, FORMAT_PATCH_BUFFER_SIZE);
+		if (ret >= 0) {
+			/* only expose the string itself, not the buffer tail */
+			if (copy_to_user((void __user *)arg, patch_flags, ret + 1))
+				ret = -EFAULT;
+			else
+				ret = 0;
+		}
+
+		kfree(patch_flags);
+		break;
 	default:
 		pr_info("%s: invalid ioctl number: %d\n", __func__, opcode);
 		return -EINVAL;

@@ -1485,7 +1485,7 @@ static int to_csv3_pg_level(int level)
 	return ret;
 }
 
-static bool csv3_guest(struct kvm *kvm)
+bool csv3_guest(struct kvm *kvm)
 {
 	struct kvm_csv_info *csv = &to_kvm_svm_csv(kvm)->csv_info;
 
