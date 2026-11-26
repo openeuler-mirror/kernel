@@ -228,6 +228,9 @@ struct vcpu_svm {
 	bool receiver_ghcb_map_fail;
 	/* CSV2 reboot vmsa */
 	struct vmcb_save_area *reset_vmsa;
+
+	/* CSV3: consecutive #NPF retries due to transient memory pressure */
+	unsigned int csv3_npf_retry;
 };
 
 struct svm_cpu_data {
