@@ -160,7 +160,7 @@ static int ubctl_check_cmd_frequency(struct ubctl_dev *ucdev, enum fwctl_rpc_sco
 		mutex_unlock(&g_fifo_lock);
 		ubctl_err(ucdev, "the current number of valid requests exceeds the limit, record_jiffies = %lu, current_jiffies = %lu.\n",
 			  record_jiffies, current_jiffies);
-		return -EBADMSG;
+		return -EUSERS;
 	}
 	kfifo_ret = kfifo_put(&ucdev->ioctl_fifo, current_jiffies);
 	if (!kfifo_ret) {
@@ -184,19 +184,13 @@ static int ubctl_legitimacy_rpc(struct ubctl_dev *ucdev, struct ubctl_data_len d
 		return -EOPNOTSUPP;
 
 	if (data_len.out_len < sizeof(struct fwctl_rpc_ub_out)) {
-		ubctl_dbg(ucdev, "outlen %zu is less than min value %zu.\n",
+		ubctl_err(ucdev, "outlen %zu is less than min value %zu.\n",
 			  data_len.out_len, sizeof(struct fwctl_rpc_ub_out));
 		return -EBADMSG;
 	}
 
-	if (data_len.in_len < sizeof(struct fwctl_rpc_ub_in)) {
-		ubctl_dbg(ucdev, "inlen %zu is less than min value %zu.\n",
-			  data_len.in_len, sizeof(struct fwctl_rpc_ub_in));
-		return -EBADMSG;
-	}
-
 	if (in_data_size + sizeof(struct fwctl_rpc_ub_in) > data_len.in_len) {
-		ubctl_dbg(ucdev, "in data size = %u, in head =  %zu, inlen = %zu.\n",
+		ubctl_err(ucdev, "in data size = %u, in head =  %zu, inlen = %zu.\n",
 			  in_data_size, sizeof(struct fwctl_rpc_ub_in), data_len.in_len);
 		return -EBADMSG;
 	}
@@ -330,13 +324,20 @@ static void *ubctl_fw_rpc(struct fwctl_uctx *uctx, enum fwctl_rpc_scope scope,
 {
 	struct ubctl_dev *ucdev = container_of(uctx->fwctl, struct ubctl_dev,
 					       fwctl);
-	u32 opcode = ((struct fwctl_rpc_ub_in *)rpc_in)->rpc_cmd;
 	struct ubctl_query_cmd_param query_cmd_param;
 	struct ubctl_data_len data_len = {};
 	void *rpc_out;
 	u32 env_type;
+	u32 opcode;
 	int ret;
 
+	if (in_len < sizeof(struct fwctl_rpc_ub_in)) {
+		ubctl_err(ucdev, "inlen %zu is less than min value %zu.\n",
+			  in_len, sizeof(struct fwctl_rpc_ub_in));
+		return ERR_PTR(-EBADMSG);
+	}
+
+	opcode = ((struct fwctl_rpc_ub_in *)rpc_in)->rpc_cmd;
 	ubctl_dbg(ucdev, "cmdif: opcode 0x%x inlen %zu outlen %zu\n",
 		  opcode, in_len, *out_len);
 
@@ -409,6 +410,7 @@ static int ubctl_probe(struct auxiliary_device *adev,
 			   ret);
 
 	ucdev->adev = adev;
+	mutex_init(&ucdev->rt_bandwidth_mutex);
 	auxiliary_set_drvdata(adev, no_free_ptr(ucdev));
 	return 0;
 }
