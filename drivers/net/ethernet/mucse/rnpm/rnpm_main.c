@@ -2878,10 +2878,7 @@ static void rnpm_configure_rx(struct rnpm_adapter *adapter)
 	struct rnpm_hw *hw = &adapter->hw;
 	int i;
 	u32 rxctrl = 0, dma_axi_ctl;
-
-#if (PAGE_SIZE < 8192)
 	struct rnpm_ring *rx_ring = adapter->rx_ring[0];
-#endif
 
 	/* set_rx_buffer_len must be called before ring initialization */
 	rnpm_set_rx_buffer_len(adapter);
