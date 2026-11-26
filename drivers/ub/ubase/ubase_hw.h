@@ -202,6 +202,8 @@ void __ubase_cmd_ctx_buf_free(struct ubase_dev *udev,
 int ubase_config_ctx_buf_to_hw(struct ubase_dev *udev,
 			       struct ubase_ctx_buf_cap *ctx_buf,
 			       struct ubase_mbx_attr *attr);
+int ubase_extdb_iova_init(struct ubase_dev *udev);
+void ubase_extdb_iova_uninit(struct ubase_dev *udev);
 int ubase_init_ue_extdb_buf(struct ubase_dev *udev, struct ubase_ue_node *node);
 void ubase_uninit_ue_extdb_buf(struct ubase_dev *udev, struct ubase_ue_node *node);
 

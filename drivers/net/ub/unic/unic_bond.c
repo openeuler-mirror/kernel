@@ -17,6 +17,7 @@
 static int unic_send_bond_ip_notify_msg(struct auxiliary_device *adev,
 					struct unic_bond_ip_notify_req *req)
 {
+	struct unic_dev *unic_dev = dev_get_drvdata(&adev->dev);
 	struct ubase_ctrlq_msg msg = {0};
 	int ret, tmp_resp;
 
@@ -32,8 +33,9 @@ static int unic_send_bond_ip_notify_msg(struct auxiliary_device *adev,
 
 	ret = ubase_ctrlq_send_msg(adev, &msg);
 	if (ret)
-		dev_err(&adev->dev,
-			"failed to notify bond ip by ctrlq, ret = %d.\n", ret);
+		unic_err_rl_hr(unic_dev, notify_bond_ip_fail,
+			       "failed to notify bond ip by ctrlq, ret = %d.\n",
+			       ret);
 
 	return ret;
 }
@@ -313,10 +315,11 @@ static int unic_send_bond_status_change_notify(struct auxiliary_device *adev,
 
 	ret = ubase_ctrlq_send_msg(adev, &msg);
 	if (ret)
-		unic_err(unic_dev,
-			 "failed to notify bond status change, port id = %u, bonding_cmd = %s, ret = %d.\n",
-			 req.port_id, req.bonding_cmd == UNIC_CTRLQ_BOND_ADD_PORT ?
-			 "ADD" : "DEL", ret);
+		unic_err_rl_hr(unic_dev, send_ctrlq_bond_status_fail,
+			       "failed to notify bond status change, port id = %u, bonding_cmd = %s, ret = %d.\n",
+			       req.port_id,
+			       req.bonding_cmd == UNIC_CTRLQ_BOND_ADD_PORT ?
+			       "ADD" : "DEL", ret);
 
 	return ret;
 }

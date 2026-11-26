@@ -2,7 +2,7 @@
 menuconfig UB_CDMA
 	default n
 	tristate "cdma driver"
-	depends on UB_UBASE && UB_UMMU_CORE
+	depends on UB_UBASE && UB_UMMU_CORE_DRIVER
 	help
 	   This option enables support for CDMA drivers. The CDMA driver facilitates
 	   the creation and destruction of CDMA devices, as well as the creation of

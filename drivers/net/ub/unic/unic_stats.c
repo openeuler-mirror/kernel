@@ -260,8 +260,9 @@ static int unic_get_dfx_reg_num(struct unic_dev *unic_dev, u32 *reg_num,
 			     reg_arr_size * sizeof(u32), reg_num);
 	ret = ubase_cmd_send_inout(unic_dev->comdev.adev, &in, &out);
 	if (ret)
-		unic_err(unic_dev,
-			 "failed to query dfx reg num, ret = %d.\n", ret);
+		dev_err_ratelimited(&unic_dev->comdev.adev->dev,
+				    "failed to query dfx reg num, ret = %d.\n",
+				    ret);
 
 	return ret;
 }
@@ -466,7 +467,8 @@ void unic_get_regs(struct net_device *netdev, struct ethtool_regs *cmd,
 	ret = unic_get_dfx_regs(unic_dev, pdata, unic_dfx_reg_arr,
 				reg_arr_size, reg_num);
 	if (ret)
-		unic_err(unic_dev, "failed to get dfx regs, ret = %d.\n", ret);
+		dev_err_ratelimited(&unic_dev->comdev.adev->dev,
+				    "failed to get dfx regs, ret = %d.\n", ret);
 
 	kfree(reg_num);
 }
@@ -532,7 +534,7 @@ void unic_get_stats(struct net_device *netdev,
 
 	if (unic_resetting(netdev) ||
 	    test_bit(UNIC_STATE_CHANNEL_INVALID, &unic_dev->state)) {
-		unic_err(unic_dev,
+		unic_dbg(unic_dev,
 			 "dev resetting or channel is null, could not get stats.\n");
 		return;
 	}

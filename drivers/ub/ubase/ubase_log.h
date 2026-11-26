@@ -55,8 +55,41 @@
 	}                                                                     \
 } while (0)
 
+#define ubase_err_rl_hr(_udev, name, fmt, ...) do {                           \
+	if (__ratelimit(&(_udev->log_rs.name##_rs)) &&                        \
+	    __ratelimit(&(_udev->log_rs.name##_hr_rs))) {                     \
+		ubase_err(_udev, fmt, ##__VA_ARGS__);                         \
+	} else {                                                              \
+		(_udev->log_rs.name##_cnt)++;                                 \
+		ubase_dbg(_udev, fmt, ##__VA_ARGS__);                         \
+	}                                                                     \
+} while (0)
+
+#define ubase_info_rl_hr(_udev, name, fmt, ...) do {                          \
+	if (__ratelimit(&(_udev->log_rs.name##_rs)) &&                        \
+	    __ratelimit(&(_udev->log_rs.name##_hr_rs))) {                     \
+		ubase_info(_udev, fmt, ##__VA_ARGS__);                        \
+	} else {                                                              \
+		(_udev->log_rs.name##_cnt)++;                                 \
+		ubase_dbg(_udev, fmt, ##__VA_ARGS__);                         \
+	}                                                                     \
+} while (0)
+
+#define ubase_warn_rl_hr(_udev, name, fmt, ...) do {                          \
+	if (__ratelimit(&(_udev->log_rs.name##_rs)) &&                        \
+	    __ratelimit(&(_udev->log_rs.name##_hr_rs))) {                     \
+		ubase_warn(_udev, fmt, ##__VA_ARGS__);                        \
+	} else {                                                              \
+		(_udev->log_rs.name##_cnt)++;                                 \
+		ubase_dbg(_udev, fmt, ##__VA_ARGS__);                         \
+	}                                                                     \
+} while (0)
+
 #define UBASE_RATELIMIT_INTERVAL (1 * HZ)
 #define UBASE_RATELIMIT_BURST 2
+
+#define UBASE_RATELIMIT_INTERVAL_HR (60 * 60 * HZ)
+#define UBASE_RATELIMIT_BURST_HR 50
 
 #define UBASE_RATELIMIT_INIT(udev, name) do {                                 \
 	raw_spin_lock_init(&udev->log_rs.name##_rs.lock);                     \
@@ -64,9 +97,21 @@
 	udev->log_rs.name##_rs.burst    = UBASE_RATELIMIT_BURST;              \
 } while (0)
 
+#define UBASE_RATELIMIT_INIT_HR(udev, name) do {                              \
+	UBASE_RATELIMIT_INIT(udev, name);                                     \
+	udev->log_rs.name##_rs.flags      |= RATELIMIT_MSG_ON_RELEASE;        \
+	raw_spin_lock_init(&udev->log_rs.name##_hr_rs.lock);                  \
+	udev->log_rs.name##_hr_rs.interval = UBASE_RATELIMIT_INTERVAL_HR;     \
+	udev->log_rs.name##_hr_rs.burst    = UBASE_RATELIMIT_BURST_HR;        \
+} while (0)
+
 #define UBASE_DEFINE_RATELIMIT(name)                                          \
 	struct ratelimit_state name##_rs;                                     \
 	u32	name##_cnt
+
+#define UBASE_DEFINE_RATELIMIT_HR(name)                                       \
+	UBASE_DEFINE_RATELIMIT(name);                                         \
+	struct ratelimit_state name##_hr_rs
 
 struct ubase_log_rs {
 	UBASE_DEFINE_RATELIMIT(ctrlq_other_seq_invalid);
@@ -90,6 +135,7 @@ struct ubase_log_rs {
 	UBASE_DEFINE_RATELIMIT(send_ue_ctrlq_msg_fail);
 	UBASE_DEFINE_RATELIMIT(proxy_resp_seq_invalid);
 	UBASE_DEFINE_RATELIMIT(err_msn_in_act_resp);
+	UBASE_DEFINE_RATELIMIT_HR(csq_clean_bd_mismatch);
 };
 
 #endif /* __UBASE_LOG_H__ */

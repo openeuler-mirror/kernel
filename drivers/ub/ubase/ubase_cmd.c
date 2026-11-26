@@ -547,8 +547,9 @@ err_clr_cmdq:
 	if (cleaned < 0)
 		ret = cleaned;
 	else if (cleaned != num)
-		ubase_warn(udev,
-			   "cleaned %dBD, need to clean %dBD.\n", cleaned, num);
+		ubase_warn_rl_hr(udev, csq_clean_bd_mismatch,
+				 "cleaned %dBD, need to clean %dBD.\n", cleaned,
+				 num);
 
 	if (is_unready)
 		ubase_warn(udev, "peer cmdq is not ready.\n");
@@ -571,8 +572,9 @@ static int ubase_send_cmd_query_fw_ver(struct ubase_dev *udev,
 		sw_pi = csq->pi;
 		ubase_write_desc_to_cmdq(udev, desc, 1);
 		if (!ubase_wait_resp_timeout(udev)) {
-			ubase_err(udev,
-				  "query fw version wait ci update timeout.\n");
+			dev_err_ratelimited(udev->dev,
+					    "query fw version wait ci update timeout, retry_cnt = %u.\n",
+					    i + 1);
 			continue;
 		}
 
@@ -581,14 +583,17 @@ static int ubase_send_cmd_query_fw_ver(struct ubase_dev *udev,
 		csq->ci = ubase_read_dev(&udev->hw, UBASE_CSQ_HEAD_REG);
 
 		if (!(desc->flag & UBASE_CMD_FLAG_OUT)) {
-			ubase_err(udev, "query fw version wait resp timeout.\n");
+			dev_err_ratelimited(udev->dev,
+					    "query fw version wait resp timeout, retry_cnt = %u.\n",
+					    i + 1);
 			continue;
 		}
 
 		if (desc->ret) {
 			ret = -le16_to_cpu(desc->ret);
-			ubase_err(udev,
-				  "failed to query fw version, ret = %d.\n", ret);
+			dev_err_ratelimited(udev->dev,
+					    "failed to query fw version, retry_cnt = %u, ret = %d.\n",
+					    i + 1, ret);
 		} else {
 			ret = 0;
 		}
@@ -947,17 +952,17 @@ static void ubase_cmd_crq_handler(struct ubase_dev *udev)
 		opcode = crq->desc[crq->ci].opcode;
 		bd_num = crq->desc[crq->ci].bd_num;
 		flag = crq->desc[crq->ci].flag;
-		msg_data_len = bd_num * sizeof(struct ubase_cmdq_desc) -
-			       UBASE_CMD_HEADER_LENGTH;
 
 		if (unlikely(!bd_num || !(flag & UBASE_CMD_FLAG_OUT))) {
-			ubase_err(udev,
-				  "drop invalid crq message, opcode = 0x%x, bd_num = %u, flag = 0x%x.",
-				  opcode, bd_num, flag);
-			UBASE_MOVE_CRQ_RING_PTR(crq, 1);
+			dev_err_ratelimited(udev->dev,
+					    "drop invalid crq message, opcode = 0x%x, bd_num = %u, flag = 0x%x.\n",
+					    opcode, bd_num, flag);
+			crq->ci = crq->pi;
 			ubase_write_dev(&udev->hw, UBASE_CRQ_HEAD_REG, crq->ci);
 			continue;
 		}
+		msg_data_len = bd_num * sizeof(struct ubase_cmdq_desc) -
+			       UBASE_CMD_HEADER_LENGTH;
 
 		ret = ubase_gen_bd_data(udev, bd_num, &msg_data, msg_data_len);
 		if (ret) {
