@@ -373,7 +373,7 @@ static int p2p_pin_va_range(u64 addr, u64 size, struct p2p_iov_map *map)
 		goto put_pages;
 	}
 	aligned_end = round_down(aligned_end, page_table->page_size);
-	page_num = (aligned_end - aligned_addr) / page_table->page_size;
+	page_num = (aligned_end - aligned_addr) >> ilog2(page_table->page_size);
 	if (!page_num || page_num > U32_MAX || page_table->page_num != page_num) {
 		pr_err("invalid page table page_num %llu expected %llu\n",
 		       page_table->page_num, page_num);

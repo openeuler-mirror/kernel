@@ -255,8 +255,7 @@ static int raid0_map_offset(const struct topo *topo, u64 raid_sector,
 	u32 nr;
 	struct topo_bdev *bdev;
 
-	member_index = chunk_index % topo->nr_bdevs;
-	member_chunk = div_u64(chunk_index, topo->nr_bdevs);
+	member_chunk = div_u64_rem(chunk_index, topo->nr_bdevs, &member_index);
 	member_offset = member_chunk * chunk_sectors + offset_in_chunk;
 	bdev = &topo->bdevs[member_index];
 	nr = min_t(u64, in_nr_sectors, chunk_sectors - offset_in_chunk);
@@ -629,7 +628,7 @@ static int topo_raid0_logical_sectors(const struct topo *topo, u64 chunk_shift,
 	chunk_sectors = 1ULL << chunk_shift;
 	for (i = 0; i < topo->nr_bdevs; i++) {
 		if (topo->bdevs[i].size_sector != topo->bdevs[0].size_sector ||
-		    topo->bdevs[i].size_sector % chunk_sectors) {
+		    topo->bdevs[i].size_sector & (chunk_sectors - 1)) {
 			pr_err("raid0 component %u size 0x%llx must match 0x%llx and align to chunk 0x%llx sectors\n",
 			       i, topo->bdevs[i].size_sector,
 			       topo->bdevs[0].size_sector, chunk_sectors);
