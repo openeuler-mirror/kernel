@@ -8,10 +8,12 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
+#include <linux/debugfs.h>
 #include <linux/kallsyms.h>
 #include <linux/mm.h>
 #include <linux/slab.h>
 #include <linux/platform_device.h>
+#include <linux/seq_file.h>
 #include <linux/smp.h>
 #include <linux/xarray.h>
 #include <linux/irqchip.h>
@@ -60,13 +62,19 @@ static int hisi_l3t_init_data(struct platform_device *pdev,
 				     &l3t->ccl_id))
 		return -EINVAL;
 
+	/* Keeps the id inside the sccl->l3t[] array. */
+	if (l3t->ccl_id < 0 || l3t->ccl_id >= HISI_L3T_MAX_CCL) {
+		dev_err(&pdev->dev, "invalid l3t ccl-id: %d\n", l3t->ccl_id);
+		return -EINVAL;
+	}
+
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!mem)
 		return -ENODEV;
 
 	l3t->base = devm_ioremap(&pdev->dev, mem->start, resource_size(mem));
 	if (IS_ERR_OR_NULL(l3t->base))
-		return PTR_ERR(l3t->base);
+		return -ENOMEM;
 
 	l3t->nid = sccl_to_node_id(l3t->sccl_id);
 	if (l3t->nid < 0)
@@ -77,7 +85,7 @@ static int hisi_l3t_init_data(struct platform_device *pdev,
 
 static int hisi_l3t_insert_to_sccl(struct hisi_sccl *sccl, struct hisi_l3t *l3t)
 {
-	void *tmp_l3t;
+	struct hisi_l3t **tmp_l3t;
 
 	if (sccl->ccl_cnt > l3t->ccl_id)
 		goto set;
@@ -88,6 +96,13 @@ static int hisi_l3t_insert_to_sccl(struct hisi_sccl *sccl, struct hisi_l3t *l3t)
 	if (!tmp_l3t)
 		return -ENOMEM;
 
+	/*
+	 * krealloc() leaves the grown slots uninitialized; a skipped
+	 * probe must read as NULL, not as a stale pointer.
+	 */
+	memset(tmp_l3t + sccl->ccl_cnt, 0,
+	       (l3t->ccl_id + 1 - sccl->ccl_cnt) * sizeof(struct hisi_l3t *));
+
 	sccl->ccl_cnt = l3t->ccl_id + 1;
 	sccl->l3t = tmp_l3t;
 
@@ -96,11 +111,8 @@ set:
 	return 0;
 }
 
-/*
- * Use xarray to store the mapping b/t nid to sccl
- * all ccls belong be one sccl is store with vla in sccl->l3t
- */
-static int hisi_l3t_init_mapping(struct device *dev, struct hisi_l3t *l3t)
+/* nid -> sccl; the ccls of one sccl live in sccl->l3t[]. */
+static int hisi_l3t_init_mapping(struct hisi_l3t *l3t)
 {
 	struct hisi_sccl *sccl;
 	int ret = -ENOMEM;
@@ -108,12 +120,20 @@ static int hisi_l3t_init_mapping(struct device *dev, struct hisi_l3t *l3t)
 	mutex_lock(&l3t_mutex);
 	sccl = xa_load(&l3t_mapping, l3t->nid);
 	if (!sccl) {
-		sccl = devm_kzalloc(dev, sizeof(*sccl), GFP_KERNEL);
+		/*
+		 * l3t_mapping owns the sccl until module exit, so a
+		 * failed probe leaves a valid entry for the next one.
+		 */
+		sccl = kzalloc(sizeof(*sccl), GFP_KERNEL);
 		if (!sccl)
 			goto unlock;
 		sccl->nid = l3t->nid;
 
-		xa_store(&l3t_mapping, l3t->nid, sccl, GFP_KERNEL);
+		ret = xa_insert(&l3t_mapping, l3t->nid, sccl, GFP_KERNEL);
+		if (ret) {
+			kfree(sccl);
+			goto unlock;
+		}
 	}
 
 	ret = hisi_l3t_insert_to_sccl(sccl, l3t);
@@ -139,20 +159,28 @@ static void __l3t_update_and_wait(void __iomem *addr, u32 b_update, u32 b_wait)
 		pr_warn_ratelimited("read reg timeout\n");
 }
 
-static void __l3t_maintain_do_lock(void __iomem *addr, int slot_idx,
-				   unsigned long s_addr, int size)
+/* Return the bank address of slot_idx, or NULL if it is invalid. */
+static void __iomem *l3t_slot_addr(void __iomem *base, int slot_idx)
 {
 	if (slot_idx < 0 || slot_idx >= L3T_REG_NUM) {
 		pr_err("slot index is invalid: %d\n", slot_idx);
-		return;
+		return NULL;
 	}
 
-	if (!addr) {
-		pr_err("invalid unlock addr\n");
-		return;
+	if (!base) {
+		pr_err("invalid l3t base addr\n");
+		return NULL;
 	}
 
-	addr += slot_idx * L3T_LOCK_STEP;
+	return base + slot_idx * L3T_LOCK_STEP;
+}
+
+static void __l3t_maintain_do_lock(void __iomem *addr, int slot_idx,
+				   unsigned long s_addr, int size)
+{
+	addr = l3t_slot_addr(addr, slot_idx);
+	if (!addr)
+		return;
 
 	writeq(s_addr, addr + L3T_LOCK_START_L);
 	writel(size, addr + L3T_LOCK_AREA);
@@ -162,17 +190,9 @@ static void __l3t_maintain_do_lock(void __iomem *addr, int slot_idx,
 
 static void __l3t_maintain_do_unlock(void __iomem *addr, int slot_idx)
 {
-	if (slot_idx < 0 || slot_idx >= L3T_REG_NUM) {
-		pr_err("slot index is invalid: %d\n", slot_idx);
+	addr = l3t_slot_addr(addr, slot_idx);
+	if (!addr)
 		return;
-	}
-
-	if (!addr) {
-		pr_err("invalid unlock addr\n");
-		return;
-	}
-
-	addr += slot_idx * L3T_LOCK_STEP;
 
 	__l3t_update_and_wait(addr + L3T_LOCK_CTRL, UNLOCK_EN, UNLOCK_DONE);
 
@@ -203,7 +223,7 @@ static void hisi_l3t_read_inner(void __iomem *addr, int locksel,
 	if (!addr) {
 		*s_addr = 0;
 		*size = 0;
-		pr_err("invalid unlock addr\n");
+		pr_err("invalid l3t base addr\n");
 		return;
 	}
 
@@ -227,11 +247,100 @@ struct hisi_sccl *hisi_l3t_get_sccl(int nid)
 	return xa_load(&l3t_mapping, nid);
 }
 
+/* Dump every slot bank of one l3t. */
+static void l3t_dump_slots(struct seq_file *m, struct hisi_l3t *l3t)
+{
+	unsigned long s_addr;
+	void __iomem *bank;
+	u32 ctrl;
+	int size, i;
+
+	for (i = 0; i < L3T_REG_NUM; i++) {
+		bank = l3t_slot_addr(l3t->base, i);
+		if (!bank)
+			continue;
+
+		ctrl = readl(bank + L3T_LOCK_CTRL);
+		hisi_l3t_read(l3t, i, &s_addr, &size);
+
+		seq_printf(m, "    slot %d: ctrl %#x addr %#lx size %#x\n",
+			   i, ctrl, s_addr, size);
+	}
+}
+
+/*
+ * sccl->l3t may hold holes and a failed probe can leave an empty
+ * sccl behind, so check each level.
+ */
+static int l3t_dump_show(struct seq_file *m, void *unused)
+{
+	struct hisi_sccl *sccl;
+	struct hisi_l3t *l3t;
+	unsigned long nid;
+	int i;
+
+	mutex_lock(&l3t_mutex);
+	xa_for_each(&l3t_mapping, nid, sccl) {
+		seq_printf(m, "node %d: ccl_cnt %d\n", sccl->nid,
+			   sccl->ccl_cnt);
+		if (!sccl->l3t)
+			continue;
+
+		for (i = 0; i < sccl->ccl_cnt; i++) {
+			l3t = sccl->l3t[i];
+			if (!l3t)
+				continue;
+
+			seq_printf(m, "  ccl %d (sccl %d)\n", l3t->ccl_id,
+				   l3t->sccl_id);
+			l3t_dump_slots(m, l3t);
+		}
+	}
+	mutex_unlock(&l3t_mutex);
+
+	return 0;
+}
+
+DEFINE_SHOW_ATTRIBUTE(l3t_dump);
+
+static struct dentry *l3t_dbgfs_root;
+
+/* Root only. */
+static void hisi_l3t_dbgfs_init(void)
+{
+	l3t_dbgfs_root = debugfs_create_dir("hisi_l3t", NULL);
+	debugfs_create_file("dump", 0400, l3t_dbgfs_root, NULL,
+			    &l3t_dump_fops);
+}
+
+static void hisi_l3t_dbgfs_uninit(void)
+{
+	debugfs_remove_recursive(l3t_dbgfs_root);
+	l3t_dbgfs_root = NULL;
+}
+
 static const struct acpi_device_id hisi_l3t_acpi_match[] = {
 	{ "HISI0502", },
 	{}
 };
 MODULE_DEVICE_TABLE(acpi, hisi_l3t_acpi_match);
+
+/*
+ * Detach the device instance from the module-lifetime mapping.
+ * Devres runs this before the instance and its ioremap are freed;
+ * clearing the slot here keeps the later teardown safe.
+ */
+static void hisi_l3t_dev_release(void *data)
+{
+	struct hisi_l3t *l3t = data;
+	struct hisi_sccl *sccl;
+
+	mutex_lock(&l3t_mutex);
+	sccl = hisi_l3t_get_sccl(l3t->nid);
+	if (sccl && l3t->ccl_id < sccl->ccl_cnt)
+		sccl->l3t[l3t->ccl_id] = NULL;
+	mutex_unlock(&l3t_mutex);
+}
 
 static int hisi_l3t_probe(struct platform_device *pdev)
 {
@@ -247,10 +356,13 @@ static int hisi_l3t_probe(struct platform_device *pdev)
 	ret = hisi_l3t_init_data(pdev, l3t);
 	if (!ret) {
 		l3t->dev = &pdev->dev;
-		ret = hisi_l3t_init_mapping(&pdev->dev, l3t);
+		ret = hisi_l3t_init_mapping(l3t);
 	}
+	if (ret)
+		return ret;
 
-	return ret;
+	return devm_add_action_or_reset(&pdev->dev, hisi_l3t_dev_release,
+					l3t);
 }
 
 static struct platform_driver hisi_l3t_driver = {
@@ -269,13 +381,21 @@ static int __init hisi_l3t_init(void)
 		MIDR_ALL_VERSIONS(MIDR_HISI_HIP10),
 		{}
 	};
+	int ret;
+
 	if (!is_midr_in_range_list(read_cpuid_id(), l3t_support_list))
 		return -ENODEV;
 
 	mutex_init(&l3t_mutex);
 	xa_init(&l3t_mapping);
 
-	return platform_driver_register(&hisi_l3t_driver);
+	ret = platform_driver_register(&hisi_l3t_driver);
+	if (ret)
+		return ret;
+
+	hisi_l3t_dbgfs_init();
+
+	return 0;
 }
 module_init(hisi_l3t_init);
 
@@ -284,16 +404,19 @@ static void hisi_l3t_destroy_sccl(void)
 	struct hisi_sccl *sccl;
 	unsigned long nid;
 
-	xa_for_each(&l3t_mapping, nid, sccl)
+	xa_for_each(&l3t_mapping, nid, sccl) {
 		kfree(sccl->l3t);
+		kfree(sccl);
+	}
 }
 
 static void __exit hisi_l3t_exit(void)
 {
-	hisi_l3t_destroy_sccl();
-	xa_destroy(&l3t_mapping);
+	hisi_l3t_dbgfs_uninit();
 
 	platform_driver_unregister(&hisi_l3t_driver);
+	hisi_l3t_destroy_sccl();
+	xa_destroy(&l3t_mapping);
 }
 module_exit(hisi_l3t_exit);
 

@@ -20,19 +20,36 @@ struct hisi_l3t_ops {
 				unsigned long addr, int size);
 };
 
-static int hisi_l3t_sccl_action(struct hisi_sccl *sccl, unsigned long addr,
+static int hisi_l3t_sccl_action(int nid, unsigned long addr,
 				int size, struct hisi_l3t_ops *ops)
 {
 	struct hisi_l3t *l3t;
+	struct hisi_sccl *sccl;
 	int i, slot_idx;
+
+	mutex_lock(&l3t_mutex);
+
+	/*
+	 * Probe publishes the slots and the release action clears
+	 * them under l3t_mutex, so stay under it from the lookup
+	 * to the last dereference.
+	 */
+	sccl = hisi_l3t_get_sccl(nid);
+	if (!sccl || !sccl->ccl_cnt || !sccl->l3t)
+		goto enodev;
 
 	/*
 	 * in shared mode, all l3t belongs to one sccl is the same.
 	 * use the first l3t to test.
 	 */
-	l3t = sccl->l3t[0];
+	for (i = 0; i < sccl->ccl_cnt; i++) {
+		if (sccl->l3t[i])
+			break;
+	}
+	if (i >= sccl->ccl_cnt)
+		goto enodev;
+	l3t = sccl->l3t[i];
 
-	mutex_lock(&l3t_mutex);
 	for (slot_idx = 0; slot_idx < L3T_REG_NUM; slot_idx++) {
 		if (ops->l3t_slot_test(l3t, slot_idx, addr, size))
 			break;
@@ -51,20 +68,10 @@ static int hisi_l3t_sccl_action(struct hisi_sccl *sccl, unsigned long addr,
 	mutex_unlock(&l3t_mutex);
 
 	return 0;
-}
 
-struct hisi_sccl *get_valid_sccl(int nid)
-{
-	struct hisi_sccl *sccl;
-
-	sccl = hisi_l3t_get_sccl(nid);
-	if (!sccl || !sccl->ccl_cnt)
-		return NULL;
-
-	if (!sccl->l3t || !sccl->l3t[0])
-		return NULL;
-
-	return sccl;
+enodev:
+	mutex_unlock(&l3t_mutex);
+	return -ENODEV;
 }
 
 static bool hisi_l3t_test_empty(struct hisi_l3t *l3t, int slot_idx,
@@ -85,18 +92,13 @@ int l3t_shared_lock(int nid, unsigned long pfn, unsigned long size)
 		.l3t_slot_test = hisi_l3t_test_empty,
 		.l3t_slot_action = hisi_l3t_lock,
 	};
-	struct hisi_sccl *sccl;
 	int ret;
 
-	sccl = get_valid_sccl(nid);
-	if (!sccl)
-		return -ENODEV;
+	ret = hisi_l3t_sccl_action(nid, pfn << PAGE_SHIFT, size, &ops);
+	if (ret == -EINVAL)
+		return -ENOSPC;
 
-	ret = hisi_l3t_sccl_action(sccl, pfn << PAGE_SHIFT, size, &ops);
-	if (ret)
-		return -ENOMEM;
-
-	return 0;
+	return ret;
 }
 EXPORT_SYMBOL_GPL(l3t_shared_lock);
 
@@ -124,17 +126,12 @@ int l3t_shared_unlock(int nid, unsigned long pfn, unsigned long size)
 		.l3t_slot_test = hisi_l3t_test_equal,
 		.l3t_slot_action = hisi_l3t_do_unlock,
 	};
-	struct hisi_sccl *sccl;
 	int ret;
 
-	sccl = get_valid_sccl(nid);
-	if (!sccl)
-		return -ENODEV;
+	ret = hisi_l3t_sccl_action(nid, pfn << PAGE_SHIFT, size, &ops);
+	if (ret == -EINVAL)
+		return -ENOENT;
 
-	ret = hisi_l3t_sccl_action(sccl, pfn << PAGE_SHIFT, size, &ops);
-	if (ret)
-		return -EINVAL;
-
-	return 0;
+	return ret;
 }
 EXPORT_SYMBOL_GPL(l3t_shared_unlock);
