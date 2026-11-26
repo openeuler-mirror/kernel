@@ -274,8 +274,6 @@ static int ipourma_ndo_init(struct net_device *dev)
 
 	if (IS_ERR_OR_NULL(dev))
 		return -EINVAL;
-	/* supports scatter/gather */
-	dev->features |= NETIF_F_SG;
 	/* HW DO NOT support TSO */
 	dev->hw_features &= ~NETIF_F_FRAGLIST;
 
@@ -394,8 +392,8 @@ static int ipourma_stop(struct net_device *dev)
 	ipourma_napi_disable(dev);
 	clear_bit(IPOURMA_DEV_ADMIN_UP, &priv->flags);
 	netif_stop_queue(dev);
-	if (!IS_ERR_OR_NULL(priv->tx_wq))
-		flush_workqueue(priv->tx_wq);
+	if (!IS_ERR_OR_NULL(priv->tjetty_lru.import_wq))
+		flush_workqueue(priv->tjetty_lru.import_wq);
 	if (!IS_ERR_OR_NULL(priv->rx_wq))
 		flush_workqueue(priv->rx_wq);
 	/* Serialize with the eid handler and the register work (evt_lock). */
@@ -671,6 +669,7 @@ static int ipourma_priv_base_init(struct net_device *dev,
 	priv->eid_info_exist = NULL;
 	priv->eid_count = 0;
 	priv->tjetty_lru.count = 0;
+	priv->tjetty_lru.pending_cnt = 0;
 	priv->need_restart_ring = false;
 	priv->unregistering = false;
 	priv->netdev_registered = false;
@@ -693,6 +692,7 @@ static int ipourma_priv_base_init(struct net_device *dev,
 	spin_lock_init(&priv->set_ip_lock);
 	spin_lock_init(&priv->anchor_lock);
 	INIT_LIST_HEAD(&priv->tjetty_lru.list);
+	INIT_LIST_HEAD(&priv->tjetty_lru.pending_list);
 	INIT_LIST_HEAD(&priv->set_ip_list);
 
 	priv->register_wq = alloc_workqueue("ipourma_register_wq", WQ_MEM_RECLAIM, 0);

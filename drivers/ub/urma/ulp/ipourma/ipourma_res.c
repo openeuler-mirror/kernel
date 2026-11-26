@@ -282,7 +282,6 @@ static int ipourma_init_tx_bufs(struct ipourma_dev_priv *priv, u32 jetty_idx)
 		priv->tx_ring[jetty_idx][i].priv = priv;
 		priv->tx_ring[jetty_idx][i].idx = i;
 		priv->tx_ring[jetty_idx][i].jetty_index = jetty_idx;
-		INIT_WORK(&(priv->tx_ring[jetty_idx][i].work), ipourma_post_send);
 		ipourma_init_tx_wr(&(priv->tx_ring[jetty_idx][i]));
 		ret = ipourma_alloc_tx_buf_aligned(priv, jetty_idx, i);
 		if (ret != IPOURMA_OK)
@@ -378,6 +377,10 @@ static void cleanup_tx_ring_by_jetty(struct ipourma_dev_priv *priv, u32 jetty_id
 		if (unlikely(tx_ring[i].tx_buf_in_use == 1)) {
 			tx_ring[i].tx_buf_in_use = 0;
 			dev_kfree_skb_any(tx_ring[i].skb);
+			if (!IS_ERR_OR_NULL(tx_ring[i].tjetty_node)) {
+				ipourma_tjetty_node_put(tx_ring[i].tjetty_node);
+				tx_ring[i].tjetty_node = NULL;
+			}
 		}
 	}
 	spin_unlock_irqrestore(&priv->tx_ring_locks[jetty_idx], flags);
@@ -954,6 +957,10 @@ static void ipourma_uninit_misc(struct ipourma_dev_priv *priv)
 		kfree(set_ip_work);
 	}
 
+	if (!IS_ERR_OR_NULL(priv->tjetty_lru.import_wq)) {
+		destroy_workqueue(priv->tjetty_lru.import_wq);
+		priv->tjetty_lru.import_wq = NULL;
+	}
 	if (!IS_ERR_OR_NULL(priv->tjetty_lru.tjetty_wq)) {
 		flush_workqueue(priv->tjetty_lru.tjetty_wq);
 		destroy_workqueue(priv->tjetty_lru.tjetty_wq);
@@ -967,10 +974,6 @@ static void ipourma_uninit_misc(struct ipourma_dev_priv *priv)
 	if (!IS_ERR_OR_NULL(priv->rx_wq)) {
 		destroy_workqueue(priv->rx_wq);
 		priv->rx_wq = NULL;
-	}
-	if (!IS_ERR_OR_NULL(priv->tx_wq)) {
-		destroy_workqueue(priv->tx_wq);
-		priv->tx_wq = NULL;
 	}
 }
 
@@ -1031,9 +1034,10 @@ static int ipourma_init_misc(struct ipourma_dev_priv *priv)
 	if (IS_ERR_OR_NULL(priv->tjetty_lru.tjetty_wq))
 		goto tjetty_wq_failed;
 
-	priv->tx_wq = alloc_ordered_workqueue("ipourma_tx_wq", 0);
-	if (IS_ERR_OR_NULL(priv->tx_wq))
-		goto tx_wq_failed;
+	priv->tjetty_lru.import_wq = alloc_workqueue("ipourma_import_wq",
+					WQ_UNBOUND | WQ_MEM_RECLAIM, IPOURMA_IMPORT_WORKER_NUM);
+	if (IS_ERR_OR_NULL(priv->tjetty_lru.import_wq))
+		goto import_wq_failed;
 
 	priv->rx_wq = alloc_workqueue("ipourma_rx_wq", WQ_MEM_RECLAIM, 0);
 	if (IS_ERR_OR_NULL(priv->rx_wq))
@@ -1049,9 +1053,9 @@ net_config_wq_failed:
 	destroy_workqueue(priv->rx_wq);
 	priv->rx_wq = NULL;
 rx_wq_failed:
-	destroy_workqueue(priv->tx_wq);
-	priv->tx_wq = NULL;
-tx_wq_failed:
+	destroy_workqueue(priv->tjetty_lru.import_wq);
+	priv->tjetty_lru.import_wq = NULL;
+import_wq_failed:
 	destroy_workqueue(priv->tjetty_lru.tjetty_wq);
 	priv->tjetty_lru.tjetty_wq = NULL;
 tjetty_wq_failed:

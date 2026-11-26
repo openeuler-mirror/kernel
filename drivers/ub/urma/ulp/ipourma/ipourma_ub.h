@@ -12,6 +12,7 @@
 
 void ipourma_build_seg_cfg(struct ubcore_seg_cfg *cfg,
 			   uint64_t va, uint64_t len);
+void ipourma_tjetty_node_put(struct ipourma_tjetty_hash_node *tjetty_node);
 void ipourma_lru_clear(struct ipourma_tjetty_lru *tjetty_lru);
 void ipourma_init_tjetty_aging_work(struct ipourma_tjetty_lru *tjetty_lru);
 int ipourma_urma_init_by_jetty(struct ipourma_dev_priv *priv, u32 jetty_idx);
@@ -19,7 +20,6 @@ void ipourma_handle_rx_cqe(struct ubcore_jfc *jfc);
 void ipourma_handle_tx_cqe(struct ubcore_jfc *jfc);
 int ipourma_urma_dev_init(struct net_device *dev);
 void ipourma_urma_dev_uninit(struct net_device *dev);
-void ipourma_post_send(struct work_struct *work);
 int ipourma_xmit(struct net_device *dev, struct sk_buff *skb,
 		 union ubcore_eid *src_eid, union ubcore_eid *dst_eid);
 int ipourma_check_skb(struct net_device *dev, struct sk_buff *skb);

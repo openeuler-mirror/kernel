@@ -118,15 +118,19 @@ static ssize_t format_stats(char *buf, struct ipourma_dev_priv *priv, ssize_t bu
 			"not_ipv6_proto: %llu\n"
 			"not_ipv6_addr: %llu\n"
 			"ip_eid_not_equal: %llu\n"
-			"tx_ring_full: %llu\n\n"
+			"tx_ring_full: %llu\n"
+			"tx_ring_invalid: %llu\n\n"
 			"/* post send */\n"
 			"post_send_start: %llu\n"
 			"num_import_jetty_real: %llu\n"
 			"num_import_jetty_bypass: %llu\n"
 			"num_tjetty_hash_hit: %llu\n"
+			"num_pending_flush: %llu\n"
 			"linear_len_oversize: %llu\n"
 			"import_jetty_failed: %llu\n"
-			"send_wr_failed: %llu\n\n"
+			"send_wr_failed: %llu\n"
+			"pending_drop: %llu\n"
+			"pending_create_drop: %llu\n\n"
 			"/* pass to ub */\n"
 			"pass_to_ub: %llu\n\n"
 			"/* tx cqe notify */\n"
@@ -148,13 +152,17 @@ static ssize_t format_stats(char *buf, struct ipourma_dev_priv *priv, ssize_t bu
 			ptx->not_ipv6_addr,
 			ptx->ip_eid_not_equal,
 			ptx->ring_full,
+			ptx->ring_invalid,
 			ptx->post_send_start,
 			ptx->num_import_jetty_real,
 			ptx->num_import_jetty_bypass,
 			ptx->num_tjetty_hash_hit,
+			ptx->num_pending_flush,
 			ptx->linear_len_oversize,
 			ptx->import_jetty_failed,
 			ptx->send_wr_failed,
+			ptx->pending_drop,
+			ptx->pending_create_drop,
 			ptx->pass_to_ub,
 			ptx->cqe_notify,
 			ptx->num_napi_tx,
