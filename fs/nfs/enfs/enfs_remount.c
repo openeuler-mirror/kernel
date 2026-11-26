@@ -37,22 +37,16 @@ static bool enfs_rpc_xprt_switch_need_delete_addr(
 
 	local_total = enfs_option->local_ip_list->count;
 	remote_total = enfs_option->remote_ip_list->count;
-	if (local_total == 0 || remote_total == 0) {
+	if (remote_total == 0) {
 		enfs_log_debug("no ip list is present.\n");
 		return false;
 	}
 
-	for (i = 0; i < local_total; i++) {
-		if (protocol == XPRT_TRANSPORT_RDMA) {
-			find_same_ip = true;
-			break;
-		}
+	find_same_ip = local_total == 0 || protocol == XPRT_TRANSPORT_RDMA;
+	for (i = 0; i < local_total && !find_same_ip; i++)
 		find_same_ip = rpc_cmp_addr((struct sockaddr *)&enfs_option
 						    ->local_ip_list->address[i],
 					    srcaddr);
-		if (find_same_ip)
-			break;
-	}
 
 	if (find_same_ip == false)
 		return true;
@@ -114,6 +108,9 @@ void enfs_clnt_delete_obsolete_xprts(struct nfs_client *nfs_client,
 		return;
 	}
 	list_for_each_entry_rcu(pos, &xps->xps_xprt_list, xprt_switch) {
+		/* Keep the main transport even when the new limit is one. */
+		if (enfs_is_main_xprt(pos))
+			continue;
 		if (xprt_count < (enfs_get_config_link_count_per_mount() - 1)) {
 			if (enfs_delete_xprt_from_switch(pos, enfs_option,
 							 xps) == false) {

@@ -73,12 +73,12 @@ bool enfs_link_count_add(int num)
 
 	spin_lock(&link_count_lock);
 	if (num < 0) {
-		link_count += num;
-		ret = true;
-		spin_unlock(&link_count_lock);
-		return ret;
-	}
-	if (link_count <= enfs_get_config_link_count_total() - num) {
+		if (num >= -link_count) {
+			link_count += num;
+			ret = true;
+		}
+	} else if (num <= enfs_get_config_link_count_total() &&
+		   link_count <= enfs_get_config_link_count_total() - num) {
 		link_count += num;
 		ret = true;
 	}
@@ -130,7 +130,13 @@ bool enfs_mount_count_add(int num)
 	bool ret = false;
 
 	spin_lock(&mount_count_lock);
-	if (mount_count <= ENFS_MAX_MOUNT_COUNT - num) {
+	if (num < 0) {
+		if (num >= -mount_count) {
+			mount_count += num;
+			ret = true;
+		}
+	} else if (num <= ENFS_MAX_MOUNT_COUNT &&
+		   mount_count <= ENFS_MAX_MOUNT_COUNT - num) {
 		mount_count += num;
 		ret = true;
 	}
@@ -277,8 +283,10 @@ static void pm_xprt_ping_callback(void *data)
 {
 	struct xprt_attach_callback_data *attach_callback_data =
 		(struct xprt_attach_callback_data *)data;
+	wait_queue_head_t *waitq = attach_callback_data->waitq;
+
 	atomic_dec(attach_callback_data->condition);
-	wake_up(attach_callback_data->waitq);
+	wake_up(waitq);
 }
 
 static int enfs_add_xprt_setup(struct rpc_clnt *clnt,
@@ -291,6 +299,8 @@ static int enfs_add_xprt_setup(struct rpc_clnt *clnt,
 	struct sockaddr_storage *srcaddr = attach_info->localAddress;
 
 	ctx = (struct enfs_xprt_context *)xprt_get_reserve_context(xprt);
+	if (!ctx)
+		return -ESHUTDOWN;
 	memset(ctx, 0, sizeof(struct enfs_xprt_context));
 	ctx->stats = rpc_alloc_iostats(clnt);
 	ctx->main = false;
@@ -305,8 +315,10 @@ static int enfs_add_xprt_setup(struct rpc_clnt *clnt,
 
 	ret = pm_ping_rpc_test_xprt_with_callback(
 		clnt, xprt, pm_xprt_ping_callback, attach_info->data);
-	if (ret != 1)
+	if (ret != 1) {
 		enfs_log_error("Failed to add ping task.\n");
+		pm_xprt_ping_callback(attach_info->data);
+	}
 
 	ret = 1;
 
@@ -462,6 +474,8 @@ static void enfs_add_xprts_to_clnt(struct rpc_clnt *clnt,
 	ip_list = kzalloc(sizeof(struct nfs_ip_list), GFP_KERNEL);
 	if (!ip_list) {
 		enfs_log_error("alloc memery failed.\n");
+		for (i = 0; i < total_combinations; i++)
+			xprt_put(attach_infos[i].xprt);
 		return;
 	}
 
@@ -495,81 +509,58 @@ static void enfs_combine_addr(struct xprt_create *xprtargs,
 			      struct rpc_clnt *clnt, struct nfs_ip_list *local,
 			      struct nfs_ip_list *remote)
 {
-	int i;
-	int err;
-	int local_index;
-	int remote_index;
-	int link_count = 0;
-	int local_total = local->count;
-	int remote_total = remote->count;
-	int local_remote_total_lcm;
-	int total_combinations = local_total * remote_total;
+	unsigned int i, submitted = 0;
+	unsigned int local_total = local->count;
+	unsigned int remote_total = remote->count;
+	unsigned int total_combinations = local_total * remote_total;
+	unsigned int capacity = total_combinations;
+	unsigned int local_remote_total_lcm;
 	struct xprt_attach_info *attach_infos;
-	atomic_t wait_queue_condition;
+	atomic_t wait_queue_condition = ATOMIC_INIT(1);
 	struct xprt_attach_callback_data attach_callback_data = {
 		&wait_queue_condition, &path_attach_wait_queue
 	};
 
-	atomic_set(&wait_queue_condition, total_combinations);
-
-	enfs_log_debug("local count:%d remote count:%d\n",
-		       local_total, remote_total);
-	if (local_total == 0 || remote_total == 0) {
-		enfs_log_debug("no ip list is present.\n");
+	if (!capacity)
 		return;
-	}
 
-	attach_infos = kzalloc((total_combinations) * sizeof(struct xprt_attach_info),
-		GFP_KERNEL);
-	if (attach_infos == NULL) {
-		enfs_log_error("Failed to kzalloc memory\n");
+	attach_infos = kcalloc(capacity, sizeof(*attach_infos), GFP_KERNEL);
+	if (!attach_infos)
 		return;
-	}
-	// Calculate the least common multiple of local_total and remote_total
+
 	local_remote_total_lcm =
 		total_combinations / enfs_cal_gcd(local_total, remote_total);
 
-	// It needs to be offset one for lcm times of cycle so that
-	// all possible link setup method would be traversed
 	for (i = 0; i < total_combinations; i++) {
-		local_index = i % local_total;
-		remote_index = (i + link_count / local_remote_total_lcm) %
-			       remote_total;
+		unsigned int local_index = i % local_total;
+		unsigned int remote_index =
+			(i + i / local_remote_total_lcm) % remote_total;
+		struct xprt_attach_info *info = &attach_infos[submitted];
+		int err;
 
 		if (local->address[local_index].ss_family !=
-		    remote->address[remote_index].ss_family) {
-			atomic_dec(&wait_queue_condition);
-			link_count++;
+		    remote->address[remote_index].ss_family)
 			continue;
-		}
-
 		if (enfs_already_have_xprt(clnt, &local->address[local_index],
-					   &remote->address[remote_index])) {
-			atomic_dec(&wait_queue_condition);
-			link_count++;
+					   &remote->address[remote_index]))
 			continue;
-		}
 
-		attach_infos[i].localAddress = &local->address[local_index];
-		attach_infos[i].remoteAddress = &remote->address[remote_index];
-		attach_infos[i].data = &attach_callback_data;
-		attach_infos[i].protocol = xprtargs->ident;
-
-		err = enfs_configure_xprt_to_clnt(xprtargs, clnt,
-						  &attach_infos[i]);
-		if (err) {
-			enfs_log_error("add xprt ippair err:%d\n", err);
+		info->localAddress = &local->address[local_index];
+		info->remoteAddress = &remote->address[remote_index];
+		info->data = &attach_callback_data;
+		info->protocol = xprtargs->ident;
+		atomic_inc(&wait_queue_condition);
+		submitted++;
+		err = enfs_configure_xprt_to_clnt(xprtargs, clnt, info);
+		if (err)
 			atomic_dec(&wait_queue_condition);
-		}
-		link_count++;
 	}
 
+	atomic_dec(&wait_queue_condition);
 	wait_event(path_attach_wait_queue,
 		   atomic_read(&wait_queue_condition) == 0);
-
-	enfs_add_xprts_to_clnt(clnt, attach_infos, total_combinations,
+	enfs_add_xprts_to_clnt(clnt, attach_infos, submitted,
 			       remote_total, local_total);
-
 	kfree(attach_infos);
 }
 
@@ -578,61 +569,43 @@ static void enfs_combine_addr_with_no_local(struct xprt_create *xprtargs,
 					    struct nfs_ip_list *local,
 					    struct nfs_ip_list *remote)
 {
-	int i;
-	int err;
-	int link_count = 0;
-	int local_total = local->count;
-	int remote_total = remote->count;
-	int total_combinations = remote_total;
+	unsigned int i, submitted = 0;
+	unsigned int capacity = remote->count;
 	struct xprt_attach_info *attach_infos;
-	atomic_t wait_queue_condition;
+	atomic_t wait_queue_condition = ATOMIC_INIT(1);
 	struct xprt_attach_callback_data attach_callback_data = {
 		&wait_queue_condition, &path_attach_wait_queue
 	};
 
-	atomic_set(&wait_queue_condition, total_combinations);
-
-	enfs_log_debug("local count:%d remote count:%d\n",
-		       local_total, remote_total);
-	if (remote_total == 0) {
-		enfs_log_debug("no ip list is present.\n");
+	if (!capacity)
 		return;
-	}
 
-	attach_infos = kzalloc((total_combinations) * sizeof(struct xprt_attach_info),
-		GFP_KERNEL);
-	if (attach_infos == NULL) {
-		enfs_log_error("Failed to kzalloc memory\n");
+	attach_infos = kcalloc(capacity, sizeof(*attach_infos), GFP_KERNEL);
+	if (!attach_infos)
 		return;
-	}
 
-	for (i = 0; i < total_combinations; i++) {
-		if (enfs_already_have_xprt(clnt, NULL, &remote->address[i])) {
-			atomic_dec(&wait_queue_condition);
-			link_count++;
+	for (i = 0; i < remote->count; i++) {
+		struct xprt_attach_info *info = &attach_infos[submitted];
+		int err;
+
+		if (enfs_already_have_xprt(clnt, NULL, &remote->address[i]))
 			continue;
-		}
 
-		attach_infos[i].localAddress = NULL;
-		attach_infos[i].remoteAddress = &remote->address[i];
-		attach_infos[i].data = &attach_callback_data;
-		attach_infos[i].protocol = xprtargs->ident;
-
-		err = enfs_configure_xprt_to_clnt(xprtargs, clnt,
-						  &attach_infos[i]);
-		if (err) {
-			enfs_log_error("add xprt ippair err:%d\n", err);
+		info->remoteAddress = &remote->address[i];
+		info->data = &attach_callback_data;
+		info->protocol = xprtargs->ident;
+		atomic_inc(&wait_queue_condition);
+		submitted++;
+		err = enfs_configure_xprt_to_clnt(xprtargs, clnt, info);
+		if (err)
 			atomic_dec(&wait_queue_condition);
-		}
-		link_count++;
 	}
 
+	atomic_dec(&wait_queue_condition);
 	wait_event(path_attach_wait_queue,
 		   atomic_read(&wait_queue_condition) == 0);
-
-	enfs_add_xprts_to_clnt(clnt, attach_infos, total_combinations,
-			       remote_total, local_total);
-
+	enfs_add_xprts_to_clnt(clnt, attach_infos, submitted,
+			       remote->count, local->count);
 	kfree(attach_infos);
 }
 
@@ -716,7 +689,7 @@ static void enfs_auto_fill_local_inet(struct nfs_ip_list *list,
 	if (!dvice)
 		return;
 	in_dev_for_each_ifa_rcu(ifa, dvice) {
-		if (list->count >= enfs_get_config_link_count_per_mount())
+		if (list->count >= MAX_SUPPORTED_LOCAL_IP_COUNT)
 			break;
 
 		snprintf(buf, INET6_ADDRSTRLEN, "%pI4", &ifa->ifa_address);
@@ -740,7 +713,7 @@ static void enfs_auto_fill_local_inet6(struct nfs_ip_list *list,
 		return;
 
 	list_for_each_entry(ifp, &idev->addr_list, if_list) {
-		if (list->count >= enfs_get_config_link_count_per_mount())
+		if (list->count >= MAX_SUPPORTED_LOCAL_IP_COUNT)
 			break;
 
 		snprintf(buf, INET6_ADDRSTRLEN, "%pI6", &ifp->addr);
@@ -762,7 +735,7 @@ static void find_fill_local_addr(struct nfs_ip_list *list,
 
 	rtnl_lock();
 	for_each_netdev(&init_net, dev) {
-		if (list->count >= enfs_get_config_link_count_per_mount())
+		if (list->count >= MAX_SUPPORTED_LOCAL_IP_COUNT)
 			break;
 		enfs_log_debug("device: %s\n", dev->name);
 

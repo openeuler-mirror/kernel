@@ -290,24 +290,23 @@ static const struct enfs_config_value_info g_check_and_assign_value[] = {
 static int32_t enfs_read_config_file_in_openeuler(char *buffer, char *file_path)
 {
 	int ret;
-	struct file *filp = NULL;
+	ssize_t len;
+	struct file *filp;
 	loff_t f_pos = 0;
 
 	filp = filp_open(file_path, O_RDONLY, 0);
 	if (IS_ERR(filp)) {
-		enfs_log_error("Failed to open file %s\n", CONFIG_FILE_PATH);
-		ret = -ENOENT;
-		return ret;
+		enfs_log_error("Failed to open file %s\n", file_path);
+		return PTR_ERR(filp);
 	}
 
-	kernel_read(filp, buffer, MAX_FILE_SIZE, &f_pos);
-
+	len = kernel_read(filp, buffer, MAX_FILE_SIZE, &f_pos);
 	ret = filp_close(filp, NULL);
-	if (ret) {
-		enfs_log_error("Close File:%s failed:%d.\n", CONFIG_FILE_PATH,
-			       ret);
-		return -EINVAL;
-	}
+	if (len < 0)
+		return len;
+	if (ret)
+		return ret;
+	buffer[len] = '\0';
 	return ENFS_RET_OK;
 }
 
@@ -412,12 +411,11 @@ int32_t enfs_config_load(void)
 	int i;
 	char *buffer;
 
-	buffer = kmalloc(MAX_FILE_SIZE, GFP_KERNEL);
+	buffer = kmalloc(MAX_FILE_SIZE + 1, GFP_KERNEL);
 	if (!buffer) {
 		enfs_log_error("Failed to allocate memory.\n");
 		return -ENOMEM;
 	}
-	memset(buffer, 0, MAX_FILE_SIZE);
 
 	// default value
 	g_enfs_config_info.path_detect_interval = DEFAULT_PATH_DETECT_INTERVAL;
@@ -430,6 +428,9 @@ int32_t enfs_config_load(void)
 	g_enfs_config_info.shardview_update_interval =
 		DEFAULT_SHARDVIEW_UPDATE_INTERVAL;
 	g_enfs_config_info.priopity_wwn_count = 0;
+	g_enfs_config_info.ip_filters_count = 0;
+	memset(g_enfs_config_info.local_ip_filters, 0,
+	       sizeof(g_enfs_config_info.local_ip_filters));
 	g_enfs_config_info.lookupcache_interval = DEFAULT_LOOKUPCACHE_INTERVAL;
 	g_enfs_config_info.lookupcache_enable = DEFAULT_LOOKUPCACHE_STATE;
 	g_enfs_config_info.link_count_per_mount =

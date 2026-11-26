@@ -77,8 +77,8 @@ void pm_set_path_state(struct rpc_xprt *xprt, enum enfs_path_state state)
 	enum enfs_path_state cur_state;
 	char localip[64] = { "*" };
 	char remoteip[64] = { "*" };
-	struct sockaddr_storage srcaddr;
-	char local_name[INET6_ADDRSTRLEN];
+	struct sockaddr_storage srcaddr = {};
+	char local_name[INET6_ADDRSTRLEN] = {};
 	const char *local = local_name;
 	int ret;
 
@@ -111,8 +111,9 @@ void pm_set_path_state(struct rpc_xprt *xprt, enum enfs_path_state state)
 			rpc_localalladdr(xprt, (struct sockaddr *)&srcaddr,
 					 sizeof(srcaddr));
 
-		sockaddr_ip_to_str((struct sockaddr *)&srcaddr, localip,
-				   sizeof(localip));
+		if (!ret)
+			sockaddr_ip_to_str((struct sockaddr *)&srcaddr, localip,
+					   sizeof(localip));
 	} else {
 		sockaddr_ip_to_str((struct sockaddr *)&ctx->srcaddr, localip,
 				   sizeof(localip));

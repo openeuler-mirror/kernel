@@ -216,24 +216,16 @@ static void enfs_lb_iter_default_rewind(struct rpc_xprt_iter *xpi)
 static void enfs_lb_switch_set_roundrobin(struct rpc_clnt *clnt)
 {
 	struct rpc_xprt_switch *xps;
+	const struct rpc_xprt_iter_ops *ops;
 
 	rcu_read_lock();
 	xps = rcu_dereference(clnt->cl_xpi.xpi_xpswitch);
-	rcu_read_unlock();
-
-	if (xps == NULL || xps->xps_nxprts == 0)
-		return;
-
-	if (clnt->cl_vers == 3) {
-		if (READ_ONCE(xps->xps_iter_ops) !=
-		    &enfs_xprt_iter_roundrobin) {
-			WRITE_ONCE(xps->xps_iter_ops,
-				   &enfs_xprt_iter_roundrobin);
-		}
-		return;
+	if (xps && READ_ONCE(xps->xps_nxprts)) {
+		ops = clnt->cl_vers == 3 ? &enfs_xprt_iter_roundrobin :
+					 &enfs_xprt_iter_singular;
+		WRITE_ONCE(xps->xps_iter_ops, ops);
 	}
-	if (READ_ONCE(xps->xps_iter_ops) != &enfs_xprt_iter_singular)
-		WRITE_ONCE(xps->xps_iter_ops, &enfs_xprt_iter_singular);
+	rcu_read_unlock();
 }
 
 static struct rpc_xprt *enfs_lb_switch_find_current(struct list_head *head,

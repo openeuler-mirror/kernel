@@ -396,7 +396,7 @@ static int clnt_proc_name(struct rpc_clnt *clnt, char *buf, int len)
 
 	ret = snprintf(buf, len, "%s_%u",
 		       rpc_peeraddr2str(clnt, RPC_DISPLAY_ADDR), clnt->cl_clid);
-	if (ret > len)
+	if (ret >= len)
 		return -E2BIG;
 	return 0;
 }
@@ -439,7 +439,7 @@ void enfs_count_iostat(struct rpc_task *task)
 		return;
 	rpc_count_iostats(task, ctx->stats);
 	ktime = ktime_get();
-	ctx->lastTime = ktime_to_ms(ktime);
+	WRITE_ONCE(ctx->lastTime, ktime_to_ms(ktime));
 }
 
 static void enfs_proc_delete_file(struct rpc_clnt *clnt)

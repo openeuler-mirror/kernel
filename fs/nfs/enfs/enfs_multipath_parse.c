@@ -156,7 +156,6 @@ int enfs_parse_ip_single(struct nfs_ip_list *ip_list, struct net *net_ns,
 {
 	int i = 0;
 	struct sockaddr_storage addr;
-	struct sockaddr_storage swap;
 	int len;
 
 	len = rpc_pton(net_ns, cursor, strlen(cursor), (struct sockaddr *)&addr,
@@ -171,10 +170,10 @@ int enfs_parse_ip_single(struct nfs_ip_list *ip_list, struct net *net_ns,
 			enfs_log_info("parsing nfs mount option '%s' type: %d index %d same as before index %d\n",
 				      cursor, type, ip_list->count, i);
 
-			swap = ip_list->address[i];
-			ip_list->address[i] =
-				ip_list->address[ip_list->count - 1];
-			ip_list->address[ip_list->count - 1] = swap;
+			swap(ip_list->address[i],
+			     ip_list->address[ip_list->count - 1]);
+			swap(ip_list->addrlen[i],
+			     ip_list->addrlen[ip_list->count - 1]);
 			return 0;
 		}
 	}

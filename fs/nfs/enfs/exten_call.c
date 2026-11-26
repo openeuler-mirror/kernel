@@ -928,7 +928,7 @@ int enfs_query_lifview(struct rpc_clnt *clnt, struct rpc_xprt *xprt,
 	ret = dorado_query_lifview(clnt, xprt, ipaddr, 1, &lif_info);
 	if (ret || lif_info.workStatus == 0) {
 		enfs_log_debug("err:%d status:%d\n", ret, lif_info.workStatus);
-		return ret;
+		return ret ? ret : -EAGAIN;
 	}
 	*lsid = lif_info.lsId;
 	*wwn = lif_info.wwn;
@@ -972,7 +972,7 @@ int sprint_uuid(char *buf, int buflen, struct enfs_file_uuid *file_uuid)
 	int n;
 	char *head = buf;
 
-	if (buflen < FILE_UUID_BUFF_LEN)
+	if (buflen < FILE_UUID_BUFF_LEN * 2 + 1)
 		return -1;
 
 	for (i = 0; i < FILE_UUID_BUFF_LEN; i++) {

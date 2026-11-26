@@ -113,6 +113,7 @@ struct clnt_uuid_info {
 	struct rpc_clnt *clnt;
 	struct enfs_file_uuid root_uuid;
 	bool updating;
+	bool recovery_pending;
 };
 
 static bool delete_view_table(uint64_t devId);
@@ -137,8 +138,15 @@ out:
 
 static int enfs_insert_clnt_root(struct rpc_clnt *clnt, struct enfs_file_uuid *root_uuid)
 {
-	int ret = 0;
-	struct clnt_uuid_info *info;
+	struct clnt_uuid_info *info, *new_info;
+
+	new_info = kmalloc(sizeof(*new_info), GFP_KERNEL);
+	if (!new_info)
+		return -ENOMEM;
+	new_info->clnt = clnt;
+	new_info->root_uuid = *root_uuid;
+	new_info->updating = false;
+	new_info->recovery_pending = false;
 
 	write_lock(&shard_ctrl->clnt_info_lock);
 	list_for_each_entry(info, &shard_ctrl->clnt_info_list, next) {
@@ -147,21 +155,12 @@ static int enfs_insert_clnt_root(struct rpc_clnt *clnt, struct enfs_file_uuid *r
 			goto out;
 		}
 	}
-
-	info = kmalloc(sizeof(*info), GFP_KERNEL);
-	if (!info) {
-		ret = -1;
-		goto out;
-	}
-
-	info->clnt = clnt;
-	info->root_uuid = *root_uuid;
-	list_add_tail(&info->next, &shard_ctrl->clnt_info_list);
-	info->updating = false;
-
+	list_add_tail(&new_info->next, &shard_ctrl->clnt_info_list);
+	new_info = NULL;
 out:
 	write_unlock(&shard_ctrl->clnt_info_lock);
-	return ret;
+	kfree(new_info);
+	return 0;
 }
 
 int enfs_delete_clnt_shard_cache(struct rpc_clnt *clnt)
@@ -304,7 +303,7 @@ static int get_ls_and_cpu_id(struct view_table *table, uint64_t clusterId,
 				 uint64_t *lsid, uint32_t *cpuId)
 {
 	struct shard_view *view;
-	bool matched;
+	bool matched = false;
 
 	list_for_each_entry(view, &table->shard_head, next) {
 		matched = (view->clusterId == clusterId &&
@@ -395,12 +394,17 @@ static void copy_shard_entry(struct shard_view *view,
 {
 	int i;
 
+	if (view->num != fs_shard_view->num)
+		*flag = FAULT_DETECTED;
+
 	for (i = 0; i < fs_shard_view->num; i++) {
-		if (view->entry[i].lsid != fs_shard_view->shardView[i].lsid)
+		if (i >= view->num ||
+		    view->entry[i].lsid != fs_shard_view->shardView[i].lsid)
 			*flag = FAULT_DETECTED;
 		view->entry[i].lsid = fs_shard_view->shardView[i].lsid;
 		view->entry[i].cpuid = fs_shard_view->shardView[i].cpuId;
 	}
+	view->num = fs_shard_view->num;
 }
 
 static int update_shard_view(struct view_table *table,
@@ -436,6 +440,9 @@ static int enfs_update_fsshard(uint64_t devId, struct enfs_shard_view *fs_shard_
 {
 	int ret = 0;
 	struct view_table *table;
+
+	if (fs_shard_view->num > MAX_SHARD_NUMBER_IN_CLUSTER_4FS)
+		return -EINVAL;
 
 	write_lock(&shard_ctrl->view_lock);
 	table = get_view_table(devId, true);
@@ -720,9 +727,9 @@ void enfs_print_uuid(struct enfs_file_uuid *file_uuid)
 static void enfs_debug_fh(const struct nfs_fh *fh)
 {
 	int i;
-	char str[NFS_MAXFHSIZE * 2];
+	char str[NFS_MAXFHSIZE * 2 + 1];
 
-	for (i = 0; i < fh->size; i++)
+	for (i = 0; i < min_t(unsigned int, fh->size, NFS_MAXFHSIZE); i++)
 		sprintf(str + 2 * i, "%02X", fh->data[i]);
 	str[2 * i] = '\0';
 	enfs_log_debug("fh: %s\n", str);
@@ -1051,7 +1058,7 @@ static void debug_show_uuidinfo(int argc, char *argv[])
 
 	ret = scan_uuid(argv[0], file_uuid.data, FILE_UUID_BUFF_LEN);
 	if (ret) {
-		enfs_log_info("uuid str is wrong, str:%s.\n", argv[1]);
+		enfs_log_info("uuid str is wrong, str:%s.\n", argv[0]);
 		return;
 	}
 
@@ -1082,6 +1089,7 @@ static void debug_show_uuidinfo(int argc, char *argv[])
 			if (shardId >= view->num) {
 				enfs_log_error("shardNum:%u shardId:%u",
 						   view->num, shardId);
+				break;
 			}
 			enfs_log_info("fsidinfo clusterId:%llu storagePoolId:%u shardNum:%u shard:%u lsid:%llu cpuId:%u.\n",
 				      view->clusterId, view->storagePoolId, view->num,
@@ -1379,9 +1387,9 @@ static int EnfsChooseNewNlmXprt(struct rpc_clnt *clnt, struct rpc_xprt *xprt,
 	char localip[64] = { "*" };
 	struct enfs_xprt_context *ctx = NULL;
 	struct enfs_xprt_context *nlm_ctx = NULL;
-	char local_name[INET6_ADDRSTRLEN];
+	char local_name[INET6_ADDRSTRLEN] = {};
 	const char *local = local_name;
-	struct sockaddr_storage srcaddr;
+	struct sockaddr_storage srcaddr = {};
 	struct rpc_xprt *nlm_xprt = (struct rpc_xprt *)data;
 	enum enfs_path_state state = pm_get_path_state(xprt);
 
@@ -1539,13 +1547,14 @@ static int each_xprt_update_shard(struct rpc_clnt *clnt, struct rpc_xprt *xprt,
 	return 0;
 }
 
-static void shard_update_done(struct rpc_clnt *clnt)
+static void shard_update_done(struct rpc_clnt *clnt, bool recovery_pending)
 {
 	struct clnt_uuid_info *info;
 
 	write_lock(&shard_ctrl->clnt_info_lock);
 	list_for_each_entry(info, &shard_ctrl->clnt_info_list, next) {
 		if (info->clnt == clnt) {
+			info->recovery_pending = recovery_pending;
 			info->updating = false;
 			break;
 		}
@@ -1559,6 +1568,7 @@ static void do_shard_update(struct work_struct *work)
 	struct shard_work *shard_work =
 		container_of(work, struct shard_work, work);
 	struct clnt_uuid_info *info = &shard_work->info;
+	bool recovery_pending = info->recovery_pending;
 
 	error =
 		query_and_update_shard(info->clnt, &info->root_uuid, shard_work);
@@ -1568,14 +1578,14 @@ static void do_shard_update(struct work_struct *work)
 	rpc_clnt_iterate_for_each_xprt(info->clnt, each_xprt_update_shard,
 					   NULL);
 
-	if (shard_work->isupdate) {
-		// Actively reassert the nlm lock
-		enfs_recovery_nlm_lock(info->clnt);
+	if (shard_work->isupdate || recovery_pending) {
+		/* Keep failed recoveries pending until a later update succeeds. */
+		recovery_pending = enfs_recovery_nlm_lock(info->clnt) != 0;
 	}
 
+	shard_update_done(info->clnt, recovery_pending);
 	rpc_release_client(shard_work->info.clnt);
 	xprt_switch_put(shard_work->xps);
-	shard_update_done(info->clnt);
 	kfree(shard_work);
 }
 
@@ -1804,13 +1814,14 @@ static int enfs_check_shard(void)
 				continue;
 			if (atomic_read(&super->s_active) == 0)
 				continue;
-			if (!nfs_sb_active(super))
-				continue;
 			info = kmalloc(sizeof(*info), GFP_ATOMIC);
 			if (!info) {
-				nfs_sb_deactive(super);
 				ret = -ENOMEM;
-				goto out;
+				goto out_unlock;
+			}
+			if (!nfs_sb_active(super)) {
+				kfree(info);
+				continue;
 			}
 			INIT_WORK(&info->work, enfs_shard_workfn);
 			info->server = server;
@@ -1824,6 +1835,11 @@ static int enfs_check_shard(void)
 out:
 	// free shard_check_wq in enfs_shard_exit() if an error occurs
 	return ret;
+
+out_unlock:
+	spin_unlock(&nn->nfs_client_lock);
+	rcu_read_unlock();
+	goto out;
 }
 
 int enfs_shard_init(void)
@@ -1839,22 +1855,37 @@ int enfs_shard_init(void)
 	rc = enfs_check_shard();
 	if (rc) {
 		enfs_log_error("check shard failed!");
-		return rc;
+		goto out_check;
 	}
 
 	shard_workq = create_workqueue("enfs_shard_workqueue");
 	if (!shard_workq) {
 		enfs_log_error("create workqueue failed.\n");
-		return -ENOMEM;
+		rc = -ENOMEM;
+		goto out_check;
 	}
 
 	shard_thread =
 		kthread_run(shard_update_loop, NULL, "enfs_shard_update");
 	if (IS_ERR(shard_thread)) {
 		enfs_log_error("Failed to create thread shard update.\n");
-		return PTR_ERR(shard_thread);
+		rc = PTR_ERR(shard_thread);
+		shard_thread = NULL;
+		goto out_workqueue;
 	}
 	return 0;
+
+out_workqueue:
+	destroy_workqueue(shard_workq);
+	shard_workq = NULL;
+out_check:
+	if (shard_check_wq) {
+		destroy_workqueue(shard_check_wq);
+		shard_check_wq = NULL;
+	}
+	enfs_shard_ctrl_clear();
+	shard_ctrl = NULL;
+	return rc;
 }
 
 void enfs_shard_exit(void)
@@ -1865,9 +1896,9 @@ void enfs_shard_exit(void)
 	if (shard_workq)
 		destroy_workqueue(shard_workq);
 
-	if (shard_ctrl)
-		enfs_shard_ctrl_clear();
-
 	if (shard_check_wq)
 		destroy_workqueue(shard_check_wq);
+
+	if (shard_ctrl)
+		enfs_shard_ctrl_clear();
 }
