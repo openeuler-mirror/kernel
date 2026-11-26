@@ -1649,6 +1649,18 @@ static unsigned long svm_get_rflags(struct kvm_vcpu *vcpu)
 		if (!(svm->nmi_singlestep_guest_rflags & X86_EFLAGS_RF))
 			rflags &= ~X86_EFLAGS_RF;
 	}
+
+	/*
+	 * CSV2/3 guests do not expose RFLAGS. Use the VMCB interrupt mask
+	 * bit to determine the state of the IF flag.
+	 */
+	if (sev_es_guest(vcpu->kvm) && is_x86_vendor_hygon()) {
+		if (svm->vmcb->control.int_state & SVM_GUEST_INTERRUPT_MASK)
+			rflags |= X86_EFLAGS_IF;
+		else
+			rflags &= ~X86_EFLAGS_IF;
+	}
+
 	return rflags;
 }
 
@@ -1656,6 +1668,15 @@ static void svm_set_rflags(struct kvm_vcpu *vcpu, unsigned long rflags)
 {
 	if (to_svm(vcpu)->nmi_singlestep)
 		rflags |= (X86_EFLAGS_TF | X86_EFLAGS_RF);
+
+	/*
+	 * CSV2/3 guests do not expose RFLAGS. Use the VMCB interrupt mask
+	 * bit to determine the state of the IF flag.
+	 */
+	if (sev_es_guest(vcpu->kvm) &&
+	    is_x86_vendor_hygon() &&
+	    (rflags & X86_EFLAGS_IF))
+		to_svm(vcpu)->vmcb->control.int_state |= SVM_GUEST_INTERRUPT_MASK;
 
        /*
         * Any change of EFLAGS.VM is accompanied by a reload of SS
