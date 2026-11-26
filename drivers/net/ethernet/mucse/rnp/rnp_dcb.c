@@ -17,18 +17,22 @@ static void rnp_config_prio_map(struct rnp_adapter *adapter, u8 pfc_map)
 	u8 *prio_tc = adapter->prio_tc_map;
 	void __iomem *ioaddr = adapter->hw.hw_addr;
 	u8 num_tc = adapter->num_tc;
+	struct device *dev = &adapter->pdev->dev;
 
 	for (i = 0; i < num_tc; i++) {
 		if (i > RNP_MAX_TCS_NUM)
 			break;
 		for (j = 0; j < RNP_MAX_USER_PRIO; j++) {
-			dbg("prio_tc[%d]==%d tc_num[%d] pfc_map 0x%.2x\n", j,
-			    prio_tc[j], i, pfc_map);
-			if (prio_tc[j] == i && pfc_map & BIT(j)) {
-				dbg("match rule tc_num %d prio_%d\n", i, j);
+			dev_dbg(dev,
+				"prio_tc[%d]==%d tc_num[%d] pfc_map 0x%.2x\n",
+				j, prio_tc[j], i, pfc_map);
+			if ((prio_tc[j] == i) && (pfc_map & BIT(j))) {
+				dev_dbg(dev,
+					"match rule tc_num %d prio_%d\n", i, j);
 				prio_map |= (i << (2 * j));
-				dbg("match prio_tc change to 0x%.2x\n",
-				    prio_map);
+				dev_dbg(dev,
+					"match prio_tc change to 0x%.2x\n",
+					prio_map);
 			}
 		}
 	}
@@ -39,7 +43,7 @@ static void rnp_config_prio_map(struct rnp_adapter *adapter, u8 pfc_map)
 	prio_map |= i << RNP_FC_UNCTAGS_MAP_OFFSET;
 	prio_map |= (1 << 30) | (1 << 31);
 	rnp_wr_reg(ioaddr + RNP_FC_PORT_PRIO_MAP(port), prio_map);
-	dbg("tc_prio_map[%d] 0x%.2x\n", i, prio_map);
+	dev_dbg(dev, "tc_prio_map[%d] 0x%.2x\n", i, prio_map);
 
 	/* enable port prio_map config */
 	rnp_wr_reg(ioaddr + RNP_FC_EN_CONF_AVAILABLE, 1);
@@ -121,8 +125,6 @@ static int rnp_dcbnl_getpfc(struct net_device *dev, struct ieee_pfc *pfc)
 				pfc->pfc_en |= BIT(j);
 		}
 	}
-	/* do we need to get the pfc statistic*/
-	/* 1. get the tc channel send and recv pfc pkts*/
 
 	return 0;
 }
@@ -249,7 +251,8 @@ static int rnp_dcb_parse_config(struct rnp_dcb_cfg *dcb, struct ieee_pfc *pfc)
 	}
 	dcb->pfc_cfg.pfc_num = pfc_en_num;
 	dcb->pfc_cfg.hw_pfc_map = pfc_map;
-	dbg("pfc_map 0x%.2x pfc->pfc_en 0x%.2x\n", pfc_map, pfc->pfc_en);
+	pr_debug("pfc_map 0x%.2x pfc->pfc_en 0x%.2x\n",
+		 pfc_map, pfc->pfc_en);
 	/* tc resource rebuild */
 	/* we need to decide tx_ring bind to tc 4 fifo-mac*/
 	return pfc_map;
@@ -261,7 +264,8 @@ static int rnp_dcbnl_setpfc(struct net_device *dev, struct ieee_pfc *pfc)
 	struct rnp_dcb_cfg *dcb = &adapter->dcb_cfg;
 	u8 pfc_map = 0;
 
-	dbg("%s:%d pfc enabled %d\n", __func__, __LINE__, pfc->pfc_en);
+	netdev_dbg(dev, "%s:%d pfc enabled %d\n",
+		   __func__, __LINE__, pfc->pfc_en);
 	if (pfc->pfc_en) {
 		/*set PFC Priority mask */
 		pfc_map = rnp_dcb_parse_config(dcb, pfc);

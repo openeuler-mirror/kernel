@@ -11,20 +11,12 @@
 #include "rnp_regs.h"
 
 struct rnp_adapter;
+#define ADAPTER_TO_DEV(adapter) (&(adapter)->pdev->dev)
+#define HW_TO_DEV(hw) (&(hw)->pdev->dev)
 
 #define TRACE() pr_debug("==[ %s %d ] ==\n", __func__, __LINE__)
 
-#define rx_debug_printk(fmt, args...)
-#define rx_buf_dump(a, b, c)
-#define rx_dbg(fmt, args...)
-
-#define desc_hex_dump(msg, buf, len)
 #define rnp_skb_dump(skb, full_pkt)
-#define tx_dbg(fmt, args...)
-
-#define dbg(fmt, args...)
-
-#define vf_dbg(fmt, args...)
 
 int rnp_acquire_msix_vectors(struct rnp_adapter *adapter, int vectors);
 
@@ -105,9 +97,9 @@ static inline void hw_queue_strip_rx_vlan(struct rnp_hw *hw, u8 ring_num,
 	do {                                            \
 		u32 reg = reg_def;                      \
 		u32 value = rd32(hw, reg);              \
-		dbg("before set  %x %x\n", reg, value); \
-		value |= (0x01 << (bit));                 \
-		dbg("after set %x %x\n", reg, value);   \
+		pr_debug("before set  %x %x\n", reg, value); \
+		value |= BIT((bit));                 \
+		pr_debug("after set %x %x\n", reg, value);   \
 		wr32(hw, reg, value);                   \
 	} while (0)
 
@@ -115,9 +107,9 @@ static inline void hw_queue_strip_rx_vlan(struct rnp_hw *hw, u8 ring_num,
 	do {                                           \
 		u32 reg = reg_def;                     \
 		u32 value = rd32(hw, reg);             \
-		dbg("before clr %x %x\n", reg, value); \
-		value &= (~(0x01 << (bit)));             \
-		dbg("after clr %x %x\n", reg, value);  \
+		pr_debug("before clr %x %x\n", reg, value); \
+		value &= (~BIT((bit)));             \
+		pr_debug("after clr %x %x\n", reg, value);  \
 		wr32(hw, reg, value);                  \
 	} while (0)
 
@@ -126,97 +118,17 @@ static inline void hw_queue_strip_rx_vlan(struct rnp_hw *hw, u8 ring_num,
 #define rnp_vlan_filter_off(hw) \
 	rnp_clr_reg_bit(hw, RNP_ETH_VLAN_FILTER_ENABLE, 30)
 
-#define DPRINTK(nlevel, klevel, fmt, args...)                              \
-	((NETIF_MSG_##nlevel & adapter->msg_enable) ?                      \
-		 ((void)netdev_printk(KERN_##klevel, adapter->netdev, fmt, \
-				      ##args)) :                           \
-		 (void)0)
-
-//==== log helper ===
-#define hw_dbg(hw, fmt, args...)
-#define eth_dbg(hw, fmt, args...)
-
-#define rnp_dbg(fmt, args...)
-#define rnp_info(fmt, args...) pr_debug("rnp-info: " fmt, ##args)
-#define rnp_warn(fmt, args...) pr_debug("rnp-warn: " fmt, ##args)
-#define rnp_err(fmt, args...) pr_err("rnp-err : " fmt, ##args)
-
-#define e_info(msglvl, format, arg...) \
-	netif_info(adapter, msglvl, adapter->netdev, format, ##arg)
-#define e_err(msglvl, format, arg...) \
-	netif_err(adapter, msglvl, adapter->netdev, format, ##arg)
-#define e_warn(msglvl, format, arg...) \
-	netif_warn(adapter, msglvl, adapter->netdev, format, ##arg)
-#define e_crit(msglvl, format, arg...) \
-	netif_crit(adapter, msglvl, adapter->netdev, format, ##arg)
-
-#define e_dev_info(format, arg...) dev_info(&adapter->pdev->dev, format, ##arg)
-#define e_dev_warn(format, arg...) dev_warn(&adapter->pdev->dev, format, ##arg)
-#define e_dev_err(format, arg...) dev_err(&adapter->pdev->dev, format, ##arg)
-
-#define buf_dump_line(msg, line, buf, len)
-
 static inline __le64 build_ctob(u32 vlan_cmd, u32 mac_ip_len, u32 size)
 {
 	return cpu_to_le64(((u64)vlan_cmd << 32) | ((u64)mac_ip_len << 16) |
 			   ((u64)size));
 }
 
-static inline void buf_dump(const char *msg, void *buf, int len)
-{
-	int i, offset = 0;
-	int msg_len = 1024;
-	u8 msg_buf[1024];
-	u8 *ptr = (u8 *)buf;
-
-	offset += snprintf(msg_buf + offset, msg_len,
-			   "=== %s #%d ==\n000: ", msg, len);
-
-	for (i = 0; i < len; ++i) {
-		if (i != 0 && (i % 16) == 0 && (offset >= (1024 - 10 * 16))) {
-			pr_debug("%s\n", msg_buf);
-			offset = 0;
-		}
-
-		if (i != 0 && (i % 16) == 0) {
-			offset += snprintf(msg_buf + offset, msg_len,
-					   "\n%03x: ", i);
-		}
-		offset += snprintf(msg_buf + offset, msg_len, "%02x ", ptr[i]);
-	}
-
-	offset += snprintf(msg_buf + offset, msg_len, "\n=== done ==\n");
-	pr_debug("%s\n", msg_buf);
-}
-
-enum RNP_LOG_EVT {
-	LOG_MBX_IN,
-	LOG_MBX_OUT,
-	LOG_MBX_MSG_IN,
-	LOG_MBX_MSG_OUT,
-	LOG_LINK_EVENT,
-	LOG_ADPT_STAT,
-	LOG_MBX_ABLI,
-	LOG_MBX_LINK_STAT,
-	LOG_MBX_IFUP_DOWN,
-	LOG_MBX_LOCK,
-	LOG_ETHTOOL,
-	LOG_PHY,
-
-};
-
 #define MII_BUSY 0x00000001
 #define MII_WRITE 0x00000002
 #define MII_DATA_MASK GENMASK(15, 0)
 
-extern unsigned int rnp_loglevel;
-
-#define rnp_logd(evt, fmt, args...)                     \
-	do {                                            \
-		if (BIT(evt) & rnp_loglevel) {          \
-			pr_debug(fmt, ##args); \
-		}                                       \
-	} while (0)
+extern unsigned int cpu_offset;
 
 int pci_device_check_offline(struct pci_dev *pdev);
 #endif /* RNP_COMMON */

@@ -38,8 +38,9 @@ static struct mbx_req_cookie *mbx_cookie_zalloc(struct rnp_hw *hw, int priv_len)
 	u64 now_jiffies = get_jiffies_64();
 
 	if (mutex_lock_interruptible(&hw->mbx.lock)) {
-		rnp_err("[%s] get mbx lock failed,priv_len:%d\n", __func__,
-			priv_len);
+		dev_err(HW_TO_DEV(hw),
+			"[%s] get mbx lock failed,priv_len:%d\n",
+			__func__, priv_len);
 		return NULL;
 	}
 	i = hw->mbx.cookie_pool.next_idx;
@@ -61,7 +62,8 @@ static struct mbx_req_cookie *mbx_cookie_zalloc(struct rnp_hw *hw, int priv_len)
 	mutex_unlock(&hw->mbx.lock);
 
 	if (!find) {
-		rnp_err("[%s] no free cookies available\n", __func__);
+		dev_err(HW_TO_DEV(hw),
+			"[%s] no free cookies availble\n", __func__);
 		return NULL;
 	}
 
@@ -95,24 +97,25 @@ static int rnp_mbx_write_posted_locked(struct rnp_hw *hw,
 {
 	int err = 0;
 	int retry = 3;
+	struct device *dev = &hw->pdev->dev;
 
 	if (pci_device_check_offline(hw->pdev))
 		return -EIO;
 
 	if (mutex_lock_interruptible(&hw->mbx.lock)) {
-		rnp_err("[%s] get mbx lock failed opcode:0x%x\n", __func__,
-			req->opcode);
+		dev_err(dev, "[%s] get mbx lock failed opcode:0x%x\n",
+			__func__, req->opcode);
 		return -EAGAIN;
 	}
 
-	rnp_logd(LOG_MBX_LOCK, "%s %d lock:%p hw:%p opcode:0x%x\n", __func__,
-		 hw->pfvfnum, &hw->mbx.lock, hw, req->opcode);
+	dev_dbg(dev, "%s %d lock:%p hw:%p opcode:0x%x\n",
+		__func__, hw->pfvfnum, &hw->mbx.lock, hw, req->opcode);
 
 try_again:
 	retry--;
 	if (retry < 0) {
 		mutex_unlock(&hw->mbx.lock);
-		rnp_err("%s: write_posted failed! err:0x%x opcode:0x%x\n",
+		dev_err(dev, "%s: write_posted failed! err:0x%x opcode:0x%x\n",
 			__func__, err, req->opcode);
 		return -EIO;
 	}
@@ -147,6 +150,7 @@ static int rnp_mbx_fw_post_req(struct rnp_hw *hw, struct mbx_fw_cmd_req *req,
 {
 	int err = 0;
 	struct rnp_adapter *adpt = hw->back;
+	struct device *dev = &hw->pdev->dev;
 
 	if (pci_device_check_offline(hw->pdev))
 		return -EIO;
@@ -156,19 +160,19 @@ static int rnp_mbx_fw_post_req(struct rnp_hw *hw, struct mbx_fw_cmd_req *req,
 	init_waitqueue_head(&cookie->wait);
 
 	if (mutex_lock_interruptible(&hw->mbx.lock)) {
-		rnp_err("[%s] wait mbx lock timeout pfvf:0x%x opcode:0x%x\n",
+		dev_err(dev, "[%s] wait mbx lock timeout pfvf:0x%x opcode:0x%x\n",
 			__func__, hw->pfvfnum, req->opcode);
 		return -EAGAIN;
 	}
 
-	rnp_logd(LOG_MBX_LOCK, "%s %d lock:%p hw:%p opcode:0x%x\n", __func__,
-		 hw->pfvfnum, &hw->mbx.lock, hw, req->opcode);
+	dev_dbg(dev, "%s %d lock:%p hw:%p opcode:0x%x\n",
+		__func__, hw->pfvfnum, &hw->mbx.lock, hw, req->opcode);
 
 	err = rnp_write_mbx(hw, (u32 *)req,
 			    (req->datalen + MBX_REQ_HDR_LEN) / 4, MBX_FW);
 	if (err) {
-		rnp_err("rnp_write_mbx failed! err:%d opcode:0x%x\n", err,
-			req->opcode);
+		dev_err(dev, "rnp_write_mbx failed! err:%d opcode:0x%x\n",
+			err, req->opcode);
 		mutex_unlock(&hw->mbx.lock);
 		return err;
 	}
@@ -185,7 +189,8 @@ retry:
 			goto retry;
 		}
 		if (!err) {
-			rnp_err("[%s] %s failed! pfvfnum:0x%x hw:%p timeout err:%d opcode:%x\n",
+			dev_err(dev,
+				"[%s] %s failed! pfvfnum:0x%x hw:%p timeout err:%d opcode:%x\n",
 				adpt->name, __func__, hw->pfvfnum, hw, err,
 				req->opcode);
 			err = -ETIME;
@@ -208,27 +213,30 @@ static int rnp_fw_send_cmd_wait(struct rnp_hw *hw, struct mbx_fw_cmd_req *req,
 {
 	int err;
 	int retry_cnt = 3;
+	struct device *dev;
 
 	if (!hw || !req || !reply || !hw->mbx.ops.read_posted)
 		return -EINVAL;
+
+	dev = &hw->pdev->dev;
 
 	if (pci_device_check_offline(hw->pdev))
 		return -EIO;
 
 	if (mutex_lock_interruptible(&hw->mbx.lock)) {
-		rnp_err("[%s] get mbx lock failed opcode:0x%x\n", __func__,
-			req->opcode);
+		dev_err(dev, "[%s] get mbx lock failed opcode:0x%x\n",
+			__func__, req->opcode);
 		return -EAGAIN;
 	}
 
-	rnp_logd(LOG_MBX_LOCK, "%s %d lock:%p hw:%p opcode:0x%x\n", __func__,
-		 hw->pfvfnum, &hw->mbx.lock, hw, req->opcode);
+	dev_dbg(dev, "%s %d lock:%p hw:%p opcode:0x%x\n",
+		__func__, hw->pfvfnum, &hw->mbx.lock, hw, req->opcode);
 	err = hw->mbx.ops.write_posted(hw,
 				       (u32 *)req,
 				       (req->datalen + MBX_REQ_HDR_LEN) / 4,
 				       MBX_FW);
 	if (err) {
-		rnp_err("%s: write_posted failed! err:0x%x opcode:0x%x\n",
+		dev_err(dev, "%s: write_posted failed! err:0x%x opcode:0x%x\n",
 			__func__, err, req->opcode);
 		mutex_unlock(&hw->mbx.lock);
 		return err;
@@ -238,13 +246,13 @@ retry:
 	retry_cnt--;
 	if (retry_cnt < 0) {
 		mutex_unlock(&hw->mbx.lock);
-		rnp_err("retry timeout opcode:0x%x\n", req->opcode);
+		dev_err(dev, "retry timeout opcode:0x%x\n", req->opcode);
 		return -EIO;
 	}
 	err = hw->mbx.ops.read_posted(hw, (u32 *)reply, sizeof(*reply) / 4,
 				      MBX_FW);
 	if (err) {
-		rnp_err("%s: read_posted failed! err:0x%x opcode:0x%x\n",
+		dev_err(dev, "%s: read_posted failed! err:0x%x opcode:0x%x\n",
 			__func__, err, req->opcode);
 		mutex_unlock(&hw->mbx.lock);
 		return err;
@@ -255,7 +263,7 @@ retry:
 	mutex_unlock(&hw->mbx.lock);
 
 	if (reply->error_code) {
-		rnp_err("%s: reply err:0x%x req:0x%x\n", __func__,
+		dev_err(dev, "%s: reply err:0x%x req:0x%x\n", __func__,
 			reply->error_code, req->opcode);
 		return -reply->error_code;
 	}
@@ -327,7 +335,7 @@ int rnp_get_lane_stat_v3(struct rnp_hw *hw)
 	for (i = 0; i < sizeof(st) / 4; i++) {
 		p_st[i] = rd32(hw, _SHM_LANES_STAT_V3 + i * 4);
 		if (!i && st.magic != 0x55) {
-			rnp_logd(LOG_MBX_LINK_STAT, "%s: magic != 0xA!\n", __func__);
+			dev_dbg(HW_TO_DEV(hw), "%s: magic != 0xA!\n", __func__);
 			return -1;
 		}
 	}
@@ -365,15 +373,15 @@ int rnp_get_lane_stat_v3(struct rnp_hw *hw)
 	hw->is_backplane = !!(hw->supported_link & RNP_IS_BACKPLANE);
 	hw->duplex = p_info->duplex;
 
-	rnp_logd(LOG_MBX_LINK_STAT,
-		 "v3:%s(%s):phy_type:0x%x,linkup:%d speed=%d duplex:%d auton:%d "
-		 "fec:%d lt:%d is_sgmii:%d supported_link:0x%x, backplane:%d "
-		 "phy_addr:0x%x sfp:(mod:%d los:%d txdis:%d faul:%d)\n",
-		 adpt->name, adpt->netdev->name, hw->phy_type,
-		 adpt->hw.link, hw->speed, hw->duplex, adpt->an, adpt->fec,
-		 adpt->link_traing, hw->is_sgmii, hw->supported_link,
-		 hw->is_backplane, adpt->phy_addr, adpt->sfp.mod_abs,
-		 adpt->sfp.los, adpt->sfp.tx_dis, adpt->sfp.fault);
+	dev_dbg(HW_TO_DEV(hw),
+		"v3:%s(%s):phy_type:0x%x,linkup:%d speed=%d duplex:%d auton:%d "
+		"fec:%d lt:%d is_sgmii:%d supported_link:0x%x, backplane:%d "
+		"phy_addr:0x%x sfp:(mod:%d los:%d txdis:%d faul:%d)\n",
+		adpt->name, adpt->netdev->name, hw->phy_type,
+		adpt->hw.link, hw->speed, hw->duplex, adpt->an, adpt->fec,
+		adpt->link_traing, hw->is_sgmii, hw->supported_link,
+		hw->is_backplane, adpt->phy_addr, adpt->sfp.mod_abs,
+		adpt->sfp.los, adpt->sfp.tx_dis, adpt->sfp.fault);
 
 	return 0;
 }
@@ -386,6 +394,7 @@ int rnp_mbx_get_lane_stat(struct rnp_hw *hw)
 	struct lane_stat_data *st;
 	struct mbx_req_cookie *cookie = NULL;
 	struct mbx_fw_cmd_reply reply;
+	struct device *dev = &hw->pdev->dev;
 
 	if ((rnp_get_lane_stat_v3(hw)) == 0)
 		return 0;
@@ -395,7 +404,7 @@ int rnp_mbx_get_lane_stat(struct rnp_hw *hw)
 	if (hw->mbx.other_irq_enabled) {
 		cookie = mbx_cookie_zalloc(hw, sizeof(struct lane_stat_data));
 		if (!cookie) {
-			rnp_err("%s: no memory\n", __func__);
+			dev_err(dev, "%s: no memory\n", __func__);
 			return -ENOMEM;
 		}
 		st = (struct lane_stat_data *)cookie->priv;
@@ -404,7 +413,7 @@ int rnp_mbx_get_lane_stat(struct rnp_hw *hw)
 
 		err = rnp_mbx_fw_post_req(hw, &req, cookie);
 		if (err) {
-			rnp_err("%s: error:%d\n", __func__, err);
+			dev_err(dev, "%s: error:%d\n", __func__, err);
 			goto quit;
 		}
 	} else {
@@ -413,7 +422,7 @@ int rnp_mbx_get_lane_stat(struct rnp_hw *hw)
 		build_get_lane_status_req(&req, hw->nr_lane, &req);
 		err = rnp_fw_send_cmd_wait(hw, &req, &reply);
 		if (err) {
-			rnp_err("%s: 1 error:%d\n", __func__, err);
+			dev_err(dev, "%s: 1 error:%d\n", __func__, err);
 			goto quit;
 		}
 		st = (struct lane_stat_data *)&reply.data;
@@ -462,16 +471,16 @@ int rnp_mbx_get_lane_stat(struct rnp_hw *hw)
 		}
 	}
 
-	rnp_logd(LOG_MBX_LINK_STAT,
-		 "%s(%s):pma_type:0x%x phy_type:0x%x,linkup:%d duplex:%d auton:%d "
-		 "fec:%d an:%d lt:%d is_sgmii:%d supported_link:0x%x, backplane:%d "
-		 "speed:%d sfp_connector:0x%x sfp:(mod:%d los:%d txdis:%d faul:%d)\n",
-		 adpt->name, adpt->netdev->name, st->pma_type,
-		 st->phy_type, st->linkup, st->duplex,
-		 st->autoneg, st->fec, st->an, st->link_traing, st->is_sgmii,
-		 hw->supported_link, hw->is_backplane, st->speed,
-		 st->sfp_connector, adpt->sfp.mod_abs,
-		 adpt->sfp.los, adpt->sfp.tx_dis, adpt->sfp.fault);
+	dev_dbg(dev,
+		"%s(%s):pma_type:0x%x phy_type:0x%x,linkup:%d duplex:%d auton:%d "
+		"fec:%d an:%d lt:%d is_sgmii:%d supported_link:0x%x, backplane:%d "
+		"speed:%d sfp_connector:0x%x sfp:(mod:%d los:%d txdis:%d faul:%d)\n",
+		adpt->name, adpt->netdev->name, st->pma_type,
+		st->phy_type, st->linkup, st->duplex,
+		st->autoneg, st->fec, st->an, st->link_traing, st->is_sgmii,
+		hw->supported_link, hw->is_backplane, st->speed,
+		st->sfp_connector, adpt->sfp.mod_abs,
+		adpt->sfp.los, adpt->sfp.tx_dis, adpt->sfp.fault);
 quit:
 	if (cookie)
 		mbx_free_cookie(cookie, err ? false : true);
@@ -575,14 +584,16 @@ int rnp_fw_get_macaddr(struct rnp_hw *hw, int pfvfnum, u8 *mac_addr,
 	int err;
 	struct mbx_fw_cmd_req req;
 	struct mbx_fw_cmd_reply reply;
+	struct device *dev = &hw->pdev->dev;
 
 	memset(&req, 0, sizeof(req));
 	memset(&reply, 0, sizeof(reply));
 
-	rnp_dbg("%s: pfvfnum:0x%x nr_lane:%d\n", __func__, pfvfnum, nr_lane);
+	dev_dbg(dev, "%s: pfvfnum:0x%x nr_lane:%d\n",
+		__func__, pfvfnum, nr_lane);
 
 	if (!mac_addr) {
-		rnp_err("%s: mac_addr is null\n", __func__);
+		dev_err(dev, "%s: mac_addr is null\n", __func__);
 		return -EINVAL;
 	}
 
@@ -610,7 +621,7 @@ int rnp_fw_get_macaddr(struct rnp_hw *hw, int pfvfnum, u8 *mac_addr,
 	build_get_macaddress_req(&req, 1 << nr_lane, pfvfnum, &req);
 	err = rnp_fw_send_cmd_wait(hw, &req, &reply);
 	if (err) {
-		rnp_err("%s: failed. err:%d\n", __func__, err);
+		dev_err(dev, "%s: failed. err:%d\n", __func__, err);
 		return err;
 	}
 
@@ -631,8 +642,9 @@ static int rnp_mbx_sfp_read(struct rnp_hw *hw, int sfp_i2c_addr, int reg,
 	int nr_lane = hw->nr_lane;
 
 	if (cnt > MBX_SFP_READ_MAX_CNT || !out_buf) {
-		rnp_err("%s: cnt:%d should <= %d out_buf:%p\n", __func__, cnt,
-			MBX_SFP_READ_MAX_CNT, out_buf);
+		dev_err(HW_TO_DEV(hw),
+			"%s: cnt:%d should <= %d out_buf:%p\n",
+			__func__, cnt, MBX_SFP_READ_MAX_CNT, out_buf);
 		return -EINVAL;
 	}
 
@@ -688,7 +700,7 @@ int rnp_mbx_sfp_module_eeprom_info(struct rnp_hw *hw, int sfp_addr, int reg,
 						      left;
 		err = rnp_mbx_sfp_read(hw, sfp_addr, reg, cnt, buf);
 		if (err) {
-			rnp_err("%s: error:%d\n", __func__, err);
+			dev_err(HW_TO_DEV(hw), "%s: error:%d\n", __func__, err);
 			return err;
 		}
 		reg += cnt;
@@ -755,7 +767,9 @@ int rnp_mbx_fw_reg_read(struct rnp_hw *hw, int fw_reg)
 		build_readreg_req(&req, fw_reg, &reply);
 		err = rnp_fw_send_cmd_wait(hw, &req, &reply);
 		if (err) {
-			rnp_err("%s: failed. err:%d\n", __func__, err);
+			dev_err(HW_TO_DEV(hw),
+				"%s: failed. err:%d\n",
+				__func__, err);
 			return err;
 		}
 		ret = reply.r_reg.value[0];
@@ -924,7 +938,7 @@ quit:
 		hw->dump.flag = get_dump->flags;
 		hw->dump.len = get_dump->bytes;
 	}
-	if (err == 0 && data_out) {
+	if (!err && data_out) {
 		if (dma_buf)
 			memcpy(data_out, dma_buf, bytes);
 		else
@@ -1132,8 +1146,8 @@ int rnp_mbx_ifinsmod(struct rnp_hw *hw, int status)
 				       MBX_FW);
 	mutex_unlock(&hw->mbx.lock);
 
-	rnp_logd(LOG_MBX_IFUP_DOWN, "%s: lane:%d status:%d\n", __func__,
-		 hw->nr_lane, status);
+	dev_dbg(HW_TO_DEV(hw), "%s: lane:%d status:%d\n",
+		__func__, hw->nr_lane, status);
 	return err;
 }
 
@@ -1161,8 +1175,8 @@ int rnp_mbx_ifsuspuse(struct rnp_hw *hw, int status)
 				       MBX_FW);
 	mutex_unlock(&hw->mbx.lock);
 
-	rnp_logd(LOG_MBX_IFUP_DOWN, "%s: lane:%d status:%d\n", __func__,
-		 hw->nr_lane, status);
+	dev_dbg(HW_TO_DEV(hw), "%s: lane:%d status:%d\n",
+		__func__, hw->nr_lane, status);
 
 	return err;
 }
@@ -1192,8 +1206,8 @@ int rnp_mbx_ifforce_control_mac(struct rnp_hw *hw, int status)
 				       MBX_FW);
 	mutex_unlock(&hw->mbx.lock);
 
-	rnp_logd(LOG_MBX_IFUP_DOWN, "%s: lane:%d status:%d\n", __func__,
-		 hw->nr_lane, status);
+	dev_dbg(HW_TO_DEV(hw), "%s: lane:%d status:%d\n",
+		__func__, hw->nr_lane, status);
 
 	return err;
 }
@@ -1222,8 +1236,8 @@ int rnp_mbx_ifup_down(struct rnp_hw *hw, int up)
 				       MBX_FW);
 	mutex_unlock(&hw->mbx.lock);
 
-	rnp_logd(LOG_MBX_IFUP_DOWN, "%s: lane:%d up:%d\n", __func__,
-		 hw->nr_lane, up);
+	dev_dbg(HW_TO_DEV(hw), "%s: lane:%d up:%d\n",
+		__func__, hw->nr_lane, up);
 
 	/* force firmware report link-status */
 	if (up)
@@ -1268,7 +1282,7 @@ int rnp_mbx_get_capability(struct rnp_hw *hw, struct rnp_info *info)
 
 	while (try_cnt--) {
 		err = rnp_fw_get_capability(hw, &ability);
-		if (err == 0 && info) {
+		if (!err && info) {
 			hw->lane_mask = ability.lane_mask & 0xf;
 			info->mac = to_mac_type(&ability);
 			info->adapter_cnt = hweight_long(hw->lane_mask);
@@ -1357,7 +1371,7 @@ int rnp_get_temperature_v3(struct rnp_hw *hw, int *voltage, int *temp)
 		*voltage = st.voltage;
 
 	if (temp)
-		*temp = st.tempreture;
+		*temp = (signed char)st.tempreture;
 
 	return 0;
 }
@@ -1471,13 +1485,13 @@ static inline int rnp_mbx_fw_req_handler(struct rnp_adapter *adapter,
 
 	switch (req->opcode) {
 	case LINK_STATUS_EVENT:
-		rnp_logd(LOG_LINK_EVENT,
-			 "[LINK_STATUS_EVENT:0x%x] %s:link changed: changed_lane:0x%x, "
-			 "status:0x%x, speed:%d, duplex:%d\n",
-			 req->opcode, adapter->name,
-			 req->link_stat.changed_lanes,
-			 req->link_stat.lane_status, req->link_stat.st[0].speed,
-			 req->link_stat.st[0].duplex);
+		dev_dbg(HW_TO_DEV(hw),
+			"[LINK_STATUS_EVENT:0x%x] %s:link changed: changed_lane:0x%x, "
+			"status:0x%x, speed:%d, duplex:%d\n",
+			req->opcode, adapter->name,
+			req->link_stat.changed_lanes,
+			req->link_stat.lane_status, req->link_stat.st[0].speed,
+			req->link_stat.st[0].duplex);
 
 		if (req->link_stat.lane_status)
 			adapter->hw.link = 1;
@@ -1567,9 +1581,8 @@ static inline int rnp_rcv_msg_from_fw(struct rnp_adapter *adapter)
 		return retval;
 	}
 
-	rnp_logd(LOG_MBX_MSG_IN,
-		 "msg from fw: msg[0]=0x%08x_0x%08x_0x%08x_0x%08x\n", msgbuf[0],
-		 msgbuf[1], msgbuf[2], msgbuf[3]);
+	dev_dbg(dev, "msg from fw: msg[0]=0x%08x_0x%08x_0x%08x_0x%08x\n",
+		msgbuf[0], msgbuf[1], msgbuf[2], msgbuf[3]);
 
 	/* this is a message we already processed, do nothing */
 	if (((unsigned short *)msgbuf)[0] & FLAGS_DD) {
@@ -1735,7 +1748,7 @@ int rnp_mbx_lldp_port_enable(struct rnp_hw *hw, bool enable)
 	int nr_lane = hw->nr_lane;
 
 	if (!hw->fw_lldp_ability) {
-		rnp_warn("lldp set not supported\n");
+		dev_dbg(HW_TO_DEV(hw), "lldp set not supported\n");
 		return -EOPNOTSUPP;
 	}
 
@@ -1754,7 +1767,7 @@ int rnp_mbx_lldp_status_get(struct rnp_hw *hw)
 	int err, ret = 0;
 
 	if (!hw->fw_lldp_ability) {
-		rnp_warn("fw lldp not supported\n");
+		dev_dbg(HW_TO_DEV(hw), "fw lldp not supported\n");
 		return -EOPNOTSUPP;
 	}
 
@@ -1780,7 +1793,8 @@ int rnp_mbx_lldp_status_get(struct rnp_hw *hw)
 		build_lldp_ctrl_get(&req, hw->nr_lane, &reply);
 		err = rnp_fw_send_cmd_wait(hw, &req, &reply);
 		if (err) {
-			rnp_err("%s: 1 error:%d\n", __func__, err);
+			dev_err(HW_TO_DEV(hw),
+				"%s: 1 error:%d\n", __func__, err);
 			return -EIO;
 		}
 		ret = reply.lldp.enable_stat;

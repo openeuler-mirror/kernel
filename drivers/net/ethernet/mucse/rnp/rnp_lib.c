@@ -6,6 +6,7 @@
 #include "rnp_common.h"
 
 #if IS_ENABLED(CONFIG_MXGBE_DCB)
+
 /**
  * rnp_cache_ring_dcb_sriov - Descriptor ring to register mapping for SRIOV
  * @adapter: board private structure to initialize
@@ -361,6 +362,7 @@ u32 rnp_rss_indir_tbl_entries(struct rnp_adapter *adapter)
 static bool rnp_set_rss_queues(struct rnp_adapter *adapter)
 {
 	struct rnp_ring_feature *f;
+	struct net_device *netdev = adapter->netdev;
 	u16 rss_i;
 
 	f = &adapter->ring_feature[RING_F_RSS];
@@ -392,8 +394,8 @@ static bool rnp_set_rss_queues(struct rnp_adapter *adapter)
 		min_t(int, rss_i, adapter->max_ring_pair_counts);
 	adapter->num_rx_queues = adapter->num_tx_queues;
 
-	rnp_dbg("[%s] limit:%d indices:%d queues:%d\n", adapter->name, f->limit,
-		f->indices, adapter->num_tx_queues);
+	netdev_dbg(netdev, "limit:%d indices:%d queues:%d\n",
+		   f->limit, f->indices, adapter->num_tx_queues);
 
 	return true;
 }
@@ -435,8 +437,9 @@ int rnp_acquire_msix_vectors(struct rnp_adapter *adapter, int vectors)
 	err = pci_enable_msix_range(adapter->pdev, adapter->msix_entries,
 				    vectors, vectors);
 	if (err < 0) {
-		rnp_err("pci_enable_msix failed: req:%d err:%d\n", vectors,
-			err);
+		dev_err(ADAPTER_TO_DEV(adapter),
+			"pci_enable_msix failed: req:%d err:%d\n",
+			vectors, err);
 		kfree(adapter->msix_entries);
 		adapter->msix_entries = NULL;
 		return -EINVAL;
@@ -557,6 +560,35 @@ do_self_napi:
 	return HRTIMER_NORESTART;
 }
 
+/*
+ * get cpu with specified node and index
+ * return CPU index on success, return -1 on failure.
+ */
+static int rnp_get_cpu_on_node(int node, int index, unsigned int offset)
+{
+	int cpu_count = 0;
+	int target;
+	int cpu;
+
+	if (node == NUMA_NO_NODE || node < 0)
+		return -1;
+
+	for_each_cpu_and(cpu, cpumask_of_node(node), cpu_online_mask)
+		cpu_count++;
+
+	if (cpu_count == 0)
+		return -1;
+
+	target = (offset + index) % cpu_count;
+
+	for_each_cpu_and(cpu, cpumask_of_node(node), cpu_online_mask) {
+		if (target-- == 0)
+			return cpu;
+	}
+
+	return -1;
+}
+
 /**
  * rnp_alloc_q_vector - Allocate memory for a single interrupt vector
  * @adapter: board private structure to initialize
@@ -580,24 +612,35 @@ static int rnp_alloc_q_vector(struct rnp_adapter *adapter, int eth_queue_idx,
 	int ring_count, size;
 	int txr_count, rxr_count, idx;
 	int rxr_idx = r_idx, txr_idx = r_idx;
-	int cpu_offset = 0;
+	struct device *dev = &adapter->pdev->dev;
+	int orig_node = dev_to_node(dev);
+	int queue_index = v_idx - adapter->q_vector_off;
 
+	netdev_dbg(adapter->netdev,
+		   "eth_queue_idx:%d v_idx:%d(off:%d) ring:%d ring_cnt:%d\n",
+		   eth_queue_idx, v_idx, adapter->q_vector_off, r_idx, r_count);
+	netdev_dbg(adapter->netdev, "step:%d\n", step);
 	rxr_count = r_count;
 	txr_count = rxr_count;
-
-	DPRINTK(PROBE, INFO,
-		"eth_queue_idx:%d v_idx:%d(off:%d) ring:%d ring_cnt:%d\n",
-		eth_queue_idx, v_idx, adapter->q_vector_off, r_idx, r_count);
-	DPRINTK(PROBE, INFO, "step:%d\n", step);
 	ring_count = txr_count + rxr_count;
 	size = sizeof(struct rnp_q_vector) +
 	       (sizeof(struct rnp_ring) * ring_count);
 
-	/* should minis adapter->q_vector_off */
-	if (cpu_online(cpu_offset + v_idx - adapter->q_vector_off)) {
-		/* cpu 1 - 7 */
-		cpu = cpu_offset + v_idx - adapter->q_vector_off;
-		node = cpu_to_node(cpu);
+	/* Find the first online CPU on the same NUMA node as the NIC.
+	 * Then assign q_vectors to CPUs on this node in a round-robin fashion.
+	 */
+	if (orig_node != NUMA_NO_NODE) {
+		cpu = rnp_get_cpu_on_node(orig_node, queue_index, cpu_offset);
+		if (cpu >= 0) {
+			node = orig_node;
+			pr_debug("RNP: q_vector[%d] attached to CPU %d on NUMA node %d\n",
+				 v_idx, cpu, node);
+		} else {
+			pr_warn("RNP: WARNING: No online CPUs on NIC's NUMA node %d!\n",
+				orig_node);
+			cpu = -1;
+			node = NUMA_NO_NODE;
+		}
 	}
 
 	/* allocate q_vector and rings */
@@ -671,7 +714,7 @@ static int rnp_alloc_q_vector(struct rnp_adapter *adapter, int eth_queue_idx,
 		/* update count and index */
 		txr_idx += step;
 
-		rnp_dbg("\t\t%s:vector[%d] <--RNP TxRing:%d, eth_queue:%d\n",
+		dev_dbg(dev, "\t\t%s:vector[%d] <--RNP TxRing:%d, eth_queue:%d\n",
 			adapter->name, v_idx, ring->rnp_queue_idx,
 			ring->queue_index);
 
@@ -713,7 +756,7 @@ static int rnp_alloc_q_vector(struct rnp_adapter *adapter, int eth_queue_idx,
 
 		/* assign ring to adapter */
 		adapter->rx_ring[ring->queue_index] = ring;
-		rnp_dbg("\t\t%s:vector[%d] <--RNP RxRing:%d, eth_queue:%d\n",
+		dev_dbg(dev, "\t\t%s:vector[%d] <--RNP RxRing:%d, eth_queue:%d\n",
 			adapter->name, v_idx, ring->rnp_queue_idx,
 			ring->queue_index);
 
@@ -751,8 +794,6 @@ static void rnp_free_q_vector(struct rnp_adapter *adapter, int v_idx)
 {
 	struct rnp_q_vector *q_vector = adapter->q_vector[v_idx];
 	struct rnp_ring *ring;
-
-	rnp_dbg("v_idx:%d\n", v_idx);
 
 	rnp_for_each_ring(ring, q_vector->tx)
 		adapter->tx_ring[ring->queue_index] = NULL;
@@ -809,13 +850,10 @@ static int rnp_alloc_q_vectors(struct rnp_adapter *adapter)
 	adapter->eth_queue_idx = 0;
 	BUG_ON(adapter->num_q_vectors == 0);
 
-	if (adapter->flags & RNP_FLAG_DCB_ENABLED) {
-		rnp_dbg("in dcb mode r_remaing %d, num_q_vectors %d\n",
-			r_remaing, v_remaing);
-	}
-
-	rnp_dbg("r_remaing:%d, ring_step:%d num_q_vectors:%d\n", r_remaing,
-		ring_step, v_remaing);
+	dev_dbg(ADAPTER_TO_DEV(adapter),
+		"dcb mode:%d r_remaing:%d, ring_step:%d num_q_vectors:%d\n",
+		(adapter->flags & RNP_FLAG_DCB_ENABLED) ? 1 : 0,
+		r_remaing, ring_step, v_remaing);
 
 	/* can support muti rings in one q_vector */
 	for (; r_remaing > 0 && v_remaing > 0; v_remaing--) {
@@ -899,6 +937,7 @@ static void rnp_reset_interrupt_capability(struct rnp_adapter *adapter)
 static int rnp_set_interrupt_capability(struct rnp_adapter *adapter)
 {
 	struct rnp_hw *hw = &adapter->hw;
+	struct device *dev = &adapter->pdev->dev;
 	int vector, v_budget, err = 0;
 	int irq_mode_back = adapter->irq_mode;
 
@@ -914,11 +953,9 @@ static int rnp_set_interrupt_capability(struct rnp_adapter *adapter)
 						sizeof(struct msix_entry), GFP_KERNEL);
 
 		if (!adapter->msix_entries) {
-			rnp_err("alloc msix_entries failed!\n");
+			dev_err(dev, "alloc msix_entries failed!\n");
 			return -EINVAL;
 		}
-		dbg("[%s] adapter:%p msix_entry:%p\n", __func__, adapter,
-		    adapter->msix_entries);
 
 		for (vector = 0; vector < v_budget; vector++)
 			adapter->msix_entries[vector].entry = vector;
@@ -927,7 +964,8 @@ static int rnp_set_interrupt_capability(struct rnp_adapter *adapter)
 		if (!err) {
 			if (adapter->num_other_vectors)
 				adapter->q_vector_off = 1;
-			rnp_dbg("adapter%d alloc vectors: cnt:%d [%d~%d] num_q_vectors:%d\n",
+			dev_dbg(dev,
+				"adapter%d alloc vectors: cnt:%d [%d~%d] num_q_vectors:%d\n",
 				adapter->bd_number, v_budget,
 				adapter->q_vector_off,
 				adapter->q_vector_off + v_budget - 1,
@@ -940,15 +978,16 @@ static int rnp_set_interrupt_capability(struct rnp_adapter *adapter)
 		if (adapter->flags & RNP_FLAG_MSI_CAPABLE)
 			adapter->irq_mode = irq_mode_msi;
 		kfree(adapter->msix_entries);
-		rnp_dbg("acquire msix failed, try to use msi\n");
+		dev_dbg(dev, "acquire msix failed, try to use msi\n");
 	} else {
-		rnp_dbg("adapter%d not in msix mode\n", adapter->bd_number);
+		dev_dbg(dev, "adapter%d not in msix mode\n", adapter->bd_number);
 	}
 	/* if has msi capability or set irq_mode */
 	if (adapter->irq_mode == irq_mode_msi) {
 		err = pci_enable_msi(adapter->pdev);
 		if (err) {
-			rnp_dbg("Failed to allocate MSI interrupt, falling back to legacy. Error");
+			dev_dbg(dev,
+				"Failed to allocate MSI interrupt, falling back to legacy. Error");
 		} else {
 			/* msi mode use only 1 irq */
 			adapter->flags |= RNP_FLAG_MSI_ENABLED;
@@ -967,31 +1006,32 @@ static void rnp_print_ring_info(struct rnp_adapter *adapter)
 	int i;
 	struct rnp_ring *ring;
 	struct rnp_q_vector *q_vector;
+	struct device *dev = &adapter->pdev->dev;
 
-	rnp_dbg("tx_queue count %d\n", adapter->num_tx_queues);
-	rnp_dbg("queue-mapping :\n");
+	dev_dbg(dev, "tx_queue count %d\n", adapter->num_tx_queues);
+	dev_dbg(dev, "queue-mapping :\n");
 	for (i = 0; i < adapter->num_tx_queues; i++) {
 		ring = adapter->tx_ring[i];
-		rnp_dbg(" queue %d , physical ring %d\n", i,
+		dev_dbg(dev, " queue %d , physical ring %d\n", i,
 			ring->rnp_queue_idx);
 	}
-	rnp_dbg("rx_queue count %d\n", adapter->num_rx_queues);
-	rnp_dbg("queue-mapping :\n");
+	dev_dbg(dev, "rx_queue count %d\n", adapter->num_rx_queues);
+	dev_dbg(dev, "queue-mapping :\n");
 	for (i = 0; i < adapter->num_rx_queues; i++) {
 		ring = adapter->rx_ring[i];
-		rnp_dbg(" queue %d , physical ring %d\n", i,
+		dev_dbg(dev, " queue %d , physical ring %d\n", i,
 			ring->rnp_queue_idx);
 	}
-	rnp_dbg("q_vector count %d\n", adapter->num_q_vectors);
-	rnp_dbg("vector-queue mapping:\n");
+	dev_dbg(dev, "q_vector count %d\n", adapter->num_q_vectors);
+	dev_dbg(dev, "vector-queue mapping:\n");
 	for (i = 0; i < adapter->num_q_vectors; i++) {
 		q_vector = adapter->q_vector[i];
-		rnp_dbg("vector %d\n", i);
+		dev_dbg(dev, "vector %d\n", i);
 		rnp_for_each_ring(ring, q_vector->tx)
-			rnp_dbg(" tx physical ring %d\n", ring->rnp_queue_idx);
+			dev_dbg(dev, " tx physical ring %d\n", ring->rnp_queue_idx);
 
 		rnp_for_each_ring(ring, q_vector->rx)
-			rnp_dbg(" rx physical ring %d\n", ring->rnp_queue_idx);
+			dev_dbg(dev, " rx physical ring %d\n", ring->rnp_queue_idx);
 	}
 }
 
@@ -1006,6 +1046,7 @@ static void rnp_print_ring_info(struct rnp_adapter *adapter)
 int rnp_init_interrupt_scheme(struct rnp_adapter *adapter)
 {
 	int err;
+	struct device *dev = &adapter->pdev->dev;
 
 	/* Number of supported queues */
 	rnp_set_num_queues(adapter);
@@ -1013,21 +1054,21 @@ int rnp_init_interrupt_scheme(struct rnp_adapter *adapter)
 	/* Set interrupt mode */
 	err = rnp_set_interrupt_capability(adapter);
 	if (err) {
-		e_dev_err("Unable to get interrupt\n");
+		dev_err(dev, "Unable to get interrupt\n");
 		goto err_set_interrupt;
 	}
 
 	err = rnp_alloc_q_vectors(adapter);
 	if (err) {
-		e_dev_err("Unable to allocate memory for queue vectors\n");
+		dev_err(dev, "Unable to allocate memory for queue vectors\n");
 		goto err_alloc_q_vectors;
 	}
 	rnp_cache_ring_register(adapter);
 
-	DPRINTK(PROBE, INFO,
-		"Multiqueue %s: Rx Queue count = %u, Tx Queue count = %u\n\n",
-		(adapter->num_rx_queues > 1) ? "Enabled" : "Disabled",
-		adapter->num_rx_queues, adapter->num_tx_queues);
+	netdev_dbg(adapter->netdev,
+		   "Multiqueue %s: Rx Queue count = %u, Tx Queue count = %u\n\n",
+		   (adapter->num_rx_queues > 1) ? "Enabled" : "Disabled",
+		   adapter->num_rx_queues, adapter->num_tx_queues);
 	rnp_print_ring_info(adapter);
 
 	set_bit(__RNP_DOWN, &adapter->state);
@@ -1110,7 +1151,7 @@ void rnp_tx_ctxtdesc(struct rnp_ring *tx_ring, u32 mss_len_vf_num,
 			context_desc->inner_vlan_tunnel_len |=
 				cpu_to_le32(VF_VEB_IGNORE_VLAN);
 	}
-	buf_dump_line("ctx  ", __LINE__, context_desc, sizeof(*context_desc));
+
 }
 
 void rnp_maybe_tx_ctxtdesc(struct rnp_ring *tx_ring,
@@ -1260,10 +1301,8 @@ s32 rnp_fdir_erase_perfect_filter(int fdir_mode, struct rnp_hw *hw,
 	/* just disable filter */
 	if (input->formatted.flow_type == RNP_ATR_FLOW_TYPE_ETHER) {
 		hw->ops.clr_layer2_remapping(hw, pri_id);
-		dbg("disable layer2 %d\n", pri_id);
 	} else {
 		hw->ops.clr_tuple5_remapping(hw, pri_id);
-		dbg("disable tuple5 %d\n", pri_id);
 	}
 
 	return 0;

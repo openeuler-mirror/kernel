@@ -122,11 +122,10 @@ static s32 rnp_eth_set_rar_n10(struct rnp_eth_info *eth, u32 index, u8 *addr,
 
 	/* Make sure we are using a valid rar index range */
 	if (index >= (rar_entries + hw->ncsi_rar_entries)) {
-		rnp_err("RAR index %d is out of range.\n", index);
+		dev_err(HW_TO_DEV(hw),
+			"RAR index %u is out of range.\n", index);
 		return RNP_ERR_INVALID_ARGUMENT;
 	}
-
-	eth_dbg(eth, "    RAR[%d] <= %pM.  vmdq:%d enable:0x%x\n", index, addr);
 
 	/*
 	 * HW expects these in big endian so we reverse the byte
@@ -171,10 +170,12 @@ static s32 rnp_eth_clear_rar_n10(struct rnp_eth_info *eth, u32 index)
 {
 	u32 rar_high;
 	u32 rar_entries = eth->num_rar_entries;
+	struct rnp_hw *hw = (struct rnp_hw *)eth->back;
 
 	/* Make sure we are using a valid rar index range */
 	if (index >= rar_entries) {
-		eth_dbg(eth, "RAR index %d is out of range.\n", index);
+		dev_warn(HW_TO_DEV(hw),
+			 "RAR index %d is out of range.\n", index);
 		return RNP_ERR_INVALID_ARGUMENT;
 	}
 
@@ -208,7 +209,7 @@ static s32 rnp_eth_set_vmdq_n10(struct rnp_eth_info *eth, u32 rar, u32 vmdq)
 
 	/* Make sure we are using a valid rar index range */
 	if (rar >= rar_entries) {
-		eth_dbg(eth, "RAR index %d is out of range.\n", rar);
+		dev_warn(HW_TO_DEV(hw), "RAR index %d is out of range.\n", rar);
 		return RNP_ERR_INVALID_ARGUMENT;
 	}
 	/* n400 should use like this
@@ -236,10 +237,11 @@ static s32 rnp_eth_set_vmdq_n10(struct rnp_eth_info *eth, u32 rar, u32 vmdq)
 static s32 rnp_eth_clear_vmdq_n10(struct rnp_eth_info *eth, u32 rar, u32 vmdq)
 {
 	u32 rar_entries = eth->num_rar_entries;
+	struct rnp_hw *hw = (struct rnp_hw *)eth->back;
 
 	/* Make sure we are using a valid rar index range */
 	if (rar >= rar_entries) {
-		eth_dbg(eth, "RAR index %d is out of range.\n", rar);
+		dev_warn(HW_TO_DEV(hw), "RAR index %d is out of range.\n", rar);
 		return RNP_ERR_INVALID_ARGUMENT;
 	}
 
@@ -251,6 +253,7 @@ static s32 rnp_eth_clear_vmdq_n10(struct rnp_eth_info *eth, u32 rar, u32 vmdq)
 static s32 rnp10_mta_vector(struct rnp_eth_info *eth, u8 *mc_addr)
 {
 	u32 vector = 0;
+	struct rnp_hw *hw = (struct rnp_hw *)eth->back;
 
 	switch (eth->mc_filter_type) {
 	case 0: /* use bits [36:47] of the address */
@@ -266,7 +269,8 @@ static s32 rnp10_mta_vector(struct rnp_eth_info *eth, u8 *mc_addr)
 		vector = ((mc_addr[4] << 5) | (((u16)mc_addr[5]) >> 3));
 		break;
 	default: /* Invalid mc_filter_type */
-		hw_dbg(hw, "MC filter type param set incorrectly\n");
+		dev_warn(HW_TO_DEV(hw),
+			 "MC filter type param set incorrectly\n");
 		break;
 	}
 
@@ -297,8 +301,9 @@ static void rnp10_set_mta(struct rnp_hw *hw, u8 *mc_addr)
 	 */
 	vector_reg = (vector >> 5) & 0x7F;
 	vector_bit = vector & 0x1F;
-	hw_dbg(hw, "\t\t%pM: MTA-BIT:%4d, MTA_REG[%d][%d] <= 1\n", mc_addr,
-	       vector, vector_reg, vector_bit);
+	dev_dbg(HW_TO_DEV(hw),
+		"\t\t%pM: MTA-BIT:%4d, MTA_REG[%d][%d] <= 1\n",
+		mc_addr, vector, vector_reg, vector_bit);
 	eth->mta_shadow[vector_reg] |= (1 << vector_bit);
 }
 
@@ -312,8 +317,9 @@ static void rnp10_set_vf_mta(struct rnp_hw *hw, u16 vector)
 
 	vector_reg = (vector >> 5) & 0x7F;
 	vector_bit = vector & 0x1F;
-	hw_dbg(hw, "\t\t vf M: MTA-BIT:%4d, MTA_REG[%d][%d] <= 1\n", vector,
-	       vector_reg, vector_bit);
+	dev_dbg(HW_TO_DEV(hw),
+		"\t\t vf M: MTA-BIT:%4d, MTA_REG[%d][%d] <= 1\n",
+		vector, vector_reg, vector_bit);
 	eth->mta_shadow[vector_reg] |= (1 << vector_bit);
 }
 
@@ -365,19 +371,18 @@ static s32 rnp_eth_update_mc_addr_list_n10(struct rnp_eth_info *eth,
 	hw->addr_ctrl.mta_in_use = 0;
 
 	/* Clear mta_shadow */
-	eth_dbg(eth, " Clearing MTA(multicast table)\n");
+	netdev_dbg(netdev, "Clearing MTA(multicast table)\n");
 
 	memset(&eth->mta_shadow, 0, sizeof(eth->mta_shadow));
 
 	/* Update mta shadow */
-	eth_dbg(eth, " Updating MTA..\n");
+	netdev_dbg(netdev, "Updating MTA..\n");
 
 	addr_count = netdev_mc_count(netdev);
 
 	ha = list_first_entry(&netdev->mc.list, struct netdev_hw_addr, list);
 	addr_list = ha->addr;
 	for (i = 0; i < addr_count; i++) {
-		eth_dbg(eth, " Adding the multicast addresses:\n");
 		rnp10_set_mta(hw, rnp_addr_list_itr(hw, &addr_list));
 	}
 
@@ -420,8 +425,8 @@ static s32 rnp_eth_update_mc_addr_list_n10(struct rnp_eth_info *eth,
 		}
 	}
 
-	eth_dbg(eth, " update MTA Done. mta_in_use:%d\n",
-		hw->addr_ctrl.mta_in_use);
+	netdev_dbg(netdev, "update MTA Done. mta_in_use:%d\n",
+		   hw->addr_ctrl.mta_in_use);
 	return hw->addr_ctrl.mta_in_use;
 }
 
@@ -642,7 +647,6 @@ static void rnp_eth_set_tuple5_n10(struct rnp_eth_info *eth,
 		u16 hw_id;
 
 		hw_id = rnp_tuple5_pritologic_n10(pri_id);
-		dbg("try to eable tuple 5 %x\n", hw_id);
 		if (input->formatted.src_ip[0] != 0) {
 			eth_wr32(eth, RNP10_ETH_TUPLE5_SAQF(hw_id),
 				 ntohl(input->formatted.src_ip[0]));
@@ -718,45 +722,23 @@ static void rnp_eth_set_tuple5_n10(struct rnp_eth_info *eth,
 
 		hw_id = rnp_tuple5_pritologic_tcam_n10(pri_id);
 		eth_wr32(eth, RNP10_TCAM_MODE, 2);
-		dbg("try to eable tcam %d\n", hw_id);
 		if (input->formatted.src_ip[0] != 0) {
 			eth_wr32(eth, RNP10_TCAM_SAQF(hw_id),
 				 ntohl(input->formatted.src_ip[0]));
 			eth_wr32(eth, RNP10_TCAM_SAQF_MASK(hw_id),
 				 ntohl(input->formatted.src_ip_mask[0]));
-
-			dbg("tcam src ip 0%x ---> 0x%x\n",
-			    ntohl(input->formatted.src_ip[0]),
-			    RNP10_TCAM_SAQF(hw_id));
-			dbg("tcam src ip mask 0%x ---> 0x%x\n",
-			    ntohl(input->formatted.src_ip_mask[0]),
-			    RNP10_TCAM_SAQF_MASK(hw_id));
 		} else {
 			eth_wr32(eth, RNP10_TCAM_SAQF(hw_id), 0);
 			eth_wr32(eth, RNP10_TCAM_SAQF_MASK(hw_id), 0);
-			dbg("tcam src ip 0%x ---> 0x%x\n", 0,
-			    RNP10_TCAM_SAQF(hw_id));
-			dbg("tcam src ip mask 0%x ---> 0x%x\n", 0,
-			    RNP10_TCAM_SAQF_MASK(hw_id));
 		}
 		if (input->formatted.dst_ip[0] != 0) {
 			eth_wr32(eth, RNP10_TCAM_DAQF(hw_id),
 				 ntohl(input->formatted.dst_ip[0]));
 			eth_wr32(eth, RNP10_TCAM_DAQF_MASK(hw_id),
 				 ntohl(input->formatted.dst_ip_mask[0]));
-			dbg("tcam dst ip 0%x ---> 0x%x\n",
-			    ntohl(input->formatted.dst_ip[0]),
-			    RNP10_TCAM_DAQF(hw_id));
-			dbg("tcam dst ip mask 0%x ---> 0x%x\n",
-			    ntohl(input->formatted.dst_ip_mask[0]),
-			    RNP10_TCAM_DAQF_MASK(hw_id));
 		} else {
 			eth_wr32(eth, RNP10_TCAM_DAQF(hw_id), 0);
 			eth_wr32(eth, RNP10_TCAM_DAQF_MASK(hw_id), 0);
-			dbg("tcam dst ip 0%x ---> 0x%x\n", 0,
-			    RNP10_TCAM_DAQF(hw_id));
-			dbg("tcam dst ip mask 0%x ---> 0x%x\n", 0,
-			    RNP10_TCAM_DAQF_MASK(hw_id));
 		}
 		if (input->formatted.src_port != 0) {
 			port |= (ntohs(input->formatted.src_port) << 16);
@@ -771,18 +753,9 @@ static void rnp_eth_set_tuple5_n10(struct rnp_eth_info *eth,
 		if (port != 0) {
 			eth_wr32(eth, RNP10_TCAM_SDPQF(hw_id), port);
 			eth_wr32(eth, RNP10_TCAM_SDPQF_MASK(hw_id), port_mask);
-
-			dbg("tcam port 0%x ---> 0x%x\n", port,
-			    RNP10_TCAM_SDPQF(hw_id));
-			dbg("tcam port mask 0%x ---> 0x%x\n", port_mask,
-			    RNP10_TCAM_SDPQF_MASK(hw_id));
 		} else {
 			eth_wr32(eth, RNP10_TCAM_SDPQF(hw_id), 0);
 			eth_wr32(eth, RNP10_TCAM_SDPQF_MASK(hw_id), 0);
-			dbg("tcam port 0%x ---> 0x%x\n", port,
-			    RNP10_TCAM_SDPQF(hw_id));
-			dbg("tcam port mask 0%x ---> 0x%x\n", port_mask,
-			    RNP10_TCAM_SDPQF_MASK(hw_id));
 		}
 
 		switch (input->formatted.flow_type) {
@@ -815,10 +788,6 @@ static void rnp_eth_set_tuple5_n10(struct rnp_eth_info *eth,
 			eth_wr32(eth, RNP10_TCAM_APQF(hw_id),
 				 (0x1 << 31) | action);
 			eth_wr32(eth, RNP10_TCAM_APQF_MASK(hw_id), mark);
-			dbg("tcam action 0%x ---> 0x%x\n", (0x1 << 31) | action,
-			    RNP10_TCAM_APQF(hw_id));
-			dbg("tcam action mask 0%x ---> 0x%x\n", mark,
-			    RNP10_TCAM_APQF_MASK(hw_id));
 		} else {
 			if (queue == ACTION_TO_MPE) {
 				eth_wr32(eth, RNP10_TCAM_APQF(hw_id),
@@ -830,12 +799,6 @@ static void rnp_eth_set_tuple5_n10(struct rnp_eth_info *eth,
 					  action));
 			}
 			eth_wr32(eth, RNP10_TCAM_APQF_MASK(hw_id), mark);
-
-			dbg("tcam action 0%x ---> 0x%x\n",
-			    (0x1 << 30) | (queue << 16) | action,
-			    RNP10_TCAM_APQF(hw_id));
-			dbg("tcam action mask 0%x ---> 0x%x\n", mark,
-			    RNP10_TCAM_APQF_MASK(hw_id));
 		}
 		eth_wr32(eth, RNP10_TCAM_MODE, 1);
 	}
@@ -851,7 +814,6 @@ static void rnp_eth_clr_tuple5_n10(struct rnp_eth_info *eth, u16 pri_id)
 		eth_wr32(eth, RNP10_ETH_TUPLE5_FTQF(hw_id), 0);
 	} else {
 		hw_id = rnp_tuple5_pritologic_tcam_n10(pri_id);
-		dbg("disable tcam tuple5 %d\n", hw_id);
 		/* earase tcam */
 		eth_wr32(eth, RNP10_TCAM_MODE, 2);
 		eth_wr32(eth, RNP10_TCAM_SAQF(hw_id), 0);
@@ -969,8 +931,8 @@ static s32 rnp_eth_set_fc_mode_n10(struct rnp_eth_info *eth)
 		    hw->fc.high_water[i]) {
 			if (!hw->fc.low_water[i] ||
 			    hw->fc.low_water[i] >= hw->fc.high_water[i]) {
-				hw_dbg(hw,
-				       "Invalid water mark configuration\n");
+				dev_dbg(HW_TO_DEV(hw),
+					"Invalid water mark configuration\n");
 				ret_val = RNP_ERR_INVALID_LINK_SETTINGS;
 				goto out;
 			}
@@ -1402,8 +1364,10 @@ static int rnp_write_uc_addr_list_n10(struct rnp_hw *hw,
 	if (!netdev_uc_empty(netdev)) {
 		struct netdev_hw_addr *ha;
 
-		hw_dbg(hw, "%s: rar_entries:%d, uc_count:%d\n", __func__,
-		       hw->num_rar_entries, netdev_uc_count(netdev));
+		dev_dbg(HW_TO_DEV(hw),
+			"%s: rar_entries:%d, uc_count:%d\n",
+			__func__, hw->num_rar_entries,
+			netdev_uc_count(netdev));
 
 		/* return error if we do not support writing to RAR table */
 		if (!eth->ops.set_rar)
@@ -1428,7 +1392,8 @@ static int rnp_write_uc_addr_list_n10(struct rnp_hw *hw,
 	}
 	/* write the addresses in reverse order to avoid write combining */
 
-	hw_dbg(hw, "%s: Clearing RAR[1 - %d]\n", __func__, rar_entries);
+	dev_dbg(HW_TO_DEV(hw),
+		"%s: Clearing RAR[1 - %d]\n", __func__, rar_entries);
 	for (; rar_entries > 0; rar_entries--)
 		eth->ops.clear_rar(eth, rar_entries);
 
@@ -1772,8 +1737,9 @@ static s32 rnp_init_rx_addrs_hw_ops_n10(struct rnp_hw *hw)
 	u32 rar_entries = eth->num_rar_entries;
 	u32 v;
 
-	hw_dbg(hw, "init_rx_addrs:rar_entries:%d, mac.addr:%pM\n", rar_entries,
-	       hw->mac.addr);
+	dev_dbg(HW_TO_DEV(hw),
+		"init_rx_addrs:rar_entries:%d, mac.addr:%pM\n",
+		rar_entries, hw->mac.addr);
 	/*
 	 * If the current mac address is valid, assume it is a software override
 	 * to the permanent address.
@@ -1782,11 +1748,13 @@ static s32 rnp_init_rx_addrs_hw_ops_n10(struct rnp_hw *hw)
 	if (!is_valid_ether_addr(hw->mac.addr)) {
 		/* Get the MAC address from the RAR0 for later reference */
 		memcpy(hw->mac.addr, hw->mac.perm_addr, ETH_ALEN);
-		hw_dbg(hw, " Keeping Current RAR0 Addr =%pM\n", hw->mac.addr);
+		dev_dbg(HW_TO_DEV(hw),
+			"Keeping Current RAR0 Addr =%pM\n", hw->mac.addr);
 	} else {
 		/* Setup the receive address. */
-		hw_dbg(hw, "Overriding MAC Address in RAR[0]\n");
-		hw_dbg(hw, " New MAC Addr =%pM\n", hw->mac.addr);
+		dev_dbg(HW_TO_DEV(hw),
+			"Overriding MAC Address in RAR[0] with %pM\n",
+			hw->mac.addr);
 		eth->ops.set_rar(eth, 0, hw->mac.addr, true);
 
 		/*  clear VMDq pool/queue selection for RAR 0 */
@@ -1796,7 +1764,7 @@ static s32 rnp_init_rx_addrs_hw_ops_n10(struct rnp_hw *hw)
 	hw->addr_ctrl.rar_used_count = 1;
 
 	/* Zero out the other receive addresses. */
-	hw_dbg(hw, "Clearing RAR[1-%d]\n", rar_entries - 1);
+	dev_dbg(HW_TO_DEV(hw), "Clearing RAR[1-%d]\n", rar_entries - 1);
 	for (i = 1; i < rar_entries; i++)
 		eth->ops.clear_rar(eth, i);
 	if (hw->ncsi_en)
@@ -1809,7 +1777,7 @@ static s32 rnp_init_rx_addrs_hw_ops_n10(struct rnp_hw *hw)
 	v |= eth->mc_filter_type;
 	eth_wr32(eth, RNP10_ETH_DMAC_MCSTCTRL, v);
 
-	hw_dbg(hw, " Clearing MTA\n");
+	dev_dbg(HW_TO_DEV(hw), " Clearing MTA\n");
 	eth->ops.clr_mc_addr(eth);
 	if (hw->ncsi_en) {
 		eth->ops.ncsi_set_mc_mta(eth);
@@ -1925,11 +1893,11 @@ static s32 rnp_setup_mac_link_hw_ops_n10(struct rnp_hw *hw,
 	u32 value_r4 = 0;
 	u32 value_r9 = 0;
 
-	rnp_logd(LOG_PHY,
-		 "%s setup phy: phy_addr=%d speed=%d duplex=%d autoneg=%d "
-		 "is_backplane=%d is_sgmii=%d\n",
-		 __func__, adpt->phy_addr, speed, duplex, autoneg,
-		 hw->is_backplane, hw->is_sgmii);
+	dev_dbg(HW_TO_DEV(hw),
+		"%s setup phy: phy_addr=%d speed=%d duplex=%d autoneg=%d "
+		"is_backplane=%d is_sgmii=%d\n",
+		__func__, adpt->phy_addr, speed, duplex, autoneg,
+		hw->is_backplane, hw->is_sgmii);
 
 	/* Backplane type, support AN, unsupport set speed */
 	if (hw->is_backplane)
@@ -1983,7 +1951,8 @@ static s32 rnp_setup_mac_link_hw_ops_n10(struct rnp_hw *hw,
 				value = 0;
 				break;
 			default:
-				hw_dbg(hw, "unknown speed = 0x%x.\n", speed);
+				dev_warn(HW_TO_DEV(hw),
+					 "unknown speed = 0x%x.\n", speed);
 				break;
 			}
 			rnp_mbx_phy_write(hw, PHY_826x_SPEED, value);
@@ -2088,7 +2057,8 @@ static s32 rnp_setup_mac_link_hw_ops_n10(struct rnp_hw *hw,
 		default:
 			value = RNP_MDI_PHY_SPEED_SELECT0 |
 				RNP_MDI_PHY_SPEED_SELECT1;
-			hw_dbg(hw, "unknown speed = 0x%x.\n", speed);
+			dev_warn(HW_TO_DEV(hw),
+				 "unknown speed = 0x%x.\n", speed);
 			break;
 		}
 		/* duplex full */
@@ -3173,12 +3143,12 @@ static int rnp10_get_link_ksettings(struct net_device *netdev,
 	else
 		ks->base.eth_tp_mdix_ctrl = hw->phy.mdix;
 
-	rnp_logd(LOG_ETHTOOL,
-		 "%s %s set link: speed=%d port=%d duplex=%d autoneg=%d "
-		 "phy_address=%d, media_type=%d hw->phy_type:%d\n",
-		 __func__, netdev->name, ks->base.speed, ks->base.port,
-		 ks->base.duplex, ks->base.autoneg, ks->base.phy_address,
-		 hw->phy.media_type, hw->phy_type);
+	netdev_dbg(netdev,
+		   "%s set link: speed=%d port=%d duplex=%d autoneg=%d "
+		   "phy_address=%d, media_type=%d hw->phy_type:%d\n",
+		   __func__, ks->base.speed, ks->base.port,
+		   ks->base.duplex, ks->base.autoneg, ks->base.phy_address,
+		   hw->phy.media_type, hw->phy_type);
 	return 0;
 }
 
@@ -3201,9 +3171,10 @@ static int rnp10_set_link_ksettings(struct net_device *netdev,
 	/* save autoneg out of ksettings */
 
 	autoneg = copy_ks.base.autoneg;
-	rnp_logd(LOG_ETHTOOL,
-		 "%s %s set link: speed=%d port=%d duplex=%d autoneg=%d phy_address=%d\n",
-		 __func__, netdev->name, copy_ks.base.speed, copy_ks.base.port,
+	netdev_dbg(netdev,
+		 "%s set link: speed=%d port=%d duplex=%d autoneg=%d "
+		 "phy_address=%d\n",
+		 __func__, copy_ks.base.speed, copy_ks.base.port,
 		 copy_ks.base.duplex, copy_ks.base.autoneg,
 		 copy_ks.base.phy_address);
 
@@ -3396,7 +3367,7 @@ static int rnp10_set_link_ksettings(struct net_device *netdev,
 	err = hw->ops.setup_link(hw, advertising_link_speed, hw->autoneg, speed,
 				 hw->duplex);
 	if (err)
-		e_info(probe, "setup link failed with code %d\n", err);
+		netdev_err(netdev, "setup link failed with code %d\n", err);
 
 	clear_bit(__RNP_IN_SFP_INIT, &adapter->state);
 done:
@@ -3790,8 +3761,7 @@ static int rnp10_set_priv_flags(struct net_device *netdev, u32 priv_flags)
 			if (rnp_mbx_lldp_port_enable(hw, true) == 0) {
 				adapter->priv_flags |= RNP_PRIV_FLAG_LLDP_EN_STAT;
 			} else {
-				rnp_err("%s: set lldp enable failed!\n",
-					adapter->netdev->name);
+				netdev_err(netdev, "set lldp enable faild!\n");
 				adapter->priv_flags &= (~RNP_PRIV_FLAG_LLDP_EN_STAT);
 			}
 		} else if (adapter->priv_flags & RNP_PRIV_FLAG_LLDP_EN_STAT) {
@@ -3923,7 +3893,6 @@ static int rnp10_set_priv_flags(struct net_device *netdev, u32 priv_flags)
 			int i;
 
 			adapter->priv_flags &= (~RNP_PRIV_FLAG_SRIOV_VLAN_MODE);
-
 			// should clean vlvf table
 			for (i = 0; i < hw->max_vfs; i++) {
 				if (hw->ops.set_vf_vlan_mode)
@@ -3957,14 +3926,12 @@ static int rnp10_set_priv_flags(struct net_device *netdev, u32 priv_flags)
 			}
 		} else {
 			if (priv_flags & RNP10_FORCE_CLOSE)
-				rnp_err("%s: firmware not support set `link_down_on_close` private flag\n",
-					adapter->netdev->name);
+				netdev_err(netdev,
+					   "firmware not support set `link_down_on_close` private flag\n");
 		}
 	}
 
 skip_setup_vf_vlan:
-
-	dbg("data new is %x\n", data_new);
 	if (data_old != data_new)
 		dma_wr32(dma, RNP_DMA_CONFIG, data_new);
 	/* if ft_padding changed */
@@ -4380,7 +4347,10 @@ static void rnp_dump_tx_regs(struct rnp_hw *hw)
 	/* eth */
 	for (i = 0; i < sizeof(tx_debug_reg_eth) / sizeof(struct rnp_debug_reg); i++) {
 		value = eth_rd32(eth, tx_debug_reg_eth[i].offset);
-		dev_info(dev, "\t%s \t:0x%08x(%4u)", tx_debug_reg_eth[i].name, value, value);
+		dev_info(dev, "\t%s \t:0x%08x(%4u)",
+			 tx_debug_reg_eth[i].name,
+			 tx_debug_reg_eth[i].offset + RNP10_ETH_BASE,
+			 value);
 	}
 }
 
@@ -4450,12 +4420,18 @@ static void rnp_dump_rx_regs(struct rnp_hw *hw)
 	/* eth */
 	for (i = 0; i < sizeof(rx_debug_reg_eth) / sizeof(struct rnp_debug_reg); i++) {
 		value = eth_rd32(eth, rx_debug_reg_eth[i].offset);
-		dev_info(dev, "\t%s \t:0x%08x(%4u)", rx_debug_reg_eth[i].name, value, value);
+		dev_info(dev, "\t%s \t:0x%08x(%4u)",
+			 rx_debug_reg_eth[i].name,
+			 rx_debug_reg_eth[i].offset + RNP10_ETH_BASE,
+			 value);
 	}
 
 	for (i = 0; i < sizeof(rx_debug_reg_dma) / sizeof(struct rnp_debug_reg); i++) {
 		value = dma_rd32(dma, rx_debug_reg_dma[i].offset);
-		dev_info(dev, "\t%s \t:0x%08x(%4u)", rx_debug_reg_dma[i].name, value, value);
+		dev_info(dev, "\t%s \t:0x%08x(%4u)",
+			 rx_debug_reg_dma[i].name,
+			 rx_debug_reg_dma[i].offset,
+			 value);
 	}
 }
 
@@ -4498,7 +4474,10 @@ static void rnp_dump_dma_regs(struct rnp_hw *hw)
 
 	for (i = 0; i < sizeof(tx_dmadebug_reg) / sizeof(struct rnp_debug_reg); i++) {
 		value = dma_rd32(dma, tx_dmadebug_reg[i].offset);
-		dev_info(dev, "\t%s \t:0x%08x(%4u)", tx_dmadebug_reg[i].name, value, value);
+		dev_info(dev, "\t%s \t:0x%08x(%4u)",
+			 tx_dmadebug_reg[i].name,
+			 tx_dmadebug_reg[i].offset,
+			 value);
 	}
 	dev_info(dev, "dma rx:\n");
 	/* 0x110 */
@@ -4782,7 +4761,7 @@ static s32 rnp_mac_fc_mode_n10(struct rnp_mac_info *mac)
 			txctl_reg[i] |= (RNP10_TX_FLOW_ENABLE_MASK);
 		break;
 	default:
-		hw_dbg(hw, "Flow control param set incorrectly\n");
+		dev_warn(HW_TO_DEV(hw), "Flow control param set incorrectly\n");
 		ret_val = RNP_ERR_CONFIG;
 		goto out;
 	}

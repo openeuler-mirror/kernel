@@ -545,6 +545,7 @@ int rnp_ptp_register(struct rnp_adapter *pf)
 
 	/* default mac clock rate is 50Mhz */
 	pf->clk_ptp_rate = 50000000;
+
 	if (!pf->pdev)
 		pr_debug("pdev dev is null\n");
 

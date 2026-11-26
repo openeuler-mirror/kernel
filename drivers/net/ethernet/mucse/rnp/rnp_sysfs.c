@@ -245,7 +245,7 @@ static ssize_t mac_vf_info_store(struct device *dev,
 	return count;
 }
 
-static ssize_t maintain_read(struct file *filp, struct kobject *kobj,
+static ssize_t maintain_read(struct file *file, struct kobject *kobj,
 			     struct bin_attribute *attr, char *buf, loff_t off,
 			     size_t count)
 {
@@ -271,7 +271,7 @@ static ssize_t maintain_read(struct file *filp, struct kobject *kobj,
 	return rbytes;
 }
 
-static ssize_t maintain_write(struct file *filp, struct kobject *kobj,
+static ssize_t maintain_write(struct file *file, struct kobject *kobj,
 			      struct bin_attribute *attr, char *buf, loff_t off,
 			      size_t count)
 {
@@ -487,6 +487,9 @@ static ssize_t rx_desc_info_store(struct device *dev,
 	u32 rx_desc_num = adapter->sysfs_rx_desc_num;
 	u32 rx_ring_num = adapter->sysfs_rx_ring_num;
 	struct rnp_ring *ring = adapter->rx_ring[rx_ring_num];
+
+	if (test_bit(__RNP_DOWN, &adapter->state))
+		return -ENETDOWN;
 
 	if (kstrtou32(buf, 0, &rx_desc_num) != 0)
 		return -EINVAL;
@@ -765,6 +768,9 @@ static ssize_t tx_desc_info_store(struct device *dev,
 
 	struct rnp_ring *ring = adapter->tx_ring[tx_ring_num];
 
+	if (test_bit(__RNP_DOWN, &adapter->state))
+		return -ENETDOWN;
+
 	if (kstrtou32(buf, 0, &tx_desc_num) != 0)
 		return -EINVAL;
 	if (tx_desc_num < ring->count)
@@ -862,6 +868,9 @@ static ssize_t rx_ring_info_store(struct device *dev,
 
 	u32 rx_ring_num = adapter->sysfs_rx_ring_num;
 
+	if (test_bit(__RNP_DOWN, &adapter->state))
+		return -ENETDOWN;
+
 	if (kstrtou32(buf, 0, &rx_ring_num) != 0)
 		return -EINVAL;
 	if (rx_ring_num < adapter->num_rx_queues)
@@ -916,6 +925,9 @@ static ssize_t tx_ring_info_store(struct device *dev,
 	int ret = count;
 
 	u32 tx_ring_num = adapter->sysfs_tx_ring_num;
+
+	if (test_bit(__RNP_DOWN, &adapter->state))
+		return -ENETDOWN;
 
 	if (kstrtou32(buf, 0, &tx_ring_num) != 0)
 		return -EINVAL;

@@ -297,8 +297,8 @@ void rnp_check_options(struct rnp_adapter *adapter)
 
 			if (rnp_validate_option(adapter->netdev, &vfs, &opt)) {
 				vfs = 0;
-				DPRINTK(PROBE, INFO,
-					"max_vfs out of range Disabling SR-IOV.\n");
+				netdev_dbg(adapter->netdev,
+					   "max_vfs out of range Disabling SR-IOV.\n");
 			}
 
 			adapter->num_vfs = vfs;

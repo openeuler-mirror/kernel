@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0
-# Copyright(c) 2022 - 2023 Mucse Corporation.
+# Copyright(c) 2022 - 2026 Mucse Corporation.
 #
 # Makefile for the Mucse(R) 1/10/25/40GbE PCI Express ethernet driver
 #
@@ -24,3 +24,5 @@ rnp-objs :=   \
 
 rnp-$(CONFIG_DEBUG_FS) += rnp_debugfs.o
 rnp-$(CONFIG_MXGBE_DCB) +=  rnp_dcb.o
+
+ccflags-y += -I$(src)

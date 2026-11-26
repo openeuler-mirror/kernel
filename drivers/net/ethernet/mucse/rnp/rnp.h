@@ -534,9 +534,6 @@ struct hwmon_buff {
 	unsigned int n_hwmon;
 };
 
-/*
- * rnp_test_staterr - tests bits in Rx descriptor status and error fields
- */
 static inline __le16 rnp_test_staterr(union rnp_rx_desc *rx_desc,
 				      const u16 stat_err_bits)
 {
