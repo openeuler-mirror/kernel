@@ -8,23 +8,30 @@
 #include <linux/acpi.h>
 #include <linux/bits.h>
 #include <linux/cleanup.h>
+#include <linux/cpumask.h>
 #include <linux/devfreq.h>
+#include <linux/devfreq-event.h>
 #include <linux/device.h>
 #include <linux/dev_printk.h>
 #include <linux/errno.h>
 #include <linux/iopoll.h>
 #include <linux/kernel.h>
 #include <linux/ktime.h>
+#include <linux/math64.h>
 #include <linux/mailbox_client.h>
 #include <linux/module.h>
 #include <linux/mod_devicetable.h>
 #include <linux/mutex.h>
+#include <linux/perf_event.h>
+#include <linux/perf/hisi_pmu.h>
 #include <linux/platform_device.h>
 #include <linux/pm_opp.h>
 #include <linux/property.h>
+#include <linux/smp.h>
 #include <linux/topology.h>
 #include <linux/units.h>
 #include <acpi/pcc.h>
+#include <asm/cputype.h>
 
 #include "governor.h"
 
@@ -61,6 +68,13 @@ enum hisi_uncore_freq_mode {
 
 #define HUCF_CAP_PLATFORM_CTRL	BIT(0)
 
+/*
+ * Upper bound for SCCL ids encoded in MPIDR affinity levels. Used to
+ * size the per-domain sccl bitmap; far above any realistic Kunpeng
+ * configuration (SCCL ids are typically single digits).
+ */
+#define HISI_MAX_SCCL		32
+
 /**
  * struct hisi_uncore_freq - hisi uncore frequency scaling device data
  * @dev:		device of this frequency scaling driver
@@ -72,6 +86,14 @@ enum hisi_uncore_freq_mode {
  * @devfreq:		devfreq data of this hisi_uncore_freq device
  * @related_cpus:	CPUs whose performance is majorly affected by this
  *			uncore frequency domain
+ * @domain_sccl:	bitmap of MPIDR-derived sccl ids covered by this
+ *			freq domain; populated from related_cpus and used
+ *			to match hisi uncore PMUs by their hisilicon,scl-id
+ *			firmware property
+ * @edev:		devfreq-event device backing get_dev_status, or NULL
+ *			when no L3C PMU was matched for this freq domain
+ * @ondemand_data:	tuning knobs for the simple_ondemand governor,
+ *			chosen by L3C PMU revision during event registration
  * @cap:		capability flag
  */
 struct hisi_uncore_freq {
@@ -83,6 +105,9 @@ struct hisi_uncore_freq {
 	struct mutex pcc_lock;
 	struct devfreq *devfreq;
 	struct cpumask related_cpus;
+	DECLARE_BITMAP(domain_sccl, HISI_MAX_SCCL);
+	struct devfreq_event_dev *edev;
+	struct devfreq_simple_ondemand_data *ondemand_data;
 	u32 cap;
 };
 
@@ -92,6 +117,408 @@ struct hisi_uncore_freq {
 
 /* Default polling interval in ms for devfreq governors*/
 #define HUCF_DEFAULT_POLLING_MS 100
+
+#define HISI_L3C_EVENT_CYCLES	0x7f
+
+/*
+ * A PMU's utilization counter measures either busy or idle cycles,
+ * depending on the L3C revision. Record which, so the read path can
+ * normalise both to busy (busy = total - idle for the idle case).
+ */
+enum hucf_util_kind {
+	HUCF_UTIL_BUSY,
+	HUCF_UTIL_IDLE,
+};
+
+/*
+ * Per-HID description of the L3C uncore PMU. To support a new revision,
+ * add a row with its ACPI HID, the utilization event, its polarity, and
+ * the simple_ondemand tuning parameters for that revision.
+ */
+struct hisi_l3c_pmu_info {
+	const char *hid;
+	u32 util_event;
+	enum hucf_util_kind util_kind;
+	struct devfreq_simple_ondemand_data *ondemand_data;
+};
+
+static struct devfreq_simple_ondemand_data hisi_l3c_0214_odata = {
+	.upthreshold = 10,
+	.downdifferential = 0,
+};
+
+static struct devfreq_simple_ondemand_data hisi_l3c_0215_odata = {
+	.upthreshold = 75,
+	.downdifferential = 0,
+};
+
+static const struct hisi_l3c_pmu_info hisi_l3c_pmus[] = {
+	{ "HISI0214", 0x90, HUCF_UTIL_BUSY, &hisi_l3c_0214_odata },
+	{ "HISI0215", 0x96, HUCF_UTIL_IDLE, &hisi_l3c_0215_odata },
+};
+
+struct evset {
+	struct perf_event *util;
+	struct perf_event *total;
+	u64 prev_util;
+	u64 prev_total;
+	enum hucf_util_kind util_kind;
+};
+
+struct hisi_uncore_event {
+	struct evset *evset;
+	int nr_ev;
+};
+
+static const struct hisi_l3c_pmu_info *hisi_l3c_pmu_info_get(void)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(hisi_l3c_pmus); i++)
+		if (acpi_dev_present(hisi_l3c_pmus[i].hid, NULL, -1))
+			return &hisi_l3c_pmus[i];
+
+	return NULL;
+}
+
+static void hisi_uncore_read_mpidr_cb(void *info)
+{
+	u64 *mpidr = info;
+
+	*mpidr = read_cpuid_mpidr();
+}
+
+/*
+ * Decode the SCCL and CCL ids for a remote @cpu from its MPIDR.
+ * Returns 0 on success, or a negative errno if @cpu is offline or otherwise
+ * unreachable.
+ */
+static int hisi_uncore_cpu_sccl_ccl(int cpu, int *sccl, int *ccl)
+{
+	u64 mpidr;
+	int rc;
+
+	rc = smp_call_function_single(cpu, hisi_uncore_read_mpidr_cb,
+				      &mpidr, 1);
+	if (rc)
+		return rc;
+
+	if (mpidr & MPIDR_MT_BITMASK) {
+		*sccl = MPIDR_AFFINITY_LEVEL(mpidr, 3);
+		*ccl  = MPIDR_AFFINITY_LEVEL(mpidr, 2);
+	} else {
+		*sccl = MPIDR_AFFINITY_LEVEL(mpidr, 2);
+		*ccl  = MPIDR_AFFINITY_LEVEL(mpidr, 1);
+	}
+
+	return 0;
+}
+
+/*
+ * Build the per-domain bitmap of MPIDR-derived sccl ids covered by
+ * @uncore. Run after related_cpus has been populated and before any
+ * PMU matching is done.
+ *
+ * Only online CPUs are consulted (IPI-based MPIDR read can't reach
+ * offline CPUs). At probe time the related CPUs are normally all
+ * online; any SCCL that has at least one online CPU in the domain is
+ * recorded, which is sufficient for PMU matching.
+ */
+static void hisi_uncore_build_domain_sccl(struct hisi_uncore_freq *uncore)
+{
+	int cpu;
+
+	bitmap_zero(uncore->domain_sccl, HISI_MAX_SCCL);
+
+	for_each_cpu_and(cpu, &uncore->related_cpus, cpu_online_mask) {
+		int sccl, ccl;
+
+		if (hisi_uncore_cpu_sccl_ccl(cpu, &sccl, &ccl))
+			continue;
+		if (sccl >= 0 && sccl < HISI_MAX_SCCL)
+			set_bit(sccl, uncore->domain_sccl);
+	}
+}
+
+/*
+ * Is the hisi uncore PMU described by @adev part of @uncore's freq
+ * domain? The PMU advertises its SCCL via hisilicon,scl-id; matching
+ * is a constant-time lookup in the precomputed domain_sccl bitmap.
+ */
+static bool hisi_uncore_pmu_in_domain(struct hisi_uncore_freq *uncore,
+				      struct acpi_device *adev)
+{
+	u32 pmu_sccl;
+
+	if (fwnode_property_read_u32(acpi_fwnode_handle(adev),
+				     "hisilicon,scl-id", &pmu_sccl))
+		return false;
+
+	return pmu_sccl < HISI_MAX_SCCL &&
+	       test_bit(pmu_sccl, uncore->domain_sccl);
+}
+
+static int hisi_uncore_event_enable(struct devfreq_event_dev *edev)
+{
+	struct hisi_uncore_event *event = devfreq_event_get_drvdata(edev);
+	int i;
+
+	for (i = 0; i < event->nr_ev; i++) {
+		perf_event_enable(event->evset[i].util);
+		perf_event_enable(event->evset[i].total);
+	}
+	return 0;
+}
+
+static int hisi_uncore_event_disable(struct devfreq_event_dev *edev)
+{
+	struct hisi_uncore_event *event = devfreq_event_get_drvdata(edev);
+	int i;
+
+	for (i = 0; i < event->nr_ev; i++) {
+		perf_event_disable(event->evset[i].util);
+		perf_event_disable(event->evset[i].total);
+	}
+	return 0;
+}
+
+static int hisi_uncore_event_set(struct devfreq_event_dev *edev)
+{
+	return 0;
+}
+
+/*
+ * Return the highest load/total pair from the PMU in this freq domain over the
+ * latest poll interval.  A PMU's utilization counter measures busy or idle
+ * cycles; both are normalised to load here.
+ */
+static int hisi_uncore_event_get(struct devfreq_event_dev *edev,
+				 struct devfreq_event_data *edata)
+{
+	struct hisi_uncore_event *event = devfreq_event_get_drvdata(edev);
+	u64 cur_util, cur_total, d_util, d_total;
+	u64 max_load = 0, max_total = 1;
+	u64 ena_u, run_u, ena_t, run_t;
+	struct evset *e;
+	int i, shift;
+
+	for (i = 0; i < event->nr_ev; i++) {
+		e = &event->evset[i];
+
+		cur_util  = perf_event_read_value(e->util,  &ena_u, &run_u);
+		cur_total = perf_event_read_value(e->total, &ena_t, &run_t);
+
+		d_util  = cur_util  - e->prev_util;
+		d_total = cur_total - e->prev_total;
+		e->prev_util  = cur_util;
+		e->prev_total = cur_total;
+
+		if (!d_total)
+			continue;
+
+		/*
+		 * If the PMU was multiplexed (running < enabled), scale the
+		 * raw delta up to estimate the full-interval count.
+		 */
+		if (run_u && run_u != ena_u)
+			d_util = mul_u64_u64_div_u64(d_util, ena_u, run_u);
+		if (run_t && run_t != ena_t)
+			d_total = mul_u64_u64_div_u64(d_total, ena_t, run_t);
+
+		d_util = min(d_util, d_total);
+		d_util = (e->util_kind == HUCF_UTIL_IDLE) ? d_total - d_util
+							  : d_util;
+
+		/*
+		 * Scale down to 32 bits so the following cross multiplication
+		 * can't overflow, in case of a long sampling window and
+		 * possibly large deltas.
+		 */
+		shift = fls64(d_total) - 32;
+		if (shift > 0) {
+			d_util  >>= shift;
+			d_total >>= shift;
+		}
+
+		if (d_util * max_total > max_load * d_total) {
+			max_load  = d_util;
+			max_total = d_total;
+		}
+	}
+
+	edata->load_count  = max_load;
+	edata->total_count = max_total;
+
+	return 0;
+}
+
+static const struct devfreq_event_ops hisi_uncore_event_ops = {
+	.enable    = hisi_uncore_event_enable,
+	.disable   = hisi_uncore_event_disable,
+	.set_event = hisi_uncore_event_set,
+	.get_event = hisi_uncore_event_get,
+};
+
+static void devm_hisi_uncore_disable_edev(void *data)
+{
+	devfreq_event_disable_edev(data);
+}
+
+static void hisi_uncore_release_perf_events(void *data)
+{
+	struct hisi_uncore_event *event = data;
+	int i;
+
+	for (i = 0; i < event->nr_ev; i++) {
+		if (event->evset[i].util)
+			perf_event_release_kernel(event->evset[i].util);
+		if (event->evset[i].total)
+			perf_event_release_kernel(event->evset[i].total);
+	}
+}
+
+static int hisi_uncore_create_pmu_events(struct hisi_uncore_freq *uncore,
+					 struct acpi_device *adev,
+					 const struct hisi_l3c_pmu_info *info,
+					 struct evset *evset)
+{
+	struct device *pmu_dev = acpi_get_first_physical_node(adev);
+	struct perf_event_attr attr = {
+		.size		= sizeof(attr),
+		.disabled	= 1,
+	};
+	struct perf_event *pe_util, *pe_total;
+	int cpu, type;
+
+	/*
+	 * The L3C PMU may not be registered yet, e.g. when both drivers are
+	 * built in and this one probes first. Wait for it, but not forever,
+	 * as basic frequency control works without it.
+	 */
+	type = pmu_dev ? hisi_uncore_pmu_get_type(pmu_dev) : -ENODEV;
+	if (type < 0)
+		return driver_deferred_probe_check_state(uncore->dev);
+
+	cpu = cpumask_first_and(&uncore->related_cpus, cpu_online_mask);
+	if (cpu >= nr_cpu_ids)
+		return -EAGAIN;
+
+	attr.type = type;
+	attr.config = info->util_event;
+	pe_util = perf_event_create_kernel_counter(&attr, cpu, NULL, NULL, NULL);
+	if (IS_ERR(pe_util))
+		return PTR_ERR(pe_util);
+
+	attr.config = HISI_L3C_EVENT_CYCLES;
+	pe_total = perf_event_create_kernel_counter(&attr, cpu, NULL, NULL, NULL);
+	if (IS_ERR(pe_total)) {
+		perf_event_release_kernel(pe_util);
+		return PTR_ERR(pe_total);
+	}
+
+	evset->util  = pe_util;
+	evset->total = pe_total;
+	evset->util_kind = info->util_kind;
+
+	return 0;
+}
+
+static int hisi_uncore_devfreq_event_register(struct hisi_uncore_freq *uncore)
+{
+	const struct hisi_l3c_pmu_info *pmu_info;
+	struct device *dev = uncore->dev;
+	struct hisi_uncore_event *event;
+	struct devfreq_event_desc *desc;
+	struct devfreq_event_dev *edev;
+	struct acpi_device *adev;
+	int rc, max_pmus = 0;
+
+	if (!IS_ENABLED(CONFIG_HISI_PMU))
+		return 0;
+
+	pmu_info = hisi_l3c_pmu_info_get();
+	if (!pmu_info)
+		return 0;
+
+	for_each_acpi_dev_match(adev, pmu_info->hid, NULL, -1)
+		max_pmus++;
+
+	if (!max_pmus)
+		return 0;
+
+	hisi_uncore_build_domain_sccl(uncore);
+
+	event = devm_kzalloc(dev, sizeof(*event), GFP_KERNEL);
+	if (!event)
+		return -ENOMEM;
+
+	event->evset = devm_kcalloc(dev, max_pmus, sizeof(*event->evset),
+				    GFP_KERNEL);
+	if (!event->evset)
+		return -ENOMEM;
+
+	/* Release any partially created perf events on probe failure. */
+	rc = devm_add_action_or_reset(dev, hisi_uncore_release_perf_events,
+				      event);
+	if (rc)
+		return rc;
+
+	for_each_acpi_dev_match(adev, pmu_info->hid, NULL, -1) {
+		if (!hisi_uncore_pmu_in_domain(uncore, adev))
+			continue;
+
+		rc = hisi_uncore_create_pmu_events(uncore, adev, pmu_info,
+						   &event->evset[event->nr_ev]);
+		if (rc) {
+			acpi_dev_put(adev);
+			/*
+			 * PMU event support is optional. Defer the probe while
+			 * the PMU may still show up, otherwise carry on.
+			 */
+			if (rc == -ETIMEDOUT || rc == -ENODEV || rc == -EAGAIN) {
+				dev_info(dev, "PMU unavailable, continue without devfreq-event support\n");
+				return 0;
+			}
+			return rc;
+		}
+		event->nr_ev++;
+	}
+
+	if (!event->nr_ev)
+		return 0;
+
+	uncore->ondemand_data = pmu_info->ondemand_data;
+
+	desc = devm_kzalloc(dev, sizeof(*desc), GFP_KERNEL);
+	if (!desc)
+		return -ENOMEM;
+
+	*desc = (struct devfreq_event_desc) {
+		.name = dev_name(dev),
+		.driver_data = event,
+		.ops = &hisi_uncore_event_ops,
+	};
+
+	edev = devm_devfreq_event_add_edev(dev, desc);
+	if (IS_ERR(edev))
+		return PTR_ERR(edev);
+
+	uncore->edev = edev;
+
+	rc = devfreq_event_enable_edev(edev);
+	if (rc)
+		return dev_err_probe(dev, rc, "Failed to enable devfreq-event\n");
+
+	return devm_add_action_or_reset(dev, devm_hisi_uncore_disable_edev, edev);
+}
+
+/*
+ * Load the L3C PMU first when available so its perf PMU is registered before we
+ * look it up.  This is a soft dependency: PMU event support is optional and the
+ * driver still provides basic frequency control without it.
+ */
+MODULE_SOFTDEP("pre: hisi_uncore_l3c_pmu");
+MODULE_IMPORT_NS(HISI_PMU);
 
 static void hisi_uncore_free_pcc_chan(struct hisi_uncore_freq *uncore)
 {
@@ -276,7 +703,29 @@ static int hisi_uncore_target(struct device *dev, unsigned long *freq,
 static int hisi_uncore_get_dev_status(struct device *dev,
 				      struct devfreq_dev_status *stat)
 {
-	/* Not used */
+	struct hisi_uncore_freq *uncore = dev_get_drvdata(dev);
+	struct devfreq_event_data edata;
+	int rc;
+
+	/*
+	 * Without the L3C PMU there's no load data. Report a zero total time,
+	 * which makes simple_ondemand stay at the max frequency, instead of
+	 * failing on every poll.
+	 */
+	if (!uncore->edev) {
+		*stat = (struct devfreq_dev_status) { };
+		return 0;
+	}
+
+	rc = devfreq_event_get_event(uncore->edev, &edata);
+	if (rc < 0)
+		return rc;
+
+	stat->busy_time = edata.load_count;
+	stat->total_time = edata.total_count;
+	stat->current_frequency = uncore->devfreq ?
+				  uncore->devfreq->previous_freq : 0;
+
 	return 0;
 }
 
@@ -586,10 +1035,12 @@ static int hisi_uncore_devfreq_register(struct hisi_uncore_freq *uncore)
 
 	if (data == HUCF_MODE_PLATFORM)
 		uncore->devfreq = devm_devfreq_add_device(dev, profile,
-					  hisi_platform_governor.name, NULL);
+					  hisi_platform_governor.name,
+					  uncore->ondemand_data);
 	else
 		uncore->devfreq = devm_devfreq_add_device(dev, profile,
-					  DEVFREQ_GOV_PERFORMANCE, NULL);
+					  DEVFREQ_GOV_PERFORMANCE,
+					  uncore->ondemand_data);
 	if (IS_ERR(uncore->devfreq))
 		return dev_err_probe(dev, PTR_ERR(uncore->devfreq),
 			"Failed to add devfreq device\n");
@@ -611,6 +1062,15 @@ static int hisi_uncore_freq_probe(struct platform_device *pdev)
 	uncore->dev = dev;
 	platform_set_drvdata(pdev, uncore);
 
+	rc = hisi_uncore_mark_related_cpus_wrap(uncore);
+	if (rc)
+		return dev_err_probe(dev, rc, "Failed to mark related cpus\n");
+
+	/* Do this first as it may defer the probe. */
+	rc = hisi_uncore_devfreq_event_register(uncore);
+	if (rc)
+		return rc;
+
 	rc = hisi_uncore_init_pcc_chan(uncore);
 	if (rc)
 		return dev_err_probe(dev, rc, "Failed to init PCC channel\n");
@@ -628,10 +1088,6 @@ static int hisi_uncore_freq_probe(struct platform_device *pdev)
 	rc = hisi_uncore_add_platform_gov(uncore);
 	if (rc)
 		return dev_err_probe(dev, rc, "Failed to add hisi_platform governor\n");
-
-	rc = hisi_uncore_mark_related_cpus_wrap(uncore);
-	if (rc)
-		return dev_err_probe(dev, rc, "Failed to mark related cpus\n");
 
 	rc = hisi_uncore_devfreq_register(uncore);
 	if (rc)

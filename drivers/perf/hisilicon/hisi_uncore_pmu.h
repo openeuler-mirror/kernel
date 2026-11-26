@@ -15,6 +15,7 @@
 #include <linux/cpumask.h>
 #include <linux/device.h>
 #include <linux/kernel.h>
+#include <linux/list.h>
 #include <linux/module.h>
 #include <linux/perf_event.h>
 #include <linux/platform_device.h>
@@ -132,6 +133,8 @@ struct hisi_pmu {
 	int irq;
 	struct device *dev;
 	struct hlist_node node;
+	/* Entry in the list of PMUs exposed to in-kernel users */
+	struct list_head entry;
 	void __iomem *base;
 	int num_counters;
 	int counter_bits;
@@ -173,6 +176,8 @@ int hisi_uncore_pmu_init_irq(struct hisi_pmu *hisi_pmu,
 void hisi_uncore_pmu_init_topology(struct hisi_pmu *hisi_pmu, struct device *dev);
 
 void hisi_pmu_init(struct hisi_pmu *hisi_pmu, struct module *module);
+void hisi_uncore_pmu_list_add(struct hisi_pmu *hisi_pmu);
+void hisi_uncore_pmu_list_del(struct hisi_pmu *hisi_pmu);
 
 extern enum cpuhp_state hisi_uncore_pmu_cpuhp_state;
 #endif /* __HISI_UNCORE_PMU_H__ */
