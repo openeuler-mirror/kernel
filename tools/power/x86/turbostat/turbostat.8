@@ -92,7 +92,7 @@ name as necessary to disambiguate it from others is necessary.  Note that option
 		'%x' hex identifier of the PMT MMIO region.
 .fi
 .PP
-\fB--cpu cpu-set\fP limit output to system summary plus the specified cpu-set.  If cpu-set is the string "core", then the system summary plus the first CPU in each core are printed -- eg. subsequent HT siblings are not printed.  Or if cpu-set is the string "package", then the system summary plus the first CPU in each package is printed.  Otherwise, the system summary plus the specified set of CPUs are printed.  The cpu-set is ordered from low to high, comma delimited with ".." and "-" permitted to denote a range. eg. 1,2,8,14..17,21-44
+\fB--cpu cpu-set\fP limit output to system summary plus the specified cpu-set.  If cpu-set is the string "core", then the system summary plus the first CPU in each core are printed -- eg. subsequent HT siblings are not printed.  Or if cpu-set is the string "package", then the system summary plus the first CPU in each package is printed.  Otherwise, the system summary plus the specified set of CPUs are printed.  The cpu-set is ordered from low to high, comma delimited with ".." and "-" permitted to denote a range. eg. 1,2,8,14..17,21-44  Multiple invocations of --cpu are OR'd together.
 .PP
 \fB--hide column\fP do not show the specified built-in columns.  May be invoked multiple times, or with a comma-separated list of column names.
 .PP
@@ -111,9 +111,13 @@ The column name "all" can be used to enable all disabled-by-default built-in cou
 .PP
 \fB--no-perf\fP Disable all the uses of the perf API.
 .PP
+\fB--force\fP Force turbostat to run on an unsupported platform (minimal defaults).
+.PP
 \fB--interval seconds\fP overrides the default 5.0 second measurement interval.
 .PP
 \fB--num_iterations num\fP number of the measurement iterations.
+.PP
+\fB--header_iterations num\fP print header every num iterations.
 .PP
 \fB--out output_file\fP turbostat output is written to the specified output_file.
 The file is truncated if it already exists, and it is created if it does not exist.
@@ -159,15 +163,19 @@ The system configuration dump (if --quiet is not used) is followed by statistics
 .PP
 \fBSMI\fP The number of System Management Interrupts  serviced CPU during the measurement interval.  While this counter is actually per-CPU, SMI are triggered on all processors, so the number should be the same for all CPUs.
 .PP
-\fBLLCkRPS\fP Last Level Cache Thousands of References Per Second.  For CPUs with an L3 LLC, this is the number of references that CPU made to the L3 (and the number of misses that CPU made to it's L2).  For CPUs with an L2 LLC, this is the number of references to the L2 (and the number of misses to the CPU's L1).  The system summary row shows the sum for all CPUs.  In both cases, the value displayed is the actual value divided by 1000 in the interest of usually fitting into 8 columns.
+\fBLLCMRPS\fP Last Level Cache Millions of References Per Second.  For CPUs with an L3 LLC, this is the number of references that CPU made to the L3 (and the number of misses that CPU made to it's L2).  For CPUs with an L2 LLC, this is the number of references to the L2 (and the number of misses to the CPU's L1).  The system summary row shows the sum for all CPUs.  In both cases, the value displayed is the actual value divided by 1,000,000.  If this value is large, then the LLC%hit column is significant.  If this value is small, then the LLC%hit column is not significant.
 .PP
-\fBLLC%hit\fP Last Level Cache Hit Rate %.  Hit Rate Percent = 100.0 * (References - Misses)/References.  The system summary row shows the weighted average for all CPUs (100.0 * (Sum_References - Sum_Misses)/Sum_References).
+\fBLLC%hit\fP Last Level Cache Hit Rate %.  Hit Rate Percent = 100.0 * Hits/References.  The system summary row shows the weighted average for all CPUs (100.0 * Sum_Hits/Sum_References).
+.PP
+\fBL2MRPS\fP Level-2 Cache Millions of References Per Second.  For CPUs with an L2 LLC, this is the same as LLC references.  The system summary row shows the sum for all CPUs.  In both cases, the value displayed is the actual value divided by 1,000,000.  If this value is large, then the L2%hit column is significant.  If this value is small, then the L2%hit column is not significant.
+.PP
+\fBL2%hit\fP Level-2 Cache Hit Rate %.  Hit Rate Percent = 100.0 * Hits/References.  The system summary row shows the weighted average for all CPUs (100.0 * (Sum_Hits)/Sum_References).
 .PP
 \fBC1, C2, C3...\fP The number times Linux requested the C1, C2, C3 idle state during the measurement interval.  The system summary line shows the sum for all CPUs.  These are C-state names as exported in /sys/devices/system/cpu/cpu*/cpuidle/state*/name.  While their names are generic, their attributes are processor specific. They the system description section of output shows what MWAIT sub-states they are mapped to on each system.  These counters are in the "cpuidle" group, which is disabled, by default.
 .PP
-\fBC1+, C2+, C3+...\fP The idle governor idle state misprediction statistics. Inidcates the number times Linux requested the C1, C2, C3 idle state during the measurement interval, but should have requested a deeper idle state (if it exists and enabled). These statistics come from the /sys/devices/system/cpu/cpu*/cpuidle/state*/below file.  These counters are in the "cpuidle" group, which is disabled, by default.
+\fBC1+, C2+, C3+...\fP The idle governor idle state misprediction statistics. Indicates the number times Linux requested the C1, C2, C3 idle state during the measurement interval, but should have requested a deeper idle state (if it exists and enabled). These statistics come from the /sys/devices/system/cpu/cpu*/cpuidle/state*/below file.  These counters are in the "cpuidle" group, which is disabled, by default.
 .PP
-\fBC1-, C2-, C3-...\fP The idle governor idle state misprediction statistics. Inidcates the number times Linux requested the C1, C2, C3 idle state during the measurement interval, but should have requested a shallower idle state (if it exists and enabled). These statistics come from the /sys/devices/system/cpu/cpu*/cpuidle/state*/above file.  These counters are in the "cpuidle" group, which is disabled, by default.
+\fBC1-, C2-, C3-...\fP The idle governor idle state misprediction statistics. Indicates the number times Linux requested the C1, C2, C3 idle state during the measurement interval, but should have requested a shallower idle state (if it exists and enabled). These statistics come from the /sys/devices/system/cpu/cpu*/cpuidle/state*/above file.  These counters are in the "cpuidle" group, which is disabled, by default.
 .PP
 \fBC1%, C2%, C3%\fP The residency percentage that Linux requested C1, C2, C3....  The system summary is the average of all CPUs in the system.  Note that these are software, reflecting what was requested.  The hardware counters reflect what was actually achieved.  These counters are in the "pct_idle" group, which is enabled by default.
 .PP
@@ -197,7 +205,7 @@ The system configuration dump (if --quiet is not used) is followed by statistics
 .PP
 \fBGFX%C0\fP Percentage of time that at least one GFX compute engine is busy.
 .PP
-\fBCPUGFX%\fP Percentage of time that at least one CPU is busy at the same time as at least one Graphics compute enginer is busy.
+\fBCPUGFX%\fP Percentage of time that at least one CPU is busy at the same time as at least one Graphics compute engine is busy.
 .PP
 \fBPkg%pc2, Pkg%pc3, Pkg%pc6, Pkg%pc7\fP percentage residency in hardware package idle states.  These numbers are from hardware residency counters.
 .PP
@@ -261,7 +269,7 @@ Periodic output goes to stdout, by default, unless --out is used to specify an o
 The 5-second interval can be changed with the "-i sec" option.
 .nf
 sudo turbostat --quiet --show CPU,frequency
-	Core	CPU	Avg_MHz	Busy%	Bzy_MHz	TSC_MHz	CPU%c7	UncMhz
+	Core	CPU	Avg_MHz	Busy%	Bzy_MHz	TSC_MHz	CPU%c7	UncMHz
 	-	-	524	12.48	4198	3096	74.53	3800
 	0	0	4	0.09	4081	3096	98.88	3800
 	0	4	1	0.02	4063	3096
@@ -271,7 +279,7 @@ sudo turbostat --quiet --show CPU,frequency
 	2	6	3	0.08	4159	3096
 	3	3	1	0.04	4046	3096	99.66
 	3	7	0	0.01	3989	3096
-	Core	CPU	Avg_MHz	Busy%	Bzy_MHz	TSC_MHz	CPU%c7	UncMhz
+	Core	CPU	Avg_MHz	Busy%	Bzy_MHz	TSC_MHz	CPU%c7	UncMHz
 	-	-	525	12.52	4198	3096	74.54	3800
 	0	0	4	0.10	4051	3096	99.49	3800
 	0	4	2	0.04	3993	3096
@@ -559,6 +567,8 @@ If the upstream version isn't new enough, the development tree can be found here
 If the development tree doesn't work, please contact the author via chat,
 or via email with the word "turbostat" on the Subject line.
 
+An old turbostat binary may run on unknown hardware by using "--force",
+but results are unsupported.
 .SH FILES
 .ta
 .nf
