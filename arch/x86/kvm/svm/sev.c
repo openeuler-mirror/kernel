@@ -113,10 +113,10 @@ static int sev_asid_new(bool es_active)
 	max_asid = es_active ? min_sev_asid - 1 : max_sev_asid;
 
 	/*
-	 * No matter what the min_sev_asid is, all asids in range
+	 * When the firmware is with build ID >= 1810, all asids in range
 	 * [1, max_sev_asid] can be used for CSV2 guest on Hygon CPUs.
 	 */
-	if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON)
+	if (is_x86_vendor_hygon() && hygon_csv_build >= 1810)
 		max_asid = max_sev_asid;
 again:
 	pos = find_next_zero_bit(sev_asid_bitmap, max_sev_asid, min_asid);
@@ -2145,12 +2145,18 @@ void __init sev_hardware_setup(void)
 	if (!boot_cpu_has(X86_FEATURE_SEV_ES))
 		goto out;
 
-	/*
-	 * The ASIDs from 1 to max_sev_asid are available for hygon CSV2
-	 * guest.
-	 */
-	if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON) {
-		pr_info("CSV2 supported: %u ASIDs\n", max_sev_asid);
+	if (is_x86_vendor_hygon()) {
+		if (hygon_csv_build < 1810 && min_sev_asid <= 1)
+			goto out;
+
+		/*
+		 * If firmware version >= 1810, the ASIDs from 1 to max_sev_asid
+		 * are available for hygon CSV2 guest.
+		 * If firmware version < 1810, the ASIDs from 1 to CPUID function
+		 * 0x8000_001F_EDX are available for hygon CSV2 guest.
+		 */
+		pr_info("CSV2 supported: %u ASIDs\n",
+			hygon_csv_build >= 1810 ? max_sev_asid : min_sev_asid - 1);
 		sev_es_supported = true;
 		goto out;
 	}
