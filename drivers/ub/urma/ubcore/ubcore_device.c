@@ -29,7 +29,6 @@
 #include "ubcore_uvs_cmd.h"
 #include "ubcore_vtp.h"
 #include "ubcore_connect_adapter.h"
-#include "ubcore_topo_info.h"
 #include "ubcore_priv.h"
 #include "net/ubcore_session.h"
 #include "net/ubcore_cm.h"
@@ -2075,6 +2074,65 @@ int ubcore_config_device(struct ubcore_device *dev,
 	return 0;
 }
 EXPORT_SYMBOL(ubcore_config_device);
+
+/*
+ * Temporary compatibility protocol; keep in sync with ubagg_ioctl.c.
+ * Remove these definitions together with ubcore_get_path_set().
+ * uctx is NULL and in/out.addr point to kernel buffers.
+ */
+enum ubagg_kernel_ctl_opcode {
+	UBAGG_KERNEL_CTL_GET_PATH_SET = 0x10000,
+};
+
+struct ubagg_get_path_set_in {
+	union ubcore_eid src_bonding_eid;
+	union ubcore_eid dst_bonding_eid;
+	enum ubcore_tp_type tp_type;
+	bool iodie_level;
+};
+
+int ubcore_get_path_set(union ubcore_eid *src_bonding_eid,
+	union ubcore_eid *dst_bonding_eid, enum ubcore_tp_type tp_type,
+	bool iodie_level, struct ubcore_path_set *path_set)
+{
+	struct ubagg_get_path_set_in in = {0};
+	struct ubcore_user_ctl ctl = {0};
+	struct ubcore_device *dev;
+	int ret;
+
+	if (IS_ERR_OR_NULL(src_bonding_eid) || IS_ERR_OR_NULL(dst_bonding_eid) ||
+	    IS_ERR_OR_NULL(path_set))
+		return -EINVAL;
+
+	memset(path_set, 0, sizeof(*path_set));
+	if (!memchr_inv(src_bonding_eid->raw, 0, sizeof(src_bonding_eid->raw)) ||
+	    !memchr_inv(dst_bonding_eid->raw, 0, sizeof(dst_bonding_eid->raw)))
+		return -EINVAL;
+
+	dev = ubcore_find_device(src_bonding_eid, UBCORE_TRANSPORT_UB);
+	if (dev == NULL)
+		return -ENODEV;
+
+	in.src_bonding_eid = *src_bonding_eid;
+	in.dst_bonding_eid = *dst_bonding_eid;
+	in.tp_type = tp_type;
+	in.iodie_level = iodie_level;
+	ctl.in.opcode = UBAGG_KERNEL_CTL_GET_PATH_SET;
+	ctl.in.addr = (uintptr_t)&in;
+	ctl.in.len = sizeof(in);
+	ctl.out.addr = (uintptr_t)path_set;
+	ctl.out.len = sizeof(*path_set);
+
+	ret = ubcore_user_control(dev, &ctl);
+	ubcore_put_device(dev);
+	if (ret == 0 && (ctl.out.len != sizeof(*path_set) ||
+			 path_set->path_count > ARRAY_SIZE(path_set->paths)))
+		ret = -EIO;
+	if (ret != 0)
+		memset(path_set, 0, sizeof(*path_set));
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_get_path_set);
 
 int ubcore_user_control(struct ubcore_device *dev,
 			struct ubcore_user_ctl *k_user_ctl)

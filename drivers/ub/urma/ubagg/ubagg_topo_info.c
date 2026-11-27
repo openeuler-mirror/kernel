@@ -438,6 +438,183 @@ bool ubagg_eid_is_known(const union ubcore_eid *eid)
 	return ubagg_find_topo_by_eid(eid, NULL, NULL, NULL) == 0;
 }
 
+static int ubagg_get_path_set_primary(struct ubagg_topo_node *dst_topo_info,
+	struct ubagg_topo_agg_dev *src_agg_dev, struct ubagg_topo_agg_dev *dst_agg_dev,
+	struct ubcore_path_set *path_set)
+{
+	uint32_t path_idx = 0;
+	struct ubcore_path *path;
+
+	for (uint32_t local_iodie = 0; local_iodie < IODIE_NUM; local_iodie++) {
+		for (uint32_t remote_iodie = 0; remote_iodie < IODIE_NUM; remote_iodie++) {
+			bool has_port_link = false;
+
+			if (path_idx >= UBCORE_MAX_ROUTE_NUM) {
+				ubagg_log_warn("Path set is full, path_count: %u.\n", path_idx);
+				path_set->path_count = path_idx;
+				return 0;
+			}
+
+			for (uint32_t local_port = 0;
+				local_port < PORT_NUM && !has_port_link; local_port++) {
+				uint32_t local_idx = local_iodie * PORT_NUM + local_port;
+
+				for (uint32_t remote_port = 0;
+					remote_port < PORT_NUM && !has_port_link; remote_port++) {
+					uint32_t remote_idx = remote_iodie * PORT_NUM + remote_port;
+
+					if (dst_topo_info->links[local_idx][remote_idx])
+						has_port_link = true;
+				}
+			}
+
+			if (!has_port_link)
+				continue;
+			if (memchr_inv(src_agg_dev->ues[local_iodie].primary_eid,
+				       0, EID_LEN) == NULL ||
+			    memchr_inv(dst_agg_dev->ues[remote_iodie].primary_eid,
+				       0, EID_LEN) == NULL)
+				continue;
+
+			path = &path_set->paths[path_idx];
+			path->src_port.chip_id = src_agg_dev->ues[local_iodie].chip_id;
+			path->src_port.die_id = src_agg_dev->ues[local_iodie].die_id;
+			path->src_port.port_idx = U8_MAX;
+			path->src_port.reserved = 0;
+			path->dst_port.chip_id = dst_agg_dev->ues[remote_iodie].chip_id;
+			path->dst_port.die_id = dst_agg_dev->ues[remote_iodie].die_id;
+			path->dst_port.port_idx = U8_MAX;
+			path->dst_port.reserved = 0;
+			(void)memcpy(&path->src_eid,
+				src_agg_dev->ues[local_iodie].primary_eid,
+				sizeof(union ubcore_eid));
+			(void)memcpy(&path->dst_eid,
+				dst_agg_dev->ues[remote_iodie].primary_eid,
+				sizeof(union ubcore_eid));
+			path_idx++;
+		}
+	}
+
+	path_set->path_count = path_idx;
+	if (path_idx == 0) {
+		ubagg_log_err("Failed to get any valid primary path.\n");
+		return -EINVAL;
+	}
+	return 0;
+}
+
+static int ubagg_get_path_set_port(struct ubagg_topo_node *dst_topo_info,
+	struct ubagg_topo_agg_dev *src_agg_dev, struct ubagg_topo_agg_dev *dst_agg_dev,
+	struct ubcore_path_set *path_set)
+{
+	uint32_t path_idx = 0;
+	struct ubcore_path *path;
+
+	for (uint32_t local_idx = 0; local_idx < IODIE_NUM * PORT_NUM; local_idx++) {
+		uint32_t local_iodie = local_idx / PORT_NUM;
+		uint32_t local_port = local_idx % PORT_NUM;
+
+		if (path_idx >= UBCORE_MAX_ROUTE_NUM) {
+			ubagg_log_warn("Path set is full, path_count: %u.\n", path_idx);
+			path_set->path_count = path_idx;
+			return 0;
+		}
+		if (memchr_inv(src_agg_dev->ues[local_iodie].port_eid[local_port],
+			       0, EID_LEN) == NULL)
+			continue;
+
+		for (uint32_t remote_idx = 0; remote_idx < IODIE_NUM * PORT_NUM; remote_idx++) {
+			uint32_t remote_iodie = remote_idx / PORT_NUM;
+			uint32_t remote_port = remote_idx % PORT_NUM;
+
+			if (!dst_topo_info->links[local_idx][remote_idx])
+				continue;
+			if (path_idx >= UBCORE_MAX_ROUTE_NUM) {
+				ubagg_log_warn("Path set is full, path_count: %u.\n", path_idx);
+				path_set->path_count = path_idx;
+				return 0;
+			}
+
+			path = &path_set->paths[path_idx];
+			path->src_port.chip_id = src_agg_dev->ues[local_iodie].chip_id;
+			path->src_port.die_id = src_agg_dev->ues[local_iodie].die_id;
+			path->src_port.port_idx = local_port;
+			path->src_port.reserved = 0;
+			path->dst_port.chip_id = dst_agg_dev->ues[remote_iodie].chip_id;
+			path->dst_port.die_id = dst_agg_dev->ues[remote_iodie].die_id;
+			path->dst_port.port_idx = remote_port;
+			path->dst_port.reserved = 0;
+			(void)memcpy(&path->src_eid,
+				src_agg_dev->ues[local_iodie].port_eid[local_port],
+				sizeof(union ubcore_eid));
+			(void)memcpy(&path->dst_eid,
+				dst_agg_dev->ues[remote_iodie].port_eid[remote_port],
+				sizeof(union ubcore_eid));
+			path_idx++;
+		}
+	}
+
+	path_set->path_count = path_idx;
+	if (path_idx == 0) {
+		ubagg_log_err("Failed to get any valid port path.\n");
+		return -EINVAL;
+	}
+	return 0;
+}
+
+int ubagg_get_path_set(union ubcore_eid *src_bonding_eid,
+	union ubcore_eid *dst_bonding_eid, enum ubcore_tp_type tp_type,
+	bool iodie_level, struct ubcore_path_set *path_set)
+{
+	struct ubagg_topo_agg_dev *src_agg_dev;
+	struct ubagg_topo_agg_dev *dst_agg_dev;
+	struct ubagg_topo_node *src_topo_info;
+	struct ubagg_topo_node *dst_topo_info;
+	int ret;
+
+	if (IS_ERR_OR_NULL(src_bonding_eid) || IS_ERR_OR_NULL(dst_bonding_eid) ||
+	    IS_ERR_OR_NULL(path_set))
+		return -EINVAL;
+	if (g_topo_map == NULL)
+		return -EINVAL;
+
+	(void)memset(path_set, 0, sizeof(*path_set));
+	ret = ubagg_find_topo_by_eid(src_bonding_eid, &src_topo_info,
+				     &src_agg_dev, NULL);
+	if (ret != 0 || memcmp(src_bonding_eid->raw, src_agg_dev->agg_eid, EID_LEN) != 0) {
+		ubagg_log_err("Failed to get source topology by bonding EID.\n");
+		return -EINVAL;
+	}
+	ret = ubagg_find_topo_by_eid(dst_bonding_eid, &dst_topo_info,
+				     &dst_agg_dev, NULL);
+	if (ret != 0 || memcmp(dst_bonding_eid->raw, dst_agg_dev->agg_eid, EID_LEN) != 0) {
+		ubagg_log_err("Failed to get destination topology by bonding EID.\n");
+		return -EINVAL;
+	}
+	if (src_topo_info->type != dst_topo_info->type) {
+		ubagg_log_err("Source and destination topology types differ.\n");
+		return -EINVAL;
+	}
+
+	path_set->topo_type = src_topo_info->type;
+	path_set->chip_count = IODIE_NUM;
+	path_set->die_count = IODIE_NUM_PER_CHIP;
+	path_set->src_node.node_id = src_topo_info->node_id;
+	path_set->src_node.super_node_id = src_topo_info->super_node_id;
+	path_set->dst_node.node_id = dst_topo_info->node_id;
+	path_set->dst_node.super_node_id = dst_topo_info->super_node_id;
+
+	/* Iodie-level RTP returns topology metadata without any paths. */
+	if (iodie_level && tp_type == UBCORE_RTP)
+		return 0;
+	if (iodie_level && tp_type == UBCORE_CTP)
+		return ubagg_get_path_set_primary(dst_topo_info, src_agg_dev,
+					  dst_agg_dev, path_set);
+
+	return ubagg_get_path_set_port(dst_topo_info, src_agg_dev,
+				       dst_agg_dev, path_set);
+}
+
 int ubagg_get_topo_by_eid(const union ubcore_eid *eid,
 	struct ubagg_topo_by_eid_out *out)
 {

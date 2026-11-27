@@ -98,4 +98,7 @@ bool ubagg_eid_is_known(const union ubcore_eid *eid);
 int ubagg_get_topo_by_eid(const union ubcore_eid *eid,
 	struct ubagg_topo_by_eid_out *out);
 int ubagg_rebuild_topo_eid_index(struct ubagg_topo_map *topo_map);
+int ubagg_get_path_set(union ubcore_eid *src_bonding_eid,
+	union ubcore_eid *dst_bonding_eid, enum ubcore_tp_type tp_type,
+	bool iodie_level, struct ubcore_path_set *path_set);
 #endif // ubagg_topo_node_H
