@@ -563,7 +563,7 @@ static void ubmad_rt_work_handler(struct work_struct *work)
 	rt_work->rt_cnt++;
 	if (ubmad_repost_send_conn_data(rt_work) == 0 &&
 			rt_work->rt_cnt <= ubcore_max_retry_cnt) {
-		ubcore_log_info_rl("rt: repost success, msn %llu, rt_cnt %u, next after %u ms.\n",
+		ubcore_log_info_rl("rt: repost success, msn %llu, rt_cnt %u, next after %ums.\n",
 			rt_work->msn, rt_work->rt_cnt, ubmad_retry_interval_ms);
 		if (queue_delayed_work(rt_work->rt_wq, &rt_work->delay_work,
 					msecs_to_jiffies(1 << rt_work->rt_cnt)) != true) {
@@ -637,7 +637,7 @@ struct ubmad_rt_work *ubmad_create_rt_work(struct workqueue_struct *rt_wq,
 		return NULL;
 	}
 
-	ubcore_log_info_rl("Created rt_work, msn %llu, interval %u ms, dst " EID_FMT ".\n",
+	ubcore_log_info_rl("Created rt_work, msn %llu, interval %ums, dst " EID_FMT ".\n",
 		      msn, ubmad_retry_interval_ms, EID_ARGS(dst));
 	return rt_work;
 }
@@ -792,7 +792,7 @@ static int ubmad_do_post_send_reliable_data(struct ubcore_jetty *jetty,
 	}
 
 	ubcore_log_info_rl("send data successfully. msg_type %u msn %llu eid " EID_FMT
-			  ", max_retry %u, interval %u ms.\n",
+			  ", max_retry %u, interval %ums.\n",
 		      msg_type, msn, EID_ARGS(*dst_eid), ubcore_max_retry_cnt,
 		      ubmad_retry_interval_ms);
 	return 0;

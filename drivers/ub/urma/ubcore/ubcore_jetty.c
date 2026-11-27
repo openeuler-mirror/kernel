@@ -3225,20 +3225,12 @@ struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
 	cfg->flag.bs.order_type = order_type;
 
 	if (ubcore_check_ctrlplane_compat(dev->ops->import_jetty)) {
-		if (ubcore_share_mode != UBCORE_TPID_SHARE_NONE &&
-		    cfg->trans_mode == UBCORE_TP_RM)
-			ubcore_log_info("tp-trace|route=adapter|dev=%s eid_idx=%u\n",
-				dev->dev_name, cfg->eid_index);
 		ubcore_log_info_rl("Enter import jetty compat.\n");
 		result = ubcore_import_jetty_compat_retry(dev, cfg, udata);
 		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
 		return result;
 	}
 
-	if (ubcore_share_mode != UBCORE_TPID_SHARE_NONE &&
-	    cfg->trans_mode == UBCORE_TP_RM)
-		ubcore_log_info("tp-trace|route=provider-bypass|dev=%s eid_idx=%u\n",
-			dev->dev_name, cfg->eid_index);
 	ubcore_log_info_rl("Quit import jetty compat.\n");
 
 	UBCORE_PERF_TRACE_BEGIN(PERF_AGG_IMPORT_JETTY);

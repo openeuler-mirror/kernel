@@ -63,9 +63,6 @@ module_param(ubcore_conn_timeout, uint, UBCORE_LOG_FILE_PERMISSION);
 MODULE_PARM_DESC(ubcore_conn_timeout, "unit milliseconds");
 module_param(ubcore_enable_shared_ctp, bool, UBCORE_LOG_FILE_PERMISSION);
 MODULE_PARM_DESC(ubcore_enable_shared_ctp, "enable shared-CTP, 0: off, 1: on (default: 0)");
-
-module_param(ubcore_share_mode, uint, UBCORE_LOG_FILE_PERMISSION);
-MODULE_PARM_DESC(ubcore_share_mode, "TP share mode: 0=NONE, 1=CONTAINER, 2=NODE, 3=JETTY (default: 0)");
 module_param(ubcore_max_retry_cnt, uint, UBCORE_LOG_FILE_PERMISSION);
 MODULE_PARM_DESC(ubcore_max_retry_cnt, "maximum retry count for wk-jetty (default: 11)");
 module_param(ubmad_retry_interval_ms, uint, UBCORE_LOG_FILE_PERMISSION);

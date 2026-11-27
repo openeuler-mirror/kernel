@@ -2,7 +2,7 @@
 /*
  * Copyright (c) Huawei Technologies Co., Ltd. 2025-2025. All rights reserved.
  *
- * Description: ubcore comm module implementation
+ * Description: ubcore comm module implementation (替代 ubcore_net)
  */
 
 #include <linux/hashtable.h>
@@ -50,7 +50,6 @@ static const char *const msg_type_str_list[UBCORE_NET_MSG_MAX] = {
 	[UBCORE_NET_CREATE_ACK] = "create-ack",
 	[UBCORE_NET_DESTROY_REQ] = "destroy-req",
 	[UBCORE_NET_DESTROY_RESP] = "destroy-resp",
-	[UBCORE_NET_ISREF_RESP] = "isref-resp",
 };
 
 enum ubcore_connect_type {
