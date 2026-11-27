@@ -82,6 +82,10 @@ static struct tee_shm *shm_alloc_helper(struct tee_context *ctx, size_t size,
 	void *ret;
 	int rc;
 
+	/* get_order(0) is undefined and exceeds MAX_PAGE_ORDER. */
+	if (!size)
+		return ERR_PTR(-EINVAL);
+
 	if (!tee_device_get(teedev))
 		return ERR_PTR(-EINVAL);
 
