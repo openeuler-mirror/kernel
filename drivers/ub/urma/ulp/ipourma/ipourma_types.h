@@ -10,6 +10,7 @@
 
 #include <linux/netdevice.h>
 #include <linux/mutex.h>
+#include <linux/refcount.h>
 #include <linux/skbuff.h>
 #include <linux/jhash.h>
 #include <linux/list.h>
@@ -74,7 +75,10 @@ enum {
 	IPOURMA_TJETTY_CB_S         = 30,
 	IPOURMA_TJETTY_TIMEOUT_S    = 1200,
 	IPOURMA_TJETTY_TIMEOUT_MAX  = 65535,
+	IPOURMA_TJETTY_SKB_QLEN     = 16,
+	IPOURMA_TJETTY_MAX_PENDING  = 1024,
 	IPOURMA_MAX_DEV_NAME        = 50,
+	IPOURMA_IMPORT_WORKER_NUM   = 512,
 };
 
 enum {
@@ -171,14 +175,18 @@ struct ipourma_tx_stats {
 	uint64_t not_ipv6_addr;
 	uint64_t ip_eid_not_equal;
 	uint64_t ring_full;
+	uint64_t ring_invalid;
 	/* post send */
 	uint64_t post_send_start;
 	uint64_t num_import_jetty_real;
 	uint64_t num_import_jetty_bypass;
 	uint64_t num_tjetty_hash_hit;
+	uint64_t num_pending_flush;
 	uint64_t linear_len_oversize;
 	uint64_t import_jetty_failed;
 	uint64_t send_wr_failed;
+	uint64_t pending_drop;
+	uint64_t pending_create_drop;
 	/* pass to ub */
 	uint64_t pass_to_ub;
 	/* tx cqe notify */
@@ -250,7 +258,6 @@ struct ipourma_tx_buf {
 	struct ubcore_target_seg *seg[IPOURMA_MAX_TX_SGES];
 	u32 idx;
 	u32 jetty_index;
-	struct work_struct work;
 	/* dynamic fields */
 	struct sk_buff *skb;
 	union ubcore_eid dst_eid;
@@ -259,6 +266,7 @@ struct ipourma_tx_buf {
 	struct ubcore_jfs_wr tx_wr;
 	struct ubcore_sge tx_sge[IPOURMA_MAX_TX_SGES];
 	struct ubcore_tjetty *tjetty;
+	struct ipourma_tjetty_hash_node *tjetty_node;
 };
 
 struct ipourma_ethtool_st {
@@ -266,11 +274,21 @@ struct ipourma_ethtool_st {
 	u16     max_coalesced_frames;
 };
 
+enum ipourma_tjetty_state {
+	IPOURMA_TJETTY_PENDING,
+	IPOURMA_TJETTY_READY,
+	IPOURMA_TJETTY_DEAD,
+};
+
 struct ipourma_tjetty_hash_node {
 	struct hlist_node hlist;
 	struct list_head lru_list;
 	union ubcore_eid key[2];
+	enum ipourma_tjetty_state state;
 	struct ubcore_tjetty *tjetty;
+	refcount_t refcount;
+	struct sk_buff_head skb_q;
+	struct work_struct import_work;
 	struct work_struct unimport_work;
 	struct ipourma_tjetty_lru *tjetty_lru;
 	u64 last_jiffies;
@@ -284,11 +302,14 @@ struct ipourma_tjetty_hmap {
 struct ipourma_tjetty_lru {
 	struct ipourma_tjetty_hmap tjetty_hmap;
 	struct list_head list;
+	struct list_head pending_list;
 	spinlock_t lock;
 	uint16_t count;
+	uint16_t pending_cnt;
 	uint16_t tjetty_capacity;
 	struct delayed_work tjetty_aging_work;
 	struct workqueue_struct *tjetty_wq;
+	struct workqueue_struct *import_wq;
 	uint16_t tjetty_aging_interval_s;
 	uint16_t tjetty_aging_timeout_s;
 };
@@ -313,7 +334,6 @@ struct ipourma_dev_priv {
 	u32 *tx_count;
 	struct napi_struct napi_send;
 	struct napi_struct napi_recv;
-	struct workqueue_struct *tx_wq;
 	struct workqueue_struct *rx_wq;
 	unsigned long flags;
 	struct ipourma_ethtool_st ethtool;

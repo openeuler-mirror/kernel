@@ -149,91 +149,81 @@ static inline void ipourma_renew_tjetty_node(struct ipourma_tjetty_lru *tjetty_l
 	tjetty_node->last_jiffies = get_jiffies_64();
 }
 
-static struct ipourma_tjetty_hash_node *ipourma_locate_tjetty_node(
+static struct ipourma_tjetty_hash_node *ipourma_lookup_tjetty_node(
 					struct ipourma_tjetty_lru *tjetty_lru,
 					union ubcore_eid *src_eid,
-					union ubcore_eid *dst_eid,
-					bool lock_free)
+					union ubcore_eid *dst_eid)
 {
 	struct ipourma_tjetty_hmap *tjetty_hmap = &tjetty_lru->tjetty_hmap;
 	uint32_t hash_key = hash_eids(src_eid, dst_eid, tjetty_hmap->hash_seed);
 	struct ipourma_tjetty_hash_node *tjetty_node = NULL;
 
 	hash_key = hash_key % IPOURMA_TJETTY_HMAP_SIZE;
-	if (!lock_free)
-		spin_lock(&tjetty_lru->lock);
 	hlist_for_each_entry(tjetty_node, &tjetty_hmap->buckets[hash_key], hlist) {
 		if (ipourma_are_eids_equal(&tjetty_node->key[0], src_eid) &&
-		    ipourma_are_eids_equal(&tjetty_node->key[1], dst_eid)) {
-			pr_debug("dst_eid hit in hmap\n");
-			ipourma_renew_tjetty_node(tjetty_lru, tjetty_node);
-			break;
-		}
+		    ipourma_are_eids_equal(&tjetty_node->key[1], dst_eid))
+			return tjetty_node;
 	}
-	if (!lock_free)
-		spin_unlock(&tjetty_lru->lock);
 
-	return tjetty_node;
+	return NULL;
 }
 
-static void ipourma_insert_tjetty_node(struct ipourma_tjetty_lru *tjetty_lru,
-					struct ipourma_tjetty_hash_node *tjetty_node)
+void ipourma_tjetty_node_put(struct ipourma_tjetty_hash_node *tjetty_node)
 {
-	struct ipourma_tjetty_hmap *tjetty_hmap = &tjetty_lru->tjetty_hmap;
-	uint32_t hash_seed = tjetty_hmap->hash_seed;
-	/* newly imported jetty has been checked before the calling of insert function */
-	uint32_t hash_key = hash_eids(&tjetty_node->key[0], &tjetty_node->key[1], hash_seed);
-
-	hash_key = hash_key % IPOURMA_TJETTY_HMAP_SIZE;
-	spin_lock(&tjetty_lru->lock);
-	hlist_add_head(&tjetty_node->hlist, &tjetty_hmap->buckets[hash_key]);
-	list_add(&tjetty_node->lru_list, &tjetty_lru->list);
-	tjetty_lru->count++;
-	tjetty_node->last_jiffies = get_jiffies_64();
-	spin_unlock(&tjetty_lru->lock);
+	if (refcount_dec_and_test(&tjetty_node->refcount))
+		queue_work(tjetty_node->tjetty_lru->tjetty_wq, &tjetty_node->unimport_work);
 }
 
-static inline void ipourma_delete_tjetty_node(struct ipourma_tjetty_hash_node *tjetty_node)
+static void ipourma_evict_ready_tail(struct ipourma_tjetty_lru *tjetty_lru)
 {
+	struct ipourma_tjetty_hash_node *tjetty_node;
+
+	if (list_empty(&tjetty_lru->list))
+		return;
+	tjetty_node = list_last_entry(&tjetty_lru->list,
+					struct ipourma_tjetty_hash_node, lru_list);
+	list_del(&tjetty_node->lru_list);
+	tjetty_lru->count--;
+	tjetty_node->state = IPOURMA_TJETTY_DEAD;
 	hlist_del(&tjetty_node->hlist);
-	queue_work(tjetty_node->tjetty_lru->tjetty_wq, &tjetty_node->unimport_work);
-}
-
-static void ipourma_lru_del_tail(struct ipourma_tjetty_lru *tjetty_lru, bool lock_free)
-{
-	struct ipourma_tjetty_hash_node *tjetty_node = NULL;
-
-	if (!lock_free)
-		spin_lock(&tjetty_lru->lock);
-
-	if (likely(!list_empty(&tjetty_lru->list))) {
-		tjetty_node = list_last_entry(&tjetty_lru->list,
-						struct ipourma_tjetty_hash_node,
-						lru_list);
-		list_del(&tjetty_node->lru_list);
-		ipourma_delete_tjetty_node(tjetty_node);
-		tjetty_lru->count--;
-	}
-
-	if (!lock_free)
-		spin_unlock(&tjetty_lru->lock);
+	ipourma_tjetty_node_put(tjetty_node);
 }
 
 void ipourma_lru_clear(struct ipourma_tjetty_lru *tjetty_lru)
 {
-	spin_lock(&tjetty_lru->lock);
-	while (tjetty_lru->count > 0)
-		ipourma_lru_del_tail(tjetty_lru, true);
-	spin_unlock(&tjetty_lru->lock);
-}
+	struct ipourma_tjetty_hash_node *tjetty_node, *next;
+	struct hlist_node *tmp;
+	LIST_HEAD(dead_list);
+	int i;
 
-static void ipourma_lru_update(struct ipourma_tjetty_lru *tjetty_lru,
-				struct ipourma_tjetty_hash_node *tjetty_node)
-{
-	spin_lock(&tjetty_lru->lock);
-	while (tjetty_lru->count > tjetty_lru->tjetty_capacity)
-		ipourma_lru_del_tail(tjetty_lru, true);
-	spin_unlock(&tjetty_lru->lock);
+	spin_lock_bh(&tjetty_lru->lock);
+	for (i = 0; i < IPOURMA_TJETTY_HMAP_SIZE; i++) {
+		hlist_for_each_entry_safe(tjetty_node, tmp,
+				&tjetty_lru->tjetty_hmap.buckets[i], hlist) {
+			hlist_del(&tjetty_node->hlist);
+			list_del(&tjetty_node->lru_list);
+			list_add(&tjetty_node->lru_list, &dead_list);
+			tjetty_node->state = IPOURMA_TJETTY_DEAD;
+		}
+	}
+	INIT_LIST_HEAD(&tjetty_lru->list);
+	INIT_LIST_HEAD(&tjetty_lru->pending_list);
+	tjetty_lru->count = 0;
+	tjetty_lru->pending_cnt = 0;
+	spin_unlock_bh(&tjetty_lru->lock);
+
+	list_for_each_entry_safe(tjetty_node, next, &dead_list, lru_list) {
+		struct sk_buff *skb;
+
+		cancel_work_sync(&tjetty_node->import_work);
+		if (refcount_read(&tjetty_node->refcount) == 0) {
+			while ((skb = skb_dequeue(&tjetty_node->skb_q)) != NULL)
+				dev_kfree_skb_any(skb);
+			kfree(tjetty_node);
+		} else {
+			ipourma_tjetty_node_put(tjetty_node);
+		}
+	}
 }
 
 static void tjetty_aging_callback(struct work_struct *work)
@@ -248,7 +238,7 @@ static void tjetty_aging_callback(struct work_struct *work)
 	u64 now_jiffies = 0;
 	u32 delay_s = 0;
 
-	if (!spin_trylock(&tjetty_lru->lock)) {
+	if (!spin_trylock_bh(&tjetty_lru->lock)) {
 		schedule_delayed_work(tjetty_aging_work,
 			msecs_to_jiffies(IPOURMA_TJETTY_CB_S * MSEC_PER_SEC));
 		return;
@@ -262,11 +252,9 @@ static void tjetty_aging_callback(struct work_struct *work)
 		if (now_jiffies - tjetty_node->last_jiffies
 			< (u64)tjetty_lru->tjetty_aging_timeout_s * HZ)
 			break;
-		list_del(&tjetty_node->lru_list);
-		ipourma_delete_tjetty_node(tjetty_node);
-		tjetty_lru->count--;
+		ipourma_evict_ready_tail(tjetty_lru);
 	}
-	spin_unlock(&tjetty_lru->lock);
+	spin_unlock_bh(&tjetty_lru->lock);
 	schedule_delayed_work(tjetty_aging_work, msecs_to_jiffies(delay_s * MSEC_PER_SEC));
 }
 
@@ -288,54 +276,21 @@ void ipourma_init_tjetty_aging_work(struct ipourma_tjetty_lru *tjetty_lru)
 static void ipourma_unimport_tjetty_cb(struct work_struct *work)
 {
 	struct ipourma_tjetty_hash_node *tjetty_node = NULL;
+	struct sk_buff *skb;
 
 	tjetty_node = container_of(work, struct ipourma_tjetty_hash_node, unimport_work);
-	ubcore_unimport_jetty(tjetty_node->tjetty);
+	if (!IS_ERR_OR_NULL(tjetty_node->tjetty))
+		ubcore_unimport_jetty(tjetty_node->tjetty);
+	while ((skb = skb_dequeue(&tjetty_node->skb_q)) != NULL)
+		dev_kfree_skb_any(skb);
 	kfree(tjetty_node);
-}
-
-static struct ubcore_tjetty *ipourma_import_new_tjetty(
-	struct ipourma_dev_priv *priv, struct ipourma_tx_buf *tx_req)
-{
-	if (IS_ERR_OR_NULL(priv) || IS_ERR_OR_NULL(tx_req))
-		goto nullptr_err;
-	u32 jetty_index = tx_req->jetty_index;
-	union ubcore_eid src_eid = tx_req->src_eid;
-	union ubcore_eid dst_eid = tx_req->dst_eid;
-	struct ipourma_tjetty_hash_node *tjetty_node = NULL;
-	u32 jetty_id = jetty_index + IPOURMA_WELL_KNOWN_JETTY_ID;
-
-	tjetty_node = kzalloc(sizeof(struct ipourma_tjetty_hash_node), GFP_KERNEL);
-	if (IS_ERR_OR_NULL(tjetty_node)) {
-		netdev_dbg(priv->dev, "%s\n",
-				ipourma_err_desc(IPOURMA_TJETTY_NODE_ALLOC_FAILED));
-		goto tjetty_node_zalloc_failed;
-	}
-
-	tjetty_node->key[0] = src_eid;
-	tjetty_node->key[1] = dst_eid;
-	tjetty_node->tjetty_lru = &priv->tjetty_lru;
-	INIT_WORK(&tjetty_node->unimport_work, ipourma_unimport_tjetty_cb);
-	tjetty_node->tjetty = ipourma_import_jetty(priv->dev, &dst_eid, jetty_id,
-						(u32)READ_ONCE(priv->anchor_eid_idx));
-	if (IS_ERR_OR_NULL(tjetty_node->tjetty))
-		goto ipourma_import_jetty_failed;
-
-	ipourma_insert_tjetty_node(&priv->tjetty_lru, tjetty_node);
-	ipourma_lru_update(&priv->tjetty_lru, tjetty_node);
-	return tjetty_node->tjetty;
-nullptr_err:
-	return NULL;
-ipourma_import_jetty_failed:
-	kfree(tjetty_node);
-tjetty_node_zalloc_failed:
-	return NULL;
 }
 
 static void ipourma_advance_tx_tail(struct ipourma_dev_priv *priv,
 	struct ipourma_tx_buf *tx_req)
 {
 	u32 i = 0, jetty_idx = tx_req->jetty_index;
+	struct ipourma_tjetty_hash_node *tjetty_node = NULL;
 	unsigned long flags;
 
 	spin_lock_irqsave(&priv->tx_ring_locks[jetty_idx], flags);
@@ -355,60 +310,30 @@ static void ipourma_advance_tx_tail(struct ipourma_dev_priv *priv,
 		if (atomic_read(&priv->tx_ring_blocked) == 0)
 			netif_wake_queue(priv->dev);
 	}
-	spin_unlock_irqrestore(&priv->tx_ring_locks[jetty_idx], flags);
-}
-
-static int ipourma_update_wr(struct net_device *dev, struct ipourma_tx_buf *tx_req)
-{
-	struct ipourma_tjetty_hash_node *tjetty_node = NULL;
-	struct ipourma_dev_priv *priv = netdev_priv(dev);
-	struct ubcore_tjetty *tjetty_new = NULL;
-	union ubcore_eid *src_eid, *dst_eid;
-
-	if (IS_ERR_OR_NULL(tx_req->tjetty)) {
-		src_eid = &tx_req->src_eid;
-		dst_eid = &tx_req->dst_eid;
-		tjetty_node = ipourma_locate_tjetty_node(&priv->tjetty_lru,
-								src_eid, dst_eid, false);
-		if (IS_ERR_OR_NULL(tjetty_node)) {
-			priv->runtime_stats.tx_stats.num_import_jetty_real++;
-			tjetty_new = ipourma_import_new_tjetty(priv, tx_req);
-			if (IS_ERR_OR_NULL(tjetty_new)) {
-				priv->runtime_stats.tx_stats.import_jetty_failed++;
-				return IPOURMA_TJETTY_NODE_ALLOC_FAILED;
-			}
-		} else {
-			tjetty_new = tjetty_node->tjetty;
-			priv->runtime_stats.tx_stats.num_import_jetty_bypass++;
-		}
-		tx_req->tx_wr.tjetty = tjetty_new;
-	} else {
-		tx_req->tx_wr.tjetty = tx_req->tjetty;
-		priv->runtime_stats.tx_stats.num_tjetty_hash_hit++;
+	if (!IS_ERR_OR_NULL(tx_req->tjetty_node)) {
+		tjetty_node = tx_req->tjetty_node;
+		tx_req->tjetty_node = NULL;
 	}
-
-	tx_req->tx_wr.send.src.num_sge = (u32)ipourma_setup_sges(priv, tx_req);
-	return 0;
+	spin_unlock_irqrestore(&priv->tx_ring_locks[jetty_idx], flags);
+	if (!IS_ERR_OR_NULL(tjetty_node))
+		ipourma_tjetty_node_put(tjetty_node);
 }
 
-void ipourma_post_send(struct work_struct *work)
+static void ipourma_post_send(struct ipourma_tx_buf *tx_req)
 {
-	struct ipourma_tx_buf *tx_req = container_of(work, struct ipourma_tx_buf, work);
 	struct ipourma_dev_priv *priv = tx_req->priv;
-	int ret;
 	struct ubcore_jfs_wr *jfs_bad_wr = NULL;
-
-	if (!test_bit(IPOURMA_DEV_ADMIN_UP, &priv->flags))
-		return;
+	int ret;
 
 	priv->runtime_stats.tx_stats.post_send_start++;
 	pr_debug("post_send start, idx %u, jetty %u\n", tx_req->idx, tx_req->jetty_index);
+	if (!test_bit(IPOURMA_DEV_ADMIN_UP, &priv->flags))
+		goto free_skb_out;
 	ret = ipourma_prepare_tx_data(priv->urma_dev, priv, tx_req);
 	if (ret != IPOURMA_OK)
 		goto free_skb_out;
-	ret = ipourma_update_wr(priv->dev, tx_req);
-	if (unlikely(ret != 0))
-		goto free_skb_out;
+	tx_req->tx_wr.tjetty = tx_req->tjetty;
+	tx_req->tx_wr.send.src.num_sge = (u32)ipourma_setup_sges(priv, tx_req);
 	ret = ubcore_post_jetty_send_wr(priv->jetty[tx_req->jetty_index],
 								&tx_req->tx_wr, &jfs_bad_wr);
 	if (unlikely(ret != 0)) {
@@ -427,14 +352,14 @@ free_skb_out:
 	ipourma_advance_tx_tail(priv, tx_req);
 }
 
-static inline int ipourma_get_eid_index(struct net_device *dev, union ubcore_eid *eid)
+static inline int ipourma_get_jetty_index(struct net_device *dev, union ubcore_eid *eid)
 {
 	struct ipourma_dev_priv *priv = netdev_priv(dev);
 
 	for (u32 i = 0; i < UBCORE_MAX_SIP; i++) {
 		if (!eid_is_empty(&priv->eid_info[i].eid)
 				&& ipourma_are_eids_equal(&priv->eid_info[i].eid, eid))
-			return i;
+			return 0;
 	}
 	return -IPOURMA_SRC_IP_ADDR_EID_MISMATCH;
 }
@@ -524,50 +449,34 @@ static inline int ipourma_add_header(struct sk_buff *skb)
 	return header_size;
 }
 
-int ipourma_xmit(struct net_device *dev, struct sk_buff *skb,
-		 union ubcore_eid *src_eid, union ubcore_eid *dst_eid)
+static int ipourma_tx_submit(struct ipourma_dev_priv *priv, struct sk_buff *skb,
+			struct ipourma_tjetty_hash_node *tjetty_node, u32 jetty_idx)
 {
-	struct ipourma_tjetty_hash_node *tjetty_node = NULL;
-	struct ipourma_dev_priv *priv = netdev_priv(dev);
+	struct net_device *dev = priv->dev;
 	struct ipourma_tx_buf *tx_req;
-	int ret = IPOURMA_OK;
-	u32 jetty_idx = 0;
 	u32 tx_idx;
 
-	ret = ipourma_add_header(skb);
-	if (ret < 0) {
-		netdev_dbg(dev, "skb headroom too short\n");
-		return IPOURMA_INSUFFICIENT_MEMORY;
-	}
-	ret = ipourma_get_eid_index(dev, src_eid);
-	if (unlikely(ret == -IPOURMA_SRC_IP_ADDR_EID_MISMATCH)) {
-		priv->runtime_stats.tx_stats.ip_eid_not_equal++;
-		netdev_dbg(dev, "%s:IP=0x%llx-0x%llx\n",
-			ipourma_err_desc(IPOURMA_SRC_IP_ADDR_EID_MISMATCH),
-			src_eid->in6.subnet_prefix,
-			src_eid->in6.interface_id);
-		return IPOURMA_SRC_IP_ADDR_EID_MISMATCH;
-	}
-	ret = IPOURMA_OK;
-	if (spin_trylock(&priv->tjetty_lru.lock)) {
-		tjetty_node = ipourma_locate_tjetty_node(&priv->tjetty_lru, src_eid, dst_eid, true);
-		spin_unlock(&priv->tjetty_lru.lock);
-	}
-
-	// enqueue the skb
-	if (IS_ERR_OR_NULL(priv->tx_ring[jetty_idx]))
+	refcount_inc(&tjetty_node->refcount);
+	if (IS_ERR_OR_NULL(priv->tx_ring[jetty_idx])) {
+		priv->runtime_stats.tx_stats.ring_invalid++;
+		dev_kfree_skb_any(skb);
+		dev->stats.tx_errors++;
+		ipourma_tjetty_node_put(tjetty_node);
 		return IPOURMA_ALLOC_TX_RING_FAILED;
-	spin_lock(&priv->tx_ring_locks[jetty_idx]);
+	}
+	spin_lock_bh(&priv->tx_ring_locks[jetty_idx]);
 	if (priv->tx_ring_is_full[jetty_idx]) {
-		spin_unlock(&priv->tx_ring_locks[jetty_idx]);
+		spin_unlock_bh(&priv->tx_ring_locks[jetty_idx]);
 		priv->runtime_stats.tx_stats.ring_full++;
+		dev_kfree_skb_any(skb);
+		dev->stats.tx_errors++;
+		ipourma_tjetty_node_put(tjetty_node);
 		return IPOURMA_TX_RING_FULL;
 	}
 	tx_idx = priv->tx_head[jetty_idx] % priv->tx_ring_size;
 	tx_req = &priv->tx_ring[jetty_idx][tx_idx];
 	tx_req->tx_buf_in_use = 1;
 	if ((priv->tx_head[jetty_idx] - priv->tx_tail[jetty_idx]) == priv->tx_ring_size - 1) {
-		/* tx ring is full, notify the upper layer */
 		priv->tx_ring_is_full[jetty_idx] = true;
 		atomic_add(1, &priv->tx_ring_blocked);
 		netif_stop_queue(dev);
@@ -576,26 +485,192 @@ int ipourma_xmit(struct net_device *dev, struct sk_buff *skb,
 					priv->tx_head[jetty_idx], priv->tx_tail[jetty_idx]);
 	}
 	priv->tx_head[jetty_idx]++;
-	spin_unlock(&priv->tx_ring_locks[jetty_idx]);
+	spin_unlock_bh(&priv->tx_ring_locks[jetty_idx]);
+
 	tx_req->skb = skb;
-	tx_req->dst_eid = *dst_eid;
-	tx_req->src_eid = *src_eid;
+	tx_req->dst_eid = tjetty_node->key[1];
+	tx_req->src_eid = tjetty_node->key[0];
 	tx_req->jetty_index = jetty_idx;
-	tx_req->tjetty = IS_ERR_OR_NULL(tjetty_node) ? NULL : tjetty_node->tjetty;
+	tx_req->tjetty = tjetty_node->tjetty;
+	tx_req->tjetty_node = tjetty_node;
 
 	/* take the ownership of skb */
 	skb_orphan(skb);
 	skb_dst_drop(skb);
-	pr_debug("queue work, idx %u\n", tx_idx);
-	if (!IS_ERR_OR_NULL(tx_req->tjetty)) {
-		priv->runtime_stats.tx_stats.post_send_bypass++;
-		ipourma_post_send(&(tx_req->work));
-	} else {
-		priv->runtime_stats.tx_stats.post_send_enque++;
-		queue_work(priv->tx_wq, &(tx_req->work));
+	ipourma_post_send(tx_req);
+	priv->runtime_stats.tx_stats.post_send_bypass++;
+	return IPOURMA_OK;
+}
+
+static void ipourma_import_tjetty_work(struct work_struct *work);
+
+static void ipourma_create_pending_node(struct ipourma_dev_priv *priv,
+			struct sk_buff *skb, union ubcore_eid *src_eid,
+			union ubcore_eid *dst_eid)
+{
+	struct ipourma_tjetty_lru *tjetty_lru = &priv->tjetty_lru;
+	struct ipourma_tjetty_hmap *tjetty_hmap = &tjetty_lru->tjetty_hmap;
+	struct ipourma_tjetty_hash_node *tjetty_node;
+	uint32_t hash_key;
+
+	if (!test_bit(IPOURMA_DEV_ADMIN_UP, &priv->flags))
+		goto create_failed;
+	if (tjetty_lru->pending_cnt >= IPOURMA_TJETTY_MAX_PENDING)
+		goto create_failed;
+	tjetty_node = kzalloc(sizeof(struct ipourma_tjetty_hash_node), GFP_ATOMIC);
+	if (IS_ERR_OR_NULL(tjetty_node))
+		goto create_failed;
+
+	tjetty_node->key[0] = *src_eid;
+	tjetty_node->key[1] = *dst_eid;
+	tjetty_node->state = IPOURMA_TJETTY_PENDING;
+	tjetty_node->tjetty_lru = tjetty_lru;
+	refcount_set(&tjetty_node->refcount, 1);
+	skb_queue_head_init(&tjetty_node->skb_q);
+	INIT_WORK(&tjetty_node->import_work, ipourma_import_tjetty_work);
+	INIT_WORK(&tjetty_node->unimport_work, ipourma_unimport_tjetty_cb);
+	skb_queue_tail(&tjetty_node->skb_q, skb);
+
+	hash_key = hash_eids(src_eid, dst_eid, tjetty_hmap->hash_seed);
+	hash_key = hash_key % IPOURMA_TJETTY_HMAP_SIZE;
+	hlist_add_head(&tjetty_node->hlist, &tjetty_hmap->buckets[hash_key]);
+	list_add(&tjetty_node->lru_list, &tjetty_lru->pending_list);
+	tjetty_lru->pending_cnt++;
+	tjetty_node->last_jiffies = get_jiffies_64();
+	queue_work(tjetty_lru->import_wq, &tjetty_node->import_work);
+	return;
+
+create_failed:
+	priv->runtime_stats.tx_stats.pending_create_drop++;
+	dev_kfree_skb_any(skb);
+	priv->dev->stats.tx_errors++;
+}
+
+static struct ipourma_tjetty_hash_node *ipourma_get_tjetty_node(
+			struct ipourma_dev_priv *priv, struct sk_buff *skb,
+			union ubcore_eid *src_eid, union ubcore_eid *dst_eid)
+{
+	struct ipourma_tjetty_lru *tjetty_lru = &priv->tjetty_lru;
+	struct ipourma_tjetty_hash_node *tjetty_node;
+
+	spin_lock(&tjetty_lru->lock);
+	tjetty_node = ipourma_lookup_tjetty_node(tjetty_lru, src_eid, dst_eid);
+	if (IS_ERR_OR_NULL(tjetty_node)) {
+		ipourma_create_pending_node(priv, skb, src_eid, dst_eid);
+		spin_unlock(&tjetty_lru->lock);
+		return NULL;
+	}
+	if (tjetty_node->state == IPOURMA_TJETTY_READY) {
+		ipourma_renew_tjetty_node(tjetty_lru, tjetty_node);
+		priv->runtime_stats.tx_stats.num_tjetty_hash_hit++;
+		priv->runtime_stats.tx_stats.num_import_jetty_bypass++;
+		refcount_inc(&tjetty_node->refcount);
+		spin_unlock(&tjetty_lru->lock);
+		return tjetty_node;
+	}
+	if (tjetty_node->state == IPOURMA_TJETTY_PENDING &&
+		skb_queue_len(&tjetty_node->skb_q) < IPOURMA_TJETTY_SKB_QLEN) {
+		skb_queue_tail(&tjetty_node->skb_q, skb);
+		spin_unlock(&tjetty_lru->lock);
+		return NULL;
 	}
 
-	return ret;
+	priv->runtime_stats.tx_stats.pending_drop++;
+	spin_unlock(&tjetty_lru->lock);
+	dev_kfree_skb_any(skb);
+	priv->dev->stats.tx_errors++;
+	return NULL;
+}
+
+static void ipourma_import_tjetty_work(struct work_struct *work)
+{
+	struct ipourma_tjetty_hash_node *tjetty_node = container_of(work,
+				struct ipourma_tjetty_hash_node, import_work);
+	struct ipourma_tjetty_lru *tjetty_lru = tjetty_node->tjetty_lru;
+	struct ipourma_dev_priv *priv = container_of(tjetty_lru,
+				struct ipourma_dev_priv, tjetty_lru);
+	struct ubcore_tjetty *tjetty;
+	struct sk_buff *skb;
+
+	if (test_bit(IPOURMA_DEV_ADMIN_UP, &priv->flags))
+		tjetty = ipourma_import_jetty(priv->dev, &tjetty_node->key[1],
+				IPOURMA_WELL_KNOWN_JETTY_ID, (u32)READ_ONCE(priv->anchor_eid_idx));
+	else
+		tjetty = NULL;
+	spin_lock_bh(&tjetty_lru->lock);
+	if (tjetty_node->state != IPOURMA_TJETTY_DEAD &&
+		!IS_ERR_OR_NULL(tjetty)) {
+		tjetty_node->state = IPOURMA_TJETTY_READY;
+		tjetty_node->tjetty = tjetty;
+		list_del(&tjetty_node->lru_list);
+		list_add(&tjetty_node->lru_list, &tjetty_lru->list);
+		tjetty_lru->pending_cnt--;
+		tjetty_lru->count++;
+		priv->runtime_stats.tx_stats.num_import_jetty_real++;
+		/* work's own reference: protects the flush loop below from a
+		 * concurrent aging/capacity eviction; dropped by the final
+		 * ipourma_tjetty_node_put at the end of this work */
+		refcount_inc(&tjetty_node->refcount);
+		while (tjetty_lru->count > tjetty_lru->tjetty_capacity)
+			ipourma_evict_ready_tail(tjetty_lru);
+		spin_unlock_bh(&tjetty_lru->lock);
+		while ((skb = skb_dequeue(&tjetty_node->skb_q)) != NULL) {
+			if (ipourma_tx_submit(priv, skb, tjetty_node, 0) == IPOURMA_OK)
+				priv->runtime_stats.tx_stats.num_pending_flush++;
+		}
+		ipourma_tjetty_node_put(tjetty_node);
+		return;
+	}
+	if (tjetty_node->state != IPOURMA_TJETTY_DEAD) {
+		priv->runtime_stats.tx_stats.import_jetty_failed++;
+		tjetty_node->state = IPOURMA_TJETTY_DEAD;
+		list_del(&tjetty_node->lru_list);
+		tjetty_lru->pending_cnt--;
+		hlist_del(&tjetty_node->hlist);
+		spin_unlock_bh(&tjetty_lru->lock);
+		while ((skb = skb_dequeue(&tjetty_node->skb_q)) != NULL) {
+			dev_kfree_skb_any(skb);
+			priv->dev->stats.tx_errors++;
+		}
+		kfree(tjetty_node);
+		return;
+	}
+	spin_unlock_bh(&tjetty_lru->lock);
+	if (!IS_ERR_OR_NULL(tjetty))
+		ubcore_unimport_jetty(tjetty);
+}
+
+int ipourma_xmit(struct net_device *dev, struct sk_buff *skb,
+		 union ubcore_eid *src_eid, union ubcore_eid *dst_eid)
+{
+	struct ipourma_tjetty_hash_node *tjetty_node = NULL;
+	struct ipourma_dev_priv *priv = netdev_priv(dev);
+	int ret;
+	u32 jetty_idx;
+
+	ret = ipourma_add_header(skb);
+	if (ret < 0) {
+		netdev_dbg(dev, "skb headroom too short\n");
+		return IPOURMA_INSUFFICIENT_MEMORY;
+	}
+	ret = ipourma_get_jetty_index(dev, src_eid);
+	if (unlikely(ret < 0)) {
+		priv->runtime_stats.tx_stats.ip_eid_not_equal++;
+		netdev_dbg(dev, "%s:IP=0x%llx-0x%llx\n",
+			ipourma_err_desc(IPOURMA_SRC_IP_ADDR_EID_MISMATCH),
+			src_eid->in6.subnet_prefix,
+			src_eid->in6.interface_id);
+		return IPOURMA_SRC_IP_ADDR_EID_MISMATCH;
+	}
+	jetty_idx = (u32)ret;
+
+	tjetty_node = ipourma_get_tjetty_node(priv, skb, src_eid, dst_eid);
+	if (IS_ERR_OR_NULL(tjetty_node))
+		return IPOURMA_OK;
+
+	ipourma_tx_submit(priv, skb, tjetty_node, jetty_idx);
+	ipourma_tjetty_node_put(tjetty_node);
+	return IPOURMA_OK;
 }
 
 static struct sk_buff *ipourma_alloc_rx_skb(struct net_device *dev)
