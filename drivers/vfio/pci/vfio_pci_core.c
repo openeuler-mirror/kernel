@@ -26,6 +26,7 @@
 #include <linux/uaccess.h>
 #include <linux/vgaarb.h>
 #include <linux/nospec.h>
+#include <linux/pfn_t.h>
 #include <linux/sched/mm.h>
 #include <linux/iommufd.h>
 #if IS_ENABLED(CONFIG_EEH)
@@ -1775,59 +1776,95 @@ static void vfio_pci_mmap_close(struct vm_area_struct *vma)
 	mutex_unlock(&vdev->vma_lock);
 }
 
-static vm_fault_t vfio_pci_mmap_fault(struct vm_fault *vmf)
+static vm_fault_t vfio_pci_mmap_huge_fault(struct vm_fault *vmf,
+					   unsigned int order)
 {
 	struct vm_area_struct *vma = vmf->vma;
 	struct vfio_pci_core_device *vdev = vma->vm_private_data;
 	struct vfio_pci_mmap_vma *mmap_vma;
-	vm_fault_t ret = VM_FAULT_NOPAGE;
+	unsigned long addr = vmf->address & ~((PAGE_SIZE << order) - 1);
+	unsigned long pgoff = (addr - vma->vm_start) >> PAGE_SHIFT;
+	unsigned long pfn = vma->vm_pgoff + pgoff;
+	vm_fault_t ret = VM_FAULT_SIGBUS;
+
+	if (order && (addr < vma->vm_start ||
+		      addr + (PAGE_SIZE << order) > vma->vm_end ||
+		      pfn & ((1 << order) - 1))) {
+		ret = VM_FAULT_FALLBACK;
+		goto out;
+	}
 
 	mutex_lock(&vdev->vma_lock);
+
 	down_read(&vdev->memory_lock);
 
 	/*
 	 * Memory region cannot be accessed if the low power feature is engaged
 	 * or memory access is disabled.
 	 */
-	if (vdev->pm_runtime_engaged || !__vfio_pci_memory_enabled(vdev)) {
-		ret = VM_FAULT_SIGBUS;
+	if (vdev->pm_runtime_engaged || !__vfio_pci_memory_enabled(vdev))
 		goto up_out;
-	}
 
 	/*
-	 * We populate the whole vma on fault, so we need to test whether
-	 * the vma has already been mapped, such as for concurrent faults
-	 * to the same vma.  io_remap_pfn_range() will trigger a BUG_ON if
-	 * we ask it to fill the same range again.
+	 * Register the vma in the device's vma_list, which the zap path
+	 * (vfio_pci_zap_and_vma_lock()) iterates.  Unlike the old
+	 * whole-vma remap on fault, pages are now inserted one mapping
+	 * step at a time, so a vma that is already tracked may still
+	 * fault in more pages.
 	 */
 	list_for_each_entry(mmap_vma, &vdev->vma_list, vma_next) {
 		if (mmap_vma->vma == vma)
-			goto up_out;
-	}
-
-	if (io_remap_pfn_range(vma, vma->vm_start, vma->vm_pgoff,
-			       vma->vm_end - vma->vm_start,
-			       vma->vm_page_prot)) {
-		ret = VM_FAULT_SIGBUS;
-		zap_vma_ptes(vma, vma->vm_start, vma->vm_end - vma->vm_start);
-		goto up_out;
+			goto found;
 	}
 
 	if (__vfio_pci_add_vma(vdev, vma)) {
 		ret = VM_FAULT_OOM;
-		zap_vma_ptes(vma, vma->vm_start, vma->vm_end - vma->vm_start);
+		goto up_out;
 	}
+
+found:
+	if (!order)
+		ret = vmf_insert_pfn(vma, vmf->address, pfn);
+	else if (IS_ENABLED(CONFIG_ARCH_SUPPORTS_PMD_PFNMAP) &&
+		 order == PMD_ORDER)
+		ret = vmf_insert_pfn_pmd(vmf,
+					 __pfn_to_pfn_t(pfn, PFN_DEV), false);
+	else if (IS_ENABLED(CONFIG_ARCH_SUPPORTS_PUD_PFNMAP) &&
+		 order == PUD_ORDER)
+		ret = vmf_insert_pfn_pud(vmf,
+					 __pfn_to_pfn_t(pfn, PFN_DEV), false);
+	else
+		ret = VM_FAULT_FALLBACK;
 
 up_out:
 	up_read(&vdev->memory_lock);
 	mutex_unlock(&vdev->vma_lock);
+
+out:
+	/*
+	 * Note: upstream logs the BAR index decoded from vm_pgoff, but
+	 * vfio_pci_core_mmap() on this kernel rewrites vm_pgoff to the
+	 * physical pfn, so only the page offset is logged here.
+	 */
+	dev_dbg_ratelimited(&vdev->pdev->dev,
+			   "%s(,order = %d) page offset 0x%lx: 0x%x\n",
+			    __func__, order, pgoff, (unsigned int)ret);
+
 	return ret;
+}
+
+static vm_fault_t vfio_pci_mmap_fault(struct vm_fault *vmf)
+{
+	return vfio_pci_mmap_huge_fault(vmf, 0);
 }
 
 static const struct vm_operations_struct vfio_pci_mmap_ops = {
 	.open = vfio_pci_mmap_open,
 	.close = vfio_pci_mmap_close,
 	.fault = vfio_pci_mmap_fault,
+#ifdef CONFIG_ARCH_SUPPORTS_HUGE_PFNMAP
+	.huge_fault = vfio_pci_mmap_huge_fault,
+#endif
 };
 
 int vfio_pci_core_mmap(struct vfio_device *core_vdev, struct vm_area_struct *vma)
