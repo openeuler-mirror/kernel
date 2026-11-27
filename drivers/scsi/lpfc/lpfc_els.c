@@ -1635,7 +1635,8 @@ lpfc_more_plogi(struct lpfc_vport *vport)
 	lpfc_printf_vlog(vport, KERN_INFO, LOG_DISCOVERY,
 			 "0232 Continue discovery with %d PLOGIs to go "
 			 "Data: x%x x%x x%x\n",
-			 vport->num_disc_nodes, vport->fc_plogi_cnt,
+			 vport->num_disc_nodes,
+			 atomic_read(&vport->fc_plogi_cnt),
 			 vport->fc_flag, vport->port_state);
 	/* Check to see if there are more PLOGIs to be sent */
 	if (vport->fc_flag & FC_NLP_MORE)
@@ -2660,7 +2661,7 @@ lpfc_rscn_disc(struct lpfc_vport *vport)
 
 	/* RSCN discovery */
 	/* go thru NPR nodes and issue ELS PLOGIs */
-	if (vport->fc_npr_cnt)
+	if (atomic_read(&vport->fc_npr_cnt))
 		if (lpfc_els_disc_plogi(vport))
 			return;
 
@@ -2720,7 +2721,7 @@ lpfc_adisc_done(struct lpfc_vport *vport)
 		if (!(vport->fc_flag & FC_ABORT_DISCOVERY)) {
 			vport->num_disc_nodes = 0;
 			/* go thru NPR list, issue ELS PLOGIs */
-			if (vport->fc_npr_cnt)
+			if (atomic_read(&vport->fc_npr_cnt))
 				lpfc_els_disc_plogi(vport);
 			if (!vport->num_disc_nodes) {
 				spin_lock_irq(shost->host_lock);
@@ -2753,7 +2754,8 @@ lpfc_more_adisc(struct lpfc_vport *vport)
 	lpfc_printf_vlog(vport, KERN_INFO, LOG_DISCOVERY,
 			 "0210 Continue discovery with %d ADISCs to go "
 			 "Data: x%x x%x x%x\n",
-			 vport->num_disc_nodes, vport->fc_adisc_cnt,
+			 vport->num_disc_nodes,
+			 atomic_read(&vport->fc_adisc_cnt),
 			 vport->fc_flag, vport->port_state);
 	/* Check to see if there are more ADISCs to be sent */
 	if (vport->fc_flag & FC_NLP_MORE) {
@@ -7300,7 +7302,7 @@ int lpfc_get_sfp_info_wait(struct lpfc_hba *phba,
 		mbox->in_ext_byte_len = DMP_SFF_PAGE_A0_SIZE;
 		mbox->out_ext_byte_len = DMP_SFF_PAGE_A0_SIZE;
 		mbox->mbox_offset_word = 5;
-		mbox->ctx_buf = virt;
+		mbox->ext_buf = virt;
 	} else {
 		bf_set(lpfc_mbx_memory_dump_type3_length,
 		       &mbox->u.mqe.un.mem_dump_type3, DMP_SFF_PAGE_A0_SIZE);
@@ -7360,7 +7362,7 @@ int lpfc_get_sfp_info_wait(struct lpfc_hba *phba,
 		mbox->in_ext_byte_len = DMP_SFF_PAGE_A2_SIZE;
 		mbox->out_ext_byte_len = DMP_SFF_PAGE_A2_SIZE;
 		mbox->mbox_offset_word = 5;
-		mbox->ctx_buf = virt;
+		mbox->ext_buf = virt;
 	} else {
 		bf_set(lpfc_mbx_memory_dump_type3_length,
 		       &mbox->u.mqe.un.mem_dump_type3, DMP_SFF_PAGE_A2_SIZE);
