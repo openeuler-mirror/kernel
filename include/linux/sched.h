@@ -1883,7 +1883,7 @@ extern struct pid __rcu *cad_pid;
 #else
 #define PF__HOLE__00800000	0x00800000
 #endif
-#define PF__HOLE__01000000	0x01000000
+#define PF_NO_NOTIFY_SIGNAL	0x01000000	/* see no_notify_signal_save() */
 #define PF__HOLE__02000000	0x02000000
 #define PF_NO_SETAFFINITY	0x04000000	/* Userland is not allowed to meddle with cpus_mask */
 #define PF_MCE_EARLY		0x08000000      /* Early kill for mce process policy */
