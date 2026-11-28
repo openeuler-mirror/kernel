@@ -38,6 +38,12 @@ s32 sxe2_com_rss_key_set(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
 		ret = -EINVAL;
 		goto l_end;
 	}
+	if (cmd_buf->req_len < sizeof(*req) + req->key_size) {
+		LOG_ERROR_BDF("rss key req_len %u too small, need %zu\n",
+			      cmd_buf->req_len, sizeof(*req) + req->key_size);
+		ret = -EINVAL;
+		goto l_end;
+	}
 
 	mutex_lock(&adapter->vsi_ctxt.lock);
 	vsi = sxe2_vsi_get_by_idx(adapter, req->vsi_id);
@@ -79,9 +85,15 @@ s32 sxe2_com_rss_lut_set(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
 		goto l_unlock;
 	}
 
-	if (vsi->rss_ctxt.lut_size != req->lut_size) {
-		LOG_ERROR_BDF("vsi[%u] lut size[%u] not [%u].\n", req->vsi_id,
-			      vsi->rss_ctxt.lut_size, req->lut_size);
+	if (req->lut_size > vsi->rss_ctxt.lut_size) {
+		LOG_ERROR_BDF("rss lut len err %u > %u\n", req->lut_size,
+			      vsi->rss_ctxt.lut_size);
+		ret = -EINVAL;
+		goto l_unlock;
+	}
+	if (cmd_buf->req_len < sizeof(*req) + req->lut_size) {
+		LOG_ERROR_BDF("rss lut req_len %u too small, need %zu\n",
+			      cmd_buf->req_len, sizeof(*req) + req->lut_size);
 		ret = -EINVAL;
 		goto l_unlock;
 	}

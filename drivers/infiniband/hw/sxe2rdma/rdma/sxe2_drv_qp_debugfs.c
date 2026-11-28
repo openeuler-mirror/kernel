@@ -168,6 +168,7 @@ static char *g_qp_fields[] = {
 	[LOCAL_IP3]	    = "local_ip_addr_3",
 	[LOCAL_IP2]	    = "local_ip_addr_2",
 	[LOCAL_IP1]	    = "local_ip_addr_1",
+	[LOCAL_IP0]	    = "local_ip_addr_0",
 	[DBR_ADDR]	    = "dbr_addr",
 	[PBL_POINTER]	    = "pbl_pointer",
 	[TPID_IDX]	    = "tpid_index",
@@ -963,196 +964,196 @@ void drv_rdma_qp_read_field_seg4(char *buf, size_t *len, struct sxe2_qpc *qpc)
 void drv_rdma_qp_read_field_seg5(struct sxe2_rdma_device *rdma_dev, int qpn,
 				 struct sxe2_qpc *qpc)
 {
-	DRV_RDMA_LOG_DEV_DEBUG("qp:%#x qpc SEG5(RX_TGT)\n", qpn);
-	DRV_RDMA_LOG_DEV_DEBUG("rxt_qp_state:			 %u\n",
+	DRV_RDMA_LOG_DEV_INFO("qp:%#x qpc SEG5(RX_TGT)\n", qpn);
+	DRV_RDMA_LOG_DEV_INFO("rxt_qp_state:			 %u\n",
 			       qpc->rxt_qp_state);
-	DRV_RDMA_LOG_DEV_DEBUG("rxt_resp_pa_type:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rxt_resp_pa_type:			  %u\n",
 			       qpc->rxt_resp_pa_type);
-	DRV_RDMA_LOG_DEV_DEBUG("rxt_newest_credit:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rxt_newest_credit:			  %u\n",
 			       qpc->rxt_newest_credit);
-	DRV_RDMA_LOG_DEV_DEBUG("rx_cnp_flag:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rx_cnp_flag:			  %u\n",
 			       qpc->rx_cnp_flag);
-	DRV_RDMA_LOG_DEV_DEBUG("rxt_resp_retry_wr_cnt:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rxt_resp_retry_wr_cnt:			  %u\n",
 			       qpc->rxt_resp_retry_wr_cnt);
-	DRV_RDMA_LOG_DEV_DEBUG("rxt_ack_type:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rxt_ack_type:			  %u\n",
 			       qpc->rxt_ack_type);
-	DRV_RDMA_LOG_DEV_DEBUG("rxt_nak_flag:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rxt_nak_flag:			  %u\n",
 			       qpc->rxt_nak_flag);
-	DRV_RDMA_LOG_DEV_DEBUG("rxt_ack_retry_flag:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rxt_ack_retry_flag:			  %u\n",
 			       qpc->rxt_ack_retry_flag);
-	DRV_RDMA_LOG_DEV_DEBUG("rxt_ack_syndrome:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rxt_ack_syndrome:			  %u\n",
 			       qpc->rxt_ack_syndrome);
-	DRV_RDMA_LOG_DEV_DEBUG("rxt_ack_msn:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rxt_ack_msn:			  %u\n",
 			       qpc->rxt_ack_msn);
-	DRV_RDMA_LOG_DEV_DEBUG("rxt_resp_paddr_96_127:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rxt_resp_paddr_96_127:			  %u\n",
 			       qpc->rxt_resp_paddr_96_127);
-	DRV_RDMA_LOG_DEV_DEBUG("rxt_resp_paddr_64_95:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rxt_resp_paddr_64_95:			  %u\n",
 			       qpc->rxt_resp_paddr_64_95);
-	DRV_RDMA_LOG_DEV_DEBUG("rxt_resp_paddr_32_63:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rxt_resp_paddr_32_63:			  %u\n",
 			       qpc->rxt_resp_paddr_32_63);
-	DRV_RDMA_LOG_DEV_DEBUG("rxt_resp_paddr_0_31:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rxt_resp_paddr_0_31:			  %u\n",
 			       qpc->rxt_resp_paddr_0_31);
-	DRV_RDMA_LOG_DEV_DEBUG("rxt_resp_rd_flag:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rxt_resp_rd_flag:			  %u\n",
 			       qpc->rxt_resp_rd_flag);
-	DRV_RDMA_LOG_DEV_DEBUG("rxt_resp_boundary_done:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rxt_resp_boundary_done:			  %u\n",
 			       qpc->rxt_resp_boundary_done);
-	DRV_RDMA_LOG_DEV_DEBUG(
+	DRV_RDMA_LOG_DEV_INFO(
 		"rxt_resp_first_wr_ptr_in:			  %u\n",
 		qpc->rxt_resp_first_wr_ptr_in);
-	DRV_RDMA_LOG_DEV_DEBUG(
+	DRV_RDMA_LOG_DEV_INFO(
 		"rxt_resp_first_wr_ptr_sel:			  %u\n",
 		qpc->rxt_resp_first_wr_ptr_sel);
-	DRV_RDMA_LOG_DEV_DEBUG("rxt_resp_first_wr_flag:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rxt_resp_first_wr_flag:			  %u\n",
 			       qpc->rxt_resp_first_wr_flag);
-	DRV_RDMA_LOG_DEV_DEBUG("rxt_resp_wr_ptr_in:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rxt_resp_wr_ptr_in:			  %u\n",
 			       qpc->rxt_resp_wr_ptr_in);
-	DRV_RDMA_LOG_DEV_DEBUG("rxt_resp_wr_ptr_out:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rxt_resp_wr_ptr_out:			  %u\n",
 			       qpc->rxt_resp_wr_ptr_out);
-	DRV_RDMA_LOG_DEV_DEBUG("rxt_resp_wr_ptr_sel:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rxt_resp_wr_ptr_sel:			  %u\n",
 			       qpc->rxt_resp_wr_ptr_sel);
-	DRV_RDMA_LOG_DEV_DEBUG("rxt_resp_pa_vld:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rxt_resp_pa_vld:			  %u\n",
 			       qpc->rxt_resp_pa_vld);
-	DRV_RDMA_LOG_DEV_DEBUG("rxt_resp_newest_psn:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rxt_resp_newest_psn:			  %u\n",
 			       qpc->rxt_resp_newest_psn);
-	DRV_RDMA_LOG_DEV_DEBUG(
+	DRV_RDMA_LOG_DEV_INFO(
 		"rxt_resp_retry_start_ptr:			  %u\n",
 		qpc->rxt_resp_retry_start_ptr);
-	DRV_RDMA_LOG_DEV_DEBUG("rxt_rmsm:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rxt_rmsm:			  %u\n",
 			       qpc->rxt_rmsm);
-	DRV_RDMA_LOG_DEV_DEBUG("rxt_resp_retry_end_ptr:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rxt_resp_retry_end_ptr:			  %u\n",
 			       qpc->rxt_resp_retry_end_ptr);
-	DRV_RDMA_LOG_DEV_DEBUG("rx_cnp_disp_timing:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rx_cnp_disp_timing:			  %u\n",
 			       qpc->rx_cnp_disp_timing);
 }
 
 void drv_rdma_qp_read_field_seg6(struct sxe2_rdma_device *rdma_dev, int qpn,
 				 struct sxe2_qpc *qpc)
 {
-	DRV_RDMA_LOG_DEV_DEBUG("qp:%#x qpc SEG6(RX_PKT_PROC)\n", qpn);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_ini_irrl_rd_ptr_in:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("qp:%#x qpc SEG6(RX_PKT_PROC)\n", qpn);
+	DRV_RDMA_LOG_DEV_INFO("rpp_ini_irrl_rd_ptr_in:			  %u\n",
 			       qpc->rpp_ini_irrl_rd_ptr_in);
-	DRV_RDMA_LOG_DEV_DEBUG(
+	DRV_RDMA_LOG_DEV_INFO(
 		"rpp_ini_irrl_rd_ptr_out:			  %u\n",
 		qpc->rpp_ini_irrl_rd_ptr_out);
-	DRV_RDMA_LOG_DEV_DEBUG(
+	DRV_RDMA_LOG_DEV_INFO(
 		"rpp_ini_irrl_rd_ptr_sel:			  %u\n",
 		qpc->rpp_ini_irrl_rd_ptr_sel);
-	DRV_RDMA_LOG_DEV_DEBUG(
+	DRV_RDMA_LOG_DEV_INFO(
 		"rpp_ini_irrl_first_rd_flag:			  %u\n",
 		qpc->rpp_ini_irrl_first_rd_flag);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_ini_irrl_delete_en:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_ini_irrl_delete_en:			  %u\n",
 			       qpc->rpp_ini_irrl_delete_en);
-	DRV_RDMA_LOG_DEV_DEBUG(
+	DRV_RDMA_LOG_DEV_INFO(
 		"rpp_ini_irrl_delete_done:			  %u\n",
 		qpc->rpp_ini_irrl_delete_done);
-	DRV_RDMA_LOG_DEV_DEBUG(
+	DRV_RDMA_LOG_DEV_INFO(
 		"rpp_ini_irrl_sge_va_low:			  %u\n",
 		qpc->rpp_ini_irrl_sge_va_low);
-	DRV_RDMA_LOG_DEV_DEBUG(
+	DRV_RDMA_LOG_DEV_INFO(
 		"rpp_ini_irrl_sge_va_high:			  %u\n",
 		qpc->rpp_ini_irrl_sge_va_high);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_ini_irrl_sge_lkey:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_ini_irrl_sge_lkey:			  %u\n",
 			       qpc->rpp_ini_irrl_sge_lkey);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_ini_irrl_sge_len:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_ini_irrl_sge_len:			  %u\n",
 			       qpc->rpp_ini_irrl_sge_len);
-	DRV_RDMA_LOG_DEV_DEBUG(
+	DRV_RDMA_LOG_DEV_INFO(
 		"rpp_ini_irrl_sge_totallen:			  %u\n",
 		qpc->rpp_ini_irrl_sge_totallen);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_ini_irrl_sge_spsn:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_ini_irrl_sge_spsn:			  %u\n",
 			       qpc->rpp_ini_irrl_sge_spsn);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_ini_irrl_sge_ssn:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_ini_irrl_sge_ssn:			  %u\n",
 			       qpc->rpp_ini_irrl_sge_ssn);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_ini_rcv_messlen:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_ini_rcv_messlen:			  %u\n",
 			       qpc->rpp_ini_rcv_messlen);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_ini_unack_psn:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_ini_unack_psn:			  %u\n",
 			       qpc->rpp_ini_unack_psn);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_ini_irrl_info_flag:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_ini_irrl_info_flag:			  %u\n",
 			       qpc->rpp_ini_irrl_info_flag);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_ini_qpsts_err_flag:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_ini_qpsts_err_flag:			  %u\n",
 			       qpc->rpp_ini_qpsts_err_flag);
-	DRV_RDMA_LOG_DEV_DEBUG(
+	DRV_RDMA_LOG_DEV_INFO(
 		"rpp_ini_read_retry_flag:			  %u\n",
 		qpc->rpp_ini_read_retry_flag);
-	DRV_RDMA_LOG_DEV_DEBUG(
+	DRV_RDMA_LOG_DEV_INFO(
 		"rpp_ini_write_retry_flag:			  %u\n",
 		qpc->rpp_ini_write_retry_flag);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_ini_cur_ssn:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_ini_cur_ssn:			  %u\n",
 			       qpc->rpp_ini_cur_ssn);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_tgt_sge_va_low:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_tgt_sge_va_low:			  %u\n",
 			       qpc->rpp_tgt_sge_va_low);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_tgt_sge_va_high:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_tgt_sge_va_high:			  %u\n",
 			       qpc->rpp_tgt_sge_va_high);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_tgt_sge_key:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_tgt_sge_key:			  %u\n",
 			       qpc->rpp_tgt_sge_key);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_tgt_sge_len:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_tgt_sge_len:			  %u\n",
 			       qpc->rpp_tgt_sge_len);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_tgt_sge_len:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_tgt_sge_len:			  %u\n",
 			       qpc->rpp_wqe_err);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_tgt_read_ots_ptr:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_tgt_read_ots_ptr:			  %u\n",
 			       qpc->rpp_tgt_read_ots_ptr);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_tgt_rnr_flag:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_tgt_rnr_flag:			  %u\n",
 			       qpc->rpp_tgt_rnr_flag);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_tgt_nak_flag:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_tgt_nak_flag:			  %u\n",
 			       qpc->rpp_tgt_nak_flag);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_tgt_nak_flag:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_tgt_nak_flag:			  %u\n",
 			       qpc->rpp_tgt_rtr_aeq_flag);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_tgt_sge_num:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_tgt_sge_num:			  %u\n",
 			       qpc->rpp_tgt_sge_num);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_tgt_page_pa_sel:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_tgt_page_pa_sel:			  %u\n",
 			       qpc->rpp_tgt_page_pa_sel);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_tgt_page_pa_vld:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_tgt_page_pa_vld:			  %u\n",
 			       qpc->rpp_tgt_page_pa_vld);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_tgt_page_pa_1_low:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_tgt_page_pa_1_low:			  %u\n",
 			       qpc->rpp_tgt_page_pa_1_low);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_tgt_page_pa_1_high:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_tgt_page_pa_1_high:			  %u\n",
 			       qpc->rpp_tgt_page_pa_1_high);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_tgt_rq_ud_len_err:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_tgt_rq_ud_len_err:			  %u\n",
 			       qpc->rpp_tgt_rq_ud_len_err);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_tgt_page_pa_l:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_tgt_page_pa_l:			  %u\n",
 			       qpc->rpp_tgt_page_pa_l);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_tgt_page_pa_h:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_tgt_page_pa_h:			  %u\n",
 			       qpc->rpp_tgt_page_pa_h);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_tgt_qp_error:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_tgt_qp_error:			  %u\n",
 			       qpc->rpp_tgt_qp_error);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_wqe_vld:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_wqe_vld:			  %u\n",
 			       qpc->rpp_wqe_vld);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_tgt_bth_opcode:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_tgt_bth_opcode:			  %u\n",
 			       qpc->rpp_tgt_bth_opcode);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_tgt_epsn:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_tgt_epsn:			  %u\n",
 			       qpc->rpp_tgt_epsn);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_tgt_rcv_messlen:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_tgt_rcv_messlen:			  %u\n",
 			       qpc->rpp_tgt_rcv_messlen);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_tgt_sw_counter:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_tgt_sw_counter:			  %u\n",
 			       qpc->rpp_tgt_sw_counter);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_tgt_hw_counter:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_tgt_hw_counter:			  %u\n",
 			       qpc->rpp_tgt_hw_counter);
-	DRV_RDMA_LOG_DEV_DEBUG("rpp_ini_pkt_psn:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("rpp_ini_pkt_psn:			  %u\n",
 			       qpc->rpp_ini_pkt_psn);
 }
 
 void drv_rdma_qp_read_field_seg7(struct sxe2_rdma_device *rdma_dev, int qpn,
 				 struct sxe2_qpc *qpc)
 {
-	DRV_RDMA_LOG_DEV_DEBUG("qp:%#x qpc SEG7(HW_ID)\n", qpn);
-	DRV_RDMA_LOG_DEV_DEBUG("pf_id:			  %u\n", qpc->pf_id);
-	DRV_RDMA_LOG_DEV_DEBUG("vf_relative_id:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("qp:%#x qpc SEG7(HW_ID)\n", qpn);
+	DRV_RDMA_LOG_DEV_INFO("pf_id:			  %u\n", qpc->pf_id);
+	DRV_RDMA_LOG_DEV_INFO("vf_relative_id:			  %u\n",
 			       qpc->vf_relative_id);
-	DRV_RDMA_LOG_DEV_DEBUG("vf_id:			  %u\n", qpc->vf_id);
-	DRV_RDMA_LOG_DEV_DEBUG("vf_valid:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("vf_id:			  %u\n", qpc->vf_id);
+	DRV_RDMA_LOG_DEV_INFO("vf_valid:			  %u\n",
 			       qpc->vf_valid);
-	DRV_RDMA_LOG_DEV_DEBUG("sqpn_8_17:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("sqpn_8_17:			  %u\n",
 			       qpc->sqpn_8_17);
-	DRV_RDMA_LOG_DEV_DEBUG("hw_cqn_snd:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("hw_cqn_snd:			  %u\n",
 			       qpc->hw_cqn_snd);
-	DRV_RDMA_LOG_DEV_DEBUG("sqpn_0_7:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("sqpn_0_7:			  %u\n",
 			       qpc->sqpn_0_7);
-	DRV_RDMA_LOG_DEV_DEBUG("hw_cqn_rcv:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("hw_cqn_rcv:			  %u\n",
 			       qpc->hw_cqn_rcv);
-	DRV_RDMA_LOG_DEV_DEBUG("hw_srqn:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("hw_srqn:			  %u\n",
 			       qpc->hw_srqn);
-	DRV_RDMA_LOG_DEV_DEBUG("sw_cc_enable:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("sw_cc_enable:			  %u\n",
 			       qpc->sw_cc_enable);
-	DRV_RDMA_LOG_DEV_DEBUG("sw_cc_index:			  %u\n",
+	DRV_RDMA_LOG_DEV_INFO("sw_cc_index:			  %u\n",
 			       qpc->sw_cc_index);
 }
 

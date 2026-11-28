@@ -18,16 +18,46 @@
 #include "sxe2_com_cdev.h"
 #include "sxe2_cmd_channel.h"
 #include "sxe2_spec.h"
+#include "sxe2_xsk.h"
 
 #define SXE2_AA_MODE_QSET_NUM 16
 #define SXE2_TXSCH_LAYER_BY_TEID_MASK 0x7
 #define SXE2_TXSCH_VF_IDX_INVAL SXE2_VF_NUM
 #define SXE2_TXSCHED_NODE_TEID_GET(x) ((x)->info.node_teid)
 
+STATIC int sxe2_txsched_param_set_adj_lvl(const char *val,
+					  const struct kernel_param *kp)
+{
+	int ret, temp_val;
+
+	ret = kstrtoint(val, 0, &temp_val);
+	if (ret)
+		return ret;
+
+	if (temp_val < 0 || temp_val > 3)
+		return -EINVAL;
+
+	*(u32 *)kp->arg = (u32)temp_val;
+
+	return 0;
+}
+
+STATIC int sxe2_txsched_param_get_adj_lvl(char *buffer,
+					  const struct kernel_param *kp)
+{
+	return sprintf(buffer, "%u\n", *(u32 *)kp->arg);
+}
+
+STATIC const struct kernel_param_ops sxe2_txsched_adj_lvl_param_ops = {
+	.set = sxe2_txsched_param_set_adj_lvl,
+	.get = sxe2_txsched_param_get_adj_lvl,
+};
+
 STATIC u32 node_adj_lvl = SXE2_TXSCH_NODE_ADJ_LVL_DFLT;
-module_param(node_adj_lvl, uint, 0644);
+module_param_cb(node_adj_lvl, &sxe2_txsched_adj_lvl_param_ops,
+		&node_adj_lvl, 0644);
 MODULE_PARM_DESC(node_adj_lvl,
-		 "txsch node adj lvl, 0:Physical, 1:Data Link 2:Network 3(Default):Transport");
+		 "txsch node adj lvl, 0:Physical, 1:Data Link, 2:Network, 3(Default):Transport");
 
 static inline u8 sxe2_txsch_node_adj_lvl_get(void)
 {
@@ -220,9 +250,9 @@ STATIC s32 sxe2_txsched_vsi_q_ctxt_alloc(struct sxe2_vsi *vsi, u8 tc,
 	return 0;
 }
 
-static inline void
+STATIC void
 sxe2_txsched_node_rl_info_get(struct sxe2_txsched_node *node, u8 rl_type,
-			      struct scbge_txsched_node_bw *rl)
+			      struct sxe2_txsched_node_bw *rl)
 {
 	switch (rl_type) {
 	case SXE2_NODE_RL_TYPE_CIR:
@@ -294,7 +324,7 @@ s32 sxe2_txsched_node_bw_lmt_cfg(struct sxe2_vsi *vsi,
 {
 	s32 ret;
 	struct sxe2_cmd_params cmd = {};
-	struct scbge_txsched_node_bw orig_rl;
+	struct sxe2_txsched_node_bw orig_rl;
 	struct sxe2_txsched_cfg_node_rl_req req;
 	struct sxe2_txsched_cfg_node_rl_resp resp;
 	struct sxe2_adapter *adapter = vsi->adapter;
@@ -327,7 +357,7 @@ s32 sxe2_txsched_node_bw_lmt_cfg(struct sxe2_vsi *vsi,
 
 	sxe2_txsched_node_rl_record(vsi, node, rl_type, bw, resp.prof_id);
 
-	LOG_INFO_BDF("txsched node rl cfg success, \t"
+	LOG_DEBUG_BDF("txsched node rl cfg success, \t"
 		     "node_teid=%#x, layer=%u, \t"
 		     "rl_type=%x, orig_prof_idx=%u, orig_bw=%u, \t"
 		     "bw=%u, prof_idx=%u\n",
@@ -513,7 +543,7 @@ static s32 sxe2_txsched_sw_node_add(struct sxe2_adapter *adapter,
 	}
 
 	if (parent->child_cnt >= SXE2_TXSCHED_NODE_CHILD_MAX) {
-		LOG_ERROR_BDF("the number of child nodes ara full, parent_teid=%#x\n",
+		LOG_ERROR_BDF("the number of child nodes are full, parent_teid=%#x\n",
 			      parent->info.node_teid);
 		return -EINVAL;
 	}
@@ -870,6 +900,7 @@ STATIC void sxe2_txsched_sw_node_del(struct sxe2_adapter *adapter,
 				} else {
 					for (j = i + 1; j < parent->child_cnt; j++)
 						parent->child[j - 1] = parent->child[j];
+					parent->child[parent->child_cnt - 1] = NULL;
 				}
 
 				parent->child_cnt--;
@@ -1186,8 +1217,8 @@ s32 sxe2_txsched_tc_max_bw_lmt_cfg(struct sxe2_vsi *vsi, u8 tc, u32 max_tx_rate)
 	mutex_lock(&sched_ctxt->lock);
 	tc_node = sxe2_txsched_tc_node_get(sched_ctxt, tc);
 	if (!tc_node) {
-		LOG_ERROR_BDF("txsched tc node get failed, tc_id=%u, max_tx_rate=%u\n",
-			      tc, max_tx_rate);
+		LOG_WARN_BDF("txsched tc node get failed, tc_id=%u, max_tx_rate=%u\n",
+			     tc, max_tx_rate);
 		ret = -ENXIO;
 		goto l_unlock;
 	}
@@ -2125,7 +2156,7 @@ sxe2_txsched_vsi_children_build(struct sxe2_adapter *adapter,
 		}
 	}
 
-	LOG_INFO_BDF("txsched queue grep node num=%d, q_num=%d\n", qg_nodes, new_numqs);
+	LOG_INFO_BDF("txsched queue group node num=%d, q_num=%d\n", qg_nodes, new_numqs);
 
 	ret = sxe2_txsched_vsi_child_nodes_add(adapter, vsi, vsi_node, tc_node,
 					       qg_nodes, owner);
@@ -2208,8 +2239,6 @@ s32 sxe2_txsched_lan_vsi_cfg(struct sxe2_vsi *vsi)
 
 		if (vsi->type == SXE2_VSI_T_PF) {
 			q_cnt[i] = vsi->tc.info[i].txq_cnt;
-			if (i == 0)
-				q_cnt[i] += vsi->num_xdp_txq;
 		} else if (vsi->type == SXE2_VSI_T_CTRL) {
 			q_cnt[i] = 1;
 		} else if (vsi->type == SXE2_VSI_T_VF) {
@@ -2223,6 +2252,9 @@ s32 sxe2_txsched_lan_vsi_cfg(struct sxe2_vsi *vsi)
 		ret = sxe2_txsched_vsi_q_ctxt_alloc(vsi, i, (u16)q_cnt[i]);
 		if (ret)
 			return ret;
+
+		if (vsi->type == SXE2_VSI_T_PF && i == 0)
+			q_cnt[i] += vsi->num_xdp_txq;
 	}
 
 	mutex_lock(&adapter->tx_sched_ctxt.lock);
@@ -2425,7 +2457,9 @@ s32 sxe2_txsched_txq_node_add(struct sxe2_adapter *adapter,
 	}
 	txq->txq_teid = resp.node_teid;
 
-	if (vsi->type == SXE2_VSI_T_DPDK_PF || vsi->type == SXE2_VSI_T_DPDK_VF)
+	if (vsi->type == SXE2_VSI_T_DPDK_PF ||
+	    vsi->type == SXE2_VSI_T_DPDK_VF ||
+		sxe2_queue_is_xdp(txq))
 		goto l_end;
 
 	q_ctxt = sxe2_txsched_q_ctxt_get(vsi, txq->dcb_tc, txq->idx_in_vsi);
@@ -2573,7 +2607,7 @@ void sxe2_txsched_sw_subtree_dump(struct sxe2_adapter *adapter,
 		     node->info.data.prio, node->info.data.status,
 		     node->info.data.arb_mode, node->info.data.rl_type);
 
-	LOG_DEV_INFO("cir_prof_id:%u bw:%u, crlweight:%u srl_prof_id:%u bw:%u srl_weight:%u \t"
+	LOG_DEV_INFO("cir_prof_id:%u bw:%u, cir_weight:%u srl_prof_id:%u bw:%u srl_weight:%u \t"
 		     " pri:#%x\n\n",
 		     le32_to_cpu(node->info.data.cir.prof_id),
 		     le32_to_cpu(node->info.data.cir.bw),
@@ -2682,7 +2716,7 @@ STATIC s32 sxe2_txsched_tc_node_update(struct sxe2_adapter *adapter,
 {
 	u8 i, j;
 	s32 ret = 0;
-	u32 teid1, teid2;
+	u16 teid1, teid2;
 	struct sxe2_txsched_node *tc_node;
 	struct sxe2_txsched_node_param param;
 	struct sxe2_txsched_context *sched_ctxt = sxe2_txsched_ctxt_get(adapter);
@@ -2693,10 +2727,10 @@ STATIC s32 sxe2_txsched_tc_node_update(struct sxe2_adapter *adapter,
 	}
 
 	for (i = 0; i < sched_ctxt->root->child_cnt; i++) {
-		teid1 = le32_to_cpu(sched_ctxt->root->child[i]->info.node_teid);
+		teid1 = le16_to_cpu(sched_ctxt->root->child[i]->info.node_teid);
 
 		sxe2_for_each_tc(j) {
-			teid2 = le32_to_cpu(resp->tc_node[j].teid);
+			teid2 = le16_to_cpu(resp->tc_node[j].teid);
 			if (teid1 == teid2)
 				break;
 		}
@@ -2708,7 +2742,7 @@ STATIC s32 sxe2_txsched_tc_node_update(struct sxe2_adapter *adapter,
 	}
 
 	sxe2_for_each_tc(j) {
-		teid2 = le32_to_cpu(resp->tc_node[j].teid);
+		teid2 = le16_to_cpu(resp->tc_node[j].teid);
 		if (teid2 == SXE2_TXSCHED_TEID_INVALID)
 			continue;
 
@@ -2729,7 +2763,7 @@ STATIC s32 sxe2_txsched_tc_node_update(struct sxe2_adapter *adapter,
 			continue;
 
 		param.tc	       = j;
-		param.node_teid	       = (u16)teid2;
+		param.node_teid	       = teid2;
 		param.vsi_idx_in_dev   = 0;
 		param.owner            = SXE2_TXSCHED_NODE_OWNER_LAN;
 		param.sw_layer	       = SXE2_TXSCHED_SW_TC_LAYER;
@@ -2899,6 +2933,7 @@ s32 sxe2_txsched_qset_node_add(struct sxe2_adapter *adapter,
 	node_param.node_silbing_idx = resp.sibling_idx;
 	node_param.parent_teid	    = parent->info.node_teid;
 	node_param.txq_idx_in_dev   = req->leaf.txq_idx_in_dev;
+	node_param.owner            = SXE2_TXSCHED_NODE_OWNER_RDMA;
 	ret = sxe2_txsched_sw_node_add(adapter, &node_param);
 	if (ret) {
 		LOG_ERROR_BDF("tx sched qset add failed, ret=%d\n", ret);
@@ -3494,7 +3529,7 @@ static bool sxe2_txsch_ucmd_add_txq_node_is_valid(struct sxe2_vsi *vsi,
 		return false;
 	}
 
-	if (params->queue_id > vsi->txqs.q_cnt) {
+	if (params->queue_id >= vsi->txqs.q_cnt) {
 		LOG_ERROR_BDF("txq id:%u invalid, max:%u vsi_id:%d\n",
 			      params->queue_id, vsi->txqs.q_cnt, vsi->idx_in_dev);
 		return false;

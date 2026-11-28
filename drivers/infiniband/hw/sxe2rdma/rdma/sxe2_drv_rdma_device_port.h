@@ -23,7 +23,7 @@
 #define SXE2_MAX_QPS_PER_MGN	      16
 #define SXE2_MAX_MCGS		      256
 #define SXE2_PKEY_TBL_SZ	      1
-#define SXE2_GID_TABLE_LEN	      32
+#define SXE2_GID_TABLE_LEN	      255
 #define SXE2_RDMA_ABI_VER	      1
 #define SXE2_UCTX_IS_PF		      1
 #define SXE2_UCTX_IS_VF		      0
@@ -52,6 +52,12 @@
 	memcpy(mac_addr, new_mac_addr, ETH_ALEN)
 
 enum { SXE2_ALLOC_UCTX_MIN_HW_WQ_SIZE = 1 << 0,
+};
+
+enum sxe2_rdma_link_status {
+	SXE2_RDMA_LINK_UP         = 0,
+	SXE2_RDMA_LINK_DOWN       = 1,
+	SXE2_RDMA_LINK_ERROR      = 15,
 };
 
 enum sxe2_port_phys_state {

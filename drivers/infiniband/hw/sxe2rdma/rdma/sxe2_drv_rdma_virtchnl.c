@@ -238,7 +238,9 @@ static int sxe2_vchnl_req_get_resp(struct sxe2_rdma_ctx_dev *dev,
 	}
 	ret = (int)vchnl_msg_resp->op_ret;
 	if (ret != SXE2_OK) {
-		DRV_RDMA_LOG_DEV_ERR("vchnl: resp msg op ret err ret=%d\n",
+		if (ret == -ENOSPC)
+			rdma_dev->vf_num_overflow_print = true;
+		DRV_RDMA_LOG_ERROR_BDF("vchnl: resp msg op ret err ret=%d\n",
 				     ret);
 		goto end;
 	}
@@ -559,6 +561,8 @@ sxe2_vchnl_mq_manage_rcms_fcn_cmd(struct sxe2_rdma_ctx_dev *dev,
 	mq_info->post_mq		     = 1;
 	mq_info->in.u.manage_rcms_pm.scratch = (uintptr_t)mq_request;
 	ret	    = sxe2_khandle_mq_cmd(rdma_func, mq_request);
+	if (ret != SXE2_OK)
+		goto put_mq_request;
 	ret_val.val = mq_request->cmpl_info.op_ret_val;
 	if (!ret_val.valid) {
 		DRV_RDMA_LOG_DEV_ERR(
@@ -567,7 +571,7 @@ sxe2_vchnl_mq_manage_rcms_fcn_cmd(struct sxe2_rdma_ctx_dev *dev,
 	} else {
 		*pmf_idx = ret_val.rel_fid;
 	}
-
+put_mq_request:
 	sxe2_kput_mq_request(&rdma_func->mq, mq_request);
 
 end:
@@ -589,7 +593,10 @@ sxe2_vchnl_pf_get_vf_rcms_fcn(struct sxe2_rdma_ctx_dev *dev, u16 vf_id,
 
 	vf_idx = sxe2_vchnl_get_next_vf_idx(dev);
 	if (vf_idx == SXE2_VCHNL_INVALID_VF_IDX) {
-		DRV_RDMA_LOG_ERROR_BDF("vchnl: get vf idx err\n");
+		if (!rdma_dev->vf_num_overflow_print) {
+			DRV_RDMA_LOG_DEV_WARN("sxe2rdma: Cannot create new VF, quantity limit reached.\n");
+			rdma_dev->vf_num_overflow_print = true;
+		}
 		return NULL;
 	}
 	size = sizeof(*vc_dev) +
@@ -624,11 +631,19 @@ sxe2_vchnl_pf_get_vf_rcms_fcn(struct sxe2_rdma_ctx_dev *dev, u16 vf_id,
 	ret = sxe2_vchnl_mq_manage_rcms_fcn_cmd(dev, &rcms_fcn_info,
 						&vc_dev->pmf_index);
 	if (ret != SXE2_OK) {
-		DRV_RDMA_LOG_DEV_ERR(
+		if (ret == -ENOSPC) {
+			if (!rdma_dev->vf_num_overflow_print) {
+				DRV_RDMA_LOG_DEV_WARN("sxe2rdma: Cannot create new VF, quantity limit reached.\n");
+				rdma_dev->vf_num_overflow_print = true;
+			}
+		} else {
+			DRV_RDMA_LOG_DEV_ERR(
 			"vchnl: vf %u error mq get rcms function operation\n",
 			vf_id);
+		}
 		goto disable_vport;
 	}
+	rdma_dev->vf_num_overflow_print = false;
 
 	DRV_RDMA_LOG_DEBUG_BDF(
 		"vchnl: vf %u mq manage rcms fcn Function pmf idx = %u\n",
@@ -1135,7 +1150,10 @@ static void sxe2_vchnl_recv_pf_worker(struct work_struct *work)
 				DRV_RDMA_LOG_ERROR_BDF(
 					"vchnl:vf %u req opcode %u pf get vf rcms fcn err\n",
 					vf_id, vchnl_msg->op_code);
-				resp_code = -ENODEV;
+				if (rdma_dev->vf_num_overflow_print)
+					resp_code = -ENOSPC;
+				else
+					resp_code = -ENODEV;
 			}
 		}
 
@@ -1292,14 +1310,14 @@ int sxe2_vchnl_req_get_ver(struct sxe2_rdma_ctx_dev *dev,
 	}
 
 	if (ver_res->major != SXE2_FW_COMP_MAJOR_VER) {
-		DRV_RDMA_LOG_ERROR("vf: major version compare mismatch, fw vrsion:%d rdma %d\n",
+		DRV_RDMA_LOG_ERROR("vf: major version compare mismatch, fw version:%d rdma %d\n",
 							ver_res->major, SXE2_FW_COMP_MAJOR_VER);
 		ret = -EOPNOTSUPP;
 		goto end;
 	}
 
 	if (ver_res->minor != SXE2_FW_COMP_MINOR_VER) {
-		DRV_RDMA_LOG_WARN("vf: minor version compare mismatch, fw vrsion:%d rdma %d.\n",
+		DRV_RDMA_LOG_WARN("vf: minor version compare mismatch, fw version:%d rdma %d.\n",
 							ver_res->minor, SXE2_FW_COMP_MINOR_VER);
 	}
 

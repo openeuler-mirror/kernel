@@ -25,6 +25,42 @@
 #include "sxe2_cmd_channel.h"
 #include "sxe2_compat.h"
 
+STATIC char g_fw_log_path[SXE2_FW_LOG_DIR_LEN] = { SXE2_DUMP_FILE_DIR };
+
+STATIC int sxe2_param_get_fwlog_path(char *buffer, const struct kernel_param *kp)
+{
+	return sprintf(buffer, "%s\n", (char *)kp->arg);
+}
+
+STATIC int sxe2_param_set_fwlog_path(const char *val, const struct kernel_param *kp)
+{
+	s32 string_len = strlen(val);
+
+	if (string_len >= SXE2_FW_LOG_DIR_LEN)
+		return -EINVAL;
+	memset(g_fw_log_path, 0, sizeof(g_fw_log_path));
+	if (val[0] == '/') {
+		if (val[string_len - 1] == '/') {
+			snprintf(g_fw_log_path, SXE2_FW_LOG_DIR_LEN, "%s",
+				 val);
+		} else {
+			snprintf(g_fw_log_path, SXE2_FW_LOG_DIR_LEN, "%s/",
+				 val);
+		}
+	} else {
+		(void)strcpy(g_fw_log_path, SXE2_DUMP_FILE_DIR);
+	}
+
+	return 0;
+}
+
+STATIC const struct kernel_param_ops sxe2_fwlog_param_ops = {
+	.set = sxe2_param_set_fwlog_path,
+	.get = sxe2_param_get_fwlog_path,
+};
+
+module_param_cb(fw_log_path, &sxe2_fwlog_param_ops, g_fw_log_path, 0644);
+MODULE_PARM_DESC(fw_log_path, "the path host driver will be saved(<80 chars) Default: /var/log");
 static s32 sxe2_export_local_time(struct rtc_time *tm)
 {
 	struct timespec64 time;
@@ -49,7 +85,7 @@ static void sxe2_export_filename_build(struct sxe2_export_context *ctxt,
 	s8 *p_str = filename;
 
 	(void)sxe2_export_local_time(&tm);
-	p_str += snprintf(p_str, len - (p_str - filename), "%s", SXE2_DUMP_FILE_DIR);
+	p_str += snprintf(p_str, len - (p_str - filename), "%s/", g_fw_log_path);
 	p_str += snprintf(p_str, len - (p_str - filename), "sxe2-fw");
 	p_str += snprintf(p_str, len - (p_str - filename), "-%04x:%02x:%02x.%x.log.",
 			  pci_domain_nr(pdev->bus), pdev->bus->number,

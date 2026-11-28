@@ -163,6 +163,7 @@ static const struct sxe2vf_stats sxe2vf_gstrings_vsi_sw_stats[] = {
 
 #define SXE2VF_FNAV_MATCH_STATS_LEN                                            \
 	(sizeof_field(struct sxe2vf_fnav_context, fnav_match) / sizeof(u64))
+#define SXE2VF_TX_TIMEOUT_STATS_CNT 1
 
 #define SXE2VF_ALL_STATS_LEN(n)                                                \
 	({ \
@@ -170,7 +171,7 @@ static const struct sxe2vf_stats sxe2vf_gstrings_vsi_sw_stats[] = {
 		((SXE2VF_VSI_HW_STATS_LEN + SXE2VF_IPSEC_STATS_LEN +           \
 		  SXE2VF_VSI_SW_STATS_LEN + sxe2vf_q_stats_len(_n)) +          \
 		 sxe2vf_rxq_stats_len(_n) + sxe2vf_txq_stats_len(_n) +         \
-		 SXE2VF_FNAV_MATCH_STATS_LEN); \
+		 SXE2VF_FNAV_MATCH_STATS_LEN + SXE2VF_TX_TIMEOUT_STATS_CNT); \
 	})
 
 #define SXE2VF_PRIV_FLAG_LEN ARRAY_SIZE(sxe2vf_gstrings_priv_flags)

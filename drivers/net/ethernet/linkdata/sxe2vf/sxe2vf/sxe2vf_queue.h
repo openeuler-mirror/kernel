@@ -15,7 +15,7 @@
 struct sxe2vf_irq_data;
 struct sxe2vf_vsi;
 
-#define SXE2VF_QUEUES_CNT_MAX 16
+#define SXE2VF_QUEUES_CNT_MAX 128
 
 #define SXE2VF_ETH_QUEUE_CNT_MIN  1
 #define SXE2VF_DPDK_QUEUE_CNT_MIN 1
@@ -148,7 +148,6 @@ struct sxe2vf_queue {
 	};
 
 	struct sxe2vf_queue_stats *stats;
-	struct u64_stats_sync syncp;
 
 	struct rcu_head rcu;
 
@@ -169,6 +168,9 @@ struct sxe2vf_queue_context {
 	u16 eth_offset;
 	u16 dpdk_q_cnt;
 	u16 dpdk_offset;
+	u16 kernel_q_alloc;
+	u16 dpdk_q_alloc;
+	bool is_pre_assigned;
 };
 
 static inline bool sxe2vf_desc_status0_err_test(__le16 desc_status,

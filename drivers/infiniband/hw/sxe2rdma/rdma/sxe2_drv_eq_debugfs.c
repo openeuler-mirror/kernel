@@ -327,12 +327,14 @@ int drv_rdma_eq_write_field(struct sxe2_rdma_device *rdma_dev, void *data,
 		goto free_ctx;
 
 	if (type == SXE2_DBG_RSC_CEQ) {
+		ceq = (struct sxe2_rdma_ceq *)data;
 		ret = sxe2_drv_ceq_modify_op(rdma_dev, &ceq->ctx_ceq, ctx);
 		if (ret != 0)
 			DRV_RDMA_LOG_DEV_ERR(
 				"modify ceq ctx:%s failed, ret (%d)\n", argv[0],
 				ret);
 	} else if (type == SXE2_DBG_RSC_AEQ) {
+		aeq = (struct sxe2_rdma_aeq *)data;
 		ret = sxe2_drv_aeq_modify_op(rdma_dev, &aeq->ctx_aeq, ctx);
 		if (ret != 0)
 			DRV_RDMA_LOG_DEV_ERR(
@@ -622,6 +624,8 @@ STATIC ssize_t drv_aeq_codes_inject_flag_write(struct file *filp,
 	struct sxe2_rdma_device *rdma_dev;
 	char cmd_buf[INJECT_CMD_LEN] = {0};
 	u64 alive = ALIVE;
+	size_t arg_len;
+	size_t field_len;
 
 	rdma_dev = filp->private_data;
 
@@ -642,7 +646,13 @@ STATIC ssize_t drv_aeq_codes_inject_flag_write(struct file *filp,
 		goto end;
 	}
 
+	arg_len = strlen(argv[0]);
+
 	for (i = 0; i < ARRAY_SIZE(inject_flag_fields); i++) {
+		field_len = strlen(inject_flag_fields[i]);
+		if (arg_len != field_len)
+			continue;
+
 		if (!strncmp(argv[0], inject_flag_fields[i],
 			     strlen(inject_flag_fields[i])))
 			break;

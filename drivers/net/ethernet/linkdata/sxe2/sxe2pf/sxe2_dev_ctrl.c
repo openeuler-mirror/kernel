@@ -28,6 +28,7 @@
 #include "sxe2_lag.h"
 #include "sxe2_com_cdev.h"
 #include "sxe2_acl.h"
+#include "sxe2_tx.h"
 
 #ifdef SXE2_CFG_DEBUG
 extern int switch_heart_check;
@@ -43,8 +44,10 @@ extern int switch_heart_check;
 #define SXE2_DEV_CTRL_TIMER_PERIOD (secs_to_jiffies(SXE2_DEV_CTRL_TIMEOUT_SECS))
 
 #ifndef SXE2_TEST
-#define SXE2_WAIT_RESET_DONE_TIMEOUT (100000)
+#define SXE2_WAIT_CORER_DONE_TIMEOUT (20000)
+#define SXE2_WAIT_RESET_DONE_TIMEOUT (10000)
 #else
+#define SXE2_WAIT_CORER_DONE_TIMEOUT (201)
 #define SXE2_WAIT_RESET_DONE_TIMEOUT (200)
 #endif
 
@@ -148,6 +151,7 @@ STATIC void sxe2_pf_sw_cfg_clear(struct sxe2_adapter *adapter)
 {
 	sxe2_fnav_enter_reset(adapter, true);
 	sxe2_fnav_flow_ctxt_clean(adapter);
+	sxe2_acl_flow_ctxt_clean(adapter);
 	sxe2_arfs_clean(adapter);
 	sxe2_rss_ppp_ctxt_clean(&adapter->rss_flow_ctxt);
 
@@ -188,7 +192,15 @@ static s32 sxe2_vfs_rebuild(struct sxe2_adapter *adapter)
 			LOG_INFO_BDF("no enable vf do nothing.\n");
 			goto l_clear_bit;
 		}
+
 		sxe2_vfs_repr_decfg(adapter);
+
+		ret = sxe2_vf_queue_range_set(adapter);
+		if (ret) {
+			LOG_DEV_ERR("vf_cnt:%u queue range set failed.\n",
+				    adapter->vf_ctxt.num_vfs);
+			goto l_unlock;
+		}
 
 		sxe2_for_each_vf(adapter, idx)
 		{
@@ -205,7 +217,7 @@ static s32 sxe2_vfs_rebuild(struct sxe2_adapter *adapter)
 
 			mutex_lock(SXE2_VF_NODE_LOCK(adapter, idx));
 			vf_node = sxe2_vf_node_get(adapter, idx);
-			ret = sxe2_vf_clean_and_rebuild(vf_node, false);
+			ret = sxe2_vf_cfg_clear(vf_node, false);
 			mutex_unlock(SXE2_VF_NODE_LOCK(adapter, idx));
 			if (ret) {
 				LOG_DEV_ERR("vf:%u rebuild failed during function\t"
@@ -223,13 +235,7 @@ static s32 sxe2_vfs_rebuild(struct sxe2_adapter *adapter)
 
 		if (test_bit(SXE2_FLAG_FNAV_ENABLE, adapter->flags) &&
 		    adapter->vsi_ctxt.main_vsi) {
-			ret = sxe2_fnav_filter_replay(adapter->vsi_ctxt.main_vsi,
-						      true);
-			if (ret) {
-				LOG_DEV_ERR("fnav filter action to vf rebuild\t"
-					    "failed\n");
-				goto l_unlock;
-			}
+			sxe2_fnav_filter_replay(adapter->vsi_ctxt.main_vsi, true);
 		}
 
 		sxe2_vfs_active(adapter);
@@ -250,16 +256,18 @@ s32 sxe2_lfc_rebuild_set(struct sxe2_adapter *adapter)
 	struct sxe2_fwc_lfc_info lfc = {0};
 	struct sxe2_cmd_params cmd = {0};
 
-	if (adapter->lfc_ctxt.rx_en || adapter->lfc_ctxt.tx_en) {
+	if (adapter->lfc_ctxt.rx_en || adapter->lfc_ctxt.tx_en ||
+	    adapter->lfc_ctxt.an == SXE2_LFC_AN_ON) {
 		lfc.fc_mode = SXE2_FC_MODE_LFC;
 		lfc.rx_en = adapter->lfc_ctxt.rx_en;
 		lfc.tx_en = adapter->lfc_ctxt.tx_en;
+		lfc.an = adapter->lfc_ctxt.an;
 		sxe2_cmd_params_dflt_fill(&cmd, SXE2_CMD_LINK_FLOW_CONTROL_SET, &lfc,
 					  sizeof(lfc), NULL, 0);
 
 		ret = sxe2_cmd_fw_exec(adapter, &cmd);
 		if (ret) {
-			LOG_DEV_ERR("fc set cmd fail, ret=%d\n", ret);
+			LOG_DEV_ERR("fc set cmd failed, ret=%d\n", ret);
 			goto end;
 		}
 	}
@@ -298,7 +306,7 @@ STATIC s32 sxe2_pf_recfg(struct sxe2_adapter *adapter)
 {
 	s32 ret;
 	u32 mtu;
-	struct net_device *netdev = adapter->vsi_ctxt.main_vsi->netdev;
+	struct net_device *netdev = NULL;
 	struct sxe2_dcbx_cfg *curr_cfg;
 
 	ret = sxe2_pf_cfg_clear(adapter);
@@ -345,10 +353,13 @@ STATIC s32 sxe2_pf_recfg(struct sxe2_adapter *adapter)
 			LOG_DEV_ERR("lfc rebuild failed, ret=%d\n", ret);
 	}
 
-	mtu = netdev->mtu;
-	ret = sxe2_set_mtu_cfg(adapter, mtu);
-	if (ret)
-		LOG_DEV_ERR("rebuild mtu:%d, ret: %d\n", mtu, ret);
+	if (adapter->vsi_ctxt.main_vsi && adapter->vsi_ctxt.main_vsi->netdev) {
+		netdev = adapter->vsi_ctxt.main_vsi->netdev;
+		mtu = netdev->mtu;
+		ret = sxe2_set_mtu_cfg(adapter, mtu);
+		if (ret)
+			LOG_DEV_ERR("rebuild mtu:%d, ret: %d\n", mtu, ret);
+	}
 
 l_end:
 	return ret;
@@ -381,10 +392,18 @@ STATIC s32 sxe2_pf_vsi_rebuild(struct sxe2_adapter *adapter)
 		goto l_end;
 	}
 
+	(void)sxe2_rdma_multi_mac_addr_clean(adapter);
+
 	ret = sxe2_vsi_enable_by_type(adapter, SXE2_VSI_T_PF);
 	if (ret) {
 		LOG_DEV_ERR("pf enable failed ret:%d.\n", ret);
 		goto l_end;
+	}
+
+	if (test_bit(SXE2_FLAG_TX_TIMEOUT, adapter->flags)) {
+		LOG_DEV_INFO("Tx hang detected on queue %u recover successful.",
+			     adapter->txtimeout_ctxt.last_hung_txq);
+		sxe2_txtimeout_clean(adapter);
 	}
 
 l_end:
@@ -407,6 +426,8 @@ STATIC s32 sxe2_pf_feature_rebuild(struct sxe2_adapter *adapter)
 		goto l_end;
 	}
 	sxe2_fnav_enter_reset(adapter, false);
+
+	sxe2_acl_rebuild(adapter);
 
 	(void)sxe2_ptp_rebuild(adapter);
 
@@ -453,6 +474,20 @@ l_end:
 	return ret;
 }
 
+STATIC s32 sxe2_pf_vsi_feature_rebuild_pre(struct sxe2_adapter *adapter)
+{
+	s32 ret;
+
+	ret = sxe2_switch_fltr_restore_prepare(adapter);
+	if (ret) {
+		LOG_DEV_ERR("adapter %d switch filter restore \t"
+			    "prepare failed, ret %d\n",
+			    adapter->pf_idx, ret);
+	}
+
+	return ret;
+}
+
 s32 sxe2_pf_rebuild(struct sxe2_adapter *adapter)
 {
 	s32 ret;
@@ -478,6 +513,13 @@ s32 sxe2_pf_rebuild(struct sxe2_adapter *adapter)
 		goto l_pf_recfg_failed;
 	}
 
+	ret = sxe2_pf_vsi_feature_rebuild_pre(adapter);
+	if (ret) {
+		LOG_DEV_ERR("adapter %d rebuild pre failed, ret %d\n",
+			    adapter->pf_idx, ret);
+		goto l_pf_recfg_failed;
+	}
+
 	ret = sxe2_pf_vsi_rebuild(adapter);
 	if (ret) {
 		LOG_DEV_ERR("sxe2_pf_vsi_rebuild failed, ret=%d\n", ret);
@@ -486,6 +528,12 @@ s32 sxe2_pf_rebuild(struct sxe2_adapter *adapter)
 
 	if (sxe2_is_safe_mode(adapter))
 		goto l_rebuild_safe_mode;
+
+	ret = sxe2_udp_tunnel_restore(adapter);
+	if (ret) {
+		LOG_DEV_ERR("UDP tunnel restore failed, ret=%d\n", ret);
+		goto l_vsi_comm_roll_back;
+	}
 
 	ret = sxe2_pf_feature_rebuild(adapter);
 	if (ret) {
@@ -586,10 +634,11 @@ void sxe2_dev_state_set(struct sxe2_adapter *adapter,
 			    old_state == SXE2_DEVSTATE_RUNNING ||
 			    old_state == SXE2_DEVSTATE_ABNORMAL ||
 			    (old_state == SXE2_DEVSTATE_RESETTING &&
-			     old_reset_type == SXE2_RESET_PFR))
+			     old_reset_type == SXE2_RESET_PFR)) {
 				adapter->dev_ctrl_ctxt.dev_state =
 						SXE2_DEVSTATE_RESETTING;
-			adapter->dev_ctrl_ctxt.reset_type = new_reset_type;
+				adapter->dev_ctrl_ctxt.reset_type = new_reset_type;
+			}
 		}
 
 		if (new_reset_type == SXE2_RESET_PFR) {
@@ -749,12 +798,22 @@ static s32 sxe2_reset_done(struct sxe2_adapter *adapter,
 	return ret;
 }
 
+STATIC u32 sxe2_get_reset_timeout_by_type(enum sxe2_reset_type reset_type)
+{
+	u32 delay_ms = 0;
+
+	delay_ms = (reset_type == SXE2_RESET_CORER) ?
+			SXE2_WAIT_CORER_DONE_TIMEOUT : SXE2_WAIT_RESET_DONE_TIMEOUT;
+
+	return delay_ms;
+}
+
 s32 sxe2_wait_reset_done(struct sxe2_adapter *adapter,
 			 enum sxe2_reset_type reset_type)
 {
 	s32 ret;
 	unsigned long end;
-	u32 delay_ms = SXE2_WAIT_RESET_DONE_TIMEOUT;
+	u32 delay_ms = sxe2_get_reset_timeout_by_type(reset_type);
 
 	end = jiffies + msecs_to_jiffies(delay_ms);
 	do {
@@ -916,6 +975,12 @@ STATIC void sxe2_reset_work(struct sxe2_adapter *adapter)
 		(void)sxe2_dev_state_proc(adapter);
 		cond_resched();
 	}
+}
+
+STATIC void sxe2_msg_cancel_work(struct sxe2_adapter *adapter)
+{
+	if (sxe2_dev_status_abnormal(adapter))
+		sxe2_wait_task_cancel_all(adapter);
 }
 
 STATIC s32 sxe2_fault_work(struct sxe2_adapter *adapter)
@@ -1108,6 +1173,8 @@ STATIC void sxe2_dev_ctrl_timer_cb(struct timer_list *timer)
 	mod_timer(&adapter->dev_ctrl_ctxt.timer,
 		  adapter->dev_ctrl_ctxt.period + jiffies);
 
+	sxe2_msg_cancel_work(adapter);
+
 	sxe2_dev_ctrl_work_schedule(adapter);
 }
 
@@ -1217,11 +1284,35 @@ s32 sxe2_reset_sync(struct sxe2_adapter *adapter, enum sxe2_reset_type reset_typ
 	return sxe2_wait_reset_done(adapter, reset_type);
 }
 
+s32 sxe2_check_in_reset(struct sxe2_adapter *adapter)
+{
+	s32 ret;
+	u32 val;
+	u16 wait_times = 0;
+	struct sxe2_hw *hw = &adapter->hw;
+
+	do {
+		val = sxe2_read_reg(hw, SXE2_PFGEN_CTRL);
+		wait_times++;
+		if (val == SXE2_REG_INVALID_VALUE) {
+			ret = 0;
+			break;
+		}
+
+		msleep(SXE2_RESET_WAIT_INTERVAL);
+		if (wait_times > SXE2_RESET_WAIT_TIMES) {
+			LOG_DEV_WARN("reset trigger when err occur.\n");
+			ret = -EIO;
+			break;
+		}
+	} while (1);
+
+	return ret;
+}
+
 STATIC void sxe2_core_reset_and_check(struct sxe2_adapter *adapter)
 {
 #ifndef SXE2_TEST
-	u32 val;
-	u16 wait_times = 0;
 	struct sxe2_hw *hw = &adapter->hw;
 
 	if (hw->is_pop_type) {
@@ -1231,6 +1322,19 @@ STATIC void sxe2_core_reset_and_check(struct sxe2_adapter *adapter)
 
 	sxe2_trigger_reset(adapter, SXE2_RESET_CORER);
 
+	(void)sxe2_check_in_reset(adapter);
+#endif
+}
+
+void sxe2_pf_reset_and_check(struct sxe2_adapter *adapter)
+{
+#ifndef SXE2_TEST
+	u32 val;
+	u16 wait_times = 0;
+	struct sxe2_hw *hw = &adapter->hw;
+
+	(void)sxe2_reset_async(adapter, SXE2_RESET_PFR);
+
 	do {
 		val = sxe2_read_reg(hw, SXE2_PFGEN_CTRL);
 		wait_times++;
@@ -1239,10 +1343,11 @@ STATIC void sxe2_core_reset_and_check(struct sxe2_adapter *adapter)
 
 		msleep(SXE2_RESET_WAIT_INTERVAL);
 		if (wait_times > SXE2_RESET_WAIT_TIMES) {
-			LOG_DEV_WARN("core reset trigger when err occur.\n");
+			LOG_DEV_WARN("pf reset trigger when err occur.\n");
 			break;
 		}
 	} while (1);
+
 #endif
 }
 
@@ -1334,6 +1439,10 @@ s32 sxe2_reset_vf(struct sxe2_adapter *adapter, u16 vf_id, u32 flag)
 
 	sxe2_vf_stop(vf_node);
 
+	ret = sxe2_wait_vfr_done(adapter, vf_id);
+	if (ret)
+		goto l_end;
+
 	sxe2_hw_trigger_vfr(hw, vf_id);
 
 	ret = sxe2_wait_vfr_done(adapter, vf_id);
@@ -1342,7 +1451,7 @@ s32 sxe2_reset_vf(struct sxe2_adapter *adapter, u16 vf_id, u32 flag)
 
 	(void)sxe2_rdma_aux_send_vf_reset_event(adapter, vf_node->vf_idx);
 
-	ret = sxe2_vf_clean_and_rebuild(vf_node, true);
+	ret = sxe2_vf_cfg_clear(vf_node, true);
 	if (ret) {
 		LOG_ERROR_BDF("vf:%u vsi recreate failed during reset.\n",
 			      vf_node->vf_idx);

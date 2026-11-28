@@ -343,7 +343,7 @@ STATIC s32 sxe2_user_vlan_cfg_query_common_handle(struct sxe2_vsi *vsi,
 s32 sxe2_com_vlan_cfg_query(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
 			    struct sxe2_drv_cmd_params *cmd_buf)
 {
-	struct sxe2_drv_vlan_cfg_query_resp resp;
+	struct sxe2_drv_vlan_cfg_query_resp resp = {0};
 	u16 vsi_id = cmd_buf->vsi_id;
 	struct sxe2_vsi *vsi = NULL;
 	s32 ret = 0;

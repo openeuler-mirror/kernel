@@ -813,10 +813,10 @@ STATIC bool sxe2_fnav_filter_multi_vsi_dup(struct sxe2_adapter *adapter,
 					   struct sxe2_fnav_filter *filter,
 					   struct sxe2_fnav_flow_cfg *flow_cfg)
 {
-	bool is_dup = false;
-	struct sxe2_vsi *other_vsi = NULL;
-	u16 other_vsi_id;
-	u16 other_filter_cnt = 0;
+	bool                  is_dup       = false;
+	struct sxe2_vsi      *other_vsi    = NULL;
+	u16                   other_vsi_id = SXE2_INVAL_U16;
+	u16                   other_filter_cnt = 0;
 
 	if (!sxe2_eth_fnav_support_flow_type(filter->flow_type))
 		goto l_end;
@@ -854,9 +854,9 @@ s32 sxe2_fnav_flow_cfg_add(struct sxe2_vsi *vsi, struct sxe2_fnav_flow_cfg *flow
 			&adapter->fnav_ctxt.fnav_flow_ctxt.ppp;
 	enum sxe2_fnav_flow_type flow_type = flow_cfg->flow_type;
 	u8 level = seg->is_tunnel ? SXE2_FNAV_SEG_TUN : SXE2_FNAV_SEG_NON_TUN;
-	struct sxe2_fnav_flow_seg *seg_old = flow_cfg->seg[level];
-	struct sxe2_flow_info_node *flow;
-	u8 seg_cnt = seg->is_tunnel ? 2 : 1;
+	struct sxe2_fnav_flow_seg    *seg_old   = flow_cfg->seg[level];
+	struct sxe2_flow_info_node   *flow = NULL;
+	u8                            seg_cnt = seg->is_tunnel ? 2 : 1;
 
 	if (seg_old) {
 		if (sxe2_fnav_flow_segs_compare(seg_old, seg, seg_cnt)) {
@@ -914,7 +914,7 @@ s32 sxe2_fnav_flow_cfg_del(struct sxe2_adapter *adapter,
 	struct sxe2_ppp_common_ctxt *ppp_ctxt =
 			&adapter->fnav_ctxt.fnav_flow_ctxt.ppp;
 	u8 level = is_tunnel ? SXE2_FNAV_SEG_TUN : SXE2_FNAV_SEG_NON_TUN;
-	struct sxe2_flow_info_node *flow;
+	struct sxe2_flow_info_node *flow = NULL;
 
 	if (!flow_cfg->seg[level])
 		return 0;
@@ -957,7 +957,7 @@ STATIC s32 sxe2_fnav_flow_cfg_replay(struct sxe2_adapter *adapter,
 	u64 i;
 	struct sxe2_ppp_common_ctxt *ppp_ctxt =
 			&adapter->fnav_ctxt.fnav_flow_ctxt.ppp;
-	struct sxe2_flow_info_node *flow;
+	struct sxe2_flow_info_node *flow = NULL;
 
 	flow = sxe2_fnav_hw_flow_add(adapter, seg, &ret_tmp);
 	if (!flow) {
@@ -1055,6 +1055,11 @@ static s32 sxe2_fnav_default_flow_set_by_type(struct sxe2_vsi *vsi,
 		}
 	} else {
 		flow_cfg = devm_kzalloc(dev, sizeof(*flow_cfg), GFP_KERNEL);
+		if (!flow_cfg) {
+			LOG_ERROR_BDF("no memory.\n");
+			ret = -ENOMEM;
+			goto l_end;
+		}
 		flow_cfg->flow_type = flow_type;
 		flow_cfg->peer_vsi_used.vsi_id_sw =
 				SXE2_INVAL_U16;
@@ -1073,7 +1078,6 @@ static s32 sxe2_fnav_default_flow_set_by_type(struct sxe2_vsi *vsi,
 	}
 
 	ret = sxe2_fnav_default_flow_seg_fill_by_type(flow_type, seg);
-
 	if (ret) {
 		LOG_ERROR_BDF("default flow seg fill failed, ret:%d\n", ret);
 		goto l_free;
@@ -1085,20 +1089,17 @@ static s32 sxe2_fnav_default_flow_set_by_type(struct sxe2_vsi *vsi,
 		goto l_free;
 	}
 
-	if (!ret) {
-		flow_cfg->full_match = true;
-		if (new_alloc_flow)
-			sxe2_fnav_flow_cfg_add_list(vsi, flow_cfg);
-	} else {
-		if (new_alloc_flow)
-			devm_kfree(dev, flow_cfg);
-	}
+	flow_cfg->full_match = true;
+	if (new_alloc_flow)
+		sxe2_fnav_flow_cfg_add_list(vsi, flow_cfg);
 
 	goto l_end;
 
 l_free:
 	if (seg)
 		devm_kfree(dev, seg);
+	if (new_alloc_flow && flow_cfg)
+		devm_kfree(dev, flow_cfg);
 l_end:
 	return ret;
 }
@@ -1147,7 +1148,7 @@ void sxe2_fnav_filter_hash(struct sxe2_fnav_filter *filter)
 {
 	u32 hash = 0;
 	u16 offset = 0;
-	u8 hash_fld[SXE2_FNAV_HASH_FLD_MAX_SIZE];
+	u8 hash_fld[SXE2_FNAV_HASH_FLD_MAX_SIZE] = { 0 };
 
 	if (filter->hashed)
 		return;
@@ -1278,6 +1279,9 @@ s32 sxe2_pf_eth_fnav_init(struct sxe2_adapter *adapter)
 	s32 ret = 0;
 	struct sxe2_vsi *vsi = NULL;
 
+	if (sxe2_is_safe_mode(adapter))
+		return 0;
+
 	if (sxe2_com_mode_get(adapter) == SXE2_COM_MODULE_DPDK)
 		return 0;
 
@@ -1292,8 +1296,10 @@ s32 sxe2_pf_eth_fnav_init(struct sxe2_adapter *adapter)
 
 	if (test_bit(SXE2_FLAG_FNAV_ENABLE, adapter->flags)) {
 		ret = sxe2_fnav_default_flow_set(adapter);
-		if (ret)
+		if (ret) {
 			LOG_DEV_WARN("fnav default flow set failed, ret=%d\n", ret);
+			ret = 0;
+		}
 		sxe2_fnav_reserve_stat_idx_alloc(adapter);
 	}
 l_end:
@@ -1302,6 +1308,9 @@ l_end:
 
 void sxe2_pf_eth_fnav_deinit(struct sxe2_adapter *adapter)
 {
+	if (sxe2_is_safe_mode(adapter))
+		return;
+
 	if (sxe2_com_mode_get(adapter) == SXE2_COM_MODULE_DPDK)
 		return;
 
@@ -1312,6 +1321,9 @@ void sxe2_pf_eth_fnav_deinit(struct sxe2_adapter *adapter)
 s32 sxe2_pf_eth_fnav_rebuild(struct sxe2_adapter *adapter)
 {
 	s32 ret = 0;
+
+	if (sxe2_is_safe_mode(adapter))
+		return 0;
 
 	if (sxe2_com_mode_get(adapter) == SXE2_COM_MODULE_DPDK)
 		return 0;
@@ -1328,13 +1340,8 @@ s32 sxe2_pf_eth_fnav_rebuild(struct sxe2_adapter *adapter)
 		goto l_end;
 	}
 
-	if (test_bit(SXE2_FLAG_FNAV_ENABLE, adapter->flags)) {
-		ret = sxe2_fnav_rule_reply(adapter);
-		if (ret) {
-			LOG_DEV_ERR("fnav rule failed, ret:%d\n", ret);
-			goto l_end;
-		}
-	}
+	if (test_bit(SXE2_FLAG_FNAV_ENABLE, adapter->flags))
+		sxe2_fnav_rule_reply(adapter);
 
 	LOG_INFO_BDF("sxe2 pf eth fnav rebuild done. ret:%d.\n", ret);
 
@@ -1530,7 +1537,7 @@ STATIC s32 sxe2_fwc_fnav_filter_update(struct sxe2_adapter *adapter,
 	seg = flow_cfg->seg[level];
 	if (!seg || !seg->flow_ptr) {
 		ret = -EINVAL;
-		LOG_ERROR_BDF("seg or seh->flow_ptr is NULL. filter_loc: %u,\t"
+		LOG_ERROR_BDF("seg or seg->flow_ptr is NULL. filter_loc: %u,\t"
 			      "flow_type: %d, is_add: %d, tun: %d\n",
 			      filter->filter_loc, filter->flow_type, is_add, tun);
 		goto l_out;
@@ -2148,10 +2155,10 @@ STATIC s32 sxe2_fnav_packet_xmit(struct sxe2_adapter *adapter,
 				 bool tun)
 {
 	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
-	struct sxe2_tx_fnav_desc desc;
-	struct sxe2_vsi *ctrl_vsi;
-	u8 *pkt;
-	s32 ret;
+	struct sxe2_tx_fnav_desc desc = { 0 };
+	struct sxe2_vsi *ctrl_vsi = NULL;
+	u8 *pkt = NULL;
+	s32 ret = 0;
 
 	ctrl_vsi = adapter->vsi_ctxt.ctrl_vsi;
 	if (!ctrl_vsi)
@@ -2273,7 +2280,7 @@ STATIC s32 sxe2_fnav_action_to_vf_all_filter_del(struct sxe2_vsi *vsi,
 		return ret;
 
 	adapter = vsi->adapter;
-	for (i = 0; i < SXE2_VF_TYPE_NR; i++) {
+	for (i = 0; i < SXE2_VF_VSI_ID_NR; i++) {
 		vf_vsi_id = vf_node->vsi_id[i];
 		mutex_lock(&adapter->fnav_ctxt.filter_lock);
 		list_for_each_entry_safe(filter, tmp, &vsi->fnav.filter_list, l_node) {
@@ -2306,6 +2313,21 @@ s32 sxe2_fwc_fnav_hw_clear(struct sxe2_adapter *adapter)
 		LOG_ERROR_BDF("clear fnav hw filter failed, ret=%d\n", ret);
 		ret = -EIO;
 	}
+
+	return ret;
+}
+
+s32 sxe2_fwc_fnav_algo_set(struct sxe2_adapter *adapter, u8 mode)
+{
+	s32 ret;
+	struct sxe2_cmd_params cmd = {};
+	struct sxe2_fwc_fnav_algo_set_req req = {};
+
+	req.mode = mode;
+	sxe2_cmd_params_dflt_fill(&cmd, SXE2_CMD_FNAV_ALGO_SET, &req,
+				  sizeof(req), NULL, 0);
+
+	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 
 	return ret;
 }
@@ -2579,7 +2601,7 @@ s32 sxe2_fnav_del_filter_by_loc(struct sxe2_vsi *vsi, u32 loc)
 {
 	struct sxe2_adapter *adapter = vsi->adapter;
 	s32 ret = -ENOENT;
-	struct sxe2_fnav_filter *filter;
+	struct sxe2_fnav_filter *filter = NULL;
 
 	mutex_lock(&adapter->fnav_ctxt.filter_lock);
 	filter = sxe2_fnav_find_filter_by_loc_unlock(&vsi->fnav, loc);
@@ -2594,44 +2616,107 @@ s32 sxe2_fnav_del_filter_by_loc(struct sxe2_vsi *vsi, u32 loc)
 	return ret;
 }
 
-static s32 sxe2_fnav_flow_replay(struct sxe2_vsi *vsi)
+static void sxe2_fnav_flow_replay(struct sxe2_vsi *vsi)
 {
 	struct sxe2_adapter *adapter = vsi->adapter;
 	s32 ret = 0;
 	u32 j;
 	struct sxe2_fnav_flow_seg *seg;
+	struct sxe2_fnav_flow_cfg *flow_cfg = NULL;
 	struct sxe2_fnav_flow_cfg *flow_tmp = NULL;
+	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
 
 	mutex_lock(&vsi->fnav.flow_cfg_lock);
 
-	list_for_each_entry(flow_tmp, &vsi->fnav.flow_cfg_list, l_node) {
+	list_for_each_entry_safe(flow_cfg, flow_tmp, &vsi->fnav.flow_cfg_list, l_node) {
 		for (j = 0; j < SXE2_FNAV_SEG_MAX; j++) {
-			seg = flow_tmp->seg[j];
+			seg = flow_cfg->seg[j];
 			if (seg) {
 				ret = sxe2_fnav_flow_cfg_replay(adapter, seg);
 				if (ret) {
 					LOG_ERROR_BDF("flow cfg replay failed,\t"
 						      "flow_type:%u, level:%u\n",
-						      flow_tmp->flow_type, j);
-					goto l_end;
+						      flow_cfg->flow_type, j);
+
+					devm_kfree(dev, flow_cfg->seg[j]);
+					flow_cfg->seg[j] = NULL;
+					flow_cfg->filter_cnt[j] = 0;
 				}
 			}
 		}
+
+		if (!flow_cfg->seg[SXE2_FNAV_SEG_NON_TUN] &&
+		    !flow_cfg->seg[SXE2_FNAV_SEG_TUN]) {
+			list_del(&flow_cfg->l_node);
+			devm_kfree(dev, flow_cfg);
+		}
 	}
 
-l_end:
 	mutex_unlock(&vsi->fnav.flow_cfg_lock);
-	return ret;
 }
 
-s32 sxe2_fnav_filter_replay(struct sxe2_vsi *vsi, bool to_vf)
+STATIC void sxe2_fnav_hlist_del_for_arfs(struct sxe2_adapter *adapter,
+					 struct sxe2_fnav_filter *filter)
+{
+	u16 vsi_id = filter->ori_vsi_sw;
+	u16 arfs_vsi_id = adapter->arfs_ctxt.vsi_id_in_pf;
+
+	if (vsi_id == arfs_vsi_id) {
+		if (sxe2_fnav_flow_sup_arfs(filter->flow_type)) {
+			hlist_del(&filter->hl_node);
+			if (filter->conflict)
+				sxe2_monitor_work_schedule(adapter);
+		}
+	}
+}
+
+STATIC void sxe2_fnav_filter_del_replay_failed(struct sxe2_vsi *vsi, struct sxe2_fnav_filter
+					       *filter)
+{
+	struct sxe2_adapter *adapter = vsi->adapter;
+	struct sxe2_fnav_flow_cfg *flow_cfg = NULL;
+	enum sxe2_fnav_flow_type flow_type;
+	s32 ret = 0;
+
+	mutex_lock(&vsi->fnav.flow_cfg_lock);
+
+	flow_type = sxe2_arfs_flow_to_fnav_flow(filter->flow_type);
+	flow_cfg = sxe2_fnav_find_flow_cfg_by_flow_type(vsi, flow_type);
+	if (!flow_cfg)
+		goto l_end;
+
+	if (filter->tunn_flag == SXE2_FNAV_TUN_FLAG_NO_TUNNEL ||
+	    filter->tunn_flag == SXE2_FNAV_TUN_FLAG_ANY) {
+		flow_cfg->filter_cnt[SXE2_FNAV_SEG_NON_TUN]--;
+		if (filter->rule_vsi_sw != vsi->id_in_pf)
+			flow_cfg->peer_vsi_used.filter_cnt--;
+		else
+			flow_cfg->self_vsi_used.filter_cnt--;
+	}
+
+	if (filter->tunn_flag == SXE2_FNAV_TUN_FLAG_TUNNEL ||
+	    filter->tunn_flag == SXE2_FNAV_TUN_FLAG_ANY)
+		flow_cfg->filter_cnt[SXE2_FNAV_SEG_TUN]--;
+
+	ret = sxe2_fnav_flow_update_after_filter_del(vsi, flow_cfg);
+	if (ret)
+		LOG_ERROR_BDF("sxe2 fnav update flow cfg after del failed, ret:%d\n", ret);
+
+l_end:
+	sxe2_fnav_hlist_del_for_arfs(adapter, filter);
+	mutex_unlock(&vsi->fnav.flow_cfg_lock);
+}
+
+void sxe2_fnav_filter_replay(struct sxe2_vsi *vsi, bool to_vf)
 {
 	struct sxe2_adapter *adapter = vsi->adapter;
 	s32 ret = 0;
 	struct sxe2_fnav_filter *filter = NULL;
+	struct sxe2_fnav_filter *filter_tmp = NULL;
+	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
 
 	mutex_lock(&adapter->fnav_ctxt.filter_lock);
-	list_for_each_entry(filter, &vsi->fnav.filter_list, l_node) {
+	list_for_each_entry_safe(filter, filter_tmp, &vsi->fnav.filter_list, l_node) {
 		if ((to_vf && filter->ori_vsi_hw == filter->dst_vsi_hw) ||
 		    (!to_vf && filter->ori_vsi_hw != filter->dst_vsi_hw)) {
 			continue;
@@ -2640,38 +2725,30 @@ s32 sxe2_fnav_filter_replay(struct sxe2_vsi *vsi, bool to_vf)
 		ret = sxe2_pf_fnav_hw_filter_update(vsi, filter, true, false,
 						    SXE2_FNAV_FILTER_UPDATE_ADMIN);
 		if (ret) {
-			LOG_ERROR_BDF("add hw filter failed, ret:%d\n", ret);
-			goto l_unlock;
+			LOG_DEV_ERR("replay fnav filter loc=%d failed, ret:%d\n",
+				    filter->filter_loc, ret);
+			sxe2_fnav_filter_del_replay_failed(vsi, filter);
+			list_del(&filter->l_node);
+			devm_kfree(dev, filter);
+			vsi->fnav.filter_cnt--;
 		}
 	}
 
-l_unlock:
 	mutex_unlock(&adapter->fnav_ctxt.filter_lock);
-	return ret;
 }
 
-s32 sxe2_fnav_rule_reply(struct sxe2_adapter *adapter)
+void sxe2_fnav_rule_reply(struct sxe2_adapter *adapter)
 {
 	struct sxe2_vsi *vsi = adapter->vsi_ctxt.main_vsi;
-	s32 ret = 0;
 
 	if (!vsi)
-		return 0;
+		return;
 
-	ret = sxe2_fnav_flow_replay(vsi);
-	if (ret) {
-		LOG_DEV_ERR("fnav flow replay failed, ret: %d\n", ret);
-		goto l_end;
-	}
+	sxe2_fnav_flow_replay(vsi);
+
+	sxe2_fnav_filter_replay(vsi, false);
 
 	(void)sxe2_fnav_default_flow_set(adapter);
-
-	ret = sxe2_fnav_filter_replay(vsi, false);
-	if (ret)
-		LOG_DEV_ERR("fnav filter replay failed, ret: %d\n", ret);
-
-l_end:
-	return ret;
 }
 
 void sxe2_fwc_fnav_trace_trigger(struct sxe2_adapter *adapter)
@@ -2731,7 +2808,7 @@ sxe2_fnav_recorder1_hit_info_first(struct sxe2_adapter *adapter,
 	LOG_DEV_INFO("ad_fd_vsi = 0x%x\r\n", hit_info->ad_fd_vsi);
 	LOG_DEV_INFO("gl_space  = 0x%x\r\n", hit_info->gl_space);
 	LOG_DEV_INFO("pf_space  = 0x%x\r\n", hit_info->pf_space);
-	LOG_DEV_INFO("vsi_spcae = 0x%x\r\n", hit_info->vsi_space);
+	LOG_DEV_INFO("vsi_space = 0x%x\r\n", hit_info->vsi_space);
 
 	tmp[5] = (u32)(hit_info->profile_id_4_0 | (hit_info->profile_id_6_5 << 5));
 	LOG_DEV_INFO("profile_id   = 0x%x\r\n", tmp[5]);
@@ -2871,7 +2948,7 @@ sxe2_fnav_recorder1_hit_info_detail(struct sxe2_adapter *adapter,
 		LOG_DEV_INFO("pcmd          = 2, add table\r\n");
 		break;
 	case 3:
-		LOG_DEV_INFO("pcmd          = 3, subsitute table(if not exist, will fail)\r\n");
+		LOG_DEV_INFO("pcmd          = 3, substitute table(if not exist, will fail)\r\n");
 		break;
 	}
 	LOG_DEV_INFO("comp_report   = 0x%x\r\n", hit_info->comp_report);
@@ -3150,8 +3227,8 @@ l_end:
 	return ret;
 }
 
-s32 sxe2_fnav_stat_idx_alloc_with_lock(struct sxe2_adapter *adapter, u16 vsi_id,
-				       u16 *stat_index, bool need_update)
+s32 sxe2_fnav_stat_idx_alloc(struct sxe2_adapter *adapter, u16 vsi_id,
+			     u16 *stat_index, bool need_update, bool need_lock)
 {
 	struct sxe2_fnav_stat_node *stat_node = NULL;
 	struct sxe2_fnav_stat_node *tmp, *pre = NULL;
@@ -3165,7 +3242,11 @@ s32 sxe2_fnav_stat_idx_alloc_with_lock(struct sxe2_adapter *adapter, u16 vsi_id,
 	if (count >= stat_num)
 		return -ENOMEM;
 
-	mutex_lock(&adapter->fnav_ctxt.fnav_stat_ctxt.fnav_stat_lock);
+	if (need_lock)
+		mutex_lock(&adapter->fnav_ctxt.fnav_stat_ctxt.fnav_stat_lock);
+	else
+		lockdep_assert_held(&adapter->fnav_ctxt.fnav_stat_ctxt.fnav_stat_lock);
+
 	list_for_each_entry(tmp, &adapter->fnav_ctxt.fnav_stat_ctxt.fnav_stat_list, l_node) {
 		if (tmp->stat_index > new_index)
 			break;
@@ -3194,7 +3275,8 @@ s32 sxe2_fnav_stat_idx_alloc_with_lock(struct sxe2_adapter *adapter, u16 vsi_id,
 	*stat_index = new_index;
 
 l_end:
-	mutex_unlock(&adapter->fnav_ctxt.fnav_stat_ctxt.fnav_stat_lock);
+	if (need_lock)
+		mutex_unlock(&adapter->fnav_ctxt.fnav_stat_ctxt.fnav_stat_lock);
 	return ret;
 }
 
@@ -3258,12 +3340,16 @@ void sxe2_fnav_reserve_stat_idx_alloc(struct sxe2_adapter *adapter)
 	u32 i = 0;
 	u16 stat_idx = 0;
 
+	mutex_lock(&adapter->fnav_ctxt.fnav_stat_ctxt.fnav_stat_lock);
+
 	for (i = 0; i < SXE2_FNAV_STAT_PF_MAX; i++) {
-		(void)sxe2_fnav_stat_idx_alloc_with_lock(adapter,
+		(void)sxe2_fnav_stat_idx_alloc(adapter,
 							 adapter->vsi_ctxt.main_vsi->id_in_pf,
-							 &stat_idx, false);
+							 &stat_idx, false, false);
 		adapter->fnav_ctxt.fnav_stat_ctxt.stat_rsv_idx[i] = stat_idx;
 	}
+
+	mutex_unlock(&adapter->fnav_ctxt.fnav_stat_ctxt.fnav_stat_lock);
 }
 
 void sxe2_fnav_stat_ctxt_init(struct sxe2_adapter *adapter)
@@ -3352,7 +3438,7 @@ void sxe2_comm_fnav_msg_convert_fld(unsigned long *flds,
 				    struct sxe2_fnav_comm_proto_hdr *proto_hdr)
 {
 	DECLARE_BITMAP(tmp_flds_bit, SXE2_FLOW_FLD_ID_MAX);
-	u32 tmp_flds[BITS_TO_U32(SXE2_FLOW_FLD_ID_MAX)];
+	u32 tmp_flds[BITS_TO_U32(SXE2_FLOW_FLD_ID_MAX)] = { 0 };
 	u32 i = 0;
 
 	bitmap_zero(tmp_flds_bit, SXE2_FLOW_FLD_ID_MAX);
@@ -3424,21 +3510,6 @@ STATIC void sxe2_fnav_hlist_add_for_arfs(struct sxe2_adapter *adapter,
 	}
 }
 
-STATIC void sxe2_fnav_hlist_del_for_arfs(struct sxe2_adapter *adapter,
-					 struct sxe2_fnav_filter *filter)
-{
-	u16 vsi_id = filter->ori_vsi_sw;
-	u16 arfs_vsi_id = adapter->arfs_ctxt.vsi_id_in_pf;
-
-	if (vsi_id == arfs_vsi_id) {
-		if (sxe2_fnav_flow_sup_arfs(filter->flow_type)) {
-			hlist_del(&filter->hl_node);
-			if (filter->conflict)
-				sxe2_monitor_work_schedule(adapter);
-		}
-	}
-}
-
 STATIC bool sxe2_fnav_flow_parse_full_match(struct sxe2_vsi *vsi,
 					    struct sxe2_fnav_filter *filter,
 					    struct sxe2_fnav_flow_seg *segs)
@@ -3446,6 +3517,8 @@ STATIC bool sxe2_fnav_flow_parse_full_match(struct sxe2_vsi *vsi,
 	struct sxe2_adapter *adapter = vsi->adapter;
 	bool full_match = false;
 	DECLARE_BITMAP(full_match_flds, SXE2_FLOW_FLD_ID_MAX);
+
+	bitmap_zero(full_match_flds, SXE2_FLOW_FLD_ID_MAX);
 
 	if (vsi->id_in_pf != adapter->arfs_ctxt.vsi_id_in_pf)
 		goto l_end;
@@ -3461,35 +3534,31 @@ STATIC bool sxe2_fnav_flow_parse_full_match(struct sxe2_vsi *vsi,
 
 	switch (filter->flow_type) {
 	case SXE2_FNAV_FLOW_TYPE_IPV4_TCP:
-		bitmap_zero(full_match_flds, SXE2_FLOW_FLD_ID_MAX);
 		set_bit(SXE2_FLOW_FLD_ID_IPV4_SA, full_match_flds);
 		set_bit(SXE2_FLOW_FLD_ID_IPV4_DA, full_match_flds);
 		set_bit(SXE2_FLOW_FLD_ID_TCP_SRC_PORT, full_match_flds);
 		set_bit(SXE2_FLOW_FLD_ID_TCP_DST_PORT, full_match_flds);
-		break;
+	break;
 	case SXE2_FNAV_FLOW_TYPE_IPV4_UDP:
-		bitmap_zero(full_match_flds, SXE2_FLOW_FLD_ID_MAX);
 		set_bit(SXE2_FLOW_FLD_ID_IPV4_SA, full_match_flds);
 		set_bit(SXE2_FLOW_FLD_ID_IPV4_DA, full_match_flds);
 		set_bit(SXE2_FLOW_FLD_ID_UDP_SRC_PORT, full_match_flds);
 		set_bit(SXE2_FLOW_FLD_ID_UDP_DST_PORT, full_match_flds);
-		break;
+	break;
 	case SXE2_FNAV_FLOW_TYPE_IPV6_TCP:
-		bitmap_zero(full_match_flds, SXE2_FLOW_FLD_ID_MAX);
 		set_bit(SXE2_FLOW_FLD_ID_IPV6_SA, full_match_flds);
 		set_bit(SXE2_FLOW_FLD_ID_IPV6_DA, full_match_flds);
 		set_bit(SXE2_FLOW_FLD_ID_TCP_SRC_PORT, full_match_flds);
 		set_bit(SXE2_FLOW_FLD_ID_TCP_DST_PORT, full_match_flds);
-		break;
+	break;
 	case SXE2_FNAV_FLOW_TYPE_IPV6_UDP:
-		bitmap_zero(full_match_flds, SXE2_FLOW_FLD_ID_MAX);
 		set_bit(SXE2_FLOW_FLD_ID_IPV6_SA, full_match_flds);
 		set_bit(SXE2_FLOW_FLD_ID_IPV6_DA, full_match_flds);
 		set_bit(SXE2_FLOW_FLD_ID_UDP_SRC_PORT, full_match_flds);
 		set_bit(SXE2_FLOW_FLD_ID_UDP_DST_PORT, full_match_flds);
-		break;
+	break;
 	default:
-		break;
+	break;
 	}
 
 	if (bitmap_equal(full_match_flds, segs->fields, SXE2_FLOW_FLD_ID_MAX))
@@ -3527,6 +3596,11 @@ sxe2_fnav_flow_update_before_filter_add(struct sxe2_vsi *vsi,
 	flow_cfg = sxe2_fnav_find_flow_cfg_by_flow_type(vsi, flow_type);
 	if (!flow_cfg) {
 		flow_cfg = devm_kzalloc(dev, sizeof(*flow_cfg), GFP_KERNEL);
+		if (!flow_cfg) {
+			LOG_ERROR_BDF("no memory.\n");
+			ret = -ENOMEM;
+			goto l_end;
+		}
 		flow_cfg->flow_type = flow_type;
 		flow_cfg->peer_vsi_used.vsi_id_sw =
 				SXE2_INVAL_U16;
@@ -3538,7 +3612,7 @@ sxe2_fnav_flow_update_before_filter_add(struct sxe2_vsi *vsi,
 
 	if (sxe2_fnav_filter_multi_vsi_dup(adapter, filter, flow_cfg)) {
 		ret = -EEXIST;
-		goto l_end;
+		goto l_free;
 	}
 
 	if (filter->tunn_flag == SXE2_FNAV_TUN_FLAG_NO_TUNNEL ||
@@ -3697,8 +3771,8 @@ struct sxe2_fnav_filter *
 sxe2_comm_fnav_filter_search_for_dup(struct sxe2_vsi *vsi,
 				     struct sxe2_fnav_filter *filter)
 {
-	bool ret;
-	struct sxe2_fnav_filter *filter_tmp = NULL;
+	bool ret = 0;
+	struct sxe2_fnav_filter *filter_tmp  = NULL;
 	struct sxe2_fnav_filter *filter_find = NULL;
 
 	list_for_each_entry(filter_tmp, &vsi->fnav.filter_list, l_node) {
@@ -4208,9 +4282,9 @@ void sxe2_fnav_clean_by_vsi(struct sxe2_vsi *vsi, bool need_clear_hw)
 
 void sxe2_fnav_vf_cfg_clear(struct sxe2_adapter *adapter)
 {
-	struct sxe2_vf_node *vf_node;
-	struct sxe2_vsi *dpdk_pf_vsi = NULL;
-	struct sxe2_vsi *main_vsi = adapter->vsi_ctxt.main_vsi;
+	struct sxe2_vf_node   *vf_node = NULL;
+	struct sxe2_vsi      *dpdk_pf_vsi = NULL;
+	struct sxe2_vsi      *main_vsi    = adapter->vsi_ctxt.main_vsi;
 	u16 vf_idx;
 
 	sxe2_for_each_vf(adapter, vf_idx)

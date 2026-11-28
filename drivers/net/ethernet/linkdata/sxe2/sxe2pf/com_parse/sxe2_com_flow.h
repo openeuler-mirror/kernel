@@ -16,6 +16,12 @@ s32 sxe2_com_flow_filter_add(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
 s32 sxe2_com_flow_filter_del(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
 			     struct sxe2_drv_cmd_params *cmd_buf);
 
+s32 sxe2_com_flow_filter_add_ext(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
+				 struct sxe2_drv_cmd_params *cmd_buf);
+
+s32 sxe2_com_flow_filter_del_ext(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
+				 struct sxe2_drv_cmd_params *cmd_buf);
+
 s32 sxe2_com_flow_fnav_stat_alloc(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
 				  struct sxe2_drv_cmd_params *cmd_buf);
 
@@ -24,5 +30,14 @@ s32 sxe2_com_flow_fnav_stat_free(struct sxe2_adapter *adapter, struct sxe2_obj *
 
 s32 sxe2_com_flow_fnav_stat_query(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
 				  struct sxe2_drv_cmd_params *cmd_buf);
+
+s32 sxe2_com_flow_acl_stat_alloc(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
+				 struct sxe2_drv_cmd_params *cmd_buf);
+
+s32 sxe2_com_flow_acl_stat_free(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
+				struct sxe2_drv_cmd_params *cmd_buf);
+
+s32 sxe2_com_flow_acl_stat_query(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
+				 struct sxe2_drv_cmd_params *cmd_buf);
 
 #endif

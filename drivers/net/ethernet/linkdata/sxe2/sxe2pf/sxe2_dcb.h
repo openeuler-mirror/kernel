@@ -33,6 +33,7 @@
 #define SXE2_DSCP_NUM_VAL	64
 #define SXE2_DCBX_APPS_NON_WILLING	0x1
 
+#define SXE2_DCBX_PENDING_MIB_SIZE	1500
 enum sxe2_dcb_state {
 	SXE2_DCB_STATE_UNINIT = 0,
 	SXE2_DCB_STATE_READY,
@@ -59,7 +60,8 @@ struct sxe2_dcb_pfc_cfg {
 struct sxe2_lfc_context {
 	u8 tx_en;
 	u8 rx_en;
-	u8 recv[2];
+	u8 an;
+	u8 recv;
 };
 
 struct sxe2_dcb_app_prio_tbl {
@@ -95,6 +97,10 @@ struct sxe2_dcb_context {
 	enum sxe2_dcb_state state;
 	u8 dcbx_cap;
 
+	struct mutex pending_lock;
+	u32 pending_mib_len;
+	u8 pending_mib[SXE2_DCBX_PENDING_MIB_SIZE];
+
 	/* in order to protect the data */
 	struct mutex tc_mutex;
 };
@@ -120,8 +126,6 @@ s32 sxe2_dcb_cfg(struct sxe2_adapter *adapter,
 s32 sxe2_qos_mode_set(struct sxe2_adapter *adapter, enum sxe2QosMode mode);
 
 s32 sxe2_dcbx_fw_agent_status_set(struct sxe2_adapter *adapter, bool isenable);
-
-void sxe2_dcb_stats_update(struct sxe2_adapter *adapter);
 
 s32 sxe2_dcb_rebuild(struct sxe2_adapter *adapter);
 
@@ -154,6 +158,8 @@ void sxe2_lldp_sw_rule_change(struct sxe2_adapter *adapter, u8 stats);
 s32 sxe2_dcb_process_lldp_set_mib_change(struct sxe2_adapter *adapter,
 					 void *buf, u32 buf_len);
 
+void sxe2_dcbx_pending_cfg_proc(struct sxe2_adapter *adapter);
+
 s32 sxe2_lldp_fw_agent_change(struct sxe2_adapter *adapter,
 			      void *buf, u32 buf_len);
 
@@ -164,8 +170,6 @@ void sxe2_setup_dcb_qos_info(struct sxe2_adapter *adapter,
 
 void sxe2_vsi_netdev_tc_cfg(struct sxe2_vsi *vsi, u8 tc_bitmap);
 
-s32 sxe2_fc_get(struct sxe2_adapter *adapter, u16 vsi_id, u8 *fc);
-
-void sxe2_set_fc_flag(struct sxe2_vsi *vsi, bool on);
+void sxe2_fc_get(struct sxe2_adapter *adapter, u8 *fc);
 
 #endif

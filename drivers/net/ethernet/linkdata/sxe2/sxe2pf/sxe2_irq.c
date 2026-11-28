@@ -21,6 +21,7 @@
 #include "sxe2_tx.h"
 #include "sxe2_xsk.h"
 #include "sxe2_irq.h"
+#include "sxe2_hw.h"
 
 #define SXE2_MSIX_SCHEME_CNT 9
 #define SXE2_DIM_DFLT_PROFILE_IDX 1
@@ -82,11 +83,6 @@ irqreturn_t sxe2_msix_ctrl_vsi_handler(int __always_unused irq, void *data)
 {
 	struct sxe2_irq_data *irq_data = (struct sxe2_irq_data *)data;
 
-#define FNAV_RX_DESC_CLEAN_BUDGET 64
-	if (SXE2_IRQ_HAS_RXQ(irq_data))
-		(void)sxe2_rxq_irq_clean(irq_data->rx.list.next,
-					 FNAV_RX_DESC_CLEAN_BUDGET);
-
 	if (SXE2_IRQ_HAS_TXQ(irq_data))
 		sxe2_ctrl_txq_irq_clean(irq_data->tx.list.next);
 
@@ -123,6 +119,30 @@ static void sxe2_msix_entries_free(struct sxe2_adapter *adapter)
 	adapter->irq_ctxt.msix_entries = NULL;
 }
 
+STATIC irqreturn_t sxe2_irq_tmp_handler(int irq, void *data)
+{
+	return IRQ_HANDLED;
+}
+
+STATIC void sxe2_irq_pre_padding(struct sxe2_adapter *adapter, s32 irq_cnt)
+{
+	s32 rc;
+	s32 i;
+	u32 vector;
+
+	for (i = 0; i < irq_cnt; ++i) {
+		vector = adapter->irq_ctxt.msix_entries[i].vector;
+		rc = request_irq(vector, sxe2_irq_tmp_handler, 0,
+				 "sxe2_irq_pre_pad", adapter);
+		if (rc) {
+			LOG_ERROR_BDF("pre pad request irq %u failed, idx=%u cnt=%d ret=%d\n",
+				      vector, i, irq_cnt, rc);
+			continue;
+		}
+		free_irq(vector, adapter);
+	}
+}
+
 STATIC s32 sxe2_msix_enable(struct sxe2_adapter *adapter, u16 min_msix, u16 msix_cnt)
 {
 	s32 ret;
@@ -138,6 +158,7 @@ STATIC s32 sxe2_msix_enable(struct sxe2_adapter *adapter, u16 min_msix, u16 msix
 			      msix_cnt, ret);
 		goto l_ena_failed;
 	}
+	sxe2_irq_pre_padding(adapter, ret);
 	return ret;
 
 l_ena_failed:
@@ -278,7 +299,7 @@ STATIC void sxe2_msix_adjust(struct sxe2_adapter *adapter, u16 max_msix)
 	if (sxe2_is_safe_mode(adapter))
 		goto l_end;
 
-	left_cnt = (u16)(max_msix - SXE2_EVENT_MSIX_CNT);
+	left_cnt = (u16)(max_msix - SXE2_EVENT_MSIX_CNT - SXE2_LB_RXQ_MSIX_CNT);
 	if (expected_cnt > max_msix) {
 		if (mode == SXE2_COM_MODULE_KERNEL) {
 			left_cnt = (u16)(left_cnt - SXE2_FNAV_MSIX_CNT -
@@ -335,12 +356,162 @@ STATIC s32 sxe2_msix_init(struct sxe2_adapter *adapter)
 		adapter->irq_ctxt.fixed_cnt = sxe2_msix_num_calc(adapter);
 	}
 
-	adapter->irq_ctxt.avail_cnt = (u16)expected_cnt;
+	adapter->irq_ctxt.avail_cnt = (u16)applied_cnt;
 
 	sxe2_msix_irq_layout_init(adapter);
 
 l_end:
 	return ret;
+}
+
+STATIC irqreturn_t sxe2_msix_pool_irq_handler(int __always_unused irq,
+					      void *data)
+{
+	struct sxe2_irq_pool_entry *entry = data;
+	struct sxe2_irq_data *irq_data = READ_ONCE(entry->irq_data);
+
+	if (unlikely(!irq_data))
+		return IRQ_HANDLED;
+
+	if (!SXE2_IRQ_HAS_TXQ(irq_data) && !SXE2_IRQ_HAS_RXQ(irq_data))
+		goto l_end;
+
+	irq_data->event_ctr++;
+
+	napi_schedule(&irq_data->napi);
+l_end:
+	return IRQ_HANDLED;
+}
+
+STATIC void sxe2_irq_pool_affinity_notify(struct irq_affinity_notify *notify,
+					  const cpumask_t *mask)
+{
+	struct sxe2_irq_pool_entry *entry =
+			container_of(notify, struct sxe2_irq_pool_entry,
+				     affinity_notify);
+
+	mutex_lock(&entry->pool->lock);
+	cpumask_copy(&entry->affinity_mask, mask);
+	if (entry->irq_data)
+		cpumask_copy(&entry->irq_data->affinity_mask, mask);
+	mutex_unlock(&entry->pool->lock);
+}
+
+STATIC void sxe2_irq_pool_affinity_release(struct kref __always_unused *ref)
+{
+}
+
+STATIC void sxe2_irq_pool_entry_free(struct sxe2_irq_pool_entry *entry)
+{
+	if (!entry->requested)
+		return;
+
+	(void)irq_set_affinity_notifier(entry->irqn, NULL);
+	(void)irq_set_affinity_hint(entry->irqn, NULL);
+	synchronize_irq(entry->irqn);
+	free_irq(entry->irqn, entry);
+	entry->requested = false;
+}
+
+s32 sxe2_irq_pool_init(struct sxe2_adapter *adapter)
+{
+	struct sxe2_irq_pool *pool = &adapter->irq_ctxt.pool;
+	struct sxe2_irq_layout *layout = &adapter->irq_ctxt.irq_layout;
+	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
+	s32 node = dev_to_node(dev);
+	u16 i;
+	s32 ret;
+
+	if (pool->entries)
+		sxe2_irq_pool_destroy(adapter);
+
+	mutex_init(&pool->lock);
+	pool->base = layout->lan_offset;
+	pool->cnt = layout->lan;
+
+	if (!pool->cnt)
+		return 0;
+
+	pool->entries = devm_kcalloc(dev, pool->cnt, sizeof(*pool->entries),
+				     GFP_KERNEL);
+	if (!pool->entries) {
+		LOG_ERROR_BDF("alloc irq pool entries(%u) failed.\n", pool->cnt);
+		return -ENOMEM;
+	}
+
+	for (i = 0; i < pool->cnt; i++) {
+		struct sxe2_irq_pool_entry *entry = &pool->entries[i];
+
+		entry->idx_in_pf = pool->base + i;
+		if (entry->idx_in_pf >= adapter->irq_ctxt.avail_cnt) {
+			ret = -EPERM;
+			goto l_failed;
+		}
+		entry->pool = pool;
+		entry->irqn =
+		    adapter->irq_ctxt.msix_entries[entry->idx_in_pf].vector;
+		entry->irq_data = NULL;
+		cpumask_set_cpu(cpumask_local_spread(i, node),
+				&entry->affinity_mask);
+		(void)snprintf(entry->name, sizeof(entry->name) - 1,
+			       "%s-%s-q-%u", dev_driver_string(dev),
+			       dev_name(dev), entry->idx_in_pf);
+
+		ret = request_irq(entry->irqn, sxe2_msix_pool_irq_handler, 0,
+				  entry->name, entry);
+		if (ret) {
+			LOG_ERROR_BDF("pool request irq(%u) failed, ret=%d\n",
+				      entry->irqn, ret);
+			goto l_failed;
+		}
+		entry->requested = true;
+
+		(void)irq_set_affinity_hint(entry->irqn,
+					    &entry->affinity_mask);
+		if (!sxe2_arfs_supported(adapter)) {
+			entry->affinity_notify.notify = sxe2_irq_pool_affinity_notify;
+			entry->affinity_notify.release = sxe2_irq_pool_affinity_release;
+			(void)irq_set_affinity_notifier(entry->irqn,
+							&entry->affinity_notify);
+		}
+	}
+
+	LOG_INFO_BDF("lan irq pool inited: base=%u cnt=%u\n",
+		     pool->base, pool->cnt);
+	return 0;
+
+l_failed:
+	while (i) {
+		i--;
+		sxe2_irq_pool_entry_free(&pool->entries[i]);
+	}
+	devm_kfree(dev, pool->entries);
+	pool->entries = NULL;
+	pool->cnt = 0;
+	mutex_destroy(&pool->lock);
+	return ret;
+}
+
+void sxe2_irq_pool_destroy(struct sxe2_adapter *adapter)
+{
+	struct sxe2_irq_pool *pool = &adapter->irq_ctxt.pool;
+	u16 i;
+
+	if (!pool->entries)
+		return;
+
+	for (i = 0; i < pool->cnt; i++) {
+		struct sxe2_irq_pool_entry *entry = &pool->entries[i];
+
+		if (WARN_ON(entry->irq_data))
+			entry->irq_data = NULL;
+		sxe2_irq_pool_entry_free(entry);
+	}
+
+	devm_kfree(SXE2_ADAPTER_TO_DEV(adapter), pool->entries);
+	pool->entries = NULL;
+	pool->cnt = 0;
+	mutex_destroy(&pool->lock);
 }
 
 s32 sxe2_irq_init(struct sxe2_adapter *adapter)
@@ -355,8 +526,14 @@ s32 sxe2_irq_init(struct sxe2_adapter *adapter)
 	if (ret)
 		goto l_failed;
 
+	ret = sxe2_irq_pool_init(adapter);
+	if (ret)
+		goto l_pool_failed;
+
 	return ret;
 
+l_pool_failed:
+	sxe2_event_irq_free(adapter);
 l_failed:
 	sxe2_msix_deinit(adapter);
 l_end:
@@ -395,8 +572,19 @@ s32 sxe2_irq_resume(struct sxe2_adapter *adapter)
 	if (ret != 0)
 		goto l_failed;
 
+	sxe2_irq_pool_destroy(adapter);
+	ret = sxe2_irq_pool_init(adapter);
+	if (ret != 0)
+		goto l_pool_failed;
+
+	if (adapter->vsi_ctxt.main_vsi &&
+	    sxe2_cpu_rx_rmap_set(adapter->vsi_ctxt.main_vsi))
+		LOG_WARN_BDF("rebuild cpu rmap failed on resume, arfs degraded.\n");
+
 	return ret;
 
+l_pool_failed:
+	sxe2_event_irq_free(adapter);
 l_failed:
 	sxe2_msix_deinit(adapter);
 	return ret;
@@ -404,6 +592,11 @@ l_failed:
 
 void sxe2_irq_deinit(struct sxe2_adapter *adapter)
 {
+	if (adapter->vsi_ctxt.main_vsi && adapter->irq_ctxt.pool.entries)
+		sxe2_cpu_rx_rmap_free(adapter->vsi_ctxt.main_vsi);
+
+	sxe2_irq_pool_destroy(adapter);
+
 	sxe2_event_irq_free(adapter);
 	sxe2_msix_deinit(adapter);
 }
@@ -416,6 +609,7 @@ STATIC void sxe2_event_irq_common_handler(struct sxe2_adapter *adapter, u32 oicr
 	u32 fw_event;
 	struct sxe2_hw *hw = &adapter->hw;
 	s32 gltsyn_stat;
+	u32 mdd_cause = 0;
 
 	if (oicr & SXE2_PF_INT_OICR_FW) {
 		fw_event = sxe2_hw_fw_irq_cause_get(hw);
@@ -470,14 +664,17 @@ STATIC void sxe2_event_irq_common_handler(struct sxe2_adapter *adapter, u32 oicr
 		sxe2_ptp_extts_intr(adapter);
 	}
 
-	if (oicr & SXE2_PF_INT_OICR_LAN_TX_ERR)
-		set_bit(SXE2_FLAG_MDD_TX_PENDING, adapter->flags);
+	if (oicr & SXE2_MDD_OICR_MASK) {
+		mdd_cause = oicr & SXE2_MDD_OICR_MASK;
+		if (oicr & SXE2_PF_INT_OICR_LAN_TX_ERR)
+			set_bit(SXE2_FLAG_MDD_TX_PENDING, adapter->flags);
 
-	if (oicr & SXE2_PF_INT_OICR_LAN_RX_ERR)
-		set_bit(SXE2_FLAG_MDD_RX_PENDING, adapter->flags);
+		if (oicr & SXE2_PF_INT_OICR_LAN_RX_ERR)
+			set_bit(SXE2_FLAG_MDD_RX_PENDING, adapter->flags);
 
-	if (oicr & SXE2_PF_INT_OICR_LAN_TX_ERR || oicr & SXE2_PF_INT_OICR_LAN_RX_ERR)
+		sxe2_hw_event_mdd_irq_switch(hw, mdd_cause, false);
 		sxe2_monitor_work_schedule(adapter);
+	}
 }
 
 STATIC irqreturn_t sxe2_msix_event_irq_handler(int irq, void *data)
@@ -761,7 +958,7 @@ static void sxe2_net_dim(u16 event_ctr, u64 packets, u64 bytes, struct dim *dim)
 	if (ktime_ms_delta(dim_sample.time, dim->start_sample.time) >= 1000)
 		dim->state = DIM_START_MEASURE;
 
-	net_dim(dim, dim_sample);
+	net_dim(dim, &dim_sample);
 }
 
 void sxe2_dynamic_itr(struct sxe2_irq_data *irq_data)
@@ -838,11 +1035,24 @@ int sxe2_napi_poll(struct napi_struct *napi, int weight)
 
 	sxe2_for_each_queue(txq, irq_data->tx.list)
 	{
+		bool wd;
+
 #ifdef HAVE_AF_XDP_ZC_SUPPORT
-		bool wd = txq->xsk_pool ? sxe2_txq_irq_clean_zc(txq, weight)
-					: sxe2_txq_irq_clean(txq, weight);
+#ifdef HAVE_AF_XDP_MULTI_BUF_SUPPORT
+		if (txq->xsk_pool)
+			wd = sxe2_xmit_clean_zc(txq, txq->xsk_pool);
+		else if (sxe2_queue_is_xdp(txq))
+			wd = true;
+		else
+			wd = sxe2_txq_irq_clean(txq, weight);
 #else
-		bool wd = sxe2_txq_irq_clean(txq, weight);
+		if (txq->xsk_pool)
+			wd = sxe2_txq_irq_clean_zc(txq, weight);
+		else
+			wd = sxe2_txq_irq_clean(txq, weight);
+#endif
+#else
+		wd = sxe2_txq_irq_clean(txq, weight);
 #endif
 		if (!wd)
 			complete = false;
@@ -863,7 +1073,11 @@ int sxe2_napi_poll(struct napi_struct *napi, int weight)
 		sxe2_trace(rxq_clean_begin, rxq);
 #ifdef HAVE_AF_XDP_ZC_SUPPORT
 		clean = rxq->xsk_pool ? sxe2_rx_irq_clean_zc(rxq, budget_per_ring)
+#ifdef HAVE_AF_XDP_MULTI_BUF_SUPPORT
+				      : sxe2_rxq_irq_clean_mbuf(rxq, budget_per_ring);
+#else
 				      : sxe2_rxq_irq_clean(rxq, budget_per_ring);
+#endif
 #else
 		clean = sxe2_rxq_irq_clean(rxq, budget_per_ring);
 #endif
@@ -939,7 +1153,7 @@ s32 sxe2_dpdk_irq_vector_idx_get(void *adapter, u16 irq_idx)
 	struct sxe2_adapter *pf_adapter = adapter;
 	u16 offset = pf_adapter->irq_ctxt.irq_layout.dpdk_offset + irq_idx;
 
-	if (!pf_adapter->irq_ctxt.msix_entries)
+	if (!pf_adapter->irq_ctxt.msix_entries || offset >= pf_adapter->irq_ctxt.avail_cnt)
 		return -EINVAL;
 
 	return (s32)pf_adapter->irq_ctxt.msix_entries[offset].vector;

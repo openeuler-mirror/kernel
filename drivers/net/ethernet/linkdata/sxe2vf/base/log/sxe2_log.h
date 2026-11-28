@@ -45,6 +45,9 @@ static inline const char *sxe2_debug_level_name(enum debug_level_e lv)
 		[LEVEL_DEBUG] = "DEBUG",
 	};
 
+	if ((unsigned int)lv > LEVEL_DEBUG)
+		return "UNKNOWN";
+
 	return level[lv];
 }
 
@@ -616,8 +619,8 @@ do {	\
 	BUG_ON(type);								\
 } while (0)
 
-#define SXE2_BUG_NO_SYNC(void)	\
-	BUG(void)
+#define SXE2_BUG_NO_SYNC() \
+	BUG()
 
 #endif
 

@@ -28,6 +28,7 @@
 #include "sxe2_hw.h"
 #include "sxe2_vsi.h"
 #include "sxe2_cmd_channel.h"
+#include "sxe2_event.h"
 #include "sxe2_switch.h"
 #include "sxe2_monitor.h"
 #include "sxe2_ptp.h"
@@ -52,6 +53,7 @@
 #include "sxe2_com_cdev.h"
 #include "sxe2_acl.h"
 #include "sxe2_drv_cmd.h"
+#include "sxe2_sdf.h"
 
 #define SXE2_CTXT_REG_VALUE(value, shift, width)                               \
 	({ \
@@ -120,6 +122,10 @@ enum sxe2_adapter_flags {
 	SXE2_FLAG_LINK_DOWN_ON_CLOSE,
 	SXE2_FLAG_RDMA_LOADED,
 	SXE2_FLAG_ACL_CAPABLE,
+	SXE2_FLAG_ACL_EXT_CAPABLE,
+	SXE2_FLAG_TX_TIMEOUT,
+	SXE2_FLAG_DEVLINK_REGISTERED,
+	SXE2_FLAG_DCBX_CFG_PENDING,
 	SXE2_PF_FLAGS_NBITS
 };
 
@@ -152,8 +158,12 @@ struct sxe2_caps_context {
 	u16 fnav_space_gsize;
 	u16 fnav_stat_base;
 	u16 fnav_stat_num;
+	u16 acl_stat_base;
+	u16 acl_stat_num;
 	u16 global_lut_base;
 	u16 global_lut_num;
+	DECLARE_BITMAP(global_lut_id, SXE2_RSS_GLOBAL_LUT_NUM_MAX);
+	struct mutex global_lut_lock;
 };
 
 struct sxe2_rss_ctxt {
@@ -194,6 +204,14 @@ struct sxe2_repr_vf_stats {
 	struct rtnl_link_stats64 repr_link_stats64[SXE2_VF_NUM];
 };
 
+struct sxe2_txtimeout_ctxt {
+	u32 tx_timeout_count;
+	u32 last_hung_txq;
+	unsigned long long last_hung_jiffies;
+	u32 txq_last_trans;
+	struct sxe2_pause_stats pause_stats;
+};
+
 struct sxe2_adapter {
 	char dev_name[DEV_NAME_LEN];
 	u8 pf_idx;
@@ -202,14 +220,12 @@ struct sxe2_adapter {
 	u8 pad;
 	struct pci_dev *pdev;
 	struct sxe2_hw hw;
-	u32 tx_timeout_count;
-	u32 tx_timeout_recovery_level;
-	unsigned long tx_timeout_last_recovery;
 	struct sxe2_irq_context irq_ctxt;
 	struct sxe2_queue_context q_ctxt;
 	struct sxe2_vsi_context vsi_ctxt;
 	struct sxe2_txsched_context tx_sched_ctxt;
 	struct sxe2_cmd_channel_context cmd_channel_ctxt;
+	struct sxe2_event_handle event_table[SXE2_EVENT_TABLE_SIZE];
 	struct sxe2_monitor_context monitor_ctxt;
 	struct sxe2_msglevel_context msglvl_ctxt;
 	struct sxe2_pf_stats pf_stats;
@@ -257,10 +273,25 @@ struct sxe2_adapter {
 #endif
 
 	enum sxe2_com_module drv_mode;
+	struct sxe2_sdf_ctxt sdf_ctxt;
+	struct sxe2_txtimeout_ctxt txtimeout_ctxt;
+
 };
+
+static inline bool sxe2_arfs_supported(struct sxe2_adapter *adapter)
+{
+	return IS_ENABLED(CONFIG_RFS_ACCEL) &&
+	       (adapter->caps_ctxt.fnav_space_bsize > 0 ||
+		adapter->caps_ctxt.fnav_space_gsize > 0);
+}
 
 void sxe2_fw_version_get(struct sxe2_adapter *adapter);
 
-int sxe2_g_com_mode_get(void);
+int sxe2_g_drv_mode_get(void);
 
+void sxe2_g_drv_mode_set(int __drv_mode);
+
+bool sxe2_dev_status_abnormal(struct sxe2_adapter *adapter);
+
+void sxe2_log_pkg_init(struct sxe2_adapter *adapter, s32 err);
 #endif

@@ -75,6 +75,7 @@ enum SXE2_COM_CMD {
 
 enum sxe2_com_cap {
 	SXE2_COM_CAP_IOMMU_MAP = 0,
+	SXE2_COM_CAP_MP = 1,
 };
 
 struct sxe2_ioctl_cmd_common_hdr {

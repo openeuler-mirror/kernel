@@ -21,6 +21,7 @@
 #include "sxe2vf_ethtool.h"
 #include "sxe2vf_l2_filter.h"
 #include "sxe2vf_irq.h"
+#include "sxe2vf_rxft.h"
 
 STATIC DEFINE_PER_CPU(union sxe2vf_trace_info, sxe2vf_trace_id);
 
@@ -31,6 +32,8 @@ STATIC DEFINE_PER_CPU(union sxe2vf_trace_info, sxe2vf_trace_id);
 #define SXE2VF_VT_RESOURCE_SIZE                                                     \
 	(sizeof(struct sxe2_vf_vfres_msg) +                                         \
 	 (SXE2_VF_MAX_VSI_CNT * sizeof(struct sxe2_vf_vsi_res)))
+
+#define SXE2_BITS_PER_U64 (sizeof(u64) * BITS_PER_BYTE)
 
 STATIC void sxe2vf_trace_id_alloc(u64 *trace_id)
 {
@@ -85,7 +88,7 @@ s32 sxe2vf_mbx_common_msg_send(struct sxe2vf_adapter *adapter,
 s32 sxe2vf_txq_cfg_request(struct sxe2vf_adapter *adapter)
 {
 	u32 i;
-	s32 ret;
+	s32 ret = 0;
 	struct sxe2vf_queue *txq;
 	struct sxe2vf_msg_params params = {0};
 	struct sxe2_vf_txq_ctxt_msg *msg;
@@ -219,11 +222,35 @@ STATIC s32 sxe2vf_queues_num_validate(struct sxe2vf_adapter *adapter,
 {
 	u16 q_cnt = le16_to_cpu(vf_res->q_cnt);
 	u16 q_min = sxe2vf_queue_cnt_min_get(adapter);
-	u16 q_max = SXE2_VF_ETH_Q_NUM + SXE2_VF_DPDK_Q_NUM;
+	u16 kernel_max;
+	u16 dpdk_max;
+	u16 q_max;
+
+	kernel_max = (adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_KERNEL].base.lut_type ==
+		      SXE2_RSS_GLOBAL_LUT) ?
+		     SXE2_GLOBAL_LUT_MAX_QUEUE : SXE2_VSI_LUT_MAX_QUEUE;
+	dpdk_max = (adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_DPDK].base.lut_type ==
+		    SXE2_RSS_GLOBAL_LUT) ?
+		   SXE2_GLOBAL_LUT_MAX_QUEUE : SXE2_VSI_LUT_MAX_QUEUE;
+	q_max = kernel_max + dpdk_max;
 
 	if (q_cnt < q_min || q_cnt > q_max) {
-		LOG_ERROR_BDF("irq cnt invalid:%d min:%d max:%u\n", q_cnt, q_min,
-			      q_max);
+		LOG_ERROR_BDF("queue cnt invalid:%d min:%d max:%u\n", q_cnt,
+			      q_min, q_max);
+		return -EINVAL;
+	}
+
+	if (adapter->q_ctxt.is_pre_assigned &&
+	    (adapter->q_ctxt.kernel_q_alloc < 1 ||
+	     adapter->q_ctxt.kernel_q_alloc > kernel_max ||
+	     adapter->q_ctxt.dpdk_q_alloc > dpdk_max ||
+	     (u16)(adapter->q_ctxt.kernel_q_alloc +
+		   adapter->q_ctxt.dpdk_q_alloc) != q_cnt)) {
+		LOG_ERROR_BDF("pre-assigned q alloc invalid: kernel:%u dpdk:%u q_cnt:%u "
+			      "kernel_max:%u dpdk_max:%u\n",
+			      adapter->q_ctxt.kernel_q_alloc,
+			      adapter->q_ctxt.dpdk_q_alloc, q_cnt, kernel_max,
+			      dpdk_max);
 		return -EINVAL;
 	}
 
@@ -232,7 +259,7 @@ STATIC s32 sxe2vf_queues_num_validate(struct sxe2vf_adapter *adapter,
 
 s32 sxe2vf_rxq_cfg_request(struct sxe2vf_adapter *adapter)
 {
-	s32 ret;
+	s32 ret = 0;
 	u16 i;
 	struct sxe2vf_vsi *vsi = adapter->vsi_ctxt.vf_vsi;
 	struct sxe2_vf_rxq_msg *rxq_msg;
@@ -331,9 +358,15 @@ STATIC void sxe2vf_sw_caps_set(struct sxe2vf_adapter *adapter,
 		adapter->vsi_ctxt.vsi_ids[i] =
 				le16_to_cpu(vf_res->vsi_res[i].vsi_id);
 
-	adapter->rss_ctxt.rss_lut_type = le16_to_cpu(vf_res->rxft_cap.rss_lut_type);
-	adapter->rss_ctxt.rss_key_size = le16_to_cpu(vf_res->rxft_cap.rss_key_size);
-	adapter->rss_ctxt.rss_lut_size = le16_to_cpu(vf_res->rxft_cap.rss_lut_size);
+	adapter->rss_ctxt.dflt.lut_type = le16_to_cpu(vf_res->rxft_cap.rss_lut_type);
+	adapter->rss_ctxt.dflt.key_size = le16_to_cpu(vf_res->rxft_cap.rss_key_size);
+	adapter->rss_ctxt.dflt.lut_size = le16_to_cpu(vf_res->rxft_cap.rss_lut_size);
+	for (i = 0; i < SXE2VF_RSS_LUT_NR; i++) {
+		adapter->rss_ctxt.adv_info[i].base.lut_type = adapter->rss_ctxt.dflt.lut_type;
+		adapter->rss_ctxt.adv_info[i].base.key_size = adapter->rss_ctxt.dflt.key_size;
+		adapter->rss_ctxt.adv_info[i].base.lut_size = adapter->rss_ctxt.dflt.lut_size;
+		adapter->rss_ctxt.adv_info[i].lut_id = 0;
+	}
 	adapter->fnav_ctxt.space_bsize =
 			le16_to_cpu(vf_res->rxft_cap.fnav_space_bsize);
 	adapter->fnav_ctxt.space_gsize =
@@ -539,43 +572,83 @@ s32 sxe2vf_irq_map_setup(struct sxe2vf_vsi *vsi)
 {
 	struct sxe2vf_adapter *adapter = vsi->adapter;
 	struct sxe2_vf_irq_map_msg *vsi_irqs_map;
+	struct sxe2_vf_irq_map_msg_ext *vsi_irqs_map_ext;
 	struct sxe2_vf_irq_map *irq_map;
+	struct sxe2_vf_irq_map_ext *irq_map_ext;
 	struct sxe2vf_irq_data *irq_data;
 	u32 len;
 	s32 ret;
 	u16 i, q_irq_cnt = vsi->irqs.cnt;
 	struct sxe2vf_msg_params params = {0};
+	bool use_ext = (vsi->txqs.q_cnt > SXE2_VSI_LUT_MAX_QUEUE ||
+			vsi->rxqs.q_cnt > SXE2_VSI_LUT_MAX_QUEUE) ? true : false;
 
-	len = (sizeof(struct sxe2_vf_irq_map_msg) +
-	       (q_irq_cnt * sizeof(struct sxe2_vf_irq_map)));
-	vsi_irqs_map = kzalloc(len, GFP_KERNEL);
-	if (!vsi_irqs_map) {
-		LOG_ERROR_BDF("vsi irq map alloc failed.\n");
-		return -ENOMEM;
+	if (use_ext) {
+		len = (sizeof(struct sxe2_vf_irq_map_msg_ext) +
+		       (q_irq_cnt * sizeof(struct sxe2_vf_irq_map_ext)));
+		vsi_irqs_map_ext = kzalloc(len, GFP_KERNEL);
+		if (!vsi_irqs_map_ext) {
+			LOG_ERROR_BDF("vsi irq map ext alloc failed.\n");
+			return -ENOMEM;
+		}
+
+		vsi_irqs_map_ext->num_irqs = cpu_to_le16(q_irq_cnt);
+		vsi_irqs_map_ext->vsi_id = cpu_to_le16(vsi->vsi_id);
+
+		sxe2vf_for_each_vsi_irq(vsi, i)
+		{
+			irq_data = vsi->irqs.irq_data[i];
+			irq_map_ext = &vsi_irqs_map_ext->irq_maps[i];
+
+			irq_map_ext->irq_id = cpu_to_le16(i);
+			irq_map_ext->rxq_map = cpu_to_le64(irq_data->q_bitmap);
+			irq_map_ext->txq_map = cpu_to_le64(irq_data->q_bitmap);
+			irq_map_ext->txitr_idx = cpu_to_le16(irq_data->tx.itr_idx);
+			irq_map_ext->rxitr_idx = cpu_to_le16(irq_data->rx.itr_idx);
+		}
+
+		sxe2vf_mbx_msg_dflt_params_fill(&params, SXE2VF_MSG_RESP_WAIT_NOTIFY,
+						SXE2_VF_IRQ_MAP_EXT, vsi_irqs_map_ext,
+						len, NULL, 0);
+		ret = sxe2vf_mbx_msg_send(adapter, &params);
+
+		LOG_INFO_BDF("itr qs map ext msg:0x%x ret:%d.\n",
+			     SXE2_VF_IRQ_MAP_EXT, ret);
+
+		kfree(vsi_irqs_map_ext);
+	} else {
+		len = (sizeof(struct sxe2_vf_irq_map_msg) +
+		       (q_irq_cnt * sizeof(struct sxe2_vf_irq_map)));
+		vsi_irqs_map = kzalloc(len, GFP_KERNEL);
+		if (!vsi_irqs_map) {
+			LOG_ERROR_BDF("vsi irq map alloc failed.\n");
+			return -ENOMEM;
+		}
+
+		vsi_irqs_map->num_irqs = cpu_to_le16(q_irq_cnt);
+		vsi_irqs_map->vsi_id = cpu_to_le16(vsi->vsi_id);
+
+		sxe2vf_for_each_vsi_irq(vsi, i)
+		{
+			irq_data = vsi->irqs.irq_data[i];
+			irq_map = &vsi_irqs_map->irq_maps[i];
+
+			irq_map->irq_id = cpu_to_le16(i);
+			irq_map->rxq_map = cpu_to_le16((u16)irq_data->q_bitmap);
+			irq_map->txq_map = cpu_to_le16((u16)irq_data->q_bitmap);
+			irq_map->txitr_idx = cpu_to_le16(irq_data->tx.itr_idx);
+			irq_map->rxitr_idx = cpu_to_le16(irq_data->rx.itr_idx);
+		}
+
+		sxe2vf_mbx_msg_dflt_params_fill(&params, SXE2VF_MSG_RESP_WAIT_NOTIFY,
+						SXE2_VF_IRQ_MAP, vsi_irqs_map, len, NULL, 0);
+		ret = sxe2vf_mbx_msg_send(adapter, &params);
+
+		LOG_INFO_BDF("itr qs map msg:0x%x ret:%d.\n", SXE2_VF_IRQ_MAP, ret);
+
+		kfree(vsi_irqs_map);
 	}
 
-	vsi_irqs_map->num_irqs = cpu_to_le16(q_irq_cnt);
-	vsi_irqs_map->vsi_id = cpu_to_le16(vsi->vsi_id);
-
-	sxe2vf_for_each_vsi_irq(vsi, i)
-	{
-		irq_data = vsi->irqs.irq_data[i];
-		irq_map = &vsi_irqs_map->irq_maps[i];
-
-		irq_map->irq_id = cpu_to_le16(i);
-		irq_map->rxq_map = cpu_to_le16((u16)irq_data->q_bitmap);
-		irq_map->txq_map = cpu_to_le16((u16)irq_data->q_bitmap);
-		irq_map->txitr_idx = cpu_to_le16(irq_data->tx.itr_idx);
-		irq_map->rxitr_idx = cpu_to_le16(irq_data->rx.itr_idx);
-	}
-
-	sxe2vf_mbx_msg_dflt_params_fill(&params, SXE2VF_MSG_RESP_WAIT_NOTIFY,
-					SXE2_VF_IRQ_MAP, vsi_irqs_map, len, NULL, 0);
-	ret = sxe2vf_mbx_msg_send(adapter, &params);
-
-	LOG_INFO_BDF("itr qs map msg:0x%x ret:%d.\n", SXE2_VF_IRQ_MAP, ret);
-
-	kfree(vsi_irqs_map);
 	return ret;
 }
 
@@ -770,7 +843,7 @@ void sxe2vf_wait_in_resetting(struct sxe2vf_adapter *adapter, bool is_close)
 
 	ret = sxe2vf_reset_msg_send(adapter);
 	if (ret) {
-		LOG_DEV_INFO("reset request failed.(err:%d)\n", ret);
+		LOG_INFO_BDF("reset request failed.(err:%d)\n", ret);
 		return;
 	}
 
@@ -1286,11 +1359,47 @@ STATIC s32 sxe2vf_reset_msg_func(struct sxe2vf_adapter *adapter, void *body)
 	return 0;
 }
 
+STATIC s32 sxe2vf_mdd_notify_msg_func(struct sxe2vf_adapter *adapter, void *body)
+{
+	struct sxe2_mdd_notify_msg *msg = body;
+	struct sxe2vf_vsi *vsi = NULL;
+	u64 bitmap = le64_to_cpu(msg->vf_tx_queues_bitmap);
+	u32 q_idx;
+
+	mutex_lock(&adapter->vsi_ctxt.lock);
+	vsi = adapter->vsi_ctxt.vf_vsi;
+	if (!vsi) {
+		mutex_unlock(&adapter->vsi_ctxt.lock);
+		return 0;
+	}
+
+	for_each_set_bit(q_idx, (const unsigned long *)&bitmap, SXE2_BITS_PER_U64) {
+		struct sxe2vf_queue *txq = sxe2vf_tx_queue_get(vsi, (u16)q_idx);
+
+		if (txq && txq->netdev)
+			netif_stop_subqueue(txq->netdev, txq->idx_in_vsi);
+	}
+	mutex_unlock(&adapter->vsi_ctxt.lock);
+	return 0;
+}
+
+STATIC s32 sxe2vf_mdd_fault_notify_msg_func(struct sxe2vf_adapter *adapter, void *body)
+{
+	LOG_DEV_WARN("rcv mdd fault notify, enter FAULT state.\n");
+	sxe2vf_dev_state_set(adapter, SXE2VF_DEVSTATE_FAULT, SXE2VF_RESET_NONE);
+	sxe2vf_wkq_schedule(adapter, SXE2VF_WK_MONITOR_IM, 0);
+	return 0;
+}
+
 struct sxe2vf_mbx_msg_table pf_msg_table[SXE2_VF_OPCODE_NR] = {
 		[SXE2_VF_LINK_UPDATE_NOTIFY] = {SXE2_VF_LINK_UPDATE_NOTIFY,
 						sxe2vf_links_msg_func},
 		[SXE2_VF_RESET_NOTIFY] = {SXE2_VF_RESET_NOTIFY,
 					  sxe2vf_reset_msg_func},
+		[SXE2_VF_MDD_NOTIFY] = {SXE2_VF_MDD_NOTIFY,
+					 sxe2vf_mdd_notify_msg_func},
+		[SXE2_VF_MDD_FAULT_NOTIFY] = {SXE2_VF_MDD_FAULT_NOTIFY,
+					 sxe2vf_mdd_fault_notify_msg_func},
 };
 
 struct sxe2vf_mbx_msg_table *sxe2vf_mbx_msg_table_get(void)
@@ -1324,8 +1433,8 @@ s32 sxe2vf_drv_ver_match(struct sxe2vf_adapter *adapter)
 	u16 major = 0;
 	u16 minor = 0;
 
-	vf_ver.major = cpu_to_le16(SXE2_VF_VERSION_MAJOR);
-	vf_ver.minor = cpu_to_le16(SXE2_VF_VERSION_MINOR);
+	vf_ver.major = cpu_to_le16(SXE2_PF_VF_VERSION_MAJOR);
+	vf_ver.minor = cpu_to_le16(SXE2_PF_VF_VERSION_MINOR);
 
 	sxe2vf_mbx_msg_dflt_params_fill(&params, SXE2VF_MSG_RESP_WAIT_POLLING,
 					SXE2_VF_VERSION_MATCH, &vf_ver,
@@ -1337,12 +1446,12 @@ s32 sxe2vf_drv_ver_match(struct sxe2vf_adapter *adapter)
 		major = le16_to_cpu(pf_ver.major);
 		minor = le16_to_cpu(pf_ver.minor);
 
-		if (major != SXE2_VF_VERSION_MAJOR) {
+		if (major != SXE2_PF_VF_VERSION_MAJOR) {
 			ret = -EIO;
 			LOG_DEV_ERR("unsupport pf version expected %d.%d\t"
 				    "received %d.%d\n",
-				    SXE2_VF_VERSION_MAJOR, SXE2_VF_VERSION_MINOR,
-				    major, minor);
+				    major, minor,
+				    SXE2_PF_VF_VERSION_MAJOR, SXE2_PF_VF_VERSION_MINOR);
 			goto l_out;
 		}
 		adapter->pf_ver.major = major;
@@ -1355,8 +1464,8 @@ s32 sxe2vf_drv_ver_match(struct sxe2vf_adapter *adapter)
 l_out:
 	LOG_INFO_BDF("opcode:0x%x vf version:%d.%d pf version:%d.%d\t"
 		     "ret:%d.\n",
-		     SXE2_VF_VERSION_MATCH, SXE2_VF_VERSION_MAJOR,
-		     SXE2_VF_VERSION_MINOR, major, minor, ret);
+		     SXE2_VF_VERSION_MATCH, SXE2_PF_VF_VERSION_MAJOR,
+		     SXE2_PF_VF_VERSION_MINOR, major, minor, ret);
 
 	return ret;
 }
@@ -1370,6 +1479,7 @@ s32 sxe2vf_func_caps_init(struct sxe2vf_adapter *adapter)
 
 	vf_req.driver_type = SXE2_DRIVER_TYPE_VF;
 	vf_req.support_sw_stats = 1;
+	vf_req.run_mode = (u8)sxe2vf_drv_run_mode_get(adapter);
 	sxe2vf_mbx_msg_dflt_params_fill(&params, SXE2VF_MSG_RESP_WAIT_POLLING,
 					SXE2_VF_HW_RES_GET, &vf_req, sizeof(vf_req),
 					&vf_res, sizeof(struct sxe2_vf_vfres_msg));
@@ -1378,6 +1488,20 @@ s32 sxe2vf_func_caps_init(struct sxe2vf_adapter *adapter)
 	if (ret) {
 		LOG_ERROR_BDF("hw caps init failed.%d\n", ret);
 		goto l_out;
+	}
+
+	sxe2vf_sw_caps_set(adapter, &vf_res);
+
+	ret = sxe2vf_adv_cfg_get(adapter);
+	if (ret == -EOPNOTSUPP) {
+		LOG_INFO_BDF("pf not support adv cfg, use hw res only\n");
+		ret = 0;
+	} else if (ret == -EINVAL) {
+		LOG_ERROR_BDF("adv cfg data invalid.%d\n", ret);
+		goto l_out;
+	} else if (ret) {
+		LOG_WARN_BDF("adv cfg get failed.%d, fallback to hw res only\n", ret);
+		ret = 0;
 	}
 
 	ret = sxe2vf_irqs_num_validate(adapter, &vf_res);
@@ -1398,7 +1522,78 @@ s32 sxe2vf_func_caps_init(struct sxe2vf_adapter *adapter)
 		goto l_out;
 	}
 
-	sxe2vf_sw_caps_set(adapter, &vf_res);
+l_out:
+	return ret;
+}
+
+s32 sxe2vf_adv_cfg_get(struct sxe2vf_adapter *adapter)
+{
+	struct sxe2vf_msg_params params = {0};
+	struct sxe2_vf_adv_cfg_msg adv_cfg_req = {0};
+	struct sxe2_vf_adv_cfg_msg adv_cfg_rsp = {0};
+	s32 ret;
+	u16 vsi_id;
+	u8 vsi_idx;
+
+	vsi_id = adapter->vsi_ctxt.vsi_ids[SXE2_VF_VSI_ID_MASTER];
+	adv_cfg_req.vsi_id = cpu_to_le16(vsi_id);
+
+	sxe2vf_mbx_msg_dflt_params_fill(&params, SXE2VF_MSG_RESP_WAIT_POLLING,
+					SXE2_VF_ADV_CFG_GET, &adv_cfg_req,
+					sizeof(adv_cfg_req), &adv_cfg_rsp,
+					sizeof(adv_cfg_rsp));
+
+	ret = sxe2vf_mbx_msg_send(adapter, &params);
+	if (ret) {
+		LOG_ERROR_BDF("adv cfg get msg send failed.%d\n", ret);
+		goto l_out;
+	}
+
+	if (!adv_cfg_rsp.is_pre_assigned) {
+		adapter->q_ctxt.is_pre_assigned = false;
+		LOG_INFO_BDF("adv cfg: pf not pre-assigned, use default strategy\n");
+		goto l_out;
+	}
+
+	for (vsi_idx = 0; vsi_idx < SXE2VF_RSS_LUT_NR; vsi_idx++) {
+		if (adv_cfg_rsp.vsi[vsi_idx].lut_type != SXE2_RSS_GLOBAL_LUT &&
+		    adv_cfg_rsp.vsi[vsi_idx].lut_type != SXE2_RSS_VSI_LUT) {
+			LOG_ERROR_BDF("adv cfg vsi:%u lut type:%u invalid.\n",
+				      vsi_idx,
+				      adv_cfg_rsp.vsi[vsi_idx].lut_type);
+			ret = -EINVAL;
+			goto l_out;
+		}
+	}
+
+	adapter->q_ctxt.is_pre_assigned = true;
+	adapter->q_ctxt.kernel_q_alloc =
+		le16_to_cpu(adv_cfg_rsp.vsi[SXE2_VF_ADV_VSI_KERNEL].q_alloc);
+	adapter->q_ctxt.dpdk_q_alloc =
+		le16_to_cpu(adv_cfg_rsp.vsi[SXE2_VF_ADV_VSI_DPDK].q_alloc);
+
+	for (vsi_idx = 0; vsi_idx < SXE2VF_RSS_LUT_NR; vsi_idx++) {
+		struct sxe2_rss_lut_adv_info *adv_info =
+			&adapter->rss_ctxt.adv_info[vsi_idx];
+		struct sxe2_vf_vsi_adv_cfg *vsi_cfg =
+			&adv_cfg_rsp.vsi[vsi_idx];
+
+		adv_info->base.lut_type = vsi_cfg->lut_type;
+		adv_info->base.lut_size = le16_to_cpu(vsi_cfg->lut_size);
+		adv_info->base.key_size = adapter->rss_ctxt.dflt.key_size;
+		adv_info->lut_id = vsi_cfg->lut_id;
+	}
+
+	LOG_INFO_BDF("adv cfg: kernel_q_alloc:%u dpdk_q_alloc:%u "
+		     "kernel_lut:%u/%u/%u dpdk_lut:%u/%u/%u is_pre_assigned:%u\n",
+		     adapter->q_ctxt.kernel_q_alloc, adapter->q_ctxt.dpdk_q_alloc,
+		     adv_cfg_rsp.vsi[SXE2_VF_ADV_VSI_KERNEL].lut_type,
+		     adv_cfg_rsp.vsi[SXE2_VF_ADV_VSI_KERNEL].lut_id,
+		     le16_to_cpu(adv_cfg_rsp.vsi[SXE2_VF_ADV_VSI_KERNEL].lut_size),
+		     adv_cfg_rsp.vsi[SXE2_VF_ADV_VSI_DPDK].lut_type,
+		     adv_cfg_rsp.vsi[SXE2_VF_ADV_VSI_DPDK].lut_id,
+		     le16_to_cpu(adv_cfg_rsp.vsi[SXE2_VF_ADV_VSI_DPDK].lut_size),
+		     adapter->q_ctxt.is_pre_assigned);
 
 l_out:
 	return ret;
@@ -1429,29 +1624,27 @@ s32 __sxe2vf_drv_mode_get(struct sxe2vf_adapter *adapter,
 	return ret;
 }
 
-s32 sxe2vf_drv_mode_get(struct sxe2vf_adapter *adapter,
-			enum sxe2vf_resp_wait_mode mode)
+void sxe2vf_drv_mode_get(struct sxe2vf_adapter *adapter,
+			 enum sxe2vf_resp_wait_mode mode)
 {
 	s32 ret = 0;
+	enum sxe2_com_module drv_mode = sxe2vf_g_drv_mode_get();
 	struct sxe2_vf_drv_mode_resp vf_resp = {0};
+
+	if (sxe2vf_post_probe_is_done(adapter))
+		return;
+
+	adapter->drv_mode = drv_mode;
 
 	ret = __sxe2vf_drv_mode_get(adapter, &vf_resp, sizeof(vf_resp), mode);
 	if (!ret) {
 		if (vf_resp.drv_mode != SXE2_COM_MODULE_UNDEFINED) {
 			adapter->drv_mode = vf_resp.drv_mode;
-			goto end;
-		} else {
-			ret = -EINVAL;
+			return;
 		}
+	} else {
+		LOG_ERROR_BDF("__sxe2vf_drv_mode_get failed: %d\n", ret);
 	}
-
-	if (sxe2vf_g_com_mode_get() != SXE2_COM_MODULE_UNDEFINED) {
-		adapter->drv_mode = sxe2vf_g_com_mode_get();
-		ret = 0;
-	}
-
-end:
-	return ret;
 }
 
 s32 sxe2vf_drv_mode_set(struct sxe2vf_adapter *adapter, enum sxe2_com_module type)

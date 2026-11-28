@@ -56,6 +56,8 @@ static s32 sxe2_uplink_vsi_cfg_to_switchdev(struct sxe2_adapter *adapter)
 
 	sxe2_vsi_l2_fltr_remove(adapter, uplink_vsi->idx_in_dev);
 
+	sxe2_mac_addr_clear(uplink_vsi);
+
 	if (uplink_vsi->type == SXE2_VSI_T_PF) {
 		uplink_netdev = uplink_vsi->netdev;
 		netif_addr_lock_bh(uplink_netdev);
@@ -73,10 +75,11 @@ static s32 sxe2_uplink_vsi_cfg_to_switchdev(struct sxe2_adapter *adapter)
 	return ret;
 }
 
-static s32 sxe2_mac_rule_restore(struct sxe2_vsi *vsi, const u8 *mac)
+STATIC s32 sxe2_mac_rule_restore(struct sxe2_vsi *vsi, const u8 *mac)
 {
 	s32 ret;
 	u8 broadcast[ETH_ALEN];
+	struct sxe2_adapter *adapter = vsi->adapter;
 
 	eth_broadcast_addr(broadcast);
 	ret = sxe2_mac_rule_add(vsi, broadcast);
@@ -86,7 +89,9 @@ static s32 sxe2_mac_rule_restore(struct sxe2_vsi *vsi, const u8 *mac)
 		return ret;
 	}
 
-	ret = sxe2_mac_rule_add(vsi, mac);
+	(void)mutex_lock(&adapter->vsi_ctxt.lock);
+	ret = sxe2_mac_addr_add(vsi, mac, SXE2_MAC_OWNER_NETDEV);
+	(void)mutex_unlock(&adapter->vsi_ctxt.lock);
 	if (ret) {
 		LOG_ERROR("vsi[%u][%u] dev mac addr add failed.(err:%d).\n",
 			  vsi->id_in_pf, vsi->idx_in_dev, ret);
@@ -107,12 +112,10 @@ static void sxe2_uplink_vsi_cfg_to_legacy(struct sxe2_adapter *adapter)
 
 	(void)sxe2_vsi_vlan_zero_add(vsi);
 
-	rtnl_lock();
 	if (netdev->features &
 	    (NETIF_F_HW_VLAN_CTAG_FILTER | NETIF_F_HW_VLAN_STAG_FILTER)) {
 		(void)sxe2_vlan_filter_control(adapter, vsi->idx_in_dev, true);
 	}
-	rtnl_unlock();
 
 	sxe2_set_rx_mode(vsi->netdev);
 
@@ -168,8 +171,9 @@ static s32 sxe2_repr_open(struct net_device *netdev)
 
 	netif_tx_start_all_queues(netdev);
 
-	LOG_INFO_BDF("vf:%u src_vsi:%u repr:%pK esw_vsi:%u start.\n",
-		     repr->vf_node->vf_idx, repr->vf_node->vsi_id[SXE2_VF_TYPE_ETH],
+	LOG_INFO_BDF("vf:%u master_vsi:%u slave_vsi:%u repr:%pK esw_vsi:%u start.\n",
+		     repr->vf_node->vf_idx, repr->vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER],
+		     repr->vf_node->vsi_id[SXE2_VF_VSI_ID_SLAVE],
 		     repr, np->vsi->idx_in_dev);
 
 unlock:
@@ -195,8 +199,9 @@ static int sxe2_repr_stop(struct net_device *netdev)
 	netif_carrier_off(netdev);
 	netif_tx_stop_all_queues(netdev);
 
-	LOG_INFO_BDF("vf:%u src_vsi:%u repr:%pK esw_vsi:%u stopped.\n",
-		     repr->vf_node->vf_idx, repr->vf_node->vsi_id[SXE2_VF_TYPE_ETH],
+	LOG_INFO_BDF("vf:%u master_vsi:%u slave_vsi:%u repr:%pK esw_vsi:%u stopped.\n",
+		     repr->vf_node->vf_idx, repr->vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER],
+		     repr->vf_node->vsi_id[SXE2_VF_VSI_ID_SLAVE],
 		     repr, np->vsi->idx_in_dev);
 
 unlock:
@@ -261,7 +266,7 @@ static bool sxe2_repr_ndo_has_offload_stats(const struct net_device *dev,
 	return attr_id == IFLA_OFFLOAD_XSTATS_CPU_HIT;
 }
 
-static int sxe2_repr_slow_path_stats64(const struct net_device *netdev,
+STATIC int sxe2_repr_slow_path_stats64(const struct net_device *netdev,
 				       struct rtnl_link_stats64 *stats)
 {
 	int ret = 0;
@@ -272,9 +277,12 @@ static int sxe2_repr_slow_path_stats64(const struct net_device *netdev,
 	int vf_id = np->repr->vf_node->vf_idx;
 	struct sxe2_queue *txq = NULL;
 	struct sxe2_queue *rxq = NULL;
-	struct sxe2_vsi_qs_stats *qs_stats_last = &esw_vsi->vsi_qs_stats;
+	struct sxe2_vsi_qs_stats *qs_stats_last;
 
 	mutex_lock(&adapter->vsi_ctxt.lock);
+
+	qs_stats_last = sxe2_vsi_qs_stats_get(adapter, esw_vsi->id_in_pf);
+
 	if (test_bit(SXE2_VSI_S_DISABLE, esw_vsi->state)) {
 		stats->rx_packets = qs_stats_last->txqs_stats[vf_id].packets;
 		stats->rx_bytes = qs_stats_last->txqs_stats[vf_id].bytes;
@@ -292,11 +300,11 @@ static int sxe2_repr_slow_path_stats64(const struct net_device *netdev,
 	txq = esw_vsi->txqs.q[vf_id];
 	rxq = esw_vsi->rxqs.q[vf_id];
 
-	sxe2_fetch_u64_data_per_ring(&txq->syncp, txq->stats, &pkts, &bytes);
+	sxe2_fetch_u64_data_per_ring(&txq->stats->syncp, txq->stats, &pkts, &bytes);
 	stats->rx_packets = pkts;
 	stats->rx_bytes = bytes;
 
-	sxe2_fetch_u64_data_per_ring(&rxq->syncp, rxq->stats, &pkts, &bytes);
+	sxe2_fetch_u64_data_per_ring(&rxq->stats->syncp, rxq->stats, &pkts, &bytes);
 	stats->tx_packets = pkts;
 	stats->tx_bytes = bytes;
 	stats->tx_dropped = rxq->stats->rx_stats.rx_pg_alloc_fail +
@@ -336,6 +344,8 @@ static s32 sxe2_repr_setup_tc(struct net_device *netdev, enum tc_setup_type type
 static s32 sxe2_repr_setup_tc(struct net_device *netdev, u32 __always_unused handle,
 			      __be16 __always_unused proto, struct tc_to_netdev *tc)
 {
+	struct sxe2_netdev_priv *np = netdev_priv(netdev);
+
 	if (tc->type == TC_SETUP_CLSFLOWER)
 		return sxe2_repr_setup_tc_cls_flower(np->repr, tc->cls_flower);
 	return -EOPNOTSUPP;
@@ -574,7 +584,7 @@ STATIC s32 sxe2_repr_netdev_register(struct sxe2_vf_node *vf)
 	netif_carrier_off(netdev);
 	netif_tx_stop_all_queues(netdev);
 
-	return register_netdev(netdev);
+	return register_netdevice(netdev);
 }
 
 STATIC s32 __sxe2_vf_repr_create(struct sxe2_vf_node *vf)
@@ -601,23 +611,12 @@ STATIC s32 __sxe2_vf_repr_create(struct sxe2_vf_node *vf)
 	if (ret)
 		goto l_irq_free;
 
-	ret = sxe2_repr_netdev_register(vf);
-	if (ret) {
-		LOG_ERROR_BDF("vf:%u representor netdev register failed.(err:%d)\n",
-			      vf->vf_idx, ret);
-		goto l_netdev_free;
-	}
-
 	vf->msg_table = sxe2_esw_mbx_msg_table_get();
 
 	LOG_INFO_BDF("vf:%u repr:%pK netdev:%pK name:%s.\n", vf->vf_idx, repr,
 		     repr->netdev, repr->netdev->name);
 
 	return ret;
-
-l_netdev_free:
-	free_netdev(repr->netdev);
-	repr->netdev = NULL;
 
 l_irq_free:
 	kfree(repr->irq_data);
@@ -629,17 +628,21 @@ l_repr_free:
 	return ret;
 }
 
+static void __sxe2_vf_repr_netdev_destroy(struct sxe2_vf_repr *repr)
+{
+	struct net_device *netdev = repr->netdev;
+
+	ASSERT_RTNL();
+	rtnl_unlock();
+	free_netdev(netdev);
+	rtnl_lock();
+}
+
 STATIC void __sxe2_vf_repr_destroy(struct sxe2_vf_node *vf)
 {
 	struct sxe2_vf_repr *repr = vf->repr;
-	struct net_device *netdev = repr->netdev;
 
-	netif_carrier_off(netdev);
-	netif_tx_stop_all_queues(netdev);
-
-	unregister_netdev(netdev);
-
-	free_netdev(netdev);
+	__sxe2_vf_repr_netdev_destroy(repr);
 	kfree(repr->irq_data);
 	repr->irq_data = NULL;
 	kfree(repr);
@@ -709,6 +712,7 @@ void sxe2_vf_repr_decfg(struct sxe2_vf_node *vf_node)
 		return;
 
 	(void)sxe2_vf_sp_rule_del(vf_node, false);
+	(void)sxe2_vf_sp_rule_del(vf_node, true);
 	netif_napi_del(&repr->irq_data->napi);
 	metadata_dst_free(repr->dst);
 	repr->dst = NULL;
@@ -753,13 +757,22 @@ static s32 sxe2_vf_repr_cfg(struct sxe2_vf_node *vf_node)
 		goto l_err;
 	}
 
+	ret = sxe2_vf_sp_rule_add(vf_node, true);
+	if (ret && (ret != -EEXIST)) {
+		(void)sxe2_vf_sp_rule_del(vf_node, false);
+		metadata_dst_free(repr->dst);
+		repr->dst = NULL;
+		LOG_DEV_ERR("slow path rule add failed.(err:%d)\n", ret);
+		goto l_err;
+	}
+
 	vf_node->prop.spoofchk = false;
 
 	netif_napi_add(repr->netdev, &repr->irq_data->napi, sxe2_esw_napi_poll,
 		       NAPI_POLL_WEIGHT);
 	netif_keep_dst(repr->netdev);
 
-	repr->dst->u.port_info.port_id = repr->vf_node->vsi_id[SXE2_VF_TYPE_ETH];
+	repr->dst->u.port_info.port_id = repr->vf_node->vsi_id[SXE2_VF_VSI_ID_MASTER];
 	repr->dst->u.port_info.lower_dev = repr->netdev;
 
 	return 0;
@@ -859,6 +872,49 @@ static void sxe2_eswitch_irq_queues_map(struct sxe2_adapter *adapter)
 	}
 }
 
+static s32 sxe2_eswitch_netdev_register_all(struct sxe2_adapter *adapter)
+{
+	u32 ret = 0;
+	u32 i = 0;
+	struct sxe2_vf_node *vf_node = NULL;
+
+	sxe2_for_each_vf(adapter, i) {
+		vf_node = SXE2_VF_NODE(adapter, i);
+		ret = sxe2_repr_netdev_register(vf_node);
+		if (ret) {
+			LOG_ERROR_BDF(
+				"vf:%u representor netdev register failed.(err:%d)\n",
+				vf_node->vf_idx, ret);
+			break;
+		}
+	}
+
+	if (ret) {
+		while (i) {
+			i--;
+			vf_node = SXE2_VF_NODE(adapter, i);
+			unregister_netdevice(vf_node->repr->netdev);
+		}
+	}
+
+	return ret;
+}
+
+static void sxe2_eswitch_netdev_unregister_all(struct sxe2_adapter *adapter)
+{
+	u32 i = 0;
+	struct sxe2_vf_node *vf_node = NULL;
+	struct net_device *netdev = NULL;
+
+	sxe2_for_each_vf(adapter, i) {
+		vf_node = SXE2_VF_NODE(adapter, i);
+		netdev = vf_node->repr->netdev;
+		netif_carrier_off(netdev);
+		netif_tx_stop_all_queues(netdev);
+		unregister_netdevice(netdev);
+	}
+}
+
 static s32 sxe2_eswitch_offload_enable(struct sxe2_adapter *adapter)
 {
 	s32 ret;
@@ -901,8 +957,18 @@ static s32 sxe2_eswitch_offload_enable(struct sxe2_adapter *adapter)
 		goto l_vsi_open_fail;
 	}
 
+	ret = sxe2_eswitch_netdev_register_all(adapter);
+	if (ret) {
+		LOG_ERROR_BDF("eswitch netdev register failed.(err:%d)\n", ret);
+		goto l_netdev_register_fail;
+	}
+
 	return ret;
 
+l_netdev_register_fail:
+	mutex_lock(&adapter->vsi_ctxt.lock);
+	(void)sxe2_vsi_close(eswitch->esw_vsi);
+	mutex_unlock(&adapter->vsi_ctxt.lock);
 l_vsi_open_fail:
 	sxe2_vfs_repr_decfg(adapter);
 
@@ -920,22 +986,42 @@ l_uplink_setup:
 	return -ENODEV;
 }
 
+STATIC void sxe2_dpdk_uplink_vsi_cfg_to_legacy(struct sxe2_adapter *adapter)
+{
+	struct sxe2_vsi *user_pf_vsi;
+
+	mutex_lock(&adapter->vsi_ctxt.lock);
+	mutex_lock(&adapter->user_pf_ctxt.flag_lock);
+
+	user_pf_vsi = sxe2_vsi_get_by_type_unlock(adapter, SXE2_VSI_T_DPDK_PF);
+	if (user_pf_vsi) {
+		if (!adapter->user_pf_ctxt.is_promisc_set)
+			(void)sxe2_promisc_rule_del(adapter, user_pf_vsi->idx_in_dev);
+
+		(void)sxe2_src_vsi_prune_control(adapter, user_pf_vsi->idx_in_dev, true);
+		(void)sxe2_srcvsi_rule_add(user_pf_vsi);
+	}
+
+	mutex_unlock(&adapter->user_pf_ctxt.flag_lock);
+	mutex_unlock(&adapter->vsi_ctxt.lock);
+}
+
 static s32 sxe2_eswitch_offload_disable(struct sxe2_adapter *adapter)
 {
 	if (!test_bit(SXE2_FLAG_SWITCHDEV_ENABLE, adapter->flags))
 		return 0;
 
-	mutex_lock(&adapter->vsi_ctxt.lock);
+	sxe2_eswitch_netdev_unregister_all(adapter);
 
+	mutex_lock(&adapter->vsi_ctxt.lock);
 	if (!test_bit(SXE2_VSI_S_CLOSE, adapter->eswitch_ctxt.esw_vsi->state))
 		(void)sxe2_vsi_close(adapter->eswitch_ctxt.esw_vsi);
-
-	if (sxe2_com_mode_get(adapter) != SXE2_COM_MODULE_KERNEL &&
-	    !test_bit(SXE2_VSI_S_CLOSE, adapter->eswitch_ctxt.user_esw_vsi->state)) {
-		(void)sxe2_vsi_close(adapter->eswitch_ctxt.user_esw_vsi);
-	}
-
 	mutex_unlock(&adapter->vsi_ctxt.lock);
+
+	if (sxe2_com_mode_get(adapter) != SXE2_COM_MODULE_KERNEL) {
+		(void)sxe2_dpdk_reprvsi_resource_release(adapter);
+		LOG_ERROR_BDF("user eswitch vsi close.\n");
+	}
 
 	sxe2_vfs_repr_decfg(adapter);
 
@@ -952,6 +1038,8 @@ static s32 sxe2_eswitch_offload_disable(struct sxe2_adapter *adapter)
 	if (sxe2_com_mode_get(adapter) != SXE2_COM_MODULE_DPDK)
 		sxe2_uplink_vsi_cfg_to_legacy(adapter);
 
+	sxe2_dpdk_uplink_vsi_cfg_to_legacy(adapter);
+
 	sxe2_eswitch_vsi_destroy(adapter);
 
 	return 0;
@@ -961,6 +1049,8 @@ s32 sxe2_eswitch_configure(struct sxe2_adapter *adapter, bool enable)
 {
 	s32 ret = 0;
 
+	rtnl_lock();
+
 	if (enable)
 		ret = sxe2_eswitch_offload_enable(adapter);
 	else
@@ -969,6 +1059,7 @@ s32 sxe2_eswitch_configure(struct sxe2_adapter *adapter, bool enable)
 	if (ret)
 		LOG_ERROR_BDF("eswitch offload %s failed.(err:%d)\n",
 			      enable ? "enable" : "disable", ret);
+	rtnl_unlock();
 	return ret;
 }
 
@@ -1079,6 +1170,18 @@ s32 sxe2_eswitch_rebuild(struct sxe2_adapter *adapter)
 	if (ret) {
 		LOG_ERROR_BDF("eswitch vsi rebuild failed.(err:%d)\n", ret);
 		goto l_end;
+	}
+
+	if (sxe2_com_mode_get(adapter) != SXE2_COM_MODULE_KERNEL) {
+		ret = sxe2_sriov_vsi_rebuild(esw_ctxt->user_esw_vsi, false);
+		if (ret) {
+			LOG_ERROR_BDF("user eswitch vsi rebuild fail.\n");
+			goto l_end;
+		}
+
+		LOG_INFO_BDF("user eswitch vsi:%p [%u][%u].\n", esw_ctxt->user_esw_vsi,
+			     esw_ctxt->user_esw_vsi->id_in_pf,
+			     esw_ctxt->user_esw_vsi->idx_in_dev);
 	}
 
 	ret = sxe2_uplink_vsi_cfg_to_switchdev(adapter);
@@ -1194,10 +1297,10 @@ s32 sxe2_eswitch_ucmd_uplink_set(struct sxe2_adapter *adapter, bool to_user)
 	}
 
 	if (to_user && eswitch->uplink_vsi->type == SXE2_VSI_T_DPDK_PF) {
-		LOG_WARN_BDF("current uplink vsi is user, no neet to set.\n");
+		LOG_WARN_BDF("current uplink vsi is user, no need to set.\n");
 		goto l_vsi_unlock;
 	} else if (!to_user && eswitch->uplink_vsi->type == SXE2_VSI_T_PF) {
-		LOG_WARN_BDF("current uplink vsi is kernel, no neet to set.\n");
+		LOG_WARN_BDF("current uplink vsi is kernel, no need to set.\n");
 		goto l_vsi_unlock;
 	} else if (!sxe2_eswitch_is_offload(adapter)) {
 		LOG_ERROR_BDF("eswitch mode is not switchdev, not support.\n");
@@ -1271,7 +1374,7 @@ s32 sxe2_eswitch_ucmd_uplink_resetto_ker(struct sxe2_adapter *adapter)
 	}
 
 	if (eswitch->uplink_vsi->type == SXE2_VSI_T_PF) {
-		LOG_WARN_BDF("current uplink vsi is kernel, no neet to set.\n");
+		LOG_WARN_BDF("current uplink vsi is kernel, no need to set.\n");
 		goto l_end;
 	}
 
@@ -1340,20 +1443,20 @@ s32 sxe2_eswitch_ucmd_repr_cfg(struct sxe2_vf_node *vf_node, bool is_to_user)
 	struct sxe2_vf_repr_cfg repr_cfg = {0};
 	struct sxe2_adapter *adapter = vf_node->adapter;
 
-	vf_vsi_id = vf_node->vsi_id[SXE2_VF_TYPE_ETH];
-	vf_vsi_id_u = vf_node->vsi_id[SXE2_VF_TYPE_DPDK];
+	vf_vsi_id = sxe2_kernel_vf_vsi_id_get(vf_node);
+	vf_vsi_id_u = sxe2_user_vf_vsi_id_get(vf_node);
 
 	mutex_lock(&vf_node->repr_cfg_lock);
 
 	if (is_to_user && vf_node->user_repr_valid) {
-		LOG_WARN_BDF("current repr is user, no neet to set,\t"
+		LOG_WARN_BDF("current repr is user, no need to set,\t"
 			     "user_vf_vsi_id[%u], ker_vf_vsi_id[%u]\n",
-			     vf_vsi_id, vf_vsi_id_u);
+			     vf_vsi_id_u, vf_vsi_id);
 		goto l_end;
 	} else if (!is_to_user && !vf_node->user_repr_valid) {
-		LOG_WARN_BDF("current repr is kernel, no neet to set,\t"
+		LOG_WARN_BDF("current repr is kernel, no need to set,\t"
 			     "user_vf_vsi_id[%u], ker_vf_vsi_id[%u]\n",
-			     vf_vsi_id, vf_vsi_id_u);
+			     vf_vsi_id_u, vf_vsi_id);
 		goto l_end;
 	}
 

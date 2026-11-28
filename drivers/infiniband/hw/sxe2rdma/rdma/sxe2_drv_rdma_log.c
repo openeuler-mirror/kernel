@@ -804,7 +804,7 @@ static int sxe2_log_alloc_res_per_cpu(void)
 {
 	int rc		  = 0;
 	struct sxe2_ctxt *ctxt = NULL;
-	int i;
+	u32 i;
 	int nid;
 
 	for_each_possible_cpu(i) {
@@ -839,7 +839,7 @@ free_cpu_buff:
 static void sxe2_log_free_res_per_cpu(void)
 {
 	struct sxe2_ctxt *ctxt = NULL;
-	int i;
+	u32 i;
 
 	for_each_possible_cpu(i) {
 		ctxt = per_cpu_ptr(g_sxe2_debug_rdma.ctxt, i);
@@ -946,7 +946,7 @@ EXPORT_SYMBOL(sxe2_log_init);
 
 void sxe2_log_exit(void)
 {
-	int i = 0;
+	u32 i = 0;
 	struct sxe2_ctxt *ctxt;
 
 	if (g_sxe2_debug_rdma.task == NULL)

@@ -151,6 +151,6 @@ void sxe2_dcb_cfg_to_lldp(u8 *lldpmib, u16 *miblen,
 s32 sxe2_fw_dcbx_agent_cfg_get(struct sxe2_adapter *adapter,
 			       struct sxe2_dcbx_cfg *dcbcfg);
 
-s32 sxe2_lldp_to_dcb_cfg(u8 *lldpmib, struct sxe2_dcbx_cfg *dcbcfg);
+s32 sxe2_lldp_to_dcb_cfg(u8 *lldpmib, u32 lldpmib_len, struct sxe2_dcbx_cfg *dcbcfg);
 
 #endif

@@ -56,6 +56,7 @@ typedef s8		S8;
 typedef s16		S16;
 typedef s32		S32;
 
+#ifndef SXE2_DPDK_DRIVER
 #define __le16  u16
 #define __le32  u32
 #define __le64  u64
@@ -63,6 +64,7 @@ typedef s32		S32;
 #define __be16  u16
 #define __be32  u32
 #define __be64  u64
+#endif
 
 #define STATIC static
 

@@ -120,7 +120,7 @@ STATIC s32 sxe2vf_user_vsi_hw_cfg(struct sxe2vf_adapter *adapter,
 	vsi_cfg.irq_cnt = cpu_to_le16(vsi_info->used_msix.msix_vectors_cnt);
 
 	vsi_cfg.is_clear = is_clear;
-	vsi_cfg.vsi_id = cpu_to_le16(adapter->vsi_ctxt.vsi_ids[SXE2VF_VSI_TYPE_DPDK]);
+	vsi_cfg.vsi_id = cpu_to_le16(sxe2vf_dpdk_vsi_id_get(adapter));
 
 	sxe2vf_mbx_msg_dflt_params_fill(&params, SXE2VF_MSG_RESP_WAIT_NOTIFY,
 					SXE2_VF_VSI_CFG, &vsi_cfg, sizeof(vsi_cfg), NULL,
@@ -170,18 +170,27 @@ static s32 sxe2vf_com_cap_get(struct sxe2vf_adapter *adapter, struct sxe2_obj *o
 	resp->rss_hash_caps.hash_key_size = caps.rss_key_size;
 	resp->rss_hash_caps.lut_key_size = caps.rss_lut_size;
 
-	resp->vsi_caps.dpdk_vsi_id = 0xFFFF;
 	resp->vsi_caps.vsi_type = 0xFF;
+	resp->pf_idx = adapter->pf_id;
 
+	resp->vsi_caps.dpdk_vsi_id = 0xFFFF;
 	if (adapter->vsi_ctxt.vf_vsi)
 		resp->vsi_caps.kernel_vsi_id = adapter->vsi_ctxt.vf_vsi->vsi_id;
+	else
+		resp->vsi_caps.kernel_vsi_id = 0xFFFF;
 
 	resp->txsch_caps.layer_cap = adapter->txsch_cap.layer_cap;
 	resp->txsch_caps.prio_num = adapter->txsch_cap.prio_num;
+
 	resp->txsch_caps.tm_mid_node_num = adapter->txsch_cap.tm_mid_node_num;
+
 	resp->cap_flags = SXE2_DEV_CAPS_OFFLOAD_L2 | SXE2_DEV_CAPS_OFFLOAD_VLAN |
 			  SXE2_DEV_CAPS_OFFLOAD_RSS | SXE2_DEV_CAPS_OFFLOAD_FNAV |
-			  SXE2_DEV_CAPS_OFFLOAD_TM;
+			  SXE2_DEV_CAPS_OFFLOAD_TM | SXE2_DEV_CAPS_OFFLOAD_FLOW_EXT;
+
+	if (sxe2vf_com_mode_get(adapter) == SXE2_COM_MODULE_DPDK)
+		(void)sxe2vf_ipsec_get_capa_msg_send(adapter);
+
 	if (adapter->ipsec_ctxt.max_tx_sa_cnt && adapter->ipsec_ctxt.max_rx_sa_cnt)
 		resp->cap_flags |= SXE2_DEV_CAPS_OFFLOAD_IPSEC;
 
@@ -229,6 +238,11 @@ static s32 sxe2vf_com_main_vsi_create(struct sxe2vf_adapter *adapter,
 
 	req_resp = (struct sxe2_drv_vsi_create_req_resp *)
 		   sxe2vf_com_req_data_copy_to_kernel(cmd_buf);
+	if (!req_resp) {
+		LOG_ERROR_BDF("vsi create req is NULL.\n");
+		ret = -EINVAL;
+		goto l_end;
+	}
 
 	ret = sxe2vf_user_vsi_hw_cfg(adapter, req_resp, false);
 	if (ret) {
@@ -324,6 +338,10 @@ static struct sxe2vf_ioctl_cmd_table driver_cmd_table[] = {
 		 sxe2vf_com_user_vf_passthrough_to_kernel_pf},
 		{SXE2_DRV_CMD_FLOW_FILTER_DEL,
 		 sxe2vf_com_user_vf_passthrough_to_kernel_pf},
+		{SXE2_DRV_CMD_FLOW_FILTER_ADD_EXT,
+		 sxe2vf_com_user_vf_passthrough_to_kernel_pf},
+		{SXE2_DRV_CMD_FLOW_FILTER_DEL_EXT,
+		 sxe2vf_com_user_vf_passthrough_to_kernel_pf},
 		{SXE2_DRV_CMD_FLOW_FNAV_STAT_ALLOC,
 		 sxe2vf_com_user_vf_passthrough_to_kernel_pf},
 		{SXE2_DRV_CMD_FLOW_FNAV_STAT_FREE,
@@ -377,9 +395,13 @@ static struct sxe2vf_ioctl_cmd_table driver_cmd_table[] = {
 		 sxe2vf_com_user_vf_passthrough_to_kernel_pf},
 
 		{SXE2_DRV_CMD_OPT_EEP_GET, sxe2vf_com_user_vf_passthrough_to_kernel_pf},
+
+		{SXE2_DRV_CMD_ACL_STAT_QUERY, sxe2vf_com_user_vf_passthrough_to_kernel_pf},
+		{SXE2_DRV_CMD_FLOW_ACL_STAT_ALLOC, sxe2vf_com_user_vf_passthrough_to_kernel_pf},
+		{SXE2_DRV_CMD_FLOW_ACL_STAT_FREE, sxe2vf_com_user_vf_passthrough_to_kernel_pf},
 };
 
-static s32 sxe2vf_drv_cmd_len_check(struct sxe2_drv_cmd_params *cmd_buf)
+STATIC s32 sxe2vf_drv_cmd_len_check(struct sxe2_drv_cmd_params *cmd_buf)
 {
 	return 0;
 }

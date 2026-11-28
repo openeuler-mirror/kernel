@@ -26,14 +26,7 @@
 #endif
 #endif
 
-#ifdef __KERNEL__
-#define _SXE2_PACK     __packed__
-#define _SXE2_ALIGN    __aligned__(4)
-#define SXE2_ATTRIBUTE __attribute__((_SXE2_PACK, _SXE2_ALIGN))
-#else
-#define SXE2_ATTRIBUTE
 #pragma pack(4)
-#endif
 
 #define SXE2_DRV_CMD_MODULE_S        (16)
 #define SXE2_MK_DRV_CMD(module, cmd) ((module) << SXE2_DRV_CMD_MODULE_S | (cmd))
@@ -47,6 +40,7 @@
 #define SXE2_DEV_CAPS_OFFLOAD_PTP   BIT(6)
 #define SXE2_DEV_CAPS_OFFLOAD_Q_MAP	BIT(7)
 #define SXE2_DEV_CAPS_OFFLOAD_FC_STATE	BIT(8)
+#define SXE2_DEV_CAPS_OFFLOAD_FLOW_EXT	BIT(9)
 
 #define SXE2_TXQ_STATS_MAP_MAX_NUM 16
 #define SXE2_RXQ_STATS_MAP_MAX_NUM 4
@@ -98,17 +92,17 @@ enum sxe2_dev_type {
 struct sxe2_drv_queue_caps {
 	__le16 queues_cnt;
 	__le16 base_idx_in_pf;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_msix_caps {
 	__le16 msix_vectors_cnt;
 	__le16 base_idx_in_func;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_rss_hash_caps {
 	__le16 hash_key_size;
 	__le16 lut_key_size;
-} SXE2_ATTRIBUTE;
+};
 
 enum sxe2_vf_vsi_valid {
 	SXE2_VF_VSI_BOTH = 0,
@@ -122,13 +116,13 @@ struct sxe2_drv_vsi_caps {
 	__le16 dpdk_vsi_id;
 	__le16 kernel_vsi_id;
 	__le16 vsi_type;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_representor_caps {
 	__le16 cnt_repr_vf;
 	u8 rsv[2];
 	struct sxe2_drv_vsi_caps repr_vf_id[256];
-} SXE2_ATTRIBUTE;
+};
 
 enum sxe2_phys_port_name_type {
 	SXE2_PHYS_PORT_NAME_TYPE_NOTSET = 0,
@@ -147,13 +141,13 @@ struct sxe2_switchdev_info {
 	__le32 pf_num;
 	__le32 vf_num;
 	__le32 mpesw_owner;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_switchdev_uplink_info {
 	u8 pf_id;
 	u8 is_set;
 	u8 rsv[2];
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_switchdev_repr_info {
 	u8 pf_id;
@@ -163,25 +157,25 @@ struct sxe2_switchdev_repr_info {
 	__le16 repr_pf_id;
 	__le16 repr_vf_id;
 	__le16 repr_q_id;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_switchdev_mode_info {
 	u8 pf_id;
 	u8 is_switchdev;
 	u8 rsv[2];
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_switchdev_cpvsi_info {
 	__le16 cp_vsi_id;
 	u8 rsv[2];
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_txsch_caps {
 	u8 layer_cap;
 	u8 tm_mid_node_num;
 	u8 prio_num;
 	u8 rev;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_dev_caps_resp {
 	struct sxe2_drv_queue_caps queue_caps;
@@ -195,7 +189,7 @@ struct sxe2_drv_dev_caps_resp {
 	u8 dev_type;
 	u8 rev;
 	__le32 cap_flags;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_dev_info_resp {
 	__le64 dsn;
@@ -203,14 +197,14 @@ struct sxe2_drv_dev_info_resp {
 	u8 rsv[2];
 	u8 mac_addr[ETH_ALEN];
 	u8 rsv2[2];
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_dev_fw_info_resp {
 	u8 main_version_id;
 	u8 sub_version_id;
 	u8 fix_version_id;
 	u8 build_id;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_rxq_ctxt {
 	__le64 dma_addr;
@@ -224,7 +218,7 @@ struct sxe2_drv_rxq_ctxt {
 	u8 keep_crc_en;
 	u8 split_en;
 	u8 desc_size;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_rxq_cfg_req {
 	__le16 q_cnt;
@@ -232,7 +226,7 @@ struct sxe2_drv_rxq_cfg_req {
 	__le16 max_frame_size;
 	u8 rsv[2];
 	struct sxe2_drv_rxq_ctxt cfg[];
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_txq_ctxt {
 	__le64 dma_addr;
@@ -241,13 +235,13 @@ struct sxe2_drv_txq_ctxt {
 	__le16 depth;
 	__le16 vsi_id;
 	u8 rsv[2];
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_txq_cfg_req {
 	__le16 q_cnt;
 	__le16 vsi_id;
 	struct sxe2_drv_txq_ctxt cfg[];
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_q_switch_req {
 	__le16 q_idx;
@@ -255,7 +249,7 @@ struct sxe2_drv_q_switch_req {
 	u8 is_enable;
 	u8 sched_mode;
 	u8 rsv[2];
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_queue_irq_bind_req {
 	__le16 q_idx;
@@ -263,37 +257,37 @@ struct sxe2_drv_queue_irq_bind_req {
 	u8 itr_idx;
 	u8 bind;
 	u8 rsv[2];
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_vsi_create_req_resp {
 	__le16 vsi_id;
 	__le16 vsi_type;
 	struct sxe2_drv_queue_caps used_queues;
 	struct sxe2_drv_msix_caps used_msix;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_vsi_free_req {
 	__le16 vsi_id;
 	u8 rsv[2];
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_vsi_info_get_req {
 	__le16 vsi_id;
 	u8 rsv[2];
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_vsi_info_get_resp {
 	__le16 vsi_id;
 	__le16 vsi_type;
 	struct sxe2_drv_queue_caps used_queues;
 	struct sxe2_drv_msix_caps used_msix;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_udp_tunnel_req {
 	u8 type;
 	u8 rsv;
 	__le16 port;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_udp_tunnel_resp {
 	u8 type;
@@ -303,17 +297,19 @@ struct sxe2_drv_udp_tunnel_resp {
 	u16 port;
 	u8 fw_used;
 	u8 rsv;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_rx_map_req {
 	__le16 queue_id;
 	u8 pool_idx;
-} SXE2_ATTRIBUTE;
+	u8 rsv;
+};
 
 struct sxe2_drv_tx_map_req {
 	__le16 queue_id;
 	u8 pool_idx;
-} SXE2_ATTRIBUTE;
+	u8 rsv;
+};
 
 struct sxe2_drv_vlan_cfg_query_resp {
 	__le16 vsi_id;
@@ -325,7 +321,7 @@ struct sxe2_drv_vlan_cfg_query_resp {
 	u8 outer_strip;
 	u8 inner_insert;
 	u8 inner_strip;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_vlan_offload_cfg_req {
 	__le16 vsi_id;
@@ -334,7 +330,7 @@ struct sxe2_drv_vlan_offload_cfg_req {
 	u8 outer_strip;
 	u8 inner_insert;
 	u8 inner_strip;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_port_vlan_cfg_req {
 	__le16 vsi_id;
@@ -342,7 +338,7 @@ struct sxe2_drv_port_vlan_cfg_req {
 	__le16 vid;
 	u8 prio;
 	u8 rsv;
-} SXE2_ATTRIBUTE;
+};
 
 enum sxe2_mac_filter_type {
 	SXE2_MAC_FILTER_TYPE_UC = 0,
@@ -356,7 +352,7 @@ struct sxe2_mac_filter_cfg_req {
 	u8 type;
 	u8 is_add;
 	u8 rsv[2];
-} SXE2_ATTRIBUTE;
+};
 
 enum sxe2_promisc_filter_type {
 	SXE2_PROMISC_FILTER_TYPE_PROMISC = 0,
@@ -368,14 +364,14 @@ struct sxe2_promisc_filter_cfg_req {
 	__le16 vsi_id;
 	u8 type;
 	u8 is_add;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_srcvsi_ext_cfg_req {
 	__le16 vsi_id;
 	__le16 srcvsi_list[SXE2_SRCVSI_PRUNE_MAX_NUM];
 	u8 srcvsi_cnt;
 	u8 is_add;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_vlan_filter_cfg_req {
 	__le16 vsi_id;
@@ -383,31 +379,31 @@ struct sxe2_vlan_filter_cfg_req {
 	__le16 tpid_id;
 	u8 prio;
 	u8 is_add;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_vlan_filter_switch_req {
 	__le16 vsi_id;
 	u8 is_oper_enable;
 	u8 rsv;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_rss_key_req {
 	__le16 vsi_id;
 	__le16 key_size;
 	u8 key[];
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_rss_lut_req {
 	__le16 vsi_id;
 	__le16 lut_size;
 	u8 lut[];
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_rss_func_req {
 	__le16 vsi_id;
 	u8 func;
 	u8 rsv[1];
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_rss_hf_req {
 	__le16 vsi_id;
@@ -417,27 +413,27 @@ struct sxe2_rss_hf_req {
 	__le32 hdr_type;
 	u8 symm;
 	u8 rsv1[3];
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_ipsec_capa_resq {
 	__le16 tx_sa_cnt;
 	__le16 rx_sa_cnt;
 	__le16 ip_id_cnt;
 	__le16 udp_group_cnt;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_ipsec_txsa_add_req {
 	__le32 mode;
 	u8 encrypt_keys[SXE2_IPSEC_KEY_LEN];
 	u8 auth_keys[SXE2_IPSEC_KEY_LEN];
-	bool func_type;
+	u8 func_type;
 	u8 func_id;
 	u8 drv_id;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_ipsec_txsa_add_resp {
 	__le16 index;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_ipsec_rxsa_add_req {
 	__le32 mode;
@@ -450,38 +446,39 @@ struct sxe2_drv_ipsec_rxsa_add_req {
 	u8 sdn_group_id;
 	u8 encrypt_keys[SXE2_IPSEC_KEY_LEN];
 	u8 auth_keys[SXE2_IPSEC_KEY_LEN];
-	bool func_type;
+	u8 func_type;
 	u8 func_id;
 	u8 drv_id;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_ipsec_rxsa_add_resp {
 	u8 ip_id;
 	u8 udp_group_id;
 	__le16 sa_idx;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_ipsec_txsa_del_req {
 	__le16 sa_idx;
-	bool func_type;
+	u8 func_type;
 	u8 func_id;
 	u8 drv_id;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_ipsec_rxsa_del_req {
 	u8 ip_id;
 	u8 group_id;
 	__le16 sa_idx;
 	__le32 spi;
-	bool func_type;
+	u8 func_type;
 	u8 func_id;
 	u8 drv_id;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_link_info_resp {
 	__le32 speed;
 	u8 status;
-} SXE2_ATTRIBUTE;
+	u8 rsv[3];
+};
 
 struct sxe2_drv_flow_filter_req {
 	__le32 flow_id;
@@ -490,49 +487,62 @@ struct sxe2_drv_flow_filter_req {
 	struct sxe2_flow_pattern pattern_outer;
 	struct sxe2_flow_pattern pattern_inner;
 	struct sxe2_flow_action action;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_flow_filter_resp {
 	enum sxe2_flow_engine_type engine_type;
 	__le32 flow_id;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_flow_fnav_get_stat_id_req {
 	u8 need_update;
-} SXE2_ATTRIBUTE;
+	u8 rsv[3];
+};
 
 struct sxe2_drv_flow_fnav_get_stat_id_resp {
 	__le32 stat_id;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_flow_fnav_free_stat_id_req {
 	__le32 stat_id;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_flow_fnav_query_stat_req {
 	__le32 stat_id;
 	__le32 stat_ctrl;
 	__le32 is_clear;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_flow_fnav_query_stat_resp {
 	__le32 stat_index;
 	__le64 stat_hits;
 	__le64 stat_bytes;
-} SXE2_ATTRIBUTE;
+};
+
+struct sxe2_drv_acl_query_stat_req {
+	__le32 stat_id;
+	__le32 stat_ctrl;
+	__le32 is_clear;
+};
+
+struct sxe2_drv_acl_query_stat_resp {
+	__le32 stat_index;
+	__le64 stat_hits;
+	__le64 stat_bytes;
+};
 
 struct sxe2_drv_vsi_sw_stats {
 	__le64 rx_packets;
 	__le64 rx_bytes;
 	__le64 tx_packets;
 	__le64 tx_bytes;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_vsi_stats_req {
 	__le16 vsi_id;
 	u8 rsv[2];
 	struct sxe2_drv_vsi_sw_stats sw_stats;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_vsi_stats_resp {
 	__le64 rx_vsi_unicast_packets;
@@ -543,7 +553,7 @@ struct sxe2_drv_vsi_stats_resp {
 	__le64 tx_vsi_multicast_packets;
 	__le64 rx_vsi_broadcast_packets;
 	__le64 tx_vsi_broadcast_packets;
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_mac_stats_resp {
 	__le64 rx_out_of_buffer;
@@ -608,7 +618,7 @@ struct sxe2_drv_mac_stats_resp {
 	__le64 prio_xon_tx[SXE2_MAX_USER_PRIORITY];
 	__le64 prio_xoff_tx[SXE2_MAX_USER_PRIORITY];
 	__le64 prio_xon_2_xoff[SXE2_MAX_USER_PRIORITY];
-} SXE2_ATTRIBUTE;
+};
 
 enum sxe2_fc_type {
 	SXE2_FC_T_DIS = 0,
@@ -621,12 +631,12 @@ enum sxe2_fc_type {
 struct sxe2_drv_vsi_fc_get_req {
 	__le16 vsi_id;
 	u8 rsv[2];
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_drv_vsi_fc_get_resp {
 	u8 fc_enable;
 	u8 rsv[3];
-} SXE2_ATTRIBUTE;
+};
 
 struct sxe2_tm_res {
 	__le16 teid;
@@ -643,6 +653,7 @@ struct sxe2_tm_info {
 struct sxe2_tm_add_mid_msg {
 	__le16 parent_teid;
 	u8 adj_lvl;
+	u8 rsv;
 	struct sxe2_tm_info info;
 };
 
@@ -650,6 +661,7 @@ struct sxe2_tm_add_queue_msg {
 	__le16 parent_teid;
 	__le16 queue_id;
 	u8 adj_lvl;
+	u8 rsv[3];
 	struct sxe2_tm_info info;
 };
 
@@ -669,6 +681,7 @@ struct sxe2_stats_hw_txq_map {
 
 struct sxe2_stats_rxq_map_pool {
 	u8 pool_id;
+	u8 rsv;
 	__le16 queue_id_pool[SXE2_RXQ_MAP_Q_MAX_NUM];
 	__le16 curr_map_idx;
 };
@@ -824,6 +837,10 @@ enum sxe2_drv_cmd_code {
 	SXE2_DRV_CMD_FLOW_FNAV_STAT_FREE,
 	SXE2_DRV_CMD_FLOW_FNAV_STAT_QUERY,
 
+	SXE2_DRV_CMD_FLOW_FILTER_ADD_EXT =
+		SXE2_MK_DRV_CMD(SXE2_DRV_CMD_MODULE_FLOW, 16),
+	SXE2_DRV_CMD_FLOW_FILTER_DEL_EXT,
+
 	SXE2_DRV_CMD_DEL_TM_ROOT =
 		SXE2_MK_DRV_CMD(SXE2_DRV_CMD_MODULE_TM, 1),
 	SXE2_DRV_CMD_ADD_TM_ROOT,
@@ -886,10 +903,13 @@ enum sxe2_drv_cmd_code {
 	SXE2_DRV_CMD_OPT_EEP_GET =
 		SXE2_MK_DRV_CMD(SXE2_DRV_CMD_MODULE_OPT, 1),
 
+	SXE2_DRV_CMD_ACL_STAT_QUERY =
+		SXE2_MK_DRV_CMD(SXE2_DRV_CMD_MODULE_ACL, 1),
+	SXE2_DRV_CMD_FLOW_ACL_STAT_ALLOC,
+	SXE2_DRV_CMD_FLOW_ACL_STAT_FREE,
+
 };
 
-#ifndef __KERNEL__
 #pragma pack()
-#endif
 
 #endif

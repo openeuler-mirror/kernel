@@ -12,6 +12,7 @@
 #include "sxe2.h"
 #include "sxe2_log.h"
 #include "sxe2_common.h"
+#include "sxe2_sriov.h"
 
 STATIC u16 sxe2_rxq_preallocate_num_cal(struct sxe2_adapter *adapter)
 {
@@ -89,9 +90,9 @@ l_end:
 	return offset;
 }
 
-STATIC s32 sxe2_vsi_qs_offset_get(struct sxe2_vsi *vsi,
-				  struct sxe2_queue_layout *q_layout,
-				  unsigned long *map, u16 size, u16 cnt, u8 q_type)
+s32 sxe2_vsi_qs_offset_get(struct sxe2_vsi *vsi,
+			   struct sxe2_queue_layout *q_layout,
+				 unsigned long *map, u16 size, u16 cnt, u8 q_type)
 {
 	s32 offset;
 	u8 vsi_type = vsi->type;
@@ -138,8 +139,8 @@ STATIC s32 sxe2_vsi_qs_offset_get(struct sxe2_vsi *vsi,
 	case SXE2_VSI_T_DPDK_VF:
 		base_idx = (q_type == SXE2_DATA_TQ) ? vsi->txqs.base_idx_in_feature
 						    : vsi->rxqs.base_idx_in_feature;
-		offset = q_layout->sriov_offset +
-			 adapter->vf_ctxt.q_cnt * (vsi->vf_node->vf_idx) + base_idx;
+		offset = ((q_type == SXE2_DATA_TQ) ? vsi->vf_node->txq_base
+						   : vsi->vf_node->rxq_base) + base_idx;
 		break;
 	case SXE2_VSI_T_DPDK_PF:
 		offset = q_layout->dpdk_offset;
@@ -273,7 +274,8 @@ STATIC void sxe2_vsi_queues_put(struct sxe2_vsi *vsi, u8 q_type)
 	mutex_lock(lock);
 	for (i = 0; i < queues->q_alloc; i++) {
 		if (queues->q[i]->idx_in_pf != SXE2_Q_IDX_INVAL) {
-			clear_bit(queues->q[i]->idx_in_pf, map);
+			if (vsi->type == SXE2_VSI_T_MACVLAN || q_type == SXE2_DATA_XDP_TQ)
+				clear_bit(queues->q[i]->idx_in_pf, map);
 			queues->q[i]->idx_in_pf = SXE2_Q_IDX_INVAL;
 		}
 	}
@@ -421,14 +423,14 @@ STATIC void sxe2_q_layout_init(struct sxe2_adapter *adapter)
 		rxq_layout->lan_offset = rxq_layout->ctrl_offset + rxq_layout->ctrl;
 		rxq_layout->lan = (u16)min_t(u32, standard_cpu_cnt,
 					     (u32)adapter->irq_ctxt.irq_layout.lan);
-		if ((rxq_layout->lan + rxq_layout->lan_offset) > max_txq)
-			rxq_layout->lan = (u16)(max_txq - rxq_layout->lan_offset);
+		if ((rxq_layout->lan + rxq_layout->lan_offset) > max_rxq)
+			rxq_layout->lan = (u16)(max_rxq - rxq_layout->lan_offset);
 		rxq_layout->dpdk_offset = rxq_layout->lan_offset + rxq_layout->lan;
 	} else if (mode == SXE2_COM_MODULE_DPDK) {
 		rxq_layout->dpdk = SXE2_DPDK_QUEUE_MAX_CNT;
 		rxq_layout->dpdk_offset = rxq_layout->lan_offset + rxq_layout->lan;
-		if ((rxq_layout->dpdk + rxq_layout->dpdk_offset) > max_txq)
-			rxq_layout->dpdk = (u16)(max_txq - rxq_layout->dpdk_offset);
+		if ((rxq_layout->dpdk + rxq_layout->dpdk_offset) > max_rxq)
+			rxq_layout->dpdk = (u16)(max_rxq - rxq_layout->dpdk_offset);
 	} else {
 		rxq_layout->lb = 1;
 		rxq_layout->lb_offset = 0;
@@ -439,13 +441,13 @@ STATIC void sxe2_q_layout_init(struct sxe2_adapter *adapter)
 		rxq_layout->lan_offset = rxq_layout->ctrl_offset + rxq_layout->ctrl;
 		rxq_layout->lan = (u16)min_t(u32, standard_cpu_cnt,
 					     (u32)adapter->irq_ctxt.irq_layout.lan);
-		if ((rxq_layout->lan + rxq_layout->lan_offset) > max_txq)
-			rxq_layout->lan = (u16)(max_txq - rxq_layout->lan_offset);
+		if ((rxq_layout->lan + rxq_layout->lan_offset) > max_rxq)
+			rxq_layout->lan = (u16)(max_rxq - rxq_layout->lan_offset);
 
 		rxq_layout->dpdk_offset = rxq_layout->lan_offset + rxq_layout->lan;
 		rxq_layout->dpdk = SXE2_DPDK_QUEUE_DFLT_CNT;
-		if ((rxq_layout->dpdk + rxq_layout->dpdk_offset) > max_txq)
-			rxq_layout->dpdk = (u16)(max_txq - rxq_layout->dpdk_offset);
+		if ((rxq_layout->dpdk + rxq_layout->dpdk_offset) > max_rxq)
+			rxq_layout->dpdk = (u16)(max_rxq - rxq_layout->dpdk_offset);
 	}
 
 	rxq_layout->xdp = 0;

@@ -16,6 +16,7 @@
 #include "sxe2_log.h"
 #include "sxe2_common.h"
 #include "sxe2_flow.h"
+#include "sxe2_sriov.h"
 
 static struct sxe2_rss_hash_cfg default_rss_cfg_ip4;
 static struct sxe2_rss_hash_cfg default_rss_cfg_tcp4;
@@ -69,18 +70,60 @@ void sxe2_rss_ctxt_init(struct sxe2_vsi *vsi)
 				min_t(u16, SXE2_PF_LUT_MAX_QUEUE, vsi->rxqs.q_cnt);
 		break;
 	case SXE2_VSI_T_DPDK_PF:
-		vsi->rss_ctxt.lut_type = SXE2_RSS_GLOBAL_LUT;
-		vsi->rss_ctxt.lut_size = SXE2_RSS_LUT_SIZE_512;
-		vsi->rss_ctxt.global_lut_id = (u8)adapter->caps_ctxt.global_lut_base;
-		vsi->rss_ctxt.queue_size = min_t(u16, SXE2_GLOBAL_LUT_MAX_QUEUE,
-						 vsi->rxqs.q_cnt);
+		if (adapter->vsi_ctxt.dpdk_lut_type == SXE2_RSS_GLOBAL_LUT) {
+			vsi->rss_ctxt.lut_type = SXE2_RSS_GLOBAL_LUT;
+			vsi->rss_ctxt.lut_size = SXE2_RSS_LUT_SIZE_512;
+			vsi->rss_ctxt.global_lut_id =
+				adapter->vsi_ctxt.dpdk_global_lut_id;
+			vsi->rss_ctxt.queue_size =
+					min_t(u16, SXE2_GLOBAL_LUT_MAX_QUEUE,
+					      vsi->rxqs.q_cnt);
+		} else {
+			vsi->rss_ctxt.lut_type = SXE2_RSS_VSI_LUT;
+			vsi->rss_ctxt.lut_size = SXE2_RSS_LUT_SIZE_64;
+			vsi->rss_ctxt.global_lut_id =
+				SXE2_VF_GLOBAL_LUT_INVALID_ID;
+			vsi->rss_ctxt.queue_size =
+					min_t(u16, SXE2_VSI_LUT_MAX_QUEUE,
+					      vsi->rxqs.q_cnt);
+		}
 		break;
+
 	case SXE2_VSI_T_VF:
 	case SXE2_VSI_T_DPDK_VF:
-		vsi->rss_ctxt.lut_type = SXE2_RSS_VSI_LUT;
-		vsi->rss_ctxt.lut_size = SXE2_RSS_LUT_SIZE_64;
-		vsi->rss_ctxt.queue_size =
-				min_t(u16, SXE2_VSI_LUT_MAX_QUEUE, vsi->rxqs.q_cnt);
+		{
+			struct sxe2_vf_usr_cfg *usr_cfg = NULL;
+			u16 lut_size = SXE2_RSS_LUT_SIZE_64;
+			u8 lut_type = SXE2_RSS_VSI_LUT;
+			u8 lut_id = SXE2_VF_GLOBAL_LUT_INVALID_ID;
+
+			if (vsi->vf_node)
+				usr_cfg = SXE2_VF_USR_CFG(adapter, vsi->vf_node->vf_idx);
+
+			if (usr_cfg) {
+				u8 v = (vsi->type == SXE2_VSI_T_VF) ? SXE2_PRODUCT_ID_KERNEL :
+								      SXE2_PRODUCT_ID_DPDK;
+
+				lut_type = usr_cfg->product[v].lut_type;
+				lut_id = usr_cfg->product[v].lut_id;
+				lut_size = usr_cfg->product[v].lut_size;
+			}
+
+			if (lut_type == SXE2_RSS_GLOBAL_LUT) {
+				vsi->rss_ctxt.lut_type = SXE2_RSS_GLOBAL_LUT;
+				vsi->rss_ctxt.lut_size = lut_size;
+				vsi->rss_ctxt.global_lut_id = lut_id;
+				vsi->rss_ctxt.queue_size =
+						min_t(u16, SXE2_GLOBAL_LUT_MAX_QUEUE,
+						      vsi->rxqs.q_cnt);
+			} else {
+				vsi->rss_ctxt.lut_type = SXE2_RSS_VSI_LUT;
+				vsi->rss_ctxt.lut_size = lut_size;
+				vsi->rss_ctxt.queue_size =
+						min_t(u16, SXE2_VSI_LUT_MAX_QUEUE,
+						      vsi->rxqs.q_cnt);
+			}
+		}
 		break;
 	default:
 		LOG_INFO_BDF("unsupport Vsi Type: %u\n", vsi->type);
@@ -95,6 +138,9 @@ void sxe2_rss_ctxt_init(struct sxe2_vsi *vsi)
 void sxe2_rss_fill_lut(u8 *lut, u16 lut_size, u16 queue_size)
 {
 	u16 i = 0;
+
+	if (queue_size == 0)
+		return;
 
 	for (i = 0; i < lut_size; i++)
 		lut[i] = (u8)(i % queue_size);
@@ -173,9 +219,9 @@ s32 sxe2_rss_default_flow_set(struct sxe2_vsi *vsi)
 {
 	u32 i, j;
 	s32 ret = 0;
-	s32 ret_tmp;
-	struct sxe2_rss_hash_cfg *cfg;
-	struct sxe2_adapter *adapter = vsi->adapter;
+	s32 ret_tmp = 0;
+	struct sxe2_rss_hash_cfg *cfg = NULL;
+	struct sxe2_adapter *adapter	    = vsi->adapter;
 	struct sxe2_rss_ctxt *rss_flow_ctxt = &adapter->rss_flow_ctxt;
 
 	if (sxe2_is_safe_mode(adapter)) {
@@ -268,6 +314,10 @@ s32 sxe2_fwc_rss_lut_set(struct sxe2_vsi *vsi, u8 *lut, u16 lut_size)
 	if (vsi->rss_ctxt.lut_type == SXE2_RSS_GLOBAL_LUT)
 		lut_cfg->global_lut_id = vsi->rss_ctxt.global_lut_id;
 
+	if (lut_size == SXE2_RSS_LUT_SIZE_64) {
+		lut_cfg->lut_type = SXE2_RSS_VSI_LUT;
+		lut_cfg->global_lut_id = 0;
+	}
 	lut_cfg->lut_size = cpu_to_le16(lut_size);
 	memcpy(lut_cfg->lut, lut, lut_size);
 
@@ -310,12 +360,14 @@ s32 sxe2_fwc_rss_lut_get(struct sxe2_vsi *vsi, u8 *lut, u16 lut_size)
 
 	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 	if (ret) {
-		LOG_ERROR_BDF("rss lut set cmd fail, ret=%d\n", ret);
+		LOG_ERROR_BDF("rss lut get cmd fail, ret=%d\n", ret);
 		ret = -EIO;
+		goto l_end;
 	}
 
 	memcpy(lut, lut_cfg->lut, lut_size);
 
+l_end:
 	kfree(lut_cfg);
 	return ret;
 }
@@ -489,6 +541,29 @@ l_lut_alloc_failed:
 	return ret;
 }
 
+void sxe2_rss_vf_sw_cfg_clear(struct sxe2_adapter *adapter)
+{
+	struct sxe2_rss_ctxt  *rss_ctxt = &adapter->rss_flow_ctxt;
+	struct sxe2_vf_node   *vf_node;
+	u16                    vsi_sw_idx;
+	u16                    vf_idx;
+	s32                    ret = 0;
+
+	sxe2_for_each_vf(adapter, vf_idx)
+	{
+		mutex_lock(SXE2_VF_NODE_LOCK(adapter, vf_idx));
+		vf_node = SXE2_VF_NODE(adapter, vf_idx);
+		ret = sxe2_vf_sw_vsi_id_get(vf_node, SXE2_VSI_T_VF, &vsi_sw_idx);
+		if (ret) {
+			mutex_unlock(SXE2_VF_NODE_LOCK(adapter, vf_idx));
+			continue;
+		}
+		sxe2_rss_delete_vsi_cfg_list(rss_ctxt, vsi_sw_idx);
+
+		mutex_unlock(SXE2_VF_NODE_LOCK(adapter, vf_idx));
+	}
+}
+
 s32 sxe2_rss_ptg_parse_from_ddp(u8 *data, u16 cnt, u16 base_id,
 				struct sxe2_adapter *adapter)
 {
@@ -502,7 +577,7 @@ s32 sxe2_rss_ptg_parse_from_ddp(u8 *data, u16 cnt, u16 base_id,
 
 	per_size = sizeof(struct sxe2_ddp_rxft_ptg);
 	ddp_max_cnt = (SXE2_MAX_PTYPE_NUM * SXE2_MAX_CDID_NUM) / per_size;
-	if (!data || base_id >= ddp_max_cnt || cnt > ddp_max_cnt) {
+	if (!data || base_id >= ddp_max_cnt || cnt > ddp_max_cnt || (base_id + cnt > ddp_max_cnt)) {
 		LOG_ERROR_BDF("sxe2 rss ptg parse from ddp failed, port_idx=%u !\n",
 			      port_idx);
 		ret = -EINVAL;

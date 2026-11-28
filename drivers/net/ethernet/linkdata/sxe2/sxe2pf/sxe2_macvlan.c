@@ -16,6 +16,7 @@
 #include "sxe2_log.h"
 #include "sxe2_netdev.h"
 #include "sxe2_xsk.h"
+#include "sxe2_spec.h"
 
 s32 sxe2_vsi_cfg_netdev_tc0(struct sxe2_vsi *vsi)
 {
@@ -279,7 +280,7 @@ void *sxe2_fwd_add_macvlan(struct net_device *netdev, struct net_device *vdev)
 	mv = sxe2_fwd_add_macvlan_unlock(netdev, vdev);
 	mutex_unlock(&adapter->vsi_ctxt.lock);
 
-	if (!mv)
+	if (IS_ERR_OR_NULL(mv))
 		WARN_ON_ONCE(sxe2_netdev_q_cnt_set(vdev, old_txq_cnt, old_rxq_cnt,
 						   true));
 
@@ -484,15 +485,13 @@ s32 sxe2_macvlan_deinit(struct sxe2_vsi *vsi, bool locked)
 
 	list_for_each_entry_safe(mv, mv_tmp, &macvlan->macvlan_list, list) {
 		(void)sxe2_mac_rule_del(adapter, mv->vsi->idx_in_dev, mv->mac);
-#ifdef HAVE_NETDEV_SB_DEV
 		(void)macvlan_release_l2fw_offload(mv->vdev);
-#endif
 		sxe2_fwd_del_macvlan_unlock(mv->parent_vsi->netdev, mv);
 	}
 
 	ret = netdev_set_num_tc(vsi->netdev, 0);
 	if (ret)
-		LOG_ERROR_BDF("set num:0 tc NOK, ret:%d\n", ret);
+		LOG_ERROR_BDF("set num:0 tc failed, ret:%d\n", ret);
 
 	mutex_unlock(&adapter->vsi_ctxt.lock);
 	ret = sxe2_netdev_q_cnt_set(vsi->netdev, vsi->txqs.q_cnt, vsi->rxqs.q_cnt,
@@ -614,10 +613,10 @@ s32 sxe2_macvlan_rebuild(struct sxe2_adapter *adapter)
 	rtnl_lock();
 	ret = sxe2_vsi_enable_by_type(adapter, SXE2_VSI_T_MACVLAN);
 	rtnl_unlock();
-	if (!ret) {
-		LOG_DEV_ERR("sxe2_vsi_enable_by_type failed ret:%d.\n", ret);
+	if (!ret)
 		goto l_end;
-	}
+
+	LOG_DEV_ERR("sxe2_vsi_enable_by_type failed ret:%d.\n", ret);
 
 l_err:
 	WARN_ON_ONCE(sxe2_macvlan_deinit(parent_vsi, false));

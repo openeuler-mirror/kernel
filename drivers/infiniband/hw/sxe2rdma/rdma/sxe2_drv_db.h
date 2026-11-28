@@ -49,6 +49,7 @@ enum sxe2_drv_objects {
 };
 
 struct sxe2_db_page {
+	void __iomem *sys_page_addr;
 	void __iomem *map;
 	bool wc;
 	u32 index;

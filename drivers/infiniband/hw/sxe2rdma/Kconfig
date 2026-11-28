@@ -1,21 +1,21 @@
 # SPDX-License-Identifier: GPL-2.0
 #
-# sxe2 network device configuration
+# SXE2 RDMA device configuration
 #
 
 config INFINIBAND_SXE2RDMA
 	tristate "sxe2 network adapters RDMA support"
-	depends on (X86 || ARM64)
-	depends on NETDEVICES
-	depends on ETHERNET
-	depends on PCI
-	depends on INET
-	depends on IPV6
+	depends on X86 || ARM64
+	depends on NETDEVICES && ETHERNET && PCI
+	depends on INET && IPV6
 	depends on SXE2
+	depends on INFINIBAND && INFINIBAND_USER_ACCESS
 	select AUXILIARY_BUS
 	select CONFIGFS_FS
 	default n
-
 	help
-	  This driver supports sxe2 PCI Express family of adapters.
-	  To compile this driver as a module, choose M here.
+	  This driver supports RDMA on sxe2 PCI Express network adapters.
+	  It requires the SXE2 Ethernet driver and RDMA userspace access.
+
+	  To compile this driver as a module, choose M here. The module
+	  will be called sxe2rdma.

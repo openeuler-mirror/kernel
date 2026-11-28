@@ -128,6 +128,8 @@ int sxe2vf_mac_addr_del(struct sxe2vf_adapter *adapter, const u8 *addr,
 
 s32 sxe2vf_dev_mac_add(struct sxe2vf_adapter *adapter);
 
+s32 sxe2vf_rdma_multi_mac_addr_clean(struct sxe2vf_adapter *adapter);
+
 void sxe2vf_l2_filter_rules_restore(struct sxe2vf_adapter *adapter);
 
 s32 sxe2vf_addr_node_del(struct sxe2vf_adapter *adapter, const u8 *macaddr);

@@ -46,6 +46,11 @@
 
 #define SXE2_PROFILE_MAX_COUNT	    (256)
 #define SXE2_SWITCH_PROFILE_FV_CNT  (48)
+#define SXE2_FV_OFF_SLOT_MAX	    (SXE2_SWITCH_PROFILE_FV_CNT / 2)
+#define SXE2_FV_KEY_PROT_MAX	    (256)
+#define SXE2_FV_KEY_CNT		    (SXE2_FV_KEY_PROT_MAX * SXE2_FV_OFF_SLOT_MAX)
+#define SXE2_FV_KEY_GEN(prot_id, off) \
+	((u16)(prot_id) * SXE2_FV_OFF_SLOT_MAX + (u16)(off))
 
 #define SXE2_VLAN(tpid, vid, prio) ((struct sxe2_vlan){ tpid, vid, prio })
 
@@ -176,6 +181,12 @@ struct sxe2_profile_fv_item {
 	u32 rsv : 14;
 };
 
+enum sxe2_profile_tun_kind {
+	SXE2_PROFILE_TUN_NONE = 0,
+	SXE2_PROFILE_TUN_VNI,
+	SXE2_PROFILE_TUN_GRE,
+};
+
 struct sxe2_switch_context {
 	u16 evb_mode;
 	u8 switch_id;
@@ -185,6 +196,9 @@ struct sxe2_switch_context {
 	struct sxe2_recipe recipe[SXE2_DEFAULT_RECIPE_MAX];
 	struct sxe2_recipe complex_recipe;
 	struct sxe2_profile_fv_item **profile_fv_item;
+	unsigned long (*fv_prof_map)[BITS_TO_LONGS(SXE2_MAX_NUM_PROFILES)];
+	DECLARE_BITMAP(profile_used, SXE2_MAX_NUM_PROFILES);
+	u8 profile_tun_kind[SXE2_MAX_NUM_PROFILES];
 	/* in order to protect the data */
 	struct mutex lldp_rule_lock;
 	/* in order to protect the data */
@@ -205,6 +219,28 @@ struct sxe2_udp_tnl_hdr {
 	u32 vni;
 } __packed;
 
+struct sxe2_udp_gtpu_hdr {
+	u16 source;
+	u16 dest;
+	u16 len;
+	u16 check;
+	u8 flags;
+	u8 msg_type;
+	u16 length;
+	u32 teid;
+} __packed;
+
+struct sxe2_udp_gtpc_hdr {
+	u16 source;
+	u16 dest;
+	u16 len;
+	u16 check;
+	u8 flags;
+	u8 msg_type;
+	u16 length;
+	u32 teid;
+} __packed;
+
 union sxe2_prot_hdr {
 	struct sxe2_ether_hdr eth_hdr;
 	struct sxe2_ethtype_hdr ethertype;
@@ -214,7 +250,15 @@ union sxe2_prot_hdr {
 	struct sxe2_tcp_hdr tcp_hdr;
 	struct sxe2_udp_hdr udp_hdr;
 	struct sxe2_udp_tnl_hdr udp_tnl_hdr;
+	struct sxe2_udp_gtpu_hdr gtpu_hdr;
+	struct sxe2_udp_gtpc_hdr gtpc_hdr;
 	struct sxe2_nvgre_hdr nvgre_hdr;
+	struct sxe2_sctp_hdr sctp_hdr;
+	struct sxe2_esp_hdr esp_hdr;
+	struct sxe2_icmp_hdr icmp_hdr;
+	struct sxe2_ipv6_frag_hdr ipv6_frag_hdr;
+	struct sxe2_gre_hdr gre_hdr;
+	struct sxe2_icmpv6_nd_hdr icmpv6_nd_hdr;
 };
 
 #define SXE2_MAC_OL_HW	 1
@@ -227,10 +271,16 @@ union sxe2_prot_hdr {
 #define SXE2_IPV4_IL_HW	 33
 #define SXE2_IPV6_OL_HW	 40
 #define SXE2_IPV6_IL_HW	 41
+#define SXE2_IPV6_FRAG_HW 47
 #define SXE2_TCP_IL_HW	 49
 #define SXE2_UDP_OL_HW	 52
 #define SXE2_UDP_IL_HW	 53
 #define SXE2_GRE_HW	 64
+#define SXE2_ESP_HW	 88
+#define SXE2_ESP_NATT_HW 89
+#define SXE2_SCTP_IL_HW	 96
+#define SXE2_ICMP_IL_HW	 98
+#define SXE2_ICMPV6_IL_HW 100
 
 #define SXE2_META_HW 0xff
 
@@ -275,6 +325,24 @@ enum sxe2_protocol_filed_type {
 	SXE2_VXLAN_ENC_ID,
 	SXE2_GENEVE_ENC_ID,
 	SXE2_NVGRE_ENC_ID,
+	SXE2_LAST_TCP_FLAGS,
+	SXE2_LAST_SCTP_SPORT,
+	SXE2_LAST_SCTP_DPORT,
+	SXE2_ICMP_TYPE,
+	SXE2_ICMP_CODE,
+	SXE2_ESP_SPI,
+	SXE2_ESP_SEQ,
+	SXE2_ESP_NATT_SPI,
+	SXE2_ESP_NATT_SEQ,
+	SXE2_ICMP_IDENT,
+	SXE2_IPV6_FRAG_NEXT_HDR,
+	SXE2_IPV6_FRAG_DATA,
+	SXE2_IPV6_FRAG_ID,
+	SXE2_GRE_PROTOCOL,
+	SXE2_ICMPV6_ND_TYPE,
+	SXE2_ICMPV6_ND_TARGET,
+	SXE2_GTPU,
+	SXE2_GTPC,
 
 	SXE2_PROT_FIELD_LAST,
 };
@@ -298,6 +366,8 @@ enum sxe2_tunnel_type {
 	SXE2_TNL_VXLAN,
 	SXE2_TNL_GENEVE,
 	SXE2_TNL_GRETAP,
+	SXE2_TNL_GTPU,
+	SXE2_TNL_GTPC,
 
 	SXE2_TNL_ALL,
 };
@@ -498,6 +568,8 @@ void sxe2_fwc_switch_trace_tx_trigger(struct sxe2_adapter *adapter);
 
 void sxe2_fwc_switch_trace_recorder(struct sxe2_adapter *adapter);
 
+s32 sxe2_fwc_switch_algo_set(struct sxe2_adapter *adapter, u8 mode);
+
 void sxe2_fwc_hw_dfx_show(struct sxe2_adapter *adapter);
 
 s32 sxe2_vlan_filter_control(struct sxe2_adapter *adapter, u16 vsi_hw_id,
@@ -575,6 +647,12 @@ s32 sxe2_mac_spoofchk_ext_rule_add(struct sxe2_adapter *adapter,
 s32 sxe2_mac_spoofchk_ext_rule_del(struct sxe2_adapter *adapter,
 				   u16 id_in_dev, const u8 *mac);
 
+s32 sxe2_vf_vsi_mac_spoof_sync(struct sxe2_adapter *adapter,
+			       struct sxe2_vsi *eth_vsi, struct sxe2_vsi *usr_vsi);
+
+s32 sxe2_vf_vsi_mac_spoof_unsync(struct sxe2_adapter *adapter,
+				 struct sxe2_vsi *dpdk_vsi, struct sxe2_vsi *eth_vsi);
+
 s32 sxe2_cur_mac_addr_set(struct sxe2_vsi *vsi, const u8 *mac);
 
 void sxe2_switch_recipe_dump(struct sxe2_adapter *adapter);
@@ -582,6 +660,8 @@ void sxe2_switch_recipe_dump(struct sxe2_adapter *adapter);
 void sxe2_switch_profile_recipemap_dump(struct sxe2_adapter *adapter);
 
 void sxe2_switch_share_id_dump(struct sxe2_adapter *adapter);
+
+void sxe2_switch_profile_fv_dump(struct sxe2_adapter *adapter);
 
 s32 sxe2_vsi_loopback_control(struct sxe2_adapter *adapter, u16 vsi_hw_id,
 			      bool en);
@@ -647,8 +727,6 @@ s32 sxe2_ucmd_vlan_rule_process(struct sxe2_adapter *adapter, u16 vsi_hw_id,
 
 s32 sxe2_user_l2_feature_clean(struct sxe2_adapter *adapter, u16 vsi_hw_id);
 
-s32 sxe2_mac_spoof_rule_update(struct sxe2_vsi *eth_vsi,
-			       struct sxe2_vsi *user_vsi, u8 *mac_addr, bool to_user);
 s32 sxe2_srcvsi_ext_rule_add(struct sxe2_vsi *vsi);
 
 s32 sxe2_srcvsi_ext_rule_del(struct sxe2_adapter *adapter,

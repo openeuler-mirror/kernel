@@ -194,10 +194,23 @@ void sxe2vf_tx_rings_clean(struct sxe2vf_vsi *vsi);
 bool sxe2vf_txq_irq_clean(struct sxe2vf_queue *txq, s32 napi_budget);
 s32 sxe2vf_txqs_stop(struct sxe2vf_vsi *vsi);
 netdev_tx_t sxe2vf_xmit(struct sk_buff *skb, struct net_device *netdev);
-void sxe2vf_tx_timeout(struct net_device *netdev,
-		       __always_unused unsigned int txqueue);
 
 s32 sxe2vf_tx_hw_cfg(struct sxe2vf_vsi *vsi);
+
+struct sxe2vf_queue *sxe2vf_tx_queue_get(struct sxe2vf_vsi *vsi, u16 queue);
+
+static inline struct netdev_queue *
+sxe2vf_queue_to_netdevq(const struct sxe2vf_queue *queue)
+{
+	return netdev_get_tx_queue(queue->netdev, queue->idx_in_vsi);
+}
+
+#ifdef HAVE_TX_TIMEOUT_TXQUEUE
+void sxe2vf_tx_timeout(struct net_device *netdev,
+		       __always_unused unsigned int txqueue);
+#else
+void sxe2vf_tx_timeout(struct net_device *netdev);
+#endif
 
 #endif
 

@@ -18,7 +18,13 @@
 #include "sxe2_com_stats.h"
 #include "sxe2_ethtool.h"
 
-#define SXE2_COM_CALC_READCLEAR_STATS(S, N, O) ((S) = (N) - (O))
+#define SXE2_COM_CALC_READCLEAR_STATS(S, N, O) \
+	do { \
+		if ((N) >= (O)) \
+			(S) = (N) - (O); \
+		else \
+			(S) = (N); \
+	} while (0)
 #define SXE2_COM_CALC_ADD_STATS(S, N, O) ((S) = (N) + (O))
 
 STATIC inline void sxe2_com_calc_nonclear_stats(u64 *s, u64 n, u64 *o)
@@ -116,15 +122,21 @@ s32 sxe2_com_vsi_stat_get(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
 	struct sxe2_vf_node *vf = NULL;
 	s32 ret = 0;
 	u16 vf_idx = cmd_buf->repr_id;
-	u16 vsi_id = req->vsi_id;
+	u16 vsi_id;
 
 	if (!req) {
 		LOG_ERROR_BDF("invalid vsi stats get req.\n");
 		ret = -EINVAL;
 		goto l_end;
 	}
+	vsi_id = req->vsi_id;
 
 	if (obj->func_type == SXE2_PF && vf_idx < SXE2_VF_NUM) {
+		ret = sxe2_vf_id_check(adapter, vf_idx);
+		if (ret) {
+			LOG_ERROR_BDF("invalid repr vf id:%u\n", vf_idx);
+			goto l_end;
+		}
 		mutex_lock(SXE2_VF_NODE_LOCK(adapter, vf_idx));
 		vf = sxe2_vf_node_get(adapter, vf_idx);
 		if (!vf) {
@@ -138,18 +150,21 @@ s32 sxe2_com_vsi_stat_get(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
 			LOG_ERROR_BDF("VF %u not ready for mac cfg.\n", vf_idx);
 		} else {
 			if (vf->vsi) {
-				last_stats = &vf->vsi->vsi_stats.parse_vsi_hw_stats;
+				last_stats = sxe2_parse_hw_stats_get(adapter, vf->vsi->id_in_pf);
 				sxe2_hw_vsi_stats_update(vf->vsi);
-				sxe2_com_vsi_stats_calc(&vf->vsi->vsi_stats.vsi_hw_stats,
+				sxe2_com_vsi_stats_calc(sxe2_vsi_hw_stats_get(adapter,
+									      vf->vsi->id_in_pf),
 							last_stats, &k_stats);
 			} else {
 				LOG_INFO_BDF("vf %u vsi not found.\n", vf_idx);
 			}
 
 			if (vf->dpdk_vf_vsi) {
-				last_stats = &vf->dpdk_vf_vsi->vsi_stats.parse_vsi_hw_stats;
+				last_stats = sxe2_parse_hw_stats_get(adapter,
+								     vf->dpdk_vf_vsi->id_in_pf);
 				sxe2_hw_vsi_stats_update(vf->dpdk_vf_vsi);
-				sxe2_com_vsi_stats_calc(&vf->dpdk_vf_vsi->vsi_stats.vsi_hw_stats,
+				sxe2_com_vsi_stats_calc(sxe2_vsi_hw_stats_get(adapter,
+									      vf->dpdk_vf_vsi->id_in_pf),
 							last_stats, &u_stats);
 			} else {
 				LOG_ERROR_BDF("vf %u dpdk vsi not found.\n", vf_idx);
@@ -169,10 +184,10 @@ s32 sxe2_com_vsi_stat_get(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
 		}
 
 		if (vsi->type == SXE2_VSI_T_DPDK_PF) {
-			last_stats = &vsi->vsi_stats.parse_vsi_hw_stats;
+			last_stats = sxe2_parse_hw_stats_get(adapter, vsi->id_in_pf);
 			sxe2_hw_vsi_stats_update(vsi);
-			sxe2_com_vsi_stats_calc(&vsi->vsi_stats.vsi_hw_stats, last_stats,
-						&stats);
+			sxe2_com_vsi_stats_calc(sxe2_vsi_hw_stats_get(adapter, vsi->id_in_pf),
+						last_stats, &stats);
 		}
 		mutex_unlock(&adapter->vsi_ctxt.lock);
 	}
@@ -196,12 +211,18 @@ s32 sxe2_com_vsi_stat_clear(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
 {
 	struct sxe2_vsi *vsi = NULL;
 	struct sxe2_vsi_hw_stats *last_stats = NULL;
+	struct sxe2_vsi_hw_stats *vsi_hw_stats = NULL;
 	struct sxe2_vf_node *vf = NULL;
 	s32 ret = 0;
 	u16 vsi_id = cmd_buf->vsi_id;
 	u16 vf_idx = cmd_buf->repr_id;
 
 	if (obj->func_type == SXE2_PF && vf_idx < SXE2_VF_NUM) {
+		ret = sxe2_vf_id_check(adapter, vf_idx);
+		if (ret) {
+			LOG_ERROR_BDF("invalid repr vf id:%u\n", vf_idx);
+			goto l_end;
+		}
 		mutex_lock(SXE2_VF_NODE_LOCK(adapter, vf_idx));
 		vf = sxe2_vf_node_get(adapter, vf_idx);
 		if (!vf) {
@@ -216,19 +237,22 @@ s32 sxe2_com_vsi_stat_clear(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
 		} else {
 			if (vf->vsi) {
 				sxe2_hw_vsi_stats_update(vf->vsi);
-				last_stats = &vf->vsi->vsi_stats.parse_vsi_hw_stats;
-				(void)memcpy(last_stats, &vf->vsi->vsi_stats.vsi_hw_stats,
-					     sizeof(*last_stats));
+				last_stats = sxe2_parse_hw_stats_get(adapter, vf->vsi->id_in_pf);
+				vsi_hw_stats = sxe2_vsi_hw_stats_get(adapter, vf->vsi->id_in_pf);
+				(void)memcpy(last_stats, vsi_hw_stats,
+					     sizeof(struct sxe2_vsi_hw_stats));
 			} else {
 				LOG_INFO_BDF("vf %u vsi not found.\n", vf_idx);
 			}
 
 			if (vf->dpdk_vf_vsi) {
 				sxe2_hw_vsi_stats_update(vf->dpdk_vf_vsi);
-				last_stats = &vf->dpdk_vf_vsi->vsi_stats.parse_vsi_hw_stats;
-				(void)memcpy(last_stats,
-					     &vf->dpdk_vf_vsi->vsi_stats.vsi_hw_stats,
-					     sizeof(*last_stats));
+				last_stats = sxe2_parse_hw_stats_get(adapter,
+								     vf->dpdk_vf_vsi->id_in_pf);
+				vsi_hw_stats = sxe2_vsi_hw_stats_get(adapter,
+								     vf->dpdk_vf_vsi->id_in_pf);
+				(void)memcpy(last_stats, vsi_hw_stats,
+					     sizeof(struct sxe2_vsi_hw_stats));
 			} else {
 				LOG_INFO_BDF("vf %u dpdk vsi not found.\n", vf_idx);
 			}
@@ -246,9 +270,9 @@ s32 sxe2_com_vsi_stat_clear(struct sxe2_adapter *adapter, struct sxe2_obj *obj,
 
 		if (vsi->type == SXE2_VSI_T_DPDK_PF) {
 			sxe2_hw_vsi_stats_update(vsi);
-			last_stats = &vsi->vsi_stats.parse_vsi_hw_stats;
-			(void)memcpy(last_stats, &vsi->vsi_stats.vsi_hw_stats,
-				     sizeof(*last_stats));
+			last_stats = sxe2_parse_hw_stats_get(adapter, vsi->id_in_pf);
+			vsi_hw_stats = sxe2_vsi_hw_stats_get(adapter, vsi->id_in_pf);
+			(void)memcpy(last_stats, vsi_hw_stats, sizeof(struct sxe2_vsi_hw_stats));
 		}
 		mutex_unlock(&adapter->vsi_ctxt.lock);
 	}
@@ -364,8 +388,8 @@ STATIC void sxe2_com_mac_nonclear_stats_calc(const struct sxe2_pf_hw_stats *new_
 	sxe2_com_calc_nonclear_stats(&stats->tx_underflow_error,
 				     new_stats->tx_underflow_error,
 				     &old_stats->tx_underflow_error);
-	sxe2_com_calc_nonclear_stats(&stats->rx_byte_good_bad, new_stats->rx_byte_good_bad,
-				     &old_stats->rx_byte_good_bad);
+	sxe2_com_calc_nonclear_stats(&stats->rx_bytes_good_bad, new_stats->rx_bytes_good_bad,
+				     &old_stats->rx_bytes_good_bad);
 	sxe2_com_calc_nonclear_stats(&stats->rx_frame_good_bad,
 				     new_stats->rx_frame_good_bad,
 				     &old_stats->rx_frame_good_bad);
@@ -488,7 +512,7 @@ STATIC void sxe2_com_mac_stats_copy_to_user(struct sxe2_drv_mac_stats_resp *resp
 	resp->tx_size_1024_1522 = stats->tx_size_1024_1522;
 	resp->tx_size_1523_max = stats->tx_size_1523_max;
 	resp->tx_underflow_error = stats->tx_underflow_error;
-	resp->rx_byte_good_bad = stats->rx_byte_good_bad;
+	resp->rx_byte_good_bad = stats->rx_bytes_good_bad;
 	resp->rx_frame_good_bad = stats->rx_frame_good_bad;
 	resp->rx_unicast_good = stats->rx_unicast_good;
 	resp->rx_vlan_packets = stats->rx_vlan_packets;

@@ -120,6 +120,7 @@ static int srq_ksetup_umode(struct sxe2_rdma_device *rdma_dev,
 	int ret	     = 0;
 	long ret_tmp = 0;
 
+	ksrq->user_mode = true;
 	if (udata->inlen <
 	    offsetofend(struct sxe2_create_srq_req, max_wr_cal)) {
 		ret = -EINVAL;
@@ -300,7 +301,7 @@ static int srq_ksetup_kmode(struct sxe2_rdma_device *rdma_dev,
 	int ret = 0;
 
 	drv_info = &info->srq_drv_init_info;
-
+	ksrq->user_mode = false;
 	srq_kcal_wqe_shift(drv_info->max_srq_frag_cnt, &shift);
 	ret = srq_kget_depth(drv_info->common_attrs, attr->max_wr, shift,
 			     &depth);
@@ -493,7 +494,7 @@ static void srq_kfree_mode(struct sxe2_rdma_srq *ksrq,
 	struct sxe2_umode_srq *usrq_rsc	  = &ksrq->srq_ctx.usrq_rsc;
 	struct sxe2_kmode_srq *ksrq_rsc	  = &ksrq->srq_ctx.ksrq_rsc;
 
-	if (udata) {
+	if (udata || ksrq->user_mode) {
 		ib_umem_release(usrq_rsc->db_note_umem);
 		usrq_rsc->db_note_umem = NULL;
 		if (usrq_rsc->wqe_access_mod ==
@@ -619,6 +620,8 @@ int sxe2_kdestroy_srq(struct ib_srq *ib_srq, struct ib_udata *udata)
 
 #ifndef RDMA_DESTROY_SRQ_VER_3
 	srq_kfree_mode(ksrq, &rdma_func->ctx_dev, udata);
+#else
+	srq_kfree_mode(ksrq, &rdma_func->ctx_dev, NULL);
 #endif
 
 	sxe2_kfree_rsrc(rdma_func, rdma_func->allocated_srqs, ksrq->srq_id);

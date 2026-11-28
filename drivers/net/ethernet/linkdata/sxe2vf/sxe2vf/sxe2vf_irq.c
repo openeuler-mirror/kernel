@@ -16,10 +16,41 @@
 #include "sxe2vf_rx.h"
 #include "sxe2vf_tx.h"
 #include "sxe2vf_vsi.h"
+#include "sxe2vf_rxft.h"
 #include "sxe2vf_mbx_channel.h"
 
+STATIC int sxe2vf_param_set_dpdk_irq_cnt(const char *val,
+					 const struct kernel_param *kp)
+{
+	int ret, temp_val;
+
+	ret = kstrtoint(val, 0, &temp_val);
+	if (ret)
+		return ret;
+
+	if (temp_val < SXE2VF_DPDK_MSIX_MIN_CNT ||
+	    temp_val > SXE2VF_DPDK_MSIX_MAX_CNT)
+		return -EINVAL;
+
+	*(int *)kp->arg = temp_val;
+
+	return 0;
+}
+
+STATIC int sxe2vf_param_get_dpdk_irq_cnt(char *buffer,
+					 const struct kernel_param *kp)
+{
+	return sprintf(buffer, "%d\n", *(int *)kp->arg);
+}
+
+STATIC const struct kernel_param_ops sxe2vf_dpdk_irq_cnt_param_ops = {
+	.set = sxe2vf_param_set_dpdk_irq_cnt,
+	.get = sxe2vf_param_get_dpdk_irq_cnt,
+};
+
 int dpdk_irq_cnt = SXE2VF_DPDK_MSIX_MIN_CNT;
-module_param(dpdk_irq_cnt, int, 0644);
+module_param_cb(dpdk_irq_cnt, &sxe2vf_dpdk_irq_cnt_param_ops,
+		&dpdk_irq_cnt, 0644);
 MODULE_PARM_DESC(dpdk_irq_cnt, "dpdk vf irq cnt");
 
 #define SXE2VF_DIM_DFLT_PROFILE_IDX 1
@@ -127,7 +158,6 @@ STATIC s32 sxe2vf_vsi_queues_alloc(struct sxe2vf_vsi *vf_vsi)
 		q->dev = dev;
 		q->netdev = vf_vsi->netdev;
 		q->depth = vf_vsi->txqs.depth;
-		u64_stats_init(&q->syncp);
 		WRITE_ONCE(vf_vsi->txqs.q[i], q);
 	}
 
@@ -144,7 +174,6 @@ STATIC s32 sxe2vf_vsi_queues_alloc(struct sxe2vf_vsi *vf_vsi)
 		q->dev = dev;
 		q->depth = vf_vsi->rxqs.depth;
 		q->netdev = vf_vsi->netdev;
-		u64_stats_init(&q->syncp);
 		WRITE_ONCE(vf_vsi->rxqs.q[i], q);
 	}
 	return ret;
@@ -216,6 +245,30 @@ static void sxe2vf_msix_entries_free(struct sxe2vf_adapter *adapter)
 	adapter->irq_ctxt.msix_entries = NULL;
 }
 
+STATIC irqreturn_t sxe2vf_irq_tmp_handler(int irq, void *data)
+{
+	return IRQ_HANDLED;
+}
+
+STATIC void sxe2vf_irq_pre_padding(struct sxe2vf_adapter *adapter, s32 irq_cnt)
+{
+	s32 rc;
+	s32 i;
+	u32 vector;
+
+	for (i = 0; i < irq_cnt; ++i) {
+		vector = adapter->irq_ctxt.msix_entries[i].vector;
+		rc = request_irq(vector, sxe2vf_irq_tmp_handler, 0,
+				 "sxe2vf_irq_pre_pad", adapter);
+		if (rc) {
+			LOG_ERROR_BDF("pre pad request irq %u failed, idx=%u cnt=%d ret=%d\n",
+				      vector, i, irq_cnt, rc);
+			continue;
+		}
+		free_irq(vector, adapter);
+	}
+}
+
 STATIC s32 sxe2vf_msix_enable(struct sxe2vf_adapter *adapter, s32 min_msix,
 			      s32 msix_cnt)
 {
@@ -234,6 +287,7 @@ STATIC s32 sxe2vf_msix_enable(struct sxe2vf_adapter *adapter, s32 min_msix,
 	}
 	LOG_INFO_BDF("enable msix range[%d-%d] suc, ret=%d\n", min_msix, msix_cnt,
 		     ret);
+	sxe2vf_irq_pre_padding(adapter, ret);
 	return ret;
 
 l_ena_failed:
@@ -254,12 +308,14 @@ s32 sxe2vf_msix_init(struct sxe2vf_adapter *adapter)
 	u16 eth_expect = 0;
 	u16 dpdk_expect = 0;
 	u16 rdma_expect = 0;
+	u16 eth_q_limit = adapter->q_ctxt.kernel_q_alloc ?
+			  adapter->q_ctxt.kernel_q_alloc : (u16)SXE2_VF_ETH_Q_NUM;
 	int mode = sxe2vf_com_mode_get(adapter);
 	u16 msix_min = sxe2vf_irq_cnt_min_get(adapter);
 
 	if (mode == SXE2_COM_MODULE_KERNEL) {
 		left_cnt -= SXE2VF_RDMA_MSIX_MIN_CNT;
-		eth_expect = (u16)(min3((u16)SXE2_VF_ETH_Q_NUM,
+		eth_expect = (u16)(min3(eth_q_limit,
 					(u16)(num_online_cpus()), left_cnt));
 		rdma_expect = (u16)(adapter->irq_ctxt.max_cnt -
 				    (u16)SXE2VF_EVENT_MSIX_CNT - eth_expect);
@@ -267,7 +323,7 @@ s32 sxe2vf_msix_init(struct sxe2vf_adapter *adapter)
 		dpdk_expect = (u16)(min((u16)(SXE2VF_DPDK_MSIX_MAX_CNT), left_cnt));
 	} else {
 		left_cnt -= (SXE2VF_DPDK_MSIX_MIN_CNT + SXE2VF_RDMA_MSIX_MIN_CNT);
-		eth_expect = (u16)(min3((u16)SXE2_VF_ETH_Q_NUM,
+		eth_expect = (u16)(min3(eth_q_limit,
 					(u16)(num_online_cpus()), left_cnt));
 		left_cnt = (u16)(adapter->irq_ctxt.max_cnt -
 				 (u16)SXE2VF_EVENT_MSIX_CNT -
@@ -351,20 +407,42 @@ s32 sxe2vf_queue_init(struct sxe2vf_adapter *adapter)
 	u16 dpdk_q_cnt = 0;
 	int mode = sxe2vf_com_mode_get(adapter);
 
-	if (mode == SXE2_COM_MODULE_KERNEL) {
-		eth_queue_cnt = (u16)min3(adapter->q_ctxt.max_cnt,
-					  (u16)SXE2_VF_ETH_Q_NUM,
-					  adapter->irq_ctxt.eth_irq_cnt);
-	} else if (mode == SXE2_COM_MODULE_DPDK) {
-		dpdk_q_cnt = (u16)min_t(u16, adapter->q_ctxt.max_cnt,
-					(u16)SXE2_VF_DPDK_Q_NUM);
+	if (adapter->q_ctxt.is_pre_assigned) {
+		if (mode == SXE2_COM_MODULE_KERNEL) {
+			eth_queue_cnt = adapter->q_ctxt.kernel_q_alloc;
+		} else if (mode == SXE2_COM_MODULE_DPDK) {
+			dpdk_q_cnt = adapter->q_ctxt.dpdk_q_alloc;
+		} else {
+			eth_queue_cnt = adapter->q_ctxt.kernel_q_alloc;
+			dpdk_q_cnt = adapter->q_ctxt.dpdk_q_alloc;
+		}
+
+		eth_queue_cnt = (u16)min(eth_queue_cnt,
+					 adapter->irq_ctxt.eth_irq_cnt);
+
+		LOG_INFO_BDF("use pf alloc: eth_q_cnt:%u dpdk_q_cnt:%u mode:%d\n",
+			     eth_queue_cnt, dpdk_q_cnt, mode);
 	} else {
-		eth_queue_cnt = (u16)min3((u16)(adapter->q_ctxt.max_cnt -
-						SXE2VF_DPDK_QUEUE_CNT_MIN),
-					  (u16)SXE2_VF_ETH_Q_NUM,
-					  adapter->irq_ctxt.eth_irq_cnt);
-		dpdk_q_cnt = (u16)min((u16)(adapter->q_ctxt.max_cnt - eth_queue_cnt),
-				      (u16)SXE2_VF_DPDK_Q_NUM);
+		if (mode == SXE2_COM_MODULE_KERNEL) {
+			eth_queue_cnt = (u16)min3(adapter->q_ctxt.max_cnt,
+						  (u16)SXE2_VF_ETH_Q_NUM,
+						  adapter->irq_ctxt.eth_irq_cnt);
+		} else if (mode == SXE2_COM_MODULE_DPDK) {
+			dpdk_q_cnt = (u16)min_t(u16, adapter->q_ctxt.max_cnt,
+						(u16)SXE2_VF_DPDK_Q_NUM);
+		} else {
+			eth_queue_cnt = (u16)min3((u16)(adapter->q_ctxt.max_cnt -
+							SXE2VF_DPDK_QUEUE_CNT_MIN),
+						  (u16)SXE2_VF_ETH_Q_NUM,
+						  adapter->irq_ctxt.eth_irq_cnt);
+			dpdk_q_cnt = (u16)min((u16)(adapter->q_ctxt.max_cnt - eth_queue_cnt),
+					      (u16)SXE2_VF_DPDK_Q_NUM);
+		}
+
+		LOG_INFO_BDF("default alloc: eth irq cnt:%u eth_q_cnt:%u "
+			     "dpdk_q_cnt:%u mode:%d\n",
+			     adapter->irq_ctxt.eth_irq_cnt, eth_queue_cnt,
+			     dpdk_q_cnt, mode);
 	}
 
 	adapter->q_ctxt.eth_q_cnt = eth_queue_cnt;
@@ -372,12 +450,6 @@ s32 sxe2vf_queue_init(struct sxe2vf_adapter *adapter)
 	adapter->q_ctxt.dpdk_q_cnt = dpdk_q_cnt;
 	adapter->q_ctxt.dpdk_offset =
 			adapter->q_ctxt.eth_q_cnt + adapter->q_ctxt.eth_offset;
-
-	LOG_INFO_BDF("eth irq cnt:%u eth_q_cnt:%u offset:%d dpdk_q_cnt:%u offset:%d \t"
-		     "mode:%d\n",
-		     adapter->irq_ctxt.eth_irq_cnt, adapter->q_ctxt.eth_q_cnt,
-		     adapter->q_ctxt.eth_offset, adapter->q_ctxt.dpdk_q_cnt,
-		     adapter->q_ctxt.dpdk_offset, mode);
 
 	return ret;
 }
@@ -472,7 +544,7 @@ STATIC void sxe2vf_map_txq_to_irq(struct sxe2vf_vsi *vsi, u16 cnt, u16 q_idx,
 		queue = vsi->txqs.q[q_idx];
 		queue->irq_data = irq_data;
 		sxe2vf_queue_add(queue, &irq_data->tx.list);
-		irq_data->q_bitmap |= (u32)BIT(q_idx);
+		irq_data->q_bitmap |= BIT_ULL(q_idx);
 		cnt--;
 		q_idx++;
 	}
@@ -615,6 +687,19 @@ s32 sxe2vf_vsi_irqs_decfg(struct sxe2vf_vsi *vsi)
 	return ret;
 }
 
+static void sxe2vf_irq_affinity_set(struct sxe2vf_vsi *vsi, u16 irq_idx)
+{
+	struct sxe2vf_irq_data *irq_data = vsi->irqs.irq_data[irq_idx];
+	struct sxe2vf_adapter *adapter = vsi->adapter;
+	struct device *dev = SXE2VF_ADAPTER_TO_DEV(adapter);
+	s32 node = dev_to_node(dev);
+	u32 cpu;
+
+	cpu = cpumask_local_spread(irq_idx, node);
+
+	cpumask_set_cpu(cpu, &irq_data->affinity_mask);
+}
+
 s32 sxe2vf_vsi_irqs_cfg(struct sxe2vf_vsi *vsi)
 {
 	u16 i;
@@ -630,8 +715,7 @@ s32 sxe2vf_vsi_irqs_cfg(struct sxe2vf_vsi *vsi)
 
 		sxe2vf_vsi_irq_itr_cfg(vsi, i);
 
-		if (cpu_online(i))
-			cpumask_set_cpu(i, &irq_data->affinity_mask);
+		sxe2vf_irq_affinity_set(vsi, i);
 
 		netif_napi_add(vsi->netdev, &irq_data->napi, sxe2vf_napi_poll,
 			       NAPI_POLL_WEIGHT);
@@ -731,6 +815,145 @@ STATIC void sxe2vf_event_irq_free(struct sxe2vf_adapter *adapter)
 	LOG_INFO_BDF("event irq freed.\n");
 }
 
+STATIC irqreturn_t sxe2vf_msix_pool_irq_handler(int __always_unused irq,
+						void *data)
+{
+	struct sxe2vf_irq_pool_entry *entry = data;
+	struct sxe2vf_irq_data *irq_data = READ_ONCE(entry->irq_data);
+
+	if (unlikely(!irq_data))
+		return IRQ_HANDLED;
+
+	if (!SXE2VF_IRQ_HAS_TXQ(irq_data) && !SXE2VF_IRQ_HAS_RXQ(irq_data))
+		goto l_end;
+
+	irq_data->event_ctr++;
+	napi_schedule_irqoff(&irq_data->napi);
+l_end:
+	return IRQ_HANDLED;
+}
+
+STATIC void sxe2vf_irq_pool_affinity_notify(struct irq_affinity_notify *notify,
+					    const cpumask_t *mask)
+{
+	struct sxe2vf_irq_pool_entry *entry =
+			container_of(notify, struct sxe2vf_irq_pool_entry,
+				     affinity_notify);
+
+	mutex_lock(&entry->pool->lock);
+	cpumask_copy(&entry->affinity_mask, mask);
+	if (entry->irq_data)
+		cpumask_copy(&entry->irq_data->affinity_mask, mask);
+	mutex_unlock(&entry->pool->lock);
+}
+
+STATIC void sxe2vf_irq_pool_affinity_release(struct kref __always_unused *ref)
+{
+}
+
+STATIC void sxe2vf_irq_pool_entry_free(struct sxe2vf_irq_pool_entry *entry)
+{
+	if (!entry->requested)
+		return;
+
+	(void)irq_set_affinity_notifier(entry->irqn, NULL);
+	(void)irq_set_affinity_hint(entry->irqn, NULL);
+	synchronize_irq(entry->irqn);
+	free_irq(entry->irqn, entry);
+	entry->requested = false;
+}
+
+s32 sxe2vf_irq_pool_init(struct sxe2vf_adapter *adapter)
+{
+	struct sxe2vf_irq_pool *pool = &adapter->irq_ctxt.pool;
+	struct device *dev = SXE2VF_ADAPTER_TO_DEV(adapter);
+	s32 node = dev_to_node(dev);
+	u16 i;
+	s32 ret;
+
+	sxe2vf_irq_pool_destroy(adapter);
+
+	pool->cnt = adapter->irq_ctxt.eth_irq_cnt;
+	mutex_init(&pool->lock);
+	if (!pool->cnt)
+		return 0;
+
+	pool->entries = devm_kcalloc(dev, pool->cnt, sizeof(*pool->entries),
+				     GFP_KERNEL);
+	if (!pool->entries) {
+		LOG_ERROR_BDF("alloc irq pool entries(%u) failed.\n", pool->cnt);
+		return -ENOMEM;
+	}
+
+	for (i = 0; i < pool->cnt; i++) {
+		struct sxe2vf_irq_pool_entry *entry = &pool->entries[i];
+
+		entry->idx_in_pf = adapter->irq_ctxt.eth_offset + i;
+		entry->pool = pool;
+		entry->irqn =
+		    adapter->irq_ctxt.msix_entries[entry->idx_in_pf].vector;
+		entry->irq_data = NULL;
+		cpumask_set_cpu(cpumask_local_spread(i, node),
+				&entry->affinity_mask);
+		(void)snprintf(entry->name, sizeof(entry->name) - 1,
+			       "%s-%s-q-%u", dev_driver_string(dev),
+			       dev_name(dev), entry->idx_in_pf);
+
+		ret = request_irq(entry->irqn, sxe2vf_msix_pool_irq_handler, 0,
+				  entry->name, entry);
+		if (ret) {
+			LOG_ERROR_BDF("pool request irq(%u) failed, ret=%d\n",
+				      entry->irqn, ret);
+			goto l_failed;
+		}
+		entry->requested = true;
+
+		(void)irq_set_affinity_hint(entry->irqn,
+					    &entry->affinity_mask);
+		entry->affinity_notify.notify = sxe2vf_irq_pool_affinity_notify;
+		entry->affinity_notify.release =
+					sxe2vf_irq_pool_affinity_release;
+		(void)irq_set_affinity_notifier(entry->irqn,
+						&entry->affinity_notify);
+	}
+
+	LOG_INFO_BDF("eth irq pool inited: cnt=%u\n", pool->cnt);
+	return 0;
+
+l_failed:
+	while (i) {
+		i--;
+		sxe2vf_irq_pool_entry_free(&pool->entries[i]);
+	}
+	devm_kfree(dev, pool->entries);
+	pool->entries = NULL;
+	pool->cnt = 0;
+	mutex_destroy(&pool->lock);
+	return ret;
+}
+
+void sxe2vf_irq_pool_destroy(struct sxe2vf_adapter *adapter)
+{
+	struct sxe2vf_irq_pool *pool = &adapter->irq_ctxt.pool;
+	u16 i;
+
+	if (!pool->entries)
+		return;
+
+	for (i = 0; i < pool->cnt; i++) {
+		struct sxe2vf_irq_pool_entry *entry = &pool->entries[i];
+
+		if (WARN_ON(entry->irq_data))
+			entry->irq_data = NULL;
+		sxe2vf_irq_pool_entry_free(entry);
+	}
+
+	devm_kfree(SXE2VF_ADAPTER_TO_DEV(adapter), pool->entries);
+	pool->entries = NULL;
+	pool->cnt = 0;
+	mutex_destroy(&pool->lock);
+}
+
 s32 sxe2vf_irq_init(struct sxe2vf_adapter *adapter)
 {
 	s32 ret;
@@ -743,10 +966,16 @@ s32 sxe2vf_irq_init(struct sxe2vf_adapter *adapter)
 	if (ret)
 		goto l_event_irq_failed;
 
+	ret = sxe2vf_irq_pool_init(adapter);
+	if (ret)
+		goto l_pool_failed;
+
 	sxe2vf_event_irq_enable(adapter);
 
 	return 0;
 
+l_pool_failed:
+	sxe2vf_event_irq_free(adapter);
 l_event_irq_failed:
 	sxe2vf_msix_deinit(adapter);
 l_end:
@@ -795,6 +1024,27 @@ s32 sxe2vf_vsi_irqs_init(struct sxe2vf_vsi *vsi)
 
 void sxe2vf_vsi_irqs_deinit(struct sxe2vf_vsi *vsi)
 {
+	struct sxe2vf_irq_pool *pool = &vsi->adapter->irq_ctxt.pool;
+	u16 i;
+
+	if (pool->entries && vsi->irqs.irq_data) {
+		mutex_lock(&pool->lock);
+		sxe2vf_for_each_vsi_irq(vsi, i)
+		{
+			struct sxe2vf_irq_pool_entry *entry;
+
+			if (i >= pool->cnt)
+				break;
+			entry = &pool->entries[i];
+			if (WARN_ON_ONCE(entry->irq_data ==
+					 vsi->irqs.irq_data[i])) {
+				synchronize_irq(entry->irqn);
+				WRITE_ONCE(entry->irq_data, NULL);
+			}
+		}
+		mutex_unlock(&pool->lock);
+	}
+
 	sxe2vf_vsi_irqs_data_free(vsi);
 
 	sxe2vf_vsi_irqs_num_clear(vsi);
@@ -802,6 +1052,8 @@ void sxe2vf_vsi_irqs_deinit(struct sxe2vf_vsi *vsi)
 
 void sxe2vf_irq_deinit(struct sxe2vf_adapter *adapter)
 {
+	sxe2vf_irq_pool_destroy(adapter);
+
 	sxe2vf_event_irq_free(adapter);
 
 	sxe2vf_msix_deinit(adapter);
@@ -842,7 +1094,7 @@ static void sxe2vf_net_dim(u16 event_ctr, u64 packets, u64 bytes, struct dim *di
 	if (ktime_ms_delta(dim_sample.time, dim->start_sample.time) >= 1000)
 		dim->state = DIM_START_MEASURE;
 
-	net_dim(dim, dim_sample);
+	net_dim(dim, &dim_sample);
 }
 
 STATIC void sxe2vf_dynamic_itr(struct sxe2vf_irq_data *irq_data)
@@ -938,7 +1190,8 @@ STATIC void sxe2vf_vsi_irq_disable(struct sxe2vf_vsi *vsi, u16 idx)
 	struct sxe2vf_hw *hw = &adapter->hw;
 	struct sxe2vf_irq_data *irq_data = vsi->irqs.irq_data[idx];
 
-	synchronize_irq(adapter->irq_ctxt.msix_entries[irq_data->irq_idx].vector);
+	synchronize_irq(adapter->irq_ctxt.msix_entries[irq_data->irq_idx +
+			SXE2VF_EVENT_MSIX_CNT].vector);
 
 	if (irq_data->rx.list.next || irq_data->tx.list.next)
 		napi_disable(&irq_data->napi);
@@ -1159,14 +1412,14 @@ STATIC s32 sxe2vf_vsi_irq_request(struct sxe2vf_vsi *vsi, s8 *base_name, u16 idx
 	irq_data->affinity_notify.release = sxe2vf_irq_affinity_release;
 	ret = irq_set_affinity_notifier(irq_num, &irq_data->affinity_notify);
 	if (ret) {
-		LOG_DEV_ERR("irq_idx:%u vector:%u MSI-X set affinity notifier NOK, \t"
+		LOG_DEV_ERR("irq_idx:%u vector:%u MSI-X set affinity notifier failed, \t"
 			    "ret:%d\n",
 			    idx, irq_num, ret);
 	}
 
 	ret = irq_set_affinity_hint(irq_num, &irq_data->affinity_mask);
 	if (ret) {
-		LOG_DEV_ERR("irq_idx:%u vector:%u MSI-X set affinity hint NOK, \t"
+		LOG_DEV_ERR("irq_idx:%u vector:%u MSI-X set affinity hint failed, \t"
 			    "ret:%d\n",
 			    idx, irq_num, ret);
 	}
@@ -1178,6 +1431,70 @@ l_end:
 	return ret;
 }
 
+STATIC s32 sxe2vf_vsi_irqs_attach(struct sxe2vf_vsi *vsi)
+{
+	struct sxe2vf_adapter *adapter = vsi->adapter;
+	struct sxe2vf_irq_pool *pool = &adapter->irq_ctxt.pool;
+	u16 i;
+	s32 ret = 0;
+
+	mutex_lock(&pool->lock);
+	sxe2vf_for_each_vsi_irq(vsi, i)
+	{
+		struct sxe2vf_irq_data *irq_data = vsi->irqs.irq_data[i];
+		struct sxe2vf_irq_pool_entry *entry = &pool->entries[i];
+
+		if (!SXE2VF_IRQ_HAS_TXQ(irq_data) && !SXE2VF_IRQ_HAS_RXQ(irq_data))
+			continue;
+
+		if (WARN_ON(entry->irq_data)) {
+			ret = -EBUSY;
+			goto l_failed;
+		}
+
+		cpumask_copy(&irq_data->affinity_mask, &entry->affinity_mask);
+		(void)strscpy(irq_data->name, entry->name, sizeof(irq_data->name));
+		WRITE_ONCE(entry->irq_data, irq_data);
+
+		LOG_INFO_BDF("irq_cnt:%u idx:%u vector:%u attached.\n",
+			     vsi->irqs.cnt, i, entry->irqn);
+	}
+	mutex_unlock(&pool->lock);
+
+	return 0;
+
+l_failed:
+	while (i) {
+		i--;
+		WRITE_ONCE(pool->entries[i].irq_data, NULL);
+		memset(vsi->irqs.irq_data[i]->name, 0,
+		       sizeof(vsi->irqs.irq_data[i]->name));
+	}
+	mutex_unlock(&pool->lock);
+	return ret;
+}
+
+STATIC void sxe2vf_vsi_irqs_detach(struct sxe2vf_vsi *vsi)
+{
+	struct sxe2vf_irq_pool *pool = &vsi->adapter->irq_ctxt.pool;
+	u16 i;
+
+	mutex_lock(&pool->lock);
+	sxe2vf_for_each_vsi_irq(vsi, i)
+	{
+		struct sxe2vf_irq_data *irq_data = vsi->irqs.irq_data[i];
+		struct sxe2vf_irq_pool_entry *entry = &pool->entries[i];
+
+		if (entry->irq_data != irq_data)
+			continue;
+
+		synchronize_irq(entry->irqn);
+		WRITE_ONCE(entry->irq_data, NULL);
+		memset(irq_data->name, 0, sizeof(irq_data->name));
+	}
+	mutex_unlock(&pool->lock);
+}
+
 s32 sxe2vf_vsi_irqs_request(struct sxe2vf_vsi *vsi)
 {
 	s32 ret;
@@ -1186,6 +1503,9 @@ s32 sxe2vf_vsi_irqs_request(struct sxe2vf_vsi *vsi)
 	struct device *dev = SXE2VF_ADAPTER_TO_DEV(adapter);
 	u16 i;
 	unsigned int irq_num;
+
+	if (adapter->irq_ctxt.pool.entries)
+		return sxe2vf_vsi_irqs_attach(vsi);
 
 	(void)snprintf(base_name, sizeof(base_name) - 1, "%s-%s",
 		       dev_driver_string(dev), vsi->netdev->name);
@@ -1240,6 +1560,11 @@ void sxe2vf_vsi_irqs_free(struct sxe2vf_vsi *vsi)
 {
 	u16 i;
 
+	if (vsi->adapter->irq_ctxt.pool.entries) {
+		sxe2vf_vsi_irqs_detach(vsi);
+		return;
+	}
+
 	sxe2vf_for_each_vsi_irq(vsi, i)
 	{
 		sxe2vf_vsi_irq_free(vsi, i);
@@ -1278,7 +1603,7 @@ static s32 __sxe2vf_vsi_hw_cfg(struct sxe2vf_adapter *adapter, bool is_clear)
 	vsi_cfg.irq_base_idx = cpu_to_le16(adapter->irq_ctxt.eth_offset);
 	vsi_cfg.irq_cnt = cpu_to_le16(adapter->irq_ctxt.eth_irq_cnt);
 	vsi_cfg.is_clear = is_clear;
-	vsi_cfg.vsi_id = cpu_to_le16(adapter->vsi_ctxt.vsi_ids[SXE2VF_VSI_TYPE_ETH]);
+	vsi_cfg.vsi_id = cpu_to_le16(adapter->vsi_ctxt.vsi_ids[SXE2_VF_VSI_ID_MASTER]);
 
 	sxe2vf_mbx_msg_dflt_params_fill(&params, SXE2VF_MSG_RESP_WAIT_NOTIFY,
 					SXE2_VF_VSI_CFG, &vsi_cfg, sizeof(vsi_cfg),
@@ -1334,7 +1659,7 @@ STATIC struct sxe2vf_vsi *sxe2vf_vsi_init(struct sxe2vf_adapter *adapter)
 
 	vsi->adapter = adapter;
 	vsi->netdev = adapter->netdev;
-	vsi->vsi_id = adapter->vsi_ctxt.vsi_ids[SXE2VF_VSI_TYPE_ETH];
+	vsi->vsi_id = adapter->vsi_ctxt.vsi_ids[SXE2_VF_VSI_ID_MASTER];
 
 	set_bit(SXE2VF_VSI_CLOSE, vsi->state);
 	adapter->vsi_ctxt.vf_vsi = vsi;

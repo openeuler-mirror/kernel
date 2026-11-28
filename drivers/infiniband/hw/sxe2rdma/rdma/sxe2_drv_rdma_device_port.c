@@ -18,6 +18,7 @@
 #include <linux/netdevice.h>
 #include <rdma/ib_mad.h>
 #include <net/addrconf.h>
+#include <rdma/ib_cache.h>
 
 #ifdef NEED_KALLOC_UCONTEXT_V1
 struct ib_ucontext *sxe2_rdma_kalloc_ucontext(struct ib_device *ibdev, struct ib_udata *udata)
@@ -85,7 +86,7 @@ struct ib_ucontext *sxe2_rdma_kalloc_ucontext(struct ib_device *ibdev, struct ib
 					 min(sizeof(uresp), udata->outlen))) {
 			DRV_RDMA_LOG_DEV_ERR("device:copy from udata err\n");
 			ret = -EFAULT;
-			goto end;
+			goto free_ucontext;
 		}
 	} else {
 		uresp.kernel_ver	= SXE2_RDMA_ABI_VER;
@@ -120,7 +121,7 @@ struct ib_ucontext *sxe2_rdma_kalloc_ucontext(struct ib_device *ibdev, struct ib
 			DRV_RDMA_LOG_DEV_ERR(
 				"device:db insert user mmap entry err\n");
 			ret = -ENOMEM;
-			goto end;
+			goto free_ucontext;
 		}
 		if (ib_copy_to_udata(udata, &uresp,
 					 min(sizeof(uresp), udata->outlen))) {
@@ -147,8 +148,11 @@ struct ib_ucontext *sxe2_rdma_kalloc_ucontext(struct ib_device *ibdev, struct ib
 	list_add_tail(&db_ucontext_entry->list, &rdma_func->db_mmap_entry_head.list);
 	mutex_unlock(&rdma_func->db_mmap_entry_head.lock);
 	goto end;
+
 free_mmap_entry:
 	rdma_user_mmap_entry_del_hash(ucontext->db_mmap_entry);
+free_ucontext:
+	kfree(ucontext);
 end:
 	return ret ? ERR_PTR(ret) : &ucontext->ibucontext;
 }
@@ -340,6 +344,9 @@ void sxe2_rdma_kdealloc_ucontext(struct ib_ucontext *uctx)
 	rdma_user_mmap_entry_del_hash(ucontext->db_mmap_entry);
 #endif
 	DRV_RDMA_LOG_DEV_DEBUG("device:dealloc uncontext finish\n");
+#ifdef NEED_KALLOC_UCONTEXT_V1
+	kfree(ucontext);
+#endif
 #ifdef DEVICE_OPS_V1
 	return 0;
 #endif
@@ -374,7 +381,9 @@ int sxe2_rdma_kquery_device(struct ib_device *ibdev,
 	props->max_mr_size    = hw_attrs->max_mr_size;
 	props->max_qp	      = (s32)(rdma_func->max_qp - SXE2_QP_USED_NUM);
 	props->max_qp_wr      = (s32)hw_attrs->max_qp_wr;
+#ifndef NOT_SUPPORT_PROPS_MAX_SGE
 	set_max_sge(props, rdma_func);
+#endif
 	props->max_cq	  = (s32)(rdma_func->max_cq - SXE2_CQ_USED_NUM);
 	props->max_cqe	  = (s32)(rdma_func->max_cqe - 1);
 	props->max_mr	  = (s32)(rdma_func->max_mr - SXE2_MR_USED_NUM);
@@ -404,6 +413,54 @@ end:
 	return ret;
 }
 
+static void sxe2_rdma_get_eth_speed(struct sxe2_rdma_device *rdma_dev,
+										u8 *speed, u8 *width)
+{
+	u32 link_speed;
+	struct aux_core_dev_info *cdev_info = (struct aux_core_dev_info *)rdma_dev->rdma_func->cdev;
+
+	link_speed = cdev_info->ops->rdma_get_link_speed(cdev_info);
+	DRV_RDMA_LOG_DEV_DEBUG(
+			"device:link speed is %u\n", link_speed);
+	switch (link_speed) {
+	case SXE2_LINK_SPEED_UNKNOWN:
+		*width = IB_WIDTH_1X;
+		*speed = IB_SPEED_SDR;
+		break;
+	case SXE2_LINK_SPEED_10G:
+		*width = IB_WIDTH_1X;
+		*speed = IB_SPEED_FDR10;
+		break;
+	case SXE2_LINK_SPEED_25G:
+		*width = IB_WIDTH_1X;
+		*speed = IB_SPEED_EDR;
+		break;
+#ifdef NOT_HAVE_WIDTH_2X
+	case SXE2_LINK_SPEED_50G:
+		*width = IB_WIDTH_4X;
+		*speed = IB_SPEED_EDR;
+		break;
+	case SXE2_LINK_SPEED_100G:
+		*width = IB_WIDTH_4X;
+		*speed = IB_SPEED_EDR;
+		break;
+#else
+	case SXE2_LINK_SPEED_50G:
+		*width = IB_WIDTH_2X;
+		*speed = IB_SPEED_EDR;
+		break;
+	case SXE2_LINK_SPEED_100G:
+		*width = IB_WIDTH_4X;
+		*speed = IB_SPEED_EDR;
+		break;
+#endif
+	default:
+		*width = IB_WIDTH_1X;
+		*speed = IB_SPEED_SDR;
+		break;
+	}
+}
+
 #ifdef QUERY_PORT_V1
 int sxe2_rdma_kquery_port(struct ib_device *ibdev, u8 port,
 			  struct ib_port_attr *props)
@@ -416,6 +473,8 @@ int sxe2_rdma_kquery_port(struct ib_device *ibdev, u32 port,
 	struct sxe2_rdma_device *rdma_dev = to_dev(ibdev);
 	struct net_device *netdev	  = rdma_dev->netdev;
 	enum ib_mtu ndev_ib_mtu;
+	u8 active_speed;
+	u8 active_width;
 
 	props->max_mtu	  = IB_MTU_4096;
 	ndev_ib_mtu	  = sxe2_iboe_get_mtu((int)netdev->mtu);
@@ -432,10 +491,14 @@ int sxe2_rdma_kquery_port(struct ib_device *ibdev, u32 port,
 		props->state	  = IB_PORT_DOWN;
 		props->phys_state = SXE2_PORT_PHYS_STATE_DISABLED;
 	}
-	ib_get_eth_speed(ibdev, port, &props->active_speed,
-			 &props->active_width);
+	sxe2_rdma_get_eth_speed(rdma_dev, &active_speed,
+			 &active_width);
+	props->active_speed = active_speed;
+	props->active_width = active_width;
 	props->gid_tbl_len = SXE2_GID_TABLE_LEN;
+#ifndef NOT_SUPPORT_IP_GIDS
 	kc_set_props_ip_gid_caps(props);
+#endif
 	props->pkey_tbl_len   = SXE2_PKEY_TBL_SZ;
 	props->qkey_viol_cntr = 0;
 	props->port_cap_flags |= IB_PORT_CM_SUP | IB_PORT_REINIT_SUP;
@@ -464,11 +527,13 @@ int sxe2_rdma_kquery_gid(struct ib_device *ibdev, u32 port, int index,
 			 union ib_gid *gid)
 #endif
 {
-	int ret				  = SXE2_OK;
-	struct sxe2_rdma_device *rdma_dev = to_dev(ibdev);
+	int ret;
 
-	memset(gid->raw, 0, sizeof(gid->raw));
-	ether_addr_copy(gid->raw, rdma_dev->netdev->dev_addr);
+	ret = rdma_query_gid(ibdev, port, index, gid);
+	if (ret == -EAGAIN) {
+		memcpy(gid, &zgid, sizeof(*gid));
+		return 0;
+	}
 
 	return ret;
 }

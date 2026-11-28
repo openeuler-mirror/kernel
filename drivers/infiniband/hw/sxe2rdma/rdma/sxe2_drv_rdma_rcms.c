@@ -2320,6 +2320,8 @@ int sxe2_rcms_setup(struct sxe2_rdma_device *rdma_dev)
 {
 	int ret				  = SXE2_OK;
 	struct sxe2_rdma_pci_f *rdma_func = rdma_dev->rdma_func;
+	struct sxe2_rdma_ctx_dev *dev     = &rdma_func->ctx_dev;
+	u32 bar_reg_val;
 
 	DRV_RDMA_LOG_DEV_DEBUG("RCMS: setup rcms start\n");
 	ret = drv_rdma_debug_rcms_add(rdma_dev, rdma_func->ctx_dev.rcms_info);
@@ -2333,6 +2335,10 @@ int sxe2_rcms_setup(struct sxe2_rdma_device *rdma_dev)
 
 	if (ret != SXE2_OK)
 		goto end;
+	bar_reg_val = TXRX_TOM_PBL_DISABLE;
+	SXE2_BAR_WRITE_32(bar_reg_val, dev->hw_regs[RDMA_CONFIG_TMO_PBL]);
+	bar_reg_val = TXRX_TOM_PBL_ENBALE;
+	SXE2_BAR_WRITE_32(bar_reg_val, dev->hw_regs[RDMA_CONFIG_TMO_PBL]);
 
 	DRV_RDMA_LOG_DEV_DEBUG("RCMS: setup rcms finish\n");
 end:

@@ -20,6 +20,9 @@
 #ifdef CREATE_AH_VER_3
 struct ib_ah *sxe2_kcreate_ah(struct ib_pd *ibpd, struct rdma_ah_attr *attr,
 		    struct ib_udata *udata);
+#elif defined CREATE_AH_VER_4
+struct ib_ah *sxe2_kcreate_ah(struct ib_pd *ibpd, struct rdma_ah_attr *attr, u32 flags,
+		    struct ib_udata *udata);
 #elif defined CREATE_AH_VER_2
 int sxe2_kcreate_ah(struct ib_ah *ibah, struct rdma_ah_attr *attr, u32 flags,
 		    struct ib_udata *udata);

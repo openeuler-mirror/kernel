@@ -11,10 +11,10 @@
 #ifndef __SXE2_VER_H__
 #define __SXE2_VER_H__
 
-#define SXE2_VERSION                "2.1.0.9"
-#define SXE2_COMMIT_ID              "049b638"
-#define SXE2_BRANCH                 "develop/rc/tucana-2.1.0_B009_OpenSource-01"
-#define SXE2_BUILD_TIME             "2026-05-07 14:15:31"
+#define SXE2_VERSION                "2.3.0.19"
+#define SXE2_COMMIT_ID              "911ec23"
+#define SXE2_BRANCH                 "develop/rc/tucana-2.3.0_B019_OpenSource-01"
+#define SXE2_BUILD_TIME             "2026-11-02 14:38:46"
 
 #define SXE2_DRV_ARCH                   "x86_64"
 #define SXE2_DRV_NAME                   "sxe2"

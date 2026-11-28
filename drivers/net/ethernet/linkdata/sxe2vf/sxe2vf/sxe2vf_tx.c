@@ -50,7 +50,7 @@
 #define SXE2VF_ESTIMATE_DESC_COUNT_FOR_SKB_FRAG(frag_size)                          \
 	((((frag_size) * 85) >> 20) + 1)
 
-static inline u16 sxe2vf_tx_desc_unused_count(struct sxe2vf_queue *txq)
+STATIC inline u16 sxe2vf_tx_desc_unused_count(struct sxe2vf_queue *txq)
 {
 	u16 ntc = txq->next_to_clean;
 	u16 ntu = txq->next_to_use;
@@ -60,7 +60,7 @@ static inline u16 sxe2vf_tx_desc_unused_count(struct sxe2vf_queue *txq)
 	return unused_tx_desc_cnt;
 }
 
-static s32 sxe2vf_maybe_stop_tx(struct sxe2vf_queue *txq, u16 desc_cnt)
+STATIC s32 sxe2vf_maybe_stop_tx(struct sxe2vf_queue *txq, u16 desc_cnt)
 {
 	s32 ret = 0;
 
@@ -189,7 +189,7 @@ l_end:
 	return ret;
 }
 
-static void sxe2vf_tx_dma_err(struct sxe2vf_queue *txq,
+STATIC void sxe2vf_tx_dma_err(struct sxe2vf_queue *txq,
 			      struct sxe2vf_tx_buf *first_buf, u16 ntu)
 {
 	struct sxe2vf_tx_buf *tx_buf;
@@ -234,7 +234,7 @@ sxe2vf_tx_data_desc_qword1_setup(struct sxe2vf_tx_offload_info *offload, u32 siz
 			    << SXE2VF_TX_DATA_DESC_L2TAG1_SHIFT));
 }
 
-static s32 sxe2vf_tx_desc_ring_map(struct sxe2vf_queue *txq,
+STATIC s32 sxe2vf_tx_desc_ring_map(struct sxe2vf_queue *txq,
 				   struct sxe2vf_tx_buf *first_buf,
 				   struct sxe2vf_tx_offload_info *offload,
 				   union sxe2vf_tx_data_desc **desc, u16 *ntu)
@@ -324,12 +324,6 @@ l_dma_err:
 	return -ENOMEM;
 }
 
-static inline struct netdev_queue *
-sxe2vf_queue_to_netdevq(const struct sxe2vf_queue *queue)
-{
-	return netdev_get_tx_queue(queue->netdev, queue->idx_in_vsi);
-}
-
 static inline void
 sxe2vf_tx_desc_setup_for_csum(struct sxe2vf_tx_offload_info *offload, u32 l2_len,
 			      u32 l3_len, u32 l4_len, u32 cmd)
@@ -390,7 +384,7 @@ l_end:
 	return ret;
 }
 
-static bool sxe2vf_chk_linearize(struct sk_buff *skb, u32 desc_needed)
+STATIC bool sxe2vf_chk_linearize(struct sk_buff *skb, u32 desc_needed)
 {
 	if (likely(desc_needed < SXE2VF_MAX_DATA_DESC_PER_SKB))
 		return false;
@@ -508,7 +502,7 @@ l_end:
 	return ret;
 }
 
-static s32 sxe2vf_tx_csum(struct sxe2vf_queue *txq, struct sxe2vf_tx_buf *first_buf,
+STATIC s32 sxe2vf_tx_csum(struct sxe2vf_queue *txq, struct sxe2vf_tx_buf *first_buf,
 			  struct sxe2vf_tx_offload_info *offload)
 {
 	s32 ret;
@@ -756,7 +750,7 @@ l_end:
 	return ret;
 }
 
-static netdev_tx_t sxe2vf_queue_xmit(struct sk_buff *skb, struct sxe2vf_queue *txq)
+STATIC netdev_tx_t sxe2vf_queue_xmit(struct sk_buff *skb, struct sxe2vf_queue *txq)
 {
 	netdev_tx_t ret = NETDEV_TX_OK;
 	struct sxe2vf_tx_buf *first_buf = NULL;
@@ -835,7 +829,7 @@ l_end:
 	return ret;
 }
 
-static s32 sxe2vf_tx_ring_alloc(struct sxe2vf_queue *txq, struct sxe2vf_vsi *vsi)
+STATIC s32 sxe2vf_tx_ring_alloc(struct sxe2vf_queue *txq, struct sxe2vf_vsi *vsi)
 {
 	u32 size;
 	struct device *dev = txq->dev;
@@ -890,7 +884,7 @@ static void sxe2vf_tx_ring_free(struct sxe2vf_queue *txq)
 	}
 }
 
-static s32 sxe2vf_tx_rings_alloc(struct sxe2vf_vsi *vsi)
+STATIC s32 sxe2vf_tx_rings_alloc(struct sxe2vf_vsi *vsi)
 {
 	s32 ret;
 	u16 i;
@@ -1013,7 +1007,7 @@ l_end:
 	return ret;
 }
 
-static inline void sxe2vf_tx_desc_buf_update(struct sxe2vf_queue *txq,
+STATIC inline void sxe2vf_tx_desc_buf_update(struct sxe2vf_queue *txq,
 					     struct sxe2vf_tx_buf **tx_buf,
 					     union sxe2vf_tx_data_desc **tx_desc,
 					     u32 *ntc)
@@ -1115,10 +1109,10 @@ static void sxe2vf_tx_desc_ring_unmap(struct sxe2vf_queue *txq, s32 napi_budget,
 static inline void sxe2vf_tx_pkt_stats_update(struct sxe2vf_queue *txq,
 					      struct sxe2vf_queue_stats *stats)
 {
-	u64_stats_update_begin(&txq->syncp);
+	u64_stats_update_begin(&txq->stats->syncp);
 	txq->stats->bytes += stats->bytes;
 	txq->stats->packets += stats->packets;
-	u64_stats_update_end(&txq->syncp);
+	u64_stats_update_end(&txq->stats->syncp);
 }
 
 bool sxe2vf_txq_irq_clean(struct sxe2vf_queue *txq, s32 napi_budget)
@@ -1151,15 +1145,63 @@ bool sxe2vf_txq_irq_clean(struct sxe2vf_queue *txq, s32 napi_budget)
 	return !!budget;
 }
 
+struct sxe2vf_queue *sxe2vf_tx_queue_get(struct sxe2vf_vsi *vsi, u16 queue)
+{
+	struct sxe2vf_queue *txq = NULL;
+	u32 i = 0;
+
+	sxe2vf_for_each_vsi_txq(vsi, i)
+	{
+		if (vsi->txqs.q[i] && vsi->txqs.q[i]->desc.base_addr) {
+			if (queue == vsi->txqs.q[i]->idx_in_vsi) {
+				txq = vsi->txqs.q[i];
+				break;
+			}
+		}
+	}
+
+	return txq;
+}
+
+#ifdef HAVE_TX_TIMEOUT_TXQUEUE
 void sxe2vf_tx_timeout(struct net_device *netdev,
 		       __always_unused unsigned int txqueue)
+#else
+void sxe2vf_tx_timeout(struct net_device *netdev)
+#endif
 {
 	struct sxe2vf_adapter *adapter = netdev_priv(netdev);
+#ifndef HAVE_TX_TIMEOUT_TXQUEUE
+	unsigned int txqueue = 0;
+	u32 i;
+	unsigned long trans_start;
+	struct netdev_queue *q;
+#endif
+
+	adapter->work_ctxt.tx_timeout_cnt++;
+
+#ifndef HAVE_TX_TIMEOUT_TXQUEUE
+	for (i = 0; i < netdev->num_tx_queues; i++) {
+		q = netdev_get_tx_queue(netdev, i);
+		trans_start = q->trans_start;
+		if (netif_xmit_stopped(q) &&
+		    time_after(jiffies,
+			       trans_start + netdev->watchdog_timeo)) {
+			txqueue = i;
+			break;
+		}
+	}
+
+	if (i == netdev->num_tx_queues) {
+		LOG_DEV_INFO("tx_timeout: no netdev hung queue found\n");
+		return;
+	}
+#endif
 
 	sxe2vf_dev_state_set(adapter, SXE2VF_DEVSTATE_VFR_REQUEST,
 			     SXE2VF_RESET_NONE);
 	sxe2vf_wkq_schedule(adapter, SXE2VF_WK_MONITOR_IM, 0);
 
-	LOG_WARN_BDF("vf tx timeout detected queue:%u cnt:%llu.\n", txqueue,
-		     adapter->work_ctxt.tx_timeout_cnt++);
+	LOG_DEV_INFO("vf tx timeout detected queue:%u cnt:%llu.\n", txqueue,
+		     adapter->work_ctxt.tx_timeout_cnt);
 }

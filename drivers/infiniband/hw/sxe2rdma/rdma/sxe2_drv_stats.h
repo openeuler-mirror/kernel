@@ -43,7 +43,7 @@ struct mq_wqe_gather_stats {
 	u32 rsv5 : 1;
 	u32 wqe_valid : 1;
 	u64 physical_buffer_address;
-	u32 rcms_fcn_index : 6;
+	u64 rcms_fcn_index : 6;
 	u64 rsv6 : 58;
 	u64 rsv7;
 	u64 rsv8;
@@ -88,6 +88,9 @@ void sxe2_kfree_vsi_stats(struct sxe2_rdma_device *rdma_dev);
 #ifdef ALLOC_HW_STATS_V1
 struct rdma_hw_stats *sxe2_kalloc_hw_port_stats(struct ib_device *ibdev,
 						u8 port_num);
+#elif defined ALLOC_HW_STATS_V2
+struct rdma_hw_stats *sxe2_kalloc_hw_port_stats(struct ib_device *ibdev,
+						u32 port_num);
 #else
 struct rdma_hw_stats *sxe2_kalloc_hw_port_stats(struct ib_device *ibdev,
 						u32 port_num);

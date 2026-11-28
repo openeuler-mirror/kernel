@@ -24,7 +24,7 @@ extern u32 g_sxe2_rdma_dmesg_level;
 extern struct list_head sxe2_handlers;
 extern spinlock_t sxe2_handler_lock;
 #define SXE2_RDMA_MCQ_HW_PAGE_SIZE	   8192
-#define SXE2_SQ_RSVD		   8
+#define SXE2_SQ_RSVD		   258
 #define SXE2_CPU_ID_GET_VENDOR_ID  (0x0)
 #define SXE2_VENDOR_ID_SIZE	   (0x13)
 #define SXE2_MAX_PKEY_CNT	   (32)
@@ -42,6 +42,8 @@ extern spinlock_t sxe2_handler_lock;
 
 #define SXE2_RCMS_MODE_2M 1
 #define SXE2_RCMS_MODE_4K 2
+
+#define MAX_SEG_SIZE_2G (2ULL << 30)
 
 #define SXE2_PKEY_TBLE_BAR_ADDR(base_addr, idx) (base_addr + idx)
 
@@ -78,6 +80,7 @@ extern spinlock_t sxe2_handler_lock;
 #define SXE2_CC_DCQCN_MIN_RATE_DEFAULT 2
 #define SXE2_CC_DCQCN_MIN_RATE_MAX     100
 #define SXE2_CC_DCQCN_MIN_RATE_MIN     2
+
 #define SXE2_CC_DCQCN_K_VAL			 1280
 #define SXE2_CC_DCQCN_BC_VAL			 0
 #define SXE2_CC_DCQCN_TC_VAL			 0
@@ -104,7 +107,7 @@ extern spinlock_t sxe2_handler_lock;
 #define SXE2_CC_TIMELY_BETA_VAL	    620
 #define SXE2_CC_TIMELY_ALPHA_VAL    500
 #define SXE2_CC_TIMELY_RTT_DIFF_VAL 0
-#define RDMA_DRIVER_SXE2     20
+#define RDMA_DRIVER_SXE2     21
 
 struct sxe2_rdma_device_init_info {
 	u64 fpm_query_buf_pa;
@@ -142,6 +145,7 @@ enum sxe2_rdma_stages {
 	SXE2_RDMA_STAGE_CREATE_CEQS,
 	SXE2_RDMA_STAGE_CREATE_AEQ,
 	SXE2_RDMA_STAGE_RCRC_WQ,
+	SXE2_RDMA_STAGE_SET_HW_CC,
 	SXE2_RDMA_STAGE_MAX,
 };
 
@@ -206,6 +210,8 @@ void sxe2_configfs_exit(void);
 void sxe2_rdma_cc_dcqcn_set_params(struct sxe2_rdma_pci_f *rdma_func);
 
 void sxe2_rdma_cc_timely_set_params(struct sxe2_rdma_pci_f *rdma_func);
+
+void sxe2_rdma_cc_hw_set_params(struct sxe2_rdma_pci_f *rdma_func);
 
 void sxe2_rdma_init_cc_params(struct sxe2_rdma_pci_f *rdma_func);
 

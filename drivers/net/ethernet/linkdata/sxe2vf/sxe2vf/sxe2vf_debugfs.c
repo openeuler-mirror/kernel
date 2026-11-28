@@ -10,7 +10,6 @@
  */
 
 #include <linux/debugfs.h>
-#include <linux/cpu_rmap.h>
 #include <linux/cpumask.h>
 #include <linux/atomic.h>
 
@@ -19,6 +18,7 @@
 #include "sxe2_log.h"
 #include "sxe2vf_debugfs.h"
 #include "sxe2_com_cdev.h"
+#include "sxe2vf_tx.h"
 
 static struct dentry *sxe2vf_debugfs_root;
 #ifdef SXE2_CFG_DEBUG
@@ -131,7 +131,7 @@ void sxe2vf_vsi_dump(struct sxe2vf_adapter *adapter)
 			     vsi->irqs.irq_data[i]->rate_limit);
 		LOG_DEV_INFO("\t\t irq_data[%d]->multiple_polling=%d\n", i,
 			     vsi->irqs.irq_data[i]->multiple_polling);
-		LOG_DEV_INFO("\t\t irq_data[%d]->q_bitmap=%d\n", i,
+		LOG_DEV_INFO("\t\t irq_data[%d]->q_bitmap=%llu\n", i,
 			     vsi->irqs.irq_data[i]->q_bitmap);
 		LOG_DEV_INFO("\t\t irq_data[%d]->tx.itr_mode=%d\n", i,
 			     vsi->irqs.irq_data[i]->tx.itr_mode);
@@ -198,6 +198,90 @@ static void sxe2vf_monitor_stats_close(struct sxe2vf_adapter *adapter)
 {
 	g_vf_switch_stats = 0;
 }
+
+STATIC void sxe2vf_ntxq_stack_set(struct sxe2vf_adapter *adapter,
+				  const struct sxe2vf_debugfs_arg_val *argv)
+{
+	bool on = false;
+	u16 queue = 0;
+	struct sxe2vf_queue *txq = NULL;
+	struct sxe2vf_vsi *vsi = adapter->vsi_ctxt.vf_vsi;
+	struct netdev_queue *ntxq = NULL;
+
+	queue = argv[0].num;
+	on = argv[1].on;
+
+	mutex_lock(&adapter->vsi_ctxt.lock);
+	if (test_bit(SXE2VF_VSI_DISABLE, vsi->state)) {
+		LOG_DEV_ERR("dev busy, please wait a moment.\n");
+		goto l_end;
+	}
+
+	if (!netif_carrier_ok(vsi->netdev)) {
+		LOG_DEV_ERR("netdev not carrier on.\n");
+		goto l_end;
+	}
+
+	txq = sxe2vf_tx_queue_get(vsi, queue);
+	if (!txq) {
+		LOG_DEV_ERR("get txq failed.\n");
+		goto l_end;
+	}
+
+	ntxq = sxe2vf_queue_to_netdevq(txq);
+	if (on) {
+		clear_bit(__QUEUE_STATE_STACK_XOFF, &ntxq->state);
+		LOG_DEV_INFO("set netdev txq %u stack on.\n", queue);
+	} else {
+		set_bit(__QUEUE_STATE_STACK_XOFF, &ntxq->state);
+		LOG_DEV_INFO("set netdev txq %u stack off.\n", queue);
+	}
+
+l_end:
+	mutex_unlock(&adapter->vsi_ctxt.lock);
+}
+
+STATIC void sxe2vf_ntxq_drv_set(struct sxe2vf_adapter *adapter,
+				const struct sxe2vf_debugfs_arg_val *argv)
+{
+	bool on = false;
+	u16 queue = 0;
+	struct sxe2vf_queue *txq = NULL;
+	struct sxe2vf_vsi *vsi = adapter->vsi_ctxt.vf_vsi;
+	struct netdev_queue *ntxq = NULL;
+
+	queue = argv[0].num;
+	on = argv[1].on;
+
+	mutex_lock(&adapter->vsi_ctxt.lock);
+	if (test_bit(SXE2VF_VSI_DISABLE, vsi->state)) {
+		LOG_DEV_ERR("dev busy, please wait a moment.\n");
+		goto l_end;
+	}
+
+	if (!netif_carrier_ok(vsi->netdev)) {
+		LOG_DEV_ERR("netdev not carrier on.\n");
+		goto l_end;
+	}
+
+	txq = sxe2vf_tx_queue_get(vsi, queue);
+	if (!txq) {
+		LOG_DEV_ERR("get txq failed.\n");
+		goto l_end;
+	}
+
+	ntxq = sxe2vf_queue_to_netdevq(txq);
+	if (on) {
+		netif_tx_start_queue(ntxq);
+		LOG_DEV_INFO("set netdev txq %u drv on.\n", queue);
+	} else {
+		netif_tx_stop_queue(ntxq);
+		LOG_DEV_INFO("set netdev txq %u drv off.\n", queue);
+	}
+
+l_end:
+	mutex_unlock(&adapter->vsi_ctxt.lock);
+}
 #endif
 
 static struct sxe2vf_debugfs_command command[] = {
@@ -211,14 +295,126 @@ static struct sxe2vf_debugfs_command command[] = {
 		{"", NULL},
 };
 
+static struct sxe2vf_debugfs_command_arg command_arg[] = {
+#ifdef SXE2_CFG_DEBUG
+	{"txq drv flag set", 2, {SXE2VF_DEBUGFS_ARG_NUM, SXE2VF_DEBUGFS_ARG_ONOFF},
+		sxe2vf_ntxq_drv_set},
+	{"txq stack flag set", 2, {SXE2VF_DEBUGFS_ARG_NUM, SXE2VF_DEBUGFS_ARG_ONOFF},
+		sxe2vf_ntxq_stack_set},
+#endif
+	{"", 0, {0}, NULL},
+};
+
+static const char *sxe2vf_debugfs_arg_type_str(enum sxe2vf_debugfs_arg_type type)
+{
+	switch (type) {
+	case SXE2VF_DEBUGFS_ARG_NUM:
+		return "num";
+	case SXE2VF_DEBUGFS_ARG_STR:
+		return "str";
+	case SXE2VF_DEBUGFS_ARG_ONOFF:
+		return "on|off";
+	default:
+		return "unknown";
+	}
+}
+
+STATIC s32 sxe2vf_debugfs_args_parse(struct sxe2vf_adapter *adapter,
+				     const struct sxe2vf_debugfs_command_arg *cmd,
+				     char *args, struct sxe2vf_debugfs_arg_val *argv)
+{
+	u32 n = 0;
+	char *tok;
+	s32 ret;
+
+	while ((tok = strsep(&args, " ")) != NULL) {
+		if (*tok == '\0')
+			continue;
+
+		if (n >= cmd->argc) {
+			LOG_DEV_ERR("command '%s' needs %u args, got more\n",
+				    cmd->string, cmd->argc);
+			return -EINVAL;
+		}
+
+		switch (cmd->argt[n]) {
+		case SXE2VF_DEBUGFS_ARG_NUM:
+			ret = kstrtol(tok, 10, &argv[n].num);
+			if (ret) {
+				LOG_DEV_ERR("arg %u '%s' is not a decimal number\n",
+					    n + 1, tok);
+				return -EINVAL;
+			}
+			break;
+		case SXE2VF_DEBUGFS_ARG_STR:
+			if (strlen(tok) > SXE2VF_DEBUGFS_STR_MAX_LEN) {
+				LOG_DEV_ERR("arg %u string too long (max %d)\n",
+					    n + 1, SXE2VF_DEBUGFS_STR_MAX_LEN);
+				return -EINVAL;
+			}
+			argv[n].str = tok;
+			break;
+		case SXE2VF_DEBUGFS_ARG_ONOFF:
+			if (strlen(tok) > SXE2_DEBUGFS_ONOFF_MAX_LEN) {
+				LOG_DEV_ERR("arg %u string too long (max %d)\n",
+					    n + 1, SXE2_DEBUGFS_ONOFF_MAX_LEN);
+				return -EINVAL;
+			}
+
+			if (strncmp(tok, "on", 2) == 0) {
+				argv[n].on = true;
+			} else if (strncmp(tok, "off", 3) == 0) {
+				argv[n].on = false;
+			} else {
+				LOG_DEV_ERR("arg %u string is not on or off\n", n + 1);
+				return -EINVAL;
+			}
+
+			break;
+		default:
+			return -EINVAL;
+		}
+
+		n++;
+	}
+
+	if (n != cmd->argc) {
+		LOG_DEV_ERR("command '%s' needs %u args, got %u\n",
+			    cmd->string, cmd->argc, n);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static s32 sxe2vf_debugfs_command_match(struct sxe2vf_adapter *adapter, s8 *cmd_buf,
 					size_t size)
 {
 	u32 i;
+	size_t verb_len;
+	char *args;
+	struct sxe2vf_debugfs_arg_val argv[SXE2VF_DEBUGFS_ARG_MAX] = {};
 
 	for (i = 0; strlen(command[i].string) != 0; i++) {
 		if (!strcmp(cmd_buf, command[i].string)) {
 			command[i].debugfs_cb(adapter);
+			goto l_end;
+		}
+	}
+
+	for (i = 0; strlen(command_arg[i].string) != 0; i++) {
+		verb_len = strlen(command_arg[i].string);
+		if (strncmp(cmd_buf, command_arg[i].string, verb_len) == 0 &&
+		    (cmd_buf[verb_len] == '\0' || cmd_buf[verb_len] == ' ')) {
+			args = (char *)cmd_buf + verb_len;
+			while (*args == ' ')
+				args++;
+
+			if (sxe2vf_debugfs_args_parse(adapter, &command_arg[i],
+						      args, argv))
+				return -EINVAL;
+
+			command_arg[i].debugfs_cb(adapter, argv);
 			goto l_end;
 		}
 	}
@@ -231,12 +427,23 @@ l_end:
 
 static void sxe2vf_debugfs_command_help_info(struct sxe2vf_adapter *adapter)
 {
-	u32 i;
+	u32 i, j;
+	char usage[80];
+	int len;
 
 	LOG_DEV_INFO("available commands:\n");
 
 	for (i = 0; strlen(command[i].string) != 0; i++)
 		LOG_DEV_INFO("\t %s\n", command[i].string);
+
+	for (i = 0; strlen(command_arg[i].string) != 0; i++) {
+		len = scnprintf(usage, sizeof(usage), "%s", command_arg[i].string);
+		for (j = 0; j < command_arg[i].argc && j < SXE2VF_DEBUGFS_ARG_MAX; j++)
+			len += scnprintf(usage + len, sizeof(usage) - len,
+					 " <%s>",
+					 sxe2vf_debugfs_arg_type_str(command_arg[i].argt[j]));
+		LOG_DEV_INFO("\t %s\n", usage);
+	}
 }
 
 STATIC ssize_t sxe2vf_debugfs_command_write(struct file *file,
@@ -275,9 +482,9 @@ STATIC ssize_t sxe2vf_debugfs_command_write(struct file *file,
 }
 
 static const struct file_operations sxe2vf_debugfs_command_fops = {
-		.owner = THIS_MODULE,
-		.open = simple_open,
-		.write = sxe2vf_debugfs_command_write,
+	.owner = THIS_MODULE,
+	.open = simple_open,
+	.write = sxe2vf_debugfs_command_write,
 };
 
 void sxe2vf_debugfs_create_common_file(struct sxe2vf_adapter *adapter)
@@ -344,7 +551,7 @@ STATIC s32 sxe2vf_debugfs_drv_mode_set(struct sxe2vf_adapter *adapter, char *cmd
 
 		ret = sxe2vf_drv_mode_set(adapter, new_mode);
 		if (ret) {
-			LOG_ERROR_BDF("drv mode configurate failed.\n");
+			LOG_ERROR_BDF("drv mode configured failed.\n");
 			goto end;
 		}
 
@@ -380,6 +587,7 @@ STATIC ssize_t sxe2vf_debugfs_drv_mode_read(struct file *file, char __user *buf,
 			"configured mode:%s\n",
 			ret ? "get failed"
 			    : sxe2vf_com_mode_to_str(vf_resp.drv_mode));
+	len += snprintf(tmp_buf + len, SXE2_COM_MODE_NAME_SIZE - len, "\n");
 
 	return simple_read_from_buffer(buf, count, ppos, &tmp_buf, len);
 }
@@ -393,7 +601,7 @@ STATIC ssize_t sxe2vf_debugfs_drv_mode_write(struct file *file,
 	struct sxe2vf_adapter *adapter = file->private_data;
 
 	if (*ppos != 0) {
-		LOG_DEV_ERR("dont't allow partial writes.\n, *ppos!=NULL");
+		LOG_DEV_ERR("don't allow partial writes.\n, *ppos!=NULL");
 		return -EINVAL;
 	}
 

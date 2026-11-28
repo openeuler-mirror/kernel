@@ -248,10 +248,10 @@ s32 sxe2vf_com_switch_filter_allmulti(struct sxe2vf_adapter *adapter,
 		ret = sxe2vf_ucmd_allmulti_rule_del(adapter, vsi_id);
 
 	if (ret)
-		LOG_ERROR_BDF("user driver(vsi=%u) %s promisc fail, ret=%d\n", vsi_id,
+		LOG_ERROR_BDF("user driver(vsi=%u) %s allmulti fail, ret=%d\n", vsi_id,
 			      is_add ? "set" : "clear", ret);
 	else
-		LOG_DEBUG_BDF("user driver(vsi=%u) %s promisc.\n", vsi_id,
+		LOG_DEBUG_BDF("user driver(vsi=%u) %s allmulti.\n", vsi_id,
 			      is_add ? "set" : "clear");
 
 l_end:

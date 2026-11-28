@@ -32,6 +32,7 @@
 #define SXE2_XDP_CONSUMED BIT(0)
 #define SXE2_XDP_TX	  BIT(1)
 #define SXE2_XDP_REDIR	  BIT(2)
+#define SXE2_XDP_EXIT	  BIT(3)
 
 struct sxe2_indr_block_priv {
 	struct net_device *netdev;
@@ -88,13 +89,13 @@ bool sxe2_netdev_is(struct net_device *dev);
 s32 sxe2_check_vf_ready_for_cfg(struct sxe2_vf_node *vf);
 
 #ifdef HAVE_XDP_SUPPORT
-s32 sxe2_xmit_xdp_buff(struct xdp_buff *xdp, struct sxe2_queue *xdp_ring);
-
-s32 sxe2_xmit_xdp_ring(void *data, u16 size, struct sxe2_queue *xdp_ring);
+s32 __sxe2_xmit_xdp_ring(struct xdp_buff *xdp, struct sxe2_queue *xdp_ring, bool frame);
 
 s32 sxe2_destroy_xdp_rings(struct sxe2_vsi *vsi, bool is_rebuild);
 
 s32 sxe2_prepare_xdp_rings(struct sxe2_vsi *vsi, struct bpf_prog *prog);
+
+s32 sxe2_xdp_rings_rebind(struct sxe2_vsi *vsi, bool q_cnt_changed);
 
 void sxe2_vsi_xdp_qs_stats_deinit(struct sxe2_vsi *vsi);
 #endif

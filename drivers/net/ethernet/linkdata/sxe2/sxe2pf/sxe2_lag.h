@@ -34,6 +34,8 @@
 enum sxe2_lag_flags {
 	SXE2_LAG_FLAGS_WK_PENDING,
 	SXE2_LAG_FLAGS_WK_PROCESS,
+	SXE2_LAG_FLAGS_SRIOV_ENABLING_PF0,
+	SXE2_LAG_FLAGS_SRIOV_ENABLING_PF1,
 	SXE2_LAG_FLAGS_NBITS
 };
 
@@ -129,6 +131,10 @@ void sxe2_lag_stop(struct sxe2_adapter *adapter);
 void sxe2_lag_rebuild(struct sxe2_adapter *adapter);
 
 void sxe2_lag_proc(struct sxe2_adapter *adapter);
+
+void sxe2_lag_exit_bond(struct sxe2_adapter *adapter);
+
+void sxe2_lag_exit_bond_done(struct sxe2_adapter *adapter);
 
 struct sxe2_adapter *sxe2_lag_role_find(struct sxe2_lag_context *lag,
 					int role);

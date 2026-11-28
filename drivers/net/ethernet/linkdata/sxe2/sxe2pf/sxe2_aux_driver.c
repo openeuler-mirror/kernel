@@ -9,6 +9,8 @@
  * @note:
  */
 
+#include "sxe2_compat.h"
+
 #include <linux/idr.h>
 
 #include "sxe2.h"
@@ -20,6 +22,7 @@
 #include "sxe2_lag.h"
 #include "sxe2_tc.h"
 #include "sxe2_version.h"
+#include "sxe2_linkchg.h"
 
 #define MAX_RDMA_MSG_SIZE (4096)
 #define PRIMARY_PF_INDEX 0
@@ -59,6 +62,12 @@ static int sxe2_alloc_res(struct aux_core_dev_info *cdev_info,
 
 	if (!cdev_info || !qset)
 		return -EINVAL;
+
+	if (qset->user_pri >= SXE2_MAX_USER_PRIORITY) {
+		LOG_ERROR("invalid user_pri %u, max %u\n",
+			  qset->user_pri, SXE2_MAX_USER_PRIORITY - 1);
+		return -EINVAL;
+	}
 
 	adapter = cdev_info->adapter;
 	if (!sxe2_txsched_support_chk(adapter))
@@ -143,10 +152,19 @@ static int sxe2_free_res(struct aux_core_dev_info *cdev_info,
 	if (!cdev_info || !qset)
 		return -EINVAL;
 
+	if (qset->user_pri >= SXE2_MAX_USER_PRIORITY) {
+		LOG_ERROR("invalid user_pri %u, max %u\n",
+			  qset->user_pri, SXE2_MAX_USER_PRIORITY - 1);
+		return -EINVAL;
+	}
+
 	if (!sxe2_txsched_support_chk(cdev_info->adapter))
 		return 0;
 
 	adapter = cdev_info->adapter;
+	if (!adapter)
+		return -ENODEV;
+
 	lag = cdev_info->adapter->lag_ctxt;
 	is_primary = (adapter->pf_idx == PRIMARY_PF_INDEX) ? true : false;
 	is_vf = sxe2_rdma_aux_is_in_vf(adapter, qset);
@@ -293,10 +311,17 @@ static int sxe2_free_rdma_multi_qsets(struct aux_core_dev_info *cdev_info,
 	struct aux_rdma_qset_params dqset;
 	struct sxe2_lag_context *lag;
 	int i;
-	int ret;
+	int ret = 0;
 
 	if (!cdev_info || !qset)
 		return -EINVAL;
+
+	if (qset->user_pri >= SXE2_MAX_USER_PRIORITY) {
+		LOG_ERROR("invalid user_pri %u, max %u\n",
+			  qset->user_pri, SXE2_MAX_USER_PRIORITY - 1);
+		return -EINVAL;
+	}
+
 	if (!sxe2_txsched_support_chk(cdev_info->adapter))
 		return 0;
 
@@ -402,6 +427,8 @@ static int sxe2_vc_send(struct aux_core_dev_info *cdev_info, u16 vf_id, u8 *msg,
 		return -EINVAL;
 
 	adapter = pci_get_drvdata(cdev_info->pdev);
+	if (!adapter)
+		return -ENODEV;
 
 	ret = sxe2_aux_reply_rdma_msg_to_vf(adapter, vf_id, msg, len, session_id);
 	return ret;
@@ -422,7 +449,7 @@ int sxe2_rdma_msg_send(struct sxe2_adapter *adapter, enum sxe2_drv_cmd_opcode op
 	return ret;
 }
 
-static s32 sxe2_rdma_mac_rule_cmd(struct sxe2_adapter *adapter, u8 *mac, bool is_add)
+STATIC s32 sxe2_rdma_mac_rule_cmd(struct sxe2_adapter *adapter, u8 *mac, bool is_add)
 {
 	s32 ret = 0;
 	struct sxe2_vsi *vsi = adapter->vsi_ctxt.main_vsi;
@@ -458,6 +485,9 @@ static s32 sxe2_rdma_send_cmd(struct aux_core_dev_info *cdev_info,
 		return -EINVAL;
 
 	adapter = pci_get_drvdata(cdev_info->pdev);
+	if (!adapter)
+		return -ENODEV;
+
 	ret = sxe2_rdma_msg_send(adapter, op, msg, len, recv_msg, recv_len);
 
 	return ret;
@@ -473,6 +503,9 @@ static s32 sxe2_rdma_drv_config(struct aux_core_dev_info *cdev_info, u8 op, u8 *
 		return -EINVAL;
 
 	adapter = pci_get_drvdata(cdev_info->pdev);
+	if (!adapter)
+		return -ENODEV;
+
 	switch (opcode) {
 	case RDMA_MAC_RULE_ADD:
 		ret = sxe2_rdma_mac_rule_cmd(adapter, msg, true);
@@ -491,6 +524,8 @@ static void sxe2_rdma_loaded(struct aux_core_dev_info *cdev_info, bool loaded)
 	struct sxe2_adapter *adapter;
 
 	adapter = pci_get_drvdata(cdev_info->pdev);
+	if (!adapter)
+		return;
 
 	if (loaded)
 		set_bit(SXE2_FLAG_RDMA_LOADED, adapter->flags);
@@ -513,10 +548,15 @@ static int sxe2_rdma_dump_pcap_cmd(struct aux_core_dev_info *cdev_info, u8 *mac,
 static u32 sxe2_rdma_get_link_speed(struct aux_core_dev_info *cdev_info)
 {
 	struct sxe2_adapter *adapter;
+	u8 state;
+	u32 speed;
 
 	adapter = pci_get_drvdata(cdev_info->pdev);
+	if (!adapter)
+		return 0;
 
-	return sxe2_get_link_speed(adapter);
+	sxe2_link_get_info_config(adapter, &state, &speed);
+	return speed;
 }
 
 static struct sxe2_core_ops core_ops = {
@@ -532,6 +572,9 @@ static struct sxe2_core_ops core_ops = {
 		.rdma_drv_config = sxe2_rdma_drv_config,
 		.notify_rdma_load = sxe2_rdma_loaded,
 		.rdma_get_link_speed = sxe2_rdma_get_link_speed,
+		.update_vport_filter = NULL,
+		.vc_send_sync = NULL,
+		.vc_queue_vec_map_unmap = NULL
 };
 
 struct sxe2_auxiliary_drv *sxe2_rdma_aux_drv_get(struct aux_core_dev_info *cdev_info)
@@ -557,6 +600,9 @@ static int sxe2_rdma_aux_send_event(struct sxe2_adapter *adapter,
 
 	if (sxe2_is_safe_mode(adapter))
 		return -EPERM;
+
+	if (!test_bit(SXE2_FLAG_RDMA_LOADED, adapter->flags))
+		return 0;
 
 	cdev_info = &adapter->aux_ctxt.cdev_info;
 
@@ -672,17 +718,17 @@ int sxe2_rdma_aux_add(struct sxe2_adapter *adapter)
 
 	ret = auxiliary_device_init(adev);
 	if (ret)
-		goto err_out;
+		goto kfree;
 
 	ret = auxiliary_device_add(adev);
 	if (ret) {
 		auxiliary_device_uninit(adev);
-		goto err_out;
+		cdev_info->adev = NULL;
 	}
 
 	goto out;
 
-err_out:
+kfree:
 	kfree(sadev);
 	cdev_info->adev = NULL;
 out:
@@ -708,6 +754,7 @@ void sxe2_rdma_aux_delete(struct aux_core_dev_info *cdev_info)
 	}
 	adev = cdev_info->adev;
 	cdev_info->adev = NULL;
+	clear_bit(SXE2_FLAG_RDMA_LOADED, adapter->flags);
 	mutex_unlock(&adapter->aux_ctxt.adev_mutex);
 
 	if (adev) {
@@ -755,17 +802,20 @@ void sxe2_rdma_aux_deinit(struct sxe2_adapter *adapter)
 
 s32 sxe2_rdma_aux_rebuild(struct sxe2_adapter *adapter)
 {
+	struct sxe2_lag_context *lag;
+
 	LOG_DEBUG_BDF("aux driver rebuild:index=%d\n", adapter->aux_ctxt.aux_idx);
 
-	if (sxe2_lag_support(adapter)) {
-		mutex_lock(&adapter->lag_ctxt->lock);
+	lag = adapter->lag_ctxt;
+	if (sxe2_lag_support(adapter) && lag) {
+		mutex_lock(&lag->lock);
 		if (sxe2_lag_is_bonded(adapter)) {
-			mutex_unlock(&adapter->lag_ctxt->lock);
+			mutex_unlock(&lag->lock);
 			LOG_WARN_BDF("running in bond mode, rdma does not need\t"
 				     "rebuild.\n");
 			goto end;
 		}
-		mutex_unlock(&adapter->lag_ctxt->lock);
+		mutex_unlock(&lag->lock);
 	}
 
 	if (!sxe2_is_safe_mode(adapter))

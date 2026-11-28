@@ -10,6 +10,7 @@
  */
 
 #include <linux/bitfield.h>
+#include <linux/sizes.h>
 
 #include "sxe2_drv_rdma_common.h"
 #include "sxe2_drv_hw.h"
@@ -40,6 +41,7 @@ static u32 sxe2_pf_bar_regs_offset[SXE2_PF_MAX_BAR_REGS] = {
 	PF_RDMA_FEATURE_QSETS_MAX_OFFSET,
 	PF_RDMA_FEATURE_FW_VERSION_OFFSET,
 	PF_RDMA_CONFIG_PKEY_OFFSET,
+	PF_RDMA_CONFIG_TMO_PBL_OFFSET,
 	GLINT_CTRL_PF_INT_AEQCTL_OFFSET,
 	GLINT_CTRL_PF_INT_CEQCTL_OFFSET(0),
 	SXE2_PF_INT_RATE(0),
@@ -70,6 +72,7 @@ static u32 sxe2_vf_bar_regs_offset[SXE2_VF_MAX_BAR_REGS] = {
 	VF_RDMA_FEATURE_QSETS_MAX_OFFSET,
 	VF_RDMA_FEATURE_FW_VERSION_OFFSET,
 	VF_RDMA_CONFIG_PKEY_OFFSET,
+	VF_RDMA_CONFIG_TMO_PBL_OFFSET,
 };
 
 void sxe2_hw_ena_irq(struct sxe2_rdma_ctx_dev *dev, u32 idx)
@@ -226,7 +229,7 @@ void sxe2_rdma_init_hw(struct sxe2_rdma_ctx_dev *dev)
 	dev->hw_attrs.max_rra	   = SXE2_MAX_RRA_SIZE;
 	dev->hw_attrs.max_sra	   = SXE2_MAX_SRA_SIZE;
 
-	dev->hw_attrs.page_size_cap		= SZ_4K | SZ_2M | SZ_1G;
+	dev->hw_attrs.page_size_cap		= SZ_4K | SZ_64K | SZ_2M | SZ_1G;
 	dev->hw_attrs.max_hw_device_pages	= SXE2_MAX_PUSH_PAGE_COUNT;
 	dev->hw_attrs.uk_attrs.max_hw_wq_frags	= SXE2_MAX_WQ_FRAGMENT_COUNT;
 	dev->hw_attrs.uk_attrs.max_hw_read_sges = SXE2_MAX_SGE_RD;

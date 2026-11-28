@@ -550,7 +550,7 @@ s32 sxe2vf_vlan_offload_cfg(struct net_device *netdev, netdev_features_t request
 					     NETIF_F_HW_VLAN_CTAG_TX));
 	}
 
-	LOG_INFO_BDF("ctag_strip:%u stag_strip:%u\t"
+	LOG_DEBUG_BDF("ctag_strip:%u stag_strip:%u\t"
 		     " ctag_insert:%u stag_insert:%u.\n",
 		     vlan_offload->ctag_strip_enable,
 		     vlan_offload->stag_strip_enable,
@@ -815,6 +815,43 @@ s32 sxe2vf_l2_filter_cfg_sync(struct sxe2vf_adapter *adapter)
 	if (ret)
 		LOG_ERROR_BDF("promisc set mbx msg send failed ret %d.\n", ret);
 
+	return ret;
+}
+
+s32 sxe2vf_rdma_multi_mac_addr_clean(struct sxe2vf_adapter *adapter)
+{
+	s32 ret = 0;
+	struct sxe2vf_addr_node *node;
+	struct sxe2vf_addr_node *tmp;
+	struct sxe2vf_mac_filter *filter =
+			&adapter->switch_ctxt.filter_ctxt.mac_filter;
+	u16 vsi_id = adapter->vsi_ctxt.vf_vsi->vsi_id;
+	struct sxe2vf_switch_context *switch_ctxt = &adapter->switch_ctxt;
+
+	mutex_lock(&switch_ctxt->mac_addr_lock);
+
+	list_for_each_entry_safe(node, tmp, &filter->mac_addr_list, list) {
+		if (!test_bit((int)SXE2VF_MAC_OWNER_ROCE, &node->usage))
+			continue;
+
+		clear_bit((int)SXE2VF_MAC_OWNER_ROCE, &node->usage);
+
+		if (node->usage)
+			continue;
+
+		ret = sxe2vf_mac_msg_send(adapter, &node->mac, false, false,
+					  vsi_id);
+		if (ret) {
+			LOG_ERROR_BDF("del rdma mac %pM failed err:%d\n",
+				      node->mac.macaddr, ret);
+			set_bit((int)SXE2VF_MAC_OWNER_ROCE, &node->usage);
+			goto l_end;
+		}
+
+		sxe2vf_switch_mac_node_del_and_free(node);
+	}
+l_end:
+	mutex_unlock(&switch_ctxt->mac_addr_lock);
 	return ret;
 }
 
@@ -1560,7 +1597,7 @@ int sxe2vf_ucmd_vlan_rule_process(struct sxe2vf_adapter *adapter, u16 vsi_id,
 	return sxe2vf_user_vlan_msg_send(adapter, vsi_id, vlan, is_add);
 }
 
-static void sxe2vf_user_unicast_mac_rest(struct sxe2vf_adapter *adapter, u16 vsi_id)
+STATIC void sxe2vf_user_unicast_mac_rest(struct sxe2vf_adapter *adapter, u16 vsi_id)
 {
 	s32 ret = 0;
 	struct sxe2vf_mac_filter *user_mac_fltr;

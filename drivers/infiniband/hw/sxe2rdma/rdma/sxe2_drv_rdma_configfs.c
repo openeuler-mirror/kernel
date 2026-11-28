@@ -95,20 +95,27 @@ static int sxe2_configfs_set_vsi_attr(struct config_item *item, const char *buf,
 
 	struct sxe2_rdma_device *dev = grp->dev;
 	bool enable;
-
+	u8 dcqcn_mode = 0;
 	int ret = 0;
-
-	if (kstrtobool(buf, &enable)) {
-		ret = -EINVAL;
-		goto done;
-	}
 
 	switch (attr_type) {
 	case SXE2_ATTR_ROCE_TIMELY:
+		if (kstrtobool(buf, &enable)) {
+			ret = -EINVAL;
+			goto done;
+		}
 		dev->rdma_func->cc_params.timely_enable = enable;
 		break;
 	case SXE2_ATTR_ROCE_DCQCN:
-		dev->rdma_func->cc_params.dcqcn_enable = enable;
+		if (kstrtou8(buf, 0, &dcqcn_mode)) {
+			ret = -EINVAL;
+			goto done;
+		}
+		if (dcqcn_mode >= SXE2_CC_DCQCN_MODE_MAX) {
+			ret = -EINVAL;
+			goto done;
+		}
+		dev->rdma_func->cc_params.dcqcn_enable = dcqcn_mode;
 		break;
 
 	default:
@@ -538,7 +545,6 @@ void sxe2_rdma_remove_configfs_subdir(const char *name)
 
 	if (vsi_grp) {
 		configfs_unregister_group(&vsi_grp->group);
-		kfree(vsi_grp);
 
 		DRV_RDMA_LOG_INFO("Removed directory: %s\n", name);
 	} else {

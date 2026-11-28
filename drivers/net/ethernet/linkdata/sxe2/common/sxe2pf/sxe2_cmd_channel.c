@@ -128,11 +128,6 @@ enum sxe2_cmd_exec_mode {
 
 static void sxe2_cmd_work_init(struct sxe2_adapter *adapter);
 
-STATIC void sxe2_cmd_work_exit(struct sxe2_adapter *adapter);
-
-STATIC void sxe2_msg_list_add(struct sxe2_adapter *adapter,
-			      struct sxe2_recv_msg *msg);
-
 static void sxe2_msg_list_del(struct sxe2_adapter *adapter,
 			      struct sxe2_recv_msg **msg);
 
@@ -637,6 +632,13 @@ STATIC s32 sxe2_mbxc_cmd_channel_close(struct sxe2_adapter *adapter,
 {
 	s32 ret;
 	struct sxe2_cmd_params cmd = {};
+	u32 vfalloc;
+
+	vfalloc = sxe2_hw_vf_alloc(&adapter->hw);
+	if ((vfalloc & SXE2_PCIEPROC_VFALLOC_ENA) == 0) {
+		ret = 0;
+		goto l_end;
+	}
 
 	sxe2_cmd_params_fill(&cmd, SXE2_CMD_Q_DISABLE, NULL, 0, NULL, 0,
 			     SXE2_DRV_CMD_DFLT_TIMEOUT, false, true);
@@ -644,6 +646,7 @@ STATIC s32 sxe2_mbxc_cmd_channel_close(struct sxe2_adapter *adapter,
 	if (ret)
 		LOG_ERROR_BDF("cmd channel %d disable failed: ret %d.\n", chnl_type,
 			      ret);
+l_end:
 	return ret;
 }
 
@@ -668,6 +671,7 @@ static s32 sxe2_fw_comp_version_check(struct sxe2_adapter *adapter)
 			    SXE2_FW_COMP_MAJOR_VER, SXE2_FW_COMP_MINOR_VER,
 			    adapter->fw_ver.major, adapter->fw_ver.minor);
 	}
+
 l_out:
 	return ret;
 }
@@ -758,6 +762,27 @@ STATIC void sxe2_cmd_channel_deinit(struct sxe2_adapter *adapter,
 
 	sxe2_wait_task_cancel(channel);
 	mutex_unlock(&channel->lock);
+}
+
+STATIC void sxe2_cmd_work_exit(struct sxe2_adapter *adapter)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&adapter->cmd_channel_ctxt.recv_work_lock, flags);
+	set_bit(SXE2_RQ_RECV_WORK_STOPPED,
+		&adapter->cmd_channel_ctxt.recv_work_state);
+	spin_unlock_irqrestore(&adapter->cmd_channel_ctxt.recv_work_lock, flags);
+	cancel_work_sync(&adapter->cmd_channel_ctxt.recv_work);
+	clear_bit(SXE2_RQ_RECV_WORK_SCHED,
+		  &adapter->cmd_channel_ctxt.recv_work_state);
+
+	spin_lock_irqsave(&adapter->cmd_channel_ctxt.handle_work_lock, flags);
+	set_bit(SXE2_MSG_HANDLE_WORK_STOPPED,
+		&adapter->cmd_channel_ctxt.handle_work_state);
+	spin_unlock_irqrestore(&adapter->cmd_channel_ctxt.handle_work_lock, flags);
+	cancel_work_sync(&adapter->cmd_channel_ctxt.handle_work);
+	clear_bit(SXE2_MSG_HANDLE_WORK_SCHED,
+		  &adapter->cmd_channel_ctxt.handle_work_state);
 }
 
 s32 sxe2_cmd_channels_enable(struct sxe2_adapter *adapter)
@@ -1148,14 +1173,17 @@ STATIC s32 sxe2_recv_msg_check(struct sxe2_adapter *adapter,
 {
 	struct sxe2_cmd_hdr *cmd_hdr = (struct sxe2_cmd_hdr *)msg->buf;
 	struct sxe2_drv_msg_hdr *msg_hdr;
+	u16 cmd_hdr_len;
 	u32 hdr_len = 0;
+	u32 data_len;
 
-	msg_hdr = (struct sxe2_drv_msg_hdr *)((u8 *)cmd_hdr + cmd_hdr->hdr_len);
+	cmd_hdr_len = le16_to_cpu(cmd_hdr->hdr_len);
+	msg_hdr = (struct sxe2_drv_msg_hdr *)((u8 *)cmd_hdr + cmd_hdr_len);
 
 	if (cmd_hdr->cmd_type == SXE2_CMD_TYPE_CLI)
-		hdr_len = cmd_hdr->hdr_len;
+		hdr_len = cmd_hdr_len;
 	else
-		hdr_len = cmd_hdr->hdr_len + msg_hdr->data_offset;
+		hdr_len = cmd_hdr_len + le32_to_cpu(msg_hdr->data_offset);
 
 	if (msg->buf_len < hdr_len) {
 		LOG_ERROR_BDF("recv cmd type %d, buf len %d hdr len :%u invalid.\n",
@@ -1169,14 +1197,42 @@ STATIC s32 sxe2_recv_msg_check(struct sxe2_adapter *adapter,
 	}
 
 	if (cmd_hdr->cmd_type != SXE2_CMD_TYPE_CLI) {
-		if ((u8 *)SXE2_MSG_BODY(msg_hdr) + msg_hdr->data_len >
-		    msg->buf + msg->buf_len) {
-			LOG_ERROR_BDF("msg hdr buf len %d invalid.\n",
-				      msg_hdr->data_len);
+		data_len = le32_to_cpu(msg_hdr->data_len);
+
+		if ((u8 *)SXE2_MSG_BODY(msg_hdr) + data_len >
+			msg->buf + msg->buf_len) {
+			LOG_ERROR_BDF("msg hdr buf len %u invalid.\n",
+				      data_len);
 			return -EINVAL;
 		}
 	}
 	return 0;
+}
+
+STATIC void sxe2_msg_list_add(struct sxe2_adapter *adapter, struct sxe2_recv_msg *msg)
+{
+	struct sxe2_cmd_channel_context *ctxt = &adapter->cmd_channel_ctxt;
+
+	mutex_lock(&ctxt->lock);
+	list_add_tail(&msg->node, &ctxt->head);
+	mutex_unlock(&ctxt->lock);
+}
+
+void sxe2_msg_list_del(struct sxe2_adapter *adapter, struct sxe2_recv_msg **msg)
+{
+	struct sxe2_cmd_channel_context *ctxt = &adapter->cmd_channel_ctxt;
+
+	mutex_lock(&ctxt->lock);
+
+	if (list_empty(&ctxt->head)) {
+		*msg = NULL;
+		mutex_unlock(&ctxt->lock);
+		return;
+	}
+
+	*msg = list_first_entry(&ctxt->head, struct sxe2_recv_msg, node);
+	list_del(&(*msg)->node);
+	mutex_unlock(&ctxt->lock);
 }
 
 STATIC void sxe2_msg_handle_async(struct sxe2_adapter *adapter,
@@ -1655,7 +1711,7 @@ STATIC u16 sxe2_cmd_tq_put_desc(struct sxe2_adapter *adapter,
 		buf_dma = &tq->buf[tq->ntc];
 
 		memset(desc, 0, sizeof(*desc));
-		memset(buf_dma->va, 0, sizeof(buf_dma->size));
+		memset(buf_dma->va, 0, buf_dma->size);
 		SXE2_QUEUE_IDX_INC(tq->ntc, tq->depth);
 	}
 
@@ -1832,8 +1888,10 @@ STATIC s32 sxe2_cmd_send_single(struct sxe2_cmd_context *cmd_ctxt)
 	ret = sxe2_cmd_desc_err_trans(cmd_ctxt, desc);
 
 l_end:
+#ifndef SXE2_CFG_RELEASE
 	if (desc)
 		DATA_DUMP(desc, sizeof(*desc), "tq cmd desc after");
+#endif
 	return ret;
 }
 
@@ -2060,30 +2118,30 @@ l_end:
 	return ret;
 }
 
-static inline bool sxe2_cmd_exec_mode_get(struct sxe2_adapter *adapter,
+static inline void sxe2_cmd_exec_mode_get(struct sxe2_adapter *adapter,
 					  struct sxe2_cmd_params *cmd_params,
 					  enum sxe2_cmd_exec_mode *mode)
 {
+	if (cmd_params->no_resp)
+		*mode = SXE2_CMD_EXEC_NO_RESP;
+	else if (adapter->cmd_channel_ctxt.mode == SXE2_CMD_POLLING)
+		*mode = SXE2_CMD_EXEC_POLLING;
+	else
+		*mode = SXE2_CMD_EXEC_NOTIFY;
+}
+
+bool sxe2_dev_state_check(struct sxe2_adapter *adapter)
+{
 	enum sxe2_dev_state state;
 	enum sxe2_reset_type reset_type;
-	bool is_resetting;
+	bool ret = true;
 
 	sxe2_dev_state_get(adapter, &state, &reset_type);
+	if (state == SXE2_DEVSTATE_FAULT ||
+	    state == SXE2_DEVSTATE_RESETTING)
+		ret = false;
 
-	if (state == SXE2_DEVSTATE_RESETTING) {
-		is_resetting = true;
-		*mode = SXE2_CMD_EXEC_NO_RESP;
-	} else {
-		is_resetting = false;
-		if (cmd_params->no_resp)
-			*mode = SXE2_CMD_EXEC_NO_RESP;
-		else if (adapter->cmd_channel_ctxt.mode == SXE2_CMD_POLLING)
-			*mode = SXE2_CMD_EXEC_POLLING;
-		else
-			*mode = SXE2_CMD_EXEC_NOTIFY;
-	}
-
-	return is_resetting;
+	return ret;
 }
 
 STATIC s32 sxe2_cmd_exec(struct sxe2_adapter *adapter,
@@ -2095,7 +2153,6 @@ STATIC s32 sxe2_cmd_exec(struct sxe2_adapter *adapter,
 	enum sxe2_cmd_exec_mode mode;
 	unsigned long flags;
 	u64 trace_id = cmd_params->trace_id;
-	bool is_resetting;
 
 #ifdef SXE2_CFG_RELEASE
 	UNUSED(trace_id);
@@ -2112,12 +2169,12 @@ STATIC s32 sxe2_cmd_exec(struct sxe2_adapter *adapter,
 	sxe2_cmd_wait_list_fill(&cmd_ctxt);
 
 	spin_lock_irqsave(&adapter->dev_ctrl_ctxt.cmd_list_lock, flags);
-	is_resetting = sxe2_cmd_exec_mode_get(adapter, cmd_params, &mode);
-	if (is_resetting) {
+	if (!sxe2_dev_state_check(adapter)) {
 		ret = -EOWNERDEAD;
 		spin_unlock_irqrestore(&adapter->dev_ctrl_ctxt.cmd_list_lock, flags);
 		goto l_strip_hdr;
 	} else {
+		sxe2_cmd_exec_mode_get(adapter, cmd_params, &mode);
 		if (mode == SXE2_CMD_EXEC_NOTIFY)
 			sxe2_cmd_wait_list_add(&cmd_ctxt);
 		spin_unlock_irqrestore(&adapter->dev_ctrl_ctxt.cmd_list_lock, flags);
@@ -2278,15 +2335,18 @@ s32 sxe2_err_code_trans_fw(struct sxe2_adapter *adapter, u64 trace_id, s32 err)
 	case -SXE2_CMD_DRV_UDP_TUNNEL_WRONG_PORT:
 		ret = -EINVAL;
 		break;
+	case -SXE2_CMD_DRV_FLM_LINK_NOT_UPDATE:
+		ret = -SXE2_CMD_DRV_FLM_LINK_NOT_UPDATE;
+		break;
 	case -SXE2_CMD_DUMP_LOG_FAILED:
 	case -SXE2_CMD_DRV_RXQ_CFG_FAIL:
 	case -SXE2_CMD_DRV_TXQ_EN_FAIL:
 	case -SXE2_CMD_DRV_TXQ_DISA_FAIL:
 	case -SXE2_CMD_DRV_PFR_FAILED:
 	case -SXE2_CMD_DRV_VFR_FAILED:
+	case -SXE2_CMD_DRV_HW_NOENT:
 	case -SXE2_CMD_DRV_HW_RETURN:
 	case -SXE2_CMD_DRV_HW_MISMATCH:
-	case -SXE2_CMD_DRV_HW_NOENT:
 	case -SXE2_CMD_DRV_TLV_ERROR:
 	case -SXE2_CMD_DRV_TXSCHED_CFG_FAILED:
 	case -SXE2_CMD_DRV_LINK_UPDATE_FAILED:
@@ -2379,32 +2439,6 @@ void sxe2_wait_task_cancel_all(struct sxe2_adapter *adapter)
 {
 	sxe2_wait_task_cancel(&adapter->cmd_channel_ctxt.channel[SXE2_CHNL_FW]);
 	sxe2_wait_task_cancel(&adapter->cmd_channel_ctxt.channel[SXE2_CHNL_MBX]);
-}
-
-void sxe2_msg_list_add(struct sxe2_adapter *adapter, struct sxe2_recv_msg *msg)
-{
-	struct sxe2_cmd_channel_context *ctxt = &adapter->cmd_channel_ctxt;
-
-	mutex_lock(&ctxt->lock);
-	list_add_tail(&msg->node, &ctxt->head);
-	mutex_unlock(&ctxt->lock);
-}
-
-void sxe2_msg_list_del(struct sxe2_adapter *adapter, struct sxe2_recv_msg **msg)
-{
-	struct sxe2_cmd_channel_context *ctxt = &adapter->cmd_channel_ctxt;
-
-	mutex_lock(&ctxt->lock);
-
-	if (list_empty(&ctxt->head)) {
-		*msg = NULL;
-		mutex_unlock(&ctxt->lock);
-		return;
-	}
-
-	*msg = list_first_entry(&ctxt->head, struct sxe2_recv_msg, node);
-	list_del(&(*msg)->node);
-	mutex_unlock(&ctxt->lock);
 }
 
 bool sxe2_cmd_rq_pending(struct sxe2_adapter *adapter,
@@ -2566,27 +2600,6 @@ void sxe2_cmd_work_init(struct sxe2_adapter *adapter)
 	clear_bit(SXE2_RQ_RECV_WORK_STOPPED,
 		  &adapter->cmd_channel_ctxt.recv_work_state);
 	clear_bit(SXE2_MSG_HANDLE_WORK_STOPPED,
-		  &adapter->cmd_channel_ctxt.handle_work_state);
-}
-
-void sxe2_cmd_work_exit(struct sxe2_adapter *adapter)
-{
-	unsigned long flags;
-
-	spin_lock_irqsave(&adapter->cmd_channel_ctxt.recv_work_lock, flags);
-	set_bit(SXE2_RQ_RECV_WORK_STOPPED,
-		&adapter->cmd_channel_ctxt.recv_work_state);
-	spin_unlock_irqrestore(&adapter->cmd_channel_ctxt.recv_work_lock, flags);
-	cancel_work_sync(&adapter->cmd_channel_ctxt.recv_work);
-	clear_bit(SXE2_RQ_RECV_WORK_SCHED,
-		  &adapter->cmd_channel_ctxt.recv_work_state);
-
-	spin_lock_irqsave(&adapter->cmd_channel_ctxt.handle_work_lock, flags);
-	set_bit(SXE2_MSG_HANDLE_WORK_STOPPED,
-		&adapter->cmd_channel_ctxt.handle_work_state);
-	spin_unlock_irqrestore(&adapter->cmd_channel_ctxt.handle_work_lock, flags);
-	cancel_work_sync(&adapter->cmd_channel_ctxt.handle_work);
-	clear_bit(SXE2_MSG_HANDLE_WORK_SCHED,
 		  &adapter->cmd_channel_ctxt.handle_work_state);
 }
 

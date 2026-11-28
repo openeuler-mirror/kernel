@@ -9,8 +9,8 @@
  * @note:
  */
 
-#ifndef __SXE2_DRV_RCMS_DEBUGFS_H__
-#define __SXE2_DRV_RCMS_DEBUGFS_H__
+#ifndef __SXE2_DRV_QOS_DEBUGFS_H__
+#define __SXE2_DRV_QOS_DEBUGFS_H__
 
 #include "sxe2_drv_rdma_common.h"
 

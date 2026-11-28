@@ -396,7 +396,8 @@ s32 sxe2_fnav_del_filter_by_loc(struct sxe2_vsi *vsi, u32 loc);
 
 s32 sxe2_fwc_fnav_hw_clear(struct sxe2_adapter *adapter);
 
-s32 sxe2_fnav_rule_reply(struct sxe2_adapter *adapter);
+s32 sxe2_fwc_fnav_algo_set(struct sxe2_adapter *adapter, u8 mode);
+void sxe2_fnav_rule_reply(struct sxe2_adapter *adapter);
 
 void sxe2_fwc_fnav_trace_trigger(struct sxe2_adapter *adapter);
 
@@ -440,8 +441,8 @@ s32 sxe2_fwc_fnav_space_cnt_get(struct sxe2_adapter *adapter, u16 vsi_id,
 				u32 *gcnt_global, u32 *bcnt_global, u32 *gcnt_pf, u32 *bcnt_pf,
 				u32 *gcnt_vsi, u32 *bcnt_vsi);
 
-s32 sxe2_fnav_stat_idx_alloc_with_lock(struct sxe2_adapter *adapter,
-				       u16 vsi_id, u16 *stat_index, bool need_update);
+s32 sxe2_fnav_stat_idx_alloc(struct sxe2_adapter *adapter, u16 vsi_id,
+			     u16 *stat_index, bool need_update, bool need_lock);
 
 s32 sxe2_fnav_stat_idx_free_with_lock(struct sxe2_adapter *adapter,
 				      u16 stat_index);
@@ -462,7 +463,7 @@ void sxe2_fnav_mask_dump(struct sxe2_adapter *adapter);
 
 void sxe2_fnav_stats_dump(struct sxe2_adapter *adapter);
 
-s32 sxe2_fnav_filter_replay(struct sxe2_vsi *vsi, bool to_vf);
+void sxe2_fnav_filter_replay(struct sxe2_vsi *vsi, bool to_vf);
 
 void sxe2_comm_fnav_msg_convert_fld(unsigned long *flds,
 				    struct sxe2_fnav_comm_proto_hdr *proto_hdr);

@@ -49,6 +49,23 @@ size_t dbg_vsnprintf(char *buf, size_t len, char *fmt, ...)
 	return cnt;
 }
 
+size_t dbg_vsnprintf_buf_szie(char *buf, size_t buf_size, size_t len, char *fmt, ...)
+{
+	size_t cnt = 0;
+	int ret;
+	va_list args;
+
+	va_start(args, fmt);
+	ret = vsnprintf(buf + len, buf_size - len, fmt, args);
+	if (ret >= 0)
+		cnt = (size_t)ret;
+	else
+		DRV_RDMA_LOG_ERROR("vsnprintf format err %d\n", ret);
+	va_end(args);
+
+	return cnt;
+}
+
 int split_command(char *cmd, int *argc, char *argv[])
 {
 	int ret	    = 0;
@@ -770,9 +787,9 @@ remove_stats_debug:
 
 #ifdef SXE2_CFG_DEBUG
 remove_qos_debug:
+#endif
 	debugfs_remove_recursive(hdl->qos_debugfs);
 	hdl->qos_debugfs = NULL;
-#endif
 
 remove_srq_debug:
 	debugfs_remove_recursive(hdl->srq_debugfs);
@@ -805,9 +822,9 @@ remove_mq_err_debug:
 
 #ifdef SXE2_CFG_DEBUG
 remove_mq_debug:
+#endif
 	debugfs_remove_recursive(hdl->mq_debugfs);
 	hdl->mq_debugfs = NULL;
-#endif
 
 #if defined(SXE2_SUPPORT_INJECT) && defined(SXE2_CFG_DEBUG)
 remove_aeq_codes_inject_debug:
@@ -847,68 +864,102 @@ void sxe2_rdma_dgb_pf_exit(struct sxe2_rdma_device *rdma_dev)
 	struct sxe2_rdma_handler *hdl = rdma_dev->hdl;
 
 	DRV_RDMA_LOG_DEV_DEBUG("debugfs remove entries start.\n");
+	if (hdl == NULL) {
+		DRV_RDMA_LOG_DEV_ERR("debugfs remove hdl is NULL.\n");
+		goto end;
+	}
 
-	debugfs_remove_recursive(hdl->cq_debugfs);
-	hdl->cq_debugfs = NULL;
+	if (hdl->cq_debugfs != NULL) {
+		debugfs_remove_recursive(hdl->cq_debugfs);
+		hdl->cq_debugfs = NULL;
+	}
 
-	debugfs_remove_recursive(hdl->qp_debugfs);
-	hdl->qp_debugfs = NULL;
-
-	debugfs_remove_recursive(hdl->ceq_debugfs);
-	hdl->ceq_debugfs = NULL;
+	if (hdl->qp_debugfs != NULL) {
+		debugfs_remove_recursive(hdl->qp_debugfs);
+		hdl->qp_debugfs = NULL;
+	}
+	if (hdl->ceq_debugfs != NULL) {
+		debugfs_remove_recursive(hdl->ceq_debugfs);
+		hdl->ceq_debugfs = NULL;
+	}
 
 #if defined(SXE2_SUPPORT_INJECT) && defined(SXE2_CFG_DEBUG)
 	drv_rdma_aeq_codes_inject_del(rdma_dev);
 #endif
 
-	debugfs_remove_recursive(hdl->aeq_debugfs);
-	hdl->aeq_debugfs = NULL;
+	if (hdl->aeq_debugfs != NULL) {
+		debugfs_remove_recursive(hdl->aeq_debugfs);
+		hdl->aeq_debugfs = NULL;
+	}
 
-	debugfs_remove_recursive(hdl->eq_debugfs);
-	hdl->eq_debugfs = NULL;
-
+	if (hdl->eq_debugfs != NULL) {
+		debugfs_remove_recursive(hdl->eq_debugfs);
+		hdl->eq_debugfs = NULL;
+	}
 #if defined(SXE2_SUPPORT_INJECT) && defined(SXE2_CFG_DEBUG)
 	sxe2_kremove_mq_err_debugfs(rdma_dev);
 #endif
 
-	debugfs_remove_recursive(hdl->mq_debugfs);
-	hdl->mq_debugfs = NULL;
+	if (hdl->mq_debugfs != NULL) {
+		debugfs_remove_recursive(hdl->mq_debugfs);
+		hdl->mq_debugfs = NULL;
+	}
 
-	debugfs_remove_recursive(hdl->rcms_debugfs);
-	hdl->rcms_debugfs = NULL;
-
-#ifdef SXE2_CFG_DEBUG
-	debugfs_remove_recursive(hdl->db_debugfs);
-	hdl->db_debugfs = NULL;
-#endif
-
-	debugfs_remove_recursive(hdl->srq_debugfs);
-	hdl->srq_debugfs = NULL;
-
-	debugfs_remove_recursive(hdl->mr_debugfs);
-	hdl->mr_debugfs = NULL;
-#ifdef SXE2_CFG_DEBUG
-	debugfs_remove_recursive(hdl->ah_debugfs);
-	hdl->ah_debugfs = NULL;
-#endif
-	debugfs_remove_recursive(hdl->qos_debugfs);
-	hdl->qos_debugfs = NULL;
+	if (hdl->rcms_debugfs != NULL) {
+		debugfs_remove_recursive(hdl->rcms_debugfs);
+		hdl->rcms_debugfs = NULL;
+	}
 
 #ifdef SXE2_CFG_DEBUG
-	debugfs_remove_recursive(hdl->stats_debugfs);
-	hdl->stats_debugfs = NULL;
+	if (hdl->db_debugfs != NULL) {
+		debugfs_remove_recursive(hdl->db_debugfs);
+		hdl->db_debugfs = NULL;
+	}
 #endif
-	debugfs_remove_recursive(hdl->cc_debugfs);
-	hdl->cc_debugfs = NULL;
 
-	debugfs_remove_recursive(hdl->common_debugfs);
-	hdl->common_debugfs = NULL;
+	if (hdl->srq_debugfs != NULL) {
+		debugfs_remove_recursive(hdl->srq_debugfs);
+		hdl->srq_debugfs = NULL;
+	}
+
+	if (hdl->mr_debugfs != NULL) {
+		debugfs_remove_recursive(hdl->mr_debugfs);
+		hdl->mr_debugfs = NULL;
+	}
+#ifdef SXE2_CFG_DEBUG
+	if (hdl->ah_debugfs != NULL) {
+		debugfs_remove_recursive(hdl->ah_debugfs);
+		hdl->ah_debugfs = NULL;
+	}
+#endif
+	if (hdl->qos_debugfs != NULL) {
+		debugfs_remove_recursive(hdl->qos_debugfs);
+		hdl->qos_debugfs = NULL;
+	}
+#ifdef SXE2_CFG_DEBUG
+	if (hdl->stats_debugfs != NULL) {
+		debugfs_remove_recursive(hdl->stats_debugfs);
+		hdl->stats_debugfs = NULL;
+	}
+#endif
+	if (hdl->cc_debugfs != NULL) {
+		debugfs_remove_recursive(hdl->cc_debugfs);
+		hdl->cc_debugfs = NULL;
+	}
+	if (hdl->common_debugfs != NULL) {
+		debugfs_remove_recursive(hdl->common_debugfs);
+		hdl->common_debugfs = NULL;
+	}
 #if defined(SXE2_SUPPORT_INJECT) && defined(SXE2_CFG_DEBUG)
 	sxe2_drv_inject_clean_debug_files(rdma_dev);
 #endif
 
-	debugfs_remove_recursive(hdl->sxe2_rdma_dbg_dentry);
-	hdl->sxe2_rdma_dbg_dentry = NULL;
+	if (hdl->sxe2_rdma_dbg_dentry != NULL) {
+		debugfs_remove_recursive(hdl->sxe2_rdma_dbg_dentry);
+		hdl->sxe2_rdma_dbg_dentry = NULL;
+	}
+end:
+	return;
 }
 
 int sxe2_rdma_dbg_init(void)

@@ -97,9 +97,10 @@ bool find_key_in_mmap_tbl(struct sxe2_rdma_kcontext *ucontext, u64 key)
 	int ret_code = 0;
 
 	hash_for_each_possible(ucontext->mmap_hash_tbl, entry, hlist, key) {
-		if (entry->pgoff_key == key)
+		if (entry->pgoff_key == key) {
 			ret_code = true;
-		goto end;
+			goto end;
+		}
 	}
 
 	ret_code = false;
@@ -143,8 +144,7 @@ rdma_user_mmap_entry_add_hash(struct sxe2_rdma_kcontext *ucontext,
 	} while (retry_cnt++ < 10);
 
 	DRV_RDMA_LOG_ERROR_BDF(
-		"mmap table add failed: Cannot find a unique key\n",
-		&ucontext->rdma_dev->ibdev);
+		"mmap table add failed: Cannot find a unique key\n");
 	kfree(entry);
 	return NULL;
 
@@ -256,7 +256,7 @@ static void db_kdec_count_and_free(struct kref *kref)
 	struct sxe2_rdma_pci_f *rdma_func = db_page->rdma_func;
 
 	list_del(&db_page->list);
-	iounmap(db_page->map);
+	iounmap(db_page->sys_page_addr);
 	sxe2_kfree_rsrc(rdma_func, rdma_func->allocated_dbs, db_page->index);
 	bitmap_free(db_page->llwqe_bitmap);
 	kfree(db_page);
@@ -355,6 +355,7 @@ static int db_kalloc_page(struct sxe2_rdma_pci_f *rdma_func,
 		db_page->wc  = true;
 		db_page->map = ioremap_wc(pfn << PAGE_SHIFT,
 					  PAGE_SIZE);
+		db_page->sys_page_addr = db_page->map;
 		if (!db_page->map) {
 			ret_code = -EAGAIN;
 			DRV_RDMA_LOG_DEV_ERR(
@@ -366,6 +367,7 @@ static int db_kalloc_page(struct sxe2_rdma_pci_f *rdma_func,
 		db_page->wc = false;
 		db_page->map =
 			ioremap(pfn << PAGE_SHIFT, PAGE_SIZE);
+		db_page->sys_page_addr = db_page->map;
 		if (!db_page->map) {
 			ret_code = -EAGAIN;
 			DRV_RDMA_LOG_DEV_ERR(
@@ -698,6 +700,7 @@ int db_kalloc_llwqe_mmap_entry(struct sxe2_rdma_device *rdma_dev,
 		DRV_RDMA_LOG_DEV_ERR("kzalloc db_page_idx_entry fail\n");
 		goto free_rsrc;
 	}
+	INIT_LIST_HEAD(&db_page_idx_entry->list);
 	db_page_idx_entry->db_page_idx = db_index;
 	mutex_lock(&rdma_func->db_mmap_entry_head.lock);
 	list_for_each_entry_safe(db_ucontext_entry, next,
@@ -727,8 +730,7 @@ int db_kalloc_llwqe_mmap_entry(struct sxe2_rdma_device *rdma_dev,
 	*mmap_offset  = rdma_user_mmap_get_offset(&entry->rdma_entry);
 	*length	     = entry->rdma_entry.npages * PAGE_SIZE;
 #else
-	spin_lock_init(&ucontext->mmap_tbl_lock);
-	entry	 = rdma_user_mmap_entry_add_hash(ucontext, SXE2_DRV_DB_MMAP_TYPE_NC,
+	entry	 = rdma_user_mmap_entry_add_hash(ucontext, SXE2_DRV_DB_MMAP_TYPE_WC,
 						 mmap_offset);
 	if (!entry) {
 		ret_code = -ENOMEM;
@@ -770,7 +772,8 @@ free_entry:
 	rdma_user_mmap_entry_del_hash(entry);
 #endif
 free_idx_entry:
-	list_del(&db_page_idx_entry->list);
+	if (!list_empty(&db_page_idx_entry->list))
+		list_del(&db_page_idx_entry->list);
 	kfree(db_page_idx_entry);
 	db_page_idx_entry = NULL;
 free_rsrc:

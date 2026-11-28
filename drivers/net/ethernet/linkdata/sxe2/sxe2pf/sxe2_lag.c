@@ -28,9 +28,34 @@ static DEFINE_IDA(sxe2_lag_ida);
 static struct mutex sxe2_lag_list_mtx;
 static struct sxe2_lag_list sxe2_lag_head;
 
-int allow_repeat_sn;
-module_param(allow_repeat_sn, int, 0644);
+STATIC int sxe2_lag_param_set_bool(const char *val, const struct kernel_param *kp)
+{
+	int ret, temp_val;
 
+	ret = kstrtoint(val, 0, &temp_val);
+	if (ret)
+		return ret;
+
+	if (temp_val != 0 && temp_val != 1)
+		return -EINVAL;
+
+	*(int *)kp->arg = temp_val;
+
+	return 0;
+}
+
+STATIC int sxe2_lag_param_get_bool(char *buffer, const struct kernel_param *kp)
+{
+	return sprintf(buffer, "%d\n", *(int *)kp->arg);
+}
+
+STATIC const struct kernel_param_ops sxe2_lag_bool_param_ops = {
+	.set = sxe2_lag_param_set_bool,
+	.get = sxe2_lag_param_get_bool,
+};
+
+int allow_repeat_sn;
+module_param_cb(allow_repeat_sn, &sxe2_lag_bool_param_ops, &allow_repeat_sn, 0644);
 MODULE_PARM_DESC(allow_repeat_sn,
 		 "Indicates device can be probed successfully or not when SN is repeat.");
 
@@ -99,7 +124,7 @@ STATIC struct sxe2_lag_context *sxe2_lag_context_find(struct sxe2_adapter *adapt
 	return lag;
 }
 
-static bool sxe2_lag_is_primary(struct sxe2_adapter *adapter)
+STATIC bool sxe2_lag_is_primary(struct sxe2_adapter *adapter)
 {
 	struct sxe2_lag_context *lag = adapter->lag_ctxt;
 	bool ret = false;
@@ -194,12 +219,12 @@ static void sxe2_lag_info_display(struct sxe2_lag_context *lag)
 		if (active_adapter)
 			active = active_adapter->pf_idx == bond_adapter->pf_idx ? "TRUE" : "FALSE";
 
-		LOG_INFO_BDF("lag display: %s , upper:%s, primary:%s active %s\n",
-			     name, upper, primary, active);
+		LOG_DEBUG_BDF("lag display: %s , upper:%s, primary:%s active %s\n",
+			      name, upper, primary, active);
 	}
 }
 
-static struct sxe2_adapter *sxe2_lag_get_adapter(struct sxe2_lag_context *lag, u8 pf)
+STATIC struct sxe2_adapter *sxe2_lag_get_adapter(struct sxe2_lag_context *lag, u8 pf)
 {
 	return lag->adapters[pf];
 }
@@ -315,7 +340,7 @@ STATIC int sxe2_lag_move_node(struct sxe2_lag_context *lag, u8 oldpf, u8 newpf,
 		qset.user_pri = user_pri;
 		qset.teid = lag->rdma_qset[user_pri].teid;
 		qset.qset_id = lag->rdma_qset[user_pri].qset_id;
-		memcpy(qset.tc, lag->rdma_qsets[user_pri].tc, sizeof(qset.tc));
+		memcpy(qset.tc, lag->rdma_qset[user_pri].tc, sizeof(qset.tc));
 		ret = sxe2_txsched_qset_node_move(old_adapter, new_adapter, &qset,
 						  &new_teid, (u8)is_aa);
 		if (ret) {
@@ -333,7 +358,7 @@ STATIC int sxe2_lag_move_node(struct sxe2_lag_context *lag, u8 oldpf, u8 newpf,
 	}
 
 l_end:
-	return 0;
+	return ret;
 }
 
 static void sxe2_lag_unlink(struct sxe2_adapter *adapter)
@@ -417,7 +442,7 @@ STATIC s32 sxe2_lag_add_prune_list(struct sxe2_adapter *primary_adapter,
 	return ret;
 }
 
-static s32 sxe2_lag_rdma_create_fltr(struct sxe2_adapter *adapter)
+STATIC s32 sxe2_lag_rdma_create_fltr(struct sxe2_adapter *adapter)
 {
 	s32 ret = 0;
 
@@ -455,7 +480,7 @@ static s32 sxe2_lag_rdma_create_fltr(struct sxe2_adapter *adapter)
 	return ret;
 }
 
-static void sxe2_lag_rdma_del_action(struct sxe2_adapter *adapter)
+STATIC void sxe2_lag_rdma_del_action(struct sxe2_adapter *adapter)
 {
 	s32 ret;
 	struct sxe2_fwc_switch_large_action lg_act;
@@ -488,7 +513,7 @@ l_end:
 	LOG_INFO_BDF("lag del rdma action end.\n");
 }
 
-static void sxe2_lag_reclaim_nodes(struct sxe2_lag_context *lag)
+STATIC void sxe2_lag_reclaim_nodes(struct sxe2_lag_context *lag)
 {
 	struct sxe2_adapter *primary_adapter;
 	struct sxe2_adapter *redundant_adapter;
@@ -537,7 +562,7 @@ void sxe2_lag_ab_reclaim_node(struct sxe2_lag_context *lag,
 				 SXE2_LAG_PF1);
 }
 
-static bool sxe2_lag_monitor_act_back(struct sxe2_lag_context *lag)
+STATIC bool sxe2_lag_monitor_act_back(struct sxe2_lag_context *lag)
 {
 	bool send = false;
 	struct sxe2_adapter *adapter = lag->adapters[0];
@@ -892,6 +917,29 @@ void sxe2_lag_alloced_node_move(struct aux_core_dev_info *cdev_info, u8 user_pri
 	}
 }
 
+STATIC bool sxe2_lag_sriov_check(struct sxe2_lag_context *lag)
+{
+	struct sxe2_adapter *adapter = sxe2_lag_role_find(lag, SXE2_LAG_ADAPTER_TYPE_PRIMARY);
+	int i;
+
+	if (test_bit(SXE2_LAG_FLAGS_SRIOV_ENABLING_PF0, &lag->flags) ||
+	    test_bit(SXE2_LAG_FLAGS_SRIOV_ENABLING_PF1, &lag->flags)) {
+		LOG_WARN_BDF("lag: sriov enabling in progress.\n");
+		return true;
+	}
+
+	for (i = 0; i < SXE2_MAX_BOND_DEV_NUM; i++) {
+		adapter = lag->adapters[i];
+		if (adapter && pci_num_vf(adapter->pdev)) {
+			LOG_DEV_ERR("pf %d in sriov, num_vfs %d.\n",
+				    adapter->pf_idx, pci_num_vf(adapter->pdev));
+			return true;
+		}
+	}
+
+	return false;
+}
+
 static s32 sxe2_lag_changeupper_proc(struct sxe2_lag_work *work)
 {
 	s32 ret = 0;
@@ -918,11 +966,26 @@ static s32 sxe2_lag_changeupper_proc(struct sxe2_lag_work *work)
 	set_bit(SXE2_LAG_FLAGS_WK_PROCESS, &lag->flags);
 
 	bonded = lag->lag_wk.is_bonded;
-	lag->bonded = bonded;
-	if (bonded)
+
+	if (bonded && sxe2_lag_sriov_check(lag)) {
+		lag->lag_wk.is_bonded = 0;
+		lag->bonded = false;
+		LOG_WARN_BDF("lag: refuse to bond rdma in sriov.\n");
+		mutex_unlock(&lag->lock);
+		goto l_end;
+	}
+
+	if (bonded) {
+		lag->bonded = true;
 		sxe2_lag_add_devs(lag);
-	else
+	} else {
+		if (!lag->bonded) {
+			mutex_unlock(&lag->lock);
+			goto l_end;
+		}
+		lag->bonded = false;
 		sxe2_lag_del_devs(lag);
+	}
 
 	sxe2_lag_info_display(lag);
 
@@ -1046,6 +1109,16 @@ STATIC int sxe2_lag_netdev_idx_get(struct sxe2_lag_context *lag,
 	return idx;
 }
 
+static void sxe2_lag_wk_reset(struct sxe2_lag_context *lag)
+{
+	lag->lag_wk.lag = lag;
+	lag->lag_wk.state = SXE2_LAG_WK_ST_UNSET;
+	memset(lag->lag_wk.info, 0, sizeof(struct sxe2_lag_dev_info) * 2);
+	lag->lag_wk.bond_mode = SXE2_LAG_MODE_NONE;
+	lag->lag_wk.event = SXE2_LAG_EVENT_UNSET;
+	lag->lag_wk.is_bonded = 0;
+}
+
 STATIC int
 sxe2_lag_changeupper_event_fill(struct sxe2_adapter *adapter,
 				struct netdev_notifier_changeupper_info *info)
@@ -1102,6 +1175,11 @@ l_end:
 	if (changed) {
 		lag->lag_wk.event = SXE2_LAG_EVENT_CHANGEUPPER;
 		lag->lag_wk.state = SXE2_LAG_WK_ST_WAIT_PROC;
+		if (is_bonded && sxe2_lag_sriov_check(lag)) {
+			sxe2_lag_wk_reset(lag);
+			changed = 0;
+			LOG_WARN_BDF("changeupper syn proc failed: in sriov\n");
+		}
 	}
 
 	LOG_INFO_BDF("changeupper syn proc done: changed %d\n", changed);
@@ -1128,7 +1206,7 @@ static int sxe2_lag_bondinfo_event_fill(struct sxe2_adapter *adapter,
 	lag->lag_wk.bond_mode = info->bonding_info.master.bond_mode;
 	linfo = &lag->lag_wk.info[idx];
 
-	if (memcmp(&event_info, linfo, sizeof(struct sxe2_lag_dev_info) == 0))
+	if (memcmp(&event_info, linfo, sizeof(struct sxe2_lag_dev_info)) == 0)
 		goto l_end;
 
 	linfo->slave_state = info->bonding_info.slave.state;
@@ -1193,37 +1271,13 @@ static bool sxe2_lag_safe_mode_check(struct sxe2_lag_context *lag)
 	return in_safe_mode;
 }
 
-static bool sxe2_lag_sriov_check(struct sxe2_lag_context *lag)
-{
-	struct sxe2_adapter *adapter;
-	bool in_sriov = false;
-	int i;
-
-	for (i = 0; i < SXE2_MAX_BOND_DEV_NUM; i++) {
-		adapter = lag->adapters[i];
-		if (adapter) {
-			mutex_lock(&adapter->vf_ctxt.vfs_lock);
-			if (sxe2_vf_is_exist(adapter)) {
-				in_sriov = true;
-				LOG_DEV_ERR("pf %d in sriov.\n",
-					    lag->adapters[i]->pf_idx);
-			}
-			mutex_unlock(&adapter->vf_ctxt.vfs_lock);
-
-			if (in_sriov)
-				break;
-		}
-	}
-
-	return in_sriov;
-}
-
-static int sxe2_lag_event_process(struct sxe2_adapter *adapter, unsigned long event,
+STATIC int sxe2_lag_event_process(struct sxe2_adapter *adapter, unsigned long event,
 				  void *ptr)
 {
 	int ret = NOTIFY_DONE;
 	int changed = 0;
 	struct net_device *netdev = netdev_notifier_info_to_dev(ptr);
+	struct sxe2_lag_context *lag = adapter->lag_ctxt;
 
 	if (!net_eq(dev_net(netdev), &init_net))
 		goto l_end;
@@ -1231,10 +1285,9 @@ static int sxe2_lag_event_process(struct sxe2_adapter *adapter, unsigned long ev
 	if (sxe2_lag_safe_mode_check(adapter->lag_ctxt))
 		goto l_end;
 
-	if (sxe2_lag_sriov_check(adapter->lag_ctxt))
-		goto l_end;
-
-	if (!test_bit(SXE2_FLAG_RDMA_LOADED, adapter->flags))
+	if (!test_bit(SXE2_FLAG_RDMA_LOADED, adapter->flags) &&
+	    !test_bit(SXE2_LAG_FLAGS_WK_PROCESS, &lag->flags) &&
+	    !lag->bonded)
 		goto l_end;
 
 	if (event == NETDEV_CHANGEUPPER)
@@ -1443,7 +1496,7 @@ int sxe2_lag_init(struct sxe2_adapter *adapter)
 
 	mutex_lock(&lag->lock);
 	if (lag->ref_num >= SXE2_MAX_BOND_DEV_NUM) {
-		LOG_DEV_ERR("netdev is arrive max %d.\n", SXE2_MAX_BOND_DEV_NUM);
+		LOG_DEV_ERR("netdev reaches the maximum %d.\n", SXE2_MAX_BOND_DEV_NUM);
 		ret = -EMLINK;
 		goto l_unlock;
 	}
@@ -1483,6 +1536,40 @@ l_end:
 	return ret;
 }
 
+static void sxe2_lag_clean(struct sxe2_adapter *adapter)
+{
+	struct sxe2_lag_context *lag = adapter->lag_ctxt;
+	struct sxe2_adapter *another_adapter = NULL;
+
+	LOG_DEBUG_BDF("lag exit proc start.\n");
+
+	mutex_lock(&lag->lock);
+	if (!lag->bonded) {
+		mutex_unlock(&lag->lock);
+		goto l_end;
+	}
+
+	lag->bond_mode = SXE2_LAG_BOND_MODE_UNSET;
+	lag->bonded    = false;
+
+	sxe2_lag_wk_reset(lag);
+
+	if (adapter == lag->adapters[SXE2_LAG_PF0])
+		another_adapter = lag->adapters[SXE2_LAG_PF1];
+	else
+		another_adapter = lag->adapters[SXE2_LAG_PF0];
+
+	if (another_adapter)
+		another_adapter->aux_ctxt.cdev_info.bond_mode = SXE2_LAG_MODE_NONE;
+	mutex_unlock(&lag->lock);
+
+	if (another_adapter)
+		(void)sxe2_rdma_aux_add(another_adapter);
+
+l_end:
+	LOG_DEBUG_BDF("lag exit proc end.\n");
+}
+
 void sxe2_lag_deinit(struct sxe2_adapter *adapter)
 {
 	struct sxe2_lag_context *lag = adapter->lag_ctxt;
@@ -1492,9 +1579,11 @@ void sxe2_lag_deinit(struct sxe2_adapter *adapter)
 		goto l_end;
 
 	if (!lag) {
-		LOG_ERROR_BDF("adapter already unlinkd lag.\n");
+		LOG_ERROR_BDF("adapter already unlinked lag.\n");
 		goto l_end;
 	}
+
+	sxe2_lag_clean(adapter);
 
 	sxe2_lag_list_lock();
 
@@ -1503,6 +1592,7 @@ void sxe2_lag_deinit(struct sxe2_adapter *adapter)
 		if (notif_blk->notifier_call) {
 			(void)unregister_netdevice_notifier(notif_blk);
 			LOG_INFO("LAG event handler unregistered\n");
+			notif_blk->notifier_call = NULL;
 		}
 	}
 
@@ -1590,6 +1680,13 @@ void sxe2_lag_stop(struct sxe2_adapter *adapter)
 	cdev_info = &primary_adapter->aux_ctxt.cdev_info;
 	sxe2_rdma_aux_delete(cdev_info);
 
+	mutex_lock(&lag->lock);
+	memset(lag->rdma_qset, 0,
+	       sizeof(struct aux_rdma_qset_params) * SXE2_MAX_USER_PRIORITY);
+	memset(lag->rdma_qsets, 0,
+	       sizeof(struct aux_rdma_multi_qset_params) * SXE2_MAX_USER_PRIORITY);
+	mutex_unlock(&lag->lock);
+
 l_end:
 	LOG_DEBUG_BDF("lag stop proc end.\n");
 }
@@ -1648,4 +1745,52 @@ void sxe2_lag_proc(struct sxe2_adapter *adapter)
 
 l_end:
 	return;
+}
+
+void sxe2_lag_exit_bond(struct sxe2_adapter *adapter)
+{
+	struct sxe2_lag_context *lag = adapter->lag_ctxt;
+	int i;
+
+	if (!sxe2_lag_support(adapter) || !lag)
+		return;
+
+	mutex_lock(&lag->lock);
+
+	for (i = 0; i < SXE2_MAX_BOND_DEV_NUM; i++) {
+		if (lag->adapters[i] == adapter) {
+			set_bit(SXE2_LAG_FLAGS_SRIOV_ENABLING_PF0 + i,
+				&lag->flags);
+			break;
+		}
+	}
+
+	if (lag->bonded || lag->lag_wk.is_bonded) {
+		lag->lag_wk.is_bonded = 0;
+		lag->lag_wk.event = SXE2_LAG_EVENT_CHANGEUPPER;
+		lag->lag_wk.state = SXE2_LAG_WK_ST_WAIT_PROC;
+		sxe2_lag_work_sched(lag);
+		LOG_INFO_BDF("lag: exit bond triggered for sriov.\n");
+	}
+
+	mutex_unlock(&lag->lock);
+}
+
+void sxe2_lag_exit_bond_done(struct sxe2_adapter *adapter)
+{
+	struct sxe2_lag_context *lag = adapter->lag_ctxt;
+	int i;
+
+	if (!sxe2_lag_support(adapter) || !lag)
+		return;
+
+	mutex_lock(&lag->lock);
+	for (i = 0; i < SXE2_MAX_BOND_DEV_NUM; i++) {
+		if (lag->adapters[i] == adapter) {
+			clear_bit(SXE2_LAG_FLAGS_SRIOV_ENABLING_PF0 + i,
+				  &lag->flags);
+			break;
+		}
+	}
+	mutex_unlock(&lag->lock);
 }

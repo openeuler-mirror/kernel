@@ -93,6 +93,7 @@ static void sxe2_com_batch_fini(struct sxe2_com_batch *batch)
 		free_page((unsigned long)batch->pages);
 }
 
+#ifndef HAVE_FOLLOW_FAULT_PFN
 static int follow_fault_pfn(struct vm_area_struct *vma,
 			    struct mm_struct *mm, unsigned long vaddr, unsigned long *pfn,
 			    bool write_fault)
@@ -109,7 +110,13 @@ static int follow_fault_pfn(struct vm_area_struct *vma,
 	bool unlocked;
 	int ret;
 
+#ifdef FOLLOW_PTE_6_PARAMS
+	ret = follow_pte(vma->vm_mm, vaddr, NULL, &ptep, NULL, &ptl);
+#elif defined(FOLLOW_PTE_NEED_VM_AREA_PARAM)
+	ret = follow_pte(vma, vaddr, &ptep, &ptl);
+#else
 	ret = follow_pte(vma->vm_mm, vaddr, &ptep, &ptl);
+#endif
 	if (ret) {
 		unlocked = false;
 		ret = fixup_user_fault(mm, vaddr,
@@ -121,7 +128,13 @@ static int follow_fault_pfn(struct vm_area_struct *vma,
 		if (ret)
 			return ret;
 
+#ifdef FOLLOW_PTE_6_PARAMS
+		ret = follow_pte(vma->vm_mm, vaddr, NULL, &ptep, NULL, &ptl);
+#elif defined(FOLLOW_PTE_NEED_VM_AREA_PARAM)
+		ret = follow_pte(vma, vaddr, &ptep, &ptl);
+#else
 		ret = follow_pte(vma->vm_mm, vaddr, &ptep, &ptl);
+#endif
 		if (ret)
 			return ret;
 	}
@@ -135,6 +148,7 @@ static int follow_fault_pfn(struct vm_area_struct *vma,
 	return ret;
 #endif
 }
+#endif
 
 static int vaddr_get_pfns(struct mm_struct *mm, unsigned long vaddr,
 			  long npages, int prot, unsigned long *pfn,
@@ -183,6 +197,7 @@ retry:
 	}
 done:
 	mmap_read_unlock(mm);
+
 	return ret;
 }
 
@@ -350,7 +365,7 @@ static int sxe2_com_pin_map_dma(struct sxe2_com_context *com_ctxt,
 						  size >> PAGE_SHIFT, &pfn, &batch);
 		if (npage <= 0) {
 			WARN_ON(!npage);
-			ret = (int)npage;
+			ret = npage ? (int)npage : -EFAULT;
 			break;
 		}
 
@@ -371,7 +386,7 @@ static int sxe2_com_pin_map_dma(struct sxe2_com_context *com_ctxt,
 }
 
 STATIC struct sxe2_com_dma *sxe2_com_dma_find_unlock(struct sxe2_com_context *com_ctxt,
-						     dma_addr_t start, u32 size)
+						     dma_addr_t start, size_t size)
 {
 	struct sxe2_com_dma *dma;
 	struct sxe2_com_dma_dev *dma_dev = &com_ctxt->dma_dev;

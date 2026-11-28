@@ -35,7 +35,7 @@ static int sxe2_pbl_buddy_init(struct sxe2_pbl_buddy *buddy, u32 max_order)
 		ret = -ENOMEM;
 		goto end;
 	}
-	buddy->num_free = kzalloc((buddy->max_order + 1) * sizeof(u32 *),
+	buddy->num_free = kzalloc((buddy->max_order + 1) * sizeof(u32),
 					 GFP_KERNEL);
 	if (!buddy->num_free) {
 		DRV_RDMA_LOG_DEV_ERR("pbl:buddy init num free alloc mem err\n");
@@ -53,7 +53,6 @@ static int sxe2_pbl_buddy_init(struct sxe2_pbl_buddy *buddy, u32 max_order)
 			ret = -ENOMEM;
 			goto err_out_free;
 		}
-		memset(buddy->bits[i], 0x0, sizeof(unsigned long));
 	}
 
 	set_bit(0, buddy->bits[buddy->max_order]);
@@ -128,8 +127,9 @@ static void sxe2_pbl_buddy_free(struct sxe2_pbl_buddy *buddy, u64 pbl_seg_index,
 
 	seg = (int)(pbl_seg_index >> order);
 	spin_lock(&buddy->buddy_lock);
-
-	while (test_bit(seg ^ 1, buddy->bits[order])) {
+	while (order < buddy->max_order) {
+		if (!test_bit(seg ^ 1, buddy->bits[order]))
+			break;
 		clear_bit(seg ^ 1, buddy->bits[order]);
 		--buddy->num_free[order];
 		seg >>= 1;
@@ -170,7 +170,7 @@ static int sxe2_pbl_first_page_bitmap_init(
 	first_page_bitmap->first_fpte_idx = rcms_info->max_fpte_index + 1;
 	spin_lock_init(&first_page_bitmap->bitmap_lock);
 	first_page_bitmap->fpte_bits = kzalloc(
-		(first_page_bitmap->max_fpte_cnt) * sizeof(unsigned long *),
+		(BITS_TO_LONGS(first_page_bitmap->max_fpte_cnt) * sizeof(unsigned long)),
 		GFP_KERNEL);
 	if (!first_page_bitmap->fpte_bits) {
 		DRV_RDMA_LOG_DEV_ERR(
@@ -494,8 +494,10 @@ add_spte_err:
 		sxe2_rcms_remove_spt_entry(dev, rcms_info, spte_idx);
 	}
 	pble_rsrc->add_spte_cnt = 0;
-	sxe2_rcms_remove_fpt_entry(dev, rcms_info, fpte_idx,
-				   SXE2_RCMS_FPT_TYPE_SECOND);
+	if (!fpte->valid) {
+		sxe2_rcms_remove_fpt_entry(dev, rcms_info, fpte_idx,
+					SXE2_RCMS_FPT_TYPE_SECOND);
+	}
 end:
 	return ret;
 }
@@ -767,10 +769,9 @@ update_fpte_err:
 		spte_idx_range = max(spte_idx, i * SXE2_RCMS_SPT_ENTRY_CNT);
 		spte_lmt_range =
 			min(spte_lmt, (i + 1) * SXE2_RCMS_SPT_ENTRY_CNT);
-		j = spte_lmt_range;
-		while (j > spte_idx_range) {
-			j--;
-			sxe2_rcms_remove_spt_entry(dev, rcms_info, j);
+		while (spte_lmt_range > spte_idx_range) {
+			spte_lmt_range--;
+			sxe2_rcms_remove_spt_entry(dev, rcms_info, spte_lmt_range);
 		}
 		sxe2_rcms_remove_fpt_entry(dev, rcms_info, i,
 					   SXE2_RCMS_FPT_TYPE_SECOND);
@@ -1266,7 +1267,6 @@ void sxe2_pbl_free_pble(struct sxe2_pbl_pble_rsrc *pble_rsrc,
 					      pble_cnt);
 		goto end;
 	}
-
 	pble_seg_idx = ((pble_liner_addr - pble_rsrc->alloc_pble_base_addr) /
 			SXE2_PBL_MIN_ALLOC_PBLE) /
 		       SXE2_PBL_PBLE_SIZE;

@@ -54,12 +54,66 @@ MODULE_PARM_DESC(g_vf_switch_stats, "stats open/close, 0-off 1-on.");
 
 #endif
 
-static int com_mode = SXE2_COM_MODULE_UNDEFINED;
-module_param(com_mode, uint, 0644);
-MODULE_PARM_DESC(com_mode, "driver mode. kernel:0, dpdk:1, mixed:2(default)");
+static int drv_mode = SXE2_COM_MODULE_MIXED;
+
+STATIC int sxe2vf_param_get_drv_mode(char *buffer, const struct kernel_param *kp)
+{
+	return sprintf(buffer, "%d\n", *(int *)kp->arg);
+}
+
+STATIC int sxe2vf_param_set_drv_mode(const char *val, const struct kernel_param *kp)
+{
+	int ret, temp_val;
+
+	ret = kstrtoint(val, 0, &temp_val);
+	if (ret)
+		return ret;
+
+	if (temp_val != SXE2_COM_MODULE_DPDK && temp_val != SXE2_COM_MODULE_KERNEL
+	    && temp_val != SXE2_COM_MODULE_MIXED)
+		return -EINVAL;
+
+	*(int *)kp->arg = temp_val;
+
+	return 0;
+}
+
+STATIC const struct kernel_param_ops sxe2vf_drv_mode_param_ops = {
+	.set = sxe2vf_param_set_drv_mode,
+	.get = sxe2vf_param_get_drv_mode,
+};
+
+module_param_cb(drv_mode, &sxe2vf_drv_mode_param_ops, &drv_mode, 0644);
+MODULE_PARM_DESC(drv_mode, "driver mode. kernel:0, dpdk:1, mixed(default):2");
+
+STATIC int sxe2vf_param_set_debug(const char *val, const struct kernel_param *kp)
+{
+	int ret, temp_val;
+
+	ret = kstrtoint(val, 0, &temp_val);
+	if (ret)
+		return ret;
+
+	if (temp_val < -1 || temp_val > 16)
+		return -EINVAL;
+
+	*(int *)kp->arg = temp_val;
+
+	return 0;
+}
+
+STATIC int sxe2vf_param_get_debug(char *buffer, const struct kernel_param *kp)
+{
+	return sprintf(buffer, "%d\n", *(int *)kp->arg);
+}
+
+STATIC const struct kernel_param_ops sxe2vf_debug_param_ops = {
+	.set = sxe2vf_param_set_debug,
+	.get = sxe2vf_param_get_debug,
+};
 
 STATIC int msg_debug = -1;
-module_param(msg_debug, int, 0644);
+module_param_cb(msg_debug, &sxe2vf_debug_param_ops, &msg_debug, 0644);
 #ifndef CONFIG_DYNAMIC_DEBUG
 MODULE_PARM_DESC(msg_debug,
 		 "netif level (0=none,...,16=all), debug_mask (0x8XXXXXXXX)");
@@ -83,9 +137,9 @@ int sxe2vf_com_mode_get(void *adapter)
 	return ((struct sxe2vf_adapter *)adapter)->drv_mode;
 }
 
-int sxe2vf_g_com_mode_get(void)
+int sxe2vf_g_drv_mode_get(void)
 {
-	return com_mode;
+	return drv_mode;
 }
 
 static inline u32 sxe2vf_readl(void __iomem *reg)
@@ -135,10 +189,28 @@ STATIC const struct pci_device_id sxe2vf_pci_tbl[] = {
 				0,
 		}};
 
+enum sxe2_com_module sxe2vf_drv_run_mode_get(struct sxe2vf_adapter *adapter)
+{
+	enum sxe2_com_module run_mode;
+
+	run_mode = adapter->drv_mode;
+	LOG_INFO_BDF("vf run drv mode:%u.\n", run_mode);
+
+	return run_mode;
+}
+
+u16 sxe2vf_dpdk_vsi_id_get(struct sxe2vf_adapter *adapter)
+{
+	return (sxe2vf_drv_run_mode_get(adapter) == SXE2_COM_MODULE_DPDK) ?
+			adapter->vsi_ctxt.vsi_ids[SXE2_VF_VSI_ID_MASTER] :
+			adapter->vsi_ctxt.vsi_ids[SXE2_VF_VSI_ID_SLAVE];
+}
+
 s32 sxe2vf_dpdk_caps_get(struct sxe2vf_adapter *adapter,
 			 struct sxe2vf_res_caps *caps)
 {
 	s32 ret = 0;
+	u16 q_max;
 
 	if (!adapter || !caps) {
 		ret = -EINVAL;
@@ -146,25 +218,32 @@ s32 sxe2vf_dpdk_caps_get(struct sxe2vf_adapter *adapter,
 		goto l_end;
 	}
 
+	q_max = (adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_DPDK].base.lut_type ==
+		 SXE2_RSS_GLOBAL_LUT) ? SXE2_GLOBAL_LUT_MAX_QUEUE :
+					SXE2_VSI_LUT_MAX_QUEUE;
+
 	caps->txq_base = adapter->q_ctxt.dpdk_offset;
-	caps->txq_cnt = adapter->q_ctxt.dpdk_q_cnt;
+	caps->txq_cnt = min(q_max, adapter->q_ctxt.dpdk_q_cnt);
 
 	caps->rxq_base = adapter->q_ctxt.dpdk_offset;
-	caps->rxq_cnt = adapter->q_ctxt.dpdk_q_cnt;
+	caps->rxq_cnt = min(q_max, adapter->q_ctxt.dpdk_q_cnt);
 
 	caps->irq_base = adapter->irq_ctxt.dpdk_offset;
 	caps->irq_cnt = adapter->irq_ctxt.dpdk_irq_cnt;
 
-	caps->rss_key_size = adapter->rss_ctxt.rss_key_size;
-	caps->rss_lut_size = adapter->rss_ctxt.rss_lut_size;
-	caps->rss_lut_type = adapter->rss_ctxt.rss_lut_type;
+	caps->rss_key_size = adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_DPDK].base.key_size;
+	caps->rss_lut_size = adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_DPDK].base.lut_size;
+	caps->rss_lut_type = adapter->rss_ctxt.adv_info[SXE2VF_RSS_LUT_DPDK].base.lut_type;
+
+	caps->vsi_id = sxe2vf_dpdk_vsi_id_get(adapter);
 
 	LOG_INFO_BDF("dpdk vf txq base:%d cnt:%d rxq base:%d cnt:%d irq base:%d\t"
 		     "cnt:%d\n"
-		     "\t rss_key_size:%u lut_size:%u lut_type:%u.\n",
+		     "\t rss_key_size:%u lut_size:%u lut_type:%u vsi_id:%u.\n",
 		     caps->txq_base, caps->txq_cnt, caps->rxq_base, caps->rxq_cnt,
 		     caps->irq_base, caps->irq_cnt, caps->rss_key_size,
-		     caps->rss_lut_size, caps->rss_lut_type);
+		     caps->rss_lut_size, caps->rss_lut_type,
+		     caps->vsi_id);
 
 l_end:
 	return ret;
@@ -284,6 +363,18 @@ void sxe2vf_post_state_update(struct sxe2vf_work_context *work_ctxt,
 {
 	work_ctxt->post_state = post_state;
 	LOG_INFO("post state update to %u.\n", post_state);
+}
+
+static bool sxe2vf_is_fault_status(struct sxe2vf_adapter *adapter)
+{
+	enum sxe2vf_dev_state state;
+	bool ret = false;
+
+	sxe2vf_dev_state_get(adapter, &state, NULL);
+	if (state == SXE2VF_DEVSTATE_FAULT)
+		ret = true;
+
+	return ret;
 }
 
 STATIC void sxe2vf_queue_work(struct sxe2vf_adapter *adapter,
@@ -465,12 +556,40 @@ STATIC void sxe2vf_probe_post_deinit(struct sxe2vf_adapter *adapter,
 	LOG_INFO_BDF("probe post deinit from state %d.\n", state);
 }
 
+static s32 sxe2vf_eth_vf_stats_clear(struct sxe2vf_adapter *adapter)
+{
+	struct sxe2vf_msg_params params = { 0 };
+	struct sxe2_vf_vsi_res vf_info;
+	s32 ret = 0;
+
+	vf_info.vsi_id = adapter->vsi_ctxt.vsi_ids[SXE2_VF_VSI_ID_MASTER];
+	sxe2vf_mbx_msg_dflt_params_fill(&params, SXE2VF_MSG_RESP_WAIT_NOTIFY,
+					SXE2_VF_ETH_STATS_CLEAR, &vf_info, sizeof(vf_info),
+					NULL, 0);
+
+	ret = sxe2vf_mbx_msg_send(adapter, &params);
+	if (ret == -EOPNOTSUPP) {
+		LOG_ERROR_BDF("vf stats clear not support pf version:%d.%d ret:%d\n",
+			      adapter->pf_ver.major,
+					  adapter->pf_ver.minor, ret);
+		ret = 0;
+	}
+
+	return ret;
+}
+
 static s32 sxe2vf_eth_init(struct sxe2vf_adapter *adapter)
 {
 	s32 ret = 0;
 
 	if (sxe2vf_com_mode_get(adapter) == SXE2_COM_MODULE_DPDK)
 		return ret;
+
+	ret = sxe2vf_eth_vf_stats_clear(adapter);
+	if (ret) {
+		LOG_ERROR_BDF("eth vf stats clear failed, ret=%d\n", ret);
+		return ret;
+	}
 
 	sxe2vf_netdev_init(adapter);
 
@@ -538,7 +657,12 @@ STATIC s32 sxe2vf_irq_queue_cfg(struct sxe2vf_adapter *adapter)
 		goto l_irq_deinit;
 	}
 
-	(void)sxe2vf_vsi_hw_decfg(adapter);
+	if (adapter->pf_ver.major == SXE2_PF_VF_VERSION_MAJOR_V1 &&
+	    adapter->pf_ver.minor <= SXE2_PF_VF_VERSION_MINOR_V1) {
+		(void)sxe2vf_vsi_hw_decfg(adapter);
+		LOG_WARN_BDF("pf version %d.%d need vsi decfg\n",
+			     adapter->pf_ver.major, adapter->pf_ver.minor);
+	}
 
 	ret = sxe2vf_eth_init(adapter);
 	if (ret) {
@@ -559,6 +683,15 @@ l_irq_deinit:
 	return ret;
 }
 
+static bool sxe2vf_dev_status_abnormal(struct sxe2vf_adapter *adapter)
+{
+	bool ret = sxe2vf_reg_read(&adapter->hw, SXE2VF_MBX_RQ_LEN) ==
+				     SXE2VF_REG_INVAL_VALUE;
+	if (ret)
+		LOG_WARN_BDF("vf dev status abnormal.\n");
+	return ret;
+}
+
 STATIC bool sxe2vf_reset_is_detected(struct sxe2vf_adapter *adapter)
 {
 	u32 i;
@@ -572,8 +705,7 @@ STATIC bool sxe2vf_reset_is_detected(struct sxe2vf_adapter *adapter)
 		     state != SXE2VF_DEVSTATE_VFR_REQUEST &&
 		     state != SXE2VF_DEVSTATE_VFR_NOTIFY) ||
 		    sxe2vf_reset_detect(adapter) ||
-		    (sxe2vf_reg_read(&adapter->hw, SXE2VF_MBX_RQ_LEN) ==
-				     SXE2VF_REG_INVAL_VALUE &&
+		    (sxe2vf_dev_status_abnormal(adapter) &&
 		     pci_wait_for_pending_transaction(adapter->pdev))) {
 			LOG_INFO_BDF("detected reset_type:0x%x state:0x%x reg:0x%x\t"
 				     "value:0x%x.\n",
@@ -657,11 +789,7 @@ STATIC void sxe2vf_probe_post_build(struct sxe2vf_adapter *adapter)
 
 	case SXE2VF_PROBE_POST_CAPS_INIT:
 
-		ret = sxe2vf_drv_mode_get(adapter, SXE2VF_MSG_RESP_WAIT_POLLING);
-		if (ret) {
-			adapter->drv_mode = SXE2_COM_MODULE_MIXED;
-			LOG_ERROR_BDF("get drv mode failed, ret=%d\n", ret);
-		}
+		sxe2vf_drv_mode_get(adapter, SXE2VF_MSG_RESP_WAIT_POLLING);
 
 		if (sxe2vf_func_caps_init(adapter))
 			goto l_retry;
@@ -800,6 +928,14 @@ static s32 sxe2vf_eth_rebuild(struct sxe2vf_adapter *adapter)
 	if (sxe2vf_com_mode_get(adapter) == SXE2_COM_MODULE_DPDK)
 		return ret;
 
+	if (adapter->pf_ver.minor > SXE2_PF_VF_VERSION_MINOR_V1) {
+		ret = sxe2vf_vsi_hw_cfg(adapter);
+		if (ret) {
+			LOG_ERROR_BDF("vf vsi hw cfg failed.ret:%d\n", ret);
+			goto l_out;
+		}
+	}
+
 	mutex_lock(&adapter->vsi_ctxt.lock);
 	ret = sxe2vf_vsi_rebuild(vsi);
 	mutex_unlock(&adapter->vsi_ctxt.lock);
@@ -822,6 +958,8 @@ static s32 sxe2vf_eth_rebuild(struct sxe2vf_adapter *adapter)
 	set_bit(SXE2VF_FLAG_UPDATE_NETDEV_FEATURES, adapter->flags);
 
 	sxe2vf_adv_cfg_restore(adapter);
+
+	(void)sxe2vf_rdma_multi_mac_addr_clean(adapter);
 
 	(void)netif_set_real_num_rx_queues(adapter->netdev, vsi->rxqs.q_cnt);
 	(void)netif_set_real_num_tx_queues(adapter->netdev, vsi->txqs.q_cnt);
@@ -1071,6 +1209,11 @@ STATIC s32 sxe2vf_pci_drop_stop(struct sxe2vf_adapter *adapter)
 		msleep(SXE2VF_STOP_DROP_DONE_INTERVAL);
 		if (sxe2vf_hw_corer_stop_drop_done(hw))
 			break;
+
+		if (sxe2vf_is_fault_status(adapter)) {
+			LOG_WARN_BDF("dev fault status no need wait stop drop done.\n");
+			return -EIO;
+		}
 	}
 
 	if (cnt == SXE2VF_STOP_DROP_TIMEOUT) {
@@ -1122,6 +1265,10 @@ static s32 sxe2vf_unactive_state_proc(struct sxe2vf_adapter *adapter)
 			sxe2vf_dev_state_set(adapter, SXE2VF_DEVSTATE_ACTIVATED,
 					     SXE2VF_RESET_NONE);
 			return 0;
+		}
+		if (sxe2vf_is_fault_status(adapter)) {
+			LOG_WARN_BDF("dev fault status no need wait dev to active.\n");
+			return -EIO;
 		}
 		msleep(SXE2VF_ACTIVE_WAIT_INTERVAL);
 	}
@@ -1206,10 +1353,15 @@ static s32 sxe2vf_corer_done(struct sxe2vf_adapter *adapter)
 	for (i = 0; i < SXE2VF_CORER_WAIT_DONE_COUNT; i++) {
 		if (sxe2vf_hw_corer_done(&adapter->hw))
 			break;
+
+		if (sxe2vf_is_fault_status(adapter)) {
+			LOG_WARN_BDF("dev fault status no need wait core reset done.\n");
+			return -EIO;
+		}
 		msleep(SXE2VF_CORER_DONE_WAIT_INTERVAL);
 	}
 
-	if (i == SXE2VF_RESET_DETEC_WAIT_COUNT) {
+	if (i == SXE2VF_CORER_WAIT_DONE_COUNT) {
 		LOG_ERROR_BDF("wait core reset done failed.\n");
 		return -ETIMEDOUT;
 	}
@@ -1373,7 +1525,7 @@ STATIC void sxe2vf_mbx_wk_cb(struct work_struct *work)
 
 STATIC int sxe2vf_wait_config_space_accessible(struct sxe2vf_adapter *adapter)
 {
-	u32 delay = 1;
+	u32 delay = 0;
 	u32 val;
 	u32 timeout = SXE2VF_WAIT_CONFIG_ACCESSIBLE_TIMEOUT_MS;
 
@@ -1385,8 +1537,11 @@ STATIC int sxe2vf_wait_config_space_accessible(struct sxe2vf_adapter *adapter)
 			return -ENOTTY;
 		}
 
-		msleep(delay);
-		delay *= 2;
+		if (sxe2vf_is_fault_status(adapter))
+			break;
+
+		msleep(SXE2VF_WAIT_CONFIG_ACCESSIBLE_INTERVAL);
+		delay += SXE2VF_WAIT_CONFIG_ACCESSIBLE_INTERVAL;
 		(void)pci_read_config_dword(adapter->pdev, PCI_COMMAND, &val);
 	}
 
@@ -1407,6 +1562,13 @@ STATIC void sxe2vf_health_wk_cb(struct work_struct *health_wk)
 		return;
 	}
 
+	if (sxe2vf_dev_status_abnormal(adapter) &&
+	    (!pci_device_is_present(adapter->pdev) ||
+		 pci_wait_for_pending_transaction(adapter->pdev))) {
+		sxe2vf_waitq_entry_cancel(adapter);
+		sxe2vf_wkq_schedule(adapter, SXE2VF_WK_MONITOR_IM, 0);
+	}
+
 	if (sxe2vf_wait_config_space_accessible(adapter)) {
 		sxe2vf_dev_state_set(adapter, SXE2VF_DEVSTATE_FAULT,
 				     SXE2VF_RESET_NONE);
@@ -1420,7 +1582,7 @@ STATIC void sxe2vf_health_wk_cb(struct work_struct *health_wk)
 		sxe2vf_wkq_schedule(adapter, SXE2VF_WK_MONITOR_IM, 0);
 	}
 
-	sxe2vf_dev_state_get(adapter, &state, SXE2VF_RESET_NONE);
+	sxe2vf_dev_state_get(adapter, &state, NULL);
 	if (state != SXE2VF_DEVSTATE_FAULT)
 		sxe2vf_wkq_schedule(adapter, SXE2VF_WK_HEALTH,
 				    SXE2VF_WOKER_DELAY_2S);
@@ -1571,15 +1733,12 @@ STATIC s32 sxe2vf_sw_base_init(struct sxe2vf_adapter *adapter)
 STATIC void sxe2vf_pci_deinit(struct sxe2vf_adapter *adapter)
 {
 	struct pci_dev *pdev = adapter->pdev;
-	struct net_device *netdev = adapter->netdev;
 
 	iounmap(adapter->hw.reg_base_addr);
 
 #ifdef HAVE_PCI_ENABLE_PCIE_ERROR_REPORTING
 	pci_disable_pcie_error_reporting(adapter->pdev);
 #endif
-
-	free_netdev(netdev);
 
 	pci_set_drvdata(pdev, NULL);
 
@@ -1597,7 +1756,8 @@ STATIC int sxe2vf_probe(struct pci_dev *pdev,
 	adapter = sxe2vf_adapter_create(pdev);
 	if (!adapter) {
 		LOG_ERROR("can't probe virtual\n");
-		return -ENOMEM;
+		ret = -ENOMEM;
+		goto l_out;
 	}
 
 	sxe2vf_msg_level_init(adapter);
@@ -1605,8 +1765,7 @@ STATIC int sxe2vf_probe(struct pci_dev *pdev,
 	ret = sxe2vf_pci_init(adapter);
 	if (ret) {
 		LOG_DEV_ERR("pci init failed, ret=%d\n", ret);
-		free_netdev(adapter->netdev);
-		goto l_out;
+		goto l_pci_init_fail;
 	}
 
 	sxe2vf_hw_base_init(adapter);
@@ -1630,20 +1789,31 @@ STATIC int sxe2vf_probe(struct pci_dev *pdev,
 l_sw_base_init_fail:
 	sxe2vf_pci_deinit(adapter);
 
+l_pci_init_fail:
+	free_netdev(adapter->netdev);
+
 l_out:
 	return ret;
 }
 
 STATIC void sxe2vf_remove(struct pci_dev *pdev)
 {
-	struct sxe2vf_adapter *adapter = SXE2VF_DEV_TO_ADAPTER(pdev);
+	struct sxe2vf_adapter *adapter;
 
-	if (!adapter) {
+	if (!pci_get_drvdata(pdev)) {
 		LOG_WARN("adapter NULL, skip vf remove oper.\n");
 		return;
 	}
 
+	adapter = SXE2VF_DEV_TO_ADAPTER(pdev);
+
 	LOG_INFO_BDF("vf driver remove start.\n");
+
+	if (sxe2vf_dev_status_abnormal(adapter)) {
+		sxe2vf_dev_state_set(adapter, SXE2VF_DEVSTATE_FAULT, SXE2VF_RESET_NONE);
+		sxe2vf_waitq_entry_cancel(adapter);
+		LOG_INFO_BDF("vf dev status abnormal set fault state.\n");
+	}
 
 	sxe2vf_wkq_cancel(adapter, SXE2VF_WK_MONITOR);
 
@@ -1666,6 +1836,8 @@ STATIC void sxe2vf_remove(struct pci_dev *pdev)
 	LOG_INFO_BDF("vf remove done.\n");
 
 	sxe2vf_pci_deinit(adapter);
+
+	free_netdev(adapter->netdev);
 }
 
 STATIC bool sxe2vf_wait_reset_done(struct sxe2vf_adapter *adapter)
@@ -1678,6 +1850,7 @@ STATIC bool sxe2vf_wait_reset_done(struct sxe2vf_adapter *adapter)
 			LOG_INFO_BDF("wait vf reset done success\n");
 			return true;
 		}
+
 		msleep(SXE2VF_ACTIVE_WAIT_INTERVAL);
 	}
 	LOG_WARN_BDF("wait vf reset done timeout\n");
@@ -1845,6 +2018,12 @@ static int __maybe_unused sxe2vf_pm_resume(struct device *dev)
 		if (ret) {
 			LOG_ERROR_BDF("sxe2vf_irq_init resume failed %d.\n", ret);
 			sxe2vf_msix_deinit(adapter);
+			goto l_end;
+		}
+		ret = sxe2vf_irq_pool_init(adapter);
+		if (ret) {
+			LOG_ERROR_BDF("sxe2vf_irq_pool_init resume failed %d.\n", ret);
+			sxe2vf_irq_deinit(adapter);
 			goto l_end;
 		}
 	}

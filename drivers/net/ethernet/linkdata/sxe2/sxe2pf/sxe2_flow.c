@@ -47,7 +47,7 @@ static s32 sxe2_flow_op_creat_vsig_with_flow(struct sxe2_ppp_common_ctxt *ppp_ct
 static void sxe2_rss_delete_cfg_list(struct sxe2_rss_ctxt *rss_ctxt, u16 vsi_sw_idx,
 				     struct sxe2_flow_info_node *flow);
 
-STATIC u8 sxe2_blk_fv_cnt_get(enum sxe2_block_id blk)
+u8 sxe2_blk_fv_cnt_get(enum sxe2_block_id blk)
 {
 	switch (blk) {
 	case SXE2_HW_BLOCK_ID_FNAV:
@@ -87,8 +87,8 @@ STATIC u8 sxe2_blk_prof_cnt_get(enum sxe2_block_id blk)
 	};
 }
 
-STATIC void *sxe2_section_buf_alloc(struct sxe2_fwc_prof_buf *buf,
-				    enum sxe2_class_id type, u16 size)
+void *sxe2_section_buf_alloc(struct sxe2_fwc_prof_buf *buf,
+			     enum sxe2_class_id type, u16 size)
 {
 	u16 data_end;
 	u16 entry_cnt;
@@ -303,7 +303,7 @@ s32 sxe2_fwc_update_profile(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 
 	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 	if (ret) {
-		LOG_ERROR_BDF("og config cmd fail, ret=%d\n", ret);
+		LOG_ERROR_BDF("og config cmd failed, ret=%d\n", ret);
 		ret = -EIO;
 	}
 
@@ -313,8 +313,8 @@ l_out:
 	return ret;
 }
 
-STATIC s32 sxe2_fwc_process_tcam_batch(struct sxe2_adapter *adapter,
-				       struct sxe2_fwc_tcam_idx_batch *tcam_batch,
+s32 sxe2_fwc_process_tcam_batch(struct sxe2_adapter *adapter,
+				struct sxe2_fwc_tcam_idx_batch *tcam_batch,
 				       u32 size)
 {
 	s32 ret = 0;
@@ -325,19 +325,19 @@ STATIC s32 sxe2_fwc_process_tcam_batch(struct sxe2_adapter *adapter,
 
 	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 	if (ret) {
-		LOG_ERROR_BDF("tcam entry batch cmd fail, ret=%d\n", ret);
+		LOG_ERROR_BDF("tcam entry batch cmd failed, ret=%d\n", ret);
 		ret = -EIO;
 	}
 
 	return ret;
 }
 
-STATIC s32 sxe2_fwc_alloc_prof_id(struct sxe2_adapter *adapter,
-				  enum sxe2_block_id blk, u16 *prof_id)
+s32 sxe2_fwc_alloc_prof_id(struct sxe2_adapter *adapter,
+			   enum sxe2_block_id blk, u16 *prof_id)
 {
 	s32 ret = 0;
-	struct sxe2_fwc_prof_id entry;
-	struct sxe2_cmd_params cmd = {0};
+	struct sxe2_fwc_prof_id entry = { 0 };
+	struct sxe2_cmd_params cmd = { 0 };
 
 	entry.blk = blk;
 
@@ -347,7 +347,7 @@ STATIC s32 sxe2_fwc_alloc_prof_id(struct sxe2_adapter *adapter,
 
 	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 	if (ret) {
-		LOG_ERROR_BDF("profile id alloc cmd fail, ret=%d\n", ret);
+		LOG_ERROR_BDF("profile id alloc cmd failed, ret=%d\n", ret);
 		ret = -EIO;
 		goto l_out;
 	}
@@ -358,12 +358,12 @@ l_out:
 	return ret;
 }
 
-STATIC s32 sxe2_fwc_free_prof_id(struct sxe2_adapter *adapter,
-				 enum sxe2_block_id blk, u16 prof_id)
+s32 sxe2_fwc_free_prof_id(struct sxe2_adapter *adapter,
+			  enum sxe2_block_id blk, u16 prof_id)
 {
 	s32 ret = 0;
-	struct sxe2_fwc_prof_id entry;
-	struct sxe2_cmd_params cmd = {0};
+	struct sxe2_fwc_prof_id entry = { 0 };
+	struct sxe2_cmd_params cmd = { 0 };
 
 	entry.blk = blk;
 	entry.prof_id = cpu_to_le16(prof_id);
@@ -373,20 +373,95 @@ STATIC s32 sxe2_fwc_free_prof_id(struct sxe2_adapter *adapter,
 
 	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 	if (ret) {
-		LOG_ERROR_BDF("profile id free cmd fail, ret=%d\n", ret);
+		LOG_ERROR_BDF("profile id free cmd failed, ret=%d\n", ret);
 		ret = -EIO;
 	}
 
 	return ret;
 }
 
-STATIC s32 sxe2_fwc_update_mask_sel(struct sxe2_adapter *adapter,
-				    enum sxe2_block_id blk, u16 prof_id,
+s32 sxe2_fwc_alloc_mask_id(struct sxe2_adapter *adapter,
+			   enum sxe2_block_id blk, u16 *mask_id)
+{
+	s32 ret = 0;
+	struct sxe2_fwc_mask_idx entry = { 0 };
+	struct sxe2_cmd_params cmd = { 0 };
+
+	entry.blk = blk;
+
+	sxe2_cmd_params_dflt_fill(&cmd, SXE2_CMD_OG_MASK_ALLOC, &entry,
+				  sizeof(struct sxe2_fwc_mask_idx), &entry,
+				  sizeof(struct sxe2_fwc_mask_idx));
+
+	ret = sxe2_cmd_fw_exec(adapter, &cmd);
+	if (ret) {
+		LOG_ERROR_BDF("mask id alloc cmd failed, ret=%d\n", ret);
+		ret = -EIO;
+		goto l_out;
+	}
+
+	*mask_id = le16_to_cpu(entry.mask_idx);
+
+l_out:
+	return ret;
+}
+
+s32 sxe2_fwc_free_mask_id(struct sxe2_adapter *adapter,
+			  enum sxe2_block_id blk, u16 mask_id)
+{
+	s32 ret = 0;
+	struct sxe2_fwc_mask_idx entry = { 0 };
+	struct sxe2_cmd_params cmd = { 0 };
+
+	entry.blk     = blk;
+	entry.mask_idx = cpu_to_le16(mask_id);
+
+	sxe2_cmd_params_dflt_fill(&cmd, SXE2_CMD_OG_MASK_FREE, &entry,
+				  sizeof(struct sxe2_fwc_mask_idx), NULL, 0);
+
+	ret = sxe2_cmd_fw_exec(adapter, &cmd);
+	if (ret) {
+		LOG_ERROR_BDF("mask id free cmd failed, ret=%d\n", ret);
+		ret = -EIO;
+	}
+
+	return ret;
+}
+
+s32 sxe2_fwc_update_mask(struct sxe2_adapter *adapter,
+			 enum sxe2_block_id blk,
+								u16 mask_idx,
+								u16 fv_idx,
+								u16 mask)
+{
+	s32 ret = 0;
+	struct sxe2_fwc_mask_val entry = {0};
+	struct sxe2_cmd_params cmd = { 0 };
+
+	entry.blk = blk;
+	entry.mask_idx = cpu_to_le16(mask_idx);
+	entry.fv_idx = cpu_to_le16(fv_idx);
+	entry.mask = cpu_to_le16(mask);
+
+	sxe2_cmd_params_dflt_fill(&cmd, SXE2_CMD_OG_MASK_UPDATE,
+				  &entry, sizeof(struct sxe2_fwc_mask_val), NULL, 0);
+
+	ret = sxe2_cmd_fw_exec(adapter, &cmd);
+	if (ret) {
+		LOG_DEV_ERR("mask update cmd failed, ret=%d\n", ret);
+		ret = -EIO;
+	}
+
+	return ret;
+}
+
+s32 sxe2_fwc_update_mask_sel(struct sxe2_adapter *adapter,
+			     enum sxe2_block_id blk, u16 prof_id,
 				    u32 mask_sel)
 {
 	s32 ret = 0;
-	struct sxe2_fwc_mask_sel entry;
-	struct sxe2_cmd_params cmd = {0};
+	struct sxe2_fwc_mask_sel entry = { 0 };
+	struct sxe2_cmd_params cmd = { 0 };
 
 	entry.blk = blk;
 	entry.prof_id = cpu_to_le16(prof_id);
@@ -397,7 +472,7 @@ STATIC s32 sxe2_fwc_update_mask_sel(struct sxe2_adapter *adapter,
 
 	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 	if (ret) {
-		LOG_ERROR_BDF("mask sel update cmd fail, ret=%d\n", ret);
+		LOG_ERROR_BDF("mask sel update cmd failed, ret=%d\n", ret);
 		ret = -EIO;
 	}
 
@@ -840,12 +915,15 @@ static s32 sxe2_flow_free_vsig(struct sxe2_ppp_common_ctxt *ppp_ctxt, u16 vsig_i
 {
 	s32 ret = 0;
 	struct sxe2_adapter *adapter = ppp_ctxt->adapter;
-	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
+	struct device *dev;
 	struct sxe2_associated_flow_node *flow;
 	struct sxe2_associated_flow_node *tmp;
 	u16 vsi_sw_idx = 0;
 	u16 i;
 
+	if (!adapter)
+		return 0;
+	dev = SXE2_ADAPTER_TO_DEV(adapter);
 	if (vsig_idx >= SXE2_MAX_VSIG_NUM) {
 		LOG_ERROR_BDF("invalid param, vsig: %u\n", vsig_idx);
 		ret = -EINVAL;
@@ -1219,8 +1297,11 @@ STATIC s32 sxe2_flow_op_flow_assoc_vsi_insert_tmp_list(struct sxe2_ppp_common_ct
 
 		ret = sxe2_flow_op_adjust_vsig_tcams_priority(ppp_ctxt, vsig_idx,
 							      op_list);
-		if (ret != 0)
+		if (ret != 0) {
+			(void)sxe2_flow_vsi_move_vsig(ppp_ctxt, vsi_sw_idx, or_vsig_idx);
+			(void)sxe2_flow_free_vsig(ppp_ctxt, vsig_idx);
 			goto l_end;
+		}
 	}
 l_end:
 	return ret;
@@ -1312,6 +1393,7 @@ static s32 sxe2_flow_op_flow_dissoc_vsi(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 	struct sxe2_og_chg *del_chg;
 	s32 ret;
 	u16 vsig_idx;
+	u16 ori_vsig_idx;
 	bool only_vsi;
 	bool only_flow;
 
@@ -1321,6 +1403,8 @@ static s32 sxe2_flow_op_flow_dissoc_vsi(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 	ret = sxe2_flow_find_vsig_with_vsi(ppp_ctxt, vsi_sw_idx, &vsig_idx);
 	if (ret != 0)
 		goto l_end;
+
+	ori_vsig_idx = vsig_idx;
 
 	if (vsig_idx == SXE2_PPP_DEFAULT_VSIG_IDX)
 		goto l_end;
@@ -1384,8 +1468,12 @@ static s32 sxe2_flow_op_flow_dissoc_vsi(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 				ret = sxe2_flow_op_adjust_vsig_tcams_priority(ppp_ctxt,
 									      vsig_idx,
 									      &op_list);
-				if (ret != 0)
+				if (ret != 0) {
+					(void)sxe2_flow_vsi_move_vsig(ppp_ctxt, vsi_sw_idx,
+								      ori_vsig_idx);
+					(void)sxe2_flow_free_vsig(ppp_ctxt, vsig_idx);
 					goto l_end;
+				}
 			}
 		}
 	}
@@ -1444,11 +1532,12 @@ STATIC s32 sxe2_flow_acl_assoc_prof_scen(struct sxe2_adapter *adapter,
 		flow_fld = &dis_info->raw[i].fld;
 		sxe2_flow_acl_prof_set_fld(flow_fld, &acl_prof_set);
 	}
+
 	acl_prof_set.prof_id = flow_info->prof_id;
 	acl_prof_set.pf_scenario_num[adapter->pf_idx] = flow_info->cfg.scen->scen_id;
 	ret = sxe2_fwc_acl_set_scen_prof(adapter, &acl_prof_set);
 	if (ret) {
-		LOG_ERROR_BDF("Acl prof scen set cmd failed, ret:%d", ret);
+		LOG_ERROR_BDF("Acl prof scen set cmd faileded, ret:%d", ret);
 		goto l_end;
 	}
 
@@ -1463,7 +1552,7 @@ sxe2_flow_check_flow_conflict_in_vsig(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 {
 	s32 ret = 0;
 	u8 i, j;
-	u8 find;
+	u8 find = 0;
 	bool conflict = false;
 	u16 or_vsig_idx = SXE2_PPP_DEFAULT_VSIG_IDX;
 	struct sxe2_associated_flow_node *assoc_flow;
@@ -1505,7 +1594,7 @@ sxe2_flow_check_flow_conflict_in_vsig(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 s32 sxe2_flow_assoc_vsi(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 			struct sxe2_flow_info_node *flow, u16 vsi_sw_idx)
 {
-	s32 ret;
+	s32 ret = 0;
 	struct sxe2_adapter *adapter = ppp_ctxt->adapter;
 
 	if (test_bit(vsi_sw_idx, flow->used_vsi)) {
@@ -1534,7 +1623,7 @@ l_end:
 s32 sxe2_flow_disassoc_vsi(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 			   struct sxe2_flow_info_node *flow, u16 vsi_sw_idx)
 {
-	s32 ret;
+	s32 ret = 0;
 	struct sxe2_adapter *adapter = ppp_ctxt->adapter;
 
 	if (!test_bit(vsi_sw_idx, flow->used_vsi)) {
@@ -1559,7 +1648,7 @@ s32 sxe2_flow_assoc_vsi_fnav(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 			     struct sxe2_flow_info_node *flow, u16 vsi_sw_idx,
 			     enum sxe2_fnav_flow_type flow_type)
 {
-	s32 ret;
+	s32 ret = 0;
 	struct sxe2_adapter *adapter = ppp_ctxt->adapter;
 
 	if (test_bit(vsi_sw_idx, flow->used_vsi)) {
@@ -1690,6 +1779,9 @@ static s32 sxe2_flow_op_creat_vsig_with_flow(struct sxe2_ppp_common_ctxt *ppp_ct
 	ret = sxe2_flow_op_vsig_add_flow(ppp_ctxt, flow, new_vsig, false, op_list);
 	if (ret != 0)
 		goto l_free;
+	ret = sxe2_flow_op_adjust_vsig_tcams_priority(ppp_ctxt, new_vsig, op_list);
+	if (ret != 0)
+		goto l_free;
 
 l_end:
 	LOG_DEBUG_BDF("create new vsig[%u](vsi:%u) with flow, ret:%d.\n", new_vsig,
@@ -1707,16 +1799,8 @@ static s32 sxe2_flow_op_vsig_add_flow(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 	struct sxe2_adapter *adapter = ppp_ctxt->adapter;
 	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
 	struct sxe2_associated_flow_node *associated_flow = NULL;
-	struct sxe2_og_chg *chg;
-
-	u8 vl_mask[SXE2_TCAM_KEY_VAL_SZ] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-	u8 dc_mask[SXE2_TCAM_KEY_VAL_SZ] = {0x00, 0xF0, 0xFF, 0x0F, 0x00};
-	u8 nm_mask[SXE2_TCAM_KEY_VAL_SZ] = {0x00, 0x00, 0x00, 0x00, 0x00};
 	s32 ret = 0;
-	u16 tcam_idx;
 	u16 i;
-	u32 size;
-	struct sxe2_fwc_tcam_idx_batch *tcam_batch = NULL;
 
 	if (sxe2_flow_check_flow_in_vsig(ppp_ctxt, flow, vsig_idx)) {
 		ret = -EEXIST;
@@ -1729,65 +1813,14 @@ static s32 sxe2_flow_op_vsig_add_flow(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 		goto l_end;
 	}
 
-	size = sizeof(struct sxe2_fwc_tcam_idx_batch) +
-	       flow->ptg_info.ptg_cnt * sizeof(struct sxe2_fwc_tcam_info);
-
-	tcam_batch = kzalloc(size, GFP_KERNEL);
-	if (!tcam_batch) {
-		ret = -ENOMEM;
-		goto l_free;
-	}
-	tcam_batch->blk = ppp_ctxt->block_id;
-	tcam_batch->tcam_cnt = cpu_to_le16((u16)flow->ptg_info.ptg_cnt);
-	for (i = 0; i < flow->ptg_info.ptg_cnt; i++)
-		tcam_batch->tcam_info[i].action = SXE2_FWC_TCAM_ACTION_ADD;
-
-	ret = sxe2_fwc_process_tcam_batch(adapter, tcam_batch, size);
-	if (ret) {
-		LOG_ERROR_BDF("batch application for TCAM failed, ret=%d\n", ret);
-		goto l_free;
-	}
-
 	associated_flow->flow_ptr = flow;
 	associated_flow->tcam_cnt = flow->ptg_info.ptg_cnt;
 
 	for (i = 0; i < associated_flow->tcam_cnt; i++) {
-		tcam_idx = le16_to_cpu(tcam_batch->tcam_info[i].tcam_idx);
-		associated_flow->tcams[i].idx = tcam_idx;
 		associated_flow->tcams[i].ptg = flow->ptg_info.ptg[i];
 		associated_flow->tcams[i].prof_id = flow->prof_id;
-		associated_flow->tcams[i].used = true;
-		LOG_DEBUG_BDF("alloc tcam[%u]\n", tcam_idx);
+		associated_flow->tcams[i].used = false;
 	}
-
-	for (i = 0; i < associated_flow->tcam_cnt; i++) {
-		tcam_idx = tcam_batch->tcam_info[i].tcam_idx;
-		chg = devm_kzalloc(dev, sizeof(*chg), GFP_KERNEL);
-		if (!chg) {
-			ret = -ENOMEM;
-			goto l_free;
-		}
-
-		chg->type = SXE2_OG_CHG_TYPE_TCAM;
-		chg->info.tcam.prof_id = flow->prof_id;
-		chg->info.tcam.tcam_idx = tcam_idx;
-
-		LOG_DEBUG_BDF("config tcam, tcam_idx:%u, prof_id:%u, ptg:%u, \t"
-			      "vsig:%d, cdid:%u\n",
-			      tcam_idx, flow->prof_id, associated_flow->tcams[i].ptg,
-			      vsig_idx, ppp_ctxt->adapter->port_idx);
-		ret = sxe2_flow_cfg_tcam_entry(ppp_ctxt, tcam_idx, flow->prof_id,
-					       associated_flow->tcams[i].ptg,
-					       vsig_idx, SXE2_TCAM_DEFAULT_CD_ID,
-					       SXE2_TCAM_DEFAULT_FLAGS, vl_mask,
-					       dc_mask, nm_mask);
-		if (ret != 0) {
-			devm_kfree(dev, chg);
-			goto l_free;
-		}
-		list_add(&chg->l_entry, op_list);
-	}
-
 	if (tail) {
 		list_add_tail(&associated_flow->l_node,
 			      &ppp_ctxt->vsig[vsig_idx].associated_flow_list);
@@ -1797,12 +1830,7 @@ static s32 sxe2_flow_op_vsig_add_flow(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 	}
 
 l_end:
-	kfree(tcam_batch);
 	return ret;
-l_free:
-	(void)sxe2_flow_remove_associated_flow(ppp_ctxt, associated_flow);
-	devm_kfree(dev, associated_flow);
-	goto l_end;
 }
 
 #define SXE2_MATCH_DC_KEY 0x0
@@ -1899,8 +1927,8 @@ l_end:
 	return ret;
 }
 
-static s32 sxe2_flow_set_key(u8 *key, u16 size, u8 *val, u8 *vl_mask, u8 *dc_mask,
-			     u8 *nm_mask, u16 off, u16 len)
+s32 sxe2_flow_set_key(u8 *key, u16 size, u8 *val, u8 *vl_mask, u8 *dc_mask,
+		      u8 *nm_mask, u16 off, u16 len)
 {
 	s32 ret = 0;
 	u16 half_size;
@@ -1949,15 +1977,13 @@ static s32 sxe2_flow_reless_tcam(struct sxe2_ppp_common_ctxt *ppp_ctxt, u16 tcam
 	return ret;
 }
 
-#define SXE2_FLOW_TCAM_FULL_KEY_MASK_VSIG 0x0FFF
-#define SXE2_FLOW_TCAM_FULL_KEY_MASK_CDID 0x0F
 s32 sxe2_flow_cfg_tcam_entry(struct sxe2_ppp_common_ctxt *ppp_ctxt, u16 tcam_idx,
 			     u8 prof_id, u8 ptg_idx, u16 vsig_idx, u8 cdid,
 			     u16 flags, u8 vl_mask[SXE2_TCAM_KEY_VAL_SZ],
 			     u8 dc_mask[SXE2_TCAM_KEY_VAL_SZ],
 			     u8 nm_mask[SXE2_TCAM_KEY_VAL_SZ])
 {
-	struct sxe2_prof_tcam_full_key full_key;
+	struct sxe2_prof_tcam_full_key full_key = { 0 };
 	struct sxe2_prof_tcam_entry *entry;
 	s32 ret = 0;
 
@@ -2062,7 +2088,7 @@ sxe2_flow_op_adjust_vsig_tcams_priority(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 	struct sxe2_associated_flow_node *associated_flow;
 	s32 ret = 0;
 	u16 i, j = 0;
-	bool used;
+	bool used = false;
 	struct sxe2_adapter *adapter = ppp_ctxt->adapter;
 	struct sxe2_fwc_tcam_idx_batch *tcam_batch = NULL;
 	struct sxe2_prof_tcam_info **tcam_info = NULL;
@@ -2129,8 +2155,8 @@ sxe2_flow_op_adjust_vsig_tcams_priority(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 
 	for (i = 0; i < batch_cnt; i++) {
 		if (tcam_batch->tcam_info[i].action == SXE2_FWC_TCAM_ACTION_DEL) {
-			LOG_DEBUG_BDF("free used tcam[%u], ptg=%u, prof_id=%u\n",
-				      tcam_info[i]->idx, tcam_info[i]->ptg,
+			LOG_INFO_BDF("free used tcam[%u], ptg=%u, prof_id=%u\n",
+				     tcam_info[i]->idx, tcam_info[i]->ptg,
 				      tcam_info[i]->prof_id);
 			(void)sxe2_flow_op_tcam_avail_cfg(ppp_ctxt, vsig_idx,
 							  tcam_info[i], false,
@@ -2144,8 +2170,8 @@ sxe2_flow_op_adjust_vsig_tcams_priority(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 			ret = sxe2_flow_op_tcam_avail_cfg(ppp_ctxt, vsig_idx,
 							  tcam_info[i], true,
 							  op_list);
-			LOG_DEBUG_BDF("alloc unused tcam[%u], ptg=%u, prof_id=%u\n",
-				      tcam_info[i]->idx, tcam_info[i]->ptg,
+			LOG_INFO_BDF("alloc unused tcam[%u], ptg=%u, prof_id=%u\n",
+				     tcam_info[i]->idx, tcam_info[i]->ptg,
 				      tcam_info[i]->prof_id);
 			if (ret) {
 				LOG_ERROR_BDF("add tcam op list failed, ret=%d\n",
@@ -2249,1060 +2275,564 @@ static const struct sxe2_flow_fld_info sxe2_flds_info[SXE2_FLOW_FLD_ID_MAX] = {
 };
 
 static const struct sxe2_ptype_map g_ptype_map = {
-		.sxe2_ptypes_mac_ofos_all = {
-						SXE2_PTYPE_BITMAP(BF, BF, 7F, 7E, FD,
-								  C0, 0C, C6),
-						SXE2_PTYPE_BITMAP(FE, FD, FD, FB, F7,
-								  EF, DF, DF),
-						SXE2_PTYPE_BITMAP(00, 00, 00, FF, 03,
-								  BF, 7F, 7E),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  5F, 00, 00),
-						SXE2_PTYPE_BITMAP(20, 08, 03, 07, FF,
-								  FF, FF, 80),
-						SXE2_PTYPE_BITMAP(00, 00, 0F, FF, FF,
-								  FF, F0, 80),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(FF, F3, FF, 03, FF,
-								  3F, 3F, 3E),
-						SXE2_PTYPE_BITMAP(FF, FF, FF, F0, 00,
-								  00, FF, F9),
-						SXE2_PTYPE_BITMAP(FF, FF, FF, FF, FF,
-								  FF, FF, FF),
-						SXE2_PTYPE_BITMAP(FF, FF, FF, FF, FF,
-								  FF, FF, FF),
-				},
-		.sxe2_ptypes_mac_il_all = {
-						SXE2_PTYPE_BITMAP(BC, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(F0, 00, 00, 00, 00,
-								  EF, DF, DF),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 03,
-								  BF, 7F, 7E),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 0F, FF, FF,
-								  FF, F0, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(FF, F0, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, FF, F9),
-						SXE2_PTYPE_BITMAP(FF, FF, FF, FF, FF,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(FF, FF, FF, FF, FF,
-								  FF, FF, FF),
-				},
-		.sxe2_ptypes_mac_ofos_with_l3 = {
-						SXE2_PTYPE_BITMAP(BF, BF, 7F, 7E, FD,
-								  C0, 00, 00),
-						SXE2_PTYPE_BITMAP(FE, FD, FD, FB, F7,
-								  EF, DF, DF),
-						SXE2_PTYPE_BITMAP(00, 00, 00, FF, 03,
-								  BF, 7F, 7E),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  0F, 00, 00),
-						SXE2_PTYPE_BITMAP(20, 00, 03, 07, FF,
-								  FF, FF, 80),
-						SXE2_PTYPE_BITMAP(00, 00, 0F, FF, FF,
-								  FF, F0, 80),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(FF, F3, FF, 03, FF,
-								  3F, 3F, 00),
-						SXE2_PTYPE_BITMAP(FF, FF, FF, F0, 00,
-								  00, FF, F9),
-						SXE2_PTYPE_BITMAP(FF, FF, FF, FF, FF,
-								  FF, FF, FF),
-						SXE2_PTYPE_BITMAP(FF, FF, FF, FF, FF,
-								  FF, FF, FF),
-				},
-		.sxe2_ptypes_mac_il_with_l3 = {
-						SXE2_PTYPE_BITMAP(B8, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(E0, 00, 00, 00, 00,
-								  EF, DD, DF),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 03,
-								  BF, 77, 7E),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 0F, FF, FF,
-								  FF, F0, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(FF, E0, 00, 00, 00,
-								  00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, FF, F1),
-						SXE2_PTYPE_BITMAP(EF, FF, 7F, FB,
-								  FF, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(DF, FE, FF, F7,
-								  FF, BF, FD, FF),
-				},
-		.sxe2_ptypes_mac_ofos_no_l3 = {
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 0C, C6),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 50, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 08, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 3E),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-				},
-		.sxe2_ptypes_mac_il_no_l3 = {
-						SXE2_PTYPE_BITMAP(04, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(10, 00, 00, 00,
-								  00, 00, 02, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 08, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 10, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 08),
-						SXE2_PTYPE_BITMAP(10, 00, 80, 04,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(20, 01, 00, 08,
-								  00, 40, 02, 00),
-				},
-		.sxe2_ptypes_ipv4_ofos_with_l4 = {
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  0D, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 50,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(20, 00, 00, 01,
-								  83, E0, FA, 80),
-						SXE2_PTYPE_BITMAP(00, 00, 05, 55,
-								  55, 55, 50, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 03,
-								  FF, 00, 38, 00),
-						SXE2_PTYPE_BITMAP(3F, FE, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(80, 03, FF, E0,
-								  00, FF, F8, 00),
-						SXE2_PTYPE_BITMAP(FF, F8, 00, 3F,
-								  FE, 00, 0F, FF),
-				},
-		.sxe2_ptypes_ipv4_il_with_l4 = {
-						SXE2_PTYPE_BITMAP(A0, 03, 40, 06,
-								  80, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(80, 0D, 00, 1A,
-								  00, 00, D0, 01),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 03, 40, 06),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 1C, E0, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(03, 80, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(31, 01, 88, 00,
-								  00, 00, 01, C0),
-						SXE2_PTYPE_BITMAP(62, 03, 10, 18,
-								  80, C4, 06, 20),
-						SXE2_PTYPE_BITMAP(C4, 06, 20, 31,
-								  01, 88, 0C, 40),
-				},
-		.sxe2_ptypes_ipv6_ofos_with_l4 = {
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  34, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, A0,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 06,
-								  7C, 1F, 05, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 0A, AA,
-								  AA, AA, A0, 80),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 03, FF, 00,
-								  00, 38, 00, 00),
-						SXE2_PTYPE_BITMAP(C0, 01, FF, F0,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(7F, FC, 00, 1F,
-								  FF, 00, 07, FF),
-						SXE2_PTYPE_BITMAP(00, 07, FF, C0,
-								  01, FF, F0, 00),
-				},
-		.sxe2_ptypes_ipv6_il_with_l4 = {
-						SXE2_PTYPE_BITMAP(01, A0, 03, 40,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(06, 80, 0D, 00,
-								  00, 68, 00, D0),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  01, A0, 03, 40),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  73, 80, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(E0, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(80, 64, 03, 20,
-								  00, 00, 70, 00),
-						SXE2_PTYPE_BITMAP(00, C8, 06, 40,
-								  32, 01, 90, 0C),
-						SXE2_PTYPE_BITMAP(01, 90, 0C, 80,
-								  64, 03, 20, 19),
-				},
-		.sxe2_ptypes_ipv4_ofos_no_l4 = {
-						SXE2_PTYPE_BITMAP(BF, BF, 7F, 7E,
-								  F0, C0, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, EF, DF, DF),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 05,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 03, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 01, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 07, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-				},
-		.sxe2_ptypes_ipv4_il_no_l4 = {
-						SXE2_PTYPE_BITMAP(18, 04, 30, 08,
-								  60, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(60, 10, C0, 21,
-								  80, 01, 0C, 02),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 04, 30, 08),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 03, 18, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 03, 33,
-								  33, 03, F0, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(04, 60, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(06, 80, 34, 00,
-								  00, 00, 02, 30),
-						SXE2_PTYPE_BITMAP(0D, 00, 68, 03,
-								  40, 1A, 00, D0),
-						SXE2_PTYPE_BITMAP(1A, 00, D0, 06,
-								  80, 34, 01, A0),
-				},
-		.sxe2_ptypes_ipv6_ofos_no_l4 = {
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(FE, FD, FD, E1,
-								  C3, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 0A,
-								  03, BF, 7F, 7E),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 0C, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 02, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(FF, F0, 00, 00,
-								  00, 07, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, FF, F9),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-				},
-		.sxe2_ptypes_ipv6_il_no_l4 = {
-						SXE2_PTYPE_BITMAP(02, 18, 04, 30,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(08, 60, 10, C0,
-								  00, 86, 01, 0C),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  02, 18, 04, 30),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  0C, 60, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 0C, CC,
-								  CC, FC, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(18, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(40, 1A, 00, D0,
-								  00, 00, 8C, 01),
-						SXE2_PTYPE_BITMAP(80, 34, 01, A0,
-								  0D, 00, 68, 03),
-						SXE2_PTYPE_BITMAP(00, 68, 03, 40,
-								  1A, 00, D0, 06),
-				},
-		.sxe2_ptypes_udp_ofos = {
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  01, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  04, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, F0,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(20, 00, 00, 07,
-								  FF, FF, FF, 80),
-						SXE2_PTYPE_BITMAP(00, 00, 0F, FF,
-								  FF, FF, F0, 80),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 03, FC, 03,
-								  FC, 38, 38, 00),
-						SXE2_PTYPE_BITMAP(FF, FF, FF, F0,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(FF, FF, FF, FF,
-								  FF, FF, FF, FF),
-						SXE2_PTYPE_BITMAP(FF, FF, FF, FF,
-								  FF, FF, FF, FF),
-				},
-		.sxe2_ptypes_udp_il = {
-						SXE2_PTYPE_BITMAP(20, 20, 40, 40,
-								  80, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(80, 81, 01, 02,
-								  00, 08, 10, 10),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 20, 40, 40),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  10, 84, 20, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(20, 80, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(10, 20, 81, 00,
-								  00, 00, 10, 40),
-						SXE2_PTYPE_BITMAP(20, 41, 02, 08,
-								  10, 40, 82, 04),
-						SXE2_PTYPE_BITMAP(40, 82, 04, 10,
-								  20, 81, 04, 08),
-				},
-		.sxe2_ptypes_tcp_ofos = {
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  04, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  10, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 03, 00,
-								  03, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-				},
-		.sxe2_ptypes_tcp_il = {
-						SXE2_PTYPE_BITMAP(80, 81, 01, 02,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(02, 04, 04, 08,
-								  00, 20, 40, 40),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 81, 01, 02),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  21, 08, 40, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(41, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(20, 41, 02, 00,
-								  00, 00, 20, 80),
-						SXE2_PTYPE_BITMAP(40, 82, 04, 10,
-								  20, 81, 04, 08),
-						SXE2_PTYPE_BITMAP(81, 04, 08, 20,
-								  41, 02, 08, 10),
-				},
-		.sxe2_ptypes_sctp_ofos = {
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  08, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  20, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-				},
-		.sxe2_ptypes_sctp_il = {
-						SXE2_PTYPE_BITMAP(01, 02, 02, 04,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(04, 08, 08, 10,
-								  00, 40, 80, 81),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  01, 02, 02, 04),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  42, 10, 80, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(82, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(81, 04, 08, 20,
-								  00, 00, 41, 00),
-						SXE2_PTYPE_BITMAP(02, 08, 10, 40,
-								  82, 04, 10, 20),
-						SXE2_PTYPE_BITMAP(04, 10, 20, 81,
-								  04, 08, 20, 41),
-				},
-		.sxe2_ptypes_vxlan_vni = {
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(3F, FF, FF, F0,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 03, FF, FF,
-								  FF, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 3F,
-								  FF, FF, F0, 00),
-				},
-		.sxe2_ptypes_gre_of = {
-						SXE2_PTYPE_BITMAP(BF, BF, 78, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(FE, FD, E0, 00,
-								  00, EF, DF, DF),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  03, BF, 7F, 7E),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(C0, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(FF, FC, 00, 00,
-								  00, FF, FF, FF),
-						SXE2_PTYPE_BITMAP(FF, FF, FF, C0,
-								  00, 00, 0F, FF),
-				},
-		.sxe2_ptypes_ipv4_ofos_frag = {
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 40, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-				},
-		.sxe2_ptypes_ipv4_il_frag = {
-						SXE2_PTYPE_BITMAP(08, 00, 10, 00,
-								  20, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(20, 00, 40, 00,
-								  80, 00, 04, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 10, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 01, 08, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 20, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(04, 00, 20, 00,
-								  00, 00, 00, 10),
-						SXE2_PTYPE_BITMAP(08, 00, 40, 02,
-								  00, 10, 00, 80),
-						SXE2_PTYPE_BITMAP(10, 00, 80, 04,
-								  00, 20, 01, 00),
-				},
-		.sxe2_ptypes_ipv6_ofos_frag = {
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  01, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-				},
-		.sxe2_ptypes_ipv6_il_frag = {
-						SXE2_PTYPE_BITMAP(00, 08, 00, 10,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 20, 00, 40,
-								  00, 02, 00, 04),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 08, 00, 10),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  04, 20, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(08, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 10, 00, 80,
-								  00, 00, 04, 00),
-						SXE2_PTYPE_BITMAP(00, 20, 01, 00,
-								  08, 00, 40, 02),
-						SXE2_PTYPE_BITMAP(00, 40, 02, 00,
-								  10, 00, 80, 04),
-				},
-		.sxe2_ptypes_ipv4_ofos_all = {
-						SXE2_PTYPE_BITMAP(BF, BF, 7F, 7E,
-								  FD, C0, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, EF, DF, DF),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 55,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 03, 00, 00),
-						SXE2_PTYPE_BITMAP(20, 00, 01, 01,
-								  83, E0, FA, 80),
-						SXE2_PTYPE_BITMAP(00, 00, 05, 55,
-								  55, 55, 50, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 03,
-								  FF, 00, 3F, 00),
-						SXE2_PTYPE_BITMAP(3F, FE, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(80, 03, FF, E0,
-								  00, FF, F8, 00),
-						SXE2_PTYPE_BITMAP(FF, F8, 00, 3F,
-								  FE, 00, 0F, FF),
-				},
-		.sxe2_ptypes_ipv4_il_all = {
-						SXE2_PTYPE_BITMAP(B8, 07, 70, 0E,
-								  E0, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(E0, 1D, C0, 3B,
-								  80, 01, DC, 03),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 07, 70, 0E),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 1F, F8, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 03, 33,
-								  33, 03, F0, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(07, E0, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(37, 81, BC, 00,
-								  00, 00, 03, F0),
-						SXE2_PTYPE_BITMAP(6F, 03, 78, 1B,
-								  C0, DE, 06, F0),
-						SXE2_PTYPE_BITMAP(DE, 06, F0, 37,
-								  81, BC, 0D, E0),
-				},
-		.sxe2_ptypes_ipv6_ofos_all = {
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(FE, FD, FD, FB,
-								  F7, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, AA,
-								  03, BF, 7F, 7E),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 0C, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 02, 06,
-								  7C, 1F, 05, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 0A, AA,
-								  AA, AA, A0, 80),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(FF, F3, FF, 00,
-								  00, 3F, 00, 00),
-						SXE2_PTYPE_BITMAP(C0, 01, FF, F0,
-								  00, 00, FF, F9),
-						SXE2_PTYPE_BITMAP(7F, FC, 00, 1F,
-								  FF, 00, 07, FF),
-						SXE2_PTYPE_BITMAP(00, 07, FF, C0,
-								  01, FF, F0, 00),
-				},
-		.sxe2_ptypes_ipv6_il_all = {
-						SXE2_PTYPE_BITMAP(03, B8, 07, 70,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(0E, E0, 1D, C0,
-								  00, EE, 01, DC),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  03, B8, 07, 70),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  7F, E0, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 0C, CC,
-								  CC, FC, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(F8, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(C0, 7E, 03, F0,
-								  00, 00, FC, 01),
-						SXE2_PTYPE_BITMAP(80, FC, 07, E0,
-								  3F, 01, F8, 0F),
-						SXE2_PTYPE_BITMAP(01, F8, 0F, C0,
-								  7E, 03, F0, 1F),
-				},
-		.sxe2_ptypes_gtpu = {
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  7F, FF, FE, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-						SXE2_PTYPE_BITMAP(00, 00, 00, 00,
-								  00, 00, 00, 00),
-				},
+	.sxe2_ptypes_mac_ofos_all = {
+		SXE2_PTYPE_BITMAP(BF, BF, 7F, 7E, FD, C0, 0C, C6),
+		SXE2_PTYPE_BITMAP(FE, FD, FD, FB, F7, EF, DF, DF),
+		SXE2_PTYPE_BITMAP(00, 00, 00, FF, 03, BF, 7F, 7E),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 5F, 00, 00),
+		SXE2_PTYPE_BITMAP(20, 08, 03, 07, FF, FF, FF, 80),
+		SXE2_PTYPE_BITMAP(00, 00, 0F, FF, FF, FF, F0, 80),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(FF, F3, FF, 03, FF, 3F, 3F, 3C),
+		SXE2_PTYPE_BITMAP(FF, FF, FF, F0, 00, 00, FF, F9),
+		SXE2_PTYPE_BITMAP(FF, FF, FF, FF, FF, FF, FF, FF),
+		SXE2_PTYPE_BITMAP(FF, FF, FF, FF, FF, FF, FF, FF),
+	},
+	.sxe2_ptypes_mac_il_all = {
+		SXE2_PTYPE_BITMAP(BC, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(F0, 00, 00, 00, 00, EF, DF, DF),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 03, BF, 7F, 7E),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 0F, FF, FF, FF, F0, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(FF, F0, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, FF, F9),
+		SXE2_PTYPE_BITMAP(FF, FF, FF, FF, FF, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(FF, FF, FF, FF, FF, FF, FF, FF),
+	},
+	.sxe2_ptypes_mac_ofos_with_l3 = {
+		SXE2_PTYPE_BITMAP(BF, BF, 7F, 7E, FD, C0, 00, 00),
+		SXE2_PTYPE_BITMAP(FE, FD, FD, FB, F7, EF, DF, DF),
+		SXE2_PTYPE_BITMAP(00, 00, 00, FF, 03, BF, 7F, 7E),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 0F, 00, 00),
+		SXE2_PTYPE_BITMAP(20, 00, 03, 07, FF, FF, FF, 80),
+		SXE2_PTYPE_BITMAP(00, 00, 0F, FF, FF, FF, F0, 80),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(FF, F3, FF, 03, FF, 3F, 3F, 00),
+		SXE2_PTYPE_BITMAP(FF, FF, FF, F0, 00, 00, FF, F9),
+		SXE2_PTYPE_BITMAP(FF, FF, FF, FF, FF, FF, FF, FF),
+		SXE2_PTYPE_BITMAP(FF, FF, FF, FF, FF, FF, FF, FF),
+	},
+	.sxe2_ptypes_mac_il_with_l3 = {
+		SXE2_PTYPE_BITMAP(B8, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(E0, 00, 00, 00, 00, EF, DD, DF),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 03, BF, 77, 7E),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 0F, FF, FF, FF, F0, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(FF, E0, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, FF, F1),
+		SXE2_PTYPE_BITMAP(EF, FF, 7F, FB, FF, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(DF, FE, FF, F7, FF, BF, FD, FF),
+	},
+	.sxe2_ptypes_mac_ofos_no_l3 = {
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 0C, C6),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 50, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 08, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 3C),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+	},
+	.sxe2_ptypes_mac_il_no_l3 = {
+		SXE2_PTYPE_BITMAP(04, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(10, 00, 00, 00, 00, 00, 02, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 08, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 10, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 08),
+		SXE2_PTYPE_BITMAP(10, 00, 80, 04, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(20, 01, 00, 08, 00, 40, 02, 00),
+	},
+	.sxe2_ptypes_ipv4_ofos_with_l4 = {
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 0D, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 50, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(20, 00, 00, 01, 83, E0, FA, 80),
+		SXE2_PTYPE_BITMAP(00, 00, 05, 55, 55, 55, 50, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 03, FF, 00, 38, 00),
+		SXE2_PTYPE_BITMAP(3F, FE, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(80, 03, FF, E0, 00, FF, F8, 00),
+		SXE2_PTYPE_BITMAP(FF, F8, 00, 3F, FE, 00, 0F, FF),
+	},
+	.sxe2_ptypes_ipv4_il_with_l4 = {
+		SXE2_PTYPE_BITMAP(A0, 03, 40, 06, 80, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(80, 0D, 00, 1A, 00, 00, D0, 01),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 03, 40, 06),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 1C, E0, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(03, 80, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(31, 01, 88, 00, 00, 00, 01, C0),
+		SXE2_PTYPE_BITMAP(62, 03, 10, 18, 80, C4, 06, 20),
+		SXE2_PTYPE_BITMAP(C4, 06, 20, 31, 01, 88, 0C, 40),
+	},
+	.sxe2_ptypes_ipv6_ofos_with_l4 = {
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 34, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, A0, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 06, 7C, 1F, 05, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 0A, AA, AA, AA, A0, 80),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 03, FF, 00, 00, 38, 00, 00),
+		SXE2_PTYPE_BITMAP(C0, 01, FF, F0, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(7F, FC, 00, 1F, FF, 00, 07, FF),
+		SXE2_PTYPE_BITMAP(00, 07, FF, C0, 01, FF, F0, 00),
+	},
+	.sxe2_ptypes_ipv6_il_with_l4 = {
+		SXE2_PTYPE_BITMAP(01, A0, 03, 40, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(06, 80, 0D, 00, 00, 68, 00, D0),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 01, A0, 03, 40),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 73, 80, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(E0, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(80, 64, 03, 20, 00, 00, 70, 00),
+		SXE2_PTYPE_BITMAP(00, C8, 06, 40, 32, 01, 90, 0C),
+		SXE2_PTYPE_BITMAP(01, 90, 0C, 80, 64, 03, 20, 19),
+	},
+	.sxe2_ptypes_ipv4_ofos_no_l4 = {
+		SXE2_PTYPE_BITMAP(BF, BF, 7F, 7E, F0, C0, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, EF, DF, DF),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 05, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 03, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 01, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 07, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+	},
+	.sxe2_ptypes_ipv4_il_no_l4 = {
+		SXE2_PTYPE_BITMAP(18, 04, 30, 08, 60, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(60, 10, C0, 21, 80, 01, 0C, 02),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 04, 30, 08),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 03, 18, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 03, 33, 33, 03, F0, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(04, 60, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(06, 80, 34, 00, 00, 00, 02, 30),
+		SXE2_PTYPE_BITMAP(0D, 00, 68, 03, 40, 1A, 00, D0),
+		SXE2_PTYPE_BITMAP(1A, 00, D0, 06, 80, 34, 01, A0),
+	},
+	.sxe2_ptypes_ipv6_ofos_no_l4 = {
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(FE, FD, FD, E1, C3, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 0A, 03, BF, 7F, 7E),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 0C, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 02, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(FF, F0, 00, 00, 00, 07, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, FF, F9),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+	},
+	.sxe2_ptypes_ipv6_il_no_l4 = {
+		SXE2_PTYPE_BITMAP(02, 18, 04, 30, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(08, 60, 10, C0, 00, 86, 01, 0C),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 02, 18, 04, 30),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 0C, 60, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 0C, CC, CC, FC, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(18, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(40, 1A, 00, D0, 00, 00, 8C, 01),
+		SXE2_PTYPE_BITMAP(80, 34, 01, A0, 0D, 00, 68, 03),
+		SXE2_PTYPE_BITMAP(00, 68, 03, 40, 1A, 00, D0, 06),
+	},
+	.sxe2_ptypes_udp_ofos = {
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 01, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 04, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, F0, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(20, 00, 00, 07, FF, FF, FF, 80),
+		SXE2_PTYPE_BITMAP(00, 00, 0F, FF, FF, FF, F0, 80),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 03, FC, 03, FC, 38, 38, 00),
+		SXE2_PTYPE_BITMAP(FF, FF, FF, F0, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(FF, FF, FF, FF, FF, FF, FF, FF),
+		SXE2_PTYPE_BITMAP(FF, FF, FF, FF, FF, FF, FF, FF),
+	},
+	.sxe2_ptypes_udp_il = {
+		SXE2_PTYPE_BITMAP(20, 20, 40, 40, 80, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(80, 81, 01, 02, 00, 08, 10, 10),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 20, 40, 40),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 10, 84, 20, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(20, 80, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(10, 20, 81, 00, 00, 00, 10, 40),
+		SXE2_PTYPE_BITMAP(20, 41, 02, 08, 10, 40, 82, 04),
+		SXE2_PTYPE_BITMAP(40, 82, 04, 10, 20, 81, 04, 08),
+	},
+	.sxe2_ptypes_tcp_ofos = {
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 04, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 10, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 03, 00, 03, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+	},
+	.sxe2_ptypes_tcp_il = {
+		SXE2_PTYPE_BITMAP(80, 81, 01, 02, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(02, 04, 04, 08, 00, 20, 40, 40),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 81, 01, 02),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 21, 08, 40, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(41, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(20, 41, 02, 00, 00, 00, 20, 80),
+		SXE2_PTYPE_BITMAP(40, 82, 04, 10, 20, 81, 04, 08),
+		SXE2_PTYPE_BITMAP(81, 04, 08, 20, 41, 02, 08, 10),
+	},
+	.sxe2_ptypes_sctp_ofos = {
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 08, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 20, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+	},
+	.sxe2_ptypes_sctp_il = {
+		SXE2_PTYPE_BITMAP(01, 02, 02, 04, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(04, 08, 08, 10, 00, 40, 80, 81),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 01, 02, 02, 04),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 42, 10, 80, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(82, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(81, 04, 08, 20, 00, 00, 41, 00),
+		SXE2_PTYPE_BITMAP(02, 08, 10, 40, 82, 04, 10, 20),
+		SXE2_PTYPE_BITMAP(04, 10, 20, 81, 04, 08, 20, 41),
+	},
+	.sxe2_ptypes_vxlan_vni = {
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(3F, FF, FF, F0, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 03, FF, FF, FF, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 3F, FF, FF, F0, 00),
+	},
+	.sxe2_ptypes_gre_of = {
+		SXE2_PTYPE_BITMAP(BF, BF, 78, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(FE, FD, E0, 00, 00, EF, DF, DF),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 03, BF, 7F, 7E),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(C0, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(FF, FC, 00, 00, 00, FF, FF, FF),
+		SXE2_PTYPE_BITMAP(FF, FF, FF, C0, 00, 00, 0F, FF),
+	},
+	.sxe2_ptypes_ipv4_ofos_frag = {
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 40, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+	},
+	.sxe2_ptypes_ipv4_il_frag = {
+		SXE2_PTYPE_BITMAP(08, 00, 10, 00, 20, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(20, 00, 40, 00, 80, 00, 04, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 10, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 01, 08, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 20, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(04, 00, 20, 00, 00, 00, 00, 10),
+		SXE2_PTYPE_BITMAP(08, 00, 40, 02, 00, 10, 00, 80),
+		SXE2_PTYPE_BITMAP(10, 00, 80, 04, 00, 20, 01, 00),
+	},
+	.sxe2_ptypes_ipv6_ofos_frag = {
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 01, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+	},
+	.sxe2_ptypes_ipv6_il_frag = {
+		SXE2_PTYPE_BITMAP(00, 08, 00, 10, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 20, 00, 40, 00, 02, 00, 04),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 08, 00, 10),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 04, 20, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(08, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 10, 00, 80, 00, 00, 04, 00),
+		SXE2_PTYPE_BITMAP(00, 20, 01, 00, 08, 00, 40, 02),
+		SXE2_PTYPE_BITMAP(00, 40, 02, 00, 10, 00, 80, 04),
+	},
+	.sxe2_ptypes_ipv4_ofos_all = {
+		SXE2_PTYPE_BITMAP(BF, BF, 7F, 7E, FD, C0, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, EF, DF, DF),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 55, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 03, 00, 00),
+		SXE2_PTYPE_BITMAP(20, 00, 01, 01, 83, E0, FA, 80),
+		SXE2_PTYPE_BITMAP(00, 00, 05, 55, 55, 55, 50, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 03, FF, 00, 3F, 00),
+		SXE2_PTYPE_BITMAP(3F, FE, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(80, 03, FF, E0, 00, FF, F8, 00),
+		SXE2_PTYPE_BITMAP(FF, F8, 00, 3F, FE, 00, 0F, FF),
+	},
+	.sxe2_ptypes_ipv4_il_all = {
+		SXE2_PTYPE_BITMAP(B8, 07, 70, 0E, E0, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(E0, 1D, C0, 3B, 80, 01, DC, 03),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 07, 70, 0E),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 1F, F8, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 03, 33, 33, 03, F0, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(07, E0, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(37, 81, BC, 00, 00, 00, 03, F0),
+		SXE2_PTYPE_BITMAP(6F, 03, 78, 1B, C0, DE, 06, F0),
+		SXE2_PTYPE_BITMAP(DE, 06, F0, 37, 81, BC, 0D, E0),
+	},
+	.sxe2_ptypes_ipv6_ofos_all = {
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(FE, FD, FD, FB, F7, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, AA, 03, BF, 7F, 7E),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 0C, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 02, 06, 7C, 1F, 05, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 0A, AA, AA, AA, A0, 80),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(FF, F3, FF, 00, 00, 3F, 00, 00),
+		SXE2_PTYPE_BITMAP(C0, 01, FF, F0, 00, 00, FF, F9),
+		SXE2_PTYPE_BITMAP(7F, FC, 00, 1F, FF, 00, 07, FF),
+		SXE2_PTYPE_BITMAP(00, 07, FF, C0, 01, FF, F0, 00),
+	},
+	.sxe2_ptypes_ipv6_il_all = {
+		SXE2_PTYPE_BITMAP(03, B8, 07, 70, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(0E, E0, 1D, C0, 00, EE, 01, DC),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 03, B8, 07, 70),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 7F, E0, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 0C, CC, CC, FC, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(F8, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(C0, 7E, 03, F0, 00, 00, FC, 01),
+		SXE2_PTYPE_BITMAP(80, FC, 07, E0, 3F, 01, F8, 0F),
+		SXE2_PTYPE_BITMAP(01, F8, 0F, C0, 7E, 03, F0, 1F),
+	},
+	.sxe2_ptypes_gtpu = {
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 7F, FF, FE, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+		SXE2_PTYPE_BITMAP(00, 00, 00, 00, 00, 00, 00, 00),
+	},
 };
 
 STATIC void
@@ -3370,102 +2900,115 @@ sxe2_flow_parse_dissectors_hdrs_l3(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 	    (test_bit(SXE2_FLOW_HDR_TCP, headers) ||
 	     test_bit(SXE2_FLOW_HDR_UDP, headers) ||
 	     test_bit(SXE2_FLOW_HDR_SCTP, headers))) {
-		ptypes_src = i ? (const unsigned long
-						  *)(ptype_map_ptr->sxe2_ptypes_ipv4_il_with_l4)
-			       : (const unsigned long
-						  *)(ptype_map_ptr->sxe2_ptypes_ipv4_ofos_with_l4);
+		ptypes_src =
+			i ? (const unsigned long
+				     *)(ptype_map_ptr
+						->sxe2_ptypes_ipv4_il_with_l4) :
+			    (const unsigned long
+				     *)(ptype_map_ptr
+						->sxe2_ptypes_ipv4_ofos_with_l4);
 		bitmap_and(flow_params->ptypes, flow_params->ptypes, ptypes_src,
 			   SXE2_MAX_PTYPE_NUM);
-		flow_params->flow_info->priority = i ? SXE2_FLOW_PRIO_LEVEL_INNER_L3
-						     : SXE2_FLOW_PRIO_LEVLE_OUTER_L3;
-
+		flow_params->flow_info->priority =
+			i ? SXE2_FLOW_PRIO_LEVEL_INNER_IP4 :
+			    SXE2_FLOW_PRIO_LEVEL_OUTER_IP4;
 	} else if (test_bit(SXE2_FLOW_HDR_IPV4, headers) &&
 		   test_bit(SXE2_FLOW_HDR_IPV_OTHER, headers)) {
-		ptypes_src = i ? (const unsigned long
-						  *)(ptype_map_ptr->sxe2_ptypes_ipv4_il_no_l4)
-			       : (const unsigned long
-						  *)(ptype_map_ptr->sxe2_ptypes_ipv4_ofos_no_l4);
+		ptypes_src =
+			i ? (const unsigned long
+				     *)(ptype_map_ptr
+						->sxe2_ptypes_ipv4_il_no_l4) :
+			    (const unsigned long
+				     *)(ptype_map_ptr
+						->sxe2_ptypes_ipv4_ofos_no_l4);
 		bitmap_and(flow_params->ptypes, flow_params->ptypes, ptypes_src,
 			   SXE2_MAX_PTYPE_NUM);
-		flow_params->flow_info->priority = i ? SXE2_FLOW_PRIO_LEVEL_INNER_L3
-						     : SXE2_FLOW_PRIO_LEVLE_OUTER_L3;
-
+		flow_params->flow_info->priority =
+			i ? SXE2_FLOW_PRIO_LEVEL_INNER_IP4 :
+			    SXE2_FLOW_PRIO_LEVEL_OUTER_IP4;
 	} else if (test_bit(SXE2_FLOW_HDR_IPV4, headers)) {
-		ptypes_src = i ? (const unsigned long
-						  *)(ptype_map_ptr->sxe2_ptypes_ipv4_il_all)
-			       : (const unsigned long
-						  *)(ptype_map_ptr->sxe2_ptypes_ipv4_ofos_all);
+		ptypes_src =
+			i ? (const unsigned long
+				     *)(ptype_map_ptr
+						->sxe2_ptypes_ipv4_il_all) :
+			    (const unsigned long
+				     *)(ptype_map_ptr
+						->sxe2_ptypes_ipv4_ofos_all);
+
 		bitmap_and(flow_params->ptypes, flow_params->ptypes, ptypes_src,
 			   SXE2_MAX_PTYPE_NUM);
-		flow_params->flow_info->priority = i ? SXE2_FLOW_PRIO_LEVEL_INNER_L3
-						     : SXE2_FLOW_PRIO_LEVLE_OUTER_L3;
-
+		flow_params->flow_info->priority =
+			i ? SXE2_FLOW_PRIO_LEVEL_INNER_IP4 :
+			    SXE2_FLOW_PRIO_LEVEL_OUTER_IP4;
 	} else if (test_bit(SXE2_FLOW_HDR_IPV6, headers) &&
 		   (test_bit(SXE2_FLOW_HDR_TCP, headers) ||
 		    test_bit(SXE2_FLOW_HDR_UDP, headers) ||
 		    test_bit(SXE2_FLOW_HDR_SCTP, headers))) {
-		ptypes_src = i ? (const unsigned long
-						  *)(ptype_map_ptr->sxe2_ptypes_ipv6_il_with_l4)
-			       : (const unsigned long
-						  *)(ptype_map_ptr->sxe2_ptypes_ipv6_ofos_with_l4);
+		ptypes_src =
+		 i ? (const unsigned long *)(ptype_map_ptr->sxe2_ptypes_ipv6_il_with_l4) :
+		     (const unsigned long *)(ptype_map_ptr->sxe2_ptypes_ipv6_ofos_with_l4);
 		bitmap_and(flow_params->ptypes, flow_params->ptypes, ptypes_src,
 			   SXE2_MAX_PTYPE_NUM);
-		flow_params->flow_info->priority = i ? SXE2_FLOW_PRIO_LEVEL_INNER_L3
-						     : SXE2_FLOW_PRIO_LEVLE_OUTER_L3;
-
+		flow_params->flow_info->priority =
+			i ? SXE2_FLOW_PRIO_LEVEL_INNER_IP6 :
+			    SXE2_FLOW_PRIO_LEVEL_OUTER_IP6;
 	} else if (test_bit(SXE2_FLOW_HDR_IPV6, headers) &&
 		   test_bit(SXE2_FLOW_HDR_IPV_OTHER, headers)) {
-		ptypes_src = i ? (const unsigned long
-						  *)(ptype_map_ptr->sxe2_ptypes_ipv6_il_no_l4)
-			       : (const unsigned long
-						  *)(ptype_map_ptr->sxe2_ptypes_ipv6_ofos_no_l4);
+		ptypes_src =
+			i ? (const unsigned long *)(ptype_map_ptr->sxe2_ptypes_ipv6_il_no_l4) :
+			(const unsigned long *)
+			(ptype_map_ptr->sxe2_ptypes_ipv6_ofos_no_l4);
 		bitmap_and(flow_params->ptypes, flow_params->ptypes, ptypes_src,
 			   SXE2_MAX_PTYPE_NUM);
-		flow_params->flow_info->priority = i ? SXE2_FLOW_PRIO_LEVEL_INNER_L3
-						     : SXE2_FLOW_PRIO_LEVLE_OUTER_L3;
-
+		flow_params->flow_info->priority =
+			i ? SXE2_FLOW_PRIO_LEVEL_INNER_IP6 :
+			    SXE2_FLOW_PRIO_LEVEL_OUTER_IP6;
 	} else if (test_bit(SXE2_FLOW_HDR_IPV6, headers)) {
-		ptypes_src = i ? (const unsigned long
-						  *)(ptype_map_ptr->sxe2_ptypes_ipv6_il_all)
-			       : (const unsigned long
-						  *)(ptype_map_ptr->sxe2_ptypes_ipv6_ofos_all);
+		ptypes_src =
+		  i ? (const unsigned long *)(ptype_map_ptr->sxe2_ptypes_ipv6_il_all) :
+		      (const unsigned long *)(ptype_map_ptr->sxe2_ptypes_ipv6_ofos_all);
 		bitmap_and(flow_params->ptypes, flow_params->ptypes, ptypes_src,
 			   SXE2_MAX_PTYPE_NUM);
-		flow_params->flow_info->priority = i ? SXE2_FLOW_PRIO_LEVEL_INNER_L3
-						     : SXE2_FLOW_PRIO_LEVLE_OUTER_L3;
+		flow_params->flow_info->priority =
+			i ? SXE2_FLOW_PRIO_LEVEL_INNER_IP6 :
+			    SXE2_FLOW_PRIO_LEVEL_OUTER_IP6;
 	}
 }
 
-STATIC void
-sxe2_flow_parse_dissectors_hdrs_l3_frag(struct sxe2_ppp_common_ctxt *ppp_ctxt,
-					struct sxe2_flow_info_params *flow_params,
-					const struct sxe2_ptype_map *ptype_map_ptr,
-					unsigned long *headers, u8 i)
+STATIC void sxe2_flow_parse_dissectors_hdrs_l3_frag(
+	struct sxe2_ppp_common_ctxt *ppp_ctxt,
+	struct sxe2_flow_info_params *flow_params,
+	const struct sxe2_ptype_map *ptype_map_ptr, unsigned long *headers,
+	u8 i)
 {
 	const unsigned long *ptypes_src;
 
 	if (test_bit(SXE2_FLOW_HDR_IPV4, headers) &&
 	    test_bit(SXE2_FLOW_HDR_IPV_FRAG, headers)) {
-		ptypes_src = i ? (const unsigned long
-						  *)(ptype_map_ptr->sxe2_ptypes_ipv4_il_frag)
-			       : (const unsigned long
-						  *)(ptype_map_ptr->sxe2_ptypes_ipv4_ofos_frag);
+		ptypes_src =
+			i ? (const unsigned long
+				     *)(ptype_map_ptr->sxe2_ptypes_ipv4_il_frag) :
+			    (const unsigned long
+				     *)(ptype_map_ptr
+						->sxe2_ptypes_ipv4_ofos_frag);
 		bitmap_and(flow_params->ptypes, flow_params->ptypes, ptypes_src,
 			   SXE2_MAX_PTYPE_NUM);
 		flow_params->flow_info->priority =
-				i ? SXE2_FLOW_PRIO_LEVLE_INNER_L3_FRAG
-				  : SXE2_FLOW_PRIO_LEVEL_OUTER_L3_FRAG;
+			i ? SXE2_FLOW_PRIO_LEVEL_INNER_IP4_FRAG :
+			    SXE2_FLOW_PRIO_LEVEL_OUTER_IP4_FRAG;
 	} else if (test_bit(SXE2_FLOW_HDR_IPV6, headers) &&
 		   test_bit(SXE2_FLOW_HDR_IPV_FRAG, headers)) {
-		ptypes_src = i ? (const unsigned long
-						  *)(ptype_map_ptr->sxe2_ptypes_ipv6_il_frag)
-			       : (const unsigned long
-						  *)(ptype_map_ptr->sxe2_ptypes_ipv6_ofos_frag);
+		ptypes_src =
+			i ? (const unsigned long
+				     *)(ptype_map_ptr->sxe2_ptypes_ipv6_il_frag) :
+			    (const unsigned long
+				     *)(ptype_map_ptr
+						->sxe2_ptypes_ipv6_ofos_frag);
 		bitmap_and(flow_params->ptypes, flow_params->ptypes, ptypes_src,
 			   SXE2_MAX_PTYPE_NUM);
 		flow_params->flow_info->priority =
-				i ? SXE2_FLOW_PRIO_LEVLE_INNER_L3_FRAG
-				  : SXE2_FLOW_PRIO_LEVEL_OUTER_L3_FRAG;
+			i ? SXE2_FLOW_PRIO_LEVEL_INNER_IP6_FRAG :
+			    SXE2_FLOW_PRIO_LEVEL_OUTER_IP6_FRAG;
 	}
 }
 
@@ -3478,50 +3021,76 @@ sxe2_flow_parse_dissectors_hdrs_l4(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 	const unsigned long *ptypes_src;
 
 	if (test_bit(SXE2_FLOW_HDR_UDP, headers)) {
-		ptypes_src = i ? (const unsigned long
-						  *)(ptype_map_ptr->sxe2_ptypes_udp_il)
-			       : (const unsigned long
-						  *)(ptype_map_ptr->sxe2_ptypes_udp_ofos);
+		ptypes_src =
+			i ? (const unsigned long
+				     *)(ptype_map_ptr->sxe2_ptypes_udp_il) :
+			    (const unsigned long
+				     *)(ptype_map_ptr->sxe2_ptypes_udp_ofos);
 		bitmap_and(flow_params->ptypes, flow_params->ptypes, ptypes_src,
 			   SXE2_MAX_PTYPE_NUM);
-		flow_params->flow_info->priority = i ? SXE2_FLOW_PRIO_LEVEL_INNER_L4
-						     : SXE2_FLOW_PRIO_LEVEL_OUTER_L4;
 
+		if (test_bit(SXE2_FLOW_HDR_IPV4, headers)) {
+			flow_params->flow_info->priority = i ?
+				SXE2_FLOW_PRIO_LEVEL_INNER_IP4_UDP :
+				 SXE2_FLOW_PRIO_LEVEL_OUTER_IP4_UDP;
+		} else {
+			flow_params->flow_info->priority = i ?
+				SXE2_FLOW_PRIO_LEVEL_INNER_IP6_UDP :
+				 SXE2_FLOW_PRIO_LEVEL_OUTER_IP6_UDP;
+		}
 	} else if (test_bit(SXE2_FLOW_HDR_TCP, headers)) {
-		ptypes_src = i ? (const unsigned long
-						  *)(ptype_map_ptr->sxe2_ptypes_tcp_il)
-			       : (const unsigned long
-						  *)(ptype_map_ptr->sxe2_ptypes_tcp_ofos);
+		ptypes_src =
+			i ? (const unsigned long
+				     *)(ptype_map_ptr->sxe2_ptypes_tcp_il) :
+			    (const unsigned long
+				     *)(ptype_map_ptr->sxe2_ptypes_tcp_ofos);
 		bitmap_and(flow_params->ptypes, flow_params->ptypes, ptypes_src,
 			   SXE2_MAX_PTYPE_NUM);
-		flow_params->flow_info->priority = i ? SXE2_FLOW_PRIO_LEVEL_INNER_L4
-						     : SXE2_FLOW_PRIO_LEVEL_OUTER_L4;
 
+		if (test_bit(SXE2_FLOW_HDR_IPV4, headers)) {
+			flow_params->flow_info->priority = i ?
+				SXE2_FLOW_PRIO_LEVEL_INNER_IP4_TCP :
+				 SXE2_FLOW_PRIO_LEVEL_OUTER_IP4_TCP;
+		} else {
+			flow_params->flow_info->priority = i ?
+				SXE2_FLOW_PRIO_LEVEL_INNER_IP6_TCP :
+				 SXE2_FLOW_PRIO_LEVEL_OUTER_IP6_TCP;
+		}
 	} else if (test_bit(SXE2_FLOW_HDR_SCTP, headers)) {
-		ptypes_src = i ? (const unsigned long
-						  *)(ptype_map_ptr->sxe2_ptypes_sctp_il)
-			       : (const unsigned long
-						  *)(ptype_map_ptr->sxe2_ptypes_sctp_ofos);
+		ptypes_src =
+			i ? (const unsigned long
+				     *)(ptype_map_ptr->sxe2_ptypes_sctp_il) :
+			    (const unsigned long
+				     *)(ptype_map_ptr->sxe2_ptypes_sctp_ofos);
 		bitmap_and(flow_params->ptypes, flow_params->ptypes, ptypes_src,
 			   SXE2_MAX_PTYPE_NUM);
-		flow_params->flow_info->priority = i ? SXE2_FLOW_PRIO_LEVEL_INNER_L4
-						     : SXE2_FLOW_PRIO_LEVEL_OUTER_L4;
+
+		if (test_bit(SXE2_FLOW_HDR_IPV4, headers)) {
+			flow_params->flow_info->priority = i ?
+				SXE2_FLOW_PRIO_LEVEL_INNER_IP4_SCTP :
+				 SXE2_FLOW_PRIO_LEVEL_OUTER_IP4_SCTP;
+		} else {
+			flow_params->flow_info->priority = i ?
+				SXE2_FLOW_PRIO_LEVEL_INNER_IP6_SCTP :
+				 SXE2_FLOW_PRIO_LEVEL_OUTER_IP6_SCTP;
+		}
 	}
 
 	if (test_bit(SXE2_FLOW_HDR_GRE, headers)) {
-		ptypes_src = (const unsigned long
-					      *)(ptype_map_ptr->sxe2_ptypes_gre_of);
+		ptypes_src =
+			(const unsigned long *)(ptype_map_ptr
+							->sxe2_ptypes_gre_of);
 		bitmap_and(flow_params->ptypes, flow_params->ptypes, ptypes_src,
 			   SXE2_MAX_PTYPE_NUM);
 	} else if (test_bit(SXE2_FLOW_HDR_VXLAN, headers) ||
 		   test_bit(SXE2_FLOW_HDR_GENEVE, headers)) {
 		ptypes_src = (const unsigned long
-					      *)(ptype_map_ptr->sxe2_ptypes_vxlan_vni);
+				      *)(ptype_map_ptr->sxe2_ptypes_vxlan_vni);
 		bitmap_and(flow_params->ptypes, flow_params->ptypes, ptypes_src,
 			   SXE2_MAX_PTYPE_NUM);
 	} else if (test_bit(SXE2_FLOW_HDR_GTPU, headers)) {
 		ptypes_src = (const unsigned long
-					      *)(ptype_map_ptr->sxe2_ptypes_gtpu);
+				      *)(ptype_map_ptr->sxe2_ptypes_gtpu);
 		bitmap_and(flow_params->ptypes, flow_params->ptypes, ptypes_src,
 			   SXE2_MAX_PTYPE_NUM);
 	}
@@ -3535,6 +3104,7 @@ static s32 sxe2_flow_parse_dissectors_hdrs(struct sxe2_ppp_common_ctxt *ppp_ctxt
 	u8 i;
 	const struct sxe2_ptype_map *ptype_map_ptr = &g_ptype_map;
 
+	bitmap_zero(headers, SXE2_FLOW_HDR_MAX);
 	memset(flow_params->ptypes, 0xff, sizeof(flow_params->ptypes));
 
 	for (i = 0; i < flow_params->flow_info->dissector_cnt; i++) {
@@ -3554,7 +3124,7 @@ static s32 sxe2_flow_parse_dissectors_hdrs(struct sxe2_ppp_common_ctxt *ppp_ctxt
 						   ptype_map_ptr, headers, i);
 	}
 
-	LOG_INFO("generate ptypes: 0x%lX, 0x%lX, 0x%lX, 0x%lX\n, priority: %u",
+	LOG_INFO("generate ptypes: 0x%lX, 0x%lX, 0x%lX, 0x%lX, priority: %u\n",
 		 flow_params->ptypes[0], flow_params->ptypes[1],
 		 flow_params->ptypes[2], flow_params->ptypes[5],
 		 flow_params->flow_info->priority);
@@ -3663,14 +3233,14 @@ static s32 sxe2_flow_parse_fld_to_fv(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 	struct sxe2_adapter *adapter = ppp_ctxt->adapter;
 	struct sxe2_flow_fld *fld;
 	enum sxe2_prot_id prot_id = SXE2_PROT_INVALID;
-	s32 ret = 0;
-	u16 mask;
-	u16 off;
-	u16 i;
+	s32 ret			  = 0;
+	u16 mask = 0;
+	u16 off = 0;
+	u16 i = 0;
 	u8 fv_num = ppp_ctxt->hw_fv_num;
-	u8 fv_word_size;
-	u8 fv_cnt;
-	u8 fv_idx;
+	u8 fv_word_size = 0;
+	u8 fv_cnt = 0;
+	u8 fv_idx = 0;
 	u16 def_mask_id = 0;
 	u16 def_fv_id = 0;
 
@@ -3769,12 +3339,12 @@ static s32 sxe2_flow_parse_raw_to_fv(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 {
 	s32 ret = 0;
 	u8 i, j;
-	u16 off;
+	u16 off = 0;
 	struct sxe2_adapter *adapter = ppp_ctxt->adapter;
 	struct sxe2_flow_raw *raw;
 	u8 raw_cnt = flow_params->flow_info->dissectors[dissector].raw_cnt;
-	u8 fv_num = ppp_ctxt->hw_fv_num;
-	u8 fv_cnt;
+	u8 fv_num  = ppp_ctxt->hw_fv_num;
+	u8 fv_cnt = 0;
 
 	if (!raw_cnt)
 		return 0;
@@ -3821,7 +3391,7 @@ static s32 sxe2_flow_parse_dissectors_fld(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 	DECLARE_BITMAP(fields, SXE2_FLOW_FLD_ID_MAX);
 	s32 ret = 0;
 	enum sxe2_flow_fld_id j = 0;
-	unsigned long tmp;
+	unsigned long tmp = 0;
 	u8 i;
 
 	bitmap_zero(fields, SXE2_FLOW_FLD_ID_MAX);
@@ -3850,12 +3420,13 @@ l_end:
 }
 
 #define SXE2_FLOW_FLD_OFF_INVAL 0xffff
+
 STATIC void sxe2_flow_acl_frmt_entry_field(u16 fld, struct sxe2_flow_fld *info,
 					   u8 *buf, u8 *dontcare, u8 *data)
 {
 	u16 dst, src, mask, k, end_disp, tmp_s = 0, tmp_m = 0;
 	bool use_mask = false;
-	u8 disp;
+	u8 disp = 0;
 
 	src = info->fld_val.val;
 	mask = info->fld_val.mask;
@@ -3912,14 +3483,18 @@ s32 sxe2_flow_acl_format_lut_act_entry(struct sxe2_adapter *adapter,
 	u8 *key = NULL;
 	u16 buf_size;
 	u16 i, j;
+	u8 act_cnt;
 
-	flow_entry->action = devm_kzalloc(dev, sizeof(struct sxe2_acl_flow_action),
+	act_cnt = acts[1].data.acl_act.mdid ? 2 : 1;
+	flow_entry->act_cnt = act_cnt;
+	flow_entry->action = devm_kzalloc(dev, act_cnt * sizeof(struct sxe2_acl_flow_action),
 					  GFP_KERNEL);
 	if (!flow_entry->action) {
 		ret = -ENOMEM;
 		goto l_end;
 	}
-	memcpy(flow_entry->action, acts, sizeof(*acts));
+
+	memcpy(flow_entry->action, acts, act_cnt * sizeof(struct sxe2_acl_flow_action));
 
 	buf_size = flow->cfg.scen->width;
 	buf = kzalloc(buf_size, GFP_KERNEL);
@@ -4096,7 +3671,7 @@ l_end:
 static s32 sxe2_flow_parse_dissectors(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 				      struct sxe2_flow_info_params *flow_params)
 {
-	s32 ret;
+	s32 ret = 0;
 	struct sxe2_adapter *adapter = ppp_ctxt->adapter;
 
 	ret = sxe2_flow_parse_dissectors_hdrs(ppp_ctxt, flow_params);
@@ -4133,11 +3708,11 @@ static s32 sxe2_flow_add_profile(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 	struct sxe2_adapter *adapter = ppp_ctxt->adapter;
 	DECLARE_BITMAP(ptgs_used, SXE2_MAX_PTG_NUM);
 	struct sxe2_flow_info_node *flow = flow_params->flow_info;
-	s32 ret = 0;
-	u64 ptype_64;
-	u16 ptype;
-	u8 prof_id;
-	u8 ptg;
+	s32 ret				 = 0;
+	u64 ptype_64 = 0;
+	u16 ptype = 0;
+	u8 prof_id = 0;
+	u8 ptg = 0;
 
 	SXE2_SET_USED(fnav_swap);
 
@@ -4168,7 +3743,7 @@ static s32 sxe2_flow_add_profile(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 		if (test_bit(ptg, ptgs_used))
 			continue;
 
-		LOG_INFO_BDF("process ptype[%u] ptg[%u]\n", ptype, ptg);
+		LOG_DEBUG_BDF("process ptype[%u] ptg[%u]\n", ptype, ptg);
 
 		set_bit(ptg, ptgs_used);
 
@@ -4195,7 +3770,7 @@ static s32 sxe2_flow_creat_sync(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 	struct sxe2_adapter *adapter = ppp_ctxt->adapter;
 	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
 	struct sxe2_flow_info_params *flow_params;
-	s32 ret;
+	s32 ret = 0;
 	u32 i;
 
 	if (!flow) {
@@ -4289,6 +3864,7 @@ static bool sxe2_flow_check_hdrs_correct(struct sxe2_flow_dissector_info *dissec
 	DECLARE_BITMAP(headers_l4, SXE2_FLOW_HDR_MAX);
 	DECLARE_BITMAP(headers_tmp, SXE2_FLOW_HDR_MAX);
 
+	bitmap_zero(headers_tmp, SXE2_FLOW_HDR_MAX);
 	sxe2_layer_hdrs_bitmap_get(protocol_stack_layer_L3, headers_l3);
 	sxe2_layer_hdrs_bitmap_get(protocol_stack_layer_L4, headers_l4);
 
@@ -4317,7 +3893,7 @@ s32 sxe2_flow_creat(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 		    struct sxe2_flow_dissector_info *dissectors, u8 dissectors_cnt,
 		    struct sxe2_flow_info_node **flow)
 {
-	s32 ret;
+	s32 ret = 0;
 	struct sxe2_adapter *adapter = ppp_ctxt->adapter;
 
 	if (!dissectors) {
@@ -4358,7 +3934,7 @@ static s32 sxe2_flow_op_remove_flow(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 	struct sxe2_og_chg *tmp_chg;
 	struct sxe2_og_chg *del_chg;
 	struct list_head op_list;
-	s32 ret;
+	s32 ret = 0;
 	u16 i;
 
 	INIT_LIST_HEAD(&op_list);
@@ -4388,7 +3964,7 @@ l_end:
 s32 sxe2_flow_delete(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 		     struct sxe2_flow_info_node *flow)
 {
-	s32 ret;
+	s32 ret = 0;
 	struct sxe2_adapter *adapter = ppp_ctxt->adapter;
 	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
 
@@ -4437,15 +4013,22 @@ s32 sxe2_flow_cfg_clear_muti_vsi_in_vsig(struct sxe2_adapter *adapter,
 	return ret;
 }
 
-s32 sxe2_rss_delete_vsi_flows_for_vfr(struct sxe2_rss_ctxt *rss_ctxt, u16 vsi_sw_idx)
+void sxe2_rss_vsi_flow_clean_for_vf(struct sxe2_vsi *vsi)
 {
-	struct sxe2_ppp_common_ctxt *ppp_ctxt = &rss_ctxt->ppp;
-	struct sxe2_adapter *adapter = ppp_ctxt->adapter;
-	struct sxe2_flow_info_node *flow;
-	struct sxe2_flow_info_node *tmp;
-	s32 ret = 0;
-	u16 vsig_idx;
-	bool only_vsi;
+	struct sxe2_adapter          *adapter   = vsi->adapter;
+	struct sxe2_rss_ctxt         *rss_ctxt  = &adapter->rss_flow_ctxt;
+	struct sxe2_ppp_common_ctxt  *ppp_ctxt  = &rss_ctxt->ppp;
+	struct sxe2_flow_info_node   *flow;
+	struct sxe2_flow_info_node   *tmp;
+	u16                           vsi_sw_idx = vsi->id_in_pf;
+	s32                           ret = 0;
+	u16                           vsig_idx;
+	bool                          only_vsi;
+
+	if (sxe2_is_safe_mode(adapter)) {
+		LOG_DEV_ERR("sxe2 rss in safe mode is not supported.\n");
+		goto l_end;
+	}
 
 	if (list_empty(&ppp_ctxt->flow_list))
 		goto l_end;
@@ -4489,7 +4072,6 @@ l_unlock:
 	mutex_unlock(&rss_ctxt->rss_cfgs_lock);
 l_end:
 	LOG_DEBUG_BDF("delete vsi flows end, ret:%d.\n", ret);
-	return ret;
 }
 
 s32 sxe2_rss_delete_vsi_flows(struct sxe2_rss_ctxt *rss_ctxt, u16 vsi_sw_idx)
@@ -4689,7 +4271,7 @@ static s32 sxe2_fwc_rss_symm_fv_set(struct sxe2_adapter *adapter, u16 prof_id,
 
 	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 	if (ret)
-		LOG_ERROR_BDF("Rss hash symm fv set cmd fail, ret=%d", ret);
+		LOG_ERROR_BDF("Rss hash symm fv set cmd failed, ret=%d", ret);
 
 l_end:
 	return ret;
@@ -4778,9 +4360,10 @@ static void sxe2_rss_flow_support_hdrs_get(unsigned long *hdrs)
 	set_bit(SXE2_FLOW_HDR_ETH_NON_IP, hdrs);
 }
 
-static s32 sxe2_rss_gen_dissector_info(struct sxe2_flow_dissector_info *dissectors,
-				       u8 dissectors_cnt,
-				       const struct sxe2_rss_hash_cfg *cfg)
+STATIC s32
+sxe2_rss_gen_dissector_info(struct sxe2_flow_dissector_info *dissectors,
+			    u8 dissectors_cnt,
+			    const struct sxe2_rss_hash_cfg *cfg)
 {
 	s32 ret = 0;
 	u64 i;
@@ -4790,6 +4373,7 @@ static s32 sxe2_rss_gen_dissector_info(struct sxe2_flow_dissector_info *dissecto
 	DECLARE_BITMAP(headers_l3, SXE2_FLOW_HDR_MAX);
 	DECLARE_BITMAP(headers_l4, SXE2_FLOW_HDR_MAX);
 
+	bitmap_zero(hdrs, SXE2_FLOW_HDR_MAX);
 	sxe2_rss_flow_support_hdrs_get(rss_support_hdrs);
 	sxe2_layer_hdrs_bitmap_get(protocol_stack_layer_L3, headers_l3);
 	sxe2_layer_hdrs_bitmap_get(protocol_stack_layer_L4, headers_l4);
@@ -4982,10 +4566,14 @@ s32 sxe2_flow_default_mask_get(enum sxe2_block_id block_id,
 static void sxe2_flow_free_all_flows(struct sxe2_ppp_common_ctxt *ppp_ctxt)
 {
 	struct sxe2_adapter *adapter = ppp_ctxt->adapter;
-	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
+	struct device *dev = NULL;
 	struct sxe2_flow_info_node *flow;
 	struct sxe2_flow_info_node *tmp;
 
+	if (!adapter)
+		return;
+
+	dev = SXE2_ADAPTER_TO_DEV(adapter);
 	mutex_lock(&ppp_ctxt->flow_list_lock);
 	list_for_each_entry_safe(flow, tmp, &ppp_ctxt->flow_list, l_node) {
 		list_del(&flow->l_node);
@@ -5061,8 +4649,8 @@ s32 sxe2_rss_add_cfg(struct sxe2_rss_ctxt *rss_ctxt, u16 vsi_sw_idx,
 	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
 	struct sxe2_flow_dissector_info *dissectors = NULL;
 	struct sxe2_flow_info_node *flow;
-	s32 ret;
-	u8 dissectors_cnt;
+	s32 ret = 0;
+	u8 dissectors_cnt = 0;
 
 	if (cfg->hdr_type == SXE2_RSS_OUTER_HEADERS)
 		dissectors_cnt = SXE2_FLOW_DISSECTOR_SINGLE;
@@ -5089,13 +4677,8 @@ s32 sxe2_rss_add_cfg(struct sxe2_rss_ctxt *rss_ctxt, u16 vsi_sw_idx,
 					SXE2_FLOW_FIND_FLOW_COND_VSI |
 					SXE2_FLOW_FIND_FLOW_COND_FLD);
 	if (flow) {
-		LOG_DEBUG_BDF("add rss cfg, find vsi and (fld、hdr) same flow.\n");
-		if (flow->cfg.symm == cfg->symm) {
-			goto l_end;
-		} else {
-			flow->cfg.symm = cfg->symm;
-			goto l_update_symm;
-		}
+		LOG_DEBUG_BDF("add rss cfg, find vsi and (fld hdr) same flow.\n");
+		goto l_end;
 	}
 
 	flow = sxe2_find_flow_with_cond(ppp_ctxt, dissectors, dissectors_cnt,
@@ -5118,16 +4701,10 @@ s32 sxe2_rss_add_cfg(struct sxe2_rss_ctxt *rss_ctxt, u16 vsi_sw_idx,
 	flow = sxe2_find_flow_with_cond(ppp_ctxt, dissectors, dissectors_cnt,
 					vsi_sw_idx, SXE2_FLOW_FIND_FLOW_COND_FLD);
 	if (flow) {
-		LOG_DEBUG_BDF("add rss cfg, find (hdr、fld) same flow.\n");
-		if (flow->cfg.symm == cfg->symm) {
-			ret = sxe2_flow_assoc_vsi(ppp_ctxt, flow, vsi_sw_idx);
-			if (ret == 0) {
-				ret = sxe2_rss_save_cfg_list(rss_ctxt, vsi_sw_idx,
-							     flow);
-			}
-		} else {
-			ret = -EOPNOTSUPP;
-		}
+		LOG_DEBUG_BDF("add rss cfg, find (hdr fld) same flow.\n");
+		ret = sxe2_flow_assoc_vsi(ppp_ctxt, flow, vsi_sw_idx);
+		if (ret == 0)
+			ret = sxe2_rss_save_cfg_list(rss_ctxt, vsi_sw_idx, flow);
 		goto l_end;
 	}
 
@@ -5146,11 +4723,10 @@ s32 sxe2_rss_add_cfg(struct sxe2_rss_ctxt *rss_ctxt, u16 vsi_sw_idx,
 		goto l_end;
 	}
 
+	flow->cfg.symm = true;
+	(void)sxe2_rss_update_symm(rss_ctxt, flow);
 	ret = sxe2_rss_save_cfg_list(rss_ctxt, vsi_sw_idx, flow);
 
-	flow->cfg.symm = cfg->symm;
-l_update_symm:
-	(void)sxe2_rss_update_symm(rss_ctxt, flow);
 l_end:
 	if (dissectors)
 		devm_kfree(dev, dissectors);
@@ -5166,8 +4742,8 @@ s32 sxe2_rss_rem_cfg(struct sxe2_rss_ctxt *rss_ctxt, u16 vsi_sw_idx,
 	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
 	struct sxe2_flow_dissector_info *dissectors;
 	struct sxe2_flow_info_node *flow;
-	s32 ret;
-	u8 dissectors_cnt;
+	s32 ret = 0;
+	u8 dissectors_cnt = 0;
 
 	if (cfg->hdr_type == SXE2_RSS_OUTER_HEADERS)
 		dissectors_cnt = SXE2_FLOW_DISSECTOR_SINGLE;
@@ -5463,8 +5039,8 @@ void sxe2_rss_comm_deinit(struct sxe2_rss_ctxt *rss_ctxt)
 s32 sxe2_add_rss_flow(struct sxe2_rss_ctxt *rss_ctxt, u16 vsi_sw_idx,
 		      const struct sxe2_rss_hash_cfg *cfg)
 {
-	s32 ret;
-	struct sxe2_rss_hash_cfg cfg_tmp;
+	s32 ret = 0;
+	struct sxe2_rss_hash_cfg cfg_tmp = {{0}};
 
 	if (vsi_sw_idx >= SXE2_VSI_MAX_CNT || !cfg || !rss_ctxt ||
 	    cfg->hdr_type > SXE2_RSS_ANY_HEADERS ||

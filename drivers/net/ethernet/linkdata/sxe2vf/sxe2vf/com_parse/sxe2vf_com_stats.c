@@ -81,13 +81,24 @@ STATIC void sxe2vf_com_vsi_stats_calc(const struct sxe2_vf_vsi_hw_stats *new_sta
 s32 sxe2vf_com_vsi_stat_get(struct sxe2vf_adapter *adapter, struct sxe2_obj *obj,
 			    struct sxe2_drv_cmd_params *cmd_buf)
 {
+	s32 ret = 0;
 	struct sxe2_drv_vsi_stats_req *req = (struct sxe2_drv_vsi_stats_req *)
 			sxe2vf_com_req_data_copy_to_kernel(cmd_buf);
 	struct sxe2_drv_vsi_stats_resp resp = {0};
 	struct sxe2_vf_sw_stats msg = {0};
 	struct sxe2_vf_hw_stats_rsp rsp = {{0}, 0};
 	struct sxe2_vf_vsi_hw_stats stats = {0};
-	s32 ret = 0;
+
+	if (!req) {
+		ret = -ENOMEM;
+		goto l_end;
+	}
+
+	if (!req) {
+		LOG_ERROR_BDF("vsi stats get req is NULL.\n");
+		ret = -EINVAL;
+		goto l_end;
+	}
 
 	msg.sw_stats.rx_bytes = req->sw_stats.rx_bytes;
 	msg.sw_stats.rx_packets = req->sw_stats.rx_packets;
@@ -159,10 +170,11 @@ s32 sxe2vf_com_vsi_stat_clear(struct sxe2vf_adapter *adapter, struct sxe2_obj *o
 
 	if (sxe2vf_com_mode_get(adapter) == SXE2_COM_MODULE_DPDK) {
 		ret = sxe2vf_com_clear_stats_msg_send(adapter, cmd_buf->vsi_id);
-		if (ret)
-			LOG_INFO_BDF("sxe2vf com vsi[%d] stats clear is completed.\n",
+		if (ret) {
+			LOG_INFO_BDF("sxe2vf com vsi[%d] stats clear is failed.\n",
 				     cmd_buf->vsi_id);
-		goto l_end;
+			goto l_end;
+		}
 	} else if (sxe2vf_com_mode_get(adapter) == SXE2_COM_MODULE_MIXED) {
 		msg.vsi_id = cmd_buf->vsi_id;
 		msg.fnav_stats_idx = cpu_to_le16(SXE2_VF_FNAV_INVALID_STAT_IDX);

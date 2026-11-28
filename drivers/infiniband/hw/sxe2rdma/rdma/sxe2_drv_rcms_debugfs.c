@@ -53,9 +53,8 @@ int sxe2_rcms_num_to_ctx_va_pointer(struct sxe2_rdma_device *rdma_dev,
 		ret = -EINVAL;
 		goto end;
 	}
-
-	if (obj_type == SXE2_RCMS_OBJ_RESP && obj_type == SXE2_RCMS_OBJ_SSNT &&
-	    obj_type == SXE2_RCMS_OBJ_IRRL &&
+	if (obj_type == SXE2_RCMS_OBJ_RESP || obj_type == SXE2_RCMS_OBJ_SSNT ||
+	    obj_type == SXE2_RCMS_OBJ_IRRL ||
 	    obj_type == SXE2_RCMS_OBJ_ACK_TIMEOUT) {
 		DRV_RDMA_LOG_DEV_ERR(
 			"rcms debugfs:num to ctx va input obj type err obj type=%u\n",
@@ -370,12 +369,18 @@ static ssize_t drv_rdma_rcms_read_fpte_write(struct file *filp,
 		goto end;
 	}
 
-	if (fpte_cnt > RCMS_DEBUGFS_READ_FPTE_MAX_CNT) {
+	if (fpte_cnt > RCMS_DEBUGFS_READ_FPTE_MAX_CNT || fpte_cnt == 0) {
 		DRV_RDMA_LOG_DEV_ERR(
 			"rcms debugfs:input fpte cnt support cnt=%u\n",
 			RCMS_DEBUGFS_READ_FPTE_MAX_CNT);
 		fpte_cnt = RCMS_DEBUGFS_READ_FPTE_MAX_CNT;
 	}
+	if (fpte_idx + fpte_cnt - 1 > rcms_info->max_fpte_index) {
+		fpte_cnt = rcms_info->max_fpte_index - fpte_idx + 1;
+		DRV_RDMA_LOG_DEV_ERR(
+			"rcms debugfs:input fpte cnt err max cnt is %u\n", fpte_cnt);
+	}
+
 	rcms_info->read_fpte_input.fpte_cnt = fpte_cnt;
 
 	ret  = (ssize_t)count;

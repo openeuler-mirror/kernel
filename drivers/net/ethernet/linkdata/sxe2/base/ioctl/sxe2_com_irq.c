@@ -33,12 +33,13 @@ STATIC irqreturn_t sxe2_com_io_irq_handler(int irq, void *dev)
 	return IRQ_HANDLED;
 }
 
-static s32 sxe2_com_io_set_trigger(struct sxe2_com_context *com_ctxt,
+STATIC s32 sxe2_com_io_set_trigger(struct sxe2_com_context *com_ctxt,
 				   int index, int fd, irq_handler_t handler)
 {
 	struct sxe2_com_irq_entry *entry = &com_ctxt->irqs.entry[index];
 	struct eventfd_ctx *trigger;
 	int ret;
+	s32 vector;
 
 	if (entry->trigger) {
 		synchronize_irq(entry->vector);
@@ -50,6 +51,11 @@ static s32 sxe2_com_io_set_trigger(struct sxe2_com_context *com_ctxt,
 
 	if (fd < 0)
 		return 0;
+
+	vector = com_ctxt->ops->get_vector(com_ctxt->adapter, index);
+	if (vector < 0)
+		return vector;
+	entry->vector = vector;
 
 	entry->name = kasprintf(GFP_KERNEL, "sxe2-com-irq[%d](%s)",
 				entry->vector, com_ctxt->com_log_param.dev_name);
@@ -101,6 +107,7 @@ STATIC s32 sxe2_com_io_irq_init(struct sxe2_com_context *com_ctxt)
 			goto l_err;
 	}
 	com_ctxt->irqs.num_irqs = num_irq;
+	com_ctxt->irqs.io_irq_owner = NULL;
 
 	return 0;
 l_err:
@@ -109,12 +116,14 @@ l_err:
 	return -EINVAL;
 }
 
-STATIC void sxe2_com_io_irq_clear(struct sxe2_com_context *com_ctxt)
+void sxe2_com_io_irq_clear(struct sxe2_com_context *com_ctxt)
 {
 	int i;
 
 	for (i = 0; i < com_ctxt->irqs.num_irqs; i++)
 		sxe2_com_io_set_trigger(com_ctxt, i, -1, NULL);
+
+	com_ctxt->irqs.io_irq_owner = NULL;
 }
 
 STATIC void sxe2_com_io_irq_deinit(struct sxe2_com_context *com_ctxt)
@@ -133,7 +142,6 @@ s32 sxe2_com_io_irq_req(struct sxe2_com_context *com_ctxt, unsigned long arg)
 	u32 i;
 	s32 *fd;
 
-	mutex_lock(&com_ctxt->com_lock);
 	ret = sxe2_com_get_arg_sz(com_ctxt->dpdk_ver, SXE2_DEVICE_IO_IRQS_REQ);
 	if (ret < 0) {
 		LOG_ERROR_BDF_COM("get arg sz failed, ver: %d, cmd:%d\n", com_ctxt->dpdk_ver,
@@ -151,7 +159,8 @@ s32 sxe2_com_io_irq_req(struct sxe2_com_context *com_ctxt, unsigned long arg)
 	}
 
 	if (param.cnt == 0 || param.cnt > com_ctxt->irqs.num_irqs ||
-	    param.base_irq_in_com + param.cnt - 1 > com_ctxt->irqs.num_irqs - 1 ||
+	    param.base_irq_in_com >= com_ctxt->irqs.num_irqs ||
+	    param.cnt  > com_ctxt->irqs.num_irqs - param.base_irq_in_com ||
 	    !param.event_fd) {
 		ret = -EINVAL;
 		goto l_end;
@@ -180,7 +189,6 @@ l_free:
 l_end:
 	LOG_INFO_BDF_COM("cnt:%u:%u, base_irq_in_com: %u, ret: %d.\n", param.cnt,
 			 com_ctxt->irqs.num_irqs, param.base_irq_in_com, ret);
-	mutex_unlock(&com_ctxt->com_lock);
 	return ret;
 }
 
@@ -260,9 +268,9 @@ STATIC void sxe2_com_event_irq_clear(struct sxe2_com_context *com_ctxt)
 	com_ctxt->irqs.evt_sub_map = 0;
 
 	if (com_ctxt->irqs.evt_trigger) {
+		sxe2_com_irq_notifier_unregister(com_ctxt, &com_ctxt->irqs.evt_nb);
 		eventfd_ctx_put(com_ctxt->irqs.evt_trigger);
 		com_ctxt->irqs.evt_trigger = NULL;
-		sxe2_com_irq_notifier_unregister(com_ctxt, &com_ctxt->irqs.evt_nb);
 	}
 }
 
@@ -279,7 +287,6 @@ s32 sxe2_com_event_irq_req(struct sxe2_com_context *com_ctxt, unsigned long arg)
 	u32 arg_sz;
 	struct eventfd_ctx *trigger;
 
-	mutex_lock(&com_ctxt->com_lock);
 	ret = sxe2_com_get_arg_sz(com_ctxt->dpdk_ver, SXE2_DEVICE_EVT_IRQ_REQ);
 	if (ret < 0) {
 		LOG_ERROR_BDF_COM("sxe2_com_get_arg_sz failed, ver: %d, cmd:%d\n",
@@ -323,7 +330,6 @@ s32 sxe2_com_event_irq_req(struct sxe2_com_context *com_ctxt, unsigned long arg)
 l_end:
 	LOG_INFO_BDF_COM("eventfd:%d, filter_table: %llu, ret: %d.\n", param.eventfd,
 			 param.filter_table, ret);
-	mutex_unlock(&com_ctxt->com_lock);
 	return ret;
 }
 
@@ -333,7 +339,6 @@ s32 sxe2_com_event_cause_get(struct sxe2_com_context *com_ctxt, unsigned long ar
 	struct sxe2_ioctl_other_evt_get ec = {};
 	u32 arg_sz;
 
-	mutex_lock(&com_ctxt->com_lock);
 	ret = sxe2_com_get_arg_sz(com_ctxt->dpdk_ver, SXE2_DEVICE_EVT_CAUSE_GET);
 	if (ret < 0) {
 		LOG_ERROR_BDF_COM("get arg sz failed, ver: %d, cmd:%d\n",
@@ -355,7 +360,6 @@ s32 sxe2_com_event_cause_get(struct sxe2_com_context *com_ctxt, unsigned long ar
 	LOG_INFO_BDF_COM("ec:%llu, ret: %d.\n", ec.evt_cause, ret);
 
 l_end:
-	mutex_unlock(&com_ctxt->com_lock);
 	return ret;
 }
 
@@ -366,7 +370,6 @@ s32 sxe2_com_reset_irq_req(struct sxe2_com_context *com_ctxt, unsigned long arg)
 	u32 arg_sz;
 	struct eventfd_ctx *trigger;
 
-	mutex_lock(&com_ctxt->com_lock);
 	ret = sxe2_com_get_arg_sz(com_ctxt->dpdk_ver, SXE2_DEVICE_RST_IRQ_REQ);
 	if (ret < 0) {
 		LOG_ERROR_BDF_COM("sxe2_com_get_arg_sz failed, ver: %d, cmd:%d\n",
@@ -406,7 +409,6 @@ s32 sxe2_com_reset_irq_req(struct sxe2_com_context *com_ctxt, unsigned long arg)
 
 l_end:
 	LOG_INFO_BDF_COM("eventfd:%d, ret: %d.\n", param.eventfd, ret);
-	mutex_unlock(&com_ctxt->com_lock);
 	return ret;
 }
 
@@ -432,9 +434,9 @@ STATIC void sxe2_com_reset_irq_init(struct sxe2_com_context *com_ctxt)
 STATIC void sxe2_com_reset_irq_clear(struct sxe2_com_context *com_ctxt)
 {
 	if (com_ctxt->irqs.rst_trigger) {
+		sxe2_com_irq_notifier_unregister(com_ctxt, &com_ctxt->irqs.rst_nb);
 		eventfd_ctx_put(com_ctxt->irqs.rst_trigger);
 		com_ctxt->irqs.rst_trigger = NULL;
-		sxe2_com_irq_notifier_unregister(com_ctxt, &com_ctxt->irqs.rst_nb);
 	}
 }
 
@@ -458,12 +460,9 @@ s32 sxe2_com_irqs_init(struct sxe2_com_context *com_ctxt)
 
 void sxe2_com_irqs_clear(struct sxe2_com_context *com_ctxt)
 {
-	mutex_lock(&com_ctxt->com_lock);
-
 	sxe2_com_reset_irq_clear(com_ctxt);
 	sxe2_com_event_irq_clear(com_ctxt);
 	sxe2_com_io_irq_clear(com_ctxt);
-	mutex_unlock(&com_ctxt->com_lock);
 }
 
 void sxe2_com_irqs_deinit(struct sxe2_com_context *com_ctxt)

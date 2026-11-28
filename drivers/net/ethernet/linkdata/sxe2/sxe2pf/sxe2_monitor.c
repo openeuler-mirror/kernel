@@ -20,14 +20,11 @@
 #include "sxe2_mbx_msg.h"
 #include "sxe2_lag.h"
 #include "sxe2_cmd.h"
+#include "sxe2_hw.h"
 
-#define SXE2_MAX_MDD_REQ_BUF                                                        \
-	(sizeof(struct sxe2_fwc_mdd_req) +                                          \
-	 SXE2_VF_NUM * sizeof(struct sxe2_mdd_vf_req))
+#define SXE2_TX_TIME_HANDLE_JIFFIES(last_jiffies) ((unsigned long)last_jiffies + 2 * HZ)
 
-#define SXE2_MAX_MDD_RESP_BUF                                                       \
-	(sizeof(struct sxe2_fwc_mdd_resp) +                                         \
-	 SXE2_VF_NUM * sizeof(struct sxe2_mdd_vf_resp))
+#define SXE2_BITS_PER_U64 (sizeof(u64) * BITS_PER_BYTE)
 
 struct workqueue_struct *sxe2_workqueue;
 
@@ -187,6 +184,14 @@ STATIC s32 sxe2_vsi_l2_fltr_sync(struct sxe2_vsi *vsi)
 	if (!vsi->netdev)
 		return 0;
 
+	rtnl_lock();
+
+	if (test_bit(SXE2_FLAG_SWITCHDEV_ENABLE, adapter->flags)) {
+		clear_bit(SXE2_VSI_S_MAC_FLTR_CHANGED, vsi->state);
+		rtnl_unlock();
+		return 0;
+	}
+
 	mutex_lock(&adapter->vsi_ctxt.lock);
 	mutex_lock(&mac_filter->sync_lock);
 
@@ -225,13 +230,9 @@ STATIC s32 sxe2_vsi_l2_fltr_sync(struct sxe2_vsi *vsi)
 	mutex_unlock(&mac_filter->sync_lock);
 	mutex_unlock(&adapter->vsi_ctxt.lock);
 
-	ret = 0;
-	if (!test_bit(SXE2_FLAG_SWITCHDEV_ENABLE, adapter->flags)) {
-		rtnl_lock();
-		ret = sxe2_vsi_promisc_sync_legacy(vsi);
-		rtnl_unlock();
-	}
+	ret = sxe2_vsi_promisc_sync_legacy(vsi);
 
+	rtnl_unlock();
 	return ret;
 }
 
@@ -280,8 +281,45 @@ static void sxe2_mdd_req_fill(struct sxe2_adapter *adapter,
 	{
 		mutex_lock(SXE2_VF_NODE_LOCK(adapter, idx));
 		vf_node = sxe2_vf_node_get(adapter, idx);
+		if (!vf_node) {
+			mutex_unlock(SXE2_VF_NODE_LOCK(adapter, idx));
+			continue;
+		}
 
 		vf->vf_idx = cpu_to_le16(vf_node->vf_idx);
+		vf->q_mapping_mode = SXE2_MAPPING_CONTIG;
+		vf++;
+		i++;
+		mutex_unlock(SXE2_VF_NODE_LOCK(adapter, idx));
+	}
+
+	req->vf_cnt = cpu_to_le16(i);
+}
+
+static void sxe2_mdd_req_v2_fill(struct sxe2_adapter *adapter,
+				 struct sxe2_fwc_mdd_req_v2 *req)
+{
+	struct sxe2_vf_node *vf_node;
+	u16 idx;
+	u16 i = 0;
+	struct sxe2_mdd_vf_req_v2 *vf = req->vfs;
+	struct sxe2_vsi *vsi = adapter->vsi_ctxt.main_vsi;
+	struct sxe2_queue_layout *q_layout = &adapter->q_ctxt.txq_layout;
+	unsigned long *map = q_layout->txq_map;
+	struct sxe2_vsi_queues *queues = &vsi->txqs;
+	u16 offset = 0;
+
+	offset = sxe2_vsi_qs_offset_get(vsi, q_layout, map,
+					adapter->q_ctxt.max_txq_cnt,
+					queues->q_alloc, SXE2_DATA_TQ);
+	req->q_offset = cpu_to_le16(offset);
+	sxe2_for_each_vf(adapter, idx)
+	{
+		mutex_lock(SXE2_VF_NODE_LOCK(adapter, idx));
+		vf_node = sxe2_vf_node_get(adapter, idx);
+
+		vf->vf_idx = cpu_to_le16(vf_node->vf_idx);
+		vf->q_mapping_mode = SXE2_MAPPING_CONTIG;
 
 		vf++;
 		i++;
@@ -310,6 +348,64 @@ STATIC s32 sxe2_fwc_vf_mdd_check(struct sxe2_adapter *adapter,
 	return ret;
 }
 
+STATIC s32 sxe2_fwc_vf_mdd_check_v2(struct sxe2_adapter *adapter,
+				    struct sxe2_fwc_mdd_req_v2 *req, u32 req_len,
+				    struct sxe2_fwc_mdd_resp_v2 *resp, u32 resp_len)
+{
+	s32 ret;
+	struct sxe2_cmd_params cmd = {};
+
+	sxe2_cmd_params_dflt_fill(&cmd, SXE2_CMD_VSI_MDD_CHECK_V2,
+				  req, req_len, resp, resp_len);
+
+	ret = sxe2_cmd_fw_exec(adapter, &cmd);
+	if (ret) {
+		LOG_ERROR_BDF("vsi mdd check v2 failed, ret=%d\n", ret);
+		ret = -EIO;
+	}
+
+	return ret;
+}
+
+STATIC s32 sxe2_fwc_vf_mdd_check_compat(struct sxe2_adapter *adapter,
+					u8 *req_buf, u32 req_len_v2,
+					u8 *resp_buf_v2, u32 resp_len_v2,
+					u8 *req_buf_v1, u32 req_len_v1,
+					u8 *resp_buf_v1, u32 resp_len_v1,
+					bool *used_v2)
+{
+	s32 ret;
+
+	*used_v2 = false;
+
+	ret = sxe2_fwc_vf_mdd_check_v2(adapter,
+				       (struct sxe2_fwc_mdd_req_v2 *)req_buf,
+				       req_len_v2,
+				       (struct sxe2_fwc_mdd_resp_v2 *)resp_buf_v2,
+				       resp_len_v2);
+	if (ret == 0) {
+		*used_v2 = true;
+		return 0;
+	}
+
+	LOG_WARN_BDF("MDD_CHECK_V2 opcode failed (ret=%d), fallback to V1 opcode\n", ret);
+	ret = sxe2_fwc_vf_mdd_check(adapter,
+				    (struct sxe2_fwc_mdd_req *)req_buf_v1,
+				    req_len_v1,
+				    (struct sxe2_fwc_mdd_resp *)resp_buf_v1,
+				    resp_len_v1);
+	if (ret == 0)
+		*used_v2 = false;
+
+	return ret;
+}
+
+STATIC bool sxe2_mdd_rx_event_valid(u8 event)
+{
+	return event != SXE2_RX_MDD_EVENT_NONE &&
+	       event != SXE2_RX_MDD_EVENT_INVALID;
+}
+
 static void sxe2_vf_mdd_reply_process(struct sxe2_adapter *adapter,
 				      struct sxe2_fwc_mdd_resp *resp)
 {
@@ -329,15 +425,19 @@ static void sxe2_vf_mdd_reply_process(struct sxe2_adapter *adapter,
 		LOG_DEV_WARN("pf mdd event 0x%04x detected.\n", mdd_tx_event);
 	}
 
-	if (mdd_rx_event) {
+	if (sxe2_mdd_rx_event_valid(mdd_rx_event)) {
 		LOG_DEV_WARN("Malicious Driver Detection Rx event on PF# %d.\n",
 			     pf_idx);
-		LOG_DEV_WARN("pf mdd rx event 0x%04x detected.\n", mdd_rx_event);
+		LOG_DEV_WARN("pf mdd rx event 0x%04x detected, enter FAULT state.\n", mdd_rx_event);
+		sxe2_dev_state_set(adapter, SXE2_DEVSTATE_FAULT,
+				   SXE2_RESET_INVAL);
+		sxe2_dev_ctrl_work_schedule(adapter);
+		return;
 	}
 
 	mdd_tx_event = le32_to_cpu(resp->vf_mdd_tx_event);
 	mdd_rx_event = resp->vf_mdd_rx_event;
-	if (mdd_tx_event || mdd_rx_event) {
+	if (mdd_tx_event || sxe2_mdd_rx_event_valid(mdd_rx_event)) {
 		LOG_DEV_WARN("vf mdd tx event 0x%04x rx event 0x%04x detected.\n",
 			     mdd_tx_event, mdd_rx_event);
 
@@ -392,10 +492,160 @@ static void sxe2_vf_mdd_reply_process(struct sxe2_adapter *adapter,
 				LOG_DEV_WARN("vf #%d detected mdd event reset vf now.\n",
 					     vf_idx);
 				(void)sxe2_reset_vf(adapter, vf_idx, 0);
+			} else if (mdd_vfs[i].mdd & SXE2_MDD_TYPE_RX) {
+				LOG_DEV_WARN("vf %d rx mdd detected, notify VF\t"
+					     "enter FAULT state.\n", vf_idx);
+				(void)sxe2_send_mdd_fault_notify_to_vf(adapter, vf_node);
 			}
 
 			mutex_unlock(SXE2_VF_NODE_LOCK(adapter, vf_idx));
 		}
+	}
+}
+
+static void sxe2_vf_mdd_reply_process_v2(struct sxe2_adapter *adapter,
+					 struct sxe2_fwc_mdd_resp_v2 *resp)
+{
+	u32 vf_mdd_tx_event = le32_to_cpu(resp->vf_mdd_tx_event);
+	u32 pf_mdd_tx_event = le32_to_cpu(resp->pf_mdd_tx_event);
+	u8 vf_mdd_rx_event = resp->vf_mdd_rx_event;
+	u8 pf_mdd_rx_event = resp->pf_mdd_rx_event;
+	u64 pf_tx_qmap = le64_to_cpu(resp->pf_tx_queues_bitmap);
+	struct sxe2_vsi *vsi = adapter->vsi_ctxt.main_vsi;
+	u16 pf_idx = adapter->pf_idx;
+	u16 max_txq = adapter->q_ctxt.max_txq_cnt;
+	struct sxe2_vf_node *vf_node;
+	struct sxe2_queue *txq;
+	unsigned int q_idx;
+	u8 vf_mdd_type;
+	u64 vf_qmap;
+	u16 vf_idx;
+	u32 i;
+
+	if (pf_mdd_tx_event || sxe2_mdd_rx_event_valid(pf_mdd_rx_event)) {
+		if (pf_mdd_tx_event) {
+			LOG_DEV_WARN("Malicious Driver Detection Tx event on PF# %d.\n",
+				     pf_idx);
+			LOG_DEV_WARN("pf mdd event 0x%04x detected.\n",
+				     pf_mdd_tx_event);
+		}
+
+		if (sxe2_mdd_rx_event_valid(pf_mdd_rx_event)) {
+			LOG_DEV_WARN("Malicious Driver Detection Rx event on PF# %d.\n",
+				     pf_idx);
+			LOG_DEV_WARN("pf mdd rx event 0x%04x detected, enter FAULT state.\n",
+				     pf_mdd_rx_event);
+			sxe2_dev_state_set(adapter, SXE2_DEVSTATE_FAULT,
+					   SXE2_RESET_INVAL);
+			sxe2_dev_ctrl_work_schedule(adapter);
+			return;
+		}
+	}
+
+	if (pf_tx_qmap) {
+		LOG_WARN_BDF("PF MDD problem queues bitmap: 0x%016llx\n",
+			     (unsigned long long)pf_tx_qmap);
+
+		for_each_set_bit(q_idx,
+				 (const unsigned long *)&pf_tx_qmap,
+				 SXE2_BITS_PER_U64) {
+			if (q_idx >= max_txq)
+				break;
+			txq = sxe2_tx_queue_get(vsi, (u16)q_idx);
+			if (txq) {
+				netif_tx_stop_queue(netdev_get_tx_queue(vsi->netdev, q_idx));
+				(void)sxe2_txq_stop(vsi, txq);
+				set_bit(SXE2_TXQ_MDD_DISABLED, &txq->flags);
+				LOG_WARN_BDF("PF MDD problem queue %u stop\n", q_idx);
+			}
+		}
+	}
+
+	if (vf_mdd_tx_event || sxe2_mdd_rx_event_valid(vf_mdd_rx_event))
+		LOG_DEV_WARN("vf mdd tx event 0x%04x rx event 0x%04x detected.\n",
+			     vf_mdd_tx_event, vf_mdd_rx_event);
+	else
+		return;
+
+	for (i = 0; i < le16_to_cpu(resp->mdd_vf_cnt); i++) {
+		vf_idx = le16_to_cpu(resp->mdd_vfs[i].vf_idx);
+		vf_qmap = le64_to_cpu(resp->mdd_vfs[i].tx_queues_bitmap);
+		vf_mdd_type = resp->mdd_vfs[i].mdd;
+
+		if (sxe2_vf_id_check(adapter, vf_idx))
+			continue;
+
+		mutex_lock(SXE2_VF_NODE_LOCK(adapter, vf_idx));
+		vf_node = sxe2_vf_node_get(adapter, vf_idx);
+		if (!vf_node) {
+			LOG_ERROR_BDF("vf %d node is null.\n", vf_idx);
+			mutex_unlock(SXE2_VF_NODE_LOCK(adapter, vf_idx));
+			continue;
+		}
+
+		if (sxe2_check_vf_ready_for_cfg(vf_node)) {
+			mutex_unlock(SXE2_VF_NODE_LOCK(adapter, vf_idx));
+			continue;
+		}
+
+		LOG_DEV_WARN("vf %d mdd tx event 0x%04x rx event 0x%04x mdd\t"
+			     "%d detected q bitmap %llu.\n",
+			     vf_idx, vf_mdd_tx_event, vf_mdd_rx_event, vf_mdd_type, vf_qmap);
+
+		if (vf_mdd_type & SXE2_MDD_TYPE_TX) {
+			LOG_DEV_WARN("Malicious Driver Detection Tx event\t"
+				     "on PF# %d VF# %d Mac %pM.\t"
+				     "mdd-auto-reset-vfs=%s\n",
+				     pf_idx, vf_idx, vf_node->mac_addr.addr,
+				     test_bit(SXE2_FLAG_MDD_AUTO_RESET_VF,
+					      adapter->flags)
+					     ? "on"
+					     : "off");
+		}
+
+		if (vf_mdd_type & SXE2_MDD_TYPE_RX) {
+			LOG_DEV_WARN("Malicious Driver Detection Rx event \t"
+				     "on PF# %d VF# %d Mac %pM. \t"
+				     "mdd-auto-reset-vfs=%s\n",
+				     pf_idx, vf_idx, vf_node->mac_addr.addr,
+				     test_bit(SXE2_FLAG_MDD_AUTO_RESET_VF,
+					      adapter->flags)
+					     ? "on"
+					     : "off");
+		}
+
+		if (!vf_node->vsi) {
+			LOG_WARN_BDF("vf %u vsi is null, continue\n", vf_node->vf_idx);
+			mutex_unlock(SXE2_VF_NODE_LOCK(adapter, vf_idx));
+			continue;
+		}
+
+		(void)sxe2_send_mdd_notify_to_vf(adapter, vf_node, vf_qmap);
+		max_txq = vf_node->vsi->txqs.q_cnt;
+		for_each_set_bit(q_idx,
+				 (const unsigned long *)&vf_qmap,
+				 SXE2_BITS_PER_U64) {
+			if (q_idx >= max_txq)
+				break;
+			txq = sxe2_tx_queue_get(vf_node->vsi, (u16)q_idx);
+			if (txq) {
+				(void)sxe2_txq_stop(vf_node->vsi, txq);
+				set_bit(SXE2_TXQ_MDD_DISABLED, &txq->flags);
+				LOG_WARN_BDF("VF %u MDD problem queue %u stop\n", vf_idx, q_idx);
+			}
+		}
+
+		if (test_bit(SXE2_FLAG_MDD_AUTO_RESET_VF, adapter->flags)) {
+			LOG_DEV_WARN("vf #%d detected mdd event reset vf now.\n",
+				     vf_idx);
+			(void)sxe2_reset_vf(adapter, vf_idx, 0);
+		} else if (vf_mdd_type & SXE2_MDD_TYPE_RX) {
+			LOG_DEV_WARN("vf %d rx mdd detected, notify VF\t"
+				     "enter FAULT state.\n", vf_idx);
+			(void)sxe2_send_mdd_fault_notify_to_vf(adapter, vf_node);
+		}
+
+		mutex_unlock(SXE2_VF_NODE_LOCK(adapter, vf_idx));
 	}
 }
 
@@ -579,63 +829,245 @@ STATIC void sxe2_linkchk_handler(struct sxe2_adapter *adapter)
 
 STATIC void sxe2_mdd_work(struct sxe2_adapter *adapter)
 {
-	u8 *req_buf;
-	u8 *resp_buf;
-	struct sxe2_fwc_mdd_req *req;
-	struct sxe2_fwc_mdd_resp *resp;
+	u8 *req_buf_v1 = NULL;
+	u8 *resp_buf_v1 = NULL;
+	u8 *req_buf_v2 = NULL;
+	u8 *resp_buf_v2 = NULL;
+	struct sxe2_fwc_mdd_req *req_v1;
+	struct sxe2_fwc_mdd_resp *resp_v1;
+	struct sxe2_fwc_mdd_req_v2 *req_v2;
+	struct sxe2_fwc_mdd_resp_v2 *resp_v2;
 	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
-	u32 req_len, resp_len;
-
-	req_buf = devm_kzalloc(dev, SXE2_MAX_MDD_REQ_BUF, GFP_KERNEL);
-	if (!req_buf)
-		return;
-
-	resp_buf = devm_kzalloc(dev, SXE2_MAX_MDD_RESP_BUF, GFP_KERNEL);
-	if (!resp_buf) {
-		devm_kfree(dev, req_buf);
-		return;
-	}
-
-	mutex_lock(&adapter->vf_ctxt.vfs_lock);
-	req = (struct sxe2_fwc_mdd_req *)req_buf;
-	resp = (struct sxe2_fwc_mdd_resp *)resp_buf;
+	u32 req_len_v1, resp_len_v1;
+	u32 req_len_v2, resp_len_v2;
+	u8 mdd_check = 0;
+	bool used_v2 = false;
 
 	if (test_and_clear_bit(SXE2_FLAG_MDD_TX_PENDING, adapter->flags))
-		req->mdd_check = SXE2_MDD_TYPE_TX;
-
+		mdd_check |= SXE2_MDD_TYPE_TX;
 	if (test_and_clear_bit(SXE2_FLAG_MDD_RX_PENDING, adapter->flags))
-		req->mdd_check = SXE2_MDD_TYPE_RX;
+		mdd_check |= SXE2_MDD_TYPE_RX;
 
-	if (req->mdd_check == 0)
+	if (mdd_check == 0)
+		return;
+
+	req_buf_v2 = devm_kzalloc(dev, SXE2_MAX_MDD_REQ_BUF_V2, GFP_KERNEL);
+	if (!req_buf_v2)
 		goto l_free;
 
-	sxe2_mdd_req_fill(adapter, req);
-	req_len = (u32)(sizeof(struct sxe2_fwc_mdd_req) +
-			pci_num_vf(adapter->pdev) * sizeof(struct sxe2_mdd_vf_req));
-	resp_len = SXE2_MAX_MDD_RESP_BUF;
-
-	if (sxe2_fwc_vf_mdd_check(adapter, req, req_len, resp, resp_len)) {
-		LOG_ERROR_BDF("vsi mdd check failed.\n");
+	resp_buf_v2 = devm_kzalloc(dev, SXE2_MAX_MDD_RESP_BUF_V2, GFP_KERNEL);
+	if (!resp_buf_v2)
 		goto l_free;
+
+	req_buf_v1 = devm_kzalloc(dev, SXE2_MAX_MDD_REQ_BUF, GFP_KERNEL);
+	if (!req_buf_v1)
+		goto l_free;
+
+	resp_buf_v1 = devm_kzalloc(dev, SXE2_MAX_MDD_RESP_BUF, GFP_KERNEL);
+	if (!resp_buf_v1)
+		goto l_free;
+
+	mutex_lock(&adapter->vf_ctxt.vfs_lock);
+	req_v1 = (struct sxe2_fwc_mdd_req *)req_buf_v1;
+	resp_v1 = (struct sxe2_fwc_mdd_resp *)resp_buf_v1;
+	req_v2 = (struct sxe2_fwc_mdd_req_v2 *)req_buf_v2;
+	resp_v2 = (struct sxe2_fwc_mdd_resp_v2 *)resp_buf_v2;
+
+	req_v1->mdd_check = mdd_check;
+	req_v2->mdd_check = mdd_check;
+
+	sxe2_mdd_req_fill(adapter, req_v1);
+	sxe2_mdd_req_v2_fill(adapter, req_v2);
+
+	req_len_v1 = (u32)(sizeof(struct sxe2_fwc_mdd_req) +
+			    pci_num_vf(adapter->pdev) * sizeof(struct sxe2_mdd_vf_req));
+	resp_len_v1 = SXE2_MAX_MDD_RESP_BUF;
+
+	req_len_v2 = (u32)(sizeof(struct sxe2_fwc_mdd_req_v2) +
+			    pci_num_vf(adapter->pdev) * sizeof(struct sxe2_mdd_vf_req_v2));
+	resp_len_v2 = SXE2_MAX_MDD_RESP_BUF_V2;
+
+	if (sxe2_fwc_vf_mdd_check_compat(adapter,
+					 req_buf_v2, req_len_v2,
+					 resp_buf_v2, resp_len_v2,
+					 req_buf_v1, req_len_v1,
+					 resp_buf_v1, resp_len_v1,
+					 &used_v2)) {
+		LOG_ERROR_BDF("vsi mdd check (compat) failed.\n");
+		goto l_unlock;
 	}
 
-	sxe2_vf_mdd_reply_process(adapter, resp);
+	if (used_v2)
+		sxe2_vf_mdd_reply_process_v2(adapter, resp_v2);
+	else
+		sxe2_vf_mdd_reply_process(adapter, resp_v1);
+
+l_unlock:
+	mutex_unlock(&adapter->vf_ctxt.vfs_lock);
 
 l_free:
-	mutex_unlock(&adapter->vf_ctxt.vfs_lock);
-	devm_kfree(dev, req_buf);
-	devm_kfree(dev, resp_buf);
+	sxe2_hw_event_mdd_irq_switch(&adapter->hw, SXE2_MDD_OICR_MASK, true);
+
+	if (req_buf_v1)
+		devm_kfree(dev, req_buf_v1);
+	if (resp_buf_v1)
+		devm_kfree(dev, resp_buf_v1);
+	if (req_buf_v2)
+		devm_kfree(dev, req_buf_v2);
+	if (resp_buf_v2)
+		devm_kfree(dev, resp_buf_v2);
 }
 
 STATIC void sxe2_dcbx_agent_status_proc(struct sxe2_adapter *adapter)
 {
-	if (test_bit(SXE2_FLAG_FW_DCBX_DIS_PENDING, adapter->flags) &&
-	    test_bit(SXE2_FLAG_FW_DCBX_AGENT, adapter->flags)) {
-		rtnl_lock();
-		(void)sxe2_dcbx_agent_disable(adapter);
-		rtnl_unlock();
+	s32 ret;
+
+	if (!test_bit(SXE2_FLAG_FW_DCBX_DIS_PENDING, adapter->flags))
+		return;
+
+	if (!test_bit(SXE2_FLAG_FW_DCBX_AGENT, adapter->flags)) {
 		clear_bit(SXE2_FLAG_FW_DCBX_DIS_PENDING, adapter->flags);
+		return;
 	}
+
+	rtnl_lock();
+	ret = sxe2_dcbx_agent_disable(adapter);
+	rtnl_unlock();
+
+	if (ret && test_bit(SXE2_FLAG_FW_DCBX_AGENT, adapter->flags)) {
+		LOG_ERROR_BDF("disable fw dcbx agent failed, retry later: %d\n", ret);
+		return;
+	}
+
+	clear_bit(SXE2_FLAG_FW_DCBX_DIS_PENDING, adapter->flags);
+}
+
+STATIC bool sxe2_is_pfc_causing_hung_q(struct sxe2_adapter *adapter,
+				       struct sxe2_queue *txq)
+{
+	bool pfc_cause = false;
+	u8 num_tcs = 0, i, tc, up_in_tc = 0;
+	struct sxe2_vsi *vsi	      = adapter->vsi_ctxt.main_vsi;
+	struct sxe2_dcb_stats *stats  = &adapter->pf_stats.dcb_stats;
+	struct sxe2_dcbx_cfg *dcb_cfg = &adapter->dcb_ctxt.local_dcbx_cfg;
+	struct sxe2_pause_stats *hung_stats  = &adapter->txtimeout_ctxt.pause_stats;
+
+	lockdep_assert_held(&adapter->vsi_ctxt.lock);
+
+	if (!vsi)
+		goto l_end;
+
+	sxe2_for_each_tc(i)
+		if (vsi->tc.tc_map & BIT(i))
+			num_tcs++;
+
+	for (tc = 0; tc < num_tcs - 1; tc++)
+		if (sxe2_find_q_in_range(vsi->tc.info[tc].txq_offset,
+					 vsi->tc.info[tc + 1].txq_offset,
+					 txq->idx_in_vsi))
+			break;
+
+	for (i = 0; i < IEEE_8021Q_MAX_PRIORITIES; i++) {
+		if (dcb_cfg->ets.prio_tbl[i] == tc)
+			up_in_tc |= BIT(i);
+	}
+
+	for (i = 0; i < IEEE_8021Q_MAX_PRIORITIES; i++)
+		if (up_in_tc & BIT(i))
+			if (stats->curr_pause_stats.prio_xoff_rx[i] >
+			    hung_stats->prio_xoff_rx[i])
+				pfc_cause = true;
+
+l_end:
+	return pfc_cause;
+}
+
+STATIC bool sxe2_is_lfc_causing_hung_q(struct sxe2_adapter *adapter,
+				       struct sxe2_queue *txq)
+{
+	bool lfc_cause = false;
+	struct sxe2_vsi *vsi	      = adapter->vsi_ctxt.main_vsi;
+	struct sxe2_dcb_stats *stats  = &adapter->pf_stats.dcb_stats;
+	struct sxe2_pause_stats *hung_stats  = &adapter->txtimeout_ctxt.pause_stats;
+
+	lockdep_assert_held(&adapter->vsi_ctxt.lock);
+
+	if (!vsi)
+		goto l_end;
+
+	if (stats->curr_pause_stats.rx_pause > hung_stats->rx_pause)
+		lfc_cause = true;
+
+l_end:
+	return lfc_cause;
+}
+
+STATIC bool sxe2_is_fc_causing_hung_q(struct sxe2_adapter *adapter,
+				      struct sxe2_queue *txq)
+{
+	bool fc_case = false;
+
+	if (adapter->lfc_ctxt.rx_en || adapter->lfc_ctxt.tx_en ||
+	    adapter->lfc_ctxt.an == SXE2_LFC_AN_ON)
+		fc_case = sxe2_is_lfc_causing_hung_q(adapter, txq);
+	else if (adapter->dcb_ctxt.local_dcbx_cfg.pfc.enable)
+		fc_case = sxe2_is_pfc_causing_hung_q(adapter, txq);
+
+	return fc_case;
+}
+
+STATIC void sxe2_tx_hung_proc(struct sxe2_adapter *adapter)
+{
+	struct sxe2_txtimeout_ctxt *timeout_ctxt = &adapter->txtimeout_ctxt;
+	struct sxe2_vsi *vsi = adapter->vsi_ctxt.main_vsi;
+	struct sxe2_queue *txq = NULL;
+	struct netdev_queue *ntxq = NULL;
+
+	if (!test_bit(SXE2_FLAG_TX_TIMEOUT, adapter->flags))
+		goto l_end;
+
+	if (time_before(jiffies,
+			SXE2_TX_TIME_HANDLE_JIFFIES(timeout_ctxt->last_hung_jiffies) +
+						    SXE2_NORMAL_TIMER_PERIOD))
+		goto l_end;
+
+	mutex_lock(&adapter->vsi_ctxt.lock);
+
+	txq = sxe2_tx_queue_get(vsi, timeout_ctxt->last_hung_txq);
+	if (!txq) {
+		LOG_DEV_ERR("get txq %u failed.\n", timeout_ctxt->last_hung_txq);
+		sxe2_txtimeout_clean(adapter);
+		goto l_unlock;
+	}
+
+	if (sxe2_is_fc_causing_hung_q(adapter, txq)) {
+		LOG_DEV_INFO("fake Tx hang detected on queue %u, \t"
+				"timeout caused by FC storm\n",
+				timeout_ctxt->last_hung_txq);
+		sxe2_txtimeout_clean(adapter);
+		goto l_unlock;
+	}
+
+	ntxq = sxe2_netdev_txq_get(txq);
+	if (ntxq->trans_start != timeout_ctxt->txq_last_trans &&
+	    !netif_xmit_stopped(ntxq)) {
+		LOG_DEV_INFO("Tx hang detected on queue %u at %llu, \t"
+				"auto recovered at %llu\n",
+				timeout_ctxt->last_hung_txq, timeout_ctxt->last_hung_jiffies,
+				(unsigned long long)ntxq->trans_start);
+		sxe2_txtimeout_clean(adapter);
+		goto l_unlock;
+	}
+
+	sxe2_pf_reset_and_check(adapter);
+	LOG_DEV_ERR("Tx hang detected on queue %u at %llu",
+		    timeout_ctxt->last_hung_txq, timeout_ctxt->last_hung_jiffies);
+
+l_unlock:
+	mutex_unlock(&adapter->vsi_ctxt.lock);
+
+l_end:
+	return;
 }
 
 void sxe2_work_cb(struct work_struct *work)
@@ -675,6 +1107,10 @@ void sxe2_work_cb(struct work_struct *work)
 	sxe2_arfs_filters_sync(adapter);
 
 	sxe2_dcbx_agent_status_proc(adapter);
+
+	sxe2_dcbx_pending_cfg_proc(adapter);
+
+	sxe2_tx_hung_proc(adapter);
 
 l_complete:
 	sxe2_monitor_work_complete(adapter);

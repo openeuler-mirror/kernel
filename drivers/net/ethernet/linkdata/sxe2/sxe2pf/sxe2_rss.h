@@ -16,35 +16,13 @@
 #include <linux/kernel.h>
 
 #include "sxe2_vsi.h"
+#include "sxe2_mbx_public.h"
 
 #ifdef SXE2_TEST
 #define STATIC
 #else
 #define STATIC static
 #endif
-
-#define SXE2_RSS_HASH_KEY_SIZE 52
-
-enum sxe2_rss_lut_type {
-	SXE2_RSS_VSI_LUT = 0,
-	SXE2_RSS_LUT_TYPE_RSV,
-	SXE2_RSS_PF_LUT,
-	SXE2_RSS_GLOBAL_LUT,
-	SXE2_RSS_MAX_LUT_TYPE,
-};
-
-enum sxe2_rss_lut_size {
-	SXE2_RSS_LUT_SIZE_64  = 64,
-	SXE2_RSS_LUT_SIZE_128 = 128,
-	SXE2_RSS_LUT_SIZE_512 = 512,
-	SXE2_RSS_LUT_SIZE_2K  = 2048,
-};
-
-enum sxe2_rss_lut_max_queue {
-	SXE2_VSI_LUT_MAX_QUEUE	  = 16,
-	SXE2_GLOBAL_LUT_MAX_QUEUE = 64,
-	SXE2_PF_LUT_MAX_QUEUE	  = 256,
-};
 
 void sxe2_rss_flow_ctxt_init(struct sxe2_adapter *adapter);
 
@@ -76,7 +54,7 @@ u16 sxe2_rss_queue_size_correct(u16 new_size);
 
 s32 sxe2_rss_lut_reset(struct sxe2_vsi *vsi, u16 queue_size);
 
-void sxe2_rss_clean_for_vf(struct sxe2_vsi *vsi, bool need_clear_hw);
+void sxe2_rss_vf_sw_cfg_clear(struct sxe2_adapter *adapter);
 
 s32 sxe2_rss_ptg_parse_from_ddp(u8 *data, u16 cnt, u16 base_id,
 				struct sxe2_adapter *adapter);

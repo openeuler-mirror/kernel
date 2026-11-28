@@ -15,6 +15,8 @@
 #include "sxe2_cmd.h"
 #include "sxe2_log.h"
 
+#define SXE2_LLDP_REMOTE_MIBS_MAX     (16)
+
 static inline void sxe2_lldp_fw_stats(struct sxe2_adapter *adapter)
 {
 	s32 ret;
@@ -26,7 +28,7 @@ static inline void sxe2_lldp_fw_stats(struct sxe2_adapter *adapter)
 
 	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 	if (ret) {
-		LOG_DEV_ERR("lldp fw state cmd fail, ret=%d\n", ret);
+		LOG_DEV_ERR("lldp fw state cmd failed, ret=%d\n", ret);
 		return;
 	}
 	LOG_DEV_INFO("\t lldp fw stats\n");
@@ -49,6 +51,8 @@ static inline void sxe2_lldp_fw_stats(struct sxe2_adapter *adapter)
 static inline void sxe2_lldp_remote_mibs_dump(struct sxe2_adapter *adapter)
 {
 	s32 ret, i, j;
+	u8 count, num_apps;
+	u16 size;
 	struct sxe2_cmd_params cmd = { 0 };
 	struct sxe2_fwc_lldp_mibs_info info = { 0 };
 	struct sxe2_fwc_lldp_mibs_dump_req dump_req;
@@ -65,8 +69,14 @@ static inline void sxe2_lldp_remote_mibs_dump(struct sxe2_adapter *adapter)
 
 	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 	if (ret) {
-		LOG_DEV_ERR("lldp remote mibs dump cmd fail, ret=%d\n", ret);
+		LOG_DEV_ERR("lldp remote mibs dump cmd failed, ret=%d\n", ret);
 		goto l_end;
+	}
+	count = info.count;
+	if (count > SXE2_LLDP_REMOTE_MIBS_MAX) {
+		LOG_DEV_ERR("fw returned abnormal mib count %u, clamp to %u\n",
+			    count, SXE2_LLDP_REMOTE_MIBS_MAX);
+			    count = SXE2_LLDP_REMOTE_MIBS_MAX;
 	}
 	LOG_DEV_INFO("\t lldp remote mibs dump_resp\n");
 	LOG_DEV_INFO("\t\t lldp remote mibs count %d\n", info.count);
@@ -82,6 +92,13 @@ static inline void sxe2_lldp_remote_mibs_dump(struct sxe2_adapter *adapter)
 			LOG_DEV_ERR("lldp remote mibs dump, ret=%d\n", ret);
 			goto l_end;
 		}
+		size = le16_to_cpu(dump_resp->size);
+		if (size > SXE2_LLDP_FRAME_MAX_SIZE) {
+			LOG_DEV_ERR("fw returned abnormal mib size %u, clamp to %u\n",
+				    size, SXE2_LLDP_FRAME_MAX_SIZE);
+			size = SXE2_LLDP_FRAME_MAX_SIZE;
+		}
+
 		LOG_DEV_INFO("\t\t lldp remote mib[%d]\n", i);
 		print_hex_dump(KERN_INFO, "\t\t content: ", DUMP_PREFIX_OFFSET, 16, 1,
 			       dump_resp->buffer, dump_resp->size, true);
@@ -127,6 +144,13 @@ static inline void sxe2_lldp_remote_mibs_dump(struct sxe2_adapter *adapter)
 		LOG_DEV_INFO("\t\t pfc cfg pfccap 0x%02x\n", dump_resp->pfc_cfg.pfccap);
 		LOG_DEV_INFO("\t\t pfc cfg pfcena 0x%02x\n", dump_resp->pfc_cfg.pfcena);
 
+		num_apps = dump_resp->num_apps;
+		if (num_apps > SXE2_DCBX_MAX_APPS) {
+			LOG_DEV_ERR("fw returned abnormal num_apps %u, clamp to %u\n",
+				    num_apps, SXE2_DCBX_MAX_APPS);
+			num_apps = SXE2_DCBX_MAX_APPS;
+		}
+
 		LOG_DEV_INFO("\t\t app cfg parse:\n");
 		LOG_DEV_INFO("\t\t app cfg numapps %d\n", dump_resp->num_apps);
 		for (j = 0; j < dump_resp->num_apps; j++) {
@@ -152,7 +176,7 @@ static inline void sxe2_lldp_dcbx_agent_on(struct sxe2_adapter *adapter)
 	req.enable = 1;
 	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 	if (ret)
-		LOG_DEV_ERR("lldp fw state cmd fail, ret=%d\n", ret);
+		LOG_DEV_ERR("lldp fw state cmd failed, ret=%d\n", ret);
 }
 
 static inline void sxe2_lldp_dcbx_agent_off(struct sxe2_adapter *adapter)
@@ -167,7 +191,7 @@ static inline void sxe2_lldp_dcbx_agent_off(struct sxe2_adapter *adapter)
 	req.enable = 0;
 	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 	if (ret)
-		LOG_DEV_ERR("lldp fw state cmd fail, ret=%d\n", ret);
+		LOG_DEV_ERR("lldp fw state cmd failed, ret=%d\n", ret);
 }
 
 static inline void sxe2_lldp_dcbx_agent_is_on(struct sxe2_adapter *adapter)
@@ -181,7 +205,7 @@ static inline void sxe2_lldp_dcbx_agent_is_on(struct sxe2_adapter *adapter)
 
 	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 	if (ret)
-		LOG_DEV_ERR("lldp fw state cmd fail, ret=%d\n", ret);
+		LOG_DEV_ERR("lldp fw state cmd failed, ret=%d\n", ret);
 
 	LOG_DEV_INFO("\t lldp fw stats\n");
 	LOG_DEV_INFO("\t\t lldp dcbx agent is %s\n", resp.enable ? "on" : "off");

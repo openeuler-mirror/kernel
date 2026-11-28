@@ -81,6 +81,9 @@ typedef unsigned char u8;
 #define SXE2_PF_TXRX_COM_BAR_OFFSET 0x1F0000
 #define SXE2_VF_TXRX_COM_BAR_OFFSET 0x8C00
 
+#define PF_RDMA_CONFIG_TMO_PBL_OFFSET (SXE2_PF_TXRX_COM_BAR_OFFSET + 0x48800 + 0x2000)
+#define VF_RDMA_CONFIG_TMO_PBL_OFFSET (SXE2_VF_TXRX_COM_BAR_OFFSET + 0x80)
+
 #define PF_RDMA_CONFIG_PKEY_OFFSET                                             \
 	(SXE2_PF_TXRX_COM_BAR_OFFSET + 0x4D800 + 0x1000)
 #define VF_RDMA_CONFIG_PKEY_OFFSET (SXE2_VF_TXRX_COM_BAR_OFFSET + 0x0)
@@ -970,7 +973,7 @@ struct sxe2_rcms_update_fpte_wqe {
 };
 #pragma pack(0)
 
-#define SXE2_SQ_RSVD 8
+#define SXE2_SQ_RSVD 258
 #define SXE2_RQ_RSVD 8
 
 enum sxe2_mr_caps_const {

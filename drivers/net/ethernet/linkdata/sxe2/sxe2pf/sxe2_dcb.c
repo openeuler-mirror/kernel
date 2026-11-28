@@ -22,14 +22,12 @@
 #include "sxe2_aux_driver.h"
 #include "sxe2_switch.h"
 #include "sxe2_netdev.h"
+#include "sxe2_xsk.h"
 #include <net/dcbnl.h>
 #include <linux/if_bridge.h>
 
 #define CEE_DCBX_MAX_PGS 8
 #define CEE_DCBX_MAX_PRIO 8
-
-#define SXE2_DCBX_WAIT_CNT 10
-#define SXE2_DCBX_RESET_WAIT_MS 5
 
 void sxe2_dcb_set_state(struct sxe2_adapter *adapter, enum sxe2_dcb_state state,
 			bool need_lock)
@@ -263,11 +261,24 @@ STATIC void sxe2_dcb_vsi_cfg(struct sxe2_vsi *vsi, u8 tc_bitmap)
 	struct net_device *netdev = vsi->netdev;
 	int i;
 	u8 ets_tc;
+#ifdef HAVE_XDP_SUPPORT
+	u16 old_rxq_cnt = vsi->rxqs.q_cnt;
+	u16 old_txq_cnt = vsi->txqs.q_cnt;
+#endif
 
 	sxe2_vsi_tc_cfg(vsi);
 
 	sxe2_vsi_queues_irqs_map(vsi);
+#ifdef HAVE_XDP_SUPPORT
+	if (vsi->type == SXE2_VSI_T_PF && sxe2_xdp_is_enable(vsi)) {
+		bool q_cnt_changed = (vsi->rxqs.q_cnt != old_rxq_cnt) ||
+				     (vsi->txqs.q_cnt != old_txq_cnt);
 
+		ret = sxe2_xdp_rings_rebind(vsi, q_cnt_changed);
+		if (ret)
+			LOG_ERROR_BDF("rebind xdp rings failed(%d) when dcb tc cfg\n", ret);
+	}
+#endif
 	ret = sxe2_vsi_recfg(vsi);
 
 	if (ret) {
@@ -355,47 +366,26 @@ STATIC bool sxe2_dcb_tc_qalloc_chk(struct sxe2_adapter *adapter,
 	if (vsi->rxqs.q_alloc < tc_cnt) {
 		LOG_DEV_ERR("Trying to use more Traffic Classes (%u), \t"
 			    "than rx queue allocated (%u)!\n",
-			    tc_cnt, vsi->txqs.q_alloc);
+			    tc_cnt, vsi->rxqs.q_alloc);
 		return false;
 	}
 
 	return true;
 }
 
-s32 sxe2_fc_get(struct sxe2_adapter *adapter, u16 vsi_id, u8 *fc)
+void sxe2_fc_get(struct sxe2_adapter *adapter, u8 *fc)
 {
-	s32 ret = 0;
-	struct sxe2_vsi *vsi = NULL;
-
 	mutex_lock(&adapter->vsi_ctxt.lock);
-	vsi = sxe2_vsi_get_by_idx(adapter, vsi_id);
-	if (!vsi) {
-		ret = -EINVAL;
-		LOG_ERROR("find vf vsi by vsi_id %d failed.\n", vsi_id);
-		goto l_unlock;
-	}
 
-	if (test_bit(SXE2_VSI_FLAG_FC_ON, vsi->flags)) {
-		if (adapter->lfc_ctxt.rx_en || adapter->lfc_ctxt.tx_en)
-			*fc = SXE2_FC_T_LFC;
-		else
-			*fc = SXE2_FC_T_PFC;
-	} else {
-		*fc = SXE2_FC_T_DIS;
-	}
-
-l_unlock:
-	mutex_unlock(&adapter->vsi_ctxt.lock);
-
-	return ret;
-}
-
-void sxe2_set_fc_flag(struct sxe2_vsi *vsi, bool on)
-{
-	if (on)
-		set_bit(SXE2_VSI_FLAG_FC_ON, vsi->flags);
+	if (adapter->lfc_ctxt.rx_en || adapter->lfc_ctxt.tx_en ||
+	    adapter->lfc_ctxt.an == SXE2_LFC_AN_ON)
+		*fc = SXE2_FC_T_LFC;
+	else if (adapter->dcb_ctxt.local_dcbx_cfg.pfc.enable)
+		*fc = SXE2_FC_T_PFC;
 	else
-		clear_bit(SXE2_VSI_FLAG_FC_ON, vsi->flags);
+		*fc = SXE2_FC_T_DIS;
+
+	mutex_unlock(&adapter->vsi_ctxt.lock);
 }
 
 s32 sxe2_dcb_cfg(struct sxe2_adapter *adapter, struct sxe2_dcbx_cfg *new_cfg, bool locked)
@@ -511,11 +501,11 @@ out:
 l_unlock:
 	mutex_unlock(&adapter->vsi_ctxt.lock);
 
-free_old_cfg:
 	for (i = 0; i < tc_cnt; i++)
 		(void)sxe2_txsched_tc_max_bw_lmt_cfg(adapter->vsi_ctxt.main_vsi,
 						     (u8)i, curr_cfg->hw_bw_value[i]);
 	LOG_INFO_BDF("rebuild tc maxrate.\n");
+free_old_cfg:
 
 	kfree(old_cfg);
 	return ret;
@@ -577,42 +567,67 @@ s32 sxe2_dcb_sw_dflt_cfg(struct sxe2_adapter *adapter, bool ets_willing, bool lo
 s32 sxe2_dcb_process_lldp_set_mib_change(struct sxe2_adapter *adapter, void *buf,
 					 u32 buf_len)
 {
-	s32 ret;
-	struct sxe2_dcbx_cfg *tmp_dcbx_cfg = NULL;
-	struct sxe2_dcbx_cfg *new_dcbx_cfg = NULL;
-	struct sxe2_dcbx_cfg *remote_dcbx_cfg = NULL;
-	s32 i = 0;
-	struct device *dev = SXE2_ADAPTER_TO_DEV(adapter);
-
 	if (!(test_bit(SXE2_FLAG_DCB_CAPABLE, adapter->flags))) {
 		LOG_WARN_BDF("dcb disable, lldp mib change\n");
 		return 0;
 	}
 
-	tmp_dcbx_cfg = devm_kcalloc(dev, sizeof(struct sxe2_dcbx_cfg), 1,
-				    GFP_KERNEL);
-	new_dcbx_cfg = devm_kcalloc(dev, sizeof(struct sxe2_dcbx_cfg), 1,
-				    GFP_KERNEL);
-	remote_dcbx_cfg = devm_kcalloc(dev, sizeof(struct sxe2_dcbx_cfg), 1,
-				       GFP_KERNEL);
-	if (!remote_dcbx_cfg ||
-	    !tmp_dcbx_cfg ||
-	    !remote_dcbx_cfg) {
-		LOG_ERROR_BDF("no mem for remote dcbx_cfg.\n");
-		ret = -ENOMEM;
+	if (!buf || !buf_len ||
+	    buf_len > sizeof(adapter->dcb_ctxt.pending_mib)) {
+		LOG_ERROR_BDF("bad mib change msg, buf_len=%u\n", buf_len);
+		return -EIO;
+	}
+
+	mutex_lock(&adapter->dcb_ctxt.pending_lock);
+	memcpy(adapter->dcb_ctxt.pending_mib, buf, buf_len);
+	adapter->dcb_ctxt.pending_mib_len = buf_len;
+	set_bit(SXE2_FLAG_DCBX_CFG_PENDING, adapter->flags);
+	mutex_unlock(&adapter->dcb_ctxt.pending_lock);
+
+	sxe2_monitor_work_schedule(adapter);
+
+	return 0;
+}
+
+void sxe2_dcbx_pending_cfg_proc(struct sxe2_adapter *adapter)
+{
+	s32 ret;
+	u32 mib_len;
+	struct sxe2_dcbx_cfg *tmp_dcbx_cfg = NULL;
+	struct sxe2_dcbx_cfg *new_dcbx_cfg = NULL;
+	struct sxe2_dcbx_cfg *remote_dcbx_cfg = NULL;
+	u8 *mib = NULL;
+
+	if (!test_bit(SXE2_FLAG_DCBX_CFG_PENDING, adapter->flags))
+		return;
+
+	if (!test_bit(SXE2_FLAG_FW_DCBX_AGENT, adapter->flags))
+		return;
+
+	tmp_dcbx_cfg = kcalloc(1, sizeof(*tmp_dcbx_cfg), GFP_KERNEL);
+	new_dcbx_cfg = kcalloc(1, sizeof(*new_dcbx_cfg), GFP_KERNEL);
+	remote_dcbx_cfg = kcalloc(1, sizeof(*remote_dcbx_cfg), GFP_KERNEL);
+	mib = kmalloc(sizeof(adapter->dcb_ctxt.pending_mib), GFP_KERNEL);
+	if (!tmp_dcbx_cfg || !new_dcbx_cfg || !remote_dcbx_cfg || !mib) {
+		LOG_ERROR_BDF("no mem for pending dcbx cfg proc.\n");
+		goto l_out;
+	}
+
+	mutex_lock(&adapter->dcb_ctxt.pending_lock);
+	mib_len = adapter->dcb_ctxt.pending_mib_len;
+	memcpy(mib, adapter->dcb_ctxt.pending_mib, mib_len);
+	adapter->dcb_ctxt.pending_mib_len = 0;
+	clear_bit(SXE2_FLAG_DCBX_CFG_PENDING, adapter->flags);
+	mutex_unlock(&adapter->dcb_ctxt.pending_lock);
+
+	ret = sxe2_lldp_to_dcb_cfg(mib, mib_len, remote_dcbx_cfg);
+	if (ret) {
+		LOG_ERROR_BDF("parse dcbx tlv failed: %d\n", ret);
 		goto l_out;
 	}
 
 	memcpy(tmp_dcbx_cfg, &adapter->dcb_ctxt.local_dcbx_cfg,
 	       sizeof(struct sxe2_dcbx_cfg));
-
-	ret = sxe2_lldp_to_dcb_cfg(buf, remote_dcbx_cfg);
-	if (ret) {
-		LOG_ERROR_BDF("parse dcbx tlv failed: %d\n", ret);
-		ret = -EIO;
-		goto l_out;
-	}
-
 	(void)memcpy(&adapter->dcb_ctxt.remote_dcbx_cfg,
 		     remote_dcbx_cfg, sizeof(struct sxe2_dcbx_cfg));
 
@@ -630,22 +645,16 @@ s32 sxe2_dcb_process_lldp_set_mib_change(struct sxe2_adapter *adapter, void *buf
 	}
 
 	adapter->dcb_ctxt.dcbx_cap = sxe2_dcb_mode_get(adapter, false);
+
 	sxe2_dcbnl_flush_apps(adapter, tmp_dcbx_cfg,
 			      &adapter->dcb_ctxt.local_dcbx_cfg);
 
-	for (i = 0; i < SXE2_DCBX_WAIT_CNT; i++) {
-		rtnl_lock();
-		mutex_lock(&adapter->dcb_ctxt.tc_mutex);
-		if (adapter->dcb_ctxt.state == SXE2_DCB_STATE_READY)
-			break;
+	rtnl_lock();
+	mutex_lock(&adapter->dcb_ctxt.tc_mutex);
+	if (adapter->dcb_ctxt.state != SXE2_DCB_STATE_READY ||
+	    !test_bit(SXE2_FLAG_FW_DCBX_AGENT, adapter->flags)) {
 		mutex_unlock(&adapter->dcb_ctxt.tc_mutex);
 		rtnl_unlock();
-		msleep(SXE2_DCBX_RESET_WAIT_MS);
-	}
-
-	if (i == SXE2_DCBX_WAIT_CNT) {
-		LOG_ERROR_BDF("wait reset done timeout.\n");
-		ret = -ETIMEDOUT;
 		goto l_out;
 	}
 
@@ -660,17 +669,13 @@ s32 sxe2_dcb_process_lldp_set_mib_change(struct sxe2_adapter *adapter, void *buf
 	mutex_unlock(&adapter->dcb_ctxt.tc_mutex);
 	rtnl_unlock();
 
-	LOG_ERROR_BDF("dcbx fw agent mib change process end.\n");
+	LOG_INFO_BDF("dcbx fw agent mib change process end.\n");
 
 l_out:
-	if (tmp_dcbx_cfg)
-		devm_kfree(dev, tmp_dcbx_cfg);
-	if (new_dcbx_cfg)
-		devm_kfree(dev, new_dcbx_cfg);
-	if (remote_dcbx_cfg)
-		devm_kfree(dev, remote_dcbx_cfg);
-
-	return ret;
+	kfree(mib);
+	kfree(remote_dcbx_cfg);
+	kfree(new_dcbx_cfg);
+	kfree(tmp_dcbx_cfg);
 }
 
 void sxe2_lldp_sw_rule_change(struct sxe2_adapter *adapter, u8 stats)
@@ -805,7 +810,7 @@ void sxe2_lldp_agent_event_deinit(struct sxe2_adapter *adapter)
 	struct sxe2_fwc_event event = {0};
 
 	event.count = 1;
-	event.code[0] = cpu_to_le16(SXE2_EVENT_CODE_MIB_NOTIFY);
+	event.code[0] = cpu_to_le16(SXE2_EVENT_CODE_LLDP_AGENT_NOTIFY);
 	(void)sxe2_fwc_event_unsubscribe(adapter, &event);
 	(void)sxe2_set_event_status(adapter, SXE2_EVENT_CODE_LLDP_AGENT_NOTIFY,
 				    SXE2_CMD_EVENT_STATUS_UNSUB);
@@ -870,15 +875,12 @@ s32 sxe2_dcbx_fw_agent_status_set(struct sxe2_adapter *adapter, bool is_enable)
 	return ret;
 }
 
-void sxe2_dcb_stats_update(struct sxe2_adapter *adapter)
+static void sxe2_dcbx_pending_cfg_clear(struct sxe2_adapter *adapter)
 {
-	struct sxe2_dcb_stats *dcb_stats = &adapter->pf_stats.dcb_stats;
-
-	sxe2_hw_pause_stats_update(&adapter->hw,
-				   adapter->port_idx, dcb_stats->prev_stat_loaded,
-				   &dcb_stats->curr_pause_stats,
-				   &dcb_stats->perv_pause_stats);
-	dcb_stats->prev_stat_loaded = true;
+	mutex_lock(&adapter->dcb_ctxt.pending_lock);
+	adapter->dcb_ctxt.pending_mib_len = 0;
+	clear_bit(SXE2_FLAG_DCBX_CFG_PENDING, adapter->flags);
+	mutex_unlock(&adapter->dcb_ctxt.pending_lock);
 }
 
 s32 sxe2_dcb_rebuild(struct sxe2_adapter *adapter)
@@ -907,6 +909,7 @@ s32 sxe2_dcb_rebuild(struct sxe2_adapter *adapter)
 			     sizeof(struct sxe2_dcbx_cfg));
 	}
 
+	sxe2_dcbx_pending_cfg_clear(adapter);
 	ret = sxe2_dcb_cfg_download(adapter);
 	if (ret) {
 		LOG_ERROR_BDF("failed to set dcb config in rebuild\n");
@@ -959,6 +962,7 @@ static s32 sxe2_dcbx_change2host(struct sxe2_adapter *adapter, bool locked)
 	s32 ret = 0;
 
 	clear_bit(SXE2_FLAG_FW_DCBX_AGENT, adapter->flags);
+
 	ret = sxe2_qos_mode_set(adapter, SXE2_QOS_MODE_VLAN);
 	if (ret) {
 		LOG_ERROR_BDF("failed to set vlan pfc mode\n");
@@ -982,9 +986,17 @@ s32 sxe2_dcbx_agent_enable(struct sxe2_adapter *adapter)
 	s32 ret = 0;
 	bool lldp_enabled = false;
 	u8 dir;
+	u8 fc;
+
+	sxe2_fc_get(adapter, &fc);
+	if (fc == SXE2_FC_T_LFC) {
+		LOG_DEV_INFO("Link flow control enabled, FW Agent not allowed to start.\n");
+		ret = -EOPNOTSUPP;
+		return ret;
+	}
 
 	if (adapter->dcb_ctxt.local_dcbx_cfg.qos_mode == SXE2_QOS_MODE_DSCP) {
-		LOG_DEV_ERR("QOS in L3 DSCP mode, \t"
+		LOG_DEV_WARN("QOS in L3 DSCP mode, \t"
 			    "FW Agent not allowed to start\n");
 		ret = -EOPNOTSUPP;
 		goto l_out;
@@ -995,12 +1007,13 @@ s32 sxe2_dcbx_agent_enable(struct sxe2_adapter *adapter)
 		LOG_ERROR_BDF("dcbx lldp st get failed:%d\n", ret);
 		goto l_out;
 	} else if (!lldp_enabled || dir != sxe2_lldp_enabled_rx_tx) {
-		LOG_DEV_ERR("Lldp agent is not enabled or \t"
-			    "Fw Lldp Agent work mode is not TXRX.\n");
+		LOG_DEV_ERR("LLDP agent is not enabled or \t"
+			    "Fw LLDP Agent work mode is not TXRX.\n");
 		ret = -EOPNOTSUPP;
 		goto l_out;
 	}
 
+	sxe2_dcbx_pending_cfg_clear(adapter);
 	ret = sxe2_dcbx_fw_agent_status_set(adapter, true);
 	if (ret) {
 		LOG_ERROR_BDF("start fw dcbx agent failed, ret=%d\n", ret);
@@ -1010,7 +1023,8 @@ s32 sxe2_dcbx_agent_enable(struct sxe2_adapter *adapter)
 
 	ret = sxe2_dcb_init(adapter, true);
 	if (ret) {
-		LOG_ERROR_BDF("start fw dcbx agent failed, ret=%d\n", ret);
+		(void)sxe2_dcbx_fw_agent_status_set(adapter, false);
+		LOG_ERROR_BDF("dcb init failed, ret=%d\n", ret);
 		ret = -EIO;
 		goto l_out;
 	}
@@ -1025,6 +1039,7 @@ s32 sxe2_dcbx_agent_disable(struct sxe2_adapter *adapter)
 
 	sxe2_dcbx_agent_event_deinit(adapter);
 
+	sxe2_dcbx_pending_cfg_clear(adapter);
 	ret = sxe2_dcbx_fw_agent_status_set(adapter, false);
 	if (ret) {
 		LOG_ERROR_BDF("stop fw dcbx agent failed, ret=%d\n", ret);
@@ -1032,9 +1047,10 @@ s32 sxe2_dcbx_agent_disable(struct sxe2_adapter *adapter)
 		goto l_out;
 	}
 
+	clear_bit(SXE2_FLAG_FW_DCBX_AGENT, adapter->flags);
 	ret = sxe2_dcb_init(adapter, true);
 	if (ret) {
-		LOG_ERROR_BDF("start fw dcbx agent failed, ret=%d\n", ret);
+		LOG_ERROR_BDF("dcb init failed, ret=%d\n", ret);
 		ret = -EIO;
 		goto l_out;
 	}
@@ -1060,6 +1076,7 @@ static s32 sxe2_dcbx_change2fw(struct sxe2_adapter *adapter, bool locked)
 	if (ret) {
 		LOG_ERROR_BDF("get local dcb config %d\n", ret);
 		ret = -EIO;
+		(void)sxe2_dcbx_agent_event_deinit(adapter);
 		goto out;
 	}
 
@@ -1082,6 +1099,7 @@ s32 sxe2_dcb_init(struct sxe2_adapter *adapter, bool locked)
 	mutex_lock(&adapter->dcb_ctxt.tc_mutex);
 	if (adapter->dcb_ctxt.state == SXE2_DCB_STATE_RESET) {
 		LOG_ERROR_BDF("dcb is reset state.\n");
+		ret = -EBUSY;
 		goto dcb_init_err;
 	}
 

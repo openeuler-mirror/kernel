@@ -255,7 +255,7 @@ STATIC int sxe2_drv_create_cq_kernel(struct sxe2_rdma_device *rdma_dev,
 
 	cq_size = (u32)cqe_count * sizeof(struct sxe2_cqe);
 
-	cq->kmem.size = ALIGN(round_up(cq_size, 4096), 4096);
+	cq->kmem.size = ALIGN(cq_size, 4096);
 	cq->kmem.va   = dma_alloc_coherent(dev_ctx->hw->device, cq->kmem.size,
 					   &cq->kmem.pa, GFP_KERNEL);
 	if (!cq->kmem.va) {
@@ -598,7 +598,7 @@ end:
 	return ret;
 }
 
-#ifdef CREATE_CQ_V1
+#if defined(CREATE_CQ_V1) || defined(CREATE_CQ_V2)
 static int sxe2_create_cq_param_check(const struct ib_cq_init_attr *attr,
 				      struct ib_udata *udata)
 {
@@ -703,9 +703,14 @@ static void sxe2_drv_destroy_cq(struct ib_udata *udata, struct sxe2_rdma_cq *cq,
 		sxe2_drv_destroy_cq_kernel(rdma_func, cq);
 }
 
+#if defined(CREATE_CQ_V1) || defined(CREATE_CQ_V2)
 #ifdef CREATE_CQ_V1
 struct ib_cq *sxe2_kcreate_cq(struct ib_device *ibdev, const struct ib_cq_init_attr *attr,
 		    struct ib_ucontext *ibucontext, struct ib_udata *udata)
+#elif defined CREATE_CQ_V2
+struct ib_cq *sxe2_kcreate_cq(struct ib_device *ibdev, const struct ib_cq_init_attr *attr,
+		    struct ib_udata *udata)
+#endif
 {
 	int ret;
 	int entries;
@@ -749,7 +754,11 @@ struct ib_cq *sxe2_kcreate_cq(struct ib_device *ibdev, const struct ib_cq_init_a
 	DRV_RDMA_LOG_INFO("cqe_alloc_db :%p\n",
 			  info.cq_uk_init_info.cqe_alloc_db);
 	cq->cq_num = (u16)cq_num;
+#ifdef CREATE_CQ_V1
 	ret	   = sxe2_drv_create_cq(udata, cq, &info, rdma_dev, entries, ibucontext);
+#else
+	ret	   = sxe2_drv_create_cq(udata, cq, &info, rdma_dev, entries);
+#endif
 	if (ret != 0)
 		goto free_rsrc;
 
@@ -794,8 +803,8 @@ struct ib_cq *sxe2_kcreate_cq(struct ib_device *ibdev, const struct ib_cq_init_a
 		}
 	}
 
-	DRV_RDMA_LOG_DEV_INFO("create cq end, cqn:%d\n",
-			      info.cq_uk_init_info.cq_id);
+	DRV_RDMA_LOG_DEV_INFO("create cq end, cqn:%d, eqn:%u\n",
+			      info.cq_uk_init_info.cq_id, (u32)info.cqc.eqn);
 
 	rdma_func->cq_table[cq_num] = cq;
 	init_completion(&cq->free_cq);
@@ -815,9 +824,17 @@ end:
 }
 
 #else
+#if defined(HAVE_CREATE_CQ_UVERBS_ATTR_BUNDLE) || defined(RDMA_OFED_CREATE_CQ)
 int sxe2_kcreate_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
-		    struct ib_udata *udata)
+			struct uverbs_attr_bundle *attrs)
 {
+	struct ib_udata *udata = attrs ? &attrs->driver_udata : NULL;
+#else
+int sxe2_kcreate_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
+			struct ib_udata *udata)
+{
+#endif
+
 	int ret;
 	int entries;
 	u32 cq_num = 0;
@@ -902,8 +919,8 @@ int sxe2_kcreate_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
 		}
 	}
 
-	DRV_RDMA_LOG_DEV_INFO("create cq end, cqn:%d\n",
-			      info.cq_uk_init_info.cq_id);
+	DRV_RDMA_LOG_DEV_INFO("create cq end, cqn:%d, eqn:%u\n",
+			      info.cq_uk_init_info.cq_id, (u32)info.cqc.eqn);
 
 	rdma_func->cq_table[cq_num] = cq;
 	init_completion(&cq->free_cq);
@@ -1163,7 +1180,6 @@ void sxe2_drv_cq_rem_ref(struct sxe2_rdma_cq *cq)
 	spin_lock_irqsave(&rdma_func->cqtable_lock, flag);
 	if (!refcount_dec_and_test(&cq->refcnt)) {
 		spin_unlock_irqrestore(&rdma_func->cqtable_lock, flag);
-		DRV_RDMA_LOG_DEV_ERR("cq is used by other\n");
 		goto end;
 	}
 
@@ -1273,6 +1289,11 @@ int sxe2_kdestroy_cq(struct ib_cq *cq_in, struct ib_udata *udata)
 #ifndef RDMA_DESTROY_CQ_VER_4
 	if (udata)
 		sxe2_drv_destroy_cq_user(rdma_dev, cq, udata);
+	else
+		sxe2_drv_destroy_cq_kernel(rdma_func, cq);
+#else
+	if (cq->user_mode)
+		sxe2_drv_destroy_cq_user(rdma_dev, cq, NULL);
 	else
 		sxe2_drv_destroy_cq_kernel(rdma_func, cq);
 #endif

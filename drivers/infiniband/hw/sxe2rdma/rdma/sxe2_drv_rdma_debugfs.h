@@ -26,6 +26,7 @@
 #define DEBUG_PARA_CONT4     (4)
 
 size_t dbg_vsnprintf(char *buf, size_t len, char *fmt, ...);
+size_t dbg_vsnprintf_buf_szie(char *buf, size_t buf_size, size_t len, char *fmt, ...);
 int split_command(char *cmd, int *argc, char *argv[]);
 
 struct sxe2_rdma_rsc_debug *

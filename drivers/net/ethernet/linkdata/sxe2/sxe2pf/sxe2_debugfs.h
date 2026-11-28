@@ -16,6 +16,29 @@ struct sxe2_debugfs_command {
 	void (*debugfs_cb)(struct sxe2_adapter *adapter);
 };
 
+#define SXE2_DEBUGFS_ARG_MAX		4
+#define SXE2_DEBUGFS_STR_MAX_LEN	32
+#define SXE2_DEBUGFS_ONOFF_MAX_LEN	3
+enum sxe2_debugfs_arg_type {
+	SXE2_DEBUGFS_ARG_NUM,
+	SXE2_DEBUGFS_ARG_STR,
+	SXE2_DEBUGFS_ARG_ONOFF,
+};
+
+struct sxe2_debugfs_arg_val {
+	long num;
+	const char *str;
+	bool on;
+};
+
+struct sxe2_debugfs_command_arg {
+	s8 string[50];
+	u32 argc;
+	enum sxe2_debugfs_arg_type argt[SXE2_DEBUGFS_ARG_MAX];
+	void (*debugfs_cb)(struct sxe2_adapter *adapter,
+			   const struct sxe2_debugfs_arg_val *argv);
+};
+
 void sxe2_debugfs_init(void);
 
 void sxe2_debugfs_exit(void);

@@ -203,9 +203,8 @@ static struct sxe2_injection *inject_find_inner(struct sxe2_rdma_pci_f *dev,
 			break;
 		}
 	}
-
-end:
 	spin_unlock_irqrestore(&dev->inject_mem.list_lock, flags);
+end:
 	return found ? injection : NULL;
 }
 

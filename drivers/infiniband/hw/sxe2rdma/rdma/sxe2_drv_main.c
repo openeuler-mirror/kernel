@@ -119,7 +119,7 @@ module_param_named(rdma_dmesg_level, g_sxe2_rdma_dmesg_level, uint, 0644);
 MODULE_PARM_DESC(
 	rdma_dmesg_level,
 	"modify sxe2 rdma dmesg log level,\n"
-	"\tRange: 0(LEVEL_EMERG)-7(LEVEL_DEBUG), default=4(WARNING)");
+	"\t\tRange: 0(LEVEL_EMERG)-7(LEVEL_DEBUG), default=4(WARNING)");
 
 #if defined(SXE2_CFG_DEBUG) && defined(SXE2_SUPPORT_INJECT)
 static unsigned int inject_sleep_time;
@@ -127,11 +127,11 @@ module_param(inject_sleep_time, uint, 0444);
 MODULE_PARM_DESC(inject_sleep_time, "set inject_sleep_time, default=0");
 #endif
 
-static bool dcqcn_enable;
-module_param(dcqcn_enable, bool, 0444);
+static u8 dcqcn_enable;
+module_param(dcqcn_enable, byte, 0444);
 MODULE_PARM_DESC(
 	dcqcn_enable,
-	"enables DCQCN algorithm for RoCEv2 on all ports, default=false");
+	"enables DCQCN algorithm for RoCEv2 on all ports, 0=disable(default), 1=hw dcqcn enable, 2=sw dcqcn enable");
 
 bool dcqcn_cfg_valid;
 module_param(dcqcn_cfg_valid, bool, 0444);
@@ -143,7 +143,7 @@ module_param(dcqcn_min_dec_factor, byte, 0444);
 MODULE_PARM_DESC(
 	dcqcn_min_dec_factor,
 	"set minimum percentage factor by which tx\n"
-	"\trate can be changed for CNP, Range: 2-100, interval 2, default=2");
+	"\t\trate can be changed for CNP, Range: 2-100, interval 2, default=2");
 u8 dcqcn_min_rate = SXE2_CC_DCQCN_MIN_RATE_DEFAULT;
 module_param(dcqcn_min_rate, byte, 0444);
 MODULE_PARM_DESC(
@@ -159,33 +159,90 @@ module_param(dcqcn_T, ushort, 0444);
 MODULE_PARM_DESC(
 	dcqcn_T,
 	"set number of usecs that should elapse before\n"
-	"\tincreasing rate in DCQCN mode, Range: 0x1-0xFFFF, default=120");
+	"\t\tincreasing rate in DCQCN mode, Range: 0x1-0xFFFF, default=120");
 unsigned int dcqcn_B = SXE2_CC_DCQCN_B_DEFAULT;
 module_param(dcqcn_B, uint, 0444);
 MODULE_PARM_DESC(
 	dcqcn_B,
 	"The number of B to transmit before increasing rate in DCQCN mode,\n"
-	"\tRange: 0x0-0xFFFFFF, default=131072");
+	"\t\tRange: 0x0-0xFFFFFF, default=131072");
 u8 dcqcn_timely_rai_factor = SXE2_CC_DCQCN_TIMELY_RAI_DEFAULT;
 module_param(dcqcn_timely_rai_factor, byte, 0444);
 MODULE_PARM_DESC(
 	dcqcn_timely_rai_factor,
 	"set increasing rate factor percentage in additive increase mode,\n"
-	"\tRange: 2-100, interval 2, default=18");
+	"\t\tRange: 2-100, interval 2, default=18");
 
 u8 dcqcn_rhai_factor = SXE2_CC_DCQCN_RHAI_DEFAULT;
 module_param(dcqcn_rhai_factor, byte, 0444);
 MODULE_PARM_DESC(
 	dcqcn_rhai_factor,
 	"set increasing rate factor percentage in hyperactive increase\n"
-	"\tmode rhai > rai,Range: 2-100,interval 2,default=34");
+	"\t\tmode rhai > rai,Range: 2-100,interval 2,default=34");
 unsigned short dcqcn_rreduce_mperiod =
 	SXE2_CC_DCQCN_RREDUCE_MPERIOD_DEFAULT;
 module_param(dcqcn_rreduce_mperiod, ushort, 0444);
 MODULE_PARM_DESC(
 	dcqcn_rreduce_mperiod,
 	"set minimum time (usecs) between 2 consecutive rate reductions\n"
-	"\tfor a single flow, Range: 0x1-0xFFFF, default=60");
+	"\t\tfor a single flow, Range: 0x1-0xFFFF, default=60");
+
+u8 hw_dcqcn_min_rate = SXE2_HW_CC_DCQCN_MIN_RATE_DEFAULT;
+module_param(hw_dcqcn_min_rate, byte, 0444);
+MODULE_PARM_DESC(
+	hw_dcqcn_min_rate,
+	"set minimum rate percentage limit value, Range: 2-100, interval 2, default=2");
+
+unsigned short hw_dcqcn_rreduce_mperiod =
+	SXE2_HW_CC_DCQCN_RREDUCE_MPERIOD_DEFAULT;
+module_param(hw_dcqcn_rreduce_mperiod, ushort, 0444);
+MODULE_PARM_DESC(
+	hw_dcqcn_rreduce_mperiod,
+	"set minimum number of ns between 2 consecutive rate reductions for a single flow,\n"
+	"\t\tshall lie in the interval from hw_dcqcn_T/2 to hw_dcqcn_T, Range: 0x1000-0xF000, default=0xE000");
+
+unsigned short hw_dcqcn_T = SXE2_HW_CC_DCQCN_T_DEFAULT;
+module_param(hw_dcqcn_T, ushort, 0444);
+MODULE_PARM_DESC(
+	hw_dcqcn_T,
+	"set number of ns that should elapse before increasing rate in DCQCN mode, Range: 0x2000-0xF000, default=0xF000");
+
+u8 hw_dcqcn_B = SXE2_HW_CC_DCQCN_B_DEFAULT;
+module_param(hw_dcqcn_B, byte, 0444);
+MODULE_PARM_DESC(
+	hw_dcqcn_B,
+	"The number of B to transmit before increasing rate in DCQCN mode,\n"
+	"\t\tRange: {0:0.125M, 1:0.25M, 2:0.5M, 3:1M, 4:2M, 5:4M, 6:8M, 7:16M}, default=4");
+
+unsigned short hw_dcqcn_alpha_cnt = SXE2_HW_CC_DCQCN_ALPHA_CNT_DEFAULT;
+module_param(hw_dcqcn_alpha_cnt, ushort, 0444);
+MODULE_PARM_DESC(
+	hw_dcqcn_alpha_cnt,
+	"set the alpha adjustment multiplier based on the hw_dcqcn_T period, Range: 0-1023, default=0");
+
+unsigned short hw_dcqcn_rate_cnt = SXE2_HW_CC_DCQCN_RATE_CNT_DEFAULT;
+module_param(hw_dcqcn_rate_cnt, ushort, 0444);
+MODULE_PARM_DESC(
+	hw_dcqcn_rate_cnt,
+	"set the increasing rate multiplier based on the hw_dcqcn_T period, Range: 0-1023, default=0");
+
+u8 hw_dcqcn_F = SXE2_HW_CC_DCQCN_F_DEFAULT;
+module_param(hw_dcqcn_F, byte, 0444);
+MODULE_PARM_DESC(
+	hw_dcqcn_F,
+	"set number of times to stay in each stage of bandwidth recovery, Range 0-7, default=5");
+
+u8 hw_dcqcn_rai_factor = SXE2_HW_CC_DCQCN_RAI_DEFAULT;
+module_param(hw_dcqcn_rai_factor, byte, 0444);
+MODULE_PARM_DESC(
+	hw_dcqcn_rai_factor,
+	"set increasing rate factor in additive increase mode, Range: 1-14, default=5");
+
+u8 hw_dcqcn_rhai_factor = SXE2_HW_CC_DCQCN_RHAI_DEFAULT;
+module_param(hw_dcqcn_rhai_factor, byte, 0444);
+MODULE_PARM_DESC(
+	hw_dcqcn_rhai_factor,
+	"set increasing rate factor in hyperactive increase mode, rhai > rai, Range: 2-15, default=10");
 
 static bool timely_enable;
 module_param(timely_enable, bool, 0444);
@@ -256,7 +313,8 @@ void sxe2_rdma_free_one_vf(struct sxe2_rdma_vchnl_dev *vc_dev)
 
 	vc_dev->reset_en = true;
 	for (i = 0; i < SXE2_MAX_UESER_PRIORITY; i++)
-		vf_vsi->unregister_qsets(vf_vsi, &vf_vsi->qos[i].qset[0], NULL);
+		if (vf_vsi->qos[i].valid)
+			vf_vsi->unregister_qsets(vf_vsi, &vf_vsi->qos[i].qset[0], NULL);
 
 	sxe2_vchnl_pf_put_vf_rcms_fcn(dev, &vc_dev);
 	sxe2_vchnl_put_vf_dev(&vc_dev);
@@ -444,12 +502,12 @@ static void sxe2_aux_event_handler(struct aux_core_dev_info *cdev_info,
 
 static int sxe2_dbg_and_configs_init(void)
 {
-		int ret = 0;
+	int ret = 0;
 #ifdef SXE2_SUPPORT_CONFIGFS
 	ret = sxe2_configfs_init();
 	if (ret) {
 		DRV_RDMA_LOG_ERROR(
-			"ERR: Failed to register sxe2 to configfs subsystem\n",
+			"ERR: Failed to register sxe2 to configfs subsystem ret:%d\n",
 			ret);
 		goto out;
 	}
@@ -652,6 +710,159 @@ void sxe2_rdma_cc_timely_set_params(struct sxe2_rdma_pci_f *rdma_func)
 	}
 }
 
+void sxe2_rdma_cc_hw_set_params(struct sxe2_rdma_pci_f *rdma_func)
+{
+	struct sxe2_hw_cc_dcqcn_param_info *hw_cc_p =
+		&rdma_func->cc_params.hw_cc_params;
+
+	hw_cc_p->t = hw_dcqcn_T;
+	if (hw_cc_p->t > SXE2_HW_CC_DCQCN_T_MAX) {
+		hw_cc_p->t = SXE2_HW_CC_DCQCN_T_MAX;
+		pr_warn_once(
+			"sxe2_rdma: Requested [%u] hw_dcqcn_T\n"
+			"\tvalue out of range(%u-%u), setting to %u.\n",
+			hw_dcqcn_T, SXE2_HW_CC_DCQCN_T_MIN, SXE2_HW_CC_DCQCN_T_MAX,
+			hw_cc_p->t);
+	} else if (hw_cc_p->t < SXE2_HW_CC_DCQCN_T_MIN) {
+		hw_cc_p->t = SXE2_HW_CC_DCQCN_T_MIN;
+		pr_warn_once(
+			"sxe2_rdma: Requested [%u] hw_dcqcn_T\n"
+			"\tvalue out of range(%u-%u), setting to %u.\n",
+			hw_dcqcn_T, SXE2_HW_CC_DCQCN_T_MIN, SXE2_HW_CC_DCQCN_T_MAX,
+			hw_cc_p->t);
+	}
+
+	hw_cc_p->bc = hw_dcqcn_B;
+	if (hw_cc_p->bc > SXE2_HW_CC_DCQCN_B_MAX) {
+		hw_cc_p->bc = SXE2_HW_CC_DCQCN_B_MAX;
+		pr_warn_once(
+			"sxe2_rdma: Requested [%u] hw_dcqcn_B\n"
+			"\tvalue out of range(%u-%u), setting to %u.\n",
+			hw_dcqcn_B, SXE2_HW_CC_DCQCN_B_MIN, SXE2_HW_CC_DCQCN_B_MAX,
+			hw_cc_p->bc);
+	}
+
+	hw_cc_p->alphaCnt = hw_dcqcn_alpha_cnt;
+	if (hw_cc_p->alphaCnt > SXE2_HW_CC_DCQCN_ALPHA_CNT_MAX) {
+		hw_cc_p->alphaCnt = SXE2_HW_CC_DCQCN_ALPHA_CNT_MAX;
+		pr_warn_once(
+			"sxe2_rdma: Requested [%u] hw_dcqcn_alpha_cnt\n"
+			"\tvalue out of range(%u-%u), setting to %u.\n",
+			hw_dcqcn_alpha_cnt, SXE2_HW_CC_DCQCN_ALPHA_CNT_MIN,
+			SXE2_HW_CC_DCQCN_ALPHA_CNT_MAX, hw_cc_p->alphaCnt);
+	}
+
+	hw_cc_p->rateCnt = hw_dcqcn_rate_cnt;
+	if (hw_cc_p->rateCnt > SXE2_HW_CC_DCQCN_RATE_CNT_MAX) {
+		hw_cc_p->rateCnt = SXE2_HW_CC_DCQCN_RATE_CNT_MAX;
+		pr_warn_once(
+			"sxe2_rdma: Requested [%u] hw_dcqcn_rate_cnt\n"
+			"\tvalue out of range(%u-%u), setting to %u.\n",
+			hw_dcqcn_rate_cnt, SXE2_HW_CC_DCQCN_RATE_CNT_MIN,
+			SXE2_HW_CC_DCQCN_RATE_CNT_MAX, hw_cc_p->rateCnt);
+	}
+
+	hw_cc_p->rdPeriod = hw_dcqcn_rreduce_mperiod;
+	if (hw_cc_p->rdPeriod > hw_cc_p->t) {
+		hw_cc_p->rdPeriod = hw_cc_p->t;
+		pr_warn_once(
+			"sxe2_rdma: The value of rreduce(%u) shall be\n"
+			"\tbetween T/2(%u) and T(%u), setting to %u.\n",
+			hw_dcqcn_rreduce_mperiod, hw_cc_p->t/2, hw_cc_p->t,
+			hw_cc_p->t);
+	} else if (hw_cc_p->rdPeriod < (hw_cc_p->t)/2) {
+		hw_cc_p->rdPeriod = (hw_cc_p->t)/2;
+		pr_warn_once(
+			"sxe2_rdma: The value of rreduce(%u) shall be\n"
+			"\tbetween T/2(%u) and T(%u), setting to %u.\n",
+			hw_dcqcn_rreduce_mperiod, hw_cc_p->t/2, hw_cc_p->t,
+			hw_cc_p->t/2);
+	}
+	if (hw_cc_p->rdPeriod > SXE2_HW_CC_DCQCN_RREDUCE_MPERIOD_MAX) {
+		hw_cc_p->rdPeriod = SXE2_HW_CC_DCQCN_RREDUCE_MPERIOD_MAX;
+		pr_warn_once(
+			"sxe2_rdma: Requested [%u] hw_dcqcn_rreduce_mperiod\n"
+			"\tvalue out of range(%u-%u), setting to %u.\n",
+			hw_dcqcn_rreduce_mperiod, SXE2_HW_CC_DCQCN_RREDUCE_MPERIOD_MIN,
+			SXE2_HW_CC_DCQCN_RREDUCE_MPERIOD_MAX, hw_cc_p->rdPeriod);
+	} else if (hw_cc_p->rdPeriod < SXE2_HW_CC_DCQCN_RREDUCE_MPERIOD_MIN) {
+		hw_cc_p->rdPeriod = SXE2_HW_CC_DCQCN_RREDUCE_MPERIOD_MIN;
+		pr_warn_once(
+			"sxe2_rdma: Requested [%u] hw_dcqcn_rreduce_mperiod\n"
+			"\tvalue out of range(%u-%u), setting to %u.\n",
+			hw_dcqcn_rreduce_mperiod, SXE2_HW_CC_DCQCN_RREDUCE_MPERIOD_MIN,
+			SXE2_HW_CC_DCQCN_RREDUCE_MPERIOD_MAX, hw_cc_p->rdPeriod);
+	}
+
+	hw_cc_p->f = hw_dcqcn_F;
+	if (hw_cc_p->f > SXE2_HW_CC_DCQCN_F_MAX) {
+		hw_cc_p->f = SXE2_HW_CC_DCQCN_F_MAX;
+		pr_warn_once(
+			"sxe2_rdma: Requested [%u] hw_dcqcn_F\n"
+			"\tvalue out of range(%u-%u), setting to %u.\n",
+			hw_dcqcn_F, SXE2_HW_CC_DCQCN_F_MIN, SXE2_HW_CC_DCQCN_F_MAX,
+			hw_cc_p->f);
+	}
+
+	hw_cc_p->minTh = hw_dcqcn_min_rate;
+	if (hw_cc_p->minTh > SXE2_HW_CC_DCQCN_MIN_RATE_MAX) {
+		hw_cc_p->minTh = SXE2_HW_CC_DCQCN_MIN_RATE_MAX;
+		pr_warn_once(
+			"sxe2_rdma: Requested [%u] hw_dcqcn_min_rate\n"
+			"\tvalue out of range(%u-%u), setting to %u.\n",
+			hw_dcqcn_min_rate, SXE2_HW_CC_DCQCN_MIN_RATE_MIN,
+			SXE2_HW_CC_DCQCN_MIN_RATE_MAX, hw_cc_p->minTh);
+	} else if (hw_cc_p->minTh < SXE2_HW_CC_DCQCN_MIN_RATE_MIN) {
+		hw_cc_p->minTh = SXE2_HW_CC_DCQCN_MIN_RATE_MIN;
+		pr_warn_once(
+			"sxe2_rdma: Requested [%u] hw_dcqcn_min_rate\n"
+			"\tvalue out of range(%u-%u), setting to %u.\n",
+			hw_dcqcn_min_rate, SXE2_HW_CC_DCQCN_MIN_RATE_MIN,
+			SXE2_HW_CC_DCQCN_MIN_RATE_MAX, hw_cc_p->minTh);
+	}
+
+	hw_cc_p->rai = hw_dcqcn_rai_factor;
+	if (hw_cc_p->rai > SXE2_HW_CC_DCQCN_RAI_MAX) {
+		hw_cc_p->rai = SXE2_HW_CC_DCQCN_RAI_MAX;
+		pr_warn_once(
+			"sxe2_rdma: Requested [%u] hw_dcqcn_rai_factor\n"
+			"\tvalue out of range(%u-%u), setting to %u.\n",
+			hw_dcqcn_rai_factor, SXE2_HW_CC_DCQCN_RAI_MIN, SXE2_HW_CC_DCQCN_RAI_MAX,
+			hw_cc_p->rai);
+	} else if (hw_cc_p->rai < SXE2_HW_CC_DCQCN_RAI_MIN) {
+		hw_cc_p->rai = SXE2_HW_CC_DCQCN_RAI_MIN;
+		pr_warn_once(
+			"sxe2_rdma: Requested [%u] hw_dcqcn_rai_factor\n"
+			"\tvalue out of range(%u-%u), setting to %u.\n",
+			hw_dcqcn_rai_factor, SXE2_HW_CC_DCQCN_RAI_MIN, SXE2_HW_CC_DCQCN_RAI_MAX,
+			hw_cc_p->rai);
+	}
+
+	hw_cc_p->rhai = hw_dcqcn_rhai_factor;
+	if (hw_cc_p->rhai <= hw_cc_p->rai) {
+		hw_cc_p->rhai = hw_cc_p->rai + 1;
+		pr_warn_once(
+			"sxe2_rdma: The value of RHAI(%u) must be\n"
+			"\tgreater than the value of RAI(%u), setting to %u.\n",
+			hw_dcqcn_rhai_factor, hw_cc_p->rai, hw_cc_p->rhai);
+	}
+	if (hw_cc_p->rhai > SXE2_HW_CC_DCQCN_RHAI_MAX) {
+		hw_cc_p->rhai = SXE2_HW_CC_DCQCN_RHAI_MAX;
+		pr_warn_once(
+			"sxe2_rdma: Requested [%u] hw_dcqcn_rhai_factor\n"
+			"\tvalue out of range(%u-%u), setting to %u.\n",
+			hw_dcqcn_rhai_factor, SXE2_HW_CC_DCQCN_RHAI_MIN, SXE2_HW_CC_DCQCN_RHAI_MAX,
+			hw_cc_p->rhai);
+	} else if (hw_cc_p->rhai < SXE2_HW_CC_DCQCN_RHAI_MIN) {
+		hw_cc_p->rhai = SXE2_HW_CC_DCQCN_RHAI_MIN;
+		pr_warn_once(
+			"sxe2_rdma: Requested [%u] hw_dcqcn_rhai_factor\n"
+			"\tvalue out of range(%u-%u), setting to %u.\n",
+			hw_dcqcn_rhai_factor, SXE2_HW_CC_DCQCN_RHAI_MIN, SXE2_HW_CC_DCQCN_RHAI_MAX,
+			hw_cc_p->rhai);
+	}
+}
+
 void
 sxe2_rdma_set_func_user_cfg_params(struct sxe2_rdma_pci_f *rdma_func)
 
@@ -699,12 +910,14 @@ sxe2_rdma_set_func_user_cfg_params(struct sxe2_rdma_pci_f *rdma_func)
 		rdma_func->rcms_mode.pbl_mode = SXE2_PBL_THIRD_INIT_MODE;
 	}
 
-	rdma_func->cc_params.dcqcn_enable = dcqcn_enable;
+	rdma_func->cc_params.dcqcn_enable =
+		(dcqcn_enable < SXE2_CC_DCQCN_MODE_MAX) ? dcqcn_enable : SXE2_CC_DCQCN_DISABLE;
 	rdma_func->cc_params.dcqcn_cfg_valid = dcqcn_cfg_valid;
 	rdma_func->cc_params.cnp_ecn	     = SXE2_QP_CC_CNP_ECN_ENABLE;
 	rdma_func->cc_params.ecn	     = SXE2_QP_CC_ECN_ENABLE;
 	if (dcqcn_cfg_valid) {
 		sxe2_rdma_cc_dcqcn_set_params(rdma_func);
+		sxe2_rdma_cc_hw_set_params(rdma_func);
 	} else {
 		rdma_func->cc_params.dcqcn_params.t_interval =
 			SXE2_CC_DCQCN_T_DEFAULT;
@@ -720,6 +933,16 @@ sxe2_rdma_set_func_user_cfg_params(struct sxe2_rdma_pci_f *rdma_func)
 			SXE2_CC_DCQCN_MIN_DEC_FACTOR_DEFAULT;
 		rdma_func->cc_params.dcqcn_params.min_rate =
 			SXE2_CC_DCQCN_MIN_RATE_DEFAULT;
+		rdma_func->cc_params.hw_cc_params.t = SXE2_HW_CC_DCQCN_T_DEFAULT;
+		rdma_func->cc_params.hw_cc_params.bc = SXE2_HW_CC_DCQCN_B_DEFAULT;
+		rdma_func->cc_params.hw_cc_params.alphaCnt = SXE2_HW_CC_DCQCN_ALPHA_CNT_DEFAULT;
+		rdma_func->cc_params.hw_cc_params.rateCnt = SXE2_HW_CC_DCQCN_RATE_CNT_DEFAULT;
+		rdma_func->cc_params.hw_cc_params.rdPeriod =
+			SXE2_HW_CC_DCQCN_RREDUCE_MPERIOD_DEFAULT;
+		rdma_func->cc_params.hw_cc_params.f = SXE2_HW_CC_DCQCN_F_DEFAULT;
+		rdma_func->cc_params.hw_cc_params.minTh = SXE2_HW_CC_DCQCN_MIN_RATE_DEFAULT;
+		rdma_func->cc_params.hw_cc_params.rai = SXE2_HW_CC_DCQCN_RAI_DEFAULT;
+		rdma_func->cc_params.hw_cc_params.rhai = SXE2_HW_CC_DCQCN_RHAI_DEFAULT;
 	}
 
 	rdma_func->cc_params.timely_enable    = timely_enable;
@@ -786,7 +1009,7 @@ int sxe2_rdma_save_msix_info(struct sxe2_rdma_pci_f *rdma_func)
 	size = (u32)(sizeof(struct sxe2_rdma_msix_vector) *
 		     rdma_func->msix_count);
 	size += sizeof(*sxe2_qvlist);
-	size += sizeof(*sxe2_qvinfo) * rdma_func->msix_count - 1;
+	size += sizeof(*sxe2_qvinfo) * rdma_func->msix_count;
 	rdma_func->sxe2_msixtbl = kzalloc(size, GFP_KERNEL);
 	if (!rdma_func->sxe2_msixtbl) {
 		DRV_RDMA_LOG_DEV_ERR(
@@ -844,10 +1067,11 @@ static const struct ib_device
 static const struct ib_device_ops
 #endif
 	sxe2_rdma_dev_ops = {
-
+#ifndef HAVE_NO_IB_DEVICE_OPS_OWNER
 	.owner		  = THIS_MODULE,
 	.driver_id	  = RDMA_DRIVER_SXE2,
 	.uverbs_abi_ver	  = 1,
+#endif
 	.alloc_ucontext	  = sxe2_rdma_kalloc_ucontext,
 	.dealloc_ucontext = sxe2_rdma_kdealloc_ucontext,
 	.query_device	  = sxe2_rdma_kquery_device,
@@ -887,6 +1111,8 @@ static const struct ib_device_ops
 	.destroy_srq	    = sxe2_kdestroy_srq,
 #ifdef ALLOC_HW_STATS_V1
 	.alloc_hw_stats = sxe2_kalloc_hw_port_stats,
+#elif defined ALLOC_HW_STATS_V2
+	.alloc_hw_stats = sxe2_kalloc_hw_port_stats,
 #else
 	.alloc_hw_port_stats = sxe2_kalloc_hw_port_stats,
 #endif
@@ -912,9 +1138,11 @@ static const struct ib_device_ops
 #ifndef GLOBAL_QP_MEM_NOT_SUPPORT
 	INIT_RDMA_OBJ_SIZE(ib_qp, sxe2_rdma_qp, ibqp),
 #endif
+#ifndef GLOBAL_CQ_MEM_NOT_SUPPORT
+	INIT_RDMA_OBJ_SIZE(ib_cq, sxe2_rdma_cq, ibcq),
+#endif
 #ifndef HAVE_NO_DEFINE_STRUCT
 	INIT_RDMA_OBJ_SIZE(ib_ah, sxe2_ah, ibah),
-	INIT_RDMA_OBJ_SIZE(ib_cq, sxe2_rdma_cq, ibcq),
 	INIT_RDMA_OBJ_SIZE(ib_pd, sxe2_rdma_pd, ibpd),
 	INIT_RDMA_OBJ_SIZE(ib_srq, sxe2_rdma_srq, ibsrq),
 	INIT_RDMA_OBJ_SIZE(ib_ucontext, sxe2_rdma_kcontext, ibucontext),
@@ -954,9 +1182,9 @@ static unsigned int sxe2_calc_mem_rsrc_size(struct sxe2_rdma_pci_f *rf)
 	rsrc_size += sizeof(unsigned long) * BITS_TO_LONGS(rf->max_dbs);
 	rsrc_size += sizeof(unsigned long) * BITS_TO_LONGS(rf->max_srq);
 
-	rsrc_size += sizeof(struct sxe2_rdma_qp **) * rf->max_qp;
-	rsrc_size += sizeof(struct sxe2_rdma_cq **) * rf->max_cq;
-	rsrc_size += sizeof(struct sxe2_rdma_srq **) * rf->max_srq;
+	rsrc_size += sizeof(struct sxe2_rdma_qp *) * rf->max_qp;
+	rsrc_size += sizeof(struct sxe2_rdma_cq *) * rf->max_cq;
+	rsrc_size += sizeof(struct sxe2_rdma_srq *) * rf->max_srq;
 
 	return rsrc_size;
 }
@@ -1169,8 +1397,9 @@ int sxe2_rdma_init_ctx_dev(struct sxe2_rdma_ctx_dev *dev,
 	if (!dev->privileged) {
 		ret = sxe2_vchnl_req_get_rcms_fcn(dev);
 		if (ret != SXE2_OK) {
-			DRV_RDMA_LOG_DEV_ERR(
-				"probe:vchnl get rcms fcn err ret=%d\n", ret);
+			if (!rdma_dev->vf_num_overflow_print)
+				DRV_RDMA_LOG_DEV_ERR(
+					"probe:vchnl get rcms fcn err ret=%d\n", ret);
 			goto end;
 		}
 	}
@@ -1238,7 +1467,7 @@ int sxe2_rdma_initialize_dev(struct sxe2_rdma_pci_f *rdma_func)
 	info.hw		       = &rdma_func->hw;
 	ret = sxe2_rdma_init_ctx_dev(&rdma_func->ctx_dev, &info);
 	if (ret != SXE2_OK) {
-		DRV_RDMA_LOG_DEV_ERR("probe:init ctx dev err ret=%d\n", ret);
+		DRV_RDMA_LOG_ERROR_BDF("probe:init ctx dev err ret=%d\n", ret);
 		goto error;
 	}
 	if (!rdma_func->ctx_dev.privileged) {
@@ -1321,11 +1550,13 @@ static int sxe2_ib_register_device(struct sxe2_rdma_device *rdma_dev)
 	strscpy(rdma_dev->ibdev.name, rdma_dev->ib_devname,
 		sizeof(rdma_dev->ibdev.name));
 
-	dma_set_max_seg_size(rdma_dev->rdma_func->hw.device, UINT_MAX);
+	dma_set_max_seg_size(rdma_dev->rdma_func->hw.device, MAX_SEG_SIZE_2G);
 #ifdef REGISTER_DEV_NEED_2_PARAMS
 	ret = ib_register_device(&rdma_dev->ibdev, rdma_dev->ib_devname);
 #elif defined REGISTER_DEV_NEED_CHAR_PARAM
 	ret = ib_register_device(&rdma_dev->ibdev, NULL);
+#elif defined REGISTER_DEV_NEED_CHAR_3_PARAM
+	ret = ib_register_device(&rdma_dev->ibdev, rdma_dev->ib_devname, NULL);
 #else
 	ret = ib_register_device(&rdma_dev->ibdev, rdma_dev->ib_devname,
 				 rdma_dev->rdma_func->hw.device);
@@ -1442,7 +1673,10 @@ static int sxe2_rdma_fill_device_info(struct sxe2_rdma_device *rdma_dev,
 	rdma_dev->rcv_wnd	= SXE2_CM_DEFAULT_RCV_WND_SCALED;
 	rdma_dev->rcv_wscale	= SXE2_CM_DEFAULT_RCV_WND_SCALE;
 	rdma_dev->kernel_llwqe_mode = 0;
-	rdma_dev->roce_dcqcn_en = rdma_dev->rdma_func->cc_params.dcqcn_enable;
+	if (rdma_dev->rdma_func->cc_params.dcqcn_enable != 0)
+		rdma_dev->roce_dcqcn_en = true;
+	else
+		rdma_dev->roce_dcqcn_en = false;
 	rdma_dev->roce_mode	= true;
 
 end:
@@ -1547,7 +1781,7 @@ int sxe2_rdma_setup_init_state(struct sxe2_rdma_device *rdma_dev)
 	rdma_func->obj_next = rdma_func->obj_mem;
 	ret		    = sxe2_rdma_initialize_dev(rdma_func);
 	if (ret != SXE2_OK) {
-		DRV_RDMA_LOG_DEV_ERR("probe:initialize dev err ret=%d\n", ret);
+		DRV_RDMA_LOG_ERROR_BDF("probe:initialize dev err ret=%d\n", ret);
 		goto clean_obj_mem;
 	}
 	sxe2_init_dflt_pkey(&rdma_func->ctx_dev, rdma_func->pf_id);
@@ -1946,6 +2180,33 @@ end:
 	return ret;
 }
 
+static int sxe2_set_hw_cc_param(struct sxe2_rdma_device *rdma_dev)
+{
+	int ret				    = SXE2_OK;
+	struct aux_core_dev_info *cdev_info = rdma_dev->rdma_func->cdev;
+	struct sxe2_rdma_pci_f *rf = rdma_dev->rdma_func;
+	struct sxe2_hw_cc_dcqcn_param_info *hw_cc_p =
+		&rf->cc_params.hw_cc_params;
+
+	if (rf->ctx_dev.privileged) {
+		ret = sxe2_rdma_adminq_send(cdev_info, SXE2_CMD_RDMA_SET_HW_CC_PARAM,
+							(u8 *)hw_cc_p, (u16)sizeof(*hw_cc_p),
+							NULL, 0);
+		if (ret) {
+			DRV_RDMA_LOG_DEV_ERR(
+				"probe:aq send set hw cc param err ret=%d\n", ret);
+			goto end;
+		}
+		DRV_RDMA_LOG_DEV_INFO("probe:set hw cc param success, minTh(%u), rdPeriod(%u),\n"
+		"\tt(%u), bc(%u), alphaCnt(%u), rateCnt(%u), f(%u), rai(%u), rhai(%u)\n",
+		hw_cc_p->minTh, hw_cc_p->rdPeriod, hw_cc_p->t, hw_cc_p->bc,
+		hw_cc_p->alphaCnt, hw_cc_p->rateCnt, hw_cc_p->f, hw_cc_p->rai, hw_cc_p->rhai);
+	}
+
+end:
+	return SXE2_OK;
+}
+
 static const struct sxe2_rdma_profile drv_profile = {
 	STAGE_CREATE(SXE2_RDMA_STAGE_SETUP_INITINFO, sxe2_rdma_setup_init_state,
 		     sxe2_rdma_del_init_mem),
@@ -1978,6 +2239,8 @@ static const struct sxe2_rdma_profile drv_profile = {
 	STAGE_CREATE(SXE2_RDMA_STAGE_CREATE_AEQ, sxe2_setup_aeq, sxe2_del_aeq),
 	STAGE_CREATE(SXE2_RDMA_STAGE_RCRC_WQ, sxe2_init_rsrc_wq,
 		     sxe2_destroy_rsrc_wq),
+	STAGE_CREATE(SXE2_RDMA_STAGE_SET_HW_CC, sxe2_set_hw_cc_param,
+		     NULL),
 };
 
 static int sxe2_drv_add(struct sxe2_rdma_device *rdma_dev,
@@ -1993,9 +2256,11 @@ static int sxe2_drv_add(struct sxe2_rdma_device *rdma_dev,
 			ret = profile->stage[i].init(rdma_dev);
 			if (ret) {
 				ret = -ENOMEM;
-				DRV_RDMA_LOG_DEV_ERR(
-					"SXE2 DRV add fail in stage:%d, ret %d\n",
-					i, ret);
+				if (rdma_dev->rdma_func->ctx_dev.privileged ||
+					!rdma_dev->vf_num_overflow_print)
+					DRV_RDMA_LOG_DEV_ERR(
+						"SXE2 DRV add fail in stage:%d, ret %d\n",
+						i, ret);
 				goto err_out;
 			}
 		}
@@ -2169,10 +2434,17 @@ static int sxe2_rdma_probe_init(struct auxiliary_device *adev,
 
 	if (strcmp(cdev_info->drv_ver, SXE2_VERSION) != 0) {
 		ret =  -EINVAL;
-		DRV_RDMA_LOG_ERROR("RoCE cannot be enabled because of a driver version mismatch\n");
-		DRV_RDMA_LOG_ERROR("sxe driver version [%s]\n"
-			"\tRoCE diver version [%s] please ensure version matching!\n",
-			cdev_info->drv_ver, SXE2_VERSION);
+		DRV_RDMA_LOG_PR_ERR("RoCE cannot be enabled because of driver version mismatch.\n");
+		if (!cdev_info->ftype)
+			DRV_RDMA_LOG_PR_ERR(
+				"sxe2 driver version [%s] mismatches sxe2rdma driver version [%s].\n"
+				"\tPlease ensure version matching.\n",
+				cdev_info->drv_ver, SXE2_VERSION);
+		else
+			DRV_RDMA_LOG_PR_ERR(
+				"sxe2vf driver version [%s] mismatches sxe2rdma driver version [%s].\n"
+				"\tPlease ensure version matching.\n",
+				cdev_info->drv_ver, SXE2_VERSION);
 		goto end;
 	}
 
@@ -2195,7 +2467,11 @@ static int sxe2_rdma_probe_init(struct auxiliary_device *adev,
 	snprintf(rdma_dev->bdf, 16, "%02x:%02x.%x",
 		 cdev_info->pdev->bus->number, PCI_SLOT(cdev_info->pdev->devfn),
 		 PCI_FUNC(cdev_info->pdev->devfn));
-
+#ifdef SXE2_SUPPORT_CONFIGFS
+	snprintf(rdma_dev->configfs_dir_name, 32, "%04x:%02x:%02x.%x",
+			  pci_domain_nr(cdev_info->pdev->bus), cdev_info->pdev->bus->number,
+			  PCI_SLOT(cdev_info->pdev->devfn), PCI_FUNC(cdev_info->pdev->devfn));
+#endif
 	if (!cdev_info->ftype) {
 		rdma_dev->fw_ver.major = major_value;
 		rdma_dev->fw_ver.minor = minor_value;
@@ -2293,7 +2569,7 @@ static int sxe2_rdma_probe(struct auxiliary_device *adev,
 
 	ret = sxe2_drv_add(rdma_dev, &drv_profile);
 	if (ret < 0) {
-		DRV_RDMA_LOG_DEV_ERR("rdma device add failed. ret:%d\n", ret);
+		DRV_RDMA_LOG_ERROR_BDF("rdma device add failed. ret:%d\n", ret);
 #if defined(SXE2_SUPPORT_INJECT) && defined(SXE2_CFG_DEBUG)
 		goto err_inject_reg;
 #else
@@ -2319,11 +2595,11 @@ static int sxe2_rdma_probe(struct auxiliary_device *adev,
 
 	auxiliary_set_drvdata(adev, rdma_dev);
 #ifdef SXE2_SUPPORT_CONFIGFS
-	ret = sxe2_rdma_create_configfs_subdir(rdma_dev->bdf, rdma_dev);
+	ret = sxe2_rdma_create_configfs_subdir(rdma_dev->configfs_dir_name, rdma_dev);
 	if (ret) {
 		DRV_RDMA_LOG_DEV_ERR(
 			"create configfs subdir %s failed, ret %d\n",
-			rdma_dev->bdf, ret);
+			rdma_dev->configfs_dir_name, ret);
 		goto err_probe_notify;
 	}
 #endif
@@ -2340,7 +2616,7 @@ static int sxe2_rdma_probe(struct auxiliary_device *adev,
 	goto end;
 err_remove_configfs:
 #ifdef SXE2_SUPPORT_CONFIGFS
-	sxe2_rdma_remove_configfs_subdir(rdma_dev->bdf);
+	sxe2_rdma_remove_configfs_subdir(rdma_dev->configfs_dir_name);
 err_probe_notify:
 #endif
 	sxe2_kunregister_notifiers(rdma_dev);
@@ -2381,7 +2657,7 @@ static void sxe2_rdma_remove(struct auxiliary_device *adev)
 	}
 	DRV_RDMA_LOG_DEV_INFO("rdma remove start\n");
 #ifdef SXE2_SUPPORT_CONFIGFS
-	sxe2_rdma_remove_configfs_subdir(rdma_dev->bdf);
+	sxe2_rdma_remove_configfs_subdir(rdma_dev->configfs_dir_name);
 #endif
 	if (rdma_dev->rdma_func->ctx_dev.privileged) {
 		cdev_info->ops->notify_rdma_load(cdev_info, false);

@@ -71,24 +71,8 @@ s32 sxe2vf_hw_mbx_txq_enable(struct sxe2vf_hw *hw, u16 depth, dma_addr_t addr)
 {
 	s32 ret = 0;
 	u32 value;
-	u32 old_tail;
-	u32 old_head;
-#if !defined(SXE2_DPDK_VF_DRIVER) && !defined(SXE2_DPDK_DRIVER)
-	struct sxe2vf_adapter *adapter = hw->adapter;
-#endif
 
-	old_tail = sxe2vf_reg_read(hw, SXE2VF_MBX_TQ_TAIL);
-	old_head = sxe2vf_reg_read(hw, SXE2VF_MBX_TQ_HEAD);
-	if (old_tail >= old_head) {
-		sxe2vf_reg_write(hw, SXE2VF_MBX_TQ_TAIL, 0);
-	} else {
-		sxe2vf_reg_write(hw, SXE2VF_MBX_TQ_TAIL, 0);
-		sxe2vf_reg_write(hw, SXE2VF_MBX_TQ_TAIL, old_tail);
-		sxe2vf_reg_write(hw, SXE2VF_MBX_TQ_TAIL, 0);
-	}
-#if !defined(SXE2_DPDK_VF_DRIVER) && !defined(SXE2_DPDK_DRIVER)
-	LOG_INFO_BDF("mbx txq old tail:0x%x old head:0x%x.\n", old_tail, old_head);
-#endif
+	sxe2vf_reg_write(hw, SXE2VF_MBX_TQ_TAIL, 0);
 	sxe2vf_reg_write(hw, SXE2VF_MBX_TQ_HEAD, 0);
 
 	sxe2vf_reg_write(hw, SXE2VF_MBX_TQ_BAL, lower_32_bits(addr));
@@ -150,6 +134,20 @@ void sxe2vf_hw_mbx_txq_fault_clear(struct sxe2vf_hw *hw, u32 *err)
 
 void sxe2vf_hw_mbx_txq_t_write(struct sxe2vf_hw *hw, u32 tail)
 {
+	u32 value;
+#if !defined(SXE2_DPDK_VF_DRIVER) && !defined(SXE2_DPDK_DRIVER)
+	struct sxe2vf_adapter *adapter = (struct sxe2vf_adapter *)hw->adapter;
+#endif
+	if (tail == 0) {
+		value = sxe2vf_reg_read(hw, SXE2VF_MBX_TQ_LEN);
+		value &= SXE2VF_MBX_Q_LEN_ENA_M;
+		if (!value) {
+#if !defined(SXE2_DPDK_VF_DRIVER) && !defined(SXE2_DPDK_DRIVER)
+			LOG_INFO_BDF("no need write tail.\n");
+#endif
+			return;
+		}
+	}
 	sxe2vf_reg_write(hw, SXE2VF_MBX_TQ_TAIL, tail);
 }
 

@@ -77,6 +77,9 @@ struct sxe2_acl_flow_action;
 #define SXE2_U8_MASK  (0xFF)
 #define SXE2_U16_MASK (0xFFFF)
 
+#define SXE2_FLOW_TCAM_FULL_KEY_MASK_VSIG 0x0FFF
+#define SXE2_FLOW_TCAM_FULL_KEY_MASK_CDID 0x0F
+
 #pragma pack(1)
 struct sxe2_fv_word {
 	u8 prot_id;
@@ -136,13 +139,37 @@ enum sxe2_prot_id {
 
 enum sxe2_flow_priority {
 	SXE2_FLOW_PRIO_LEVEL_OUTER_ETH = 0,
-	SXE2_FLOW_PRIO_LEVLE_OUTER_L3,
-	SXE2_FLOW_PRIO_LEVEL_OUTER_L3_FRAG,
-	SXE2_FLOW_PRIO_LEVEL_OUTER_L4,
+
+	SXE2_FLOW_PRIO_LEVEL_OUTER_IP4,
+	SXE2_FLOW_PRIO_LEVEL_OUTER_IP6,
+
+	SXE2_FLOW_PRIO_LEVEL_OUTER_IP4_FRAG,
+	SXE2_FLOW_PRIO_LEVEL_OUTER_IP6_FRAG,
+
+	SXE2_FLOW_PRIO_LEVEL_OUTER_IP4_TCP,
+	SXE2_FLOW_PRIO_LEVEL_OUTER_IP4_UDP,
+	SXE2_FLOW_PRIO_LEVEL_OUTER_IP4_SCTP,
+
+	SXE2_FLOW_PRIO_LEVEL_OUTER_IP6_TCP,
+	SXE2_FLOW_PRIO_LEVEL_OUTER_IP6_UDP,
+	SXE2_FLOW_PRIO_LEVEL_OUTER_IP6_SCTP,
+
 	SXE2_FLOW_PRIO_LEVEL_INNER_ETH,
-	SXE2_FLOW_PRIO_LEVEL_INNER_L3,
-	SXE2_FLOW_PRIO_LEVLE_INNER_L3_FRAG,
-	SXE2_FLOW_PRIO_LEVEL_INNER_L4,
+
+	SXE2_FLOW_PRIO_LEVEL_INNER_IP4,
+	SXE2_FLOW_PRIO_LEVEL_INNER_IP6,
+
+	SXE2_FLOW_PRIO_LEVEL_INNER_IP4_FRAG,
+	SXE2_FLOW_PRIO_LEVEL_INNER_IP6_FRAG,
+
+	SXE2_FLOW_PRIO_LEVEL_INNER_IP4_TCP,
+	SXE2_FLOW_PRIO_LEVEL_INNER_IP4_UDP,
+	SXE2_FLOW_PRIO_LEVEL_INNER_IP4_SCTP,
+
+	SXE2_FLOW_PRIO_LEVEL_INNER_IP6_TCP,
+	SXE2_FLOW_PRIO_LEVEL_INNER_IP6_UDP,
+	SXE2_FLOW_PRIO_LEVEL_INNER_IP6_SCTP,
+
 	SXE2_FLOW_PRIO_LEVEL_HIGHEST,
 };
 
@@ -555,8 +582,7 @@ s32 sxe2_flow_disassoc_vsi(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 s32 sxe2_add_rss_flow(struct sxe2_rss_ctxt *rss_ctxt, u16 vsi_sw_idx,
 		      const struct sxe2_rss_hash_cfg *cfg);
 
-s32 sxe2_rss_delete_vsi_flows_for_vfr(struct sxe2_rss_ctxt *rss_ctxt,
-				      u16 vsi_sw_idx);
+void sxe2_rss_vsi_flow_clean_for_vf(struct sxe2_vsi *vsi);
 
 s32 sxe2_rss_delete_vsi_flows(struct sxe2_rss_ctxt *rss_ctxt, u16 vsi_sw_idx);
 
@@ -637,5 +663,38 @@ s32 sxe2_flow_acl_format_lut_act_entry(struct sxe2_adapter *adapter,
 s32 sxe2_flow_assoc_vsi_fnav(struct sxe2_ppp_common_ctxt *ppp_ctxt,
 			     struct sxe2_flow_info_node *flow,
 			     u16 vsi_sw_idx, enum sxe2_fnav_flow_type flow_type);
+
+void *sxe2_section_buf_alloc(struct sxe2_fwc_prof_buf *buf,
+			     enum sxe2_class_id type, u16 size);
+
+u8 sxe2_blk_fv_cnt_get(enum sxe2_block_id blk);
+
+s32 sxe2_fwc_alloc_prof_id(struct sxe2_adapter *adapter,
+			   enum sxe2_block_id blk, u16 *prof_id);
+
+s32 sxe2_fwc_free_prof_id(struct sxe2_adapter *adapter,
+			  enum sxe2_block_id blk, u16 prof_id);
+
+s32 sxe2_fwc_alloc_mask_id(struct sxe2_adapter *adapter,
+			   enum sxe2_block_id blk, u16 *mask_id);
+
+s32 sxe2_fwc_free_mask_id(struct sxe2_adapter *adapter,
+			  enum sxe2_block_id blk, u16 mask_id);
+
+s32 sxe2_fwc_update_mask(struct sxe2_adapter *adapter,
+			 enum sxe2_block_id blk,
+								u16 mask_idx,
+								u16 fv_idx,
+								u16 mask);
+
+s32 sxe2_fwc_update_mask_sel(struct sxe2_adapter *adapter,
+			     enum sxe2_block_id blk, u16 prof_id,
+				    u32 mask_sel);
+
+s32 sxe2_flow_set_key(u8 *key, u16 size, u8 *val, u8 *vl_mask,
+		      u8 *dc_mask, u8 *nm_mask, u16 off, u16 len);
+
+s32 sxe2_fwc_process_tcam_batch(struct sxe2_adapter *adapter,
+				struct sxe2_fwc_tcam_idx_batch *tcam_batch, u32 size);
 
 #endif

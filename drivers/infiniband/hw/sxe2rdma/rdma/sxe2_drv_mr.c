@@ -12,6 +12,7 @@
 #include <linux/err.h>
 
 #include <rdma/ib_verbs.h>
+#include <rdma/uverbs_ioctl.h>
 #include <rdma/ib_umem.h>
 #include <linux/random.h>
 
@@ -757,6 +758,7 @@ static struct ib_mr *sxe2_rereg_mr_trans(struct sxe2_mr *vendor_mr, u64 start,
 
 ret:
 	ib_umem_release(region);
+	vendor_mr->region = NULL;
 	return ERR_PTR(ret);
 }
 
@@ -872,6 +874,9 @@ struct ib_mr *sxe2_kreg_user_mr(struct ib_pd *pd, u64 start, u64 len, u64 virt,
 			rdma_dev->rdma_func->ctx_dev.hw_attrs.max_mr_size);
 		return ERR_PTR(-EINVAL);
 	}
+#ifdef SUPPORT_IB_UMEM_GET_PEER
+	region = ib_umem_get_peer(&rdma_dev->ibdev, start, len, access, IB_PEER_MEM_INVAL_SUPP);
+#else
 #ifdef IB_UMEM_GET_V2
 	region = ib_umem_get(udata, start, len, access);
 #elif defined(IB_UMEM_GET_V1)
@@ -881,6 +886,7 @@ struct ib_mr *sxe2_kreg_user_mr(struct ib_pd *pd, u64 start, u64 len, u64 virt,
 	region = ib_umem_get(pd->uobject->context, start, len, access, 0);
 #else
 	region = ib_umem_get(pd->device, start, len, access);
+#endif
 #endif
 	if (IS_ERR(region)) {
 		DRV_RDMA_LOG_DEV_ERR("MR: ib umem get failed.\n");
@@ -1110,9 +1116,16 @@ struct ib_mr *sxe2_krereg_user_mr(struct ib_mr *ib_mr, int flags, u64 start,
 #endif
 
 #ifndef REG_USER_MR_DMABUF_VER_1
+#if defined(REG_USER_MR_DMABUF_VER_2) || defined(RDMA_OFED_REG_USER_MR_DMABUF)
+struct ib_mr *sxe2_kreg_user_mr_dmabuf(struct ib_pd *pd, u64 start, u64 len,
+				       u64 virt, int fd, int access,
+				       struct uverbs_attr_bundle *attrs)
+
+#else
 struct ib_mr *sxe2_kreg_user_mr_dmabuf(struct ib_pd *pd, u64 start, u64 len,
 				       u64 virt, int fd, int access,
 				       struct ib_udata *udata)
+#endif
 {
 	struct sxe2_rdma_device *rdma_dev = ibdev_to_rdmadev(pd->device);
 	struct ib_umem_dmabuf *umem_dmabuf;

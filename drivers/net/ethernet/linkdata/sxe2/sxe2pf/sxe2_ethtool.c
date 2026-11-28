@@ -57,6 +57,8 @@
 #define SXE2_SFF_STATUS_INDICATER (0x2)
 
 #define SXE2_SFF_FLAT_MEM (BIT(2))
+#define SXE2_QSFP_SFF_PROVIDE_PAGE1(reg) (reg & BIT(6))
+#define SXE2_QSFP_SFF_PROVIDE_PAGE2(reg) (reg & BIT(7))
 
 #define L2_FWD_TX_PKTS1	 "l2-fwd-%s-tx_pkts"
 #define L2_FWD_TX_PKTS2	 "l2-fwd-%i-tx_pkts"
@@ -177,6 +179,8 @@ static void sxe2_get_macvlan_tx_stats(struct sxe2_adapter *adapter, u64 *data,
 				      int *idx)
 {
 	int i, j;
+	struct sxe2_vsi_qs_stats *qs_stats;
+	u64 pkts, bytes;
 
 	if (!idx)
 		return;
@@ -187,8 +191,15 @@ static void sxe2_get_macvlan_tx_stats(struct sxe2_adapter *adapter, u64 *data,
 		struct sxe2_macvlan *mv = sxe2_get_macvlan(i, adapter);
 
 		if (mv) {
-			data[j++] = mv->vsi->vsi_stats.txqs_stats.packets;
-			data[j++] = mv->vsi->vsi_stats.txqs_stats.bytes;
+			qs_stats = sxe2_vsi_qs_stats_get(adapter, mv->vsi->id_in_pf);
+			if (!qs_stats) {
+				LOG_ERROR_BDF("macvlan vsi:%d stats null.\n", mv->vsi->id_in_pf);
+				return;
+			}
+			sxe2_fetch_u64_data_per_ring(&qs_stats->syncp, qs_stats->stats, &pkts,
+						     &bytes);
+			data[j++] = pkts;
+			data[j++] = bytes;
 		} else {
 			data[j++] = 0;
 			data[j++] = 0;
@@ -225,6 +236,8 @@ static void sxe2_get_macvlan_rx_stats(struct sxe2_adapter *adapter, u64 *data,
 				      int *idx)
 {
 	int i, j;
+	struct sxe2_vsi_qs_stats *qs_stats;
+	u64 pkts, bytes;
 
 	if (!idx)
 		return;
@@ -235,8 +248,15 @@ static void sxe2_get_macvlan_rx_stats(struct sxe2_adapter *adapter, u64 *data,
 		struct sxe2_macvlan *mv = sxe2_get_macvlan(i, adapter);
 
 		if (mv) {
-			data[j++] = mv->vsi->vsi_stats.rxqs_stats.packets;
-			data[j++] = mv->vsi->vsi_stats.rxqs_stats.bytes;
+			qs_stats = sxe2_vsi_qs_stats_get(adapter, mv->vsi->id_in_pf);
+			if (!qs_stats) {
+				LOG_ERROR_BDF("macvlan vsi:%d stats null.\n", mv->vsi->id_in_pf);
+				return;
+			}
+			sxe2_fetch_u64_data_per_ring(&qs_stats->syncp, qs_stats->stats, &pkts,
+						     &bytes);
+			data[j++] = pkts;
+			data[j++] = bytes;
 		} else {
 			data[j++] = 0;
 			data[j++] = 0;
@@ -260,7 +280,7 @@ static void sxe2_get_tx_stats(struct sxe2_vsi *vsi, u64 *data, u32 *idx)
 
 	sxe2_for_each_vsi_txq(vsi, j) {
 		tx_q = READ_ONCE(vsi->txqs.q[j]);
-		sxe2_fetch_u64_data_per_ring(&tx_q->syncp, tx_q->stats, &pkts,
+		sxe2_fetch_u64_data_per_ring(&tx_q->stats->syncp, tx_q->stats, &pkts,
 					     &bytes);
 		data[i++] = pkts;
 		data[i++] = bytes;
@@ -294,7 +314,7 @@ static void sxe2_get_rx_stats(struct sxe2_vsi *vsi, u64 *data, u32 *idx)
 
 	sxe2_for_each_vsi_rxq(vsi, j) {
 		rx_q = READ_ONCE(vsi->rxqs.q[j]);
-		sxe2_fetch_u64_data_per_ring(&rx_q->syncp, rx_q->stats, &pkts,
+		sxe2_fetch_u64_data_per_ring(&rx_q->stats->syncp, rx_q->stats, &pkts,
 					     &bytes);
 		data[i++] = pkts;
 		data[i++] = bytes;
@@ -340,8 +360,13 @@ static void sxe2_get_rx_stats(struct sxe2_vsi *vsi, u64 *data, u32 *idx)
 	*idx = i;
 }
 
+#ifdef NEED_KERNEL_ETH_TS_INFO
+static int sxe2_get_ts_info(struct net_device *dev,
+			    struct kernel_ethtool_ts_info *info)
+#else
 static int sxe2_get_ts_info(struct net_device *dev,
 			    struct ethtool_ts_info *info)
+#endif
 {
 	struct sxe2_netdev_priv *netpriv = netdev_priv(dev);
 	struct sxe2_adapter *adapter	 = netpriv->vsi->adapter;
@@ -445,7 +470,7 @@ void __sxe2_get_strings(struct net_device *netdev, u32 stringset, u8 *data)
 			ethtool_sprintf(&p, "rx%u_xdp_drop", i);
 			ethtool_sprintf(&p, "rx%u_xdp_redirect", i);
 			ethtool_sprintf(&p, "rx%u_xdp_redirect_fail", i);
-			ethtool_sprintf(&p, "rx%u_xdp_pkts", i);
+			ethtool_sprintf(&p, "rx%u_xdp_packets", i);
 			ethtool_sprintf(&p, "rx%u_xdp_bytes", i);
 			ethtool_sprintf(&p, "rx%u_xdp_pass", i);
 			ethtool_sprintf(&p, "rx%u_xdp_unknown", i);
@@ -478,7 +503,7 @@ void __sxe2_get_strings(struct net_device *netdev, u32 stringset, u8 *data)
 			ethtool_sprintf(&p, "rx_prio%u_xon_phy", i);
 			ethtool_sprintf(&p, "rx_prio%u_xoff_phy", i);
 		}
-
+		ethtool_sprintf(&p, "tx_timeout");
 		break;
 	case ETH_SS_TEST:
 		sxe2_ethtool_selftest_strings(netdev, data);
@@ -574,6 +599,7 @@ STATIC void sxe2_hw_vsi_stats_set(struct sxe2_adapter *adapter,
 	u16 i, j;
 	struct sxe2_vsi *vsi;
 	u16 vsi_cnt = le16_to_cpu(resp->vsi_cnt);
+	struct sxe2_vsi_hw_stats *vsi_hw_stats;
 
 	for (i = 0; i < vsi_cnt; i++) {
 		sxe2_for_each_vsi(&adapter->vsi_ctxt, j) {
@@ -583,28 +609,35 @@ STATIC void sxe2_hw_vsi_stats_set(struct sxe2_adapter *adapter,
 
 			if (vsi->idx_in_dev ==
 			    le16_to_cpu(resp->vsi_stats[i].vsi_id)) {
-				vsi->vsi_stats.vsi_hw_stats.rx_vsi_unicast_packets +=
+				vsi_hw_stats = sxe2_vsi_hw_stats_get(adapter, vsi->id_in_pf);
+				if (!vsi_hw_stats) {
+					LOG_ERROR_BDF("vsi_id_in_pf:%d hw stats null.\n",
+						      vsi->id_in_pf);
+					continue;
+				}
+
+				vsi_hw_stats->rx_vsi_unicast_packets +=
 				  le64_to_cpu(resp->vsi_stats[i].stats.rx_vsi_unicast_packets);
 
-				vsi->vsi_stats.vsi_hw_stats.rx_vsi_bytes +=
+				vsi_hw_stats->rx_vsi_bytes +=
 				   le64_to_cpu(resp->vsi_stats[i].stats.rx_vsi_bytes);
 
-				vsi->vsi_stats.vsi_hw_stats.tx_vsi_unicast_packets +=
+				vsi_hw_stats->tx_vsi_unicast_packets +=
 				  le64_to_cpu(resp->vsi_stats[i].stats.tx_vsi_unicast_packets);
 
-				vsi->vsi_stats.vsi_hw_stats.tx_vsi_bytes +=
+				vsi_hw_stats->tx_vsi_bytes +=
 				  le64_to_cpu(resp->vsi_stats[i].stats.tx_vsi_bytes);
 
-				vsi->vsi_stats.vsi_hw_stats.rx_vsi_multicast_packets +=
+				vsi_hw_stats->rx_vsi_multicast_packets +=
 				  le64_to_cpu(resp->vsi_stats[i].stats.rx_vsi_multicast_packets);
 
-				vsi->vsi_stats.vsi_hw_stats.tx_vsi_multicast_packets +=
+				vsi_hw_stats->tx_vsi_multicast_packets +=
 				  le64_to_cpu(resp->vsi_stats[i].stats.tx_vsi_multicast_packets);
 
-				vsi->vsi_stats.vsi_hw_stats.rx_vsi_broadcast_packets +=
+				vsi_hw_stats->rx_vsi_broadcast_packets +=
 				  le64_to_cpu(resp->vsi_stats[i].stats.rx_vsi_broadcast_packets);
 
-				vsi->vsi_stats.vsi_hw_stats.tx_vsi_broadcast_packets +=
+				vsi_hw_stats->tx_vsi_broadcast_packets +=
 				  le64_to_cpu(resp->vsi_stats[i].stats.tx_vsi_broadcast_packets);
 			}
 		}
@@ -646,6 +679,7 @@ STATIC void sxe2_pf_hw_stats_set(struct sxe2_adapter *adapter,
 	u8 i;
 	struct sxe2_pf_hw_stats *last_pf_hw_stats =
 		&adapter->pf_stats.last_pf_hw_stats;
+	struct sxe2_pause_stats *cur_stats = &adapter->pf_stats.dcb_stats.curr_pause_stats;
 
 	if (adapter->pf_stats.stat_prev_loaded) {
 		stats->rx_out_of_buffer += le64_to_cpu(resp->stats.rx_out_of_buffer);
@@ -678,6 +712,10 @@ STATIC void sxe2_pf_hw_stats_set(struct sxe2_adapter *adapter,
 		sxe2_pf_nonclear_hw_stats64_set(adapter, &last_pf_hw_stats->prio_xon_2_xoff[i],
 						le64_to_cpu(resp->stats.prio_xon_2_xoff[i]),
 						&stats->prio_xon_2_xoff[i]);
+		cur_stats->prio_xoff_rx[i] = last_pf_hw_stats->prio_xoff_rx[i];
+		cur_stats->prio_xon_rx[i] = last_pf_hw_stats->prio_xon_rx[i];
+		cur_stats->prio_xoff_tx[i] = last_pf_hw_stats->prio_xoff_tx[i];
+		cur_stats->prio_xon_tx[i] = last_pf_hw_stats->prio_xon_tx[i];
 	}
 
 	sxe2_pf_nonclear_hw_stats64_set(adapter, &last_pf_hw_stats->rx_pause,
@@ -686,6 +724,8 @@ STATIC void sxe2_pf_hw_stats_set(struct sxe2_adapter *adapter,
 	sxe2_pf_nonclear_hw_stats64_set(adapter, &last_pf_hw_stats->tx_pause,
 					le64_to_cpu(resp->stats.tx_pause),
 					&stats->tx_pause);
+	cur_stats->rx_pause = last_pf_hw_stats->rx_pause;
+	cur_stats->tx_pause = last_pf_hw_stats->tx_pause;
 
 	sxe2_pf_nonclear_hw_stats64_set(adapter,
 					&last_pf_hw_stats->tx_frame_good,
@@ -842,9 +882,9 @@ STATIC void sxe2_pf_hw_stats_set(struct sxe2_adapter *adapter,
 	sxe2_pf_nonclear_hw_stats64_set(adapter, &last_pf_hw_stats->tx_underflow_error,
 					le64_to_cpu(resp->stats.tx_underflow_error),
 					&stats->tx_underflow_error);
-	sxe2_pf_nonclear_hw_stats64_set(adapter, &last_pf_hw_stats->rx_byte_good_bad,
-					le64_to_cpu(resp->stats.rx_byte_good_bad),
-					&stats->rx_byte_good_bad);
+	sxe2_pf_nonclear_hw_stats64_set(adapter, &last_pf_hw_stats->rx_bytes_good_bad,
+					le64_to_cpu(resp->stats.rx_bytes_good_bad),
+					&stats->rx_bytes_good_bad);
 	sxe2_pf_nonclear_hw_stats64_set(adapter, &last_pf_hw_stats->rx_frame_good_bad,
 					le64_to_cpu(resp->stats.rx_frame_good_bad),
 					&stats->rx_frame_good_bad);
@@ -909,10 +949,17 @@ static void sxe2_sw_pf_stats_update(struct sxe2_adapter *adapter)
 void sxe2_sw_vsi_stats_update(struct sxe2_vsi *vsi)
 {
 	struct sxe2_vsi_sw_stats cur_stats;
-	struct sxe2_vsi_qs_stats *vsi_qs_stats = &vsi->vsi_qs_stats;
+	struct sxe2_adapter *adapter = vsi->adapter;
+	struct sxe2_vsi_qs_stats *vsi_qs_stats = sxe2_vsi_qs_stats_get(adapter, vsi->id_in_pf);
+	struct sxe2_vsi_sw_stats *vsi_sw_stats = sxe2_vsi_sw_stats_get(adapter, vsi->id_in_pf);
 	struct sxe2_queue_stats *txq_stats, *rxq_stats;
 	u64 pkts, bytes;
 	u8 j;
+
+	if (!vsi_qs_stats || !vsi_sw_stats) {
+		LOG_ERROR_BDF("vsi:%d queue stats null.\n", vsi->id_in_pf);
+		return;
+	}
 
 	(void)memset(&cur_stats, 0, sizeof(cur_stats));
 
@@ -1022,8 +1069,7 @@ void sxe2_sw_vsi_stats_update(struct sxe2_vsi *vsi)
 
 			cur_stats.rx_pa_err += rxq_stats->rx_stats.rx_pa_err;
 		}
-		(void)memcpy(&vsi->vsi_stats.vsi_sw_stats, &cur_stats,
-			     sizeof(cur_stats));
+		(void)memcpy(vsi_sw_stats, &cur_stats, sizeof(cur_stats));
 	}
 }
 
@@ -1070,6 +1116,13 @@ void sxe2_hw_vsi_stats_update(struct sxe2_vsi *vsi)
 	kfree(resp);
 }
 
+void sxe2_fc_stats_backup(struct sxe2_adapter *adapter)
+{
+	struct sxe2_pause_stats *cur_stats = &adapter->pf_stats.dcb_stats.curr_pause_stats;
+
+	memcpy(&adapter->txtimeout_ctxt.pause_stats, cur_stats, sizeof(struct sxe2_pause_stats));
+}
+
 STATIC void sxe2_hw_vsi_stats_update_all(struct sxe2_adapter *adapter)
 {
 	u16 i;
@@ -1112,16 +1165,24 @@ STATIC void sxe2_repr_accumulate_sw_stats(struct rtnl_link_stats64 *stats,
 					  struct sxe2_vsi *vsi)
 {
 	struct sxe2_vsi_hw_stats *vsi_hw_stats;
+	struct sxe2_vsi_sw_stats *vsi_sw_stats;
 
 	if (!vsi)
 		return;
 
-	vsi_hw_stats = &vsi->vsi_stats.vsi_hw_stats;
+	vsi_hw_stats = sxe2_vsi_hw_stats_get(vsi->adapter, vsi->id_in_pf);
+	vsi_sw_stats = sxe2_vsi_sw_stats_get(vsi->adapter, vsi->id_in_pf);
 
-	stats->rx_packets += vsi->vsi_stats.vsi_sw_stats.rx_packets;
-	stats->rx_bytes   += vsi->vsi_stats.vsi_sw_stats.rx_bytes;
-	stats->tx_packets += vsi->vsi_stats.vsi_sw_stats.tx_packets;
-	stats->tx_bytes   += vsi->vsi_stats.vsi_sw_stats.tx_bytes;
+	if (!vsi_hw_stats || !vsi_sw_stats) {
+		LOG_ERROR("vsi id:%d vsi hw/sw stats null.\n", vsi->id_in_pf);
+		return;
+	}
+
+	stats->rx_packets += vsi_sw_stats->rx_packets;
+	stats->rx_bytes   += vsi_sw_stats->rx_bytes;
+	stats->tx_packets += vsi_sw_stats->tx_packets;
+	stats->tx_bytes   += vsi_sw_stats->tx_bytes;
+
 	stats->multicast  += vsi_hw_stats->rx_vsi_multicast_packets;
 }
 
@@ -1133,7 +1194,11 @@ STATIC void sxe2_repr_accumulate_hw_stats(struct rtnl_link_stats64 *stats,
 	if (!vsi)
 		return;
 
-	vsi_hw_stats = &vsi->vsi_stats.vsi_hw_stats;
+	vsi_hw_stats = sxe2_vsi_hw_stats_get(vsi->adapter, vsi->id_in_pf);
+	if (!vsi_hw_stats) {
+		LOG_ERROR("vsi id:%d vsi hw stats null.\n", vsi->id_in_pf);
+		return;
+	}
 
 	stats->rx_packets += vsi_hw_stats->rx_vsi_unicast_packets +
 				vsi_hw_stats->rx_vsi_multicast_packets +
@@ -1242,8 +1307,8 @@ void __sxe2_get_ethtool_stats(struct net_device *netdev,
 	struct sxe2_adapter *adapter	       = vsi->adapter;
 	struct sxe2_pf_hw_stats *pf_hw_stats   = &adapter->pf_stats.pf_hw_stats;
 	struct sxe2_pf_sw_stats *pf_sw_stats   = &adapter->pf_stats.pf_sw_stats;
-	struct sxe2_vsi_sw_stats *vsi_sw_stats = &vsi->vsi_stats.vsi_sw_stats;
-	struct sxe2_vsi_hw_stats *vsi_hw_stats = &vsi->vsi_stats.vsi_hw_stats;
+	struct sxe2_vsi_sw_stats *vsi_sw_stats;
+	struct sxe2_vsi_hw_stats *vsi_hw_stats;
 
 	u8 j;
 	u32 i = 0;
@@ -1261,6 +1326,13 @@ void __sxe2_get_ethtool_stats(struct net_device *netdev,
 	sxe2_hw_vsi_stats_update(vsi);
 
 	sxe2_sw_vsi_stats_update(vsi);
+
+	vsi_sw_stats = sxe2_vsi_sw_stats_get(adapter, vsi->id_in_pf);
+	vsi_hw_stats = sxe2_vsi_hw_stats_get(adapter, vsi->id_in_pf);
+	if (!vsi_sw_stats || !vsi_hw_stats) {
+		LOG_ERROR_BDF("vsi hw/sw stats null. vsi_sw_id:%d\n", vsi->id_in_pf);
+		goto l_unlock;
+	}
 
 	for (j = 0; j < SXE2_VSI_SW_STATS_LEN; j++) {
 		p = (char *)vsi_sw_stats +
@@ -1309,6 +1381,7 @@ void __sxe2_get_ethtool_stats(struct net_device *netdev,
 		data[i++] = pf_hw_stats->prio_xoff_rx[j];
 	}
 
+	data[i++] = adapter->txtimeout_ctxt.tx_timeout_count;
 l_unlock:
 	mutex_unlock(&adapter->vsi_ctxt.lock);
 }
@@ -1338,7 +1411,7 @@ void __sxe2_repr_get_ethtool_stats(struct net_device *netdev,
 
 	sxe2_hw_vsi_stats_update(vsi);
 
-	vsi_hw_stats = &vsi->vsi_stats.vsi_hw_stats;
+	vsi_hw_stats = sxe2_vsi_hw_stats_get(adapter, vsi->id_in_pf);
 	for (j = 0; j < SXE2_VSI_HW_STATS_LEN; j++) {
 		p = (char *)vsi_hw_stats +
 		    sxe2_gstrings_vsi_hw_stats[j].stats_offset;
@@ -1349,7 +1422,7 @@ void __sxe2_repr_get_ethtool_stats(struct net_device *netdev,
 	if (user_vsi)  {
 		sxe2_hw_vsi_stats_update(user_vsi);
 		i = 0;
-		vsi_hw_stats = &user_vsi->vsi_stats.vsi_hw_stats;
+		vsi_hw_stats = sxe2_vsi_hw_stats_get(adapter, user_vsi->id_in_pf);
 		for (j = 0; j < SXE2_VSI_HW_STATS_LEN; j++) {
 			p = (char *)vsi_hw_stats +
 			    sxe2_gstrings_vsi_hw_stats[j].stats_offset;
@@ -1467,7 +1540,7 @@ static void sxe2_ringparam_set_offline(struct sxe2_vsi *vsi, u32 tx_size,
 	if (vsi->txqs.depth == tx_size) {
 		LOG_NETDEV_DEBUG("tx desc depth[%d] not changed.\n", tx_size);
 	} else {
-		LOG_NETDEV_DEBUG("link is down, tx desc depth chang from [%d] to [%d] happens \t"
+		LOG_NETDEV_DEBUG("link is down, tx desc depth change from [%d] to [%d] happens \t"
 				 "when link is brought up.\n",
 				 vsi->txqs.depth, tx_size);
 		sxe2_for_each_vsi_txq(vsi, i) {
@@ -1487,7 +1560,7 @@ static void sxe2_ringparam_set_offline(struct sxe2_vsi *vsi, u32 tx_size,
 	if (vsi->rxqs.depth == rx_size) {
 		LOG_NETDEV_DEBUG("rx desc depth[%d] not changed.\n", rx_size);
 	} else {
-		LOG_NETDEV_DEBUG("link is down, rx desc depth chang from [%d] to [%d] happens \t"
+		LOG_NETDEV_DEBUG("link is down, rx desc depth change from [%d] to [%d] happens \t"
 				 "when link is brought up.\n",
 				 vsi->rxqs.depth, rx_size);
 		sxe2_for_each_vsi_rxq(vsi, i) {
@@ -1729,7 +1802,7 @@ STATIC int sxe2_ethtool_fnav_filter_get_by_loc(struct sxe2_vsi *vsi,
 	int ret = 0;
 	struct ethtool_rx_flow_spec *fsp =
 		(struct ethtool_rx_flow_spec *)&cmd->fs;
-	struct sxe2_fnav_filter *filter;
+	struct sxe2_fnav_filter *filter = NULL;
 	u64 vf_id = 0;
 
 	mutex_lock(&adapter->fnav_ctxt.filter_lock);
@@ -1862,7 +1935,7 @@ STATIC int sxe2_ethtool_ntuple_filter_locs_get(struct sxe2_vsi *vsi,
 	struct sxe2_adapter *adapter = vsi->adapter;
 	int ret			     = 0;
 	unsigned int cnt	     = 0;
-	struct sxe2_fnav_filter *filter;
+	struct sxe2_fnav_filter *filter = NULL;
 
 	cmd->data = sxe2_ntuple_max_filter_cnt_get_by_vsi(vsi);
 	if (cmd->data == 0)
@@ -2009,6 +2082,7 @@ STATIC int sxe2_set_rss_flow(struct sxe2_vsi *vsi, struct ethtool_rxnfc *nfc)
 		return -EINVAL;
 	}
 
+	memset(&cfg, 0, sizeof(cfg));
 	cfg.hdr_type = SXE2_RSS_ANY_HEADERS;
 	bitmap_copy(cfg.headers, hdrs, SXE2_FLOW_HDR_MAX);
 	bitmap_copy(cfg.hash_flds, hash_flds, SXE2_FLOW_FLD_ID_MAX);
@@ -3176,9 +3250,9 @@ STATIC s32 sxe2_acl_ethtool_flow_cfg_add(struct sxe2_vsi *vsi,
 	}
 
 	ret = sxe2_acl_flow_cfg_add(vsi, flow_cfg, seg);
+	seg = NULL;
 	if (ret == -EEXIST) {
 		LOG_DEBUG_BDF("acl flow config exists, skip creation.\n");
-		devm_kfree(dev, seg);
 		if (new_alloc_flow)
 			devm_kfree(dev, flow_cfg);
 
@@ -3198,7 +3272,8 @@ l_free_flow_cfg:
 		devm_kfree(dev, flow_cfg);
 
 l_free:
-	devm_kfree(dev, seg);
+	if (seg)
+		devm_kfree(dev, seg);
 l_end:
 	return ret;
 }
@@ -4070,7 +4145,11 @@ STATIC void sxe2_channels_get(struct net_device *netdev,
 	channel->tx_count	= vsi->txqs.q_cnt - channel->combined_count;
 
 	if (test_bit(SXE2_FLAG_MACVLAN_ENABLE, adapter->flags)) {
-		channel->max_combined += adapter->macvlan_ctxt.max_num_macvlan;
+		u16 usable = min(sxe2_usable_txqs_cnt_get(adapter),
+				 sxe2_usable_rxqs_cnt_get(adapter));
+
+		channel->max_combined += min(SXE2_MAX_MACVLANS, usable +
+					     adapter->macvlan_ctxt.num_macvlan);
 		channel->combined_count += adapter->macvlan_ctxt.num_macvlan;
 	}
 
@@ -4338,6 +4417,7 @@ STATIC int sxe2_module_eeprom_get(struct net_device *netdev,
 				SFF_READ_BLOCK_SIZE_8 * sizeof(u8),
 			GFP_KERNEL);
 	u8 upper_page_enable = 0;
+	u8 upper_page_provide = 0;
 
 	if (!sff_value) {
 		ret = -ENOSPC;
@@ -4358,8 +4438,13 @@ STATIC int sxe2_module_eeprom_get(struct net_device *netdev,
 
 	if (sff_value->data[0] == SXE2_SFP_TYPE_SFP)
 		is_sfp = true;
-
 	upper_page_enable = sff_value->data[SXE2_SFF_STATUS_INDICATER];
+
+	ret = sxe2_fwc_sff_eeprom_get(adapter, !is_sfp, SXE2_SFP_E2P_I2C_7BIT_ADDR0, 0,
+				      SXE2_QSFP_UP_PAGE_PROVIDE_OFF, SFF_READ_BLOCK_SIZE_8,
+					sff_value);
+	upper_page_provide = sff_value->data[0];
+
 	memset(data, 0, eeprom->len);
 	for (i = 0; i < SFF_READ_BLOCK_SIZE_8; i++)
 		sff_value->data[i] = 0;
@@ -4380,8 +4465,31 @@ STATIC int sxe2_module_eeprom_get(struct net_device *netdev,
 			}
 		}
 
-		if (page != 0 && (upper_page_enable & SXE2_SFF_FLAT_MEM))
-			page = 0;
+		if (page != 0) {
+			if (upper_page_enable & SXE2_SFF_FLAT_MEM) {
+				page = 0;
+			} else {
+				if (page == SXE2_QSFP_UP_PAGE_1 &&
+				    !SXE2_QSFP_SFF_PROVIDE_PAGE1(upper_page_provide)) {
+					page = 0;
+				} else if (page == SXE2_QSFP_UP_PAGE_2 &&
+					   !SXE2_QSFP_SFF_PROVIDE_PAGE2(upper_page_provide)) {
+					page = 0;
+				} else if (page == SXE2_QSFP_UP_PAGE_3) {
+					ret = sxe2_fwc_sff_eeprom_get(adapter, !is_sfp, addr, page,
+								      (u8)offset, SFF_READ_BLOCK_SIZE_8,
+						      sff_value);
+					if (ret) {
+						LOG_ERROR_BDF("get eeprom page %u failed \t"
+							      "use page0, ret=%d\n", page, ret);
+						page = 0;
+						ret = 0;
+					}
+				} else {
+					page = 0;
+				}
+			}
+		}
 
 		for (j = 0; j < SXE2_MODULE_REPEAT_TIMES; j++) {
 			ret = sxe2_fwc_sff_eeprom_get(adapter, !is_sfp, addr, page,
@@ -4649,7 +4757,7 @@ STATIC s32 sxe2_lbtest_loopback_set(struct sxe2_adapter *adapter, bool enable)
 	return ret;
 }
 
-static bool sxe2_vfs_is_active(struct sxe2_adapter *adapter)
+STATIC bool sxe2_vfs_is_active(struct sxe2_adapter *adapter)
 {
 	struct sxe2_vf_node *vf_node;
 	u16 vf_idx;
@@ -4756,6 +4864,15 @@ l_err:
 	return ret;
 }
 
+STATIC bool sxe2_dpdk_is_active_by_vsi_unlock(struct sxe2_adapter *adapter)
+{
+	struct sxe2_vsi *vsi = NULL;
+
+	vsi = sxe2_vsi_get_by_type_unlock(adapter, SXE2_VSI_T_DPDK_PF);
+
+	return vsi ? true : false;
+}
+
 STATIC s32 sxe2_loopback_test(struct net_device *netdev)
 {
 	struct sxe2_netdev_priv *priv = netdev_priv(netdev);
@@ -4765,6 +4882,7 @@ STATIC s32 sxe2_loopback_test(struct net_device *netdev)
 	struct sxe2_vsi *test_vsi;
 	s32 status, ret = 0;
 	bool link_status;
+	u16 cnt;
 
 	mutex_lock(&adapter->link_ctxt.link_status_lock);
 	link_status = sxe2_get_pf_link_status(adapter);
@@ -4774,13 +4892,21 @@ STATIC s32 sxe2_loopback_test(struct net_device *netdev)
 		return SXE2_SELFTEST_RTN_FAIL;
 	}
 
-	if (sxe2_vfs_is_active(adapter))
+	if (sxe2_vfs_is_active(adapter)) {
+		LOG_NETDEV_ERR("vf is active, loopback test failed.\n");
 		return -EFAULT;
+	}
 
 	mutex_lock(&adapter->vsi_ctxt.lock);
 	if (test_bit(SXE2_VSI_S_DISABLE, vsi->state)) {
 		ret = -EBUSY;
-		goto vsi_unlock;
+		goto l_unlock;
+	}
+
+	if (sxe2_dpdk_is_active_by_vsi_unlock(adapter)) {
+		LOG_NETDEV_ERR("dpdk is active, loopback test failed.\n");
+		ret = -EFAULT;
+		goto l_unlock;
 	}
 
 	if_running = netif_running(netdev);
@@ -4789,7 +4915,7 @@ STATIC s32 sxe2_loopback_test(struct net_device *netdev)
 		ret = sxe2_vsi_close(vsi);
 		if (ret) {
 			LOG_NETDEV_ERR("main vsi close failed.\n");
-			goto vsi_unlock;
+			goto l_unlock;
 		}
 	}
 
@@ -4814,6 +4940,15 @@ STATIC s32 sxe2_loopback_test(struct net_device *netdev)
 	if (ret) {
 		LOG_NETDEV_ERR("failed to add mac rule.\n");
 		goto mac_rule_add_failed;
+	}
+
+	for (cnt = 0; cnt < SXE2_LB_TEST_DOWN_TIME_OUT_CNT; cnt++) {
+		mutex_lock(&adapter->link_ctxt.link_status_lock);
+		link_status = sxe2_get_pf_link_status(adapter);
+		mutex_unlock(&adapter->link_ctxt.link_status_lock);
+		if (link_status)
+			break;
+		msleep(SXE2_LB_TEST_DOWN_WAIT_TIME);
 	}
 
 	ret = sxe2_frames_loopback(test_vsi);
@@ -4843,6 +4978,7 @@ vsi_unlock:
 		}
 	}
 
+l_unlock:
 	mutex_unlock(&adapter->vsi_ctxt.lock);
 
 	return ret;
@@ -4964,20 +5100,11 @@ static void sxe2_get_pauseparam(struct net_device *netdev,
 	struct sxe2_dcbx_cfg *curr_cfg;
 	s32 ret;
 
-	struct flm_ethtool_get_link_resp link_cfg;
-
-	ret = sxe2_get_link_configure(adapter, &link_cfg);
-	if (ret) {
-		LOG_ERROR_BDF("link get cmd fail, ret=%d\n", ret);
-		return;
-	}
-
-	pause->autoneg = link_cfg.local_an_en.advertis_an;
-
 	curr_cfg = &adapter->dcb_ctxt.local_dcbx_cfg;
 
 	pause->rx_pause = 0;
 	pause->tx_pause = 0;
+	pause->autoneg = 0;
 
 	if (curr_cfg->pfc.enable)
 		goto l_out;
@@ -4991,12 +5118,14 @@ static void sxe2_get_pauseparam(struct net_device *netdev,
 		return;
 	}
 
-	pause->rx_pause = adapter->lfc_ctxt.rx_en;
-	pause->tx_pause = adapter->lfc_ctxt.tx_en;
+	pause->rx_pause = lfc.rx_en;
+	pause->tx_pause = lfc.tx_en;
+	if (adapter->lfc_ctxt.an == SXE2_LFC_AN_ON)
+		pause->autoneg = true;
 
-	LOG_INFO_BDF("link get cmd fw tx %d rx %d driver tx %d rx %d, ret=%d\n",
-		     lfc.tx_en, lfc.rx_en,
-		     adapter->lfc_ctxt.tx_en, adapter->lfc_ctxt.rx_en, ret);
+	LOG_INFO_BDF("link get cmd driver tx %d rx %d, autoneg %u ret=%d\n",
+		     adapter->lfc_ctxt.tx_en, adapter->lfc_ctxt.rx_en,
+		     adapter->lfc_ctxt.an == SXE2_LFC_AN_ON, ret);
 
 l_out:
 	return;
@@ -5007,7 +5136,6 @@ static int sxe2_set_pauseparam(struct net_device *netdev,
 {
 	struct sxe2_netdev_priv *np  = netdev_priv(netdev);
 	struct sxe2_vsi *vsi	     = np->vsi;
-	struct sxe2_vsi *dpdk_vsi    = NULL;
 	struct sxe2_adapter *adapter = vsi->adapter;
 	struct sxe2_fwc_lfc_info lfc = { 0 };
 	struct sxe2_cmd_params cmd   = { 0 };
@@ -5015,11 +5143,6 @@ static int sxe2_set_pauseparam(struct net_device *netdev,
 	s32 ret = 0;
 	struct flm_ethtool_get_link_resp link_cfg;
 	u32 is_an;
-	bool changed = false;
-	u8 old_fc = SXE2_FC_MODE_DISABLE;
-	u8 new_fc = SXE2_FC_MODE_DISABLE;
-
-	(void)sxe2_fc_get(adapter, vsi->idx_in_dev, &old_fc);
 
 	mutex_lock(&adapter->vsi_ctxt.lock);
 	if (test_bit(SXE2_VSI_S_DISABLE, vsi->state)) {
@@ -5027,7 +5150,6 @@ static int sxe2_set_pauseparam(struct net_device *netdev,
 		LOG_ERROR_BDF("vsi disabled, try later.\n");
 		goto vsi_unlock;
 	}
-	memset(&adapter->lfc_ctxt, 0, sizeof(struct sxe2_lfc_context));
 	curr_cfg = &adapter->dcb_ctxt.local_dcbx_cfg;
 
 	if (vsi->type != SXE2_VSI_T_PF) {
@@ -5054,62 +5176,34 @@ static int sxe2_set_pauseparam(struct net_device *netdev,
 		goto vsi_unlock;
 	}
 
-	if (is_an) {
-		ret = sxe2_link_set_fc_configure(adapter,
-						 (u8)pause->tx_pause,
-						 (u8)pause->rx_pause);
-		if (ret) {
-			LOG_ERROR_BDF("link set fc cmd fail, ret=%d\n", ret);
-			ret = -EIO;
-			goto vsi_unlock;
-		}
-	} else {
-		memset(&lfc, 0, sizeof(lfc));
-		if (pause->rx_pause) {
-			lfc.rx_en = true;
-			adapter->lfc_ctxt.rx_en = true;
-		}
+	memset(&lfc, 0, sizeof(lfc));
+	memset(&adapter->lfc_ctxt, 0, sizeof(struct sxe2_lfc_context));
+	lfc.rx_en = pause->rx_pause ? true : false;
+	lfc.tx_en = pause->tx_pause ? true : false;
+	if (is_an)
+		lfc.an = SXE2_LFC_AN_ON;
+	else
+		lfc.an = SXE2_LFC_AN_OFF;
+	lfc.fc_mode = SXE2_FC_MODE_LFC;
 
-		if (pause->tx_pause) {
-			lfc.tx_en = true;
-			adapter->lfc_ctxt.tx_en = true;
-		}
+	sxe2_cmd_params_dflt_fill(&cmd, SXE2_CMD_LINK_FLOW_CONTROL_SET,
+				  &lfc, sizeof(lfc), NULL, 0);
 
-		lfc.fc_mode = SXE2_FC_MODE_LFC;
-		sxe2_cmd_params_dflt_fill(&cmd, SXE2_CMD_LINK_FLOW_CONTROL_SET,
-					  &lfc, sizeof(lfc), NULL, 0);
-
-		ret = sxe2_cmd_fw_exec(adapter, &cmd);
-		if (ret) {
-			LOG_ERROR_BDF("fc set cmd fail, ret=%d\n", ret);
-			ret = -EIO;
-			goto vsi_unlock;
-		}
-	}
-
-	dpdk_vsi = sxe2_vsi_get_by_type_unlock(adapter, SXE2_VSI_T_DPDK_PF);
-	if (dpdk_vsi)
-		sxe2_set_fc_flag(dpdk_vsi, pause->tx_pause || pause->rx_pause);
-	sxe2_set_fc_flag(vsi, pause->tx_pause || pause->rx_pause);
-
-	ret = sxe2_vsi_down_up_unlock(adapter->vsi_ctxt.main_vsi);
+	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 	if (ret) {
-		LOG_ERROR_BDF("vsi down up failed, ret=%d\n", ret);
+		LOG_ERROR_BDF("fc set cmd fail, ret=%d\n", ret);
+		ret = -EIO;
 		goto vsi_unlock;
 	}
+
+	adapter->lfc_ctxt.rx_en = lfc.rx_en;
+	adapter->lfc_ctxt.tx_en = lfc.tx_en;
+	adapter->lfc_ctxt.an = lfc.an;
 
 	LOG_INFO_BDF("lfc set tx %d rx %d.\n", pause->tx_pause, pause->rx_pause);
 
 vsi_unlock:
 	mutex_unlock(&adapter->vsi_ctxt.lock);
-
-	(void)sxe2_fc_get(adapter, vsi->idx_in_dev, &new_fc);
-	if (new_fc != old_fc)
-		changed = true;
-
-	if (changed && ret == 0)
-		(void)sxe2_com_irq_notifier_call_chain(&adapter->com_ctxt,
-						       SXE2_COM_FC_ST_CHANGE);
 
 	return ret;
 }
@@ -5338,6 +5432,8 @@ void sxe2_stop_lfc(struct sxe2_adapter *adapter)
 	}
 
 	memset(&lfc, 0, sizeof(lfc));
+	lfc.fc_mode = SXE2_FC_MODE_LFC;
+	lfc.an = SXE2_LFC_AN_OFF;
 	sxe2_cmd_params_dflt_fill(&cmd, SXE2_CMD_LINK_FLOW_CONTROL_SET, &lfc,
 				  sizeof(lfc), NULL, 0);
 
@@ -5361,32 +5457,6 @@ STATIC s32 sxe2_link_set_configure(struct sxe2_adapter *adapter, u32 speed)
 	ret = sxe2_cmd_fw_exec(adapter, &cmd);
 	if (ret) {
 		LOG_ERROR_BDF("failed to link cfg, ret=%d\n", ret);
-		goto out;
-	}
-
-out:
-	return ret;
-}
-
-s32 sxe2_link_set_fc_configure(struct sxe2_adapter *adapter, u8 tx_fc, u8 rx_fc)
-{
-	s32 ret			   = 0;
-	struct sxe2_cmd_params cmd = { 0 };
-	struct flm_link_info req	   = { 0 };
-
-	req.fec			   = adapter->link_ctxt.fec;
-	req.speed		   = adapter->link_ctxt.current_link_speed;
-	req.fc_mode.rx_en	   = rx_fc;
-	req.fc_mode.tx_en	   = tx_fc;
-	req.port_num		   = adapter->port_idx;
-
-	sxe2_cmd_params_dflt_fill(&cmd, SXE2_CMD_SFP_SET_LINK_CFG, &req,
-				  sizeof(req), NULL, 0);
-
-	ret = sxe2_cmd_fw_exec(adapter, &cmd);
-	if (ret) {
-		LOG_ERROR_BDF("failed to link cfg, ret=%d\n", ret);
-		ret = -EIO;
 		goto out;
 	}
 
@@ -5594,38 +5664,40 @@ s32 sxe2_phy_type_to_ethtool(struct net_device *netdev,
 		}
 	}
 
-	if (link_cfg.an_publicity.an_mode.speed_ability_10Gkr) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising,
-						     10000baseKR_Full);
-	}
-	if (link_cfg.an_publicity.an_mode.speed_ability_25Gkrcr ||
-	    link_cfg.an_publicity.an_mode.speed_ability_25Gkrcr_s) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising,
-						     25000baseKR_Full);
-	}
-	if (link_cfg.an_publicity.an_np_mode.speed_ability_25Gkr) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising,
-						     25000baseKR_Full);
-	}
-	if (link_cfg.an_publicity.an_np_mode.speed_ability_25Gcr) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising,
-						     25000baseCR_Full);
-	}
-	if (link_cfg.an_publicity.an_np_mode.speed_ability_50Gcr2) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising,
-						     50000baseCR2_Full);
-	}
-	if (link_cfg.an_publicity.an_np_mode.speed_ability_50Gkr2) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising,
-						     50000baseKR2_Full);
-	}
-	if (link_cfg.an_publicity.an_mode.speed_ability_100Gcr4) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising,
-						     100000baseCR4_Full);
-	}
-	if (link_cfg.an_publicity.an_mode.speed_ability_100Gkr4) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising,
-						     100000baseKR4_Full);
+	if (link_cfg.current_an_en.current_an) {
+		if (link_cfg.an_publicity.an_mode.speed_ability_10Gkr) {
+			ethtool_link_ksettings_add_link_mode(ks, advertising,
+							     10000baseKR_Full);
+		}
+		if (link_cfg.an_publicity.an_mode.speed_ability_25Gkrcr ||
+		    link_cfg.an_publicity.an_mode.speed_ability_25Gkrcr_s) {
+			ethtool_link_ksettings_add_link_mode(ks, advertising,
+							     25000baseKR_Full);
+		}
+		if (link_cfg.an_publicity.an_np_mode.speed_ability_25Gkr) {
+			ethtool_link_ksettings_add_link_mode(ks, advertising,
+							     25000baseKR_Full);
+		}
+		if (link_cfg.an_publicity.an_np_mode.speed_ability_25Gcr) {
+			ethtool_link_ksettings_add_link_mode(ks, advertising,
+							     25000baseCR_Full);
+		}
+		if (link_cfg.an_publicity.an_np_mode.speed_ability_50Gcr2) {
+			ethtool_link_ksettings_add_link_mode(ks, advertising,
+							     50000baseCR2_Full);
+		}
+		if (link_cfg.an_publicity.an_np_mode.speed_ability_50Gkr2) {
+			ethtool_link_ksettings_add_link_mode(ks, advertising,
+							     50000baseKR2_Full);
+		}
+		if (link_cfg.an_publicity.an_mode.speed_ability_100Gcr4) {
+			ethtool_link_ksettings_add_link_mode(ks, advertising,
+							     100000baseCR4_Full);
+		}
+		if (link_cfg.an_publicity.an_mode.speed_ability_100Gkr4) {
+			ethtool_link_ksettings_add_link_mode(ks, advertising,
+							     100000baseKR4_Full);
+		}
 	}
 
 	sxe2_ethtool_support_fec_get(&speed_ability, ks);
@@ -5659,12 +5731,22 @@ static void sxe2_advertise_fec_get(struct ethtool_link_ksettings *ks,
 				   struct ethtool_flm_link_info *currect_info)
 {
 	if (currect_info->link_status == SXE2_LINK_UP) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising, FEC_NONE);
-		if (link_cfg->advertis_fec.fec_br)
-			ethtool_link_ksettings_add_link_mode(ks, advertising, FEC_BASER);
-
-		if (link_cfg->advertis_fec.fec_528 || link_cfg->advertis_fec.fec_544)
+		switch (link_cfg->local_fec_mode) {
+		case FLM_FEC_528:
+		case FLM_FEC_544:
 			ethtool_link_ksettings_add_link_mode(ks, advertising, FEC_RS);
+			break;
+		case FLM_FEC_BSFEC:
+			ethtool_link_ksettings_add_link_mode(ks, advertising, FEC_BASER);
+			break;
+		case FLM_FEC_NONE:
+			ethtool_link_ksettings_add_link_mode(ks, advertising, FEC_NONE);
+			break;
+		default:
+			LOG_ERROR("unknown FEC mode 0x%x.\n", link_cfg->local_fec_mode);
+			ethtool_link_ksettings_add_link_mode(ks, advertising, FEC_NONE);
+			break;
+		}
 	}
 }
 
@@ -5732,8 +5814,8 @@ static void sxe2_advertise_link_mode_get(struct ethtool_link_ksettings *ks,
 	}
 }
 
-STATIC int sxe2_get_link_requir_cfg(struct net_device *netdev,
-				    struct ethtool_link_ksettings *ks, u32 *speed)
+STATIC int sxe2_get_link_require_cfg(struct net_device *netdev,
+				     struct ethtool_link_ksettings *ks, u32 *speed)
 {
 	s32 ret = 0;
 	u32 supported;
@@ -5823,31 +5905,22 @@ STATIC int sxe2_get_link_requir_cfg(struct net_device *netdev,
 	}
 
 	ethtool_link_ksettings_add_link_mode(ks, supported, Pause);
-	if (link_cfg.sxe2_ana_fsm == SXE2_AN_GOOD) {
-		if (link_cfg.partner_pause_result.tx_en &&
-		    link_cfg.partner_pause_result.rx_en) {
-			ethtool_link_ksettings_add_link_mode(ks, lp_advertising,
-							     Pause);
-		} else if (link_cfg.partner_pause_result.tx_en) {
-			ethtool_link_ksettings_add_link_mode(ks, lp_advertising,
-							     Pause);
-			ethtool_link_ksettings_add_link_mode(ks, lp_advertising,
-							     Asym_Pause);
-		} else if (link_cfg.partner_pause_result.rx_en) {
-			ethtool_link_ksettings_add_link_mode(ks, lp_advertising,
-							     Asym_Pause);
-		} else {
-			ethtool_link_ksettings_del_link_mode(ks, lp_advertising,
-							     Pause);
-			ethtool_link_ksettings_del_link_mode(ks, lp_advertising,
-							     Asym_Pause);
-		}
-	}
+	ethtool_link_ksettings_add_link_mode(ks, supported, Asym_Pause);
+
+	if (link_cfg.local_pause.bit_asym)
+		ethtool_link_ksettings_add_link_mode(ks, advertising, Asym_Pause);
+	if (link_cfg.local_pause.bit_pause)
+		ethtool_link_ksettings_add_link_mode(ks, advertising, Pause);
+
+	if (link_cfg.partner_pause.bit_asym)
+		ethtool_link_ksettings_add_link_mode(ks, lp_advertising, Asym_Pause);
+	if (link_cfg.partner_pause.bit_pause)
+		ethtool_link_ksettings_add_link_mode(ks, lp_advertising, Pause);
 
 	return ret;
 }
 
-static int sxe2_get_link_ksettings(struct net_device *netdev,
+STATIC int sxe2_get_link_ksettings(struct net_device *netdev,
 				   struct ethtool_link_ksettings *ks)
 {
 	u32 supported;
@@ -5876,34 +5949,19 @@ static int sxe2_get_link_ksettings(struct net_device *netdev,
 		LOG_ERROR_BDF("failed to link cfg, ret=%d\n", ret);
 
 	ks->base.autoneg = link_cfg.current_an_en.current_an;
-	ret = sxe2_get_link_requir_cfg(netdev, ks, &speed);
+	ret = sxe2_get_link_require_cfg(netdev, ks, &speed);
 	if (ret)
-		LOG_ERROR_BDF("get link requir cfg failed, ret=%d\n", ret);
+		LOG_ERROR_BDF("get link require cfg failed, ret=%d\n", ret);
 
 	adapter->link_ctxt.current_link_speed = speed;
-	if (link_cfg.configed_pause_result.tx_en &&
-	    link_cfg.configed_pause_result.rx_en) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising, Pause);
-		ethtool_link_ksettings_add_link_mode(ks, advertising,
-						     Asym_Pause);
-	} else if (link_cfg.configed_pause_result.tx_en) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising,
-						     Asym_Pause);
-	} else if (link_cfg.configed_pause_result.rx_en) {
-		ethtool_link_ksettings_add_link_mode(ks, advertising, Pause);
-		ethtool_link_ksettings_add_link_mode(ks, advertising,
-						     Asym_Pause);
-	} else {
-		ethtool_link_ksettings_add_link_mode(ks, advertising, Pause);
-		ethtool_link_ksettings_add_link_mode(ks, advertising,
-						     Asym_Pause);
-	}
 
 	if (link_cfg.local_an_en.suppert_an)
 		ethtool_link_ksettings_add_link_mode(ks, supported, Autoneg);
 
 	if (link_cfg.local_an_en.advertis_an)
 		ethtool_link_ksettings_add_link_mode(ks, advertising, Autoneg);
+	if (link_cfg.sxe2_ana_fsm == SXE2_AN_GOOD)
+		ethtool_link_ksettings_add_link_mode(ks, lp_advertising, Autoneg);
 
 	return ret;
 }
@@ -6069,7 +6127,7 @@ static int sxe2_set_link_ksettings(struct net_device *netdev,
 		copy_ks.base.link_mode_masks_nwords;
 	ret = sxe2_get_link_ksettings(netdev, &safe_ks);
 	if (ret) {
-		LOG_ERROR_BDF("get link ksetting failed to link cfg, ret=%d\n",
+		LOG_ERROR_BDF("get link ksettings failed to link cfg, ret=%d\n",
 			      ret);
 		goto l_end;
 	}
@@ -6088,7 +6146,7 @@ static int sxe2_set_link_ksettings(struct net_device *netdev,
 
 	ret = sxe2_link_get_pasist_info(adapter, &pasist_info);
 	if (ret)
-		LOG_ERROR_BDF("failed to get usr pasit info, ret=%d\n", ret);
+		LOG_ERROR_BDF("failed to get usr pasist info, ret=%d\n", ret);
 
 	if (link_cfg.optical_module.current_connection == SXE2_FW_CONNECT_MDDE_UNKNOWN) {
 		ret = -EIO;
@@ -6117,22 +6175,36 @@ static int sxe2_set_link_ksettings(struct net_device *netdev,
 	adv_link_speed = sxe2_ksettings_find_adv_link_speed(ks);
 	usr_link_speed = sxe2_get_usr_req_link_speed(adv_link_speed);
 	current_link_speed = adapter->link_ctxt.current_link_speed;
-	if (!autoneg_change) {
-		if (!sxe2_check_usr_link_speed_change(&currect_info,
-						      ks,
-						      &usr_link_speed,
-						      current_link_speed, &pasist_info)) {
-			LOG_INFO_BDF("linkup and config same not set!!\n");
-			goto l_end;
-		}
-	} else {
-		if (ks->base.speed != current_link_speed &&
-		    ks->base.speed != SXE2_PF_DOWN_ETHTOOL_BASE_SPEED)
-			usr_link_speed = ks->base.speed;
+
+	if ((ks->base.speed != current_link_speed || autoneg == AUTONEG_DISABLE) &&
+	    ks->base.speed != SXE2_PF_DOWN_ETHTOOL_BASE_SPEED) {
+		usr_link_speed = ks->base.speed;
+	} else if (ks->base.speed == SXE2_PF_DOWN_ETHTOOL_BASE_SPEED &&
+		   autoneg == AUTONEG_DISABLE) {
+		usr_link_speed = sxe2_speed_dut_switch_cfg(pasist_info.speed);
+	} else if (ks->base.speed == SXE2_PF_DOWN_ETHTOOL_BASE_SPEED &&
+		   autoneg == AUTONEG_ENABLE) {
+		usr_link_speed = SXE2_ETHTOOL_SPEED_AUTO;
 	}
 
+	if (!sxe2_check_usr_link_speed_change(&currect_info,
+					      ks,
+					      &usr_link_speed,
+					      current_link_speed, &pasist_info)) {
+		LOG_INFO_BDF("linkup and config same not set!!\n");
+		goto l_end;
+	}
+
+	LOG_INFO_BDF("set speed %u cur speed %u autoneg_change %d\n",
+		     usr_link_speed, current_link_speed, autoneg_change);
 	if (!sxe2_check_speed_param_valid(usr_link_speed))
 		return -EOPNOTSUPP;
+
+	mutex_lock(&adapter->vsi_ctxt.lock);
+	if (test_bit(SXE2_VSI_S_DISABLE, vsi->state)) {
+		ret = -EBUSY;
+		goto l_unlock;
+	}
 
 	if (currect_info.link_status == SXE2_LINK_UP) {
 		netif_carrier_off(netdev);
@@ -6148,19 +6220,19 @@ static int sxe2_set_link_ksettings(struct net_device *netdev,
 		if (autoneg_change)
 			ret = 0;
 
-		if (currect_info.link_status == SXE2_LINK_UP &&
-		    (usr_link_speed == SXE2_ETHTOOL_SPEED_AUTO ||
-		     usr_link_speed == current_link_speed)) {
-			ret = 0;
-		}
-
 		if (currect_info.link_status == SXE2_LINK_UP) {
 			netif_carrier_on(netdev);
 			netif_tx_start_all_queues(netdev);
 		}
+
+		if (ret == -SXE2_CMD_DRV_FLM_LINK_NOT_UPDATE)
+			ret = 0;
 	}
 
 	adapter->link_ctxt.current_link_speed = adv_link_speed;
+l_unlock:
+	mutex_unlock(&adapter->vsi_ctxt.lock);
+
 l_end:
 
 	return ret;
@@ -6332,6 +6404,8 @@ update_filter:
 		if (ret)
 			goto rebuild_err;
 	}
+	vsi->rss_ctxt.queue_size = sxe2_rss_queue_size_correct(vsi->rxqs.req_q_cnt);
+
 	goto l_unlock;
 
 rebuild_err:

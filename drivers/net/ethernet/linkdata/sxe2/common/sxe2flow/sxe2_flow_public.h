@@ -327,6 +327,9 @@ enum sxe2_flow_hdr {
 	SXE2_FLOW_HDR_IPV_FRAG,
 	SXE2_FLOW_HDR_IPV_OTHER,
 	SXE2_FLOW_HDR_ETH_NON_IP = 15,
+	SXE2_FLOW_HDR_ESP,
+	SXE2_FLOW_HDR_ICMPV6_ND,
+	SXE2_FLOW_HDR_GTPC,
 	SXE2_FLOW_HDR_MAX = 128,
 };
 
@@ -373,6 +376,19 @@ enum sxe2_flow_fld_id {
 	SXE2_FLOW_FLD_ID_GENEVE_VNI,
 	SXE2_FLOW_FLD_ID_GTPU_TEID = 40,
 	SXE2_FLOW_FLD_ID_NVGRE_TNI,
+	SXE2_FLOW_FLD_ID_ESP_SPI,
+	SXE2_FLOW_FLD_ID_ESP_SEQ,
+	SXE2_FLOW_FLD_ID_ESP_NATT_SPI,
+	SXE2_FLOW_FLD_ID_ESP_NATT_SEQ = 45,
+	SXE2_FLOW_FLD_ID_ICMP_TYPE,
+	SXE2_FLOW_FLD_ID_ICMP_CODE,
+	SXE2_FLOW_FLD_ID_ICMP_IDENT,
+	SXE2_FLOW_FLD_ID_IPV6_FRAG_NEXT_HDR,
+	SXE2_FLOW_FLD_ID_IPV6_FRAG_DATA = 50,
+	SXE2_FLOW_FLD_ID_GRE_PROTO,
+	SXE2_FLOW_FLD_ID_GTPC_FLAG,
+	SXE2_FLOW_FLD_ID_ICMPV6_ND_TYPE,
+	SXE2_FLOW_FLD_ID_ICMPV6_ND_TARGET,
 
 	SXE2_FLOW_FLD_ID_MAX = 128,
 };
@@ -469,6 +485,37 @@ struct sxe2_vxlan_hdr {
 	u8 resvd1;
 	u8 protocol;
 	__be32 vni;
+};
+
+struct sxe2_esp_hdr {
+	__be32 spi;
+	__be32 seq;
+};
+
+struct sxe2_icmp_hdr {
+	u8 type;
+	u8 code;
+	__be16 rsv;
+	__be16 ident;
+};
+
+struct sxe2_ipv6_frag_hdr {
+	u8 next_hdr;
+	u8 rsv;
+	__be16 frag_data;
+	__be32 ident;
+};
+
+struct sxe2_gre_hdr {
+	__be16 flags_ver;
+	__be16 protocol;
+};
+
+struct sxe2_icmpv6_nd_hdr {
+	u8 type;
+	u8 code;
+	u8 rsv[6];
+	u8 target[16];
 };
 
 enum sxe2_flow_act_type {
@@ -588,6 +635,7 @@ enum sxe2_flow_tunnel_type {
 	SXE2_FLOW_TUNNEL_TYPE_GENEVE,
 	SXE2_FLOW_TUNNEL_TYPE_GRE,
 	SXE2_FLOW_TUNNEL_TYPE_IPIP,
+	SXE2_FLOW_TUNNEL_TYPE_GTPC,
 };
 
 struct sxe2_flow_meta {
@@ -620,6 +668,73 @@ struct sxe2_flow_action {
 	struct sxe2_flow_action_vsi_list vsi_list;
 	struct sxe2_flow_action_mark mark;
 	struct sxe2_flow_action_count count;
+};
+
+#define SXE2_FLOW_ITEM_MAX	10
+
+union sxe2_flow_item_ext_val {
+	struct sxe2_ether_hdr	eth;
+	struct sxe2_vlan_hdr	vlan;
+	struct sxe2_vlan_hdr	qinq;
+	struct sxe2_ipv4_hdr	ipv4;
+	struct sxe2_ipv6_hdr	ipv6;
+	struct sxe2_udp_hdr	udp;
+	struct sxe2_tcp_hdr	tcp;
+	struct sxe2_sctp_hdr	sctp;
+	struct sxe2_gtpu_hdr	gtpu;
+	struct sxe2_vxlan_hdr	vxlan;
+	struct sxe2_nvgre_hdr	nvgre;
+	struct sxe2_geneve_hdr	geneve;
+	struct sxe2_esp_hdr	esp;
+	struct sxe2_icmp_hdr	icmp;
+	struct sxe2_ipv6_frag_hdr ipv6_frag;
+	struct sxe2_gre_hdr	gre;
+	struct sxe2_icmpv6_nd_hdr icmpv6_nd;
+	struct sxe2_gtpu_hdr	gtpc;
+	u8			raw[40];
+};
+
+struct sxe2_flow_item_ext {
+	enum sxe2_flow_hdr	type;
+	union sxe2_flow_item_ext_val val;
+	union sxe2_flow_item_ext_val mask;
+};
+
+struct sxe2_flow_pattern_ext {
+	DECLARE_BITMAP(hdrs, SXE2_FLOW_HDR_MAX);
+	DECLARE_BITMAP(map_spec, SXE2_FLOW_FLD_ID_MAX);
+	DECLARE_BITMAP(map_mask, SXE2_FLOW_FLD_ID_MAX);
+	struct sxe2_flow_item_ext item[SXE2_FLOW_ITEM_MAX];
+	u64	rss_type_allow;
+	u8 nr_items;
+	u8 rsv[3];
+};
+
+static inline const struct sxe2_flow_item_ext *sxe2_flow_pattern_ext_item_find(
+		const struct sxe2_flow_pattern_ext *pattern, enum sxe2_flow_hdr type)
+{
+	u8 i;
+
+	for (i = 0; i < pattern->nr_items && i < SXE2_FLOW_ITEM_MAX; i++) {
+		if (pattern->item[i].type == type)
+			return &pattern->item[i];
+	}
+
+	return NULL;
+}
+
+struct sxe2_drv_flow_filter_req_ext {
+	__le32	flow_id;
+	struct sxe2_flow_meta meta;
+	__le32	engine_type;
+	struct sxe2_flow_pattern_ext pattern_outer;
+	struct sxe2_flow_pattern_ext pattern_inner;
+	struct sxe2_flow_action action;
+};
+
+struct sxe2_drv_flow_filter_resp_ext {
+	__le32	engine_type;
+	__le32	flow_id;
 };
 #endif
 

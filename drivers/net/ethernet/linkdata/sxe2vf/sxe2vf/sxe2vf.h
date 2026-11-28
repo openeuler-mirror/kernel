@@ -62,11 +62,13 @@
 #define SXE2VF_RESET_DONE_WAIT_COUNT (250)
 #define SXE2VF_RESET_WAIT_MS (50)
 #define SXE2VF_CORER_WAIT_DONE_COUNT (1000)
-#define SXE2VF_WAIT_CONFIG_ACCESSIBLE_TIMEOUT_MS (60000)
+#define SXE2VF_WAIT_CONFIG_ACCESSIBLE_INTERVAL (2)
 #ifdef SXE2VF_TEST
 #define SXE2VF_RESET_ROBACK_WAIT_COUNT (1)
+#define SXE2VF_WAIT_CONFIG_ACCESSIBLE_TIMEOUT_MS (10)
 #else
 #define SXE2VF_RESET_ROBACK_WAIT_COUNT (18000)
+#define SXE2VF_WAIT_CONFIG_ACCESSIBLE_TIMEOUT_MS (60000)
 #endif
 #ifdef SXE2VF_TEST
 #define SXE2VF_RESET_WAIT_COMPLETE_COUNT (1000)
@@ -255,7 +257,7 @@ struct sxe2vf_vsi {
 	struct sxe2vf_adapter *adapter;
 	struct net_device *netdev;
 	u16 vsi_id;
-	enum sxe2vf_vsi_type vsi_type;
+	enum sxe2_vf_vsi_id_type vsi_type;
 	struct sxe2vf_vsi_irqs irqs;
 	struct sxe2vf_vsi_queues txqs;
 	struct sxe2vf_vsi_queues rxqs;
@@ -270,7 +272,6 @@ struct sxe2vf_vsi_context {
 	/* in order to protect the data */
 	struct mutex lock;
 	struct sxe2vf_vsi *vf_vsi;
-	struct sxe2vf_vsi *dpdk_vf_vsi;
 	u16 vsi_ids[SXE2_VF_MAX_VSI_CNT];
 };
 
@@ -339,10 +340,27 @@ struct sxe2vf_rss_cfg {
 	struct sxe2vf_rss_hash_cfg hash_cfg;
 };
 
+enum sxe2vf_rss_lut_vsi_id {
+	SXE2VF_RSS_LUT_KERNEL = 0,
+	SXE2VF_RSS_LUT_DPDK,
+	SXE2VF_RSS_LUT_NR
+};
+
+struct sxe2vf_rss_lut_info {
+	u16 lut_type;
+	u16 lut_size;
+	u16 key_size;
+};
+
+struct sxe2_rss_lut_adv_info {
+	struct sxe2vf_rss_lut_info base;
+	u8  lut_id;
+	u8  resv;
+};
+
 struct sxe2vf_rss_context {
-	u16 rss_lut_type;
-	u16 rss_key_size;
-	u16 rss_lut_size;
+	struct sxe2vf_rss_lut_info dflt;
+	struct sxe2_rss_lut_adv_info adv_info[SXE2VF_RSS_LUT_NR];
 	u8 *key;
 	u8 *lut;
 	struct list_head rss_cfgs;
@@ -455,6 +473,10 @@ s32 sxe2vf_dpdk_caps_get(struct sxe2vf_adapter *adapter, struct sxe2vf_res_caps 
 
 int sxe2vf_com_mode_get(void *adapter);
 
-int sxe2vf_g_com_mode_get(void);
+int sxe2vf_g_drv_mode_get(void);
+
+enum sxe2_com_module sxe2vf_drv_run_mode_get(struct sxe2vf_adapter *adapter);
+
+u16 sxe2vf_dpdk_vsi_id_get(struct sxe2vf_adapter *adapter);
 
 #endif

@@ -230,6 +230,8 @@ s32 sxe2_cmd_mbx_exec(struct sxe2_adapter *adapter, struct sxe2_cmd_params *cmd_
 
 s32 sxe2_cmd_cli_exec(struct sxe2_adapter *adapter, struct sxe2_cmd_params *cmd_params);
 
+bool sxe2_dev_state_check(struct sxe2_adapter *adapter);
+
 void sxe2_wait_task_cancel(struct sxe2_cmd_channel *channel);
 
 void sxe2_wait_task_cancel_all(struct sxe2_adapter *adapter);
