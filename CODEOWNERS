@@ -538,7 +538,7 @@
 /drivers/net/ethernet/intel/ @zeng_zhaorong @juntianlinux
 /drivers/net/ethernet/amd/ @kile2009 @sming56_admin
 /drivers/net/ethernet/motorcomm/ @Frank_Sae
-/drivers/net/ethernet/mucse/ @sinat_17738335 @qich @AlphaLan2025 @huzhitao @gcw_EzAoulpf @eaglew-forge
+/drivers/net/ethernet/mucse/ @qich @AlphaLan2025 @huzhitao @gcw_EzAoulpf @eaglew-forge
 /drivers/net/ethernet/wangxun/ @duanqiangwen @linyuexie1
 /drivers/net/phy/motorcomm.c @Frank_Sae
 /drivers/net/phy/amd.c @kile2009 @sming56_admin
@@ -1058,7 +1058,7 @@
 /include/linux/can/ @yuehaibing_planb
 /include/linux/capability.h @lujialin2 @raverstern
 /include/linux/cb710.h @UNMAINTAINED
-/include/linux/cc_platform.h @stkid
+/include/linux/cc_platform.h @wkfxxx @mawupeng @sun_nanyong
 /include/linux/cciss_ioctl.h @zhangyi089
 /include/linux/ccp.h @lujialin2 @raverstern
 /include/linux/cdev.h @chen-jun-hw
@@ -1075,7 +1075,7 @@
 /include/linux/clk/ @UNMAINTAINED
 /include/linux/clock* @chen-jun-hw
 /include/linux/cm4000_cs.h @qinirao
-/include/linux/cma.h @chen-jun-hw
+/include/linux/cma.h @wkfxxx @mawupeng @sun_nanyong
 /include/linux/cn* @chen-jun-hw
 /include/linux/coda.h @chen-jun-hw
 /include/linux/comedi/ @UNMAINTAINED
@@ -1675,7 +1675,7 @@
 /include/linux/prmt.h @chriszjh @zouyipeng
 /include/math-emu/ @chen-jun-hw
 /include/net/ @yuehaibing_planb
-/include/net/smc.h @giree2
+/include/net/smc.h @UNMAINTAINED
 /include/net/ub/ @chenjunxin1992 @fanghaiqinghw
 /include/ras/ @wkfxxx @mawupeng @sun_nanyong
 /include/rdma/ @yuehaibing_planb
@@ -2204,7 +2204,7 @@
 /mm/share_pool.c @chen-jun-hw
 /net/ @yuehaibing_planb
 /net/ubl/ @hu-chunzhi @wsoydl @jerry_lilijun
-/net/smc/ @giree2
+/net/smc/ @UNMAINTAINED
 /net/bpf/ @xukuohai @yeweihua999
 /net/bpf/modules.builtin @xukuohai @yeweihua
 /net/sunrpc/ @chenxiaosonggitcode @zhangguodong11
