@@ -228,12 +228,14 @@ bool is_od_root_valid(struct ubios_od_root *root)
 	}
 
 	if (!odf_is_checksum_ok(&(root->header))) {
-		pr_err("odf: root checksum error.\n");
+		pr_err("odf: root checksum error, name=%s, total_size=%u, version=%u\n",
+		       root->header.name, root->header.total_size, root->header.version);
 		return false;
 	}
 
 	if (strcmp(root->header.name, UBIOS_OD_ROOT_NAME)) {
-		pr_err("odf: root name[%s] mismatch\n", root->header.name);
+		pr_err("odf: root name[%s] mismatch, expected[%s]\n",
+		       root->header.name, UBIOS_OD_ROOT_NAME);
 		return false;
 	}
 

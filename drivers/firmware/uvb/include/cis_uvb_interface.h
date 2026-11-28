@@ -9,6 +9,7 @@
 #ifndef CIS_UVB_INTERFACE_H
 #define CIS_UVB_INTERFACE_H
 #include <linux/firmware/uvb/cis.h>
+#include <linux/list.h>
 
 /**
  * struct cis_group - call id service group
@@ -39,19 +40,32 @@ struct cis_ub {
 };
 
 /**
+ * struct cis_group_node - node for dynamic CIS group management
+ * @owner:    0=ODF source, non-zero=sender_id from Notify
+ * @group:    pointer to cis_group
+ * @list:     linked list node
+ */
+struct cis_group_node {
+	u32 owner;
+	struct cis_group *group;
+	struct list_head list;
+};
+
+/**
  * struct cis_info - call id service information
  * @group_count:    number of cis group
- * @groups:         array of cis group
+ * @group_list:     linked list of cis_group_node
  */
 struct cis_info {
 	u32 group_count;
 	u32 reserved;
 	struct cis_ub ub;
-	struct cis_group *groups[];
+	struct list_head group_list;
 };
 
 
 extern struct cis_info *g_cis_info;
+extern rwlock_t g_cis_group_lock;      /* protect g_cis_info->group_list / group_count */
 
 #define UVB_OUTPUT_SIZE_NULL        0xFFFFFFFF
 #define UVB_WINDOW_COUNT_MAX        0xFF

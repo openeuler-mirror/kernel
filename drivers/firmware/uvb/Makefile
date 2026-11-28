@@ -3,6 +3,7 @@
 # Description : cis odf Makefile
 
 ccflags-y += -I$(srctree)/drivers/firmware/uvb/include
+ccflags-y += -I$(srctree)/drivers/firmware/uvb
 
 obj-$(CONFIG_UDFI) = odf/odf_get_fdt.o
 obj-$(CONFIG_UDFI_ODF) += odf.o

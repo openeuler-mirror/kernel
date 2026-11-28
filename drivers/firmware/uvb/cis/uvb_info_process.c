@@ -279,5 +279,3 @@ int uvb_polling_sync(void *data)
 	return -ETIMEDOUT;
 }
 EXPORT_SYMBOL(uvb_polling_sync);
-
-

@@ -18,7 +18,9 @@
 #include <linux/hashtable.h>
 #include <linux/delay.h>
 #include "cis_info_process.h"
+#include "cis_ub.h"
 #include "uvb_info_process.h"
+#include "odf/odf_handle.h"
 
 static u32 uvb_poll_timeout = UVB_POLL_TIMEOUT;
 module_param(uvb_poll_timeout, uint, 0644);
@@ -50,23 +52,28 @@ int get_cis_group_info(u32 call_id, u32 receiver_id,
 					u8 *usage, u8 *index,
 					u32 *exact_receiver_id, u32 *forwarder_id)
 {
-	u32 i;
+	struct cis_group_node *node;
+	unsigned long flags;
+	int ret = -EOPNOTSUPP;
+
+	read_lock_irqsave(&g_cis_group_lock, flags);
 
 	if (!g_cis_info) {
 		pr_err("can't get cis_info from odf\n");
-		return -EOPNOTSUPP;
+		goto out;
 	}
 
-	for (i = 0; i < g_cis_info->group_count; i++) {
-		if (receiver_id != g_cis_info->groups[i]->owner_user_id &&
-			receiver_id != ubios_get_user_type(g_cis_info->groups[i]->owner_user_id))
+	list_for_each_entry(node, &g_cis_info->group_list, list) {
+		if (receiver_id != node->group->owner_user_id &&
+			receiver_id != ubios_get_user_type(node->group->owner_user_id))
 			continue;
-		if (is_call_id_supported(g_cis_info->groups[i], call_id)) {
-			*usage = g_cis_info->groups[i]->usage;
-			*index = g_cis_info->groups[i]->index;
-			*exact_receiver_id = g_cis_info->groups[i]->owner_user_id;
-			*forwarder_id = g_cis_info->groups[i]->forwarder_id;
-			return 0;
+		if (is_call_id_supported(node->group, call_id)) {
+			*usage = node->group->usage;
+			*index = node->group->index;
+			*exact_receiver_id = node->group->owner_user_id;
+			*forwarder_id = node->group->forwarder_id;
+			ret = 0;
+			goto out;
 		}
 	}
 
@@ -77,12 +84,15 @@ int get_cis_group_info(u32 call_id, u32 receiver_id,
 		*forwarder_id = g_cis_info->ub.forwarder_id;
 		pr_info("refresh info, usage=%d, index=%d, forward_id=%08x\n",
 			*usage, *index, *forwarder_id);
-		return 0;
+		ret = 0;
+		goto out;
 	}
 
 	pr_err("call id: %08x not supported\n", call_id);
 
-	return -EOPNOTSUPP;
+out:
+	read_unlock_irqrestore(&g_cis_group_lock, flags);
+	return ret;
 }
 
 /*
@@ -396,7 +406,7 @@ int cis_call_uvb(u8 index, struct udfi_para *para, bool is_sync)
 	struct uvb_win_desc_map *uwdm = NULL;
 
 	if (!g_uvb_info) {
-		pr_err("uvb unsupported\n");
+		pr_err("uvb unsupported, virtual_bus table is missing or invalid\n");
 		return -EOPNOTSUPP;
 	}
 
@@ -469,13 +479,14 @@ int cis_call_remote(u32 call_id, u32 sender_id, u32 receiver_id,
 	para.sender_id = sender_id;
 	para.forwarder_id = forwarder_id;
 
-	if (usage != CIS_USAGE_UVB) {
-		pr_err("method not supported, call id=%08x, receiver id=%08x, usage=%d\n",
-			call_id, receiver_id, usage);
-		return -EOPNOTSUPP;
-	}
+	if (usage == CIS_USAGE_UVB)
+		return cis_call_uvb(index, &para, is_sync);
+	else if (usage == CIS_USAGE_UB)
+		return cis_call_ub(&para);
 
-	return cis_call_uvb(index, &para, is_sync);
+	pr_err("method not supported, call id=%08x, receiver id=%08x, usage=%d\n",
+		call_id, receiver_id, usage);
+	return -EOPNOTSUPP;
 }
 
 static bool check_msg_vaild(struct cis_message *msg)
@@ -562,8 +573,10 @@ int register_local_cis_func(u32 call_id, u32 receiver_id, msg_handler func)
 	struct cis_func_node *p;
 	unsigned long flags;
 
-	if (UBIOS_GET_MESSAGE_FLAG(call_id) != UBIOS_CALL_ID_FLAG) {
-		pr_err("register is not uvb call\n");
+	if (UBIOS_GET_MESSAGE_FLAG(call_id) != UBIOS_CALL_ID_FLAG &&
+	    UBIOS_GET_MESSAGE_FLAG(call_id) != UBIOS_NOTIFY_ID_FLAG) {
+		pr_err("register invalid message id, flag=%u\n",
+		       UBIOS_GET_MESSAGE_FLAG(call_id));
 		return -EINVAL;
 	}
 	if (!func) {
@@ -606,8 +619,10 @@ int unregister_local_cis_func(u32 call_id, u32 receiver_id)
 	struct cis_func_node *p;
 	unsigned long flags;
 
-	if (UBIOS_GET_MESSAGE_FLAG(call_id) != UBIOS_CALL_ID_FLAG) {
-		pr_err("unregister is not uvb call\n");
+	if (UBIOS_GET_MESSAGE_FLAG(call_id) != UBIOS_CALL_ID_FLAG &&
+	    UBIOS_GET_MESSAGE_FLAG(call_id) != UBIOS_NOTIFY_ID_FLAG) {
+		pr_err("unregister invalid message id, flag=%u\n",
+		       UBIOS_GET_MESSAGE_FLAG(call_id));
 		return -EINVAL;
 	}
 
@@ -630,4 +645,152 @@ int unregister_local_cis_func(u32 call_id, u32 receiver_id)
 	return 0;
 }
 EXPORT_SYMBOL(unregister_local_cis_func);
+
+/*
+ * Add CIS extension groups from Notify payload.
+ * - Same owner: force overwrite (remove old, append new)
+ * - Different owner: append directly
+ */
+int cis_ext_table_add(u32 owner, struct ubios_od_list_info *list)
+{
+	struct cis_group_node *node, *tmp;
+	struct ubios_od_value_struct vs;
+	unsigned long flags;
+	u32 owner_cnt = 0;
+	int err, i;
+	LIST_HEAD(new_nodes);
+
+	if (!g_cis_info || !list || list->count == 0)
+		return -EINVAL;
+
+	/* Enforce the quota before any allocation: the count comes from the
+	 * notify payload and must not drive an unbounded lock-free kzalloc loop.
+	 */
+	if (list->count > CIS_EXT_TABLE_MAX_GROUP) {
+		pr_err("cis ext add: list count %u exceeds max %u\n",
+		       list->count, CIS_EXT_TABLE_MAX_GROUP);
+		return -ENOSPC;
+	}
+
+	/* ---- Lock-free: parse + build temp nodes (may sleep) ---- */
+	err = odf_get_data_from_list(list, 0, &vs);
+	if (err) {
+		pr_err("cis ext add: get data from list failed, err=%d\n", err);
+		return err;
+	}
+
+	for (i = 0; i < list->count; i++) {
+		node = kzalloc(sizeof(struct cis_group_node), GFP_KERNEL);
+		if (!node) {
+			err = -ENOMEM;
+			goto free_new_nodes;
+		}
+		node->owner = owner;
+		node->group = create_group_from_vs(&vs);
+		if (!node->group) {
+			pr_err("cis ext add: create group from vs failed\n");
+			kfree(node);
+			err = -ENODATA;
+			goto free_new_nodes;
+		}
+		list_add_tail(&node->list, &new_nodes);
+
+		/* No next element after the last one: odf_next_in_list() would
+		 * read the next struct header at list->end (out of bounds).
+		 */
+		if (i == list->count - 1)
+			break;
+
+		/* list->count comes from the payload and may exceed the number
+		 * of structs actually present: stop at the first failure and
+		 * roll back instead of parsing past list->end.
+		 */
+		err = odf_next_in_list(list, &vs);
+		if (err) {
+			pr_err("cis ext add: list exhausted at %d/%u, err=%d\n",
+			       i + 1, list->count, err);
+			goto free_new_nodes;
+		}
+	}
+
+	/* ---- In-lock: limit check + remove old + splice (pointer ops only) ---- */
+	write_lock_irqsave(&g_cis_group_lock, flags);
+
+	if (!g_cis_info) {          /* may have been freed by free_cis_info */
+		write_unlock_irqrestore(&g_cis_group_lock, flags);
+		err = -EINVAL;
+		goto free_new_nodes;
+	}
+
+	/* Precise limit: same-owner old nodes will be removed, not extra */
+	list_for_each_entry(node, &g_cis_info->group_list, list) {
+		if (node->owner == owner)
+			owner_cnt++;
+	}
+	if (g_cis_info->group_count - owner_cnt + list->count >
+	    CIS_EXT_TABLE_MAX_GROUP) {
+		pr_err("cis ext add: group count overflow, current=%u, replace=%u, add=%u, max=%u\n",
+		       g_cis_info->group_count, owner_cnt, list->count,
+		       CIS_EXT_TABLE_MAX_GROUP);
+		write_unlock_irqrestore(&g_cis_group_lock, flags);
+		err = -ENOSPC;
+		goto free_new_nodes;
+	}
+
+	/* Same owner: force overwrite - remove old groups first */
+	list_for_each_entry_safe(node, tmp, &g_cis_info->group_list, list) {
+		if (node->owner == owner) {
+			list_del(&node->list);
+			kfree(node->group);
+			kfree(node);
+			g_cis_info->group_count--;
+		}
+	}
+
+	/* Splice new nodes into main list */
+	list_splice_tail(&new_nodes, &g_cis_info->group_list);
+	g_cis_info->group_count += list->count;
+
+	write_unlock_irqrestore(&g_cis_group_lock, flags);
+
+	pr_info("cis ext add: added %d groups from owner %08x\n", list->count, owner);
+	return 0;
+
+free_new_nodes:
+	list_for_each_entry_safe(node, tmp, &new_nodes, list) {
+		kfree(node->group);
+		kfree(node);
+	}
+	return err;
+}
+
+/* Delete all CIS group nodes from the specified owner */
+int cis_ext_table_del(u32 owner)
+{
+	struct cis_group_node *node, *tmp;
+	unsigned long flags;
+	int deleted = 0;
+
+	write_lock_irqsave(&g_cis_group_lock, flags);
+
+	if (!g_cis_info) {
+		write_unlock_irqrestore(&g_cis_group_lock, flags);
+		return -EINVAL;
+	}
+
+	list_for_each_entry_safe(node, tmp, &g_cis_info->group_list, list) {
+		if (node->owner == owner) {
+			list_del(&node->list);
+			kfree(node->group);
+			kfree(node);
+			g_cis_info->group_count--;
+			deleted++;
+		}
+	}
+
+	write_unlock_irqrestore(&g_cis_group_lock, flags);
+
+	pr_info("cis ext del: deleted %d groups from owner %08x\n", deleted, owner);
+	return deleted ? 0 : -ENOENT;
+}
 

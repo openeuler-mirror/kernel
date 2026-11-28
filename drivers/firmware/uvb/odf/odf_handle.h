@@ -8,6 +8,7 @@
 #ifndef ODF_HANDLE_H
 #define ODF_HANDLE_H
 #include <linux/types.h>
+#include "cis_uvb_interface.h"
 
 extern struct ubios_od_root *od_root;
 
@@ -178,5 +179,7 @@ bool odf_is_checksum_ok(struct ubios_od_header *header);
 void odf_update_checksum(struct ubios_od_header *header);
 int odf_separate_name(char **path, char *name, u64 max_len, u16 *index);
 void odf_get_vs_by_pointer(u8 *data, struct ubios_od_value_struct *vs);
+
+struct cis_group *create_group_from_vs(struct ubios_od_value_struct *vs);
 
 #endif

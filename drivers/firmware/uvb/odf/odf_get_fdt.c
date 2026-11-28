@@ -5,30 +5,30 @@
  * Author: mengkanglai
  * Create: 2025-04-18
  */
-#include <asm/unaligned.h>
-#include <linux/of_fdt.h>
-#include <linux/libfdt.h>
-#include <linux/byteorder/generic.h>
+#include <linux/of.h>
 #include <linux/printk.h>
 
 int odf_get_fdt_ubiostbl(u64 *phys_addr, char *tbl)
 {
-	int node, len;
-	const void *prop;
+	struct device_node *node;
+	u64 val;
+	int ret;
 
-	node = fdt_path_offset(initial_boot_params, "/chosen");
-	if (node < 0) {
+	node = of_find_node_by_path("/chosen");
+	if (!node) {
 		pr_err("failed to get device tree chosen node\n");
 		return -EINVAL;
 	}
-	prop = fdt_getprop(initial_boot_params, node, tbl, &len);
-	if (!prop) {
-		pr_err("failed to get property\n");
+
+	ret = of_property_read_u64(node, tbl, &val);
+	if (ret) {
+		pr_err("failed to get property %s, ret=%d\n", tbl, ret);
+		of_node_put(node);
 		return -EINVAL;
 	}
-	*phys_addr = (len == 4) ? (u64)be32_to_cpup((const u32 *)prop) :
-			get_unaligned_be64(prop);
+	of_node_put(node);
 
+	*phys_addr = val;
 	return 0;
 }
 EXPORT_SYMBOL(odf_get_fdt_ubiostbl);
