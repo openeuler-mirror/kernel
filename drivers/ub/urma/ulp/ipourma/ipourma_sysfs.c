@@ -63,7 +63,7 @@ static DEVICE_ATTR_RO(ipourma_rx_ring_size);
  * The size of this array must be equal to IPOURMA_MAX_CR_STATUS
  * The order of strings must be consistent with the members of ubcore_cr_status in ubcore_opcode.h
  */
-static const char * const status_names[] = {
+const char * const ipourma_cr_status_names[IPOURMA_MAX_CR_STATUS] = {
 	"SUCCESS",
 	"UNSUPPORTED_OPCODE_ERR",
 	"LOC_LEN_ERR",
@@ -82,8 +82,8 @@ static const char * const status_names[] = {
 	"LOC_DATA_POISON",
 	"REM_DATA_POISON"
 };
-_Static_assert(ARRAY_SIZE(status_names) == IPOURMA_MAX_CR_STATUS,
-		"ipourma: the length of status_names mismatch with IPOURMA_MAX_CR_STATUS!");
+_Static_assert(ARRAY_SIZE(ipourma_cr_status_names) == IPOURMA_MAX_CR_STATUS,
+		"ipourma: the length of ipourma_cr_status_names mismatch with IPOURMA_MAX_CR_STATUS!");
 
 /*
  * Sysfs_emit is used to format the attribute string to the buffer and the
@@ -147,7 +147,7 @@ static ssize_t format_stats(char *buf, struct ipourma_dev_priv *priv, ssize_t bu
 			ptx->not_ipv6_proto,
 			ptx->not_ipv6_addr,
 			ptx->ip_eid_not_equal,
-			ptx->tx_ring_full,
+			ptx->ring_full,
 			ptx->post_send_start,
 			ptx->num_import_jetty_real,
 			ptx->num_import_jetty_bypass,
@@ -167,7 +167,8 @@ static ssize_t format_stats(char *buf, struct ipourma_dev_priv *priv, ssize_t bu
 
 	len += ret;
 	for (int i = 0; i < IPOURMA_MAX_CR_STATUS; i++) {
-		ret = sysfs_emit_at(buf, len, "--%s: %llu\n", status_names[i], ptx->cqe_stats[i]);
+		ret = sysfs_emit_at(buf, len, "--%s: %llu\n", ipourma_cr_status_names[i],
+				ptx->cqe_stats[i]);
 		if (ret < 0 || ret + len >= buf_size)
 			goto FORMAT_ERR;
 		len += ret;
@@ -195,8 +196,8 @@ static ssize_t format_stats(char *buf, struct ipourma_dev_priv *priv, ssize_t bu
 			ptx->rearm_failed,
 			prx->cqe_notify,
 			prx->num_napi_rx,
-			prx->rx_enque,
-			prx->rx_deque,
+			prx->enque,
+			prx->deque,
 			prx->cqe_recved,
 			prx->cqe_success,
 			prx->cqe_err);
@@ -205,7 +206,8 @@ static ssize_t format_stats(char *buf, struct ipourma_dev_priv *priv, ssize_t bu
 	len += ret;
 
 	for (int i = 0; i < IPOURMA_MAX_CR_STATUS; i++) {
-		ret = sysfs_emit_at(buf, len, "--%s: %llu\n", status_names[i], prx->cqe_stats[i]);
+		ret = sysfs_emit_at(buf, len, "--%s: %llu\n", ipourma_cr_status_names[i],
+				prx->cqe_stats[i]);
 		if (ret < 0 || ret + len >= buf_size)
 			goto FORMAT_ERR;
 		len += ret;

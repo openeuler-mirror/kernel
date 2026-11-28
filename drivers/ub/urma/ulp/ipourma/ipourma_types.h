@@ -153,6 +153,12 @@ extern int ipourma_min_eid_cnt;
 
 #define IPOURMA_MAX_CR_STATUS (UBCORE_CR_REM_DATA_POISON + 1)
 
+/* CR status name table, shared by sysfs and ethtool.
+ * The order must match enum ubcore_cr_status in ubcore_opcode.h.
+ * Defined in ipourma_sysfs.c.
+ */
+extern const char * const ipourma_cr_status_names[IPOURMA_MAX_CR_STATUS];
+
 struct ipourma_tx_stats {
 	/* start xmit */
 	uint64_t num_recv_pkts_from_kernel;
@@ -164,7 +170,7 @@ struct ipourma_tx_stats {
 	uint64_t not_ipv6_proto;
 	uint64_t not_ipv6_addr;
 	uint64_t ip_eid_not_equal;
-	uint64_t tx_ring_full;
+	uint64_t ring_full;
 	/* post send */
 	uint64_t post_send_start;
 	uint64_t num_import_jetty_real;
@@ -195,8 +201,8 @@ struct ipourma_rx_stats {
 	uint64_t cqe_notify;
 	/* rx poll */
 	uint64_t num_napi_rx;
-	uint64_t rx_enque;
-	uint64_t rx_deque;
+	uint64_t enque;
+	uint64_t deque;
 	uint64_t cqe_recved;
 	uint64_t cqe_success;
 	uint64_t cqe_err;
