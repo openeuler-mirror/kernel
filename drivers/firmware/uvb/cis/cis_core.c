@@ -182,10 +182,11 @@ static int __init cis_init(void)
 	} else {
 		err = init_uvb();
 		if (err) {
-			pr_err("uvb init failed, err=%d\n", err);
-			return err;
+			pr_warn("uvb init failed, err=%d, uvb channel unavailable, only cis over ub works\n",
+				err);
+		} else {
+			pr_info("cis uvb init success\n");
 		}
-		pr_info("cis uvb init success\n");
 	}
 
 	err = auxiliary_driver_register(&uvb_drv);

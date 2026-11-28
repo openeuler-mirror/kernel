@@ -11,13 +11,24 @@
 #define CIS_INFO_PROCESS_H
 
 #include "cis_uvb_interface.h"
+#include "odf/odf_interface.h"
 
 #define CIS_USAGE_UVB                    2
+#define CIS_USAGE_UB                     4
 #define MAX_UVB_DESC_BITS                8
 #define UVB_POLL_TIME_INTERVAL           (100)                  /* 100us */
 #define UVB_POLL_TIMEOUT                 (1200)                 /* 1200ms */
 #define UVB_TIMEOUT_WINDOW_OBTAIN        (10000)                /* 10000us */
 #define UVB_POLL_TIMEOUT_TIMES           (10000)                /* 10000 times */
+
+#define UBIOS_NOTIFY_ID_FLAG             0x1
+#define UBIOS_NOTIFY_ID_CIS_TABLE        0x40000001
+
+/* Max groups allowed in CIS extension table.
+ * Based on: 8 call_id_service sections, each up to 1KB,
+ * minimum realistic group size ~24 bytes (16B header + 2 call_ids),
+ * yielding ~42 groups/section × 8 = 336; rounded up to 64 for safety. */
+#define CIS_EXT_TABLE_MAX_GROUP          64
 
 extern struct list_head  g_local_cis_list;
 
@@ -31,6 +42,7 @@ struct udfi_para {
 	void *output;
 	u32 *output_size;
 };
+
 
 struct cis_func_node {
 	struct list_head link;
@@ -52,6 +64,8 @@ int cis_call_remote(u32 call_id, u32 sender_id, u32 receiver_id,
 					struct cis_message *msg,
 					bool is_sync);
 msg_handler search_local_cis_func(u32 call_id, u32 receiver_id);
+int cis_ext_table_add(u32 owner, struct ubios_od_list_info *list);
+int cis_ext_table_del(u32 owner);
 
 static inline u32 ubios_get_user_type(u32 user_id)
 {

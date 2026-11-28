@@ -10,6 +10,7 @@
 #include <linux/string.h>
 #include <linux/module.h>
 #include <linux/printk.h>
+#include <linux/sizes.h>
 #include "cis_uvb_interface.h"
 #include "odf_interface.h"
 #include "odf_handle.h"
@@ -20,6 +21,9 @@ MODULE_DESCRIPTION("ODF Api");
 struct cis_info *g_cis_info;
 EXPORT_SYMBOL(g_cis_info);
 
+DEFINE_RWLOCK(g_cis_group_lock);
+EXPORT_SYMBOL(g_cis_group_lock);
+
 struct uvb_info *g_uvb_info;
 EXPORT_SYMBOL(g_uvb_info);
 
@@ -27,22 +31,29 @@ struct ubios_od_root *od_root;
 
 void free_cis_info(void)
 {
-	u32 i;
+	struct cis_group_node *node, *tmp;
+	unsigned long flags;
 
-	if (!g_cis_info)
+	write_lock_irqsave(&g_cis_group_lock, flags);
+
+	if (!g_cis_info) {
+		write_unlock_irqrestore(&g_cis_group_lock, flags);
 		return;
-
-	for (i = 0; i < (g_cis_info)->group_count; i++) {
-		if ((g_cis_info)->groups[i]) {
-			kfree((g_cis_info)->groups[i]);
-			(g_cis_info)->groups[i] = NULL;
-		}
 	}
+
+	list_for_each_entry_safe(node, tmp, &g_cis_info->group_list, list) {
+		list_del(&node->list);
+		kfree(node->group);
+		kfree(node);
+	}
+
 	kfree(g_cis_info);
 	g_cis_info = NULL;
+
+	write_unlock_irqrestore(&g_cis_group_lock, flags);
 }
 
-static struct cis_group *create_group_from_vs(struct ubios_od_value_struct *vs)
+struct cis_group *create_group_from_vs(struct ubios_od_value_struct *vs)
 {
 	struct ubios_od_list_info list;
 	struct cis_group *group;
@@ -54,6 +65,18 @@ static struct cis_group *create_group_from_vs(struct ubios_od_value_struct *vs)
 		pr_err("create group: get [call id list] failed, err = %d\n", status);
 		return NULL;
 	}
+
+	/* count entries must fit inside [start, end): count comes from the
+	 * (possibly remote) payload and must not drive the kzalloc size or
+	 * the odf_get_u32_from_list() loop beyond the real buffer.
+	 */
+	if (list.count == 0 ||
+	    (u32)list.count > (u32)((u8 *)list.end - (u8 *)list.start) / sizeof(u32)) {
+		pr_err("create group: call id count %u exceeds data length %u\n",
+		       list.count, (u32)((u8 *)list.end - (u8 *)list.start));
+		return NULL;
+	}
+
 	group = kzalloc(sizeof(struct cis_group) + (sizeof(u32) * list.count), GFP_KERNEL);
 	if (!group)
 		return NULL;
@@ -94,6 +117,7 @@ fail:
 
 	return NULL;
 }
+EXPORT_SYMBOL(create_group_from_vs);
 
 static int create_cis_info_from_odf(void)
 {
@@ -157,12 +181,13 @@ static int create_cis_info_from_odf(void)
 				ODF_FILE_NAME_CALL_ID_SERVICE "/" ODF_NAME_CIS_UB, &ub_vs);
 	}
 
-	g_cis_info = kzalloc(sizeof(struct cis_info) + (sizeof(void *) * list.count), GFP_KERNEL);
+	g_cis_info = kzalloc(sizeof(struct cis_info), GFP_KERNEL);
 	if (!g_cis_info) {
 		err = -ENOMEM;
 		goto free_sub_table;
 	}
-	g_cis_info->group_count = list.count;
+	INIT_LIST_HEAD(&g_cis_info->group_list);
+	g_cis_info->group_count = 0;
 
 	err = odf_get_data_from_list(&list, 0, &vs);
 	if (err) {
@@ -171,12 +196,24 @@ static int create_cis_info_from_odf(void)
 		goto fail;
 	}
 	for (i = 0; i < list.count; i++) {
-		g_cis_info->groups[i] = create_group_from_vs(&vs);
-		if (!g_cis_info->groups[i]) {
+		struct cis_group_node *node;
+
+		node = kzalloc(sizeof(struct cis_group_node), GFP_KERNEL);
+		if (!node) {
+			err = -ENOMEM;
+			goto fail;
+		}
+		node->owner = 0; /* ODF source */
+		node->group = create_group_from_vs(&vs);
+		if (!node->group) {
 			pr_err("create cis group from odf failed\n");
+			kfree(node);
 			err = -ENODATA;
 			goto fail;
 		}
+		INIT_LIST_HEAD(&node->list);
+		list_add_tail(&node->list, &g_cis_info->group_list);
+		g_cis_info->group_count++;
 		(void)odf_next_in_list(&list, &vs);
 	}
 
@@ -376,6 +413,14 @@ free_sub_table:
 
 static void free_odf_info(void)
 {
+	int i;
+
+	if (od_root) {
+		for (i = 0; i < od_root->count; i++) {
+			if (od_root->odfs[i])
+				memunmap((void *)(u64)od_root->odfs[i]);
+		}
+	}
 	kfree(od_root);
 	od_root = NULL;
 }
@@ -385,7 +430,13 @@ static int create_odf_info(void)
 	u64 od_root_phys = 0;  /* physical address */
 	struct ubios_od_root *od_root_origin = NULL;  /* virtual address */
 	struct acpi_table_header *ubrt_header = NULL;
+	struct ubios_od_header *dump_hdr = NULL;
+	struct ubios_od_header *od_hdr = NULL;
+	u64 dump_phys = 0;
+	u64 od_file_phys = 0;
 	u32 od_root_size = 0;
+	u32 od_file_size = 0;
+	void *od_file_va = NULL;
 	int i = 0;
 	acpi_status status;
 	int ret = 0;
@@ -396,7 +447,7 @@ static int create_odf_info(void)
 		pr_info("Success fully get UBRT table\n");
 		return 0;
 	}
-	ret = odf_get_fdt_ubiostbl(&od_root_phys, "linux,ubiostbl");
+	ret = odf_get_fdt_ubiostbl(&od_root_phys, "linux,ubios-information-table");
 	if (ret) {
 		pr_err("from fdt get ubiostbl failed\n");
 		return -1;
@@ -426,11 +477,63 @@ static int create_odf_info(void)
 	memcpy(&od_root->header, &od_root_origin->header, sizeof(struct ubios_od_header));
 	od_root->count = od_root_origin->count;
 
+	/* Dump UB root table contents for debugging */
+	pr_info("odf: root table dump: name=%s, total_size=%u, version=%u, count=%u\n",
+		od_root_origin->header.name, od_root_origin->header.total_size,
+		od_root_origin->header.version, od_root_origin->count);
+	for (i = 0; i < od_root_origin->count; i++) {
+		dump_phys = od_root_origin->odfs[i];
+
+		if (!dump_phys) {
+			pr_info("odf: sub_table[%d]: NULL\n", i);
+			continue;
+		}
+
+		dump_hdr = (struct ubios_od_header *)memremap(dump_phys,
+				sizeof(struct ubios_od_header), MEMREMAP_WB);
+		if (!dump_hdr) {
+			pr_info("odf: sub_table[%d]: phys=%016llx, memremap FAILED\n",
+				i, dump_phys);
+			continue;
+		}
+
+		pr_info("odf: sub_table[%d]: phys=%016llx, name=%s, total_size=%u, version=%u\n",
+			i, dump_phys, dump_hdr->name, dump_hdr->total_size, dump_hdr->version);
+
+		memunmap(dump_hdr);
+	}
+
 	for (i = 0; i < od_root->count; i++) {
 		if (!od_root_origin->odfs[i])
 			continue;
 
-		od_root->odfs[i] = od_root_origin->odfs[i];
+		od_file_phys = od_root_origin->odfs[i];
+
+		/* Map header first to get total_size, then map full OD file.
+		 * Same pattern as ubfi's ub_table_get(). */
+		od_hdr = (struct ubios_od_header *)memremap(od_file_phys,
+				sizeof(struct ubios_od_header), MEMREMAP_WB);
+		if (!od_hdr) {
+			pr_err("odf: failed to map od file header at %016llx\n", od_file_phys);
+			continue;
+		}
+		od_file_size = od_hdr->total_size;
+		memunmap(od_hdr);
+
+		if (od_file_size == 0 || od_file_size > SZ_1M) {
+			pr_err("odf: invalid od file size %u at %016llx\n",
+				od_file_size, od_file_phys);
+			continue;
+		}
+
+		od_file_va = memremap(od_file_phys, od_file_size, MEMREMAP_WB);
+		if (!od_file_va) {
+			pr_err("odf: failed to map od file at %016llx, size=%u\n",
+				od_file_phys, od_file_size);
+			continue;
+		}
+
+		od_root->odfs[i] = (u64)od_file_va;
 	}
 	if (od_root_origin)
 		memunmap(od_root_origin);
@@ -465,16 +568,13 @@ static int __init odf_init(void)
 
 	status = create_uvb_info_from_odf();
 	if (status) {
-		pr_err("create uvb info failed, uvb is invalid\n");
-		goto free_cis;
+		pr_warn("create uvb info failed, uvb channel unavailable, cis still works\n");
+	} else {
+		pr_info("odf init success\n");
 	}
-
-	pr_info("odf init success\n");
 
 	return 0;
 
-free_cis:
-	free_cis_info();
 free_odf:
 	free_odf_info();
 

@@ -8,6 +8,8 @@
 #ifndef CIS_UB_H
 #define CIS_UB_H
 
+#include <ub/ubase/ubase_comm_cmd.h>
+
 #define seid_high(eid) (((eid) >> 12) & 0xff)
 #define seid_low(eid) ((eid) & 0xfff)
 #define eid_gen(eid_h, eid_l) ((eid_h) << 12 | (eid_l))
@@ -121,5 +123,15 @@ struct compact_network_header nth;
 
 int uvb_probe(struct auxiliary_device *aux_dev, const struct auxiliary_device_id *id);
 void uvb_remove(struct auxiliary_device *aux_dev);
+struct udfi_para;
+int cis_call_ub(struct udfi_para *para);
+int cis_ext_table_add_from_ub(void *data, u32 data_size, u32 sender_id);
+
+/* Framing support: cmdQ max payload is 1016B, each frame's usable data
+ * is max payload minus msg_pkt_header size.
+ * IMP returns data_total_size as the total data length; if it exceeds
+ * one frame, UVB driver fetches remaining frames by setting index field.
+ */
+#define UB_FRAME_MAX_DATA    (UBASE_CMDQ_MAX_DATA_SIZE - sizeof(struct msg_pkt_header))
 
 #endif

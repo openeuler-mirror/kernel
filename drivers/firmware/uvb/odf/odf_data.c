@@ -403,6 +403,7 @@ int odf_get_list_from_table(u8 *table, char *path, struct ubios_od_list_info *li
 
 	return 0;
 }
+EXPORT_SYMBOL(odf_get_list_from_table);
 
 /**
 @brief Get a ubios od value struct from od root according to the path
@@ -541,6 +542,7 @@ int odf_get_data_from_list(const struct ubios_od_list_info *list,
 
 	return 0;
 }
+EXPORT_SYMBOL(odf_get_data_from_list);
 
 /**
 @brief Get next value of a list.
@@ -589,6 +591,7 @@ int odf_next_in_list(const struct ubios_od_list_info *list, struct ubios_od_valu
 
 	return 0;
 }
+EXPORT_SYMBOL(odf_next_in_list);
 
 /**
 Internal function, get data pointer by path and type.
@@ -726,4 +729,3 @@ int odf_get_list_from_struct(const struct ubios_od_value_struct *vs,
 
 	return 0;
 }
-
