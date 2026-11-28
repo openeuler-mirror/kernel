@@ -1579,7 +1579,6 @@ xfs_swap_extents(
 	int			src_log_flags, target_log_flags;
 	int			error = 0;
 	int			lock_flags;
-	uint64_t		f;
 	int			resblks = 0;
 	unsigned int		flags = 0;
 
@@ -1721,14 +1720,12 @@ xfs_swap_extents(
 	if (error)
 		goto out_trans_cancel;
 
-	/* Do we have to swap reflink flags? */
-	if ((ip->i_d.di_flags2 & XFS_DIFLAG2_REFLINK) ^
-	    (tip->i_d.di_flags2 & XFS_DIFLAG2_REFLINK)) {
-		f = ip->i_d.di_flags2 & XFS_DIFLAG2_REFLINK;
-		ip->i_d.di_flags2 &= ~XFS_DIFLAG2_REFLINK;
-		ip->i_d.di_flags2 |= tip->i_d.di_flags2 & XFS_DIFLAG2_REFLINK;
-		tip->i_d.di_flags2 &= ~XFS_DIFLAG2_REFLINK;
-		tip->i_d.di_flags2 |= f & XFS_DIFLAG2_REFLINK;
+	/* Either inode may now own shared blocks; flag both, with CoW forks. */
+	if ((ip->i_d.di_flags2 | tip->i_d.di_flags2) & XFS_DIFLAG2_REFLINK) {
+		ip->i_d.di_flags2 |= XFS_DIFLAG2_REFLINK;
+		tip->i_d.di_flags2 |= XFS_DIFLAG2_REFLINK;
+		xfs_ifork_init_cow(ip);
+		xfs_ifork_init_cow(tip);
 	}
 
 	/* Swap the cow forks. */
